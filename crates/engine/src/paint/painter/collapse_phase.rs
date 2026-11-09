@@ -147,6 +147,17 @@ impl Painter {
         styles: &HashMap<NodeId, ComputedStyle>,
         doc: Option<&Document>,
     ) {
+        // R5472（CSS2 App E step4 < step5）：floats-defer 下降内每个盒的行内墨相位
+        // 入口记录 pre-ink 位（draw_order 当前长度）——flush 时以其为窗起点查首个
+        // 墨位（Glyph op）作 float 段 splice 目标位（float 绘于窗内块装饰上、首个
+        // 墨之下）。float 项施绘期间 floats_defer_active=false 不记录（项内墨不
+        // 入表）。
+        if self.float_insert_active
+            && self.floats_defer_active
+            && let Some(id) = box_node.node_id
+        {
+            self.float_pre_ink_pos.insert(id, self.primitives.draw_order.len());
+        }
         // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
         // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
         // R4058：UA display:inline 的**替换元素**（svg 根等）是 atomic inline——
@@ -223,8 +234,10 @@ impl Painter {
         }
         // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，
         // border 之内），非 content box。R2500：overflow:clip 轴按
-        // overflow-clip-margin 扩展（CSS Overflow 3 §3）。
-        let clip_rect = super::overflow_clip_rect(box_node, abs_x, abs_y);
+        // overflow-clip-margin 扩展（CSS Overflow 3 §3）。R5429：containment 臂
+        // 传入（css-contain-1 §3.1，collapse 驱动 cell 与主路径同源裁剪）。
+        let clip_rect =
+            super::overflow_clip_rect(box_node, abs_x, abs_y, super::node_containment_clips(box_node, styles));
         super::super::helpers::clip_all_primitives_to_rect(&mut self.primitives, counts, &clip_rect);
         // R4541（css-borders-4 §border-shape）：border-shape 声明时 overflow 内容
         // 裁剪到形状内缘。覆盖填充改写 + v2 条带裁剪与 clip-path polygon 臂共用
@@ -259,6 +272,8 @@ impl Painter {
                 })
             })
         });
+        // R5430：活跃性在 if-let 消费前快照（if let 按值 move，后置 is_none 借用冲突）。
+        let shaped_overflow_active = shaped_overflow.is_some();
         if let Some(polygon) = shaped_overflow {
             super::super::helpers::clip_with_polygon_rewrite(&mut self.primitives, counts, &polygon);
         }
@@ -275,6 +290,15 @@ impl Painter {
             && let Some(radii) = super::overflow_clip_radii(box_node, style, &clip_rect, abs_x, abs_y)
         {
             super::super::helpers::clip_fills_to_rounded_rect(&mut self.primitives, counts, &clip_rect, radii);
+            // R5430：零模糊 outset 阴影同判据承接 clip 圆角（CSS Overflow 3 §3
+            // shaped clip edge；driving overflow-clip-margin-border-radius）。
+            // shaped_overflow（border-shape/corner-shape 形角多边形）活跃或
+            // corner-shape 非初始（R5188 同判据 is_all_round；混合 kind 页
+            // shaped_overflow 为 None，spec 半径 shadow 改写越出形角弧
+            // corner-shape-overflow-clip-margin 0.30%→3.06% 实证）时跳过。
+            if !shaped_overflow_active && style.corner_shape.is_all_round() {
+                super::super::helpers::clip_shadows_to_rounded_rect(&mut self.primitives, counts, &clip_rect, radii);
+            }
         }
     }
 }

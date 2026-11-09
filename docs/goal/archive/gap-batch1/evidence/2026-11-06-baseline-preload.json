@@ -1,0 +1,2377 @@
+[
+  [
+    "preload/avoid-delaying-onload-link-modulepreload-exec.html",
+    [
+      {
+        "name": "preload/avoid-delaying-onload-link-modulepreload-exec.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "preload/avoid-delaying-onload-link-modulepreload.html",
+    [
+      {
+        "name": "preload/avoid-delaying-onload-link-modulepreload.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "preload/avoid-delaying-onload-link-preload-style.html",
+    [
+      {
+        "name": "Makes sure link preload preloaded resources are not delaying onload",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy.css?pipe=trickle(d5) expected 0 but got 1"
+      }
+    ]
+  ],
+  [
+    "preload/avoid-delaying-onload-link-preload.html",
+    [
+      {
+        "name": "Makes sure link preload preloaded resources are not delaying onload",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy.js?pipe=trickle(d5) expected 0 but got 1"
+      }
+    ]
+  ],
+  [
+    "preload/cross-origin-link-header-on-subresource.sub.html",
+    [
+      {
+        "name": "preload/cross-origin-link-header-on-subresource.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/delaying-onload-link-preload-after-discovery.html",
+    [
+      {
+        "name": "Makes sure link preload preloaded resources are delaying onload after discovery",
+        "status": "Fail",
+        "message": "assert_less_than_equal: resources/dummy.js?pipe=trickle(d5) should be downloaded from network at most once expected a number less than or equal to 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "preload/download-resources.html",
+    [
+      {
+        "name": "preload/download-resources.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/dynamic-adding-preload-imagesrcset.html",
+    [
+      {
+        "name": "Makes sure that a dynamically added preload with imagesrcset works",
+        "status": "Fail",
+        "message": "assert_equals: resources/square.png?default expected 0 but got 1"
+      }
+    ]
+  ],
+  [
+    "preload/dynamic-adding-preload-nonce.html",
+    [
+      {
+        "name": "link preload with nonce attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link preload without nonce attribute",
+        "status": "Fail",
+        "message": "assert_unreached: link.onload Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "preload/dynamic-adding-preload.html",
+    [
+      {
+        "name": "Makes sure that a dynamically added preloaded resource is downloaded",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/link-header-modulepreload.html",
+    [
+      {
+        "name": "preload/link-header-modulepreload.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[2679, 203815, 2227, 891], state={\"loaded\":true,\"pending\":1,\"phase\":2,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/link-header-on-subresource.html",
+    [
+      {
+        "name": "preload/link-header-on-subresource.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/link-header-preload-delay-onload.html",
+    [
+      {
+        "name": "Makes sure that Link headers preload resources and block window.onload after resource discovery",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "preload/link-header-preload-imagesrcset.html",
+    [
+      {
+        "name": "preload/link-header-preload-imagesrcset.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/link-header-preload-non-html.html",
+    [
+      {
+        "name": "XHTML documents should respect preload Link headers",
+        "status": "Fail",
+        "message": "assert_equals: verify that request was issued exactly once expected 1 but got 0"
+      },
+      {
+        "name": "plain text documents should respect preload Link headers",
+        "status": "Fail",
+        "message": "assert_equals: verify that request was issued exactly once expected 1 but got 0"
+      },
+      {
+        "name": "image documents should respect preload Link headers",
+        "status": "Fail",
+        "message": "assert_equals: verify that request was issued exactly once expected 1 but got 0"
+      },
+      {
+        "name": "media documents should respect preload Link headers",
+        "status": "Fail",
+        "message": "assert_equals: verify that request was issued exactly once expected 1 but got 0"
+      },
+      {
+        "name": "invalid image documents should respect preload Link headers",
+        "status": "Fail",
+        "message": "assert_equals: verify that request was issued exactly once expected 1 but got 0"
+      }
+    ]
+  ],
+  [
+    "preload/link-header-preload-nonce.html",
+    [
+      {
+        "name": "without nonce",
+        "status": "Fail",
+        "message": "assert_false: The preload should be blocked. expected false got true"
+      },
+      {
+        "name": "with nonce",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "preload/link-header-preload.html",
+    [
+      {
+        "name": "preload/link-header-preload.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/link-preload-as-case-insensitive.html",
+    [
+      {
+        "name": "The as IDL attribute reflects the canonical keyword of the state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preload/link-preload-as-case-insensitive.html",
+        "status": "Timeout",
+        "message": "testharness page timeout completed the file with 6 test(s) unreported (state={\"loaded\":true,\"pending\":6,\"phase\":4,\"tests\":7})"
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-already-in-module-map.html",
+    [
+      {
+        "name": "already-fetched module fires load",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "already-fetched module with a syntax error fires load",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: fired error\""
+      },
+      {
+        "name": "already-fetched module that failed to fetch fires error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "module still fetching that succeeds fires load",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "module still fetching that fails fires error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-as.html",
+    [
+      {
+        "name": "preload/modulepreload-as.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":28,\"phase\":4,\"tests\":28})"
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-consumed-by-script.html",
+    [
+      {
+        "name": "modulepreload satisfied by an in-flight fetch fires load when a script element consumes it",
+        "status": "Fail",
+        "message": "assert_equals: the modulepreload fired load expected \"load\" but got \"error\""
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-fires-before-dependencies.html",
+    [
+      {
+        "name": "still-fetching top-level fires load before its dependencies",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      },
+      {
+        "name": "preload/modulepreload-fires-before-dependencies.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 2679, 2214, 3259], state={\"loaded\":true,\"pending\":2,\"phase\":3,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-json.html",
+    [
+      {
+        "name": "link rel=modulepreload with as=json should preload JSON module",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test/preload/resources/dummy.json expected 1 but got 0"
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-multiple.html",
+    [
+      {
+        "name": "multiple style preloads of the same file do not cause errors",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "multiple json preloads of the same file do not cause errors",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test/preload/resources/dummy.json expected 1 but got 0"
+      },
+      {
+        "name": "multiple script preloads of the same file do not cause errors",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test/preload/resources/dummy.js expected 1 but got 0"
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-sri-importmap.html",
+    [
+      {
+        "name": "A module script should load even if an earlier modulepreload for the same URL failed its integrity check, with an import map registered",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-sri.html",
+    [
+      {
+        "name": "A module script should load even if an earlier modulepreload for the same URL failed its integrity check",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-style.html",
+    [
+      {
+        "name": "link rel=modulepreload with as=style should preload CSS module",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload-text.html",
+    [
+      {
+        "name": "link rel=modulepreload with as=text should preload text module",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "preload/modulepreload.html",
+    [
+      {
+        "name": "link rel=modulepreload with script shares a cache with <script> tags",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy-module.js?unique expected 1 but got 0"
+      },
+      {
+        "name": "same-origin link rel=modulepreload crossorigin=anonymous",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy-module.js?sameOriginAnonymous expected 1 but got 0"
+      },
+      {
+        "name": "same-origin link rel=modulepreload crossorigin=use-credentials",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy-module.js?sameOriginUseCredentials expected 1 but got 0"
+      },
+      {
+        "name": "cross-origin link rel=modulepreload",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "cross-origin link rel=modulepreload crossorigin=anonymous",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "cross-origin link rel=modulepreload crossorigin=use-credentials",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with submodules",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with bad href attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload as=script",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with non-script-like as= value (image)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with non-script-like as= value (xslt)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with non-style as= value (style)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with non-JSON as= value (JSON)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with integrity match",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with integrity match2",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with integrity mismatch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with integrity mismatch2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with invalid integrity",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "multiple link rel=modulepreload with child module before parent",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with empty href and invalid as= value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload and script with non-matching crossorigin values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload and script with non-matching crossorigin values2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload and non-module script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with script doesn't re-fetch when imported",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy.js?unique_fetch expected 1 but got 0"
+      },
+      {
+        "name": "link rel=modulepreload for a script module with syntax error will still load",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload for a script module with network error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with script and matching media",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with script and non-matching media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with script and empty media",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with script and empty href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple script link rel=modulepreload with same href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with style doesn't re-fetch when imported",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload for a style module with syntax error will still load",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload for a style module with network error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with style and matching media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with style and non-matching media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with style and empty media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with style and empty href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple style link rel=modulepreload with same href",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with json doesn't re-fetch when imported",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy.json?unique_fetch expected 1 but got 0"
+      },
+      {
+        "name": "link rel=modulepreload for a json module with syntax error will still load",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload for a json module with network error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with json and matching media",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with json and non-matching media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with json and empty media",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with json and empty href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple json link rel=modulepreload with same href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with text doesn't re-fetch when imported",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload for a text module with syntax error will still load",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload for a text module with network error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "link rel=modulepreload with text and matching media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with text and non-matching media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with text and empty media",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "link rel=modulepreload with text and empty href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple text link rel=modulepreload with same href",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "preload/onerror-event.html",
+    [
+      {
+        "name": "Makes sure that preloaded resources trigger the onerror event",
+        "status": "Fail",
+        "message": "assert_unreached: invalid as value should not fire error event Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "preload/onload-event.html",
+    [
+      {
+        "name": "preload/onload-event.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 2227, 324, 1512], state={\"loaded\":true,\"pending\":1,\"phase\":2,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/preconnect-onerror-event.html",
+    [
+      {
+        "name": "Preconnect should not fire load (or error) events",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preconnect should not fire error (or load) events for non-existent origins",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preconnect should not fire error (or load) events for non-http(s) scheme",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/preconnect.html",
+    [
+      {
+        "name": "Test that preconnect reduces connection time to zero",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-accept.html",
+    [
+      {
+        "name": "Document prefetch should send the exact Accept header as navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-cache.html",
+    [
+      {
+        "name": "Prefetch should populate the HTTP cache",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch should respect cache-control: no-cache",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch should respect cache-control: no-store",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch should respect cache-control: max-age=0",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-document.html",
+    [
+      {
+        "name": "same origin document prefetch without 'as' should be consumed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "same-site different-origin document prefetch without 'as' should not be consumed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "different-site document prefetch without 'as' should not be consumed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "different-site document prefetch with 'as=document' should not be consumed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "Document prefetch should send the exact Accept header as navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-events.html",
+    [
+      {
+        "name": "Prefetch should fire the load event",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"timeout\""
+      },
+      {
+        "name": "Cross-origin prefetch should fire the load event",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"timeout\""
+      },
+      {
+        "name": "Prefetch should fire the load event for 404",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"timeout\""
+      },
+      {
+        "name": "Prefetch should fire the load event for 404 (cross-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"timeout\""
+      },
+      {
+        "name": "Prefetch should fire the load event for 500",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"timeout\""
+      },
+      {
+        "name": "Cross-origin prefetch should fire the load event for 500",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"timeout\""
+      },
+      {
+        "name": "Prefetch should fire the error event for network errors",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"timeout\""
+      },
+      {
+        "name": "Prefetch should do nothing with an empty href",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Prefetch should do nothing with an invalid href",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-headers.https.html",
+    [
+      {
+        "name": "Prefetch should include Sec-Purpose=prefetch and Sec-Fetch-Dest=empty headers",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch should not include proprietary headers (X-moz/Purpose)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch should respect CORS mode",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-load-event.html",
+    [
+      {
+        "name": "Prefetch should not block the load event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-time-to-fetch.https.html",
+    [
+      {
+        "name": "Changing a prefetch href should trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"load\" but got \"timeout\" (expected array [\"load\", \"load\"] got [\"timeout\", \"timeout\"])"
+      },
+      {
+        "name": "Changing a prefetch crossorigin attribute does not trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"load\" but got \"timeout\" (expected array [\"load\", \"timeout\"] got [\"timeout\", \"timeout\"])"
+      }
+    ]
+  ],
+  [
+    "preload/prefetch-types.https.html",
+    [
+      {
+        "name": "Prefetch as= should work when consumed as  (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as= should work when consumed as image (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as= should work when consumed as script (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as= should work when consumed as style (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as= should work when consumed as document (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=image should work when consumed as  (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=image should work when consumed as image (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=image should work when consumed as script (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=image should work when consumed as style (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=image should work when consumed as document (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=script should work when consumed as  (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=script should work when consumed as image (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=script should work when consumed as script (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=script should work when consumed as style (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=script should work when consumed as document (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=style should work when consumed as  (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=style should work when consumed as image (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=style should work when consumed as script (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=style should work when consumed as style (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=style should work when consumed as document (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=document should work when consumed as  (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=document should work when consumed as image (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=document should work when consumed as script (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=document should work when consumed as style (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      },
+      {
+        "name": "Prefetch as=document should work when consumed as document (https://wpt.test)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os\n\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "preload/preload-connect-to-doc.html",
+    [
+      {
+        "name": "preload link should be fetched when attached a shadow DOM",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 2 to be \"loaded\" but got \"timeout\" (expected array [\"constructed\", \"connected\", \"loaded\"] got [\"constructed\", \"connected\", \"timeout\"])"
+      },
+      {
+        "name": "preload link should note fetched when detached from a shadow DOM",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preload links only work for documents within browsing contexts",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preload links from DocumentFragment only work when attached",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preload links only work when attached to the document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "preload/preload-csp.sub.html",
+    [
+      {
+        "name": "Preload requests are blocked by CSP.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading '1')\""
+      }
+    ]
+  ],
+  [
+    "preload/preload-default-csp.sub.html",
+    [
+      {
+        "name": "Preload requests are blocked by CSP (\"default-src 'none').",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading '1')\""
+      }
+    ]
+  ],
+  [
+    "preload/preload-dynamic-csp.html",
+    [
+      {
+        "name": "preload/preload-dynamic-csp.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/preload-error.sub.html",
+    [
+      {
+        "name": "success (image): preload events",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "success (image): main",
+        "status": "Fail",
+        "message": "assert_less_than_equal: https://wpt.test/preload/resources/square.png?label=image should be downloaded from network at most once expected a number less than or equal to 1 but got 2"
+      },
+      {
+        "name": "404 (image): preload events",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "404 (image): main",
+        "status": "Fail",
+        "message": "assert_less_than_equal: https://wpt.test/preload/resources/square.png?pipe=status%28404%29&label=image should be downloaded from network at most once expected a number less than or equal to 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "preload/preload-font-crossorigin.html",
+    [
+      {
+        "name": "Same origin font preload with crossorigin attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same origin font preload without crossorigin attribute",
+        "status": "Fail",
+        "message": "assert_equals: /fonts/CanvasTest.ttf?without_crossorigin expected 2 but got 1"
+      },
+      {
+        "name": "Cross origin font preload with crossorigin attribute",
+        "status": "Fail",
+        "message": "assert_unreached: Valid main load fired error handler. Reached unreachable code"
+      },
+      {
+        "name": "Cross origin font preload without crossorigin attribute",
+        "status": "Fail",
+        "message": "assert_unreached: Valid main load fired error handler. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "preload/preload-imagesrcset-in-markup.html",
+    [
+      {
+        "name": "Preload in markup with href and imagesrcset (w descriptors) does not fetch href",
+        "status": "Fail",
+        "message": "step_wait_func: a w-descriptor candidate should be preloaded Timed out waiting on condition"
+      },
+      {
+        "name": "Preload in markup with href and imagesrcset (x descriptors) does not fetch href",
+        "status": "Fail",
+        "message": "step_wait_func: an x-descriptor candidate should be preloaded Timed out waiting on condition"
+      }
+    ]
+  ],
+  [
+    "preload/preload-imagesrcset-no-href.html",
+    [
+      {
+        "name": "preload/preload-imagesrcset-no-href.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 2227, 30, 2838], state={\"loaded\":true,\"pending\":3,\"phase\":2,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/preload-invalid-resources.html",
+    [
+      {
+        "name": "preload/preload-invalid-resources.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":2})"
+      }
+    ]
+  ],
+  [
+    "preload/preload-link-cached-stylesheet-different-doc.html",
+    [
+      {
+        "name": "preload/preload-link-cached-stylesheet-different-doc.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/preload-nonce.sub.html",
+    [
+      {
+        "name": "Preload requests without a nonce are blocked by CSP.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading '1')\""
+      },
+      {
+        "name": "Preload requests with a correct nonce are allowed by CSP.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading '1')\""
+      }
+    ]
+  ],
+  [
+    "preload/preload-referrer-policy-subresource-header.tentative.html",
+    [
+      {
+        "name": "referrer policy ( -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy ( -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy ( -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy ( -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy ( -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy ( -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy ( -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (no-referrer -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (same-origin -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (origin-when-cross-origin -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (strict-origin-when-cross-origin -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> , same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> no-referrer, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> same-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> strict-origin-when-cross-origin, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      },
+      {
+        "name": "referrer policy (unsafe-url -> unsafe-url, same-origin, same-origin)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"NO-REFERER\" but got \"from wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    response.headers.set(b'Access-Control-Allow-Origin', b'*')\\n\\n    # We assume this is a string representing a UUID\\n    key = request.GET.first(b'key')\\n    operation = request.GET.first(b'operation')\\n\\n    if operation == b'put':\\n        referer = request.headers.get(b'referer') or 'NO-REFERER'\\n        request.server.stash.put(key, referer)\\n        return \\\"Added value to stash\\\"\\n    elif operation == b'take':\\n        value = request.server.stash.take(key)\\n        return value or ''\\n    else:\\n        assert False\\n\""
+      }
+    ]
+  ],
+  [
+    "preload/preload-referrer-policy.html",
+    [
+      {
+        "name": "preload/preload-referrer-policy.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[228, 3146, 2679, 203815, 2227, 3968], state={\"loaded\":true,\"pending\":196,\"phase\":2,\"tests\":196}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/preload-resource-match.https.html",
+    [
+      {
+        "name": "Loading image (same-origin) with link (same-origin) should reuse the preloaded response",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test/preload/resources/echo-with-cors.py?type=image%2Fsvg%2Bxml&content=%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%222%22%20height%3D%222%22%20%2F%3E&uid=196c380d-2991-4e7f-983c-90e3af41e3be&af7b55f2-e932-44ee-ab08-034fbecc25ae expected 1 but got 2"
+      },
+      {
+        "name": "preload/preload-resource-match.https.html",
+        "status": "Timeout",
+        "message": "testharness page timeout completed the file with 57 test(s) unreported (state={\"loaded\":true,\"pending\":57,\"phase\":4,\"tests\":58})"
+      }
+    ]
+  ],
+  [
+    "preload/preload-strict-dynamic.sub.html",
+    [
+      {
+        "name": "dynamic",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "static-no-nonce",
+        "status": "Fail",
+        "message": "Cannot read properties of null (reading '1')"
+      },
+      {
+        "name": "static-nonce",
+        "status": "Fail",
+        "message": "Cannot read properties of null (reading '1')"
+      }
+    ]
+  ],
+  [
+    "preload/preload-time-to-fetch.https.html",
+    [
+      {
+        "name": "Changing a preload href should trigger a fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Changing a preload \"as\" from a previously non-matching destination should trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 1 to be \"load\" but got \"timeout\" (expected array [\"load\", \"load\"] got [\"load\", \"timeout\"])"
+      },
+      {
+        "name": "Changing a preload \"type\" (non-matching->matching) should trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"timeout\" but got \"load\" (expected array [\"timeout\", \"load\"] got [\"load\", \"timeout\"])"
+      },
+      {
+        "name": "Removing a preload non-matching \"type\" should trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"timeout\" but got \"load\" (expected array [\"timeout\", \"load\"] got [\"load\", \"timeout\"])"
+      },
+      {
+        "name": "Removing a preload matching \"type\" should not trigger a fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Changing a preload media attribute (non matching->matching) should trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"timeout\" but got \"load\" (expected array [\"timeout\", \"load\"] got [\"load\", \"timeout\"])"
+      },
+      {
+        "name": "Changing a preload media attribute (non matching->non matching) should not trigger a fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"timeout\" but got \"load\" (expected array [\"timeout\", \"timeout\"] got [\"load\", \"timeout\"])"
+      },
+      {
+        "name": "Changing a preload media attribute (matching->matching) should not trigger a new fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Removing a matching preload media attribute should not trigger a new fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Removing a non-matching preload media attribute should trigger a new fetch",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"timeout\" but got \"load\" (expected array [\"timeout\", \"load\"] got [\"load\", \"timeout\"])"
+      }
+    ]
+  ],
+  [
+    "preload/preload-type-match.html",
+    [
+      {
+        "name": "Preload with {as=image; type=} should load when retrieved resource is a png",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=image; type=image/png} should load when retrieved resource is a svg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=image; type=image/png} should load when retrieved resource is a png",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=image; type=image/unknown} should timeout when retrieved resource is a png",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=image; type=not-a-mime-type} should timeout when retrieved resource is a png",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=font; type=} should load when retrieved resource is a ttf",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=font; type=font/ttf} should load when retrieved resource is a ttf",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=font; type=font/otf} should load when retrieved resource is a ttf",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=font; type=font/not-a-font} should timeout when retrieved resource is a ttf",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=font; type=not-a-mime} should timeout when retrieved resource is a ttf",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=script; type=} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=application/ecmascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=application/javascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=application/x-ecmascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=application/x-javascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/ecmascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript1.0} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript1.1} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript1.2} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript1.3} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript1.4} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/javascript1.5} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/jscript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/livescript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/x-ecmascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/x-javascript} should load when retrieved resource is a script",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=script; type=text/not-javascript} should timeout when retrieved resource is a script",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=script; type=not-a-mime} should timeout when retrieved resource is a script",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=style; type=text/css} should load when retrieved resource is a css",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=style; type=application/css} should timeout when retrieved resource is a css",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=style; type=text/plain} should timeout when retrieved resource is a css",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=track; type=text/vtt} should load when retrieved resource is a track",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preload with {as=track; type=text/plain} should timeout when retrieved resource is a track",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=track; type=not-a-mime} should timeout when retrieved resource is a track",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=json; type=application/json} should timeout when retrieved resource is a json",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=json; type=text/json} should timeout when retrieved resource is a json",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=json; type=application/geo+json} should timeout when retrieved resource is a json",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=json; type=text/plain} should timeout when retrieved resource is a json",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=json; type=application/javascript} should timeout when retrieved resource is a json",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=text; type=text/plain} should timeout when retrieved resource is a text",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=text; type=application/json} should timeout when retrieved resource is a text",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=text; type=application/javascript} should timeout when retrieved resource is a text",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=text; type=image/png} should timeout when retrieved resource is a text",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      },
+      {
+        "name": "Preload with {as=text; type=not-a-mime-type} should timeout when retrieved resource is a text",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"load\""
+      }
+    ]
+  ],
+  [
+    "preload/preload-with-type.html",
+    [
+      {
+        "name": "preload/preload-with-type.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 2227, 1461, 522, 979], state={\"loaded\":true,\"pending\":1,\"phase\":2,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/preload-with-unsupported-type.html",
+    [
+      {
+        "name": "preload/preload-with-unsupported-type.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 82, 691], state={\"loaded\":true,\"pending\":1,\"phase\":2,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "preload/preload-xhr.html",
+    [
+      {
+        "name": "Make an XHR request immediately after creating link rel=preload.",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy.xml?token=227c1b4a-ef6a-4b1b-9732-ecf81b58240c expected 1 but got 2"
+      },
+      {
+        "name": "Make an XHR request after loading link rel=preload.",
+        "status": "Fail",
+        "message": "assert_equals: resources/dummy.xml?token=45b9d600-1292-4fcd-80a9-fbd8b6edd224 expected 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "preload/reflected-as-value.html",
+    [
+      {
+        "name": "Link preload \"as\" value for \"Image\" should be \"image\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"images\" should be \"\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"scripT\" should be \"script\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"style\" should be \"style\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"\" should be \"\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"foNt\" should be \"font\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"foobar\" should be \"\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"video\" should be \"video\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"audio\" should be \"audio\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"track\" should be \"track\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"fetch\" should be \"fetch\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Link preload \"as\" value for \"json\" should be \"json\".",
+        "status": "Fail",
+        "message": "assert_equals: expected \"json\" but got \"\""
+      },
+      {
+        "name": "Link preload \"as\" value for \"text\" should be \"text\".",
+        "status": "Fail",
+        "message": "assert_equals: expected \"text\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "preload/single-download-late-used-preload.html",
+    [
+      {
+        "name": "preload/single-download-late-used-preload.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "preload/single-download-preload.html",
+    [
+      {
+        "name": "Makes sure that preloaded resources are not downloaded again when used",
+        "status": "Fail",
+        "message": "assert_less_than_equal: resources/dummy.css?single-download-preload should be downloaded from network at most once expected a number less than or equal to 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "preload/subresource-integrity-font.html",
+    [
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with incorrect hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with sha256 match, sha512 mismatch.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin, not CORS request, with incorrect sha256 hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Cross-origin with incorrect sha256 hash, ACAO: *.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Cross-origin with correct sha256 hash, with CORS-ineligible resource.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cross-origin, not CORS request, with correct sha256.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin, not CORS request, with incorrect sha256.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"use-credentials\"> Cross-origin with incorrect sha256 hash, CORS-eligible.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with correct sha256 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with correct sha384 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with correct sha512 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with empty integrity.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with no integrity.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with correct sha256 hash, options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with unknown algorithm only.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with multiple sha256 hashes, including correct.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with multiple sha256 hashes, including unknown algorithm.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Same-origin with sha256 mismatch, sha512 match.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin, not CORS request, with correct sha256 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /fonts/CanvasTest.ttf?5fca65c4-a69d-4cde-b69a-b7a922e9162c expected 2 but got 1"
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Cross-origin with correct sha256 hash, ACAO: *.",
+        "status": "Fail",
+        "message": "assert_unreached: Valid main load fired error handler. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"anonymous\"> Cross-origin with empty integrity.",
+        "status": "Fail",
+        "message": "assert_unreached: Valid main load fired error handler. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin, not CORS request, with empty integrity.",
+        "status": "Fail",
+        "message": "assert_unreached: Valid main load fired error handler. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin=\"use-credentials\"> Cross-origin with correct sha256 hash, CORS-eligible.",
+        "status": "Fail",
+        "message": "assert_unreached: Valid main load fired error handler. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "preload/subresource-integrity-partial-image.html",
+    [
+      {
+        "name": "<link rel='image'> with progressive image shouldn't crash",
+        "status": "Fail",
+        "message": "assert_unreached: image should load because SRI is not checked Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "preload/subresource-integrity.html",
+    [
+      {
+        "name": "Same-origin script with incorrect hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin script with sha256 match, sha512 mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='anonymous'> script with incorrect hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='use-credentials'> script with incorrect hash CORS-eligible",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin script, not CORS request, with correct hash",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin script, not CORS request, with hash mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin script with matching digest does not re-use preload with non-matching digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin script with non-matching digest does not re-use preload with non-matching digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with incorrect hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with sha256 match, sha512 mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='anonymous'> style with incorrect hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='use-credentials'> style with incorrect hash CORS-eligible",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin style, not CORS request, with correct hash",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin style, not CORS request, with hash mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with matching digest does not re-use preload with non-matching digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with non-matching digest does not re-use preload with non-matching digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin image with incorrect hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin image with sha256 match, sha512 mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='anonymous'> image with incorrect hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='use-credentials'> image with incorrect hash CORS-eligible",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin image, not CORS request, with correct hash",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Cross-origin image, not CORS request, with hash mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid preload load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='anonymous'> script with CORS-ineligible resource",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/script.js?65eafdea-90b8-425c-8457-66a9b38d61a6 expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='anonymous'> style with CORS-ineligible resource",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with correct sha256 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?52932114-599f-4a58-a7aa-1d081a81bdc7 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with correct sha384 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?ab99c86f-0962-43ab-9886-774c3acc47bb expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with correct sha512 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?855416e7-7a48-4799-91a9-572ab5173e16 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with empty integrity.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?a959d9f0-949c-4cd0-9898-f74f625cdcf7 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with multiple sha256 hashes, including correct.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?870d3c72-ef06-4e77-a332-0dbe17f06b14 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with multiple sha256 hashes, including unknown algorithm.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?21d4d690-9285-4ad5-beb1-ea75b11fb46d expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with sha256 mismatch, sha512 match",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?ab6ff369-1f22-49cb-a8fd-13f6d674dd35 expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='anonymous'> style with correct hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/style.css?6bc2d4a3-2525-41ce-8aa8-c220a45ee767&pipe=header(Access-Control-Allow-Origin,*) expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='use-credentials'> style with correct hash, CORS-eligible",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/style.css?dc51b80c-e0fc-49a2-a811-4d0d7acd9d80&pipe=header(Access-Control-Allow-Credentials,true)|header(Access-Control-Allow-Origin,https://wpt.test) expected 1 but got 2"
+      },
+      {
+        "name": "Cross-origin style, empty integrity",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/style.css?6d841a36-030e-4d7c-b9e4-58eb2bba1fb8&pipe=header(Access-Control-Allow-Origin,*) expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with correct hash, options.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?dea4002f-b0f1-4d6c-8151-f033ca424b1a expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with unknown algorithm only.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?f7c8968c-70ff-49a7-aee0-ca80fcd8a1c6 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with matching digest re-uses preload with matching digest.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?281caa50-d81c-456a-9bdf-38c0207493b9 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with matching digest re-uses preload with matching digest and options.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/style.css?0c0f3721-f435-4098-9718-4584586074eb expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin style with non-matching digest does not re-use preload with matching digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with matching digest does not reuse preload without digest.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin style with matching digest does not reuse preload with matching but stronger digest.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin style with wrong digest does not reuse preload with correct and stronger digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin style with matching digest does not reuse preload with matching but weaker digest.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin style with non-matching digest reuses preload with no digest but fails.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin script with correct sha256 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?27d55443-4e93-4173-aec7-420b2525c238 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with correct sha384 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?ef2eabbb-56eb-4f54-8275-c830ca8ceb9e expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with correct sha512 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?57806ee2-0075-4dd8-baa2-196b5e438698 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with empty integrity.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?16a1f505-a1bc-442b-9785-693f455806a8 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with multiple sha256 hashes, including correct.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?f09e2ee3-6706-48cd-992e-7dc841122e72 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with multiple sha256 hashes, including unknown algorithm.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?0684273d-1ebf-47ff-91f8-bfb4af13776b expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with sha256 mismatch, sha512 match",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?0a4725c3-e9d3-435f-972e-f34cd1b5a37c expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='anonymous'> script with correct hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/script.js?4a7e3b01-260e-4f5c-b524-01e514f33502&pipe=header(Access-Control-Allow-Origin,*) expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='use-credentials'> script with correct hash, CORS-eligible",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/script.js?a9df26bd-435f-4262-8e8f-889d184f3beb&pipe=header(Access-Control-Allow-Credentials,true)|header(Access-Control-Allow-Origin,https://wpt.test) expected 1 but got 2"
+      },
+      {
+        "name": "Cross-origin script, empty integrity",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/script.js?5cbdea7b-8124-414f-99df-9cef73e496bc&pipe=header(Access-Control-Allow-Origin,*) expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with correct hash, options.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?92d0343f-dae7-40e8-8cc1-b45bc93065c5 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with unknown algorithm only.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?d88b2608-5125-4411-9835-7def98dcfdd7 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with matching digest re-uses preload with matching digest.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?1182a0a8-ea26-4376-a9a0-f85d50978cf0 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with matching digest re-uses preload with matching digest and options.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/script.js?3d1eec23-8a3e-45ab-92cf-62fd35b19912 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin script with non-matching digest does not re-use preload with matching digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin script with matching digest does not reuse preload without digest.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin script with matching digest does not reuse preload with matching but stronger digest.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin script with wrong digest does not reuse preload with correct and stronger digest.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Same-origin script with matching digest does not reuse preload with matching but weaker digest.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin script with non-matching digest reuses preload with no digest but fails.",
+        "status": "Fail",
+        "message": "assert_unreached: Invalid subresource load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "<crossorigin='anonymous'> image with CORS-ineligible resource",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/image.png?1208e6e3-f201-4824-a305-6574fa784276 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with correct sha256 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?dbd2a156-fd4a-4dc3-a68d-9fc1206be083 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with correct sha384 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?817bc443-827f-4f4d-a6ac-88fa01fc6a17 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with correct sha512 hash.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?a8aed34a-1ab3-40f5-a875-e6588c1f8291 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with empty integrity.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?99363f15-011d-4666-8385-d210e53d9d68 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with multiple sha256 hashes, including correct.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?478860b1-cf08-4d2d-9d3d-acc88c1dcf8d expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with multiple sha256 hashes, including unknown algorithm.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?bc182da8-16a0-4763-b2e6-e713f46c395b expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with sha256 mismatch, sha512 match",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?6fd5528b-3d98-46ae-8f3f-a0e4603fe1f2 expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='anonymous'> image with correct hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/image.png?b0edb4b0-0572-4e3b-a62c-aef2865151db&pipe=header(Access-Control-Allow-Origin,*) expected 1 but got 2"
+      },
+      {
+        "name": "<crossorigin='use-credentials'> image with correct hash, CORS-eligible",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/image.png?c89fd62c-abb6-4efe-84d6-273cc52e3f15&pipe=header(Access-Control-Allow-Credentials,true)|header(Access-Control-Allow-Origin,https://wpt.test) expected 1 but got 2"
+      },
+      {
+        "name": "Cross-origin image, empty integrity",
+        "status": "Fail",
+        "message": "assert_equals: https://wpt.test:8444/subresource-integrity/image.png?9ae20ca4-ca2f-4a74-8f3f-17dc2cfa3e89&pipe=header(Access-Control-Allow-Origin,*) expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with correct hash, options.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?a84ee1ae-88fc-48cb-bcac-a8cf24186da4 expected 1 but got 2"
+      },
+      {
+        "name": "Same-origin image with unknown algorithm only.",
+        "status": "Fail",
+        "message": "assert_equals: /subresource-integrity/image.png?1441822d-a513-4f84-8911-e23d74ecf2c9 expected 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "preload/supported-as-values.html",
+    [
+      {
+        "name": "Test the supported value for <link rel=preload as=\"...\">",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      }
+    ]
+  ]
+]

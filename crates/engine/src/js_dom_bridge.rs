@@ -230,6 +230,20 @@ pub enum DomMutation {
         /// 子节点句柄。
         child_handle: String,
     },
+    /// 45 号 shadow-dom-rendering M3：`containerHandle.appendChild(selChild)`——父为
+    /// 容器/元素 create 句柄，子为 markup 章的 selector 子（无 create 句柄）。R97 noWire
+    /// 缺口（shadow 容器 append 后 slot/light 子只落 JS 侧 `_handleChildren`，engine
+    /// 树看不到——slot-fallback-content-004 恒空根因）。子经 find_by_selector 解析；
+    /// 同批前序 move-out（`Remove`）已摘除时复用 detached_stash 的 NodeId（移动语义，
+    /// spec pre-insert 摘除后同节点再插）。父句柄批内未注册/子悬垂 → lenient warn+跳过
+    /// （renderer 批 lenient 口径，R125）；跨批持久父句柄的翻译臂暂未覆盖（无 sel/sel
+    /// append 变体可译），同走 warn+跳过。
+    AppendChildByHandleSel {
+        /// 父节点句柄（fragment/shadow 容器或 create 元素）。
+        parent_handle: String,
+        /// 子节点选择器（markup 章 `__zwSelector`）。
+        child_selector: String,
+    },
     /// t7（js-dom P15 修复）：`plainAncestor.appendChild(handleChild)` — 父在 host 无直接锚
     /// （`innerHTML` 解析出的 plain 视图，无 handle/sel），以「parentNode 链上最近 sel/handle
     /// 祖先锚 + child-index 路径」寻址。spec
@@ -364,6 +378,25 @@ pub enum DomMutation {
         /// HTML 片段。
         html: String,
     },
+    /// `element.setHTMLUnsafe(html)`（s180/gethtml，M3 Batch 2，whatwg/dom#831）——
+    /// **物化**片段解析（`<template shadowrootmode>` → ShadowRoot 节点，三个
+    /// `shadowroot*` 布尔属性进状态位）+ 子树整体替换。区别于 [`Self::SetInnerHtml`]
+    ///（opt-in 不物化，template 存活）。
+    /// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+    SetInnerHtmlUnsafe {
+        /// 目标元素选择器。
+        selector: String,
+        /// HTML 片段。
+        html: String,
+    },
+    /// [`Self::SetInnerHtmlUnsafe`] 的 create 句柄对偶（宿主可为 ShadowRoot 容器
+    /// 句柄——runGetHTMLOnShadowRoot 场景 wrapper.setHTMLUnsafe）。
+    SetInnerHtmlOnHandleUnsafe {
+        /// 节点句柄。
+        handle: String,
+        /// HTML 片段。
+        html: String,
+    },
     /// 对 create 句柄设置 style 属性。
     SetStyleOnHandle {
         /// 节点句柄。
@@ -466,6 +499,18 @@ pub enum DomMutation {
         root_handle: String,
         /// 封装模式（`"open"`/`"closed"`；shim 侧已校验枚举与二次 attach）。
         mode: String,
+        /// delegatesFocus（init 同名字段——声明式形态序列化回写
+        /// `shadowrootdelegatesfocus`）。
+        delegates_focus: bool,
+        /// clonable（init 同名字段）。
+        clonable: bool,
+        /// serializable（init 同名字段——getHTML serializableShadowRoots 资格与
+        /// `shadowrootserializable` 回写）。
+        serializable: bool,
+        /// `slotAssignment: 'manual'`（init 枚举 shim 侧已校验；false = named）。
+        /// manual root 的 slot 分配走手动表（[`DomMutation::SlotAssign`] 通道），
+        /// [`zero_dom::Document::resolve_slots`] 对其整树跳过。
+        slot_assignment: bool,
     },
     /// [`Self::AttachShadow`] 的句柄宿主对偶（create 句柄宿主无 selector）。
     AttachShadowOnHandle {
@@ -475,6 +520,27 @@ pub enum DomMutation {
         root_handle: String,
         /// 封装模式。
         mode: String,
+        /// delegatesFocus（语义同 [`Self::AttachShadow`]）。
+        delegates_focus: bool,
+        /// clonable（语义同 [`Self::AttachShadow`]）。
+        clonable: bool,
+        /// serializable（语义同 [`Self::AttachShadow`]）。
+        serializable: bool,
+        /// `slotAssignment: 'manual'`（语义同 [`Self::AttachShadow`]）。
+        slot_assignment: bool,
+    },
+    /// 45 号 shadow-dom-rendering M3 手动臂：`HTMLSlotElement.assign()` 的渲染
+    /// 镜像——把 slot 的手动分配原始列表写入 dom 手动表（JS 语义面
+    /// `__zwManualAssigned`/slotchange 归 42 号已落，本通道只服务渲染消费）。
+    /// `nodes` 为空 = 清列表（无参 assign() 语义）；列表读取活过滤 parent==host
+    ///（[`zero_dom::Document::get_assigned_nodes`] manual 分支）。
+    /// https://dom.spec.whatwg.org/#dom-slot-assign
+    SlotAssign {
+        /// slot 元素引用（句柄优先，失配回落选择器——slot 多在 shadow 树内，
+        /// 经 handle 注册表解析）。
+        slot_ref: String,
+        /// 手动分配节点引用列表（顺序保留——渲染序 = assign 调用序）。
+        nodes: Vec<String>,
     },
     /// `parent.appendChild(fragment)`（P1a）——把 fragment 的**子节点移动**到 parent（flatten，
     /// fragment 自身不入树）。区别于 [`Self::AppendChild`]（append 节点自身）。父为选择器。
@@ -529,7 +595,23 @@ pub enum DomMutation {
         /// 新焦点元素稳定选择器；None 表示 blur（聚焦到 body）。
         selector: Option<String>,
     },
+    /// 页面 focus() 落在 shadow 树内元素（45 号 shadow-dom-rendering M1）——handle-only
+    /// proxy 无 sel 域（`deep_entry_json` 条目不带地址段），shim 按容器链上报 shadow 根
+    /// handle + 元素序路径，apply 臂经 [`resolve_focus_shadow_address`] 铸造 s176 zwsh
+    /// 域定位选择器（[`FOCUS_SELECTOR_KEY`] 保留键出表）。
+    FocusChangedInShadow {
+        /// shadow 根 handle（`attachShadow` 产物的 handle 容器键）。
+        root_handle: String,
+        /// 元素序路径：`-` 连接的 0-based 元素 index 逐跳下行（`"0"` = 根直接子）。
+        child_path: String,
+    },
 }
+
+/// [`DomMutation::FocusChangedInShadow`] apply 臂铸造的 zwsh 地址在返回
+/// `handle → selector` 映射中的保留键。真实 handle 键为 shim 侧数字串形态，
+/// 本键不会被任何 handle 反查命中；消费方（reftest runner focus_selector 提取 /
+/// renderer focus 队列翻译）按键名读取。
+pub const FOCUS_SELECTOR_KEY: &str = "__zw_focus";
 
 /// R3254-L3：UTF-8 字节偏移 → UTF-16 code unit 偏移（selection/composition 契约）。
 /// 偏移落在多字节字符内部时截断到该字符起点；超长取末尾。
@@ -586,6 +668,29 @@ thread_local! {
     static DOC_ACTIVE_SELECTOR: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
+// s326（html-semantics M2 切片 326）：`:filtered` 过滤态槽——filterable select
+// （whatwg/html #12050 谱系：`<input filter=idref>` 关联 select）的 shim 过滤算法
+// 在输入值变化时重算命中集，把被滤 option 的唯一选择器列表（`\u001f` 连接；空串 =
+// 无过滤态）经 `__zw_set_doc_filtered` 写入本槽。归属模型同 [`DOC_ACTIVE_SELECTOR`]：
+// per-document 状态、查询闭包同线程消费，thread_local 即正确归属；跨页残留选择器
+// 在异构文档解析 miss 即降级（同 `:active` 已接受的风险面）。
+// https://github.com/whatwg/html/issues/12050
+thread_local! {
+    static DOC_FILTERED_SELECTORS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// s326：把过滤态槽解析进文档（选择器列表 → NodeId，逐条 [`find_by_selector`]
+/// 求值；解析失败 = 目标已离开文档视图，跳过该项）。槽空即零成本直返（热路径
+/// 全部既有查询零变化——无 filterable 输入的文档不产生槽写入）。
+fn sync_filtered_state(doc: &mut Document) {
+    let sels = DOC_FILTERED_SELECTORS.with(|slot| slot.borrow().clone());
+    if sels.is_empty() {
+        return;
+    }
+    let ids: Vec<NodeId> = sels.iter().filter_map(|s| find_by_selector(doc, s)).collect();
+    doc.set_filtered_options(ids);
+}
+
 /// M2-S196：把按压态槽解析进文档（selector → NodeId，[`find_by_selector`] 求值；
 /// 解析失败 = 目标已离开文档视图，按无按压态处理）。幂等无条件覆盖：每条查询
 /// 路径（live doc / 视图缓存命中 / rebuild+链增量 / 字符串路径 re-parse）执行
@@ -598,6 +703,10 @@ fn sync_active_state(doc: &mut Document) {
         find_by_selector(doc, &sel)
     };
     doc.set_active_element(active);
+    // s326：过滤态随同一构建点注入（[`sync_filtered_state`] 槽空零成本）——所有
+    // 既有查询路径（live doc / 视图缓存 / 字符串 re-parse / matches / closest）
+    // 经本函数单漏斗继承，`:filtered` 与 `:active` 同批可见。
+    sync_filtered_state(doc);
 }
 
 /// t8b：structural path 快速通道——识别 [`structural_path_selector`] 生成的
@@ -1416,6 +1525,10 @@ pub fn apply_dom_mutations_full(
     // 路径」改为 lenient warn+跳过，见 SetAttr arm）。SetText 的 lenient no-op（R3076）
     // 保持不变。
     let mut pending: std::collections::VecDeque<DomMutation> = mutations.iter().cloned().collect();
+    // 45 号 shadow-dom-rendering M1：`FocusChangedInShadow` 臂铸造的 zwsh 地址暂存
+    //（map 构建在批循环之后，臂内不可直插）——批循环结束统一登记保留键
+    // [`FOCUS_SELECTOR_KEY`]（见 `handle_selectors` 构建点注释）。
+    let mut focus_shadow_sel: Option<String> = None;
     // R361（js-dom M4）：**批内 detach→insert 移动语义的 detached-stash**——同一 dispatch
     // 内 listener 执行 `parent.removeChild(target); other.appendChild(target)`（WPT
     // Event-dispatch-target-moved）产生两条 wire：Remove{'#target'} 使 target 脱离文档 →
@@ -1570,11 +1683,19 @@ pub fn apply_dom_mutations_full(
                 ref host_handle,
                 ref root_handle,
                 ref mode,
+                ref delegates_focus,
+                ref clonable,
+                ref serializable,
+                ref slot_assignment,
             } if !handles.contains_key(host_handle) && persistent_sel(host_handle).is_some() => {
                 pending.push_front(DomMutation::AttachShadow {
                     host_selector: persistent_sel(host_handle).unwrap_or_default(),
                     root_handle: root_handle.clone(),
                     mode: mode.clone(),
+                    delegates_focus: *delegates_focus,
+                    clonable: *clonable,
+                    serializable: *serializable,
+                    slot_assignment: *slot_assignment,
                 });
                 continue;
             }
@@ -1586,6 +1707,23 @@ pub fn apply_dom_mutations_full(
             }
             DomMutation::FocusChanged { .. } => {
                 // 焦点状态由宿主（renderer）消费，不写 DOM。
+            }
+            DomMutation::FocusChangedInShadow {
+                ref root_handle,
+                ref child_path,
+            } => {
+                // 45 号 shadow-dom-rendering M1：shadow 树内 focus() 地址铸造（不写 DOM，
+                // 同 [`DomMutation::FocusChanged`] 语义）——rootHandle（同批 [`DomMutation::AttachShadow`]
+                // 已注册）→ ShadowRoot 节点 → 元素序链下行 → s176 zwsh 定位选择器。解析
+                // 失败（根未注册/链越界/嵌套 shadow 宿主不可达）→ 静默无注入（无稳定
+                // 地址 = 焦点不落 retained 状态，R3254-M7' 空串同口径）。
+                let resolved = resolve_focus_shadow_address(doc, &handles, root_handle, child_path);
+                if resolved.is_none() {
+                    tracing::warn!(
+                        "apply DOM mutations: focus_changed_in_shadow no stable address, skipped: {root_handle}/{child_path}"
+                    );
+                }
+                focus_shadow_sel = resolved;
             }
             DomMutation::SetAttr { selector, name, value } => {
                 // siteopt t4（2026-10-01）P19：selector 失配 lenient warn+跳过，不再 Err。
@@ -1745,6 +1883,34 @@ pub fn apply_dom_mutations_full(
                     .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            // 45 号 M3：sel 子挂容器 handle 的 engine 落树（R97 noWire 缺口补全——
+            // variant doc 记 lenient 口径与移动语义）。
+            DomMutation::AppendChildByHandleSel {
+                parent_handle,
+                child_selector,
+            } => {
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child handle_sel parent unanchored, skipped: {parent_handle}"
+                    );
+                    continue;
+                };
+                let child = match find_by_selector(doc, &child_selector) {
+                    Some(c) => c,
+                    // R361：同批前序 move-out（`Remove`）已摘除 → stash 复用 NodeId
+                    //（appendChild 移动语义：spec pre-insert 摘除后同节点再插）。
+                    None => match detached_stash.remove(child_selector.as_str()) {
+                        Some(id) => id,
+                        None => {
+                            tracing::warn!(
+                                "apply DOM mutations: append_child handle_sel child no match, skipped: {child_selector}"
+                            );
+                            continue;
+                        }
+                    },
+                };
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
             }
             // t7（js-dom P15 修复）：plain 祖先上的 append 以「锚 + child-index 路径」落 host。
@@ -2022,6 +2188,22 @@ pub fn apply_dom_mutations_full(
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
                 replace_inner_html(doc, node, &html)?;
             }
+            DomMutation::SetInnerHtmlUnsafe { selector, html } => {
+                // s180/gethtml：失配 lenient warn+跳过（同 SetInnerHtml 臂口径），
+                // 物化解析走 [`replace_inner_html_unsafe`]。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: set_inner_html_unsafe selector no match, skipped: {selector}");
+                    continue;
+                };
+                replace_inner_html_unsafe(doc, node, &html)?;
+            }
+            DomMutation::SetInnerHtmlOnHandleUnsafe { handle, html } => {
+                let node = handles
+                    .get(&handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                replace_inner_html_unsafe(doc, node, &html)?;
+            }
             DomMutation::SetStyleOnHandle {
                 handle,
                 property,
@@ -2226,11 +2408,18 @@ pub fn apply_dom_mutations_full(
                 host_selector,
                 root_handle,
                 mode,
+                delegates_focus,
+                clonable,
+                serializable,
+                slot_assignment,
             } => {
                 // s168：宿主失配硬错（同 AppendChildByHandle 口径——shim attachShadow 已过
                 // spec 校验序列：二次 attach NotSupportedError / mode TypeError / 非 HTML ns
                 // 均不入队，失配暴露 replay 真 bug）。ShadowRoot 节点挂宿主 children 下；
                 // root_handle 注册后，后续 flatten/append 按常规 parent 解析入 shadow 树。
+                // s180/gethtml：init 三状态位进 ShadowRootData（getHTML serializable
+                // 资格与序列化回写）。45 号 M3 手动臂：slotAssignment 枚举随 init 入
+                // ShadowRootData（manual root 的 resolve_slots 跳过 + slot.assign() 手动表）。
                 let host = find_by_selector(doc, &host_selector)
                     .ok_or_else(|| format!("attach_shadow: no host {host_selector}"))?;
                 let mode = if mode == "open" {
@@ -2238,14 +2427,91 @@ pub fn apply_dom_mutations_full(
                 } else {
                     zero_dom::ShadowRootMode::Closed
                 };
-                let root = doc.attach_shadow(host, mode).map_err(|e| e.to_string())?;
+                let slot_assignment = if slot_assignment {
+                    zero_dom::SlotAssignment::Manual
+                } else {
+                    zero_dom::SlotAssignment::Named
+                };
+                let root = doc
+                    .attach_shadow_full(
+                        host,
+                        mode,
+                        delegates_focus,
+                        clonable,
+                        serializable,
+                        slot_assignment,
+                        false,
+                    )
+                    .map_err(|e| e.to_string())?;
                 handles.insert(root_handle.clone(), root);
             }
-            DomMutation::AttachShadowOnHandle { host_handle, .. } => {
-                // s168：翻译臂未接住（宿主句柄既不在 ephemeral 表也无持久 selector 锚）
-                // → lenient warn+跳过（R125 口径：host 与 JS 解析视图分歧不中止整批，
-                // 跳过即修复前形态）。
-                tracing::warn!("apply DOM mutations: attach_shadow handle host unanchored, skipped: {host_handle}");
+            DomMutation::AttachShadowOnHandle {
+                ref host_handle,
+                ref root_handle,
+                ref mode,
+                ref delegates_focus,
+                ref clonable,
+                ref serializable,
+                ref slot_assignment,
+            } => {
+                // 45 号 shadow-dom-rendering M3（css-scoping-shadow-slotted-nested）：宿主
+                // 句柄批内 ephemeral（innerHTML 克隆的内层宿主）时翻译臂不接（contains_key
+                // 命中），原 warn+skip 臂使内层 shadow 从不物化。宿主在 handles 表即直连
+                // attach（语义同上方 selector 变体）；跨批持久宿主已由翻译臂转为 selector
+                // 形态，悬垂句柄保持 lenient warn+跳过（R125 口径：host 与 JS 解析视图分歧
+                // 不中止整批）。https://dom.spec.whatwg.org/#dom-element-attachshadow
+                match handles.get(host_handle).copied() {
+                    Some(host) => {
+                        let m = if mode == "open" {
+                            zero_dom::ShadowRootMode::Open
+                        } else {
+                            zero_dom::ShadowRootMode::Closed
+                        };
+                        let sa = if *slot_assignment {
+                            zero_dom::SlotAssignment::Manual
+                        } else {
+                            zero_dom::SlotAssignment::Named
+                        };
+                        let root = doc
+                            .attach_shadow_full(host, m, *delegates_focus, *clonable, *serializable, sa, false)
+                            .map_err(|e| e.to_string())?;
+                        handles.insert(root_handle.clone(), root);
+                    }
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: attach_shadow handle host unanchored, skipped: {host_handle}"
+                        );
+                    }
+                }
+            }
+            DomMutation::SlotAssign {
+                ref slot_ref,
+                ref nodes,
+            } => {
+                // 45 号 M3 手动臂：slot.assign() 渲染镜像落表。slot/节点引用解析
+                // 句柄优先（批内 ephemeral → 持久表），selector 回落走 shadow 包含
+                // 查询（[`Document::query_selector_including_shadow`]——assign 参数
+                // 是页面持对象，spec 对象身份通道可及 shadow 内容；006 形态的 slot
+                // 已随 appendChild 入 shadow 树，封装查询定位不到）。shim 侧已过
+                // spec 校验（参数非节点 TypeError / 抢占 victim 同步），引擎失配
+                // 暴露 replay 真 bug——硬错同 AttachShadow 口径。
+                let slot = handles
+                    .get(slot_ref)
+                    .copied()
+                    .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(slot_ref).copied()))
+                    .or_else(|| doc.query_selector_including_shadow(slot_ref))
+                    .ok_or_else(|| format!("slot_assign: no slot {slot_ref}"))?;
+                let mut assigned = Vec::with_capacity(nodes.len());
+                for node_ref in nodes {
+                    let id = handles
+                        .get(node_ref)
+                        .copied()
+                        .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(node_ref).copied()))
+                        .or_else(|| doc.query_selector_including_shadow(node_ref))
+                        .ok_or_else(|| format!("slot_assign: no node {node_ref}"))?;
+                    assigned.push(id);
+                }
+                doc.set_manual_assigned_nodes(slot, assigned);
             }
             DomMutation::AppendFragmentChildren {
                 parent_selector,
@@ -2328,6 +2594,14 @@ pub fn apply_dom_mutations_full(
         }
     }
 
+    // 45 号 shadow-dom-rendering M3 R3（变异应用臂统一挂接，shadow.rs FIXME 收口）：
+    // 批次应用后重解析全部 shadow host 的 slot 分配——命令式 attachShadow、宿主
+    // childList 变异、innerHTML 与 slot/name 属性改名都经本通道落地，批末统一
+    // 重解析使动态分配与树态一致（布局树 shadow 分支经 `get_assigned_nodes` 在
+    // 下帧布局消费）。无 shadow 页 O(1) 快返零开销（dom 侧封装）。
+    // https://dom.spec.whatwg.org/#assigning-slots-and-slots
+    doc.resolve_slots_all_hosts();
+
     // P1a gBCR path A：为本次 batch 创建的每个 handle 算唯一稳定选择器（歧义者跳过）。
     // 供 RectBridge handler 解析 handle-identity（`__n{n}`）→ selector → NodeId → rect。
     let mut handle_selectors: HashMap<String, String> = HashMap::new();
@@ -2345,6 +2619,12 @@ pub fn apply_dom_mutations_full(
         {
             handle_selectors.insert(handle.clone(), sel);
         }
+    }
+    // 45 号 M1：shadow 树内 focus() 的铸造地址走保留键出表（见 [`FOCUS_SELECTOR_KEY`]）
+    //——真实 handle 键为数字串形态，本键不与任何 handle 反查冲突；runner/renderer
+    // 消费方按键名读取后走 selector 字符串通道（`focused_selector`）。
+    if let Some(zwsh) = focus_shadow_sel {
+        handle_selectors.insert(FOCUS_SELECTOR_KEY.to_string(), zwsh);
     }
 
     // js-dom M3 R100：回填 NodeId 持久表——本批 ephemeral handles（含从持久表预植的
@@ -2411,7 +2691,14 @@ fn merge_style_property(style: &str, property: &str, value: &str) -> String {
     if value.trim().is_empty() {
         return parts.join("; ");
     }
-    parts.push(format!("{}: {}", property.trim(), value.trim()));
+    // css-anchor-1 canonical serialization：anchor()/anchor-size() 参数序归一（锚元素
+    // dashed-ident 固定在前）；自定义属性值 spec 语义原样保留（values::anchor 模块头注）。
+    let canonical_value = if prop_key.starts_with("--") {
+        value.trim().to_string()
+    } else {
+        zero_css_parser::values::canonicalize_anchor_functions(value.trim())
+    };
+    parts.push(format!("{}: {}", property.trim(), canonical_value));
     parts.join("; ")
 }
 
@@ -2472,6 +2759,43 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
         doc.scripting_enabled()
     };
     let frag_doc = parse_html_fragment_with_scripting(html, &context_ns, &context_local, scripting);
+    let frag_children = fragment_top_level_children(&frag_doc);
+    for frag_child in frag_children {
+        let copied = copy_subtree_from(doc, &frag_doc, frag_child);
+        doc.append_child(parent, copied).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// `element.setHTMLUnsafe(html)` 的 host 侧（s180/gethtml，M3 Batch 2）——
+/// [`replace_inner_html`] 的物化对偶：片段解析走
+/// [`zero_dom::parse_html_fragment_with_scripting_materialized`]（`<template
+/// shadowrootmode>` → ShadowRoot 节点 + `shadowroot*` 布尔属性进状态位），
+/// 拷贝经 [`copy_subtree_from`] 的 ShadowRoot 臂随子树重建声明式根。目标可为
+/// 元素或 ShadowRoot 容器（后者 context 回落 body——fragment 算法对非元素
+/// context 的默认面）。引擎树为物化真态（shim 视图经 unsafe 深 JSON 对齐——
+/// Batch 1 教训：两端必须同态，防快照回环分叉）。
+/// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+pub(crate) fn replace_inner_html_unsafe(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
+    let children: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
+    for child in children {
+        doc.remove_child(parent, child).map_err(|e| e.to_string())?;
+    }
+    if html.is_empty() {
+        return Ok(());
+    }
+    let (context_ns, context_local) = match doc.get(parent).map(|n| &n.kind) {
+        Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
+        // ShadowRoot / fragment 等 context（spec：default context element = body）。
+        _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+    };
+    let scripting = if context_local.eq_ignore_ascii_case("template") && context_ns == "http://www.w3.org/1999/xhtml" {
+        false
+    } else {
+        doc.scripting_enabled()
+    };
+    let frag_doc =
+        zero_dom::parse_html_fragment_with_scripting_materialized(html, &context_ns, &context_local, scripting);
     let frag_children = fragment_top_level_children(&frag_doc);
     for frag_child in frag_children {
         let copied = copy_subtree_from(doc, &frag_doc, frag_child);
@@ -2543,6 +2867,30 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
                 }
             }
             for &child in &src_node.children {
+                // s180/gethtml（M3 Batch 2）：源子树内的声明式 ShadowRoot（unsafe 解析
+                // 物化产物）随拷贝重建——attach_shadow_full 还原状态位（45 号 M3 手动臂
+                // 起 slotAssignment 一并随拷贝——命令式 manual root 的 setHTML 克隆保
+                // 手动分配语义面），shadow 子深拷贝入新根；slot 分配表按 NodeId 键控
+                // 不随拷贝（渲染面，物化路径既有 FIXME）。
+                if let Some(sd) = src_doc.get(child).and_then(|n| match &n.kind {
+                    NodeKind::ShadowRoot(d) => Some((
+                        d.mode,
+                        d.delegates_focus,
+                        d.clonable,
+                        d.serializable,
+                        d.declarative,
+                        d.slot_assignment,
+                    )),
+                    _ => None,
+                }) {
+                    if let Ok(root) = doc.attach_shadow_full(new_id, sd.0, sd.1, sd.2, sd.3, sd.5, sd.4) {
+                        for sk in src_doc.child_nodes(child) {
+                            let cc = copy_subtree_from(doc, src_doc, sk);
+                            doc.append_child(root, cc).ok();
+                        }
+                    }
+                    continue;
+                }
                 let copied = copy_subtree_from(doc, src_doc, child);
                 doc.append_child(new_id, copied).ok();
             }
@@ -2826,6 +3174,45 @@ pub fn apply_mutations_to_html_with_handles(
     Ok((doc.outer_html(doc.root()), handle_selectors))
 }
 
+/// 45 号 shadow-dom-rendering M1：shadow 树内 focus() 的地址铸造——rootHandle（本批
+/// [`DomMutation::AttachShadow`] 注册进 `handles`）→ ShadowRoot 节点 → `child_path`
+/// 元素序链（`-` 连接 0-based 元素 index，逐跳只数元素子）下行 → s176 zwsh 域定位
+/// 选择器（[`shadow_scoped_selector`]：host 段 light 树唯一选择器 + local 段根子树内
+/// 唯一；嵌套 shadow 宿主不可达 → None）。返回 None = 无稳定地址，消费方按「无注入」
+/// 处理（R3254-M7' 空串同口径）。
+fn resolve_focus_shadow_address(
+    doc: &Document,
+    handles: &HashMap<String, NodeId>,
+    root_handle: &str,
+    child_path: &str,
+) -> Option<String> {
+    let root_node = handles.get(root_handle).copied()?;
+    if !matches!(doc.get(root_node).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
+        return None;
+    }
+    let host = doc.get(root_node)?.parent?;
+    let mut cur = root_node;
+    for step in child_path.split('-') {
+        let idx: usize = step.trim().parse().ok()?;
+        let mut seen = 0usize;
+        let mut hit = None;
+        for c in doc.child_nodes(cur) {
+            if matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::Element(_))) {
+                if seen == idx {
+                    hit = Some(c);
+                    break;
+                }
+                seen += 1;
+            }
+        }
+        cur = hit?;
+    }
+    if cur == root_node {
+        return None;
+    }
+    shadow_scoped_selector(doc, host, cur)
+}
+
 /// 从 HTML 快照查询全部匹配元素的**唯一**选择器（`|` 分隔，供 `__zw_query_all`→querySelectorAll）。
 ///
 /// 用 [`unique_selector_for_node`]（`#id`/`tag.class`/`tag` 唯一时返回；歧义时 nth-child 结构路径
@@ -2944,7 +3331,15 @@ pub fn parse_html_element_json_full(
 ) -> String {
     // R5001 M3 片 a：DOMParser 产物为 inert 文档（scripting disabled——noscript 按
     // markup 解析、序列化走转义分支，html-syntax-compat escaping 面）。
-    let mut doc = parse_html_with_scripting(html, false);
+    // M3 Batch 2（whatwg/dom#831 opt-in 收敛）：无 URL 的查询视图（DOMParser/XHR
+    // responseXML/detached doc）**不物化**声明式根——`<template shadowrootmode>`
+    // 以普通 template 存活（opt-in 页 assert_dsd(doc.body, false) 断言面）；URL
+    // 变体（iframe 子文档，R160）按真实文档语义维持物化。
+    let mut doc = if url.is_some() {
+        parse_html_with_scripting(html, false)
+    } else {
+        zero_dom::parse_html_with_scripting_unmaterialized(html, false)
+    };
     if url.is_some() {
         doc.set_url(url.map(str::to_string));
     }
@@ -2954,6 +3349,11 @@ pub fn parse_html_element_json_full(
     // HTML ns），`|div`/`|*`（EmptyNs）恒 miss。查询前还原（zero_dom
     // `Document::apply_empty_ns_markers`：ns 置空 + 剔标记属性）。
     doc.apply_empty_ns_markers();
+    // s326：`:filtered` 过滤态注入（[`sync_filtered_state`] 槽空零成本）——本函数是
+    // shim `matches`/元素子树查询（`_zwMQueryAll`）的宿主 re-parse 路径，不注入则
+    // `option.matches(':filtered')` 恒 miss（文档级 qsa 走 `with_query_doc` 漏斗已有
+    // 同批注入；`:active` 在本路径维持原状不补注入——匹配行为面变更超本切片范围）。
+    sync_filtered_state(&mut doc);
     let root = doc.root();
     let ids: Vec<NodeId> = if all {
         doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
@@ -3138,7 +3538,12 @@ pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
 pub fn child_nodes_json_full(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
-            let doc = parse_html_with_scripting(html, scripting);
+            // 视图解析（shadow-dom 扩面 opt-in，whatwg/dom#831）：shim 本地视图/
+            // 查询产物不物化声明式 shadow root——`<template shadowrootmode>` 以普通
+            // template 存活（innerHTML 产物/DOMParser 面）。快照寻址解析
+            //（callbacks parse_html(dom_html)）保持物化不变（序列化回环闭合）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+            let doc = zero_dom::parse_html_with_scripting_unmaterialized(html, scripting);
             child_nodes_json_doc(&doc, elem_sel)
         }
         Some(ns) => {
@@ -3171,7 +3576,8 @@ pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>
 pub fn parse_html_subtree_deep_json(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
-            let mut doc = parse_html_with_scripting(html, scripting);
+            // 视图解析（opt-in 不物化，同 [`child_nodes_json_full`] HTML 分支注）。
+            let mut doc = zero_dom::parse_html_with_scripting_unmaterialized(html, scripting);
             // 与 `parse_html_element_json_full` 同款 no-ns 标记还原（查询前）。
             doc.apply_empty_ns_markers();
             let Some(node) = find_by_selector(&doc, elem_sel) else {
@@ -3195,7 +3601,144 @@ pub fn parse_html_subtree_deep_json(html: &str, elem_sel: &str, context_ns: Opti
     }
 }
 
-/// R5001 M3 片 a 收口（html-syntax-compat）：HTML **context tag** 片段解析变体——
+/// [`parse_html_subtree_deep_json`] 的**物化**变体（s180/gethtml，M3 Batch 2）——
+/// `setHTMLUnsafe` 视图数据源（`__zw_parse_html_subtree_unsafe` 回调）。解析走
+/// 物化面（文档路径 [`zero_dom::parse_html_with_scripting`] / 片段路径
+/// [`zero_dom::parse_html_fragment_with_scripting_materialized`]），条目由
+/// [`deep_entry_json_unsafe`] 发射——元素携带 `sr` 字段（声明式根 mode + 状态位 +
+/// shadow 子深 JSON，template 已消费不再出现）。
+///
+/// `context_local`（宿主元素 local name，M3 清单 1）——HTML ns 且有值时改走真实
+/// context 片段解析：全文档路径会丢弃宿主祖先（`<td><template shadowrootmode>`
+/// 场景模板重挂 body ∈ 名单被误物化，attachment 170F 勘根），片段路径保序于
+/// `context` 插入模式。foreign ns / 缺省保持原行为（`elem_sel` 全文档寻址）。
+pub fn parse_html_subtree_deep_json_unsafe(
+    html: &str,
+    elem_sel: &str,
+    context_ns: Option<&str>,
+    context_local: Option<&str>,
+    scripting: bool,
+) -> String {
+    match context_ns {
+        None | Some("http://www.w3.org/1999/xhtml") => {
+            if let Some(ctx) = context_local.filter(|s| !s.is_empty()) {
+                let frag = zero_dom::parse_html_fragment_with_scripting_materialized(
+                    html,
+                    "http://www.w3.org/1999/xhtml",
+                    ctx,
+                    scripting,
+                );
+                let entries: Vec<String> = fragment_top_level_children(&frag)
+                    .into_iter()
+                    .filter_map(|c| deep_entry_json_unsafe(&frag, c))
+                    .collect();
+                return format!("[{}]", entries.join(","));
+            }
+            let mut doc = zero_dom::parse_html_with_scripting(html, scripting);
+            doc.apply_empty_ns_markers();
+            let Some(node) = find_by_selector(&doc, elem_sel) else {
+                return "[]".to_string();
+            };
+            let entries: Vec<String> = doc
+                .child_nodes(node)
+                .iter()
+                .filter_map(|&k| deep_entry_json_unsafe(&doc, k))
+                .collect();
+            format!("[{}]", entries.join(","))
+        }
+        Some(ns) => {
+            let frag = zero_dom::parse_html_fragment_with_scripting_materialized(html, ns, "body", scripting);
+            let entries: Vec<String> = fragment_top_level_children(&frag)
+                .into_iter()
+                .filter_map(|c| deep_entry_json_unsafe(&frag, c))
+                .collect();
+            format!("[{}]", entries.join(","))
+        }
+    }
+}
+
+/// [`deep_entry_json`] 的物化变体：元素条目追加 `sr` 字段（声明式根存在时）——
+/// `{"m":mode,"d":delegatesFocus,"c":clonable,"s":serializable,"nodes":[深条目]}`；
+/// ShadowRoot 子自常规 children 剥离（被 sr 字段消费，template 已物化移除——与
+/// 视图构建的 sr 注册一一对应）。
+fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
+    let node = doc.get(id)?;
+    match &node.kind {
+        NodeKind::Text(t) => Some(format!("{{\"k\":\"T\",\"v\":{}}}", json_str(&t.content))),
+        NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
+        NodeKind::Element(e) => {
+            let tag = json_str(e.local_name());
+            let attrs: Vec<String> = e
+                .attributes
+                .iter()
+                .map(|a| {
+                    let qname = match a.name.prefix.as_deref() {
+                        Some(p) if !p.is_empty() => format!("{}:{}", p, a.name.local.as_ref()),
+                        _ => a.name.local.to_string(),
+                    };
+                    format!("{{\"n\":{},\"v\":{}}}", json_str(&qname), json_str(&a.value))
+                })
+                .collect();
+            let sr_field = shadow_root_entry_json(doc, id);
+            let raw_kids = match doc.template_contents_children(id) {
+                tpl_kids if !tpl_kids.is_empty() => tpl_kids,
+                _ => doc.child_nodes(id),
+            };
+            let kids_src: Vec<NodeId> = raw_kids
+                .into_iter()
+                .filter(|&k| !doc.get(k).is_some_and(|n| matches!(n.kind, NodeKind::ShadowRoot(_))))
+                .collect();
+            let kids: Vec<String> = kids_src
+                .iter()
+                .filter_map(|&k| deep_entry_json_unsafe(doc, k))
+                .collect();
+            // sr_field 自带前导逗号且可能为空，必须拼在元素对象闭括号**内**，
+            // 否则产出非法 JSON、shim 端 JSON.parse 静默回退未物化臂（42 号 M3 勘根）。
+            Some(format!(
+                "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]{}}}",
+                tag,
+                attrs.join(","),
+                kids.join(","),
+                sr_field,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// 声明式根条目（`,"sr":{"m":..,"d":..,"c":..,"s":..,"nodes":[..]}`；无根时空串）
+/// ——[`deep_entry_json_unsafe`] 元素臂消费。mode 键用 `m`、状态位用 `d`/`c`/`s`
+///（delegatesFocus/clonable/serializable）——与 shim `_zwDeclarativeShadowHydrate`
+/// 注册表字段一一对应。
+fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
+    let Some(root) = doc.shadow_root(host) else {
+        return String::new();
+    };
+    let (mode, df, cl, srl) = match doc.get(root).map(|n| &n.kind) {
+        Some(NodeKind::ShadowRoot(d)) => (
+            match d.mode {
+                zero_dom::ShadowRootMode::Open => "open",
+                zero_dom::ShadowRootMode::Closed => "closed",
+            },
+            d.delegates_focus,
+            d.clonable,
+            d.serializable,
+        ),
+        _ => return String::new(),
+    };
+    let entries: Vec<String> = doc
+        .child_nodes(root)
+        .iter()
+        .filter_map(|&k| deep_entry_json_unsafe(doc, k))
+        .collect();
+    format!(
+        ",\"sr\":{{\"m\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"nodes\":[{}]}}",
+        df,
+        cl,
+        srl,
+        entries.join(",")
+    )
+}
 /// `Range.createContextualFragment` 的 context 元素面（spec §8.5.7：startContainer
 /// Element 或 Text/CDATASection 的 parentElement，`<html>` 容器与 null 回落 body）。
 /// 经 [`parse_html_fragment_with_scripting`] 以 (HTML ns, context_tag) 解析，顶层子
@@ -3349,11 +3892,16 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
     let Some(root) = doc.shadow_root(host) else {
         return String::new();
     };
-    let mode = match doc.get(root).map(|n| &n.kind) {
-        Some(NodeKind::ShadowRoot(d)) => match d.mode {
-            zero_dom::ShadowRootMode::Open => "open",
-            zero_dom::ShadowRootMode::Closed => "closed",
-        },
+    let (mode, df, cl, srl) = match doc.get(root).map(|n| &n.kind) {
+        Some(NodeKind::ShadowRoot(d)) => (
+            match d.mode {
+                zero_dom::ShadowRootMode::Open => "open",
+                zero_dom::ShadowRootMode::Closed => "closed",
+            },
+            d.delegates_focus,
+            d.clonable,
+            d.serializable,
+        ),
         _ => return String::new(),
     };
     let entries: Vec<String> = doc
@@ -3361,15 +3909,27 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
         .iter()
         .filter_map(|&k| ds_scoped_entry(doc, k, host))
         .collect();
-    format!("{{\"mode\":\"{mode}\",\"nodes\":[{}]}}", entries.join(","))
+    // s180/gethtml：状态位随注册数据下发（shim hydrate 读 d/c/s 填
+    // _shadowHandleMeta——re-attach 校验与 getHTML 资格判据）。
+    format!(
+        "{{\"mode\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"nodes\":[{}]}}",
+        df,
+        cl,
+        srl,
+        entries.join(",")
+    )
 }
 
 /// WC-M2：参数化 html 串的 template contents **深 JSON**（含 children 嵌套，形态
 /// `{"k":"E","tag":"p","attrs":[...],"children":[...]}`）——iframe/detached shim 文档的
 /// JS 树构建用。contents 子在 fragment（非文档树），selector 无法二次定位（上层
 /// `unique_selector` 穿透 fragment 错位），须一次取全子树。
+/// 视图解析（opt-in 不物化，同 [`child_nodes_json_full`] 注）——嵌套声明式模板在
+/// contents 内同样以普通 template 存活（WPT opt-in 'innerHTML on template, with
+/// nested template content' 断言 getAttribute === 'open'；物化变体曾把值留成
+/// 预变换形态 "Open" 且顶层模板被消费）。
 pub fn parse_template_contents_deep_json(html: &str, elem_sel: &str) -> String {
-    let doc = parse_html(html);
+    let doc = zero_dom::parse_html_with_scripting_unmaterialized(html, true);
     let Some(node) = find_by_selector(&doc, elem_sel) else {
         return "[]".to_string();
     };
@@ -5426,6 +5986,24 @@ pub fn generate_js_dom_shim() -> &'static str {
         // globalThis.__zw_ce_delete_apply 单点调用（flat 模型 _zwExecCmd-
         // ApplyDelete 同轮摘除）。
         s.push_str(include_str!("js_dom_shim/part01f.js"));
+        // part01g（2026-11-07 editing-compat 四命令零应用族）：execCommand
+        // formatBlock/insertHorizontalRule/insertImage/indent 实应用引擎 + formatBlock
+        // value 读面（参考 implementation.js :6580-6698/:5482-5517/:7141-7230/
+        // :7316-7367/:6773-6805 忠实移植）——此前四命令仅 _zwExecCmdInputType 有名
+        // （事件照派、execCommand 返 true），apply 面缺失 → DOM 零变更。挂 part01f
+        // 后同闭包复用 _zwJus*/_zwList*/_zwDel*/_zwVa* 机具；part06 经
+        // globalThis.__zw_ce_fb_apply/__zw_ce_fb_value/__zw_ce_indent_apply/
+        // __zw_ce_hr_apply/__zw_ce_img_apply 单点调用。
+        s.push_str(include_str!("js_dom_shim/part01g.js"));
+        // part01h（2026-11-09 editing-compat ④ F1' typed 壳继承残）：collapsed
+        // delete/forwarddelete 跨块合并形的 typing 态壳链 carry（Chrome
+        // TypingStyle 自删除边界推导，spec 无此概念——caret collapse 到两块间
+        // 元素位丢壳层，typed 段裸落，残 23F）。挂 part01g 后同闭包复用
+        // _zwJus* 机具；part01f __zw_ce_delete_apply 经
+        // __zw_ce_capture_shell_carry 捕获+替换式回写 __zwTypingShellCarry，
+        // part01 inserttext 元素位 caret 两臂经 __zw_ce_shell_carry_consume
+        // 消费（逐节点同一门，consume 即清），part06 _zwSync 面清除。
+        s.push_str(include_str!("js_dom_shim/part01h.js"));
         // part02a（2026-11-01 webcrypto-compat-v3 M2-1 门禁面）：SubtleCrypto 接口
         // 对象 + 静态 supports(operation, algorithm, lengthOrAdditionalAlgorithm)
         // （wicg/webcrypto-modern-algos：注册面×op 真实支持矩阵 + 参数校验，未实现
@@ -5460,6 +6038,27 @@ pub fn generate_js_dom_shim() -> &'static str {
         // part08b 的 _zwGlslShared 词法/类型表交接（用后即清），发布
         // _zwGlDrawBackend 供 part08 draw op 调用期查表；必须后于 part08b。
         s.push_str(include_str!("js_dom_shim/part08d.js"));
+        // part09（2026-11-07 svg-compat-v2 M1）：SMIL 文档级时间线引擎——时钟值
+        // 严格文法（B1）、begin/end offset 列表 + interval 解析（首个 end>t 为
+        // current，SVGAnimationElement-getStartTime 定谳）、linear from/to/by/
+        // values 采样 + fill=freeze、SVGSVGElement pause/seek/getCurrentTime
+        // 文档级共享时间线（part03 _zwSvgSvgCtlState stub FIXME 合流兑现——
+        // part09 加载序在后无条件覆写四方法；currentTranslate/currentScale/
+        // deselectAll 留 part03）、SVGAnimationElement getStartTime/
+        // getSimpleDuration 真值 + beginElement 动态实例、事件泵（begin/end
+        // Event task 粒度 setTimeout ≤50ms 轮询——learnings #30 禁 microtask）。
+        // animVal 反射消费经 globalThis._zwSmilAnimValue/_zwSmilAnimNumber 单点
+        //（part03 S2a SVGLength 只读面 cur()/SVGAnimatedNumber.animVal getter
+        // 挂钩）；文档时间线起点经 part06 window load 派发点 _zwSmilDocStart。
+        // https://www.w3.org/TR/2001/REC-smil-animation-20010904/
+        s.push_str(include_str!("js_dom_shim/part09.js"));
+        // part09b（2026-11-07 svg-compat-v2 B6c 切分）：part09 超 2000 行准则
+        // 按行边界字节精确切分（R2963 先例，拼接字节序零变化零行为变更）——
+        // 前半（part09）= 时间线状态/文法/interval 链/数值与类型域采样器，
+        // 后半（part09b，续 part09 自身 IIFE 同闭合并收尾 })();）=
+        // animateTransform 域采样 + animVal 反射消费钩子 + 事件泵 +
+        // SVGSVGElement/SVGAnimationElement 接口。
+        s.push_str(include_str!("js_dom_shim/part09b.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

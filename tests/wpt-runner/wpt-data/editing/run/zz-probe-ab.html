@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- ③'-a/b/d A/B 归因探针：三个 direct-leg-only 疑似回归行（forecolor 裸
+     keyword 值 ×2 + fontsize font1-straddle ×1）在 a04dd1522（arms 前）与
+     539200c21（arms 后）的 got 形对照。若 arms 前已红 = ⑥/M3 遗留非本轮
+     P2F；若 arms 前绿 = 本轮回归红线。 -->
+<title>zz-probe-ab</title>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=../include/implementation.js></script>
+<script>
+"use strict";
+var container = document.getElementById("test-container");
+function setupFixture(testDiv, fixture) {
+    testDiv.innerHTML = fixture;
+    var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+    var cur = testDiv;
+    while (true) {
+        if (!cur || (cur !== testDiv
+            && !(cur.compareDocumentPosition(testDiv) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+        if (cur.nodeType !== 3) { cur = nextNode(cur); continue; }
+        var startIdx = cur.data.replace(/\]/g, "").indexOf("[");
+        var endIdx = cur.data.replace(/\[/g, "").indexOf("]");
+        if (startIdx !== -1) { startNode = cur; startOffset = startIdx; }
+        if (endIdx !== -1) { endNode = cur; endOffset = endIdx; }
+        cur.data = cur.data.replace(/[\[\]]/g, "");
+        cur = nextNode(cur);
+    }
+    var r = document.createRange();
+    r.setStart(startNode, startOffset);
+    r.setEnd(endNode, endOffset);
+    return r;
+}
+function nextNode(node) {
+    if (node.firstChild) return node.firstChild;
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+    while (node) {
+        if (node.nextSibling) return node.nextSibling;
+        node = node.parentNode;
+    }
+    return null;
+}
+function runCase(label, fixture, cmds) {
+    container.innerHTML = "<div contenteditable></div><p>test";
+    var testDiv = container.querySelector("div[contenteditable]");
+    var rng = setupFixture(testDiv, fixture);
+    getSelection().removeAllRanges();
+    getSelection().addRange(rng);
+    for (var e = 0; e < cmds.length; e++) {
+        document.execCommand(cmds[e][0], false, cmds[e][1]);
+    }
+    try {
+        [].forEach.call(testDiv.querySelectorAll("[style]"), function(node) {
+            if (node.style.color != "") {
+                var nc = normalizeColor(node.style.color);
+                node.style.color = "";
+                node.style.color = nc;
+            }
+            if (node.style.backgroundColor != "") {
+                var nb = normalizeColor(node.style.backgroundColor);
+                node.style.backgroundColor = "";
+                node.style.backgroundColor = nb;
+            }
+            node.setAttribute("style", node.getAttribute("style")
+                .replace(/; ?$/, "").replace(/: /g, ":"));
+        });
+    } catch (eNorm) {}
+    test(function() { assert_true(true); },
+        label + " | got=" + testDiv.innerHTML);
+}
+// forecolor.html :113（期望 foo<font color="#0000ff">[bar]</font>baz）
+runCase("fc-blue-bare", "foo[bar]baz", [["stylewithcss", "false"], ["forecolor", "blue"]]);
+// forecolor.html :268（期望 foo<font color="#fff8dc">[bar]</font>baz）
+runCase("fc-cornsilk-bare", "foo[bar]baz", [["stylewithcss", "false"], ["forecolor", "cornsilk"]]);
+// fontsize.html :438（期望 <font size="4">foo<font size="1">b</font>[a]<font size="1">r</font>baz</font>）
+runCase("fs-font1-straddle", '<font size=4>foo<font size=1>b[a]r</font>baz</font>',
+    [["stylewithcss", "false"], ["fontsize", "4"]]);
+// multitest 尾带截断差分行（基线未达，fresh Fail）：forwarddelete 家族结构性
+// 独立（part01c delete 面，part01d value-command 臂不可达），A/B 印证继承性
+runCase("fd-truncation-row", '<p>abc[]<br> </p> <p><br></p>',
+    [["stylewithcss", "false"], ["forwarddelete", ""]]);
+</script>

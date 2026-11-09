@@ -1201,7 +1201,11 @@
       try {
         var dlg = _makeProxy(sel, handle);
         var cur = _zwDialogFocusedElR4600();
-        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur)));
+        // s330：slot 摊平包含——焦点锚经宿主声明式根 slot 分配进 dialog 时
+        // 纯 parentNode 链不可见（slotted light 子的 engine 父仍是宿主），
+        // Chromium close-the-dialog 同面用 FlatTreeTraversal::Contains。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog
+        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur) || _zwLdFlatContains(dlg, cur)));
       } catch (_eAn) { anchorOk = false; }
     }
     if (!anchorOk) return;
@@ -1432,6 +1436,37 @@
         }
       }
     } catch (_e176sl) {}
+    return null;
+  }
+  // s330：declarative shadow 复合地址（`zwsh<len>:<host>|<local>`，engine
+  // js_dom_bridge/shadow_address.rs 铸造；host 段 = 轻树宿主唯一选择器）→
+  // 已登记 declarative 根 handle 反查（_shadowRoots 活注册 + _shadowHandleMeta
+  // 声明式面；不滤 mode——focus retarget 非封装边界，closed declarative 根同
+  // 语义）。declarative 根 hydration 只登记不物化 root wrapper 子链（part05
+  // _zwDeclarativeShadowEnsureContent 把内容绑成 zwsh sel proxy、engine 父链
+  // 锚宿主——s176「shadow 内容不摊平」），focus chain retarget walk 的
+  // wrapper hop（parentNode 命中 _shadowHandles）在该面永不触发：内容 sel
+  // 解码 hostSel 反查同注册是 declarative 边界的唯一入口。
+  // OPTIMIZATION: 前缀门外置（light sel 一步即出），注册表扫描只在
+  // declarative 内容焦点面付出（同 _zwLdSlotForHost 量级）。
+  function _zwDsRootHandleForContentSel(sel) {
+    if (typeof sel !== 'string' || sel.indexOf('zwsh') !== 0) return null;
+    var c330ds = sel.indexOf(':', 4);
+    if (c330ds < 0) return null;
+    var n330ds = parseInt(sel.slice(4, c330ds), 10);
+    if (!(n330ds >= 0)) return null;
+    var hostSel330ds = sel.slice(c330ds + 1, c330ds + 1 + n330ds);
+    if (sel.charAt(c330ds + 1 + n330ds) !== '|') return null;
+    try {
+      var keys330ds = Object.keys(_shadowRoots);
+      for (var i330ds = 0; i330ds < keys330ds.length; i330ds++) {
+        var info330ds = _shadowRoots[keys330ds[i330ds]];
+        if (!info330ds || !info330ds.handle) continue;
+        var meta330ds = _shadowHandleMeta[info330ds.handle];
+        if (!meta330ds || !meta330ds.declarative || meta330ds.hostSel !== hostSel330ds) continue;
+        return info330ds.handle;
+      }
+    } catch (_e330ds) {}
     return null;
   }
   // flat parent：light 父持有已登记声明式 open SR 且其内有 slot → slot（摊平归属）。
@@ -1896,6 +1931,13 @@
       if (!v || k.charAt(0) === '@') continue;
       if (!v.top && !v.left) continue;
       out.push({ selector: k, scroll_top: v.top, scroll_left: v.left });
+    }
+    // R5428：窗口滚动槽导出（viewport 滚动）——documentElement.scrollTop 经 M2-S7
+    // 委托 scrollTo、与 scrollX/scrollY 同镜像 `_winScroll`（cssom-view-1 §11.2：
+    // 根元素滚动 = 视口滚动，根元素可滚溢出传播至 viewport）。reftest 消费侧按
+    // 'html' 记录回流、paint 期 root-scroller 应用；零偏移跳过（同 sel 条目口径）。
+    if (_winScroll.top || _winScroll.left) {
+      out.push({ selector: 'html', scroll_top: _winScroll.top, scroll_left: _winScroll.left });
     }
     return out;
   };
@@ -2834,10 +2876,31 @@
           + String(body).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
           + '</pre></body></html>';
       }
+      // S305（html-semantics M2）：image/* 子文档按 **image document** 装载（spec
+      // navigate read image：image/* 响应建 body > 单 img 文档、img.src = 最终
+      // URL，https://html.spec.whatwg.org/multipage/document-lifecycle.html#read-image
+      // ——真浏览器 ImageDocument 框架语义）。此前 image URL 落 kind 'xml'，JPEG
+      // 等二进制字节走标记解析 → body.firstChild=#text，adopt-from-image-document
+      // 的收养 img 面全缺（✗16.00%，2026-11-06 探针定谳）。kind 升 'html' + 合成
+      // 壳：src 用 effectiveUrl（绝对最终 URL）；image/svg+xml 排除——SVG 有自
+      // 有文档类型（kind 'svg' 标记解析臂）。
+      var _zwIsImageDoc = /^image\//i.test(String(_zwFrameCt || ''))
+        && !/svg/i.test(String(_zwFrameCt || ''));
+      if (_zwIsImageDoc) {
+        kind = 'html';
+        body = '<html><head></head><body><img src="'
+          + String(effectiveUrl).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+          + '"></body></html>';
+      }
       entry.doc = _zwMakeIframeDoc(kind, body, _zwFrameCharset);
       // S184：text/plain 面回写文档 MIME（read text——上壳 kind 升 'html' 后工厂
       // 盖了 text/html；真浏览器 text 文档 contentType 恒 text/plain）。
       if (_zwIsTextPlain) { try { entry.doc.contentType = 'text/plain'; } catch (_eTpCt) {} }
+      // S305：image document MIME 回写（read image——文档 contentType = 响应 MIME
+      // essence；壳工厂盖了 text/html 须覆回）。
+      if (_zwIsImageDoc) {
+        try { entry.doc.contentType = String(_zwFrameCt).split(';')[0].trim(); } catch (_eImgCt) {}
+      }
       // uievents-compat 尾簇 23（2026-10-06）：body id 落视图——`<body id=…>` 的
       // 子文档（pointercapture_in_frame 内页）body 视图 getAttribute 此前恒 null
       //（_zwMakeIframeDoc 的 R159/R255 提取链对 fetch 形态断链）——从原始 markup
@@ -2890,6 +2953,50 @@
       _zwObserveIframeWindowClient(entry, frameKey, url);
       try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
       try { _zwRunIframeScripts(entry.win, entry.doc, body, url, entry.flags); } catch (_eR206s) {}
+      // s341（html-semantics M2 切片 341）：子文档 body `onload` 事件处理器内容
+      // 属性——spec load 事件路径含 body 元素（window → document → body），真浏览器
+      // 经路径派发触发 body handler（delay-load-event-iframe 的
+      // `<body onload="parent.onloadIframe()">` 完成面——moving-between-documents
+      // /ordering delay-load-event-{1,2} 第二子测）。shim win.dispatchEvent 只派
+      // win listener——内容属性在此显式编译执行：CSP script-src-attr 门（R152 同款
+      // `__zwCspAttrAllowed`）+ `with(document)/with(this)` 基（R152 同型）+
+      // `parent` 形参绑 win.parent（R206 形参遮蔽同语义——合并 Function 作用域外
+      // 的裸 `parent` 标识符唯此通道可达）。无属性零变化（普通 fixture 面）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#event-handler-content-attributes
+      try {
+        // 属性源：finish 现场 raw markup 的 `<body …>` 标签直提——body 视图的
+        // getAttribute 链在 load 派发时点不可靠（R168 印章打在惰性 `_tree` 根，
+        // `_zwRunIframeScripts` 前 `_tree` 未建则视图查不到；簇 23 body id
+        // 「从原始 markup 直提」同型）；工厂 raw attrs 槽 `_r159BodyAttrs` 与
+        // 视图 getAttribute 依次回落（无 `<body>` 标签的合成面）。
+        var _zwBl341 = null;
+        try {
+          var _zwBm341 = /<body\b([^>]*)>/i.exec(String(body || ''));
+          var _zwBa341 = _zwBm341 ? String(_zwBm341[1] || '') : '';
+          if (!_zwBa341) _zwBa341 = String((entry.doc && entry.doc._r159BodyAttrs) || '');
+          if (_zwBa341) {
+            var _zwBo341 = /(^|\s)onload\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(_zwBa341);
+            if (_zwBo341) _zwBl341 = _zwBo341[2] != null ? _zwBo341[2]
+              : (_zwBo341[3] != null ? _zwBo341[3] : _zwBo341[4]);
+          }
+        } catch (_eBa341) {}
+        if (_zwBl341 == null && entry.doc && entry.doc.body
+            && typeof entry.doc.body.getAttribute === 'function') {
+          _zwBl341 = entry.doc.body.getAttribute('onload');
+        }
+        if (_zwBl341) {
+          var _zwBlOk341 = (typeof __zwCspAttrAllowed !== 'function')
+            || __zwCspAttrAllowed(String(_zwBl341)) === '1';
+          if (_zwBlOk341) {
+            globalThis.__zwAttrClear = true;
+            try {
+              new Function('event', 'parent',
+                'with(document) { with(this) { ' + _zwBl341 + ' } }')
+                .call(entry.doc.body, new Event('load'), entry.win.parent);
+            } finally { globalThis.__zwAttrClear = false; }
+          }
+        }
+      } catch (_eS341bl) {}
       try {
         if (entry.win && typeof entry.win.dispatchEvent === 'function') {
           entry.win.dispatchEvent(new Event('load'));
@@ -3142,6 +3249,26 @@
     // subtest 2「no scripts should run in the iframe」断言面——child postMessage 不得发生）。
     if (flags && flags.sandboxed && !flags.allowScripts) return;
     var parts = [];
+    var partSrcs = [];
+    // s340（iframe 子文档 credentials 穿面）：每段 script 元素 `crossorigin` 推导
+    // 的 credentials mode 槽（'include'=use-credentials / ''=缺省 same-origin），
+    // 与 partSrcs 同索引对齐——合并体每段前置复位行 + 注册包装体执行窗恢复读出端
+    //（v8_runtime native resolver 第 5 参 `__zwActiveScriptCred`）。仅 harness 段
+    // 在场时置位（无钉面普通 fixture 零变化——保守零漂移）。
+    // spec：动态 import 的请求 credentials 取调用点 script 元素 fetch options
+    //（crossorigin 属性推导；invalid value default = anonymous → same-origin）。
+    var partCreds = [];
+    // crossorigin 属性 → credentials mode（'include' 仅 use-credentials，ASCII
+    // 大小写不敏感——与 extract.rs extract_script_credentials 同映射；缺属性/
+    // anonymous/非法值 → '' = same-origin 缺省）。bare `crossorigin`（无 = 值）
+    // 不匹配带值捕获组 → 落 ''（anonymous 空串语义，spec 同）。
+    function _zwCredFromAttrs206(attrs) {
+      var cm = /\bcrossorigin\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(String(attrs || ''));
+      var cv = cm ? (cm[2] != null ? cm[2] : (cm[3] != null ? cm[3] : (cm[4] || ''))) : null;
+      return cv != null && String(cv).replace(/[A-Z]/g, function (c) {
+        return String.fromCharCode(c.charCodeAt(0) + 32);
+      }).trim() === 'use-credentials' ? 'include' : '';
+    }
     var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
     var m;
     while ((m = re.exec(body)) !== null) {
@@ -3153,12 +3280,65 @@
         if (src && typeof __zw_fetch_script === 'function') {
           try {
             var ext = String(__zw_fetch_script(pageUrl, src) || '');
-            if (ext) parts.push(ext);
+            if (ext) { parts.push(ext); partSrcs.push(src); partCreds.push(_zwCredFromAttrs206(attrs)); }
           } catch (_eR206f) {}
         }
       } else if (code.trim()) {
-        parts.push(code);
+        // s339：s261 预内联投递形态（`data-zw-inlined data-inline="<原始 src>"`——
+        // runner 语料外链脚本就地内联）以 data-inline 记原始外链 URL——partSrcs 槽
+        // 语义 = 「原外链 URL 或 ''（真内联）」，下方 s339 harness 段检测按 URL 命中
+        // testharness 段。
+        var inlM = /\bdata-inline\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+        var isrc = inlM ? (inlM[2] != null ? inlM[2] : (inlM[3] != null ? inlM[3] : (inlM[4] || ''))) : '';
+        parts.push(code); partSrcs.push(isrc); partCreds.push(_zwCredFromAttrs206(attrs));
       }
+    }
+    // s339（iframe 域动态 import 模块体 window 身份桥）——子文档 harness 段后注入
+    // 注册包装段：test/async_test/promise_test 的体执行窗置全局
+    // `__zwActiveIframeWin`/`__zwActiveIframeDoc` 桥位，模块体求值包裹
+    //（script-sandbox es_module MODULE_EVAL_WINDOW_SCOPE_OPEN/CLOSE——prelude eval
+    // 臂与 v8_runtime settle 臂同形）求值时读之，模块体裸 `window`/`document`/
+    // `self` 形参遮蔽到 importing document 的 win/doc。本引擎单 isolate 共享全局，
+    // 子文档 realm 以合并 Function 形参承载（R206 形参遮蔽）；桥位修复 s338 定谳
+    // 根因链——动态 import 模块体 `window.<id>` 写此前错落主窗，iframe 续延读形参
+    // 恒 undefined（dynamic-imports-credentials 簇 12F 根因）。finally 恢复前值
+    //（嵌套安全）；桥位仅覆盖体同步窗——体内 `.then` 续延不持桥位（续延读形参
+    // window 与真浏览器同型；setTimeout 字符串求值窗仍全局——该族面承基线）。
+    // spec：模块的 settings object/realm 归属 importing document。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-scripts
+    // 仅 testharness 段在场注入——无 harness 子文档（普通 fixture）零变化。
+    var _zwHarnessIdx339 = -1;
+    for (var pi339 = 0; pi339 < partSrcs.length; pi339++) {
+      if (partSrcs[pi339] && /testharness/.test(partSrcs[pi339])) { _zwHarnessIdx339 = pi339; break; }
+    }
+    if (_zwHarnessIdx339 !== -1) {
+      parts.splice(_zwHarnessIdx339 + 1, 0,
+        '/* s339 iframe module window-scope bridge (+s340 credentials slot) */\n' +
+        '(function () {\n' +
+        '  var _zwPT = promise_test, _zwT = test, _zwAT = async_test;\n' +
+        '  function _zwScopeBody(fn) {\n' +
+        '    if (typeof fn !== "function") return fn;\n' +
+        // s340：注册窗捕获段前置复位行已置的 credentials mode（promise_test(f)
+        // 调用发生在段序窗内——捕获即该注册体所属 script 元素的 mode），体执行窗
+        // 存旧→置捕获值→finally 恢复（体由 harness 异步调度，届时槽已被后续段
+        // 覆写——捕获窗与执行窗分离正是此钉的承重面）。与桥位同一 try/finally 窗。
+        '    var _zwCred = globalThis.__zwActiveScriptCred;\n' +
+        '    return function () {\n' +
+        '      var _zwPW = globalThis.__zwActiveIframeWin, _zwPD = globalThis.__zwActiveIframeDoc;\n' +
+        '      var _zwPC = globalThis.__zwActiveScriptCred;\n' +
+        '      globalThis.__zwActiveIframeWin = window;\n' +
+        '      globalThis.__zwActiveIframeDoc = document;\n' +
+        '      globalThis.__zwActiveScriptCred = _zwCred;\n' +
+        '      try { return fn.apply(this, arguments); }\n' +
+        '      finally { globalThis.__zwActiveIframeWin = _zwPW; globalThis.__zwActiveIframeDoc = _zwPD; globalThis.__zwActiveScriptCred = _zwPC; }\n' +
+        '    };\n' +
+        '  }\n' +
+        '  promise_test = function (f, n, p) { return _zwPT.call(this, _zwScopeBody(f), n, p); };\n' +
+        '  test = function (f, n, p) { return _zwT.call(this, _zwScopeBody(f), n, p); };\n' +
+        '  async_test = function (f, n, p) { return _zwAT.call(this, _zwScopeBody(f), n, p); };\n' +
+        '})();');
+      partSrcs.splice(_zwHarnessIdx339 + 1, 0, '');
+      partCreds.splice(_zwHarnessIdx339 + 1, 0, '');
     }
     if (!parts.length) return;
     try { if (win) win._zwScriptsRan = true; } catch (_eR206mark) {}
@@ -3170,7 +3350,15 @@
     // 后续段；var 仍函数级共享）。
     var partsWrapped206 = [];
     for (var pi206 = 0; pi206 < parts.length; pi206++) {
-      partsWrapped206.push('try{' + parts[pi206] + '\n}catch(_zwE206p){window.unexpectedException=window.unexpectedException||_zwE206p;}');
+      // s340：段前置 credentials 复位行（仅 harness 子文档面）——注册窗槽值=该段
+      // 元素推导 mode（'include'/''；JSON.stringify 生成合法 JS 字面量）；下一段
+      // 前置行复位，防前段泄漏。体执行窗值由 s339 注册包装捕获/恢复（promise_test
+      // 体异步调度，届时段序置位行已跑完——捕获在注册窗同步发生）。置位行在 try
+      // 外：mode 是元素静态属性语义，段体抛错不回撤。
+      var _zwCredPre206 = _zwHarnessIdx339 !== -1
+        ? 'globalThis.__zwActiveScriptCred=' + JSON.stringify(partCreds[pi206] || '') + ';'
+        : '';
+      partsWrapped206.push(_zwCredPre206 + 'try{' + parts[pi206] + '\n}catch(_zwE206p){window.unexpectedException=window.unexpectedException||_zwE206p;}');
     }
     var combined206 = partsWrapped206.join('\n;\n');
     var names206 = {};
@@ -3255,11 +3443,42 @@
         'window', 'self', 'parent', 'top', 'document', 'location',
         'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
         _omWrapped);
-      fn.call(
-        win, win, win, globalThis, globalThis, doc, loc,
-        win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
-        win.Response, win.URL, win.caches, win.history
-      );
+      // s339：上方注入段的注册包装对**宿主全局** `promise_test`/`test`/`async_test`
+      // 写包装——子文档 harness 的注册 API 是 IIFE 内绑定、合并 fn 作用域无同名局部，
+      // 裸赋值落宿主全局（恰是既有承重契约「嵌套 test() 落宿主 harness」的同一解析
+      // 路径——s147 注记）。fn 执行后**恢复执行前全局值**：注册发生在 fn 同步窗内、
+      // 体在注册时即被包成桥位置位形态（宿主 harness 持包过的体，恢复不撤已注册包
+      // 装），后续主页面/跨文档注册面不再继承 iframe 包装（跨页零漂移）。同路径影
+      // 子页（s147）的裸赋值落影子局部绑定，此处恢复为同值回写（no-op）。
+      var _zwReg339Pre = null;
+      try {
+        _zwReg339Pre = [['promise_test', 'promise_test' in globalThis],
+          ['test', 'test' in globalThis],
+          ['async_test', 'async_test' in globalThis],
+          // s340：credentials 槽同窗恢复——子文档合并体残留的段序置位值不得泄漏
+          // 到主文档后续 classic 面 import()（合并 fn 返回后主页面脚本的动态
+          // import 须回到执行前值——undefined 缺省面零漂移）。
+          ['__zwActiveScriptCred', '__zwActiveScriptCred' in globalThis]].map(function (p339) {
+          return { name: p339[0], had: p339[1], val: p339[1] ? globalThis[p339[0]] : undefined };
+        });
+      } catch (_e339cap) {}
+      try {
+        fn.call(
+          win, win, win, globalThis, globalThis, doc, loc,
+          win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
+          win.Response, win.URL, win.caches, win.history
+        );
+      } finally {
+        try {
+          if (_zwReg339Pre) {
+            for (var _ri339 = 0; _ri339 < _zwReg339Pre.length; _ri339++) {
+              var _rp339 = _zwReg339Pre[_ri339];
+              if (_rp339.had) { globalThis[_rp339.name] = _rp339.val; }
+              else { delete globalThis[_rp339.name]; }
+            }
+          }
+        } catch (_e339res) {}
+      }
     } catch (_eR206x) {
       try { win.unexpectedException = _eR206x; } catch (_eR206w) {}
     }
@@ -3761,9 +3980,15 @@
     return found == null ? '' : String(found);
   }
   // 旧 / 错误路径：body 为裸文本（status 200）或 `__zw_fetch_error:` 前缀（ok:false）。增 headers:{}（向后兼容）。
+  // net-api M2：错误 wire 的 tag（`__zw_fetch_error:` 后段）挂 `__zwFetchErrorTag`——
+  // 同步 XHR 对特定错误（响应头 NUL）须同步抛 NetworkError（xhr.spec send handle
+  // errors：async false → throw），靠 tag 窄化识别，其余错误语义不变。
   function _makeResponse(body) {
     var ok = typeof body === 'string' && body.indexOf('__zw_fetch_error') !== 0;
+    var errTag = (!ok && typeof body === 'string' && body.indexOf('__zw_fetch_error:') === 0)
+      ? body.slice('__zw_fetch_error:'.length) : null;
     return {
+      __zwFetchErrorTag: errTag,
       ok: ok,
       status: ok ? 200 : 0,
       statusText: ok ? 'OK' : 'Error',
@@ -3796,6 +4021,22 @@
     var headersWire = rest.slice(p2 + 1, p3);
     var body = rest.slice(p3 + 1); // 末字段，可含 \x1f
     var headers = _parseHeadersWire(headersWire);
+    // net-api M2：响应头值含 NUL → 网络错误（fetch spec HTTP-network fetch 头解析
+    // failure → network error；headers-normalize-response NUL 族同步 send() 断言
+    // NetworkError）。`\x0B`/`\x0C` 竖直空白合法（headers-some-are-empty 在账通过
+    // 面），仅 NUL 拒。
+    // https://fetch.spec.whatwg.org/#http-network-fetch
+    // https://fetch.spec.whatwg.org/#concept-header-list-decode-split
+    for (var _nvK in headers) {
+      if (!Object.prototype.hasOwnProperty.call(headers, _nvK)) continue;
+      var _nvV = headers[_nvK];
+      var _nvVals = Array.isArray(_nvV) ? _nvV : [_nvV];
+      for (var _nvI = 0; _nvI < _nvVals.length; _nvI++) {
+        if (String(_nvVals[_nvI]).indexOf('\0') >= 0) {
+          return _makeResponse('__zw_fetch_error:header-value-nul');
+        }
+      }
+    }
     var finalUrl = _takeHeaderValue(headers, 'x-zero-final-url');
     var responseType = _takeHeaderValue(headers, 'x-zero-response-type') || 'default';
     var bodyError = _takeHeaderValue(headers, 'x-zero-body-error');
@@ -4440,7 +4681,7 @@
   // 对象不外泄 JS，无 opaque 暴露面）。FIXME(compat)：真实 opaque 过滤面
   //（JS 可见 response.type 'opaque'）未建，img 通道响应不走该过滤。
   var _zwImgNoCorsChannelDepth = 0;
-  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel) {
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, opaqueOrigin) {
     // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
@@ -4448,24 +4689,34 @@
     var responseUrl = response && response.url ? response.url : requestUrl;
     var requestOrigin = _zwUrlOrigin(_zwCurrentHref());
     var responseOrigin = _zwUrlOrigin(responseUrl || requestUrl);
+    if (!_zwSsChannel && !_zwImgChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
+      // https://fetch.spec.whatwg.org/#cors-check——按 spec 步序：`*` 先行通配
+      // （步骤 3，credentials 非 include；include 下 `*` 不可用——access-control-
+      // and-redirects with-credentials 面）；步骤 4 以 byte-serializing a request
+      // origin 为准——跨源重定向链已把 request's origin 置 opaque
+      //（#http-redirect-fetch），序列化为 `null`，ACAO 须字面 `null` 即匹配
+      //（authentication-redirection 跨源腿 dump-authorization-header 回显 `null`
+      // 面；比对文档 origin 恒失配 → 误判 network error）；include 恒须 ACAC true。
+      // net-api-compat-v3 M3：cors check 先于 manual→opaqueredirect 转换
+      //（HTTP-network-or-cache fetch 步序——cors check 落在 redirect status
+      // switch 之前：manual redirect with a CORS error 期望面，无 ACAO 的跨源
+      // 重定向响应须 network error 而非 opaqueredirect）。
+      //   https://fetch.spec.whatwg.org/#cors-check
+      //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+      var allowOrigin = response.headers.get('access-control-allow-origin');
+      var allowCreds = response.headers.get('access-control-allow-credentials');
+      if (credentials !== 'include' && allowOrigin === '*') {
+        // 步骤 3：非 include 下 `*` 恒过（opaque origin 同——步骤 3 先于步骤 4）。
+      } else if (allowOrigin !== (opaqueOrigin ? 'null' : requestOrigin) ||
+          (credentials === 'include' && String(allowCreds).toLowerCase() !== 'true')) {
+        throw new TypeError('Failed to fetch');
+      }
+    }
     if (redirect === 'manual' && _zwFetchRedirectStatus(response.status)) {
       return _zwFetchMakeOpaqueLike(response, 'opaqueredirect');
     }
     if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
       return _zwFetchMakeOpaqueLike(response, 'opaque');
-    }
-    if (!_zwSsChannel && !_zwImgChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
-      // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
-      // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
-      var allowOrigin = response.headers.get('access-control-allow-origin');
-      var allowCreds = response.headers.get('access-control-allow-credentials');
-      if (credentials === 'include') {
-        if (allowOrigin !== requestOrigin || String(allowCreds).toLowerCase() !== 'true') {
-          throw new TypeError('Failed to fetch');
-        }
-      } else if (allowOrigin !== '*' && allowOrigin !== requestOrigin) {
-        throw new TypeError('Failed to fetch');
-      }
     }
     if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
       // https://fetch.spec.whatwg.org/#concept-filtered-response-cors——cors 响应仅暴露
@@ -4671,7 +4922,7 @@
   // wire 就地结算，行为不变。
   // https://fetch.spec.whatwg.org/#cors-preflight-fetch
   // p: { id, url, method, preHeaders, preNames, preDocOrigin, opaqueOrigin,
-  //      credentials, mode, redirect } → Promise<{ resp, ok }>。缓存与失败处置由调用方
+  //      credentials, mode, redirect, cache } → Promise<{ resp, ok }>。缓存与失败处置由调用方
   // 执行（M2-S11：两臂均仅覆盖检查成功后写缓存——spec store 步位于 CORS check
   // 成功分支内，失败预检不落缓存）。
   function _zwRunPreflight(p) {
@@ -4734,7 +4985,8 @@
         preResolve({ resp: preResp, ok: preOk, methods: preMethods, allowed: preAllowedHdrs });
       };
       globalThis.__zw_pending[p.id] = settlePre;
-      var preWireSync = __zw_fetch(p.id, 'OPTIONS', p.url, p.preHeaders, '', '', '', p.mode, p.redirect, p.credentials);
+      var preWireSync = __zw_fetch(p.id, 'OPTIONS', p.url, p.preHeaders, '', '', '', p.mode, p.redirect, p.credentials,
+        '', p.cache || '');
       // 同步返回契约（headless webview fetch_handler 直返 wire）——就地结算；
       // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 __zw_pending
       // 删除 + Promise 单 settle 防护。
@@ -5388,6 +5640,11 @@
                                   : init.__zwInternalHeadersWire;
       }
       var redirect = String(init.redirect || (isRequestLike ? input.redirect : '') || 'follow');
+      // http-cache goal M2：cache 模式态取值（同 mode/redirect 缺省链；枚举合法性
+      // 已在 _zwRequestValidate 校验——非法值 TypeError，only-if-cached 须配
+      // same-origin。wire 第 12 参（index 11）传枚举原值，`default` 由宿主侧
+      // from_request_cache 映射回缺省）。
+      var cache = String(init.cache || (isRequestLike ? input.cache : '') || 'default');
       var body = '';
       // UA 内部 Content-Length（HTTP 语义；forbidden request-header 名单内 JS 不可自设，
       // fetch 层对已知字节体统一补齐——xhr send-blob content.py 回显断言面）。
@@ -5504,6 +5761,17 @@
           else resolve(_schemeHit.response);
           return;
         }
+        // net-api-compat-v3 M3：main fetch 步骤 3 mode 分支（no-cors 臂）——redirect
+        // mode 非 follow 且 current URL 跨源 → network error（入口即拒，先于任何网络
+        // 活动）。同源 URL 先被「同源 + response tainting basic」臂截住不入本臂——
+        // redirect-mode same-origin manual+no-cors opaqueredirect 期望面与此门共存
+        //（上臂分派 data:/非 HTTP scheme 先行，arm 排序对齐 spec switch）。
+        //   https://fetch.spec.whatwg.org/#concept-main-fetch
+        if (mode === 'no-cors' && redirect !== 'follow' &&
+            _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
+          reject(new TypeError('Failed to fetch'));
+          return;
+        }
         // net-api M4-S22：CORS-preflight cache（fetch spec §cors-preflight-cache）——
         // (目标 origin, credentials) 键缓存 ACAM/ACAH + Max-Age 过期；命中（method ∈
         // ACAM 且自定义头 ⊆ ACAH——`*` 通配）则跳过 OPTIONS（preflight-cache「second
@@ -5525,6 +5793,23 @@
         var _zwBeaconPolicy = (init && typeof init.__zwBeaconReferrerPolicy === 'string' && init.__zwBeaconReferrerPolicy)
           ? init.__zwBeaconReferrerPolicy : null;
         var _zwRefIsDowngrade = String(_zwCurrentHref()).indexOf('https:') === 0 && String(url).indexOf('https:') !== 0;
+        // 策略 → Referer 外发值（M4-S25 初始请求与 M3 重定向环逐跳重算共用形）；
+        // 入参语义 = determine request's referrer 的 policy 分支逐条转写（downgrade/
+        // beacon 收紧仅 beacon 通道生效——fetch 通道 http 宇宙无降级场景，行为不变）。
+        //   https://w3c.github.io/webappsec-referrer-policy/#determine-request's-referrer
+        var _zwReferrerPolicyOut = function (policy, refUrl, targetCross, originOnly, downgrade, beacon) {
+          if (policy === 'origin') return originOnly;
+          if (policy === 'strict-origin') return (beacon && downgrade) ? null : originOnly;
+          if (policy === 'no-referrer-when-downgrade') return (beacon && downgrade) ? null : refUrl;
+          if (policy === 'unsafe-url') return refUrl;
+          if (policy === '' || policy === 'strict-origin-when-cross-origin' ||
+              policy === 'origin-when-cross-origin') {
+            if (beacon && downgrade && policy !== 'origin-when-cross-origin') return null;
+            return targetCross ? originOnly : refUrl;
+          }
+          if (policy === 'same-origin') return targetCross ? null : refUrl;
+          return null;
+        };
         var _zwRefOut = null;
         if (mode === 'cors' || _zwBeaconPolicy != null) {
           var _refPolicy = _zwBeaconPolicy != null ? _zwBeaconPolicy
@@ -5549,26 +5834,8 @@
             var _originOnly = (_zwBeaconPolicy != null
               ? _zwUrlOrigin(_zwCurrentHref())
               : _zwUrlOriginLenient(_zwCurrentHref())) + '/';
-            if (_refPolicy === 'origin') {
-              _zwRefOut = _originOnly;
-            } else if (_refPolicy === 'strict-origin') {
-              _zwRefOut = (_zwBeaconPolicy != null && _zwRefIsDowngrade) ? null : _originOnly;
-            } else if (_refPolicy === 'no-referrer-when-downgrade') {
-              _zwRefOut = (_zwBeaconPolicy != null && _zwRefIsDowngrade) ? null : _refUrl;
-            } else if (_refPolicy === 'unsafe-url') {
-              _zwRefOut = _refUrl;
-            } else if (_refPolicy === '' || _refPolicy === 'strict-origin-when-cross-origin' ||
-                       _refPolicy === 'origin-when-cross-origin') {
-              // s-o-w-c-o 有降级条款（spec）；origin-when-cross-origin 无（只按 cross 分
-              // 全 URL/origin——不随 scheme 降级）。
-              if (_zwBeaconPolicy != null && _zwRefIsDowngrade && _refPolicy !== 'origin-when-cross-origin') {
-                _zwRefOut = null;
-              } else {
-                _zwRefOut = _tgtCross ? _originOnly : _refUrl;
-              }
-            } else if (_refPolicy === 'same-origin') {
-              _zwRefOut = _tgtCross ? null : _refUrl;
-            }
+            _zwRefOut = _zwReferrerPolicyOut(_refPolicy, _refUrl, _tgtCross, _originOnly,
+              _zwRefIsDowngrade, _zwBeaconPolicy != null);
             if (_zwRefOut && !_zwHasHeader(headersWire, 'referer')) {
               headersWire = _zwAddHeader(headersWire, 'Referer', _zwRefOut);
             }
@@ -5628,7 +5895,7 @@
             id: preId,
             url: url, method: method, preHeaders: preHeaders, preNames: _preNames,
             preDocOrigin: preDocOrigin, opaqueOrigin: false,
-            credentials: credentials, mode: mode, redirect: redirect,
+            credentials: credentials, mode: mode, redirect: redirect, cache: cache,
           }).then(function (pre) {
             if (!pre.ok) {
               reject(new TypeError('Failed to fetch'));
@@ -5720,8 +5987,34 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
+          // net-api-compat-v3 M2：链上跨源跳已置 opaque origin → cors check 按请求
+          // opaque 序列化（`null`）比对（见 #cors-check 步骤 4——authentication-
+          // redirection 跨源腿面）。
+          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, _zwHopOriginOpaque);
           if (hopUrl) response.url = hopUrl;
+          // net-api-compat-v3 M3：response tainting 持久——链上曾跨源（initial 跨源
+          // 或任一跳跨源）后 tainting 不随「终跳回到同源」回退（main fetch mode
+          // switch 同源臂门在 response tainting "basic"；HTTP-redirect fetch 递归
+          // re-entry 保留 tainting）→ cors 链终跳同源 type 'cors'、no-cors 链终跳
+          // 同源落 opaque 过滤（whatwg/fetch#737——redirect-back-to-original-origin
+          // 「original => remote => original」cors 期望 'cors' / no-cors 期望
+          // 'opaque' 面）。opaqueredirect（manual）与已 opaque 终跳不重包。
+          //   https://fetch.spec.whatwg.org/#main-fetch
+          //   https://github.com/whatwg/fetch/issues/737
+          if (_zwChainCrossed && response.type !== 'opaqueredirect' &&
+              !(typeof _zwSsChannel !== 'undefined' && _zwSsChannel) &&
+              !(typeof _zwImgChannel !== 'undefined' && _zwImgChannel)) {
+            if (mode === 'no-cors') {
+              if (response.type !== 'opaque') response = _zwFetchMakeOpaqueLike(response, 'opaque');
+            } else if (mode === 'cors' && response.type !== 'cors') {
+              response.type = 'cors';
+            }
+          }
+          // net-api-compat-v3 M1b：response.redirected spec 语义（URL list > 1——
+          // 已跟 ≥1 跳即 true；manual 模式不进 hop 保持 false；new Response() ctor
+          // 默认 false）——redirect-method「assert_true(resp.redirected)」面。
+          //   https://fetch.spec.whatwg.org/#dom-response-redirected
+          response.redirected = hopCount > 0;
           if (response && response.__zwSwFetchId) {
             // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
             // 浏览器取消响应体获取（SW 场景反传到 worker stream cancel 回调）。
@@ -5766,6 +6059,20 @@
           }
           return out;
         };
+        // net-api-compat-v3 M1b：重定向落体（POST→GET 改写）后剥离体派生头——
+        // Content-Type/Encoding/Language/Location 描述旧请求体（fetch spec
+        // HTTP-redirect fetch body-null 转移语义；redirect-method strip 断言面）。
+        var _zwStripBodyDerivedHeaders = function(wire) {
+          var parts = wire ? wire.split('\x1e') : [];
+          var out = '';
+          for (var i = 0; i + 1 < parts.length; i += 2) {
+            var ln = String(parts[i]).toLowerCase();
+            if (ln === 'content-length' || ln === 'content-type' || ln === 'content-encoding' ||
+                ln === 'content-language' || ln === 'content-location') continue;
+            out = out ? out + '\x1e' + parts[i] + '\x1e' + parts[i + 1] : parts[i] + '\x1e' + parts[i + 1];
+          }
+          return out;
+        };
         var hopCount = 0;
         var _zwHopOriginOpaque = false; // net-api M4-S23：跨源重定向 → Origin opaque
         // net-api M2-S3b：response tainting "cors" 追踪（fetch spec HTTP fetch——
@@ -5774,18 +6081,97 @@
         // network error 规则②依赖它。
         var _zwRespTaintingCors = mode === 'cors' &&
           _zwUrlOriginLenient(url) !== _zwUrlOriginLenient(_zwCurrentHref());
+        // net-api-compat-v3 M3：链上「曾跨源」追踪（mode 无关）——response tainting
+        // 持久语义（main fetch mode switch 同源臂门在 tainting "basic"，cors/opaque
+        // 置位后递归 re-entry 恒不再回退；redirect-back-to-original-origin
+        // 「original => remote => original」no-cors 期望 opaque / cors 期望 cors 面）。
+        var _zwChainCrossed = _zwRespTaintingCors;
         var settleFetch = function(raw, hopUrl, hopMethod, hopBody, hopWire, currentId) {
           if (settled) return;
+          // http-cache goal M2：handler Err（`__zw_fetch_error:` wire——only-if-cached
+          // 504 语义等）→ fetch spec network error → TypeError reject（fetch promise
+          // 恒不 resolve status-0 伪对象；request-cache 语料 response:"error" 臂
+          // assert_throws_js(TypeError) 判据面）。
+          var _errWireTag = null;
+          if (typeof raw === 'string' && raw.indexOf('__zw_fetch_error:') === 0) {
+            _errWireTag = raw.slice('__zw_fetch_error:'.length);
+          }
+          if (_errWireTag != null) {
+            settled = true;
+            delete globalThis.__zw_pending[currentId || id];
+            reject(new TypeError('Failed to fetch'));
+            return;
+          }
           var response = _makeResponseFromWire(raw);
           var loc = null;
           if (_zwFetchRedirectStatus(response.status) && redirect !== 'manual' &&
               response.headers && typeof response.headers.get === 'function') {
-            loc = response.headers.get('Location');
+            // net-api-compat-v3 M1b：fetch spec HTTP-redirect fetch 顺序对齐——
+            // ① redirect-mode 'error' → network error（先于 Location 解析，Location
+            // 缺席与否无关——redirect-location「error mode with valid location」面）；
+            // ② Location 头存在但空/解析失败 → network error（redirect-empty-location
+            // follow 面）；③ Location scheme 非 HTTP(S) → network error（fetch spec
+            // step——redirect-to-dataurl / redirect-schemes no-cors/same-origin 面，
+            // 此前仅 cors 分支拒绝）。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (redirect === 'error') {
+              settled = true;
+              delete globalThis.__zw_pending[currentId || id];
+              reject(new TypeError('Redirect mode is "error"'));
+              return;
+            }
+            var _locVal = response.headers.get('Location');
+            if (_locVal !== null && _locVal !== undefined) {
+              var _locStr = String(_locVal);
+              if (_locStr.trim() === '') {
+                settled = true;
+                delete globalThis.__zw_pending[currentId || id];
+                reject(new TypeError('Empty redirect Location'));
+                return;
+              }
+              // net-api-compat-v3 M3：Location 字节序列保真——header 值经 ByteString
+              // 逐字节 Latin-1 映射（fixture 侧 wpt_query_value_bytes 对齐），解析时
+              // 0x80..0xFF 字节以 %XX 单字节转义进 URL（非 UTF-8 重编——`new URL`
+              // query 通道会把 U+00E2 等重编为双字节 %C3%A2 mojibake）。whatwg/fetch
+              // #883 tentative 行为（redirect-location-escape 期望面：
+              // \xe2\x98\x83 → %E2%98%83、\xff → %FF、`%\xe2\x98\x83` →
+              // `%%E2%98%83`——`%` 字面保留；ASCII 值逐字符零变化）。
+              //   https://github.com/whatwg/fetch/issues/883
+              var _locEsc = '';
+              for (var _li = 0; _li < _locStr.length; _li++) {
+                var _lc = _locStr.charCodeAt(_li);
+                if (_lc >= 0x80 && _lc <= 0xFF) {
+                  _locEsc += (_lc < 0x10 ? '%0' : '%') + _lc.toString(16).toUpperCase();
+                } else {
+                  _locEsc += _locStr.charAt(_li);
+                }
+              }
+              _locStr = _locEsc;
+              var _locScheme = '';
+              try { _locScheme = new URL(_locStr, hopUrl).protocol.replace(':', ''); } catch (_eLocSch) {}
+              if (_locScheme !== 'http' && _locScheme !== 'https') {
+                settled = true;
+                delete globalThis.__zw_pending[currentId || id];
+                reject(new TypeError('Redirect to non-HTTP URL'));
+                return;
+              }
+              loc = _locStr;
+            }
+          }
+          // net-api-compat-v3 M1b：跳数超限 → network error（fetch spec HTTP-redirect
+          // fetch step——浏览器上限即 network error，不落末跳 302 作 response——
+          // redirect-count max_count=N+1 链「should reject」面）。
+          if (loc && hopCount >= 20) {
+            settled = true;
+            delete globalThis.__zw_pending[currentId || id];
+            reject(new TypeError('Too many redirects'));
+            return;
           }
           if (loc && hopCount < 20) {
             // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
+            // 请求 origin 在先序跳已 opaque → 按 `null` 比对（#cors-check 步骤 4）。
             try {
-              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
+              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, _zwHopOriginOpaque);
             } catch (eHop) {
               settled = true;
               delete globalThis.__zw_pending[id];
@@ -5794,6 +6180,18 @@
             }
             var nextUrl = hopUrl;
             try { nextUrl = new URL(loc, hopUrl).href; } catch (_eHopLoc) {}
+            // http-cache goal M2：fetch spec HTTP-redirect fetch——mode same-origin
+            // 链上跳到跨源 Location → network error（only-if-cached 强制 same-origin，
+            // request-cache-only-if-cached「does not follow redirects across origins
+            // and rejects」判据面：缓存重放的 302 跨源跳零网络触达即断）。
+            // https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (mode === 'same-origin' && nextUrl &&
+                _zwUrlOriginLenient(nextUrl) !== _zwUrlOriginLenient(hopUrl)) {
+              settled = true;
+              delete globalThis.__zw_pending[currentId || id];
+              reject(new TypeError('Failed to fetch'));
+              return;
+            }
             // net-api M2-S3b：fetch spec HTTP-redirect fetch——Location URL 带
             // credentials（username/password 非空）→ 两条 network error 规则：
             // ① mode cors 且 request's origin 与 locationURL origin 不同源；
@@ -5823,11 +6221,71 @@
             }
             var nextMethod = hopMethod;
             var nextBody = hopBody;
-            if (response.status === 303 || ((response.status === 301 || response.status === 302) && hopMethod === 'POST')) {
+            var nextWire = hopHeaders(hopWire);
+            // net-api-compat-v3 M1b：301/302 仅 POST→GET 改写；net-api-compat-v3
+            // M3：303 对**任意非 GET/HEAD**方法改写 GET（fetch spec HTTP-redirect
+            // fetch 方法改写步——303 with TESTING 面；HEAD 不改写）。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if ((response.status === 301 || response.status === 302) && hopMethod === 'POST') {
               nextMethod = 'GET';
               nextBody = null;
+              // 体派生头剥离（Content-Type/Encoding/Language/Location 描述旧体，落体
+              // 后不得随 hop 携带——redirect-method strip 断言面；Content-Length 由
+              // hopHeaders 既有剥离覆盖）。
+              nextWire = _zwStripBodyDerivedHeaders(nextWire);
+            } else if (response.status === 303 && hopMethod !== 'GET' && hopMethod !== 'HEAD') {
+              nextMethod = 'GET';
+              nextBody = null;
+              nextWire = _zwStripBodyDerivedHeaders(nextWire);
             }
-            var nextWire = hopHeaders(hopWire);
+            // net-api-compat-v3 M3：重定向链逐跳 Referer 重算——HTTP-redirect fetch
+            // 每跳经 set request's referrer policy on redirect 读重定向响应
+            // Referrer-Policy 头（非空且为已知 token → **替换**当前策略），再按
+            // determine request's referrer 重算外发值并**替换**线缆 Referer。
+            // referrerSource 取**链式**语义：上一跳实际外发值（Chromium
+            // net::RedirectInfo / Firefox ReferrerInfo 重定向路径的浏览器共识，
+            // wpt.fyi Firefox 162.0.0a1 / Edge 159.0.4378.0 master 对该案面均
+            // 128/128；与 spec 字面「request's referrer 固定文档 URL」不同——
+            // redirect-referrer-override 期望矩阵 omitted-wins / origin-严于-full
+            // 的组合语义（严格者胜）定谳链式：origin-only 源经全 URL 策略重算
+            // 仍 origin-only，空源（上跳未外发）则链上恒不复活）。beacon 通道
+            // 维持 M4-S25 一次性计算行为零回归，不参与重算。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            //   https://w3c.github.io/webappsec-referrer-policy/#set-request-referrer-policy-on-redirect
+            //   https://w3c.github.io/webappsec-referrer-policy/#determine-request's-referrer
+            if (mode === 'cors' && !_zwBeaconPolicy && typeof _refPolicy === 'string') {
+              var _hopRpRaw = response.headers.get('Referrer-Policy');
+              var _hopRpVal = _hopRpRaw == null ? '' : String(_hopRpRaw).toLowerCase();
+              var _hopRpTokens = _hopRpVal.split(',');
+              for (var hti = 0; hti < _hopRpTokens.length; hti++) {
+                var _hopRpTok = _hopRpTokens[hti].trim();
+                if (_hopRpTok === 'no-referrer' || _hopRpTok === 'no-referrer-when-downgrade' ||
+                    _hopRpTok === 'same-origin' || _hopRpTok === 'origin' ||
+                    _hopRpTok === 'origin-when-cross-origin' || _hopRpTok === 'strict-origin' ||
+                    _hopRpTok === 'strict-origin-when-cross-origin' || _hopRpTok === 'unsafe-url') {
+                  _refPolicy = _hopRpTok;
+                }
+              }
+              if (_zwRefOut) {
+                var _hopRefIsDowngrade = String(_zwRefOut).indexOf('https:') === 0 &&
+                  String(nextUrl).indexOf('https:') !== 0;
+                var _hopTgtCross = _zwUrlOrigin(_zwRefOut) !== _zwUrlOrigin(nextUrl);
+                _zwRefOut = _zwReferrerPolicyOut(_refPolicy, _zwRefOut, _hopTgtCross,
+                  _zwUrlOriginLenient(_zwRefOut) + '/', _hopRefIsDowngrade, false);
+                var _hopRefParts = nextWire ? nextWire.split('\x1e') : [];
+                var _hopKeptRef = '';
+                for (var hri = 0; hri + 1 < _hopRefParts.length; hri += 2) {
+                  if (String(_hopRefParts[hri]).toLowerCase() === 'referer') continue;
+                  _hopKeptRef = _hopKeptRef ? _hopKeptRef + '\x1e' + _hopRefParts[hri] + '\x1e' + _hopRefParts[hri + 1]
+                                            : _hopRefParts[hri] + '\x1e' + _hopRefParts[hri + 1];
+                }
+                nextWire = _zwRefOut ? _zwAddHeader(_hopKeptRef, 'Referer', _zwRefOut) : _hopKeptRef;
+              }
+            }
+            // net-api-compat-v3 M3：本跳**跳前**tainting 快照（下方跨源臂会就位改写
+            // _zwRespTaintingCors——同源→跨源跳的 Origin 发射门须用跳前值区分
+            // 「clean 链首次跨」与「已污染链再跨」，见下方 Origin 发射块）。
+            var _zwHopWasTainted = _zwRespTaintingCors;
             // fetch spec：跨源重定向 → Authorization 头丢弃（xhr-authorization-redirect
             // 「cross origin redirection」期望 'none' 面）。
             if (nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
@@ -5835,6 +6293,7 @@
               //（fetch spec HTTP fetch——cors check 通过即置；后续 Location
               // credentials 规则②按链上已跨源判定）。
               if (mode === 'cors') _zwRespTaintingCors = true;
+              _zwChainCrossed = true;
               var dropParts = nextWire ? nextWire.split('\x1e') : [];
               var keptWire = '';
               for (var di = 0; di + 1 < dropParts.length; di += 2) {
@@ -5858,14 +6317,24 @@
               _zwHopOriginOpaque = true;
             }
             var _hopDocOrigin = _zwUrlOrigin(_zwCurrentHref());
-            // cors 跳 Origin 一律归一：跳透明用文档 origin，跳不透明（跨跳
-            // 改写）用 'null'——**不**以 nextUrl 是否等于文档 origin 为门
-            // （跨跳回到文档 origin 的 Location 也要送 'null'，fetch spec
-            // HTTP-redirect fetch 的 opaque origin 规则按键住的是「当前跳
-            // origin ≠ Location origin」，非「Location origin ≠ 文档
-            // origin」；否则 wpt.test:8000 锚下 cors-redirect
-            // 「cors to same origin」面的 null 写不进 wire）。
+            // cors 跳 Origin 发射门（net-api-compat-v3 M3 收敛，矩阵覆盖
+            // cors-redirect 20 行 + redirect-origin 40 行全绿）：
+            // - 跳不透明（_zwHopOriginOpaque 置位——已污染链再跨源，值**sticky**，
+            //   链上恒 'null'——cors-redirect「cors to another cors / cors to same
+            //   origin」、redirect-origin「Other origin to same origin」面；
+            //   upstream Firefox/Edge 对后者红是 crbug.com/1432059 挂账面，本仓
+            //   按 corpus 期望值 'null' 发射）；
+            // - 跳前已污染或本跳跨源（clean 链首次跨）→ 文档 origin
+            //   （cors-redirect「same origin to cors」「cors to same cors」、
+            //   redirect-origin「Same origin to other origin / Other origin to
+            //   other origin」面）；
+            // - clean 同源链同源跳 → **不发射** Origin（redirect-origin
+            //   「Same origin to same origin」GET/POST 全 10 行期望 null——浏览器
+            //   共识：未跨源链的同源跳不带 Origin，fetch spec append-a-request-
+            //   origin-header cors 臂字面（恒 append）与浏览器行为不符，以
+            //   corpus 为准）。
             // https://fetch.spec.whatwg.org/#http-redirect-fetch
+            // https://fetch.spec.whatwg.org/#append-a-request-origin-header
             if (mode === 'cors' && nextUrl && _hopDocOrigin) {
               var oParts = nextWire ? nextWire.split('\x1e') : [];
               var keptO = '';
@@ -5874,9 +6343,18 @@
                 keptO = keptO ? keptO + '\x1e' + oParts[oi] + '\x1e' + oParts[oi + 1]
                               : oParts[oi] + '\x1e' + oParts[oi + 1];
               }
-              nextWire = _zwAddHeader(keptO, 'Origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin);
+              nextWire = (_zwHopOriginOpaque || _zwHopWasTainted ||
+                          _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl))
+                ? _zwAddHeader(keptO, 'Origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin)
+                : keptO;
             }
-            if (nextBody != null) {
+            // net-api-compat-v3 M3：体 null **或空串**（无体 GET/HEAD 跳——初始 body
+            // 变量无体时为 ''，非 null）不加 Content-Length（fetch spec body 传输
+            // 后为 null → HTTP fetch 不 append；浏览器无体 GET 不带 CL——
+            // redirect-method GET/HEAD 全形态「x-request-content-length NO」面）；
+            // POST 空体跳仍带 CL:0（对齐初始请求 M2-S10 POST 缺体补 CL:0 口径）。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (nextBody != null && (nextBody !== '' || nextMethod === 'POST')) {
               var hopLen = 0;
               if (nextBody.indexOf('__zw_bytes:') === 0) {
                 hopLen = nextBody.slice('__zw_bytes:'.length).split(',').length;
@@ -5906,7 +6384,11 @@
               };
               try {
                 var hopSync = __zw_fetch(hopId, nextMethod, nextUrl, nextWire,
-                  nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials);
+                  nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials,
+                  // http-cache goal M2：index 10 client-id 位恒空，index 11 携带
+                  // 主 fetch 的 cache 模式态（重定向链逐跳沿用——only-if-cached
+                  // 同源重定向缓存重放面）。
+                  '', cache);
                 // 同步返回契约（headless webview fetch_handler 直返 wire）——本跳就地结算；
                 // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 settled 防护。
                 if (typeof hopSync === 'string' &&
@@ -5958,7 +6440,7 @@
                 id: rpId,
                 url: nextUrl, method: nextMethod, preHeaders: rpHeaders, preNames: _rpNames,
                 preDocOrigin: rpDocOrigin, opaqueOrigin: _zwHopOriginOpaque,
-                credentials: credentials, mode: mode, redirect: redirect,
+                credentials: credentials, mode: mode, redirect: redirect, cache: cache,
               }).then(function (rp) {
                 if (!rp.ok) {
                   settled = true;
@@ -6028,13 +6510,23 @@
             // wptserve trickle 语法：trickle(d1) / trickle(1)——字母前缀可选。
             // s152：静态 stylesheet 交错扫描窗内折叠（__zwScanCollapseTrickle——
             // part03 _zwStylesheetStaticScanUpto 触发窗置位，同步段结束即清）。
-            // spec 的 script-blocking stylesheet 等待语义由「load 先于后继脚本
-            // 本」承载；runner 无 parser 阻塞，保留 3s 延迟只会把 load 推迟到后
-            // 继脚本断言之后（WPT link-load-fired-before-scripting-unblocked 判
-            // 式面）。fetch API 面 timeout 竞速用例不在扫描窗内，延迟语义零变化。
+            // s349（html-semantics M2 切片 349）：折叠收窄到非 runner 车道——
+            // s152 折叠以「load 先于后继脚本体」近似 script-blocking 等待语义；
+            // runner 车道现由 webview 交错点等待泵真实承载
+            //（__zwScriptBlockingSheetsPending 探测 + __zw_fire_due_timers 泵），
+            // 窗内保留延迟才有阻塞窗（script-text-modifications 500ms 改写窗、
+            // 106/150 sheet 阻断面）；非 runner 车道（reftest/product/单测——
+            // __zw_test_setTimeout 未装）等待泵缺席，保持折叠基线（保留延迟只会
+            // 平移 load 时序——s152 判式面
+            // link-load-fired-before-scripting-unblocked）。fetch API 面 timeout
+            // 竞速用例不在扫描窗内，延迟语义零变化。
             var _tp = /[?&]pipe=trickle\((?:[a-z]+)?(\d+)\)/.exec(_us);
-            if (_tp && globalThis.__zwScanCollapseTrickle !== true) {
-              _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+            if (_tp) {
+              var _ssScanCollapseOnly = globalThis.__zwScanCollapseTrickle === true
+                && typeof globalThis.__zw_test_setTimeout !== 'function';
+              if (!_ssScanCollapseOnly) {
+                _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+              }
             }
           }
         }
@@ -6063,7 +6555,11 @@
             String(globalThis.__zwFetchReferrer || ''),
             mode,
             redirect,
-            credentials
+            credentials,
+            // http-cache goal M2：index 10 恒空（iframe 通道 client-id 载荷位——
+            // R115/S7 调用点占用），index 11 = init.cache 模式态。
+            '',
+            cache
           );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
           // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由
@@ -7105,6 +7601,13 @@
     }
     // fallback：无 host → microtask 同步触发（旧行为）。
     delete globalThis.__zw_pending[id];
+    // s307（animated image 帧推进）：延迟被即时消费时向虚钟记账——真浏览器语义 =
+    // 截图前 timer 等待时长已推进动画时钟（reftest harness 脚本期读 `__zw_anim_clock`
+    // 注入渲染期活跃帧选取；无消费者通道零开销，仅累加一个数）。单次记账上限 60s
+    // 防病态大延迟撑爆虚钟。
+    var _zwDelay = _zwClampDelay(delay | 0);
+    if (typeof globalThis.__zw_anim_clock !== 'number') globalThis.__zw_anim_clock = 0;
+    globalThis.__zw_anim_clock += _zwDelay > 60000 ? 60000 : _zwDelay;
     _defer(fn);
     return handle;
   };
@@ -7388,6 +7891,16 @@
     message: 1, messageerror: 1, offline: 1, online: 1, pagehide: 1, pageshow: 1,
     popstate: 1, rejectionhandled: 1, storage: 1, unhandledrejection: 1, unload: 1,
   };
+  // s288：historical non-element event handler 名（spec HTML webappapis「event handlers
+  // on elements, Document, and Window objects」表无此三名——loadstart/progress/loadend
+  // 的 handler IDL 属性仅存在于 XHR/FileReader 等非 Node 目标，img/body/window 读应为
+  // undefined、写落普通 expando；historical-progress-event.window.js「onloadend is not
+  // exposed」+ img 三 handler unreached 断言面）。_ZW_NON_ELEMENT_ON_MEDIA = media 元素
+  // 豁免子集——HTMLMediaElement 仍有 onloadstart/onprogress IDL（part06 _zwMediaFire
+  // 经 _listenerStore 派发，全排会断 media handler 面）；loadend 无元素持有。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#event-handlers-on-elements,-document,-and-window-objects
+  globalThis._ZW_NON_ELEMENT_ON = { loadstart: 1, progress: 1, loadend: 1 };
+  globalThis._ZW_NON_ELEMENT_ON_MEDIA = { loadstart: 1, progress: 1 };
   // js-dom M4 R113：prefixed animation/transition 事件 handler 的「event handler event type」
   // 映射（spec HTML webappapis「event handlers on elements…」表）——`onwebkitanimationend`
   // 等 handler IDL 名全小写，但其 event type 是 camelCase（webkitAnimationEnd）。on* setter
@@ -7400,6 +7913,17 @@
     webkitanimationend: 'webkitAnimationEnd',
     webkittransitionend: 'webkitTransitionEnd',
   };
+  // svg-compat-v2 B5：SVG 动画事件处理器错位映射（SVG2 animate.html
+  // §SVGAnimationElement——onbegin/onend/onrepeat 的 handler event type 是
+  // beginEvent/endEvent/repeatEvent）。TYPE_TO_BASE 供派发侧：type → 内容
+  // 属性后缀（beginEvent 事件编译 attr `onbegin`）；BASE_TO_TYPE 供
+  // setter/getter：handler 名 → 注册键（el.onbegin=fn 后派发 beginEvent
+  // 触发）。裸 'begin'/'end'/'repeat' 是 BASE_TO_TYPE 键 = 保留事件名：
+  // 派发侧 on* 编译/泛型查找必须跳过（onbegin 内容属性不得被自定义
+  // Event("begin") 误触发——WPT custom-events/event-listeners 定谳面；
+  // onendEvent 等未知名不进表 = 恒无 handler）。
+  globalThis._ZW_SMIL_TYPE_TO_BASE = { beginEvent: 'begin', endEvent: 'end', repeatEvent: 'repeat' };
+  globalThis._ZW_SMIL_BASE_TO_TYPE = { begin: 'beginEvent', end: 'endEvent', repeat: 'repeatEvent' };
   // js-dom R343：标准 → webkit 前缀的**派发侧**别名（compat spec `#css-prefixed-animations`——
   // UA 动画系统产生 animationstart/iteration/end + transitionrun/start/end 事件时，同元素上
   // 对应 webkit 前缀名 listener 也触发；WPT EventListener-invoke-legacy「Legacy listener of X」
@@ -7548,13 +8072,23 @@
             // FIXME(architecture): 写流执行身份盖章断链，若增量解析落地应回归
             // already-started 表判。
             var _anGo117 = true;
+            var _anProxy117 = _makeProxy(sel, handle);
             if (!handle) {
               try {
-                var _anTxt117 = String(_makeProxy(sel, handle).text != null ? _makeProxy(sel, handle).text : '');
+                var _anTxt117 = String(_anProxy117.text != null ? _anProxy117.text : '');
                 if (_anTxt117.trim() !== '') _anGo117 = false;
               } catch (_e109tx117) {}
             }
-            if (_anGo117) _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
+            // s357（html-semantics M2 切片 357）：spec 属性变更步骤 value 非 null
+            // 才 run post-connection steps——摘除（value=null）不触发 prepare。写后
+            // 状态近似：属性已不在场 = 摘除记录，跳过（remove-src-attr-prepare-
+            // a-script 判据面：type='' 后摘 src，旧实现经本臂触发 maybe-start-
+            // dynamic → src 已空落内联分支同步 eval 体 = innerText 旗标臂红）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
+            try {
+              if (!(_anProxy117.hasAttribute && _anProxy117.hasAttribute(_an109))) _anGo117 = false;
+            } catch (_eS357an) {}
+            if (_anGo117) _zwScriptMaybeStartDynamic(_anProxy117);
           }
           // s110：async 内容属性加至 script → force async=false（spec 独立条款——
           // 「When an async attribute is added … set force async to false」，非 prepare
@@ -7708,6 +8242,14 @@
                   }
                 } catch (_e109ss) {}
               } else if (_an109n.nodeType === 1) {
+                if ((_tag109 === 'SELECTEDCONTENT' || _tag109 === 'OPTION')
+                    && typeof _zwScMaybeUpdateFor === 'function') {
+                  // s324（html-semantics M2 切片 324）：sc/option 插入触发
+                  //（selectedcontent post-connection steps / option insertion steps 的
+                  // selectedcontent 更新面——inDoc 门在 helper 内；文档序同步跑，
+                  // 同批 script prepare 夹逼语义见 insertion-removal test2/3）。
+                  try { _zwScMaybeUpdateFor(_an109n); } catch (_e109sc) {}
+                }
                 // s111：detached 子树整体插入的「becomes connected」后代面——spec
                 // insert 步骤遍历**inclusive descendants**（文档序逐 script prepare），
                 // addedNodes 顶层的非 SCRIPT 元素（129 形 div 内 script）须按文档序
@@ -7753,6 +8295,12 @@
                       } catch (_e111ss) {}
                       _walk111(_kdW);
                     } else {
+                      if ((_kdTagW === 'SELECTEDCONTENT' || _kdTagW === 'OPTION')
+                          && typeof _zwScMaybeUpdateFor === 'function') {
+                        // s324：detached 子树整体插入的 sc/option 后代面（同型下降——
+                        // inclusive descendants 文档序，script prepare 夹逼语义不变）。
+                        try { _zwScMaybeUpdateFor(_kdW); } catch (_e111sc) {}
+                      }
                       _walk111(_kdW);
                     }
                   }
@@ -8471,6 +9019,20 @@
         try { obs._schedule(); } catch (_e) {}
       }
     }
+    // s284（html-semantics M2）：lazy deferred 唤醒——script 创建 lazy 图插入后
+    // 无布局 rect（s284 gBCR handle 解析修复前恒零），defer 臂挂冻结请求后须等
+    // 「starts being rendered」渲染机会再验。observers_tick = host 渲染机会
+    // （runner 探针循环与 renderer page_scripts tick 同点），且 `_defer`
+    // microtask 殿后本 checkpoint 的 RO/IO 回调——sizes-auto-resize-observer 页
+    // 的页面 RO 回调先改 sizes，引擎 sweep 再按新值重选源，与 spec 渲染机会
+    // RO 批序一致。旗标门：仅 defer 臂重臂过（rect 不可判且非 display:none）
+    // 才扫，常态 tick 零开销。
+    if (globalThis._zwLazyDeferredAny5277
+        && typeof globalThis.__zwImgSweepDeferredLazy5277 === 'function') {
+      _defer(function() {
+        try { globalThis.__zwImgSweepDeferredLazy5277(); } catch (_e5284ws) {}
+      });
+    }
   };
   // event-loop-spec M3-S2：per-task 模式（renderer kill-switch
   // ZW_RENDERER_TICK_PER_TASK）——无状态游标协议：`tick_once(from)` 从 from 起 schedule
@@ -8902,6 +9464,7 @@
     // 同世界 caret（连续键入流）contains 命中零开销跳过。`_zwSynced`：本轮是否
     // 发生过世界同步回灌（决定一级重锚是否让位，见下）。
     var _zwSynced = false;
+    var _zwSyncCaretLost = false;
     try {
       var _selSync = (typeof _getSelection === 'function') ? _getSelection() : null;
       var _scSync = _selSync && _selSync._ranges && _selSync._ranges[0]
@@ -8916,12 +9479,62 @@
           var _htmlSync = '';
           try { _htmlSync = String(_phSync.innerHTML || ''); } catch (_eSh) {}
           if (_htmlSync !== '') {
+            // 回灌前活锚路径捕获（editing-compat 第十刀 2026-11-07）：锚在自身
+            // 家族视图内存活（document.contains）而宿主 fused 视图滞留旧形态时，
+            // 回灌以锚侧视图重建 el 子树——重建换代会打死该活锚，②随后的
+            // sel+path 重解析在换代子树上落包裹壳边界（faithful 环境
+            // `[值命令,iol,inserttext]` 链 caret (foo,3)→(ol,1)，inserttext 走
+            // 元素臂把 typed 壳挂列表尾，A 簇红源）。回灌前按 (锚→_phSync) 索引
+            // 链捕获 caret 逻辑位，回灌后自 el 同位下行回植——内容幂等重建下
+            // 逻辑位不变。捕获失败（链断/锚离文档）不回植，章程行为不变。
+            var _syncCaret = null;
+            try {
+              var _sc0 = _selSync._ranges[0].startContainer,
+                  _so0 = _selSync._ranges[0].startOffset | 0;
+              if (_sc0 && document.contains && document.contains(_sc0)) {
+                var _pth0 = [], _cur0 = _sc0, _g0 = 0, _ok0 = true;
+                while (_cur0 && _cur0 !== _phSync && _g0++ < 256) {
+                  var _p0 = _cur0.parentNode;
+                  if (!_p0) { _ok0 = false; break; }
+                  var _kids0 = _p0.childNodes || [], _idx0 = -1;
+                  for (var _i0 = 0; _i0 < _kids0.length; _i0++) {
+                    if (_kids0[_i0] === _cur0) { _idx0 = _i0; break; }
+                  }
+                  if (_idx0 < 0) { _ok0 = false; break; }
+                  _pth0.unshift(_idx0);
+                  _cur0 = _p0;
+                }
+                if (_ok0 && _cur0 === _phSync) {
+                  _syncCaret = { path: _pth0, off: _so0,
+                    collapsed: _selSync._ranges[0].collapsed };
+                }
+              }
+            } catch (_eCp) {}
             // 撞车合并仲裁（2026-10-31）：回灌子树归本文 plain 补偿域——world-sync
             // 期间不发 D1 stamping（part04 钩子查 `__zwCeWorldSyncing`；stamp 域
             // 访问器移除面对回灌子树 remove 有缺口，语料 join 后残留 `<br>` 实证）。
             _zwSynced = true;
             globalThis.__zwCeWorldSyncing = true;
             try { el.innerHTML = _htmlSync; } catch (_eSw) {} finally { globalThis.__zwCeWorldSyncing = false; }
+            // 回植（第十刀）：捕获成功的塌缩 caret 自 el 同位下行回植；本轮跳过②
+            //（回植位即回灌前活锚逻辑位，重解析纯损耗）。非塌缩选区不回植（章程
+            // 行为）。回植落点随下行断链放弃（_syncCaret 清空，交②章程域）。
+            if (_syncCaret && _syncCaret.collapsed) {
+              try {
+                var _cR = el;
+                for (var _dR = 0; _dR < _syncCaret.path.length && _cR; _dR++) {
+                  _cR = (_cR.childNodes || [])[_syncCaret.path[_dR]];
+                }
+                if (_cR) {
+                  var _nrR = document.createRange();
+                  _nrR.setStart(_cR, _zwCeClampOffset(_cR, _syncCaret.off));
+                  _nrR.collapse(true);
+                  _selSync._ranges[0] = _nrR;
+                  _syncCaret = null;
+                }
+              } catch (_eCr) {}
+            }
+            if (_syncCaret) _zwSyncCaretLost = true;
           }
         }
       }
@@ -8940,7 +9553,22 @@
         try { s._ranges[0] = r2; } catch (_eCa) {}
         return r2;
       }
-      var rr = _zwCeReresolveCaret(r0);
+      // 活锚让位门（editing-compat 第十刀 2026-11-07）：锚仍存活于本宿主子树
+      // 内时跳过② sel-path 重解析、保留原 range。②章程（D3 注）是 setup/resync
+      // 换代后 detached 旧对象残留的补偿——joins 语料锚已移出宿主 childNodes
+      //（探针 idx=-1），章程案不受影响。锚在宿主内时 `_zwCeCaretAnchorStale`
+      // 的 sel+path 下行经 query wrapper 家族视图解析，身份翻异（落点非原对象）
+      // 是跨族身份 churn 伪阳性：结构命令（iol wrap 等）保身份迁移内容后，活锚
+      // 被误判陈旧并按登记路径重映射到包裹壳边界（multitest faithful 环境
+      // `[值命令,iol,inserttext]` 链 caret 落 (ol,1)，inserttext 走元素边界臂把
+      // typed 壳挂列表尾，A 簇 131 键红源；直调环境同锚 stale=false 零误判）。
+      // 活锚位置即当前 caret 语义位置，重解析无收益纯损耗。
+      var _rrKeep = _zwSyncCaretLost;
+      try {
+        _rrKeep = _rrKeep || !!(el && typeof el.contains === 'function'
+          && r0.startContainer && el.contains(r0.startContainer));
+      } catch (_eKc) {}
+      var rr = _rrKeep ? null : _zwCeReresolveCaret(r0);
       if (rr) { try { s._ranges[0] = rr; } catch (_eD3w) {} }
       return rr || r0;
     }
@@ -8963,16 +9591,215 @@
   // typing-state 簇（2026-10-31）：collapsed format 命令记录的 typing inline 包裹
   //（part06 format 臂设置/切换，Selection 方法经 _zwSync 清除）——插入文本按记录
   // 嵌套包裹（记录序 = 外层在前）。返回 { el: 挂树用根, text: caret 锚文本节点 }。
-  function _zwCeTypingInsert(tags, text) {
+  // F2 link-absorption 消费（2026-11-08 刀）：第三参 f2 = link 上下文
+  //（_zwCeF2LinkContext 产出）。① 通道 A decoration 滤——armed 时 tags 中 u/s
+  // 剔除（underline ≡ link 参照零 delta，multitest :2033-:2052 四案期望全裸；
+  // qS override 读面照设不动，只滤 materialization）；② carry font 内层
+  //（color/face/size delta，part01f __zw_ce_capture_link_carry 产出，语料
+  // :2148/:2158/:1170 形）；③ `<a href>` 最外裹（armed pending link，:1159-:1178
+  // 族期望 typed 段 link 化）。嵌套次序 a > carry-font > tags > text。
+  // F6b（2026-11-08 oracle 定谳档）script×fontsize 打字机具：px 直走表——
+  // host 缺省 16px 基，下行链 font[size=N] 绝对档覆写 + sub/sup 0.83em 缩放
+  //（UA 表与 style-system lib.rs :2288 同源）；桶 = 中点表最近档（part01d
+  // _zwValLegacyBounds 同源 10/13/16/18/24/32/48）。删除位捕获（part01f
+  // __zw_ce_capture_script_carry）与打字位重放（A=本核 f2.f6bBucket 内层臂、
+  // N=__zw_ce_f6b_post_insert 外层臂）共用此表。语料机制：删除位桶 vs
+  // caret 位（script 缩放后）桶——等桶溶解、异桶 font size=N（A 族 armed
+  // 壳内层 / N 族前树壳外层 editorial hoist，oracle 12 案全合）。
+  var _zwF6bSizePx = { 1: 10, 2: 13, 3: 16, 4: 18, 5: 24, 6: 32, 7: 48 };
+  // part01f capture 内层 font[size] 档读取共用（:1307 capture）。
+  globalThis.__zw_f6b_size_px = _zwF6bSizePx;
+  globalThis.__zw_f6b_walk_px = function (node) {
+    var chain = [];
+    var n = (node && node.nodeType === 1) ? node
+      : (node ? node.parentNode : null);
+    var guard = 0;
+    while (n && n.nodeType === 1 && guard++ < 256) {
+      if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(n)) break;
+      chain.push(n);
+      n = n.parentNode;
+    }
+    var px = 16;
+    for (var i = chain.length - 1; i >= 0; i--) {
+      var tn = String(chain[i].tagName || '').toLowerCase();
+      if (tn === 'sub' || tn === 'sup') {
+        px = px * 0.83;
+        continue;
+      }
+      if (tn === 'font' && chain[i].getAttribute
+          && chain[i].getAttribute('size') != null) {
+        var v = parseInt(chain[i].getAttribute('size'), 10);
+        if (!isNaN(v)) {
+          if (v < 1) v = 1;
+          if (v > 7) v = 7;
+          px = _zwF6bSizePx[v];
+        }
+      }
+    }
+    return px;
+  };
+  // 桶 = 7 档最近距离（整档值归本档：bucket_of(16)=3——中点扫描在整档值
+  // 上差一档（16 落桶2），2026-11-08 诊断 fixture D1 实证后改距离式）。
+  globalThis.__zw_f6b_bucket_of = function (px) {
+    var bounds = [10, 13, 16, 18, 24, 32, 48];
+    var best = 1;
+    var bestD = px > bounds[0] ? px - bounds[0] : bounds[0] - px;
+    for (var i = 1; i < 7; i++) {
+      var d = px > bounds[i] ? px - bounds[i] : bounds[i] - px;
+      if (d < bestD) { bestD = d; best = i + 1; }
+    }
+    return best;
+  };
+  function _zwCeTypingInsert(tags, text, f2) {
     var tn = document.createTextNode(text);
     var root = tn;
-    for (var i = tags.length - 1; i >= 0; i--) {
-      var w = document.createElement(String(tags[i]));
+    var eff = Array.isArray(tags) ? tags : [];
+    if (f2 && f2.href && eff.length) {
+      eff = eff.filter(function (t) { return t !== 'u' && t !== 's'; });
+    }
+    // F6b A 通道（armed script tag，2026-11-08 oracle 定谳档）：script carry
+    // 桶落 armed sub/sup 壳**内层**——先裹 text，再被下方 tags 循环包入
+    //（语料 `fo<sub><font size="3">a[]</font></sub>bar` 形；旧版裹 root 于
+    // tags 循环后落壳外，2026-11-09 诊断 D1c 实证）。等桶溶解在消费面门
+    //（_zwCeF6bArmedBucket 等桶返 null 不携——见 :9698）。eff 含 script tag
+    // 才消费（f2 构造面无 tag 判定——四臂共用上下文）。
+    if (f2 && f2.f6bBucket != null
+        && (eff.indexOf('sub') >= 0 || eff.indexOf('sup') >= 0)) {
+      var f6f = document.createElement('font');
+      f6f.setAttribute('size', String(f2.f6bBucket));
+      f6f.appendChild(root);
+      root = f6f;
+    }
+    for (var i = eff.length - 1; i >= 0; i--) {
+      var w = document.createElement(String(eff[i]));
       w.appendChild(root);
       root = w;
     }
+    if (f2 && f2.carry) {
+      var fnt = document.createElement('font');
+      if (f2.carry.color != null) fnt.setAttribute('color', String(f2.carry.color));
+      if (f2.carry.face != null) fnt.setAttribute('face', String(f2.carry.face));
+      if (f2.carry.size != null) fnt.setAttribute('size', String(f2.carry.size));
+      fnt.appendChild(root);
+      root = fnt;
+    }
+    if (f2 && f2.href) {
+      var la = document.createElement('a');
+      la.setAttribute('href', String(f2.href));
+      la.appendChild(root);
+      root = la;
+    }
     return { el: root, text: tn };
   }
+  // F2 link 上下文解析（变异核单点）：href 槽仅 armed（`__zwTypingLink`）时
+  // 有效——物理 link 内键入不重裹 `<a>`（typed 段自然入链）；carry 消费须
+  // link 上下文（armed 或 sc 祖先链物理 `<a>`）——异位残留 carry（如删链后
+  // _zwSync 未触的变异核内移动）不消费。
+  function _zwCeF2LinkContext(sc, el) {
+    var href = globalThis.__zwTypingLink;
+    var out = {
+      href: (href != null && href !== '') ? String(href) : null,
+      carry: null
+    };
+    var carry = globalThis.__zwTypingLinkCarry;
+    if (!carry) return out;
+    var inLink = out.href != null;
+    var n = sc;
+    var guard = 0;
+    while (!inLink && n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1 && String(n.tagName || '').toLowerCase() === 'a') {
+        inLink = true;
+      }
+      n = n.parentNode;
+    }
+    if (inLink) out.carry = carry;
+    return out;
+  }
+  // F6b A 通道 f2 携带（2026-11-08 oracle 定谳档，2026-11-09 inner 旗标收
+  // 敛）：armed script tag 时比较删除位 carry 桶 vs caret 位缩放桶——caret
+  // 位按 armed 壳内层落位加乘 0.83（插入后文本居 armed sub/sup 内，UA 缩
+  // 放生效面）；等桶溶解不携（unified rule），异桶携桶供 _zwCeTypingInsert
+  // 内层 font 臂消费。carry.inner 旗标（capture armed-only 无内层 font 形）
+  // 独占此臂——N 通道 carry（inScript 形）恒返 null 走 post-insert 外层臂
+  //（N2 内壳 hoist 不得被内层臂截胡：D5 实证 caret 落壳内时 eff 滤 tag，
+  // 内层臂 eff 检查本就失活，旗标使路由显式）。前树形（无 armed tag）不
+  // 在此臂——mutate 核 post-insert 外层臂管（N 通道）。
+  function _zwCeF6bArmedBucket(sc) {
+    var carry = globalThis.__zwTypingScriptCarry;
+    if (!carry || carry.bucket == null || !carry.inner) return null;
+    if (typeof globalThis.__zw_f6b_walk_px !== 'function'
+        || typeof globalThis.__zw_f6b_bucket_of !== 'function') return null;
+    var at = globalThis.__zwTypingTags;
+    if (!Array.isArray(at)) return null;
+    var scriptArmed = false;
+    for (var i = 0; i < at.length; i++) {
+      if (at[i] === 'sub' || at[i] === 'sup') { scriptArmed = true; break; }
+    }
+    if (!scriptArmed) return null;
+    var cpx = globalThis.__zw_f6b_walk_px(sc) * 0.83;
+    if (globalThis.__zw_f6b_bucket_of(cpx) === carry.bucket) return null;
+    return carry.bucket;
+  }
+  // F6b N 通道（前树幸存 script 壳形，2026-11-08 oracle 定谳档）mutate 核
+  // post-insert 外层臂：caret 落 DOM sub/sup 壳内且 carry 在账（armed tag
+  // 形已在 _zwCeTypingInsert 内层臂消费，此处让位）。两步——
+  // ① 剥离 script 壳至宿主间幸存 font[size] 壳（:2178/:2398 期望 size 重
+  //   映射、:2188/:2408 等桶溶解——幸存原壳恒消，由 carry 重放重建）；
+  // ② carry 桶 vs caret 位缩放桶（walk_px 见剥离后新树）：异桶 font
+  //   size=N 包 script 壳外（editorial hoist——:2178 size="1"、:2183
+  //   size="3" 形），等桶不包（:2173/:2393 引擎绿溶解形零扰动）。
+  globalThis.__zw_ce_f6b_post_insert = function (node) {
+    try {
+      var carry = globalThis.__zwTypingScriptCarry;
+      if (!carry || carry.bucket == null) return;
+      if (carry.inner) return; // A 通道已在内层臂消费，此处让位（不剥外层）
+      if (typeof globalThis.__zw_f6b_walk_px !== 'function'
+          || typeof globalThis.__zw_f6b_bucket_of !== 'function') return;
+      var scriptEl = null;
+      var n = node && node.parentNode;
+      var guard = 0;
+      while (n && n.nodeType === 1 && guard++ < 256) {
+        var tn = String(n.tagName || '').toLowerCase();
+        if (tn === 'sub' || tn === 'sup') { scriptEl = n; break; }
+        if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(n)) return;
+        n = n.parentNode;
+      }
+      if (!scriptEl) return;
+      // ① 剥离外层幸存 font[size] 壳（unwrap 直迁子节点，原位保序）。
+      var anc = scriptEl.parentNode;
+      var sGuard = 0;
+      while (anc && anc.nodeType === 1 && sGuard++ < 32
+             && !(typeof _zwJusIsEditingHost === 'function'
+                  && _zwJusIsEditingHost(anc))) {
+        var next = anc.parentNode;
+        if (String(anc.tagName || '').toLowerCase() === 'font' && anc.getAttribute
+            && anc.getAttribute('size') != null) {
+          var kids = [];
+          for (var k = anc.firstChild; k; k = k.nextSibling) kids.push(k);
+          for (var ki = 0; ki < kids.length; ki++) {
+            try { anc.parentNode.insertBefore(kids[ki], anc); } catch (_eUw) { break; }
+          }
+          try { anc.parentNode.removeChild(anc); } catch (_eRm) {}
+        }
+        anc = next;
+      }
+      // ② 异桶重放（等桶溶解=不动作）。
+      var cb = globalThis.__zw_f6b_bucket_of(globalThis.__zw_f6b_walk_px(node));
+      if (cb === carry.bucket) return;
+      var fontEl = document.createElement('font');
+      fontEl.setAttribute('size', String(carry.bucket));
+      var sp = scriptEl.parentNode;
+      if (!sp) return;
+      sp.insertBefore(fontEl, scriptEl);
+      // 显式摘除后头插（shim appendChild 隐式 detach 缺口先例——zz-probe-d4x
+      // X4、F1'-B 前向并入同法）：mt 顺序执行面 typed 文本为 caret 锚节点时
+      // script 壳移动不脱旧亲链，元素双亲被 innerHTML 序列化两次＝N 族
+      // :2178/:2183/:2398/:2403 重复尾根因（2026-11-09 side-band trace 定谳
+      // POST-in 单壳树 → POST-out 双壳树）。
+      if (scriptEl.parentNode) scriptEl.parentNode.removeChild(scriptEl);
+      fontEl.appendChild(scriptEl);
+    } catch (_eF6bPi) {}
+  };
   // TypingStyle 轮（2026-11-02 editing-compat）：delete 幸存壳链捕获的 typing
   // 态（part01f __zw_ce_capture_typing_chain）含 caret 仍居其中的壳层——该层
   // 由 DOM 祖先自然承接，重复包裹会产出 `<b><i><b>d</b></i></b>` 双裹形
@@ -8997,6 +9824,145 @@
     }
     if (!have) return tags;
     return tags.filter(function (t) { return have.indexOf(t) < 0; });
+  }
+  // F6a（2026-11-09 editing-compat）：inserttext 位 caret 祖先链 font[color]
+  // hex 大小写归一。幸存壳层由 DOM 祖先自然承接（TypingStyle 轮 _zwCeTypingTagsAt
+  // 同款链走——typed 文本落进 delete 幸存的原壳，attr 原样直传），Chrome 录音
+  // 期望形为小写 canonical hex（multitest :2128/:2348 期望 color="#0000ff"、
+  //  直传 #0000FF 失配＝F6a 残红 2 键全貌）。仅 case-fold 纯 hex 值（# + hex
+  //  字符）：命名色壳在语料中恒溶解无幸存录音形（blue :2143、brown :2153），
+  //  不做语义转换；face/size、F2 link carry（capture_link_carry 已 parseSimpleColor
+  //  归一）、F6b script 溶解重放三路径零交叉。execCommand 草案未定义本归一，
+  //  权威＝Chrome 录音语料形（DC-4 语料形对齐）。
+  function _zwCeNormalizeHexColorShells(sc, el) {
+    var n = sc;
+    var guard = 0;
+    while (n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1 && n.getAttribute
+          && String(n.tagName || '').toLowerCase() === 'font') {
+        var c = n.getAttribute('color');
+        if (typeof c === 'string' && c.charAt(0) === '#'
+            && /^[#][0-9a-fA-F]+$/.test(c) && c !== c.toLowerCase()) {
+          n.setAttribute('color', c.toLowerCase());
+        }
+      }
+      n = n.parentNode;
+    }
+  }
+  // F1' restyle（2026-11-09 editing-compat ⑧' 刀）：caret 居 armed 值壳内元素
+  // 位（zz-probe-f1dbg D2 实证 caret_range → (font@0)，非 host 级提升）的原位
+  // restyle。fontsize collapsed armed 后 insertText，caret 容器本身即 font[size]
+  // 壳、offset 0、壳内容仅单 br/空时，Chrome TypingStyle 复用既有壳原地改档
+  // （multitest :9780/:19877 期望 assert_in_array 首形 `<font size="4">a<br>
+  // </font>` 录音——壳复用原位 size 7→4，br 留壳内）；我方壳内裸插后值
+  // override 重放走异桶壳外重放（F6bN C/N 族先例语义），新壳旁落于幸存壳外
+  // 致两壳分裂（got `<font size="4">a</font><font size="7"><br></font>`＝
+  // lane9 残键全貌）。修法＝restyle 后 typed 段裸插壳内：重放等值门读
+  // font[size] 指定形（kwMap 档 'large'）≡ override 档零再裹，异桶重放径
+  // 自然不触。内容门（保守设计——含文壳 Chrome 走 split 语义，语料无此形不入
+  // 本臂；census 素材补注：fontsize 42 键 fixture 全裸 foo[]bar 零 font[size]
+  // 壳配对）：offset 0 ∧ 壳子恰空或单 br。armed 冲突门：override 经读侧同款
+  // 归一档（记录侧存 keyword 形——__zw_ce_value_apply fontsize 臂 normalize
+  // 后以 'large' 进流程、塌缩无 contained 臂 _zwVaSetValueOverride 直存；
+  // part01d _zwVaLegacyValueOf 归一 keyword/数字/px 三形）≠ 壳 size 纯数字档
+  // ——相对 +n/-n 形不入（parseInt("+1")=1 折档误判冲突，part01d
+  // specifiedValue 相对臂同坑先例）；同值面 replay 等值门本就零裹不入臂。
+  // 壳内 br 无 __zwPlaceholderBr 标记不被插入后占位消费扫描摘除（:10298 只认
+  // 标记）＝期望首形 br 留壳内。
+  function _zwCeF1RestyleShell(sc, so, ovSnap, ins) {
+    if (so !== 0) return null;
+    if (!ovSnap || ovSnap.fontsize == null) return null;
+    var ov = String(ovSnap.fontsize);
+    if (!/^[1-7]$/.test(ov)) {
+      if (typeof _zwVaLegacyValueOf !== 'function') return null;
+      var ovL = _zwVaLegacyValueOf(ov);
+      if (ovL == null || !/^[1-7]$/.test(String(ovL))) return null;
+      ov = String(ovL);
+    }
+    var sh = sc;
+    if (!sh || sh.nodeType !== 1
+        || String(sh.tagName || '').toLowerCase() !== 'font') return null;
+    if (!sh.hasAttribute || !sh.hasAttribute('size')) return null;
+    var sizeRaw = String(sh.getAttribute('size'));
+    if (!/^[0-9]+$/.test(sizeRaw)) return null;
+    var sm = parseInt(sizeRaw, 10);
+    if (isNaN(sm) || sm === parseInt(ov, 10)) return null;
+    var k2 = sh.childNodes || [];
+    if (k2.length > 1) return null;
+    if (k2.length === 1) {
+      var c1 = k2[0];
+      if (c1.nodeType !== 1
+          || String(c1.tagName || '').toLowerCase() !== 'br') return null;
+    }
+    sh.setAttribute('size', ov);
+    var tn = document.createTextNode(ins);
+    sh.insertBefore(tn, k2.length ? k2[0] : null);
+    return tn;
+  }
+  // F1'-B（2026-11-08 editing-compat）[2]：swcss(true) typing 样式并壳——Chrome
+  // CSS 模式 typing 不产 tag 壳，armed tag 折算 CSS 属性并入 caret 祖先链 span
+  // 的 style attr（multitest `<span style=font-weight:bold>{}<br></span>`+
+  // stylewithcss(true)+italic+inserttext 期望 `<span style="font-weight:bold;
+  // font-style:italic">a</span>` 录音实证）。链上首 span 的 style 已含同名
+  // 属性 → 冲突不并（fallback 既有 tag 壳径，FIXME: 嵌套 span 壳形未接）。
+  // 返回 { sp: 承接 span, add: [prop:value] } 或 null。
+  var _zwCeSwcssTypingProps = {
+    b: 'font-weight:bold',
+    i: 'font-style:italic',
+    u: 'text-decoration:underline',
+    s: 'text-decoration:line-through'
+  };
+  function _zwCeSwcssAbsorbSpan(sc, el) {
+    if (globalThis.__zwStyleWithCSS !== true) return null;
+    var tags = globalThis.__zwTypingTags;
+    if (!Array.isArray(tags) || !tags.length) return null;
+    var add = [];
+    for (var i = 0; i < tags.length; i++) {
+      var p = _zwCeSwcssTypingProps[String(tags[i])];
+      if (p) add.push(p);
+    }
+    if (!add.length) return null;
+    var n = sc;
+    var guard = 0;
+    while (n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1 && String(n.tagName || '').toLowerCase() === 'span') {
+        var raw = '';
+        try { raw = String(n.getAttribute('style') || ''); } catch (_eSa) {}
+        var decls = raw.toLowerCase().split(';');
+        for (var j = 0; j < add.length; j++) {
+          var pn = add[j].split(':')[0];
+          for (var q = 0; q < decls.length; q++) {
+            if (String(decls[q]).split(':')[0].replace(/^\s+|\s+$/g, '') === pn) {
+              return null; // 同名属性已存在（冲突或冗余）→ 不并壳
+            }
+          }
+        }
+        return { sp: n, add: add };
+      }
+      n = n.parentNode;
+    }
+    return null;
+  }
+  // F1'-B（2026-11-08 editing-compat）[21]：typing 壳前向并入——typed 壳与
+  // 紧随其后的同 tag 壳合并（`a[]<b>c</b>`+bold+italic+inserttext 期望
+  // `a<b><i>b</i>c</b>` 录音实证：typed `<b><i>b</i></b>` 头插进既有 `<b>c</b>`；
+  // 反例 `a[]<i>c</i>` 期望不并——外层 tag 不同即不并）。link 上下文（f2Wrap）
+  // 不并（F2 面独立吸收机制）；b/i/u/s 装饰族之外（sub/sup 等）不并（F6b 域）。
+  function _zwCeTypingForwardMerge(twEl, hasF2) {
+    if (!twEl || hasF2 || twEl.nodeType !== 1) return;
+    var tag = String(twEl.tagName || '').toLowerCase();
+    if ('b i u s'.split(' ').indexOf(tag) < 0) return;
+    var nx = twEl.nextSibling;
+    if (!nx || nx.nodeType !== 1
+        || String(nx.tagName || '').toLowerCase() !== tag) return;
+    // 显式摘除后头插（shim appendChild/insertBefore 隐式 detach 缺口先例
+    // ——zz-probe-d4x X4，DocumentFragment 无移动语义；元素侧同法保守）。
+    while (twEl.firstChild) {
+      var mvSw = twEl.firstChild;
+      if (mvSw.parentNode) mvSw.parentNode.removeChild(mvSw);
+      nx.insertBefore(mvSw, nx.firstChild);
+    }
+    if (twEl.parentNode) twEl.parentNode.removeChild(twEl);
   }
   // 变异核导出（editing-compat inserttext 簇 2026-11-01）：R3254-M2 branch3
   // execCommand 分支（part06 inserttext 臂）与键盘 __zw_ce_insert 共用。事件序
@@ -9023,6 +9989,26 @@
     }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
+    // F6a：caret 链幸存 font[color] hex 归一（typed 落壳前，见上方函数注）。
+    if (typeof _zwCeNormalizeHexColorShells === 'function') {
+      _zwCeNormalizeHexColorShells(sc, el);
+    }
+    // F2 link 上下文（armed pending / carry 消费资格）——变异核单点解析，
+    // 四臂共用（_zwCeTypingInsert 第三参）。
+    var f2 = _zwCeF2LinkContext(sc, el);
+    // F6b A 通道桶（armed script tag 异桶判定后携带——_zwCeF6bArmedBucket
+    // 内含等桶溶解门；前树形返 null 走 post-insert 外层臂）。
+    var f6bBucket = _zwCeF6bArmedBucket(sc);
+    if (f6bBucket != null) f2.f6bBucket = f6bBucket;
+    var f2Wrap = !!(f2 && (f2.href || f2.carry));
+    // F1'-B swcss 并壳承接（变异前决策——sole-child 占位 br 快照挂此刻）。
+    var swAbs = _zwCeSwcssAbsorbSpan(sc, el);
+    var swBr = null;
+    if (swAbs && swAbs.sp.childNodes && swAbs.sp.childNodes.length === 1) {
+      var fcSw = swAbs.sp.childNodes[0];
+      if (fcSw && fcSw.nodeType === 1
+          && String(fcSw.tagName || '').toLowerCase() === 'br') swBr = fcSw;
+    }
     if (sc && (sc.nodeType === 3 || sc.__zwIsText)) {
       // 文本节点 splice（UTF-16 单元；选区非空先删区间）。
       var v = String(sc.nodeValue || '');
@@ -9039,7 +10025,7 @@
       // —— separator br 与 typed 段同壳合并 + 末占位 br 重挂 off 壳）。
       var offSplit = null;
       var toff0 = globalThis.__zwTypingTagsOff;
-      if (range.collapsed && Array.isArray(toff0) && toff0.length) {
+      if (range.collapsed && Array.isArray(toff0) && toff0.length && !swAbs) {
         var nOff = sc.parentNode;
         var guardOff = 0;
         while (nOff && nOff !== el && guardOff++ < 256) {
@@ -9097,10 +10083,40 @@
           }
           for (var ci = chain.length - 1; ci >= 0; ci--) innerTags.push(chain[ci]);
         })(sc);
-        var twD = innerTags.length ? _zwCeTypingInsert(innerTags, ins) : null;
+        // F1'-B（2026-11-08）：显式 typing 态并入——本臂原只按幸存壳链重包裹，
+        // 显式 toggle-on 命令被丢（`<b>a[]</b>c`+bold-off+italic-on 期望
+        // `<b>a</b><i>b</i>c` 录音 :584/:585 实证，got 裸文本）；off 拆出后
+        // typed 段仍需武装 tags（幸存链已含的 tag 去重，序 = 链壳外→内、
+        // 显式 tags 垫内层）。
+        var ttEx = globalThis.__zwTypingTags;
+        if (Array.isArray(ttEx)) {
+          for (var txi = 0; txi < ttEx.length; txi++) {
+            var txTag = String(ttEx[txi]);
+            if (txTag && innerTags.indexOf(txTag) < 0) innerTags.push(txTag);
+          }
+        }
+        var twD = (innerTags.length || f2Wrap)
+          ? _zwCeTypingInsert(innerTags, ins, f2) : null;
         var dEl = twD ? twD.el : document.createTextNode(ins);
         var dText = twD ? twD.text : dEl;
-        offSplit.parentNode.insertBefore(dEl, offSplit.nextSibling || null);
+        // 文本后继改锚插入（F1'-B 判读定谳 2026-11-08）：offSplit.nextSibling 为
+        // 解析文本节点时，insertBefore(handle 元素 × 文本 ref) 落入 part04 sel 域
+        // wire 死区——D3 臂 refNode.nodeType===1 门、R265 族 handle 父门全 miss，
+        // 探针 dbg kids 实证静默丢弃（`<b>a[]</b>c` got `<b>a</b>c`，typed 段
+        // 无踪）。语料 :584/:585 形（文本后继居尾）：显式摘除文本（隐式 detach
+        // 缺口同 zz-probe-d4x X4 教训）→ dEl 改锚 append（refNode null 分支）→
+        // 文本以 dEl 为 ref 经 R5058 text wire 回填（dEl 为末元素时 beforeend
+        // 兜底 = 正确位序）。FIXME: 文本后继尚有元素兄弟的位序保持未接（R5058
+        // beforeend 兜底落尾；语料普查无此形）。
+        var postInsT = null;
+        var nsD = offSplit.nextSibling;
+        if (nsD && nsD.nodeType === 3) {
+          postInsT = String(nsD.nodeValue || '');
+          if (nsD.parentNode) nsD.parentNode.removeChild(nsD);
+          offSplit.parentNode.insertBefore(dEl, null);
+        } else {
+          offSplit.parentNode.insertBefore(dEl, nsD || null);
+        }
         var tailHasText = false;
         if (tailSeq) (function _zwD4Scan(x) {
           for (var c = x.firstChild; c; c = c.nextSibling) {
@@ -9146,17 +10162,24 @@
             }
           }
         }
+        if (postInsT) {
+          offSplit.parentNode.insertBefore(document.createTextNode(postInsT), dEl.nextSibling || null);
+        }
         node = dText;
         caretOff = ins.length;
-      } else if (ttags1 && ttags1.length) {
+      } else if ((ttags1 && ttags1.length && !swAbs) || f2Wrap) {
         // typing 包裹（wss/ilb temporary inline style 组）：头段留原节点，插入段
-        // 成 inline 包裹元素，尾段成新文本节点。
+        // 成 inline 包裹元素，尾段成新文本节点。F2：armed/carry 时裸 splice 臂
+        // 禁入（原地把字粘进宿主文本节点，pending link 无从包裹）——同分流到
+        // 三段包裹形（:1159-:1178 族期望 `foo<a…>a</a>bar`）。
         sc.nodeValue = v.slice(0, so);
-        var tw1 = _zwCeTypingInsert(ttags1, ins);
+        var tw1 = _zwCeTypingInsert(ttags1, ins, f2);
         var tp1 = sc.parentNode || el;
         tp1.insertBefore(tw1.el, sc.nextSibling || null);
         var tv1 = v.slice(eo);
         if (tv1) tp1.insertBefore(document.createTextNode(tv1), tw1.el.nextSibling || null);
+        // F1'-B [21]：同 tag 前向并壳（尾段空才并——尾段非空时并壳会错位残段）。
+        if (!tv1) _zwCeTypingForwardMerge(tw1.el, f2Wrap);
         node = tw1.text;
         caretOff = ins.length;
       } else {
@@ -9241,16 +10264,27 @@
         var v2 = String(target.nodeValue || '');
         var at = (kids[idx] === target) ? 0 : v2.length; // offset 子即文本 → 插其头；前一个子 → 插其尾
         var ttags2 = _zwCeTypingTagsAt(sc, el);
-        if (ttags2 && ttags2.length) {
+        if ((ttags2 && ttags2.length && !swAbs) || f2Wrap) {
           target.nodeValue = v2.slice(0, at);
-          var tw2 = _zwCeTypingInsert(ttags2, ins);
+          var tw2 = _zwCeTypingInsert(ttags2, ins, f2);
           target.parentNode.insertBefore(tw2.el, target.nextSibling || null);
           var tv2 = v2.slice(at);
           if (tv2) target.parentNode.insertBefore(document.createTextNode(tv2), tw2.el.nextSibling || null);
+          if (!tv2) _zwCeTypingForwardMerge(tw2.el, f2Wrap);
           node = tw2.text;
         } else {
-          target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
-          node = target;
+          // F1' shell carry consume（2026-11-09 ④ 刀）：at===0（caret 在文本
+          // 头、左邻可为元素壳）时 typed 段可并入左边界壳链 carry（命中即
+          // 插 innermost 壳尾并清账）；at>0（前子文本内 splice）不消费
+          // （splice 自延壳内文本，消费即双插）。
+          var car2 = (at === 0 && typeof globalThis.__zw_ce_shell_carry_consume === 'function')
+            ? globalThis.__zw_ce_shell_carry_consume(sc, idx, ins) : null;
+          if (car2) {
+            node = car2; // caretOff 走下方共享 at+ins.length（at===0 同值）
+          } else {
+            target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
+            node = target;
+          }
         }
         caretOff = at + ins.length;
       } else {
@@ -9259,13 +10293,34 @@
         //（insertlinebreak-wss 现有 inline 样式组 nowrap 变体：`<b>abc<br>[]<br>`
         // 位插 'def' → got `<b>abc<br><br>def</b>`，期望 `abc<br>def<br>` 形）。
         var ttags3 = _zwCeTypingTagsAt(sc, el);
-        if (ttags3 && ttags3.length) {
-          var tw3 = _zwCeTypingInsert(ttags3, ins);
+        if ((ttags3 && ttags3.length && !swAbs) || f2Wrap) {
+          var tw3 = _zwCeTypingInsert(ttags3, ins, f2);
           sc.insertBefore(tw3.el, kids[idx] || null);
+          _zwCeTypingForwardMerge(tw3.el, f2Wrap);
           node = tw3.text;
         } else {
-          node = document.createTextNode(ins);
-          sc.insertBefore(node, kids[idx] || null);
+          // F1' shell carry consume（2026-11-09 ④ 刀）：元素位 caret 裸插面
+          // ——壳链 carry 命中（左边界链逐节点同一）时 typed 段并入 innermost
+          // 壳尾（`fooA` extend-in-place 形，插入由 consume 内部完成），
+          // consume 即清；未命中走原裸插（残形维持现状，零回退面）。
+          var car3 = (typeof globalThis.__zw_ce_shell_carry_consume === 'function')
+            ? globalThis.__zw_ce_shell_carry_consume(sc, idx, ins) : null;
+          if (car3) {
+            node = car3;
+          } else {
+            // F1' restyle（⑧' 刀）：armed 值壳冲突原位 restyle 臂（见
+            // _zwCeF1RestyleShell 注；caret 居壳内时 sc 即壳本体，命中即
+            // typed 段入壳首，未命中走原裸插零回退面）。swcss(true) 面
+            // CSS 模式语义不入本臂。
+            var rst3 = (!swAbs && typeof _zwCeF1RestyleShell === 'function')
+              ? _zwCeF1RestyleShell(sc, so, insOvSnap, ins) : null;
+            if (rst3) {
+              node = rst3;
+            } else {
+              node = document.createTextNode(ins);
+              sc.insertBefore(node, kids[idx] || null);
+            }
+          }
         }
         caretOff = ins.length;
       }
@@ -9274,6 +10329,21 @@
       return { ok: false, text: null }; // 非 text/element caret 容器（document 级等）——best-effort 不做
     }
     if (!node) return { ok: false, text: null }; // void 臂 detached 形（无父 void）best-effort 不做
+    // F1'-B swcss 并壳落笔（[2]）：armed 折算属性并入承接 span style attr
+    //（原串保留 verbatim + `; ` 分隔追加——Chrome CSSOM 序列化形，part01d
+    // _zwVa 合并序列化先例）；span 入插前仅含占位 br → typed 段就位后消费
+    //（语料 :2847 期望 `a</span>` 无 br）。
+    if (swAbs) {
+      try {
+        var rawSw = String(swAbs.sp.getAttribute('style') || '');
+        var nextSw = rawSw;
+        for (var si = 0; si < swAbs.add.length; si++) {
+          nextSw = nextSw ? nextSw + '; ' + swAbs.add[si] : swAbs.add[si];
+        }
+        swAbs.sp.setAttribute('style', nextSw);
+        if (swBr && swBr.parentNode) swBr.parentNode.removeChild(swBr);
+      } catch (_eSwAp) {}
+    }
     // 插入消费拆分占位 br（wss block 形：新块/inline 壳的占位断在内容进场后
     // 移除——期望 `abc<div><i>def</i></div>` 形，带标 br 见拆分 ① 臂与 ②b
     // inline 盒臂）。**不门 typing state**（preserving 组无 format 前置同样
@@ -9301,6 +10371,14 @@
     nr.setStart(node, caretOff);
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    // F6b N 通道（2026-11-08 oracle 定谳档）：前树幸存 script 壳外层臂——
+    // 剥离外层 font[size] 壳 + carry 桶异同重放（函数体见
+    // __zw_ce_f6b_post_insert；armed 形已在 _zwCeTypingInsert 内层臂消费，
+    // 此处 armed 让位）。置于值 override 重放前（F6b 与五值命令语料键零交，
+    // 序不敏感；剥离先行保 walk_px 见净树）。
+    if (node && typeof globalThis.__zw_ce_f6b_post_insert === 'function') {
+      try { globalThis.__zw_ce_f6b_post_insert(node); } catch (_eF6bHook) {}
+    }
     // 值 override 重放（快照在核头）：覆盖插入段重放，就地 splice 的整节点
     // 过裹由重放入口临时 range + setSelectionValue 边界 splitText 消化（只裹
     // 插入段）；caret 随后塌到插入段尾（vendored 尾部 collapseToEnd 面）。
@@ -10150,6 +11228,24 @@
     var nr3 = document.createRange();
     nr3.setStart(boundaryParent, idx3 + 1);
     nr3.collapse(true);
+    // 断点后 caret 下游归一（F4 ilb 轮，2026-11-09；Blink VisiblePosition
+    // AfterNode(br) deep-equivalent 形）：断点后首子为元素时沿 inline 链下钻
+    // 首文本位——随后 typing 落壳内（mt 530/546 族录音 `<b><i>def</i></b>`
+    // 形；裸位 caret 使 typed 段裸落壳外 got `de<b><i>f</i></b>`）。块界不
+    // 下钻；文本首子/断器（含第二断器 br）位保持原 caret（现行为零扰动）。
+    if ((boundaryParent.childNodes || [])[idx3 + 1]
+        && boundaryParent.childNodes[idx3 + 1].nodeType === 1) {
+      var drT = null;
+      (function _drill(n, d) {
+        if (!n || d > 16 || drT) return;
+        if (n.nodeType === 3) { drT = n; return; }
+        if (n.nodeType !== 1) return;
+        if (_zwCeIsBlockTagName(String(n.tagName || '').toLowerCase())) return;
+        var ks = n.childNodes || [];
+        for (var di = 0; di < ks.length; di++) _drill(ks[di], d + 1);
+      })(boundaryParent.childNodes[idx3 + 1], 0);
+      if (drT) { nr3.setStart(drT, 0); nr3.collapse(true); }
+    }
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr3]; }
     return true;
   }
@@ -10182,16 +11278,82 @@
     } else {
       boundaryParent = sc.parentNode; boundaryNode = sc;
     }
+    // ③ 块 caret 归一补臂（F4 ilb 轮，2026-11-09）：行断面块元素 caret
+    //（deleteSelection 落位 `(div, k)` 形——mt 536/548/556 族）行断位在块内
+    // offset 处：br 插块内子 offset 位。元素臂 (父, sc) 上爬对 inline caret
+    // 是 void 语料形，对块 caret 则把 br 推出宿主直子块（got `<br>de<div>…`
+    // 逃逸形）。仅 lineBreakOnly 臂重映射（⓪/①/② ip 臂 boundary 语义不动
+    // ——⓪ gate 读 boundaryNode、① gate 读 boundaryParent === host）。
+    if (lineBreakOnly && !isText && sc !== host
+        && _zwCeIsBlockTagName(String(sc.tagName || '').toLowerCase())) {
+      boundaryParent = sc;
+      boundaryNode = (sc.childNodes || [])[so] || null;
+      boundaryOff = so;
+    }
     var hostTag = String(host.tagName || '').toLowerCase();
     var dispHost = _zwCeDisplayOf(host);
-    var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // separator 缺省双面制（第十一刀，2026-11-07；① 臂 host-copy 修正见下
+    // DC-4 刀注）：产线块面（②b sep2b、part01e list retag、part01f
+    // ipara_apply）未设置态取 'p'——multitest ip 链
+    // rich 组 foo[]bar × 12 + B 簇同形 12 的 ambient insertParagraph 期望 `<p>`
+    // 分块（628 案零显式 defaultparagraphseparator 命令、bootstrap 仅
+    // styleWithCSS）。值面（part06 queryCommandValue）未设置态保持 'div'：
+    // per-command 语料各文件首案 separator qV before 值断言 "div"（后续案
+    // before=上一案 after 顺序泄漏链）。spec 分层：HTML spec 的
+    // defaultParagraphSeparator IDL 已移除（interaction §6.8.4 仅指
+    // [EXECCOMMAND]）；execCommand spec（w3c.github.io/editing/docs/execCommand/）
+    // 2016-08 起 default single-line container name "must initially be div"——
+    // 值面与之一致；rich 组 p 形属演进前录音（styled 组 div 期望翻后仍红按
+    // DC-4 记账）。显式 setter（part06）两面一票胜出不变。
+    var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p';
+    // DC-4（knife11 v3，2026-11-07 探针相 P3/P4 双源定谳；四轮门禁定谳
+    // 三门终形 v5 判别信号）：① 臂 unset 面 **无挂起 state/value override
+    // 且无显式 typing 命令在案**时新块标签随宿主（host copy；run 语料
+    // 496/499 de]f 族 recording `<div>abc</div><div><b>def</b>ghi</div>`，
+    // 与 v2 容器面 _zwIpWrapTag host-copy 同向）；**有挂起 override**
+    // （collapsed caret 先行 forecolor/backcolor 五值命令值面）或 **显式
+    // typing 命令在案**（collapsed format 命令 / createlink 置
+    // __zwTypingCmdArmed 旗标，multitest foo[]bar rich 组 23 案 recording
+    // `<p>foo</p><p>{}bar</p>` p 形）保持双面制产线缺省 'p'（与 v2 基线
+    // 同面；r3 mt 13 案 P2F 定谳：值命令走 override 表、format 命令走
+    // 旗标面）。判别不读 __zwTypingTags 本体：双源在案（显式命令 + 处方 c
+    // delete 前导删 styled 内容 arm 包裹壳供 inserttext 消费——v4 探针
+    // 4 案（CASE496/499 + ip-first 族 2 案）tt=["b"] 无 format 命令实证，
+    // 同帧 recording 要求 ① 面 host copy + <b>def</b> 包裹并存，v4 读
+    // 壳即双案族全 P2F 定谳）。override 读先走 staleness 复位
+    // （_zwVaOverridesReset，part01d 同闭包）：选区已变即清，陈旧
+    // override 不参与判别；旗标随 multitest 每案 setup addRange 公共面清
+    // （part06 _zwSync），无跨案泄漏。显式 setter 一票胜出（typeof 门——
+    // r3 ip 4 案 explicit-p P2F 与 wss 电池 32F 定谳）。
+    _zwVaOverridesReset();
+    var hasPendingOvr = false;
+    for (var kOvr in _zwVaStateOverrides) {
+      if (Object.prototype.hasOwnProperty.call(_zwVaStateOverrides, kOvr)) {
+        hasPendingOvr = true;
+        break;
+      }
+    }
+    if (!hasPendingOvr) {
+      for (var kOvr2 in _zwVaValueOverrides) {
+        if (Object.prototype.hasOwnProperty.call(_zwVaValueOverrides, kOvr2)) {
+          hasPendingOvr = true;
+          break;
+        }
+      }
+    }
+    var cmdArmed1 = globalThis.__zwTypingCmdArmed === true;
+    if (typeof globalThis.__zwDefaultParagraphSeparator !== 'string'
+        && !hasPendingOvr && !cmdArmed1) {
+      sepTag = hostTag;
+    }
     // ⓪ void 元素 caret 拆分（editing-compat void 簇，2026-10-31）：collapsed caret
     // 落在 void 元素（br/img/hr/input/embed/wbr）上时，insertParagraph = 在 void
     // 位置拆分所在块容器——void 及其后兄弟移入新块（spec：selection.collapse 进
     // void 元素仅 (el, 0) 形合法，语料注释「cannot be tested by editing/run」）。
     // 新块标签：li 容器 → li（同列表续行，`</li><li>`），其余（div/h1-h6）→ div
-    // （defaultParagraphSeparator 缺省；h1 不可嵌 h1，语料期望 `</h1><div>` 显式
-    // div）。拆分后容器空 → 占位 <br>（`<h1><br></h1><div><img></div>` 期望形，
+    // （void 面语料固定 div，与 ① 臂产线缺省翻 p 不同面；h1 不可嵌 h1，语料期望
+    // `</h1><div>` 显式 div）。拆分后容器空 → 占位 <br>（`<h1><br></h1><div><img>
+    // </div>` 期望形，
     // 与 ① 同款 `__zwPlaceholderBr` 打标）。caret 宿主直子 void（容器=host）不接
     // （语料面皆包块容器，落 ③ 既有行断形不变）。
     if (!lineBreakOnly && !isText && boundaryNode
@@ -10247,8 +11409,21 @@
       }
     }
     // ① 宿主级拆分（insertLineBreak 模式跳过块拆分面）。
-    if (!lineBreakOnly && block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
-        && boundaryParent === host && (isText || boundaryNode === null)) {
+    // ⑦ A2（2026-11-09 ip-placeholder ① 路由，mt 485/487）：扩宿主直子空壳
+    // 元素 caret 形——A1 消解后 caret (b,0) 挂宿主直子 inline 壳（boundaryNode
+    // 即该壳、block===boundaryNode、壳内无可见内容）。Chrome 拆分 = 壳起子移
+    // 入新块 + 头侧空占位 <br> 前置 + caret 入壳链首（exp `<br><div><b>a</b>
+    // </div>`）；有内容壳面（`<b>foo[]bar</b>` wrap 形语料）与块级 caret 不在
+    // 诉求，窄门不收（落 ③ 现径）。
+    var arm1EmptyShellEl = !lineBreakOnly && !isText && boundaryNode
+      && boundaryNode.nodeType === 1 && block === boundaryNode
+      && boundaryParent === host && so === 0
+      && !_zwCeIsBlockTagName(String(boundaryNode.tagName || '').toLowerCase())
+      && ![].some.call((boundaryNode.childNodes || []), _zwJusIsVisible);
+    if (!lineBreakOnly && (block === host || arm1EmptyShellEl) && hostTag === 'div'
+        && (dispHost === '' || dispHost === 'block')
+        && boundaryParent === host
+        && (isText || boundaryNode === null || arm1EmptyShellEl)) {
       var sep1 = document.createElement(sepTag);
       var refAfter1 = null;
       if (boundaryText) {
@@ -10262,11 +11437,25 @@
         var head1 = v1.slice(0, boundaryOff);
         var tail1 = v1.slice(eo);
         var headBlock1 = document.createElement(sepTag);
+        // DC-4（editing-compat 496/499 fallback 病形，2026-11-07 探针 Q1-Q7
+        // 定谳）：宿主桥 plain 子跨域移动必须先 plain removeChild 再挂 engine
+        // 块——raw appendChild 对在挂 plain 子是序列化拷贝（Q6 s3：view 残留
+        // 原文本 → `ghi<p>ghi</p>` 残段）；engine 块挂载用 insertBefore 在
+        // fully-plain 宿主是静默半挂（Q6 s1：wrapper 父指针已设、view/childNodes
+        // 未动 → head 块消失）。收集后统一 detach→append 保序，不走 engine 父
+        // insertBefore（挂载延后至两块建齐，append 面 Q7 s3 物化一致）。
         var mv1h = boundaryText.previousSibling;
+        var headParts1 = [];
         while (mv1h) {
-          var nx1h = mv1h.previousSibling;
-          headBlock1.insertBefore(mv1h, headBlock1.firstChild);
-          mv1h = nx1h;
+          headParts1.push(mv1h);
+          mv1h = mv1h.previousSibling;
+        }
+        for (var hi1 = headParts1.length - 1; hi1 >= 0; hi1--) {
+          var hn1 = headParts1[hi1];
+          if (hn1.parentNode) {
+            try { hn1.parentNode.removeChild(hn1); } catch (e1h) {}
+          }
+          headBlock1.appendChild(hn1);
         }
         if (head1) headBlock1.appendChild(document.createTextNode(head1));
         if (!(headBlock1.childNodes || []).length) {
@@ -10274,40 +11463,82 @@
           phbr1a.__zwPlaceholderBr = true;
           headBlock1.appendChild(phbr1a);
         }
-        host.insertBefore(headBlock1, boundaryText || null);
         if (tail1) sep1.appendChild(document.createTextNode(tail1));
         refAfter1 = boundaryText.nextSibling;
         host.removeChild(boundaryText);
         var mv1t = refAfter1;
+        var tailParts1 = [];
         while (mv1t) {
-          var nx1t = mv1t.nextSibling;
-          sep1.appendChild(mv1t);
-          mv1t = nx1t;
+          tailParts1.push(mv1t);
+          mv1t = mv1t.nextSibling;
+        }
+        for (var ti1 = 0; ti1 < tailParts1.length; ti1++) {
+          var tn1 = tailParts1[ti1];
+          if (tn1.parentNode) {
+            try { tn1.parentNode.removeChild(tn1); } catch (e1t) {}
+          }
+          sep1.appendChild(tn1);
         }
         if (!(sep1.childNodes || []).length) {
           var phbr1b = document.createElement('br');
           phbr1b.__zwPlaceholderBr = true;
           sep1.appendChild(phbr1b);
         }
-        host.insertBefore(sep1, headBlock1.nextSibling || null);
+        host.appendChild(headBlock1);
+        host.appendChild(sep1);
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
-        refAfter1 = (host.childNodes || [])[so] || null;
+        // 跨域移动纪律同 boundaryText 臂（先 detach 再 append，挂载延后）。
+        // ⑦ A2：空壳元素 caret 形（arm1EmptyShellEl）边界即 caret 宿主直子
+        // 壳本身（boundaryNode；so 是壳内偏移非宿主子位，恒 0）。
+        refAfter1 = arm1EmptyShellEl ? boundaryNode
+          : ((host.childNodes || [])[so] || null);
         var mv1 = refAfter1;
+        var tailParts1e = [];
         while (mv1) {
-          var nx1 = mv1.nextSibling;
-          sep1.appendChild(mv1);
-          mv1 = nx1;
+          tailParts1e.push(mv1);
+          mv1 = mv1.nextSibling;
+        }
+        for (var ti1e = 0; ti1e < tailParts1e.length; ti1e++) {
+          var tn1e = tailParts1e[ti1e];
+          if (tn1e.parentNode) {
+            try { tn1e.parentNode.removeChild(tn1e); } catch (e1e) {}
+          }
+          sep1.appendChild(tn1e);
         }
         if (!(sep1.childNodes || []).length) {
           var phbr1c = document.createElement('br');
           phbr1c.__zwPlaceholderBr = true;
           sep1.appendChild(phbr1c);
         }
-        host.insertBefore(sep1, refAfter1 || null);
+        host.appendChild(sep1);
+        // ⑦ A2 头侧占位：caret 前侧宿主级空（A1 消解形 host=[b]）→ 占位
+        // <br> 前置于新块（exp `<br><div><b>a</b></div>`）。带标同 ① phbr
+        // 惯例——typing 占位消费扫描上行止于新块块界，宿主级带标 br 不入
+        // 扫描链（caret 落新块内），485 typing 后 `<br>` 幸存。空判沿
+        // sep1.previousSibling 反向（sep1 自身刚挂载，_zwJusIsVisible 对块
+        // 节点恒真不可用）：头侧子仅折叠 ws 算空。
+        var a2HeadEmpty = true;
+        for (var a2hn = sep1.previousSibling; a2hn; a2hn = a2hn.previousSibling) {
+          if (a2hn.nodeType === 1
+              || (a2hn.nodeType === 3 && !_zwJusIsCollapsedWhitespaceNode(a2hn))) {
+            a2HeadEmpty = false;
+            break;
+          }
+        }
+        if (a2HeadEmpty) {
+          var phbr1d = document.createElement('br');
+          phbr1d.__zwPlaceholderBr = true;
+          host.insertBefore(phbr1d, sep1);
+        }
       }
+      // 处方 b 同款 caret 入壳下行（⑦ A2：新块头 inline 壳链——exp 485/487
+      // typed 段入既有壳 `<div><b>a</b></div>`；文本/占位 br 头面 firstChild
+      // 非 fmt 壳 → null → (sep1,0) 原位不变，语料已锁面零漂移）。
       var nr1 = document.createRange();
-      nr1.setStart(sep1, 0);
+      var sh1 = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
+        ? globalThis.__zw_ce_caret_in_leading_shell(sep1) : null;
+      nr1.setStart(sh1 ? sh1[0] : sep1, sh1 ? sh1[1] : 0);
       nr1.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr1]; }
       return true;
@@ -10331,7 +11562,8 @@
         var dispH2b = _zwCeDisplayOf(host);
         var hostBlockish2b = hostTag === 'div' && (dispH2b === '' || dispH2b === 'block');
         if (hostBlockish2b && !_zwCeIsBlockTagName(tag2)) {
-          var sep2b = document.createElement((globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div');
+          // separator 缺省 'p'（第十一刀，见 ① sepTag 刀注：产线块面双面制）。
+          var sep2b = document.createElement((globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p');
           var shell2b = block.cloneNode(false);
           var caretIn2b = 0;
           if (boundaryText) {
@@ -10541,6 +11773,37 @@
     if (!resolved) return null;
     var tag = (typeof __zw_get_tag === 'function' ? __zw_get_tag(resolved) : '').toUpperCase();
     if (tag !== 'INPUT' && tag !== 'TEXTAREA') return null;
+    // s328（html-semantics M2）：testdriver 可见对象采纳——页面经 pending 视图
+    //（innerHTML 同 turn children 枚举，R145 延迟 apply 模型）持有的解析对象
+    //（_zwMEl 形）与 apply 后 sel 域 wrap 产物不是同一对象；本函数取的 dispatch
+    // 目标若走 wrap 会派发到隔离对象（beforeinput.tentative `events.has(element)`
+    // Map 按对象身份键控 miss + IDL on* own 属性永不触发）。td stub
+    // `__zw_td_selector` 出队解析成功时登记（sel → 页面可见对象），此处命中即
+    // 采纳：graft `__zwSelector`/`__zwHandle`（写路径 `_controlValue` 与 value
+    // setter 同源 sel）+ 覆写 dispatchEvent 走 `_dispatchWithBubble` 站链
+    //（receiverProxy=页面对象保 identity；inline 内容属性 handler 经站编译照常
+    // 触发；own on* 属性由 part03 target 站 s328 臂消费）。静态元素（getElementById
+    // /qSA 产物）registry 值即同一 wrap proxy——采纳零差异。导航清面挂
+    // `__zw_reset_form_state`（registry 持对象引用，不清跨页滞留）。
+    var _vis = null;
+    try {
+      var _visReg = globalThis.__zwTdVisibleTargets;
+      _vis = _visReg ? ((_visReg[sel] || _visReg[resolved]) || null) : null;
+    } catch (_e328v) { _vis = null; }
+    if (_vis && typeof _dispatchWithBubble === 'function') {
+      try {
+        _vis.__zwSelector = resolved;
+        _vis.__zwHandle = null;
+        _vis.__zwTdAdopted = true;
+        _vis.dispatchEvent = function (ev) {
+          var _h328 = '';
+          try { if (typeof __zw_handle_for_selector === 'function') _h328 = __zw_handle_for_selector(resolved) || ''; } catch (_e328h) {}
+          var _k328 = _h328 ? _elKey(null, _h328) : _elKey(resolved, null);
+          return _dispatchWithBubble(_k328, _h328 ? null : resolved, _h328 || null, ev, undefined, _vis);
+        };
+      } catch (_e328g) { _vis = null; }
+    }
+    if (_vis) return { element: _vis, key: _elKey(resolved, null) };
     // R100 identity 反查（同 query 返回点约定）：createElement 建立的动态控件经
     // handle→selector 倒置 merge 后须包装回**原 handle proxy**——`_wrapSelector`
     // 直接新建 sel proxy 会派发/写值到隔离对象上，页面 listener 收不到
@@ -10580,7 +11843,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; globalThis.__zwTdVisibleTargets = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -11118,18 +12381,110 @@
   // 任意 throwable（含非 Error 值，`throw {foo:true}`）照传；旧 `(instanceof Error) ? reason : null`
   // 折 null 丢对象身份（WPT module/error-type-3 `log[1].foo` 断言）。
   // https://html.spec.whatwg.org/multipage/webappapis.html#dom-report-error
-  globalThis.reportError = function (reason) {
+  // s336（报告位置保真）：可选 (filename, lineno, colno) 形参——strict classic
+  // 抛错面（script_gen strict tail）传 script src / 页面 URL 与非零行列；缺省
+  // 回落 ''/0/0（基线包装与既有调用零位移）。data-url 断言 lineno/colno 非零
+  // number、url 非空——window.onerror 五参经 part06 legacy adapter 从事件特性读。
+  globalThis.reportError = function (reason, filename, lineno, colno) {
     try {
       var msg = (reason && (reason.message || reason.name)) ? String(reason.message || reason.name) : String(reason);
       var ev = new ErrorEvent('error', {
         message: msg,
-        filename: '',
-        lineno: 0,
-        colno: 0,
+        filename: filename == null ? '' : String(filename),
+        lineno: lineno == null ? 0 : (Number(lineno) || 0),
+        colno: colno == null ? 0 : (Number(colno) || 0),
         error: reason
       });
       if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(ev);
     } catch (_e) {}
+  };
+  // s360（html-semantics-compat import.defer 面，tc39 proposal-defer-import-eval）：动态延迟
+  // 导入运行时——bundled V8 默认关 --js-import-defer 旗，`import.defer(spec)` 语法 parse 即
+  // SyntaxError，源码面重写承接（es_module rewrite_imports_impl：模块 lane → __zw_import_defer
+  // 经 .call 穿 referrer/credentials、classic lane → __zwClassicImportDefer 自读 s90 referrer
+  // 槽 / s340 credentials 槽）。语义：依赖图急切求值（depsPromise——build_module_script_deferred
+  // async deps fn，TLA 依赖 await 归一）、入口体延迟到命名空间属性访问（runBody 恰好一次）；
+  // 门面 Proxy get 臂（仅导出名）先触发体再透传导出面，has/ownKeys 只读不触发。
+  // 未建模面：体抛错后的失败记账
+  // （eager 面 __moduleFailures 同源语义，语料无钉面 FIXME）；TLA 入口体的属性访问挂起
+  // （发射侧 async runBody 近似，语料无钉面 FIXME）。
+  globalThis.__zwDeferRecords = globalThis.__zwDeferRecords || {};
+  globalThis.__zwDeferFetchKeys = globalThis.__zwDeferFetchKeys || {};
+  // defer 契约装载——镜像 __zw_load_module 四态失败面（宿主返空 = 顶层取回失败逐次新
+  // TypeError；3\u001f = 链接失败逐次新 SyntaxError；图失败 TypeError；求值抛原样透传），
+  // 记账走独立 defer 表（eager 面 __moduleCache 键值是导出面，defer 记录是三臂对象——
+  // s363：同 URL 混用 eager/defer 已按 spec module map 单键语义共享记录，双向钩子
+  // 见 __zw_load_module_deferred resolved 段与 es_module prelude __zw_load_module 对应段）。
+  globalThis.__zw_load_module_deferred = function (spec, parentHint, typeHint, credHint) {
+    var parent = parentHint || 'about:blank';
+    var fk = spec + '\u001f' + parent + '\u001f' + (typeof typeHint === 'string' ? typeHint : '');
+    var kr = globalThis.__zwDeferFetchKeys[fk];
+    if (kr !== undefined && globalThis.__zwDeferRecords[kr]) return globalThis.__zwDeferRecords[kr];
+    if (typeof __zw_compile_module !== 'function') throw new TypeError("Failed to fetch module: '" + spec + "'");
+    var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '', credHint || '', 1);
+    if (!r) throw new TypeError("Failed to fetch module: '" + spec + "'");
+    var sep = r.indexOf('\u001f');
+    if (sep === 1 && r.charCodeAt(0) === 51) {
+      var p3 = r.slice(2);
+      var m3 = p3.indexOf('\u001f');
+      throw new SyntaxError(m3 >= 0 ? p3.slice(m3 + 1) : p3);
+    }
+    var resolved = sep >= 0 ? r.slice(0, sep) : spec;
+    // s363（mixed eager/defer 同 URL 记录共享——spec module map 单键）：eager 先取
+    // 已求值完毕的 URL 再走 import.defer 时，以其导出面构造「已求值三臂」记录入
+    // defer 表（runBody 空函数——体已跑，facade get trap 触发无害），门面属性访问
+    // 直取导出值，不再二次求值。
+    if (globalThis.__moduleCache[resolved]) {
+      var erec = { exports: globalThis.__moduleCache[resolved], depsPromise: Promise.resolve(), runBody: function () {} };
+      globalThis.__zwDeferRecords[resolved] = erec;
+      globalThis.__zwDeferFetchKeys[fk] = resolved;
+      return erec;
+    }
+    if (globalThis.__zwDeferRecords[resolved]) return globalThis.__zwDeferRecords[resolved];
+    var code = sep >= 0 ? r.slice(sep + 1) : r;
+    if (sep >= 0 && code === '') throw new TypeError("Failed to fetch module graph: '" + resolved + "'");
+    var src = globalThis.__zwActiveIframeWin
+      ? ('(function(){var __zwW=globalThis.__zwActiveIframeWin;return (function(window,document,self){return (' + code + ');}).call(__zwW,__zwW,globalThis.__zwActiveIframeDoc||__zwW.document||__zwW,__zwW);}())')
+      : ('(' + code + ')');
+    globalThis.__zwDeferRecords[resolved] = (typeof __zwRealEval === 'function' ? __zwRealEval : eval)(src);
+    globalThis.__zwDeferFetchKeys[fk] = resolved;
+    return globalThis.__zwDeferRecords[resolved];
+  };
+  // 延迟命名空间门面——**仅导出名触发**延迟求值（spec 延迟命名空间语义：属性访问
+  // 触发的是导出绑定求值，非导出属性/内部探查如 await 归一化的 then 查找不触发——
+  // 否则 `await import.defer()` 决议即提前跑体，红态实证 getter 臂无守卫时 flag 提前
+  // 置位）。导出 getter 已在记录 IIFE 首装（build_module_script 体首 getter 面），
+  // `in` 存在性判定先于 runBody 触发、不读 getter 值。
+  globalThis.__zw_make_defer_facade = function (record) {
+    return new Proxy({}, {
+      get: function (_t, name) {
+        if (!(name in record.exports)) return undefined;
+        record.runBody();
+        return record.exports[name];
+      },
+      has: function (_t, name) { return name in record.exports; },
+      ownKeys: function () { return Reflect.ownKeys(record.exports); }
+    });
+  };
+  // 模块 lane 入口（rewrite_imports_impl Module 档发射 `.call({referrer, credentials}, spec)`）。
+  globalThis.__zw_import_defer = function (spec) {
+    var parent = (this && this.referrer) || 'about:blank';
+    var cred = (this && this.credentials) || 'same-origin';
+    try {
+      return Promise.resolve(__zw_load_module_deferred(spec, parent, '', cred)).then(function (record) {
+        return Promise.resolve(record.depsPromise).then(function () {
+          return globalThis.__zw_make_defer_facade(record);
+        });
+      });
+    } catch (e) { return Promise.reject(e); }
+  };
+  // classic lane 入口（ClassicDeferOnly 档发射直调）——referrer 取 s90 槽（无参
+  // __zwSwapImportReferrer = 纯 getter），credentials 取 s340 槽。
+  globalThis.__zwClassicImportDefer = function (spec) {
+    var parent = 'about:blank';
+    try { if (typeof __zwSwapImportReferrer === 'function') parent = __zwSwapImportReferrer() || parent; } catch (_e) {}
+    var cred = (typeof globalThis.__zwActiveScriptCred === 'string' && globalThis.__zwActiveScriptCred) || 'same-origin';
+    return globalThis.__zw_import_defer.call({ referrer: parent, credentials: cred }, spec);
   };
   // scroll（R2817/R3047）——window 滚动方法/属性。headless 无真视口滚动 → R3047 改 JS-side 状态追踪：
   // scrollTo/scrollBy 更新 `_winScroll`，scrollX/scrollY/pageXOffset/pageYOffset 经 defineProperty getter 读回

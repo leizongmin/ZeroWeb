@@ -283,7 +283,20 @@
     if (!_zwJusIsHtmlElement(br, 'br')) return false;
     if (_zwJusIsHtmlElement(br.parentNode, 'li')
         && br.parentNode.childNodes && br.parentNode.childNodes.length === 1) return false;
-    return _zwJusPrecedesLineBreak(br);
+    // 重入断环（qCV 走查 forecolor 跨元素 peel 形实证）：extraneous 判定链
+    // precedes → 爬升 → blockStartPoint(parent, brIdx+1) → isVisible(同 br)
+    // → 本函数 无界互递归（RangeError）。in-flight 印记 + boundary 探测跳过
+    // in-flight br（见 _zwJusIsBlockStartPoint）：precedes 转而回看更前节点，
+    // 语义不变、递归有界。
+    if (br.__zwExProbeInFlight) return false;
+    br.__zwExProbeInFlight = true;
+    var r;
+    try {
+      r = _zwJusPrecedesLineBreak(br);
+    } finally {
+      br.__zwExProbeInFlight = false;
+    }
+    return r;
   }
 
   // spec visible：block node / 非折叠空白文本 / img / 非冗余 br / 有可见后代；
@@ -377,8 +390,19 @@
     }
     var nodeList = [];
     var guard = 0;
-    while (node && stop && _zwJusIsBefore(node, stop) && guard++ < 65536) {
-      if (_zwJusIsContained(node, range) && cond(node)) {
+    // 含界判定就地展开（2026-11-09 F6b 尾选区 delete 空转定谳）：spec
+    // contained 语义为含界（起点不早于 range 起点、终点不晚于 range 终点
+    // ——w3c editing spec #contained），端界归一到元素边界后与端界等值的
+    // 节点（`<sub>[bar` 起点≡壳界、`baz]` 终点≡宿主界）按严格版会被排除
+    // 致空转。就地含界比较使收集面归 spec 口径；_zwJusIsContained 严格版
+    // 保留给其余调用面（:1314/:2189/part01f:1573 行为不变）。
+    // stop=null 卫兵：end 界落宿主链顶（NextNodeDescendants 走根）时迭代
+    // 至树尽——此后无节点，界外溢收集不存在。
+    while (node && (!stop || _zwJusIsBefore(node, stop)) && guard++ < 65536) {
+      if (_zwJusBpCompare(node, 0, range.startContainer, range.startOffset) >= 0
+          && _zwJusBpCompare(node, _zwJusNodeLength(node),
+              range.endContainer, range.endOffset) <= 0
+          && cond(node)) {
         nodeList.push(node);
         if (stopAtMatch) { node = _zwJusNextNodeDescendants(node); continue; }
       }
@@ -403,11 +427,15 @@
   // https://w3c.github.io/editing/execCommand.html#block-extending-a-range
 
   function _zwJusIsBlockStartPoint(node, offset) {
+    // extraneous 判定在途的 br 不作 boundary 候选（断 extraneous ↔ isVisible
+    // 互递归，配对印记见 _zwJusIsExtraneousLineBreak）——该子级视为不存在，
+    // 调用方（precedes/follows 回看）继续考察更前/更后节点取真实语义。
+    var cand = (node.childNodes && offset - 1 >= 0 && offset - 1 < node.childNodes.length)
+      ? node.childNodes[offset - 1] : null;
     return (!node.parentNode && offset === 0)
-      || (offset - 1 >= 0 && node.childNodes && offset - 1 < node.childNodes.length
-          && _zwJusIsVisible(node.childNodes[offset - 1])
-          && (_zwJusIsBlockNode(node.childNodes[offset - 1])
-              || _zwJusIsHtmlElement(node.childNodes[offset - 1], 'br')));
+      || (cand && !cand.__zwExProbeInFlight
+          && _zwJusIsVisible(cand)
+          && (_zwJusIsBlockNode(cand) || _zwJusIsHtmlElement(cand, 'br')));
   }
 
   function _zwJusIsBlockEndPoint(node, offset) {
@@ -460,6 +488,13 @@
     var startClosure = _zwJusClosestClosure(startNode, host);
     var endClosure = _zwJusClosestClosure(endNode, host);
 
+    // 原始 start 端点（li 臂/do-while 改写 startNode 前捕获；list-wide 纯壳
+    // 门判分支归属用）。
+    var origStart = startNode;
+    // 原始 end 端点（list-wide block start 边界排除臂判几何用，改写前捕获）。
+    var origEndN = endNode;
+    var origEndO = endOffset;
+
     // li 臂：start/end 所在最近 li 整行收编。
     var li = null;
     var n = startNode;
@@ -501,7 +536,75 @@
       } while (endNode && g2++ < 256);
     }
 
-    if (chromeTight) {
+    if (chromeTight === 'list-wide') {
+      // toggleLists enable 局部档（q16 转换主流程 Chrome delta）。end 界：
+      // vendored blockExtend 忠实语义——纯 at-length 爬升（无跨端关系守卫，
+      // :373 内壳 end 必须跨出 innerUL 才能让外壳入含域），宿主为顶护栏
+      // （:43/:48 尾文本吸收归 flat-model 臂，range 越顶会过度吸收）。
+      // Chrome delta（语料权威，div 边界 compare 族 iul :803/:809）：原始
+      // end 恰落 block start 边界（offset0 沿首子链爬升到最近 block 仍在
+      // offset0）且该 block 无列表祖先、非宿主、非起始块时，该 block 不入
+      // 含域——end 钳到 block 前（语料明注 "don't listify the last empty
+      // <div> if only its start boundary is in the range"；对照 :806
+      // end=offset3 含域、:800 start 侧对称位不触发、两语料 census 仅
+      // :803/:809 该几何；eb1 空体形 start=end 同块不触发）。
+      var exB = origEndN, exO = origEndO, gEx = 0;
+      while (exO === 0 && exB && exB.parentNode && exB !== host
+          && !_zwJusIsBlockNode(exB) && gEx++ < 256) {
+        exO = _zwJusNodeIndex(exB);
+        exB = exB.parentNode;
+      }
+      if (exO === 0 && exB && exB !== host && exB.parentNode
+      && _zwJusIsBlockNode(exB)
+      && !_zwJusIsHtmlElement(exB, ['ol', 'ul', 'li', 'td', 'th'])) {
+        var sbX = origStart, gSx = 0;
+        while (sbX && sbX.parentNode && sbX !== host
+        && !_zwJusIsBlockNode(sbX) && gSx++ < 256) {
+          sbX = sbX.parentNode;
+        }
+        var laX = exB, hasListX = false, gLx = 0;
+        while (laX && laX !== host && gLx++ < 256) {
+          if (_zwJusIsHtmlElement(laX, ['li', 'ol', 'ul'])) { hasListX = true; break; }
+          laX = laX.parentNode;
+        }
+        if (exB !== sbX && !hasListX) {
+          endNode = exB.parentNode;
+          endOffset = _zwJusNodeIndex(exB);
+        }
+      }
+      while (endOffset === _zwJusNodeLength(endNode) && endNode && endNode.parentNode
+          && endNode !== host) {
+        endOffset = 1 + _zwJusNodeIndex(endNode);
+        endNode = endNode.parentNode;
+      }
+      var shellsExited = 0;
+      var shellsPure = true;
+      var peekN = startNode, peekO = startOffset;
+      while (peekO === 0 && peekN && peekN.parentNode && peekN !== host) {
+        if (_zwJusIsHtmlElement(peekN, ['ol', 'ul'])) {
+          shellsExited++;
+          // 纯壳门：被退出壳的直属 li 子若存在不含原始选区 start 端点的
+          // 分支（兄弟分支残留），整壳分裂语义（Chrome 保形）依赖 start
+          // 相等剔除前序兄弟——不提交爬升（<ul><li>foo<li>[bar]<li>baz
+          // </ul> 类；对照 :373 纯壳链/单分支整壳换型）。判据用 origStart
+          // （li 臂/do-while 改写前的原始端点），非当前 startNode。
+          var pk = peekN.firstChild;
+          while (pk) {
+            if (_zwJusIsHtmlElement(pk, 'li')
+            && !_zwJusIsAncestorOf(pk, origStart) && pk !== origStart) {
+              shellsPure = false;
+            }
+            pk = pk.nextSibling;
+          }
+        }
+        peekO = _zwJusNodeIndex(peekN);
+        peekN = peekN.parentNode;
+      }
+      if (shellsExited > 0 && shellsPure) {
+        startNode = peekN;
+        startOffset = peekO;
+      }
+    } else if (chromeTight) {
       var ctS = _zwJusClampToClosure(startNode, startOffset, host, startClosure, false);
       startNode = ctS[0]; startOffset = ctS[1];
       var ctE = _zwJusClampToClosure(endNode, endOffset, host, endClosure, true);
@@ -885,10 +988,21 @@
       if (rng && wrapper) {
         if (wEl.parentNode !== host) {
           var wantOpen = _zwJusSerializeOpenTag(wrapper);
-          for (k = 0; k < host.childNodes.length; k++) {
-            var cN = host.childNodes[k];
-            if (cN.nodeType === 1 && _zwJusSerializeOpenTag(cN) === wantOpen) {
-              wEl = cN; break;
+          // 孪生定位位优先：wrapper 恰占重建子列 firstIdx 位（prefix 前缀 =
+          // 成员首索引，html 拼装序即 DOM 序）；位不可靠（解析回流/结构怪形）
+          // 再按 open tag 串扫描兜底。串扫描首命中在同 open-tag 前缀面取错
+          // 孪生（div 边界 :775 刀双 li 形：liEl 指向 liFooTwin，主循环
+          // sublist 重锚后重复引用同节点、真包装 liBarTwin 永远 bare 实证）。
+          var posW = host.childNodes[firstIdx];
+          if (posW && posW.nodeType === 1
+          && _zwJusSerializeOpenTag(posW) === wantOpen) {
+            wEl = posW;
+          } else {
+            for (k = 0; k < host.childNodes.length; k++) {
+              var cN = host.childNodes[k];
+              if (cN.nodeType === 1 && _zwJusSerializeOpenTag(cN) === wantOpen) {
+                wEl = cN; break;
+              }
             }
           }
         }
@@ -916,7 +1030,12 @@
     return wEl && wEl.parentNode === host ? wEl : wrapper;
   }
 
-  function _zwJusWrap(nodeList, siblingCriteria, newParentInstructions) {
+  // plainSkipViaHtml（Chrome delta，formatBlock 专用）：host 直子文本成员走
+  // plain wrap 不走 ViaHtml 整段重写——`<p>[foo<p>bar]` + `<p>` 双成员同 tag 时
+  // ViaHtml 的序列化重写会使未处理成员游离复制倒序（语料 :1410 三重 p 录音铁证；
+  // formatBlock 的 skip 环已在 nodeList 预剔同 tag 成员，plain wrap 到位即净零变更）。
+  function _zwJusWrap(nodeList, siblingCriteria, newParentInstructions,
+      plainSkipViaHtml) {
     var i;
     var anyBr = false;
     for (i = 0; i < nodeList.length; i++) {
@@ -948,7 +1067,7 @@
     // 单一 center div）、tbody/tr-attr selection 行、整表选择行部分变体。
     // flat 模型边界臂：editing host 直子文本成员 → innerHTML setter 整段重写。
     for (i = 0; i < nodeList.length; i++) {
-      if (nodeList[i].nodeType === 3 && nodeList[i].parentNode
+      if (!plainSkipViaHtml && nodeList[i].nodeType === 3 && nodeList[i].parentNode
           && _zwJusIsEditingHost(nodeList[i].parentNode)) {
         return _zwJusWrapViaHtml(nodeList[i].parentNode, nodeList,
           siblingCriteria, newParentInstructions);
@@ -1149,6 +1268,97 @@
     return rng && rng.startContainer && rng.endContainer ? rng : null;
   }
 
+  // —— Chrome delta 原语（J-A/J-D 祖先壳改写 + 邻接壳吸收 + 包缘 ws 吞入）——
+  // 权威面 = 语料 justify*.js 录制期望（真实 Chrome 行为），非 spec 算法——
+  // vendored 参考实现同页直调不产出该形（⑥ 族 census 定谳）。
+
+  // 对齐载具元素：align attr（任意值）或 style text-align 声明或 center 标签
+  //（与 ① 清理 pass 收集条件同判，另出常函数供祖先链走查/邻接壳判定复用）。
+  function _zwJusIsAlignCarrierEl(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (_zwJusIsHtmlElement(el, 'center')) return true;
+    if (el.getAttribute && el.getAttribute('align') != null) return true;
+    var st = el.getAttribute && el.getAttribute('style');
+    return !!st && /(?:^|;)\s*text-align\s*:/i.test(String(st));
+  }
+
+  // 纯 ws 文本节点（含空串）。
+  function _zwJusIsWsOnlyText(node) {
+    return !!node && node.nodeType === 3
+      && /^[ \t\n\f\r]*$/.test(String(node.nodeValue || ''));
+  }
+
+  // style attr 内 text-align 声明覆写（其余声明保留、无则追加、串空摘 attr）。
+  // 录制形 `style="text-align:center"` 单声明与值覆写均落此串（无空格序列化）。
+  function _zwJusSetInlineTextAlign(el, value) {
+    var st = el.getAttribute && el.getAttribute('style');
+    var out;
+    if (st) {
+      var decls = String(st).split(';');
+      var kept = [];
+      var replaced = false;
+      for (var i = 0; i < decls.length; i++) {
+        if (/(?:^|\s*)text-align\s*:/i.test(decls[i])) {
+          if (!replaced) { kept.push('text-align:' + value); replaced = true; }
+          continue;
+        }
+        if (decls[i].replace(/\s+/g, '') !== '') kept.push(decls[i]);
+      }
+      if (!replaced) kept.push('text-align:' + value);
+      out = kept.join(';').replace(/^;+|;+$/g, '');
+    } else {
+      out = 'text-align:' + value;
+    }
+    if (out === '') {
+      try { el.removeAttribute('style'); } catch (_eJsita1) {}
+    } else {
+      try { el.setAttribute('style', out); } catch (_eJsita2) {}
+    }
+  }
+
+  // 祖先壳改写门控：壳子节点全被含（部分覆盖选区不触发——justifyleft
+  // `<div align=left><p>[foo]<p>bar}` 录制原样不动/跨值壳内层包裹）且壳内
+  // 无非 editable 节点（contenteditable=false 边界形归既有劈分路径）。
+  function _zwJusShellRewritable(shell, rng) {
+    var kids = shell.childNodes ? [].slice.call(shell.childNodes) : [];
+    for (var i = 0; i < kids.length; i++) {
+      if (!_zwJusIsContained(kids[i], rng)) return false;
+    }
+    var allOk = true;
+    var walk = function (node) {
+      var c = node.firstChild;
+      while (c && allOk) {
+        if (!_zwJusIsEditable(c)) { allOk = false; return; }
+        walk(c);
+        c = c.nextSibling;
+      }
+    };
+    walk(shell);
+    return allOk;
+  }
+
+  // 相邻同值载具壳折叠：s 紧随（至多隔一纯 ws 文本）同值 div 壳时，ws 与壳子
+  // 节点并入 s、壳移除——录制 `<div align="center"><p>foo</p> <p>bar</p>
+  // <p>baz</p></div>` 形（justifycenter [7]/justifyright 无 ws 三节点行）。
+  function _zwJusCollapseAlignedShell(s, alignment) {
+    var guard = 0;
+    while (s && s.parentNode && guard++ < 64) {
+      var nx = s.nextSibling;
+      var ws = null;
+      if (_zwJusIsWsOnlyText(nx)) { ws = nx; nx = nx.nextSibling; }
+      if (!nx || nx.nodeType !== 1 || _zwJusTag(nx) !== 'div'
+          || !_zwJusIsAlignCarrierEl(nx)
+          || _zwJusGetAlignmentValue(nx) !== alignment) {
+        return;
+      }
+      if (ws) _zwJusMovePreservingRanges(ws, s, -1);
+      while (nx.firstChild) {
+        _zwJusMovePreservingRanges(nx.firstChild, s, -1);
+      }
+      try { nx.parentNode.removeChild(nx); } catch (_eJcol) {}
+    }
+  }
+
   globalThis.__zw_ce_justify_apply = function (alignment) {
     var range = _zwJusActiveRange();
     if (!range) return false;
@@ -1178,6 +1388,76 @@
         || !!hasTa
         || _zwJusIsHtmlElement(node, 'center');
     }, false);
+    // Chrome delta（J-A/J-D 对齐载具祖先壳改写）：① 含域无载具（祖先壳不入含
+    // 域——{} 边界选区形除外，彼时走 ① 既有路径）且选区端点同在某载具祖先壳
+    // 内、壳内容全被含、壳内全 editable 时，改写壳形态并收口。录制口径：
+    // - 目标≠left：壳归一 div style text-align=目标——div 摘 align attr 后
+    //   覆写/追加声明；center 换代 div 加声明；未知元素（quasit 族）摘 attr
+    //   后新 div 外裹。justifycenter/right/full 九祖先形（align/style × 5 值
+    //   + center）全落此臂，值==目标也换形（justifycenter [5] align=center →
+    //   style 形）。
+    // - 目标=left（缺省值）：壳剥对齐（摘 attr/剔声明）后按 ① 同判解包提升
+    //   （无属性 div 解包；center 换代后解包）——justifyleft 九祖先形全落此臂。
+    if (elementList.length === 0) {
+      var shellJ = null;
+      var ancJ = range.startContainer;
+      var gJ = 0;
+      while (ancJ && gJ++ < 128) {
+        if (_zwJusIsEditingHost(ancJ)) break;
+        if (ancJ.nodeType === 1 && _zwJusIsAlignCarrierEl(ancJ)) {
+          shellJ = ancJ;
+          break;
+        }
+        ancJ = ancJ.parentNode;
+      }
+      var endOkJ = false;
+      if (shellJ) {
+        endOkJ = newRange.endContainer === shellJ
+          || _zwJusIsAncestorOf(shellJ, newRange.endContainer);
+      }
+      if (shellJ && endOkJ && _zwJusShellRewritable(shellJ, newRange)) {
+        var tagJ = _zwJusTag(shellJ);
+        if (alignment === 'left') {
+          try { shellJ.removeAttribute('align'); } catch (_eJalp) {}
+          var stJ = shellJ.getAttribute && shellJ.getAttribute('style');
+          if (stJ && /(?:^|;)\s*text-align\s*:/i.test(String(stJ))) {
+            var declsJ = String(stJ).split(';');
+            var keptJ = [];
+            for (var dJ = 0; dJ < declsJ.length; dJ++) {
+              if (/(?:^|\s*)text-align\s*:/i.test(declsJ[dJ])) continue;
+              if (declsJ[dJ].replace(/\s+/g, '') !== '') keptJ.push(declsJ[dJ]);
+            }
+            var outJ = keptJ.join(';').replace(/^;+|;+$/g, '');
+            if (outJ === '') {
+              try { shellJ.removeAttribute('style'); } catch (_eJstp1) {}
+            } else {
+              try { shellJ.setAttribute('style', outJ); } catch (_eJstp2) {}
+            }
+          }
+          if (_zwJusIsHtmlElement(shellJ, ['div', 'span']) || tagJ === 'center') {
+            var elJ = tagJ === 'center' ? _zwJusSetTagName(shellJ, 'div') : shellJ;
+            if (elJ.attributes && !elJ.attributes.length) {
+              _zwJusRemovePreservingDescendants(elJ);
+            }
+          }
+        } else if (tagJ === 'center') {
+          var ndJ = _zwJusSetTagName(shellJ, 'div');
+          _zwJusSetInlineTextAlign(ndJ, alignment);
+        } else if (tagJ === 'div') {
+          try { shellJ.removeAttribute('align'); } catch (_eJald) {}
+          _zwJusSetInlineTextAlign(shellJ, alignment);
+        } else {
+          try { shellJ.removeAttribute('align'); } catch (_eJalu) {}
+          var wJ = document.createElement('div');
+          try { wJ.setAttribute('style', 'text-align:' + alignment); } catch (_eJwu) {}
+          if (shellJ.parentNode) {
+            shellJ.parentNode.insertBefore(wJ, shellJ);
+            _zwJusMovePreservingRanges(shellJ, wJ, 0);
+          }
+        }
+        return true;
+      }
+    }
     var i;
     for (i = 0; i < elementList.length; i++) {
       var element = elementList[i];
@@ -1218,6 +1498,47 @@
         && _zwJusGetAlignmentValue(node) !== alignment;
     });
 
+    // Chrome delta（J-A 邻接壳吸收）：目标≠left 且选区块与同值 div 载具壳相邻
+    //（中间至多一个纯 ws 文本节点）时，块移入壳内（ws 随迁入壳）、紧随同值壳
+    // 折叠并入——录制 `<div align="center"><p>foo</p> <p>bar</p></div>`（前邻
+    // ws 形）/ `<div align="right"><p>foo</p><p>[bar]</p><p>baz</p></div>`（无
+    // ws + 后随壳折叠形）。center 壳不吸收（`<center><p>foo</center> <p>[bar]`
+    // 录制新建 div）。目标=left 时选区块对齐已命中不入 nodeList，本臂自然不触
+    // 发（justifyleft 邻接形录制原样不动）。
+    if (alignment !== 'left') {
+      for (var bI = nodeList.length - 1; bI >= 0; bI--) {
+        var bJ2 = nodeList[bI];
+        if (!bJ2 || bJ2.nodeType !== 1 || !_zwJusIsHtmlElement(bJ2)) continue;
+        var parJ2 = bJ2.parentNode;
+        if (!parJ2) continue;
+        var pvJ = bJ2.previousSibling;
+        var pvWsJ = null;
+        if (_zwJusIsWsOnlyText(pvJ)) { pvWsJ = pvJ; pvJ = pvJ.previousSibling; }
+        if (pvJ && pvJ.nodeType === 1 && _zwJusTag(pvJ) === 'div'
+            && _zwJusIsAlignCarrierEl(pvJ)
+            && _zwJusGetAlignmentValue(pvJ) === alignment
+            && pvJ.parentNode === parJ2 && _zwJusIsEditable(pvJ)) {
+          if (pvWsJ) _zwJusMovePreservingRanges(pvWsJ, pvJ, -1);
+          _zwJusMovePreservingRanges(bJ2, pvJ, -1);
+          _zwJusCollapseAlignedShell(pvJ, alignment);
+          nodeList.splice(bI, 1);
+          continue;
+        }
+        var nxJ = bJ2.nextSibling;
+        var nxWsJ = null;
+        if (_zwJusIsWsOnlyText(nxJ)) { nxWsJ = nxJ; nxJ = nxJ.nextSibling; }
+        if (nxJ && nxJ.nodeType === 1 && _zwJusTag(nxJ) === 'div'
+            && _zwJusIsAlignCarrierEl(nxJ)
+            && _zwJusGetAlignmentValue(nxJ) === alignment
+            && nxJ.parentNode === parJ2 && _zwJusIsEditable(nxJ)) {
+          _zwJusMovePreservingRanges(bJ2, nxJ, 0);
+          if (nxWsJ) _zwJusMovePreservingRanges(nxWsJ, nxJ, 1);
+          _zwJusCollapseAlignedShell(nxJ, alignment);
+          nodeList.splice(bI, 1);
+        }
+      }
+    }
+
     // ③ 连续兄弟 run 逐段 wrap（sibling criteria：仅 align attr = alignment 或
     // 单声明 style text-align = alignment 的 div 可复用；新父 = div style 带值）。
     var guard3 = 0;
@@ -1227,7 +1548,8 @@
           && nodeList[0] === sublist[sublist.length - 1].nextSibling) {
         sublist.push(nodeList.shift());
       }
-      _zwJusWrap(sublist,
+      var freshJ = false;
+      var wrappedJ = _zwJusWrap(sublist,
         function (node) {
           if (!_zwJusIsHtmlElement(node, 'div')) return false;
           var attrs = node.attributes || [];
@@ -1254,11 +1576,22 @@
           return true;
         },
         function () {
+          freshJ = true;
           var np = document.createElement('div');
           // Chrome 样式序列化无空格形（录制 `style="text-align:center"`）。
           try { np.setAttribute('style', 'text-align:' + alignment); } catch (_eJnp) {}
           return np;
         });
+      // Chrome delta（J-E 包缘 ws 吞入）：新建包 div 吞并紧邻纯 ws 文本兄弟——
+      // 录制 `<div style="text-align:center"> <p>bar</p></div>`（前缘）/
+      // `<div style="text-align:center"><p>foo</p> </div>`（后缘）形；复用壳
+      // 与既有 DOM 形不动（freshJ 仅新父臂置位）。
+      if (freshJ && wrappedJ) {
+        var pvWJ = wrappedJ.previousSibling;
+        if (_zwJusIsWsOnlyText(pvWJ)) _zwJusMovePreservingRanges(pvWJ, wrappedJ, 0);
+        var nxWJ = wrappedJ.nextSibling;
+        if (_zwJusIsWsOnlyText(nxWJ)) _zwJusMovePreservingRanges(nxWJ, wrappedJ, -1);
+      }
     }
     return true;
   };
@@ -1513,6 +1846,99 @@
     } catch (_ePST) {}
     return _zwPlainStyleDecls(el)[prop] || '';
   }
+  // 作者样式表扁平声明快照（2026-11-05 ③'-c）：host gCS 桥对 <link> 作者样式表
+  // 盲（语料 #purple qV-before got 黑实证——合成源契约 P9-9/R5107 面），plain
+  // 走查此前只见 inline/表现提示/UA 臂。editing 语料 reset.css 全规则为无后代
+  // 组合器的简单选择器（元素/类/id/伪类 :link,:visited），据此做有界扁平匹配。
+  // 页生命周期快照：document.styleSheets getter 每访问即走桥面全量重查（part06
+  // live DOM 语义），而 __zwPlainComputed 位于 apply/qV 热走查（每节点每步调
+  // 用——shim trap 域成本不可见，R350 教训），故首用构建、页生命周期复用；语料
+  // 壳页均为静态样式表（runConformanceTest 不改 sheet）。表/规则数封顶防病态页；
+  // 修改样式表的页面不经本缓存面（cssom 公开视图不走此路径，语义不变）。
+  var _zwPlainAuthorRules = null;
+  function _zwPlainAuthorSnapshot() {
+    if (_zwPlainAuthorRules) return _zwPlainAuthorRules;
+    var out = [];
+    try {
+      var sheets = globalThis.document ? globalThis.document.styleSheets : null;
+      for (var si = 0; sheets && si < sheets.length && si < 16; si++) {
+        var rules = null;
+        try { rules = sheets[si].cssRules; } catch (_ePASn) { rules = null; }
+        if (!rules) continue;
+        for (var ri = 0; ri < rules.length && out.length < 256; ri++) {
+          var r = rules[ri];
+          // 仅 style 规则（selectorText+style 双在；@media/@import 等无此二者）。
+          if (!r || !r.selectorText || !r.style) continue;
+          out.push({ sel: String(r.selectorText), st: r.style,
+            text: String(r.style.cssText || '') });
+        }
+      }
+    } catch (_ePAS) {}
+    _zwPlainAuthorRules = out;
+    return out;
+  }
+  function _zwPlainAuthorMatches(selText, el) {
+    var sels = String(selText).split(',');
+    var tag = String(el.tagName || '').toLowerCase();
+    var id = '';
+    try { id = el.id ? String(el.id) : ''; } catch (_ePAMi) {}
+    var cls = [];
+    try {
+      cls = el.className ? String(el.className).split(/\s+/) : [];
+    } catch (_ePAMc) {}
+    for (var i = 0; i < sels.length; i++) {
+      var s = sels[i].trim().toLowerCase();
+      if (!s) continue;
+      // 有界域：简单选择器（元素/.类/#id/:link/:visited）；含组合器/属性/通配/
+      // 其他伪类的选择器一律不匹配（越界宁可漏配不误配——reset.css 无此形态）。
+      var bare = s.replace(/:link|:visited/g, '');
+      if (!bare || /[\s>+~\[*:]/.test(bare)) continue;
+      var m = /^([a-z][a-z0-9]*)?((?:[.#][a-z0-9_-]+)*)(:(?:link|visited))?$/.exec(s);
+      if (!m) continue;
+      if (m[1] && m[1] !== tag) continue;
+      var ok = true;
+      var parts = m[2] ? m[2].match(/[.#][a-z0-9_-]+/g) || [] : [];
+      for (var pi = 0; pi < parts.length; pi++) {
+        if (parts[pi].charAt(0) === '#') {
+          if (id !== parts[pi].slice(1)) { ok = false; break; }
+        } else if (cls.indexOf(parts[pi].slice(1)) === -1) { ok = false; break; }
+      }
+      if (!ok) continue;
+      if (m[3]) {
+        // :link/:visited 同域近似（语料 reset.css 双伪类同声明 blue；:visited
+        // 历史不可查——与 UA a[href] 臂同口径）。
+        if (tag !== 'a') continue;
+        try {
+          if (!el.getAttribute || el.getAttribute('href') == null) continue;
+        } catch (_ePAMl) { continue; }
+      }
+      return true;
+    }
+    return false;
+  }
+  function _zwPlainAuthorDecl(el, prop) {
+    // 末次匹配规则胜（同 specificity 文档序语义；语料 reset.css 无同属性竞争
+    // 规则，全排序不需要）。声明读取：style IDL getPropertyValue 优先（kebab
+    // 归一 + 无序列化损耗），cssText 文本扫描兜底。
+    var rules = _zwPlainAuthorSnapshot();
+    var found = '';
+    for (var i = 0; i < rules.length; i++) {
+      if (!_zwPlainAuthorMatches(rules[i].sel, el)) continue;
+      var v = '';
+      try {
+        if (rules[i].st && typeof rules[i].st.getPropertyValue === 'function') {
+          v = String(rules[i].st.getPropertyValue(prop) || '').trim();
+        }
+      } catch (_ePADg) {}
+      if (!v && rules[i].text) {
+        var m = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i')
+          .exec(rules[i].text);
+        if (m) v = m[1].trim();
+      }
+      if (v) found = v;
+    }
+    return found;
+  }
   // hsl(h, s%, l%) → rgb 序列化值（CSS Color 3 算法；h 角度可负可超 360）。
   function _zwPlainHslToRgb(h, s, l) {
     h = ((h % 360) + 360) % 360;
@@ -1641,10 +2067,33 @@
         }
       }
     } catch (_ePSA) {}
+    // UA stylesheet 元素规则（HTML 渲染节 15.3.1：big{font-size:larger}/
+    // small{font-size:smaller}）——engine UA 样式表无该规则，host gCS 恒
+    // 缺省 16px。larger/smaller = 父链 rendered size 过 legacy 中点表定档
+    // ±1（与 font[size] ±N 相对臂同口径），clamp 1..7。font[size] 表现提示
+    // （author 源）级联在上，故后置。
+    try {
+      var tg = (el.tagName && String(el.tagName).toLowerCase()) || '';
+      if (tg === 'big' || tg === 'small') {
+        var baseUa = 16;
+        var parUa = el.parentNode;
+        var guardUa = 0;
+        while (parUa && parUa.nodeType === 1 && guardUa++ < 256) {
+          var pvUa = _zwPlainFontSizePx(parUa);
+          if (!isNaN(pvUa)) { baseUa = pvUa; break; }
+          parUa = parUa.parentNode;
+        }
+        var lgUa = parseInt(_zwValLegacyFontSize(baseUa + 'px'), 10);
+        if (isNaN(lgUa)) lgUa = 3;
+        lgUa += tg === 'big' ? 1 : -1;
+        lgUa = Math.min(7, Math.max(1, lgUa));
+        return _zwPlainFontKwPx[_zwPlainFontAttrKw[lgUa]];
+      }
+    } catch (_ePSB) {}
     return NaN;
   }
   // 入口：prop 为 kebab-case；仅应答四属性，其余返 ''（调用方维持旧行为）。
-  globalThis.__zwPlainComputed = function (elt, prop) {
+  globalThis.__zwPlainComputed = function (elt, prop, qvMode) {
     if (!elt || elt.nodeType !== 1) return '';
     var guard = 0;
     var node = elt;
@@ -1667,6 +2116,15 @@
       node = elt; guard = 0;
       while (node && node.nodeType === 1 && guard++ < 256) {
         var raw = _zwPlainDecl(node, prop);
+        if (!raw && qvMode) {
+          // 作者样式表规则（③'-c）：作者 normal 声明 > 表现提示 > UA 规则——
+          // 插在 inline decl 之后、font 提示臂之前。仅 qvMode（值面通道）开：
+          // apply 面 ownFacePre/parFacePre 等价分组消费方对近端作者声明可见性
+          // 敏感（ba[r ba] compare 修复前绿、#purple 臂开实测 z/ba 序 scramble；
+          // pre/listing fontname compare 同证 bazfoo 跨块并段）——作者臂在
+          // apply 面的等价分组语义属 ③'-a/b/d 同窗实施，本刀不动。
+          try { raw = _zwPlainAuthorDecl(node, prop); } catch (_ePAAu) { raw = ''; }
+        }
         var tagL = String(node.tagName || '').toLowerCase();
         if (!raw && tagL === 'font') {
           try {
@@ -1803,8 +2261,26 @@
     return true;
   }
   function _zwValIsFormattable(node) {
-    return _zwJusIsEditable(node) && _zwJusFormattableVisible(node)
-      && (node.nodeType === 3 || _zwJusIsHtmlElement(node, ['img', 'br']));
+    // OPTIMIZATION：类型门槛前置（纯合取词换序，真值不变）——qV 走查逐节点
+    // 调用，绝大多数节点（span/div/font…）非 text/img/br，先短路免掉
+    // FormattableVisible → isVisible 的全子树下行；重排前 multitest 大树
+    // 每查询同步开销爆炸（30 分钟 0 行出账，br extraneous 断环后走查不再
+    // 被 RangeError 快速中止，全量走完暴露了这层成本）。
+    if (!(node.nodeType === 3 || _zwJusIsHtmlElement(node, ['img', 'br']))) {
+      return false;
+    }
+    return _zwJusIsEditable(node) && _zwJusFormattableVisible(node);
+  }
+  // qI 普查面（Chrome delta，④ fontsize qI-after 收口）：extraneous br 不作
+  // 可见性过滤——Chrome qI 普查含选区内未包裹 br（fontsize 语料
+  // `<p>[foo<p><br><p>bar]` 双变体记录 qI after=true：br 继承缺省值与包裹
+  // span 混合；vendored isFormattableNode 的 isVisible 冗余 br 过滤与 Chrome
+  // 录音相悖，语料权威）。qV 值面口径保持 _zwValIsFormattable 过滤不动。
+  // br 短路免掉 FormattableVisible 下行（trap 域成本同 _zwValIsFormattable 门）。
+  // https://w3c.github.io/editing/execCommand.html#indeterminate
+  function _zwValIsFormattableQI(node) {
+    if (_zwJusIsHtmlElement(node, 'br')) return _zwJusIsEditable(node);
+    return _zwValIsFormattable(node);
   }
   // getLegacyFontSize 中点表（Chrome UA 缺省标度下界 px；上界 = 下位 +1 档）。
   var _zwValLegacyBounds = [10, 13, 16, 18, 24, 32];
@@ -1839,13 +2315,59 @@
     }
     var prop = cmd === 'fontsize' ? 'font-size'
       : (cmd === 'fontname' ? 'font-family' : 'color');
-    var v = _zwJusCs(node, prop);
+    var v;
+    if (cmd === 'fontname' || cmd === 'forecolor') {
+      // plain 走查优先（2026-11-05 ③'-c/⑤）：host gCS 桥对 <link> 作者样式表
+      // 与 legacy font face 提示均盲（forecolor #purple qV-before got 黑 /
+      // fontname pre 族 qV-after got serif 实证）；plain 走查含 inline、作者
+      // 规则、font 提示、UA 臂，即完整近端级联。host 读数回落保留（P9-9
+      // 通道口径），fontsize 档位面维持 host 优先不动（getLegacyFontSize
+      // 消费 host 16px 缺省口径）。
+      try { v = __zwPlainComputed(node, prop, true); } catch (_eEvPV) { v = ''; }
+      if (!v) v = _zwJusCs(node, prop);
+    } else {
+      v = _zwJusCs(node, prop);
+    }
+    if (cmd === 'fontsize' && (v === '' || v === '16px')) {
+      // host gCS 通道无 UA stylesheet 元素规则（big/small——HTML 渲染节
+      // 15.3.1），big/small 子树读数恒 16px 缺省 → forceValue 等值早退跳包
+      // （big/small 语料期望内层包裹实证）+ qV 档位错档（small 得 3 期望
+      // 2）。host 读数为空或缺省时改 plain 走查补 UA 面（plain 同时见声明/
+      // 表现提示/UA 规则；host 非 16px 可分辨值优先保 P9-9 通道口径）。
+      var pv = '';
+      try { pv = __zwPlainComputed(node, 'font-size'); } catch (_eEvP) {}
+      if (pv && pv !== '16px') return pv;
+    }
     if (v === '') {
       // 无声明时 UA 初值（Chrome computed 口径，probe tD/tE 与语料裸行期望）——
       // gCS 通道保 P9-9 合成源契约返空，初值在此值面消费点填；fontsize 16px
       // 过 legacy 中点映射落 '3'（medium）。
       v = cmd === 'fontname' ? 'serif'
         : (cmd === 'forecolor' ? 'rgb(0, 0, 0)' : '16px');
+    }
+    // F6b r2（2026-11-09 r1 批 ABORT 定谳）：sub/sup UA 0.83em 缩放在 host gCS
+    // 与 plain 走查双通道盲读（style-system UA 表 sub,sup{font-size:0.83em}
+    // shim 侧不可见）——C1/C2 等桶溶解位 qV("fontsize") 回落缺省 16px 过中点
+    // 映射得 '3'，语料/Chrome computed 语义 16×0.83=13.28px→'2'。仅缺省回落位
+    // 且**无显式 font[size] 载体**时缩放：载体在场（C3/C4 `<font size=3><sub>`
+    // /A/N 族）的 16px 是 attr 派生真值（legacy '3'），盲读同串不同源，近端
+    // 不可分辨故按载体存在性分派；作者 px 声明路径（plain 非 16px 直返）不触。
+    // r1 全量 P2F 矩阵实证影响面恰 C1/C2 四断言行（C3/C4 载体读数、N 族无
+    // fontsize qV 断言均不受扰）。
+    // https://w3c.github.io/editing/execCommand.html#value-overrides-and-query
+    if (cmd === 'fontsize' && v === '16px') {
+      var scN = node;
+      var gS = 0;
+      var hasCarrier = false;
+      var inScript = false;
+      while (scN && scN.nodeType === 1 && gS++ < 256) {
+        var tnS = String(scN.tagName || '').toLowerCase();
+        if (tnS === 'sub' || tnS === 'sup') inScript = true;
+        if (tnS === 'font' && scN.hasAttribute && scN.hasAttribute('size')) hasCarrier = true;
+        if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(scN)) break;
+        scN = scN.parentNode;
+      }
+      if (inScript && !hasCarrier) v = (16 * 0.83) + 'px';
     }
     return v;
   }
@@ -1872,7 +2394,11 @@
       var sel = globalThis.getSelection ? globalThis.getSelection() : null;
       var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
       if (!rng) return { value: '', indeterm: false };
-      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattable);
+      // qI 普查独立于 qV 值面（单遍走查，④ 收口）：普查用 _zwValIsFormattableQI
+      // （含 extraneous br）；qV ref = 普查序首个通过 qV 过滤的节点——两走查
+      // 同文档序且 qV 过滤集 ⊆ 普查集（仅差 extraneous br），首过滤节点与旧
+      // 全量过滤走查 nodes[0] 恒等（qV 首节点口径零漂移）。
+      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattableQI);
       var indeterm = false;
       if (nodes.length > 1) {
         var first = _zwValEffectiveValue(nodes[0], cmd);
@@ -1880,9 +2406,15 @@
           if (_zwValEffectiveValue(nodes[i], cmd) !== first) { indeterm = true; break; }
         }
       }
-      var ref = nodes.length ? nodes[0] : rng.startContainer;
+      var ref = null;
+      for (var i = 0; i < nodes.length; i++) {
+        if (_zwValIsFormattable(nodes[i])) { ref = nodes[i]; break; }
+      }
+      if (!ref) ref = rng.startContainer;
       var v = _zwValEffectiveValue(ref, cmd);
       if (cmd === 'fontsize') v = _zwValLegacyFontSize(v);
       return { value: v == null ? '' : String(v), indeterm: indeterm };
-    } catch (_eVQ) { return { value: '', indeterm: false }; }
+    } catch (_eVQ) {
+      return { value: '', indeterm: false };
+    }
   };

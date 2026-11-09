@@ -36,6 +36,15 @@
       enumerable: false, // 非枚举——for...in/枚举面保持原状（链重接后可枚举成员会漏进元素枚举，cue/march 内部枚举回归源）
     });
   } catch (_ePPDef) {}
+  // s332（html-semantics M2）：HTMLVideoElement 接口构造器补落——spec 无 [Constructor]
+  //（仅 `new Video()` 不存在的历史面，实例经 createElement('video') 产出）。此前 part03
+  // `_zwHtmlElementIfaces` 循环 `if (!globalThis[...])` 泛化分支为本名铸**可构造**占位
+  //（该循环 Audio/Video 特化分支注释所称「已由 part01b 定义」对 video 从未成立），
+  // `new HTMLVideoElement()` 返元素不抛。补定义后特化分支接管（Illegal constructor +
+  // WC-M1 super() 包装，prototype 链 Media→HTMLElement 同 Audio）。
+  // https://html.spec.whatwg.org/multipage/media.html#htmlvideoelement
+  function HTMLVideoElement() { throw new TypeError('Illegal constructor'); }
+  globalThis.HTMLVideoElement = globalThis.HTMLVideoElement || HTMLVideoElement;
   function HTMLTrackElement() { throw new TypeError('Illegal constructor'); }
   HTMLTrackElement.NONE = 0; HTMLTrackElement.LOADING = 1;
   HTMLTrackElement.LOADED = 2; HTMLTrackElement.ERROR = 3;

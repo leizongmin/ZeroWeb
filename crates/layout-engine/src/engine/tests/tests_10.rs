@@ -597,43 +597,128 @@ fn test_multiple_floats_with_clear() {
     assert!(be.y >= ce.y, "block 应在 clear 元素之后: be.y={}, ce.y={}", be.y, ce.y);
 }
 
-/// 测试 <img> 元素的固有尺寸：有 width/height HTML 属性时应正确布局。
+/// 测试 <img> 属性尺寸通道（s283 后契约，HTML §rendering dimension-attributes）：
+/// width/height 属性只经两条规范通道影响 used size——① presentational hint 进级联
+///（style-system img 臂 → computed definite Px，真实管线即此形）；② aspect-ratio
+/// 注入（tree.rs 属性比，一侧显式时 auto 侧按比推导）。attr 绝不直写 used size
+///（s283 勘根：hint 被作者覆盖后 attr 二次入场压回 attr 值 = implicit-sizes-ignores-width
+/// 实证缺陷）；computed 双 auto + 无解码固有信号 → 保持 auto（块级 img 回落容器宽）。
+/// 引入点：8549f39ec（s283 img 免 attr 直写三臂）后本测试旧契约（裸 ComputedStyle
+/// + attr 直写）失效——R4918 后 make test workspace 腿 fail-fast 盲区遮蔽至今。
 #[test]
 fn test_img_intrinsic_sizing_with_attributes() {
-    let (mut doc, body) = make_doc_with_body();
-    let img = doc.create_element("img");
-    // 设置 HTML 属性
+    // ① hint 等价形（真实管线通道）：computed = 级联产物（attrs → hints 200px/100px，
+    // 无作者覆盖）→ used 200×100。
     {
-        let elem = doc.get_mut(img).unwrap();
-        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
-            e.set_attribute("width", "200");
-            e.set_attribute("height", "100");
-        }
+        let (mut doc, body) = make_doc_with_body();
+        let img = doc.create_element("img");
+        set_img_attr_dimensions(&mut doc, img, 200.0, 100.0);
+        doc.append_child(body, img).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut img_style = ComputedStyle::default();
+        img_style.display = DisplayValue::Block;
+        img_style.width = LengthValue::Px(200.0);
+        img_style.height = LengthValue::Px(100.0);
+        styles.insert(img, img_style);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+        assert!(
+            (img_box.width - 200.0).abs() < 1.0 && (img_box.height - 100.0).abs() < 1.0,
+            "img should use hint-mapped computed 200x100, got {}x{}",
+            img_box.width,
+            img_box.height
+        );
     }
-    doc.append_child(body, img).unwrap();
 
-    let mut styles = HashMap::new();
-    // 不设置 CSS width/height — 使用 HTML 属性的固有尺寸
-    let mut img_style = ComputedStyle::default();
-    img_style.display = DisplayValue::Block;
-    styles.insert(img, img_style);
+    // ② s283 契约钉：computed 双 auto + 属性 + 无解码固有信号 → 保持 auto（块级
+    // img 回落容器宽 800），attr 不直写 used size。
+    {
+        let (mut doc, body) = make_doc_with_body();
+        let img = doc.create_element("img");
+        set_img_attr_dimensions(&mut doc, img, 200.0, 100.0);
+        doc.append_child(body, img).unwrap();
 
-    let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute(&doc, &styles);
+        let mut styles = HashMap::new();
+        let mut img_style = ComputedStyle::default();
+        img_style.display = DisplayValue::Block;
+        styles.insert(img, img_style);
 
-    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+        assert!(
+            (img_box.width - 800.0).abs() < 1.0,
+            "img with attrs but no hint and no intrinsic signal must stay auto (container fill), got {}",
+            img_box.width
+        );
+    }
 
-    // img 应使用 HTML 属性的固有尺寸 200x100
-    assert!(
-        (img_box.width - 200.0).abs() < 1.0,
-        "img width should be ~200 (from HTML attribute), got {}",
-        img_box.width
-    );
-    assert!(
-        (img_box.height - 100.0).abs() < 1.0,
-        "img height should be ~100 (from HTML attribute), got {}",
-        img_box.height
-    );
+    // ③ auto + 解码固有信号（CSS2 §10.3.2 auto→intrinsic，s283 替换臂）：属性给比、
+    // used 尺寸取 img_intrinsic_sizes 注入的固有维。
+    {
+        let (mut doc, body) = make_doc_with_body();
+        let img = doc.create_element("img");
+        set_img_attr_dimensions(&mut doc, img, 200.0, 100.0);
+        doc.append_child(body, img).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut img_style = ComputedStyle::default();
+        img_style.display = DisplayValue::Block;
+        styles.insert(img, img_style);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute_with_img_intrinsic(
+            &doc,
+            &styles,
+            [(img, (200.0_f32, 100.0_f32))].into_iter().collect(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+        assert!(
+            (img_box.width - 200.0).abs() < 1.0 && (img_box.height - 100.0).abs() < 1.0,
+            "img auto should resolve to injected intrinsic 200x100, got {}x{}",
+            img_box.width,
+            img_box.height
+        );
+    }
+
+    // ④ 属性比通道（s283 保留半边，R784 语义）：CSS 宽显式 400 + 高 auto + 属性
+    // 200×100 → 高由属性比推导 400/(200/100)=200。
+    {
+        let (mut doc, body) = make_doc_with_body();
+        let img = doc.create_element("img");
+        set_img_attr_dimensions(&mut doc, img, 200.0, 100.0);
+        doc.append_child(body, img).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut img_style = ComputedStyle::default();
+        img_style.display = DisplayValue::Block;
+        img_style.width = LengthValue::Px(400.0);
+        styles.insert(img, img_style);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+        assert!(
+            (img_box.width - 400.0).abs() < 1.0 && (img_box.height - 200.0).abs() < 1.0,
+            "img height should derive from attr ratio 400/(200/100)=200, got {}x{}",
+            img_box.width,
+            img_box.height
+        );
+    }
+}
+
+/// 设置 img 元素的 width/height HTML 属性（本文件 s283 后契约测试共用）。
+fn set_img_attr_dimensions(doc: &mut Document, img: NodeId, w: f32, h: f32) {
+    let elem = doc.get_mut(img).unwrap();
+    if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+        e.set_attribute("width", &format!("{w}"));
+        e.set_attribute("height", &format!("{h}"));
+    }
 }
 
 /// R1683：`<embed>`/`<object>`/`<applet>` 同为替换元素，HTML width/height 属性应给出固有

@@ -8,7 +8,8 @@ use std::path::Path;
 
 use zero_engine::pipeline::PageScript;
 use zero_engine::{
-    DomMutation, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
+    DomMutation, FOCUS_SELECTOR_KEY, apply_mutations_to_html, apply_mutations_to_html_with_handles,
+    extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
 };
 
 /// R4353：脚本化滚动偏移记录（`element.scrollTop/scrollLeft = n`，shim `_scrollOffsets`
@@ -61,6 +62,7 @@ pub(super) fn apply_scripted_dom_mutations(
     Vec<ScrollOffsetRecord>,
     Vec<TextSelectionRecord>,
     Option<CeCaretRecord>,
+    f64,
 ) {
     // R-t2qq 返修 F2：adopted 槽 case 首清（置于最前——含下方无脚本早退路径）。进程级
     // 槽清空是防御位（本 harness 经下方换装回调正常路径不写它）；线程局部 case 覆盖
@@ -72,7 +74,7 @@ pub(super) fn apply_scripted_dom_mutations(
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
-        return (html.to_string(), None, Vec::new(), Vec::new(), None);
+        return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0);
     }
 
     use std::sync::Arc;
@@ -93,20 +95,81 @@ pub(super) fn apply_scripted_dom_mutations(
         #[cfg(feature = "v8")]
         let sandbox = match zero_script_sandbox::V8Sandbox::with_config(config) {
             Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
-            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0),
         };
         #[cfg(not(feature = "v8"))]
         let sandbox = match zero_script_sandbox::QuickJSSandbox::with_config(config) {
             Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
-            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0),
         };
         sandbox
     };
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
-    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
+    // s304：脚本沙箱 page_url 取真实 wpt 页面 URL（base_dir 相对 wpt_root 还原
+    // `/html/...` 路径）——页面脚本的相对 URL/fetch/XHR 按页面 URL 语义解析（此前
+    // 恒 about:blank，location 相关判定与相对取址全落空）。无法还原路径（root/dir
+    // 不同基）回落 about:blank 维持旧行为。
+    let page_url_str = wpt_root
+        .zip(base_dir)
+        .and_then(|(root, dir)| {
+            let root = std::fs::canonicalize(root).ok()?;
+            let dir = std::fs::canonicalize(dir).ok()?;
+            let rel = dir
+                .strip_prefix(&root)
+                .ok()?
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            Some(format!("https://wpt.test/{rel}/"))
+        })
+        .unwrap_or_else(|| String::from("about:blank"));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(page_url_str));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, canvas_registry, None);
+    // s304：同步 fetch 桥——shim R34xx 同步返回契约（`__zw_fetch` 返回 `__zwfr:`
+    // wire 即同步 settle，无 handler 时 fetch 落 no-handler error）。mutation 沙箱
+    // 此前无 fetch 桥：页面 fetch 恒 `__zw_fetch_error:no-handler` → detached
+    // `new Image()` 预载链（fetch → blob → createImageBitmap）onload 永不派发 →
+    // 运行时插入元素不入 mutated_html（available-images.html 全白勘根 2026-11-06）。
+    // handler 复用 testharness 通道 wpt_data_fetch_handler_with_stash（wpt_root
+    // 本地文件 + wptserve py 端点协议同源）；fetch 只在脚本阶段消费（同步调用落
+    // wire，V8 execute 末 microtask checkpoint 排空 then 链）。
+    if let Some(root) = wpt_root
+        && let Some(handler) = crate::testharness::reftest_mutation_fetch_handler(root)
+    {
+        sandbox.register_callback(
+            "__zw_fetch",
+            Box::new(move |args: &[String]| -> String {
+                let method = args.get(1).cloned().unwrap_or_else(|| "GET".to_string());
+                let url = args.get(2).cloned().unwrap_or_default();
+                let headers = zero_engine::fetch_bridge::decode_headers(args.get(3).map(String::as_str).unwrap_or(""));
+                let body_raw = args.get(4).cloned().unwrap_or_default();
+                let (body, body_bytes) =
+                    if let Some(bytes) = zero_engine::fetch_bridge::decode_body_bytes_raw(&body_raw) {
+                        (None, Some(bytes))
+                    } else if body_raw.is_empty() {
+                        (None, None)
+                    } else {
+                        (Some(body_raw), None)
+                    };
+                let req = zero_engine::fetch_bridge::FetchRequest {
+                    url,
+                    method,
+                    headers,
+                    body,
+                    body_bytes,
+                    credentials: args.get(9).filter(|value| !value.is_empty()).cloned(),
+                    mode: args.get(7).filter(|value| !value.is_empty()).cloned(),
+                    redirect: args.get(8).filter(|value| !value.is_empty()).cloned(),
+                    cache: None,
+                };
+                match handler(&req) {
+                    Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),
+                    Err(e) => format!("__zw_fetch_error:{e}"),
+                }
+            }),
+        );
+    }
     // R4344：清除潜在跨 case 泄漏的 live 查询文档（本函数末尾同样清）——live 文档
     // 生命周期严格限于本 case 的脚本阶段。
     zero_engine::publish_live_query_doc(None);
@@ -126,7 +189,7 @@ pub(super) fn apply_scripted_dom_mutations(
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
-        return (html.to_string(), None, Vec::new(), Vec::new(), None);
+        return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0);
     }
     // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
     // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
@@ -256,6 +319,20 @@ pub(super) fn apply_scripted_dom_mutations(
         "if (typeof __zw_dispatch_event === 'function') { try { __zw_dispatch_event('html','load',null); } catch(_e){} }",
     );
 
+    // s318（WPT reftest-wait 契约）：带 reftest-wait 的页面在首次渲染后由 harness 在
+    // documentElement 上派发 `TestRendered`——页面监听它做首帧后变更（填文本等）再摘
+    // class 允许截图（上游 wptrunner 行为，https://web-platform-tests.org/writing-tests/
+    // reftests.html#controlling-when-comparison-occurs）。harness 串行模型无真首帧，
+    // load 派发后即「首个渲染窗口」近似位：此处派发给页面 listener 变更窗口，mutation
+    // 随下方 recorded 一次应用。仅 reftest-wait 页面派发（上游仅该流程触达；无监听页
+    // no-op，非 reftest-wait 页零扰动）。多轮重入（listener 摘后重挂 reftest-wait 等
+    // 下一次 TestRendered）未模拟——FIXME：无语料驱动，单轮覆盖既有全部 42 案。
+    // 先例：the-option-element dynamic-content-change-rendering（span textContent
+    // 首帧后置）。
+    let _ = sandbox.execute(
+        "if (typeof __zw_dispatch_event === 'function') { try { if (document.documentElement && document.documentElement.classList && document.documentElement.classList.contains('reftest-wait')) __zw_dispatch_event('html','TestRendered',null); } catch(_e){} }",
+    );
+
     let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if std::env::var("REFTEST_DEBUG").is_ok() {
         eprintln!("  [reftest JS] recorded {} mutation(s): {:?}", recorded.len(), recorded);
@@ -267,18 +344,29 @@ pub(super) fn apply_scripted_dom_mutations(
     // R4321：先应用 recorded mutations（既有行为，作用于原始 html），再两段式落地
     // document.write 缓冲（合成 SetOuterHtml 作用于上一步产物）。两段分离保证合成
     // 选择器失配等 Err 只回落 write 兜底（= 旧行为），不殃及 recorded mutations。
-    let focus_selector = recorded
-        .iter()
-        .filter_map(|m| match m {
-            DomMutation::FocusChanged { selector } => Some(selector.clone()),
-            _ => None,
-        })
-        .next_back()
-        .flatten();
+    // R4344：焦点回流（R4241 口径）——最后一次 focus 变更生效。45 号 M1 起 shadow 树内
+    // focus() 为 [`DomMutation::FocusChangedInShadow`]（apply 时经 [`FOCUS_SELECTOR_KEY`]
+    // 保留键铸造 zwsh 地址），此处只记录「最后一次焦点变更是否 shadow 形态」，地址在
+    // 下方 apply 返回的 handle_selectors 里按键读取。
+    let mut focus_selector: Option<String> = None;
+    let mut last_focus_is_shadow = false;
+    for m in &recorded {
+        match m {
+            DomMutation::FocusChanged { selector } => {
+                focus_selector = selector.clone();
+                last_focus_is_shadow = false;
+            }
+            DomMutation::FocusChangedInShadow { .. } => last_focus_is_shadow = true,
+            _ => {}
+        }
+    }
     let mut current = html.to_string();
     if !recorded.is_empty() {
-        match apply_mutations_to_html(html, &recorded) {
-            Ok(new_html) => {
+        match apply_mutations_to_html_with_handles(html, &recorded) {
+            Ok((new_html, handle_selectors)) => {
+                if last_focus_is_shadow {
+                    focus_selector = handle_selectors.get(FOCUS_SELECTOR_KEY).cloned();
+                }
                 if std::env::var("REFTEST_DEBUG_HTML").is_ok() {
                     let sample = new_html.chars().take(2000).collect::<String>();
                     eprintln!("  [reftest JS] mutated html (first 2000): {sample}");
@@ -341,7 +429,22 @@ pub(super) fn apply_scripted_dom_mutations(
         eprintln!("  [reftest JS] ce caret: {ce_caret:?}");
     }
 
-    (current, focus_selector, scroll_offsets, text_selections, ce_caret)
+    // s307：脚本期 setTimeout 虚钟导出（shim timer 即时消费——`__zw_anim_clock`
+    // 累计页面等待 = 截图时刻动画时钟，渲染期活跃帧选取依据；无 timer 页恒 0）。
+    let anim_clock_ms: f64 = sandbox
+        .execute_json("(typeof __zw_anim_clock === 'number') ? __zw_anim_clock : 0")
+        .ok()
+        .and_then(|r| serde_json::from_str::<f64>(&r.value).ok())
+        .unwrap_or(0.0);
+
+    (
+        current,
+        focus_selector,
+        scroll_offsets,
+        text_selections,
+        ce_caret,
+        anim_clock_ms,
+    )
 }
 
 /// R4344：解析期 `appendChild` 位置锚定——把单个内联脚本执行期间（`range`）记录的

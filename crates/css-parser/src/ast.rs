@@ -442,6 +442,15 @@ pub enum PseudoClassSelector {
     Lang(Vec<String>),
     /// `:dir()` 选择器（参数为 `ltr`/`rtl`，归一化为小写）。
     Dir(String),
+    /// `:host` 伪类（CSS Scoping §3，https://drafts.csswg.org/css-scoping/#host-selector）：
+    /// 匹配 shadow host 元素。`None` = 无参形式；`Some` = `:host(<compound-selector>)`
+    /// 限定形态（spec 语法单化合物选择器，解析期强制单化合物、非组合器链）。
+    /// 特异性 = 伪类 (0,1,0) + 参数（见 `selector::specificity`）。
+    Host(Option<Vec<Selector>>),
+    /// `:host-context(<compound-selector>)` 伪类（CSS Scoping §4）：host 且 light
+    /// 域祖先链（穿出 shadow 边界上行）任一祖先匹配参数时命中。同 `:host()` 强制
+    /// 单化合物参数。
+    HostContext(Vec<Selector>),
 }
 
 /// nth 函数的模式（如 `2n+1`、`odd`、`even`、`3`）。
@@ -467,6 +476,14 @@ pub enum PseudoElementSelector {
         /// 方向关键字或 `*` 通配（已归一化小写）。
         arg: String,
     },
+    /// `::slotted(<compound-selector>)`（45 号 shadow-dom-rendering M2，CSS Shadow §3.2.4，
+    /// https://drafts.csswg.org/css-shadow-1/#slotted-pseudo）：slot 分配内容伪元素。
+    /// 参数为单化合物选择器（解析期强制）；`:has` 可入参（csswg-drafts#10586 后形态，
+    /// slotted-has-001..004 实证）。特异性 = 伪元素 (0,0,1) + 参数（`selector::specificity`）。
+    /// 匹配语义：`::slotted` 子类所在化合物匹配 slot 元素，参数匹配 slot 的已分配元素，
+    /// 前缀组合子沿 flat tree（slot → shadow host → …）上行——由 style-system slotted
+    /// 段收集器消费；常规匹配路径恒不匹配（同 `:host` 族分道模式）。
+    Slotted(Box<CompoundSelector>),
 }
 
 // ── @supports ─────────────────────────────────────────────────────────

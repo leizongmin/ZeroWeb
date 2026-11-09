@@ -1,0 +1,486 @@
+bash tests/wpt-runner/scripts/goals/25-html-semantics-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  html/semantics/forms/attributes-common-to-form-controls: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/constraints: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/customizable-combobox: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/form-control-infrastructure: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/form-submission-0: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/form-submission-target: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/resetting-a-form: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/textfieldselection: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-button-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-datalist-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-fieldset-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-form-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-input-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-label-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-legend-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-meter-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-optgroup-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-option-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-output-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-progress-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-select-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms/the-textarea-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 403
+  html/semantics/embedded-content/image-maps: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/semantics/embedded-content/the-area-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-audio-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-canvas-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-embed-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-img-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-object-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-video-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/interactions-of-styling-and-scripting: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/styling: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/the-base-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/the-link-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/the-meta-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/the-style-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/document-metadata/the-title-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-dd-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-div-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-dl-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-dt-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-figcaption-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-figure-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-hr-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-li-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-ol-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-p-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-pre-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/grouping-content/the-ul-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-a-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-b-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-bdi-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-bdo-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-br-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-ruby-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-time-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/text-level-semantics/the-wbr-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/attributes-common-to-td-and-th-elements: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/processing-model-1: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/the-caption-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/the-table-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/the-tbody-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/the-tfoot-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/the-thead-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data/the-tr-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 403
+  html/semantics/interactive-elements/commands: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/semantics/interactive-elements/the-details-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/interactive-elements/the-dialog-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/interactive-elements/the-summary-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-noscript-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/css-module: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/execution-timing: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/fetch-src: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/import-attributes: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/json-module: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/microtasks: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/module: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/moving-between-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/scripting-1/the-script-element/text-module: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/links/downloading-resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 403
+  html/semantics/links/following-hyperlinks: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/semantics/links/hyperlink-auditing: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/links/links-created-by-a-and-area-elements: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/links/linktypes: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/forms: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 403
+  html/semantics/embedded-content: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+curl: (22) The requested URL returned error: 403
+  html/semantics/document-metadata: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+curl: (22) The requested URL returned error: 403
+  html/semantics/grouping-content: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/semantics/text-level-semantics: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/tabular-data: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/interactive-elements: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 403
+  html/semantics/scripting-1: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+curl: (22) The requested URL returned error: 403
+  html/semantics/links: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  html/semantics/forms/attributes-common-to-form-controls     9 案
+  html/semantics/forms/constraints    44 案
+  html/semantics/forms/customizable-combobox     9 案
+  html/semantics/forms/form-control-infrastructure     5 案
+  html/semantics/forms/form-submission-0    33 案
+  html/semantics/forms/form-submission-target     9 案
+  html/semantics/forms/resetting-a-form     6 案
+  html/semantics/forms/textfieldselection    14 案
+  html/semantics/forms/the-button-element    25 案
+  html/semantics/forms/the-datalist-element     5 案
+  html/semantics/forms/the-fieldset-element    34 案
+  html/semantics/forms/the-form-element    26 案
+  html/semantics/forms/the-input-element   176 案
+  html/semantics/forms/the-label-element    14 案
+  html/semantics/forms/the-legend-element     2 案
+  html/semantics/forms/the-meter-element    12 案
+  html/semantics/forms/the-optgroup-element     1 案
+  html/semantics/forms/the-option-element    14 案
+  html/semantics/forms/the-output-element     3 案
+  html/semantics/forms/the-progress-element     3 案
+  html/semantics/forms/the-select-element   323 案
+  html/semantics/forms/the-textarea-element    33 案
+  html/semantics/embedded-content/image-maps     4 案
+  html/semantics/embedded-content/the-area-element     7 案
+  html/semantics/embedded-content/the-audio-element    17 案
+  html/semantics/embedded-content/the-canvas-element    70 案
+  html/semantics/embedded-content/the-embed-element    26 案
+  html/semantics/embedded-content/the-img-element   160 案
+  html/semantics/embedded-content/the-object-element    27 案
+  html/semantics/embedded-content/the-video-element    29 案
+  html/semantics/document-metadata/interactions-of-styling-and-scripting     8 案
+  html/semantics/document-metadata/styling     1 案
+  html/semantics/document-metadata/the-base-element    14 案
+  html/semantics/document-metadata/the-link-element    38 案
+  html/semantics/document-metadata/the-meta-element    18 案
+  html/semantics/document-metadata/the-style-element    27 案
+  html/semantics/document-metadata/the-title-element     3 案
+  html/semantics/grouping-content/the-dd-element     1 案
+  html/semantics/grouping-content/the-div-element     1 案
+  html/semantics/grouping-content/the-dl-element     1 案
+  html/semantics/grouping-content/the-dt-element     1 案
+  html/semantics/grouping-content/the-figcaption-element     1 案
+  html/semantics/grouping-content/the-figure-element     1 案
+  html/semantics/grouping-content/the-hr-element     1 案
+  html/semantics/grouping-content/the-li-element    32 案
+  html/semantics/grouping-content/the-ol-element    23 案
+  html/semantics/grouping-content/the-p-element     1 案
+  html/semantics/grouping-content/the-pre-element     5 案
+  html/semantics/grouping-content/the-ul-element     1 案
+  html/semantics/text-level-semantics/the-a-element    12 案
+  html/semantics/text-level-semantics/the-b-element     2 案
+  html/semantics/text-level-semantics/the-bdi-element    32 案
+  html/semantics/text-level-semantics/the-bdo-element     5 案
+  html/semantics/text-level-semantics/the-br-element     4 案
+  html/semantics/text-level-semantics/the-ruby-element     3 案
+  html/semantics/text-level-semantics/the-time-element     1 案
+  html/semantics/text-level-semantics/the-wbr-element     2 案
+  html/semantics/tabular-data/attributes-common-to-td-and-th-elements     1 案
+  html/semantics/tabular-data/processing-model-1     4 案
+  html/semantics/tabular-data/the-caption-element     1 案
+  html/semantics/tabular-data/the-table-element    12 案
+  html/semantics/tabular-data/the-tbody-element     3 案
+  html/semantics/tabular-data/the-tfoot-element     1 案
+  html/semantics/tabular-data/the-thead-element     1 案
+  html/semantics/tabular-data/the-tr-element     5 案
+  html/semantics/interactive-elements/commands     8 案
+  html/semantics/interactive-elements/the-details-element    21 案
+  html/semantics/interactive-elements/the-dialog-element   185 案
+  html/semantics/interactive-elements/the-summary-element     7 案
+  html/semantics/scripting-1/the-noscript-element     1 案
+  html/semantics/scripting-1/the-script-element   449 案
+  html/semantics/scripting-1/the-script-element/css-module    23 案
+  html/semantics/scripting-1/the-script-element/execution-timing   155 案
+  html/semantics/scripting-1/the-script-element/fetch-src     4 案
+  html/semantics/scripting-1/the-script-element/import-attributes     4 案
+  html/semantics/scripting-1/the-script-element/json-module    18 案
+  html/semantics/scripting-1/the-script-element/microtasks     8 案
+  html/semantics/scripting-1/the-script-element/module   119 案
+  html/semantics/scripting-1/the-script-element/moving-between-documents    57 案
+  html/semantics/scripting-1/the-script-element/text-module    14 案
+  html/semantics/links/downloading-resources    18 案
+  html/semantics/links/following-hyperlinks     0 案
+  html/semantics/links/hyperlink-auditing     1 案
+  html/semantics/links/links-created-by-a-and-area-elements    17 案
+  html/semantics/links/linktypes     4 案
+  html/semantics/forms           805 案
+  html/semantics/embedded-content   759 案
+  html/semantics/document-metadata   109 案
+  html/semantics/grouping-content    69 案
+  html/semantics/text-level-semantics    63 案
+  html/semantics/tabular-data     29 案
+  html/semantics/interactive-elements   222 案
+  html/semantics/scripting-1     499 案
+  html/semantics/links            40 案
+== M1 下一步（rally 轮，契约见 docs/goal/html-semantics-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/html-semantics-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.20s
+ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1800 -- ./target/release/zero-wpt-runner testharness-html-semantics naturalWidth-naturalHeight
+Using 8 test job(s).
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/1x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/1x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/1x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/1x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/1x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/1x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/1x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/2x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/2x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/2x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/2x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Fail html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/2x)
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/2x)
+Pass html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/2x) (when not rendered)
+make: *** [Makefile:1136：testharness-html-semantics] 错误 1

@@ -1,10 +1,14 @@
 //! R1721：float:right table 避到 float 左侧（mirror of float:left 右避）。
 //!
 //! `floats-wrap-bfc-002-right-table`：外 table 300 内 `float:right 100×100` + 嵌套 auto table。
-//! chromium（ref）：table beside float **左侧**（x=0, width=200=float.left_edge）。
+//! chromium（ref）：table beside float **左侧**（x=0, y=0 非 below）。
 //! ZW 旧（R1721 前）：table_float_fix 仅 float:left（table 放 float 右侧 content_width-max_right），
 //! float:right 的 right_edge≈content_width → 右侧无空间 → table 错误推 below（y=100+）。
-//! R1721 fix：纯右 float → target=(0, natural_y, right_float_left)，table beside 左填到 float 左边。
+//! R1721 fix：纯右 float → target=(0, natural_y, right_float_left)，table beside 左落位。
+//! R5443 oracle 勘根（headless chromium 截图 + PIL 逐像素）：beside 表盒宽 = grid extent
+//!（cell 内容 definite 50 → 表盒 50，无 gap 填充带；§10.3.5 shrink-to-fit，R5436 同判）
+//! ——本文件旧 width≈200 断言系 R1613 fill-gap 旧语义，R5436（6acbeea9a）落 shrink 臂时
+//! 翻红；beside 落位断言（x/y）保留，仍守 R1721 原修复。
 
 use super::*;
 use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
@@ -65,7 +69,8 @@ fn build_right_float_table() -> (
     (doc, styles, container, table, float_r)
 }
 
-/// R1721：float:right 时 table 应 beside float 左侧（x≈0, width≈200），非推 below（y≈100）。
+/// R1721：float:right 时 table 应 beside float 左侧（x≈0, y≈0），非推 below（y≈100）。
+/// 表盒宽 = grid extent（R5443 oracle：chrome 表盒 50 = cell 内容宽，无 gap 填充）。
 /// load-bearing：关闭 fix（env ZW_TABLE_FLOAT_RIGHT_AVOID=0）则 table 被推 below（y≈100）。
 #[test]
 fn r1721_right_float_table_beside_left_not_below() {
@@ -74,10 +79,11 @@ fn r1721_right_float_table_beside_left_not_below() {
     let result = engine.compute(&doc, &styles);
 
     let table_box = find_child_by_node_id_root(&result.root, table).expect("table found");
-    // table 在 float 左侧 beside：x≈0（左边缘），width≈200（填到 float left_edge），y≈0（非 below）。
+    // table 在 float 左侧 beside：x≈0（左边缘），width≈50（grid extent，R5436 shrink 臂
+    // + chrome oracle 定谳），y≈0（非 below）。
     assert!(
-        table_box.width >= 190.0 && table_box.width <= 210.0,
-        "beside float:right table width 应 ≈200（填到 float left_edge），实际 {}",
+        table_box.width >= 45.0 && table_box.width <= 55.0,
+        "beside float:right table width 应 ≈50（grid extent，chrome oracle），实际 {}",
         table_box.width
     );
     assert!(

@@ -104,6 +104,7 @@ mod r5392_negative_margin_float_tests;
 /// R5394 纯原子行内盒行的 strut 行盒（CSS2 §10.8.1：strut 每行必参与，
 /// va:bottom 原子盒底对齐扩展后行底；line-height:0 容器 R5303 域不回归）。
 mod r5394_atomic_line_strut_tests;
+mod r5428_viewport_scroll;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
@@ -114,3 +115,6 @@ mod visual_resize_scroll;
 /// R5410：static flex item 负 z-index 下沉绘制（flex-item-z-ordering-002 锚 +
 /// 非 flex 父 legacy 守卫）。
 mod r5410_flex_item_neg_z_tests;
+mod r5420_float_global_tree_order_tests;
+/// R5472：floats flush 段逐容器 App E step4<step5 splice（draw_order 序钉子）。
+mod r5472_float_app_e_insert_tests;

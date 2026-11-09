@@ -439,8 +439,33 @@ pub(crate) fn worker_timer_period_at(nesting: u64, period_ms: u64) -> u64 {
 pub trait Sandbox {
     /// 执行 JavaScript 代码，返回字符串结果。
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
+    /// s369（strict 车道 SCRIPT 直编译迁移）：classic 脚本直编译执行 + in-execute
+    /// catch 面——体即 global code（GDI 原生 var/fn 提升、指令序言原生生效），抛错
+    /// 时同一次 execute 内挂 `globalThis.__zw_e` → 运行 `catch_js`（错误吞没）→
+    /// 微任务/job 排空（FIFO：体内微任务先于 catch 片 load 微任务）→ 删 `__zw_e` →
+    /// 返回 Err。片源由 engine [`script_classic_catch_tail`] 供给（reportError 原值
+    /// 透传 + 元素 load 微任务派发，s335 序契约）；`__zw_e` 名两侧契约耦合。
+    /// 详见 V8 腿 `execute_classic` 注记。
+    fn execute_classic(&mut self, _code: &str, _catch_js: &str) -> Result<ScriptResult, ScriptError> {
+        Err(ScriptError::EngineUnavailable(
+            "execute_classic unsupported by this backend".into(),
+        ))
+    }
     /// 执行 JavaScript 代码，返回 JSON 字符串结果（`JSON.stringify` 包装）。
     fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
+    /// s348（html-semantics-compat）：compile-only 校验（parse 不执行）——模块包装级
+    /// parse 失败的记录归属扫描面（webview s102 臂经
+    /// [`crate::module_parse_failure_owner`] 逐模块调用，与装配脚本的 classic 编译
+    /// 同语法面、同 context）。仅编译丢弃产物，不运行任何代码、无副作用。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    ///
+    /// **默认不支持**（EngineUnavailable——调用方按扫描不达回落旧记账臂）；V8 后端
+    /// 实现，QuickJS 后端待接（FIXME：quickjs eval 无独立 parse 面，接线后两车道对齐）。
+    fn parse_check(&mut self, _code: &str) -> Result<(), ScriptError> {
+        Err(ScriptError::EngineUnavailable(
+            "parse_check unsupported by this backend".into(),
+        ))
+    }
     /// 注册宿主回调，挂为全局函数 `name`（JS 调 `name(...)` 触发 Rust 闭包）。
     /// 须在 `execute` 之前调用。回调参数为 JS 参数的字符串数组，返回字符串。
     #[allow(clippy::type_complexity)]
@@ -536,14 +561,18 @@ pub trait Sandbox {
     /// spec/referrer/nonce 均为宿主解析语义（referrer/nonce 由
     /// [`Sandbox::set_dynamic_import_referrer`] / [`Sandbox::set_dynamic_import_nonce`]
     /// 每脚本前设定；nonce 空串 = 无 nonce）。s249：第四参 = 动态 import 属性
-    /// `with.type` 值（空串 = 无属性）。须在 `execute` 之前调用；未注册时
-    /// 动态 import() 维持引擎默认 reject 语义。
+    /// `with.type` 值（空串 = 无属性）。s340：第五参 = 调用窗 active script
+    /// credentials mode（`__zwActiveScriptCred` 全局槽读出；undefined/空串 =
+    /// 缺省 same-origin——宿主据此决定 fetch credentials 标记，spec 动态
+    /// import 的请求 credentials 取调用点 script 元素 fetch options）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    /// 须在 `execute` 之前调用；未注册时动态 import() 维持引擎默认 reject 语义。
     ///
     /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
     #[allow(clippy::type_complexity)] // 镜像 register_callback 模式
     fn set_dynamic_import_resolver(
         &mut self,
-        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync>,
+        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str, &str, &str) -> String + Send + Sync>,
     ) {
     }
 

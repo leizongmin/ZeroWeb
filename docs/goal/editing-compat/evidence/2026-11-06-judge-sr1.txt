@@ -1,0 +1,10 @@
+########## judge-sr1（vs 本席 fresh base，/tmp/zw-p21）##########
+# base: base-insertorderedlist.log=1720P/41F, base-insertunorderedlist.log=2027P/38F
+# post: sr1-insertorderedlist.log=1721P/40F, sr1-insertunorderedlist.log=2028P/37F
+insertorderedlist: rows 1761->1761 P 1720->1721 F 41->40 F2P 1 P2F 0 newF 0
+insertunorderedlist: rows 2065->2065 P 2027->2028 F 38->37 F2P 1 P2F 0 newF 0
+TOTAL F2P 2 P2F 0 newF 0
+VERDICT OK
+########## F2P 逐名 ##########
+# editing/run/insertorderedlist.html?1-1000 :: [["insertorderedlist",""]] "[foo<ul><li>bar]</ul>baz" queryCommandState("insertorderedlist") after
+# editing/run/insertunorderedlist.html?1-1000 :: [["insertunorderedlist",""]] "[foo<ol><li>bar]</ol>baz" queryCommandState("insertunorderedlist") after

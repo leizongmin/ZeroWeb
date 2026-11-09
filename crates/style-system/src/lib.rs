@@ -733,6 +733,26 @@ impl StyleSystem {
             *styles = self.compute_styles(doc, stylesheets);
             return;
         }
+        // 45 号 M2：slotted 面变更 → 退化全量（增量走查无 shadow 作用域输入，
+        // `::slotted` 段声明与 slot 继承父会静默丢失；与上同口径）。触发面：
+        // 变更节点是 shadow host（其 light 子即 slotted 面），或变更节点自身/
+        // 祖先被分配到 slot（slotted 子树重算丢段）。
+        if changed.iter().any(|&n| {
+            if doc.shadow_root(n).is_some() {
+                return true;
+            }
+            let mut cur = Some(n);
+            while let Some(id) = cur {
+                if doc.assigned_slot(id).is_some() {
+                    return true;
+                }
+                cur = doc.parent_node(id);
+            }
+            false
+        }) {
+            *styles = self.compute_styles(doc, stylesheets);
+            return;
+        }
         self.registered_properties = collect_registered_properties(stylesheets);
         // s220：注册表重建即换代——gather 组合缓存旧条目按键失配惰性逐出。
         self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
@@ -778,6 +798,9 @@ impl StyleSystem {
                     &parent_custom,
                     quirks_mode,
                     None,
+                    // s168：增量路径无 shadow 作用域输入（shadow 封闭变更入口已退全量，
+                    // 见 :813 注释）——宿主段级联段在此不可达。
+                    None,
                 );
                 // 反例 B 修复：祖先链重算与全量递归同源——伪元素就地挂载，
                 // 防 ::before/::after 等伪样式被无伪样式结果覆盖（含 CSSOM
@@ -794,6 +817,9 @@ impl StyleSystem {
                     has_pseudo_rules,
                     has_scroll_button_rules,
                     has_selection_rules,
+                    // s168：增量路径无 shadow 作用域输入（shadow 封闭/宿主面变更入口
+                    // 已退全量，见 :813 与 :732 注释）——伪元素 shadow 段在此不可达。
+                    None,
                 );
                 parent_custom = self.custom_properties.clone();
                 // 反例 C 修复：≡ 全量递归下行语义（R4124/R4582）——本元素是
@@ -902,6 +928,9 @@ impl StyleSystem {
         has_pseudo_rules: bool,
         has_scroll_button_rules: bool,
         has_selection_rules: bool,
+        // 45 号 M2：shadow 作用域视图穿线——伪元素路径的宿主段（`:host::before`）
+        // 与 slotted 段（`::slotted(x)::before`）收集依赖它定位 shadow 树 sheets。
+        shadow_view: Option<&ShadowScopeView>,
     ) {
         let is_q = matches!(
             &node_data.kind,
@@ -945,6 +974,9 @@ impl StyleSystem {
                 &saved_custom,
                 quirks_mode,
                 Some("before"),
+                // 45 号 M2：宿主段伪元素（`:host::before`）与 slotted 段伪元素
+                //（`::slotted(x)::before`）经 shadow_view 接线。
+                shadow_view,
             );
             let after = *self.compute_element_style_internal(
                 doc,
@@ -955,6 +987,7 @@ impl StyleSystem {
                 &saved_custom,
                 quirks_mode,
                 Some("after"),
+                shadow_view,
             );
             // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
             // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
@@ -976,6 +1009,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("marker"),
+                    shadow_view,
                 );
                 // R3911：letter-spacing/word-spacing 等 ::marker 支持的文本属性也触发存储
                 //（css-pseudo-4 #content-properties；driving: marker-letter-spacing 显式臂）。
@@ -1031,6 +1065,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("placeholder"),
+                    shadow_view,
                 );
                 if ph.color != elem_style.color {
                     computed.placeholder_pseudo = Some(ph);
@@ -1089,6 +1124,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("selection"),
+                    shadow_view,
                 );
                 // R5065（css-pseudo-4 §highlight-styling）：UA 默认高亮表面——
                 // ::selection 规则改动了非 bg/color 高亮属性（text-decoration 族）
@@ -1173,6 +1209,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("scroll-marker-group"),
+                    shadow_view,
                 );
             }
             // R4261（CSS Overflow 5 §scroll-marker）：`::scroll-marker` per-item 伪元素——
@@ -1193,6 +1230,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("scroll-marker"),
+                    shadow_view,
                 );
                 if !matches!(marker.content, property::types::ContentComputedValue::Normal) {
                     computed.scroll_marker_pseudo = Some(marker);
@@ -1240,6 +1278,7 @@ impl StyleSystem {
                         &saved_custom,
                         quirks_mode,
                         Some(&format!("scroll-button({dir})")),
+                        shadow_view,
                     );
                     if !matches!(style.content, property::types::ContentComputedValue::Normal) {
                         buttons.push((slot as u8, style));
@@ -1434,6 +1473,9 @@ impl StyleSystem {
                         parent_custom,
                         quirks_mode,
                         None,
+                        // 45 号 M1：主走查携带 shadow 作用域视图——元素为 shadow host 时
+                        // 收集宿主段级联段（:host 族声明，tree_context=1 排序轴）。
+                        Some(shadow_view),
                     );
                     if let Some(k) = &cache_key {
                         style_cache.insert(k.clone(), (*c).clone());
@@ -1465,6 +1507,8 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                // 45 号 M2：伪元素路径 shadow 段收集（:host::before / ::slotted(x)::before）。
+                Some(shadow_view),
             );
             if delay_parent_insert {
                 delayed_style = Some(Box::new(computed));
@@ -1538,17 +1582,20 @@ impl StyleSystem {
         // 本元素不可键时它刻画子元素继承态的全部来源（cache_safe 已排除
         // 属性选择器/伪类/伪元素等键外依赖）。
         let child_chain = Self::mix_chain_hash(chain_hash, node_data);
-        for child in children {
+        // 45 号 M2/R5（CSS Shadow §3.3 flat tree 继承）：子循环两遍走——ShadowRoot
+        // 子树先行，slot 元素的样式/自定义属性先于 slotted light 子写入 styles 表
+        //（slotted 元素继承自 originating slot，见 light 遍历的 slotted 分支）；
+        // light 子保持文档序，shadow 树内文档序不变。非 shadow 页（无 ShadowRoot
+        // 子）filter 恒空，首遍零行为、次遍全序——与旧单遍形态逐步等价。
+        for child in children
+            .iter()
+            .copied()
+            .filter(|&c| matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))))
+        {
             // s168：ShadowRoot 边界切换级联源——shadow 子树只用本树样式表
             //（CSS Scoping：文档表不匹配 shadow 内容；无记录/空表 = UA + host
             // 继承，ShadowRoot 节点非元素不产样式，继承链经 parent_ref 自然贯通）。
-            // light 子沿用当前作用域。
-            let (child_sheets, child_index) =
-                if matches!(doc.get(child).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
-                    shadow_view.for_root(child)
-                } else {
-                    (stylesheets, rule_index)
-                };
+            let (child_sheets, child_index) = shadow_view.for_root(child);
             self.compute_styles_recursive(
                 doc,
                 child,
@@ -1562,6 +1609,46 @@ impl StyleSystem {
                 has_scroll_button_rules,
                 has_selection_rules,
                 cache_safe,
+                style_cache,
+                delay_parent_insert,
+                cache_key.clone(),
+                child_chain,
+                shadow_view,
+            );
+        }
+        for child in children
+            .iter()
+            .copied()
+            .filter(|&c| !matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))))
+        {
+            // light 子沿用当前作用域（文档表规则）。
+            let (child_sheets, child_index) = (stylesheets, rule_index);
+            // 45 号 M2/R5：被分配到 slot 的 light 子继承自 slot（CSS Shadow §3.3
+            // flat tree：slotted 元素从 originating slot 继承样式与自定义属性——
+            // 首遍 shadow 子树遍历已把 slot 结果写入 styles 表，此处克隆出借，
+            // 规避 styles 可变借用冲突）。样式键缓存禁用：StyleKey 的 parent_key
+            // 刻画 light 父链，slotted 继承链经 slot，跨上下文复用会错命中。
+            // 分配表空（非 shadow 页常态）assigned_slot 快返 None，零开销回落。
+            let slot_style = doc.assigned_slot(child).and_then(|slot| styles.get(&slot).cloned());
+            let (child_parent_style, child_parent_custom, child_cache_safe) =
+                if let Some(ref slot_computed) = slot_style {
+                    (Some(slot_computed), &slot_computed.custom_properties, false)
+                } else {
+                    (parent_ref, &current_custom, cache_safe)
+                };
+            self.compute_styles_recursive(
+                doc,
+                child,
+                child_sheets,
+                child_index,
+                child_parent_style,
+                child_parent_custom,
+                styles,
+                quirks_mode,
+                has_pseudo_rules,
+                has_scroll_button_rules,
+                has_selection_rules,
+                child_cache_safe,
                 style_cache,
                 delay_parent_insert,
                 cache_key.clone(),
@@ -1625,6 +1712,7 @@ impl StyleSystem {
             parent_custom,
             quirks_mode,
             Some("first-line"),
+            None,
         );
         // R5320（CSS2 §5.12.1 切片 2 bg 位）：background-color 与元素不同也
         // 存储——bg-only 页（`p:first-line { background: green }`）此前 None
@@ -1683,6 +1771,7 @@ impl StyleSystem {
             parent_custom,
             quirks_mode,
             Some("first-letter"),
+            None,
         );
         (first_letter.color != elem_style.color).then(|| Box::new(first_letter))
     }
@@ -1713,6 +1802,8 @@ impl StyleSystem {
             &ComputedStyle::empty_custom_properties(),
             doc.quirks_mode(),
             None,
+            // 单元素路径无 shadow 作用域输入（shadow 页走 compute_styles_with_shadow）。
+            None,
         )
     }
 
@@ -1732,6 +1823,7 @@ impl StyleSystem {
         parent_custom: &CustomProperties,
         quirks_mode: QuirksMode,
         pseudo: Option<&str>,
+        shadow_view: Option<&ShadowScopeView>,
     ) -> Box<ComputedStyle> {
         // R3867：返回 Box——把 3.3KB 的 ComputedStyle 返回值从调用方（compute_styles_recursive，
         // 每元素递归一帧）的 sret 栈槽移到堆。深嵌套页 debug 构建的递归帧曾逼近 2MB 测试线程栈顶
@@ -1780,12 +1872,69 @@ impl StyleSystem {
             ),
         };
 
+        // 1.1. 宿主段级联段收集（45 号 M1，CSS Scoping §3，https://drafts.csswg.org/css-scoping/#host-selector）：
+        // 本元素挂有 shadow root 且该树带样式表时，从其 shadow sheets 收集 `:host` 族
+        // 声明（独立 tree_context=1 排序轴，见 cascade.rs / 下方展开段）。文档表规则不经
+        // 此通道——matcher 常规路径对 `:host` 族恒不匹配，宿主段语义只在 host 元素自身
+        // 生效；shadow sheets 无 `:host` 规则时走查为空、零开销兜底。
+        // 45 号 M2：伪元素路径接线（`:host::before` 族）——`pseudo` 作伪元素尾下传
+        //（`selector_tail_for_pseudo` 对齐：Some("before") 只收带 `::before` 尾的宿主段
+        // 规则；None 收裸 `:host` 族）。
+        let host_matching: Vec<matcher::MatchingDecl> = match shadow_view.zip(doc.shadow_root(element)) {
+            Some((view, root)) => {
+                let (sheets, _index) = view.for_root(root);
+                matcher::collect_host_declarations_with_media(doc, element, sheets, media_ctx.as_ref(), pseudo)
+            }
+            None => Vec::new(),
+        };
+
+        // 1.2. slotted 段级联段收集（45 号 M2，CSS Shadow §3.2.4，
+        // https://drafts.csswg.org/css-shadow-1/#slotted-pseudo）：本元素被分配到 slot
+        // 时，从所属 shadow 树 sheets 收集 `::slotted(<compound>)` 声明（tree_context=1
+        // 级联段，同宿主段；css-cascade-5 §6.1）。分配表空（非 shadow 页常态）快返
+        // 零开销；slot 只会把宿主 light 子纳入分配（resolve_slots 面不变式），slot 沿
+        // light 父链上行的 ShadowRoot 必在 shadow_view 内。伪元素路径同宿主段口径：
+        // `::slotted(x)::before` 只收带 `::before` 尾的规则。
+        let slotted_matching: Vec<matcher::MatchingDecl> = match doc.assigned_slot(element) {
+            Some(slot) => {
+                // slot → light 父链上行 → 所属 ShadowRoot 节点（前缀组合子沿该 slot
+                // 的 flat tree 上行匹配，见 matcher::matches_slotted_target）。
+                let mut cur = doc.parent_node(slot);
+                let root = loop {
+                    match cur {
+                        Some(id) if matches!(doc.get(id).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) => {
+                            break Some(id);
+                        }
+                        Some(id) => cur = doc.parent_node(id),
+                        None => break None,
+                    }
+                };
+                match shadow_view.zip(root) {
+                    Some((view, root)) => {
+                        let (sheets, _index) = view.for_root(root);
+                        matcher::collect_slotted_declarations_with_media(
+                            doc,
+                            element,
+                            slot,
+                            sheets,
+                            media_ctx.as_ref(),
+                            pseudo,
+                        )
+                    }
+                    None => Vec::new(),
+                }
+            }
+            None => Vec::new(),
+        };
+
         // 伪元素无匹配规则时直接返回 originating element 自身样式（content 恒
         // Normal，before/after 合成门不受影响），跳过整条级联/继承/计算管线——
         // 避免对无伪元素规则的元素产生 2× 额外开销。曾返回 default()：scoped
         // ::selection 页（如仅 `div::selection` 规则）的非匹配后代经「color 差异」
         // 存储判据误存 initial 黑（R5257 paint 侧 per-owner 消费首触即黑字）。
-        if pseudo.is_some() && matching.is_empty() {
+        // 45 号 M2：早返门并入宿主段/slotted 段——`::slotted(x)::before` /
+        // `:host::before` 页主匹配恒空但 shadow 段非空，不得早返。
+        if pseudo.is_some() && matching.is_empty() && host_matching.is_empty() && slotted_matching.is_empty() {
             return match parent_style {
                 Some(p) => {
                     let mut s = p.clone();
@@ -2446,6 +2595,8 @@ impl StyleSystem {
         let cache_key_ref = CascadeKeyRef {
             hints: &hints,
             matching: &matching,
+            host_matching: &host_matching,
+            slotted_matching: &slotted_matching,
             inline: &inline_decls,
             ua: &ua_decl_inputs,
             quirks: quirks_mode == QuirksMode::Quirks,
@@ -2453,7 +2604,9 @@ impl StyleSystem {
         let outcome: std::sync::Arc<CascadeOutcome> = match self.cascade_cache.lookup_ref(&cache_key_ref) {
             Some(hit) => hit,
             None => {
-                // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式。
+                // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式
+                // + 宿主段（45 号 M1，仅 host 元素非空）。末位 u8 = tree_context
+                //（CSS Scoping §5 树上下文轴，cascade.rs CascadeOrder）。
                 #[allow(clippy::type_complexity)]
                 let mut expanded_with_layer: Vec<(
                     String,
@@ -2462,6 +2615,7 @@ impl StyleSystem {
                     (u32, u32, u32),
                     Option<usize>,
                     bool,
+                    u8,
                 )> = Vec::new();
                 if !hints.is_empty() {
                     #[allow(clippy::type_complexity)]
@@ -2470,14 +2624,33 @@ impl StyleSystem {
                         .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
                         .collect();
                     for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
-                        expanded_with_layer.push((prop, val, imp, spec, None, false));
+                        expanded_with_layer.push((prop, val, imp, spec, None, false, 0));
                     }
                 }
                 for (property, value, important, specificity, layer_index) in &matching {
                     let input = (property.clone(), value.clone(), *important, *specificity);
                     let expanded = shorthand::expand_shorthands(&[input]);
                     for (prop, val, imp, spec) in expanded {
-                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false));
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 0));
+                    }
+                }
+                // 45 号 M1：宿主段声明展开——tree_context=1（shadow 树上下文）。
+                // 仅本元素为 shadow host 且其树有样式表时非空（收集见上方步骤 1）。
+                for (property, value, important, specificity, layer_index) in &host_matching {
+                    let input = (property.clone(), value.clone(), *important, *specificity);
+                    let expanded = shorthand::expand_shorthands(&[input]);
+                    for (prop, val, imp, spec) in expanded {
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
+                    }
+                }
+                // 45 号 M2：slotted 段声明展开——tree_context=1（shadow 树上下文，同
+                // 宿主段；css-cascade-5 §6.1：外树 normal 胜 shadow 段 normal、important
+                // 反转）。仅被分配元素非空（收集见上方步骤 1.2）。
+                for (property, value, important, specificity, layer_index) in &slotted_matching {
+                    let input = (property.clone(), value.clone(), *important, *specificity);
+                    let expanded = shorthand::expand_shorthands(&[input]);
+                    for (prop, val, imp, spec) in expanded {
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
                     }
                 }
                 if !inline_decls.is_empty() {
@@ -2490,7 +2663,8 @@ impl StyleSystem {
                     for (prop, val, imp, spec) in expanded {
                         // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
                         //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
-                        expanded_with_layer.push((prop, val, imp, spec, None, true));
+                        // 45 号 M1：style 属性属宿主元素自身（外树上下文），tree_context=0。
+                        expanded_with_layer.push((prop, val, imp, spec, None, true, 0));
                     }
                 }
                 // UA 展开列表（原 1.7 尾段：借用在 declarations 构造，此处随 outcome 缓存）。
@@ -2517,7 +2691,7 @@ impl StyleSystem {
                         order: CascadeOrder::new(Origin::UserAgent, None, *specificity, position, *important),
                     });
                 }
-                for (position, (property, value, important, specificity, layer_index, style_attribute)) in
+                for (position, (property, value, important, specificity, layer_index, style_attribute, tree_context)) in
                     expanded_with_layer.iter().enumerate()
                 {
                     declarations.push(CascadedDeclaration {
@@ -2530,6 +2704,7 @@ impl StyleSystem {
                             position,
                             important: *important,
                             style_attribute: *style_attribute,
+                            tree_context: *tree_context,
                         },
                     });
                 }
@@ -3638,16 +3813,18 @@ static CASCADE_CACHE_DEFAULT_ENABLED: std::sync::LazyLock<Option<bool>> =
         _ => None,
     });
 
-/// 声明组合级联缓存的键：cascade 输入**全部四个源**的原始声明序列 + quirks。
+/// 声明组合级联缓存的键：cascade 输入**全部五个源**的原始声明序列 + quirks。
 ///
 /// 正确性边界：[`cascade::cascade_with_orders`]（cascade.rs）与
 /// [`shorthand::expand_shorthands`] 是输入声明序列的纯函数——键必须唯一决定
-/// 该输入。四源按 `compute_element_style_internal` 生产顺序排列（同段内顺序
+/// 该输入。五源按 `compute_element_style_internal` 生产顺序排列（同段内顺序
 /// 即源码/生产序；段序恒定），逐字段完整比对命中（哈希仅桶定位，见
 /// [`CascadeCache`]）。quirks 影响级联合法性判定（cascade.rs
 /// `is_cascade_value_valid` 传参），进键保证跨文档安全；media/container 上下文
 /// 只影响 matching 收集（键前已执行），custom properties/继承只影响 cascade
-/// 之后的阶段（不在缓存范围）。
+/// 之后的阶段（不在缓存范围）。45 号 M1 起新增宿主段源、M2 起 slotted 段源——
+/// 仅 shadow host / 被分配元素各自非空；其余元素为空切片，不贡献哈希字节、
+/// 比对恒等（非 shadow 页键与历史形态一致）。
 #[derive(Debug)]
 struct CascadeKeySources {
     /// CSS2 Appendix D 表现提示（`collect_presentational_hints` 输出）。
@@ -3655,6 +3832,12 @@ struct CascadeKeySources {
     /// 选择器匹配收集（`matcher::collect_matching_declarations_with_media` /
     /// `collect_pseudo_declarations_with_media` 输出）。
     matching: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
+    /// 45 号 M1：宿主段收集（`collect_host_declarations_with_media` 输出，
+    /// tree_context=1 级联段；非 host 元素恒空）。
+    host_matching: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
+    /// 45 号 M2：slotted 段收集（`collect_slotted_declarations_with_media` 输出，
+    /// tree_context=1 级联段；非被分配元素恒空）。
+    slotted_matching: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
     /// 内联 style 属性（`parse_inline_style` 输出）。
     inline: Vec<(String, String, bool)>,
     /// UA 默认注入（`ua_decl_inputs`，含 hidden/UA display/dialog/svg/td-th/body/h1-6 等）。
@@ -3668,16 +3851,20 @@ struct CascadeKeySources {
 struct CascadeKeyRef<'a> {
     hints: &'a [(String, String)],
     matching: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
+    host_matching: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
+    slotted_matching: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
     inline: &'a [(String, String, bool)],
     ua: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
     quirks: bool,
 }
 
-/// FNV-1a 预过滤哈希：覆盖四源全部字段。桶定位用，正确性由完整比对
+/// FNV-1a 预过滤哈希：覆盖六源全部字段。桶定位用，正确性由完整比对
 ///（[`cascade_key_eq`]）保证。owned/借用两形态共用同一函数，保证同键同哈希。
 fn cascade_key_hash(
     hints: &[(String, String)],
     matching: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
+    host_matching: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
+    slotted_matching: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
     inline: &[(String, String, bool)],
     ua: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
     quirks: bool,
@@ -3705,6 +3892,24 @@ fn cascade_key_hash(
         mix(&mut h, &spec.2.to_ne_bytes());
         mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
     }
+    for (p, v, imp, spec, layer) in host_matching {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+        mix(&mut h, &[*imp as u8]);
+        mix(&mut h, &spec.0.to_ne_bytes());
+        mix(&mut h, &spec.1.to_ne_bytes());
+        mix(&mut h, &spec.2.to_ne_bytes());
+        mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
+    }
+    for (p, v, imp, spec, layer) in slotted_matching {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+        mix(&mut h, &[*imp as u8]);
+        mix(&mut h, &spec.0.to_ne_bytes());
+        mix(&mut h, &spec.1.to_ne_bytes());
+        mix(&mut h, &spec.2.to_ne_bytes());
+        mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
+    }
     for (p, v, imp) in inline {
         mix_str(&mut h, p);
         mix_str(&mut h, v);
@@ -3723,10 +3928,13 @@ fn cascade_key_hash(
     h
 }
 
-/// 借用键与存储键的逐字段完整比对（属性/值/important/specificity/layer/quirks）。
+/// 借用键与存储键的逐字段完整比对（属性/值/important/specificity/layer/quirks；
+/// 45 号 M1 增宿主段源、M2 增 slotted 段源）。
 fn cascade_key_eq(a: &CascadeKeyRef<'_>, b: &CascadeKeySources) -> bool {
     a.hints == b.hints.as_slice()
         && a.matching == b.matching.as_slice()
+        && a.host_matching == b.host_matching.as_slice()
+        && a.slotted_matching == b.slotted_matching.as_slice()
         && a.inline == b.inline.as_slice()
         && a.ua == b.ua.as_slice()
         && a.quirks == b.quirks
@@ -3736,10 +3944,10 @@ fn cascade_key_eq(a: &CascadeKeyRef<'_>, b: &CascadeKeySources) -> bool {
 /// 结果不缓存——仅未命中分支局部用于 declarations 构造，命中后无消费方。
 #[derive(Debug)]
 struct CascadeOutcome {
-    /// 非 UA 段展开结果（hints+matching+inline，六元组含 style 属性标志），即
-    /// `expanded_with_layer`；后半段 author width/height 判定（select/input
-    /// intrinsic sizing 门）仍从它读取。
-    expanded: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool)>,
+    /// 非 UA 段展开结果（hints+matching+host+inline，七元组：末位 style 属性标志、
+    /// tree_context——45 号 M1），即 `expanded_with_layer`；后半段 author width/height
+    /// 判定（select/input intrinsic sizing 门）仍从它读取。
+    expanded: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool, u8)>,
     /// `cascade_with_orders` 输出（步骤 4 起按 `&` 消费，Arc 共享不可变安全）。
     cascaded: HashMap<String, String>,
     orders: HashMap<String, CascadeOrder>,
@@ -3796,7 +4004,15 @@ impl CascadeCache {
         if !self.enabled {
             return None;
         }
-        let h = cascade_key_hash(key.hints, key.matching, key.inline, key.ua, key.quirks);
+        let h = cascade_key_hash(
+            key.hints,
+            key.matching,
+            key.host_matching,
+            key.slotted_matching,
+            key.inline,
+            key.ua,
+            key.quirks,
+        );
         self.map
             .get(&h)?
             .iter()
@@ -3816,11 +4032,21 @@ impl CascadeCache {
         let owned = CascadeKeySources {
             hints: key.hints.to_vec(),
             matching: key.matching.to_vec(),
+            host_matching: key.host_matching.to_vec(),
+            slotted_matching: key.slotted_matching.to_vec(),
             inline: key.inline.to_vec(),
             ua: key.ua.to_vec(),
             quirks: key.quirks,
         };
-        let h = cascade_key_hash(&owned.hints, &owned.matching, &owned.inline, &owned.ua, owned.quirks);
+        let h = cascade_key_hash(
+            &owned.hints,
+            &owned.matching,
+            &owned.host_matching,
+            &owned.slotted_matching,
+            &owned.inline,
+            &owned.ua,
+            owned.quirks,
+        );
         self.map.entry(h).or_default().push((owned, outcome));
     }
 }

@@ -219,6 +219,7 @@ pub fn clear_rect_doc_cache() {
 /// pending-布局 kill-switch：默认 on；`ZW_RECT_PENDING_LAYOUT=0` 关闭 worker 侧有效视图
 /// 布局（整面回落 [`make_dom_html_rect_handler`] 纯 snapshot 旧行为）。工厂构造期读一次，
 /// 不进逐查询热路径（准则 #9）。
+#[cfg(feature = "script-runtime")]
 fn rect_pending_layout_enabled() -> bool {
     std::env::var("ZW_RECT_PENDING_LAYOUT").as_deref() != Ok("0")
 }
@@ -227,6 +228,7 @@ fn rect_pending_layout_enabled() -> bool {
 // `GENERATION_CACHE` 同线程域）。键 = (html, drain_gen, style_version, vw, vh)；
 // css/adopted/外链条目分量经 [`crate::js_dom_bridge::generation_cache_matches`] 对
 // 代际槽校验（其键含这些分量）。槽值 = NodeId(u64) → rect（Send 纯值）。
+#[cfg(feature = "script-runtime")]
 thread_local! {
     static RECT_LAYOUT_CACHE: RefCell<Option<(String, usize, usize, f32, f32, HashMap<u64, Rect4>)>> =
         const { RefCell::new(None) };
@@ -257,6 +259,9 @@ thread_local! {
 /// 沿旧零 rect 回落（与现状一致）。FIXME(M3 后续)：字体度量快照跨线程共享后闭合文本边界。
 ///
 /// https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+// pending 判定读 script-runtime 门控的 callbacks 模块状态（[`crate::js_dom_bridge::MUT_DRAIN_GEN`]
+// / `applied_mutations_cursor`）——本工厂与那两项同门控；无 JS 特性组合走下方回落变体。
+#[cfg(feature = "script-runtime")]
 pub fn make_effective_dom_rect_handler(
     dom_html: Arc<Mutex<String>>,
     mutations: Arc<Mutex<Vec<crate::js_dom_bridge::DomMutation>>>,
@@ -330,6 +335,20 @@ pub fn make_effective_dom_rect_handler(
             slot.borrow().as_ref()?.5.get(&node_id_to_u64(node_id)).copied()
         })
     })
+}
+
+/// 无 script-runtime 变体（如 `cargo build -p zero-browser` 默认特性）：无 JS 侧样式写源，
+/// mutation 队列 pending 尾恒空——纯 snapshot 旧行为即完整语义，与快路径逐字节一致。
+/// 与 kill-switch-off 臂同款回落（避免引用 script-runtime 门控的 callbacks 模块状态）。
+#[cfg(not(feature = "script-runtime"))]
+pub fn make_effective_dom_rect_handler(
+    dom_html: Arc<Mutex<String>>,
+    _mutations: Arc<Mutex<Vec<crate::js_dom_bridge::DomMutation>>>,
+    snapshot: LayoutRectSnapshot,
+    handle_map: HandleSelectorMap,
+    _viewport: Arc<Mutex<(u32, u32)>>,
+) -> RectLookupHandler {
+    make_dom_html_rect_handler(dom_html, snapshot, handle_map)
 }
 
 #[cfg(test)]

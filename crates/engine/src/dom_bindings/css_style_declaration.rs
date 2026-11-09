@@ -256,6 +256,12 @@ fn native_style_named_setter(
     // R3211：空值语义 = 移除声明（spec IDL setter ≡ setProperty(prop, value) 无 priority；value 空串 →
     // removeProperty）。`el.style.display = ''` 是 reset inline 样式事实标准高频用法——旧实现 upsert 空值
     // 致 dangling `prop: `（与 setProperty / polyfill merge_style_property 三处同病，本片对称闭合）。
+    // css-anchor-1 canonical serialization 与 setProperty 同款（自定义属性原样保留）。
+    let val = if prop.starts_with("--") || val.trim().is_empty() {
+        val
+    } else {
+        zero_css_parser::values::canonicalize_anchor_functions(val.trim())
+    };
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
         if val.trim().is_empty() {
@@ -455,6 +461,13 @@ fn native_style_set_property_invoke(
         });
         return;
     }
+    // css-anchor-1 canonical serialization：anchor()/anchor-size() 参数序归一（锚元素
+    // dashed-ident 固定在前）；自定义属性值 spec 语义原样保留（values::anchor 模块头注）。
+    let val = if prop.starts_with("--") {
+        val
+    } else {
+        zero_css_parser::values::canonicalize_anchor_functions(val.trim())
+    };
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
         if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {

@@ -71,16 +71,27 @@ pub(crate) fn remeasure_cells_at_compressed_widths(
     styles: &HashMap<NodeId, ComputedStyle>,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
+    // R5467 结构 cell 臂开关：回退 `ZW_TABLE_STRUCT_CELL_REMEASURE=0`（仅 TableCell
+    // display 判定，提交态）。LazyLock 进程级单读（R5152/R5166 先例）。
+    static STRUCT_CELL_REMEASURE: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_STRUCT_CELL_REMEASURE").as_deref() != Ok("0"));
     fn walk(
         box_node: &mut LayoutBox,
+        parent_style: Option<&ComputedStyle>,
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+        struct_cell: bool,
     ) {
-        let is_cell = box_node
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
+        let style = box_node.node_id.and_then(|id| styles.get(&id));
+        // R5467：cell 判定结构臂——grid 收集（build_row）把行盒全部非 inline 元素子收为
+        // cell，含被作者块化的 td（CSS2 §17.2.1：display 不影响表格内 cell 身份）。旧
+        // gate 只认 ComputedStyle.display == TableCell，块化 cell 逃逸列压缩重测，内容高
+        // 停留压缩前 taffy 值（sizing-orthog-htb-in-vrl-007 ref 页 td#data display:block：
+        // 394 宽 6 行真值 120 vs 残留压缩前 4 行 80，行/表高 126 vs 86，chrome oracle
+        // 同值；去掉 display:block 即 ch=120 实证 gate 逃逸为唯一病因）。
+        let is_cell = style.is_some_and(|s| matches!(s.display, DisplayValue::TableCell))
+            || (struct_cell && parent_style.is_some_and(|s| matches!(s.display, DisplayValue::TableRow)));
         if is_cell {
             let cw = box_node.content_width;
             if cw > 0.5 {
@@ -160,10 +171,10 @@ pub(crate) fn remeasure_cells_at_compressed_widths(
             return;
         }
         for child in &mut box_node.children {
-            walk(child, doc, styles, inline_fonts);
+            walk(child, style, doc, styles, inline_fonts, struct_cell);
         }
     }
-    walk(table_box, doc, styles, inline_fonts);
+    walk(table_box, None, doc, styles, inline_fonts, *STRUCT_CELL_REMEASURE);
 }
 
 /// `clamp_cell_subtree_to_content_width` 的强制变体：wrapping 内容（max-content 超宽）也

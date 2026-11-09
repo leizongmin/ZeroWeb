@@ -26,7 +26,7 @@
 //! - paint 层通过容器的 overflow 裁剪，每列只显示该片段对应的高度范围
 
 use std::collections::HashMap;
-use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::{LengthValue, OverflowValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
@@ -1442,6 +1442,22 @@ fn layout_multicol(
                         || child_style(idx).is_some_and(|s| s.contain.has_size())
                 })
                 .collect();
+            // R5431：css-break-3 monolithic——overflow≠visible 子不可跨列拆（哪怕
+            // explicit height；R1037 gate 注释声称该排除但未落实现，
+            // overflow-clip-margin-mul-column-border-box 实证：overflow:clip＋
+            // height:50 容器被拆两列、ref 侧 auto 高同盒却 compact 单列）。先推后
+            // 放＋breaking 臂排除见 assign（与 contain:size `unbreakable` 分参数，
+            // 既有簇语义不变）。css-multicol §3.4 最高不可分下限不入（floor 已按
+            // corpus 校准，definite 容器高下 floor 被钳无观察差异）。
+            let overflow_unsplittable: Vec<bool> = child_info
+                .iter()
+                .map(|&(idx, _)| {
+                    child_style(idx).is_some_and(|s| {
+                        !matches!(s.overflow_x, OverflowValue::Visible)
+                            || !matches!(s.overflow_y, OverflowValue::Visible)
+                    })
+                })
+                .collect();
             balanced_placement = true;
             assign_children_to_columns_balanced(
                 &child_info,
@@ -1450,6 +1466,7 @@ fn layout_multicol(
                 &forced_breaks_after,
                 explicit_for_break,
                 &unbreakable_nested,
+                &overflow_unsplittable,
                 min_balanced,
             )
         }
@@ -1950,6 +1967,7 @@ fn layout_multicol_with_spanners_inner(
                     &[],
                     &[],
                     &region_explicit,
+                    &[],
                     &[],
                     0.0,
                 ),

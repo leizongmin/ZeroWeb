@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+var results = [];
+
+// ---- q15 nested-split 残债八面（q14 后仍红族；独立页避免常驻页 dump 消息
+// 3.3KB 截断顶格——runner 单脚本 strict eval 首抛即止，消息预算全给本页）。
+// expected 形取自 iol 语料 data（行号见逐案注释）。
+
+function nodeDesc(n) {
+  return n ? n.nodeName + (n.nodeType === 3 ? JSON.stringify(n.nodeValue) : '<' + (n.parentNode ? String(n.parentNode.nodeName) : '?') + '>') : 'null';
+}
+
+// 通用寻址：path = 自宿主 div 的 child index 链（文本节点计入）。
+function q15case(name, html, startPath, startOff, endPath, endOff, cmd) {
+  tc.innerHTML = '<div contenteditable>' + html + '</div>';
+  var d = tc.firstChild;
+  function at(path) {
+    var n = d;
+    for (var i = 0; i < path.length; i++) {
+      var c = n.firstChild, k = path[i];
+      while (k-- > 0) c = c.nextSibling;
+      n = c;
+    }
+    return n;
+  }
+  var r;
+  try {
+    results.push(name + ' PRE html=' + JSON.stringify(d.innerHTML));
+    r = document.createRange();
+    r.setStart(at(startPath), startOff);
+    r.setEnd(at(endPath), endOff);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+  } catch (e) { results.push(name + ' SETEXC ' + e + ' pre=' + JSON.stringify(d.innerHTML)); return; }
+  try { document.execCommand(cmd, false, ""); } catch (e) { results.push(name + ' EXC ' + e); return; }
+  var sel = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+  results.push(name + ' html=' + JSON.stringify(d.innerHTML)
+    + ' sel=' + (sel ? nodeDesc(sel.startContainer) + '@' + sel.startOffset + '..' + nodeDesc(sel.endContainer) + '@' + sel.endOffset : 'EMPTY')
+    + ' qIndA=' + document.queryCommandIndeterm(cmd)
+    + ' qSA=' + document.queryCommandState(cmd));
+}
+
+// q15-1 双层嵌套塌缩（语料 :373 期望 <ol><ol><li>[foo]</li></ol></ol> 双层换壳保形）
+q15case('q15-1', '<ul><ul><li>foo</li></ul></ul>', [0, 0, 0, 0], 0, [0, 0, 0, 0], 3, 'insertorderedlist');
+// q15-2 单 li 直选 + 后随嵌套（语料 :407 期望 <ol><li>[foo]<ul>bar</ul></li></ol><ul>baz</ul> 保嵌套 + 外层分裂）
+q15case('q15-2', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul>', [0, 0, 0], 0, [0, 0, 0], 3, 'insertorderedlist');
+// q15-3 = q14-L3 尾随列表（语料 :418 期望 <ul>foo</ul><ol><li>[bar]<ul>baz</ul></li></ol><ul>quz</ul>）
+q15case('q15-3', '<ul><li>foo<li>bar<ul><li>baz</li></ul><li>quz</li></ul>', [0, 1, 0], 0, [0, 1, 0], 3, 'insertorderedlist');
+// q15-4 = q14-K2 straddle-extra（语料 :458 期望 <ol><li>[foo</li><ol>bar</ol><li>baz]</li></ol><p>extra）
+q15case('q15-4', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul><p>extra</p>', [0, 0, 0], 0, [0, 1, 0], 3, 'insertorderedlist');
+// q15-5 单 li 直选 + 嵌套 + 尾随文本（语料 :463 期望 <ol><li>[foo]<ul>bar</ul>baz</li></ol> 全保进新壳）
+q15case('q15-5', '<ul><li>foo<ul><li>bar</li></ul>baz</ul>', [0, 0, 0], 0, [0, 0, 0], 3, 'insertorderedlist');
+// q15-6 嵌套后直选（语料 :473 期望 <ol><li>foo<ul>bar</ul>[baz]</li></ol> 整 li 换壳零分裂）
+q15case('q15-6', '<ul><li>foo<ul><li>bar</li></ul>baz</ul>', [0, 0, 2], 0, [0, 0, 2], 3, 'insertorderedlist');
+// q15-7 跨入嵌套 + 尾随文本（语料 :478 期望 <ol><li>[foo<ol>bar]</ol>baz</li></ol> 嵌套换 tag 保位）
+q15case('q15-7', '<ul><li>foo<ul><li>bar</li></ul>baz</ul>', [0, 0, 0], 0, [0, 0, 1, 0, 0], 3, 'insertorderedlist');
+// q15-8 跨列表边界 join（语料 :488 期望 foo<ol><li>bar</li><li>[baz</li><li>quz]</li></ol> ul 并入 ol）
+q15case('q15-8', 'foo<ol><li>bar</ol><ul><li>baz</ul>quz', [2, 0, 0], 0, [3], 3, 'insertorderedlist');
+
+assert_false(true, results.join(' || '));
+</script>
+</body>

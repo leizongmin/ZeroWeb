@@ -45,5 +45,20 @@ fetch_raw "html/syntax/parsing/named-character-references-data.js"
 fetch_raw "html/dom/render-blocking/support/dummy-1.mjs"
 fetch_raw "html/dom/render-blocking/support/target-red.css"
 
+# dom-expansion goal M1（docs/goal/archive/dom-expansion.md DC-1/DC-2）：html/dom 深层叶子
+# 目录补拉——34 号 deep 语料（git trees recursive）扩进来、runner 通道
+#（HTML_SYNTAX_CORPUS_SUBDIRS）同步扫描的面；fetch_dir_html depth<1 不达 depth-2，
+# 按上方 support/ 先例显式列目录。目录清单与 runner 扫描面一一对应。
+fetch_dir_html "html/dom/documents/dom-tree-accessors"
+fetch_dir_html "html/dom/documents/dom-tree-accessors/document.getElementsByName"
+fetch_dir_html "html/dom/documents/resource-metadata-management"
+fetch_dir_html "html/dom/partial-updates/tentative"
+fetch_dir_html "html/dom/partial-updates/tentative/fragment"
+fetch_dir_html "html/dom/elements/elements-in-the-dom"
+fetch_dir_html "html/dom/elements/global-attributes"
+fetch_dir_html "html/dom/elements/images"
+fetch_dir_html "html/dom/elements/requirements-relating-to-bidirectional-algorithm-formatting-characters"
+fetch_dir_html "html/dom/elements/the-innertext-and-outertext-properties"
+
 goals_inventory
 goals_next_steps "${GOAL}"

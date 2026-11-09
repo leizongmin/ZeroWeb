@@ -40,6 +40,10 @@
 #     v1.10 快照早于该提交；docs/goal/net-api-compat/evidence/2026-10-29-m2-s12-
 #     preflight-redirect-corpus-drift.md）——升级新 ref 后需重新核对（新 ref 若
 #     快照 ≥ 2026-09-12 则无需补）
+#     销账（2026-11-08，46 号 runner-net-infra M3 切片五核对）：现有 pin 树
+#     已原生含「after preflight succeeded」腿，上述条件成立——升级新 ref 后
+#     无需再补；redirect.py OPTIONS 补丁本体已随 46 号 M3 注册表收编
+#     （route_fetch_redirect 臂）
 #   - fetch/api/basic/request-upload.any.js：已对齐上游 HEAD（2026-10-29，
 #     net-api M2-S13 语料巡检——上游删除「POST text body 421 retried once」
 #     测试，本地残留假红腿；docs/goal/net-api-compat/evidence/2026-10-29-m2-s13-
@@ -81,7 +85,85 @@
 #     白名单。字节勿用 master：bom-utf-16be.css 上游已重编码为 UTF-8 BOM+
 #     纯文本，与 pin 版真 UTF-16BE 不符，corpus 判据按 pin 字节形写定——
 #     升级新 ref 后 make fetch-wpt-html-semantics 白名单幂等自动补齐）
+#   - images/green-1x1.png、images/green-16x16.png 与 html/semantics/
+#     embedded-content/the-img-element/srcset/resources/image.png 缺失
+#     （the-img-element sizes/img-load/srcset 家族依赖；s282 勘根定性
+#     sizes-auto 族 6F、sizes-xhr-fragment 1F、adoption 等引用面为语料
+#     404 非引擎缺陷——img onerror → 断言永假/文件级 Timeout；已从上游
+#     wpt images/ 原件本地补入 1x1 PNG 82B + 16x16 PNG 92B + srcset
+#     resources 100x100 PNG 268B（经 gh api contents 按 lib.sh WPT_REV
+#     pin 315976933870b34d6ea30e3f6643403edae678ba 取件）；solo A/B
+#     sizes-auto 6F 全转绿——升级新 ref 后需重新补）
+#   - images/red-16x16.png 缺失（html/semantics/embedded-content/
+#     the-img-element/sizes/sizes-auto-dynamic-attributes.html 依赖；s284
+#     勘根定性该页 3F 为语料 404 非引擎缺陷——fetch fail → img onerror
+#     载入断言永假；已从上游 wpt images/ 原件本地补入 16x16 PNG 130B
+#     （同 gh api contents 按 pin 取件）——升级新 ref 后需重新补）
+#   - images/rrgg-256x256.png 缺失（html/semantics/embedded-content/
+#     the-img-element/historical-progress-event.window.js 依赖；s288 勘根
+#     定性该文件级 Timeout 的悬挂腿为语料 404——async_test 等 load 永不
+#     done；已从上游 wpt images/ 原件本地补入 256x256 PNG 120B（github.com
+#     sparse clone 按 wpt pin 1eecaa0c30 取件）——升级新 ref 后需重新补。
+#     同域：404-response-with-actual-image-data.py 端点为 runner 仿真臂
+#     （testharness.rs s288，wptserve handler 不入语料），无语料资产）
+#   - html/semantics/embedded-content/the-img-element/resources/
+#     {animated.gif,animated.webp,red.png} 缺失（animated-image-update.
+#     tentative.html、animated-webp-update.tentative.html 与 responsive-
+#     image-select-print.html 依赖；s304 勘根定性该簇部分红页含语料 404
+#     面——资产缺席时测试图走 error/占位形态，期望帧面根本不可观测；已
+#     从上游 wpt 原件本地补入 animated GIF 292B（md5 ceb7ff0068d19fbef6
+#     57cc0f09434e44）+ animated WebP 286B（md5 fe2ba7e9a9e024a91ee24e2
+#     d6def97b2）+ 100x100 PNG 510B（md5 b8ae7929d842f20ada510d963b741e1c；
+#     github.com sparse clone 按 wpt pin efcaa5bb87 取件，2026-11-03
+#     master 快照）；补后 animated 两页转为可观测 2.08% 首帧差（10000/
+#     480000，GIF/WebP 帧推进引擎面归 render-foundation decode 域）——
+#     升级新 ref 后需重新补）
+#   - common/reftest-wait.js 缺失（树级 reftest wait 机制脚本，html+css
+#     树 354 页 `<script src="/common/reftest-wait.js">` 依赖；本地语料
+#     common/ 为绕过本脚本补齐路径的手动填充残留——14 文件独缺此件，s304
+#     勘根定性脚本 404 → takeScreenshot 未定义告警刷屏、wait 机制全树失效
+#     面；已从上游 wpt sparse clone（pin efcaa5bb87）cat-file 原件补入
+#     5616B（md5 fbe764e11b37f04436f6a470ebc418e8）。注记：本脚本
+#     fetch_common_resources 走 unpinned master，该件内容随上游漂移，与
+#     WPT_DATA_REF pin 语料存在版本错位风险——升级新 ref 后重跑本脚本
+#     common/ 补齐即自动接管，或按本条手工补入）
+#   - html/semantics/forms/the-textarea-element/support/placeholder.css 缺失
+#     （multiline-placeholder{,-cr,-crlf}.html 与 multiline-placeholder-ref.html
+#     4 页依赖；s311 勘根定性该簇 3F 为语料缺口非引擎缺陷——上游 CSS 对称
+#     归一 test/ref 两侧着色（textarea::placeholder 与 .placeholder 正文同为
+#     GrayText + opacity 1），缺席时 test 侧 placeholder 走引擎 UA 灰
+#     #757575、ref 侧正文默认色，逐字形色差 5508/480000=1.15% 三页齐红；
+#     已从上游 wpt 原件按 pin 取件补入 188B（md5 07368e84cb705a96ff176ec45
+#     652a4db；gh api contents 按 wpt pin efcaa5bb87 取件，2026-11-06）——
+#     升级新 ref 后需重新补）
+#   - html/semantics/document-metadata/the-link-element/{stylesheet.css,
+#     resources/stylesheet.css} 缺失（link-rel-attribute-ascii-case-insensitive
+#     .html/notref 与 stylesheet-with-base.html 依赖；s315 勘根定性 ascii-case 页
+#     mismatch 恒败为纯语料缺口（link1/link3 双 404 → test/notref 同白底）、
+#     with-base 页为缺件+`<base>` 基准缺口复合（引擎侧 base 前移同提交）——上游
+#     原件本地补入 36B 红（md5 4952ca73677541df4bacbe83cc3aae99）/ 38B 绿
+#     （md5 56ae6412c0519859b25b032fb77a2270）（raw.githubusercontent wpt master
+#     2026-11-06 取件）——升级新 ref 后需重新补）
+#   - html/semantics/scripting-1/the-script-element/module/dynamic-import/
+#     resources/{side-effect-module.js,module-with-tla-dep.js,tla-module.js,
+#     cyclic-tla-dep-a.js,cyclic-tla-dep-b.js} 缺失（import.defer 三 tentative 页
+#     依赖：basic-deferred-evaluation / tla-deferred-evaluation /
+#     cyclic-tla-defer-eval；s360 勘根定性三页 SyntaxError 恒败为双缺口——bundled
+#     V8 默认关 --js-import-defer 旗（语法面，引擎侧 transform 层重写收口）+
+#     资源 404（fetch 按扩展名白名单漏收新目录）；已按 lib.sh WPT_REV pin
+#     315976933870b34d6ea30e3f6643403edae678ba 从上游原件补入 58B（md5
+#     4d4df47b73875ae8b8781b93855948a8）/ 118B（ada0c57bac189e1540a45e1173c4b227）/
+#     97B（33e7b388292cfb792c6040eb54694ecd）/ 121B（cc63c221f594e31e916a2e3cfb777719）/
+#     109B（123fdb8f9fb663cdc9109454e5c671ab）；basic+tla 两页 solo 转绿，cyclic
+#     页残红为 tc39 proposal-defer-import-eval issue #83 已知循环 TLA 死锁面
+#     （bounded Fail 非 hang）——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
+#   - s364（2026-11-09）自建诊断探针清理：probe12-defer-slow.html + probe12-slow.js +
+#     probe12-fast.js（execution-timing/）与 probe13-async-srcfast.html（module/）为
+#     历史轮次恒红 dump 探针（assert ["__FAIL__"] 恒假带现场，gitignore 未入库）——
+#     本地删除收口径：the-script-element 域 4F→2F（残 F=143/052 流式物化长挂）；
+#     probe8/9/10 系列（module/）为 Pass 中的行为钉，维持本地回归保护不删。
+#     upgrade 后探针不回归（从未入库）。
 
 set -euo pipefail
 

@@ -1,0 +1,12 @@
+# enginelib 已知红名册（2026-11-07，knife9 树复核，roster OK 九红恒一）
+# 全部已 bracket 归因外部债：五红 CSSOM 序列化（s249 形变在册）+ ws×2 ba03fd7ff + fetch×1 f021e11fb + iframe-sw×1 4615680c0——移交 net-api 流对齐，非本 goal 回归。
+# 名册变化当轮新增带日期文件，不覆盖本档。
+js_dom_bridge::tests::p56_adopted_snapshot_restore_hook_keeps_page_value
+js_dom_bridge::tests::test_fetch_filtered_response_type_matrix
+js_dom_bridge::tests::test_iframe_service_worker_messages_dispatch_to_iframe_container
+js_dom_bridge::tests::test_p99s_rule_style_preserves_custom_property_case
+js_dom_bridge::tests::test_stylesheet_add_rule_remove_rule_r3276
+js_dom_bridge::tests::test_stylesheets_rule_style_r2810
+js_dom_bridge::tests::test_stylesheets_write_r2809
+js_dom_bridge::tests::test_t8k_websocket_error_nonterminal
+js_dom_bridge::tests::test_t8k_websocket_event_flow_open_message_close

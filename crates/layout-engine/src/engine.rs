@@ -1387,6 +1387,19 @@ impl LayoutEngine {
         // R3905（CSS2 §10.3.7）：rtl CB 中全-auto inset abspos 静态位置镜像（左缘贴 CB 右缘）。
         fix_rtl_abspos_static_position(&mut root_box, styles);
 
+        // 11.4b R5461（CSS2 §10.3.7 × Writing Modes §7.1 交换帧）：正交 htb abs 叶
+        // auto 物理宽按真 CB（视口 ICB）shrink-to-fit 重解——taffy 交换帧 R5293 回灌臂
+        // 把 pass1 测得的物理块轴 extent（盒高）经 known.width 反馈成水平 IFC 约束，
+        // 行内 extent 塌最宽词（002 ref 臂 abs 89 vs chromium 211.48，R5455 家族）。
+        // 须在 11.5 视口重解析前（右锚方程消费修正后 width）与 Final Inline Layout 前。
+        abspos_sizing::resolve_orthog_abspos_shrink_to_fit(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+            self.viewport_width,
+        );
+
         // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素的**百分比**
         // inset 与尺寸。
         // CSS 2.1 §10.1：absolute 元素无 positioned ancestor 时，containing block 是
@@ -1532,6 +1545,35 @@ impl LayoutEngine {
             styles,
         );
 
+        // 11.10 R5459 viv 域 float 子树容器行内轴 fill：CSS §7.1 块级盒 auto 行内尺寸 fill
+        // 包含块，float 子不阻断；taffy 交换帧对此类容器不 stretch（R4428 float 子树排除域）。
+        // 在 Final Inline Layout Pass 前修，使存 IFC 直接见正确 max_depth（免 paint Path B 重跑）。
+        crate::vertical_block_flow::fill_viv_float_subtree_inline_axis(&mut root_box, styles);
+
+        // 11.11 R5460 viv 域混合内容容器块轴 extent：auto block-size = fit-content，
+        // 自身 IFC Σ 列宽为 viv float 排除域的 extent 下限（taffy frame-only 塌宽）。
+        // 须在 11.10 fill 后（列断深度 = content_height 已可信）、R5457 float 右缘重锚
+        //（apply step 12.7）前落定——float 子几何随最终 content_width 自动跟随。
+        crate::vertical_block_flow::viv_mixed_content_block_extent(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+        );
+
+        // 11.12 R5462（CSS Writing Modes §7.1 orthogonal-auto）：vertical 父下的块级
+        // 正交 htb 子 auto 物理宽按 §7.1 约束（CB indefinite → ICB）shrink-to-fit 重解
+        // ——taffy 交换帧测量闭包以父当前收缩宽当子行内约束，100 数塌 130（chromium
+        // 780）、块轴 extent 塌 ICB fill（784 vs Σ 行高 130）。须在 Final Inline Layout
+        // 前落定：存储 IFC（步 12）以新 content_width 重排，paint use_stored 直接成立。
+        crate::vertical_block_flow::orthog_block_inline_axis_stf(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+            self.viewport_width,
+        );
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
@@ -1550,6 +1592,14 @@ impl LayoutEngine {
             &intrinsic_for_r695,
             &mut final_inline_context,
         );
+
+        // R5432（css-overflow-4 §block-ellipsis × CSS2 §10.3.8）：clamp 容器几何同步
+        // ——taffy branch abspos 盒（无 measure 函数）的高/锚不感知 clamp cap，本
+        // pass 读 compute_final 存储行盒收口（block-ellipsis-018：存储行 strut 25 vs
+        // 盒高 43.65/锚 y=26 三源不一致）。须在 compute_final 之后（存储行才落盒）、
+        // 其余 abspos 后处理之前（静态位域 auto/auto 与本 pass definite-bottom 域不相
+        // 交，序无感）。kill-switch `ZW_CLAMP_GEOMETRY_SYNC=0`。
+        abspos::sync_clamped_abspos_geometry(&mut root_box, styles);
 
         // R5166（css-position-3 §static-position）：行内流 OOF 静态位锚定——须在
         // compute_final 之后（锚位由 stored IFC 断行记录）、其余 abspos 后处理链之外
@@ -1648,6 +1698,7 @@ impl LayoutEngine {
         // line_clamp_hidden，paint 据此跳过整子树）。须在各子 IFC 终化（compute_final_inline_
         // layouts）与 R109 回填之后（inline_layout 行几何已终态）。
         apply_cross_block_line_clamp(&mut root_box, styles, doc);
+
         // R5205：clamp 收缩的兄弟位移 + 祖先缩高传播——apply_cross_block_line_clamp
         // 只收缩容器自身，布局期定位的后续兄弟/祖先高需按净差修正（line-clamp-023）。
         // 须在 12.7 vertical-rl 重定位之前（HorizontalTb 兄弟位移 pass 的既定次序）。
@@ -1699,6 +1750,12 @@ impl LayoutEngine {
         if std::env::var("ZW_BFC_INLINEBLOCK_AVOID").as_deref() != Ok("0") {
             crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box, styles);
         }
+
+        // R5477：终末块级 BFC 根 float 位移校正（CSS2 §9.5 chromium FloatAvoider 语义；
+        // 只校正仍与 float 重叠者，不触碰既有旁置/收缩绿域）。R5478 escaped-float 臂
+        // 默认开（非 BFC 根块内 float 逃逸并入候选域，V1–V4 oracle 定谳）。kill-switch
+        // ZW_BFC_ROOT_FLOAT_DISPLACE=0、ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED=0。
+        crate::bfc_root_displace::apply_bfc_root_float_displace(&mut root_box, styles);
 
         // R5070：终末 inline 载体右浮 CB 修正（CSS §9.5/§10.3.5 包含块 = 最近块级祖先；
         // 载体 x 终值确定后重定）。kill-switch ZW_FLOAT_CB_BLOCK=0。
@@ -2849,6 +2906,7 @@ impl LayoutEngine {
 
         LayoutBox {
             inline_reported_rect: None,
+            inline_overflow_extent: None,
             // R4945：taffy Position::Absolute + computed static 的组合 = R2156 skip
             // 提升原子（tree.rs 置 taffy 绝对定位持位，computed 无 inset 语义）。
             hoisted_atomic: taffy.style(taffy_id).map(|st| {
@@ -2930,6 +2988,7 @@ impl LayoutEngine {
             clearance_extent_reduction: 0.0,
             clearance_chain_absorbed: false,
             clamp_shrink_delta: 0.0,
+            table_grid_max_width: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,
             column_gap: 0.0,
@@ -2946,9 +3005,12 @@ impl LayoutEngine {
             column_span_offsets: Vec::new(),
             oof_static_mapped: false,
             oof_static_line_bottom: None,
+            clamp_kept_line_bottom: None,
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
+            line_clamp_strut_displaced: false,
+            line_clamp_ellipsis_justify_flush: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
             line_clamp_clip: false,

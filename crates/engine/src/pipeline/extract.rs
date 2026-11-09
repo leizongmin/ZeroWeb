@@ -10,6 +10,40 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
+/// link `type` 属性候选门（HTML §the-link-element candidate stylesheet）：type 缺失或
+/// 空串 = 无提示照常候选；非空则须规范化（trim → `;` 前参数段剥离 → ASCII 小写）后
+/// 等于 `text/css` 才候选，否则不抓取不应用（chromium 同——`type="application/javascript"`
+/// / 无 `/` 非法 MIME / `text/cssDEF` 变体均不加载）。三个 extract 函数与 webview/
+/// runner 装载路径共判（s315 driving：link-type-attribute match 页）。
+/// https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
+pub fn link_type_allows_stylesheet(type_attr: Option<&str>) -> bool {
+    match type_attr {
+        None => true,
+        Some(t) if t.trim().is_empty() => true,
+        Some(t) => t
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .eq_ignore_ascii_case("text/css"),
+    }
+}
+
+/// 文档基准 URL 的 `<base href>` 原始值（HTML §document-base-url：文档序首个带
+/// href 的 base 元素；href 空 = 无效回落文档 URL）。返回 raw value——join 语义由
+/// 调用方按自身基准形态落实（`Url::join` / `Path::join`），engine 不耦合网络。
+/// 既有 `script_effective_base_urls` 同款语义的样式表面（s315 driving：
+/// stylesheet-with-base match 页）。
+/// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+pub fn extract_document_base_href(html: &str) -> Option<String> {
+    let doc = zero_dom::parse_html(html);
+    doc.get_elements_by_tag_name("base")
+        .into_iter()
+        .find_map(|id| doc.get_attribute(id, "href"))
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+}
+
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
 ///
 /// 用于 URL 导航路径下外链样式表的加载（goal doc P1 缺口「外部样式表加载缺失」）：
@@ -42,6 +76,9 @@ pub fn extract_stylesheet_links(html: &str) -> Vec<(String, String)> {
         if !is_stylesheet {
             continue;
         }
+        if !link_type_allows_stylesheet(doc.get_attribute(link_id, "type").as_deref()) {
+            continue;
+        }
         if let Some(href) = doc.get_attribute(link_id, "href") {
             let href = href.trim();
             if !href.is_empty() {
@@ -67,6 +104,9 @@ pub fn extract_stylesheet_link_anchors(html: &str) -> Vec<(String, String, Strin
         let rel = doc.get_attribute(link_id, "rel").unwrap_or_default();
         let is_stylesheet = rel.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet"));
         if !is_stylesheet {
+            continue;
+        }
+        if !link_type_allows_stylesheet(doc.get_attribute(link_id, "type").as_deref()) {
             continue;
         }
         if let Some(href) = doc.get_attribute(link_id, "href") {
@@ -144,6 +184,23 @@ pub enum PageScript {
         /// `integrity` 属性原文（空格分隔 integrity metadata，空属性归 None）。
         integrity: Option<String>,
     },
+}
+
+/// 解析器插入脚本的调度分类（spec prepare-the-script-element 的 parser-inserted
+/// 时序面）：classic 无 defer = parse 位同步执行；`defer` classic 与 module 无
+/// `async` = 文档解析完后按文档序执行（deferred 列表——module 脚本隐式 defer）；
+/// module 带 `async` = 尽快就绪即执行（asap 列表——本引擎暂按 parse 位/取回完成
+/// 执行，s342 未动）。classic 的 `async` 属性本引擎未建模（同 Blocking 槽）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptSched {
+    /// parse 位同步执行（batch 文档序槽）。
+    Blocking,
+    /// 文档解析完后按文档序执行（deferred 列表——`defer` classic 与无 `async`
+    /// module；runner 侧移 batch 尾执行）。
+    Deferred,
+    /// module 带 `async`——尽快就绪即执行（当前行为同 Blocking 槽，s343 面挂账）。
+    AsyncModule,
 }
 
 /// HTML「ASCII whitespace」剥离（TAB/LF/FF/CR/SPACE）——s93（classic 脚本属性面）：spec 剥离
@@ -260,6 +317,16 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
 /// `document.currentScript`（HTML §4.11.3.1：classic 脚本执行期间 currentScript 指向自身元素）。
 /// 序号在过滤**之前**递增（每遇一个 `<script>` 即 +1），确保与 `getElementsByTagName('script')` 一一对应。
 pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
+    extract_page_scripts_sched(html)
+        .into_iter()
+        .map(|(script, idx, _)| (script, idx))
+        .collect()
+}
+
+/// 与 [`extract_page_scripts_indexed`] 相同，且每条目附解析器插入调度分类
+/// [`ScriptSched`]（s342：runner 侧按分类把 deferred 条目移 batch 尾——spec
+/// 文档解析完后按文档序执行面）。
+pub fn extract_page_scripts_sched(html: &str) -> Vec<(PageScript, usize, ScriptSched)> {
     let doc = zero_dom::parse_html(html);
     let mut scripts = Vec::new();
     let mut script_ids = Vec::new();
@@ -318,6 +385,24 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
         } else {
             doc.get_attribute(script_id, "src")
         };
+        // s342：defer/async 属性 → 解析器插入调度分类（spec prepare-the-script-element
+        // 时序面；module 的 defer 属性为 no-op——module 无 async 即隐式 defer）。
+        // classic 的 defer 仅外链生效：parser-inserted 无 src classic 一律立即执行
+        //（defer no-op，execution-timing/090 实测形态）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let sched = if is_module {
+            if doc.get_attribute(script_id, "async").is_some() {
+                ScriptSched::AsyncModule
+            } else {
+                ScriptSched::Deferred
+            }
+        } else if doc.get_attribute(script_id, "defer").is_some()
+            && src_attr.as_deref().is_some_and(|s| !s.trim().is_empty())
+        {
+            ScriptSched::Deferred
+        } else {
+            ScriptSched::Blocking
+        };
         if let Some(src) = src_attr {
             let src = src.trim();
             if src.is_empty() {
@@ -353,9 +438,10 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
                             integrity,
                         },
                         this_idx,
+                        sched,
                     ));
                 } else {
-                    scripts.push((PageScript::External(src.to_string()), this_idx));
+                    scripts.push((PageScript::External(src.to_string()), this_idx, sched));
                 }
                 script_ids.push(script_id);
                 continue;
@@ -376,9 +462,9 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
             let code = strip_script_cdata(raw.trim()).trim();
             if !code.is_empty() {
                 if is_module {
-                    scripts.push((PageScript::InlineModule(code.to_string()), this_idx));
+                    scripts.push((PageScript::InlineModule(code.to_string()), this_idx, sched));
                 } else {
-                    scripts.push((PageScript::Inline(code.to_string()), this_idx));
+                    scripts.push((PageScript::Inline(code.to_string()), this_idx, sched));
                 }
                 script_ids.push(script_id);
             }
@@ -392,10 +478,10 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
     // this_idx 仍为全体 script 元素 pre-order 序（与 shim getElementsByTagName('script')
     // 对齐），执行序与序号解耦。
     // https://html.spec.whatwg.org/multipage/syntax.html#the-rules-for-parsing-tokens-in-foreign-content
-    let mut entries: Vec<(zero_dom::NodeId, usize, PageScript)> = scripts
+    let mut entries: Vec<(zero_dom::NodeId, usize, PageScript, ScriptSched)> = scripts
         .into_iter()
         .zip(script_ids)
-        .map(|((script, idx), id)| (id, idx, script))
+        .map(|((script, idx, sched), id)| (id, idx, script, sched))
         .collect();
     entries.sort_by(|a, b| match a.1.cmp(&b.1) {
         Ordering::Equal => Ordering::Equal,
@@ -414,7 +500,10 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
             }
         }
     });
-    entries.into_iter().map(|(_, idx, script)| (script, idx)).collect()
+    entries
+        .into_iter()
+        .map(|(_, idx, script, sched)| (script, idx, sched))
+        .collect()
 }
 
 /// 判 `anc` 是否 `desc` 的祖先（沿父链上行）——脚本 end-tag 排序用。
@@ -692,54 +781,9 @@ pub fn img_selected_pixel_density(
     //（srcset_candidates——URL 内逗号合法，data: URL header 逗号不切组）。
     let mut candidates: Vec<(Option<f64>, Option<f64>)> = Vec::new();
     for (_url, desc_area) in srcset_candidates(&srcset) {
-        let mut width = None;
-        let mut density = None;
-        let mut fch = false;
-        let mut valid = true;
-        for d in desc_area.split_ascii_whitespace() {
-            if let Some(num) = d.strip_suffix('w') {
-                if width.is_some() || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
-                    valid = false;
-                    break;
-                }
-                let wv: f64 = num.parse().unwrap_or(f64::INFINITY);
-                if wv == 0.0 {
-                    valid = false;
-                    break;
-                }
-                width = Some(wv);
-            } else if let Some(num) = d.strip_suffix('x') {
-                if width.is_some() || density.is_some() || fch {
-                    valid = false;
-                    break;
-                }
-                match parse_srcset_real(num) {
-                    Some(v) if v >= 0.0 => density = Some(v),
-                    _ => {
-                        valid = false;
-                        break;
-                    }
-                }
-            } else if let Some(num) = d.strip_suffix('h') {
-                if fch || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
-                    valid = false;
-                    break;
-                }
-                if matches!(num.parse::<f64>(), Ok(v) if v == 0.0) {
-                    valid = false;
-                    break;
-                }
-                fch = true;
-            } else {
-                valid = false;
-                break;
-            }
-        }
-        if fch && width.is_none() {
-            valid = false;
-        }
-        if valid {
-            candidates.push((width, density));
+        // 文法校验共用核（s306 抽出，`img_selected_source_url` 同源）。
+        if let Some(cand) = parse_srcset_descriptor(&desc_area) {
+            candidates.push(cand);
         }
     }
     let has_src = doc.get_attribute(img_id, "src").is_some_and(|s| !s.trim().is_empty());
@@ -851,6 +895,263 @@ fn parse_srcset_real(s: &str) -> Option<f64> {
         return None;
     }
     s.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// s306（html-semantics M2）：srcset 描述符文法共用核（w/x/h 混排校验）——
+/// `img_selected_pixel_density` 与 `img_selected_source_url` 的候选解析同源。
+/// 返 (width 描述符, density 描述符)；None = 候选 invalid（spec parse error
+/// → 候选弃）。文法同 shim `__zwParseSrcsetAttr5277`：w = 纯数字+'w'（0 →
+/// error）、x = HTML 浮点（`parse_srcset_real`，非有限拒）、h = 纯数字+'h'
+///（0 → error）；w/x 互斥、h 至多一个；h 在场必须配 w。
+/// https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+fn parse_srcset_descriptor(desc_area: &str) -> Option<(Option<f64>, Option<f64>)> {
+    let mut width = None;
+    let mut density = None;
+    let mut fch = false;
+    for d in desc_area.split_ascii_whitespace() {
+        if let Some(num) = d.strip_suffix('w') {
+            if width.is_some() || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            let wv: f64 = num.parse().unwrap_or(f64::INFINITY);
+            if wv == 0.0 {
+                return None;
+            }
+            width = Some(wv);
+        } else if let Some(num) = d.strip_suffix('x') {
+            if width.is_some() || density.is_some() || fch {
+                return None;
+            }
+            match parse_srcset_real(num) {
+                Some(v) if v >= 0.0 => density = Some(v),
+                _ => return None,
+            }
+        } else {
+            let num = d.strip_suffix('h')?;
+            if fch || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            if matches!(num.parse::<f64>(), Ok(v) if v == 0.0) {
+                return None;
+            }
+            fch = true;
+        }
+    }
+    if fch && width.is_none() {
+        return None;
+    }
+    Some((width, density))
+}
+
+/// s306：`<source>` type 属性支持性门（shim `__zwSourceSupportedType5277`
+/// 白名单镜像：image/{gif,png,jpeg,svg+xml,x-icon,webp}；空值跳过检查；
+/// essence 按 RFC 7231 结构解析）。参数（;k=v）面 shim 有语法校验、此处
+/// 放行不拒——本仓 corpus 无带参 type 页 FIXME（校验收窄不影响白名单面）。
+fn source_type_supported(v: &str) -> bool {
+    let s = v.trim();
+    if s.is_empty() {
+        return true;
+    }
+    let essence = s.split(';').next().unwrap_or(s).trim();
+    let Some((t, st)) = essence.split_once('/') else {
+        return false;
+    };
+    if t.is_empty() || st.is_empty() || st.contains('/') {
+        return false;
+    }
+    let token_ok = |x: &str| {
+        !x.is_empty()
+            && x.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&c))
+    };
+    if !token_ok(t) || !token_ok(st) {
+        return false;
+    }
+    let mime = essence.to_ascii_lowercase();
+    mime == "image/gif"
+        || mime == "image/png"
+        || mime == "image/jpeg"
+        || mime == "image/svg+xml"
+        || mime == "image/x-icon"
+        || mime == "image/webp"
+}
+
+/// s306：source media 属性门（spec：media query list 求值——shim matchMedia
+/// 桥同源引擎 zero_css_parser；属性缺席/空 = 全匹配；解析失败 = 不匹配跳过
+/// 该 source；逗号列表 OR 同 matcher 求值口径）。
+fn source_media_matches(media: &str, ctx: &zero_css_parser::media_query::MediaContext) -> bool {
+    let s = media.trim();
+    if s.is_empty() {
+        return true;
+    }
+    match zero_css_parser::media_query::parse_media_query(s) {
+        Some(list) => list
+            .iter()
+            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+        None => false,
+    }
+}
+
+/// s306：picture `source` 子元素选中核（spec update the source set 前半）——
+/// 按 DOM 序走到 img 元素为止：SOURCE 元素且 media/type 门通过且 srcset
+/// 候选非空即选中（w/x 密度择优在 `img_selected_source_url`）。spec 只取
+/// img 前的兄弟 source（img 本身结束 walk）；picture 祖先缺席 → None。
+/// https://html.spec.whatwg.org/multipage/images.html#update-the-source-set
+pub(crate) fn select_source_element(
+    doc: &zero_dom::Document,
+    img_id: zero_dom::NodeId,
+    ctx: &zero_css_parser::media_query::MediaContext,
+) -> Option<zero_dom::NodeId> {
+    let parent = doc.parent_node(img_id)?;
+    let is_picture = doc
+        .get(parent)
+        .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "picture"));
+    if !is_picture {
+        return None;
+    }
+    for child in doc.child_nodes(parent) {
+        let Some(n) = doc.get(child) else {
+            continue;
+        };
+        let zero_dom::NodeKind::Element(e) = &n.kind else {
+            continue;
+        };
+        if e.local_name() == "img" {
+            return None;
+        }
+        if e.local_name() != "source" {
+            continue;
+        }
+        if let Some(media) = e.get_attribute("media")
+            && !source_media_matches(&media, ctx)
+        {
+            continue;
+        }
+        if let Some(ty) = e.get_attribute("type")
+            && !source_type_supported(&ty)
+        {
+            continue;
+        }
+        if let Some(srcset) = e.get_attribute("srcset")
+            && !srcset_candidates(&srcset).is_empty()
+        {
+            return Some(child);
+        }
+    }
+    None
+}
+
+/// s306：候选密度择优（spec select-an-image-source 步骤：密度归一 w/size +
+/// 同密度去重保首 + ≤dpr 最大密度、无则最小密度；dpr 1.0 = headless 基准同
+/// shim devicePixelRatio）。返胜出 URL；`default_src` = img src 属性补挂
+/// 候选（无 1x 且无 w 候选且非空时，spec create-a-source-set 步 4）。
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+fn pick_srcset_candidate_url(pairs: &[(String, String)], size: f64, default_src: Option<&str>) -> Option<String> {
+    let mut entries: Vec<(f64, String)> = Vec::new();
+    let mut has_d1 = false;
+    let mut has_w = false;
+    for (url, desc) in pairs {
+        if let Some((w, d)) = parse_srcset_descriptor(desc) {
+            let dv = match d {
+                Some(v) => v,
+                None => match w {
+                    Some(wv) => {
+                        has_w = true;
+                        wv / size
+                    }
+                    None => 1.0,
+                },
+            };
+            if dv == 1.0 {
+                has_d1 = true;
+            }
+            entries.push((dv, url.clone()));
+        }
+    }
+    if !has_d1
+        && !has_w
+        && let Some(src) = default_src.map(str::trim).filter(|s| !s.is_empty())
+    {
+        entries.push((1.0, src.to_string()));
+    }
+    // 同密度去重保首（shim seen 表同口径）后 ≤dpr 最大、无则最小。
+    let mut uniq: Vec<(f64, String)> = Vec::new();
+    for (d, u) in entries {
+        if !uniq.iter().any(|(ud, _)| *ud == d) {
+            uniq.push((d, u));
+        }
+    }
+    let mut best: Option<(f64, String)> = None;
+    for (d, u) in &uniq {
+        if *d <= 1.0 && best.as_ref().is_none_or(|(bd, _)| *d > *bd) {
+            best = Some((*d, u.clone()));
+        }
+    }
+    let winner = match best {
+        Some(w) => w,
+        None => {
+            let min = uniq
+                .iter()
+                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))?;
+            (min.0, min.1.clone())
+        }
+    };
+    (winner.0 > 0.0).then_some(winner.1)
+}
+
+/// s306（html-semantics M2）：img 有效选中图源 URL——select an image source
+/// 的 host 侧最小镜像（paint/固有尺寸键与 shim 选源同口径：shim 面此前只进
+/// currentSrc/available-images/resourceState，paint 面走 R4162 首候选近似 →
+/// responsive-image-select-print 红根因）。取源序随 spec（与旧 `effective_img_src`
+/// 的 src 优先近似序不同）：picture 祖先且有通过门的 source 子元素 → 其 srcset
+/// 按 w/x 密度择优（sizes 缺省 100vw = viewport 宽）；无选中 source → img 自身
+/// srcset 密度择优（含 default source 补挂）→ 自身 src。src/srcset 皆缺席时
+/// picture source 仍先于"空回落"（spec 语义）。全 corpus reftest 面无 img 同时
+/// 带 src 与通过门 picture source 的观测页 FIXME（翻转面收窄依据见 s306 账）。
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+pub fn img_selected_source_url(
+    doc: &zero_dom::Document,
+    img_id: zero_dom::NodeId,
+    viewport_w: f64,
+    viewport_h: f64,
+) -> Option<String> {
+    let has_src = doc.get_attribute(img_id, "src").is_some_and(|s| !s.trim().is_empty());
+    if let Some(src_node) = select_source_element(
+        doc,
+        img_id,
+        &zero_css_parser::media_query::MediaContext::new(viewport_w, viewport_h),
+    ) {
+        let srcset = doc.get_attribute(src_node, "srcset")?;
+        let pairs = srcset_candidates(&srcset);
+        let size = doc
+            .get_attribute(src_node, "sizes")
+            .and_then(|sizes| {
+                split_sizes_entries(&sizes)
+                    .into_iter()
+                    .find_map(|e| parse_source_size_value(e, viewport_w, viewport_h))
+            })
+            .unwrap_or_else(|| viewport_w.max(0.0));
+        return pick_srcset_candidate_url(&pairs, size, None);
+    }
+    if let Some(srcset) = doc.get_attribute(img_id, "srcset") {
+        let pairs = srcset_candidates(&srcset);
+        if !pairs.is_empty() {
+            let size = doc
+                .get_attribute(img_id, "sizes")
+                .and_then(|sizes| {
+                    split_sizes_entries(&sizes)
+                        .into_iter()
+                        .find_map(|e| parse_source_size_value(e, viewport_w, viewport_h))
+                })
+                .unwrap_or_else(|| viewport_w.max(0.0));
+            let src = doc.get_attribute(img_id, "src");
+            return pick_srcset_candidate_url(&pairs, size, src.as_deref());
+        }
+    }
+    if has_src {
+        return doc.get_attribute(img_id, "src");
+    }
+    None
 }
 
 /// R5275：template contents fragment 递归收集 `<img>`（fragment 不在文档树，
@@ -1537,6 +1838,15 @@ pub struct ScriptElementCsp {
     /// 检查），内联投递丢 src——宿主检查点按此值走外链 URL 检查路径（同源放行/
     /// 异源阻止），不按内联 hash 路径误判。
     pub inlined_src: Option<String>,
+    /// s349：元素 child text content **原文**（CSP inline hash 源——spec
+    /// source-list hash matching 对 inline script 按元素 child text content 原文
+    /// 摘要，不做 trim。执行体（`extract_page_scripts`）为 trim 后文本，JS 语义
+    /// 等价但不可作 hash 源——带缘空白/多行内联脚本原文摘要 ≠ trim 摘要
+    ///（script-text-modifications-csp 语料 pin = 含首换行原文摘要实证）。
+    /// 外链 src 形元素无文本子 → 恒空串（消费侧仅内联形态读取且空串摘要无意义）。
+    /// https://w3c.github.io/webappsec-csp/#source-list-hash-matching-algorithm
+    /// https://html.spec.whatwg.org/multipage/infrastructure.html#child-text-content
+    pub raw_text: Option<String>,
 }
 
 /// 提取每个 `<script>` 元素的 CSP 检查点输入（nonce + harness 标记 + 内联投递
@@ -1560,6 +1870,7 @@ pub fn extract_script_csp_info(html: &str) -> Vec<ScriptElementCsp> {
                 .get_attribute(script_id, "data-inline")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            raw_text: doc.child_text_content(script_id),
         })
         .collect()
 }
@@ -1581,6 +1892,31 @@ pub fn extract_script_referrer_policies(html: &str) -> Vec<Option<String>> {
             doc.get_attribute(script_id, "referrerpolicy")
                 .map(|p| p.trim().to_string())
                 .filter(|p| !p.is_empty())
+        })
+        .collect()
+}
+
+/// 提取每个 `<script>` 元素的 credentials mode（html-semantics s338——dynamic-import
+/// credentials 判据面：模块脚本元素 `crossorigin` 属性决定其 credentials mode，动态
+/// `import()` 取回沿用该 mode）。
+///
+/// 返回向量序号口径同 [`extract_script_csp_info`]（全部 script 元素文档序）。
+/// `use-credentials`（ASCII 大小写不敏感）→ `Some("include")`；缺失/`anonymous`/
+/// 非法值（spec invalid value default = anonymous）→ `None`（消费侧缺省
+/// same-origin）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn extract_script_credentials(html: &str) -> Vec<Option<String>> {
+    let doc = zero_dom::parse_html(html);
+    doc.get_elements_by_tag_name("script")
+        .into_iter()
+        .map(|script_id| {
+            doc.get_attribute(script_id, "crossorigin").and_then(|v| {
+                if v.trim().eq_ignore_ascii_case("use-credentials") {
+                    Some("include".to_string())
+                } else {
+                    None
+                }
+            })
         })
         .collect()
 }
@@ -2185,30 +2521,43 @@ mod tests {
                 super::ScriptElementCsp {
                     nonce: Some("abc".to_string()),
                     zw_harness: false,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some(String::new())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: false,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some("{\"x\":1}".to_string())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: true,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some("alert(1)".to_string())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: false,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some(String::new())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: false,
-                    inlined_src: Some("support/helper.js".to_string())
+                    inlined_src: Some("support/helper.js".to_string()),
+                    raw_text: Some("var x=1;".to_string())
                 },
             ],
-            "nonce + harness 标记 + 内联投递原始 src 按全量 script 文档序对齐（含非 JS type 占位）"
+            "nonce + harness 标记 + 内联投递原始 src + child text content 原文按全量 script 文档序对齐（含非 JS type 占位）"
+        );
+        // s349：raw_text 为 child text content 原文（不 trim）——带缘空白内联的
+        // hash 源保真（script-text-modifications-csp 语料 pin = 含首换行原文）。
+        let raw_html = "<html><body><script>\nvar a = 1;\n</script></body></html>";
+        assert_eq!(
+            extract_script_csp_info(raw_html)[0].raw_text.as_deref(),
+            Some("\nvar a = 1;\n"),
+            "raw_text 保留首尾换行原文（hash 源不 trim）"
         );
         let scripts = extract_page_scripts_indexed(html);
         // 页面脚本序列 4 条（JSON type 过滤，占位 1 号），this_idx 与 info 向量对位。
@@ -2301,5 +2650,260 @@ mod tests {
         );
         // 无 link 页零锚。
         assert!(extract_stylesheet_link_anchors("<p>no links</p>").is_empty());
+    }
+
+    #[test]
+    fn img_selected_source_url_density_picks_max_le_dpr_s306() {
+        use super::effective_img_src;
+        use super::img_selected_source_url;
+        // responsive-image-select-print 形态：source srcset w 描述符两候选，sizes
+        // 缺省 100vw。vw 800：red 1/800、green 200/800=0.25 均 ≤ dpr 1.0 → 取最大
+        // 密度 green（旧 effective_img_src 首候选近似取 red → 定谳假红根因）。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture><source srcset="./resources/red.png 1w, ./resources/green.png 200w"><img></picture></body>"#,
+        );
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("./resources/green.png")
+        );
+        assert_eq!(effective_img_src(&doc, img).as_deref(), Some("./resources/red.png"));
+        // vw 100：green 密度 2.0 > dpr → 弃，回落 ≤dpr 最大 = red。
+        assert_eq!(
+            img_selected_source_url(&doc, img, 100.0, 600.0).as_deref(),
+            Some("./resources/red.png")
+        );
+    }
+
+    #[test]
+    fn img_selected_source_url_own_srcset_and_default_src_s306() {
+        use super::img_selected_source_url;
+        // x 描述符：≤dpr 最大密度 = b（1x）。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png 2x, b.png 1x"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("b.png")
+        );
+        // x 描述符无 1x → default source（src）补挂密度 1（shim create-source-set
+        // `!hasD1 && !hasW` 同口径）→ ≤dpr 最大 = fallback。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png 2x"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("fallback.png")
+        );
+        // w 候选在场 → src 不补挂（hasW 门）→ 密度 0.25 ≤ dpr → a.png。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png 200w"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("a.png")
+        );
+        // 全候选 invalid → 空源集 → default source（src）补挂密度 1。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png bogus"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("fallback.png")
+        );
+        // srcset 缺席 → src 直取；两者皆缺 → None。
+        let doc = zero_dom::parse_html(r#"<body><img src="only.png"><img></body>"#);
+        let imgs = doc.get_elements_by_tag_name("img");
+        assert_eq!(
+            img_selected_source_url(&doc, imgs[0], 800.0, 600.0).as_deref(),
+            Some("only.png")
+        );
+        assert_eq!(img_selected_source_url(&doc, imgs[1], 800.0, 600.0), None);
+    }
+
+    #[test]
+    fn img_selected_source_url_source_sizes_and_walk_stop_s306() {
+        use super::img_selected_source_url;
+        // source sizes=50vw → size 400：a 300/400=0.75、b 600/400=1.5 → ≤dpr 最大 = a。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture><source sizes="50vw" srcset="a.png 300w, b.png 600w"><img></picture></body>"#,
+        );
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("a.png")
+        );
+        // img 后置 source 不进候选（walk 止于 img）→ 回落 img 自身 src。
+        let doc =
+            zero_dom::parse_html(r#"<body><picture><img src="own.png"><source srcset="late.png"></picture></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("own.png")
+        );
+    }
+
+    #[test]
+    fn select_source_element_gates_s306() {
+        use super::select_source_element;
+        use zero_css_parser::media_query::MediaContext;
+        // 门序：source 1 media 不命中 → 弃；source 2 type 不在白名单 → 弃；
+        // source 3 srcset 空 → 弃；source 4 全过 → 选中。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture>
+                <source srcset="a.png" media="(min-width: 4000px)">
+                <source srcset="b.png" type="image/unsupported-format">
+                <source srcset="">
+                <source srcset="d.png" media="(min-width: 400px)" type="image/png">
+                <img></picture></body>"#,
+        );
+        let img = doc.get_elements_by_tag_name("img")[0];
+        let ctx = MediaContext::new(800.0, 600.0);
+        // 期望节点 = picture 下第 4 个 source 子元素（前三个过门失败）。
+        let expected = doc
+            .child_nodes(doc.get_elements_by_tag_name("picture")[0])
+            .into_iter()
+            .filter(|id| {
+                doc.get(*id)
+                    .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "source"))
+            })
+            .nth(3);
+        assert_eq!(select_source_element(&doc, img, &ctx), expected);
+        // media 解析失败（病态串）→ 不匹配弃；picture 祖先缺席 → None。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture><source srcset="a.png" media="(min-width:"><img></picture><img id=x srcset="b.png"></body>"#,
+        );
+        let imgs = doc.get_elements_by_tag_name("img");
+        assert_eq!(
+            select_source_element(&doc, imgs[0], &MediaContext::new(800.0, 600.0)),
+            None
+        );
+        assert_eq!(
+            select_source_element(&doc, imgs[1], &MediaContext::new(800.0, 600.0)),
+            None
+        );
+    }
+
+    #[test]
+    fn source_type_supported_whitelist_s306() {
+        use super::source_type_supported;
+        // shim `__zwSourceSupportedType5277` 白名单镜像面：六 essence 命中、
+        // 大小写不敏感、参数串放行；空值 true；未知/无 '/'/空 token false。
+        assert!(source_type_supported("image/png"));
+        assert!(source_type_supported("IMAGE/JPEG"));
+        assert!(source_type_supported("image/svg+xml"));
+        assert!(source_type_supported("Image/X-Icon"));
+        assert!(source_type_supported("image/webp; charset=binary"));
+        assert!(source_type_supported("  image/gif  "));
+        assert!(source_type_supported(""));
+        assert!(source_type_supported("   "));
+        assert!(!source_type_supported("image/bmp"));
+        assert!(!source_type_supported("text/plain"));
+        assert!(!source_type_supported("noslash"));
+        assert!(!source_type_supported("image/"));
+    }
+
+    #[test]
+    fn parse_srcset_descriptor_grammar_s306() {
+        use super::parse_srcset_descriptor;
+        // w/x/h 文法（shim 同口径）：纯数字+'w'（0 拒）、HTML 浮点 x（负/非有限拒）、
+        // h 兼容位（0 拒、必须配 w）；w/x 互斥；多余 token 拒。
+        assert_eq!(parse_srcset_descriptor("1w"), Some((Some(1.0), None)));
+        assert_eq!(parse_srcset_descriptor("2.0x"), Some((None, Some(2.0))));
+        assert_eq!(
+            parse_srcset_descriptor("200w 1x"),
+            None,
+            "同一候选 w/x 互斥（spec error）"
+        );
+        assert_eq!(parse_srcset_descriptor(""), Some((None, None)));
+        assert_eq!(parse_srcset_descriptor("100h 200w"), Some((Some(200.0), None)));
+        assert_eq!(parse_srcset_descriptor("0w"), None, "w=0 → error");
+        assert_eq!(parse_srcset_descriptor("-1x"), None, "x 负 → error");
+        assert_eq!(parse_srcset_descriptor("9e999x"), None, "x 非有限 → error");
+        assert_eq!(parse_srcset_descriptor("+1x"), None, "x '+' 前缀 → error");
+        assert_eq!(parse_srcset_descriptor("1w 2x"), None, "w/x 互斥");
+        assert_eq!(parse_srcset_descriptor("100h"), None, "h 缺 w → error");
+        assert_eq!(parse_srcset_descriptor("0h 1w"), None, "h=0 → error");
+        assert_eq!(parse_srcset_descriptor("1w junk"), None, "多余 token → error");
+    }
+
+    #[test]
+    fn link_type_allows_stylesheet_matrix_s315() {
+        use super::link_type_allows_stylesheet as allows;
+        // 缺失/空串 = 无提示候选；text/css（ASCII 大小写/参数段放行）；非 CSS MIME/
+        // 非法 MIME 拒（link-type-attribute 五形态全拒）。
+        assert!(allows(None));
+        assert!(allows(Some("")));
+        assert!(allows(Some("  ")));
+        assert!(allows(Some("text/css")));
+        assert!(allows(Some("Text/CSS")));
+        assert!(allows(Some("text/css; charset=utf-8")));
+        assert!(!allows(Some("application/javascript")));
+        assert!(!allows(Some("ABCtext/css")));
+        assert!(!allows(Some("text/cssDEF")));
+        assert!(!allows(Some("text/invalid")));
+        assert!(!allows(Some("invalid")));
+    }
+
+    #[test]
+    fn extract_stylesheet_type_gate_and_base_href_s315() {
+        use super::{extract_document_base_href, extract_stylesheet_hrefs};
+        // type 门：全非法 type 的 5 link 均不入候选（link-type-attribute 页形）；
+        // 无 type / 带参数 text/css 照常。
+        let typed = r#"<head>
+            <link rel="stylesheet" type="application/javascript" href="a.css">
+            <link rel="stylesheet" type="ABCtext/css" href="b.css">
+            <link rel="stylesheet" type="text/cssDEF" href="c.css">
+            <link rel="stylesheet" type="text/invalid" href="d.css">
+            <link rel="stylesheet" type="invalid" href="e.css">
+            <link rel="stylesheet" href="f.css">
+            <link rel="stylesheet" type="text/css; charset=utf-8" href="g.css">
+        </head>"#;
+        assert_eq!(extract_stylesheet_hrefs(typed), vec!["f.css", "g.css"]);
+        // base 提取：文档序首个带 href 的 base（raw value）；无 base/空 href 回落 None。
+        assert_eq!(
+            extract_document_base_href(r#"<head><base href="resources/"><base href="other/"></head>"#),
+            Some("resources/".to_string())
+        );
+        assert_eq!(
+            extract_document_base_href(r#"<head><base target="_b"><base href="res/"></head>"#),
+            Some("res/".to_string())
+        );
+        assert_eq!(extract_document_base_href("<head></head>"), None);
+        assert_eq!(extract_document_base_href(r#"<head><base href=""></head>"#), None);
+    }
+
+    /// s342（script 调度面）：解析器插入脚本按 spec prepare-the-script-element 分桶
+    /// ——module 无 `async` 一律 Deferred（`defer` 属性对 module 是 no-op，隐式
+    /// defer 已覆盖）；module 带 `async` 走 AsyncModule（当前引擎按 Blocking 槽执行，
+    /// s343 面）；classic 的 `defer` 仅外链生效（parser-inserted 无 src classic 一律
+    /// 立即执行），其余 Blocking。Driving WPT：module/module-vs-script-1.html、
+    /// module/charset-01.html（外链 module 文档序交错）、execution-timing/090.html
+    ///（inline defer no-op）。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    #[test]
+    fn extract_page_scripts_sched_classification_s342() {
+        use super::{ScriptSched, extract_page_scripts_sched};
+        let html = r#"<body>
+            <script type="module" src="m1.js"></script>
+            <script type="module" async src="m2.js"></script>
+            <script type="module" defer src="m3.js"></script>
+            <script defer src="d1.js"></script>
+            <script defer>inline_defer_noop();</script>
+            <script defer src="">empty_src_falls_inline();</script>
+            <script>plain();</script>
+        </body>"#;
+        let scheds: Vec<ScriptSched> = extract_page_scripts_sched(html)
+            .into_iter()
+            .map(|(_, _, s)| s)
+            .collect();
+        assert_eq!(
+            scheds,
+            vec![
+                ScriptSched::Deferred,    // module 无 async（隐式 defer）
+                ScriptSched::AsyncModule, // module async（s343 执行面）
+                ScriptSched::Deferred,    // module defer 属性 no-op，仍隐式 defer
+                ScriptSched::Deferred,    // classic defer 外链生效
+                ScriptSched::Blocking,    // classic defer 内联 no-op
+                ScriptSched::Blocking,    // classic defer 空 src 落内联臂（defer no-op）
+                ScriptSched::Blocking,    // plain classic parse 位
+            ]
+        );
     }
 }

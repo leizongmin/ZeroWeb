@@ -1,17 +1,29 @@
-// part01e（2026-11-01 editing-compat F1 list 命令簇）：execCommand
-// insertorderedlist/insertunorderedlist 实应用引擎 + qState/qIndeterm 读面
-//（toggleLists/getSelectionListState 参考实现移植）。挂 part01d 后同闭包复用
-// _zwJus* 机具（blockExtend/containedNodes/wrap/movePreservingRanges/
-// setTagName/followsLineBreak 系）与 part01d _zwVaIsAllowedChild（spec 44 名
-// 版）；part06 经 globalThis.__zw_ce_list_toggle / __zw_ce_list_state 单点调
-// 用，事件口径同 justify 臂（beforeinput 已由事件序派发、input 走既有尾部）。
+// part01e（2026-11-01 editing-compat F1 list 命令簇；2026-11-05 f2 残余面）：
+// execCommand insertorderedlist/insertunorderedlist 实应用引擎 + qState/
+// qIndeterm 读面（toggleLists/getSelectionListState 参考实现移植）。挂 part01d
+// 后同闭包复用 _zwJus* 机具（blockExtend/containedNodes/wrap/
+// movePreservingRanges/setTagName/followsLineBreak 系）与 part01f
+// _zwDelRecordValues/_zwDelRestoreValues（vendored :2385/:2427 忠实版）；list
+// 域 isAllowedChild 走本文件 _zwListIsAllowedChild 忠实尾段（part01d
+// _zwVaIsAllowedChild 是值命令启发式，无 per-parent 表/pair 表，只服务值域）。
+// part06 经 globalThis.__zw_ce_list_toggle / __zw_ce_list_state 单点调用，
+// 事件口径同 justify 臂（beforeinput 已由事件序派发、input 走既有尾部）。
 // 规范：https://w3c.github.io/editing/execCommand.html#the-insertorderedlist-
 // command（toggleLists :5690 / getSelectionListState :3949）。
+// f2 收口（iloop/illist 语料 dd/dt 聚合、嵌套归并、样式保全、缩进合并面）：
+// ② normalizeSublists + items 祖先容器归并（vendored :3904/:5704）；③
+// recordValues/restoreValues 跨父移动样式保全（disable/toConvert/otherTagName
+// 三位点）；④ isSimpleIndentationElement 缩进合并新父臂（vendored :3775/:5922）。
+// f3 收口（q9-q11 门禁批；P2F 17→9→0 收敛链）：_zwListMovePreservingRanges
+// plain 拷贝重锚变体（splitParent/normalizeSublists/outdent 移动点）、
+// _zwListRetagPreservingSelection（fd-retag/outdent-attr 臂选区路径快照回写，
+// 修 setTagName detached-repl 窗口锚塌缩）、normalize 前奏 disable 单面门
+//（enable 录制保留 li 内嵌列表形）、disable 出口端点身份回植 +
+// enable-retag 交集钳制（qInd/qS 恢复选区读面）。
 // FIXME（切片范围，语料面挂后续切片）：① outdentNode 仅 ol/ul 臂（simple/
-// indentation 元素臂 + ancestorList 缩进臂挂后续）；② normalizeSublists 未
-// 移植（嵌套列表归并，items 恒按空处理）；③ recordValues/restoreValues 未移
-// 植（跨父移动的内联样式保全）；④ isSimpleIndentationElement 缩进合并新父臂
-// 简化为恒 createElement(tagName)。
+// indentation 元素臂 + ancestorList 缩进臂挂后续）；⑤ blockExtend 单行容器
+// 边界面（foo<br>bar 跨行 enable 的 br 落位形，vendored blockExtend 边界臂
+// 未移植）；⑥ qState/qIndeterm 读面残余（语料 readface 67F 族）。
 
   function _zwListIsIndentationElement(node) {
     if (!_zwJusIsHtmlElement(node)) return false;
@@ -22,6 +34,38 @@
     // 物化面 style IDL 无索引枚举面，属性串解析口径等价。
     var st = String(node.getAttribute && node.getAttribute('style') || '');
     return /(^|;)\s*(-[a-z]+-)?margin/i.test(st);
+  }
+
+  // isSimpleIndentationElement（vendored :3775 忠实移植）：缩进元素 + 全属性
+  // 为 HTML ns 的 style/dir + style 声明属性名全带 margin/border/padding 前缀。
+  // 物化面 style IDL 无索引枚举（同上注）——属性串逐声明拆名，属性名正则与
+  // vendored node.style[i] 同式（无冒号破声明 CSSOM 丢弃，跳过）。
+  function _zwListIsSimpleIndentationElement(node) {
+    if (!_zwListIsIndentationElement(node)) return false;
+    var attrs = node.attributes;
+    var n = attrs && attrs.length ? attrs.length : 0;
+    for (var i = 0; i < n; i++) {
+      var a = attrs[i];
+      var nsOk = true;
+      try {
+        var ns = a.namespaceURI;
+        nsOk = ns === null || ns === 'http://www.w3.org/1999/xhtml';
+      } catch (_eNs) { nsOk = true; }
+      if (!nsOk || ['style', 'dir'].indexOf(a.name) === -1) return false;
+    }
+    var st = '';
+    try { st = String(node.getAttribute('style') || ''); } catch (_eSt) { st = ''; }
+    var decls = st.split(';');
+    for (var d = 0; d < decls.length; d++) {
+      var decl = decls[d];
+      if (!/^[ \t\n\f\r]*$/.test(decl)) {
+        var ci = decl.indexOf(':');
+        if (ci === -1) continue;
+        var prop = decl.slice(0, ci).replace(/^[ \t\n\f\r]+/, '').replace(/[ \t\n\f\r]+$/, '');
+        if (!/^(-[a-z]+-)?(margin|border|padding)/.test(prop)) return false;
+      }
+    }
+    return true;
   }
 
   function _zwListEditingHostOf(node) {
@@ -39,10 +83,99 @@
     return !!h1 && h1 === _zwListEditingHostOf(node2);
   }
 
+  // list 域移动原语（part01c _zwJusMovePreservingRanges 的 plain 重锚变体）：
+  // shim 桥对 plain（parser 产）子做序列化拷贝不保身份，「端点在 node 内随动」
+  // 的补偿假设对真移动成立、对拷贝不成立——removeChild 后原节点脱离，锚死亡
+  //（q9 P2F 代表面实证：foo@0 起锚死→选区塌 bar@3→qS 读 true）。故移动后
+  // 若 node 身份未落 newParent（拷贝路径），把 node 内端点容器沿子索引路径
+  // 迁到插入产物同位副本。真移动（shim 节点）路径与 part01c 版逐语义一致。
+  // FIXME：part01c 版修复 plain 重锚后（item-4 域）此处本地件可回收。
+  function _zwListMovePreservingRanges(node, newParent, newIndex) {
+    if (!node || !newParent) return;
+    var idx = newIndex === -1 ? (newParent.childNodes ? newParent.childNodes.length : 0) : newIndex;
+    var oldParent = node.parentNode;
+    var oldIndex = _zwJusNodeIndex(node);
+
+    var rng = null;
+    try {
+      var sel = globalThis.getSelection ? globalThis.getSelection() : null;
+      rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
+    } catch (_eJselL) {}
+    var sc = rng ? rng.startContainer : null;
+    var so = rng ? rng.startOffset : 0;
+    var ec = rng ? rng.endContainer : null;
+    var eo = rng ? rng.endOffset : 0;
+
+    // 端点在 node 内（同或后代）→ 随动不补偿（spec movePreservingRanges 1181）。
+    var epInNode = function (n) {
+      return n === node || _zwJusIsAncestorOf(node, n);
+    };
+    if (rng) {
+      if (!epInNode(sc)) {
+        if (sc === newParent && so > idx) so++;
+        if (sc === oldParent && (so === oldIndex || so === oldIndex + 1)) {
+          sc = newParent; so += idx - oldIndex;
+        } else if (sc === oldParent && so > oldIndex + 1) {
+          so--;
+        }
+      }
+      if (!epInNode(ec)) {
+        if (ec === newParent && eo > idx) eo++;
+        if (ec === oldParent && (eo === oldIndex || eo === oldIndex + 1)) {
+          ec = newParent; eo += idx - oldIndex;
+        } else if (ec === oldParent && eo > oldIndex + 1) {
+          eo--;
+        }
+      }
+    }
+
+    // plain 摘挂纪律（R54xx）：先摘原父再插（桥拷贝不摘原父）。
+    if (oldParent && typeof oldParent.removeChild === 'function') {
+      try { oldParent.removeChild(node); } catch (_eJrmL) {}
+    }
+    var ref = newParent.childNodes && idx < newParent.childNodes.length
+      ? newParent.childNodes[idx] : null;
+    try {
+      if (ref) newParent.insertBefore(node, ref);
+      else newParent.appendChild(node);
+    } catch (_eJinsL) {
+      try { newParent.appendChild(node); } catch (_eJinsL2) {}
+    }
+
+    // 拷贝路径判别：真移动后 node.parentNode === newParent；桥拷贝后原节点
+    // 脱离（parentNode null）。此时端点容器若在 node 内，沿子索引路径迁到
+    // newParent 里的插入产物（ref 前一位 / 尾子）同位副本。
+    if (rng && node.parentNode !== newParent) {
+      var moved = ref && ref.previousSibling ? ref.previousSibling : newParent.lastChild;
+      var remap = function (n) {
+        if (n === node) return moved;
+        var path = [];
+        var w = n;
+        while (w && w !== node && w.parentNode) { path.unshift(_zwJusNodeIndex(w)); w = w.parentNode; }
+        if (w !== node) return null;
+        var m = moved;
+        for (var pi = 0; pi < path.length && m; pi++) m = m.childNodes ? m.childNodes[path[pi]] : null;
+        return m;
+      };
+      var nsc = remap(sc);
+      if (nsc) sc = nsc;
+      var nec = remap(ec);
+      if (nec) ec = nec;
+    }
+
+    if (rng) {
+      try {
+        rng.setStart(sc, so);
+        rng.setEnd(ec, eo);
+      } catch (_eJrngL) {}
+    }
+  }
+
   // splitParent（vendored :5058 忠实移植）：nodeList 整体提到原父之前/之后。
   // 尾段独在臂（!firstIn && lastIn）逆序后移 + 尾 br 保全后 abort；首段缺位臂
   // 克隆壳承接头部；中段通用路径：成员前移 + 首尾 br 保全 + 空壳删除。
-  // FIXME：recordValues/restoreValues（跨父移动样式保全）未移植。
+  // 值录还（vendored 同构）在调用位点（disable/toConvert/otherTagName 臂），
+  // splitParent 本体不录还。
   function _zwListSplitParent(nodeList) {
     var originalParent = nodeList[0].parentNode;
     if (!_zwJusIsEditable(originalParent) || !originalParent.parentNode) return;
@@ -53,7 +186,7 @@
     var precedesLb = lastIn && _zwJusPrecedesLineBreak(originalParent);
     if (!firstIn && lastIn) {
       for (var ri = nodeList.length - 1; ri >= 0; ri--) {
-        _zwJusMovePreservingRanges(nodeList[ri], originalParent.parentNode, 1 + _zwJusNodeIndex(originalParent));
+        _zwListMovePreservingRanges(nodeList[ri], originalParent.parentNode, 1 + _zwJusNodeIndex(originalParent));
       }
       if (precedesLb && !_zwJusPrecedesLineBreak(nodeList[nodeList.length - 1])) {
         nodeList[nodeList.length - 1].parentNode.insertBefore(document.createElement('br'), nodeList[nodeList.length - 1].nextSibling);
@@ -66,11 +199,11 @@
       try { originalParent.removeAttribute('id'); } catch (_eRid) {}
       originalParent.parentNode.insertBefore(clonedParent, originalParent);
       while (nodeList[0].previousSibling) {
-        _zwJusMovePreservingRanges(originalParent.firstChild, clonedParent, clonedParent.childNodes.length);
+        _zwListMovePreservingRanges(originalParent.firstChild, clonedParent, clonedParent.childNodes.length);
       }
     }
     for (var mi = 0; mi < nodeList.length; mi++) {
-      _zwJusMovePreservingRanges(nodeList[mi], originalParent.parentNode, _zwJusNodeIndex(originalParent));
+      _zwListMovePreservingRanges(nodeList[mi], originalParent.parentNode, _zwJusNodeIndex(originalParent));
     }
     if (followsLb && !_zwJusFollowsLineBreak(nodeList[0])) {
       nodeList[0].parentNode.insertBefore(document.createElement('br'), nodeList[0]);
@@ -95,15 +228,275 @@
     }
   }
 
-  // fixDisallowedAncestors（vendored :）：dd/dt → dl wrap；禁排父 → 缺省单行
-  // 容器 setTagName 递归。
+  // isAllowedChild（vendored :1629 忠实移植，F1 dd/dt 聚合面根因修复）：
+  // part01d _zwVaIsAllowedChild 是值命令域启发式（无 per-parent switch 表、无
+  // dd/dt/li 归属检查、无 pair 表），list 域尾段照录——dd/dt 只入 dl、li 只入
+  // ol/ul、同名 pair 拒绝。items 聚合谓词与 fixDisallowedAncestors 同源走此。
+  // prohibited 名单 vendored :701 照录（与 part01d +main 的 Chrome delta 名单
+  // 分开，list 域语料权威 = vendored）。
+  // https://w3c.github.io/editing/execCommand.html#allowed-children
+  var _zwListProhibitedParagraphChildNames = ['address', 'article', 'aside',
+    'blockquote', 'caption', 'center', 'col', 'colgroup', 'dd', 'details',
+    'dir', 'div', 'dl', 'dt', 'fieldset', 'figcaption', 'figure', 'footer',
+    'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'li',
+    'listing', 'menu', 'nav', 'ol', 'p', 'plaintext', 'pre', 'section',
+    'summary', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul',
+    'xmp'];
+
+  function _zwListIsAllowedChild(child, parent_) {
+    var i;
+    // table 族父的非空白 Text 子 → false。
+    var tableFamily = ['colgroup', 'table', 'tbody', 'tfoot', 'thead', 'tr'];
+    if ((tableFamily.indexOf(parent_) !== -1 || _zwJusIsHtmlElement(parent_, tableFamily))
+    && child && typeof child === 'object' && child.nodeType === 3
+    && !/^[ \t\n\f\r]*$/.test(String(child.data))) {
+      return false;
+    }
+    // script/style/plaintext/xmp 父的非 Text 子 → false。
+    var rawText = ['script', 'style', 'plaintext', 'xmp'];
+    if ((rawText.indexOf(parent_) !== -1 || _zwJusIsHtmlElement(parent_, rawText))
+    && (typeof child !== 'object' || child.nodeType !== 3)) {
+      return false;
+    }
+    // Document/DocumentFragment/DocumentType 子 → false。
+    if (child && typeof child === 'object'
+    && (child.nodeType === 9 || child.nodeType === 11 || child.nodeType === 10)) {
+      return false;
+    }
+    // HTML 元素子 → 本地名；非字符串子（Text/Comment 等）→ true。
+    var childName = null;
+    if (_zwJusIsHtmlElement(child)) childName = _zwJusTag(child);
+    if (childName === null) return true;
+    // HTML 元素 parent：祖先链三检（a∈a / prohibited∈inline-contents / hN∈hN）。
+    if (_zwJusIsHtmlElement(parent_)) {
+      var ancestor = parent_;
+      var guard = 0;
+      while (ancestor && guard++ < 256) {
+        if (childName === 'a' && _zwJusIsHtmlElement(ancestor, 'a')) return false;
+        if (_zwListProhibitedParagraphChildNames.indexOf(childName) !== -1
+        && _zwVaIsElementWithInlineContents(ancestor)) {
+          return false;
+        }
+        if (/^h[1-6]$/.test(childName)
+        && _zwJusIsHtmlElement(ancestor)
+        && /^h[1-6]$/.test(_zwJusTag(ancestor))) {
+          return false;
+        }
+        ancestor = ancestor.parentNode;
+      }
+      parent_ = _zwJusTag(parent_);
+    }
+    // Element/DocumentFragment parent 对象（非 HTML 元素）→ true；非字符串非
+    // 元素对象（含 null）→ false。
+    if (parent_ && typeof parent_ === 'object'
+    && (parent_.nodeType === 1 || parent_.nodeType === 11)) {
+      return true;
+    }
+    if (typeof parent_ !== 'string') return false;
+    // per-parent switch 表（vendored :1689）。
+    switch (parent_) {
+      case 'colgroup':
+        return childName === 'col';
+      case 'table':
+        return ['caption', 'col', 'colgroup', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr'].indexOf(childName) !== -1;
+      case 'tbody':
+      case 'thead':
+      case 'tfoot':
+        return ['td', 'th', 'tr'].indexOf(childName) !== -1;
+      case 'tr':
+        return ['td', 'th'].indexOf(childName) !== -1;
+      case 'dl':
+        return ['dt', 'dd'].indexOf(childName) !== -1;
+      case 'dir':
+      case 'ol':
+      case 'ul':
+        return ['dir', 'li', 'ol', 'ul'].indexOf(childName) !== -1;
+      case 'hgroup':
+        return /^h[1-6]$/.test(childName);
+    }
+    // 文档骨架名 → false。
+    if (['body', 'caption', 'col', 'colgroup', 'frame', 'frameset', 'head',
+    'html', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr'].indexOf(childName) !== -1) {
+      return false;
+    }
+    // dd/dt 只入 dl；li 只入 ol/ul（F1 dd/dt 聚合缺失根因）。
+    if ((childName === 'dd' || childName === 'dt') && parent_ !== 'dl') return false;
+    if (childName === 'li' && parent_ !== 'ol' && parent_ !== 'ul') return false;
+    // 同名 pair 拒绝表（vendored :1723）。
+    var inlineContents = (typeof _zwVaInlineContents !== 'undefined' && _zwVaInlineContents) || [];
+    var pairTable = [
+      [['a'], ['a']],
+      [['dd', 'dt'], ['dd', 'dt']],
+      [['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']],
+      [['li'], ['li']],
+      [['nobr'], ['nobr']],
+      [inlineContents, _zwListProhibitedParagraphChildNames],
+      [['td', 'th'], ['caption', 'col', 'colgroup', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr']],
+    ];
+    for (i = 0; i < pairTable.length; i++) {
+      if (pairTable[i][0].indexOf(parent_) !== -1
+      && pairTable[i][1].indexOf(childName) !== -1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // retag 选区保持包装（f3 knife A）：_zwJusSetTagName 换壳对 plain 子做序列化
+  // 移动时端点容器对象身份灭失（实测 probe TRACE：foo@0 端点被改写到 bar@3）。
+  // 改壳前录端点相对路径（child-index 链；壳内子序与子树结构换壳不变），改壳
+  // 后按路径重解析重设 range。端点在壳外时身份不受影响，不触碰。
+  function _zwListPathFrom(root, container, offset) {
+    var idxs = [];
+    var c = container;
+    var g = 0;
+    while (c && c !== root && c.parentNode && g++ < 256) {
+      idxs.unshift(_zwJusNodeIndex(c));
+      c = c.parentNode;
+    }
+    return { idxs: c === root ? idxs : null, offset: offset };
+  }
+  function _zwListResolvePath(root, path) {
+    if (!path.idxs) return null;
+    var c = root;
+    for (var i = 0; i < path.idxs.length; i++) {
+      c = c.childNodes[path.idxs[i]];
+      if (!c) return null;
+    }
+    return { c: c, o: path.offset };
+  }
+  function _zwListContainsNode(root, n) {
+    var g = 0;
+    while (n && n !== root && g++ < 256) n = n.parentNode;
+    return !!n;
+  }
+  // 节点仍在当前文档树中（爬到顶须为 document）——disable 出口身份回植的
+  // 存活判定，detached 子树不回植。
+  function _zwListNodeInDocument(n) {
+    if (!n) return false;
+    var top = n;
+    var g = 0;
+    while (top.parentNode && g++ < 256) top = top.parentNode;
+    return top === document;
+  }
+  // 边界 offset 按容器类型钳界：文本按字符长度、元素按子数。
+  function _zwListClampOffset(node, off) {
+    var len = node.nodeType === 3 ? (node.nodeValue || '').length
+      : (node.childNodes ? node.childNodes.length : 0);
+    return off > len ? len : off;
+  }
+  // 端点是否落在列表内容内：容器自身为列表壳（(ul,2) 尾沿形）按外部处理，
+  // 容器的某层父为 li（其父链命中 ol/ul）才算内容内。
+  function _zwListInListContent(n) {
+    if (!n) return false;
+    var g = 0;
+    var p = n;
+    while (p && g++ < 256) {
+      if (_zwJusIsHtmlElement(p.parentNode, ['ol', 'ul'])) return true;
+      p = p.parentNode;
+    }
+    return false;
+  }
+  // 端点相对 item 的路径类别（前奏归并几何门，q15 修正语义）：从 n 沿 parent
+  // 链爬升，仅在 item 可达时分类——先达 item → 'direct'（端点在 item 直属
+  // 内容）；先命中 ol/ul 再达 item → 'list'（端点在 item 的子列表内，列表
+  // 介于端点与 item 之间）；item 不在祖先链上（可能途中撞到无关列表，如
+  // straddle 端点撞外层壳）→ 'outside'，不得误判 'list'。
+  function _zwListEndpointPathKind(n, item) {
+    var g = 0;
+    var p = n;
+    var inList = false;
+    while (p && g++ < 256) {
+      if (p === item) return inList ? 'list' : 'direct';
+      if (_zwJusIsHtmlElement(p, ['ol', 'ul'])) inList = true;
+      p = p.parentNode;
+    }
+    return 'outside';
+  }
+  function _zwListRetagPreservingSelection(node, newTag, extraRanges) {
+    var sel = globalThis.getSelection ? globalThis.getSelection() : null;
+    var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
+    var pathS = null, pathE = null;
+    if (rng && _zwListContainsNode(node, rng.startContainer)) {
+      pathS = _zwListPathFrom(node, rng.startContainer, rng.startOffset);
+    }
+    if (rng && _zwListContainsNode(node, rng.endContainer)) {
+      pathE = _zwListPathFrom(node, rng.endContainer, rng.endOffset);
+    }
+    // 附加 range 保持（f4）：toggle 流的 newRange（blockExtend 产物）start 端
+    // 常为被换壳元素自身（li 臂产 [ol@0..]），换壳后容器 detached → 下游
+    // getContainedNodes 收空 → 吸收臂永不触发（语料 iul:33/iol:43 单列表
+    // 吸收形实测）。Chrome 原生 Range 随 DOM 变更自动吸附（壳 → 同位新壳），
+    // 此处对附加 range 的壳内端点做同路径捕获重锚。
+    var extras = [];
+    if (extraRanges) {
+      for (var ei = 0; ei < extraRanges.length; ei++) {
+        var er = extraRanges[ei];
+        if (!er) continue;
+        var epS = _zwListContainsNode(node, er.startContainer)
+          ? _zwListPathFrom(node, er.startContainer, er.startOffset) : null;
+        var epE = _zwListContainsNode(node, er.endContainer)
+          ? _zwListPathFrom(node, er.endContainer, er.endOffset) : null;
+        extras.push({ r: er, s: epS, e: epE,
+          sc: er.startContainer, so: er.startOffset,
+          ec: er.endContainer, eo: er.endOffset });
+      }
+    }
+    var newNode = _zwJusSetTagName(node, newTag);
+    if (newNode && rng && (pathS || pathE)) {
+      var ns = pathS ? _zwListResolvePath(newNode, pathS) : { c: rng.startContainer, o: rng.startOffset };
+      var ne = pathE ? _zwListResolvePath(newNode, pathE) : { c: rng.endContainer, o: rng.endOffset };
+      if (ns && ne) {
+        try { rng.setStart(ns.c, ns.o); rng.setEnd(ne.c, ne.o); } catch (_eRp) {}
+      }
+    }
+    for (var ei2 = 0; ei2 < extras.length; ei2++) {
+      var xo = extras[ei2];
+      if (!newNode) continue;
+      if (xo.s) {
+        var xs = _zwListResolvePath(newNode, xo.s);
+        if (xs) {
+          try {
+            xo.r.setStart(xs.c, xs.o);
+          } catch (_eRs) {}
+        }
+      } else if (_zwListNodeInDocument(xo.sc) &&
+          (xo.r.startContainer !== xo.sc || xo.r.startOffset !== xo.so)) {
+        // 壳外端点：setTagName 为先插后删的替换（净子数不变），引擎
+        // pre-remove 活范围钩子按纯删除收缩 offset，端点被误前移；回写
+        // 入口快照（按容器钳界）抵消该误收缩。
+        try {
+          xo.r.setStart(xo.sc, _zwListClampOffset(xo.sc, xo.so));
+        } catch (_eRr) {}
+      }
+      if (xo.e) {
+        var xe = _zwListResolvePath(newNode, xo.e);
+        if (xe) {
+          try {
+            xo.r.setEnd(xe.c, xe.o);
+          } catch (_eRe) {}
+        }
+      } else if (_zwListNodeInDocument(xo.ec) &&
+          (xo.r.endContainer !== xo.ec || xo.r.endOffset !== xo.eo)) {
+        try {
+          xo.r.setEnd(xo.ec, _zwListClampOffset(xo.ec, xo.eo));
+        } catch (_eRf) {}
+      }
+    }
+    return newNode;
+  }
+
+  // fixDisallowedAncestors（vendored :3816 忠实移植）：双臂——「无同宿主允许
+  // 祖先」臂（dd/dt → 无属性 dl wrap；禁排子 → 缺省单行容器 setTagName 递归 +
+  // 新壳内禁排孙逐个录还拆出）与「允许于某祖先但非直父」拆父臂（录还包
+  // while-splitParent）。
   function _zwListFixDisallowedAncestors(node) {
     if (!_zwJusIsEditable(node)) return;
     var anc = node.parentNode;
     var ok = false;
     var g = 0;
     while (anc && g++ < 256) {
-      if (_zwListInSameEditingHost(node, anc) && _zwVaIsAllowedChild(node, anc)) { ok = true; break; }
+      if (_zwListInSameEditingHost(node, anc) && _zwListIsAllowedChild(node, anc)) { ok = true; break; }
       anc = anc.parentNode;
     }
     if (!ok) {
@@ -116,12 +509,39 @@
         return;
       }
       var host = _zwListEditingHostOf(node);
-      if (!_zwVaIsAllowedChild('p', _zwListTagOf(host))) return;
-      var sep = globalThis.__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div';
+      if (!host || !_zwListIsAllowedChild('p', host)) return;
+      // retag 目标随产线块面缺省 'p'（第十一刀，见 part01 ① sepTag 刀注双面制；
+      // 显式 setter 一票胜出，值面 qV 不在此域）。
+      var sep = globalThis.__zwDefaultParagraphSeparator === 'div' ? 'div' : 'p';
       if (!_zwListIsProhibitedParagraphChild(node)) return;
-      node = _zwJusSetTagName(node, sep);
+      node = _zwListRetagPreservingSelection(node, sep);
       _zwListFixDisallowedAncestors(node);
+      // 新壳内禁排孙录还拆出（vendored :3873-3887）。
+      var kids = [];
+      var kc = node.firstChild;
+      while (kc) { kids.push(kc); kc = kc.nextSibling; }
+      for (var ki = 0; ki < kids.length; ki++) {
+        if (!_zwListIsProhibitedParagraphChild(kids[ki])) continue;
+        var kv = _zwDelRecordValues([kids[ki]]);
+        _zwListSplitParent([kids[ki]]);
+        _zwDelRestoreValues(kv);
+      }
+      return;
     }
+    // 允许子臂（vendored :3886-3896）：允许于同宿主某祖先但非直父 → 逐层拆父。
+    // 进度防御（2026-11-07 fbq 轮）：splitParent 走 plain 域拷贝路径时身份不迁
+    //（副本上移、原 node 留原地）——while 判定引用不变 → 每轮重克隆整棵子树指
+    // 数膨胀挂死（formatblock 语料条目 360 display:block span / 361 不可编辑
+    // span 混合形单案复现实证）。parentNode 不变即停（真移动路径必迁位，list
+    // 刀既有调用零行为变化）；行为面（engine 产物在 plain 子树的真上移）挂账。
+    var values = _zwDelRecordValues([node]);
+    var pg = 0;
+    while (node.parentNode && !_zwListIsAllowedChild(node, node.parentNode) && pg++ < 256) {
+      var prevParent = node.parentNode;
+      _zwListSplitParent([node]);
+      if (node.parentNode === prevParent) break;
+    }
+    _zwDelRestoreValues(values);
   }
 
   function _zwListTagOf(node) {
@@ -132,6 +552,55 @@
     var list = (typeof _zwVaProhibitedParagraphChildren !== 'undefined' && _zwVaProhibitedParagraphChildren) || null;
     if (!list) return false;
     return list.indexOf(_zwListTagOf(node)) !== -1;
+  }
+
+  // 真共同祖先：物化 Range.commonAncestorContainer 是 best-effort
+  //（=startContainer，part06 _recalc）——items 祖先爬升须真实 CAC。
+  function _zwListCommonAncestor(a, b) {
+    var n = b;
+    var g = 0;
+    while (n && g++ < 256) {
+      var m = a;
+      var g2 = 0;
+      while (m && g2++ < 256) {
+        if (m === n) return n;
+        m = m.parentNode;
+      }
+      n = n.parentNode;
+    }
+    return null;
+  }
+
+  // normalizeSublists（vendored :3904 忠实移植）：li 内 ol/ul 子归并外提——
+  // 尾部 ol/ul 子提回父层紧随 item；中间 ws-text/inline 子聚入 item 后新插的
+  // 兄弟 li。list 域 items 前奏与缩进合并新父臂两处调用。
+  function _zwListNormalizeSublists(item) {
+    if (!_zwJusIsHtmlElement(item, 'li')
+    || !_zwJusIsEditable(item)
+    || !_zwJusIsEditable(item.parentNode)) {
+      return;
+    }
+    var newItem = null;
+    var g = 0;
+    while (g++ < 4096) {
+      var hasSub = false;
+      for (var si = 0; si < item.childNodes.length; si++) {
+        if (_zwJusIsHtmlElement(item.childNodes[si], ['ol', 'ul'])) { hasSub = true; break; }
+      }
+      if (!hasSub) break;
+      var child = item.lastChild;
+      if (_zwJusIsHtmlElement(child, ['ol', 'ul'])
+      || (!newItem && child.nodeType === 3 && /^[ \t\n\f\r]*$/.test(String(child.data)))) {
+        newItem = null;
+        _zwListMovePreservingRanges(child, item.parentNode, 1 + _zwJusNodeIndex(item));
+      } else {
+        if (!newItem) {
+          newItem = document.createElement('li');
+          item.parentNode.insertBefore(newItem, item.nextSibling);
+        }
+        _zwListMovePreservingRanges(child, newItem, 0);
+      }
+    }
   }
 
   // getSelectionListState（vendored :3949）：blockExtend 后 contained 节点
@@ -145,7 +614,7 @@
         && !_zwListIsIndentationElement(node)
         && (_zwJusIsHtmlElement(node, ['ol', 'ul'])
         || _zwJusIsHtmlElement(node.parentNode, ['ol', 'ul'])
-        || _zwVaIsAllowedChild(node, 'li'));
+        || _zwListIsAllowedChild(node, 'li'));
     });
     if (!nodeList.length) return 'none';
     function hasDesc(node, tag) {
@@ -181,9 +650,8 @@
 
   // outdentNode ol/ul 臂（vendored :5022 切片）：disable 模式整列表撤壳主案
   //（toggle-off 语料面）。摘 reversed/start/type 后 preserve-descendants 撤壳 +
-  // 子 fixDisallowedAncestors。
-  // FIXME：simple/indentation 元素臂、ancestorList 缩进臂、recordValues/
-  // restoreValues 样式保全未移植。
+  // 子 fixDisallowedAncestors + 值录还。
+  // FIXME：simple/indentation 元素臂、ancestorList 缩进臂未移植。
   function _zwListOutdentListNode(node) {
     if (!_zwJusIsEditable(node)) return;
     if (!_zwJusIsHtmlElement(node, ['ol', 'ul'])) return;
@@ -198,70 +666,500 @@
     var hasAttr = false;
     try { hasAttr = node.attributes && node.attributes.length > 0; } catch (_eHb) { hasAttr = true; }
     if (hasAttr && !_zwJusIsHtmlElement(node.parentNode, ['ol', 'ul'])) {
-      _zwJusSetTagName(node, 'div');
+      _zwListRetagPreservingSelection(node, 'div');
     } else {
-      // removePreservingDescendants（recordValues/restoreValues FIXME 跳过）。
+      // removePreservingDescendants + record/restore（vendored ol/ul 臂
+      // 「otherwise」分支：值先录、撤壳、再还）。
+      var outValues = _zwDelRecordValues(children);
       var pp = node.parentNode;
       var idx = _zwJusNodeIndex(node);
       for (var i = 0; i < children.length; i++) {
-        _zwJusMovePreservingRanges(children[i], pp, idx + i);
+        _zwListMovePreservingRanges(children[i], pp, idx + i);
       }
       pp.removeChild(node);
+      _zwDelRestoreValues(outValues);
     }
     for (var ci = 0; ci < children.length; ci++) {
       try { _zwListFixDisallowedAncestors(children[ci]); } catch (_eFd2) {}
     }
   }
 
+  // br compare 族行粒度预遍（br 刀，part01e enable 专用）：Chrome 录制以 br
+  // 为行界做列表换型——选区所在行整体入列、行外内容不动、行间 br 消费为 li
+  // 切分、新块紧邻 br 移除（iol/iul 语料 :13/:18/:23 exp 三形实证）。vendored
+  // blockExtend 无行概念：整块内容入列后，主循环 br 停聚臂把界外 br 吸进壳
+  // （got `foo<ol><br><li>` 形）、邻线成员卷入/遗落 + 幽灵壳（wrap flat 重写
+  // 臂成员扫描对 br/文本混合的序列化形）。本预遍仅对纯扁平块生效（origin 块
+  // 直子全 inline、含 br、双端点同块）：选区行收进临时 div（借主循环 p/div
+  // retag 臂成 li，成员为元素后不再触发 wrap 的 editing host 直子文本臂），
+  // 行间与紧邻行界的 br 移除，kept 供 nodeList 跨行成员剔除。
+  // 空行保真：只移紧邻行界各一 br，隔位 br（空行载体）不动；选区行无可见
+  // 内容时不触发（eb1 空形守护）。
+  // FIXME：选区内空行（连续 br）不产空 li，Chrome 形未对语料验证。
+  function _zwListEnableLineScope(capS, capE) {
+    if (!_zwListNodeInDocument(capS.n) || !_zwListNodeInDocument(capE.n)) return null;
+    var b = capS.n, g = 0;
+    while (b && !_zwJusIsBlockNode(b) && g++ < 256) b = b.parentNode;
+    if (!b || b.nodeType !== 1) return null;
+    // 列表语境排除（语料 P2F 定谳，iol 1747P 面两行）：b 或其任意祖先为列表
+    // 族（ol/ul/li/dl/dt/dd）时 enable 语义是整壳 retag，既有列表内 br 属 li
+    // 内容保全（`<ul><li>[foo]<br>bar<li>baz</ul>` → `<ol>` 整换期望 br 原位）
+    // ——预遍误入会把行壳塞进 li 造嵌套错形，恒 null 走旧径。
+    var la = b, laG = 0;
+    while (la && laG++ < 256) {
+      if (_zwJusIsHtmlElement(la, ['ol', 'ul', 'li', 'dl', 'dt', 'dd'])) return null;
+      la = la.parentNode;
+    }
+    if (b !== capE.n && !_zwJusIsAncestorOf(b, capE.n)) return null;
+    var kids = [];
+    var brCount = 0;
+    var kid = b.firstChild;
+    while (kid) {
+      if (!_zwJusIsInlineNode(kid) && !_zwJusIsHtmlElement(kid, 'br')) return null;
+      if (_zwJusIsHtmlElement(kid, 'br')) brCount++;
+      kids.push(kid);
+      kid = kid.nextSibling;
+    }
+    if (!brCount || !kids.length) return null;
+    // 点 → 行号：直子 inline 成员所在行 = 前方 br 数；端点容器为块本体时按
+    // offset 前方 br 数（br 后位即下一行行首）。更深端点爬升到直子。
+    function lineOf(n, o) {
+      if (n === b) {
+        var line0 = 0;
+        for (var i0 = 0; i0 < o && i0 < kids.length; i0++) {
+          if (_zwJusIsHtmlElement(kids[i0], 'br')) line0++;
+        }
+        return line0;
+      }
+      var proj = n;
+      while (proj && proj.parentNode && proj.parentNode !== b) proj = proj.parentNode;
+      if (!proj || proj.parentNode !== b) return -1;
+      var line = 0;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === proj) break;
+        if (_zwJusIsHtmlElement(kids[i], 'br')) line++;
+      }
+      return line;
+    }
+    var startLine = lineOf(capS.n, capS.o);
+    var endLine = lineOf(capE.n, capE.o);
+    if (startLine < 0 || endLine < 0 || startLine > endLine) return null;
+    var spanNodes = [];
+    for (var s = 0; s < kids.length; s++) {
+      if (_zwJusIsHtmlElement(kids[s], 'br')) continue;
+      var ln = 0;
+      for (var j = 0; j < s; j++) {
+        if (_zwJusIsHtmlElement(kids[j], 'br')) ln++;
+      }
+      if (ln >= startLine && ln <= endLine) spanNodes.push(kids[s]);
+    }
+    if (!spanNodes.length) return null;
+    var anyVisible = false;
+    for (var v = 0; v < spanNodes.length; v++) {
+      if (_zwJusIsVisible(spanNodes[v])) { anyVisible = true; break; }
+    }
+    if (!anyVisible) return null;
+    var firstIdx = kids.indexOf(spanNodes[0]);
+    var lastIdx = kids.indexOf(spanNodes[spanNodes.length - 1]);
+    // 行间与紧邻行界 br 移除（span 内部 + 前一紧邻 + 后一紧邻；隔位 br 不动）。
+    var lo = firstIdx > 0 ? firstIdx - 1 : 0;
+    var hi = lastIdx + 1 < kids.length ? lastIdx + 1 : kids.length - 1;
+    for (var r = hi; r >= lo; r--) {
+      if (_zwJusIsHtmlElement(kids[r], 'br')) {
+        try { b.removeChild(kids[r]); } catch (_eRb) {}
+      }
+    }
+    // 行壳：每行成员收进临时 div（树序分组；空行无成员跳过）。
+    var kept = [];
+    var group = [];
+    var groupLine = lineOf(spanNodes[0], 0);
+    for (var t = 0; t <= spanNodes.length; t++) {
+      var sn = t < spanNodes.length ? spanNodes[t] : null;
+      var sl = sn ? lineOf(sn, 0) : -1;
+      if (sn && sl === groupLine) { group.push(sn); continue; }
+      if (group.length) {
+        var d = document.createElement('div');
+        try {
+          group[0].parentNode.insertBefore(d, group[0]);
+          for (var m = 0; m < group.length; m++) {
+            _zwJusMovePreservingRanges(group[m], d, -1);
+          }
+          kept.push(d);
+        } catch (_eLw) {}
+        group = [];
+      }
+      groupLine = sl;
+      if (sn) group.push(sn);
+    }
+    return { block: b, kept: kept };
+  }
+
+  // flat 模型幽灵重定位（blockquote straddle 族，iol :513/:533 + iul :523/:543
+  // 镜像）：enable 主循环前期 wrap 命中 _zwJusWrapViaHtml 扁平边界臂（成员含
+  // editing host 直子文本）时经 host.innerHTML= setter 整壳重建——真实树子树
+  // 全为新建对象，nodeList 残余成员沦为幽灵链：parentNode 字段仍指旧宿主、
+  // 爬升可达致 _zwListNodeInDocument 误真，但不在宿主 firstChild/nextSibling
+  // 链上且 previousSibling 误空（DBG 实证 MERGE ps=null + host 子链无旧对象
+  // 标记），残余成员后续换型落幽灵、转换对真实树不可见。逐迭代头扫残余成员：
+  // 宿主直子链身份可达即活引用跳过；幽灵按顶层 outerHTML 精确匹配重锚新树
+  // 同位对象，再沿旧索引路径下行换新引用——活树路径下缩进合并臂（G3/G7 绿面
+  // 实证）即产出语料期望树。
+  // FIXME: 同序列化兄弟歧义（如两个 <blockquote>bar</blockquote>）取首个命中；
+  // 语料现存 straddle 形无歧义面，出现歧义红行时再补二段锚（成员文本路径）。
+  function _zwListRelocateWrapGhosts(host, nodeList) {
+    if (!host) return;
+    for (var i = 0; i < nodeList.length; i++) {
+      var m = nodeList[i];
+      // detached 成员放行（div 边界 :775 刀）：ViaHtml 整段重建换新树的
+      // 宿主直下成员按顶层幽灵候选重锚（旧 climb 前置 parentNode 检查恒跳
+      // 过，sublist 套壳段 parentNode 检查不可达——裸 li 两枚实证）。
+      if (!m) continue;
+      // 下行索引路径：成员爬升到宿主直下，逐层记 childNodes 索引。
+      var path = [];
+      var anc = m;
+      var gR = 0;
+      while (anc && anc.parentNode && anc.parentNode !== host && gR++ < 256) {
+        var idx = 0;
+        var sib = anc.parentNode.firstChild;
+        while (sib && sib !== anc) { idx++; sib = sib.nextSibling; }
+        if (!sib) break;
+        path.unshift(idx);
+        anc = anc.parentNode;
+      }
+      if (!anc) continue;
+      if (!anc.parentNode) {
+        // detached 宿主直下成员（ViaHtml 整段重建换新树，div 边界 :775 刀）：
+        // 顶层幽灵候选，路径空（路径非空时孪生下行同样成立——早停层即最深
+        // 存活祖先，outerHTML 匹配后按旧路径换新引用）。
+      } else if (anc.parentNode !== host) {
+        continue;
+      }
+      // 活引用判定：宿主 firstChild/nextSibling 链身份可达即未重建，跳过。
+      var top = host.firstChild;
+      while (top && top !== anc) top = top.nextSibling;
+      if (top === anc) continue;
+      // 幽灵：顶层按序列化精确匹配重锚新树，沿旧路径下行换新引用。
+      var ancHtml = null;
+      try { ancHtml = anc.outerHTML; } catch (_eRh) {}
+      if (!ancHtml) continue;
+      var found = null;
+      var cand = host.firstChild;
+      while (cand) {
+        if (cand.nodeType === 1) {
+          try { if (cand.outerHTML === ancHtml) { found = cand; break; } } catch (_eRh2) {}
+        }
+        cand = cand.nextSibling;
+      }
+      if (!found) continue;
+      var nn = found;
+      for (var p = 0; p < path.length && nn; p++) {
+        nn = nn.childNodes[path[p]];
+      }
+      if (nn && nn !== m) nodeList[i] = nn;
+    }
+  }
+
   // toggleLists（vendored :5690）：enable 全流程 + disable outdent 臂（ol/ul
-  // 切片）移植。选区保持依赖 _zwJusWrap/_zwJusMovePreservingRanges。
+  // 切片）移植。选区保持依赖 _zwJusWrap/_zwListMovePreservingRanges（plain 重锚）。
   function _zwListToggle(tagName) {
     var range = _zwJusActiveRange();
     if (!range) return;
+    // qV tri-state 壳标入口判定（qv13 轮）：动作前快照，出口对 caret 所在
+    // 列表壳打标（after 读面查标；时点信息 DOM 纯读不可复原，见
+    // _zwListQvPreFires 注）。
+    var qvPre = _zwListQvPreFires(range);
     var mode = _zwListSelectionState() === tagName ? 'disable' : 'enable';
     // tag 常量小写（_zwJusIsHtmlElement 经 _zwJusTag 小写比较，大写常量恒 miss
     // ——ol→ul 换型恒等实证）。
     var utag = tagName;
     var otherTagName = tagName === 'ol' ? 'ul' : 'ol';
 
-    // normalizeSublists FIXME：items 归并跳过（嵌套面少数派）。
+    // 端点身份捕获（Chrome delta，语料权威）：动作前录 (textNode, offset)。
+    // setTagName/splitParent 均按 movePreservingRanges 逐子迁移，文本节点身份
+    // 存活；disable 出口按身份回植（语料 straddle 族期望恢复跨区选区——q10
+    // 探针 i5-straddle sel=@2..@2 塌缩实证，跨区恢复后读面 [li, div] 混排给
+    // qInd=true 与语料一致）；enable-retag 用交集钳制（见 toConvert 位点），
+    // 不走此回植（全跨度回植会混入壳外文本，absorb 行 qInd 期望 false）。
+    var capS = { n: range.startContainer, o: range.startOffset };
+    var capE = { n: range.endContainer, o: range.endOffset };
 
-    var newRange = _zwJusBlockExtend(range, false);
+    // wholesale 同型嵌套跨入形快照（nq7 轮）：enable 面起点 li 严格包含终点
+    // li（同壳内选区跨嵌套边界，census 恰 iol :448/:478 + iul :233/:263 四
+    // 行命中）。toggle 后引擎重锚把塌缩选区留在嵌套 li 内（探针 bar@3 实
+    // 证），qState 端点直读翻 true；语料 after 录音 false/false = 'none' 签
+    // 名＝选区停列表外（P10 定谳选区恢复耦合，纯读不可双全），出口恢复到换
+    // 壳列表树位锚点。dps 族同形源全部 qSB=true 走 disable 面，enable 门天
+    // 然排除；塌缩选区（:393/:418 族 endLi==startLi）与端点反向形（:453）
+    // 均不命中。
+    var nqOut = false;
+    if (mode === 'enable') {
+      var sLiN = range.startContainer;
+      var eLiN = range.endContainer;
+      var gNq = 0;
+      while (sLiN && !_zwJusIsHtmlElement(sLiN, 'li') && gNq++ < 256) sLiN = sLiN.parentNode;
+      gNq = 0;
+      while (eLiN && !_zwJusIsHtmlElement(eLiN, 'li') && gNq++ < 256) eLiN = eLiN.parentNode;
+      nqOut = !!(sLiN && eLiN && sLiN !== eLiN && _zwListContainsNode(sLiN, eLiN));
+    }
+
+    // items 前奏（vendored :5704-5727）：range 端点祖先容器 li 逐个归并子列表
+    // ——end 侧爬到真 CAC 止、start 侧爬到根，unshift 成树序外先内后。
+    // Chrome delta（语料权威）：归并仅 disable 面执行。enable 录制保留 li 内
+    // 嵌列表换壳形（<ul><li>[foo<ul><li>bar]</ul><li>baz</ul> iol 期望嵌套+
+    // 分裂），vendored 无条件 items.forEach 归并与 enable 录制不符；disable
+    // 录制（li 内嵌列表外提合并形）才需要归并。语料权威面优先。
+    var items = [];
+    var cac = _zwListCommonAncestor(range.startContainer, range.endContainer);
+    var ac = range.endContainer;
+    var gI = 0;
+    while (ac && ac !== cac && gI++ < 256) {
+      if (_zwJusIsHtmlElement(ac, 'li')) items.unshift(ac);
+      ac = ac.parentNode;
+    }
+    for (ac = range.startContainer; ac && gI++ < 512; ac = ac.parentNode) {
+      if (_zwJusIsHtmlElement(ac, 'li')) items.unshift(ac);
+    }
+    // normalize 前奏模式×几何双门（语料权威，q9 判读面 + q14/q15 census）：
+    // disable 无条件归并（top-level 合并形 `<div>foo</div><ol>…<ol>…` 依赖，
+    // q10 判读）；enable 按选区几何逐 item 门控——起点在 item 直属内容且
+    // 终点未离开该 item（直属内容或其子列表内）的形状跳过归并：跨入形
+    // `[foo<ol><li>bar]`（q9 P2F 17 行族，:233/:448 expected 保嵌套换壳）
+    // 与单 li 直选含嵌套尾随形 `[foo]<ol><li>bar</ol>…`（q15 census 八面
+    // 中四面，:407/:418/:463/:473 expected 换壳 li 保嵌套子列表/尾随文本，
+    // Chrome 录制不 lift）。其余形状归并（起点在子列表内：subset-of-N :178
+    // 外提换壳形；终点离开 item：straddle-extra :458 外提后整体换壳分裂
+    // 形——vendored lift+换型+splitParent+wrap 全流程模拟即 expected）。
+    // 单门含两者：无条件归并重引 17 行 P2F 且回引 q15 四面、全关丢失外提行。
+    if (mode === 'disable') {
+      for (var ii = 0; ii < items.length; ii++) {
+        _zwListNormalizeSublists(items[ii]);
+      }
+    } else {
+      for (var ii = 0; ii < items.length; ii++) {
+        if (_zwListEndpointPathKind(range.startContainer, items[ii]) === 'direct'
+        && _zwListEndpointPathKind(range.endContainer, items[ii]) !== 'outside') {
+          continue;
+        }
+        _zwListNormalizeSublists(items[ii]);
+      }
+    }
+
+    // br 刀预遍调用（br compare 族，enable 专用）：capS/capE 端点身份快照为
+    // 输入，须在 blockExtend 之前执行——预遍删 br/移行壳会位移块子索引，事后
+    // 跑会 skew newRange 端点致 nodeList 漏员/错员。非扁平块形恒 null 零扰动。
+    var lineScope = mode === 'enable' ? _zwListEnableLineScope(capS, capE) : null;
+
+    var newRange = _zwJusBlockExtend(range, mode === 'enable' ? 'list-wide' : false);
 
     // enable：对 other tag 名可编辑元素换型或并入邻接同名列表。
     if (mode === 'enable') {
+      var retaggedFinal = null;
+      // ARM-B' 命中壳记录（:478 族 wholesale 档第二半）：壳内成员已随整壳
+      // retag 处理完毕，后置 nodeList 平铺阶段必须排除壳子树——否则首分支
+      // 直属文本以 allowedChild(li) 混入平铺重排，inline-wrap-li + 缩进合并
+      // default-wrap 臂把 foo lift 进嵌套列表（split-lift 错形，DBG 探针
+      // nodeList/gather/sublistArm 三点实证）。
+      var shellArm = null;
       var toConvert = _zwJusCollectContainedNodes(newRange, function (node) {
         return _zwJusIsEditable(node) && _zwJusIsHtmlElement(node, otherTagName);
       }, false);
+      // Chrome delta（语料权威，q16 直选跨嵌套形）：start 直属分支 li 内容
+      // （path kind direct）、end 跨入同一分支的嵌套子列表（list）且最外层
+      // 壳仅一 li 子时，部分含域收集不到的顶层壳前置整壳换型（:478 expected
+      // 双层换壳保尾随文本；对照 :470 list→list 分裂保壳、:448 双 li 残留
+      // UL 分出、:458 跨分支 straddle——li 子数与端点几何三分判据）。
+      var wS = range.startContainer, wE = range.endContainer, stLi = null, enLi = null, gW = 0;
+      while (wS && gW++ < 256) {
+        if (_zwJusIsHtmlElement(wS, 'li')) { stLi = wS; break; }
+        wS = wS.parentNode;
+      }
+      gW = 0;
+      while (wE && gW++ < 256) {
+        if (_zwJusIsHtmlElement(wE, 'li')) { enLi = wE; break; }
+        wE = wE.parentNode;
+      }
+      if (stLi && enLi) {
+        var shell = null, walker = stLi, gS2 = 0;
+        while (walker && gS2++ < 256) {
+          walker = walker.parentNode;
+          if (!walker || !_zwJusIsHtmlElement(walker, ['ol', 'ul'])) break;
+          shell = walker;
+        }
+        var branchS = stLi, branchE = enLi, gS3 = 0, gS4 = 0;
+        while (branchS.parentNode && branchS.parentNode !== shell && gS3++ < 256) branchS = branchS.parentNode;
+        while (branchE.parentNode && branchE.parentNode !== shell && gS4++ < 256) branchE = branchE.parentNode;
+        if (shell && branchS === branchE
+        && _zwListEndpointPathKind(range.startContainer, branchS) === 'direct'
+        && _zwListEndpointPathKind(range.endContainer, branchE) === 'list') {
+          var wLic = 0, wK = shell.firstChild;
+          while (wK) {
+            if (_zwJusIsHtmlElement(wK, 'li')) wLic++;
+            wK = wK.nextSibling;
+          }
+          if (wLic === 1 && _zwJusIsEditable(shell)
+          && _zwJusIsHtmlElement(shell, otherTagName)
+          && toConvert.indexOf(shell) === -1) {
+            toConvert.unshift(shell);
+            shellArm = shell;
+          }
+        }
+      }
       for (var ci = 0; ci < toConvert.length; ci++) {
         var list = toConvert[ci];
+        // Chrome delta（语料权威，q15 census 四面）：嵌套在被换壳 li 内、且
+        // 选区两端点均不在列表内的子列表不换型（:407/:418/:463/:473 expected
+        // 换壳 li 保嵌套 UL 原型；对照 :448 选区跨入嵌套 `[foo<ol><li>bar]`
+        // 换型、:458 外提后列表升 sibling 位 parent 非 li 换型——三分判据）。
+        if (_zwJusIsHtmlElement(list.parentNode, 'li')
+        && !_zwListContainsNode(list, range.startContainer)
+        && !_zwListContainsNode(list, range.endContainer)) {
+          continue;
+        }
         var prevL = list.previousSibling, nextL = list.nextSibling;
         if ((_zwJusIsEditable(prevL) && _zwJusIsHtmlElement(prevL, utag))
         || (_zwJusIsEditable(nextL) && _zwJusIsHtmlElement(nextL, utag))) {
+          retaggedFinal = _zwJusIsEditable(prevL) && _zwJusIsHtmlElement(prevL, utag) ? prevL : nextL;
           var children = [];
           var ck = list.firstChild;
           while (ck) { children.push(ck); ck = ck.nextSibling; }
+          var kidsValues = _zwDelRecordValues(children);
           _zwListSplitParent(children);
           _zwJusWrap(children, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () { return document.createElement(utag); });
+          _zwDelRestoreValues(kidsValues);
         } else {
-          _zwJusSetTagName(list, utag.toLowerCase());
+          var retagged = _zwListRetagPreservingSelection(list, utag.toLowerCase(), [newRange]);
+          if (retagged) retaggedFinal = retagged;
+          // shellArm 重锚（:478 族 wholesale 档收尾）：setTagName 为先插后删
+          // 替换，换型后原壳节点 detached——nodeList 过滤须持新壳引用（批9 v1
+          // 锚旧壳过滤恒空，probe q16-2 零位移实证）；批10 重锚后壳子树成员
+          // （首分支直属文本）不再混入平铺重排，_zwJusWrap 邻接 utag 同壳
+          // 收养臂无从触发，split-lift 消除。
+          if (retagged && list === shellArm) {
+            shellArm = retagged;
+          }
+          // Chrome delta（语料权威，absorb 行）：enable-retag 后活动选区与换
+          // 壳子树求交——端点在壳内保留原位（身份随逐子迁移存活），壳外钳到
+          // 壳内最深文本端。Chrome retag 后选区留在 li 内（qInd=false 确定
+          // 读），全跨度回植会混入壳外文本给 mixed（探针 qIndA=true 实证）。
+          if (retagged) {
+            var rngC = _zwJusActiveRange();
+            if (rngC) {
+              var sIn = _zwListContainsNode(retagged, rngC.startContainer);
+              var eIn = _zwListContainsNode(retagged, rngC.endContainer);
+              if (!sIn || !eIn) {
+                try {
+                  if (!sIn) {
+                    var fC = retagged;
+                    while (fC.firstChild) fC = fC.firstChild;
+                    rngC.setStart(fC.parentNode, _zwJusNodeIndex(fC));
+                  }
+                  if (!eIn) {
+                    var lC = retagged;
+                    while (lC.lastChild) lC = lC.lastChild;
+                    rngC.setEnd(lC.parentNode, 1 + _zwJusNodeIndex(lC));
+                  }
+                } catch (_eCl) {}
+              }
+            }
+          }
         }
       }
     }
 
     // node list：blockExtend 后 contained 可编辑（ol/ul 或其子或 li 允许子）。
+    // 出口收钳树位锚（sr1 选区恢复刀）：retag 臂换壳后、wrap 重写臂
+    // （_zwJusWrapViaHtml 整壳 innerHTML 重建）灭失节点身份前，记下换壳
+    // 列表在父级下的树位；重建后旧节点 detached，出口收钳按 (parent,
+    // index, tag) 解析同位重建孪生为收钳目标。
+    var shellHome = null;
+    if (retaggedFinal && retaggedFinal.parentNode) {
+      shellHome = { p: retaggedFinal.parentNode, i: _zwJusNodeIndex(retaggedFinal), t: retaggedFinal.nodeName };
+    }
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
       return _zwJusIsEditable(node)
         && !_zwListIsIndentationElement(node)
         && (_zwJusIsHtmlElement(node, ['ol', 'ul'])
         || _zwJusIsHtmlElement(node.parentNode, ['ol', 'ul'])
-        || _zwVaIsAllowedChild(node, 'li'));
+        || _zwListIsAllowedChild(node, 'li'));
     });
     if (mode === 'enable') {
       nodeList = nodeList.filter(function (node) {
+        if (shellArm && (node === shellArm || _zwListContainsNode(shellArm, node))) {
+          return false;
+        }
         return !_zwJusIsHtmlElement(node, ['ol', 'ul'])
           || _zwJusIsHtmlElement(node.parentNode, ['ol', 'ul']);
       });
+      // br 刀 kept 过滤：预遍已把选区行收进行壳、行外成员不属于本命令域——
+      // 爬升到预遍块直子，仅行壳（kept）放行：A 形 foo-text 剔除不出列、C 形
+      // bar-text 剔除不入列，行壳自身与其子树成员放行；已脱块/块外成员不受
+      // 预遍影响放行。
+      if (lineScope) {
+        nodeList = nodeList.filter(function (node) {
+          var proj = node, gP = 0;
+          while (proj && proj.parentNode !== lineScope.block && gP++ < 256) {
+            proj = proj.parentNode;
+          }
+          if (!proj || !proj.parentNode || proj === lineScope.block) return true;
+          return lineScope.kept.indexOf(proj) !== -1;
+        });
+      }
+    }
+
+    // 宿主锚（幽灵重定位用，见 _zwListRelocateWrapGhosts）：活动选区端点爬升
+    // 到 editing host 本尊；爬升失败恒 null，重定位臂自动禁用（零扰动）。
+    var bqHost = null;
+    try {
+      var rH = range.startContainer;
+      var gH = 0;
+      while (rH && gH++ < 256 && !_zwJusIsEditingHost(rH)) rH = rH.parentNode;
+      bqHost = rH && _zwJusIsEditingHost(rH) ? rH : null;
+    } catch (_eBh) { bqHost = null; }
+    // NE 整行单 li 臂（Chrome delta，语料 :860/:768 双语料各一行）：宿主直下
+    // 扁平行（covered span 全 inline、无块无 br）且 span 内含 non-editable 直
+    // 子时，Chrome 录音把整行（含 non-editable span + 空白 run）收进单 li。
+    // 主循环按可编辑 contained 逐 run wrap 必碎：span 滤除割断兄弟链成孤立
+    // run、首尾空白 run allInvisible 返 null、ViaHtml 整段重建后残余 text 成
+    // 员幽灵重定位 outerHTML 元素门不可达 → wrap 检 !parentNode 返 null →
+    // 空 sublist 走 sublist[0] TypeError 调用点吞、单 li 烂尾（探针 TRACE：
+    // NL=4 text / SUB=1 实证）。census：contenteditable="false" 行双语料各
+    // 恰一行（:860/:768），活引用全 editable 行走原主循环零扰动；块/br 形
+    // 归 eb/br 预遍域，lineScope 存在即不触发。
+    if (mode === 'enable' && bqHost && !lineScope && nodeList.length) {
+      var neFirst = -1, neLast = -1, neOk = true;
+      for (var ni = 0; ni < nodeList.length && neOk; ni++) {
+        var nm = nodeList[ni];
+        var nIdx = -1;
+        if (nm && nm.parentNode === bqHost) {
+          for (var nj = 0; nj < bqHost.childNodes.length; nj++) {
+            if (bqHost.childNodes[nj] === nm) { nIdx = nj; break; }
+          }
+        }
+        if (nIdx < 0) { neOk = false; break; }
+        if (neFirst < 0 || nIdx < neFirst) neFirst = nIdx;
+        if (nIdx > neLast) neLast = nIdx;
+      }
+      if (neOk) {
+        var neHasNe = false, neHasVis = false;
+        for (var nk = neFirst; nk <= neLast; nk++) {
+          var nc = bqHost.childNodes[nk];
+          if (!nc) { neOk = false; break; }
+          if (nc.nodeType === 3) { if (_zwJusIsVisible(nc)) neHasVis = true; continue; }
+          if (!_zwJusIsInlineNode(nc) || _zwJusIsHtmlElement(nc, 'br')) { neOk = false; break; }
+          if (!_zwJusIsEditable(nc)) neHasNe = true;
+          if (_zwJusIsVisible(nc)) neHasVis = true;
+        }
+        if (neOk && neHasNe && neHasVis) {
+          try {
+            var neLi = document.createElement('li');
+            bqHost.insertBefore(neLi, bqHost.childNodes[neFirst]);
+            for (var nl = neFirst; nl <= neLast; nl++) {
+              _zwListMovePreservingRanges(bqHost.childNodes[neFirst + 1], neLi, neLi.childNodes.length);
+            }
+            nodeList = [neLi];
+          } catch (_eNe) {}
+        }
+      }
     }
 
     if (mode === 'disable') {
@@ -277,23 +1175,80 @@
         && !_zwJusIsHtmlElement(nodeList[0], utag)) {
           dsub.push(nodeList.shift());
         }
+        var dValues = _zwDelRecordValues(dsub);
         _zwListSplitParent(dsub);
         for (var di = 0; di < dsub.length; di++) {
           try { _zwListFixDisallowedAncestors(dsub[di]); } catch (_eFd) {}
         }
+        _zwDelRestoreValues(dValues);
+      }
+      // disable 出口端点身份回植：双端点文本节点仍在文档中时按捕获 offset
+      // 原位重设（offset 越界钳到容器长度）；任一端点身份灭失则保持现行为
+      // （marker/path 恢复结果），不用半新半旧混搭。
+      if (_zwListNodeInDocument(capS.n) && _zwListNodeInDocument(capE.n)) {
+        try {
+          var soR = _zwListClampOffset(capS.n, capS.o);
+          var eoR = _zwListClampOffset(capE.n, capE.o);
+          range.setStart(capS.n, soR);
+          range.setEnd(capE.n, eoR);
+        } catch (_eRs) {}
       }
       return;
     }
 
+    // eb1 空 context 建列表臂（empty-body 语料形，Chrome 录制口径）：
+    // ①空白 div 形 <div>{}</div>/<div>{}<br></div>——主循环换型臂对空 div
+    // 也整壳替换（探针实测 <ul><li>…</li></ul> 丢 div），语料期望保 div 壳
+    // 列表内嵌；改臂：清空 div（消费唯一 br 占位）、div 内新建列表壳+空 li，
+    // caret 入 li，div 不动。②裸 host 形 {}——nodeList 空，主循环 no-op
+    // （探针实测纯文本落 host）；Chrome 在 caret 位新建列表壳。空 host 下
+    // blockExtend 会爬出 host 落到祖先容器（探针实证 sc=祖先 DIV、ce=null），
+    // newRange 端点不可作锚；改用入口 range（blockExtend 前）的 caret 端点
+    // ——语料 caret 就在 host（tests.js setupDiv 落位）。空白 p 形仍走换
+    // 型臂整壳替换（语料已绿，不动）。②锚点仅认 editing host 本尊：嵌套形
+    // caret 落 li 内文本（首判 iol 11 行 P2F 实证，父元素可编辑即落臂会在
+    // li 里建空列表、并灭掉换型主循环），host 外一律不落臂。caret 经活动
+    // range 直写（disable 出口同款，setStart/setEnd 即选区生效）。
+    if (mode === 'enable') {
+      var ebDiv = nodeList.length === 1
+        && _zwJusIsHtmlElement(nodeList[0], ['div'])
+        && (!nodeList[0].firstChild
+        || (nodeList[0].firstChild === nodeList[0].lastChild
+        && _zwJusIsHtmlElement(nodeList[0].firstChild, ['br'])));
+      var ebAnchor = nodeList.length === 0
+        && range.startContainer.nodeType === 1
+        && _zwJusIsEditingHost(range.startContainer)
+        ? range.startContainer : null;
+      if (ebDiv || ebAnchor) {
+        try {
+          var ebHost = ebDiv ? nodeList[0] : ebAnchor;
+          if (ebDiv) {
+            while (ebHost.firstChild) ebHost.removeChild(ebHost.firstChild);
+          }
+          var ebList = document.createElement(utag);
+          var ebLi = document.createElement('li');
+          ebList.appendChild(ebLi);
+          ebHost.appendChild(ebList);
+          range.setStart(ebLi, 0);
+          range.setEnd(ebLi, 0);
+        } catch (_eEb) {}
+        nodeList = [];
+      }
+    }
+
     // enable 主循环：连续兄弟聚 sublist → p/div 换型 li / li·ol·ul 直收 /
-    // inline 段 wrap 成 li。
+    // inline 段 wrap 成 li。迭代头幽灵重定位（ViaHtml setter 重建后残余成员
+    // 换新树引用，见 _zwListRelocateWrapGhosts）：活引用零扰动直过。
     while (nodeList.length) {
+      if (bqHost) {
+        try { _zwListRelocateWrapGhosts(bqHost, nodeList); } catch (_eRg) {}
+      }
       var sublist = [];
       while (nodeList.length
       && (!sublist.length
       || nodeList[0] === sublist[sublist.length - 1].nextSibling)) {
         if (_zwJusIsHtmlElement(nodeList[0], ['p', 'div'])) {
-          sublist.push(_zwJusSetTagName(nodeList[0], 'li'));
+          sublist.push(_zwListRetagPreservingSelection(nodeList[0], 'li'));
           nodeList.shift();
         } else if (_zwJusIsHtmlElement(nodeList[0], ['li', 'ol', 'ul'])) {
           sublist.push(nodeList.shift());
@@ -309,6 +1264,13 @@
           }
           var liEl = _zwJusWrap(nodesToWrap, function () { return false; }, function () { return document.createElement('li'); });
           if (liEl) sublist.push(liEl);
+          // ViaHtml 整段重写后续套壳成员幽灵重锚（div 边界 compare :775 刀）：
+          // flat 边界臂 innerHTML setter 重建宿主子列，先前 gather 的 retag li
+          // （div1→li1 形）原引用 detached——重定位孪生后套壳段 parentNode
+          // 检查才可达（裸 li 两枚、ul 壳灭失实证），子列新 ul 壳得以建立。
+          if (bqHost) {
+            try { _zwListRelocateWrapGhosts(bqHost, sublist); } catch (_eRgS) {}
+          }
         }
       }
 
@@ -318,14 +1280,271 @@
       }
 
       if (_zwJusIsHtmlElement(sublist[0].parentNode, otherTagName)) {
+        var xoValues = _zwDelRecordValues(sublist);
         _zwListSplitParent(sublist);
         _zwJusWrap(sublist, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () { return document.createElement(utag); });
+        _zwDelRestoreValues(xoValues);
         continue;
       }
 
-      // 缩进合并新父臂 FIXME：恒 createElement(utag)（isSimpleIndentationElement
-      // 未移植，indent+list 组合面挂后续切片）。
-      _zwJusWrap(sublist, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () { return document.createElement(utag); });
+      // 缩进合并新父臂（vendored :5922-5960）：sublist[0].parentNode 是可编辑
+      // simple 缩进元素且其 previousSibling 是可编辑 utag 元素 → newParent =
+      // 归并后该 utag 的 lastChild（非可编辑 utag 则新插一个），wrap 的
+      // isBefore 判定落 append 臂；否则恒新壳。
+      var freshShell = false;
+      // ST 源块捕获（div 壳溶解臂输入）：wrap 前 sublist[0] 的父块（非宿主
+      // 才录；复用合并后该块若只剩列表则按 Chrome 录音溶解，见主循环后臂）。
+      var stBlock = sublist[0] && sublist[0].parentNode
+        && !_zwJusIsEditingHost(sublist[0].parentNode) ? sublist[0].parentNode : null;
+      var newShell = _zwJusWrap(sublist, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () {
+        if (!_zwJusIsEditable(sublist[0].parentNode)
+        || !_zwListIsSimpleIndentationElement(sublist[0].parentNode)
+        || !_zwJusIsEditable(sublist[0].parentNode.previousSibling)
+        || !_zwJusIsHtmlElement(sublist[0].parentNode.previousSibling, utag)) {
+          freshShell = true;
+          return document.createElement(utag);
+        }
+        var list = sublist[0].parentNode.previousSibling;
+        _zwListNormalizeSublists(list.lastChild);
+        if (!_zwJusIsEditable(list.lastChild)
+        || !_zwJusIsHtmlElement(list.lastChild, utag)) {
+          list.appendChild(document.createElement(utag));
+        }
+        return list.lastChild;
+      });
+
+      // br 刀壳臂补 fix（vendored :5928 等价，仅行粒度预遍生效面）：C 形
+      // `<p>[foo]<br>bar</p>` 行壳挂进 p 后 wrap 新壳 ol 落 p 内——ol 属
+      // prohibited-paragraph 子而 p 是 inline-contents 元素，allowedChild 祖先
+      // 链首检即 false → splitParent 拆出，残段净 `<p>bar</p>`（语料 :23 exp）。
+      // A/B 形新壳落 div host，ol/ul 对 div 放行 no-op；非预遍面恒不触发
+      // （既有绿面零扰动），置于 dps 归并出口之前——拆出后按新树位判归并。
+      if (lineScope && freshShell && newShell && _zwListNodeInDocument(newShell)) {
+        try { _zwListFixDisallowedAncestors(newShell); } catch (_eLf) {}
+      }
+
+      // dir 特判（rtl compare 族，语料 :726/:732/:741 双备选树 + 语料明注）：
+      // 跨块 straddle enable 走 p/div→li retag（setTagName 全属性携带），源块
+      // dir 落 li——语料明注 "do not copy dir attributes to corresponding
+      // <li>s"（dir 不影响文本方向，与父列表异值致 bullet 错位）；双备选树
+      // dir 恒在列表壳（提升形 ol[dir=rtl]）或留包裹 div（内嵌形），li 恒裸。
+      // 出口统一：freshShell 直子 li 携 dir 时，首个 dir 值迁壳（壳无 dir 时
+      // 不覆盖既有），全部直子 li 移除 dir。id/class 行已绿不受影响——
+      // "other attributes should be cloned to each list item" 契约 id/class
+      // 留 li，唯 dir 特判。
+      if (freshShell && newShell && _zwListNodeInDocument(newShell)) {
+        var dVal = null;
+        var dK = newShell.firstChild;
+        while (dK) {
+          if (dK.nodeType === 1 && _zwJusIsHtmlElement(dK, 'li') && dVal === null) {
+            try { dVal = dK.getAttribute('dir'); } catch (_eDg) { dVal = null; }
+          }
+          dK = dK.nextSibling;
+        }
+        if (dVal !== null) {
+          var hasD = false;
+          try { hasD = newShell.getAttribute('dir') !== null; } catch (_eDh) { hasD = true; }
+          if (!hasD) {
+            try { newShell.setAttribute('dir', dVal); } catch (_eDs) {}
+          }
+          var dR = newShell.firstChild;
+          while (dR) {
+            if (dR.nodeType === 1 && _zwJusIsHtmlElement(dR, 'li')) {
+              try { dR.removeAttribute('dir'); } catch (_eDr) {}
+            }
+            dR = dR.nextSibling;
+          }
+        }
+      }
+
+      // dps compare 族归并出口（dps 刀）：恒新壳落位后相邻同名可编辑列表壳
+      // 归并——Blink insert_list_command.cc mergeWithPreviousList/
+      // MergeWithNextList 等价行为（语料 pin 快照即契约口径）。三形
+      // `<ol><li>foo</ol> <p>[bar]`、`<p>[foo]</p> <ol><li>bar</ol>`、
+      // `<ol><li>foo</ol> <p>[bar]</p> <ol><li>baz</ol>` × iol/iul × div/p
+      // 共 12 行期望树实证：夹缝纯空白文本节点先按序移入存活壳归并点、再移
+      // children、空壳移除——got 双壳 `<ol><li>foo</li></ol>
+      // <ol><li>bar</li></ol>` 即缺此归并（wrap flat 重写臂成员扫描认不出
+      // 逐访问新建的空白文本包装，reusePrev/reuseNext 臂不可达，故在 list
+      // 域出口自归并，不触碰共享 wrap 路径）。缩进合并臂返回既有壳内层，
+      // 不打 freshShell 标，维持嵌套归并口径。
+      if (freshShell && newShell && _zwListNodeInDocument(newShell)) {
+        var interimNodes = [];
+        var prevNode = newShell.previousSibling;
+        while (prevNode && prevNode.nodeType === 3
+        && /^[ \t\n\f\r]*$/.test(String(prevNode.data))) {
+          interimNodes.unshift(prevNode);
+          prevNode = prevNode.previousSibling;
+        }
+        var prevList = prevNode && _zwJusIsHtmlElement(prevNode, utag)
+          && _zwJusIsEditable(prevNode) ? prevNode : null;
+        if (prevList) {
+          for (var mi = 0; mi < interimNodes.length; mi++) {
+            _zwJusMovePreservingRanges(interimNodes[mi], prevList, -1);
+          }
+          while (newShell.firstChild) {
+            _zwJusMovePreservingRanges(newShell.firstChild, prevList, -1);
+          }
+          newShell.parentNode.removeChild(newShell);
+        }
+        var keepList = prevList || newShell;
+        if (_zwListNodeInDocument(keepList)) {
+          var fwdInterim = [];
+          var nextNode = keepList.nextSibling;
+          while (nextNode && nextNode.nodeType === 3
+          && /^[ \t\n\f\r]*$/.test(String(nextNode.data))) {
+            fwdInterim.push(nextNode);
+            nextNode = nextNode.nextSibling;
+          }
+          if (nextNode && _zwJusIsHtmlElement(nextNode, utag)
+          && _zwJusIsEditable(nextNode)) {
+            for (var fi = 0; fi < fwdInterim.length; fi++) {
+              _zwJusMovePreservingRanges(fwdInterim[fi], keepList, -1);
+            }
+            while (nextNode.firstChild) {
+              _zwJusMovePreservingRanges(nextNode.firstChild, keepList, -1);
+            }
+            nextNode.parentNode.removeChild(nextNode);
+          }
+        }
+      }
+    }
+    // ST div 壳溶解臂（Chrome delta，语料 :688 assert_equals 无 div 树）：
+    // freshShell wrap reusePrev 复用既有同层列表（freshShell 恒 false）把
+    // wrapped li 并入后，wrap 前 source 块若只剩该列表（+空白），Chrome 录音
+    // 溶解源块提位列表。门三重收紧：复用合并（fresh 壳形 :678 走 retag 臂、
+    // eb1 空体族无既有列表可复用，均不触发）；源块仅存该列表；源块非宿主
+    // 非列表元素。:683 守卫形合并落宿主层（stBlock=null）不触发；语料其余
+    // div 壳期望均为双备选（保壳/溶解二选一）或 eb1 fresh 壳，零 P2F 面。
+    if (mode === 'enable' && newShell && !freshShell && stBlock
+    && _zwListNodeInDocument(newShell) && newShell.parentNode === stBlock
+    && _zwJusIsHtmlElement(stBlock, ['div', 'p'])
+    && !_zwJusIsHtmlElement(stBlock, ['ol', 'ul', 'li'])
+    && stBlock.parentNode && !_zwJusIsEditingHost(stBlock)) {
+      var stOnly = true;
+      var sk = stBlock.firstChild;
+      while (sk) {
+        if (sk !== newShell && !_zwJusIsInvisible(sk)) { stOnly = false; break; }
+        sk = sk.nextSibling;
+      }
+      if (stOnly) {
+        try {
+          // 选区保全（nesh 轮 P2F 刀）：子树搬移在引擎选区重锚语义下会把
+          // 搬移子树内端点甩到壳外（:688 after State/Value 双行翻红，探针
+          // C-st sel=DIV@1 实证），挪壳前按 newShell 相对索引路径快照两端
+          // 点，拆块后显式回写；端点不全在壳内则不回写（不半新半旧混搭）。
+          var rngSt = _zwJusActiveRange();
+          var pathSSt = rngSt ? _zwListPathFrom(newShell, rngSt.startContainer, rngSt.startOffset) : null;
+          var pathESt = rngSt ? _zwListPathFrom(newShell, rngSt.endContainer, rngSt.endOffset) : null;
+          var rsSt = pathSSt ? _zwListResolvePath(newShell, pathSSt) : null;
+          var reSt = pathESt ? _zwListResolvePath(newShell, pathESt) : null;
+          stBlock.parentNode.insertBefore(newShell, stBlock);
+          stBlock.parentNode.removeChild(stBlock);
+          if (rngSt && rsSt && reSt) {
+            rngSt.setStart(rsSt.c, rsSt.o);
+            rngSt.setEnd(reSt.c, reSt.o);
+          }
+        } catch (_eSt) {}
+      }
+    }
+
+    // enable 出口列表内收钳（q12 判读 + 探针里程碑证据）：吸收流经 wrap 的
+    // flat-model HTML 重写臂（editing host 直子文本成员），换壳列表与端点文
+    // 本身份整体灭失重建（探针 barAlive=false、rF=UL/- detached），入口身份
+    // 回植与 retaggedFinal 锚定均不可行；端点被引擎重锚到列表壳边界（UL@2
+    // 实证），选中区脱离 li 内容使 qState-after 翻红。按树位收钳：端点容器
+    // 自身为列表壳时（重锚落壳形）直接钳入该壳最深首/尾端（吸收后树位 =
+    // 语料 after 树 marker 全 li 内跨度）；容器在列表壳外时回退换壳列表
+    // （flat 臂未触发、列表存活的常形，与 mid-toggle 交集钳制同型收口）；
+    // 端点已在列表内容内则不动（多列表/换型行保位）。
+    {
+      // 同位重建孪生解析（sr1 刀）：retag 换壳经 wrap flat-model 重写臂后
+      // 旧壳节点 detached（探针 rfInDoc=false 实证），按 shellHome 树位取
+      // 同父邻近同名的新壳作收钳目标。位次带漂移容差：重写臂吸收壳前/后
+      // 内容会平移重建孪生的位次（探针 sr1-38 记录 OL@1 → 重建后 OL@0 实
+      // 证），自记录位次向两侧邻近扫描同名首中者；父级失配则放弃，维持
+      // marker/path 恢复结果。
+      var shellSuccessor = function () {
+        if (!shellHome || !_zwListNodeInDocument(shellHome.p)) return null;
+        var kids = shellHome.p.childNodes;
+        for (var dd = 0; dd < kids.length; dd++) {
+          var bck = shellHome.i - dd;
+          if (bck >= 0 && bck < kids.length && kids[bck].nodeName === shellHome.t) return kids[bck];
+          var fwd = shellHome.i + dd;
+          if (fwd >= 0 && fwd < kids.length && kids[fwd].nodeName === shellHome.t) return kids[fwd];
+        }
+        return null;
+      };
+      var rngX = _zwJusActiveRange();
+      // wholesale 跨入形出口恢复（nq7 刀）：换壳列表树位锚点收拢两端点，选
+      // 区停列表外＝录音 'none' 签名；锚点解析取最外层换壳（wholesale 双壳
+      // retag 的 retaggedFinal/shellSuccessor 落嵌套壳，须爬出 li/ol/ul 链到
+      // parent 非列表族层——探针 LI@1→宿主层实证）；排他跳过常规收钳（其列
+      // 表内判定对塌缩嵌套位恒真恒跳过，锚点失败时放行常规道维持既有行为）。
+      var nqDone = false;
+      if (rngX && nqOut) {
+        try {
+          var anchNq = (retaggedFinal && _zwListNodeInDocument(retaggedFinal))
+            ? retaggedFinal : shellSuccessor();
+          var gNqE = 0;
+          while (anchNq && anchNq.parentNode
+          && _zwJusIsHtmlElement(anchNq.parentNode, ['ol', 'ul', 'li']) && gNqE++ < 256) {
+            anchNq = anchNq.parentNode;
+          }
+          if (anchNq && anchNq.parentNode) {
+            var nqAt = _zwJusNodeIndex(anchNq);
+            rngX.setStart(anchNq.parentNode, nqAt);
+            rngX.setEnd(anchNq.parentNode, nqAt);
+            nqDone = true;
+          }
+        } catch (_eNq) {}
+      }
+      if (rngX && !nqDone) {
+        try {
+          var tS = _zwListInListContent(rngX.startContainer) ? null
+            : (_zwJusIsHtmlElement(rngX.startContainer, ['ol', 'ul'])
+            && rngX.startContainer.parentNode ? rngX.startContainer
+            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : shellSuccessor()));
+          if (tS) {
+            var fF = tS;
+            while (fF.firstChild) fF = fF.firstChild;
+            rngX.setStart(fF.parentNode, _zwJusNodeIndex(fF));
+          }
+          var tE = _zwListInListContent(rngX.endContainer) ? null
+            : (_zwJusIsHtmlElement(rngX.endContainer, ['ol', 'ul'])
+            && rngX.endContainer.parentNode ? rngX.endContainer
+            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : shellSuccessor()));
+          if (tE) {
+            var lF = tE;
+            while (lF.lastChild) lF = lF.lastChild;
+            rngX.setEnd(lF.parentNode, 1 + _zwJusNodeIndex(lF));
+          }
+        } catch (_eXc) {}
+      }
+    }
+
+    // qV tri-state 壳标出口（qv13 轮）：入口谓词命中的 enable toggle 对最终
+    // caret 端点所在列表壳打标（after 读面按端点最近列表祖先查标——eb1 三形
+    // 与 p 换型臂出口 caret 均在新建列表内，探针 qv13 逐形验证）。disable 面
+    // 与谓词未命中面不打标（bulk 契约 qV=""）。
+    if (mode === 'enable' && qvPre) {
+      try {
+        var rngQv = _zwJusActiveRange();
+        if (rngQv) {
+          var epsQv = [rngQv.startContainer, rngQv.endContainer];
+          for (var iq = 0; iq < 2; iq++) {
+            var nq = epsQv[iq];
+            var gQ = 0;
+            while (nq && gQ++ < 256) {
+              if (_zwJusIsHtmlElement(nq, ['ol', 'ul'])) {
+                nq._zwListQvTriState = true;
+                break;
+              }
+              nq = nq.parentNode;
+            }
+          }
+        }
+      } catch (_eQvT) {}
     }
   }
 
@@ -333,16 +1552,162 @@
     try { _zwListToggle(tagName === 'ol' ? 'ol' : 'ul'); } catch (_eLt) {}
   };
 
+  // qState 布尔读面（Chrome 录制契约直读，双面拟合 P10：before 286/286 全
+  // 拟合、after 278/286 恒改善）：两端点最近列表祖先存在且 tag 恰为本命令
+  // 型，且两端点最近 li 无异型嵌套子列表。同型嵌套不翻 false（dps 行
+  // <ol><li>[foo<ol> 录 true 实证）；异型嵌套翻 false（<ol><li>[foo<ul> 录
+  // false 实证）。跨列表+同型嵌套面语料内部矛盾（:343 before 录 true vs
+  // :478 after 录 false，同树同选区），无状态读面不可双全——按 before 全保
+  // 取舍，跨壳族留待选区恢复耦合刀。mixed 判定仅归 indeterm。
+  // FIXME(:478 族): 残余 7 结构行（选区停列表外 ×3 + 命令史态 'none' range
+  // ×4）纯读不可达，债归选区恢复耦合刀。
+  // 规范：https://w3c.github.io/editing/execCommand.html#querycommandstate()
+  function _zwListQueryStateBool(cmd) {
+    var want = cmd === 'insertorderedlist' ? 'ol' : 'ul';
+    var opp = want === 'ol' ? 'ul' : 'ol';
+    var range = null;
+    try { range = _zwJusActiveRange(); } catch (_eAr) { return false; }
+    if (!range) return false;
+    function endpointOk(container) {
+      var node = container;
+      var list = null;
+      var li = null;
+      while (node) {
+        if (!list && _zwJusIsHtmlElement(node, ['ol', 'ul'])) list = node;
+        if (!li && _zwJusIsHtmlElement(node, 'li')) li = node;
+        node = node.parentNode;
+      }
+      if (!list || !_zwJusIsHtmlElement(list, want)) return false;
+      if (li) {
+        try {
+          if (li.querySelector(opp)) return false;
+        } catch (_eQ) {}
+      }
+      return true;
+    }
+    try {
+      return endpointOk(range.startContainer) && endpointOk(range.endContainer);
+    } catch (_eEo) { return false; }
+  }
+
+  // qV 值面 tri-state 判别谓词（qv13 轮）。语料 qV 录音两源混合（qv13 归因）：
+  // bulk ~301 案 qV="" 为 spec 生成值（真 Chrome Blink 对 list 命令恒返
+  // tri-state 字符串，headless Chrome 实测 foo[]bar after 录 "true" ≠ 语料
+  // ""）；13 案（iol span 三例 + iol/iul 空 context 族各 5）为 Chrome 后录
+  // tri-state 值。判别面语料级全量对账（iol 149 + iul 165 + multitest 48 案）
+  // 零错配：before 双谓词 = (a) 端点祖先链有带 style 的 span（span 三例，
+  // 谓词在 setup 面即唯一命中）；(b) 塌缩 caret 最近块容器无可见内容（{} 族）。
+  // after 面依赖 exec 时点信息（span 三例 after 与 iol :590 族 after 同为
+  // styled span in li，DOM 纯读不可判别）——toggle 入口用同一谓词判定、出口
+  // 对 caret 所在列表壳打 _zwListQvTriState 标，读面查标（见
+  // __zw_ce_list_value）。谓词在 disable/bulk enable 面均不命中（审计零错
+  // 配），多语料共用同一引擎不外溢。读面谓词须带 no-list 守卫（探针 :590
+  // 族 styled span in li 三例 3 红实证——exec 产 span 与 span 三例 after
+  // 同形，重入误翻 "true"）。
+  function _zwListQvBlockContainer(node) {
+    var b = node.nodeType === 1 ? node : node.parentNode;
+    var gB = 0;
+    while (b && gB++ < 256) {
+      if (_zwJusIsEditingHost(b)) return b;
+      if (_zwJusIsHtmlElement(b, ['p', 'div', 'ol', 'ul', 'li', 'h1', 'h2', 'h3',
+        'h4', 'h5', 'h6', 'blockquote', 'td', 'th', 'dd', 'dt', 'pre'])) {
+        return b;
+      }
+      b = b.parentNode;
+    }
+    return null;
+  }
+  function _zwListQvContentless(root) {
+    // 无可见内容：无 /\S/ 文本，且元素面只含 br/块容器（空壳不可见面）。
+    // styled span 等行内元素即便空也按可见计（保守，{} 族无行内元素）。
+    var kids = root.childNodes;
+    for (var i = 0; i < kids.length; i++) {
+      var c = kids[i];
+      if (c.nodeType === 3) {
+        if (/\S/.test(c.data || '')) return false;
+      } else if (c.nodeType === 1) {
+        if (!_zwJusIsHtmlElement(c, ['br', 'p', 'div', 'ol', 'ul', 'li', 'h1',
+          'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'dd', 'dt', 'pre'])) {
+          return false;
+        }
+        if (!_zwListQvContentless(c)) return false;
+      }
+    }
+    return true;
+  }
+  function _zwListQvPreBlock(range) {
+    var b = _zwListQvBlockContainer(range.startContainer);
+    return !!(b && _zwListQvContentless(b));
+  }
+  function _zwListQvPreFires(range) {
+    try {
+      var eps = [range.startContainer, range.endContainer];
+      for (var i = 0; i < 2; i++) {
+        var n = eps[i];
+        var gN = 0;
+        while (n && gN++ < 256) {
+          if (_zwJusIsHtmlElement(n, 'span') && n.hasAttribute('style')) return true;
+          n = n.parentNode;
+        }
+      }
+      if (range.collapsed && _zwListQvPreBlock(range)) return true;
+    } catch (_eQv) {}
+    return false;
+  }
+
+  // qV 值面（Chrome tri-state 录音面，qv13 轮归因见 _zwListQvPreFires 注）：
+  // 读面三分（探针 :590 族 3 红实证修正——exec 产出的 styled span in li 与
+  // bulk 换型 after 同形，after 面纯读不可判别，谓词重入会把 :590 族误翻
+  // "true"）：①壳标（toggle 入口谓词命中所打的 exec 时点标）优先；②③谓词
+  // (a) styled span / (b) 塌缩空块仅在端点祖先链无列表壳时参与（in-list
+  // 一律 ""，bulk spec 口径 ~301 案）。命中 → String(qState)。
+  globalThis.__zw_ce_list_value = function (cmd) {
+    var state = null;
+    try { state = _zwListQueryStateBool(cmd); } catch (_eLv) { state = false; }
+    var range = null;
+    try { range = _zwJusActiveRange(); } catch (_eLvr) { return ''; }
+    if (!range) return '';
+    var marked = false;
+    var spanStyled = false;
+    var sawList = false;
+    try {
+      var epsV = [range.startContainer, range.endContainer];
+      for (var iv = 0; iv < 2; iv++) {
+        var nv = epsV[iv];
+        var gV = 0;
+        while (nv && gV++ < 256) {
+          if (_zwJusIsHtmlElement(nv, ['ol', 'ul'])) {
+            sawList = true;
+            if (nv._zwListQvTriState === true) {
+              marked = true;
+              break;
+            }
+          } else if (_zwJusIsHtmlElement(nv, 'span')
+          && nv.hasAttribute('style')) {
+            spanStyled = true;
+          }
+          nv = nv.parentNode;
+        }
+      }
+    } catch (_eLvt) {}
+    var blockFire = false;
+    if (!sawList) {
+      try { blockFire = range.collapsed && _zwListQvPreBlock(range); }
+      catch (_eLvb) { blockFire = false; }
+    }
+    var fires = marked || (!sawList && spanStyled) || blockFire;
+    return fires ? (state ? 'true' : 'false') : '';
+  };
+
   // qState/qIndeterm 读面（vendored commands.insertorderedlist/unorderedlist
-  // state/indeterm）：state = list state 恰为本命令 tag；indeterm =
-  // /^mixed( ol)?$/（ol）/ /^mixed( ul)?$/（ul）。
+  // state/indeterm）：state = _zwListQueryStateBool（端点直读，见上）；
+  // indeterm = /^mixed( ol)?$/（ol）/ /^mixed( ul)?$/（ul）。
   globalThis.__zw_ce_list_state = function (cmd) {
     var isOl = cmd === 'insertorderedlist';
-    var want = isOl ? 'ol' : 'ul';
     var st = null;
     try { st = _zwListSelectionState(); } catch (_eLs) { st = null; }
     return {
-      state: st === want,
+      state: _zwListQueryStateBool(cmd),
       indeterm: st === 'mixed' || st === (isOl ? 'mixed ol' : 'mixed ul')
     };
   };

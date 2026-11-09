@@ -43,6 +43,31 @@ fn compound_to_string(c: &CompoundSelector) -> String {
                         s.push_str(arg);
                         s.push(')');
                     }
+                    // 45 号 M2：`::slotted(<compound>)` best-effort 序列化（嵌套编译
+                    // 残留面；参数按类型/id/class 直排，同 css_wire.rs 口径）。
+                    PseudoElementSelector::Slotted(arg) => {
+                        s.push_str("slotted(");
+                        match &arg.type_selector {
+                            Some(TypeSelector::Tag(t)) => s.push_str(t),
+                            Some(TypeSelector::Universal) => s.push('*'),
+                            Some(TypeSelector::Namespaced { .. }) => s.push('*'),
+                            None => {}
+                        }
+                        for sub in &arg.subclass_selectors {
+                            match sub {
+                                SubclassSelector::Id(id) => {
+                                    s.push('#');
+                                    s.push_str(id);
+                                }
+                                SubclassSelector::Class(c) => {
+                                    s.push('.');
+                                    s.push_str(c);
+                                }
+                                _ => {}
+                            }
+                        }
+                        s.push(')');
+                    }
                 }
             }
             SubclassSelector::PseudoClass(pc) => {
@@ -78,6 +103,10 @@ fn pseudo_class_to_string(pc: &PseudoClassSelector) -> String {
         | PseudoClassSelector::NthLastOfType(_) => "nth".to_string(),
         PseudoClassSelector::Lang(l) => format!("lang({})", l.join(",")),
         PseudoClassSelector::Dir(d) => format!("dir({d})"),
+        // 45 号 M1：`:host` 族（参数重建，同上功能伪类口径）。
+        PseudoClassSelector::Host(Some(l)) => format!("host({})", selectors_to_string(l)),
+        PseudoClassSelector::Host(None) => "host".to_string(),
+        PseudoClassSelector::HostContext(l) => format!("host-context({})", selectors_to_string(l)),
     }
 }
 

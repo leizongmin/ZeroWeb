@@ -11,7 +11,7 @@ fontdue = { workspace = true }
 swash = { workspace = true }
 rustybuzz = { workspace = true }
 wuff = { workspace = true }
-png = "0.17"
+png = "0.18"
 jpeg-decoder = "0.3"
 image-webp = "0.2"
 flate2 = "1"

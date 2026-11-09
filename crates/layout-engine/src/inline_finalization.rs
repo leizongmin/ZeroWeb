@@ -10,6 +10,10 @@ use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue,
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
+use crate::inline::nested_float::{
+    apply_nested_float_writeback, collect_nested_float_exclusions, collect_nested_inline_floats,
+    has_nested_inline_float, nested_float_wrapper_descendable, nested_inline_float_enabled,
+};
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, TextGroupAlign, WordBreakMode};
 pub(crate) use crate::inline_content::{has_direct_text, has_inline_content};
 pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
@@ -36,11 +40,53 @@ static CONTENT_AREA_DORMANT_ON: std::sync::LazyLock<bool> =
 static RELPOS_INLINE_SHIFT_ON: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_RELPOS_INLINE_SHIFT").as_deref() != Ok("0"));
 
+/// R5419（CSS2 §10.8.1/§10.6.2 空 inline content area）：空 inline（零宽 TextRun）
+/// 单 fragment 的盒 y 锚 = 自身基线 − 字体 ascent（chromium 空 span gBCR 顶 =
+/// baseline−A 实证；Ahem 1em 形态差 = descent 20px，empty-inline-002 驱动案）。
+/// va=baseline 时片段顶相对 content 顶差 first_frag_h − A，空 inline 臂局部合成
+/// 上移；va 定位面不动——R4383 own_baseline 判例校准面依赖「片段底 = 行基线」
+/// 不变式。ascent 常数与 strut 同源（R990）。
+/// `ZW_EMPTY_INLINE_BASELINE_ANCHOR=0` 回退片段顶锚（旧行为）。
+static EMPTY_INLINE_BASELINE_ANCHOR_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_EMPTY_INLINE_BASELINE_ANCHOR").as_deref() != Ok("0"));
+
 /// R5369（CSS §9.4.3 / CSS2 §9.5）：R4222 相对 inset 回加范围扩到「float 祖先容器内的
 /// clear 子」开关（`ZW_R4222_FLOAT_ANCESTOR_SCOPE=0` 回退旧「直接子含 float」范围，
 /// default-on）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
 static R4222_FLOAT_ANCESTOR_SCOPE: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_R4222_FLOAT_ANCESTOR_SCOPE").as_deref() != Ok("0"));
+
+/// R5442（CSS2 §9.5.1 规则 6）：float 锚位推压 no-preceding-content 前置门——锚位 0 =
+/// IFC 起点（float 行首且容器无前文内容行）时规则 6 无更早行盒可约束，静态位
+///（adjust_float_positions band+mt）已合规；旧无条件推压 `anchor > child.y` 把负 mt
+/// float 从静态位抬回容器顶（c5525-fltmrgn test4：img mt −30 静态位 = chrome 位，推后
+/// 高 30px）。仅前文有完整内容行（行槽顶锚 > 0，auto-015 形 L1-L4 后 128）推压。
+/// OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
+/// `ZW_FLOAT_ANCHOR_PRE_GATE=0` 回退无条件推压（旧行为）。
+static FLOAT_ANCHOR_PRE_GATE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_ANCHOR_PRE_GATE").as_deref() != Ok("0"));
+
+/// R5470（CSS2 §8.3.1 × §10.6.3）：float 排除感知 IFC 重测的高度增量传播——步 5
+/// float walk 以 taffy float-unaware 文本帧定位兄弟，步 6 排除感知重测改变含 float
+/// 块高度后，同容器后续流内兄弟仍停驻旧帧位，差值即「含 float 前驱之后兄弟间距
+/// 塌陷」签名（c5525-fltmrgn-000：p3-p6 累计上移 15/60/75/90px；最小页 min-f：
+/// 前驱块高 30→45 后 p3 不随动）。本臂把子树根高度增量（δ = 子树 height 差，含
+/// 本子自身重测写入与孙层吸收量）平移给同容器后续流内兄弟并吸收进本层高，逐级
+/// 上浮。float 兄弟（脱流）仅在生长块旧底边之下随动——并置于旧底之上的 float
+/// 锚定更早流位，平移会双计；abs/fixed 锚定不随动。纵排块轴为 x，不处理
+///（FIXME: vertical 域待探）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点
+/// env::var 有可测开销）。`ZW_FLOAT_REMEASURE_SIB_SHIFT=0` 回退不传播（旧行为，
+/// 高度吸收一并回退）。
+static FLOAT_REMEASURE_SIB_SHIFT: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_REMEASURE_SIB_SHIFT").as_deref() != Ok("0"));
+
+/// own_floats 排除带判弃/裁顶口径门（R5471，CSS2 §9.5 float margin box）。
+/// 开（默认）：判弃按 margin-box 带底（整带在容器顶上方才丢），跨顶带裁顶保留
+/// 可见段——对齐步 6 remeasure R5442 同构臂，stored IFC 与重测口径一致（c5525
+/// test4 负 mt float 形态）。关：旧口径按 border 顶 rel_y < 0 整带丢弃、通过带
+/// 不裁顶（y 可为负）。OPTIMIZATION：进程级单读（R5108 同上）。
+static FLOAT_BAND_MARGINBOX_CLIP: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_BAND_MARGINBOX").as_deref() != Ok("0"));
 
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
@@ -1292,7 +1338,34 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         let fold_landed = (agg.first_ml - raw_ml).max(0.0);
         child.x = agg.first_x - fold_landed;
         if !is_slice_host {
-            child.y = agg.first_y - metrics.padding_top - metrics.border_top;
+            // R5419（CSS2 §10.8.1/§10.6.2）：**零宽空 inline**（空 span 产零宽 TextRun，
+            // first_w=0）content area 顶 = 自身基线 − 字体 ascent（与 line-height 无关；
+            // chromium 空 span gBCR 顶 = baseline−A 实证）。va=baseline 时片段顶 =
+            // 行主基线 − line_height（break_lines 空 inline 臂 height=line_height 口径），
+            // 相对 content 顶差 first_frag_h − A，局部合成上移；va 定位面不动——
+            // R4383 own_baseline（first_y + first_frag_h ≡ 行主基线）判例校准面依赖
+            // 「片段底 = 行基线」不变式。ascent 常数与 strut 同源（R990）。
+            // first_w==0 门排除原子行内级盒（canvas/img 等 replaced inline 的 fragment
+            // 非零宽，first_frag_h = 盒高非 line_height——background-color-animation-
+            // fallback-replace ref 页 canvas 误下移 85px 实证）。
+            // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+            let baseline_anchored = *EMPTY_INLINE_BASELINE_ANCHOR_ON
+                && agg.first_w == 0.0
+                && matches!(style.vertical_align, VerticalAlignValue::Baseline);
+            child.y = if baseline_anchored {
+                let (font_size, _) = crate::inline::resolve_font_metrics_with_provider(
+                    Some(style),
+                    inline_ctx.font_metric_provider.as_ref(),
+                );
+                let is_ahem = style
+                    .font_family
+                    .iter()
+                    .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+                let ascent_ratio = if is_ahem { 0.8 } else { 0.928 };
+                agg.first_y + agg.first_frag_h - font_size * ascent_ratio - metrics.padding_top - metrics.border_top
+            } else {
+                agg.first_y - metrics.padding_top - metrics.border_top
+            };
         }
         child.width =
             agg.first_w + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
@@ -1547,10 +1620,32 @@ pub(crate) fn compute_final_inline_layouts(
         .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None))
         .filter_map(|c| {
             let rel_y = c.y;
-            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+            if c.width <= 0.0 || c.height <= 0.0 {
                 return None;
             }
             let id = c.node_id?;
+            let band_top = rel_y - c.margin_top;
+            let band_height = c.margin_top + c.height + c.margin_bottom;
+            // R5471（CSS2 §9.5）：带判弃/裁顶按 **margin-box** 口径（对齐步 6 remeasure
+            // R5442 同构臂）——旧 border 顶 rel_y<0 整带丢弃：负 mt float（c5525 test4
+            // img mt−30，border 顶 p-rel −30、margin-box 带 [0,15]）带被丢 → stored IFC
+            // float-unaware（首行 x=0 应 15）→ paint use_stored 重放错位墨，img 右侧
+            // 45×15 红标记露出（c5525 ✓0.28% 残余主体）。带底 ≤ 0（整带在容器顶上方）
+            // 不约束任何行 → 丢弃；跨顶带裁顶保留可见段——IFC 行盒 y ≥ 0，裁顶对既有
+            // rel_y ≥ 0 带的行排不可见。kill-switch 退旧口径（判弃 border 顶、不裁顶）。
+            let (band_y, band_h) = if *FLOAT_BAND_MARGINBOX_CLIP {
+                let band_bottom = band_top + band_height;
+                if band_bottom <= 0.0 {
+                    return None;
+                }
+                let clipped_top = band_top.max(0.0);
+                (clipped_top, band_bottom - clipped_top)
+            } else {
+                if rel_y < 0.0 {
+                    return None;
+                }
+                (band_top, band_height)
+            };
             Some((
                 id,
                 crate::inline::FloatExclusion {
@@ -1559,8 +1654,8 @@ pub(crate) fn compute_final_inline_layouts(
                     // 旧式 `+margin` 再加一次 = 双计（outline-028 ml:5 案：带 [10,25] 应
                     // [0,15]，span 被挤到行 2 + 右移 10px）。左/上缘回退 margin 得 margin-box
                     // 原点；margin 字段被后继 pass 清零时 c.x−0 = 原值，两约定同成立。
-                    y: rel_y - c.margin_top,
-                    height: c.margin_top + c.height + c.margin_bottom,
+                    y: band_y,
+                    height: band_h,
                     width: c.width + c.margin_left + c.margin_right,
                     x: c.x - c.margin_left,
                     is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
@@ -1568,6 +1663,21 @@ pub(crate) fn compute_final_inline_layouts(
             ))
         })
         .collect();
+    // R5446（CSS2 §9.5.1）：wrapper 子树内嵌套 float 的排除带——旧只认直接 float 子，
+    // 嵌套 float 缺带 → IFC 行不缩窄，且 float-aware fail-closed 门（`can_skip_final_ifc`
+    // 第三参 / R1280 has_float_exclusions）得 false → 容器早退不落存储路径 → paint
+    // Path B 无锚重跑（001b "tty" 残段根因）。此刻嵌套 float 盒已被步 6 remeasure
+    // 写回终位，构造公式与直接臂同（见 [`collect_nested_float_exclusions`]）。
+    // 带只入本容器 IFC 与 fail-closed 门，不向子容器传播（嵌套 float 的跨块入侵属
+    // block-in-inline 拆分域，FIXME 另案）；wrapper 自身 IFC 的自带（float 在其子树内）
+    // 经本收集自然覆盖。kill-switch `ZW_NESTED_INLINE_FLOAT=0`（与 remeasure/collect
+    // 侧同一开关）。
+    let nested_float_bands: Vec<crate::inline::FloatExclusion> =
+        if nested_inline_float_enabled() && !root.writing_mode.is_vertical_block_flow() {
+            collect_nested_float_exclusions(root, styles)
+        } else {
+            Vec::new()
+        };
 
     // 递归子节点。CSS float 侵入：祖先 BFC 内的 float 会侵入未建 BFC 的后代 block 的 line box，
     // 故把（祖先 float + 本容器直接 float）换算到每个子节点 box 坐标系后向其传播。
@@ -1581,13 +1691,23 @@ pub(crate) fn compute_final_inline_layouts(
         is_left: f.is_left,
     };
     for child in &mut root.children {
-        let child_ancestor: Vec<crate::inline::FloatExclusion> = own_floats
-            .iter()
-            .filter(|(id, _)| Some(*id) != child.node_id) // 排除子节点自身
-            .map(|(_, f)| transform(f, child))
-            .chain(ancestor_floats.iter().map(|f| transform(f, child)))
-            .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
-            .collect();
+        // R5421（CSS 2.2 §9.4.1/§9.5）：float 排除带只在**同一 BFC** 内生效——子盒自身
+        // 建立 BFC（float/overflow≠visible/abs|fixed/flow-root/flex 等）时，祖先 float
+        // 不侵入其后代 line box，祖先排除带整体清零；子树内自身 float 子由该层递归
+        // 重新收集。旧实现无界传播：body 级 float 兄弟经排除带侵入 float/overflow
+        // 兄弟（均建 BFC）的内部文本，行位被推到自身 overflow clip 之下 → 文本整缺
+        //（border-radius-clip-001 #txt 案形）。
+        let child_ancestor: Vec<crate::inline::FloatExclusion> = if crate::margin_collapse::establishes_bfc(child) {
+            Vec::new()
+        } else {
+            own_floats
+                .iter()
+                .filter(|(id, _)| Some(*id) != child.node_id) // 排除子节点自身
+                .map(|(_, f)| transform(f, child))
+                .chain(ancestor_floats.iter().map(|f| transform(f, child)))
+                .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
+                .collect()
+        };
         compute_final_inline_layouts(child, doc, styles, &child_ancestor, img_intrinsic_sizes, context);
     }
 
@@ -1779,7 +1899,8 @@ pub(crate) fn compute_final_inline_layouts(
         doc,
         styles,
         context.finalized_inline_blocks,
-        !own_floats.is_empty() || !ancestor_floats.is_empty(),
+        // R5446：wrapper 子树嵌套 float 同款 fail-closed——有带必走 re-break 存储路径。
+        !own_floats.is_empty() || !nested_float_bands.is_empty() || !ancestor_floats.is_empty(),
     ) {
         return;
     }
@@ -1878,10 +1999,12 @@ pub(crate) fn compute_final_inline_layouts(
     let parent_word_spacing: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_word_spacing);
     let parent_line_heights: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_line_heights);
 
-    // 收集浮动排除区域 = 本容器直接 float 子 + 祖先传播下来的 float（均已在 root box 坐标系）
+    // 收集浮动排除区域 = 本容器直接 float 子 + wrapper 子树嵌套 float（R5446，均已在
+    // root box 坐标系）+ 祖先传播下来的 float
     let exclusions: Vec<crate::inline::FloatExclusion> = own_floats
         .iter()
         .map(|(_, f)| f.clone())
+        .chain(nested_float_bands.iter().cloned())
         .chain(ancestor_floats.iter().cloned())
         .collect();
 
@@ -2034,6 +2157,29 @@ pub(crate) fn compute_final_inline_layouts(
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。
     // 须在 store-gate return 之前设（非 stored 容器也走此，non-stored paint 路径冗余读之）。
     root.line_clamp_clamped = inline_ctx.clamped;
+    // R5452（css-overflow-4 §line-clamp）：cap 后保留行底镜像（容器内容坐标）。
+    // own-IFC-capped 且未落 inline_layout 的容器（非 pure-Ahem），cross-block walk
+    // 尾部按子盒底边重算高度时会缩穿保留行底（inline 子盒底边 = strut 常数盒，
+    // block-ellipsis-032：24 → 19.624 实证）；该场点容器高度 = clamp 边界 =
+    // 保留行底，postprocess 据此作 extent 下限。标量、store-gate return 之前
+    //（同上 non-stored 也走此），paint 零扰动。
+    if inline_ctx.clamped {
+        root.clamp_kept_line_bottom = inline_ctx
+            .lines
+            .iter()
+            .map(|l| l.y + l.height)
+            .fold(None::<f32>, |acc, v| Some(acc.map_or(v, |a| a.max(v))));
+    }
+    // R5432：整行置换旗标同站点镜像——paint stored 路径清零被置换 glyph + ellipsis
+    // 落行首（block-ellipsis-018）。须在 store-gate return 之前（同 2083 注释）。
+    root.line_clamp_strut_displaced = inline_ctx.clamp_strut_applied;
+    // R5454：justify ellipsis 线尾旗标同站点镜像——realign 把 ellipsis 计入 justify
+    // 分配项（gap_count = kept_count，末 gap 落 ellipsis 槽位前），paint 定位须落
+    // 线尾 [line_limit − ell, line_limit) 而非紧贴末 glyph（032 box3：ref
+    // text-align-last:justify '…' 为独立分配项，紧贴落位差 1 个 gap ≈ 10px）。
+    // stored 路径行快照（inline_layout）无 IFC 字段，盒旗标为 stored/Path B 共用
+    // 信号；须在 store-gate return 之前（同 2083 注释）。
+    root.line_clamp_ellipsis_justify_flush = inline_ctx.clamp_ellipsis_justify_flush;
     // R4417：cap 值存盒——paint Path B（空 styles 重跑 IFC，ruby 页等非 stored 容器）
     // 无行数语义（resolve_line_clamp 对 Auto 恒 None，paint 自身 style 亦不可用），
     // exceeded 截断与省略号须从盒读 cap（auto-with-ruby-005：Path B 6 行全绘、
@@ -2066,6 +2212,67 @@ pub(crate) fn compute_final_inline_layouts(
     if !inline_ctx.relpos_shifts.is_empty() {
         root.inline_relpos_shifts = Some(Box::new(inline_ctx.relpos_shifts.clone()));
     }
+    // R5427：本盒直系行内内容的溢出 span（content-box 系 (max_right, max_bottom)）存盒。
+    // **所有**文本容器都写（store-gate return 之前，R5166/R5227 先例区）：非 pure-Ahem
+    // 容器不存 inline_layout（非 Ahem 字体度量失真域），paint scrollable_overflow_extent
+    // 的行内臂在 stored 行缺席时回退消费此标量（background-attachment-350：默认字体
+    // nbsp 长行 200×200 溢出 100×100 盒，local 定位区须见纵向溢出）。只存标量、不落
+    // inline_layout——那会翻转 paint use_stored 路径（R5227 同款理由）。行 y/height 纵向、
+    // run x+relpos 横向（位移烘焙与 stored 面 line 2186 同口径）；竖排流行进轴为水平、
+    // 行盒坐标已重映射，语义不适用不入（R5227 同门）；空行集不存。存面恒写（成本
+    // O(行×run) 常数小），消费端受 ZW_INLINE_OVERFLOW_EXTENT 总门。
+    // FIXME: direction:rtl / 竖排的负向 span 未建模（无驱动案）。
+    if !root.writing_mode.is_vertical_block_flow() && !inline_ctx.lines.is_empty() {
+        let max_bottom = inline_ctx.lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
+        let max_right = inline_ctx
+            .lines
+            .iter()
+            .flat_map(|l| l.runs.iter())
+            .map(|r| {
+                let shift = root
+                    .inline_relpos_shifts
+                    .as_deref()
+                    .and_then(|m| m.get(&r.node_id))
+                    .copied()
+                    .unwrap_or((0.0, 0.0));
+                r.x + shift.0 + r.width
+            })
+            .fold(0.0f32, f32::max);
+        root.inline_overflow_extent = Some((max_right, max_bottom));
+    }
+    // R5435 slice 2（CSS2 §17.5.3 valign 可用空间＝行高 − 文本块高）：R1717 臂以
+    // `height - row_extra` 推导文本块高——auto 高表 row_extra=0 且 cell height 已被
+    // position_cells 均衡化为行高，推导恒 avail=0，text-only cell 的 middle/bottom
+    // 沉底失效（vertical-align-baseline-003 ref 侧：箭头 cell 停顶部行，slice 1 行高
+    // 随动后残差 0.24%）。此处取本容器 IFC（本 pass 已跑，行 y 纵向 content 顶起）
+    // 直系行内内容真底，按**均衡化后** content_height 重算 avail 并覆写 valign_offset：
+    // 行内最高 cell 与 R1717 值（=row_extra）数值相同，矮 cell 按规范下沉/居中。
+    // 须在 store-gate return 之前（非 stored cell 同样生效，R5166 先例区）；仅水平
+    // 书写模式（行 y 纵向语义，R5427/R5227 同门）；空行集不入。合成匿名 cell 借宿主
+    // 行 node_id，行样式 vertical-align 非 middle/bottom 自然不入臂（其内容为子盒域）。
+    // kill-switch `ZW_CELL_VALIGN_IFC_TRUTH=0` 回退 R1717 推导（slice 1 提交态）。
+    // LazyLock 快照：per-container 热路径不耐受 env 线性扫描（R5152/R5166 先例）。
+    static CELL_VALIGN_IFC_TRUTH: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_VALIGN_IFC_TRUTH").as_deref() != Ok("0"));
+    if is_table_cell
+        && !is_vertical_table_cell
+        && root.children.is_empty()
+        && !inline_ctx.lines.is_empty()
+        && matches!(
+            style.vertical_align,
+            zero_css_parser::values::VerticalAlignValue::Middle
+                | zero_css_parser::values::VerticalAlignValue::Bottom
+                | zero_css_parser::values::VerticalAlignValue::TextBottom
+        )
+        && *CELL_VALIGN_IFC_TRUTH
+    {
+        let text_bottom = inline_ctx.lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
+        let avail = (root.content_height - text_bottom).max(0.0);
+        root.valign_offset = match style.vertical_align {
+            zero_css_parser::values::VerticalAlignValue::Middle => avail / 2.0,
+            _ => avail,
+        };
+    }
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
@@ -2074,14 +2281,22 @@ pub(crate) fn compute_final_inline_layouts(
     // render v_offset is_ahem 分支正确）。Path B（override maps）对折叠 inline 元素的 is_ahem
     // 不传播 + baseline_offset 非 is_ahem-aware，致混合字体（default 容器 + Ahem span）glyph
     // 位错（floats-006 残余 4.04%）。kill-switch `ZW_FLOAT_INLINE_PAINT=0` 关闭（default-on）。
-    let has_float_exclusions = !own_floats.is_empty();
+    let has_float_exclusions = !own_floats.is_empty() || !nested_float_bands.is_empty();
     // R5169：合成匿名 cell 放行 non-Ahem 存储——cell 借宿主行 node_id，行样式（如
     // infer-cells 系列 body monospace）非 pure-Ahem 会拒存 → paint Path B（空 styles
     // 重跑）的字体/推进解析与同页真实 cell 的 stored 度量分歧（090/091 绿层推进
     // 16.9px vs 红层 16.0px，红绿叠层错排）。存 IFC 即冻结 layout 度量（R5167 cell
     // 存储臂同款），paint use_stored 重放，两层逐像素对齐。
     let allow_non_ahem_store = (has_float_exclusions && std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0"))
-        || (root.is_anon_table_cell && crate::table_anon_cell::anon_cell_wrap_enabled());
+        || (root.is_anon_table_cell && crate::table_anon_cell::anon_cell_wrap_enabled())
+        // R5475（CSS2 §9.7 float 块化 = BFC 根）：单行 float 容器自身行盒落盘——
+        // floats-149 形归因：display:inline 中间层物化 + 子 span 块化 float 后，文本行
+        // 真 owner = float span 自身（其 IFC 已产 1 行），旧门「非 pure-Ahem 且无排除带」
+        // 拒存 → 全树零行盒，paint Path B 兜视觉但行盒消费面失据（R5470 回退臂挂账主案）。
+        // 多行 float 不放行（下行 is_floated 多行拒存臂维持 R355 multicol 对称域）。
+        || (is_floated
+            && inline_ctx.lines.len() == 1
+            && crate::inline::float_own_line_store_enabled());
     if (!is_pure_ahem && !allow_non_ahem_store) || (is_floated && inline_ctx.lines.len() > 1) {
         return;
     }
@@ -3045,6 +3260,52 @@ pub(crate) fn measure_text_content_with_baseline(
             None,
         );
     }
+    // R5456（CSS Writing Modes §7.1 交换帧；#33 orthogonal float h=NaN 根因）：
+    // 父 vertical（is_vertical）而自身 horizontal-tb 的正交收缩叶（float / abs
+    // 收窄——块级正交子 fill 语义不变，FIXME 有驱动案再扩 inline-block/块级）。
+    // 旧路径 IFC 按父 vertical 模式测量：taffy float 臂以 MaxContent 测
+    //（taffy-local block.rs Size::MAX_CONTENT）→ 约束 INFINITY → vertical-rl 列
+    // x = 约束右缘锚定 → measured_width = INFINITY → 返回物理高 inf → 后处理
+    // inf−inf = NaN（float-lft-orthog-htb-in-vrl-002/003 ✗6.91% 驱动案）。正交盒
+    // 以**自身取向**排版：IFC 横排（with_vertical(false)），行内约束 = width 槽位
+    //（taffy float/abs 臂实测该槽承载物理水平量：float MaxContent→INFINITY 单行
+    // max-content；abs Definite(CB 宽) 单行 advance，R5104 同约定）；返回按交换帧
+    // 转置（taffy w = 物理 Y extent = 自身块轴高，taffy h = 物理 X extent = 自身
+    // 行内宽），extract_layout 反交换复原物理几何。ZW_ORTHO_HTB_MEASURE=0
+    // kill-switch。
+    if !own_vertical
+        && is_vertical
+        && styles.get(&dom_id).is_some_and(|s| {
+            !matches!(s.float, zero_css_parser::values::FloatValue::None)
+                || matches!(
+                    s.position,
+                    zero_css_parser::values::PositionValue::Absolute | zero_css_parser::values::PositionValue::Fixed
+                )
+        })
+        && std::env::var("ZW_ORTHO_HTB_MEASURE").as_deref() != Ok("0")
+    {
+        let mut ortho_ctx = crate::inline::InlineFormattingContext::new(width).with_vertical(false);
+        ortho_ctx = configure_inline_fonts(ortho_ctx, inline_fonts, false);
+        ortho_ctx.layout(doc, dom_id, styles);
+        let ortho_inline = ortho_ctx
+            .all_fragments()
+            .iter()
+            .map(|f| f.x + f.width)
+            .fold(0.0_f32, f32::max);
+        let ortho_block = if ortho_ctx.lines.is_empty() {
+            let (fs, lh) = crate::inline::resolve_font_metrics(styles.get(&dom_id));
+            lh.max(fs)
+        } else {
+            ortho_ctx.total_height()
+        };
+        return (
+            Size {
+                width: known_dimensions.width.unwrap_or(ortho_block),
+                height: known_dimensions.height.unwrap_or(ortho_inline),
+            },
+            None,
+        );
+    }
     // R5104（CSS2 §10.3.7 shrink-to-fit）：auto 宽 abspos/fixed 叶的 taffy absolute
     // 测量臂以 Definite(CB 宽) 约束跑 ContentSize（max-content）测量——IFC 以该宽排出
     // 单行，measured_width = 文本真实 advance（如 247.4）；taffy 盒宽经 round_layout
@@ -3140,8 +3401,27 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     inline_fonts: InlineFontContext<'_>,
 ) {
+    remeasure_text_with_float_exclusions_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false, false);
+}
+
+fn remeasure_text_with_float_exclusions_inner(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+    claimed_nested_floats: bool,
+    in_multicol: bool,
+) {
+    // R5446：嵌套 float 收集（认领子树跳过——float 已由祖先容器处理）。
+    let (mut nested, nested_claimed) =
+        if nested_inline_float_enabled() && !claimed_nested_floats && !box_node.writing_mode.is_vertical_block_flow() {
+            collect_nested_inline_floats(box_node, styles)
+        } else {
+            (Vec::new(), std::collections::HashSet::new())
+        };
     // 收集此容器的 float 排除区域
-    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None)) || !nested.is_empty();
 
     if has_floats {
         // R3784：float 行内流锚 y 两遍测量第一遍——无 exclusion IFC 跑到每个 float 子的
@@ -3177,8 +3457,63 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                     && let Some(anchor_y) = anchor_y_map.get(&fid)
                 {
                     // float 不高于锚位（前文行盒顶）；已更低（clear/前 float 堆叠）则保留。
-                    if *anchor_y > child.y {
+                    // R5442：锚位 0（IFC 起点，无前文内容行）不推——规则 6 无更早行盒，
+                    // 静态位已合规（见 FLOAT_ANCHOR_PRE_GATE 文档）。
+                    if (!*FLOAT_ANCHOR_PRE_GATE || *anchor_y > 0.0) && *anchor_y > child.y {
                         child.y = *anchor_y;
+                    }
+                }
+            }
+            // R5446：嵌套 float 目标——y=锚行顶（无条件；见 NestedInlineFloatInfo.target
+            // 注），x=§9.5.1 rule 6 方向极值缘。盒写入延后到 sync 后（`target` 先供
+            // exclusion/containment 使用，写入需 sync 后的父链偏移）。
+            if !nested.is_empty() {
+                let cw = box_node.content_width;
+                for nf in &mut nested {
+                    let Some(anchor_y) = anchor_y_map.get(&nf.fid) else {
+                        continue;
+                    };
+                    let tx = if nf.is_left {
+                        nf.margin_left
+                    } else {
+                        (cw - nf.width - nf.margin_right).max(0.0)
+                    };
+                    nf.target = Some((*anchor_y, tx));
+                }
+                // R5446：嵌套 float 高补测——collector 在步 6 入口取样 `child.height`，
+                // 此刻 taffy 对 float 叶子的内容高欠计恒 0（R3787 直接臂同问题，彼处由
+                // float_h_backfill 按其 DOM 子树补测）；0 高致排除带被 w/h 过滤丢弃 +
+                // float_bottom 恒 0 → 容器高度塌 0（floats-149 div.block 绿条消失实证）。
+                // 补测值只进 `nf.height`（exclusion/float_bottom 消费），不写 LayoutBox
+                // ——后继 pass 与 paint 路径各有自己的回填语义。kill-switch 同直接臂
+                // `ZW_FLOAT_H_BACKFILL=0`。
+                if std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0") {
+                    for nf in &mut nested {
+                        if nf.height > 0.0 {
+                            continue;
+                        }
+                        let fid = nf.fid;
+                        let width = nf.width;
+                        let m = measure_text_content(
+                            doc,
+                            styles,
+                            fid,
+                            Size {
+                                width: Some(width),
+                                height: None,
+                            },
+                            Size {
+                                width: AvailableSpace::Definite(width),
+                                height: AvailableSpace::Definite(f32::INFINITY),
+                            },
+                            img_intrinsic_sizes,
+                            inline_fonts,
+                            // R4332：float 非 run-in 后继块，无前缀可并入。
+                            None,
+                        );
+                        if m.height > nf.height {
+                            nf.height = m.height;
+                        }
                     }
                 }
             }
@@ -3193,14 +3528,14 @@ pub(crate) fn remeasure_text_with_float_exclusions(
         // 已有高度的 float（h>0，如 007 的 80px）不重复测量（零开销）。
         // kill-switch `ZW_FLOAT_H_BACKFILL=0` 回退（default-on）。
         let float_h_backfill = std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0");
-        let exclusions: Vec<FloatExclusion> = box_node
+        let mut exclusions: Vec<FloatExclusion> = box_node
             .children
             .iter()
             .filter(|c| !matches!(c.float, FloatValue::None))
             .filter_map(|c| {
                 // c.y 现在是相对于父级内容区域的坐标（与 taffy 一致）
                 let rel_y = c.y;
-                if rel_y < 0.0 || c.width <= 0.0 {
+                if c.width <= 0.0 {
                     return None;
                 }
                 // R3787：h<=0 的 float 按其 DOM 子树补测内容高（宽用自身 width；容器宽
@@ -3234,17 +3569,52 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 if height <= 0.0 {
                     return None;
                 }
+                // R5442：按 margin-box 带判弃/裁顶（旧 border 顶 rel_y<0 整带丢弃）。
+                // 带顶 = border 顶 − mt（R5312 margin-box 口径）；带底 ≤ 0（整带在容器
+                // 顶上方）不约束任何行 → 丢弃；跨顶带裁顶保留可见段——锚位门放开负 mt
+                // float 后 test4 形（img mt −30 静态位 −30）带恰为 [0,15]，文本按规范绕
+                // 可见段排（R5439 oracle：spec 文本带 rel 15）。IFC 行盒 y ≥ 0，裁顶对
+                // 既有 rel_y ≥ 0 带的行排不可见。
+                let band_top = rel_y - c.margin_top;
+                let band_bottom = band_top + (c.margin_top + height + c.margin_bottom);
+                if band_bottom <= 0.0 {
+                    return None;
+                }
+                let clipped_top = band_top.max(0.0);
                 Some(FloatExclusion {
                     // R5312：margin-box 口径（同 compute_final own_floats——taffy native
                     // float 下 c.x/c.y 为 border-box 位，`+margin` 双计致 span 挤行/右移）。
-                    y: rel_y - c.margin_top,
-                    height: c.margin_top + height + c.margin_bottom,
+                    y: clipped_top,
+                    height: band_bottom - clipped_top,
                     width: c.width + c.margin_left + c.margin_right,
                     x: c.x - c.margin_left,
                     is_left: matches!(c.float, FloatValue::Left),
                 })
             })
             .collect();
+        // R5446：嵌套 float 排除带——margin-box 口径同上，y 用锚目标（此刻盒 y 仍是
+        // wrapper 帧堆叠位，sync 后才回写目标位）。
+        for nf in &nested {
+            let Some((ty, tx)) = nf.target else {
+                continue;
+            };
+            if nf.width <= 0.0 || nf.height <= 0.0 {
+                continue;
+            }
+            let band_top = ty - nf.margin_top;
+            let band_bottom = band_top + (nf.margin_top + nf.height + nf.margin_bottom);
+            if band_bottom <= 0.0 {
+                continue;
+            }
+            let clipped_top = band_top.max(0.0);
+            exclusions.push(FloatExclusion {
+                y: clipped_top,
+                height: band_bottom - clipped_top,
+                width: nf.width + nf.margin_left + nf.margin_right,
+                x: tx - nf.margin_left,
+                is_left: nf.is_left,
+            });
+        }
 
         // 如果有排除区域且容器有行内级内容
         // R3783：旧 gate `!exclusions.is_empty()`——float 子此刻 h=0（未测量）时 exclusion
@@ -3331,6 +3701,16 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 // 会与 float 重叠（c414-flt-fit-001 的 br img 落在首行起点）。all-or-nothing
                 // 语义（任一 atomic 子缺 fragment 即整体不动）防半同步撕裂。
                 sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles);
+                // R5446：嵌套 float 目标位回写（sync 已定 wrapper 盒几何，父链偏移取现值）。
+                if !nested.is_empty() {
+                    let targets: Vec<(NodeId, f32, f32)> = nested
+                        .iter()
+                        .filter_map(|nf| nf.target.map(|(ty, tx)| (nf.fid, tx, ty)))
+                        .collect();
+                    if !targets.is_empty() {
+                        apply_nested_float_writeback(box_node, &targets, 0.0, 0.0);
+                    }
+                }
             }
 
             // R3784：clamp 点后的 float 子隐藏（css-overflow-4 with-floats-003：「floats
@@ -3377,6 +3757,13 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .iter()
                 .filter(|c| !matches!(c.float, FloatValue::None) && !c.line_clamp_hidden)
                 .map(|c| c.y + c.height + c.margin_bottom)
+                .chain(
+                    // R5446：嵌套 float 底计入（锚目标 + margin-box 底；盒 y 此刻仍是
+                    // wrapper 帧位不可用）。
+                    nested
+                        .iter()
+                        .filter_map(|nf| nf.target.map(|(ty, _)| ty + nf.height + nf.margin_bottom)),
+                )
                 .fold(0.0_f32, f32::max);
 
             // 使用文本和 float 中较大的高度
@@ -3387,11 +3774,12 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             // BFC 触发集（§9.4.1）：is_flow_root（flow-root/inline-block/contain:layout|
             // paint）+ float/abspos/fixed 自身 + multicol + 布局容器（flex/grid/table 系，
             // 高度路径不同但保守并入）+ table-caption + overflow 非 visible。
-            // env ZW_IFC_AUTOHEIGHT_BFC=1 启用（**default-off**——机制按 §10.6.3/§10.6.7
-            // 正确且 chromium oracle 探针吻合，但 floats-no-content-beside-001 /
-            // floats-clear-multicol-001 暴露 cleared-br 行位/多列内部两处被旧高度掩盖
-            // 的既存偏差，default-on 为净 +1 红；待后续轮修清后翻默认）。default-off =
-            // 退回无条件 max(float_bottom) 旧行为。
+            // env ZW_IFC_AUTOHEIGHT_BFC=0 回退（R5470 翻默认 **default-on**——机制按
+            // §10.6.3/§10.6.7 正确且 chromium oracle 探针吻合；c5525-fltmrgn 最小页
+            // min-a 实证 float extent 计入普通块高使前驱后兄弟位 +15px 偏低，与
+            // R5470 兄弟传播臂配套）。R5026 时代 default-off 记录的两处暴露
+            //（floats-no-content-beside-001 / floats-clear-multicol-001 的 cleared-br
+            // 行位/多列内部既存偏差）随传播臂 A/B 复核，见 docs/goal/rendering-compat。
             let establishes_bfc = box_node.is_flow_root
                 || !matches!(box_node.float, FloatValue::None)
                 || box_node.is_absolute
@@ -3401,8 +3789,19 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 || box_node.is_table_caption
                 || !matches!(box_node.overflow_x, OverflowClip::Visible)
                 || !matches!(box_node.overflow_y, OverflowClip::Visible);
-            let bfc_gate = std::env::var("ZW_IFC_AUTOHEIGHT_BFC").as_deref() == Ok("1");
-            let content_height = if bfc_gate && !establishes_bfc {
+            let bfc_gate = std::env::var("ZW_IFC_AUTOHEIGHT_BFC").as_deref() != Ok("0");
+            // R5470：行盒证据门——text_height=0（IFC 零行盒）时行盒底不可信，不得据以
+            // 收窄：floats-149 的 .block 流内内容经 display:inline div 中间层物化后子
+            // span 块化 float（§9.7 块化＝BFC 根），文本行合法归属 float 自身 IFC
+            //（R5475 已落盘单行 float 自持行盒），本容器 IFC 收集 0 文本行＝spec 正确
+            //（收集器视块级 span 发 FloatAnchor 不下探，chromium 同构）而非行盒归属
+            // 缺陷——零行盒普通块高度真值来自 float extent（§10.6.7 域），塌缩到
+            // text_height=0 即绿条消失（floats-149 形）。R5476 复核定谳：**恒久保留**，
+            // 非「待行盒归属修复后移除」的回退臂。multicol 子树同退旧口径
+            //（floats-clear-multicol-001：列断流里 float 参与列内布局并撑列，§10.6.3
+            // 单列收窄把 .container 250→20 致 br clear 的 clearance/列位判定链断，
+            // clear 从第三列 float 尾错回第一列）。
+            let content_height = if bfc_gate && !establishes_bfc && text_height > 0.0 && !in_multicol {
                 text_height
             } else {
                 text_height.max(float_bottom)
@@ -3484,8 +3883,95 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     }
 
     // 递归处理子容器
-    for child in &mut box_node.children {
-        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes, inline_fonts);
+    // R5446：认领传递——本容器已认领的顶层子（嵌套 float 归容器机制）与继承认领子树
+    // 中的 inline wrapper 跳过 float 体；块级/原子/BFC 子不受继承认领影响（其子树
+    // float 归自身容器）。
+    // R5470：float 子树重测后的兄弟重锚——含 float+inline 内容的块在 taffy 层是
+    // collapse-through（行内内容对 taffy 块堆叠不可见，taffy-raw 实证 h=0 且折链吃掉
+    // 兄弟 margin），真实高度步 6 才物化；重测后首个后继流内兄弟须落到生长块
+    // margin-box 堆叠位 = child.y + child.height + collapse(child.mb, sib.mt)，其后
+    // 兄弟随正差整体平移（保留 taffy 兄弟间距与 clearance/BFC 避让的合法超额——
+    // 只正差下推，不回拉）。float 子自身脱流不重锚（流兄弟不避它定位）；abs/fixed
+    // 不动；float 兄弟仅在生长块旧底边之下随动。容器高按尾流内兄弟 margin-box
+    // 堆叠底重算（只升不降）。纵排块轴为 x，不处理（FIXME: vertical 域待探）；
+    // multicol 子树不处理（floats-clear-multicol-001：列断流内兄弟沿列断切分，
+    // 单列堆叠假设把 br clear 后的 .clear 推出列到 303/第一列，multicol 亦被撑高）。
+    // kill-switch `ZW_FLOAT_REMEASURE_SIB_SHIFT=0` 回退。
+    let mut stacking_push: f32 = 0.0;
+    let subtree_in_multicol = in_multicol || box_node.is_multicol;
+    for idx in 0..box_node.children.len() {
+        let child_claimed = nested_claimed.contains(&idx)
+            || (claimed_nested_floats && nested_float_wrapper_descendable(&box_node.children[idx], styles));
+        let child_height_before = box_node.children[idx].height;
+        remeasure_text_with_float_exclusions_inner(
+            &mut box_node.children[idx],
+            doc,
+            styles,
+            img_intrinsic_sizes,
+            inline_fonts,
+            child_claimed,
+            subtree_in_multicol,
+        );
+        if !*FLOAT_REMEASURE_SIB_SHIFT || subtree_in_multicol || box_node.writing_mode.is_vertical_block_flow() {
+            continue;
+        }
+        let child = &box_node.children[idx];
+        // 仅流内块级且本步高度物化（|Δh| > 0.5）的块参与重锚——高度未变时 taffy
+        // 折叠（float-only 容器 §8.3.1 塌穿）本就合规；高度物化 = 真实行内容落位，
+        // taffy 折链基失效。无 float 块高度不变，天然不触发。
+        if !matches!(child.float, FloatValue::None)
+            || child.is_absolute
+            || child.is_fixed
+            || !child.is_block_level
+            || (child.height - child_height_before).abs() <= 0.5
+        {
+            continue;
+        }
+        let Some(first_sib) = box_node.children[idx + 1..]
+            .iter()
+            .position(|s| !s.is_absolute && !s.is_fixed && matches!(s.float, FloatValue::None))
+        else {
+            continue;
+        };
+        let sib_idx = idx + 1 + first_sib;
+        let gap = crate::margin_collapse::collapse_two_margins(
+            box_node.children[idx].margin_bottom,
+            box_node.children[sib_idx].margin_top,
+        );
+        let target_y = box_node.children[idx].y + box_node.children[idx].height + gap;
+        let push = target_y - box_node.children[sib_idx].y;
+        if push <= 0.5 {
+            continue;
+        }
+        let grown_floor = box_node.children[idx].y + child_height_before;
+        for sib in box_node.children[idx + 1..].iter_mut() {
+            if sib.is_absolute || sib.is_fixed {
+                continue;
+            }
+            if !matches!(sib.float, FloatValue::None) {
+                if sib.y >= grown_floor - 0.5 {
+                    sib.y += push;
+                }
+                continue;
+            }
+            sib.y += push;
+        }
+        stacking_push += push;
+    }
+    if stacking_push > 0.5 && *FLOAT_REMEASURE_SIB_SHIFT {
+        // 尾流内兄弟 margin-box 堆叠底重算容器高（taffy 折链基不再可信，只升不降）
+        if let Some(last) = box_node
+            .children
+            .iter()
+            .rev()
+            .find(|s| !s.is_absolute && !s.is_fixed && matches!(s.float, FloatValue::None))
+        {
+            let stacked_bottom = last.y + last.height + last.margin_bottom;
+            if stacked_bottom > box_node.content_height + 0.5 {
+                box_node.height += stacked_bottom - box_node.content_height;
+                box_node.content_height = stacked_bottom;
+            }
+        }
     }
 }
 
@@ -3958,7 +4444,13 @@ pub(crate) fn remeasure_inline_only_containers(
 
     // 检查此容器是否有 inline-level 子元素（is_block_level == false）
     // 且不包含 float 子元素（float 容器由 remeasure_text_with_float_exclusions 处理）
-    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    // R5446：嵌套 float（inline wrapper 子树）同域并入——否则本重测按纯 inline 容器
+    // 覆写容器级刚写入的 float 高/绕排几何（与直接 float 容器同一豁免语义；vertical
+    // 容器不入，与步 6 收集门同口径）。
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None))
+        || (nested_inline_float_enabled()
+            && !box_node.writing_mode.is_vertical_block_flow()
+            && has_nested_inline_float(box_node, styles));
     // R5218：inline-flex/inline-grid 子（is_block_level=true）计入 inline 级——纯原子
     // 族行容器也须进 IFC 重测合成行盒高。
     // R5395：inline-table 子同域计入（CSS2 §9.2.2/§9.7 行内级，R5096 判例同源；
@@ -3969,18 +4461,55 @@ pub(crate) fn remeasure_inline_only_containers(
     // IFC 不收表尺寸、收缩臂豁免同撤，逐字节旧行为）。
     static R5395_INLINE_TABLE_ENTRY: std::sync::LazyLock<bool> =
         std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_TABLE_IB_SIZING").as_deref() != Ok("0"));
+    // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
+    //（content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
+    // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
+    // content_height≈0 守卫避免覆盖 taffy 已正确测量的块（font-feature/multicol-fill-auto/abspos 回归源）。
+    // （R4 前移至此：shadow 匿名叶 gate 的 has_inline_children 兜底臂同源消费，见下。）
+    let has_dom_text = box_node.node_id.is_some_and(|id| {
+        doc.child_nodes(id)
+            .iter()
+            .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+    });
+    // R4 兜底臂（上方 has_inline_children 第二析取支）用**非空白** DOM 文本口径——
+    // shadow host 元素子移入 shadow 树后残留的标签间空白文本节点（004 host1:
+    // slot1 移走 + A.remove 后仅余 "\n  "）不算可测内容：IFC 对纯空白测得 total 0，
+    // 兜底照旧放行重测 → 收缩臂照旧清 0。contents 文本提升（R3848）页面为实文本，
+    // 非空白口径足以保住其重测（display-contents-text-inherit 等字节不变）。
+    let has_dom_non_ws_text = box_node.node_id.is_some_and(|id| {
+        doc.child_nodes(id).iter().any(|c| {
+            doc.get(*c).is_some_and(|n| match &n.kind {
+                NodeKind::Text(t) => !t.content.trim().is_empty(),
+                _ => false,
+            })
+        })
+    });
+    // R4（45 号 M3 第二臂）：shadow host 盒内 inline 级「子」仅为 R4 匿名文本叶
+    //（Display::Block，is_block_level 旗标沿 flex/grid 匿名项约定为 false）时，本 IFC
+    // 重测不得介入——容器几何已由 taffy 按匿名叶块流正确解出（M3 R4 taffy 树层已验证），
+    // 而 collect_inline_items 按容器 **DOM 子**收集（flat tree 之外无内容：slot 回退
+    // 文本在 shadow 树内），测得 total 0 → 「允许减小高度」臂把 host 高清 0、后继兄弟
+    // 整体上移一行（slot-fallback-content-004 基线：host h 18→0，p2 行带 89→71）。
+    // flex/grid 匿名项同旗标不入此域（容器 is_layout_container 入口早退）；contents 文本
+    // 提升（R3848）与混排 shadow host 页面容器有 DOM 直挂文本 → has_dom_text 兜底臂
+    // 照旧重测（display-contents-text-inherit 两行文本等字节不变）。
+    let has_dom_anon_text_leaves = box_node
+        .children
+        .iter()
+        .any(|c| c.is_anonymous_text_item && !c.is_absolute && !c.is_fixed);
     let has_inline_children = box_node.children.iter().any(|c| {
-        (!c.is_block_level
-            || is_atomic_inline_family_box(c, styles)
-            || (*R5395_INLINE_TABLE_ENTRY
-                && c.node_id.is_some_and(|id| {
-                    styles
-                        .get(&id)
-                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
-                })))
+        (!c.is_anonymous_text_item
+            && (!c.is_block_level
+                || is_atomic_inline_family_box(c, styles)
+                || (*R5395_INLINE_TABLE_ENTRY
+                    && c.node_id.is_some_and(|id| {
+                        styles
+                            .get(&id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
+                    }))))
             && !c.is_absolute
             && !c.is_fixed
-    });
+    }) || (has_dom_anon_text_leaves && has_dom_non_ws_text);
     // R4108（CSS2 §9.2.1.1 块容器的匿名块序列 + §10.3.2 replaced inline）：容器**同时**有
     // 块级 in-flow 子与 inline 级子、且其 inline 级子**全部为 replaced 类标签**（svg/canvas/
     // img 等——converter 映射 taffy Block 按匿名块序列堆叠，几何已正确）时跳过本 remeasure：
@@ -4100,15 +4629,8 @@ pub(crate) fn remeasure_inline_only_containers(
                     })
                     .unwrap_or(false)
             });
-    // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
-    // （content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
-    // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
-    // content_height≈0 守卫避免覆盖 taffy 已正确测量的块（font-feature/multicol-fill-auto/abspos 回归源）。
-    let has_dom_text = box_node.node_id.is_some_and(|id| {
-        doc.child_nodes(id)
-            .iter()
-            .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
-    });
+    // R105 的 has_dom_text 计算已前移至 has_inline_children 处（R4 shadow 匿名叶 gate
+    // 兜底臂同源消费），语义不变，此处不再重复绑定。
     // R3992：并入态 run-in 跳过 DOM 文本 remeasure——其内容已由后继块 IFC 渲染，
     // 此处按 DOM 子重测会把单行高回填进 0 高 leaf（run-in-basic-001 target 下移 19px）。
     // 判定与 measure gate / build_subtree 分派同源。

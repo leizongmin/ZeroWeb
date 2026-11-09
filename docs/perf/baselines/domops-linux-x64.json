@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "dom-ops-baseline",
+  "platform_class": "linux-x64",
+  "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+  "cpu_cores": 16,
+  "os": "linux",
+  "recorded_at": "2026-11-04T12:06:07Z",
+  "git_sha": "700d6ddb7",
+  "git_dirty": true,
+  "run_config": {
+    "config_hash": "aa6fe820890375e424a39c639b83fa6f03755a82596584380c825fd28ddcfda3"
+  },
+  "justification": "dom-ops v1.1 初始基线：M4 门禁接线首次录制，3 哨兵行双浏览器（thrash/geom.read.same/replace.pool），采集窗口 load<=1.29（采样器证词），全行语义 PASS",
+  "budgets": {
+    "microbench_factor": 1.35,
+    "microbench_floor_ns": 1.0,
+    "page_factor": 1.15,
+    "page_constant_ms": 40.0,
+    "rss_factor": 1.20,
+    "rss_constant_mb": 128.0,
+    "hard_total_ms": 2000.0
+  },
+  "metrics": [
+    {
+      "id": "mb/domops/zeroweb/style-geometry/geom.write_read.thrash",
+      "p95": 13400900,
+      "tier": "budget"
+    },
+    {
+      "id": "mb/domops/zeroweb/style-geometry/geom.read.same",
+      "p95": 24498,
+      "tier": "budget"
+    },
+    {
+      "id": "mb/domops/zeroweb/mutation/mut.replace.pool",
+      "p95": 6949000,
+      "tier": "budget"
+    },
+    {
+      "id": "mb/domops/chrome/style-geometry/geom.write_read.thrash",
+      "p95": 1555,
+      "tier": "budget"
+    },
+    {
+      "id": "mb/domops/chrome/style-geometry/geom.read.same",
+      "p95": 456,
+      "tier": "budget"
+    },
+    {
+      "id": "mb/domops/chrome/mutation/mut.replace.pool",
+      "p95": 17650,
+      "tier": "budget"
+    }
+  ]
+}

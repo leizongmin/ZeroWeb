@@ -2839,3 +2839,43 @@ fn test_query_selector_focus_state_driven() {
     assert!(!doc.is_focus_element(other), "清焦点后 is_focus_element 应返 false");
     assert!(!doc.has_focus_within(bd), "清焦点后 has_focus_within 应返 false");
 }
+
+// 45 号 M1：焦点在 shadow 树内 → 焦点链上各层 shadow host 也匹配 `:focus` 权威判定
+//（composed 焦点链；WPT shadow-dom/focus/focus-pseudo-on-shadow-host-{1,2,3} 判据面）。
+// host 的普通祖先与兄弟不得延伸（:focus ≠ :focus-within），非 shadow 页行为不变。
+#[test]
+fn test_is_focus_element_shadow_host_chain() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let body = doc.create_element("body");
+    doc.append_child(root, body).unwrap();
+    let host = doc.create_element("div");
+    doc.append_child(body, host).unwrap();
+    let sibling = doc.create_element("div");
+    doc.append_child(body, sibling).unwrap();
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let inner = doc.create_element("div");
+    doc.append_child(shadow, inner).unwrap();
+
+    doc.set_focus_element(Some(inner));
+    assert!(doc.is_focus_element(inner), "焦点元素自身应匹配 :focus");
+    assert!(doc.is_focus_element(host), "包含焦点元素的 shadow host 应匹配 :focus");
+    assert!(!doc.is_focus_element(body), "host 之上的普通祖先不得延伸 :focus");
+    assert!(!doc.is_focus_element(sibling), "无关兄弟不得匹配 :focus");
+
+    // 嵌套 shadow 树：焦点在最深树内，两层 host 都在焦点链上。
+    let shadow2 = doc.attach_shadow(inner, ShadowRootMode::Open).unwrap();
+    let deepest = doc.create_element("input");
+    doc.append_child(shadow2, deepest).unwrap();
+    doc.set_focus_element(Some(deepest));
+    assert!(doc.is_focus_element(deepest), "最深焦点元素应匹配 :focus");
+    assert!(doc.is_focus_element(inner), "内层 shadow host 应匹配 :focus");
+    assert!(doc.is_focus_element(host), "外层 shadow host 应匹配 :focus");
+    assert!(!doc.is_focus_element(body), "两层 host 之上的 body 仍不延伸");
+
+    // 焦点回到 light DOM：焦点链无 shadow 边界，只有焦点元素自身匹配。
+    doc.set_focus_element(Some(sibling));
+    assert!(doc.is_focus_element(sibling), "light DOM 焦点元素自身应匹配");
+    assert!(!doc.is_focus_element(host), "焦点不在 shadow 树内时 host 不匹配");
+    assert!(!doc.is_focus_element(inner), "shadow 树内元素在焦点丢失后不匹配");
+}

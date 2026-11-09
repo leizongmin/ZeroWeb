@@ -10,13 +10,14 @@ use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
-    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info,
-    extract_script_referrer_policies, extract_script_source_positions, extract_style_elements_csp,
-    extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key, page_script_error_check,
-    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
-    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
-    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,
-    script_report_module_failure, script_run_classic_page, script_set_current_script,
+    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_sched, extract_script_credentials,
+    extract_script_csp_info, extract_script_referrer_policies, extract_script_source_positions,
+    extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
+    register_dom_callbacks, resolve_document_url, script_classic_catch_tail, script_clear_current_script,
+    script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
+    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_cache_probe,
+    script_module_entry_precheck, script_module_eval_error_report, script_report_module_failure,
+    script_report_module_failure_cached, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -25,9 +26,9 @@ use zero_engine::script_dispatch_native_event;
 use zero_net::{
     FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url, is_javascript_mime,
 };
-use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
+use zero_render_foundation::image_cache::{AnimationData, ImageCache, ImageData, ImageKey};
 
-use crate::image_decoder::decode_image;
+use crate::image_decoder::{decode_data_uri_animation, decode_image_with_animation, insert_image_decoded};
 use zero_page_runtime::{
     ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
     ServiceWorkerVersionSlots, validate_service_worker_registration_for_document,
@@ -175,6 +176,17 @@ struct ServiceWorkerHostContext {
 /// R34xx：图片源获取器（headless/testharness 路径 fetch `<img src>` / CSS `url()` 图片；
 /// None → 走 HTTP 网络）。返回图片字节；返回 None 表示该 URL 无法本地提供（回退网络）。
 pub type ImageSourceFetcher = std::sync::Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
+
+/// s293（html-semantics M2）：运行核 settle 已补同步的图片布局信号表。IDL 信号门
+/// （s292 `__zwImgHasIntrinsicSignal`）在注册期克隆 cached_* 快照，运行时对 cached_*
+/// 本体的插入对闭包不可见——补表同时写本容器，门按同键并列查询。字段口径同
+/// cached_image_ratios / cached_image_sizes / cached_image_no_ratio（R717 分类）。
+#[derive(Default)]
+struct RuntimeImageSignalTables {
+    sizes: HashMap<u64, (f32, f32)>,
+    ratios: HashMap<u64, f32>,
+    no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
+}
 
 /// s256（动态 import 延迟决议）：外链动态 `import()` 取回延迟提供器（毫秒；
 /// 输入为宿主解析后的 URL）。headless/runner 路径建模 trickle 类慢模块源；
@@ -767,6 +779,14 @@ pub struct WebView {
     /// width/height 非双绝对且无 viewBox 的 SVG 既无确定固有尺寸也无固有宽高比，布局不设
     /// aspect_ratio，缺失维按 default object size（宽 300 / 高 150）回退。
     cached_image_no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
+    /// s293（html-semantics M2）：运行核 settle 待补同步的 img 选中源 URL 队列。shim
+    /// 位图 settle 臂经 `__zwImgSyncRuntimeTable` 入队（回调闭包持 Arc 克隆，&mut 排空
+    /// 在 [`Self::apply_runtime_image_syncs`]——异步回调泵轮内逐 resolve 后调用）。
+    runtime_img_sync_pending: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// s293：已补同步进 cached_* 三表的运行时图片信号。IDL 布局信号门（s292
+    /// `__zwImgHasIntrinsicSignal`）注册期快照冻结，运行时 cached_* 插入对它不可见——
+    /// 门经本容器并列查询补表增量。
+    runtime_img_sync_applied: std::sync::Arc<std::sync::Mutex<RuntimeImageSignalTables>>,
     /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
     font_resolver: std::collections::HashMap<String, u32>,
     /// per-family 行度量与 `ex`/`ch` aspect 映射。字体相对单位默认启用；
@@ -950,6 +970,8 @@ impl WebView {
             batch_handle_selectors: HashMap::new(),
             cached_image_ratios: HashMap::new(),
             cached_image_no_ratio: HashMap::new(),
+            runtime_img_sync_pending: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            runtime_img_sync_applied: std::sync::Arc::new(std::sync::Mutex::new(RuntimeImageSignalTables::default())),
             font_resolver: HashMap::new(),
             font_metric_map: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -1484,6 +1506,14 @@ impl WebView {
             return (Vec::new(), String::new());
         }
         let base = url::Url::parse(base_url).ok();
+        // s315：`<base href>` 前移基准（HTML document-base-url——文档序首个带 href 的
+        // base；相对 href 按其 join，样式表与脚本既有 `script_effective_base_urls` 面
+        // 对齐）。driving：stylesheet-with-base。页未声明 base（或 join 失败）时维持
+        // 文档 URL 基准——不得清空（zip 对 None 直接得 None 会丢基准）。
+        let base = match (base, zero_engine::extract_document_base_href(html)) {
+            (Some(u), Some(b)) => u.join(&b).ok().or(Some(u)),
+            (base, _) => base,
+        };
         // 每 link 一个桶（按 links 文档序）；@import 子表文本进根 link 桶。
         let mut buckets: Vec<String> = vec![String::new(); links.len()];
         // s89：@import 递归抓取（对齐 async_load `poll_stylesheets` R2411 语义——相对
@@ -1684,71 +1714,80 @@ impl WebView {
             // 解码（in-scope img 子资源，goal line 118 SVG-as-img；render-foundation 共用按 magic
             // 分派）。data: 非相对，key = image_resource_key(src)（与 painter 查找一致：data: 经
             // is_non_relative_href 原样保留）。失败仅 warn 不阻断（与 HTTP fetch 失败同，宽松降级）。
-            let (img, key_hash): (ImageData, u64) = if src.starts_with("data:") {
-                match decode_data_uri(src) {
-                    Ok(d) => (d, image_resource_key(src, None)),
-                    Err(e) => {
-                        tracing::warn!("data: URI image decode failed: {e}");
-                        continue;
-                    }
-                }
-            } else {
-                let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
-                    Some(u) => u.to_string(),
-                    None => src.to_string(),
-                };
-                // security-hardening M3：img Mixed Content 检查点（可选阻塞型——HTTPS
-                // 页面 HTTP 图片自动升级 HTTPS 后抓取；阻塞/HSTS 判定同走
-                // check_resource_url）。缓存键仍按 markup 可见的原始 abs（painter 按
-                // 原始 src 解析查找，升级键会失配）。spec
-                // https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
-                let fetch_url = if self.config.mixed_content_enforcement {
-                    match self.security_context.check_resource_url(&abs, "img") {
-                        ResourceCheckResult::Allow => abs.clone(),
-                        ResourceCheckResult::Upgraded(upgraded) => upgraded,
-                        ResourceCheckResult::Blocked(reason) => {
-                            tracing::warn!("mixed content blocked image {abs}: {reason}");
+            // s310：(首帧, 动画时间线, 来自缓存)——动画感知装载；from_cache 置位时
+            // 尾部不重插（重插会以 animation: None 覆写动画条目并冻结活跃帧）。
+            let (img, anim, key_hash, from_cache): (ImageData, Option<AnimationData>, u64, bool) =
+                if src.starts_with("data:") {
+                    // R1987：data: URI（PNG/JPEG/WebP/SVG，base64 或 url-encoded）→ 直接
+                    // 解码（in-scope img 子资源，goal line 118 SVG-as-img）。s310：动画
+                    // 感知解码（data: 恒进程内，动画 GIF/WebP 携带时间线）。data: 非相对，
+                    // key = image_resource_key(src)（与 painter 查找一致：data: 经
+                    // is_non_relative_href 原样保留）。失败仅 warn 不阻断（与 HTTP fetch
+                    // 失败同，宽松降级）。
+                    match decode_data_uri_animation(src) {
+                        Ok((d, anim)) => (d, anim, image_resource_key(src, None), false),
+                        Err(e) => {
+                            tracing::warn!("data: URI image decode failed: {e}");
                             continue;
                         }
                     }
                 } else {
-                    abs.clone()
-                };
-                // 性能门禁优化 S5（2026-08-08）：ImageCache 命中即跳过网络——DOM 变更后
-                // reload_html_after_script 每次全页同步重抓图片（webview.rs:452 每图
-                // 全新 TCP+TLS，UI 线程阻塞）是「日志资源请求不断」的最大来源。
-                let key_hash = image_resource_key(&abs, None);
-                match self.image_cache.get(&ImageKey::new(key_hash)) {
-                    Some(cached) => (cached.clone(), key_hash),
-                    None => {
-                        // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
-                        //（wpt-data 文件映射）；None → 回退 HTTP 网络。
-                        let fetched = self
-                            .image_source_fetcher
-                            .as_ref()
-                            .and_then(|f| f(&fetch_url))
-                            .or_else(|| {
-                                self.resource_get(&fetch_url, FetchPriority::MEDIUM, "image")
-                                    .ok()
-                                    .map(|resp| resp.body)
-                            });
-                        let bytes = match fetched {
-                            Some(bytes) => bytes,
-                            None => {
-                                tracing::warn!("image {abs} fetch failed");
-                                continue;
-                            }
-                        };
-                        match decode_image(&bytes) {
-                            Ok(img) => (img, key_hash),
-                            Err(e) => {
-                                tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
+                    let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                        Some(u) => u.to_string(),
+                        None => src.to_string(),
+                    };
+                    // security-hardening M3：img Mixed Content 检查点（可选阻塞型——HTTPS
+                    // 页面 HTTP 图片自动升级 HTTPS 后抓取；阻塞/HSTS 判定同走
+                    // check_resource_url）。缓存键仍按 markup 可见的原始 abs（painter 按
+                    // 原始 src 解析查找，升级键会失配）。spec
+                    // https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+                    let fetch_url = if self.config.mixed_content_enforcement {
+                        match self.security_context.check_resource_url(&abs, "img") {
+                            ResourceCheckResult::Allow => abs.clone(),
+                            ResourceCheckResult::Upgraded(upgraded) => upgraded,
+                            ResourceCheckResult::Blocked(reason) => {
+                                tracing::warn!("mixed content blocked image {abs}: {reason}");
                                 continue;
                             }
                         }
+                    } else {
+                        abs.clone()
+                    };
+                    // 性能门禁优化 S5（2026-08-08）：ImageCache 命中即跳过网络——DOM 变更后
+                    // reload_html_after_script 每次全页同步重抓图片（webview.rs:452 每图
+                    // 全新 TCP+TLS，UI 线程阻塞）是「日志资源请求不断」的最大来源。
+                    let key_hash = image_resource_key(&abs, None);
+                    match self.image_cache.get(&ImageKey::new(key_hash)) {
+                        Some(cached) => (cached.clone(), None, key_hash, true),
+                        None => {
+                            // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
+                            //（wpt-data 文件映射）；None → 回退 HTTP 网络。
+                            let fetched =
+                                self.image_source_fetcher
+                                    .as_ref()
+                                    .and_then(|f| f(&fetch_url))
+                                    .or_else(|| {
+                                        self.resource_get(&fetch_url, FetchPriority::MEDIUM, "image")
+                                            .ok()
+                                            .map(|resp| resp.body)
+                                    });
+                            let bytes = match fetched {
+                                Some(bytes) => bytes,
+                                None => {
+                                    tracing::warn!("image {abs} fetch failed");
+                                    continue;
+                                }
+                            };
+                            match decode_image_with_animation(&bytes) {
+                                Ok((img, anim)) => (img, anim, key_hash, false),
+                                Err(e) => {
+                                    tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
+                                    continue;
+                                }
+                            }
+                        }
                     }
-                }
-            };
+                };
             let key = ImageKey::new(key_hash);
             // R717：ratio-only SVG（%-dim / viewBox-only）无确定固有尺寸，仅有 viewBox 比——
             // 进 image_ratios，**不**进 image_sizes（任何确定 size 都会被 taffy 当作固有高度，
@@ -1769,9 +1808,132 @@ impl WebView {
                     image_no_ratio.insert(key_hash, dims);
                 }
             }
-            self.image_cache.insert_with_key(key, img);
+            // s310：缓存 dedup 命中不重插（get 已刷 LRU 面且重插会冻结动画条目）。
+            if !from_cache {
+                insert_image_decoded(&mut self.image_cache, key, img, anim);
+            }
         }
         (image_sizes, image_ratios, image_no_ratio, image_natural_sizes)
+    }
+
+    /// s293（html-semantics M2）：运行核 settle 补同步排空——shim 位图 settle 臂经
+    /// `__zwImgSyncRuntimeTable` 入队的选中源 URL（load 期 `extract_img_srcs` 清单外的
+    /// 运行时 img：script 注入 / srcset 换源），逐条补走 load 期同款解码 + R717 分类入
+    /// `cached_*` 三表 + `runtime_img_sync_applied`（IDL 信号门可见，快照冻结故并列容器）
+    /// + `image_cache`（paint 像素查找同键）。
+    ///
+    /// 时序契约：异步回调泵轮内逐 `resolve_async_callback` 后调用——settle 与紧随的
+    /// timer 载荷（`loadStep5275` 等待循环 → window load 断言）之间落表 + 重绘
+    /// （[`Self::repaint_after_runtime_image_sync`]），断言窗内 gBCR/IDL 读到真实布局。
+    /// runner 无渲染循环，此前 settle→load 之间无任何渲染点（探针全时点 gBCR=0x0，
+    /// naturalWidth 族 srcset 克隆 12F 勘根 2026-11-05）。
+    ///
+    /// 键/抓取口径同 [`Self::fetch_image_subresources`]（data: 原样解码入键、其余按
+    /// 文档 base join 绝对化）；运行时 fetch 已过 shim 侧 CSP 检查点（`__zwCspImgCheck`）
+    /// 与 CORS 态判定——此处不再复核，仅补布局表。已知边界：`image_natural_sizes`
+    /// 不补（pipeline 侧整表替换语义，border-image 9-slice 对运行时图暂缺——目标域
+    /// img 面不消费，与 load 期口径的差异仅此一处）。返回补表条数（0 = 无待补，
+    /// 调用方免重绘）。
+    fn apply_runtime_image_syncs(&mut self) -> usize {
+        let pending: Vec<String> = std::mem::take(&mut *self.runtime_img_sync_pending.lock().unwrap());
+        if pending.is_empty() {
+            return 0;
+        }
+        let base_url = self.current_url.clone().unwrap_or_default();
+        let mut applied = 0usize;
+        let mut seen = std::collections::HashSet::new();
+        for src in &pending {
+            if !seen.insert(src.as_str()) {
+                continue;
+            }
+            // s310：(首帧, 动画时间线, 来自缓存)——装载纪律同 fetch_image_subresources
+            //（data: 恒进程内动画感知解码；from_cache 置位时尾部不重插，防动画条目被冻结）。
+            let (img, anim, key_hash, from_cache): (ImageData, Option<AnimationData>, u64, bool) =
+                if src.starts_with("data:") {
+                    match decode_data_uri_animation(src) {
+                        Ok((d, anim)) => (d, anim, image_resource_key(src, None), false),
+                        Err(e) => {
+                            tracing::debug!("runtime image sync decode failed: {e}");
+                            continue;
+                        }
+                    }
+                } else {
+                    let abs = url::Url::parse(&base_url)
+                        .ok()
+                        .and_then(|b| b.join(src).ok())
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|| src.clone());
+                    let key_hash = image_resource_key(&abs, None);
+                    match self.image_cache.get(&ImageKey::new(key_hash)) {
+                        Some(cached) => (cached.clone(), None, key_hash, true),
+                        None => {
+                            let fetched = self.image_source_fetcher.as_ref().and_then(|f| f(&abs)).or_else(|| {
+                                self.resource_get(&abs, FetchPriority::MEDIUM, "image")
+                                    .ok()
+                                    .map(|resp| resp.body)
+                            });
+                            let bytes = match fetched {
+                                Some(bytes) => bytes,
+                                None => {
+                                    tracing::debug!("runtime image sync fetch failed: {abs}");
+                                    continue;
+                                }
+                            };
+                            match decode_image_with_animation(&bytes) {
+                                Ok((img, anim)) => (img, anim, key_hash, false),
+                                Err(e) => {
+                                    tracing::debug!("runtime image sync decode failed ({abs}): {e}");
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                };
+            // R717 分类（口径同 fetch_image_subresources）：ratio-only SVG 进 ratios、
+            // no-ratio SVG 进 no_ratio + sizes、其余图像走 sizes。
+            if let Some(ratio) = img.intrinsic_ratio() {
+                self.runtime_img_sync_applied
+                    .lock()
+                    .unwrap()
+                    .ratios
+                    .insert(key_hash, ratio);
+                self.cached_image_ratios.insert(key_hash, ratio);
+            } else {
+                let (w, h) = img
+                    .computed_intrinsic()
+                    .unwrap_or((img.width as f32, img.height as f32));
+                {
+                    let mut signal = self.runtime_img_sync_applied.lock().unwrap();
+                    signal.sizes.insert(key_hash, (w, h));
+                    if let Some(dims) = img.no_ratio_intrinsic() {
+                        signal.no_ratio.insert(key_hash, dims);
+                    }
+                }
+                self.cached_image_sizes.insert(key_hash, (w, h));
+                if let Some(dims) = img.no_ratio_intrinsic() {
+                    self.cached_image_no_ratio.insert(key_hash, dims);
+                }
+            }
+            // s310：缓存 dedup 命中不重插（同 fetch_image_subresources）。
+            if !from_cache {
+                insert_image_decoded(&mut self.image_cache, ImageKey::new(key_hash), img, anim);
+            }
+            applied += 1;
+        }
+        applied
+    }
+
+    /// s293：补表后的重绘收口——补表入 pipeline + cached viewport 重算（style/layout/
+    /// paint）+ gBCR 快照刷新。口径同 `sync_render_after_native_dom` 重绘块（live DOM
+    /// 未变，仅布局输入更新——不整表 render_html，保 shim 元素身份不换代）。
+    fn repaint_after_runtime_image_sync(&mut self) {
+        self.sync_pipeline_page_state();
+        if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
+            // repaint 只读不改 Document，cached_html/桥接换代不触发。
+            self.last_render = Some(self.absorb_render_result(&result));
+            // R150：补表后 repaint——刷新 gBCR 快照（布局随新表变化）。
+            self.refresh_layout_rect_snapshot();
+        }
     }
 
     /// R34xx：@font-face 字体同步加载（headless/testharness 路径）。从 CSS 提取 font-face，
@@ -3223,6 +3385,12 @@ impl WebView {
                         if let Some(sandbox) = self.js_sandbox.as_mut() {
                             sandbox.resolve_async_callback(&id, &result);
                         }
+                        // s293：同 drain_next_async_callback_if_pending——resolve 落地即
+                        // 排空运行核图片补表（runner 静态提交后的集中排空入口，settle
+                        // 多在此落地）。
+                        if self.apply_runtime_image_syncs() > 0 {
+                            self.repaint_after_runtime_image_sync();
+                        }
                         continue;
                     }
                     _ => {}
@@ -3237,6 +3405,11 @@ impl WebView {
                     if let Some(sandbox) = self.js_sandbox.as_mut() {
                         sandbox.resolve_async_callback(&id, &result);
                     }
+                    // s293：同 drain_next_async_callback_if_pending——resolve 落地即排空
+                    // 运行核图片补表。
+                    if self.apply_runtime_image_syncs() > 0 {
+                        self.repaint_after_runtime_image_sync();
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
@@ -3245,22 +3418,25 @@ impl WebView {
     }
 
     fn drain_async_callbacks(&mut self) {
-        let Some(sandbox) = self.js_sandbox.as_mut() else {
-            return;
-        };
-        let mut callbacks = Vec::new();
-        while let Ok((id, result)) = self.async_callback_rx.try_recv() {
-            callbacks.push((id, result));
+        {
+            let Some(sandbox) = self.js_sandbox.as_mut() else {
+                return;
+            };
+            let mut callbacks = Vec::new();
+            while let Ok((id, result)) = self.async_callback_rx.try_recv() {
+                callbacks.push((id, result));
+            }
+            for (id, result) in callbacks {
+                sandbox.resolve_async_callback(&id, &result);
+            }
         }
-        for (id, result) in callbacks {
-            sandbox.resolve_async_callback(&id, &result);
+        // s293：bulk 排空后统一补表+重绘（批内 settle 在后续泵轮/timer 载荷前可见）。
+        if self.apply_runtime_image_syncs() > 0 {
+            self.repaint_after_runtime_image_sync();
         }
     }
 
     fn drain_next_async_callback_if_pending(&mut self, timeout: std::time::Duration) {
-        let Some(sandbox) = self.js_sandbox.as_mut() else {
-            return;
-        };
         let deadline = std::time::Instant::now() + timeout;
         loop {
             // 排水预算对每次迭代生效：回调可以 setTimeout(fn, 0) 自续（service
@@ -3289,7 +3465,21 @@ impl WebView {
                 return;
             };
             let is_interval = id.starts_with("__zwint:");
+            // s293：sandbox 借用收窄到 resolve 本体——resolve 落地后需 &mut self 排空
+            // 运行核图片补表（见下）。
+            let Some(sandbox) = self.js_sandbox.as_mut() else {
+                return;
+            };
             sandbox.resolve_async_callback(&id, &result);
+            // s293：settle 位图臂经 __zwImgSyncRuntimeTable 入队的补表在本回调落地后
+            // 立即排空+重绘——同 execute 入口泵轮的 resolve 与其后脚本侧
+            // `__zw_fire_due_timers` 的 timer 载荷（loadStep5275 等待循环 → window
+            // load 断言）之间必须完成落表，断言窗才能读到真实布局几何（runner 无
+            // 渲染循环，settle→load 间原本无任何渲染点）。无 pending 时一次锁判空
+            // 早退，零开销。
+            if self.apply_runtime_image_syncs() > 0 {
+                self.repaint_after_runtime_image_sync();
+            }
             if is_interval {
                 return;
             }
@@ -3624,6 +3814,10 @@ impl WebView {
         // 标记查询参数穿入）。与 CSP info 同为序号对齐 sidecar（全 script 元素文档序
         // ），无条件提取（referrer 族页面无 CSP 配置）。
         let script_referrer_policies = extract_script_referrer_policies(&html);
+        // s338（html-semantics）：script 元素级 credentials mode（`crossorigin` 属性——
+        // 内联模块元素动态 import() 的取回 credentials；序号对齐 sidecar 同上两表）。
+        // 无条件提取（credentials 族页面无 CSP/referrer 配置）。
+        let script_credentials = extract_script_credentials(&html);
         let csp_active = self.config.csp_enforcement && self.security_context.has_document_csp();
         // security-hardening M2-s6：eval 门禁快照（v8 crate 无 codegen 写入面——shim 层
         // eval/Function 包装抛 EvalError + violation 入 connect 共享队列）。
@@ -3632,7 +3826,34 @@ impl WebView {
             .csp_enforcement
             .then(|| self.security_context.eval_violation())
             .flatten();
-        let scripts = extract_page_scripts_indexed(&html);
+        let (scripts, blocking_count) = {
+            // s342：解析器插入调度序——deferred（外链/内联 `defer` classic、无 `async`
+            // module）整体移 batch 尾按文档序执行（spec 文档解析完后执行的 deferred
+            // 列表——module 脚本隐式 defer 语义；charset-01 实证外链 module 在引擎
+            // batch 内阻塞串行执行，挪位即改执行序，parse 位只留会打乱与内联 module
+            // 的文档序交错）。async module 保持 Blocking 槽（s343 面）。稳定分桶保各组
+            // 内文档序；script_index 原样透传（CSP/referrer/credentials sidecar 表按
+            // 序号取，与执行序解耦）。取回发起随执行位后移为已知偏差（spec prepare 时
+            // 取回即发起，A/B 无案面依赖）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let mut blocking: Vec<_> = Vec::new();
+            let mut deferred: Vec<_> = Vec::new();
+            for (script, idx, sched) in extract_page_scripts_sched(&html) {
+                if matches!(sched, zero_engine::pipeline::ScriptSched::Deferred) {
+                    deferred.push((script, idx));
+                } else {
+                    blocking.push((script, idx));
+                }
+            }
+            // s365（html-semantics M2 切片 365）：交付水位线分界——deferred 相位（the-end，
+            // 全文档已解析）与阻塞交付窗（spec tokenizer 停在阻塞脚本 end tag）的边界。
+            // 循环头据此判相位：阻塞段逐脚本前推 `__zwParseCeiling`（shim script 枚举
+            // 交付门，052 面），进入 deferred 尾与循环毕清 -1（全文档可见）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let blocking_count = blocking.len();
+            blocking.extend(deferred);
+            (blocking, blocking_count)
+        };
         // s90（string-compilation base URL 面）：每脚本 parse 时刻的文档基 URL 捕获
         // 表（DOM 文档序，与 script_index 同序号空间；纯函数于原文，动态 `<base>`
         // 变更天然不回溯）。外链脚本不经此表（referrer 用自身 src，见循环内）。
@@ -3748,6 +3969,7 @@ impl WebView {
                                     credentials: None,
                                     mode: None,
                                     redirect: None,
+                                    cache: None,
                                 };
                                 let resp = match handler(&req).ok() {
                                     Some(resp) => resp,
@@ -3805,6 +4027,64 @@ impl WebView {
                     Some((w, h)) => format!("{w},{h}"),
                     None => String::new(),
                 }
+            }),
+        );
+        // s292（html-semantics M2）：__zwImgHasIntrinsicSignal —— shim img width/height
+        // IDL 渲染维臂的布局信号门。运行时创建/换源的 img（script 注入、srcset 换源）
+        // 不在 load 期 fetch_image_subresources 清单里，cached_* 布局表无该资源键——
+        // 此时布局盒走无信号 auto 回落（CB − margin 拉伸），真实渲染维与 corpus 期望
+        // （固有维/default object size）背离，IDL 读几何会把该布局缺口泄进断言面
+        // （naturalWidth 族 srcset 克隆 62 P→F 勘根 2026-11-05，s292 replica 探针；
+        // 表缺口 s293 运行时表同步收口）。门 = 三表任一含该键（快照口径同
+        // __zw_get_image_size）+ s293 补表容器（`runtime_img_sync_applied`——快照冻结，
+        // 运行时 cached_* 插入对闭包不可见，补表增量按同键并列查询）：命中 → 布局按
+        // 真实固有信号 sizing，几何臂可信；未命中 / 契约沙箱未注册 → shim 侧回落
+        // naturalDim 近似（旧行为）。
+        let img_signal_sizes = self.cached_image_sizes.clone();
+        let img_signal_ratios = self.cached_image_ratios.clone();
+        let img_signal_no_ratio = self.cached_image_no_ratio.clone();
+        let img_signal_runtime = std::sync::Arc::clone(&self.runtime_img_sync_applied);
+        let page_url_img_signal = page_url.clone();
+        sandbox.register_callback(
+            "__zwImgHasIntrinsicSignal",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                if src.is_empty() {
+                    return "0".to_string();
+                }
+                let base = page_url_img_signal.lock().unwrap();
+                let abs = zero_engine::resolve_document_url(&base, src);
+                let key = zero_engine::image_resource_key(&abs, None);
+                let runtime = img_signal_runtime.lock().unwrap();
+                let hit = img_signal_sizes.contains_key(&key)
+                    || img_signal_ratios.contains_key(&key)
+                    || img_signal_no_ratio.contains_key(&key)
+                    || runtime.sizes.contains_key(&key)
+                    || runtime.ratios.contains_key(&key)
+                    || runtime.no_ratio.contains_key(&key);
+                if hit { "1".to_string() } else { "0".to_string() }
+            }),
+        );
+        // s293（html-semantics M2）：__zwImgSyncRuntimeTable —— shim 运行核位图 settle 臂
+        // 把选中源 URL 入待补队列。load 期清单来自 extract_img_srcs（静态 HTML 源解析 +
+        // R5275 模板 walk），运行时创建/换源的 img 不在其中——cached_* 布局三表无键：
+        // 布局零盒 + 信号门关（探针 zz-s293-probe 全时点 gBCR=0x0，IDL 回落 naturalDim）。
+        // 仅入队（Arc<Mutex> 回调闭包持克隆；&mut 排空/解码/分类在
+        // [`Self::apply_runtime_image_syncs`]——异步回调泵轮钩子）。256 上限丢旧：
+        // runner 泵轮逐 resolve 排空永不触顶；无泵消费的环境封顶防滞留增长。
+        let runtime_img_pending = std::sync::Arc::clone(&self.runtime_img_sync_pending);
+        sandbox.register_callback(
+            "__zwImgSyncRuntimeTable",
+            Box::new(move |args| {
+                if let Some(src) = args.first().filter(|s| !s.is_empty()) {
+                    let mut queue = runtime_img_pending.lock().unwrap();
+                    queue.push(src.clone());
+                    if queue.len() > 256 {
+                        let excess = queue.len() - 256;
+                        queue.drain(0..excess);
+                    }
+                }
+                String::new()
             }),
         );
 
@@ -3960,6 +4240,11 @@ impl WebView {
                             .flatten(),
                         redirect: (!fetch_id.starts_with("r115iframe:"))
                             .then(|| args.get(8).filter(|value| !value.is_empty()).cloned())
+                            .flatten(),
+                        // http-cache goal M2：init.cache 六态 wire 解码（fetch_bridge
+                        // 同序 index 11；iframe 通道不吃 cache 语义——r115 藏体加载面）。
+                        cache: (!fetch_id.starts_with("r115iframe:"))
+                            .then(|| args.get(11).filter(|value| !value.is_empty()).cloned())
                             .flatten(),
                     };
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
@@ -4251,12 +4536,35 @@ impl WebView {
                     // s249：第三参 = 动态 import 属性 `with.type`（prelude 校验后的
                     // type 串；空串 = 无属性，JS 模块语义）。
                     let type_attr = args.get(2).map(String::as_str).unwrap_or("");
+                    // s338：第四参 = 调用点模块 credentials mode（prelude `__zw_load_module`
+                    // 穿入：include/same-origin；空 = 旧宿主/直调形态，same-origin 缺省）。
+                    let credentials = args.get(3).map(String::as_str).unwrap_or("");
                     // s254：import map 应用（map 阶段命中才改写；未命中既有 parent-join
                     // 路径零漂移）。s260：Blocked → 空契约（TypeError 拒绝面，
                     // 不回退 parent-join 抓取被阻断 URL）。
                     let Some(spec_eff) = apply_import_map(&map_compile, parent, spec) else {
                         return String::new();
                     };
+                    // s360：第五参 = defer 标记（shim `__zw_load_module_deferred` 穿 '1'）
+                    // ——入口走延迟求值发射（build_module_script_deferred：depsPromise 急切
+                    // 依赖图 + runBody 延迟体），产物记录对象 IIFE 由 shim 门面化。合同
+                    // 失败回落空串（shim 顶层取回失败面 TypeError——与 eager 契约空串同
+                    // 语义；链接失败 tag 3 由该函数自带）。
+                    // https://tc39.es/proposal-defer-import-eval/
+                    let deferred = args.get(4).map(String::as_str) == Some("1");
+                    if deferred {
+                        return compile_module_contract_deferred(
+                            &fetcher_compile,
+                            parent,
+                            &spec_eff,
+                            if credentials.is_empty() || credentials == "same-origin" {
+                                None
+                            } else {
+                                Some(credentials)
+                            },
+                        )
+                        .unwrap_or_default();
+                    }
                     compile_module_contract(
                         &fetcher_compile,
                         parent,
@@ -4266,6 +4574,20 @@ impl WebView {
                         // 无元素上下文；doc 默认链回落）——语料无钉面，spec 动态面
                         // 挂账（s116 module-import-referrer 同域）。
                         None,
+                        // s338：credentials 经 `__zw_cred` 查询标记穿 fetcher 契约
+                        //（fetcher 无 credentials 形参，s124 `__zw_lp` 同法；真实 HTTP
+                        // 宿主忽略未知查询参数，renderer/tab 旧宿主第 4 参缺省
+                        // same-origin 面）。registry/缓存记账键取原始 spec，不带标记。
+                        // same-origin 缺省面**不带标记**（取回 src 逐字节零漂移——既有
+                        // 精确 src 匹配 fetcher/端点臂不受扰，s124 有值才附标记同规）；
+                        // fetcher 臂无标记 = same-origin 缺省语义。
+                        // FIXME(s339)：classic 车道（native resolver）无 credentials
+                        // 槽——延迟 promise_test 调用打破槽位刷新（s124 同形挂账）。
+                        if credentials.is_empty() || credentials == "same-origin" {
+                            None
+                        } else {
+                            Some(credentials)
+                        },
                     )
                 }),
             );
@@ -4287,7 +4609,7 @@ impl WebView {
             //（与 CSP violation 拒绝同通道；不回退 parent-join）。
             let map_native = page_import_map.clone();
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
-                move |spec: &str, parent: &str, nonce: &str, type_attr: &str| {
+                move |spec: &str, parent: &str, nonce: &str, type_attr: &str, credentials: &str| {
                     if spec.is_empty() {
                         return String::new();
                     }
@@ -4320,6 +4642,19 @@ impl WebView {
                         // s268：动态 import() 元素级 referrerpolicy 未穿（resolver
                         // 契约无元素上下文；doc 默认链回落，同上方 shim 面）。
                         None,
+                        // s340：调用窗 active script credentials mode（resolver 第 5
+                        // 参，v8_runtime 读全局 `__zwActiveScriptCred` 穿入——shim 子
+                        // 文档合并体段序置位 + 注册包装体执行窗恢复）。空串/same-origin
+                        // 缺省**不带标记**（取回 src 逐字节零漂移，`__zw_compile_module`
+                        // 第 4 参同规）；include（use-credentials）附 `__zw_cred` 查询
+                        // 标记穿 fetcher——经典上下文 import() 触发窗与槽窗同步（注册
+                        // 包装捕获体执行窗值，延迟 promise_test 调用不再打破槽位）。
+                        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                        if credentials.is_empty() || credentials == "same-origin" {
+                            None
+                        } else {
+                            Some(credentials)
+                        },
                     );
                     // s256：延迟包裹 `1\x1f<delay_ms>\x1f<contract>`——延迟 >0 时挂起
                     // resolver 到期 settle（v8_runtime 回调臂）。契约已同步算好，包裹
@@ -4371,6 +4706,9 @@ impl WebView {
                             // s268：动态插入内联 module 无元素策略属性——doc 默认链
                             // 回落（同动态 import 面）。
                             None,
+                            // s338：动态插入 module 无元素 credentials 上下文——
+                            // same-origin 缺省（语料无钉面）。
+                            None,
                             &mut registry,
                             &mut visited,
                         ) {
@@ -4408,12 +4746,91 @@ impl WebView {
         // declared>0 放行收集（uncaught exception 不降级 test status）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
         let mut first_strict_error: Option<String> = None;
-        for (script, script_index) in scripts {
+        // s349（html-semantics M2 切片 349）：解析交付集预盖章——spec already-started
+        // 在 prepare（parser 遇到元素）即置位，求值被「a style sheet that is blocking
+        // scripts」推迟不改变该事实。页面脚本阶段起点把交付索引表穿沙箱，shim 按索引
+        // 盖 `_zwParserDelivered[sel]`（part06 __zw_stamp_parser_scripts）——script0
+        // 在样式表等待窗内被改写 textContent 时，s109 childList 触发臂按已交付拦截，
+        // 不按 LIVE 文本重 prepare（script-text-modifications 双案）。索引与
+        // currentScript 同号空间（全 script 元素文档序，extract_page_scripts_sched
+        // 透传）。best-effort：盖章失败只重开等待窗触发面，不中止脚本阶段。与
+        // `_zwScriptStarted` 分表——s110 async getter 的执行事实臂（sc2 执行前读
+        // false、122 reinsert 前读真）不被预盖章污染。
+        // s365（html-semantics M2 切片 365）：交付水位线复位——持久沙箱跨文档存活
+        //（R5182-D1 同源），上一文档的 ceiling/序号键表不得落穿。-1 = 门未激活
+        //（枚举全量视图）；键表由下方 stamp 入口在本阶段起点重建（ceiling 未激活
+        // 时枚举=全量，序号对应正确）。复位必须先于 stamp——stamp 建表在后，
+        // 顺序颠倒会把新表清回 null（门 fail-open 退化为全量视图）。
+        // s366：写面 excess `</script>` 消费记账同步复位（`__zwParserConsumed`
+        // 序号 = 前缀源表，写面 part06 `__zwParserConsumeExcess` 记、交付循环
+        // 逐脚本探测消费——跨文档残留会使新文档同序号脚本误以前缀源投递）。
+        let _ = self.js_sandbox.as_mut().map(|sb| {
+            sb.execute(
+                "globalThis.__zwParseCeiling = -1; globalThis.__zwParseScriptSelMap = null; \
+                            globalThis.__zwParserConsumed = null;",
+            )
+        });
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if !scripts.is_empty() {
+            let stamp_js = format!(
+                "if(typeof globalThis.__zw_stamp_parser_scripts==='function')\
+                 globalThis.__zw_stamp_parser_scripts([{}]);",
+                scripts.iter().map(|(_, i)| i.to_string()).collect::<Vec<_>>().join(",")
+            );
+            let _ = self.js_sandbox.as_mut().map(|sb| sb.execute(&stamp_js));
+        }
+        // s355（html-semantics M2 切片 355）：交付排水门置位——页脚本交付循环期间
+        // 动态插入的 classic/module src 脚本由 shim gate 挂起（part03 s355 臂），
+        // 循环毕 flush 发起。spec 动态 src 取回为异步任务，让后于 parser 交付窗
+        // 内后继脚本（051 alt B：count-script-tags.js 在 inline#2 后执行；
+        // module 同门——execorder dynamic async-ordered 的 FIFO 交错序）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let _ = self
+            .js_sandbox
+            .as_mut()
+            .map(|sb| sb.execute("globalThis.__zwDeliveryDrainActive = true;"));
+        let mut deferred_phase_cleared = blocking_count == 0;
+        for (script_pos, (script, script_index)) in scripts.into_iter().enumerate() {
+            // s365：阻塞交付窗逐脚本前推水位线（shim 侧单调取 max——s106 end-tag 序
+            // 执行时祖先脚本文档序小于已执行的子脚本，ceiling 不回退）；进入 deferred
+            // 尾（the-end 相位，全文档已解析）清 -1。非阻塞探测/事件枚举在门内取
+            // 已交付前缀视图（052：外链脚本执行时 getElementsByTagName('script') 不得
+            // 含其后内联脚本）。
+            // https://html.spec.whatwg.org/multipage/parsing.html#script-parser-executing
+            if script_pos < blocking_count {
+                let _ = self.js_sandbox.as_mut().map(|sb| {
+                    sb.execute(&format!(
+                        "globalThis.__zwParseCeiling = (typeof globalThis.__zwParseCeiling === 'number' \
+                         && globalThis.__zwParseCeiling > {script_index}) ? globalThis.__zwParseCeiling : {script_index};"
+                    ))
+                });
+            } else if !deferred_phase_cleared {
+                deferred_phase_cleared = true;
+                let _ = self
+                    .js_sandbox
+                    .as_mut()
+                    .map(|sb| sb.execute("globalThis.__zwParseCeiling = -1;"));
+            }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
             // security-hardening M3：外链 script Mixed Content 检查点（阻塞型——HTTPS
             // 页面 HTTP 脚本不执行；HSTS 预载域 HTTP 脚本升级 HTTPS 后执行，
             // `mc_script_fetch_src` 携升级 URL 给 fetch 面）。内联脚本非混合内容不受检。
             // spec https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+            // s336（报告位置保真）：filename=script src——外链按 src 绝对化；data:
+            // 为绝对形原样；取回内联页（runner 投递）用 inlined_src 原始 URL
+            //（spec report the exception 的 source 面取脚本 settings base URL——
+            // 内联脚本即页面 URL，data-url 断言 url 非空非 'Script error.'）。
+            let strict_report_src: Option<String> = match &script {
+                zero_engine::pipeline::PageScript::External(src)
+                | zero_engine::pipeline::PageScript::ExternalModule { src, .. } => Some(resolve_document_url(
+                    self.current_url.as_deref().unwrap_or("about:blank"),
+                    src,
+                )),
+                _ => script_csp_info
+                    .get(script_index)
+                    .and_then(|info| info.inlined_src.clone())
+                    .map(|src| resolve_document_url(self.current_url.as_deref().unwrap_or("about:blank"), &src)),
+            };
             let mc_script_fetch_src: Option<String> = if self.config.mixed_content_enforcement {
                 let external_src = match &script {
                     zero_engine::pipeline::PageScript::External(src)
@@ -4462,14 +4879,28 @@ impl WebView {
                         self.security_context.check_script(nonce, None, Some(&abs))
                     }
                     None => {
-                        // 内联 hash（spec §source-list-hash-matching：对 trim 后内容计算，
-                        // 与 extract 侧的 trim 口径一致）。
-                        let code = match &script {
-                            zero_engine::pipeline::PageScript::Inline(c)
-                            | zero_engine::pipeline::PageScript::InlineModule(c) => Some(c.trim()),
-                            _ => None,
+                        // 内联 hash（CSP source-list hash matching：hash 源 = 元素
+                        // child text content 原文，不做 trim；s349
+                        // script-text-modifications-csp 语料 pin = 含首换行原文摘要
+                        // 实证——旧口径对 trim 后执行体摘要使带缘空白/多行内联恒失配
+                        // 误阻。提取侧执行体为 trim 后文本（JS 语义等价），hash 源取
+                        // csp_info.raw_text 原文；单行脚本 trim==raw，既有案零漂移）。
+                        // https://w3c.github.io/webappsec-csp/#source-list-hash-matching-algorithm
+                        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+                        let is_inline = matches!(
+                            &script,
+                            zero_engine::pipeline::PageScript::Inline(_)
+                                | zero_engine::pipeline::PageScript::InlineModule(_)
+                        );
+                        let hash = if is_inline {
+                            script_csp_info
+                                .get(script_index)
+                                .and_then(|info| info.raw_text.as_deref())
+                                .filter(|text| !text.is_empty())
+                                .map(zero_security::csp::script_hash_sha256_base64)
+                        } else {
+                            None
                         };
-                        let hash = code.map(zero_security::csp::script_hash_sha256_base64);
                         self.security_context.check_script(nonce, hash.as_deref(), None)
                     }
                 }
@@ -4515,6 +4946,49 @@ impl WebView {
                 let _ = sandbox.execute(&snippet);
                 continue;
             }
+            // s349（html-semantics M2 切片 349）：script-blocking stylesheet 等待窗
+            // ——runner 交错扫描窗保留 trickle 延迟（part01 fetch wrapper s349 面）
+            // 后，取回在飞的 media 匹配 sheet 挂起其后 pending script 求值：等待泵
+            // 以 runner timer wheel（__zw_fire_due_timers，真实时钟）驱动 trickle
+            // 取回发行与页面 timer（script-text-modifications 500ms 改写窗），
+            // sheet settle（load/error 均在 _zwSsVisitCss settle 点计数归零）即放行。
+            // spec：a style sheet that is blocking scripts 阻塞其后 parser-inserted
+            // script 的求值，timer 窗照常运转。探测以 runner wheel 在场为前提
+            //（非 runner 车道扫描窗折叠基线不变，计数非零亦零等待）；30s 封顶
+            //（part01 trickle 上限同源）防挂死，封顶后照常求值（红而非悬）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            let blocking_probe_js = "(typeof globalThis.__zwScriptBlockingSheetsPending === 'function') \
+                 && (typeof globalThis.__zw_fire_due_timers === 'function') \
+                 && globalThis.__zwScriptBlockingSheetsPending()";
+            if sandbox
+                .execute(blocking_probe_js)
+                .map(|r| r.value.trim() == "true")
+                .unwrap_or(false)
+            {
+                let wait_deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    let _ = sandbox.execute(
+                        "if (typeof globalThis.__zw_fire_due_timers === 'function') \
+                         globalThis.__zw_fire_due_timers();",
+                    );
+                    let settled = !sandbox
+                        .execute(blocking_probe_js)
+                        .map(|r| r.value.trim() == "true")
+                        .unwrap_or(true);
+                    if settled {
+                        break;
+                    }
+                    if std::time::Instant::now() >= wait_deadline {
+                        tracing::warn!(
+                            "script-blocking stylesheet 等待封顶（30s）: {}",
+                            self.current_url.clone().unwrap_or_else(|| "about:blank".to_string())
+                        );
+                        break;
+                    }
+                }
+            }
             // s90（string-compilation base URL 面）：spec 脚本基 URL = 创建时刻的
             // 文档基 URL（后续 `<base>` 变更不回溯）——内联脚本用捕获表；外链经典
             // 脚本用自身 src 绝对 URL（spec 外链脚本基 URL = 自身 URL）。先于下方
@@ -4523,41 +4997,134 @@ impl WebView {
             let doc_url = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
             let referrer = match &script {
                 zero_engine::pipeline::PageScript::External(src) => resolve_document_url(&doc_url, src),
+                // s367：runner 内联投递的外链经典脚本（s261 data-inline）以**原 src 解析
+                // 绝对 URL** 恢复 s88 动态 import() 解析基——classic 上下文 import() 走
+                // 原生宿主回调读槽位 referrer（s88 注记），spec 的解析基准 = 调用脚本
+                // 基 URL（外链脚本 = 自身 URL；ECMA-262 HostResolveImportedModule 的
+                // referencingScript 基）。旧值 = 页面基：内联体相对 spec 解析到页目录
+                // → 取回 404 → `Failed to fetch module`（code-cache-base-url 六子测
+                // 实证；s336 同形修复只覆盖了模块 lane 的 _importMeta/依赖收集基，
+                // classic 槽位面缺位）。真内联脚本（无 data-inline）维持脚本基快照
+                //（spec 内联脚本基 = 文档基，零漂移）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#script-settings-for-scripts
+                zero_engine::pipeline::PageScript::Inline(_) => script_csp_info
+                    .get(script_index)
+                    .and_then(|info| info.inlined_src.as_deref())
+                    .map(|src| {
+                        // s336 同款双形态归一（s261/s101）：runner 语料投递 = 语料根
+                        // 相对裸路径归一为 root-absolute；取回内联页 = 绝对 URL 原样解析。
+                        let normalized = if src.contains("://") || src.starts_with('/') {
+                            src
+                        } else {
+                            &format!("/{src}")
+                        };
+                        resolve_document_url(&doc_url, normalized)
+                    })
+                    .unwrap_or_else(|| {
+                        script_bases
+                            .get(script_index)
+                            .cloned()
+                            .unwrap_or_else(|| doc_url.clone())
+                    }),
                 _ => script_bases
                     .get(script_index)
                     .cloned()
                     .unwrap_or_else(|| doc_url.clone()),
-            };
-            // s94 附带修复（module 缓存键）：R5182 `__moduleCache` 文档级记忆化键旧一律传
-            // 页面 URL——同文档第二枚 module script（内联/外链皆然）被首枚的记忆化命中
-            // 短路，模块体零次求值（currentScript-null 双内联 module 定谳：testharness
-            // "completed without reporting registered tests"；probe-csn-d 双纯内联最小复现）。
-            // spec 模块 map 只按请求 URL 缓存 fetch 型模块，内联 module script 每元素是
-            // 独立模块记录：内联键 = 页面 URL 挂 ordinal 片段（仍为绝对 URL，相对 import
-            // 解析基准不变——URL 构造剥旧 fragment）；外链键 = src 绝对化（同 src 两元素
-            // 命中同键恰好一次，spec 语义；异 src 各自求值）。
-            // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
-            let module_cache_key = match &script {
-                zero_engine::pipeline::PageScript::InlineModule(_) => {
-                    format!("{doc_url}#!zw-inline-module-{script_index}")
-                }
-                zero_engine::pipeline::PageScript::ExternalModule { src, .. } => resolve_document_url(&doc_url, src),
-                _ => doc_url.clone(),
             };
             // s101：外链模块静态 import 的收集基 = 模块自身绝对 URL（spec：import 语句
             // 相对 requesting module 解析，referrer 为模块自身）；内联模块基 = 页面 URL。
             // 旧版一律页面 URL——模块体在 resources/ 子目录时其相对 import 解析到页目录
             // → 取回 404 → 空存根 → 假「Module does not provide an export」编译错
             //（nomodule-set-on-external-module-script 实证；strict 下整页 abort）。
+            // s336（内联投递模块解析基恢复）：runner 内联投递的外链模块（InlineModule +
+            // data-inline 原始 src）以模块自身 URL 恢复解析基——内联默认基 = 页面 URL，
+            // 模块体在 resources/ 子目录时动态 import() 兄弟 spec 解析到页目录 → 取回
+            // 404 → TopFetch「Failed to fetch module」（microtasks/evaluation-order-3
+            // 实证；order-4 TLA await import() 同根）。静态 import 面 spec 已被 runner
+            // 重写为 root-absolute `/…`（s101，基无关），基恢复零漂移；动态 import()
+            // 的 helper parent = _importMeta.url（= 本基），随基恢复落正确目录。
+            // 真内联模块（无 data-inline）维持页面基。
             // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+            // s336：外链模块错误事件按 R2944 src 键派发的判定面（独立于解析基——
+            // 内联投递模块 s336 起也有解析基，但元素无 src 键，仍走文档序派发）。
+            let external_module_error_face =
+                matches!(&script, zero_engine::pipeline::PageScript::ExternalModule { .. });
             let module_dep_base = match &script {
                 zero_engine::pipeline::PageScript::ExternalModule { src, .. } => {
                     Some(resolve_document_url(&doc_url, src))
                 }
+                zero_engine::pipeline::PageScript::InlineModule(_) => script_csp_info
+                    .get(script_index)
+                    .and_then(|info| info.inlined_src.as_deref())
+                    .map(|src| {
+                        // data-inline 原始 src 双形态（s261/s101）：runner 语料投递 =
+                        // 语料根相对裸路径（`html/…`，无 scheme 无前导斜杠——host-root
+                        // join 语义），其他取回内联页 = 绝对 URL（webview.rs:4665 面，
+                        // 原样解析）。裸路径归一为 root-absolute 后解析，消除页目录
+                        // 双拼（probe 实证 parent=…/microtasks/html/semantics/…）。
+                        let normalized = if src.contains("://") || src.starts_with('/') {
+                            src
+                        } else {
+                            &format!("/{src}")
+                        };
+                        resolve_document_url(&doc_url, normalized)
+                    }),
+                _ => None,
+            };
+            // s94 附带修复（module 缓存键）：R5182 `__moduleCache` 文档级记忆化键旧一律传
+            // 页面 URL——同文档第二枚 module script（内联/外链皆然）被首枚的记忆化命中
+            // 短路，模块体零次求值（currentScript-null 双内联 module 定谳：testharness
+            // "completed without reporting registered tests"；probe-csn-d 双纯内联最小复现）。
+            // s344（module 记录键恢复）：runner 内联投递的外链模块（InlineModule +
+            // data-inline）旧键 = 页面 URL 挂 ordinal 片段——同 src 多元素各持独立键，
+            // 入口记忆化恒 miss，模块体逐元素重求值/重抛新错误对象（single-evaluation-1
+            // 实测 this.js 求值 4 次入 log；evaluation-error/compilation-error 同对象
+            // 判据全数翻转）。记录键改挂解析基 = 模块自身绝对 URL（module_dep_base），
+            // 与 ExternalModule/spec module map 同 URL 同键恰好一次求值；真内联模块
+            //（无 data-inline，spec 每元素独立模块记录）维持 ordinal 键（s94 语义不变）。
+            // 错误/成功元素事件派发键（s336/s107）不受扰——两臂均以 external_module_
+            // error_face 门控或按 src 属性匹配（内联投递元素无 src 属性，派发 no-op
+            // 与旧 ordinal 键同面）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+            let module_cache_key = match &script {
+                zero_engine::pipeline::PageScript::InlineModule(_) => module_dep_base
+                    .clone()
+                    .unwrap_or_else(|| format!("{doc_url}#!zw-inline-module-{script_index}")),
+                zero_engine::pipeline::PageScript::ExternalModule { .. } => {
+                    module_dep_base.clone().unwrap_or_else(|| doc_url.clone())
+                }
+                _ => doc_url.clone(),
+            };
+            // s343（html-semantics M2 切片 343）：外链 classic 成功取回面标记——元素
+            // fire load 派发锚（下方 match 按 src 消费后 lose 绑定；fetch Err 臂
+            // continue 已带 error 派发，不落 load）。
+            let classic_external_src_343 = match &script {
+                zero_engine::pipeline::PageScript::External(src) => Some(src.clone()),
+                _ => None,
+            };
+            // s366（html-semantics M2 切片 366）：写面 excess `</script>` 消费探测
+            // ——shim 写面（part06 `__zwParserConsumeExcess`）把 write 注入串中超出
+            // 开标签数的闭合按序弹出最近开放祖先 SVG script（143：嵌套 write 的
+            // 第二个闭合提前终结外层），记账 `__zwParserConsumed[序号] = 前缀源`。
+            // 宿主投递到被消费脚本时以**前缀源**（消费时点 child text content——
+            // 尾段文本尚未标记化）替代提取期全量源（全量源含尾段文本，SVG 嵌套
+            // 语料 143 尾段带故意笔误，全量执行 SyntaxError 缺 #3 日志）。命中面
+            // 仅 classic 内联（module/外链消费形语料 0 形，FIXME 在册）。
+            // https://html.spec.whatwg.org/multipage/parsing.html#the-rules-for-parsing-tokens-in-foreign-content
+            let consumed_prefix = match &script {
+                zero_engine::pipeline::PageScript::Inline(_) => sandbox
+                    .execute_json(&format!(
+                        "(globalThis.__zwParserConsumed \
+                         && typeof globalThis.__zwParserConsumed[{script_index}] === 'string') \
+                         ? globalThis.__zwParserConsumed[{script_index}] : null"
+                    ))
+                    .ok()
+                    .and_then(|r| serde_json::from_str::<Option<String>>(&r.value).ok())
+                    .flatten(),
                 _ => None,
             };
             let (code, is_module) = match script {
-                zero_engine::pipeline::PageScript::Inline(c) => (c, false),
+                zero_engine::pipeline::PageScript::Inline(c) => (consumed_prefix.unwrap_or(c), false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
                 // 代码后执行（旧 InlineModule 与 Inline 同走经典路径→`import` 抛 SyntaxError）。headless 进程内
                 // 模式不 fetch 外链模块，故把模块源中引用的 import 标识符预注册为**空存根**（副作用导入 no-op，
@@ -4569,8 +5136,17 @@ impl WebView {
                     match &self.script_source_fetcher {
                         Some(fetch) => {
                             let page_url = self.current_url.as_deref().unwrap_or("about:blank");
-                            // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
-                            let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            // s356：src 相对面按**文档基 URL** 解析（spec prepare-the-script-element
+                            // src 步——encoding-parsing a URL given src, relative to el's node
+                            // document；`<base href>` 前移基准）。script_bases = s90 parse 时刻
+                            // 快照表（script_index 同空间），即 spec 基；绝对形（HSTS 升级/根
+                            // 绝对/绝对 src）join 恒等零漂移。fetch-src/alpha/base 判据：基下
+                            // `test.js` 须解析到 beta/test.js。动态面不走此缝（shim fetch 经
+                            // `_zwResolveFetchUrl` M5-S7 已基解析）。
+                            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                            let fetch_src_base = script_bases.get(script_index).map(String::as_str).unwrap_or(page_url);
+                            let fetch_src = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            let fetch_src = &resolve_document_url(fetch_src_base, fetch_src);
                             match fetch(page_url, fetch_src) {
                                 Ok(code) => (code, false),
                                 Err(e) => {
@@ -4597,8 +5173,12 @@ impl WebView {
                     match &self.script_source_fetcher {
                         Some(fetch) => {
                             let page_url = self.current_url.as_deref().unwrap_or("about:blank");
-                            // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
-                            let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            // s356：同 classic 臂——external module src 按文档基 URL 解析
+                            //（spec prepare src 步同段：fetch an external module script graph
+                            // given url，url 同基解析；语料 module src 恒根绝对，join 恒等）。
+                            let fetch_src_base = script_bases.get(script_index).map(String::as_str).unwrap_or(page_url);
+                            let fetch_src = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            let fetch_src = &resolve_document_url(fetch_src_base, fetch_src);
                             match fetch(page_url, fetch_src) {
                                 Ok(code) => {
                                     // s107（SRI）：integrity 属性在场 → 按响应字节校验
@@ -4633,7 +5213,16 @@ impl WebView {
                     }
                 }
             };
-            let full = if is_module {
+            // s344-r2：入口图注册键（s102 包装级 parse 失败报告的失败扫描清单——
+            // compile Ok 臂填装；编译 Err 臂 continue 不达 s102，恒空）。
+            let mut module_dep_keys: Vec<String> = Vec::new();
+            // s348：registry 与入口转换基 url 提升到元素循环域——s102 臂归属扫描
+            // （module_parse_failure_owner）在 execute 失败后消费，需图注册态与入口键。
+            let mut registry = zero_script_sandbox::ModuleRegistry::new();
+            let url = module_dep_base
+                .clone()
+                .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
+            let mut full = if is_module {
                 // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
                 // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，
                 // WPT invalid-import-errors-order 判据；type 值 ∉ module type map →
@@ -4654,7 +5243,6 @@ impl WebView {
                 // ensure_module_export 对空源报「does not provide an export」，模块化 corpus 的命名
                 // 导入全数 compile error；WPT focus-reset basic/multiple-intercept 首证）。递归收集
                 // （transitive deps 一并入册）；单 spec 失败回落空存根（保旧「不阻塞模块 body 执行」语义）。
-                let mut registry = zero_script_sandbox::ModuleRegistry::new();
                 // s254：页面 import map 入册——静态依赖收集的 resolve_registered_specifier
                 // map 阶段生效（多进程宿主 js_worker 同形态）。
                 if let Some(map) = &page_import_map {
@@ -4699,6 +5287,9 @@ impl WebView {
                         // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
                         // https://github.com/whatwg/html/pull/9210
                         let script_referrer = script_referrer_policies.get(script_index).and_then(|p| p.as_deref());
+                        // FIXME(s339)：外链模块元素 crossorigin credentials 未穿（语料
+                        // 无钉面；内联模块动态 import 面经 compile_module_script_with_
+                        // credentials + `__zw_cred` 标记已收口）。
                         match collect_module_deps_recursive(
                             &fetcher_m,
                             &dep_base_m,
@@ -4706,6 +5297,7 @@ impl WebView {
                             true,
                             type_attr.as_deref(),
                             script_referrer,
+                            None,
                             &mut registry,
                             &mut visited_m,
                         ) {
@@ -4728,8 +5320,10 @@ impl WebView {
                             ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch => {
                                 // 元素 error 派发目标：外链模块按 R2944 src 匹配派发
                                 //（module_cache_key = src 绝对化）；内联模块无 src，按文
-                                // 档序 script 序号派发（script_report_module_failure 同口径）。
-                                if module_dep_base.is_some() {
+                                // 档序 script 序号派发（script_report_module_failure 同口
+                                // 径）。s336：判定用外链面 bool 而非 module_dep_base——
+                                // 内联投递模块起也有解析基（元素键仍内联序号面）。
+                                if external_module_error_face {
                                     let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "error"));
                                 } else {
                                     let _ = sandbox
@@ -4750,13 +5344,40 @@ impl WebView {
                 // 口径下入口体 import 经 resolve_registered_specifier URL-join 归一到依赖
                 // 注册键——基错即 join 落页目录 → 假 Module not found（s101 钉实证）。
                 // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
-                let url = module_dep_base
-                    .clone()
-                    .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
-                match zero_script_sandbox::compile_module_script(&code, &url, &module_cache_key, &registry) {
+                // s338：入口转换穿元素 credentials mode（crossorigin → include，缺省
+                // same-origin）——重写发射的 `_importCred` 由该值发射，动态 import() 取
+                // 回经 `__zw_dynamic_import` → `__zw_load_module` → `__zw_compile_module`
+                // 第 4 参 → `__zw_cred` 查询标记穿 fetcher（runner check-cookie 臂消费）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                let script_credentials_mode = script_credentials
+                    .get(script_index)
+                    .and_then(|c| c.as_deref())
+                    .unwrap_or("same-origin");
+                match zero_script_sandbox::compile_module_script_with_credentials(
+                    &code,
+                    &url,
+                    &module_cache_key,
+                    &registry,
+                    script_credentials_mode,
+                ) {
                     Ok(transformed) => {
                         // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
+                        // s344：入口模块记录入册（prelude 按既有语义跳过入口急切求值）——
+                        // module_graph_postorder 以入口为根（s255 依赖求值序 = 入口图源内
+                        // 声明序）；旧入口不在 registry，postorder 从入口不可达 → 全依赖落
+                        // leftovers 字典序追加，duplicated-imports-1/2 实测
+                        // export-default 抢跑（'export-default' < 'export-something'）。
+                        registry.register(&url, &code);
+                        // s344-r2：装填 s102 失败扫描清单（图注册键 + 入口键，字典序
+                        // 定序——compilation-error-1 判据：syntaxerror-nested.js 的
+                        // 包装级 parse 失败源于依赖 syntaxerror.js，复报该键既有的
+                        // 失败对象）。
+                        module_dep_keys = registry.specifiers().into_iter().map(str::to_string).collect();
+                        if !module_dep_keys.iter().any(|k| k == &module_cache_key) {
+                            module_dep_keys.push(module_cache_key.clone());
+                        }
+                        module_dep_keys.sort_unstable();
                         let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry, Some(&url))
                             .unwrap_or_default();
                         // s255（求值错原值报告面）：try/catch 哨兵暂存**原值抛出对象**
@@ -4765,9 +5386,15 @@ impl WebView {
                         // `script_module_eval_error_report` 在 JS 侧取哨兵原样上报）。
                         // 包装级 parse 失败（体语法错）时整体 execute 仍 Err → 下方
                         // s102 臂照旧，语义不变。
+                        // s344-r2（入口预检前缀）：失败/缓存两表先于 prelude 查访——入口键
+                        // 已持失败记录（首元素图中止 + 中间祖先记账，spec 求值错误中间缓存）
+                        // → 复抛同对象零 prelude 零体求值（choice-of-error-3 第二元素若照
+                        // 跑 prelude 会重求值图外 fresh 模块 throw?3c，log 翻倍 6≠5）；入口
+                        // 键已缓存 → 跳过 prelude（依赖必然已完成，重复发射仅空转记忆化）。
                         // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+                        let entry_precheck = script_module_entry_precheck(&module_cache_key);
                         format!(
-                            "__zw_begin_script && __zw_begin_script();\ntry {{\n{prelude}\n{transformed}\n}} catch (__zwModEvalErr) {{ globalThis.__zwModEvalErrObj = __zwModEvalErr; }}"
+                            "__zw_begin_script && __zw_begin_script();\ntry {{\n{entry_precheck}\n{prelude}\n}}\n{transformed}\n}} catch (__zwModEvalErr) {{ globalThis.__zwModEvalErrObj = __zwModEvalErr; }}"
                         )
                     }
                     Err(e) => {
@@ -4778,11 +5405,21 @@ impl WebView {
                         // strict 亦不 abort——与外链取回失败同属 prepare 阶段失败面而非
                         // 内联体抛错（旧版 strict 整页 abort 以 declared tests: 0 掩盖
                         // 页面其余用例——runner「空洞」面）。
+                        // s344：失败记账入 module map——**本入口键**缓存（同 src 后续
+                        // 元素复报同对象：instantiation-error-3 判据 log[0] === log[4]
+                        // 同根两元素同源；不同根不共享——spec 链接失败逐记录独立，
+                        // log[0] !== log[2] 异根新对象）。跨键扫描在本臂翻车（不同根
+                        // 共享失败依赖被并成同对象，error-type-2/3、choice-of-error-2、
+                        // instantiation-error-3/5 全红）——扫描语义属 **s102 臂**（包装级
+                        // parse 错误源于依赖源文件，见下方 s102 处）。
                         // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                        let _ = sandbox.execute(&script_report_module_failure(
+                        let _ = sandbox.execute(&script_report_module_failure_cached(
                             &format!("{e}"),
                             script_index,
                             "SyntaxError",
+                            &module_cache_key,
+                            // clippy 1.99 cloned_ref_to_slice_refs：单元素借用切片免 clone。
+                            std::slice::from_ref(&module_cache_key),
                         ));
                         tracing::warn!("模块脚本编译警告: {e}");
                         continue;
@@ -4791,11 +5428,42 @@ impl WebView {
             } else {
                 // Classic scripts must execute in the global script scope. Wrapping them in a
                 // block changes top-level async function and lexical declaration visibility.
+                // s360（import.defer 面）：bundled V8 默认关 --js-import-defer 旗，classic
+                // 源内 `import.defer(` parse 即 SyntaxError——源码面重写到 shim
+                // `__zwClassicImportDefer`（`import(` 走 V8 原生宿主回调不重写，无匹配
+                // 时源逐字节原样）。classic 车道动态延迟导入 spec：defer 动态形式返回
+                // 延迟命名空间 promise，依赖图急切求值、入口体延迟到属性访问。
+                // https://tc39.es/proposal-defer-import-eval/
+                let classic_code = zero_script_sandbox::rewrite_classic_deferred_imports(&code);
                 if strict {
-                    script_run_classic_page(&code, script_index, None)
+                    // s369（strict 车道 SCRIPT 直编译迁移）：全量 classic 脚本走 **SCRIPT
+                    // 直编译**（sandbox `execute_classic` = `Script::compile`，体求值前原生
+                    // GDI 建 var/fn 全局绑定——eval wrapper 车道 strict 间接 var 绑定 eval
+                    // 局部、accessor 导出在**源尾**（体后）才发布，write 面 mid-body eval
+                    // 对同脚本 var ReferenceError（load-error-events-3 判据，s368 已按
+                    // write 探测路由收口，本刀全量收编 retire 探测分叉）。指令序言原生
+                    // 生效（源首 directive 不被前置行破坏）；R147/R198/R201 accessor 导出
+                    // 机器对本车道自然退役（GDI 原生语义）。抛错报告面 = s335 契约
+                    // （in-execute catch：reportError 原值透传 + 元素 load 微任务派发，
+                    // 序 `[error, 体内微任务, load]` 精确同构——catch 片经
+                    // [`script_classic_catch_tail`] 供给，`__zw_e` 名 sandbox 侧契约）。
+                    // currentScript 设索引在执行前宿主侧单独 execute（R3258 预备路径），
+                    // 清理沿用既有无条件 clear（配对不变）；sentinel（`__zw_pgerr__`）
+                    // 尾读随 wrapper 撤出本车道（sentinel 读取臂已撤）。
+                    // sourceURL 注注释于源真末尾（s336 报告位置保真同源；换行先行——
+                    // bing 教训：源尾行注释会把同行后缀整体吞掉）。
+                    // https://tc39.es/ecma262/#sec-globaldeclarationinstantiation
+                    // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+                    let mut direct = classic_code;
+                    if let Some(src) = strict_report_src.as_deref() {
+                        direct.push('\n');
+                        direct.push_str("//# sourceURL=");
+                        direct.extend(src.chars().filter(|c| !c.is_control()));
+                    }
+                    direct
                 } else {
                     format!(
-                        "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
+                        "{set}\n__zw_begin_script&&__zw_begin_script();\n{classic_code}",
                         set = script_set_current_script(script_index),
                     )
                 }
@@ -4870,7 +5538,62 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
             sandbox.set_dynamic_import_nonce(script_csp_info.get(script_index).and_then(|i| i.nonce.as_deref()));
             sandbox.set_dynamic_import_referrer(&referrer);
-            let execution = sandbox.execute(&full).map(|_| ());
+            // s337（async 入口模块元素 load 面）：runner 投递的 from-external 内联
+            // 模块（data-inline 在案）async 入口面（await / import( 谓词，与 es_module
+            // async_body 同源）——体尾 load 尾片（runner 面）位于 async 体 await 之后，
+            // 拒绝路径（TLA rejection）永不可达；catch 桥 reportError 又在 execute 内
+            // 检查点末触发 window error → testDone 即席断言——检查点后派发（旧 s107
+            // sync 端臂）load 恒迟到（evaluation-order-4 定谳：6 条无 script-load）。
+            // 本面把 load 派发 queueMicrotask **append 在 execute 之前**——sync 端入队
+            // = 检查点 gen1 位次（mt-4.1 后、动态依赖体前，corpus 判据序）；TLA 成功
+            // 路径亦由本面单发。非 async 面维持 runner 体尾 / s107 双臂零漂移；真作者
+            // 内联（无 data-inline）不发射，load-error-events-inline 判据不动。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+            let inlined_from_external = script_csp_info
+                .get(script_index)
+                .is_some_and(|info| info.inlined_src.is_some());
+            let async_module_face = is_module
+                && (code.contains("await")
+                    || code.contains("import(")
+                    // s361：静态 defer import 声明传染 async IIFE 形态（es_module
+                    // build_dep_iife / compile_module_script 同谓词）——load 派发臂
+                    // 须随编译形态走，否则 async 体 load 尾片回退 sync 端臂。
+                    || zero_script_sandbox::source_has_deferred_import_decl(&code));
+            if is_module && inlined_from_external && async_module_face {
+                full.push_str(&format!(
+                    "\nPromise.resolve().then(function () {{ {} }});",
+                    script_dispatch_script_event_by_ordinal(script_index, "load")
+                ));
+            }
+
+            // s344-r2（缓存命中探测）：执行前查入口键缓存态——命中 = 本单元体不再调用
+            // （记忆化短路），runner 体尾 load 尾片死代码。仅限 runner 投递的内联模块
+            // 面（真作者内联 load/error 不适用——load-error-events-inline 判据）；async
+            // 面单元由上方 s337 微任务臂承担（命中与否恒发，再发即双发）；首评单元
+            // 缓存未命中探测为假，load 由体尾承担无双发。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let module_cache_hit = is_module
+                && inlined_from_external
+                && !async_module_face
+                && sandbox
+                    .execute(&script_module_cache_probe(&module_cache_key))
+                    .map(|r| r.value == "true")
+                    .unwrap_or(false);
+
+            // s369：SCRIPT 直编译车道（strict 全量 classic）currentScript 设索引
+            // （wrapper 内首行的宿主侧等价，R3258 typeof 守卫 shim 缺席即 no-op）——
+            // 体求值前设、既有无条件 clear 清，write 面 mid-body eval 与事件处理器
+            // 编译窗的可见性同构。体 + 抛错报告面一次 execute_classic 完成（in-execute
+            // catch：s335 序契约，见 classic 臂注记）。
+            let execution = if strict && !is_module {
+                // 设索引先于体（wrapper 首行的宿主侧等价）；非 strict 车道前置串自带、
+                // 模块车道不设（既有口径）。
+                let _ = sandbox.execute(&script_set_current_script(script_index));
+                let catch_tail = script_classic_catch_tail(strict_report_src.as_deref());
+                sandbox.execute_classic(&full, &catch_tail).map(|_| ())
+            } else {
+                sandbox.execute(&full).map(|_| ())
+            };
             if eval_wrap_active {
                 let _ = sandbox.execute(
                     "if(globalThis.__zwRealEval)globalThis.eval=globalThis.__zwRealEval;if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;",
@@ -4880,9 +5603,21 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // 对象 + 元素照常 fire load）。返回 '1' = 求值抛错已报告——s107 成功臂
             // 须跳过（防 load 双发）；'' = 无抛错。execute Err（包装级 parse 失败）
             // 时哨兵臂不达，下方 s102 臂照旧。
+            // s347（报告位置）：内联模块 lineno = 开标签在**原始源**中的行号——复用
+            // M2-s2 CSP 位置表（runner 经 config.csp_script_positions 注入 prepared
+            // 空间原始源行号，避开 harness 内联扭曲；csp 关闭面表空回落 0 = 旧行为）。
+            // 判据 evaluation-error-5：文档 16 行 `<script type="module">a</script>`
+            // 求值抛错 lineno 16。外链模块体行号属模块自身 URL 内坐标（runner 投递
+            // 内联面同，非页面文档坐标），维持 0（FIXME：语料无钉面）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+            let eval_err_lineno = if is_module && module_dep_base.is_none() && !inlined_from_external {
+                script_positions.get(script_index).map(|pos| pos.0).unwrap_or(0)
+            } else {
+                0
+            };
             let eval_err_reported = if is_module {
                 sandbox
-                    .execute(&script_module_eval_error_report(script_index))
+                    .execute(&script_module_eval_error_report(script_index, eval_err_lineno))
                     .map(|r| r.value)
                     .unwrap_or_default()
             } else {
@@ -4895,19 +5630,32 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // 「Load event should not be fired」；内联无 fetch，load/error 不适用）。
             // 求值抛错走上方 s102 面（其附 load），此处仅外链成功臂，按 src 匹配派发
             //（R2944 同口径）；s255 哨兵已报告的求值抛错不再进本臂。
+            // s337：runner 投递面（inlined_from_external）async 入口跳过——load 改由
+            // execute 前包装尾（sync 端 queueMicrotask 入队，检查点 gen1 位次）承担，
+            // sync 端派发先于检查点排空会错位（evaluation-order-4 判据位次）。浏览器
+            // 道外链 async 模块维持本臂（外链无本包装尾，跳过即 load 缺席——s107 面
+            // 零漂移）。
             // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-            if is_module && execution.is_ok() && module_dep_base.is_some() && eval_err_reported.is_empty() {
+            if is_module
+                && execution.is_ok()
+                && module_dep_base.is_some()
+                && eval_err_reported.is_empty()
+                && !(inlined_from_external && async_module_face)
+            {
                 let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "load"));
             }
-            let script_error = if strict && !is_module && execution.is_ok() {
-                match sandbox.execute(&page_script_error_check()) {
-                    Ok(result) if result.value.is_empty() => None,
-                    Ok(result) => Some(result.value),
-                    Err(e) => Some(format!("{e}")),
-                }
-            } else {
-                None
-            };
+            // s344-r2（缓存命中 load 补派发）：spec load 属元素 fetch 完成路径而非求值
+            // ——module map 去重只作用求值，每元素各自 fire（nested-imports 判据
+            // log=["1","2"]，命中单元体尾死代码致 "2" 缺席）。探测命中 + 无哨兵 +
+            // 体正常完成才派发（求值抛错由 s255 post-check 附 load 不进本臂；包装级
+            // parse 失败 execute Err 同不进）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if module_cache_hit && execution.is_ok() && eval_err_reported.is_empty() {
+                let _ = sandbox.execute(&script_dispatch_script_event_by_ordinal(script_index, "load"));
+            }
+            // s369：sentinel（`__zw_pgerr__` 尾读）随 wrapper 撤出 strict 车道——直编译
+            // 抛错走 execution Err→combined_err 面归 first_strict_error（t5 消息头+
+            // 帧行同契约）；browser/renderer 车道仍走各自身份的 wrapper+sentinel 链。
             // clear 无论成败都执行（R3258 currentScript 清理的 try-finally 等价——
             // 9ef914d10 改顺序执行后用 `execution.or(clear)` 误吞 strict 错误：execution
             // Err 时 .or() 取 clear 的 Ok → 抛错脚本在 strict 路径返回 Ok（js-dom R139
@@ -4918,11 +5666,6 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             } else {
                 sandbox.execute(script_clear_current_script()).map(|_| ()).err()
             };
-            if let Some(e) = script_error {
-                // s108：首错记录 + 继续后续脚本（见 first_strict_error 声明注记）。
-                first_strict_error.get_or_insert_with(|| format!("page script: {e}"));
-                continue;
-            }
             let combined_err: Result<(), _> = execution.err().or(clear_err).map_or_else(|| Ok(()), Err);
             if let Err(e) = combined_err {
                 if strict && !is_module {
@@ -4937,17 +5680,113 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     // spec 评估失败语义与编译失败同类：向 window 报异常 + 元素照常
                     // fire load + 页面继续（strict 亦不 abort——模块失败非内联 classic
                     // 体抛错，上游页面继续运行、其余用例照报）。
+                    // s344-r2（包装级 parse 失败记账 + 依赖图失败扫描）：此臂的错误
+                    // 多为**包装级 parse**（坏源码经变换存活、在 V8 parse 期炸）——
+                    // spec：parse error 缓存于 module map，同 src 后续元素复报同对象
+                    // 且依赖其的模块（入口语法合法）复报**同一依赖记录错误**
+                    //（compilation-error-1 判据 log.every(exn => exn === log[0])，
+                    // 5 元素 3 src 全同源；syntaxerror-nested 的扫描清单 = 依赖键 +
+                    // 入口键，字典序定序）。求值错误原值上报走 s255 哨兵面，本臂仅
+                    // 接哨兵未达的包装级失败。
+                    // s348（记录归属扫描）：spec parse error 属**失败模块自身记录**，
+                    // 非入口键——嵌套首元素（compilation-error-2）旧口径把新记录落
+                    // 入口键，后续直连元素复建第二对象（every(exn===log[0]) 红）；
+                    // 循环双根（choice-of-error-1）字典序 dep-scan 把双根并成同对象
+                    //（assert_not_equals 红）。沿入口图 postorder（求值序）归属扫描
+                    // 定位失败模块键（parse 优先于既有记录、build Err/空源跳过），
+                    // 命中 → 按属主键记账报告（复用旧报告面的缓存/新建语义）；扫描
+                    // 不达（非 parse 失败面）→ 回落旧口径（入口键记账 + 字典序
+                    // dep-scan，语义不变）。后端支持先经 trivial 编译探测：无
+                    // parse_check 面（QuickJS 默认）→ 整个扫描跳过落旧口径（车道
+                    // 行为与 s344 基线逐位一致）。快照取 __moduleFailures 键集
+                    //（parse_check 无副作用，扫描中途无新记录，快照即扫描期真值）。
                     // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                    let _ = sandbox.execute(&script_report_module_failure(
-                        &format!("{e}"),
-                        script_index,
-                        "SyntaxError",
-                    ));
+                    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                    let mut parse_err: Option<String> = None;
+                    let parse_supported = !matches!(
+                        sandbox.parse_check("1"),
+                        Err(zero_script_sandbox::ScriptError::EngineUnavailable(_))
+                    );
+                    let owner = if parse_supported {
+                        let recorded_failures: std::collections::HashSet<String> = sandbox
+                            .execute_json("Object.keys(globalThis.__moduleFailures || {})")
+                            .ok()
+                            .and_then(|r| serde_json::from_str(&r.value).ok())
+                            .unwrap_or_default();
+                        let mut check = |unit: &str| -> Result<(), String> {
+                            match sandbox.parse_check(unit) {
+                                Ok(()) => Ok(()),
+                                Err(zero_script_sandbox::ScriptError::EngineUnavailable(_)) => Ok(()),
+                                Err(other) => {
+                                    let msg = format!("{other}");
+                                    parse_err = Some(msg.clone());
+                                    Err(msg)
+                                }
+                            }
+                        };
+                        let owner = zero_script_sandbox::module_parse_failure_owner(
+                            Some(&url),
+                            &registry,
+                            &recorded_failures,
+                            &mut check,
+                        );
+                        drop(check);
+                        owner
+                    } else {
+                        None
+                    };
+                    let report_msg = parse_err.unwrap_or_else(|| format!("{e}"));
+                    if let Some(owner_key) = owner {
+                        let _ = sandbox.execute(&script_report_module_failure_cached(
+                            &report_msg,
+                            script_index,
+                            "SyntaxError",
+                            &owner_key,
+                            &[],
+                        ));
+                    } else {
+                        let _ = sandbox.execute(&script_report_module_failure_cached(
+                            &report_msg,
+                            script_index,
+                            "SyntaxError",
+                            &module_cache_key,
+                            &module_dep_keys,
+                        ));
+                    }
                 }
                 tracing::warn!("页面脚本执行警告: {e}");
             }
+            // s343（html-semantics M2 切片 343）：外链 classic 取回+执行完成 → 元素
+            // fire load（spec load 事件属 fetch 完成路径——s102 只补了失败 error 面，
+            // 成功 load 此前缺席；runner s343 plain defer 透传后 load-error-events-1
+            // test1_load（defer 200 onload 臂）元素 load 恒缺 → 页面 Timeout 定谳）。
+            // 执行体抛错仍 fire load（spec report the exception 与 load 解耦，同模块
+            // s102「元素照常 fire load」口径）。runner 投递内联单元（Inline 形）不经
+            // 本臂，s100 体尾 load 投递无双发；动态 src 通道（shim prepare 家族）另
+            // 派，非本臂消费面。
+            // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+            if let Some(src_343) = classic_external_src_343 {
+                let abs = resolve_document_url(&doc_url, &src_343);
+                let _ = sandbox.execute(&script_dispatch_script_event(&abs, "load"));
+            }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }
+        // s365：交付毕清水位线——纯阻塞页（无 deferred 尾清点）在此恢复全量枚举视图
+        //（后续排水/收口段与事件派发不受门限）。
+        let _ = self
+            .js_sandbox
+            .as_mut()
+            .map(|sb| sb.execute("globalThis.__zwParseCeiling = -1;"));
+        // s355：交付排水门 flush——循环毕清旗标并逐臂发起挂起的动态 src fetch
+        //（shim `__zwFlushDrainPendingSrc`：fetch promise 微任务同求值排空，取回
+        // 体在本 execute 内求值；trickle 慢源由 runner timer wheel + loadStep5275
+        // in-flight 等待承接）。空队列 + 清旗标为常量开销。
+        let _ = self.js_sandbox.as_mut().map(|sb| {
+            sb.execute(
+                "if (typeof globalThis.__zwFlushDrainPendingSrc === 'function') \
+                 globalThis.__zwFlushDrainPendingSrc();",
+            )
+        });
         // s157（html-semantics M2 切片 157）：尾随静态 link 触发收口——per-script
         // 交错扫描只覆盖「script 之前的 link」（spec：script-blocking stylesheet
         // 只阻塞其后 pending script），最后一个 script 之后的尾随 link
@@ -6624,6 +7463,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 credentials: request.credentials.clone(),
                 mode: None,
                 redirect: None,
+                cache: None,
             })?;
             return Ok(ServiceWorkerFetchResponse {
                 status: response.status,
@@ -6663,6 +7503,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     url: request.url.clone(),
                     headers: request.headers.clone(),
                     body: request_body,
+                    cache_mode: zero_net::CacheMode::Default,
                 })
                 .map_err(|error| error.to_string())?
         };
@@ -7687,6 +8528,7 @@ fn compile_module_contract(
     spec: &str,
     type_attr: Option<&str>,
     referrer_policy: Option<&str>,
+    credentials: Option<&str>,
 ) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -7697,6 +8539,7 @@ fn compile_module_contract(
         false,
         type_attr,
         referrer_policy,
+        credentials,
         &mut reg,
         &mut visited,
     ) {
@@ -7705,7 +8548,15 @@ fn compile_module_contract(
             // 依赖查找经 resolve_registered_specifier 统一归一到解析 URL，跨拼写命中。
             let resolved = resolve_document_url(parent, spec);
             match zero_script_sandbox::compile_dependency_iife(&resolved, &reg) {
-                Ok(iife) => format!("{resolved}\u{1f}{iife}"),
+                // s361：产物前拼动态 import helper 段（语句包立即执行函数后接 iife
+                // 表达式——契约 eval 是 `(code)` 表达式求值形态）——嵌套 `import()`
+                // 内联体在非 module 页面（prelude 从未执行）的 eval 上下文缺
+                // `__zw_dynamic_import`（cyclic 页 ReferenceError 红态实证面）；
+                // helper 定义幂等，module 页面包重定义零行为漂移。
+                Ok(iife) => format!(
+                    "{resolved}\u{1f}(function(){{{}return ({iife});}})()",
+                    zero_script_sandbox::module_dynamic_import_helpers_prelude()
+                ),
                 // s252：链接/instantiation 期失败（缺导出等 CompileError）→ tag 3 逐次新
                 // SyntaxError（spec：link 失败不入 module map、不记账，逐次新错误对象——
                 // WPT dynamic-imports-script-error「instantiation error」判据 SyntaxError
@@ -7728,6 +8579,57 @@ fn compile_module_contract(
     }
 }
 
+/// s360：defer 契约（[`compile_module_contract`] 的延迟求值变体）——入口以
+/// [`zero_script_sandbox::compile_dependency_iife_deferred`] 编译为记录对象 IIFE
+///（`{exports, depsPromise, runBody}`），依赖图急切求值、入口体延迟。失败面镜像
+/// eager 契约：链接失败 tag 3 逐次新 SyntaxError、其余空串 TypeError。
+/// https://tc39.es/proposal-defer-import-eval/
+fn compile_module_contract_deferred(
+    fetcher: &ScriptSourceFetcher,
+    parent: &str,
+    spec: &str,
+    credentials: Option<&str>,
+) -> Option<String> {
+    let mut reg = zero_script_sandbox::ModuleRegistry::new();
+    let mut visited = std::collections::HashSet::new();
+    match collect_module_deps_recursive(
+        fetcher,
+        parent,
+        spec,
+        false,
+        None,
+        None,
+        credentials,
+        &mut reg,
+        &mut visited,
+    ) {
+        Ok(()) => {
+            let resolved = resolve_document_url(parent, spec);
+            match zero_script_sandbox::compile_dependency_iife_deferred(&resolved, &reg) {
+                // s361：helper 段同拼（见 compile_module_contract Ok 臂注记）——defer
+                // 契约 eval 上下文的嵌套 `import()` 内联体同缺 helper 面。
+                Ok(iife) => Some(format!(
+                    "{resolved}\u{1f}(function(){{{}return ({iife});}})()",
+                    zero_script_sandbox::module_dynamic_import_helpers_prelude()
+                )),
+                Err(e @ zero_script_sandbox::ScriptError::CompileError(_)) => {
+                    tracing::warn!("compile defer module {spec} (transitive fetch): {e}");
+                    Some(format!("3\u{1f}{resolved}\u{1f}{e}"))
+                }
+                Err(_) => {
+                    tracing::warn!("compile defer module {spec} (transitive fetch)");
+                    None
+                }
+            }
+        }
+        Err(ModuleGraphFailure::DepResolution) => Some(format!("{}\u{1f}", resolve_document_url(parent, spec))),
+        Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
+            tracing::warn!("collect defer module {spec} (transitive fetch): {failure:?}");
+            None
+        }
+    }
+}
+
 /// 递归抓取 module graph（transitive deps），供进程内 `__zw_compile_module`（R3094）闭合 module graph。
 /// s252 起 registry 按**解析后 URL**注册源（与入口编译键、动态面 `__moduleCache` 记账键
 /// 同键形——HTML spec module map 按 URL 记账、同一模块唯一；importer 侧跨拼写查找由
@@ -7738,7 +8640,7 @@ fn compile_module_contract(
 /// 解析后同 URL → visited 命中一次取回，两导入方查找同落该键
 ///（module/imports.html imports-self-inner 实证面）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
-#[allow(clippy::too_many_arguments)] // s268：策略穿参 +1 形参（8 参——既有图收集签名面）
+#[allow(clippy::too_many_arguments)] // s338：credentials 穿参 +1 形参（9 参——既有图收集签名面）
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
@@ -7746,6 +8648,7 @@ fn collect_module_deps_recursive(
     is_dep: bool,
     type_attr: Option<&str>,
     referrer_policy: Option<&str>,
+    credentials: Option<&str>,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
 ) -> Result<(), ModuleGraphFailure> {
@@ -7781,6 +8684,18 @@ fn collect_module_deps_recursive(
         Some(policy) => {
             let sep = if fetch_spec.contains('?') { '&' } else { '?' };
             format!("{fetch_spec}{sep}__zw_lp={policy}")
+        }
+        None => fetch_spec,
+    };
+    // s338：credentials 同通道穿参（`__zw_cred=<mode>`，runner fetcher check-cookie
+    // 端点臂消费；真实 HTTP 宿主忽略未知查询参数）。静态图 descendant 继承入口
+    // mode（下方递归透传——spec 图内取回沿顶层 fetch options）。值恒 same-origin/
+    // include 内部常量，无转义面。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    let fetch_spec = match credentials {
+        Some(mode) => {
+            let sep = if fetch_spec.contains('?') { '&' } else { '?' };
+            format!("{fetch_spec}{sep}__zw_cred={mode}")
         }
         None => fetch_spec,
     };
@@ -7831,7 +8746,23 @@ fn collect_module_deps_recursive(
             }
             Err(e) => {
                 let message = serde_json::to_string(&e.to_string()).map_err(|_| fetch_failure())?;
-                format!("throw new SyntaxError({message});")
+                let url_js = serde_json::to_string(&url).map_err(|_| fetch_failure())?;
+                // s359（报告位置 file 坐标）：parse 失败的 SyntaxError 携带**本数据模块
+                // URL**（`fileName` 自有属性）——求值抛错经 s255 哨兵上报时 reportError
+                // 第二参从原值读取，WPT json-module/parse-error-location 判据
+                // `e.filename === parse-error.json 的绝对 URL`。spec extract error
+                // information 的 filename 属 implementation-defined derived values，
+                // 按抛出模块定位（浏览器一致行为）。
+                // 首行补 `export default undefined;`——纯 throw 体无导出面，入口静态
+                // import 的 compile 期 export 扫描（ensure_module_export）会先于本体
+                // 求值以「does not provide an export named default」链接失败短路
+                //（probe17 实证），SyntaxError 永不执行；补 default 导出后链接成立，
+                // 抛错在求值期发生（spec：JSON parse 失败属 internalize 期失败，
+                // 经模块记录传播 SyntaxError——parse-error/parse-error-location 双判据）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#extract-error
+                format!(
+                    "export default undefined;var __zwJsonParseErr=new SyntaxError({message});__zwJsonParseErr.fileName={url_js};throw __zwJsonParseErr;"
+                )
             }
         };
         registry.register(&url, &synth);
@@ -7880,6 +8811,7 @@ fn collect_module_deps_recursive(
         // s268：descendant 逐层继承顶层元素的策略（图内请求 Referrer 策略 = 发起
         // 取回的 script 元素策略；嵌套模块自身属性面语料无钉 FIXME——spec 各请求
         // 按其发起元素就近取属性，本通道先按顶层继承口径收口三数据模块 face）。
+        // s338：credentials 同口径逐层继承入口 mode。
         collect_module_deps_recursive(
             fetcher,
             &url,
@@ -7887,6 +8819,7 @@ fn collect_module_deps_recursive(
             true,
             attr.as_deref(),
             referrer_policy,
+            credentials,
             registry,
             visited,
         )?;
@@ -9155,6 +10088,44 @@ mod redirect_tests {
         );
     }
 
+    /// s336 回归钉：内联投递的外链模块以 data-inline 原始 src 恢复解析基。
+    /// runner 内联投递（engine 侧 InlineModule + data-inline 语料根相对裸路径）后，
+    /// 内联模块默认基 = 页面 URL——resources/ 子目录模块体的动态 import() 兄弟 spec
+    /// 解析到页目录 → 宿主取回 404 →「Failed to fetch module」（microtasks/
+    /// evaluation-order-3 实证；order-4 TLA await import 同根挂账 s337）。钉法：dep
+    /// 仅在模块自身相对位置可达，动态 import 的 helper parent 由 _importMeta.url
+    /// （= 本钉恢复的模块 URL）决定——模块体执行成功且 import 兑现即基正确。
+    /// https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+    #[test]
+    fn inlined_module_dep_base_restored_from_data_inline_s336() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(|parent: &str, spec: &str| {
+                let resolved = resolve_document_url(parent, spec);
+                if resolved.ends_with("/resources/dep.js") {
+                    Ok("globalThis.__s336Dep = 41;".to_string())
+                } else {
+                    Err(format!("404 at {resolved}"))
+                }
+            })),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body><script type=\"module\" data-zw-inlined data-inline=\"a/resources/entry.mjs\">\
+             import('./dep.js').then(function () { globalThis.__s336 = String(globalThis.__s336Dep); },\
+             function () { globalThis.__s336 = 'rejected'; });</script></body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("内联投递模块解析基恢复后动态 import 必须兑现（旧页面基 → dep 404 → rejected）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__s336)").unwrap(),
+            "41",
+            "动态 import 兑现且 dep 体已执行（基 = 模块自身 URL）"
+        );
+    }
+
     /// s102 回归钉：module 编译失败错误报告面——spec「run a module script」失败语义：
     /// fetch 成功后的编译/链接失败向 window 报异常（ev.error 为 SyntaxError 实例）且
     /// 元素照常 fire load、页面继续（strict 亦不 abort——旧版整页 abort 以 declared
@@ -9555,8 +10526,8 @@ mod redirect_tests {
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__text)").unwrap(),
-            "#test { background-color: rgb(255, 0, 0); }",
-            "sheet 规则经 shim CSSOM 解析（颜色 Blink rgb() 归一化形态）"
+            "#test { background-color: red; }",
+            "sheet 规则经 shim CSSOM 解析（命名色逐字——T45 撤回 s249 归一：Blink 活体 style/rule cssText 持 named 形，rgb() 形属 getComputedStyle 计算管线；CSSOM §serialize-a-declaration-block）"
         );
     }
 

@@ -87,6 +87,7 @@ mod css_nesting;
 mod dir_pseudo;
 mod font_feature_values;
 mod forgiving_selector_list;
+mod host_selector;
 mod lang_list;
 mod nth_invalid;
 mod nth_of_selector;
@@ -101,6 +102,8 @@ mod r5076_scale_percent_tests;
 mod r5400_qualified_rule_recovery_tests;
 mod r5401_safe_overflow_position_tests;
 mod review_r3344;
+/// 45 号 M2：`::slotted(<compound-selector>)` 解析契约与特异性。
+mod slotted_selector;
 mod tests_1;
 mod tests_10;
 mod tests_11;

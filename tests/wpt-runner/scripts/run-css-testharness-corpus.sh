@@ -60,6 +60,15 @@ case "${CORPUS}" in
   selectors) SUBCMD=testharness-selectors ;;
   # motion 上游目录名无 css- 前缀（css/motion），历史命名特例同 selectors。
   motion) SUBCMD=testharness-css-motion ;;
+  # css-testharness-compat-v2 M1 批次：上游目录名无 css- 前缀的目录逐一显式
+  # 映射（B1 值/属性解析序列化簇先例 cssom / filter-effects，后续批次目录
+  # 同款补臂；css-* 前缀目录走下方通用规则零改动接入）。
+  cssom) SUBCMD=testharness-cssom ;;
+  filter-effects) SUBCMD=testharness-filter-effects ;;
+  fill-stroke) SUBCMD=testharness-fill-stroke ;;
+  compositing) SUBCMD=testharness-compositing ;;
+  mediaqueries) SUBCMD=testharness-mediaqueries ;;
+  CSS2) SUBCMD=testharness-css2 ;;
   css-*) SUBCMD="testharness-${CORPUS}" ;;
   *) echo "usage: $0 <css-values|selectors|css-variables|css-color|css-align|css-sizing|...> [runner]" >&2; exit 2 ;;
 esac

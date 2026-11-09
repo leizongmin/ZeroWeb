@@ -715,6 +715,78 @@ if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
     )
 }
 
+/// 构造「module 编译失败记账 + 原值复报」shim 脚本（html-semantics M2 s344）：
+/// [`script_report_module_failure`] 的 module map 记账变体——parse 失败对象按
+/// `cache_key` 记入 `globalThis.__moduleFailures`（首元素构造入表），同键后续
+/// module script 元素复报**同对象**不重建（spec：parse error 缓存于 module map，
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script；
+/// WPT compilation-error-1 判据 log.every(exn => exn === log[0])）。s344-r2：`dep_keys`
+/// 为入口图注册键（调用方按字典序给）——图内既有失败记录优先复报（编译失败源于
+/// 依赖 parse 错误时该错误属依赖记录，见函数体注记）。load 派发面与旧臂一致
+/// （fetch 成功后的失败类元素照常 fire load）。
+pub fn script_report_module_failure_cached(
+    msg: &str,
+    script_ordinal: usize,
+    error_ctor: &str,
+    cache_key: &str,
+    dep_keys: &[String],
+) -> String {
+    let esc_msg = escape_js_string(msg);
+    let esc_ctor = escape_js_string(error_ctor);
+    let esc_key = escape_js_string(cache_key);
+    // s344-r2（依赖图失败扫描）：编译失败可能源于**依赖**的 parse 错误（入口自身语法
+    // 合法——syntaxerror-nested.js import 已失败的 syntaxerror.js）——spec：该错误属
+    // 依赖模块记录的缓存错误，入口加载失败复报**同一对象**（compilation-error-1 判据
+    // log.every(exn => exn === log[0])，5 元素 3 个 src 全同源）。扫描先于新建：命中
+    // 任一图内键既有失败记录 → 复报该对象且**不再新建**（入口键不落新记录）；全空才
+    // 入口键新建。键序由调用方定（webview 按字典序）保证确定性。
+    let dep_keys_js = dep_keys
+        .iter()
+        .map(|k| format!("'{}'", escape_js_string(k)))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "(function(){{\
+globalThis.__moduleFailures=globalThis.__moduleFailures||{{}};\
+var K='{esc_key}';\
+var __zwErr=globalThis.__moduleFailures[K];\
+if(__zwErr===undefined){{var __zwDepKeys=[{dep_keys_js}];\
+for(var __zwDi=0;__zwDi<__zwDepKeys.length;__zwDi++){{\
+if(globalThis.__moduleFailures[__zwDepKeys[__zwDi]]!==undefined){{\
+__zwErr=globalThis.__moduleFailures[__zwDepKeys[__zwDi]];break;}}}}}}\
+if(__zwErr===undefined){{__zwErr=new {esc_ctor}('{esc_msg}');globalThis.__moduleFailures[K]=__zwErr;}}\
+try{{reportError(__zwErr);}}catch(_e){{}}\
+try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
+if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
+    )
+}
+
+/// 构造「module 入口失败/缓存预检」前缀（html-semantics M2 切片 344-r2）：入口包装
+/// 在 prelude **之前**查失败表与缓存表——
+/// ① 入口键已持失败记录（首元素图中止、中间祖先记账或入口自身求值失败）→ 复抛该
+///    对象：后续同入口元素零 prelude、零体求值，s255 哨兵原值上报（choice-of-error-3
+///    判据：第二元素若照跑 prelude 会重求值图外 fresh 模块 throw?3c——log 翻倍）；
+/// ② 入口键已缓存（前序元素已完成求值）→ 跳过 prelude：依赖必然已完成（入口缓存
+///    ⟺ 入口图后序全部完成），重复发射仅产生空转记忆化命中；返回值以 `{` 起头，
+///    调用方以 `}` 收口包住 prelude。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+pub fn script_module_entry_precheck(cache_key: &str) -> String {
+    let esc_key = escape_js_string(cache_key);
+    format!(
+        "if(globalThis.__moduleFailures['{esc_key}']!==undefined)throw globalThis.__moduleFailures['{esc_key}'];\nif(globalThis.__moduleCache['{esc_key}']===undefined){{"
+    )
+}
+
+/// 构造「module 缓存命中探测」表达式（html-semantics M2 切片 344-r2）：宿主在执行
+/// 前查入口键缓存态——命中 = 本单元体不再调用（记忆化短路），runner 体尾 load 尾片
+/// 死代码 → 元素 load 须由宿主序号派发承担（spec：load 属元素 fetch 完成路径而非
+/// 求值，module map 去重只作用求值；nested-imports 判据 log=["1","2"]）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+pub fn script_module_cache_probe(cache_key: &str) -> String {
+    let esc_key = escape_js_string(cache_key);
+    format!("globalThis.__moduleCache['{esc_key}'] !== undefined")
+}
+
 /// 构造「module 求值抛错原值报告」shim 脚本（html-semantics M2 s255）：模块体求值
 /// 抛出的**原值对象**（宿主侧 try/catch 哨兵 `globalThis.__zwModEvalErrObj` 暂存）
 /// 经 `reportError` 原样上报 + 元素照常 fire load（spec：评估失败与编译失败同面——
@@ -722,13 +794,22 @@ if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
 /// 重构 `new SyntaxError(msg)`——应用数据丢失（WPT error-type-3 判据 `log[1].foo`
 /// 对 `throw {foo:true}` 原值断言）。返回 '1' 表示有哨兵已上报，'' 表示无（宿主据
 /// 此门控 s107 成功臂 load 派发，防双发）。
+/// s347：`lineno` = 报告位置——内联模块由宿主取 M2-s2 位置表（原始源开标签行，
+/// runner 经 config.csp_script_positions 注入 prepared 空间，避开 harness 内联扭曲）
+/// 传入（evaluation-error-5 判据 lineno 16）；0 = 未知位置（旧行为，外链/降级面——
+/// 外链模块体行号属模块自身 URL 内坐标，语料无钉面 FIXME）。
+/// s359：`filename` = 原值对象的 `fileName` 自有属性（有则透传，无则回落 '' 旧行为）
+/// ——JSON 数据模块 parse 失败的 SyntaxError 由 synth 面携带本模块 URL
+/// （parse-error-location 判据 `e.filename === parse-error.json` 绝对 URL）；其余
+/// 求值抛错（普通 Error 实例）无 `fileName` 属性 → 保持 ''（零位移）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-pub fn script_module_eval_error_report(script_ordinal: usize) -> String {
+/// https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+pub fn script_module_eval_error_report(script_ordinal: usize, lineno: u32) -> String {
     format!(
         "(function(){{\
 if(globalThis.__zwModEvalErrObj===undefined)return '';\
 var __zwErr=globalThis.__zwModEvalErrObj;globalThis.__zwModEvalErrObj=undefined;\
-try{{reportError(__zwErr);}}catch(_e){{}}\
+try{{reportError(__zwErr, (__zwErr && __zwErr.fileName) || '', {lineno});}}catch(_e){{}}\
 try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
 if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}\
 return '1';}})()"
@@ -788,6 +869,25 @@ lineNumber:{line},columnNumber:{column}}});\
 /// `undefined`，抛错时设为错误文本（stack 优先——首行消息 + 栈帧行）。调用方经
 /// [`page_script_error_check`] 读取。
 pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
+
+/// s335 strict 车道未捕获报告尾——进 catch 臂、哨兵写之后（JS 源文；入 format! 前花括号
+/// 加倍，见 [`script_run_classic_page_impl`]）。时序依据：①`reportError` 同步派发 window
+/// error 事件（handler 在 catch 内跑——spec report the exception 位置）；②元素 load 经
+/// queueMicrotask 延至包装 execute 末检查点——体内微任务（如 evaluation-order-1
+/// throw 体 `queueMicrotask` 先于 throw 入队）先于 load 排空。元素引用在 catch 点同步
+/// 捕获：`document.currentScript` 由 finally 清理（R3258），微任务窗内已清不可延迟读取。
+/// `globalThis.reportError` 缺席（shim 未装）/ currentScript 解析失败均 try 守卫降级。
+// s336（报告位置保真）：reportError 五参形——filename=script src（外链原样；内联/无 src 落页面
+// URL，spec report-the-exception 的 source 面），行列非零 number（data-url 断言 lineno/colno
+// 非 0；包装偏移语义不伪造精确行）；currentScript 同步窗捕获先于报告（R3258 微任务窗内
+// 已清不可延迟读取）。
+// 占位 `__zw_SRC_EXPR__` 在 escape 前由 impl 替换为宿主字面量（source_url Some 时
+// 为 escape 后的 JS 字符串字面量；None 时 ''——falsy 落下方兜底链：元素 src（读空
+// 实证面）→ 页面 URL。字符串嵌 JS 字面量不经 format! 花括号语义，先行替换安全）。
+const STRICT_UNCAUGHT_REPORT_TAIL: &str = "var _zwCs=document.currentScript;\
+try{globalThis.reportError&&globalThis.reportError(__zw_e,__zw_SRC_EXPR__||((_zwCs&&_zwCs.src)||(globalThis.location&&globalThis.location.href)||''),1,1);}catch(_zwRe){}\
+try{queueMicrotask(function(){\
+try{_zwCs&&_zwCs.dispatchEvent(new Event('load'));}catch(_zwLe){}});}catch(_zwQm){}";
 
 /// `var` 声明的 accessor 转导出片段（R201）：get/set 双向转发 eval 绑定——后续脚本
 /// 读 `globalThis.NAME` 得当前值，写落回 eval 绑定（WPT dom/common.js 的跨脚本再赋值
@@ -1350,6 +1450,32 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
 /// [`script_report_error`] 取首行（带栈文本不改变 5-arg 消息形状），ScriptErrorParams
 /// 全文携带栈帧行（pageerror 归因面）。
 pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Option<&str>) -> String {
+    script_run_classic_page_impl(code, script_index, source_url)
+}
+
+/// s335 strict 车道变体（runner harness 页专用——`webview::run_page_scripts_strict` 唯一
+/// 消费方）：基线包装之上，catch 臂补 spec 未捕获报告面——`reportError` **原值透传**
+/// s369（strict 车道 SCRIPT 直编译迁移）：classic 脚本体抛错时由 sandbox
+/// `execute_classic` 在**同一次 execute 内**（体检查点前）运行的 catch 片——
+/// 原异常值由 sandbox 挂 `globalThis.__zw_e` 传入（片内引用，跑完 sandbox 即删，
+/// 见 script-sandbox 两后端 `execute_classic`）。片体 = [`STRICT_UNCAUGHT_REPORT_TAIL`]
+/// （s335 报告面：reportError 原值透传 + 元素 load 微任务派发），IIFE 包裹防
+/// `var _zwCs` 落全局（T64 同教训：IIFE 隔离 var 泄漏）。序契约 = wrapper 车道
+/// 精确同构：`[error 同步派发, 体内微任务, load 微任务]`（sandbox 尾检查点 FIFO
+/// 排空——checkpoint-after-window-onerror t1 判据）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+pub fn script_classic_catch_tail(source_url: Option<&str>) -> String {
+    let src_literal = match source_url {
+        Some(url) => format!("'{}'", escape_js_string(url)),
+        None => "''".to_string(),
+    };
+    format!(
+        "(function(){{{}}})()",
+        STRICT_UNCAUGHT_REPORT_TAIL.replace("__zw_SRC_EXPR__", &src_literal)
+    )
+}
+
+fn script_run_classic_page_impl(code: &str, script_index: usize, source_url: Option<&str>) -> String {
     let code_literal = format!("'{}'", escape_js_string(code));
     // R147（js-dom M4）：顶层函数声明的**全局发布**。间接 eval `(0,eval)` 中源内
     // 'use strict'/"use strict" 指令使 eval 建独立变量环境——顶层 `function` 声明
@@ -1413,6 +1539,11 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
         // 换行不改指令序言（directive 仍为源首语句）与 eval 同变量环境语义。
         format!("+'{}'", escape_js_string(&format!("\n{tail}")))
     };
+    // {report_tail} 进 format! 前花括号加倍——JS 体自身含 `{`/`}`（format! 转义语义），
+    // 基线路径恒空串（字节形状与拆分前逐位一致）。
+    // s369：报告面随 strict 车道迁移撤出 wrapper（[`script_classic_catch_tail`] +
+    // sandbox `execute_classic` in-execute catch 承担）——基线包装恒无报告尾，
+    // browser/renderer 车道 sentinel→R2940 自报链形状逐字节不变。
     format!(
         // T64 返修（缺陷首轮 D1/D2）：①message/stack 访问各带 try 守卫——异形
         // throw 对象（getter 抛错）退化为栈文本可见（旧臂吞为静默）；②V8 判定

@@ -404,6 +404,13 @@ pub struct LayoutBox {
     /// `shift_siblings_after_clamp_shrink` 消费（后续 in-flow 兄弟上移 + 祖先 auto 高
     /// 收缩并继续上抛），消费后清零防重入双计。
     pub clamp_shrink_delta: f32,
+    /// R5436（CSS2 §10.3.5 shrink-to-fit）：本表最近一次 `apply_table_size_constraints`
+    /// 记录的纯 grid extent（列轨 + border-spacing 周界，**不含** caption 下界——caption
+    /// 可溢出表盒（§17.4.1），fit 判定仍消费 caption-inclusive intrinsic）。仅
+    /// fix_table_among_floats C 步 beside 臂消费：auto-width 表 beside 目标宽 =
+    /// min(grid extent, gap)，替代无条件填 gap。0 = 无信号（非表盒 / 表布局未跑，
+    /// 回退旧填 gap 语义）。
+    pub table_grid_max_width: f32,
     /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
     /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
@@ -497,6 +504,15 @@ pub struct LayoutBox {
     /// 若不匹配（如 table/multicol 后处理改变了宽度），
     /// paint 回退到重新运行 IFC。
     pub inline_layout_width: f32,
+    /// R5427：本盒直系行内内容的溢出 span（content-box 系 (max_right, max_bottom)）。
+    ///
+    /// 由 `compute_final_inline_layouts` 在 IFC 运行后聚合（store-gate return 之前，
+    /// **所有**文本容器都写，含非 stored 容器——`inline_layout` 只对 pure-Ahem 容器存储，
+    /// paint 的 `scrollable_overflow_extent` 行内臂在 `inline_layout` 为 None 时回退消费
+    /// 此 span（滚动容器门同口径）。只存标量、不落 `inline_layout`：后者翻转 use_stored
+    /// 路径会引入非 Ahem 字体度量失真（R5227 oof_static_line_bottom 同款理由）。
+    /// 空行集 / 垂直书写模式 = `None`。
+    pub inline_overflow_extent: Option<(f32, f32)>,
     /// R2467 line-clamp slice 2：layout 期 IFC `apply_line_clamp_cap` 是否真的截断了行
     ///（容器 `line-clamp: Count(n)` 且原始行数 > n）。
     ///
@@ -506,6 +522,18 @@ pub struct LayoutBox {
     /// paint 据此在 stored 路径补 ellipsis（text.rs line-clamp 后处理）。non-stored 路径
     ///（非 Ahem）paint IFC 用空 styles 重跑不 cap → 全量行 → `line_ys.len() > max` 仍可独立触发。
     pub line_clamp_clamped: bool,
+    /// R5432（css-overflow-4 §block-ellipsis）：本容器末保留行内容被 ellipsis **整行
+    /// 置换**（IFC R5342 strut 改写臂命中，`clamp_strut_applied` 镜像，与
+    /// `line_clamp_clamped` 同站点）。paint stored 路径据此清零该行全部 glyph 并把
+    /// ellipsis 落行首（block-ellipsis-018：被置换 span.red 1.5em 大字照绘 = 红泄漏）。
+    pub line_clamp_strut_displaced: bool,
+    /// R5454（css-overflow-4 §block-ellipsis）：justify 容器 clamp 末保留行再对齐把
+    /// ellipsis 计入 justify 分配项（IFC `clamp_ellipsis_justify_flush` 镜像，与
+    /// `line_clamp_strut_displaced` 同站点）。paint ellipsis 定位据此落线尾
+    /// `[line_limit − ell, line_limit)`（realign 的 ellipsis 槽位，末 gap 与 kept
+    /// 间隔同宽 expansion），而非默认紧贴末 glyph——ref `text-align-last:justify`
+    /// 行（block-ellipsis-032 box3）'…' 为独立分配项，紧贴落位差 1 个 gap。
+    pub line_clamp_ellipsis_justify_flush: bool,
     /// R3768 line-clamp slice 3：跨块盒 clamp 中，预算在该子用尽时该子可见行数上限
     ///（container 预算余量）。paint 期该子自身样式无 line-clamp（max_lines=None），
     /// 从此字段取 cap：非 stored 路径 paint IFC 全量行 → 按此 cap 截 glyph + 补 ellipsis。
@@ -685,6 +713,17 @@ pub struct LayoutBox {
     ///（line-breaking-018/019 stored/Path B 分歧实证），本字段是布局侧标量，
     /// paint 零扰动。`None` = 不适用（无 abspos 静态位 pending 或无行盒）。
     pub oof_static_line_bottom: Option<f32>,
+    /// R5452（css-overflow-4 §line-clamp）：本容器 IFC 被 line-clamp cap 后
+    /// **保留行底**（容器内容坐标，`max(line.y + line.height)`）。
+    ///
+    /// compute_final 期为 `inline_ctx.clamped` 的容器镜像。用途：own-IFC-capped
+    /// 容器（R2431 已在 IFC 内裁至 n 行）不落 `inline_layout` 时（非 pure-Ahem，
+    /// store-gate 跳过），`apply_cross_block_line_clamp` 的 walk 尾部只能按子盒
+    /// 底边重算高度——inline 子盒底边是 strut 常数盒（其行高 ≤ 行盒高），把容器
+    /// 高度缩到保留行底之下（block-ellipsis-032 盒高失配实证：24 → 19.624）。
+    /// 该场点容器高度语义 = clamp 边界 = 保留行底，walk 尾部以此作 extent 下限。
+    /// **不落 `inline_layout`**（同 R5227 理由）。`None` = 未被 cap 或无行盒。
+    pub clamp_kept_line_bottom: Option<f32>,
     /// R109 §9.2.1.1：此 inline 盒被 in-flow block-level 子元素拆分（生产端接线标记）。
     ///
     /// 当为 true 时，此盒自身的 paint IFC 应跳过——其直接文本已由其匿名块片段
@@ -859,6 +898,7 @@ impl Default for LayoutBox {
             clearance_extent_reduction: 0.0,
             clearance_chain_absorbed: false,
             clamp_shrink_delta: 0.0,
+            table_grid_max_width: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,
             column_gap: 0.0,
@@ -874,7 +914,10 @@ impl Default for LayoutBox {
             column_span_offsets: Vec::new(),
             inline_layout: None,
             inline_layout_width: 0.0,
+            inline_overflow_extent: None,
             line_clamp_clamped: false,
+            line_clamp_strut_displaced: false,
+            line_clamp_ellipsis_justify_flush: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
             line_clamp_clip: false,
@@ -904,6 +947,7 @@ impl Default for LayoutBox {
             inline_block_baseline: None,
             fragment_node_ids: None,
             oof_static_line_bottom: None,
+            clamp_kept_line_bottom: None,
             is_r109_split: false,
             is_r109_block_mixed: false,
             is_multicol_region_fragment: false,

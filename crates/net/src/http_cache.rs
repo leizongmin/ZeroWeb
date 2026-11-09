@@ -164,7 +164,43 @@ impl HttpCache {
                 }
             }
         }
+        // No-Vary-Search 等价类扫描（draft-ietf-httpbis-no-vary-search §6/§7——
+        // RFC 9111 §4 的 presented-target-URI 匹配被「equivalent modulo URL variation
+        // config」替换）：条目键注册在无 query 基座下，用条目自带的 config 对本请求
+        // 查询串取规范形式，再连同 Vary 后缀整体比对。
+        // OPTIMIZATION: 仅精确键 miss 且 URL 可解析基座时才扫描 resource_index 的
+        // 无 query 桶（浏览器规模下同基座条目个位数）。
+        if let Some(qbase) = crate::no_vary_search::queryless_base(url)
+            && let Some(keys) = self.resource_index.get(&qbase).cloned()
+        {
+            for key in keys {
+                let Some(candidate) = self.nvs_candidate_key(&key, url, request_headers) else {
+                    continue;
+                };
+                let lookup = self.lookup_key(&candidate, policy);
+                if !matches!(lookup, CacheLookup::Miss) {
+                    return lookup;
+                }
+            }
+        }
         self.lookup_key(&base, policy)
+    }
+
+    /// 由 NVS 自描述键构造本请求对应的候选键；与本请求不等价（规范 query 不同或
+    /// Vary 后缀不同）时返回 `None`。
+    fn nvs_candidate_key(&self, stored_key: &str, url: &str, request_headers: &[(String, String)]) -> Option<String> {
+        let (qbase, config, _) = crate::no_vary_search::split_nvs_key(stored_key)?;
+        let query = crate::no_vary_search::query_of(url);
+        let canonical = crate::no_vary_search::canonical_query(query.as_deref(), &config)?;
+        let vary = self.vary_for_key(stored_key);
+        let vary_suffix = cache_lookup_key("", request_headers, vary.as_deref());
+        let candidate = format!(
+            "{qbase}{}{}{}{canonical}{vary_suffix}",
+            crate::no_vary_search::NVS_KEY_MARKER,
+            crate::no_vary_search::encode_config(&config),
+            crate::no_vary_search::CQ_KEY_MARKER,
+        );
+        (candidate == stored_key).then_some(candidate)
     }
 
     fn lookup_key(&mut self, key: &str, policy: &RequestCacheControl) -> CacheLookup {
@@ -247,23 +283,27 @@ impl HttpCache {
                 tracing::info!(url = %key, "HTTP cache 304 Vary changed, invalidated entry");
                 return Some(cached);
             }
-            if let Some(mode) = storable_mode(response)
-                && let Some(e) = self.entries.get_mut(&key)
-            {
-                e.stored_at = Instant::now();
-                match mode {
-                    CacheStoreMode::Fresh(ttl) => {
-                        e.ttl_secs = Some(ttl);
-                        e.revalidate_only = false;
+            if let Some(e) = self.entries.get_mut(&key) {
+                // RFC 9111 §4.3.4——304 的头字段/验证器更新**不要求 304 自身可存**
+                // （验证响应语义：带验证器但无可存依据的 304——如裸 `Cache-Control:
+                // no-cache`——仍须更新存储条目）。新鲜期/年龄元数据仅在 304 具备
+                // 可存依据时刷新，否则沿用原条目（存储响应的新鲜度按更新后的头取）。
+                if let Some(mode) = storable_mode(response) {
+                    e.stored_at = Instant::now();
+                    match mode {
+                        CacheStoreMode::Fresh(ttl) => {
+                            e.ttl_secs = Some(ttl);
+                            e.revalidate_only = false;
+                        }
+                        CacheStoreMode::RevalidateOnly => {
+                            e.ttl_secs = Some(0);
+                            e.revalidate_only = true;
+                        }
                     }
-                    CacheStoreMode::RevalidateOnly => {
-                        e.ttl_secs = Some(0);
-                        e.revalidate_only = true;
-                    }
+                    // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age（与 R3231/R3232 头并入一致）。
+                    e.initial_age_secs = crate::cache_policy::compute_initial_age(response);
+                    e.must_revalidate = parse_cache_control(response).must_revalidate;
                 }
-                // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age（与 R3231/R3232 头并入一致）。
-                e.initial_age_secs = crate::cache_policy::compute_initial_age(response);
-                e.must_revalidate = parse_cache_control(response).must_revalidate;
                 merge_304_headers(&mut e.headers, response);
                 if let Some(etag) = response.header("etag") {
                     e.etag = Some(etag.to_string());
@@ -432,12 +472,36 @@ impl HttpCache {
     }
 
     /// 存储响应到缓存（含请求头以构造 Vary cache key）。
+    ///
+    /// No-Vary-Search（draft-ietf-httpbis-no-vary-search §7）：响应声明**非常规**
+    /// variation config 时，条目按「无 query 基座 + 规范查询串」等价类自描述键存取
+    /// （键内嵌 config 编码与规范 query，磁盘层无需另存）；默认/缺失/非法配置沿用
+    /// 原始 URL 精确键。
     pub fn put_with_headers(
         &mut self,
         url: &str,
         request_headers: &[(String, String)],
         response: &HttpResponse,
     ) -> bool {
+        if let Some(config) = response
+            .header("no-vary-search")
+            .and_then(crate::no_vary_search::parse_no_vary_search)
+            .filter(|config| !config.is_default())
+            && let Some(qbase) = crate::no_vary_search::queryless_base(url)
+        {
+            let query = crate::no_vary_search::query_of(url);
+            let canonical = crate::no_vary_search::canonical_query(query.as_deref(), &config).unwrap_or_default();
+            let vary = vary_header_value(response);
+            // vary 后缀复用 cache_lookup_key 的空 base 形态（结果恰为 `\0vary=…` 或空）。
+            let vary_suffix = cache_lookup_key("", request_headers, vary.as_deref());
+            let key = format!(
+                "{qbase}{}{}{}{canonical}{vary_suffix}",
+                crate::no_vary_search::NVS_KEY_MARKER,
+                crate::no_vary_search::encode_config(&config),
+                crate::no_vary_search::CQ_KEY_MARKER,
+            );
+            return self.put_key(&key, response);
+        }
         let key = cache_store_key(url, request_headers, response);
         self.put_key(&key, response)
     }
@@ -455,7 +519,11 @@ impl HttpCache {
         let etag = response.header("etag").map(|s| s.to_string());
         let last_modified = response.header("last-modified").map(|s| s.to_string());
         let resource_url = response.url.clone();
-        let resource_base = strip_url_fragment(&resource_url);
+        // NVS 自描述键注册到无 query 基座（等价类扫描面，与 lookup/invalidate 一致）；
+        // 普通键注册到完整 URL（现有精确/变体扫描）。
+        let resource_base = crate::no_vary_search::split_nvs_key(key)
+            .map(|(qbase, _, _)| qbase)
+            .unwrap_or_else(|| strip_url_fragment(&resource_url));
         let vary = vary_header_value(response);
 
         if self.max_entries > 0 {
@@ -520,6 +588,23 @@ impl HttpCache {
         let mut removed = false;
         for key in keys {
             removed |= self.remove(&key);
+        }
+        // §4.4 目标 URI 等价类（No-Vary-Search）：规范 query 等价的 NVS 条目一并
+        // 失效（与 lookup 同一匹配规则；Vary 维度不参与失效判定——失效覆盖全部变体）。
+        if let Some(qbase) = crate::no_vary_search::queryless_base(url)
+            && let Some(keys) = self.resource_index.get(&qbase).cloned()
+        {
+            for key in keys {
+                let Some((_, config, stored_canonical)) = crate::no_vary_search::split_nvs_key(&key) else {
+                    continue;
+                };
+                let query = crate::no_vary_search::query_of(url);
+                if crate::no_vary_search::canonical_query(query.as_deref(), &config).as_deref()
+                    == Some(stored_canonical.as_str())
+                {
+                    removed |= self.remove(&key);
+                }
+            }
         }
         removed
     }
@@ -645,7 +730,10 @@ impl HttpCache {
         if let Some(disk) = self.disk.as_ref() {
             for entry in disk.list_index_entries() {
                 if let Some(resource_url) = entry.resource_url {
-                    let base = strip_url_fragment(&resource_url);
+                    // NVS 自描述键与内存 put 一致注册到无 query 基座（等价类扫描才可见）。
+                    let base = crate::no_vary_search::split_nvs_key(&entry.key)
+                        .map(|(qbase, _, _)| qbase)
+                        .unwrap_or_else(|| strip_url_fragment(&resource_url));
                     self.register_resource_key(&base, &entry.key);
                 }
             }
@@ -665,6 +753,16 @@ impl HttpCache {
                 let candidate = cache_lookup_key(&base, request_headers, vary.as_deref());
                 if &candidate == key {
                     return Some(key.clone());
+                }
+            }
+        }
+        // NVS 等价类（304 更新/条件头须命中同一自描述键，见 lookup 同名扫描）。
+        if let Some(qbase) = crate::no_vary_search::queryless_base(url)
+            && let Some(keys) = self.resource_index.get(&qbase)
+        {
+            for key in keys {
+                if let Some(candidate) = self.nvs_candidate_key(key, url, request_headers) {
+                    return Some(candidate);
                 }
             }
         }
@@ -781,27 +879,63 @@ fn merge_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
 }
 
 fn merge_304_headers(headers: &mut Vec<(String, String)>, response: &HttpResponse) {
-    // RFC 9111 §4.3.4: https://www.rfc-editor.org/rfc/rfc9111#section-4.3.4
-    for field in [
-        "cache-control",
-        "content-location",
-        "date",
-        "expires",
-        "vary",
-        "etag",
-        "last-modified",
-    ] {
-        if field == "vary" {
-            if let Some(value) = vary_header_value(response) {
-                // Vary is a list field and may arrive on repeated field lines. Store its combined
-                // value once so the returned response cannot retain stale dimensions.
-                headers.retain(|(name, _)| !name.eq_ignore_ascii_case("vary"));
-                headers.push((field.to_string(), value));
-            }
-        } else if let Some(value) = response.header(field) {
-            merge_header(headers, field, value);
+    // RFC 9111 §4.3.4 → §3.2——304 的每个字段替换式并入存储响应（同名替换、缺则
+    // 追加；name 大小写不敏感），例外仅——
+    // - §3.1 存储例外：`Connection` 及其列举字段、逐跳语义字段（RFC 9110 §7.6.1）、
+    //   代理字段 Proxy-Authenticate/Proxy-Authorization；
+    // - `Content-Length`：MUST NOT 更新（§3.2 明列；「Content-* 前缀不是省略信号」
+    //   ——304-update 语料的 Content-Test-Header 必须并入）；
+    // - `Content-Range` / `Trailer`：自动处理并移除的字段（MAY 略；本实现不支持
+    //   Range，不并入）。
+    // https://www.rfc-editor.org/rfc/rfc9111#section-3.2
+    let hop_by_hop = hop_by_hop_fields(response);
+    let mut merged_vary = false;
+    for (name, value) in &response.headers {
+        let lower = name.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "content-length"
+                | "content-range"
+                | "trailer"
+                | "connection"
+                | "keep-alive"
+                | "proxy-connection"
+                | "transfer-encoding"
+                | "upgrade"
+                | "te"
+                | "proxy-authenticate"
+                | "proxy-authorization"
+        ) || hop_by_hop.contains(&lower)
+        {
+            continue;
         }
+        if lower == "vary" {
+            if merged_vary {
+                continue;
+            }
+            merged_vary = true;
+            // Vary 是列表字段，可能按重复行到达——合并值单次写入，防止返回响应
+            // 保留陈旧维度。
+            if let Some(combined) = vary_header_value(response) {
+                headers.retain(|(name, _)| !name.eq_ignore_ascii_case("vary"));
+                headers.push(("vary".to_string(), combined));
+            }
+            continue;
+        }
+        merge_header(headers, &lower, value);
     }
+}
+
+/// `Connection` 头列举的逐跳字段名（小写，RFC 9110 §7.6.1）。
+fn hop_by_hop_fields(response: &HttpResponse) -> Vec<String> {
+    response
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("connection"))
+        .flat_map(|(_, value)| value.split(','))
+        .map(|field| field.trim().to_ascii_lowercase())
+        .filter(|field| !field.is_empty())
+        .collect()
 }
 
 fn merge_not_modified_metadata(cached: &mut CachedResponse, response: &HttpResponse) {
@@ -1539,9 +1673,14 @@ mod tests {
 
     #[test]
     fn test_cache_non_cacheable_status() {
+        // RFC 9111 §3（http-cache goal M3）——显式新鲜度（max-age）在场时任意 final
+        // 状态可存（status 语料 fresh-500 腿）；无可存依据的状态不存。
         let mut cache = HttpCache::new();
-        let resp = make_response(500, b"error", vec![("cache-control", "max-age=60")]);
-        assert!(!cache.put("https://example.com/test", &resp));
+        let explicit = make_response(500, b"error", vec![("cache-control", "max-age=60")]);
+        assert!(cache.put("https://example.com/explicit", &explicit));
+        let mut cache = HttpCache::new();
+        let bare = make_response(500, b"error", vec![]);
+        assert!(!cache.put("https://example.com/test", &bare));
     }
 
     #[test]
@@ -1717,16 +1856,27 @@ mod tests {
 
     #[test]
     fn test_non_cacheable_status_codes() {
-        let non_cacheable = [201, 205, 400, 403, 500, 502, 503];
+        // RFC 9111 §3（http-cache goal M3）——无可存依据（无 public/private/Expires/
+        // max-age，状态码亦非启发式可缓存集）的 final 状态不存；同样的状态带显式
+        // `max-age` 则可存（status 语料 fresh 腿语义）。
+        let non_cacheable_without_basis = [201, 205, 400, 403, 500, 502, 503];
         let mut cache = HttpCache::new();
-        for status in non_cacheable {
-            let resp = make_response(status, b"body", vec![("cache-control", "max-age=60")]);
+        for status in non_cacheable_without_basis {
+            let resp = make_response(status, b"body", vec![]);
             assert!(
                 !cache.put(&format!("https://example.com/{status}"), &resp),
-                "status {status} should not be cacheable"
+                "status {status} without storage basis should not be cacheable"
             );
         }
         assert_eq!(cache.len(), 0);
+        for status in non_cacheable_without_basis {
+            let mut cache = HttpCache::new();
+            let resp = make_response(status, b"body", vec![("cache-control", "max-age=60")]);
+            assert!(
+                cache.put(&format!("https://example.com/{status}"), &resp),
+                "status {status} with explicit max-age should be storable"
+            );
+        }
     }
 
     #[test]
@@ -1842,5 +1992,231 @@ mod tests {
             cache.lookup(url, &[("Cache-Control".into(), "max-stale".into())]),
             CacheLookup::Miss
         ));
+    }
+
+    // ── No-Vary-Search 等价类缓存键（draft-ietf-httpbis-no-vary-search §6/§7，
+    //    http-cache goal M3，语料 no-vary-search.tentative 13 腿的语义蒸馏）──
+
+    fn response_at(url: &str, status: u16, headers: Vec<(&str, &str)>) -> HttpResponse {
+        HttpResponse {
+            status_code: status,
+            headers: headers
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            body: b"body".to_vec(),
+            url: url.to_string(),
+            redirect_count: 0,
+        }
+    }
+
+    fn header_value_of<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
+    #[test]
+    fn nvs_wildcard_except_merges_query_variants_into_one_entry() {
+        // 语料 leg 1：wildcard no-vary + except(dispatch uuid)——参数差异同条目，
+        // uuid 差异（跨测试隔离）不同条目。
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?dispatch=d&uuid=u1&a=1&b=2";
+        cache.put(
+            url,
+            &response_at(
+                url,
+                200,
+                vec![
+                    ("cache-control", "max-age=10000"),
+                    ("no-vary-search", "params, except=(\"dispatch\" \"uuid\")"),
+                ],
+            ),
+        );
+        assert!(matches!(
+            cache.lookup("https://x.test/a?dispatch=d&uuid=u1", &[]),
+            CacheLookup::Hit(_)
+        ));
+        assert!(matches!(
+            cache.lookup("https://x.test/a?dispatch=d&uuid=u1&a=9", &[]),
+            CacheLookup::Hit(_)
+        ));
+        assert!(matches!(
+            cache.lookup("https://x.test/a?dispatch=d&uuid=u2", &[]),
+            CacheLookup::Miss
+        ));
+    }
+
+    #[test]
+    fn nvs_key_order_makes_reordering_equivalent() {
+        // 语料 leg 3/4：key-order 下顺序不敏感；键集/值差异仍不等价。
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?a=1&b=2";
+        cache.put(
+            url,
+            &response_at(
+                url,
+                200,
+                vec![("cache-control", "max-age=10000"), ("no-vary-search", "key-order")],
+            ),
+        );
+        assert!(matches!(
+            cache.lookup("https://x.test/a?b=2&a=1", &[]),
+            CacheLookup::Hit(_)
+        ));
+        assert!(matches!(cache.lookup("https://x.test/a?b=2", &[]), CacheLookup::Miss));
+        assert!(matches!(
+            cache.lookup("https://x.test/a?a=2&b=2", &[]),
+            CacheLookup::Miss
+        ));
+    }
+
+    #[test]
+    fn nvs_named_params_ignores_only_listed_keys() {
+        // 语料 leg 5/6：params=("a")——a 差异同条目，b 差异不同条目。
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?a=1&b=2";
+        cache.put(
+            url,
+            &response_at(
+                url,
+                200,
+                vec![("cache-control", "max-age=10000"), ("no-vary-search", "params=(\"a\")")],
+            ),
+        );
+        assert!(matches!(
+            cache.lookup("https://x.test/a?a=99&b=2", &[]),
+            CacheLookup::Hit(_)
+        ));
+        assert!(matches!(
+            cache.lookup("https://x.test/a?a=1&b=99", &[]),
+            CacheLookup::Miss
+        ));
+    }
+
+    #[test]
+    fn nvs_invalid_config_falls_back_to_exact_match() {
+        // 语料 leg 2/12/13：无 NVS（ground truth 顺序敏感）与非法配置（params 列表
+        // + except、单独 except）均精确匹配。
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?a=1&b=2";
+        cache.put(url, &response_at(url, 200, vec![("cache-control", "max-age=10000")]));
+        assert!(matches!(
+            cache.lookup("https://x.test/a?b=2&a=1", &[]),
+            CacheLookup::Miss
+        ));
+
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?a=1";
+        cache.put(
+            url,
+            &response_at(
+                url,
+                200,
+                vec![
+                    ("cache-control", "max-age=10000"),
+                    ("no-vary-search", "params=(\"a\"), except=(\"b\")"),
+                ],
+            ),
+        );
+        assert!(matches!(cache.lookup("https://x.test/a?a=2", &[]), CacheLookup::Miss));
+    }
+
+    #[test]
+    fn nvs_invalidate_covers_equivalent_target_uris() {
+        // §4.4——失效按目标 URI 等价类覆盖 NVS 条目。
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?a=1&b=2";
+        cache.put(
+            url,
+            &response_at(
+                url,
+                200,
+                vec![("cache-control", "max-age=10000"), ("no-vary-search", "params=(\"a\")")],
+            ),
+        );
+        assert!(cache.invalidate("https://x.test/a?a=7&b=2"));
+        assert!(matches!(
+            cache.lookup("https://x.test/a?a=1&b=2", &[]),
+            CacheLookup::Miss
+        ));
+    }
+
+    #[test]
+    fn nvs_revalidation_hits_the_same_self_describing_key() {
+        // 304 再验证须命中同一 NVS 键（resolve_lookup_key 等价类扫描）。
+        let mut cache = HttpCache::new();
+        let url = "https://x.test/a?a=1&b=2";
+        cache.put(
+            url,
+            &response_at(
+                url,
+                200,
+                vec![
+                    ("cache-control", "max-age=0"),
+                    ("etag", "\"v1\""),
+                    ("no-vary-search", "key-order"),
+                ],
+            ),
+        );
+        let conditional = cache.conditional_headers_with_request("https://x.test/a?b=2&a=1", &[]);
+        assert_eq!(conditional, vec![("If-None-Match".to_string(), "\"v1\"".to_string())]);
+        let not_modified = response_at("https://x.test/a?a=1&b=2", 304, vec![("etag", "\"v1\"")]);
+        assert!(
+            cache
+                .not_modified("https://x.test/a?b=2&a=1", &[], &not_modified)
+                .is_some()
+        );
+    }
+
+    // ── RFC 9111 §3.2 304 头更新泛化（http-cache goal M3 304-update 语料）──
+
+    #[test]
+    fn merge_304_updates_all_fields_except_9111_exemptions() {
+        let mut cache = HttpCache::new();
+        let url = "https://example.com/test";
+        cache.put(
+            url,
+            &make_response(
+                200,
+                b"abcde",
+                vec![
+                    ("cache-control", "max-age=1"),
+                    ("content-length", "5"),
+                    ("test-header", "A"),
+                ],
+            ),
+        );
+        let not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("test-header", "B"),
+                ("content-test-header", "new"),
+                ("content-length", "0"),
+                ("connection", "x-hop-by-hop"),
+                ("x-hop-by-hop", "dropped"),
+                ("age", "7"),
+            ],
+        );
+        let cached = cache.not_modified(url, &[], &not_modified).expect("304 须命中缓存条目");
+        // §3.2——「Content-* 前缀不是省略信号」：304-update 语料的 Content-Test-Header。
+        assert_eq!(header_value_of(&cached.headers, "test-header"), Some("B"));
+        assert_eq!(header_value_of(&cached.headers, "content-test-header"), Some("new"));
+        // §3.2——Content-Length MUST NOT 更新。
+        assert_eq!(header_value_of(&cached.headers, "content-length"), Some("5"));
+        // §3.1——Connection 及其列举字段不并入。
+        assert_eq!(header_value_of(&cached.headers, "connection"), None);
+        assert_eq!(header_value_of(&cached.headers, "x-hop-by-hop"), None);
+        // 其余字段替换式更新。
+        assert_eq!(header_value_of(&cached.headers, "cache-control"), Some("max-age=60"));
+        // 存储条目本体同步更新（304-update 语料断言「returned AND stored」）。
+        assert!(matches!(cache.lookup(url, &[]), CacheLookup::Hit(_)));
+        let entry = &cache.entries[&url.to_string()];
+        assert_eq!(header_value_of(&entry.headers, "content-test-header"), Some("new"));
+        assert_eq!(header_value_of(&entry.headers, "content-length"), Some("5"));
+        assert_eq!(entry.ttl_secs, Some(60));
     }
 }

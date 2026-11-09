@@ -48,3 +48,11 @@ html/semantics/document-metadata/the-link-element/style.css
 # 上游 master 逐字节导入；runner fetch_external_script 绝对路径臂（wpt_root=wpt-data）
 # 交付，无 runner 改动。
 web-animations/testcommon.js
+# s249/s250/s261（652a78e00，2026-11-03）runner 单测语料依赖——v1.10 打包仓
+# 无 resources/ 目录，css-module/text-module 资源文件与 pragma-directives 页面
+# helper 也不在包内；四个文件均 upstream master 原件（2026-11-05 核验 200）。
+# 缺失时 smoke job 三测试常红（s261 CI 侧连 harness source 也 NotFound）。
+resources/testharness.js
+html/semantics/scripting-1/the-script-element/css-module/resources/basic.css
+html/semantics/scripting-1/the-script-element/text-module/file
+html/semantics/document-metadata/the-meta-element/pragma-directives/http-equiv-enumerated-ascii-case-insensitive-message.js

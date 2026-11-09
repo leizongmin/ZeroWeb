@@ -19,8 +19,36 @@ impl Document {
     /// 当前文档焦点元素（engine JS 桥 `.focus()` 注入）即本节点 → 匹配。无焦点或焦点在
     /// 别处 → 不匹配。`<input autofocus>` 静态声明不在此判定（焦点注入仍须 JS/用户交互；
     /// WPT 驱动面均为 `.focus()` 脚本）。
+    ///
+    /// 45 号 M1（shadow-dom-rendering）：焦点在 shadow 树内时，包含焦点元素的各层
+    /// shadow host 也匹配 `:focus`（composed 焦点链——HTML §6.6.2 焦点元素沿 shadow
+    /// 边界 retarget，WPT shadow-dom/focus/focus-pseudo-on-shadow-host-{1,2,3} 的
+    /// 判据面）。判定：从焦点元素沿物理父链上行，**穿过 ShadowRoot 节点**后到达的
+    /// 节点即焦点链 host，命中即匹配；链上继续上行（host 的普通祖先）不再延伸，
+    /// 除非又穿过一层 ShadowRoot（嵌套 shadow 树）。非 shadow 页物理链上无 ShadowRoot
+    /// → 行为与本判定扩展前逐位一致（只有焦点元素自身匹配）。
     pub fn is_focus_element(&self, node: NodeId) -> bool {
-        self.focus_element == Some(node)
+        let Some(mut cur) = self.focus_element else {
+            return false;
+        };
+        if cur == node {
+            return true;
+        }
+        while let Some(parent) = self.parent_node(cur) {
+            if matches!(self.get(parent).map(|n| &n.kind), Some(crate::NodeKind::ShadowRoot(_))) {
+                // 穿过 shadow 边界：ShadowRoot 的物理父即焦点链上的 shadow host。
+                let Some(host) = self.parent_node(parent) else {
+                    return false;
+                };
+                if host == node {
+                    return true;
+                }
+                cur = host;
+            } else {
+                cur = parent;
+            }
+        }
+        false
     }
 
     /// `:focus-within` 的权威判定（CSS Selectors L4 §14：自身或后代获得焦点的元素）。

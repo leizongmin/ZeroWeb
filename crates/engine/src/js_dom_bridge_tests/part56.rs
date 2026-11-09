@@ -391,7 +391,7 @@ fn p56_adopted_snapshot_restore_hook_keeps_page_value() {
     );
     assert_eq!(
         &*crate::js_dom_bridge::active_adopted_css(),
-        "#p56r { color: rgb(9, 105, 218) }",
+        "#p56r { color: rgb(9, 105, 218); }",
         "adopt 后槽须持页面规则文本"
     );
     // 模拟 SetDomSnapshot 臂恢复行（同 js_worker.rs/tab_js_worker.rs 恢复一行）——
@@ -402,7 +402,7 @@ fn p56_adopted_snapshot_restore_hook_keeps_page_value() {
     p56_eval(&mut sb, restore_line);
     assert_eq!(
         &*crate::js_dom_bridge::active_adopted_css(),
-        "#p56r { color: rgb(9, 105, 218) }",
+        "#p56r { color: rgb(9, 105, 218); }",
         "SetDomSnapshot 恢复钩子后槽必须保持页面最后设置值（每帧快照不清空）"
     );
     // 旧缺陷窗口：槽被外部清空（首轮返修形态）→ 恢复钩子从 shim 真值重推回填。
@@ -410,7 +410,7 @@ fn p56_adopted_snapshot_restore_hook_keeps_page_value() {
     p56_eval(&mut sb, restore_line);
     assert_eq!(
         &*crate::js_dom_bridge::active_adopted_css(),
-        "#p56r { color: rgb(9, 105, 218) }",
+        "#p56r { color: rgb(9, 105, 218); }",
         "恢复钩子必须从 shim 闭包真值回填被清空的槽"
     );
     crate::js_dom_bridge::set_active_adopted_css("");

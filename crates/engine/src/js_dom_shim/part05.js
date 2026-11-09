@@ -460,6 +460,34 @@
           // §4.10.7 set the selected index——全员 selectedness=false、命中者 true +
           // dirtiness true；不触发 selectedness setting，-1/越界可全不选）。
           _zwSetSelectSelectedIndex(sel, handle, value);
+          // s324：selectedcontent 同步更新（spec set selected index 步尾）。
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try { _zwSelectedContentUpdate(sel, handle); } catch (_eScSi) {}
+          }
+        } else if (p === 'selectedContentElement' && _zwIsSelectTag(sel, handle)) {
+          // s324：`select.selectedContentElement = el`（selectedcontentelement 内容
+          // 属性反射——element → 属性落 id，null/非元素 → 移除；关联变更即同步 sc
+          // 更新，attr.tentative「IDL assign synchronously assign / not clear」断言面；
+          // 移除面同面更新对已无关联恒 no-op，内容保持）。
+          if (value && typeof value === 'object' && value.nodeType === 1) {
+            var _sceId = null;
+            try { _sceId = value.id; } catch (_eScSeI) { _sceId = null; }
+            var _sceVal = String(_sceId != null ? _sceId : '');
+            if (handle) __zw_set_attr_handle(handle, 'selectedcontentelement', _sceVal);
+            else { __zw_set_attr(sel, 'selectedcontentelement', _sceVal); moAttr = 'selectedcontentelement'; }
+          } else {
+            if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'selectedcontentelement');
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'selectedcontentelement');
+              moAttr = 'selectedcontentelement';
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'selectedcontentelement');
+              moAttr = 'selectedcontentelement';
+            }
+          }
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try { _zwSelectedContentUpdate(sel, handle); } catch (_eScSeU) {}
+          }
         } else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') {
           // `option.selected = x`（R3908b，HTML §4.10.9
           // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-selected）——
@@ -472,6 +500,14 @@
           // 目标 true 时绝对胜出——Chromium/WPT ask-for-reset 反向循环）。
           _optSelectedDirty[key] = !!value;
           _zwAskForReset(sel, handle, key);
+          // s324：selected setter 步尾 → selectedcontent 同步更新（最近 select 经
+          // 身份链解析——detached 无所属 select 时不触发，disconnected 断言面）。
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try {
+              var _scNsOs = _zwOptNearestSelect(sel, handle);
+              if (_scNsOs) _zwSelectedContentUpdate(_scNsOs.sel, _scNsOs.hnd);
+            } catch (_eScOs) {}
+          }
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
           // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。
@@ -1282,6 +1318,18 @@
           if (moAttr !== 'src' && typeof globalThis.__zwImgAttrMutated5277 === 'function') {
             try { globalThis.__zwImgAttrMutated5277(sel, handle, moAttr, false, _zw5277PreAttr); } catch (_e5277idl) {}
           }
+          // s281：AUDIO/VIDEO loading IDL set → 唤醒 deferred lazy video
+          //（to-eager 断言面 IDL 路径——video.loading='eager' 经反射臂写内容
+          // 属性后落此汇流点；册空 no-op）。
+          if (moAttr === 'loading' && typeof globalThis.__zwMediaLoadingMutated5281 === 'function') {
+            try { globalThis.__zwMediaLoadingMutated5281(sel, handle); } catch (_e5281idl) {}
+          }
+          // s281：VIDEO poster IDL set → poster 待取登记/更新（poster-when-visible
+          // 断言面：无 src lazy video 上设 poster——resource timing 条目按旗标
+          // 产出，fetch 唯一通路是唤醒体旗标 flush）。
+          if (moAttr === 'poster' && typeof globalThis.__zwMediaPosterAttrMutated5281 === 'function') {
+            try { globalThis.__zwMediaPosterAttrMutated5281(sel, handle); } catch (_e5281idl2) {}
+          }
         }
         return true;
       },
@@ -1482,6 +1530,35 @@
             && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           return true;
+        }
+        // B7（svg-compat-v2 M3）：SVG 接口原型成员 `in` 可见性兜底——get trap R98 走查
+        // 供给的接口 accessor/method 面（part09b 在 SVGPathElement.prototype 上
+        // defineProperty 的 pathSegList/animatedPathSegList accessor；getTotalLength
+        // 同法 patch SVGGeometryElement.prototype）在 target 无 own key，本 trap 白名单
+        // 缺列使 `'animatedPathSegList' in path` 恒 false（WPT svg/animations
+        // animated-path-helpers.js 的 `'animatedPathSegList' in target` 消费门）。
+        // 按 getPrototypeOf trap 同款路由兜底：__zwSvgTagIface 词表先行门控（非 SVG
+        // tag 不付 ns 探测，#26 热路径成本防御同款）→ _zwIsSvgNsEl 判定 → 接口原型链
+        // own 走查命中即 true；链顶越界 guard 10（SVGPathElement→…→Node 实测 8 层）。
+        // 非 SVG tag / SVG 词表 miss 行为不变（`prop in _t` 兜底），零外溢。
+        if (typeof prop === 'string' && prop !== ''
+            && globalThis.__zwSvgTagIface
+            && globalThis.__zwSvgTagIface[_realTag(sel, handle).toLowerCase()]) {
+          try {
+            if (_zwIsSvgNsEl(sel, handle) && globalThis.SVGElement && globalThis.SVGElement.prototype) {
+              var _b7TagL = _realTag(sel, handle).toLowerCase();
+              var _b7I = globalThis.__zwSvgTagIface[_b7TagL];
+              var _b7p = (_b7I && globalThis[_b7I] && globalThis[_b7I].prototype)
+                ? globalThis[_b7I].prototype
+                : globalThis.SVGElement.prototype;
+              var _b7g = 0;
+              while (_b7p && _b7g < 10) {
+                if (Object.prototype.hasOwnProperty.call(_b7p, prop)) return true;
+                _b7p = Object.getPrototypeOf(_b7p);
+                _b7g++;
+              }
+            }
+          } catch (_eB7h) {}
         }
         return prop in _t;
       },
@@ -3166,12 +3243,40 @@
       // node-creation-realm 的 adoption 后 `shadow.innerHTML = "text<!--comment-->"`
       // 断言 firstChild instanceof Text / lastChild instanceof Comment。
       attachShadow: function (init) {
+        // s180/gethtml（M3 Batch 2）：声明式根重挂接——unsafe 解析产物的
+        // __zwDeclarativeSR 印记（_zwAttachDeclarativeSRView）：init 全成员相等
+        //（mode/delegatesFocus/clonable/serializable）返既有根，任一不等抛
+        // NotSupportedError（handle 域 _attachShadow 同 spec 步骤）。
+        var _dsPre180 = this.__zwDeclarativeSR;
+        if (_dsPre180) {
+          if (init == null || typeof init !== 'object') {
+            throw new TypeError("Failed to execute 'attachShadow' on 'Element': parameter 1 is not of type 'object'.");
+          }
+          var _dsM180 = String(init.mode);
+          if (_dsM180 !== 'open' && _dsM180 !== 'closed') {
+            throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
+          }
+          if (_dsPre180.mode === _dsM180
+              && !!_dsPre180.delegatesFocus === !!init.delegatesFocus
+              && !!_dsPre180.clonable === !!init.clonable
+              && !!_dsPre180.serializable === !!init.serializable) {
+            return _dsPre180;
+          }
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.",
+            'NotSupportedError');
+        }
         var shadow = {
           nodeType: 11,
           nodeName: '#shadow-root',
           mode: init && init.mode === 'closed' ? 'closed' : 'open',
           host: el,
           childNodes: [],
+          // s180/gethtml（M3 Batch 2）：init 状态位（ShadowRoot IDL 读 + getHTML
+          // serializableShadowRoots 资格——_zwResolveRoot180 直接读本对象字段）。
+          delegatesFocus: !!(init && init.delegatesFocus),
+          clonable: !!(init && init.clonable),
+          serializable: !!(init && init.serializable),
           get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
@@ -5260,6 +5365,68 @@
   // 内容查询（querySelector('button') 面）付结构性批代价，通用枚举面零扰动。
   var _zwDsHandleCounter = 0;
   var _zwDsRegMiss = {};
+  // s180/gethtml（M3 Batch 2）：声明式根视图挂载（工厂代理域）——part03
+  // `_zwMBuildDeepTreeNode` 消费 unsafe 深 JSON 的 `sr` 字段调人。ShadowRoot 原型
+  // 节点承载 shadow 子（querySelector/innerHTML 走 R366 原型面），host 侧
+  // `__zwDeclarativeSR` + `shadowRoot` own 印记——三面消费：shadowRoot 直读、
+  // attachShadow 重挂接（part03 轻量路径读 __zwDeclarativeSR）、getHTML 资格判定。
+  function _zwAttachDeclarativeSRView(host, sr, scripting) {
+    if (!host || !sr) return null;
+    var mode = sr.m === 'closed' ? 'closed' : 'open';
+    var root = {
+      nodeType: 11,
+      nodeName: '#shadow-root',
+      mode: mode,
+      host: host,
+      delegatesFocus: !!sr.d,
+      clonable: !!sr.c,
+      serializable: !!sr.s,
+      declarative: true,
+      childNodes: [],
+    };
+    try {
+      Object.defineProperty(root, 'firstChild', { configurable: true, get: function () { return this.childNodes.length ? this.childNodes[0] : null; } });
+      Object.defineProperty(root, 'lastChild', { configurable: true, get: function () { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; } });
+    } catch (_eDsrFc) {}
+    try {
+      if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+        Object.setPrototypeOf(root, globalThis.ShadowRoot.prototype);
+      }
+    } catch (_eDsrSp) {}
+    var nodes = Array.isArray(sr.nodes) ? sr.nodes : [];
+    for (var _dsrI = 0; _dsrI < nodes.length; _dsrI++) {
+      var _dsrC = (typeof _zwMBuildDeepTreeNode === 'function') ? _zwMBuildDeepTreeNode(nodes[_dsrI], root, scripting) : null;
+      if (_dsrC) root.childNodes.push(_dsrC);
+    }
+    try { host.__zwDeclarativeSR = root; } catch (_eDsrA) {}
+    try { host.shadowRoot = root; } catch (_eDsrB) {}
+    return root;
+  }
+  // s180/gethtml（M3 Batch 2）：声明式根注册转移——setHTMLUnsafe handle 容器的
+  // 顶层子重建（_wcRebuildAsHandle detached 真 handle 树）后，工厂代理上的
+  // __zwDeclarativeSR 转登 `_shadowRoots['@'+handle]`（part04 重挂接/getHTML/
+  // shadowRoot 读三面走 handle 域既有通道）。内容直接挂 sr 视图子（镜像构建跳过
+  // ——mirrored/contentBound 先置位）；engine 绑定经 `__zw_declare_fragment` 一次性
+  // 补上（hydrate 同款——此后 AppendChildByHandle 入根正常解析）。
+  function _zwTransferDeclarativeSR(srcNode, dstProxy) {
+    var sr = srcNode && srcNode.__zwDeclarativeSR;
+    var h = dstProxy && dstProxy.__zwHandle;
+    if (!sr || !h) return;
+    var key = _elKey('', h);
+    _zwDsHandleCounter++;
+    var rootHandle = '__ds' + _zwDsHandleCounter;
+    _fragmentHandles[rootHandle] = true;
+    _shadowHandles[rootHandle] = true;
+    _shadowHandleMeta[rootHandle] = { hostSel: '', hostHandle: h, mode: sr.mode, slotAssignment: 'named',
+      delegatesFocus: !!sr.delegatesFocus, clonable: !!sr.clonable, serializable: !!sr.serializable,
+      declarative: true, mirrored: true, contentBound: true };
+    _handleChildren[rootHandle] = (sr.childNodes || []).slice();
+    _shadowRoots[key] = { handle: rootHandle, mode: sr.mode, declarative: true };
+    try {
+      if (typeof __zw_declare_fragment === 'function') __zw_declare_fragment(rootHandle);
+    } catch (_eTdfrag) {}
+    try { dstProxy.shadowRoot = _wrapHandle(rootHandle); } catch (_eTdwrap) {}
+  }
   function _zwDeclarativeShadowHydrate(key, sel, handle) {
     if (_shadowRoots[key]) return true;
     if (!sel) return false;
@@ -5281,8 +5448,13 @@
     var _dsMode = _dsInfo.mode === 'closed' ? 'closed' : 'open';
     _fragmentHandles[rootHandle] = true;
     _shadowHandles[rootHandle] = true;
-    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle || null, mode: _dsMode, slotAssignment: 'named', delegatesFocus: false, declarative: true, mirrored: false };
-    _shadowRoots[key] = { handle: rootHandle, mode: _dsMode };
+    // s180/gethtml（M3 Batch 2）：d/c/s 状态位随注册数据下发（引擎侧
+    // declarative_shadow_deep_json_doc 新增键）——re-attach 全成员相等判定与
+    // getHTML serializable 资格判据同源；`declarative` 进 _shadowRoots 注册项
+    //（attachShadow 重挂接分支判据——声明式可重挂，命令式恒抛）。
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle || null, mode: _dsMode, slotAssignment: 'named',
+      delegatesFocus: !!_dsInfo.d, clonable: !!_dsInfo.c, serializable: !!_dsInfo.s, declarative: true, mirrored: false };
+    _shadowRoots[key] = { handle: rootHandle, mode: _dsMode, declarative: true };
     return true;
   }
 
@@ -5379,6 +5551,55 @@
       _zwDeclarativeShadowHydrate(key, sel, handle);
     }
     if (_shadowRoots[key]) {
+      // s180/gethtml（M3 Batch 2，spec attach a shadow root 步——declarative
+      // re-attach，whatwg/dom#831）：声明式根（DSD 物化产物）的 attachShadow 为
+      // **重挂接**——先 init/slotAssignment 校验（WebIDL 字典转换先于 attach 步骤，
+      // TypeError 优先），再与根状态全成员相等判定（mode/delegatesFocus/clonable/
+      // serializable/slotAssignment）；相等返既有根，任一不等抛 NotSupportedError。
+      // 命令式根仍恒抛（spec：命令式二次 attach 一律 NotSupportedError）。
+      // https://dom.spec.whatwg.org/#concept-attach-a-shadow-root
+      var _dsReg180 = _shadowRoots[key];
+      var _dsMeta180 = _dsReg180.handle ? _shadowHandleMeta[_dsReg180.handle] : null;
+      if (_dsReg180.declarative && _dsMeta180 && _dsMeta180.declarative) {
+        if (init == null || typeof init !== 'object') {
+          throw new TypeError("Failed to execute 'attachShadow' on 'Element': parameter 1 is not of type 'object'.");
+        }
+        var _dsMode180 = String(init.mode);
+        if (_dsMode180 !== 'open' && _dsMode180 !== 'closed') {
+          throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
+        }
+        var _dsSlot180 = 'named';
+        if (init.slotAssignment !== undefined && init.slotAssignment !== null) {
+          _dsSlot180 = String(init.slotAssignment);
+          if (_dsSlot180 !== 'manual' && _dsSlot180 !== 'named') {
+            throw new TypeError("Failed to execute 'attachShadow' on 'Element': Failed to read the 'slotAssignment' property from 'ShadowRootInit': The provided value '" + _dsSlot180 + "' is not a valid enum value of type ShadowRootSlotAssignment.");
+          }
+        }
+        if (_dsMeta180.mode === _dsMode180
+            && !!_dsMeta180.delegatesFocus === !!init.delegatesFocus
+            && !!_dsMeta180.clonable === !!init.clonable
+            && !!_dsMeta180.serializable === !!init.serializable
+            && (_dsMeta180.slotAssignment || 'named') === _dsSlot180) {
+          // spec 恢复/upgrade 步（whatwg/dom#831，WPT attachment.html 恢复案）：
+          // 同模式重挂取回既有声明式根时须**清空** shadow 内容（WPT 断言
+          // innerHTML === ''），且为**一次性**——声明式标记翻转 false，其后任一
+          // attachShadow 走下方命令式根恒抛臂（WPT 'second time ... fails'）。
+          // 清空双面：mutation 队列（命令式根 handle 直绑 ShadowRoot 节点；转登/
+          // 水合 `__ds` 句柄引擎侧落声明 fragment no-op）+ 视图容器同步清
+          //（assertion 同步读面——shadowRoot.innerHTML 经 handle 子读链）。
+          // FIXME: engine `ShadowRootData.declarative` 旗标与 materialized shadow
+          // 树不随本臂翻转/清空（corpus 无钉面——恢复后 getHTML/序列化/布局读
+          // absent，M4 coverage 出现再接线）。
+          // https://dom.spec.whatwg.org/#concept-attach-a-shadow-root
+          try { __zw_set_inner_html_handle_unsafe(_dsReg180.handle, ''); } catch (_eUpg180) {}
+          try { _handleChildren[_dsReg180.handle] = []; } catch (_eUpgV180) {}
+          if (_dsMeta180) _dsMeta180.declarative = false;
+          _dsReg180.declarative = false;
+          return _wrapHandle(_dsReg180.handle);
+        }
+        _throwDom('NotSupportedError',
+          "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.");
+      }
       _throwDom('NotSupportedError',
         "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.");
     }
@@ -5461,7 +5682,14 @@
     // delegate 递归 + ShadowRoot 委派读面消费）。
     // https://dom.spec.whatwg.org/#dom-shadowrootinit-delegatesfocus
     var delegatesFocus = !!init.delegatesFocus;
-    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment, delegatesFocus: delegatesFocus };
+    // s180/gethtml（M3 Batch 2，spec attach a shadow root init 成员）：clonable/
+    // serializable 进根状态（ShadowRoot IDL 读 + getHTML serializableShadowRoots
+    // 资格 + 序列化回写 `shadowrootserializable`/`shadowrootclonable`）。
+    // https://dom.spec.whatwg.org/#dom-shadowrootinit-serializable
+    var clonable180 = !!init.clonable;
+    var serializable180 = !!init.serializable;
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment,
+      delegatesFocus: delegatesFocus, clonable: clonable180, serializable: serializable180 };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
     // s168（html-semantics M2）：engine 物化通道——AttachShadow wire（宿主按身份分
     // 双回调，镜像 append_child / append_child_handle 对偶；mode 枚举与二次 attach
@@ -5470,10 +5698,332 @@
     // appendChild 按常规 parent 解析落入 shadow 树（layout 既有 slot 解析随之激活）。
     // https://dom.spec.whatwg.org/#dom-element-attachshadow
     try {
-      if (sel) __zw_attach_shadow(sel, rootHandle, mode);
-      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode);
+      // s180/gethtml：init 状态位随 mode 下发（引擎 attach_shadow_full 写
+      // ShadowRootData——引擎树 getHTML/序列化面同态）。45 号 M3 手动臂起
+      // slotAssignment 一并下发（'manual' → 引擎侧 resolve_slots 跳过 + slot.assign()
+      // 手动表通道——渲染面与 JS 语义面同态）。
+      var _dfw180 = delegatesFocus ? '1' : '0';
+      var _clw180 = clonable180 ? '1' : '0';
+      var _srw180 = serializable180 ? '1' : '0';
+      var _saw180 = slotAssignment === 'manual' ? '1' : '0';
+      if (sel) __zw_attach_shadow(sel, rootHandle, mode, _dfw180, _clw180, _srw180, _saw180);
+      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode, _dfw180, _clw180, _srw180, _saw180);
     } catch (_e168aw) {}
     return _wrapHandle(rootHandle);
+  }
+
+  // ── s180/gethtml（M3 Batch 2）：setHTMLUnsafe / getHTML ──────────────────
+  // spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html
+  // #dom-element-sethtmlunsafe / #dom-element-gethtml（whatwg/dom#831 unsafe 双
+  // API + 序列化 options）。视图与引擎**双端物化**（Batch 1 教训：两端必须同态）。
+
+  // `_zwFragmentAdded` 的物化对偶——视图深臂切 `__zw_parse_html_subtree_unsafe`
+  //（_zwMBuildBodyTree 第 4 参），sr 字段经 _zwAttachDeclarativeSRView 挂声明式根。
+  // 宿主印章/parentNode 重指（R123/R136）同款。
+  function _zwFragmentAddedUnsafe(html, hostHandle) {
+    if (typeof _zwMBuildBodyTree !== 'function') return [];
+    try {
+      var _uCtxNs = '';
+      try {
+        if (hostHandle != null && typeof _nsHandles !== 'undefined' && _nsHandles[hostHandle]) {
+          _uCtxNs = String(_nsHandles[hostHandle].namespace || '');
+        }
+      } catch (_eUcn) {}
+      var _uScr;
+      try {
+        _uScr = (hostHandle != null && _realTag(null, hostHandle) === 'TEMPLATE') ? false : undefined;
+      } catch (_eUtg) { _uScr = undefined; }
+      // M3 清单 1：宿主 local name 作 context 透传（真实 context 片段解析，防声明式
+      // 模板重挂 body 误物化）；shadow 容器 handle 不作元素 context——引擎 ShadowRoot
+      // 写走 body 兜底，视图同态保持 ''（全文档路径）。
+      var _uCtxTag = '';
+      try {
+        if (hostHandle != null && !(typeof _shadowHandles !== 'undefined' && _shadowHandles[hostHandle])) {
+          _uCtxTag = String(_realTag(null, hostHandle) || '');
+        }
+      } catch (_eUtg2) { _uCtxTag = ''; }
+      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _uCtxNs, _uScr, true, _uCtxTag).childNodes;
+      if (hostHandle != null) {
+        var _uHostProxy = null;
+        try { _uHostProxy = (typeof _wrapHandle === 'function') ? _wrapHandle(hostHandle) : null; } catch (_eUhp) {}
+        for (var _uJ = 0; _uJ < kids.length; _uJ++) {
+          if (kids[_uJ]) {
+            kids[_uJ].__zwFragHostHandle = hostHandle;
+            if (_uHostProxy) {
+              try { kids[_uJ].parentNode = _uHostProxy; } catch (_eUpp) {}
+            }
+          }
+        }
+      }
+      return kids;
+    } catch (_eUfa) { return []; }
+  }
+
+  // `Element/ShadowRoot.setHTMLUnsafe(value)` 实现（part04 trap 双域调人）。镜像
+  // innerHTML setter 主链（removed 快照 → 视图 → 引擎写 → handle 容器顶层重建 +
+  // registry）；MO/slotchange/radio 附属钩子不接（语料无钉面——FIXME 附属钩子按
+  // 实证簇另刀）。sr 注册随顶层重建转移（_zwMEl 印记 → handle 键注册表）。
+  function _zwSetHtmlUnsafeImpl(sel, handle, value) {
+    var _uRemoved = _childNodeList(sel, handle);
+    if (handle && (!_uRemoved || !_uRemoved.length)) {
+      var _uHc = _handleChildren[handle];
+      _uRemoved = _uHc ? _uHc.slice() : [];
+    }
+    _zwRemoveIframeWindowClientsForNodes(_uRemoved);
+    // spec LegacyNullToEmptyString（innerHTML setter 同款）。
+    var _uVal = value === null ? '' : String(value);
+    var _uAdded = _zwFragmentAddedUnsafe(_uVal, handle);
+    // s118 同章：fragment 产物 SCRIPT 盖 already-started（innerHTML setter 同款递归）。
+    if (_uAdded.length) {
+      var _uS118 = function (_ndU) {
+        if (!_ndU || _ndU.nodeType !== 1) return;
+        if (String(_ndU.tagName || '').toUpperCase() === 'SCRIPT') {
+          try { _ndU.__zwFragNoExec = true; } catch (_eU118) {}
+        }
+        var _kcU = null;
+        try { _kcU = _ndU.childNodes; } catch (_eUmK) { return; }
+        if (_kcU) for (var _miU = 0; _miU < _kcU.length; _miU++) _uS118(_kcU[_miU]);
+      };
+      for (var _kiU = 0; _kiU < _uAdded.length; _kiU++) _uS118(_uAdded[_kiU]);
+    }
+    // 引擎写：物化变体（replace_inner_html_unsafe——引擎树 ShadowRoot 同态）。
+    if (handle) __zw_set_inner_html_handle_unsafe(handle, _uVal);
+    else __zw_set_inner_html_unsafe(sel, _uVal);
+    // t8r 同款：handle 容器顶层元素子重建 detached 真 handle 树（.style 等元素
+    // 接口可读）+ sr 注册转移（重建 handle 键入 _shadowRoots——重挂接/getHTML）。
+    if (handle && !(_uVal.indexOf('<') < 0)) {
+      var _uMat = [];
+      for (var _uI = 0; _uI < _uAdded.length; _uI++) {
+        var _uK = _uAdded[_uI];
+        var _uW = (_uK && _uK.nodeType === 1) ? _wcRebuildAsHandle(_uK) : _uK;
+        if (_uW && _uW !== _uK && _uW.__zwHandle && _zwNodeParent) {
+          _zwNodeParent[_uW.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+        }
+        if (_uK && _uK.nodeType === 1 && _uW && _uW.__zwHandle && _uK.__zwDeclarativeSR) {
+          try { _zwTransferDeclarativeSR(_uK, _uW); } catch (_eTrSR) {}
+        }
+        _uMat.push(_uW);
+      }
+      _handleChildren[handle] = _uMat;
+    } else if (handle && _uVal.indexOf('<') < 0) {
+      _handleChildren[handle] = [];
+    }
+  }
+
+  // getHTML options 解析（spec 序列化 options 字典）。
+  function _zwGetHtmlOpts180(options) {
+    var o = { srs: false, csr: false, list: [] };
+    if (options != null && typeof options === 'object') {
+      o.srs = !!options.serializableShadowRoots;
+      o.csr = !!options.closedShadowRoots;
+      var l = options.shadowRoots;
+      if (l != null) {
+        if (Array.isArray(l)) o.list = l;
+        else o.list = [l];
+      }
+    }
+    return o;
+  }
+
+  // 根资格判定（spec 序列化步——列表成员恒收；serializable×srs / closed×csr）。
+  function _zwSrQualifies180(mode, df, cl, srl, rootObj, o) {
+    if (o.list && o.list.length && rootObj != null && o.list.indexOf(rootObj) >= 0) return true;
+    if (srl && o.srs) return true;
+    if (mode === 'closed' && o.csr) return true;
+    return false;
+  }
+
+  // 节点根解析：工厂代理 `__zwDeclarativeSR` 印记优先；handle/sel 域走注册表
+  //（hydrate consult 补登记 sel 域声明式根）。返 {mode,df,cl,srl,kids} 或 null。
+  function _zwResolveRoot180(node, o) {
+    var srObj = null;
+    try { srObj = node.__zwDeclarativeSR || null; } catch (_eRr1) {}
+    if (srObj) {
+      if (!_zwSrQualifies180(srObj.mode, srObj.delegatesFocus, srObj.clonable, srObj.serializable, srObj, o)) return null;
+      return { mode: srObj.mode, delegatesFocus: srObj.delegatesFocus, clonable: srObj.clonable,
+        serializable: srObj.serializable, kids: srObj.childNodes || [] };
+    }
+    var h = null, s = null;
+    try { h = node.__zwHandle || null; } catch (_eRr2) {}
+    try { s = node.__zwSelector || null; } catch (_eRr3) {}
+    if (!h && !s) return null;
+    var key = _elKey(s, h);
+    if (!_shadowRoots[key] && typeof _zwDeclarativeShadowHydrate === 'function') {
+      _zwDeclarativeShadowHydrate(key, s, h);
+    }
+    var reg = _shadowRoots[key];
+    if (!reg) return null;
+    var meta = reg.handle ? _shadowHandleMeta[reg.handle] : null;
+    if (!meta) return null;
+    if (typeof _zwDeclarativeShadowEnsureMirrors === 'function') {
+      try { _zwDeclarativeShadowEnsureMirrors(reg.handle); } catch (_eRrM) {}
+    }
+    var rootObj = _wrapHandle(reg.handle);
+    if (!_zwSrQualifies180(meta.mode, meta.delegatesFocus, meta.clonable, meta.serializable, rootObj, o)) return null;
+    var kids = null;
+    if (typeof _handleChildNodes === 'function') {
+      try { kids = _handleChildNodes(reg.handle); } catch (_eRrK) { kids = null; }
+    }
+    if (!kids) kids = _handleChildren[reg.handle] || [];
+    return { mode: meta.mode, delegatesFocus: meta.delegatesFocus, clonable: meta.clonable,
+      serializable: meta.serializable, kids: kids };
+  }
+
+  // 根存在判定（**不含资格**——`_zwResolveRoot180` 对未资格根返 null，echo 剔除
+  // 需要独立存在面：closed/非 serializable 根同样把快照视图的 template echo 变成
+  // 非法子，spec：根不入 light 子序列化面）。
+  function _zwHasRoot180(node) {
+    try { if (node.__zwDeclarativeSR) return true; } catch (_eHr0) {}
+    var h = null, s = null;
+    try { h = node.__zwHandle || null; } catch (_eHr1) {}
+    try { s = node.__zwSelector || null; } catch (_eHr2) {}
+    if (!h && !s) return false;
+    var key = _elKey(s, h);
+    if (!_shadowRoots[key] && typeof _zwDeclarativeShadowHydrate === 'function') {
+      try { _zwDeclarativeShadowHydrate(key, s, h); } catch (_eHr3) {}
+    }
+    return !!_shadowRoots[key];
+  }
+
+  // shadow echo 子判定——快照视图 unmaterialized 解析让已物化根以 `<template
+  // shadowrootmode>` 普通模板形态存活于融合 childNodes（引擎 s168 序列化回环的
+  // 视图投影）。spec：物化根不在 light 子序列化面（innerHTML/getHTML 恒干净），
+  // 宿主有序列化根时剔除该形态子。引擎子树内 `<template shadowrootmode>` 只能
+  // 来自真根（物化解析消费一切合法声明式模板），故判定按属性 presence 精确。
+  function _zwIsShadowEcho180(n) {
+    if (!n || n.nodeType !== 1) return false;
+    var t = '';
+    try { t = String(n.localName || n.tagName || '').toLowerCase(); } catch (_eSe0) {}
+    if (t !== 'template') return false;
+    try { return !!(n.hasAttribute && n.hasAttribute('shadowrootmode')); } catch (_eSe1) { return false; }
+  }
+
+  // 引擎串 echo 剔除（outerHTML getter 引擎臂消费）——模板 tag 含 shadowrootmode
+  // 即剔（`_zwIsShadowEcho180` 的字符串形态）。FIXME: 根内容含嵌套 template 时
+  // 非贪婪止于内层闭 tag（语料无钉面——引擎物化不达 shadow 内部模板，嵌套 DSD
+  // 与 Batch 1 同刀挂账）。
+  function _zwStripEchoHtml180(html) {
+    return String(html).replace(/<template\b[^>]*>([\s\S]*?)<\/template>|<template\b[^>]*>/g, function (m) {
+      return /\bshadowrootmode\b/.test(m) ? '' : m;
+    });
+  }
+
+  // 子列表序列化（宿主有根时剔 echo 子——`_zwSerNode180` 元素臂与 getHTML 直走
+  // 面共用同一闸门）。
+  function _zwSerKids180(parentNode, kids, o) {
+    var hasRoot = (parentNode && typeof _zwHasRoot180 === 'function') ? _zwHasRoot180(parentNode) : false;
+    var out = '';
+    for (var i = 0; i < kids.length; i++) {
+      if (hasRoot && _zwIsShadowEcho180(kids[i])) continue;
+      out += _zwSerNode180(kids[i], o);
+    }
+    return out;
+  }
+
+  // 单节点序列化（资格根模板形注入宿主开标签后——spec 顺序 shadowrootmode →
+  // delegatesfocus → serializable → clonable，与引擎 serializer 逐字节一致）。开
+  // 标签属性段借 outerHTML 前缀（R3198/R3201 转义/顺序同源）；子递归（嵌套根同判）。
+  // FIXME: 属性值含 '>' 时 indexOf('>') 开标签切分会切早（语料无钉面）。
+  var _zwVoidTags180 = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/;
+  function _zwSerNode180(n, o) {
+    if (!n) return '';
+    var nt = 0;
+    try { nt = n.nodeType; } catch (_eSn0) {}
+    if (nt === 3) {
+      var tv = n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : '');
+      return _zwMEscapeText(String(tv));
+    }
+    if (nt === 8) {
+      var cv = n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : '');
+      return '<!--' + String(cv) + '-->';
+    }
+    if (nt === 7) {
+      return '<?' + (n.target != null ? n.target : (n.nodeName != null ? n.nodeName : '')) + ' '
+        + (n.data != null ? n.data : (n.nodeValue != null ? n.nodeValue : '')) + '?>';
+    }
+    if (nt !== 1) return '';
+    var tag = '';
+    try { tag = String(n.localName || n.tagName || '').toLowerCase(); } catch (_eSn1) {}
+    if (!tag) return '';
+    var oh = '';
+    try { oh = String(n.outerHTML || ''); } catch (_eSn2) {}
+    // template 元素（非 shadow host——序列化恒 outerHTML 原形，WC-M3 空形态机器）。
+    if (tag === 'template') return oh;
+    var gt = oh.indexOf('>');
+    var open = (oh && gt >= 0) ? oh.slice(0, gt + 1) : '<' + tag + '>';
+    var close = _zwVoidTags180.test(tag) ? '' : '</' + tag + '>';
+    var sr180 = _zwResolveRoot180(n, o);
+    var mid = '';
+    if (sr180) {
+      mid = '<template shadowrootmode="' + sr180.mode + '"';
+      if (sr180.delegatesFocus) mid += ' shadowrootdelegatesfocus=""';
+      if (sr180.serializable) mid += ' shadowrootserializable=""';
+      if (sr180.clonable) mid += ' shadowrootclonable=""';
+      mid += '>';
+      var sk = sr180.kids || [];
+      for (var si = 0; si < sk.length; si++) mid += _zwSerNode180(sk[si], o);
+      mid += '</template>';
+    }
+    var kids180 = [];
+    try { kids180 = n.childNodes || []; } catch (_eSn3) {}
+    var kidsOut = _zwSerKids180(n, kids180, o);
+    return open + mid + kidsOut + close;
+  }
+
+  // 子列表序列化 + 无资格根短路（equality 断言面逐字节同 innerHTML 机器——经
+  // proxy getter 复用既有融合序列化）。qualified 臂走 `_zwSerKids180`（parentNode
+  // echo 闸门同 innerHTML 语义）。
+  function _zwGetHtmlKids180(sel, handle, kids, o, parentNode) {
+    var hasQual = false;
+    for (var qi = 0; qi < kids.length; qi++) {
+      if (kids[qi] && kids[qi].nodeType === 1 && _zwResolveRoot180(kids[qi], o)) { hasQual = true; break; }
+    }
+    if (!hasQual) {
+      try { return _makeProxy(sel, handle).innerHTML; } catch (_eGhSc) { return ''; }
+    }
+    return _zwSerKids180(parentNode || null, kids, o);
+  }
+
+  // `Element/ShadowRoot.getHTML(options)` 实现（part04 trap 双域调人）——子列表
+  // 解析同 innerHTML getter（容器 handle 只读 registry；普通 handle 融合本地视图；
+  // sel 域 _childNodeList）。元素域自根资格时先注模板形（spec：getHTML 序列化
+  // 含自身 shadow root，`host.getHTML({serializableShadowRoots:true})` 断言面）。
+  function _zwGetHtmlImpl(sel, handle, options) {
+    var o = _zwGetHtmlOpts180(options);
+    var kids;
+    var selfN = null;
+    if (handle) {
+      if (_isContainerHandle(handle)) {
+        kids = _handleChildNodes(handle);
+      } else {
+        selfN = _makeProxy(sel, handle);
+        var _g1 = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+        var _g2 = (_handleChildren[handle] || []).slice();
+        if (_g1 && _g1.length) kids = _g1.concat(_g2);
+        else if (_g2.length) kids = _g2;
+        else if (_g1) kids = _g1;
+        else kids = [];
+      }
+    } else {
+      selfN = (sel != null && sel !== '') ? _makeProxy(sel, handle) : null;
+      kids = _childNodeList(sel, handle);
+    }
+    // 自根模板形（`_zwResolveRoot180` 已内含资格判定，未资格返 null → 无前缀）。
+    var pre = '';
+    if (selfN) {
+      var selfSR = _zwResolveRoot180(selfN, o);
+      if (selfSR) {
+        pre = '<template shadowrootmode="' + selfSR.mode + '"';
+        if (selfSR.delegatesFocus) pre += ' shadowrootdelegatesfocus=""';
+        if (selfSR.serializable) pre += ' shadowrootserializable=""';
+        if (selfSR.clonable) pre += ' shadowrootclonable=""';
+        pre += '>';
+        pre += _zwSerKids180(selfN, selfSR.kids || [], o);
+        pre += '</template>';
+        return pre + _zwSerKids180(selfN, kids || [], o);
+      }
+    }
+    return _zwGetHtmlKids180(sel, handle, kids || [], o, selfN);
   }
 
   // WC-M3（spec slotchange）：shadow 树内全 slot 的 slotchange 微任务派发——分配变化
@@ -8068,11 +8618,17 @@
         return wctx;
       }
       if (t !== '2d') return null; // 仅 2d/webgl；其余类型（webgl2/bitmaprenderer 等）defer
+      // s334：CanvasRenderingContext2DSettings 字典转换——spec getContext 步每次调用
+      // 都执行（创建相与缓存相均跑成员 Get；成员按字母序：alpha → colorSpace（枚举
+      // ToString 可观察）→ desynchronized → willReadFrequently；undefined/null →
+      // 默认零 Get；非对象 → TypeError，离格枚举 → TypeError）。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext
+      // https://webidl.spec.whatwg.org/#es-dictionary （2d-getcontext-options 断言面）
+      var _gcs = _zwCanvasCtxSettings(arguments[1]);
       if (el._ctx) return el._ctx._zwCtxType === 'webgl' ? null : el._ctx;
       if (typeof __zw_canvas_op !== 'function') return null;
       var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height),
-        (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-          ? arguments[1].colorSpace : 'srgb',
+        _gcs.colorSpace,
         (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorType === 'string')
           ? arguments[1].colorType : 'unorm8');
       if (!id || String(id).charAt(0) === '!') return null;
@@ -8083,8 +8639,8 @@
         __zw_set_attr_handle(_handle, 'data-zw-canvas-ctx', String(id));
       }
       // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 画布的浮点转换基准）。
-      el._ctx._cs = (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-        ? arguments[1].colorSpace : 'srgb';
+      // s334：改读字典转换产物（不再直读 options——Get 次序归 spec 字典转换单点）。
+      el._ctx._cs = _gcs.colorSpace;
       // R34xx：ctx.canvas 只读（spec——赋值忽略；2d.canvas.host.readonly）。
       Object.defineProperty(el._ctx, 'canvas', {
         value: el,
@@ -8122,6 +8678,11 @@
       if (el._ctx && el._ctx._zwUnclean) {
         throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
       }
+      // s329：bitmap 无像素（宽/高 0）→ 恒 'data:,'（spec 步骤 2，origin-clean 门之后、
+      // 惰性建 ctx 之前；el.width/height getter 属性即时读——createElement 产物走本实例
+      // 面而非 part04 trap，c.width=0 动态置零同臂）。toDataURL.zero 断言。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl
+      if (el.width === 0 || el.height === 0) return 'data:,';
       if (!el._ctx) el.getContext('2d');
       if (!el._ctx) return 'data:,';
       var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
@@ -8152,6 +8713,11 @@
       // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
       var p = Promise.resolve().then(function () {
         if (typeof __zw_canvas_op !== 'function') return null;
+        // s329：bitmap 无像素（宽/高 0）→ null（spec result=null，惰性建 ctx 之前；
+        // el.width/height getter 属性即时读——createElement 产物走本实例面而非
+        // part04 trap）。toBlob.null 断言。
+        // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-toblob
+        if (el.width === 0 || el.height === 0) return null;
         if (!el._ctx) el.getContext('2d');
         if (!el._ctx || !el._ctx._handle) return null; // 无 ctx → 无 bitmap
         var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
@@ -8225,6 +8791,37 @@
       } catch (_e128cv) {}
       return c;
     };
+    // s180/gethtml（M3 Batch 2）：standalone canvas 补 ParentNode.append 变参面——
+    // 委托同 handle 的 trap 代理（R57 innerHTML/outerHTML 同款桥）。gethtml.html
+    // 命令式臂 `element.append(...temp.childNodes)` 曾 TypeError（standalone 对象
+    // 无 proxy trap、缺现代 ParentNode API）。字符串包 Text / 节点插入语义在
+    // part04 trap append 臂内（spec dom-parent-node-append 前置校验同享）。
+    if (typeof _makeProxy === 'function' && el.__zwHandle) {
+      el.append = function () {
+        var _pn180 = _makeProxy(null, el.__zwHandle);
+        return _pn180.append.apply(_pn180, arguments);
+      };
+    }
+    // 42 号 M3 清单 1 续刀（canvas C 族收口）：standalone canvas 的**子节点操作面**
+    //（R57「DOM 集成/appendChild 为 follow-up」到期，s180 append 同款桥）。旧对象
+    // 仅 R57 handle 记账面——无 appendChild/insertBefore/removeChild、无 childNodes
+    // 视图：`_wcRebuildAsHandle`（part03 createElement 重建臂）对 canvas 子递归
+    // `el.appendChild(ck)` TypeError → 外层 catch 弃转 plain 节点返回 → 子树全丢
+    //（WPT attachment canvas disallowed 族 `querySelector('template[shadowrootmode]')`
+    // miss，6F）。经同 handle 的 trap 代理委托共享实现（WebIDL 校验/R368 plain 子
+    // 盖章/wire/_recordHandleChild 记账/s95/s131 全套复用，不复制 trap 逻辑），
+    // childNodes 读面同桥（R140 live NodeList 按 handle 键缓存——与 trap 面同一视图）。
+    if (typeof _makeProxy === 'function' && el.__zwHandle) {
+      el.appendChild = function (c) { return _makeProxy(null, el.__zwHandle).appendChild(c); };
+      el.insertBefore = function (c, r) { return _makeProxy(null, el.__zwHandle).insertBefore(c, r); };
+      el.removeChild = function (c) { return _makeProxy(null, el.__zwHandle).removeChild(c); };
+      try {
+        Object.defineProperty(el, 'childNodes', {
+          configurable: true, enumerable: true,
+          get: function () { return _makeProxy(null, el.__zwHandle).childNodes; },
+        });
+      } catch (_eM3Cc180) {}
+    }
     return el;
   }
   // R3077：HTMLCanvasElement width/height 反射读（spec default 300/150）。供 CANVAS get-trap getContext
@@ -8954,11 +9551,40 @@
   // 同族 CanvasPattern/CanvasGradient/Path2D/CanvasFilter/OffscreenCanvas 本文件
   // 均已急切注册，唯 CTR 例外。https://webidl.spec.whatwg.org/#es-interfaces
   if (!globalThis.CanvasRenderingContext2D) {
-    globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+    // s334：Illegal constructor——spec CTR 接口无 [Constructor]/[LegacyFactoryFunction]，
+    // call/new 均抛 TypeError（historical「CanvasRenderingContext2D constructors」断言面）；
+    // R49xx typeof 特性检测面不变（typeof 仍 'function'）。实例经 Object.create(prototype)
+    // 产（_zwMakeCtx2d），不经本函数。
+    // https://webidl.spec.whatwg.org/#es-interface-call
+    globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {
+      throw new TypeError('Illegal constructor');
+    };
     Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
       writable: false,
       configurable: false
     });
+  }
+  // s334：CanvasRenderingContext2DSettings 字典转换（spec 成员字母序 Get；colorSpace
+  // 枚举经 ToString 可观察；undefined/null → 默认零 Get；非对象 → TypeError；离格
+  // 枚举 → TypeError）。仅转换+校验面，不做宿主存储择别（alpha/desynchronized/
+  // willReadFrequently 的行为面 defer——软渲染无 CPU/GPU 存储分岔）。
+  // https://webidl.spec.whatwg.org/#es-dictionary
+  function _zwCanvasCtxSettings(v) {
+    if (v === undefined || v === null) {
+      return { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false };
+    }
+    if (typeof v !== 'object') throw new TypeError('CanvasRenderingContext2DSettings conversion');
+    var s = {};
+    s.alpha = v.alpha; // boolean，缺省 true
+    var _csV = v.colorSpace;
+    if (_csV !== undefined && _csV !== null) {
+      _csV = String(_csV); // 枚举 ToString 可观察面（2d-getcontext-options 断言）
+      if (_csV !== 'srgb' && _csV !== 'display-p3') throw new TypeError('CanvasRenderingContext2DSettings.colorSpace');
+    }
+    s.colorSpace = (_csV === undefined || _csV === null) ? 'srgb' : _csV;
+    s.desynchronized = v.desynchronized; // boolean，缺省 false
+    s.willReadFrequently = v.willReadFrequently; // boolean，缺省 false
+    return s;
   }
   // R34xx：WebIDL 参数语义——缺省（undefined/null）→ TypeError（missingargs：
   // 2d.conformance.requirements.missingargs）；非有限（NaN/±Infinity）数值 → 方法忽略
@@ -8982,7 +9608,11 @@
     // 不可删，spec）。R49xx 起全局注册已提前到上方急切段（typeof 检测面），
     // 此处保留幂等兜底（急切段执行后被页面 delete 之类移除全局时的再注册路径）。
     if (!globalThis.CanvasRenderingContext2D) {
-      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+      // s334：同急切段——Illegal constructor（spec 无 [Constructor]；call/new 抛
+      // TypeError；实例经 Object.create(prototype) 产）。
+      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {
+        throw new TypeError('Illegal constructor');
+      };
       Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
         writable: false,
         configurable: false
@@ -10845,7 +11475,9 @@
       var _write = function (nv) {
         var _moTgt = _mo_id(null, parentSel);
         var _old = (_moTgt != null && _mo_any_wants_char_old(_moTgt)) ? _cur() : null;
-        node.__nv = nv; node.textContent = nv; node.length = nv.length;
+        // textContent 不在此回写（下方 R260 accessor 化后 setter 会再进 _write——互递归）；
+        // accessor getter 读 __nv，视图一致。
+        node.__nv = nv; node.length = nv.length;
         __zw_set_child_text(parentSel, String(node.__zwChildIndex || 0), nv);
         _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node.__zwNotifyTarget || node });
       };
@@ -10920,14 +11552,41 @@
       // data/nodeValue setter（CharacterData data IDL 可写）——写经 _write；getter 读本地（_write 同步）。
       // R129：[LegacyNullToEmptyString] DOMString——null→''、undefined→'undefined'（WPT
       // CharacterData-data 两断言；旧 `v == null ? '' : v` 把 undefined 也吞成 ''）。
+      // R260 dataChange 簇（dom-expansion M2）：`.data=`/`.nodeValue=` 全量替换 =
+      // replace(0, length, new)——上方注释声称「_write 内统一以 (0, 旧长, 新长) 调整」
+      // 但 _write 从未实现调整，live-range 边界失效（Range-mutations-dataChange
+      // wrong start/end offset 273F）。调整先于写（同 insert/delete/replaceData 臂）。
+      // https://dom.spec.whatwg.org/#concept-cd-replace
       Object.defineProperty(node, 'data', {
         get: function () { return node.nodeValue; },
-        set: function (v) { _write(v === null ? '' : String(v)); },
+        set: function (v) {
+          var _cdNew = v === null ? '' : String(v);
+          _r260adj(0, _cur().length, _cdNew.length);
+          _write(_cdNew);
+        },
         configurable: true, enumerable: true,
       });
       Object.defineProperty(node, 'nodeValue', {
         get: function () { return node.__nv; },
-        set: function (v) { _write(v === null ? '' : String(v)); },
+        set: function (v) {
+          var _cdNew = v === null ? '' : String(v);
+          _r260adj(0, _cur().length, _cdNew.length);
+          _write(_cdNew);
+        },
+        configurable: true, enumerable: true,
+      });
+      // R260 dataChange 簇根因 ②：textContent= 原为构造字面 plain 字段——赋值只改
+      // 本地视图不同步 host（.data 读 __nv 恒旧值 → "data not changed as expected"
+      // 96F）。spec CharacterData.textContent setter 对 CharacterData 即 replace data
+      //（无子可换，非元素「string replace all」语义）。
+      // https://dom.spec.whatwg.org/#dom-node-textcontent
+      Object.defineProperty(node, 'textContent', {
+        get: function () { return node.__nv; },
+        set: function (v) {
+          var _tc5New = v === null ? '' : String(v);
+          _r260adj(0, _cur().length, _tc5New.length);
+          _write(_tc5New);
+        },
         configurable: true, enumerable: true,
       });
       node.__zwWriteChildText = _write;
@@ -11092,6 +11751,41 @@
       return _zwOverlayPendingChildNodes(out, sel, parent);
     } catch (_e) { return []; }
   }
+  // s324（html-semantics M2 切片 324）：**sel 域融合 textContent 拼串**——R380 同款
+  // 三臂门（同 turn 内 pending 视图激活：innerHTML=/appendChild/子树脏）激活时沿
+  // `_childNodeList` 融合子视图递归拼字符数据（R81 handle 分支同口径——Text/CDATA 拼
+  // data，元素递归 textContent，comment/PI 不计）。门未激活返 null（调用方回落
+  // `__zw_get_text_lw` host 读，R3028 语义零变化）。缺口实证：sel 形解析元素
+  // innerHTML= 纯文本后同 turn textContent 读 host 恒 stale（探针 div/sc 双案；
+  // host 写异步 apply，innerHTML getter 有融合臂而 textContent 无——selectedcontent
+  // 更新面 selectedcontent.html test2 的 sc.textContent 读首踩）。
+  function _zwFusedTextSel(sel) {
+    var bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+      ? _zwPendingByParent.get(sel) : null;
+    var arm1 = !!(bucket && (bucket.added.length || bucket.removed.length)
+        && (!globalThis._zwApplyGeneration || bucket.stamp === globalThis._zwApplyGeneration()));
+    var arm2 = !!(typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel));
+    var arm3 = !!(typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel));
+    if (!(arm1 || arm2 || arm3)) return null;
+    var kids;
+    try { kids = _childNodeList(sel, null) || []; } catch (_eFtc) { return null; }
+    var out = '';
+    for (var i = 0; i < kids.length; i++) {
+      var n = kids[i];
+      if (!n) continue;
+      var nt = null;
+      try { nt = n.nodeType; } catch (_eFtn) { nt = null; }
+      if (nt === 3 || nt === 4) {
+        out += String(n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : ''));
+      } else if (nt === 1) {
+        var t = null;
+        try { t = n.textContent; } catch (_eFtt) { t = null; }
+        if (typeof t === 'string') out += t;
+      }
+    }
+    return (out !== '' || kids.length > 0) ? out : null;
+  }
+
   // R380/pa3（js-dom M4，pending-apply RFC）：**sel 域融合 innerHTML 序列化**——pending
   // 桶非空（同 turn 内 replaceWith/removeChild/appendChild/innerHTML= 等已记账、host 快照
   // 未换代）时，host 字符串是 apply 滞后旧树；从融合 childNodes 视图序列化
@@ -11205,12 +11899,22 @@
     }
     // R55：no-pending 快路径返回副本——out 可能是基底缓存本体（_childNodeList 缓存命中/刚存入），
     // 调用方 concat/原地写不得污染缓存。
-    if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out.slice();
+    // s325（html-semantics M2 切片 325）：快路径门补桶态——原门只看全局 pending 表，
+    // 桶级 removed（R51c 消零条目不入全局表 + R334 移挂/对冲仅桶级记账）在全局表排空时
+    // 被跳过 → 基底残影泄漏（select-options-id test2「remove 后 select.length 6 残留」：
+    // 首轮 remove 全局表有条目门开；跨测试复跑前全局条目被重添加对冲/消零悉数排空，
+    // 桶 removed=[four] 独存，快路径直返未滤基底）。桶 miss 或桶空才随全局空一起快出；
+    // 全局空 + 桶空的热路径（R51c 消零主场景）不受影响。
+    var _s325BucketGate = (sel != null) ? _zwPendingByParent.get(sel) : null;
+    if (!_zwPendingAdded.length && !_zwPendingRemoved.length
+        && (!_s325BucketGate || (!_s325BucketGate.added.length && !_s325BucketGate.removed.length))) {
+      return out.slice();
+    }
     // js-dom M4 R51c：按 parentSel 分桶查询（桶在 _zwHCLiveInvalidate 记账时维护）——旧实现每次
     // childNodes 读全表扫 pending（testharness 单 turn 数千 subtest 全量重建 → 万级表 × 每读 O(n)
     // 线性增速，Range-mutations-dataChange 实测 250 次/5s → 1250 次/31s O(n²) 超时）。桶 miss 且
     // 全局表空则零成本快出。
-    var bucket = _zwPendingByParent.get(sel);
+    var bucket = _s325BucketGate;
     if (!bucket || (!bucket.added.length && !bucket.removed.length)) return out;
     // R383（editing-compat attr 门轮归因，2026-10-31）：**跨代际桶不并入序列化视图**——
     // R381 的桶级代际门只护「是否走融合」决策（R380 门），门内 `_childNodeList` 经本函数
@@ -11589,7 +12293,9 @@
             if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
             return this.__zwHC().length;
           },
-          set: function () {}, enumerable: false, configurable: true,
+          // WebIDL 属性/操作在接口 prototype 上 enumerable:true（for-in 可见——
+          // document.forms iteration 期望 ["0","1","2","item","namedItem","length"]）。
+          set: function () {}, enumerable: true, configurable: true,
         });
         Object.defineProperty(_hp, 'item', {
           value: function (i) {
@@ -11597,7 +12303,7 @@
             var n = this.__zwHC(), u = _zwToUint32(i);
             return u < n.length ? n[u] : null;
           },
-          writable: true, enumerable: false, configurable: true,
+          writable: true, enumerable: true, configurable: true,
         });
         Object.defineProperty(_hp, 'namedItem', {
           value: function (name) {
@@ -11619,7 +12325,7 @@
             }
             return null;
           },
-          writable: true, enumerable: false, configurable: true,
+          writable: true, enumerable: true, configurable: true,
         });
       }
     } catch (_eHP) {}
@@ -11631,18 +12337,20 @@
         if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
         return this.__zwHC().length;
       },
-      set: function () {}, enumerable: false, configurable: true,
+      // WebIDL regular attribute enumerable:true（for-in 面同 _hp 层注释）。
+      set: function () {}, enumerable: true, configurable: true,
     });
-    // WebIDL §3.6.5：接口操作（method）在 prototype 上 enumerable:false（for-in 不可见），
-    // regular attribute（length getter）enumerable:true。WPT own-props for-in 期望仅
-    // indexed/named（+length 属 prototype 层）。
+    // WebIDL（M3 documents 簇修正）：接口 prototype 上属性与操作均 enumerable:true
+    //（for-in 可见——document.forms iteration 期望 ["item","namedItem","length"]；
+    // **own 层** named 属性仍 LegacyUnenumerableNamedProperties enumerable:false，
+    // for-in/gOPN 期望仅 indexed 的案在 own 层不受此影响）。
     // R120：item/namedItem 直接转发构造器 prototype 的同一函数（WPT expando 断言
     // `fn === HTMLCollection.prototype.item` 要求 identity 相同——p 层不再定义副本）。
     try {
       var _hp2 = globalThis.HTMLCollection && globalThis.HTMLCollection.prototype;
       if (_hp2 && _hp2.item) {
-        Object.defineProperty(p, 'item', { value: _hp2.item, writable: true, enumerable: false, configurable: true });
-        Object.defineProperty(p, 'namedItem', { value: _hp2.namedItem, writable: true, enumerable: false, configurable: true });
+        Object.defineProperty(p, 'item', { value: _hp2.item, writable: true, enumerable: true, configurable: true });
+        Object.defineProperty(p, 'namedItem', { value: _hp2.namedItem, writable: true, enumerable: true, configurable: true });
       }
     } catch (_eHP2) {}
     // 恢复被 R120 段误删的原有定义（@@iterator value iterator——for-of 消费路径 +
@@ -11814,13 +12522,11 @@
   // 快照替换形态）。id 覆盖表同源清理（旧快照的 id 变更对新文档无意义）。
   globalThis.__zw_reset_pending_state = function () {
     _zwLiveCollections.length = 0;
-    // r2s2（导航后 TITLE 一致性）：document.title 缓存随快照换代失效。getter 首访惰性读
-    // `<title>` 后与 setter 显式值共用 `_doc_title`（part06）永久驻留——同 worker 就地换
-    // 文档（表单提交/location.assign 导航落地形态）后残留旧文档标题：旧页读过的旅程提交后
-    // 读回旧标题；占位文档期首读的缓存空串致新文档换入后仍读空。置 null → getter 按新文档
-    // 惰性重读（document.title getter：当前文档首 <title> 元素子文本）。
-    // https://html.spec.whatwg.org/multipage/dom.html#document.title
-    _doc_title = null;
+    // M3 documents 簇：title element 查找缓存随换代失效（part03 _zwTitleElCache——
+    // r2s2 换代滞留同 _doc_title 前车之鉴：旧文档 title 元素引用对新快照失聪）。
+    try {
+      if (typeof _zwTitleElCache !== 'undefined') { _zwTitleElCache.stamp = null; _zwTitleElCache.doc = null; _zwTitleElCache.el = null; }
+    } catch (_eTc2) {}
     // t8e：children 集合缓存随换代重置（与注册表清空同点）——旧集合自此刻起与旧文档
     // 一样失聪（页面持旧引用冻结 = 旧文档语义，slice32 dead 标记同款）；不重置则换代后
     // 缓存命中绕过重建，新快照内容不可见（R357 stale 根因同形）。
@@ -12457,11 +13163,31 @@
       for (var pb1 = 0; pb1 < remFlat.length; pb1++) {
         var _pr = remFlat[pb1];
         if (_pb.addedSet.has(_pr)) {
-          // R51c 消零：曾 pending-added → 对冲（同全局表语义），不记 removed。
+          // s325（html-semantics M2 切片 325）：对冲前提修正——R51c 消零假设
+          // 「added ⇒ host 快照从未见过」，但 sel 子移动（R334 appendChild reparent）
+          // 的补偿条目是**基底快照成员**（基底在 apply 前仍列该子于本父；engine
+          // 纯测试环境无配对 apply，基底恒原始位）。此类条目 remove 时不对冲：
+          // 照常记 removed（overlay 剔除基底残影至 apply）+ splice added（补偿
+          // 撤销）。判据 = 本父基底缓存 identity 成员（_wrapSelector identity 稳定，
+          // 移动补偿与基底缓存同源——R5246 同款）；真 pending 新子（createElement/
+          // 解析产物，基底从未含）不在基底 → 对冲保持（R51c 热路径零变化）。
+          // select-options-id「moves are reflected」跨测试 remove 面（multiple 后
+          // remove 计数 6 残留）钉此。
+          var _s325InBase = false;
+          if (mutSel && typeof _zwChildBaseCache !== 'undefined' && _zwChildBaseCache) {
+            var _s325Base = null;
+            try { _s325Base = _zwChildBaseCache.get(mutSel) || null; } catch (_eS325bg) { _s325Base = null; }
+            if (_s325Base) {
+              for (var _s325bi = 0; _s325bi < _s325Base.length; _s325bi++) {
+                if (_s325Base[_s325bi] === _pr) { _s325InBase = true; break; }
+              }
+            }
+          }
           _pb.addedSet.delete(_pr);
           if (_pbHitN === 0) _pbHits = [];
           _pbHits.push(_pr);
           _pbHitN++;
+          if (_s325InBase && !_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }
           continue;
         }
         if (!_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }
@@ -13836,6 +14562,32 @@
           }
         }
         added.push(item);
+      } else if (item && typeof item === 'object' && item.__zwSelector
+          && sel && typeof __zw_insert_adjacent_sel_element === 'function') {
+        // R4200 同源补齐（append/replaceChildren 通道）：sel 项（静态解析元素，仅有
+        // __zwSelector 无 __zwHandle）此前掉入下方文本分支——`String(item)` 产出
+        // '[object HTMLDivElement]' 文本节点且真身滞留原父。slot-fallback-content-006
+        // 五处 `host.append(A,B)` 全坏：垃圾文本叠渲染 + 真身未移动致 manual 分配
+        // 通道 parent!=host 过滤全惰性（45 号 M3 R3b 后矩阵 006 仍 4.90% 的根因，
+        // 探针 r3b-probe2/3/4 实证分型）。走 R334/R182 sel wire（'beforeend' =
+        // append 尾插；host insert_nodes_at_position 自带 reparent 移动语义），
+        // insertAdjacent 漏斗 R4200 已修同型洞，本函数是漏网通道。
+        // https://dom.spec.whatwg.org/#dom-parentnode-append
+        __zw_insert_adjacent_sel_element(sel, 'beforeend', item.__zwSelector);
+        // R4200：清同步移除标记（remove→append 重插面，标记残留 isConnected 恒 false）。
+        try {
+          if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(item.__zwSelector);
+        } catch (_e4200umA) {}
+        // R4200：同步可见性——pending 父槽（parentNode getter 在 host 异步 apply
+        // 前即返新父）+ 重解析索引（同 turn getElementById 可见）+ 兄弟基缓存失效。
+        try {
+          item._zwSelPendingParent = { parentSel: sel, nextSibling: null };
+          if (typeof globalThis.__zwPendReselAdd === 'function') globalThis.__zwPendReselAdd(item.__zwSelector, item);
+          if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+        } catch (_e4200svA) {}
+        added.push(item);
+        // FIXME(45-M3+)：handle 父（sel 为空）+ sel 项组合仍缺 wire——appendChild
+        // trap 的 C3 移动语义块（part04）未镜像进本函数，同组合当前仍落文本分支。
       } else {
         var tn = __zw_create_text(String(item));
         if (tn) _textHandles[tn] = true;
@@ -13864,6 +14616,43 @@
         if (!_s4pN || typeof _s4pN !== 'object' || !_s4pN.__zwHandle) continue;
         try {
           if (String(_s4pN.tagName || '').toUpperCase() !== 'SCRIPT') continue;
+          // s343（html-semantics M2 切片 343）：module 单元不走本臂同步 eval——
+          // M2-S4P 建 arm 时只建模 classic 内联（textContent 非空即 (0,eval) 同步
+          // 求值），`document.head.append(module)` 体在插入语句内跑完（probe10
+          // 实证 start|body|after-append 序），违背 spec 动态插入 module 的
+          // evaluate 排在插入脚本之后（s251 同语义；whatwg/html#9864 判据
+          // inline-async-inserted-execorder）。委派 _zwScriptMaybeStartDynamic
+          //（s250 内联 module 分支：run-once 记账先行 + 整体 setTimeout 延迟 +
+          // __zw_compile_inline_module 四态契约），与 R387/s95 cls343 同形；
+          // 委派后不回落 classic eval（module 永不同步求值，即使宿主让位或缺
+          // 回调）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+          var _s4pCls343 = '';
+          try { _s4pCls343 = String(_zwScriptTypeClassify(_s4pN)); } catch (_eS4pc343) {}
+          if (_s4pCls343 === 'module') {
+            if (typeof _zwScriptMaybeStartDynamic === 'function') _zwScriptMaybeStartDynamic(_s4pN);
+            continue;
+          }
+          // s357（html-semantics M2 切片 357）：spec prepare 中止序对齐——①type
+          // 分类 blocked（data block：非法 type/language）在 src 分支前中止，体不
+          // 执行、不置 run-once（remove-src-attr-prepare-a-script 判据面：type=
+          // invalid + src + 内联体 .append()，期望双旗标恒 false——旧实现直呼内联
+          // eval，innerText 旗标臂红）。②src 属性在场走 src 分支（外链取回、体
+          // 忽略）——委派 _zwPrepareSrcScript（gate 内 already-started/nomodule/
+          // for-event/空 src/module 臂完整重检），与 R387b appendChild 面
+          //（execution-timing 049 external-only 判据）同语义；旧实现内联 eval 且
+          // 抢先置 run-once 把 s111 notify 臂的外链取回挡死（probe15 实证
+          // didExecute 恒 false）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+          if (_s4pCls343 === 'blocked') continue;
+          var _s4pHasSrc357 = false;
+          try { _s4pHasSrc357 = !!(_s4pN.hasAttribute && _s4pN.hasAttribute('src')); } catch (_eS357hs) {}
+          if (_s4pHasSrc357) {
+            if (typeof globalThis._zwPrepareSrcScript === 'function') {
+              globalThis._zwPrepareSrcScript(_s4pN);
+            }
+            continue;
+          }
           var _s4pSrc = '';
           try { _s4pSrc = String(_s4pN.textContent || ''); } catch (_eS4pt) {}
           if (_s4pSrc && !(globalThis._zwRanScripts && globalThis._zwRanScripts[_s4pN.__zwHandle])) {
@@ -14214,6 +15003,48 @@
     };
   }
 
+  // s365（html-semantics M2 切片 365）：解析交付水位线（parse ceiling）——spec 流式
+  // 解析：parser-inserted 阻塞脚本于自身 end tag 执行，tokenizer 停在该点，其后标记
+  // 尚未物化进 DOM（052：外链脚本执行时 getElementsByTagName('script') 不得含其后
+  // 内联脚本——got 5 expected 4）。本引擎全解析先行的交付形态下枚举源恒为全文档
+  // 快照；宿主交付循环每投递一个阻塞脚本前置位 `__zwParseCeiling`（全体 script
+  // 元素文档序号，shim 侧单调取 max——s106 end-tag 序执行时祖先序号小于已执行的
+  // 子脚本），deferred 相位（the-end，全文档已解析）与交付毕清 -1。此门把 script
+  // 标签**枚举面**（getElementsByTagName/NS 过滤核 + document.scripts）裁到已交付
+  // 前缀（sel→序号表由宿主 stamp 入口在阶段起点建——`__zwParseScriptSelMap`，
+  // 全量视图下枚举，序号对应正确）。getElementById/querySelector 选择器面与树遍历
+  // 不门（语料无钉面，近似在册）；无 sel 或 sel 不在表内的动态产物（写流物化，
+  // fragment 回放同样带 fragment 域 sel——不在解析表内）不受门限（即时可见，
+  // 026 面）。门缺失键表时放行（fail-open——语义保真门，非安全边界）。
+  // https://html.spec.whatwg.org/multipage/parsing.html#script-parser-executing
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  function _zwParseCeilingActive() {
+    return typeof globalThis.__zwParseCeiling === 'number' && globalThis.__zwParseCeiling >= 0;
+  }
+  function _zwGateDeliveredScripts(list) {
+    if (!_zwParseCeilingActive() || !list || !list.length) return list;
+    var _map = globalThis.__zwParseScriptSelMap;
+    if (!_map) return list;
+    var _ceil = globalThis.__zwParseCeiling;
+    var _out = [];
+    for (var _gi = 0; _gi < list.length; _gi++) {
+      var _ge = list[_gi];
+      var _keep = true;
+      try {
+        var _gsel = _ge && _ge.__zwSelector;
+        if (_gsel != null && _gsel !== '') {
+          // 判据三分：无 sel 或 sel 不在表内 = 动态产物（write 创建等，即时可
+          // 见，026 面）放行；表内序号 > ceiling = 解析产物尚未交付 → 裁剪
+          //（052 面外链脚本执行时不得见其后内联脚本）。表查 O(1)，无需重建缓存。
+          var _gidx = _map[String(_gsel)];
+          if (_gidx != null) _keep = _gidx <= _ceil;
+        }
+      } catch (_eGateK) {}
+      if (_keep) _out.push(_ge);
+    }
+    return _out;
+  }
+
   // js-dom M4 R120：getElementsBy* 匹配核心（与 Element 级 / Document 级共用）。
   // input = 限定名（非 NS 变体，对 tagName 含 prefix）或 localName（NS 变体）；
   // nsArg = undefined（非 NS）/ ns（'*' 任意 / null 无 ns / 精确串）。
@@ -14299,6 +15130,11 @@
         }
       }
       out.push(el);
+    }
+    // s365：script 标签交付门（非 NS 变体输入 ASCII 小写后比较；NS 变体 localName
+    // 原样精确——'SCRIPT' 大写不门）。'*' 快道不门（无标签比较步骤，近似在册）。
+    if ((!nsMode && inputLower === 'script') || (nsMode && String(input) === 'script')) {
+      return _zwGateDeliveredScripts(out);
     }
     return out;
   }
@@ -14490,6 +15326,31 @@
     return s.replace(/-([a-z])/g, function(_, c) { return c.toUpperCase(); });
   }
 
+  // DOMStringMap 接口对象（spec https://html.spec.whatwg.org/multipage/dom.html#domstringmap
+  // ——无 [Constructor]，`new DOMStringMap()` TypeError；dataset 产物原型链入
+  // DOMStringMap.prototype，WPT dataset.html `dataset instanceof DOMStringMap` 四案）。
+  if (typeof globalThis.DOMStringMap !== 'function') {
+    globalThis.DOMStringMap = function DOMStringMap() {
+      throw new globalThis.TypeError("Illegal constructor");
+    };
+    try {
+      Object.defineProperty(globalThis.DOMStringMap, 'prototype', {
+        value: (function () {
+          var p = {};
+          // WebIDL interface prototype object：constructor writable/enumerable:false/
+          // configurable:true——enumerable 会进 dataset 的 for-in（for-in 走原型链枚举
+          // enumerable 项），WPT dataset-enumeration.html 计数 3/2 面。
+          Object.defineProperty(p, 'constructor', {
+            value: globalThis.DOMStringMap,
+            writable: true, enumerable: false, configurable: true,
+          });
+          return p;
+        })(),
+        writable: false, enumerable: false, configurable: false,
+      });
+    } catch (_eDsmP) {}
+  }
+
   // `el.dataset`——data-* 属性的 camelCase 键对象。get/set/has/delete/枚举（ownKeys）。
   // 注：mutate（set/delete）记 mutation，apply 在脚本末尾——同脚本内即读见旧值（stale，
   // 同 setAttribute 既有模式）；枚举读 dom_html 当前属性名。
@@ -14502,69 +15363,122 @@
       if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
       return __zw_get_attr(sel, name);
     };
-    var hasAttrFn = function(name) {
-      try {
-        // R3195：handle 经 `__zw_has_attr_handle`（latest-wins from mutations）判存在性——旧恒返 false
-        //（R3002 时无 has-attr-handle 回调遗留），致 handle 元素 `el.dataset.foo=` 后 `el.dataset.foo`
-        // 恒 undefined（get trap 经 hasAttrFn 短路）。
-        if (handle) {
-          if (typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, name) === '1';
-          return false;
-        }
-        // R3002：sel 用 latest-wins 反映同批 SetAttr/RemoveAttr（旧 `__zw_has_attr` 纯快照 stale）。
-        if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, name) === '1';
-        return __zw_has_attr(sel, name) === '1';
-      } catch (_e) { return false; }
-    };
-    var dataKeys = function() {
-      // data-* → camelCase 键。sel 用 `__zw_attr_names`（latest-wins），handle 用 `__zw_attr_names_handle`
-      //（R3196：闭合 R3195 限制①——旧 handle 路径无 attr-names 变体恒返 []）。无对应回调 → []。
+    // dataset 簇收口（2026-11-05）：named property 可见性 round-trip 门（spec HTML
+    // #dom-dataset「get a DOMStringMap's name-value pairs」——eligible 属性 = `data-` 前缀
+    // 且余段无 ASCII 大写；可见键 = 余段 kebab→camel。eligible 余段上 camel→kebab
+    // 恒复原，round-trip 门与之等价：`data--foo` 的可见键是 `Foo` 不是 `-foo`，
+    // get/has/delete 对不可见键 no-op（WPT dataset-delete.html `-foo` 组、
+    // dataset.html instanceof/枚举面）。set 不走可见性表：按 spec setter 校验
+    //（SyntaxError/InvalidCharacterError，见 set trap）后恒 camel→kebab 落属性。
+    var dataAttrNames = function() {
+      // 原始 data-* 属性名。sel 用 `__zw_attr_names`（latest-wins），handle 用
+      // `__zw_attr_names_handle`（R3196：旧 handle 路径无 attr-names 变体恒返 []）。
       try {
         var names = handle
           ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
           : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
         if (!names) return [];
-        return names.split('|').filter(function(n) { return n.indexOf('data-') === 0; })
-                     .map(function(n) { return _kebabToCamel(n.slice(5)); });
+        return names.split('|').filter(function(n) { return n.indexOf('data-') === 0; });
       } catch (_e) { return []; }
     };
-    return new Proxy({}, {
-      get: function(_t, key) {
+    var visibleKeyOf = function(dataName) {
+      var key = _kebabToCamel(dataName);
+      return _camelToKebab(key) === dataName ? key : null;
+    };
+    var attrForVisibleKey = function(key) {
+      var ns = dataAttrNames();
+      for (var i = 0; i < ns.length; i++) {
+        var dn = ns[i].slice(5);
+        if (visibleKeyOf(dn) === key) return 'data-' + dn;
+      }
+      return null;
+    };
+    return new Proxy(
+      (function () {
+        var t = {};
+        try {
+          if (typeof globalThis.DOMStringMap === 'function' && globalThis.DOMStringMap.prototype) {
+            Object.setPrototypeOf(t, globalThis.DOMStringMap.prototype);
+          }
+        } catch (_eDsProto) {}
+        return t;
+      })(), {
+      get: function(_t, key, receiver) {
         if (typeof key !== 'string') return undefined;
         if (key === 'then') return undefined; // 防 Promise 化误判
-        var name = attrOf(key);
-        // 缺失属性 → undefined（__zw_get_attr 对缺失返空串，须用 has_attr 区分）。
-        if (!hasAttrFn(name)) return undefined;
+        // 可见键读属性；不可见键回落原型链（spec DOMStringMap 原型 shine-through——
+        // WPT dataset-prototype.html `dataset.toString === Object.prototype.toString`、
+        // Object.prototype.expando 污染后透见 42）。
+        var name = attrForVisibleKey(key);
+        if (name === null) return Reflect.get(_t, key, receiver);
         var v = readAttr(name);
         return v == null ? '' : v;
       },
       set: function(_t, key, value) {
         if (typeof key !== 'string') return false;
+        // spec HTML #dom-dataset DOMStringMap setter：① 名含 '-' 后跟 ASCII 小写
+        // 字母 → SyntaxError；② 大写前插 '-' 转小写 + 'data-' 前缀（attrOf）；④ 结果
+        // 名非 valid attribute local name（DOM Standard #valid-attribute-local-name：
+        // 非空且不含 ASCII 空白/NUL/'/'/'>'——';'(;) 等合法名字符不拒）
+        // → InvalidCharacterError（WPT dataset-set.html 末组）。
+        if (/-[a-z]/.test(key)) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the '" + key + "' property on 'DOMStringMap': The property name contains a '-' followed by a lowercase letter, which is not allowed.",
+            'SyntaxError');
+        }
         var name = attrOf(key);
-        if (handle) __zw_set_attr_handle(handle, name, String(value));
+        if (/[\t\n\f\r \u0000/>]/.test(name)) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the '" + key + "' property on 'DOMStringMap': The property name is not a valid attribute local name.",
+            'InvalidCharacterError');
+        }
+        // 落属性经元素自身 setAttribute（实例层 upsert/class/反射缓存同步/MO record/CE
+        // attributeChangedCallback 全链共享——直接 __zw_set_attr* 只记 host mutation，
+        // R122 实例层残留使 hasAttribute 读 stale 旧值）。回调缺席才回落裸 host 写。
+        var pr = null;
+        try { pr = typeof _makeProxy === 'function' ? _makeProxy(sel, handle) : null; } catch (_eDsMk) {}
+        if (pr && typeof pr.setAttribute === 'function') pr.setAttribute(name, String(value));
+        else if (handle) __zw_set_attr_handle(handle, name, String(value));
         else __zw_set_attr(sel, name, String(value));
-        _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
         return true;
       },
       has: function(_t, key) {
-        return typeof key === 'string' && hasAttrFn(attrOf(key));
+        // 可见键命中后非可见键回落原型链（`"toString" in dataset` → true；
+        // 'expando' 污染 Object.prototype 后 `in` 透见——dataset-prototype.html）。
+        if (typeof key === 'string' && attrForVisibleKey(key) !== null) return true;
+        return Reflect.has(_t, key);
       },
       deleteProperty: function(_t, key) {
+        // 不可见键 no-op 返 true（非 visible named property 的 delete 不动属性；
+        // 返 false 会在 strict delete 抛 TypeError）。
         if (typeof key !== 'string') return false;
-        var name = attrOf(key);
-        // R3195：handle 优先 `__zw_remove_attr_handle`（真移除，与 removeAttribute 一致）——旧用 set-empty
-        // 残留 `data-x=""` 致 hasAttr 仍 true（get 返 '' 而非 undefined）。无回调 → fallback set-empty。
-        if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, name);
-        else if (handle) __zw_set_attr_handle(handle, name, '');
+        var name = attrForVisibleKey(key);
+        if (name === null) return true;
+        // 真移除经元素自身 removeAttribute（R122 实例层剔除 + Attr 解绑 ownerElement +
+        // R46「属性不存在不产 record」MO 语义全链共享——直接 __zw_remove_attr* 只记
+        // host mutation，实例层残留使 hasAttribute/getAttribute 读 stale 旧值，
+        // dataset-delete 8F 实证）。R3195：handle 真移除（RemoveAttrOnHandle）语义同源。
+        var pr = null;
+        try { pr = typeof _makeProxy === 'function' ? _makeProxy(sel, handle) : null; } catch (_eDsMk) {}
+        if (pr && typeof pr.removeAttribute === 'function') pr.removeAttribute(name);
+        else if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, name);
         else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, name);
         else __zw_set_attr(sel, name, '');
-        _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
         return true;
       },
-      ownKeys: function() { return dataKeys(); },
+      ownKeys: function() {
+        var ns = dataAttrNames(), out = [];
+        for (var i = 0; i < ns.length; i++) {
+          var k = visibleKeyOf(ns[i].slice(5));
+          if (k !== null) out.push(k);
+        }
+        return out;
+      },
       getOwnPropertyDescriptor: function(_t, key) {
-        if (typeof key !== 'string' || !hasAttrFn(attrOf(key))) return undefined;
-        return { configurable: true, enumerable: true, value: readAttr(attrOf(key)), writable: true };
+        if (typeof key !== 'string') return undefined;
+        var name = attrForVisibleKey(key);
+        if (name === null) return undefined;
+        return { configurable: true, enumerable: true, value: readAttr(name), writable: true };
       }
     });
   }
@@ -16294,7 +17208,16 @@
     // 已把 handler 注册进 _et_listeners（listener 循环已调）——handler 函数与已调 listener
     // 同一引用时跳过，防双 fire（R2783 回归实证 b:hi 双发）。handler 返 true → preventDefault
     //（HTML onerror 语义；其余 handler 返值 spec 忽略，此处仅 onerror 认）。
-    var _r114On = target['on' + event.type];
+    // SVG 动画事件错位名映射（SVG2 animate.html §SVGAnimationElement，表定义
+    // 在 part01 _ZW_SMIL_TYPE_TO_BASE/_ZW_SMIL_BASE_TO_TYPE——beginEvent/
+    // endEvent/repeatEvent 的处理器是 onbegin/onend/onrepeat；裸 "begin"/
+    // "end"/"repeat" 非注册事件类型，泛型 on<type> 查找必须跳过，否则 onbegin
+    // 内容属性被 Event("begin") 误触发——WPT custom-events/event-listeners
+    // 定谳面，svg-compat-v2 B5）。
+    var _r114SmilBase = globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[event.type];
+    var _r114Reserved = globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[event.type];
+    var _r114Prop = _r114Reserved ? null : 'on' + (_r114SmilBase || event.type);
+    var _r114On = _r114Prop === null ? undefined : target[_r114Prop];
     if (typeof _r114On === 'function') {
       var _r114Already = false;
       var _r114Arrs = target._et_listeners;
@@ -16324,6 +17247,15 @@
         }
       }
     }
+    // SMIL eventbase 动态实例源通知（svg-compat-v2 B5，part09 契约）：元素上
+    // 任何事件真发即通知文档级时间线——begin="click"/"id.event" 形态的实例
+    // 创建（SMIL #Eventvalue semantics）。通知方零 SMIL 语义：无时间线/无
+    // 动画元素时 part09 侧即返，热路径只付一次 typeof + WeakMap 读。
+    try {
+      if (typeof globalThis._zwSmilNotifyEvent === 'function') {
+        globalThis._zwSmilNotifyEvent(target, event.type);
+      }
+    } catch (_eSmilN) {}
     globalThis.event = _r114Prev;
     return !event._defaultPrevented;
   };
@@ -18790,8 +19722,9 @@
   // data/event/id/retry，空行派发累积事件，`:` 行注释，BOM 去除，CRLF/LF/CR 分行。readyState + onopen/
   // onmessage/onerror + addEventListener。**headless 有限流**：fetch 取整 body 后解析派发全部事件（真浏览器
   // 持续流式逐块派发；本实现 finite-stream 一次派发）。连接处理按 spec §9.2.3 分派：status ≠ 200 或
-  // Content-Type 非 text/event-stream → fail the connection（CLOSED + error，不再重连）；网络错误或 body
-  // 结束 → reestablish（CONNECTING + error + 等重连时间后带 Last-Event-ID 重连，§9.2.4）。
+  // Content-Type 非 text/event-stream → fail the connection（CLOSED + error，不再重连）；body 结束 →
+  // reestablish（CONNECTING + error + 等重连时间后带 Last-Event-ID 重连，§9.2.4）；网络错误按连接是否
+  // 曾 establish 分派——曾 → reestablish，从未（初始 CORS 失败/请求取消/非 http(s) scheme）→ fail。
   // https://html.spec.whatwg.org/multipage/server-sent-events.html
   function EventSource(url, options) {
     // spec 构造（§9.2.2）：url = parse(url, API base URL)——失败抛 SyntaxError DOMException；
@@ -18813,6 +19746,7 @@
       throw new DE('Invalid URL', 'SyntaxError');
     }
     this.url = resolved.href;
+    this._origin = resolved.origin; // MessageEvent.origin = 连接 URL origin 的序列化（§9.2.7 dispatch）
     this.readyState = EventSource.CONNECTING;
     this.withCredentials = !!(options && options.withCredentials);
     this.onopen = null; this.onmessage = null; this.onerror = null;
@@ -18820,6 +19754,7 @@
     this._lastEventId = '';
     this._retryMs = 0; // reconnection time（retry 字段更新；0 = 走默认 5000——spec UA-defined）
     this._closed = false;
+    this._everAnnounced = false; // 连接曾 announce（OPEN）——决定后续失败 reestablish vs fail
     var self = this;
     function failConnection() {
       // spec fail the connection：readyState ≠ CLOSED 时置 CLOSED + fire error，之后不再重连。
@@ -18836,9 +19771,19 @@
     }
     function connect() {
       if (self._closed) return;
+      // §9.2.4 network error 且连接从未 establish → fail the connection（重连例外分支）。
+      // URL scheme 非 http(s) 时请求必然失败且永不 establish——直接异步 fail
+      // （constructor-non-same-origin 四 scheme 面标尺：ftp/about:blank/mailto/javascript:）。
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+        setTimeout(failConnection, 0);
+        return;
+      }
       if (typeof fetch !== 'function') { reestablish(); return; }
       var headers = { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' };
       var init = { headers: headers };
+      // §9.2.2 构造 withCredentials → credentials mode：true → include（跨源携带 cookie/
+      // 凭证），否则 same-origin（request-credentials 三案断言面）。
+      init.credentials = self.withCredentials ? 'include' : 'same-origin';
       // §9.2.4：Last-Event-ID 于 request header list 内部直设（任意 UTF-8 串）——经
       // __zwInternalHeadersWire 旁路（公共 init.headers 的 ByteString 校验会拒绝 >U+00FF）。
       if (self._lastEventId) {
@@ -18848,7 +19793,7 @@
       try {
         p = fetch(self.url, init);
       } catch (e) {
-        reestablish();
+        failConnection(); // sync throw：连接从未 establish（announce 只可能异步发生）→ fail
         return;
       }
       p.then(function (resp) {
@@ -18870,12 +19815,15 @@
           if (self._closed) return;
           // announce the connection（OPEN + open）
           self.readyState = EventSource.OPEN;
+          self._everAnnounced = true;
           self._dispatch('open', null);
           self._process(text);
           reestablish(); // body 结束 = 连接关闭（有限流模型）→ reestablish
         });
       }, function () {
-        reestablish(); // network error → reestablish（futile 判定不做——headless 本地服务稳定）
+        // network error：曾 establish → reestablish（§9.2.4）；从未 → fail the connection
+        // （§9.2.4 例外——初始 CORS 失败/请求取消等面，WPT 三浏览器行为标尺均 CLOSED）。
+        if (self._everAnnounced) { reestablish(); } else { failConnection(); }
       }).catch(function () {
         failConnection();
       });

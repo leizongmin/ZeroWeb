@@ -212,6 +212,7 @@ mod r4176_negative_margin_float_tests;
 mod r4499_spanner_region_diag;
 /// R5261 cell intrinsic inline 级显式宽子相邻 run 求和（CSS2 §17.5.2 + css-sizing-3）。
 mod r5261_cell_inline_run_intrinsic_tests;
+mod r5432_clamp_displaced_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
@@ -863,6 +864,10 @@ mod r5294_dyn_trailing_space_tests;
 /// R5295（CSS2 §8.4）：换行 padded 行内盒 border-box 左缘写回——逐片段盒缘
 /// 收敛（run 首片段扣自身 pl、续行/空片段不扣），负偏回归守护。
 mod r5295_wrapped_padding_box_x_tests;
+/// R5470 float 重测后兄弟重锚（步 6 传播臂）+ §10.6.3 高度门测试。
+mod r5470_float_remeasure_sibling_reanchor_tests;
+/// R5471 own_floats 排除带 margin-box 判弃/裁顶口径测试。
+mod r5471_float_band_marginbox_tests;
 mod trending_band_strut_tests;
 
 mod r5250_inline_relpos_shift_map;
@@ -1013,3 +1018,44 @@ mod r5408_replaced_clamp_transfer_tests;
 /// R5409：visibility:collapse 多线 strut 迁移（css-flexbox §4，002 Row2/Row3 锚 +
 /// 单线守卫）。
 mod r5409_flex_collapse_strut_tests;
+
+/// R5434：col 元素指定宽 = 列 used width（auto cell 可断行贡献钳到 col 宽，min-content
+/// floor 存活；vertical-align-baseline-003 ref 侧锚）。
+mod r5434_table_col_used_width_tests;
+
+/// R5435：col 指定宽钳臂缩列后行高随动（钳臂并入 R4298 remeasure 链；valign:bottom
+/// 沉底恢复）。
+mod r5435_cell_valign_extent_tests;
+
+/// R5436：float 旁 auto-width 表 beside 目标宽收口（definite-exact grid 缩到
+/// §10.3.5 shrink-to-fit 上限，欠度量形态维持填 gap）。
+mod r5436_beside_shrink_tests;
+
+/// R5444：cell 固有宽不计 OOF 子（absolute/fixed）——三臂泄漏封堵（显式宽/R4028
+/// max-content/95% 启发式/char 回退），driving s-11-1-1b-005。
+mod r5444_cell_intrinsic_oof_skip_tests;
+
+/// R5445：abs-auto 盒 spec CB ≠ 直接父（无 positioned 祖先 → ICB / positioned 祖先）
+/// 双向重测（CSS2 §10.1），driving s-11-1-1b-005 残差 0.46%→0.00%。
+mod r5445_abspos_icb_cb_tests;
+
+/// R5446：嵌套 inline float（wrapper span 子树内 float）锚位/极值缘/容纳高 +
+/// 直挂堆叠回归卫 + float-only wrapper 欠计高补测，driving floats-placement-vertical-001b。
+mod r5446_nested_inline_float_tests;
+
+/// R5475：单行 float 容器自身行盒落盘（行盒归属主案 floats-149 形切片）——文本
+/// float 自持行盒 + 中间层无第二 owner 卫，driving floats-clear/floats-149。
+mod r5475_float_own_line_store_tests;
+
+/// R5447：cell 指定绝对宽度 content-box 语义——列贡献 = width+padding+border
+///（separated 显式臂 + fixed 分支 col_cell_spec），driving c5525-fltmult-000。
+mod r5447_cell_spec_frame_tests;
+
+/// R5452：own-IFC-capped 容器跨块 walk 尾 extent 下限 = 保留行底（clamp_kept_line_bottom
+/// 镜像），driving block-ellipsis-032。
+mod r5452_clamp_kept_bottom_tests;
+
+/// R5477：块级 BFC 根 float 位移终末校正——driving 形 (#contain → (0, 200)、
+/// 容器涨高 370) + 不触碰不变式（旁置非重叠 BFC 根原样），kill-switch 锚见
+/// tests/r5477_bfc_root_displace_kill_switch.rs。
+mod r5477_bfc_root_displace_tests;

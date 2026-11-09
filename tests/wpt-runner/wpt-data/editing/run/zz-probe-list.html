@@ -83,6 +83,365 @@ getSelection().removeAllRanges(); getSelection().addRange(r6);
 try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('2p EXC ' + e); }
 results.push('two-p html=' + JSON.stringify(d6.innerHTML) + qface());
 
+// 7 dd/dt 聚合面（K1 isAllowedChild 忠实尾段：dd 非 li 允许子 → 文本节点
+// 聚合 wrap，ol 落 dd 内）
+tc.innerHTML = "<div contenteditable><dl><dt>foo</dt><dd>bar</dd></dl></div>";
+var d7 = tc.firstChild;
+caretText(findTag(d7, "dd").firstChild, 1);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('dd EXC ' + e); }
+results.push('dd-aggregate html=' + JSON.stringify(d7.innerHTML) + qface());
+
+// 8 嵌套 li 退格面（disable splitParent + fixDisallowedAncestors：li∈li pair
+// 拒绝 → 内层 li 退成 div）
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</li></ol></li></ol></div>";
+var d8 = tc.firstChild;
+var lis8 = [];
+(function walk8(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis8.push(n);
+  var c = n.firstChild;
+  while (c) { walk8(c); c = c.nextSibling; }
+})(d8);
+caretText(lis8[lis8.length - 1].firstChild, 1);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('nest EXC ' + e); }
+results.push('nested-disable html=' + JSON.stringify(d8.innerHTML) + qface());
+
+// 9 样式保全面（otherTagName 臂 recordValues/restoreValues：li 内联样式跨
+// ol→ul 换壳保留）
+tc.innerHTML = "<div contenteditable><ol><li style=\"color: blue\">foo</li></ol></div>";
+var d9 = tc.firstChild;
+caretText(findTag(d9, "li").firstChild, 1);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('st EXC ' + e); }
+results.push('styled-switch html=' + JSON.stringify(d9.innerHTML) + qface());
+
+// 10 缩进合并新父臂（K4 isSimpleIndentationElement：simple 缩进 div 邻接 ul
+// → 成员并入既有 ul 的尾 li）
+tc.innerHTML = "<div contenteditable><ul><li>a</li></ul><div style=\"margin-left: 40px\">bar</div></div>";
+var d10 = tc.firstChild;
+var ul10 = findTag(d10, "ul");
+var dv10 = ul10.nextSibling;
+caretText(dv10.firstChild, 1);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('im EXC ' + e); }
+results.push('indent-merge html=' + JSON.stringify(d10.innerHTML) + qface());
+
+// 11 P2F 读面诊断（q9 17 行翻红族代表形状：disable 动作后树/恢复选区/读面
+// 三要素——定位选区恢复 vs 成员资格缺口）
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol></div>";
+var d11 = tc.firstChild;
+var ol11 = findTag(d11, "ol");
+var li11 = ol11.firstChild;
+var foo11 = null, innerOl11 = null;
+for (var c11 = li11.firstChild; c11; c11 = c11.nextSibling) {
+  if (c11.nodeType === 3) foo11 = c11;
+  if (c11.nodeType === 1 && String(c11.tagName).toLowerCase() === 'ol') innerOl11 = c11;
+}
+var barText11 = innerOl11.firstChild.firstChild;
+var r11 = document.createRange();
+r11.setStart(foo11, 0); r11.setEnd(barText11, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r11);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x11 EXC ' + e); }
+var sel11 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+var selDesc = sel11
+  ? (sel11.startContainer.nodeName + '@' + sel11.startOffset + JSON.stringify(sel11.startContainer.nodeValue || '')
+     + '..' + sel11.endContainer.nodeName + '@' + sel11.endOffset + JSON.stringify(sel11.endContainer.nodeValue || ''))
+  : 'EMPTY';
+results.push('p2f-diag html=' + JSON.stringify(d11.innerHTML)
+  + ' sel=' + selDesc
+  + ' qI=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qS=' + document.queryCommandState('insertorderedlist'));
+
+// 12 W 行 enable innerHTML 形（renest-diag）：期望
+// <ol><li>[foo<ol><li>bar]</li></ol></li></ol><ul><li>baz</li></ul>
+tc.innerHTML = "<div contenteditable><ul><li>foo<ul><li>bar</ul><li>baz</ul></div>";
+var d12 = tc.firstChild;
+var lis12 = [];
+(function walk12(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis12.push(n);
+  var c = n.firstChild;
+  while (c) { walk12(c); c = c.nextSibling; }
+})(d12);
+var fooText12 = lis12[0].firstChild;
+var barText12 = lis12[1].firstChild;
+var r12 = document.createRange();
+r12.setStart(fooText12, 0); r12.setEnd(barText12, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r12);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x12 EXC ' + e); }
+results.push('renest-diag html=' + JSON.stringify(d12.innerHTML));
+
+// 13 普查 (T,T) hoist+split 族（data:177）：caret 入嵌套 li，期望 foo 落单 +
+// bar 段 ul + baz 段 ol + quz 落单（lift 后按选区分裂换型）。
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol><li>quz</ol></div>";
+var d13 = tc.firstChild;
+caretText(findTag(findTag(d13, "ol"), "ol").firstChild.firstChild, 1);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x13 EXC ' + e); }
+results.push('census-tt html=' + JSON.stringify(d13.innerHTML));
+
+// 14 普查 (F,F contained) 族（data:247）：选区跨嵌套列表全含，期望整壳换 ul
+// 且内层保持 ul 嵌套（lift 后两列表都入选换型）。
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol></div>";
+var d14 = tc.firstChild;
+var lis14 = [];
+(function walk14(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis14.push(n);
+  var c = n.firstChild;
+  while (c) { walk14(c); c = c.nextSibling; }
+})(d14);
+var r14 = document.createRange();
+r14.setStart(lis14[0].firstChild, 0);
+r14.setEnd(lis14[lis14.length - 1].firstChild, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r14);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x14 EXC ' + e); }
+results.push('census-ff-cont html=' + JSON.stringify(d14.innerHTML));
+
+// 15 普查 (F,F disjoint) 族（data:249）：caret 在嵌套列表前文本，期望嵌套
+// ol 原位保留（不 lift），仅外层换 ul。
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol>baz</ol></div>";
+var d15 = tc.firstChild;
+caretText(findTag(d15, "li").firstChild, 1);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x15 EXC ' + e); }
+results.push('census-ff-disj html=' + JSON.stringify(d15.innerHTML));
+
+// 16 absorb 面（语料 iul:33）：foo<ol><li>[bar</ol>baz] + iul，期望单 ul 吸收
+// bar+baz（`<ul><li>[bar</li><li>baz]</li></ul>`），qInd-after=false。
+tc.innerHTML = "<div contenteditable>foo<ol><li>bar</ol>baz</div>";
+var d16 = tc.firstChild;
+var r16 = document.createRange();
+var lis16 = [];
+(function walk16(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis16.push(n);
+  var c = n.firstChild;
+  while (c) { walk16(c); c = c.nextSibling; }
+})(d16);
+r16.setStart(lis16[0].firstChild, 0);
+r16.setEnd(d16.lastChild, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r16);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x16 EXC ' + e); }
+var sel16 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+function nodeDesc16(n) {
+  return n ? n.nodeName + (n.nodeType === 3 ? JSON.stringify(n.nodeValue) : '<' + (n.parentNode ? String(n.parentNode.nodeName) : '?') + '>') : 'null';
+}
+results.push('absorb html=' + JSON.stringify(d16.innerHTML)
+  + ' sel=' + (sel16 ? nodeDesc16(sel16.startContainer) + '@' + sel16.startOffset + '..' + nodeDesc16(sel16.endContainer) + '@' + sel16.endOffset : 'EMPTY')
+  + ' qIndA=' + document.queryCommandIndeterm('insertunorderedlist')
+  + ' qSA=' + document.queryCommandState('insertunorderedlist'));
+
+// 17 I5 复刻（disable straddle qInd 面）：b[ar..b]az + iol，期望
+// `<ol><li>foo</li><li>bar</li></ol><div>baz</div>` qInd-after=true。
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol></div>";
+var d17 = tc.firstChild;
+var lis17 = [];
+(function walk17(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis17.push(n);
+  var c = n.firstChild;
+  while (c) { walk17(c); c = c.nextSibling; }
+})(d17);
+var barT17 = lis17[1].firstChild;
+var bazT17 = lis17[lis17.length - 1].firstChild;
+var r17 = document.createRange();
+// 语料 iol:298 标记 b[ar/b]az → 两侧 offset 1。
+r17.setStart(barT17, 1); r17.setEnd(bazT17, 1);
+getSelection().removeAllRanges(); getSelection().addRange(r17);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x17 EXC ' + e); }
+var sel17 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+function nodeDesc(n) {
+  return n ? n.nodeName + (n.nodeType === 3 ? JSON.stringify(n.nodeValue) : '<' + (n.parentNode ? String(n.parentNode.nodeName) : '?') + '>') : 'null';
+}
+results.push('i5-straddle html=' + JSON.stringify(d17.innerHTML)
+  + ' sel=' + (sel17 ? nodeDesc(sel17.startContainer) + '@' + sel17.startOffset + '..' + nodeDesc(sel17.endContainer) + '@' + sel17.endOffset : 'EMPTY')
+  + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSA=' + document.queryCommandState('insertorderedlist'));
+
+// 18 plain-retag P2F 面（语料 iol:43）：foo<ul><li>[bar</ul>baz] + iol，期望
+// 吸收形 `foo<ol><li>[bar</li><li>baz]</li></ol>` qInd-after=false qState=true。
+// 现状 got 树 `foo<ol><li>bar</li></ol>baz`（absorb 未达），qInd-after=true。
+tc.innerHTML = "<div contenteditable>foo<ul><li>bar</ul>baz</div>";
+var d18 = tc.firstChild;
+var lis18 = [];
+(function walk18(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis18.push(n);
+  var c = n.firstChild;
+  while (c) { walk18(c); c = c.nextSibling; }
+})(d18);
+var r18 = document.createRange();
+r18.setStart(lis18[0].firstChild, 0); r18.setEnd(lis18[0].firstChild, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r18);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x18 EXC ' + e); }
+var sel18 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+results.push('plain-retag html=' + JSON.stringify(d18.innerHTML)
+  + ' sel=' + (sel18 ? sel18.startContainer.nodeName + '@' + sel18.startOffset + '..' + sel18.endContainer.nodeName + '@' + sel18.endOffset : 'EMPTY')
+  + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSA=' + document.queryCommandState('insertorderedlist'));
+
+// 19 I4 复刻（disable straddle qInd 面，语料 iol:308 dps=div）：
+// <ol><li>[foo<ol><li>bar</ol><li>baz]</ol><p>extra + iol，期望
+// `<div>[foo</div><ol><li>bar</li></ol><div>baz]</div><p>extra</p>`
+// qInd-after=true（选区跨幸存 ol 内外 → mixed）。
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol><p>extra</div>";
+try { document.execCommand("defaultparagraphseparator", false, "div"); } catch (e) { results.push('x19dps EXC ' + e); }
+var d19 = tc.firstChild;
+var fooT19 = null, barT19 = null, bazT19 = null;
+(function walk19(n) {
+  if (!n) return;
+  if (n.nodeType === 3) {
+    var v = String(n.nodeValue || '');
+    if (v === 'foo') fooT19 = n;
+    else if (v === 'bar') barT19 = n;
+    else if (v === 'baz') bazT19 = n;
+  }
+  var c = n.firstChild;
+  while (c) { walk19(c); c = c.nextSibling; }
+})(d19);
+if (!fooT19 || !bazT19) {
+  results.push('i4-straddle SKIP html=' + JSON.stringify(d19.innerHTML)
+    + ' foo=' + !!fooT19 + ' baz=' + !!bazT19);
+} else {
+var r19 = document.createRange();
+r19.setStart(fooT19, 0); r19.setEnd(bazT19, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r19);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x19 EXC ' + e); }
+var sel19 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+results.push('i4-straddle html=' + JSON.stringify(d19.innerHTML)
+  + ' sel=' + (sel19 ? sel19.startContainer.nodeName + '@' + sel19.startOffset + '..' + sel19.endContainer.nodeName + '@' + sel19.endOffset : 'EMPTY')
+  + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSA=' + document.queryCommandState('insertorderedlist'));
+}
+
+// 20 corpus 拟真：absorb 形先跑 before-query 三连再动作（q10 corpus 面），
+// 若读面 blockExtend 原地改写选区，动作几何被毁 → qIndA 翻 true。
+tc.innerHTML = "<div contenteditable>foo<ol><li>bar</ol>baz</div>";
+var d20 = tc.firstChild;
+var lis20 = [];
+(function walk20(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis20.push(n);
+  var c = n.firstChild;
+  while (c) { walk20(c); c = c.nextSibling; }
+})(d20);
+var r20 = document.createRange();
+r20.setStart(lis20[0].firstChild, 0); r20.setEnd(d20.lastChild, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r20);
+var pre20 = 'qIndB=' + document.queryCommandIndeterm('insertunorderedlist')
+  + ' qSB=' + document.queryCommandState('insertunorderedlist')
+  + ' qVB=' + JSON.stringify(document.queryCommandValue('insertunorderedlist'));
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x20 EXC ' + e); }
+results.push('absorb-cq ' + pre20
+  + ' html=' + JSON.stringify(d20.innerHTML)
+  + ' qIndA=' + document.queryCommandIndeterm('insertunorderedlist')
+  + ' qSA=' + document.queryCommandState('insertunorderedlist'));
+
+// 21 corpus 拟真：I5 形带 dps 前置 + before-query 三连再动作。
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol></div>";
+var d21 = tc.firstChild;
+var lis21 = [];
+(function walk21(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis21.push(n);
+  var c = n.firstChild;
+  while (c) { walk21(c); c = c.nextSibling; }
+})(d21);
+try { document.execCommand("defaultparagraphseparator", false, "div"); } catch (e) { results.push('x21dps EXC ' + e); }
+var r21 = document.createRange();
+r21.setStart(lis21[1].firstChild, 1); r21.setEnd(lis21[lis21.length - 1].firstChild, 1);
+getSelection().removeAllRanges(); getSelection().addRange(r21);
+var pre21 = 'qIndB=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSB=' + document.queryCommandState('insertorderedlist')
+  + ' qVB=' + JSON.stringify(document.queryCommandValue('insertorderedlist'));
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x21 EXC ' + e); }
+var sel21 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+results.push('i5-cq ' + pre21
+  + ' html=' + JSON.stringify(d21.innerHTML)
+  + ' sel=' + (sel21 ? nodeDesc(sel21.startContainer) + '@' + sel21.startOffset + '..' + nodeDesc(sel21.endContainer) + '@' + sel21.endOffset : 'EMPTY')
+  + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSA=' + document.queryCommandState('insertorderedlist'));
+
+// 22 pollution 复现：replicate 语料 iol:288/:293 两前邻行（dps+iol disable 面）
+// 后紧跟 I5 全拟真（dps div + before-query 三连 + 动作）。q10 corpus I5 qInd-after
+// 实测 false（期望 true），净页 probe 全绿——若本案 I5 读面翻 false 即锁定污染源
+// 在前邻行遗留状态。
+function iolPreRow(dpsVal) {
+  tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol></div>";
+  var dp = tc.firstChild;
+  var lp = [];
+  (function walkP(n) {
+    if (!n) return;
+    if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lp.push(n);
+    var c = n.firstChild;
+    while (c) { walkP(c); c = c.nextSibling; }
+  })(dp);
+  try { document.execCommand("defaultparagraphseparator", false, dpsVal); } catch (e) { results.push('x22dps EXC ' + e); }
+  var rp = document.createRange();
+  rp.setStart(lp[0].firstChild, 0); rp.setEnd(lp[1].firstChild, 3);
+  getSelection().removeAllRanges(); getSelection().addRange(rp);
+  try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x22pre EXC ' + e); }
+}
+iolPreRow("div");
+iolPreRow("p");
+tc.innerHTML = "<div contenteditable><ol><li>foo<ol><li>bar</ol><li>baz</ol></div>";
+var d22 = tc.firstChild;
+var lis22 = [];
+(function walk22(n) {
+  if (!n) return;
+  if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis22.push(n);
+  var c = n.firstChild;
+  while (c) { walk22(c); c = c.nextSibling; }
+})(d22);
+try { document.execCommand("defaultparagraphseparator", false, "div"); } catch (e) { results.push('x22dps2 EXC ' + e); }
+var r22 = document.createRange();
+r22.setStart(lis22[1].firstChild, 1); r22.setEnd(lis22[lis22.length - 1].firstChild, 1);
+getSelection().removeAllRanges(); getSelection().addRange(r22);
+var pre22 = 'qIndB=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSB=' + document.queryCommandState('insertorderedlist');
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('x22 EXC ' + e); }
+var sel22 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+results.push('i5-polluted ' + pre22
+  + ' html=' + JSON.stringify(d22.innerHTML)
+  + ' sel=' + (sel22 ? nodeDesc(sel22.startContainer) + '@' + sel22.startOffset + '..' + nodeDesc(sel22.endContainer) + '@' + sel22.endOffset : 'EMPTY')
+  + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
+  + ' qSA=' + document.queryCommandState('insertorderedlist'));
+
+// ---- q14 nested 前奏归并几何门族案（enable lift 面 + keep 面对照）----
+// 逐案：新宿主 → 定位 li 文本端点 → exec iol → dump html/sel/读面。
+// lift 期望形以 iol 语料镜像为准（ul 底 + ul 嵌套 + iol 命令 → enable 模式；
+// iul 语料 :178/:253/:208/:240/:245 的 ol↔ul 镜像）。
+function q14case(name, html, selLiIdx, cmd) {
+  tc.innerHTML = '<div contenteditable>' + html + '</div>';
+  var d = tc.firstChild;
+  var lis = [];
+  (function walk(n) {
+    if (!n) return;
+    if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis.push(n);
+    var c = n.firstChild;
+    while (c) { walk(c); c = c.nextSibling; }
+  })(d);
+  var r = document.createRange();
+  r.setStart(lis[selLiIdx[0]].firstChild, selLiIdx[1]);
+  r.setEnd(lis[selLiIdx[2]].firstChild, selLiIdx[3]);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+  try { document.execCommand(cmd, false, ""); } catch (e) { results.push(name + ' EXC ' + e); return; }
+  var sel = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+  results.push(name + ' html=' + JSON.stringify(d.innerHTML)
+    + ' sel=' + (sel ? nodeDesc(sel.startContainer) + '@' + sel.startOffset + '..' + nodeDesc(sel.endContainer) + '@' + sel.endOffset : 'EMPTY')
+    + ' qIndA=' + document.queryCommandIndeterm(cmd)
+    + ' qSA=' + document.queryCommandState(cmd));
+}
+// L1 subset-of-N（期望外提换壳 <ul><li>foo</li><ol><li>bar</ol><ul><li>baz</ul><li>quz</ul>）
+q14case('q14-L1', '<ul><li>foo<ul><li>bar</li><li>baz</li></ul><li>quz</li></ul>', [1, 0, 1, 3], 'insertorderedlist');
+// L2 尾随文本（期望外提 + 尾段成新 li：<ul><li>foo</li><ol><li>bar</ol><li>baz</li></ul>）
+q14case('q14-L2', '<ul><li>foo<ul><li>bar</li></ul>baz</ul>', [1, 0, 1, 3], 'insertorderedlist');
+// L3 尾随列表（期望换壳 li 保嵌套子列表 + 外层分裂）
+q14case('q14-L3', '<ul><li>foo<li>bar<ul><li>baz</li></ul><li>quz</li></ul>', [1, 0, 1, 3], 'insertorderedlist');
+// K1 straddle-out（期望双壳 ol<ol> 形：<ul><li>foo</ul><ol><ol><li>bar</ol><li>baz</ol>）
+q14case('q14-K1', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul>', [1, 1, 2, 1], 'insertorderedlist');
+// K2 straddle-extra（期望新壳含 li(foo)+嵌套 ul+li(baz) 分裂形）
+q14case('q14-K2', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul><p>extra</p>', [0, 0, 2, 3], 'insertorderedlist');
+// K3plain keep 对照（q10 起 Pass，期望嵌套换壳 li(foo,N) 分裂形——门必须跳过）
+q14case('q14-K3', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul>', [0, 0, 1, 3], 'insertorderedlist');
+
 assert_false(true, results.join(' || '));
 </script>
 </body>

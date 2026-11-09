@@ -1,0 +1,432 @@
+[
+  [
+    "subresource-integrity/subresource-integrity.html",
+    [
+      {
+        "name": "Script: <crossorigin='anonymous'> with CORS-ineligible resource",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Style: Same-origin with correct sha256 hash",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Script: Same-origin with correct sha256 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with correct sha384 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with correct sha512 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with empty integrity.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with non-Base64 hash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with incorrect hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: Same-origin with incorrect integrity => cleared after prepare.",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: Same-origin with incorrect integrity => set to correct hash after prepare.",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: Same-origin with empty integrity => set to incorrect hash after prepare.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with correct integrity => set to incorrect hash after prepare.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with multiple sha256 hashes, including correct.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with multiple sha256 hashes, including unknown algorithm.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with sha256 mismatch, sha512 match",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with sha256 match, sha512 mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: <crossorigin='anonymous'> with correct hash, ACAO: *",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: <crossorigin='anonymous'> with incorrect hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: <crossorigin='use-credentials'> with correct hash, CORS-eligible",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: <crossorigin='use-credentials'> with incorrect hash CORS-eligible",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: Cross-origin, not CORS request, with correct hash",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: Cross-origin, not CORS request, with hash mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Script: Cross-origin, empty integrity",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with correct hash, options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script: Same-origin with unknown algorithm only.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Style: Same-origin with correct sha384 hash",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with correct sha512 hash",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with empty integrity",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with non-Base64 integrity",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with incorrect hash.",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: Same-origin with multiple sha256 hashes, including correct.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with multiple sha256 hashes, including unknown algorithm.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with sha256 mismatch, sha512 match",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with sha256 match, sha512 mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: <crossorigin='anonymous'> with correct hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: <crossorigin='anonymous'> with incorrect hash, ACAO: *",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: <crossorigin='use-credentials'> with correct hash, CORS-eligible",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: <crossorigin='use-credentials'> with incorrect hash CORS-eligible",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: <crossorigin='anonymous'> with CORS-ineligible resource",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: Cross-origin, not CORS request, with correct hash",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: Cross-origin, not CORS request, with hash mismatch",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      },
+      {
+        "name": "Style: Cross-origin, empty integrity",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with correct hash, options.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with unknown algorithm only.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with correct sha256 hash, rel='stylesheet license'",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with correct sha256 hash, rel='license stylesheet'",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with correct sha256 and sha512 hash, rel='alternate stylesheet' enabled",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(255, 0, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Style: Same-origin with incorrect sha256 and sha512 hash, rel='alternate stylesheet' enabled",
+        "status": "Fail",
+        "message": "assert_unreached: Bad load succeeded. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/integrity-policy/parsing.html",
+    [
+      {
+        "name": "subresource-integrity/integrity-policy/parsing.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 9816, 2679, 0, 3920], state={\"loaded\":true,\"pending\":11,\"phase\":2,\"tests\":11}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/integrity-policy/preload-script-with-integrity.https.html",
+    [
+      {
+        "name": "Script with integrity in initial HTML should not trigger Integrity-Policy reports (tests preload scanner)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/integrity-policy/script.https.html",
+    [
+      {
+        "name": "subresource-integrity/integrity-policy/script.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 9816, 2679, 3146, 0, 10314], state={\"loaded\":true,\"pending\":12,\"phase\":2,\"tests\":12}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/integrity-policy/style.https.html",
+    [
+      {
+        "name": "subresource-integrity/integrity-policy/style.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 9816, 2679, 3146, 0, 10722], state={\"loaded\":true,\"pending\":12,\"phase\":2,\"tests\":12}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/integrity-policy/tentative/signature.https.html",
+    [
+      {
+        "name": "subresource-integrity/integrity-policy/tentative/signature.https.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/signatures/tentative/accept-signature.parser-inserted.html",
+    [
+      {
+        "name": "Single, valid integrity assertion.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"true\" but got (object) null"
+      },
+      {
+        "name": "One matching + malformed integrity assertion.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"true\" but got (object) null"
+      },
+      {
+        "name": "One matching + one mismatching integrity assertion.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"true\" but got (object) null"
+      },
+      {
+        "name": "One matching + one mismatching + malformed integrity assertion.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"true\" but got (object) null"
+      }
+    ]
+  ],
+  [
+    "subresource-integrity/signatures/tentative/inline.html",
+    [
+      {
+        "name": "No `signature`, no `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No `signature`, invalid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No `signature`, valid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No `signature`, multiple `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "invalid `signature`, no `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "invalid `signature`, invalid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "invalid `signature`, valid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "invalid `signature`, multiple `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "valid `signature`, no `integrity` => blocked",
+        "status": "Fail",
+        "message": "assert_unreached: Should be blocked. Reached unreachable code"
+      },
+      {
+        "name": "valid `signature`, invalid `integrity` => blocked",
+        "status": "Fail",
+        "message": "assert_unreached: Should be blocked. Reached unreachable code"
+      },
+      {
+        "name": "valid `signature`, valid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "valid `signature`, multiple `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple `signature`, no `integrity` => blocked",
+        "status": "Fail",
+        "message": "assert_unreached: Should be blocked. Reached unreachable code"
+      },
+      {
+        "name": "multiple `signature`, invalid `integrity` => blocked",
+        "status": "Fail",
+        "message": "assert_unreached: Should be blocked. Reached unreachable code"
+      },
+      {
+        "name": "multiple `signature`, valid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple `signature`, multiple `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "valid `signature`, valid `integrity`, non-ASCII => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "SVG valid `signature`, no `integrity` => blocked",
+        "status": "Fail",
+        "message": "assert_unreached: Should be blocked. Reached unreachable code"
+      },
+      {
+        "name": "SVG valid `signature`, invalid `integrity` => blocked",
+        "status": "Fail",
+        "message": "assert_unreached: Should be blocked. Reached unreachable code"
+      },
+      {
+        "name": "SVG valid `signature`, valid `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "SVG valid `signature`, multiple `integrity` => executes",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

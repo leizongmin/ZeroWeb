@@ -843,7 +843,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           make fetch-wpt-html-testharness
-          for t in ${{ matrix.shard.fetch }}; do make "$t"; done
+          # discoverer 契约「跑不动的面该面记 0（与未跑同态）」：catch-all 套件
+          # fetch 目标缺失/失败只废本套件面，不连带同分片兄弟套件（run
+          # 42498433483 catch-all-7 shadow-dom 语料依赖链断裂曾连带 storage
+          # 面丢失）。共享 harness 引导（上一行）保持致命。
+          for t in ${{ matrix.shard.fetch }}; do
+            make "$t" || echo "::warning::fetch $t 失败，套件面记 0（与未跑同态）"
+          done
           for s in ${{ matrix.shard.fetch_scripts }}; do
             bash "tests/wpt-runner/scripts/$s"
           done
@@ -882,14 +888,18 @@ jobs:
           filter="${{ matrix.shard.filter }}"
           tag="${{ matrix.shard.result_tag }}"
           mkdir -p /tmp/zw-results
+          # 无 JSON 输出（runner 崩/语料残缺）仍让分片红，但只记账不中断循环
+          # ——兄弟套件照跑，红面不扩大（与 fetch 步容错同款契约）。
+          rc=0
           for s in ${{ matrix.shard.suites }}; do
             ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit ${{ matrix.shard.time_limit }} -- \
               ./target/release/zero-wpt-runner "testharness-$s" $filter --json \
               > "/tmp/zw-results/testharness-$s${tag:+-$tag}.json" \
               || echo "::warning::testharness-$s 退出码非 0（存在失败用例属预期）"
             test -s "/tmp/zw-results/testharness-$s${tag:+-$tag}.json" \
-              || { echo "::error::testharness-$s 无 JSON 输出"; exit 1; }
+              || { echo "::error::testharness-$s 无 JSON 输出"; rc=1; }
           done
+          exit $rc
 
       - name: Upload results shard
         if: always()
@@ -904,9 +914,13 @@ jobs:
   # → 提交回 main。纯 Python 标准库，无需构建环境。
   wptfyi-coverage-aggregate:
     needs: wptfyi-coverage
-    if: >
-      github.event_name == 'schedule'
-      || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage)
+    # 个别分片红（如某 catch-all 套件语料依赖链断裂）不吞快照：未跑的面按
+    # 分母设计记 0（与未跑同态）；分片红态在矩阵 job 结论上保持可见。
+    # 取消仍跳过（success/failure 均不覆盖 cancelled）。
+    if: >-
+      (github.event_name == 'schedule'
+        || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage))
+      && (success() || failure())
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

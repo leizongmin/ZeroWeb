@@ -847,3 +847,7 @@ html/browsers/the-window-object/named-access-on-the-window-object/window-null-na
 #（+15P：basics 4、changing 5、multi-match 1、removing 2、name-attribute-elements 2、
 # nested-context 1）；残余 13F 为 iframe contentWindow 通道/prototype 链/cross-global/
 # 取数基建面，非动态名语义（diag/evidence/slice36/gates/wpt-named-access-group-after.log）。
+html/webappapis/system-state-and-capabilities/the-navigator-object/plugins-and-mimetypes.html 315976933870b34d6ea30e3f6643403edae678ba 2026-11-06 T44-pluginarray-iface
+html/semantics/scripting-1/the-script-element/microtasks/resources/evaluation-order-2.1.mjs 315976933870b34d6ea30e3f6643403edae678ba 2026-11-07 M2-S335-asset
+html/semantics/scripting-1/the-script-element/microtasks/resources/evaluation-order-3.1.mjs 315976933870b34d6ea30e3f6643403edae678ba 2026-11-07 M2-S335-asset
+html/semantics/scripting-1/the-script-element/microtasks/resources/evaluation-order-4.1.mjs 315976933870b34d6ea30e3f6643403edae678ba 2026-11-07 M2-S335-asset

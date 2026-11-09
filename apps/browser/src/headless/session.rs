@@ -987,6 +987,7 @@ impl HeadlessSession {
                         url: job_url.clone(),
                         headers: job_headers,
                         body: job_body,
+                        cache_mode: zero_net::CacheMode::Default,
                     });
                     // RFC 9111 §4.4：非安全方法成功响应失效目标 URI（含同源
                     // Location/Content-Location），防止后续 GET 复用陈旧条目。
@@ -1009,6 +1010,7 @@ impl HeadlessSession {
                 url: params.url.clone(),
                 headers,
                 body: params.body,
+                cache_mode: zero_net::CacheMode::Default,
             });
             // 非 GET 兜底路径同闸：非安全方法成功失效目标 URI（RFC 9111 §4.4）。
             invalidate_after_unsafe_response(&zero_net::shared_http_cache(), &method, &params.url, &outcome);

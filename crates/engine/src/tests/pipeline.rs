@@ -2743,3 +2743,297 @@ fn test_img_srcset_comma_url_density_intrinsic_r5386b() {
         "尾逗号组切分后次候选 1x 生效 → 20 不折（got {w}x{h}）"
     );
 }
+
+/// s306（html-semantics M2）：picture/source 页全管线图钉——source width 维度
+/// 属性缺省 img 尺寸 + w 描述符密度择优选源，在真实 render_html 管线的联合面。
+/// 钉形取自 responsive-image-select-print（source width=200 + red 1w/green 200w，
+/// vw 800 下 green 密度 0.25 ≤ dpr 最大胜出）：引擎须发射 green 键 ImagePrimitive
+/// 且盒 200×200（宽 = source width 属性，高 = green 1:1 比率推得）。旧管面
+/// R4162 首候选近似取红 + 无 source 维度缺省 → 红或塌缩双态假红根因。
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+#[test]
+fn test_img_source_dimension_default_and_density_selection_s306() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let green = "./resources/green.png";
+    let red = "./resources/red.png";
+    let gk = crate::paint::image_resource_key(green, pipeline.document_url());
+    let rk = crate::paint::image_resource_key(red, pipeline.document_url());
+    let mut sizes = std::collections::HashMap::new();
+    sizes.insert(gk, (100.0f32, 100.0f32));
+    sizes.insert(rk, (100.0f32, 100.0f32));
+    pipeline.set_image_sizes(sizes);
+    let mut ratios = std::collections::HashMap::new();
+    ratios.insert(gk, 1.0f32);
+    ratios.insert(rk, 1.0f32);
+    pipeline.set_image_ratios(ratios);
+    let html = r#"<!DOCTYPE html><html><head><style>
+  :root { print-color-adjust: exact; }
+  @page { size: 300px; margin: 0; }
+</style></head><body>
+  <picture>
+    <source width="200" srcset="./resources/red.png 1w, ./resources/green.png 200w">
+    <img>
+  </picture>
+</body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let imgs = &result.display_list.primitives.images;
+    assert_eq!(imgs.len(), 1, "img 恰一发一图元（got {}）", imgs.len());
+    let img = &imgs[0];
+    assert_eq!(img.image_key.0, gk, "密度择优选 green（≤dpr 最大密度），非首候选 red");
+    let (x, y, w, h) = (
+        img.rect.origin.x,
+        img.rect.origin.y,
+        img.rect.size.width,
+        img.rect.size.height,
+    );
+    assert!(
+        (x - 8.0).abs() < 0.01 && (y - 8.0).abs() < 0.01,
+        "body 默认 margin 8px（got {x},{y}）"
+    );
+    assert!(
+        (w - 200.0).abs() < 0.01 && (h - 200.0).abs() < 0.01,
+        "source width=200 缺省 img 宽 + 1:1 比率高（got {w}x{h}）"
+    );
+}
+
+/// s311：textarea 子文本（defaultValue，无 harness 值）恒经控件路径绘制——
+/// 多行内容按 \n 拆行（此前非空种子臂 return，子文本经通用 IFC 塌行折行，
+/// \n 行结构丢失），且 IFC 面整盒抑制不与控件面双绘。
+#[test]
+fn test_s311_textarea_child_text_control_path_multiline() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    // 两个短行：塌行后 "aa bb" 在缺省 textarea 宽内可排单行；控件路径必 2 基线。
+    let html = r#"<html><body><textarea>aa
+bb</textarea></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let glyphs: Vec<(char, f32)> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.y)))
+        .collect();
+    let text: String = glyphs.iter().map(|(c, _)| c).collect();
+    assert_eq!(
+        text.matches('a').count(),
+        2,
+        "子文本应经控件路径单份绘制（got {text:?}）"
+    );
+    assert_eq!(text.matches('b').count(), 2, "IFC 面应整盒抑制不双绘（got {text:?}）");
+    let baselines: std::collections::HashSet<i32> = glyphs.iter().map(|(_, y)| *y as i32).collect();
+    assert_eq!(baselines.len(), 2, "\\n 行结构应保留（2 基线，got {baselines:?}）");
+}
+
+/// s311：`&#xd;` CR 实体绕过 HTML 输入流预处理进入 placeholder——textarea
+/// 显示面按换行绘制（显示换行归一 CR LF/CR → LF，Chromium/Firefox 同）。
+#[test]
+fn test_s311_textarea_placeholder_cr_entity_line_break() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    let html = r#"<html><body><textarea placeholder="a&#xd;b"></textarea></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let baselines: std::collections::HashSet<i32> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.y as i32)))
+        .map(|(_, y)| y)
+        .collect();
+    assert_eq!(baselines.len(), 2, "CR 实体应按换行绘制（2 基线）");
+}
+
+/// s311：textarea 多行块顶对齐——rows=1/rows=5 单行内容首行基线应一致
+///（content box 垂直居中口径下 rows=5 首行显著下移，Chromium UA 顶对齐）。
+#[test]
+fn test_s311_textarea_content_top_aligned() {
+    let first_x_baseline = |html: &str| {
+        let mut pipeline = RenderPipeline::new(400.0, 600.0);
+        let result = pipeline.render_html(html, "");
+        result
+            .primitives()
+            .glyphs
+            .iter()
+            .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.y)))
+            .find(|(c, _)| *c == 'x')
+            .map(|(_, y)| y)
+            .expect("单行 textarea 应产出 x 字形")
+    };
+    let y1 = first_x_baseline(r#"<html><body><textarea rows="1">x</textarea></body></html>"#);
+    let y5 = first_x_baseline(r#"<html><body><textarea rows="5">x</textarea></body></html>"#);
+    assert!(
+        (y1 - y5).abs() < 8.0,
+        "rows=1/5 单行首基线应顶对齐一致（got y1={y1}, y5={y5}）"
+    );
+}
+
+/// s312：textarea 宽度软折行（UA pre-wrap 显示语义）——wrap 型 white-space 在
+/// content box 宽处按空格断点拆视觉行；white-space:nowrap 关闭折行（单行溢出）。
+#[test]
+fn test_s312_textarea_width_soft_wrap() {
+    let glyphs_of = |css: &str| {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let html = r#"<html><head><style></style></head><body><textarea placeholder="aa bb cc dd ee ff"></textarea></body></html>"#;
+        let result = pipeline.render_html(html, css);
+        let glyphs: Vec<(char, f32, f32)> = result
+            .primitives()
+            .glyphs
+            .iter()
+            .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.x, glyph.y)))
+            .collect();
+        (glyphs, result)
+    };
+    let (wrap_glyphs, _) = glyphs_of("textarea { max-width: 100px; }");
+    let baselines: std::collections::HashSet<i32> = wrap_glyphs.iter().map(|(_, _, y)| *y as i32).collect();
+    assert!(
+        baselines.len() >= 2,
+        "wrap 型应在 100px 宽内软折行（≥2 基线，got {baselines:?}）"
+    );
+    assert!(
+        wrap_glyphs.iter().all(|(_, x, _)| *x < 118.0),
+        "折行行不得溢出 content box（max x = {:?}）",
+        wrap_glyphs.iter().map(|(_, x, _)| *x).fold(0.0f32, f32::max)
+    );
+
+    let (nowrap_glyphs, _) = glyphs_of("textarea { max-width: 100px; white-space: nowrap; }");
+    let nowrap_baselines: std::collections::HashSet<i32> = nowrap_glyphs.iter().map(|(_, _, y)| *y as i32).collect();
+    assert_eq!(nowrap_baselines.len(), 1, "nowrap 应单行（got {nowrap_baselines:?}）");
+}
+
+/// s312：text-overflow:ellipsis——nowrap 溢出行截断并以 "…"（U+2026）收尾，
+/// 字形不得越过 content box 右缘。
+#[test]
+fn test_s312_textarea_ellipsis_clip() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    let html = r#"<html><head><style></style></head><body><textarea placeholder="aa bb cc dd ee ff gg"></textarea></body></html>"#;
+    let result = pipeline.render_html(
+        html,
+        "textarea { max-width: 100px; white-space: nowrap; text-overflow: ellipsis; }",
+    );
+    let glyphs: Vec<(char, f32)> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.x)))
+        .collect();
+    assert!(
+        glyphs.iter().any(|(c, _)| *c == '\u{2026}'),
+        "溢出行应以省略号收尾（got {glyphs:?}）"
+    );
+    assert!(
+        glyphs.iter().all(|(_, x)| *x < 118.0),
+        "ellipsis 截断后字形不得越过 content box 右缘（max x = {:?}）",
+        glyphs.iter().map(|(_, x)| *x).fold(0.0f32, f32::max)
+    );
+}
+
+/// s313：meter/progress `appearance: none`——UA track chrome（bg/border）与 value
+/// 填充条整体不施画（css-ui-4 §appearance-switching；appearance 初值 auto，作者 none
+/// 覆盖后 computed None = 关闭意图）。裸 meter 照常施画。
+/// driving：R1670 meter-appearance-none-rendering 族 mismatch 四页。
+#[test]
+fn test_s313_meter_appearance_none_chrome_suppressed() {
+    let counts_of = |css: &str| {
+        let mut pipeline = RenderPipeline::new(200.0, 80.0);
+        let html = r#"<html><head><style></style></head><body><meter value="0.5"></meter></body></html>"#;
+        let result = pipeline.render_html(html, css);
+        let prims = result.primitives();
+        prims.fills.len()
+            + prims.rounded_rects.len()
+            + prims.path_fills.len()
+            + prims.strokes.len()
+            + prims.path_strokes.len()
+    };
+    // 裸 meter（UA appearance:auto）：track bg #efefef + value 条（green）+ UA 边框。
+    let auto_total = counts_of("");
+    assert!(
+        auto_total >= 2,
+        "裸 meter 应有 track bg + value 条 + 边框（got {auto_total}）"
+    );
+    // 作者 appearance:none：素盒，零图元。
+    let none_total = counts_of("meter { appearance: none; }");
+    assert_eq!(
+        none_total, 0,
+        "appearance:none meter 不应施画任何 track chrome（got {none_total}）"
+    );
+}
+
+/// s314：`<input type=range>` datalist tick 刻度全链——list→datalist 解析 + step 对齐
+/// 过滤 + fraction 映射（HTML range state）。无 list 引用时零刻度（tick-01 notref 侧）。
+/// driving：R1670 range-tick-marks-01/03 mismatch 两页 + repaint 八页 match 域。
+#[test]
+fn test_s314_range_datalist_tick_marks() {
+    let fills_of = |html: &str| {
+        let mut pipeline = RenderPipeline::new(400.0, 80.0);
+        let result = pipeline.render_html(html, "");
+        result.primitives().fills.len()
+    };
+    let with = fills_of(
+        r#"<html><body><input type="range" min="-100" max="100" value="0" step="10" list="powers"><datalist id="powers"><option value="0"><option value="-30"><option value="30"><option value="50"></datalist></body></html>"#,
+    );
+    let without =
+        fills_of(r#"<html><body><input type="range" min="-100" max="100" value="0" step="10"></body></html>"#);
+    assert_eq!(
+        with,
+        without + 4,
+        "list→datalist 应绘 4 枚 step 对齐 tick（got with={with} without={without}）"
+    );
+}
+
+/// s316（HTML §4.8.6 the-embed-element）：embed 非 potentially active → represents
+/// nothing，盒（含作者红背景）不渲染；potentially active（src+type 在）照常渲染。
+/// src="" 空串即便带 type 仍 nothing（spec：src 缺席或非空才 potentially active）。
+/// driving：embed-represent-nothing-01/02（修复前红 100×100 fill 泄绘）。
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-embed-element
+#[test]
+fn test_s316_embed_represents_nothing_paint_gate() {
+    let red_fills = |html: &str| {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, "");
+        result
+            .primitives()
+            .fills
+            .iter()
+            .filter(|f| f.color.r == 255 && f.color.g == 0 && f.color.b == 0)
+            .count()
+    };
+    let page = |embed: &str| {
+        format!(
+            r#"<style>embed {{ background-color: red; height: 100px; width: 100px; }}</style><body><embed {embed}></body>"#
+        )
+    };
+    assert_eq!(red_fills(&page("")), 0, "无 src+type → represents nothing 不渲染");
+    assert_eq!(
+        red_fills(&page(r#"src="x.png" type="image/png""#)),
+        1,
+        "src 非空+type set → 照常渲染"
+    );
+    assert_eq!(
+        red_fills(&page(r#"type="image/png""#)),
+        1,
+        "仅 type set → potentially active 渲染"
+    );
+    assert_eq!(
+        red_fills(&page(r#"src="" type="image/png""#)),
+        0,
+        "src=空串即便带 type 仍 nothing"
+    );
+}
+
+/// 45 号 shadow-dom-rendering M1：shadow 树内联 `<style>` 真实样式 shadow 内部元素
+///（R1 面——pipeline `collect_inline_shadow_scopes` → `compute_styles_with_shadow`）。
+/// B3 vw-units 的样式面即此形（其 shadow sheet `div { width: 100vw; … }` 命中 shadow
+/// 内部 div）；reftest 载体为 iframe src 嵌入文档，harness 不渲染 iframe 内容 →
+/// reftest 面挂账（控制面已记），本测试钉样式面真通过。
+#[test]
+fn test_shadow_inline_sheet_styles_shadow_inner_element() {
+    use zero_render_foundation::color::Color;
+    let html = r#"<html><body><div id="host"><template shadowrootmode="open"><style>div { background: rgb(0, 128, 0); width: 50px; height: 50px; }</style><div></div></template></div></body></html>"#;
+    let mut pipeline = RenderPipeline::new(200.0, 100.0);
+    let frame = pipeline.render_html(html, "");
+    assert!(
+        frame
+            .primitives()
+            .fills
+            .iter()
+            .any(|f| f.color == Color::rgba(0, 128, 0, 255)),
+        "shadow 内联 sheet 的 div 规则应命中 shadow 内部元素并参与绘制（45 号 M1 R1 面）"
+    );
+}

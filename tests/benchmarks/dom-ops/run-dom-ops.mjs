@@ -20,6 +20,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -48,7 +49,10 @@ const fail = (msg) => {
 // ── 协议常量（权威来源；README.md 引用本表，不改两份） ──
 
 const PROTOCOL = {
-  version: 'v1',
+  // v1.1（2026-11-04）：thrash 行样本 12→8。12 样本 × ~610ms/样本 + 间隙 ≈ 7.6s，
+  // 贴 ZeroWeb CDP awaitPromise 8s 悬崖——capture 实测 reverse 超时（forward 侥幸擦过）。
+  // 8 样本总预算 ≈5.2s，留 2s 余量；其余行不变。
+  version: 'v1.1',
   viewport: { width: 1280, height: 720 },
   samples: 12,
   sampleGapMs: 25,
@@ -73,7 +77,7 @@ const PROTOCOL = {
     { scenario: 'style-geometry', op: 'style.write.color', ops: 1000 },
     { scenario: 'style-geometry', op: 'geom.read.same', ops: 2000 },
     { scenario: 'style-geometry', op: 'geom.read.rotate', ops: 1000 },
-    { scenario: 'style-geometry', op: 'geom.write_read.thrash', ops: 50 },
+    { scenario: 'style-geometry', op: 'geom.write_read.thrash', ops: 50, samples: 8 },
     { scenario: 'mutation', op: 'mut.replace.pool', ops: 20 },
     { scenario: 'mutation', op: 'mut.build.append', ops: 20 },
     { scenario: 'mutation', op: 'mut.remove.children', ops: 15 },
@@ -84,6 +88,28 @@ const PROTOCOL = {
     { scenario: 'canvas', op: 'cv.read.imageData', ops: 200 },
   ],
 }
+
+// 门禁配置指纹：对协议规范字段做 sha256（不含时间戳/端口等易变项）。perf-gate 以
+// config_hash 不一致拒绝跨配置比较——协议或采样参数任何变更都会触发基线重 capture。
+const PROTOCOL_CONFIG_HASH = createHash('sha256')
+  .update(
+    JSON.stringify({
+      version: PROTOCOL.version,
+      viewport: PROTOCOL.viewport,
+      samples: PROTOCOL.samples,
+      sampleGapMs: PROTOCOL.sampleGapMs,
+      sampleCapMs: PROTOCOL.sampleCapMs,
+      warmupMax: PROTOCOL.warmupMax,
+      settleMs: PROTOCOL.settleMs,
+      subWatchdogMs: PROTOCOL.subWatchdogMs,
+      orderRatioAlert: PROTOCOL.orderRatioAlert,
+      anomalyRatio: PROTOCOL.anomalyRatio,
+      notableRatio: PROTOCOL.notableRatio,
+      timerErrorMaxFraction: PROTOCOL.timerErrorMaxFraction,
+      sub: PROTOCOL.sub,
+    })
+  )
+  .digest('hex')
 
 // ── 页面内协议（必须自包含：经 page.evaluate 序列化，不引用外层作用域） ──
 
@@ -657,7 +683,7 @@ async function runBrowserSession(page, subs, cfgCommon, baseUrl, acc) {
             page.evaluate(runInPage, {
               scenario,
               op: sub.op,
-              cfg: { ...cfgCommon, opsPerSample: sub.ops },
+              cfg: { ...cfgCommon, opsPerSample: sub.ops, samples: sub.samples ?? cfgCommon.samples },
             }),
             new Promise((_, rej) => {
               watchdog = setTimeout(
@@ -730,7 +756,7 @@ async function collectBrowser(which, attachEndpoint, baseUrl, cfgCommon, subs) {
     for (const sub of subs) {
       acc.scenarios[`${sub.scenario}/${sub.op}`] = {
         ops_per_sample: sub.ops,
-        samples_requested: cfgCommon.samples,
+        samples_requested: sub.samples ?? cfgCommon.samples,
         warmup_ops: Math.min(sub.ops, cfgCommon.warmupMax),
         sample_cap_ms: cfgCommon.sampleCapMs,
         forward: null,
@@ -894,6 +920,7 @@ async function main() {
             schema_version: 1,
             kind: 'dom-ops-run',
             protocol_version: PROTOCOL.version,
+            config_hash: PROTOCOL_CONFIG_HASH,
             generated_at: timestamp(),
             git_sha: git.sha,
             git_dirty: git.dirty,
@@ -943,6 +970,7 @@ async function main() {
         schema_version: 1,
         kind: 'dom-ops-report',
         protocol_version: PROTOCOL.version,
+        config_hash: PROTOCOL_CONFIG_HASH,
         generated_at: timestamp(),
         git_sha: git.sha,
         git_dirty: git.dirty,

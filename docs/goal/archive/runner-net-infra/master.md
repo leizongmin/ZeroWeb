@@ -1,0 +1,249 @@
+# runner-net-infra 控制面（46 号）
+
+## 状态头（2026-11-08）
+
+- **当前状态**：M3 进行中——基线落账 + 组成归因完成（基线 =
+  **13,582P/1,337F/8T（14,927 subtest，含 wss 360P/101 键）**，
+  [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)）；
+  切片一完成（py 路由底座模块迁出，testharness.rs 19,236→15,630 行，
+  [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md)）；
+  **切片二+三落地**：`PyRoute` 保序注册表（Exact/Exacts/DirSuffix/
+  DirSuffixes 谓词 + None=落穿语义），链头 23 臂迁入（站点根→xhr
+  redirect-cors 段）。切片二 12 臂态 = 54c5f4cea（A/B multiset 空集）；
+  切片三 11 臂初版 7 条 DirSuffix 谓词带列表字面量缺陷（永不匹配→
+  落穿，机械验证发现已修），**修复后 23 臂态全量 A/B multiset 空集 +
+  七域全等已落证**（m3s3-ab-181241 主证 + 181630 冗余印证），谓词
+  修复随 6be021b87 落库，证据与事件见
+  [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)。
+  **切片四完成**（2026-11-08 晚）：残链清障 + 40 臂合并批迁入
+  （fetch/api 头段 + xhr 中段 + eventsource 主块 = 普查档四+五+六a
+  前段），谓词面扩至六变体（+Suffix/Custom），A/B multiset 空集 +
+  七域全等落证（[切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)）；
+  同窗 main FF 六提交取齐，s346 module-fetch-tester.py 行合流表尾
+  第 64 行（注册表 = 原链 63 行序 + 合流 1 行），trickle/http-cache
+  M2 两上游语义面与本批不相交（合流判定与复核链见切片四档 §五），
+  残链 19 臂、链头 = xhr/resources/get-set-cookie.py。
+  **切片五完成**（2026-11-08 深夜）：残链 21 臂全量迁入（普查概数 19 与
+  实提 21 之差 = 405 门 + OPTIONS blanket 两臂口径归属），method 面
+  谓词首入表（Custom ×2，405 门/OPTIONS blanket 表内原位承载——移表尾
+  会被 method 无关行截答），dispatch 收口为「注册表循环 + 静态回退尾」，
+  表 85 行 = 原链 84 臂 + s346 合流行；基线锚对合流后 HEAD 重录
+  （13,614P/1,305F/8T，vs 16:41 锚 32 子测试 F→P 漂移全部归因
+  c6dcbce0a http-cache M2 wire），A/B 升级计数敏感 multiset 空集落证；
+  S12 update 脚本缺口核对销账（pin 树原生含 succeeded 腿，条件成立）。
+  [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)。
+  **文件族拆分随后落库**：testharness_py_routes.rs（4,822 行）→ 目录模块
+  底座 mod.rs（809 行）+ site/xhr/fetch/es/misc 五族（89 项全迁出，每
+  文件 ≤2000 行），表文本 vs 迁移提交逐字节全等，单测 298P/0F +
+  全量 A/B 第三跑 multiset 空集（切片五档 §六）；与上游 7f1c9f717
+  lint 合流后 clippy --fix 收敛归零（d19247694，碰撞管理 22:47 条）。
+  **M4 互指记账面已落**（2026-11-08 续轮）：43 号 wss 面入账注记（归档
+  入口挂账锚点）、47 号 corpus 批次可消费互指（fetch 通道主表承接面）
+  与 39 号 P-B 判据族互指三处；py 池数值门判定与四 fixture 面
+  终验 A/B 随切片六收口一并落证。
+  **切片六 6b 落库**（2026-11-09）：script fetcher 闭包链 14 臂 →
+  `py_script_fetch_routes()` in-place 表（`ScriptFetchMatch` 四形谓词 +
+  fn 指针 handler + `ScriptRouteCtx`/`ScriptFetchEnv` 借用形；T9/T10
+  if-let 头换 let-else；P0-P3 前置 + R1-R3 尾段留守逐字节未动）。
+  等价证据：token 级验证器 A 14/14 + B 14/14（fmt 前后双过）+
+  单测 303P/0F（11/14 臂有直接行使钉；s351 css-module 钉语料缺口
+  两文件定向补拉后绿，HEAD 同红 stash 复证）+ net-api 全量 multiset
+  changed=1（xhr/send-timeout-events P→F，等负载受控探针 HEAD 3/3F
+  vs B 3/3F 同型 → 环境归因）+ fmt/clippy -D warnings 净。
+  **余项收口**（2026-11-09 续轮）：html-semantics
+  FILTER=the-script-element 行为面双跑落证——A = pre-6b 二进制
+  （7f6604ea3 源态换出构建）vs B = 本树重建，243 案 473 结果行
+  multiset **changed = 0**，双侧 exit 1 既有红案逐项全等 →
+  **DC-3 ✅ M3 ✅**（首批 A 锚曾现 charset 家族 Timeout 漂移，
+  A3 重锚归零 = 并行腿噪声归因，见 6b 档 §四.5 过程注记）。
+  [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
+  **M4/DC-4 收口**（2026-11-09 终账）：wss 池门 = covered 101 键 > 0 +
+  实跑批次门 `?wss` 变体子测试 **489/489 Pass = 100%**（net-api A/B
+  双跑双侧同值，超 98.5% 门）；py 池门 = P-A/P-B 两族注册面 + 单测钉
+  + 互指三要素齐备（P-A 端点状态机钉
+  `http_cache_py_endpoint_state_machine_dc4_pa_pool` 本批补齐——经
+  主表注册面端到端 OPTIONS preflight / 缺 uuid falsy 404 /
+  dispatch=test 状态序列 / dispatch=state 取走即清，单测 304P/0F +
+  clippy -D warnings 净）；等价硬门 = 五面 + 行为面 changed 空集
+  （唯一 1 项 xhr/send-timeout P→F 环境归因已探针钉死）+ 头条
+  13,993P ≥ 锚 13,614P 不回落 → **DC-4 ✅，goal 四项 DC 全过收口**。
+  [终账档](evidence/2026-11-09-m4-dc4-final-closure.md)。
+- **卡点**：无。
+- **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
+  keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
+  现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
+  goal py 框架交付（M4 承接）。
+- **下一步**：goal 收口（2026-11-09，DC-1~DC-4 全过，随本批归档
+  archive/）——无余项；承接挂账（trickle 分块延迟 + keepalive 配额
+  池）维持 d8d563e14 FIXME 在案，非本 goal 门。
+
+## 里程碑状态表
+
+| 里程碑 | 状态 | 证据 |
+|---|---|---|
+| M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
+| M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
+| M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | ✅ 2026-11-09（切片一~五：残链清空 + 主表 85 行；切片六：6a SW fetcher 21 臂 + 6b script fetcher 14 臂分表，行为面 multiset 空集收口） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） + [切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)（SW fetcher 21 臂分表，net-api + SW-core 双 A/B 空集） + [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)（script fetcher 14 臂分表，token 级 A/B 全过 + 单测 303P/0F + net-api multiset 等负载探针环境归因 + 行为面 473 行 multiset 空集收口） |
+| M4 下游消费验收 + 零回归收口（DC-4） | ✅ 2026-11-09（wss 池 101 键 covered>0 + 批次门 489/489=100%；py 池 P-A/P-B 注册面 + 单测钉 + 互指齐备；五面 + 行为面 changed 空集 + 头条 13,993P 不回落） | [终账档](evidence/2026-11-09-m4-dc4-final-closure.md)；门型原文见两审计档第四节；互指落点见状态头 M4 段 |
+
+## 数值门（DC-4，2026-11-08 M0 落定）
+
+- **wss 池**：102 wss 变体案（41 html + 61 any.js）covered > 0，批次门 =
+  实跑分母 × 98.5%（M2 实跑池 101 键，普查 102 的组成修正与 cookies/003-005
+  预排除归因见 [M2 档](evidence/2026-11-08-m2-wss-wiring.md) §二.1/§二.2）；
+  h2 变体 92 实例维持排除；mixed-content.https
+  （引擎 mixed-content 缺口并记）与 third-party-cookie-accepted（语料
+  helper 缺口并记）不入门、如实落账。
+- **py 池**：P-A 三目录池（den 606）+ P-B 判据族框架承接面落地（注册面 +
+  单测 ≥1 例/族，下游控制面互指可消费）；迁移案逐字节等价 100% 硬门
+  （A/B changed 空集，wss 面显式声明除外）。
+
+**终账（2026-11-09 M4）**：wss 池批次门实测 489/489 Pass = 100%；
+py 池两族三要素（注册面/单测钉/互指）齐备；等价硬门五面 + 行为面
+changed 空集落证——[终账档](evidence/2026-11-09-m4-dc4-final-closure.md) §一/§二/§五。
+
+## 零回归复验面（DC-2/DC-3/DC-4 共用锚）
+
+1. websockets 通道既有面（M2 A/B 锚：110 案 381 行，[M2 档](evidence/2026-11-08-m2-wss-wiring.md)）；
+2. net-api 全通道基线 13,582P/1,337F/8T（2026-11-08 落账 +
+   [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)，
+   supersedes 43 号 M4 终账 13,275P 口径）——M3 切片五起对合流后
+   HEAD 重录为 **13,614P/1,305F/8T**（32 子测试 F→P 归因 c6dcbce0a
+   http-cache M2 wire，[切片五档](evidence/2026-11-08-m3-slice5-
+   residual-clear.md) §三；后续批次以新锚对照）；
+3. S3b `/echo-query_v13`（constructor/016）；
+4. S12 cors-preflight-redirect 面；
+5. inspect-headers.py POST 豁免面。
+迁移/接线前后逐 subtest A/B 对照，changed 集为空（wss 池新增案除外）。
+
+**终账（2026-11-09 M4）**：锚 1/3/4/5 A/B 双侧全等（锚 5 现行套件
+0 行——行使案不在拉取面，注册面在主表、普查档迁移 A/B 承证，缺席
+对称）；锚 2 changed=1（xhr/send-timeout-events P→F，等负载受控
+探针 HEAD≡B 环境归因）——[终账档 §三](evidence/2026-11-09-m4-dc4-final-closure.md)。
+
+## 碰撞管理（run-rules §9）
+
+- 与 43 号（已归档）：websockets 通道共享——fixture 接线改动同窗复验其非
+  wss 面零回归；43 号 wss 面入账以本 goal DC-2 为前置（控制面互指：入口
+  文档「依赖约束」节 ↔ 归档入口「划界」节）。
+- 与 47 号（http-cache）：py 框架交付前置（其 M0/语料拉取对齐本 goal M3）；
+  缓存语义归 47 号，本 goal 只解锁端点管道。
+- ws_host_factory 通道级隔离不变（仅 websockets 用例挂接）——CSP/cookies
+  通道 WebSocket 用例零耦合。
+- 渲染流共享面（engine/Cargo.lock 等）改动即碰头信号：本 goal 预计触碰
+  Cargo.toml workspace 依赖（rustls/rcgen）——与并行流撞车时暂停一边记本节。
+- 2026-11-08 碰头记录：并行流 3f2d80d27 对 tests/wpt-runner 五文件做机械
+  rustfmt——与 M3 迁移面（testharness.rs）重叠。迁移开工前先 pull --rebase
+  取齐，迁移中发现的格式冲突以重排为准不改语义。
+- 2026-11-08 18:10 碰撞记录（同 session 多重 spawn 爆发）：43d2b169 同
+  session ≥9 个并发 resume 实例同树同 goal——切片二由其中一轮认领提交
+  （54c5f4cea，内容与 A/B 验证树逐字节一致，按认领件采纳）；随后一实例
+  已起切片三源码编辑（testharness_py_routes.rs M 态）。**仲裁口径**：
+  同文件单编辑方（迁移面 .rs 归当前在编实例，他轮勿碰）；同二进制
+  A/B 跑窗口互斥（并发双跑失败面不作账）；产物按先完成者采纳、互补
+  者按件核对收编；各轮动手前 pull --rebase 重读本节。
+- 2026-11-08 18:14 观察注→18:26 对账→18:31 git 定谳：7 处
+  `DirSuffix { suffix: "['…']" }` list-repr 缺陷真实存在过，但**只在
+  工作树切片三中间态（18:05–18:11 生成），未进 54c5f4cea**——
+  git show 证其为纯 12 臂态（零 DirSuffix/Exacts），18:26 注误指该
+  提交；在树实例 18:12 sed 修复 + 机械等价验证 11 臂，修复随
+  6be021b87 入库；23 臂态全量 A/B 双跑（m3s3-ab-181241 主证 +
+  181630 冗余印证，两窗有重叠段但双双 multiset 空集）落证零回归。
+  教训两条：观察注要留 mtime 锚点；接手方先核 git 账再下结论——
+  「生成器自修」误归因源于只看终态没查修复事件，「缺陷在 54c5f4cea」
+  误指源于未跑 git show 即落笔。
+- 2026-11-08 20:35 合流记录：切片四 40 臂在途态与 main FF 六提交
+  （524b3b548→a47d00cf9）冲突一处（注册表表尾，autostash）。解法 =
+  原链序连续优先（40 行 = 行 24–63），s346 module-fetch-tester.py 行
+  合流表尾第 64 行；trickle POST 包裹器（d8d563e14，拦截路径
+  fetch/api/resources/trickle.py）与 http-cache M2 wire（c6dcbce0a）
+  与本批语义不相交，判定与复核链见切片四档 §五。顺带处置 origin
+  既有红：runner 单测编译 E0063（c6dcbce0a 漏改 test 初始化器）以
+  `cache: None` 一行最小补齐随本批落库；py_routes 29 处 clippy 既有
+  债维持碰头挂账不硬解。过程教训：本批执行实例 18:58 A/B 跑完后
+  中断，对照分析 20:17 由后续 session 以孤儿日志补齐——证据档
+  「待填」栏不得跨实例存续，长跑等待窗是实例死亡高发段。
+- 2026-11-08 22:33 同 session 多实例中断爆发：A/B 等待窗内本 goal 执行
+  session 五次中断/重启，各自对同一已完成跑（m3s5-split-ab-222458）落
+  §六草稿并暂存（数值一致、两份含 fmt 前旧行数）——续轮按互补链仲裁
+  合并为切片五档单节 §六落证；systemd 单元跨 session 存活使长跑未被
+  废弃。教训：等待窗内不落「待填」占位的纪律有效，但多实例并发写同
+  一档需续轮先 grep 重复节标题再合并。
+- 2026-11-08 22:42 补验与在飞声明（续轮实例）：c7207e1e0 收编件独立
+  补验通过——注册表表文本 vs c0cab1830 逐字节全等、五族 pub(crate) fn
+  计数 15/37/17/9/11（合计 89 项）与 A/B 验证树一致、§六与状态头拆分
+  段落在位；该树即单测 298P/0F + 全量 A/B multiset 空集
+  （m3s5-split-ab-222458 vs 基线锚）验证态。另：六文件 170 行
+  needless_borrow 清理在飞（未暂存，他实例工作面），他轮勿碰；其
+  收尾后切片六 fetcher 闭包三分表迁移再认领开工。
+- 2026-11-08 22:47 合流收口：push 前 pull --rebase 与上游 7f1c9f717
+  （切片四 40 臂 69 处机械 lint + android fetch 臂 cache_mode）冲突
+  一处（py_routes 单文件 UU）——取本流迁移版后，rebase 零后续冲突；
+  上游 lint 类（needless_return/needless_borrow）在本树余 90 处
+  （= 上游修过的 40 臂态 + 本流 21 新臂同形态），以 clippy --fix 同
+  手法收敛（170 行，两类机械变换），clippy 零告警 + fmt 净 + 单测
+  298P/0F 持平，随收敛提交落库。上游 s347（08f55becb，testharness.rs
+  内联 module）与本流唯一交叉行 :5934 无冲突。
+- 2026-11-08 22:49 切片六认领（本实例）：fetcher 闭包三分表迁移开工——
+  按[清单档](evidence/2026-11-08-fetcher-closure-inventory.md)拓扑迁
+  script fetcher（`wpt_data_script_fetcher_with_stash`）与 service-worker
+  fetcher（`wpt_data_service_worker_script_fetcher`）为独立表实例
+  （`py_script_fetch_routes()`/`py_sw_fetch_routes()`），清单档 §二
+  stash 恒等约束守门（script fetcher 的 serve_custom_stash/cred_cookies
+  与 PyEndpointCtx 同 Arc，不得另建）；他轮勿碰两 fetcher 闭包段与
+  testharness_py_routes 表面，逐臂普查证据随切片六档落。
+- 2026-11-08 22:55 续轮实例（M4 记账面）：对 22:41 在飞 needless_borrow
+  六文件件跑 fmt/clippy -D warnings/单测三件套全过后，见 d19247694
+  同内容收编件已落库——零重复提交，验证即独立补验；切片六 .rs 面让予
+  22:49 认领实例，本实例承接 M4 互指记账（43 号入账注记 + 47/39 号
+  控制面互指三处，见状态头 M4 段与各 goal 文档），不碰两 fetcher
+  闭包段与 testharness_py_routes 表面。
+- 2026-11-08 23:05 三实例并发观测与 SW 面让予（8407e081 续轮本条）：
+  同级实例正在应用 SW fetcher 分表至 testharness.rs（工作树 703+/440-
+  未提交，23:03 落树；表设计 = in-place 单 suffix 行 ×24 + handler
+  `Result<Option<HttpResponse>, String>` 落穿语义，与普查档 §二
+  sw_fetch.rs 模块化设计不同形——按先完成者采纳，收编时逐件核对
+  等价，模块化拆分留作 6b 收尾补项）。其 22:48 基线单元失败
+  （MAKE_EXIT=2），A/B 对照锚维持切片五 `/tmp/m3s5-base-214840.log`；
+  23:03 上游 s348（9afb87f69，webview 模块 parse 归属，
+  the-script-element 域 2 案 F→P）不含 runner 面改动——补验 A/B
+  如现同签名漂移按切片五 §三先例归因 s348，不记为迁移回归。本实例 SW 分表生成器写就
+  未应用即退役，.rs 面（testharness.rs 两 fetcher 段 + py_routes
+  表面）让予在编实例（同文件单编辑方），转入落库件独立补验位
+  （fmt/clippy -D warnings/单测三件套 + 全量 A/B multiset 空集复核）。
+- 2026-11-09 10:20 切片六 6b 认领（本实例）：script fetcher 闭包分表开工——
+  基线 A 锚已录 `/tmp/m3s6b-base-run.log` @ 87efb6aa9（13,993P/1,321F/9T；
+  vs 切片五锚 +396 = http-cache 批次 +138 逐字对账 + websockets 面 +258
+  域级归因）；普查重录：T 臂 T1-T10 → **T1-T14**（s356 not-found ×2 +
+  s350 accept-header ×2 新臂入链，见切片六档待补节），P0-P3 前置留守 +
+  R1-R3 尾段留守、stash Arc 借出恒等。工作面 = testharness.rs script
+  fetcher 闭包段（6117–6854 行 @ 87efb6aa9）+ 同文件尾块插入，他轮勿碰。
+- 2026-11-09 11:40 切片六 6b 落库（10:20 认领本实例）：script fetcher
+  闭包链 14 臂迁入 `py_script_fetch_routes()` in-place 表（承 6a 采纳
+  态；T9/T10 let-else 头；R1-R3 留守逐字节）。门禁：验证器 A 14/14 +
+  B 14/14（fmt 前后双过）+ fmt/clippy -D warnings 净 + 单测 303P/0F
+  （s351 css-module 钉语料缺口补拉后绿，HEAD 同红复证）+ net-api
+  全量 multiset changed=1（等负载探针 HEAD≡B → 环境归因）。
+  同日续轮补证：行为面（html-semantics FILTER=the-script-element）
+  A/B multiset 空集（473 行 changed=0）→ **DC-3 收口 + M3 ✅**，
+  M4 余项（py 池数值门 + 四 fixture 面终验）转当前工作面。
+  证据：[切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
+- 2026-11-09 M4/DC-4 收口认领与落库（11:40 条本实例续）：py 池数值门
+  判定 + 四 fixture 面终验落证收口——P-A 端点状态机钉补齐
+  （testharness.rs 单测一处，经主表注册面端到端）+
+  [终账档](evidence/2026-11-09-m4-dc4-final-closure.md) + 控制面数值门/
+  零回归面终账注记 + goal 文档 DC-4 行收口。DC-1~DC-4 全过，goal
+  随本批归档 archive/（相对互指三处同步改写）。
+- 2026-11-08 23:55 切片六 6a 落库（22:49 认领本实例）：SW fetcher 闭包
+  链 459 行 → `py_sw_fetch_routes()` 24 行表 + 21 handler（T1-T6 机械
+  等价，落穿臂 2 手写尾包裹同形），表设计 in-place 单 suffix 行 ×24
+  采纳（与 23:05 条兄弟轮预案一致；sw_fetch.rs 模块化留 6b）。门禁
+  全绿：验证器 ALL PASS（A 逐臂 token 全等 + B 表序 + C 静态尾）+
+  fmt/check/clippy -D warnings 净 + 单测 298P/0F + **net-api 全量 A/B
+  multiset 空集**（13,614P/1,305F/8T 锚 d19247694 vs B 9f2b7cdef，四域
+  锚全等；23:03 条预告的 s348 双案不在本套件，零归因需要）+
+  **SW-core 双跑 multiset 空集**（246P/3F/0T，worktree@9f2b7cdef 干净
+  基线 vs 主树本批，页面直方图逐项全等；net-api 不行使 SW 臂故 SW 面
+  改由 SW-core 承载，普查档 §三.2 缺陷订正见证据档 §四）。SW 波资产
+  45 fetch 本 clone 首次拉取（gitignored）。证据：[切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)。

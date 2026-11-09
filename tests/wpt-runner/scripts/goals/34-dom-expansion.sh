@@ -8,7 +8,7 @@
 # html/dom 是 HTML 元素/Document DOM 接口面（394 文件，idlharness.any.js 为
 # build 期生成资产上游不存在，拉取会记 1 个失败属预期）。语料补全后归既有
 # runner 通道扩面：ranges → testharness-dom、html/dom → testharness-html-syntax
-# （M1 rally 轮落地，契约见 docs/goal/dom-expansion.md DC-1）。
+# （M1 rally 轮落地，契约见 docs/goal/archive/dom-expansion.md DC-1）。
 # 用法：bash tests/wpt-runner/scripts/goals/34-dom-expansion.sh（FORCE=1 强制重拉）
 set -euo pipefail
 

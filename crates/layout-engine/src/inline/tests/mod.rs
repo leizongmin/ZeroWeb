@@ -37,6 +37,20 @@ mod r5325_text_wrap_balance_tests;
 mod r5342_clamp_displaced_strut_tests;
 mod r5402_ls_line_end_fit_tests;
 mod r5404_first_line_lh_tests;
+/// R5449 clamp 截断末保留行 hangable 尾随空格剪除（css-overflow-4 §block-ellipsis）。
+mod r5449_clamp_hang_trim_tests;
+/// R5450 clamp trim 清零 run x 折叠到剪除点（R5297 band 域幻影带收口）。
+mod r5450_clamp_hang_x_collapse_tests;
+/// R5451 clamp trim 后末保留行再对齐（ellipsis 计入对齐，css-overflow-4 §block-ellipsis）。
+mod r5451_clamp_hang_realign_tests;
+
+/// R5453：clamp realign ellipsis advance 度量源 = 容器 face（真面/estimate 分派），driving block-ellipsis-032。
+mod r5453_clamp_ellipsis_container_font_tests;
+
+/// R5454：clamp justify realign ellipsis 计入分配项（gap_count = kept_count）+ 线尾旗标，driving block-ellipsis-032 box3。
+mod r5454_clamp_justify_ellipsis_item_tests;
+/// R5469：fit 门断行新行首词放不下 float 缩短带下绕（CSS2 §9.5 rule 8，c5525-fltmrgn-000）。
+mod r5469_postbreak_word_float_fit_probe;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

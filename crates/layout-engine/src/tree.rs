@@ -1326,9 +1326,27 @@ fn apply_replaced_element_sizing(
             // 无条件设为 HTML 属性值，致 <canvas width=10 height=10 style="height:100%">
             // 的 width 仍为 HTML 值 10（应按 1:1 比例从 height 100px 推导为 100px）。
             if css_w_auto && css_h_auto {
-                stored_is_content_intrinsic = true;
-                taffy_style.size.width = taffy::style::Dimension::length(w);
-                taffy_style.size.height = taffy::style::Dimension::length(h);
+                // s283（html-semantics M2）：img 免 attr 直写 definite——width/height
+                // 属性已按 HTML dimension attributes 映射 presentational hint
+                //（style-system img 臂，author origin (0,0,0)）进级联，可被作者规则
+                // 覆盖；computed 双 auto = hint 被作者覆盖（img{width:auto} 场景），
+                // attr 直写会压回被覆盖值（implicit-sizes-ignores-width：
+                // img{width:auto} 与 inline style="width:auto" 均被二次入场压回
+                // attr 400 实证——规范语义 attrs 只经 hint + aspect-ratio 两通道，
+                // 绝不直写 used size）。auto 态改注入密度折算固有尺寸（与无属性
+                // `_` 臂 img_intrinsic_sizes 同通道；无固有信号保持 auto = 容器宽
+                // 回落）。无作者覆盖时 computed 即 hint Px，本臂不达（taffy definite
+                // 同值零回归）；canvas/embed/object 等无 hint 通道，维持 attr 直写。
+                // https://html.spec.whatwg.org/multipage/rendering.html#dimension-attributes
+                if tag != "img" {
+                    stored_is_content_intrinsic = true;
+                    taffy_style.size.width = taffy::style::Dimension::length(w);
+                    taffy_style.size.height = taffy::style::Dimension::length(h);
+                } else if let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id) {
+                    stored_is_content_intrinsic = true;
+                    taffy_style.size.width = taffy::style::Dimension::length(iw.max(1.0));
+                    taffy_style.size.height = taffy::style::Dimension::length(ih.max(1.0));
+                }
             } else if css_w_auto && !css_h_auto {
                 // R3796（css-sizing-3 §5.2 + csswg #12333）：width content 关键字 + height
                 // 显式 + max-height content 关键字——max-content 高 = 固有宽 / 属性比
@@ -1389,6 +1407,14 @@ fn apply_replaced_element_sizing(
         }
         (Some(w), None) if w > 0.0 => {
             // 仅有 width：设置宽度，高度由 aspect_ratio 推导
+            // R5421（html-semantics M2 s292 + CSS Sizing 4 §4.1 natural aspect ratio）：
+            // no-ratio img（SVG 无 viewBox、仅单位 width attr）无自然比——bogus 解码
+            // pixmap（usvg attr 默认尺寸）不得作比注入（density-vs-zoom "intrinsic width
+            // only: baseline"：width=60 SVG 应 60×150，bogus 比 60/100 → 60×100）。
+            // 同 R5411 形态，独立 kill-switch `ZW_NORATIO_ATTR_GUARD=0`。
+            let noratio_img = tag == "img"
+                && img_intrinsic_no_ratio.contains_key(&dom_id)
+                && std::env::var("ZW_NORATIO_ATTR_GUARD").as_deref() != Ok("0");
             if computed.aspect_ratio.is_none() {
                 // R2172：SVG data URI unitless width attr（`extract_svg_data_uri_size` 解析
                 // '200' 命中此分支，区别于 '50px' 解析失败落 img_intrinsic_sizes 分支）须补设
@@ -1396,36 +1422,104 @@ fn apply_replaced_element_sizing(
                 // 200×0；img-row-011 等）。仅 CSS aspect-ratio 未设 + 至少一侧 auto + decoded
                 // intrinsic 可用时。kill-switch ZW_SVG_ATTR_AR=0。
                 if (matches!(computed.width, LengthValue::Auto) || matches!(computed.height, LengthValue::Auto))
+                    && !noratio_img
                     && std::env::var("ZW_SVG_ATTR_AR").as_deref() != Ok("0")
                     && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
                     && ih > 0.0
                 {
                     taffy_style.aspect_ratio = Some(iw / ih);
                 }
-                // 无 aspect_ratio 也无 height，使用固定宽度
+                // s283：img 免 attr 直写——width 属性经 presentational hint 进级联，
+                // computed Auto = 作者已覆盖；auto 态改注入固有宽（同 `_` 臂
+                // img_intrinsic_sizes 通道，密度折算固有 = spec replaced auto
+                // sizing），无固有信号保持 auto；R2172 aspect_ratio 注入保留 =
+                // attrs 只喂比例的规范语义半边。canvas 等无 hint 通道维持 attr 直写。
+                // https://html.spec.whatwg.org/multipage/rendering.html#dimension-attributes
                 if matches!(computed.width, LengthValue::Auto) {
-                    taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                    if tag != "img" {
+                        taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                    } else if noratio_img
+                        && let Some(&(nw, _)) = img_intrinsic_no_ratio.get(&dom_id)
+                        && let Some(nw) = nw
+                        && nw > 0.0
+                    {
+                        // s292 L1：no-ratio img 固有宽取 no_ratio 真维——sizes 表此形态
+                        // 存 bogus pixmap（R3760 零维 viewBox 早退 1×1 / usvg attr 默认
+                        // 尺寸），sizes 注入把 SVG width 60 压成 1（naturalWidth 语料
+                        // vb0w 面实证 1×150；no_ratio 维已密度折算，同通道口径）。
+                        taffy_style.size.width = taffy::style::Dimension::length(nw.max(1.0));
+                    } else if let Some(&(iw, _)) = img_intrinsic_sizes.get(&dom_id)
+                        && iw > 0.0
+                    {
+                        taffy_style.size.width = taffy::style::Dimension::length(iw.max(1.0));
+                    }
+                }
+                // R5421：no-ratio img 缺轴（CSS auto）落 default object size 对应轴
+                //（SVG 无比不传送：width-only → 高 150，同 shim natural dims w-only
+                // → (w,150) 口径；https://html.spec.whatwg.org/multipage/rendering.html#
+                // replaced-elements 的 default object size 300×150 另半轴）。
+                if noratio_img && matches!(computed.height, LengthValue::Auto) {
+                    taffy_style.size.height = taffy::style::Dimension::length(crate::svg_default_size::SVG_DEFAULT_H);
                 }
             } else if matches!(computed.width, LengthValue::Auto) {
-                taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                if tag != "img" {
+                    taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                } else if let Some(&(iw, _)) = img_intrinsic_sizes.get(&dom_id)
+                    && iw > 0.0
+                {
+                    taffy_style.size.width = taffy::style::Dimension::length(iw.max(1.0));
+                }
             }
         }
         (None, Some(h)) if h > 0.0 => {
             // 仅有 height：设置高度，宽度由 aspect_ratio 推导
+            // R5421：no-ratio img 对称臂（见上分支注记）——kill-switch 同
+            // `ZW_NORATIO_ATTR_GUARD=0`。
+            let noratio_img = tag == "img"
+                && img_intrinsic_no_ratio.contains_key(&dom_id)
+                && std::env::var("ZW_NORATIO_ATTR_GUARD").as_deref() != Ok("0");
             if computed.aspect_ratio.is_none() {
                 // R2172：对称——SVG unitless height attr 须补设 aspect_ratio（见上分支注释）。
                 if (matches!(computed.width, LengthValue::Auto) || matches!(computed.height, LengthValue::Auto))
+                    && !noratio_img
                     && std::env::var("ZW_SVG_ATTR_AR").as_deref() != Ok("0")
                     && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
                     && ih > 0.0
                 {
                     taffy_style.aspect_ratio = Some(iw / ih);
                 }
+                // s283：img 免 attr 直写——height 属性经 presentational hint 进级联，
+                // computed Auto = 作者已覆盖；auto 态改注入固有高（同上臂注记）。
+                // https://html.spec.whatwg.org/multipage/rendering.html#dimension-attributes
                 if matches!(computed.height, LengthValue::Auto) {
-                    taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                    if tag != "img" {
+                        taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                    } else if noratio_img
+                        && let Some(&(_, nh)) = img_intrinsic_no_ratio.get(&dom_id)
+                        && let Some(nh) = nh
+                        && nh > 0.0
+                    {
+                        // s292 L1：对称臂 no_ratio 真维优先（见上分支注记——sizes 表
+                        // bogus pixmap 不得经 s283 注入压扁真高）。
+                        taffy_style.size.height = taffy::style::Dimension::length(nh.max(1.0));
+                    } else if let Some(&(_, ih)) = img_intrinsic_sizes.get(&dom_id)
+                        && ih > 0.0
+                    {
+                        taffy_style.size.height = taffy::style::Dimension::length(ih.max(1.0));
+                    }
+                }
+                // R5421：no-ratio img 对称缺轴（CSS auto）→ 宽落 default object size 宽 300。
+                if noratio_img && matches!(computed.width, LengthValue::Auto) {
+                    taffy_style.size.width = taffy::style::Dimension::length(crate::svg_default_size::SVG_DEFAULT_W);
                 }
             } else if matches!(computed.height, LengthValue::Auto) {
-                taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                if tag != "img" {
+                    taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                } else if let Some(&(_, ih)) = img_intrinsic_sizes.get(&dom_id)
+                    && ih > 0.0
+                {
+                    taffy_style.size.height = taffy::style::Dimension::length(ih.max(1.0));
+                }
             }
         }
         _ => {
@@ -1505,8 +1599,35 @@ fn apply_replaced_element_sizing(
                             }
                         }
                     } else {
-                        taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
-                        taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                        // R5418（css-ui-3 §box-sizing + CSS2 §10.3.2/§10.6.2 replaced sizing）：
+                        // box-sizing:border-box 只改写**显式声明** width/height 的解释盒；
+                        // auto 尺寸（固有维/default object size）恒 content-box 语义（used
+                        // width = intrinsic width，即 content 区）。本臂注入的 (w_opt, h_opt)
+                        // 是 content 语义（真实固有维或 default 300/150），节点 taffy
+                        // box_sizing 已被作者 CSS 设为 BorderBox 时直写会被 taffy 按
+                        // border-box 扣 padding/border（box-sizing-008：img border-box +
+                        // padding-left 20 + 固有宽 100 → chromium border box 120/content
+                        // 100，旧径注入 100 扣成 content 80；t02 padding-bottom 20 +
+                        // default 高 150 → chromium bb 170，旧径 130 致第二行整体上移
+                        // 20px）。折算 bb = content + frame（frame_size 与 R4165 同源）。
+                        // R3801 bb 折算臂不达此处——no-ratio 因 min/max 表假比污染被
+                        // 2105 门整体跳表，frame 折算与之无关，就地补齐。显式侧
+                        //（width:120 等）converter 已按 bb 语义写入不触碰；flex both-auto
+                        // 臂（R5411 主轴/交叉轴让位语义）无驱动案不触碰。
+                        // kill-switch `ZW_REPLACED_NORATIO_BB_FOLD=0`。
+                        let (base_w, base_h) = (w_opt.unwrap_or(300.0).max(0.5), h_opt.unwrap_or(150.0).max(0.5));
+                        if matches!(
+                            computed.box_sizing,
+                            zero_style_system::property::types::BoxSizingValue::BorderBox
+                        ) && std::env::var("ZW_REPLACED_NORATIO_BB_FOLD").as_deref() != Ok("0")
+                        {
+                            let (fx, fy) = frame_size(computed);
+                            taffy_style.size.width = taffy::style::Dimension::length((base_w + fx).max(0.5));
+                            taffy_style.size.height = taffy::style::Dimension::length((base_h + fy).max(0.5));
+                        } else {
+                            taffy_style.size.width = taffy::style::Dimension::length(base_w);
+                            taffy_style.size.height = taffy::style::Dimension::length(base_h);
+                        }
                     }
                 } else if !width_auto && height_auto {
                     // width 显式，height auto → 用真实固有高或 default 150
@@ -1951,11 +2072,32 @@ fn apply_replaced_element_sizing(
                         // ratio**（§10.3.2 "should" undefined 的 chromium 非标准行为；default object
                         // size 300×150 会溢出父盒，chromium 收束到父宽）。仅父有 Px 宽时用之
                         //（限 blast radius——auto 父或无父回落 default 300，避免普遍撑满父宽）。
+                        // R5421（html-semantics M2 s292 + CSS2 §10.3.4 块级替换元素约束方程）：
+                        // used content 宽 = CB content 宽 − 自身水平 frame（margin+border+padding，
+                        // margin-box = CB 宽解方程；margin auto used = 0，% margin 相对 CB 宽；
+                        // border/padding 复用 frame_size，style none 归零）。naturalWidth
+                        // -naturalHeight-width-height SVG viewBox-only 群（740 容器 + 5px
+                        // border/margin img → content 720×240，chromium 同值）实证；无 frame
+                        // 形态（R2054 C2）逐字节不变。CB 不可解析（fallback 300 default
+                        // object size）不减——default 非约束方程解。kill-switch
+                        // `ZW_RATIO_CONSTRAINT_FRAME=0`。
                         let container_w = doc
                             .parent_node(dom_id)
                             .and_then(|p| styles.get(&p))
                             .and_then(|s| resolve_tree_definite_real_length(&s.width, s));
-                        let w = container_w.unwrap_or(300.0);
+                        let mut w = container_w.unwrap_or(300.0);
+                        if container_w.is_some() && std::env::var("ZW_RATIO_CONSTRAINT_FRAME").as_deref() != Ok("0") {
+                            let margin_px = |m: &LengthValue| -> f32 {
+                                match m {
+                                    LengthValue::Auto => 0.0,
+                                    LengthValue::Percentage(p) => container_w.unwrap_or(0.0) * (*p as f32) / 100.0,
+                                    other => resolve_tree_definite_real_length(other, computed).unwrap_or(0.0),
+                                }
+                            };
+                            let (fw, _) = frame_size(computed);
+                            w = (w - margin_px(&computed.margin_left) - margin_px(&computed.margin_right) - fw)
+                                .max(0.0);
+                        }
                         taffy_style.size.width = taffy::style::Dimension::length(w);
                         taffy_style.size.height = taffy::style::Dimension::length((w / ratio).max(0.5));
                     } else if height_content_kw
@@ -4900,6 +5042,34 @@ fn build_subtree(
     taffy_id
 }
 
+/// 45 号 shadow-dom-rendering M3（R4）：shadow 树内文本节点的匿名 taffy 叶——
+/// flex/grid 匿名文本项同款构造（`new_leaf_with_context` + node_map/taffy_to_dom
+/// 登记，测量回调按 text NodeId 取内容）。`collect_shadow_children` /
+/// `collect_shadow_slot_children` 此前只收 Element 子：shadow 根直挂文本、slot
+/// 回退文本、被分配到默认 slot 的 light 文本全部无布局盒（slot-fallback-content-004
+/// 回退行恒空、css-scoping nested 系列缺行根因）。纯空白文本跳过（与 flex 匿名项
+/// 同口径——块流空白折叠后不产盒）。https://dom.spec.whatwg.org/#slotting
+///
+/// 挂 `ZW_SHADOW_TEXT_BOX` 开关（默认开，`=0` 杀）：taffy 侧布局已验证；R4 第二臂
+/// （inline_finalization `remeasure_inline_only_containers` 的 shadow 匿名叶 gate，
+/// 修 slot-fallback-content-004 host 高被 IFC 重测清 0 的根因）落地后翻默认，
+/// 门控矩阵逐批不回落见 M3 R4 evidence。
+fn push_shadow_text_leaf(ctx: &mut BuildContext, text_id: NodeId, output: &mut Vec<taffy::NodeId>) {
+    let anon_style = taffy::Style {
+        display: taffy::style::Display::Block,
+        ..taffy::Style::default()
+    };
+    let anon_taffy = ctx
+        .taffy
+        .new_leaf_with_context(anon_style, text_id)
+        .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+    if let Some(node_map) = &mut ctx.node_map {
+        node_map.insert(text_id, anon_taffy);
+    }
+    ctx.taffy_to_dom.insert(anon_taffy, text_id);
+    output.push(anon_taffy);
+}
+
 /// 递归遍历 shadow 树，收集 taffy 子节点。
 ///
 /// 遇到 `<slot>` 元素时：
@@ -4926,9 +5096,15 @@ fn collect_shadow_children(
             None => continue,
         };
 
-        // 只处理元素节点
+        // R4：文本子建匿名叶（shadow 根直挂文本此前无布局盒）；其余非元素跳过。
         let elem_data = match &child_data.kind {
             NodeKind::Element(elem) => elem,
+            NodeKind::Text(t) => {
+                if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() {
+                    push_shadow_text_leaf(ctx, child_id, output);
+                }
+                continue;
+            }
             _ => continue,
         };
 
@@ -4938,44 +5114,52 @@ fn collect_shadow_children(
             if !assigned.is_empty() {
                 // 有分配的 light DOM 节点 → 替换 slot
                 for &assigned_id in &assigned {
-                    if doc
-                        .get(assigned_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            assigned_id,
-                            parent_grid_areas,
-                            false,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(assigned_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                assigned_id,
+                                parent_grid_areas,
+                                false,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：被分配的 light 文本（默认 slot 接文本 slottable）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, assigned_id, output);
+                        }
+                        _ => {}
                     }
                 }
             } else {
                 // 无分配 → 使用 slot 的回退内容（slot 自身的子元素）
                 let slot_children = doc.get(child_id).map(|n| n.children.clone()).unwrap_or_default();
                 for &fallback_id in &slot_children {
-                    if doc
-                        .get(fallback_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            fallback_id,
-                            parent_grid_areas,
-                            true,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(fallback_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                fallback_id,
+                                parent_grid_areas,
+                                true,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：回退文本子（slot-fallback-content-004 回退行）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, fallback_id, output);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -5020,9 +5204,15 @@ fn collect_shadow_slot_children(
             None => continue,
         };
 
-        // 只处理元素节点
+        // R4：文本子建匿名叶（shadow 内层元素直挂文本此前无布局盒）；其余非元素跳过。
         let elem_data = match &child_data.kind {
             NodeKind::Element(elem) => elem,
+            NodeKind::Text(t) => {
+                if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() {
+                    push_shadow_text_leaf(ctx, child_id, output);
+                }
+                continue;
+            }
             _ => continue,
         };
 
@@ -5031,43 +5221,51 @@ fn collect_shadow_slot_children(
             let assigned = doc.get_assigned_nodes(child_id);
             if !assigned.is_empty() {
                 for &assigned_id in &assigned {
-                    if doc
-                        .get(assigned_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            assigned_id,
-                            parent_grid_areas,
-                            false,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(assigned_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                assigned_id,
+                                parent_grid_areas,
+                                false,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：被分配的 light 文本（默认 slot 接文本 slottable）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, assigned_id, output);
+                        }
+                        _ => {}
                     }
                 }
             } else {
                 let slot_children = doc.get(child_id).map(|n| n.children.clone()).unwrap_or_default();
                 for &fallback_id in &slot_children {
-                    if doc
-                        .get(fallback_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            fallback_id,
-                            parent_grid_areas,
-                            true,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(fallback_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                fallback_id,
+                                parent_grid_areas,
+                                true,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：回退文本子（slot-fallback-content-004 回退行）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, fallback_id, output);
+                        }
+                        _ => {}
                     }
                 }
             }

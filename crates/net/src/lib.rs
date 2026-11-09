@@ -19,6 +19,7 @@ pub mod file_url;
 pub mod http_cache;
 pub mod navigation;
 pub mod negative_cache;
+pub mod no_vary_search;
 pub mod private_mode;
 pub mod request;
 pub mod resource_loader;

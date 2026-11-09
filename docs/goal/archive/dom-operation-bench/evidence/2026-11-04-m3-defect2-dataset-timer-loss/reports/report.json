@@ -1,0 +1,2710 @@
+{
+  "schema_version": 1,
+  "kind": "dom-ops-report",
+  "protocol_version": "v1",
+  "generated_at": "20261104_172304",
+  "git_sha": "90572cc78",
+  "git_dirty": true,
+  "env": {
+    "platform_class": "linux-x64",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "cpu_cores": 16
+  },
+  "runs": [
+    {
+      "browser": "zeroweb",
+      "binary": "target/release/zero-browser",
+      "flags": [
+        "--headless",
+        "--remote-debugging-port",
+        "43233"
+      ],
+      "cdp_product": "ZeroWeb/26.11.4",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/26.11.4 Chrome/120.0.0.0",
+      "cross_origin_isolated": false,
+      "timer_resolution_us": 100.00000000002274,
+      "scenarios": {
+        "style-geometry/style.read.same": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              2.699999999999932,
+              2.6000000000000227,
+              3.2999999999999545,
+              3.5,
+              4,
+              3.599999999999909,
+              6.2999999999999545,
+              2.300000000000182,
+              2.2999999999999545,
+              2.400000000000091,
+              3.099999999999909,
+              3.6000000000001364
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.1500000000000399,
+              "p50": 1.599999999999966,
+              "p95": 2.517499999999989
+            },
+            "ops_per_sec": 625000.0000000133
+          },
+          "reverse": {
+            "samples_ms": [
+              2.5,
+              2.400000000001455,
+              2.3999999999941792,
+              4.200000000004366,
+              2.2000000000043656,
+              2.2999999999956344,
+              2.2000000000043656,
+              2.3999999999941792,
+              2.400000000001455,
+              2.2999999999956344,
+              2.3000000000029104,
+              4.099999999998545
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.1000000000021828,
+              "p50": 1.1999999999970896,
+              "p95": 2.072500000000582
+            },
+            "ops_per_sec": 833333.3333353545
+          },
+          "checks": [
+            {
+              "name": "computed.color.c0",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            },
+            {
+              "name": "computed.color.c1",
+              "pass": true,
+              "expected": [
+                234,
+                67,
+                53
+              ],
+              "actual": [
+                234,
+                67,
+                53
+              ]
+            },
+            {
+              "name": "computed.color.c0",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            },
+            {
+              "name": "computed.color.c1",
+              "pass": true,
+              "expected": [
+                234,
+                67,
+                53
+              ],
+              "actual": [
+                234,
+                67,
+                53
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.3333333333365387
+        },
+        "style-geometry/style.read.rotate": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              22.200000000000045,
+              3.5,
+              3.7999999999999545,
+              3.7999999999999545,
+              3.6000000000001364,
+              3.400000000000091,
+              3.7000000000000455,
+              3.7000000000000455,
+              3.1000000000001364,
+              3.2999999999999545,
+              3.5,
+              3.2000000000000455
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.5775000000000432,
+              "p50": 1.775000000000034,
+              "p95": 6.039999999999991
+            },
+            "ops_per_sec": 563380.28169013
+          },
+          "reverse": {
+            "samples_ms": [
+              21,
+              5.5,
+              3.5,
+              3.1999999999970896,
+              3.1999999999970896,
+              3.3000000000029104,
+              4.299999999995634,
+              3.1999999999970896,
+              3.7999999999956344,
+              5.400000000001455,
+              3.099999999998545,
+              3
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.5274999999995997,
+              "p50": 1.7000000000007276,
+              "p95": 6.2374999999999945
+            },
+            "ops_per_sec": 588235.2941173953
+          },
+          "checks": [
+            {
+              "name": "computed.color.c5",
+              "pass": true,
+              "expected": [
+                158,
+                158,
+                158
+              ],
+              "actual": [
+                158,
+                158,
+                158
+              ]
+            },
+            {
+              "name": "computed.color.c5",
+              "pass": true,
+              "expected": [
+                158,
+                158,
+                158
+              ],
+              "actual": [
+                158,
+                158,
+                158
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.044117647058396714
+        },
+        "style-geometry/style.write.color": {
+          "ops_per_sample": 1000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              30.399999999999864,
+              28.100000000000364,
+              28.199999999999815,
+              28.799999999999727,
+              29.399999999999636,
+              28.90000000000009,
+              27.800000000000185,
+              28.200000000000273,
+              29.800000000000185,
+              38.90000000000009,
+              31.699999999999815,
+              47.20000000000027
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 27.965000000000284,
+              "p50": 29.149999999999864,
+              "p95": 42.63500000000017
+            },
+            "ops_per_sec": 34305.31732418541
+          },
+          "reverse": {
+            "samples_ms": [
+              27.5,
+              27.10000000000582,
+              26.900000000001455,
+              27.19999999999709,
+              28.80000000000291,
+              26.900000000001455,
+              28.69999999999709,
+              27.30000000000291,
+              28.099999999998545,
+              28.5,
+              29.099999999998545,
+              30.099999999998545
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 26.900000000001455,
+              "p50": 27.799999999999272,
+              "p95": 29.549999999998544
+            },
+            "ops_per_sec": 35971.223021583675
+          },
+          "checks": [
+            {
+              "name": "style.write.roundtrip",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0
+              ],
+              "actual": [
+                255,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "style.write.roundtrip",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0
+              ],
+              "actual": [
+                255,
+                0,
+                0
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.048561151079159225
+        },
+        "style-geometry/geom.read.same": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              45.60000000000037,
+              47.69999999999982,
+              45.20000000000027,
+              49,
+              44,
+              42.69999999999982,
+              45.5,
+              39.90000000000009,
+              40.70000000000027,
+              40.5,
+              40.89999999999963,
+              42
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 20.11500000000002,
+              "p50": 21.674999999999955,
+              "p95": 24.14249999999995
+            },
+            "ops_per_sec": 46136.10149942339
+          },
+          "reverse": {
+            "samples_ms": [
+              42.5,
+              42.299999999995634,
+              39.099999999998545,
+              40.099999999998545,
+              41.599999999998545,
+              41.30000000000291,
+              43.69999999999709,
+              40.60000000000582,
+              43.400000000001455,
+              41.599999999998545,
+              48.099999999998545,
+              38.900000000001455
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 19.504999999999928,
+              "p50": 20.799999999999272,
+              "p95": 22.83999999999887
+            },
+            "ops_per_sec": 48076.92307692476
+          },
+          "checks": [
+            {
+              "name": "geom.finite",
+              "pass": true,
+              "expected": "finite, w>0, h>0",
+              "actual": {
+                "top": 9,
+                "width": 24,
+                "height": 20
+              }
+            },
+            {
+              "name": "geom.order",
+              "pass": true,
+              "expected": "cells[599].top >= cells[0].top",
+              "actual": {
+                "first": 9,
+                "last": 273
+              }
+            },
+            {
+              "name": "geom.finite",
+              "pass": true,
+              "expected": "finite, w>0, h>0",
+              "actual": {
+                "top": 9,
+                "width": 24,
+                "height": 20
+              }
+            },
+            {
+              "name": "geom.order",
+              "pass": true,
+              "expected": "cells[599].top >= cells[0].top",
+              "actual": {
+                "first": 9,
+                "last": 273
+              }
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.04206730769234196
+        },
+        "style-geometry/geom.read.rotate": {
+          "ops_per_sample": 1000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              63,
+              35,
+              28.899999999999636,
+              30.299999999999272,
+              29,
+              33.20000000000073,
+              27.199999999999815,
+              27.600000000000364,
+              29,
+              28,
+              29.099999999999454,
+              29.199999999999815
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 27.420000000000115,
+              "p50": 29.049999999999727,
+              "p95": 47.59999999999998
+            },
+            "ops_per_sec": 34423.407917384146
+          },
+          "reverse": {
+            "samples_ms": [
+              49.299999999995634,
+              31.5,
+              32.299999999995634,
+              31.5,
+              32.299999999995634,
+              31.89999999999418,
+              31.099999999998545,
+              33.69999999999709,
+              31.099999999998545,
+              29.89999999999418,
+              29.900000000001455,
+              30.30000000000291
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 29.89999999999818,
+              "p50": 31.5,
+              "p95": 40.719999999996425
+            },
+            "ops_per_sec": 31746.031746031746
+          },
+          "checks": [
+            {
+              "name": "geom.finite.mid",
+              "pass": true,
+              "expected": "finite, w>0",
+              "actual": {
+                "top": 141,
+                "width": 24
+              }
+            },
+            {
+              "name": "geom.finite.mid",
+              "pass": true,
+              "expected": "finite, w>0",
+              "actual": {
+                "top": 141,
+                "width": 24
+              }
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.08433734939760054
+        },
+        "style-geometry/geom.write_read.thrash": {
+          "ops_per_sample": 50,
+          "samples_requested": 12,
+          "warmup_ops": 50,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              626.3000000000002,
+              625.4000000000005,
+              618.6999999999998,
+              623.3999999999996,
+              621.8999999999996,
+              620.6000000000004,
+              615.5,
+              626.5,
+              618.3999999999996,
+              617.7999999999993,
+              620.2999999999993,
+              618.6000000000004
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 12335.299999999992,
+              "p50": 12408.999999999996,
+              "p95": 12527.800000000001
+            },
+            "ops_per_sec": 80.58667096462247
+          },
+          "reverse": {
+            "samples_ms": [
+              638.5999999999985,
+              641,
+              632.9000000000015,
+              634.2000000000007,
+              641.5999999999985,
+              651.1999999999971,
+              640.3000000000029,
+              646.0999999999985,
+              640.8000000000029,
+              637.8000000000029,
+              634.6999999999971,
+              636.2999999999956
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 12672.300000000021,
+              "p50": 12789.000000000015,
+              "p95": 12967.899999999958
+            },
+            "ops_per_sec": 78.19219641879731
+          },
+          "checks": [
+            {
+              "name": "geom.thrash.applied",
+              "pass": true,
+              "expected": 33,
+              "actual": 33
+            },
+            {
+              "name": "geom.thrash.applied",
+              "pass": true,
+              "expected": 33,
+              "actual": 33
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.030622934966558005
+        },
+        "mutation/mut.replace.pool": {
+          "ops_per_sample": 20,
+          "samples_requested": 12,
+          "warmup_ops": 20,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              72.60000000000036,
+              47.10000000000037,
+              49.39999999999963,
+              54,
+              56,
+              59,
+              61.20000000000073,
+              71.79999999999927,
+              68.80000000000109,
+              72.79999999999927,
+              76.19999999999891,
+              81.79999999999927
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 2418.249999999998,
+              "p50": 3250.0000000000455,
+              "p95": 3935.9999999999536
+            },
+            "ops_per_sec": 307.69230769230336
+          },
+          "reverse": {
+            "samples_ms": [
+              105.29999999999929,
+              111.5,
+              112.90000000000146,
+              108.19999999999708,
+              120,
+              114.89999999999782,
+              128.20000000000073,
+              124.90000000000146,
+              134.59999999999854,
+              129.39999999999782,
+              143.79999999999927,
+              140.39999999999782
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 5344.749999999904,
+              "p50": 6122.500000000036,
+              "p95": 7096.499999999924
+            },
+            "ops_per_sec": 163.33197223356376
+          },
+          "checks": [
+            {
+              "name": "mut.replace.count",
+              "pass": true,
+              "expected": 50,
+              "actual": 50
+            },
+            {
+              "name": "mut.replace.identity_order",
+              "pass": true,
+              "expected": "children[i] === pool[i], seq 0..49",
+              "actual": true
+            },
+            {
+              "name": "mut.replace.count",
+              "pass": true,
+              "expected": 50,
+              "actual": 50
+            },
+            {
+              "name": "mut.replace.identity_order",
+              "pass": true,
+              "expected": "children[i] === pool[i], seq 0..49",
+              "actual": true
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.8838461538461386
+        },
+        "mutation/mut.build.append": {
+          "ops_per_sample": 20,
+          "samples_requested": 12,
+          "warmup_ops": 20,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              18,
+              24.200000000000728,
+              33,
+              28.5,
+              28.600000000000364,
+              38.69999999999891,
+              39.5,
+              43.29999999999927,
+              45,
+              51,
+              55.099999999998545,
+              58.60000000000037
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1070.50000000002,
+              "p50": 1954.9999999999727,
+              "p95": 2833.749999999968
+            },
+            "ops_per_sec": 511.50895140665676
+          },
+          "reverse": {
+            "samples_ms": [
+              51.099999999998545,
+              56.900000000001455,
+              49.70000000000073,
+              56,
+              89.40000000000146,
+              135.60000000000218,
+              160.40000000000146,
+              197.79999999999927,
+              241.5,
+              312.5,
+              344,
+              383.40000000000146
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 2523.4999999999764,
+              "p50": 7400.000000000091,
+              "p95": 18086.500000000033
+            },
+            "ops_per_sec": 135.13513513513348
+          },
+          "checks": [
+            {
+              "name": "mut.append.count",
+              "pass": true,
+              "expected": 260,
+              "actual": 260
+            },
+            {
+              "name": "mut.append.last",
+              "pass": true,
+              "expected": "last child is the last appended node",
+              "actual": true
+            },
+            {
+              "name": "mut.append.count",
+              "pass": true,
+              "expected": 260,
+              "actual": 260
+            },
+            {
+              "name": "mut.append.last",
+              "pass": true,
+              "expected": "last child is the last appended node",
+              "actual": true
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 2.7851662404093065
+        },
+        "mutation/mut.remove.children": {
+          "ops_per_sample": 15,
+          "samples_requested": 12,
+          "warmup_ops": 15,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              8.899999999997817,
+              5.299999999999272,
+              4.099999999998545,
+              6.69999999999709,
+              3.400000000001455,
+              3.700000000000728,
+              3.5,
+              4.099999999998545,
+              3.2000000000007276,
+              3.900000000001455,
+              3.2999999999992724,
+              3.700000000000728
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 216.99999999999514,
+              "p50": 253.33333333340607,
+              "p95": 512.6666666664944
+            },
+            "ops_per_sec": 3947.368421051498
+          },
+          "reverse": {
+            "samples_ms": [
+              9.399999999997815,
+              5.599999999998545,
+              3.8000000000029104,
+              4.799999999999272,
+              3.799999999999272,
+              4.400000000001455,
+              3.799999999999272,
+              4.5,
+              2.900000000001455,
+              4.200000000000728,
+              3.2999999999992724,
+              4.5
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 208.00000000001697,
+              "p50": 286.6666666667394,
+              "p95": 487.3333333332142
+            },
+            "ops_per_sec": 3488.3720930223703
+          },
+          "checks": [
+            {
+              "name": "mut.remove.count",
+              "pass": true,
+              "expected": 1305,
+              "actual": 1305
+            },
+            {
+              "name": "mut.remove.count",
+              "pass": true,
+              "expected": 1305,
+              "actual": 1305
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.1315789473683832
+        },
+        "mutation/mut.move.identity": {
+          "ops_per_sample": 100,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              16.299999999999272,
+              6.599999999998545,
+              6.399999999997817,
+              6.5,
+              7.799999999999272,
+              6.399999999997817,
+              6.100000000002183,
+              6.19999999999709,
+              6.19999999999709,
+              6.5,
+              6.399999999997817,
+              6.899999999997817
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 61.549999999993815,
+              "p50": 64.49999999998909,
+              "p95": 116.24999999999267
+            },
+            "ops_per_sec": 15503.875968994871
+          },
+          "reverse": {
+            "samples_ms": [
+              5.30000000000291,
+              5.69999999999709,
+              5.600000000002183,
+              5.600000000002183,
+              6,
+              4.400000000001455,
+              5.299999999999272,
+              4.299999999999272,
+              4.799999999999272,
+              4.299999999999272,
+              4.400000000001455,
+              4.69999999999709
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 42.999999999992724,
+              "p50": 50.499999999992724,
+              "p95": 58.34999999998399
+            },
+            "ops_per_sec": 19801.980198022655
+          },
+          "checks": [
+            {
+              "name": "mut.move.identity",
+              "pass": true,
+              "expected": "marker same node still in container",
+              "actual": {
+                "parentIsBox": true,
+                "inContainer": true
+              }
+            },
+            {
+              "name": "mut.move.count",
+              "pass": true,
+              "expected": 300,
+              "actual": 300
+            },
+            {
+              "name": "mut.move.identity",
+              "pass": true,
+              "expected": "marker same node still in container",
+              "actual": {
+                "parentIsBox": true,
+                "inContainer": true
+              }
+            },
+            {
+              "name": "mut.move.count",
+              "pass": true,
+              "expected": 300,
+              "actual": 300
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.2772277227722451
+        },
+        "canvas/cv.state.fillStyle": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.7000000000007276,
+              0.5999999999985448,
+              0.5,
+              0.5999999999985448,
+              0.6000000000021828,
+              0.6000000000021828,
+              0.5999999999985448,
+              0.5,
+              0.5,
+              0.6000000000021828,
+              0.5,
+              0.5
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.25,
+              "p50": 0.2999999999992724,
+              "p95": 0.32250000000076395
+            },
+            "ops_per_sec": 3333333.333341418
+          },
+          "reverse": {
+            "samples_ms": [
+              0.6000000000021828,
+              1.1000000000021828,
+              0.7999999999992724,
+              0.5999999999985448,
+              1.2000000000007276,
+              0.5999999999985448,
+              0.5,
+              0.5999999999985448,
+              1,
+              1,
+              1,
+              1
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.27749999999959984,
+              "p50": 0.4499999999998181,
+              "p95": 0.572500000000764
+            },
+            "ops_per_sec": 2222222.2222231203
+          },
+          "checks": [
+            {
+              "name": "cv.fillStyle.roundtrip",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            },
+            {
+              "name": "cv.fillStyle.roundtrip",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.5000000000030317
+        },
+        "canvas/cv.state.saveRestore": {
+          "ops_per_sample": 500,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              2.8000000000029104,
+              1.7000000000007276,
+              1.5,
+              1.3999999999978172,
+              1.3999999999978172,
+              1.5,
+              1.4000000000014552,
+              1.2999999999992724,
+              1.5,
+              1.5,
+              1.5,
+              1.7000000000007276
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 2.709999999996944,
+              "p50": 3,
+              "p95": 4.390000000003418
+            },
+            "ops_per_sec": 333333.3333333333
+          },
+          "reverse": {
+            "samples_ms": [
+              1.7999999999992724,
+              2.100000000002183,
+              1.2000000000007276,
+              2,
+              1.5999999999985448,
+              1.3000000000029104,
+              1.5999999999985448,
+              1.2000000000007276,
+              1.5,
+              1.2999999999992724,
+              1.1999999999970896,
+              5.200000000000728
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 2.399999999998181,
+              "p50": 3.099999999998545,
+              "p95": 6.990000000003052
+            },
+            "ops_per_sec": 322580.64516144176
+          },
+          "checks": [
+            {
+              "name": "cv.saveRestore.state",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                0
+              ],
+              "actual": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "cv.saveRestore.state",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                0
+              ],
+              "actual": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.03333333333284827
+        },
+        "canvas/cv.draw.rect": {
+          "ops_per_sample": 200,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.5,
+              0.5,
+              0.5,
+              0.4000000000014552,
+              0.3999999999978172,
+              0.5,
+              0.4000000000014552,
+              0.5,
+              0.3999999999978172,
+              0.5,
+              0.6999999999970896,
+              0.4000000000014552
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.999999999989086,
+              "p50": 2.5,
+              "p95": 2.9499999999934507
+            },
+            "ops_per_sec": 400000
+          },
+          "reverse": {
+            "samples_ms": [
+              0.6000000000021828,
+              0.6000000000021828,
+              0.5,
+              0.5,
+              0.4000000000014552,
+              0.4000000000014552,
+              0.4000000000014552,
+              0.3999999999978172,
+              0.4000000000014552,
+              0.3999999999978172,
+              0.4000000000014552,
+              0.4000000000014552
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.999999999989086,
+              "p50": 2.000000000007276,
+              "p95": 3.000000000010914
+            },
+            "ops_per_sec": 499999.999998181
+          },
+          "checks": [
+            {
+              "name": "cv.draw.red",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.blue",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                255,
+                255
+              ],
+              "actual": [
+                0,
+                0,
+                255,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.bg_alpha0",
+              "pass": true,
+              "expected": "alpha 0 outside fills",
+              "actual": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "cv.measureText.finite",
+              "pass": true,
+              "expected": ">0 finite",
+              "actual": 90
+            },
+            {
+              "name": "cv.draw.red",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.blue",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                255,
+                255
+              ],
+              "actual": [
+                0,
+                0,
+                255,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.bg_alpha0",
+              "pass": true,
+              "expected": "alpha 0 outside fills",
+              "actual": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "cv.measureText.finite",
+              "pass": true,
+              "expected": ">0 finite",
+              "actual": 90
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.24999999999545253
+        },
+        "canvas/cv.read.imageData": {
+          "ops_per_sample": 200,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              25.30000000000291,
+              23.400000000001455,
+              23.5,
+              23,
+              22.899999999997817,
+              24,
+              23.099999999998545,
+              23.099999999998545,
+              23,
+              22.799999999999272,
+              23.100000000002183,
+              22.900000000001455
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 114.27499999999236,
+              "p50": 115.49999999999272,
+              "p95": 122.92500000000655
+            },
+            "ops_per_sec": 8658.008658009203
+          },
+          "reverse": {
+            "samples_ms": [
+              25.900000000001455,
+              24.700000000000728,
+              25.200000000000728,
+              23.099999999998545,
+              23.700000000000728,
+              23.900000000001455,
+              23.400000000001455,
+              22.900000000001455,
+              23.30000000000291,
+              23.099999999998545,
+              24.400000000001455,
+              23.600000000002183
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 115.04999999999927,
+              "p50": 118.25000000000728,
+              "p95": 127.57500000000528
+            },
+            "ops_per_sec": 8456.659619449796
+          },
+          "checks": [
+            {
+              "name": "cv.read.known_pixel",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            },
+            {
+              "name": "cv.read.known_pixel",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.0238095238096513
+        }
+      },
+      "harness": {
+        "evaluate_calls": 34
+      },
+      "bridge_counters": "not_exposed"
+    },
+    {
+      "browser": "chrome",
+      "binary": "google-chrome",
+      "flags": [
+        "--headless",
+        "--remote-debugging-port=37879",
+        "--user-data-dir=/tmp/dom-ops-chrome-prt82z",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--window-size=1280,800"
+      ],
+      "cdp_product": "Chrome/156.0.8078.79",
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "cross_origin_isolated": true,
+      "timer_resolution_us": 4.999995231628418,
+      "scenarios": {
+        "style-geometry/style.read.same": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              2.7200000286102295,
+              2.725000023841858,
+              0.9750000238418579,
+              1.0449999570846558,
+              0.9199999570846558,
+              0.9500000476837158,
+              0.9300000667572021,
+              0.9700000286102295,
+              0.9300000667572021,
+              0.9099999666213989,
+              0.9300000667572021,
+              0.9800000190734863
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.4577499806880951,
+              "p50": 0.48000001907348633,
+              "p95": 1.3611250132322312
+            },
+            "ops_per_sec": 2083333.2505491078
+          },
+          "reverse": {
+            "samples_ms": [
+              0.9149999618530273,
+              0.9350000619888306,
+              0.9149999618530273,
+              0.9500000476837158,
+              0.9199999570846558,
+              0.9600000381469727,
+              0.9299999475479126,
+              0.9500000476837158,
+              1.2200000286102295,
+              0.8949999809265137,
+              0.9049999713897705,
+              0.8600000143051147
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.43962499797344207,
+              "p50": 0.4624999761581421,
+              "p95": 0.538500016927719
+            },
+            "ops_per_sec": 2162162.2736215475
+          },
+          "checks": [
+            {
+              "name": "computed.color.c0",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            },
+            {
+              "name": "computed.color.c1",
+              "pass": true,
+              "expected": [
+                234,
+                67,
+                53
+              ],
+              "actual": [
+                234,
+                67,
+                53
+              ]
+            },
+            {
+              "name": "computed.color.c0",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            },
+            {
+              "name": "computed.color.c1",
+              "pass": true,
+              "expected": [
+                234,
+                67,
+                53
+              ],
+              "actual": [
+                234,
+                67,
+                53
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.03783793257831535
+        },
+        "style-geometry/style.read.rotate": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              1.065000057220459,
+              0.9500000476837158,
+              1.0199999809265137,
+              0.9750000238418579,
+              0.9449999332427979,
+              0.9450000524520874,
+              0.9549999237060547,
+              0.9650000333786011,
+              0.9699999094009399,
+              0.9600000381469727,
+              0.9550000429153442,
+              1.0149999856948853
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.47249999940395354,
+              "p50": 0.48125001788139343,
+              "p95": 0.5201250076293945
+            },
+            "ops_per_sec": 2077922.0007145125
+          },
+          "reverse": {
+            "samples_ms": [
+              1,
+              0.9850000143051147,
+              1.5049999952316284,
+              0.9500000476837158,
+              1.7899999618530273,
+              0.9650000333786011,
+              0.9800000190734863,
+              1.040000081062317,
+              0.9499999284744263,
+              0.9850000143051147,
+              0.9600000381469727,
+              0.9350000619888306
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.4716249942779541,
+              "p50": 0.49125000834465027,
+              "p95": 0.8166249901056288
+            },
+            "ops_per_sec": 2035623.3750909616
+          },
+          "checks": [
+            {
+              "name": "computed.color.c5",
+              "pass": true,
+              "expected": [
+                158,
+                158,
+                158
+              ],
+              "actual": [
+                158,
+                158,
+                158
+              ]
+            },
+            {
+              "name": "computed.color.c5",
+              "pass": true,
+              "expected": [
+                158,
+                158,
+                158
+              ],
+              "actual": [
+                158,
+                158,
+                158
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.02077920019053669
+        },
+        "style-geometry/style.write.color": {
+          "ops_per_sample": 1000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.24500000476837158,
+              0.14499998092651367,
+              0.23000001907348633,
+              0.1549999713897705,
+              0.1400001049041748,
+              0.13999998569488525,
+              0.21000003814697266,
+              0.2549999952316284,
+              0.15999996662139893,
+              0.17500007152557373,
+              0.13999998569488525,
+              0.1549999713897705
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.13999998569488525,
+              "p50": 0.15749996900558472,
+              "p95": 0.24950000047683712
+            },
+            "ops_per_sec": 6349207.598666521
+          },
+          "reverse": {
+            "samples_ms": [
+              0.18499994277954102,
+              0.16999995708465576,
+              0.14499998092651367,
+              0.30500006675720215,
+              0.1799999475479126,
+              0.16499996185302734,
+              0.14499998092651367,
+              0.14499998092651367,
+              0.14499998092651367,
+              0.19000005722045898,
+              0.1499999761581421,
+              0.1499999761581421
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.14499998092651367,
+              "p50": 0.15749996900558472,
+              "p95": 0.24175006151199332
+            },
+            "ops_per_sec": 6349207.598666521
+          },
+          "checks": [
+            {
+              "name": "style.write.roundtrip",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0
+              ],
+              "actual": [
+                255,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "style.write.roundtrip",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0
+              ],
+              "actual": [
+                255,
+                0,
+                0
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0
+        },
+        "style-geometry/geom.read.same": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.9100000858306885,
+              0.9399999380111694,
+              0.9249999523162842,
+              0.940000057220459,
+              0.9150000810623169,
+              0.9049999713897705,
+              0.8999999761581421,
+              0.9199999570846558,
+              0.940000057220459,
+              0.8250000476837158,
+              0.8249999284744263,
+              0.8299999237060547
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.41249999701976775,
+              "p50": 0.45625004172325134,
+              "p95": 0.4700000286102295
+            },
+            "ops_per_sec": 2191780.621483367
+          },
+          "reverse": {
+            "samples_ms": [
+              0.8249999284744263,
+              0.8999999761581421,
+              0.8450000286102295,
+              0.8600000143051147,
+              0.8449999094009399,
+              0.9149999618530273,
+              0.8350000381469727,
+              0.8400000333786011,
+              0.809999942779541,
+              0.8300000429153442,
+              0.7949999570846558,
+              0.8300000429153442
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.40162497460842134,
+              "p50": 0.41875001788139343,
+              "p95": 0.4533749848604202
+            },
+            "ops_per_sec": 2388059.5995180104
+          },
+          "checks": [
+            {
+              "name": "geom.finite",
+              "pass": true,
+              "expected": "finite, w>0, h>0",
+              "actual": {
+                "top": 9,
+                "width": 24,
+                "height": 20
+              }
+            },
+            {
+              "name": "geom.order",
+              "pass": true,
+              "expected": "cells[599].top >= cells[0].top",
+              "actual": {
+                "first": 9,
+                "last": 273
+              }
+            },
+            {
+              "name": "geom.finite",
+              "pass": true,
+              "expected": "finite, w>0, h>0",
+              "actual": {
+                "top": 9,
+                "width": 24,
+                "height": 20
+              }
+            },
+            {
+              "name": "geom.order",
+              "pass": true,
+              "expected": "cells[599].top >= cells[0].top",
+              "actual": {
+                "first": 9,
+                "last": 273
+              }
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.08955229191770303
+        },
+        "style-geometry/geom.read.rotate": {
+          "ops_per_sample": 1000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.5199999809265137,
+              0.46000003814697266,
+              0.4700000286102295,
+              0.7250000238418579,
+              0.48000001907348633,
+              0.5199999809265137,
+              0.5,
+              0.49000000953674316,
+              0.44999992847442627,
+              0.5099999904632568,
+              0.434999942779541,
+              0.43999993801116943
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.43774994015693663,
+              "p50": 0.48500001430511475,
+              "p95": 0.6122500002384185
+            },
+            "ops_per_sec": 2061855.6092884927
+          },
+          "reverse": {
+            "samples_ms": [
+              0.4750000238418579,
+              0.4649999141693115,
+              0.48000001907348633,
+              0.4650000333786011,
+              0.4599999189376831,
+              0.5099999904632568,
+              0.49000000953674316,
+              0.4599999189376831,
+              0.4649999141693115,
+              0.43999993801116943,
+              0.4750000238418579,
+              0.5099999904632568
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.45099992752075196,
+              "p50": 0.4700000286102295,
+              "p95": 0.5099999904632568
+            },
+            "ops_per_sec": 2127659.444951436
+          },
+          "checks": [
+            {
+              "name": "geom.finite.mid",
+              "pass": true,
+              "expected": "finite, w>0",
+              "actual": {
+                "top": 141,
+                "width": 24
+              }
+            },
+            {
+              "name": "geom.finite.mid",
+              "pass": true,
+              "expected": "finite, w>0",
+              "actual": {
+                "top": 141,
+                "width": 24
+              }
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.03191486123785904
+        },
+        "style-geometry/geom.write_read.thrash": {
+          "ops_per_sample": 50,
+          "samples_requested": 12,
+          "warmup_ops": 50,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.060000061988830566,
+              0.059999942779541016,
+              0.11500000953674316,
+              0.13999998569488525,
+              0.06500005722045898,
+              0.07499992847442627,
+              0.07499992847442627,
+              0.06499993801116943,
+              0.04499995708465576,
+              0.09499990940093994,
+              0.04499995708465576,
+              0.125
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.8999991416931152,
+              "p50": 1.3999998569488525,
+              "p95": 2.6349998712539673
+            },
+            "ops_per_sec": 714285.787271001
+          },
+          "reverse": {
+            "samples_ms": [
+              0.04500007629394531,
+              0.0549999475479126,
+              0.039999961853027344,
+              0.04999995231628418,
+              0.05500006675720215,
+              0.09500002861022949,
+              0.0849999189376831,
+              0.0549999475479126,
+              0.06999993324279785,
+              0.03000009059906006,
+              0.05500006675720215,
+              0.03500008583068848
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.6550017595291138,
+              "p50": 1.099998950958252,
+              "p95": 1.7899993658065794
+            },
+            "ops_per_sec": 909091.7760683872
+          },
+          "checks": [
+            {
+              "name": "geom.thrash.applied",
+              "pass": true,
+              "expected": 33,
+              "actual": 33
+            },
+            {
+              "name": "geom.thrash.applied",
+              "pass": true,
+              "expected": 33,
+              "actual": 33
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.27272835644912036
+        },
+        "mutation/mut.replace.pool": {
+          "ops_per_sample": 20,
+          "samples_requested": 12,
+          "warmup_ops": 20,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.2749999761581421,
+              0.24500000476837158,
+              0.2549999952316284,
+              0.2650001049041748,
+              0.24000000953674316,
+              0.25,
+              0.5049999952316284,
+              0.2600001096725464,
+              0.26999998092651367,
+              0.2549999952316284,
+              0.2549999952316284,
+              0.26499998569488525
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 12.13750034570694,
+              "p50": 12.87500262260437,
+              "p95": 18.92499923706054
+            },
+            "ops_per_sec": 77669.88709146522
+          },
+          "reverse": {
+            "samples_ms": [
+              0.2799999713897705,
+              0.25,
+              0.26499998569488525,
+              0.2950000762939453,
+              0.26499998569488525,
+              0.24000000953674316,
+              0.2799999713897705,
+              0.375,
+              0.27500009536743164,
+              0.25,
+              0.2600001096725464,
+              0.25
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 12.275000214576721,
+              "p50": 13.249999284744263,
+              "p95": 16.550002098083493
+            },
+            "ops_per_sec": 75471.70218728815
+          },
+          "checks": [
+            {
+              "name": "mut.replace.count",
+              "pass": true,
+              "expected": 50,
+              "actual": 50
+            },
+            {
+              "name": "mut.replace.identity_order",
+              "pass": true,
+              "expected": "children[i] === pool[i], seq 0..49",
+              "actual": true
+            },
+            {
+              "name": "mut.replace.count",
+              "pass": true,
+              "expected": 50,
+              "actual": 50
+            },
+            {
+              "name": "mut.replace.identity_order",
+              "pass": true,
+              "expected": "children[i] === pool[i], seq 0..49",
+              "actual": true
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.029125948408081786
+        },
+        "mutation/mut.build.append": {
+          "ops_per_sample": 20,
+          "samples_requested": 12,
+          "warmup_ops": 20,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.02499997615814209,
+              0.02499997615814209,
+              0.039999961853027344,
+              0.029999971389770508,
+              0.029999971389770508,
+              0.029999971389770508,
+              0.02500009536743164,
+              0.060000061988830566,
+              0.039999961853027344,
+              0.040000081062316895,
+              0.04499995708465576,
+              0.07500004768371582
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.2499988079071045,
+              "p50": 1.7499983310699463,
+              "p95": 3.337502777576446
+            },
+            "ops_per_sec": 571429.1163858434
+          },
+          "reverse": {
+            "samples_ms": [
+              0.03000009059906006,
+              0.10500001907348633,
+              0.02500009536743164,
+              0.02500009536743164,
+              0.03500008583068848,
+              0.08000004291534424,
+              0.03000009059906006,
+              0.02499997615814209,
+              0.029999971389770508,
+              0.02499997615814209,
+              0.02499997615814209,
+              0.02499997615814209
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.2499988079071045,
+              "p50": 1.3750016689300537,
+              "p95": 4.562501609325408
+            },
+            "ops_per_sec": 727271.8445339355
+          },
+          "checks": [
+            {
+              "name": "mut.append.count",
+              "pass": true,
+              "expected": 260,
+              "actual": 260
+            },
+            {
+              "name": "mut.append.last",
+              "pass": true,
+              "expected": "last child is the last appended node",
+              "actual": true
+            },
+            {
+              "name": "mut.append.count",
+              "pass": true,
+              "expected": 260,
+              "actual": 260
+            },
+            {
+              "name": "mut.append.last",
+              "pass": true,
+              "expected": "last child is the last appended node",
+              "actual": true
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.2727245141685487
+        },
+        "mutation/mut.remove.children": {
+          "ops_per_sample": 15,
+          "samples_requested": 12,
+          "warmup_ops": 15,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.029999971389770508,
+              0.02499997615814209,
+              0.034999966621398926,
+              0.03500008583068848,
+              0.029999971389770508,
+              0.02499997615814209,
+              0.09000003337860107,
+              0.019999980926513672,
+              0.08500003814697266,
+              0.02500009536743164,
+              0.029999971389770508,
+              0.07499992847442627
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.5166652202606201,
+              "p50": 1.9999980926513672,
+              "p95": 5.816669066747029
+            },
+            "ops_per_sec": 500000.476837613
+          },
+          "reverse": {
+            "samples_ms": [
+              0.029999971389770508,
+              0.019999980926513672,
+              0.02499997615814209,
+              0.03000009059906006,
+              0.029999971389770508,
+              0.05500006675720215,
+              0.02499997615814209,
+              0.03000009059906006,
+              0.04500007629394531,
+              0.029999971389770508,
+              0.02499997615814209,
+              0.02499997615814209
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 1.5166652202606201,
+              "p50": 1.9999980926513672,
+              "p95": 3.300004800160725
+            },
+            "ops_per_sec": 500000.476837613
+          },
+          "checks": [
+            {
+              "name": "mut.remove.count",
+              "pass": true,
+              "expected": 1305,
+              "actual": 1305
+            },
+            {
+              "name": "mut.remove.count",
+              "pass": true,
+              "expected": 1305,
+              "actual": 1305
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0
+        },
+        "mutation/mut.move.identity": {
+          "ops_per_sample": 100,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.13999998569488525,
+              0.0700000524520874,
+              0.13499999046325684,
+              0.06499993801116943,
+              0.11000001430511475,
+              0.05000007152557373,
+              0.0549999475479126,
+              0.05500006675720215,
+              0.06500005722045898,
+              0.06499993801116943,
+              0.0549999475479126,
+              0.059999942779541016
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.5275000333786011,
+              "p50": 0.6499993801116943,
+              "p95": 1.3724998831748962
+            },
+            "ops_per_sec": 1538463.0056541937
+          },
+          "reverse": {
+            "samples_ms": [
+              0.06999993324279785,
+              0.12999999523162842,
+              0.05000007152557373,
+              0.04499995708465576,
+              0.08999991416931152,
+              0.06500005722045898,
+              0.04999995231628418,
+              0.059999942779541016,
+              0.06499993801116943,
+              0.06499993801116943,
+              0.0549999475479126,
+              0.059999942779541016
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.4774995446205139,
+              "p50": 0.6249994039535522,
+              "p95": 1.079999506473541
+            },
+            "ops_per_sec": 1600001.5258803614
+          },
+          "checks": [
+            {
+              "name": "mut.move.identity",
+              "pass": true,
+              "expected": "marker same node still in container",
+              "actual": {
+                "parentIsBox": true,
+                "inContainer": true
+              }
+            },
+            {
+              "name": "mut.move.count",
+              "pass": true,
+              "expected": 300,
+              "actual": 300
+            },
+            {
+              "name": "mut.move.identity",
+              "pass": true,
+              "expected": "marker same node still in container",
+              "actual": {
+                "parentIsBox": true,
+                "inContainer": true
+              }
+            },
+            {
+              "name": "mut.move.count",
+              "pass": true,
+              "expected": 300,
+              "actual": 300
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.04
+        },
+        "canvas/cv.state.fillStyle": {
+          "ops_per_sample": 2000,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.11500000953674316,
+              0.06500005722045898,
+              0.10500001907348633,
+              0.09500002861022949,
+              0.04999995231628418,
+              0.09000003337860107,
+              0.1799999475479126,
+              0.05000007152557373,
+              0.04999995231628418,
+              0.18999993801116943,
+              0.0549999475479126,
+              0.04999995231628418
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.02499997615814209,
+              "p50": 0.038750022649765015,
+              "p95": 0.09224997162818908
+            },
+            "ops_per_sec": 25806436.528781336
+          },
+          "reverse": {
+            "samples_ms": [
+              0.09499990940093994,
+              0.07499992847442627,
+              0.060000061988830566,
+              0.060000061988830566,
+              0.07500004768371582,
+              0.0549999475479126,
+              0.0549999475479126,
+              0.0549999475479126,
+              0.10500001907348633,
+              0.060000061988830566,
+              0.05500006675720215,
+              0.059999942779541016
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.0274999737739563,
+              "p50": 0.030000030994415283,
+              "p95": 0.0497499793767929
+            },
+            "ops_per_sec": 33333298.89512971
+          },
+          "checks": [
+            {
+              "name": "cv.fillStyle.roundtrip",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            },
+            {
+              "name": "cv.fillStyle.roundtrip",
+              "pass": true,
+              "expected": [
+                26,
+                115,
+                232
+              ],
+              "actual": [
+                26,
+                115,
+                232
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.2916660871776634
+        },
+        "canvas/cv.state.saveRestore": {
+          "ops_per_sample": 500,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.18999993801116943,
+              0.1650000810623169,
+              0.16999995708465576,
+              0.19999992847442627,
+              0.1700000762939453,
+              0.19000005722045898,
+              0.15000009536743164,
+              0.3500000238418579,
+              0.18000006675720215,
+              0.16999995708465576,
+              0.18000006675720215,
+              0.1650000810623169
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.31650017499923705,
+              "p50": 0.35000014305114746,
+              "p95": 0.5349999427795408
+            },
+            "ops_per_sec": 2857141.6893788655
+          },
+          "reverse": {
+            "samples_ms": [
+              0.18999993801116943,
+              0.18999993801116943,
+              0.24500000476837158,
+              0.2799999713897705,
+              0.2250000238418579,
+              0.20500004291534424,
+              0.20500004291534424,
+              0.28999996185302734,
+              0.16999995708465576,
+              0.17499995231628418,
+              0.17499995231628418,
+              0.16999995708465576
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.3399999141693115,
+              "p50": 0.39499998092651367,
+              "p95": 0.5689999341964721
+            },
+            "ops_per_sec": 2531645.6918666065
+          },
+          "checks": [
+            {
+              "name": "cv.saveRestore.state",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                0
+              ],
+              "actual": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "cv.saveRestore.state",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                0
+              ],
+              "actual": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.12857091280899888
+        },
+        "canvas/cv.draw.rect": {
+          "ops_per_sample": 200,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.04500007629394531,
+              0.040000081062316895,
+              0.0549999475479126,
+              0.03000009059906006,
+              0.04500007629394531,
+              0.04499995708465576,
+              0.040000081062316895,
+              0.11500000953674316,
+              0.034999966621398926,
+              0.02499997615814209,
+              0.08500003814697266,
+              0.034999966621398926
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.13875019550323486,
+              "p50": 0.21250009536743164,
+              "p95": 0.4925001263618468
+            },
+            "ops_per_sec": 4705880.240999001
+          },
+          "reverse": {
+            "samples_ms": [
+              0.05000007152557373,
+              0.034999966621398926,
+              0.039999961853027344,
+              0.09500002861022949,
+              0.034999966621398926,
+              0.029999971389770508,
+              0.029999971389770508,
+              0.03000009059906006,
+              0.02499997615814209,
+              0.02499997615814209,
+              0.040000081062316895,
+              0.02499997615814209
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 0.12499988079071045,
+              "p50": 0.16250014305114746,
+              "p95": 0.35125026106834395
+            },
+            "ops_per_sec": 6153840.736529362
+          },
+          "checks": [
+            {
+              "name": "cv.draw.red",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.blue",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                255,
+                255
+              ],
+              "actual": [
+                0,
+                0,
+                255,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.bg_alpha0",
+              "pass": true,
+              "expected": "alpha 0 outside fills",
+              "actual": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "cv.measureText.finite",
+              "pass": true,
+              "expected": ">0 finite",
+              "actual": 75.0341796875
+            },
+            {
+              "name": "cv.draw.red",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.blue",
+              "pass": true,
+              "expected": [
+                0,
+                0,
+                255,
+                255
+              ],
+              "actual": [
+                0,
+                0,
+                255,
+                255
+              ]
+            },
+            {
+              "name": "cv.draw.bg_alpha0",
+              "pass": true,
+              "expected": "alpha 0 outside fills",
+              "actual": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "cv.measureText.finite",
+              "pass": true,
+              "expected": ">0 finite",
+              "actual": 75.0341796875
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.3076917433884752
+        },
+        "canvas/cv.read.imageData": {
+          "ops_per_sample": 200,
+          "samples_requested": 12,
+          "warmup_ops": 100,
+          "sample_cap_ms": 4000,
+          "forward": {
+            "samples_ms": [
+              0.8049999475479126,
+              0.7650001049041748,
+              0.8950001001358032,
+              0.809999942779541,
+              0.8100000619888306,
+              0.7699999809265137,
+              0.7599999904632568,
+              1,
+              0.8349999189376831,
+              0.7450000047683716,
+              0.7050000429153442,
+              0.7450000047683716
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 3.6350001096725464,
+              "p50": 3.9374998211860657,
+              "p95": 4.711250275373459
+            },
+            "ops_per_sec": 253968.26550173073
+          },
+          "reverse": {
+            "samples_ms": [
+              0.8349999189376831,
+              0.8049999475479126,
+              0.9750000238418579,
+              0.7100000381469727,
+              0.7450000047683716,
+              0.6749999523162842,
+              0.8449999094009399,
+              0.7599999904632568,
+              0.7999999523162842,
+              0.6999999284744263,
+              0.690000057220459,
+              0.8650000095367432
+            ],
+            "truncated": false,
+            "per_op_us": {
+              "p05": 3.4162500500679016,
+              "p50": 3.8999998569488525,
+              "p95": 4.572500079870224
+            },
+            "ops_per_sec": 256410.26581532892
+          },
+          "checks": [
+            {
+              "name": "cv.read.known_pixel",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            },
+            {
+              "name": "cv.read.known_pixel",
+              "pass": true,
+              "expected": [
+                255,
+                0,
+                0,
+                255
+              ],
+              "actual": [
+                255,
+                0,
+                0,
+                255
+              ]
+            }
+          ],
+          "notes": [],
+          "error": null,
+          "status": "PASS",
+          "order_spread": 0.009615375798129148
+        }
+      },
+      "harness": {
+        "evaluate_calls": 34
+      },
+      "bridge_counters": "not_exposed"
+    }
+  ],
+  "comparison": {
+    "style-geometry/style.read.same": {
+      "zeroweb_p50_us": 1.3999999999985278,
+      "chrome_p50_us": 0.4712499976158142,
+      "ratio_p50": 2.970822296194207,
+      "status": "OK",
+      "classification": "ok",
+      "inconclusive_reason": null
+    },
+    "style-geometry/style.read.rotate": {
+      "zeroweb_p50_us": 1.7375000000003809,
+      "chrome_p50_us": 0.48625001311302185,
+      "ratio_p50": 3.5732646851292196,
+      "status": "OK",
+      "classification": "notable",
+      "inconclusive_reason": null
+    },
+    "style-geometry/style.write.color": {
+      "zeroweb_p50_us": 28.474999999999568,
+      "chrome_p50_us": 0.15749996900558472,
+      "ratio_p50": 180.79368637202643,
+      "status": "OK",
+      "classification": "ANOMALY",
+      "inconclusive_reason": null
+    },
+    "style-geometry/geom.read.same": {
+      "zeroweb_p50_us": 21.237499999999613,
+      "chrome_p50_us": 0.4375000298023224,
+      "ratio_p50": 48.542853836136764,
+      "status": "OK",
+      "classification": "ANOMALY",
+      "inconclusive_reason": null
+    },
+    "style-geometry/geom.read.rotate": {
+      "zeroweb_p50_us": 30.274999999999864,
+      "chrome_p50_us": 0.4775000214576721,
+      "ratio_p50": 63.403138512075614,
+      "status": "OK",
+      "classification": "ANOMALY",
+      "inconclusive_reason": null
+    },
+    "style-geometry/geom.write_read.thrash": {
+      "zeroweb_p50_us": 12599.000000000005,
+      "chrome_p50_us": 1.2499994039535522,
+      "ratio_p50": 10079.204806139382,
+      "status": "INCONCLUSIVE",
+      "classification": null,
+      "inconclusive_reason": "timer resolution error >10% of smallest sample"
+    },
+    "mutation/mut.replace.pool": {
+      "zeroweb_p50_us": 4686.250000000041,
+      "chrome_p50_us": 13.062500953674316,
+      "ratio_p50": 358.7559546689915,
+      "status": "OK",
+      "classification": "ANOMALY",
+      "inconclusive_reason": null
+    },
+    "mutation/mut.build.append": {
+      "zeroweb_p50_us": 4677.500000000032,
+      "chrome_p50_us": 1.5625,
+      "ratio_p50": 2993.6000000000204,
+      "status": "INCONCLUSIVE",
+      "classification": null,
+      "inconclusive_reason": "timer resolution error >10% of smallest sample"
+    },
+    "mutation/mut.remove.children": {
+      "zeroweb_p50_us": 270.00000000007276,
+      "chrome_p50_us": 1.9999980926513672,
+      "ratio_p50": 135.00012874619188,
+      "status": "INCONCLUSIVE",
+      "classification": null,
+      "inconclusive_reason": "timer resolution error >10% of smallest sample"
+    },
+    "mutation/mut.move.identity": {
+      "zeroweb_p50_us": 57.499999999990905,
+      "chrome_p50_us": 0.6374993920326233,
+      "ratio_p50": 90.19616444912376,
+      "status": "INCONCLUSIVE",
+      "classification": null,
+      "inconclusive_reason": "timer resolution error >10% of smallest sample"
+    },
+    "canvas/cv.state.fillStyle": {
+      "zeroweb_p50_us": 0.37499999999954525,
+      "chrome_p50_us": 0.03437502682209015,
+      "ratio_p50": 10.909082396949927,
+      "status": "INCONCLUSIVE",
+      "classification": null,
+      "inconclusive_reason": "timer resolution error >10% of smallest sample"
+    },
+    "canvas/cv.state.saveRestore": {
+      "zeroweb_p50_us": 3.0499999999992724,
+      "chrome_p50_us": 0.37250006198883057,
+      "ratio_p50": 8.187918100509542,
+      "status": "OK",
+      "classification": "notable",
+      "inconclusive_reason": null
+    },
+    "canvas/cv.draw.rect": {
+      "zeroweb_p50_us": 2.250000000003638,
+      "chrome_p50_us": 0.18750011920928955,
+      "ratio_p50": 11.999992370629721,
+      "status": "INCONCLUSIVE",
+      "classification": null,
+      "inconclusive_reason": "timer resolution error >10% of smallest sample"
+    },
+    "canvas/cv.read.imageData": {
+      "zeroweb_p50_us": 116.875,
+      "chrome_p50_us": 3.918749839067459,
+      "ratio_p50": 29.82456262832348,
+      "status": "OK",
+      "classification": "ANOMALY",
+      "inconclusive_reason": null
+    }
+  }
+}

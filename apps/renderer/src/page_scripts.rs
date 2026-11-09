@@ -1271,6 +1271,11 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
     if recorded.is_empty() {
         return None;
     }
+    // 缺陷2（M3，R100 宿主半边）：apply 前 append 历史收件箱——drain 后当前批清空，
+    // worker 线程 handle 属性读回落靠 MUTATION_HISTORY（part46/48 钉①装配序镜像：
+    // drain → append → apply）。不接线时跨 apply 的 handle 属性读恒落空（probe7 实证
+    // dataset.seq 同任务翻转 null）。收件箱在 js_worker（主线程 → worker 线程桥）。
+    ctx.js_worker.append_applied_mutation_history(&recorded);
     // M3-S9：webview 在场时 DOM 变更直接应用活 DOM（pipeline.cached_doc，免 HTML
     // 往返重 parse——与 browser tab_scripts 同机制）；无 webview（测试）回退 HTML 回写。
     if let Some(wv) = ctx.webview.as_deref_mut() {
@@ -1283,6 +1288,17 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
                     // iter 克隆 extend（同 webview batch_handle_selectors 惯用法）——
                     // handle_selectors 还要作 evict 的 batch_handles 借用。
                     map.extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
+                }
+                // 45 号 shadow-dom-rendering M1：shadow 树内 focus()（[`DomMutation::FocusChangedInShadow`]，
+                // 未入上方 focus 队列——地址须 apply 铸造后才有）经保留键取 zwsh 地址补入
+                // 队列（runtime drain `sync_focus_from_js` 同 selector 通道消费）。
+                if recorded
+                    .iter()
+                    .any(|m| matches!(m, DomMutation::FocusChangedInShadow { .. }))
+                    && let Some(zwsh) = handle_selectors.get(zero_engine::js_dom_bridge::FOCUS_SELECTOR_KEY)
+                    && let Ok(mut queue) = ctx.js_worker.focus_changes().lock()
+                {
+                    queue.push(Some(zwsh.clone()));
                 }
                 // slice33：R100 失效契约（webview 侧 evict_removed_identities 同源）——
                 // 被移除 handle 的 worker 侧 gBCR 反查表条目同步清除，防 RectBridge
@@ -1760,10 +1776,11 @@ mod tests {
     }
 
     /// t3 返修 D1（qq-20261016-r1）：worker 长臂跨越导航（文档代际翻转）时，mutation
-    /// 非空臂不得把旧文档 mutation apply 进新文档。确定性复现（r2946 忙臂惯用法）：
-    /// 忙臂 400ms 后写 mutation、再忙 1100ms 占住 worker；主线程在其间 `reset_document_state`
-    /// ——主线程侧清队后臂才写入（真实滞留），复位命令滞留优先队列，同步有界等待
-    /// （T36 起为 5ms 界）超时 stash（臂至 t≈1500ms），「未落定」窗 ~1.2s 足够轮询观察。
+    /// 非空臂不得把旧文档 mutation apply 进新文档。确定性复现（r2946 忙臂惯用法 +
+    /// execution_count 启动确认）：忙臂 400ms 后写 mutation、再忙 1100ms 占住 worker；
+    /// 主线程确认臂 eval 开跑后 `reset_document_state`——主线程侧清队后臂才写入（真实
+    /// 滞留），复位命令滞留优先队列，同步有界等待（T36 起为 5ms 界）超时 stash
+    /// （臂至 t≈1500ms），「未落定」窗 ~1.1s 足够轮询观察。
     /// 落定前 drain 必须恒 false 且
     /// 新文档 HTML 不变；落定即 worker 侧复位臂清队（t8 返修 defect-r1 D1 丢弃语义），
     /// 旧 mutation 不得迟到新文档。
@@ -1776,16 +1793,31 @@ mod tests {
         worker.set_dom_snapshot(old_doc_html, "https://zero.test/list");
 
         // ① 忙臂占住 worker（50ms 有界放行，臂实跑 1500ms）：t≈400ms 写旧文档 mutation。
+        let executions_before = worker.execution_count_for_test();
         let _ = worker.execute_script_direct_bounded(
             "const __t_w1 = Date.now(); while (Date.now() - __t_w1 < 400) {} \
              document.querySelector('#m').textContent = 'cross-doc-write'; \
              const __t_w2 = Date.now(); while (Date.now() - __t_w2 < 1100) {}",
             std::time::Duration::from_millis(50),
         );
-        // ② t≈250ms 臂已确然在跑（50ms 放行 + 200ms 裕量）：导航——主线程侧清队（此刻
-        //    队列仍空，臂 t≈400ms 才写入）→ 复位命令滞留优先队列 → 有界等待（5ms 界）
-        //    必超时 stash。
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // ② 臂 eval 确然在跑后再复位（引擎无关；worker_host host_op 派发轮询同款惯
+        //    用法）。固定 250ms 放行+裕量是 v8 时序形态：quickjs 下 worker boot + shim
+        //    安装 + 快照构建可超 250ms，复位（prio）在臂启动前到达即在命令边界合法
+        //    内联落定（滞留旧臂随后被复位臂清队丢弃，t8-D1 语义照常），「队列非空 +
+        //    复位未落定」滞留窗不可观测——quickjs-ren-lib 腿入册后暴露的引擎时序盲区
+        //    （同 slice35 v8-only 注记类，2026-11-08）。轮询 execution_count 递增
+        //    （eval 已开跑）后忙循环保证臂继续占 worker ≥1.1s：prio 不可抢占运行中
+        //    eval，复位必滞留臂后；主线程侧清队（此刻队列仍空，臂 t≈400ms 才写入）
+        //    → 有界等待（5ms 界）必超时 stash。
+        let arm_started_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while worker.execution_count_for_test() == executions_before && std::time::Instant::now() < arm_started_deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            worker.execution_count_for_test() > executions_before,
+            "前置：忙臂 eval 5s 内开跑（未开跑说明 worker 启动链路失效，测试须重审）"
+        );
         worker.reset_document_state();
         assert!(
             !worker.document_reset_settled(),

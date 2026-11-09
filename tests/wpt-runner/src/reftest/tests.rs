@@ -4802,33 +4802,42 @@ fn debug_r4193_cis_computed() {
     }
 }
 
-/// R5056：picture/source 回退提取（R4162 落地即坏——quote 切片截到 tag 尾致
-/// find 永不命中，replaced-element-012 自引入起恒红）。三断言：回退取首 URL、
-/// img 自身 srcset 优先、非 picture 场景不误取。
+/// s306：图源 URL 抓取全候选过采集契约（engine DOM 版委托）。三断言：picture
+/// source srcset w 多候选全抓、img 自身 src 与 source 候选并取、img 自身 srcset
+/// 非首候选在列。驱动案 responsive-image-select-print（首候选红/次候选绿，host
+/// 密度择优选绿）——旧首 URL 单抓致绿永不进 ImageCache → 盒 200×0 零绘制。
 #[test]
-fn find_picture_source_srcset_basic() {
-    use crate::reftest::resources::{extract_img_srcs, find_picture_source_srcset};
+fn picture_page_collects_all_declared_candidates_s306() {
+    use crate::reftest::resources::extract_img_srcs;
 
-    // ① 驱动案形态：img 在 picture 内、无自身图源 → 首个 source srcset 首 URL。
+    // ① 驱动案形态（responsive-image-select-print）：source srcset w 描述符多候选
+    // ——全候选过采集（s70 契约）：host 选源随 viewport 密度择优，任一候选都可能
+    // 被选中，漏抓 → 选中侧固有尺寸/ratio 双查 miss → img 盒塌缩不绘制（s306 定谳）。
     let html = r#"<body><picture>
-  <source srcset="support/20x50-green.png">
-  <img style="width: 100px; aspect-ratio: 1/1;">
+  <source width="200" srcset="./resources/red.png 1w, ./resources/green.png 200w">
+  <img>
 </picture></body>"#;
-    let img_pos = html.find("<img").expect("img pos");
-    assert_eq!(
-        find_picture_source_srcset(html, img_pos).as_deref(),
-        Some("support/20x50-green.png")
+    let srcs = extract_img_srcs(html);
+    assert!(
+        srcs.contains(&"./resources/red.png".to_string()),
+        "首 source 候选: {srcs:?}"
     );
-    assert_eq!(extract_img_srcs(html), vec!["support/20x50-green.png".to_string()]);
+    assert!(
+        srcs.contains(&"./resources/green.png".to_string()),
+        "次 source 候选必抓: {srcs:?}"
+    );
 
-    // ② img 自身 src 存在 → 不走回退。
+    // ② img 自身 src + picture source 候选并取（过采集无害，键 = 原始串）。
     let html2 = r#"<picture><source srcset="a.png"><img src="b.png"></picture>"#;
     let srcs2 = extract_img_srcs(html2);
-    assert!(srcs2.contains(&"b.png".to_string()), "自 src 优先: {srcs2:?}");
-    assert!(!srcs2.contains(&"a.png".to_string()), "不并取 source: {srcs2:?}");
+    assert!(srcs2.contains(&"b.png".to_string()), "自 src 在列: {srcs2:?}");
+    assert!(srcs2.contains(&"a.png".to_string()), "source 候选并取: {srcs2:?}");
 
-    // ③ 非 picture 场景（无 source）→ None。
-    let html3 = r#"<div><img style="width:10px"></div>"#;
-    let pos3 = html3.find("<img").expect("img pos");
-    assert_eq!(find_picture_source_srcset(html3, pos3), None);
+    // ③ img 自身 srcset 全候选（含非首组）。
+    let html3 = r#"<body><img srcset="x.png 2x, y.png 1x"></body>"#;
+    let srcs3 = extract_img_srcs(html3);
+    assert!(
+        srcs3.contains(&"x.png".to_string()) && srcs3.contains(&"y.png".to_string()),
+        "{srcs3:?}"
+    );
 }

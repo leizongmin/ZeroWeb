@@ -1,6 +1,6 @@
 # dom-ops — 跨浏览器 DOM 与脚本桥接操作基准
 
-目标 [docs/goal/dom-operation-bench.md](../../../docs/goal/dom-operation-bench.md) 的 M1/M2 落地：固定同一页面与操作协议，比较 ZeroWeb 与 Chrome 的 DOM、样式/几何查询和 Canvas 状态操作成本。协议版本 **v1**（2026-11-04 首次落地；数值常量的权威来源是 `run-dom-ops.mjs` 内的 `PROTOCOL` 表，本文件描述并引用它，不复制两份）。
+目标 [docs/goal/archive/dom-operation-bench.md](../../../docs/goal/archive/dom-operation-bench.md)（✅ 已完成，2026-11-05 模式 A 归档）的 M1/M2 落地：固定同一页面与操作协议，比较 ZeroWeb 与 Chrome 的 DOM、样式/几何查询和 Canvas 状态操作成本。协议版本 **v1.1**（v1 于 2026-11-04 首次落地；v1.1 将 thrash 行样本 12→8——12 样本 × ~610ms + 间隙 ≈ 7.6s 贴 ZeroWeb CDP `awaitPromise` 8s 悬崖，实测 reverse 超时；数值常量的权威来源是 `run-dom-ops.mjs` 内的 `PROTOCOL` 表，本文件描述并引用它，不复制两份）。
 
 ## 范围与边界
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | 视口 | 1280×720 | 两侧一致（`page.setViewportSize`） |
 | 预热 | `min(opsPerSample, 100)` 次操作 | 计时前执行，不计样本 |
-| 样本数 | 12 / 子场景 / 顺序遍历 | forward + reverse 双序（DC-4 正反序） |
+| 样本数 | 12 / 子场景 / 顺序遍历（thrash 行 8） | forward + reverse 双序（DC-4 正反序）；thrash 按 awaitPromise 预算下调，见版本注 |
 | 样本间隔 | 25 ms（`setTimeout`） | 让事件循环排空 |
 | 单样本上限 | 4000 ms | 超限截断（`truncated`），样本数不足一半 → INCONCLUSIVE |
 | 顺序 | forward 后 reverse，各自重新 `goto` | 中位数比值 >3 → 比较行 INCONCLUSIVE（顺序效应） |
@@ -66,6 +66,13 @@ node tests/benchmarks/dom-ops/run-dom-ops.mjs --browser chrome --cdp-endpoint ht
 
 # harness 自检（注入错误期望必须被判 FAIL）
 node tests/benchmarks/dom-ops/run-dom-ops.mjs --self-test
+
+# 门禁接线（M4）：采集 → 转换 → perf-gate 比较（比较器原样复用，退出码透传 0/1/2/3）
+node tests/benchmarks/dom-ops/run-dom-ops.mjs --browser both
+bash scripts/dom-ops-gate.sh --report tests/benchmarks/dom-ops/results/<ts>/report.json
+
+# 首次使用 / 协议变更后录制基线（理由必填，基线随提交入库）
+bash scripts/dom-ops-gate.sh --report tests/benchmarks/dom-ops/results/<ts>/report.json --record-baseline "dom-ops 初始基线"
 ```
 
 - 依赖 `playwright-core@1.63.0`，从 `tests/playwright-matrix/node_modules` 解析（不新增 npm 安装）；Node ≥ 20。
@@ -74,4 +81,21 @@ node tests/benchmarks/dom-ops/run-dom-ops.mjs --self-test
 
 ## 报告
 
-`results/<timestamp>/`（gitignore）：`<browser>.json`（原始样本 + 断言）与 `report.json`（合并 + `comparison` 比值表）。schema `dom-ops-report` v1：`runs[].scenarios{}` 记 `ops_per_sample`/样本原始毫秒/per-op 分位数（p05/p50/p95）/断言/status；`comparison{}` 记两侧 p50 µs、`ratio_p50`、分类与 INCONCLUSIVE 原因。与既有 `bench-report`（criterion 微基准）schema 互不替换；M4 若将本基准接入 `perf-gate`，以新增条目方式进基线，不修改既有配置。
+`results/<timestamp>/`（gitignore）：`<browser>.json`（原始样本 + 断言）与 `report.json`（合并 + `comparison` 比值表）。schema `dom-ops-report` v1：`runs[].scenarios{}` 记 `ops_per_sample`/样本原始毫秒/per-op 分位数（p05/p50/p95）/断言/status；`comparison{}` 记两侧 p50 µs、`ratio_p50`、分类与 INCONCLUSIVE 原因。报告顶层带 `config_hash`（协议规范字段 sha256，v1 schema 新增字段——协议或采样参数任何变更都会换值）。与既有 `bench-report`（criterion 微基准）schema 互不替换。
+
+## 门禁接线（M4）
+
+[scripts/dom-ops-gate.sh](../../../scripts/dom-ops-gate.sh) 编排「转换（`to-bench-report.mjs`）→ 比较（原样调用 `scripts/perf-gate.sh`）」，判定逻辑零新增。与 criterion 基线（`docs/perf/baselines/linux-x86_64.json`）的关键差异：
+
+- **独立基线文件** `docs/perf/baselines/domops-<platform_class>.json`：`config_hash` 按测量协议隔离，不与 criterion 共写一个文件（混写会破坏既有基线的 config_hash 一致性）。预算公式沿用共享基线同源数值（mb 1.35 因子 / floor 1ns / page +40ms / rss +128MB）。
+- **入选行（确有价值准则：M3 归因明确 + 跨轮绝对值稳定 + 对修复面敏感）**，双浏览器都入（zeroweb = 回归目标，chrome = 同环境哨兵，环境漂移时先红哨兵行）：
+
+  | 条目 id（报告侧无 `mb/` 前缀，perf-gate 判定时加） | 哨兵面 |
+  |---|---|
+  | `domops/<browser>/style-geometry/geom.write_read.thrash` | M3 缺陷1 面：pending 读全量有效视图重建成本（10079x 异常） |
+  | `domops/<browser>/style-geometry/geom.read.same` | gBCR drained 快路径成本 |
+  | `domops/<browser>/mutation/mut.replace.pool` | M3 缺陷2 面：shim 逐节点结构成本（358.8x 异常） |
+
+  未入选与理由：`style.*`/`style.write.color`（比值由 Chrome 亚 µs 分母驱动，未归因）、`geom.read.rotate`（与 same 同链冗余）、canvas 全行（29.8x 异常未归因，防神秘失败）、timer-INCONCLUSIVE 行（计时分辨率）。每 op 取正反序 p95 较大者，单位转 ns（perf-gate 的 floor_ns 预算按 ns 语义设计）。
+- **失败语义**：转换器对入选行缺失 / 非 PASS / 缺 `config_hash`（旧 runner 采集）直接非零退出——门禁不在坏样本上判定；perf-gate 侧 `config_hash` 不一致 → exit 2（协议改了必须重采集重录基线，禁止为过门禁改测量配置）。
+- **已知限制**：dom-ops runner 暂无负载守卫（无 criterion 侧的 suspect 检测）——采集必须在机器空闲窗口执行；负载污染会推高 p95 直接 FAIL（chrome 哨兵行先红即环境证据）。

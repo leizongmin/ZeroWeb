@@ -16,7 +16,9 @@ use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
-use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri, decode_data_uri_bytes};
+use zero_render_foundation::image_cache::{
+    AnimationData, ImageCache, ImageData, ImageKey, decode_data_uri, decode_data_uri_bytes, decode_image_animation,
+};
 use zero_render_foundation::rendering_thread::render_threading_enabled_for_tests;
 use zero_render_foundation::surface::FrameBuffer;
 
@@ -641,8 +643,11 @@ fn render_with_layout_inner(
     // 经 pipeline.set_focused_selector 注入 `:focus`/`:focus-within` 样式判定。
     // R5384：Selection 插入点一并取出（`getSelection()` collapse/addRange → CE 宿主
     // caret 定位），照 R5052 文本选区同款回流。
-    let (mutated_html, focus_selector, scroll_offsets, text_selections, ce_caret) =
+    let (mutated_html, focus_selector, scroll_offsets, text_selections, ce_caret, anim_clock_ms) =
         apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
+    // s307：注入虚拟动画时钟（脚本期 setTimeout 总等待 = 截图时刻动画推进量；
+    // guard drop 于函数尾自动还原——线程局部防 rayon 跨案泄漏）。
+    let _anim_clock_guard = zero_render_foundation::image_cache::set_anim_virtual_elapsed(anim_clock_ms);
     let _zw_t1 = std::time::Instant::now();
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
@@ -1023,8 +1028,10 @@ pub fn render_via_webview_to_framebuffer_with_base(
         let reg = canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
         *reg.font_loader.lock().unwrap_or_else(|e| e.into_inner()) = create_font_loader();
     }
-    let (mutated_html, focus_selector, scroll_offsets, text_selections, ce_caret) =
+    let (mutated_html, focus_selector, scroll_offsets, text_selections, ce_caret, anim_clock_ms) =
         apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
+    // s307：虚拟动画时钟同款注入（见 render_with_layout_inner 注释）。
+    let _anim_clock_guard = zero_render_foundation::image_cache::set_anim_virtual_elapsed(anim_clock_ms);
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
         config.viewport_height as f64,

@@ -24,6 +24,12 @@ pub(crate) fn nested_atomic_signal_enabled() -> bool {
     runtime_flags::nested_atomic_signal()
 }
 
+/// R5475：单行 float 容器自身行盒落盘放行（行盒归属主案）——转发 runtime_flags
+/// 供 inline 模块外（inline_finalization store 门）消费。
+pub(crate) fn float_own_line_store_enabled() -> bool {
+    runtime_flags::float_own_line_store()
+}
+
 // R830：行内布局核心数据类型抽出，glob 再导出保持公开路径。
 mod inline_types;
 pub use inline_types::*;
@@ -43,6 +49,9 @@ pub use column_fragmentation::*;
 // Phase 2a step-2：multicol 列碎片化算法，layout 接线后才有生产调用方。
 mod column_fragmentation_flow;
 pub use column_fragmentation_flow::*;
+
+// R5446：嵌套 inline float 收集器（R5448 自 inline_finalization.rs 抽出，2000 行规则）。
+pub(crate) mod nested_float;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -169,6 +178,18 @@ pub struct InlineFormattingContext {
     pub line_clamp: Option<usize>,
     /// line-clamp 是否截断了行（第 N 行后有更多内容 → 第 N 行末须渲 ellipsis，slice 2 消费）。
     pub clamped: bool,
+    /// R5432（css-overflow-4 §block-ellipsis）：末保留行内容被 ellipsis **整行置换**
+    /// （R5342 strut 改写臂命中）。paint stored 路径据此清零该行全部被置换 glyph 并把
+    /// ellipsis 落行首（block-ellipsis-016 ref：置换行只有 `…` 独占行首；018 判例：
+    /// 被置换 span.red 大字照绘 = 红泄漏主体）。随 `clamped` 同站点镜像到 LayoutBox。
+    pub clamp_strut_applied: bool,
+    /// R5454（css-overflow-4 §block-ellipsis）：justify 容器 clamp 末保留行再对齐把
+    /// ellipsis 计入 justify 分配项（gap_count = kept_count，末 gap 落 ellipsis 槽位
+    /// 前）。paint ellipsis 定位须同步落线尾 `[line_limit − ell, line_limit)`，而非
+    /// 默认的紧贴末 glyph（032 box3：ref `text-align-last:justify` 行 '…' 为独立
+    /// 分配项，紧贴落位与 ref 差 1 个 gap）。随 `clamp_strut_applied` 同站点镜像到
+    /// LayoutBox（stored 路径行快照无 IFC 字段，盒旗标为 stored/Path B 共用信号）。
+    pub clamp_ellipsis_justify_flush: bool,
     /// 垂直书写模式（vertical-rl 或 vertical-lr）。
     ///
     /// 当为 true 时，字符沿 y 轴向下推进，"行"变为垂直列，
@@ -266,6 +287,32 @@ pub struct InlineFormattingContext {
     /// R5298：容器字体 is_ahem 判定（strut ascent ratio 查询用，与
     /// `container_strut_line_height` 同点捕获）。
     pub container_strut_is_ahem: bool,
+    /// R5453（css-overflow-4 §block-ellipsis）：容器 font-family 解析出的 face id
+    ///（`font_id_for_style`，weight-aware，与 paint `resolve_style_font_id` 同语义）。
+    ///
+    /// clamp 末保留行再对齐的 ellipsis advance 度量源（`apply_line_clamp_cap`
+    /// 无 style 参数，capture 于 `layout()` 容器 styles 在手处）。paint 侧 ellipsis
+    /// 定位/截断门按容器 face 真面 advance 测宽（text.rs `measure_char_cached(
+    /// default_font_id, '…')`）——layout 预留同源真面度量，否则 estimate 与真面
+    /// 的 advance 差把末保留字符挤进 paint cut-back 臂被清零（block-ellipsis-032
+    /// box1/2：estimate '…' 半宽 8px vs mono 真面全角 16px，'d' 被截实证）。
+    /// `None` = Path B 空 styles / 无法解析（回退 estimate，旧语义）。
+    pub container_font_id: Option<u32>,
+    /// R5453②（css-overflow-4 §block-ellipsis）：clamp 末保留行再对齐的 ellipsis
+    /// advance 直注入值（paint Path B 专供）。
+    ///
+    /// Path B 空 styles 下 `layout()` 捕获臂空转（`container_font_id` 恒 None），
+    /// realign 预留回 estimate 半宽——paint ellipsis 截断门按容器 face 真面测宽
+    ///（text.rs ellipsis 臂），预留差把末保留字符挤进 cut-back 臂被清零（032 探针
+    /// 实证：layout 期预留 16 落 [8,216)，paint Path B 重跑预留 8 落 [16,224)，
+    /// 'd' 落 cut_x 右侧照旧截失，像素零变化）。注入由 paint 侧在
+    /// `apply_line_clamp_cap` 前完成（text.rs：`resolve_style_font_id` +
+    /// `measure_char_cached` 与 ellipsis 臂**同表达式**，字号/Ahem 判定同源），
+    /// `Some` 时 realign 直取。`None` = layout 期 IFC（走 `container_font_id`
+    /// 捕获度量，R5453①）与既有调用（回退 estimate 旧语义）。独立字段而非复用
+    /// `container_font_size`/`container_strut_is_ahem`：二者为 strut/vertical-align
+    /// 基线路径共享输入，Path B 改写会扰动无关行定位。
+    pub clamp_ellipsis_advance: Option<f32>,
     /// R5303（CSS2 §10.8.1 strut）：容器 line-height 显式为 0 的捕获标记。
     ///
     /// `container_strut_line_height == 0` 有两义——「未捕获」（paint Path B 空
@@ -482,6 +529,8 @@ impl InlineFormattingContext {
             lines: Vec::new(),
             line_clamp: None,
             clamped: false,
+            clamp_strut_applied: false,
+            clamp_ellipsis_justify_flush: false,
             vertical: false,
             vertical_rtl: false,
             block_extent: container_width,
@@ -498,6 +547,8 @@ impl InlineFormattingContext {
             container_font_size: DEFAULT_FONT_SIZE,
             container_strut_line_height: 0.0,
             container_strut_is_ahem: false,
+            container_font_id: None,
+            clamp_ellipsis_advance: None,
             container_strut_lh_zero: false,
             font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
@@ -1342,6 +1393,7 @@ impl InlineFormattingContext {
         // Path B 空 styles → 恒 0 = legacy，零扰动。
         self.container_strut_line_height = 0.0;
         self.container_strut_lh_zero = false;
+        self.container_font_id = None;
         if let Some(style) = styles.get(&container) {
             self.container_font_size = resolve_inline_font_size_px(style);
             // R5298（CSS2 §10.8.1 strut）：捕获容器自身 used line-height + 字体 Ahem
@@ -1359,6 +1411,9 @@ impl InlineFormattingContext {
                 .font_family
                 .iter()
                 .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+            // R5453：容器 face id 同点捕获（weight-aware，同 `font_id_for_style`
+            // 语义）——clamp realign ellipsis advance 度量源，见字段文档。
+            self.container_font_id = self.font_id_for_style(Some(style));
             self.plaintext_auto_align = matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                 && matches!(
                     style.text_align,
@@ -1444,6 +1499,9 @@ impl InlineFormattingContext {
                     if first_w + ellipsis_w > self.container_width + 0.5
                         && let Some(line) = self.lines.last_mut()
                     {
+                        // R5432：整行置换旗标——paint stored 路径据此清零该行被置换
+                        // glyph + ellipsis 落行首（见字段文档）。
+                        self.clamp_strut_applied = true;
                         let strut_fs = self.container_font_size;
                         let strut_ratio = ascent_ratio_lookup(
                             &self.ascent_ratio_overrides,
@@ -1551,6 +1609,167 @@ impl InlineFormattingContext {
             self.lines.truncate(n);
             self.clamped = true;
         }
+        // R5449（css-overflow-4 §block-ellipsis / css-text-3 §3.1.4 hangable
+        // whitespace）：截断生效后，末保留行的 hangable 尾随空格不进 ellipsis 前内容
+        // ——纯空白 run 清零（无字形零推进）、混合 run 剪尾随空格并收缩 width。保留
+        // 内容 x 不动（R1338 对齐口径已排除 hang 宽，位置中性）；被剪除 run 的 x
+        // 折叠见下方 R5450 块。predicate 与 trailing_hang_width 同源（仅 ' '，tab
+        // 不剪）。
+        if self.clamped && runtime_flags::clamp_hang_trim() {
+            let (pure_count, mixed_index) = match self.lines.last() {
+                Some(l) => Self::scan_hangable_tail(&l.runs),
+                None => (0, None),
+            };
+            if pure_count > 0 || mixed_index.is_some() {
+                // 混合 run 的空格 advance 经 advance_of 读字体度量（&self 借），先于
+                // run 变更借用取值（借用分离，两段不可合并）。
+                let mixed_advance = mixed_index.map(|i| {
+                    let frag = &self.lines.last().unwrap().runs[i];
+                    self.advance_of(' ', None, frag.font_size, frag.is_ahem)
+                });
+                // R5451（css-overflow-4 §block-ellipsis：ellipsis 计入末保留行参与
+                // 对齐）再对齐预计算（&self 借，与下方 run 变更借用分离）。对齐 pass
+                // 先于 clamp cap 执行且 content_width 含被剪 hang 宽（R1338 豁免是
+                // IFC 级 preserve_whitespace，032 容器 normal 的 run 级悬挂不入门），
+                // 而 kept-last 截断前恒非末行（truncate 前缀不变量）→ 对齐值取
+                // text_align。ellipsis advance 按容器 face 度量（R5453：旧
+                // `advance_of('…', None)` 回 estimate——runner 环境 mono 真面
+                // 全角 16px vs estimate 半宽 8px，预留差把末保留字符挤进 paint
+                // cut-back 臂被清零〔032 box1/2 'd' 截失实证〕；paint 侧按容器
+                // face/字号/Ahem 判定测宽，layout 预留须同源——度量源二臂：
+                // paint Path B 注入值 `clamp_ellipsis_advance` 直取（R5453②，
+                // 与 paint ellipsis 臂同表达式）；layout 期容器 face id 捕获见
+                // `container_font_id` 字段文档（R5453①）；estimate/Path B 环境
+                // font_id None 或 advance_source 缺失仍回 estimate 零回归）；
+                // R4213 行组参照系未镜像（FIXME 另案）；
+                // 整行皆 hangable（kept 0）不位移。
+                let realign = if self.text_group_align == TextGroupAlign::None {
+                    let l = self.lines.last().unwrap();
+                    let kept_count = l.runs.len() - pure_count;
+                    if kept_count > 0 {
+                        let (left, avail) = self.effective_content_area(l.y, l.height);
+                        // R5453②：paint Path B 注入值直取（与 paint ellipsis 截断门
+                        // 同表达式）；None（layout 期）走容器 face 捕获度量（R5453①），
+                        // estimate 环境仍回 estimate 零回归。
+                        Some((
+                            self.clamp_ellipsis_advance.unwrap_or_else(|| {
+                                self.advance_of(
+                                    '…',
+                                    self.container_font_id,
+                                    self.container_font_size,
+                                    self.container_strut_is_ahem,
+                                )
+                            }),
+                            left,
+                            left + avail,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(line) = self.lines.last_mut() {
+                    if let Some(i) = mixed_index {
+                        let frag = &mut line.runs[i];
+                        let trailing = frag.text.chars().rev().take_while(|&c| c == ' ').count();
+                        frag.width -= trailing as f32 * mixed_advance.unwrap_or(0.0);
+                        frag.text.truncate(frag.text.len() - trailing);
+                    }
+                    for frag in line.runs.iter_mut().rev().take(pure_count) {
+                        frag.text.clear();
+                        frag.width = 0.0;
+                    }
+                    // R5450：被剪除 run 的 x 折叠到剪除点（混合 run 新末端或首个纯
+                    // 空白 run 起点）。清零 run 若保留递进 x，R5297
+                    // `owner_line_band_extent_map`（(owner, line_top) → 祖先累计
+                    // (min_x, max_end)）仍 union 其 (x, x+0)，paint 侧 R639 fragment
+                    // bg 臂（whole_box）按 band 域涂背景 → block-ellipsis-032 hangable
+                    // span 红底幻影带。折叠后 band 退化为零宽点，不产生延伸。
+                    if pure_count > 0 {
+                        let tail_start = line.runs.len() - pure_count;
+                        let trim_x = match mixed_index {
+                            Some(i) => line.runs[i].x + line.runs[i].width,
+                            None => line.runs[tail_start].x,
+                        };
+                        for frag in line.runs.iter_mut().skip(tail_start) {
+                            frag.x = trim_x;
+                        }
+                    }
+                }
+                // R5451：trim 生效后末保留行再对齐。right/center：整行附加位移使
+                // kept + ellipsis 合宽按对齐值落位（032 right 盒：offset −40，
+                // "This" 左裁；Δ 附加后行起点 = line_limit − kept_w − ell_w ＝ ref
+                // 把 ellipsis 计入行内容右对齐的行起点）。justify：kept run 重均布
+                // 至 [left, line_limit − ell_w]，**ellipsis 作末项参与分配**
+                //（R5454：gap_count = kept_count——ref `text-align-last:justify`
+                // 行 '…' 为独立分配项，末 gap 落 ellipsis 槽位前；032 box3 数值
+                // 定谳：kept_w 173.9、D = 232−173.9−16 = 42.1，ref 正常 justify
+                // pass（runs 含 ellipsis）remaining = 42.1、gap_count = 4，与
+                // D/k 逐位同值；旧 kept_count−1 口径差 1/gap_count 级已销），
+                // cleared tail 与末 kept run 同步位移不占 gap；溢出行 extra 为负
+                // ＝压缩 gap，与原 justify 口径一致。paint ellipsis 定位须同步落
+                // 线尾槽位（`clamp_ellipsis_justify_flush` 盒旗标镜像，非紧贴末
+                // glyph）。
+                if let Some((ell_advance, left, line_limit)) = realign {
+                    match self.text_align {
+                        TextAlign::Left => {}
+                        align @ (TextAlign::Center | TextAlign::Right) => {
+                            if let Some(line) = self.lines.last_mut() {
+                                let kept_count = line.runs.len() - pure_count;
+                                let first_x = line.runs[0].x;
+                                let last_kept = &line.runs[kept_count - 1];
+                                let kept_w = last_kept.x + last_kept.width - first_x;
+                                let desired_first = if align == TextAlign::Right {
+                                    line_limit - kept_w - ell_advance
+                                } else {
+                                    left + (line_limit - left - kept_w - ell_advance) / 2.0
+                                };
+                                let delta = desired_first - first_x;
+                                for frag in &mut line.runs {
+                                    frag.x += delta;
+                                }
+                            }
+                        }
+                        TextAlign::Justify => {
+                            // R5454：旗标先于行变更借用取值（disjoint 字段经 self
+                            // 不可分离借用）。kept ≥ 2 才有均布语义，与下方 realign
+                            // 门同源——flag = 真实触发了 ellipsis 末项分配。
+                            let kept_count = self.lines.last().map_or(0, |l| l.runs.len() - pure_count);
+                            if kept_count >= 2 {
+                                self.clamp_ellipsis_justify_flush = true;
+                            }
+                            if let Some(line) = self.lines.last_mut() {
+                                if kept_count >= 2 {
+                                    let first_x = line.runs[0].x;
+                                    let last_kept = &line.runs[kept_count - 1];
+                                    let kept_w = last_kept.x + last_kept.width - first_x;
+                                    // R5454：ellipsis 计入分配项（含末 gap），见上方
+                                    // R5451 注释块数值定谳。
+                                    let gap_count = kept_count as f32;
+                                    let extra = (line_limit - left - kept_w - ell_advance) / gap_count;
+                                    for (j, frag) in line.runs.iter_mut().enumerate() {
+                                        if j < kept_count {
+                                            frag.x += extra * j as f32;
+                                        }
+                                    }
+                                }
+                                // cleared tail 重折叠到末 kept run 新末端：原 justify
+                                // 分 gap 时把 hang run 也当内容，折叠位（trim point）
+                                // 与 kept 端之间隔着旧 gap，uniform 位移不复 glued
+                                //（R5297 band 域零延伸口径不变）。
+                                if kept_count >= 1 {
+                                    let new_kept_end = line.runs[kept_count - 1].x + line.runs[kept_count - 1].width;
+                                    for frag in line.runs.iter_mut().skip(kept_count) {
+                                        frag.x = new_kept_end;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // R4414 临时诊断：clamp cap 后行高序列（ZW_CLAMP_PROBE=1）。
         if std::env::var("ZW_CLAMP_PROBE").as_deref() == Ok("1") {
             let hs: Vec<f32> = self.lines.iter().map(|l| l.height).collect();
@@ -1560,6 +1779,25 @@ impl InlineFormattingContext {
                 hs
             );
         }
+    }
+
+    /// R5449：扫描行尾 hangable 空格后缀——返回 (纯空白 run 数，首个混合 run 绝对
+    /// 下标)。predicate 与 `trailing_hang_width` 同源：仅计 ' '（tab 不剪），空文本
+    /// run 无尾随空格即停（保守：不越空 run 回溯）。
+    fn scan_hangable_tail(runs: &[TextFragment]) -> (usize, Option<usize>) {
+        let mut pure = 0;
+        for (index, frag) in runs.iter().enumerate().rev() {
+            let trailing = frag.text.chars().rev().take_while(|&c| c == ' ').count();
+            if trailing == 0 {
+                break;
+            }
+            if trailing == frag.text.chars().count() {
+                pure += 1;
+            } else {
+                return (pure, Some(index));
+            }
+        }
+        (pure, None)
     }
 
     /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树，

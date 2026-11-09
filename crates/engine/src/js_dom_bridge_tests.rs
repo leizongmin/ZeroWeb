@@ -93,6 +93,13 @@ include!("js_dom_bridge_tests/part92.rs");
 include!("js_dom_bridge_tests/part93.rs");
 include!("js_dom_bridge_tests/part94.rs");
 include!("js_dom_bridge_tests/part95.rs");
+include!("js_dom_bridge_tests/part96.rs");
 // renderer 信任边界 ②C'：`__zw*` 特权 mutator counter-plugin 常驻回归（非 part 编号——
 // 跨 part 面：删除策略 + 闭包化非回归 + 激活门不可旁路）。
 include!("js_dom_bridge_tests/privilege_guard.rs");
+// 45 号 shadow-dom-rendering M3：命令式面变异序列探针/回归（attachShadow 移动语义 +
+// 分配表新鲜度）。
+include!("js_dom_bridge_tests/part97_m3_shadow_probe.rs");
+
+// 46 号 s363 mixed eager/defer 同 URL 记录共享：defer 面命中 eager 缓存零再求值钉。
+include!("js_dom_bridge_tests/part98_s363_mixed_eager_defer.rs");

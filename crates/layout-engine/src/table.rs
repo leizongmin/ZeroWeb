@@ -781,7 +781,7 @@ fn layout_table_inner(
     }
 
     // 2. 计算列宽
-    let (col_widths, cols_auto_shrunk) =
+    let (col_widths, cols_auto_shrunk, col_spec_clamped) =
         compute_column_widths_inner(table_box, &grid, styles, doc, inline_fonts, width_constraint);
 
     // R4495：嵌套表高度预 pass——cell 子树内的 table-display 后代先完成自身
@@ -813,9 +813,14 @@ fn layout_table_inner(
     // ref 页 280 宽文本挤 120 列实证）。须在**首趟 position_cells 之后**（cell 宽已被
     // 置为列宽）并**再跑一趟 position_cells**（行高取自增高后的 cell/子树内容底，
     // 后继行 y、表高随之修正）。
+    // R5435 slice 1（CSS2 §17.5.2.1/§17.5.3 行高随动）：R5434 col 指定宽钳臂缩列后
+    // 同形——cell content 仍是钳前宽度的单行度量，行高不随钳后列宽换行增高
+    //（vertical-align-baseline-003 ref 侧：列 80 内容 12 行、行高塌 20）。钳臂实际
+    // 减宽（col_spec_clamped）并入同一重测链。矮 cell 沉底由 slice 2 在 compute_final
+    // 的 IFC 存储臂按真文本高收口（inline_finalization.rs）。
     // img_intrinsic_sizes 以空表传入（engine 侧 intrinsic 表不穿 table 调用链；仅影响
     // 压缩表内 img 的固有比解析，R4149-R4151 域的属性/CSS 尺寸路径不受影响）。
-    if cols_auto_shrunk {
+    if cols_auto_shrunk || col_spec_clamped {
         crate::table_cell_content::remeasure_cells_at_compressed_widths(table_box, doc, styles, inline_fonts);
         if matches!(
             table_box.writing_mode,
@@ -1344,12 +1349,12 @@ fn compute_column_widths_inner(
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     width_constraint: Option<f32>,
-) -> (Vec<f32>, bool) {
+) -> (Vec<f32>, bool, bool) {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
 
     if col_count == 0 {
-        return (Vec::new(), false);
+        return (Vec::new(), false, false);
     }
 
     // border-collapse 模式标志（cell-width-as-content 与 fixed 空列裁剪共用）。
@@ -1387,11 +1392,18 @@ fn compute_column_widths_inner(
     // 扩展填满容器时这些列冻结（不吸收剩余空间），仅 auto 列吸收——chromium auto 表行为
     //（table-cell-width-0：width:0/2px/20px 列保持其宽，width:auto 的 .normal 列填满剩余）。
     let mut col_explicit = vec![false; col_count];
+    // R5466 片 2：列冻结下限快照——显式贡献进入 col_max_widths 后，同列其他 auto cell
+    // 仍可能把列撑到更高（R364b 片 1 口径 w = max(specified, min-content floor)）；
+    // R4298 超宽压缩按此下限冻结显式列（chrome：列下限 = max(specified, min-content)，
+    // 赤字由 slack 列吸收；vrl-007 ref 臂探针 57.75/388.5/57.75 实证）。
+    let mut col_frozen_floor = vec![0.0f32; col_count];
 
     // R1718：`<col>`/`<colgroup>` width 属性 → 列宽 floor + col_explicit（≡ 显式 cell width
     // 语义，CSS Tables §4：col width 行为同该列每格显式 width）。col 无 box，须在 grid 直接读
     // DOM 属性（compute_column_widths 此前仅读 cell width，col width 被忽略）。auto 扩展期
     // 这些列冻结（同 R364 cell-explicit），仅 auto 列吸收剩余空间。
+    // R5434：col 元素指定宽快照（Pass 1 cell 贡献钳臂用；Pass 0 各分支同步记录）。
+    let mut col_elem_spec = vec![None; col_count];
     for (i, w) in crate::table_grid::collect_col_widths(table_box, col_count, styles, doc, col_available)
         .iter()
         .enumerate()
@@ -1399,6 +1411,8 @@ fn compute_column_widths_inner(
         if let Some(px) = w {
             col_max_widths[i] = col_max_widths[i].max(*px);
             col_explicit[i] = true;
+            col_elem_spec[i] = Some(*px);
+            col_frozen_floor[i] = col_frozen_floor[i].max(*px);
         }
     }
 
@@ -1456,7 +1470,17 @@ fn compute_column_widths_inner(
                 explicit
             } else if is_collapsed_border {
                 explicit + (cell_box.border_left + cell_box.border_right) / 2.0
+            } else if spec_px.is_some() && cell_spec_frame_enabled() {
+                // R5447（CSS2 §17.5.2 cell 是普通盒模型 content-box；chrome oracle
+                // A/B/C/F/G 形定谳：width:100 + border:20×2 → td 外宽 140、width:60 +
+                // padding:20×2 → 100，auto/fixed 同口径）：cell 指定绝对宽度是 content
+                // 语义，separated 列宽（border-box 间距口径，auto 臂 intrinsic 同源
+                // R2050）= width + padding + border。`ZW_CELL_SPEC_FRAME=0` 回退
+                // specified 直接当列宽的旧行为。
+                explicit + cell_box.padding_left + cell_box.padding_right + cell_box.border_left + cell_box.border_right
             } else {
+                // % 宽等 spec_px 为 None 的回落：cell_box.width 已是 taffy 布局后的
+                // border-box 口径，不再加 frame（防双重计入）。
                 explicit
             };
             // R364b：显式 width 不小于单元格 min-content（CSS 表格：列宽下限 = 内容
@@ -1531,6 +1555,7 @@ fn compute_column_widths_inner(
                         if idx < col_count {
                             if let Some(w) = gw {
                                 col_max_widths[idx] = col_max_widths[idx].max(w);
+                                col_elem_spec[idx] = Some(w);
                             }
                             if let Some(mn) = gmin {
                                 col_max_widths[idx] = col_max_widths[idx].max(mn);
@@ -1557,6 +1582,7 @@ fn compute_column_widths_inner(
                             if idx < col_count {
                                 if let Some(w) = cw {
                                     col_max_widths[idx] = col_max_widths[idx].max(w);
+                                    col_elem_spec[idx] = Some(w);
                                 }
                                 if let Some(mn) = cmin {
                                     col_max_widths[idx] = col_max_widths[idx].max(mn);
@@ -1582,6 +1608,7 @@ fn compute_column_widths_inner(
                     if idx < col_count {
                         if let Some(w) = cw {
                             col_max_widths[idx] = col_max_widths[idx].max(w);
+                            col_elem_spec[idx] = Some(w);
                         }
                         if let Some(mn) = cmin {
                             col_max_widths[idx] = col_max_widths[idx].max(mn);
@@ -1703,10 +1730,33 @@ fn compute_column_widths_inner(
     };
     // R5162：显式 width 单元格的原始 specified px（无 R364b 内容 floor）——fixed 分支
     // 步骤 2 用（fixed 布局内容不 dilate 列宽，floor 的 min-content 属内容域）。
+    // R5447：存入时加水平 frame（content-box specified → 列 border-box 口径，chrome
+    // oracle H 形实证：fixed + 表宽 400 + td width:100 + border:20×2 → 列 140、auto 列
+    // 均分 260）；`ZW_CELL_SPEC_FRAME=0` 回退原始 px。
     let mut col_cell_spec = vec![None; col_count];
     // R5285：winner-center 配对写入过的槽位（content 与本行 local 半宽已配对）——
     // 无 cell 槽位（纯 col 宽/空列）在 Pass 2 后做全局线源半宽加法兜底。
     let mut paired_slots = vec![false; col_count];
+    // R5434（CSS2 §17.5.2.1 auto layout 列宽；chrome oracle 三探针定谳）：col 元素指定宽
+    // 是列的 **used width**——auto cell 可断行内容贡献不越过 col 宽（col width:80 +
+    // max-content 430 → 列 80 内容换行；chrome p2 实证），min-content floor 仍由内容
+    // 撑起（col 2px + "xx" → 列 = 词宽；col 80 + 不可断长词 → 列 = 全词宽）。floor 用
+    // R5036 `block_min_content_width` 真 min-content（词级软换行全用）。仅 cell 自身
+    // width:auto 入臂——cell 显式宽与 col 宽同为作者 floor，大者
+    // 胜（chrome p3 形）；winner-center（R5285 格线胜者配对域）与 anon cell（anon_max_
+    // width 无盒测量）不入臂。旧径 cell max-content 直接 max 进槽（col 宽仅 floor）→
+    // 列被内容撑破（vertical-align-baseline-003 ref 侧：col 80 → 430 单行）。
+    // kill-switch `ZW_TABLE_COL_USED_WIDTH=0`。
+    static COL_USED_WIDTH_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COL_USED_WIDTH").as_deref() != Ok("0"));
+    // R5435 slice 1（§17.5.2.1 列宽随动行高的组成步骤）：R5434 钳臂把 col 指定宽列的
+    // 贡献收到 used width 后，cell content 仍是钳前宽度的 taffy 布局（行高＝单行度量）
+    // ——须触发 R4298 remeasure 链按列宽重排增高（vertical-align-baseline-003 ref 侧：
+    // 列 80 内容 12 行而行高塌 20）。kill-switch `ZW_TABLE_COL_SPEC_REMEASURE=0`
+    // （回退 R5434 提交态：列宽钳、行高不随动）。
+    static COL_SPEC_REMEASURE_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COL_SPEC_REMEASURE").as_deref() != Ok("0"));
+    let mut col_spec_clamped = false;
     for (row_idx, row) in grid.rows.iter().enumerate() {
         let Some(row_box) = get_row_box(table_box, row) else {
             continue;
@@ -1754,7 +1804,45 @@ fn compute_column_widths_inner(
                 }
                 continue;
             }
-            let (w, _, cell_spec_px) = cell_used_width(cell_box);
+            let (w, css_width_auto, cell_spec_px) = cell_used_width(cell_box);
+            // R5434：col 元素指定宽列的 auto cell 贡献钳到 used width（floor = R364b
+            // for_explicit_floor 启发式；详见上方 kill-switch 注）。collapse 非
+            // winner-center 的 floor 同 R5241 扣半边框（边框中心距口径）。
+            let w = if *COL_USED_WIDTH_ON
+                && css_width_auto
+                && !winner_center_col
+                && let Some(Some(spec)) = col_elem_spec.get(cell.col_start).copied()
+                && w > spec
+            {
+                // floor = R5036 真 min-content（词级软换行全用；for_explicit_floor 的
+                // 95% 启发式是 max-content 域度量，非 min-content，钳臂不可用）。
+                let mut floor = crate::intrinsic_sizing::block_min_content_width(cell_box, doc, styles);
+                if is_collapsed_border && collapse_half_extent_enabled() {
+                    floor = (floor - (cell_box.border_left + cell_box.border_right) / 2.0).max(0.0);
+                }
+                // cell min-width 已折进 w（cell_used_width 出口），钳臂不得倒扣——
+                // 按 R364 显式宽同口径转列贡献（collapse 边框中心距 + ½(bl+br)；
+                // CSS Tables §17.5.3：cell min-width 是列 min-content 下限）。
+                if let Some(mn) = cell_box
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .and_then(|s| resolve_table_used_length(&s.min_width, s))
+                {
+                    let mn_col = if is_collapsed_border && collapse_half_extent_enabled() {
+                        mn + (cell_box.border_left + cell_box.border_right) / 2.0
+                    } else {
+                        mn
+                    };
+                    floor = floor.max(mn_col);
+                }
+                let clamped = w.min(spec.max(floor));
+                if *COL_SPEC_REMEASURE_ON && clamped < w {
+                    col_spec_clamped = true;
+                }
+                clamped
+            } else {
+                w
+            };
             // R5285：winner-center 槽需求 = local[k]/2 + content + local[k+1]/2
             //（行局部格线胜者与 content 同行配对后 max，chromium 探针定谳模型）。
             if winner_center_col {
@@ -1766,7 +1854,18 @@ fn compute_column_widths_inner(
                 col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
             }
             if let Some(px) = cell_spec_px {
-                col_cell_spec[cell.col_start] = Some(px);
+                // R5447：fixed 分支列宽是 border-box 口径——content-box specified 加
+                // 水平 frame（chrome oracle H 形；`ZW_CELL_SPEC_FRAME=0` 回退原始 px）。
+                col_cell_spec[cell.col_start] = if cell_spec_frame_enabled() {
+                    Some(
+                        px + cell_box.padding_left
+                            + cell_box.padding_right
+                            + cell_box.border_left
+                            + cell_box.border_right,
+                    )
+                } else {
+                    Some(px)
+                };
             }
             // R364：记录该列是否有显式 width 属性（用于扩展填满时冻结）。
             if cell_box
@@ -1775,6 +1874,9 @@ fn compute_column_widths_inner(
                 .is_some_and(|s| !matches!(s.width, zero_css_parser::values::LengthValue::Auto))
             {
                 col_explicit[cell.col_start] = true;
+                // R5466 片 2：冻结下限 = 显式 cell 的 used 贡献 w（含 R364b 片 1 floor、
+                // R5447 frame 口径），同列后续显式贡献取 max。
+                col_frozen_floor[cell.col_start] = col_frozen_floor[cell.col_start].max(w);
             }
         }
     }
@@ -1956,7 +2058,7 @@ fn compute_column_widths_inner(
         // 口径），周界胜者外半在盒装配（apply_table_size_constraints）时加在 extent
         // 之外（chromium 实证：fixed;width:96 + colgroup border-right:20 → 盒 106 =
         // 96 + 10，格线 0/48/96，格线距仍 48/48；空 cell 探针盒 144 = 96 + 48 同构）。
-        return (col_max_widths, false);
+        return (col_max_widths, false, col_spec_clamped);
     }
 
     // 计算总宽度
@@ -2003,6 +2105,15 @@ fn compute_column_widths_inner(
     // 0→5.22 实证），不压缩。
     let table_is_floated = table_style.is_some_and(|s| !matches!(s.float, FloatValue::None));
     let shrink_eligible = has_explicit_width && !table_is_floated;
+    // R5466 片 2：压缩冻结臂——赤字按各列 slack（当前 − 冻结下限）比例分摊，显式列
+    // （col 元素/显式 cell）不摊薄到下限之下（css-tables-3 §3.4.3：列下限 = max(
+    // specified, min-content)；与下方 R364 扩展臂对称——扩展填满时显式列冻结，超宽
+    // 压缩同样不该被摊薄；vrl-007 ref 臂 67.92/1931/67.92 → 侧列冻 67.92、data 列
+    // 吸收赤字，chrome 探针 57.75/388.5/57.75 同构实证）。floor 和已超 available 或
+    // 赤字 ≥ 总 slack（无 slack 可摊）时回退整行比例压缩旧径（CAP 溢出域）。
+    // kill-switch `ZW_TABLE_SHRINK_FREEZE=0` 回退纯比例压缩。
+    static SHRINK_FREEZE_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_SHRINK_FREEZE").as_deref() != Ok("0"));
     let mut auto_shrunk = false;
     if !fixed_capped && shrink_eligible && *AUTO_SHRINK_ON {
         let total: f32 = col_max_widths.iter().sum();
@@ -2010,9 +2121,22 @@ fn compute_column_widths_inner(
         // taffy content_width=0，contain-inline-size-table 实证）——压缩到 ~0 违背 CSS 意图
         // （该表经「列和 = 表宽」shrink-to-sum 路径取 100 正常渲染），跳过。
         if total > col_available + 0.5 && total > 0.0 && col_available >= 1.0 {
-            let ratio = col_available / total;
-            for w in &mut col_max_widths {
-                *w *= ratio;
+            let deficit = total - col_available;
+            let total_floor: f32 = col_frozen_floor.iter().sum();
+            let total_slack = total - total_floor;
+            if *SHRINK_FREEZE_ON && total_floor > 0.0 && total_floor <= col_available + 0.5 && deficit < total_slack {
+                let slack_ratio = deficit / total_slack;
+                for (i, w) in col_max_widths.iter_mut().enumerate() {
+                    let slack = (*w - col_frozen_floor[i]).max(0.0);
+                    if slack > 0.0 {
+                        *w -= slack * slack_ratio;
+                    }
+                }
+            } else {
+                let ratio = col_available / total;
+                for w in &mut col_max_widths {
+                    *w *= ratio;
+                }
             }
             auto_shrunk = true;
         }
@@ -2107,7 +2231,7 @@ fn compute_column_widths_inner(
         }
     }
 
-    (col_max_widths, auto_shrunk)
+    (col_max_widths, auto_shrunk, col_spec_clamped)
 }
 
 /// R1390：table-cell 建立 BFC（CSS §9.4.1），其高度须包含浮动子（§10.6.7：
@@ -3634,6 +3758,11 @@ fn apply_table_size_constraints(
             let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x)
                 .max(caption_definite_width)
                 .max(caption_frame_floor);
+            // R5436（CSS2 §10.3.5 shrink-to-fit）：纯 grid extent 信号（列轨 + spacing
+            // 周界，不含 caption 下界——caption 溢出表盒语义见消费点）。intrinsic_width
+            // 自 R5213 起 max 了 caption definite 宽，作 beside 宽上限会把表盒撑到
+            // caption 宽（chromium 表盒 = grid 宽，caption 溢出）。
+            table_box.table_grid_max_width = total_col_width + spacing_total_x + 2.0 * perimeter_x;
             let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
             let padding_border_w =
                 table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;

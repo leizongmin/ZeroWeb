@@ -495,21 +495,58 @@
       if (blockOfParent
           && ![].some.call(blockOfParent.childNodes, _zwJusIsVisible)
           && (_zwJusIsEditable(parent_) || _zwJusIsEditingHost(parent_))
-          && parent_ !== delKeepShell) {
-        // Chrome delta：幸存壳本身就是块内占位（blockquote>font 选区删净后壳
-        // 保留、不再补 br——g17 实证补 br 产出 <font><br></font> 双占位）。
+          && parent_ !== delKeepShell
+          && !_zwJusIsAncestorOf(blockOfParent, delKeepShell)) {
+        // Chrome delta：幸存壳即块内占位，不补 br（g17 实证补 br 产出
+        // <font><br></font> 双占位）。⑤ F7① 扩面（2026-11-09）：壳在块内
+        // 任一层同样即占位——multitest flex/grid 4 键删净后逐迭代补块级 br
+        // 成尾残（got `<span>gh</span><br></div>`，期望 `<span>gh</span></div>`）。
         parent_.appendChild(document.createElement('br'));
       }
       if (stripWrappers
           || (!_zwJusIsAncestorOf(parent_, startNode) && parent_ != startNode)) {
         while (_zwJusIsEditable(parent_)
             && _zwJusIsInlineNode(parent_)
-            && _zwJusNodeLength(parent_) == 0) {
+            && (_zwJusNodeLength(parent_) == 0
+                // F2b 外壳剥离补真（2026-11-08 link-absorption 刀）：幸存壳
+                // 为**空**时，仅含它的外层 inline 包裹按空摘——此前注释声称
+                // 「置空计数」但 _zwJusNodeLength 无该特例，wrapper 含空 a 时
+                // length=1 提前退出（zz-probe-f2 D2/D3 实证 got
+                // `foo<u><a>a</a></u>baz` / `foo<font…><a…></font>`，语料
+                // :2143/:2153/:2168 外壳剥离面 4 键红源）。Shape C（a 整含被
+                // 删）keepShell 已离树、原条件自然成立，本支不触（现绿不动）；
+                // keepShell 非空（部分删）不摘——Chrome 未录形，保守。
+                || (delKeepShell && parent_.firstChild === delKeepShell
+                    && parent_.childNodes.length === 1
+                    && _zwJusNodeLength(delKeepShell) == 0))) {
           var grandparent = parent_.parentNode;
           // Chrome delta：链上幸存壳不摘（打字续壳）；幸存壳置空计数使其上方
           // 仅含它的包裹仍按空摘除（u>a 链：a 留、u 摘）。非链壳照 spec 摘。
           if (parent_ !== delKeepShell && grandparent) {
-            grandparent.removeChild(parent_);
+            if (delKeepShell && parent_.firstChild === delKeepShell
+                && parent_.childNodes.length === 1) {
+              // F2b：wrapper 唯一子即幸存壳 → 换位摘壳（keepShell 升至
+              // wrapper 原位）——removeChild(parent_) 会连带摘走壳内空 link，
+              // typed 段将无处落（probe D2 形）。
+              grandparent.insertBefore(delKeepShell, parent_);
+              grandparent.removeChild(parent_);
+              // R262 换位吸附回填：壳移动触发 live-range pre-remove 调整
+              //（边界容器 = 被摘壳子树根 → (oldParent, oldIndex) 吸附出壳，
+              // 再经空壳 removeChild 二次吸附落宿主位）——caret 漂出幸存
+              // link，typed 段落壳外（probe D2 got `</a>abaz` 形）。Chrome
+              // 删除落定 caret 仍在幸存 link 内（:2143/:2153/:2168 期望
+              // `foo<a…>a[]</a>baz`），活动 range 折回壳内（collapsed 落定由
+              // 下方 exit 路径统一完成；空壳 length=0 → 折回 (壳,0)）。
+              try {
+                var srUw = _zwVaGetActiveRange();
+                if (srUw) {
+                  srUw.setStart(delKeepShell, 0);
+                  srUw.setEnd(delKeepShell, _zwJusNodeLength(delKeepShell));
+                }
+              } catch (_eUw) {}
+            } else {
+              grandparent.removeChild(parent_);
+            }
           }
           if (!grandparent) break;
           parent_ = grandparent;
@@ -625,7 +662,19 @@
 
     } else if (_zwJusIsAncestorOf(endBlock, startBlock)) {
       var selDesc = globalThis.getSelection();
-      selDesc.collapse(startBlock, _zwJusNodeLength(startBlock));
+      // Chrome delta（⑤ F7② 空壳并存面，2026-11-09）：块尾幸存空壳即 caret
+      // 载体，折入 (壳,0) 让 typing 壳内续写（multitest div 跨块 2 键 got
+      // `<div><b></b><b>gh</b></div>` 并列新壳，期望 `<div><b>gh</b></div>`）；
+      // 壳非末子/非空/delKeepShell 缺省走原语义零扰动。
+      var shellExitDesc = delKeepShell
+        && delKeepShell.parentNode === startBlock
+        && startBlock.childNodes[startBlock.childNodes.length - 1] === delKeepShell
+        && _zwJusNodeLength(delKeepShell) == 0;
+      if (shellExitDesc) {
+        selDesc.collapse(delKeepShell, 0);
+      } else {
+        selDesc.collapse(startBlock, _zwJusNodeLength(startBlock));
+      }
       _zwVaGetActiveRange().collapse(true);
 
       var referenceNode2 = startBlock;
@@ -902,11 +951,13 @@
     while (true) {
       if (!node) return true;
       if (offset == _zwJusNodeLength(node) && _zwJusIsEditable(node.nextSibling)
-          && _zwJusIsInvisible(node.nextSibling)) {
+          && (_zwJusIsInvisible(node.nextSibling)
+            || _zwA4TrailWsInvisible(node.nextSibling))) {
         node.parentNode.removeChild(node.nextSibling);
       } else if (offset < node.childNodes.length
           && _zwJusIsEditable(node.childNodes[offset])
-          && _zwJusIsInvisible(node.childNodes[offset])) {
+          && (_zwJusIsInvisible(node.childNodes[offset])
+            || _zwA4TrailWsInvisible(node.childNodes[offset]))) {
         node.removeChild(node.childNodes[offset]);
       } else if ((offset == _zwJusNodeLength(node) && _zwJusIsInlineNode(node)
             && node.parentNode) || _zwJusIsInvisible(node)) {
@@ -1108,6 +1159,30 @@
     return null;
   }
 
+  // newBlock 头 inline 壳链 caret 入壳下行（knife11 v2 处方 b，2026-11-07）：
+  // ip 拆分后新行首可见内容带 inline 壳时 Chrome 把 caret 落进壳链深处——空壳
+  // `<b></b>` typed 段入壳填充（multitest 515/517/518），幸存壳
+  // `<b><i>f</i></b>` typed 段入壳与幸存内容合流（529/539/545/547/553/555，
+  // 语料注 "caret should be in the inline elements since the styled text is
+  // the first visible content in the line"）。命中返回 [容器, 0]，否则
+  // null（调用方保持 (newBlock, 0) 原位）。壳表复用 _zwDelFmtTags。
+  globalThis.__zw_ce_caret_in_leading_shell = function (block) {
+    var c = block && block.firstChild;
+    if (!c || c.nodeType !== 1) return null;
+    var tn = String(c.tagName || '').toLowerCase();
+    if (!_zwDelFmtTags[tn]) return null;
+    var n = c;
+    var guard = 0;
+    while (guard++ < 32) {
+      var cc = n.firstChild;
+      if (!cc || cc.nodeType !== 1) break;
+      var t2 = String(cc.tagName || '').toLowerCase();
+      if (!_zwDelFmtTags[t2]) break;
+      n = cc;
+    }
+    return [n, 0];
+  };
+
   globalThis.__zw_ce_capture_typing_chain = function (ar) {
     var sc = ar && ar.startContainer;
     if (!sc) return null;
@@ -1165,6 +1240,129 @@
   // 公共面（collapse/extend/collapseToStart），_zwSync 对显式 selection 变更
   // 清 typing 态（part06 :10355，防跨子测泄漏语义）——Chrome delete 不清
   // typing style（g18 multitest 实证：值命令族 Fix A 已复、状态命令族仍红）。
+  // F2 link-absorption delta carry 捕获（2026-11-08 刀，预研档集成点 6/7）：
+  // delete 动作前读 link 上下文相对参照的样式 delta，落 `__zwTypingLinkCarry`
+  // 供 typing insert 消费（part01 _zwCeTypingInsert link 内层 font）。
+  // carry = 删除内容相对 link 参照（Chrome UA blue/underline）的 delta——
+  // 通道仅 color/face/size，永不含 decoration（:2163/:2168 u 双位形零 delta
+  // 自然成立）。参照钉死 #0000ff 不读 computed（本仓 UA 样式表无 link 色规则
+  // ——computed 读黑则 :1170 黑 carry 误判零 delta，待判别②闭合）。
+  // 两形：① 物理链形（F2b :2138-:2172）——startContainer 上行至 linkEl 收
+  // 内层壳 color/face/size 声明，色经 parseSimpleColor 归一（≡#0000ff 零
+  // delta 不捕，:2138/:2139 blue 现绿保持）；② armed pending collapsed 形
+  //（F2a :1170 `createlink>delete>inserttext`）——无物理链，读 caret 上下文
+  // computed 色（_zwValEffectiveValue 'forecolor'）vs 参照。外链弃捕语义
+  //（链上行遇 <a> 前无内层壳则 carry 自然为空）与既有
+  // __zw_ce_capture_typing_chain hasA 面（tags 捕获置空）互不相干。
+  // 保守边界：物理链 collapsed 形不捕（Chrome 未录形，避免既有绿行 P2F）；
+  // armed 非 collapsed 形按 startContainer 同 ② 读（语料无行，语义同源）。
+  globalThis.__zw_ce_capture_link_carry = function (ar) {
+    var sc = ar && ar.startContainer;
+    if (!sc) return null;
+    var armed = globalThis.__zwTypingLink != null && globalThis.__zwTypingLink !== ''
+      ? String(globalThis.__zwTypingLink) : null;
+    var linkEl = null;
+    var n = sc;
+    var guard = 0;
+    while (n && n.parentNode && !_zwJusIsEditingHost(n) && guard++ < 256) {
+      if (n.nodeType == 1 && String(n.tagName || '').toLowerCase() === 'a') {
+        linkEl = n;
+        break;
+      }
+      n = n.parentNode;
+    }
+    var carry = null;
+    if (linkEl) {
+      // ① 内层壳声明面：sc → linkEl 之间 color/face/size，色归一 hex。
+      var m = sc;
+      guard = 0;
+      while (m && m !== linkEl && guard++ < 512) {
+        if (m.nodeType == 1 && m.getAttribute) {
+          var ca = m.getAttribute('color');
+          if (ca != null && typeof _zwVaParseSimpleColor === 'function') {
+            var hexc = _zwVaParseSimpleColor(ca);
+            if (hexc && hexc !== '#0000ff') {
+              carry = carry || {};
+              carry.color = hexc;
+            }
+          }
+          var fa = m.getAttribute('face');
+          if (fa != null) {
+            carry = carry || {};
+            carry.face = String(fa);
+          }
+          var sa = m.getAttribute('size');
+          if (sa != null) {
+            carry = carry || {};
+            carry.size = String(sa);
+          }
+        }
+        m = m.parentNode;
+      }
+      return carry;
+    }
+    if (!armed) return null;
+    // ② armed pending 形：caret 上下文 computed 色 vs 参照 #0000ff。
+    if (typeof _zwValEffectiveValue === 'function') {
+      var eff = _zwValEffectiveValue(sc, 'forecolor');
+      var hexc2 = (typeof _zwVaParseSimpleColor === 'function')
+        ? _zwVaParseSimpleColor(eff) : null;
+      if (hexc2 && hexc2 !== '#0000ff') {
+        carry = { color: hexc2 };
+      }
+    }
+    return carry;
+  };
+
+  // F6b（2026-11-08 oracle 定谳档，2026-11-09 诊断 D1-D7 实证改口径）
+  // script 上下文删除位打字 carry 捕获——删除位（动作前 active range 起点）
+  // 三形分账（等桶溶解/异桶重放消费在 typing 侧，此处只记账）：
+  // ① inScript 且 caret 上行先遇内层 font[size]（script 壳内）→ 记该 font
+  //    自身档桶（缩放前口径——W1 13px→2 溶解、N2 16px→3 壳外 hoist）；
+  // ② 其余 inScript（外层 font 或无 font）→ walk_px 直走桶（已含 script
+  //    0.83 缩放与 font 档覆写——N1 10.79→1 重映射、N3 13.28→2 溶解）；
+  // ③ armed-only（无壳形，A 族）→ walk_px 桶 + inner:true（消费面内层臂
+  //    专用旗标——A 族期望 font 落 armed 壳内层，桶 = 未缩放 caret 档）。
+  // 非 script 删除返 null 清陈旧 carry（scope 语义：carry 不跨非 script
+  // 删除存续；_zwSync 同生命周期清除）。
+  globalThis.__zw_ce_capture_script_carry = function (ar) {
+    var sc = ar && ar.startContainer;
+    if (!sc) return null;
+    var inScript = false;
+    var innerFontPx = null;
+    var n = (sc.nodeType === 1) ? sc : sc.parentNode;
+    var guard = 0;
+    while (n && n.nodeType === 1 && !_zwJusIsEditingHost(n) && guard++ < 256) {
+      var tn = String(n.tagName || '').toLowerCase();
+      if (tn === 'sub' || tn === 'sup') { inScript = true; break; }
+      // 内层 font[size]（break 前记录 = caret 与 script 壳之间）——最近者
+      // 胜（首个命中即锁，不随上行覆写）。
+      if (innerFontPx == null && tn === 'font' && n.getAttribute
+          && n.getAttribute('size') != null) {
+        var fv = parseInt(n.getAttribute('size'), 10);
+        if (!isNaN(fv)) {
+          if (fv < 1) fv = 1;
+          if (fv > 7) fv = 7;
+          innerFontPx = globalThis.__zw_f6b_size_px
+            ? globalThis.__zw_f6b_size_px[fv] : null;
+        }
+      }
+      n = n.parentNode;
+    }
+    var tags = globalThis.__zwTypingTags;
+    var armedScript = Array.isArray(tags)
+      && (tags.indexOf('sub') >= 0 || tags.indexOf('sup') >= 0);
+    if (!inScript && !armedScript) return null;
+    if (typeof globalThis.__zw_f6b_walk_px !== 'function'
+        || typeof globalThis.__zw_f6b_bucket_of !== 'function') return null;
+    if (inScript && innerFontPx != null) {
+      return { bucket: globalThis.__zw_f6b_bucket_of(innerFontPx) };
+    }
+    var b = globalThis.__zw_f6b_bucket_of(globalThis.__zw_f6b_walk_px(sc));
+    if (!inScript) return { bucket: b, inner: true };
+    return { bucket: b };
+  };
+
   globalThis.__zw_ce_delete_apply = function (forward) {
     var ar = _zwVaGetActiveRange();
     if (!ar) return true;
@@ -1175,6 +1373,24 @@
     // 仅非 collapsed 面（deleteSelection 留壳路径；collapsed 动作无留壳语义）。
     var tcap = (!ar.collapsed && typeof globalThis.__zw_ce_capture_typing_chain === 'function')
       ? globalThis.__zw_ce_capture_typing_chain(ar) : null;
+    // F2 link carry 捕获 + pending link 快照：link 幸存 delete（:1170 面），
+    // armed href 槽不随动作清（capture 内部动作前读，删后链形已变）；carry
+    // 新捕获优先，无捕获保持原值（同 delta ④ 回写式）。
+    var snapLink = globalThis.__zwTypingLink;
+    var snapCarry = globalThis.__zwTypingLinkCarry;
+    var lcap = (typeof globalThis.__zw_ce_capture_link_carry === 'function')
+      ? globalThis.__zw_ce_capture_link_carry(ar) : null;
+    // F6b script carry 捕获（2026-11-08 oracle 定谳档）：动作前 active range
+    // 起点记账（删后链形已变，:2183 内层 font[size] 桶必须动作前读）；非
+    // script 删除记 null 清陈旧（scope 语义）。
+    var f6bCap = (typeof globalThis.__zw_ce_capture_script_carry === 'function')
+      ? globalThis.__zw_ce_capture_script_carry(ar) : null;
+    // F1' shell carry 捕获（2026-11-09 ④ 刀 typing 壳继承轮）：collapsed
+    // 跨块合并前置形的左边界 inline 壳链节点引用（Chrome TypingStyle 自删除
+    // 边界推导——caret collapse 到两块间元素位丢壳层，typed 段裸落，残 23F
+    // 普查档 ④）。仅 collapsed 面（非 collapsed 走 delta ⑤ tcap，互不相干）。
+    var shellCap = (ar.collapsed && typeof globalThis.__zw_ce_capture_shell_carry === 'function')
+      ? globalThis.__zw_ce_capture_shell_carry(ar, forward) : null;
     if (!ar.collapsed) {
       _zwDelDeleteSelection();
     } else if (forward) {
@@ -1190,6 +1406,26 @@
     globalThis.__zwTypingTags = (tt && tt.length) ? tt
       : (tcap && tcap.length ? tcap : tt);
     globalThis.__zwTypingTagsOff = ttoff;
+    globalThis.__zwTypingLink = snapLink;
+    globalThis.__zwTypingLinkCarry = (lcap && lcap.color != null)
+      || (lcap && lcap.face != null) || (lcap && lcap.size != null)
+      ? lcap : snapCarry;
+    // F6b script carry 回写（2026-11-08 oracle 定谳档）：替换式——非 script
+    // 删除捕获 null 即清账（不跨非 script 删除存续）；消费面
+    // （part01 内层臂/post-insert 外层臂）各自设等桶门。
+    globalThis.__zwTypingScriptCarry = f6bCap;
+    // F1' shell carry 回写（2026-11-09 ④ 刀）：替换式（同 F6b script carry
+    // 口径——非边界 collapsed 删除捕获 null 即清账；消费面 part01 元素位
+    // caret 两臂，consume 即清；_zwSync 面清除同槽位）。
+    globalThis.__zwTypingShellCarry = shellCap;
+    // ⑦ A1 尾消解（2026-11-09 host-div-wrap，mt 483/485）：非 collapsed
+    // deleteSelection 全删空宿主唯一元素子 div 时 Chrome 消解壳提宿主——
+    // caret 塌缩提壳链首（typing 落壳，exp `<b>a</b>`）。仅非 collapsed 臂调
+    // （collapsed delete/fd 无消解语义诉求）；482 blockquote 反例由 helper
+    // tag 收窄挡。消解保节点身份，上方 override 重锚不失效。
+    if (!ar.collapsed && typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function') {
+      try { globalThis.__zw_ce_dissolve_emptied_div_tail(ar); } catch (_eA1Tail) {}
+    }
     return true;
   };
 
@@ -1520,6 +1756,24 @@
             return false;
           }
         }
+        // ⑦ A1 消解后宿主级空壳 caret（2026-11-09 mt 485/487）：startContainer
+        // 为宿主直子 inline 壳、壳内无可见内容、(so=0) 且其前宿主级无可见兄弟
+        // ——Chrome 产裸占位 <br> 头垫 + 壳装新块（exp `<br><div><b>a</b>
+        // </div>`）；ipara wrap 臂产 `<div><br></div>` 双块形不符 → 让位 legacy
+        // ① 宿主级臂（part01 `_zwCeParagraphMutate`）。宿主直子 inline 链有内
+        // 容面（`<b>foo[]bar</b>` 探针 v4 P3 定谳 wrap 形）壳内可见 → 不命中。
+        if (node.nodeType === 1 && offset === 0
+            && node.parentNode === ipHost
+            && _zwJusIsInlineNode(node)
+            && !_zwIparaHasVisibleChild(node)) {
+          var a1Prev = node.previousSibling;
+          var a1PrevVisible = false;
+          while (a1Prev) {
+            if (_zwJusIsVisible(a1Prev)) { a1PrevVisible = true; break; }
+            a1Prev = a1Prev.previousSibling;
+          }
+          if (!a1PrevVisible) return false;
+        }
       }
       return true;
     } catch (_eWants) {
@@ -1528,16 +1782,62 @@
   };
 
   globalThis.__zw_ce_ipara_apply = function () {
-    var sep = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // separator 缺省 'p'（第十一刀，见 part01 ① sepTag 刀注：产线块面双面制，
+    // 值面 qV 保持 div）。
+    var sep = (globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p';
     // preservesOverrides: true——override 快照/重锚/回填同 __zw_ce_delete_apply。
     var snap = _zwVaOverridesTakeRaw();
+    // delta ④ typing 快照（__zw_ce_delete_apply 同构）：动作内 Selection
+    // collapse 经公共面清 typing 态（part06 :10355 防跨子测泄漏语义），动作后
+    // 回写——Chrome insertParagraph 不清 typing style。
+    var tt = globalThis.__zwTypingTags;
+    var ttoff = globalThis.__zwTypingTagsOff;
     try {
       // "Delete the selection."（collapsed 时 spec 中止——不 canonicalize、不删）
       var ar0 = _zwVaGetActiveRange();
       if (!ar0) return true;
       var _zwIpCol = (ar0.startContainer === ar0.endContainer
         && ar0.startOffset === ar0.endOffset) || !!ar0.collapsed;
-      if (!_zwIpCol) _zwDelDeleteSelection();
+      // delta ⑤ 幸存壳 typing 链捕获（同 __zw_ce_delete_apply）：仅非 collapsed
+      // 面（deleteSelection 留壳路径）动作前读 start 链（删后链形已变）；
+      // collapsed 动作无留壳语义。
+      var tcap = (!_zwIpCol && typeof globalThis.__zw_ce_capture_typing_chain === 'function')
+        ? globalThis.__zw_ce_capture_typing_chain(ar0) : null;
+      // 处方 c 容器面（Chrome collapsed→separator / range→container-copy 规则，
+      // multitest 495/497/498 语料双源录音面）：非 collapsed（delete 前导）拆分
+      // 的 wrap 臂块标签复制编辑宿主标签，collapsed 保持 separator 缺省。
+      // 容器复制仅适用于 separator 未设置态（双面制 unset 面）——显式 setter
+      // 一票胜出不翻置：insertparagraph 语料 td 跨格族（explicit sep p/div，
+      // ip 腿 v2 门禁 P2F×2 定谳）录音期望 `td><p><br></p><p>{}<br></p></td>`
+      // 分块随显式 separator，宿主标签复制会翻成 div 形违录音。
+      var _zwIpWrapTag = null;
+      if (!_zwIpCol
+          && globalThis.__zwDefaultParagraphSeparator !== 'p'
+          && globalThis.__zwDefaultParagraphSeparator !== 'div') {
+        var _zwIpHost = _zwListEditingHostOf(ar0.startContainer);
+        _zwIpWrapTag = _zwIpHost ? _zwJusTag(_zwIpHost) : 'div';
+      }
+      if (!_zwIpCol) {
+        var _zwIpAr0 = _zwVaGetActiveRange();
+        _zwDelDeleteSelection();
+        // ⑦ A1（2026-11-09 host-div-wrap 姊妹面，mt 487）：前导 delete 全删
+        // 空宿主唯一元素子 div 时 Chrome 消解壳提宿主（caret 提壳链首）——
+        // 消解命中即宿主级空壳 caret 形，本 port 的 SLC 爬升/wrap 臂管线不再
+        // 适用（双 div 形 vs exp `<br><div><b>a</b></div>`），转 `__zw_ce_
+        // paragraph_split_at` ① 宿主级臂（同 ipara_wants=false 让位路径）。
+        // fireEvents=false——beforeinput/input 已由 part06 ip 臂事件序派发。
+        if (typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function'
+            && globalThis.__zw_ce_dissolve_emptied_div_tail(_zwIpAr0)) {
+          var _zwIpHostA1 = null;
+          try {
+            _zwIpHostA1 = _zwListEditingHostOf(_zwVaGetActiveRange().startContainer);
+          } catch (_eA1Host) {}
+          if (_zwIpHostA1
+              && typeof globalThis.__zw_ce_paragraph_split_at === 'function') {
+            return globalThis.__zw_ce_paragraph_split_at(_zwIpHostA1, null, false);
+          }
+        }
+      }
       // "If the active range's start node is neither editable nor an editing
       // host, return true."
       ar0 = _zwVaGetActiveRange();
@@ -1603,7 +1903,7 @@
               _zwJusTag(_zwVaGetActiveRange().startContainer))) {
             return true;
           }
-          container = document.createElement(sep);
+          container = document.createElement(_zwIpWrapTag || sep);
           _zwIparaInsertNode(_zwVaGetActiveRange(), container);
           container.appendChild(document.createElement('br'));
           try { globalThis.getSelection().collapse(container, 0); } catch (_eCl2) {}
@@ -1614,7 +1914,7 @@
           nodeList.push(nodeList[nodeList.length - 1].nextSibling);
         }
         container = _zwJusWrap(nodeList, function () { return false; },
-          function () { return document.createElement(sep); });
+          function () { return document.createElement(_zwIpWrapTag || sep); });
         if (!container) return true;
       }
       // pre/address/listing 支路：br 插入 + 非"br 后随即块尾"双 br 垫底。
@@ -1723,13 +2023,29 @@
       if (!_zwIparaHasVisibleChild(container)) {
         container.appendChild(document.createElement('br'));
       }
-      if (!_zwIparaHasVisibleChild(newContainer)) {
+      // 处方 b 壳链判定提前（A3 共用）：新块头 inline 壳链（fmt 壳表）。
+      var _zwIpShell = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
+        ? globalThis.__zw_ce_caret_in_leading_shell(newContainer) : null;
+      // ⑦ A3（2026-11-09 mt 486/488）：新块头 inline 壳链非空块——Chrome 不
+      // 垫尾 br（exp `<div>abc</div><div><b>d</b></div>`；got `<div><b>d</b>
+      // <br></div>` = 空壳判不可见误垫）。垫底收窄为真空壳面（无头壳链）；
+      // caret 随处方 b 入壳链首，typed 段填壳。
+      if (!_zwIparaHasVisibleChild(newContainer) && !_zwIpShell) {
         newContainer.appendChild(document.createElement('br'));
       }
-      try { globalThis.getSelection().collapse(newContainer, 0); } catch (_eCl5) {}
+      try {
+        if (_zwIpShell) globalThis.getSelection().collapse(_zwIpShell[0], _zwIpShell[1]);
+        else globalThis.getSelection().collapse(newContainer, 0);
+      } catch (_eCl5) {}
     } finally {
       if (typeof _zwVaReanchorOverrides === 'function') _zwVaReanchorOverrides();
       _zwVaOverridesPutRaw(snap);
+      // delta ④ 回写 + delta ⑤ 捕获补位（同 __zw_ce_delete_apply）：显式 typing
+      // 态存活优先（g18/g19 面），态空且捕获非空时落捕获链（Chrome typing
+      // style 跨 insertParagraph 存续），俱空保持原值。
+      globalThis.__zwTypingTags = (tt && tt.length) ? tt
+        : (tcap && tcap.length ? tcap : tt);
+      globalThis.__zwTypingTagsOff = ttoff;
     }
     return true;
   };

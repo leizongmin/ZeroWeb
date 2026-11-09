@@ -92,11 +92,14 @@ impl LayoutEngine {
         let mut changed = false;
         // R5036：栈携带第一趟 content CB 宽——fit-content(%) 的 arg 相对 CB 解析
         //（css-sizing-3 #valdef-width-fit-content-length-percentage；root 的 CB = viewport）。
-        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, root.width.max(0.0))];
-        while let Some((b, cb_w)) = stack.pop() {
+        // R5456：栈携带 parent WM——R5368 float 钉宽域门需要正交语境（父 vertical）
+        // 排除（见 stf_pin_on 域门注）。
+        let mut stack: Vec<(&LayoutBox, f32, WritingModeValue)> =
+            vec![(root, root.width.max(0.0), WritingModeValue::HorizontalTb)];
+        while let Some((b, cb_w, parent_wm)) = stack.pop() {
             let self_frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
             let child_cb = (b.width - self_frame).max(0.0);
-            stack.extend(b.children.iter().map(|c| (c, child_cb)));
+            stack.extend(b.children.iter().map(|c| (c, child_cb, b.writing_mode.clone())));
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
             // 仅水平书写模式的 flex/grid 容器，或 R1018 block-level（width:max-content/fit-content）
@@ -403,7 +406,15 @@ impl LayoutEngine {
                 //（block-flow-direction-vrl-006 四 vertical-rl float：钉宽致字形列
                 // 重排 blue+15200/yellow−15200 实证）。vertical float 维持 R1015 旧臂；
                 // 垂直 shrink-to-fit 归 writing-mode 深域（既有避让清单）。
-                && matches!(b.writing_mode, WritingModeValue::HorizontalTb);
+                && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+                // R5456（CSS Writing Modes §7.1 交换帧）：正交 float（自身 htb、父
+                // vertical）同病排除——cb_w 是父 LayoutBox 物理宽 = 交换帧下父**块轴**
+                // extent（.vp content 40 = 单列行高 16+border，非行内轴可用 768），
+                // available 取错轴把钉宽钳到 123.2（float-lft-orthog-htb-in-vrl-002
+                // 单行 max-content 262.4 钉成 3 行 wrapped）；钉写 style.size.width
+                // 对已交换 taffy 样式是物理高轴槽，轴语义双错。正交 float 维持 R1015
+                // 旧臂（max-content 测量与物理宽同轴，b.width==intrinsic 时 no-op）。
+                && matches!(parent_wm, WritingModeValue::HorizontalTb);
             let mut float_has_cyclic_pct = false;
             let intrinsic = if stf_pin_on {
                 float_has_cyclic_pct = subtree_has_cyclic_pct_width(b, styles);
@@ -1207,8 +1218,23 @@ impl LayoutEngine {
     ) -> bool {
         use zero_css_parser::values::LengthValue;
         let mut changed = false;
-        let mut stack: Vec<(&LayoutBox, f32, f32)> = vec![(root, f32::INFINITY, f32::INFINITY)];
-        while let Some((b, cb_width, cb_height)) = stack.pop() {
+        // R5445（CSS2 §10.1）：种子宽 = ICB 宽（root.width = html 盒宽 = 视口）——无
+        // positioned 祖先的 abs 盒 spec CB 即 ICB；旧种子 INF 使 available 恒无界、
+        // branch-text 扩臂超出 ICB 不钳（chrome 按 ICB 折行）。高侧维持 INF 不动
+        //（% 高臂依赖 INF-skip，宽度专用切片不触高语义）。
+        // 第 4 元 `spec_cb_is_parent`：本盒 spec CB 是否恰为直接父（父 positioned）——
+        // taffy 只知直接父，旗标为假时 taffy 首趟值不可信（见下方 D2 臂）。
+        // 第 5 元 `cb_horizontal`：spec CB 书写模式水平（ICB 语义随 root，§10.1）——
+        // D2 臂仅水平 CB 域（R4436 caption 先例：vertical 域 abs 宽语义另路；
+        // float-rgt-orthog-htb-in-vlr-003 实证 vertical 上下文臂会拆自洽补偿）。
+        let root_horizontal = root
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| !s.writing_mode.is_vertical_block_flow());
+        let icb_width = root.width;
+        let mut stack: Vec<(&LayoutBox, f32, f32, bool, bool)> =
+            vec![(root, icb_width, f32::INFINITY, false, root_horizontal)];
+        while let Some((b, cb_width, cb_height, spec_cb_is_parent, cb_horizontal)) = stack.pop() {
             // CB 更新在 push 时——positioned 盒（含 contain CB）的子代 CB = 本盒宽/高。
             let child_is_cb = b.is_abspos_cb
                 || b.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
@@ -1227,8 +1253,17 @@ impl LayoutEngine {
             } else {
                 cb_height
             };
+            // 子代 CB 书写模式（仅 CB 切换时才做 styles 查询——#9 热路径）。
+            let child_cb_horizontal = if child_is_cb {
+                b.node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| !s.writing_mode.is_vertical_block_flow())
+            } else {
+                cb_horizontal
+            };
             for child in &b.children {
-                stack.push((child, child_cb, child_cb_h));
+                // 子代 spec CB = 直接父 ⟺ 本盒 positioned（child_is_cb）。
+                stack.push((child, child_cb, child_cb_h, child_is_cb, child_cb_horizontal));
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
@@ -1340,6 +1375,9 @@ impl LayoutEngine {
             if !width_fix && !height_fix {
                 continue;
             }
+            // R5445 D2 盒判定结果（gate 块内赋值，写侧消费——双向写只对 D2 盒开启；
+            // d2_only = D2 且非 branch-text——后者沿用既有只扩口径）。
+            let mut d2_only = false;
             if width_fix && b.width > 0.5 {
                 // R5236 D2（CSS2 §10.3.8 shrink-to-fit）：R2156 slice19 提升原子为 taffy
                 // Absolute 子（R4941）后，含 IFC 文本的 branch 盒（有元素子 → taffy branch、
@@ -1360,11 +1398,23 @@ impl LayoutEngine {
                     LengthValue::Percentage(_) => true,
                     _ => false,
                 };
+                let no_aspect_or_maxdef = !s.aspect_ratio.is_some_and(|r| r > 0.0) && !max_width_definite;
                 let branch_text_box = crate::inline_content::has_inline_content(doc, styles, id)
                     && !b.children.is_empty()
-                    && !s.aspect_ratio.is_some_and(|r| r > 0.0)
-                    && !max_width_definite;
-                if !(branch_text_box && abspos_stf_branch_text_enabled()) {
+                    && no_aspect_or_maxdef;
+                // R5445 D2（CSS2 §10.1 包含块）：taffy 无「最近 positioned 祖先 / ICB」
+                // CB 语义，abs-auto 盒一律按直接父 content width 钳制；本 pass 旧径只扩
+                // 不缩＋branch-text 窄门 → spec CB ≠ 直接父（无 positioned 祖先 → ICB，
+                // 或 positioned 祖先隔非 positioned 中间层）时钳制存活（探针 P1/P3/P5：
+                // ZW 96/96/96 vs chrome 796/796/796；P2/P4 直父=CB 对照两侧一致）。
+                // 旗标为假（spec CB 为 positioned 祖先或 ICB）时按 spec CB available
+                // 双向重测。R5236 同款排除：aspect-ratio（transferred 宽 taffy 已解）与
+                // definite max-width（测量无钳，扩臂会撑破钳制盒）。
+                // kill-switch `ZW_ABSPOS_ICB_CB=0` 回退旧行为（种子 INF + 只扩 branch-text）。
+                let d2_spec_cb_differs =
+                    !spec_cb_is_parent && cb_horizontal && no_aspect_or_maxdef && abspos_icb_cb_enabled();
+                d2_only = d2_spec_cb_differs && !branch_text_box;
+                if !((branch_text_box && abspos_stf_branch_text_enabled()) || d2_spec_cb_differs) {
                     width_fix = false;
                 }
             }
@@ -1408,6 +1458,14 @@ impl LayoutEngine {
                         crate::intrinsic_sizing::block_max_content_width(b, doc, styles)
                     }
                     .max(0.0);
+                    // R5426 归因存档（CSS2 §10.3.7 shrink-to-fit 折行一致性）：非塌 0
+                    // branch 盒 max-content 超 CB 可用宽时无约束 max-content 直 clamp
+                    // 成单行 fill 宽，而 leaf 文本盒（taffy R5104 measure 臂）按
+                    // available 折行取最宽行——同内容两臂盒形分岔（content-177 真实
+                    // 字体实证）。按 available 约束重测的修复臂已在窗口 A/B 验证中性
+                    //（16px 下不触发），但驱动案 content-177 依赖的 abs 直系文本种子
+                    // 臂窗口翻红已回退，本臂暂无驱动面，一并回退待布局层字体修复
+                    // 同轮落地。
                     if measured > 0.5 {
                         let target = if available.is_finite() {
                             measured.min(available)
@@ -1426,7 +1484,14 @@ impl LayoutEngine {
                             let single_line = !available.is_finite() || measured <= available;
                             (if single_line { target.ceil() } else { target }).max(0.0)
                         };
-                        if b.width < target_bw - 0.5 {
+                        // R5445 D2 盒双向写：taffy 首趟按直接父钳制的存活值要缩回
+                        // spec CB 宽；其余盒维持只扩（R5236/塌 0 补测既有口径不动）。
+                        let should_write = if d2_only && !width_collapsed {
+                            (target_bw - b.width).abs() > 0.5
+                        } else {
+                            b.width < target_bw - 0.5
+                        };
+                        if should_write {
                             style.size.width = taffy::style::Dimension::length(target_bw);
                             resolved_child_cb = Some(target_bw);
                         }
@@ -3709,6 +3774,16 @@ fn abspos_stf_branch_text_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_ABSPOS_STF_BRANCH_TEXT").as_deref() != Ok("0"))
 }
 
+/// R5445（CSS2 §10.1 包含块）：abs-auto 盒 spec CB ≠ 直接父（无 positioned 祖先 →
+/// ICB，或 positioned 祖先隔非 positioned 中间层）时按 spec CB available 双向重测——
+/// taffy 只知直接父 content width，旧径只扩不缩使钳制存活（探针 P1/P3/P5：ZW
+/// 96/96/96 vs chrome 796/796/796）。种子宽同步 INF→ICB（root.width）。kill-switch
+/// `ZW_ABSPOS_ICB_CB=0` 回退旧行为。
+fn abspos_icb_cb_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_ABSPOS_ICB_CB").as_deref() != Ok("0"))
+}
+
 /// R5300（CSS2 §10.3.7 shrink-to-fit 链）：嵌套 abs-pos 链（CB 本身也是 auto 宽
 /// abs-pos）中，本 pass 给父代写定的宽度即时回写子代栈槽的 cb_width（子代紧随父代
 /// 弹出，一趟即得正确链式求解）。旧行为：子代 cb 取 taffy 首趟布局的过期值（父代
@@ -3725,7 +3800,7 @@ fn abspos_stf_cb_prop_enabled() -> bool {
 /// 时有意义（非 CB 子代的子代沿旧链继承）。kill-switch OFF 或未写定（None）不回写，
 /// 子代维持旧行为（taffy 首趟布局值）。
 fn propagate_resolved_cb_width(
-    stack: &mut Vec<(&LayoutBox, f32, f32)>,
+    stack: &mut Vec<(&LayoutBox, f32, f32, bool, bool)>,
     b: &LayoutBox,
     child_is_cb: bool,
     resolved: Option<f32>,

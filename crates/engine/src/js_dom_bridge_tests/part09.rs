@@ -305,11 +305,28 @@ fn test_image_constructor_r2834() {
         "detached Image() src failure asynchronously dispatches error"
     );
 
-    // 无 new 调用亦返 img proxy。
+    // s294：Image.prototype 与 HTMLImageElement.prototype 同一（WebIDL named constructor——
+    // Image-constructor.html「share a prototype」钉形；旧函数版 prototype 属性 non-configurable
+    // 不可改形，class 具名构造器 + 接口原型置换落地）。
     assert_eq!(
-        sandbox.execute("String(Image().tagName)").unwrap().value,
-        "IMG",
-        "Image() 无 new 亦返 IMG proxy"
+        sandbox
+            .execute("String(Image.prototype === globalThis.HTMLImageElement.prototype)")
+            .unwrap()
+            .value,
+        "true",
+        "Image.prototype 与 HTMLImageElement.prototype 同一"
+    );
+
+    // 无 new 调用抛 TypeError（s294 spec 纠正——WebIDL named constructor 语义，Image-constructor.html
+    // 具名构造器结构钉形同族。旧断言「无 new 亦返 IMG proxy」与 spec 冲突，随结构对齐一并修正——
+    // Audio R2835 无 new TypeError 同款先例）。
+    sandbox
+        .execute("try { Image(); globalThis.__callNoNew = 'no-throw'; } catch (err) { globalThis.__callNoNew = err.name; }")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__callNoNew)").unwrap().value,
+        "TypeError",
+        "Image() 无 new 抛 TypeError（spec WebIDL named constructor 语义）"
     );
 }
 
@@ -437,6 +454,91 @@ fn test_audio_constructor_and_media_methods_r2835() {
         sandbox.execute("String(globalThis.__callNoNew)").unwrap().value,
         "TypeError",
         "Audio() 无 new 抛 TypeError（spec WebIDL constructor 语义）"
+    );
+}
+
+/// s332（html-semantics M2）：HTMLAudioElement/HTMLVideoElement 接口不可构造 + 定制
+/// 内建 super() 在途建元素双面。WC-M1 切片 4 的媒体接口包装（`_znMediaWrapped`）此前
+/// 对任意 new.target 都走 SuperCreate——直构造 `new HTMLAudioElement()` 返回元素不抛
+/// （WPT audio_constructor「Constructing HTMLAudioElement should throw」断言面）。
+/// spec 元素接口构造步：new.target 须为**已注册**定制内建构造器（customElements.getName
+/// 命中）才在途建元素，否则 TypeError。
+/// https://html.spec.whatwg.org/multipage/dom.html#html-element-constructors
+#[test]
+fn test_media_iface_ctor_illegal_and_customized_builtin_s332() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 直构造 Audio/Video 接口 → TypeError（Illegal constructor）。
+    sandbox
+        .execute(
+            "globalThis.__s332 = [];\
+             try { new HTMLAudioElement(); globalThis.__s332.push('audio-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }\
+             try { new HTMLVideoElement(); globalThis.__s332.push('video-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }\
+             try { HTMLAudioElement(); globalThis.__s332.push('call-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s332.join('|')").unwrap().value,
+        "TypeError|TypeError|TypeError",
+        "s332：直构造/直调用媒体接口全 TypeError"
+    );
+
+    // 注册定制内建子类 → super() 在途建元素（WC-M1 切片 4 面保持）：tagName=AUDIO +
+    // is 属性反射 extends 名 + instanceof 子类成立。
+    sandbox
+        .execute(
+            "globalThis.__s332 = [];\
+             class XAudio extends HTMLAudioElement { constructor() { super(); } }\
+             customElements.define('x-audio', XAudio, { extends: 'audio' });\
+             try {\
+               var xa = new XAudio();\
+               globalThis.__s332.push(xa.tagName === 'AUDIO' ? 'tag-audio' : 'tag:' + xa.tagName);\
+               globalThis.__s332.push(xa.getAttribute('is') === 'x-audio' ? 'is-ok' : 'is:' + xa.getAttribute('is'));\
+               globalThis.__s332.push(xa instanceof XAudio ? 'instance-ok' : 'instance-miss');\
+             } catch (e) { globalThis.__s332.push('ctor:' + e.constructor.name); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s332.join('|')").unwrap().value,
+        "tag-audio|is-ok|instance-ok",
+        "s332：注册定制内建 super() 在途建 audio 元素（WC-M1 面保持）"
+    );
+
+    // video 面对称：直构造抛 + 注册子类 super() 在途建 video 元素。
+    sandbox
+        .execute(
+            "globalThis.__s332 = [];\
+             try { new HTMLVideoElement(); globalThis.__s332.push('video-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }\
+             class XVideo extends HTMLVideoElement { constructor() { super(); } }\
+             customElements.define('x-video', XVideo, { extends: 'video' });\
+             try {\
+               var xv = new XVideo();\
+               globalThis.__s332.push(xv.tagName === 'VIDEO' ? 'tag-video' : 'tag:' + xv.tagName);\
+               globalThis.__s332.push(xv instanceof HTMLMediaElement ? 'media-proto-ok' : 'media-proto-miss');\
+             } catch (e) { globalThis.__s332.push('ctor:' + e.constructor.name); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s332.join('|')").unwrap().value,
+        "TypeError|tag-video|media-proto-ok",
+        "s332：video 接口 Illegal constructor + super() 在途建 video 元素（prototype 链 Media）"
     );
 }
 
@@ -8005,5 +8107,402 @@ fn test_focusable_area_rendering_gate_r5385() {
         get(&mut sandbox, 5),
         "span1=false",
         "⑥ canvas 内 shadow host light 子无默认 slot 不在 flat tree → 不可聚焦（旧 shim 恒可聚焦）"
+    );
+}
+
+#[test]
+fn test_media_audio_lazy_gate_s333() {
+    // s333：audio lazy loading 门（HTML §lazy loading attributes：lazy load
+    // resumption steps 挂在 img/audio/video/iframe 四元素上——s281 落地时门只
+    // 认 video，s333 按 spec 现行清单补 audio。脚本车道 _zwMediaScheduleLoad
+    // 门 + 静态车道 _zwSettleResourceSelector 门双置 + scrollIntoView 旗标臂
+    // AUDIO 扩展）。
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><audio id=\"a2\" loading=\"lazy\" src=\"/media/song.mp3\"></audio></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（同 r389 harness）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };",
+    ).unwrap();
+
+    // ① 脚本车道 defer：script 创建 audio + loading='lazy' + src → 门 defer，
+    //    不 invoke media load 算法（readyState HAVE_NOTHING、无 loadstart；
+    //    networkState 由 src setter 既有语义先置 NETWORK_LOADING，非本门
+    //    改动面——video defer 同形态，WPT lazy 断言面不查 networkState）。
+    sandbox.execute(
+        "globalThis.__a1 = document.createElement('audio');\
+         globalThis.__a1.loading = 'lazy';\
+         var __ls1 = 0;\
+         globalThis.__a1.addEventListener('loadstart', function () { __ls1 = 1; });\
+         globalThis.__a1.src = '/media/song.mp3';\
+         __zw_fire_due_timers();\
+         globalThis.__r1 = globalThis.__a1.readyState + ':' + __ls1;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "0:0",
+        "lazy audio（脚本车道）应 defer：readyState 0 / 无 loadstart"
+    );
+
+    // ② eager 唤醒：loading IDL set 'eager' → __zwMediaLoadingMutated5281 唤醒
+    //    deferred 册重入 → 门资格再判非 lazy → 装载（headless 模拟路径）。
+    //    装载续段走 queueMicrotask（_deferCont）——独立 execute 借返回期
+    //    microtask checkpoint 排空后再读（同 M2a ②口径）。
+    sandbox.execute("globalThis.__a1.loading = 'eager';").unwrap();
+    sandbox.execute(
+        "__zw_fire_due_timers();\
+         globalThis.__r2 = globalThis.__a1.readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "4",
+        "eager 化后 lazy audio 应唤醒装载（readyState 推进 HAVE_ENOUGH_DATA）"
+    );
+
+    // ③ 静态车道 defer：静态 <audio loading=lazy src> + 宿主 commit（async_load
+    //    抓取完成 → dispatch_resource_element_event → __zw_commit_resource_
+    //    element_state）→ _zwSettleResourceSelector 门 defer（readyState 恒 0）。
+    sandbox.execute(
+        "__zw_commit_resource_element_state('audio', 'https://wpt.test/media/song.mp3', 'loaded', 0, 0, null);\
+         __zw_fire_due_timers();\
+         globalThis.__r3 = document.querySelector('#a2').readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "0",
+        "lazy audio（静态车道）宿主 commit 后应 defer 不落 settle（readyState 0）"
+    );
+
+    // ④ 静态车道 eager 唤醒：loading IDL set → commit 参数重放 settle。
+    sandbox.execute(
+        "document.querySelector('#a2').loading = 'eager';\
+         __zw_fire_due_timers();\
+         globalThis.__r4 = document.querySelector('#a2').readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4)").unwrap().value,
+        "4",
+        "静态 lazy audio eager 化后应唤醒 settle（readyState 推进）"
+    );
+}
+
+#[test]
+fn test_canvas_ctr_illegal_ctor_and_settings_s334() {
+    // s334：canvas 双面——① CanvasRenderingContext2D Illegal constructor（spec 接口
+    // 无 [Constructor]/[LegacyFactoryFunction]，call/new 均抛 TypeError；historical
+    // 「CanvasRenderingContext2D constructors」断言面；R49xx typeof 特性检测面保持
+    // 'function'）+ ② getContext('2d', options) 的 CanvasRenderingContext2DSettings
+    // 字典转换（spec 成员字母序 Get：alpha → colorSpace（枚举 ToString 可观察）→
+    // desynchronized → willReadFrequently；每次调用都转换——创建相与缓存相各跑一轮；
+    // undefined/null → 默认零 Get；非对象/离格枚举 → TypeError）。
+    // https://webidl.spec.whatwg.org/#es-interface-call
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext
+    // https://webidl.spec.whatwg.org/#es-dictionary
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① Illegal constructor：new/带参/call 三形态全 TypeError。
+    sandbox.execute(
+        "globalThis.__r1 = (function () {\
+           var out = [];\
+           function probe(f) {\
+             try { f(); out.push('no-throw'); } catch (e) {\
+               out.push(e instanceof TypeError ? 'TypeError' : 'other'); } }\
+           probe(function () { new CanvasRenderingContext2D(); });\
+           probe(function () { new CanvasRenderingContext2D(1, 1); });\
+           probe(function () { CanvasRenderingContext2D(); });\
+           return out.join(',');\
+         })();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "TypeError,TypeError,TypeError",
+        "CTR 无 [Constructor]——new/带参/call 全抛 TypeError"
+    );
+
+    // ② typeof 特性检测面不变（R49xx：页面 canvas 探针靠 typeof === 'function'）。
+    assert_eq!(
+        sandbox.execute("typeof CanvasRenderingContext2D").unwrap().value,
+        "function",
+        "Illegal constructor 不改变 typeof 面（特性检测仍识别支持）"
+    );
+
+    // ③ 创建相：字典转换字母序 Get（alpha/colorSpace/colorSpace toString/
+    //    desynchronized/willReadFrequently），ctx 非 null 且 instanceof CTR。
+    sandbox.execute(
+        "globalThis.__t = document.createElement('canvas');\
+         globalThis.__actual = [];\
+         globalThis.__opts = {\
+           get alpha() { globalThis.__actual.push('alpha'); return true; },\
+           get willReadFrequently() { globalThis.__actual.push('willReadFrequently'); return false; },\
+           get desynchronized() { globalThis.__actual.push('desynchronized'); return false; },\
+           get colorSpace() {\
+             globalThis.__actual.push('colorSpace');\
+             return { toString: function () {\
+               globalThis.__actual.push('colorSpace toString'); return 'srgb'; } }; }\
+         };\
+         globalThis.__c1 = globalThis.__t.getContext('2d', globalThis.__opts);\
+         globalThis.__r3 = globalThis.__actual.join(',') + '|' + (globalThis.__c1 !== null ? 'ctx' : 'null')\
+           + '|' + (globalThis.__c1 instanceof CanvasRenderingContext2D ? 'inst' : 'noinst');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "alpha,colorSpace,colorSpace toString,desynchronized,willReadFrequently|ctx|inst",
+        "创建相：设置字典按成员字母序转换（枚举 ToString 在位），ctx instanceof CTR"
+    );
+
+    // ④ 缓存相：同一 canvas 再 getContext('2d', options) → 转换重跑（再 5 Get）
+    //    且返回同一 ctx 实例（spec 缓存语义）。
+    sandbox.execute(
+        "globalThis.__actual = [];\
+         globalThis.__c2 = globalThis.__t.getContext('2d', globalThis.__opts);\
+         globalThis.__r4 = globalThis.__actual.join(',') + '|' + (globalThis.__c2 === globalThis.__c1 ? 'same' : 'diff');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4)").unwrap().value,
+        "alpha,colorSpace,colorSpace toString,desynchronized,willReadFrequently|same",
+        "缓存相：字典转换仍每次执行（5 Get），返回缓存 ctx 同实例"
+    );
+
+    // ⑤ null options：字典转换零 Get（undefined/null → 默认），ctx 同实例。
+    sandbox.execute(
+        "globalThis.__actual = [];\
+         globalThis.__c3 = globalThis.__t.getContext('2d', null);\
+         globalThis.__r5 = String(globalThis.__actual.length) + '|' + (globalThis.__c3 === globalThis.__c1 ? 'same' : 'diff');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r5)").unwrap().value,
+        "0|same",
+        "null options → 默认转换零 Get，缓存 ctx 同实例"
+    );
+
+    // ⑥ 离格枚举 → TypeError；非对象 options → TypeError（spec 字典转换）。
+    sandbox.execute(
+        "globalThis.__r6 = (function () {\
+           try { document.createElement('canvas').getContext('2d', { colorSpace: 'bogus' }); return 'no-throw'; }\
+           catch (e) { return e instanceof TypeError ? 'TypeError' : 'other'; } })();\
+         globalThis.__r7 = (function () {\
+           try { document.createElement('canvas').getContext('2d', 42); return 'no-throw'; }\
+           catch (e) { return e instanceof TypeError ? 'TypeError' : 'other'; } })();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r6) + '|' + String(globalThis.__r7)").unwrap().value,
+        "TypeError|TypeError",
+        "离格枚举/非对象 options → TypeError（spec 字典转换）"
+    );
+}
+
+#[test]
+fn test_classic_strict_lane_uncaught_report_and_load_s335() {
+    // s335 契约（strict 车道未捕获报告面，spec run-a-classic-script abrupt completion）：
+    //   ①window error 事件在 catch 内**同步**派发（reportError 原值透传——报告先于检查点）；
+    //   ②体内 queueMicrotask 微任务经包装 execute 末检查点排空——序在报告之后；
+    //   ③元素 load 微任务派发——序在微任务之后（spec fire load 在 clean-up 检查点后；
+    //     evaluation-order-1 判据 [body, global-error, microtask] + onload=testDone）；
+    //   ④sentinel 原始消息保真（first_strict_error 链不变）；
+    //   ⑤基线包装静默面保持——browser tab/renderer 车道 sentinel→R2940 自报链防双报。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    register_dom_callbacks(
+        &mut sandbox,
+        &mutations,
+        &dom_html,
+        &page_url,
+        &canvas_registry,
+        None,
+    );
+    // 侦听面 + DOM 内 script 元素（currentScript 按活列表序号解析——元素须真实在位）
+    sandbox.execute(
+        "globalThis.__zlog=[];\
+         globalThis.addEventListener('error',function(ev){__zlog.push('error:'+String(ev&&ev.error&&ev.error.message||'?'));});\
+         document.body.innerHTML='<script id=zw-s335></script>';\
+         document.getElementById('zw-s335').addEventListener('load',function(){__zlog.push('load');});",
+    )
+    .unwrap();
+    // s369 直编译车道：in-execute catch（sandbox execute_classic）+ catch 片——
+    // currentScript 宿主侧设索引（wrapper 首行的宿主侧等价）
+    sandbox
+        .execute(&crate::js_dom_bridge::script_set_current_script(0))
+        .unwrap();
+    let exec = sandbox.execute_classic(
+        "__zlog.push('body');queueMicrotask(function(){__zlog.push('mt');});throw new Error('boom');",
+        &crate::js_dom_bridge::script_classic_catch_tail(None),
+    );
+    assert!(
+        exec.is_err(),
+        "直编译抛错返 Err（first_strict_error 经 combined_err 链）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "body|error:boom|mt|load",
+        "strict 臂：报告（catch 内同步）→ 检查点微任务 → 元素 load（spec 序）"
+    );
+    assert!(
+        exec.unwrap_err().to_string().contains("boom"),
+        "Err 文本原始消息保真（first_strict_error 链，t5 消息头+帧行同契约）"
+    );
+    assert_eq!(
+        sandbox.execute("typeof globalThis.__zw_e").unwrap().value,
+        "undefined",
+        "__zw_e 挂载面跑后即删（不残留全局枚举面）"
+    );
+    // 基线包装（browser tab / renderer 车道共用）：静默面保持
+    sandbox.execute("globalThis.__zlog=[];").unwrap();
+    let base = crate::js_dom_bridge::script_run_classic_page(
+        "__zlog.push('body');queueMicrotask(function(){__zlog.push('mt');});throw new Error('bang');",
+        0,
+        None,
+    );
+    sandbox.execute(&base).unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "body|mt",
+        "基线包装静默如旧——无 window error 事件、无元素 load（报告归属 R2940/sentinel 链）"
+    );
+    let base_sentinel = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert!(
+        base_sentinel.contains("bang"),
+        "基线包装 sentinel 链不受影响: {base_sentinel}"
+    );
+}
+
+#[test]
+fn test_window_onerror_legacy_five_arg_adapter_and_report_position_s336() {
+    // s336 契约（window.onerror legacy 签名面 + strict 抛错位置透传，data-url 判据）：
+    //   ①`window.onerror = fn` 经 R2932 注册进 listener 表，但 invoke 以 OnErrorEventHandler
+    //     legacy 五参 (message, source, lineno, colno, error)（从 error 事件特性读）——
+    //     非 (event) 单参（旧版单参直传使 lineno/colno undefined → data-url 全断言红）；
+    //   ②reportError(reason, filename, lineno, colno) 四参位置进事件特性（strict tail 传
+    //     script src 或页面 URL + 非零行列——data-url 断言 url 非空、lineno/colno 非零 number）；
+    //   ③getter identity：window.onerror === fn（原始 fn 存 _winOnHandlers）；
+    //   ④event 形 listener（addEventListener('error')）仍收 event 单参（签名不混），
+    //     ev.filename 读到同一位置透传值。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#handler-onerror
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    register_dom_callbacks(
+        &mut sandbox,
+        &mutations,
+        &dom_html,
+        &page_url,
+        &canvas_registry,
+        None,
+    );
+    // onerror 五参注册面 + event 形对照 listener + DOM 内带 src 的 script 元素
+    //（strict tail 的 currentScript 同步捕获 + src 位置读取都要求元素真实在位）。
+    sandbox.execute(
+        "globalThis.__zlog=[];\
+         window.onerror=function(m,u,l,c,e){\
+           __zlog.push(m+'|'+u+'|'+l+'|'+c+'|'+(typeof e==='number'?String(e):String(e&&e.message)));\
+           return false;\
+         };\
+         globalThis.addEventListener('error',function(ev){__zlog.push('ev-filename='+ev.filename);});\
+         document.body.innerHTML='<script id=zw-s336 src=\"data:,throw 42\"></script>';",
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("typeof window.onerror").unwrap().value,
+        "function",
+        "③getter identity 面：window.onerror 返原始 fn"
+    );
+    sandbox
+        .execute(&crate::js_dom_bridge::script_set_current_script(0))
+        .unwrap();
+    let exec = sandbox.execute_classic(
+        "throw 42;",
+        &crate::js_dom_bridge::script_classic_catch_tail(Some("data:,throw 42")),
+    );
+    assert!(exec.is_err(), "直编译抛错返 Err");
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "42|data:,throw 42|1|1|42|ev-filename=data:,throw 42",
+        "①②④五参 legacy 签名 + 位置透传 + event 形对照：message='42'（非 Error 原值字符串化）、\
+         source=script src、lineno/colno 非零、error 原值 number、listener 形 filename 同值"
+    );
+    // null 赋值面：adapter 摘除后 event 形 listener 保持（不残留双触发）
+    sandbox.execute("globalThis.__zlog=[];window.onerror=null;").unwrap();
+    sandbox
+        .execute("globalThis.reportError(new Error('after-null'));")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "ev-filename=",
+        "null 赋值摘 adapter——仅 event 形 listener 触发（filename='' shim 缺省）"
     );
 }

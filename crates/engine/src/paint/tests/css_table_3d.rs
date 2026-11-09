@@ -10,10 +10,11 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::{ColorValue, TransformFunction, TransformValue};
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
+use zero_render_foundation::color::Color;
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{
     BackfaceVisibilityValue, BorderSpacingComputedValue, CaptionSideValue, LengthValue, ScrollSnapAlign,
@@ -324,6 +325,131 @@ fn test_backface_visibility_hidden_renders() {
     // hidden 应生成虚线边框（多条短 fill）
     let prims = painter.primitives();
     assert!(prims.fills.len() > 1, "backface-visibility:hidden 应生成虚线边框");
+}
+
+// ── R5422：3D 渲染上下文累积背面判定 ──────────────────────────────
+
+#[test]
+fn test_r54xx_backface_accumulates_through_preserve3d_parent() {
+    // transform3d-backface-visibility-006 案形：父 rotateX(180deg)+preserve-3d
+    //（lime 可见），子 backface-visibility:hidden（红、自身无变换）——累积矩阵
+    // zz = cos(180°) = -1 → 子背面隐藏。R4035 旧实现只判自身链（子无翻转 → 正
+    // 面）红块照绘。
+    let mut doc = zero_dom::Document::new();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("div");
+    let mut parent_box = make_box(Some(parent), 0.0, 0.0, 100.0, 100.0);
+    parent_box.children = vec![make_box(Some(child), 0.0, 0.0, 100.0, 100.0)];
+
+    let mut styles = HashMap::new();
+    let mut pstyle = ComputedStyle::default();
+    pstyle.background_color = ColorValue::Named("lime".into());
+    pstyle.transform = zero_css_parser::values::TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
+    pstyle.transform_style = TransformStyleValue::Preserve3d;
+    styles.insert(parent, pstyle);
+    let mut cstyle = ComputedStyle::default();
+    cstyle.background_color = ColorValue::Named("red".into());
+    cstyle.backface_visibility = BackfaceVisibilityValue::Hidden;
+    styles.insert(child, cstyle);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, None);
+
+    let prims = painter.primitives();
+    let red = prims.fills.iter().any(|f| f.color == Color::rgb(255, 0, 0));
+    let lime = prims.fills.iter().any(|f| f.color == Color::rgb(0, 255, 0));
+    assert!(!red, "hidden 子盒经 preserve-3d 父累积背面后不应绘制红 fill");
+    assert!(lime, "可见父盒（lime）照常绘制");
+}
+
+#[test]
+fn test_r54xx_backface_preserve3d_leaf_skipped() {
+    // backface-visibility-with-sibling-001 案形收敛：hidden + preserve-3d + 自身
+    // 背面（rotateX(180deg)）叶盒——spec：元素自身平面不渲染；叶无子平面，整弃
+    // ≡ 仅弃自身。R4035 旧豁免（preserve-3d 一律不隐）照绘红块。
+    let mut doc = zero_dom::Document::new();
+    let leaf = doc.create_element("div");
+    let layout = make_box(Some(leaf), 0.0, 0.0, 100.0, 100.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Named("red".into());
+    style.transform = zero_css_parser::values::TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
+    style.transform_style = TransformStyleValue::Preserve3d;
+    style.backface_visibility = BackfaceVisibilityValue::Hidden;
+    styles.insert(leaf, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert!(
+        prims.fills.iter().all(|f| f.color != Color::rgb(255, 0, 0)),
+        "hidden preserve-3d 背面叶盒不应绘制红 fill"
+    );
+}
+
+#[test]
+fn test_r54xx_backface_preserve3d_parent_children_visible() {
+    // R4035 composited-preserve-3d 校准案回归锚：hidden + preserve-3d + 背面父盒
+    //（红）带可见子盒（绿、默认 backface）——父盒维持 R4035 豁免照绘（子绿块覆
+    // 盖）、子盒照绘。整子树误弃会令绿块消失（回归信号）。
+    let mut doc = zero_dom::Document::new();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("div");
+    let mut parent_box = make_box(Some(parent), 0.0, 0.0, 100.0, 100.0);
+    parent_box.children = vec![make_box(Some(child), 0.0, 0.0, 100.0, 100.0)];
+
+    let mut styles = HashMap::new();
+    let mut pstyle = ComputedStyle::default();
+    pstyle.background_color = ColorValue::Named("red".into());
+    pstyle.transform = zero_css_parser::values::TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
+    pstyle.transform_style = TransformStyleValue::Preserve3d;
+    pstyle.backface_visibility = BackfaceVisibilityValue::Hidden;
+    styles.insert(parent, pstyle);
+    let mut cstyle = ComputedStyle::default();
+    cstyle.background_color = ColorValue::Named("green".into());
+    styles.insert(child, cstyle);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, None);
+
+    let prims = painter.primitives();
+    let green = prims.fills.iter().any(|f| f.color == Color::rgb(0, 128, 0));
+    assert!(green, "preserve-3d hidden 背面父盒的可见子盒照绘（豁免臂）");
+}
+
+#[test]
+fn test_r54xx_backface_ctx_off_falls_back_to_r4035() {
+    // ZW_BACKFACE_3D_CTX=0 回退镜像针：同
+    // test_r54xx_backface_accumulates_through_preserve3d_parent 案形（父
+    // rotateX(180deg)+preserve-3d，子 hidden 无自身变换），开关 OFF → 只判自身链
+    //（R4035），子恒正面照绘红块（旧语义 = hidden-animated 双案自洽伪绿的机制
+    // 底座，ON 暴露为真不一致）。
+    let mut doc = zero_dom::Document::new();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("div");
+    let mut parent_box = make_box(Some(parent), 0.0, 0.0, 100.0, 100.0);
+    parent_box.children = vec![make_box(Some(child), 0.0, 0.0, 100.0, 100.0)];
+
+    let mut styles = HashMap::new();
+    let mut pstyle = ComputedStyle::default();
+    pstyle.background_color = ColorValue::Named("lime".into());
+    pstyle.transform = zero_css_parser::values::TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
+    pstyle.transform_style = TransformStyleValue::Preserve3d;
+    styles.insert(parent, pstyle);
+    let mut cstyle = ComputedStyle::default();
+    cstyle.background_color = ColorValue::Named("red".into());
+    cstyle.backface_visibility = BackfaceVisibilityValue::Hidden;
+    styles.insert(child, cstyle);
+
+    let mut painter = Painter::new();
+    painter.set_backface_3d_ctx_enabled_for_test(false);
+    painter.paint(&parent_box, &styles, None);
+
+    let prims = painter.primitives();
+    let red = prims.fills.iter().any(|f| f.color == Color::rgb(255, 0, 0));
+    assert!(red, "OFF 回退路径子盒只判自身链（恒正面）应照绘红 fill");
 }
 
 // ── transform-style 测试 ──────────────────────────────────────────

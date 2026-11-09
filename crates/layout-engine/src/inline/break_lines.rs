@@ -850,7 +850,30 @@ impl InlineFormattingContext {
                             };
                             current_line_had_oof_anchor = false;
                             // 新行重新计算浮动偏移
-                            let (new_left, _) = self.effective_content_area(current_y, run.box_height());
+                            let (mut new_left, new_avail) =
+                                self.effective_content_area(current_y, run.box_height());
+                            // R5469（CSS2 §9.5 rule 8「shortened line box too small to
+                            // contain any further content → shifted downward until it
+                            // either fits or there are no more floats present」）：fit 门
+                            // 断行开出的新行首词放不下 float 缩短后的新带时同 R5240 下绕——
+                            // R5240 只在 loop-head 空行臂生效，fit 门 fall-through 开的新行
+                            // 不经 loop-head 重评，行首词原地强放缩短带溢出（c5525-fltmrgn
+                            // -000 test3：float 左 margin-top+left 30/30 时 float 带底 75，
+                            // y60 新行带 15px 强放 30px 词溢出，chromium 下绕带底满宽整行，
+                            // p 高 90→105）。与 loop-head R5240 共用 kill-switch
+                            // `ZW_FIRST_WORD_FLOAT_FIT=0`。
+                            if runtime_flags::first_word_float_fit()
+                                && !hang_trailing_space
+                                && wrap_allowed
+                                && !atomic_gl_first_word
+                                && new_avail < word_width
+                                && !self.float_exclusions.is_empty()
+                            {
+                                let (new_y, lo, _) =
+                                    self.shift_new_line_below_floats(current_y, run.box_height(), word_width);
+                                current_y = new_y;
+                                new_left = lo;
+                            }
                             current_x = new_left;
                             lead_gap = 0.0; // 行首词无前导 gap
                         }
@@ -1017,6 +1040,15 @@ impl InlineFormattingContext {
                     // inline-block 是原子盒，不可拆分
                     let box_width = box_info.width;
                     let box_height = box_info.height;
+                    // CSS：inline-block 的 margin box 参与行内格式化——margin_left/right
+                    // 推进水平位置，margin_top/bottom 计入行盒高度，margin_top 偏移盒 Y。
+                    // （R5417 提升至 fit 门之前：fit 占位需同口径 ml/mr。）
+                    let (m_left, m_right, m_top, m_bot) = (
+                        box_info.margin_left,
+                        box_info.margin_right,
+                        box_info.margin_top,
+                        box_info.margin_bottom,
+                    );
                     // 行内级盒打破了可折叠空白的连续性
                     last_was_collapsible_ws = false;
                     // R5317（css-text-3 §4.1 collapse + §4.2 atomic inline）：原子盒中断
@@ -1062,6 +1094,19 @@ impl InlineFormattingContext {
                     }
 
                     // 检查当前行是否放得下（当行非空时）
+                    // R5417（CSS2 §10.3.5 inline-block margin box 参排 + §9.4.2）：fit 门
+                    // 占位 = margin box（= ml + border box + mr，与下方 placement advance
+                    // 同口径，含负 margin 符号语义 R5068）——旧径只计 border box，原子横
+                    // margin 越出行缘不折行、强留本行横向溢出（flexbox_first-line ref 页
+                    // li5：li4 margin-box 终点 714 + border box 191.2 = 905.2 ≤ 908 旧门
+                    // 「放得下」，margin box 969.2 > 908 应折——flex 侧 margin box 参排
+                    // 正确折行，双页 4/4 vs 5/3 恒红）。
+                    // kill-switch `ZW_ATOMIC_MARGIN_BOX_FIT=0` 回退 border box 口径。
+                    let atomic_fit_width = if runtime_flags::atomic_margin_box_fit() {
+                        m_left + box_width + m_right
+                    } else {
+                        box_width
+                    };
                     // R5165（css-text-3 §5.5 line-break-details + UAX #14）：前邻原始字符
                     // 属 GL/WJ/ZWJ 类（U+00A0 例外，InlineBlockBox::prev_char_gl 旁带）——
                     // 原子与该字符间无软换行机会，fit 门不折行，随前词横向溢出（chromium
@@ -1069,7 +1114,7 @@ impl InlineFormattingContext {
                     // 第 2 行、透明 span 露红底 2.0833%）。
                     if !self.no_wrap
                         && !(runtime_flags::atomic_gl_no_break() && box_info.prev_char_gl)
-                        && current_x + box_width > left_offset + avail_width
+                        && current_x + atomic_fit_width > left_offset + avail_width
                         && !current_line.runs.is_empty()
                     {
                         // 当前行放不下，开始新行
@@ -1105,14 +1150,6 @@ impl InlineFormattingContext {
                     }
 
                     // inline-block 片段不使用 font_size，设为 0
-                    // CSS：inline-block 的 margin box 参与行内格式化——margin_left/right
-                    // 推进水平位置，margin_top/bottom 计入行盒高度，margin_top 偏移盒 Y。
-                    let (m_left, m_right, m_top, m_bot) = (
-                        box_info.margin_left,
-                        box_info.margin_right,
-                        box_info.margin_top,
-                        box_info.margin_bottom,
-                    );
                     current_x += m_left;
                     current_line.runs.push(TextFragment {
                         ws_override: None,
@@ -1232,6 +1269,22 @@ impl InlineFormattingContext {
                         let anchor_idx = self.lines.len();
                         self.float_anchor_line_idxs.insert(*fid, anchor_idx);
                         last_push_was_float_anchor = true;
+                        // R5473（CSS2 §9.5 float 离流盒）：**行中** float 锚不产生换行
+                        // ——后继 inline 内容留原行续排（行内带消费机制已把前文推到带
+                        // 右侧，后文无碰撞时同行相接）。chromium oracle 定谳（001b 形
+                        // `<span>Hello<span float/></span>Kitty`："HelloKitty" 同行
+                        // x≈50 起＝ZW 旧径 Kitty 掉行 1 独有缺陷）。R3784「语义同
+                        // BlockBreak」为借推行机制的权宜（锚行号/空行判定现成），非
+                        // spec 决策。**行首锚**（空行）不在此跳过——落 R3779b 臂同效果
+                        //（不推行）且必须经其 current_x 带左缘重锚（003l 形 s1 落带
+                        // 右侧依赖该重锚，跳过则 s1/s2 滞留 x=0 与 float 重叠）。
+                        // 锚记录照旧（行中锚 = 当前行顶）；R3786 块断行旗仅对真推行的
+                        // Br/BlockBreak 成立。连续 float 锚继承保留。
+                        if runtime_flags::float_anchor_no_break()
+                            && !(current_line.runs.is_empty() && current_line.height <= 0.0)
+                        {
+                            continue;
+                        }
                     } else {
                         last_push_was_float_anchor = false;
                     }

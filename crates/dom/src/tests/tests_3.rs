@@ -981,6 +981,160 @@ fn test_resolve_slots_matching_element() {
     assert_eq!(assigned[0], header, "分配的节点应是 header");
 }
 
+/// 45 号 M3 R3（变异应用臂）：命令式 attachShadow 后未经逐宿主 resolve_slots，
+/// resolve_slots_all_hosts 统一重解析应补齐分配（engine apply_dom_mutations_full
+/// 批末挂接的 dom 侧语义收口）。
+#[test]
+fn test_resolve_slots_all_hosts_after_imperative_attach() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-widget");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM 先于 shadow 树存在
+    let title = doc.create_element("h1");
+    doc.set_attribute(title, "slot", "title");
+    doc.append_child(host, title).unwrap();
+    let body = doc.create_element("div");
+    doc.append_child(host, body).unwrap();
+
+    // 命令式 attachShadow（无 resolve_slots 调用——变异应用臂语义）
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let title_slot = doc.create_element("slot");
+    doc.set_attribute(title_slot, "name", "title");
+    doc.append_child(shadow, title_slot).unwrap();
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, default_slot).unwrap();
+
+    doc.resolve_slots_all_hosts();
+
+    assert_eq!(doc.get_assigned_nodes(title_slot), vec![title]);
+    assert_eq!(doc.get_assigned_nodes(default_slot), vec![body]);
+}
+
+/// 45 号 M3 R3（变异应用臂）：初始解析后宿主 childList 变异（appendChild）与
+/// slot 属性改名，resolve_slots_all_hosts 应使分配与新树态一致（旧分配清零重收集）。
+#[test]
+fn test_resolve_slots_all_hosts_after_mutations() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-panel");
+    doc.append_child(root, host).unwrap();
+    let first = doc.create_element("span");
+    doc.append_child(host, first).unwrap();
+
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let named_slot = doc.create_element("slot");
+    doc.set_attribute(named_slot, "name", "a");
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, named_slot).unwrap();
+    doc.append_child(shadow, default_slot).unwrap();
+
+    doc.resolve_slots_all_hosts();
+    // 初始：first（无 slot 属性）走默认 slot
+    assert_eq!(doc.get_assigned_nodes(default_slot), vec![first]);
+    assert!(doc.get_assigned_nodes(named_slot).is_empty());
+
+    // 变异 1：childList——追加带 slot="a" 的子节点
+    let second = doc.create_element("em");
+    doc.set_attribute(second, "slot", "a");
+    doc.append_child(host, second).unwrap();
+
+    // 变异 2：slot 属性改名——first 从默认档改入 a 档
+    doc.set_attribute(first, "slot", "a");
+
+    doc.resolve_slots_all_hosts();
+
+    assert_eq!(doc.get_assigned_nodes(named_slot), vec![first, second]);
+    assert!(
+        doc.get_assigned_nodes(default_slot).is_empty(),
+        "改名后默认 slot 分配应清空"
+    );
+}
+
+/// 45 号 shadow-dom-rendering M3 手动臂：manual root 的 slot 走 assign() 手动表
+/// 渲染镜像——resolve_slots 跳过（自动匹配不写表）、get_assigned_nodes 活过滤
+/// parent==host（006 host1-3 分配面 / host4-5 移除后回退面同型）。
+#[test]
+fn test_manual_slot_assignment_render_table() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-manual");
+    doc.append_child(root, host).unwrap();
+    let a = doc.create_element("div");
+    doc.append_child(host, a).unwrap();
+    let b = doc.create_element("div");
+    doc.append_child(host, b).unwrap();
+
+    let shadow = doc
+        .attach_shadow_full(
+            host,
+            ShadowRootMode::Open,
+            false,
+            false,
+            false,
+            SlotAssignment::Manual,
+            false,
+        )
+        .unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.set_attribute(slot_elem, "name", "s");
+    doc.append_child(shadow, slot_elem).unwrap();
+
+    // manual root：自动分配跳过——light 子节点带 slot="s" 也不写分配表
+    doc.set_attribute(a, "slot", "s");
+    doc.resolve_slots_all_hosts();
+    assert!(doc.get_assigned_nodes(slot_elem).is_empty(), "manual root 不做自动分配");
+
+    // assign() 镜像：raw 列表写入（顺序保留），读取按 parent==host 活过滤
+    doc.set_manual_assigned_nodes(slot_elem, vec![b, a]);
+    assert_eq!(doc.get_assigned_nodes(slot_elem), vec![b, a]);
+    assert_eq!(doc.assigned_slot(a), Some(slot_elem));
+
+    // assign 后移出宿主：原始列表不变，读取面过滤为空 = 回退内容（006 host4/5 形态）
+    doc.remove_child(host, a).unwrap();
+    doc.remove_child(host, b).unwrap();
+    assert!(
+        doc.get_assigned_nodes(slot_elem).is_empty(),
+        "移出宿主后分配失配，slot 走回退内容"
+    );
+    assert_eq!(doc.assigned_slot(a), None, "移出宿主后反查亦失配");
+}
+
+/// 45 号 shadow-dom-rendering M3 手动臂：named root 的 slot 上 assign() 列表
+/// inert——spec find slotables 的 manual 分支以所属 shadow root 分配策略为门，
+/// 手动表条目不改变 named root 的自动分配读取面。
+#[test]
+fn test_manual_assignment_inert_on_named_root() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-named");
+    doc.append_child(root, host).unwrap();
+    let child = doc.create_element("div");
+    doc.append_child(host, child).unwrap();
+
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.append_child(shadow, slot_elem).unwrap();
+
+    // named root：自动分配在先
+    doc.resolve_slots_all_hosts();
+    assert_eq!(doc.get_assigned_nodes(slot_elem), vec![child]);
+
+    // assign() 镜像写入——named root 读取面不受手动表影响（inert 列表）
+    doc.set_manual_assigned_nodes(slot_elem, vec![child]);
+    assert_eq!(
+        doc.get_assigned_nodes(slot_elem),
+        vec![child],
+        "named root 走自动分配表，手动表 inert"
+    );
+    assert_eq!(doc.assigned_slot(child), Some(slot_elem), "反查命中自动分配条目");
+}
+
 /// 测试 slot 分配：无匹配元素时使用 slot 的回退内容。
 ///
 /// 场景：shadow 树中有 <slot name="footer">，但 light DOM 中
@@ -1889,4 +2043,138 @@ fn test_parser_script_tag_content() {
     let ps = doc.get_elements_by_tag_name("p");
     assert_eq!(ps.len(), 1, "script 后的 p 应正常解析");
     assert_eq!(doc.text_content(ps[0]), Some("after".to_string()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// M3 手动臂：manual slot 分配 serialize→re-parse 回环
+// ═══════════════════════════════════════════════════════════════════════
+
+/// `assign()` 分配关系经 outer_html→parse_html 边界还原：marker 属性回写、
+/// parse 侧物化后手动表还原、marker 摘除、活过滤（parent==host）照常。
+#[test]
+fn test_manual_slot_assignments_roundtrip_through_reparse() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    doc.set_attribute(host, "id", "h");
+    doc.append_child(doc.root(), host).expect("host appended");
+    let sr = doc
+        .attach_shadow_full(
+            host,
+            ShadowRootMode::Open,
+            false,
+            false,
+            false,
+            SlotAssignment::Manual,
+            false,
+        )
+        .expect("manual shadow root attached");
+    let slot = doc.create_element("slot");
+    doc.set_attribute(slot, "id", "s");
+    doc.append_child(sr, slot).expect("slot appended");
+    let a = doc.create_element("p");
+    doc.set_attribute(a, "id", "A");
+    doc.append_child(host, a).expect("A appended");
+    let b = doc.create_element("p");
+    doc.set_attribute(b, "id", "B");
+    doc.append_child(host, b).expect("B appended");
+    doc.set_manual_assigned_nodes(slot, vec![b, a]);
+
+    let html = doc.outer_html(doc.root());
+    assert!(
+        html.contains("shadowrootslotassignment=\"manual\""),
+        "manual root 应回写枚举属性, got: {html}"
+    );
+    assert!(
+        html.contains("data-zw-manual-assigned=\"#B #A\""),
+        "slot 应按 render 顺序回写 marker, got: {html}"
+    );
+
+    let mut doc2 = parse_html(&html);
+    let host2 = doc2.get_element_by_id("h").expect("host reparsed");
+    assert_eq!(
+        doc2.shadow_root(host2).map(|_| ()),
+        Some(()),
+        "reparse 后 manual root 经声明式物化重建"
+    );
+    let sr2 = doc2.shadow_root(host2).expect("shadow root present");
+    match doc2.get(sr2).map(|n| &n.kind) {
+        Some(NodeKind::ShadowRoot(d)) => {
+            assert_eq!(d.slot_assignment, SlotAssignment::Manual, "manual 模式还原");
+        }
+        _ => panic!("shadow root node present"),
+    }
+    let slot2 = doc2.query_selector_including_shadow("#s").expect("slot reparsed");
+    assert!(
+        doc2.get_attribute(slot2, "data-zw-manual-assigned").is_none(),
+        "marker 应在物化还原后摘除"
+    );
+    let b2 = doc2.get_element_by_id("B").expect("B present");
+    let a2 = doc2.get_element_by_id("A").expect("A present");
+    assert_eq!(
+        doc2.get_assigned_nodes(slot2),
+        vec![b2, a2],
+        "手动分配列表按 render 顺序还原"
+    );
+
+    // 活过滤：被分配节点移出宿主后不再算已分配（读侧 parent==host 门）。
+    // B 移除后 A 仍在宿主下——活跃列表只塌到 [A]；A 也移除后才塌回回退内容。
+    doc2.remove_child(host2, b2).expect("B removed");
+    assert_eq!(
+        doc2.get_assigned_nodes(slot2),
+        vec![a2],
+        "移出宿主的被分配节点失配，宿主内条目保持"
+    );
+    doc2.remove_child(host2, a2).expect("A removed");
+    assert!(
+        doc2.get_assigned_nodes(slot2).is_empty(),
+        "全部被分配节点移出宿主后塌回回退内容"
+    );
+}
+
+/// 降级路径：被分配节点无 id 时 marker 不回写（re-parse 后该 slot 走回退内容，
+/// 与真实浏览器 assign 状态非持久化语义一致）。
+#[test]
+fn test_manual_slot_marker_degrades_without_id() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    doc.append_child(doc.root(), host).expect("host appended");
+    let sr = doc
+        .attach_shadow_full(
+            host,
+            ShadowRootMode::Open,
+            false,
+            false,
+            false,
+            SlotAssignment::Manual,
+            false,
+        )
+        .expect("manual shadow root attached");
+    let slot = doc.create_element("slot");
+    doc.append_child(sr, slot).expect("slot appended");
+    let anon = doc.create_element("p");
+    doc.append_child(host, anon).expect("anon appended");
+    doc.set_manual_assigned_nodes(slot, vec![anon]);
+
+    let html = doc.outer_html(doc.root());
+    assert!(
+        !html.contains("data-zw-manual-assigned"),
+        "无 id 引用时不应回写 marker, got: {html}"
+    );
+}
+
+/// marker 引用不可解析（assign 后节点被 remove）→ 手动表不建，slot 走回退
+/// 内容——006 hosts 4/5 场景的 parse 侧行为。
+#[test]
+fn test_manual_slot_marker_unresolvable_refs_skip_table() {
+    let doc = parse_html(
+        r##"<div id="h"><template shadowrootmode="open" shadowrootslotassignment="manual"><slot id="s" data-zw-manual-assigned="#gone #also">FALLBACK</slot></template><p id="keep">k</p></div>"##,
+    );
+    let host = doc.get_element_by_id("h").expect("host present");
+    let sr = doc.shadow_root(host).expect("materialized");
+    let slot = doc.query_selector_shadow(sr, "#s").expect("slot present");
+    assert!(doc.get_assigned_nodes(slot).is_empty(), "引用不可解析时手动表不建");
+    assert!(
+        doc.get_attribute(slot, "data-zw-manual-assigned").is_none(),
+        "marker 仍应摘除"
+    );
 }

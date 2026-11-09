@@ -17,6 +17,7 @@
 #![allow(clippy::collapsible_if)]
 
 pub mod aspect_ratio_transfer;
+pub mod bfc_root_displace;
 pub mod converter;
 pub mod dirty;
 pub mod engine;

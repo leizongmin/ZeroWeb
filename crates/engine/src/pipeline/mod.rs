@@ -487,7 +487,13 @@ impl RenderPipeline {
     /// 显式注入。painter 的 `set_focused_node` 只管原生控件焦点外观，此处补样式匹配面。
     fn inject_focus_state(&self, doc: &mut zero_dom::Document) {
         if let Some(selector) = self.focused_selector.as_deref()
-            && let Some(id) = doc.query_selector(doc.root(), selector)
+            // 45 号 shadow-dom-rendering M1：经 [`find_by_selector`] 单漏斗解析——
+            // `doc.query_selector` 带封装门（不降 ShadowRoot 子树）且不识 zwsh 形态，
+            // shadow 树内焦点（`zwsh<len>:<host>|<local>`，R3254-M7' FocusChanged 通道
+            // 的 shadow 臂铸造地址）解析恒 miss → `:focus` 永不命中宿主（B4
+            // focus-pseudo-on-shadow-host 勘根）。单漏斗含 shadow 域 fastpath，常规
+            // selector 路径行为不变（structural fastpath + 通用引擎同序）。
+            && let Some(id) = crate::js_dom_bridge::find_by_selector(doc, selector)
         {
             doc.set_focus_element(Some(id));
         }
@@ -755,8 +761,15 @@ impl RenderPipeline {
         let mut ratios = HashMap::new();
         let mut no_ratio = HashMap::new();
         for img_id in doc.get_elements_by_tag_name("img") {
-            // R4162：src → srcset → picture/source 有效图源（replaced-element-012）。
-            if let Some(src) = crate::effective_img_src(doc, img_id) {
+            // s306：src → srcset → picture/source 有效图源，paint 键与 shim
+            // select-an-image-source 选源同口径（R4162 首候选近似 → 密度择优）。
+            // 选源 None 时回落旧首候选近似取键——全候选 invalid 且无 src 的
+            // broken 形态（r5386 '9e999…x'）密度折算面恒 +Inf → dim 0，键
+            // 缺席会把该面从 dim 0 退化成无条目 NaN（shim naturalWidth 0 面）。
+            let src =
+                crate::img_selected_source_url(doc, img_id, self.viewport_width as f64, self.viewport_height as f64)
+                    .or_else(|| crate::effective_img_src(doc, img_id));
+            if let Some(src) = src {
                 let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&size) = self.image_sizes.get(&key) {
                     sizes.insert(img_id, size);
@@ -918,6 +931,55 @@ impl RenderPipeline {
                     st.width = LengthValue::Px(w.into());
                 }
                 if matches!(st.height, LengthValue::Auto) {
+                    st.height = LengthValue::Px(h.into());
+                }
+            }
+        }
+    }
+
+    /// s306（html-semantics M2）：picture `source` 维度属性 → img 缺省尺寸
+    ///（R4044 同款 Auto→Px post-style pass——source width/height 不进
+    /// style-system presentational hints（crate 边界不混写），img 自身属性
+    /// 仍在 hints 面）。spec：选中 source 的 width/height 在 img 自身缺对应
+    /// 属性时逐轴充作 img 维度属性缺省；作者 CSS/自身属性在场（style 非
+    /// Auto）时让位。
+    /// https://html.spec.whatwg.org/multipage/embedded-content.html#the-source-element
+    pub(crate) fn apply_source_dimension_defaults(
+        &self,
+        doc: &zero_dom::Document,
+        styles: &mut HashMap<NodeId, ComputedStyle>,
+    ) {
+        use zero_css_parser::values::LengthValue;
+        let ctx = self.media_context();
+        let mut targets: Vec<(NodeId, Option<f32>, Option<f32>)> = Vec::new();
+        for img_id in doc.get_elements_by_tag_name("img") {
+            let Some(src_id) = select_source_element(doc, img_id, &ctx) else {
+                continue;
+            };
+            let w = if doc.get_attribute(img_id, "width").is_none() {
+                Self::parse_nonnegative_int_attr(doc.get_attribute(src_id, "width"))
+            } else {
+                None
+            };
+            let h = if doc.get_attribute(img_id, "height").is_none() {
+                Self::parse_nonnegative_int_attr(doc.get_attribute(src_id, "height"))
+            } else {
+                None
+            };
+            if w.is_some() || h.is_some() {
+                targets.push((img_id, w, h));
+            }
+        }
+        for (nid, w, h) in targets {
+            if let Some(st) = styles.get_mut(&nid) {
+                if let Some(w) = w
+                    && matches!(st.width, LengthValue::Auto)
+                {
+                    st.width = LengthValue::Px(w.into());
+                }
+                if let Some(h) = h
+                    && matches!(st.height, LengthValue::Auto)
+                {
                     st.height = LengthValue::Px(h.into());
                 }
             }
@@ -1227,7 +1289,7 @@ impl RenderPipeline {
         };
         let stylesheets = self.cached_stylesheets.clone();
         let doc = doc_rc.borrow();
-        let styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let styles = compute_styles_for_doc(&mut self.style_system, &doc, &stylesheets);
         drop(doc);
         self.cached_styles = styles;
     }
@@ -1243,7 +1305,7 @@ impl RenderPipeline {
     ) -> HashMap<NodeId, ComputedStyle> {
         self.animation_clock
             .register_from_stylesheets(stylesheets, &self.media_context());
-        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, doc, stylesheets);
 
         // 4b. 过渡检测：比较新旧基础样式，启动必要的过渡
         {
@@ -1423,8 +1485,9 @@ impl RenderPipeline {
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
         // R342：动画/过渡段（4b–cleanup）抽取为 `tick_animation_styles` 共用 helper
         //（runner 的 `tick_animation_clock` 泵复用同一段；行为等价重构零语义变化）。
-        let styles = self.tick_animation_styles(&doc, &stylesheets, current_time);
+        let mut styles = self.tick_animation_styles(&doc, &stylesheets, current_time);
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
+        self.apply_source_dimension_defaults(&doc, &mut styles);
 
         // 6. 计算布局
         let layout_start = Instant::now();
@@ -1706,7 +1769,7 @@ impl RenderPipeline {
         let style_start = Instant::now();
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, &doc, &stylesheets);
         // 3.2 R3882：静态动画首帧（CSS Animations §4 未知时间轴下的渲染近似）——
         // `render_html` 是无时间轴的静态渲染路径（reftest 截图、首帧绘制），对声明了
         // animation-name 的元素按 t=0 求值一次插值（fill-mode/backwards 与负 delay
@@ -1753,6 +1816,7 @@ impl RenderPipeline {
         // image 固有尺寸 sizing（width/height Auto 时设为图尺寸），build_subtree 已抑制其
         // 子节点，paint_img_element 渲染图片。绕 R109 IFC（见 R2438 child-injection 证伪）。
         self.apply_content_url_replaced_sizing(&doc, &mut styles);
+        self.apply_source_dimension_defaults(&doc, &mut styles);
 
         // 4. 计算布局
         let layout_start = Instant::now();
@@ -1911,7 +1975,8 @@ impl RenderPipeline {
         // 计算样式
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, doc, stylesheets);
+        self.apply_source_dimension_defaults(doc, &mut styles);
 
         // 计算布局
         let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
@@ -1999,12 +2064,14 @@ impl RenderPipeline {
         // 增量路径作 base）
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, doc, stylesheets);
         // B-1/K4b：重级联覆盖 styles 整表后回 graft 伪元素替身样式（caret 参与布局、
         // tooltip 替身恢复 display:none——见 regraft_pseudo_standin_styles）；先于布局，
-        // 替身盒以正确样式参与本次 relayout。
+        // 替身盒以正确样式参与本次 relayout。（增量路径与全量同源：经
+        // compute_styles_for_doc 保 shadow scope 处理，R5478-R5481 重构形态。）
         regraft_pseudo_standin_styles(doc, &mut styles);
         self.cached_styles = styles.clone();
+        self.apply_source_dimension_defaults(doc, &mut styles);
 
         // 计算布局
         let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
@@ -2558,7 +2625,7 @@ impl RenderPipeline {
         }
         if self.cached_styles.is_empty() {
             // 首帧（render_html 路径不维护 cached_styles）：全量计算并作为 base。
-            let s = self.style_system.compute_styles(doc, &stylesheets);
+            let s = compute_styles_for_doc(&mut self.style_system, doc, &stylesheets);
             self.cached_styles = s;
         } else {
             self.style_system
@@ -3932,17 +3999,22 @@ fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Styleshee
         return None;
     }
     let css_text = doc.text_content(style_id)?;
-    let css_text = strip_cdata(css_text.trim());
+    let css_text = css_text.trim();
     // R4022（XML #PCDATA 实体解码）：XHTML 文档（content_is_xml）的 <style> 内容
     // 按 XML 语义是 **已解析字符数据**——`&gt;` 等实体应在文档解析期解码。ZW 对
     // .xht 用 HTML tokenizer（<style> = raw text，实体保留），致 `body &gt; div`
     // 以实体串进入 CSS 解析器（选择器损坏：inline-table-width-001a/001b/002a/002b
     // 的 width/display 规则错位命中父子 div）。纯 HTML 文档 <style> raw text
     // 不解码实体（HTML 语义，chromium 同），故仅 content_is_xml gate。
+    // R5426：CDATA 段内实体**不**解码（XML 1.0 §2.7 CDATA Sections——段内不识别
+    // markup，字符引用按字面文本保留；strip_cdata 先剥壳会让 R4022 臂误吞段内实体，
+    // content-177 的 `content:'TEST &#x46;...'` 被解成 "TEST FAIL" 实证）。XML 侧
+    // 解码须先于任何剥壳（段按首个 `]]>` 收口，不嵌套）；HTML 侧 strip_cdata 为
+    // 前后缀锚定匹配，须 trim 后调用（原口径）。
     let css_text = if doc.content_is_xml() {
-        decode_xml_char_references(&css_text)
+        decode_xml_style_css(css_text)
     } else {
-        css_text.to_string()
+        strip_cdata(css_text).into_owned()
     };
     if css_text.is_empty() {
         return None;
@@ -4066,6 +4138,99 @@ pub(crate) fn collect_shadow_scoped_sheets(
         };
         out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
     }
+    out
+}
+
+/// 45 号 M1（CSS Scoping §3，https://drafts.csswg.org/css-scoping/#declarations-in-shadow-trees）：
+/// shadow 树内联 `<style>` 作用域表收集——每个 shadow root 一个 [`ShadowScopeStylesheets`]，
+/// 作者级联源 = 本树 `<style>`（树序）。走查本 shadow 子树、**跳过嵌套 ShadowRoot 子树**
+///（各归其作用域）；`<style>` 过 [`style_sheet_if_eligible`] 三门（type/media/disabled）
+/// 与文档面同语义。无 shadow 树 / 树内无表 → 空向量（调用方回落 [`StyleSystem::compute_styles`]，
+/// 非 shadow 页零行为变化、仅一次 shadow_root_ids 扫描开销）。
+///
+/// FIXME(45-M2+)：`<link rel=stylesheet>` 外部表与 `ShadowRoot.adoptedStyleSheets` 不在
+/// 本收集面（M1 语料为树内联 `<style>`；外部表经 gCS 通道 [`collect_shadow_scoped_sheets`]
+/// 已接，主管线待 M2 一并接入）。
+pub(crate) fn collect_inline_shadow_scopes(doc: &Document) -> Vec<zero_style_system::ShadowScopeStylesheets> {
+    let mut out = Vec::new();
+    for root in doc.shadow_root_ids() {
+        let mut sheets = Vec::new();
+        collect_shadow_inline_sheets(doc, root, &mut sheets);
+        if !sheets.is_empty() {
+            out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
+        }
+    }
+    out
+}
+
+/// [`collect_inline_shadow_scopes`] 的树序走查：元素 `<style>` 过门收表；嵌套
+/// ShadowRoot 子树整体跳过（其 `<style>` 属该层作用域）；其余元素递归下降。
+fn collect_shadow_inline_sheets(doc: &Document, node: NodeId, sheets: &mut Vec<Stylesheet>) {
+    for child in doc.child_nodes(node) {
+        match doc.get(child).map(|n| &n.kind) {
+            Some(NodeKind::Element(e)) if e.name.local.as_ref().eq_ignore_ascii_case("style") => {
+                if let Some(sheet) = style_sheet_if_eligible(doc, child) {
+                    sheets.push(sheet);
+                }
+            }
+            // 嵌套 shadow 树：整棵子树不进本级收集（CSS Scoping：树内 `<style>`
+            // 只影响本树——嵌套树走其自身 ShadowRoot 的作用域条目）。
+            Some(NodeKind::ShadowRoot(_)) => {}
+            Some(NodeKind::Element(_)) => {
+                collect_shadow_inline_sheets(doc, child, sheets);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 45 号 M1：全量样式计算统一入口——文档含带表 shadow 树时走
+/// [`StyleSystem::compute_styles_with_shadow`]（CSS Scoping 作用域级联 + `:host`
+/// 宿主段），否则原 [`StyleSystem::compute_styles`]（逐位一致）。六个主管线
+/// compute 调用点共用；gCS/handle 视图通道已有各自接入（computed_style.rs）。
+pub(crate) fn compute_styles_for_doc(
+    style_system: &mut StyleSystem,
+    doc: &Document,
+    stylesheets: &[Stylesheet],
+) -> HashMap<NodeId, ComputedStyle> {
+    let shadow_scopes = collect_inline_shadow_scopes(doc);
+    if shadow_scopes.is_empty() {
+        style_system.compute_styles(doc, stylesheets)
+    } else {
+        style_system.compute_styles_with_shadow(doc, stylesheets, &shadow_scopes)
+    }
+}
+
+/// XHTML `<style>` 内容的 CDATA 感知实体解码（R4022 + R5426）。
+///
+/// XML 1.0 §2.7（CDATA Sections，https://www.w3.org/TR/xml/#sec-cdata-sect）：
+/// 段内不识别 markup——字符引用按字面文本保留；段外为已解析字符数据，
+/// 实体照常解码（R4022）。逐段解码后剥壳拼接：[`strip_cdata`] 只处理整体单壳
+/// （CSS21 套件绝大多数），此函数额外覆盖段中段与多段情形；未闭合 `<![CDATA[`
+/// 视整个剩余文本为段（标记不识别），字面保留。
+pub(crate) fn decode_xml_style_css(css: &str) -> String {
+    const OPEN: &str = "<![CDATA[";
+    const CLOSE: &str = "]]>";
+    if !css.contains(OPEN) {
+        return decode_xml_char_references(css);
+    }
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&decode_xml_char_references(&rest[..start]));
+        let after_open = &rest[start + OPEN.len()..];
+        match after_open.find(CLOSE) {
+            Some(close) => {
+                out.push_str(&after_open[..close]);
+                rest = &after_open[close + CLOSE.len()..];
+            }
+            None => {
+                out.push_str(after_open);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(&decode_xml_char_references(rest));
     out
 }
 

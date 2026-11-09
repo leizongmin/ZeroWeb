@@ -25,6 +25,7 @@ mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
 mod testharness_pointerlock;
+mod testharness_py_routes;
 mod testharness_svg;
 mod testharness_wasm_core;
 mod testharness_webcrypto;
@@ -97,6 +98,8 @@ Commands:
                        (performance-api-compat goal M1 / DC-1)
   testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
                        testharness cases (web-components goal M1 / DC-1)
+  testharness-shadow-dom  Run shadow-dom render-coupled supplement pool cases
+                       (shadow-dom-rendering goal B6)
   testharness-intersection-observer  Run imported IntersectionObserver testharness cases
                        (event-loop-spec goal M1 / DC-1)
   testharness-resize-observer  Run imported ResizeObserver testharness cases
@@ -138,6 +141,94 @@ Commands:
                        face; css-testharness-compat goal M3)
   testharness-css-text  Run upstream css-text testharness cases (CSSOM/style API
                        face; css-testharness-compat goal M3)
+  testharness-cssom  Run upstream cssom testharness cases (CSSOM/style API face;
+                       css-testharness-compat-v2 goal M1)
+  testharness-css-images  Run upstream css-images testharness cases (CSSOM/style
+                       API face; css-testharness-compat-v2 goal M1)
+  testharness-filter-effects  Run upstream filter-effects testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-ui  Run upstream css-ui testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M1)
+  testharness-css-borders  Run upstream css-borders testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-logical  Run upstream css-logical testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-text-decor  Run upstream css-text-decor testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-box  Run upstream css-box testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M1)
+  testharness-css-pseudo  Run upstream css-pseudo testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-display  Run upstream css-display testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-mixins  Run upstream css-mixins testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-syntax  Run upstream css-syntax testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-fill-stroke  Run upstream fill-stroke testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-shadow  Run upstream css-shadow testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-size-adjust  Run upstream css-size-adjust testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-content  Run upstream css-content testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-will-change  Run upstream css-will-change testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-color-adjust  Run upstream css-color-adjust testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-easing  Run upstream css-easing testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-compositing  Run upstream compositing testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-counter-styles  Run upstream css-counter-styles testharness
+                       cases (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-nesting  Run upstream css-nesting testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-color-hdr  Run upstream css-color-hdr testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-env  Run upstream css-env testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M1)
+  testharness-css-conditional  Run upstream css-conditional testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-mediaqueries  Run upstream mediaqueries testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-cascade  Run upstream css-cascade testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css2  Run upstream CSS2 html-face testharness cases (CSSOM/style
+                       API face; css-testharness-compat-v2 goal M2)
+  testharness-css-forms  Run upstream css-forms testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-link-params  Run upstream css-link-params testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-font-loading  Run upstream css-font-loading testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-gaps  Run upstream css-gaps testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M2)
+  testharness-css-flexbox  Run upstream css-flexbox testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-multicol  Run upstream css-multicol testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-position  Run upstream css-position testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-overflow  Run upstream css-overflow testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-tables  Run upstream css-tables testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-lists  Run upstream css-lists testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-inline  Run upstream css-inline testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-scroll-snap  Run upstream css-scroll-snap testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-viewport  Run upstream css-viewport testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-break  Run upstream css-break testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-contain  Run upstream css-contain testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-writing-modes  Run upstream css-writing-modes testharness
+                       cases (CSSOM/style API face; css-testharness-compat-v2 goal M2)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -148,6 +239,28 @@ Commands:
                        (security-hardening goal M1 / DC-1)
   testharness-secure-contexts  Run imported Secure Contexts testharness cases
                        (security-hardening goal M1 / DC-1)
+  testharness-quirks  Run imported quirks-mode testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-domparsing  Run imported DOMParser/XMLSerializer testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-domxpath  Run imported XPathEvaluator testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-subresource-integrity  Run imported SRI testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-cors  Run imported cors testharness cases (.htm face)
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-import-maps  Run imported import-maps testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-referrer-policy  Run imported referrer-policy testharness cases
+                       (gap-batch1 goal M3)
+  testharness-input-events  Run imported input-events testharness cases
+                       (gap-batch1 goal M3)
+  testharness-preload  Run imported preload testharness cases
+                       (gap-batch1 goal M3)
+  testharness-wai-aria  Run imported wai-aria testharness cases
+                       (gap-batch1 goal M3)
+  testharness-storage  Run imported storage testharness cases
+                       (gap-batch1 goal M3)
   testharness-hr-time  Run imported hr-time testharness cases
                        (timing-animation-compat goal M1 / DC-1)
   testharness-performance-timeline  Run imported performance-timeline testharness cases
@@ -234,8 +347,9 @@ struct CliOptions {
     jobs: Option<usize>,
     /// 上游 WPT 数据目录。
     wpt_data: Option<String>,
-    /// 渲染媒体类型（DC-12 @media print/screen；R1991）。默认 `Screen`。
-    media_type: zero_css_parser::media_query::MediaType,
+    /// 渲染媒体类型（DC-12 @media print/screen；R1991）。None = 未显式指定（按 case
+    /// 分类——s317 上游 print-reftest 以 print 媒体渲染）；Some 时覆盖 case 分类。
+    media_type: Option<zero_css_parser::media_query::MediaType>,
 }
 
 /// 输出格式。
@@ -249,9 +363,30 @@ enum OutputFormat {
 }
 
 fn main() {
+    // 深组合树用例在默认 8MB OS 主线程栈上爆栈：shadow-dom 999 层嵌套 shadow 链
+    // （wpt-data build-deep-detached-shadow-then-append-text.html，组合树 ~2000 节点）
+    // × `compute_styles_recursive` 逐层栈帧 ≈ 8MB（weekly html-sem 分片
+    // testharness-web-components 空 JSON 红的面）。RUST_MIN_STACK 只影响 std::thread
+    // 派生线程，主线程栈由 OS 定额——整轮 runner 换道 256MB 大栈线程执行；
+    // cmd_* 的 std::process::exit 在任意线程均直接终止进程，退出码语义不变，
+    // panic 经 join() 传播为 101（与 Rust 运行时 panic 退出码一致）。
+    // 修复挂账：style 递归迭代化为引擎流根治项（此处只换执行道，不触热路径）。
+    let runner = std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(run_main)
+        .expect("spawn runner main thread");
+    match runner.join() {
+        Ok(()) => std::process::exit(0),
+        Err(_) => std::process::exit(101),
+    }
+}
+
+/// 原 main 主体——在 [`main`] 换道的大栈线程上执行。
+fn run_main() {
     // ②A-env（renderer 信任边界 ②）：runner 即自动化——置测试模式信号，本进程 webview
     // 保留 `__zw*` 测试钩子（counter-plugin 跳过；testdriver stub 依赖）。
-    // SAFETY: main 启动首语句、单线程期，先于一切线程与 WebView 创建。
+    // SAFETY: run_main 启动首语句、单线程期（此刻新线程外无其他零引擎线程），先于一切
+    // WebView 创建。
     unsafe {
         std::env::set_var("ZW_RENDERER_AUTOMATION", "1");
     }
@@ -304,7 +439,7 @@ fn main() {
         use_gpu: false,
         jobs: None,
         wpt_data: None,
-        media_type: zero_css_parser::media_query::MediaType::Screen,
+        media_type: None,
     };
 
     // 解析选项参数
@@ -357,8 +492,8 @@ fn main() {
                 i += 1;
                 if i < args.len() {
                     match args[i].to_ascii_lowercase().as_str() {
-                        "print" => options.media_type = zero_css_parser::media_query::MediaType::Print,
-                        "screen" => options.media_type = zero_css_parser::media_query::MediaType::Screen,
+                        "print" => options.media_type = Some(zero_css_parser::media_query::MediaType::Print),
+                        "screen" => options.media_type = Some(zero_css_parser::media_query::MediaType::Screen),
                         other => eprintln!("Unknown --media value '{other}' (expected print|screen), ignoring"),
                     }
                 }
@@ -429,6 +564,9 @@ fn main() {
             testharness_console::run_console_cases(wpt_root, filter)
         }),
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
+        "testharness-shadow-dom" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness::run_shadow_render_pool_cases(wpt_root, filter)
+        }),
         "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
         "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),
         "testharness-clipboard-apis" => cmd_testharness_clipboard_apis(&options, filter.as_deref()),
@@ -449,6 +587,50 @@ fn main() {
         "testharness-css-motion" => cmd_testharness_css_motion(&options, filter.as_deref()),
         "testharness-css-grid" => cmd_testharness_css_grid(&options, filter.as_deref()),
         "testharness-css-text" => cmd_testharness_css_text(&options, filter.as_deref()),
+        "testharness-cssom" => cmd_testharness_cssom(&options, filter.as_deref()),
+        "testharness-css-images" => cmd_testharness_css_images(&options, filter.as_deref()),
+        "testharness-filter-effects" => cmd_testharness_filter_effects(&options, filter.as_deref()),
+        "testharness-css-ui" => cmd_testharness_css_ui(&options, filter.as_deref()),
+        "testharness-css-borders" => cmd_testharness_css_borders(&options, filter.as_deref()),
+        "testharness-css-logical" => cmd_testharness_css_logical(&options, filter.as_deref()),
+        "testharness-css-text-decor" => cmd_testharness_css_text_decor(&options, filter.as_deref()),
+        "testharness-css-box" => cmd_testharness_css_box(&options, filter.as_deref()),
+        "testharness-css-pseudo" => cmd_testharness_css_pseudo(&options, filter.as_deref()),
+        "testharness-css-display" => cmd_testharness_css_display(&options, filter.as_deref()),
+        "testharness-css-mixins" => cmd_testharness_css_mixins(&options, filter.as_deref()),
+        "testharness-css-syntax" => cmd_testharness_css_syntax(&options, filter.as_deref()),
+        "testharness-fill-stroke" => cmd_testharness_fill_stroke(&options, filter.as_deref()),
+        "testharness-css-shadow" => cmd_testharness_css_shadow(&options, filter.as_deref()),
+        "testharness-css-size-adjust" => cmd_testharness_css_size_adjust(&options, filter.as_deref()),
+        "testharness-css-content" => cmd_testharness_css_content(&options, filter.as_deref()),
+        "testharness-css-will-change" => cmd_testharness_css_will_change(&options, filter.as_deref()),
+        "testharness-css-color-adjust" => cmd_testharness_css_color_adjust(&options, filter.as_deref()),
+        "testharness-css-easing" => cmd_testharness_css_easing(&options, filter.as_deref()),
+        "testharness-compositing" => cmd_testharness_compositing(&options, filter.as_deref()),
+        "testharness-css-counter-styles" => cmd_testharness_css_counter_styles(&options, filter.as_deref()),
+        "testharness-css-nesting" => cmd_testharness_css_nesting(&options, filter.as_deref()),
+        "testharness-css-color-hdr" => cmd_testharness_css_color_hdr(&options, filter.as_deref()),
+        "testharness-css-env" => cmd_testharness_css_env(&options, filter.as_deref()),
+        "testharness-css-conditional" => cmd_testharness_css_conditional(&options, filter.as_deref()),
+        "testharness-mediaqueries" => cmd_testharness_mediaqueries(&options, filter.as_deref()),
+        "testharness-css-cascade" => cmd_testharness_css_cascade(&options, filter.as_deref()),
+        "testharness-css2" => cmd_testharness_css2(&options, filter.as_deref()),
+        "testharness-css-forms" => cmd_testharness_css_forms(&options, filter.as_deref()),
+        "testharness-css-link-params" => cmd_testharness_css_link_params(&options, filter.as_deref()),
+        "testharness-css-font-loading" => cmd_testharness_css_font_loading(&options, filter.as_deref()),
+        "testharness-css-gaps" => cmd_testharness_css_gaps(&options, filter.as_deref()),
+        "testharness-css-flexbox" => cmd_testharness_css_flexbox(&options, filter.as_deref()),
+        "testharness-css-multicol" => cmd_testharness_css_multicol(&options, filter.as_deref()),
+        "testharness-css-position" => cmd_testharness_css_position(&options, filter.as_deref()),
+        "testharness-css-overflow" => cmd_testharness_css_overflow(&options, filter.as_deref()),
+        "testharness-css-tables" => cmd_testharness_css_tables(&options, filter.as_deref()),
+        "testharness-css-lists" => cmd_testharness_css_lists(&options, filter.as_deref()),
+        "testharness-css-inline" => cmd_testharness_css_inline(&options, filter.as_deref()),
+        "testharness-css-scroll-snap" => cmd_testharness_css_scroll_snap(&options, filter.as_deref()),
+        "testharness-css-viewport" => cmd_testharness_css_viewport(&options, filter.as_deref()),
+        "testharness-css-break" => cmd_testharness_css_break(&options, filter.as_deref()),
+        "testharness-css-contain" => cmd_testharness_css_contain(&options, filter.as_deref()),
+        "testharness-css-writing-modes" => cmd_testharness_css_writing_modes(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -458,6 +640,17 @@ fn main() {
         "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
         "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
         "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
+        "testharness-quirks" => cmd_testharness_quirks(&options, filter.as_deref()),
+        "testharness-domparsing" => cmd_testharness_domparsing(&options, filter.as_deref()),
+        "testharness-domxpath" => cmd_testharness_domxpath(&options, filter.as_deref()),
+        "testharness-subresource-integrity" => cmd_testharness_subresource_integrity(&options, filter.as_deref()),
+        "testharness-cors" => cmd_testharness_cors(&options, filter.as_deref()),
+        "testharness-import-maps" => cmd_testharness_import_maps(&options, filter.as_deref()),
+        "testharness-referrer-policy" => cmd_testharness_referrer_policy(&options, filter.as_deref()),
+        "testharness-input-events" => cmd_testharness_input_events(&options, filter.as_deref()),
+        "testharness-preload" => cmd_testharness_preload(&options, filter.as_deref()),
+        "testharness-wai-aria" => cmd_testharness_wai_aria(&options, filter.as_deref()),
+        "testharness-storage" => cmd_testharness_storage(&options, filter.as_deref()),
         "testharness-hr-time" => cmd_testharness_hr_time(&options, filter.as_deref()),
         "testharness-performance-timeline" => cmd_testharness_performance_timeline(&options, filter.as_deref()),
         "testharness-user-timing" => cmd_testharness_user_timing(&options, filter.as_deref()),
@@ -1689,6 +1882,302 @@ fn cmd_testharness_css_text(options: &CliOptions, filter: Option<&str>) {
     });
 }
 
+/// `testharness-cssom` / `testharness-css-images` / `testharness-filter-effects`
+/// / `testharness-css-ui` / `testharness-css-borders` / `testharness-css-logical`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M1 批次 1——B1 值/属性解析序列化簇首批 6 目录；契约与退出码同
+/// `cmd_testharness_css_values`：共享底座 skip 规则单点，病态案谓词排除，
+/// 记录模式不设 land 门禁）。
+fn cmd_testharness_cssom(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_cssom_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_images(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_images_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_filter_effects(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_filter_effects_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_ui(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_ui_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_borders(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_borders_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_logical(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_logical_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-text-decor` / `testharness-css-box` / `testharness-css-pseudo`
+/// / `testharness-css-display` / `testharness-css-mixins` / `testharness-css-syntax`
+/// / `testharness-fill-stroke` / `testharness-css-shadow` / `testharness-css-size-adjust`
+/// / `testharness-css-content` / `testharness-css-will-change` / `testharness-css-color-adjust`
+/// / `testharness-css-easing` / `testharness-compositing` / `testharness-css-counter-styles`
+/// / `testharness-css-nesting` / `testharness-css-color-hdr` / `testharness-css-env`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M1 批次 2——B1 值/属性解析序列化簇余 18 目录；契约与退出码同
+/// `cmd_testharness_css_values`：共享底座 skip 规则单点，病态案谓词排除，
+/// 记录模式不设 land 门禁）。
+fn cmd_testharness_css_text_decor(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_text_decor_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_box(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_box_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_pseudo(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_pseudo_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_display(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_display_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_mixins(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_mixins_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_syntax(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_syntax_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_fill_stroke(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_fill_stroke_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_shadow(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_shadow_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_size_adjust(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_size_adjust_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_content(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_content_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_will_change(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_will_change_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_color_adjust(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_color_adjust_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_easing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_easing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_compositing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_compositing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_counter_styles(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_counter_styles_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_nesting(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_nesting_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_color_hdr(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_color_hdr_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_env(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_env_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-conditional` / `testharness-mediaqueries` / `testharness-css-cascade`
+/// / `testharness-css2` / `testharness-css-forms` / `testharness-css-link-params`
+/// / `testharness-css-font-loading`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M2 批次 3——B2 规则/条件/级联簇 7 目录，CSS2 只含 html 面——.xht
+/// XML 面不在通道；契约与退出码同 `cmd_testharness_css_values`：共享底座
+/// skip 规则单点，病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_conditional(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_conditional_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_mediaqueries(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_mediaqueries_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_cascade(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_cascade_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css2(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css2_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_forms(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_forms_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_link_params(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_link_params_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_font_loading(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_font_loading_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-gaps` / `testharness-css-flexbox` / `testharness-css-multicol`
+/// / `testharness-css-position` / `testharness-css-overflow` / `testharness-css-tables`
+/// / `testharness-css-lists` / `testharness-css-inline` / `testharness-css-scroll-snap`
+/// / `testharness-css-viewport` / `testharness-css-break` / `testharness-css-contain`
+/// / `testharness-css-writing-modes`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M2 批次 4——B3 混合布局簇 13 目录；解析/序列化份额入账，布局探测面
+/// 失败归口布局账；契约与退出码同 `cmd_testharness_css_values`：共享底座
+/// skip 规则单点，病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_gaps(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_gaps_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_flexbox(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_flexbox_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_multicol(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_multicol_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_position(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_position_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_overflow(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_overflow_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_tables(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_tables_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_lists(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_lists_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_inline(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_inline_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_scroll_snap(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_scroll_snap_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_viewport(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_viewport_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_break(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_break_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_contain(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_contain_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_writing_modes(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_writing_modes_cases(wpt_root, filter)
+    });
+}
+
 /// `testharness-csp` / `testharness-mixed-content` / `testharness-secure-contexts`
 /// 子命令 — 跑导入的上游 CSP / Mixed Content / Secure Contexts testharness 用例
 /// （security-hardening goal M1 / DC-1——三 corpus window 可执行面基线）。
@@ -1713,6 +2202,95 @@ fn cmd_testharness_mixed_content(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_secure_contexts(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_secure_contexts_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-quirks` / `testharness-domparsing` / `testharness-domxpath` /
+/// `testharness-subresource-integrity` / `testharness-cors` /
+/// `testharness-import-maps` 子命令 — 跑导入的上游 gap-batch1 六 corpus（quirks
+/// 模式判定 / DOMParser+XMLSerializer / XPathEvaluator / SRI / cors /
+/// import-maps）window 可执行子集（gap-batch1 goal M1 / DC-2——CONFIRMED 六面
+/// 通道五件套，审计锚点：dom parser.rs R5346、shim part02.js R3019、part06.js
+/// R2981、part01.js `_zwFetchVerifyIntegrity`、security/cors.rs s153、
+/// script-sandbox/import_map.rs）。
+///
+/// 用例由 `fetch-gap-batch1-subset.sh` 按需拉到 `wpt-data/`（gitignored），运行面
+/// 按内容规则筛减（`gap_batch1_case_skipped`：ref 页 / manual / 非 testharness
+/// 形态 / iframe / worker 面）。退出码：有用例非 Pass 或用例集为空 → 1
+/// （observers 先例）。基线首跑即便大量 Fail 也只用于记录通过率（agent 经
+/// `--format json` 捕获后写 evidence/），不作为 land 门禁。filter 按路径子串
+/// 透传：make testharness-quirks FILTER=unitless。
+fn cmd_testharness_quirks(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_quirks_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_domparsing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_domparsing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_domxpath(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_domxpath_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_subresource_integrity(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_subresource_integrity_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_cors(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_cors_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_import_maps(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_import_maps_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-referrer-policy` / `testharness-input-events` /
+/// `testharness-preload` / `testharness-wai-aria` / `testharness-storage`
+/// 子命令 — 跑导入的上游 gap-batch1 五 corpus（referrer-policy / input-events
+/// / preload / wai-aria / storage）window 可执行子集（gap-batch1 goal M3——
+/// LIKELY 五面按 M0 甄别池逐面入账；池清单与引擎缺位归因见
+/// evidence/2026-11-06-m0-likely-facet-triage.md）。skip 规则与 M1 六面共用
+/// `gap_batch1_case_skipped`；manual/ 目录不进子目录清单。退出码与 filter
+/// 语义同 M1 六面（见 `cmd_testharness_quirks` 文档）。
+fn cmd_testharness_referrer_policy(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_referrer_policy_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_input_events(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_input_events_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_preload(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_preload_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_wai_aria(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_wai_aria_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_storage(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_storage_cases(wpt_root, filter)
     });
 }
 
@@ -2742,7 +3320,10 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         let mut config = configs[*idx].clone();
         config.viewport_width = options.viewport_width as u32;
         config.viewport_height = options.viewport_height as u32;
-        config.media_type = options.media_type;
+        // s317：CLI 未显式 --media 时不覆盖（per-case print-reftest 分类生效）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
 
         if options.use_gpu {
             run_reftest_gpu(case, &config)
@@ -2927,7 +3508,10 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
         // 用例尾清防其他渲染路径（GPU 腿复用线程等）残留。
         reftest::set_current_case_doc_url(Some(format!("https://wpt.live/{}", case.id)));
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
-        config.media_type = options.media_type;
+        // s317：CLI 未显式 --media 时不覆盖（per-case print-reftest 分类生效）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
         config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
@@ -3075,7 +3659,10 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
 
     for case in &filtered {
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
-        config.media_type = options.media_type;
+        // s317：CLI 未显式 --media 时不覆盖（per-case print-reftest 分类生效）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
         config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
@@ -3253,10 +3840,9 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         if !oracle_path.exists() {
             return (case.id.clone(), false, None, strict_thresh_pct, false, 0, 0);
         }
-        let config = ReftestConfig {
+        let mut config = ReftestConfig {
             viewport_width: options.viewport_width as u32,
             viewport_height: options.viewport_height as u32,
-            media_type: options.media_type,
             // R4283：与 self-source upstream 路径同口径——配 wpt_root 使
             // /common/reftest-wait.js、rendering-utils.js 可解析，脚本 DOM 变更
             // （waitForAtLeastOneFrame().then(...) 后 rename/remove）在 oracle 渲染中
@@ -3265,6 +3851,11 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             wpt_root: Some(wpt_data_dir.clone()),
             ..Default::default()
         };
+        // s317：CLI 未显式 --media 时按 Screen 兜底（oracle 对比页走 case.to_config
+        // 的 print 分类面不在此路——本命令按 category 自建 config）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
         let (test_fb, layout_root, mutated_html) =
             render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, case.base_dir.as_deref());
         // R57（M3）：canvas oracle A/B 的 canvas 区域对比——DC-3 测的是 canvas 绘制结果，

@@ -609,6 +609,30 @@ pub(crate) fn vertical_table_slot_depth(
     })
 }
 
+/// R5444 kill-switch 判据（CSS2 §17.5.2 table intrinsic = 流内内容 + css-position-3
+/// §9.1，R5370 同门）：OOF（absolute/fixed）子不计 cell/table 内部盒固有宽。旧径
+/// 三臂（显式宽/R4028 max-content/95% 启发式）+ char/leaf 文本回退都把 abs 子的
+/// laid-out/DOM max-content 计入——s-11-1-1b-005 探针实证 td(width:20px) + abs p →
+/// 列/表 279.5（p max-content），cell 黑底带随之 279.5 宽致 1.52%。
+/// `ZW_CELL_INTRINSIC_OOF_SKIP=0` 回退计数行为（R4028/R4029 提交态）。
+/// 非 table 盒不走此判据——R5300 abs 塌 0 补测链依赖普通块盒的 abs 文本宽度量
+///（ZW abs 定位以父盒为 sizing 语境；chrome §10.1 ICB 语义偏差另案挂账 D2）。
+pub(crate) fn cell_intrinsic_oof_skip_enabled() -> bool {
+    static ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_INTRINSIC_OOF_SKIP").as_deref() != Ok("0"));
+    *ON
+}
+
+/// R5447（CSS2 §17.5.2 cell content-box 语义；chrome oracle A-G/H 形定谳）：cell 指定
+/// 绝对宽度的列贡献 = width + padding + border（separated 显式臂 + fixed 分支
+/// col_cell_spec 两处，`c5525-fltmult-000` ref 侧 td width:100 + border:20×2 旧径
+/// 列 100 应 140）。`ZW_CELL_SPEC_FRAME=0` 回退 specified 直接当列宽的旧行为。
+pub(crate) fn cell_spec_frame_enabled() -> bool {
+    static ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_SPEC_FRAME").as_deref() != Ok("0"));
+    *ON
+}
+
 pub(crate) fn compute_cell_intrinsic_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -710,6 +734,80 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
         .filter_map(|c| c.node_id.and_then(|id| styles.get(&id)))
         .collect();
     let calc_margin_px = calc_style_margin_px(cell_box.node_id.and_then(|id| styles.get(&id)), &child_styles);
+
+    // R5466 片 3（css-writing-modes-3 §7 正交流 + css-sizing-3 intrinsic sizing）：
+    // htb cell 内 vertical-flow 块级子——cell 固有宽沿子的**块轴**测：vertical IFC
+    // 行内轴（物理垂直）不设限 → min-content = max-content = Σ列宽 = 行高，文本
+    // advance 进物理高（inline 轴）不进宽。旧水平测量把文本 run advance 当宽
+    //（vrl-007 ref 臂 nbsp 句侧列地基 128.8/137.6；chrome oracle：vertical p 块轴
+    // ~20 → 侧列 = max(52, 20) = 52、data 列 400）。混合轴向内容（vertical 子 +
+    // cell 直接文本/水平块子）与块轴 definite 宽子未案驱动不入臂（FIXME：混合域
+    // 应逐子按轴测量合成，definite 宽子应直接贡献指定宽）。
+    // kill-switch `ZW_CELL_ORTHOG_INTRINSIC=0` 回退水平旧径。
+    static ORTHOG_INTRINSIC_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_ORTHOG_INTRINSIC").as_deref() != Ok("0"));
+    let child_axis_ready = |c: &LayoutBox| -> bool {
+        if c.is_absolute || c.is_fixed {
+            return true; // OOF 子不入固有宽（R5444 同口径），不阻断入臂
+        }
+        if !c.writing_mode.is_vertical_block_flow() {
+            return false;
+        }
+        let Some(id) = c.node_id else {
+            return true; // 匿名盒随盒树 writing_mode 判定
+        };
+        styles.get(&id).is_none_or(|s| {
+            // 块轴 definite 宽子不入臂（指定宽应直接贡献，旧径维持）
+            crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.width, s).is_none()
+                && !matches!(
+                    s.display,
+                    DisplayValue::Inline
+                        | DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+        })
+    };
+    if *ORTHOG_INTRINSIC_ON
+        && !cell_box.writing_mode.is_vertical_block_flow()
+        && !cell_box.children.is_empty()
+        && cell_box.children.iter().all(child_axis_ready)
+        && cell_box.children.iter().any(|c| !c.is_absolute && !c.is_fixed)
+    {
+        let mut block_extent = 0.0f32;
+        for child in &cell_box.children {
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+            let Some(dom_id) = child.node_id else {
+                continue;
+            };
+            let Some(cs) = styles.get(&dom_id) else {
+                continue;
+            };
+            // 行内深度 INFINITY = 单列不折（R4478 同款）；vertical 文本块轴无折行
+            // 压力，min/max 同值。
+            let mut inline_ctx = crate::inline::InlineFormattingContext::new(f32::INFINITY)
+                .with_vertical(true)
+                .with_vertical_rtl(matches!(
+                    child.writing_mode,
+                    zero_style_system::WritingModeValue::VerticalRl
+                ));
+            inline_ctx = crate::inline_finalization::configure_inline_fonts(inline_ctx, inline_fonts, false);
+            inline_ctx.layout(doc, dom_id, styles);
+            let extent = if inline_ctx.lines.is_empty() {
+                let (fs, lh) = crate::inline::resolve_font_metrics(Some(cs));
+                lh.max(fs)
+            } else {
+                inline_ctx.total_height()
+            };
+            block_extent = block_extent.max(extent + child.margin_left + child.margin_right);
+        }
+        if block_extent > 0.0 {
+            return block_extent + padding + cell_box.border_left + cell_box.border_right + calc_margin_px;
+        }
+    }
     let mut content_width = 0.0f32;
     let mut has_explicit_child = false;
 
@@ -781,6 +879,15 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
             content_width = content_width.max(inline_run_sum);
             inline_run_sum = 0.0;
             inline_run_active = false;
+        }
+
+        // R5444：OOF（absolute/fixed）子不计固有宽（三臂在此前全部旁路——显式宽臂
+        // probe D p width:300px 计入 300、R4028 臂 probe C/E max-content 279.5、95%
+        // 臂 laid-out 宽同泄）。abs 子的尺寸/定位语义另案（宽按父 cell 退化可用宽塌
+        // min-content 43，CSS §10.1 应 ICB——R5444 挂账 D2）。flush 在前保 R5261
+        // 「间隔任意 DOM 节点即断」的 run 断链语义。
+        if cell_intrinsic_oof_skip_enabled() && (child.is_absolute || child.is_fixed) {
+            continue;
         }
 
         // R5345（css-sizing-3 §5 intrinsic sizing）：百分比（及 min/max/fit-content）
@@ -883,8 +990,25 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
     let char_width = if is_ahem { font_size } else { font_size * 0.6 };
 
     // 收集单元格内的文本内容长度
-    let text_len = collect_text_length(cell_box, doc);
+    let text_len = collect_text_length(cell_box, doc, styles);
     if text_len > 0 {
+        // R5466 片 1（css-tables-3 §3.6.3 + chrome oracle 探针组）：floor 语境（R364b
+        // 显式宽 cell 的列宽下限）取词级 **min-content**——指定宽是 used width，内容可
+        // 断行（chrome：td width:52 + 块级 p "Sentence after." 侧列 = max(52, 词 min
+        // 57.75) = 57.75，max-content 124.8 不参与列宽）。本 fallback（95% 臂失败的块级
+        // 子域）旧回落 box_content_max_width = max-content，让内容 max-content 越过指定
+        // 宽——R364b 注释自称 min-content 与实现背离（R4028 停用 DOM max 臂防 c5501
+        // 撑破，fallback 同病未防）。min-content 语义与 R5434 col used-width 钳臂
+        //（ZW_TABLE_COL_USED_WIDTH）同构：min-content floor 由内容撑起。
+        // kill-switch `ZW_TABLE_SPEC_FLOOR_MINC=0` 回退 max-content 旧径。
+        static FLOOR_MINC_ON: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_SPEC_FLOOR_MINC").as_deref() != Ok("0"));
+        if for_explicit_floor && *FLOOR_MINC_ON {
+            let mc = crate::intrinsic_sizing::block_min_content_width(cell_box, doc, styles);
+            if mc > 0.0 {
+                return mc + calc_margin_px;
+            }
+        }
         // R702/R679：优先用 intrinsic max-content（DOM-based，不依赖 layout 结果）。
         // collect_text_length 把 block 子之间的空白/换行也计入字符数，致 char_count
         // 估算严重过宽（如 margin-collapse-101：31 字符含大量块间空白 → 930px 列，
@@ -1023,17 +1147,55 @@ fn cell_direct_text_width(
 /// 使用 DOM text_content() 方法获取元素的完整文本内容。
 /// 注意：使用 .chars().count() 计算字符数而非 .len()（字节数），
 /// 因为多字节 Unicode 字符（如 CJK）的字节数不等于字符数。
-pub(crate) fn collect_text_length(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
-    let mut len = 0;
-    if let Some(node_id) = box_node.node_id {
-        if let Some(text) = doc.text_content(node_id) {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                len += trimmed.chars().count();
+pub(crate) fn collect_text_length(
+    box_node: &LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> usize {
+    let Some(root) = box_node.node_id else {
+        return 0;
+    };
+    // R5444：OOF（absolute/fixed）子树文本不计 char 估算（CSS Tables §17.5.2 固有宽
+    // = 流内内容；旧 doc.text_content 递归把纯 abs 内容 cell 的估算撑到 abs 文本宽
+    // ——三臂跳过 OOF 后 char 回退臂成为最后泄漏缝）。除 OOF 剪枝外与旧
+    // text_content 递归拼接 + trim 一次语义一致（collect_text 同构）。kill-switch
+    // `ZW_CELL_INTRINSIC_OOF_SKIP=0` 回退（含 abs 文本）。
+    let skip_oof = cell_intrinsic_oof_skip_enabled();
+    fn collect(
+        id: NodeId,
+        doc: &zero_dom::Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        skip_oof: bool,
+        out: &mut String,
+    ) {
+        let Some(node) = doc.get(id) else {
+            return;
+        };
+        match &node.kind {
+            zero_dom::NodeKind::Text(data) => out.push_str(&data.content),
+            zero_dom::NodeKind::Element(_) => {
+                if skip_oof
+                    && styles.get(&id).is_some_and(|s| {
+                        matches!(
+                            s.position,
+                            zero_css_parser::values::PositionValue::Absolute
+                                | zero_css_parser::values::PositionValue::Fixed
+                        )
+                    })
+                {
+                    return;
+                }
+                for &child in &node.children {
+                    collect(child, doc, styles, skip_oof, out);
+                }
             }
+            _ => {}
         }
     }
-    len
+    let mut text = String::new();
+    collect(root, doc, styles, skip_oof, &mut text);
+    let trimmed = text.trim();
+    trimmed.chars().count()
 }
 
 /// R1146：计算 vertical 表每列的 min-content（最长不可断 word 的宽度）。

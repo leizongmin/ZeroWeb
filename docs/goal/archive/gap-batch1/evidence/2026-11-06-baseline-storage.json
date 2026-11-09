@@ -1,0 +1,42 @@
+[
+  [
+    "storage/partitioned-estimate-usage-details-caches.tentative.https.sub.html",
+    [
+      {
+        "name": "storage/partitioned-estimate-usage-details-caches.tentative.https.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "storage/partitioned-estimate-usage-details-indexeddb.tentative.https.sub.html",
+    [
+      {
+        "name": "storage/partitioned-estimate-usage-details-indexeddb.tentative.https.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "storage/buckets/detached-iframe.https.html",
+    [
+      {
+        "name": "Verify open() on detached iframe returns an error",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'open')\""
+      },
+      {
+        "name": "Verify keys() on detached iframe returns an error",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'open')\""
+      },
+      {
+        "name": "Verify delete() on detached iframe returns an error",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'open')\""
+      }
+    ]
+  ]
+]

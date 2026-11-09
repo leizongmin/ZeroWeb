@@ -26,7 +26,7 @@ impl NodeId {
 // ── QuirksMode 重导出 ───────────────────────────────────────────────
 
 /// 重导出 html5ever 的 QuirksMode 类型。
-pub use html5ever::interface::QuirksMode;
+pub use markup5ever::interface::QuirksMode;
 
 // ── NodeKind ────────────────────────────────────────────────────────
 
@@ -353,6 +353,24 @@ pub struct ShadowRootData {
     pub mode: ShadowRootMode,
     /// Slot 分配策略。
     pub slot_assignment: SlotAssignment,
+    /// 是否为声明式 shadow root（`<template shadowrootmode>` 物化产物）——
+    /// 序列化与 getHTML 以声明式模板形态回写的资格标记（whatwg/dom#831）。
+    pub declarative: bool,
+    /// delegatesFocus（声明式：`shadowrootdelegatesfocus` 布尔属性存在；
+    /// 命令式：attachShadow init 同名字段）。
+    pub delegates_focus: bool,
+    /// clonable（声明式：`shadowrootclonable` 布尔属性存在；命令式：init 同名字段）。
+    pub clonable: bool,
+    /// serializable（声明式：`shadowrootserializable` 布尔属性存在；
+    /// 命令式：init 同名字段）——getHTML({serializableShadowRoots}) 翻转与
+    /// 序列化回写 `shadowrootserializable` 的资格标记。
+    pub serializable: bool,
+    /// referenceTarget（声明式：`shadowrootreferencetarget` 属性值原样捕获，
+    /// 空值属性捕获为空串；命令式：init `referenceTarget`）——None 不回写，
+    /// Some(v) 序列化为 `shadowrootreferencetarget="v"`（spec 序在 clonable
+    /// 之后、customelementregistry 之前）。
+    /// https://dom.spec.whatwg.org/#shadowroot-reference-target
+    pub reference_target: Option<String>,
 }
 
 impl ShadowRootData {
@@ -362,6 +380,11 @@ impl ShadowRootData {
             host: None,
             mode,
             slot_assignment: SlotAssignment::Named,
+            declarative: false,
+            delegates_focus: false,
+            clonable: false,
+            serializable: false,
+            reference_target: None,
         }
     }
 }

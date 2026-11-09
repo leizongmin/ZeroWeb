@@ -1,6 +1,7 @@
 //! html5ever 集成 — HTML 解析器和 TreeSink 实现。
 
 mod declarative_shadow;
+mod selectedcontent;
 mod xhtml_self_close;
 
 use crate::document::Document;
@@ -9,7 +10,7 @@ use crate::node::{
     TextData,
 };
 use hashbrown::HashMap;
-use html5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
+use markup5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
 use markup5ever::{Attribute, QualName};
 use std::borrow::Cow;
 use std::default::Default;
@@ -37,7 +38,22 @@ pub fn parse_html(html: &str) -> Document {
 /// 等 inert 文档（spec：无 browsing context → scripting disabled；noscript 按 markup
 /// 解析、序列化走转义分支）。
 pub fn parse_html_with_scripting(html: &str, scripting_enabled: bool) -> Document {
-    parse_html_with_builder(html, scripting_enabled)
+    parse_html_with_builder(html, scripting_enabled, true)
+}
+
+/// [`parse_html_with_scripting`] 的**声明式 shadow 不物化**变体（opt-in 语义，
+/// whatwg/dom#831）：`<template shadowrootmode=open|close>` 以普通 template 存活
+///（contents 可读、属性值还原源码小写）。消费面 = shim 本地视图解析（innerHTML=
+/// 产物/DOMParser/query 视图——spec：fragment 上下文与 DOMParser 均不物化声明式
+/// 根，物化只属文档加载与 setHTMLUnsafe/parseHTMLUnsafe）。
+/// 注意与真实文档路径的区别：本变体不做 slot 解析副作用（无 ShadowRoot 节点）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+pub fn parse_html_with_scripting_unmaterialized(html: &str, scripting_enabled: bool) -> Document {
+    let mut doc = parse_html_with_builder(html, scripting_enabled, false);
+    // 片段路径同款值还原（[`declarative_shadow::restore_shadowrootmode_values`]）：
+    // template 以普通元素存活，改写值经 getAttribute/序列化可观测。
+    declarative_shadow::restore_shadowrootmode_values(&mut doc);
+    doc
 }
 
 /// HTML 片段解析（spec `html-fragment-parsing-algorithm`）——以 `(namespace, local_name)` 标识的
@@ -86,9 +102,39 @@ pub fn parse_html_fragment_with_scripting(
     let builder = DomBuilder::new();
     let mut opts = ParseOpts::default();
     opts.tree_builder.scripting_enabled = scripting_enabled;
-    let parser = html5ever::parse_fragment(builder, opts, context_qname, Vec::new());
-    let mut doc = parser.one(html);
+    // html5ever 0.38 起 parse_fragment 增第 5 参 `context_element_allows_scripting`
+    //（spec fragment parsing 的 scripting 旗标，影响 context 元素 tokenizer 初始态
+    // 甄别）——与文档级 scripting 旗标同值传入。
+    let parser = html5ever::parse_fragment(builder, opts, context_qname, Vec::new(), scripting_enabled);
+    // 片段路径同享 s173 预变换——html5ever 0.29.1 对 shadowrootmode=open/close 值
+    // 精确匹配走 attach 分支且不插入 template（机制见 [`declarative_shadow`] 模块
+    // 文档）。文档路径已预变换；片段路径（innerHTML/insertAdjacentHTML/
+    // createContextualFragment）此前裸喂 → template 整体消失、contents 扁平化
+    // （shadow-dom 扩面 opt-in 矩阵 ~145F 根因）。opt-in 语义：片段解析不物化
+    // 声明式 shadow root（whatwg/dom#831），template 须以普通 template 存活；
+    // 物化只发生在文档路径与 setHTMLUnsafe/parseHTMLUnsafe。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    let prepassed = declarative_shadow::restore_declarative_shadow_templates(html);
+    let mut doc = parser.one(prepassed.as_ref());
+    declarative_shadow::restore_shadowrootmode_values(&mut doc);
     doc.set_scripting_enabled(scripting_enabled);
+    doc
+}
+
+/// [`parse_html_fragment_with_scripting`] 的**声明式 shadow 物化**变体（M3 Batch 2，
+/// s180/gethtml）——`setHTMLUnsafe` / `parseHTMLUnsafe` 的解析面（whatwg/dom#831：
+/// 物化只属文档加载与 unsafe 双 API）。解析后 [`Document::materialize_declarative_shadow_roots`]
+/// 把 `<template shadowrootmode>` 还原为 ShadowRoot 节点（三个 `shadowroot*` 布尔
+/// 属性进状态位）；被消费 template 无观测面，skip 路径值还原已由片段路径自带。
+/// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+pub fn parse_html_fragment_with_scripting_materialized(
+    html: &str,
+    namespace: &str,
+    local_name: &str,
+    scripting_enabled: bool,
+) -> Document {
+    let mut doc = parse_html_fragment_with_scripting(html, namespace, local_name, scripting_enabled);
+    doc.materialize_declarative_shadow_roots();
     doc
 }
 
@@ -574,8 +620,10 @@ impl TreeSink for DomBuilder {
     }
 }
 
-/// 使用 DomBuilder 解析 HTML（推荐方式）。
-fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
+/// 使用 DomBuilder 解析 HTML（推荐方式）。`declarative_shadows` = 声明式 shadow root
+/// 物化开关（真实文档路径 true；视图路径 false——opt-in 语义见
+/// [`parse_html_with_scripting_unmaterialized`]）。
+fn parse_html_with_builder(html: &str, scripting_enabled: bool, declarative_shadows: bool) -> Document {
     use html5ever::driver::ParseOpts;
     use tendril::TendrilSink;
 
@@ -595,11 +643,16 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
     opts.tree_builder.scripting_enabled = scripting_enabled;
     let parser = html5ever::parse_document(builder, opts);
     let mut doc = parser.one(html);
+    // s324（selectedcontent 初始化）：解析后单遍重建 select 的 enabled
+    // selectedcontent 后代内容快照（时点等价与 spec 差异判据见模块文档）。
+    selectedcontent::initialize_selects(&mut doc);
     // s168：声明式 Shadow DOM 重建——序列化面（serializer ShadowRoot 分支）以
     // `<template shadowrootmode>` 形态落盘，此处解析后还原为 ShadowRoot 节点，
     // drain 重序列化 → 视图重放回环闭合。spec 声明式 shadow DOM：
     // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
-    doc.materialize_declarative_shadow_roots();
+    if declarative_shadows {
+        doc.materialize_declarative_shadow_roots();
+    }
     doc.set_encoding_label(encoding_label);
     doc.set_scripting_enabled(scripting_enabled);
     doc
@@ -873,6 +926,66 @@ mod tests {
         assert!(doc.root().is_valid());
     }
 
+    // ── selectedcontent 解析期初始化（s324） ──
+
+    /// 解析后 select 的 enabled selectedcontent 后代应克隆选中 option 子节点
+    ///（无 `selected` 属性时 display size 1 回落首个非 disabled）。
+    #[test]
+    fn test_selectedcontent_parse_initial_clone_fallback() {
+        let doc = parse_html(
+            "<body><select><button><selectedcontent></selectedcontent></button>\
+             <option>one</option><option>two</option></select></body>",
+        );
+        let mut sc = None;
+        for id in doc.collect_descendants(doc.root()) {
+            if matches!(
+                doc.get(id),
+                Some(NodeData { kind: NodeKind::Element(el), .. })
+                    if el.local_name() == "selectedcontent"
+            ) {
+                sc = Some(id);
+                break;
+            }
+        }
+        let sc = sc.expect("selectedcontent 应存在");
+        assert_eq!(
+            doc.text_content(sc),
+            Some("one".to_string()),
+            "回落首个非 disabled option 内容"
+        );
+    }
+
+    /// `selected` 属性 option 优后者胜；multiple 的 enabled selectedcontent **清空**
+    /// （预置内容被清除——语料 mutations test6 末态判据，非 spec「null 不施」）。
+    #[test]
+    fn test_selectedcontent_parse_selected_attr_and_multiple() {
+        let doc = parse_html(
+            "<body><select><button><selectedcontent></selectedcontent></button>\
+             <option>one</option><option selected>two</option><option selected>three</option>\
+             </select><select multiple><button><selectedcontent id=m>legacy</selectedcontent>\
+             </button><option>x</option></select></body>",
+        );
+        let mut sc = None;
+        let mut sc_m = None;
+        for id in doc.collect_descendants(doc.root()) {
+            if let Some(NodeData {
+                kind: NodeKind::Element(el),
+                ..
+            }) = doc.get(id)
+                && el.local_name() == "selectedcontent"
+            {
+                match el.get_attribute_str("id") {
+                    Some("m") => sc_m = Some(id),
+                    _ => sc = Some(id),
+                }
+            }
+        }
+        let sc = sc.expect("selectedcontent 应存在");
+        assert_eq!(doc.text_content(sc), Some("three".to_string()), "selected 属性后者胜");
+        let sc_m = sc_m.expect("multiple select 的 selectedcontent 应存在");
+        assert_eq!(doc.text_content(sc_m), Some(String::new()), "multiple 预置内容被清空");
+    }
+
     // ── 元素和属性 ──
 
     /// 带属性的元素。
@@ -1027,7 +1140,7 @@ mod tests {
 
     // ── TreeSink 实现的覆盖率测试 ──
 
-    use html5ever::interface::TreeSink;
+    use markup5ever::interface::TreeSink;
     use markup5ever::{LocalName, Namespace, QualName};
     use tendril::StrTendril;
 
@@ -1058,7 +1171,7 @@ mod tests {
             .insert(NodeData::new(NodeKind::Text(TextData::new(" World"))));
 
         // 添加相邻文本节点，应该自动合并
-        builder.append(&root, html5ever::interface::NodeOrText::AppendNode(text2_id));
+        builder.append(&root, markup5ever::interface::NodeOrText::AppendNode(text2_id));
 
         // 验证合并后的内容
         let inner = builder.inner.borrow();
@@ -1091,7 +1204,7 @@ mod tests {
         // 添加新的文本内容，应该合并到现有文本节点
         builder.append(
             &root,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from(" World")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from(" World")),
         );
 
         // 验证合并
@@ -1125,7 +1238,7 @@ mod tests {
         // 添加文本（前面是元素，不应合并）
         builder.append(
             &root,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
         );
 
         let inner = builder.inner.borrow();
@@ -1178,7 +1291,7 @@ mod tests {
         }
 
         // 插入子节点到 sibling 之前
-        builder.append_before_sibling(&sibling_id, html5ever::interface::NodeOrText::AppendNode(child_id));
+        builder.append_before_sibling(&sibling_id, markup5ever::interface::NodeOrText::AppendNode(child_id));
 
         // 验证
         let inner = builder.inner.borrow();
@@ -1239,7 +1352,7 @@ mod tests {
         // 在 sibling 前添加文本，应该合并到 prev_text
         builder.append_before_sibling(
             &sibling_id,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from(" More")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from(" More")),
         );
 
         let inner = builder.inner.borrow();
@@ -1267,7 +1380,7 @@ mod tests {
             .insert(NodeData::new(NodeKind::Text(TextData::new("new"))));
 
         // 不应该 panic
-        builder.append_before_sibling(&sibling_id, html5ever::interface::NodeOrText::AppendNode(node_id));
+        builder.append_before_sibling(&sibling_id, markup5ever::interface::NodeOrText::AppendNode(node_id));
 
         let inner = builder.inner.borrow();
         assert_eq!(inner.nodes.get(sibling_id).unwrap().parent, None);
@@ -1318,7 +1431,7 @@ mod tests {
         // 在 sibling 前添加文本（前面是元素，不应合并）
         builder.append_before_sibling(
             &sibling_id,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
         );
 
         let inner = builder.inner.borrow();
@@ -1449,7 +1562,7 @@ mod tests {
 
         let elem_id = builder.create_element(
             QualName::new(None, Namespace::from(""), LocalName::from("div")),
-            vec![html5ever::interface::Attribute {
+            vec![markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("existing")),
                 value: StrTendril::from("value"),
             }],
@@ -1457,15 +1570,15 @@ mod tests {
         );
 
         let new_attrs = vec![
-            html5ever::interface::Attribute {
+            markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("id")),
                 value: StrTendril::from("test-id"),
             },
-            html5ever::interface::Attribute {
+            markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                 value: StrTendril::from("container active"),
             },
-            html5ever::interface::Attribute {
+            markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("data-custom")),
                 value: StrTendril::from("custom-value"),
             },
@@ -1487,7 +1600,7 @@ mod tests {
 
         let elem_id = builder.create_element(
             QualName::new(None, Namespace::from(""), LocalName::from("div")),
-            vec![html5ever::interface::Attribute {
+            vec![markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                 value: StrTendril::from("original"),
             }],
@@ -1496,7 +1609,7 @@ mod tests {
 
         builder.add_attrs_if_missing(
             &elem_id,
-            vec![html5ever::interface::Attribute {
+            vec![markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                 value: StrTendril::from("duplicate"),
             }],
@@ -1573,7 +1686,7 @@ mod tests {
         builder.append_based_on_parent_node(
             &elem_id,
             &elem_id, // prev_element（未使用）
-            html5ever::interface::NodeOrText::AppendNode(text_id),
+            markup5ever::interface::NodeOrText::AppendNode(text_id),
         );
 
         let inner = builder.inner.borrow();
@@ -1603,7 +1716,7 @@ mod tests {
         builder.append_based_on_parent_node(
             &elem_id,
             &elem_id,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
         );
 
         let inner = builder.inner.borrow();
@@ -1863,5 +1976,79 @@ mod cdata_fragment_tests {
         assert_eq!(path.text_content(path.root()), Some("xy".to_string()));
         let body = parse_html_fragment("x<![CDATA[y]]>", "http://www.w3.org/1999/xhtml", "body");
         assert_eq!(body.text_content(body.root()), Some("x".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod declarative_materialize_contents_tests {
+    use super::*;
+
+    /// M3 清单 1（attachment/basic 勘根）：声明式模板落在**外层普通 template 的
+    /// contents 内**——[`crate::document::Document::materialize_declarative_shadow_roots`]
+    /// 候选枚举须下探 template contents（spec：contents 片段内的声明式模板解析期
+    /// 即 attach；`collect_by_tag_name` 只走 children 边不可达，枚举盲区）。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    #[test]
+    fn materializes_declarative_template_inside_template_contents() {
+        let doc = parse_html_with_scripting(
+            "<template><div><template shadowrootmode=open><span>s</span></template></div></template>",
+            true,
+        );
+        // 外层普通 template 保留（非声明式，无 attach 面）。
+        let outer = doc.query_selector(doc.root(), "template").expect("外层 template 保留");
+        // contents 内 div 宿主已 attach open 根。
+        let kids = doc.template_contents_children(outer);
+        assert_eq!(kids.len(), 1, "contents 顶层应为 div 宿主");
+        let root = doc.shadow_root(kids[0]).expect("contents 内宿主已 attach");
+        assert!(matches!(
+            doc.get_shadow_root_mode(root),
+            Some(crate::ShadowRootMode::Open)
+        ));
+        // 内层声明式 template 已消费（span 直挂 shadow 树）。
+        let span = doc.query_selector_shadow(root, "span").expect("span 入 shadow 树");
+        assert!(doc.get(span).is_some());
+    }
+
+    /// 嵌套声明式（外层 contents 内再嵌声明式）——快照枚举按序物化：外层消费把
+    /// 内层 template 随 contents 移入 shadow 树，内层仍在快照内、按新父级 attach
+    /// （与 spec 解析期 attach 等价终态）。
+    #[test]
+    fn nested_declarative_templates_materialize_through_contents() {
+        let doc = parse_html_with_scripting(
+            "<div><template shadowrootmode=open><section><template shadowrootmode=closed><b>x</b></template></section></template></div>",
+            true,
+        );
+        let host = doc.query_selector(doc.root(), "div").expect("div 宿主");
+        let root = doc.shadow_root(host).expect("外层 open 根");
+        let section = doc
+            .query_selector_shadow(root, "section")
+            .expect("section 入 shadow 树");
+        let inner_root = doc.shadow_root(section).expect("内层 closed 根（嵌套族）");
+        assert!(matches!(
+            doc.get_shadow_root_mode(inner_root),
+            Some(crate::ShadowRootMode::Closed)
+        ));
+    }
+
+    /// 跳过路径的 s173 值还原覆盖 contents 内层——不可物化模板（宿主非法）以
+    /// 普通元素存活，`shadowrootmode` 须还原源码小写形态（getAttribute 观测面）。
+    #[test]
+    fn skipped_contents_template_restores_lowercase_value() {
+        let doc = parse_html_with_scripting(
+            "<template><ul><template shadowrootmode=open><span>s</span></template></ul></template>",
+            true,
+        );
+        let outer = doc.query_selector(doc.root(), "template").expect("外层 template 保留");
+        let kids = doc.template_contents_children(outer);
+        assert_eq!(kids.len(), 1, "contents 顶层应为 ul");
+        // ul ∉ valid shadow host 名单 → 内层 template 保留普通形态 + 值还原。
+        let tpl = doc.child_nodes(kids[0]);
+        assert_eq!(tpl.len(), 1, "ul 内声明式 template 保留");
+        assert_eq!(
+            doc.get_attribute(tpl[0], "shadowrootmode").as_deref(),
+            Some("open"),
+            "s173 预变换值还原（Open → open）"
+        );
+        assert!(doc.shadow_root(kids[0]).is_none(), "ul 非 valid 宿主不 attach");
     }
 }

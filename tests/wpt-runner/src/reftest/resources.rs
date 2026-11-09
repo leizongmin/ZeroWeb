@@ -14,99 +14,15 @@ use percent_encoding::percent_decode;
 /// 从 HTML 中提取所有 `<img src="...">` 的 URL。
 /// R4162：img 无 src/srcset 且位于 `<picture>` 内时，回退首个 `<source srcset>` 首 URL
 /// （HTML §4.8.5 picture 选择；不评估 media/type 条件，match-all）。
+/// s306：实现委托 zero_engine 的 DOM 精确版（s70 全候选过采集契约——img srcset
+/// 全候选 + 全体 `<source>` srcset 候选 + template fragment img）。旧本地字符串
+/// 扫描只取「img srcset 首 URL / 首个 source 首 URL」，picture 页（source srcset
+/// w/x 密度多候选）其余候选永不进 ImageCache → host 选源侧（s306
+/// `img_selected_source_url`）选中非首候选时固有尺寸/ratio 双查 miss → img 盒
+/// 200×0 不绘制（responsive-image-select-print ✗8.33% 定谳根因）。过采集无害
+/// （键 = 原始串 token，paint/layout 双查同串）。
 pub(super) fn extract_img_srcs(html: &str) -> Vec<String> {
-    let mut srcs = Vec::new();
-    let mut pos = 0;
-    while let Some(idx) = html[pos..].find("<img") {
-        let tag_start = pos + idx;
-        // 找到标签真正的结束位置（跳过引号内的 >）
-        let Some(tag_end) = find_tag_end(&html[tag_start..]) else {
-            break;
-        };
-        let tag = &html[tag_start..tag_start + tag_end];
-        // 在标签内查找 src 属性
-        let mut extracted: Option<String> = None;
-        if let Some(src_start) = tag.find("src=\"").or_else(|| tag.find("src='")) {
-            let quote = &tag[src_start + 4..src_start + 5];
-            let value_start = src_start + 5;
-            if let Some(value_end) = tag[value_start..].find(quote) {
-                let src_value = &tag[value_start..value_start + value_end];
-                // R4996：trim 对齐 engine 侧 `effective_img_src`——src 属性值可含首尾空白
-                //（HTML 源内长 base64 折行尾随换行）。未 trim 时此处 URL 串与 paint/布局
-                // 侧 key（image_resource_key trim 后）错位，ImageCache 双查 miss，
-                // flex-aspect-ratio-img-row-016 的 data URI 图整体不渲染。
-                let src_value = src_value.trim();
-                if !src_value.is_empty() {
-                    extracted = Some(src_value.to_string());
-                }
-            }
-        }
-        // R4162：picture/source 回退（src 缺失时）。注意 tag.find("src=") 也会命中
-        // srcset= 前缀，上面的提取已按 srcset 语义取值——此处仅在其为 None 时走回退。
-        if extracted.is_none()
-            && let Some(ss_start) = tag.find("srcset=\"").or_else(|| tag.find("srcset='"))
-        {
-            let quote = &tag[ss_start + 7..ss_start + 8];
-            let value_start = ss_start + 8;
-            if let Some(value_end) = tag[value_start..].find(quote) {
-                let v = &tag[value_start..value_start + value_end];
-                if !v.is_empty() {
-                    let first = v.split(',').next().unwrap_or("").trim();
-                    if let Some(url) = first.split_whitespace().next() {
-                        extracted = Some(url.to_string());
-                    }
-                }
-            }
-        }
-        if extracted.is_none()
-            && let Some(src_url) = find_picture_source_srcset(html, tag_start)
-        {
-            extracted = Some(src_url);
-        }
-        if let Some(v) = extracted {
-            srcs.push(v);
-        }
-        pos = tag_start + tag_end + 1;
-    }
-    srcs
-}
-
-/// 向上/向前扫描：img 无自身图源时，找其所在 `<picture>` 内首个 `<source srcset>` 的首 URL。
-/// `img_pos` 为 `<img` 标签在 html 中的起始偏移。
-pub(super) fn find_picture_source_srcset(html: &str, img_pos: usize) -> Option<String> {
-    // 向前找最近的 <picture 开（且中间无 </picture> 闭合）
-    let before = &html[..img_pos];
-    let pic_open = before.rfind("<picture")?;
-    if before[pic_open..].contains("</picture>") {
-        return None;
-    }
-    // 在 <picture 与 <img 之间找首个 <source 的 srcset
-    let between = &html[pic_open..img_pos];
-    let src_idx = between.find("<source")?;
-    let src_seg = &between[src_idx..];
-    let seg_end = find_tag_end(src_seg)?;
-    let src_tag = &src_seg[..seg_end];
-    for attr in ["srcset=\"", "srcset='"] {
-        if let Some(a) = src_tag.find(attr) {
-            // R5056：quote 须为**单字符**切片（≡ R3995 data=/src= 提取同款端界）——
-            // 旧 `&src_tag[a+attr.len()-1..]` 截到 tag 尾，find(quote) 在值区间内永不
-            // 命中 → picture/source 回退恒 None → 图源缺失零渲染（R4162 落地即坏，
-            // replaced-element-012 自引入起恒红）。单测见 reftest/tests.rs probe 同款
-            // 断言（find_picture_source_srcset_basic）。
-            let quote = &src_tag[a + attr.len() - 1..a + attr.len()];
-            let vs = a + attr.len();
-            if let Some(ve) = src_tag[vs..].find(quote) {
-                let v = &src_tag[vs..vs + ve];
-                if !v.is_empty() {
-                    // 首 URL（去 descriptors）
-                    let first = v.split(',').next()?.trim();
-                    let url = first.split_whitespace().next()?;
-                    return Some(url.to_string());
-                }
-            }
-        }
-    }
-    None
+    zero_engine::extract_img_srcs(html)
 }
 
 /// 从 HTML 中提取所有 `<video src="...">` 的 URL（media-playback M1b）。
@@ -235,6 +151,14 @@ fn load_video_first_frames(cache: &mut ImageCache, html: &str, base_dir: Option<
         };
         cache.insert_with_key(ImageKey::new(simple_hash(&url)), data);
     }
+}
+
+/// s307：GIF/animated WebP 文件装载——动画感知解码（魔数分派，帧合成 +
+/// GCE/ANMF 时序；单帧返回 anim=None）。此前 reftest 通道无 GIF/WebP 装载臂：
+/// 两类文件从不入缓存 → img 空白（animated-image-update 双页 ✗2.08% 勘根）。
+fn load_anim_file(path: &Path) -> Result<(ImageData, Option<AnimationData>), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
+    decode_image_animation(&bytes)
 }
 
 /// 找到 HTML 标签的真正结束位置（> 在引号外）。
@@ -398,10 +322,16 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
     let Some(base) = base_dir else {
         return String::new();
     };
+    // s315：`<base href>` 前移基准（HTML document-base-url——文档序首个带 href 的 base；
+    // 相对 href 按其解析而非页面目录，stylesheet-with-base driving）。Path::join 对
+    // 绝对 href 无影响（load_stylesheet_by_href 已先行特判 `/` 前缀）。
+    let base = zero_engine::extract_document_base_href(html)
+        .map(|b| base.join(&b))
+        .unwrap_or_else(|| base.to_path_buf());
 
     let mut merged = String::new();
     for href in extract_stylesheet_hrefs(html) {
-        if let Some(css) = load_stylesheet_by_href(&href, base) {
+        if let Some(css) = load_stylesheet_by_href(&href, &base) {
             if !merged.is_empty() {
                 merged.push('\n');
             }
@@ -503,6 +433,12 @@ pub(super) fn merge_page_css_document_order(
 
     let style_set: std::collections::HashSet<zero_dom::NodeId> =
         doc.get_elements_by_tag_name("style").into_iter().collect();
+    // s315：`<base href>` 前移基准（≡ load_linked_stylesheets 同款）+ 本循环自有
+    // rel/href 门补 type 门（≡ extract 层共判谓词——触发门① 走 extract 已被
+    // type 门过滤，混合 data:/file: link 页循环臂同判防漏）。
+    let base = zero_engine::extract_document_base_href(html)
+        .map(|b| base_dir.join(&b))
+        .unwrap_or_else(|| base_dir.to_path_buf());
     let mut parts: Vec<String> = Vec::new();
     for id in doc.get_elements_by_tag_names(&["style", "link"]) {
         if style_set.contains(&id) {
@@ -512,8 +448,9 @@ pub(super) fn merge_page_css_document_order(
         } else if doc
             .get_attribute(id, "rel")
             .is_some_and(|rel| rel_tokens_include_stylesheet(&rel))
+            && zero_engine::link_type_allows_stylesheet(doc.get_attribute(id, "type").as_deref())
             && let Some(href) = doc.get_attribute(id, "href").filter(|h| !h.is_empty())
-            && let Some(text) = load_stylesheet_by_href(&href, base_dir)
+            && let Some(text) = load_stylesheet_by_href(&href, &base)
         {
             parts.push(text);
         }
@@ -1065,6 +1002,30 @@ fn read_headers_sidecar_content_type(path: &Path) -> Option<String> {
 ///
 /// 对于每个 URL，用 `simple_hash(url)` 生成 ImageKey（与 paint 系统一致），
 /// 然后尝试从 `base_dir` 解析相对路径并加载 PNG 文件。
+/// s299（html-semantics M2 切片 299）：提取文档首个 `<base href>` 的相对引用前缀
+///（HTML §4.2.3——document base URL 的 path 前缀作用于全部相对引用）。仅用于
+/// build_image_cache 的文件系统查找路径；缓存 ImageKey 保持 raw attr 串（painter
+/// 侧 image_resource_key 同源 raw——键面改写会全量 miss）。返回 None = 无
+/// `<base>`/href 空/绝对形态（`/` 开头、含 scheme、`#` 片段——按 spec 这些引用
+/// 不受 base 的相对改写，走既有站点根解析）。
+/// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+fn extract_base_href_prefix(html: &str) -> Option<String> {
+    let idx = html.find("<base")?;
+    let rest = &html[idx..];
+    let tag_end = find_tag_end(rest)?;
+    let tag = &rest[..tag_end];
+    let (value_start, quote) = tag
+        .find("href=\"")
+        .map(|p| (p + 6, '"'))
+        .or_else(|| tag.find("href='").map(|p| (p + 6, '\'')))?;
+    let value_end = tag[value_start..].find(quote)? + value_start;
+    let href = tag[value_start..value_end].trim();
+    if href.is_empty() || href.starts_with('/') || href.starts_with('#') || href.contains("://") {
+        return None;
+    }
+    Some(href.to_string())
+}
+
 pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
     let mut cache = ImageCache::new(256, 64 * 1024 * 1024);
 
@@ -1079,6 +1040,12 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
     all_urls.extend(posters);
     all_urls.sort_unstable();
     all_urls.dedup();
+
+    // s299：`<base href>` 相对引用前缀（document-adopt-base-url 钉形——
+    // `<base href="resources/">` + img src "cat.jpg"，文件实际在 base_dir/resources/
+    // 下；此前一律 `base.join(url)` 落空 → 图不渲染 → reftest ✗16%）。仅改文件
+    // 查找路径，ImageKey 键面零变化。
+    let base_href_prefix = extract_base_href_prefix(html);
 
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
@@ -1118,15 +1085,38 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         let decoded = percent_decode(url.as_bytes()).decode_utf8_lossy();
         let trimmed = decoded.trim_start_matches('/');
         let primary = base.join(trimmed);
+        // s304：wpt.test 绝对 URL——mutation 沙箱 page_url 真实化后，脚本间 IDL 传值
+        // （`image.src = otherImg.src`）以绝对形态入 mutated html。剥 wpt.test 前缀按
+        // 站点根解析（镜像 testharness 通道 `wpt_data_image_fetcher` 的域名白名单与
+        // wpt-data 根读取）；存在才接管，落空回落下方既有解析（ImageKey 仍用原始
+        // url 哈希，painter 键面对齐零变化）。
+        let wpt_abs_path = url
+            .strip_prefix("https://wpt.test")
+            .or_else(|| url.strip_prefix("http://wpt.test"))
+            .or_else(|| url.strip_prefix("https://wpt.test:8000"))
+            .or_else(|| url.strip_prefix("http://wpt.test:8000"))
+            .map(|rest| {
+                let clean = rest.split(['?', '#']).next().unwrap_or(rest);
+                let decoded_rest = percent_decode(clean.as_bytes()).decode_utf8_lossy();
+                Path::new("tests/wpt-runner/wpt-data").join(decoded_rest.trim_start_matches('/'))
+            })
+            .filter(|p| p.exists());
         // R2427：站点根绝对 URL（如 "/css/support/60x60-green.png"）。WPT 下 `base_dir` 是测试
         // 文件所在目录而非站点根，`base.join(trimmed)` 解析到 `base_dir/css/support/...` 找不到
         // → 图片加载失败 → 不渲染（修复前 ~2995 个 WPT 文件的 `/` 绝对路径图片全丢，含
         // css-box/margin-trim replaced 簇）。回退到 wpt-data 站点根（镜像 `load_linked_stylesheets`
         // :175 对 `/` 外链样式表的解析）。product-smoke 的 `base_dir` 即站点根，`primary` 先解析
         // 命中故不受影响（仅当 primary 不存在才尝试回退）。
-        let path = if url.starts_with('/') && !primary.exists() {
+        let path = if let Some(wpt_path) = wpt_abs_path {
+            wpt_path
+        } else if url.starts_with('/') && !primary.exists() {
             let alt = Path::new("tests/wpt-runner/wpt-data").join(trimmed);
             if alt.exists() { alt } else { primary }
+        } else if let Some(prefix) = &base_href_prefix {
+            // s299：`<base href>` 前缀路径优先，落空回落 primary（无 base 页与
+            // 前缀失配页共用既有 miss 语义，零行为面外移）。
+            let with_base = base.join(prefix).join(trimmed);
+            if with_base.exists() { with_base } else { primary }
         } else {
             primary
         };
@@ -1140,6 +1130,18 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
             && let Ok(data) = load_svg_file(&path)
         {
             cache.insert_with_key(key, data);
+        } else if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("gif") || e.eq_ignore_ascii_case("webp"))
+            && let Ok((data, anim)) = load_anim_file(&path)
+        {
+            // s307：GIF/animated WebP——动画数据随条目注入（首帧为静态位图，
+            // ImageKey 键面零变化）；渲染期 get 按动画时钟推进活跃帧。单帧文件
+            // anim=None 同 insert_with_key（零行为面外移）。
+            match anim {
+                Some(a) => cache.insert_with_animation(key, data, a),
+                None => cache.insert_with_key(key, data),
+            }
         }
     }
 
@@ -1193,8 +1195,8 @@ pub fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_de
 
 /// 加载并解码 PNG 文件为 RGBA ImageData。
 fn load_png_file(path: &Path) -> Result<ImageData, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
-    let mut decoder = png::Decoder::new(file);
+    let bytes = std::fs::read(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
+    let mut decoder = png::Decoder::new(&bytes[..]);
     // DC-14 anti-false-pass：正确加载任意 color type 的 PNG（palette/grayscale/RGB/RGBA）。
     // EXPAND|STRIP_16 把 palette→RGB(A)、grayscale→RGB(A)、低位深→8bit；但输出色型不一定是
     // RGBA（palette 无 tRNS / RGB 输入 → 输出 RGB=3 字节/像素）。须用 output_buffer_size 分配
@@ -1216,12 +1218,21 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let width = info.width;
     let height = info.height;
 
+    // s300：PNG eXIf Orientation 与 render-foundation decode_png_bytes 同通道
+    //（早块生效/晚块忽略）；像素解码本体不委托（R217 ZERO_PNG_EXPAND 逃生舱
+    // 保留），方向探测与重排复用 render-foundation 同表实现。
+    let orientation = zero_render_foundation::image_cache::png_orientation(&bytes);
+
     if expand {
         let mut raw = vec![0u8; reader.output_buffer_size()];
         let output_info = reader
             .next_frame(&mut raw)
             .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
         let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
+        let (rgba, width, height) = match orientation {
+            Some(o) => zero_render_foundation::image_cache::apply_orientation(rgba, width, height, o),
+            None => (rgba, width, height),
+        };
         return ImageData::from_rgba(rgba, width, height);
     }
 
@@ -1232,6 +1243,10 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
         .next_frame(&mut buf)
         .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
 
+    let (buf, width, height) = match orientation {
+        Some(o) => zero_render_foundation::image_cache::apply_orientation(buf, width, height, o),
+        None => (buf, width, height),
+    };
     ImageData::from_rgba(buf, width, height)
 }
 
@@ -1483,6 +1498,39 @@ mod tests {
             urls2,
             vec!["a.png".to_string(), "b.png".to_string(), "c.png".to_string()]
         );
+    }
+
+    /// s299：`<base href>` 相对引用前缀——build_image_cache 文件查找按 base 前缀
+    /// 解析（document-adopt-base-url 钉形：`<base href="resources/">` + img src
+    /// "cat.jpg"，文件在 base_dir/resources/ 下）；ImageKey 保持 raw 串。
+    #[test]
+    fn base_href_prefix_resolves_relative_img() {
+        use std::fs;
+        let dir = std::env::temp_dir().join("zw_reftest_base_href_test");
+        let sub = dir.join("resources");
+        fs::create_dir_all(&sub).expect("create temp dir");
+        let png_path = sub.join("cat.jpg");
+        let mut buf = Vec::new();
+        {
+            use png::{BitDepth, ColorType, Encoder};
+            let mut enc = Encoder::new(&mut buf, 1, 1);
+            enc.set_color(ColorType::Rgba);
+            enc.set_depth(BitDepth::Eight);
+            let mut w = enc.write_header().expect("PNG header");
+            w.write_image_data(&[0, 128, 0, 255]).expect("PNG data");
+        }
+        fs::write(&png_path, &buf).expect("write png");
+        let html = "<head><base href=\"resources/\"></head><body><img src=\"cat.jpg\"></body>";
+        let mut cache = build_image_cache(html, Some(&dir));
+        let src = extract_img_srcs(html).into_iter().next().expect("img src extracted");
+        assert_eq!(src, "cat.jpg", "cache key stays raw attr string");
+        let key = ImageKey::new(simple_hash(&src));
+        let img = cache
+            .get(&key)
+            .expect("img under <base href> should resolve to base/resources file (s299)");
+        assert_eq!(img.width, 1);
+        assert_eq!(&img.pixels[..4], &[0, 128, 0, 255]);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// R2134：未终止 url() 字符串在 `</style>` 处不得吸收 `</style>` 及后续 HTML。

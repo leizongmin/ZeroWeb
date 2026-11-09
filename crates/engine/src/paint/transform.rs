@@ -107,7 +107,144 @@ pub(crate) fn matrix3d_2d_projection(m: &[f64; 16]) -> Option<(f64, f64, f64, f6
     }
 }
 
-/// R4035：元素是否背对观察者（CSS Transforms 2 §backface-visibility）。
+/// R5422：变换链 3D 线性矩阵合成（CSS Transforms 2 §backface-visibility）。
+///
+/// 背面朝向由**累积矩阵的 zz 分量符号**判定（矩阵合成，非 cos 连乘——同轴旋转
+/// rotateX(a)·rotateX(b) = rotateX(a+b)，cos(a)·cos(b) ≠ cos(a+b)，R4035 旧近似
+/// 对拆分旋转会误判符号，driving：transform3d-backface-visibility-004 父 60°+子
+/// 60° = 120° 背面）。每个函数贡献其 3D 线性部分（行主序 3×3），沿变换列表依序
+/// 右乘：`transform: A B` ≡ A·B。纯 2D 函数（translate/scale x|y/rotate/skew/
+/// matrix）线性部分 zz=1 不翻转 z（scaleX(-1) 镜像仍是正面，chromium 同）；
+/// scaleZ/scale3d 贡献 sz（scaleZ(-1) 镜像 z → 背面）。
+///
+/// individual 属性按 R4201 同序前置（translate·rotate·scale·transform，与
+/// [`compute_transform_matrix_with_ref_box`] 的 used transform 同源）。
+/// perspective 只影响投影除法不改变平面法向朝向，贡献恒等
+///（FIXME：真 3D 透视面朝向超出 flat 模型）。
+///
+/// driving：R4035 backface-visibility-hidden-002（rotateY(180deg) + hidden → 元素
+/// 不可见）；R5422 扩展 transform3d-backface-visibility-004/006/007、
+/// backface-visibility-hidden-004、backface-visibility-with-sibling-001（3D 渲染
+/// 上下文累积）。|θ|=90° 时投影奇异（det≈0）由 [`is_singular_transform`] 兜底链
+/// 处理，此处 cos=0 不判背面。
+pub fn transform_chain_3d_matrix(style: &ComputedStyle) -> [f32; 9] {
+    const IDENTITY3: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    // OPTIMIZATION：painter 对每个绘制盒调用（背面目判定），恒等快照先行——
+    // 无 individual 属性且 transform:none 的普通盒（corpus 大多数节点）零合成；
+    // 逐函数原地折叠右乘，全程无堆分配（#10/#23：paint 热路径禁逐节点 collect）。
+    if style.individual_translate.is_none()
+        && style.individual_rotate.is_none()
+        && style.individual_scale.is_none()
+        && matches!(style.transform, TransformValue::None)
+    {
+        return IDENTITY3;
+    }
+    let mut m = IDENTITY3;
+    if let Some(f) = &style.individual_translate {
+        m = compose_linear3(&m, &transform_function_3d_matrix(f));
+    }
+    if let Some(f) = &style.individual_rotate {
+        m = compose_linear3(&m, &transform_function_3d_matrix(f));
+    }
+    if let Some(f) = &style.individual_scale {
+        m = compose_linear3(&m, &transform_function_3d_matrix(f));
+    }
+    if let TransformValue::List(f) = &style.transform {
+        for f in f {
+            m = compose_linear3(&m, &transform_function_3d_matrix(f));
+        }
+    }
+    m
+}
+
+/// 单个变换函数的 3D 线性部分（行主序 3×3，css-transforms-1/2 §funcdef 矩阵表）。
+fn transform_function_3d_matrix(f: &TransformFunction) -> [f32; 9] {
+    let rad = |deg: f64| (deg as f32).to_radians();
+    let sin = |deg: f64| rad(deg).sin();
+    let cos = |deg: f64| rad(deg).cos();
+    match f {
+        // 平移：线性部分恒等（平移不入 3×3）。
+        TransformFunction::Translate(_, _)
+        | TransformFunction::TranslateMixed(_, _, _, _)
+        | TransformFunction::TranslateXMixed(_, _)
+        | TransformFunction::TranslateYMixed(_, _)
+        | TransformFunction::TranslateX(_)
+        | TransformFunction::TranslateY(_)
+        | TransformFunction::Translate3d(_, _, _)
+        // perspective 只作用于投影除法，不改变平面朝向（见上 FIXME）。
+        | TransformFunction::Perspective(_) => [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        TransformFunction::RotateX(deg) => {
+            let (s, c) = (sin(*deg), cos(*deg));
+            [1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c]
+        }
+        TransformFunction::RotateY(deg) => {
+            let (s, c) = (sin(*deg), cos(*deg));
+            [c, 0.0, s, 0.0, 1.0, 0.0, -s, 0.0, c]
+        }
+        TransformFunction::Rotate(deg) | TransformFunction::RotateZ(deg) => {
+            let (s, c) = (sin(*deg), cos(*deg));
+            [c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0]
+        }
+        // rotate3d 任意轴（Rodrigues；R5016 已把单轴形归一到 RotateX/Y/Z，此臂只接
+        // 混合轴形）。零长轴按 spec 无效处理为恒等。
+        TransformFunction::Rotate3d(x, y, z, deg) => {
+            let len = (x * x + y * y + z * z).sqrt();
+            if len == 0.0 {
+                return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+            }
+            let (x, y, z) = (x / len, y / len, z / len);
+            let (s, c) = (sin(*deg), cos(*deg));
+            let nc = 1.0 - c;
+            let (x, y, z) = (x as f32, y as f32, z as f32);
+            [
+                c + x * x * nc,
+                x * y * nc - z * s,
+                x * z * nc + y * s,
+                y * x * nc + z * s,
+                c + y * y * nc,
+                y * z * nc - x * s,
+                z * x * nc - y * s,
+                z * y * nc + x * s,
+                c + z * z * nc,
+            ]
+        }
+        TransformFunction::Scale(sx, sy) => {
+            let sy = sy.unwrap_or(*sx) as f32;
+            [*sx as f32, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 1.0]
+        }
+        TransformFunction::ScaleX(sx) => [*sx as f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        TransformFunction::ScaleY(sy) => [1.0, 0.0, 0.0, 0.0, *sy as f32, 0.0, 0.0, 0.0, 1.0],
+        TransformFunction::ScaleZ(sz) => [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, *sz as f32],
+        TransformFunction::Scale3d(sx, sy, sz) => {
+            [*sx as f32, 0.0, 0.0, 0.0, *sy as f32, 0.0, 0.0, 0.0, *sz as f32]
+        }
+        // skew(ax, ay)：matrix(1, tan(ay), tan(ax), 1, 0, 0)。
+        TransformFunction::Skew(ax, ay) => {
+            let tx = (rad(*ax)).tan();
+            let ty = ay.map(|a| rad(a).tan()).unwrap_or(0.0);
+            [1.0, tx, 0.0, ty, 1.0, 0.0, 0.0, 0.0, 1.0]
+        }
+        TransformFunction::Matrix(a, b, cc, d, _, _) => {
+            [*a as f32, *b as f32, 0.0, *cc as f32, *d as f32, 0.0, 0.0, 0.0, 1.0]
+        }
+        // matrix3d 列主序 4×4 的线性 3×3（R5191）。
+        TransformFunction::Matrix3d(m) => [m[0] as f32, m[4] as f32, m[8] as f32, m[1] as f32, m[5] as f32, m[9] as f32, m[2] as f32, m[6] as f32, m[10] as f32],
+    }
+}
+
+/// 两个 3D 线性部分右乘（行主序 3×3）：`compose_linear3(a, b) = a·b`。
+pub(crate) fn compose_linear3(a: &[f32; 9], b: &[f32; 9]) -> [f32; 9] {
+    let mut r = [0.0_f32; 9];
+    for row in 0..3 {
+        for col in 0..3 {
+            r[row * 3 + col] = a[row * 3] * b[col] + a[row * 3 + 1] * b[3 + col] + a[row * 3 + 2] * b[6 + col];
+        }
+    }
+    r
+}
+
+/// R4035：元素是否背对观察者——自身链 cos 连乘近似（CSS Transforms 2
+/// §backface-visibility）。
 ///
 /// ZW 无 3D 场景图（transform-style:flat 逐盒 2D 投影，R3833），背面朝向由变换链中
 /// 3D 旋转函数的 z 翻转近似：每个 rotateX(θ)/rotateY(θ) 在其 2D 投影中贡献符号
@@ -115,9 +252,11 @@ pub(crate) fn matrix3d_2d_projection(m: &[f64; 16]) -> Option<(f64, f64, f64, f6
 /// skew/matrix）不翻转 z（scaleX(-1) 镜像仍是正面，chromium 同）。rotate3d 在 ZW
 /// 为恒等近似（R3833 前），不贡献翻转。
 ///
-/// driving：css-transforms/backface-visibility-hidden-002（rotateY(180deg) + hidden
-/// → 元素不可见，旧实现照绘红块）。|θ|=90° 时投影奇异（det≈0）由
-/// [`is_singular_transform`] 兜底链处理，此处 cos=0 不判背面。
+/// 仅作 `ZW_BACKFACE_3D_CTX=0` 回退路径（R4035 原语义精确保留，供 corpus 归因
+/// bisect）：默认矩阵合成路径见 [`transform_chain_3d_matrix`] + painter
+/// `backface_ctx`——cos 连乘对拆分旋转误判符号（cos(a)·cos(b) ≠ cos(a+b)，如
+/// rotateX(60°)·rotateX(60°) = 120° 背面而连乘 = +0.25 正面），且只判自身链，
+/// 3D 渲染上下文（preserve-3d 祖先链）累积缺失。
 pub fn transform_shows_backface(style: &ComputedStyle) -> bool {
     let funcs = match &style.transform {
         TransformValue::None => return false,
@@ -1467,7 +1606,10 @@ mod tests {
 
     #[test]
     fn test_r4035_double_flip_composes() {
-        // rotateY(90) rotateY(90) = rotateY(180) → 背面（角度按轴累加语义）
+        // R4035 cos 连乘近似契约（ZW_BACKFACE_3D_CTX=0 回退路径精确保留）：
+        // rotateY(90)·rotateY(90) → cos90·cos90 = 0 不判背面（90° 投影奇异由
+        // is_singular_transform 兜底）。矩阵合成语义见 R5422 针——该近似对拆分
+        // 旋转误判符号，默认路径已弃用。
         let mut style = ComputedStyle::default();
         style.transform =
             TransformValue::List(vec![TransformFunction::RotateY(90.0), TransformFunction::RotateY(90.0)]);
@@ -1479,6 +1621,77 @@ mod tests {
         let mut rx = ComputedStyle::default();
         rx.transform = TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
         assert!(transform_shows_backface(&rx), "rotateX(180deg) 背面朝向观察者");
+    }
+
+    // ── R5422：3D 渲染上下文累积背面判定（矩阵合成） ────────────────────
+
+    #[test]
+    fn test_r54xx_split_rotation_accumulates() {
+        // transform3d-backface-visibility-004 案形（拆分旋转）：rotateX(60°)·
+        // rotateX(60°) = rotateX(120°) → zz = cos(120°) = -0.5 → 背面。
+        // 旧 cos 连乘近似 cos60·cos60 = +0.25 误判正面。
+        let mut style = ComputedStyle::default();
+        style.transform =
+            TransformValue::List(vec![TransformFunction::RotateX(60.0), TransformFunction::RotateX(60.0)]);
+        let zz = transform_chain_3d_matrix(&style)[8];
+        assert!(zz < 0.0, "拆分 rotateX 60°+60° 合成 120° 背面（zz={zz}）");
+    }
+
+    #[test]
+    fn test_r54xx_double_rotate_y_matrix_backface() {
+        // rotateY(90)·rotateY(90) = rotateY(180) → zz = cos(180°) = -1 → 背面
+        //（旧 cos 连乘 = 0 恒正面；绘制路径 90° 投影奇异仍由 is_singular_transform
+        // 兜底，本纯函数语义按 spec 矩阵）。
+        let mut style = ComputedStyle::default();
+        style.transform =
+            TransformValue::List(vec![TransformFunction::RotateY(90.0), TransformFunction::RotateY(90.0)]);
+        let zz = transform_chain_3d_matrix(&style)[8];
+        assert!(zz < 0.0, "rotateY(90)·rotateY(90) 合成 rotateY(180) 背面（zz={zz}）");
+    }
+
+    #[test]
+    fn test_r54xx_scalez_flips_backface() {
+        // transform3d-backface-visibility-007 案形：scaleZ(-1) 镜像 z → 背面；
+        // scaleX(-1)（Scale 单臂）只镜像 x，zz=1 维持正面（chromium 同）。
+        let mut sz = ComputedStyle::default();
+        sz.transform = TransformValue::List(vec![TransformFunction::ScaleZ(-1.0)]);
+        assert!(transform_chain_3d_matrix(&sz)[8] < 0.0, "scaleZ(-1) 背面朝向观察者");
+        let mut sx = ComputedStyle::default();
+        sx.transform = TransformValue::List(vec![TransformFunction::ScaleX(-1.0)]);
+        assert!(
+            transform_chain_3d_matrix(&sx)[8] > 0.0,
+            "scaleX(-1) 是正面（2D 镜像非背面）"
+        );
+    }
+
+    #[test]
+    fn test_r54xx_flat_functions_keep_frontface() {
+        // 2D 函数（translate/rotateZ/skew/matrix）线性部分 zz=1 不判背面。
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::Translate(10.0, 20.0),
+            TransformFunction::RotateZ(180.0),
+            TransformFunction::Matrix(1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+        ]);
+        assert!(
+            transform_chain_3d_matrix(&style)[8] > 0.0,
+            "translate+rotateZ+matrix 维持正面"
+        );
+    }
+
+    #[test]
+    fn test_r54xx_compose_associates_transform_order() {
+        // `transform: A B` ≡ A·B：rotateX(60°) 前置 rotateZ(180°)（zz 恒 1 的 2D 函数）
+        // 不改变 z 朝向；rotateY(120°) 单函数 zz = cos(120°) < 0 直接背面。
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::RotateY(120.0),
+            TransformFunction::RotateZ(180.0),
+        ]);
+        assert!(
+            transform_chain_3d_matrix(&style)[8] < 0.0,
+            "rotateY(120°)·rotateZ(180°) 背面"
+        );
     }
 
     // ── R5191：matrix3d 奇异判定 + 2D 投影合成 ─────────────────────────

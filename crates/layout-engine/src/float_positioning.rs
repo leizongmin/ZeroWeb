@@ -41,6 +41,15 @@ static R5215_ATOMIC_FLOW: std::sync::LazyLock<bool> =
 static FLOAT_REPLAY_FIRST_MT: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_REPLAY_FIRST_MT").as_deref() != Ok("0"));
 
+/// R5448（CSS2 §9.5）：walk 不稳帧内跳过跨兄弟 float 带集/底边继承——前序兄弟含
+/// inline 内容 + float 时块高 remeasure 步 6 才物化（walk h=0），后继兄弟帧 y 偏小
+/// δ：带集换算 `fy − cy` 整体下移 δ 成幻影排斥带、底边换算成幻影 floor 推压
+///（c5525-fltmrgn-000 f3 被幻影带压到 75 应 30，R5371 实证）。两者在不稳帧内都不
+/// 继承；remeasure 步 6 终位继承（collect_nested_float_exclusions 域）不受影响。
+/// `ZW_FLOAT_STALE_FRAME_BAND_SKIP=0` 回退。
+static FLOAT_STALE_FRAME_BAND_SKIP: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_STALE_FRAME_BAND_SKIP").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions(
     box_node: &mut LayoutBox,
     doc: &zero_dom::Document,
@@ -310,7 +319,17 @@ fn solve_auto_bfc_margin_beside(
     let right = (container_width - mr).min(band_right);
     let right = if is_left_float {
         // 左 float：band 钉 border-box 左缘，right 取 frame 下限后夹回 band。
-        right.max(left + frame).min(band_right)
+        // R5481：tight 门（chromium oracle p1 left-margin-tight 定谳——float 440
+        // 带 10 < frame 30 时下绕 float 底 (0,50) 宽 CB−margin_h=440，与右 float
+        // 镜像门、R5479/R5480 margin:0 域同一 frame-floor 模型；R5217 当年探针形
+        // 全 fit 域（gap ≥ frame），tight 行为未实证、「夹回 band 永不下绕」系
+        // 猜测臂）。fit 形零变化（p3 lf mr=10 (100,0) 宽 340、R5217 lf mr=15/22/28
+        // [14,2] 实证域——r−left ≥ frame 门不触发）。
+        let r = right.max(left + frame).min(band_right);
+        if !wrap && r - left < frame {
+            wrap = true;
+        }
+        r
     } else {
         // 右 float：右缘钉 float margin-box 左缘，钉后宽不足 frame → 下绕。
         if !wrap && right - left < frame {
@@ -1965,6 +1984,21 @@ pub(crate) static CLEAR_EMPTY_CHAIN_ABSORB: std::sync::LazyLock<bool> =
 static FLOAT_EARLIEST_FIT: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_EARLIEST_FIT").as_deref() != Ok("0"));
 
+/// R5441（CSS 2.1 §9.5 + §9.2.1.1 float 静态位模型）：破碎 inline 前序占据参与 float
+/// 落位。chrome 落位以「行顶旁放得下 → 贴行顶旁落（floats-placement-006/007：50+50
+/// 旁落 y=0，rtl float-left 贴左缘同此）、纯单行 inline 前序 → 贴行顶、内容绕排（s10
+/// 热榜 369 容器 4px mark + 369px float 同贴行顶）、破碎 inline（含块级子，§9.2.1.1
+/// 生成匿名块）旁放不下 → 下移到其流底（静态位；stack-floats-003：满宽破碎 inline 后
+/// mt:−100 float，旧落 band_y=0 → border −100，借 R3784 钳位救场）」为准。walk 此前
+/// 只见 float 带（R1277② inline 子不推进 flow_bottom，行顶旁落不退）。启用后仅破碎
+/// inline 级前序子记宽度占据 Σ 与行内容流底，float 旁放不下（宽 > 容器宽 − 占据 Σ，
+/// fit 判定仅宽度、rtl 免疫）时静态位地板抬升落位起点（earliest-fit 抬 band_y /
+/// 回退路径抬 line_y），其余形零扰动。
+/// kill-switch `ZW_FLOAT_INLINE_LINE_BAND=0` 回退。
+/// https://www.w3.org/TR/CSS22/visuren.html#float-position
+static FLOAT_INLINE_LINE_BAND: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_INLINE_LINE_BAND").as_deref() != Ok("0"));
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
@@ -2105,6 +2139,11 @@ pub(crate) fn adjust_float_positions_with_context(
     // r5226_float_after_block_cursor_anchor 同值）。无片段史时与
     // (flow_bottom, last_flow_mb) 恒等，既有锚零扰动。
     let mut flow_snap: (f32, f32) = (0.0, 0.0);
+    // R5441（CSS 2.1 §9.5 float 静态位模型）：R1277② 跳过推进的 inline 级前序子占据——
+    // 宽度 Σ 供 float「旁放不下」判定（fit 仅宽度，rtl 免疫，见 skip 分支注释），流底供
+    // 不 fit 下探的静态位地板。kill-switch `ZW_FLOAT_INLINE_LINE_BAND=0` 回退（两处同门）。
+    let mut inline_line_occupied_w = 0.0f32;
+    let mut inline_content_bottom = 0.0f32;
     // 第一个流内子元素的 margin-top 会与无 border-top/padding-top 的父容器折叠
     //（CSS §8.3.1），此时子元素位于容器 content 原点，其 margin-top 不应计入 flow_bottom，
     // 否则后续 float 的 min_float_y 会把该 margin-top 双重计入，使 float 偏低。
@@ -2173,6 +2212,25 @@ pub(crate) fn adjust_float_positions_with_context(
                 if child.fragment_node_ids.is_none() {
                     flow_snap = (flow_bottom, last_flow_mb);
                 }
+            }
+            // R5441（CSS 2.1 §9.5 + §9.2.1.1 float 静态位模型）：被 R1277② 跳过的 inline
+            // 级前序子中，仅**含块级子的破碎 inline**（§9.2.1.1 生成匿名块盒 = BFC 内真实
+            // 块结构）记占据参与 float 落位——宽度 Σ（fit 判定仅宽度，rtl 免疫）+ 行内容
+            // 流底。float 旁放不下（宽 > 容器宽 − 占据 Σ）时静态位地板（inline 流底）抬升
+            // 落位起点：stack-floats-003 形满宽破碎 inline 后 mt:−100 float 旧落 band_y=0
+            // → border −100 借 R3784 钳位救场，现下探 inline 流底 100 → border 0 chrome 位。
+            // 纯单行 inline 内容（文本 span、inline-block、空 mark）不入账——五点 oracle
+            // 对照（s10 热榜 li=369 + 4px mark + 369px float 贴行顶 y=0 不下探 vs
+            // stack-floats-003 同「beside 不可能」却下探流底）定谳判别式是破碎性而非 fit：
+            // 纯 inline 前序的 float 贴行顶、内容绕排（s10 基线 24.85 保持；宽度可信性门
+            // 曾把 s10 形 369 声明宽误入 Σ → 全量 make test 实证 paint s10 ✗40.85 回归）。
+            if lift_inline
+                && !child.is_block_level
+                && *FLOAT_INLINE_LINE_BAND
+                && child.children.iter().any(|c| c.is_block_level)
+            {
+                inline_line_occupied_w += child.margin_left + child.width + child.margin_right;
+                inline_content_bottom = inline_content_bottom.max(child.y + child.height + child.margin_bottom);
             }
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
             if matches!(child.float, FloatValue::None) {
@@ -2471,7 +2529,15 @@ pub(crate) fn adjust_float_positions_with_context(
         // 425 宽 x=−25 越容器左缘）。旧行为（双墙恒容器宽）下这些案被误判放不下
         // 而下移。https://www.w3.org/TR/CSS22/visuren.html#float-position
         let earliest_fit = if *FLOAT_EARLIEST_FIT {
-            let mut band_y = line_y;
+            // R5441：旁放不下（float 宽 > 容器宽 − inline 占据 Σ）→ 静态位地板（inline
+            // 行内容流底）抬升试探起点；fit 形零扰动。见 skip 分支与 FLOAT_INLINE_LINE_BAND 注释。
+            let inline_no_fit_floor =
+                if *FLOAT_INLINE_LINE_BAND && child_outer_width > (container_width - inline_line_occupied_w).max(0.0) {
+                    inline_content_bottom
+                } else {
+                    0.0
+                };
+            let mut band_y = line_y.max(inline_no_fit_floor);
             let mut resolved: Option<(f32, f32)> = None; // (左缘, 右缘)
             let is_right_float = matches!(child.float, FloatValue::Right);
             // R5392：fit 试探的候选带高取 max(margin 盒高, border 盒高)——负 margin
@@ -2590,6 +2656,11 @@ pub(crate) fn adjust_float_positions_with_context(
                 left_used_width = 0.0;
                 right_used_width = 0.0;
                 line_max_height = 0.0;
+            }
+            // R5441：旁放不下 → 静态位地板（与 earliest-fit 路径同口径；本路径为
+            // kill-switch 回退域，corpus 默认 earliest-fit）。见 skip 分支注释。
+            if *FLOAT_INLINE_LINE_BAND && child_outer_width > (container_width - inline_line_occupied_w).max(0.0) {
+                line_y = line_y.max(inline_content_bottom);
             }
 
             match child.float {
@@ -2756,6 +2827,10 @@ pub(crate) fn adjust_float_positions_with_context(
     let nested_avoid_on = std::env::var("ZW_NESTED_BFC_FLOAT_AVOID").as_deref() != Ok("0");
     // R5217 margin-aware 钉位总开关，循环外取一次（热路径逐对 env 查询有可测开销）。
     let margin_solve_on = std::env::var("ZW_BFC_MARGIN_SOLVE").as_deref() != Ok("0");
+    // R5480 auto 宽 BFC tight 下绕门总开关，循环外取一次（同款纪律）。收缩带宽
+    // < 框架和（border+padding LR）时 chromium 不旁置、下绕 float 底全 CB 重解
+    //（CSS2 §9.5×§10.3.3，oracle vd-extreme-direct / e5 rf-tight 定谳）。
+    let auto_tight_wrap_on = std::env::var("ZW_BFC_AUTO_TIGHT_WRAP").as_deref() != Ok("0");
     // R5221：下绕 BFC 的流游标修正（chromium 交错布局语义，007 探针定谳）。Phase 1
     // 用 BFC 避让**前**的流位放置后继 float 与兄弟预位；auto 宽 BFC 在 Phase 2 下绕
     // 到 float 底后其真实底边下移，后继 float 的流位置 ≥ 该底（007：float2 从
@@ -3628,13 +3703,30 @@ pub(crate) fn adjust_float_positions_with_context(
                                     // 父 content-box 左 + margin_left（child.x 相对父 content-box）。
                                     child.x = child.margin_left;
                                 } else if avoidance_x > child.x {
-                                    // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）
-                                    child.x = avoidance_x;
-                                    // 缩小宽度以不超出容器
-                                    let max_width = container_width - child.x;
-                                    if child.width > max_width {
-                                        child.width = max_width.max(0.0);
+                                    // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）。
+                                    // R5480：auto 宽形 tight 门（chromium oracle vd-extreme-direct
+                                    // 定谳）——收缩带宽（container_width − avoidance_x）< 框架和
+                                    // frame 时不旁置，下绕 float 底全 CB 重解（x=ml、w=CB −
+                                    // margin_h，流游标/快照抬升与 R5221 下绕臂同款）；declared
+                                    // 宽形维持原判据（R1369/R1728 must_pushdown 域零回归）。
+                                    let max_width = container_width - avoidance_x;
+                                    if auto_tight_wrap_on && child.declared_width_auto && max_width < frame - 0.5 {
+                                        if float_bottom > child.y {
+                                            child.y = float_bottom;
+                                        }
+                                        child.x = ml;
+                                        child.width = (container_width - margin_h).max(0.0);
                                         shrink_bfc_content_width(child);
+                                        let new_bottom = child.y + child.height;
+                                        wrap_floors.push((idx + 1, new_bottom));
+                                        pending_geom_bump = Some(new_bottom);
+                                    } else {
+                                        child.x = avoidance_x;
+                                        // 缩小宽度以不超出容器
+                                        if child.width > max_width {
+                                            child.width = max_width.max(0.0);
+                                            shrink_bfc_content_width(child);
+                                        }
                                     }
                                 }
                             }
@@ -3713,9 +3805,14 @@ pub(crate) fn adjust_float_positions_with_context(
                                     }
                                 } else if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
                                     && is_definite_width
+                                    && !child.declared_width_auto
                                     && !has_following_block_sibling[idx]
                                     && !child.is_layout_container
                                 {
+                                    // R5480：门加 `!declared_width_auto`（左臂 R1728 同款纪律的
+                                    // 右镜像补齐）——左臂收缩后的 auto 宽 BFC 不被 is_definite_width
+                                    // 代理误判 definite 走下绕（双侧夹 oracle (100,0) 宽 250 定谳），
+                                    // 落 else 臂带内收缩。
                                     if float_bottom > child.y {
                                         child.y = float_bottom;
                                     }
@@ -3729,9 +3826,24 @@ pub(crate) fn adjust_float_positions_with_context(
                                     // R5217：float_x 是 float border-box 左缘，§9.5 约束边是
                                     // margin-box 左缘（001/002 v=0 cells 实证 ref 宽 16 =
                                     // float_x − margin_l，旧算式给 18 多留 float 左 margin）。
-                                    let new_width = float_x - *float_margin_l - child.x;
-                                    child.width = new_width.max(0.0);
-                                    shrink_bfc_content_width(child);
+                                    // R5480：auto 宽形 tight 门（e5 rf-tight oracle 定谳）——收缩带
+                                    // 宽 < 框架和时下绕 float 底全 CB 重解；带内（含左臂收缩后的
+                                    // 双侧形）维持带内收缩旁置（双侧夹 (100,0) 宽 250 oracle）。
+                                    let new_width = (*float_x - *float_margin_l - child.x).max(0.0);
+                                    if auto_tight_wrap_on && child.declared_width_auto && new_width < frame - 0.5 {
+                                        if float_bottom > child.y {
+                                            child.y = float_bottom;
+                                        }
+                                        child.x = ml;
+                                        child.width = (container_width - margin_h).max(0.0);
+                                        shrink_bfc_content_width(child);
+                                        let new_bottom = child.y + child.height;
+                                        wrap_floors.push((idx + 1, new_bottom));
+                                        pending_geom_bump = Some(new_bottom);
+                                    } else {
+                                        child.width = new_width;
+                                        shrink_bfc_content_width(child);
+                                    }
                                 }
                             }
                             _ => {}
@@ -4075,6 +4187,10 @@ pub(crate) fn adjust_float_positions_with_context(
     // R5399：最近流内前驱块 mb 单趟跟踪（float/abspos 脱流不破坏 §8.3.1 邻接，
     // 跳过继续回溯）——供子 walk 的 unhoist 兄弟间距保留。
     let mut prev_in_flow_mb = 0.0f32;
+    // R5448：前序兄弟 walk 高不稳旗标（见 FLOAT_STALE_FRAME_BAND_SKIP 文档）——
+    // sticky 累积（任一前序不稳即其后所有兄弟帧都带其 δ），消费在下面两处：
+    // 带集继承跳过 + 底边不传。
+    let mut prior_float_height_unstable = false;
     for (idx, child) in box_node.children.iter_mut().enumerate() {
         let (left_ctx, right_ctx) = child_float_contexts
             .get(idx)
@@ -4109,7 +4225,9 @@ pub(crate) fn adjust_float_positions_with_context(
             let has_prior_floats = !inherited_floats.is_empty()
                 || !nested_geoms_acc.is_empty()
                 || float_child_indices.iter().any(|ci| *ci < idx);
-            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && has_prior_floats {
+            // R5448：不稳帧内带集不继承（换算下移 δ 幻影排斥，见环首注释）。
+            let stale_frame = *FLOAT_STALE_FRAME_BAND_SKIP && prior_float_height_unstable;
+            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && has_prior_floats && !stale_frame {
                 // float_geometries 借用 box_node.children；先取出 child 偏移再 map（避免与 child mut 借用冲突）。
                 let (cx, cy) = (child.x, child.y);
                 inherited_floats
@@ -4127,11 +4245,18 @@ pub(crate) fn adjust_float_positions_with_context(
             } else {
                 Vec::new()
             };
+            // R5448：不稳帧内底边不传（left_ctx/right_ctx 含前序不稳兄弟的 walk 底，
+            // 换算成幻影 floor 推压；传盒自身内容顶 = 无约束中性值）。
+            let (inherited_left, inherited_right) = if stale_frame {
+                (box_content_abs_y, box_content_abs_y)
+            } else {
+                (box_content_abs_y + left_ctx, box_content_abs_y + right_ctx)
+            };
             adjust_float_positions_with_context(
                 child,
                 child_content_abs_y,
-                box_content_abs_y + left_ctx,
-                box_content_abs_y + right_ctx,
+                inherited_left,
+                inherited_right,
                 &child_inherited,
                 doc,
                 styles,
@@ -4165,6 +4290,24 @@ pub(crate) fn adjust_float_positions_with_context(
             nested_left_acc = nested_left_acc.max(nl);
             nested_right_acc = nested_right_acc.max(nr);
             nested_geoms_acc.extend(nested_float_geoms(child, child.x, child.y, outer_content_y_offset));
+        }
+        // R5448：本子刚递归定谳完，按其形态更新不稳旗标（供后继兄弟消费）——流内
+        // 非 BFC 且子树含 float、且有 inline 内容（直接文本/inline 级子）的容器，块高
+        // remeasure 步 6 才物化（walk h=0）。仅 float 无文本容器不入：float 不参与
+        // 非 BFC auto 高（§9.7），real h 亦 0 → δ=0 帧稳定；BFC-auto 载体不入：taffy
+        // 已含 float 堆叠高（δ=0）。float_subtrees=None（全树无 float）恒 false，
+        // 门全关零开销（deep_nesting 等无 float 文档不受扰）。
+        if *FLOAT_STALE_FRAME_BAND_SKIP
+            && !child.is_absolute
+            && !child.is_fixed
+            && matches!(child.float, FloatValue::None)
+            && !crate::margin_collapse::establishes_bfc(child)
+            && float_subtrees.is_some_and(|m| child.node_id.is_none_or(|id| m.get(&id).copied().unwrap_or(true)))
+            && child
+                .node_id
+                .is_some_and(|id| crate::inline_content::has_inline_content(doc, styles, id))
+        {
+            prior_float_height_unstable = true;
         }
     }
 

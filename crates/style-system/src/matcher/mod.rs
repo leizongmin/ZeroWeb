@@ -4,13 +4,13 @@
 //! 检查标签名、ID、类、属性和伪类。
 
 /// 匹配声明结果类型：(属性名, 属性值, 是否important, 特异性, 层索引)
-type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
+pub(crate) type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
 
 use std::collections::HashMap;
 
 use zero_css_parser::ast::{
-    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -333,6 +333,12 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // 只在 engine shim JS 栈，由管线逐帧注入 Document（镜像 :focus 通道），
             // 委派 `is_modal_dialog` 权威判定（与 `dialog:modal` UA 定位同源）。
             "modal" => doc.is_modal_dialog(element),
+            // `:filtered`：filterable select 过滤态（whatwg/html #12050 谱系——
+            // `<input filter=idref>` 关联 select，输入值变化时文本不匹配的 option
+            // 进入过滤态）。过滤态只在 engine shim JS 栈，由桥线程局槽逐查询注入
+            // Document（镜像 `:active` 的 `sync_active_state` 通道），委派
+            // `is_filtered_option` 权威判定。
+            "filtered" => doc.is_filtered_option(element),
             // 约束校验伪类（HTML §4.10.20 + CSS Selectors L4）：候选校验元素的约束状态。
             // 委派 Document 权威方法（R3284 与 DOM 选择器同源，逻辑在 dom/document/validation.rs）。
             "valid" => doc.is_valid_element(element),
@@ -372,6 +378,11 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
         // `:lang()`/`:dir()` 委派 Document 权威方法（R3281 与 DOM 选择器同源，逻辑提升见 dom/document/lang_dir.rs）。
         PseudoClassSelector::Lang(range) => doc.matches_lang(element, range),
         PseudoClassSelector::Dir(dir) => doc.matches_dir(element, dir),
+        // `:host` / `:host(...)` / `:host-context(...)`（CSS Scoping §3/§4）：常规
+        // 匹配路径恒不匹配——宿主段规则由 [`collect_host_declarations_with_media`]
+        // 在宿主元素的独立 tree-context 级联段收集（45 号 shadow-dom-rendering M1）。
+        // 文档表规则与 shadow 树内元素一律不得经本路径命中宿主段语义。
+        PseudoClassSelector::Host(_) | PseudoClassSelector::HostContext(_) => false,
     }
 }
 
@@ -1455,6 +1466,7 @@ const SUPPORTED_SIMPLE_PSEUDO_CLASSES: &[&str] = &[
     "disabled",
     "empty",
     "enabled",
+    "filtered",
     "first-child",
     "first-of-type",
     "focus",
@@ -2235,6 +2247,595 @@ pub fn collect_pseudo_declarations_with_media(
     results
 }
 
+/// 45 号 shadow-dom-rendering M1：`:host` / `:host(...)` / `:host-context(...)`
+/// 宿主段声明收集（CSS Scoping §3/§4，https://drafts.csswg.org/css-scoping/#host-selector）。
+///
+/// shadow 树样式表中的 `:host` 族规则作用于宿主元素；作用域正确性由调用方保证——
+/// 只传宿主自身 shadow root 的 sheets（文档表规则不得经此通道）。
+///
+/// 与常规收集（[`collect_matching_declarations_with_media`]）分道的理由：常规路径对
+/// `:host` 族恒不匹配（见 [`matches_pseudo_class`]），宿主段声明由本收集器单独产出，
+/// 以独立 tree-context 级联段参与排序（外树 author normal 声明胜 shadow 宿主段、
+/// important 反转——[`crate::cascade::CascadeOrder`] tree_context 轴）。走查为直接
+/// 规则遍历（无桶索引）：宿主元素每代至多数个、shadow sheets 低频小表，非热路径；
+/// 层索引独立计数（tree-context 排序先于层序，跨树层比较由 tree-context 消解，
+/// 段内自洽即可）。
+pub fn collect_host_declarations_with_media(
+    doc: &Document,
+    host: NodeId,
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    pseudo_name: Option<&str>,
+) -> Vec<MatchingDecl> {
+    let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
+    let mut layer_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for stylesheet in stylesheets {
+        collect_host_from_rules(
+            doc,
+            host,
+            &stylesheet.rules,
+            &mut results,
+            media_ctx,
+            None,
+            &mut layer_counter,
+            &mut layer_map,
+            pseudo_name,
+        );
+    }
+    results
+}
+
+/// [`collect_host_declarations_with_media`] 的规则走查（@media/@layer 递归语义同
+/// [`collect_from_rules`]；`@supports` 现场求值；其余 at-rule 整体忽略——CSS 未知
+/// at-rule body 不参与级联）。`pseudo_name` 为 `Some` 时只收集尾部伪元素等于该名
+/// 的规则（`:host::before` 等宿主段伪元素，45 号 M2 扩面）。
+#[allow(clippy::too_many_arguments)]
+fn collect_host_from_rules(
+    doc: &Document,
+    host: NodeId,
+    rules: &[zero_css_parser::ast::Rule],
+    results: &mut Vec<MatchingDecl>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    current_layer: Option<usize>,
+    layer_counter: &mut usize,
+    layer_map: &mut std::collections::HashMap<String, usize>,
+    pseudo_name: Option<&str>,
+) {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                // 同规则多选择器只收集一次（collect_from_rules 的 last_matched_rule 语义）。
+                let mut collected = false;
+                for selector in &style_rule.selectors {
+                    if !collected
+                        && let Some(stripped) = selector_tail_for_pseudo(selector, pseudo_name)
+                        && matches_host_target(doc, host, &stripped)
+                    {
+                        push_style_rule_decls(style_rule, selector, results, current_layer);
+                        collected = true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at_rule) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body
+                    && at_rule.name.eq_ignore_ascii_case("media")
+                {
+                    let hit = media_ctx.is_some_and(|ctx| {
+                        zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                    });
+                    if hit {
+                        collect_host_from_rules(
+                            doc,
+                            host,
+                            inner_rules,
+                            results,
+                            media_ctx,
+                            current_layer,
+                            layer_counter,
+                            layer_map,
+                            pseudo_name,
+                        );
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::Layer(layer_rule) => {
+                // R4246：层名首次出现序注册；空语句只注册不递归（collect_from_rules 同语义）。
+                if layer_rule.rules.is_empty() {
+                    if layer_rule.name.is_empty() {
+                        *layer_counter += 1;
+                    } else {
+                        for name in layer_rule.name.split(',') {
+                            let name = name.trim();
+                            if !name.is_empty() {
+                                register_layer_name(layer_map, layer_counter, name);
+                            }
+                        }
+                    }
+                } else {
+                    let layer_idx = if layer_rule.name.is_empty() {
+                        let idx = *layer_counter;
+                        *layer_counter += 1;
+                        idx
+                    } else {
+                        register_layer_name(layer_map, layer_counter, layer_rule.name.trim())
+                    };
+                    collect_host_from_rules(
+                        doc,
+                        host,
+                        &layer_rule.rules,
+                        results,
+                        media_ctx,
+                        Some(layer_idx),
+                        layer_counter,
+                        layer_map,
+                        pseudo_name,
+                    );
+                }
+            }
+            zero_css_parser::ast::Rule::Supports(supports_rule)
+                if evaluate_supports_condition(&supports_rule.condition) =>
+            {
+                collect_host_from_rules(
+                    doc,
+                    host,
+                    &supports_rule.rules,
+                    results,
+                    media_ctx,
+                    current_layer,
+                    layer_counter,
+                    layer_map,
+                    pseudo_name,
+                );
+            }
+            _ => {
+                // @keyframes/@import 等不参与匹配。
+            }
+        }
+    }
+}
+
+/// 伪元素尾对齐：`pseudo_name` 为 `None` 时要求选择器无尾部伪元素（元素路径规则）；
+/// 为 `Some(name)` 时要求尾部伪元素键等于该名（`:host::before`/`::slotted(x)::after`
+/// 等树上下文伪元素规则，45 号 M2）。命中时返回剥除尾部伪元素后的选择器副本。
+fn selector_tail_for_pseudo(selector: &Selector, pseudo_name: Option<&str>) -> Option<Selector> {
+    match (selector_pseudo_element(selector), pseudo_name) {
+        (None, None) => Some(selector.clone()),
+        (Some(tail), Some(name)) if tail == name => {
+            let mut stripped = selector.clone();
+            if let Some(last) = stripped.complex.parts.last_mut() {
+                last.0.subclass_selectors.pop();
+            }
+            Some(stripped)
+        }
+        _ => None,
+    }
+}
+
+/// 45 号 shadow-dom-rendering M2：`::slotted(<compound-selector>)` 段声明收集
+///（CSS Shadow §3.2.4，https://drafts.csswg.org/css-shadow-1/#slotted-pseudo）。
+///
+/// shadow 树样式表中的 `::slotted` 规则作用于该树 slot 的已分配元素；作用域正确性
+/// 由调用方保证——`slot` 必须是该 shadow 树内的 slot 元素，只传 slot 所在树的 sheets
+///（文档表规则不得经此通道）。`element` 为被分配元素（匹配参数化合物），`slot` 为
+/// 其 flat tree 父（前缀组合子从 slot 沿 flat tree 上行匹配）。
+///
+/// 与常规收集分道的理由同 [`collect_host_declarations_with_media`]：常规路径对
+/// `::slotted` 恒不匹配（[`matches_subclass`] PseudoElement 臂），slotted 段声明由
+/// 本收集器单独产出，以 tree_context=1 独立级联段参与排序（css-cascade-5 §6.1：
+/// 外树 author normal 胜 shadow 树、important 反转）。`pseudo_name` 为 `Some` 时只
+/// 收集 `::slotted(...)::<name>` 树驻留伪元素规则（CSS Shadow §3.2.4 缀后形态）。
+#[allow(clippy::too_many_arguments)]
+pub fn collect_slotted_declarations_with_media(
+    doc: &Document,
+    element: NodeId,
+    slot: NodeId,
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    pseudo_name: Option<&str>,
+) -> Vec<MatchingDecl> {
+    let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
+    let mut layer_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for stylesheet in stylesheets {
+        collect_slotted_from_rules(
+            doc,
+            element,
+            slot,
+            &stylesheet.rules,
+            &mut results,
+            media_ctx,
+            None,
+            &mut layer_counter,
+            &mut layer_map,
+            pseudo_name,
+        );
+    }
+    results
+}
+
+/// [`collect_slotted_declarations_with_media`] 的规则走查（@media/@layer/@supports
+/// 递归语义与 [`collect_host_from_rules`] 逐点一致）。
+#[allow(clippy::too_many_arguments)]
+fn collect_slotted_from_rules(
+    doc: &Document,
+    element: NodeId,
+    slot: NodeId,
+    rules: &[zero_css_parser::ast::Rule],
+    results: &mut Vec<MatchingDecl>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    current_layer: Option<usize>,
+    layer_counter: &mut usize,
+    layer_map: &mut std::collections::HashMap<String, usize>,
+    pseudo_name: Option<&str>,
+) {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                // 同规则多选择器只收集一次（collect_from_rules 的 last_matched_rule 语义）。
+                let mut collected = false;
+                for selector in &style_rule.selectors {
+                    if !collected
+                        && let Some(stripped) = selector_tail_for_pseudo(selector, pseudo_name)
+                        && matches_slotted_target(doc, slot, element, &stripped)
+                    {
+                        push_style_rule_decls(style_rule, selector, results, current_layer);
+                        collected = true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at_rule) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body
+                    && at_rule.name.eq_ignore_ascii_case("media")
+                {
+                    let hit = media_ctx.is_some_and(|ctx| {
+                        zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                    });
+                    if hit {
+                        collect_slotted_from_rules(
+                            doc,
+                            element,
+                            slot,
+                            inner_rules,
+                            results,
+                            media_ctx,
+                            current_layer,
+                            layer_counter,
+                            layer_map,
+                            pseudo_name,
+                        );
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::Layer(layer_rule) => {
+                if layer_rule.rules.is_empty() {
+                    if layer_rule.name.is_empty() {
+                        *layer_counter += 1;
+                    } else {
+                        for name in layer_rule.name.split(',') {
+                            let name = name.trim();
+                            if !name.is_empty() {
+                                register_layer_name(layer_map, layer_counter, name);
+                            }
+                        }
+                    }
+                } else {
+                    let layer_idx = if layer_rule.name.is_empty() {
+                        let idx = *layer_counter;
+                        *layer_counter += 1;
+                        idx
+                    } else {
+                        register_layer_name(layer_map, layer_counter, layer_rule.name.trim())
+                    };
+                    collect_slotted_from_rules(
+                        doc,
+                        element,
+                        slot,
+                        &layer_rule.rules,
+                        results,
+                        media_ctx,
+                        Some(layer_idx),
+                        layer_counter,
+                        layer_map,
+                        pseudo_name,
+                    );
+                }
+            }
+            zero_css_parser::ast::Rule::Supports(supports_rule)
+                if evaluate_supports_condition(&supports_rule.condition) =>
+            {
+                collect_slotted_from_rules(
+                    doc,
+                    element,
+                    slot,
+                    &supports_rule.rules,
+                    results,
+                    media_ctx,
+                    current_layer,
+                    layer_counter,
+                    layer_map,
+                    pseudo_name,
+                );
+            }
+            _ => {
+                // @keyframes/@import 等不参与匹配。
+            }
+        }
+    }
+}
+
+/// 45 号 M2：slotted 段匹配谓词（CSS Shadow §3.2.4）。`selector` 已按
+/// [`selector_tail_for_pseudo`] 对齐伪元素尾。选择器形态分解：
+///
+/// 1. 末化合物含 `Slotted(arg)` 子类：弹出 arg——**参数化合物匹配被分配元素**
+///    （含 `:has` 等函数伪类，csswg-drafts#10586）；
+/// 2. 末化合物剥除 Slotted 后的余部（类型选择器/其余子类）匹配 **slot 元素**
+///    （`slot.x::slotted(div)`、裸 `::slotted(div)` ≡ `*::slotted(div)`）；
+/// 3. 前缀组合子链沿**被分配元素**的 flat tree 上行匹配
+///    （[`matches_selector_flat_recursive`]——`div.wrap ::slotted(x)` 的 `div.wrap`
+///    是 slotted 元素的 flat 祖先，slot 作为其 flat 父入链；`:host` 族在 host
+///    边界步 featureless 命中），如 `:host ::slotted(div)`（host-slotted-001）。
+fn matches_slotted_target(doc: &Document, slot: NodeId, element: NodeId, selector: &Selector) -> bool {
+    let parts = &selector.complex.parts;
+    let Some((last_compound, _)) = parts.last() else {
+        return false;
+    };
+    // 1. 末化合物的最后一个 Slotted 子类弹出（css-parser 保证 Slotted 只在末化合物）。
+    let Some(idx) = last_compound.subclass_selectors.iter().rposition(|s| {
+        matches!(
+            s,
+            SubclassSelector::PseudoElement(zero_css_parser::ast::PseudoElementSelector::Slotted(_))
+        )
+    }) else {
+        return false;
+    };
+    let SubclassSelector::PseudoElement(zero_css_parser::ast::PseudoElementSelector::Slotted(arg)) =
+        &last_compound.subclass_selectors[idx]
+    else {
+        return false;
+    };
+    // 2. 余部匹配 slot 元素（空化合物 = universal，恒过）。
+    let rest = CompoundSelector {
+        type_selector: last_compound.type_selector.clone(),
+        subclass_selectors: last_compound
+            .subclass_selectors
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != idx)
+            .map(|(_, s)| s.clone())
+            .collect(),
+    };
+    if !(rest.type_selector.is_none() && rest.subclass_selectors.is_empty()) && !matches_compound(doc, slot, &rest) {
+        return false;
+    }
+    // 1'. 参数匹配被分配元素（单化合物 → 构造单 part 选择器复用常规匹配）。
+    let arg_selector = Selector {
+        complex: ComplexSelector {
+            parts: vec![(arg.as_ref().clone(), None)],
+        },
+    };
+    if !matches_selector(doc, element, &arg_selector) {
+        return false;
+    }
+    // 3. 前缀链沿被分配元素的 flat tree 上行匹配：末化合物已在本元素求值完
+    //（余部对 slot、参数对本元素），前缀按其与末化合物间的组合子自 slot 起
+    // 继续（Descendant → slot 及以上祖先；Child → slot 本身）。
+    if parts.len() > 1 {
+        return matches_selector_flat_recursive(doc, element, parts, parts.len() - 1);
+    }
+    true
+}
+
+/// flat tree 父边（CSS Shadow §4.1 flat tree 构造的父语义）。
+/// 返回 `(flat 父, 是否跨 shadow 边界落在 host 上)`：
+/// - 节点已被分配到 slot → 该 slot（slotted 元素的 flat 父是 slot）；
+/// - light 父是 ShadowRoot 节点 → 其宿主（shadow 根由宿主「顶替」——host 视图
+///   从树内看是 featureless，见 [`matches_compound_flat`] 的 `featureless` 臂）；
+/// - 其余 → light 父。
+fn flat_tree_parent(doc: &Document, node: NodeId) -> Option<(NodeId, bool)> {
+    if let Some(slot) = doc.assigned_slot(node) {
+        return Some((slot, false));
+    }
+    let parent = doc.parent_node(node)?;
+    if let Some(zero_dom::NodeKind::ShadowRoot(data)) = doc.get(parent).map(|n| &n.kind) {
+        return data.host.map(|h| (h, true));
+    }
+    Some((parent, false))
+}
+
+/// 组合子链的 flat tree 匹配——[`matches_selector`] 的 flat tree 变体：组合子上行
+/// 用 [`flat_tree_parent`] 替代 light `doc.parent_node`，化合物匹配用
+/// [`matches_compound_flat`]（host 边界 featureless + `:host` 族臂）。兄弟组合器沿
+/// light 边（前缀链的兄弟比较只发生在同一 shadow 树内——slot 及其树内祖先的 light
+/// 兄弟即 flat 兄弟；slotted 元素只出现在参数化合物，不入前缀链）。
+/// [`matches_selector_recursive`] 的 flat tree 变体（结构逐点镜像，父边换
+/// [`flat_tree_parent`]）。调用约定：`parts[part_idx]` 化合物视为已在 `current`
+/// 求值完毕（slotted 段由 [`matches_slotted_target`] 步骤 1/2 完成），本函数仅
+/// 负责更深前缀的上行。
+fn matches_selector_flat_recursive(
+    doc: &Document,
+    current: NodeId,
+    parts: &[(CompoundSelector, Option<Combinator>)],
+    part_idx: usize,
+) -> bool {
+    if part_idx == 0 {
+        return true;
+    }
+    let (prev_compound, combinator) = &parts[part_idx - 1];
+    match combinator {
+        Some(Combinator::Descendant) => {
+            // 后代组合器：flat tree 上行（slotted → slot → 树内链 → host → 外树）。
+            // host 边界步（crossed）用 featureless 匹配 host 节点本身，其后继续上行
+            // 用常规匹配（host 在自身树外照常匹配——CSS Shadow §3.2.2 只约束树内视图）。
+            let mut ancestor = flat_tree_parent(doc, current);
+            while let Some((ancestor_id, crossed)) = ancestor {
+                if matches_compound_flat(doc, ancestor_id, prev_compound, crossed)
+                    && matches_selector_flat_recursive(doc, ancestor_id, parts, part_idx - 1)
+                {
+                    return true;
+                }
+                ancestor = flat_tree_parent(doc, ancestor_id);
+            }
+            false
+        }
+        Some(Combinator::Child) => {
+            if let Some((parent, crossed)) = flat_tree_parent(doc, current)
+                && matches_compound_flat(doc, parent, prev_compound, crossed)
+            {
+                return matches_selector_flat_recursive(doc, parent, parts, part_idx - 1);
+            }
+            false
+        }
+        Some(Combinator::NextSibling) => {
+            // 相邻兄弟（light 边，语义同 matches_selector_recursive——见函数注）。
+            let mut sibling = doc.previous_sibling(current);
+            while let Some(sib) = sibling {
+                if is_element(doc, sib) {
+                    if matches_compound_flat(doc, sib, prev_compound, false) {
+                        return matches_selector_flat_recursive(doc, sib, parts, part_idx - 1);
+                    }
+                    return false;
+                }
+                sibling = doc.previous_sibling(sib);
+            }
+            false
+        }
+        Some(Combinator::SubsequentSibling) => {
+            let mut sibling = doc.previous_sibling(current);
+            while let Some(sibling_id) = sibling {
+                if is_element(doc, sibling_id)
+                    && matches_compound_flat(doc, sibling_id, prev_compound, false)
+                    && matches_selector_flat_recursive(doc, sibling_id, parts, part_idx - 1)
+                {
+                    return true;
+                }
+                sibling = doc.previous_sibling(sibling_id);
+            }
+            false
+        }
+        None => matches_selector_flat_recursive(doc, current, parts, part_idx - 1),
+    }
+}
+
+/// flat tree 化合物匹配：`featureless=true`（跨 shadow 边界落在 host 上）时宿主
+/// featureless——只有 `:host` 族可命中（CSS Shadow §3.2.2），类型选择器与其余子类
+/// 一律不匹配；否则镜像 [`matches_compound`]，仅 `:host` 族臂替换：常规路径恒 false，
+/// 此处 host 节点上按参数形态求值（形态判定与 [`matches_host_target`] 一致：
+/// `:host(args)` 参数照常匹配宿主 light 上下文，`:host-context(args)` 沿宿主 light
+/// 祖先链上行——从树内前缀链跨出的宿主即「本树宿主」，语义同 M1 宿主段）。
+fn matches_compound_flat(doc: &Document, element: NodeId, compound: &CompoundSelector, featureless: bool) -> bool {
+    if let Some(ts) = &compound.type_selector {
+        // featureless 宿主：类型选择器不匹配（含 `*`——selectors-4 §featureless）。
+        if featureless || !matches_type(doc, element, ts) {
+            return false;
+        }
+    }
+    for sub in &compound.subclass_selectors {
+        match sub {
+            SubclassSelector::PseudoClass(PseudoClassSelector::Host(_) | PseudoClassSelector::HostContext(_)) => {
+                // `:host` 族只命中 shadow host（树内普通元素上恒不命中——与常规路径同口径）。
+                if doc.shadow_root(element).is_none() {
+                    return false;
+                }
+                match sub {
+                    SubclassSelector::PseudoClass(PseudoClassSelector::Host(None)) => {}
+                    SubclassSelector::PseudoClass(PseudoClassSelector::Host(Some(args))) => {
+                        if !args.iter().any(|s| matches_selector(doc, element, s)) {
+                            return false;
+                        }
+                    }
+                    SubclassSelector::PseudoClass(PseudoClassSelector::HostContext(args)) => {
+                        let mut cur = doc.parent_node(element);
+                        let mut hit = false;
+                        while let Some(ancestor) = cur {
+                            if doc
+                                .get(ancestor)
+                                .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+                                && args.iter().any(|s| matches_selector(doc, ancestor, s))
+                            {
+                                hit = true;
+                                break;
+                            }
+                            cur = doc.parent_node(ancestor);
+                        }
+                        if !hit {
+                            return false;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            // featureless 宿主：其余子类一律不匹配。
+            _ if featureless => return false,
+            _ => {
+                if !matches_subclass(doc, element, sub) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// 45 号 M1：宿主段匹配谓词。`:host` 族只允许出现在选择器末化合物（CSS Scoping
+/// §3 host-selector 语法）；去除该子类后的选择器主体匹配宿主（组合器前体照常沿
+/// light 域匹配，如 `body > :host`），且按形态判定参数：
+/// - `:host(args)`：宿主匹配任一参数选择器；
+/// - `:host-context(args)`：宿主沿 shadow-including 祖先链上行，任一**元素**祖先
+///   匹配任一参数（物理父链上跳过 ShadowRoot 节点即穿出本 shadow 树，落到外层
+///   宿主继续上行——css-scoping §4 祖先定义）。
+fn matches_host_target(doc: &Document, host: NodeId, selector: &Selector) -> bool {
+    let Some(last) = selector.complex.parts.last() else {
+        return false;
+    };
+    let host_idx = last.0.subclass_selectors.iter().rposition(|sub| {
+        matches!(
+            sub,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Host(_))
+                | SubclassSelector::PseudoClass(PseudoClassSelector::HostContext(_))
+        )
+    });
+    let Some(idx) = host_idx else {
+        return false;
+    };
+    let SubclassSelector::PseudoClass(pc) = &last.0.subclass_selectors[idx] else {
+        return false;
+    };
+    let mut stripped = selector.clone();
+    if let Some(stripped_last) = stripped.complex.parts.last_mut() {
+        stripped_last.0.subclass_selectors.remove(idx);
+    }
+    if !matches_selector(doc, host, &stripped) {
+        return false;
+    }
+    match pc {
+        PseudoClassSelector::Host(None) => true,
+        PseudoClassSelector::Host(Some(args)) => args.iter().any(|s| matches_selector(doc, host, s)),
+        PseudoClassSelector::HostContext(args) => {
+            let mut cur = doc.parent_node(host);
+            while let Some(ancestor) = cur {
+                // 祖先链上非元素节点（文本/注释）不参与匹配，继续上行。
+                if doc
+                    .get(ancestor)
+                    .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+                    && args.iter().any(|s| matches_selector(doc, ancestor, s))
+                {
+                    return true;
+                }
+                cur = doc.parent_node(ancestor);
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 /// 返回选择器的尾部伪元素名（如 `"before"`/`"after"`），若无则 `None`。
 ///
 /// 按 CSS 语法，伪元素总是最后一个复合选择器的最后一个子类选择器。
@@ -2779,6 +3380,19 @@ fn collect_style_rule_decls(
     if !matched {
         return false;
     }
+    push_style_rule_decls(style_rule, selector, results, current_layer);
+    true
+}
+
+/// 将已命中 Style 规则的声明推入收集结果（specificity 按命中选择器计）。
+/// 45 号 M1 起 [`collect_host_declarations_with_media`] 与常规收集共用此出栈路径，
+/// 保证 justify-all 双声明展开等收集层语义两边一致。
+fn push_style_rule_decls(
+    style_rule: &zero_css_parser::ast::StyleRule,
+    selector: &Selector,
+    results: &mut Vec<MatchingDecl>,
+    current_layer: Option<usize>,
+) {
     let spec = zero_css_parser::selector::specificity(selector);
     for decl in &style_rule.declarations {
         // CSS Text 3 §7.1：`text-align: justify-all` = justify +
@@ -2811,7 +3425,6 @@ fn collect_style_rule_decls(
             ));
         }
     }
-    true
 }
 
 /// R4246：注册层名到层索引（首次出现序；已注册名返回既有索引）。

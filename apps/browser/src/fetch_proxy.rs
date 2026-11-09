@@ -554,6 +554,7 @@ impl TabFetchProxy {
                 url: url.clone(),
                 headers: request_headers,
                 body: params.body.clone(),
+                cache_mode: zero_net::CacheMode::Default,
             },
             priority,
             partition,
@@ -611,6 +612,7 @@ impl TabFetchProxy {
                 url,
                 headers,
                 body: None,
+                cache_mode: zero_net::CacheMode::Default,
             },
             FetchPriority::HIGH,
             partition,
@@ -675,6 +677,7 @@ impl TabFetchProxy {
                 url,
                 headers: request.headers.clone(),
                 body: request.body.as_ref().map(|body| body.as_bytes().to_vec()),
+                cache_mode: zero_net::CacheMode::Default,
             },
             priority,
             partition,
@@ -822,6 +825,7 @@ impl TabFetchProxy {
                     url: url.clone(),
                     headers,
                     body: None,
+                    cache_mode: zero_net::CacheMode::Default,
                 },
                 |chunk| {
                     if cache_body_within_limit {

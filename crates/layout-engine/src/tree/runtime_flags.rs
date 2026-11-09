@@ -11,6 +11,7 @@ pub(super) struct TreeRuntimeFlags {
     inline_box_model_coherence: bool,
     run_in: bool,
     r109_slice_vframe_overflow: bool,
+    shadow_text_box: bool,
     record_node_map: bool,
 }
 
@@ -28,6 +29,7 @@ impl TreeRuntimeFlags {
             inline_box_model_coherence: enabled("ZW_INLINE_BOX_MODEL_COHERENCE"),
             run_in: enabled("ZW_RUN_IN"),
             r109_slice_vframe_overflow: enabled("ZW_R109_SLICE_VFRAME_OVERFLOW"),
+            shadow_text_box: enabled("ZW_SHADOW_TEXT_BOX"),
             record_node_map: std::env::var("ZW_TREE_NODE_MAP_RECORD").as_deref() == Ok("1"),
         }
     }
@@ -70,6 +72,12 @@ impl TreeRuntimeFlags {
 
     pub(super) fn r109_slice_vframe_overflow(self) -> bool {
         self.value("ZW_R109_SLICE_VFRAME_OVERFLOW", self.r109_slice_vframe_overflow)
+    }
+
+    /// 45 号 R4：shadow 文本匿名叶开关（默认开，`ZW_SHADOW_TEXT_BOX=0` 杀；R4 第二臂
+    /// paint/IFC 侧收口后翻默认，零回归见 M3 R4 evidence 门控矩阵）。
+    pub(super) fn shadow_text_box(self) -> bool {
+        self.value("ZW_SHADOW_TEXT_BOX", self.shadow_text_box)
     }
 
     pub(super) fn record_node_map(self) -> bool {

@@ -138,3 +138,30 @@ wrapper）。①族残余 ~120 行主攻（`exp /font+/span+font+span vs got fon
 单族 55 行）不变。
 
 
+
+## S5 现行代收敛补账（2026-11-05 只读窗，fix12b 代复核）
+
+fix1 时点 S5 挂账 ~25 行经 ⑦ 递归断环/⑧⑨⑫ 各轮收敛，fix12b 代复核定谳：
+
+1. **空串签名全治愈**：五语料 fix12b 全日志 qV `got ""` 行计数 = **0**（`<p>[foo<p><br><p>bar]`
+   qV before/after 双向 Pass="3"/"4"，异常路径签名消除——⑦ 递归断环轮 + 后续轮收益）。
+2. **table qV-after "3/4" 维持 ⑪ 切片伪影判定**：straddle 签名（exec 子测试落窗外
+   → after 读数=未修改状态；fs-win ?1001-2130 重跑全绿先例），非引擎缺陷。
+3. **S5 真实存活面收敛 = fontname tag 模式 pre/listing 3 行**（= fontname 现行全部
+   3F）：`[foo<pre>bar</pre>baz]` qI-after（expected false got true）+ qV-after
+   （expected "sans-serif" got "serif"）+ `fo[o<listing>b]ar</listing>` qV-after
+   （expected "sans-serif" got "serif"），全部 sw=false。
+
+**判别证据（模式特异性）**：同 fixture `[foo<pre>bar</pre>baz]`——compare innerHTML
+双模式全绿（post-DOM 与 Chrome 录音逐字一致：`<font face=sans-serif>foo</font><pre>
+<font face=sans-serif>bar</font></pre><font face=sans-serif>baz</font>` 形）；
+**sw=true（CSS 模式）qI/qV before+after 4/4 Pass**，sw=false（tag 模式）before Pass、
+after 双红。语料录音（fontname.js :317/:323）：qI before=true（Chrome 普查含 bar 的
+pre UA mono → 混合）→ after=false（全 sans 均一）。
+
+**机制假设（实施窗探针判别）**：tag 模式 fontname 查值走查缺 `<font face>` attr→
+font-family 映射（foo/baz 读落 body serif，qV serif 与此吻合）且 pre/listing UA 臂
+在 bar 走查压过最近祖先 face 值（bar 读 mono ≠ serif → qI 混合 true）；CSS 模式
+span style 映射在位且走查序正确故全绿。修向 = tag 模式查值补 face attr 映射 +
+最近祖先 face 优先于隔代 UA 臂的走查序；探针判别 fixture = pre/listing 双模式
+qV/qI + 走查 trace。此面与 ③'-c 样式表查找刀同域（effective 走查面），宜合并实施窗。

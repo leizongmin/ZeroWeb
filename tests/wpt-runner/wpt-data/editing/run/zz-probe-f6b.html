@@ -1,0 +1,204 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F6b sub/sup×fontsize carry 刀判别探针（2026-11-08）：14 红键 + 2 绿见证。
+     A 族（armed typing script 壳，carry font 内层——`foo[]bar`+script+delete
+     +insertText 期望 `fo<sub><font size="3">a</font></sub>bar`，刀前 got 无
+     font）；C 族（fontsize 指定值通道，桶等价门+壳外重放——subscript+fontsize
+     (2)+insertText 期望 `foo<sub>a</sub>bar`（等桶溶解，刀前多包 size2）、
+     fontsize(3) 期望 `foo<font size="3"><sub>a</sub></font>bar`（刀前 size3 被
+     当缺省丢））；N 族（前树幸存壳，外层剥+异桶重放/等桶溶——font2 外壳重映射
+     size 2→1、font3 内壳提出壳外、font3 外壳等桶溶解；尾选区三形同构）；W1/W2
+     = 壳内侧 font2 等桶溶解绿面护栏（:2173/:2393 引擎既有绿，carry 重放不得污
+     染）。r2（2026-11-09）：C 族补 qV-after 断言面——C3/C4 载体 attr 真值期
+     "3"（缩放臂不触护栏）+ C5 静态无 override 案期 "2"（纯文档态回落，r2
+     part01c 缺省位 0.83em 缩放修复的直接闸门；C1/C2 既有 qV 走 part01d 溶解
+     臂 override 重绑路径，不闸该修复）。
+     运行：make testharness-editing-run-one FILTER=zz-probe-f6b.html -->
+<title>zz-probe-f6b</title>
+<div id=log></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function setupCase(markup) {
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = "<div contenteditable></div>";
+    var host = container.querySelector("div[contenteditable]");
+    host.innerHTML = markup;
+    var marker = { s: null, e: null };
+    (function strip(n) {
+        if (n.nodeType === 3) {
+            var si = n.data.indexOf("[");
+            if (si >= 0 && !marker.s) marker.s = { node: n, off: si };
+            var ei = n.data.indexOf("]");
+            if (ei >= 0 && !marker.e) marker.e = { node: n, off: ei };
+        }
+        for (var c = 0; c < n.childNodes.length; c++) strip(n.childNodes[c]);
+    })(host);
+    var sel = getSelection();
+    var r = document.createRange();
+    if (marker.s && marker.e) {
+        var sOff = marker.s.off;
+        var eOff = marker.e.off;
+        if (marker.s.node === marker.e.node && eOff > sOff) eOff -= 1;
+        marker.s.node.deleteData(sOff, 1);
+        marker.e.node.deleteData(eOff, 1);
+        r.setStart(marker.s.node, sOff);
+        r.setEnd(marker.e.node, eOff);
+        if (r.collapsed) r.setEnd(marker.s.node, sOff);
+    } else {
+        r.selectNodeContents(host);
+        r.collapse(true);
+    }
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return host;
+}
+function setupCaret(markup) {
+    // `foo[]bar` 形：[] 标记 caret 位（无选区）——A/C 族入口。
+    return setupCase(markup);
+}
+function runChain(host, chain) {
+    for (var i = 0; i < chain.length; i++) {
+        document.execCommand(chain[i][0], false, chain[i][1]);
+    }
+}
+var SW = ["styleWithCSS", "false"];
+
+// —— A 族：armed typing script 壳，carry font 内层（census 4 键）——
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["subscript",""],["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'fo<sub><font size="3">a</font></sub>bar',
+        "A1 sub+delete carry font 内层");
+}, "A1 subscript delete typed carry");
+
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["subscript",""],["forwarddelete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<sub><font size="3">a</font></sub>ar',
+        "A2 sub+fwddelete carry font 内层");
+}, "A2 subscript forwarddelete typed carry");
+
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["superscript",""],["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'fo<sup><font size="3">a</font></sup>bar',
+        "A3 sup+delete carry font 内层");
+}, "A3 superscript delete typed carry");
+
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["superscript",""],["forwarddelete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<sup><font size="3">a</font></sup>ar',
+        "A4 sup+fwddelete carry font 内层");
+}, "A4 superscript forwarddelete typed carry");
+
+// —— C 族：fontsize 指定值通道，桶等价门 + 壳外重放（census 4 键）——
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["subscript",""],["fontsize","2"],["insertText","a"]]);
+    assert_equals(host.innerHTML, "foo<sub>a</sub>bar",
+        "C1 等桶溶解（small 桶2 ≡ sub 内 13.28px 桶2）");
+    assert_equals(document.queryCommandValue("fontsize"), "2",
+        "C1 溶解后 qV 载体（override 重绑，语料 qV-after 期望 2）");
+}, "C1 subscript fontsize2 equal bucket dissolve");
+
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["fontsize","2"],["subscript",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, "foo<sub>a</sub>bar",
+        "C2 等桶溶解（先 fontsize 后 subscript 同门）");
+    assert_equals(document.queryCommandValue("fontsize"), "2",
+        "C2 溶解后 qV 载体（override 重绑，语料 qV-after 期望 2）");
+}, "C2 fontsize2 subscript equal bucket dissolve");
+
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["subscript",""],["fontsize","3"],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<font size="3"><sub>a</sub></font>bar',
+        "C3 异桶重放（medium 桶3 ≠ 桶2，font 壳外）");
+    // 载体在场：16px 是 font[size=3] attr 派生真值，legacy 读数恒 "3"——r2
+    // part01c 缩放按载体存在性分派，此处不得触缩放臂（过缩放即翻红护栏）。
+    assert_equals(document.queryCommandValue("fontsize"), "3",
+        "C3 qV-after 载体 attr 真值（非缺省回落，不缩放）");
+}, "C3 subscript fontsize3 hoist");
+
+test(function() {
+    var host = setupCaret("foo[]bar");
+    runChain(host, [SW, ["fontsize","3"],["subscript",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<font size="3"><sub>a</sub></font>bar',
+        "C4 异桶重放（先 fontsize 后 subscript 同形）");
+    assert_equals(document.queryCommandValue("fontsize"), "3",
+        "C4 qV-after 载体 attr 真值（非缺省回落，不缩放）");
+}, "C4 fontsize3 subscript hoist");
+
+test(function() {
+    var host = setupCaret("foo<sub>a[]b</sub>bar");
+    // r1 批 P2F 失败面静态复刻（C1/C2 qV-after 走 part01d 溶解臂 override
+    // 重绑路径、override 存活故不闸 r2 修复——r1 批 probe 16/16 与 mt 红 2 键
+    // 并存的机制）：本案无链无 override，qV 纯文档态回落。UA sub 0.83em 盲读
+    // 16px→legacy '3'（r1 刀体缺 part01c 缺省位缩放时此处红）。
+    assert_equals(document.queryCommandValue("fontsize"), "2",
+        "C5 静态文档态 qV（无 override，UA 0.83em 缺省位缩放）");
+}, "C5 static document-state qV in sub");
+
+// —— N 族：前树幸存壳（census 6 键）——
+test(function() {
+    var host = setupCase('foo<font size=2><sub>[bar]</sub></font>baz');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<font size="1"><sub>a</sub></font>baz',
+        "N1 外层 font2 剥离+重放 size1（重映射 2→1 形）");
+}, "N1 outer font2 remap");
+
+test(function() {
+    var host = setupCase('foo<sub><font size=3>[bar]</font></sub>baz');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<font size="3"><sub>a</sub></font>baz',
+        "N2 内层 font3 attr 提出 sub 壳外");
+}, "N2 inner font3 hoist");
+
+test(function() {
+    var host = setupCase('foo<font size=3><sub>[bar]</sub></font>baz');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, "foo<sub>a</sub>baz",
+        "N3 外层 font3 剥离+等桶溶解（13.28px 桶2 ≡ 重放桶2）");
+}, "N3 outer font3 dissolve");
+
+test(function() {
+    var host = setupCase('foo<font size=2><sub>[bar</sub></font>baz]');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<font size="1"><sub>a</sub></font>',
+        "N4 尾选区外层 font2 重放 size1");
+}, "N4 tail outer font2 remap");
+
+test(function() {
+    var host = setupCase('foo<sub><font size=3>[bar</font></sub>baz]');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, 'foo<font size="3"><sub>a</sub></font>',
+        "N5 尾选区内层 font3 提出");
+}, "N5 tail inner font3 hoist");
+
+test(function() {
+    var host = setupCase('foo<font size=3><sub>[bar</sub></font>baz]');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, "foo<sub>a</sub>",
+        "N6 尾选区外层 font3 等桶溶解");
+}, "N6 tail outer font3 dissolve");
+
+// —— 绿见证：壳内侧 font2 等桶溶解（:2173/:2393 引擎既有绿，不得污染）——
+test(function() {
+    var host = setupCase('foo<sub><font size=2>[bar]</font></sub>baz');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, "foo<sub>a</sub>baz",
+        "W1 内层 font2 等桶溶解绿面护栏");
+}, "W1 inner font2 dissolve witness");
+
+test(function() {
+    var host = setupCase('foo<sub><font size=2>[bar</font></sub>baz]');
+    runChain(host, [["delete",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, "foo<sub>a</sub>",
+        "W2 尾选区内层 font2 溶解绿面护栏");
+}, "W2 tail inner font2 dissolve witness");
+</script>

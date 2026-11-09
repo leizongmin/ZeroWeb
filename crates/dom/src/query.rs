@@ -213,6 +213,15 @@ pub enum PseudoClass {
     /// DOM 静态解析不可知 → 静态永不匹配（镜像 [`PseudoClass::Active`]）。识别理由同上：
     /// selector validity 接受面与 style-system `SUPPORTED_SIMPLE_PSEUDO_CLASSES` 对齐。
     Hover,
+    /// `:filtered`——filterable select 过滤态（whatwg/html #12050 谱系：`<input
+    /// filter=idref>` 关联 select，输入值变化时文本不匹配的 option 进入过滤态）。
+    /// s326（html-semantics M2 切片 326）起为运行时真匹配：shim 过滤算法经
+    /// `Document::set_filtered_options` 注入，`Document::element_matches_selector`
+    /// 延后复评（镜像 [`PseudoClass::Active`] 两阶段模式；`:not(:filtered)` 否定
+    /// 嵌套局限同 `:not(:active)`）。识别理由：`option:not(:filtered)` 语料查询
+    /// 合法性 + selector validity 接受面与 style-system
+    /// `SUPPORTED_SIMPLE_PSEUDO_CLASSES` 对齐。
+    Filtered,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -481,7 +490,18 @@ impl SimpleSelector {
             // R159：伪元素——DOM querySelector **恒不匹配**（spec 伪元素不是元素）。
             PseudoClass::PseudoElement => false,
             // :not(inner)——否定（内嵌经 matches_full 递归评估，可含伪类）。
-            PseudoClass::Not(inner) => !inner.matches_full(elem, pos),
+            // s326：inner 含 `:filtered`（运行时注入态）时延后返 true——deferred-true
+            // 在 Not 内层泄漏会使 `:not(:filtered)`（filterable select 语料主消费面
+            // `visibleOptions()`）恒 false；延后由 Document::element_matches_selector
+            // 复评（镜像 :active 顶层面）。其余 inner 维持既有直评（:not(:target) 等
+            // 否定嵌套局限不变——泛化修复超本切片范围）。
+            PseudoClass::Not(inner) => {
+                if inner.pseudos.iter().any(|p| matches!(p, PseudoClass::Filtered)) {
+                    true
+                } else {
+                    !inner.matches_full(elem, pos)
+                }
+            }
             // :is/:where(list)——任一内嵌匹配则真。
             PseudoClass::Is(list) => list.iter().any(|inner| inner.matches_full(elem, pos)),
             // :has(inner)——需 Document 子树求值，matches_full 无 Document 访问，延后返 true。
@@ -519,6 +539,10 @@ impl SimpleSelector {
             // Document::element_matches_selector 经 `is_active_element` 复评（镜像
             // :target/:valid 延后族；`:not(:active)` 否定嵌套局限见枚举注记）。
             PseudoClass::Active => true,
+            // `:filtered`——filterable select 过滤态（s326，whatwg/html #12050 谱系）：
+            // 延后返 true，由 Document::element_matches_selector 经 `is_filtered_option`
+            // 复评（镜像 :active 两阶段；`:not(:filtered)` 否定嵌套局限同上）。
+            PseudoClass::Filtered => true,
             // `:hover`——运行时指针悬停状态，静态解析的 DOM 不可知 → 永不匹配
             //（headless 无悬停信号源；:active 的按压通道不覆盖 hover）。
             PseudoClass::Hover => false,
@@ -1462,6 +1486,9 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         // checkable-active-space：`input:active` 期望合法 + 零匹配，不抛 SyntaxError）。
         "active" => Some(PseudoClass::Active),
         "hover" => Some(PseudoClass::Hover),
+        // `:filtered`——filterable select 过滤态（whatwg/html #12050 谱系），运行时
+        // 注入真匹配（镜像 :active 两阶段；parse 无 Document 上下文只识别合法性）。
+        "filtered" => Some(PseudoClass::Filtered),
         _ => None, // 未识别伪类 → 视为不匹配该 compound（保守）
     }
 }

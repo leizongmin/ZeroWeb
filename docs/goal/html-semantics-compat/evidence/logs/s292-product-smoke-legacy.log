@@ -1,0 +1,55 @@
+rustc -O scripts/test-guard.rs -o target/test-guard
+bash docs/goal/rendering-compat/evidence/product-static/legacy-html/run-all.sh
+=== Legacy Static Web smoke (DC-13 Tier 1, HTML 3.2/4 + CSS1/2) ===
+    fixtures: /lzcapp/document/work/ZeroWeb/docs/goal/rendering-compat/evidence/product-static/legacy-html/fixtures
+    oracle:   /lzcapp/document/work/ZeroWeb/docs/goal/rendering-compat/evidence/product-static/legacy-html/oracle (chrome-for-testing 127)
+
+  01-body-attrs                      diff=    NA%  struct=PASS
+  02-table-border                    diff=    NA%  struct=PASS
+  03-table-cellpadding               diff=    NA%  struct=PASS
+  04-table-cellspacing               diff=    NA%  struct=PASS
+  05-table-tr-bgcolor                diff=    NA%  struct=PASS
+  06-td-bgcolor-align                diff=    NA%  struct=PASS
+  07-table-valign                    diff=    NA%  struct=PASS
+  08-img-align                       diff=    NA%  struct=PASS
+  09-img-size                        diff=    NA%  struct=PASS
+  10-font-size                       diff=    NA%  struct=PASS
+  11-font-color-face                 diff=    NA%  struct=PASS
+  12-headings                        diff=    NA%  struct=PASS
+  13-lists                           diff=    NA%  struct=PASS
+  14-hr                              diff=    NA%  struct=PASS
+  15-blockquote                      diff=    NA%  struct=PASS
+  16-links                           diff=    NA%  struct=PASS
+  17-center                          diff=    NA%  struct=PASS
+  18-nested-table                    diff=    NA%  struct=PASS
+  19-testpage-minimal                diff=    NA%  struct=PASS
+  20-mixed-legacy                    diff=    NA%  struct=PASS
+  21-dl-dt-dd                        diff=    NA%  struct=PASS
+  22-ol-list-attrs                   diff=    NA%  struct=PASS
+  23-table-rowspan-colspan           diff=    NA%  struct=PASS
+  24-img-presentational              diff=    NA%  struct=PASS
+  25-table-width-height              diff=    NA%  struct=PASS
+  26-pre                             diff=    NA%  struct=PASS
+  27-address                         diff=    NA%  struct=PASS
+  28-div-align                       diff=    NA%  struct=PASS
+  29-inline-style-css1               diff=    NA%  struct=PASS
+  30-table-sections                  diff=    NA%  struct=PASS
+  31-nested-list                     diff=    NA%  struct=PASS
+  32-table-align                     diff=    NA%  struct=PASS
+  33-css1-float                      diff=    NA%  struct=PASS
+  34-br-and-phrasing                 diff=    NA%  struct=PASS
+  35-xmp-listing-plaintext           diff=    NA%  struct=PASS
+  36-isindex                         diff=    NA%  struct=PASS
+  37-form-controls                   diff=    NA%  struct=PASS
+  38-noframes                        diff=    NA%  struct=PASS
+  39-menu                            diff=    NA%  struct=PASS
+  [SKIP] 49-details-summary — oracle missing (run capture-all-oracles)
+  [SKIP] 50-mark — oracle missing (run capture-all-oracles)
+  [SKIP] 51-blockquote-dl-figure — oracle missing (run capture-all-oracles)
+
+=== summary ===
+  fixtures run: 42
+  struct-check failures: 0
+
+trend-only: pixel diff is font-wall baseline data (R633 plateau), not pass/fail.
+struct-check FAIL = real structural finding to investigate (logged above), not a CI block.

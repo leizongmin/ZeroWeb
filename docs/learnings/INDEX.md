@@ -5,9 +5,56 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（214）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（261）
 
-- 2026-11-03 [throw 式诊断 bail 在 DOM merge 路径会撕裂不变量并致不可中断自旋](bugs/2026-11/2026-11-03-throw-bail-diag-corrupts-merge-invariants.md) — engine, testing
+- 2026-11-09 [shim appendChild 隐式 detach 缺口状态相关——孤立探针同码全绿不等于实现正确，执行态分歧用窗口克隆+side-band trace 定位](bugs/2026-11/2026-11-09-shim-appendchild-implicit-detach-state-gap.md) — engine
+- 2026-11-09 [数值分桶中点扫描在整档值上系统性差一档](bugs/2026-11/2026-11-09-numeric-bucket-midpoint-scan-off-by-one.md) — engine
+- 2026-11-09 [FD walk 吸收臂设计前先逐迭代 trace 执行路径——静态模型把 br-branch 当落点，实际 walk cond1 已先吃掉 br](bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md) — engine
+- 2026-11-09 [deleteSelection 跨壳边界选区静默空转：收集器两道叠加缺陷](bugs/2026-11/2026-11-09-delete-selection-cross-shell-noop.md) — engine
+- 2026-11-09 [批脚本二进制特征串选串须先实测源文件单行连续存在](bugs/2026-11/2026-11-09-binary-sig-string-line-wrap-split.md) — tests/wpt-runner,build-support
+- 2026-11-08 [归因批须断言现行门禁腿定义：腿定义漂移使 5 次重载 bisect 答了已废弃的问题](bugs/2026-11/2026-11-08-rss-razor-edge-same-content-time-ab.md) — tests/wpt-runner,testing
+- 2026-11-08 [match 判别式临时 MutexGuard 存活到整个 match——臂内再锁自死锁](bugs/2026-11/2026-11-08-match-scrutinee-mutex-guard-deadlock.md) — net, wpt-runner
+- 2026-11-08 [shim 侧 iframe 子文档脚本段的 src 检测在 runner 语料面恒空——s261 预内联投递剥 src，须读 data-inline](bugs/2026-11/2026-11-08-iframe-child-doc-inlined-scripts-data-inline.md) — crates/engine/src/js_dom_shim, tests/wpt-runner
+- 2026-11-08 [手搓 make test 镜像腿缺前置 standalone binary 构建——cargo fail-fast 放大成整腿早停](bugs/2026-11/2026-11-08-hand-rolled-gate-legs-miss-standalone-binary-build.md) — engine, webdriver, testing
+- 2026-11-08 [门禁批计数跨域混算——multitest raw 行数(×2 双窗) ≠ judge 键域(去重)，完账检查与残数预期必须同域取数](bugs/2026-11/2026-11-08-gate-batch-count-domain-alignment.md) — tests/wpt-runner, .acceptance/dps
+- 2026-11-08 [完成态 op 绑定的证据文件字节冻结与 open_findings 非空即不就绪](bugs/2026-11/2026-11-08-frozen-evidence-and-open-findings-contract.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-11-08 [构建锁等待继承二进制内容：无 Compiling 行的构建不能作归因锚点](bugs/2026-11/2026-11-08-build-lock-inherited-binary-provenance.md) — tests/wpt-runner,build-support
+- 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
+- 2026-11-07 [taffy abs 包含块=直接父模型：后处理「只扩不缩」让错误钳制存活（R5445 D2 域图谱）](bugs/2026-11/2026-11-07-taffy-abs-direct-parent-cb-vs-spec-icb.md) — layout-engine
+- 2026-11-07 [layout 期行内几何修复不经 paint Path B 等价注入，像素必然不变](bugs/2026-11/2026-11-07-paint-path-b-rerun-eats-inline-geometry-fixes.md) — layout-engine, engine
+- 2026-11-07 [OOF 固有宽剪除的作用域：table 内部盒可剪，普通块盒剪不得（R5300 补测链依赖）](bugs/2026-11/2026-11-07-oof-intrinsic-prune-scope-table-internal-vs-abs-refill-chain.md) — layout-engine, testing
+- 2026-11-07 [§9.7 blockification 让 float span 算块级子：inline wrapper 谓词把离流盒计成块子（R5446 嵌套 float 域）](bugs/2026-11/2026-11-07-oof-float-blockification-predicate-leak.md) — layout-engine
+- 2026-11-07 [批脚本 md5 锚两陷阱：expect/got 配方必须同一函数；md5sum 行配方对路径标签敏感](bugs/2026-11/2026-11-07-md5-anchor-recipe-identity-and-path-label.md) — tests/wpt-runner, docs/goal/editing-compat
+- 2026-11-07 [单测钉红的归因必须 bisect 到提交；改动域轮次必须跑改动 crate 的 lib 全腿](bugs/2026-11/2026-11-07-lib-full-leg-and-commit-level-bisect-for-pin-reds.md) — layout-engine, testing
+- 2026-11-07 [内部按 _elKey 建链的 map 查找跨族落空——按元素 id 回落对齐](bugs/2026-11/2026-11-07-internal-chain-key-cross-family-id-fallback.md) — crates/engine
+- 2026-11-07 [element proxy 的 get trap 拦截全部属性读——原型侧 accessor 对 proxy 恒不可达](bugs/2026-11/2026-11-07-element-proxy-get-trap-intercepts-prototype-accessors.md) — crates/engine
+- 2026-11-07 [批脚本 md5 守卫快照须落构建后，脚本起点快照会误标二进制身份](bugs/2026-11/2026-11-07-batch-md5-guard-snapshot-timing.md) — tests/wpt-runner
+- 2026-11-06 [WebSocket fail 面 error 派发：err 标记位与派发门共用 flag 导致派发永久跳过](bugs/2026-11/2026-11-06-ws-deferred-error-dispatch-flag-short-circuit.md) — engine
+- 2026-11-06 [WPT runner 完成竞态：module script unhandled rejection 上报与结果收集差一 tick](bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md) — zero-engine, tests/wpt-runner
+- 2026-11-06 [真值判断链吞掉新增字符串模式分支（q16 list-wide 死码四批）](bugs/2026-11/2026-11-06-truthy-guard-eats-new-string-mode-branch.md) — engine, js_dom_shim
+- 2026-11-06 [XHR 同步路径 preflight 头集与响应过滤的异步镜像漂移](bugs/2026-11/2026-11-06-sync-xhr-preflight-header-drift.md) — zero-engine（js_dom_shim part01/part03）
+- 2026-11-06 [setTagName 先插后删换型使持有引用 detached，过滤判据恒假](bugs/2026-11/2026-11-06-settagName-detached-reference-breaks-filters.md) — engine
+- 2026-11-06 [响应头值是字节序列不是 Unicode 文本——fixture percent-decode 语义两态](bugs/2026-11/2026-11-06-response-header-values-are-byte-sequences.md) — engine, tests/wpt-runner
+- 2026-11-06 [探针判读必须覆盖目标语料行族全部断言面，而非只核树](bugs/2026-11/2026-11-06-probe-assert-full-row-family.md) — engine
+- 2026-11-06 [runner 日志混入 NUL 字节后 grep 静默空输出——统计与 A/B 前先 Python 解析](bugs/2026-11/2026-11-06-nul-byte-in-runner-logs-silences-grep.md) — wpt-runner, testing
+- 2026-11-06 [wpt-runner flat stash 单键与上游多键 dict 语义冲突——多端点共用 token 的 fixture 须键命名空间化](bugs/2026-11/2026-11-06-flat-stash-key-collision-between-endpoint-fixtures.md) — wpt-runner
+- 2026-11-06 [estimate-font 测试 harness 掩盖真实 advance 下的 reftest 回归](bugs/2026-11/2026-11-06-estimate-font-harness-masks-real-advance-reftest-regressions.md) — zero-engine,zero-layout-engine,wpt-runner
+- 2026-11-06 [切片伪影与真实缺陷的判别：exec 是否在失败 variant 页内运行过才是决定性证据](bugs/2026-11/2026-11-06-dbg-probe-read-point-mismatch-harness-assert.md) — zero-engine
+- 2026-11-06 [fetch cors check 按 spec 步序重排——`*` 通配步骤先于 origin 比对，opaque 分支不可先行特判](bugs/2026-11/2026-11-06-cors-check-asterisk-step-precedes-origin-compare.md) — engine
+- 2026-11-05 [WPT 探针全局调用计数被 testharness 并发臂污染](bugs/2026-11/2026-11-05-wpt-probe-global-counter-pollution.md) — wpt-runner
+- 2026-11-05 [shim/DOM 桥 insertBefore 解析文本 ref 静默丢弃](bugs/2026-11/2026-11-05-shim-insertbefore-parsed-text-ref-silent-drop.md) — engine
+- 2026-11-05 [shim helper 定义在运行核闭包内——载入期机具消费时缺位 throw 撕裂 sweep](bugs/2026-11/2026-11-05-shim-helper-closure-scope-load-time-machinery.md) — engine
+- 2026-11-05 [registry indexOf 快道的「登记序 = DOM 序」前提在部分覆盖视图下静默失效](bugs/2026-11/2026-11-05-registry-index-view-mismatch.md) — engine, js_dom_shim
+- 2026-11-05 [嵌套 flock 同锁致内层 -n 静默跳跑，复跑判读读到幻影旧账](bugs/2026-11/2026-11-05-nested-flock-phantom-log.md) — tooling
+- 2026-11-05 [日志失败计数未锚定 ^Fail 前缀，Pass 行同串误计](bugs/2026-11/2026-11-05-grep-fail-count-pass-line-collision.md) — tooling
+- 2026-11-05 [br 可见性谓词互递归：extraneous ↔ isVisible 无界环](bugs/2026-11/2026-11-05-br-visibility-predicate-mutual-recursion.md) — engine
+- 2026-11-04 [计时探针不带值断言会测到错误路径——「便宜读数」可能是零矩形快速回落](bugs/2026-11/2026-11-04-timing-probe-without-value-assertions-measures-wrong-path.md) — engine, testing
+- 2026-11-04 [SIGKILL 构建链可在 target/debug 留下"指纹新鲜、内容陈旧"的投毒构件，编译假红要先用 clean -p 验伪](bugs/2026-11/2026-11-04-sigkilled-build-poisoned-artifacts-false-compile-red.md) — engine, testing
+- 2026-11-04 [timer 回调丢 data-\* 属性——读侧回落机制与宿主半边分离交付，跨线程接线是结构必需](bugs/2026-11/2026-11-04-mutation-history-host-half-unwired-cross-thread-inbox.md) — engine
+- 2026-11-04 [include_str! 内嵌 shim 的 A/B 判读必须先做二进制谱系验证](bugs/2026-11/2026-11-04-include-str-shim-binary-lineage-ab.md) — engine, testing
+- 2026-11-04 [gBCR 不反映同任务样式写——读路径数据源分叉与 worker 侧有效视图布局](bugs/2026-11/2026-11-04-gbcr-pending-style-write-effective-view-layout.md) — engine
+- 2026-11-04 [workspace 特性统一掩盖 cfg 门控符号的未门控引用断裂](bugs/2026-11/2026-11-04-cargo-feature-unification-hides-cfg-symbol-breaks.md) — engine, 构建系统
+- 2026-11-03 [throw 式诊断 bail 在 DOM merge 路径会撕裂不变量](bugs/2026-11/2026-11-03-throw-bail-diag-corrupts-merge-invariants.md) — engine, testing
 - 2026-11-03 [KMAC newX 拼接是裸 X——把 TupleHash 的逐元素 encode_string 套到 KMAC 上产出全错 MAC](bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md) — zero-engine
 - 2026-11-03 [Hybrid PQ/T KEM combiner 用 CG 框架 C2PRI 定义（含 ek_T、不含 ct_PQ），不是 X-Wing 原式](bugs/2026-11/2026-11-03-hybrid-kem-c2pri-combiner-includes-ek-t.md) — engine
 - 2026-11-02 [per-document 运行时状态用进程级 static 槽承载 → 并行测试 job 下跨页串态](bugs/2026-11/2026-11-02-per-doc-state-static-slot-parallel-jobs.md) — engine, js-dom-bridge
@@ -222,8 +269,13 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（29）
+## Patterns — 可复用代码模式与最佳实践（34）
 
+- 2026-11-09 [样式 carry 刀的捕获三形分账与壳级缩放口径](patterns/2026-11/2026-11-09-style-carry-capture-consume-routing.md) — engine
+- 2026-11-08 [自源 reftest 争议语义定谳：ref 页行为语义 = ZW 自身对应实现，先读 ref 页写法再对 ZW 同路径数值](patterns/2026-11/2026-11-08-self-source-ref-page-semantics-equal-zw-implementation.md) — layout-engine,testing
+- 2026-11-07 [共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main](patterns/2026-11/2026-11-07-shared-tree-push-via-temp-worktree.md) — docs/goal/editing-compat
+- 2026-11-05 [自源探针「0.00% 通过」不可信——图元清单 + black-ref 强拆定谳伪绿](patterns/2026-11/2026-11-05-reftest-passing-page-primitive-forensics.md) — engine,testing
+- 2026-11-04 [Timeout 行不是挂死证明——判读前先做 solo/in-face 预算算术](patterns/2026-11/2026-11-04-timeout-line-budget-arithmetic-before-hang-verdict.md) — testing
 - 2026-11-03 [密码学语料期望值程序化解析取数，不手抄长 hex 串](patterns/2026-11/2026-11-03-corpus-expected-values-parse-not-transcribe.md) — tests/wpt-runner
 - 2026-10-31 [coverage 面级 0P 断层的提交窗口二分法](patterns/2026-10/2026-10-31-coverage-face-zero-pass-bisect.md) — wpt_runner
 - 2026-10-29 [WPT encode-form 期望按 per-scalar fresh 编码出字节——整串流式编码对 stateful 编码必判 FAIL](patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md) — engine, tests/wpt-runner
@@ -254,8 +306,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（48）
+## Performance — 性能优化经验（49）
 
+- 2026-11-04 [缓存键携带每次写都变的版本计数（mlen）——写读交织下缓存归零，每读全量重建](performance/2026-11/2026-11-04-rect-cache-key-mlen-full-rebuild-per-write-read.md) — engine
 - 2026-11-01 [per-call 重算视图 × mutation 循环 = 单调用线性化后的 O(n²) 地板](performance/2026-11/2026-11-01-per-call-recompute-view-mutation-loop-quadratic-floor.md) — engine/js-dom-shim
 - 2026-10-30 [push-only 注册表 + length-only gate 后的 O(n) 预处理 = 填充序列 O(n²)](performance/2026-10/2026-10-30-ring-registry-length-gate-hidden-quadratic.md) — engine/js-dom-shim
 - 2026-10-30 [未注册 globalThis 属性的 typeof 判定走慢路径——惰性注册让页面常驻付 17.6ms/次](performance/2026-10/2026-10-30-globalthis-unregistered-property-typeof-miss-cost.md) — engine
@@ -305,8 +358,16 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（36）
+## Platform — 平台与环境相关经验（44）
 
+- 2026-11-09 [wpt testharness 断言消息只在 Fail 输出——状态转储用聚合单断言](platform/2026-11/2026-11-09-wpt-testharness-fail-only-dump-aggregation.md) — wpt-runner, engine
+- 2026-11-08 [GitHub PR baseRefOid 粘滞锚：head push 不重锚，main 未前进时 PR 侧事件也不重锚](platform/2026-11/2026-11-08-github-pr-base-ref-oid-anchor-drift.md) — crates/engine
+- 2026-11-08 [批脚本被外部 SIGTERM 后 runner 孤儿持锁继续跑——先判孤儿活性再决定等待完账，补跑分支禁止原地截断](platform/2026-11/2026-11-08-flock-fd-orphan-runner-recovery.md) — .acceptance/dps, scripts
+- 2026-11-06 [editing 语料 before 读面编码录音会话状态泄漏——孤立红行先做泄漏模拟对账再定读面 bug](platform/2026-11/2026-11-06-editing-corpus-recording-session-state-leak.md) — editing-compat,wpt_runner
+- 2026-11-06 [并发重型 make 入口时 target-disk-guard 三级全清连坐兄弟门禁腿](platform/2026-11/2026-11-06-concurrent-make-disk-guard-wipes-sibling-gate.md) — make,target-disk-guard,test-guard
+- 2026-11-05 [wpt-runner testharness 行输出进程末统一落盘——stdout 静默 ≠ 挂死](platform/2026-11/2026-11-05-wpt-runner-row-flush-at-process-exit.md) — wpt-runner
+- 2026-11-05 [multitest 语料 full-file 单发模式失败——必须走切片协议](platform/2026-11/2026-11-05-multitest-corpus-full-file-mode-fails-use-slices.md) — zero-web-runner,editing-compat
+- 2026-11-04 [wpt.fyi 上游取证通道（代理 + 端点口径 + per-test message 直键）](platform/2026-11/2026-11-04-wpt-fyi-upstream-evidence-recipe.md) — docs/goal/html-semantics-compat
 - 2026-11-03 [webcrypto 全量账 24MB 案楔死级联的判别指纹与串行复跑协议](platform/2026-11/2026-11-03-webcrypto-24mb-wedge-cascade-fingerprint.md) — tests/wpt-runner, zero-engine
 - 2026-11-03 [git stat 缓存盲区：同 size 同 mtime 的磁盘内容损坏不报脏](platform/2026-11/2026-11-03-git-stat-cache-blind-same-size-mtime-corruption.md) — engine
 - 2026-10-29 [规范迁移期 JS 语义以 Chrome 实测为地面真值——node 旧 V8 是反例](platform/2026-10/2026-10-29-spec-transition-ground-truth-chrome-first.md) — engine,tests/wpt-runner

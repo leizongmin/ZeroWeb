@@ -111,7 +111,9 @@ for entry in json.load(sys.stdin):
               fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
             fi
             ;;
-          *.html | *.htm | *.js | *.json | *.xml | *.xhtml | *.svg | *.css)
+          # .mjs 模块资产同模式（html-semantics-compat M2 s335：microtasks
+          # evaluation-order-{2,3,4}.1.mjs 此前被静默跳过→3 文件级 Timeout）。
+          *.html | *.htm | *.js | *.mjs | *.json | *.xml | *.xhtml | *.svg | *.css)
             fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
             ;;
           # .headers sidecar（wptserve per-file 响应头——xmldecl support 的
@@ -231,7 +233,9 @@ for entry in d["tree"]:
       # support/*.css 资产面——2026-10-29 补齐，深挖模式此前缺位）。
       # GOAL_PULL_HEADERS_TARGETS=1 的 sidecar 目标带拉语义同 fetch_dir_html（此处
       # name 为相对路径，%#.headers 还原目标；仅无扩展名目标生效防双拉）。
-      *.html | *.htm | *.css | *.headers | *.js | *.json | *.xml | *.xhtml | *.svg)
+      # .mjs 同 fetch_dir_html 扩展模式（html-semantics-compat M2 s335：模块
+      # 资产面补齐，浅层白名单此前缺位）。
+      *.html | *.htm | *.css | *.headers | *.js | *.mjs | *.json | *.xml | *.xhtml | *.svg)
         fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
         if [[ "${GOAL_PULL_HEADERS_TARGETS:-0}" == "1" && "${name}" == *.headers ]]; then
           local header_target="${name%.headers}"

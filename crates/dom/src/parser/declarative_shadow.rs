@@ -26,6 +26,48 @@
 
 use std::borrow::Cow;
 
+use crate::document::Document;
+use crate::node::{NodeId, NodeKind};
+
+/// 片段路径 s173 预变换的配套值还原：预变换把 `shadowrootmode` 的 `open`/`close`
+/// 改写为首字母大写以出 html5ever 0.29.1 精确匹配集（[`restore_declarative_shadow_templates`]），
+/// 文档路径随后由 `materialize_declarative_shadow_roots` 消费 template（值大小写
+/// 对语义不可见）；片段路径（innerHTML 等）按 opt-in 语义**不物化**（whatwg/dom#831），
+/// template 以普通元素存活——改写值经 getAttribute/序列化可观测，须还原为源码
+/// 小写形态（WPT declarative-shadow-dom-opt-in 断言 `getAttribute === 'open'`）。
+/// 还原只认预变换产出的两形态（`Open`/`Close`）；源码本就首字母大写的边例回显为
+/// 小写（FIXME: 源码级大小写保真需标签位置映射，欠做——语料与真实页面主流为
+/// 全小写值）。遍历含 template contents 子树（contents 内嵌套声明式模板同样可观测），
+/// 不含 shadow 树（片段解析不产 shadow 节点）。
+pub(crate) fn restore_shadowrootmode_values(doc: &mut Document) {
+    let mut stack: Vec<NodeId> = vec![doc.root()];
+    while let Some(id) = stack.pop() {
+        let (children, contents) = match doc.get(id) {
+            Some(n) => (
+                n.children.clone(),
+                if matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "template") {
+                    doc.template_contents(id)
+                } else {
+                    None
+                },
+            ),
+            None => continue,
+        };
+        if let Some(v) = doc.get_attribute(id, "shadowrootmode") {
+            let restored = match v.as_str() {
+                "Open" => "open",
+                "Close" => "close",
+                _ => v.as_str(),
+            };
+            if restored != v.as_str() {
+                doc.set_attribute(id, "shadowrootmode", restored);
+            }
+        }
+        stack.extend(children);
+        stack.extend(contents);
+    }
+}
+
 /// RAWTEXT/RCDATA 元素：其文本区内 `<template` 是字面量（spec tokenizer raw text
 /// 状态）。https://html.spec.whatwg.org/multipage/parsing.html#raw-text-elements
 const RAW_TEXT_TAGS: [&str; 9] = [
@@ -233,6 +275,292 @@ mod tests {
         matches!(restore_declarative_shadow_templates(html), Cow::Owned(_))
     }
 
+    // 片段路径 opt-in（whatwg/dom#831）：innerHTML 类 fragment 解析不物化——template
+    // 以普通元素存活、shadowrootmode 值还原源码小写、contents 可读（WPT
+    // declarative-shadow-dom-opt-in 断言面）。
+    #[test]
+    fn fragment_parse_keeps_template_without_materializing() {
+        let doc = crate::parse_html_fragment_with_scripting(
+            r#"<div class=host><template shadowrootmode=open><span class=content>Content</span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let tmpl = doc
+            .query_selector(doc.root(), "template[shadowrootmode]")
+            .expect("template should survive fragment parse");
+        assert_eq!(
+            doc.get_attribute(tmpl, "shadowrootmode").as_deref(),
+            Some("open"),
+            "rewritten value must be restored to source case"
+        );
+        let contents = doc.template_contents(tmpl).expect("template contents present");
+        let span = doc
+            .query_selector(contents, ".content")
+            .expect("content subtree readable");
+        assert_eq!(doc.text_content(span).as_deref(), Some("Content"));
+        // 片段路径无 shadow root 节点（不物化）。
+        assert!(doc.shadow_root_ids().is_empty());
+    }
+
+    // 文档路径 opt-in 关闭变体（shim 视图解析消费面）：同片段语义——template 存活 +
+    // 值还原 + 不物化；真实文档路径（parse_html）仍物化（对照断言）。
+    #[test]
+    fn unmaterialized_document_parse_keeps_template() {
+        let html = r#"<html><body><div class=host><template shadowrootmode=open><span>Shadow tree</span></template></div></body></html>"#;
+        let doc = crate::parse_html_with_scripting_unmaterialized(html, true);
+        let tmpl = doc
+            .query_selector(doc.root(), "template[shadowrootmode]")
+            .expect("template should survive unmaterialized parse");
+        assert_eq!(doc.get_attribute(tmpl, "shadowrootmode").as_deref(), Some("open"));
+        assert!(doc.shadow_root_ids().is_empty());
+        // 对照：默认文档路径物化——template 消失、shadow root 建立。
+        let doc_m = crate::parse_html(html);
+        assert!(
+            doc_m.query_selector(doc_m.root(), "template[shadowrootmode]").is_none(),
+            "materializing path consumes the template"
+        );
+        assert_eq!(doc_m.shadow_root_ids().len(), 1);
+    }
+
+    // M3 Batch 2（s180/gethtml，whatwg/dom#831）：**物化片段解析**（unsafe 双 API
+    // 消费面）——`parse_html_fragment_with_scripting_materialized` 消费 template 建
+    // 真根，状态位（delegatesfocus/clonable/serializable）自属性 presence 读入。
+    #[test]
+    fn materialized_fragment_parse_attaches_flags() {
+        let doc = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootmode=open shadowrootdelegatesfocus shadowrootclonable shadowrootserializable><span class=content>C</span></template><p>light</p></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        // template 消费、真根建立。
+        assert!(
+            doc.query_selector(doc.root(), "template[shadowrootmode]").is_none(),
+            "materializing path consumes the template"
+        );
+        let host = doc.query_selector(doc.root(), "div.host").expect("host present");
+        let sr = doc.shadow_root(host).expect("declarative root attached");
+        let data = match doc.get(sr).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(matches!(data.mode, crate::node::ShadowRootMode::Open));
+        assert!(data.declarative, "fragment materialization stamps declarative");
+        assert!(data.delegates_focus && data.clonable && data.serializable);
+        // shadow 子树可查询（.content 移入根）。
+        assert!(doc.query_selector(sr, ".content").is_some());
+        // light 子仍在宿主（template 后的 p 不入根）。
+        assert!(doc.query_selector(host, "p").is_some());
+    }
+
+    // M3 Batch 2：attach_shadow_full 状态位与序列化回写——布尔属性按 HTML 序列化
+    // spec 顺序（shadowrootmode → delegatesfocus → serializable → clonable）回写为
+    // `=""`，与声明式物化读回及 getHTML 模板形态逐字节对齐。
+    #[test]
+    fn attach_shadow_full_flags_serialize_in_spec_order() {
+        let mut doc = crate::Document::new();
+        let host = doc.create_element("div");
+        let sr = doc
+            .attach_shadow_full(
+                host,
+                crate::node::ShadowRootMode::Closed,
+                true,
+                true,
+                true,
+                crate::node::SlotAssignment::Named,
+                true,
+            )
+            .expect("attach_shadow_full succeeds");
+        doc.append_child(doc.root(), host).expect("host appended");
+        let html = crate::serializer::serialize_node(&doc, host);
+        assert!(
+            html.contains(
+                "<template shadowrootmode=\"closed\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\""
+            ),
+            "spec-order boolean attrs, got: {html}"
+        );
+        let data = match doc.get(sr).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(data.declarative, "flags passed through attach_shadow_full");
+        // 对照：全 false 位不产生附加属性（attach_shadow 薄包装默认位）。
+        let mut doc2 = crate::Document::new();
+        let host2 = doc2.create_element("div");
+        let sr2 = doc2
+            .attach_shadow(host2, crate::node::ShadowRootMode::Open)
+            .expect("attach_shadow succeeds");
+        let html2 = crate::serializer::serialize_node(&doc2, host2);
+        assert_eq!(
+            html2, "<div><template shadowrootmode=\"open\"></template></div>",
+            "no extra attrs when flags unset, got: {html2}"
+        );
+        let data2 = match doc2.get(sr2).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(!data2.declarative && !data2.delegates_focus && !data2.clonable && !data2.serializable);
+    }
+
+    // M3 手动臂：shadowrootslotassignment="manual" 按 spec 枚举回写（named 为
+    // 缺失值默认不回写，上一测试对照块已证）——序列序夹在 serializable 与
+    // clonable 之间（spec the-template-element 内容属性清单序）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    #[test]
+    fn manual_slot_assignment_serializes_in_spec_order() {
+        let mut doc = crate::Document::new();
+        let host = doc.create_element("div");
+        doc.append_child(doc.root(), host).expect("host appended");
+        doc.attach_shadow_full(
+            host,
+            crate::node::ShadowRootMode::Open,
+            false,
+            true,
+            true,
+            crate::node::SlotAssignment::Manual,
+            true,
+        )
+        .expect("attach_shadow_full succeeds");
+        let html = crate::serializer::serialize_node(&doc, host);
+        assert!(
+            html.contains("shadowrootserializable=\"\" shadowrootslotassignment=\"manual\" shadowrootclonable=\"\""),
+            "slotassignment 夹在 serializable 与 clonable 之间, got: {html}"
+        );
+    }
+
+    // M3 簇 C（s301）：shadowrootreferencetarget 值捕获与 spec 序回写——属性序
+    // 无关（可先于 shadowrootmode）、空值属性捕获为空串并回写 `=""`、缺属性不
+    // 回写。https://dom.spec.whatwg.org/#shadowroot-reference-target
+    #[test]
+    fn materialized_fragment_parse_captures_reference_target() {
+        // 属性序故意倒置：referencetarget 在 shadowrootmode 之前（上游
+        // gethtml-serialization.html 的源形态）。
+        let doc = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootreferencetarget="target" shadowrootmode=open shadowrootclonable shadowrootserializable shadowrootdelegatesfocus><span id=target></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let host = doc.query_selector(doc.root(), "div.host").expect("host present");
+        let sr = doc.shadow_root(host).expect("declarative root attached");
+        let data = match doc.get(sr).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert_eq!(
+            data.reference_target.as_deref(),
+            Some("target"),
+            "value captured position-independently"
+        );
+        let html = crate::serializer::serialize_node(&doc, host);
+        assert!(
+            html.contains(
+                "<template shadowrootmode=\"open\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\" shadowrootreferencetarget=\"target\">"
+            ),
+            "spec order: referencetarget after clonable, got: {html}"
+        );
+
+        // 空值属性 → Some("") → 回写 `=""`。
+        let doc2 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootreferencetarget shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let host2 = doc2.query_selector(doc2.root(), "div.host").expect("host present");
+        let sr2 = doc2.shadow_root(host2).expect("declarative root attached");
+        let data2 = match doc2.get(sr2).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert_eq!(data2.reference_target.as_deref(), Some(""), "empty attr value kept");
+        let html2 = crate::serializer::serialize_node(&doc2, host2);
+        assert!(
+            html2.contains("shadowrootreferencetarget=\"\">"),
+            "empty value serializes as =\"\", got: {html2}"
+        );
+
+        // 缺属性 → None → 不回写（对照）。
+        let doc3 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let host3 = doc3.query_selector(doc3.root(), "div.host").expect("host present");
+        let sr3 = doc3.shadow_root(host3).expect("declarative root attached");
+        let data3 = match doc3.get(sr3).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(data3.reference_target.is_none(), "absent attr stays None");
+        let html3 = crate::serializer::serialize_node(&doc3, host3);
+        assert!(
+            !html3.contains("shadowrootreferencetarget"),
+            "None not serialized, got: {html3}"
+        );
+    }
+
+    // M3 簇 C（attachment safelist）：物化仅认 valid shadow host 名单宿主——
+    // 名单外宿主（li）保留普通 template 且 shadowrootmode 值还原源码小写；
+    // 名单内宿主照常物化；wrapper 名单内宿主对 parser 重锚来的 stray template
+    //（void 宿主场景）照 spec 消费（attachment.html void 行残留失败的根因面）。
+    // https://dom.spec.whatwg.org/#valid-shadow-host-name
+    #[test]
+    fn materialize_only_on_valid_shadow_host_names() {
+        // li（名单外）：template 嵌套为其子面（parser 正常放置），保留普通形态、
+        // 值还原小写、li 无 shadow root。
+        let doc = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<li id=theelement><template shadowrootmode=open shadowrootclonable><span></span></template><span class=lightdom>Light DOM</span></li>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let tmpl = doc
+            .query_selector(doc.root(), "template[shadowrootmode]")
+            .expect("template survives on non-safelist host");
+        assert_eq!(
+            doc.get_attribute(tmpl, "shadowrootmode"),
+            Some("open".into()),
+            "skipped template value restored to source lowercase"
+        );
+        let li = doc.query_selector(doc.root(), "li#theelement").expect("li present");
+        assert!(doc.shadow_root(li).is_none(), "non-safelist host gets no root");
+
+        // div（名单内）：同一形态物化成功（对照）。
+        let doc2 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div id=theelement><template shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let div = doc2.query_selector(doc2.root(), "div#theelement").expect("div present");
+        assert!(doc2.shadow_root(div).is_some(), "safelist host materializes");
+        assert!(
+            doc2.query_selector(doc2.root(), "template[shadowrootmode]").is_none(),
+            "materializing path consumes the template"
+        );
+
+        // void 宿主场景：br 后的 template 被 parser 重锚到 wrapper（div）——div 是
+        // 名单内宿主，照 spec 消费该 stray template（br 本身无 root）。attachment.html
+        // 的 void/table disallowed 行残留失败即源于此（oracle 期望 template 保留）。
+        let doc3 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=wrapper><br id=theelement><template shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let br = doc3.query_selector(doc3.root(), "br#theelement").expect("br present");
+        assert!(doc3.shadow_root(br).is_none(), "void host gets no root");
+        assert!(
+            doc3.query_selector(doc3.root(), "div.wrapper")
+                .map(|w| doc3.shadow_root(w).is_some())
+                .unwrap_or(false),
+            "wrapper consumes stray template as its own declarative root"
+        );
+    }
+
     #[test]
     fn open_close_values_uppercased() {
         assert_eq!(
@@ -319,5 +647,28 @@ mod tests {
             .as_ref(),
             r#"<div><template shadowrootmode="Open"><a></template><template shadowrootmode="Close"><b></template></div>"#
         );
+    }
+
+    // 45 号 M3（css-scoping-shadow-slotted-nested）：custom element 名（连字符形态）
+    // 宿主同为 valid shadow host（https://dom.spec.whatwg.org/#valid-shadow-host-name
+    // ——词汇法判定，无需注册面）；HTML spec 保留名与无连字符名不算。
+    #[test]
+    fn hyphenated_custom_element_hosts_materialize() {
+        // 连字符宿主物化。
+        let doc = crate::parse_html(
+            r#"<html><body><inner-host><template shadowrootmode=open><span>S</span></template></inner-host></body></html>"#,
+        );
+        let host = doc.query_selector(doc.root(), "inner-host").expect("host present");
+        assert!(doc.shadow_root(host).is_some(), "hyphenated host materializes");
+        // 保留名（#valid-custom-element-name 排除表）不物化。
+        let doc2 = crate::parse_html(
+            r#"<html><body><annotation-xml><template shadowrootmode=open><span>S</span></template></annotation-xml></body></html>"#,
+        );
+        assert!(doc2.shadow_root_ids().is_empty(), "reserved name keeps template");
+        // 无连字符名不物化。
+        let doc3 = crate::parse_html(
+            r#"<html><body><innerhost><template shadowrootmode=open><span>S</span></template></innerhost></body></html>"#,
+        );
+        assert!(doc3.shadow_root_ids().is_empty(), "non-hyphenated name keeps template");
     }
 }

@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F6b N 族 mt 顺序上下文回归探针（2026-11-09 常驻）：孤立探针（zz-probe-f6b/
+     f6bn）同码全绿而 multitest 顺序执行面才有 script 壳 appendChild 隐式 detach
+     缺口（typed 文本为 caret 锚节点态，元素双亲序列化两次=N 族重复尾）——本页
+     multitest 全克隆为该缺口唯一常驻回归面，variant 取两窗（?8001-9000 含 N1/N2、
+     ?9001-last 含 N4/N5）。detach 显式摘除刀修后判读：2089P/3F，残红=F6a 2
+     （#0000FF 色值大小写）+ F1' fontsize(4) 1（下刀目标白名单），N 族四键
+     compare 零红。运行：make testharness-editing-run-one FILTER=zz-probe-f6bwin.html -->
+<meta name="variant" content="?8001-9000">
+<meta name="variant" content="?9001-last">
+<link rel=stylesheet href=../include/reset.css>
+<title>zz-probe-f6bwin</title>
+
+<div id=log></div>
+
+<div id=test-container></div>
+
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=../data/multitest.js></script>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src="/common/subset-tests.js"></script>
+<script>
+"use strict";
+
+(function() {
+    [].forEach.call(document.querySelectorAll("script"), function(node) {
+        node.parentNode.removeChild(node);
+    });
+
+    if (true) {
+        try { document.execCommand("styleWithCSS", false, "true") } catch(e) {}
+    }
+
+    browserTests.forEach(runConformanceTest);
+
+    document.getElementById("test-container").parentNode
+        .removeChild(document.getElementById("test-container"));
+})();
+</script>

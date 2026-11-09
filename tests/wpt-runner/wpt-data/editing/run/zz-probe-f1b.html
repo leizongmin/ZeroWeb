@@ -1,0 +1,136 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F1'-B typing wrap 放置/合并刀判别探针（2026-11-08）：B 族 4 键 + 绿面护栏。
+     B1/B2 = D4 拆壳臂显式 typing 态并入（`<b>a[]</b>c`+bold-off+italic-on 期望
+     `<b>a</b><i>b</i>c`，语料 :584/:585 录音形——刀前 got 裸文本）；B3 = 同 tag
+     前向并壳（`a[]<b>c</b>`+bold+italic 期望 `a<b><i>b</i>c</b>` 语料 :586——
+     刀前 got 分裂形 `<b><i>b</i></b><b>c</b>`）；B4 = 异 tag 不并护栏（语料
+     :587 绿面 `a<b><i>b</i></b><i>c</i>` 逐字节）；B5 = swcss(true) typing 并壳
+     + 占位 br 消费（语料 :2847 录音形 `<span style="font-weight:bold;
+     font-style:italic">a</span>`——刀前 got `<i>a</i><br>` 壳）；B6 = swcss 置位
+     经选区变更（_zwSync）清除护栏（不清则 B6 形 span 吸收产 style 串）；B7 =
+     同名属性冲突不并护栏（既有 tag 壳 fallback 表征钉）。运行：
+     make testharness-editing-run-one FILTER=zz-probe-f1b.html -->
+<title>zz-probe-f1b</title>
+<div id=log></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function setupCaseV2(markup) {
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = "<div contenteditable></div>";
+    var host = container.querySelector("div[contenteditable]");
+    host.innerHTML = markup;
+    var marker = { s: null, e: null };
+    (function strip(n) {
+        if (n.nodeType === 3) {
+            var si = n.data.indexOf("[");
+            if (si >= 0 && !marker.s) marker.s = { node: n, off: si };
+            var ei = n.data.indexOf("]");
+            if (ei >= 0 && !marker.e) marker.e = { node: n, off: ei };
+        }
+        for (var c = 0; c < n.childNodes.length; c++) strip(n.childNodes[c]);
+    })(host);
+    var sel = getSelection();
+    var r = document.createRange();
+    if (marker.s && marker.e) {
+        var sOff = marker.s.off;
+        var eOff = marker.e.off;
+        if (marker.s.node === marker.e.node && eOff > sOff) eOff -= 1;
+        marker.s.node.deleteData(sOff, 1);
+        marker.e.node.deleteData(eOff, 1);
+        r.setStart(marker.s.node, sOff);
+        r.setEnd(marker.e.node, eOff);
+        if (r.collapsed) r.setEnd(marker.s.node, sOff);
+    } else {
+        r.selectNodeContents(host);
+        r.collapse(true);
+    }
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return host;
+}
+// B5/B6 形 setup：caret 元素位（span,0）——`{}` 语料标记无文本载体，手工定位。
+function setupSpanCaret(markup) {
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = "<div contenteditable></div>";
+    var host = container.querySelector("div[contenteditable]");
+    host.innerHTML = markup;
+    var span = host.querySelector("span");
+    var sel = getSelection();
+    var r = document.createRange();
+    r.setStart(span, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return host;
+}
+function runChain(host, chain) {
+    for (var i = 0; i < chain.length; i++) {
+        document.execCommand(chain[i][0], false, chain[i][1]);
+    }
+}
+
+test(function() {
+    var host = setupCaseV2("<b>a[]</b>c");
+    runChain(host, [["styleWithCSS","false"],["bold",""],["italic",""],["insertText","b"]]);
+    assert_equals(host.innerHTML, "<b>a</b><i>b</i>c", "B1 D4 显式 tags 并入");
+}, "B1 bold-off italic-on typed shell");
+
+test(function() {
+    var host = setupCaseV2("<i>a[]</i>c");
+    runChain(host, [["styleWithCSS","false"],["bold",""],["italic",""],["insertText","b"]]);
+    assert_equals(host.innerHTML, "<i>a</i><b>b</b>c", "B2 D4 显式 tags 并入（i 壳 off）");
+}, "B2 italic-off bold-on typed shell");
+
+test(function() {
+    var host = setupCaseV2("a[]<b>c</b>");
+    runChain(host, [["styleWithCSS","false"],["bold",""],["italic",""],["insertText","b"]]);
+    assert_equals(host.innerHTML, "a<b><i>b</i>c</b>", "B3 同 tag 前向并壳");
+}, "B3 forward same-tag merge");
+
+test(function() {
+    var host = setupCaseV2("a[]<i>c</i>");
+    runChain(host, [["styleWithCSS","false"],["bold",""],["italic",""],["insertText","b"]]);
+    assert_equals(host.innerHTML, "a<b><i>b</i></b><i>c</i>", "B4 异 tag 不并（语料 :587 绿面）");
+}, "B4 no cross-tag merge");
+
+test(function() {
+    var host = setupSpanCaret('<span style="font-weight:bold"><br></span>');
+    runChain(host, [["styleWithCSS","true"],["italic",""],["insertText","a"]]);
+    assert_equals(host.innerHTML, '<span style="font-weight:bold; font-style:italic">a</span>',
+        "B5 swcss 并壳 + 占位 br 消费（语料 :2847 录音形）");
+}, "B5 swcss absorb + placeholder br");
+
+test(function() {
+    var host = setupSpanCaret('<span style="font-weight:bold"><br></span>');
+    runChain(host, [["styleWithCSS","true"]]);
+    // 选区变更（removeAllRanges+addRange → _zwSync）后 swcss 置位须清——
+    // typed 物化回落 tag 壳（无 absorb → 无 style 串）。
+    var span = host.querySelector("span");
+    var sel = getSelection();
+    var r = document.createRange();
+    r.setStart(span, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    runChain(host, [["italic",""],["insertText","a"]]);
+    var html = host.innerHTML;
+    assert_true(html.indexOf("font-style:italic") < 0,
+        "B6 swcss 经选区变更清除 (got=" + html + ")");
+    assert_true(html.indexOf("a") >= 0, "B6 typed 在场 (got=" + html + ")");
+}, "B6 swcss cleared via selection change");
+
+test(function() {
+    var host = setupSpanCaret('<span style="font-style:normal"><br></span>');
+    runChain(host, [["styleWithCSS","true"],["italic",""],["insertText","a"]]);
+    var html = host.innerHTML;
+    assert_true(html.indexOf('font-style:normal') >= 0,
+        "B7 冲突 span style 保留 (got=" + html + ")");
+    assert_true(html.indexOf("<i>") >= 0,
+        "B7 冲突回落 tag 壳 (got=" + html + ")");
+}, "B7 conflicting style falls back to tag shell");
+</script>

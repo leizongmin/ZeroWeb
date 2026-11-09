@@ -76,8 +76,15 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 /// s92 string-compilation CSP nonce 面——宿主据此对外链 module fetch 做 script-src
 /// 检查，阻止返空串 → reject TypeError）。s249：第四参 = 动态 import 属性
 /// `with.type` 值（V8 回调 import_attributes 通道提取，空串 = 无属性）。
+/// s340：第五参 = 调用窗 active script credentials mode（Rust 侧读全局
+/// `__zwActiveScriptCred`——shim 子文档合并体每段前置复位行 + 注册包装体执行
+/// 窗恢复，classic `import()` 触发窗内同步可达；undefined/空串 = 缺省
+/// same-origin，宿主据此决定 fetch credentials 标记）。spec：动态 import 的
+/// 请求 credentials mode 取调用点 script 元素的 fetch options（`crossorigin`
+/// 属性推导）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
 #[allow(clippy::type_complexity)] // 镜像 HostCallback 形态（Arc 闭包跨 V8 回调边界）
-pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync + 'static>;
+pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str, &str, &str) -> String + Send + Sync + 'static>;
 
 /// s256（动态 import 延迟决议——delay-load/trickle 慢模块时序族）：宿主延迟
 /// 回包的挂起条目。宿主 resolver 以包裹契约 `1\u{1f}<delay_ms>\u{1f}<inner>`
@@ -178,9 +185,30 @@ fn dynamic_import_callback<'s, 'i>(
         }
         return Some(promise_resolver.get_promise(scope));
     }
+    // s340：调用窗 active script credentials mode——Rust 侧读全局
+    // `__zwActiveScriptCred`（shim 子文档合并体每段前置复位行置位、注册包装体
+    // 执行窗恢复；主文档/worker 面槽缺席恒 undefined → 空串 = 缺省 same-origin
+    // 零漂移）。读槽在 state.lock() 外（锁内不做 V8 操作，既有风格）。
+    let active_cred = v8::String::new(scope, "__zwActiveScriptCred")
+        .and_then(|key| scope.get_current_context().global(scope).get(scope, key.into()))
+        .and_then(|v| {
+            if v.is_undefined() || v.is_null() {
+                None
+            } else {
+                v.to_string(scope)
+            }
+        })
+        .map(|s| s.to_rust_string_lossy(scope))
+        .unwrap_or_default();
     let contract = match state.lock() {
         Ok(st) => match st.resolver.as_ref() {
-            Some(resolver) => resolver(&spec, &st.referrer, st.nonce.as_deref().unwrap_or(""), &type_attr),
+            Some(resolver) => resolver(
+                &spec,
+                &st.referrer,
+                st.nonce.as_deref().unwrap_or(""),
+                &type_attr,
+                &active_cred,
+            ),
             // 未注册宿主：V8 默认行为即 reject 普通 Error("Not supported")（原生效语义）。
             None => {
                 if let Some(msg) = v8::String::new(scope, "Not supported")
@@ -291,11 +319,28 @@ fn settle_dynamic_import<'s>(
         .and_then(|key| context.global(scope).get(scope, key.into()))
         .map(|v| !v.is_undefined())
         .unwrap_or(false);
+    // s339：窗口身份桥构建期判定（Rust 侧读全局 `__zwActiveIframeWin`——shim 子
+    // 文档注册包装在测试体执行窗置位；native settle 臂同步于 import() 调用窗内，
+    // 桥位必在场）。缺席按原样求值（worker/裸 sandbox 面零漂移——无条件形参遮蔽
+    // 会把裸 `window` 从 ReferenceError 变为 globalThis，语义不可接受；见
+    // es_module 常量文档）。
+    let window_bridge_active = v8::String::new(scope, "__zwActiveIframeWin")
+        .and_then(|key| context.global(scope).get(scope, key.into()))
+        .map(|v| !v.is_undefined() && !v.is_null())
+        .unwrap_or(false);
     let mut script_src = String::with_capacity(code.len() + 256);
     if !has_helpers && let Ok(prelude) = crate::build_module_runtime_prelude(&crate::ModuleRegistry::new(), None) {
         script_src.push_str(&prelude);
     }
-    script_src.push_str(code);
+    if window_bridge_active {
+        script_src.push('(');
+        script_src.push_str(crate::es_module::MODULE_EVAL_WINDOW_SCOPE_OPEN);
+        script_src.push_str(code);
+        script_src.push_str(crate::es_module::MODULE_EVAL_WINDOW_SCOPE_CLOSE);
+        script_src.push(')');
+    } else {
+        script_src.push_str(code);
+    }
     // compile/run 须在自有 TryCatch 内——宿主回调 scope 非 TryCatch，裸 run 的
     // 异常会按 uncaught 上抛（永不达 promise rejection）。
     v8::tc_scope!(let tc, scope);
@@ -435,6 +480,28 @@ impl Drop for IsolateEnterGuard {
         // is dropped before the owned isolate is disposed.
         unsafe {
             (*self.isolate).exit();
+        }
+    }
+}
+
+/// s369：per-execute 微任务策略守卫——catch 车道（execute_classic）内 kExplicit，
+/// Drop 恢复 kAuto。背景：V8 kAuto 在顶层 `script.run` 展开即自动执行微任务检查点，
+/// 直编译体的微任务会在 catch 片（reportError 同步面）之前被排空——序背离 wrapper
+/// 车道 s335 契约 `[error, 体内微任务, load 微任务]`（checkpoint-after-window-onerror
+/// t1 判据面）。kExplicit 期间唯一排空点 = catch 面/成功路径的显式
+/// `perform_microtask_checkpoint`；嵌套宿主回调内的子 run 本就无自动检查点（JS 栈
+/// 非空，kAuto 亦不触发）——策略切换对既有嵌套语义零影响。声明先于 scope 链 =
+/// Drop 晚于 scope 链析构（Rust 逆序 drop），恢复时 isolate 借用已释放。
+struct MicrotasksExplicitGuard {
+    isolate: *mut v8::OwnedIsolate,
+}
+
+impl Drop for MicrotasksExplicitGuard {
+    fn drop(&mut self) {
+        // SAFETY: 同 IsolateEnterGuard——guard 活跃期 isolate 未失效，drop 时
+        // scope 链已析构。
+        unsafe {
+            (*self.isolate).set_microtasks_policy(v8::MicrotasksPolicy::Auto);
         }
     }
 }
@@ -1097,6 +1164,24 @@ impl V8Sandbox {
     ///
     /// 返回脚本执行结果，包含返回值的字符串表示和执行耗时。
     pub fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
+        self.execute_with_catch(code, None)
+    }
+
+    /// s369（strict 车道 SCRIPT 直编译迁移）：classic 脚本**直编译执行** + in-execute
+    /// catch 面——体即 global code（GDI 原生 var/fn 提升，指令序言原生生效），抛错
+    /// （含 compile 期 SyntaxError——wrapper 车道内层 eval 的 parse 抛错同样进 catch）
+    /// 时在同一次 execute 内、尾检查点前：异常原值挂 `globalThis.__zw_e` → 运行
+    /// `catch_js`（错误吞没）→ 检查点 FIFO 排空 `[体内微任务, load 微任务]` → 删
+    /// `__zw_e` → 返回 Err（t5 消息头+帧行同契约）。序 = wrapper 车道 s335 精确同构
+    /// `[error 同步派发, 体内微任务, load 微任务]`（checkpoint-after-window-onerror
+    /// t1 判据）；看门狗 terminate 不走 catch 面（wrapper 外层面同构：强杀无报告）。
+    /// `__zw_e` 名与 engine [`script_classic_catch_tail`] 片契约耦合（片内引用后即删，
+    /// 不残留全局枚举面）。返回值契约与 [`Self::execute`] 一致。
+    pub fn execute_classic(&mut self, code: &str, catch_js: &str) -> Result<ScriptResult, ScriptError> {
+        self.execute_with_catch(code, Some(catch_js))
+    }
+
+    fn execute_with_catch(&mut self, code: &str, catch_js: Option<&str>) -> Result<ScriptResult, ScriptError> {
         if code.trim().is_empty() {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
@@ -1117,6 +1202,17 @@ impl V8Sandbox {
             isolate.enter();
         }
         let _enter_guard = IsolateEnterGuard { isolate };
+
+        // s369：catch 车道 kExplicit（先于 scope 链声明 = Drop 晚于 scope 链析构，
+        // 见 MicrotasksExplicitGuard 注记）。
+        let _mt_guard = if catch_js.is_some() {
+            isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
+            Some(MicrotasksExplicitGuard {
+                isolate: isolate as *mut _,
+            })
+        } else {
+            None
+        };
 
         let start = std::time::Instant::now();
 
@@ -1171,7 +1267,11 @@ impl V8Sandbox {
 
         let script = v8::Script::compile(try_catch, code_str, None);
         if try_catch.has_caught() || script.is_none() {
-            let msg = v8_try_catch_message!(try_catch);
+            // 宏体 move 实参——重借渡保外层绑定（catch 面仍需 try_catch）。
+            let msg = v8_try_catch_message!(&mut *try_catch);
+            if let Some(catch_src) = catch_js {
+                Self::run_catch_face(try_catch, catch_src);
+            }
             return Err(ScriptError::CompileError(msg));
         }
         let script = script.unwrap();
@@ -1190,7 +1290,10 @@ impl V8Sandbox {
                 try_catch.cancel_terminate_execution();
                 return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
             }
-            let msg = v8_try_catch_message!(try_catch);
+            let msg = v8_try_catch_message!(&mut *try_catch);
+            if let Some(catch_src) = catch_js {
+                Self::run_catch_face(try_catch, catch_src);
+            }
             return Err(ScriptError::RuntimeError(msg));
         }
         let result = result.unwrap();
@@ -1217,6 +1320,66 @@ impl V8Sandbox {
             value: result_str,
             execution_time_ms,
         })
+    }
+
+    /// s348（html-semantics-compat）：compile-only 校验（parse 不执行）——与
+    /// [`Self::execute`] 编译步同 context、同 classic Script 编译面，仅省略 run 与
+    /// watchdog（无执行、无超时、无微任务检查点、无回调挂载——零副作用）。宿主经
+    /// [`crate::Sandbox::parse_check`] trait 分发进入。
+    pub fn parse_check(&mut self, code: &str) -> Result<(), ScriptError> {
+        if code.trim().is_empty() {
+            return Ok(());
+        }
+        let persistent = self.config.persistent_context;
+        // SAFETY: cached_context 和 isolate 是不同的字段（同 execute）。
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: 同 execute——stack-like enter/exit 纪律（EnterGuard 配对退出）。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
+
+        let Some(code_str) = v8::String::new(try_catch, code) else {
+            return Err(ScriptError::InvalidInput("failed to create V8 string".into()));
+        };
+        let script = v8::Script::compile(try_catch, code_str, None);
+        if try_catch.has_caught() || script.is_none() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::CompileError(msg));
+        }
+        Ok(())
+    }
+
+    /// s369 in-execute catch 面（[`Self::execute_classic`]）：挂 `__zw_e` → 复位
+    /// TryCatch（主错文本已冻结于调用方）→ 编译+运行 catch 片（次生错误吞没——片体
+    /// 自带 try 守卫，防御异形挂载失败）→ 检查点 FIFO 排空 `[体内微任务, load 微任务]`
+    /// → 原生 delete `__zw_e`（不残留全局枚举面）。
+    fn run_catch_face(tc: &mut v8::PinnedRef<v8::TryCatch<v8::HandleScope>>, catch_js: &str) {
+        let context = tc.get_current_context();
+        let global = context.global(tc);
+        if let Some(exception) = tc.exception()
+            && let Some(key) = v8::String::new(tc, "__zw_e")
+        {
+            let _ = global.set(tc, key.into(), exception);
+        }
+        tc.reset();
+        if let Some(src) = v8::String::new(tc, catch_js) {
+            if let Some(script) = v8::Script::compile(tc, src, None) {
+                let _ = script.run(tc);
+            }
+            tc.reset();
+        }
+        tc.perform_microtask_checkpoint();
+        if let Some(key) = v8::String::new(tc, "__zw_e") {
+            let _ = global.delete(tc, key.into());
+        }
     }
 
     /// 在沙箱中执行JavaScript脚本并返回JSON字符串。
@@ -1517,8 +1680,14 @@ impl crate::Sandbox for V8Sandbox {
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute(self, code)
     }
+    fn execute_classic(&mut self, code: &str, catch_js: &str) -> Result<ScriptResult, ScriptError> {
+        V8Sandbox::execute_classic(self, code, catch_js)
+    }
     fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute_json(self, code)
+    }
+    fn parse_check(&mut self, code: &str) -> Result<(), ScriptError> {
+        V8Sandbox::parse_check(self, code)
     }
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         V8Sandbox::register_callback(self, name, callback)
@@ -1602,6 +1771,25 @@ mod tests {
     use super::*;
 
     // ── 创建与初始化 ──
+
+    // s348（parse_check compile-only 面）：合法源 Ok、语法错归 CompileError、编译
+    // 不执行（副作用源零求值——归属扫描面无副作用契约）、空源 trivially Ok。
+    #[test]
+    fn parse_check_compiles_without_execution() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        assert!(sandbox.parse_check("var __zwProbe = 42;").is_ok(), "合法源编译通过");
+        let err = sandbox.parse_check("var a = ;").expect_err("语法错必须编译失败");
+        assert!(matches!(err, ScriptError::CompileError(_)), "归 CompileError: {err:?}");
+        assert!(err.to_string().contains("Compile error"), "{err}");
+        assert!(
+            sandbox.parse_check("globalThis.__zwSideEffect = true;").is_ok(),
+            "副作用源编译通过"
+        );
+        let r = sandbox.execute("typeof globalThis.__zwSideEffect").unwrap();
+        assert_eq!(r.value, "undefined", "compile-only 不执行: {:?}", r.value);
+        assert!(sandbox.parse_check("").is_ok(), "空源 trivially 通过");
+        assert!(sandbox.parse_check("   \n ").is_ok(), "空白源 trivially 通过");
+    }
 
     /// T13 S3：reset_context 尾 `low_memory_notification` 后 context 重建语义不破——
     /// 持久 isolate 下旧全局随 Context 丢弃，新 execute 拿到全新全局对象（导航复位
@@ -3200,7 +3388,7 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce, _type_attr, _cred| {
             calls_cb.lock().unwrap().push((spec.to_string(), referrer.to_string()));
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
@@ -3238,6 +3426,111 @@ mod tests {
         );
     }
 
+    /// s339（iframe 域动态 import 模块体 window 身份桥——classic 面原生 settle
+    /// 臂）：桥位 `__zwActiveIframeWin/Doc` 在场（import() 调用窗内同步 settle——
+    /// 与 shim 子文档包装测试体执行窗同形态）时模块体裸 `window` 形参遮蔽到桥位
+    /// 对象；桥位缺席按原样求值——裸 `window` 仍 ReferenceError reject（worker/
+    /// 裸 sandbox 零漂移语义钉）。两 spec 分钉：module map 记忆化（s124）会让同
+    /// spec 二次 import 命中缓存不重求值，掩盖回落臂断言。
+    #[test]
+    fn test_native_dynamic_import_window_scope_bridge_s339() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|spec, _referrer, _nonce, _type_attr, _cred| {
+            let (resolved, body) = if spec == "./a.js" {
+                (
+                    "https://zero.test/a.js",
+                    "(function() { window.__zwNatFromModule = 'hit'; globalThis.__zwNatMain = 'main-hit'; return { from: 'a.js' }; })()",
+                )
+            } else {
+                (
+                    "https://zero.test/b.js",
+                    "(function() { window.__zwNat2FromModule = 'hit2'; return { from: 'b.js' }; })()",
+                )
+            };
+            format!("{resolved}\u{1f}{body}")
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        // 桥位置位与 import() 同脚本回合（corpus 形态：包装测试体执行窗内置位 +
+        // 调用）。微任务检查点在 execute 内跑 → .then 落定发生在返回前。
+        sandbox
+            .execute(
+                "globalThis.__zwBridgeWin = { frame: true };\n\
+                 globalThis.__zwActiveIframeWin = globalThis.__zwBridgeWin;\n\
+                 globalThis.__zwActiveIframeDoc = { doc: true };\n\
+                 import('./a.js').then(\n\
+                   function (m) { __zw_report('fulfilled:' + m.from + ':' + globalThis.__zwBridgeWin.__zwNatFromModule + ':' + globalThis.__zwNatMain); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name)); });\n",
+            )
+            .expect("classic 上下文 import() 不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("fulfilled:a.js:hit:main-hit"),
+            "桥位在场：模块体 window 写落桥位对象、globalThis 仍主全局、命名空间落定"
+        );
+        // 桥位清空 + 第二 spec（躲开首 case module map 缓存）：逐字求值——裸
+        // window ReferenceError reject（零漂移钉；消息措辞属 V8，只钉构造器）。
+        sandbox
+            .execute(
+                "globalThis.__zwActiveIframeWin = undefined;\n\
+                 globalThis.__zwActiveIframeDoc = undefined;\n\
+                 import('./b.js').then(\n\
+                   function () { __zw_report('b:fulfilled'); },\n\
+                   function (e) { __zw_report('b:rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("桥位清空 import() 不得同步 throw");
+        let report = settled.lock().unwrap().clone().unwrap_or_default();
+        assert!(
+            report.starts_with("b:rejected:ReferenceError:"),
+            "桥位缺席按原样求值：裸 window 仍 ReferenceError（零漂移钉），实报 {report:?}"
+        );
+    }
+
+    /// s340（iframe 域动态 import credentials 穿面——native resolver 第 5 参）：
+    /// 调用窗全局 `__zwActiveScriptCred` 槽值原样穿入 resolver 第 5 参（shim 子
+    /// 文档合并体每段前置复位行 + 注册包装体执行窗恢复的读出端契约钉）；槽缺席
+    /// （undefined）/空串 → 空串（缺省 same-origin，宿主零标记——主文档/worker
+    /// 面零漂移钉）。三 spec 分钉躲 module map 缓存（s124：同 spec 二次 import
+    /// 命中缓存不重触发 resolver）。
+    #[test]
+    fn test_native_dynamic_import_credentials_slot_s340() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce, _type_attr, cred| {
+            seen_cb.lock().unwrap().push(format!("{spec}|{cred}"));
+            let body = "(function() { globalThis.__zwNsMark = true; return {}; })()";
+            format!("https://zero.test/{spec}\u{1f}{body}")
+        }));
+        sandbox
+            .execute(
+                "globalThis.__zwActiveScriptCred = 'include';\n\
+                 import('./cred.js').then(function () {});\n",
+            )
+            .expect("槽 include 面 import() 不得同步 throw");
+        sandbox
+            .execute("globalThis.__zwActiveScriptCred = '';\nimport('./empty.js').then(function () {});\n")
+            .expect("槽空串面 import() 不得同步 throw");
+        sandbox
+            .execute("import('./absent.js').then(function () {});\n")
+            .expect("槽缺席面 import() 不得同步 throw");
+        assert_eq!(
+            seen.lock().unwrap().join(","),
+            "./cred.js|include,./empty.js|,./absent.js|",
+            "槽值原样穿入第 5 参：include 直传、空串/缺席（undefined）均空串缺省"
+        );
+    }
+
     /// s252（链接/instantiation 失败——classic 上下文原生回调通道）：resolver 返回
     /// tag 3 契约（`3\x1fresolved\x1fmessage`）→ 逐次新 SyntaxError reject（spec：
     /// link 失败不入 module map、不记账——WPT dynamic-imports-script-error
@@ -3246,7 +3539,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_link_failure_s252() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             "3\u{1f}https://zero.test/bad.js\u{1f}Compile error: Module https://zero.test/bad.js does not provide an export named default"
                 .to_string()
         }));
@@ -3294,14 +3587,16 @@ mod tests {
         let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen_cb = seen.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, _nonce, type_attr| {
-            seen_cb.lock().unwrap().push(type_attr.to_string());
-            format!(
-                "https://zero.test/m.json\u{1f}(function() {{ return (function() {{ \
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+            move |_spec, _referrer, _nonce, type_attr, _cred| {
+                seen_cb.lock().unwrap().push(type_attr.to_string());
+                format!(
+                    "https://zero.test/m.json\u{1f}(function() {{ return (function() {{ \
                  return {{ default: 'json-value:' + {} }}; }})(); }})()",
-                if type_attr == "json" { "1" } else { "0" }
-            )
-        }));
+                    if type_attr == "json" { "1" } else { "0" }
+                )
+            },
+        ));
         sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -3358,17 +3653,19 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce, _type_attr| {
-            calls_cb.lock().unwrap().push(spec.to_string());
-            if spec.ends_with("fail.js") {
-                return String::new(); // 取回失败三态
-            }
-            let name = spec.trim_start_matches("./").trim_end_matches(".js");
-            format!(
-                "https://zero.test/{name}.js\u{1f}(function() {{ return (function() {{ \
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+            move |spec, _referrer, _nonce, _type_attr, _cred| {
+                calls_cb.lock().unwrap().push(spec.to_string());
+                if spec.ends_with("fail.js") {
+                    return String::new(); // 取回失败三态
+                }
+                let name = spec.trim_start_matches("./").trim_end_matches(".js");
+                format!(
+                    "https://zero.test/{name}.js\u{1f}(function() {{ return (function() {{ \
                  globalThis.__evals = (globalThis.__evals || 0) + 1; return {{ from: '{name}' }}; }})(); }})()"
-            )
-        }));
+                )
+            },
+        ));
         sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -3471,10 +3768,12 @@ mod tests {
         let nonces: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let nonces_cb = nonces.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, nonce, _type_attr| {
-            nonces_cb.lock().unwrap().push(nonce.to_string());
-            String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
-        }));
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+            move |_spec, _referrer, nonce, _type_attr, _cred| {
+                nonces_cb.lock().unwrap().push(nonce.to_string());
+                String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
+            },
+        ));
         sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
         sandbox.set_dynamic_import_nonce(Some("correct"));
         sandbox
@@ -3532,7 +3831,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_reaches_eval_compiled_string() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
                 .to_string()
@@ -3568,7 +3867,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_fetch_failure_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             String::new()
         }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
@@ -3610,7 +3909,7 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             // 40ms 延迟包裹 + 成功契约（IIFE 求值为 namespace；体计数一次求值）。
             "1\u{1f}40\u{1f}https://zero.test/slow.js\u{1f}(function() { return \
              (function() { globalThis.__s256 = (globalThis.__s256|0) + 1; \
@@ -3658,7 +3957,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_graph_cut_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             "https://zero.test/graphcut.js\u{1f}".to_string()
         }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
@@ -3682,6 +3981,72 @@ mod tests {
             settled.lock().unwrap().as_deref(),
             Some("rejected:TypeError:Failed to fetch module graph: 'https://zero.test/graphcut.js'"),
             "依赖图断以携带已解析 URL 的 TypeError rejection 呈现"
+        );
+    }
+
+    /// s369 execute_classic 契约守卫：①GDI 体前建 var/fn 全局绑定（同脚本抛错后
+    /// 全局可读）；②catch 序 `[catch 同步, 体内微任务, load 微任务]`（s335 同构）；
+    /// ③`__zw_e` 跑后即删；④Err 文本保真（t5 消息头）。红态对：旧 eval 车道同脚
+    /// var 对 write 面 mid-body eval ReferenceError（s367 probe-e），直编译天然消除。
+    #[test]
+    fn test_execute_classic_gdi_catch_order_s369() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox.execute("globalThis.__zwSeq='';").unwrap();
+        let exec = sandbox.execute_classic(
+            "var gv = 41;\nPromise.resolve().then(function(){__zwSeq += 'body;';});\nthrow new TypeError('boom-s369');",
+            "__zwSeq += 'catch;';Promise.resolve().then(function(){__zwSeq += 'load;';});",
+        );
+        let err = exec.expect_err("抛错返 Err");
+        assert!(err.to_string().contains("boom-s369"), "Err 文本保真: {err}");
+        assert_eq!(
+            sandbox.execute("globalThis.gv").unwrap().value,
+            "41",
+            "GDI：var 全局绑定体前建立，抛错后仍可读（旧 eval 车道同脚 var 局部）"
+        );
+        assert_eq!(
+            sandbox.execute("globalThis.__zwSeq").unwrap().value,
+            "catch;body;load;",
+            "序契约：catch 同步先于检查点，体内微任务先于 load 微任务（s335 [error,body-μt,load]）"
+        );
+        assert_eq!(
+            sandbox.execute("typeof globalThis.__zw_e").unwrap().value,
+            "undefined",
+            "__zw_e 跑后即删"
+        );
+    }
+
+    /// s369 compile 期 SyntaxError 同进 catch 面（wrapper 内层 eval parse 抛错同构
+    /// ——spec classic parse 失败亦 report the exception + error 事件）。
+    #[test]
+    fn test_execute_classic_syntax_error_enters_catch_s369() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        let caught: std::sync::Arc<std::sync::Mutex<Option<String>>> = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let cb = caught.clone();
+        sandbox.register_callback(
+            "__zw_mark",
+            Box::new(move |args| {
+                *cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let exec = sandbox.execute_classic("var a = ;", "__zw_mark('syntax-caught');");
+        assert!(exec.is_err(), "compile 失败返 Err");
+        assert_eq!(
+            caught.lock().unwrap().as_deref(),
+            Some("syntax-caught"),
+            "compile 期异常同进 catch 面"
+        );
+        assert!(
+            matches!(exec.unwrap_err(), crate::ScriptError::CompileError(_)),
+            "错误分类保持 CompileError"
         );
     }
 

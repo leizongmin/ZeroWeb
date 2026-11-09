@@ -14,9 +14,9 @@ use zero_engine::{
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::font::{OpenTypeFeature, OpenTypeVariation};
-use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data_uri_bytes};
+use zero_render_foundation::image_cache::{ImageKey, decode_data_uri_bytes};
 
-use crate::image_decoder::decode_image;
+use crate::image_decoder::{decode_data_uri_animation, decode_image_with_animation, insert_image_decoded};
 
 use crate::net_pool::{
     dns_prefetch_async, fetch_bytes_async_meta, fetch_bytes_stream_async_meta, fetch_document_async_with_capture,
@@ -755,7 +755,15 @@ impl AsyncPageLoad {
             None => return,
         };
         let links = extract_stylesheet_links(html);
+        // s315：`<base href>` 前移基准（≡ webview `resolve_external_css` 同款——HTML
+        // document-base-url，相对 href 按文档序首个带 href 的 base join）。页未声明
+        // base（或 join 失败）时维持文档 URL 基准——不得清空（zip 对 None 直接得
+        // None 会丢基准）。
         let base = url::Url::parse(&self.url).ok();
+        let base = match (base, zero_engine::extract_document_base_href(html)) {
+            (Some(u), Some(b)) => u.join(&b).ok().or(Some(u)),
+            (base, _) => base,
+        };
         for (href, media) in links {
             // s161（html-semantics M2）media 门：media 非空且非 'all' → 求值全不匹配
             // 不取回不入级联（与 webview `resolve_external_css` 门同款语义/视口）。
@@ -1093,8 +1101,10 @@ impl AsyncPageLoad {
             if img.src.starts_with("data:") {
                 // R1987：data: URI（PNG/JPEG/WebP/SVG）无 HTTP fetch，直接解码并入缓存
                 // （in-scope img 子资源，goal line 118；与 sync 路径 fetch_image_subresources 对齐）。
-                match decode_data_uri(&img.src) {
-                    Ok(data) => {
+                // s310：动画感知装载——data: 通道恒进程内解码（decode_image 契约），
+                // 动画 GIF/WebP 携带时间线（首帧位图不变，单帧零行为面外移）。
+                match decode_data_uri_animation(&img.src) {
+                    Ok((data, anim)) => {
                         let key = image_resource_key(&img.src, None);
                         self.resource_element_events.push(ResourceElementEvent {
                             tag: "img",
@@ -1104,7 +1114,7 @@ impl AsyncPageLoad {
                             natural_height: data.height,
                             media_duration_ms: None,
                         });
-                        webview.image_cache().insert_with_key(ImageKey::new(key), data);
+                        insert_image_decoded(webview.image_cache(), ImageKey::new(key), data, anim);
                     }
                     Err(e) => {
                         tracing::warn!("data: URI image decode failed: {e}");
@@ -1164,9 +1174,10 @@ impl AsyncPageLoad {
         for src in css_urls {
             if src.starts_with("data:") {
                 // R1987：CSS url(data:) 同 <img src=data:>，直接解码入缓存（无 fetch）。
-                if let Ok(data) = decode_data_uri(&src) {
+                // s310：data: 恒进程内解码，动画资产携带时间线装载（同 img src 臂）。
+                if let Ok((data, anim)) = decode_data_uri_animation(&src) {
                     let key = image_resource_key(&src, None);
-                    webview.image_cache().insert_with_key(ImageKey::new(key), data);
+                    insert_image_decoded(webview.image_cache(), ImageKey::new(key), data, anim);
                 }
                 continue;
             }
@@ -1248,8 +1259,8 @@ impl AsyncPageLoad {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => {
-                        match decode_image(&bytes) {
-                            Ok(img) => {
+                        match decode_image_with_animation(&bytes) {
+                            Ok((img, anim)) => {
                                 // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
                                 let intrinsic_ratio = img.intrinsic_ratio();
                                 if let Some(r) = intrinsic_ratio {
@@ -1269,7 +1280,9 @@ impl AsyncPageLoad {
                                     natural_height: img.height,
                                     media_duration_ms: None,
                                 });
-                                webview.image_cache().insert_with_key(ImageKey::new(*key), img);
+                                // s310：动画资产携带时间线装载（帧推进由 paint 侧
+                                // cache get() 墙钟臂承接，见 image_decoder 装载臂注释）。
+                                insert_image_decoded(webview.image_cache(), ImageKey::new(*key), img, anim);
                             }
                             Err(e) => {
                                 tracing::warn!("lazy image {url} decode failed: {e}");
@@ -1336,8 +1349,8 @@ impl AsyncPageLoad {
         self.img_pending.retain(|(url, key, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(bytes) => match decode_image(&bytes) {
-                        Ok(img) => {
+                    Ok(bytes) => match decode_image_with_animation(&bytes) {
+                        Ok((img, anim)) => {
                             let natural_width = img.width;
                             let natural_height = img.height;
                             // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
@@ -1350,7 +1363,8 @@ impl AsyncPageLoad {
                                     no_ratio.insert(*key, dims);
                                 }
                             }
-                            webview.image_cache().insert_with_key(ImageKey::new(*key), img);
+                            // s310：动画资产携带时间线装载（同 poll_lazy_images 臂）。
+                            insert_image_decoded(webview.image_cache(), ImageKey::new(*key), img, anim);
                             self.resource_element_events.push(ResourceElementEvent {
                                 tag: "img",
                                 url: url.clone(),

@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness fetch-wpt-uievents testharness-uievents fetch-wpt-touch-events testharness-touch-events fetch-wpt-webmessaging testharness-webmessaging fetch-wpt-svg testharness-svg update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-selection testharness-selection fetch-wpt-keyboard testharness-keyboard fetch-wpt-indexeddb testharness-indexeddb fetch-wpt-media testharness-media fetch-wpt-webaudio testharness-webaudio fetch-wpt-cache-storage audit-wpt-cache-storage testharness-cache-storage baseline-wpt-cache-storage fetch-wpt-fs testharness-fs fetch-wpt-wasm testharness-wasm fetch-wpt-wasm-core testharness-wasm-core fetch-wpt-observers testharness-intersection-observer testharness-resize-observer fetch-wpt-net-api testharness-net-api fetch-wpt-encoding testharness-encoding fetch-wpt-encoding-legacy-mb testharness-encoding-legacy-mb fetch-wpt-encoding-compat-v2 testharness-form-url-encoding fetch-wpt-html-syntax testharness-html-syntax fetch-wpt-navigation testharness-navigation fetch-wpt-page-state testharness-page-state fetch-wpt-dnd testharness-dnd fetch-wpt-pointerlock testharness-pointerlock fetch-wpt-clipboard-apis testharness-clipboard-apis fetch-wpt-fullscreen testharness-fullscreen fetch-wpt-security-csp testharness-csp testharness-mixed-content testharness-secure-contexts fetch-wpt-timing-animation fetch-wpt-webstorage testharness-webstorage fetch-wpt-compression testharness-compression fetch-wpt-webcrypto testharness-webcrypto fetch-wpt-html-semantics testharness-html-semantics fetch-wpt-cookies testharness-cookies fetch-wpt-fileapi testharness-fileapi fetch-wpt-performance-api testharness-resource-timing testharness-navigation-timing testharness-event-timing testharness-longtask-timing testharness-hr-time testharness-performance-timeline testharness-user-timing testharness-web-animations fetch-wpt-web-components testharness-web-components audit-wpt-service-workers-disposition fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets fetch-wpt-service-workers-next-wave audit-wpt-service-workers-next-wave test-wpt-service-workers-next-wave-assets fetch-wpt-service-workers-message-lifecycle-wave audit-wpt-service-workers-message-lifecycle-wave test-wpt-service-workers-message-lifecycle-wave-assets fetch-wpt-service-workers-message-event-ports-wave audit-wpt-service-workers-message-event-ports-wave test-wpt-service-workers-message-event-ports-wave-assets fetch-wpt-service-workers-messageerror-event-wave audit-wpt-service-workers-messageerror-event-wave test-wpt-service-workers-messageerror-event-wave-assets fetch-wpt-service-workers-controller-on-load-wave audit-wpt-service-workers-controller-on-load-wave test-wpt-service-workers-controller-on-load-wave-assets fetch-wpt-service-workers-controller-on-disconnect-wave audit-wpt-service-workers-controller-on-disconnect-wave test-wpt-service-workers-controller-on-disconnect-wave-assets fetch-wpt-service-workers-extendable-event-waituntil-wave audit-wpt-service-workers-extendable-event-waituntil-wave test-wpt-service-workers-extendable-event-waituntil-wave-assets fetch-wpt-service-workers-onactivate-script-error-wave audit-wpt-service-workers-onactivate-script-error-wave test-wpt-service-workers-onactivate-script-error-wave-assets fetch-wpt-service-workers-oninstall-script-error-wave audit-wpt-service-workers-oninstall-script-error-wave test-wpt-service-workers-oninstall-script-error-wave-assets fetch-wpt-service-workers-getregistration-wave audit-wpt-service-workers-getregistration-wave test-wpt-service-workers-getregistration-wave-assets fetch-wpt-service-workers-registration-iframe-wave audit-wpt-service-workers-registration-iframe-wave test-wpt-service-workers-registration-iframe-wave-assets fetch-wpt-service-workers-installing-wave audit-wpt-service-workers-installing-wave test-wpt-service-workers-installing-wave-assets fetch-wpt-service-workers-waiting-wave audit-wpt-service-workers-waiting-wave test-wpt-service-workers-waiting-wave-assets fetch-wpt-service-workers-extendable-message-event-wave audit-wpt-service-workers-extendable-message-event-wave test-wpt-service-workers-extendable-message-event-wave-assets fetch-wpt-service-workers-static-wave audit-wpt-service-workers-static-wave test-wpt-service-workers-static-wave-assets fetch-wpt-service-workers-worker-secure-context-wave audit-wpt-service-workers-worker-secure-context-wave test-wpt-service-workers-worker-secure-context-wave-assets fetch-wpt-service-workers-install-event-type-wave audit-wpt-service-workers-install-event-type-wave test-wpt-service-workers-install-event-type-wave-assets fetch-wpt-service-workers-worker-close-wave audit-wpt-service-workers-worker-close-wave test-wpt-service-workers-worker-close-wave-assets fetch-wpt-service-workers-worker-interface-wave audit-wpt-service-workers-worker-interface-wave test-wpt-service-workers-worker-interface-wave-assets fetch-wpt-service-workers-fetch-event-historical-wave audit-wpt-service-workers-fetch-event-historical-wave test-wpt-service-workers-fetch-event-historical-wave-assets fetch-wpt-service-workers-update-wave audit-wpt-service-workers-update-wave test-wpt-service-workers-update-wave-assets fetch-wpt-service-workers-module-wave audit-wpt-service-workers-module-wave test-wpt-service-workers-module-wave-assets fetch-wpt-service-workers-module-bytecheck-wave audit-wpt-service-workers-module-bytecheck-wave test-wpt-service-workers-module-bytecheck-wave-assets fetch-wpt-service-workers-module-cors-wave audit-wpt-service-workers-module-cors-wave test-wpt-service-workers-module-cors-wave-assets fetch-wpt-service-workers-module-registration-wave audit-wpt-service-workers-module-registration-wave test-wpt-service-workers-module-registration-wave-assets fetch-wpt-service-workers-module-type-update-wave audit-wpt-service-workers-module-type-update-wave test-wpt-service-workers-module-type-update-wave-assets fetch-wpt-service-workers-module-request-metadata-wave audit-wpt-service-workers-module-request-metadata-wave test-wpt-service-workers-module-request-metadata-wave-assets fetch-wpt-service-workers-update-via-cache-matrix-wave audit-wpt-service-workers-update-via-cache-matrix-wave test-wpt-service-workers-update-via-cache-matrix-wave-assets fetch-wpt-service-workers-dynamic-import-update-wave audit-wpt-service-workers-dynamic-import-update-wave test-wpt-service-workers-dynamic-import-update-wave-assets fetch-wpt-service-workers-update-failure-wave audit-wpt-service-workers-update-failure-wave test-wpt-service-workers-update-failure-wave-assets fetch-wpt-service-workers-multiple-update-wave audit-wpt-service-workers-multiple-update-wave test-wpt-service-workers-multiple-update-wave-assets testharness-service-workers-core baseline-wpt-service-workers-core target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-renderer-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke android-chaos-smoke fetch-wpt-css-variables testharness-css-variables testharness-css-variables-one fetch-wpt-css-testharness fetch-wpt-css-testharness-a fetch-wpt-css-testharness-b fetch-wpt-css-testharness-c testharness-css-values testharness-css-values-one testharness-selectors testharness-selectors-one testharness-css-color testharness-css-color-one testharness-css-align testharness-css-align-one testharness-css-sizing testharness-css-sizing-one testharness-css-typed-om testharness-css-typed-om-one testharness-css-fonts testharness-css-fonts-one testharness-css-shapes testharness-css-shapes-one testharness-css-anchor-position testharness-css-anchor-position-one testharness-css-masking testharness-css-masking-one testharness-css-backgrounds testharness-css-backgrounds-one testharness-css-transforms testharness-css-transforms-one testharness-css-motion testharness-css-motion-one testharness-css-grid testharness-css-grid-one testharness-css-text testharness-css-text-one fetch-wpt-editing testharness-editing-run testharness-editing-other testharness-editing-run-one testharness-editing-other-one
+.PHONY: setup-rusty-v8 fetch-wpt-quirks fetch-wpt-domparsing fetch-wpt-domxpath fetch-wpt-subresource-integrity fetch-wpt-cors fetch-wpt-import-maps fetch-wpt-referrer-policy fetch-wpt-input-events fetch-wpt-preload fetch-wpt-wai-aria fetch-wpt-storage fetch-wpt-data fetch-wpt-html-testharness fetch-wpt-uievents testharness-uievents fetch-wpt-touch-events testharness-touch-events fetch-wpt-webmessaging testharness-webmessaging fetch-wpt-svg testharness-svg update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-selection testharness-selection fetch-wpt-keyboard testharness-keyboard fetch-wpt-indexeddb testharness-indexeddb fetch-wpt-media testharness-media fetch-wpt-webaudio testharness-webaudio fetch-wpt-cache-storage audit-wpt-cache-storage testharness-cache-storage baseline-wpt-cache-storage fetch-wpt-fs testharness-fs fetch-wpt-wasm testharness-wasm fetch-wpt-wasm-core testharness-wasm-core fetch-wpt-observers testharness-intersection-observer testharness-resize-observer fetch-wpt-net-api testharness-net-api fetch-wpt-encoding testharness-encoding fetch-wpt-encoding-legacy-mb testharness-encoding-legacy-mb fetch-wpt-encoding-compat-v2 testharness-form-url-encoding fetch-wpt-html-syntax testharness-html-syntax fetch-wpt-navigation testharness-navigation fetch-wpt-page-state testharness-page-state fetch-wpt-dnd testharness-dnd fetch-wpt-pointerlock testharness-pointerlock fetch-wpt-clipboard-apis testharness-clipboard-apis fetch-wpt-fullscreen testharness-fullscreen fetch-wpt-security-csp testharness-csp testharness-mixed-content testharness-secure-contexts fetch-wpt-timing-animation fetch-wpt-webstorage testharness-webstorage fetch-wpt-compression testharness-compression fetch-wpt-webcrypto testharness-webcrypto fetch-wpt-html-semantics testharness-html-semantics fetch-wpt-cookies testharness-cookies fetch-wpt-fileapi testharness-fileapi fetch-wpt-performance-api testharness-resource-timing testharness-navigation-timing testharness-event-timing testharness-longtask-timing testharness-hr-time testharness-performance-timeline testharness-user-timing testharness-web-animations fetch-wpt-web-components testharness-web-components fetch-wpt-shadow-render-pool testharness-shadow-dom audit-wpt-service-workers-disposition fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets fetch-wpt-service-workers-next-wave audit-wpt-service-workers-next-wave test-wpt-service-workers-next-wave-assets fetch-wpt-service-workers-message-lifecycle-wave audit-wpt-service-workers-message-lifecycle-wave test-wpt-service-workers-message-lifecycle-wave-assets fetch-wpt-service-workers-message-event-ports-wave audit-wpt-service-workers-message-event-ports-wave test-wpt-service-workers-message-event-ports-wave-assets fetch-wpt-service-workers-messageerror-event-wave audit-wpt-service-workers-messageerror-event-wave test-wpt-service-workers-messageerror-event-wave-assets fetch-wpt-service-workers-controller-on-load-wave audit-wpt-service-workers-controller-on-load-wave test-wpt-service-workers-controller-on-load-wave-assets fetch-wpt-service-workers-controller-on-disconnect-wave audit-wpt-service-workers-controller-on-disconnect-wave test-wpt-service-workers-controller-on-disconnect-wave-assets fetch-wpt-service-workers-extendable-event-waituntil-wave audit-wpt-service-workers-extendable-event-waituntil-wave test-wpt-service-workers-extendable-event-waituntil-wave-assets fetch-wpt-service-workers-onactivate-script-error-wave audit-wpt-service-workers-onactivate-script-error-wave test-wpt-service-workers-onactivate-script-error-wave-assets fetch-wpt-service-workers-oninstall-script-error-wave audit-wpt-service-workers-oninstall-script-error-wave test-wpt-service-workers-oninstall-script-error-wave-assets fetch-wpt-service-workers-getregistration-wave audit-wpt-service-workers-getregistration-wave test-wpt-service-workers-getregistration-wave-assets fetch-wpt-service-workers-registration-iframe-wave audit-wpt-service-workers-registration-iframe-wave test-wpt-service-workers-registration-iframe-wave-assets fetch-wpt-service-workers-installing-wave audit-wpt-service-workers-installing-wave test-wpt-service-workers-installing-wave-assets fetch-wpt-service-workers-waiting-wave audit-wpt-service-workers-waiting-wave test-wpt-service-workers-waiting-wave-assets fetch-wpt-service-workers-extendable-message-event-wave audit-wpt-service-workers-extendable-message-event-wave test-wpt-service-workers-extendable-message-event-wave-assets fetch-wpt-service-workers-static-wave audit-wpt-service-workers-static-wave test-wpt-service-workers-static-wave-assets fetch-wpt-service-workers-worker-secure-context-wave audit-wpt-service-workers-worker-secure-context-wave test-wpt-service-workers-worker-secure-context-wave-assets fetch-wpt-service-workers-install-event-type-wave audit-wpt-service-workers-install-event-type-wave test-wpt-service-workers-install-event-type-wave-assets fetch-wpt-service-workers-worker-close-wave audit-wpt-service-workers-worker-close-wave test-wpt-service-workers-worker-close-wave-assets fetch-wpt-service-workers-worker-interface-wave audit-wpt-service-workers-worker-interface-wave test-wpt-service-workers-worker-interface-wave-assets fetch-wpt-service-workers-fetch-event-historical-wave audit-wpt-service-workers-fetch-event-historical-wave test-wpt-service-workers-fetch-event-historical-wave-assets fetch-wpt-service-workers-update-wave audit-wpt-service-workers-update-wave test-wpt-service-workers-update-wave-assets fetch-wpt-service-workers-module-wave audit-wpt-service-workers-module-wave test-wpt-service-workers-module-wave-assets fetch-wpt-service-workers-module-bytecheck-wave audit-wpt-service-workers-module-bytecheck-wave test-wpt-service-workers-module-bytecheck-wave-assets fetch-wpt-service-workers-module-cors-wave audit-wpt-service-workers-module-cors-wave test-wpt-service-workers-module-cors-wave-assets fetch-wpt-service-workers-module-registration-wave audit-wpt-service-workers-module-registration-wave test-wpt-service-workers-module-registration-wave-assets fetch-wpt-service-workers-module-type-update-wave audit-wpt-service-workers-module-type-update-wave test-wpt-service-workers-module-type-update-wave-assets fetch-wpt-service-workers-module-request-metadata-wave audit-wpt-service-workers-module-request-metadata-wave test-wpt-service-workers-module-request-metadata-wave-assets fetch-wpt-service-workers-update-via-cache-matrix-wave audit-wpt-service-workers-update-via-cache-matrix-wave test-wpt-service-workers-update-via-cache-matrix-wave-assets fetch-wpt-service-workers-dynamic-import-update-wave audit-wpt-service-workers-dynamic-import-update-wave test-wpt-service-workers-dynamic-import-update-wave-assets fetch-wpt-service-workers-update-failure-wave audit-wpt-service-workers-update-failure-wave test-wpt-service-workers-update-failure-wave-assets fetch-wpt-service-workers-multiple-update-wave audit-wpt-service-workers-multiple-update-wave test-wpt-service-workers-multiple-update-wave-assets testharness-service-workers-core baseline-wpt-service-workers-core target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-renderer-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke android-chaos-smoke fetch-wpt-css-variables testharness-css-variables testharness-css-variables-one fetch-wpt-css-testharness fetch-wpt-css-testharness-a fetch-wpt-css-testharness-b fetch-wpt-css-testharness-c fetch-wpt-css-testharness-v2-a fetch-wpt-css-testharness-v2-b fetch-wpt-css-testharness-v2-c testharness-css-values testharness-css-values-one testharness-selectors testharness-selectors-one testharness-css-color testharness-css-color-one testharness-css-align testharness-css-align-one testharness-css-sizing testharness-css-sizing-one testharness-css-typed-om testharness-css-typed-om-one testharness-css-fonts testharness-css-fonts-one testharness-css-shapes testharness-css-shapes-one testharness-css-anchor-position testharness-css-anchor-position-one testharness-css-masking testharness-css-masking-one testharness-css-backgrounds testharness-css-backgrounds-one testharness-css-transforms testharness-css-transforms-one testharness-css-motion testharness-css-motion-one testharness-css-grid testharness-css-grid-one testharness-css-text testharness-css-text-one testharness-cssom testharness-cssom-one testharness-css-images testharness-css-images-one testharness-filter-effects testharness-filter-effects-one testharness-css-ui testharness-css-ui-one testharness-css-borders testharness-css-borders-one testharness-css-logical testharness-css-logical-one testharness-css-text-decor testharness-css-text-decor-one testharness-css-box testharness-css-box-one testharness-css-pseudo testharness-css-pseudo-one testharness-css-display testharness-css-display-one testharness-css-mixins testharness-css-mixins-one testharness-css-syntax testharness-css-syntax-one testharness-fill-stroke testharness-fill-stroke-one testharness-css-shadow testharness-css-shadow-one testharness-css-size-adjust testharness-css-size-adjust-one testharness-css-content testharness-css-content-one testharness-css-will-change testharness-css-will-change-one testharness-css-color-adjust testharness-css-color-adjust-one testharness-css-easing testharness-css-easing-one testharness-compositing testharness-compositing-one testharness-css-counter-styles testharness-css-counter-styles-one testharness-css-nesting testharness-css-nesting-one testharness-css-color-hdr testharness-css-color-hdr-one testharness-css-env testharness-css-env-one testharness-css-conditional testharness-css-conditional-one testharness-mediaqueries testharness-mediaqueries-one testharness-css-cascade testharness-css-cascade-one testharness-css2 testharness-css2-one testharness-css-forms testharness-css-forms-one testharness-css-link-params testharness-css-link-params-one testharness-css-font-loading testharness-css-font-loading-one testharness-css-gaps testharness-css-gaps-one testharness-css-flexbox testharness-css-flexbox-one testharness-css-multicol testharness-css-multicol-one testharness-css-position testharness-css-position-one testharness-css-overflow testharness-css-overflow-one testharness-css-tables testharness-css-tables-one testharness-css-lists testharness-css-lists-one testharness-css-inline testharness-css-inline-one testharness-css-scroll-snap testharness-css-scroll-snap-one testharness-css-viewport testharness-css-viewport-one testharness-css-break testharness-css-break-one testharness-css-contain testharness-css-contain-one testharness-css-writing-modes testharness-css-writing-modes-one fetch-wpt-editing testharness-editing-run testharness-editing-other testharness-editing-run-one testharness-editing-other-one
 .PHONY: dev-guard guarded-test guarded-clippy guarded-browser
 
 # Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
@@ -555,6 +555,17 @@ fetch-wpt-web-components:
 testharness-web-components: target-disk-guard fetch-wpt-web-components target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-web-components $(if $(FILTER),$(FILTER),)
 
+# shadow-dom-rendering goal B6：42 号 WC 通道渲染级排除域（几何命中/滚动/焦点/
+# caret/Highlight/交互）10 案的补充池 testharness 基线。语料由 45 号 goal 脚本
+# 幂等预置（reftest 池 + 补充池显式清单，missing=0 断言；runner 侧
+# SHADOW_RENDER_POOL_CASES 与 SUPPLEMENT_POOL 两侧同源）。filter 按路径子串
+# 透传：make testharness-shadow-dom FILTER=offsetParent。
+fetch-wpt-shadow-render-pool:
+	bash tests/wpt-runner/scripts/goals/45-shadow-dom-rendering.sh
+
+testharness-shadow-dom: target-disk-guard fetch-wpt-shadow-render-pool target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-shadow-dom $(if $(FILTER),$(FILTER),)
+
 # event-loop-spec goal M1 / DC-1：上游 IntersectionObserver / ResizeObserver window
 # 可执行面 testharness 基线。用例 gitignored（fetch-observers-subset.sh 按固定 SHA
 # manifest 恢复，runner 侧内容规则筛减 ref/iframe/v2/resources）。filter 按路径子串
@@ -623,6 +634,21 @@ fetch-wpt-css-testharness-b:
 fetch-wpt-css-testharness-c:
 	CSS_FETCH_ONLY="css/motion css/css-grid css/css-text css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
 
+# weekly css-v2-face 分片定向 fetch（css 二期 M2 / DC-2）：CSS_FETCH_ONLY
+# 白名单过滤 41 号脚本 DIRS（v2 45 项池 ~18k blob，同上单 job 装不下——按
+# 接线批次分片：A = B1 前 12 目录 ~5.2k、B = B1 后 12 + B2 7 目录 ~3.2k、
+# C = B3 混合布局 13 目录 ~5.9k）。css/support 共享 helper 必须随片
+# （一期实证漏带则引用页全数坍缩）。41 号为 pin 树清单逐文件对账 sync——
+# 幂等，已有语料只补缺失/不符文件。
+fetch-wpt-css-testharness-v2-a:
+	CSS_FETCH_ONLY="css/cssom css/css-images css/filter-effects css/css-ui css/css-borders css/css-logical css/css-text-decor css/css-box css/css-pseudo css/css-display css/css-mixins css/css-syntax css/support" bash tests/wpt-runner/scripts/goals/41-css-testharness-compat-v2.sh
+
+fetch-wpt-css-testharness-v2-b:
+	CSS_FETCH_ONLY="css/fill-stroke css/css-shadow css/css-size-adjust css/css-content css/css-will-change css/css-color-adjust css/css-easing css/compositing css/css-counter-styles css/css-nesting css/css-color-hdr css/css-env css/css-conditional css/mediaqueries css/css-cascade css/CSS2 css/css-forms css/css-link-params css/css-font-loading css/support" bash tests/wpt-runner/scripts/goals/41-css-testharness-compat-v2.sh
+
+fetch-wpt-css-testharness-v2-c:
+	CSS_FETCH_ONLY="css/css-gaps css/css-flexbox css/css-multicol css/css-position css/css-overflow css/css-tables css/css-lists css/css-inline css/css-scroll-snap css/css-viewport css/css-break css/css-contain css/css-writing-modes css/support" bash tests/wpt-runner/scripts/goals/41-css-testharness-compat-v2.sh
+
 testharness-css-values: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-values ./target/release/zero-wpt-runner
 
@@ -683,6 +709,170 @@ testharness-css-grid: fetch-wpt-css-testharness target-disk-guard target/test-gu
 testharness-css-text: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-text ./target/release/zero-wpt-runner
 
+# css-testharness-compat-v2 M1 批次 1（B1 值/属性解析序列化簇首批 6 目录）：
+# 通道与一期 M3 扩面同款（共享底座 + 分片脚本 + 41 号 sync 脚本语料），基线
+# 只记录不设门禁；语料由 goals/41 脚本 sync（fetch-wpt-css-testharness 依赖
+# 幂等，不重复拉本批目录）。
+# 用法: make testharness-cssom / testharness-css-images / testharness-filter-effects /
+#   testharness-css-ui / testharness-css-borders / testharness-css-logical
+testharness-cssom: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh cssom ./target/release/zero-wpt-runner
+
+testharness-css-images: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-images ./target/release/zero-wpt-runner
+
+testharness-filter-effects: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh filter-effects ./target/release/zero-wpt-runner
+
+testharness-css-ui: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-ui ./target/release/zero-wpt-runner
+
+testharness-css-borders: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-borders ./target/release/zero-wpt-runner
+
+testharness-css-logical: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-logical ./target/release/zero-wpt-runner
+
+# css-testharness-compat-v2 M1 批次 2（B1 值/属性解析序列化簇余 18 目录）：
+# 通道与批次 1 同款（共享底座 + 分片脚本 + 41 号 sync 脚本语料），基线只记录
+# 不设门禁；fill-stroke / compositing 上游目录名无 css- 前缀，分片脚本显式
+# 映射臂，css-* 前缀目录走通用规则零改动接入。
+# 用法: make testharness-css-text-decor / testharness-css-box / testharness-css-pseudo /
+#   testharness-css-display / testharness-css-mixins / testharness-css-syntax /
+#   testharness-fill-stroke / testharness-css-shadow / testharness-css-size-adjust /
+#   testharness-css-content / testharness-css-will-change / testharness-css-color-adjust /
+#   testharness-css-easing / testharness-compositing / testharness-css-counter-styles /
+#   testharness-css-nesting / testharness-css-color-hdr / testharness-css-env
+testharness-css-text-decor: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-text-decor ./target/release/zero-wpt-runner
+
+testharness-css-box: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-box ./target/release/zero-wpt-runner
+
+testharness-css-pseudo: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-pseudo ./target/release/zero-wpt-runner
+
+testharness-css-display: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-display ./target/release/zero-wpt-runner
+
+testharness-css-mixins: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-mixins ./target/release/zero-wpt-runner
+
+testharness-css-syntax: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-syntax ./target/release/zero-wpt-runner
+
+testharness-fill-stroke: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh fill-stroke ./target/release/zero-wpt-runner
+
+testharness-css-shadow: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-shadow ./target/release/zero-wpt-runner
+
+testharness-css-size-adjust: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-size-adjust ./target/release/zero-wpt-runner
+
+testharness-css-content: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-content ./target/release/zero-wpt-runner
+
+testharness-css-will-change: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-will-change ./target/release/zero-wpt-runner
+
+testharness-css-color-adjust: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-color-adjust ./target/release/zero-wpt-runner
+
+testharness-css-easing: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-easing ./target/release/zero-wpt-runner
+
+testharness-compositing: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh compositing ./target/release/zero-wpt-runner
+
+testharness-css-counter-styles: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-counter-styles ./target/release/zero-wpt-runner
+
+testharness-css-nesting: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-nesting ./target/release/zero-wpt-runner
+
+testharness-css-color-hdr: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-color-hdr ./target/release/zero-wpt-runner
+
+testharness-css-env: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-env ./target/release/zero-wpt-runner
+
+# css-testharness-compat-v2 M2 批次 3（B2 规则/条件/级联簇 7 目录）：通道与
+# 批次 1-2 同款，基线只记录不设门禁；CSS2 只含 html 面（.xht XML 面不在
+# 通道，数值门按 html 面折算）；mediaqueries / CSS2 上游目录名无 css- 前缀，
+# 分片脚本显式映射臂。
+# 用法: make testharness-css-conditional / testharness-mediaqueries / testharness-css-cascade /
+#   testharness-css2 / testharness-css-forms / testharness-css-link-params / testharness-css-font-loading
+testharness-css-conditional: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-conditional ./target/release/zero-wpt-runner
+
+testharness-mediaqueries: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh mediaqueries ./target/release/zero-wpt-runner
+
+testharness-css-cascade: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-cascade ./target/release/zero-wpt-runner
+
+testharness-css2: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh CSS2 ./target/release/zero-wpt-runner
+
+testharness-css-forms: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-forms ./target/release/zero-wpt-runner
+
+testharness-css-link-params: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-link-params ./target/release/zero-wpt-runner
+
+testharness-css-font-loading: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-font-loading ./target/release/zero-wpt-runner
+
+# css-testharness-compat-v2 M2 批次 4（B3 混合布局簇 13 目录）：通道与批次
+# 1-3 同款，基线只记录不设门禁；M0 划界——解析/序列化份额入账，布局探测面
+# 失败归口布局账（rendering-compat 控制面 / 独立 layout goal 待立项），本
+# 通道修到序列化/声明值层为止。13 目录均带 css- 前缀，分片脚本通用规则零
+# 改动接入。
+# 用法: make testharness-css-gaps / testharness-css-flexbox / testharness-css-multicol /
+#   testharness-css-position / testharness-css-overflow / testharness-css-tables /
+#   testharness-css-lists / testharness-css-inline / testharness-css-scroll-snap /
+#   testharness-css-viewport / testharness-css-break / testharness-css-contain /
+#   testharness-css-writing-modes
+testharness-css-gaps: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-gaps ./target/release/zero-wpt-runner
+
+testharness-css-flexbox: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-flexbox ./target/release/zero-wpt-runner
+
+testharness-css-multicol: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-multicol ./target/release/zero-wpt-runner
+
+testharness-css-position: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-position ./target/release/zero-wpt-runner
+
+testharness-css-overflow: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-overflow ./target/release/zero-wpt-runner
+
+testharness-css-tables: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-tables ./target/release/zero-wpt-runner
+
+testharness-css-lists: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-lists ./target/release/zero-wpt-runner
+
+testharness-css-inline: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-inline ./target/release/zero-wpt-runner
+
+testharness-css-scroll-snap: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-scroll-snap ./target/release/zero-wpt-runner
+
+testharness-css-viewport: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-viewport ./target/release/zero-wpt-runner
+
+testharness-css-break: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-break ./target/release/zero-wpt-runner
+
+testharness-css-contain: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-contain ./target/release/zero-wpt-runner
+
+testharness-css-writing-modes: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-writing-modes ./target/release/zero-wpt-runner
+
 # 单案/子串定向：make testharness-css-values-one FILTER=calc / testharness-selectors-one FILTER=invalidation
 testharness-css-values-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-values $(if $(FILTER),$(FILTER),)
@@ -729,6 +919,138 @@ testharness-css-grid-one: fetch-wpt-css-testharness target-disk-guard target/tes
 testharness-css-text-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-text $(if $(FILTER),$(FILTER),)
 
+testharness-cssom-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-cssom $(if $(FILTER),$(FILTER),)
+
+testharness-css-images-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-images $(if $(FILTER),$(FILTER),)
+
+testharness-filter-effects-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-filter-effects $(if $(FILTER),$(FILTER),)
+
+testharness-css-ui-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-ui $(if $(FILTER),$(FILTER),)
+
+testharness-css-borders-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-borders $(if $(FILTER),$(FILTER),)
+
+testharness-css-logical-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-logical $(if $(FILTER),$(FILTER),)
+
+testharness-css-text-decor-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-text-decor $(if $(FILTER),$(FILTER),)
+
+testharness-css-box-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-box $(if $(FILTER),$(FILTER),)
+
+testharness-css-pseudo-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-pseudo $(if $(FILTER),$(FILTER),)
+
+testharness-css-display-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-display $(if $(FILTER),$(FILTER),)
+
+testharness-css-mixins-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-mixins $(if $(FILTER),$(FILTER),)
+
+testharness-css-syntax-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-syntax $(if $(FILTER),$(FILTER),)
+
+testharness-fill-stroke-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-fill-stroke $(if $(FILTER),$(FILTER),)
+
+testharness-css-shadow-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-shadow $(if $(FILTER),$(FILTER),)
+
+testharness-css-size-adjust-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-size-adjust $(if $(FILTER),$(FILTER),)
+
+testharness-css-content-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-content $(if $(FILTER),$(FILTER),)
+
+testharness-css-will-change-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-will-change $(if $(FILTER),$(FILTER),)
+
+testharness-css-color-adjust-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-color-adjust $(if $(FILTER),$(FILTER),)
+
+testharness-css-easing-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-easing $(if $(FILTER),$(FILTER),)
+
+testharness-compositing-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-compositing $(if $(FILTER),$(FILTER),)
+
+testharness-css-counter-styles-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-counter-styles $(if $(FILTER),$(FILTER),)
+
+testharness-css-nesting-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-nesting $(if $(FILTER),$(FILTER),)
+
+testharness-css-color-hdr-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-color-hdr $(if $(FILTER),$(FILTER),)
+
+testharness-css-env-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-env $(if $(FILTER),$(FILTER),)
+
+testharness-css-conditional-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-conditional $(if $(FILTER),$(FILTER),)
+
+testharness-mediaqueries-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-mediaqueries $(if $(FILTER),$(FILTER),)
+
+testharness-css-cascade-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-cascade $(if $(FILTER),$(FILTER),)
+
+testharness-css2-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css2 $(if $(FILTER),$(FILTER),)
+
+testharness-css-forms-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-forms $(if $(FILTER),$(FILTER),)
+
+testharness-css-link-params-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-link-params $(if $(FILTER),$(FILTER),)
+
+testharness-css-font-loading-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-font-loading $(if $(FILTER),$(FILTER),)
+
+testharness-css-gaps-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-gaps $(if $(FILTER),$(FILTER),)
+
+testharness-css-flexbox-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-flexbox $(if $(FILTER),$(FILTER),)
+
+testharness-css-multicol-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-multicol $(if $(FILTER),$(FILTER),)
+
+testharness-css-position-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-position $(if $(FILTER),$(FILTER),)
+
+testharness-css-overflow-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-overflow $(if $(FILTER),$(FILTER),)
+
+testharness-css-tables-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-tables $(if $(FILTER),$(FILTER),)
+
+testharness-css-lists-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-lists $(if $(FILTER),$(FILTER),)
+
+testharness-css-inline-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-inline $(if $(FILTER),$(FILTER),)
+
+testharness-css-scroll-snap-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-scroll-snap $(if $(FILTER),$(FILTER),)
+
+testharness-css-viewport-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-viewport $(if $(FILTER),$(FILTER),)
+
+testharness-css-break-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-break $(if $(FILTER),$(FILTER),)
+
+testharness-css-contain-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-contain $(if $(FILTER),$(FILTER),)
+
+testharness-css-writing-modes-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-writing-modes $(if $(FILTER),$(FILTER),)
+
 # css-testharness-compat M1 / DC-2 等价判据复验：分片通道合并结果 ≡ 单进程 --json
 # （(case, 子测名→status) 集合恒等）。换目录子集：make testharness-css-parity CORPUS=css-values FILTER=css/css-values/calc
 testharness-css-parity: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
@@ -774,6 +1096,55 @@ testharness-mixed-content: target-disk-guard fetch-wpt-security-csp target/test-
 
 testharness-secure-contexts: target-disk-guard fetch-wpt-security-csp target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-secure-contexts $(if $(FILTER),$(FILTER),)
+
+# gap-batch1 goal M1 / DC-2：覆盖率缺口十二小面 CONFIRMED 六面（quirks /
+# domparsing / domxpath / subresource-integrity / cors / import-maps）window
+# 可执行子集通道（fetch-gap-batch1-subset.sh 十二 corpus 一批落盘，含 LIKELY
+# 五面 M3 语料基座与 mixed-content tentative 扩面）。基线首跑即便大量 Fail 也
+# 只用于记录通过率（--format json 捕获写 evidence/），不作为 land 门禁。
+# 路径子串透传：make testharness-quirks FILTER=unitless。
+fetch-wpt-quirks fetch-wpt-domparsing fetch-wpt-domxpath fetch-wpt-subresource-integrity fetch-wpt-cors fetch-wpt-import-maps:
+	bash tests/wpt-runner/scripts/fetch-gap-batch1-subset.sh
+
+testharness-quirks: target-disk-guard fetch-wpt-quirks target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-quirks $(if $(FILTER),$(FILTER),)
+
+testharness-domparsing: target-disk-guard fetch-wpt-domparsing target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-domparsing $(if $(FILTER),$(FILTER),)
+
+testharness-domxpath: target-disk-guard fetch-wpt-domxpath target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-domxpath $(if $(FILTER),$(FILTER),)
+
+testharness-subresource-integrity: target-disk-guard fetch-wpt-subresource-integrity target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-subresource-integrity $(if $(FILTER),$(FILTER),)
+
+testharness-cors: target-disk-guard fetch-wpt-cors target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-cors $(if $(FILTER),$(FILTER),)
+
+testharness-import-maps: target-disk-guard fetch-wpt-import-maps target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-import-maps $(if $(FILTER),$(FILTER),)
+
+# gap-batch1 M3：LIKELY 五面通道（referrer-policy / input-events / preload /
+# wai-aria / storage），fetch 与 M1 六面同一脚本；子目录清单按 M0 甄别池
+# （manual/ 与 resources/ 资产页不进 runner 清单）。数值门 = 各面干跑基线
+# P 数（evidence/2026-11-06-m3-*.md），storage 引擎缺位不设门。
+fetch-wpt-referrer-policy fetch-wpt-input-events fetch-wpt-preload fetch-wpt-wai-aria fetch-wpt-storage:
+	bash tests/wpt-runner/scripts/fetch-gap-batch1-subset.sh
+
+testharness-referrer-policy: target-disk-guard fetch-wpt-referrer-policy target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-referrer-policy $(if $(FILTER),$(FILTER),)
+
+testharness-input-events: target-disk-guard fetch-wpt-input-events target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-input-events $(if $(FILTER),$(FILTER),)
+
+testharness-preload: target-disk-guard fetch-wpt-preload target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-preload $(if $(FILTER),$(FILTER),)
+
+testharness-wai-aria: target-disk-guard fetch-wpt-wai-aria target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-wai-aria $(if $(FILTER),$(FILTER),)
+
+testharness-storage: target-disk-guard fetch-wpt-storage target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-storage $(if $(FILTER),$(FILTER),)
 
 # timing-animation-compat goal M1 / DC-1：上游 hr-time/ + performance-timeline/ +
 # user-timing/ + web-animations/ 四 corpus window 可执行子集（goals/10 编号脚本显式

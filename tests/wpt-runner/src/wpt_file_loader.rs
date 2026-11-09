@@ -8,6 +8,25 @@ use std::path::{Path, PathBuf};
 
 use crate::manifest::{FuzzyMeta, extract_reftest_links};
 use crate::reftest::{ReftestCase, ReftestCategory, ReftestConfig};
+use zero_css_parser::media_query::MediaType;
+
+/// 上游 print-reftest 分类（wpt `tools/manifest/sourcefile.py` `name_is_print_reftest`
+/// 同规则）：文件名末段 `-` 后 type_flag == "print"（`foo-print.html` /
+/// `x-for-print.sub.html` 的 rsplit("-",1)[1] 首段）或路径含 `print` 目录分量。
+/// print reftest 须以 print 媒体仿真渲染（`@media print` 生效 / `@media not print`
+/// 失效），按 screen 跑则 `@media not print` 隐藏臂结构性恒红（driving：the-object-element
+/// object-image/svg-only-for-print 两案 ✗1.04%）。语料 70 案实测仅 object 对带
+/// `@media` 分支——其余案 test/ref 双侧媒体无关，分类翻转对其零实效。
+/// https://github.com/web-platform-tests/wpt/blob/master/tools/manifest/sourcefile.py
+pub fn is_print_reftest(relative_id: &str) -> bool {
+    if relative_id.split('/').any(|component| component == "print") {
+        return true;
+    }
+    let filename = relative_id.rsplit('/').next().unwrap_or(relative_id);
+    let stem = filename.rsplit_once('.').map_or(filename, |(s, _)| s);
+    stem.rsplit_once('-')
+        .is_some_and(|(_, tail)| tail.split('.').next().is_some_and(|flag| flag == "print"))
+}
 
 /// 套件语料统一读取入口（encoding-legacy-mb DC-1）：字节级读 + 按语料形态解码。
 ///
@@ -137,6 +156,7 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 category: ReftestCategory::from_path(&relative_str),
                 base_dir: test_base,
                 fuzzy: parse_fuzzy_meta(&test_html),
+                is_print: is_print_reftest(&relative_str),
             });
         }
     }
@@ -221,6 +241,8 @@ pub struct FileReftestCase {
     /// 类声明容差（镜像 1px 边缘 22923px 超差）被按严格阈值误判（上游语义：maxDiff 内
     /// 像素不计、总数 ≤ totalPixels 即 pass）。
     pub fuzzy: Option<FuzzyMeta>,
+    /// 上游 print-reftest 分类（[`is_print_reftest`]）——print 媒体仿真渲染。
+    pub is_print: bool,
 }
 
 impl FileReftestCase {
@@ -247,6 +269,11 @@ impl FileReftestCase {
         let mut config = ReftestConfig::for_category(self.category).with_viewport(viewport_width, viewport_height);
         if let Some(fuzzy) = &self.fuzzy {
             config.with_fuzzy_override(fuzzy);
+        }
+        // s317：上游 print-reftest 以 print 媒体仿真渲染（按 case 分类，非全局
+        // CLI 开关——CLI `--media-type` 显式指定时仍覆盖，见 main.rs 各 reftest 命令）。
+        if self.is_print {
+            config.media_type = MediaType::Print;
         }
         config
     }
@@ -553,5 +580,22 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0], ("1B 28 4A 5C 1B 28 42", "\u{a5}"));
         assert_eq!(spans[1], ("1B 24 42 21 78 1B 28 42", "\u{a7}"));
+    }
+    // s317：上游 print-reftest 分类矩阵（sourcefile.py name_is_print_reftest 同规则）。
+    #[test]
+    fn is_print_reftest_matrix_s317() {
+        // flag 臂：末 `-` 段 == print（含点分 meta_flags 形态）。
+        assert!(super::is_print_reftest(
+            "html/semantics/embedded-content/the-object-element/object-image-only-for-print.html"
+        ));
+        assert!(super::is_print_reftest("css/css-position/x-print.sub.html"));
+        assert!(super::is_print_reftest("css/css-grid/y-print.tentative.html"));
+        assert!(super::is_print_reftest("css/CSS2/pagination/z-print.xht"));
+        // print 目录分量臂。
+        assert!(super::is_print_reftest("css/print/page.html"));
+        // 非 print：无尾 flag / flag 非 print / 仅文件名含 print 子串。
+        assert!(!super::is_print_reftest("css/print-color-adjust/plain.html"));
+        assert!(!super::is_print_reftest("html/some-printing.html"));
+        assert!(!super::is_print_reftest("a/x-printer.html"));
     }
 }

@@ -50,6 +50,9 @@ DIRS=(
   "fetch/api/resources"
   "fetch/api/cors"
   "fetch/api/cors/resources"
+  # ── fetch/api/redirect：net-api-compat-v3 M1b（redirect.py per-token stash
+  #    fixture 落地后导入；.h2. 形态案 runner 无 HTTP/2 skip 规则排除）──
+  "fetch/api/redirect"
   "fetch/data-urls"
   "fetch/data-urls/resources"
   "fetch/content-type"
@@ -83,6 +86,10 @@ DIRS=(
   #    websocket handler 面，handshake/* 服务端行为面按甄别结果记账）──
   "websockets"
   "websockets/resources"
+  # ── websockets/interfaces：net-api-compat-v3 M2（DC-3 主增量——纯客户端 WS API
+  #    语义面 74 案，连接面 /、/echo、/empty-message、/handshake_sleep_2 既有 +
+  #    /echo_raw、/sleep_10_v13 两条 ws_fixture 新端点；wss 常数引用落未走分支）──
+  "websockets/interfaces"
 )
 
 # M5-S8：formdata image submitter 坐标腿 fixture（上游原件——期望值 23/46 的几何

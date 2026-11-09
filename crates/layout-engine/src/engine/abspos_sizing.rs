@@ -359,6 +359,167 @@ fn recenter_abspos_vcenter_inner(
     }
 }
 
+/// R5461（CSS2 §10.3.7 shrink-to-fit × CSS Writing Modes §7.1 交换帧）：正交 htb
+/// abs 叶 auto 物理宽按真 CB（视口 ICB）重解 shrink-to-fit。
+///
+/// 塌陷机制（taffy 交换帧 absolute sizing 两趟）：pass1 以静态父 content 区测得
+/// `(taffy w = 物理块轴 extent, taffy h = 物理行内 advance)`（R5456 正交测量臂转置
+/// 返回）；随后 R5293 纯块级定高回灌臂（taffy-local block.rs `height_content_derived`，
+/// 文本叶无 taffy 子恒真）以 `known_width = Some(已测 taffy w)` 重排——该值是
+/// **物理高**（行高 40），经测量闭包被 R5456 臂当水平 IFC 约束消费（交换帧下
+/// taffy width 槽 = 物理块轴，槽语义劈叉）→ 文本按 40px 断行，行内 extent 塌最宽词
+///（float-lft-orthog-htb-in-vrl-002 ref 臂 abs 89 vs chromium 211.48；estimate 域
+/// 123.2 = 最宽词 advance，V-b 单词与 16 字符全文同宽实证内容无关）。taffy CB=
+/// 静态父（物理水平可用仅父内容宽 40，V-d x=40−16−w 实证），真 CB=ICB 可用
+/// 784 ≥ max-content 应单行——taffy 侧无解，须按真 CB 重解（R5455 家族同域：
+/// x 已由 11.5 右锚方程随 width 修正，宽度域本轮收口）。
+///
+/// 域门（最小切片）：viewport-CB abs（镜像 11.5 `is_abs_viewport_cb` 谓词，含
+/// is_abspos_cb 链）；父 vertical + 自身非 vertical（交换帧域；水平域 R5104 臂
+/// relayout 反馈 known.w = 物理宽语义自洽，无跨轴污染，不触）；非替换；物理宽
+/// Auto；水平/垂直双 inset 均不全定长（stretch 域让位，11.5 stretch 臂已解析）；
+/// DOM 无元素子（纯文本叶；元素子域 taffy 子树同病理但需子树重排，FIXME 挂账）。
+/// fixed 与 containment/视觉-CB 域不在本切片（FIXME）。
+///
+/// action（§10.3.7）：available = ICB 宽 − 定长 left/right − 定长 margin_l/r
+///（% inset 不计，R5104 同口径），水平 IFC（R5456 臂同取向 with_vertical(false)）
+/// 以 available 断行 → width = ceil(单行 advance)/最宽行 + frame（R5104 paint 复排
+/// 口径：盒宽 ≥ advance 免 Path B 复排折行），height = Σ 行高 + frame（显式
+/// height 不越权），content_* 同步。语义已对域（|Δw| ≤ 0.5）零扰动。
+/// kill-switch `ZW_ABSPOS_ORTHO_STF=0`。
+pub(super) fn resolve_orthog_abspos_shrink_to_fit(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    viewport_width: f32,
+) {
+    // env 边界读一次（guideline #9：进程稳定开关不进逐节点循环）。
+    if std::env::var("ZW_ABSPOS_ORTHO_STF").as_deref() == Ok("0") {
+        return;
+    }
+    orthog_stf_walk(root, doc, styles, inline_fonts, viewport_width, false);
+}
+
+fn orthog_stf_walk(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    viewport_width: f32,
+    has_positioned_ancestor: bool,
+) {
+    // 镜像 11.5 adjust_absolute_pct_to_viewport 的 CB 链谓词（child_has_positioned_ancestor
+    // = 父链 positioned 或本盒 is_abspos_cb），保证两 pass 对「谁算 viewport-CB abs」
+    // 判定逐位一致（宽度重解先于 11.5，右锚方程消费修正后 width）。
+    let child_has_positioned_ancestor = has_positioned_ancestor || box_node.is_abspos_cb;
+    let parent_vertical = box_node.writing_mode.is_vertical_block_flow();
+    for child in &mut box_node.children {
+        if parent_vertical
+            && child.is_absolute
+            && !child_has_positioned_ancestor
+            && !child.is_replaced
+            && !child.writing_mode.is_vertical_block_flow()
+        {
+            resolve_orthog_abs_child_shrink_to_fit(child, doc, styles, inline_fonts, viewport_width);
+        }
+        orthog_stf_walk(
+            child,
+            doc,
+            styles,
+            inline_fonts,
+            viewport_width,
+            child_has_positioned_ancestor,
+        );
+    }
+}
+
+fn resolve_orthog_abs_child_shrink_to_fit(
+    child: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    viewport_width: f32,
+) {
+    use zero_css_parser::values::LengthValue;
+    let Some(id) = child.node_id else { return };
+    let Some(s) = styles.get(&id) else { return };
+    // 物理宽 auto（物理属性不换轴存储，style.width = 物理宽；content 关键字域 FIXME）。
+    if !matches!(s.width, LengthValue::Auto) {
+        return;
+    }
+    // stretch 域让位：双 inset 全定长时 11.5 stretch 臂已按 CB 解析尺寸，不重解。
+    let left = resolve_abspos_real_length(&s.left, &s.font_size, viewport_width, 0.0);
+    let right = resolve_abspos_real_length(&s.right, &s.font_size, viewport_width, 0.0);
+    if left.is_some() && right.is_some() {
+        return;
+    }
+    let top = resolve_abspos_real_length(&s.top, &s.font_size, viewport_width, 0.0);
+    let bottom = resolve_abspos_real_length(&s.bottom, &s.font_size, viewport_width, 0.0);
+    if top.is_some() && bottom.is_some() {
+        return;
+    }
+    // 纯文本叶（taffy 树叶盒 ⇔ DOM 无元素子；元素子域需子树重排，FIXME 不触）。
+    if doc
+        .child_nodes(id)
+        .iter()
+        .any(|&cid| matches!(doc.get(cid).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))))
+    {
+        return;
+    }
+    // §10.3.7 available = CB 宽 − 定长 inset − 定长 margin（auto/% margin 不计）。
+    let margin_left = resolve_abspos_real_length(&s.margin_left, &s.font_size, viewport_width, 0.0).unwrap_or(0.0);
+    let margin_right = resolve_abspos_real_length(&s.margin_right, &s.font_size, viewport_width, 0.0).unwrap_or(0.0);
+    let available = viewport_width - left.unwrap_or(0.0) - right.unwrap_or(0.0) - margin_left - margin_right;
+    if !available.is_finite() || available <= 0.0 {
+        return;
+    }
+    // 水平 IFC 以 available 断行（R5456 正交测量臂同取向：自身 htb → with_vertical(false)），
+    // 行内 extent = 最宽行、块轴 extent = Σ 行高——shrink-to-fit 语义由断行自然达成。
+    let mut ctx = crate::inline::InlineFormattingContext::new(available).with_vertical(false);
+    ctx = crate::inline_finalization::configure_inline_fonts(ctx, inline_fonts, false);
+    ctx.layout(doc, id, styles);
+    if ctx.lines.is_empty() {
+        return; // 无行盒（空内容），不越权。
+    }
+    let inline_extent = ctx
+        .all_fragments()
+        .iter()
+        .map(|f| f.x + f.width)
+        .fold(0.0_f32, f32::max);
+    if !inline_extent.is_finite() || inline_extent <= 0.0 {
+        return;
+    }
+    let block_extent = ctx.total_height();
+    let frame_h = child.border_left + child.border_right + child.padding_left + child.padding_right;
+    let frame_v = child.border_top + child.border_bottom + child.padding_top + child.padding_bottom;
+    // 单行且未溢出：宽度上取整（R5104 口径——盒宽 ≥ advance，paint Path B 以盒宽
+    // 复排不折行）；多行/溢出保持测量值（chromium 窄 CB 语义同）。
+    let content_w = if ctx.lines.len() == 1 && inline_extent <= available {
+        inline_extent.ceil()
+    } else {
+        inline_extent
+    };
+    // min/max-width Px 钳（5.5 口径，em/rem 解析阶段已落 Px）。
+    let (min_w, max_w) = match (&s.min_width, &s.max_width) {
+        (LengthValue::Px(lo), LengthValue::Px(hi)) => (*lo as f32, *hi as f32),
+        (LengthValue::Px(lo), _) => (*lo as f32, f32::MAX),
+        (_, LengthValue::Px(hi)) => (0.0, *hi as f32),
+        _ => (0.0, f32::MAX),
+    };
+    let new_width = (content_w + frame_h).max(min_w).min(max_w);
+    if !new_width.is_finite() || (new_width - child.width).abs() <= 0.5 {
+        return; // 语义已对域零扰动（both directions）。
+    }
+    child.width = new_width;
+    child.content_width = new_width - frame_h;
+    // 显式 height 不越权；auto 高随断行重derive（单行 40 不变，多行 Σ 行高）。
+    if matches!(s.height, LengthValue::Auto) {
+        child.height = block_extent + frame_v;
+        child.content_height = block_extent;
+    }
+}
+
 #[cfg(test)]
 mod r2062_tests {
     use super::*;

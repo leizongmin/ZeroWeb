@@ -47,6 +47,11 @@ pub struct FetchRequest {
     pub mode: Option<String>,
     /// Fetch redirect mode (`follow`/`error`/`manual`) when projected from JS.
     pub redirect: Option<String>,
+    /// Fetch cache mode（http-cache goal M2——`init.cache` 六态枚举：`no-store`/
+    /// `reload`/`no-cache`/`force-cache`/`only-if-cached`；`default`/缺省 → None）。
+    /// wire 第 12 参（index 11——index 10 已被 iframe 通道 client-id 载荷占用，
+    /// 见 js_dom_shim part01 R115/S7 调用点），枚举合法性由 shim 层校验。
+    pub cache: Option<String>,
 }
 
 /// JS `fetch` 响应——status/status_text/headers/body。
@@ -359,6 +364,9 @@ impl FetchBridge {
                 let mode = args.get(7).filter(|value| !value.is_empty()).cloned();
                 let redirect = args.get(8).filter(|value| !value.is_empty()).cloned();
                 let credentials = args.get(9).filter(|value| !value.is_empty()).cloned();
+                // http-cache goal M2：wire index 11 = init.cache 六态（空串/缺省 →
+                // None；旧宿主 10 参调用 wire 短于 12 → get(11)=None 向后兼容）。
+                let cache = args.get(11).filter(|value| !value.is_empty()).cloned();
                 let req = FetchRequest {
                     url,
                     method,
@@ -368,6 +376,7 @@ impl FetchBridge {
                     credentials,
                     mode,
                     redirect,
+                    cache,
                 };
                 let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 let resolver = resolver.clone();

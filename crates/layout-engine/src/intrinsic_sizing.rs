@@ -1052,9 +1052,39 @@ fn box_content_max_width_inner(
     } else if !has_in_flow_child {
         // 叶盒：显式宽或文本内容宽（Round C）。纯文本 item（无 LayoutBox 子元素）
         // 之前测 0，现按 DOM 文本内容度量。取 max 避免显式宽被文本低估。
+        // R5444（CSS2 §17.5.2 table intrinsic = 流内内容 + css-position-3 §9.1）：
+        // table 内部盒（cell/row/row-group/caption 等）叶分支不走普通文本 walk——
+        // 旧径把唯一 OOF 内容的 table 盒当文本叶、DOM walk 计入 abs 后代文本
+        //（s-11-1-1b-005 探针链：td(width:20px) 唯一 abs p → 列宽 = p 文本
+        // 355.2/279.5）。改走 scoped 臂（R5243 离流剪 + R4921 定宽原子停，此处
+        // 子集仅 OOF——有流内原子早已入 has_in_flow_child）。普通块盒维持旧径：
+        // R5300 abs 塌 0 补测链依赖 abs 文本宽度量（ZW abs 定位以父盒为 sizing
+        // 语境；chrome §10.1 ICB 偏差另案挂账 D2）。kill-switch 同
+        // ZW_CELL_INTRINSIC_OOF_SKIP（table_types::cell_intrinsic_oof_skip_enabled）。
         let text_w = box_node
             .node_id
-            .map_or(0.0, |id| text_content_max_width(id, doc, styles)); // R5318（css-sizing-3 §5.1 max-content + CSS2 §10.3.2）：替换叶盒 max-content
+            .map(|id| {
+                let table_internal = styles.get(&id).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::TableCell
+                            | DisplayValue::TableRow
+                            | DisplayValue::TableRowGroup
+                            | DisplayValue::TableHeaderGroup
+                            | DisplayValue::TableFooterGroup
+                            | DisplayValue::TableCaption
+                            | DisplayValue::TableColumn
+                            | DisplayValue::TableColumnGroup
+                    )
+                });
+                if table_internal && crate::table_types::cell_intrinsic_oof_skip_enabled() {
+                    text_content_max_width_scoped(id, doc, styles, true, false)
+                } else {
+                    text_content_max_width(id, doc, styles)
+                }
+            })
+            .unwrap_or(0.0);
+        // R5318（css-sizing-3 §5.1 max-content + CSS2 §10.3.2）：替换叶盒 max-content
         // = 固有尺寸——attr/解码尺寸在 tree.rs apply_replaced_element_sizing 已写为
         // taffy definite 宽，第一趟 box_node.width 即真实固有值（替换盒主轴永不
         // fill-stretch，无拉伸伪影）。旧文本/显式宽口径对替换叶双 0 → td 内

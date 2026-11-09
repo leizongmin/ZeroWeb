@@ -1274,7 +1274,7 @@ fn test_table_min_width_relative_length_expands_auto_columns() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _auto_shrunk) =
+    let (col_widths, _auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert_eq!(col_widths.len(), 1);
@@ -1352,7 +1352,7 @@ fn test_r4298_explicit_width_table_shrinks_overflowing_columns() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, auto_shrunk) =
+    let (col_widths, auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert!(auto_shrunk, "840 > 360 应触发压缩");
@@ -1600,7 +1600,7 @@ fn test_fixed_layout_caps_columns_at_explicit_width_when_content_wider() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _auto_shrunk) =
+    let (col_widths, _auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     // 修复前：内容 200px 撑宽列到 ~200；修复后：fixed + width:100px 收缩列到 ~100
@@ -1660,7 +1660,7 @@ fn test_r364_explicit_width_column_frozen_during_expansion() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _auto_shrunk) =
+    let (col_widths, _auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     assert_eq!(col_widths.len(), 2, "应有 2 列");
     // 显式 20px 列冻结（不吸收剩余空间），保持 ~20 而非被比例撑大
@@ -1724,7 +1724,7 @@ fn test_explicit_cell_width_relative_length_freezes_column() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _auto_shrunk) =
+    let (col_widths, _auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert_eq!(col_widths.len(), 2);
@@ -1776,7 +1776,7 @@ fn test_r364b_explicit_width_floored_at_min_content() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _auto_shrunk) =
+    let (col_widths, _auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     // 列宽应 floor 到 min-content（~9.6），远大于显式 3px（修复前会返回 3）
     assert!(
@@ -2771,7 +2771,7 @@ fn test_col_percent_width_resolves_against_spacing_adjusted_base() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _auto_shrunk) =
+    let (col_widths, _auto_shrunk, _spec_clamped) =
         compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     // 基准 = 400 − 25×3 = 325：col1 = 13%×325 = 42.25；col2（auto）= 325 − 42.25 = 282.75。
@@ -3287,7 +3287,7 @@ fn collapse_winner_center_column_slot_per_cell_edge_basis() {
     let grid = build_grid(&table_box, &doc, &styles);
     // 槽 75 = max(自身 L/2+content, 自身 R/2+content) = max(75, 50)——非逐格线
     // 注入的 0+75+50 = 125（R5282 注入臂回归实证，修前本测红）
-    let (col_widths, _) = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _, _) = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     assert!(
         col_widths.len() == 1 && (col_widths[0] - 75.0).abs() < 0.01,
         "column slot {:?} != [75] (per-cell own-half max)",
@@ -3440,7 +3440,7 @@ fn collapse_winner_center_column_row_local_line_winners() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let (col_widths, _) = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _, _) = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     let expect = [59.0, 57.0, 57.0, 57.0, 57.0];
     assert!(
         col_widths.len() == 5 && col_widths.iter().zip(expect).all(|(w, e)| (w - e).abs() < 0.01),

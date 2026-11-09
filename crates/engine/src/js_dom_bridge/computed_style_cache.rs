@@ -480,6 +480,7 @@ fn try_sync_with_drain_record(
             DomMutation::SetFormValue { .. }
             | DomMutation::SetFormComposition { .. }
             | DomMutation::FocusChanged { .. }
+            | DomMutation::FocusChangedInShadow { .. }
             | DomMutation::CreateElement { .. }
             | DomMutation::CreateElementNS { .. }
             | DomMutation::CreateTextNode { .. }

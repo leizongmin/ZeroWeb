@@ -46,6 +46,16 @@ pub(super) fn clamp_strut_displaced() -> bool {
     selected(*VALUE, || default_on("ZW_CLAMP_STRUT"))
 }
 
+/// R5449（css-overflow-4 §block-ellipsis / css-text-3 §3.1.4 hangable whitespace）：
+/// line-clamp 截断生效后，末保留行的 hangable 尾随空格不进 ellipsis 前内容——纯空白
+/// run 清零（无字形零推进）、混合 run 剪尾随空格并收缩 width（x 不动：R1338 对齐口径
+/// 已排除 hang 宽，位置中性）。block-ellipsis-032 判例：pre-wrap 悬挂空格 span 残留
+/// ellipsis 前露红底。default-on；`ZW_CLAMP_HANG_TRIM=0` 回退不剪（旧行为）。
+pub(super) fn clamp_hang_trim() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_CLAMP_HANG_TRIM"));
+    selected(*VALUE, || default_on("ZW_CLAMP_HANG_TRIM"))
+}
+
 pub(super) fn skip_oof() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_IFC_SKIP_OOF"));
     selected(*VALUE, || default_on("ZW_IFC_SKIP_OOF"))
@@ -352,6 +362,44 @@ pub(super) fn ls_line_end_fit() -> bool {
 pub(super) fn first_line_lh() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FIRST_LINE_LH"));
     selected(*VALUE, || default_on("ZW_FIRST_LINE_LH"))
+}
+
+/// R5473（CSS2 §9.5 float 离流盒）：**行中** float 锚不产生换行——后继 inline 内容
+/// 留原行续排（行内带消费机制已把前文推到 float 右侧带）。chromium oracle 定谳
+///（floats-placement-vertical-001b 形 `<span>Hello<span float/></span>Kitty`：
+/// "HelloKitty" 同行 x≈50 起，ZW 旧径 Kitty 掉行 1 为独有缺陷）。R3784 引入时
+/// 「语义同 BlockBreak」为借推行机制的权宜，非 spec 决策。**行首锚**（空行）仍走
+/// R3779b 臂（不推行 + current_x 带左缘重锚，003l 形 s1 落带右侧依赖该重锚）。
+/// default-on；`ZW_FLOAT_ANCHOR_NO_BREAK=0` 回退锚推行旧行为。
+pub(super) fn float_anchor_no_break() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_ANCHOR_NO_BREAK"));
+    selected(*VALUE, || default_on("ZW_FLOAT_ANCHOR_NO_BREAK"))
+}
+
+/// R5417（CSS2 §10.3.5 inline-block margin box 参排）：IFC 原子 fit 门占位 =
+/// **margin box**（= ml + border box + mr，与同臂 placement advance 同口径）。
+/// 旧径只计 border box：原子横 margin 越出行缘不折行、强留本行横向溢出
+///（flexbox_first-line ref 页 li5：li4 margin-box 终点 714 + border box 191.2
+/// = 905.2 ≤ 908 旧门「放得下」，margin box 969.2 > 908 应折——flex 侧 margin
+/// box 参排正确折行，双页 4/4 vs 5/3 恒红）。default-on；
+/// `ZW_ATOMIC_MARGIN_BOX_FIT=0` 回退 border box 口径。
+pub(super) fn atomic_margin_box_fit() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_ATOMIC_MARGIN_BOX_FIT"));
+    selected(*VALUE, || default_on("ZW_ATOMIC_MARGIN_BOX_FIT"))
+}
+
+/// R5475（CSS2 §9.7 float 块化 = BFC 根，行盒归属其自身 IFC）：**单行 float 容器**
+/// （is_floated 且 IFC 恰产 1 行）的 inline_layout 落盘放行——不要求 pure-Ahem /
+/// float 排除带许可。floats-149 形归因（探针定谳）：`div.block > div[display:inline]
+/// > span(文本, float:left 50%) + span(空, float:left)` 形中，文本行真 owner = 块化
+/// float span 自身（chromium 同构：float 是 BFC 根，其文本行归属 float 内部 IFC）。
+/// ZW 侧 span IFC 已正确产 1 行，旧 store 门因「非 pure-Ahem 且无 float 排除带」拒存
+/// → 全树零行盒 → paint Path B 逐盒重跑兜住视觉，行盒消费面（滚动溢出行臂等）失据。
+/// 多行 float 仍拒存（R355 multicol-fill-auto-001 float 模拟列的 test/ref 对称域）。
+/// default-on；`ZW_FLOAT_OWN_LINE_STORE=0` 回退旧口径。
+pub(super) fn float_own_line_store() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_OWN_LINE_STORE"));
+    selected(*VALUE, || default_on("ZW_FLOAT_OWN_LINE_STORE"))
 }
 
 #[cfg(test)]

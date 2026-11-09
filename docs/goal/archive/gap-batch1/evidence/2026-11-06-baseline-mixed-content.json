@@ -1,0 +1,87 @@
+[
+  [
+    "mixed-content/blob.https.sub.html",
+    [
+      {
+        "name": "mixed-content/blob.https.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":2})"
+      }
+    ]
+  ],
+  [
+    "mixed-content/imageset.https.sub.html",
+    [
+      {
+        "name": "Makes sure imageset blockable resources are not downloaded",
+        "status": "Fail",
+        "message": "Invalid URL: http://{{domains[]}}:{{ports[http][0]}}/images/smiley.png?img_src"
+      }
+    ]
+  ],
+  [
+    "mixed-content/tentative/autoupgrades/audio-upgrade.https.sub.html",
+    [
+      {
+        "name": "Audio autoupgraded",
+        "status": "Fail",
+        "message": "Invalid URL: http://{{host}}:{{ports[https][0]}}/mixed-content/tentative/resources/test.wav"
+      },
+      {
+        "name": "Audio of other host autoupgraded",
+        "status": "Fail",
+        "message": "Invalid URL: http://alt.wpt.test:{{ports[https][0]}}/mixed-content/tentative/resources/test.wav"
+      }
+    ]
+  ],
+  [
+    "mixed-content/tentative/autoupgrades/image-upgrade.https.sub.html",
+    [
+      {
+        "name": "Image autoupgraded",
+        "status": "Fail",
+        "message": "Invalid URL: http://{{host}}:{{ports[https][0]}}/mixed-content/tentative/resources/pass.png"
+      },
+      {
+        "name": "Image of other host autoupgraded",
+        "status": "Fail",
+        "message": "Invalid URL: http://alt.wpt.test:{{ports[https][0]}}/mixed-content/tentative/resources/pass.png"
+      }
+    ]
+  ],
+  [
+    "mixed-content/tentative/autoupgrades/mixed-content-cors.https.sub.html",
+    [
+      {
+        "name": "Cross-Origin image should get upgraded even if CORS is set",
+        "status": "Fail",
+        "message": "Invalid URL: http://alt.wpt.test:{{ports[https][0]}}/mixed-content/tentative/resources/pass.png?pipe=header(Access-Control-Allow-Origin,*)"
+      },
+      {
+        "name": "Cross-Origin video should get upgraded even if CORS is set",
+        "status": "Fail",
+        "message": "Invalid URL: http://alt.wpt.test:{{ports[https][0]}}/mixed-content/tentative/resources/test.webm?pipe=header(Access-Control-Allow-Origin,*)"
+      },
+      {
+        "name": "Cross-Origin audio should get upgraded even if CORS is set",
+        "status": "Fail",
+        "message": "assert_equals: Length of other host audio is correct expected 1 but got 600"
+      }
+    ]
+  ],
+  [
+    "mixed-content/tentative/autoupgrades/video-upgrade.https.sub.html",
+    [
+      {
+        "name": "Video autoupgraded",
+        "status": "Fail",
+        "message": "Invalid URL: http://{{host}}:{{ports[https][0]}}/mixed-content/tentative/resources/test.webm"
+      },
+      {
+        "name": "Video of other host autoupgraded",
+        "status": "Fail",
+        "message": "Invalid URL: http://alt.wpt.test:{{ports[https][0]}}/mixed-content/tentative/resources/test.webm"
+      }
+    ]
+  ]
+]

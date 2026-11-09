@@ -23,7 +23,7 @@ use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
-    PaintAnimationProperty, PaintAnimationScope, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
+    DrawOp, PaintAnimationProperty, PaintAnimationScope, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
 };
 use zero_style_system::property::types::{DirectionValue, DisplayValue, FlexDirectionValue};
 use zero_style_system::{
@@ -290,6 +290,27 @@ pub struct Painter {
     /// paint_node_in_rect 自递归不经 paint_node 不入栈——该路径维持无透视合成
     ///（FIXME：如需覆盖改走 paint_node 或同款入栈）。
     pub(crate) perspective_ctx: Vec<ParentPerspective>,
+    /// R5422：3D 渲染上下文累积线性矩阵栈（CSS Transforms-2
+    /// §3d-transform-rendering）——`paint_node` 入栈/出栈，`Some(m)` = 当前元素
+    /// 处于 preserve-3d 祖先链建立的 3D 渲染上下文中，`m` 为上下文累积 3×3 线性
+    /// 矩阵（含 preserve-3d 祖先全部变换）；`None`/空栈 = 不在 3D 上下文（flat
+    /// 边界截断，子树回退自身链判定）。backface-visibility:hidden 的背面判定按
+    /// 累积矩阵 zz 分量（transform.rs `transform_chain_3d_matrix`），驱动
+    /// transform3d-backface-visibility-004/006、backface-visibility-hidden-004、
+    /// backface-visibility-with-sibling-001（R4035 旧实现只判自身链）。
+    /// 限制（FIXME）：脏矩形路径 paint_node_in_rect 自递归不入栈（同
+    /// perspective_ctx 口径）；scope 延迟 positioned 后代若与 preserve-3d 祖先
+    /// 之间隔着非 walk 路径元素，累积链缺失中间代（现存六案形均 scope=自身/
+    /// 直系，未触达）。
+    pub(crate) backface_ctx: Vec<Option<[f32; 9]>>,
+    /// R5422：3D 渲染上下文累积背面判定开关（构造期单次读取，热路径零 env 查询，
+    /// 同 [`Self::parent_perspective_enabled`] 口径）。`ZW_BACKFACE_3D_CTX=0` 关闭
+    /// → 精确回退 R4035 原语义（自身链 cos 连乘 + preserve-3d 一律不隐，无累积栈），
+    /// 供 corpus 归因 bisect。已知 ON/OFF 差异：OFF 下 backface-visibility-hidden-
+    /// animated-001/002 维持 R4035 双侧同隐自洽伪绿（t=0 冻结动画语义 × ref 页静
+    /// 态 180°，guidelines #33 案形）；ON 下暴露为真不一致（挂账 animation 推进
+    /// 依赖族）。
+    pub(crate) backface_3d_ctx_enabled: bool,
     /// R5174：父 perspective 投影合成开关（构造期单次读取，热路径零 env 查询）。
     /// `ZW_PARENT_PERSPECTIVE=0` 关闭（回退透视折叠合成；解析层 translateZ 归一与
     /// translateZ 混合列表失效不受开关控制，OFF 相对基线 corpus 差异集见
@@ -309,6 +330,34 @@ pub struct Painter {
     ///（`oof_static_mapped`，CB 在 multicol 之外）不参与本容器碎片复制，其子树在此
     /// 类重绘中整体抑制；映射位的一次绘制由 k=0 迭代照常完成。paint_node 入口判定。
     pub(crate) suppress_mapped_oof: bool,
+    /// R5420：floats 全局树序延迟领地——某 scope 根已收集其子树 floats（App E step 4
+    /// flush 承担施绘）且当前处于其主循环递归领地内。领地内各层 in_flow 滤除收集器
+    /// 同判 floats（collect ≡ 排除镜像），由最近收集 scope 统一施绘；flush 项施绘与
+    /// multicol 片段领地（无收集器可达）临时复位/门控。主循环递归前置位、返回前恢复。
+    pub(crate) floats_defer_active: bool,
+    /// R5472（CSS2 App E step4 < step5）：floats flush 段逐容器 splice 目标位表。
+    /// float_insert_active＝scope 收集了非空 floats 且处于其下降内——每个盒的行内
+    /// 墨相位（paint_inline_content_phase 入口，见 collapse_phase）以 draw_order
+    /// 当前长度记录宿主块 pre-ink 位；flush 施绘后各 float 段 splice 到其宿主位
+    /// ——float 绘于宿主装饰之上（App E step4 > step3，c5525-fltmrgn test4 旧
+    /// p4-band 同面）且宿主墨盖过 float（step5 > step4，test6 img mr−30 红格
+    /// z 序缺陷）；float 间与跨块树序不变（R5420 驱动案 overhanging-float-paint-
+    /// order 语义保留）。单点 splice 已证不可行（earliest-ink 实验把 float 插到
+    /// 后继块 bg 之前——pattern bg 盖 img，c5525 族 ✗1.92% 回归）；跨块「float >
+    /// 全部块装饰 ∧ < 全部墨」的精确序需三桶分离（FIXME 在册），本表取逐容器
+    /// 近似。表按 NodeId 键控，激活边沿清空（prev=false→true）；无 NodeId 宿主/
+    /// 重复访（multicol 片段）取末次记录，缺记录项留在 flush 原位（旧行为）。
+    ///
+    /// R5472b：目标位不取宿主 pre-ink 原值，取窗 (宿主位, flush) 内首个墨位
+    ///（Glyph op）——纯结构宿主（div 无墨，fltblck）须越过：后继兄弟块 bg 属
+    /// step3 应在 float 之下，宿主 pre-ink 位在其之前会把 float 压到该 bg 之下
+    ///（fltblck ✗1.42% 实证）；窗内首个墨位之后仍有块级装饰 op（Fill/…/Shadow）
+    /// 时 DFS 序不可单点插入（stack-floats-001 型：inline 墨后随 inline 内块 bg），
+    /// 放弃 splice 留 flush 原位（基线旧序）。
+    pub(crate) float_pre_ink_pos: HashMap<NodeId, usize>,
+    /// R5472：float_pre_ink_pos 记录门（激活边沿判定见上）。float 项施绘期间与
+    /// flush 后复位——项内墨不得记位。
+    pub(crate) float_insert_active: bool,
     /// R5265：collapse cell 带相位间插 sweep 栈帧（CSS2.1 App E / Blink
     /// kCollapsedTableBorders——「后代块背景 < 带 < inline 内容」）。None = 常规
     /// 路径；Some(DecoSweep)/Some(ContentSweep) = 带前/带后 sweep 访间，由
@@ -323,6 +372,14 @@ pub struct Painter {
     /// R4353：脚本化滚动偏移（selector 字符串未解析态 + paint 期解析后的 NodeId 态）。
     pub(crate) pending_scroll_offsets: Vec<(String, f32, f32)>,
     pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>,
+    /// R5428：视口滚动（'html' 记录 = 根元素滚动，cssom-view-1 §11.2 根元素可滚溢出
+    /// 传播至 viewport；shim 侧 documentElement.scrollTop 与 window.scrollTo 同镜像
+    /// `_winScroll` 槽、dump 以 'html' 回流）。canvas 即视口窗：消费为文档内容整体
+    /// 平移（root-scroller 应用点见子盒递归 R4353 块），画布背景保持视口锚定
+    ///（CSS §14.2）。仅 reftest harness 注入；产品路径不回流（同 pending 面）。
+    pub(crate) viewport_scroll: Option<(f32, f32)>,
+    /// R5428：视口滚动根元素 NodeId（'html' 记录解析；root-scroller 门按节点比对）。
+    pub(crate) viewport_scroll_node: Option<NodeId>,
     /// R5052：脚本化文本选区（reftest harness 回流，照 R4241/R4353 模式）——selector
     /// 未解析态 + paint 期解析后的 NodeId 态。值 = UTF-16 码元区间 [start, end)（shim
     /// `_textSelection` 同语义）。
@@ -500,6 +557,9 @@ struct DeferredPositioned<'a> {
     /// R5255：随 clip_rect 同源携带的 shaped clip edge 半径（R5201，仅 clip 轴）。
     /// 迟延 positioned/变换子此前只承接矩形补裁，圆角裁剪边漏成方角。
     clip_radii: Option<[f32; 4]>,
+    /// R5472（仅 floats 收集项）：宿主块 NodeId（直接父盒）——flush 后 splice 目标
+    /// 位查 float_pre_ink_pos 用；positioned/变换收集项恒 None（step 6/7/8 原位）。
+    container: Option<NodeId>,
 }
 
 /// 子节点的 content-box origin（父 abs + padding + border，扣除 scroll 偏移）。
@@ -561,6 +621,15 @@ fn paint_containment_clips(contain: ContainComputedValue, display: DisplayValue)
             display,
             DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
         )
+}
+
+/// 本盒是否因 paint containment 触发子内容裁剪（`overflow_clip_rect` containment
+/// 臂输入；无 node 或无 style → false，与 compute_needs_clip 的 containment 臂同谓词）。
+fn node_containment_clips(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| paint_containment_clips(s.contain.clone(), s.display.clone()))
 }
 
 /// R5155（css-contain-1 §3.1 paint containment 圆角裁剪）：contain:paint 的裁剪
@@ -733,8 +802,68 @@ pub(crate) fn scrollable_overflow_extent(
         }
     }
     let mut acc = (f32::INFINITY, f32::INFINITY, 0.0f32, 0.0f32);
+    // R5427：本盒直系行内内容（文本行盒）的溢出——行内内容不是子 LayoutBox，上方
+    // walk 不可见；纯文本滚动容器（nbsp 长行 / 超行数文本，驱动：WPT
+    // background-attachment-353 的 200×200 行溢出）此前 extent 恒缩回 content 盒
+    // → local 定位区回退 padding 盒、脚本滚动钳 0。行盒计入 scrollable overflow
+    //（css-overflow-3 §2.2）。门与消费方同口径：滚动容器（Hidden|Scroll，与 paint
+    // 子内容平移门一致；Clip 不建滚动容器）＋ stored IFC 有效（宽度匹配，与
+    // text.rs use_stored 同校验）＋非 multicol（列流存储行坐标已重映射）。
+    // FIXME: 后代盒自身的行内行溢出传递未建模（无驱动案；R5365 子盒遍历仅覆盖
+    // child-box 几何）。
+    if inline_overflow_extent_enabled()
+        && (matches!(box_node.overflow_x, OverflowClip::Hidden | OverflowClip::Scroll)
+            || matches!(box_node.overflow_y, OverflowClip::Hidden | OverflowClip::Scroll))
+        && !box_node.is_multicol
+    {
+        // 行 span 来源二选一：stored 行有效（宽度匹配，text.rs use_stored 同校验）取
+        // 全 span（含 min 侧）；非 stored 容器（非 pure-Ahem，350 默认字体案）回退消费
+        // layout 期聚合的标量 span `inline_overflow_extent`（min 侧恒原点，负向未建模）。
+        let stored_valid =
+            box_node.inline_layout.is_some() && (box_node.inline_layout_width - box_node.content_width).abs() < 1.0;
+        let inline_span = if stored_valid {
+            box_node.inline_layout.as_ref().map(|lines| {
+                let mut span = (f32::INFINITY, f32::INFINITY, 0.0f32, 0.0f32);
+                for line in lines {
+                    span.1 = span.1.min(line.y);
+                    span.3 = span.3.max(line.y + line.height);
+                    for frag in &line.fragments {
+                        span.0 = span.0.min(frag.x);
+                        span.2 = span.2.max(frag.x + frag.width);
+                    }
+                }
+                span
+            })
+        } else {
+            box_node
+                .inline_overflow_extent
+                .map(|(right, bottom)| (0.0f32, 0.0f32, right, bottom))
+        };
+        if let Some((min_x, min_y, max_x, max_y)) = inline_span {
+            acc.0 = acc.0.min(min_x);
+            acc.1 = acc.1.min(min_y);
+            acc.2 = acc.2.max(max_x);
+            acc.3 = acc.3.max(max_y);
+        }
+    }
     walk(box_node, 0.0, 0.0, styles, &mut acc, false);
     acc
+}
+
+/// R5427 kill-switch（`ZW_INLINE_OVERFLOW_EXTENT=0` 回退纯子盒遍历——行内行溢出
+/// 不入 extent，local 定位区/脚本滚动钳维持旧行为）。
+// OPTIMIZATION：进程内只读一次（R5184 口径，同 nested_clip_intersect_enabled）。
+fn inline_overflow_extent_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_INLINE_OVERFLOW_EXTENT").as_deref() != Ok("0"))
+}
+
+/// R5428 kill-switch（`ZW_ROOT_VIEWPORT_SCROLL=0` 回退——'html' 滚动记录整体弃置，
+/// 视口滚动不应用，同 R4353 期「canvas 渲染无视口滚动概念」旧行为）。
+// OPTIMIZATION：进程内只读一次（R5184 口径）。
+fn root_viewport_scroll_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_ROOT_VIEWPORT_SCROLL").as_deref() != Ok("0"))
 }
 
 pub(super) fn effective_appearance(
@@ -781,6 +910,47 @@ fn native_appearance_for_element(box_node: &LayoutBox, doc: Option<&Document>) -
     }
 }
 
+/// meter/progress 的 UA track chrome（R1670 UA 表 bg/border）在作者 `appearance: none`
+/// 下不施画。
+///
+/// css-ui-4 §appearance-switching：meter/progress 的原生外观 = track 盒（UA bg/border
+/// 与 value 填充条）整体；`none` = 素盒。appearance 初值 auto（cascade 无声明即 auto），
+/// 故这两个 tag 的 computed `None` 即作者关闭意图。value 填充条的对应门在
+/// `paint_progress_meter_value`（controls.rs）。driving：R1670
+/// meter-appearance-none-rendering 族 mismatch 四页。
+fn widget_track_chrome_suppressed(style: &ComputedStyle, box_node: &LayoutBox, doc: Option<&Document>) -> bool {
+    if !matches!(style.appearance, AppearanceComputedValue::None) {
+        return false;
+    }
+    let Some(id) = box_node.node_id else {
+        return false;
+    };
+    let Some(node) = doc.and_then(|d| d.get(id)) else {
+        return false;
+    };
+    matches!(&node.kind, zero_dom::NodeKind::Element(e)
+        if e.local_name().eq_ignore_ascii_case("meter")
+            || e.local_name().eq_ignore_ascii_case("progress"))
+}
+
+/// HTML §4.8.6 the-embed-element：embed 非 potentially active → represents nothing，
+/// 不渲染盒（Chrome 无 layout object；ZW 布局盒保留、paint 整盒抑制——布局空间差异
+/// 无语料驱动，像素契约同 Chrome）。potentially active 判据取渲染可见两腿：src set
+/// 或 type set，且 src 缺席或值非空串（src="" 即便带 type 仍 nothing）。media 祖先 /
+/// object 回退态两腿由布局层 fallback 子抑制结构满足（embed 为 void 本无子）。
+/// driving：embed-represent-nothing-01/02（01 无 src+type、02 script 移除后重绘同门）。
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-embed-element
+pub(crate) fn embed_represents_nothing(doc: &Document, node_id: NodeId) -> bool {
+    doc.get(node_id).is_some_and(|n| match &n.kind {
+        zero_dom::NodeKind::Element(e) if e.local_name() == "embed" => {
+            let src = e.get_attribute("src");
+            let ty = e.get_attribute("type");
+            !((src.is_some() || ty.is_some()) && src.is_none_or(|s| !s.is_empty()))
+        }
+        _ => false,
+    })
+}
+
 fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) -> bool {
     // R4066（CSS Overflow §3.3 overflow propagation）：根元素（html）的 overflow 传播到
     // 视口——自身不作内容裁剪盒；视口裁剪由画布边界自然完成。body 的 overflow 在 html
@@ -818,7 +988,7 @@ fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedSty
 /// overflow-clip-margin 的基准盒（content-box/padding-box/border-box）± length 扩展。
 /// 默认（PaddingBox + length 0）或全非 clip → padding-box，与旧实现字节一致（零行为变更）。
 /// 仅调整 clip 轴，hidden/scroll/visible 轴保持 padding-box（零回归）。
-fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
+fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32, containment_clips: bool) -> Rect {
     use zero_css_parser::values::OverflowClipMarginBox;
     // padding-box 边（既有 overflow 裁剪基线，CSS §11.1.1 裁到 padding-box）。
     let pad_x = abs_x + box_node.border_left;
@@ -827,7 +997,15 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
     let pad_h = box_node.padding_top + box_node.content_height + box_node.padding_bottom;
     let (mut x, mut y, mut w, mut h) = (pad_x, pad_y, pad_w, pad_h);
     // 仅当某轴为 clip 时按 overflow-clip-margin 调整该轴（hidden/scroll 始终忽略 margin）。
-    if box_node.overflow_x == OverflowClip::Clip {
+    // css-contain-1 §3.1：paint containment 使 used overflow=visible 的轴视同 clip，
+    // 裁剪边 = overflow clip edge（含 clip-margin；driving: overflow-clip-margin-004）。
+    // scroll 保持滚动语义不强转、hidden 轴维持 §11.1.1 padding-box 基线；margin=0
+    //（默认）矩形与旧实现逐字节一致（零行为变更）。
+    let clips_x = box_node.overflow_x == OverflowClip::Clip
+        || (containment_clips && box_node.overflow_x == OverflowClip::Visible);
+    let clips_y = box_node.overflow_y == OverflowClip::Clip
+        || (containment_clips && box_node.overflow_y == OverflowClip::Visible);
+    if clips_x {
         let (base_x, base_w) = match box_node.overflow_clip_margin_box {
             OverflowClipMarginBox::ContentBox => (pad_x + box_node.padding_left, box_node.content_width),
             OverflowClipMarginBox::PaddingBox => (pad_x, pad_w),
@@ -837,7 +1015,7 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
         x = base_x - m;
         w = base_w + 2.0 * m;
     }
-    if box_node.overflow_y == OverflowClip::Clip {
+    if clips_y {
         let (base_y, base_h) = match box_node.overflow_clip_margin_box {
             OverflowClipMarginBox::ContentBox => (pad_y + box_node.padding_top, box_node.content_height),
             OverflowClipMarginBox::PaddingBox => (pad_y, pad_h),
@@ -853,11 +1031,12 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
     // hidden/scroll 轴维持 padding-box 既有基线（legacy：visible+hidden 组合按 §11.1.1
     // 折叠语义，既有绿面不动）。
     const CLIP_UNBOUNDED: f32 = 1.0e5;
-    if box_node.overflow_x == OverflowClip::Clip && box_node.overflow_y == OverflowClip::Visible {
+    // containment 下双轴都视同 clip（§3.1 used overflow 强转），无可见轴放行臂。
+    if !containment_clips && box_node.overflow_x == OverflowClip::Clip && box_node.overflow_y == OverflowClip::Visible {
         y = abs_y - CLIP_UNBOUNDED;
         h = 2.0 * CLIP_UNBOUNDED;
     }
-    if box_node.overflow_y == OverflowClip::Clip && box_node.overflow_x == OverflowClip::Visible {
+    if !containment_clips && box_node.overflow_y == OverflowClip::Clip && box_node.overflow_x == OverflowClip::Visible {
         x = abs_x - CLIP_UNBOUNDED;
         w = 2.0 * CLIP_UNBOUNDED;
     }
@@ -974,6 +1153,165 @@ fn nested_clip_intersect_enabled() -> bool {
     *KILL.get_or_init(|| std::env::var("ZW_NESTED_CLIP_INTERSECT").as_deref() != Ok("0"))
 }
 
+/// R5420 kill-switch（`ZW_FLOAT_GLOBAL_TREE_ORDER=0` 回退 per-container float 后置
+/// 旧序——floats 回主循环绘制、scope 收集/flush 全跳过）。
+// OPTIMIZATION：进程内只读一次（R5184 口径，同 nested_clip_intersect_enabled）。
+fn float_global_tree_order_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_FLOAT_GLOBAL_TREE_ORDER").as_deref() != Ok("0"))
+}
+
+/// R5472 kill-switch（`ZW_FLOAT_APP_E_INSERT=0` 跳过 floats flush 段 splice——flush
+/// 段留在下降末（floats 绘在行内墨上，R5420 原位）。 OnceLock 单读，OFF 反证走
+/// 独立测试进程（R3858 教训）。
+fn floats_app_e_insert_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_FLOAT_APP_E_INSERT").as_deref() != Ok("0"))
+}
+
+/// R5472 splice 守卫：[from..to) 内含状态性/位置性破坏 op（BlendMode 标记之后入
+/// src 缓冲、Transform/Clip 对已绘内容做位置性后处理、Filter 作用于已绘区域）或
+/// 存在 animation scope（draw_order 半开区间按 paint 期索引绑定，splice 移位失效）
+/// 时放弃本 scope 的 splice，保持 flush 段原位。
+fn splice_range_state_safe(ops: &[DrawOp], from: usize, to: usize, has_animation_scopes: bool) -> bool {
+    !has_animation_scopes
+        && !ops[from..to].iter().any(|op| {
+            matches!(
+                op,
+                DrawOp::BlendMode(_) | DrawOp::Transform(_) | DrawOp::Clip(_) | DrawOp::Filter(_)
+            )
+        })
+}
+
+/// R5420：float 延迟谓词——collect_floats_descendants 的收集判 ≡ 领地内 in_flow
+/// 滤除判（collect ≡ 排除镜像，R5176 同纪律：两处异判必然漏绘/双绘）。positioned /
+/// transform 相位 / SC 创建者在收集器里先行排除（自成 scope，域内 floats 归其自身
+/// 域）；in_flow 表（collapse_sweep_in_flow）本身恒排除 positioned 与 transform 相位
+/// 子——此处重复列出的分支为镜像文档，保证任一侧扩门时另一侧同改。
+fn r5420_float_deferred(child: &LayoutBox, transform_phase: bool, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    !matches!(child.float, FloatValue::None)
+        && !is_positioned_child(child)
+        && !child.creates_stacking_context
+        && !(transform_phase && box_paints_in_transform_phase(child, styles))
+}
+
+/// R5420（CSS 2.2 Appendix E step 4）：收集 scope 根子树中所有**非 positioned float
+/// 后代**（跨普通块边界、tree order pre-order），flush 按 step 4 全局树序绘制
+/// （见 paint_node floats flush 段）。遇 float 收集即停——其子树（含嵌套 floats）
+/// 随其递归 paint_node 内既有 per-node float 后置序绘制，DFS 前序即全局树序
+///（chromium PaintLayer 平面化同型：普通块不建 layer，其内 floats 挂最近 layer
+/// 祖先按全局树序；per-container 局部后置排序无法实现跨块全局树序，R503 同型教训）。
+/// 下钻排除与 collect_positioned_descendants 同型镜像：positioned / transform 相位
+///（R5176）/ SC 创建者不下钻（其域内 floats 归其自身域）；multicol cso 子跳过。
+/// clip 链（R3922/R5391 交集同款）**恒保留**——floats 是 in-flow 系内容，
+/// CSS §11.1.1 overflow 裁剪对其后代恒适用（无 positioned CB 语义的清除分支）。
+#[allow(clippy::too_many_arguments)]
+fn collect_floats_descendants<'a>(
+    box_node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    out: &mut Vec<DeferredPositioned<'a>>,
+    doc: Option<&zero_dom::Document>,
+    transform_phase: bool,
+) {
+    collect_floats_descendants_inner(box_node, abs_x, abs_y, styles, None, None, out, doc, transform_phase);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_floats_descendants_inner<'a>(
+    box_node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    clip_rect: Option<Rect>,
+    clip_radii: Option<[f32; 4]>,
+    out: &mut Vec<DeferredPositioned<'a>>,
+    doc: Option<&zero_dom::Document>,
+    transform_phase: bool,
+) {
+    let (cx, cy) = child_content_origin(box_node, abs_x, abs_y);
+    let needs_clip = compute_needs_clip(box_node, styles, doc);
+    // R3922：本节点自身即 overflow 裁剪祖先 → 更新携带矩形（沿途交集，R5391）。
+    // **与 positioned 收集器的差异点**：line_clamp_clip（R3790 隐式裁剪）**入携带**
+    // ——floats 是 in-flow 系内容，css-overflow-4 with-floats-006「clamp 点前 BFC 内
+    // float 不隐藏但裁剪到 clamp 容器 content edge」明文适用；flush 施绘晚于中间层
+    // 既有 clip 步骤，不携带则 clamp 点后 float 段永久逃逸（006 A/B 实证 ✗1.19%
+    // 3/3）。positioned 收集器的 line_clamp 豁免（R3922：CB 链在 clamp 容器之外，
+    // line-clamp-with-abspos-023）是 positioned CB 语义特例，floats 不适用。
+    let css_overflow_clips = needs_clip;
+    let (clip_rect, clip_radii) = if css_overflow_clips {
+        // R5429：containment 臂传入（floats 携带矩形与主裁剪同源，css-contain-1 §3.1）。
+        let rect = overflow_clip_rect(box_node, abs_x, abs_y, node_containment_clips(box_node, styles));
+        let radii = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| overflow_clip_radii(box_node, s, &rect, abs_x, abs_y));
+        let rect = if nested_clip_intersect_enabled() {
+            match clip_rect {
+                Some(outer) => outer
+                    .intersection(&rect)
+                    .unwrap_or_else(|| Rect::new(outer.left(), outer.top(), 0.0, 0.0)),
+                None => rect,
+            }
+        } else {
+            rect
+        };
+        (Some(rect), radii)
+    } else {
+        (clip_rect, clip_radii)
+    };
+    let is_multicol = box_node.is_multicol;
+    for child in &box_node.children {
+        // 多列 column-span 子元素由 multicol 循环处理
+        if is_multicol && !child.column_span_offsets.is_empty() {
+            continue;
+        }
+        let child_abs_x = cx + child.x;
+        let child_abs_y = cy + child.y;
+        if is_positioned_child(child) {
+            // positioned 自成 scope（defer_abspos 的直接 abspos/fixed 子由其 overflow
+            // defer 循环绘制）——其域内 floats 均归其自身域，不收集不下钻。
+            continue;
+        }
+        if transform_phase && box_paints_in_transform_phase(child, styles) {
+            // R5176：变换 float 与 positioned 同属 step 8 组——scope step 6 flush
+            // 施绘，不入 floats 收集。
+            continue;
+        }
+        if child.creates_stacking_context {
+            // SC 创建者（float+SC 同理）自成 scope，其域内 floats 由它自己的
+            // collect/flush 收集。不下钻避免 double-collect（R505 同理）。
+            continue;
+        }
+        if r5420_float_deferred(child, transform_phase, styles) {
+            // float（非 positioned 非 SC 非 transform 相位）：收集即停（子树随其
+            // 递归 paint 绘制，嵌套 float 维持 DFS 旧序）。
+            out.push(DeferredPositioned {
+                node: child,
+                abs_x: child_abs_x,
+                abs_y: child_abs_y,
+                clip_rect,
+                clip_radii,
+                container: box_node.node_id,
+            });
+            continue;
+        }
+        // in-flow 非 scope：下钻找嵌套 floats。
+        collect_floats_descendants_inner(
+            child,
+            child_abs_x,
+            child_abs_y,
+            styles,
+            clip_rect,
+            clip_radii,
+            out,
+            doc,
+            transform_phase,
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_positioned_descendants_inner<'a>(
     box_node: &'a LayoutBox,
@@ -998,7 +1336,8 @@ fn collect_positioned_descendants_inner<'a>(
     // R5255：矩形与 shaped edge 半径（R5201）同源计算、同源覆盖——迟延子补裁时
     // 二者成对生效，避免只带矩形漏方角。
     let (clip_rect, clip_radii) = if css_overflow_clips {
-        let rect = overflow_clip_rect(box_node, abs_x, abs_y);
+        // R5429：containment 臂传入（迟延 positioned 携带矩形与主裁剪同源）。
+        let rect = overflow_clip_rect(box_node, abs_x, abs_y, node_containment_clips(box_node, styles));
         let radii = box_node
             .node_id
             .and_then(|id| styles.get(&id))
@@ -1056,6 +1395,7 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_y: child_abs_y,
                 clip_rect: child_clip,
                 clip_radii: child_radii,
+                container: None,
             });
         } else if transform_phase && box_paints_in_transform_phase(child, styles) {
             // R5176（css-transforms-1 §4 + App E step 8）：in-flow/float 变换元素与
@@ -1072,6 +1412,7 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_y: child_abs_y,
                 clip_rect,
                 clip_radii,
+                container: None,
             });
         } else if child.creates_stacking_context {
             // in-flow 但建立堆叠上下文（opacity<1/transform/filter 等 CSS3 SC 触发器）：
@@ -1132,6 +1473,7 @@ fn collect_mapped_oof_in_multicol<'a>(
                     abs_y: child_abs_y,
                     clip_rect: None,
                     clip_radii: None,
+                    container: None,
                 });
             }
         } else if child.creates_stacking_context {
@@ -1237,6 +1579,8 @@ impl Painter {
             inline_owner_max_lh: HashMap::new(),
             mc_paint_nesting: 0,
             perspective_ctx: Vec::new(),
+            backface_ctx: Vec::new(),
+            backface_3d_ctx_enabled: std::env::var("ZW_BACKFACE_3D_CTX").as_deref() != Ok("0"),
             parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
             transform_paint_phase_enabled: std::env::var("ZW_TRANSFORM_PAINT_PHASE").as_deref() != Ok("0"),
             multicol_fragment_depth: 0,
@@ -1276,9 +1620,14 @@ impl Painter {
             counter_styles: HashMap::new(),
             transform_depth: 0,
             suppress_mapped_oof: false,
+            floats_defer_active: false,
+            float_pre_ink_pos: HashMap::new(),
+            float_insert_active: false,
             list_inside_marker_advance: HashMap::new(),
             pending_scroll_offsets: Vec::new(),
             scroll_offsets: HashMap::new(),
+            viewport_scroll: None,
+            viewport_scroll_node: None,
             pending_text_selections: Vec::new(),
             text_selections: HashMap::new(),
             sel_partial_line_enabled: std::env::var("ZW_SEL_PARTIAL_LINE").as_deref() != Ok("0"),
@@ -1290,6 +1639,14 @@ impl Painter {
     /// M2-S1b：注入已导出动画通道表（空表 = flag 关闭，paint 路径行为不变）。
     pub fn set_compositor_animation_channels(&mut self, channels: HashMap<u64, Vec<ExportedChannel>>) {
         self.compositor_channels = channels;
+    }
+
+    /// R5422：单实例覆盖 3D 上下文累积背面判定开关（仅测试注入；生产路径以
+    /// `ZW_BACKFACE_3D_CTX` 构造期快照为准）——避免测试改进程级 env 与并行用例
+    /// 互踩（guidelines #19）。
+    #[doc(hidden)]
+    pub fn set_backface_3d_ctx_enabled_for_test(&mut self, enabled: bool) {
+        self.backface_3d_ctx_enabled = enabled;
     }
 
     /// M2-S1b：取走本帧收集的动画作用域（调用方在视口剔除时做区间修复）。
@@ -1708,12 +2065,34 @@ impl Painter {
     /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
     pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
         // R4353：滚动偏移 selector → NodeId 解析（paint 期一次；doc 缺失则保持空 map）。
+        // R5428：'html' 记录 = 视口滚动——抽出 viewport_scroll 供 root-scroller 应用
+        //（子盒递归 R4353 块），不入 per-element map（根盒重复消费会双计）。shim 侧
+        // documentElement.scrollTop 经 M2-S7 委托 window.scrollTo、与 scrollX/scrollY
+        // 同镜像 `_winScroll` 槽，dump 以 'html' 回流（cssom-view-1 §11.2：根元素可滚
+        // 溢出传播至 viewport，滚动根元素 = 滚动视口）。body 记录维持跳过（shim 未
+        // 镜像 body.scrollTop；无驱动案不扩面）。kill-switch `ZW_ROOT_VIEWPORT_SCROLL=0`
+        // 回退（html/body 记录整体弃置，旧行为）。
+        self.viewport_scroll = None;
+        self.viewport_scroll_node = None;
+        if root_viewport_scroll_enabled()
+            && let Some(doc) = doc
+        {
+            for (sel, x, y) in &self.pending_scroll_offsets {
+                if sel.eq_ignore_ascii_case("html")
+                    && self.viewport_scroll.is_none()
+                    && let Some(id) = doc.query_selector(doc.root(), zero_dom::trim_ascii_ws(sel))
+                {
+                    self.viewport_scroll = Some((*x, *y));
+                    self.viewport_scroll_node = Some(id);
+                }
+            }
+        }
         self.scroll_offsets = self
             .pending_scroll_offsets
             .iter()
             .filter(|(sel, _, _)| {
-                // 根元素滚动（documentElement/body.scrollTop）= 视口滚动——canvas
-                // 渲染无视口滚动概念，跳过（应用会整体平移页面）。
+                // 根元素滚动（documentElement/body.scrollTop）= 视口滚动（R5428 上方
+                // 已抽出应用）；body 记录维持跳过。
                 let lower = sel.to_ascii_lowercase();
                 lower != "html" && lower != "body"
             })
@@ -2460,6 +2839,10 @@ impl Painter {
             // ≡ R1660 paint_input_value 谱系）。option/optgroup 经 UA display:none 抑制
             // 不生成盒，select 按钮内无文本，须显式绘 selected option 标签。
             self.paint_select_value(box_node, abs_x, abs_y, style, doc);
+
+            // 4b5. <input type=range> datalist tick 刻度（R1687，≡ R1671 progress/meter
+            // value 条谱系）。list→datalist 逐 paint 解析，见 controls.rs。
+            self.paint_range_ticks(box_node, abs_x, abs_y, style, doc);
         }
 
         // 4c. CSS `content` 属性生成的文本（在普通文本之前）
@@ -2590,6 +2973,15 @@ impl Painter {
         // paint_node_inner 同款守卫（R3768/R3769 教训：跳过链两路径须同步加）。
         if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
             && matches!(style.display, DisplayValue::None)
+        {
+            return;
+        }
+
+        // s316（HTML §4.8.6）：embed represents nothing → 整盒不渲染（同 paint_node_inner
+        // 守卫——R3768/R3769 教训：跳过链两路径须同步加）。
+        if let Some(doc) = doc
+            && let Some(node_id) = box_node.node_id
+            && embed_represents_nothing(doc, node_id)
         {
             return;
         }
@@ -2837,7 +3229,9 @@ impl Painter {
                 // 背景/边框/outline 图元绘制后统一裁到形角多边形。窗口准备走
                 // #[inline(never)] 助手（paint 递归帧敏感，深嵌套页栈溢出史）。
                 self.prepare_corner_shape_clip(style, box_node, abs_x, abs_y);
-                if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
+                // meter/progress appearance:none → UA track chrome 抑制（同主路径门）。
+                let track_chrome_off = widget_track_chrome_suppressed(style, box_node, doc);
+                if style.background_color != ColorValue::Transparent && !skip_inline_box_bg && !track_chrome_off {
                     // R5086：同 paint_node 主路径——行内盒背景移动到父 IFC 已发字形之前。
                     let r5086_bg_pos =
                         if self.inline_bg_z_order_enabled && matches!(style.display, DisplayValue::Inline) {
@@ -2902,6 +3296,7 @@ impl Painter {
                     // R4332：多行 inline（skip_inline_box_border）改由 paint_text
                     // per-fragment 描绘（union 矩形跨行整框与 chromium per-fragment 语义相悖）。
                     && !skip_inline_box_border
+                    && !track_chrome_off
                 {
                     let fieldset_legend = doc.and_then(|doc| {
                         let node = doc.get(node_id)?;
@@ -3007,7 +3402,8 @@ impl Painter {
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
             // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
-            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
+            // R5429：containment 臂传入（css-contain-1 §3.1，overflow-clip-margin-004）。
+            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y, node_containment_clips(box_node, styles));
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
             // R5155：contain:paint 圆角裁剪——图片内容窗口追加四角圆角剔除
             //（矩形交集后逐像素测试角部）。
@@ -3038,6 +3434,18 @@ impl Painter {
                     &clip_rect,
                     radii,
                 );
+                // R5430：零模糊 outset 阴影同判据承接 clip 圆角（CSS Overflow 3 §3
+                // shaped clip edge；driving overflow-clip-margin-border-radius）。
+                // corner-shape 非初始（R5188 同判据）时跳过——裁剪边随形角，spec
+                // 半径 shadow 改写越出形角弧（corner-shape-overflow-clip-margin）。
+                if style.corner_shape.is_all_round() {
+                    super::helpers::clip_shadows_to_rounded_rect(
+                        &mut self.primitives,
+                        &counts_before_children,
+                        &clip_rect,
+                        radii,
+                    );
+                }
             }
         }
 
@@ -3105,6 +3513,81 @@ impl Painter {
     /// 子节点产生的图元会被裁剪到内容盒范围内。
     /// 当传入 `doc` 时，使用行内格式化上下文处理文本换行。
     fn paint_node(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        offset_x: f32,
+        offset_y: f32,
+        doc: Option<&Document>,
+        is_root_scope: bool,
+    ) {
+        // R5422（CSS Transforms 2 §backface-visibility + §3d-transform-rendering）：
+        // 背面判定用累积矩阵——3D 渲染上下文（preserve-3d 祖先链）内元素叠加祖先
+        // 变换后 zz < 0 即背面；R4035 旧实现只判自身链，3D 上下文内的 hidden 子盒
+        // （transform3d-backface-visibility-004/006、hidden-004）与 preserve-3d
+        // 叶（with-sibling-001，自身无翻转但父 rotateX(120deg) 翻 z）漏隐。
+        // hidden + 背面：flat 盒整子树不渲染（子树同一投影平面，R4035 口径）；
+        // preserve-3d 盒自身维持 R4035 豁免（composited-preserve-3d 校准案：hidden
+        // 父背面但子盒为 3D 上下文独立平面照绘），仅叶盒（无子）整弃——叶无子平面，
+        // 整弃 ≡ 仅弃自身平面（spec 语义）。
+        if self.backface_3d_ctx_enabled {
+            let backface_own = box_node.node_id.and_then(|id| styles.get(&id)).map(|style| {
+                let own = super::helpers::transform_chain_3d_matrix(style);
+                let accumulated = match self.backface_ctx.last() {
+                    Some(Some(parent)) => super::helpers::compose_linear3(parent, &own),
+                    _ => own,
+                };
+                (
+                    style,
+                    accumulated,
+                    matches!(
+                        style.transform_style,
+                        zero_style_system::property::types::TransformStyleValue::Preserve3d
+                    ),
+                )
+            });
+            if let Some((style, accumulated, preserve3d)) = &backface_own
+                && matches!(
+                    style.backface_visibility,
+                    zero_style_system::property::types::BackfaceVisibilityValue::Hidden
+                )
+                && accumulated[8] < 0.0
+                && (!*preserve3d || box_node.children.is_empty())
+            {
+                return;
+            }
+            // 子盒 3D 上下文：本盒 preserve-3d → 累积矩阵透传（上下文延伸）；flat →
+            // 截断（子树压入本投影平面，回退自身链判定）。
+            let backface_ctx_pushed = backface_own
+                .as_ref()
+                .and_then(|(_, accumulated, preserve3d)| preserve3d.then_some(*accumulated));
+            self.backface_ctx.push(backface_ctx_pushed);
+            self.paint_node_with_backface_ctx(box_node, styles, offset_x, offset_y, doc, is_root_scope);
+            self.backface_ctx.pop();
+            return;
+        }
+        // R4035 回退（ZW_BACKFACE_3D_CTX=0）：自身链 cos 连乘 + preserve-3d 一律不隐
+        //（原 paint_node_inner 检查原样上移包装器，flat 下子树同平面整隐口径不变）。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && matches!(
+                style.backface_visibility,
+                zero_style_system::property::types::BackfaceVisibilityValue::Hidden
+            )
+            && !matches!(
+                style.transform_style,
+                zero_style_system::property::types::TransformStyleValue::Preserve3d
+            )
+            && super::helpers::transform_shows_backface(style)
+        {
+            return;
+        }
+        self.paint_node_with_backface_ctx(box_node, styles, offset_x, offset_y, doc, is_root_scope);
+    }
+
+    /// `paint_node` 背面目判定后的公共主体（transform_depth / perspective_ctx
+    /// 入栈 + [`Self::paint_node_inner`] + 出栈）——R5422 双路径共用，避免复制
+    /// R3834/R5174 包装逻辑。
+    fn paint_node_with_backface_ctx(
         &mut self,
         box_node: &LayoutBox,
         styles: &HashMap<NodeId, ComputedStyle>,
@@ -3183,6 +3666,14 @@ impl Painter {
         {
             return;
         }
+        // s316（HTML §4.8.6）：embed represents nothing → 整盒不渲染（与 display:none
+        // 守卫同位；embed void 无子树，主路径/脏矩形路径双走查同款守卫）。
+        if let Some(doc) = doc
+            && let Some(node_id) = box_node.node_id
+            && embed_represents_nothing(doc, node_id)
+        {
+            return;
+        }
         // R5139：列流映射 OOF（CB 在 multicol 之外）不参与 multicol 碎片复制——
         // 片段循环 k>0 迭代与 R5137 续片重绘期间整子树抑制；映射位一次绘制由
         // k=0 迭代照常完成（入口单点判定覆盖全部递归/迟延路径）。
@@ -3243,28 +3734,9 @@ impl Painter {
             return;
         }
 
-        // R4035（CSS Transforms 2 §backface-visibility）：hidden 且变换链显示背面
-        //（rotateX/rotateY 连乘 cos < 0，见 helpers::transform_shows_backface）→ 元素
-        // 及其子树整体不渲染（flat transform-style 下子树同一投影平面）。旧实现只画
-        // 诊断虚线指示器不隐藏内容（backface-visibility-hidden-002：rotateY(180deg)
-        // 红块照绘，应全隐）。
-        // preserve-3d 豁免：3D 渲染上下文中子元素不被压入父投影平面，各子盒按自身
-        // 背面状态渲染（composited-under-rotateY-180deg-preserve-3d：父 hidden 背面
-        // 但子可见）——ZW 无 3D 场景图，preserve-3d 时回退旧「不隐藏」行为（子绿块
-        // 恰覆盖父红块，逐字面匹配 ref）。
-        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
-            && matches!(
-                style.backface_visibility,
-                zero_style_system::property::types::BackfaceVisibilityValue::Hidden
-            )
-            && !matches!(
-                style.transform_style,
-                zero_style_system::property::types::TransformStyleValue::Preserve3d
-            )
-            && super::helpers::transform_shows_backface(style)
-        {
-            return;
-        }
+        // R4035/R5422（CSS Transforms 2 §backface-visibility）：hidden + 累积背面
+        // 判定已上移至 paint_node 包装器（3D 渲染上下文矩阵栈 backface_ctx——
+        // backface-visibility-with-sibling-001 等六案形需要祖先链累积）。
 
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
@@ -3380,6 +3852,19 @@ impl Painter {
         //（仅 R1341 wrapper），区别于 R1351 any_child_has_cso（误触 deep-nesting regression）。
         let paint_as_multicol = is_multicol || box_node.is_nested_spanner_wrapper;
         let defer_abspos = needs_clip && !self_positioned && !is_multicol;
+        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插。
+        // 驱动序：sweep A（plain-block 链装饰，带之前）→ R793 裁剪 → 带补发射（deco
+        // 相位已置位）→ 自身 inline/替换内容 → R792 基线重置 → sweep B（plain-block
+        // 补文本/子树，其余整体常规）。positioned 后代仍走步 2/6/7，不入 sweep。
+        // ContentSweep 访间：plain-block 子继续拆分递归，其余整体常规。
+        // R5420：判定自 in_flow 构建段前置到 collects 段之前——floats 收集 gate 需要
+        // band_cell/ContentSweep 形态互斥（带/sweep 访间本节点不收集，域内 floats 交
+        // 最近收集 scope 的 flush）。
+        let band_cell = self.collapse_cell_phase.is_none()
+            && box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|st| collapse_phase::is_collapse_band_cell(box_node, st));
 
         // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
         // scope 根（positioned 元素、根 html、或任何建立堆叠上下文的元素）收集其子树中
@@ -3395,17 +3880,90 @@ impl Painter {
         // [counts_before, now] 应用）必须覆盖其 positioned 后代；若它们非 scope，后代会被
         // 上提到祖先而漏掉效果（opacity:0 不隐藏内容的 R505 回归）。详见 R505。
         let is_scope = self_positioned || box_node.creates_stacking_context || is_root_scope;
+        // R5428：root-scroller 钳制值前置计算——定位/float 收集（下方）早于子盒递归
+        // R4353 块，scope 根收藏原点须随视口平移，否则被根 scope 认领的 positioned
+        // 后代全部绘在未滚位（css-overflow-3 §2.2/§2.3：根元素可滚溢出传播至
+        // viewport，滚动根元素 = 文档整体平移；cssom-view-1 §11.2 client 面按视口
+        // 量取）。钳制数学与 R4353 块同式（此处结果供收藏原点，块内重钳幂等）。
+        // FIXME：position:fixed 的 CB 分析未建模（css-contain-1 §3.1 contain:layout/
+        // transform 祖先使 fixed CB 转移随文档滚、viewport CB 真锚定应不随滚）——
+        // 本实现一律随文档平移，驱动案 contain-layout-021（fixed CB = contain:layout
+        // html）语义正确；真 viewport-fixed × 视口滚（fixed-z-index-blend 的
+        // .blend/.background 无背景面，像素无差）待有像素可辨驱动案再分域。
+        let is_root_scroller = self.viewport_scroll.is_some()
+            && box_node.node_id.is_some()
+            && box_node.node_id == self.viewport_scroll_node;
+        let root_scroll_clamped = if is_root_scroller {
+            let (rev_x, rev_y) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(reversed_scroll_axes)
+                .unwrap_or((false, false));
+            let (min_ox, min_oy, ex_w, ex_h) = scrollable_overflow_extent(box_node, Some(styles));
+            let (sx_raw, sy_raw) = self.viewport_scroll.unwrap_or((0.0, 0.0));
+            let nsx = if rev_x {
+                let range = ((ex_w - min_ox) - self.viewport_w).max(0.0);
+                sx_raw.clamp(-range, 0.0)
+            } else {
+                let max_sx = (ex_w - self.viewport_w).max(0.0);
+                sx_raw.clamp(0.0, max_sx)
+            };
+            let nsy = if rev_y {
+                let range = ((ex_h - min_oy) - self.viewport_h).max(0.0);
+                sy_raw.clamp(-range, 0.0)
+            } else {
+                let max_sy = (ex_h - self.viewport_h).max(0.0);
+                sy_raw.clamp(0.0, max_sy)
+            };
+            Some((nsx, nsy))
+        } else {
+            None
+        };
+        let (collect_abs_x, collect_abs_y) =
+            root_scroll_clamped.map_or((abs_x, abs_y), |(dx, dy)| (abs_x - dx, abs_y - dy));
         let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
         // R5176：变换子相位重排旗标——与主循环排除同快照（multicol 片段领地不入，
         // 见 multicol_fragment_depth）；collect 与排除集同判保证收集 ≡ 排除。
         let transform_phase_defer = self.transform_paint_phase_enabled && self.multicol_fragment_depth == 0;
         if is_scope {
+            // R5428：收藏原点经视口平移（collect_abs_*）——被根 scope 认领的
+            // positioned/float 后代随文档滚动定位。
             collect_positioned_descendants(
                 box_node,
-                abs_x,
-                abs_y,
+                collect_abs_x,
+                collect_abs_y,
                 styles,
                 &mut collected_positioned,
+                doc,
+                transform_phase_defer,
+            );
+        }
+
+        // R5420（CSS 2.2 Appendix E step 4）：scope 根收集子树中所有非 positioned float
+        // 后代（跨普通块边界、tree order）——floats 属 SC 根的 step 4 统一平面化绘制层，
+        // 不嵌套于后代块的递归序（chromium PaintLayer 平面化同型：普通块不建 layer，
+        // 其内 floats 挂最近 layer 祖先按全局树序绘制）。per-container 局部后置排序无法
+        // 实现跨块全局树序（R503 同型教训）。驱动案 overhanging-float-paint-order：
+        // body: red float（树 1）→ container 内 blue（树 2）/green（树 3），ZW 旧序
+        // container 子树先画完、red 后画 → red 盖 green（chromium: green 盖 red＝ref 页
+        // 语义，oracle 实测 green [0,80] blue [40,100] red [0,60] 文档系）。
+        // band_cell/ContentSweep 形态本节点不入收集（sweep 语义由 collapse 带驱动）；
+        // 其域内 floats 仍由最近收集 scope 的收集器收走（收集器下钻不识 band_cell，
+        // in_flow 滤除在 sweep 循环同表生效）——collect ≡ 排除镜像维持，无 double-paint。
+        let mut collected_floats: Vec<DeferredPositioned> = Vec::new();
+        let floats_scope_collect = is_scope
+            && float_global_tree_order_enabled()
+            && !paint_as_multicol
+            && !band_cell
+            && self.collapse_cell_phase != Some(collapse_phase::CollapseCellPhase::ContentSweep);
+        if floats_scope_collect {
+            // R5428：收藏原点经视口平移（同上方 positioned 收藏）。
+            collect_floats_descendants(
+                box_node,
+                collect_abs_x,
+                collect_abs_y,
+                styles,
+                &mut collected_floats,
                 doc,
                 transform_phase_defer,
             );
@@ -3662,12 +4220,16 @@ impl Painter {
                 } else {
                     (false, false)
                 };
+                // meter/progress appearance:none → UA track chrome（bg/border/value 条）
+                // 整体不施画（css-ui-4 native look；driving R1670 appearance-none 族）。
+                let track_chrome_off = widget_track_chrome_suppressed(style, box_node, doc);
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
                     && !skip_contents_deco
                     && !spanner_segs_active
                     && !bg_clip_text_suppress_color
+                    && !track_chrome_off
                 {
                     // R5086：行内盒且 render_fragment 已记录字形前位点 → 背景发射后把
                     // draw_order 段移动到字形之前（css2.1 附录 E：行内背景先于文本）。
@@ -3787,6 +4349,7 @@ impl Painter {
                     && !skip_inline_box_border
                     && !spanner_segs_active
                     && !band_driver
+                    && !track_chrome_off
                     && (box_node.border_top > 0.0
                         || box_node.border_right > 0.0
                         || box_node.border_bottom > 0.0
@@ -3904,16 +4467,23 @@ impl Painter {
             .node_id
             .and_then(|id| styles.get(&id))
             .map(reversed_scroll_axes);
+        // R5428：root-scroller 面（is_root_scroller/root_scroll_clamped 前置于收藏点，
+        // 见上方）——根元素即 viewport 滚动容器（css-overflow-3 §2.2/§2.3 根元素可滚
+        // 溢出传播至 viewport，根盒自身 overflow 门不适用）；canvas 即视口窗，子树整
+        // 体平移 = 文档在视口窗内滚动，画布背景（传播面）保持视口锚定。
+        let root_scroll = if is_root_scroller { self.viewport_scroll } else { None };
         let (child_offset_x, child_offset_y) = box_node
             .node_id
             .and_then(|id| self.scroll_offsets.get(&id))
             .copied()
+            .or(root_scroll)
             .filter(|_| {
                 // 仅滚动容器应用（css-overflow-3 §2.2：hidden/scroll/auto = scroll
                 // container；visible/clip 非滚动容器——scrollTop 恒 0 不平移，
-                // overflow-clip-cant-scroll 锚定）。
+                // overflow-clip-cant-scroll 锚定）。根元素例外（视口滚动容器，上方）。
                 matches!(box_node.overflow_x, OverflowClip::Hidden | OverflowClip::Scroll)
                     || matches!(box_node.overflow_y, OverflowClip::Hidden | OverflowClip::Scroll)
+                    || is_root_scroller
             })
             .map(|(sx, sy)| {
                 // spec：scrollTop 钳到可滚动溢出范围（scrollHeight − clientHeight）——
@@ -3921,8 +4491,16 @@ impl Painter {
                 // 钳 [-range, 0]（范围 = 传递性可滚溢出跨度 − client，两侧量取）。
                 let (rev_x, rev_y) = node_scroll_axes.unwrap_or((false, false));
                 let (min_ox, min_oy, ex_w, ex_h) = scrollable_overflow_extent(box_node, Some(styles));
-                let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
-                let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+                // R5428：root-scroller 的 client 面 = 视口（cssom-view-1 §11.2——视口
+                // 滚动值域按视口尺寸量取；根盒 auto 高 = 文档高，按盒面钳会归零）。
+                let (client_w, client_h) = if is_root_scroller {
+                    (self.viewport_w, self.viewport_h)
+                } else {
+                    (
+                        (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                        (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                    )
+                };
                 let nsx = if rev_x {
                     let range = ((ex_w - min_ox) - client_w).max(0.0);
                     sx.clamp(-range, 0.0)
@@ -4010,16 +4588,24 @@ impl Painter {
             transform_phase_defer,
             self.flex_neg_z_parent_gate(box_node, styles),
         );
-        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插。
-        // 驱动序：sweep A（plain-block 链装饰，带之前）→ R793 裁剪 → 带补发射（deco
-        // 相位已置位）→ 自身 inline/替换内容 → R792 基线重置 → sweep B（plain-block
-        // 补文本/子树，其余整体常规）。positioned 后代仍走步 2/6/7，不入 sweep。
-        // ContentSweep 访间：plain-block 子继续拆分递归，其余整体常规。
-        let band_cell = self.collapse_cell_phase.is_none()
-            && box_node
-                .node_id
-                .and_then(|id| styles.get(&id))
-                .is_some_and(|st| collapse_phase::is_collapse_band_cell(box_node, st));
+        // R5420：floats 延迟领地＝本 scope 收集生效（floats_scope_collect）或处于外层
+        // scope 的主循环递归领地（floats_defer_active）。领地内 in_flow 滤除收集器同判
+        // floats（collect ≡ 排除镜像）——主循环与两条 collapse sweep 循环共用此表，
+        // sweep 内 floats 同样交 scope flush，旧径不再就地施绘（防 double-paint）。
+        // multicol 片段领地不入（multicol_fragment_depth > 0：cso 片段内容无收集器
+        // 可达——scope collect 对 multicol cso 子整支跳过，排除即盒永久丢失，R5176
+        // 同型）。
+        let floats_defer_on = (floats_scope_collect || self.floats_defer_active) && self.multicol_fragment_depth == 0;
+        let in_flow = if floats_defer_on {
+            in_flow
+                .into_iter()
+                .filter(|&idx| !r5420_float_deferred(&box_node.children[idx], transform_phase_defer, styles))
+                .collect::<Vec<_>>()
+        } else {
+            in_flow
+        };
+        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插
+        //（band_cell 判定已前置到 collects 段，见上）。
         if band_cell {
             let sweep_a_counts = PrimitiveCounts::snapshot(&self.primitives);
             self.paint_collapse_deco_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
@@ -4037,12 +4623,172 @@ impl Painter {
         } else if self.collapse_cell_phase == Some(collapse_phase::CollapseCellPhase::ContentSweep) {
             self.paint_collapse_content_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
         } else {
+            // R5420：floats 延迟领地内 float 子已从 in_flow 滤除（见上），由本 scope
+            // 或最近收集 scope 的 flush 按 App E step 4 全局树序统一施绘。本 scope
+            // 收集生效时主循环递归领地置位（子层 in_flow 滤除同判展开），返回前恢复
+            //——后续 flush（positioned/neg-z/transform 项均为 scope，自管其域内
+            // floats）与祖先领地语义不受污染。
+            let prev_floats_defer = self.floats_defer_active;
+            let prev_float_insert = self.float_insert_active;
+            let has_deferred_floats = floats_scope_collect && !collected_floats.is_empty();
+            if floats_scope_collect {
+                self.floats_defer_active = true;
+                if has_deferred_floats {
+                    // R5472：激活边沿（prev=false→true）清空目标位表——内层 scope
+                    // （prev 已 true）不清，外层记录保留至外层 flush。
+                    if !prev_float_insert {
+                        self.float_pre_ink_pos.clear();
+                    }
+                    self.float_insert_active = true;
+                }
+            }
             for child_idx in &in_flow {
                 if is_canvas_box {
                     continue;
                 }
                 let child = &box_node.children[*child_idx];
                 self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
+            }
+            self.floats_defer_active = prev_floats_defer;
+
+            // R5420：floats flush（App E step 4，全局树序；位置＝in-flow 块之后、
+            // step 6 positioned 之前）。clip 链随收集项补裁（R3922/R5391 同款，
+            // floats 为 in-flow 系内容恒受路径 overflow 裁剪）。收集项为普通 float
+            //（非 scope）——施绘期间复位领地旗，其子树（含嵌套 float）随递归
+            // paint_node 既有 DFS 旧序自绘，不被误滤到本 flush 之外。
+            if floats_scope_collect {
+                let flush_start = self.primitives.draw_order.len();
+                // R5472：各 float 段的 draw_order 起止（施绘前快照，tree order 升序）。
+                let mut item_ranges: Vec<(usize, usize)> = Vec::with_capacity(collected_floats.len());
+                for item in &collected_floats {
+                    let off_x = item.abs_x - item.node.x;
+                    let off_y = item.abs_y - item.node.y;
+                    let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
+                    let range_start = self.primitives.draw_order.len();
+                    let prev_item_floats_defer = self.floats_defer_active;
+                    let prev_item_insert = self.float_insert_active;
+                    self.floats_defer_active = false;
+                    self.float_insert_active = false;
+                    self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                    self.float_insert_active = prev_item_insert;
+                    self.floats_defer_active = prev_item_floats_defer;
+                    item_ranges.push((range_start, self.primitives.draw_order.len()));
+                    if let Some(clip) = item.clip_rect {
+                        super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                        if let Some(radii) = item.clip_radii {
+                            super::helpers::clip_fills_to_rounded_rect(
+                                &mut self.primitives,
+                                &counts_before_item,
+                                &clip,
+                                radii,
+                            );
+                        }
+                    }
+                }
+                self.float_insert_active = prev_float_insert;
+                // R5472（CSS2 App E step4 < step5）：各 float 段重排到窗 (宿主 pre-ink
+                // 位, flush) 内首个墨位——float 绘于窗内块装饰之上（step4 > step3）、
+                // 首墨之下（step5 > step4）；无记录宿主（匿名盒/非下降路径）留 flush
+                // 原位（旧行为）。R5472b 语义门：首墨位之后到 flush 仍有块级装饰
+                // op（Fill/…/Shadow＝step3 bg 在墨后 DFS 发射，stack-floats-001
+                // inline 墨后随 inline 内块 bg 型）时窗序不可单点插入，该 float 放弃
+                // splice 留 flush 原位。不可移动项的段在重建时按 tree order 回填
+                // flush 位（v1 曾丢弃——漏绘）。单遍重建：原 op 按序输出、扫到目标位
+                // 插入该宿主名下 float 段（tree order），flush 位回填不可移动段
+                // ——float 间与跨块树序不变（R5420 驱动案 overhanging-float-paint-
+                // order 语义保留）。guard：影响域 [min_target..end) 含状态性/位置性
+                // 破坏 op（BlendMode 标记之后入 blend 源缓冲、Transform/Clip 对已绘
+                // 内容位置性后处理、Filter 作用于已绘区域）或存在 animation scope
+                //（draw_order 半开区间按 paint 期索引绑定）时整体放弃保持旧序。op
+                // 身份（桶+索引）不变，typed Vec 与既有 clip 重写按身份寻址
+                //（clip.rs position+pop-tail）不受重排影响。
+                let targets: Vec<Option<usize>> = collected_floats
+                    .iter()
+                    .map(|item| {
+                        item.container
+                            .and_then(|id| self.float_pre_ink_pos.get(&id).copied())
+                            .filter(|&host_pos| host_pos <= flush_start)
+                            .and_then(|host_pos| {
+                                let window = &self.primitives.draw_order[host_pos..flush_start];
+                                let glyph = window
+                                    .iter()
+                                    .position(|op| matches!(op, DrawOp::Glyph(_)))
+                                    .map(|g| host_pos + g)
+                                    .unwrap_or(host_pos);
+                                // 语义门：首墨位之后不得再有块级装饰 op——有则放弃。
+                                let deco_after_ink = self.primitives.draw_order[glyph..flush_start].iter().any(|op| {
+                                    matches!(
+                                        op,
+                                        DrawOp::Fill(_)
+                                            | DrawOp::RoundedRect(_)
+                                            | DrawOp::PathFill(_)
+                                            | DrawOp::PathStroke(_)
+                                            | DrawOp::Stroke(_)
+                                            | DrawOp::Gradient(_)
+                                            | DrawOp::Image(_)
+                                            | DrawOp::Shadow(_)
+                                    )
+                                });
+                                (!deco_after_ink).then_some(glyph)
+                            })
+                    })
+                    .collect();
+                let movable: Vec<usize> = targets
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, t)| t.filter(|&p| p <= flush_start).map(|_| i))
+                    .collect();
+                if has_deferred_floats && floats_app_e_insert_enabled() && !movable.is_empty() {
+                    let end = self.primitives.draw_order.len();
+                    let min_target = movable.iter().map(|&i| targets[i].unwrap()).min().unwrap();
+                    if flush_start < end
+                        && splice_range_state_safe(
+                            &self.primitives.draw_order,
+                            min_target,
+                            end,
+                            !self.animation_scopes.is_empty(),
+                        )
+                    {
+                        // 目标位 → float 段索引组（tree order；同宿主多 float 保序）。
+                        let mut by_target: Vec<(usize, Vec<usize>)> = Vec::new();
+                        for &i in &movable {
+                            let t = targets[i].unwrap();
+                            match by_target.last_mut() {
+                                Some((lt, idxs)) if *lt == t => idxs.push(i),
+                                _ => by_target.push((t, vec![i])),
+                            }
+                        }
+                        let old = &self.primitives.draw_order[..end];
+                        let mut rebuilt: Vec<DrawOp> = Vec::with_capacity(end);
+                        let mut seg_iter = by_target.iter().peekable();
+                        for (pos, op) in old.iter().enumerate() {
+                            while let Some((t, idxs)) = seg_iter.peek()
+                                && *t == pos
+                            {
+                                for &i in idxs {
+                                    let (s, e) = item_ranges[i];
+                                    rebuilt.extend_from_slice(&old[s..e]);
+                                }
+                                seg_iter.next();
+                            }
+                            if pos < flush_start {
+                                rebuilt.push(*op);
+                            }
+                        }
+                        // R5472b：放弃 splice 的项按 tree order 回填 flush 位——
+                        // flush 段已被跳过，不回填即漏绘。
+                        let mut is_movable = vec![false; collected_floats.len()];
+                        for &i in &movable {
+                            is_movable[i] = true;
+                        }
+                        for (i, (s, e)) in item_ranges.iter().enumerate() {
+                            if !is_movable[i] {
+                                rebuilt.extend_from_slice(&old[*s..*e]);
+                            }
+                        }
+                        self.primitives.draw_order = rebuilt;
+                    }
+                }
             }
         }
 
@@ -7566,7 +8312,7 @@ mod tests {
             b
         }
         let base = box_with(OverflowClip::Clip, OverflowClip::Visible);
-        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        let r = overflow_clip_rect(&base, 100.0, 100.0, false);
         assert!(
             r.origin.y < 0.0 && r.size.height > 1.0e5,
             "overflow-x:clip + y visible → y 轴不裁剪（矩形扩到界外），got {:?}",
@@ -7579,7 +8325,7 @@ mod tests {
         );
 
         let base = box_with(OverflowClip::Visible, OverflowClip::Clip);
-        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        let r = overflow_clip_rect(&base, 100.0, 100.0, false);
         assert!(
             r.origin.x < 0.0 && r.size.width > 1.0e5,
             "overflow-y:clip + x visible → x 轴不裁剪，got {:?}",
@@ -7588,10 +8334,84 @@ mod tests {
 
         // 双轴 clip：两轴都按 padding-box（不扩界）
         let base = box_with(OverflowClip::Clip, OverflowClip::Clip);
-        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        let r = overflow_clip_rect(&base, 100.0, 100.0, false);
         assert!(
             (r.origin.x - 100.0).abs() < 0.5 && (r.size.height - 50.0).abs() < 0.5,
             "双轴 clip → 均按 padding-box，got {:?}",
+            r
+        );
+    }
+
+    /// R5429：containment 臂（css-contain-1 §3.1）——paint containment 下 used
+    /// overflow=visible 的轴视同 clip，裁剪边 = overflow clip edge（含 clip-margin）。
+    /// driving: WPT overflow-clip-margin-004（contain:paint + clip-margin 10px，
+    /// 双侧期望 120×120 露绿）。hidden/scroll 轴不消费 margin（§11.1.1 基线）；
+    /// margin=0（默认）矩形与旧实现逐字节一致（零行为变更护栏）。
+    #[test]
+    fn r5429_containment_clip_margin_extends_clip_edge() {
+        fn contained_box() -> LayoutBox {
+            let mut b = LayoutBox {
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                ..Default::default()
+            };
+            b.content_width = 100.0;
+            b.content_height = 100.0;
+            b.overflow_clip_margin_length = 10.0;
+            b
+        }
+        // containment + visible 双轴 + margin 10 → 四边各外扩 10（driving 案形）。
+        let r = overflow_clip_rect(&contained_box(), 100.0, 100.0, true);
+        assert!(
+            (r.origin.x - 90.0).abs() < 0.5 && (r.origin.y - 90.0).abs() < 0.5,
+            "containment 裁剪边须外扩到 (90,90)，got {:?}",
+            r
+        );
+        assert!(
+            (r.size.width - 120.0).abs() < 0.5 && (r.size.height - 120.0).abs() < 0.5,
+            "containment 裁剪边须为 120×120，got {:?}",
+            r
+        );
+        // 同盒 containment=false → 纯 padding-box（旧路径不变，100×100）。
+        let r = overflow_clip_rect(&contained_box(), 100.0, 100.0, false);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5 && (r.size.width - 100.0).abs() < 0.5,
+            "非 containment 不消费 margin（visible 轴本来就不裁），got {:?}",
+            r
+        );
+        // margin=0 → 矩形 = padding-box 逐字节同旧（零行为变更护栏）。
+        let mut zero = contained_box();
+        zero.overflow_clip_margin_length = 0.0;
+        let r = overflow_clip_rect(&zero, 100.0, 100.0, true);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5
+                && (r.origin.y - 100.0).abs() < 0.5
+                && (r.size.width - 100.0).abs() < 0.5
+                && (r.size.height - 100.0).abs() < 0.5,
+            "margin=0 containment 矩形须同 padding-box，got {:?}",
+            r
+        );
+        // hidden 轴不消费 margin：x hidden → x 轴 padding-box，y visible+containment 外扩。
+        let mut hidden_x = contained_box();
+        hidden_x.overflow_x = OverflowClip::Hidden;
+        let r = overflow_clip_rect(&hidden_x, 100.0, 100.0, true);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5 && (r.size.width - 100.0).abs() < 0.5,
+            "hidden 轴维持 padding-box（§11.1.1 基线），got {:?}",
+            r
+        );
+        assert!(
+            (r.origin.y - 90.0).abs() < 0.5 && (r.size.height - 120.0).abs() < 0.5,
+            "containment visible 轴仍消费 margin，got {:?}",
+            r
+        );
+        // containment + x:clip/y:visible 组合：无可见轴放行臂（双轴都裁）。
+        let mut clip_x = contained_box();
+        clip_x.overflow_x = OverflowClip::Clip;
+        let r = overflow_clip_rect(&clip_x, 100.0, 100.0, true);
+        assert!(
+            r.size.height < 1.0e5,
+            "containment 下无可见轴放行臂（y 轴视同 clip 有界），got {:?}",
             r
         );
     }

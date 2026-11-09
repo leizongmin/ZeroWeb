@@ -1903,3 +1903,115 @@ fn test_sync_inline_box_x_tightens_to_descendant_first_edge() {
         "映射收紧：外盒 x 应 = 子孙首缘 0（外层 fold 不落流不扣），实际 {x_tightened}（旧行为 {x_legacy}）"
     );
 }
+
+/// R5421（CSS 2.2 §9.4.1/§9.5）：float 排除带只在**同一 BFC** 内生效——祖先 float
+/// 不侵入建立 BFC 的子盒（float/overflow≠visible 等）内部的文本行位。
+/// border-radius-clip-001 #txt 案形：body 级 float A(140 高) 经旧无界传播进入
+/// float 兄弟 B 子盒的 IFC，行位被推到带底（≥100）→ 被 B 自身 overflow clip 整缺。
+/// 同时守护同 BFC 合法侵入（plain block 后代仍须避让，不因修复反向矫枉）。
+#[test]
+fn r5421_float_exclusions_stop_at_bfc_boundary() {
+    use zero_css_parser::values::FloatValue;
+    use zero_dom::parse_html;
+
+    // "xxxxxx" Ahem 20px = 120px > 容器 100 → 断行路径（float 带位移只在断行
+    // 重算时消费，恰好放下不触发——真实案形 XX 恰处 fit 边界）。
+    let doc = parse_html("<div></div><div><div>xxxxxx</div></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let a = doc.first_child(body).unwrap();
+    let t = doc.next_sibling(a).unwrap();
+    let i = doc.first_child(t).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut style_a = ComputedStyle::default();
+    style_a.float = FloatValue::Left;
+    styles.insert(a, style_a);
+    // pure-Ahem 才过默认存储门（compute_final store-gate R817 口径）。
+    let mut style_i = ComputedStyle::default();
+    style_i.font_family = vec!["Ahem".to_string()];
+    style_i.font_size = LengthValue::Px(20.0);
+    styles.insert(i, style_i);
+
+    let box_a = LayoutBox {
+        node_id: Some(a),
+        x: 0.0,
+        y: 0.0,
+        width: 140.0,
+        height: 140.0,
+        content_width: 140.0,
+        content_height: 140.0,
+        float: FloatValue::Left,
+        is_block_level: true,
+        ..Default::default()
+    };
+    let box_i = LayoutBox {
+        node_id: Some(i),
+        x: 20.0,
+        y: 20.0,
+        width: 100.0,
+        height: 100.0,
+        content_width: 100.0,
+        content_height: 100.0,
+        is_block_level: true,
+        ..Default::default()
+    };
+
+    let run = |float_t: bool| {
+        let mut styles = styles.clone();
+        let mut style_t = ComputedStyle::default();
+        if float_t {
+            style_t.float = FloatValue::Left;
+        }
+        styles.insert(t, style_t);
+        let box_t = LayoutBox {
+            node_id: Some(t),
+            x: if float_t { 168.0 } else { 50.0 },
+            y: if float_t { 0.0 } else { 20.0 },
+            width: 140.0,
+            height: 140.0,
+            content_width: 140.0,
+            content_height: 140.0,
+            float: if float_t { FloatValue::Left } else { FloatValue::None },
+            is_block_level: true,
+            children: vec![box_i.clone()],
+            ..Default::default()
+        };
+        let mut root_box = LayoutBox {
+            width: 400.0,
+            height: 200.0,
+            content_width: 400.0,
+            content_height: 200.0,
+            is_block_level: true,
+            children: vec![box_a.clone(), box_t],
+            ..Default::default()
+        };
+        let mut paint_skip = std::collections::HashSet::new();
+        let finalized_inline_blocks = Default::default();
+        let mut context =
+            FinalInlineContext::new(&mut paint_skip, InlineFontContext::default(), &finalized_inline_blocks);
+        compute_final_inline_layouts(&mut root_box, &doc, &styles, &[], &HashMap::new(), &mut context);
+        root_box.children[1].children[0]
+            .inline_layout
+            .as_ref()
+            .expect("inner text should store inline layout")
+            .iter()
+            .map(|l| l.y)
+            .fold(0.0_f32, f32::max)
+    };
+
+    // t 是 float（建立 BFC）：祖先 float A 不得侵入 t 子盒文本行位（修复前行位被
+    // 推到带底 ≥100，落在 t 的 overflow clip 之下 → 文本整缺）。
+    let y_bfc = run(true);
+    assert!(
+        y_bfc < 40.0,
+        "sibling float must not intrude into float sibling's BFC: line y={y_bfc}"
+    );
+
+    // t 是普通块（同 BFC）：float A 的合法侵入保持——i（位于 A 横向带内）行位避让到带底。
+    let y_same_bfc = run(false);
+    assert!(
+        y_same_bfc >= 99.0,
+        "same-BFC float must still intrude into plain block descendant: line y={y_same_bfc}"
+    );
+}

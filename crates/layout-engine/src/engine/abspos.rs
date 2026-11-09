@@ -7,11 +7,17 @@
 //!（18 处 call site 不变）。纯移动，零行为变化。
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 
 use crate::types::LayoutBox;
+
+/// R5465 kill-switch：abspos inset calc() 百分比基准求值（`ZW_ABSPOS_CALC_INSET=0`
+/// 回退塌缩旧行为）。LazyLock 进程级读一次（递归 pass 热路径不逐节点读 env）。
+static CALC_INSET_ENABLED: LazyLock<bool> =
+    LazyLock::new(|| std::env::var("ZW_ABSPOS_CALC_INSET").as_deref() != Ok("0"));
 
 /// R1227：abspos/fixed 百分比尺寸（`width`/`height: %`）按 CB 重解析为 border-box +
 /// content 一对值。
@@ -62,7 +68,7 @@ fn solved_auto_margin_left(style: &ComputedStyle, cb_width: f32, left_px: f32, c
     {
         return None;
     }
-    let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, 0.0)?;
+    let right_px = resolve_abspos_calc_inset(&style.right, &style.font_size, cb_width, cb_width, 0.0)?;
     let mr_px = resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, 0.0).unwrap_or(0.0);
     let slack = cb_width - left_px - right_px - mr_px - child.width;
     if matches!(style.margin_right, LengthValue::Auto) {
@@ -91,7 +97,7 @@ fn rtl_overconstrained_right_anchor(
     if matches!(style.width, LengthValue::Auto) && !child.is_replaced {
         return None; // 非 replaced width:auto 走 inset-stretch 域（既有口径，左右锚不选边）
     }
-    let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, 0.0)?;
+    let right_px = resolve_abspos_calc_inset(&style.right, &style.font_size, cb_width, cb_width, 0.0)?;
     let ml_auto = matches!(style.margin_left, LengthValue::Auto);
     let mr_auto = matches!(style.margin_right, LengthValue::Auto);
     // 过约束组：双 definite margin（方程由 left 侧硬凑）；双 auto 负 slack（归零后仍
@@ -136,6 +142,47 @@ pub(super) fn resolve_abspos_real_length(
             ) as f32)
         }
     }
+}
+
+/// R5465（CSS2 §10.1 ICB + css-values-4 calc 百分比基准）：abspos inset `calc()`
+/// 含百分比时按 CB 对应轴尺寸求值。旧路径 `resolve_length` 构造 CalcContext 无
+/// `parent_length` 基准 → calc 内百分比不可解析 → 整式塌缩 `unwrap_or(0.0)`
+///（sizing-orthog-htb-in-vrl-007 ref 臂 `left: calc(100% - 136px - 400px - 136px)`
+/// 落 x=0 而非 128；`max-width: calc(50% + 10px)` 同病塌缩为 0 触发错误钳制）。
+/// 计算值阶段转换器对含 % calc 保留信号不解析（style-system converter 的
+/// `Calc if calc_contains_percentage` 臂），布局侧按已知 CB 基准消费——本 helper
+/// 即该消费点。`basis` = 调用方按属性轴传入的 CB 尺寸（水平 inset → CB 宽、
+/// 垂直 inset → CB 高；CSS2 §10.1 viewport-CB 时即视口对应轴）。非 Calc 值与
+/// kill-switch `ZW_ABSPOS_CALC_INSET=0` 回退走 `resolve_abspos_real_length` 旧口径。
+fn resolve_abspos_calc_inset(
+    value: &zero_css_parser::values::LengthValue,
+    font_size: &zero_css_parser::values::LengthValue,
+    basis: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
+    use zero_css_parser::values::{CalcContext, LengthValue};
+    let LengthValue::Calc(expr) = value else {
+        return resolve_abspos_real_length(value, font_size, viewport_width, viewport_height);
+    };
+    if !*CALC_INSET_ENABLED {
+        return resolve_abspos_real_length(value, font_size, viewport_width, viewport_height);
+    }
+    let font_size_px = zero_style_system::computed::resolve_length(
+        font_size,
+        zero_style_system::computed::ROOT_FONT_SIZE,
+        Some(viewport_width as f64),
+        Some(viewport_height as f64),
+    );
+    let ctx = CalcContext {
+        parent_length: Some(basis as f64),
+        font_size: Some(font_size_px),
+        root_font_size: Some(zero_style_system::computed::ROOT_FONT_SIZE),
+        viewport_width: Some(viewport_width as f64),
+        viewport_height: Some(viewport_height as f64),
+        ..Default::default()
+    };
+    zero_css_parser::values::eval_calc_with_context(expr, &ctx).map(|v| v as f32)
 }
 
 /// R4122（csswg #10544 + css-position-3）：本元素是否为 fixed 后代的 containment
@@ -395,8 +442,20 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             if matches!(style.width, LengthValue::Auto)
                 && !child.is_replaced
                 && let (Some(left), Some(right)) = (
-                    resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
-                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_calc_inset(
+                        &style.left,
+                        &style.font_size,
+                        viewport_width,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                    resolve_abspos_calc_inset(
+                        &style.right,
+                        &style.font_size,
+                        viewport_width,
+                        viewport_width,
+                        viewport_height,
+                    ),
                 )
             {
                 child.width = (viewport_width - left - right).max(0.0);
@@ -404,8 +463,20 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             if matches!(style.height, LengthValue::Auto)
                 && !child.is_replaced
                 && let (Some(top), Some(bottom)) = (
-                    resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height),
-                    resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_calc_inset(
+                        &style.top,
+                        &style.font_size,
+                        viewport_height,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                    resolve_abspos_calc_inset(
+                        &style.bottom,
+                        &style.font_size,
+                        viewport_height,
+                        viewport_width,
+                        viewport_height,
+                    ),
                 )
             {
                 child.height = (viewport_height - top - bottom).max(0.0);
@@ -430,16 +501,26 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // margin auto/百分比不计（auto margin 另有 R2062 居中；% margin 相对 CB 宽）。
             // R5376：例外——left/width/right 全 definite 时 auto ml 按方程求解（helper
             // 文档）；width:auto / right:auto / 非 auto margin 回退当 0 旧口径。
-            if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height)
-            {
+            if let Some(px) = resolve_abspos_calc_inset(
+                &style.left,
+                &style.font_size,
+                viewport_width,
+                viewport_width,
+                viewport_height,
+            ) {
                 let ml = solved_auto_margin_left(style, viewport_width, px, child).unwrap_or_else(|| {
                     resolve_abspos_real_length(&style.margin_left, &style.font_size, viewport_width, viewport_height)
                         .unwrap_or(0.0)
                 });
                 child.x = px + ml - parent_content_origin_x;
             }
-            if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height)
-            {
+            if let Some(px) = resolve_abspos_calc_inset(
+                &style.top,
+                &style.font_size,
+                viewport_height,
+                viewport_width,
+                viewport_height,
+            ) {
                 let mt =
                     resolve_abspos_real_length(&style.margin_top, &style.font_size, viewport_width, viewport_height)
                         .unwrap_or(0.0);
@@ -453,8 +534,13 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // Px 时由上方块处理；双 inset 全 Px 的 over-constrained（LTR）忽略 right。
             // right/bottom 百分比仅当对应尺寸为 auto 时才影响位置，当前不处理。
             if matches!(style.left, LengthValue::Auto)
-                && let Some(right) =
-                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height)
+                && let Some(right) = resolve_abspos_calc_inset(
+                    &style.right,
+                    &style.font_size,
+                    viewport_width,
+                    viewport_width,
+                    viewport_height,
+                )
             {
                 // R4047：margin-right 计入方程（盒右缘 = 视口右 - right - margin-right）
                 let mr =
@@ -464,8 +550,13 @@ pub(super) fn adjust_absolute_pct_to_viewport(
                 child.x = target_viewport_x - parent_content_origin_x;
             }
             if matches!(style.top, LengthValue::Auto)
-                && let Some(bottom) =
-                    resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height)
+                && let Some(bottom) = resolve_abspos_calc_inset(
+                    &style.bottom,
+                    &style.font_size,
+                    viewport_height,
+                    viewport_width,
+                    viewport_height,
+                )
             {
                 // R4047：margin-bottom 计入方程（盒下缘 = 视口下 - bottom - margin-bottom）
                 let mb =
@@ -481,9 +572,27 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // 转回父 content 相对坐标（与上方各块同机制）。
             if matches!(style.width, LengthValue::Auto)
                 && let (Some(left), Some(right), Some(mw)) = (
-                    resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
-                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
-                    resolve_abspos_real_length(&style.max_width, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_calc_inset(
+                        &style.left,
+                        &style.font_size,
+                        viewport_width,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                    resolve_abspos_calc_inset(
+                        &style.right,
+                        &style.font_size,
+                        viewport_width,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                    resolve_abspos_calc_inset(
+                        &style.max_width,
+                        &style.font_size,
+                        viewport_width,
+                        viewport_width,
+                        viewport_height,
+                    ),
                 )
                 && child.width > mw + 0.5
             {
@@ -1376,6 +1485,102 @@ fn resolve_abspos_against_nested_cb_inner_m(
 ///
 /// margin：x 加 `margin_left`（§10.3.7 静态位为 margin-box 位；019 ref 的 div>.before
 /// `margin-left:2px` 对齐语义依赖）。
+/// R5432（css-overflow-4 §block-ellipsis × CSS2 §10.3.8）：clamp 容器几何同步——
+/// 含元素子的 abspos 盒是 taffy branch（无 measure 函数，R5236 D2 记录的同款结构性
+/// 盲区），高度取子原子贡献、inset 锚定用早期测量，**均不感知 clamp cap**（cap 是
+/// 容器 IFC 层截断，compute_final 才落存储行盒）。block-ellipsis-018 实证三源互不
+/// 一致：存储行 strut 25 正确，盒高 43.65（taffy MaxContent 期单行 generic 比率）、
+/// 锚 y=26（taffy 定位期 pre-clamp 两行总高），渐变红区露底。本 pass 在
+/// compute_final 之后读存储行盒收口：盒高 = clamp 后行盒底（+frame）；abspos
+/// `top:auto + bottom:definite` 且 CB = 直接 positioned 父时按 §10.3.8 方程重锚定
+/// y（CB padding-box 语义，§10.1）。门极窄：仅 stored 路径（`inline_layout` 非空）、
+/// abspos 非 fixed、height auto、top auto、bottom 定长、直接父 positioned；
+/// in-flow／跨块／无存储行盒形态不入（既有簇语义逐字节不变）。
+/// kill-switch `ZW_CLAMP_GEOMETRY_SYNC=0` 回退。
+pub(super) fn sync_clamped_abspos_geometry(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_CLAMP_GEOMETRY_SYNC").as_deref() == Ok("0") {
+        return;
+    }
+    sync_clamped_abspos_geometry_walk(root, styles);
+}
+
+fn sync_clamped_abspos_geometry_walk(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+    use zero_css_parser::values::PositionValue;
+
+    // 本盒是否 positioned（直接子 abspos 的 CB）——与 apply_abspos_shrink_to_fit_width
+    // 的 child_is_cb 同判据（is_abspos_cb 短路 + style 侧兜底）。
+    let is_cb = box_node.is_abspos_cb
+        || box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(
+                s.position,
+                PositionValue::Relative | PositionValue::Absolute | PositionValue::Fixed
+            )
+        });
+    if is_cb {
+        // 两阶段收集/写回（同 fix_abspos_static_position_y：避免 children 借用冲突）。
+        let mut fixes: Vec<(usize, f32, f32)> = Vec::new();
+        for (idx, child) in box_node.children.iter().enumerate() {
+            if !child.is_absolute
+                || child.is_fixed
+                || child.oof_static_mapped
+                || !child.line_clamp_clamped
+                || child.inline_layout.is_none()
+            {
+                continue;
+            }
+            let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+                continue;
+            };
+            // top:auto + bottom 定长（bottom:0 与 % 均入）；definite top / auto bottom
+            // 是静态位/stretch 域，不触。height:auto（作者高度压过 clamp 内容）。
+            if !matches!(style.top, LengthValue::Auto)
+                || !matches!(style.height, LengthValue::Auto)
+                || matches!(style.bottom, LengthValue::Auto)
+            {
+                continue;
+            }
+            // clamp 后行盒底（内容系）：行 y 累计堆叠，末行底 = 行盒和（float 推压
+            // gap 行形态 max 同值）。
+            let Some(lines) = &child.inline_layout else { continue };
+            let ifc_bottom = lines.iter().map(|l| l.y + l.height).fold(0.0_f32, f32::max);
+            if ifc_bottom <= 0.0 {
+                continue;
+            }
+            let frame_v = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+            let new_height = ifc_bottom + frame_v;
+            // §10.3.8 方程（CB padding-box）：盒下缘 = CB padding-box 底 − bottom
+            // − margin-bottom；y（树坐标 = 父 content 系）再剥父 border/padding 顶距。
+            let Some(bottom_px) =
+                resolve_abspos_real_length(&style.bottom, &style.font_size, box_node.width, box_node.height)
+            else {
+                continue;
+            };
+            let margin_bottom_px =
+                resolve_abspos_real_length(&style.margin_bottom, &style.font_size, box_node.width, box_node.height)
+                    .unwrap_or(0.0);
+            let cb_padbox_bottom = box_node.height - box_node.border_bottom - box_node.padding_bottom;
+            let new_y = cb_padbox_bottom
+                - bottom_px
+                - margin_bottom_px
+                - new_height
+                - box_node.border_top
+                - box_node.padding_top;
+            fixes.push((idx, new_y, new_height));
+        }
+        for (idx, y, height) in fixes {
+            let child = &mut box_node.children[idx];
+            child.y = y;
+            child.height = height;
+            child.content_height =
+                height - child.padding_top - child.padding_bottom - child.border_top - child.border_bottom;
+        }
+    }
+    for child in box_node.children.iter_mut() {
+        sync_clamped_abspos_geometry_walk(child, styles);
+    }
+}
+
 pub(super) fn fix_abspos_inline_static_position(
     root: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,

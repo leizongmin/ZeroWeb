@@ -3,6 +3,7 @@
 //! 提供请求方法、请求体、响应体等类型。
 
 use crate::NetError;
+use crate::resource_loader::CacheMode;
 
 /// HTTP 请求方法。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +50,11 @@ pub struct HttpRequest {
     pub headers: Vec<(String, String)>,
     /// 请求体。
     pub body: Option<Vec<u8>>,
+    /// 缓存模式（http-cache goal M2——fetch 通道 `init.cache` 六态传播；显式
+    /// 模式为权威值，优先于请求头 Cache-Control 启发式推导，见
+    /// [`crate::resource_loader::ResourceLoader::submit`]；缺省 Default 时
+    /// 启发式照常生效，引擎内部资源通道零变化）。
+    pub cache_mode: CacheMode,
 }
 
 impl HttpRequest {
@@ -59,6 +65,7 @@ impl HttpRequest {
             url: url.to_string(),
             headers: Vec::new(),
             body: None,
+            cache_mode: CacheMode::Default,
         }
     }
 
@@ -69,6 +76,7 @@ impl HttpRequest {
             url: url.to_string(),
             headers: Vec::new(),
             body: Some(body),
+            cache_mode: CacheMode::Default,
         }
     }
 
@@ -81,6 +89,12 @@ impl HttpRequest {
     /// 修改请求方法（builder 风格）。
     pub fn with_method(mut self, method: HttpMethod) -> Self {
         self.method = method;
+        self
+    }
+
+    /// 设置缓存模式（builder 风格；fetch 通道 `init.cache` 传播入口）。
+    pub fn with_cache_mode(mut self, cache_mode: CacheMode) -> Self {
+        self.cache_mode = cache_mode;
         self
     }
 }

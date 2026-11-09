@@ -8,6 +8,7 @@
 use crate::geometry::Size;
 use hashbrown::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// 图片缓存键 — 唯一标识一张图片
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -214,12 +215,76 @@ impl ImageData {
     }
 }
 
+/// s307（animated image 帧推进）：动画图片数据（多帧合成快照 + 时序时间线）。
+///
+/// GIF89a / animated WebP 解码出全部帧与帧时序；`ImageData` 仍只承载「当前帧」
+/// 位图（插入时 = 首帧），[`ImageCache::get`] 按动画时钟推进把条目换到活跃帧。
+/// HTML spec：img 渲染动画的当前帧
+///（https://html.spec.whatwg.org/multipage/images.html#the-img-element）。
+/// canvas drawImage 首帧语义不经此路径（R34xx，解码在桥接期一次性消费）。
+#[derive(Debug)]
+pub struct AnimationData {
+    /// 帧序列（RGBA 全画布合成快照；尺寸一致 = GIF 逻辑屏幕 / WebP VP8X canvas）
+    pub frames: Vec<ImageData>,
+    /// 每帧起点（毫秒；帧 i 活跃于 [start_ms[i], start_ms[i+1])，末帧到 total_ms）
+    pub start_ms: Vec<f64>,
+    /// 总时长（毫秒；回绕取模 = 无限循环）
+    pub total_ms: f64,
+    /// 动画时钟零点（宿主未注入虚拟时钟时按真实墙钟推进——engine 直连路径语义）
+    pub start: Instant,
+    /// 上次推进到的帧序号（get 比对，避免每查重换 `Arc`）
+    active: usize,
+}
+
+impl AnimationData {
+    /// 活跃帧序号：回绕取模后落在的时间线区间（末帧闭到 total_ms）。
+    fn frame_index_at(&self, elapsed_ms: f64) -> usize {
+        if self.total_ms <= 0.0 || self.frames.is_empty() {
+            return 0;
+        }
+        let t = elapsed_ms.rem_euclid(self.total_ms);
+        // 线性扫描（帧数有界，解码期已限 4096；首帧零等待 = 任何 t ≥ 0 命中区间 0 起）。
+        let mut idx = 0usize;
+        while idx + 1 < self.frames.len() && t >= self.start_ms[idx + 1] {
+            idx += 1;
+        }
+        idx
+    }
+}
+
+thread_local! {
+    /// s307：虚拟动画时钟（毫秒，自动画 0 点）。reftest 通道在脚本期注入页面
+    /// setTimeout 总等待（shim timer 即时消费——真浏览器语义 = 截图时刻动画已
+    /// 推进等待时长）；None = 按条目 `AnimationData::start` 墙钟推进。渲染全程
+    /// 有效，[`set_anim_virtual_elapsed`] 返回的 RAII guard drop 时还原。
+    static ANIM_VIRTUAL_ELAPSED_MS: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+}
+
+/// [`set_anim_virtual_elapsed`] 的 RAII guard：drop 时清虚拟时钟（reftest 渲染
+/// 入口 set、函数尾自动还原——adopted-css 线程局部同款，防 rayon 跨案泄漏）。
+#[derive(Debug)]
+pub struct AnimClockGuard;
+
+impl Drop for AnimClockGuard {
+    fn drop(&mut self) {
+        ANIM_VIRTUAL_ELAPSED_MS.with(|c| c.set(None));
+    }
+}
+
+/// 注入虚拟动画时钟（毫秒，自动画 0 点起；负值钳 0）。返回 guard，drop 清除。
+pub fn set_anim_virtual_elapsed(ms: f64) -> AnimClockGuard {
+    ANIM_VIRTUAL_ELAPSED_MS.with(|c| c.set(Some(ms.max(0.0))));
+    AnimClockGuard
+}
+
 /// 图片缓存条目
 #[derive(Debug)]
 struct CacheEntry {
     /// 图片数据（A3 Fix C4：`Arc` 共享句柄——快照发布路径引用计数替代全量深拷贝；
     /// 像素在插入后不可变（R3254-M2，content_hash 复用前提），共享语义安全）。
     data: Arc<ImageData>,
+    /// s307：动画数据（仅动画图片 Some；`get` 推进时换写 `data` 到活跃帧）
+    animation: Option<AnimationData>,
     /// 引用计数
     ref_count: u32,
     /// 最近访问的代数（用于 GC）
@@ -990,8 +1055,8 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     ImageData::from_rgba(demultiply_resvg_rgba(pixmap.take()), target_w, target_h)
 }
 
-/// R3996：把 `<svg>` 根元素的 `background-color`（presentation attr 或 style 声明）从源中
-/// 剥离并返回（RGBA，未知/非法值返回 None 不动源）。
+/// R3996：把 `<svg>` 根元素的 `background-color`（presentation attr、style 声明或内联
+/// `<style>` 的 `:root` 规则）从源中剥离并返回（RGBA，未知/非法值返回 None 不动源）。
 ///
 /// 根因（css-sizing replaced-element-004/006/010/020 簇实证）：usvg 0.47 把根背景生成为
 /// **viewBox rect** 的 path（`converter.rs` `background_path(background_color, view_box.rect)`），
@@ -1013,17 +1078,22 @@ fn promote_svg_root_background(source: &[u8]) -> (Vec<u8>, Option<[u8; 4]>) {
         return (source.to_vec(), None);
     };
     let tag = &after[..tag_end_rel]; // 含 "<svg"
-    // 值来源优先级（与 usvg parse 一致）：style 声明 > presentation attr。两者皆无 → 不动。
+    // 值来源优先级：style 声明 > 样式表规则 > presentation attr（CSS 级联——presentation
+    // attr 是 presentational hint，author origin 内最低，svg-img-with-external-stylesheet
+    // 驱动案的 `<style>:root{...}</style>` 为样式表来源）。三者皆无 → 不动。
     let style_val = extract_svg_attr(tag, "style");
     let style_color = style_val.as_deref().and_then(svg_style_background_color);
+    let stylesheet_color = svg_stylesheet_root_background(text);
     let attr_color = extract_svg_attr(tag, "background-color")
         .or_else(|| extract_svg_attr(tag, "background"))
         .and_then(|v| parse_svg_color(&v));
-    let color = style_color.or(attr_color);
+    let color = style_color.or(stylesheet_color).or(attr_color);
     let Some(color) = color else {
         return (source.to_vec(), None);
     };
     // 改写根标签：删 style 中的 background-color 声明（若来自 style），否则删 attr。
+    // 样式表来源时标签本无需改写（usvg 不读样式表），但落败的 presentation attr 仍须删
+    // ——usvg 会把它画成 viewBox rect，而级联上它已落败（chromium 不绘制）。
     let new_tag = if style_color.is_some() {
         let stripped_style = strip_background_decl(style_val.as_deref().unwrap_or_default());
         if stripped_style.is_empty() {
@@ -1067,6 +1137,57 @@ fn svg_style_background_color(style_val: &str) -> Option<[u8; 4]> {
             }
             None
         })
+}
+
+/// s322：扫描文档内联 `<style>` 元素中的 `:root` 规则，提取根 background-color（RGBA，
+/// 无可识别规则返回 None）。多条规则按文档序后者胜（同等特异性级联）。声明解析复用
+/// svg_style_background_color（background-color 与 background 简写均识别）。
+/// 仅内联样式生效——SVG-as-image 安全静态模式不加载外部样式表（html/semantics
+/// embedded-content svg-img-with-external-stylesheet 驱动案：
+/// `<style xmlns="…">:root { background-color: green }</style>`）。
+/// https://drafts.csswg.org/css-cascade-5/#cascade-sort
+/// https://www.w3.org/TR/SVG2/styling.html#PresentationAttributes
+fn svg_stylesheet_root_background(text: &str) -> Option<[u8; 4]> {
+    let mut color = None;
+    let mut pos = 0;
+    while let Some(rel) = text[pos..].find("<style") {
+        let start = pos + rel;
+        let after_open = &text[start + "<style".len()..];
+        // 边界检查：`<styleX` 不是 style 元素。
+        if !after_open
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_whitespace() || c == '>' || c == '/')
+        {
+            pos = start + "<style".len();
+            continue;
+        }
+        let Some(tag_end_rel) = after_open.find('>') else {
+            break;
+        };
+        let body_start = start + "<style".len() + tag_end_rel + 1;
+        let body = &text[body_start..];
+        let Some(close_rel) = body.find("</style") else {
+            break;
+        };
+        pos = body_start + close_rel;
+        // 逐规则扫：选择器段 = 上一 `}`（或体首）至 `{`，声明块至下一 `}`。
+        let mut scan = &body[..close_rel];
+        while let Some(brace_rel) = scan.find('{') {
+            let selector = &scan[..brace_rel];
+            let block = &scan[brace_rel + 1..];
+            let Some(end_rel) = block.find('}') else {
+                break;
+            };
+            if selector.contains(":root")
+                && let Some(c) = svg_style_background_color(block[..end_rel].trim())
+            {
+                color = Some(c);
+            }
+            scan = &block[end_rel + 1..];
+        }
+    }
+    color
 }
 
 /// 删除 style 声明值中的 background-color / background 项（返回剩余声明，分号规范化）。
@@ -1217,10 +1338,18 @@ impl ImageCache {
 
     /// R34xx：快照全部缓存条目（key hash → ImageData clone），供 host 回调查询
     ///（webview 的 __zw_get_image_wire——headless canvas drawImage img 源 G5）。
+    /// s310：动画条目固定取**首帧**——canvas drawImage/createPattern 的 img 源
+    /// 画首帧（R34xx drawing-images 契约，2d.drawImage.animated.gif），不随
+    /// [`ImageCache::get`] 推进臂换帧（img 元素显示活跃帧与 canvas 首帧语义
+    /// 在此分叉；get() 会把 entry.data 换写为活跃帧快照，故以 animation 帧表
+    /// frames[0] 为准）。
     pub fn snapshot_entries(&self) -> std::collections::HashMap<u64, ImageData> {
         self.entries
             .iter()
-            .map(|(k, e)| (k.0, e.data.as_ref().clone()))
+            .map(|(k, e)| {
+                let data = e.animation.as_ref().and_then(|a| a.frames.first()).unwrap_or(&e.data);
+                (k.0, data.clone())
+            })
             .collect()
     }
 
@@ -1231,6 +1360,7 @@ impl ImageCache {
 
         let entry = CacheEntry {
             data: Arc::new(data),
+            animation: None,
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1245,6 +1375,21 @@ impl ImageCache {
     pub fn insert_with_key(&mut self, key: ImageKey, data: ImageData) {
         let entry = CacheEntry {
             data: Arc::new(data),
+            animation: None,
+            ref_count: 1,
+            last_access_gen: self.current_gen,
+        };
+        self.entries.insert(key, entry);
+    }
+
+    /// s307：带动画数据插入（`data` = 首帧位图；`animation` 携带全部帧与时序）。
+    ///
+    /// 条目像素不可变不变式保持：每次推进写**新的** `Arc<ImageData>`（其
+    /// content_hash 与自身像素一致），下游 GPU 纹理缓存按 content_hash 自然换新。
+    pub fn insert_with_animation(&mut self, key: ImageKey, data: ImageData, animation: AnimationData) {
+        let entry = CacheEntry {
+            data: Arc::new(data),
+            animation: Some(animation),
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1254,6 +1399,28 @@ impl ImageCache {
     /// 获取图片数据的引用，并递增引用计数
     pub fn get(&mut self, key: &ImageKey) -> Option<&ImageData> {
         let entry = self.entries.get_mut(key)?;
+        // s307：动画条目先推进到活跃帧（虚拟时钟优先，缺省按条目墙钟）。
+        // 先算出目标帧快照再换写（entry.animation 与 entry.data 不相交字段借用）。
+        if entry.animation.is_some() {
+            let elapsed = ANIM_VIRTUAL_ELAPSED_MS.with(|c| c.get()).unwrap_or_else(|| {
+                entry
+                    .animation
+                    .as_ref()
+                    .map_or(0.0, |a| a.start.elapsed().as_secs_f64() * 1000.0)
+            });
+            let next = entry.animation.as_ref().and_then(|a| {
+                let idx = a.frame_index_at(elapsed);
+                (idx != a.active)
+                    .then(|| a.frames.get(idx).map(|f| (idx, f.clone())))
+                    .flatten()
+            });
+            if let Some((idx, frame)) = next {
+                if let Some(a) = entry.animation.as_mut() {
+                    a.active = idx;
+                }
+                entry.data = Arc::new(frame);
+            }
+        }
         entry.ref_count = entry.ref_count.saturating_add(1);
         entry.last_access_gen = self.current_gen;
         Some(entry.data.as_ref())
@@ -1392,6 +1559,7 @@ impl ImageCache {
                 key.clone(),
                 CacheEntry {
                     data: Arc::clone(&entry.data),
+                    animation: None,
                     ref_count: 1,
                     last_access_gen: 0,
                 },
@@ -1427,18 +1595,110 @@ impl Default for ImageCache {
 /// 解码失败时返回描述性错误字符串（调用方决定降级策略）。
 pub fn decode_png_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     use png::Transformations;
-    let mut decoder = png::Decoder::new(bytes);
+    // png 0.18 Decoder 要求 BufRead + Seek——字节切片经 Cursor 供给。
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
     let mut reader = decoder.read_info().map_err(|e| format!("PNG 解码失败: {e}"))?;
 
     let info = reader.info().clone();
+    // s300：方向标签在 read_info 边界快照（早块生效）——IDAT 后的 eXIf/文本块
+    // 在 next_frame 期才被解析进 Info，快照点天然实现「晚块 EXIF 被忽略」
+    //（css-images-3 #url-metadata late-metadata 语义）。
+    let orientation = png_orientation_from_info(&info);
     let width = info.width;
     let height = info.height;
 
-    let mut raw = vec![0u8; reader.output_buffer_size()];
+    // png 0.18：output_buffer_size 返回 Option<usize>（info 无效时 None）。
+    let buf_size = reader
+        .output_buffer_size()
+        .ok_or_else(|| "PNG 无输出缓冲区大小".to_string())?;
+    let mut raw = vec![0u8; buf_size];
     let output_info = reader.next_frame(&mut raw).map_err(|e| format!("PNG 读取失败: {e}"))?;
     let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
+    // CSS image-orientation from-image（默认值）解码侧语义：按 PNG eXIf Orientation
+    // 物理重排像素并换轴，与 JPEG 路径同表同通道（naturalWidth/Height 与绘制统一
+    // 消费已定向位图）。
+    // https://drafts.csswg.org/css-images-3/#default-image-orientation
+    let (rgba, width, height) = match orientation {
+        Some(orientation) => apply_orientation(rgba, width, height, orientation),
+        None => (rgba, width, height),
+    };
     ImageData::from_rgba(rgba, width, height)
+}
+
+/// 读取 PNG EXIF Orientation 标签（IFD0，tag 0x0112）。
+///
+/// 语义面（css-images-3 from-image 默认值）：eXIf 块优先，其次 ImageMagick
+///「Raw profile type exif」文本档案（tEXt/zTXt，JPEG APP1 同构载荷——双源为
+/// Chromium/Firefox 实际读取面）。只扫早块视角的 `Info`：调用方须以 read_info
+/// 边界快照供给，晚块（IDAT 后）方向标签按规范忽略。值域 1..=8 之外按无方向
+/// 处理（同 JPEG 路径）。pub 供 reftest harness `load_png_file` 独立解码路径
+/// 复用（R217 逃生舱面不委托像素解码，仅共享元数据探测）。
+/// https://drafts.csswg.org/css-images-3/#default-image-orientation
+/// https://exif.org/Exif2-32.PDF §4.6.4
+pub fn png_orientation(bytes: &[u8]) -> Option<u16> {
+    let reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().ok()?;
+    png_orientation_from_info(reader.info())
+}
+
+/// 从解码器 `Info` 快照读 Orientation——`decode_png_bytes` 与 `png_orientation`
+/// 共用；不公开（快照时机语义归调用方）。
+fn png_orientation_from_info(info: &png::Info<'_>) -> Option<u16> {
+    if let Some(exif) = info.exif_metadata.as_deref() {
+        // eXIf 块载荷为 TIFF 流；个别编码器带 JPEG APP1 同构「Exif\0\0」前缀，
+        // 有则剥（TIFF 头按字节序标记校验，剥错仅解析失效不误读）。
+        let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(exif);
+        if let Some(orientation) = parse_tiff_orientation(tiff) {
+            return Some(orientation);
+        }
+    }
+    const RAW_PROFILE_EXIF_KEYWORD: &str = "Raw profile type exif";
+    for text in &info.uncompressed_latin1_text {
+        if text.keyword != RAW_PROFILE_EXIF_KEYWORD {
+            continue;
+        }
+        if let Some(exif) = imagemagick_exif_raw_profile(&text.text) {
+            let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(&exif);
+            if let Some(orientation) = parse_tiff_orientation(tiff) {
+                return Some(orientation);
+            }
+        }
+    }
+    for text in &info.compressed_latin1_text {
+        if text.keyword != RAW_PROFILE_EXIF_KEYWORD {
+            continue;
+        }
+        let Ok(text) = text.get_text() else { continue };
+        if let Some(exif) = imagemagick_exif_raw_profile(&text) {
+            let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(&exif);
+            if let Some(orientation) = parse_tiff_orientation(tiff) {
+                return Some(orientation);
+            }
+        }
+    }
+    None
+}
+
+/// 解析 ImageMagick「Raw profile type exif」文本档案正文。
+///
+/// 约定格式（ImageMagick profile.c）：`"\nexif\n<8 位右对齐长度>\n"` 后接大写
+/// hex 换行分片（尾部 `"\n"`）；hex 解码即「Exif\0\0」+ TIFF（JPEG APP1 同构）。
+/// 声明长度落空（截断档案）按无 EXIF 处理。
+fn imagemagick_exif_raw_profile(text: &str) -> Option<Vec<u8>> {
+    let rest = text.split_once("\nexif\n")?.1;
+    let (len_line, hex_body) = rest.split_once('\n')?;
+    let len: usize = len_line.trim().parse().ok()?;
+    let hex: String = hex_body
+        .chars()
+        .filter(|c: &char| c.is_ascii_hexdigit())
+        .take(len.checked_mul(2)?)
+        .collect();
+    if hex.len() != len * 2 {
+        return None;
+    }
+    (0..len)
+        .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+        .collect()
 }
 
 /// 解码 JPEG 字节为 `ImageData`（RGBA）。
@@ -1453,7 +1713,152 @@ pub fn decode_jpeg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let width = info.width as u32;
     let height = info.height as u32;
     let rgba = convert_jpeg_pixels_to_rgba(&pixels, info.pixel_format);
+    // CSS image-orientation from-image（默认值）解码侧语义：按 EXIF Orientation
+    // 物理重排像素并换轴，naturalWidth/Height 与绘制通道统一消费已定向位图
+    //（HTML naturalWidth「reflective of the EXIF orientation」）。PNG eXIf 面
+    // 由 decode_png_bytes 同通道处理（s300）。
+    // https://drafts.csswg.org/css-images-3/#default-image-orientation
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-naturalwidth
+    let (rgba, width, height) = match jpeg_exif_orientation(bytes) {
+        Some(orientation) => apply_orientation(rgba, width, height, orientation),
+        None => (rgba, width, height),
+    };
     ImageData::from_rgba(rgba, width, height)
+}
+
+/// 读取 JPEG EXIF Orientation 标签（IFD0，tag 0x0112）。
+///
+/// 只扫 SOI 后到 SOS 前的 APP1「Exif\0\0」段，IFD0 内首个命中项；Exif 子 IFD
+/// 镜像不在读取面。值域 1..=8 之外（含「unknown」9）返回 None 按无方向处理。
+/// 结构：EXIF 2.32 §4.6.4 / CIPA DC-008-2023（TIFF/EP tag 0x0112）。
+fn jpeg_exif_orientation(bytes: &[u8]) -> Option<u16> {
+    let mut pos = 2usize; // SOI 后
+    while bytes.len() >= pos + 4 && bytes[pos] == 0xFF {
+        let marker = bytes[pos + 1];
+        if marker == 0xDA {
+            break; // SOS：头段扫描结束
+        }
+        if marker == 0x01 || marker == 0xD8 || (0xD0..=0xD7).contains(&marker) {
+            pos += 2; // TEM/SOI/RSTn 无长度段
+            continue;
+        }
+        let seg_len = u16::from_be_bytes([bytes[pos + 2], bytes[pos + 3]]) as usize;
+        // 段长含自身 2 字节；病态段按无 EXIF 处理（外部输入不 panic）。
+        if seg_len < 2 || bytes.len() - pos < seg_len + 2 {
+            return None;
+        }
+        if marker == 0xE1 && bytes[pos + 4..pos + 10].starts_with(b"Exif\0\0") {
+            return parse_tiff_orientation(&bytes[pos + 10..pos + 2 + seg_len]);
+        }
+        pos += 2 + seg_len;
+    }
+    None
+}
+
+/// 在 TIFF 头（字节序 + IFD0 偏移）中读 Orientation（tag 0x0112）。
+///
+/// SHORT(3) 单值内联在条目值域前 2 字节、LONG(4) 前 4 字节；其余类型按缺失。
+/// https://exif.org/Exif2-32.PDF §4.6.4
+fn parse_tiff_orientation(tiff: &[u8]) -> Option<u16> {
+    let be = match (tiff.first()?, tiff.get(1)?) {
+        (b'M', b'M') => true,
+        (b'I', b'I') => false,
+        _ => return None,
+    };
+    let read_u16 = |o: usize| -> Option<u16> {
+        let b = tiff.get(o..o.checked_add(2)?)?;
+        Some(if be {
+            u16::from_be_bytes([b[0], b[1]])
+        } else {
+            u16::from_le_bytes([b[0], b[1]])
+        })
+    };
+    let read_u32 = |o: usize| -> Option<u32> {
+        let b = tiff.get(o..o.checked_add(4)?)?;
+        Some(if be {
+            u32::from_be_bytes([b[0], b[1], b[2], b[3]])
+        } else {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        })
+    };
+    let ifd0 = read_u32(4)? as usize;
+    let count = read_u16(ifd0)? as usize;
+    for i in 0..count {
+        let entry = ifd0.checked_add(2)?.checked_add(i.checked_mul(12)?)?;
+        if read_u16(entry)? != 0x0112 {
+            continue;
+        }
+        let value = match read_u16(entry.checked_add(2)?)? {
+            3 => read_u16(entry.checked_add(8)?).map(u32::from),
+            4 => read_u32(entry.checked_add(8)?),
+            _ => None,
+        };
+        return value.filter(|v| (1..=8).contains(v)).map(|v| v as u16);
+    }
+    None
+}
+
+/// 按 EXIF Orientation 重排 RGBA 像素并换轴（CSS from-image 解码侧语义）。
+///
+/// 映射：1 恒等 / 2 水平翻转 / 3 旋转 180° / 4 垂直翻转 / 5 主对角转置 /
+/// 6 顺时针 90° / 7 反对角转置 / 8 逆时针 90°；5-8 宽高互换。与 image crate
+/// `apply_orientation`、libvips 同表。越界值防御性恒等（解析侧已过滤）。pub
+/// 供 reftest harness `load_png_file` 独立解码路径复用（R217 逃生舱面）。
+/// https://exif.org/Exif2-32.PDF §4.6.4 Orientation
+pub fn apply_orientation(data: Vec<u8>, width: u32, height: u32, orientation: u16) -> (Vec<u8>, u32, u32) {
+    const PX: usize = 4;
+    let (w, h) = (width as usize, height as usize);
+    // 行内水平翻转 / 行间垂直翻转（原位，无越界分支——像素序恒在缓冲区界内）。
+    let flip_h = |data: &mut [u8]| {
+        for r in 0..h {
+            for c in 0..w / 2 {
+                let (a, b) = ((r * w + c) * PX, (r * w + w - 1 - c) * PX);
+                let (left, right) = data.split_at_mut(b);
+                left[a..a + PX].swap_with_slice(&mut right[..PX]);
+            }
+        }
+    };
+    let flip_v = |data: &mut [u8]| {
+        for r in 0..h / 2 {
+            let (a, b) = (r * w * PX, (h - 1 - r) * w * PX);
+            let (top, bottom) = data.split_at_mut(b);
+            top[a..a + w * PX].swap_with_slice(&mut bottom[..w * PX]);
+        }
+    };
+    let mut data = data;
+    if !(1..=8).contains(&orientation) {
+        return (data, width, height); // 越界值防御性恒等（解析侧已过滤）
+    }
+    match orientation {
+        1 => return (data, width, height),
+        2 => flip_h(&mut data),
+        3 => {
+            flip_h(&mut data);
+            flip_v(&mut data);
+        }
+        4 => flip_v(&mut data),
+        _ => {} // 5-8 转置族，落入下方循环
+    }
+    if matches!(orientation, 2..=4) {
+        return (data, width, height);
+    }
+    // 转置族（5/6/7/8）：目标 (列 x, 行 y) 从源按方向公式取像素，宽高互换。
+    let (w2, h2) = (h, w);
+    let mut dst = vec![0u8; w2 * h2 * PX];
+    for y in 0..h2 {
+        for x in 0..w2 {
+            let src = match orientation {
+                5 => x * w + y,                     // 主对角转置：dst(x,y) = src(y,x)
+                6 => (h - 1 - x) * w + y,           // 顺时针 90°：dst(x,y) = src(h-1-x, y)
+                7 => (h - 1 - x) * w + (w - 1 - y), // 反对角：dst(x,y) = src(h-1-x, w-1-y)
+                8 => x * w + (w - 1 - y),           // 逆时针 90°：dst(x,y) = src(x, w-1-y)
+                _ => y * w + x,                     // 不可达（上方已分流），恒等兜底
+            };
+            let d = (y * w2 + x) * PX;
+            dst[d..d + PX].copy_from_slice(&data[src * PX..src * PX + PX]);
+        }
+    }
+    (dst, w2 as u32, h2 as u32)
 }
 
 /// 解码 WebP 字节为 `ImageData`（RGBA）。
@@ -1486,6 +1891,89 @@ pub fn decode_webp_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         out
     };
     ImageData::from_rgba(rgba, width, height)
+}
+
+/// s307：WebP 多帧解码（animated WebP 帧迭代 + 时序时间线）。
+///
+/// 静态 WebP：委托 [`decode_webp_bytes`](首帧/唯帧，行为不变）。
+/// animated WebP（VP8X）：`image-webp` `read_frame` 顺序迭代——每帧返回全画布
+/// 合成 RGBA（dispose + alpha blending 由解码器内部完成）与帧时长（毫秒）。
+/// 首帧之后的解码错误降级为「保留已解帧」（部分动画优于失败，与 GIF 臂同纪律）。
+/// https://developers.google.com/speed/webp/docs/riff_container#animation
+pub fn decode_webp_animation_bytes(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
+    use std::io::Cursor;
+    let mut decoder = image_webp::WebPDecoder::new(Cursor::new(bytes)).map_err(|e| format!("WebP 解码失败: {e}"))?;
+    if !decoder.is_animated() {
+        // 静态：走既有单帧路径（时间线 None，缓存侧零行为面外移）。
+        return decode_webp_bytes(bytes).map(|img| (img, None));
+    }
+    let (width, height) = decoder.dimensions();
+    let has_alpha = decoder.has_alpha();
+    let buf_size = decoder
+        .output_buffer_size()
+        .ok_or_else(|| "WebP 无输出缓冲区大小".to_string())?;
+    let mut raw = vec![0u8; buf_size];
+    let mut frames: Vec<ImageData> = Vec::new();
+    let mut start_ms: Vec<f64> = Vec::new();
+    let mut elapsed_ms = 0.0f64;
+    // s307：帧数上限（与 GIF 臂同款病态内存防线）。
+    const WEBP_FRAME_CAP: usize = 4096;
+    loop {
+        if frames.len() >= WEBP_FRAME_CAP {
+            break;
+        }
+        let duration_ms = match decoder.read_frame(&mut raw) {
+            Ok(d) => d,
+            Err(image_webp::DecodingError::NoMoreFrames) => break,
+            Err(e) => {
+                if frames.is_empty() {
+                    return Err(format!("WebP 读取失败: {e}"));
+                }
+                break;
+            }
+        };
+        let rgba = if has_alpha {
+            raw.clone()
+        } else {
+            let mut out = Vec::with_capacity(raw.len() / 3 * 4);
+            for px in raw.as_chunks::<3>().0 {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        };
+        frames.push(ImageData::from_rgba(rgba, width, height).map_err(|e| format!("WebP frame compose: {e}"))?);
+        start_ms.push(elapsed_ms);
+        // 帧时长 0 按 100ms 钳（GIF 臂同款浏览器节奏实践；防零时长帧时间线塌缩）。
+        elapsed_ms += if duration_ms < 1 { 100.0 } else { duration_ms as f64 };
+    }
+    if frames.is_empty() {
+        return Err("WebP 无帧".into());
+    }
+    let first = frames[0].clone();
+    let anim = if frames.len() >= 2 {
+        Some(AnimationData {
+            frames,
+            start_ms,
+            total_ms: elapsed_ms,
+            start: Instant::now(),
+            active: 0,
+        })
+    } else {
+        None
+    };
+    Ok((first, anim))
+}
+
+/// s307：动画感知解码分派——[`decode_image_bytes`] 的 `(首帧, Option<动画>)`
+/// 扩展面。PNG/JPEG/SVG 恒 `(img, None)`；GIF/animated WebP 解全部帧。
+pub fn decode_image_animation(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        decode_gif_animation_bytes(bytes)
+    } else if is_webp_magic(bytes) {
+        decode_webp_animation_bytes(bytes)
+    } else {
+        decode_image_bytes(bytes).map(|img| (img, None))
+    }
 }
 
 /// 把 `jpeg-decoder` 输出的像素（RGB24/L8/L16/CMYK32）转换为 RGBA。
@@ -1561,10 +2049,25 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
 }
 
 /// R34xx（drawing-images 目录）：GIF 首帧解码（2d.drawImage.animated.gif 的
-/// drawImage 画首帧——anim-gr.gif 首帧绿）。GIF89a：逻辑屏幕 + 全局色表 +
-/// 首个图像描述符 + LZW 压缩数据（多帧忽略——静态首帧）。
+/// drawImage 画首帧——anim-gr.gif 首帧绿）。委托 [`decode_gif_animation_bytes`]
+/// 取帧 0（s307 起多帧解码，首帧语义不变）。
 /// https://www.w3.org/Graphics/GIF/spec-gif89a.txt
 fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    decode_gif_animation_bytes(bytes).map(|(first, _)| first)
+}
+
+/// s307：GIF 多帧解码（帧合成快照 + GCE 时序时间线）。GIF89a：逻辑屏幕 +
+/// 全局/局部色表 + 图像描述符 + LZW 压缩数据；每帧各有 GCE（透明色/延迟/处置）。
+/// 首帧解码路径与旧单帧实现逐字节同构（全零画布起、透明索引写 alpha 0、
+/// palette 越界跳过）；首帧之后的结构错误降级为「保留已解帧」（部分动画优于失败）。
+/// https://www.w3.org/Graphics/GIF/spec-gif89a.txt
+/// FIXME: 帧间处置码 3（restore to previous）按 1（leave in place）降级；
+/// FIXME: 交错存储（image descriptor packed bit6）按顺序解码，像素错位——WPT
+///       语料暂未驱动，遇到时按 spec §22 行序重排；
+/// FIXME: NETSCAPE 循环计数忽略（恒无限循环回绕——浏览器无计数扩展默认语义）；
+/// FIXME: 延迟钳制采用浏览器实践（<10ms 按 100ms，
+///       https://wiki.whatwg.org/wiki/GIF_specs#Delay_times）。
+fn decode_gif_animation_bytes(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
     if bytes.len() < 13 {
         return Err("GIF too short".into());
     }
@@ -1592,25 +2095,157 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         }
         pos += gct_size * 3;
     }
-    // 扫描块到首个图像描述符（0x2C）。Graphic Control Extension（0x21 0xF9）携带
-    // 首帧的透明色标志（packed bit0）与透明色索引（第 5 字节）——spec gif89a §23；
-    // 多帧时每帧各有 GCE，静态首帧解码取图像描述符前最后一个 GCE。
+    // 帧循环：扫描块流，每个图像描述符（0x2C）合成一帧快照；其前最后一个 GCE
+    //（0x21 0xF9）携带本帧的透明色/延迟/处置——spec gif89a §23。
+    let mut canvas = vec![0u8; (w * h * 4) as usize];
+    let mut frames: Vec<ImageData> = Vec::new();
+    let mut start_ms: Vec<f64> = Vec::new();
+    let mut elapsed_ms = 0.0f64;
+    // s307：帧数上限——多帧全量快照的病态内存防线（单帧 4K 张 4096×4096 画布
+    // 也不越 64G；正常动画 GIF 远低于此）。
+    const GIF_FRAME_CAP: usize = 4096;
     let mut transparent: Option<u8> = None;
+    let mut delay_ms = 100.0f64;
+    let mut disposal = 0u8;
     loop {
-        if pos >= bytes.len() {
-            return Err("GIF no image descriptor".into());
+        if frames.len() >= GIF_FRAME_CAP {
+            break;
         }
-        match bytes[pos] {
-            0x2C => break,
+        let Some(&block) = bytes.get(pos) else {
+            if frames.is_empty() {
+                return Err("GIF no image descriptor".into());
+            }
+            break;
+        };
+        match block {
+            0x3B => break, // trailer
+            0x2C => {
+                // 图像描述符
+                if bytes.len() < pos + 10 {
+                    if frames.is_empty() {
+                        return Err("GIF truncated image descriptor".into());
+                    }
+                    break;
+                }
+                let left = u16::from_le_bytes([bytes[pos + 1], bytes[pos + 2]]) as u32;
+                let top = u16::from_le_bytes([bytes[pos + 3], bytes[pos + 4]]) as u32;
+                let iw = u16::from_le_bytes([bytes[pos + 5], bytes[pos + 6]]) as u32;
+                let ih = u16::from_le_bytes([bytes[pos + 7], bytes[pos + 8]]) as u32;
+                let iflags = bytes[pos + 9];
+                pos += 10;
+                // 局部色表
+                let mut lct: Vec<[u8; 3]> = Vec::new();
+                if iflags & 0x80 != 0 {
+                    let lct_size = 2usize.pow((iflags & 0x07) as u32 + 1);
+                    if bytes.len() < pos + lct_size * 3 {
+                        if frames.is_empty() {
+                            return Err("GIF truncated LCT".into());
+                        }
+                        break;
+                    }
+                    for i in 0..lct_size {
+                        lct.push([bytes[pos + i * 3], bytes[pos + i * 3 + 1], bytes[pos + i * 3 + 2]]);
+                    }
+                    pos += lct_size * 3;
+                }
+                let use_lct = iflags & 0x80 != 0;
+                if pos >= bytes.len() {
+                    if frames.is_empty() {
+                        return Err("GIF truncated LZW min code".into());
+                    }
+                    break;
+                }
+                let min_code = bytes[pos] as usize;
+                pos += 1;
+                if min_code > 8 {
+                    return Err("GIF invalid LZW min code".into());
+                }
+                // LZW 数据子块
+                let mut lzw: Vec<u8> = Vec::new();
+                let mut truncated = false;
+                while pos < bytes.len() && bytes[pos] != 0 {
+                    let len = bytes[pos] as usize;
+                    if pos + 1 + len > bytes.len() {
+                        truncated = true;
+                        break;
+                    }
+                    lzw.extend_from_slice(&bytes[pos + 1..pos + 1 + len]);
+                    pos += 1 + len;
+                }
+                if truncated {
+                    if frames.is_empty() {
+                        return Err("GIF truncated LZW data".into());
+                    }
+                    break;
+                }
+                if pos < bytes.len() {
+                    pos += 1; // 子块 0 终止
+                }
+                let indices = match gif_lzw_decode(&lzw, min_code) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        if frames.is_empty() {
+                            return Err(e);
+                        }
+                        break;
+                    }
+                };
+                if indices.len() < (iw * ih) as usize {
+                    if frames.is_empty() {
+                        return Err("GIF LZW output too short".into());
+                    }
+                    break;
+                }
+                // 上采样到画布尺寸（左/上偏移 + GCE 透明色索引）。
+                let palette = if use_lct { &lct } else { &gct };
+                for y in 0..ih {
+                    for x in 0..iw {
+                        let si = (y * iw + x) as usize;
+                        let idx = indices[si] as usize;
+                        let (dx, dy) = (left + x, top + y);
+                        if dx >= w || dy >= h {
+                            continue;
+                        }
+                        let di = ((dy * w + dx) * 4) as usize;
+                        if Some(idx as u8) == transparent {
+                            canvas[di + 3] = 0;
+                        } else if let Some(c) = palette.get(idx) {
+                            canvas[di] = c[0];
+                            canvas[di + 1] = c[1];
+                            canvas[di + 2] = c[2];
+                            canvas[di + 3] = 255;
+                        }
+                    }
+                }
+                frames.push(ImageData::from_rgba(canvas.clone(), w, h).map_err(|e| format!("GIF frame compose: {e}"))?);
+                start_ms.push(elapsed_ms);
+                elapsed_ms += delay_ms;
+                // 帧后处置（影响下一帧绘制起点）：0/1 leave in place；2 = 帧矩形
+                // 清透明（restore to background，浏览器以透明实现背景）；3 = leave
+                //（FIXME 已标降级）。
+                if disposal == 2 {
+                    for y in top..(top + ih).min(h) {
+                        for x in left..(left + iw).min(w) {
+                            let di = ((y * w + x) * 4) as usize;
+                            canvas[di..di + 4].fill(0);
+                        }
+                    }
+                }
+            }
             0x21 => {
                 // Graphic Control Extension：packed bit0 = 透明色标志，索引在
-                // [size, packed, delay lo, delay hi, trans idx] 的第 5 字节。
+                // [size, packed, delay lo, delay hi, trans idx] 的第 5 字节；
+                // packed bit2-4 = 处置码。
                 if bytes.get(pos + 1) == Some(&0xF9) && bytes.get(pos + 2).copied().unwrap_or(0) >= 4 {
-                    transparent = if bytes[pos + 3] & 0x01 != 0 {
+                    let packed = bytes[pos + 3];
+                    transparent = if packed & 0x01 != 0 {
                         bytes.get(pos + 6).copied()
                     } else {
                         None
                     };
+                    disposal = (packed >> 2) & 0x07;
+                    let delay_cs = u16::from_le_bytes([bytes[pos + 4], bytes[pos + 5]]) as f64;
+                    delay_ms = if delay_cs < 1.0 { 100.0 } else { delay_cs * 10.0 };
                 }
                 // 扩展块：跳过标签 + 子块
                 pos += 2;
@@ -1619,90 +2254,30 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
                 }
                 pos += 1; // 0 终止
             }
-            0x3B => return Err("GIF no image".into()),
-            _ => return Err("GIF unexpected block".into()),
-        }
-    }
-    // 图像描述符
-    if bytes.len() < pos + 10 {
-        return Err("GIF truncated image descriptor".into());
-    }
-    let left = u16::from_le_bytes([bytes[pos + 1], bytes[pos + 2]]) as u32;
-    let top = u16::from_le_bytes([bytes[pos + 3], bytes[pos + 4]]) as u32;
-    let iw = u16::from_le_bytes([bytes[pos + 5], bytes[pos + 6]]) as u32;
-    let ih = u16::from_le_bytes([bytes[pos + 7], bytes[pos + 8]]) as u32;
-    let iflags = bytes[pos + 9];
-    pos += 10;
-    // 局部色表
-    let mut lct: Vec<[u8; 3]> = Vec::new();
-    if iflags & 0x80 != 0 {
-        let lct_size = 2usize.pow((iflags & 0x07) as u32 + 1);
-        if bytes.len() < pos + lct_size * 3 {
-            return Err("GIF truncated LCT".into());
-        }
-        for i in 0..lct_size {
-            lct.push([bytes[pos + i * 3], bytes[pos + i * 3 + 1], bytes[pos + i * 3 + 2]]);
-        }
-        pos += lct_size * 3;
-    }
-    let use_lct = iflags & 0x80 != 0;
-    if pos >= bytes.len() {
-        return Err("GIF truncated LZW min code".into());
-    }
-    let min_code = bytes[pos] as usize;
-    pos += 1;
-    if min_code > 8 {
-        return Err("GIF invalid LZW min code".into());
-    }
-    // LZW 数据子块
-    let mut lzw: Vec<u8> = Vec::new();
-    while pos < bytes.len() && bytes[pos] != 0 {
-        let len = bytes[pos] as usize;
-        if pos + 1 + len > bytes.len() {
-            return Err("GIF truncated LZW data".into());
-        }
-        lzw.extend_from_slice(&bytes[pos + 1..pos + 1 + len]);
-        pos += 1 + len;
-    }
-    let indices = gif_lzw_decode(&lzw, min_code)?;
-    if indices.len() < (iw * ih) as usize {
-        return Err("GIF LZW output too short".into());
-    }
-    // 上采样到画布尺寸（左/上偏移 + GCE 透明色索引）。
-    // FIXME: 交错存储（image descriptor packed bit6, iflags & 0x40）按顺序解码，
-    // 交错 GIF 像素错位——WPT 语料暂未驱动，遇到时按 spec §22 行序重排。
-    let mut data = vec![0u8; (w * h * 4) as usize];
-    let palette = if use_lct { &lct } else { &gct };
-    for y in 0..ih {
-        for x in 0..iw {
-            let si = (y * iw + x) as usize;
-            let idx = indices[si] as usize;
-            let (dx, dy) = (left + x, top + y);
-            if dx >= w || dy >= h {
-                continue;
-            }
-            let di = ((dy * w + dx) * 4) as usize;
-            if Some(idx as u8) == transparent {
-                data[di + 3] = 0;
-            } else if let Some(c) = palette.get(idx) {
-                data[di] = c[0];
-                data[di + 1] = c[1];
-                data[di + 2] = c[2];
-                data[di + 3] = 255;
+            _ => {
+                if frames.is_empty() {
+                    return Err("GIF unexpected block".into());
+                }
+                break;
             }
         }
     }
-    Ok(ImageData {
-        width: w,
-        height: h,
-        pixels: data,
-        content_hash: 0,
-        solid_color: None,
-        intrinsic_ratio: None,
-        no_ratio: None,
-        computed_intrinsic: None,
-        svg_source: None,
-    })
+    if frames.is_empty() {
+        return Err("GIF no image".into());
+    }
+    let first = frames[0].clone();
+    let anim = if frames.len() >= 2 {
+        Some(AnimationData {
+            frames,
+            start_ms,
+            total_ms: elapsed_ms,
+            start: Instant::now(),
+            active: 0,
+        })
+    } else {
+        None
+    };
+    Ok((first, anim))
 }
 
 /// GIF LZW 解码（spec gif89a LZW——clear/EOI 代码 + 变长码宽 + 字典增长）。
@@ -1825,6 +2400,73 @@ fn extract_svg_viewbox_dims(bytes: &[u8]) -> Option<(f32, f32)> {
     Some((vw, vh))
 }
 
+/// s292 Gap-0b：剥离根 svg 标签中负值的 width/height 属性（SVG 规范值校验：负值 = 非法
+/// 视同未指定；https://www.w3.org/TR/SVG2/types.html#presentation-attribute-value）。
+/// usvg 对负维拒绝整文档解析 → decode Err → fetch 侧丢弃 → 三表全空，布局/naturalDims
+/// 双面失真（naturalWidth 语料负维 4 plain 面：viewBox 比 600×200 应 RatioOnly(3)，
+/// natural 300×100 + 渲染 720×240）。无负维属性原样返回（零拷贝）。
+fn strip_negative_svg_dims(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    let Ok(s) = std::str::from_utf8(bytes) else {
+        return std::borrow::Cow::Borrowed(bytes);
+    };
+    let Some(svg_start) = s.find("<svg") else {
+        return std::borrow::Cow::Borrowed(bytes);
+    };
+    let tag_start = svg_start + 4;
+    let Some(tag_end_rel) = s[tag_start..].find('>') else {
+        return std::borrow::Cow::Borrowed(bytes);
+    };
+    let tag = &s[tag_start..tag_start + tag_end_rel];
+    // 引号感知切 attr（viewBox 值含空格，不得裸 split）
+    let mut attrs: Vec<&str> = Vec::new();
+    let mut cur_start = 0usize;
+    let mut in_quote: Option<char> = None;
+    for (i, c) in tag.char_indices() {
+        if let Some(q) = in_quote {
+            if c == q {
+                in_quote = None;
+            }
+        } else if c == '\'' || c == '"' {
+            in_quote = Some(c);
+        } else if c.is_whitespace() {
+            if cur_start < i {
+                attrs.push(&tag[cur_start..i]);
+            }
+            cur_start = i + 1;
+        }
+    }
+    if cur_start < tag.len() {
+        attrs.push(&tag[cur_start..]);
+    }
+    let mut changed = false;
+    let mut kept: Vec<&str> = Vec::with_capacity(attrs.len());
+    for attr in attrs {
+        let name_and_val: Vec<&str> = attr.splitn(2, '=').collect();
+        let neg_attr = name_and_val.len() == 2
+            && (name_and_val[0].eq_ignore_ascii_case("width") || name_and_val[0].eq_ignore_ascii_case("height"))
+            && {
+                let v = name_and_val[1].trim_matches('\'').trim_matches('"').trim();
+                v.starts_with('-')
+            };
+        if neg_attr {
+            changed = true;
+        } else {
+            kept.push(attr);
+        }
+    }
+    if !changed {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    let mut out = String::with_capacity(s.len());
+    out.push_str(&s[..tag_start]);
+    if !kept.is_empty() {
+        out.push(' ');
+        out.push_str(&kept.join(" "));
+    }
+    out.push_str(&s[tag_start + tag_end_rel..]);
+    std::borrow::Cow::Owned(out.into_bytes())
+}
+
 /// 解析 `data:` URI 为原始字节。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
@@ -1908,6 +2550,11 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 ///（no-ratio）——usvg 对缺失维给出默认值（如缺 height 时 h=100），该默认值非真实固有
 /// 尺寸，布局须以 `no_ratio` 信号处理（不设 aspect_ratio，缺失维按 default object size 回退）。
 pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    // s292 Gap-0b：负维属性先剥（非法视同未指定）——后续 R3760 检测 / svg_intrinsic_kind
+    // 分类 / usvg 解析 / svg_source 存字节全链一致（分类对负维本就按缺失计：
+    // parse_abs_length_value 拒负，剥离前后语义同）。
+    let stripped_negative = strip_negative_svg_dims(bytes);
+    let bytes: &[u8] = &stripped_negative;
     // R3760：viewBox 含 0 维（`viewBox="0 0 8 0"` 等）的退化 SVG——css-images-4 §5.4.1
     //（default sizing algorithm）：固有宽度/高度为 0 的图像视为空。usvg 对缺失 width/
     // height 属性的此类 SVG 仍按默认 100×100 栅格化（内容 100%×100% 会被画出 lime 实心，
@@ -2111,7 +2758,14 @@ fn svg_intrinsic_kind(bytes: &[u8]) -> SvgIntrinsicKind {
         if nums.len() == 4
             && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
             && vh > 0.0
+            && vw > 0.0
         {
+            // s292 Gap-0（naturalWidth 语料第三组）：vw=0 与 vh=0 同判——零维 viewBox
+            // 无有效比（旧只护 vh，vw=0 时 ratio = 0/vh = 0 伪有效 → ComputedIntrinsic
+            // w/ratio = w/0 = +∞ 或 RatioOnly(0)，no_ratio 不落表，布局/naturalDims
+            // 双面失真）。css-images-4 §5.4.1：零固有维图像视为无固有——落 NoRatio
+            //（attr 维保留），R3760 早退臂据此设 no_ratio。R3760 判词「0 维 viewBox
+            // 无有效 ratio → NoRatio」的对跖半边。
             let ratio = vw / vh;
             // 一维 abs + 另一维**缺失或百分比** + viewBox → 计算真实固有尺寸（css-images-4
             // default sizing：百分比属性维不贡献固有尺寸，仅 abs 维 + viewBox 比推导另一维）。
@@ -2284,6 +2938,198 @@ mod decode_tests {
         // JPEG 魔数 + 无效正文 → 库解码失败
         let result = decode_jpeg_bytes(&[0xFF, 0xD8, 0xFF, 0x00, 0x00]);
         assert!(result.is_err());
+    }
+
+    /// 构造带 EXIF Orientation 的 APP1 段（FF E1 + 段长 + "Exif\0\0" + TIFF），
+    /// 字节序与标签类型可配——解析器两字节序 × SHORT/LONG 值域测试基面。
+    fn exif_app1_segment(orientation: u16, big_endian: bool, tag_type: u16) -> Vec<u8> {
+        let u16b = |v: u16| {
+            if big_endian {
+                v.to_be_bytes().to_vec()
+            } else {
+                v.to_le_bytes().to_vec()
+            }
+        };
+        let u32b = |v: u32| {
+            if big_endian {
+                v.to_be_bytes().to_vec()
+            } else {
+                v.to_le_bytes().to_vec()
+            }
+        };
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(if big_endian { b"MM" } else { b"II" });
+        tiff.extend_from_slice(&u16b(42));
+        tiff.extend_from_slice(&u32b(8)); // IFD0 偏移
+        tiff.extend_from_slice(&u16b(1)); // 条目数
+        tiff.extend_from_slice(&u16b(0x0112)); // Orientation tag
+        tiff.extend_from_slice(&u16b(tag_type));
+        tiff.extend_from_slice(&u32b(1)); // count
+        let mut value = [0u8; 4];
+        let v = if tag_type == 3 {
+            u16b(orientation)
+        } else {
+            u32b(orientation as u32)
+        };
+        value[..v.len()].copy_from_slice(&v);
+        tiff.extend_from_slice(&value);
+        tiff.extend_from_slice(&u32b(0)); // next IFD
+        let mut seg = vec![0xFF, 0xE1];
+        seg.extend_from_slice(&[0, 0]); // 段长占位（含自身 2 字节）
+        seg.extend_from_slice(b"Exif\0\0");
+        seg.extend_from_slice(&tiff);
+        // JPEG 段长恒大端（字节序只作用于 TIFF 载荷）
+        let len = (seg.len() - 2) as u16;
+        seg[2..4].copy_from_slice(&len.to_be_bytes());
+        seg
+    }
+
+    /// EXIF Orientation 解析：大/小端 × SHORT/LONG 全组合命中 tag 值；
+    /// SOI + APP1 + SOS 框架下头段扫描在 SOS 停止。
+    #[test]
+    fn jpeg_exif_orientation_parses_endianness_and_types() {
+        for &(big_endian, tag_type) in &[(true, 3u16), (false, 3), (true, 4), (false, 4)] {
+            let mut jpeg = vec![0xFF, 0xD8];
+            jpeg.extend_from_slice(&exif_app1_segment(6, big_endian, tag_type));
+            jpeg.extend_from_slice(&[0xFF, 0xDA]); // SOS 终止
+            assert_eq!(
+                jpeg_exif_orientation(&jpeg),
+                Some(6),
+                "endian={big_endian} type={tag_type}"
+            );
+        }
+    }
+
+    /// EXIF Orientation 无效面：无 EXIF（真实 fixture 只有 JFIF APP0）、
+    /// 「unknown」9 越界、字节序标记残损、段长越界截断——全部 None。
+    #[test]
+    fn jpeg_exif_orientation_invalid_cases() {
+        let green = include_bytes!("testdata/green_4x3.jpg");
+        assert_eq!(jpeg_exif_orientation(green), None);
+        let with_soi = |seg: &[u8]| {
+            let mut jpeg = vec![0xFF, 0xD8];
+            jpeg.extend_from_slice(seg);
+            jpeg
+        };
+        // 越界值（unknown 9）
+        assert_eq!(jpeg_exif_orientation(&with_soi(&exif_app1_segment(9, true, 3))), None);
+        // 字节序标记残损（TIFF 头首字节在 SOI+段头+Exif\0\0 之后）
+        let mut bad = with_soi(&exif_app1_segment(6, true, 3));
+        bad[12] = b'X';
+        assert_eq!(jpeg_exif_orientation(&bad), None);
+        // 段长声越实际字节（截断）
+        let seg = exif_app1_segment(6, true, 3);
+        let truncated = with_soi(&seg[..seg.len() - 6]);
+        assert_eq!(jpeg_exif_orientation(&truncated), None);
+    }
+
+    /// 3×2 花样位图：红通道编码 A..F（10..60），其余通道固定——8 方向网格基面。
+    fn pattern_3x2() -> (Vec<u8>, u32, u32) {
+        (
+            [
+                10u8, 0, 0, 255, // A
+                20, 0, 0, 255, // B
+                30, 0, 0, 255, // C
+                40, 0, 0, 255, // D
+                50, 0, 0, 255, // E
+                60, 0, 0, 255, // F
+            ]
+            .to_vec(),
+            3,
+            2,
+        )
+    }
+
+    /// EXIF 全 8 方向映射：手算期望网格（源 A B C / D E F 行主序）逐方向断言
+    /// 维度与像素序；越界值（0 / 9）防御性恒等。映射与 image crate
+    /// `apply_orientation` / libvips 同表。
+    #[test]
+    fn apply_orientation_matches_exif_mapping() {
+        let (data, w, h) = pattern_3x2();
+        let cases: [(u16, u32, u32, &[u8]); 8] = [
+            (1, 3, 2, &[10, 20, 30, 40, 50, 60]),
+            (2, 3, 2, &[30, 20, 10, 60, 50, 40]), // C B A / F E D
+            (3, 3, 2, &[60, 50, 40, 30, 20, 10]), // F E D / C B A
+            (4, 3, 2, &[40, 50, 60, 10, 20, 30]), // D E F / A B C
+            (5, 2, 3, &[10, 40, 20, 50, 30, 60]), // A D / B E / C F
+            (6, 2, 3, &[40, 10, 50, 20, 60, 30]), // D A / E B / F C
+            (7, 2, 3, &[60, 30, 50, 20, 40, 10]), // F C / E B / D A
+            (8, 2, 3, &[30, 60, 20, 50, 10, 40]), // C F / B E / A D
+        ];
+        for &(orientation, ew, eh, expected) in &cases {
+            let (out, ow, oh) = apply_orientation(data.clone(), w, h, orientation);
+            assert_eq!((ow, oh), (ew, eh), "orientation {orientation} dims");
+            let got: Vec<u8> = (0..oh * ow).map(|i| out[i as usize * 4]).collect();
+            assert_eq!(got, expected, "orientation {orientation} pixels");
+        }
+        for o in [0u16, 9] {
+            let (out, ow, oh) = apply_orientation(data.clone(), w, h, o);
+            assert_eq!((ow, oh), (w, h), "orientation {o} identity dims");
+            assert_eq!(out, data, "orientation {o} identity pixels");
+        }
+    }
+
+    /// EXIF Orientation=6 拼接进真实 4×3 纯绿 fixture：解码输出换轴 3×4，
+    /// 像素总量守恒；Orientation=1 维与像素逐字节同无 EXIF 解码。
+    #[test]
+    fn decode_jpeg_bytes_applies_exif_orientation() {
+        let green = include_bytes!("testdata/green_4x3.jpg");
+        let mut oriented = green[..2].to_vec(); // SOI
+        oriented.extend_from_slice(&exif_app1_segment(6, true, 3));
+        oriented.extend_from_slice(&green[2..]);
+        let img = decode_jpeg_bytes(&oriented).expect("decode should succeed");
+        assert_eq!((img.width, img.height), (3, 4));
+        assert_eq!(img.pixels.len(), 3 * 4 * 4);
+        // JPEG 有损：绿色主导断言（同 decode_jpeg_bytes_green_4x3 口径）
+        let px = img.get_pixel(1, 2);
+        assert!(px[1] > 200, "green channel should be high, got {}", px[1]);
+        let mut identity = green[..2].to_vec();
+        identity.extend_from_slice(&exif_app1_segment(1, true, 3));
+        identity.extend_from_slice(&green[2..]);
+        let plain = decode_jpeg_bytes(green).unwrap();
+        let same = decode_jpeg_bytes(&identity).unwrap();
+        assert_eq!((same.width, same.height), (plain.width, plain.height));
+        assert_eq!(same.pixels, plain.pixels);
+    }
+
+    /// s300 PNG eXIf Orientation 四 fixture：早块 eXIf（IDAT 前）生效换轴 1×2、
+    /// 晚块 eXIf（IDAT 后）按规范忽略保持 2×1、ImageMagick「Raw profile type
+    /// exif」zTXt/tEXt 双档案源生效。像素均为 红|蓝 2×1（非对称可观测重排），
+    /// ori=6 顺时针 90° → 1×2 上红下蓝。
+    #[test]
+    fn decode_png_bytes_applies_exif_orientation() {
+        let early = decode_png_bytes(include_bytes!("testdata/exif_early_2x1.png")).unwrap();
+        assert_eq!((early.width, early.height), (1, 2), "early eXIf swapped dims");
+        assert_eq!(early.get_pixel(0, 0), [255, 0, 0, 255], "early eXIf top red");
+        assert_eq!(early.get_pixel(0, 1), [0, 0, 255, 255], "early eXIf bottom blue");
+
+        let late = decode_png_bytes(include_bytes!("testdata/exif_late_2x1.png")).unwrap();
+        assert_eq!((late.width, late.height), (2, 1), "late eXIf ignored dims");
+        assert_eq!(late.get_pixel(0, 0), [255, 0, 0, 255], "late eXIf left red");
+        assert_eq!(late.get_pixel(1, 0), [0, 0, 255, 255], "late eXIf right blue");
+
+        let raw_profile_cases: [(&str, &[u8]); 2] = [
+            ("zTXt", include_bytes!("testdata/exif_ztxt_2x1.png")),
+            ("tEXt", include_bytes!("testdata/exif_text_2x1.png")),
+        ];
+        for (kind, bytes) in raw_profile_cases {
+            let img = decode_png_bytes(bytes).unwrap();
+            assert_eq!((img.width, img.height), (1, 2), "{kind} raw profile swapped dims");
+            assert_eq!(img.get_pixel(0, 0), [255, 0, 0, 255], "{kind} top red");
+            assert_eq!(img.get_pixel(0, 1), [0, 0, 255, 255], "{kind} bottom blue");
+        }
+    }
+
+    /// s300 `png_orientation` 元数据探测面：早块双源 Some(6)、晚块 None、
+    /// 无 EXIF 的普通 PNG None。
+    #[test]
+    fn png_orientation_probes_early_chunks_only() {
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_early_2x1.png")), Some(6));
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_ztxt_2x1.png")), Some(6));
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_text_2x1.png")), Some(6));
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_late_2x1.png")), None);
+        let red = red_2x2_png();
+        assert_eq!(png_orientation(&red), None);
     }
 
     /// R1793：解码真实 4×3 纯绿 WebP fixture（lossless，RGB → 补 alpha=255）。
@@ -2471,6 +3317,57 @@ mod decode_tests {
         let (bytes4, bg4) = promote_svg_root_background(src4.as_bytes());
         assert_eq!(bg4, None);
         assert_eq!(bytes4, src4.as_bytes());
+    }
+
+    /// s322：`<style>` 内 `:root` 规则的根背景提升（svg-img-with-external-stylesheet
+    /// 驱动案）。级联序 inline style > 样式表规则 > presentation attr；样式表来源不改写
+    /// 源标签（usvg 本不读样式表），落败 presentation attr 删除；非 `:root` 选择器不提升。
+    #[test]
+    fn promote_svg_root_background_from_stylesheet() {
+        // 语料形态：内联 `<style>` 的 `:root` 规则（外部样式表 SVG-as-image 不加载）
+        let src = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 1"><style xmlns="http://www.w3.org/1999/xhtml">:root { background-color: green }</style></svg>"#;
+        let (bytes, bg) = promote_svg_root_background(src.as_bytes());
+        assert_eq!(bg, Some([0, 128, 0, 255]));
+        assert_eq!(bytes, src.as_bytes(), "stylesheet source leaves tag untouched");
+        // 提升后栅格化：letterbox 区（viewBox 5:1 → 100×100 视口的上下 40px）也被填充
+        let img = rasterize_svg_at(src.as_bytes(), 100, 100).expect("rasterize");
+        assert_eq!(
+            img.get_pixel(50, 5)[1],
+            128,
+            "top letterbox filled by promoted background"
+        );
+        assert_eq!(
+            img.get_pixel(50, 95)[1],
+            128,
+            "bottom letterbox filled by promoted background"
+        );
+
+        // 级联：inline style > 样式表规则
+        let src2 = r#"<svg viewBox="0 0 5 1" style="background-color: blue"><style>:root { background-color: green }</style></svg>"#;
+        let (_bytes2, bg2) = promote_svg_root_background(src2.as_bytes());
+        assert_eq!(bg2, Some([0, 0, 255, 255]));
+
+        // 级联：样式表规则 > presentation attr（落败 attr 删除，usvg 不再绘制）
+        let src3 =
+            r#"<svg viewBox="0 0 5 1" background-color="red"><style>:root { background-color: green }</style></svg>"#;
+        let (bytes3, bg3) = promote_svg_root_background(src3.as_bytes());
+        assert_eq!(bg3, Some([0, 128, 0, 255]));
+        let out3 = String::from_utf8(bytes3).unwrap();
+        assert!(
+            !out3.contains("background-color=\"red\""),
+            "losing presentation attr stripped: {out3}"
+        );
+
+        // 同体多规则：文档序后者胜
+        let src4 = r#"<svg viewBox="0 0 5 1"><style>:root { background-color: red } :root { background-color: green }</style></svg>"#;
+        let (_bytes4, bg4) = promote_svg_root_background(src4.as_bytes());
+        assert_eq!(bg4, Some([0, 128, 0, 255]));
+
+        // 非 `:root` 选择器：不提升
+        let src5 = r#"<svg viewBox="0 0 5 1"><style>rect { background-color: green }</style></svg>"#;
+        let (bytes5, bg5) = promote_svg_root_background(src5.as_bytes());
+        assert_eq!(bg5, None);
+        assert_eq!(bytes5, src5.as_bytes());
     }
 
     /// R3998：一维 abs attr + viewBox 的 SVG，usvg 栅格化 viewport 不施 viewBox 比
@@ -2863,6 +3760,54 @@ mod tests {
         assert!(img.pixels.iter().all(|&b| b == 0), "1x1 应全透明");
         assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
         assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// s292 Gap-0：vw=0 零维 viewBox + width attr（naturalWidth 语料「with natural
+    /// width, viewBox with 0 height」形）——1×1 透明 pixmap + NoRatio{Some(60),None}
+    /// 落表（旧 vw=0 伪有效 ratio → ComputedIntrinsic(60, ∞)，no_ratio 不落 → 布局
+    /// bogus pixmap 注入 1×150，几何臂面 P→F）。vh=0 对跖形（viewBox 0 0 10 0）R3760
+    /// 既有测试已护。
+    #[test]
+    fn s292_gap0_zero_viewbox_width_attr_no_ratio() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" viewBox=\"0 0 0 10\"></svg>";
+        let img = decode_image_bytes(bytes).expect("decode");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert_eq!(img.no_ratio_intrinsic(), Some((Some(60.0), None)));
+        assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// s292 Gap-0 对称守卫：vw=0 零维 viewBox 无 attr 维 → NoRatio{None,None}
+    ///（naturalWidth 语料「no natural dimensions, viewBox with 0 height」300×150 形；
+    /// 旧 RatioOnly(0) 伪比）。
+    #[test]
+    fn s292_gap0_zero_viewbox_attrless_no_ratio() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 0 10\"></svg>";
+        let img = decode_image_bytes(bytes).expect("decode");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
+        assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// s292 Gap-0b：负维属性（usvg 拒负 → 旧 decode Err 表空）剥后按未指定解——
+    /// viewBox 比保留（naturalWidth 语料负维 4 plain 面：natural 300×100 + 渲染
+    /// 720×240）。width=-5 单独存在 → RatioOnly(3)。
+    #[test]
+    fn s292_gap0b_negative_dims_stripped_ratio_only() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width='-5' viewBox='0 0 600 200'></svg>";
+        let img = decode_image_bytes(bytes).expect("负维剥离后应解码成功");
+        assert_eq!(img.intrinsic_ratio(), Some(3.0));
+        assert_eq!(img.no_ratio_intrinsic(), None);
+        assert_eq!(img.computed_intrinsic(), None);
+    }
+
+    /// s292 Gap-0b 对称：负百分比维（-400%/-10%）同剥——usvg 同拒 → RatioOnly(3)。
+    #[test]
+    fn s292_gap0b_negative_percent_dims_stripped() {
+        let bytes =
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width='-400%' height='-10%' viewBox='0 0 600 200'></svg>";
+        let img = decode_image_bytes(bytes).expect("负 % 维剥离后应解码成功");
+        assert_eq!(img.intrinsic_ratio(), Some(3.0));
+        assert_eq!(img.no_ratio_intrinsic(), None);
     }
 
     #[test]
@@ -3807,5 +4752,110 @@ mod r5125_filter_extents_tests {
     fn no_filter_returns_none() {
         let src = r#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="100"><rect width="50" height="100" fill="green"/></svg>"#;
         assert_eq!(svg_filter_extents(src.as_bytes(), 50, 100), None);
+    }
+}
+
+#[cfg(test)]
+mod s307_anim_frame_tests {
+    use super::*;
+
+    /// s307：GIF 多帧解码——帧序/时序/回绕（corpus animated.gif：红 100ms → 绿 10s）。
+    #[test]
+    fn test_decode_gif_animation_frames_s307() {
+        let (first, anim) = decode_gif_animation_bytes(include_bytes!("testdata/animated.gif")).expect("decode");
+        assert_eq!((first.width, first.height), (100, 100));
+        let px = |img: &ImageData, x: u32, y: u32| -> [u8; 4] {
+            let i = ((y * img.width + x) * 4) as usize;
+            [img.pixels[i], img.pixels[i + 1], img.pixels[i + 2], img.pixels[i + 3]]
+        };
+        // 首帧红（GCT idx 0 = 255,0,0），全画布不透明。
+        assert_eq!(px(&first, 0, 0), [255, 0, 0, 255]);
+        assert_eq!(px(&first, 99, 99), [255, 0, 0, 255]);
+        let anim = anim.expect("animated.gif 须产出动画数据");
+        assert_eq!(anim.frames.len(), 2);
+        assert_eq!(anim.start_ms, vec![0.0, 100.0]);
+        assert!((anim.total_ms - 10100.0).abs() < 1e-6, "total={}", anim.total_ms);
+        // 帧 1 绿（GCT idx 1 = 0,128,0）。
+        assert_eq!(px(&anim.frames[1], 0, 0), [0, 128, 0, 255]);
+        // 时间线：0ms→帧0；150ms→帧1；10100ms 回绕→帧0；100.5ms→帧1。
+        assert_eq!(anim.frame_index_at(0.0), 0);
+        assert_eq!(anim.frame_index_at(99.9), 0);
+        assert_eq!(anim.frame_index_at(150.0), 1);
+        assert_eq!(anim.frame_index_at(10100.0), 0);
+    }
+
+    /// s307：animated WebP 多帧解码——帧序/时序（corpus animated.webp：100ms+10000ms）。
+    #[test]
+    fn test_decode_webp_animation_frames_s307() {
+        let (first, anim) = decode_webp_animation_bytes(include_bytes!("testdata/animated.webp")).expect("decode");
+        assert_eq!((first.width, first.height), (100, 100));
+        let px = |img: &ImageData, x: u32, y: u32| -> [u8; 4] {
+            let i = ((y * img.width + x) * 4) as usize;
+            [img.pixels[i], img.pixels[i + 1], img.pixels[i + 2], img.pixels[i + 3]]
+        };
+        let anim = anim.expect("animated.webp 须产出动画数据");
+        assert_eq!(anim.frames.len(), 2);
+        assert_eq!(anim.start_ms, vec![0.0, 100.0]);
+        assert!((anim.total_ms - 10100.0).abs() < 1e-6, "total={}", anim.total_ms);
+        assert_eq!(px(&anim.frames[1], 0, 0)[1], 128, "帧 1 绿通道");
+    }
+
+    /// s307：静态 WebP/GIF 单帧——anim=None（缓存零行为面外移）。
+    #[test]
+    fn test_decode_static_no_anim_s307() {
+        let (_, anim) = decode_webp_animation_bytes(include_bytes!("testdata/green_4x3.webp")).expect("webp");
+        assert!(anim.is_none(), "静态 webp 不产出动画数据");
+    }
+
+    /// s307：ImageCache 动画条目推进——虚拟时钟注入换帧，未注入停帧 0。
+    #[test]
+    fn test_image_cache_anim_frame_advance_s307() {
+        let (first, anim) = decode_gif_animation_bytes(include_bytes!("testdata/animated.gif")).expect("decode");
+        let anim = anim.expect("anim");
+        let green_px = anim.frames[1].pixels.clone();
+        let green_hash = anim.frames[1].content_hash;
+        let mut cache = ImageCache::new(16, 16 * 1024 * 1024);
+        let key = ImageKey::new(42);
+        cache.insert_with_animation(key.clone(), first, anim);
+        // 未注入虚拟时钟：墙钟≈0 → 帧离线停 0（engine 直连路径确定性语义）。
+        // （条目 start = 解码时刻，测试内亚毫秒级推进不会越 100ms 首帧边界。）
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(img.pixels[0], 255, "帧 0 红");
+        cache.release(&key);
+        // 注入虚拟时钟 150ms → 活跃帧 1（绿）。
+        let _guard = set_anim_virtual_elapsed(150.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(&img.pixels[..8], &green_px[..8], "帧 1 绿");
+        assert_eq!(img.content_hash, green_hash, "hash 随帧换新");
+        cache.release(&key);
+        drop(_guard);
+        // 回绕：10100ms → 帧 0（红）。
+        let _guard = set_anim_virtual_elapsed(10100.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(img.pixels[0], 255, "回绕帧 0 红");
+        cache.release(&key);
+    }
+
+    /// s310：快照条目对动画条目固定首帧——get() 已推进换写 data 后，
+    /// snapshot_entries 仍须返回 frames[0]（canvas G5 drawImage 首帧契约）。
+    #[test]
+    fn test_snapshot_entries_pins_first_frame_s310() {
+        let (first, anim) = decode_gif_animation_bytes(include_bytes!("testdata/animated.gif")).expect("decode");
+        let anim = anim.expect("anim");
+        let first_px = anim.frames[0].pixels.clone();
+        let green_px = anim.frames[1].pixels.clone();
+        let mut cache = ImageCache::new(16, 16 * 1024 * 1024);
+        let key = ImageKey::new(310);
+        cache.insert_with_animation(key.clone(), first, anim);
+        // 推进到帧 1（绿）——entry.data 已被换写。
+        let _guard = set_anim_virtual_elapsed(150.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(&img.pixels[..8], &green_px[..8], "前置：get 已推进到帧 1");
+        cache.release(&key);
+        drop(_guard);
+        // 快照仍固定首帧（红）。
+        let snap = cache.snapshot_entries();
+        let snap_px = snap.get(&310).expect("快照含键").pixels.clone();
+        assert_eq!(&snap_px[..8], &first_px[..8], "快照动画条目应固定首帧");
     }
 }

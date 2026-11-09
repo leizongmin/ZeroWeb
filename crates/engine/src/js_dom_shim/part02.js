@@ -4130,17 +4130,31 @@
       // 新增随后（静态页与原行为逐项一致；动态页 form 子树序即树序）。
       try {
         var fields = [];
+        var fieldsSrc = [];
         var _fdSeen = {};
-        var _fdPush = function (el) {
+        var _fdPush = function (el, fromFormSubtree) {
           if (!el) return;
           var k = null;
           try { k = (typeof _elKeyOf === 'function') ? _elKeyOf(el) : null; } catch (_eFdk) {}
           if (k == null) {
             try { k = el.__zwHandle ? ('@' + el.__zwHandle) : (el.__zwSelector || null); } catch (_eFdk2) {}
           }
-          if (k != null && _fdSeen[k]) return;
-          if (k != null) _fdSeen[k] = 1;
+          // net-api M3（七）：键碰撞时 form 子树源**顶替** doc 级占位——同 turn
+          // 解析物料的 sel-proxy 身份是 tag 级模糊 selector，doc 级逗号列表按文档
+          // 首个同名元素解析（probe：docQList=1 落在他 form 留存 input 上）与
+          // 子树源我方字段同键，先到先得的去重会吞掉结构正确者。顶替保留原位
+          //（树序不变——静态页双源同元素顶替无害；s123 序约定不变）。
+          if (k != null && _fdSeen[k] != null) {
+            var _fdIdx = _fdSeen[k];
+            if (fromFormSubtree && fieldsSrc[_fdIdx] !== true) {
+              fields[_fdIdx] = el;
+              fieldsSrc[_fdIdx] = true;
+            }
+            return;
+          }
+          if (k != null) _fdSeen[k] = fields.length;
           fields.push(el);
+          fieldsSrc.push(!!fromFormSubtree);
         };
         try {
           var _fdDocQ = (typeof document !== 'undefined' && document.querySelectorAll)
@@ -4150,7 +4164,7 @@
         } catch (_eFdd) {}
         try {
           var _fdFormQ = form.querySelectorAll('input, select, textarea, button');
-          for (var _fdq = 0; _fdq < _fdFormQ.length; _fdq++) _fdPush(_fdFormQ[_fdq]);
+          for (var _fdq = 0; _fdq < _fdFormQ.length; _fdq++) _fdPush(_fdFormQ[_fdq], true);
         } catch (_eFdf) {}
         var subKey = null;
         if (submitter != null && typeof _elKey === 'function') {
@@ -4159,16 +4173,27 @@
         for (var i = 0; i < fields.length; i++) {
           var f = fields[i];
           // form owner 判定：form= 属性 → getElementById；否则 closest('form')。
-          var owner = null;
-          try {
-            var formAttr = f.getAttribute ? f.getAttribute('form') : null;
-            if (formAttr) {
-              owner = (typeof document !== 'undefined' && document.getElementById)
-                ? document.getElementById(formAttr) : null;
-            } else if (typeof f.closest === 'function') {
-              owner = f.closest('form');
-            }
-          } catch (_eOwn2) {}
+          // net-api M3（七）：form 子树源字段（s123 ②源）免 closest owner 复验——
+          // 结构性属主由子树查询本身成立（spec 枚举 = form 祖先链后代；HTML 无嵌套
+          // form）。同 turn 解析产物经查询视图物化的 sel-proxy 身份是 tag 级模糊
+          // selector，s81 closest 祖先走对无 id selector 恒 null（`_zwSelIdConstraint`
+          // 无 #/[ 预门 return null → host closest 按文档首个同名元素解析）——复验
+          // 在此形态恒假阳性丢条目（WPT xhr formdata FormDataEvent：populateForm 后
+          // 同 turn 构造全字段被丢）。①源（document 级）owner 判定保留（form= 属性
+          // 站外关联的排除语义不变）。
+          var fromSubtree = fieldsSrc[i] === true;
+          var owner = fromSubtree ? form : null;
+          if (!fromSubtree) {
+            try {
+              var formAttr = f.getAttribute ? f.getAttribute('form') : null;
+              if (formAttr) {
+                owner = (typeof document !== 'undefined' && document.getElementById)
+                  ? document.getElementById(formAttr) : null;
+              } else if (typeof f.closest === 'function') {
+                owner = f.closest('form');
+              }
+            } catch (_eOwn2) {}
+          }
           if (owner !== form) continue;
           var name = f.getAttribute ? f.getAttribute('name') : f.name;
           var type = ((f.getAttribute ? f.getAttribute('type') : f.type) || '').toLowerCase();
@@ -5685,7 +5710,31 @@
     var tag = this.localName || 'div';
     var snap = { tag: tag, id: this.id, cls: this.className, attrs: this._attrs };
     var node = _zwMEl(snap, null);
-    if (typeof __zw_parse_html_child_nodes === 'function') {
+    // WC-M2：template 根的 contents 在独立 inert DocumentFragment（host 解析器真实化
+    //——`<template>` 内容子不进常规 childNodes，`__zw_parse_html_child_nodes` 对
+    // template 定位恒返空数组，`.content` 视图（plain 工厂惰性 fragment，别名
+    // childNodes）看不到任何内容子）。读参数化 outerHTML 的深 JSON
+    //（`__zw_parse_template_contents`，_zwMBuildNode template 分支同数据源）本地
+    // 构建进 childNodes。inert 印章随既有分支同口径（parse-el 恒 inert 文档面）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    if (String(tag).toLowerCase() === 'template'
+        && typeof __zw_parse_template_contents === 'function') {
+      try {
+        var _s287tcArr = JSON.parse(__zw_parse_template_contents(this.outerHTML, 'template') || '[]');
+        for (var _s287ti = 0; _s287ti < _s287tcArr.length; _s287ti++) {
+          var _s287tc = _zwMBuildDeepEntry(_s287tcArr[_s287ti], node);
+          if (_s287tc) {
+            (function stampInertTpl(n7c) {
+              if (!n7c) return;
+              try { n7c.__zwTreeScripting = false; } catch (_e7cs) {}
+              var k7c = n7c.childNodes || [];
+              for (var j7c = 0; j7c < k7c.length; j7c++) stampInertTpl(k7c[j7c]);
+            })(_s287tc);
+            node.childNodes.push(_s287tc);
+          }
+        }
+      } catch (_e287tpl) {}
+    } else if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
         // R5001 M3 片 a：ownerDocument 为 inert 文档（`__zwScriptingEnabled === false`
         // ——DOMParser/createHTMLDocument 产物）时本地树按 markup 解析（noscript 实体
@@ -5864,6 +5913,53 @@
       try { globalThis._zwParsedToggleH[this._zwEvKey()] = typeof fn === 'function' ? fn : null; } catch (_eR254s2) {}
     },
   });
+  // s287（html-semantics M2）：快照元素 onload/onerror IDL accessor + currentSrc
+  // twin 转发表——R5254 ontoggle 同款身份键跨实例通道。快照架构下 on* 实例属性
+  // 无派发链可达（查询每 query 产新实例，expando 随实例死）；DOMParser img 经
+  // adoptNode 物化 / R368 盖章落地后 load/error 由 live 派发，handler 须按身份键
+  // （_zwEvKey：id 或 sig 串，宿主行派生重解析稳定）持久化供物化/盖章时刻寻址
+  // 接线（spec event handler IDL 赋值即注册）。currentSrc 读侧查 adoptNode 转移
+  // 时刻登记的 twin 表（part06 写侧），未物化恒 undefined——与旧 expando 形态
+  // 同观测值，非 img 快照零回归。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#handler-event-types
+  globalThis._zwParsedImgH5287 = {};
+  globalThis._zwParsedImgTwin5287 = {};
+  ['onload', 'onerror'].forEach(function (_s287h) {
+    Object.defineProperty(_zwParseEl.prototype, _s287h, {
+      configurable: true,
+      get: function () {
+        try { return globalThis._zwParsedImgH5287[this._zwEvKey() + '\x1f' + _s287h] || null; } catch (_e5287hg) { return null; }
+      },
+      set: function (fn) {
+        try { globalThis._zwParsedImgH5287[this._zwEvKey() + '\x1f' + _s287h] = typeof fn === 'function' ? fn : null; } catch (_e5287hs) {}
+      },
+    });
+  });
+  Object.defineProperty(_zwParseEl.prototype, 'currentSrc', {
+    configurable: true,
+    get: function () {
+      try {
+        var _s287tw = globalThis._zwParsedImgTwin5287[this._zwEvKey()];
+        return _s287tw ? _s287tw.currentSrc : undefined;
+      } catch (_e5287cs) { return undefined; }
+    },
+  });
+  // s287：快照 TEMPLATE 的 content 转发——`_ensureMutTree()` 物化树的 WC-M1
+  // content fragment 视图（part03 `_zwMEl` 工厂 template 门；宿主解析按 template
+  // contents 规则把子入 content——MEl 树 childNodes 即 contents 视图组）。查询每
+  // query 产新实例且快照无 content 槽（`d.querySelector('template').content` 恒
+  // undefined——adoption.html 'adopt a cloned img in template' 首查询链抛错实测），
+  // 物化转发后 content.querySelector/cloneNode 走 MEl 既有装配机具。非 template
+  // 快照恒 undefined（`<meta content>` 属性面走 getAttribute，不受影响）。
+  Object.defineProperty(_zwParseEl.prototype, 'content', {
+    configurable: true,
+    get: function () {
+      try {
+        if (String(this.localName || '').toLowerCase() !== 'template') return undefined;
+        return this._ensureMutTree().content;
+      } catch (_e5287ct) { return undefined; }
+    },
+  });
   _zwParseEl.prototype.addEventListener = function (type, fn, opts) {
     if (!this._zwEvLs) this._zwEvLs = {};
     var t = String(type);
@@ -5976,6 +6072,9 @@
     this.documentElement = this.querySelector('html');
     this.head = this.querySelector('head');
     this.body = this.querySelector('body');
+    // inert 文档无浏览上下文，脚本可见期恒已加载完（WPT resource-metadata-management
+    // document-readyState「documents created via DOMParser」断言 'complete'；旧 undefined）。
+    this.readyState = 'complete';
   }
   // R5001 M3 片 a：DOMParser 产物为 inert 文档（scripting disabled）——本地视图
   // 解析（`__zw_parse_html_child_nodes` arg[3]='0'）与序列化（`__zwTreeScripting`
@@ -6107,6 +6206,15 @@
     var v = this._attrs[String(n)];
     return v == null ? null : v;
   };
+  // net-api M3（六）：Element.tagName = 元素限定名（DOM spec——非 HTML ns 不
+  // 大写，XML 解析保源 case；responseXML.documentElement.tagName 断言面——
+  // overridemimetype open-state XML 案经 _zwXmlNode 树读 tagName）。非元素节点
+  // 无 tagName（undefined）。
+  // https://dom.spec.whatwg.org/#dom-element-tagname
+  Object.defineProperty(_zwXmlNode.prototype, 'tagName', {
+    get: function () { return this.nodeType === 1 ? this.nodeName : undefined; },
+    configurable: true,
+  });
   // HTML spec：template.content——仅 HTML ns template 有 content DocumentFragment
   //（_zwXmlParseDoc 开标签时建 _content）；其余元素 null（template-element 腿 1 面）。
   Object.defineProperty(_zwXmlNode.prototype, 'content', {
@@ -9297,6 +9405,12 @@
       toJSON: function () { return { brands: this.brands, mobile: this.mobile, platform: this.platform }; }
     },
     webdriver: false,
+    // T44（site-optimizer perf-mem T44）：pdfViewerEnabled——上游 WPT plugins-and-
+    // mimetypes.html 首测属性存在 + boolean 类型，且为插件断言分支选择键（falsy →
+    // 空插件集断言臂，与 headless 诚实空集一致；Chrome 的 true 侧绑定其 PDF 家族
+    // 插件条目，不模仿条目内容）。实例重铸见 part03 T44 块。
+    // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-pdfviewerenabled
+    pdfViewerEnabled: false,
     plugins: _emptyCollection(),
     mimeTypes: _emptyCollection(),
     javaEnabled: function() { return false; },
@@ -11567,19 +11681,6 @@
   });
   // 无条件覆盖（R3256 注记——描述符/原型链口径随本对象整体生效）。
   globalThis.console = _zwConsoleNamespace;
-
-  // `new Image(width, height)`（HTMLImageElement 构造器，R2834）——图片预加载（`new Image().src = url` 预取 /
-  // onload 探测）+ DOM 挂载（`document.body.appendChild(img)`）高频；WPT css-images / css-backgrounds /
-  // content-visibility fixtures 经 `new Image()` 构造。旧实现返 plain object（非 DOM 元素，appendChild 失效，
-  // 无 tagName）；现返 createElement('img') proxy（镜像 Option R2832 模式），设 width/height 属性；允许 new
-  // 与无 new（返值覆盖 this）。shim 元素为 Proxy 非 ctor 实例，故 `instanceof Image` 不成立（documented）。
-  function Image(width, height) {
-    var el = globalThis.document.createElement('img');
-    if (width !== undefined) { try { el.setAttribute('width', String(width)); } catch (_e) {} }
-    if (height !== undefined) { try { el.setAttribute('height', String(height)); } catch (_e) {} }
-    return el;
-  }
-  globalThis.Image = globalThis.Image || Image;
 
   // `new Audio([src])`（HTMLAudioElement 构造器，R2835）——音效/播客/通知音频构造高频（`new Audio(url).play()`）。
   // 返 createElement('audio') proxy（镜像 Image R2834），设 src；**无 new 调用抛 TypeError**
@@ -15327,6 +15428,44 @@
     Object.setPrototypeOf(globalThis.indexedDB, globalThis.IDBFactory.prototype);
   }
 
+  // net-api M3：UA auth 会话缓存 + 401 Basic 挑战透明重试值（xhr.spec §send()
+  // http-authorization 注记——UA 持凭据时 401 挑战透明认证，401 响应不透传
+  // JS；send-authentication-basic / basic-setrequestheader-existing-session
+  // 挑战流 + basic-repeat-no-args「无参第二请求复用缓存凭据」面）。
+  // 语料定谳 + wpt.fyi Edge 159 master 旁证（auth 面 9 文件 8 绿，唯 cors-no-cred
+  // 1/2 与本仓同歧）：同源才透明重试（跨源 401 挑战不透传 JS 亦不重试——
+  // basic-cors 断失败面，语料期望为标尺）；open()/URL userinfo 显式凭据恒
+  // 优先于会话缓存（competing-names-passwords「must override cached
+  // credentials」面）；作者 Authorization 头显式在场不捕获 URL 凭据
+  //（header wins——setrequestheader-and-arguments 面）。
+  var _ZW_XHR_AUTH_SESSIONS = null;
+  function _zwXhrAuthChallengeValue(status, resp, reqUrl, reqUser, reqPass) {
+    if (status !== 401 || !reqUrl) return null;
+    var docOrigin = _zwUrlOrigin(_zwCurrentHref());
+    if (!docOrigin || _zwUrlOrigin(reqUrl) !== docOrigin) return null;
+    var challenge = response_headers_get(resp, 'www-authenticate');
+    if (!challenge || !/^[ \t]*basic/i.test(String(challenge))) return null;
+    if (reqUser == null && reqPass == null) {
+      var sess = _ZW_XHR_AUTH_SESSIONS && _ZW_XHR_AUTH_SESSIONS[_zwUrlOrigin(reqUrl)];
+      if (!sess) return null;
+      reqUser = sess.user;
+      reqPass = sess.pass;
+    }
+    var authVal;
+    try {
+      authVal = 'Basic ' + globalThis.btoa(String(reqUser || '') + ':' + String(reqPass || ''));
+    } catch (_eAuthB64) { return null; }
+    // 显式凭据入会话缓存（同保护空间后续无凭据请求复用——repeat-no-args 第二
+    // 请求面；缓存于发起重试时落账，语料凭据重试恒成功不区分成败时点）。
+    if (!_ZW_XHR_AUTH_SESSIONS) _ZW_XHR_AUTH_SESSIONS = {};
+    _ZW_XHR_AUTH_SESSIONS[_zwUrlOrigin(reqUrl)] = { user: reqUser || '', pass: reqPass || '' };
+    return authVal;
+  }
+  // net-api M3：跨源 401 挑战门辅助——该源是否已有会话凭据（无显式凭据请求的
+  // 挑战面判定用）。
+  function _zwXhrAuthSessionHas(origin) {
+    return Boolean(_ZW_XHR_AUTH_SESSIONS && _ZW_XHR_AUTH_SESSIONS[origin]);
+  }
   globalThis.XMLHttpRequest = function() {
     var self = this;
     self.readyState = 0;

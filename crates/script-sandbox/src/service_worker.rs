@@ -26,8 +26,15 @@ const MAX_FETCH_STATUS_TEXT_BYTES: usize = 1024;
 const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CACHE_NAME_BYTES: usize = 1024;
 const MAX_CACHE_RESULTS: usize = 1024;
+// s362：`import.defer(` 动态形式经 rewrite_dynamic_imports 重写为 `__zw_import_defer`
+// 调用——SW 宿主与 dynamic import 同拒（spec fail-closed：classic SW 禁一切动态
+// 模块取回，见下方 evaluate_classic_script 注记）；缺 stub 时调用点 ReferenceError
+// 抢在 TypeError 拒绝面前（拒型面破损）。
 const SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE: &str = "\
 globalThis.__zw_dynamic_import = function() {\
+  return Promise.reject(new TypeError('dynamic import is unavailable in Service Worker scripts'));\
+};\
+globalThis.__zw_import_defer = function() {\
   return Promise.reject(new TypeError('dynamic import is unavailable in Service Worker scripts'));\
 };";
 
@@ -5710,9 +5717,11 @@ fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str, script_url: 
     // t8j-r2（D2）：rewrite 发射体裸引用 `_importMeta.url`（重写点须有该词法/全局绑定）——
     // 模块 IIFE 路径自带 `var _importMeta`；经典脚本路径在此补全局绑定（referrer=SW 脚本
     // URL；SW 动态 import 调用点本就被 prelude stub 以 TypeError 拒绝，referrer 不消费）。
+    // s338：发射体并裸引用 `_importCred`（credentials 槽）——同法补全局缺省 same-origin
+    //（对象字面量求值先于 stub 调用，缺绑定即 ReferenceError 抢在 TypeError 拒绝面前）。
     let source = rewrite_dynamic_imports(source);
     let setup = format!(
-        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {}; globalThis._importMeta = {{ url: {} }};",
+        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {}; globalThis._importMeta = {{ url: {} }}; globalThis._importCred = \"same-origin\";",
         serde_json::to_string(script_url).unwrap(),
         serde_json::to_string(original_source).unwrap(),
         serde_json::to_string(script_url).unwrap()
@@ -6212,6 +6221,58 @@ mod tests {
             .evaluate(
                 "if (globalThis.version !== 1) throw new Error('lost global');",
                 "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    // s362：import.defer 动态形式在 SW 宿主与 dynamic import 同拒（fail-closed）——
+    // rewrite_dynamic_imports 把 `import.defer(` 重写为 `__zw_import_defer` 调用，
+    // prelude 须提供同款 TypeError 拒型 stub（红态 = ReferenceError 抢在拒绝面前，
+    // 拒型面破损）。classic 与 module 两路消费同一 prelude。
+    #[test]
+    fn import_defer_rejected_with_typeerror_classic_s362() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "globalThis.__s362 = 'pending';\
+                 import.defer('./dep.js').then(\
+                   function () { globalThis.__s362 = 'fulfilled'; },\
+                   function (e) { globalThis.__s362 = (e instanceof TypeError) ? 'TypeError' : ('other:' + e); });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        runtime
+            .evaluate(
+                "if (globalThis.__s362 !== 'TypeError') throw new Error('want TypeError rejection, got ' + globalThis.__s362);",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn import_defer_rejected_with_typeerror_module_s362() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_module(
+                "globalThis.__s362m = 'pending';\
+                 import.defer('./dep.js').then(\
+                   function () { globalThis.__s362m = 'fulfilled'; },\
+                   function (e) { globalThis.__s362m = (e instanceof TypeError) ? 'TypeError' : ('other:' + e); });",
+                "https://example.test/sw-module.js",
+            )
+            .unwrap();
+        runtime
+            .evaluate_module(
+                "if (globalThis.__s362m !== 'TypeError') throw new Error('want TypeError rejection, got ' + globalThis.__s362m);",
+                "https://example.test/sw-module-check.js",
             )
             .unwrap();
         assert!(matches!(

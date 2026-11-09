@@ -660,7 +660,9 @@ fn test_htmlcollection_nodelist_item_nameditem_r3033() {
 
     // ② R50：HTMLCollection 为 spec legacy platform object——**无** forEach/values/entries
     //（WPT HTMLCollection-iterator 断言不存在；旧 Array 承载泄漏），for-of（@@iterator）替代
-    //+ for...in 仅 indexed/named（0,1——item/namedItem 在原型不可枚举）。
+    //+ for...in = own indexed（0,1）+ 原型层 WebIDL 成员（M3 documents 簇 51d8a6949 起
+    // 接口 prototype 属性/操作 enumerable:true——document.forms iteration WPT 期望形；
+    // own 层 named 属性仍 LegacyUnenumerableNamedProperties enumerable:false 不入）。
     sandbox
         .execute(
             "globalThis.__fe = [];\
@@ -678,8 +680,8 @@ fn test_htmlcollection_nodelist_item_nameditem_r3033() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__inKeys").unwrap().value,
-        "0,1",
-        "for...in 仅 0,1（item/namedItem/toString/constructor 非 enumerable 不泄漏；length 在 Proxy target 之外）"
+        "0,1,length,item,namedItem",
+        "for...in = own indexed（0,1）+ 原型 WebIDL 成员（M3 documents 簇起 p 层 length/item/namedItem enumerable:true，for-in 可见；toString/constructor 仍非 enumerable 不泄漏）"
     );
 
     // ③ getElementsByClassName('x') → HTMLCollection：item + namedItem。

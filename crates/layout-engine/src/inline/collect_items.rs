@@ -1162,7 +1162,18 @@ is_isolated_bidi: style.is_some_and(|s| {
                                     w = (h * ratio).max(0.5);
                                 }
                             }
-                            if w > 0.0 && h > 0.0 {
+                            // CSS2 §10.8.1：inline-block 以 margin box 参排行盒。宽有效且
+                            // 作者显式声明零高（CSS height:0）时原子盒仍入列——旧径降级
+                            // 零宽 Text 行 → 行高塌 0 且原子 margin 泄漏块链
+                            //（inline-block-non-replaced-height-002：height:0 +
+                            // margin:0.5in 0 应撑 96px 行盒，蓝橙双块随容器错位）。
+                            // auto/未解析高（含 taffy used 高 0 的 auto 原子——混合模型
+                            // 下纯行内内容子树 taffy 测高 0，R5416 oracle 实证横向流
+                            // 翻转 blast radius 过大）不在此列，仍走零宽 Text 降级。
+                            let definite_zero_h = style.is_some_and(|s| {
+                                matches!(s.height, LengthValue::Px(v) if v.is_finite() && v <= 0.0)
+                            });
+                            if (w > 0.0 && h > 0.0) || (w > 0.0 && definite_zero_h) {
                                 // R5317（CSS2 §10.3.2）：img 原子参排尺寸 = border box。
                                 // 本臂 CSS w/h 为 content 尺寸，补 padding+border（口径与
                                 // border-box 声明豁免、kill-switch 见 img_atom_border_box_extra）；
@@ -1524,6 +1535,23 @@ is_isolated_bidi: style.is_some_and(|s| {
                         if let Some(item) = self.build_flatten_run_for_element(doc, child_id, styles) {
                             items.push(item);
                         }
+                        // R5446（CSS2 §9.3.1/§9.5）：flatten 路径（bidi 特殊子、svg、竖排
+                        // 等不走 FLAT_CHILD_WALK 的 wrapper）直子 float 同款补发
+                        // `FloatAnchor`——旧 flatten 整段扁平化把 float 项吞掉，RTL wrapper
+                        //（direction:rtl 命中 R4300b bidi 门）的嵌套 float 从未入 IFC
+                        //（001b RTL 段全破根因之一）。断行语义同 R3784 直子臂。仅 layout
+                        // 趟（styles 在场）判定；paint Path B 无 styles 不发（与 walk 臂
+                        // 同口径，FIXME：存储信号镜像另案）。kill-switch
+                        // `ZW_NESTED_INLINE_FLOAT=0`。
+                        if crate::inline::nested_float::nested_inline_float_enabled() && !self.vertical {
+                            for &gc in doc.child_nodes(child_id).iter() {
+                                if styles.get(&gc).is_some_and(|st| {
+                                    !matches!(st.float, zero_css_parser::values::FloatValue::None)
+                                }) {
+                                    items.push(InlineItem::FloatAnchor(gc));
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -1622,6 +1650,12 @@ is_isolated_bidi: style.is_some_and(|s| {
                 doc.get(gc).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
                     && styles.get(&gc).is_some_and(|st| {
                         !matches!(st.position, PositionValue::Absolute | PositionValue::Fixed)
+                            // R5446（CSS2 §9.3.1）：float 离流盒同款排除——float 块化
+                            // display=Block 曾触发本门把 wrapper 载体文本置空
+                            //（floats-placement-vertical-001b 的 Hello/Kitty 消失）。
+                            // kill-switch `ZW_NESTED_INLINE_FLOAT=0`。
+                            && !(crate::inline::nested_float::nested_inline_float_enabled()
+                                && !matches!(st.float, zero_css_parser::values::FloatValue::None))
                             && !matches!(
                                 st.display,
                                 DisplayValue::None
@@ -2261,6 +2295,24 @@ is_isolated_bidi: style.is_some_and(|s| {
                         items.push(InlineItem::Br);
                         continue;
                     }
+                    // R5446（CSS2 §9.3.1/§9.5）：float 元素子是离流盒（与上方 abs/fixed
+                    // 臂同族谓词），不产文本不占行内推进，但须给容器 IFC 发
+                    // `FloatAnchor`——断行语义同 R3784 直子臂，remeasure 据锚行顶 y 把
+                    // 嵌套 float 盒搬到 §9.5.1 rule 6 方向极值缘并构 exclusion 带。
+                    // 旧 walk 落「无元素子 + 无 frame」臂被静默丢弃，wrapper 内嵌套
+                    // float 从未入 IFC 项列（001b 四子缺陷根因之一）。断行后置
+                    // emitted_text_run = true 同 br（后继文本不carry首 run frame）。
+                    // kill-switch `ZW_NESTED_INLINE_FLOAT=0`（与 remeasure 侧同一开关）。
+                    if crate::inline::nested_float::nested_inline_float_enabled()
+                        && styles.get(&gc).is_some_and(|st| {
+                            !matches!(st.float, zero_css_parser::values::FloatValue::None)
+                        })
+                    {
+                        flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        emitted_text_run = true;
+                        items.push(InlineItem::FloatAnchor(gc));
+                        continue;
+                    }
                     let gc_has_element_children = doc.child_nodes(gc).iter().any(|&gk| {
                         doc.get(gk).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
                     });
@@ -2493,14 +2545,22 @@ is_isolated_bidi: style.is_some_and(|s| {
                 doc.child_nodes(id).iter().any(|&gc| {
                     doc.get(gc).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
                         && styles.get(&gc).is_some_and(|st| {
-                            !matches!(
-                                st.display,
-                                DisplayValue::Inline
-                                    | DisplayValue::InlineBlock
-                                    | DisplayValue::InlineFlex
-                                    | DisplayValue::InlineGrid
-                                    | DisplayValue::InlineTable
-                            )
+                            // R5446（CSS2 §9.3.1）：float 是离流盒（与 abs/fixed 同族），
+                            // 不算在流块级子——§9.2.1.1 匿名块规则只围绕在流盒；float 块化
+                            // display=Block 曾误判成块子门命中，inline wrapper（span 包裹
+                            // float）被挡出 FLAT_CHILD_WALK 落 flatten 零宽臂，float 项整体
+                            // 丢失（floats-placement-vertical-001b 的 Hello 消失）。kill-switch
+                            // `ZW_NESTED_INLINE_FLOAT=0`（与 remeasure 侧同一开关）。
+                            !(crate::inline::nested_float::nested_inline_float_enabled()
+                                && !matches!(st.float, zero_css_parser::values::FloatValue::None))
+                                && !matches!(
+                                    st.display,
+                                    DisplayValue::Inline
+                                        | DisplayValue::InlineBlock
+                                        | DisplayValue::InlineFlex
+                                        | DisplayValue::InlineGrid
+                                        | DisplayValue::InlineTable
+                                )
                         })
                 })
             })

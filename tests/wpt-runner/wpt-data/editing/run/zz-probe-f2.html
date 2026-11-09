@@ -1,0 +1,134 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F2 link-absorption 诊断探针（临时 gitignore 域）：delete 族外壳剥离/内层
+     carry + pending-link arm 面。期望形 = multitest.js 语料录形（选区标记剥除
+     后）。运行：make testharness-editing-run-one FILTER=zz-probe-f2 -->
+<title>zz-probe-f2</title>
+<div id=log></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function markerOffset(data, idx) {
+    var cnt = 0;
+    for (var t = 0; t < idx; t++) {
+        if (data.charAt(t) === "[" || data.charAt(t) === "]") cnt++;
+    }
+    return idx - cnt;
+}
+function setupCase(markup) {
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = "<div contenteditable></div>";
+    var host = container.querySelector("div[contenteditable]");
+    host.innerHTML = markup;
+    var start = null, end = null;
+    (function walk(n) {
+        if (n.nodeType === 3) {
+            var i = n.data.indexOf("[");
+            if (i >= 0 && !start) start = { node: n, offset: markerOffset(n.data, i) };
+            var j = n.data.indexOf("]");
+            if (j >= 0 && !end) end = { node: n, offset: markerOffset(n.data, j) };
+            n.data = n.data.replace(/\[|\]/g, "");
+        }
+        for (var k = 0; k < n.childNodes.length; k++) walk(n.childNodes[k]);
+    })(host);
+    var rng = document.createRange();
+    if (start && end) {
+        rng.setStart(start.node, start.offset);
+        rng.setEnd(end.node, end.offset);
+    } else if (start) {
+        rng.setStart(start.node, start.offset);
+        rng.collapse(true);
+    }
+    var sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(rng);
+    return { host: host, container: container };
+}
+function teardown(container) {
+    if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+    }
+}
+var CASES = [
+    { name: "D1 bare-link del+ins (green ctl)",
+      setup: 'foo<a href="http://www.google.com">[bar]</a>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com">a[]</a>baz' },
+    { name: "D2 u-outside del+ins",
+      setup: 'foo<u><a href="http://www.google.com">[bar]</a></u>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com">a[]</a>baz' },
+    { name: "D3 blue-outside del+ins",
+      setup: 'foo<font color=blue><a href="http://www.google.com">[bar]</a></font>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com">a[]</a>baz' },
+    { name: "D4 brown-inner del+ins",
+      setup: 'foo<a href="http://www.google.com"><font color=brown>[bar]</font></a>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com"><font color="#a52a2a">a[]</font></a>baz' },
+    { name: "D5 black-inner del+ins",
+      setup: 'foo<a href="http://www.google.com"><font color=black>[bar]</font></a>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com"><font color="#000000">a[]</font></a>baz' },
+    { name: "D6 u-inner del+ins (green ctl)",
+      setup: 'foo<a href="http://www.google.com"><u>[bar]</u></a>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com">a[]</a>baz' },
+    { name: "D7 blue-inner del+ins (green ctl)",
+      setup: 'foo<a href="http://www.google.com"><font color=blue>[bar]</font></a>baz',
+      cmds: [["delete",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com">a[]</a>baz' },
+    { name: "P1 createlink+ins",
+      setup: 'foo[]bar',
+      cmds: [["createlink","http://www.google.com/"],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com/">a[]</a>bar' },
+    { name: "P2 createlink+del+ins",
+      setup: 'foo[]bar',
+      cmds: [["createlink","http://www.google.com/"],["delete",""],["inserttext","a"]],
+      expect: 'fo<a href="http://www.google.com/"><font color="#000000">a[]</font></a>bar' },
+    { name: "P3 createlink+forecolor-blue+ins",
+      setup: 'foo[]bar',
+      cmds: [["createlink","http://www.google.com/"],["forecolor","blue"],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com/">a[]</a>bar' },
+    { name: "P4 createlink+forecolor-brown+ins",
+      setup: 'foo[]bar',
+      cmds: [["createlink","http://www.google.com/"],["forecolor","brown"],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com/"><font color="#a52a2a">a[]</font></a>bar' },
+    { name: "P5 createlink+underline+ins",
+      setup: 'foo[]bar',
+      cmds: [["createlink","http://www.google.com/"],["underline",""],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com/">a[]</a>bar' },
+    { name: "P6 forecolor-blue+ins NO createlink (diagnostic pin)",
+      // 诊断钉（非语料行）：mt harness 环境同族重放可 materialize（census
+      // :63 forecolor>inserthtml>inserttext got 含 font 为证），本探针单页
+      // 环境重放不落 font（got `fooabar`）——探针 vs harness 环境态差异，
+      // mt 为权威；钉当前行为作翻动哨。FIXME: 裸 forecolor+inserttext 无
+      // 语料行，探针环境重放失 materialize 根因未查（P4 force 路径同探针
+      // 环境可 materialize，非 snap 空、疑 apply 内 splitText 路径静默 catch）。
+      setup: 'foo[]bar',
+      cmds: [["forecolor","blue"],["inserttext","a"]],
+      expect: 'fooabar' },
+    { name: "P7 createlink+forecolor-blue+ins swc=TRUE (harness parity)",
+      setup: 'foo[]bar',
+      swc: "true",
+      cmds: [["createlink","http://www.google.com/"],["forecolor","blue"],["inserttext","a"]],
+      expect: 'foo<a href="http://www.google.com/">a[]</a>bar' }
+];
+CASES.forEach(function (tc) {
+    test(function () {
+        var c = setupCase(tc.setup);
+        try {
+            document.execCommand("stylewithcss", false, tc.swc || "false");
+            for (var i = 0; i < tc.cmds.length; i++) {
+                document.execCommand(tc.cmds[i][0], false, tc.cmds[i][1]);
+            }
+            var got = c.host.innerHTML;
+            assert_equals(got, tc.expect.replace("[]", ""), tc.name + " got");
+        } finally {
+            teardown(c.container);
+        }
+    }, tc.name);
+});
+</script>
