@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_at": "2026-11-09T16:12:20+00:00",
+  "generated_at": "2026-11-09T19:16:30+00:00",
   "runs": [
    {
     "browser": "chrome",
@@ -31,22 +31,22 @@
   "compare_runs": [
    {
     "browser": "ladybird",
-    "version": "1.0-03ada6df57b",
-    "revision": "b62c4db0c5",
-    "created_at": "2026-11-09T15:58:35.591792Z"
+    "version": "1.0-da9df763960",
+    "revision": "f556782c29",
+    "created_at": "2026-11-09T19:05:17.972877Z"
    }
   ],
   "denominator": "三家 summary 并集路径；子测试分母=三家 c[1] 最大值，ZeroWeb 跑过的文件取 max(浏览器, ZW 实际子测试数)"
  },
  "totals": {
   "den_files": 126709,
-  "covered_files": 16598,
-  "uncovered_files": 110111,
-  "zw_full_pass_files": 8518,
-  "den_subtests": 2269371,
-  "zw_passes": 1551366,
-  "pass_rate": 0.6836,
-  "coverage_file_rate": 0.131
+  "covered_files": 16991,
+  "uncovered_files": 109718,
+  "zw_full_pass_files": 8867,
+  "den_subtests": 2269419,
+  "zw_passes": 1603003,
+  "pass_rate": 0.7063,
+  "coverage_file_rate": 0.1341
  },
  "browsers": {
   "chrome": {
@@ -71,10 +71,10 @@
    "pass_rate": 0.9414
   },
   "ladybird": {
-   "full_pass_files": 113710,
-   "den_files": 126098,
-   "subtest_passes": 2167452,
-   "den_subtests": 2245090,
+   "full_pass_files": 113714,
+   "den_files": 126099,
+   "subtest_passes": 2167471,
+   "den_subtests": 2245080,
    "pass_rate": 0.9654
   }
  },
@@ -820,7 +820,7 @@
    "covered_files": 81,
    "full_pass_files": 15,
    "den_subtests": 421,
-   "zw_passes": 99,
+   "zw_passes": 98,
    "zw_env_fails": 0
   },
   "css/CSS2": {
@@ -884,7 +884,7 @@
    "covered_files": 61,
    "full_pass_files": 40,
    "den_subtests": 44732,
-   "zw_passes": 41533,
+   "zw_passes": 41570,
    "zw_env_fails": 0
   },
   "dom/abort": {
@@ -977,10 +977,10 @@
   },
   "encoding": {
    "den_files": 95,
-   "covered_files": 22,
-   "full_pass_files": 20,
+   "covered_files": 36,
+   "full_pass_files": 34,
    "den_subtests": 23822,
-   "zw_passes": 693,
+   "zw_passes": 11618,
    "zw_env_fails": 0
   },
   "encoding/streams": {
@@ -1425,7 +1425,7 @@
   },
   "url": {
    "den_files": 77,
-   "covered_files": 24,
+   "covered_files": 36,
    "full_pass_files": 17,
    "den_subtests": 12345,
    "zw_passes": 4727,
@@ -1497,10 +1497,10 @@
   },
   "websockets": {
    "den_files": 400,
-   "covered_files": 7,
-   "full_pass_files": 7,
+   "covered_files": 183,
+   "full_pass_files": 183,
    "den_subtests": 769,
-   "zw_passes": 104,
+   "zw_passes": 171,
    "zw_env_fails": 0
   },
   "websockets/binary": {
@@ -1521,10 +1521,10 @@
   },
   "websockets/constructor": {
    "den_files": 71,
-   "covered_files": 19,
-   "full_pass_files": 19,
+   "covered_files": 21,
+   "full_pass_files": 21,
    "den_subtests": 600,
-   "zw_passes": 183,
+   "zw_passes": 185,
    "zw_env_fails": 0
   },
   "websockets/cookies": {
@@ -2188,7 +2188,7 @@
    "covered_files": 29,
    "full_pass_files": 5,
    "den_subtests": 7793,
-   "zw_passes": 3808,
+   "zw_passes": 3317,
    "zw_env_fails": 0
   },
   "webaudio/the-audio-api": {
@@ -2201,18 +2201,18 @@
   },
   "WebCryptoAPI": {
    "den_files": 18,
-   "covered_files": 11,
-   "full_pass_files": 11,
+   "covered_files": 15,
+   "full_pass_files": 15,
    "den_subtests": 310,
-   "zw_passes": 115,
+   "zw_passes": 143,
    "zw_env_fails": 0
   },
   "WebCryptoAPI/derive_bits_keys": {
    "den_files": 38,
-   "covered_files": 12,
-   "full_pass_files": 12,
+   "covered_files": 38,
+   "full_pass_files": 38,
    "den_subtests": 24918,
-   "zw_passes": 278,
+   "zw_passes": 24896,
    "zw_env_fails": 0
   },
   "WebCryptoAPI/digest": {
@@ -2233,18 +2233,34 @@
   },
   "WebCryptoAPI/generateKey": {
    "den_files": 92,
-   "covered_files": 44,
-   "full_pass_files": 44,
+   "covered_files": 92,
+   "full_pass_files": 76,
    "den_subtests": 11562,
-   "zw_passes": 10442,
+   "zw_passes": 10898,
    "zw_env_fails": 0
   },
   "WebCryptoAPI/import_export": {
    "den_files": 24,
-   "covered_files": 20,
-   "full_pass_files": 20,
+   "covered_files": 24,
+   "full_pass_files": 24,
    "den_subtests": 10638,
-   "zw_passes": 10602,
+   "zw_passes": 10638,
+   "zw_env_fails": 0
+  },
+  "WebCryptoAPI/modern-algos": {
+   "den_files": 81,
+   "covered_files": 79,
+   "full_pass_files": 75,
+   "den_subtests": 14354,
+   "zw_passes": 14158,
+   "zw_env_fails": 0
+  },
+  "WebCryptoAPI/secure-curves": {
+   "den_files": 28,
+   "covered_files": 26,
+   "full_pass_files": 14,
+   "den_subtests": 3746,
+   "zw_passes": 1796,
    "zw_env_fails": 0
   },
   "WebCryptoAPI/serialization": {
@@ -2265,10 +2281,10 @@
   },
   "WebCryptoAPI/wrapKey_unwrapKey": {
    "den_files": 4,
-   "covered_files": 2,
-   "full_pass_files": 2,
+   "covered_files": 4,
+   "full_pass_files": 4,
    "den_subtests": 880,
-   "zw_passes": 874,
+   "zw_passes": 880,
    "zw_env_fails": 0
   },
   "webgl": {
@@ -2381,22 +2397,6 @@
    "full_pass_files": 7,
    "den_subtests": 521,
    "zw_passes": 250,
-   "zw_env_fails": 0
-  },
-  "WebCryptoAPI/modern-algos": {
-   "den_files": 81,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 14348,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "WebCryptoAPI/secure-curves": {
-   "den_files": 28,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 3704,
-   "zw_passes": 0,
    "zw_env_fails": 0
   },
   "WebCryptoAPI/secure_context": {
@@ -6584,7 +6584,7 @@
    "zw_env_fails": 0
   }
  },
- "zw_only_files": 715,
+ "zw_only_files": 541,
  "suspicious_files": 2,
  "multi_suite_files": 65
 }
