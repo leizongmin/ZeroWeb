@@ -2,7 +2,7 @@
 
 ## 刀体
 
-commit **0bc8d545b**（原 ac2b12294 → 3a307c259 → 0bc8d545b 三代 rebase 重植，八点 md5 锚逐代恒一，刀体字节恒等）：
+commit **d4823858c**（推送实体；哈希链 ac2b12294 → 3a307c259 → 0bc8d545b → d4823858c 四次 rebase 重植，刀域字节恒等——七 shim md5 + fbqRet2×3 + 链守卫×1 逐代复读恒一。第四次重放并入正交域：s370 shadow 内容唯一选择器门 f619446a1（bridge unique-selector +18 / part01b +12 / part02 +28，自携门禁 engine lib 3832P/7F 名册恒一 + 域口径 24P/16F 零位移，evidence/2026-11-10-m2s370-shadow-selector-gate.md）+ R5486 归因轮 e6d12adf0（layout docs）；八点锚之 bridge 点漂移 = s370 域非刀体，d4823858c 自身 diff 恰 part01g+part06 两文件）：
 
 - **part06**：`__zw_ce_fb_apply` 返回值捕获（fbqRet2）贯通 execCommand 尾返回——此前 apply 返回值被丢弃、尾恒 true；宿主内容模型守卫（part01g，7ab68347f 落地）拒形（span 容器拒 p :1864/:1871、p 容器拒 div :1876）语料 ret 断言行 ×3 恒红。仅 formatBlock 臂写入，其余命令 undefined→true 行为恒一（mt 语料 formatBlock ret 36/36 全 true、tentative 页无 ret 断言，回归面核验零 P2F 候选）。
 - **part01g**：可编辑链守卫返 false→true 纠偏——该形 Chrome ret 录音 [true]（语料条目 362 选区跨不可编辑 span，Chrome 真意 wrap；本引擎不具该 wrap 能力只拦不报 false）。**预验反例在案**：首版贯通误翻 entry 362 ret 行（legs5 绿→红 P2F），纠偏后 b8 29P/1F 恰 legs5 基线（残=entry 362 compare 既有 F2F 挂账族）。两处注释纠偏：链守卫原注将 :1864 族误归于链守卫——实为链在内层 editing host 截停，由宿主守卫拒。
