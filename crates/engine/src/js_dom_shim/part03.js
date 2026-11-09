@@ -22372,7 +22372,8 @@
 
   // editing-compat style-with-value 簇（2026-11-01）：物化元素 style 面板——纯属性反射
   //（无 sel/handle，读写都落节点自身 style 内容属性）。读数语义与 _styleProxy（本文件
-  // _makeProxy get trap 的 prop === 'style' 分支）同源：camelCase→kebab（_stylePropName）、末次非空
+  // _makeProxy get trap 的 prop === 'style' 分支）同源：名参归一 _styleDeclName（T52
+  // 双位点接线；camelCase→kebab、全大写折叠、-- 保形，T50/T51 已收口写面同函数）、末次非空
   // 声明胜（R3213）、getPropertyValue 返值不含 !important（R3193）、-- 自定义属性大小写
   // 敏感。写序：同名声明移除（常规 ci / 自定义精确）后尾部追加 `name: value`，空值 =
   // 仅移除（CSSOM set 空串删声明——normalizeSerializedStyle 的 color='' 往返依赖）。
@@ -22384,7 +22385,12 @@
     var readDeclValue = function (name) {
       var raw = readRaw();
       if (!raw) return null;
-      var want = _stylePropName(name);
+      // T52：名参接 `_styleDeclName`（与写面/元素 sel-handle 面 T50/规则面/csstext 面/
+      // keyframe 面 T51 同函数）——全大写书写形折叠（'COLOR' 查 'color' 声明），此前
+      // _stylePropName 产 '-c-o-l-o-r' 垃圾 want 与正名声明失配恒 miss；`--` 保形与
+      // vendor camel 语义不变（R2810/R3023）。Blink 154 活体 m08/m09/m15（t52-oracle-
+      // result.txt）：setProperty/getPropertyValue 名参 ASCII case-insensitive。
+      var want = _styleDeclName(name);
       var custom = want.charAt(0) === '-' && want.charAt(1) === '-';
       var parts = raw.split(';');
       var found = null;
@@ -22411,7 +22417,18 @@
       }).filter(Boolean);
     };
     var writeDecl = function (name, value) {
-      var want = _stylePropName(name);
+      // T52：名参接 `_styleDeclName`（与读面同函数保证键一致）——全大写书写形折叠
+      //（'COLOR'→'color'、'-WEBKIT-TRANSFORM'→'-webkit-transform'），此前逐大写
+      // 字母加连字符（_camelToKebab）落 '-c-o-l-o-r'/'-z--i-n-d-e-x' 垃圾键：cascade
+      // 不识别、正名读面 miss，物化世界样式写静默失效。custom property `--` 前缀保形
+      //（css-variables-1 §2 名 case-sensitive）；camelCase→kebab 与 vendor camel 语义
+      // 不变（R2810/R3023）。Blink 154 活体 m08/m09（setProperty 名参 ASCII CI）；
+      // IDL 全大写名 Blink expando 不落声明、'ZINDEX' 未知属性丢弃（m02/m03/m10）——
+      // 本仓归一落库 = T50/T51 既录 recorded known deviation（垃圾键落库是实际缺陷，
+      // 键一致优先）。
+      // https://www.w3.org/TR/cssom-1/#camel-cased-attribute-to-css-attribute
+      // https://www.w3.org/TR/css-variables-1/#custom-properties
+      var want = _styleDeclName(name);
       var custom = want.charAt(0) === '-' && want.charAt(1) === '-';
       var parts = readRaw().split(';');
       var out = [];
@@ -22423,7 +22440,16 @@
         var keep = custom ? dname !== want : dname.toLowerCase() !== want.toLowerCase();
         if (keep) out.push(decl.trim());
       }
-      if (value !== '') out.push(want + ': ' + value);
+      // T52：值参 trim 后回拼（IDL set trap 此前原文透传落库两侧空白，与 setProperty
+      // 面/规则样式/_styleProxy T49 起已收口声明面 trim 口径分歧）；trim 后空串 = 仅
+      // 移除（纯空白值声明弃——Blink 154 活体 m05 '  rgb(255, 0, 0)  ' → 'color:
+      // rgb(255, 0, 0);'、m06 纯空白值弃、m13 custom 值 '  v3  ' → '--Bar: v3'）。
+      // FIXME（T49 设计卡 W4 follow-up）：值归一面（_zwNormalizeDeclValue——color token
+      // 归一/csswide 关键字/非法 color 拒绝）物化世界未接，本片仅收口名参双位点 + 值
+      // trim；cssText 整体写原文 setAttribute mini-impl 边界不触碰。
+      // https://www.w3.org/TR/css-style-attr/#parsing
+      var v = String(value == null ? '' : value).trim();
+      if (v !== '') out.push(want + ': ' + v);
       node.setAttribute('style', out.join('; '));
     };
     return new Proxy({}, {
