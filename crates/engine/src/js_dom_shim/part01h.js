@@ -259,7 +259,7 @@
   // 跨域摘挂纪律同 DC-4（plain removeChild 后挂载；子为 inline plain 节点，
   // host.insertBefore 同域安全）。
   // https://w3c.github.io/editing/execCommand.html#the-delete-command
-  globalThis.__zw_ce_dissolve_emptied_div_tail = function () {
+  globalThis.__zw_ce_dissolve_emptied_div_tail = function (ar0) {
     try {
       var ar = _zwVaGetActiveRange();
       if (!ar || !ar.startContainer) return false;
@@ -267,6 +267,27 @@
       if (!blk || blk.nodeType !== 1 || _zwJusTag(blk) !== 'div') return false;
       var host = _zwListEditingHostOf(blk);
       if (!host || blk.parentNode !== host) return false;
+      // ⑥ delmerge 边界祖先语义（zz-probe-f7 D1-D3/V1/V3/K1-K3 实证）：消解
+      // 仅当删除前选区完全含于块内某内联壳子树（483 `[abc]` 文本位全在内
+      // → 消解提壳）；选区触及块边界（K3 `{abc}` div 子边界位）或尾越块界
+      // 入宿主级（V3/D1/K1 `{abc</span><span>def</span>}` 形）→ 块为选区
+      // 边界祖先，Chrome 保留块（exp `<div>gh</div>` 族）。
+      if (!ar0 || !ar0.startContainer || !ar0.endContainer) return false;
+      var a1Shell = ar0.startContainer;
+      while (a1Shell && a1Shell.parentNode !== blk) a1Shell = a1Shell.parentNode;
+      if (!a1Shell) return false;
+      var a1EndIn = false;
+      var a1E = ar0.endContainer;
+      while (a1E) {
+        if (a1E === a1Shell) { a1EndIn = true; break; }
+        a1E = a1E.parentNode;
+      }
+      if (!a1EndIn) return false;
+      // display 守卫（D1/D2 flex/grid 保留形同源）：非默认 display 块不消解
+      // ——与 ① 臂 dispHost∈{'',block} 门同语义。
+      var a1Disp = '';
+      try { a1Disp = String(_zwJusCs(blk, 'display') || ''); } catch (_eA1d) {}
+      if (a1Disp !== '' && a1Disp !== 'block') return false;
       var kids = blk.childNodes || [];
       if (!kids.length) return false;
       for (var i = 0; i < kids.length; i++) {

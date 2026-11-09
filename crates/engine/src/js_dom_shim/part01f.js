@@ -1424,7 +1424,7 @@
     // （collapsed delete/fd 无消解语义诉求）；482 blockquote 反例由 helper
     // tag 收窄挡。消解保节点身份，上方 override 重锚不失效。
     if (!ar.collapsed && typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function') {
-      try { globalThis.__zw_ce_dissolve_emptied_div_tail(); } catch (_eA1Tail) {}
+      try { globalThis.__zw_ce_dissolve_emptied_div_tail(ar); } catch (_eA1Tail) {}
     }
     return true;
   };
@@ -1818,6 +1818,7 @@
         _zwIpWrapTag = _zwIpHost ? _zwJusTag(_zwIpHost) : 'div';
       }
       if (!_zwIpCol) {
+        var _zwIpAr0 = _zwVaGetActiveRange();
         _zwDelDeleteSelection();
         // ⑦ A1（2026-11-09 host-div-wrap 姊妹面，mt 487）：前导 delete 全删
         // 空宿主唯一元素子 div 时 Chrome 消解壳提宿主（caret 提壳链首）——
@@ -1826,7 +1827,7 @@
         // paragraph_split_at` ① 宿主级臂（同 ipara_wants=false 让位路径）。
         // fireEvents=false——beforeinput/input 已由 part06 ip 臂事件序派发。
         if (typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function'
-            && globalThis.__zw_ce_dissolve_emptied_div_tail()) {
+            && globalThis.__zw_ce_dissolve_emptied_div_tail(_zwIpAr0)) {
           var _zwIpHostA1 = null;
           try {
             _zwIpHostA1 = _zwListEditingHostOf(_zwVaGetActiveRange().startContainer);
