@@ -1,0 +1,129 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- ⑤ F7 delete-merge-div 刀探针（两微机制：① 尾残 br 4 键形 ② 空壳并存
+     2 键形 + 护栏）。part01f :501 补 br 臂守卫扩面（幸存壳在块内即占位，
+     不再逐迭代补块级 br）+ :660 臂末子空壳折入 (壳,0) caret 出口。
+     期望形出处：multitest flex/grid 尾残 br 族 raw log assert_in_array
+     exp `<span>gh</span>`（2026-11-09 f1shell-mt-post.log）；空壳并存族
+     exp `<div><b>gh</b></div>` 单壳形。运行：
+     make testharness-editing-run-one FILTER=zz-probe-f7.html -->
+<title>zz-probe-f7</title>
+<div id=log></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function nextNode(node) {
+    if (node.firstChild) return node.firstChild;
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+    while (node) { if (node.nextSibling) return node.nextSibling; node = node.parentNode; }
+    return null;
+}
+// [ ] { } 四标记提取——{ } 映射元素位 (parentNode, childIndex)（语料 setupDiv
+// 同款语义）；data-start/data-end 属性行兜底（花括号无法落文本节点时）。
+function extractRange(root) {
+    var sNode = null, sOff = 0, eNode = null, eOff = 0;
+    function nodeIndex(n) {
+        var i = 0, c = n.parentNode.firstChild;
+        while (c && c !== n) { i++; c = c.nextSibling; }
+        return i;
+    }
+    var cur = root;
+    var dEl0 = root.querySelector("[data-start]");
+    if (dEl0) { sNode = dEl0; sOff = +dEl0.getAttribute("data-start"); dEl0.removeAttribute("data-start"); }
+    var dEl1 = root.querySelector("[data-end]");
+    if (dEl1) { eNode = dEl1; eOff = +dEl1.getAttribute("data-end"); dEl1.removeAttribute("data-end"); }
+    while (cur) {
+        if (cur.nodeType === 3) {
+            var d = cur.data;
+            // 起标记先到先得（[ 文本偏移 / { 元素位）；同节点双标记串行剥离。
+            if (!sNode) {
+                var ci = d.indexOf("["), cj = d.indexOf("{");
+                if (ci >= 0 && (cj < 0 || ci < cj)) {
+                    sNode = cur; sOff = ci;
+                    d = d.slice(0, ci) + d.slice(ci + 1);
+                } else if (cj >= 0) {
+                    sNode = cur.parentNode;
+                    sOff = cj === 0 ? nodeIndex(cur) : nodeIndex(cur) + 1;
+                    d = d.slice(0, cj) + d.slice(cj + 1);
+                }
+            }
+            if (!eNode) {
+                var ck = d.indexOf("]"), cl = d.indexOf("}");
+                if (ck >= 0 && (cl < 0 || ck < cl)) {
+                    eNode = cur; eOff = ck;
+                    d = d.slice(0, ck) + d.slice(ck + 1);
+                } else if (cl >= 0) {
+                    eNode = cur.parentNode;
+                    eOff = cl === 0 ? nodeIndex(cur) : nodeIndex(cur) + 1;
+                    d = d.slice(0, cl) + d.slice(cl + 1);
+                }
+            }
+            if (d !== cur.data) cur.data = d;
+        }
+        cur = nextNode(cur);
+    }
+    if (!sNode || !eNode) return null;
+    var r = document.createRange();
+    r.setStart(sNode, sOff); r.setEnd(eNode, eOff);
+    return r;
+}
+// [输入 html, 命令链, 删除后中间态断言（null=不查）, 终态期望 html]
+var CASES = [
+    // F7① flex/grid 尾残 br（census ① 4 键代表形 + plain 变体 + 尾空壳变体）
+    ["D1", '<div style="display:flex"><span>{abc</span><span>def</span>}</div>',
+     '<div style="display:flex"><span></span></div>',
+     '<div style="display:flex"><span>gh</span></div>'],
+    ["D2", '<div style="display:grid"><span>{abc</span><span>def</span>}</div>',
+     '<div style="display:grid"><span></span></div>',
+     '<div style="display:grid"><span>gh</span></div>'],
+    ["V3", '<div><span>{abc</span><span>def</span>}</div>',
+     '<div><span></span></div>',
+     '<div><span>gh</span></div>'],
+    ["V1", '<div style="display:flex"><span>{abc</span><span>def</span><span></span>}</div>',
+     '<div style="display:flex"><span></span></div>',
+     '<div style="display:flex"><span>gh</span></div>'],
+    // F7② div 跨块空壳并存（census ② 2 键原形）
+    ["D3", '<div><b>{abc</b></div><div>def</div>}',
+     null,
+     '<div><b>gh</b></div>'],
+    ["D4", '<div>abc</div><div><b>{def</b></div>}',
+     null,
+     '<div>abc</div><div><b>gh</b></div>'],
+    // 护栏：语料通过形恒一（delKeepShell null / 壳内 caret 已然形）
+    ["K1", '<div>{abc</div><div>def</div>}',
+     null,
+     '<div>gh</div>'],
+    ["K2", '<div style="display:flex"><span>abc</span><span>{def</span>}</div>',
+     null,
+     '<div style="display:flex"><span>abc</span><span>gh</span></div>'],
+    ["K3", '<div>{abc}</div>',
+     null,
+     '<div>gh<br></div>']
+];
+CASES.forEach(function (t) {
+    test(function () {
+        var host = document.createElement("div");
+        host.setAttribute("contenteditable", "");
+        document.body.appendChild(host);
+        host.innerHTML = t[1];
+        var r = extractRange(host);
+        assert_true(!!r, t[0] + " extract");
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        var steps = [];
+        [["delete", ""], ["insertText", "g"], ["insertText", "h"]].forEach(function (c) {
+            var ok;
+            try { ok = document.execCommand(c[0], false, c[1]); } catch (err) { ok = false; }
+            steps.push(c[0] + "=" + ok);
+            if (c[0] === "delete" && t[2] !== null) {
+                assert_true(host.innerHTML === t[2],
+                    t[0] + " 删除后中间态 got=" + host.innerHTML + " exp=" + t[2]);
+            }
+        });
+        assert_true(host.innerHTML === t[3],
+            t[0] + " 终态(" + steps.join(",") + ") got=" + host.innerHTML + " exp=" + t[3]);
+    }, "F7 " + t[0]);
+});
+</script>

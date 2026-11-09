@@ -495,9 +495,12 @@
       if (blockOfParent
           && ![].some.call(blockOfParent.childNodes, _zwJusIsVisible)
           && (_zwJusIsEditable(parent_) || _zwJusIsEditingHost(parent_))
-          && parent_ !== delKeepShell) {
-        // Chrome delta：幸存壳本身就是块内占位（blockquote>font 选区删净后壳
-        // 保留、不再补 br——g17 实证补 br 产出 <font><br></font> 双占位）。
+          && parent_ !== delKeepShell
+          && !_zwJusIsAncestorOf(blockOfParent, delKeepShell)) {
+        // Chrome delta：幸存壳即块内占位，不补 br（g17 实证补 br 产出
+        // <font><br></font> 双占位）。⑤ F7① 扩面（2026-11-09）：壳在块内
+        // 任一层同样即占位——multitest flex/grid 4 键删净后逐迭代补块级 br
+        // 成尾残（got `<span>gh</span><br></div>`，期望 `<span>gh</span></div>`）。
         parent_.appendChild(document.createElement('br'));
       }
       if (stripWrappers
@@ -659,7 +662,19 @@
 
     } else if (_zwJusIsAncestorOf(endBlock, startBlock)) {
       var selDesc = globalThis.getSelection();
-      selDesc.collapse(startBlock, _zwJusNodeLength(startBlock));
+      // Chrome delta（⑤ F7② 空壳并存面，2026-11-09）：块尾幸存空壳即 caret
+      // 载体，折入 (壳,0) 让 typing 壳内续写（multitest div 跨块 2 键 got
+      // `<div><b></b><b>gh</b></div>` 并列新壳，期望 `<div><b>gh</b></div>`）；
+      // 壳非末子/非空/delKeepShell 缺省走原语义零扰动。
+      var shellExitDesc = delKeepShell
+        && delKeepShell.parentNode === startBlock
+        && startBlock.childNodes[startBlock.childNodes.length - 1] === delKeepShell
+        && _zwJusNodeLength(delKeepShell) == 0;
+      if (shellExitDesc) {
+        selDesc.collapse(delKeepShell, 0);
+      } else {
+        selDesc.collapse(startBlock, _zwJusNodeLength(startBlock));
+      }
       _zwVaGetActiveRange().collapse(true);
 
       var referenceNode2 = startBlock;
