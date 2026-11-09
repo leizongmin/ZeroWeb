@@ -10,7 +10,8 @@
 //!   混合内容条目以 `flex_item_base_size` ZW 基准写回 taffy flex_basis，
 //!   kill-switch `ZW_FLEX_BASE_AUTHORITY=0`
 //! - `layout-engine/src/intrinsic_sizing.rs` R4032 destretch 臂 + inline-block 族
-//!   else 臂段核算（`ZW_IB_DESTRETCH=0` 仅回退递归取值，段核算独立生效）
+//!   else 臂段核算（`ZW_IB_DESTRETCH=0` 回退 outer_w 旧行为：两臂整体让位、段核算
+//!   随之关闭，复红钉 ib_destretch_kill_switch）
 //!
 //! 断言全部用结构判据（summary 右缘盖过 span 右缘 + caret；V12 无 caret 形
 //! fresh==heal 逐盒相等），不冻结文本 advance 数字，跨字体环境稳健。

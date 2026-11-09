@@ -856,11 +856,14 @@ fn box_content_max_width_inner(
                             | DisplayValue::InlineTable
                     )
                 })
-                // destretch 关闭时混合形态让位 outer_w（其 kill-switch 文档语义，见上
-                // 一臂注）；destretch 开启时混合形态已在上一臂被消费、到不了这里
-                //（replaced 形态仍归本臂段核算），此条件默认路径恒真不改变行为。
-                && (std::env::var("ZW_IB_DESTRETCH").as_deref() == Ok("0")
-                    || !subtree_has_mixed_inline_content(child, styles, doc))
+                // kill-switch 语义（tv-2 复核 F-1 修正，先前子句 `== Ok("0") || !mixed`
+                // 是逻辑恒真 no-op）：destretch=0 时本臂整体让位，纯文本原子与混合形态
+                // 一并回落 generic outer_w 旧口径（与上一臂同门 `!= Ok("0")`，文档化
+                // fallback 回真，ib_destretch_kill_switch 常驻钉）；destretch 开启时混合
+                // 形态已在上一臂被消费、到不了这里（replaced 形态仍归本臂段核算），
+                // `!mixed` 仅拦 replaced 带子形态，默认路径不变。
+                && std::env::var("ZW_IB_DESTRETCH").as_deref() != Ok("0")
+                && !subtree_has_mixed_inline_content(child, styles, doc)
             {
                 // R54xx br 分段修正（else 落点）：形态门未命中的 inline-block 族纯文本
                 // 原子（`<li>hi<span style="display:inline-block">ab cd</span>` 的 span、
