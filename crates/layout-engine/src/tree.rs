@@ -3159,6 +3159,94 @@ fn inline_cb_pct_width_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_CB_PCT_WIDTH").as_deref() != Ok("0"))
 }
 
+/// R5491（CSS2 §10.3.3 × §10.1/§10.2）：`width:auto` 普通流块容器的 content 宽上溯
+/// 解析——R5484 预解算臂沿链找到的块容器宽非显式 Px 时，按普通流块级盒 fill 语义
+/// 递归求 used content 宽：包含块 content 宽 − 自身横向非 auto margin − 横向 frame
+///（auto margin 记 0，§10.3.3 差式）。包含块＝最近块容器祖先（§10.1），static
+/// inline 中间层不建立包含块（§10.2，跳过）；链至文档根（无样式节点）包含块＝初始
+/// 包含块（viewport 宽，§10.1）。守卫（不定解即 None，维持 taffy percent 旧径）：
+/// 链上祖先 float/定位非 static（float/abspos 建立 CB 且宽走收缩适配
+/// §10.3.5/§10.3.7）、display 非 Block/FlowRoot（flex/grid/table 族 item 宽走各自
+/// 算法）、竖排、multicol、margin/padding 百分比（分母即待求值域）；depth 限界防
+/// 病态深链。缺陷 Y：floats-149 形 `.block`（无宽）内 span 50% 旧径相对物化层
+/// 760（blk 800 − inline ml 40）解 380（chromium 400）→ nested 级联 fit 判定
+/// `380<=380` 边界翻转并排重叠。
+fn resolve_auto_block_cb_content_width(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    id: NodeId,
+    viewport_w: f32,
+    depth: u32,
+) -> Option<f32> {
+    use zero_style_system::property::types::ColumnCountComputedValue;
+    if depth > 12 {
+        return None;
+    }
+    // fill 可解算节点：普通流块级块容器，水平书写，非 multicol。
+    let fill_resolvable = |s: &ComputedStyle| -> bool {
+        matches!(s.display, DisplayValue::Block | DisplayValue::FlowRoot)
+            && matches!(s.position, PositionValue::Static)
+            && matches!(s.float, FloatValue::None)
+            && matches!(s.writing_mode, WritingModeValue::HorizontalTb)
+            && matches!(s.column_count, ColumnCountComputedValue::Auto)
+    };
+    let ps = styles.get(&id)?;
+    if !fill_resolvable(ps) {
+        return None;
+    }
+    // 横向 margin：Px 计值（含负值），auto 记 0（§10.3.3 差式），百分比不可解
+    //（分母即本函数待求值域，循环依赖）。
+    let px_margin = |v: &LengthValue| -> Option<f32> {
+        match v {
+            LengthValue::Px(p) if p.is_finite() => Some(*p as f32),
+            LengthValue::Auto => Some(0.0),
+            _ => None,
+        }
+    };
+    // 横向 padding 百分比不可解（frame_width 对非 Px 静默归零会错算 frame）。
+    if !matches!(ps.padding_left, LengthValue::Px(_)) || !matches!(ps.padding_right, LengthValue::Px(_)) {
+        return None;
+    }
+    // 包含块：最近块容器祖先；static inline 中间层跳过（§10.2）；文档根边界＝viewport。
+    let mut cur = doc.parent_node(id);
+    let mut cb: Option<(NodeId, &ComputedStyle)> = None;
+    while let Some(pid) = cur {
+        let Some(pps) = styles.get(&pid) else {
+            break; // 文档/根边界：初始包含块
+        };
+        if matches!(pps.display, DisplayValue::Inline)
+            && matches!(pps.position, PositionValue::Static)
+            && matches!(pps.float, FloatValue::None)
+        {
+            cur = doc.parent_node(pid);
+            continue;
+        }
+        cb = Some((pid, pps));
+        break;
+    }
+    let cb_content = match cb {
+        None => viewport_w,
+        Some((pid, pps)) => {
+            if !fill_resolvable(pps) {
+                return None;
+            }
+            match &pps.width {
+                LengthValue::Px(cw) if cw.is_finite() && *cw > 0.0 => {
+                    if matches!(pps.box_sizing, BoxSizingValue::BorderBox) {
+                        (*cw as f32 - frame_width(pps)).max(0.0)
+                    } else {
+                        *cw as f32
+                    }
+                }
+                LengthValue::Auto => resolve_auto_block_cb_content_width(doc, styles, pid, viewport_w, depth + 1)?,
+                _ => return None,
+            }
+        }
+    };
+    let horiz_margin = px_margin(&ps.margin_left)? + px_margin(&ps.margin_right)?;
+    Some((cb_content - horiz_margin - frame_width(ps)).max(0.0))
+}
+
 /// R5158 kill-switch 读取：`ZW_BODY_OVERFLOW_VISIBLE=0` 回退 body→viewport overflow
 /// 传播的 taffy 半边（css-overflow-3 §3.3）。
 fn body_overflow_visible_enabled() -> bool {
@@ -3273,8 +3361,10 @@ fn build_subtree(
     // floats-149 形 span width:50% 得 180（chromium 200）。此处把「DOM 父为
     // display:inline 且 position:static」的节点百分比宽预解算为 definite：沿祖先
     // 链找首个块容器（display ≠ Inline）的 definite Px 宽（border-box 扣 frame），
-    // 定位 inline 祖先建立包含块即停（其宽未知，不定解）；祖先宽非 definite 或链断
-    // 维持 taffy percent。height/min/max 百分比另一域不涉。
+    // auto 宽按 §10.3.3 fill 语义上溯解析（R5491
+    // resolve_auto_block_cb_content_width：文档根＝viewport），定位 inline 祖先建立
+    // 包含块即停（其宽未知，不定解）；祖先宽不定解（非 Px/Auto）或链断维持
+    // taffy percent。height/min/max 百分比另一域不涉。
     // 节点自身 absolute/fixed 不入臂：§10.2 其包含块为最近定位祖先 padding box
     //（taffy 定位 CB 已按此解析，预解算会用错误分母覆写正确值）。
     // kill-switch `ZW_INLINE_CB_PCT_WIDTH=0`。
@@ -3294,18 +3384,26 @@ fn build_subtree(
         while let Some(id) = cur {
             let Some(ps) = styles.get(&id) else { break };
             if !matches!(ps.display, DisplayValue::Inline) {
-                if let LengthValue::Px(cw) = ps.width
-                    && cw.is_finite()
-                    && cw > 0.0
-                {
-                    let content = if matches!(ps.box_sizing, BoxSizingValue::BorderBox) {
-                        (cw as f32 - frame_width(ps)).max(0.0)
-                    } else {
-                        cw as f32
-                    };
-                    if content > 0.0 {
-                        cb_w = Some(content);
+                match ps.width {
+                    LengthValue::Px(cw) if cw.is_finite() && cw > 0.0 => {
+                        let content = if matches!(ps.box_sizing, BoxSizingValue::BorderBox) {
+                            (cw as f32 - frame_width(ps)).max(0.0)
+                        } else {
+                            cw as f32
+                        };
+                        if content > 0.0 {
+                            cb_w = Some(content);
+                        }
                     }
+                    // R5491：块容器 width:auto → §10.3.3 fill 上溯解析（文档根＝
+                    // viewport）。旧径在此留 taffy percent 相对物化层（inline 中间层
+                    // fill 宽）解算——floats-149 形 50%×(blk 800 − inline ml 40)
+                    // = 380，chromium 相对块容器 800 解 400 → nested 级联 fit 判定
+                    // `380<=380` 边界翻转并排重叠（缺陷 Y）。
+                    LengthValue::Auto => {
+                        cb_w = resolve_auto_block_cb_content_width(doc, styles, id, viewport_w, 0);
+                    }
+                    _ => {}
                 }
                 break;
             }
