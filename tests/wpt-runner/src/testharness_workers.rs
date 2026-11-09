@@ -135,6 +135,21 @@ pub(crate) fn workers_any_js_lane(source: &str) -> AnyJsLane {
     AnyJsLane::Skip
 }
 
+/// dedicated 变体分道判定（wptfyi-runtime DC-2——encoding/wasm worker 变体面共用）：
+/// `.any.js` 源是否生成上游 `.any.worker.html` dedicated 变体腿。manifest
+/// `global=` 缺省（无 META）即 window+dedicatedworker 双变体
+/// （writing-tests/testharness.html#test-globals），显式 worker/dedicatedworker
+/// token 含 dedicated 面；`global=window`-only 或仅 sharedworker/serviceworker
+/// 不生成（wpt.fyi 分母无该路径——实证 8c04fb8d43 三家 union：encoding 37 /
+/// wasm 100 个 worker 变体基文件全部为无 META 或含 worker token 形态）。
+pub(crate) fn dedicated_worker_variant(source: &str) -> bool {
+    let globals = wpt_meta_globals(source);
+    globals.is_empty()
+        || globals
+            .iter()
+            .any(|global| global == "worker" || global == "dedicatedworker")
+}
+
 /// `.any.js` dedicated 变体 wrapper 源合成（M2 worker harness 通道）——上游
 /// serve.py ClassicWorkerHandler 同构：GLOBAL flags + importScripts testharness +
 /// META script 依赖 + 语料正文 + done()。语料正文**内嵌**（非

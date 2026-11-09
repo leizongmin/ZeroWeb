@@ -2971,6 +2971,9 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
 /// Run the pinned upstream WebAssembly jsapi window subset
 /// （page-wasm goal M1 / DC-1）。结构同 [`run_fs_cases`]：固定清单 + META script
 /// 自动解析 + [`any_js_window_wrapper`] window 变体执行。
+///
+/// wptfyi-runtime DC-2：无 META 缺省双变体源追加 dedicated worker 腿
+/// （`.any.worker.js` 键，encoding 通道同款分道）。
 pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -2999,14 +3002,14 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
             let case_source = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) => source,
                 Err(error) => {
-                    return (
+                    return vec![(
                         (*path).to_string(),
                         vec![HarnessSubtestResult {
                             name: "load WebAssembly case".into(),
                             status: HarnessStatus::Fail,
                             message: Some(error.to_string()),
                         }],
-                    );
+                    )];
                 }
             };
             let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
@@ -3020,14 +3023,14 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
                 match read_corpus_to_string(support_path) {
                     Ok(source) => support_sources.push((script, source)),
                     Err(error) => {
-                        return (
+                        return vec![(
                             (*path).to_string(),
                             vec![HarnessSubtestResult {
                                 name: format!("load WebAssembly support {script}"),
                                 status: HarnessStatus::Fail,
                                 message: Some(error.to_string()),
                             }],
-                        );
+                        )];
                     }
                 }
             }
@@ -3037,9 +3040,25 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
                 .collect::<Vec<_>>();
             let html = any_js_window_wrapper(path, &support_refs, &case_source);
             let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
-            ((*path).to_string(), results)
+            let mut cases = vec![((*path).to_string(), results)];
+            // wptfyi-runtime DC-2（wasm worker 变体面）：encoding 通道同款 dedicated
+            // 腿——上报 `.any.worker.js` 键（对账映射 `.any.worker.html` 分母变体；
+            // jsapi 32 源全为无 META 缺省双变体形态，分道判定见
+            // [`crate::testharness_workers::dedicated_worker_variant`]）。
+            if crate::testharness_workers::dedicated_worker_variant(&case_source) {
+                let worker_key = path.replacen(".any.js", ".any.worker.js", 1);
+                let worker_results = crate::testharness_workers::run_any_js_dedicated_case_as(
+                    wpt_root,
+                    &worker_key,
+                    &worker_key,
+                    &harness_source,
+                );
+                cases.push((worker_key, worker_results));
+            }
+            cases
         })
-        .collect()
+        .collect::<Vec<Vec<(String, Vec<HarnessSubtestResult>)>>>()
+        .concat()
 }
 
 /// Run the pinned upstream WebStorage window subset
@@ -4896,30 +4915,19 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                 cases.push((relative.clone(), results));
                 // wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源追加
                 // dedicated worker 腿，上报 `.any.worker.js` 键（对账映射
-                // `.any.worker.html` 分母变体）。上游 wptserve 对 `.any.js` 双变体
-                // 服务（serve.py AnyWorkerHtmlHandler 无条件面；manifest global= 缺省
-                // window+dedicatedworker——writing-tests/testharness.html#test-globals）：
-                // 实证 8c04fb8d43 三家 union 37 个 encoding worker 变体基文件全部为
-                // 「无 global= META（缺省双变体）或显式 window,worker token」，
-                // `global=window`-only（single-byte-decoder）分母无 worker 变体；
-                // sharedworker/serviceworker token 只生成专属变体页不生成
-                // `.any.worker.html`，不跑。
-                if options.worker_variants {
-                    let globals = crate::testharness_workers::wpt_meta_globals(&source);
-                    let dedicated_variant = globals.is_empty()
-                        || globals
-                            .iter()
-                            .any(|global| global == "worker" || global == "dedicatedworker");
-                    if dedicated_variant {
-                        let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
-                        let results = crate::testharness_workers::run_any_js_dedicated_case_as(
-                            wpt_root,
-                            &worker_key,
-                            &worker_key,
-                            &harness_source,
-                        );
-                        cases.push((worker_key, results));
-                    }
+                // `.any.worker.html` 分母变体）。分道判定（缺省双变体 /
+                // worker token 语义）见 [`crate::testharness_workers::dedicated_worker_variant`]。
+                if options.worker_variants
+                    && crate::testharness_workers::dedicated_worker_variant(&source)
+                {
+                    let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
+                    let results = crate::testharness_workers::run_any_js_dedicated_case_as(
+                        wpt_root,
+                        &worker_key,
+                        &worker_key,
+                        &harness_source,
+                    );
+                    cases.push((worker_key, results));
                 }
                 if ws_wss_enumeration {
                     // any.js 形态 variant 键追加跑：case 名带 query → 包装页
