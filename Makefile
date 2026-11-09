@@ -1222,8 +1222,8 @@ fetch-wpt-webcrypto:
 	bash tests/wpt-runner/scripts/goals/38-webcrypto-compat-v3.sh
 
 # 2026-11-09 v3 全语料（69,795 keys）本地与 CI 同阈；2026-11-10 r4 实证 3600
-# 单核满速仍守卫杀树（修复后 Hybrid-KEM 全量枚举，空 JSON），随 ci-shards
-# crypto 分片同批 7200（6a10ddaf8）。
+# 单核守卫杀树空 JSON（卡点待查：11-03 锚同语料 3m34s，非单纯慢），随
+# ci-shards crypto 分片同批 7200（6a10ddaf8）。
 testharness-webcrypto: target-disk-guard fetch-wpt-webcrypto target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),7200) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)
 
