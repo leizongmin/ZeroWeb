@@ -3791,12 +3791,16 @@ fn remeasure_text_with_float_exclusions_inner(
                 || !matches!(box_node.overflow_y, OverflowClip::Visible);
             let bfc_gate = std::env::var("ZW_IFC_AUTOHEIGHT_BFC").as_deref() != Ok("0");
             // R5470：行盒证据门——text_height=0（IFC 零行盒）时行盒底不可信，不得据以
-            // 收窄：floats-149 的 .block 流内内容经 display:inline div 中间层物化，行盒
-            // 不进本容器 IFC 行流（lines=0、span 层 h=19），行盒真值经 nested 臂折返
-            // float_bottom——零行盒证据下退回 max 旧口径（含 float extent），待行盒归属
-            // 缺陷单列修复后移除本臂。multicol 子树同退旧口径（floats-clear-multicol-001：
-            // 列断流里 float 参与列内布局并撑列，§10.6.3 单列收窄把 .container 250→20
-            // 致 br clear 的 clearance/列位判定链断，clear 从第三列 float 尾错回第一列）。
+            // 收窄：floats-149 的 .block 流内内容经 display:inline div 中间层物化后子
+            // span 块化 float（§9.7 块化＝BFC 根），文本行合法归属 float 自身 IFC
+            //（R5475 已落盘单行 float 自持行盒），本容器 IFC 收集 0 文本行＝spec 正确
+            //（收集器视块级 span 发 FloatAnchor 不下探，chromium 同构）而非行盒归属
+            // 缺陷——零行盒普通块高度真值来自 float extent（§10.6.7 域），塌缩到
+            // text_height=0 即绿条消失（floats-149 形）。R5476 复核定谳：**恒久保留**，
+            // 非「待行盒归属修复后移除」的回退臂。multicol 子树同退旧口径
+            //（floats-clear-multicol-001：列断流里 float 参与列内布局并撑列，§10.6.3
+            // 单列收窄把 .container 250→20 致 br clear 的 clearance/列位判定链断，
+            // clear 从第三列 float 尾错回第一列）。
             let content_height = if bfc_gate && !establishes_bfc && text_height > 0.0 && !in_multicol {
                 text_height
             } else {
