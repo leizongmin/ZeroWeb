@@ -13,11 +13,11 @@ use zero_engine::{
     extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_sched, extract_script_credentials,
     extract_script_csp_info, extract_script_referrer_policies, extract_script_source_positions,
     extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
-    page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
+    register_dom_callbacks, resolve_document_url, script_classic_catch_tail, script_clear_current_script,
     script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
     script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_cache_probe,
     script_module_entry_precheck, script_module_eval_error_report, script_report_module_failure,
-    script_report_module_failure_cached, script_run_classic_page_strict, script_set_current_script,
+    script_report_module_failure_cached, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -5222,10 +5222,6 @@ impl WebView {
             let url = module_dep_base
                 .clone()
                 .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
-            // s368（写面 SCRIPT 编译车道）：true = 本脚本走 SCRIPT 直编译（见下方 classic
-            // 臂注记）——sentinel 读取面按此门控（本车道无 sentinel 复位，读到上一个
-            // wrapper 脚本残留值即假错）。
-            let mut classic_script_lane = false;
             let mut full = if is_module {
                 // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
                 // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，
@@ -5439,35 +5435,32 @@ impl WebView {
                 // 延迟命名空间 promise，依赖图急切求值、入口体延迟到属性访问。
                 // https://tc39.es/proposal-defer-import-eval/
                 let classic_code = zero_script_sandbox::rewrite_classic_deferred_imports(&code);
-                if strict && classic_source_has_document_write(&classic_code) {
-                    // s368（写面 SCRIPT 编译车道）：含 write 的 classic 脚本走 **SCRIPT 直编译**
-                    // （sandbox `execute` = `Script::compile`，体求值前原生 GDI 建 var/fn 全局
-                    // 绑定）——eval 车道（strict 间接 eval）同脚本 var 绑定 eval 局部、accessor
-                    // 导出在**源尾**（体后）才发布，write 面 mid-body eval 对同脚本 var
-                    // ReferenceError（load-error-events-3 判据 `onExecute(test6_load)` 即此面，
-                    // s367 勘根四条 wrapper 内修复路径全堵后定谳的结构性修复）。指令序言
-                    // 原生生效（源首 directive 不被前置行破坏——R201 判定机器对本车道
-                    // 不再需要）；sourceURL 注注释于源真末尾（s336 报告位置保真同源）。
-                    // currentScript 设索引在执行前宿主侧单独 execute（见 full 构建后），
-                    // 清理沿用既有无条件 clear（R3258 配对不变）。
+                if strict {
+                    // s369（strict 车道 SCRIPT 直编译迁移）：全量 classic 脚本走 **SCRIPT
+                    // 直编译**（sandbox `execute_classic` = `Script::compile`，体求值前原生
+                    // GDI 建 var/fn 全局绑定——eval wrapper 车道 strict 间接 var 绑定 eval
+                    // 局部、accessor 导出在**源尾**（体后）才发布，write 面 mid-body eval
+                    // 对同脚本 var ReferenceError（load-error-events-3 判据，s368 已按
+                    // write 探测路由收口，本刀全量收编 retire 探测分叉）。指令序言原生
+                    // 生效（源首 directive 不被前置行破坏）；R147/R198/R201 accessor 导出
+                    // 机器对本车道自然退役（GDI 原生语义）。抛错报告面 = s335 契约
+                    // （in-execute catch：reportError 原值透传 + 元素 load 微任务派发，
+                    // 序 `[error, 体内微任务, load]` 精确同构——catch 片经
+                    // [`script_classic_catch_tail`] 供给，`__zw_e` 名 sandbox 侧契约）。
+                    // currentScript 设索引在执行前宿主侧单独 execute（R3258 预备路径），
+                    // 清理沿用既有无条件 clear（配对不变）；sentinel（`__zw_pgerr__`）
+                    // 尾读随 wrapper 撤出本车道（sentinel 读取臂已撤）。
+                    // sourceURL 注注释于源真末尾（s336 报告位置保真同源；换行先行——
+                    // bing 教训：源尾行注释会把同行后缀整体吞掉）。
                     // https://tc39.es/ecma262/#sec-globaldeclarationinstantiation
                     // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
-                    classic_script_lane = true;
                     let mut direct = classic_code;
                     if let Some(src) = strict_report_src.as_deref() {
-                        // 换行先行（bing 教训：源尾行注释会把同行后缀整体吞掉）。
                         direct.push('\n');
                         direct.push_str("//# sourceURL=");
                         direct.extend(src.chars().filter(|c| !c.is_control()));
                     }
                     direct
-                } else if strict {
-                    // s335（微任务检查点序）：strict 车道用报告变体——classic 抛错在 catch 内 reportError
-                    // （window error 事件同步派发，spec report the exception 先于检查点）+ 元素
-                    // load 微任务派发（spec fire load 在检查点后）；基线包装无报告面，browser/
-                    // renderer 车道 sentinel→R2940 自报链共用基线（互换即双报）。
-
-                    script_run_classic_page_strict(&classic_code, script_index, strict_report_src.as_deref())
                 } else {
                     format!(
                         "{set}\n__zw_begin_script&&__zw_begin_script();\n{classic_code}",
@@ -5587,13 +5580,20 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     .map(|r| r.value == "true")
                     .unwrap_or(false);
 
-            // s368：SCRIPT 编译车道 currentScript 设索引（wrapper 内首行的宿主侧等价，
-            // R3258 typeof 守卫 shim 缺席即 no-op）——体求值前设、既有无条件 clear 清，
-            // write 面 mid-body eval 与事件处理器编译窗的可见性与 wrapper 车道一致。
-            if classic_script_lane {
+            // s369：SCRIPT 直编译车道（strict 全量 classic）currentScript 设索引
+            // （wrapper 内首行的宿主侧等价，R3258 typeof 守卫 shim 缺席即 no-op）——
+            // 体求值前设、既有无条件 clear 清，write 面 mid-body eval 与事件处理器
+            // 编译窗的可见性同构。体 + 抛错报告面一次 execute_classic 完成（in-execute
+            // catch：s335 序契约，见 classic 臂注记）。
+            let execution = if strict && !is_module {
+                // 设索引先于体（wrapper 首行的宿主侧等价）；非 strict 车道前置串自带、
+                // 模块车道不设（既有口径）。
                 let _ = sandbox.execute(&script_set_current_script(script_index));
-            }
-            let execution = sandbox.execute(&full).map(|_| ());
+                let catch_tail = script_classic_catch_tail(strict_report_src.as_deref());
+                sandbox.execute_classic(&full, &catch_tail).map(|_| ())
+            } else {
+                sandbox.execute(&full).map(|_| ())
+            };
             if eval_wrap_active {
                 let _ = sandbox.execute(
                     "if(globalThis.__zwRealEval)globalThis.eval=globalThis.__zwRealEval;if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;",
@@ -5653,17 +5653,9 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             if module_cache_hit && execution.is_ok() && eval_err_reported.is_empty() {
                 let _ = sandbox.execute(&script_dispatch_script_event_by_ordinal(script_index, "load"));
             }
-            // s368：SCRIPT 编译车道跳过 sentinel 读取——本车道不复位 `__zw_pgerr__`，
-            // 执行成功时读到的是上一个 wrapper 脚本抛错残留值（假 first_strict_error）。
-            let script_error = if strict && !is_module && !classic_script_lane && execution.is_ok() {
-                match sandbox.execute(&page_script_error_check()) {
-                    Ok(result) if result.value.is_empty() => None,
-                    Ok(result) => Some(result.value),
-                    Err(e) => Some(format!("{e}")),
-                }
-            } else {
-                None
-            };
+            // s369：sentinel（`__zw_pgerr__` 尾读）随 wrapper 撤出 strict 车道——直编译
+            // 抛错走 execution Err→combined_err 面归 first_strict_error（t5 消息头+
+            // 帧行同契约）；browser/renderer 车道仍走各自身份的 wrapper+sentinel 链。
             // clear 无论成败都执行（R3258 currentScript 清理的 try-finally 等价——
             // 9ef914d10 改顺序执行后用 `execution.or(clear)` 误吞 strict 错误：execution
             // Err 时 .or() 取 clear 的 Ok → 抛错脚本在 strict 路径返回 Ok（js-dom R139
@@ -5674,11 +5666,6 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             } else {
                 sandbox.execute(script_clear_current_script()).map(|_| ()).err()
             };
-            if let Some(e) = script_error {
-                // s108：首错记录 + 继续后续脚本（见 first_strict_error 声明注记）。
-                first_strict_error.get_or_insert_with(|| format!("page script: {e}"));
-                continue;
-            }
             let combined_err: Result<(), _> = execution.err().or(clear_err).map_or_else(|| Ok(()), Err);
             if let Err(e) = combined_err {
                 if strict && !is_module {
@@ -8533,19 +8520,6 @@ fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, sp
         Some(zero_script_sandbox::ImportMapResolution::Blocked) => None,
         _ => Some(spec.to_string()),
     }
-}
-
-/// s368（html-semantics M2 切片 368）：classic 脚本 `document.write` 静态探测——
-/// 命中脚本路由 **SCRIPT 直编译车道**（[`run_page_scripts_impl`] classic 臂）。
-/// 子串启发式（覆盖 write/writeln 两形；动态构造写调用如 `doc['wr'+'ite']` 不命中），
-/// 方向 **fail-open**：漏检回落 eval wrapper 车道 = 既有行为零回归；误检（字符串/
-/// 注释内出现字面量）落入 SCRIPT 车道仅为更 spec 正确的语义（GDI 体前建 var/fn
-/// 全局绑定、顶层 `this` 恒 globalThis、跨脚本词法重声明按规范早错），语料勘定
-/// the-script-element 域 33 页 / semantics 全树 36 页（s367 基线）。
-/// https://tc39.es/ecma262/#sec-globaldeclarationinstantiation
-/// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document.write()
-fn classic_source_has_document_write(code: &str) -> bool {
-    code.contains("document.write")
 }
 
 fn compile_module_contract(

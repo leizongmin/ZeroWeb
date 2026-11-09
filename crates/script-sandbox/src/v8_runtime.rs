@@ -484,6 +484,28 @@ impl Drop for IsolateEnterGuard {
     }
 }
 
+/// s369：per-execute 微任务策略守卫——catch 车道（execute_classic）内 kExplicit，
+/// Drop 恢复 kAuto。背景：V8 kAuto 在顶层 `script.run` 展开即自动执行微任务检查点，
+/// 直编译体的微任务会在 catch 片（reportError 同步面）之前被排空——序背离 wrapper
+/// 车道 s335 契约 `[error, 体内微任务, load 微任务]`（checkpoint-after-window-onerror
+/// t1 判据面）。kExplicit 期间唯一排空点 = catch 面/成功路径的显式
+/// `perform_microtask_checkpoint`；嵌套宿主回调内的子 run 本就无自动检查点（JS 栈
+/// 非空，kAuto 亦不触发）——策略切换对既有嵌套语义零影响。声明先于 scope 链 =
+/// Drop 晚于 scope 链析构（Rust 逆序 drop），恢复时 isolate 借用已释放。
+struct MicrotasksExplicitGuard {
+    isolate: *mut v8::OwnedIsolate,
+}
+
+impl Drop for MicrotasksExplicitGuard {
+    fn drop(&mut self) {
+        // SAFETY: 同 IsolateEnterGuard——guard 活跃期 isolate 未失效，drop 时
+        // scope 链已析构。
+        unsafe {
+            (*self.isolate).set_microtasks_policy(v8::MicrotasksPolicy::Auto);
+        }
+    }
+}
+
 /// 确保V8平台已初始化。
 ///
 /// P1b S1：engine 的原生 DOM 绑定（`zero_engine::dom_bindings`）现直接依赖 v8 crate，
@@ -1142,6 +1164,24 @@ impl V8Sandbox {
     ///
     /// 返回脚本执行结果，包含返回值的字符串表示和执行耗时。
     pub fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
+        self.execute_with_catch(code, None)
+    }
+
+    /// s369（strict 车道 SCRIPT 直编译迁移）：classic 脚本**直编译执行** + in-execute
+    /// catch 面——体即 global code（GDI 原生 var/fn 提升，指令序言原生生效），抛错
+    /// （含 compile 期 SyntaxError——wrapper 车道内层 eval 的 parse 抛错同样进 catch）
+    /// 时在同一次 execute 内、尾检查点前：异常原值挂 `globalThis.__zw_e` → 运行
+    /// `catch_js`（错误吞没）→ 检查点 FIFO 排空 `[体内微任务, load 微任务]` → 删
+    /// `__zw_e` → 返回 Err（t5 消息头+帧行同契约）。序 = wrapper 车道 s335 精确同构
+    /// `[error 同步派发, 体内微任务, load 微任务]`（checkpoint-after-window-onerror
+    /// t1 判据）；看门狗 terminate 不走 catch 面（wrapper 外层面同构：强杀无报告）。
+    /// `__zw_e` 名与 engine [`script_classic_catch_tail`] 片契约耦合（片内引用后即删，
+    /// 不残留全局枚举面）。返回值契约与 [`Self::execute`] 一致。
+    pub fn execute_classic(&mut self, code: &str, catch_js: &str) -> Result<ScriptResult, ScriptError> {
+        self.execute_with_catch(code, Some(catch_js))
+    }
+
+    fn execute_with_catch(&mut self, code: &str, catch_js: Option<&str>) -> Result<ScriptResult, ScriptError> {
         if code.trim().is_empty() {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
@@ -1162,6 +1202,17 @@ impl V8Sandbox {
             isolate.enter();
         }
         let _enter_guard = IsolateEnterGuard { isolate };
+
+        // s369：catch 车道 kExplicit（先于 scope 链声明 = Drop 晚于 scope 链析构，
+        // 见 MicrotasksExplicitGuard 注记）。
+        let _mt_guard = if catch_js.is_some() {
+            isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
+            Some(MicrotasksExplicitGuard {
+                isolate: isolate as *mut _,
+            })
+        } else {
+            None
+        };
 
         let start = std::time::Instant::now();
 
@@ -1216,7 +1267,11 @@ impl V8Sandbox {
 
         let script = v8::Script::compile(try_catch, code_str, None);
         if try_catch.has_caught() || script.is_none() {
-            let msg = v8_try_catch_message!(try_catch);
+            // 宏体 move 实参——重借渡保外层绑定（catch 面仍需 try_catch）。
+            let msg = v8_try_catch_message!(&mut *try_catch);
+            if let Some(catch_src) = catch_js {
+                Self::run_catch_face(try_catch, catch_src);
+            }
             return Err(ScriptError::CompileError(msg));
         }
         let script = script.unwrap();
@@ -1235,7 +1290,10 @@ impl V8Sandbox {
                 try_catch.cancel_terminate_execution();
                 return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
             }
-            let msg = v8_try_catch_message!(try_catch);
+            let msg = v8_try_catch_message!(&mut *try_catch);
+            if let Some(catch_src) = catch_js {
+                Self::run_catch_face(try_catch, catch_src);
+            }
             return Err(ScriptError::RuntimeError(msg));
         }
         let result = result.unwrap();
@@ -1297,6 +1355,31 @@ impl V8Sandbox {
             return Err(ScriptError::CompileError(msg));
         }
         Ok(())
+    }
+
+    /// s369 in-execute catch 面（[`Self::execute_classic`]）：挂 `__zw_e` → 复位
+    /// TryCatch（主错文本已冻结于调用方）→ 编译+运行 catch 片（次生错误吞没——片体
+    /// 自带 try 守卫，防御异形挂载失败）→ 检查点 FIFO 排空 `[体内微任务, load 微任务]`
+    /// → 原生 delete `__zw_e`（不残留全局枚举面）。
+    fn run_catch_face(tc: &mut v8::PinnedRef<v8::TryCatch<v8::HandleScope>>, catch_js: &str) {
+        let context = tc.get_current_context();
+        let global = context.global(tc);
+        if let Some(exception) = tc.exception()
+            && let Some(key) = v8::String::new(tc, "__zw_e")
+        {
+            let _ = global.set(tc, key.into(), exception);
+        }
+        tc.reset();
+        if let Some(src) = v8::String::new(tc, catch_js) {
+            if let Some(script) = v8::Script::compile(tc, src, None) {
+                let _ = script.run(tc);
+            }
+            tc.reset();
+        }
+        tc.perform_microtask_checkpoint();
+        if let Some(key) = v8::String::new(tc, "__zw_e") {
+            let _ = global.delete(tc, key.into());
+        }
     }
 
     /// 在沙箱中执行JavaScript脚本并返回JSON字符串。
@@ -1596,6 +1679,9 @@ impl Drop for V8Sandbox {
 impl crate::Sandbox for V8Sandbox {
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute(self, code)
+    }
+    fn execute_classic(&mut self, code: &str, catch_js: &str) -> Result<ScriptResult, ScriptError> {
+        V8Sandbox::execute_classic(self, code, catch_js)
     }
     fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute_json(self, code)
@@ -3895,6 +3981,72 @@ mod tests {
             settled.lock().unwrap().as_deref(),
             Some("rejected:TypeError:Failed to fetch module graph: 'https://zero.test/graphcut.js'"),
             "依赖图断以携带已解析 URL 的 TypeError rejection 呈现"
+        );
+    }
+
+    /// s369 execute_classic 契约守卫：①GDI 体前建 var/fn 全局绑定（同脚本抛错后
+    /// 全局可读）；②catch 序 `[catch 同步, 体内微任务, load 微任务]`（s335 同构）；
+    /// ③`__zw_e` 跑后即删；④Err 文本保真（t5 消息头）。红态对：旧 eval 车道同脚
+    /// var 对 write 面 mid-body eval ReferenceError（s367 probe-e），直编译天然消除。
+    #[test]
+    fn test_execute_classic_gdi_catch_order_s369() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox.execute("globalThis.__zwSeq='';").unwrap();
+        let exec = sandbox.execute_classic(
+            "var gv = 41;\nPromise.resolve().then(function(){__zwSeq += 'body;';});\nthrow new TypeError('boom-s369');",
+            "__zwSeq += 'catch;';Promise.resolve().then(function(){__zwSeq += 'load;';});",
+        );
+        let err = exec.expect_err("抛错返 Err");
+        assert!(err.to_string().contains("boom-s369"), "Err 文本保真: {err}");
+        assert_eq!(
+            sandbox.execute("globalThis.gv").unwrap().value,
+            "41",
+            "GDI：var 全局绑定体前建立，抛错后仍可读（旧 eval 车道同脚 var 局部）"
+        );
+        assert_eq!(
+            sandbox.execute("globalThis.__zwSeq").unwrap().value,
+            "catch;body;load;",
+            "序契约：catch 同步先于检查点，体内微任务先于 load 微任务（s335 [error,body-μt,load]）"
+        );
+        assert_eq!(
+            sandbox.execute("typeof globalThis.__zw_e").unwrap().value,
+            "undefined",
+            "__zw_e 跑后即删"
+        );
+    }
+
+    /// s369 compile 期 SyntaxError 同进 catch 面（wrapper 内层 eval parse 抛错同构
+    /// ——spec classic parse 失败亦 report the exception + error 事件）。
+    #[test]
+    fn test_execute_classic_syntax_error_enters_catch_s369() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        let caught: std::sync::Arc<std::sync::Mutex<Option<String>>> = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let cb = caught.clone();
+        sandbox.register_callback(
+            "__zw_mark",
+            Box::new(move |args| {
+                *cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let exec = sandbox.execute_classic("var a = ;", "__zw_mark('syntax-caught');");
+        assert!(exec.is_err(), "compile 失败返 Err");
+        assert_eq!(
+            caught.lock().unwrap().as_deref(),
+            Some("syntax-caught"),
+            "compile 期异常同进 catch 面"
+        );
+        assert!(
+            matches!(exec.unwrap_err(), crate::ScriptError::CompileError(_)),
+            "错误分类保持 CompileError"
         );
     }
 

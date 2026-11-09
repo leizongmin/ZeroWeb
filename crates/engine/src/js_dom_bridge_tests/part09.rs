@@ -8331,7 +8331,7 @@ fn test_canvas_ctr_illegal_ctor_and_settings_s334() {
 }
 
 #[test]
-fn test_classic_strict_wrapper_uncaught_report_and_load_s335() {
+fn test_classic_strict_lane_uncaught_report_and_load_s335() {
     // s335 契约（strict 车道未捕获报告面，spec run-a-classic-script abrupt completion）：
     //   ①window error 事件在 catch 内**同步**派发（reportError 原值透传——报告先于检查点）；
     //   ②体内 queueMicrotask 微任务经包装 execute 末检查点排空——序在报告之后；
@@ -8369,13 +8369,19 @@ fn test_classic_strict_wrapper_uncaught_report_and_load_s335() {
          document.getElementById('zw-s335').addEventListener('load',function(){__zlog.push('load');});",
     )
     .unwrap();
-    // strict 变体：体内微任务 + 抛错
-    let strict = crate::js_dom_bridge::script_run_classic_page_strict(
+    // s369 直编译车道：in-execute catch（sandbox execute_classic）+ catch 片——
+    // currentScript 宿主侧设索引（wrapper 首行的宿主侧等价）
+    sandbox
+        .execute(&crate::js_dom_bridge::script_set_current_script(0))
+        .unwrap();
+    let exec = sandbox.execute_classic(
         "__zlog.push('body');queueMicrotask(function(){__zlog.push('mt');});throw new Error('boom');",
-        0,
-        None,
+        &crate::js_dom_bridge::script_classic_catch_tail(None),
     );
-    sandbox.execute(&strict).unwrap();
+    assert!(
+        exec.is_err(),
+        "直编译抛错返 Err（first_strict_error 经 combined_err 链）"
+    );
     assert_eq!(
         sandbox
             .execute("globalThis.__zlog.join('|')")
@@ -8384,13 +8390,14 @@ fn test_classic_strict_wrapper_uncaught_report_and_load_s335() {
         "body|error:boom|mt|load",
         "strict 臂：报告（catch 内同步）→ 检查点微任务 → 元素 load（spec 序）"
     );
-    let sentinel = sandbox
-        .execute(&crate::js_dom_bridge::page_script_error_check())
-        .unwrap()
-        .value;
     assert!(
-        sentinel.contains("boom"),
-        "sentinel 原始消息保真（first_strict_error 链）: {sentinel}"
+        exec.unwrap_err().to_string().contains("boom"),
+        "Err 文本原始消息保真（first_strict_error 链，t5 消息头+帧行同契约）"
+    );
+    assert_eq!(
+        sandbox.execute("typeof globalThis.__zw_e").unwrap().value,
+        "undefined",
+        "__zw_e 挂载面跑后即删（不残留全局枚举面）"
     );
     // 基线包装（browser tab / renderer 车道共用）：静默面保持
     sandbox.execute("globalThis.__zlog=[];").unwrap();
@@ -8468,8 +8475,14 @@ fn test_window_onerror_legacy_five_arg_adapter_and_report_position_s336() {
         "function",
         "③getter identity 面：window.onerror 返原始 fn"
     );
-    let strict = crate::js_dom_bridge::script_run_classic_page_strict("throw 42;", 0, Some("data:,throw 42"));
-    sandbox.execute(&strict).unwrap();
+    sandbox
+        .execute(&crate::js_dom_bridge::script_set_current_script(0))
+        .unwrap();
+    let exec = sandbox.execute_classic(
+        "throw 42;",
+        &crate::js_dom_bridge::script_classic_catch_tail(Some("data:,throw 42")),
+    );
+    assert!(exec.is_err(), "直编译抛错返 Err");
     assert_eq!(
         sandbox
             .execute("globalThis.__zlog.join('|')")
