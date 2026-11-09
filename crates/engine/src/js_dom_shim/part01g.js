@@ -346,14 +346,94 @@
     return null;
   }
 
+  // 范围面后缀扫描：末端 FB 块之后、编辑宿主内是否尚有可见 FB 块（子树前序
+  // 扫，table 族 veto 同 _zwFbqVisBlock 读面隐形域）。
+  function _zwFbqSubtreeHasVisBlock(root) {
+    var stack = [root];
+    var g = 0;
+    while (stack.length && g++ < 256) {
+      var n = stack.pop();
+      if (!n) continue;
+      if (_zwJusIsEditingHost(n)) continue;
+      if (_zwJusIsHtmlElement(n,
+          ['td', 'th', 'tr', 'table', 'tbody', 'thead', 'tfoot'])) continue;
+      if (_zwJusIsHtmlElement(n, _zwFbqValueBlockNames) && _zwJusIsEditable(n)) {
+        return true;
+      }
+      var kids = n.childNodes;
+      for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
+    }
+    return false;
+  }
+
+  function _zwFbqHasVisBlockAfter(node) {
+    var cur = node;
+    var g = 0;
+    while (cur && g++ < 256) {
+      var sib = cur.nextSibling;
+      while (sib) {
+        if (_zwFbqSubtreeHasVisBlock(sib)) return true;
+        sib = sib.nextSibling;
+      }
+      cur = cur.parentNode;
+      if (!cur || _zwJusIsEditingHost(cur)) return false;
+    }
+    return false;
+  }
+
+  // 异型多块公共祖先：自 b1 爬升（宿主边界止），首个 FB 块名且可编辑且含 b2
+  // 的祖先即返；无则 null。qV（dl 跨块形）与 qI 否决共用。
+  function _zwFbqCommonVisBlock(b1, b2) {
+    var anc = b1.parentNode;
+    var g = 0;
+    while (anc && g++ < 256) {
+      if (_zwJusIsEditingHost(anc)) return null;
+      if (_zwJusIsEditable(anc) && _zwJusIsHtmlElement(anc, _zwFbqValueBlockNames)
+      && _zwJusIsAncestorOf(anc, b2)) return anc;
+      anc = anc.parentNode;
+    }
+    return null;
+  }
+
   globalThis.__zw_ce_fb_value = function () {
     var range = _zwVaGetActiveRange();
     if (!range) return '';
     var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
     if (!b1) return '';
     var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
-    if (b1 !== b2) return '';
-    return _zwJusTag(b1);
+    if (!b2) return '';
+    if (b1 === b2) return _zwJusTag(b1);
+    // Chrome delta（范围多块面，2026-11-10 fb 读面刀）：同型多块按 tag 相等读
+    // 块名——`<p>[foo<p>bar]` qV-before 录音 "p"（52 行实证，此前 b1!==b2 元素
+    // 恒返 ""）；宿主尾块之后尚有可见 FB 块时 Chrome 读 ""——`<p>[foo<p>bar]
+    // <p>baz` 录音 "" + qI=false（:708，范围面上下文敏感非端点语义）。
+    if (_zwJusTag(b1) === _zwJusTag(b2)) {
+      return _zwFbqHasVisBlockAfter(b2) ? '' : _zwJusTag(b1);
+    }
+    // Chrome delta（异型多块面）：读含两端的最近 FB 块公共祖先——`<dl><dt>
+    // [foo<dd>bar]</dl>` qV-before 录音 "dl"（dt/dd 均为 FB 块名停于端点，
+    // Chrome 读共同块 dl，fbVals=div/p 四条目 qV 全 "dl"）；宿主内无公共 FB 块
+    // 祖先形（`<div>[foo<p>bar]</p></div>`、`<h1>[foo</h1><h2>bar]</h2>` 等）
+    // 录音 ""。
+    var anc = _zwFbqCommonVisBlock(b1, b2);
+    return anc ? _zwJusTag(anc) : '';
+  };
+
+  // Chrome delta（formatBlock qI 读面，2026-11-10 fb 读面刀）：原始端点 FB 块
+  // 恰单侧有块、或异型且宿主内无公共 FB 块祖先 → true（语料 qI true 14 行全由
+  // 本判据覆盖：`<p>[foo</p>bar]` 单侧、`<h1>[foo</h1><h2>bar]</h2>` 异型无
+  // 公共祖先等）；同型多块（含 `<p>[foo<p>bar]<p>baz` 尾块形 :708 录音 false）、
+  // 单块、异型爬达共同祖先形（`<dl><dt>[foo<dd>bar]</dl>` fbVals=div 条目
+  // qI 录音 false）→ false。同形 fbVals=p 条目 qI 录音 true 与 fbVals=div
+  // false 互斥＝录音会话顺序泄漏签名，残留 2 行维持红挂账。
+  globalThis.__zw_ce_fb_indeterm = function () {
+    var range = _zwVaGetActiveRange();
+    if (!range) return false;
+    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
+    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
+    if (!b1 || !b2) return !!(b1 || b2);
+    if (_zwJusTag(b1) === _zwJusTag(b2)) return false;
+    return !_zwFbqCommonVisBlock(b1, b2);
   };
 
   // indentNodes（vendored implementation.js :5482-5517）。ol/ul 父臂同型

@@ -5355,6 +5355,14 @@
       && typeof globalThis.__zw_ce_list_state === 'function') {
         try { return !!globalThis.__zw_ce_list_state(liLow).indeterm; } catch (_eLstI) {}
       }
+      // editing-compat fb 读面刀（2026-11-10）：formatBlock Indeterm——原始端
+      // 点 FB 块恰单侧有块、或异型且宿主内无公共 FB 块祖先 → true；同型多块、
+      // 单块、异型爬达共同祖先形 → false。判据与语料行号注见 part01g
+      // __zw_ce_fb_indeterm。
+      if (liLow === 'formatblock'
+      && typeof globalThis.__zw_ce_fb_indeterm === 'function') {
+        try { return !!globalThis.__zw_ce_fb_indeterm(); } catch (_eFbI) {}
+      }
       // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令
       // Indeterm——含域 formattable 有效值 ≥2 互异（参考实现 :8470 生成块，
       // 算法见 part01c __zw_ce_value_query 挂载注释）。
