@@ -790,7 +790,8 @@ fn box_content_max_width_inner(
                 // shrink。仅 display:Inline：inline-block/flex/grid 有自身盒模型，outer_w 真实有效
                 //（height-computed-001 等），不走此路。default-off 待全量 A/B 验证 net≥0。
                 inline_sum += box_content_max_width(child, doc, styles).max(0.0);
-            } else if std::env::var("ZW_IB_DESTRETCH").as_deref() != Ok("0")
+            } else if mixed_walk_on
+                && std::env::var("ZW_IB_DESTRETCH").as_deref() != Ok("0")
                 && child.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
                     matches!(
                         s.display,
@@ -828,7 +829,9 @@ fn box_content_max_width_inner(
                 // 配对无双计（walk 在 inline-block 族停止贡献 0，原子宽度归本分支）；
                 // R54xx `apply_flex_item_base_authority` 消费 flex_item_base_size 链经此
                 // 臂取得真基准写回 flex_basis。kill-switch `ZW_IB_DESTRETCH=0` 回退
-                // outer_w 旧行为。
+                // outer_w 旧行为（ib_atom_seg 的唯一消费方是 mixed_walk_on 门的段回调
+                // 变体——`ZW_MIXED_BARE_TEXT=0` 时本臂同步让位 outer_w，注册无消费方
+                // 即原子宽整体丢失）。
                 // 性能门 `subtree_has_mixed_inline_content`：仅 taffy 盲区形态（混合
                 // inline 内容）递归——其余形态 child.width 已是正确贡献（同款性能口径：
                 // block_max_content_width 全量递归 bench +10.4%，见 R4000 臂注）。
@@ -853,6 +856,11 @@ fn box_content_max_width_inner(
                             | DisplayValue::InlineTable
                     )
                 })
+                // destretch 关闭时混合形态让位 outer_w（其 kill-switch 文档语义，见上
+                // 一臂注）；destretch 开启时混合形态已在上一臂被消费、到不了这里
+                //（replaced 形态仍归本臂段核算），此条件默认路径恒真不改变行为。
+                && (std::env::var("ZW_IB_DESTRETCH").as_deref() == Ok("0")
+                    || !subtree_has_mixed_inline_content(child, styles, doc))
             {
                 // R54xx br 分段修正（else 落点）：形态门未命中的 inline-block 族纯文本
                 // 原子（`<li>hi<span style="display:inline-block">ab cd</span>` 的 span、

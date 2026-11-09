@@ -132,3 +132,66 @@ fn incremental_relayout_matches_full_for_summary_row() {
         );
     }
 }
+
+/// DEF-1（css-sizing-3 §5.3 box-sizing，双审查返修）：`flex_item_base_size` 返回
+/// border-box 口径基准（含 item 自身 padding+border，intrinsic_sizing.rs 契约注释），
+/// taffy 对 ContentBox 条目给 flex_basis 叠加 padding_border_sum（taffy-local
+/// flexbox.rs determine_flex_base_size 的 box_sizing_adjustment 臂；converter
+/// computed_style_to_taffy 确实搬运水平 padding/border）——
+/// `apply_flex_item_base_authority` 写回须按 box-sizing 补偿（R4360 同口径），否则
+/// 带水平 frame 的 ContentBox 条目外宽溢出 frame（def 审查 probe 形：基准 100、
+/// frame 12 → 旧写法 laid 112）。
+/// 区分力前提（zinc 探针定谳）：frame 必须在 **flex item 本体**——frame 在 item
+/// 内层子盒（wrapper>summary 形）时，taffy 叠加对象是 item 自身 taffy style 的
+/// padding_border_sum=0，旧写法同绿。故 padding/border 置于 .rgt 直接子 details
+/// （即 flex item），summary 保持 BASE_CSS 的 frame 0。
+/// 断言：content-box / border-box 两种带 12px frame 的条目最终外宽均 = 无 frame
+/// 对照外宽 + 12（±TOL）——旧缺陷形 content-box 条目 = 对照 + 24。
+#[test]
+fn padded_item_basis_no_frame_overflow() {
+    // PAD_CSS 声明在 BASE_CSS 后（同特异性 (0,1,1)，CSS Cascading §4 声明序后者胜）
+    // —— item frame = padding 5+5 + border 1+1 = 12。
+    const PAD_CSS: &str = "details.pad-content{box-sizing:content-box;padding:0 5px;border:1px solid #888}\
+        details.pad-border{box-sizing:border-box;padding:0 5px;border:1px solid #888}";
+    let item = |extra_class: &str, id: &str| {
+        format!(
+            "<details class=\"details-reset {extra_class}\" id=\"{id}\"><summary class=\"select-menu-button btn-link\">Language: <span class=\"text-bold\">Any</span></summary></details>"
+        )
+    };
+    let html = format!(
+        "<!doctype html><html><head><style>{BASE_CSS}{PAD_CSS}</style></head><body>\
+         <div class=\"hdr\"><div class=\"rgt\">{}{}{}</div></div></body></html>",
+        item("", "plain"),
+        item("pad-content", "pc"),
+        item("pad-border", "pb")
+    );
+    let mut p = RenderPipeline::new(1280.0, 800.0);
+    let r = p.render_html(&html, "");
+    let doc_rc = p.cached_doc_shared().expect("cached doc after render_html");
+    let doc = doc_rc.borrow();
+    let width_of = |dom: &zero_dom::Document, sel: &str| -> f32 {
+        let id = dom
+            .query_selector(dom.root(), sel)
+            .unwrap_or_else(|| panic!("{sel} missing"));
+        let (b, _, _) = walk_abs(&r.layout.root, id, 0.0, 0.0).unwrap_or_else(|| panic!("{sel} box"));
+        b.width
+    };
+    let plain = width_of(&doc, "#plain");
+    let pc = width_of(&doc, "#pc");
+    let pb = width_of(&doc, "#pb");
+    eprintln!("[def1] plain={plain} pc={pc} pb={pb}");
+    assert!(
+        (pc - (plain + 12.0)).abs() <= TOL,
+        "content-box 带 12px frame 条目外宽 {pc} 应 = 对照 {plain} + 12（旧缺陷形 flex_basis \
+         未补偿 → taffy 再叠 frame = +24）"
+    );
+    // pb 控制臂放宽到 1.0：BorderBox 分支写回原值 base（旧码同写、非本修复面），
+    // 行尾条目的最终外宽受 taffy round_layout 的 yoga 式右缘−左缘像素取整影响
+    //（compute/mod.rs:232 `round(cum_x + w) − round(cum_x)`，行内未取整 x 累计使
+    // 亚像素基准 +0.8；diag 探针定谳：整数基准下 BorderBox 精确落点无量化）。判别
+    // 责任在 pc 紧界臂（旧缺陷形 +24 必红），pb 只证 BorderBox 原值写入不溢出。
+    assert!(
+        (pb - (plain + 12.0)).abs() <= 1.0,
+        "border-box 带 12px frame 条目外宽 {pb} 应 ≈ 对照 {plain} + 12（±1 像素网格取整）"
+    );
+}

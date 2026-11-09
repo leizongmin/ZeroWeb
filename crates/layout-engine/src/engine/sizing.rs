@@ -2340,7 +2340,6 @@ impl LayoutEngine {
     /// （(25-15)×8+10=90 / (25-15)×19+10=200）。025 八行期望全 200（ref 平铺），
     /// ZW rows 5-8 渲 475/371/475/475。
     ///
-    /// 本 pass **必须后于 `apply_flex_cross_from_flexed_main`**（R4992 干扰假设：前置
     /// R54xx（css-flexbox-1 §4.1 flex base size + css-sizing-3 §5.1 max-content）：
     /// row flex auto 条目的 flex base 权威修正。taffy 首趟对「直接文本 + inline 级
     /// 元素子」混合内容子树的内容计量不可靠——converter 把 inline 级元素映射为
@@ -2350,6 +2349,12 @@ impl LayoutEngine {
     /// 168px）。ZW 测量（flex_item_base_size → box_content_max_width，inline 内容经
     /// dom_inline_text walk 求和）语义正确——本 pass 在第一趟布局后对失准条目改写
     /// flex_basis = ZW 基准并 mark_dirty，由调用方重跑 taffy 重解（R5407 同机制）。
+    /// ZW 基准为 border-box 口径（flex_item_base_size 文档契约），写入按条目
+    /// box-sizing 补偿（css-sizing-3 §5.3 box-sizing + R4360 同口径）：taffy 对
+    /// ContentBox 条目给 flex_basis 叠加 padding_border_sum（taffy-local flexbox.rs
+    /// determine_flex_base_size 的 box_sizing_adjustment 臂），BorderBox 条目不加
+    /// ——BorderBox 原值写入、ContentBox 写 content 口径（基准 - 水平 frame），
+    /// 否则带 padding/border 条目外宽溢出 frame。
     ///
     /// 触发条件（全部满足）：父 row/row-reverse flex + nowrap（wrap 换行后 base > laid
     /// 合法，跳过）+ 条目 width/basis auto + 水平书写 + 非替换非定位 + 主轴无 auto
@@ -2366,7 +2371,7 @@ impl LayoutEngine {
         styles: &HashMap<NodeId, ComputedStyle>,
         doc: &Document,
     ) -> bool {
-        use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue};
+        use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue};
         if std::env::var("ZW_FLEX_BASE_AUTHORITY").as_deref() == Ok("0") {
             return false;
         }
@@ -2418,7 +2423,19 @@ impl LayoutEngine {
                         .map(|c| c.width + c.margin_left + c.margin_right)
                         .sum();
                     if base + others <= content_w + 0.5 {
-                        st.flex_basis = taffy::style::Dimension::length(base.max(0.5));
+                        // css-sizing-3 §5.3 box-sizing + R4360 同口径补偿：base 为 ZW
+                        // border-box 基准（flex_item_base_size 契约），taffy 对 ContentBox
+                        // 条目给 flex_basis 叠加 padding_border_sum（taffy-local flexbox.rs
+                        // determine_flex_base_size 的 box_sizing_adjustment 臂），BorderBox
+                        // 条目不加——BorderBox 原值写入、ContentBox 写 content 口径
+                        // （base - frame），否则条目外宽溢出 frame。
+                        let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                        let basis = if matches!(item_style.box_sizing, BoxSizingValue::BorderBox) {
+                            base
+                        } else {
+                            base - frame
+                        };
+                        st.flex_basis = taffy::style::Dimension::length(basis.max(0.5));
                         let _ = taffy_tree.set_style(tid, st);
                         let _ = taffy_tree.mark_dirty(tid);
                         changed = true;
@@ -2433,6 +2450,7 @@ impl LayoutEngine {
         walk(root, None, None, taffy_tree, dom_to_taffy, styles, doc)
     }
 
+    /// 本 pass **必须后于 `apply_flex_cross_from_flexed_main`**（R4992 干扰假设：前置
     /// 写入使 item main definite Px → 该 pass 门触发重写 cross/尺寸链致 rows 6/8 写入
     /// 丢失）。实现 = 清 taffy aspect_ratio（R4990 同法防反传）+ definite size.main =
     /// content-box 传递 + pad_main；min.main 地板仅 min-*:auto（014 门）。cross 用 CSS

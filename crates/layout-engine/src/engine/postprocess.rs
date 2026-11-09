@@ -93,14 +93,19 @@ fn is_shiftable_in_flow_block(box_node: &LayoutBox) -> bool {
 /// row 方向 flex——item 沿水平 main axis 排布、不参与块流垂直堆叠，块流式「子高
 /// delta → 兄弟位移 + 父高增量」记账不适用（auto 交叉尺寸 = max in-flow item
 /// bottom）。column 方向 main 轴即垂直，块流近似成立，不在此列。
+/// css-flexbox-1 §9 writing-mode 与 flex 方向正交（css-writing-modes-3 §7.1 flex
+/// 行内主轴随 writing-mode 旋转）：vertical writing mode 下 row 的 main 轴即垂直，
+/// 块流近似同样成立，同样不在此列（本守卫的水平记账只适配 HorizontalTb；同文件
+/// 1635 行 AR 臂的 HorizontalTb 门先例）。
 fn is_row_flex_container(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
-    box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
-        matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
-            && matches!(
-                s.flex_direction,
-                FlexDirectionValue::Row | FlexDirectionValue::RowReverse
-            )
-    })
+    matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
+        && box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(
+                    s.flex_direction,
+                    FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                )
+        })
 }
 
 /// row flex 容器 auto 交叉尺寸重算：height = max(in-flow item bottom) + padding/border。

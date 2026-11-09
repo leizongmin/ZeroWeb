@@ -1999,7 +1999,11 @@ impl RenderPipeline {
         // 增量路径作 base）
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        // B-1/K4b：重级联覆盖 styles 整表后回 graft 伪元素替身样式（caret 参与布局、
+        // tooltip 替身恢复 display:none——见 regraft_pseudo_standin_styles）；先于布局，
+        // 替身盒以正确样式参与本次 relayout。
+        regraft_pseudo_standin_styles(doc, &mut styles);
         self.cached_styles = styles.clone();
 
         // 计算布局
@@ -3674,6 +3678,89 @@ pub(crate) fn inject_pseudo_text_nodes(
                 styles.remove(&cid);
             }
         }
+    }
+}
+
+/// B-1/K4b fresh 臂伪元素替身样式回 graft：`incremental_paint` 的 compute_styles
+/// 全量重级联覆盖 styles 整表，`inject_pseudo_text_nodes` 为合成替身节点写入的
+/// 条目随之丢失——替身回落默认 inline，caret（content:""+inline-block 0×0 三角）
+/// 不再参与布局，display:none 态 tooltip 替身内联化泄漏文本（zinc live19 fresh 臂
+/// right 459×21 vs heal 483×29、btnGroup 50×24 vs 75×28 定谳；heal 臂经
+/// render_after_deferred_batch → render_html 重注入无此缺口）。
+///
+/// 按 inject 的位置与样式契约只读回插（doc 不可变，替身节点已存在无需重建）：
+/// 宿主 recomputed `before_pseudo`/`after_pseudo` 每次级联都重算（内容与样式随当前
+/// 级联最新，viewport 媒体查询重解后仍正确）；宿主首子 synthetic = ::before 替身、
+/// 尾子 synthetic = ::after 替身（inject 的插入位置契约；解析所得原文档节点从不带
+/// synthetic 标记），按注入臂同构回插样式——文本节点/zw-pseudo 盒/img 直挂条目持
+/// 伪样式（content 清 Normal 同 inject 口径），zw-pseudo 内层 img（R3806/R5237 两级
+/// 结构）持干净替换元素样式（default + InlineBlock），盒内文本子无条目同 inject。
+///
+/// 内容漂移边界：本路径只适配「替身结构已在、伪元素内容集合不变」的增量 repaint
+/// （viewport 变化等）；内容变化（伪元素新增/消失）由 band/drain 路径经 render_html
+/// 全量重注入兜底（async_load drift 检测），此处对「fresh 已无 pseudo 而替身仍在」
+/// 不 graft 也不移除节点（替身回落默认样式，等 band 重渲染收敛）。
+fn regraft_pseudo_standin_styles(doc: &Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::DisplayValue;
+    use zero_style_system::property::types::ContentComputedValue;
+
+    // （替身, 样式）先收集后写——styles 迭代借用与插入互斥。
+    let mut pending: Vec<(NodeId, ComputedStyle)> = Vec::new();
+    for (&nid, st) in styles.iter() {
+        let (before, after) = (st.before_pseudo.as_ref(), st.after_pseudo.as_ref());
+        if before.is_none() && after.is_none() {
+            continue;
+        }
+        let Some(node) = doc.get(nid) else {
+            continue;
+        };
+        if node.children.is_empty() {
+            continue;
+        }
+        let targets = [
+            (before, node.children.first().copied()),
+            (after, node.children.last().copied()),
+        ];
+        for (pseudo_style, target) in targets {
+            let Some(pseudo) = pseudo_style else {
+                continue;
+            };
+            let Some(tid) = target else {
+                continue;
+            };
+            let Some(tnode) = doc.get(tid) else {
+                continue;
+            };
+            if !tnode.synthetic {
+                continue;
+            }
+            let mut style = (**pseudo).clone();
+            // content 字段对替身自身测量/绘制无意义（文本读 doc 文本；下游不得把
+            // 替身再当伪元素处理）——与 inject 同口径清 Normal。
+            style.content = ContentComputedValue::Normal;
+            pending.push((tid, style));
+            if let zero_dom::NodeKind::Element(el) = &tnode.kind
+                && el.local_name().eq_ignore_ascii_case("zw-pseudo")
+            {
+                // 盒语义注入臂的内层 img（R3806 img 臂 / R5237 mixed 臂）：干净
+                // 替换元素样式，尺寸由 image_sizes 固有注入。
+                for &cid in &tnode.children {
+                    let Some(cnode) = doc.get(cid) else {
+                        continue;
+                    };
+                    if let zero_dom::NodeKind::Element(ce) = &cnode.kind
+                        && ce.local_name().eq_ignore_ascii_case("img")
+                    {
+                        let mut img_style = zero_style_system::ComputedStyle::default();
+                        img_style.display = DisplayValue::InlineBlock;
+                        pending.push((cid, img_style));
+                    }
+                }
+            }
+        }
+    }
+    for (id, style) in pending {
+        styles.insert(id, style);
     }
 }
 
