@@ -4634,3 +4634,99 @@ fn test_cssom_idl_whitespace_name_t50fix() {
         "T50 返修 DF-T50-1 名参空白形全案（尾空白 custom 写读键一致 + 两侧空白 case 保形 + 删 prev + 规则面同形 + 常规名 sanity）"
     );
 }
+
+#[test]
+fn test_cssom_keyframe_write_name_t51() {
+    // T51（keyframe 写面属性名归一）：`_applyKeyframeProps`（part03:15205，WAAPI
+    // fill:forwards finish 与 commitStyles 把末关键帧 dict 写入 inline style 的唯一通道）
+    // 键名折叠直用 `_stylePropName`——与 T50 修前 IDL 写面同款缺陷：全大写书写形
+    //（`COLOR`/`ZINDEX`）逐大写字母加连字符（_camelToKebab，part05:15244）产出
+    // '-c-o-l-o-r'/'-z-i-n-d-e-x' 垃圾键落库 → cascade 不识别，动画终态静默失效。
+    // 本钉接共享 `_styleDeclName`（part06:2097，T49/T50 已收口写面同函数）——大写折叠 +
+    // `--` 保形 + webkit vendor 归一自动继承。
+    // Blink 154 活体 oracle（t51-oracle-result.txt，Chrome 154.0.8037.92）：WAAPI 关键帧
+    // dict 解析面**仅收** camelCase IDL 名 + custom property 名（case-sensitive）；
+    // 全大写（COLOR/Z-INDEX/ZINDEX/MARGIN-TOP）与 vendor/kebab 形（webkitTransform/
+    // -webkit-transform/-WEBKIT-TRANSFORM）**解析期直接丢弃**（effect.getKeyframes()
+    // 空）→ Blink 写面（commitStyles）无值可写，el.style 恒空；fill:forwards finish
+    // 本身不写 el.style（动画终态只在 computed level，本仓 finish 落 inline style 为
+    // 自身近似）。
+    // **recorded known deviation**（T50 口径）：全大写名 Blink 丢弃该键，本仓归一落库
+    //（'COLOR'→'color'）——本仓写面一贯接受大写名（T50：CSS attribute ASCII
+    // case-insensitive，setProperty('COLOR') 落 'color'），关键帧写面接同一归一函数
+    // 保证键一致；垃圾键落库是实际缺陷（cascade 不识别、终态静默失效），归一后终态
+    // 生效优先于 Blink 丢弃语义。vendor camel/kebab 名 Blink 解析期丢弃、本仓落
+    // '-webkit-transform'（基线即有语义，本修零变化）。
+    // https://www.w3.org/TR/web-animations-1/#parsing-a-keyframe-argument
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d1\"></div><div id=\"d2\"></div><div id=\"d3\"></div>\
+         <div id=\"d4\"></div><div id=\"d5\"></div><div id=\"d6\"></div>\
+         <div id=\"d7\"></div><div id=\"d8\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 四形末关键帧（fill:'forwards'）+ 双项对照。headless 瞬间完成：execute 末 _defer
+    // microtask 后 finished + 末态写 inline style → execute#2 dump 落库键。
+    sandbox
+        .execute(
+            "document.querySelector('#d1').animate(\
+               [{backgroundColor: 'rgb(0, 128, 0)'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d2').animate(\
+               [{COLOR: 'rgb(255, 0, 0)'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d3').animate(\
+               [{ZINDEX: '5'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d4').animate(\
+               [{'--foo': 'v1'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d5').animate(\
+               [{'--FOO': 'v2'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d6').animate(\
+               [{webkitTransform: 'scale(2)'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d7').animate(\
+               [{'-webkit-transform': 'scale(3)'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d8').animate(\
+               [{backgroundColor: 'rgb(255, 0, 0)'}, {backgroundColor: 'rgb(0, 0, 255)'}], \
+               {duration: 50, fill: 'forwards'});",
+        )
+        .unwrap();
+    // execute#1 末 checkpoint 已 fire _defer microtask → SetStyle 已 push、host 存储已更新。
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var q = function (id) { return document.querySelector('#' + id).style; };\
+                 var r = {};\
+                 r.kfCamelCssText = q('d1').cssText;\
+                 r.kfUpperColorCssText = q('d2').cssText;\
+                 r.kfUpperColorGpvColor = q('d2').getPropertyValue('color');\
+                 r.kfUpperZindexCssText = q('d3').cssText;\
+                 r.kfCustomLowerCssText = q('d4').cssText;\
+                 r.kfCustomLowerGpvFoo = q('d4').getPropertyValue('--foo');\
+                 r.kfCustomUpperCssText = q('d5').cssText;\
+                 r.kfCustomUpperGpvFOO = q('d5').getPropertyValue('--FOO');\
+                 r.kfVendorCamelCssText = q('d6').cssText;\
+                 r.kfVendorCamelRead = q('d6').webkitTransform;\
+                 r.kfVendorKebabCssText = q('d7').cssText;\
+                 r.kfVendorKebabRead = q('d7').webkitTransform;\
+                 r.kfCtrlCssText = q('d8').cssText;\
+                 JSON.stringify(r);",
+            )
+            .unwrap()
+            .value,
+        r##"{"kfCamelCssText":"background-color: rgb(0, 128, 0)","kfUpperColorCssText":"color: rgb(255, 0, 0)","kfUpperColorGpvColor":"rgb(255, 0, 0)","kfUpperZindexCssText":"zindex: 5","kfCustomLowerCssText":"--foo: v1","kfCustomLowerGpvFoo":"v1","kfCustomUpperCssText":"--FOO: v2","kfCustomUpperGpvFOO":"v2","kfVendorCamelCssText":"-webkit-transform: scale(2)","kfVendorCamelRead":"scale(2)","kfVendorKebabCssText":"-webkit-transform: scale(3)","kfVendorKebabRead":"scale(3)","kfCtrlCssText":"background-color: rgb(0, 0, 255)"}"##,
+        "T51 keyframe 写面名归一全案（camel kebab + 全大写折叠 + custom 双形保形 + vendor camel/kebab + 双项对照）"
+    );
+}
