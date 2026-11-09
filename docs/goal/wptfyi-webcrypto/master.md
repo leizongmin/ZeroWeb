@@ -12,4 +12,4 @@
 | DC-2 按簇收敛 | 收账完成 | F 全部具名并处理：generateKey failures 面 800 已修（[EnforceRange] 三处入口归一，r7 转 P）+ Ed448 面 1,950 降 scope（2026-11-02 拍板，MSRV 1.85 无可用签名实现，2026-11-10 生态复测无变化）；r7 对 r6 零回归见 [evidence 2026-11-10](evidence/2026-11-10-dc2-generatekey-enforcerange.md) |
 | DC-3 全量对账 | 待产物 | 分片收录口径净增 41,898 ≥ 31,000（coverage-r7 两 basis 试跑）；CI run 42667268541 在跑（crypto 分片已回核验），待全 run 收尾 + 快照回写 + 邻域核验 |
 
-碰撞记录暂无。注意：`engine/src/js_dom_bridge/crypto_asym.rs` 在 zero-web 流写面内，DC-2 若涉及引擎改动先核对时序，避免同文件碰撞。
+碰撞记录（2026-11-10 02:14–02:31）：quota 重置触发同目标 re-dispatch，双 webcrypto session 并发（f2fcd740 / 010f426b），r7 三链并发同写一账产出逐位一致；02:31:38 commit 4cba77f7e 为两 session 工作合并账（shim×3 + part53 契约 + evidence + 本控制面），已推 origin。冗余链已清理，coverage 双跑目录已清场重跑收口。注意：`engine/src/js_dom_bridge/crypto_asym.rs` 在 zero-web 流写面内，DC-2 若涉及引擎改动先核对时序，避免同文件碰撞。
