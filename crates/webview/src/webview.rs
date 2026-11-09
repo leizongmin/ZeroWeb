@@ -4761,10 +4761,15 @@ impl WebView {
         //（枚举全量视图）；键表由下方 stamp 入口在本阶段起点重建（ceiling 未激活
         // 时枚举=全量，序号对应正确）。复位必须先于 stamp——stamp 建表在后，
         // 顺序颠倒会把新表清回 null（门 fail-open 退化为全量视图）。
-        let _ = self
-            .js_sandbox
-            .as_mut()
-            .map(|sb| sb.execute("globalThis.__zwParseCeiling = -1; globalThis.__zwParseScriptSelMap = null;"));
+        // s366：写面 excess `</script>` 消费记账同步复位（`__zwParserConsumed`
+        // 序号 = 前缀源表，写面 part06 `__zwParserConsumeExcess` 记、交付循环
+        // 逐脚本探测消费——跨文档残留会使新文档同序号脚本误以前缀源投递）。
+        let _ = self.js_sandbox.as_mut().map(|sb| {
+            sb.execute(
+                "globalThis.__zwParseCeiling = -1; globalThis.__zwParseScriptSelMap = null; \
+                            globalThis.__zwParserConsumed = null;",
+            )
+        });
         // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
         if !scripts.is_empty() {
             let stamp_js = format!(
@@ -5068,8 +5073,29 @@ impl WebView {
                 zero_engine::pipeline::PageScript::External(src) => Some(src.clone()),
                 _ => None,
             };
+            // s366（html-semantics M2 切片 366）：写面 excess `</script>` 消费探测
+            // ——shim 写面（part06 `__zwParserConsumeExcess`）把 write 注入串中超出
+            // 开标签数的闭合按序弹出最近开放祖先 SVG script（143：嵌套 write 的
+            // 第二个闭合提前终结外层），记账 `__zwParserConsumed[序号] = 前缀源`。
+            // 宿主投递到被消费脚本时以**前缀源**（消费时点 child text content——
+            // 尾段文本尚未标记化）替代提取期全量源（全量源含尾段文本，SVG 嵌套
+            // 语料 143 尾段带故意笔误，全量执行 SyntaxError 缺 #3 日志）。命中面
+            // 仅 classic 内联（module/外链消费形语料 0 形，FIXME 在册）。
+            // https://html.spec.whatwg.org/multipage/parsing.html#the-rules-for-parsing-tokens-in-foreign-content
+            let consumed_prefix = match &script {
+                zero_engine::pipeline::PageScript::Inline(_) => sandbox
+                    .execute_json(&format!(
+                        "(globalThis.__zwParserConsumed \
+                         && typeof globalThis.__zwParserConsumed[{script_index}] === 'string') \
+                         ? globalThis.__zwParserConsumed[{script_index}] : null"
+                    ))
+                    .ok()
+                    .and_then(|r| serde_json::from_str::<Option<String>>(&r.value).ok())
+                    .flatten(),
+                _ => None,
+            };
             let (code, is_module) = match script {
-                zero_engine::pipeline::PageScript::Inline(c) => (c, false),
+                zero_engine::pipeline::PageScript::Inline(c) => (consumed_prefix.unwrap_or(c), false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
                 // 代码后执行（旧 InlineModule 与 Inline 同走经典路径→`import` 抛 SyntaxError）。headless 进程内
                 // 模式不 fetch 外链模块，故把模块源中引用的 import 标识符预注册为**空存根**（副作用导入 no-op，

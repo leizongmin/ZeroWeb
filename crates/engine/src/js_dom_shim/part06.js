@@ -6492,12 +6492,122 @@
         globalThis.__zwDocWriteVisLen = _veNew;
         return true;
       };
+      // s366（html-semantics M2 切片 366）：写串 script 平衡扫描——返回写入串中
+      // **超出开标签数的 `</script>`** 计数（parser 级闭合）。spec 流式解析：write
+      // 注入串交给 parser 标记化，串内闭合先配对串内开标签，多余闭合在 foreign
+      // content（SVG script 内容按 data 态标记化，嵌套 script 是真实子元素——
+      // s106 探针定谳）弹出**最近开放祖先 script**（143：`<script>…</script>
+      // </script>` 第二个闭合提前终结外层 SVG script）。近似解析器——注释区跳过、
+      // 开标签属性值引号配对跳过（s353 阻塞扫描器同款卫生规则）、tag 名边界校验
+      //（`<scriptx` 不计）；`<\/script>` 转义形天然不匹配不计数（写串惯例，s353
+      // 同口径）。
+      // FIXME(spec-gap)：未闭合注释区、属性值内 `<script` 字面等病态形状不作
+      // token 级识别（语料 0 形；误检方向 = 多计 parser 级闭合 → 多消耗开放
+      // script，退化为提前交付）。
+      // https://html.spec.whatwg.org/multipage/parsing.html#the-rules-for-parsing-tokens-in-foreign-content
+      globalThis.__zwDocWriteExcessScriptCloses = function (_exText) {
+        var _exLow = String(_exText || '').toLowerCase();
+        var _exLen = _exLow.length;
+        var _exI = 0, _exDepth = 0, _exN = 0;
+        while (_exI < _exLen) {
+          var _exLt = _exLow.indexOf('<', _exI);
+          if (_exLt < 0) break;
+          if (_exLow.slice(_exLt, _exLt + 4) === '<!--') {
+            var _exCe = _exLow.indexOf('-->', _exLt + 4);
+            _exI = (_exCe < 0) ? _exLen : _exCe + 3;
+            continue;
+          }
+          var _exOpen = _exLow.slice(_exLt, _exLt + 7) === '<script';
+          var _exClose = _exLow.slice(_exLt, _exLt + 8) === '</script';
+          if (!_exOpen && !_exClose) { _exI = _exLt + 1; continue; }
+          var _exNameLen = _exOpen ? 7 : 8;
+          var _exNc = _exLow.charAt(_exLt + _exNameLen);
+          if (_exNc !== '/' && _exNc !== '>' && !/\s/.test(_exNc)) { _exI = _exLt + 1; continue; }
+          if (_exOpen) {
+            _exDepth++;
+            var _exJ = _exLt + _exNameLen;
+            var _exQ = '';
+            while (_exJ < _exLen) {
+              var _exCh = _exLow.charAt(_exJ);
+              if (_exQ !== '') {
+                if (_exCh === _exQ) _exQ = '';
+              } else if (_exCh === '"' || _exCh === "'") {
+                _exQ = _exCh;
+              } else if (_exCh === '>') {
+                break;
+              }
+              _exJ++;
+            }
+            _exI = _exJ + 1;
+            continue;
+          }
+          if (_exDepth > 0) { _exDepth--; } else { _exN++; }
+          var _exGt = _exLow.indexOf('>', _exLt);
+          _exI = (_exGt < 0) ? _exLen : _exGt + 1;
+        }
+        return _exN;
+      };
+      // s366：parser 级闭合消费——从当前 classic 脚本元素（idx 通道，R3258）沿父链
+      // 找最近开放祖先 script（解析期身份 `__zwSelector` 在 s365 sel→序号表内），
+      // 逐个 excess 闭合上跳一位，按序记 `__zwParserConsumed[序号] = 前缀源`。
+      // 前缀源 = 首**非文本**子节点前的直接子 Text 节点拼接（spec 消费时点该
+      // script 的 child text content——尾段文本此刻尚未标记化），trim 对齐提取
+      // 侧执行体口径。空串也记账（宿主探测 typeof 判别——空源 spec 语义 = 空体
+      // 执行，不得回落全量源重执行尾段文本）。无祖先 script → no-op（HTML
+      // script 内容 script data 态在解析期被自身闭合标记终结，excess 闭合只可能
+      // 落 foreign content 面）。消费在 `__zwParseScriptSelMap` 缺表时 no-op
+      //（fail-open，同 s365 门缺表口径）。
+      // FIXME(spec-gap)：写中写面脚本的锚取页面脚本通道（语料 0 形）；停车段在途
+      // 时消费即时生效不随物化时序（语料 0 形）；CDATA 包裹前缀不剥离（语料 0 形）。
+      globalThis.__zwParserConsumeExcess = function (_pcN) {
+        if (typeof _zwCurrentScriptIdx !== 'number' || _zwCurrentScriptIdx < 0) return;
+        var _pcMap = globalThis.__zwParseScriptSelMap;
+        if (!_pcMap) return;
+        var _pcScripts = null;
+        try { _pcScripts = globalThis.document.getElementsByTagName('script'); } catch (_pcE0) { return; }
+        if (!_pcScripts || _zwCurrentScriptIdx >= _pcScripts.length) return;
+        var _pcCur = _pcScripts[_zwCurrentScriptIdx];
+        if (!_pcCur) return;
+        if (!globalThis.__zwParserConsumed) globalThis.__zwParserConsumed = {};
+        for (var _pcI = 0; _pcI < _pcN; _pcI++) {
+          var _pcAnc = null;
+          try {
+            var _pcWalk = _pcCur.parentNode;
+            while (_pcWalk) {
+              if (String(_pcWalk.tagName || '').toUpperCase() === 'SCRIPT'
+                && _pcWalk.__zwSelector != null
+                && _pcMap[String(_pcWalk.__zwSelector)] != null) {
+                _pcAnc = _pcWalk;
+                break;
+              }
+              _pcWalk = _pcWalk.parentNode;
+            }
+          } catch (_pcE1) { return; }
+          if (!_pcAnc) return;
+          var _pcIdx = _pcMap[String(_pcAnc.__zwSelector)];
+          if (typeof globalThis.__zwParserConsumed[_pcIdx] === 'string') return;
+          var _pcPrefix = '';
+          try {
+            var _pcKids = _pcAnc.childNodes;
+            for (var _pcK = 0; _pcK < _pcKids.length; _pcK++) {
+              var _pcCh = _pcKids[_pcK];
+              if (!_pcCh || _pcCh.nodeType !== 3) break;
+              _pcPrefix += String(_pcCh.data || '');
+            }
+          } catch (_pcE2) {}
+          globalThis.__zwParserConsumed[_pcIdx] = _pcPrefix.trim();
+          _pcCur = _pcAnc;
+        }
+      };
       }
       if (typeof globalThis.__zwDocWriteBuffer !== 'string') globalThis.__zwDocWriteBuffer = '';
       var _dwpPreLen = globalThis.__zwDocWriteBuffer.length;
       for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
         globalThis.__zwDocWriteBuffer += String(arguments[_dwW] == null ? '' : arguments[_dwW]);
       }
+      // s366：本 write 尾段快照（停车决策/插入点重排前取——重排会移动 _dwpPreLen
+      // 之后的缓冲区段，parser 级闭合平衡扫描以本快照为准）。
+      var _dwpTailRaw = globalThis.__zwDocWriteBuffer.slice(_dwpPreLen);
       // 显式 open/close 周期（PW setContent）维持原缓冲语义——close() 一次性应用。
       if (globalThis.__zwDocWriteOpen === true) return;
       // 隐式 open 流：基线快照（首 write 时）+ 累计缓冲同步重放（append 语义）。
@@ -6597,6 +6707,20 @@
           try {
             globalThis.__zwDocWriteRunFace();
           } catch (_eS97run) {}
+          // s366（html-semantics M2 切片 366）：write 注入串 excess `</script>` 消费
+          // ——尾段平衡扫描（写面 helper），超出的 parser 级闭合按序弹出最近开放
+          // 祖先 script（SVG foreign content 嵌套 write 面，143）；记账
+          // `__zwParserConsumed[祖先序号] = 前缀源`，宿主交付循环投递到该脚本时
+          // 以前缀源替代全量源（webview 探测臂）。挂在 RunFace 后——spec 消费
+          // 时点在注入串闭合标记记号化时，其后注入脚本已执行。
+          // https://html.spec.whatwg.org/multipage/parsing.html#the-rules-for-parsing-tokens-in-foreign-content
+          try {
+            if (typeof globalThis.__zwDocWriteExcessScriptCloses === 'function'
+              && typeof globalThis.__zwParserConsumeExcess === 'function') {
+              var _pcEx = globalThis.__zwDocWriteExcessScriptCloses(_dwpTailRaw);
+              if (_pcEx > 0) globalThis.__zwParserConsumeExcess(_pcEx);
+            }
+          } catch (_eS366pc) {}
         }
       } catch (_eDwb) {}
     },
