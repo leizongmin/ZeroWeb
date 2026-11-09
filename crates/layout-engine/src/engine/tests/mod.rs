@@ -1054,3 +1054,8 @@ mod r5447_cell_spec_frame_tests;
 /// R5452：own-IFC-capped 容器跨块 walk 尾 extent 下限 = 保留行底（clamp_kept_line_bottom
 /// 镜像），driving block-ellipsis-032。
 mod r5452_clamp_kept_bottom_tests;
+
+/// R5477：块级 BFC 根 float 位移终末校正——driving 形 (#contain → (0, 200)、
+/// 容器涨高 370) + 不触碰不变式（旁置非重叠 BFC 根原样），kill-switch 锚见
+/// tests/r5477_bfc_root_displace_kill_switch.rs。
+mod r5477_bfc_root_displace_tests;

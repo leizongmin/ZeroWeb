@@ -1705,6 +1705,11 @@ impl LayoutEngine {
             crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box, styles);
         }
 
+        // R5477：终末块级 BFC 根 float 位移校正（CSS2 §9.5 chromium FloatAvoider 语义；
+        // 只校正仍与 float 重叠者，不触碰既有旁置/收缩绿域）。kill-switch
+        // ZW_BFC_ROOT_FLOAT_DISPLACE=0。
+        crate::bfc_root_displace::apply_bfc_root_float_displace(&mut root_box, styles);
+
         // R5070：终末 inline 载体右浮 CB 修正（CSS §9.5/§10.3.5 包含块 = 最近块级祖先；
         // 载体 x 终值确定后重定）。kill-switch ZW_FLOAT_CB_BLOCK=0。
         crate::float_positioning::fix_inline_carrier_right_float_abs(&mut root_box, 0.0, None, styles);

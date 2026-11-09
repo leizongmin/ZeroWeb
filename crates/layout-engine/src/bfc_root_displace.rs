@@ -1,0 +1,209 @@
+//! R5477：块级 BFC 根 float 位移终末校正（CSS2 §9.5「establishes a new block
+//! formatting context 的普通流内元素 border box 不得与同 BFC float margin box 重叠」，
+//! chromium FloatAvoider 语义）。
+//!
+//! 既有 BFC float 避让（float_positioning.rs adjust_float_positions_with_context 的
+//! R1369/R1728/R5217/R5221 域）按「旁置优先、装不下下绕」处理绝大多数形，但对
+//! contain:inline-size（width 解为 0）等零宽/窄带形会停在仍与后继带 float 重叠的位置
+//!（contain-inline-size-bfc-floats-001：#contain 停 x=250/y=float1 底，与 float3 带
+//! 重叠）。chromium 定谳模型（google-chrome oracle V0–V7 八形态逐位吻合）：
+//! 候选位 = 逐 float 底边界层位（含当前位）× 候选 x {流内原点 = 已解 margin_left,
+//! 旁置 = 左 float margin-box 右缘最大值}，逐层升序首配即停；重叠判据 = x 区间交
+//!（零宽盒左缘按 float_left ≤ x < float_right 计入）× y 全盒高带交。
+//!
+//! 本 pass 终末运行（R1733 先例：终末位不被后续 pass 重置），**只校正仍重叠者**：
+//! 不重叠的既有旁置/收缩位一概不触碰（floats-wrap-bfc-* 绿域不变式）；只推不拉
+//!（dy ≥ 0，R5470 纪律）；推下后 auto 高容器涨高覆盖（R5026 镜像）＋后继流内
+//! 兄弟随推（sibling.y ≥ 旧位才推）。kill-switch `ZW_BFC_ROOT_FLOAT_DISPLACE=0`。
+
+use crate::types::LayoutBox;
+use std::collections::HashMap;
+use zero_css_parser::values::{ClearValue, FloatValue, LengthValue};
+use zero_dom::NodeId;
+use zero_style_system::WritingModeValue;
+use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue, ComputedStyle};
+
+/// float margin-box 几何：(dir, left, top, right, bottom)。
+type FloatBox = (FloatValue, f32, f32, f32, f32);
+
+/// 零宽盒左缘计入判据（chromium oracle 定谳）：w>0 标准 x 区间交（严格）；
+/// w=0 时 float_left ≤ x < float_right（点入区间）。
+fn x_overlaps(child_left: f32, child_width: f32, float_left: f32, float_right: f32) -> bool {
+    let child_right = child_left + child_width;
+    if child_width > 0.0 {
+        child_left < float_right && child_right > float_left
+    } else {
+        child_left >= float_left && child_left < float_right
+    }
+}
+
+fn y_overlaps(child_top: f32, child_bottom: f32, float_top: f32, float_bottom: f32) -> bool {
+    child_top < float_bottom && child_bottom > float_top
+}
+
+/// 终末校正入口（engine.rs 终末 pass 链调用）。kill-switch `ZW_BFC_ROOT_FLOAT_DISPLACE=0`。
+/// env 入口读一次边界快照传递（guideline #9：稳定开关禁逐节点热路径查询）。
+pub(crate) fn apply_bfc_root_float_displace(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_BFC_ROOT_FLOAT_DISPLACE").as_deref() == Ok("0") {
+        return;
+    }
+    displace_in_container(box_node, styles);
+    for child in &mut box_node.children {
+        displace_subtree(child, styles);
+    }
+}
+
+fn displace_subtree(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    displace_in_container(box_node, styles);
+    for child in &mut box_node.children {
+        displace_subtree(child, styles);
+    }
+}
+
+/// 容器内样式门：本 pass 只处理水平书写、非 multicol 的普通块流容器。
+fn container_gate(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    box_node.node_id.and_then(|id| styles.get(&id)).is_none_or(|s| {
+        matches!(s.writing_mode, WritingModeValue::HorizontalTb)
+            && matches!(s.column_count, ColumnCountComputedValue::Auto)
+            && matches!(s.column_width, ColumnWidthComputedValue::Auto)
+    })
+}
+
+fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if !container_gate(box_node, styles) {
+        return;
+    }
+    // 同容器 float 子 margin-box 几何收集（R1733 同口径：直接子 float）。
+    let floats: Vec<FloatBox> = box_node
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, FloatValue::None))
+        .map(|c| {
+            (
+                c.float.clone(),
+                c.x - c.margin_left,
+                c.y,
+                c.x + c.width + c.margin_right,
+                c.y + c.height + c.margin_bottom,
+            )
+        })
+        .collect();
+    if floats.is_empty() {
+        return;
+    }
+    for idx in 0..box_node.children.len() {
+        // 触发门：块级 BFC 根、非浮动/定位、非 r109 匿名块、无 clearance、
+        // 水平书写、非 multicol 源。
+        let (child_w, child_h, child_top, child_ml, is_displaceable) = {
+            let c = &box_node.children[idx];
+            let style = c.node_id.and_then(|id| styles.get(&id));
+            let gate = c.is_flow_root
+                && c.is_block_level
+                && matches!(c.float, FloatValue::None)
+                && !c.is_absolute
+                && !c.is_fixed
+                && !c.is_r109_split
+                && matches!(c.clear, ClearValue::None)
+                && style.is_none_or(|s| {
+                    matches!(s.writing_mode, WritingModeValue::HorizontalTb)
+                        && matches!(s.clear, ClearValue::None)
+                        && matches!(s.column_count, ColumnCountComputedValue::Auto)
+                        && matches!(s.column_width, ColumnWidthComputedValue::Auto)
+                });
+            let overlaps = gate
+                && floats.iter().any(|(_, fl, ft, fr, fb)| {
+                    y_overlaps(c.y, c.y + c.height, *ft, *fb) && x_overlaps(c.x, c.width, *fl, *fr)
+                });
+            (c.width, c.height, c.y, c.margin_left, overlaps)
+        };
+        if !is_displaceable {
+            continue;
+        }
+        // chromium FloatAvoider 定谳模型：逐 float 底边界层位（含当前位）升序 ×
+        // 候选 x {流内原点 ml, 旁置 = 左 float margin-box 右缘 max}，首配即停。
+        // 旁置候选须装得下（§9.5 "adjacent to such floats if there is sufficient
+        // space"）：beside + 盒宽 ≤ 容器内容右缘，装不下走下绕层（oracle beside
+        // 形定谳：300 容器 150 float + 200 宽 BFC 根 → 下绕 float 底，不旁置溢出）。
+        let content_right = box_node.border_left + box_node.padding_left + box_node.content_width;
+        let beside = floats
+            .iter()
+            .filter(|(d, ..)| matches!(d, FloatValue::Left))
+            .map(|(_, _, _, fr, _)| *fr)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let beside_usable = beside.is_finite() && beside + child_w <= content_right + 0.5;
+        let mut levels: Vec<f32> = floats.iter().map(|(_, _, _, _, fb)| *fb).collect();
+        levels.push(child_top);
+        levels.retain(|&l| l >= child_top - 0.5);
+        levels.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        levels.dedup();
+        let mut resolved: Option<(f32, f32)> = None;
+        for &level in &levels {
+            for cx in [child_ml, beside] {
+                if !cx.is_finite() || (cx != child_ml && !beside_usable) {
+                    continue;
+                }
+                let hit = floats.iter().any(|(_, fl, ft, fr, fb)| {
+                    y_overlaps(level, level + child_h, *ft, *fb) && x_overlaps(cx, child_w, *fl, *fr)
+                });
+                if !hit {
+                    resolved = Some((cx, level));
+                    break;
+                }
+            }
+            if resolved.is_some() {
+                break;
+            }
+        }
+        let Some((target_x, target_y)) = resolved else {
+            continue;
+        };
+        // 只推不拉（R5470 纪律）：目标位须不低于现位（x 重钉仅伴随下推）。
+        let dy = target_y - child_top;
+        if dy < -0.5 {
+            continue;
+        }
+        let old_top = child_top;
+        {
+            let child = &mut box_node.children[idx];
+            child.x = target_x;
+            child.y = target_y;
+        }
+        // 后继流内兄弟随推（sibling.y ≥ 旧位才推；float/定位/r109 兄弟不动）。
+        if dy > 0.5 {
+            for sib in box_node.children[idx + 1..].iter_mut() {
+                let in_flow =
+                    matches!(sib.float, FloatValue::None) && !sib.is_absolute && !sib.is_fixed && !sib.is_r109_split;
+                if in_flow && sib.y >= old_top - 0.5 {
+                    sib.y += dy;
+                }
+            }
+            // auto 高容器涨高覆盖新内容底（R5026 镜像：显式高不涨）。needed 取位移盒
+            // 与被推兄弟 margin-box 底的最大值（auto 高须包住全部流内内容底；行内
+            // 内容已计入 content_height，grow-only max 不会回缩）。
+            let is_auto = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+            if is_auto {
+                let mut needed = {
+                    let child = &box_node.children[idx];
+                    child.y + child.height + child.margin_bottom
+                };
+                for sib in &box_node.children[idx + 1..] {
+                    let in_flow = matches!(sib.float, FloatValue::None)
+                        && !sib.is_absolute
+                        && !sib.is_fixed
+                        && !sib.is_r109_split;
+                    if in_flow {
+                        needed = needed.max(sib.y + sib.height + sib.margin_bottom);
+                    }
+                }
+                if needed > box_node.content_height + 0.5 {
+                    let delta = needed - box_node.content_height;
+                    box_node.height += delta;
+                    box_node.content_height = needed;
+                }
+            }
+        }
+    }
+}
