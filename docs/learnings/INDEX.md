@@ -5,10 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（258）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（260）
 
 - 2026-11-09 [数值分桶中点扫描在整档值上系统性差一档](bugs/2026-11/2026-11-09-numeric-bucket-midpoint-scan-off-by-one.md) — engine
+- 2026-11-09 [FD walk 吸收臂设计前先逐迭代 trace 执行路径——静态模型把 br-branch 当落点，实际 walk cond1 已先吃掉 br](bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md) — engine
 - 2026-11-09 [deleteSelection 跨壳边界选区静默空转：收集器两道叠加缺陷](bugs/2026-11/2026-11-09-delete-selection-cross-shell-noop.md) — engine
+- 2026-11-09 [批脚本二进制特征串选串须先实测源文件单行连续存在](bugs/2026-11/2026-11-09-binary-sig-string-line-wrap-split.md) — tests/wpt-runner,build-support
 - 2026-11-08 [归因批须断言现行门禁腿定义：腿定义漂移使 5 次重载 bisect 答了已废弃的问题](bugs/2026-11/2026-11-08-rss-razor-edge-same-content-time-ab.md) — tests/wpt-runner,testing
 - 2026-11-08 [match 判别式临时 MutexGuard 存活到整个 match——臂内再锁自死锁](bugs/2026-11/2026-11-08-match-scrutinee-mutex-guard-deadlock.md) — net, wpt-runner
 - 2026-11-08 [shim 侧 iframe 子文档脚本段的 src 检测在 runner 语料面恒空——s261 预内联投递剥 src，须读 data-inline](bugs/2026-11/2026-11-08-iframe-child-doc-inlined-scripts-data-inline.md) — crates/engine/src/js_dom_shim, tests/wpt-runner
