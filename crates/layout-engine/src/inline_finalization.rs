@@ -2288,7 +2288,15 @@ pub(crate) fn compute_final_inline_layouts(
     // 16.9px vs 红层 16.0px，红绿叠层错排）。存 IFC 即冻结 layout 度量（R5167 cell
     // 存储臂同款），paint use_stored 重放，两层逐像素对齐。
     let allow_non_ahem_store = (has_float_exclusions && std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0"))
-        || (root.is_anon_table_cell && crate::table_anon_cell::anon_cell_wrap_enabled());
+        || (root.is_anon_table_cell && crate::table_anon_cell::anon_cell_wrap_enabled())
+        // R5475（CSS2 §9.7 float 块化 = BFC 根）：单行 float 容器自身行盒落盘——
+        // floats-149 形归因：display:inline 中间层物化 + 子 span 块化 float 后，文本行
+        // 真 owner = float span 自身（其 IFC 已产 1 行），旧门「非 pure-Ahem 且无排除带」
+        // 拒存 → 全树零行盒，paint Path B 兜视觉但行盒消费面失据（R5470 回退臂挂账主案）。
+        // 多行 float 不放行（下行 is_floated 多行拒存臂维持 R355 multicol 对称域）。
+        || (is_floated
+            && inline_ctx.lines.len() == 1
+            && crate::inline::float_own_line_store_enabled());
     if (!is_pure_ahem && !allow_non_ahem_store) || (is_floated && inline_ctx.lines.len() > 1) {
         return;
     }

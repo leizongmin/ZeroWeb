@@ -1043,6 +1043,10 @@ mod r5445_abspos_icb_cb_tests;
 /// 直挂堆叠回归卫 + float-only wrapper 欠计高补测，driving floats-placement-vertical-001b。
 mod r5446_nested_inline_float_tests;
 
+/// R5475：单行 float 容器自身行盒落盘（行盒归属主案 floats-149 形切片）——文本
+/// float 自持行盒 + 中间层无第二 owner 卫，driving floats-clear/floats-149。
+mod r5475_float_own_line_store_tests;
+
 /// R5447：cell 指定绝对宽度 content-box 语义——列贡献 = width+padding+border
 ///（separated 显式臂 + fixed 分支 col_cell_spec），driving c5525-fltmult-000。
 mod r5447_cell_spec_frame_tests;

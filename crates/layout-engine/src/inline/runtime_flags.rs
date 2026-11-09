@@ -388,6 +388,20 @@ pub(super) fn atomic_margin_box_fit() -> bool {
     selected(*VALUE, || default_on("ZW_ATOMIC_MARGIN_BOX_FIT"))
 }
 
+/// R5475（CSS2 §9.7 float 块化 = BFC 根，行盒归属其自身 IFC）：**单行 float 容器**
+/// （is_floated 且 IFC 恰产 1 行）的 inline_layout 落盘放行——不要求 pure-Ahem /
+/// float 排除带许可。floats-149 形归因（探针定谳）：`div.block > div[display:inline]
+/// > span(文本, float:left 50%) + span(空, float:left)` 形中，文本行真 owner = 块化
+/// float span 自身（chromium 同构：float 是 BFC 根，其文本行归属 float 内部 IFC）。
+/// ZW 侧 span IFC 已正确产 1 行，旧 store 门因「非 pure-Ahem 且无 float 排除带」拒存
+/// → 全树零行盒 → paint Path B 逐盒重跑兜住视觉，行盒消费面（滚动溢出行臂等）失据。
+/// 多行 float 仍拒存（R355 multicol-fill-auto-001 float 模拟列的 test/ref 对称域）。
+/// default-on；`ZW_FLOAT_OWN_LINE_STORE=0` 回退旧口径。
+pub(super) fn float_own_line_store() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_OWN_LINE_STORE"));
+    selected(*VALUE, || default_on("ZW_FLOAT_OWN_LINE_STORE"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

@@ -24,6 +24,12 @@ pub(crate) fn nested_atomic_signal_enabled() -> bool {
     runtime_flags::nested_atomic_signal()
 }
 
+/// R5475：单行 float 容器自身行盒落盘放行（行盒归属主案）——转发 runtime_flags
+/// 供 inline 模块外（inline_finalization store 门）消费。
+pub(crate) fn float_own_line_store_enabled() -> bool {
+    runtime_flags::float_own_line_store()
+}
+
 // R830：行内布局核心数据类型抽出，glob 再导出保持公开路径。
 mod inline_types;
 pub use inline_types::*;
