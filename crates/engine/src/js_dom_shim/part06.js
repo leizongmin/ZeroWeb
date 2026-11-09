@@ -3475,11 +3475,14 @@
   // 服务主文档集合 getter；detached 集合低频走 _zwMakeCollection 路径）。
   var _zwDocHtmlNsColl = function (sels) {
     var list = Array.isArray(sels) ? sels : [sels];
-    var _cache = { stamp: null, plen: -1, out: [] };
+    // s365：缓存键含交付水位线（ceiling 变化不改宿主视图戳，漏入缓存键则
+    // document.scripts 在交付窗内读到跨脚本陈旧快照）。
+    var _cache = { stamp: null, plen: -1, ceil: -2, out: [] };
     return _liveQueryCollection(null, function () {
       var _stamp = (typeof __zw_dom_view_stamp === 'function') ? String(__zw_dom_view_stamp() || '') : '';
       var _plen = (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) ? _zwPendingAdded.length : 0;
-      if (_stamp && _cache.stamp === _stamp && _cache.plen === _plen) return _cache.out;
+      var _ceil = (typeof globalThis.__zwParseCeiling === 'number') ? globalThis.__zwParseCeiling : -1;
+      if (_stamp && _cache.stamp === _stamp && _cache.plen === _plen && _cache.ceil === _ceil) return _cache.out;
       var out = [];
       for (var i = 0; i < list.length; i++) {
         var found = globalThis.document.querySelectorAll(list[i]);
@@ -3487,7 +3490,14 @@
           if (_zwIsHTMLNamespace(found[j])) out.push(found[j]);
         }
       }
-      if (_stamp) { _cache.stamp = _stamp; _cache.plen = _plen; _cache.out = out; }
+      // s365：script 集合交付门（同 getElementsByTagName 面——document.scripts 的
+      // 枚举源走 qSA，不过 tag 过滤核，此处单独裁剪；交付窗激活时才生效）。
+      if (typeof _zwGateDeliveredScripts === 'function') {
+        for (var _g365i = 0; _g365i < list.length; _g365i++) {
+          if (_zwAsciiLower(String(list[_g365i])) === 'script') { out = _zwGateDeliveredScripts(out); break; }
+        }
+      }
+      if (_stamp) { _cache.stamp = _stamp; _cache.plen = _plen; _cache.ceil = _ceil; _cache.out = out; }
       return out;
     });
   };
@@ -8051,6 +8061,25 @@
   // 臂保——本表只进 part03 `_zwScriptMaybeStartDynamic` 的 started 门）。
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   globalThis.__zw_stamp_parser_scripts = function (idxList) {
+    // s365（html-semantics M2 切片 365）：全体 script 元素 sel→文档序号表——宿主在
+    // 页面脚本阶段起点（ceiling 未激活=全量视图，写创建脚本尚不存在）调用本函数
+    // 时枚举一次；交付窗内的 script 枚举门（part05 `_zwGateDeliveredScripts`）查
+    // 此表裁到已交付前缀，不再自行枚举（避开交付窗内动态元素混入文档序的位移）。
+    // 键 = 元素 `__zwSelector`（解析期宿主身份，跨包装实例稳定）。判据三分：无 sel
+    // 或 sel 不在表内 = 动态产物（write 创建等，026 面即时可见）放行；表内序号
+    // ≤ ceiling = 已交付放行；> ceiling = 解析产物未交付裁剪（052 面）。
+    // 生命周期 = 页面脚本阶段（宿主循环起点复位，与 `__zwParseCeiling` 同批）。
+    try {
+      var _s365Scripts = globalThis.document.getElementsByTagName('script');
+      var _s365Map = {};
+      for (var _s365i = 0; _s365i < _s365Scripts.length; _s365i++) {
+        var _s365El = _s365Scripts[_s365i];
+        if (_s365El && _s365El.__zwSelector != null && _s365El.__zwSelector !== '') {
+          _s365Map[String(_s365El.__zwSelector)] = _s365i;
+        }
+      }
+      globalThis.__zwParseScriptSelMap = _s365Map;
+    } catch (_s365tbl) { globalThis.__zwParseScriptSelMap = null; }
     if (!idxList || !idxList.length) return;
     if (!globalThis._zwParserDelivered) globalThis._zwParserDelivered = {};
     var _s349Scripts = globalThis.document.getElementsByTagName('script');

@@ -3826,7 +3826,7 @@ impl WebView {
             .csp_enforcement
             .then(|| self.security_context.eval_violation())
             .flatten();
-        let scripts = {
+        let (scripts, blocking_count) = {
             // s342：解析器插入调度序——deferred（外链/内联 `defer` classic、无 `async`
             // module）整体移 batch 尾按文档序执行（spec 文档解析完后执行的 deferred
             // 列表——module 脚本隐式 defer 语义；charset-01 实证外链 module 在引擎
@@ -3845,8 +3845,14 @@ impl WebView {
                     blocking.push((script, idx));
                 }
             }
+            // s365（html-semantics M2 切片 365）：交付水位线分界——deferred 相位（the-end，
+            // 全文档已解析）与阻塞交付窗（spec tokenizer 停在阻塞脚本 end tag）的边界。
+            // 循环头据此判相位：阻塞段逐脚本前推 `__zwParseCeiling`（shim script 枚举
+            // 交付门，052 面），进入 deferred 尾与循环毕清 -1（全文档可见）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let blocking_count = blocking.len();
             blocking.extend(deferred);
-            blocking
+            (blocking, blocking_count)
         };
         // s90（string-compilation base URL 面）：每脚本 parse 时刻的文档基 URL 捕获
         // 表（DOM 文档序，与 script_index 同序号空间；纯函数于原文，动态 `<base>`
@@ -4750,6 +4756,15 @@ impl WebView {
         // 透传）。best-effort：盖章失败只重开等待窗触发面，不中止脚本阶段。与
         // `_zwScriptStarted` 分表——s110 async getter 的执行事实臂（sc2 执行前读
         // false、122 reinsert 前读真）不被预盖章污染。
+        // s365（html-semantics M2 切片 365）：交付水位线复位——持久沙箱跨文档存活
+        //（R5182-D1 同源），上一文档的 ceiling/序号键表不得落穿。-1 = 门未激活
+        //（枚举全量视图）；键表由下方 stamp 入口在本阶段起点重建（ceiling 未激活
+        // 时枚举=全量，序号对应正确）。复位必须先于 stamp——stamp 建表在后，
+        // 顺序颠倒会把新表清回 null（门 fail-open 退化为全量视图）。
+        let _ = self
+            .js_sandbox
+            .as_mut()
+            .map(|sb| sb.execute("globalThis.__zwParseCeiling = -1; globalThis.__zwParseScriptSelMap = null;"));
         // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
         if !scripts.is_empty() {
             let stamp_js = format!(
@@ -4769,7 +4784,28 @@ impl WebView {
             .js_sandbox
             .as_mut()
             .map(|sb| sb.execute("globalThis.__zwDeliveryDrainActive = true;"));
-        for (script, script_index) in scripts {
+        let mut deferred_phase_cleared = blocking_count == 0;
+        for (script_pos, (script, script_index)) in scripts.into_iter().enumerate() {
+            // s365：阻塞交付窗逐脚本前推水位线（shim 侧单调取 max——s106 end-tag 序
+            // 执行时祖先脚本文档序小于已执行的子脚本，ceiling 不回退）；进入 deferred
+            // 尾（the-end 相位，全文档已解析）清 -1。非阻塞探测/事件枚举在门内取
+            // 已交付前缀视图（052：外链脚本执行时 getElementsByTagName('script') 不得
+            // 含其后内联脚本）。
+            // https://html.spec.whatwg.org/multipage/parsing.html#script-parser-executing
+            if script_pos < blocking_count {
+                let _ = self.js_sandbox.as_mut().map(|sb| {
+                    sb.execute(&format!(
+                        "globalThis.__zwParseCeiling = (typeof globalThis.__zwParseCeiling === 'number' \
+                         && globalThis.__zwParseCeiling > {script_index}) ? globalThis.__zwParseCeiling : {script_index};"
+                    ))
+                });
+            } else if !deferred_phase_cleared {
+                deferred_phase_cleared = true;
+                let _ = self
+                    .js_sandbox
+                    .as_mut()
+                    .map(|sb| sb.execute("globalThis.__zwParseCeiling = -1;"));
+            }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
             // security-hardening M3：外链 script Mixed Content 检查点（阻塞型——HTTPS
             // 页面 HTTP 脚本不执行；HSTS 预载域 HTTP 脚本升级 HTTPS 后执行，
@@ -5659,6 +5695,12 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }
+        // s365：交付毕清水位线——纯阻塞页（无 deferred 尾清点）在此恢复全量枚举视图
+        //（后续排水/收口段与事件派发不受门限）。
+        let _ = self
+            .js_sandbox
+            .as_mut()
+            .map(|sb| sb.execute("globalThis.__zwParseCeiling = -1;"));
         // s355：交付排水门 flush——循环毕清旗标并逐臂发起挂起的动态 src fetch
         //（shim `__zwFlushDrainPendingSrc`：fetch promise 微任务同求值排空，取回
         // 体在本 execute 内求值；trickle 慢源由 runner timer wheel + loadStep5275

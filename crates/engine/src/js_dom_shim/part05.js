@@ -15003,6 +15003,48 @@
     };
   }
 
+  // s365（html-semantics M2 切片 365）：解析交付水位线（parse ceiling）——spec 流式
+  // 解析：parser-inserted 阻塞脚本于自身 end tag 执行，tokenizer 停在该点，其后标记
+  // 尚未物化进 DOM（052：外链脚本执行时 getElementsByTagName('script') 不得含其后
+  // 内联脚本——got 5 expected 4）。本引擎全解析先行的交付形态下枚举源恒为全文档
+  // 快照；宿主交付循环每投递一个阻塞脚本前置位 `__zwParseCeiling`（全体 script
+  // 元素文档序号，shim 侧单调取 max——s106 end-tag 序执行时祖先序号小于已执行的
+  // 子脚本），deferred 相位（the-end，全文档已解析）与交付毕清 -1。此门把 script
+  // 标签**枚举面**（getElementsByTagName/NS 过滤核 + document.scripts）裁到已交付
+  // 前缀（sel→序号表由宿主 stamp 入口在阶段起点建——`__zwParseScriptSelMap`，
+  // 全量视图下枚举，序号对应正确）。getElementById/querySelector 选择器面与树遍历
+  // 不门（语料无钉面，近似在册）；无 sel 或 sel 不在表内的动态产物（写流物化，
+  // fragment 回放同样带 fragment 域 sel——不在解析表内）不受门限（即时可见，
+  // 026 面）。门缺失键表时放行（fail-open——语义保真门，非安全边界）。
+  // https://html.spec.whatwg.org/multipage/parsing.html#script-parser-executing
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  function _zwParseCeilingActive() {
+    return typeof globalThis.__zwParseCeiling === 'number' && globalThis.__zwParseCeiling >= 0;
+  }
+  function _zwGateDeliveredScripts(list) {
+    if (!_zwParseCeilingActive() || !list || !list.length) return list;
+    var _map = globalThis.__zwParseScriptSelMap;
+    if (!_map) return list;
+    var _ceil = globalThis.__zwParseCeiling;
+    var _out = [];
+    for (var _gi = 0; _gi < list.length; _gi++) {
+      var _ge = list[_gi];
+      var _keep = true;
+      try {
+        var _gsel = _ge && _ge.__zwSelector;
+        if (_gsel != null && _gsel !== '') {
+          // 判据三分：无 sel 或 sel 不在表内 = 动态产物（write 创建等，即时可
+          // 见，026 面）放行；表内序号 > ceiling = 解析产物尚未交付 → 裁剪
+          //（052 面外链脚本执行时不得见其后内联脚本）。表查 O(1)，无需重建缓存。
+          var _gidx = _map[String(_gsel)];
+          if (_gidx != null) _keep = _gidx <= _ceil;
+        }
+      } catch (_eGateK) {}
+      if (_keep) _out.push(_ge);
+    }
+    return _out;
+  }
+
   // js-dom M4 R120：getElementsBy* 匹配核心（与 Element 级 / Document 级共用）。
   // input = 限定名（非 NS 变体，对 tagName 含 prefix）或 localName（NS 变体）；
   // nsArg = undefined（非 NS）/ ns（'*' 任意 / null 无 ns / 精确串）。
@@ -15088,6 +15130,11 @@
         }
       }
       out.push(el);
+    }
+    // s365：script 标签交付门（非 NS 变体输入 ASCII 小写后比较；NS 变体 localName
+    // 原样精确——'SCRIPT' 大写不门）。'*' 快道不门（无标签比较步骤，近似在册）。
+    if ((!nsMode && inputLower === 'script') || (nsMode && String(input) === 'script')) {
+      return _zwGateDeliveredScripts(out);
     }
     return out;
   }
