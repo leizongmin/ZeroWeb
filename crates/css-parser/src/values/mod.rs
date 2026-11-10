@@ -12,6 +12,7 @@ pub mod parse_extended_visual;
 pub mod parse_layout;
 pub mod parse_misc;
 pub mod parse_transform;
+pub mod serialize_math;
 mod transform_helpers;
 pub mod types;
 
@@ -26,6 +27,7 @@ pub use parse_extended_visual::*;
 pub use parse_layout::*;
 pub use parse_misc::*;
 pub use parse_transform::*;
+pub use serialize_math::*;
 pub use types::*;
 
 #[cfg(test)]

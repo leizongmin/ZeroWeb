@@ -1942,6 +1942,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 解析期 parent 唯一选择器（HTML §4.10.18.3 form owner）——shim 指针关联的
+    // reset-on-move 门：控件 live parent 选择器与本桥返回值不一致即指针关联已被
+    // insertion/removing/moving steps 重置（foster 非祖先关联不满足早退条件）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_parse_form_parent",
+        Box::new(move |args| {
+            let control = args.first().map(String::from).unwrap_or_default();
+            with_query_view_doc(&html, &m, |doc, _| parse_form_parent_selector_doc(doc, &control))
+        }),
+    );
+
     // 元素遍历/导航 API：children/firstElementChild/lastElementChild/childElementCount（子列表）、
     // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
     let html = Arc::clone(dom_html);

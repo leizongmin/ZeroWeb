@@ -675,7 +675,10 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             })
         }
         "rotate" => {
-            let angle = parse_angle(args)?;
+            // CSS Values 4 §10.5：<angle> 文法位接受数学函数（`transform:
+            // rotate(acos(1))`，wptfyi-css DC-2 values serialize 桶主驱动）——
+            // 与 individual rotate 属性同走 parse_angle_or_math 求值口径。
+            let angle = parse_angle_or_math(args)?;
             Some(TransformFunction::Rotate(angle))
         }
         "scale" => {
@@ -877,6 +880,11 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     if let Some(angle) = parse_angle(s) {
         return Some(angle);
     }
+    // CSS Values 4 §10.5：asin/acos/atan 实参仅 <number>——角度叶在 CalcParser
+    // parse 期已 Number 化，型别在字符串面拒绝（`atan(45deg)` invalid 面）。
+    if inverse_trig_arg_has_angle_unit(s) {
+        return None;
+    }
     let expr = parse_math_function(s)?;
     // <angle> 文法位不容 <length> 混入：长度叶使 acos(1px)/atan2(0, 1px)/
     // calc(10px) 类式子整体无效（CSS Values 4 §10.5 型别一致；calcExpr 角度
@@ -890,7 +898,9 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     } else {
         value
     };
-    deg.is_finite().then_some(deg)
+    // CSS Values 4 §10.10：NaN 结果合法非 invalid（serialize
+    // `calc(NaN * 1deg)`，WPT acos serialize 页驱动）；仅 ±Infinity 拒绝。
+    (!deg.is_infinite()).then_some(deg)
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。

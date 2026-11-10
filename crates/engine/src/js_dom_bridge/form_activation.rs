@@ -88,6 +88,22 @@ pub fn parse_form_owner_selector_doc(doc: &Document, control_selector: &str) -> 
     unique_selector_for_node(doc, owner).unwrap_or_default()
 }
 
+/// 解析期 parent 唯一选择器：控件在解析树中父节点的唯一选择器（无父返空串）。
+/// 供 shim 指针关联的 reset-on-move 门——指针关联（foster 非祖先位）只在控件
+/// 未被脚本移动时成立：任何 insertion/removing/moving steps 触发的
+/// "reset the form owner" 都使非祖先指针关联失效（不满足「owner 是变更后最近
+/// form 祖先」早退条件）。live parent 选择器与解析期 parent 不一致即视为已重置。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-owner
+pub fn parse_form_parent_selector_doc(doc: &Document, control_selector: &str) -> String {
+    let Some(control) = find_by_selector(doc, control_selector) else {
+        return String::new();
+    };
+    let Some(parent) = doc.parent_node(control) else {
+        return String::new();
+    };
+    unique_selector_for_node(doc, parent).unwrap_or_default()
+}
+
 /// 返回目标 radio 同组中当前 checked 项的唯一选择器。
 ///
 /// 无 name 的 radio 只与自身成组；无选中项返回 `None`。

@@ -99,6 +99,9 @@ mod parser_coverage_simple;
 mod property_at_rule;
 /// R2280 + CSS Values 4 §10.5：individual rotate/scale 数学函数文法位测试。
 mod r2280_math_function_slots_tests;
+/// R2320 + CSS Values 4 §10.10/§10.11：数学函数 specified 值折叠序列化 +
+/// transform 列表 rotate 臂 math 接线测试。
+mod r2320_math_specified_serialize_tests;
 /// R5076 scale 族百分比参数解析测试。
 mod r5076_scale_percent_tests;
 mod r5400_qualified_rule_recovery_tests;

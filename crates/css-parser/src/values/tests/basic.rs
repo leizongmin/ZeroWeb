@@ -307,9 +307,11 @@ fn test_eval_calc_trig() {
         approx(eval("calc(atan2(1, 1))"), std::f64::consts::PI / 4.0, 1e-9),
         "atan2(1,1)=π/4"
     );
-    // 无效：asin/acos 对 |v|>1 产生 NaN → None。
-    assert_eq!(eval("calc(asin(2))"), None, "asin(2) → None");
-    assert_eq!(eval("calc(acos(-2))"), None, "acos(-2) → None");
+    // 域外：asin/acos 对 |v|>1 产生 NaN → 合法（CSS Values 4 §10.10：NaN 非
+    // invalid，serialize `calc(NaN)`——WPT acos serialize 页驱动；原 None 口径
+    // 随 §10.10 对齐作废）。
+    assert!(eval("calc(asin(2))").unwrap().is_nan(), "asin(2) → NaN");
+    assert!(eval("calc(acos(-2))").unwrap().is_nan(), "acos(-2) → NaN");
     // pi 常量 + trig 组合：sin(pi / 2) = 1。
     assert!(approx(eval("calc(sin(pi / 2))"), 1.0, 1e-9), "sin(pi/2)=1");
 }

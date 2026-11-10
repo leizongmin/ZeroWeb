@@ -1832,15 +1832,12 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 UnaryMathOp::Sin => Some(v.sin()),
                 UnaryMathOp::Cos => Some(v.cos()),
                 UnaryMathOp::Tan => Some(v.tan()),
-                // 反三角：asin/acos 对 |v|>1 产生 NaN → None（CSS 无效）；atan 恒有效。
-                UnaryMathOp::Asin => {
-                    let r = v.asin();
-                    if r.is_nan() { None } else { Some(r) }
-                }
-                UnaryMathOp::Acos => {
-                    let r = v.acos();
-                    if r.is_nan() { None } else { Some(r) }
-                }
+                // 反三角：asin/acos 域外 |v|>1 → NaN 结果合法（CSS Values 4
+                // §10.10：NaN 非 invalid，specified 值序列化 `calc(NaN)` /
+                // `calc(NaN * 1deg)`——WPT acos-asin-atan-atan2-serialize 页驱动）；
+                // atan 恒有效。
+                UnaryMathOp::Asin => Some(v.asin()),
+                UnaryMathOp::Acos => Some(v.acos()),
                 UnaryMathOp::Atan => Some(v.atan()),
             }
         }

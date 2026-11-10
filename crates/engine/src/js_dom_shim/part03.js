@@ -19442,6 +19442,40 @@
     }
     return r;
   }
+  // s391：live 祖先链 form 探测——从 proxy 沿 parentNode 上行找最近 form 祖先
+  //（TEMPLATE 止，同 _zwFormGet 祖先臂 R5196 面）。指针关联条目判别用：live 祖先
+  // 命中 form = 祖先关联，owner 与移动无关（移动前后祖先重算同值），免 parent 门。
+  function _zwLiveFormAncestor(p) {
+    var r = p, hops = 0;
+    while (r && hops++ < 64) {
+      var par = null;
+      try { par = r.parentNode; } catch (_eLfa) { break; }
+      if (!par) break;
+      var tag = '';
+      try { tag = String(par.localName || par.tagName || '').toLowerCase(); } catch (_eLfa2) { break; }
+      if (tag === 'form') return true;
+      if (par.nodeType === 1 && String(par.localName || '').toLowerCase() === 'template') break;
+      r = par;
+    }
+    return false;
+  }
+  // s391：指针关联 reset-on-move 门（HTML §4.10.18.3 to reset the form owner）——
+  // 控件自解析后未被脚本移动才认指针关联：live parent 选择器章与解析期 parent
+  // 选择器（`__zw_parse_form_parent` 桥）不一致 = 控件经 insertion/removing/
+  // moving steps（HTML 元素插入/移除/移动步）重置，非祖先 foster 关联不满足
+  // 「owner 是变更后最近 form 祖先」早退条件 → 失效。detached（parent null）同判
+  //（removing steps 重置，Chrome 实测 remove() 后 .form 为 null）。桥不可用/
+  // 异常不设门保守沿用旧行为（同 s390b 门风格）。已知近似：移走再移回同一 parent
+  //（spec 恒 null，此处指针复活）——语料未触达，全树 sweep join 把关。
+  function _zwParseParentUnmoved(proxy, sel) {
+    if (!sel || typeof __zw_parse_form_parent !== 'function') return true;
+    try {
+      var pp = null;
+      try { pp = proxy.parentNode; } catch (_ePpu) { return true; }
+      var liveSel = (pp && pp.__zwSelector) || '';
+      return !!liveSel && liveSel === __zw_parse_form_parent(sel);
+    } catch (_ePpu2) { return true; }
+  }
   function _realTag(sel, handle) {
     // R-baidu3：批量 tag 缓存命中（part05 _zwTagCache——getElementsByTagName('*')
     // 枚举时经 __zw_query_all_tagged 灌入）。印章 = (apply 代际, pending 记账长度)，
@@ -22528,6 +22562,9 @@
       try {
         var _pfoSel = __zw_parse_form_owner(node.__zwSelector || '');
         if (_pfoSel) {
+          // s391 reset-on-move 门（HTML §4.10.18.3 to reset the form owner）：
+          // 指针关联只在控件未移动时成立，见 _zwParseParentUnmoved。
+          if (!_zwParseParentUnmoved(node, node.__zwSelector || '')) return null;
           return (typeof _zwQueryWrapIdentity === 'function')
             ? _zwQueryWrapIdentity(_pfoSel)
             : ((typeof _wrapSelector === 'function') ? _wrapSelector(_pfoSel) : null);
@@ -32288,7 +32325,10 @@ return e;
                     var _pfoOwner = (typeof _zwQueryWrapIdentity === 'function')
                       ? _zwQueryWrapIdentity(_pfoSel)
                       : ((typeof _wrapSelector === 'function') ? _wrapSelector(_pfoSel) : null);
-                    if (_pfoOwner && _zwLiveTreeRoot(_pfoOwner) === _zwLiveTreeRoot(proxy)) {
+                    // s391 reset-on-move 门（HTML §4.10.18.3）：控件被脚本移动
+                    //（含 removed）即指针关联重置，见 _zwParseParentUnmoved。
+                    if (_pfoOwner && _zwLiveTreeRoot(_pfoOwner) === _zwLiveTreeRoot(proxy)
+                        && _zwParseParentUnmoved(proxy, sel)) {
                       return _pfoOwner;
                     }
                   }
