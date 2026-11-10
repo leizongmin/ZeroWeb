@@ -93,3 +93,25 @@ test-guard 会杀进程产出空 JSON；该面无 `import.source` 使用，构�
 - defer 簇 5+71 案、tco 34（V8 未实现 PTC）、TLA 残余 15、ShadowRealm
   残余 5（1 kernel 侧 + 4 skip）、`import.source` 成功面（无宿主
   source module record，恒拒绝语义忠实 §16.2.1.7.2）等既有定性不变。
+
+## 邻域回退核对（首跑快照 11-10 对双基 11-07/11-09，③步预做）
+
+方法：coverage-2026-11-{07,09,10}.json（corpus revs 三快照全同
+`04067ce9/28c152b7/31597693/cb6cc97a`；wpt.fyi aligned run rev
+`8c04fb8d43`→`792c7512e3`→`77787fe5fe`）按 topdir 汇总 zw_passes 三方
+比对，凡 10→09 回退的 topdir 再下钻 zw-results 产物逐路径比对
+（`Pass` 串大小写敏感，`status=='PASS'` 恒 0——首查曾因此漏报）。
+
+结论：**无可归因于 ZeroWeb 行为面的回退**。全部回退项定性：
+
+| 回退 | 量 | 归因 |
+|---|---|---|
+| html | −95（semantics −96 + canvas +1） | **共享面碰撞**——gitignored 语料树内被提交的 3 个 probe `.html`（`42274e6e9`，html-semantics-compat 流 11-10 落库）触发 fetch lib.sh:62-67 幂等快路径（目录已含 `.html` 即跳过 API 列目录）：新 CI checkout 的 `the-script-element/module/` 只有 probe、64 个上游 module 用例永不落盘 → −126 Pass；叠加 +33 真实增益（closedby-complex +10=`b9f00f5b4`/s371、script-crossorigin-network +8=`a475060dc`/s383、dialog 簇 +7=s373 段施工、probe +3）与 web-components 通道 the-template-element −3 ≈ −96。11-09 无 probe、目录空、fetch 正常拉齐（126P/5F/8T 全记录）。修复归该流，本流不动（见 master.md 碰撞记录） |
+| web-animations | −1 | CI 时钟采样方差：`DocumentTimeline/constructor.html` 一子测 Pass→Fail，`assert_approx_equals: expected 76415.8 ±0.001 but got 76415.7`——亚毫秒容差撞采样抖动，文件数/其余子测零变化 |
+| wasm | −7 | 上游漂移（首跑对账节已记） |
+| test262 | −110 | Timeout 持平 + 失败簇归类（背景节已记） |
+
+其余 topdir 全平或净增：dom +120、editing +2、encoding +12,054、
+wasm 通道 +1,122、css +17,624、shadow-dom +935（11-09 快照自身 −981
+系该 run 分片波动，11-10 已回收）、WebCryptoAPI +800。终局快照
+（run 42843305476）落地后按同方法复核一遍收口 ③。

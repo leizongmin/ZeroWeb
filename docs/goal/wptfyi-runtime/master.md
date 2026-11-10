@@ -54,8 +54,9 @@ dispatch run
 1,393,984 ≥ 1,393,955 余量 +29。待 run 收尾后依次：① 快照落库核验
 （产物非空、真实路径与变体、分片无截断——builtins 预算 9000s 主要
 观察点）；② 三目录净增对账（上游漂移与 F2P 本地/CI 方差均按 −1/案吃
-余量）；③ 邻域无可归因回退核对（compare-topdirs 对 11-07 基线与 11-09
-快照双基）；④ 守卫下构建/clippy/runner 定向测试证据归档。gc 桥 +11、
+余量）；③ 邻域回退核对——首跑快照已预做完毕（无 ZeroWeb 行为面回退，
+[证据](evidence/dc3-source-phase-imports-2026-11-10.md)，终局快照按同方法
+复核）；④ 守卫下构建/clippy/runner 定向测试证据归档。gc 桥 +11、
 模块加载顺序 +18 两簇 defer 下批。
 
 [执行契约](../wptfyi-runtime.md) · [全量预算](../../compat/wptfyi-90-plan.md)
@@ -69,3 +70,11 @@ dispatch run
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
 （2026-11-09：`resources/test262/` 为本目标新占用 fetch 面，`wpt-data/third_party/test262/`
 vendored 子树为本目标独占，无共享写面冲突。）
+（2026-11-10 碰头：html-semantics-compat 流把 3 个 probe `.html` 提交进 gitignored
+语料树 `wpt-data/html/semantics/scripting-1/the-script-element/module/`
+（`42274e6e9`），触发 fetch lib.sh:62-67 幂等快路径「目录已含 .html 即跳过列
+目录」——新 CI checkout 不再拉取该目录 64 个上游 module 用例，CI html-sem
+分片 −126 Pass（本流三目录不计，邻域核对见
+[dc3 证据](evidence/dc3-source-phase-imports-2026-11-10.md)）。修复归该流
+（移位 probe 或 fast-path 计数门），本流不动；42843305476 快照 html 邻域将
+复现同缺口，对账按已归因处理。）
