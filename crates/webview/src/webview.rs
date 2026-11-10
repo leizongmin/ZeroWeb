@@ -8550,6 +8550,8 @@ fn zw_compile_module_shim_body(
             } else {
                 Some(credentials)
             },
+            // s374：defer 面 TLA 探针窗同 parse_gate 槽（Scoped 回调窗转借）。
+            parse_gate,
         )
         .unwrap_or_default();
     }
@@ -8589,7 +8591,8 @@ fn compile_module_contract(
     credentials: Option<&str>,
     // s373：module goal parse 预检的调用窗 scope（`HostCallback::Scoped` 回调窗转借；
     // None = 无预检通道——classic native resolver 面与降级 Plain 形态，维持既有放行）。
-    parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
+    // s374：同一窗复用 TLA 探针注入（gate 后 reborrow，见 Ok 臂）。
+    mut parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
 ) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -8620,14 +8623,37 @@ fn compile_module_contract(
             //（import defer/source，s360 超集承接面）由 gate 腿豁免。
             // https://tc39.es/ecma262/#sec-parsemodule
             // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-            if let Some(scope) = parse_gate
+            if let Some(scope) = parse_gate.as_deref_mut()
                 && let Some(source) = reg.get(&resolved)
                 && let Some(msg) = zero_script_sandbox::module_parse_gate(scope, source, &resolved)
             {
                 tracing::warn!("module parse 预检拒绝，契约按 tag 3 面拒绝: {resolved}");
                 return format!("3\u{1f}{resolved}\u{1f}{msg}");
             }
-            match zero_script_sandbox::compile_dependency_iife(&resolved, &reg) {
+            // s374：TLA 判定注入（同 parse_gate 回调窗）——依赖图全源预判定后经
+            // `set_tla_overrides` 穿给转换层 is_async 判定。**单调不减设计
+            //（s374-r3）**：扫描器命中源（含 `await <模板串/正则>` 等 classic 腿
+            // sloppy 语义误合法形态——tagged template 调用/除法链）恒保持 true
+            //（v1 行为零翻红面）；扫描器未命中源才交 V8 原生探针仲裁
+            //（module_tla_probe 双腿函数体编译）回收深度门漏检面（裸块/if 块
+            // await）。转换段结束 clear 恢复扫描器判定路径。无窗路径
+            //（native resolver/classic 面，parse_gate=None）不注入，维持扫描器现状。
+            if let Some(scope) = parse_gate.as_deref_mut() {
+                let tla_map = reg
+                    .iter()
+                    .filter_map(|(key, source)| {
+                        if zero_script_sandbox::module_source_has_top_level_await(source) {
+                            Some((key.to_string(), true))
+                        } else {
+                            zero_script_sandbox::module_tla_probe(scope, source)
+                                .map(|verdict| (key.to_string(), verdict))
+                        }
+                    })
+                    .collect::<std::collections::HashMap<_, _>>();
+                zero_script_sandbox::set_tla_overrides(tla_map);
+            }
+            let tla_injected = parse_gate.is_some();
+            let contract = match zero_script_sandbox::compile_dependency_iife(&resolved, &reg) {
                 // s361：产物前拼动态 import helper 段（语句包立即执行函数后接 iife
                 // 表达式——契约 eval 是 `(code)` 表达式求值形态）——嵌套 `import()`
                 // 内联体在非 module 页面（prelude 从未执行）的 eval 上下文缺
@@ -8649,7 +8675,11 @@ fn compile_module_contract(
                     tracing::warn!("compile module {spec} (transitive fetch)");
                     String::new()
                 }
+            };
+            if tla_injected {
+                zero_script_sandbox::clear_tla_overrides();
             }
+            contract
         }
         Err(ModuleGraphFailure::DepResolution) => format!("{}\u{1f}", resolve_document_url(parent, spec)),
         Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
@@ -8669,6 +8699,10 @@ fn compile_module_contract_deferred(
     parent: &str,
     spec: &str,
     credentials: Option<&str>,
+    // s374：同 eager 变体的回调窗 scope（defer 面 TLA 探针注入；None = 无窗路径
+    // 维持扫描器判定）。defer 面暂不接 module parse 预检（defer 簇 test262 71 案
+    // 已定性 V8 引擎侧不回收，见 dc2-test262-cluster-triage 证据文）。
+    mut parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
 ) -> Option<String> {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -8685,7 +8719,24 @@ fn compile_module_contract_deferred(
     ) {
         Ok(()) => {
             let resolved = resolve_document_url(parent, spec);
-            match zero_script_sandbox::compile_dependency_iife_deferred(&resolved, &reg) {
+            // s374：TLA 判定注入（同 eager 变体的单调不减设计，s374-r3，见
+            // compile_module_contract 注记）——defer 面 is_async 判定同漏检面。
+            if let Some(scope) = parse_gate.as_deref_mut() {
+                let tla_map = reg
+                    .iter()
+                    .filter_map(|(key, source)| {
+                        if zero_script_sandbox::module_source_has_top_level_await(source) {
+                            Some((key.to_string(), true))
+                        } else {
+                            zero_script_sandbox::module_tla_probe(scope, source)
+                                .map(|verdict| (key.to_string(), verdict))
+                        }
+                    })
+                    .collect::<std::collections::HashMap<_, _>>();
+                zero_script_sandbox::set_tla_overrides(tla_map);
+            }
+            let tla_injected = parse_gate.is_some();
+            let contract = match zero_script_sandbox::compile_dependency_iife_deferred(&resolved, &reg) {
                 // s361：helper 段同拼（见 compile_module_contract Ok 臂注记）——defer
                 // 契约 eval 上下文的嵌套 `import()` 内联体同缺 helper 面。
                 Ok(iife) => Some(format!(
@@ -8700,7 +8751,11 @@ fn compile_module_contract_deferred(
                     tracing::warn!("compile defer module {spec} (transitive fetch)");
                     None
                 }
+            };
+            if tla_injected {
+                zero_script_sandbox::clear_tla_overrides();
             }
+            contract
         }
         Err(ModuleGraphFailure::DepResolution) => Some(format!("{}\u{1f}", resolve_document_url(parent, spec))),
         Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {

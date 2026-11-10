@@ -501,6 +501,76 @@ pub fn module_parse_gate(scope: &mut v8::PinScope, source: &str, resource_name: 
     }
 }
 
+/// s374（wptfyi-runtime DC-2 TLA 面）：top-level await **精确判定探针**。文本
+/// 扫描器（`module_source_has_top_level_await` 深度门）漏检实证：test262
+/// `top-level-await/syntax/block-await-expr-*` 20 层裸嵌套块 `{ { … await 1; … } }`
+/// ——块语句不引入函数边界，块内 await 仍是 TLA，但深度门把 `{` 统计为嵌套
+/// 表达式 → await 恒在 depth>0 被排除 → 入口体不加 async 包裹 → V8
+/// SyntaxError「await is only valid in async functions…」（31 案簇）。
+/// 本探针用 V8 原生 parse 三腿仲裁，零启发式：module goal 腿（合法性，非法源
+/// 返 None 交 parse_gate 拒绝面）＋ async-function-body 腿＋ classic-function-body
+/// 腿。**TLA ⇔ async 腿过而 classic 腿拒**——await 表达式仅 async body goal 语法
+/// 合法；块/对象键/类体等 await 词法位置由引擎 parse 精确区分。
+/// `Some(false)` = 无 TLA；`None` = 探针不决（空源/资源失败/module 腿拒），调用
+/// 方退文本扫描器保守判定。
+pub fn module_tla_probe(scope: &mut v8::PinScope, source: &str) -> Option<bool> {
+    if source.trim().is_empty() {
+        return None;
+    }
+    // module goal 腿：非法源不在 TLA 判定域（负例由 module_parse_gate 拒绝面
+    // 分类；防御性复查，两腿包裹探针只对合法 module 源有意义）。
+    {
+        v8::tc_scope!(let tc, scope);
+        let code_str = v8::String::new(tc, source)?;
+        let name_str = v8::String::new(tc, "probe")?;
+        let origin = v8::ScriptOrigin::new(
+            tc,
+            name_str.into(),
+            0,
+            0,
+            false,
+            0,
+            None,
+            false,
+            false,
+            true, // is_module
+            None,
+        );
+        let mut src = v8::script_compiler::Source::new(code_str, Some(&origin));
+        let _module = v8::script_compiler::compile_module(tc, &mut src);
+        if tc.has_caught() {
+            return None;
+        }
+    }
+    // 函数体包裹双腿：同一源分别作 async / classic 函数体编译（parse 产物即弃，
+    // 不调用不执行）。classic 腿 Sloppy 语义下 await 是普通标识符，`await <expr>`
+    // 形（标识符后随表达式起点）语法拒绝——与 async 腿的差集恰为 TLA 面。
+    // s374-r2：**含顶层 import/export 声明的源两腿必拒**（module-only 语法在
+    // 函数体内非法）——async 腿拒不能判非 TLA（FIXTURE `export const y = await 39`
+    // 实证错判 → 47 案翻红），返 None 退文本扫描器（此类源扫描器顶层 await
+    // 判定本就精确——module-only 语法占据顶层行，await 表达式裸露在语句位）；
+    // 无 module-only 语法的源（裸块/if 块等扫描器漏检面）两腿包裹合法，探针
+    // 仲裁成立。
+    let async_ok = probe_compile_classic_body(scope, &format!("async function __zwTlaProbe() {{\n{source}\n}}"));
+    if !async_ok {
+        return None;
+    }
+    let classic_ok = probe_compile_classic_body(scope, &format!("function __zwTlaProbe() {{\n{source}\n}}"));
+    Some(!classic_ok)
+}
+
+/// classic goal 编译单腿（parse 即弃）。资源失败按腿拒处理（编译不可得 ≠ 合法）。
+fn probe_compile_classic_body(scope: &mut v8::PinScope, source: &str) -> bool {
+    v8::tc_scope!(let tc, scope);
+    let Some(code_str) = v8::String::new(tc, source) else {
+        return false;
+    };
+    // Script::compile（tc_scope 派生子域直传——TryCatch 的 Deref 强转链同
+    // module_parse_gate 注记）；resource_name 探针无文件语义，None。
+    let script = v8::Script::compile(tc, code_str, None);
+    script.is_some() && !tc.has_caught()
+}
+
 /// 将 Rust 字符串转为 JS 字符串字面量（含两端双引号），转义特殊字符防注入。
 /// 供 [`V8Sandbox::resolve_async_callback`] 把 `id`/`result` 安全嵌入执行脚本。
 fn js_string_literal(s: &str) -> String {
@@ -1500,6 +1570,34 @@ impl V8Sandbox {
         Ok(())
     }
 
+    /// s374：TLA 探针固有通道（[`module_tla_probe`] 自持 isolate 形态）——单测
+    /// 与无窗宿主判定入口；动态契约回调窗宿主走自由函数窗形态（同窗复用
+    /// parse_gate scope）。返回语义同自由函数（`None` = 探针不决，调用方退
+    /// 文本扫描器）。
+    pub fn module_tla_check_v8(&mut self, code: &str) -> Option<bool> {
+        if code.trim().is_empty() {
+            return None;
+        }
+        let persistent = self.config.persistent_context;
+        // SAFETY: cached_context 和 isolate 是不同的字段（同 parse_check）。
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        let isolate = self.isolate.as_mut()?;
+        // SAFETY: 同 parse_check——stack-like enter/exit 纪律（EnterGuard 配对退出）。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        // `&mut ContextScope` → `&mut PinScope` 由 Deref 强转承接（v8 crate
+        // scope.rs 头注：ContextScope 无缝直传 PinScope 形参——`Self::parse_check`
+        // 的 Script::compile 链同款）。
+        module_tla_probe(&mut ctx_scope, code)
+    }
+
     /// s369 in-execute catch 面（[`Self::execute_classic`]）：挂 `__zw_e` → 复位
     /// TryCatch（主错文本已冻结于调用方）→ 编译+运行 catch 片（次生错误吞没——片体
     /// 自带 try 守卫，防御异形挂载失败）→ 检查点 FIFO 排空 `[体内微任务, load 微任务]`
@@ -2002,6 +2100,55 @@ mod tests {
         );
         // 空源 trivially 通过（同 parse_check 口径）。
         assert!(sandbox.module_parse_check_v8("", "m.mjs").is_ok(), "空源通过");
+    }
+
+    /// s374：TLA 探针固有通道——文本扫描器深度门漏检面的原生仲裁验证。裸块
+    /// （含 20 层嵌套）/ if 块内 await 是 TLA；无 await、字符串含 await 字样、
+    /// 嵌套 async function 内 await 非 TLA；await 作对象键值位置非 await 表达式。
+    #[test]
+    fn module_tla_check_detects_block_and_statement_awaits() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        assert_eq!(
+            sandbox.module_tla_check_v8("{ await 1; }"),
+            Some(true),
+            "裸块内 await 是 TLA（扫描器深度门漏检面）"
+        );
+        let deep = "{ { { { { { { { { { await 1; } } } } } } } } } }";
+        assert_eq!(
+            sandbox.module_tla_check_v8(deep),
+            Some(true),
+            "20 层裸嵌套块 await 是 TLA（block-await-expr-* 簇形态）"
+        );
+        assert_eq!(
+            sandbox.module_tla_check_v8("if (x) { await f(); }"),
+            Some(true),
+            "if 块内 await 是 TLA（块语句继承 module goal）"
+        );
+        assert_eq!(
+            sandbox.module_tla_check_v8("export const a = 1;"),
+            None,
+            "含 export 声明源函数体包裹双腿必拒（module-only 语法）——探针不决退扫描器"
+        );
+        assert_eq!(
+            sandbox.module_tla_check_v8("const s = 'await later'; export { s };"),
+            None,
+            "含 export 声明源不决（扫描器对字符串 await 字样判 false，无翻红面）"
+        );
+        assert_eq!(
+            sandbox.module_tla_check_v8("async function g() { await 1; } g();"),
+            Some(false),
+            "嵌套 async function 内 await 非 TLA（无 module-only 语法，探针仲裁）"
+        );
+        assert_eq!(
+            sandbox.module_tla_check_v8("const o = { await: 1 }; export { o };"),
+            None,
+            "含 export 声明源不决（扫描器对对象键 await 同判 false）"
+        );
+        assert_eq!(
+            sandbox.module_tla_check_v8("var await = 1;"),
+            None,
+            "module goal 非法源不在判定域（负例交 parse_gate 拒绝面）"
+        );
     }
 
     /// T13 S3：reset_context 尾 `low_memory_notification` 后 context 重建语义不破——

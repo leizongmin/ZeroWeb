@@ -44,6 +44,12 @@ impl ModuleRegistry {
         self.modules.get(specifier).map(|s| s.as_str())
     }
 
+    /// 遍历已注册模块（键 = registry 键形 URL，值 = 源）。s374：动态面 TLA 探针
+    /// 注入的预判定循环用（webview scope 窗内逐源 [`crate::module_tla_probe`]）。
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.modules.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+
     /// 移除一个已注册的模块。
     pub fn unregister(&mut self, specifier: &str) -> bool {
         self.modules.remove(specifier).is_some()
@@ -1545,7 +1551,7 @@ pub fn build_module_script_deferred(
     visited: &mut HashSet<String>,
     path: &mut Vec<String>,
 ) -> Result<String, ScriptError> {
-    let async_body = module_source_has_top_level_await(source);
+    let async_body = module_tla_at(url, source);
     build_module_script_inner(source, url, registry, async_body, true, credentials, visited, path)
 }
 
@@ -1796,7 +1802,7 @@ fn build_dep_iife(
     // 的 await 归一发射——sync IIFE 中 `await memoized` 是语法错误且死锁时序不成立：
     // B 的动态 import(A) 触发的 A eager 编译若为 sync 形态，体会在 deps 挂起前同步
     // 跑（cyclic-tla-defer-eval flag 断言红态实证面）。
-    let is_async = module_source_has_top_level_await(&source) || source_has_deferred_import_decl(&source);
+    let is_async = module_tla_at(specifier, &source) || source_has_deferred_import_decl(&source);
     build_module_script(&source, specifier, registry, is_async, credentials, visited, path)
 }
 
@@ -1874,7 +1880,7 @@ fn inline_dep_once(
         let source = registry
             .get(specifier)
             .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?;
-        let is_async = module_source_has_top_level_await(source);
+        let is_async = module_tla_at(specifier, source);
         // s345：祖先链 = 入口→本导入者路径（含导入者不含自身，与 postorder_visit 语义
         // 一致——依赖体失败时其记忆化 catch 记账全链，中间模块记录同持失败对象，spec
         // 求值错误中间缓存）。自身入链后递归构建，依赖的内联发射携带含自身的链。
@@ -1888,7 +1894,7 @@ fn inline_dep_once(
     // 已访问（循环/菱形重入）→ 引用首份内联导出，不重复内联。
     let is_async = registry
         .get(specifier)
-        .map(module_source_has_top_level_await)
+        .map(|src| module_tla_at(specifier, src))
         .unwrap_or(false);
     Ok(DepInline::Visited(
         safe_ident(specifier),
@@ -2599,10 +2605,43 @@ fn statement_continues_with_attributes(statement: &str, lookahead: &[char]) -> b
 ///
 /// 欠检测残面（文档化，均维持现状）：括号内 await（`(await p)` 形）、模板插值内、
 /// 块语句 `{ await x; }`、深度 0 `=>` 后逗号续项。
-fn module_source_has_top_level_await(source: &str) -> bool {
+pub fn module_source_has_top_level_await(source: &str) -> bool {
     split_statements(source)
         .iter()
         .any(|statement| statement_scan_has_top_level_await(statement))
+}
+
+// s374：动态面 TLA 探针覆写表——文本扫描器深度门漏检裸块 await（test262
+// block-await-expr-* 20 层裸嵌套 31 案簇恒 SyntaxError）。webview `compile_module_contract`
+// 在 V8 回调窗内对依赖图全源跑 [`crate::module_tla_probe`] 预判定后 set（键 =
+// registry 键形 URL），转换结束 clear。转换层 is_async 判定先查表，无命中退
+// 文本扫描器（无窗路径——native resolver/classic 面——维持现状保守漏检）。
+// 全局单线程 isolate 语义：转换层纯文本操作不执行 JS，无嵌套重入；set 即全量
+// 替换，异常路径残留由下次 set 覆盖。
+thread_local! {
+    static TLA_OVERRIDES: std::cell::RefCell<Option<HashMap<String, bool>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 注入动态面 TLA 探针预判定表（V8 窗内调用；空表等同 clear）。
+pub fn set_tla_overrides(map: HashMap<String, bool>) {
+    TLA_OVERRIDES.with(|cell| *cell.borrow_mut() = Some(map));
+}
+
+/// 清除 TLA 覆写表（转换段结束恢复文本扫描器判定路径）。
+pub fn clear_tla_overrides() {
+    TLA_OVERRIDES.with(|cell| *cell.borrow_mut() = None);
+}
+
+/// 模块源的 TLA 判定（带 registry 键）：覆写表命中取探针值，未命中退文本
+/// 扫描器（`module_source_has_top_level_await`）。全部既有 TLA 判定点的统一入口。
+fn module_tla_at(key: &str, source: &str) -> bool {
+    TLA_OVERRIDES.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .and_then(|map| map.get(key).copied())
+            .unwrap_or_else(|| module_source_has_top_level_await(source))
+    })
 }
 
 /// s361：模块源含**静态** `import defer *` deferred namespace 声明（tc39
@@ -3614,6 +3653,33 @@ mod tests {
             "ximport.meta reimport.meta import.metax",
             "标识符边界外（前后缀）不替换"
         );
+    }
+
+    // s374（TLA 探针覆写表）：module_tla_at 查表命中取探针值、未命中退文本
+    // 扫描器、clear 恢复——webview 注入/清除生命周期的纯文本半边。
+    #[test]
+    fn test_module_tla_at_overrides_s374() {
+        // 无表：文本扫描器路径（深度门语义——裸块 await 漏检为 false 是现状）。
+        assert!(
+            !module_tla_at("a.js", "{ await 1; }"),
+            "无覆写表时退扫描器（深度门漏检裸块，现状保守面）"
+        );
+        assert!(module_tla_at("a.js", "await 1;"), "无覆写表时扫描器命中顶层 await");
+        set_tla_overrides(HashMap::from([("a.js".to_string(), true), ("b.js".to_string(), false)]));
+        assert!(
+            module_tla_at("a.js", "export const a = 1;"),
+            "表命中（true）优先于扫描器——键判定，源仅作 fallback"
+        );
+        assert!(
+            !module_tla_at("b.js", "await 1;"),
+            "表命中（false）优先于扫描器顶层 await"
+        );
+        assert!(
+            !module_tla_at("c.js", "const s = 'await';"),
+            "表未命中键退扫描器（字符串 await 字样不命中深度门）"
+        );
+        clear_tla_overrides();
+        assert!(!module_tla_at("a.js", "export const a = 1;"), "clear 后恢复扫描器路径");
     }
 
     // s360-r2（形态严格化）：非法调用形不重写——空参（`import()` /
