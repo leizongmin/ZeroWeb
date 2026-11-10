@@ -5409,10 +5409,13 @@ fn test_cssom_declared_color_context_normalization_t48() {
     // ① CSS-wide keywords：全属性有效、declared 序列化 ASCII lowercase（CSS Cascading
     //    Level 4 §7.1-§7.4 + Level 5 revert-layer；Blink 154 活体 t48 oracle a1-a5/a10——
     //    color 上下文五键 + `INHERIT !important` 形）。
-    // ② 系统色：CSS Color 4 §6.3 declared 值 ASCII lowercase（同 §16.2 命名色；活体
-    //    oracle b-*：modern 20 键 - listitem - listitemtext + deprecated 23 键 = Chrome 154
-    //    接受面（t57 oracle m15/m16 补证 listitem 亦不接受，T48 DF-1 口径勘正）；
-    //    LISTITEMTEXT Chrome 不接受→整声明丢弃。DC-2 次批 part11 管线接入后 ZW 同弃
+    // ② 系统色：CSS Color 4 §6.2 declared 值 ASCII lowercase（同 §16.2 命名色；活体
+    //    oracle b-*：§6.2 modern 19 键 + Appendix A deprecated 23 键 = Chrome 154
+    //    接受面 42 键（t57 oracle r2 m01-m19/ac01-ac03/d01-d42 全案；T57 返修
+    //    TV-T57-F1 再勘正——原注「modern 20 键 - listitem - listitemtext + 23」
+    //    前提与算术双错）；
+    //    LISTITEM/LISTITEMTEXT 非规范键（§6.2 清单无）且 Chrome 活体全大小写形
+    //    reject（r2 li01-li05）→整声明丢弃。DC-2 次批 part11 管线接入后 ZW 同弃
     //（css-color-invalid-named 184 行同语义），分歧形状钉解除、翻正为 Blink 对齐）。
     // ③ legacy 颜色函数文本归一（T46 TV-2：函数名 lowercase + 参数逗号空格 + 数字文本
     //    规范形 '.5'→'0.5'/'0.50'→'0.5'/'255.0'→'255'/'+255'→'255'，活体 oracle d1-d5/n3/n6）；
@@ -5616,12 +5619,15 @@ fn test_cssom_rule_style_csstext_quoted_semicolon_t49fix() {
 
 #[test]
 fn test_cssom_system_color_set_lock_t57() {
-    // T57（P 池 T48 DF-1 listitem oracle 消化）：系统色接受面逐键锁定 + listitem 族
-    // reject 形。Chrome 154 接受面 = modern 20 键 − listitem − listitemtext +
-    // deprecated 23 键 = 41 键（t57 oracle m01-m20/d01-d41 逐键实证：listitem/
-    // listitemtext 全大小写形 reject、其余 18 modern 键 + 23 deprecated 键全 accept）；
-    // ZW 侧 _zwSystemColorSet 41 键与 Chrome 154 逐键恒一（零行为变化），本钉锁集合
-    // 防漂移，补 DF-1「无 oracle 证据」缺口（T48 钉仅 12 键代表 + 形状钉）。
+    // T57（P 池 T48 DF-1 listitem oracle 消化；返修轮补键 accentcolortext——首轮
+    // TV-F2/DF-01 引擎内部不一致）：系统色接受面逐键锁定 + listitem 族 reject 形。
+    // Chrome 154 接受面 = CSS Color 4 §6.2 modern 19 键 + Appendix A deprecated
+    // 23 键 = 42 键（t57 oracle r2 m01-m19/ac01-ac03/d01-d42 逐键实证：42 键全
+    // accept 且 declared 读回小写；listitem 族全大小写形 reject，li01-li05）；
+    // ZW 侧 _zwSystemColorSet 42 键与 Chrome 154 逐键恒一——首轮 41 键缺
+    // accentcolortext（parser named_colors.rs 与 part11 面已认、本集合漏键的内部
+    // 不一致面，返修补齐；行为变化=declared 归一路径 accept accentcolortext），
+    // 本钉锁集合防漂移，补 DF-1「无 oracle 证据」缺口（T48 钉仅 12 键代表 + 形状钉）。
     // https://www.w3.org/TR/css-color-4/#css-system-colors
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -5645,7 +5651,7 @@ fn test_cssom_system_color_set_lock_t57() {
             "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
              var sys = ['canvas','canvastext','linktext','visitedtext','activetext',\
                'buttonface','buttontext','buttonborder','field','fieldtext','highlight',\
-               'highlighttext','mark','marktext','graytext','accentcolor','selecteditem',\
+               'highlighttext','mark','marktext','graytext','accentcolor','accentcolortext','selecteditem',\
                'selecteditemtext','activeborder','activecaption','appworkspace','background',\
                'buttonhighlight','buttonshadow','captiontext','inactiveborder',\
                'inactivecaption','inactivecaptiontext','infobackground','infotext','menu',\
@@ -5669,7 +5675,7 @@ fn test_cssom_system_color_set_lock_t57() {
     // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
     assert_eq!(
         sandbox.execute("JSON.stringify(globalThis.__t57)").unwrap().value,
-        r##"{"sys":{"canvas":"canvas","canvastext":"canvastext","linktext":"linktext","visitedtext":"visitedtext","activetext":"activetext","buttonface":"buttonface","buttontext":"buttontext","buttonborder":"buttonborder","field":"field","fieldtext":"fieldtext","highlight":"highlight","highlighttext":"highlighttext","mark":"mark","marktext":"marktext","graytext":"graytext","accentcolor":"accentcolor","selecteditem":"selecteditem","selecteditemtext":"selecteditemtext","activeborder":"activeborder","activecaption":"activecaption","appworkspace":"appworkspace","background":"background","buttonhighlight":"buttonhighlight","buttonshadow":"buttonshadow","captiontext":"captiontext","inactiveborder":"inactiveborder","inactivecaption":"inactivecaption","inactivecaptiontext":"inactivecaptiontext","infobackground":"infobackground","infotext":"infotext","menu":"menu","menutext":"menutext","scrollbar":"scrollbar","threeddarkshadow":"threeddarkshadow","threedface":"threedface","threedhighlight":"threedhighlight","threedlightshadow":"threedlightshadow","threedshadow":"threedshadow","window":"window","windowframe":"windowframe","windowtext":"windowtext"},"rej":{"LISTITEM":"","listitem":"","ListItemText":"","LISTITEMTEXT":"","listitemtext":"","LISTITEMFOO":""}}"##,
-        "T57 系统色 41 键接受面逐键锁定 + listitem 族 reject（Chrome 154 恒一，T48 DF-1 oracle 补齐）"
+        r##"{"sys":{"canvas":"canvas","canvastext":"canvastext","linktext":"linktext","visitedtext":"visitedtext","activetext":"activetext","buttonface":"buttonface","buttontext":"buttontext","buttonborder":"buttonborder","field":"field","fieldtext":"fieldtext","highlight":"highlight","highlighttext":"highlighttext","mark":"mark","marktext":"marktext","graytext":"graytext","accentcolor":"accentcolor","accentcolortext":"accentcolortext","selecteditem":"selecteditem","selecteditemtext":"selecteditemtext","activeborder":"activeborder","activecaption":"activecaption","appworkspace":"appworkspace","background":"background","buttonhighlight":"buttonhighlight","buttonshadow":"buttonshadow","captiontext":"captiontext","inactiveborder":"inactiveborder","inactivecaption":"inactivecaption","inactivecaptiontext":"inactivecaptiontext","infobackground":"infobackground","infotext":"infotext","menu":"menu","menutext":"menutext","scrollbar":"scrollbar","threeddarkshadow":"threeddarkshadow","threedface":"threedface","threedhighlight":"threedhighlight","threedlightshadow":"threedlightshadow","threedshadow":"threedshadow","window":"window","windowframe":"windowframe","windowtext":"windowtext"},"rej":{"LISTITEM":"","listitem":"","ListItemText":"","LISTITEMTEXT":"","listitemtext":"","LISTITEMFOO":""}}"##,
+        "T57 系统色 42 键接受面逐键锁定 + listitem 族 reject（Chrome 154 恒一——返修补键 accentcolortext，T48 DF-1 oracle 补齐）"
     );
 }
