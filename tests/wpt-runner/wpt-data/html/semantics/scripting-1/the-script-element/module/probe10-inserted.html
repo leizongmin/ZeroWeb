@@ -1,0 +1,23 @@
+<!doctype html>
+<title>probe10 dynamic inserted module</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<script>
+"use strict";
+setup({ allow_uncaught_exception: true });
+window.p10log = ["start"];
+var t10 = async_test("probe10");
+var s = document.createElement("script");
+s.type = "module";
+s.async = true;
+s.textContent = "window.p10log.push('module body ran');";
+document.head.append(s);
+window.p10log.push("after append");
+window.p10log.push("attr-type=" + JSON.stringify(s.getAttribute('type')));
+window.p10log.push("idl-type=" + JSON.stringify(s.type));
+window.addEventListener("load", t10.step_func(function(){
+  t10.step(function(){ assert_array_equals(window.p10log, ["start","after append","attr-type=\"module\"","idl-type=\"module\"","module body ran"], "probe10: " + window.p10log.join(" | ")); });
+  t10.done();
+}));
+</script>

@@ -1,0 +1,19 @@
+<!doctype html>
+<title>probe9 async module timing</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script>
+var probe9log = [];
+window.probe9push = function(x){ probe9log.push(x); };
+var t = async_test("probe9-report");
+window.addEventListener("load", t.step_func(function(){
+  t.step(function(){ assert_array_equals(probe9log, ["c0","a1","a3","c5","m2","d4"], "probe9: " + probe9log.join(",")); });
+  t.done();
+}));
+</script>
+<script>probe9push("c0");</script>
+<script type="module" async src="probe9-a1.js"></script>
+<script type="module">probe9push("m2");</script>
+<script type="module" async>probe9push("a3");</script>
+<script src="probe9-d4.js" defer></script>
+<script>probe9push("c5");</script>
