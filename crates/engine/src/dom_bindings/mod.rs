@@ -24,7 +24,11 @@ mod event;
 mod event_target;
 mod factories;
 mod gc;
-mod grid_cssom;
+
+// grid 批次（wptfyi-css DC-2）：`js_dom_bridge::callbacks` 宿主回调
+//（`__zw_grid_normalize_decl`/`__zw_style_supported_prop`）与 native setter 同源
+// 复用——crate 内可见即可，不外泄 API 面。
+pub(crate) mod grid_cssom;
 mod html_element;
 mod namednodemap;
 mod node;

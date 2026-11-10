@@ -22646,6 +22646,36 @@
   // 声明胜（R3213）、getPropertyValue 返值不含 !important（R3193）、-- 自定义属性大小写
   // 敏感。写序：同名声明移除（常规 ci / 自定义精确）后尾部追加 `name: value`，空值 =
   // 仅移除（CSSOM set 空串删声明——normalizeSerializedStyle 的 color='' 往返依赖）。
+  // supported property names `has` 面共享臂（cssom-1 §CSSStyleDeclaration supported
+  // property names）：接口成员 + custom `--*` + 索引名（[0, length)——propNames thunk
+  // 按需取长，非索引名零开销）+ 引擎支持面 CSS 属性（宿主清单
+  // `__zw_style_supported_prop`，camelCase 名宿主侧折叠 kebab；注册名 snake_case
+  // ——callbacks.rs register_callback 名参逐字落 globalThis，宿主回调返 JS 字符串，
+  // 比较用 'true' 字面量）+ Object.prototype 基础成员放行（Proxy has trap 返 false
+  // 即「不存在」——不放行会误杀 `'toString' in style` 等原型链真值面）。
+  // 缺宿主清单时前四类真值（polyfill 兜底链零漂移）。
+  // _styleProxy（sel/handle 面）与 _zwMStyleProxy（物化 plain 面）两个 style 面板
+  // 共用——此前两者均无 has trap，`in` 对 Proxy 名恒 false，grid-layout-properties
+  // 等语料 assert_true(prop in style) 127 子测试在门（wptfyi-css DC-2 grid 批次）。
+  // https://www.w3.org/TR/cssom-1/#cssstyledeclaration-supported-property-names
+  var _zwStyleHasBase = {};
+  function _zwStyleHas(p, propNames) {
+    var ps = String(p);
+    if (ps === 'cssText' || ps === 'length' || ps === 'getPropertyValue' ||
+        ps === 'getPropertyPriority' || ps === 'setProperty' || ps === 'removeProperty' ||
+        ps === 'item') return true;
+    if (ps.charAt(0) === '-' && ps.charAt(1) === '-') return true;
+    if (ps in _zwStyleHasBase) return true;
+    var idx = parseInt(ps, 10);
+    if (!isNaN(idx) && String(idx) === ps) {
+      return idx >= 0 && idx < propNames().length;
+    }
+    if (typeof globalThis.__zw_style_supported_prop === 'function') {
+      return globalThis.__zw_style_supported_prop(ps) === 'true';
+    }
+    return false;
+  }
+
   function _zwMStyleProxy(node) {
     var readRaw = function () {
       var v = node.getAttribute('style');
@@ -22751,6 +22781,7 @@
       node.setAttribute('style', out.join('; '));
     };
     return new Proxy({}, {
+      has: function (_t, p) { return _zwStyleHas(p, propNames); },
       get: function (_t, p) {
         var ps = String(p);
         if (ps === 'cssText') return readRaw();
@@ -30291,6 +30322,7 @@ return e;
         .filter(Boolean);
     };
     return new Proxy({}, {
+      has: function(_t, p) { return _zwStyleHas(p, propNames); },
       get: function(_t, p) {
         var ps = String(p);
         if (ps === 'cssText') return readRaw();

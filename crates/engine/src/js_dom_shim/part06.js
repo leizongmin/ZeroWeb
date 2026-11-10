@@ -1956,6 +1956,15 @@
     return s === 'color' || s === 'fill' || s === 'stroke' ||
       s.slice(-6) === '-color' || _zwColorShorthandSet.indexOf('|' + s + '|') >= 0;
   }
+  // grid 家族写面门（wptfyi-css DC-2 grid 批次 G1）：13 属性 canonical 序列化与
+  // 非法值拒绝整值委托宿主 [`crate::dom_bindings::grid_cssom`]（grid line 文法含
+  // span-ident/<integer> <ident> 形，track-list/areas echo，CSS Grid §7.4 缺省槽
+  // 填充 + 尾部最小化，CSS 全局关键字放行）。整值分派先于下方分词器——grid 值含
+  // `/` 与嵌套函数形，逐 token 切分会劈散。宿主返 null（拒）| canonical 串。
+  var _zwGridFamilySet = '|grid-auto-flow|grid-template-columns|grid-template-rows|grid-auto-columns|grid-auto-rows|grid-template-areas|grid-row-start|grid-row-end|grid-column-start|grid-column-end|grid-row|grid-column|grid-area|';
+  function _zwIsGridFamilyProp(name) {
+    return _zwGridFamilySet.indexOf('|' + String(name) + '|') >= 0;
+  }
   // legacy alpha 串（CSS Color 4 §16.1.1）：存在 n∈[0,100] 使 round-half-up(n×2.55)=a8 →
   // n/100；否则 round-half-up(a8÷0.255)/1000。整数算术 (255n+50)/100 规避 n×2.55 在
   // n≡10 (mod 20) 的 .5 边界浮点误差（旧 toFixed(4) 形与 Blink/§16.1.1 不符——T46 TV-2）。
@@ -2069,6 +2078,17 @@
   // 落点——该面由白名单门自然收窄后，剩余边界在此声明）。
   function _zwNormalizeDeclValue(value, propName) {
     var raw = String(value == null ? '' : value);
+    // grid 家族整值归一（wptfyi-css DC-2 grid 批次 G1）：宿主 grid_cssom canonical
+    // 化——非法整值返字符串 'null' → 拒（T47 DF-3 同语义：赋值忽略保留原值）；
+    // CSS-wide keyword 宿主侧放行 echo 小写。宿主回调返 JS 字符串（shim 通用
+    // 约定，比较须用字符串字面量而非 boolean/null——part01c `=== 'false'` 先例）。
+    // 宿主未注册（polyfill 兜底链）不校验零漂移。
+    // grid-layout-properties 等语料 `row dense`→`dense` 归一与 garbage 拒收锚驱动。
+    if (_zwIsGridFamilyProp(propName) && typeof globalThis.__zw_grid_normalize_decl === 'function') {
+      var _gnd = globalThis.__zw_grid_normalize_decl(propName, raw);
+      if (_gnd === 'null') return null;
+      return _gnd;
+    }
     // DC-2 次批：色/opacity 值模型归一整值委托（part11 css-color-4/5 管线）——
     // 下方分词器会把函数形劈散（css-syntax 函数含空格参数），现代语法（空格形/
     // none powerless/角度单位/hwb·lab 族）必须整值进管线。null=非法（调用方

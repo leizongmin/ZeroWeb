@@ -1933,12 +1933,13 @@ fn test_get_computed_style_grid_container() {
         <div id=\"ts-num\" style=\"tab-size: 4;\"></div>\
         <div id=\"def\"></div>\
         </body></html>";
-    // grid-auto-flow 默认 row；column / dense（ZeroWeb 解析 dense→RowDense 多词）。
+    // grid-auto-flow 默认 row；column / dense（ZeroWeb 解析 dense→RowDense）。
+    // 简写序列化：`row dense` 组合 canonical 为 `dense`（CSS Grid §3.5.3，语料锚定）。
     assert_eq!(computed_style_property(html, "#def", "grid-auto-flow"), "row");
     assert_eq!(computed_style_property(html, "#gaf-col", "grid-auto-flow"), "column");
     assert_eq!(
         computed_style_property(html, "#gaf-dense", "grid-auto-flow"),
-        "row dense"
+        "dense"
     );
     // container-type 默认 normal；size / inline-size。
     assert_eq!(computed_style_property(html, "#def", "container-type"), "normal");
