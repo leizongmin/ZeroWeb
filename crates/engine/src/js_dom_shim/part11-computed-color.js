@@ -815,7 +815,13 @@
     function parseSide(text) {
       var t = text.trim();
       var lead = /^([-+]?(\d+\.?\d*|\.\d+))%(?![\d.])\s+([\s\S]+)$/.exec(t);
-      if (lead) return { w: parseFloat(lead[1]) / 100, color: lead[3].trim() };
+      if (lead) {
+        var lw = parseFloat(lead[1]) / 100;
+        // 权重域 [0%,100%]，域外整值非法（css-color-5 §color-mix；corpus
+        // '-10%'/'150%' 拒面）。
+        if (lw < 0 || lw > 1) return null;
+        return { w: lw, color: lead[3].trim() };
+      }
       // calc() 权重形：'red calc(10%)'（css-color-5 weight syntax）。
       var leadCalc = /^(calc\([^()]*\))\s+([\s\S]+)$/.exec(t);
       if (leadCalc) {
@@ -831,7 +837,11 @@
           if (trail[1].charAt(i) === '(') d++;
           else if (trail[1].charAt(i) === ')') d--;
         }
-        if (d === 0) return { w: parseFloat(trail[2]) / 100, color: trail[1].trim() };
+        if (d === 0) {
+          var tw = parseFloat(trail[2]) / 100;
+          if (tw < 0 || tw > 1) return null; // 域外权重拒（同 lead 臂）
+          return { w: tw, color: trail[1].trim() };
+        }
       }
       // 尾 calc 形：'blue calc(10%)'（同括号平衡检查）。
       var trailCalc = /^([\s\S]+?)\s+(calc\([^()]*\))$/.exec(t);
@@ -1766,21 +1776,9 @@
 
   // ============ 入口 ============
 
-  // computed 颜色：raw 声明文本 → computed 序列化串；无效/不可解析回退基座。
-  globalThis.__zwComputedColor = function (raw, el) {
-    // 环境依赖形回退基座（part11-color.js declared 折叠面）：sign()/abs() 需
-    // 字体/容器/视口单位运行时环境（corpus sign(1em - 10px)/sign(2cqw - 10px)
-    // 实证——基座对可静态求值形有正确解）；var() 需自定义属性级联；反斜杠 =
-    // CSS 转义（host 词法器处理，如 'r\\67 b(...)'）。基座无效形返 null →
-    // 调用方宿主链（覆盖前同路径，零漂移）。
-    var rawS = String(raw == null ? '' : raw);
-    if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('var(') >= 0
-        || rawS.indexOf('\\') >= 0) {
-      return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
-    }
-    var r = null;
-    try { r = _zwCCResolveText(raw, el, 0); } catch (_eCR) { r = null; }
-    if (!r) return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+  // resolve 结果 → computed 序列化串（__zwComputedColor 与 declared origin
+  // 规范化共用分发——lab clamp/hue mod/alpha 数字化语义单一来源）。
+  function _zwCCSerialResolve(r) {
     if (r.kind === 'system') return r.text;
     if (r.own && r.kind === 'rgb') {
       // lab 族函数自形保形（round-trip；Chrome 对 lab()/oklch() computed 恒
@@ -1818,6 +1816,24 @@
     }
     if (r.kind === 'relative-out') return _zwCCSerialRelative(r);
     return '';
+  }
+
+  // computed 颜色：raw 声明文本 → computed 序列化串；无效/不可解析回退基座。
+  globalThis.__zwComputedColor = function (raw, el) {
+    // 环境依赖形回退基座（part11-color.js declared 折叠面）：sign()/abs() 需
+    // 字体/容器/视口单位运行时环境（corpus sign(1em - 10px)/sign(2cqw - 10px)
+    // 实证——基座对可静态求值形有正确解）；var() 需自定义属性级联；反斜杠 =
+    // CSS 转义（host 词法器处理，如 'r\\67 b(...)'）。基座无效形返 null →
+    // 调用方宿主链（覆盖前同路径，零漂移）。
+    var rawS = String(raw == null ? '' : raw);
+    if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('var(') >= 0
+        || rawS.indexOf('\\') >= 0) {
+      return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+    }
+    var r = null;
+    try { r = _zwCCResolveText(raw, el, 0); } catch (_eCR) { r = null; }
+    if (!r) return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+    return _zwCCSerialResolve(r);
   };
 
   // CSS.supports 钩子：颜色值可解析性（系统色同为合法值）。
@@ -1866,5 +1882,499 @@
     if (Object.prototype.hasOwnProperty.call(_zwCCSystem, low)) return false;
     if (/^(rgba?|hsla?)\([^)]*,[^)]*\)$/i.test(t)) return false; // comma legacy
     return true;
+  };
+
+  // ============ declared 规范化覆盖（DC-2 再批：css-color corpus 声明面）============
+  // 基座 part11-color.js 对 mix/relative/contrast 形保原串透传（{form:'raw'}）。
+  // 本段覆盖 __zwColorNormalizeDecl：
+  //   - relative 色函数（css-color-5 §relative colors 声明序列化）：rgba/hsla
+  //     别名折返 rgb/hsl、origin 规范化（keyword 保形小写、var/嵌套 mix·relative
+  //     保原串、其余走 computed 管线序列化——lab clamp/hue mod 360/alpha 数字化
+  //     与 computed 面同一出口）、通道表+alpha-part 原文保形（深度感知空白归一）；
+  //     整值有效性以 computed resolve 为 oracle（通道关键字/类型表已被 computed
+  //     relative 语料 1,100 断言钉）→ 失败即拒。
+  //   - color-mix（css-color-5 §color-mix 声明序列化）：权重后置、未指定侧 =
+  //     100% − 对侧、双 50% 双省略、内嵌色同 origin 规范化；域外权重/method
+  //     子句/两侧语法无效即拒（corpus invalid-mix 141 面）；非两侧形保透传。
+  //   - contrast-color（css-color-6）：恰一 <color> 参，否则拒；合法形保原串。
+  //   - color-layers（css-color-6 语法面）/light-dark：保透传（后续批次建模）。
+  // var() 引用/含注释/含转义值整值不拦截（cssText 注释保形 T49fix 锚；var 需
+  // 运行时替换面；转义 host 词法器处理）。
+  // https://drafts.csswg.org/css-color-5/#relative-colors
+  // https://drafts.csswg.org/css-color-6/#color-layers
+
+  // 深度感知 rest 归一：空白串压单空格、顶层 '/' 前后单空格；calc() 内空白与
+  // 除号不动（通道表原文保形，仅排版归一——corpus 期望单空格规范排布）。
+  function _zwCCDeclRestNorm(s) {
+    var t = String(s == null ? '' : s).trim();
+    var out = '', depth = 0, i = 0;
+    while (i < t.length) {
+      var c = t.charAt(i);
+      if (c === '(') depth++;
+      else if (c === ')') depth = depth > 0 ? depth - 1 : 0;
+      if (depth === 0 && c === '/') {
+        out = out.replace(/\s+$/, '') + ' / ';
+        i++;
+        while (i < t.length && /\s/.test(t.charAt(i))) i++;
+        continue;
+      }
+      if (depth === 0 && /\s/.test(c)) {
+        if (out !== '' && !/\s$/.test(out)) out += ' ';
+        i++;
+        continue;
+      }
+      out += c;
+      i++;
+    }
+    return out;
+  }
+
+  // rest 通道槽 calc() 声明面规范形（css-color-5 相对色通道 calc：Chrome 序列
+  // 化为乘式规范——数×通道、常数前置、除常数折叠为 1/n 乘（6 位有效，corpus
+  // 'calc(a / 3)'→'calc(0.333333 * a)'）、减常数折负常数前置（'calc(l - 20)'→
+  // 'calc(-20 + l)'）、加减中的乘式项括号化（'calc(g * .5 + g * .5)'→
+  // 'calc((0.5 * g) + (0.5 * g))'）。仅支持纯数×关键字形状；其余（单位、多
+  // 关键字积、嵌套函数）保原形不求值。
+  function _zwCCDeclCalcCanon(s) {
+    var toks = [];
+    var i = 0;
+    while (i < s.length) {
+      var c = s.charAt(i);
+      if (/\s/.test(c)) { i++; continue; }
+      var m = /^(\d+\.?\d*|\.\d+)/.exec(s.slice(i));
+      if (m) { toks.push({ t: 'n', v: parseFloat(m[1]) }); i += m[1].length; continue; }
+      var m2 = /^[a-zA-Z][a-zA-Z0-9-]*/.exec(s.slice(i));
+      if (m2) { toks.push({ t: 'k', v: m2[0] }); i += m2[0].length; continue; }
+      if ('+-*/()'.indexOf(c) >= 0) { toks.push({ t: c }); i++; continue; }
+      return null; // 单位/未知字符 → 不规范
+    }
+    var p = 0;
+    function peek() { return p < toks.length ? toks[p] : null; }
+    function parseFactor() {
+      var tk = peek();
+      if (!tk) return null;
+      if (tk.t === 'n') { p++; return { num: tk.v, kws: [] }; }
+      if (tk.t === 'k') { p++; return { num: 1, kws: [tk.v] }; }
+      if (tk.t === '(') {
+        p++;
+        var inner = parseExpr();
+        if (!inner || !peek() || peek().t !== ')') return null;
+        p++;
+        return { num: 1, kws: ['(' + inner + ')'] };
+      }
+      return null;
+    }
+    function parseTerm() {
+      var acc = parseFactor();
+      if (!acc) return null;
+      while (peek() && (peek().t === '*' || peek().t === '/')) {
+        var op = toks[p++].t;
+        var f = parseFactor();
+        if (!f) return null;
+        if (op === '*') {
+          if (f.kws.length === 0) acc.num *= f.num;
+          else acc = { num: acc.num, kws: acc.kws.concat(f.kws) };
+        } else {
+          if (f.kws.length !== 0) return null; // 除关键字 → 不规范
+          acc.num /= f.num;
+        }
+      }
+      return acc;
+    }
+    function parseExpr() {
+      var t0 = parseTerm();
+      if (!t0) return null;
+      var sum = t0.kws.length === 0 ? t0.num : 0;
+      var hasNum = t0.kws.length === 0;
+      var kws = [];
+      if (t0.kws.length > 0) kws.push({ text: termText(t0), compound: t0.kws.length > 1 || t0.num !== 1 });
+      while (peek() && (peek().t === '+' || peek().t === '-')) {
+        var op = toks[p++].t;
+        var tr = parseTerm();
+        if (!tr) return null;
+        if (tr.kws.length === 0) {
+          sum += op === '+' ? tr.num : -tr.num; // 常数项折叠（'l - 20' → -20）
+          hasNum = true;
+          continue;
+        }
+        var txt = termText(tr);
+        var compound = tr.kws.length > 1 || tr.num !== 1;
+        if (op === '+') kws.push({ text: txt, compound: compound });
+        else kws.push({ text: txt, compound: compound, neg: true });
+      }
+      if (peek()) return null; // 尾部残token（未闭括号等）
+      var hasNumPart = hasNum && (sum !== 0 || kws.length === 0);
+      var multi = kws.length + (hasNumPart ? 1 : 0) > 1; // 多项时乘式项括号化
+      var outParts = [];
+      if (hasNumPart) outParts.push(_zwCCSig6(sum));
+      for (var q = 0; q < kws.length; q++) {
+        var seg = kws[q];
+        var body = multi && seg.compound ? '(' + seg.text + ')' : seg.text;
+        if (outParts.length === 0) outParts.push(seg.neg ? '-' + body : body);
+        else outParts.push(seg.neg ? ' - ' + body : ' + ' + body);
+      }
+      if (outParts.length === 0) return null; // 全常数折叠为 0 且无通道项
+      return outParts.join('');
+    }
+    function termText(tr) {
+      var head = tr.num !== 1 ? _zwCCSig6(tr.num) + ' * ' : '';
+      return head + tr.kws.join(' * ');
+    }
+    var res = parseExpr();
+    return res;
+  }
+
+  // rest 通道表/alpha-part 声明面规范化：calc() 槽规范形（上函数）、color()
+  // 通道关键字 'xyz' 别名展开 'xyz-d65'（css-color-5 通道名用规范空间名——
+  // corpus 'color(from color(xyz ...) xyz x y z)' → 'xyz-d65 x y z' 锚）、
+  // alpha-part 前导点数字补 0（'.25'→'0.25'、'.20'→'0.20' 保原位数字——
+  // Chrome 声明面仅补前导零不重排尾零）；其余槽保形。
+  function _zwCCDeclRestCanon(fn, rest, originKept) {
+    var norm = _zwCCDeclRestNorm(rest);
+    // 顶层 '/' 拆通道区与 alpha 区。
+    var depth = 0, slashAt = -1;
+    for (var i = 0; i < norm.length; i++) {
+      var ch = norm.charAt(i);
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      else if (ch === '/' && depth === 0) { slashAt = i; break; }
+    }
+    var chan = slashAt >= 0 ? norm.slice(0, slashAt) : norm;
+    var alpha = slashAt >= 0 ? norm.slice(slashAt + 1).trim() : null;
+    // 通道区深度感知切槽（calc( 内空白不切）。
+    var slots = [], cur = '', d2 = 0;
+    for (var j = 0; j < chan.length; j++) {
+      var c2 = chan.charAt(j);
+      if (c2 === '(') d2++;
+      else if (c2 === ')') d2--;
+      if (d2 === 0 && /\s/.test(c2)) {
+        if (cur) { slots.push(cur); cur = ''; }
+        continue;
+      }
+      cur += c2;
+    }
+    if (cur) slots.push(cur);
+    var out = [];
+    for (var k = 0; k < slots.length; k++) {
+      var slot = slots[k];
+      var cm = /^calc\(([\s\S]*)\)$/i.exec(slot);
+      if (cm) {
+        var cc = _zwCCDeclCalcCanon(cm[1]);
+        out.push(cc !== null ? 'calc(' + cc + ')' : slot); // 不规范形保原槽
+        continue;
+      }
+      if (fn === 'color' && slot === 'xyz') { out.push('xyz-d65'); continue; }
+      out.push(slot);
+    }
+    var chanOut = out.join(' ');
+    if (alpha == null) return chanOut;
+    // alpha-part 前导点补 0（'.25'→'0.25' 保原位数字）——语料行为表：rgb
+    // 恒补（keyword 与 srgb origin 双锚）；hwb/lab 仅 origin 恰保原样时补
+    //（origin 变形则保）；hsl/lch/oklab 恒保；oklch/color 无语料锚随族保形。
+    // 其余 token（关键字 alpha/none/百分比/calc）一律保形。
+    var dot = fn === 'rgb' || ((fn === 'hwb' || fn === 'lab') && originKept);
+    var am = dot ? /^([-+]?)\.(\d+)$/.exec(alpha) : null;
+    return chanOut + ' / ' + (am ? am[1] + '0.' + am[2] : alpha);
+  }
+
+  // 内嵌色/origin/mix 侧规范化。返回 { s } 规范形 | { raw } 保原形（var()/
+  // alpha(from)）| null 无效。嵌套 mix/relative 递归规范化（corpus 锚
+  // 'color(from color(from color(xyz ...) xyz x y z) xyz x y z)' 整链别名
+  // 展开）；失败（null）→ 整值拒。
+  function _zwCCDeclColorCanonic(text) {
+    var t = _zwCCStripComments(text).trim();
+    if (!t) return null;
+    if (/^var\(/i.test(t)) return { raw: t };
+    // contrast-color（css-color-6）未建模面保原串（relative origin
+    // 'rgb(from contrast-color(blue) r g b)' cc4 透传锚）。
+    if (/^contrast-color\(/i.test(t)) return { raw: t };
+    var ast = null;
+    try { ast = _zwCCParseColorValue(t); } catch (_ePD) { return null; }
+    if (!ast) return null;
+    if (ast.kind === 'mix') {
+      var mo = _zwCCDeclMix(t);
+      if (mo === undefined || mo === null) return mo === undefined ? { raw: t } : null;
+      return { s: mo };
+    }
+    if (ast.kind === 'relative') {
+      var ro = _zwCCDeclRelative(t);
+      if (ro === undefined || ro === null) return ro === undefined ? { raw: t } : null;
+      return { s: ro };
+    }
+    if (ast.kind === 'alpha') return { raw: t };
+    if (ast.kind === 'named' || ast.kind === 'system') return { s: _zwCCDecodeEscapes(t).toLowerCase() };
+    if (ast.kind === 'currentcolor') return { s: 'currentcolor' };
+    if (ast.kind === 'transparent') return { s: 'transparent' };
+    var r = null;
+    try { r = _zwCCResolveText(t, null, 0); } catch (_eRD) { return null; }
+    if (!r) {
+      // 环境依赖形（sign/abs 容器/字体单位）不求值不拒——保原串交运行时面
+      //（与 __zwComputedColor 环境回退同一哲学）。
+      if (/(^|[^\w-])(sign|abs)\(/i.test(t)) return { raw: t };
+      return null;
+    }
+    // srgb 族声明面折叠（css-color-5 relative origin/mix 侧序列化：legacy
+    // rgba 数字形，通道 none→0 消解（'rgb(none none none)'→'rgb(0, 0, 0)'、
+    // 'hsl(120deg 40% 40% / none)'→'rgba(61, 143, 61, 0)' corpus 锚）——
+    // 不走 computed none 保形分支（那是 computed 面口径）。
+    if (r.kind === 'rgb' && (r.srcKind === 'rgb' || r.srcKind === 'hsl' || r.srcKind === 'hwb')) {
+      // alpha none 同消解为 0（'rgb(20% 40% 60% / none)'→'rgba(51, 102, 153, 0)'）。
+      var lg = _zwCCSerialLegacyRgb(r.rgb, r.aNone ? 0 : r.alpha, false);
+      return { s: lg };
+    }
+    var s2 = _zwCCSerialResolve(r);
+    return s2 ? { s: s2 } : null;
+  }
+
+  // 百分比权重文本（分数 → 6 位舍入百分值最短十进制 + '%'）。
+  function _zwCCDeclPctTxt(w) {
+    return _zwCCNum(Math.round(w * 1e6) / 1e4) + '%';
+  }
+
+  // 浅面（无 in 子句 mix 侧）色规范化。color() 形保原 token（Chrome declared
+  // color() 不重写数字——'color(srgb .1 .2 .3)' corpus 锚），仅 'xyz' 空间别
+  // 名展开（'color(xyz .1 ...)'→'color(xyz-d65 .1 ...)' 锚）；其余委托基座
+  // declared 序列化（named 保 keyword、hsl→rgb 数字折、oklab 数值自形——
+  // corpus 无 in 两参锚）。null（非法）→ 整值拒。函数声明提升，基座引用在
+  // 段尾绑定；返回 { s } 与完整面 canonic 同形。
+  function _zwCCShallowColor(c) {
+    var t = _zwCCStripComments(c).trim();
+    if (!t) return null;
+    if (/^color\(/i.test(t)) {
+      var ali = t.replace(/(^|[\s(/])xyz(?=$|[\s,)/])/g, '$1xyz-d65');
+      return { s: ali };
+    }
+    var o = _zwCCPrevNormalizeDecl('color', t);
+    return o == null ? null : { s: o };
+  }
+
+  // relative 色函数声明面。返规范串 | null（语法无效，拒）| undefined（非
+  // 相对形，交基座）。
+  function _zwCCDeclRelative(core) {
+    var m = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(([\s\S]*)\)$/i.exec(core);
+    if (!m) return undefined;
+    var rel = _zwCCTryRelative(m[2]);
+    if (!rel) return undefined; // 非 relative 形（普通 rgb() 等）走基座
+    var ast = null;
+    try { ast = _zwCCParseColorValue(core); } catch (_ePR) { return null; }
+    if (!ast || ast.kind !== 'relative') return null; // relative 语法无效（legacy
+    // 逗号形 'rgb(from red, r, g, b)' 解析即败——css-color-5 relative 现代语法）
+    var oast = null;
+    try { oast = _zwCCParseColorValue(_zwCCStripComments(rel.origin).trim()); } catch (_ePO) { return null; }
+    if (!oast) {
+      // contrast-color origin（css-color-6 未建模）交基座透传——有效性
+      // oracle 不覆盖未建模面（'rgb(from contrast-color(blue) r g b)'
+      // 'contrast-color(contrast-color(pink))' cc4 透传锚）。
+      if (/^contrast-color\(/i.test(_zwCCStripComments(rel.origin).trim())) return undefined;
+      return null; // origin 非法 → 整值拒
+    }
+    if (oast.kind !== 'system') {
+      // 有效性 oracle：整 ast 走 computed resolve（origin 可解析形 + 通道
+      // 关键字/类型全查；system origin 不入转换链——声面合法，computed 面放弃）。
+      var rv = null;
+      try { rv = _zwCCResolve(ast, null, 0); } catch (_eRR) { rv = null; }
+      if (!rv) return null;
+    }
+    var oc = _zwCCDeclColorCanonic(rel.origin);
+    if (oc === null) return null;
+    var fnFold = m[1].toLowerCase();
+    if (fnFold === 'rgba') fnFold = 'rgb';
+    else if (fnFold === 'hsla') fnFold = 'hsl';
+    // origin 规范化是否变形（≠原文）：hwb/lab 的 rest alpha 前导点补 0 仅在
+    // origin 恰保原样时发生（'hwb(from rebeccapurple / .2)'→0.2 补、
+    // 'hwb(from rgb(...) / .2)' 保、'lab(from lab(25 20 50) / .35)' 补、
+    // 'lab(from lab(... / 40%) / .35)' 保——语料行为表，无规范统一规则）。
+    var originKept = oc.s != null && oc.s === _zwCCStripComments(rel.origin).trim();
+    return fnFold + '(from ' + (oc.raw ? oc.raw : oc.s) + ' ' + _zwCCDeclRestCanon(fnFold, rel.rest, originKept) + ')';
+  }
+
+  // color-mix 声明面（css-color-5：可选 in 子句 + n≥1 个 [色 [权重]] 参）。
+  // 返规范串 | null（语法无效，拒）| undefined（无语料锚形状，交基座透传）。
+  // 权重序列化：全未指定全省（均匀缺省重建一致——含 n=2 双 50% 与 n≥3 多色
+  // 'red, green, blue' 锚）、单参 100% 省略（缺省重建一致）/0% 保留、部分未
+  // 指定补均分剩余、全显式 n≥3 全保留；任一侧 calc 权重则两侧逐侧保形。
+  // 色规范化双口径：带 in 子句（解析面）→ 本管线完整规范化（corpus 'in xyz'
+  // → 'xyz-d65 0.1' 数字化锚）；无 in 子句（浅面）→ 基座 declared 色序列化
+  //（'hsl(...)'→rgb 折、'color(srgb .1 .2 .3)' 保原数字 token、oklab 数值
+  // 自形——corpus 无 in 两参锚）。
+  function _zwCCDeclMix(core) {
+    var m = /^color-mix\(([\s\S]*)\)$/i.exec(core);
+    if (!m) return undefined;
+    var args = _zwCCTopSplit(m[1], ',');
+    if (args.length < 1 || args.length > 8) return undefined;
+    var hm = /^in\s+([a-z0-9-]+)(\s+(?:shorter|longer|increasing|decreasing)\s+hue)?$/i.exec(args[0].trim());
+    var mi = 0;
+    if (hm) {
+      if (args.length === 1) return undefined; // 仅 in 子句（缺色参）——无语料锚，保透传
+      mi = 1;
+    }
+    // method 子句规范化（css-color-5 序列化：插值空间缺省 oklab、hue 方法缺省
+    // shorter——整体缺省时省略子句；'in xyz' 别名 'in xyz-d65' corpus 锚；
+    // 非 'shorter hue' 的 hue 方法保形——'in hsl longer hue' 实证）。
+    var methodTxt = '';
+    if (hm) {
+      var sp = hm[1].toLowerCase();
+      var spInfo = _zwCCSpaces[sp];
+      if (spInfo && spInfo.alias) sp = spInfo.alias;
+      var hueM = hm[2] ? hm[2].toLowerCase().replace(/\s+/g, ' ').trim() : '';
+      if (sp !== 'oklab' || (hueM !== '' && hueM !== 'shorter hue')) {
+        methodTxt = 'in ' + sp + (hueM && hueM !== 'shorter hue' ? ' ' + hueM : '');
+      }
+    }
+    function side(text) {
+      var t = text.trim();
+      var w = null, wraw = null;
+      var c = t;
+      var lead = /^([-+]?(\d+\.?\d*|\.\d+))%(?![\d.])\s+([\s\S]+)$/.exec(t);
+      if (lead) {
+        w = parseFloat(lead[1]) / 100;
+        if (w < 0 || w > 1) return null;
+        c = lead[3].trim();
+      } else {
+        var trail = /^([\s\S]+?)\s+([-+]?(\d+\.?\d*|\.\d+))%$/.exec(t);
+        if (trail) {
+          var d = 0;
+          for (var i = 0; i < trail[1].length; i++) {
+            if (trail[1].charAt(i) === '(') d++;
+            else if (trail[1].charAt(i) === ')') d--;
+          }
+          if (d === 0) {
+            w = parseFloat(trail[2]) / 100;
+            if (w < 0 || w > 1) return null;
+            c = trail[1].trim();
+          }
+        }
+        if (w == null) {
+          // calc(<num>%) 权重不可求值——保形输出（'red calc(20%)'/'calc(50% *
+          // sign(100em - 1px))' corpus 锚），域检查跳过。
+          var ctrail = /^([\s\S]+?)\s+(calc\((?:(?!calc\()[\s\S])*)\)$/.exec(t);
+          if (ctrail) {
+            var d2 = 0;
+            for (var j = 0; j < ctrail[1].length; j++) {
+              if (ctrail[1].charAt(j) === '(') d2++;
+              else if (ctrail[1].charAt(j) === ')') d2--;
+            }
+            if (d2 === 0) { w = 'calc'; wraw = ctrail[2] + ')'; c = ctrail[1].trim(); }
+          }
+        }
+      }
+      // 无 in 子句（浅面）→ 基座 declared 色序列化（含 mix/relative 透传原串
+      // 形；'color-mix(hsl(...), hsl(...))'→rgb 折锚）；带 in 子句 → 完整解析
+      // 面规范化。null（非法）→ 整值拒。
+      var out = hm ? _zwCCDeclColorCanonic(c) : _zwCCShallowColor(c);
+      if (out === null) return null;
+      return { color: out, w: w, wraw: wraw };
+    }
+    var sides = [];
+    for (var si = mi; si < args.length; si++) {
+      var sd = side(args[si]);
+      if (sd === null) return null;
+      sides.push(sd);
+    }
+    function colTxt(sd) { return sd.color.raw ? sd.color.raw : sd.color.s; }
+    var body;
+    var anyCalc = false;
+    var wsum = 0, nMissing = 0;
+    for (var qi = 0; qi < sides.length; qi++) {
+      if (sides[qi].w === 'calc') anyCalc = true;
+      else if (sides[qi].w == null) nMissing++;
+      else wsum += sides[qi].w;
+    }
+    if (anyCalc) {
+      // 任一侧 calc 权重 → 各侧权重文本逐侧保形（calc 侧保形、数值侧照常输出
+      //——'red calc(10%), blue 50%' 锚；缺失侧裸色名——'red calc(50% *
+      // sign(...)), blue' 锚），不做数值补全/省略。
+      var parts = [];
+      for (var ri = 0; ri < sides.length; ri++) {
+        parts.push(colTxt(sides[ri]) + (sides[ri].wraw ? ' ' + sides[ri].wraw
+          : sides[ri].w != null ? ' ' + _zwCCDeclPctTxt(sides[ri].w) : ''));
+      }
+      body = parts.join(', ');
+    } else if (nMissing === sides.length) {
+      // 全未指定 = 均匀缺省，重建一致 → 全省略（n=2 双 50%、n≥3 'red, green,
+      // blue' corpus 锚）。
+      var allParts = [];
+      for (var ui = 0; ui < sides.length; ui++) allParts.push(colTxt(sides[ui]));
+      body = allParts.join(', ');
+    } else {
+      // 部分未指定 → 未指定侧均分剩余（'red 50%, green, blue'→25%/25% 锚）。
+      // 全体权重序列（补全后）= 均匀缺省（各 1/n）→ 全省略（重建一致——
+      // 'red 50%, blue' 双省、'red 100%' 单参省、'red, green, blue' 全省锚）；
+      // 否则显式侧逐侧保留输出（'70% red, 50% blue' 全保留、'red 0%' 单参
+      // 保留、'red 75%, blue 75%' 双保留锚）。
+      var wmiss = nMissing > 0 ? (1 - wsum) / nMissing : 0;
+      var uniform = true;
+      for (var vi = 0; vi < sides.length; vi++) {
+        var wv = sides[vi].w == null ? wmiss : sides[vi].w;
+        if (Math.round(wv * 1e6) !== Math.round(1e6 / sides.length)) { uniform = false; break; }
+      }
+      var outParts = [];
+      for (var ti = 0; ti < sides.length; ti++) {
+        var sdw = sides[ti].w;
+        outParts.push(colTxt(sides[ti])
+          + (uniform ? '' : sdw == null ? ' ' + _zwCCDeclPctTxt(wmiss) : ' ' + _zwCCDeclPctTxt(sdw)));
+      }
+      body = outParts.join(', ');
+    }
+    return 'color-mix(' + (methodTxt ? methodTxt + ', ' : '') + body + ')';
+  }
+
+  // contrast-color 声明面（css-color-6：恰一 <color> 参；corpus invalid 面
+  // 空参/数值/keyword/双参全拒）。返 null（拒）| undefined（不拦，交基座）。
+  function _zwCCDeclContrast(core) {
+    var m = /^contrast-color\(([\s\S]*)\)$/i.exec(core);
+    if (!m) return undefined;
+    var t = m[1].trim();
+    if (!t) return null;
+    if (_zwCCTopSplit(t, ',').length !== 1) return null;
+    var ast = null;
+    try { ast = _zwCCParseColorValue(t); } catch (_ePC) { return null; }
+    if (!ast) {
+      // 嵌套 contrast-color 参（'contrast-color(contrast-color(pink))' cc4
+      // 透传锚）——css-color-6 未建模面交基座保原串。
+      if (/^contrast-color\(/i.test(t)) return undefined;
+      return null;
+    }
+    return undefined; // 合法形无 declared 重排锚——保原串
+  }
+
+  // declared 归一覆盖（part11-color.js 基座之后装配——别名链尾挂）。
+  var _zwCCPrevNormalizeDecl = typeof globalThis.__zwColorNormalizeDecl === 'function'
+    ? globalThis.__zwColorNormalizeDecl : null;
+  globalThis.__zwColorNormalizeDecl = function (prop, value) {
+    if (prop !== 'color' || _zwCCPrevNormalizeDecl == null) {
+      return _zwCCPrevNormalizeDecl ? _zwCCPrevNormalizeDecl(prop, value) : String(value == null ? '' : value);
+    }
+    var s = String(value == null ? '' : value);
+    var t = s.trim();
+    if (t === '') return _zwCCPrevNormalizeDecl(prop, value);
+    var pri = '';
+    var pm = /\s*!\s*important\s*$/i.exec(t);
+    if (pm) { pri = ' !important'; t = t.slice(0, pm.index).trim(); if (!t) return null; }
+    var low0 = t.toLowerCase();
+    if (low0 === 'initial' || low0 === 'inherit' || low0 === 'unset'
+      || low0 === 'revert' || low0 === 'revert-layer') {
+      return _zwCCPrevNormalizeDecl(prop, value); // csswide 交基座
+    }
+    // 注释/var()/转义整值不拦（基座透传面——cssText 注释保形 T49fix、var 运行
+    // 时替换、转义 host 词法器）。
+    if (t.indexOf('/*') >= 0 || t.indexOf('var(') >= 0 || t.indexOf('\\') >= 0) {
+      return _zwCCPrevNormalizeDecl(prop, value);
+    }
+    var out;
+    var fnHead = /^([a-zA-Z][a-zA-Z0-9-]*)\s*\(/.exec(t);
+    if (fnHead) {
+      var fnL = fnHead[1].toLowerCase();
+      if (fnL === 'rgb' || fnL === 'rgba' || fnL === 'hsl' || fnL === 'hsla' || fnL === 'hwb'
+        || fnL === 'lab' || fnL === 'lch' || fnL === 'oklab' || fnL === 'oklch' || fnL === 'color') {
+        out = _zwCCDeclRelative(t);
+      } else if (fnL === 'color-mix') {
+        out = _zwCCDeclMix(t);
+      } else if (fnL === 'contrast-color') {
+        out = _zwCCDeclContrast(t);
+      }
+    }
+    if (out === undefined) return _zwCCPrevNormalizeDecl(prop, value);
+    return out === null ? null : out + pri;
   };
 })();
