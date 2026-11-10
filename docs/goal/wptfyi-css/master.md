@@ -39,16 +39,30 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
 **卡点**：无阻塞。
-**下一步**：`.any.js` 变体通道收口（typed-om 11 文件已补拉到位，runner 侧
-改动在途）；DC-3 全量对账（需最终 HEAD 新周跑——42801058132 已完成但
-HEAD 3bfccdfa3 不含 color 簇三批增量）；light-dark/system-color 建模。
+**下一步**：values 数学序列化批（specified 值常量折叠 `cos(0)`→`calc(1)`，
+sin-cos-tan-serialize 230 桶）；DC-3 全量对账（需最终 HEAD 新周跑——
+42801058132 已完成但 HEAD 不含 color/values 各批增量）；light-dark/
+system-color 建模。
+
+**DC-2 values 批完成（11-11 凌晨）**：L4 数学函数进 transform/数值槽位 +
+T54 inline style 写面值校验（三写臂：native CSD / shim writeDecl / shim
+sel-handle 代理——corpus 实际写臂为 sel-handle 面）——values corpus
+594 页 **Pass 1,540 → 1,770**（vs 基线 1,379 净增 +391），逐页不降 **0 回归**
+（oracle 收窄后 v5f 口径；v5e 曾 -12 回归已修）。invalid 族 9 页翻正
+（acos 族 63 全翻）；typed-om `.any.js` 变体通道同步落地（v5b 9,872 / +43）。
 
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 五批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381 |
+| DC-2 按簇收敛 | 六批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770 |
 | DC-3 全量对账 | 待执行 | 验收线 182,392 项通过，同 revision 周跑产物待补 |
+
+碰撞记录：11-11 凌晨 union 树 engine 全量 7F（img/svg settle + websocket
+族）——values/T54 批写面与该 7 测试零交集（part85/part45 无 style 用法），
+归因待 color/grid 链在途 hunks 或 main 漂移；peer 链（color/grid 批）与本批
+共享 part03.js/callbacks.rs 写文件，双方 hunk 不重叠已分别提交，push 待树
+静默窗口统一 pull --rebase 后携带。
 
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
