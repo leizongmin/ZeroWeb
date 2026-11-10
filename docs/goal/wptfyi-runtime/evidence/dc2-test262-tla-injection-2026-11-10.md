@@ -1,6 +1,7 @@
 # DC-2 · test262 TLA 判定单调不减注入（扫描器恒保持＋V8 双腿探针仲裁）
 
 **2026-11-10** · commit `59091ef2e`（`fix(script-sandbox): TLA 判定单调不减注入`）
+＋ commit `5b8080ae2`（`fix(script-sandbox): TLA 深度门只认大括号`，s375 续轮）
 
 ## 根因
 
@@ -32,26 +33,42 @@ test262 `top-level-await/syntax/block-await-expr-*` 20 层裸嵌套
 
 ## 对拍（release runner，test-guard 包裹）
 
-| 面 | 修复前 | 修复后 | 净增 |
-|---|---|---|---|
-| TLA 面（top-level-await） | 111P/145F | 208P/48F | **+97，翻红 0** |
-| module-code 面（含 TLA 子目录，614 键） | 381P/230F | 478P/136F | +97，翻红 0 |
-| dynamic-import 面 | 797P/149F | 797P/149F | 逐案零漂移 |
-| import.meta 面 | 24P/0F | 24P/0F | 保持 |
+| 面 | 修复前 | r3 后 | s375 后 | 累计净增 |
+|---|---|---|---|---|
+| TLA 面（top-level-await） | 111P/145F | 208P/48F | 238P/15F | **+127，翻红 0** |
+| module-code 面（含 TLA 子目录，614 键） | 381P/230F | 478P/136F | 508P/103F | +127，翻红 0 |
+| dynamic-import 面 | 797P/149F | 797P/149F | 797P/149F | 逐案零漂移 |
+| import.meta 面 | 24P/0F | 24P/0F | 24P/0F | 逐案一致 |
 
-净增账 75,307 → **75,404** / 76,000。log：/tmp/round8-tla.log（v1）、
-/tmp/round8-tla-v2.log（r1 翻红 47）、/tmp/round8-tla-v3.log（r2 翻红 4）、
-/tmp/round8-tla-v4.log（r3 定稿）、/tmp/round8-module-code-v5.log、
-/tmp/round8-dynamic-import-v5.log、/tmp/round8-importmeta-v5.log。
+净增账 75,307 → 75,404（r3）→ **75,434**（s375）/ 76,000。log：/tmp/round8-tla.log
+（v1）、/tmp/round8-tla-v2.log（r1 翻红 47）、/tmp/round8-tla-v3.log（r2 翻红 4）、
+/tmp/round8-tla-v4.log（r3 定稿）、/tmp/round9-tla-v5.log（s375）、
+/tmp/round8-module-code-v5.log、/tmp/round9-module-code-v5.log、
+/tmp/round9-dynamic-import-v5.log、/tmp/round9-importmeta-test262-v5.log。
 
-## 残余 48F 定性（挂账）
+## s375 续轮：深度门只认大括号（commit `5b8080ae2`，+30）
 
-- **for-await-of 形态 19**：`missing ) after argument list`——扫描器 true 已
-  async 包装，语法/重写面缺陷（`for await (` 形态处理），下轮定性。
-- **export＋块 await 混合 10**：`await is not defined`——探针 None（export 系）
-  ＋扫描器漏检（块内 await）的组合面，r3 单调设计不覆盖，需转换层剥
-  module-only 语法后探针（后续切片）。
-- **语义/时序 ~19**：unreachable/SameValue/hung 等——求值时序与依赖图面。
+上轮挂账「for-await-of 形态 19」勘误：从 v4 log 提取 `missing )` 簇名单，
+实为 `syntax/export-class-decl-await-expr-*` 18 案（`export class C extends
+fn(await 1) {}`——类 extends 子句调用实参含 await）＋ `module-import-unwrapped`
+1 案（`assert.sameValue(await mod, …)`），即文档化欠检测残面「括号内 await」
+＋探针 None（import/export 声明使 async 腿必拒）的组合——非 for-await-of。
+
+根因：扫描器深度门把 `(`/`[` 计入深度，但括号不引入函数作用域（函数体/类体/
+方法体全为大括号）；module 保留字语义下括号内 await 只能为 await 表达式，
+不存在「标识符 await」误判面。sync IIFE 内 `await` 退化为标识符，
+`fn(await 1)` 解析为实参 `await` 后跟 `1` → 「missing ) after argument list」。
+修复：深度门只计 `{`；单测翻转钉现状断言并补命中/排除面。
+
+## 残余 15F 定性（挂账）
+
+- **template-literal 3**（block/if-block/try 前缀，`await is not defined`）：
+  r2 差分残面——块内 `await \`tpl\`` classic 腿 sloppy 误合法（tagged
+  template），探针判 false，运行期报错。
+- **语义/时序 12**：defer 传染/cycle/ticks 族（dfs-invariant、pending-async-dep-
+  from-cycle、top-level-ticks 等）＋ module-import-rejection/resolution ＋
+  flattening-order（import-defer 求值序，实际案源在 `language/import/` 域）——
+  V8 模块图求值时序面，与 s361 deferred 传染簇同源。
 
 ## 已知限制
 
