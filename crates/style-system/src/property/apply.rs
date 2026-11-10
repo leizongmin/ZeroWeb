@@ -1644,8 +1644,56 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
         _ => {}
     }
+    // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/random()/
+    // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
+    // 恒拒，会误拒引擎 store+serialize 路径本已正常的合法值（values corpus v5e
+    // progress/calc-mix/random serialize 页 -12 回归根因）。文法断言只对实现面
+    // 函数调用生效（引擎实现集见 [`IMPLEMENTED_VALUE_FUNCTIONS`]）。
+    if value_has_unimplemented_function(v) {
+        return true;
+    }
     let mut scratch = ComputedStyle::default();
     apply_property_value(&mut scratch, &prop, v)
+}
+
+/// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
+/// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
+/// 未实现面放行。
+const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 38] = [
+    "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign",
+    "sqrt", "exp", "log", "sin", "cos", "tan", "asin", "acos", "atan", "matrix", "matrix3d",
+    "translate", "translate3d", "translatex", "translatey", "translatez", "scale", "scale3d",
+    "scalex", "scaley", "scalez", "rotate", "rotate3d", "rotatex", "rotatey", "rotatez",
+];
+
+/// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；
+/// URL/字符串字面量内形态属未实现面，放行方向正确）。
+fn value_has_unimplemented_function(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // ident 起始（字母/-/_）
+        if !(bytes[i].is_ascii_alphabetic() || bytes[i] == b'-' || bytes[i] == b'_') {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
+        {
+            i += 1;
+        }
+        // ident 后随 `(`（允许空白）→ 函数调用
+        let mut j = i;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n') {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'(' && !IMPLEMENTED_VALUE_FUNCTIONS.contains(&&lower[start..i]) {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -1671,6 +1719,19 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("translate", "10px 20px"));
         assert!(validate_decl_value("z-index", "sign(-3)"));
         assert!(validate_decl_value("margin-left", "round(23px, 10px)"));
+    }
+
+    #[test]
+    fn tentative_unimplemented_functions_pass_through() {
+        // v5e -12 回归钉：progress()/calc-mix()/random()/sibling-index() 属未实现面
+        // ——store 原文（apply oracle 恒拒会误拒引擎 store+serialize 正常的合法值）。
+        // WPT progress-serialize / calc-mix-serialize / random-serialize 以
+        // `scale(progress(...))` 形态驱动 transform 槽。
+        assert!(validate_decl_value("transform", "scale(progress(100px, 0px, 100px))"));
+        assert!(validate_decl_value("transform", "scale(calc-mix(1 50%, 3 50%))"));
+        assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
+        assert!(validate_decl_value("transform", "scale(calc(sibling-index() * 1px))"));
+        assert!(validate_decl_value("scale", "calc-mix(1)"));
     }
 
     #[test]
