@@ -14,7 +14,7 @@
 | 2. [Editing、Selection 与 Input Events](../goal/wptfyi-editing.md) | `editing`、`selection`、`input-events` | 138,411 | +6.10 pp | 130,000 | +5.73 pp |
 | 3. [HTML、XHTML 与 DOM 接口](../goal/wptfyi-html.md) | `html` | 88,227 | +3.89 pp | 81,000 | +3.57 pp |
 | 4. [Test262、Encoding 与 Wasm](../goal/wptfyi-runtime.md) | `third_party/test262`、`encoding`、`wasm` | 80,444 | +3.55 pp | 76,000 | +3.35 pp |
-| 5. [WebCrypto](../goal/wptfyi-webcrypto.md) | `WebCryptoAPI` | 44,093 | +1.94 pp | 31,000 | +1.37 pp |
+| 5. [WebCrypto](../goal/archive/wptfyi-webcrypto.md)（已完成 2026-11-10） | `WebCryptoAPI` | 44,093 | +1.94 pp | 31,000 | +1.37 pp |
 | 合计 | | 518,114 | +22.83 pp | 471,000 | +20.76 pp |
 
 分母固定时，五项达到预算且其他目录无净回退，合计 2,022,067 / 2,268,984，约 **89.12%**。达到 89% 需要新增 **468,329** 项，达到 90% 需要 **491,019** 项，比预算再多 **20,019** 项。五项全部补齐的账面上限为 **91.19%**。预算要求回收五项缺口的约 91%，属于长期目标。CSS 和 HTML 各自要回收九成以上缺口，HTML 还依赖真实的 XML/XHTML 文档路径。Encoding 已占现有通过数约 73%，全量百分比与平台功能广度应分别阅读。
@@ -34,10 +34,9 @@
 
 ## 无人值守启动
 
-脚本使用仓库现有的 `claude-glm` 路由和 `--yes`，可加 `--dry-run` 预览。Linux 在 [受限开发 shell](../rally/oom-guard.md#l2linux-cgroup-兜底在限内存-scope-内开发仅-linux) 内运行。表格按预计贡献排序。启动时按脚本编号从 01 到 05 依次运行。01 先做 WebCrypto 的 CI 补账，02 验证 Test262 的计分通路。每个命令都是一个长任务，同一 clone 内等上一项结束再启动下一项。提交、推送和对外通知沿用执行时已有授权。已有 Rally 在改相同代码时，复用其已落地结果，并按 [Rally 运行规则](../rally/run-rules.md) 避开共享文件冲突。
+脚本使用仓库现有的 `claude-glm` 路由和 `--yes`，可加 `--dry-run` 预览。Linux 在 [受限开发 shell](../rally/oom-guard.md#l2linux-cgroup-兜底在限内存-scope-内开发仅-linux) 内运行。表格按预计贡献排序。启动时按脚本编号从 02 到 05 依次运行（01 WebCrypto 已于 2026-11-10 收口归档，启动器随归档删除）。02 验证 Test262 的计分通路。每个命令都是一个长任务，同一 clone 内等上一项结束再启动下一项。提交、推送和对外通知沿用执行时已有授权。已有 Rally 在改相同代码时，复用其已落地结果，并按 [Rally 运行规则](../rally/run-rules.md) 避开共享文件冲突。
 
 ```bash
-bash scripts/rally-goal-01-wptfyi-webcrypto.sh
 bash scripts/rally-goal-02-wptfyi-runtime.sh
 bash scripts/rally-goal-03-wptfyi-css.sh
 bash scripts/rally-goal-04-wptfyi-editing.sh

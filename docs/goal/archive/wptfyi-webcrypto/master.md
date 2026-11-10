@@ -1,10 +1,13 @@
 # WebCrypto控制面
 
-**2026-11-10 · 目标完成（DONE）**。三里程碑全部收账：DC-3 周跑 run [42667268541](https://github.com/leizongmin/ZeroWeb/actions/runs/42667268541) 收尾（终态 failure 仅 catch-all-8 test262 预算红腿，聚合容错不吞快照），快照 [coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md) 落库（bot `003efe86b`，basis `792c7512e3`）：**WebCryptoAPI 67,877 / 70,920 = 95.71%**，与本地 r6 口径预告值逐位一致。净增 **67,877 − 26,779 = +41,098 ≥ 31,000 达标线**（本地 r7 口径 +41,898）；邻域核验零 webcrypto 可归因回退（shadow-dom −491 摆动经产物级法证定谳页超时截断 env 方差、零行为翻转，非本目标触面亦无渲染/editing 流债）。generateKey 修复 +800 未入本快照属预期（run HEAD 早于该批），随下次周跑自然入账，不再单独 dispatch（达标已过 + dispatch 会撞 weekly cancel-in-progress）。\
+**2026-11-10 · 目标完成（DONE）**。三里程碑全部收账：DC-3 周跑 run [42667268541](https://github.com/leizongmin/ZeroWeb/actions/runs/42667268541) 收尾（终态 failure 仅 catch-all-8 test262 预算红腿，聚合容错不吞快照），快照 [coverage-2026-11-09](../../../compat/wptfyi/coverage-2026-11-09.md) 落库（bot `003efe86b`，basis `792c7512e3`）：**WebCryptoAPI 67,877 / 70,920 = 95.71%**，与本地 r6 口径预告值逐位一致。净增 **67,877 − 26,779 = +41,098 ≥ 31,000 达标线**（本地 r7 口径 +41,898）；邻域核验零 webcrypto 可归因回退（shadow-dom −491 摆动经产物级法证定谳页超时截断 env 方差、零行为翻转，非本目标触面亦无渲染/editing 流债）。generateKey 修复 +800 未入本快照属预期（run HEAD 早于该批），随下次周跑自然入账，不再单独 dispatch（达标已过 + dispatch 会撞 weekly cancel-in-progress）。\
 **卡点** 无。\
-**下一步** 无（goal 完结）；goal 树归档按 goal README 归档规则由维护轮或本流后续整理动作执行。遗留他流课题见 [DC-3 evidence 第六节](evidence/2026-11-10-dc3-full-reconciliation.md)。
+**下一步** 无。goal 树已于 2026-11-10 本轮按 goal README 归档规则整树迁入
+`docs/goal/archive/wptfyi-webcrypto/`（模式 A：归档索引已登记、启动器
+rally-goal-01 随归档删除、外部引用面与 trends csv 收口行同步更新）。
+遗留他流课题见 [DC-3 evidence 第六节](evidence/2026-11-10-dc3-full-reconciliation.md)。
 
-[执行契约](../wptfyi-webcrypto.md) · [全量预算](../../compat/wptfyi-90-plan.md)
+[执行契约](../wptfyi-webcrypto.md) · [全量预算](../../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|

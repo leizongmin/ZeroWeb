@@ -18,7 +18,7 @@
 ## 二、快照落库
 
 bot commit `003efe86b`（2026-11-09T19:16:32Z）回写
-[coverage-2026-11-09](../../../compat/wptfyi/coverage-2026-11-09.md)，basis
+[coverage-2026-11-09](../../../../compat/wptfyi/coverage-2026-11-09.md)，basis
 = 三家 aligned stable `792c7512e3`（与 DC-1/DC-2 本地双 basis 试跑同一
 revision）：
 
