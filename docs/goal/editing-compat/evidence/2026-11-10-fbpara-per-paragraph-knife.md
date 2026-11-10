@@ -63,3 +63,22 @@ qV-after ×1）。v2 登记表设计恢复七面、保持四翻键。判读留�
   `__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div'` 初始 undefined 读
   'div'（spec 默认 'p'）；语料同面 before 值是录音链携带伪影。修复动
   part06 九锚之一，跨刀成本，挂账待立项。
+
+## 复绑 v2 终判（21:15:53 FBPARA-REBIND-V2-DONE，推送树红线终绑）
+
+v2 门禁批（锚 963c791d3）提交域与推送域分裂——docs 收口提交 b3417f88b 批
+完成后才落，且他流 css-color（c658ca70c）已入组合树；按绑定纪律发射复绑
+批 batch-fbpara-rebind-v2（20:10:39 发射，锚 head **b3417f88b** + 九点 +
+part11 漂移层锚复读 OK，ensure_solo + flock，setsid 脱离跨 session 存活）
+在推送树复立红线全腿绿：
+
+- 探针 **131/0**（judge vs fbp-probe 零翻越）→ fb 主门 **5029/17 精确** +
+  双 judge（漂移中性 vs fbp-fb F2P=0/P2F=0 + 刀翻键 vs rb-fb 恰族四行复
+  确认）→ mt **20182/2** + judge VERDICT OK + 归因门零非签名翻键。
+- singles 五腿（iol 1759/iul 2061/ip 6989/ilb 1658/ihtml 1446）+ exec×3
+  零漂移；enginelib 3828P/7F 名册双门恒一；battery 七腿
+  420/880/1104/552/3456/2607/1455 全同数 F=0 T=0。
+- binary sig 全在（摆位刀 + per-paragraph 不合并刀 + boolean 读面 +
+  fb_indeterm + 他流色管线双标记 `__zwCssColorNeedsPlain`/
+  `__zwColorNormalizeDecl`）＝判读域为含他流 css-color 的推送组合态。
+- 明细 `batch-fbpara-rebind-v2.log`。判读域终绑 b3417f88b。
