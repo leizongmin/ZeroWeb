@@ -5984,6 +5984,23 @@
         if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
         globalThis._zwInOrderScriptQueue.push(_faEntry);
       }
+      // s383（html-semantics M2 切片 383）：credentials 判据 slot——script-crossorigin-network
+      // 的 cookie 送达面（RFC 6265bis §5.4 cookie-header）按 crossOrigin IDL 反射推导
+      // credentials mode（HTML spec prepare-the-script-element：missing/use-credentials →
+      // include；anonymous 及 invalid value default 'anonymous' → same-origin；IDL getter
+      // 归一在 part04 R5008 片 d crossOrigin 臂——missing→null、ASCII CI、invalid→anonymous）。
+      // fetch init **不投影** credentials（fetch 通道 mode 恒 cors 近似，include 会在 CORS
+      // 判定面拒 ACAO:* 端点——真实浏览器缺省脚本为 no-cors 无 CORS 判定，投影即假红；
+      // no-cors 本体不可走——opaque 体空，脚本消费面需正文）。mode 语义由 fetch wrapper
+      // 同步段一次性消费本 slot 做 Cookie 头附加（part01 s383 臂），路由侧读 Cookie 头选
+      // included 体。getter 缺席/异常回落 include（缺省脚本语义）。
+      //   https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      try {
+        var _zwScc383 = el96.crossOrigin;
+        globalThis.__zwScriptCookieCred = (_zwScc383 === 'anonymous') ? 'same-origin' : 'include';
+      } catch (_eS383) {
+        globalThis.__zwScriptCookieCred = 'include';
+      }
       var _p110 = fetch(url);
       globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
       var _zwSettled110 = function () {

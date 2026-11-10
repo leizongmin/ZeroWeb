@@ -534,6 +534,13 @@ fn py_routes() -> &'static [PyRoute] {
             handle: route_module_fetch_tester,
         },
         PyRoute {
+            // s383（html-semantics M2 切片 383）：script-crossorigin-network 车道——
+            // 上游 1:1 移植（Origin 回显 CORS 三头 / OPTIONS 空体 / Cookie milk 判
+            // included 体 / text/javascript）；cookie 送达面由 shim Cookie 头附加承载。
+            matches: PyRouteMatch::Exact("html/semantics/scripting-1/the-script-element/resources/cross-origin.py"),
+            handle: route_cross_origin_py,
+        },
+        PyRoute {
             matches: PyRouteMatch::Exact("xhr/resources/get-set-cookie.py"),
             handle: route_get_set_cookie,
         },

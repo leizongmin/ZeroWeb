@@ -5712,6 +5712,14 @@
       var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
+      // s383（html-semantics M2 切片 383）：动态 classic 脚本 credentials 判据 slot
+      // 一次性捕获（part03 s110 臂 fetch(url) 前置）——捕获点先于 preflight/ctor 校验
+      // 等任何提前 return/throw 路径，script 车道之外的 fetch 调用读到 null 全臂 no-op，
+      // 且不会向后续 fetch 泄漏 stale slot（trickle/delay 延迟发起臂消费本次闭包捕获值）。
+      // preflighted script 请求经重入臂不重捕（slot 已清）——corpus 无此形，Cookie 附加
+      // 缺席即 no-cors 真实语义的近似缺口，见附臂注记。
+      var _zwScc383 = globalThis.__zwScriptCookieCred;
+      globalThis.__zwScriptCookieCred = null;
       // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
       // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
       var _zwSsChannel = _zwStylesheetChannelDepth > 0;
@@ -6051,6 +6059,26 @@
           // cors 跨源 GET 由上方首分支覆盖；beacon 通道按 referrer policy 序列化）。
           //   https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
           headersWire = _zwAddHeader(headersWire, 'Origin', _zwDocOrigin);
+        }
+        // s383（html-semantics M2 切片 383）：Cookie 请求头附加（script-crossorigin-network
+        // 车道）。位置在 preflight 判定面之后——真实浏览器 Cookie 由网络层在 CORS
+        // safelist 判定后追加、不触发 preflight，本位同形。触发面收窄到动态 classic
+        // 脚本车道（slot 由 part03 s110 臂前置，_zwFetchMainImpl 头部一次性捕获——
+        // script 车道外恒 null no-op；jar 非空面 corpus 仅 credentials 族 5 文件，
+        // classic 车道仅 script-crossorigin-network 在用）。附加判据 = 脚本 credentials
+        // mode include 或请求同源（RFC 6265bis §5.4 cookie-header——与 s338 check-cookie
+        // 仿真、net-api M4 cors-cookie 仿真同判据式）；jar 检索复用 WS 握手桥
+        // `_zwCookieHeaderForUrl`（part06 M5-S3 globalThis 桥——域/路径匹配、secure、
+        // 过期、路径长度排序已实现），空 jar 返空串不附（muted-errors 等无
+        // document.cookie 写面零漂移）。
+        //   https://www.rfc-editor.org/info/rfc6265bis
+        if (_zwScc383 != null && typeof globalThis._zwCookieHeaderForUrl === 'function') {
+          var _zwCkAttach383 = ((_zwScc383 === 'include') ||
+              (_zwReqOrigin && _zwDocOrigin && _zwReqOrigin === _zwDocOrigin))
+            ? String(globalThis._zwCookieHeaderForUrl(url)) : '';
+          if (_zwCkAttach383 && !_zwHasHeader(headersWire, 'cookie')) {
+            headersWire = _zwAddHeader(headersWire, 'Cookie', _zwCkAttach383);
+          }
         }
         // net-api M2-S10：体缺失的 POST 请求补 Content-Length: 0（浏览器 POST 无体
         // 仍发 CL:0，GET/HEAD 与自定义方法不带 CL——「Fetch with Chicken」CL null
