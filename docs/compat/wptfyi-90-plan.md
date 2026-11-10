@@ -34,10 +34,9 @@
 
 ## 无人值守启动
 
-脚本使用仓库现有的 `claude-glm` 路由和 `--yes`，可加 `--dry-run` 预览。Linux 在 [受限开发 shell](../rally/oom-guard.md#l2linux-cgroup-兜底在限内存-scope-内开发仅-linux) 内运行。表格按预计贡献排序。启动时按脚本编号从 02 到 05 依次运行（01 WebCrypto 已于 2026-11-10 收口归档，启动器随归档删除）。02 验证 Test262 的计分通路。每个命令都是一个长任务，同一 clone 内等上一项结束再启动下一项。提交、推送和对外通知沿用执行时已有授权。已有 Rally 在改相同代码时，复用其已落地结果，并按 [Rally 运行规则](../rally/run-rules.md) 避开共享文件冲突。
+脚本使用仓库现有的 `claude-glm` 路由和 `--yes`，可加 `--dry-run` 预览。Linux 在 [受限开发 shell](../rally/oom-guard.md#l2linux-cgroup-兜底在限内存-scope-内开发仅-linux) 内运行。表格按预计贡献排序。启动时按脚本编号从 03 到 05 依次运行（01 WebCrypto 已于 2026-11-10 收口归档、02 runtime 已于 2026-11-11 收口归档，启动器均随归档删除）。每个命令都是一个长任务，同一 clone 内等上一项结束再启动下一项。提交、推送和对外通知沿用执行时已有授权。已有 Rally 在改相同代码时，复用其已落地结果，并按 [Rally 运行规则](../rally/run-rules.md) 避开共享文件冲突。
 
 ```bash
-bash scripts/rally-goal-02-wptfyi-runtime.sh
 bash scripts/rally-goal-03-wptfyi-css.sh
 bash scripts/rally-goal-04-wptfyi-editing.sh
 bash scripts/rally-goal-05-wptfyi-html.sh
