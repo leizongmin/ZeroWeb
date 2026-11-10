@@ -4249,10 +4249,13 @@ fn test_cssom_inline_style_decl_value_normalization_t49() {
         )
         .unwrap();
     // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    // DC-2 次批翻正（2026-11-10）：modernSpaceVerbatim/ruleModernSpace 原
+    // `rgb(255 0 0)` verbatim 钉——part11 declared 归一接线后按 css-color-4 §5
+    // legacy 序列化输出 `rgb(255, 0, 0)`（Chrome 声明面口径，T48 分词归一同形）。
     assert_eq!(
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
-        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255 0 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"#F00","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255 0 0)","ruleCwwInherit":"inherit"}"##,
-        "T49 inline style 声明写归一全案（T48 管线同语义 + !important 两形 + 非法忽略 + inline/规则恒等）"
+        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255, 0, 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"#F00","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255, 0, 0)","ruleCwwInherit":"inherit"}"##,
+        "T49 inline style 声明写归一全案（T48 管线同语义 + !important 两形 + 非法忽略 + inline/规则恒等 + part11 现代空格形 legacy 序列化）"
     );
 }
 

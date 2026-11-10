@@ -6085,6 +6085,20 @@ pub fn generate_js_dom_shim() -> &'static str {
         // _zwMStyleProxy。收口 DC-1 evidence typed-om 664F 单簇（API 缺面）。
         // https://drafts.css-houdini.org/css-typed-om-1/
         s.push_str(include_str!("js_dom_shim/part10-typed-om.js"));
+        // part11（2026-11-10 wptfyi-css DC-2 次批）：现代色值模型管线
+        //（css-color-4/5：declared 归一 + computed 序列化——hsl/rgb 现代空格
+        // 语法 + none powerless 分量 + hwb/lab/lch/oklab/oklch/color()/
+        // alpha(from…) + 系统色表 + opacity clamp；color-mix()/relative color
+        // 本批原文透传、次批后半按真色彩数学建模，自包含 IIFE）——登记
+        // __zwColorNormalizeDecl/__zwComputedColorValue 两全局入口 + 兼容别名
+        //（__zwComputedColor/__zwCssColorValid/__zwOpacityComputed/
+        // __zwCssColorNeedsPlain），消费方 part01c 色臂回落 + opacity 臂、
+        // part01 gCS `has` 陷阱与抢答臂、part06 CSS.supports 前置钩子 +
+        // declared 归一委托。收口 css-color "doesn't seem to be supported"
+        // 单簇 7,199+（Proxy 无 has + declared/computed 值管线双缺面）。
+        // https://drafts.csswg.org/css-color-4/
+        // https://drafts.csswg.org/css-color-5/
+        s.push_str(include_str!("js_dom_shim/part11-color.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

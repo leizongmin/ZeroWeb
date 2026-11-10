@@ -12099,6 +12099,16 @@
       return 'inline';
     };
     return new Proxy({}, {
+      // DC-2 次批（css-color computed-testcommon 断言链第一步
+      // `assert_true(property in getComputedStyle(target))`）：无 has 陷阱时
+      // 'color' in cs 恒 false——7,199+ 单簇第一断言即死。形态门（css-syntax
+      // ident：可选 `-` 前缀 + 字母起 kebab）+ 方法名 + 自定义属性。
+      has: function(_t, prop) {
+        if (typeof prop !== 'string') return false; // Symbol 返 false
+        if (prop.slice(0, 2) === '--') return true; // css-variables-1（R5114）
+        var kp = _camelToKebab(prop);
+        return /^-?[a-z][a-z0-9-]*$/.test(kp);
+      },
       get: function(_t, prop) {
         var p = String(prop);
         if (p === 'getPropertyValue') {
@@ -12129,6 +12139,23 @@
               return 'static';
             }
             var _csGV = query(kp);
+            // DC-2 次批：宿主 partial-parse 抢答覆盖（注释形/currentcolor/
+            // 现代色形宿主产出错误计算值——part11 __zwCssColorNeedsPlain
+            // 判定），inline 命中即落 plain 重读（spec 正确值）。legacy 形
+            // 不覆盖（宿主 cascade 可正确产出，零漂移）。
+            if (_csGV !== '' && (kp === 'color' || kp === 'background-color')
+                && elt && elt.style
+                && typeof globalThis.__zwCssColorNeedsPlain === 'function'
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              var _irGV = '';
+              try { _irGV = String(elt.style.getPropertyValue(kp) || ''); } catch (_eIR1) {}
+              if (_irGV && globalThis.__zwCssColorNeedsPlain(_irGV)) {
+                try {
+                  var _pcGV2 = globalThis.__zwPlainComputed(elt, kp);
+                  if (_pcGV2 !== '') return _pcGV2;
+                } catch (_ePC3) {}
+              }
+            }
             // editing-compat style-with-value 簇（2026-11-01）：plain 元素四属性
             // 计算值 JS 侧级联解析（inline style → font 表现提示 → 继承走查 →
             // UA 缺省）。host 通道只覆盖 sel/handle 注册元素，语料 vendored 查询
@@ -12166,6 +12193,21 @@
         // 期望 'none'；host 真值非空时不变）。
         // css-variables-1：`--` 起始 camelCase 属性访问同 getPropertyValue 免归一（R5114）。
         var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
+        // DC-2 次批：宿主 partial-parse 抢答覆盖（同 getPropertyValue 臂注释）。
+        var _kpC = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
+        if (_csV !== '' && (_kpC === 'color' || _kpC === 'background-color')
+            && elt && elt.style
+            && typeof globalThis.__zwCssColorNeedsPlain === 'function'
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          var _irV = '';
+          try { _irV = String(elt.style.getPropertyValue(_kpC) || ''); } catch (_eIR2) {}
+          if (_irV && globalThis.__zwCssColorNeedsPlain(_irV)) {
+            try {
+              var _pcV2 = globalThis.__zwPlainComputed(elt, _kpC);
+              if (_pcV2 !== '') return _pcV2;
+            } catch (_ePC4) {}
+          }
+        }
         if (_csV === '') {
           // R5009 float / s89 position：初始值回落（css-position-3 position initial
           // value 'static'——host miss 的 plain 元素真值即初始值）。
@@ -12176,7 +12218,8 @@
           // （内部机具 _zwJusCs 以 kebab 访问，vendored 侧 camel）。
           var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
           if (_pcP === 'color' || _pcP === 'font-size'
-              || _pcP === 'font-family' || _pcP === 'background-color') {
+              || _pcP === 'font-family' || _pcP === 'background-color'
+              || _pcP === 'opacity') {
             try {
               var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
               if (_pcV !== '') return _pcV;

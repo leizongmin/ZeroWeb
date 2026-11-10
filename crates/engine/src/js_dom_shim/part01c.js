@@ -1955,7 +1955,10 @@
   // 颜色声明 → Chrome 计算值序列化（rgb(r, g, b) / rgba(r, g, b, a)）。
   // 无 alpha 或 alpha=1 → rgb() 形（Chrome 序列化口径）；解析失败返 ''。
   function _zwPlainColorSpec(val, el) {
-    var v = String(val == null ? '' : val).trim();
+    // 注释剥离（css-syntax 注释=空白——'/**/transparent' inline 语料实证：
+    // 不剥则解析失败落入继承爬升，transparent 语义翻红）。
+    var s0 = String(val == null ? '' : val);
+    var v = (s0.indexOf('/*') < 0 ? s0 : s0.replace(/\/\*[\s\S]*?\*\//g, ' ')).trim();
     if (!v) return '';
     var low = v.toLowerCase();
     if (low === 'transparent') return 'rgba(0, 0, 0, 0)';
@@ -2110,6 +2113,21 @@
       var r3 = Math.round(px * 1000) / 1000;
       return String(r3) + 'px';
     }
+    if (prop === 'opacity') {
+      // DC-2 次批（css-color-4 § opacity computed）：非继承——只读自身 inline
+      // 声明（语料 test_computed_value 全走 inline set）；number/%/calc()/
+      // min()/max()/clamp() 经 __zwOpacityComputed（clamp [0,1]）序列化；
+      // 无声明返初始值 '1'（css-position 邻族初始值回落同形）。
+      var opRaw = _zwPlainDecl(elt, 'opacity');
+      if (opRaw && typeof globalThis.__zwOpacityComputed === 'function') {
+        try {
+          var opV = globalThis.__zwOpacityComputed(opRaw);
+          if (opV !== '') return opV;
+        } catch (_eOpC) {}
+        return '';
+      }
+      return '1';
+    }
     if (prop === 'color' || prop === 'font-family'
         || prop === 'background-color') {
       var isBg = prop === 'background-color';
@@ -2157,7 +2175,20 @@
         }
         if (raw) {
           if (prop === 'font-family') return raw;
-          var cv = _zwPlainColorSpec(raw, node);
+          // DC-2 次批：现代色函数（hsl/rgb 现代空格语法、none 分量、hwb/lab
+          // 族/color()/color-mix()/相对色）——`_zwPlainColorSpec` 只认 legacy
+          // 形（named/hex/comma rgb·hsla），返空才落 part11 管线（零漂移：
+          // legacy 输出口径不变）。无效/不可解析返 ''（同无源路径）。
+          // currentcolor 例外前置：旧臂爬升不含作者样式表（gCS 通道 qvMode
+          // 不开）读数恒黑；part11 currentcolor 臂带作者臂（WPT computed 页
+          // #container{color:...} 锚——named-color 页实证）。
+          var rawLow = raw.length > 32 ? '' : raw.toLowerCase();
+          var isCC = rawLow.indexOf('/*') < 0 ? rawLow === 'currentcolor' : rawLow.replace(/\/\*[\s\S]*?\*\//g, ' ').trim() === 'currentcolor';
+          var cv = '';
+          if (!isCC) cv = _zwPlainColorSpec(raw, node);
+          if (!cv && typeof globalThis.__zwComputedColor === 'function') {
+            try { cv = globalThis.__zwComputedColor(raw, node); } catch (_eCC) { cv = ''; }
+          }
           if (cv) {
             // background-color：透明声明视作无（transparent 爬升等价形——
             // getEffectiveCommandValue 的 while 组合语义不变）。

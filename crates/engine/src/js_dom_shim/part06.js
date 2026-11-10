@@ -124,6 +124,26 @@
       return out;
     },
     supports: function (prop, value) {
+      if (arguments.length >= 2) {
+        // DC-2 次批：现代色函数/opacity 值可解析性 JS 前置钩子——Rust
+        // apply_property_value_with_quirks 不认 hwb/lab/color-mix/相对色/
+        // none 分量（decl_supported 恒 false），test_computed_value 第二断言
+        // `CSS.supports(property, specified)` 即死。JS 判定可解析 → true；
+        // JS 否则落 host（legacy 形由 Rust 原判定，零漂移不接管）。
+        if ((String(prop).trim().toLowerCase() === 'color'
+             || String(prop).trim().toLowerCase() === 'background-color')
+            && typeof globalThis.__zwCssColorValid === 'function') {
+          try {
+            if (globalThis.__zwCssColorValid(String(value))) return true;
+          } catch (_eSV) {}
+        }
+        if (String(prop).trim().toLowerCase() === 'opacity'
+            && typeof globalThis.__zwOpacityComputed === 'function') {
+          try {
+            if (globalThis.__zwOpacityComputed(String(value)) !== '') return true;
+          } catch (_eSO) {}
+        }
+      }
       if (typeof __zw_css_supports !== 'function') return false;
       if (arguments.length >= 2) return __zw_css_supports(String(prop), String(value)) === '1';
       return __zw_css_supports(String(prop)) === '1';
@@ -2049,6 +2069,26 @@
   // 落点——该面由白名单门自然收窄后，剩余边界在此声明）。
   function _zwNormalizeDeclValue(value, propName) {
     var raw = String(value == null ? '' : value);
+    // DC-2 次批：色/opacity 值模型归一整值委托（part11 css-color-4/5 管线）——
+    // 下方分词器会把函数形劈散（css-syntax 函数含空格参数），现代语法（空格形/
+    // none powerless/角度单位/hwb·lab 族）必须整值进管线。null=非法（调用方
+    // 丢弃声明）；透传形（color-mix/相对色等）保原串（次批后半建模）。
+    // legacy 形（named/hex/逗号 rgb·hsla）part11 输出口径与 T48 分词归一一致，
+    // 统一走管线（零漂移——smoke oracle 全量对照绿）。
+    if (propName === 'color' || propName === 'background-color' || propName === 'opacity') {
+      if (typeof globalThis.__zwColorNormalizeDecl === 'function') {
+        try {
+          var _cnv = globalThis.__zwColorNormalizeDecl(
+            propName === 'opacity' ? 'opacity' : 'color', raw);
+          // 新管线全谱建模（css-color-4/5，smoke oracle 全绿）：显式 null 即整值
+          // 非法 → 拒（T47 DF-3 同语义），**不回退旧分词器**——旧面未知 ident
+          // 透传（'yelow' 类 typo 被接受，color-invalid-named 183F）；透传形
+          //（color-mix/relative）返回原串非 null，不受影响。
+          if (_cnv === null) return null;
+          return _cnv;
+        } catch (_eCNV) {}
+      }
+    }
     var toks = raw.split(/\s+/);
     var out = [];
     var changed = false;

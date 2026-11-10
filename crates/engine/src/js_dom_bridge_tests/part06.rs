@@ -5411,11 +5411,14 @@ fn test_cssom_declared_color_context_normalization_t48() {
     //    color 上下文五键 + `INHERIT !important` 形）。
     // ② 系统色：CSS Color 4 §6.3 declared 值 ASCII lowercase（同 §16.2 命名色；活体
     //    oracle b-*：modern 19 键 - listitemtext + deprecated 23 键 = Chrome 154 接受面；
-    //    LISTITEMTEXT Chrome 不接受→整声明丢弃，ZW 无 ident 拒绝面保持逐字——分歧形状钉）。
+    //    LISTITEMTEXT Chrome 不接受→整声明丢弃。DC-2 次批 part11 管线接入后 ZW 同弃
+    //（css-color-invalid-named 184 行同语义），分歧形状钉解除、翻正为 Blink 对齐）。
     // ③ legacy 颜色函数文本归一（T46 TV-2：函数名 lowercase + 参数逗号空格 + 数字文本
     //    规范形 '.5'→'0.5'/'0.50'→'0.5'/'255.0'→'255'/'+255'→'255'，活体 oracle d1-d5/n3/n6）；
     //    现代空格语法/hsl→rgb 转换/通道 clamp（Blink parse-reserialize，oracle d6-d9/n1/n4）
-    //    本切片不覆盖——分歧形状钉锁现状。
+    //    旧分歧形状钉（hsl 保形/现代形保形/越界不 clamp）随 part11 管线接入解除——
+    //    DC-2 次批翻正为 Blink 对齐（corpus color-valid-hsl 59P/0F、color-valid-rgb
+    //    70P/0F 同语义背书）。
     // ④ T46/T47 锚点复核（命名色/hex/非法 hex 拒绝语义在 color 上下文不变）。
     // https://www.w3.org/TR/css-cascade-4/#defaulting-keywords
     // https://www.w3.org/TR/css-color-4/#css-system-colors
@@ -5484,8 +5487,8 @@ fn test_cssom_declared_color_context_normalization_t48() {
     // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
     assert_eq!(
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
-        r##"{"anchorNamedUpper":"red","anchorHex4":"rgba(255, 0, 0, 0.667)","anchorBorderNamed":"border: 1px solid red;","anchorInvalidHexDrop":"","anchorBorderInvalidHex":"","cwwInherit":"inherit","cwwInitial":"initial","cwwUnset":"unset","cwwRevert":"revert","cwwRevertLayer":"revert-layer","cwwInheritImportant":"color: inherit !important;","sysCanvas":"canvas","sysButtonText":"buttontext","sysGrayText":"graytext","sysAccentColor":"accentcolor","sysSelectedItemText":"selecteditemtext","sysDepActiveCaption":"activecaption","sysDepInfoText":"infotext","sysDepThreeDShadow":"threedshadow","sysDepWindowText":"windowtext","sysDepBackground":"background","sysListItemNotAccepted":"LISTITEMTEXT","sysInBgShorthand":"background: canvas;","funcTight":"rgb(255, 0, 0)","funcUpper":"rgb(255, 0, 0)","funcAlphaDot5":"rgba(255, 0, 0, 0.5)","funcAlphaTrailing0":"rgba(255, 0, 0, 0.5)","funcWs":"rgb(255, 0, 0)","funcIntFloat":"rgb(255, 0, 0)","funcPlus":"rgb(255, 0, 0)","funcInBorder":"border: 1px solid rgb(255, 0, 0);","funcInBg":"background: rgb(255, 0, 0);","funcHslNoConvert":"hsl(0, 100%, 50%)","funcModernNoConvert":"rgb(255 0 0)","funcNoClamp":"rgb(300, 0, 0)","funcAlphaNoClamp":"rgba(255, 0, 0, -0.5)"}"##,
-        "T48 <color> 上下文归一全案（csswide lowercase + 系统色 41 键 + legacy 函数文本归一 + 转换面分歧形状钉 + T46/T47 锚点）"
+        r##"{"anchorNamedUpper":"red","anchorHex4":"rgba(255, 0, 0, 0.667)","anchorBorderNamed":"border: 1px solid red;","anchorInvalidHexDrop":"","anchorBorderInvalidHex":"","cwwInherit":"inherit","cwwInitial":"initial","cwwUnset":"unset","cwwRevert":"revert","cwwRevertLayer":"revert-layer","cwwInheritImportant":"color: inherit !important;","sysCanvas":"canvas","sysButtonText":"buttontext","sysGrayText":"graytext","sysAccentColor":"accentcolor","sysSelectedItemText":"selecteditemtext","sysDepActiveCaption":"activecaption","sysDepInfoText":"infotext","sysDepThreeDShadow":"threedshadow","sysDepWindowText":"windowtext","sysDepBackground":"background","sysListItemNotAccepted":"","sysInBgShorthand":"background: canvas;","funcTight":"rgb(255, 0, 0)","funcUpper":"rgb(255, 0, 0)","funcAlphaDot5":"rgba(255, 0, 0, 0.5)","funcAlphaTrailing0":"rgba(255, 0, 0, 0.5)","funcWs":"rgb(255, 0, 0)","funcIntFloat":"rgb(255, 0, 0)","funcPlus":"rgb(255, 0, 0)","funcInBorder":"border: 1px solid rgb(255, 0, 0);","funcInBg":"background: rgb(255, 0, 0);","funcHslNoConvert":"rgb(255, 0, 0)","funcModernNoConvert":"rgb(255, 0, 0)","funcNoClamp":"rgb(255, 0, 0)","funcAlphaNoClamp":"rgba(255, 0, 0, 0)"}"##,
+        "T48 <color> 上下文归一全案（csswide lowercase + 系统色 41 键 + legacy 函数文本归一 + 转换面 DC-2 翻正为 Blink 对齐 + T46/T47 锚点）"
     );
 }
 
