@@ -2237,6 +2237,11 @@
       rule = { type: 1, selectorText: t, cssText: t + ' { }', style: null, parentStyleSheet: parentSheet };
     }
     rule.style = _makeRuleStyle(rule, flushFn);
+    // part10 Typed OM：styleMap 挂钩（CSSStyleRule declared 面零新回调，钩子缺席
+    // 时无操作——part10 未装配场景保持原行为）。
+    if (typeof globalThis.__zwAttachRuleStyleMap === 'function') {
+      try { globalThis.__zwAttachRuleStyleMap(rule); } catch (_eSM) {}
+    }
     return rule;
   }
   // s163（html-semantics M2）：CSSImportRule 接口全局——上游 support/utils.js
@@ -2325,6 +2330,10 @@
               parentStyleSheet: ss
             };
             r.style = _makeRuleStyle(r, flushToOwner);
+            // part10 Typed OM：styleMap 挂钩（同 _ruleFromText 面，adopted 表规则）。
+            if (typeof globalThis.__zwAttachRuleStyleMap === 'function') {
+              try { globalThis.__zwAttachRuleStyleMap(r); } catch (_eSM2) {}
+            }
             rulesCache.push(r);
           }
         }

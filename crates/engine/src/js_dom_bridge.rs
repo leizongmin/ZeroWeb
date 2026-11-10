@@ -6077,6 +6077,14 @@ pub fn generate_js_dom_shim() -> &'static str {
         // animateTransform 域采样 + animVal 反射消费钩子 + 事件泵 +
         // SVGSVGElement/SVGAnimationElement 接口。
         s.push_str(include_str!("js_dom_shim/part09b.js"));
+        // part10（2026-11-10 wptfyi-css DC-2 首批）：CSS Typed OM API 入口面
+        //（CSSStyleValue 类族 + CSS 命名空间数值工厂 + StylePropertyMap +
+        // attributeStyleMap/computedStyleMap + 225 属性语法表，自包含 IIFE，
+        // 同 part08 先例顶层作用域运行）——零新 Rust 回调：计算值读取复用
+        // part01 getComputedStyle 代理链，declared 面复用 part03
+        // _zwMStyleProxy。收口 DC-1 evidence typed-om 664F 单簇（API 缺面）。
+        // https://drafts.css-houdini.org/css-typed-om-1/
+        s.push_str(include_str!("js_dom_shim/part10-typed-om.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }
