@@ -2,20 +2,18 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 393 双小刀施工收口（output value mode flag + label 转发壳自递归）：①the-output-element
-output.html 1F→P——defaultValue setter 重写为 value mode flag 双态（override null → String replace all 写 child text
-+ `_zwRegisterTextEl` 视图重注册与 value setter R49/r2846 同链；非 null → 仅覆写 override，后代文本不动，spec
-#dom-output-defaultvalue），FILTER=output solo 5P/0F；②the-label-element clicking-noninteractive-unlabelable 2F→P——
-勘根链：栈捕获 `RangeError at _makeProxy ~ child.addEventListener(73165:38/78) ×∞`（R4004 盖章壳转发臂自递归）+
-身份探针（失败形态 el=plain stub own 壳/gOPD data:function/stable，对照 createElement img=proxy/stable=false 命名臂
-全新闭包）+时间线探针（div.appendChild(el) 挂树前即毒）→ 定谳 **R315 proxy 缓存翻转投毒**：`_recordHandleChild`
-翻转臂（`_proxyCache['@'+h] !== child` 即写）把 R368/R4004 盖章 plain stub 写入 proxy 缓存 → 壳转发 `_makeProxy(null,h)`
-取回 stub 自身 → 无限自递归；修复=翻转加 own-`addEventListener` 守卫（盖章 stub 特征，proxy 方法走 get trap 命名臂
-无 own 数据属性；页面持有 proxy A 不携带该键，R315 重挂 identity 面零变化），FILTER=clicking-noninteractive solo
-60P/0F；全树验收 join：8466 行/8463 唯一 (key,state)（rows 8201P/228F/37T；unique P 8198，3 重复 Pass 行=已知同文件
-多跑），位移全归因——3F→P=双刀三案、−4P=zw391_probe 四面（s391 轮内已删文件键随语料消失，s392 预测 8467 漏扣此
-4 行勘误），零 P→F、零 Timeout 位移；**全树在册红 231F+37T→228F+37T**。下一步 s394：textarea wrap=hard 折行
-（2F）+ img unloaded attr sizing 归属探针（2F）。
+**状态**: Active——M2 切片 394 双刀收口（textarea wrap=hard 施工 + img 未加载盒归属定谳）：①the-textarea-element
+wrapping-transformation 2F→P——entry 构造面 wrap=hard wrapping transformation：part02 共享 helper `_zwTaHardWrap`
+（cols 无条件字符计数折行、LF-only、幂等 round-trip；不进 API value；cols 读 R5009 IDL face fallback 20）+
+FormData 构造器泛化臂与 part04 form 提交 TEXTAREA 臂双落点（urlencoded/multipart/text-plain 共用 `_pairs` 单点
+覆盖），spec #attr-textarea-wrap-hard，FILTER=wrapping solo 8P/0F；②the-img-element not-broken-while-load-task-
+scheduled 2F 归属探针定谳（s394 内不施工，挂账）——探针三面剥离：attr→style presentational hints **健康**
+（动态 img attr 面 computed 50px，collect_presentational_hints img 臂与加载态无关）、静态元素 geometry **健康**
+（same-turn 即有 rect）、**动态 append rect 供给链缺席=根因**（动态产物无论身份形态 handle/id-sel、无论时点
+same-turn/2s 多帧恒 0——JS mutation 产物不进 rect 查询文档，computed 面同时段正常=查询文档分裂；与 t8f
+bilibili 视图盲区互证；s284 handle 解析刻意收窄 + naturalWidth 族 30 行回归史钉死施工边界）；全树 join：2F→P
+精确归因（wrapping 两键），零 P→F、零 Timeout 位移、零意外键；**全树在册红 228F+37T→226F+37T**。下一步
+s395：动态 append rect 供给链勘根（live doc 发布/mutation 同步链）。
 
 > **▶ 承前（2026-11-11 M2 切片 391 收口）——form owner reset-on-move 读时门施工收口（fci 1F→0F 域收官）**: commit e26772068，账本 evidence/2026-11-11-m2s391-form-owner-reset-on-move.md。解析期 parent 选择器桥+shim 指针关联 liveness 门三面，table_3 F→P、全树零回归零翻转；fci 域 corpus 红清零，全树键级基线 8504。散单分诊由 s392 接力。
 
@@ -6966,6 +6964,15 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 394**：双刀轮——textarea wrap=hard wrapping transformation 施工（2F→P）+ img unloaded
+  attr sizing 归属定谳（2F 挂账，s394 内不施工）。刀①三处落点：part02 `_zwTaHardWrap` 共享 helper（`_zwFdEntry`
+  邻位跨 part 作用域先例）+ FormData 构造器泛化臂 + part04 form 提交 TEXTAREA 臂（urlencoded/multipart/
+  text-plain 三序列化单点覆盖）；刀②探针矩阵三轮（动态 attr/CSS/nosrc + 静态 img/div 对照 + sel 身份 2s）
+  三面剥离——attr→style hints 健康、静态 geometry 健康、动态 append rect 供给链缺席定谳，修复须先勘 live doc
+  发布与 mutation 同步链（s284 收窄面 + naturalWidth 30 行回归史为施工雷区）。join 2F→P 精确归因零意外位移，
+  在册红 228F+37T→**226F+37T**；验收管线五阶段串行（driving solo→删探针→全树 sweep→单元 -j 2→smoke 双），
+  在册 7F 单元红集同形零新增。账本
+  [evidence/2026-11-11-m2s394-textarea-wrap-hard-dynamic-rect-attribution.md](html-semantics-compat/evidence/2026-11-11-m2s394-textarea-wrap-hard-dynamic-rect-attribution.md)。
 - **2026-11-11 M2 切片 393**：双小刀施工轮——output value mode flag（1F→P）+ label 转发壳自递归 R315 翻转投毒
   勘根修复（2F→P）。刀①defaultValue setter 双态：override null → 文本写+视图重注册（R49/r2846 同链），非 null →
   仅覆写 override；刀②勘根三探针（栈捕获/身份/时间线）定谳 `_recordHandleChild` R315 翻转把盖章 plain stub 写入

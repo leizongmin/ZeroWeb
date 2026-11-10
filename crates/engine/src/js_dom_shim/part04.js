@@ -12814,7 +12814,11 @@
                     _pairs.push([_nm, _c.value != null ? _c.value : '']);
                   }
                 } else if (_tg === 'TEXTAREA') {
-                  _pairs.push([_nm, _c.value != null ? _c.value : '']);
+                  // s394：wrap=hard 折行（wrapping transformation，entry 面共享
+                  // _zwTaHardWrap；API value 面不折行，
+                  // https://html.spec.whatwg.org/multipage/form-elements.html#attr-textarea-wrap-hard）。
+                  var _taV = _c.value != null ? _c.value : '';
+                  _pairs.push([_nm, _zwTaHardWrap(_taV, _c)]);
                 } else if (_tg === 'SELECT') {
                   // review M3/m1：entry 取 selectedness 为真**且非 disabled** 的 option；
                   // 全未选中（无 selected 属性）→ spec select 默认选中语义回落首个非
