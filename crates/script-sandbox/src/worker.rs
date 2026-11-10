@@ -35,6 +35,128 @@ fn worker_timer_delay(ms: u64) -> std::time::Duration {
     std::time::Duration::from_millis(ms.max(1))
 }
 
+// ===== SAB 跨 isolate 管线（test262 `$262.agent` 面采集支撑）=====
+//
+// 真线程 worker 的消息物理载体是 JSON 字符串，SharedArrayBuffer 共享内存语义不可达
+//（引擎 shim structuredClone 对 SAB 的公开拒收面维持 workers-compat battery 钉态）。
+// 通道能力门开时（`Worker.prototype.postMessage` 宿主分支 `__zwSabChannel` 标记），
+// clone 产 `{"__zwSabRef": id}` token：主 isolate 经 `__zw_sab_export` 宿主回调把
+// backing store 落本 registry（`SharedRef<BackingStore>` 为 v8 shared_ptr，
+// Send/Sync 跨线程安全），worker 派发侧（[`WorkerCommand::PostMessage`] 处理臂）按
+// id `with_backing_store` 物化同共享内存的 SAB 入 worker 全局 `__zwSabInbox`，
+// bootstrap `_zwWorkerReviveXfer` 换入消息树。
+//
+// registry 条目进程级保留：同 id 可被多个 worker / 多次投递复用（跨消息物化出新
+// SAB 对象 = spec serialize「每投递新对象」语义；单消息内同 id 去重保同一对象身份）。
+// 通道整体嵌套在 ZW_THREADED_WORKERS flag 下（默认关，生产路径不可达），runner
+// 采集面 ~百案 × ~百 KB 量级保留可接受。
+static SAB_BACKING_STORES: std::sync::LazyLock<std::sync::Mutex<HashMap<u64, v8::SharedRef<v8::BackingStore>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+static SAB_EXPORT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// 主 isolate 侧导出（engine `__zw_sab_export` scoped 回调体）：从
+/// `globalThis.__zwSabExports[key]` 暂存位取 SAB 对象（宿主回调实参只传字符串，
+/// 对象经 JS 侧暂存 + 此处 scope 读回），提取 backing store 入 registry，返回
+/// token id（0 = 取对象失败——JS 侧按 DataCloneError 收口）。
+pub fn sab_export_by_key(scope: &mut v8::PinScope, key: &str) -> u64 {
+    let Some(key_val) = v8::String::new(scope, key) else {
+        return 0;
+    };
+    let Some(stash_name) = v8::String::new(scope, "__zwSabExports") else {
+        return 0;
+    };
+    let context = scope.get_current_context();
+    let Some(exports_val) = context.global(scope).get(scope, stash_name.into()) else {
+        return 0;
+    };
+    if !exports_val.is_object() {
+        return 0;
+    }
+    let Ok(exports) = v8::Local::<v8::Object>::try_from(exports_val) else {
+        return 0;
+    };
+    let Some(sab_val) = exports.get(scope, key_val.into()) else {
+        return 0;
+    };
+    let Ok(sab) = v8::Local::<v8::SharedArrayBuffer>::try_from(sab_val) else {
+        return 0;
+    };
+    let store = sab.get_backing_store();
+    let id = SAB_EXPORT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut table) = SAB_BACKING_STORES.lock() {
+        table.insert(id, store);
+        return id;
+    }
+    0
+}
+
+/// JSON 载荷内 `{"__zwSabRef": id}` token 收集（递归扫对象/数组位）。
+fn sab_collect_token_ids(value: &serde_json::Value, ids: &mut Vec<u64>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.len() == 1
+                && let Some(serde_json::Value::Number(n)) = map.get("__zwSabRef")
+                && let Some(id) = n.as_u64()
+            {
+                ids.push(id);
+                return;
+            }
+            for child in map.values() {
+                sab_collect_token_ids(child, ids);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                sab_collect_token_ids(child, ids);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// worker 派发侧物化（[`WorkerCommand::PostMessage`] 处理臂前置步）：载荷内
+/// token → registry 取 backing store → worker 全局 `__zwSabInbox[id]` 物化。
+/// 同消息同 id 去重（单消息内同一 SAB 复现 = 同一对象身份）；无 token 的普通
+/// 消息零 isolate 开销（解析即返）。
+fn sab_materialize_tokens(scope: &mut v8::PinScope, msg: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(msg) else {
+        return;
+    };
+    let mut ids = Vec::new();
+    sab_collect_token_ids(&value, &mut ids);
+    if ids.is_empty() {
+        return;
+    }
+    let Some(inbox_name) = v8::String::new(scope, "__zwSabInbox") else {
+        return;
+    };
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let inbox: v8::Local<v8::Object> = match global.get(scope, inbox_name.into()) {
+        Some(v) if v.is_object() => v8::Local::<v8::Object>::try_from(v).unwrap_or_else(|_| v8::Object::new(scope)),
+        _ => v8::Object::new(scope),
+    };
+    if global.set(scope, inbox_name.into(), inbox.into()).is_none() {
+        return;
+    }
+    if let Ok(table) = SAB_BACKING_STORES.lock() {
+        for id in ids {
+            let Some(store) = table.get(&id) else {
+                continue;
+            };
+            let sab = v8::SharedArrayBuffer::with_backing_store(scope, store);
+            let id_val = v8::Number::new(scope, id as f64);
+            let _ = inbox.set(scope, id_val.into(), sab.into());
+        }
+    }
+}
+
+/// 空闲轮询间隔（无定时器时命令等待上限）。到期泵平台前台任务队列——
+/// `Atomics.waitAsync` 的 futex 唤醒解析经 isolate 前台任务 runner 投递（默认
+/// 平台不自驱），无泵则 worker 内 `await` 永不恢复（test262 waitAsync agent 面
+/// 实证：notify/timeout 驱动的解析全数悬挂）。wait_for_work=false 空队列即返。
+const WORKER_IDLE_PUMP_INTERVAL: std::time::Duration = std::time::Duration::from_millis(4);
+
 /// Worker 线程接收的命令。
 enum WorkerCommand {
     /// 执行脚本代码。
@@ -734,8 +856,17 @@ fn worker_thread_body(
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
-            None => match cmd_receiver.recv() {
+            None => match cmd_receiver.recv_timeout(WORKER_IDLE_PUMP_INTERVAL) {
                 Ok(cmd) => cmd,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    while v8::Platform::pump_message_loop(&v8::V8::get_current_platform(), &scope, false) {
+                        // 排空平台前台任务（waitAsync 唤醒解析等）。
+                    }
+                    // 任务解析的反应（await 续体等）是微任务——显式检查点排空
+                    //（v8_drain! 只排 worker 消息队列，不碰微任务）。
+                    scope.perform_microtask_checkpoint();
+                    continue;
+                }
                 Err(_) => break,
             },
         };
@@ -750,6 +881,9 @@ fn worker_thread_body(
                 v8_drain_canvas_ops!(scope, canvas_drain);
             }
             WorkerCommand::PostMessage(msg) => {
+                // SAB token 物化前置步（test262 `$262.agent` 面）：无 token 普通消息
+                // 零 isolate 开销（解析即返）；有 token 物化 `__zwSabInbox` 后再派发。
+                sab_materialize_tokens(&mut scope, &msg);
                 let dispatch_code = format!("_dispatchMessage({})", json_safe_arg(&msg));
                 v8_exec!(scope, &dispatch_code, exec_ctx, event_sender, true);
                 v8_drain!(scope, event_sender);

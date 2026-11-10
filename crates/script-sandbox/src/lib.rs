@@ -370,6 +370,16 @@ pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
             _workerCanvasOps.push(['bind', cid, oc._zwXferKey, oc._zwSel]);
             return oc;
         }
+        // SAB token 换入（test262 `$262.agent` 面）：`{"__zwSabRef": id}` → 派发侧
+        //（worker.rs PostMessage 臂）已物化的 `__zwSabInbox[id]` 同共享内存 SAB。
+        // 单消息内同 id 复现读同一 inbox 槽 = 同一对象身份（spec serialize 记忆化语义）；
+        // 跨消息派发侧再物化出新对象（每投递新对象语义）。未知 id 留 token 原样穿透。
+        var sabToken = v.__zwSabRef;
+        if (typeof sabToken === 'number' && globalThis.__zwSabInbox &&
+            typeof globalThis.__zwSabInbox === 'object') {
+            var sabInboxHit = globalThis.__zwSabInbox[sabToken];
+            if (sabInboxHit) { return sabInboxHit; }
+        }
         for (var k in v) {
             if (k === '__zwXferCanvas') { continue; }
             v[k] = _zwWorkerReviveXfer(v[k]);

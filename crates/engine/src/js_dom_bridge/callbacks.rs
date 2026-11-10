@@ -4041,6 +4041,20 @@ pub fn register_dom_callbacks(
                 }
             }),
         );
+        // SAB 跨 isolate 导出（test262 `$262.agent` 面）：主 isolate 侧 token id 发放
+        // ——宿主回调实参只传字符串（Plain/Scoped 形态一致），SAB 对象由 JS 侧暂存
+        // `globalThis.__zwSabExports[key]` 后传 key，此处经调用窗 scope 读回并提取
+        // backing store 落 script-sandbox 进程级 registry（worker 派发侧按 id 物化）。
+        // JS 克隆分支 `typeof __zw_sab_export === 'function'` 守卫与本注册同 flag 门
+        // ——flag 关时维持 SAB clone DataCloneError（structured-clone battery 钉面）。
+        #[cfg(feature = "v8")]
+        let _ = sandbox.register_scoped_callback(
+            "__zw_sab_export",
+            Box::new(|scope, args| -> String {
+                zero_script_sandbox::sab_export_by_key(scope, args.first().map(String::as_str).unwrap_or(""))
+                    .to_string()
+            }),
+        );
     }
 
     // R5254（html-semantics M2 切片 50，2026-10-24）：主文档初始 HTML 的 details

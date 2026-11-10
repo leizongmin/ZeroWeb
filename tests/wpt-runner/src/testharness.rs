@@ -1,5 +1,6 @@
 //! WPT testharness runner and minimal testdriver adapter for HTML interactions.
 
+use crate::test262_worker_host;
 use crate::wpt_file_loader::read_corpus_to_string;
 use std::collections::HashMap;
 use std::path::Path;
@@ -9234,6 +9235,9 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 与 script fetcher（check-cookie.py 模块取回面）两闭包同一 Arc，每案新建
     //（跨案泄漏面自清，同 [`ServeCustomResponseState`] 案级口径）。
     let cred_cookies: CredentialCookieStash = std::sync::Arc::default();
+    // test262 `$262.agent` 面案级 worker 终结：回收上一案的宿主 worker 表（agent
+    // 忙等自旋线程不跨案存续；宿主未装填的非 test262 通道零操作）。
+    test262_worker_host::terminate_all();
     let mut webview = WebView::new(WebViewConfig {
         width: 800,
         height: 600,
@@ -9875,6 +9879,12 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         }
 
         let _ = webview.poll_service_worker_runtime_events();
+        // test262 `$262.agent` 面真线程 worker 事件排空：宿主线程 8ms 泵积事件转
+        // 派发脚本，此处逐条 execute 派发（队空零开销——非 test262 通道/无 worker
+        // 页面无脚本；agent 报告走 SAB 环形缓冲不走消息，事件面仅 error 等偶发）。
+        for dispatch_script in test262_worker_host::take_dispatch_scripts() {
+            let _ = webview.execute_script(&dispatch_script);
+        }
         // R3254-KP4：帧驱动 rAF 派发（opt-in）——每轮 probe 一帧，时间戳取 case 启动
         // 起的墙钟 ms（spec DOMHighResTimeStamp 单调；shim `__zw_raf_tick` 在 OFF 时
         // 早返零开销）。rAF 内重注册进下一帧队列（shim 快照语义）。

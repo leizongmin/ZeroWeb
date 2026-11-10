@@ -1442,6 +1442,12 @@ impl V8Sandbox {
         let result = result.unwrap();
 
         try_catch.perform_microtask_checkpoint();
+        // 平台前台任务泵（waitAsync futex 唤醒解析等经 isolate 前台任务 runner 投递
+        // ——默认平台不自驱，无泵则解析永不发生，promise 永悬挂）。空队列即返
+        // （wait_for_work=false）。任务投递可挂新微任务 → 二段 checkpoint 同轮排空
+        //（省一次 execute 迟到的反应跳；Auto 策略下嵌套任务内的子 run 自带检查点）。
+        while v8::Platform::pump_message_loop(&v8::V8::get_current_platform(), try_catch, false) {}
+        try_catch.perform_microtask_checkpoint();
         if try_catch.has_caught() {
             let msg = v8_try_catch_message!(try_catch);
             return Err(ScriptError::RuntimeError(msg));

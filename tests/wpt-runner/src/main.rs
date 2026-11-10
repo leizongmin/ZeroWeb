@@ -15,6 +15,7 @@ mod reftest_data;
 mod report;
 mod runner;
 mod runner_text_metrics;
+mod test262_worker_host;
 mod testharness;
 mod testharness_console;
 mod testharness_cookies;
@@ -534,9 +535,19 @@ fn run_main() {
         "testharness-wasm-core" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_wasm_core::run_wasm_core_cases(wpt_root, filter)
         }),
-        "testharness-test262" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
-            testharness_test262::run_test262_cases(wpt_root, filter)
-        }),
+        "testharness-test262" => {
+            // test262 `$262.agent` 面采集：真线程 worker 宿主 + SAB 跨 isolate 通道门
+            //（engine `__zw_worker_host_op`/`__zw_sab_export` 注册期读 ZW_THREADED_WORKERS；
+            // provider 报告环形缓冲与 `__zwSabInbox` 物化均以该 flag 为前提）。
+            // SAFETY: 命令分派首语句、WebView 创建前（ZW_RENDERER_AUTOMATION 同纪律）。
+            unsafe {
+                std::env::set_var("ZW_THREADED_WORKERS", "1");
+            }
+            test262_worker_host::install();
+            run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+                testharness_test262::run_test262_cases(wpt_root, filter)
+            })
+        }
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
         "testharness-webcrypto" => cmd_testharness_webcrypto(&options, filter.as_deref()),

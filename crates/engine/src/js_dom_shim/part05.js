@@ -19076,6 +19076,13 @@
         : (transfer === null ? undefined : transfer));
     _zwValidateTransferList(transferList, null);
     var _xfer = { orig: transferList.filter(_zwIsMessagePort), clones: [] };
+    // SAB 通道能力门（test262 `$262.agent` 面跨 isolate 共享内存管线）：宿主分支
+    //（真线程 worker，与下方 JSON 投递分叉同条件）置位——SAB clone 产
+    // `{"__zwSabRef": id}` token 随 JSON 载荷过桥；same-realm 分支不置位（SAB
+    // clone 维持 DataCloneError——structured-clone battery 钉面）。
+    if (this._zwHostId != null && typeof __zw_worker_host_op === 'function') {
+      _xfer.__zwSabChannel = true;
+    }
     var data = typeof structuredClone === 'function' ? structuredClone(message, { __zwXfer: _xfer }) : message;
     var ports = Object.freeze(_zwConsumeTransferList(transferList, null, _xfer));
     _zwDetachTransferables(transferList);
