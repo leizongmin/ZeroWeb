@@ -4082,9 +4082,19 @@ pub fn register_dom_callbacks(
         Box::new(|args: &[String]| -> String {
             let prop = args.first().map(String::as_str).unwrap_or("");
             let value = args.get(1).map(String::as_str).unwrap_or("");
-            match crate::dom_bindings::grid_cssom::canonicalize_grid_decl(&camel_to_kebab_name(prop), value) {
-                Some(v) => v,
-                None => "null".to_string(),
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落 "null"（拒写），
+            // 与 compat_mode 桥「双引擎缺席回落同口径」先例一致（R5334）。
+            #[cfg(feature = "v8")]
+            {
+                match crate::dom_bindings::grid_cssom::canonicalize_grid_decl(&camel_to_kebab_name(prop), value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
             }
         }),
     );
@@ -4099,9 +4109,19 @@ pub fn register_dom_callbacks(
         "__zw_style_supported_prop",
         Box::new(|args: &[String]| -> String {
             let name = args.first().map(String::as_str).unwrap_or("");
-            if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str()) {
-                "true".to_string()
-            } else {
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落 "false"（has 不命中），
+            // 同 normalize 回调回落口径。
+            #[cfg(feature = "v8")]
+            {
+                if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str()) {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (name,);
                 "false".to_string()
             }
         }),
@@ -4253,6 +4273,8 @@ pub fn append_mutation_history(batch: &[DomMutation]) {
 /// 同语义镜像：`cssFloat`/`styleFloat`→`float` 特例 + 逐大写字母加连字符小写；
 /// 该 fn 私有于 dom_bindings，宿主回调侧独立同形实现避免跨模块扩面）。grid 批次
 /// `__zw_grid_normalize_decl`/`__zw_style_supported_prop` 名参归一用。
+/// 仅 v8 消费臂引用（同 `dom_bindings` 门），非 v8 腿不编译防 dead_code。
+#[cfg(feature = "v8")]
 fn camel_to_kebab_name(name: &str) -> String {
     if name == "cssFloat" || name == "styleFloat" {
         return "float".into();
