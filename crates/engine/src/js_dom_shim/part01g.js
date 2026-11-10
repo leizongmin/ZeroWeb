@@ -145,7 +145,6 @@
 
     var range = _zwVaGetActiveRange();
     if (!range) return true;
-
     // Chrome delta（可编辑链守卫）：起点叶子到编辑宿主链上遇不可编辑元素 →
     // 拦（不应用，零树变更）但 **返 true**——该形 Chrome ret 录音 [true]（语料
     // 条目 362 `{ <span cE=false>A/B/C }` 真意 wrap 不可编辑节点、本引擎不
@@ -156,7 +155,7 @@
     // 守卫拒（ret=false 对齐 Chrome）。`<div><div contenteditable=false><div
     // contenteditable>[foo]` 形链内层 div 可编辑不拦照 wrap（ret=true）。
     // display:block span 岛形（条目 360）链全程可编辑不拦。
-    var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset);
+    var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset, false);
     if (!sl) return false;
     var cur = sl;
     var fbqHost = null;
@@ -457,42 +456,86 @@
   // https://w3c.github.io/editing/execCommand.html#the-formatblock-command
   var _zwFbqValueBlockNames = _zwFbqFormattableNames.concat(['dl']);
 
-  // 端点 → 可见叶子（元素锚归一）：offset 0 取树序首个可见无子后代；否则取末
-  // 个。文本锚直接用。（Chromium VisiblePosition 归一：元素边界位置折叠进内侧
-  // 叶子端点——`{<p>foo</p>}` brace 全含形 qV-before 录音 "p" 实证终点 (host,1)
-  // 折回 p 内末叶。）
-  function _zwFbqEdgeLeaf(node, offset) {
-    if (node.nodeType === 3) return node;
-    var stack = [node];
-    var found = null;
-    var forward = offset === 0;
-    while (stack.length) {
-      var n = stack.pop();
-      if (!n) continue;
-      if (n.nodeType === 3 || !n.childNodes || n.childNodes.length === 0) {
-        if (_zwJusIsVisible(n)) {
-          found = n;
-          if (forward) return n;
+  // 端点 → 可见叶子（元素锚归一）。文本锚直接用。元素锚按边界点折叠语义取
+  // 行走域（2026-11-10 table partial-span qV 刀）：START 端 0<o<len 向前折
+  // child[o] 子树首可见叶（行走域 [o,len)——`<tr data-start=1>` 起端折入
+  // td2 内新块首叶，formatblock.js :83/:88/:418/:423 qV-after 录音
+  // "div"/"p"）；END 端 0<o<len 向后折 child[o-1] 子树末可见叶（行走域
+  // [0,o) 逆序早返——终点 (tr,2) 折回 td2 内新块与起端同块）；折叠域内无
+  // 可见叶时回落全域旧走法（`{<p><p> <p>foo</p>}` apply 后新块含
+  // [" ","foo"] 两文本节点、终点 (div,1) 折域 [0,1) 仅空白不可见，不回落
+  // 会返 null 使 qV-after 丢 "div"——语料 4 条目实证）；其余形行走全域
+  // 且恒读树序首可见叶（旧侧行为全保：`{<p>foo</p>}` 终点 (host,1) 全域
+  // 读首叶爬回 p 录音 "p"、o=0 首叶锚全保——逆序不早返时 found 依次覆
+  // 盖，终值仍为域内树序首叶）。
+  function _zwFbqEdgeLeaf(node, offset, isEnd) {
+    // 单域行走：[lo,hi) 前向早返 / 逆序按 earlyBack 早返（全域逆序不早返
+    // 时 found 依次覆盖，终值=域内树序首可见叶，旧走法原样）。
+    function walk(lo, hi, forward, earlyBack) {
+      var stack = [];
+      var found = null;
+      var i;
+      if (len) {
+        if (forward) {
+          for (i = hi - 1; i >= lo; i--) stack.push(kids[i]);
+        } else {
+          for (i = lo; i < hi; i++) stack.push(kids[i]);
         }
       } else {
-        var kids = n.childNodes;
-        var i;
-        if (forward) {
-          for (i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+        stack.push(node);
+      }
+      while (stack.length) {
+        var n = stack.pop();
+        if (!n) continue;
+        if (n.nodeType === 3 || !n.childNodes || n.childNodes.length === 0) {
+          if (_zwJusIsVisible(n)) {
+            found = n;
+            if (forward || earlyBack) return n;
+          }
         } else {
-          for (i = 0; i < kids.length; i++) stack.push(kids[i]);
+          var nk = n.childNodes;
+          if (forward) {
+            for (i = nk.length - 1; i >= 0; i--) stack.push(nk[i]);
+          } else {
+            for (i = 0; i < nk.length; i++) stack.push(nk[i]);
+          }
         }
       }
+      return found;
     }
-    return found;
+    if (node.nodeType === 3) return node;
+    var kids = node.childNodes;
+    var len = kids ? kids.length : 0;
+    var interior = offset > 0 && offset < len;
+    // 折叠域分派：内区锚（0<o<len）按端侧折入邻子树（END 折域需早返取末
+    // 叶）；边界锚保持全域旧走法（o=0 前向早返 / 其余逆序不早返）。
+    var lo = 0;
+    var hi = len;
+    var forward = offset === 0;
+    var earlyBack = false;
+    if (interior) {
+      if (isEnd) {
+        hi = offset;
+        forward = false;
+        earlyBack = true;
+      } else {
+        lo = offset;
+        forward = true;
+      }
+    }
+    var leaf = walk(lo, hi, forward, earlyBack);
+    if (leaf === null && interior) {
+      leaf = walk(0, len, false, false);
+    }
+    return leaf;
   }
 
   // 端点叶子 → FB 块：命中 _zwFbqValueBlockNames 且可编辑 → 返元素；爬至
   // editing host 或断链 → null。无 prohibited-paragraph veto：`<div><ol><li>
   // [foo]</ol></div>` qV-before 录音 "div"（:1784，div 含 li 仍返名），veto
   // 会使该形误返 ""。
-  function _zwFbqVisBlock(node, offset) {
-    var leaf = _zwFbqEdgeLeaf(node, offset);
+  function _zwFbqVisBlock(node, offset, isEnd) {
+    var leaf = _zwFbqEdgeLeaf(node, offset, isEnd);
     if (!leaf) return null;
     var cur = leaf;
     var g = 0;
@@ -564,9 +607,9 @@
   globalThis.__zw_ce_fb_value = function () {
     var range = _zwVaGetActiveRange();
     if (!range) return '';
-    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
+    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset, false);
     if (!b1) return '';
-    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
+    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset, true);
     if (!b2) return '';
     if (b1 === b2) return _zwJusTag(b1);
     // Chrome delta（范围多块面，2026-11-10 fb 读面刀）：同型多块按 tag 相等读
@@ -591,12 +634,13 @@
   // 公共祖先等）；同型多块（含 `<p>[foo<p>bar]<p>baz` 尾块形 :708 录音 false）、
   // 单块、异型爬达共同祖先形（`<dl><dt>[foo<dd>bar]</dl>` fbVals=div 条目
   // qI 录音 false）→ false。同形 fbVals=p 条目 qI 录音 true 与 fbVals=div
-  // false 互斥＝录音会话顺序泄漏签名，残留 2 行维持红挂账。
+  // false 互斥＝录音会话顺序泄漏签名，残留 2 行维持红挂账。端点折叠语义随
+  // table partial-span qV 刀同步贯通（起点向前折/终点向后折，qV 同口径）。
   globalThis.__zw_ce_fb_indeterm = function () {
     var range = _zwVaGetActiveRange();
     if (!range) return false;
-    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
-    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
+    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset, false);
+    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset, true);
     if (!b1 || !b2) return !!(b1 || b2);
     if (_zwJusTag(b1) === _zwJusTag(b2)) return false;
     return !_zwFbqCommonVisBlock(b1, b2);
