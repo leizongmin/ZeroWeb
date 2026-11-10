@@ -30338,9 +30338,13 @@ return e;
             && __zw_validate_decl_value(prop, core) === 'false') return;
         v = pri.priority ? core + ' !important' : core;
         // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
-        // none → 存原值；其余形态清条目。
+        // none → 存原值。core 保 none 形（hsl/hwb % 剥除后仍含 none 字面）同样
+        // 须存——分量语法（% vs 裸）在 core 已不可逆，computed none 保形只能从
+        // 原值恢复（WPT color-computed-hsl/hwb 'hsl(120 80% none)' 群 2026-11-11
+        // 实证；旧 `!/none/i.test(core)` 条件把该群排除在影子外，computed 读裸
+        // decl 丢 %）；其余形态清条目。
         var shadow = _zwRawStyleGet(sel, handle);
-        if (pri.value !== core && /none/i.test(pri.value) && !/none/i.test(core)) {
+        if (pri.value !== core && /none/i.test(pri.value)) {
           if (!shadow) { shadow = {}; _zwRawStyleSet(sel, handle, shadow); }
           shadow[prop] = pri.value;
         } else if (shadow) {

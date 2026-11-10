@@ -2198,7 +2198,9 @@
           var cv = '';
           if (!isCC) cv = _zwPlainColorSpec(raw, node);
           if (!cv && typeof globalThis.__zwComputedColor === 'function') {
-            try { cv = globalThis.__zwComputedColor(raw, node); } catch (_eCC) { cv = ''; }
+            // 第三参属性上下文：currentcolor 在 color 属性自身走父链（自引用
+            // =继承），background-color 等先试本元素（css-color-4 §5.3）。
+            try { cv = globalThis.__zwComputedColor(raw, node, prop); } catch (_eCC) { cv = ''; }
           }
           if (cv) {
             // background-color：透明声明视作无（transparent 爬升等价形——

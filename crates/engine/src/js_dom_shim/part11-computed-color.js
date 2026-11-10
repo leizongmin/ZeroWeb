@@ -36,6 +36,11 @@
   var _zwCCPrevComputed = typeof globalThis.__zwComputedColor === 'function'
     ? globalThis.__zwComputedColor : null;
 
+  // currentcolor 求值的属性上下文（__zwComputedColor 第三参入口暂存）：
+  // 'color' 走父链（css-color-4 §5.3 自引用=继承）、其余先试自元素。模块态 +
+  // 入口 save/restore——嵌套 __zwPlainComputed 再入（currentcolor 链）不 clobber。
+  var _zwCCPropCtx = '';
+
   // ============ 基础工具 ============
 
   // 去注释（声明文本经 inline style 原样存储，解析前剥离）。
@@ -806,6 +811,12 @@
     var valid = ['srgb', 'srgb-linear', 'display-p3', 'display-p3-linear', 'a98-rgb',
       'prophoto-rgb', 'rec2020', 'xyz', 'xyz-d50', 'xyz-d65', 'hsl', 'hwb', 'lab', 'lch', 'oklab', 'oklch'];
     if (valid.indexOf(space) < 0) return null;
+    // 别名折叠：'in xyz' ≡ 'in xyz-d65'（css-color-4/5 xyz 别名；与 color()
+    // 解析侧同规）。side 自空间解析已折叠（'color(xyz …)' → space 'xyz-d65'），
+    // _zwCCMixSide 按 space 全等匹配 own 形——不折叠则 'color-mix(in xyz,
+    // color(xyz none …), …)' side 匹配失败走 rgb 回退丢 none 旗标（none→0 全
+    // 权重归一，WPT color-computed-color-mix-function 13 案 2026-11-11）。
+    if (_zwCCSpaces[space]) space = _zwCCSpaces[space].alias || space;
     function calcW(expr) {
       var ev = _zwCCEval(expr);
       if (ev !== ev) return null;
@@ -1002,6 +1013,19 @@
         // 继承的 color）。委托 __zwPlainComputed(p, 'color', true)——qvMode
         // 臂恒开（WPT computed 页锚：#container{color:rgb(255,0,0)} 样式表
         // 声明，inline-only 爬升读不到）；part11 再解析（legacy 值原形透传）。
+        // 非 color 属性上下文先试本元素（css-color-4 §5.3：currentcolor 用于
+        // background-color 等属性取本元素 color 计算值——relative-color 语料
+        // target inline color 实证，仅爬父链漏自元素恒黑）；color 属性自身
+        // （_zwCCPropCtx 'color'）保持父链优先（自引用=继承语义，防自递归）。
+        if (_zwCCPropCtx !== 'color' && el && el.nodeType === 1
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          var cstrSelf = '';
+          try { cstrSelf = globalThis.__zwPlainComputed(el, 'color', true); } catch (_eCCSE) { cstrSelf = ''; }
+          if (cstrSelf) {
+            var subSelf = _zwCCResolveText(cstrSelf, el, depth + 1);
+            if (subSelf) return subSelf;
+          }
+        }
         var p = el && el.parentNode, guard = 0;
         while (p && p.nodeType === 1 && guard++ < 256) {
           var cstr = '';
@@ -1374,7 +1398,7 @@
       return { kind: 'labmix', space: ast.space, coords: out, none: outNone, alpha: alpha, aNone: bothANone,
         rgb: _zwCCMixCoordsToRgb(ast.space, out) };
     }
-    return { kind: 'colormix', space: ast.space === 'xyz' ? 'xyz-d65' : ast.space, comps: out, none: outNone, alpha: alpha, aNone: bothANone,
+    return { kind: 'colormix', space: ast.space, comps: out, none: outNone, alpha: alpha, aNone: bothANone,
       rgb: _zwCCMixCoordsToRgb(ast.space, out) };
   }
 
@@ -1699,7 +1723,11 @@
     return 'color(srgb ' + parts.join(' ') + (a ? ' / ' + a : '') + ')';
   }
 
-  // hsl/hwb none 保形（powerless；h 度、s/l/w/b 百分值）。
+  // hsl/hwb none 保形（powerless；h 度、s/l/w/b 百分值）。declared 面在写侧
+  // 已剥 %（color-valid-* corpus 锚 'hsl(120 80% none)' → 'hsl(120 80 none)'），
+  // computed 面读同一 store——无条件补 % 恰复 WPT computed 期望
+  //（'hsl(120 80% none)'，color-computed-hsl/hwb 锚；2026-11-11 srcBare 分量
+  // 裸形跟随实验证伪回退——store 已丢输入语法，跟随只会复刻 declared 剥 %）。
   function _zwCCSerialHslNone(srcComps, alpha, aNone, bare) {
     var h = srcComps[0] === 'none' ? 'none' : _zwCCNum(((srcComps[0] % 360) + 360) % 360);
     var s = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bare ? '' : '%');
@@ -1819,21 +1847,29 @@
   }
 
   // computed 颜色：raw 声明文本 → computed 序列化串；无效/不可解析回退基座。
-  globalThis.__zwComputedColor = function (raw, el) {
+  // propCtx（可选）：触发求值的属性名——'color' 时 currentcolor 走父链，
+  // 其余先试本元素 color（css-color-4 §5.3 currentcolor 域语义）。
+  globalThis.__zwComputedColor = function (raw, el, propCtx) {
     // 环境依赖形回退基座（part11-color.js declared 折叠面）：sign()/abs() 需
     // 字体/容器/视口单位运行时环境（corpus sign(1em - 10px)/sign(2cqw - 10px)
     // 实证——基座对可静态求值形有正确解）；var() 需自定义属性级联；反斜杠 =
     // CSS 转义（host 词法器处理，如 'r\\67 b(...)'）。基座无效形返 null →
     // 调用方宿主链（覆盖前同路径，零漂移）。
-    var rawS = String(raw == null ? '' : raw);
-    if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('var(') >= 0
-        || rawS.indexOf('\\') >= 0) {
-      return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+    var prevCtx = _zwCCPropCtx;
+    _zwCCPropCtx = String(propCtx == null ? '' : propCtx);
+    try {
+      var rawS = String(raw == null ? '' : raw);
+      if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('var(') >= 0
+          || rawS.indexOf('\\') >= 0) {
+        return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      }
+      var r = null;
+      try { r = _zwCCResolveText(raw, el, 0); } catch (_eCR) { r = null; }
+      if (!r) return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      return _zwCCSerialResolve(r);
+    } finally {
+      _zwCCPropCtx = prevCtx;
     }
-    var r = null;
-    try { r = _zwCCResolveText(raw, el, 0); } catch (_eCR) { r = null; }
-    if (!r) return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
-    return _zwCCSerialResolve(r);
   };
 
   // CSS.supports 钩子：颜色值可解析性（系统色同为合法值）。
