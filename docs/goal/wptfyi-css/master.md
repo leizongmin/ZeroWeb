@@ -121,12 +121,26 @@ values 2,213P 零漂移；纯净 HEAD 终账归 DC-3）。挂账：content 图�
 1F、image-set/cross-fade 嵌套 1F、UA 表单 dark FieldText 5F。
 [证据](evidence/2026-11-11-dc2-lightdark-image.md)
 
+**DC-2 fill/stroke gCS + currentColor 宿主解析批完成（11-11 午后）**：fill/stroke
+三层缺位补齐 + color 属性 currentColor 宿主后置解析（提交 179d04529）——apply
+fill/stroke 两臂 parse_color_with_scheme（system color dark 传播，同
+apply_advanced 四臂形态）+ inherit_property fill/stroke 继承臂（SVG2
+Inherited: yes，R4280/R5187「继承由后续切片补」落地）+ inheritance.rs 继承完成后置
+解析 `style.color == CurrentColor → parent.color`（css-color-3/5；shim plain 臂
+已有同语义，宿主 cascade 面补齐——双通道一致）+ computed_style fill/stroke 序列化
+臂（None→SVG2 初始 fill 黑/stroke none）——system-color-compute **25P/2F →
+27P/0F 页面清零**、light-dark-currentcolor-in-color 1F→1P，本批面净 +3（v11
+同轮 10,808→10,840 净 +32 含 e2 image 链 +29，逐页零回归按面分页归属；values
+2,213P 零漂移）。残余挂账：consistency dark FieldText 5F（UA 表单样式建模）、
+Typed-OM 相对色 2F、fill/stroke none/transparent 存储串区分（存储层变体）。
+[证据](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)
+
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 十一批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70） |
+| DC-2 按簇收敛 | 十二批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70）；[fill/stroke gCS + currentColor 宿主解析](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)：v11 10,808 → 10,840（本批面 +3，compute 页清零） |
 | DC-3 全量对账 | 待执行 | 验收线 182,392 项通过，同 revision 周跑产物待补 |
 
 碰撞记录：11-11 凌晨 union 树 engine 全量 7F（img/svg settle + websocket
