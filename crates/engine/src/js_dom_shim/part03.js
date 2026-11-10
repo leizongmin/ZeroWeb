@@ -5328,11 +5328,14 @@
       if (String(text).trim() === '') return;
       // s250：内联 module prepare（s109 FIXME 收口）——spec 内联模块无取回、不
       // fire load/error（text-module/load-error-events.html inline 臂判据）。依赖
-      // 图编译经宿主 __zw_compile_inline_module 四态契约（webview s250 注册）：
+      // 图编译经宿主 __zw_compile_inline_module 五态契约（webview s250 注册，
+      // s381 增态 ③）：
       // ①空 → 元素 error（依赖图取回失败，网络错误语义）；②"1\\u001f" → load
       //（specifier 解析失败，静态面 ② 同判——window TypeError 报告动态面未建模
       // FIXME）；③"2\\u001f<msg>" → window 报告 + load（属性校验违例，s105 同判
-      // ——报告 ctor 保真 FIXME）；④成功 → eval 体、无事件，求值抛错 → window
+      // ——报告 ctor 保真 FIXME）；④"3\\u001f<msg>" → window 报 SyntaxError + load
+      //（链接失败，s381——缺导出/图链接错，静态面 s102 同判，instantiation-error-8
+      // 第二相）；⑤成功 → eval 体、无事件，求值抛错 → window
       // 报告（模块运行期错误面，元素不派事件）。run-once 记账先行（spec
       // already-started prepare 置位）。编译+求值整体 setTimeout 延迟（s251）：
       // spec 动态插入模块的 evaluate 排在插入脚本完成之后（microtask 近似）——
@@ -5376,6 +5379,20 @@
             }
             setTimeout(function () {
               try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL250) {}
+            }, 0);
+            return;
+          }
+          // s381（html-semantics）：态 ③ 链接失败（缺导出/图链接错，宿主 s102 静态面
+          // 同判）——window 报 SyntaxError + 元素照常 fire load、体不执行。旧版折叠进
+          // 空态按网络错误处理（元素 fire error 不冒泡），动态插入 module 的实例化失败
+          // 从不达 window（instantiation-error-8 第二相根因）。
+          // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+          if (_miTag250 === '3') {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(new SyntaxError(_miCode250), null); } catch (_eMiA3250) {}
+            }
+            setTimeout(function () {
+              try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL3250) {}
             }, 0);
             return;
           }
