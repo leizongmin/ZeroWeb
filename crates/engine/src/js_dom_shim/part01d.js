@@ -210,6 +210,47 @@
         && _zwJusCs(el, 'display') !== 'inline') {
       return null;
     }
+    // boolean 命令族读面（vendored getSpecifiedCommandValue :2224-2337 同构；
+    // 2026-11-10 boolean 读面刀）：此前 boolean 命令落入下方 prop 映射 else 臂
+    // 读 background-color——背景块形上五条 boolean 记录/恢复三元组全得幻值
+    // 'yellow'，fb 溶解后 restore 五连幻载体（背景块 + <b>[foo]</b> + fb 探针
+    // 五嵌套背景 span 实证；纯背景形更走 wrap-in-carrier→fixDisallowed 链内容
+    // 全失）；且 b/i/u/s/sub/sup 标签形从不刹车，爬升穿壳到根误记 null。
+    // sub/sup 只读标签（vendored 无 vertical-align 面）；strike/underline 的
+    // style 声明面先于标签面（声明不含该线值时直接 null，不落标签）。
+    if (cmd === 'subscript' || cmd === 'superscript') {
+      var tVaS = _zwJusTag(el);
+      if (tVaS === 'sup') return 'superscript';
+      if (tVaS === 'sub') return 'subscript';
+      return null;
+    }
+    if (cmd === 'strikethrough') {
+      var tdVaS = _zwPlainDecl(el, 'text-decoration');
+      if (tdVaS) {
+        return tdVaS.indexOf('line-through') !== -1 ? 'line-through' : null;
+      }
+      var tVaS2 = _zwJusTag(el);
+      return (tVaS2 === 's' || tVaS2 === 'strike') ? 'line-through' : null;
+    }
+    if (cmd === 'underline') {
+      var tdVaU = _zwPlainDecl(el, 'text-decoration');
+      if (tdVaU) {
+        return tdVaU.indexOf('underline') !== -1 ? 'underline' : null;
+      }
+      return _zwJusTag(el) === 'u' ? 'underline' : null;
+    }
+    if (cmd === 'bold') {
+      var fwVaB = _zwPlainDecl(el, 'font-weight');
+      if (fwVaB) return String(fwVaB);
+      var tVaB = _zwJusTag(el);
+      return (tVaB === 'b' || tVaB === 'strong') ? 'bold' : null;
+    }
+    if (cmd === 'italic') {
+      var fsVaI = _zwPlainDecl(el, 'font-style');
+      if (fsVaI) return String(fsVaI);
+      var tVaI = _zwJusTag(el);
+      return (tVaI === 'i' || tVaI === 'em') ? 'italic' : null;
+    }
     var prop = cmd === 'fontsize' ? 'font-size'
       : (cmd === 'fontname' ? 'font-family'
         : (cmd === 'forecolor' ? 'color' : 'background-color'));

@@ -1515,6 +1515,41 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
         parse_max(value)
     } else if math_function_inner(value, "clamp").is_some() {
         parse_clamp(value)
+    } else if math_function_inner(value, "round").is_some()
+        || math_function_inner(value, "mod").is_some()
+        || math_function_inner(value, "rem").is_some()
+        || math_function_inner(value, "hypot").is_some()
+        || math_function_inner(value, "pow").is_some()
+        || math_function_inner(value, "atan2").is_some()
+        || math_function_inner(value, "abs").is_some()
+        || math_function_inner(value, "sign").is_some()
+        || math_function_inner(value, "sqrt").is_some()
+        || math_function_inner(value, "exp").is_some()
+        || math_function_inner(value, "log").is_some()
+        || math_function_inner(value, "sin").is_some()
+        || math_function_inner(value, "cos").is_some()
+        || math_function_inner(value, "tan").is_some()
+        || math_function_inner(value, "asin").is_some()
+        || math_function_inner(value, "acos").is_some()
+        || math_function_inner(value, "atan").is_some()
+    {
+        // CSS Values 4 §11.3 裸数学函数（无 calc() 包裹——round/mod/rem/hypot/
+        // pow/atan2、abs/sign/sqrt/exp/log、trig sin/cos/tan/asin/acos/atan，
+        // 任意 calc() 合法槽位等价可用）。全文（不剥函数包裹）走 CalcParser：
+        // 操作数链 try_parse_unary/binary_math 原生构建 UnaryOp/BinaryMathOp
+        // （R2279/R2280 语义复用；`atan(` 与 `atan2(` 由 math_function_inner
+        // 的后继字符 `(` 检查区分，次序无关）。
+        let mut parser = CalcParser {
+            input: value,
+            pos: 0,
+            depth: 0,
+        };
+        let expr = parser.parse_expr()?;
+        parser.skip_whitespace();
+        if parser.pos < parser.input.len() {
+            return None;
+        }
+        Some(expr)
     } else {
         None
     }

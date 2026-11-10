@@ -124,6 +124,26 @@
       return out;
     },
     supports: function (prop, value) {
+      if (arguments.length >= 2) {
+        // DC-2 次批：现代色函数/opacity 值可解析性 JS 前置钩子——Rust
+        // apply_property_value_with_quirks 不认 hwb/lab/color-mix/相对色/
+        // none 分量（decl_supported 恒 false），test_computed_value 第二断言
+        // `CSS.supports(property, specified)` 即死。JS 判定可解析 → true；
+        // JS 否则落 host（legacy 形由 Rust 原判定，零漂移不接管）。
+        if ((String(prop).trim().toLowerCase() === 'color'
+             || String(prop).trim().toLowerCase() === 'background-color')
+            && typeof globalThis.__zwCssColorValid === 'function') {
+          try {
+            if (globalThis.__zwCssColorValid(String(value))) return true;
+          } catch (_eSV) {}
+        }
+        if (String(prop).trim().toLowerCase() === 'opacity'
+            && typeof globalThis.__zwOpacityComputed === 'function') {
+          try {
+            if (globalThis.__zwOpacityComputed(String(value)) !== '') return true;
+          } catch (_eSO) {}
+        }
+      }
       if (typeof __zw_css_supports !== 'function') return false;
       if (arguments.length >= 2) return __zw_css_supports(String(prop), String(value)) === '1';
       return __zw_css_supports(String(prop)) === '1';
@@ -2049,6 +2069,26 @@
   // 落点——该面由白名单门自然收窄后，剩余边界在此声明）。
   function _zwNormalizeDeclValue(value, propName) {
     var raw = String(value == null ? '' : value);
+    // DC-2 次批：色/opacity 值模型归一整值委托（part11 css-color-4/5 管线）——
+    // 下方分词器会把函数形劈散（css-syntax 函数含空格参数），现代语法（空格形/
+    // none powerless/角度单位/hwb·lab 族）必须整值进管线。null=非法（调用方
+    // 丢弃声明）；透传形（color-mix/相对色等）保原串（次批后半建模）。
+    // legacy 形（named/hex/逗号 rgb·hsla）part11 输出口径与 T48 分词归一一致，
+    // 统一走管线（零漂移——smoke oracle 全量对照绿）。
+    if (propName === 'color' || propName === 'background-color' || propName === 'opacity') {
+      if (typeof globalThis.__zwColorNormalizeDecl === 'function') {
+        try {
+          var _cnv = globalThis.__zwColorNormalizeDecl(
+            propName === 'opacity' ? 'opacity' : 'color', raw);
+          // 新管线全谱建模（css-color-4/5，smoke oracle 全绿）：显式 null 即整值
+          // 非法 → 拒（T47 DF-3 同语义），**不回退旧分词器**——旧面未知 ident
+          // 透传（'yelow' 类 typo 被接受，color-invalid-named 183F）；透传形
+          //（color-mix/relative）返回原串非 null，不受影响。
+          if (_cnv === null) return null;
+          return _cnv;
+        } catch (_eCNV) {}
+      }
+    }
     var toks = raw.split(/\s+/);
     var out = [];
     var changed = false;
@@ -2097,16 +2137,30 @@
   // T54 勘误（DF-T50-N1）：上记折叠「无小写后随」判定漏了词尾边界——camel 词尾大写
   // 段（'backgroundPositionX' 词尾 'X'，后随串尾前瞻通过）同被原地折小写，camel 边界
   // 先于 `_stylePropName` 丢失 → 'background-positionx' 缺陷形（词中段/词首段
-  // T49-T53 已收口，词尾形遗漏）。本钉加 (?<![a-z]) 前顾限定：折叠仅取词首/连字符后
-  // 大写段（kebab 书写形全大写连字，'COLOR'/'Z-INDEX'/vendor 形语义不变）；camel
-  // 词尾大写段不折叠，落 `_stylePropName` camel 算法（cssom-1
+  // T49-T53 已收口，词尾形遗漏）。
+  // T55 勘误（SUM-T54-1/DF-T54-2）：T54 fold 正则 (?<![a-z])[A-Z]+(?![a-z]) 对
+  // **词尾多重大写段**部分命中——run 整体匹配在首字母处被前顾拒绝（首 X 前邻 'n'
+  // 小写），正则从 run 中段重新起匹配（后续字母前邻大写通过前顾）→ run 被拆分折叠：
+  // 仅尾 X 折小写 → 'backgroundPositionXX' → 'background-position-xx' 缺陷形，规范形
+  // 应为 'background-position-x-x'。修法：fold 段改 /[A-Z]+(?![a-z])/g + replace
+  // 回调原子判——大写段整体匹配（无前顾拆分），回调判段首符前邻：ASCII 小写
+  //（camel 边界）→ 整段保留落 `_stylePropName` camel 算法（cssom-1
   // §camel-cased-attribute-to-css-attribute：每大写字母 → '-' + 小写，词尾同规则）→
-  // 'background-position-x'。Blink 154 活体（t54-oracle-result.txt，Chrome
-  // 154.0.8037.92 headless 2026-11-10）：IDL backgroundPositionX/Y → cssText
-  // 'background-position-x: 10px;'（names ['background-position-x']），无连字符形
-  // 'background-positionx' 读拒；负案 custom `--` case-sensitive/词中 camel/vendor
-  // 三形/全大写连写形全数同向。五面共享本函数（规则 T49/IDL T50/csstext/keyframe
-  // T51/物化面板 T52-T53），修一处全链继承（钉 test_cssom_decl_name_fold_wordfinal_t54）。
+  // 'background-position-x-x'；否则整段折小写（kebab 书写形）。折叠判定通过集 =
+  // 段首符前邻非 ASCII 小写字母——串首/'-'/数字/'_'/大写/空白/点/非 ASCII 前邻均
+  // 折叠（'COLOR'/'Z-INDEX'/vendor 形/全大写连写形语义不变，措辞按 SUM-T54-5
+  // 校准）；词中 camel 段（'backgroundColor'）后随小写整段不匹配、零折叠。选型：
+  // 变长前顾（?<![a-z][A-Z]*，方案 1）与本实现（方案 2）在 v8 150.2.0 与
+  // quickjs-ng（rquickjs-sys 0.7 bundle）七形逐字节恒等（t55-probe-v8.log/
+  // t55-probe-quickjs.log，2026-11-10）；取方案 2 去除 lookbehind 依赖，shim 落
+  // ES5 普适能力（收口 SUM-T54-6 quickjs 前顾行为矩阵残余类）。Blink 154 活体
+  //（t55-oracle-result.txt，HeadlessChrome/154.0.0.0 headless 2026-11-10）：
+  // XX/XY IDL 形 expando 无声明，sp camel XX/kebab 规范-缺陷双形/理论形
+  // aB/aBcDE/aBCDd 全数无 CSS 属性对应整弃——落库名无活体仲裁，cssom-1 camel
+  // 算法为权威；词尾单大写族（backgroundPositionX/Y 等 T54 18 案）回归采样逐案
+  // 恒等（行为不变）。五面共享本函数（规则 T49/IDL T50/csstext/keyframe
+  // T51/物化面板 T52-T53），修一处全链继承（钉
+  // test_cssom_decl_name_fold_wordfinal_xx_t55）。
   function _styleDeclName(name) {
     // DF-T50-1（T50 返修）：trim 先于 `--` 早退——早退先于 trim 时尾空白 custom
     // 名参（'--FOO '）未修剪透传：写面落 host（merge_style_property 存储侧
@@ -2122,7 +2176,12 @@
     // test_cssom_idl_whitespace_name_t50fix 锁定。
     var s = String(name).trim();
     if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
-    var folded = s.replace(/(?<![a-z])[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
+    var folded = s.replace(/[A-Z]+(?![a-z])/g, function (m, off) {
+      // T55：段首符前邻为 ASCII 小写（camel 边界）→ 整段保留落 camel 算法（词尾
+      // 多重大写段规范形 'backgroundPositionXX' → 'background-position-x-x'）；
+      // 否则（串首/'-'/数字/'_'/大写/空白/点/非 ASCII 前邻）整段折小写。
+      return off > 0 && /[a-z]/.test(s.charAt(off - 1)) ? m : m.toLowerCase();
+    });
     return _stylePropName(folded).toLowerCase();
   }
 
@@ -2237,6 +2296,11 @@
       rule = { type: 1, selectorText: t, cssText: t + ' { }', style: null, parentStyleSheet: parentSheet };
     }
     rule.style = _makeRuleStyle(rule, flushFn);
+    // part10 Typed OM：styleMap 挂钩（CSSStyleRule declared 面零新回调，钩子缺席
+    // 时无操作——part10 未装配场景保持原行为）。
+    if (typeof globalThis.__zwAttachRuleStyleMap === 'function') {
+      try { globalThis.__zwAttachRuleStyleMap(rule); } catch (_eSM) {}
+    }
     return rule;
   }
   // s163（html-semantics M2）：CSSImportRule 接口全局——上游 support/utils.js
@@ -2325,6 +2389,10 @@
               parentStyleSheet: ss
             };
             r.style = _makeRuleStyle(r, flushToOwner);
+            // part10 Typed OM：styleMap 挂钩（同 _ruleFromText 面，adopted 表规则）。
+            if (typeof globalThis.__zwAttachRuleStyleMap === 'function') {
+              try { globalThis.__zwAttachRuleStyleMap(r); } catch (_eSM2) {}
+            }
             rulesCache.push(r);
           }
         }

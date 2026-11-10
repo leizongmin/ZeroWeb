@@ -77,6 +77,22 @@ DIRS=(
   "css/css-break"
   "css/css-contain"
   "css/css-writing-modes"
+  # wptfyi-css goal DC-2 语料扩面（DC-1 缺语料桶 13 目录 ~8-12k 子测试）：
+  # animation/transitions/om-view/view-transitions/geometry 等接口与动画
+  # 断言面；cssom-view / geometry 无 css- 前缀（分片脚本显式映射臂）。
+  "css/css-transitions"
+  "css/css-animations"
+  "css/cssom-view"
+  "css/css-view-transitions"
+  "css/geometry"
+  "css/css-properties-values-api"
+  "css/css-highlight-api"
+  "css/css-page"
+  "css/css-scroll-anchoring"
+  "css/css-scrollbars"
+  "css/css-overscroll-behavior"
+  "css/css-navigation"
+  "css/css-parser-api"
   # css 面共享 helper 目录（35 号先例：parsing/computed/interpolation-testcommon.js）
   "css/support"
 )

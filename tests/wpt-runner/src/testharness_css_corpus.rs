@@ -12,13 +12,16 @@
 //! git trees 深挖，svg/workers 先例）按 pin 315976933870b34d6ea30e3f6643403edae678ba
 //! 拉到 `wpt-data/css/`（gitignored）。试点两目录上游全树：css-values 672 blobs /
 //! selectors 996 blobs（2026-10-29 树清单）——`.html` 主体 + support 资产
-//! （png/css/woff）+ `.xht` XML 页；两目录均无 `.any.js`（形态分簇实测，
-//! `.any.js` window 变体通道为后续扩面目录预留，net-api 先例）。
+//! （png/css/woff）+ `.xht` XML 页；`.any.js` window 变体通道已接线（fileapi
+//! /webstorage 先例，见 [`run_css_corpus_dir`]；wptfyi-css goal DC-2——typed-om
+//! 等扩面目录的 `.any.js` 变体面由此进账，源名按 `.any.js` 记账，对账侧
+//! resolve_to_universe 变体优先解析为 `.any.html` universe 名）。
 //! css-variables 数据双源（M2）：fetch-wpt-data 精选仓（v1.10）只有 reftest
 //! 口径子集（harness 形态 59 页），上游全量 harness 面由 35 号脚本深挖补拉。
 //!
 //! 运行面 = 目录全递归扫描（svg/workers 先例，skip 规则两侧同源防漂移）+
-//! 只收 `.html`/`.htm` + [`css_testharness_case_skipped`] 内容规则筛减：
+//! 收 `.html`/`.htm` 页与 `.any.js` window 变体 + [`css_testharness_case_skipped`]
+//! 内容规则筛减：
 //! - 无 `testharness` 引用的 html/htm 是 reftest 页 / ref 页 / manual / demo
 //!   ——渲染断言面自动排除（rendering-compat 流域；占比盘点入 M0 evidence）；
 //! - `.xht` 文档不进通道：runner testharness 管线按 HTML 解析页面，XML 文档
@@ -26,7 +29,9 @@
 //! - source 含 `<iframe`——iframe 依赖面（runner 无 iframe 文档管道，
 //!   css-variables/fullscreen 同规则）。
 
-use crate::testharness::{HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_testharness_html_inner};
+use crate::testharness::{
+    HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_any_js_window_case, run_testharness_html_inner,
+};
 use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
@@ -57,6 +62,12 @@ const PATHO_CASES: &[&str] = &["if-conditionals.html", "variable-exponential-blo
 /// - 无 `testharness` 引用（reftest 页 / ref 页 / manual / demo——渲染断言面
 ///   自动排除，svg 先例）
 /// - source 含 `<iframe`（iframe 依赖面——runner 无 iframe 文档管道）
+///
+/// `.any.js` 变体源单列（fileapi `fileapi_case_skipped` 同规则）：wrapper 自动
+/// 注入 harness，无 `testharness` 字面引用不排除；`idlharness*` 依赖
+/// /resources/WebIDLParser.js（上游 build 期生成资产，repo 内不存在——fileapi
+/// 先例）；worker 专有面 `importScripts(` / `new Worker(` 在 window 通道不可
+/// 执行——三者跳过不记账（worker-only/idl 变体无 window 执行账面）。
 pub(crate) fn css_testharness_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
     if name.ends_with("-manual.html") || name.ends_with("-crash.html") {
@@ -72,6 +83,9 @@ pub(crate) fn css_testharness_case_skipped(relative: &str, source: &str) -> bool
         if relative.contains(&format!("/{helper}/")) {
             return true;
         }
+    }
+    if name.ends_with(".any.js") {
+        return name.starts_with("idlharness") || source.contains("importScripts(") || source.contains("new Worker(");
     }
     if !source.contains("testharness") {
         return true;
@@ -138,10 +152,14 @@ fn run_css_corpus_dir(
                 continue;
             }
             let file_name = entry.file_name().to_string_lossy().to_string();
-            // 只收 html/htm 页（testharness 管线按 HTML 解析；`.xht` XML 文档
+            // 收 html/htm 页（testharness 管线按 HTML 解析；`.xht` XML 文档
             // 执行路径缺位——模块头注记记账，占比盘点入 M0 evidence）。
+            // `.any.js` 走 window 变体通道（fileapi/webstorage 先例，模块头注
+            // 同域）：wrapper 注入 harness + META script 支持，源名按 `.any.js`
+            // 记账（对账侧变体优先解析 `.any.html`）。
             let is_html = file_name.ends_with(".html") || file_name.ends_with(".htm");
-            if !is_html {
+            let is_any_js = file_name.ends_with(".any.js");
+            if !is_html && !is_any_js {
                 continue;
             }
             let relative = format!("{subdir}/{file_name}");
@@ -154,14 +172,18 @@ fn run_css_corpus_dir(
             if css_testharness_case_skipped(&relative, &source) {
                 continue;
             }
-            let results = run_testharness_html_inner(
-                wpt_root,
-                &relative,
-                &source,
-                &harness_source,
-                &[],
-                corpus_case_timeout(),
-            );
+            let results = if is_any_js {
+                run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
+            } else {
+                run_testharness_html_inner(
+                    wpt_root,
+                    &relative,
+                    &source,
+                    &harness_source,
+                    &[],
+                    corpus_case_timeout(),
+                )
+            };
             cases.push((relative, results));
         }
     }
@@ -608,4 +630,107 @@ pub fn run_css_contain_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
 /// 419 子测试）。filter 按路径子串过滤。
 pub fn run_css_writing_modes_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-writing-modes", filter)
+}
+
+/// Run the pinned upstream css-transitions testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——transition 属性族与 TransitionEvent 断言面，DC-1 缺语料
+/// 分母 ~3,439 子测试）。filter 按路径子串过滤。
+pub fn run_css_transitions_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-transitions", filter)
+}
+
+/// Run the pinned upstream css-animations testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——@keyframes/animation 属性族解析断言面，DC-1 缺语料
+/// 分母 ~1,429 子测试）。filter 按路径子串过滤。
+pub fn run_css_animations_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-animations", filter)
+}
+
+/// Run the pinned upstream cssom-view testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——CSSOM View API（scroll/viewport/element geometry）断言面，
+/// DC-1 缺语料分母 ~2,635 子测试）。filter 按路径子串过滤。
+pub fn run_cssom_view_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/cssom-view", filter)
+}
+
+/// Run the pinned upstream css-view-transitions testharness subset（wptfyi-css
+/// goal DC-2 语料扩面——view-transition 描述符解析断言面，DC-1 缺语料
+/// 分母 ~1,437 子测试）。filter 按路径子串过滤。
+pub fn run_css_view_transitions_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-view-transitions", filter)
+}
+
+/// Run the pinned upstream geometry testharness subset（wptfyi-css goal DC-2
+/// 语料扩面——DOMMatrix/DOMRect/DOMPoint 几何接口断言面，DC-1 缺语料
+/// 分母 ~843 子测试）。filter 按路径子串过滤。
+pub fn run_geometry_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/geometry", filter)
+}
+
+/// Run the pinned upstream css-properties-values-api testharness subset
+/// （wptfyi-css goal DC-2 语料扩面——@property/CSS.registerProperty 注册属性
+/// 断言面，DC-1 缺语料分母 ~1,393 子测试）。filter 按路径子串过滤。
+pub fn run_css_properties_values_api_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-properties-values-api", filter)
+}
+
+/// Run the pinned upstream css-highlight-api testharness subset（wptfyi-css
+/// goal DC-2 语料扩面——highlight 注册表断言面，DC-1 缺语料分母 ~176
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_highlight_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-highlight-api", filter)
+}
+
+/// Run the pinned upstream css-page testharness subset（wptfyi-css goal DC-2
+/// 语料扩面——@page 描述符解析断言面，DC-1 缺语料分母 ~159 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_page_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-page", filter)
+}
+
+/// Run the pinned upstream css-scroll-anchoring testharness subset（wptfyi-css
+/// goal DC-2 语料扩面——overflow-anchor 解析断言面，DC-1 缺语料分母 ~98
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_scroll_anchoring_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-scroll-anchoring", filter)
+}
+
+/// Run the pinned upstream css-scrollbars testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——scrollbar-width/color 解析断言面，DC-1 缺语料分母 ~83
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_scrollbars_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-scrollbars", filter)
+}
+
+/// Run the pinned upstream css-overscroll-behavior testharness subset
+/// （wptfyi-css goal DC-2 语料扩面——overscroll-behavior 解析断言面，DC-1
+/// 缺语料分母 ~109 子测试）。filter 按路径子串过滤。
+pub fn run_css_overscroll_behavior_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-overscroll-behavior", filter)
+}
+
+/// Run the pinned upstream css-navigation testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——navigation 属性解析断言面，DC-1 缺语料分母 ~82 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-navigation", filter)
+}
+
+/// Run the pinned upstream css-parser-api testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——CSS.parseAll 解析 API 断言面，DC-1 缺语料分母 ~71
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_parser_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-parser-api", filter)
 }

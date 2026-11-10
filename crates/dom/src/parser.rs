@@ -199,6 +199,11 @@ struct DomBuilderInner {
     /// WC-M2：template → contents fragment 侧表（解析期构建，finish 后移交 Document——
     /// 见 `into_document` 的 `from_builder_parts` + map 搬移）。
     template_contents_map: HashMap<NodeId, NodeId>,
+    /// 解析期 form 元素指针关联侧表（同上搬移通道）：html5ever 维护指针本体
+    /// （`TreeBuilder.form_elem`，HTML §13.2.4.4）并按 §13.2.6.1 step 21 约束检查
+    /// 通过后回调 [`TreeSink::associate_with_form`]，此处只落表。仅坏标记位有条目
+    /// （foster-parented form / 隐式闭合后指针残留），常规嵌套不写表。
+    form_owner_map: HashMap<NodeId, NodeId>,
 }
 
 impl DomBuilder {
@@ -216,6 +221,7 @@ impl DomBuilder {
                 root,
                 quirks_mode: QuirksMode::NoQuirks,
                 template_contents_map: HashMap::new(),
+                form_owner_map: HashMap::new(),
             }),
         }
     }
@@ -226,7 +232,12 @@ impl DomBuilder {
         // 直接搬移节点表与树结构（NodeId 一致，parent/children 保持有效）——
         // 旧实现逐节点 clone 重建双树（10k 节点 ≈ 峰值内存翻倍 + 每节点
         // QualName/attrs/文本 2 次深拷贝），是 parse_html 30-40% 的开销。
-        let mut doc = Document::from_builder_parts(inner.nodes, inner.root, inner.template_contents_map);
+        let mut doc = Document::from_builder_parts(
+            inner.nodes,
+            inner.root,
+            inner.template_contents_map,
+            inner.form_owner_map,
+        );
 
         doc.set_quirks_mode(inner.quirks_mode);
         // 检测 XHTML 文档（DOCTYPE public_id 含 "XHTML"），置位 content_is_xml 供
@@ -617,6 +628,22 @@ impl TreeSink for DomBuilder {
                 new_parent_data.children.push(child);
             }
         }
+    }
+
+    /// HTML §13.2.6.1「create an element」step 21——form-associated 元素与 form
+    /// 元素指针的解析期关联。html5ever 已完成全部指针约束检查（form-associated
+    /// 元素集、指针非空、非 template 内容、listed 元素无 `form` 属性），这里只落
+    /// 侧表供 [`Document::parse_form_owner`] 查询；指针本体的设/清（§13.2.4.4：
+    /// form 起始标签设含 in-table foster-parenting 特例、`</form>` 看见时清）由
+    /// html5ever `TreeBuilder.form_elem` 维护。`_nodes` 为插入位置目标（本侧表不
+    /// 需要——关联对即 (target, form) 本体）。
+    fn associate_with_form(
+        &self,
+        target: &Self::Handle,
+        form: &Self::Handle,
+        _nodes: (&Self::Handle, Option<&Self::Handle>),
+    ) {
+        self.inner.borrow_mut().form_owner_map.insert(*target, *form);
     }
 }
 

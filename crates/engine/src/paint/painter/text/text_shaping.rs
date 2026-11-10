@@ -630,13 +630,48 @@ pub(super) fn fragment_shape_direction(
     source: Option<&TextFragmentSource>,
     style_direction: TextDirection,
     uba_rtl_enabled: bool,
+    text: &str,
 ) -> TextDirection {
     // https://www.w3.org/TR/css-writing-modes-3/#bidi-algo
     if uba_rtl_enabled && source.and_then(TextFragmentSource::uniform_resolved_rtl) == Some(true) {
-        TextDirection::RightToLeft
-    } else {
-        style_direction
+        return TextDirection::RightToLeft;
     }
+    // UBA 偶 level LTR 呈现臂：RTL 基方向下纯强 L/EN/AN 内容经 X 系列＋N1/N2 解析为
+    // 纯偶 level（无 R/AL 参与即无奇 level 段），呈现序 = 逻辑序——按 CSS direction
+    // 兜底走 RTL shaping 会整串反转字形。布局层已按 R3837 identity 存逻辑序（chromium
+    // 探针 floats-placement-vertical-001a p3/dir=rtl「HelloKitty」单元 LTR 呈现右对齐
+    // 实证），本臂只修 shaping 兜底残留反转面。含 R/AL、bidi 控制码或纯中性片段不适用
+    //（中性随段基 level 1，镜像/方向语义维持 legacy 兜底）；`ZW_SHAPED_UBA_RTL=0`
+    // 与上方 Some(true) 臂同开关整体回退。
+    // https://unicode.org/reports/tr9/#L2
+    if uba_rtl_enabled && style_direction == TextDirection::RightToLeft && single_ltr_script(text) {
+        return TextDirection::LeftToRight;
+    }
+    style_direction
+}
+
+/// 纯 LTR 呈现内容判定：≥1 强 L/EN/AN 字符且无 R/AL 与 bidi 控制码——RTL 段基下
+/// 经 UBA 解析为纯偶 level（LTR 呈现序）。与 `single_rtl_script` 互斥（两者皆
+/// false = 混合/中性/控制码域，维持 style 兜底）。
+fn single_ltr_script(text: &str) -> bool {
+    let mut has_ltr = false;
+    for ch in text.chars() {
+        match bidi_class(ch) {
+            BidiClass::L | BidiClass::EN | BidiClass::AN => has_ltr = true,
+            BidiClass::R | BidiClass::AL => return false,
+            BidiClass::LRE
+            | BidiClass::RLE
+            | BidiClass::LRO
+            | BidiClass::RLO
+            | BidiClass::LRI
+            | BidiClass::RLI
+            | BidiClass::FSI
+            | BidiClass::PDI
+            | BidiClass::PDF => return false,
+            _ => {}
+        }
+    }
+    has_ltr
 }
 
 /// 从布局片段恢复 RTL logical shaping 输入。
@@ -1414,16 +1449,16 @@ mod tests {
             visual_levels: Vec::new(),
         };
         assert_eq!(
-            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, false),
+            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, false, "aאבb"),
             TextDirection::LeftToRight
         );
         assert_eq!(
-            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, true),
+            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, true, "aאבb"),
             TextDirection::RightToLeft
         );
         let logical = logical_fragment_source(
             Some(&rtl),
-            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, true),
+            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, true, "aאבb"),
             true,
         )
         .expect("uniform RTL fragment in LTR container");
@@ -1436,7 +1471,49 @@ mod tests {
             visual_levels: Vec::new(),
         };
         assert_eq!(
-            fragment_shape_direction(Some(&mixed), TextDirection::LeftToRight, true),
+            fragment_shape_direction(Some(&mixed), TextDirection::LeftToRight, true, "aאב"),
+            TextDirection::LeftToRight
+        );
+    }
+
+    /// R5494（UBA 偶 level LTR 呈现臂）：RTL style 兜底域中纯强 L/EN/AN 内容翻 LTR
+    /// shaping——dir=rtl 容器 Latin/数字不再整串反转（floats-placement-vertical-001a
+    /// p3/dir=rtl chromium「HelloKitty」LTR 呈现右对齐 oracle 实证）。R/AL、bidi 控制
+    /// 码、纯中性片段与 LTR style 域维持 legacy 兜底。
+    #[test]
+    fn rtl_style_fallback_flips_pure_ltr_presentation_content_only() {
+        // 纯 L / EN → LTR 呈现（偶 level）
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::RightToLeft, true, "Hello"),
+            TextDirection::LeftToRight
+        );
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::RightToLeft, true, "Hello123"),
+            TextDirection::LeftToRight
+        );
+        // R/AL 在场 → legacy 兜底（RTL）
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::RightToLeft, true, "שלום"),
+            TextDirection::RightToLeft
+        );
+        // 混合 L+R → legacy 兜底（整段 level 混合域）
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::RightToLeft, true, "a·bש"),
+            TextDirection::RightToLeft
+        );
+        // 纯中性（无强类/数字）→ 段基 level 1 域，legacy 兜底
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::RightToLeft, true, "···"),
+            TextDirection::RightToLeft
+        );
+        // bidi 控制码在场 → 作用域域，legacy 兜底
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::RightToLeft, true, "\u{202E}ab"),
+            TextDirection::RightToLeft
+        );
+        // LTR style 域不受新臂影响
+        assert_eq!(
+            fragment_shape_direction(None, TextDirection::LeftToRight, true, "Hello"),
             TextDirection::LeftToRight
         );
     }

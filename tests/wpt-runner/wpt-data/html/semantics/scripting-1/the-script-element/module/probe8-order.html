@@ -1,0 +1,18 @@
+<!doctype html>
+<title>probe8 defer/module interleave</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script>
+var probe8log = [];
+window.probe8push = function(x){ probe8log.push(x); };
+var t = async_test("probe8-report");
+window.addEventListener("load", t.step_func(function(){
+  t.step(function(){ assert_array_equals(probe8log, ["c0","c5","d2","m3","d4"], "probe8: " + probe8log.join(",")); });
+  t.done();
+}));
+</script>
+<script>probe8push("c0");</script>
+<script src="probe8-d2.js" defer></script>
+<script type="module">probe8push("m3");</script>
+<script src="probe8-d4.js" defer></script>
+<script>probe8push("c5");</script>

@@ -391,6 +391,42 @@ fn settle_dynamic_import<'s>(
     }
 }
 
+/// source-phase 动态 import 宿主回调（`set_host_import_module_with_phase_dynamically_callback`
+/// ——V8 150 实测：注册后此回调接管**全部**动态 import 调用，旧回调不再触达，
+/// 须按 phase 分派；rusty_v8 文档「only called for source phase」与实现不符）。
+///
+// FIXME(test262-source-phase): 本引擎无 source-phase module record（无
+// `import.source` 成功面宿主 API，module record 恒 SourceText 形态），故按
+// ECMA-262 §16.2.1.7.2 GetModuleSource 的 SourceTextModule 实现——「source
+// phase import is not available」恒 abrupt、抛 SyntaxError——对每个可达的
+// source-phase import 给出规范忠实的拒绝（§13.3.10.1.1 EvaluateImportCall
+// phase=source → HostLoadImportedModule；wptfyi-runtime DC-3 收口，test262
+// dynamic-import source-phase 簇 91 案 parse 面 + 拒绝语义）。
+fn dynamic_import_source_phase_callback<'s, 'i>(
+    scope: &mut v8::PinScope<'s, 'i>,
+    host_defined_options: v8::Local<'s, v8::Data>,
+    resource_name: v8::Local<'s, v8::Value>,
+    specifier: v8::Local<'s, v8::String>,
+    phase: v8::ModuleImportPhase,
+    import_attributes: v8::Local<'s, v8::FixedArray>,
+) -> Option<v8::Local<'s, v8::Promise>> {
+    // 求值期（kEvaluation/kDefer）原样走既有宿主逻辑（行为与注册前恒等）。
+    if phase != v8::ModuleImportPhase::kSource {
+        return dynamic_import_callback(
+            scope,
+            host_defined_options,
+            resource_name,
+            specifier,
+            import_attributes,
+        );
+    }
+    let promise_resolver = v8::PromiseResolver::new(scope)?;
+    if let Some(m) = v8::String::new(scope, "source phase import is not available") {
+        promise_resolver.reject(scope, v8::Exception::syntax_error(scope, m));
+    }
+    Some(promise_resolver.get_promise(scope))
+}
+
 // 宿主回调注册表（线程局部）。FunctionTemplate 回调须为 `Copy`
 //（MapFnTo<FunctionCallback>），无法捕获 Arc 状态；故回调闭包存于此注册表，
 // FunctionTemplate 经 builder().data(idx) 携带索引，fn 回调按 idx 查表调用。
@@ -639,6 +675,15 @@ impl Drop for MicrotasksExplicitGuard {
 /// 进程级 `Once` 防重复初始化（V8 平台初始化须全局一次）。
 pub fn ensure_v8_initialized() {
     V8_INIT.call_once(|| {
+        // ShadowRealm 内建（ECMA-262 §ShadowRealm——V8 内核已实现，harmony flag
+        // 默认关闭）：平台初始化前开启，全 isolate 可见。
+        v8::V8::set_flags_from_string("--harmony-shadow-realm");
+        // source phase imports 语法面（ECMA-262 §13.3.10.1.1 EvaluateImportCall
+        // phase=source——V8 内核已实现、本构建默认关旗）：平台初始化前开启。运行
+        // 期拒绝语义见 [dynamic_import_source_phase_callback]；经典页/worker/
+        // renderer 全 isolate 一致生效（wptfyi-runtime DC-3 收口，test262
+        // dynamic-import source-phase 簇 91 案 parse 面 + 拒绝语义）。
+        v8::V8::set_flags_from_string("--js-source-phase-imports");
         let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，
         // 且在所有Isolate创建之前完成。
@@ -886,6 +931,27 @@ impl V8Sandbox {
         let dynamic_import = Arc::new(std::sync::Mutex::new(DynamicImportState::default()));
         isolate.set_slot(dynamic_import.clone());
         isolate.set_host_import_module_dynamically_callback(dynamic_import_callback);
+        // source-phase 动态 import（`import.source()`）宿主回调——见
+        // [dynamic_import_source_phase_callback] 语义说明。
+        isolate
+            .set_host_import_module_with_phase_dynamically_callback(
+                dynamic_import_source_phase_callback,
+            );
+
+        // ShadowRealm 宿主回调（ECMA-262 §ShadowRealm，HostCreateShadowRealmContext）：
+        // V8 内核已实现 realm/evaluate/wrapped function 语义，仅宿主 context 缺省
+        // ——默认抛 "Not supported"。返回裸 ECMAScript context（无 window/DOM
+        // shim——规范要求纯 JS realm；新 context 用 isolate 默认微任务队列）。
+        isolate.set_host_create_shadow_realm_context_callback(|scope| {
+            Some(v8::Context::new(
+                scope,
+                v8::ContextOptions {
+                    global_template: None,
+                    global_object: None,
+                    microtask_queue: None,
+                },
+            ))
+        });
 
         // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
         // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
@@ -1441,6 +1507,12 @@ impl V8Sandbox {
         }
         let result = result.unwrap();
 
+        try_catch.perform_microtask_checkpoint();
+        // 平台前台任务泵（waitAsync futex 唤醒解析等经 isolate 前台任务 runner 投递
+        // ——默认平台不自驱，无泵则解析永不发生，promise 永悬挂）。空队列即返
+        // （wait_for_work=false）。任务投递可挂新微任务 → 二段 checkpoint 同轮排空
+        //（省一次 execute 迟到的反应跳；Auto 策略下嵌套任务内的子 run 自带检查点）。
+        while v8::Platform::pump_message_loop(&v8::V8::get_current_platform(), try_catch, false) {}
         try_catch.perform_microtask_checkpoint();
         if try_catch.has_caught() {
             let msg = v8_try_catch_message!(try_catch);
@@ -4436,6 +4508,53 @@ mod tests {
             settled.lock().unwrap().as_deref(),
             Some("rejected:Error:Not supported"),
             "无宿主 resolver 保持 V8 默认 Error: Not supported"
+        );
+    }
+
+    // ShadowRealm 激活钉面（r11 切片——ECMA-262 §ShadowRealm；flag + 宿主
+    // context 回调缺一即全簇翻红）：构造器可见、实例 API 面、evaluate 同步
+    // 完成值返回、wrapped function 跨 realm 调用、非 primitive 返回 TypeError。
+    // 断言自包含（execute 包裹求值，var 不跨 execute 落 global）。
+    #[test]
+    fn test_shadowrealm_activate_and_evaluate() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        assert_eq!(
+            sandbox.execute("typeof ShadowRealm").unwrap().value,
+            "function",
+            "harmony flag + host callback 任一缺失即 'undefined'"
+        );
+        assert_eq!(
+            sandbox
+                .execute(
+                    "var r = new ShadowRealm(); JSON.stringify([typeof r, typeof r.evaluate, typeof r.importValue])"
+                )
+                .unwrap()
+                .value,
+            r#"["object","function","function"]"#
+        );
+        // evaluate 同步返回完成值（primitive 直通）。
+        assert_eq!(
+            sandbox.execute("new ShadowRealm().evaluate('1 + 2')").unwrap().value,
+            "3"
+        );
+        // evaluate 返回的函数是 wrapped function——主 realm 直接调用、参数原样
+        // 传入新 realm。
+        assert_eq!(
+            sandbox
+                .execute(
+                    "var r2 = new ShadowRealm(); var wf = r2.evaluate('(function (a, b) { return a * b; })'); wf(6, 7)"
+                )
+                .unwrap()
+                .value,
+            "42"
+        );
+        // 非 primitive 返回值 → TypeError（wrapped value 契约）。
+        assert_eq!(
+            sandbox
+                .execute("try { new ShadowRealm().evaluate('({})'); 'no-throw'; } catch (e) { e.constructor.name; }")
+                .unwrap()
+                .value,
+            "TypeError"
         );
     }
 }

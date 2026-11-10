@@ -1,0 +1,66 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>zz-probe-boolface</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=/resources/testharness.js></script>
+<script src="/common/subset-tests.js"></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+// 2026-11-10 boolean 读面刀探针（挂账①：_zwVaSpecifiedValue boolean 命令
+// else 臂错读 background-color——记录/恢复九命令爬升对背景块返幻值，fb 溶解
+// 后 restore 五连幻载体；挂账②面：块级背景 carry 被 hilitecolor display 门挡）。
+// 语料条目格式直跑 runConformanceTest（与语料同 harness）。
+browserTests = [
+// 控制行（carry 刀已证面，修复前后都应绿）
+["<div style=color:blue>[foo]</div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"color:rgb(0, 0, 255)\">[foo]</p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+["<div style=color:blue><b>[foo]</b></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"color:rgb(0, 0, 255)\"><b>[foo]</b></p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+["<div style=color:blue><sub>[foo]</sub></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"color:rgb(0, 0, 255)\"><sub>[foo]</sub></p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+// 幻值恢复面（背景块 ± boolean 载体：修复前五条幻载体坏树 + 背景 carry 缺口）
+["<div style=\"background-color:yellow\">[foo]</div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"background-color:rgb(255, 255, 0)\">[foo]</p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+["<div style=\"background-color:yellow\"><b>[foo]</b></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"background-color:rgb(255, 255, 0)\"><b>[foo]</b></p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+["<div style=\"background-color:yellow\"><u>[foo]</u></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"background-color:rgb(255, 255, 0)\"><u>[foo]</u></p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+["<div style=\"background-color:yellow\"><s>[foo]</s></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"background-color:rgb(255, 255, 0)\"><s>[foo]</s></p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+["<div style=color:blue><em>[foo]</em></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<p>"]],
+ "<p style=\"color:rgb(0, 0, 255)\"><em>[foo]</em></p>",
+ [true,true,true],
+ {"formatblock":[false,false,"div",false,false,"p"]}],
+];
+try { document.execCommand("styleWithCSS", false, "true") } catch(e) {}
+browserTests.forEach(runConformanceTest);
+document.getElementById("test-container").parentNode
+    .removeChild(document.getElementById("test-container"));
+</script>

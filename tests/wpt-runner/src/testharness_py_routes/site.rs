@@ -621,6 +621,73 @@ pub(crate) fn route_beacon_inspect_header(
     }))
 }
 
+/// html/semantics/scripting-1/the-script-element/resources/cross-origin.py 臂——
+/// s383（html-semantics M2 切片 383）：script-crossorigin-network 车道。上游 1:1 移植：
+/// - 请求带 Origin 头 → ACAO=origin 回显 + ACAM=GET + ACAC=true（缺省不设）；
+/// - OPTIONS → 空体先行返回（CORS 头照设——上游先置头后判方法）；
+/// - Content-Type: text/javascript；体按 Cookie 头 milk 值选——缺省/milk≠1 →
+///   `var included = false;`，milk=1 → `var included = true;`。
+///
+/// cookie 送达面由 shim 附加 Cookie 头承载（part01 s383 臂——动态 classic 脚本按
+/// crossOrigin 推导 credentials mode，RFC 6265bis §5.4 判据；runner 无 jar，案内
+/// document.cookie 写入的 in-JS jar 经 `_zwCookieHeaderForUrl` 桥出请求头，路由只读
+/// 头不持案内态——与 cors-cookie.py 的 stash 自写先例不同源，上游 request.cookies
+/// 语义等价面）。css-module/text-module/json-module 三份 resources/cross-origin.py
+/// 为不同上游脚本（module 载荷 + ?id/?origin 参数），不在本臂 Exact 路径内。
+///
+/// <https://github.com/web-platform-tests/wpt/blob/master/html/semantics/scripting-1/the-script-element/resources/cross-origin.py>
+pub(crate) fn route_cross_origin_py(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let req_origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone());
+    if let Some(origin) = req_origin {
+        headers.push(("access-control-allow-origin".into(), origin));
+        headers.push(("access-control-allow-methods".into(), "GET".into()));
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+    }
+    if req.method == "OPTIONS" {
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    headers.push(("content-type".into(), "text/javascript".into()));
+    // 上游 request.cookies.first(b"milk")扫全部 cookie 对：None → false；
+    // value == "1" → true；余 → false。
+    let milk = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("cookie"))
+        .and_then(|(_, v)| {
+            v.split(';')
+                .filter_map(|pair| pair.trim().split_once('='))
+                .find(|(name, _)| name.eq_ignore_ascii_case("milk"))
+        })
+        .map(|(_, value)| value.trim().to_string());
+    let included = milk.as_deref() == Some("1");
+    let body = format!("var included = {};", included);
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }))
+}
+
 /// service-workers fetch-with-body-worker 臂——注册表切片三迁入，体逐字节保持。
 pub(crate) fn route_fetch_with_body_worker(
     _ctx: &PyEndpointCtx,

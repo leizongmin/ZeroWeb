@@ -7019,8 +7019,24 @@
     }
     // workers-compat M3：SharedArrayBuffer 拒绝克隆（spec serialize SAB 情形——
     // 非 cross-origin isolated 环境抛 DataCloneError；battery「Growable SharedArrayBuffer」
-    // catch 面 assert_false(self.crossOriginIsolated)。沙箱无 COI 面，恒走拒绝路径）。
+    // catch 面 assert_false(self.crossOriginIsolated)。沙箱无 COI 面，公开通道恒走
+    // 拒绝路径）。例外：真线程 worker 宿主通道（postMessage 宿主分支 `__zwSabChannel`
+    // 能力门置位 + `__zw_sab_export` 导出回调在位）——SAB 序列化为 `{"__zwSabRef": id}`
+    // token（test262 `$262.agent` 面跨 isolate 共享内存管线：主 isolate 经回调导出
+    // backing store，worker 派发侧物化同内存 SAB；seen 记忆化保单消息内同一对象）。
     if (typeof SharedArrayBuffer === 'function' && val instanceof SharedArrayBuffer) {
+      if (xfer && xfer.__zwSabChannel === true && typeof __zw_sab_export === 'function') {
+        var _sabStash = globalThis.__zwSabExports || (globalThis.__zwSabExports = {});
+        var _sabKey = 'k' + (_sabStash._zwSeq = ((_sabStash._zwSeq | 0) + 1));
+        _sabStash[_sabKey] = val;
+        var _sabId = Number(__zw_sab_export(_sabKey));
+        delete _sabStash[_sabKey];
+        if (!(_sabId > 0)) {
+          throw new _cloneDE('SharedArrayBuffer could not be cloned.', 'DataCloneError');
+        }
+        var sabTok = { __zwSabRef: _sabId };
+        seen.set(val, sabTok); return sabTok;
+      }
       throw new _cloneDE('SharedArrayBuffer could not be cloned.', 'DataCloneError');
     }
     // webmessaging-compat M2-P1：平台对象克隆保持类型（spec StructuredSerialize platform-object

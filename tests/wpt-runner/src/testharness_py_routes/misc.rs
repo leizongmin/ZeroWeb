@@ -93,6 +93,55 @@ pub(crate) fn route_dom_encoding(
     }))
 }
 
+/// encoding 资源 charset 端点族臂（wptfyi-runtime DC-2 encoding iframe 面）——
+/// unsupported-labels.window.js / single-byte-decoder-iframe.window.js 的 iframe
+/// 载体（wpt-data 无静态文件，上游是 wptserve Python 脚本）。两臂上游逐字等价：
+/// - text-plain-charset.py：`Content-Type: text/plain;charset={label}` + body
+///   "hello encoding"（supported label 面——传输 charset → document.characterSet）；
+/// - text-html-meta-charset.py：`Content-Type: text/html`（无 charset）+ body
+///   `<meta charset="{label}">hello encoding`（unsupported label 面——嗅探落空
+///   回落 fallback encoding）。
+///   https://github.com/web-platform-tests/wpt/blob/315976933870b34d6ea30e3f6643403edae678ba/encoding/resources/
+pub(crate) fn route_encoding_charset(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let label = percent_encoding::percent_decode_str(
+        path_part
+            .split_once('?')
+            .map(|(_, q)| q)
+            .unwrap_or("")
+            .split('#')
+            .next()
+            .unwrap_or(""),
+    )
+    .decode_utf8_lossy()
+    .split('&')
+    .find_map(|kv| kv.strip_prefix("label="))
+    .unwrap_or("")
+    .to_string();
+    let (content_type, body) = if clean.ends_with("text-html-meta-charset.py") {
+        (
+            "text/html".to_string(),
+            format!("<meta charset=\"{label}\">hello encoding"),
+        )
+    } else {
+        (format!("text/plain;charset={label}"), "hello encoding".to_string())
+    };
+    let mut headers = Vec::new();
+    headers.push(("content-type".into(), content_type));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }))
+}
+
 /// cache-storage vary.py 臂——注册表切片五迁入，体逐字节保持。
 pub(crate) fn route_sw_vary(
     ctx: &PyEndpointCtx,

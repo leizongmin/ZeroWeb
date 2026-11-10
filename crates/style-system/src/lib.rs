@@ -2947,6 +2947,44 @@ impl StyleSystem {
             resolved.display = zero_css_parser::values::DisplayValue::Block;
         }
 
+        // 9.2 whatwg/html#3748 / bugzil.la/2028130 收敛语义：select 内 option 的样式继承
+        //    父是 UA shadow tree 中 computed display:contents 的 slot（Chrome 恒 slot 化、
+        //    Firefox 2026-04 picker 落地后同；Emilio bug 内实测 Chrome classic 亦返回
+        //    contents），author `display:inherit` 在 option 上解析为 contents 而非继承
+        //    select 的 display 值。closed select 的不渲染面由 UA origin display:none
+        //    （R1679 suppress）独立承载——本步只改写显式 `inherit` 声明的胜出值，
+        //    无 author 声明时 UA none 胜出路径不变。optgroup 面无语料钉子，不在本步。
+        //    作用域限 select 祖先（谓词与 layout 侧 tree.rs 抑制臂同判据）：select 之外的
+        //    option（自由浮置等）继承父是真实父节点，`inherit` 语义不变。谓词挂在
+        //    tag+级联值双门之后，非热路径。driving: WPT select-option-display-inherit
+        //    （display:inherit → "contents" ×2 + closed 单选 option 零 gBCR——layout 侧
+        //    盒面抑制见 tree.rs build_subtree 汇聚点臂；与本步同 gate（R5346 纪律：
+        //    LazyLock 进程级单读）。
+        static SELECT_SUPPRESS_OPTIONS: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0"));
+        let in_select_ancestor = tag_name.as_deref() == Some("option")
+            && resolved_cascaded
+                .get("display")
+                .is_some_and(|v| v.trim().eq_ignore_ascii_case("inherit"))
+            && {
+                let mut cur = doc.parent_node(element);
+                let mut hit = false;
+                while let Some(pid) = cur {
+                    if let Some(n) = doc.get(pid)
+                        && let NodeKind::Element(pe) = &n.kind
+                        && pe.local_name().eq_ignore_ascii_case("select")
+                    {
+                        hit = true;
+                        break;
+                    }
+                    cur = doc.parent_node(pid);
+                }
+                hit
+            };
+        if *SELECT_SUPPRESS_OPTIONS && in_select_ancestor {
+            resolved.display = zero_css_parser::values::DisplayValue::Contents;
+        }
+
         // 9.5 R5049（css-sizing-4 §4.2 transferred size suggestion × R1679 select UA width
         // 兜底）：作者未声明 definite width 的 select，R1679 的 UA width 兜底是显式宽度
         // ——不参与比传送（ratio 失效），且作者 width:auto 会胜过它塌成 sliver

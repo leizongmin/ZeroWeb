@@ -702,6 +702,11 @@ pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
 /// TypeError，s103 补 `error_ctor` 形参）且元素照常 fire load（仅网络级取回失败才
 /// fire error）。元素按文档序 script 序号定位（extract_script_csp_info 同口径），
 /// 适配无 src 的内联模块（有 src 外链模块走 [`script_dispatch_script_event`]）。
+/// s381 勘根注记：deferred module 单元（s342 桶）的失败报告在 batch 尾槽位派发
+///（post-parse 相位，晚于全部 blocking classic——探针 zz_probe_s380h 实证
+/// `p1body → err → p1-catch`，promise_test 体微任务先于尾槽），时序本就 spec 同构，
+/// 「报告早于 listener 注册」假设证伪（deferred setTimeout 一拍反而破坏
+/// instantiation-error-6/7 与 error-type-1 的文档序交错，A/B 三案 P→F 实证回退）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
 pub fn script_report_module_failure(msg: &str, script_ordinal: usize, error_ctor: &str) -> String {
     let esc_msg = escape_js_string(msg);
@@ -745,6 +750,9 @@ pub fn script_report_module_failure_cached(
         .map(|k| format!("'{}'", escape_js_string(k)))
         .collect::<Vec<_>>()
         .join(",");
+    // s381 勘根注记：失败记账与可观察派发均保持同步（batch 尾槽位相位已 spec 同构，
+    // 见 [`script_report_module_failure`] s381 注记——deferred 一拍破坏 ie-6/7 与
+    // error-type-1 的元素 load/错误交错文档序，A/B 三案 P→F 实证回退）。
     format!(
         "(function(){{\
 globalThis.__moduleFailures=globalThis.__moduleFailures||{{}};\

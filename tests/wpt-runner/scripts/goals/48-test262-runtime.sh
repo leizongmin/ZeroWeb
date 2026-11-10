@@ -14,7 +14,10 @@
 # - third_party/test262/harness/*.js——用例 includes 引用的 harness 库
 #   （assert/sta/doneprintHandle 等常驻 + include 列表按文件引用）
 # - resources/test262/{test262-reporter,test262-provider}.js——上游 serve 包装器
-#   脚本（reporter 负例分类 + $262 provider），runner 折叠包装页内联消费
+#   脚本（reporter 负例分类 + $262 provider），runner 折叠包装页内联消费；
+#   provider 为 ZeroWeb runner 替换版（SAB 报告环形缓冲——test262-provider.js
+#   内注记），树外 test262-resource-overrides/ 覆盖下发（wpt-data 整树按需
+#   clone，树内改动会被 fetch 清掉）
 #
 # 变体记账（上游 serve.py + tools/manifest/sourcefile.py 逐字核对）：
 #   flags 含 module   → <name>.test262-module.html（dynamic import 包装）
@@ -57,8 +60,17 @@ else
 fi
 
 # 上游 serve 包装器脚本（reporter/provider）——runner 折叠包装页按同 pin 内联。
+# 本地覆盖目录（test262-resource-overrides/，入 git）存在同名文件则整份覆盖
+# 下发（几 KB 每次拷贝零成本，覆盖文件更新即生效，无需 FORCE）；缺省拉上游
+# 原样。
 for resource in resources/test262/test262-reporter.js resources/test262/test262-provider.js; do
-  fetch_raw "${resource}"
+  override="${SCRIPT_DIR}/../../test262-resource-overrides/$(basename "${resource}")"
+  if [[ -f "${override}" ]]; then
+    mkdir -p "${WPT_DATA}/$(dirname "${resource}")"
+    cp "${override}" "${WPT_DATA}/${resource}"
+  else
+    fetch_raw "${resource}"
+  fi
 done
 
 echo "== 语料盘点 =="

@@ -1665,6 +1665,8 @@
   **GB-20261012 48h 跟进已发（一次性，最终）**（msg `om_x100b63fa85cd9ca8b4b72b65b926c36`）：
   仍零回复——不回复即默认维持挂账，此后不再催办。
 
+> **2026-11-10 goal-blockers 巡检（GB-20261110）——⑥ 补征询已发**：决策清单现状核对（①-⑤ 征询在途无批复、零变化；**⑥ = UA p margin 逻辑化 + 竖排块流边距折叠机制**，R5467/R5468 2026-11-08 定谳入册）——**⑥ 此前从未征询，本轮首次飞书征询已发**（msg `om_x100b6006c4f550a4c301f0854d5e1ff`，2026-11-10 22:2x；事项 = 物理 `margin:1em 0` vs chromium 逻辑 `margin-block` 结构性失配 16/48px + vertical_block_flow 无 collapse 两深结构缺口；建议 = 批准则归因探针先行 + 独立修复轮带 kill-switch + corpus 全窗 A/B，不批则 vrl 族按非 strict 带记账不阻塞轻量修复）。**GB-20261109 巡检漏检纠偏**：其台账记「rendering 决策清单 ①-⑤ 维持无新增」，实为 ⑥ 已于 11-08 22:55（`6da0cef4f`）入册而未被该轮扫描捕获——本轮补正并完成首征询。
+
 ### 轻量修复候选
 
 **当前活跃轻量主线 = CSS 合规缺口定向 code-reading probe（多 vein 并行）**。R2373-R2383 连续 11 lever **彻底推翻 R2372「双路径穷尽」结论**，跨多 vein：(1) color-mix 标准空间补全+feature 收官（R2376-R2378 空间 + R2381 hue method）；(2) **CSS 属性 value-级 parse-gap vein**（R2379 outline-style:auto、R2380 aspect-ratio、R2382 justify-items/self left/right、R2383 alignment normal）；(3) CSS Color 系统色/单位/gradient-hint（R2373-R2375）。

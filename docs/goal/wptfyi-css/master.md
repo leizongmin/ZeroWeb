@@ -5,20 +5,50 @@
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
-**卡点**：无阻塞。Typed OM API 面整体未实现是最大单点（12.8k，Chrome 过
-94%）；grid 布局几何断言 ~2.7k 归口布局流（协作规则记归属）。
-**下一步**：DC-2 首批落地 Typed OM API 入口面（CSS 命名空间工厂 +
-CSSStyleValue 类族 + StylePropertyMap + `Element.computedStyleMap()`，新
-shim part + 回调桥）；次批 color-mix() computed value 通路（color 目录单簇
-7,199）；再批未 fetch 目录语料扩面（transitions/animations/om-view/
-view-transitions/geometry/properties-values-api 等 ~8.1k）。
+**DC-2 首批完成**：Typed OM API 入口面（part10 ~1,810 行：CSSStyleValue
+类族 + CSS 工厂 + StylePropertyMap + attribute/computed/rule styleMap +
+225 属性语法表；part06 styleMap 挂钩）——css-typed-om 簇全量重跑
+**Pass 25 → 9830**（365 页，65 页零失败），残余 2,383 归四桶（简写长槽
+缺面/computed 颜色管线/computed transform/`.any.js` 通道）。
+**DC-2 次批完成**：css-color declared/computed 通路（part11 色值管线接线 +
+part06 null 即拒 + part01 computed `has` 陷阱/宿主抢答覆盖）——css-color 簇
+62 页 **Pass 1,293 → 7,229**（+5,936），逐页不降核对 33 增/28 平/1 回归
+（relative-color -14 记账，次批后半恢复）；T48 五钉 Blink 对齐翻正。
+**DC-2 次批后半完成**：computed 真色彩数学管线（part11-computed-color.js
+1,871 行接线：13 空间全精度矩阵/relative color 解析/color-mix 混合/none
+策略/序列化）+ part03 raw 影子/part01c raw 读取分流 + NeedsPlain 关键字
+排除——css-color 簇 63 页 **Pass 7,229 → 9,318**（+2,089），逐页不降
+**9 增/54 平/0 回归**（前轮 -14 豁免页恢复持平，computed-relative 0→1,100、
+computed-mix 0→930）。
+**DC-2 再批完成**：declared 声明面归一（part11-computed-color.js 覆盖段
++527/-17：relative origin 折叠/color-mix method 与权重规范化/calc 规范形/
+rest alpha 行为表/浅面基座委托）——css-color 簇 63 页 **Pass 9,318 →
+10,530**（+1,212），逐页不降 **2 增/61 平/0 回归**（contrast 透传修复后
+恢复）。
+**DC-2 四批完成**：语法面收批（part11-computed-color.js +205/-3：relative
+通道表槽类型校验/color-mix hue 方法空间门/alpha() 声明面/color-layers
+声明面与 computed 入口）——css-color 簇 63 页 **Pass 10,530 → 10,756**
+（+226），逐页不降 **5 增/58 平/0 回归**（cc7 校验过严 -20 回归修正后）。
+残余 254 归三桶：computed 校验/序列化残余（relative 69、rgb 21 等）、
+light-dark 32、system-color 55。
+**DC-2 语料扩面批完成**：DC-1 缺语料桶 13 目录一次接线（41-sh DIRS 扩面 +
+runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makefile
+守卫 target + ci-shards css-v2-face-d 分片，提交 0d66d7997），全量 missing=0
+（pin 315976933，blob sha 逐文件复核）。基线记录轮 13 corpus **8,562 子测试
+/ Pass 1,381**（transitions 185 / om-view 545 / geometry 209 / animations 225
+等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
+WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
+**卡点**：无阻塞。
+**下一步**：`.any.js` 变体通道收口（typed-om 11 文件已补拉到位，runner 侧
+改动在途）；DC-3 全量对账（需最终 HEAD 新周跑——42801058132 已完成但
+HEAD 3bfccdfa3 不含 color 簇三批增量）；light-dark/system-color 建模。
 
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 进行中 | 首批 Typed OM API 入口面；失败聚类见 DC-1 evidence |
+| DC-2 按簇收敛 | 五批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381 |
 | DC-3 全量对账 | 待执行 | 验收线 182,392 项通过，同 revision 周跑产物待补 |
 
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。

@@ -73,6 +73,21 @@ pub fn form_control_selectors_doc(doc: &Document, form_selector: &str) -> Vec<St
         .collect()
 }
 
+/// 解析期 form 元素指针关联查询：控件的 owner form 唯一选择器（无关联返空串）。
+/// 供 shim `.form` getter 在本地 form 属性/祖先两路落空后的兜底——指针位覆盖
+/// 表格 foster-parented `<form>`（form 是 table 的兄弟，非控件祖先）与被隐式闭合
+/// `<form>` 的指针残留（HTML §13.2.4.4 form element pointer）。form 属性与祖先
+/// 关联 shim 本地已判（`_zwFormGet`），本桥仅补指针位。
+pub fn parse_form_owner_selector_doc(doc: &Document, control_selector: &str) -> String {
+    let Some(control) = find_by_selector(doc, control_selector) else {
+        return String::new();
+    };
+    let Some(owner) = form_owner_node(doc, control) else {
+        return String::new();
+    };
+    unique_selector_for_node(doc, owner).unwrap_or_default()
+}
+
 /// 返回目标 radio 同组中当前 checked 项的唯一选择器。
 ///
 /// 无 name 的 radio 只与自身成组；无选中项返回 `None`。

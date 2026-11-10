@@ -1,5 +1,6 @@
 //! WPT testharness runner and minimal testdriver adapter for HTML interactions.
 
+use crate::test262_worker_host;
 use crate::wpt_file_loader::read_corpus_to_string;
 use std::collections::HashMap;
 use std::path::Path;
@@ -4773,6 +4774,21 @@ fn encoding_case_skipped(relative: &str, source: &str) -> bool {
     if relative.contains("/resources/") {
         return true;
     }
+    // wptfyi-runtime DC-2（encoding iframe 面）：4 个 .window.js 源的 iframe
+    // 管道已通（py-routes charset 端点族 + shim fallback-encoding 父继承 +
+    // Text*Stream），放行执行——unsupported-labels / single-byte-decoder-iframe
+    // 靠 charset 端点，streams/realms + invalid-realm 靠 srcdoc iframe + 跨
+    // realm 构造面。其余 iframe/worker 依赖面维持既有 skip 账（.any.js window
+    // 变体分母不动）。
+    if matches!(
+        name,
+        "unsupported-labels.window.js"
+            | "single-byte-decoder-iframe.window.js"
+            | "realms.window.js"
+            | "invalid-realm.window.js"
+    ) {
+        return false;
+    }
     source.contains("document.characterSet")
         || source.contains("<meta charset")
         || source.contains("rel=match")
@@ -4917,7 +4933,10 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                 // dedicated worker 腿，上报 `.any.worker.js` 键（对账映射
                 // `.any.worker.html` 分母变体）。分道判定（缺省双变体 /
                 // worker token 语义）见 [`crate::testharness_workers::dedicated_worker_variant`]。
-                if options.worker_variants && crate::testharness_workers::dedicated_worker_variant(&source) {
+                if options.worker_variants
+                    && file_name.ends_with(".any.js")
+                    && crate::testharness_workers::dedicated_worker_variant(&source)
+                {
                     let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
                     let results = crate::testharness_workers::run_any_js_dedicated_case_as(
                         wpt_root,
@@ -5054,6 +5073,11 @@ pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
         &[],
         CorpusRunOptions {
             worker_variants: true,
+            // wptfyi-runtime DC-2（encoding iframe 面）：`.window.js` 形态开（
+            // net-api M1a 门同款）——encoding 域仅 4 源（unsupported-labels /
+            // single-byte-decoder-iframe / streams/realms / streams/invalid-realm），
+            // 其余通道账分母不动。
+            extra_forms: true,
             ..CorpusRunOptions::default()
         },
     )
@@ -9234,6 +9258,9 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 与 script fetcher（check-cookie.py 模块取回面）两闭包同一 Arc，每案新建
     //（跨案泄漏面自清，同 [`ServeCustomResponseState`] 案级口径）。
     let cred_cookies: CredentialCookieStash = std::sync::Arc::default();
+    // test262 `$262.agent` 面案级 worker 终结：回收上一案的宿主 worker 表（agent
+    // 忙等自旋线程不跨案存续；宿主未装填的非 test262 通道零操作）。
+    test262_worker_host::terminate_all();
     let mut webview = WebView::new(WebViewConfig {
         width: 800,
         height: 600,
@@ -9875,6 +9902,12 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         }
 
         let _ = webview.poll_service_worker_runtime_events();
+        // test262 `$262.agent` 面真线程 worker 事件排空：宿主线程 8ms 泵积事件转
+        // 派发脚本，此处逐条 execute 派发（队空零开销——非 test262 通道/无 worker
+        // 页面无脚本；agent 报告走 SAB 环形缓冲不走消息，事件面仅 error 等偶发）。
+        for dispatch_script in test262_worker_host::take_dispatch_scripts() {
+            let _ = webview.execute_script(&dispatch_script);
+        }
         // R3254-KP4：帧驱动 rAF 派发（opt-in）——每轮 probe 一帧，时间戳取 case 启动
         // 起的墙钟 ms（spec DOMHighResTimeStamp 单调；shim `__zw_raf_tick` 在 OFF 时
         // 早返零开销）。rAF 内重注册进下一帧队列（shim 快照语义）。

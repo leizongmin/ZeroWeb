@@ -2394,10 +2394,29 @@
     try {
       var _r141Name = (typeof charsetLabel === 'string' && charsetLabel) || null;
       if (!_r141Name) {
-        var _r141M = /<meta[^>]+charset\s*=\s*["']?\s*([^"'>\s]+)\s*["']?/i.exec(String(markup || ''));
-        if (_r141M) _r141Name = _zwEncodingFromLabel(_r141M[1], true);
+        // 引号内空格保留（quoted 值含空格的 label——unsupported-labels.window 的
+        // "iso-8859-8 visual" 判据面：整值 label 表查找落空→fallback，旧首 token
+        // 截断会误解析为 supported "iso-8859-8"）。引号形态与 part01 传输
+        // charset 提取同构。
+        var _r141M = /<meta[^>]+charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^"'>\s]+))\s*["']?/i.exec(String(markup || ''));
+        if (_r141M) {
+          var _r141Raw = _r141M[1] != null ? _r141M[1] : (_r141M[2] != null ? _r141M[2] : _r141M[3]);
+          _r141Name = _zwEncodingFromLabel(_r141Raw, true);
+        }
       }
-      if (!_r141Name) _r141Name = 'windows-1252';
+      if (!_r141Name) {
+        // spec determine-fallback-encoding（encoding sniffing algorithm 落空分支）
+        // ：browsing context 子文档回落**同源祖先文档编码**（wptfyi-runtime DC-2
+        // unsupported-labels.window 判据——不可识别 label 继承父文档 UTF-8）；
+        // 顶层（无父）保持 windows-1252。近似：以主页文档代表最近同源祖先
+        // （目标语料均 depth-1；嵌套链祖先回溯待真实 frame 树——FIXME）。
+        try {
+          var _r141Fb = globalThis.document && globalThis.document.characterSet;
+          _r141Name = (typeof _r141Fb === 'string' && _r141Fb) || 'windows-1252';
+        } catch (_e141fb) {
+          _r141Name = 'windows-1252';
+        }
+      }
       Object.defineProperty(doc, 'characterSet', { configurable: true, get: function () { return _r141Name; } });
       Object.defineProperty(doc, 'charset', { configurable: true, get: function () { return _r141Name; } });
       Object.defineProperty(doc, 'inputEncoding', { configurable: true, get: function () { return _r141Name; } });
@@ -5095,25 +5114,31 @@
       // `error.constructor === w.TypeError` 由 report 侧用主 TypeError 构造满足
       //（_zwRealmError 印记 win 上的 TypeError 即主转发，constructor 恒等）。
       TypeError: globalThis.TypeError,
-      // R187（js-dom M4）：Proxy 转发 + revocable 印记——`eventListenerGlobalObject.Proxy
-      // .revocable(...)` 的 proxy 产物印记 `_zwRealmWin`（WPT cross-realm #4/#5：revoked
-      // Proxy 作为 listener，TypeError 须上报到 iframe realm win）。
+      // R187（js-dom M4）＋ s376 修正：Proxy **可调用/可构造**转发——旧包装仅
+      // { revocable }（普通对象非函数），`new w.Proxy(t, h)` 报
+      // "Proxy is not a constructor"（test262 Proxy/apply|construct/arguments-realm
+      // 簇实证）。构造产物与 revocable 产物同款 realm 印记 + __zwRealmOf 注册表
+      // （revoke 后属性 Get 抛、印记不可读时派发点经 Map 反查创建 realm）。
       Proxy: (function () {
-        var P = {
-          revocable: function (target, handler) {
-            var r = globalThis.Proxy.revocable(target, handler);
-            try { r.proxy._zwRealmWin = win; } catch (_e187p) {}
-            // R187：realm 注册表——proxy revoke 后属性 Get 抛（印记不可读），Map 键
-            // 引用不触 trap，派发点 stamp 读取失败时经 __zwRealmOf 反查创建 realm。
-            try {
-              if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
-              globalThis.__zwRealmOf.set(r.proxy, win);
-            } catch (_e187m) {}
-            return r;
-          },
+        function BoundProxy(target, handler) {
+          var p = new globalThis.Proxy(target, handler);
+          try {
+            p._zwRealmWin = win;
+            if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+            globalThis.__zwRealmOf.set(p, win);
+          } catch (_e187px) {}
+          return p;
+        }
+        BoundProxy.revocable = function (target, handler) {
+          var r = globalThis.Proxy.revocable(target, handler);
+          try { r.proxy._zwRealmWin = win; } catch (_e187p) {}
+          try {
+            if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+            globalThis.__zwRealmOf.set(r.proxy, win);
+          } catch (_e187m) {}
+          return r;
         };
-        try { P.revocable.prototype = globalThis.Proxy.revocable && globalThis.Proxy.revocable.prototype; } catch (_e187q) {}
-        return P;
+        return BoundProxy;
       })(),
       // R140（js-dom M4）：EventTarget 构造器（WPT Event-dispatch-throwing-multiple-globals
       // 的 `new w2.EventTarget()`——iframe win 的跨 realm 事件目标面）。
@@ -5188,6 +5213,40 @@
         if (typeof _r181Ctor === 'function') win[_r181Table[_r181Tag]] = _r181Ctor;
       }
     } catch (_e181w) {}
+    // s376（wptfyi-runtime DC-2）：JS 内建转发面——$262.createRealm().global 的 JS
+    // 内建存在性缺口（test262 eval/intrinsics 簇 ~50 案「eval/ArrayBuffer/[TA.name]
+    // is not a function/constructor」「g.eval is not a function」——模拟 iframe win
+    // 此前仅 DOM 构造器转发，JS 内建不在 win 对象上，with(window) 脚本取内建走
+    // 实际作用域链穿透）。R187 同款**转发本体**（主 realm 同一引用——instanceof/
+    // constructor identity 断言面自然成立；跨 realm intrinsic distinctness 与
+    // per-realm 默认 this 案不支持，维持单 realm 近似既定边界）。eval 为域内
+    // scoped 形态：with(win) 直接 eval——var/function 声明落 win（真实 realm
+    // indirect eval 的「var 落 realm 全局」近似；严格模式 eval 自建环境不落 win，
+    // spec 同）。性能：纯属性挂接，字面量已定义面（Object/Function/Array/
+    // Error/TypeError）不覆盖。
+    // https://tc39.es/ecma262/#sec-performeval
+    try {
+      win.eval = function (src) {
+        return new Function('window', '__zwRealmEvalSrc', 'with(window){ return eval(__zwRealmEvalSrc); }')(win, src);
+      };
+      var _zwRealmIntrinsics = [
+        'Reflect', 'Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef',
+        'FinalizationRegistry', 'Promise', 'ArrayBuffer', 'SharedArrayBuffer',
+        'DataView', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array',
+        'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
+        'BigInt64Array', 'BigUint64Array', 'Atomics', 'JSON', 'Math', 'RegExp',
+        'Date', 'Number', 'String', 'Boolean', 'Symbol', 'BigInt', 'RangeError',
+        'ReferenceError', 'SyntaxError', 'EvalError', 'URIError', 'AggregateError',
+        'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent',
+        'decodeURIComponent', 'encodeURI', 'decodeURI', 'structuredClone',
+        'TextEncoder', 'TextDecoder', 'Intl', 'ShadowRealm',
+      ];
+      for (var _zwRi = 0; _zwRi < _zwRealmIntrinsics.length; _zwRi++) {
+        var _zwRName = _zwRealmIntrinsics[_zwRi];
+        if (win[_zwRName] !== undefined) continue;
+        if (globalThis[_zwRName] !== undefined) win[_zwRName] = globalThis[_zwRName];
+      }
+    } catch (_e376w) {}
     // R356（js-dom M1 L2-d3d-r2 前置切片）：iframe realm 的 **timer 面**——
     // 子文档脚本（common.js 的 `setTimeoutToWindow`、事件时序用例的定时延迟）
     // 经 iframe window 调 setTimeout/clearTimeout，旧 win 无此名 "not a
@@ -14790,9 +14849,17 @@
       try {
         var listed = __zw_form_controls(sel);
         if (listed) {
+          // s390b 同树门（HTML §13.2.6.1 step 21 同树约束）：host 列表按解析期指针
+          // 侧表收集，引擎视图是原始标记重解析、不感知 JS 视图同 turn 移除——脚本
+          // 解析中途移除 owner form 后，指针关联控件不得再入 elements/named items
+          //（WPT form_owner_and_table_2 `f['image1']` 面）。owner 与控件 live 根
+          // 不同树即丢弃；同树（form= 跨树关联、detached 双离树 R4005 案）保持原
+          // 行为。owner 根取不到（wrap 异常）不设门，保守沿用旧行为。
+          var fcFormRoot = _zwLiveTreeRoot(sel ? _wrapSelector(sel) : _makeProxy(null, handle));
           var arr = listed.split('|').filter(Boolean).map(_zwQueryWrapIdentity);
           for (var hi = 0; hi < arr.length; hi++) {
-            if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1) push(arr[hi]);
+            if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1
+                && (!fcFormRoot || _zwLiveTreeRoot(arr[hi]) === fcFormRoot)) push(arr[hi]);
           }
         }
       } catch (_e) {}
@@ -17294,6 +17361,41 @@
     }
   })();
 
+  // ShadowRealm.prototype.importValue 的 exportName 字符串先行校验（ShadowRealm
+  // 提案 §ShadowRealm.prototype.importValue 步 4：IsString 检查在 ToString
+  // 之前——非 string 直接 TypeError，不触发 toString）。V8
+  // --harmony-shadow-realm 内核实现先 ToString 再检（旧草案顺序），
+  // test262 throws-if-exportname-not-string 以 toString 调用计数钉当前顺序。
+  // descriptor/name/length 三断言面（w/e/c、own name/length）逐字保留。
+  // https://tc39.es/proposal-shadowrealm/#sec-shadowrealm.prototype.importvalue
+  (function () {
+    if (typeof ShadowRealm !== 'function' || !ShadowRealm.prototype) return;
+    var _zwIvOriginal = ShadowRealm.prototype.importValue;
+    if (typeof _zwIvOriginal !== 'function') return;
+    // 方法简写（ES2015）：无 [[Construct]] 槽——not-constructor 断言面
+    // （isConstructor 助手经 new 探测，普通函数表达式可构造即假）。
+    var _zwIvHolder = {
+      importValue(specifier, exportName) {
+        // 步序对齐（步 3 → 步 4）：非 string exportName 亦先 ToString(specifier)
+        //（其 abrupt——Test262Error 之类——优先传出，valueOf/toString 调用恰一
+        // 次），再 TypeError。Object.create(null) 无继承 toString 面——
+        // String() 与规范 ToString 同走 ToPrimitive(hint string)。
+        if (typeof exportName !== 'string') {
+          specifier = String(specifier);
+          throw new TypeError('importValue: exportName must be a string');
+        }
+        return _zwIvOriginal.call(this, specifier, exportName);
+      },
+    };
+    var _zwIvPatched = _zwIvHolder.importValue;
+    // name/length own 面落位（方法简写推断值同字面——仅可写性收口为规范
+    // {writable:false}）；w/e/c 与 name/length 断言面逐字保留。
+    Object.defineProperty(_zwIvPatched, 'name', { writable: false });
+    Object.defineProperty(_zwIvPatched, 'length', { writable: false });
+    Object.defineProperty(ShadowRealm.prototype, 'importValue',
+      { value: _zwIvPatched, writable: true, enumerable: false, configurable: true });
+  })();
+
   // NPO backing + iframe 名 live 扫描（gen 缓存防热路径：未命中名的 unqualified/global
   // 读每次都走到 NPO，无缓存则每次 querySelector 级开销）。backing = 无原型对象，
   // 值一律经 trap 合成描述符，绝不落 target own（Chrome 实测 gPN(npo) 不含 named
@@ -19047,6 +19149,13 @@
         : (transfer === null ? undefined : transfer));
     _zwValidateTransferList(transferList, null);
     var _xfer = { orig: transferList.filter(_zwIsMessagePort), clones: [] };
+    // SAB 通道能力门（test262 `$262.agent` 面跨 isolate 共享内存管线）：宿主分支
+    //（真线程 worker，与下方 JSON 投递分叉同条件）置位——SAB clone 产
+    // `{"__zwSabRef": id}` token 随 JSON 载荷过桥；same-realm 分支不置位（SAB
+    // clone 维持 DataCloneError——structured-clone battery 钉面）。
+    if (this._zwHostId != null && typeof __zw_worker_host_op === 'function') {
+      _xfer.__zwSabChannel = true;
+    }
     var data = typeof structuredClone === 'function' ? structuredClone(message, { __zwXfer: _xfer }) : message;
     var ports = Object.freeze(_zwConsumeTransferList(transferList, null, _xfer));
     _zwDetachTransferables(transferList);

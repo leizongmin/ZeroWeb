@@ -270,6 +270,20 @@ shards:
     fetch_scripts: ""
     time_limit: 3600
     job_timeout: 210
+  # wptfyi-css goal DC-2 语料扩面 13 套件（DC-1 缺语料桶接线）：体量以
+  # animation/transitions/om-view 为主（chrome 分母 ~8-12k 子测试），
+  # time_limit 3600 同 v2 片；CI 实跑超预算再按 form-encode 先例拆。
+  # fetch d 片白名单同款 41 号脚本 CSS_FETCH_ONLY（cssom-view / geometry
+  # 无 css- 前缀，分片脚本显式映射臂）。
+  - name: css-v2-face-d
+    suites: >-
+      css-transitions css-animations cssom-view css-view-transitions geometry
+      css-properties-values-api css-highlight-api css-page css-scroll-anchoring
+      css-scrollbars css-overscroll-behavior css-navigation css-parser-api
+    fetch: "fetch-wpt-css-testharness-v3"
+    fetch_scripts: ""
+    time_limit: 3600
+    job_timeout: 210
   - name: sec
     suites: "csp mixed-content secure-contexts"
     fetch: "fetch-wpt-security-csp"

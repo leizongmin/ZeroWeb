@@ -678,6 +678,14 @@ is_isolated_bidi: style.is_some_and(|s| {
                             // 由 caller 注入集判定（同 vertical_walk_nodes 模式）。
                             || self.display_none_walk_nodes.contains(&child_id)
                             || (styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()))
+                            // s387：select 抑制臂（layout 趟；Path B 行为保持不变，
+                            // 同 R4321 option/optgroup 排除口径）——author display 声明
+                            // 覆盖 R1679 UA none 后 option 经 IFC 收集物化元素键控盒
+                            //（contents/inline 形态），跳过收集与下降（R1679 语义：
+                            // option 不入 IFC，标签由 paint_select_value 显式绘制）。
+                            || (!styles.is_empty()
+                                && runtime_flags::select_options_suppress()
+                                && is_select_control_descendant(doc, child_id))
                         {
                             continue;
                         }
@@ -2847,6 +2855,31 @@ fn atomic_boundary_char_gl(
             _ => return false,
         }
         cur = if forward { doc.next_sibling(sid) } else { doc.previous_sibling(sid) };
+    }
+    false
+}
+
+/// s387：option/optgroup 元素且祖先链含 `<select>`（select 抑制谓词，与 tree.rs
+/// build_subtree 汇聚点臂同判据；消费点见 collect walk 的 select 抑制臂——
+/// whatwg/html#3748 收敛语义，`runtime_flags::select_options_suppress` gate）。
+fn is_select_control_descendant(doc: &Document, id: NodeId) -> bool {
+    let is_control_tag = doc.get(id).is_some_and(|n| {
+        matches!(&n.kind, NodeKind::Element(e) if {
+            let name = e.local_name();
+            name.eq_ignore_ascii_case("option") || name.eq_ignore_ascii_case("optgroup")
+        })
+    });
+    if !is_control_tag {
+        return false;
+    }
+    let mut cur = doc.parent_node(id);
+    while let Some(pid) = cur {
+        if doc.get(pid).is_some_and(|n| {
+            matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select"))
+        }) {
+            return true;
+        }
+        cur = doc.parent_node(pid);
     }
     false
 }

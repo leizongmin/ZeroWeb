@@ -52,14 +52,24 @@
   // SLC 溶解声明收割（2026-11-10 数据丢失刀，见 apply unwrap 臂 carry 注）：
   // 只收四值命令——forecolor/hilitecolor/fontsize/fontname 的 specified 读面
   // 直读对应 style/font 声明；boolean 命令（bold/italic/underline/strikethrough/
-  // subscript）specified 读面会错读他族声明（hilite 形探针 bold=yellow 实证），
-  // 不入收割（其 vals2 restore 维持 spec 行为不变）。
+  // subscript）不入收割——Chrome carry 面只转移值声明，boolean 载体按 spec
+  // record/restore 行为走（读面 else 臂错读已于 boolean 读面刀在 part01d
+  // 修为族内正确读，此处维持不收）。
   function _zwFbqHarvestBlockValues(block) {
     var out = [];
     var carryCmds = ['forecolor', 'hilitecolor', 'fontsize', 'fontname'];
     for (var i = 0; i < carryCmds.length; i++) {
       var val = null;
       try { val = _zwVaSpecifiedValue(block, carryCmds[i]); } catch (_eFbqH) {}
+      // hilitecolor 的 spec 读面对块级返 null（display 门，见 part01d :209），
+      // 但 Chrome fb carry 面转移被替换块的内联声明不分 display——背景块形
+      // 直读 plain 声明补收割（fbl2 面谱 background 全丢 + boolface 探针
+      // bf1 双空 span 实证；语料无背景 fb 行，探针面断言）。
+      if (val === null && carryCmds[i] === 'hilitecolor') {
+        try {
+          val = _zwPlainDecl(block, 'background-color') || null;
+        } catch (_eFbqH2) {}
+      }
       if (val !== null) out.push([carryCmds[i], val]);
     }
     return out;
@@ -215,9 +225,20 @@
           anc2 = anc2.parentNode;
           continue;
         }
+        // Chrome delta（per-paragraph 不合并刀，2026-11-10）：成员为非
+        // wrap-only SLC（p/h1-6/div/pre/address 等）时不剔除——Chrome 对块
+        // 成员作原位换块（`<blockquote><p>[foo]<p>bar</blockquote><p>extra`
+        // + <blockquote> 录音 `<blockquote><blockquote>[foo]</blockquote>
+        // <p>bar</p></blockquote>...`，formatblock.js :698），剔除会照树
+        // no-op。该臂原意 = 裸 text/内联成员防双包（:1784 列表爬升形成员为
+        // text，剔除保持）；SLC 成员放行走尾环溶解臂原位重 wrap（:134
+        // div+div 幂等同树不变）。wrap-only（xmp/listing）维持剔除（防双包
+        // div>div>xmp，无语料行，探针 zz-probe-fbpara K8 锚）。
         if (_zwJusIsHtmlElement(anc2, v)
             && _zwJusIsEditable(anc2)
-            && _zwListInSameEditingHost(anc2, nodeList[i])) {
+            && _zwListInSameEditingHost(anc2, nodeList[i])
+            && !(_zwFbqIsNonListSingleLineContainer(nodeList[i])
+                 && !_zwFbqIsWrapOnlyBlock(nodeList[i]))) {
           nodeList.splice(i, 1);
         }
         break;
@@ -264,6 +285,48 @@
             if (node.parentNode !== prevP) keep = true;
             break;
           }
+          // Chrome delta（div>p 摆位刀，2026-11-10）：vetoed formattable 直亲
+          //（node 直属该块、块含 prohibited 后代——spec splitParent 爬升在此
+          // 刹车）且新块 tag 为其允许子时，Chrome 段落摆位把部分覆盖段落的
+          // 替换块落块侧旁而非块内——**内联成员** splitParent 外提后 wrap 落
+          // 宿主层（`<div>[foo<p>bar]</p></div>` + <p> 录音 `<p>[foo</p><div>
+          // <p>bar]</p></div>`，formatblock.js :1754/:1759 双 dps 变体）。三道
+          // 防线（TRACE 实证首轮三缺陷后定谳）：
+          // **直亲门**——node 与 anc 之间隔 barrier（td 等，如 `<div><table>
+          // <tr><td>[foo]</table></div>` 录音 div 落 td 内 :1794）时 splitParent
+          // 只拆直亲链，跨 barrier 外提=表格撕裂（首轮 F2P=0 + 表格 P2F ×2
+          // 实证），非直亲不外提维持 spec 停；**块成员门**——node 为块级成员
+          //（blockExtend 后选区含整个 SLC 块时该块本身入 nodeList，探针
+          // TRACE：afterFilter=[foo,<p>]）不外提——外提会连锁拆壳（splitParent
+          // move-out 臂移出成员 + 空壳删除→被替换块整体消失，首证 got
+          // `<p>foo</p><p>bar</p>` 丢 `<div><p>bar</p></div>` 录音形）；块成员
+          // 留位走尾环 SLC 溶解臂，溶解在原块内重 wrap 产出 `<div><p>bar</p>
+          // </div>` 录音形；**值门**——该成员 recordValues 有非 null 值
+          //（styled 块 forecolor 等）时 restore 会落内联载体，外提后载体×
+          // wrap×fixDisallowed 链丢内容（`<div style=color:blue>[foo<p>bar]
+          // </div>` 探针 foo 失踪实证），有值成员维持 spec 停。
+          // 新块非允许子形（h1→p 外壳）不外提维持 spec 停——fixDisallowed
+          // 允许子臂拆父产出合并录音形（`<p>[foo<p>bar]` + h1 →
+          // `<h1>[foo<br>bar]</h1>`，:1744 现行绿面；h1∉p 允许子为判据分野）。
+          if (!_zwJusIsEditingHost(anc)
+              && node.parentNode === anc
+              && _zwJusIsInlineNode(node)
+              && _zwJusIsEditable(anc)
+              && _zwListInSameEditingHost(anc, node)
+              && _zwJusIsHtmlElement(anc, _zwFbqFormattableNames)
+              && _zwFbqHasProhibitedParagraphChildDescendant(anc)
+              && _zwJusIsAllowedChild(v, _zwJusTag(anc))) {
+            var fbqHasVals = false;
+            for (var vi = 0; vi < values.length; vi++) {
+              if (values[vi][0] === node && values[vi][2] !== null) { fbqHasVals = true; break; }
+            }
+            if (!fbqHasVals) {
+              var prevP2 = node.parentNode;
+              _zwListSplitParent([node]);
+              if (node.parentNode !== prevP2) keep = true;
+            }
+            break;
+          }
           anc = anc.parentNode;
         }
       }
@@ -274,6 +337,9 @@
 
     // "While node list is not empty: ..."（single-line container 解包臂 ∨
     // 连续 sibling 聚 sublist 后 wrap）。
+    // per-paragraph 不合并刀（2026-11-10）：本次 apply 已产出新块登记表——
+    // sibCrit 合并只对自产邻居放行（v2，见下方 sibCrit 注）。
+    var fbqCreated = [];
     while (nodeList.length) {
       var sublist;
       // "If the first member of node list is a single-line container: ..."
@@ -333,25 +399,48 @@
           sublist.push(nodeList.shift());
         }
       }
-      // "Wrap sublist. If value is "div" or "p", sibling criteria returns
-      // false; otherwise it returns true for an HTML element with local name
-      // value and no attributes, and false otherwise. ... Then fix disallowed
-      // ancestors of the result."
+      // Chrome delta（per-paragraph 不合并刀 v2，2026-11-10）：sibCrit 只对
+      // 本次 apply 产出的邻居块合并——v1 恒 false 被门禁批打回（fb 主门
+      // P2F=7）：跨段部分选择行（`<p>[foo</p>bar]` + <h1> 录音单块合并形
+      // `<h1>[foo<br>bar]</h1>`，formatblock.js :1734/:1739 等 ×6）与全覆盖
+      // 双段行（`<p>[foo<p>bar]<p>baz` + <blockquote> 的 qV-after 面绑合并
+      // 形，:708，SLC 分组条件使 p1/p2 各自成 sublist、聚合全靠 sibCrit）
+      // 的绿面依赖分段 wrap 合并。而 `[foo]<blockquote>bar</blockquote>` +
+      // <blockquote>（:703）的邻居块是命令前已存在，Chrome 录音分开两块
+      // `<blockquote>[foo]</blockquote><blockquote>bar</blockquote>`——
+      // Chrome delta 实为「不并入命令前已存在的邻块」，自产分段块照 Chrome
+      // 录音合并。div/p 维持恒 false（:1754/:1759 摆位录音分段不合并）。
       var sibCrit = (['div', 'p'].indexOf(v) !== -1)
         ? function () { return false; }
         : function (n) {
-            return _zwJusIsHtmlElement(n, v)
+            return fbqCreated.indexOf(n) !== -1
+              && _zwJusIsHtmlElement(n, v)
               && n.attributes && n.attributes.length === 0;
           };
       var fbqBlock = _zwJusWrap(sublist, sibCrit,
         function () { return document.createElement(v); }, true);
+      if (fbqBlock && fbqBlock.nodeType === 1) {
+        fbqCreated.push(fbqBlock);
+      }
       if (fbqCarry.length && fbqBlock && fbqBlock.nodeType === 1) {
         for (var ci2 = 0; ci2 < fbqCarry.length; ci2++) {
           _zwVaSetStyleProp(fbqBlock, _zwFbqCarryProperty(fbqCarry[ci2][0]),
             fbqCarry[ci2][1]);
         }
       }
-      _zwListFixDisallowedAncestors(fbqBlock);
+      // Chrome delta（per-paragraph 不合并刀，2026-11-10）：新块直父为
+      // hgroup 时跳过 fixDisallowed——hgroup 内容模型只容 h1-h6（part01e
+      // allowed-child 表），blockquote 落 hgroup 内会被允许子臂 splitParent
+      // 外提到 section（qV 读外提后 blockquote 故绿、compare 红），Chrome
+      // 保留非法嵌套不修（`<section><hgroup><h1>[foo]</h1><h2>bar</h2>
+      // </hgroup><p>baz</section>` + <blockquote> 录音 `<section><hgroup>
+      // <blockquote>[foo]</blockquote><h2>bar</h2></hgroup><p>baz</p>
+      // </section>`，formatblock.js :726）。其余 hgroup 行（:1042/:1360）
+      // wrap 落宿主层直父非 hgroup，fix 照跑 no-op。
+      if (!(fbqBlock && fbqBlock.nodeType === 1
+            && _zwJusIsHtmlElement(fbqBlock.parentNode, 'hgroup'))) {
+        _zwListFixDisallowedAncestors(fbqBlock);
+      }
     }
     return true;
   };

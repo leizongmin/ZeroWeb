@@ -4786,7 +4786,10 @@ fn element_local_name(doc: &Document, node: NodeId) -> &str {
         .unwrap_or("")
 }
 
-/// 解析 form-associated 元素的 owner。存在 `form` 属性时只按其值关联，不回落祖先。
+/// 解析 form-associated 元素的 owner。存在 `form` 属性时只按其值关联，不回落；
+/// 次查解析期 form 元素指针侧表（HTML §13.2.4.4——表格 foster-parented form、被
+/// 隐式闭合 form 的指针残留等坏标记位）；最后回落最近 form 祖先（动态创建控件
+/// 无指针条目，嵌套常规位）。
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
 fn form_owner_node(doc: &Document, control: NodeId) -> Option<NodeId> {
     if let Some(form_id) = doc.get_attribute(control, "form") {
@@ -4796,6 +4799,9 @@ fn form_owner_node(doc: &Document, control: NodeId) -> Option<NodeId> {
                     .get_attribute(*node, "id")
                     .is_some_and(|candidate| candidate == form_id)
         });
+    }
+    if let Some(owner) = doc.parse_form_owner(control) {
+        return Some(owner);
     }
     let mut current = doc.parent_node(control);
     while let Some(ancestor) = current {
@@ -6077,6 +6083,35 @@ pub fn generate_js_dom_shim() -> &'static str {
         // animateTransform 域采样 + animVal 反射消费钩子 + 事件泵 +
         // SVGSVGElement/SVGAnimationElement 接口。
         s.push_str(include_str!("js_dom_shim/part09b.js"));
+        // part10（2026-11-10 wptfyi-css DC-2 首批）：CSS Typed OM API 入口面
+        //（CSSStyleValue 类族 + CSS 命名空间数值工厂 + StylePropertyMap +
+        // attributeStyleMap/computedStyleMap + 225 属性语法表，自包含 IIFE，
+        // 同 part08 先例顶层作用域运行）——零新 Rust 回调：计算值读取复用
+        // part01 getComputedStyle 代理链，declared 面复用 part03
+        // _zwMStyleProxy。收口 DC-1 evidence typed-om 664F 单簇（API 缺面）。
+        // https://drafts.css-houdini.org/css-typed-om-1/
+        s.push_str(include_str!("js_dom_shim/part10-typed-om.js"));
+        // part11（2026-11-10 wptfyi-css DC-2 次批）：现代色值模型管线
+        //（css-color-4/5：declared 归一 + computed 序列化——hsl/rgb 现代空格
+        // 语法 + none powerless 分量 + hwb/lab/lch/oklab/oklch/color()/
+        // alpha(from…) + 系统色表 + opacity clamp；color-mix()/relative color
+        // 本批原文透传、次批后半按真色彩数学建模，自包含 IIFE）——登记
+        // __zwColorNormalizeDecl/__zwComputedColorValue 两全局入口 + 兼容别名
+        //（__zwComputedColor/__zwCssColorValid/__zwOpacityComputed/
+        // __zwCssColorNeedsPlain），消费方 part01c 色臂回落 + opacity 臂、
+        // part01 gCS `has` 陷阱与抢答臂、part06 CSS.supports 前置钩子 +
+        // declared 归一委托。收口 css-color "doesn't seem to be supported"
+        // 单簇 7,199+（Proxy 无 has + declared/computed 值管线双缺面）。
+        // https://drafts.csswg.org/css-color-4/
+        // https://drafts.csswg.org/css-color-5/
+        s.push_str(include_str!("js_dom_shim/part11-color.js"));
+        // part11 后半（2026-11-10 wptfyi-css DC-2 次批后半）：computed 真数学
+        // 管线（css-color-4 转换枢纽 XYZ D65/D50 + Bradford、lab/oklab 精确
+        // 常数；color-mix() 插值——缺省权重/alpha 双轨归一/hue 归一位置弧/none
+        // carry；relative color——通道关键字+alpha 关键字+chanexpr 满量程 +
+        // 三角/exponent calc；hsl/hwb none 保形序列化；color() 跨空间 gamma）。
+        // 后挂覆盖 part11-color.js 的 computed 别名（declared 归一仍走前者）。
+        s.push_str(include_str!("js_dom_shim/part11-computed-color.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

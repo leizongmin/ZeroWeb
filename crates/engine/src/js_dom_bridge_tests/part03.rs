@@ -4249,10 +4249,13 @@ fn test_cssom_inline_style_decl_value_normalization_t49() {
         )
         .unwrap();
     // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    // DC-2 次批翻正（2026-11-10）：modernSpaceVerbatim/ruleModernSpace 原
+    // `rgb(255 0 0)` verbatim 钉——part11 declared 归一接线后按 css-color-4 §5
+    // legacy 序列化输出 `rgb(255, 0, 0)`（Chrome 声明面口径，T48 分词归一同形）。
     assert_eq!(
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
-        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255 0 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"#F00","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255 0 0)","ruleCwwInherit":"inherit"}"##,
-        "T49 inline style 声明写归一全案（T48 管线同语义 + !important 两形 + 非法忽略 + inline/规则恒等）"
+        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255, 0, 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"#F00","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255, 0, 0)","ruleCwwInherit":"inherit"}"##,
+        "T49 inline style 声明写归一全案（T48 管线同语义 + !important 两形 + 非法忽略 + inline/规则恒等 + part11 现代空格形 legacy 序列化）"
     );
 }
 
@@ -5083,3 +5086,137 @@ fn test_cssom_decl_name_fold_wordfinal_t54() {
         "T54 共享名折叠词尾单大写收口全案（词尾 X/Y 五面继承：元素 IDL 写/csstext 整写/规则样式/物化面板/keyframe + camel 读一致/负案 custom 词首 camel 词中 vendor 全大写保形）"
     );
 }
+
+#[test]
+fn test_cssom_decl_name_fold_wordfinal_xx_t55() {
+    // T55（共享名折叠**词尾多重大写段**原子化，SUM-T54-1/DF-T50-N1 余项 designated）：
+    // `_styleDeclName`（part06:2125，五面共享：规则面 T49/IDL 写面 T50/csstext 面/
+    // keyframe 面 T51/物化面板面 T52-T53）T54 fold 正则 /(?<![a-z])[A-Z]+(?![a-z])/g
+    // 对**词尾多重大写段**部分命中——run 整体匹配在首字母处被前顾拒绝（首 X 前邻
+    // 'n' 小写），正则从 run 中段重新起匹配（次 X 前邻 'X' 大写通过前顾）→ run 被
+    // 拆分折叠：仅尾 X 折小写 → 'backgroundPositionXx' → camel 算法逐大写加连字符
+    // 落库 'background-position-xx'（DF-T54-2 实测缺陷形）。本钉 fold 段改
+    // /[A-Z]+(?![a-z])/g + ES5 replace 回调原子判：run 整体匹配（无前顾拆分），回调
+    // 内判 run 首符前邻——off > 0 且前邻 ASCII 小写（camel 边界）→ 整段保留落
+    // `_stylePropName` camel 算法（cssom-1 §camel-cased-attribute-to-css-attribute：
+    // 每大写字母 → '-' + 小写，词尾同规则）→ 'background-position-x-x'；否则（串首/
+    // '-'/数字/'_'/大写/非 ASCII 前邻）整段折叠小写（kebab 书写形，T49 语义不变）。
+    // 选型（双引擎探针 t55-probe-v8.log/t55-probe-quickjs.log）：方案 1 变长前顾
+    // (?<![a-z][A-Z]*) 在 v8 150.2.0 与 quickjs-ng（rquickjs-sys 0.7 bundle）均可
+    // 解析且与方案 2 七形逐字节恒等（解析极大 run 原子性论证同证恒等）；取方案 2
+    // 去除 lookbehind 依赖（收口 SUM-T54-6 quickjs 前顾行为矩阵残余类，shim 落
+    // ES5 普适能力，双 feature 引擎最低公共分母）。
+    // Blink 154 活体 oracle（t55-oracle-result.txt，HeadlessChrome/154.0.0.0 headless
+    // 2026-11-10）：XX/XY IDL 形 expando 无声明落库（x01/x02）、sp camel XX（x03）/
+    // sp kebab 规范形 'background-position-x-x' 大小写双形（x04/x05）/缺陷形
+    // 'background-position-xx'（x06）/全大写连写 XX（x07）/理论形 aB/aBcDE/aBCDd
+    // （t01-t03）全数无 CSS 属性对应整弃——XX 族与理论形落库名无 Blink 活体仲裁，
+    // 落库名以 cssom-1 camel 算法为权威（T54 既录已知偏差族①：Blink expando，本仓
+    // 归一落库）；T54 18 案回归采样与 t54-oracle-result.txt 逐案恒等（词尾单大写族
+    // 行为不变，w01-w07/n01-n09/k01-k02）。
+    // **recorded known deviation**（T54 口径，本片不动）：① Blink IDL 未知名落
+    // expando 不落声明，本仓理论形（aB → 'a-b'、aBcDE → 'a-bc-d-e'）归一落库——
+    // 形状钉锁定；② Blink sp camel 名参拒，本仓归一落库（基线即接受）；③ Blink
+    // webkitTransform alias 'transform' 序列化，本仓维持 '-webkit-transform'
+    //（R3023）；④ Blink cssText 整写 camel 整弃，本仓 parse 归一落库（T49/T53 既录
+    // 边界）；⑤ Blink 无 'background-position-x-x' 属性（x05 整弃），本仓 kebab
+    // 名面按名折叠透传存储（无属性注册表既有边界 T47 DF-1）。
+    // 五面覆盖：元素 IDL 写面（d1 词尾 XX + camel 读一致 + gpv 三形 + item）+ 元素
+    // sp camel/理论形（d2 XY/XX/aB/aBcDE + csstext 整写）+ 规则样式面（rs）+ 物化
+    // 面板写面（implementation-doc div）+ WAAPI keyframe 写面（d4 词尾 XY +
+    // d5 控制项，fill:forwards 末态落 inline style）+ 负案（d3 custom 词中 camel
+    // 词中 vendor 全大写/kebab 全大写多段）。
+    // https://www.w3.org/TR/cssom-1/#camel-cased-attribute-to-css-attribute
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body>\
+         <div id=\"d1\"></div><div id=\"d2\"></div><div id=\"d3\"></div>\
+         <div id=\"d4\"></div><div id=\"d5\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // execute#1：五面写入。keyframe fill:'forwards' 末态写 inline style 在 execute 末
+    // _defer microtask 后落库（T51 同法，headless 瞬间完成）→ execute#2 dump 读回。
+    sandbox
+        .execute(
+            "globalThis.__st1 = document.querySelector('#d1').style;\
+             globalThis.__st2 = document.querySelector('#d2').style;\
+             globalThis.__st3 = document.querySelector('#d3').style;\
+             globalThis.__rs = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__doc55 = document.implementation.createHTMLDocument('');\
+             globalThis.__mel55 = globalThis.__doc55.createElement('div');\
+             globalThis.__st1.backgroundPositionXX = '10px';\
+             globalThis.__st2.backgroundPositionXY = '5px';\
+             globalThis.__st2.setProperty('backgroundPositionXX', '3px');\
+             globalThis.__st2.setProperty('aB', '6px');\
+             globalThis.__st2.setProperty('aBcDE', '8px');\
+             globalThis.__st3.backgroundColor = 'red';\
+             globalThis.__st3.setProperty('--PosX', 'v1');\
+             globalThis.__st3.setProperty('COLOR', 'blue');\
+             globalThis.__st3.setProperty('BACKGROUNDPOSITIONX', '1px');\
+             globalThis.__st3.setProperty('BACKGROUND-POSITION-X-X', '2px');\
+             globalThis.__st3.zIndex = '4';\
+             globalThis.__st3.webkitTransform = 'scale(2)';\
+             globalThis.__st3.WEBKITTransform = 'scale(3)';\
+             globalThis.__st3.cssFloat = 'left';\
+             globalThis.__st3.MARGINBOTTOM = '4px';\
+             globalThis.__rs.setProperty('backgroundPositionXX', '7px');\
+             globalThis.__mel55.style.backgroundPositionXX = '2px';\
+             document.querySelector('#d4').animate(\
+               [{backgroundPositionXY: '10px'}], {duration: 50, fill: 'forwards'});\
+             document.querySelector('#d5').animate(\
+               [{backgroundColor: 'rgb(0, 128, 0)'}], {duration: 50, fill: 'forwards'});",
+        )
+        .unwrap();
+    // execute#2：读回 dump。整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    sandbox
+        .execute(
+            "globalThis.__r55 = {};\
+             var r = globalThis.__r55;\
+             var s1 = globalThis.__st1, s2 = globalThis.__st2, s3 = globalThis.__st3;\
+             r.xxIdlCssText = s1.cssText;\
+             r.xxIdlCamelRead = s1.backgroundPositionXX;\
+             r.xxGpvKebab = s1.getPropertyValue('background-position-x-x');\
+             r.xxGpvUpper = s1.getPropertyValue('BACKGROUND-POSITION-X-X');\
+             r.xxGpvDefect = s1.getPropertyValue('background-position-xx');\
+             r.xxItem0 = s1.item(0);\
+             r.xxLen = s1.length;\
+             r.xySpCssText = s2.cssText;\
+             r.xyGpvKebab = s2.getPropertyValue('background-position-x-y');\
+             r.xyGpvDefect = s2.getPropertyValue('background-position-xy');\
+             r.abGpv = s2.getPropertyValue('a-b');\
+             r.abcdeGpvSpec = s2.getPropertyValue('a-bc-d-e');\
+             r.abcdeGpvDefect = s2.getPropertyValue('a-bc-de');\
+             s2.cssText = 'backgroundPositionXX: 10px';\
+             r.xxCsstextCssText = s2.cssText;\
+             r.negCssText = s3.cssText;\
+             r.negCustomGpv = s3.getPropertyValue('--PosX');\
+             r.negCamelGpv = s3.getPropertyValue('backgroundColor');\
+             r.negZindexUpperGpv = s3.getPropertyValue('Z-INDEX');\
+             r.ruleCssText = globalThis.__rs.cssText;\
+             r.panelCssText = globalThis.__mel55.style.cssText;\
+             r.kfXyCssText = document.querySelector('#d4').style.cssText;\
+             r.kfCtrlCssText = document.querySelector('#d5').style.cssText;\
+             JSON.stringify(r);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r55)").unwrap().value,
+        r##"{"xxIdlCssText":"background-position-x-x: 10px","xxIdlCamelRead":"10px","xxGpvKebab":"10px","xxGpvUpper":"10px","xxGpvDefect":"","xxItem0":"background-position-x-x","xxLen":1,"xySpCssText":"background-position-x-y: 5px; background-position-x-x: 3px; a-b: 6px; a-bc-d-e: 8px","xyGpvKebab":"5px","xyGpvDefect":"","abGpv":"6px","abcdeGpvSpec":"8px","abcdeGpvDefect":"","xxCsstextCssText":"background-position-x-x: 10px;","negCssText":"background-color: red; --PosX: v1; color: blue; backgroundpositionx: 1px; background-position-x-x: 2px; z-index: 4; -webkit-transform: scale(3); float: left; marginbottom: 4px","negCustomGpv":"v1","negCamelGpv":"red","negZindexUpperGpv":"4","ruleCssText":"margin: 0; background-position-x-x: 7px;","panelCssText":"background-position-x-x: 2px","kfXyCssText":"background-position-x-y: 10px","kfCtrlCssText":"background-color: rgb(0, 128, 0)"}"##,
+        "T55 共享名折叠词尾多重大写段原子化全案（XX/XY 词尾五面继承：元素 IDL 写/sp camel/理论形 aB aBcDE/csstext 整写/规则样式/物化面板/keyframe + camel 读一致/缺陷名读拒 + 负案 custom 词中 camel 词中 vendor 全大写 kebab 全大写多段保形）"
+    );
+}
+

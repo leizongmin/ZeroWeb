@@ -1929,6 +1929,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 解析期 form 元素指针关联（HTML §13.2.4.4）——控件 owner form 的唯一选择器
+    // （无关联返空）。shim `.form` getter 的指针位兜底（本地 form 属性/祖先两路
+    // 落空后调用；foster-parented form 与隐式闭合指针残留祖行走不可达）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_parse_form_owner",
+        Box::new(move |args| {
+            let control = args.first().map(String::from).unwrap_or_default();
+            with_query_view_doc(&html, &m, |doc, _| parse_form_owner_selector_doc(doc, &control))
+        }),
+    );
+
     // 元素遍历/导航 API：children/firstElementChild/lastElementChild/childElementCount（子列表）、
     // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
     let html = Arc::clone(dom_html);
@@ -4039,6 +4052,20 @@ pub fn register_dom_callbacks(
                     Some(op) => op(args),
                     None => "err:host-unavailable".into(),
                 }
+            }),
+        );
+        // SAB 跨 isolate 导出（test262 `$262.agent` 面）：主 isolate 侧 token id 发放
+        // ——宿主回调实参只传字符串（Plain/Scoped 形态一致），SAB 对象由 JS 侧暂存
+        // `globalThis.__zwSabExports[key]` 后传 key，此处经调用窗 scope 读回并提取
+        // backing store 落 script-sandbox 进程级 registry（worker 派发侧按 id 物化）。
+        // JS 克隆分支 `typeof __zw_sab_export === 'function'` 守卫与本注册同 flag 门
+        // ——flag 关时维持 SAB clone DataCloneError（structured-clone battery 钉面）。
+        #[cfg(feature = "v8")]
+        let _ = sandbox.register_scoped_callback(
+            "__zw_sab_export",
+            Box::new(|scope, args| -> String {
+                zero_script_sandbox::sab_export_by_key(scope, args.first().map(String::as_str).unwrap_or(""))
+                    .to_string()
             }),
         );
     }

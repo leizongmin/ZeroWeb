@@ -145,6 +145,13 @@ pub struct Document {
     /// 字段（NodeData 尺寸敏感：ElementData 加 Option<NodeId> 曾致 dom 微基准全线 +2-3x
     /// 劣化——分配/layout 阈值效应）；仅 template 元素有条目，绝大多数文档空表。
     template_contents_map: HashMap<NodeId, NodeId>,
+    /// 解析期 form 元素指针关联侧表（HTML §13.2.4.4 form element pointer）：
+    /// html5ever 在 form-associated 元素创建时按指针约束检查通过经
+    /// `TreeSink::associate_with_form` 上报（parser.rs），覆盖坏标记位——表格 foster
+    /// parenting 的 `<form>`（form 非 input 祖先）与 `<form>` 被隐式闭合后指针未清
+    /// 的兄弟控件。同 template_contents_map 侧表理由（NodeData 尺寸敏感）；常规嵌套
+    /// 两路同判不写表。动态创建（createElement/appendChild）不经解析器无条目。
+    form_owner_map: HashMap<NodeId, NodeId>,
     /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
     slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
     /// 45 号 shadow-dom-rendering M3 手动臂：`slotAssignment: 'manual'` shadow root
@@ -192,6 +199,7 @@ impl Document {
         Self {
             nodes,
             root,
+            form_owner_map: HashMap::new(),
             id_map: HashMap::new(),
             url: None,
             referrer: None,
@@ -218,11 +226,13 @@ impl Document {
         nodes: SlotMap<NodeId, NodeData>,
         root: NodeId,
         template_contents_map: HashMap<NodeId, NodeId>,
+        form_owner_map: HashMap<NodeId, NodeId>,
     ) -> Self {
         let mut doc = Self {
             nodes,
             root,
             template_contents_map,
+            form_owner_map,
             id_map: HashMap::new(),
             url: None,
             referrer: None,
@@ -1990,6 +2000,16 @@ impl Document {
         self.template_contents_map.insert(template, frag);
     }
 
+    /// 解析期 form 元素指针关联查询（HTML §13.2.4.4 form element pointer：
+    /// "points to the last `form` element that was opened and whose end tag has not
+    /// yet been seen"）。仅解析器上报的对（§13.2.6.1 create an element step 21），
+    /// 覆盖坏标记位——表格 foster parenting 的 form 与被隐式闭合 form 的指针残留；
+    /// 未命中由调用方回落祖先链（常规嵌套两路同判）。动态创建控件无条目（spec
+    /// 动态插入只认 `form` 属性）。
+    pub fn parse_form_owner(&self, id: NodeId) -> Option<NodeId> {
+        self.form_owner_map.get(&id).copied()
+    }
+
     /// WC-M2：template contents 的子节点列表（无 contents/无 template → 空）。
     /// 供 serializer/序列化面与 host 桥（shim content 视图数据源）。
     pub fn template_contents_children(&self, id: NodeId) -> Vec<NodeId> {
@@ -2196,26 +2216,42 @@ impl Document {
             // `:filtered` filterable select 过滤态（s326，whatwg/html #12050 谱系），
             // 延后至此经 filtered 子模块复评（注入通道见 set_filtered_options 注记）。
             crate::query::PseudoClass::Filtered => self.is_filtered_option(node),
-            // `:not(:filtered)` 否定嵌套（s326）——matches_full 对 inner 含 `:filtered`
-            // 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见 query.rs Not 臂注）；
-            // 守卫臂只接 Filtered 形，其余 inner 维持 matches_full 直评语义（落 `_ => true`）。
-            // inner 静态成分（tag/class/attr）直评 + `:filtered` 经 Document 复评。
-            crate::query::PseudoClass::Not(inner)
-                if inner
-                    .pseudos
-                    .iter()
-                    .any(|p| matches!(p, crate::query::PseudoClass::Filtered)) =>
+            // `:not(...:filtered...)` 否定嵌套（s326）——matches_full 对任一内层含
+            // `:filtered` 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见
+            // query.rs Not 臂注）；守卫臂只接 Filtered 形，其余内层维持直评语义。
+            // 任一内层命中即否决（Selectors L4 <negation>）：`:filtered` 内层静态
+            // 成分（tag/class/attr）直评 + is_filtered_option 经 Document 复评；
+            // 其余内层 matches_full(elem, pos) 完整直评（含伪类位置语义——DF-T56-1：
+            // 静态 matches 丢伪类使 `:not(:filtered, :first-child)` 恒否决）。
+            crate::query::PseudoClass::Not(list)
+                if list.iter().any(|inner| {
+                    inner
+                        .pseudos
+                        .iter()
+                        .any(|p| matches!(p, crate::query::PseudoClass::Filtered))
+                }) =>
             {
-                let static_hit = self
-                    .nodes
-                    .get(node)
-                    .and_then(|n| match &n.kind {
-                        NodeKind::Element(elem) => Some(elem),
-                        _ => None,
-                    })
-                    .map(|elem| inner.matches(elem))
-                    .unwrap_or(false);
-                !(static_hit && self.is_filtered_option(node))
+                let veto = list.iter().any(|inner| {
+                    let static_hit = self
+                        .nodes
+                        .get(node)
+                        .and_then(|n| match &n.kind {
+                            NodeKind::Element(elem) => Some(elem),
+                            _ => None,
+                        })
+                        .map(|elem| inner.matches_full(elem, pos))
+                        .unwrap_or(false);
+                    if inner
+                        .pseudos
+                        .iter()
+                        .any(|p| matches!(p, crate::query::PseudoClass::Filtered))
+                    {
+                        static_hit && self.is_filtered_option(node)
+                    } else {
+                        static_hit
+                    }
+                });
+                !veto
             }
             // `:valid`/`:invalid`/`:in-range`/`:out-of-range` 须约束属性上下文，延后至此经
             // validation 子模块复评（HTML §4.10.20 + CSS Selectors L4）。

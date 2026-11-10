@@ -5328,11 +5328,14 @@
       if (String(text).trim() === '') return;
       // s250：内联 module prepare（s109 FIXME 收口）——spec 内联模块无取回、不
       // fire load/error（text-module/load-error-events.html inline 臂判据）。依赖
-      // 图编译经宿主 __zw_compile_inline_module 四态契约（webview s250 注册）：
+      // 图编译经宿主 __zw_compile_inline_module 五态契约（webview s250 注册，
+      // s381 增态 ③）：
       // ①空 → 元素 error（依赖图取回失败，网络错误语义）；②"1\\u001f" → load
       //（specifier 解析失败，静态面 ② 同判——window TypeError 报告动态面未建模
       // FIXME）；③"2\\u001f<msg>" → window 报告 + load（属性校验违例，s105 同判
-      // ——报告 ctor 保真 FIXME）；④成功 → eval 体、无事件，求值抛错 → window
+      // ——报告 ctor 保真 FIXME）；④"3\\u001f<msg>" → window 报 SyntaxError + load
+      //（链接失败，s381——缺导出/图链接错，静态面 s102 同判，instantiation-error-8
+      // 第二相）；⑤成功 → eval 体、无事件，求值抛错 → window
       // 报告（模块运行期错误面，元素不派事件）。run-once 记账先行（spec
       // already-started prepare 置位）。编译+求值整体 setTimeout 延迟（s251）：
       // spec 动态插入模块的 evaluate 排在插入脚本完成之后（microtask 近似）——
@@ -5376,6 +5379,20 @@
             }
             setTimeout(function () {
               try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL250) {}
+            }, 0);
+            return;
+          }
+          // s381（html-semantics）：态 ③ 链接失败（缺导出/图链接错，宿主 s102 静态面
+          // 同判）——window 报 SyntaxError + 元素照常 fire load、体不执行。旧版折叠进
+          // 空态按网络错误处理（元素 fire error 不冒泡），动态插入 module 的实例化失败
+          // 从不达 window（instantiation-error-8 第二相根因）。
+          // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+          if (_miTag250 === '3') {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(new SyntaxError(_miCode250), null); } catch (_eMiA3250) {}
+            }
+            setTimeout(function () {
+              try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL3250) {}
             }, 0);
             return;
           }
@@ -5966,6 +5983,23 @@
       if (_faEntry) {
         if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
         globalThis._zwInOrderScriptQueue.push(_faEntry);
+      }
+      // s383（html-semantics M2 切片 383）：credentials 判据 slot——script-crossorigin-network
+      // 的 cookie 送达面（RFC 6265bis §5.4 cookie-header）按 crossOrigin IDL 反射推导
+      // credentials mode（HTML spec prepare-the-script-element：missing/use-credentials →
+      // include；anonymous 及 invalid value default 'anonymous' → same-origin；IDL getter
+      // 归一在 part04 R5008 片 d crossOrigin 臂——missing→null、ASCII CI、invalid→anonymous）。
+      // fetch init **不投影** credentials（fetch 通道 mode 恒 cors 近似，include 会在 CORS
+      // 判定面拒 ACAO:* 端点——真实浏览器缺省脚本为 no-cors 无 CORS 判定，投影即假红；
+      // no-cors 本体不可走——opaque 体空，脚本消费面需正文）。mode 语义由 fetch wrapper
+      // 同步段一次性消费本 slot 做 Cookie 头附加（part01 s383 臂），路由侧读 Cookie 头选
+      // included 体。getter 缺席/异常回落 include（缺省脚本语义）。
+      //   https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      try {
+        var _zwScc383 = el96.crossOrigin;
+        globalThis.__zwScriptCookieCred = (_zwScc383 === 'anonymous') ? 'same-origin' : 'include';
+      } catch (_eS383) {
+        globalThis.__zwScriptCookieCred = 'include';
       }
       var _p110 = fetch(url);
       globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
@@ -17086,15 +17120,55 @@
   // （None，spec 事件处理器不继承触发脚本 nonce，体内 import() 的 module fetch 被
   // 宿主 CSP 检查阻止）；字符串 timer 传**注册期捕获**的脚本 nonce（字符串编译继承
   // nonce）。swapper 未注册（QuickJS 后端）typeof 降级零变更。
-  function _zwCallHandlerSwapBase(fn, thisArg, ev, base, nonce) {
+  function _zwCallHandlerSwapBase(fn, thisArg, ev, base, nonce, cred, win, doc) {
     var swap = typeof globalThis.__zwSwapImportReferrer === 'function' && base != null;
     var prev = swap ? globalThis.__zwSwapImportReferrer(base) : null;
     var swapN = typeof globalThis.__zwSwapImportNonce === 'function';
     var prevN = swapN ? globalThis.__zwSwapImportNonce(nonce) : null;
+    // s382（string timer 文档上下文面，调用方 = s90 字符串 timer 臂传第 6-8 参；inline
+    // 处理器臂 5 参形 → 本臂全部 no-op 零漂移）：cred 非 undefined → 换入注册期捕获
+    // credentials（s340 同语义——fire 窗槽值已被后续段复位行改写）；win 在场 → 换入
+    // 子文档窗——裸 `window`/`self`/`document` 换形参化（globalThis 三属性均普通可写
+    // 赋值定义，part01:12357/part06:7668）+ s339 双槽置位（动态 import IIFE 包裹在求
+    // 值时读 `__zwActiveIframeWin`，es_module s339 桥；模块体 `window[id]=…` 须落子
+    // 窗）。finally 换回含槽缺席恢复（delete），求值窗零外溢。
+    var swapC = cred !== undefined;
+    var prevC = undefined;
+    if (swapC) {
+      prevC = '__zwActiveScriptCred' in globalThis ? globalThis.__zwActiveScriptCred : undefined;
+      globalThis.__zwActiveScriptCred = cred;
+    }
+    var prevW = undefined, prevSelf = undefined, prevD = undefined;
+    var prevSlotW = undefined, prevSlotD = undefined;
+    if (win != null) {
+      prevW = globalThis.window;
+      prevSelf = globalThis.self;
+      prevD = globalThis.document;
+      prevSlotW = '__zwActiveIframeWin' in globalThis ? globalThis.__zwActiveIframeWin : undefined;
+      prevSlotD = '__zwActiveIframeDoc' in globalThis ? globalThis.__zwActiveIframeDoc : undefined;
+      globalThis.window = win;
+      globalThis.self = win;
+      if (doc != null) globalThis.document = doc;
+      globalThis.__zwActiveIframeWin = win;
+      if (doc != null) globalThis.__zwActiveIframeDoc = doc;
+    }
     try { return fn.call(thisArg, ev); }
     finally {
       if (swap) globalThis.__zwSwapImportReferrer(prev);
       if (swapN) globalThis.__zwSwapImportNonce(prevN);
+      if (swapC) {
+        if (prevC === undefined) delete globalThis.__zwActiveScriptCred;
+        else globalThis.__zwActiveScriptCred = prevC;
+      }
+      if (win != null) {
+        globalThis.window = prevW;
+        globalThis.self = prevSelf;
+        if (doc != null) globalThis.document = prevD;
+        if (prevSlotW === undefined) delete globalThis.__zwActiveIframeWin;
+        else globalThis.__zwActiveIframeWin = prevSlotW;
+        if (prevSlotD === undefined) delete globalThis.__zwActiveIframeDoc;
+        else globalThis.__zwActiveIframeDoc = prevSlotD;
+      }
     }
   }
   function _zwCallHandlerDocBase(fn, thisArg, ev) {
@@ -19351,6 +19425,22 @@
       _zwSelNsCache.map.set(_snk, _sn);
     } catch (_e5000s) {}
     return _sn;
+  }
+  // s390b：live 视图同树根判定——proxy 沿 parentNode 上行到根（null parent 止），
+  // 两 proxy 根引用相等 = 同一棵（live 文档树或同一 detached 树）。`===` 可作树
+  // 身份比较的缓存前提：wrap/getElementById 产物同 _proxyCache（R331/R4005），
+  // 同元素恒同 proxy 对象。parentNode 链是同 turn 变更立即可见的 live 通道
+  //（R2302 判例：host getElementById/query 索引对同 turn id 变更/移除 stale，
+  // proxy 链 live）——解析期 form 元素指针关联的 liveness 同树门以此为准。
+  function _zwLiveTreeRoot(p) {
+    var r = p, hops = 0;
+    while (r && hops++ < 64) {
+      var par = null;
+      try { par = r.parentNode; } catch (_eLtr) { break; }
+      if (!par) break;
+      r = par;
+    }
+    return r;
   }
   function _realTag(sel, handle) {
     // R-baidu3：批量 tag 缓存命中（part05 _zwTagCache——getElementsByTagName('*')
@@ -22427,6 +22517,22 @@
     for (var ancestor = node.parentNode; ancestor; ancestor = ancestor.parentNode) {
       if (isTplNode(ancestor)) break;
       if (ancestor.nodeType === 1 && ancestor.localName === 'form') return ancestor;
+    }
+    // 解析期 form 元素指针兜底（HTML §13.2.4.4 form element pointer，host 侧表
+    // `__zw_parse_form_owner`）：祖行走不可达的坏标记位——表格 foster-parented
+    // `<form>`（form 是 table 兄弟，input 在 td 内祖先链无 form）与被隐式闭合
+    // `<form>` 的指针残留（`</div>` 弹栈不清指针，后续兄弟控件仍关联）。
+    // html5ever 对 template 内容不上报（§13.2.6.1 step 21 非 template 内容约束），
+    // R5196 不越界面维持；form= 属性已在上方 findForm 判定，本桥仅补指针位。
+    if (typeof __zw_parse_form_owner === 'function') {
+      try {
+        var _pfoSel = __zw_parse_form_owner(node.__zwSelector || '');
+        if (_pfoSel) {
+          return (typeof _zwQueryWrapIdentity === 'function')
+            ? _zwQueryWrapIdentity(_pfoSel)
+            : ((typeof _wrapSelector === 'function') ? _wrapSelector(_pfoSel) : null);
+        }
+      } catch (_ePfo) {}
     }
     return null;
   }
@@ -30131,6 +30237,36 @@ return e;
     return { value: s, priority: '' };
   }
 
+  // DC-2 次批后半：inline style raw 影子（css-color-4 §missing none 传播面）。
+  // 声明写面归一（_zwNormalizeDeclValue）把 `rgb(128 none none)` 消解为
+  // `rgb(128, 0, 0)`——valid corpus 声明规范化期望该形，但 computed corpus 期望
+  // `color(srgb 0.50196078 none none)` 保 none。归一改变文本且原值含 none 时按
+  // 元素存原始文本（handle 键 WeakMap / sel 键 Map——el.style 代理每次访问重建，
+  // 代理对象自身不能作键），part01c computed 读取点经 style 代理 `__zwRawDecl`
+  // 取回，交 part11-computed-color 管线。无 none/未变形清条目（不随写面膨胀）。
+  // **已知限制**：① 仅 inline IDL 写路径（setProperty/style.color=）——cssText
+  // 整体写经 _parseDeclarations 归一后逐属性落库，影子未接（FIXME(compat)：语料
+  // 出现 cssText 写 none 色时补）；② 样式表声明面（part06 rule style）同缺
+  //（语料 computed-rgb 全走 inline，先例 CSS Style Attributes §2）。
+  var _zwRawByHandle = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var _zwRawBySel = new Map();
+  // handle 键仅限对象（WeakMap CanBeHeldWeakly：set 非对象键 TypeError
+  // 'Invalid value used as weak map key'——wpt-runner 嵌入 handle 为宿主侧
+  // 标量 id，实证 valid-rgb 页 16 写面翻红）；非对象 handle 与 get 路由同源
+  // 落 sel 键 Map，读写两侧一致。
+  function _zwRawHandleKey(handle) {
+    return handle != null && _zwRawByHandle
+      && (typeof handle === 'object' || typeof handle === 'function');
+  }
+  function _zwRawStyleGet(sel, handle) {
+    if (_zwRawHandleKey(handle)) return _zwRawByHandle.get(handle) || null;
+    return _zwRawBySel.get(sel) || null;
+  }
+  function _zwRawStyleSet(sel, handle, map) {
+    if (_zwRawHandleKey(handle)) { _zwRawByHandle.set(handle, map); return; }
+    _zwRawBySel.set(sel, map);
+  }
+
   function _styleProxy(sel, handle) {
     var readRaw = function() {
       // R3194：sel 走 latest-wins（`__zw_get_style_lw` replay pending style mutation），闭合 sync set→read
@@ -30211,6 +30347,15 @@ return e;
         var core = _zwNormalizeDeclValue(pri.value, prop);
         if (core === null) return;
         v = pri.priority ? core + ' !important' : core;
+        // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
+        // none → 存原值；其余形态清条目。
+        var shadow = _zwRawStyleGet(sel, handle);
+        if (pri.value !== core && /none/i.test(pri.value) && !/none/i.test(core)) {
+          if (!shadow) { shadow = {}; _zwRawStyleSet(sel, handle, shadow); }
+          shadow[prop] = pri.value;
+        } else if (shadow) {
+          delete shadow[prop];
+        }
       }
       if (handle) __zw_set_style_handle(handle, prop, v);
       else __zw_set_style(sel, prop, v);
@@ -30229,6 +30374,14 @@ return e;
         if (ps === 'cssText') return readRaw();
         if (ps === 'length') return propNames().length;
         if (ps === 'getPropertyValue') return function(name) { return readProp(name); };
+        // DC-2 次批后半：raw 影子读取（part01c computed 链专用，非 CSSOM 公开面——
+        // 双下划线名避开属性枚举/for-in 消费面）。
+        if (ps === '__zwRawDecl') {
+          return function(name) {
+            var shadow = _zwRawStyleGet(sel, handle);
+            return shadow ? (shadow[_styleDeclName(name)] || '') : '';
+          };
+        }
         // R3193：getPropertyPriority 返 "important"（声明带 !important）/ ""（spec；旧 stub 恒 ""）。
         if (ps === 'getPropertyPriority') {
           return function(name) {
@@ -30253,6 +30406,8 @@ return e;
             // T50：与写/读同 `_styleDeclName` 归一（'COLOR' 删 'color' 声明——Blink 154
             // 活体 t50 oracle b13/g04 案，removeProperty 名参 ASCII case-insensitive）。
             var prop = _styleDeclName(name);
+            var shadow = _zwRawStyleGet(sel, handle);
+            if (shadow) delete shadow[prop];
             if (handle && typeof __zw_remove_style_handle === 'function') {
               __zw_remove_style_handle(handle, prop);
             } else if (!handle && typeof __zw_remove_style === 'function') {
@@ -32063,6 +32218,28 @@ return e;
                 if (fChainTag === 'FORM') return fnode;
                 if (fChainTag === 'TEMPLATE') break;
                 try { fnode = fnode.parentNode; } catch (_eFp) { break; }
+              }
+              // s390：解析期 form 元素指针兜底（HTML §13.2.4.4）——本地 form 属性与
+              // 祖先两路落空后查指针侧表，覆盖表格 foster-parented `<form>`（form 是
+              // table 兄弟非控件祖先）与被隐式闭合 `<form>` 的指针残留。handle-only
+              // proxy（动态 createElement 产物）无解析期条目，查表恒空不误关联。
+              // s390b 同树门（HTML §13.2.6.1 step 21：关联要求 intendedParent 与指针
+              // form 同树）——引擎视图是原始标记重解析（解析期脚本效应只在 JS 视图），
+              // 桥查表无法感知「脚本解析中途移除指针 form」（WPT
+              // form_owner_and_table_2 面），门放 shim 侧：owner wrap 与控件 proxy
+              // 的 live 根不同树即不关联（detached owner 根 = 自身 ≠ 控件根）。
+              if (sel && typeof __zw_parse_form_owner === 'function') {
+                try {
+                  var _pfoSel = __zw_parse_form_owner(sel);
+                  if (_pfoSel && typeof _zwLiveTreeRoot === 'function') {
+                    var _pfoOwner = (typeof _zwQueryWrapIdentity === 'function')
+                      ? _zwQueryWrapIdentity(_pfoSel)
+                      : ((typeof _wrapSelector === 'function') ? _wrapSelector(_pfoSel) : null);
+                    if (_pfoOwner && _zwLiveTreeRoot(_pfoOwner) === _zwLiveTreeRoot(proxy)) {
+                      return _pfoOwner;
+                    }
+                  }
+                } catch (_ePfoTrap) {}
               }
             } catch (_e) {}
             return null;

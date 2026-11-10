@@ -3541,6 +3541,14 @@
           return { name: p339[0], had: p339[1], val: p339[1] ? globalThis[p339[0]] : undefined };
         });
       } catch (_e339cap) {}
+      // s382：合并体求值窗置位子文档槽——段内字符串 timer 臂（s90）注册期捕获的
+      // 文档上下文通道（credentials 有 s340 段序前置复位行，window/document 无等
+      // 价通道）。缺此臂时子文档顶层字符串 timer 捕获空槽，fire 窗编译体裸 window
+      // 解析宿主（探针 A/B 实证 face）。恢复随 finally 窗（与 s339 同形）。
+      var _zwSlotW382 = '__zwActiveIframeWin' in globalThis ? globalThis.__zwActiveIframeWin : undefined;
+      var _zwSlotD382 = '__zwActiveIframeDoc' in globalThis ? globalThis.__zwActiveIframeDoc : undefined;
+      globalThis.__zwActiveIframeWin = win;
+      globalThis.__zwActiveIframeDoc = doc;
       try {
         fn.call(
           win, win, win, globalThis, globalThis, doc, loc,
@@ -3548,6 +3556,10 @@
           win.Response, win.URL, win.caches, win.history
         );
       } finally {
+        if (_zwSlotW382 === undefined) delete globalThis.__zwActiveIframeWin;
+        else globalThis.__zwActiveIframeWin = _zwSlotW382;
+        if (_zwSlotD382 === undefined) delete globalThis.__zwActiveIframeDoc;
+        else globalThis.__zwActiveIframeDoc = _zwSlotD382;
         try {
           if (_zwReg339Pre) {
             for (var _ri339 = 0; _ri339 < _zwReg339Pre.length; _ri339++) {
@@ -5700,6 +5712,14 @@
       var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
+      // s383（html-semantics M2 切片 383）：动态 classic 脚本 credentials 判据 slot
+      // 一次性捕获（part03 s110 臂 fetch(url) 前置）——捕获点先于 preflight/ctor 校验
+      // 等任何提前 return/throw 路径，script 车道之外的 fetch 调用读到 null 全臂 no-op，
+      // 且不会向后续 fetch 泄漏 stale slot（trickle/delay 延迟发起臂消费本次闭包捕获值）。
+      // preflighted script 请求经重入臂不重捕（slot 已清）——corpus 无此形，Cookie 附加
+      // 缺席即 no-cors 真实语义的近似缺口，见附臂注记。
+      var _zwScc383 = globalThis.__zwScriptCookieCred;
+      globalThis.__zwScriptCookieCred = null;
       // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
       // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
       var _zwSsChannel = _zwStylesheetChannelDepth > 0;
@@ -6039,6 +6059,26 @@
           // cors 跨源 GET 由上方首分支覆盖；beacon 通道按 referrer policy 序列化）。
           //   https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
           headersWire = _zwAddHeader(headersWire, 'Origin', _zwDocOrigin);
+        }
+        // s383（html-semantics M2 切片 383）：Cookie 请求头附加（script-crossorigin-network
+        // 车道）。位置在 preflight 判定面之后——真实浏览器 Cookie 由网络层在 CORS
+        // safelist 判定后追加、不触发 preflight，本位同形。触发面收窄到动态 classic
+        // 脚本车道（slot 由 part03 s110 臂前置，_zwFetchMainImpl 头部一次性捕获——
+        // script 车道外恒 null no-op；jar 非空面 corpus 仅 credentials 族 5 文件，
+        // classic 车道仅 script-crossorigin-network 在用）。附加判据 = 脚本 credentials
+        // mode include 或请求同源（RFC 6265bis §5.4 cookie-header——与 s338 check-cookie
+        // 仿真、net-api M4 cors-cookie 仿真同判据式）；jar 检索复用 WS 握手桥
+        // `_zwCookieHeaderForUrl`（part06 M5-S3 globalThis 桥——域/路径匹配、secure、
+        // 过期、路径长度排序已实现），空 jar 返空串不附（muted-errors 等无
+        // document.cookie 写面零漂移）。
+        //   https://www.rfc-editor.org/info/rfc6265bis
+        if (_zwScc383 != null && typeof globalThis._zwCookieHeaderForUrl === 'function') {
+          var _zwCkAttach383 = ((_zwScc383 === 'include') ||
+              (_zwReqOrigin && _zwDocOrigin && _zwReqOrigin === _zwDocOrigin))
+            ? String(globalThis._zwCookieHeaderForUrl(url)) : '';
+          if (_zwCkAttach383 && !_zwHasHeader(headersWire, 'cookie')) {
+            headersWire = _zwAddHeader(headersWire, 'Cookie', _zwCkAttach383);
+          }
         }
         // net-api M2-S10：体缺失的 POST 请求补 Content-Length: 0（浏览器 POST 无体
         // 仍发 CL:0，GET/HEAD 与自定义方法不带 CL——「Fetch with Chicken」CL null
@@ -7646,15 +7686,26 @@
     // 值、finally 换回（同 inline 处理器换基模式，part03 `_zwCallHandlerSwapBase`）。
     // s92（string-compilation CSP nonce 面）：nonce 同捕获——spec 字符串编译继承触发
     // 脚本 nonce，fire 窗换入注册期捕获值（无 swapper 捕获 '' 恒等）。
+    // s382（string timer 文档上下文面）：cred/子文档槽同捕获——`new Function` 编译体
+    // 裸 `window`/`document` 解析宿主全局（globalThis.window=globalThis，part06），
+    // 非注册段合并体形参（子窗）；`.then(window.resolve)` 引用解析落顶窗致子文档
+    // promise_test 链断裂（dynamic-imports-credentials-setTimeout 文件级 Timeout 根因，
+    // 探针 A/B：编译体内 window===globalThis 槽值 undefined，闭包臂经作用域链正确解
+    // 析子窗）。credentials 槽同理：fire 窗槽值 = 段序末尾复位行值，非注册 script 元素
+    // mode。子文档槽在注册窗的置位通道 = s339 体调度窗 + s382 合并体求值窗。
     if (typeof fn === 'string') {
       var _zwCapBase = (typeof globalThis.__zwSwapImportReferrer === 'function')
         ? globalThis.__zwSwapImportReferrer() : null;
       var _zwCapNonce = (typeof globalThis.__zwSwapImportNonce === 'function')
         ? globalThis.__zwSwapImportNonce() : '';
+      var _zwCapCred = globalThis.__zwActiveScriptCred;
+      var _zwCapWin = globalThis.__zwActiveIframeWin;
+      var _zwCapDoc = globalThis.__zwActiveIframeDoc;
       var _zwCompiled = new Function(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
-          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce);
+          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce,
+            _zwCapCred, _zwCapWin, _zwCapDoc);
         }
         return _zwCompiled.apply(this, arguments);
       };
@@ -7695,15 +7746,20 @@
     // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
     // s91：注册期捕获脚本基同 setTimeout（fire 时 swap 求值 finally 换回）。
     // s92：nonce 同捕获（字符串编译继承触发脚本 nonce）。
+    // s382：cred/子文档槽同捕获（setTimeout 臂同注释）。
     if (typeof fn === 'string') {
       var _zwCapBaseI = (typeof globalThis.__zwSwapImportReferrer === 'function')
         ? globalThis.__zwSwapImportReferrer() : null;
       var _zwCapNonceI = (typeof globalThis.__zwSwapImportNonce === 'function')
         ? globalThis.__zwSwapImportNonce() : '';
+      var _zwCapCredI = globalThis.__zwActiveScriptCred;
+      var _zwCapWinI = globalThis.__zwActiveIframeWin;
+      var _zwCapDocI = globalThis.__zwActiveIframeDoc;
       var _zwCompiledI = new Function(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
-          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI);
+          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI,
+            _zwCapCredI, _zwCapWinI, _zwCapDocI);
         }
         return _zwCompiledI.apply(this, arguments);
       };
@@ -12071,6 +12127,16 @@
       return 'inline';
     };
     return new Proxy({}, {
+      // DC-2 次批（css-color computed-testcommon 断言链第一步
+      // `assert_true(property in getComputedStyle(target))`）：无 has 陷阱时
+      // 'color' in cs 恒 false——7,199+ 单簇第一断言即死。形态门（css-syntax
+      // ident：可选 `-` 前缀 + 字母起 kebab）+ 方法名 + 自定义属性。
+      has: function(_t, prop) {
+        if (typeof prop !== 'string') return false; // Symbol 返 false
+        if (prop.slice(0, 2) === '--') return true; // css-variables-1（R5114）
+        var kp = _camelToKebab(prop);
+        return /^-?[a-z][a-z0-9-]*$/.test(kp);
+      },
       get: function(_t, prop) {
         var p = String(prop);
         if (p === 'getPropertyValue') {
@@ -12101,6 +12167,23 @@
               return 'static';
             }
             var _csGV = query(kp);
+            // DC-2 次批：宿主 partial-parse 抢答覆盖（注释形/currentcolor/
+            // 现代色形宿主产出错误计算值——part11 __zwCssColorNeedsPlain
+            // 判定），inline 命中即落 plain 重读（spec 正确值）。legacy 形
+            // 不覆盖（宿主 cascade 可正确产出，零漂移）。
+            if (_csGV !== '' && (kp === 'color' || kp === 'background-color')
+                && elt && elt.style
+                && typeof globalThis.__zwCssColorNeedsPlain === 'function'
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              var _irGV = '';
+              try { _irGV = String(elt.style.getPropertyValue(kp) || ''); } catch (_eIR1) {}
+              if (_irGV && globalThis.__zwCssColorNeedsPlain(_irGV)) {
+                try {
+                  var _pcGV2 = globalThis.__zwPlainComputed(elt, kp);
+                  if (_pcGV2 !== '') return _pcGV2;
+                } catch (_ePC3) {}
+              }
+            }
             // editing-compat style-with-value 簇（2026-11-01）：plain 元素四属性
             // 计算值 JS 侧级联解析（inline style → font 表现提示 → 继承走查 →
             // UA 缺省）。host 通道只覆盖 sel/handle 注册元素，语料 vendored 查询
@@ -12138,6 +12221,21 @@
         // 期望 'none'；host 真值非空时不变）。
         // css-variables-1：`--` 起始 camelCase 属性访问同 getPropertyValue 免归一（R5114）。
         var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
+        // DC-2 次批：宿主 partial-parse 抢答覆盖（同 getPropertyValue 臂注释）。
+        var _kpC = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
+        if (_csV !== '' && (_kpC === 'color' || _kpC === 'background-color')
+            && elt && elt.style
+            && typeof globalThis.__zwCssColorNeedsPlain === 'function'
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          var _irV = '';
+          try { _irV = String(elt.style.getPropertyValue(_kpC) || ''); } catch (_eIR2) {}
+          if (_irV && globalThis.__zwCssColorNeedsPlain(_irV)) {
+            try {
+              var _pcV2 = globalThis.__zwPlainComputed(elt, _kpC);
+              if (_pcV2 !== '') return _pcV2;
+            } catch (_ePC4) {}
+          }
+        }
         if (_csV === '') {
           // R5009 float / s89 position：初始值回落（css-position-3 position initial
           // value 'static'——host miss 的 plain 元素真值即初始值）。
@@ -12148,7 +12246,8 @@
           // （内部机具 _zwJusCs 以 kebab 访问，vendored 侧 camel）。
           var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
           if (_pcP === 'color' || _pcP === 'font-size'
-              || _pcP === 'font-family' || _pcP === 'background-color') {
+              || _pcP === 'font-family' || _pcP === 'background-color'
+              || _pcP === 'opacity') {
             try {
               var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
               if (_pcV !== '') return _pcV;

@@ -2093,3 +2093,66 @@ fn test_parse_named_color_brown_blueviolet_t47() {
         Some(ColorValue::Rgba(138, 43, 226, 255))
     ));
 }
+
+// ── CSS Values 4 §11.3 裸数学函数（无 calc() 包裹，wptfyi-css DC-2 values trig 批）──
+// `round(23px, 10px)` 等裸形在任意 calc() 合法槽位等价可用；分派走
+// parse_math_function → CalcParser 全文解析（操作数链构建 UnaryOp/BinaryMathOp）。
+
+#[test]
+fn test_parse_math_function_bare_round() {
+    let expr = parse_math_function("round(23px, 10px)");
+    let expr = expr.expect("bare round() should parse");
+    match &expr {
+        CalcExpr::BinaryMathOp(op, a, b) => {
+            assert_eq!(*op, BinaryMathOp::Round);
+            assert_eq!(**a, CalcExpr::Length(LengthValue::Px(23.0)));
+            assert_eq!(**b, CalcExpr::Length(LengthValue::Px(10.0)));
+        }
+        _ => panic!("expected BinaryMathOp, got {expr:?}"),
+    }
+}
+
+#[test]
+fn test_parse_math_function_bare_trig_eval() {
+    // sin(0) = 0（弧度 number 入参）
+    let expr = parse_math_function("sin(0)").expect("bare sin() should parse");
+    assert!(matches!(&expr, CalcExpr::UnaryOp(UnaryMathOp::Sin, _)));
+    assert_eq!(eval_calc(&expr, None), Some(0.0));
+    // pow(2, 10) = 1024
+    let expr = parse_math_function("pow(2, 10)").expect("bare pow() should parse");
+    assert!(matches!(&expr, CalcExpr::BinaryMathOp(BinaryMathOp::Pow, _, _)));
+    assert_eq!(eval_calc(&expr, None), Some(1024.0));
+}
+
+#[test]
+fn test_parse_math_function_atan_atan2_prefix_distinct() {
+    // `atan(` 与 `atan2(` 由后继字符 `(` 检查区分——两形各自命中。
+    let expr = parse_math_function("atan(0)").expect("bare atan() should parse");
+    assert!(matches!(&expr, CalcExpr::UnaryOp(UnaryMathOp::Atan, _)));
+    let expr = parse_math_function("atan2(0, 0)").expect("bare atan2() should parse");
+    assert!(matches!(&expr, CalcExpr::BinaryMathOp(BinaryMathOp::Atan2, _, _)));
+}
+
+#[test]
+fn test_parse_math_function_bare_round_eval() {
+    // round(23px, 10px) = 20px（BinaryMathOp 求值取最近倍数）
+    let expr = parse_math_function("round(23px, 10px)").expect("bare round() should parse");
+    match eval_calc(&expr, None) {
+        Some(v) => assert!((v - 20.0).abs() < 1e-9, "round(23px, 10px) -> 20px, got {v}"),
+        None => panic!("bare round() should evaluate"),
+    }
+}
+
+#[test]
+fn test_parse_math_function_nested_in_calc_still_works() {
+    // calc() 包裹的 L4 函数嵌套（既有语义不回归）
+    let expr = parse_math_function("calc(sin(0) + 1px)").expect("nested trig in calc() should parse");
+    assert!(matches!(expr, CalcExpr::BinaryOp(_, CalcOp::Add, _)));
+}
+
+#[test]
+fn test_parse_math_function_plain_values_still_rejected() {
+    // 非数学函数值不误分派
+    assert!(parse_math_function("10px").is_none());
+    assert!(parse_math_function("roundish(1px, 2px)").is_none());
+}
