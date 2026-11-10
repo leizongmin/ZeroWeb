@@ -274,6 +274,48 @@
             if (node.parentNode !== prevP) keep = true;
             break;
           }
+          // Chrome delta（div>p 摆位刀，2026-11-10）：vetoed formattable 直亲
+          //（node 直属该块、块含 prohibited 后代——spec splitParent 爬升在此
+          // 刹车）且新块 tag 为其允许子时，Chrome 段落摆位把部分覆盖段落的
+          // 替换块落块侧旁而非块内——**内联成员** splitParent 外提后 wrap 落
+          // 宿主层（`<div>[foo<p>bar]</p></div>` + <p> 录音 `<p>[foo</p><div>
+          // <p>bar]</p></div>`，formatblock.js :1754/:1759 双 dps 变体）。三道
+          // 防线（TRACE 实证首轮三缺陷后定谳）：
+          // **直亲门**——node 与 anc 之间隔 barrier（td 等，如 `<div><table>
+          // <tr><td>[foo]</table></div>` 录音 div 落 td 内 :1794）时 splitParent
+          // 只拆直亲链，跨 barrier 外提=表格撕裂（首轮 F2P=0 + 表格 P2F ×2
+          // 实证），非直亲不外提维持 spec 停；**块成员门**——node 为块级成员
+          //（blockExtend 后选区含整个 SLC 块时该块本身入 nodeList，探针
+          // TRACE：afterFilter=[foo,<p>]）不外提——外提会连锁拆壳（splitParent
+          // move-out 臂移出成员 + 空壳删除→被替换块整体消失，首证 got
+          // `<p>foo</p><p>bar</p>` 丢 `<div><p>bar</p></div>` 录音形）；块成员
+          // 留位走尾环 SLC 溶解臂，溶解在原块内重 wrap 产出 `<div><p>bar</p>
+          // </div>` 录音形；**值门**——该成员 recordValues 有非 null 值
+          //（styled 块 forecolor 等）时 restore 会落内联载体，外提后载体×
+          // wrap×fixDisallowed 链丢内容（`<div style=color:blue>[foo<p>bar]
+          // </div>` 探针 foo 失踪实证），有值成员维持 spec 停。
+          // 新块非允许子形（h1→p 外壳）不外提维持 spec 停——fixDisallowed
+          // 允许子臂拆父产出合并录音形（`<p>[foo<p>bar]` + h1 →
+          // `<h1>[foo<br>bar]</h1>`，:1744 现行绿面；h1∉p 允许子为判据分野）。
+          if (!_zwJusIsEditingHost(anc)
+              && node.parentNode === anc
+              && _zwJusIsInlineNode(node)
+              && _zwJusIsEditable(anc)
+              && _zwListInSameEditingHost(anc, node)
+              && _zwJusIsHtmlElement(anc, _zwFbqFormattableNames)
+              && _zwFbqHasProhibitedParagraphChildDescendant(anc)
+              && _zwJusIsAllowedChild(v, _zwJusTag(anc))) {
+            var fbqHasVals = false;
+            for (var vi = 0; vi < values.length; vi++) {
+              if (values[vi][0] === node && values[vi][2] !== null) { fbqHasVals = true; break; }
+            }
+            if (!fbqHasVals) {
+              var prevP2 = node.parentNode;
+              _zwListSplitParent([node]);
+              if (node.parentNode !== prevP2) keep = true;
+            }
+            break;
+          }
           anc = anc.parentNode;
         }
       }
