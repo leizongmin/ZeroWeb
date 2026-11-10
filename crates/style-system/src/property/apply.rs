@@ -1719,6 +1719,13 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("translate", "10px 20px"));
         assert!(validate_decl_value("z-index", "sign(-3)"));
         assert!(validate_decl_value("margin-left", "round(23px, 10px)"));
+        // r2320：transform 列表 rotate 臂 math 接线（WPT acos serialize 页
+        // 曾因该臂无 math 落 "disallowed value"）；NaN 域外合法（§10.10），
+        // asin/acos/atan 角度叶仍拒（invalid 面）。
+        assert!(validate_decl_value("transform", "rotate(acos(1))"));
+        assert!(validate_decl_value("transform", "rotate(acos(2))"));
+        assert!(!validate_decl_value("transform", "rotate(atan(45deg))"));
+        assert!(!validate_decl_value("transform", "rotate(asin(90px))"));
     }
 
     #[test]
