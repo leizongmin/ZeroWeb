@@ -126,6 +126,89 @@ fn r2280_scale_invalid_math_rejected() {
 }
 
 #[test]
+fn r2320_scale_trig_number_slot() {
+    // CSS Values 4 §10.5：trig 实参容 <angle>、产出 <number>——`scale: cos(0deg)`
+    // = 1。旧 contains_dimension_token 文本扫描把实参内 0deg 误判顶层维度拒收
+    //（WPT sin-cos-tan-serialize 210 案驱动，2026-11-11 r2320）。
+    let cases = [("cos(0deg)", 1.0_f64), ("sin(30deg)", 0.5), ("tan(45deg)", 1.0)];
+    for (value, expected) in cases {
+        let result = parse_individual_scale(value);
+        assert!(result.is_some(), "scale: {value} 应解析成功");
+        assert!(
+            matches!(result, Some(TransformFunction::Scale(a, _)) if (a - expected).abs() < 1e-6),
+            "scale: {value} 实际 {:?}",
+            result
+        );
+    }
+    // 混合式：trig 实参内角度 + 顶层纯 number。
+    let result = parse_individual_scale("calc(sin(30deg) * 2)");
+    assert!(
+        matches!(result, Some(TransformFunction::Scale(a, _)) if (a - 1.0).abs() < 1e-6),
+        "scale: calc(sin(30deg) * 2) 实际 {:?}",
+        result
+    );
+    // §10.10：NaN 结果合法（infinity/NaN 常量实参；WPT sin-cos-tan-serialize
+    // scale 面三阶段 × 9 式驱动）。
+    for value in ["calc(sin(infinity))", "cos(NaN)", "calc(calc(tan(-infinity)))"] {
+        let result = parse_individual_scale(value);
+        assert!(
+            matches!(result, Some(TransformFunction::Scale(a, _)) if a.is_nan()),
+            "scale: {value} 应求值 NaN（§10.10），实际 {:?}",
+            result
+        );
+    }
+    // 顶层角度叶（trig 实参外）维持拒绝（结果 <angle> 非 <number>）。
+    assert!(
+        parse_individual_scale("calc(45deg)").is_none(),
+        "scale: calc(45deg) 应拒绝"
+    );
+    assert!(
+        parse_individual_scale("calc(1px + cos(0deg))").is_none(),
+        "scale: 长度叶应拒绝"
+    );
+}
+
+#[test]
+fn r2320_angle_slot_number_trig_rejected() {
+    // <angle> 槽型别门（CSS Values 4 §10.5）：sin/cos/tan 产出 <number>，无
+    // <angle> 产出 provenance（反三角/atan2 或 trig 实参外角度叶）时按度直读
+    // 违反槽型别——WPT sin-cos-tan-invalid `rotate(tan(45deg ))` 驱动
+    //（实参尾随空格同拒，2026-11-11 r2320）。
+    assert!(
+        parse_individual_rotate("tan(45deg )").is_none(),
+        "rotate: tan(45deg) 产出 number 应拒绝"
+    );
+    assert!(
+        parse_individual_rotate("cos(180deg)").is_none(),
+        "rotate: cos 产出 number 应拒绝"
+    );
+    assert!(
+        parse_individual_rotate("calc(sin(45deg))").is_none(),
+        "rotate: calc(sin) 应拒绝"
+    );
+    // 有 <angle> 产出 provenance 的三角混合式照常接受（§10.5 同型运算）。
+    let result = parse_individual_rotate("calc(sin(30deg) * 1deg)");
+    assert!(
+        matches!(result, Some(TransformFunction::RotateZ(a)) if (a - 0.5).abs() < 1e-6),
+        "rotate: calc(sin(30deg) * 1deg) 实际 {:?}",
+        result
+    );
+    let result = parse_individual_rotate("atan2(1, 1)");
+    assert!(
+        matches!(result, Some(TransformFunction::RotateZ(a)) if (a - 45.0).abs() < 1e-6),
+        "rotate: atan2(1, 1) 实际 {:?}",
+        result
+    );
+    // 纯 number 式维持 unitless 宽容口径（既有测试面）。
+    let result = parse_individual_rotate("calc(45)");
+    assert!(
+        matches!(result, Some(TransformFunction::RotateZ(a)) if (a - 45.0).abs() < 1e-6),
+        "rotate: calc(45) 实际 {:?}",
+        result
+    );
+}
+
+#[test]
 fn r2280_calc_expr_number_type_check() {
     // number 型：纯 number 叶 + number 产出函数（sin/cos/tan 输入弧度归一）。
     assert!(calc_expr_is_number(&CalcExpr::Number(1.0)));

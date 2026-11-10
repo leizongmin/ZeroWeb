@@ -5476,7 +5476,15 @@ pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> Strin
                 property,
                 value,
             } if h == handle => {
-                style = merge_style_property(&style, property, value);
+                // r2320（CSS Values 4 §10.11）：声明值 specified 折叠——数学函数
+                // 值在读出视图折叠为 calc(...) 规范形（mutation log 保留原文）。
+                // WPT css-values serialize 桶以 `el.style.transform =
+                // 'rotate(acos(1))'` 读回 `rotate(calc(0deg))` 驱动（engine 物化
+                // 元素 inline style 读全走本函数——`__zw_get_style_lw`/
+                // `__zw_get_style_lw_handle` 同源）。
+                let folded =
+                    zero_css_parser::values::fold_decl_specified(property, value).unwrap_or_else(|| value.clone());
+                style = merge_style_property(&style, property, &folded);
             }
             DomMutation::RemoveStyleOnHandle { handle: h, property } if h == handle => {
                 style = remove_style_property(&style, property);

@@ -3140,7 +3140,13 @@ pub fn register_dom_callbacks(
                         property,
                         value,
                     } if s == selector => {
-                        style = merge_style_property(&style, property, value);
+                        // r2320（CSS Values 4 §10.11）：声明值 specified 折叠——与
+                        // [`style_from_mutations_lw`] handle 臂同形（mutation log 保留
+                        // 原文，sel 读出视图折叠）。WPT css-values serialize 桶解析
+                        // 元素 #target 走本 sel 臂（sin-cos-tan-serialize 驱动）。
+                        let folded = zero_css_parser::values::fold_decl_specified(property, value)
+                            .unwrap_or_else(|| value.clone());
+                        style = merge_style_property(&style, property, &folded);
                     }
                     DomMutation::RemoveStyle { selector: s, property } if s == selector => {
                         style = remove_style_property(&style, property);

@@ -892,8 +892,19 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     if calc_expr_has_length(&expr) {
         return None;
     }
+    // <angle> 槽型别门：sin/cos/tan 产出 <number>（§10.5）——式子含三角调用
+    // 而无 <angle> 产出 provenance（反三角/atan2 或 trig 实参外角度叶）时，
+    // 按度直读即违反槽型别：`rotate(tan(45deg ))` invalid 案驱动（WPT
+    // sin-cos-tan-invalid；tan(45deg) 求值 0.999 无量纲，直读成 0.999deg）。
+    // 纯 number 式（`calc(45)`）维持 unitless 宽容口径，不在此收紧。
+    if span_has_number_result_trig(s) && !calc_expr_has_angle_result(&expr) && !span_has_top_level_angle_unit(s) {
+        return None;
+    }
     let value = eval_calc(&expr, None)?;
-    let deg = if calc_expr_has_angle_result(&expr) {
+    // 弧度 → 度的双 provenance（与 [`fold_math_specified`] Angle 臂同形）：
+    // ①角度产出函数；②trig 实参外角度单位叶（parse_atom 把 `180deg` 平叶
+    // Number 化为弧度，`calc(180deg)` 缺 ② 会折成 3.14159deg）。
+    let deg = if calc_expr_has_angle_result(&expr) || span_has_top_level_angle_unit(s) {
         value.to_degrees()
     } else {
         value

@@ -21,8 +21,9 @@ fn transform_rotate_function_accepts_math() {
     assert!(parse_rotate("rotate(acos(1))").is_some(), "rotate(acos(1)) 合法");
     assert!(parse_rotate("rotate(calc(acos(1)))").is_some(), "calc 包裹形合法");
     assert!(parse_rotate("rotate(acos(2))").is_some(), "NaN 域外合法（§10.10）");
-    // 注：`rotate(sin(30deg) * 1deg)` 类角度单位算术 CalcParser 不支持（FIXME
-    // 挂账，parse_transform.rs parse_angle_or_math 注释），不在本批范围。
+    // r2320：角度单位算术求值口径已通（trig 实参外角度叶 provenance →
+    // to_degrees，见 parse_angle_or_math / r2280_math_function_slots_tests
+    // r2320_angle_slot_number_trig_rejected 正例锚）。
 }
 
 #[test]
@@ -36,8 +37,17 @@ fn transform_rotate_function_rejects_invalid_forms() {
     );
     assert!(parse_transform("rotate(asin(90px))").is_none(), "长度叶拒绝");
     assert!(parse_transform("rotate(acos(1deg, 2deg))").is_none(), "双参拒绝");
-    // sin/cos/tan 与 atan2 角度/时值实参仍合法。
-    assert!(parse_transform("rotate(sin(30deg))").is_some(), "sin 角度实参合法");
+    // sin/cos/tan 产出 <number>（§10.5），<angle> 槽拒收——WPT
+    // sin-cos-tan-invalid `test_invalid_angle('tan(45deg )')` 驱动；
+    // atan2 产出 <angle> 仍合法。
+    assert!(
+        parse_transform("rotate(sin(30deg))").is_none(),
+        "sin 产出 number 应拒绝"
+    );
+    assert!(
+        parse_transform("rotate(tan(45deg ))").is_none(),
+        "tan 产出 number 应拒绝"
+    );
     assert!(parse_transform("rotate(atan2(1, 1))").is_some(), "atan2 合法");
 }
 
