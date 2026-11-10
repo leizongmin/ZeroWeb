@@ -30,3 +30,11 @@
 - **残 23F → 21F**：div>p ×2 收口。残 21F 族级（fbw-fb-post2 实测）：compare 面照树红 ×5（blockquote ×2 / section-hgroup ×1 / h1 合并形 dps-p ×1 / p 命令 span cE=false ×1）+ qV·qI 读面 ×16（table ×4 / h1 ×2 / dl ×2 / p ×2 / blockquote-inner qV-after · div · del · xmp · listing · quasit 各 ×1）——其中 blockquote ×2 compare + section-hgroup compare 定性为 **Chrome per-paragraph 不合并族**（部分覆盖多段各自换块不合并，与 div>p 摆位同根不同形），待刀。
 - **② 外层 restore 载体类（值命令）**：多块 styled census（C1/C2/C3）pre-arm 无损嵌套、post-刀 C1/C3 字节恒一（值门/直亲门拦）、C2 无损外提形——**外层 restore 载体链未再现数据丢失**；挂账收窄为「C2 形（背景块 × 多块）Chrome 真值未录音，现走外提形」。
 - **③ `_zwJusWrap` 载体内插块 hostkids=0 机制定谳**：本轮 TRACE 面未再现（wrap 尾环 hostkids 正常），维持挂账原状。
+
+## 复绑批终判（18:22:59 REBIND-ALL-DONE，混树分裂绑定定谳）
+
+复绑批 batch-fbwrap-rebind-gate-v1（17:15:37 发射，锚 e71dcf998 + 九点 md5 复读 OK，ensure_solo + flock，setsid 脱离跨 session 存活）终判全绿，批中两次 fast-forward pull 落 mt 腿运行窗（reflog 17:43:28→c889d3e68 docs、17:49:57→3c622f21a ShadowRealm：part05.js +37 / script-sandbox v8_runtime.rs +65 / test262 runner +14），make 逐腿按需重建构成**混合二进制批**：
+
+- **旧树 e71dcf998 二进制腿（刀红线域，完整成立）**：probe 58/19 ✓ → fb 5025/21 计数精确 + 双 judge（漂移中性 vs fbw-fb-gate F2P=0/P2F=0 VERDICT OK + 刀翻键 vs bfl-fb-gate 恰 div>p 双行复确认）→ mt 20182/2 judge VERDICT OK。knife 判读绑定 e71dcf998 保持有效。
+- **新树 3c622f21a 二进制腿（delta 无害实证）**：iol/iul/ip/ilb/ihtml + exec×3 judge 全零漂移 → enginelib 3828P/**7F** 名册双门恒一（+1 P 为 ShadowRealm 域引擎侧测试）→ battery 七腿 420/880/1104/552/3456/2607/1455 全同数 F=0 T=0 → binary sig 全在含漂移层双标记（`__zwCssColorNeedsPlain`/`__zwColorNormalizeDecl`＝新树色管线 delta 确在产物，证明腿确实跑在新二进制上）。
+- **处置（不停批不补跑）**：红线三腿旧树完整＝判读域无缺口；新树腿零漂移＝ShadowRealm/s385/s386 delta 对 editing 域无害实证。新树 editing 红线不靠本批单点成立——移交下一刀（fb per-paragraph 不合并族 4 行）门禁批兼任重立：fb 腿 F2P=4 恰族签名 + P2F=0；mt 腿归因门 F2P 全 formatblock 签名（非签名翻键＝外来漂移，ABORT 不吸收）。
