@@ -52,14 +52,24 @@
   // SLC 溶解声明收割（2026-11-10 数据丢失刀，见 apply unwrap 臂 carry 注）：
   // 只收四值命令——forecolor/hilitecolor/fontsize/fontname 的 specified 读面
   // 直读对应 style/font 声明；boolean 命令（bold/italic/underline/strikethrough/
-  // subscript）specified 读面会错读他族声明（hilite 形探针 bold=yellow 实证），
-  // 不入收割（其 vals2 restore 维持 spec 行为不变）。
+  // subscript）不入收割——Chrome carry 面只转移值声明，boolean 载体按 spec
+  // record/restore 行为走（读面 else 臂错读已于 boolean 读面刀在 part01d
+  // 修为族内正确读，此处维持不收）。
   function _zwFbqHarvestBlockValues(block) {
     var out = [];
     var carryCmds = ['forecolor', 'hilitecolor', 'fontsize', 'fontname'];
     for (var i = 0; i < carryCmds.length; i++) {
       var val = null;
       try { val = _zwVaSpecifiedValue(block, carryCmds[i]); } catch (_eFbqH) {}
+      // hilitecolor 的 spec 读面对块级返 null（display 门，见 part01d :209），
+      // 但 Chrome fb carry 面转移被替换块的内联声明不分 display——背景块形
+      // 直读 plain 声明补收割（fbl2 面谱 background 全丢 + boolface 探针
+      // bf1 双空 span 实证；语料无背景 fb 行，探针面断言）。
+      if (val === null && carryCmds[i] === 'hilitecolor') {
+        try {
+          val = _zwPlainDecl(block, 'background-color') || null;
+        } catch (_eFbqH2) {}
+      }
       if (val !== null) out.push([carryCmds[i], val]);
     }
     return out;
