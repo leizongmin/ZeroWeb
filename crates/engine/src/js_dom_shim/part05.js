@@ -14768,6 +14768,70 @@
     return null;
   }
 
+  // s395：geometry trap 身份派生——handle-only（sel 空）动态元素的 in-process rect
+  // 回调（callbacks.rs `__zw_getBoundingClientRect`）无 handle→selector 解析臂
+  //（多进程 rect_bridge.rs 版有；in-process 版刻意收窄——s284 勘根：全局点亮曾致
+  // clone img 真实 rect 泄入 attr 期望面 naturalWidth 族），裸 handle 非合法
+  // selector 恒 miss（zw394 probe P2：同 turn rect/tag 双空）。元素带 id 时以
+  // '#'+id 作 rect 身份（host find_by_selector('#id') 解析；flush 后动态节点
+  // host 全可见——probe P6 实证：同 sel 1.5s 后 rect 8,58,70,20 正确）。无 id
+  // 维持 handle（现状恒 0 语义不变）。
+  function _zwRectIdent(sel, handle) {
+    if (sel || !handle) return sel || handle;
+    try {
+      var _rid = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, 'id') : null;
+      if (_rid) return '#' + _rid;
+    } catch (_eRid) {}
+    return handle;
+  }
+  // s395：definite 尺寸本地几何兜底（仅 handle-only——sel 身份的 host miss =
+  // 未布局/display:none，0 语义保持）。created 元素同 turn（mutation flush 前）
+  // host 无节点（probe P2 实证），而 CSSOM View geometry 读须先 update the
+  // rendering（强制布局语义，rect_bridge.rs:239 同注）——flush 前的同 turn 读数
+  // 以本地 0 基 definite 盒兜底（R34xx 文本几何 0 基兜底同型）。双轴均 definite
+  //（inline style px / 维度属性无单位数——img width/height attr 即 presentational
+  // hint 面，computed 50px 已由 probe v2 A 臂实证）才兜底；缺轴/百分比/auto →
+  // null（现状 0 不变）。刻意不进 _layoutRect：img IDL width/height rendered 臂
+  //（part04 `__zw_img` 尺寸臂）与 gBCR 同源消费 _layoutRect——s284 attr 期望面
+  // 雷区，本兜底仅 geometry trap 消费面接线。
+  function _zwLocalDefiniteRect(sel, handle) {
+    if (sel || !handle) return null;
+    function _pxLen(v) {
+      if (v == null) return null;
+      var m = /^\s*(\d+(?:\.\d+)?)px\s*$/i.exec(String(v));
+      return m ? +m[1] : null;
+    }
+    function _dim(getter, name) {
+      try {
+        var p = _pxLen(typeof getter === 'function' ? getter(handle, name) : null);
+        if (p != null) return p;
+        var a = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, name) : null;
+        if (a != null && /^\s*\d+(?:\.\d+)?\s*$/.test(String(a))) return +String(a).trim();
+      } catch (_eDim) {}
+      return null;
+    }
+    var _gs = typeof __zw_get_style_lw_handle === 'function' ? __zw_get_style_lw_handle : null;
+    var _w = _dim(_gs, 'width');
+    var _h = _dim(_gs, 'height');
+    if (_w == null || _h == null) return null;
+    return { x: 0, y: 0, w: _w, h: _h };
+  }
+  // s395：geometry trap 专用 rect 读取——身份派生 + host 查询 + 本地 definite 兜底。
+  // `_layoutRect` 保持裸语义（img IDL rendered 臂等既有消费者零变化）。
+  function _zwLayoutRectTrap(sel, handle) {
+    var id = _zwRectIdent(sel, handle);
+    if (id && typeof __zw_getBoundingClientRect === 'function') {
+      try {
+        var s = __zw_getBoundingClientRect(id);
+        if (s && s.indexOf(',') >= 0) {
+          var p = s.split(',');
+          return { x: +p[0], y: +p[1], w: +p[2], h: +p[3] };
+        }
+      } catch (_e) {}
+    }
+    return _zwLocalDefiniteRect(sel, handle);
+  }
+
   // getBoundingClientRect/getClientRects 共用（R2828）：从 `__zw_getBoundingClientRect(id)` 解析
   // "x,y,w,h" → 完整 DOMRect（x/y/top/left/right/bottom/width/height + toJSON）。id = selector 或 handle。
   // 未注册 / 未命中 / 无 layout（handle-only detached）→ null（getBoundingClientRect 落零 rect，getClientRects 落 []）。

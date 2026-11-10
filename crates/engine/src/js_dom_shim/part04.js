@@ -13448,8 +13448,12 @@
             // View spec：gBCR 返回布局盒；注册表本地几何仅兜底 created/detached 无布局
             // 元素（R34xx 原始受众，_domRectFromId 未命中时）。
             // https://drafts.csswg.org/cssom-view/#dom-element-getboundingclientrect
-            var _zwLayoutR = _domRectFromId(sel || handle);
+            var _zwLayoutR = _domRectFromId(_zwRectIdent(sel, handle));
             if (_zwLayoutR) return _zwLayoutR;
+            // s395：handle-only 同 turn（flush 前）host miss → 本地 definite 盒兜底
+            //（_zwLocalDefiniteRect 注——CSSOM View 强制布局语义的 flush 前近似）。
+            var _zwLoc = _zwLocalDefiniteRect(sel, handle);
+            if (_zwLoc) return _makeDomRect(_zwLoc.x, _zwLoc.y, _zwLoc.w, _zwLoc.h);
             // R34xx：注册的纯文本元素（无布局 rect）→ 本地 0 基几何（测试归一化绝对位置）。
             if (typeof _zwTextElBoundingRect === 'function') {
               var _zwR = _zwTextElBoundingRect(sel, handle);
@@ -13466,7 +13470,12 @@
         // inline 多行收缩为单 rect（无 per-line-box，documented）；handle-only detached 无 layout → []。
         if (prop === 'getClientRects') {
           return function() {
-            var r = _domRectFromId(sel || handle);
+            var r = _domRectFromId(_zwRectIdent(sel, handle));
+            if (!r) {
+              // s395：同 gBCR 的 handle-only 本地 definite 兜底。
+              var _lr = _zwLocalDefiniteRect(sel, handle);
+              if (_lr) r = _makeDomRect(_lr.x, _lr.y, _lr.w, _lr.h);
+            }
             return r ? [r] : [];
           };
         }
@@ -13478,7 +13487,7 @@
         // content-box（缺 border 数据，此处≈offset，近似）；offsetTop/Left 应相对 offsetParent（此处
         // 相对 viewport，顶层元素精确、嵌套近似）——近似对 visibility/sizing 检查足够。
         if (prop === 'offsetWidth' || prop === 'clientWidth') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           // 根元素（html）clientWidth = viewport 宽（CSSOM View spec；shim 布局 rect 根盒
           // 宽即 viewport 宽，此处恒等，显式化以免 rect 未命中时返 0）。
           if (prop === 'clientWidth' && _realTag(sel, handle) === 'HTML') {
@@ -13494,26 +13503,26 @@
           if (prop === 'clientHeight' && _realTag(sel, handle) === 'HTML') {
             return globalThis.innerHeight | 0;
           }
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.h : 0;
         }
         if (prop === 'offsetTop') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.y : 0;
         }
         if (prop === 'offsetLeft') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.x : 0;
         }
         // scrollWidth/scrollHeight：滚动内容尺寸。布局 rect 无 overflow 数据（不含滚动展开量），
         // 近似为 client 尺寸（同 offsetWidth/Height 的 border-box 近似）。对「content 是否溢出」
         // 精确判定不足，但对 `el.scrollHeight > 0` 等 sizing 检查足够（消除旧 undefined 返回）。
         if (prop === 'scrollWidth') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.w : 0;
         }
         if (prop === 'scrollHeight') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.h : 0;
         }
         // R3047：scrollTop/scrollLeft 读 `_scrollOffsets[key]`（程序化滚动 round-trip 自洽；默认未滚动 → 0）。
@@ -13550,7 +13559,7 @@
           // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
           var _opTag = _realTag(sel, handle);
           if (_opTag === 'BODY' || _opTag === 'HTML') return null;
-          var rp = _layoutRect(sel, handle);
+          var rp = _zwLayoutRectTrap(sel, handle);
           return rp ? _wrapSelector('body') : null;
         }
         // R3036：`element.sheet`——`<style>`/`<link rel=stylesheet>` 元素的 CSSStyleSheet（CSSOM 入口）。

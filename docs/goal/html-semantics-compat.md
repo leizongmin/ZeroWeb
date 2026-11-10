@@ -2,18 +2,18 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 394 双刀收口（textarea wrap=hard 施工 + img 未加载盒归属定谳）：①the-textarea-element
-wrapping-transformation 2F→P——entry 构造面 wrap=hard wrapping transformation：part02 共享 helper `_zwTaHardWrap`
-（cols 无条件字符计数折行、LF-only、幂等 round-trip；不进 API value；cols 读 R5009 IDL face fallback 20）+
-FormData 构造器泛化臂与 part04 form 提交 TEXTAREA 臂双落点（urlencoded/multipart/text-plain 共用 `_pairs` 单点
-覆盖），spec #attr-textarea-wrap-hard，FILTER=wrapping solo 8P/0F；②the-img-element not-broken-while-load-task-
-scheduled 2F 归属探针定谳（s394 内不施工，挂账）——探针三面剥离：attr→style presentational hints **健康**
-（动态 img attr 面 computed 50px，collect_presentational_hints img 臂与加载态无关）、静态元素 geometry **健康**
-（same-turn 即有 rect）、**动态 append rect 供给链缺席=根因**（动态产物无论身份形态 handle/id-sel、无论时点
-same-turn/2s 多帧恒 0——JS mutation 产物不进 rect 查询文档，computed 面同时段正常=查询文档分裂；与 t8f
-bilibili 视图盲区互证；s284 handle 解析刻意收窄 + naturalWidth 族 30 行回归史钉死施工边界）；全树 join：2F→P
-精确归因（wrapping 两键），零 P→F、零 Timeout 位移、零意外键；**全树在册红 228F+37T→226F+37T**。下一步
-s395：动态 append rect 供给链勘根（live doc 发布/mutation 同步链）。
+**状态**: Active——M2 切片 395 收口（动态 append rect 供给链勘根+施工，2F→P）：勘根五探针钉死链路——runner shim
+结构变更拆 shim 树（同步）+宿主 wire（异步 drain，execute_script 尾 flush+apply 尾刷 snapshot）两层；**P6 决定性
+实证**：动态节点 flush 后 host 全可见且几何正确（`#p5dyn` rect 8,58,70,20），缺口单点=in-process rect 回调
+（callbacks.rs:733）无 handle→selector 解析臂，shim proxy 身份恒 handle-only（querySelector 去重返原 proxy）→
+裸 handle 非法 selector 恒 miss。施工=shim 单侧：part05 三 helper（`_zwRectIdent` id 身份派生 /
+`_zwLocalDefiniteRect` 双轴 definite 本地 0 基盒兜底 / `_zwLayoutRectTrap` 组合），part04 五 geometry trap 消费面
+换接；**雷区先钉后动刀**——`_layoutRect` 本体裸语义零变化（img IDL rendered 臂 945 与 trap 同源，s284
+attr 期望面隔离），img 机具走 host 回调直连不经 trap。验证：driving 2F→P 全翻转；naturalWidth 金丝雀 join 匹配域
+258/258 零真位移（5 差集全为 solo 路径过滤 scope 伪位移）；全树 join gone 2F=new 2P 恰为 driving 两键、零意外
+位移；单元 3834P/7F 在册同形零新增；smoke 双 PASS；**全树在册红 226F+37T→224F+37T**。残差：无 id+无 definite
+尺寸动态元素 flush 前仍 0；`__zw_resolve_handle_selector` forward map 空返勘根挂账（低优先）。下一步：forms 树
+散单/分诊推进或按域 solo 分诊（承 s392 方法论）。
 
 > **▶ 承前（2026-11-11 M2 切片 391 收口）——form owner reset-on-move 读时门施工收口（fci 1F→0F 域收官）**: commit e26772068，账本 evidence/2026-11-11-m2s391-form-owner-reset-on-move.md。解析期 parent 选择器桥+shim 指针关联 liveness 门三面，table_3 F→P、全树零回归零翻转；fci 域 corpus 红清零，全树键级基线 8504。散单分诊由 s392 接力。
 
@@ -6964,6 +6964,13 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 395**：动态 append rect 供给链勘根+施工轮（2F→P）——五探针钉死：flush 后 host 全可见
+  （P6 rect 8,58,70,20）、缺口=in-process rect 回调无 handle→selector 臂 + shim proxy 身份恒 handle-only；施工
+  shim 单侧三 helper（_zwRectIdent/_zwLocalDefiniteRect/_zwLayoutRectTrap）+五 trap 消费面换接，`_layoutRect`
+  裸语义不动（img IDL 臂 945 隔离 s284 attr 期望面雷区）；naturalWidth 金丝雀 join 匹配域 258/258 零真位移，
+  全树 join 2F→P 精确归因零意外位移，在册红 226F+37T→**224F+37T**；单元 3834P/7F 在册同形、smoke 双 PASS。
+  残差：无 id+无 definite 尺寸 flush 前仍 0、forward map 空返挂账低优先。账本
+  [evidence/2026-11-11-m2s395-dynamic-append-rect-supply-chain.md](html-semantics-compat/evidence/2026-11-11-m2s395-dynamic-append-rect-supply-chain.md)。
 - **2026-11-11 M2 切片 394**：双刀轮——textarea wrap=hard wrapping transformation 施工（2F→P）+ img unloaded
   attr sizing 归属定谳（2F 挂账，s394 内不施工）。刀①三处落点：part02 `_zwTaHardWrap` 共享 helper（`_zwFdEntry`
   邻位跨 part 作用域先例）+ FormData 构造器泛化臂 + part04 form 提交 TEXTAREA 臂（urlencoded/multipart/
