@@ -3,8 +3,10 @@
 //! headless 截图逐行扫描）：V2 旁置 (50,0)、V3 下绕 (0,50) 与 chromium 精确一致；
 //! R5479 起 beside＋width:auto 收缩子形并入终末臂（V1 chromium (100,0) 宽 350
 //! 精确一致；E4 右 float (0,0) 宽 350、E3 双侧 (100,0) 宽 250、E1 tight 下绕见
-//! r5479 回归）；V4 按 ZW 自身几何下绕 (0,50)（margin-collapse 顶推差值＝上游
-//! 既有差异另记）。kill-switch 锚见 tests/r5478_escaped_kill_switch.rs（独立
+//! r5479 回归）；V4 下绕 (0,50)（R5495 勘误：该 y 为父 content 相对坐标，绝对
+//! y=70 与 chromium 一致——product-smoke 对 chromium 像素逐点 0/110000 px、青
+//! float 带双方截图同 20..69 行，R5478②「顶推差值」观察系 rel/abs 误读销案）。
+//! kill-switch 锚见 tests/r5478_escaped_kill_switch.rs（独立
 //! 进程，R3858 纪律）。
 
 use zero_layout_engine::{LayoutBox, LayoutEngine};
@@ -112,9 +114,10 @@ body { margin: 0; }
     );
 
     // V4：中间普通块 margin 100/20 嵌套偏移，flowroot 显式宽 300（border-box 330
-    // beside 判据 150+330>450 不可行）。chromium＝collapse 顶推下绕 y=70；ZW 按
-    // 自身几何（host.y=0＋mt=20 未视觉应用＝上游 margin-collapse 既有差异另记）
-    // 下绕 (0, 50)——收集链 content_x/y 累加自洽验证。
+    // beside 判据 150+330>450 不可行）。chromium＝collapse 顶推下绕绝对 y=70；
+    // ZW 一致——本断言 y=50 为父 content 相对（host 折叠链 abs=20＋rel 50＝70；
+    // R5495 勘误：R5478②「mt=20 未视觉应用」系 rel/abs 误读，product-smoke 对
+    // chromium 像素逐点一致 0/110000 px 销案）。
     probe(
         r#"<html><head><style>
 body { margin: 0; }
