@@ -49,6 +49,10 @@ results-v9/（json 通道，v8 同口径；日志 zwv9-*）：
 
 本批 v9 测量落定后，姊妹在同一工作树开始 text-shadow dark 贯穿改造（parse_transform.rs 05:36 半成品：parse_text_shadow(_list) 加 dark 参数+内部 parse_color_with_scheme，调用点未接线）——与 §3 刀单的 shadow 链同族。分工对齐：**姊妹接手** parse_box_shadow(_list)/parse_caret_color 签名+内部 dark、apply_advanced 四臂传 style.color_scheme_dark、supports.rs 三处传 false、shim selecteditem dark 分派接管与 v10 测量；**本批只提交** v9 已测量面（color.rs menu 扩键＋part01c color-scheme 分支＋part11 light-dark/system 建模与 selecteditem 补键——补键未经测量，随姊妹 v10 记录轮兜底）。compute 页 box/text-shadow/column-rule/caret 4F 归姊妹链。
 
+## 4c. shadow 链落地（姊妹 b0 实测段）
+
+链完成并推送（commit 6dd926911，13 文件 +154/−133）：parse_box_shadow(_list)/parse_caret_color 签名+内部 dark 贯穿（box-shadow 2150 色点、caret parse_one 闭包）、apply_advanced 四臂读 style.color_scheme_dark（column-rule-color 换 parse_color_with_scheme）、supports.rs 三处传 false（语法判定 scheme 无关）、测试调用点适配 7 文件（css-parser 5 + values/tests 2；tests/wpt-runner/reftest/tests.rs 最后一个 E0061 由姊妹先修，check --all-targets EXIT=0 确认）。多实例窗口取证：同树 4 姊妹（b9/e2/e5/68）交错编辑互补合并（text-shadow 单影链 4 hunk 由 b9 补齐我的 list 签名缺口；case 'system' dark 优先分派由 b9 落），cargo check 0.34s 缓存命中假象经 touch 强制单 crate 复检验证真态。主体批随 rebase 重写 640d5f4e4→639bed48a。分工终局：v10 记录轮+clippy 复检+测量回填归 b9（本段作者只补链与推送）；期望 v10 收 compute 4F＋support 3F，fill/stroke 2F 与 currentcolor-in-color 1F 维持挂账。
+
 ## 5. 挂账
 
 - 组 A light-dark image 上下文（31F）：需泛化 light-dark + background-image 等属性 computed 序列化建模。
