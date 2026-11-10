@@ -17,6 +17,16 @@ pub(super) fn strut_neg_leading() -> bool {
     selected(*VALUE, || default_on("ZW_STRUT_NEG_LEADING"))
 }
 
+/// R5492（CSS2 §9.4.2 × §10.6.3）：普通块零行盒 auto 高 strut/0 二分——行内流含
+/// 非零水平 mpb 行内部分 → 容器 strut（R5298 捕获值）计入块高，否则 0（float
+/// 不计入普通块高）。取代 R5470 的 float_bottom 近似（其「恒久保留」立场已被
+/// chromium oracle 行盒存在性二分证伪）。default-on，
+/// `ZW_INLINE_ZEROBOX_STRUT=0` 回退 float_bottom 近似。
+pub(super) fn inline_zerobox_strut() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_INLINE_ZEROBOX_STRUT"));
+    selected(*VALUE, || default_on("ZW_INLINE_ZEROBOX_STRUT"))
+}
+
 pub(super) fn debug_ifc() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| std::env::var("ZW_DEBUG_IFC").is_ok());
     selected(*VALUE, || std::env::var("ZW_DEBUG_IFC").is_ok())

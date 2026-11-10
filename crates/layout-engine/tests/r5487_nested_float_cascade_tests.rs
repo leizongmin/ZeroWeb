@@ -9,6 +9,15 @@
 //! 光标位＝前 float 右缘＋wrapper 链偏移（原形 40+200=240，可用 160<200 →
 //! 降带 y=max(锚,前 float 底)、x=own ml）。pre-fix 旧径（R5446 逐 float 独立
 //! 目标）①②③全重叠 (0,0)×2 红证据谱系。
+//!
+//! R5492 容器高勘误：R5486 oracle 把 **float 带底误读为块容器高**（「带至 y
+//! 35/17」＝cyan float 带延伸，非 .block 背景底）。R5492 标准（DOCTYPE）模式
+//! marker-div 复测（in-flow 红标 y 位＝blk 底）：①③④ blk=**18**（ml40＝非零
+//! mpb 行内部分 → strut 计入，CSS2 §9.4.2×§10.6.3×§10.8.1，float extent 36 不
+//! 计）、② blk=**0**（ml0 全零 mpb ＝零高行盒）。float extent 一律不计入普通块
+//! 高（R5026/R5470 立场维持）。float **位形**断言（堆叠/并排/fit 右缘）不受
+//! 影响——①的堆叠 (0,0)+(0,18) 复测仍真（cyan 列 x 0..199 跨 y 0..35 双带）。
+//! blk 高值随 R5492 strut/0 二分更正为 chromium 真值。
 //! kill-switch：`ZW_NESTED_FLOAT_CASCADE=0`（R3858 独立进程锚见
 //! r5487_nested_float_cascade_kill_switch.rs）。
 
@@ -97,8 +106,9 @@ fn r5487_cascade_orig_stacks_second_float() {
     let blk = doc.get_element_by_id("blk").expect("blk 存在");
     let b = abs_rect(&result.root, blk);
     assert!(
-        (b.3 - 36.0).abs() <= 0.5,
-        "两堆叠 float 带计入容器高应 36（chromium oracle 带至 y 35；pre-fix 18），实际 {}",
+        (b.3 - 18.0).abs() <= 0.5,
+        "容器高应 18（chromium marker 复测：ml40 strut 计入，float 堆叠 extent 36 \
+         不计——R5492 勘误 pre-fix「带至 y 35」系 float 带底误读），实际 {}",
         b.3
     );
 }
@@ -121,8 +131,9 @@ fn r5487_cascade_ml0_side_by_side() {
     let blk = doc.get_element_by_id("blk").expect("blk 存在");
     let b = abs_rect(&result.root, blk);
     assert!(
-        (b.3 - 18.0).abs() <= 0.5,
-        "单带并排容器高应 18（chromium oracle 带至 y 17），实际 {}",
+        (b.3 - 0.0).abs() <= 0.5,
+        "容器高应 0（chromium marker 复测：ml0 全零 mpb ＝零高行盒，float 并排 extent \
+         18 不计——R5492 勘误 pre-fix「带至 y 17」系 float 带底误读），实际 {}",
         b.3
     );
 }
@@ -144,7 +155,9 @@ fn r5487_cascade_fit_places_at_prev_right_edge() {
     );
     let blk = doc.get_element_by_id("blk").expect("blk 存在");
     let b = abs_rect(&result.root, blk);
-    assert!((b.3 - 18.0).abs() <= 0.5, "单带并排容器高应 18，实际 {}", b.3);
+    // chromium marker 复测 blk=18＝strut（ml40，§9.4.2）——与单带 extent 18 碰巧
+    // 同值；R5492 后由 strut 臂供给（R5486 时代归因 float extent 系误读域）。
+    assert!((b.3 - 18.0).abs() <= 0.5, "单带并排容器高应 18（strut），实际 {}", b.3);
 }
 
 /// ④v_d（oracle 双层堆叠形）：两独立 inline 层各一 float（各 ml=40，50%）——
@@ -173,8 +186,9 @@ span { float: left; width: 50% }
     let blk = doc.get_element_by_id("blk").expect("blk 存在");
     let b = abs_rect(&result.root, blk);
     assert!(
-        (b.3 - 36.0).abs() <= 0.5,
-        "双层堆叠容器高应 36（chromium oracle 带至 y 35），实际 {}",
+        (b.3 - 18.0).abs() <= 0.5,
+        "双层堆叠容器高应 18（chromium marker 复测：ml40 strut 计入，float extent 36 \
+         不计——R5492 勘误 pre-fix「带至 y 35」系 float 带底误读），实际 {}",
         b.3
     );
 }

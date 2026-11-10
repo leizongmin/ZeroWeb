@@ -3855,13 +3855,39 @@ fn remeasure_text_with_float_exclusions_inner(
             //（R5475 已落盘单行 float 自持行盒），本容器 IFC 收集 0 文本行＝spec 正确
             //（收集器视块级 span 发 FloatAnchor 不下探，chromium 同构）而非行盒归属
             // 缺陷——零行盒普通块高度真值来自 float extent（§10.6.7 域），塌缩到
-            // text_height=0 即绿条消失（floats-149 形）。R5476 复核定谳：**恒久保留**，
-            // 非「待行盒归属修复后移除」的回退臂。multicol 子树同退旧口径
+            // text_height=0 即绿条消失（floats-149 形）。（R5492 勘误：该结论只对
+            // float 自持行盒形成立，chromium oracle p1-p5 定谳行盒存在性二分——
+            // float_bottom 是 strut 缺失的近似而非 §10.6.7 域真值，R5476「恒久保留」
+            // 立场随之作废，零行盒臂改 strut/0 二分，见下。）multicol 子树同退旧口径
             //（floats-clear-multicol-001：列断流里 float 参与列内布局并撑列，§10.6.3
             // 单列收窄把 .container 250→20 致 br clear 的 clearance/列位判定链断，
             // clear 从第三列 float 尾错回第一列）。
+            // R5492（CSS2 §9.4.2 × §10.6.3）：零行盒普通块 strut/0 二分——text_height
+            // =0 时行盒存在性由行内流内容定：含非零水平 mpb 行内部分（collect 期
+            // `has_nonzero_mpb_inline_part` 置位，§9.4.2）→ 容器 strut 计入（§10.8.1，
+            // R5298 捕获值；line-height:0 容器解析 0 同 chromium）；全零 mpb 且无文本
+            // ＝零高行盒 → 块高 0。两臂 float 均不计入（§10.6.3 普通块 auto 高＝行盒
+            // 底）。竖排域排除——行盒语义沿块轴转置（lines 坐标系竖排下非 y 轴），
+            // §9.4.2 二分是水平书写域结论，R1043 结构缺口域维持旧口径（r5459 viv
+            // kill-switch 形 vertical-rl + h-tb float 实证：误触发把塌陷态 ch 40→0）。
+            // chromium oracle 定谳：floats-149 形 ml40 → blk=18（strut）、同构
+            // 无 ml → blk=0（零高行盒），float extent（36）均不计；旧 float_bottom
+            // 近似仅 strut 值碰巧等值时绿（p1）。kill-switch
+            // `ZW_INLINE_ZEROBOX_STRUT=0` 回退 float_bottom 近似（R5470 旧径）。
             let content_height = if bfc_gate && !establishes_bfc && text_height > 0.0 && !in_multicol {
                 text_height
+            } else if bfc_gate
+                && !establishes_bfc
+                && !in_multicol
+                && !inline_ctx.vertical
+                && text_height <= 0.0
+                && crate::inline::inline_zerobox_strut_enabled()
+            {
+                if inline_ctx.has_nonzero_mpb_inline_part.get() {
+                    inline_ctx.container_strut_line_height
+                } else {
+                    0.0
+                }
             } else {
                 text_height.max(float_bottom)
             };

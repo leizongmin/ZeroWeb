@@ -36,6 +36,12 @@ pub(crate) fn float_multiline_store_enabled() -> bool {
     runtime_flags::float_multiline_store()
 }
 
+/// R5492：零行盒 strut/0 二分开关——转发 runtime_flags 供 inline 模块外
+///（inline_finalization auto 高度臂）消费。
+pub(crate) fn inline_zerobox_strut_enabled() -> bool {
+    runtime_flags::inline_zerobox_strut()
+}
+
 // R830：行内布局核心数据类型抽出，glob 再导出保持公开路径。
 mod inline_types;
 pub use inline_types::*;
@@ -327,6 +333,14 @@ pub struct InlineFormattingContext {
     /// `layout()` 有容器 styles 且解析行高恰为 0 时置位，把两义分开：Path B 恒
     /// false = 旧行为，布局/绘制两侧口径一致。
     pub container_strut_lh_zero: bool,
+    /// R5492（CSS2 §9.4.2 零高行盒）：行内流「非零水平 mpb 行内部分」信号——普通块
+    /// auto 高零行盒 strut/0 二分的判别载荷。§9.4.2：行盒含非零 mpb 行内部分则非
+    /// 零高，容器 strut（§10.8.1，R5298 捕获）计入块高；全零 mpb 且无文本 ＝零高
+    /// 行盒，块高记 0（float 不计，§10.6.3）。由 `collect_inline_items` 对流内
+    /// inline 元素触发即记录（collect 期 styles 依赖判定）；paint Path B（空
+    /// styles）恒 false = legacy。`Rc<Cell<bool>>` 使嵌套 inline 递归（R1576
+    /// clone 臂）跨层共享同源行盒的置位——深层非零 mpb 部分与本层信号同行盒。
+    pub has_nonzero_mpb_inline_part: std::rc::Rc<std::cell::Cell<bool>>,
     /// 逐文本节点的字体大小覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，导致所有文本使用 16px 默认字体度量，
@@ -556,6 +570,7 @@ impl InlineFormattingContext {
             container_font_id: None,
             clamp_ellipsis_advance: None,
             container_strut_lh_zero: false,
+            has_nonzero_mpb_inline_part: std::rc::Rc::new(std::cell::Cell::new(false)),
             font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
             font_ids_overrides: std::rc::Rc::new(HashMap::new()),

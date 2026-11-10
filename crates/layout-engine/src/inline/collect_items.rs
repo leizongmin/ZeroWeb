@@ -848,6 +848,17 @@ is_isolated_bidi: style.is_some_and(|s| {
                             continue;
                         }
 
+                        // R5492（CSS2 §9.4.2 零高行盒）：非零水平 mpb 行内部分信号——
+                        // 走到此处即流内 inline 级元素（块级/float/OOF 臂已 continue），
+                        // 其水平 margin/padding/border 非零则所在行盒非零高，容器
+                        // strut（R5298 捕获）计入普通块 auto 高（strut/0 二分判别载荷，
+                        // inline_finalization 消费）。触发即记录；paint Path B（空
+                        // styles）恒 false = legacy。kill-switch
+                        // `ZW_INLINE_ZEROBOX_STRUT=0` 时高度臂不消费，置位无副作用。
+                        if style.is_some_and(Self::inline_part_has_nonzero_h_mpb) {
+                            self.has_nonzero_mpb_inline_part.set(true);
+                        }
+
                         // 检查该元素是否为原子行内级盒（inline-block / inline-flex / inline-grid / inline-table）。
                         // 这些元素参与行内格式化上下文，作为不可拆分的原子盒。
                         // R3987（CSS Display 3 §2.4 / CSS2 §9.2.1.1）：replaced 类元素的
@@ -2618,6 +2629,26 @@ is_isolated_bidi: style.is_some_and(|s| {
             LengthValue::Percentage(p) => container_width * (*p as f32) / 100.0,
             other => Self::resolve_inline_padding(other, style),
         }
+    }
+
+    /// R5492（CSS2 §9.4.2 零高行盒）：行内部分「非零水平 mpb」判定——水平
+    /// margin/padding 解析 px 非零（em 经 resolve_length 按元素字号，Auto/百分比按
+    /// `resolve_inline_margin` 口径记 0），或 border-left/right 宽非零且 style 非
+    /// none/hidden（CSS Backgrounds §5.2：none/hidden 边框宽恒 0，双保险）。
+    // FIXME(spec-gap): 百分比水平 mpb Chromium 按包含块宽解析非零、同计入行盒
+    // 存在性，此处按 0 保守记 legacy（实案暴露再按 `resolve_inline_padding_pct`
+    // 口径扩）。
+    fn inline_part_has_nonzero_h_mpb(style: &ComputedStyle) -> bool {
+        let border_nonzero = |w: &LengthValue, st: &zero_style_system::BorderStyleValue| {
+            !matches!(st, zero_style_system::BorderStyleValue::None | zero_style_system::BorderStyleValue::Hidden)
+                && Self::resolve_inline_margin(w, style) != 0.0
+        };
+        Self::resolve_inline_margin(&style.margin_left, style) != 0.0
+            || Self::resolve_inline_margin(&style.margin_right, style) != 0.0
+            || Self::resolve_inline_padding(&style.padding_left, style) != 0.0
+            || Self::resolve_inline_padding(&style.padding_right, style) != 0.0
+            || border_nonzero(&style.border_left_width, &style.border_left_style)
+            || border_nonzero(&style.border_right_width, &style.border_right_style)
     }
 
     /// R3840：元素级 `unicode-bidi: bidi-override` → Some(方向 rtl?)；非 override → None。
