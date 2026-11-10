@@ -3680,6 +3680,7 @@ impl super::Painter {
                                 $frag_source,
                                 style_direction,
                                 text_shaping::shaped_uba_rtl_enabled(),
+                                &transformed,
                             );
                             let logical_source = logical_fragment_source(
                                 $frag_source,
