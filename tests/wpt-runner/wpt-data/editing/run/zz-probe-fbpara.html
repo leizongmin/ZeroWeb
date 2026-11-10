@@ -1,0 +1,85 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>zz-probe-fbpara</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=/resources/testharness.js></script>
+<script src="/common/subset-tests.js"></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+// 2026-11-10 fb per-paragraph 不合并刀普查探针（残 21F per-paragraph 族 4 行：
+// blockquote compare ×2 + 同键 qV ×1 + section-hgroup compare ×1）。
+// 三机制推演见 .acceptance/dps/fbpara-knife-notes.md：
+//   A 同 tag 剔除臂过宽（row :698：SLC 成员 p 直亲 blockquote 命中 v 被剔，
+//     Chrome 原位换块嵌套）——P1 DUMP 取 got 复证
+//   B wrap sibCrit 合并（row :703：[foo] 并入邻接 blockquote，Chrome 分开两块）
+//     ——P2 DUMP 取 got 复证
+//   C hgroup 内容模型外提（row :726：blockquote 被 fixDisallowed 外提出
+//     hgroup，Chrome 保留非法嵌套）——P3 DUMP 取 got 复证
+// P1-P3 = 三机制刀面行，期望列已按 DUMP 实证（2026-11-10 18:26 fbp-dump-probe
+// 99P/5F，got 与语料 :698/:703/:726 Chrome 录音逐字节一致）落真期望形。K1-K8
+// 控制行 = 既有绿面/veto 保持面真期望，应全 Pass。K5/K6 的 qV(dps) before =
+// "div"：part06.js:5490 三元式初始态 undefined→'div' quirk，探针页首触行无
+// 录音链携带（语料同值是会话顺序伪影，见语料窗界先例），非刀回归：
+//   K1 :721 section 换块（无 veto 面基线）
+//   K2 :1042 hgroup 换块（wrap 落宿主层，fix 照跑面）
+//   K4 :134 div+div 幂等（剔除收窄后仍同树）
+//   K5 :1784 列表爬升 veto（裸 text 成员剔除保持）
+//   K6 :1794 td barrier 直亲门（div 落 td 内）
+//   K8 wrap-only veto 保持（xmp 直亲 div 命中 v，无语料行探针锚）
+browserTests = [
+["<blockquote><p>[foo]<p>bar</blockquote><p>extra",
+ [["stylewithcss","false"],["formatblock","<blockquote>"]],
+ "<blockquote><blockquote>[foo]</blockquote><p>bar</p></blockquote><p>extra</p>",
+ [true,true],
+ {"formatblock":[false,false,"p",false,false,"blockquote"]}],
+["[foo]<blockquote>bar</blockquote><p>extra",
+ [["stylewithcss","false"],["formatblock","<blockquote>"]],
+ "<blockquote>[foo]</blockquote><blockquote>bar</blockquote><p>extra</p>",
+ [true,true],
+ {"formatblock":[false,false,"",false,false,"blockquote"]}],
+["<section><hgroup><h1>[foo]</h1><h2>bar</h2></hgroup><p>baz</section>",
+ [["stylewithcss","false"],["formatblock","<blockquote>"]],
+ "<section><hgroup><blockquote>[foo]</blockquote><h2>bar</h2></hgroup><p>baz</p></section>",
+ [true,true],
+ {"formatblock":[false,false,"h1",false,false,"blockquote"]}],
+["<section>[foo]</section>",
+ [["stylewithcss","false"],["formatblock","<blockquote>"]],
+ "<blockquote>[foo]</blockquote>",
+ [true,true],
+ {"formatblock":[false,false,"section",false,false,"blockquote"]}],
+["<p>[foobar]</p>",
+ [["stylewithcss","false"],["formatblock","<hgroup>"]],
+ "<hgroup>[foobar]</hgroup>",
+ [true,true],
+ {"formatblock":[false,false,"p",false,false,"hgroup"]}],
+["<div>[foobar]</div>",
+ [["stylewithcss","false"],["formatblock","<div>"]],
+ "<div>[foobar]</div>",
+ [true,true],
+ {"formatblock":[false,false,"div",false,false,"div"]}],
+["<div><ol><li>[foo]</ol></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<div>"]],
+ "<div><ol><li>[foo]</li></ol></div>",
+ [true,true,true],
+ {"defaultparagraphseparator":[false,false,"div",false,false,"div"],"formatblock":[false,false,"div",false,false,"div"]}],
+["<div><table><tr><td>[foo]</table></div>",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<div>"]],
+ "<div><table><tbody><tr><td><div>[foo]</div></td></tr></tbody></table></div>",
+ [true,true,true],
+ {"defaultparagraphseparator":[false,false,"div",false,false,"div"],"formatblock":[false,false,"",false,false,"div"]}],
+["<div><xmp>[foo]</xmp></div>",
+ [["stylewithcss","false"],["formatblock","<div>"]],
+ "<div><xmp>[foo]</xmp></div>",
+ [true,true],
+ {"formatblock":[false,false,"div",false,false,"div"]}],
+];
+try { document.execCommand("styleWithCSS", false, "true") } catch(e) {}
+browserTests.forEach(runConformanceTest);
+document.getElementById("test-container").parentNode
+    .removeChild(document.getElementById("test-container"));
+</script>
