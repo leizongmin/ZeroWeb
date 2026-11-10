@@ -337,6 +337,9 @@
 
     // "While node list is not empty: ..."（single-line container 解包臂 ∨
     // 连续 sibling 聚 sublist 后 wrap）。
+    // per-paragraph 不合并刀（2026-11-10）：本次 apply 已产出新块登记表——
+    // sibCrit 合并只对自产邻居放行（v2，见下方 sibCrit 注）。
+    var fbqCreated = [];
     while (nodeList.length) {
       var sublist;
       // "If the first member of node list is a single-line container: ..."
@@ -396,16 +399,29 @@
           sublist.push(nodeList.shift());
         }
       }
-      // Chrome delta（per-paragraph 不合并刀，2026-11-10）：sibCrit 恒
-      // false——Chrome formatBlock 不把换块内容并入邻接同 tag 块（spec 对
-      // 非 div/p 返 true 会把 `[foo]<blockquote>bar</blockquote>` +
-      // <blockquote> 的 [foo] 并进既有块，录音为分开两块
-      // `<blockquote>[foo]</blockquote><blockquote>bar</blockquote>
-      // <p>extra</p>`，formatblock.js :703）。语料其余相邻同 tag 形均为多段
-      // 全覆盖行 accepted 备选形（本引擎走聚合单块臂一次 wrap，不经此路径）。
-      var sibCrit = function () { return false; };
+      // Chrome delta（per-paragraph 不合并刀 v2，2026-11-10）：sibCrit 只对
+      // 本次 apply 产出的邻居块合并——v1 恒 false 被门禁批打回（fb 主门
+      // P2F=7）：跨段部分选择行（`<p>[foo</p>bar]` + <h1> 录音单块合并形
+      // `<h1>[foo<br>bar]</h1>`，formatblock.js :1734/:1739 等 ×6）与全覆盖
+      // 双段行（`<p>[foo<p>bar]<p>baz` + <blockquote> 的 qV-after 面绑合并
+      // 形，:708，SLC 分组条件使 p1/p2 各自成 sublist、聚合全靠 sibCrit）
+      // 的绿面依赖分段 wrap 合并。而 `[foo]<blockquote>bar</blockquote>` +
+      // <blockquote>（:703）的邻居块是命令前已存在，Chrome 录音分开两块
+      // `<blockquote>[foo]</blockquote><blockquote>bar</blockquote>`——
+      // Chrome delta 实为「不并入命令前已存在的邻块」，自产分段块照 Chrome
+      // 录音合并。div/p 维持恒 false（:1754/:1759 摆位录音分段不合并）。
+      var sibCrit = (['div', 'p'].indexOf(v) !== -1)
+        ? function () { return false; }
+        : function (n) {
+            return fbqCreated.indexOf(n) !== -1
+              && _zwJusIsHtmlElement(n, v)
+              && n.attributes && n.attributes.length === 0;
+          };
       var fbqBlock = _zwJusWrap(sublist, sibCrit,
         function () { return document.createElement(v); }, true);
+      if (fbqBlock && fbqBlock.nodeType === 1) {
+        fbqCreated.push(fbqBlock);
+      }
       if (fbqCarry.length && fbqBlock && fbqBlock.nodeType === 1) {
         for (var ci2 = 0; ci2 < fbqCarry.length; ci2++) {
           _zwVaSetStyleProp(fbqBlock, _zwFbqCarryProperty(fbqCarry[ci2][0]),

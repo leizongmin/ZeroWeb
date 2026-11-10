@@ -77,6 +77,20 @@ browserTests = [
  "<div><xmp>[foo]</xmp></div>",
  [true,true],
  {"formatblock":[false,false,"div",false,false,"div"]}],
+// K9 v2 合并面绿锚（:1734 dps-div 变体）：跨段部分选择分段 wrap 靠 sibCrit
+// 自产邻居合并出单块录音形；qV(dps) before "div"＝K5/K6 已设携带态。
+["<p>[foo</p>bar]",
+ [["stylewithcss","false"],["defaultparagraphseparator","div"],["formatblock","<h1>"]],
+ "<h1>[foo<br>bar]</h1>",
+ [true,true,true],
+ {"defaultparagraphseparator":[false,false,"div",false,false,"div"],"formatblock":[true,false,"",false,false,"h1"]}],
+// K10 v2 :708 全覆盖双段 qV-after 面（SLC 分组 p1/p2 各自 sublist，合并后
+// 单块 caret 读 blockquote；v1 不合并形此面红）。
+["<p>[foo<p>bar]<p>baz",
+ [["stylewithcss","false"],["formatblock","<blockquote>"]],
+ "<blockquote>[foo<br>bar]</blockquote><p>baz</p>",
+ [true,true],
+ {"formatblock":[false,false,"",false,false,"blockquote"]}],
 ];
 try { document.execCommand("styleWithCSS", false, "true") } catch(e) {}
 browserTests.forEach(runConformanceTest);
