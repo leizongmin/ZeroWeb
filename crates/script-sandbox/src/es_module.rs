@@ -745,6 +745,45 @@ pub fn rewrite_classic_deferred_imports(source: &str) -> String {
     rewrite_imports_impl(source, ImportRewriteMode::ClassicDeferOnly)
 }
 
+/// 源是否含未发布提案的**静态** import 声明形式（`import defer * as ns from …` /
+/// `import source x from …`）——转换层超集支持面（s360 strip_import_keyword 承接），
+/// bundled V8 原生 module parse 拒绝（关旗）。module goal parse 预检
+///（`V8Sandbox::module_parse_check_v8`）对含此类形态的源豁免，保持转换层超集
+/// 行为不因预检回归。动态形式 `import.defer(` / `import.source(`（点分隔调用）
+/// 不匹配——`import` 词与提案词须空白分隔（词边界完整 identifier 判定，
+/// `import deferred from …` 的绑定名 defer 非提案形式）。误判方向 = 误豁免
+///（漏预检维持转换层既有放行行为），保守安全；字符串/注释内字样同样误豁免
+///（同轻量扫描器既限）。
+pub fn has_unpublished_static_import(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < source.len() {
+        // `import` 词首判定只在首字节恰为 'i'（ASCII）时做——保证 `source[i..]`
+        // 切片落在字符边界（非 ASCII 起始字节不可能是 "import" 词首；UTF-8 续
+        // 字节同跳过，轻量扫描器既限「非 ASCII 续字符失明」同口径）。
+        if bytes[i] == b'i'
+            && source[i..].starts_with("import")
+            && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+        {
+            let mut j = i + "import".len();
+            while j < source.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            let rest = &source[j..];
+            let ends_word = |tail: &str| {
+                tail.chars()
+                    .next()
+                    .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '$')
+            };
+            if rest.strip_prefix("defer").is_some_and(ends_word) || rest.strip_prefix("source").is_some_and(ends_word) {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// `import` 起点前一个非空白 token 是否 `new` 关键字（`new import(` /
 /// `new import.defer(`——ImportCall 非 MemberExpression，new 形语法非法：保留原文
 /// 交 bundled V8 原生 parse 拒绝，test262 dynamic-import/syntax/invalid
@@ -1050,6 +1089,141 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
                         }
                     }
                     i += "import.defer(".len();
+                    continue;
+                }
+                match c {
+                    b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(c)),
+                    b'{' => *depth += 1,
+                    b'}' => {
+                        if *depth == 0 {
+                            stack.pop(); // `}` 闭合 `${` → 回模板串
+                        } else {
+                            *depth -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::LineComment => {
+                if c == b'\n' {
+                    stack.pop();
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::BlockComment => {
+                if c == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    stack.pop();
+                    out.push_str("*/");
+                    i += 2;
+                    continue;
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+        }
+    }
+    out
+}
+
+/// s373：词法感知的 `import.meta` → `_importMeta` 探针引用重写。
+///
+/// 旧实现 `str::replace("import.meta", "_importMeta")` 无视词法上下文，把
+/// **字符串字面量内**的 `import.meta` 路径段也改写——runner module 变体页
+/// `import("…/language/import.meta/syntax/goal-module.js")` 实证：URL 被改写
+/// 成 `_importMeta/syntax/…` → fetch 404 → 13 案假红。本函数镜像
+/// `rewrite_imports_impl` 的上下文状态机：仅代码态（栈空或模板 `${}` 表达
+/// 式区）且标识符边界成立时替换；字符串/模板文本段/注释内原样直通（转义
+/// 对逐字符拷贝防切多字节）。已知限制同 `rewrite_imports_impl`：正则字面
+/// 量内的引号（如 `/['"]/`）会把扫描器带入字符串态——后续代码态 `import.meta`
+/// 漏替换，输出原文交 V8 parse 拒绝，按 t8j-r2 轻量精神取舍。
+pub(crate) fn rewrite_import_meta_refs(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut stack: Vec<RewriteCtx> = Vec::new();
+    let mut i = 0;
+    while i < source.len() {
+        if stack.is_empty() {
+            // s267 同款标识符边界守卫——前邻标识符续字符（`reimport.meta` 是
+            // 标识符属性访问）或后随标识符续字符（`import.metax`）不替换。
+            if source[i..].starts_with("import.meta")
+                && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+                && source[i + "import.meta".len()..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '$')
+            {
+                out.push_str("_importMeta");
+                i += "import.meta".len();
+                continue;
+            }
+            match bytes[i] {
+                b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(bytes[i])),
+                b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                    stack.push(RewriteCtx::LineComment);
+                    out.push_str("//");
+                    i += 2;
+                    continue;
+                }
+                b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                    stack.push(RewriteCtx::BlockComment);
+                    out.push_str("/*");
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+            let step = source[i..].chars().next().map_or(1, char::len_utf8);
+            out.push_str(&source[i..i + step]);
+            i += step;
+            continue;
+        }
+        let c = bytes[i];
+        // 栈空分支已在上方 continue；此处栈非空，`expect` 恒成立。
+        match stack.last_mut().expect("ctx stack non-empty") {
+            RewriteCtx::Literal(q) => {
+                if c == b'\\' {
+                    // 转义对：拷转义符与被转义字符（UTF-8 逐字符，防切多字节序列）。
+                    let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                    out.push_str(&source[i..i + step]);
+                    i += step;
+                    if i < source.len() {
+                        let step2 = source[i..].chars().next().map_or(1, char::len_utf8);
+                        out.push_str(&source[i..i + step2]);
+                        i += step2;
+                    }
+                    continue;
+                }
+                if c == *q {
+                    stack.pop();
+                } else if *q == b'`' && c == b'$' && bytes.get(i + 1) == Some(&b'{') {
+                    // 模板表达式态：`${}` 内是代码——`import.meta` 照常替换。
+                    stack.push(RewriteCtx::TemplateExpr(0));
+                    out.push_str("${");
+                    i += 2;
+                    continue;
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::TemplateExpr(depth) => {
+                // 模板 `${}` 表达式区内仍是代码——探针引用照常替换（标识符
+                // 边界守卫同栈空分支）。
+                if source[i..].starts_with("import.meta")
+                    && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+                    && source[i + "import.meta".len()..]
+                        .chars()
+                        .next()
+                        .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '$')
+                {
+                    out.push_str("_importMeta");
+                    i += "import.meta".len();
                     continue;
                 }
                 match c {
@@ -1517,7 +1691,7 @@ fn build_module_script_inner(
             body.push_str(&emitted);
         } else {
             // 普通语句：替换 import.meta 与动态 import()（s360：defer 臂同扫）
-            let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
+            let s = rewrite_dynamic_imports(&rewrite_import_meta_refs(trimmed));
             let line = format!("  {s};\n");
             body.push_str(&line);
         }
@@ -2267,7 +2441,7 @@ fn transform_export(
     if let Some(rest) = clause.strip_prefix("default")
         && default_function_decl_binding_name(rest).is_some()
     {
-        let decl = rewrite_dynamic_imports(&rest.trim_start().replace("import.meta", "_importMeta"));
+        let decl = rewrite_dynamic_imports(&rewrite_import_meta_refs(rest.trim_start()));
         return Ok(format!("  {decl}\n"));
     }
     // export default expr — 压缩形态 export default{…} 同样命中；`default` 后为
@@ -2277,7 +2451,7 @@ fn transform_export(
     if let Some(expr) = clause.strip_prefix("default")
         && !expr.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '$')
     {
-        let expr = rewrite_dynamic_imports(&expr.trim_start().replace("import.meta", "_importMeta"));
+        let expr = rewrite_dynamic_imports(&rewrite_import_meta_refs(expr.trim_start()));
         return Ok(format!("  _exports.default = {expr};\n"));
     }
     // 声明体可能含 import.meta 与动态 import()（github react-core 实测：
@@ -2289,23 +2463,23 @@ fn transform_export(
     // 承担。声明位 `_exports.name = name` 快照赋值废止（活绑定破面 + getter-only
     // 访问器 strict 赋值 TypeError）。
     if let Some(decl) = clause.strip_prefix("const ") {
-        let decl_rw = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        let decl_rw = rewrite_dynamic_imports(&rewrite_import_meta_refs(decl));
         return Ok(format!("  const {decl_rw};\n"));
     }
     if let Some(decl) = clause.strip_prefix("let ") {
-        let decl_rw = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        let decl_rw = rewrite_dynamic_imports(&rewrite_import_meta_refs(decl));
         return Ok(format!("  let {decl_rw};\n"));
     }
     if let Some(decl) = clause.strip_prefix("var ") {
-        let decl_rw = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        let decl_rw = rewrite_dynamic_imports(&rewrite_import_meta_refs(decl));
         return Ok(format!("  var {decl_rw};\n"));
     }
     if let Some(decl) = clause.strip_prefix("function ") {
-        let decl = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        let decl = rewrite_dynamic_imports(&rewrite_import_meta_refs(decl));
         return Ok(format!("  function {decl}\n"));
     }
     if let Some(decl) = clause.strip_prefix("class ") {
-        let decl = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        let decl = rewrite_dynamic_imports(&rewrite_import_meta_refs(decl));
         return Ok(format!("  class {decl}\n"));
     }
 
@@ -3365,6 +3539,81 @@ mod tests {
         // 无匹配：逐字节原样。
         let plain = "var x = 1; function f() { return import.meta; }";
         assert_eq!(rewrite_classic_deferred_imports(plain), plain, "无匹配源逐字节原样");
+    }
+
+    // s373（module 早期错误豁免扫描）：静态提案形命中、绑定名/动态形不命中、
+    // 非 ASCII 源不 panic（词首判定只在 ASCII 字节位做——`source[i..]` 切片
+    // 须落字符边界，test262 语料含 «» 等多字节字符实踩）。
+    #[test]
+    fn test_has_unpublished_static_import_s373() {
+        assert!(
+            has_unpublished_static_import("import defer * as ns from './x.js';"),
+            "静态 defer 声明形命中"
+        );
+        assert!(
+            has_unpublished_static_import("import\n  source x from './x.js';"),
+            "跨行空白分隔静态 source 形命中"
+        );
+        assert!(
+            !has_unpublished_static_import("import deferred from './x.js';"),
+            "绑定名 deferred 不命中（右词边界）"
+        );
+        assert!(
+            !has_unpublished_static_import("import('./x.js'); import.defer('./y.js');"),
+            "动态形（点分隔调用）不命中"
+        );
+        assert!(
+            !has_unpublished_static_import("var s = \"«»\";\nexport const a = 1;"),
+            "非 ASCII 多字节字符源不 panic 且放行"
+        );
+        assert!(
+            has_unpublished_static_import("var s = \"请 import defer 此物\";"),
+            "字符串内字样误豁免（保守方向，不 panic）"
+        );
+    }
+
+    // s373（词法感知 import.meta 重写）：代码态替换、字符串/模板文本段/注释
+    // 直通——旧 str::replace 把 runner module 变体页 import("…/import.meta/
+    // syntax/goal-module.js") 的 URL 路径段也改写 → fetch 404 → 13 案假红。
+    #[test]
+    fn test_rewrite_import_meta_refs_s373() {
+        assert_eq!(
+            rewrite_import_meta_refs("import.meta.url"),
+            "_importMeta.url",
+            "代码态探针引用照常替换"
+        );
+        let url = "import('/x/import.meta/syntax/goal-module.js');";
+        assert_eq!(rewrite_import_meta_refs(url), url, "字符串字面量内路径段保留");
+        assert_eq!(
+            rewrite_import_meta_refs("`t ${import.meta.url} import.meta tail`"),
+            "`t ${_importMeta.url} import.meta tail`",
+            "模板表达式区替换、模板文本段保留"
+        );
+        assert_eq!(
+            rewrite_import_meta_refs("// import.meta\nimport.meta;"),
+            "// import.meta\n_importMeta;",
+            "行注释内保留、注释后代码态替换"
+        );
+        assert_eq!(
+            rewrite_import_meta_refs("/* import.meta */ import.meta;"),
+            "/* import.meta */ _importMeta;",
+            "块注释内保留"
+        );
+        assert_eq!(
+            rewrite_import_meta_refs("'a\\'b import.meta'; import.meta;"),
+            "'a\\'b import.meta'; _importMeta;",
+            "转义引号不打断字符串态"
+        );
+        assert_eq!(
+            rewrite_import_meta_refs("«import.meta»"),
+            "«_importMeta»",
+            "非 ASCII 多字节字符源不 panic 且代码态照常替换"
+        );
+        assert_eq!(
+            rewrite_import_meta_refs("ximport.meta reimport.meta import.metax"),
+            "ximport.meta reimport.meta import.metax",
+            "标识符边界外（前后缀）不替换"
+        );
     }
 
     // s360-r2（形态严格化）：非法调用形不重写——空参（`import()` /

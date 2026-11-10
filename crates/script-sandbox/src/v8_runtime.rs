@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Once};
 
-use crate::{SandboxConfig, ScriptError, ScriptResult};
+use crate::{SandboxConfig, ScriptError, ScriptResult, has_unpublished_static_import};
 
 /// 从 TryCatch 提取异常消息与堆栈（须在调用点展开以匹配具体 scope 类型）。
 macro_rules! v8_try_catch_message {
@@ -58,11 +58,23 @@ macro_rules! v8_try_catch_message {
 // worker.rs 的 Error 事件提取复用同一宏（macro_rules 文本作用域，须显式 re-export）。
 pub(crate) use v8_try_catch_message;
 
-/// 宿主注入的扁平字符串回调类型（JS-DOM-bridge：JS shim 经 __zw_* 回调操作宿主状态）。
+/// 宿主注入的扁平字符串回调（JS-DOM-bridge：JS shim 经 __zw_* 回调操作宿主状态）。
 ///
 /// 回调接收 JS 传入参数的字符串数组，返回字符串结果（写入 V8 ReturnValue）。
 /// `Send + Sync + 'static` 以便能跨 V8 调用边界存于线程局部注册表。
-pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>;
+#[allow(clippy::type_complexity)] // 镜像闭包形态（Arc 跨 V8 调用边界）
+pub enum HostCallback {
+    /// 字符串回调（既有形态——无 V8 scope 访问）。
+    Plain(Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>),
+    /// s373（wptfyi-runtime DC-2 module 早期错误面）：带 scope 回调——调用窗 V8
+    /// HandleScope 转借（v8 crate CallbackScope 同款「bootstrap scope inside a
+    /// callback」用法，scope.rs 回调注释）。`__zw_compile_module` 动态面 module
+    /// goal parse 预检通道：test262 module 变体页（`<script type=module>` 体内
+    /// `import()` 包装）经 shim 契约编译目标源，module-only 早期错误的 parse
+    /// 判定须在回调窗 scope 内跑原生 CompileModule（[`Sandbox::module_parse_check`]
+    /// 的 scope 窗形态）。字符串参数/返回与 [`HostCallback::Plain`] 同契约。
+    Scoped(Arc<dyn Fn(&mut v8::PinScope, &[String]) -> String + Send + Sync + 'static>),
+}
 
 /// s88（html-semantics-compat dynamic-import classic 面）：V8 原生动态 `import()`
 /// 宿主解析器——服务 classic script / eval 字符串 / Function 构造器 / 事件处理器
@@ -390,7 +402,7 @@ fn settle_dynamic_import<'s>(
 // 活槽位（跨实例回调被静默替换）。置 None 的洞不再复用（无 free-list），
 // 表长以线程历史上**不同名字的注册总数**为上界。
 thread_local! {
-    static HOST_CALLBACKS: RefCell<Vec<Option<HostCallback>>> = RefCell::new(Vec::new());
+    static HOST_CALLBACKS: RefCell<Vec<Option<HostCallback>>> = const { RefCell::new(Vec::new()) };
     // P105 诊断：与 HOST_CALLBACKS 平行的名字表（同槽位同步置 None）——
     // ZW_HOST_CALL_TRACE 慢宿主调用归因用，invoke 处按 idx 取名。仅诊断读取，
     // 不参与分派语义。
@@ -437,11 +449,55 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
         cbs.borrow()
             .get(idx as usize)
             .and_then(|slot| slot.as_ref())
-            .map(|cb| cb(&strs))
+            .map(|cb| match cb {
+                HostCallback::Plain(cb) => cb(&strs),
+                // s373：scoped 变体转借调用窗 scope（V8 回调期 isolate 自然 entered，
+                // 闭包内 tc_scope 派生 TryCatch 子域做 parse 判定——异常落子域
+                // TryCatch 不毒化外层执行流，契约字符串回传 JS 侧合成错误对象）。
+                HostCallback::Scoped(cb) => cb(scope, &strs),
+            })
             .unwrap_or_default()
     });
     if let Some(s) = v8::String::new(scope, &result) {
         rv.set(s.into());
+    }
+}
+
+/// s373（wptfyi-runtime DC-2 module 早期错误面）：module goal parse 预检的
+/// **scope 窗形态**——[`V8Sandbox::module_parse_check_v8`] 的回调窗变体。调用方
+/// 持有调用窗 HandleScope（[`HostCallback::Scoped`] 转借，V8 回调期 isolate 自然
+/// entered，无需 enter 纪律），函数自派生 TryCatch 子域跑原生 CompileModule
+///（ParseModule，https://tc39.es/ecma262/#sec-parsemodule ）；异常落子域
+/// TryCatch 不毒化外层执行流。返回 `Some(msg)` = module goal parse 拒绝（宿主按
+/// 四态契约 tag 3 面合成 SyntaxError reject）；`None` = 放行（空源、未发布提案
+/// 静态形式豁免——同 [`Sandbox::module_parse_check`] 口径）。
+pub fn module_parse_gate(scope: &mut v8::PinScope, source: &str, resource_name: &str) -> Option<String> {
+    if source.trim().is_empty() || has_unpublished_static_import(source) {
+        return None;
+    }
+    v8::tc_scope!(let tc, scope);
+    let code_str = v8::String::new(tc, source)?;
+    let name_str = v8::String::new(tc, resource_name)?;
+    let origin = v8::ScriptOrigin::new(
+        tc,
+        name_str.into(),
+        0,
+        0,
+        false,
+        0,
+        None,
+        false,
+        false,
+        true, // is_module
+        None,
+    );
+    let mut src = v8::script_compiler::Source::new(code_str, Some(&origin));
+    // parse 产物即弃——只检 parse 失败（early error 面），不 resolve 不求值。
+    let _module = v8::script_compiler::compile_module(tc, &mut src);
+    if tc.has_caught() {
+        Some(v8_try_catch_message!(tc))
+    } else {
+        None
     }
 }
 
@@ -870,16 +926,33 @@ impl V8Sandbox {
     /// 无 `register_callback` 调用时行为完全同今（零回归）。须在 `execute` 之前调用。
     #[allow(clippy::type_complexity)]
     pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
-        // 同名重注册 = 替换（最后注册者胜——execute 全量重装时后安装覆盖前者，此处
-        // 把该既有可见语义显式化）。宿主每次脚本执行都会全量重注册回调面（webview
-        // `execute_dom_script` 每脚本两遍 `register_dom_callbacks`），不去重时
-        // `self.callbacks` 与 `HOST_CALLBACKS` 随脚本数无界增长，且 `execute` 每次按
-        // 注册史全量重装 O(n)、整页脚本累计 O(n²)（t8p deterministic replay 二次方
-        // 退化根因：445 脚本后单脚本 ~1s）。复用**自有**槽位（旧闭包就地 drop；
-        // 槽位所有权语义见 HOST_CALLBACKS 注释——他 sandbox 的槽位不可达）；槽位
-        // 失效（None 洞/越界，仅防御面——own-slot 清空下活 sandbox 不可达）时退化
-        // 为新注册占新槽，不越界不撞写。
-        let cb: HostCallback = Arc::from(callback);
+        self.register_host_slot(name, HostCallback::Plain(Arc::from(callback)));
+    }
+
+    /// s373：带 scope 的宿主回调注册（[`Self::register_callback`] 的 scoped 变体）
+    /// ——回调闭包首参为调用窗 V8 HandleScope（[`HostCallback::Scoped`] 注记），
+    /// 供 `__zw_compile_module` 动态面在回调窗内做 module goal parse 预检。
+    /// 槽位/挂载/同名替换语义与 [`Self::register_callback`] 完全一致（同表同 idx
+    /// 空间，变体可跨形态替换）。
+    #[allow(clippy::type_complexity)]
+    pub fn register_scoped_callback(
+        &mut self,
+        name: &str,
+        callback: Box<dyn Fn(&mut v8::PinScope, &[String]) -> String + Send + Sync>,
+    ) {
+        self.register_host_slot(name, HostCallback::Scoped(Arc::from(callback)));
+    }
+
+    /// 槽位注册公共体（Plain/Scoped 两形态共享）：同名重注册 = 替换（最后注册者
+    /// 胜——execute 全量重装时后安装覆盖前者，此处把该既有可见语义显式化）。宿主
+    /// 每次脚本执行都会全量重注册回调面（webview `execute_dom_script` 每脚本两遍
+    /// `register_dom_callbacks`），不去重时 `self.callbacks` 与 `HOST_CALLBACKS`
+    /// 随脚本数无界增长，且 `execute` 每次按注册史全量重装 O(n)、整页脚本累计
+    /// O(n²)（t8p deterministic replay 二次方退化根因：445 脚本后单脚本 ~1s）。
+    /// 复用**自有**槽位（旧闭包就地 drop；槽位所有权语义见 HOST_CALLBACKS 注释
+    /// ——他 sandbox 的槽位不可达）；槽位失效（None 洞/越界，仅防御面——own-slot
+    /// 清空下活 sandbox 不可达）时退化为新注册占新槽，不越界不撞写。
+    fn register_host_slot(&mut self, name: &str, cb: HostCallback) {
         let name_for_trace = name.to_string();
         if let Some(entry) = self.callbacks.iter_mut().find(|(n, _)| n == name) {
             HOST_CALLBACKS.with(|cbs| {
@@ -1357,6 +1430,76 @@ impl V8Sandbox {
         Ok(())
     }
 
+    /// s373（wptfyi-runtime DC-2）：module goal parse 预检（ParseModule 抽象操作的
+    /// 原生通道，https://tc39.es/ecma262/#sec-parsemodule）——与 [`Self::parse_check`]
+    /// 同 context/enter 纪律，编译面换 `script_compiler::compile_module`
+    ///（ScriptOrigin `is_module=true` + resource_name），仅 parse 丢弃产物（不
+    /// instantiate/evaluate，无解析回调需求、零副作用）。宿主在模块体转换前调用：
+    /// IIFE 转换把 module 体降为 classic function 上下文，module-only 早期错误
+    ///（escaped keyword StringValue 归一、dup export、await-as-identifier、strict
+    /// with 等）在 classic 面放行——test262 负例（negative phase=parse）依赖引擎
+    /// 原生拒绝。未发布提案静态形式（`import defer`/`import source`）豁免——
+    /// 转换层超集支持面在册（s360），V8 原生拒但 shim 语义刻意承接。
+    /// 默认不支持（EngineUnavailable，同 [`Sandbox::parse_check`] 口径）。
+    fn module_parse_check_v8(&mut self, code: &str, resource_name: &str) -> Result<(), ScriptError> {
+        if code.trim().is_empty() {
+            return Ok(());
+        }
+        if has_unpublished_static_import(code) {
+            return Ok(());
+        }
+        let persistent = self.config.persistent_context;
+        // SAFETY: cached_context 和 isolate 是不同的字段（同 parse_check）。
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: 同 parse_check——stack-like enter/exit 纪律（EnterGuard 配对退出）。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
+
+        {
+            // `&PinScope` 参数（ScriptOrigin::new / compile_module）由
+            // `PinnedRef<TryCatch<HandleScope>>` → `PinnedRef<HandleScope>` 的
+            // Deref 强转承接（[`Self::parse_check`] 的 `Script::compile(try_catch, …)`
+            // 同链同款）——无需再派生子 HandleScope；异常落 try_catch（域内
+            // 判定，module 产物同域丢弃）。
+            let Some(code_str) = v8::String::new(try_catch, code) else {
+                return Err(ScriptError::InvalidInput("failed to create V8 string".into()));
+            };
+            let Some(name_str) = v8::String::new(try_catch, resource_name) else {
+                return Err(ScriptError::InvalidInput("failed to create resource name".into()));
+            };
+            let origin = v8::ScriptOrigin::new(
+                try_catch,
+                name_str.into(),
+                0,
+                0,
+                false,
+                0,
+                None,
+                false,
+                false,
+                true, // is_module
+                None,
+            );
+            let mut source = v8::script_compiler::Source::new(code_str, Some(&origin));
+            // parse 产物即弃——只检 parse 失败（early error 面），不 resolve 不求值。
+            let _module = v8::script_compiler::compile_module(try_catch, &mut source);
+        }
+        if try_catch.has_caught() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::CompileError(msg));
+        }
+        Ok(())
+    }
+
     /// s369 in-execute catch 面（[`Self::execute_classic`]）：挂 `__zw_e` → 复位
     /// TryCatch（主错文本已冻结于调用方）→ 编译+运行 catch 片（次生错误吞没——片体
     /// 自带 try 守卫，防御异形挂载失败）→ 检查点 FIFO 排空 `[体内微任务, load 微任务]`
@@ -1689,8 +1832,19 @@ impl crate::Sandbox for V8Sandbox {
     fn parse_check(&mut self, code: &str) -> Result<(), ScriptError> {
         V8Sandbox::parse_check(self, code)
     }
+    fn module_parse_check(&mut self, code: &str, resource_name: &str) -> Result<(), ScriptError> {
+        V8Sandbox::module_parse_check_v8(self, code, resource_name)
+    }
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         V8Sandbox::register_callback(self, name, callback)
+    }
+    fn register_scoped_callback(
+        &mut self,
+        name: &str,
+        callback: Box<dyn Fn(&mut v8::PinScope, &[String]) -> String + Send + Sync>,
+    ) -> bool {
+        V8Sandbox::register_scoped_callback(self, name, callback);
+        true
     }
     fn resolve_async_callback(&mut self, id: &str, result: &str) {
         V8Sandbox::resolve_async_callback(self, id, result);
@@ -1789,6 +1943,65 @@ mod tests {
         assert_eq!(r.value, "undefined", "compile-only 不执行: {:?}", r.value);
         assert!(sandbox.parse_check("").is_ok(), "空源 trivially 通过");
         assert!(sandbox.parse_check("   \n ").is_ok(), "空白源 trivially 通过");
+    }
+
+    // s373（module goal parse 预检）：module-only 早期错误原生检出（IIFE 转换降级
+    // classic 后放行的形态）+ 豁免面（未发布提案静态形式、TLA 合法源、空源）。
+    #[test]
+    fn module_parse_check_detects_module_goal_early_errors() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        // 合法 module 源：export/import 形 parse 通过。
+        assert!(
+            sandbox.module_parse_check_v8("export const a = 1;", "m.mjs").is_ok(),
+            "合法 export 源通过"
+        );
+        assert!(
+            sandbox
+                .module_parse_check_v8("import x from './a.js'; export default x;", "m.mjs")
+                .is_ok(),
+            "合法 import 源通过"
+        );
+        // escaped keyword StringValue 归一：module goal 下 `await` 为保留字
+        //（ECMA-262 #sec-static-semantics-early-errors；node 24 module 实证 SyntaxError），
+        // classic 面放行——本预检的存在意义。
+        let err = sandbox
+            .module_parse_check_v8("class aw\\u0061it {}", "m.mjs")
+            .expect_err("escaped await 类名必须 module goal 拒绝");
+        assert!(matches!(err, ScriptError::CompileError(_)), "归 CompileError: {err:?}");
+        // dup export：module-only 早期错误（classic 面无 export 概念）。
+        let err = sandbox
+            .module_parse_check_v8("export const a = 1; export const a = 2;", "m.mjs")
+            .expect_err("重复导出名必须拒绝");
+        assert!(matches!(err, ScriptError::CompileError(_)), "归 CompileError: {err:?}");
+        // strict with：module 隐含 strict（ECMA-262 #sec-modules），with 语法非法。
+        let err = sandbox
+            .module_parse_check_v8("with ({}) {}", "m.mjs")
+            .expect_err("with 必须在 module goal 拒绝");
+        assert!(matches!(err, ScriptError::CompileError(_)), "归 CompileError: {err:?}");
+        // TLA 合法源：原生 parse 放行（~130 TLA 语法桶是转换层执行面缺口，
+        // 预检不拦——拦截会引入新 Fail 面）。
+        assert!(
+            sandbox
+                .module_parse_check_v8("await Promise.resolve();", "m.mjs")
+                .is_ok(),
+            "合法 TLA 源通过"
+        );
+        // 未发布提案静态形式豁免：V8 原生拒（关旗）但转换层超集承接（s360）——
+        // 预检不得拦截。
+        assert!(
+            sandbox
+                .module_parse_check_v8("import defer * as ns from './x.js';", "m.mjs")
+                .is_ok(),
+            "import defer 静态形豁免"
+        );
+        assert!(
+            sandbox
+                .module_parse_check_v8("import source x from './x.js';", "m.mjs")
+                .is_ok(),
+            "import source 静态形豁免"
+        );
+        // 空源 trivially 通过（同 parse_check 口径）。
+        assert!(sandbox.module_parse_check_v8("", "m.mjs").is_ok(), "空源通过");
     }
 
     /// T13 S3：reset_context 尾 `low_memory_notification` 后 context 重建语义不破——

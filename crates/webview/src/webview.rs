@@ -4525,71 +4525,25 @@ impl WebView {
             // fetch defer）→ 返 IIFE（__zw_load_module eval 为 namespace）。browser/renderer 多进程模式各自注册
             //（http fetch + collect_module_deps 递归）；本进程内路径用 fetcher + 单层 imports 空存根。
             let map_compile = page_import_map.clone();
+            // s373：module 变体负例通道——scoped 形态（回调窗 scope 转借 parse gate，
+            // `HostCallback::Scoped`）优先，module goal parse 预检在回调窗内完成；
+            // 非 v8 构建（quickjs-only）无 scoped 通道，Plain 形态预检缺席维持既有
+            // 放行（cfg 互斥分支，fetcher/map 单分支 move）。
+            // R3093：__zw_compile_module（动态 import() 外链 module）—— module prelude 的 __zw_load_module
+            // 对未缓存 spec 调此回调。fetch 源经 fetcher + compile_dependency_iife（imports 空存根，transitive
+            // fetch defer）→ 返 IIFE（__zw_load_module eval 为 namespace）。browser/renderer 多进程模式各自注册
+            //（http fetch + collect_module_deps 递归）；本进程内路径用 fetcher + 单层 imports 空存根。
+            #[cfg(feature = "v8")]
+            sandbox.register_scoped_callback(
+                "__zw_compile_module",
+                Box::new(move |scope, args| {
+                    zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, Some(scope))
+                }),
+            );
+            #[cfg(not(feature = "v8"))]
             sandbox.register_callback(
                 "__zw_compile_module",
-                Box::new(move |args| {
-                    let spec = args.first().map(String::as_str).unwrap_or("");
-                    let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
-                    if spec.is_empty() {
-                        return String::new();
-                    }
-                    // s249：第三参 = 动态 import 属性 `with.type`（prelude 校验后的
-                    // type 串；空串 = 无属性，JS 模块语义）。
-                    let type_attr = args.get(2).map(String::as_str).unwrap_or("");
-                    // s338：第四参 = 调用点模块 credentials mode（prelude `__zw_load_module`
-                    // 穿入：include/same-origin；空 = 旧宿主/直调形态，same-origin 缺省）。
-                    let credentials = args.get(3).map(String::as_str).unwrap_or("");
-                    // s254：import map 应用（map 阶段命中才改写；未命中既有 parent-join
-                    // 路径零漂移）。s260：Blocked → 空契约（TypeError 拒绝面，
-                    // 不回退 parent-join 抓取被阻断 URL）。
-                    let Some(spec_eff) = apply_import_map(&map_compile, parent, spec) else {
-                        return String::new();
-                    };
-                    // s360：第五参 = defer 标记（shim `__zw_load_module_deferred` 穿 '1'）
-                    // ——入口走延迟求值发射（build_module_script_deferred：depsPromise 急切
-                    // 依赖图 + runBody 延迟体），产物记录对象 IIFE 由 shim 门面化。合同
-                    // 失败回落空串（shim 顶层取回失败面 TypeError——与 eager 契约空串同
-                    // 语义；链接失败 tag 3 由该函数自带）。
-                    // https://tc39.es/proposal-defer-import-eval/
-                    let deferred = args.get(4).map(String::as_str) == Some("1");
-                    if deferred {
-                        return compile_module_contract_deferred(
-                            &fetcher_compile,
-                            parent,
-                            &spec_eff,
-                            if credentials.is_empty() || credentials == "same-origin" {
-                                None
-                            } else {
-                                Some(credentials)
-                            },
-                        )
-                        .unwrap_or_default();
-                    }
-                    compile_module_contract(
-                        &fetcher_compile,
-                        parent,
-                        &spec_eff,
-                        if type_attr.is_empty() { None } else { Some(type_attr) },
-                        // s268：动态 import() 元素级 referrerpolicy 未穿（回调契约
-                        // 无元素上下文；doc 默认链回落）——语料无钉面，spec 动态面
-                        // 挂账（s116 module-import-referrer 同域）。
-                        None,
-                        // s338：credentials 经 `__zw_cred` 查询标记穿 fetcher 契约
-                        //（fetcher 无 credentials 形参，s124 `__zw_lp` 同法；真实 HTTP
-                        // 宿主忽略未知查询参数，renderer/tab 旧宿主第 4 参缺省
-                        // same-origin 面）。registry/缓存记账键取原始 spec，不带标记。
-                        // same-origin 缺省面**不带标记**（取回 src 逐字节零漂移——既有
-                        // 精确 src 匹配 fetcher/端点臂不受扰，s124 有值才附标记同规）；
-                        // fetcher 臂无标记 = same-origin 缺省语义。
-                        // FIXME(s339)：classic 车道（native resolver）无 credentials
-                        // 槽——延迟 promise_test 调用打破槽位刷新（s124 同形挂账）。
-                        if credentials.is_empty() || credentials == "same-origin" {
-                            None
-                        } else {
-                            Some(credentials)
-                        },
-                    )
-                }),
+                Box::new(move |args| zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, None)),
             );
             // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
             // 构造器/事件处理器上下文源码重写不可达）。复用同一编译契约（三态标记）。
@@ -4655,6 +4609,10 @@ impl WebView {
                         } else {
                             Some(credentials)
                         },
+                        // s373：classic native resolver 面无 scope 通道（DynamicImportResolver
+                        // 纯字符串契约）——预检缺席维持既有放行（该面 WPT 负例已由 IIFE
+                        // classic 编译面覆盖，dynamic-import 941 对拍锁定）。
+                        None,
                     );
                     // s256：延迟包裹 `1\x1f<delay_ms>\x1f<contract>`——延迟 >0 时挂起
                     // resolver 到期 settle（v8_runtime 回调臂）。契约已同步算好，包裹
@@ -5234,6 +5192,30 @@ impl WebView {
                 if let Err(e) = zero_script_sandbox::validate_static_import_attributes(&code) {
                     let _ = sandbox.execute(&script_report_module_failure(&e.message, script_index, e.error_ctor));
                     tracing::warn!("import attributes 校验失败，模块体不执行: {}", e.message);
+                    continue;
+                }
+                // s373（wptfyi-runtime DC-2）：module goal parse 预检——IIFE 转换把
+                // 模块体降为 classic function 上下文，module-only 早期错误（escaped
+                // keyword StringValue 归一、dup export、await-as-identifier、strict
+                // with 等）在转换面放行，test262 负例（negative phase=parse）依赖
+                // 引擎原生拒绝；转换前对入口源做原生 ParseModule 检查。未发布提案
+                // 静态形式（import defer/source，s360 超集承接面）由 sandbox 腿豁免。
+                // 失败 → 复用 s102 报告面（window 报 SyntaxError + 元素照常 fire
+                // load + 失败记账，同下方编译 Err 臂）；位置在依赖收集前——spec 的
+                // parse 失败先于取回（escape-sequence-import 判据：入口 parse 失败
+                // 直接 SyntaxError，误 fetch 不发生）。
+                // https://tc39.es/ecma262/#sec-parsemodule
+                // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                if let Err(e) = sandbox.module_parse_check(&code, &module_cache_key) {
+                    let _ = sandbox.execute(&script_report_module_failure_cached(
+                        &format!("{e}"),
+                        script_index,
+                        "SyntaxError",
+                        &module_cache_key,
+                        // clippy 1.99 cloned_ref_to_slice_refs：单元素借用切片免 clone。
+                        std::slice::from_ref(&module_cache_key),
+                    ));
+                    tracing::warn!("module parse 预检失败，模块体不执行: {e}");
                     continue;
                 }
                 // 预注册空存根 + 编译（import→空 namespace、export→_exports；动态 import() 经 prelude）。
@@ -8522,6 +8504,82 @@ fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, sp
     }
 }
 
+/// s373：`__zw_compile_module` 回调体（Plain/Scoped 两注册形态共享——宿主参数
+/// 解析、import map 应用、deferred/eager 分派、契约调用）。`parse_gate` 穿 eager
+/// 契约（scoped 回调窗 scope 转借，module goal parse 预检，见
+/// [`compile_module_contract`]）；Plain 形态传 `None`（预检缺席维持既有放行）。
+/// deferred 臂不预检（defer 超集承接面，test262 defer 语义桶无 parse 负例需求）。
+#[allow(clippy::type_complexity)] // 镜像 HostCallback 闭包形态（parse gate scope 转借）
+fn zw_compile_module_shim_body(
+    args: &[String],
+    fetcher: &ScriptSourceFetcher,
+    import_map: &Option<zero_script_sandbox::ImportMap>,
+    parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
+) -> String {
+    let spec = args.first().map(String::as_str).unwrap_or("");
+    let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
+    if spec.is_empty() {
+        return String::new();
+    }
+    // s249：第三参 = 动态 import 属性 `with.type`（prelude 校验后的
+    // type 串；空串 = 无属性，JS 模块语义）。
+    let type_attr = args.get(2).map(String::as_str).unwrap_or("");
+    // s338：第四参 = 调用点模块 credentials mode（prelude `__zw_load_module`
+    // 穿入：include/same-origin；空 = 旧宿主/直调形态，same-origin 缺省）。
+    let credentials = args.get(3).map(String::as_str).unwrap_or("");
+    // s254：import map 应用（map 阶段命中才改写；未命中既有 parent-join
+    // 路径零漂移）。s260：Blocked → 空契约（TypeError 拒绝面，
+    // 不回退 parent-join 抓取被阻断 URL）。
+    let Some(spec_eff) = apply_import_map(import_map, parent, spec) else {
+        return String::new();
+    };
+    // s360：第五参 = defer 标记（shim `__zw_load_module_deferred` 穿 '1'）
+    // ——入口走延迟求值发射（build_module_script_deferred：depsPromise 急切
+    // 依赖图 + runBody 延迟体），产物记录对象 IIFE 由 shim 门面化。合同
+    // 失败回落空串（shim 顶层取回失败面 TypeError——与 eager 契约空串同
+    // 语义；链接失败 tag 3 由该函数自带）。
+    // https://tc39.es/proposal-defer-import-eval/
+    let deferred = args.get(4).map(String::as_str) == Some("1");
+    if deferred {
+        return compile_module_contract_deferred(
+            fetcher,
+            parent,
+            &spec_eff,
+            if credentials.is_empty() || credentials == "same-origin" {
+                None
+            } else {
+                Some(credentials)
+            },
+        )
+        .unwrap_or_default();
+    }
+    compile_module_contract(
+        fetcher,
+        parent,
+        &spec_eff,
+        if type_attr.is_empty() { None } else { Some(type_attr) },
+        // s268：动态 import() 元素级 referrerpolicy 未穿（回调契约
+        // 无元素上下文；doc 默认链回落）——语料无钉面，spec 动态面
+        // 挂账（s116 module-import-referrer 同域）。
+        None,
+        // s338：credentials 经 `__zw_cred` 查询标记穿 fetcher 契约
+        //（fetcher 无 credentials 形参，s124 `__zw_lp` 同法；真实 HTTP
+        // 宿主忽略未知查询参数，renderer/tab 旧宿主第 4 参缺省
+        // same-origin 面）。registry/缓存记账键取原始 spec，不带标记。
+        // same-origin 缺省面**不带标记**（取回 src 逐字节零漂移——既有
+        // 精确 src 匹配 fetcher/端点臂不受扰，s124 有值才附标记同规）；
+        // fetcher 臂无标记 = same-origin 缺省语义。
+        // FIXME(s339)：classic 车道（native resolver）无 credentials
+        // 槽——延迟 promise_test 调用打破槽位刷新（s124 同形挂账）。
+        if credentials.is_empty() || credentials == "same-origin" {
+            None
+        } else {
+            Some(credentials)
+        },
+        parse_gate,
+    )
+}
+
 fn compile_module_contract(
     fetcher: &ScriptSourceFetcher,
     parent: &str,
@@ -8529,6 +8587,9 @@ fn compile_module_contract(
     type_attr: Option<&str>,
     referrer_policy: Option<&str>,
     credentials: Option<&str>,
+    // s373：module goal parse 预检的调用窗 scope（`HostCallback::Scoped` 回调窗转借；
+    // None = 无预检通道——classic native resolver 面与降级 Plain 形态，维持既有放行）。
+    parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
 ) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -8547,6 +8608,25 @@ fn compile_module_contract(
             // s252：入口编译键 = 解析后 URL（registry 同键形，见 collect 注册口径）——
             // 依赖查找经 resolve_registered_specifier 统一归一到解析 URL，跨拼写命中。
             let resolved = resolve_document_url(parent, spec);
+            // s373：module goal parse 预检——IIFE 转换把模块体降为 classic function
+            // 上下文，module-only 早期错误（escaped keyword StringValue 归一、dup
+            // export、await-as-identifier、strict with 等）在转换面放行，test262
+            // module 变体负例（negative phase=parse）依赖引擎原生拒绝；IIFE 编译前
+            // 对取回源做原生 ParseModule 检查（scope 窗形态，见 module_parse_gate）。
+            // 失败 → tag 3 契约（逐次新 SyntaxError reject，shim `__zw_load_module`
+            // / v8 settle_dynamic_import 两侧既有消费面）——spec：parse 失败先于
+            // 依赖求值，误 fetch 已发生但取回源不再执行（escape-sequence-import
+            // 判据：入口 parse 失败直接 SyntaxError）。未发布提案静态形式
+            //（import defer/source，s360 超集承接面）由 gate 腿豁免。
+            // https://tc39.es/ecma262/#sec-parsemodule
+            // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+            if let Some(scope) = parse_gate
+                && let Some(source) = reg.get(&resolved)
+                && let Some(msg) = zero_script_sandbox::module_parse_gate(scope, source, &resolved)
+            {
+                tracing::warn!("module parse 预检拒绝，契约按 tag 3 面拒绝: {resolved}");
+                return format!("3\u{1f}{resolved}\u{1f}{msg}");
+            }
             match zero_script_sandbox::compile_dependency_iife(&resolved, &reg) {
                 // s361：产物前拼动态 import helper 段（语句包立即执行函数后接 iife
                 // 表达式——契约 eval 是 `(code)` 表达式求值形态）——嵌套 `import()`

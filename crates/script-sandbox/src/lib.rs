@@ -40,6 +40,13 @@ mod import_map;
 #[cfg(feature = "v8")]
 pub use v8_runtime::*;
 
+// s373：v8 crate 名字面 re-export——宿主（webview 等）在带 v8 类型的自有签名/
+// 调用面（`compile_module_contract` parse gate 参数、`HostCallback::Scoped` 回调）
+// 引用 `zero_script_sandbox::v8::PinScope` 等，不直接依赖 v8 crate（feature 对齐
+// 本 crate 的 v8 门控）。
+#[cfg(feature = "v8")]
+pub use v8;
+
 #[cfg(feature = "v8")]
 pub use worker::*;
 
@@ -466,10 +473,45 @@ pub trait Sandbox {
             "parse_check unsupported by this backend".into(),
         ))
     }
+    /// s373（wptfyi-runtime DC-2）：module goal parse 预检（ParseModule 抽象操作，
+    /// https://tc39.es/ecma262/#sec-parsemodule）——模块体**转换前**对入口源做
+    /// 原生 module 语法面检查。IIFE 转换把 module 体降为 classic function 上下文，
+    /// module-only 早期错误（escaped keyword StringValue 归一、dup export、
+    /// await-as-identifier、strict with 等）在 classic 面放行，test262 负例
+    ///（negative phase=parse）依赖引擎原生拒绝；未发布提案静态形式
+    ///（`import defer`/`import source`，见 [`crate::has_unpublished_static_import`]
+    ///）由 V8 腿豁免——转换层超集支持面刻意承接。
+    ///
+    /// **默认不支持**（EngineUnavailable——调用方维持转换层既有放行行为）；
+    /// V8 后端实现，QuickJS 后端待接（FIXME：同 parse_check 车道对齐项）。
+    fn module_parse_check(&mut self, _code: &str, _resource_name: &str) -> Result<(), ScriptError> {
+        Err(ScriptError::EngineUnavailable(
+            "module_parse_check unsupported by this backend".into(),
+        ))
+    }
     /// 注册宿主回调，挂为全局函数 `name`（JS 调 `name(...)` 触发 Rust 闭包）。
     /// 须在 `execute` 之前调用。回调参数为 JS 参数的字符串数组，返回字符串。
     #[allow(clippy::type_complexity)]
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>);
+    /// s373（wptfyi-runtime DC-2 module 早期错误面）：带 scope 宿主回调注册
+    ///（[`HostCallback::Scoped`] 变体——调用窗 V8 HandleScope 转借）。供
+    /// `__zw_compile_module` 动态面在回调窗内做 module goal parse 预检
+    ///（[`module_parse_gate`]）。槽位/挂载/同名替换语义与 [`Self::register_callback`]
+    /// 一致（同表同 idx 空间，变体可跨形态替换）。
+    ///
+    /// 返回 `true` = scoped 装载成功；`false` = 后端不支持（调用方按 false 降级
+    /// [`Self::register_callback`] Plain 形态——预检缺席仅维持既有放行行为）。
+    ///
+    /// **默认不支持**（返 false——零回归）；V8 后端实现。
+    #[cfg(feature = "v8")]
+    #[allow(clippy::type_complexity)] // 镜像 HostCallback::Scoped 闭包形态（Arc 跨 V8 调用边界）
+    fn register_scoped_callback(
+        &mut self,
+        _name: &str,
+        _callback: Box<dyn Fn(&mut v8::PinScope, &[String]) -> String + Send + Sync>,
+    ) -> bool {
+        false
+    }
     /// P1b S1 异步回调 resolve（方案 A，RFC `p1b-rfc-2026-07-25.md` v0.3）：Rust 异步
     /// 完成后调此方法，在沙箱中执行 JS 全局 `__zwResolveCallback(id, result)`，由 JS
     /// 侧 pending 表 resolve 对应 Promise。`id`/`result` 按 JS 字符串字面量安全转义防注入。
