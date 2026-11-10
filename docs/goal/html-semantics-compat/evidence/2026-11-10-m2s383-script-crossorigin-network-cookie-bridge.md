@@ -38,7 +38,7 @@ cookie 送达面三案对照：**A 投影 fetch init credentials**（include+'*'
 
 - solo（FILTER=script-crossorigin-network）：**8/8 Pass 首跑即中**（Timeout→Pass；invalid/非 ASCII 两案 false 判据正确）
 - credentials 族 solo（FILTER=credentials）：**24/24 Pass**（dynamic-imports-credentials ×2 姊妹案等全保持）
-- muted-errors 归因：solo 无结果行 exit 1——**stash 基线二进制同形复跑**（无行 + exit 1）= 先在 crash 形非本刀回归；域账两侧均无该案行（先在覆盖缺口，记账不修）
+- muted-errors 归因：solo 无结果行 exit 1——stash 基线二进制同形复跑（无行 + exit 1）= 零漂移。**s384 勘根修正**：非 crash 形——案源含 `<iframe src=…muted-errors-iframe.html`（:71），命中 skip 谓词 `source.contains("<iframe")`（testharness_html_semantics.rs:121 iframe 依赖面排除，runner 单文档通道外，the-iframe-element 排除先例）；solo 空集 exit 1 = `cmd_testharness_html_semantics` 的 `cases.is_empty()` 退出路径（main.rs:1628）。域账两侧均无该案行 = 规范排除记账正确，**非覆盖缺口**（初账「先在 crash 形/覆盖缺口」定性证伪）
 - shim 22-part 拼装 node --check PASS
 - 域 A/B join（s382 stash 基线 A vs 本刀 B，(key,state) 口径）：**A=1130P/1F/2T（1137 对）→ B=1150P/1F/0T（1155 对）**；A-only 恰 2 键 = credentials-setTimeout + script-crossorigin-network 两文件级 Timeout 旧形（前者为 s382 修复前基线侧），B-only 恰 20 键 = 12（credentials-setTimeout 子测）+ 8（本案子测）Pass，**零 STATE-DIFF**，F=1（dynamic-imports-script-error 平行流漂移）原样——**the-script-element 域 Timeout 清零（T 1→0）**
 - make test（fmt 前置过 + workspace 腿，guard --compile-first）：聚合 **9398P/7F**——7 红（img_runtime_deferred_settle_r5275 / svg_img_settle_density_r5277 / fetch_filtered_response_type_matrix / iframe_sw_messages_dispatch / response_body_readable_stream_r2967 / websocket_error_nonterminal / websocket_event_flow_open_message_close）与 s371 基线名单逐名精确同构零新增红；腿中止形态与 s381/s382 同（后续腿未达）
