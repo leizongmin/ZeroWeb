@@ -103,3 +103,6 @@ include!("js_dom_bridge_tests/part97_m3_shadow_probe.rs");
 
 // 46 号 s363 mixed eager/defer 同 URL 记录共享：defer 面命中 eager 缓存零再求值钉。
 include!("js_dom_bridge_tests/part98_s363_mixed_eager_defer.rs");
+
+// P39（siteopt github r1）：tagName/namespaceURI stamp 失配窗口永久章快道回归。
+include!("js_dom_bridge_tests/part99_p39_tag_ns_stamp_memo.rs");

@@ -19232,6 +19232,17 @@
   // R-baidu3 风暴路径预防：同视图内重复枚举零宿主往返；印章不符即整体失效，语义与
   // 逐元素宿主查询一致）。
   var _zwSelNsCache = { gen: -1, added: -1, removed: -1, map: new Map() };
+  // P39（siteopt github r1，2026-11-10）：sel→ns 永久章（`_zwSelSeenTag` 同款跨视图
+  // 持久）。_zwSelNsCache 印章每脚本 mutation drain 后失配 → 失配窗口内每次
+  // namespaceURI 读（get trap tagName/localName/nodeName 的 R5000 foreign 判定 +
+  // ns 面 getter）都打 `__zw_get_ns` 宿主往返——github home 75s 全量谱 get_ns
+  // 20.4 万次（27.4%），与 get_tag 合计 55% 为页面脚本推进分钟级主源。spec
+  // namespaceURI 不可变（https://dom.spec.whatwg.org/#dom-node-namespaceuri）；
+  // drain→apply 间隙宿主视图未变，上一视图权威值即当前权威值。写入点：宿主
+  // 命中（下方）与 `_zwSelNsCache` 表命中（同 `_zwSelSeenTag` 刷新逻辑）——apply
+  // 后权威演进即时回收，失配窗口章服务不扩大 R5000 既有误服务面（detach miss
+  // 归一 '' 的已知限制同现状，PR #80 缺陷审查记档）。
+  var _zwSelNsSeen = new Map();
   // t7（bilibili 稳态轮询满核）：_zwSelNs 的批量灌注口——`__zw_query_all_tagged`
   // payload（sel\x1ftag[\x1fns]）在 _zwDocAllElements 枚举时一次往返建全量 sel→ns
   // 表。缺此通道时轮询页每次视图换代印章失效 → 过滤循环对全量元素逐个
@@ -19264,19 +19275,37 @@
   function _zwSelNs(sel, handle) {
     if (handle || !sel || typeof __zw_get_ns !== 'function') return '';
     var _snk = String(sel);
+    var _nsFresh = false;
     try {
       if (_zwSelNsCache.gen === _zwApplyGeneration()
           && _zwSelNsCache.added === _zwPendingAdded.length
           && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+        _nsFresh = true;
         var _snhit = _zwSelNsCache.map.get(_snk);
-        if (_snhit !== undefined) return _snhit;
+        if (_snhit !== undefined) {
+          // P39：表命中即权威——顺带刷新章（同 `_realTag` 的 `_zwSelSeenTag`
+          // 刷新逻辑），防重绑定演进后失配窗口服务旧章值。
+          try { _zwSelNsSeen.set(_snk, _snhit); } catch (_eNsFr) {}
+          return _snhit;
+        }
       }
     } catch (_e5000g) {}
+    // P39：stamp 失配窗口章快道（`_realTag` 同款——语义论证见 `_zwSelNsSeen` 声明处）。
+    // `_nsFresh` 守卫保持 stamp 新鲜窗口的宿主权威语义与 R5000 原链逐位一致。
+    if (!_nsFresh) {
+      try {
+        var _nsSeen = _zwSelNsSeen.get(_snk);
+        if (_nsSeen !== undefined) return _nsSeen;
+      } catch (_eNsSeen) {}
+    }
     var _sn = '';
     try {
       _sn = String(__zw_get_ns(sel) || '');
       if (_sn === 'http://www.w3.org/1999/xhtml') _sn = '';
     } catch (_e5000sn) {}
+    try {
+      _zwSelNsSeen.set(_snk, _sn);
+    } catch (_eNsStamp) {}
     try {
       if (_zwSelNsCache.gen !== _zwApplyGeneration()
           || _zwSelNsCache.added !== _zwPendingAdded.length
@@ -19295,15 +19324,43 @@
     // 枚举时经 __zw_query_all_tagged 灌入）。印章 = (apply 代际, pending 记账长度)，
     // 不符即走原链——apply 后同 sel 重绑定新元素的窗口不服务旧 tag，语义与逐元素
     // 宿主查询一致。只正缓存枚举命中的 sel，miss 不缓存。
+    var _tcFresh = false;
     if (sel && _zwTagCache) {
       try {
         if (_zwTagCache.gen === _zwApplyGeneration()
             && _zwTagCache.added === _zwPendingAdded.length
             && _zwTagCache.removed === _zwPendingRemoved.length) {
+          _tcFresh = true;
           var _tct = _zwTagCache.map.get(String(sel));
-          if (_tct) return _zwAsciiUpper(_tct);
+          if (_tct) {
+            // P39：表命中即权威——顺带刷新章，防 apply 后 sel 重绑定（id-only sel
+            // 换 tag 形态）演进后失配窗口服务旧章值。
+            try {
+              var _stFresh = globalThis._zwSelSeenTag || (globalThis._zwSelSeenTag = {});
+              _stFresh[String(sel)] = String(_tct);
+            } catch (_eSstFr) {}
+            return _zwAsciiUpper(_tct);
+          }
         }
       } catch (_eTagCache) {}
+    }
+    // P39（siteopt github r1，2026-11-10）：stamp 失配窗口章快道。_zwTagCache 印章
+    // 三元组（apply 代际 + pending 记账）每脚本 mutation drain 后失配 → 上一视图
+    // payload 表整面失效，本函数在窗口内每次调用都打 `__zw_get_tag` 宿主往返——
+    // github home 75s 全量谱 get_tag 20.6 万次（宿主调用 74.3 万次的 27.7%），
+    // 每次 tagName/localName/nodeName get trap 读（part04 元素 getter 面 → 本函数）
+    // 均付一次 IPC 基价 → 每视图换代对全量元素逐个重查 × 30 次换代 ≈ 页面脚本
+    // 推进分钟级的主源。章 = `_zwSelSeenTag`（R4200 永久印章，下方宿主命中路径
+    // 存档——spec tagName 不可变，https://dom.spec.whatwg.org/#dom-element-tagname；
+    // drain→apply 间隙宿主视图未变，上一视图权威值即当前权威值）。`_tcFresh`
+    // 守卫：apply 后 stamp 新鲜走上方 `_zwTagCache` 权威表（命中即返回；miss 落
+    // 宿主原链——R4200「sel 重解析换 tag 的窗口 host 必命中，印章只在 miss 服务」
+    // 的误服务面语义原样保持）；宿主命中顺带刷新章，权威演进即时回收。
+    if (sel && !_tcFresh && globalThis._zwSelSeenTag) {
+      try {
+        var _sstFast = globalThis._zwSelSeenTag[String(sel)];
+        if (_sstFast) return _zwAsciiUpper(String(_sstFast));
+      } catch (_eSstFast) {}
     }
     if (sel && typeof __zw_get_tag === 'function') {
       try {
