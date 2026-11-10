@@ -62,18 +62,43 @@ computed 值发射臂缺失（grid-line 族 computed 返 initial）、stylesheet
 cascade 应用缺失（reset 不回落页面规则值）、span 形状序列化。
 [证据](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)
 
+**DC-2 values serialize 批完成（11-11 凌晨）**：specified 值读面常量折叠
+（trig/inverse-trig/minmax/clamp/round-mod-rem/hypot + canonical 序列化）三写臂
+接线 + computed 值臂 NaN 规约（CSS Values 4 §10.12 censor-to-zero / §10.13
+`calc(NaN)`）——values corpus 对重录基线（results-v5 v5d，oracle 收窄）
+**1,548 → 2,213（净 +665），逐页不降 0 回归**（对上批账面 1,770 净 +443；
+sin-cos-tan-serialize 40→270 全绿、acos 两页 0→62/60、minmax 族 +170、
+round-mod-rem-computed +54）。**DC-2 color 上下文批完成**（提交 1cafca122，三修合并）：currentcolor 三参
+属性上下文（`__zwComputedColor(raw, el, prop)`，非 color 属性先试本元素，
+css-color-4 §5.3）——currentColor 子测试 +26（relative-color +21、alpha +5）；
+part03 raw 影子放宽（归一变形且原值含 none 即存原值）+ srcBare 分量语法跟随
+证伪回退（declared 写侧剥 % 后 store 无语法）——hsl/hwb computed none 组
+保形 8 案恢复（cc8 通过系旧 serial 强加 % 与影子漏存两错误抵消的 accidental
+pass）；color-mix 插值空间别名折叠 `'in xyz' ≡ 'in xyz-d65'`——xyz none 组
+13 案恢复（v6 记录轮为 pre-alias 测量态 −13）。v7 HEAD 复录终局核对。
+[证据](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)
+（values 侧 9fc536447：values corpus v5d 1,548 → 2,213 净 +665 逐页不降；
+已知缺口挂账：atan2 混型实参、trig 实参时间单位各 1F。color 侧收口探针
+法证与 v8 终账（对 cc8 净 +26 逐页 0 回归）见
+[证据](evidence/2026-11-11-dc2-color-raw-shadow-mix-alias.md)。）
+
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 七批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94 |
+| DC-2 按簇收敛 | 九批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试 |
 | DC-3 全量对账 | 待执行 | 验收线 182,392 项通过，同 revision 周跑产物待补 |
 
 碰撞记录：11-11 凌晨 union 树 engine 全量 7F（img/svg settle + websocket
 族）——values/T54 批写面与该 7 测试零交集（part85/part45 无 style 用法），
-归因待 color/grid 链在途 hunks 或 main 漂移；peer 链（color/grid 批）与本批
-共享 part03.js/callbacks.rs 写文件，双方 hunk 不重叠已分别提交，push 待树
-静默窗口统一 pull --rebase 后携带。
+归因待 color/grid 链在途 hunks 或 main 漂移。**定谳（11-11 凌晨，HEAD
+worktree 判定）**：HEAD be6703d58 冷编译后同 7 测试全红（0.17s、同断言：
+img_runtime_deferred_settle_r5275 / svg_img_settle_density_r5277 /
+fetch_filtered_response_type_matrix / iframe_service_worker_messages /
+response_body_readable_stream_r2967 / t8k_websocket_error_nonterminal /
+t8k_websocket_event_flow）——**main 既有欠账，与任何在途 hunk 无关**。
+r2320/color ctx 批 make test 全量 3835P/7F，7F 即该既有组，本批新增测试
+全绿，不随本批携带。
 
-碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
+遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
