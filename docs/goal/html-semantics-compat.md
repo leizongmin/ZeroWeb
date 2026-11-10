@@ -2,7 +2,20 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 392 forms 树散单余红分诊 + img 域勘根（承 429 残件）+ 自建探针口径卫生收口——**零源码改动，17 键归属定谳 + 探针键级口径 −37**：①口径卫生=删除 25 个 gitignore 本地自建探针文件（全量备份 /tmp/s392/probe-backup），select 域 4 文件 27 行（23F+4P）+forms 根 s327 3 文件 10 行（6F+4P）+zzz-probe 16 文件与 zz-cueprobe/zw392_probe 零行（reftest-only 或基线后新建）；**教训钉**=scripting-1/module probe8/9/10 七文件是 s364（42274e6e9）「行为钉转正入 git 跟踪——跨 clone 回归保护」常驻回归载体，本轮误删被 git status D 暴露即 checkout 恢复——gitignore 目录内个别文件可为强制跟踪回归钉，探针清理前必须 git ls-files 核对跟踪态；键级口径：下次全树预期 8199P/231F/37T=8467 唯一键（s391 基线 8504 −37 行全为删除探针，零语料真实位移），全树在册红 260F+37T→**231F+37T**，the-select-element 域 169F+2T（含探针 27 行）→**146F+2T corpus 口径**（与 s386 非探针 59 文件清单精确一致）、forms 根 6F→0F：②img 域勘根分诊（承上 session 01:32 429 中断残件 dom-img.log+zw392_probe 首版）6 案 20 键=current-pixel-density/basic 3F 亚像素盒取整（width/naturalWidth IDL 全过，clientWidth 0.0256px 盒 ZW ceil 1 vs 上游 floor 0）+error 6F broken-image alt-box 特性缺席（broken img width=0 连坐 7 断言链）+svg-img-density-vs-zoom 3F page zoom 2x 渲染面+sizes-auto 4F+1T style 几何臂（vertical-rl block-size 宽/abspos left-right 约束宽，eager+width attr 臂全过）+lazy 半边 file T 待勘根——前四案归 rendering-compat 挂账；update-the-image-data/not-broken 2F=未加载 img width/height 属性→盒面缺席（clientWidth 0 vs 50）→**流内 s394 施工候选**（归属探针先行：engine attr 面 vs layout 未加载盒面）：③forms 散单分诊 6 域 12 键=the-output-element/output 1F defaultValue setter 未回写 textContent（value mode flag 二态语义缺席）→**s393 小刀候选**+the-label-element/clicking-noninteractive-unlabelable 2F img（含 tabindex="" 变体）深嵌 label 点击 Maximum call stack size exceeded（label 激活转发对非 labelable 无终止，first-child 位形触发 second-child 过）→**s393 bug 修复候选**+the-textarea-element/wrapping-transformation 2F wrap=hard FormData 值未按 cols 折行（LF 归一臂过）→**s394 中刀候选**+textarea-placeholder-lineheight 1F gBCR 19.5→19 亚像素（rendering 挂账，与 basic 同族）+the-button-element/button-click-submits 1T **solo 12/12 全绿**=sweep 8-job 并行负载时序 flake 非缺陷（sweep 噪声键记录）+form-submission-target 6T solo 复现=真实表单提交导航+_blank 开窗+endpoint BroadcastChannel 跨 browsing-context 回报→**navigation-compat M3 门控域挂账**（Mission 排除条款）：④验证=7 组 solo 签名日志（/tmp/s392/solo-*.log）+select 域删除探针后域 solo **182P/146F/2T=330 键与预测精确一致**、probe 行 0+git 零源码改动工作树干净：⑤下一步=**s393 施工轮双小刀**（output value mode flag 1F+label img 递归修复 2F）→s394（textarea wrap=hard 2F+img unloaded attr sizing 探针定归属 2F）；挂账池新增：渲染流 4 面（basic 亚像素/error alt-box/svg-zoom/lineheight+sizes-auto 几何半边）回流 rendering-compat 账+form-submission-target 6T 归 navigation M3+sizes-auto lazy 半边待勘根；A2+D 簇立项征询合并呈报维持待用户决策：账本=evidence/2026-11-11-m2s392-forms-scattered-triage-probe-hygiene.md
+**状态**: Active——M2 切片 393 双小刀施工收口（output value mode flag + label 转发壳自递归）：①the-output-element
+output.html 1F→P——defaultValue setter 重写为 value mode flag 双态（override null → String replace all 写 child text
++ `_zwRegisterTextEl` 视图重注册与 value setter R49/r2846 同链；非 null → 仅覆写 override，后代文本不动，spec
+#dom-output-defaultvalue），FILTER=output solo 5P/0F；②the-label-element clicking-noninteractive-unlabelable 2F→P——
+勘根链：栈捕获 `RangeError at _makeProxy ~ child.addEventListener(73165:38/78) ×∞`（R4004 盖章壳转发臂自递归）+
+身份探针（失败形态 el=plain stub own 壳/gOPD data:function/stable，对照 createElement img=proxy/stable=false 命名臂
+全新闭包）+时间线探针（div.appendChild(el) 挂树前即毒）→ 定谳 **R315 proxy 缓存翻转投毒**：`_recordHandleChild`
+翻转臂（`_proxyCache['@'+h] !== child` 即写）把 R368/R4004 盖章 plain stub 写入 proxy 缓存 → 壳转发 `_makeProxy(null,h)`
+取回 stub 自身 → 无限自递归；修复=翻转加 own-`addEventListener` 守卫（盖章 stub 特征，proxy 方法走 get trap 命名臂
+无 own 数据属性；页面持有 proxy A 不携带该键，R315 重挂 identity 面零变化），FILTER=clicking-noninteractive solo
+60P/0F；全树验收 join：8466 行/8463 唯一 (key,state)（rows 8201P/228F/37T；unique P 8198，3 重复 Pass 行=已知同文件
+多跑），位移全归因——3F→P=双刀三案、−4P=zw391_probe 四面（s391 轮内已删文件键随语料消失，s392 预测 8467 漏扣此
+4 行勘误），零 P→F、零 Timeout 位移；**全树在册红 231F+37T→228F+37T**。下一步 s394：textarea wrap=hard 折行
+（2F）+ img unloaded attr sizing 归属探针（2F）。
 
 > **▶ 承前（2026-11-11 M2 切片 391 收口）——form owner reset-on-move 读时门施工收口（fci 1F→0F 域收官）**: commit e26772068，账本 evidence/2026-11-11-m2s391-form-owner-reset-on-move.md。解析期 parent 选择器桥+shim 指针关联 liveness 门三面，table_3 F→P、全树零回归零翻转；fci 域 corpus 红清零，全树键级基线 8504。散单分诊由 s392 接力。
 
@@ -6953,6 +6966,14 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 393**：双小刀施工轮——output value mode flag（1F→P）+ label 转发壳自递归 R315 翻转投毒
+  勘根修复（2F→P）。刀①defaultValue setter 双态：override null → 文本写+视图重注册（R49/r2846 同链），非 null →
+  仅覆写 override；刀②勘根三探针（栈捕获/身份/时间线）定谳 `_recordHandleChild` R315 翻转把盖章 plain stub 写入
+  `_proxyCache` → `_makeProxy` 返回非 proxy → R4004 壳自 Feed 无限递归，修复=翻转 own-`addEventListener` 守卫
+  （R315 页面持有 proxy 面零变化）。全树 join 位移全归因（3F→P+4 键 zw391_probe 语义性消失，s392 预测 8467 勘误
+  →实 8463 唯一键），零意外位移；在册红 231F+37T→**228F+37T**。单元测试 -j 2 降并发过守卫（与并行流 build 内存
+  争用两次被 guard 杀，阈值不动）；stale done 旗标 mtime 核新鲜度教训。账本
+  [evidence/2026-11-11-m2s393-output-value-mode-flag-label-proxy-cache-poison.md](html-semantics-compat/evidence/2026-11-11-m2s393-output-value-mode-flag-label-proxy-cache-poison.md)。
 - **2026-11-11 M2 切片 392**：forms 树散单余红分诊 + img 域勘根（承上一 session 429 残件）+ 自建探针口径卫生轮
   （零源码改动，17 键归属定谳，探针键 −37）——口径卫生删 25 个 gitignore 本地探针（select 27 行/forms 根 s327 10
   行/zzz-probe 等 0 行），下次全树预期 8199P/231F/37T=8467 键，select 域 corpus 口径回归 146F+2T（域 solo

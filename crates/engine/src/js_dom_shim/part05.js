@@ -427,11 +427,29 @@
             if (_inputValuesSet[key] !== true) _inputValues[key] = String(value);
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-defaultvalue
+            // spec defaultValue setter：default value override 为 null → String replace
+            // all 写 child text content（override 保持 null——output.html「defaultValue
+            // is set to 10: value is updated」断言面，value getter 活读即新值）；非
+            // null → 仅覆写 override（value 模式后代文本不动——output.html
+            // 「defaultValue is set to 15」value/textContent 保持 20 断言面）。旧恒写
+            // override + 以 _outputValue 空判写文本：override 被抢先吞掉，null 臂的
+            // 文本写因视图 stale 读回旧值（s392 分诊 1F）。
             var _odv = String(value);
-            _outputDefault[key] = _odv;
-            if (_outputValue[key] == null) {
+            if (_outputDefault[key] == null) {
               if (handle) __zw_set_text_handle(handle, _odv);
               else __zw_set_text(sel, _odv);
+              // 视图同步与 value setter 同链（R49/r2846 同根因）：裸 host 写不进 JS
+              // pending 融合视图——本地文本重注册，同 turn value/textContent 读新值。
+              if (typeof _zwRegisterTextEl === 'function' && !handle) {
+                try {
+                  if (_odv !== '') _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _odv);
+                  else if (typeof _zwUnregisterTextEl === 'function') {
+                    _zwUnregisterTextEl(_makeProxy(sel, handle));
+                  }
+                } catch (_eOdvR) {}
+              }
+            } else {
+              _outputDefault[key] = _odv;
             }
           }
         } else if (p === 'defaultSelected') {
@@ -6761,8 +6779,17 @@
     // SPLIT:__n4 实证）。修：重挂时缓存命中但与传入 child 不同 → 以 **A 翻转缓存**
     //（页面视角 identity = A；B 是 remove 窗口期的孤儿重建，不被页面持有——live-NL
     // 数组的 stale B 成员在下次 refresh 时按 `arr[i] !== view[i]` 覆写为 A，天然收敛）。
+    // s393（html-semantics M2）：翻转目标须是 **shim proxy**（R315 本义——页面持有的
+    // canonical 视图 A）。R368/R4004 盖章 plain stub（own `addEventListener` 转发壳）
+    // 绝不能入缓存：`_makeProxy` 契约恒返 proxy——stub 入缓存后壳转发
+    // `_makeProxy(null, h)` 取回 stub 自身 → `_p.addEventListener` 即壳 → 无限自递归
+    //（RangeError：clicking-noninteractive-unlabelable-content 模板克隆 img 深嵌
+    // handle 容器下 addEventListener 两案根因）。own-`addEventListener` 探针精确命中
+    // 盖章 stub（proxy 的 gOPD trap 对方法名恒 miss——方法走 get trap 命名臂，无 own
+    // 数据属性）；页面持有的 proxy A 不携带该 own 键，R315 重挂翻转面零变化。
     if (child.__zwHandle && _proxyCache['@' + child.__zwHandle]
-        && _proxyCache['@' + child.__zwHandle] !== child) {
+        && _proxyCache['@' + child.__zwHandle] !== child
+        && !Object.prototype.hasOwnProperty.call(child, 'addEventListener')) {
       _proxyCache['@' + child.__zwHandle] = child;
     }
     var arr = _handleChildren[parentHandle] || (_handleChildren[parentHandle] = []);
