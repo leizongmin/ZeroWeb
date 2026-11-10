@@ -28,6 +28,8 @@
 
 刀体+docs 经 rebase 推为 **f100a882d**（刀体）/ **d64d971fc**（docs v1.88）。入站域（dd95461d9..059d01b96 约 19 笔：PR #278 zinc-stale 合入 + TLA 判定注入/深度门 script-sandbox + R5492 layout strut + s378 image 坐标 + perf CE define 两阶段 + webview async_load）：**part03/part04/part06 触边**（part06 `d9aaada5`→`3bf5b49e`，s378 offsetX round 退役/selected coordinates 同构域，dialog 门自携；CE define 两阶段落 part03/04），刀核 part01d `f4bc3bf8` / part01g `c842e062` / part01 `73e18900` / bridge `b6b9a516` 恒一 → 按推树纪律重绑 fb 腿（重绑不扩）：组合树重建二进制直跑 formatblock 全页 **5023P/23F**，judge vs 批门 **F2P=0 / P2F=0 / lost 0 VERDICT OK**（bfl2-fb-rebind.log，REBIND-DONE 12:03:50）——刀判读绑定推树字节恒一。重锚后锚值：part06 `3bf5b49e`（新）/ part03/part04（入站新值）；下一刀批脚本按现树重取锚。
 
+重锚二连：docs 重锚推送时又入 DC-2 Typed OM 域（e631c2420：part06 再触 `05dd0f67` + part03/05 + part10-typed-om 新建 + bridge `d47f2e09`，css-typed-om 簇自携门禁）——刀核恒一，重绑再射 @**f9f9687d3**：fb 5023P/23F judge vs 批门 **F2P=0 / P2F=0 VERDICT OK**（REBIND-DONE 12:11:54）——判读终态绑定 f9f9687d3 推树字节。
+
 ## 挂账
 
 - **② 外层 restore 载体类（值命令，未接）**：多块形（如 `<div style=color:blue>[foo<p>bar]</div>` + <p>）外层 record/restore 在裂父后仍走 forceValue 载体 + wrap-in-carrier + fixDisallowed 链——boolean 幻值面已随本刀消失，值命令（forecolor 等）真值恢复的载体链未接（无语料行，P2F=0 门下零回归）。挂账③（`_zwJusWrap` 载体内插块 hostkids=0 机制定谳）同前。
