@@ -27,6 +27,10 @@
   - 单文件腿（vs F1' 终态零漂移）：iol/iul/ip/ilb/ihtml + exec×3 judge 零漂移。
   - enginelib：failed=7 名册双门恒一；battery 七腿 420/880/1104/552/3456/2607/1455 全同数 F=0 T=0；binary sig 全在产物（含 harvest）。
 
+## 推送重锚（rebase 并入组合树）
+
+刀体+docs 经 rebase 推为 **ff1ad58b7**（刀体）/ **25e0d0cfe**（docs v1.87）。入站域（10fab5c5a..6fc7279e7 九笔：s377 dialog overlay + T54 engine-shim 共享名折叠 + R5491 layout fill 上溯 + test262/script-sandbox module 预检）：**part01 +12（`73e18900`）/ part06 +15（`d9aaada5`）触边**（T54 词尾折叠、s377 overlay gCS 面），刀核 part01g `d5b1e849` / part01d `9fbab2af` / part01e `4415bf2f` / part01f `6e8eb934` / bridge `b6b9a516` 恒一 → 按推树纪律重绑 fb 腿（重绑不扩）：组合树重建二进制直跑 formatblock 全页 **5023P/23F**，judge vs 批门 **F2P=0 / P2F=0 / lost 0 VERDICT OK**（fbc2-fb-rebind.log，REBIND-DONE 09:55:10）——刀判读绑定推树字节恒一。重锚后锚值：part01 `73e18900`、part06 `d9aaada5`、part01g/bridge 恒一；下一刀批脚本按现树重取锚。
+
 ## 挂账
 
 - **① boolean 命令 specified 读面错读**：`_zwVaSpecifiedValue(div,'bold')` 对 `background-color:yellow` 形返 'yellow'（他族声明窜值）——hilite 探针形（N）仍产出双空 span 坏树（五条 boolean restore 载体链）。语料无 fb×styled-div-boolean 行，无 compare 面；数据丢失面收敛待 boolean 读面独立刀。
