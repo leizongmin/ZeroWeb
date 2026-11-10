@@ -609,3 +609,106 @@ pub fn run_css_contain_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
 pub fn run_css_writing_modes_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-writing-modes", filter)
 }
+
+/// Run the pinned upstream css-transitions testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——transition 属性族与 TransitionEvent 断言面，DC-1 缺语料
+/// 分母 ~3,439 子测试）。filter 按路径子串过滤。
+pub fn run_css_transitions_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-transitions", filter)
+}
+
+/// Run the pinned upstream css-animations testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——@keyframes/animation 属性族解析断言面，DC-1 缺语料
+/// 分母 ~1,429 子测试）。filter 按路径子串过滤。
+pub fn run_css_animations_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-animations", filter)
+}
+
+/// Run the pinned upstream cssom-view testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——CSSOM View API（scroll/viewport/element geometry）断言面，
+/// DC-1 缺语料分母 ~2,635 子测试）。filter 按路径子串过滤。
+pub fn run_cssom_view_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/cssom-view", filter)
+}
+
+/// Run the pinned upstream css-view-transitions testharness subset（wptfyi-css
+/// goal DC-2 语料扩面——view-transition 描述符解析断言面，DC-1 缺语料
+/// 分母 ~1,437 子测试）。filter 按路径子串过滤。
+pub fn run_css_view_transitions_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-view-transitions", filter)
+}
+
+/// Run the pinned upstream geometry testharness subset（wptfyi-css goal DC-2
+/// 语料扩面——DOMMatrix/DOMRect/DOMPoint 几何接口断言面，DC-1 缺语料
+/// 分母 ~843 子测试）。filter 按路径子串过滤。
+pub fn run_geometry_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/geometry", filter)
+}
+
+/// Run the pinned upstream css-properties-values-api testharness subset
+/// （wptfyi-css goal DC-2 语料扩面——@property/CSS.registerProperty 注册属性
+/// 断言面，DC-1 缺语料分母 ~1,393 子测试）。filter 按路径子串过滤。
+pub fn run_css_properties_values_api_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-properties-values-api", filter)
+}
+
+/// Run the pinned upstream css-highlight-api testharness subset（wptfyi-css
+/// goal DC-2 语料扩面——highlight 注册表断言面，DC-1 缺语料分母 ~176
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_highlight_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-highlight-api", filter)
+}
+
+/// Run the pinned upstream css-page testharness subset（wptfyi-css goal DC-2
+/// 语料扩面——@page 描述符解析断言面，DC-1 缺语料分母 ~159 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_page_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-page", filter)
+}
+
+/// Run the pinned upstream css-scroll-anchoring testharness subset（wptfyi-css
+/// goal DC-2 语料扩面——overflow-anchor 解析断言面，DC-1 缺语料分母 ~98
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_scroll_anchoring_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-scroll-anchoring", filter)
+}
+
+/// Run the pinned upstream css-scrollbars testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——scrollbar-width/color 解析断言面，DC-1 缺语料分母 ~83
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_scrollbars_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-scrollbars", filter)
+}
+
+/// Run the pinned upstream css-overscroll-behavior testharness subset
+/// （wptfyi-css goal DC-2 语料扩面——overscroll-behavior 解析断言面，DC-1
+/// 缺语料分母 ~109 子测试）。filter 按路径子串过滤。
+pub fn run_css_overscroll_behavior_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-overscroll-behavior", filter)
+}
+
+/// Run the pinned upstream css-navigation testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——navigation 属性解析断言面，DC-1 缺语料分母 ~82 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-navigation", filter)
+}
+
+/// Run the pinned upstream css-parser-api testharness subset（wptfyi-css goal
+/// DC-2 语料扩面——CSS.parseAll 解析 API 断言面，DC-1 缺语料分母 ~71
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_parser_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-parser-api", filter)
+}

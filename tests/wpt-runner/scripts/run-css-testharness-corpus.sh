@@ -69,6 +69,10 @@ case "${CORPUS}" in
   compositing) SUBCMD=testharness-compositing ;;
   mediaqueries) SUBCMD=testharness-mediaqueries ;;
   CSS2) SUBCMD=testharness-css2 ;;
+  # wptfyi-css goal DC-2 语料扩面（13 目录）：cssom-view / geometry 上游目录
+  # 名无 css- 前缀，显式映射同上（其余 11 目录 css-* 前缀走通用规则）。
+  cssom-view) SUBCMD=testharness-cssom-view ;;
+  geometry) SUBCMD=testharness-geometry ;;
   css-*) SUBCMD="testharness-${CORPUS}" ;;
   *) echo "usage: $0 <css-values|selectors|css-variables|css-color|css-align|css-sizing|...> [runner]" >&2; exit 2 ;;
 esac

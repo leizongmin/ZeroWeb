@@ -233,6 +233,34 @@ Commands:
                        (CSSOM/style API face; css-testharness-compat-v2 goal M2)
   testharness-css-writing-modes  Run upstream css-writing-modes testharness
                        cases (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-transitions  Run upstream css-transitions testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-animations  Run upstream css-animations testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-cssom-view  Run upstream cssom-view testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-view-transitions  Run upstream css-view-transitions testharness
+                       cases (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-geometry  Run upstream geometry testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-properties-values-api  Run upstream css-properties-values-api
+                       testharness cases (CSSOM/style API face; wptfyi-css goal
+                       DC-2 corpus expansion)
+  testharness-css-highlight-api  Run upstream css-highlight-api testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-page  Run upstream css-page testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-scroll-anchoring  Run upstream css-scroll-anchoring testharness
+                       cases (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-scrollbars  Run upstream css-scrollbars testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-overscroll-behavior  Run upstream css-overscroll-behavior
+                       testharness cases (CSSOM/style API face; wptfyi-css goal
+                       DC-2 corpus expansion)
+  testharness-css-navigation  Run upstream css-navigation testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
+  testharness-css-parser-api  Run upstream css-parser-api testharness cases
+                       (CSSOM/style API face; wptfyi-css goal DC-2 corpus expansion)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -648,6 +676,21 @@ fn run_main() {
         "testharness-css-break" => cmd_testharness_css_break(&options, filter.as_deref()),
         "testharness-css-contain" => cmd_testharness_css_contain(&options, filter.as_deref()),
         "testharness-css-writing-modes" => cmd_testharness_css_writing_modes(&options, filter.as_deref()),
+        "testharness-css-transitions" => cmd_testharness_css_transitions(&options, filter.as_deref()),
+        "testharness-css-animations" => cmd_testharness_css_animations(&options, filter.as_deref()),
+        "testharness-cssom-view" => cmd_testharness_cssom_view(&options, filter.as_deref()),
+        "testharness-css-view-transitions" => cmd_testharness_css_view_transitions(&options, filter.as_deref()),
+        "testharness-geometry" => cmd_testharness_geometry(&options, filter.as_deref()),
+        "testharness-css-properties-values-api" => {
+            cmd_testharness_css_properties_values_api(&options, filter.as_deref())
+        }
+        "testharness-css-highlight-api" => cmd_testharness_css_highlight_api(&options, filter.as_deref()),
+        "testharness-css-page" => cmd_testharness_css_page(&options, filter.as_deref()),
+        "testharness-css-scroll-anchoring" => cmd_testharness_css_scroll_anchoring(&options, filter.as_deref()),
+        "testharness-css-scrollbars" => cmd_testharness_css_scrollbars(&options, filter.as_deref()),
+        "testharness-css-overscroll-behavior" => cmd_testharness_css_overscroll_behavior(&options, filter.as_deref()),
+        "testharness-css-navigation" => cmd_testharness_css_navigation(&options, filter.as_deref()),
+        "testharness-css-parser-api" => cmd_testharness_css_parser_api(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -2192,6 +2235,93 @@ fn cmd_testharness_css_contain(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_writing_modes(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_writing_modes_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-transitions` / `testharness-css-animations` / `testharness-cssom-view`
+/// / `testharness-css-view-transitions` / `testharness-geometry` / `testharness-css-properties-values-api`
+/// / `testharness-css-highlight-api` / `testharness-css-page` / `testharness-css-scroll-anchoring`
+/// / `testharness-css-scrollbars` / `testharness-css-overscroll-behavior` / `testharness-css-navigation`
+/// / `testharness-css-parser-api`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（wptfyi-css goal DC-2
+/// 语料扩面——DC-1 缺语料桶 13 目录接线，模板零改动复用；契约与退出码同
+/// `cmd_testharness_css_values`：共享底座 skip 规则单点，病态案谓词排除，
+/// 记录模式不设 land 门禁）。
+fn cmd_testharness_css_transitions(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_transitions_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_animations(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_animations_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_cssom_view(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_cssom_view_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_view_transitions(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_view_transitions_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_geometry(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_geometry_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_properties_values_api(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_properties_values_api_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_highlight_api(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_highlight_api_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_page(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_page_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_scroll_anchoring(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_scroll_anchoring_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_scrollbars(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_scrollbars_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_overscroll_behavior(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_overscroll_behavior_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_navigation(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_navigation_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_parser_api(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_parser_api_cases(wpt_root, filter)
     });
 }
 
