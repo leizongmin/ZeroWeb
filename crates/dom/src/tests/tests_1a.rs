@@ -769,6 +769,21 @@ fn test_query_not_selector_list_t56() {
     let nested_query = first_id(&doc, "div:not(:is(.a,.b))");
     // 空实参非法（非 forgiving 列表）。
     let empty_valid = selector_is_valid("div:not()");
+    // 单实参前后空白——外部 fab4dce47 采纳（Cursor Agent 首报，控制器核验采纳，
+    // Blink 真值 evidence/t56-oracle-space-result.txt g01–g04）：单实参 fallback
+    // 原样未 trim → tokenize 把尾/前 ASCII 空白记为后代组合器过拒；修前红探
+    // Δ=下方 4 查询键。列表项 splitter 本就 trim（padded 列表恒一键）。
+    // 负控制（Blink 亦非法，修前后恒一）：`. x` 内部空白仍过拒、`:not(   )`
+    // 空 padded 仍非法。
+    let not_lead_space = ids_join(&doc, &doc.query_selector_all(root, "div:not( .x)"));
+    let not_trail_space = ids_join(&doc, &doc.query_selector_all(root, "div:not(.x )"));
+    let not_both_space = ids_join(&doc, &doc.query_selector_all(root, "div:not( .x )"));
+    let not_trail_tab = ids_join(&doc, &doc.query_selector_all(root, "div:not(.x\t)"));
+    let not_list_padded = ids_join(&doc, &doc.query_selector_all(root, "div:not( .x , .missing )"));
+    let not_inner_space_valid = selector_is_valid("div:not(. x)");
+    let not_inner_space_query = first_id(&doc, "div:not(. x)");
+    let not_empty_padded_valid = selector_is_valid("div:not(   )");
+    let not_empty_padded_query = first_id(&doc, "div:not(   )");
     // DF-T56-1 返修：s326 延后复评臂（:not 列表含 `:filtered` 内层时经 Document
     // 复评）混合列表非 Filtered 内层须按 pos 完整直评（伪类语义不可静默丢弃）——
     // `option:not(:filtered, :first-child)` 应只否决真 first-child 项与被过滤项。
@@ -804,7 +819,14 @@ fn test_query_not_selector_list_t56() {
          \"nestedIsQuery\":\"{nested_query}\",\"emptyValid\":\"{empty_valid}\",\
          \"notFilteredFirstNoInject\":\"{opt_not_filtered_first}\",\
          \"notFilteredFirstInjected\":\"{opt_not_filtered_first_inj}\",\
-         \"notFilteredOnlyInjected\":\"{opt_not_filtered_inj}\"}}"
+         \"notFilteredOnlyInjected\":\"{opt_not_filtered_inj}\",\
+         \"notLeadSpace\":\"{not_lead_space}\",\"notTrailSpace\":\"{not_trail_space}\",\
+         \"notBothSpace\":\"{not_both_space}\",\"notTrailTab\":\"{not_trail_tab}\",\
+         \"notListPaddedBoth\":\"{not_list_padded}\",\
+         \"notInnerSpaceValid\":\"{not_inner_space_valid}\",\
+         \"notInnerSpaceQuery\":\"{not_inner_space_query}\",\
+         \"notEmptyPaddedValid\":\"{not_empty_padded_valid}\",\
+         \"notEmptyPaddedQuery\":\"{not_empty_padded_query}\"}}"
     );
     let expected = concat!(
         r#"{"listDiv":"b,d","listSpan":"s2","listLi":"l2,l4","listOrderFirst":"b","#,
@@ -814,9 +836,16 @@ fn test_query_not_selector_list_t56() {
         r#""complexDescQuery":"","attrSpaceValid":"true","attrSpaceQuery":"a,b,c","#,
         r#""nestedIsValid":"false","nestedIsQuery":"","emptyValid":"false","#,
         r#""notFilteredFirstNoInject":"o2,o3","notFilteredFirstInjected":"o3","#,
-        r#""notFilteredOnlyInjected":"o1,o3"}"#
+        r#""notFilteredOnlyInjected":"o1,o3","notLeadSpace":"b,c,d","#,
+        r#""notTrailSpace":"b,c,d","notBothSpace":"b,c,d","notTrailTab":"b,c,d","#,
+        r#""notListPaddedBoth":"b,d","notInnerSpaceValid":"false","#,
+        r#""notInnerSpaceQuery":"","notEmptyPaddedValid":"false","#,
+        r#""notEmptyPaddedQuery":""}"#
     );
-    assert_eq!(actual, expected, "T56 :not 列表实参 selector-list 语义全案（23 键）");
+    assert_eq!(
+        actual, expected,
+        "T56 :not 列表实参 selector-list 语义全案（32 键，含 fab4dce47 采纳空白形 9 键）"
+    );
 }
 
 #[test]
