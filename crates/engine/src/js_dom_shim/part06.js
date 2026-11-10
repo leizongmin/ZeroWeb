@@ -2097,16 +2097,30 @@
   // T54 勘误（DF-T50-N1）：上记折叠「无小写后随」判定漏了词尾边界——camel 词尾大写
   // 段（'backgroundPositionX' 词尾 'X'，后随串尾前瞻通过）同被原地折小写，camel 边界
   // 先于 `_stylePropName` 丢失 → 'background-positionx' 缺陷形（词中段/词首段
-  // T49-T53 已收口，词尾形遗漏）。本钉加 (?<![a-z]) 前顾限定：折叠仅取词首/连字符后
-  // 大写段（kebab 书写形全大写连字，'COLOR'/'Z-INDEX'/vendor 形语义不变）；camel
-  // 词尾大写段不折叠，落 `_stylePropName` camel 算法（cssom-1
+  // T49-T53 已收口，词尾形遗漏）。
+  // T55 勘误（SUM-T54-1/DF-T54-2）：T54 fold 正则 (?<![a-z])[A-Z]+(?![a-z]) 对
+  // **词尾多重大写段**部分命中——run 整体匹配在首字母处被前顾拒绝（首 X 前邻 'n'
+  // 小写），正则从 run 中段重新起匹配（后续字母前邻大写通过前顾）→ run 被拆分折叠：
+  // 仅尾 X 折小写 → 'backgroundPositionXX' → 'background-position-xx' 缺陷形，规范形
+  // 应为 'background-position-x-x'。修法：fold 段改 /[A-Z]+(?![a-z])/g + replace
+  // 回调原子判——大写段整体匹配（无前顾拆分），回调判段首符前邻：ASCII 小写
+  //（camel 边界）→ 整段保留落 `_stylePropName` camel 算法（cssom-1
   // §camel-cased-attribute-to-css-attribute：每大写字母 → '-' + 小写，词尾同规则）→
-  // 'background-position-x'。Blink 154 活体（t54-oracle-result.txt，Chrome
-  // 154.0.8037.92 headless 2026-11-10）：IDL backgroundPositionX/Y → cssText
-  // 'background-position-x: 10px;'（names ['background-position-x']），无连字符形
-  // 'background-positionx' 读拒；负案 custom `--` case-sensitive/词中 camel/vendor
-  // 三形/全大写连写形全数同向。五面共享本函数（规则 T49/IDL T50/csstext/keyframe
-  // T51/物化面板 T52-T53），修一处全链继承（钉 test_cssom_decl_name_fold_wordfinal_t54）。
+  // 'background-position-x-x'；否则整段折小写（kebab 书写形）。折叠判定通过集 =
+  // 段首符前邻非 ASCII 小写字母——串首/'-'/数字/'_'/大写/空白/点/非 ASCII 前邻均
+  // 折叠（'COLOR'/'Z-INDEX'/vendor 形/全大写连写形语义不变，措辞按 SUM-T54-5
+  // 校准）；词中 camel 段（'backgroundColor'）后随小写整段不匹配、零折叠。选型：
+  // 变长前顾（?<![a-z][A-Z]*，方案 1）与本实现（方案 2）在 v8 150.2.0 与
+  // quickjs-ng（rquickjs-sys 0.7 bundle）七形逐字节恒等（t55-probe-v8.log/
+  // t55-probe-quickjs.log，2026-11-10）；取方案 2 去除 lookbehind 依赖，shim 落
+  // ES5 普适能力（收口 SUM-T54-6 quickjs 前顾行为矩阵残余类）。Blink 154 活体
+  //（t55-oracle-result.txt，HeadlessChrome/154.0.0.0 headless 2026-11-10）：
+  // XX/XY IDL 形 expando 无声明，sp camel XX/kebab 规范-缺陷双形/理论形
+  // aB/aBcDE/aBCDd 全数无 CSS 属性对应整弃——落库名无活体仲裁，cssom-1 camel
+  // 算法为权威；词尾单大写族（backgroundPositionX/Y 等 T54 18 案）回归采样逐案
+  // 恒等（行为不变）。五面共享本函数（规则 T49/IDL T50/csstext/keyframe
+  // T51/物化面板 T52-T53），修一处全链继承（钉
+  // test_cssom_decl_name_fold_wordfinal_xx_t55）。
   function _styleDeclName(name) {
     // DF-T50-1（T50 返修）：trim 先于 `--` 早退——早退先于 trim 时尾空白 custom
     // 名参（'--FOO '）未修剪透传：写面落 host（merge_style_property 存储侧
@@ -2122,7 +2136,12 @@
     // test_cssom_idl_whitespace_name_t50fix 锁定。
     var s = String(name).trim();
     if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
-    var folded = s.replace(/(?<![a-z])[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
+    var folded = s.replace(/[A-Z]+(?![a-z])/g, function (m, off) {
+      // T55：段首符前邻为 ASCII 小写（camel 边界）→ 整段保留落 camel 算法（词尾
+      // 多重大写段规范形 'backgroundPositionXX' → 'background-position-x-x'）；
+      // 否则（串首/'-'/数字/'_'/大写/空白/点/非 ASCII 前邻）整段折小写。
+      return off > 0 && /[a-z]/.test(s.charAt(off - 1)) ? m : m.toLowerCase();
+    });
     return _stylePropName(folded).toLowerCase();
   }
 
