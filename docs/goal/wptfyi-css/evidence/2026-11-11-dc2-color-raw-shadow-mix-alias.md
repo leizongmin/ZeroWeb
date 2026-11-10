@@ -54,11 +54,13 @@
 
 v7 记录轮（zw-corpus-v7 service，04:46:29 起）运行至中途，同 clone 他流 session
 执行 clean→clippy→test 门禁舞步，`target/release/` 整目录被清（含 zero-wpt-runner
-二进制，04:47:xx）：values corpus 跑至 ~90s 后二进制消失，后续案秒失败
-（cases=180 pass=1140 fail=2522，健康口径应 ~250+ 案 pass≈2200），color 迭代
-谓词 `! -x runner` 失败 exit 2。按 rally 竞态规则伪红不入账，results-v7/ 与
-zwv7 日志已清除。release 二进制 04:56:13 重建（全量 2m16s，guard scope 包裹）
-后以 v8 全量重跑。
+二进制，`cargo clean --release` 时点 04:47:38，清理日志余 414 个空目录块）：
+values corpus 跑至 ~90s 后二进制消失，后续案秒失败（cases=180 pass=1140
+fail=2522，健康口径应 ~250+ 案 pass≈2200），color 迭代谓词 `! -x runner` 失败
+exit 2。按 rally 竞态规则伪红不入账，results-v7/ 与 zwv7 日志已清除；作废前
+部分结果经 transcript 快照留档（logs/zwv7-values-transcript-snapshot.log），
+对 v6 逐页对账 common 180 页 0 回归——伪红未掩盖真实回归，与 v8 终账互证。
+release 二进制 04:56:13 重建（全量 2m16s，guard scope 包裹）后以 v8 全量重跑。
 
 ## v8 终账（同一二进制，含全部在途批）
 
