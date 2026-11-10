@@ -1930,9 +1930,12 @@
   // case-insensitive"）——`|` 包边整串按 `|kw|` 整词 indexOf（无 keyword 前缀误命中）。
   var _zwNamedColorSet = '|aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|';
   // CSS Color 4 §6.3 system colors——declared 值 ASCII lowercase（同 §16.2 命名色；
-  // Blink 154 活体 t48 oracle b-*）。接受面 = modern 19 键 − listitemtext + deprecated
-  // 23 键 = 41 键：LISTITEMTEXT Chrome 154 不接受（`color: LISTITEMTEXT` 整声明丢弃），
-  // 不入表 → ZW 侧按未知 ident 逐字透传（既定无 ident 拒绝面限制，t48 分歧形状钉）。
+  // Blink 154 活体 t48 oracle b-*、t57 oracle m01-m20/d01-d41 全案重采）。接受面 =
+  // modern 20 键 − listitem − listitemtext + deprecated 23 键 = 41 键：LISTITEM 与
+  // LISTITEMTEXT Chrome 154 均不接受（`color: ListItem`/`color: LISTITEMTEXT` 整声明
+  // 丢弃，t57 oracle m15/m16/li01-li05 形变实证；T48 DF-1 口径勘正——原注「modern 19
+  // 键 − listitemtext」漏 listitem），不入表 → ZW 侧按未知 ident 逐字透传（既定无
+  // ident 拒绝面限制，t48 分歧形状钉、t57 41 键集合逐键锁定）。
   // https://www.w3.org/TR/css-color-4/#css-system-colors
   var _zwSystemColorSet = '|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|mark|marktext|graytext|accentcolor|selecteditem|selecteditemtext|activeborder|activecaption|appworkspace|background|buttonhighlight|buttonshadow|captiontext|inactiveborder|inactivecaption|inactivecaptiontext|infobackground|infotext|menu|menutext|scrollbar|threeddarkshadow|threedface|threedhighlight|threedlightshadow|threedshadow|window|windowframe|windowtext|';
   // CSS-wide keywords（CSS Cascading and Inheritance Level 4 §7.1-§7.4 inherit/initial/

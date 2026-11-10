@@ -5410,7 +5410,8 @@ fn test_cssom_declared_color_context_normalization_t48() {
     //    Level 4 §7.1-§7.4 + Level 5 revert-layer；Blink 154 活体 t48 oracle a1-a5/a10——
     //    color 上下文五键 + `INHERIT !important` 形）。
     // ② 系统色：CSS Color 4 §6.3 declared 值 ASCII lowercase（同 §16.2 命名色；活体
-    //    oracle b-*：modern 19 键 - listitemtext + deprecated 23 键 = Chrome 154 接受面；
+    //    oracle b-*：modern 20 键 - listitem - listitemtext + deprecated 23 键 = Chrome 154
+    //    接受面（t57 oracle m15/m16 补证 listitem 亦不接受，T48 DF-1 口径勘正）；
     //    LISTITEMTEXT Chrome 不接受→整声明丢弃。DC-2 次批 part11 管线接入后 ZW 同弃
     //（css-color-invalid-named 184 行同语义），分歧形状钉解除、翻正为 Blink 对齐）。
     // ③ legacy 颜色函数文本归一（T46 TV-2：函数名 lowercase + 参数逗号空格 + 数字文本
@@ -5610,5 +5611,65 @@ fn test_cssom_rule_style_csstext_quoted_semicolon_t49fix() {
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
         r##"{"ruleUrlDataUri":"url(\"data:image/png;base64,AAA\")","ruleContentSemi":"\"a;b\"","ruleColorNorm":"red"}"##,
         "T49 返修 DF-2 规则面钉：_parseDeclarations 引号形整值（url 引号形 + content 引号形 + 同块归一不损）"
+    );
+}
+
+#[test]
+fn test_cssom_system_color_set_lock_t57() {
+    // T57（P 池 T48 DF-1 listitem oracle 消化）：系统色接受面逐键锁定 + listitem 族
+    // reject 形。Chrome 154 接受面 = modern 20 键 − listitem − listitemtext +
+    // deprecated 23 键 = 41 键（t57 oracle m01-m20/d01-d41 逐键实证：listitem/
+    // listitemtext 全大小写形 reject、其余 18 modern 键 + 23 deprecated 键全 accept）；
+    // ZW 侧 _zwSystemColorSet 41 键与 Chrome 154 逐键恒一（零行为变化），本钉锁集合
+    // 防漂移，补 DF-1「无 oracle 证据」缺口（T48 钉仅 12 键代表 + 形状钉）。
+    // https://www.w3.org/TR/css-color-4/#css-system-colors
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             var sys = ['canvas','canvastext','linktext','visitedtext','activetext',\
+               'buttonface','buttontext','buttonborder','field','fieldtext','highlight',\
+               'highlighttext','mark','marktext','graytext','accentcolor','selecteditem',\
+               'selecteditemtext','activeborder','activecaption','appworkspace','background',\
+               'buttonhighlight','buttonshadow','captiontext','inactiveborder',\
+               'inactivecaption','inactivecaptiontext','infobackground','infotext','menu',\
+               'menutext','scrollbar','threeddarkshadow','threedface','threedhighlight',\
+               'threedlightshadow','threedshadow','window','windowframe','windowtext'];\
+             var sysOut = {};\
+             sys.forEach(function (k) {\
+               __st.cssText = 'color: ' + k.toUpperCase();\
+               sysOut[k] = __st.color;\
+             });\
+             var rej = {};\
+             ['LISTITEM','listitem','ListItemText','LISTITEMTEXT','listitemtext',\
+              'LISTITEMFOO'].forEach(function (k) {\
+               __st.cssText = 'color: ' + k;\
+               rej[k] = __st.color;\
+             });\
+             globalThis.__t57 = {sys: sysOut, rej: rej};\
+             JSON.stringify(globalThis.__t57);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__t57)").unwrap().value,
+        r##"{"sys":{"canvas":"canvas","canvastext":"canvastext","linktext":"linktext","visitedtext":"visitedtext","activetext":"activetext","buttonface":"buttonface","buttontext":"buttontext","buttonborder":"buttonborder","field":"field","fieldtext":"fieldtext","highlight":"highlight","highlighttext":"highlighttext","mark":"mark","marktext":"marktext","graytext":"graytext","accentcolor":"accentcolor","selecteditem":"selecteditem","selecteditemtext":"selecteditemtext","activeborder":"activeborder","activecaption":"activecaption","appworkspace":"appworkspace","background":"background","buttonhighlight":"buttonhighlight","buttonshadow":"buttonshadow","captiontext":"captiontext","inactiveborder":"inactiveborder","inactivecaption":"inactivecaption","inactivecaptiontext":"inactivecaptiontext","infobackground":"infobackground","infotext":"infotext","menu":"menu","menutext":"menutext","scrollbar":"scrollbar","threeddarkshadow":"threeddarkshadow","threedface":"threedface","threedhighlight":"threedhighlight","threedlightshadow":"threedlightshadow","threedshadow":"threedshadow","window":"window","windowframe":"windowframe","windowtext":"windowtext"},"rej":{"LISTITEM":"","listitem":"","ListItemText":"","LISTITEMTEXT":"","listitemtext":"","LISTITEMFOO":""}}"##,
+        "T57 系统色 41 键接受面逐键锁定 + listitem 族 reject（Chrome 154 恒一，T48 DF-1 oracle 补齐）"
     );
 }
