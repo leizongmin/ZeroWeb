@@ -2394,10 +2394,29 @@
     try {
       var _r141Name = (typeof charsetLabel === 'string' && charsetLabel) || null;
       if (!_r141Name) {
-        var _r141M = /<meta[^>]+charset\s*=\s*["']?\s*([^"'>\s]+)\s*["']?/i.exec(String(markup || ''));
-        if (_r141M) _r141Name = _zwEncodingFromLabel(_r141M[1], true);
+        // 引号内空格保留（quoted 值含空格的 label——unsupported-labels.window 的
+        // "iso-8859-8 visual" 判据面：整值 label 表查找落空→fallback，旧首 token
+        // 截断会误解析为 supported "iso-8859-8"）。引号形态与 part01 传输
+        // charset 提取同构。
+        var _r141M = /<meta[^>]+charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^"'>\s]+))\s*["']?/i.exec(String(markup || ''));
+        if (_r141M) {
+          var _r141Raw = _r141M[1] != null ? _r141M[1] : (_r141M[2] != null ? _r141M[2] : _r141M[3]);
+          _r141Name = _zwEncodingFromLabel(_r141Raw, true);
+        }
       }
-      if (!_r141Name) _r141Name = 'windows-1252';
+      if (!_r141Name) {
+        // spec determine-fallback-encoding（encoding sniffing algorithm 落空分支）
+        // ：browsing context 子文档回落**同源祖先文档编码**（wptfyi-runtime DC-2
+        // unsupported-labels.window 判据——不可识别 label 继承父文档 UTF-8）；
+        // 顶层（无父）保持 windows-1252。近似：以主页文档代表最近同源祖先
+        // （目标语料均 depth-1；嵌套链祖先回溯待真实 frame 树——FIXME）。
+        try {
+          var _r141Fb = globalThis.document && globalThis.document.characterSet;
+          _r141Name = (typeof _r141Fb === 'string' && _r141Fb) || 'windows-1252';
+        } catch (_e141fb) {
+          _r141Name = 'windows-1252';
+        }
+      }
       Object.defineProperty(doc, 'characterSet', { configurable: true, get: function () { return _r141Name; } });
       Object.defineProperty(doc, 'charset', { configurable: true, get: function () { return _r141Name; } });
       Object.defineProperty(doc, 'inputEncoding', { configurable: true, get: function () { return _r141Name; } });

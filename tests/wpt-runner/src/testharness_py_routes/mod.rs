@@ -595,6 +595,15 @@ fn py_routes() -> &'static [PyRoute] {
             handle: route_dom_encoding,
         },
         PyRoute {
+            // wptfyi-runtime DC-2 encoding iframe 面：charset 端点族（unsupported
+            // label 嗅探面 + single-byte supported label 传输面）。
+            matches: PyRouteMatch::Exacts(&[
+                "encoding/resources/text-plain-charset.py",
+                "encoding/resources/text-html-meta-charset.py",
+            ]),
+            handle: route_encoding_charset,
+        },
+        PyRoute {
             matches: PyRouteMatch::Exact("service-workers/cache-storage/resources/vary.py"),
             handle: route_sw_vary,
         },

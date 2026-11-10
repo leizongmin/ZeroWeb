@@ -4774,6 +4774,21 @@ fn encoding_case_skipped(relative: &str, source: &str) -> bool {
     if relative.contains("/resources/") {
         return true;
     }
+    // wptfyi-runtime DC-2（encoding iframe 面）：4 个 .window.js 源的 iframe
+    // 管道已通（py-routes charset 端点族 + shim fallback-encoding 父继承 +
+    // Text*Stream），放行执行——unsupported-labels / single-byte-decoder-iframe
+    // 靠 charset 端点，streams/realms + invalid-realm 靠 srcdoc iframe + 跨
+    // realm 构造面。其余 iframe/worker 依赖面维持既有 skip 账（.any.js window
+    // 变体分母不动）。
+    if matches!(
+        name,
+        "unsupported-labels.window.js"
+            | "single-byte-decoder-iframe.window.js"
+            | "realms.window.js"
+            | "invalid-realm.window.js"
+    ) {
+        return false;
+    }
     source.contains("document.characterSet")
         || source.contains("<meta charset")
         || source.contains("rel=match")
@@ -4918,7 +4933,10 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                 // dedicated worker 腿，上报 `.any.worker.js` 键（对账映射
                 // `.any.worker.html` 分母变体）。分道判定（缺省双变体 /
                 // worker token 语义）见 [`crate::testharness_workers::dedicated_worker_variant`]。
-                if options.worker_variants && crate::testharness_workers::dedicated_worker_variant(&source) {
+                if options.worker_variants
+                    && file_name.ends_with(".any.js")
+                    && crate::testharness_workers::dedicated_worker_variant(&source)
+                {
                     let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
                     let results = crate::testharness_workers::run_any_js_dedicated_case_as(
                         wpt_root,
@@ -5055,6 +5073,11 @@ pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
         &[],
         CorpusRunOptions {
             worker_variants: true,
+            // wptfyi-runtime DC-2（encoding iframe 面）：`.window.js` 形态开（
+            // net-api M1a 门同款）——encoding 域仅 4 源（unsupported-labels /
+            // single-byte-decoder-iframe / streams/realms / streams/invalid-realm），
+            // 其余通道账分母不动。
+            extra_forms: true,
             ..CorpusRunOptions::default()
         },
     )
