@@ -391,6 +391,42 @@ fn settle_dynamic_import<'s>(
     }
 }
 
+/// source-phase 动态 import 宿主回调（`set_host_import_module_with_phase_dynamically_callback`
+/// ——V8 150 实测：注册后此回调接管**全部**动态 import 调用，旧回调不再触达，
+/// 须按 phase 分派；rusty_v8 文档「only called for source phase」与实现不符）。
+///
+// FIXME(test262-source-phase): 本引擎无 source-phase module record（无
+// `import.source` 成功面宿主 API，module record 恒 SourceText 形态），故按
+// ECMA-262 §16.2.1.7.2 GetModuleSource 的 SourceTextModule 实现——「source
+// phase import is not available」恒 abrupt、抛 SyntaxError——对每个可达的
+// source-phase import 给出规范忠实的拒绝（§13.3.10.1.1 EvaluateImportCall
+// phase=source → HostLoadImportedModule；wptfyi-runtime DC-3 收口，test262
+// dynamic-import source-phase 簇 91 案 parse 面 + 拒绝语义）。
+fn dynamic_import_source_phase_callback<'s, 'i>(
+    scope: &mut v8::PinScope<'s, 'i>,
+    host_defined_options: v8::Local<'s, v8::Data>,
+    resource_name: v8::Local<'s, v8::Value>,
+    specifier: v8::Local<'s, v8::String>,
+    phase: v8::ModuleImportPhase,
+    import_attributes: v8::Local<'s, v8::FixedArray>,
+) -> Option<v8::Local<'s, v8::Promise>> {
+    // 求值期（kEvaluation/kDefer）原样走既有宿主逻辑（行为与注册前恒等）。
+    if phase != v8::ModuleImportPhase::kSource {
+        return dynamic_import_callback(
+            scope,
+            host_defined_options,
+            resource_name,
+            specifier,
+            import_attributes,
+        );
+    }
+    let promise_resolver = v8::PromiseResolver::new(scope)?;
+    if let Some(m) = v8::String::new(scope, "source phase import is not available") {
+        promise_resolver.reject(scope, v8::Exception::syntax_error(scope, m));
+    }
+    Some(promise_resolver.get_promise(scope))
+}
+
 // 宿主回调注册表（线程局部）。FunctionTemplate 回调须为 `Copy`
 //（MapFnTo<FunctionCallback>），无法捕获 Arc 状态；故回调闭包存于此注册表，
 // FunctionTemplate 经 builder().data(idx) 携带索引，fn 回调按 idx 查表调用。
@@ -642,6 +678,12 @@ pub fn ensure_v8_initialized() {
         // ShadowRealm 内建（ECMA-262 §ShadowRealm——V8 内核已实现，harmony flag
         // 默认关闭）：平台初始化前开启，全 isolate 可见。
         v8::V8::set_flags_from_string("--harmony-shadow-realm");
+        // source phase imports 语法面（ECMA-262 §13.3.10.1.1 EvaluateImportCall
+        // phase=source——V8 内核已实现、本构建默认关旗）：平台初始化前开启。运行
+        // 期拒绝语义见 [dynamic_import_source_phase_callback]；经典页/worker/
+        // renderer 全 isolate 一致生效（wptfyi-runtime DC-3 收口，test262
+        // dynamic-import source-phase 簇 91 案 parse 面 + 拒绝语义）。
+        v8::V8::set_flags_from_string("--js-source-phase-imports");
         let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，
         // 且在所有Isolate创建之前完成。
@@ -889,6 +931,12 @@ impl V8Sandbox {
         let dynamic_import = Arc::new(std::sync::Mutex::new(DynamicImportState::default()));
         isolate.set_slot(dynamic_import.clone());
         isolate.set_host_import_module_dynamically_callback(dynamic_import_callback);
+        // source-phase 动态 import（`import.source()`）宿主回调——见
+        // [dynamic_import_source_phase_callback] 语义说明。
+        isolate
+            .set_host_import_module_with_phase_dynamically_callback(
+                dynamic_import_source_phase_callback,
+            );
 
         // ShadowRealm 宿主回调（ECMA-262 §ShadowRealm，HostCreateShadowRealmContext）：
         // V8 内核已实现 realm/evaluate/wrapped function 语义，仅宿主 context 缺省
