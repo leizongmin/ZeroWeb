@@ -68,7 +68,7 @@ cascade 应用缺失（reset 不回落页面规则值）、span 形状序列化�
 `calc(NaN)`）——values corpus 对重录基线（results-v5 v5d，oracle 收窄）
 **1,548 → 2,213（净 +665），逐页不降 0 回归**（对上批账面 1,770 净 +443；
 sin-cos-tan-serialize 40→270 全绿、acos 两页 0→62/60、minmax 族 +170、
-round-mod-rem-computed +54）。**DC-2 color 上下文批完成**（提交 1cafca122，三修合并）：currentcolor 三参
+round-mod-rem-computed +54）。**DC-2 color 上下文批完成**（提交 d1dd30e7a，三修合并）：currentcolor 三参
 属性上下文（`__zwComputedColor(raw, el, prop)`，非 color 属性先试本元素，
 css-color-4 §5.3）——currentColor 子测试 +26（relative-color +21、alpha +5）；
 part03 raw 影子放宽（归一变形且原值含 none 即存原值）+ srcBare 分量语法跟随
@@ -77,7 +77,7 @@ part03 raw 影子放宽（归一变形且原值含 none 即存原值）+ srcBare
 pass）；color-mix 插值空间别名折叠 `'in xyz' ≡ 'in xyz-d65'`——xyz none 组
 13 案恢复（v6 记录轮为 pre-alias 测量态 −13）。v7 HEAD 复录终局核对。
 [证据](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)
-（values 侧 9fc536447：values corpus v5d 1,548 → 2,213 净 +665 逐页不降；
+（values 侧 8b5fc9ebd：values corpus v5d 1,548 → 2,213 净 +665 逐页不降；
 已知缺口挂账：atan2 混型实参、trig 实参时间单位各 1F。color 侧收口探针
 法证与 v8 终账（对 cc8 净 +26 逐页 0 回归）见
 [证据](evidence/2026-11-11-dc2-color-raw-shadow-mix-alias.md)。）

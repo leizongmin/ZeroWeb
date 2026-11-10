@@ -48,23 +48,23 @@ producer 数组/serial 分支/_zwCCCompBare 三件套，保留 currentcolor ctx 
 - **color：测量二进制含 raw 影子放宽（见下节），子测试级归因**：+26 currentcolor
   （computed-relative-color +21、alpha-color-computed +5，全部 currentColor
   子测试、无 none 槽，归因本批 ctx 修复）；−13 color-computed-color-mix-function
-  xyz none 组（pre-alias 测量态，1cafca122 别名折叠恢复）；探针页
+  xyz none 组（pre-alias 测量态，d1dd30e7a 别名折叠恢复）；探针页
   zz-probe-hsl-none +1。hsl/hwb computed 3752/3753、55/56 与 cc8 持平——
   srcBare 回退成功恢复首跑 -8。终局记录见
   [color 批收口](2026-11-11-dc2-color-raw-shadow-mix-alias.md) v8 终账
   （color 63 页 10,782P/228F，对 cc8 净 +26 逐页 0 回归）。
 
-## raw 影子放宽与 mix 空间别名折叠（合并提交 1cafca122）
+## raw 影子放宽与 mix 空间别名折叠（合并提交 d1dd30e7a）
 
 part03.js raw 影子保存条件放宽（`!/none/i.test(core)` 项去除：归一变形且原值
 含 none 即存原值）与本批 srcBare 回退是同一现象的两层修法，最终**合并提交**
-1cafca122（currentcolor 三参上下文 + raw 影子放宽 + color-mix 插值空间别名折叠
+d1dd30e7a（currentcolor 三参上下文 + raw 影子放宽 + color-mix 插值空间别名折叠
 `'in xyz' ≡ 'in xyz-d65'`）。法证记录：
 
 - v6 记录轮二进制（04:29 rebuild3 态）已含 raw 影子放宽、不含 mix 别名折叠——
   color −13 mix xyz none 组（cc8 943→930，丢失子测试全部含 `color(xyz … none …)`）
   是 **pre-alias 测量态**：raw 影子让 computed 读回含 none 原文后，mix 侧空间
-  别名未折叠走 rgb 回退丢 none 旗标；别名折叠（1cafca122）恢复该组。
+  别名未折叠走 rgb 回退丢 none 旗标；别名折叠（d1dd30e7a）恢复该组。
 - values 零影响：v6 两轮 values 总数逐字一致（2213P/3373F），首轮构建不含
   part03.js 改动。
 - currentcolor +26 与 none 槽无关（全部新增子测试无 none），不受 raw 影子

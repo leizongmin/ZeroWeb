@@ -95,7 +95,7 @@ zw-corpus-v8 service（04:57 起，results-v8/，日志 zwv8-*）：
   碰撞记录）；日志 `.acceptance/wptfyi-css/logs/zwv6-maketest3.log`。
 - corpus：`CSS_CORPUS_JSON_DIR=.acceptance/wptfyi-css/results-v8`，systemd
   user service `zw-corpus-v8`，test-guard `--per-proc-mem 4 --total-mem 8
-  --time-limit 3600`。HEAD 提交态（14e9ae2e2）复录交叉验证（results-v7，
+  --time-limit 3600`。HEAD 提交态（b59c0bd16）复录交叉验证（results-v7，
   日志 zwv7-*，systemd scope zeroweb-dev-guard-ZeroWeb-2-v7run）：values
   2213P/3373F+7T、color 10782P/228F——与 v8/v6 逐字一致，确定性四轮闭环。
   注：04:46 伪红轮已清空的 results-v7/zwv7 命名由本复录轮复用，产物即本次
