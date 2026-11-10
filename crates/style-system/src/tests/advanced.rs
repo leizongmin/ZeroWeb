@@ -194,8 +194,8 @@ fn test_grid_column_start_end_end_to_end() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    assert_eq!(div_style.grid_column_start, property::GridLineValue::Line(2));
-    assert_eq!(div_style.grid_column_end, property::GridLineValue::Line(5));
+    assert_eq!(div_style.grid_column_start, property::GridLineValue::Line { line: 2, name: None });
+    assert_eq!(div_style.grid_column_end, property::GridLineValue::Line { line: 5, name: None });
 }
 
 #[test]
@@ -224,8 +224,8 @@ fn test_grid_row_start_end_end_to_end() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    assert_eq!(div_style.grid_row_start, property::GridLineValue::Line(1));
-    assert_eq!(div_style.grid_row_end, property::GridLineValue::Line(3));
+    assert_eq!(div_style.grid_row_start, property::GridLineValue::Line { line: 1, name: None });
+    assert_eq!(div_style.grid_row_end, property::GridLineValue::Line { line: 3, name: None });
 }
 
 #[test]
@@ -247,10 +247,10 @@ fn test_grid_area_shorthand_end_to_end() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    assert_eq!(div_style.grid_row_start, property::GridLineValue::Line(1));
-    assert_eq!(div_style.grid_row_end, property::GridLineValue::Line(3));
-    assert_eq!(div_style.grid_column_start, property::GridLineValue::Line(2));
-    assert_eq!(div_style.grid_column_end, property::GridLineValue::Line(4));
+    assert_eq!(div_style.grid_row_start, property::GridLineValue::Line { line: 1, name: None });
+    assert_eq!(div_style.grid_row_end, property::GridLineValue::Line { line: 3, name: None });
+    assert_eq!(div_style.grid_column_start, property::GridLineValue::Line { line: 2, name: None });
+    assert_eq!(div_style.grid_column_end, property::GridLineValue::Line { line: 4, name: None });
 }
 
 #[test]
@@ -279,8 +279,8 @@ fn test_grid_span_placement_end_to_end() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    assert_eq!(div_style.grid_column_start, property::GridLineValue::Span(2));
-    assert_eq!(div_style.grid_column_end, property::GridLineValue::Line(5));
+    assert_eq!(div_style.grid_column_start, property::GridLineValue::Span { count: Some(2), name: None });
+    assert_eq!(div_style.grid_column_end, property::GridLineValue::Line { line: 5, name: None });
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn test_grid_span_keyword_is_case_insensitive_end_to_end() {
                 },
                 Declaration {
                     property: "grid-column-end".to_string(),
-                    value: "SpAn3".to_string(),
+                    value: "SpAn 3".to_string(),
                     important: false,
                 },
             ],
@@ -309,8 +309,8 @@ fn test_grid_span_keyword_is_case_insensitive_end_to_end() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    assert_eq!(div_style.grid_column_start, property::GridLineValue::Span(2));
-    assert_eq!(div_style.grid_column_end, property::GridLineValue::Span(3));
+    assert_eq!(div_style.grid_column_start, property::GridLineValue::Span { count: Some(2), name: None });
+    assert_eq!(div_style.grid_column_end, property::GridLineValue::Span { count: Some(3), name: None });
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn test_grid_negative_line_numbers_end_to_end() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    assert_eq!(div_style.grid_column_start, property::GridLineValue::Line(-1));
+    assert_eq!(div_style.grid_column_start, property::GridLineValue::Line { line: -1, name: None });
 }
 
 #[test]

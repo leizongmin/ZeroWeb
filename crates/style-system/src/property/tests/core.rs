@@ -945,11 +945,11 @@ fn test_computed_style_default_grid() {
 #[test]
 fn test_parse_grid_line() {
     assert_eq!(parse_grid_line("auto"), Some(GridLineValue::Auto));
-    assert_eq!(parse_grid_line("1"), Some(GridLineValue::Line(1)));
-    assert_eq!(parse_grid_line("-1"), Some(GridLineValue::Line(-1)));
-    assert_eq!(parse_grid_line("5"), Some(GridLineValue::Line(5)));
-    assert_eq!(parse_grid_line("span 2"), Some(GridLineValue::Span(2)));
-    assert_eq!(parse_grid_line("span 3"), Some(GridLineValue::Span(3)));
+    assert_eq!(parse_grid_line("1"), Some(GridLineValue::Line { line: 1, name: None }));
+    assert_eq!(parse_grid_line("-1"), Some(GridLineValue::Line { line: -1, name: None }));
+    assert_eq!(parse_grid_line("5"), Some(GridLineValue::Line { line: 5, name: None }));
+    assert_eq!(parse_grid_line("span 2"), Some(GridLineValue::Span { count: Some(2), name: None }));
+    assert_eq!(parse_grid_line("span 3"), Some(GridLineValue::Span { count: Some(3), name: None }));
     assert_eq!(parse_grid_line("0"), None); // 0 is invalid
     assert_eq!(
         parse_grid_line("invalid"),
@@ -965,13 +965,13 @@ fn test_parse_grid_line() {
 fn test_apply_grid_column_start() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-column-start", "1"));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(1));
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 1, name: None });
 
     assert!(apply_property_value(&mut style, "grid-column-start", "-1"));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(-1));
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: -1, name: None });
 
     assert!(apply_property_value(&mut style, "grid-column-start", "span 2"));
-    assert_eq!(style.grid_column_start, GridLineValue::Span(2));
+    assert_eq!(style.grid_column_start, GridLineValue::Span { count: Some(2), name: None });
 
     assert!(apply_property_value(&mut style, "grid-column-start", "auto"));
     assert_eq!(style.grid_column_start, GridLineValue::Auto);
@@ -981,10 +981,10 @@ fn test_apply_grid_column_start() {
 fn test_apply_grid_row_start() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-row-start", "2"));
-    assert_eq!(style.grid_row_start, GridLineValue::Line(2));
+    assert_eq!(style.grid_row_start, GridLineValue::Line { line: 2, name: None });
 
     assert!(apply_property_value(&mut style, "grid-row-end", "3"));
-    assert_eq!(style.grid_row_end, GridLineValue::Line(3));
+    assert_eq!(style.grid_row_end, GridLineValue::Line { line: 3, name: None });
 }
 
 // ── Transition 属性测试 ──

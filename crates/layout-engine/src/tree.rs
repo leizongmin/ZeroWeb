@@ -3116,7 +3116,9 @@ fn grid_track_adjacency_explicit(
         styles
             .get(&items[i])
             .and_then(|st| match st.grid_column_start {
-                zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => Some((n as usize) - 1),
+                zero_style_system::property::types::GridLineValue::Line { line: n, .. } if n >= 1 => {
+                    Some((n as usize) - 1)
+                }
                 _ => None,
             })
             .unwrap_or(i % cols)
@@ -3125,7 +3127,9 @@ fn grid_track_adjacency_explicit(
         styles
             .get(&items[i])
             .and_then(|st| match st.grid_row_start {
-                zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => Some((n as usize) - 1),
+                zero_style_system::property::types::GridLineValue::Line { line: n, .. } if n >= 1 => {
+                    Some((n as usize) - 1)
+                }
                 _ => None,
             })
             .unwrap_or(i / cols)
@@ -3720,7 +3724,7 @@ fn build_subtree(
                 if col_autofit || row_autofit {
                     let explicit_line = |v: &zero_style_system::property::types::GridLineValue| -> Option<usize> {
                         match v {
-                            zero_style_system::property::types::GridLineValue::Line(n) if *n >= 1 => {
+                            zero_style_system::property::types::GridLineValue::Line { line: n, .. } if *n >= 1 => {
                                 Some((*n as usize) - 1)
                             }
                             _ => None,

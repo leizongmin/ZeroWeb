@@ -115,19 +115,19 @@ fn test_resolve_named_area_all_directions() {
     areas.insert("header".to_string(), (1, 2, 1, 4));
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "row-start"),
-        GridLineValue::Line(1)
+        GridLineValue::Line { line: 1, name: None }
     );
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "row-end"),
-        GridLineValue::Line(2)
+        GridLineValue::Line { line: 2, name: None }
     );
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "col-start"),
-        GridLineValue::Line(1)
+        GridLineValue::Line { line: 1, name: None }
     );
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "col-end"),
-        GridLineValue::Line(4)
+        GridLineValue::Line { line: 4, name: None }
     );
 }
 

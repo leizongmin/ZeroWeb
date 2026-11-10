@@ -413,10 +413,10 @@ fn test_nested_grid_container() {
     inner_grid_style.display = DisplayValue::Grid;
     inner_grid_style.grid_template_columns = Some("1fr 1fr".to_string());
     inner_grid_style.grid_template_rows = Some("1fr".to_string());
-    inner_grid_style.grid_row_start = GridLineValue::Line(1);
-    inner_grid_style.grid_row_end = GridLineValue::Line(2);
-    inner_grid_style.grid_column_start = GridLineValue::Line(1);
-    inner_grid_style.grid_column_end = GridLineValue::Line(2);
+    inner_grid_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    inner_grid_style.grid_row_end = GridLineValue::Line { line: 2, name: None };
+    inner_grid_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    inner_grid_style.grid_column_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(inner_grid, inner_grid_style);
 
     // 内层子元素
@@ -429,24 +429,24 @@ fn test_nested_grid_container() {
 
     // 外层其余单元格
     let mut oi2 = ComputedStyle::default();
-    oi2.grid_row_start = GridLineValue::Line(1);
-    oi2.grid_row_end = GridLineValue::Line(2);
-    oi2.grid_column_start = GridLineValue::Line(2);
-    oi2.grid_column_end = GridLineValue::Line(3);
+    oi2.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    oi2.grid_row_end = GridLineValue::Line { line: 2, name: None };
+    oi2.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    oi2.grid_column_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(outer_item2, oi2);
 
     let mut oi3 = ComputedStyle::default();
-    oi3.grid_row_start = GridLineValue::Line(2);
-    oi3.grid_row_end = GridLineValue::Line(3);
-    oi3.grid_column_start = GridLineValue::Line(1);
-    oi3.grid_column_end = GridLineValue::Line(2);
+    oi3.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    oi3.grid_row_end = GridLineValue::Line { line: 3, name: None };
+    oi3.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    oi3.grid_column_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(outer_item3, oi3);
 
     let mut oi4 = ComputedStyle::default();
-    oi4.grid_row_start = GridLineValue::Line(2);
-    oi4.grid_row_end = GridLineValue::Line(3);
-    oi4.grid_column_start = GridLineValue::Line(2);
-    oi4.grid_column_end = GridLineValue::Line(3);
+    oi4.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    oi4.grid_row_end = GridLineValue::Line { line: 3, name: None };
+    oi4.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    oi4.grid_column_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(outer_item4, oi4);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

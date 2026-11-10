@@ -1547,14 +1547,27 @@ impl ContentComputedValue {
 }
 
 /// CSS grid line 值（用于 grid-column-start/end、grid-row-start/end）。
+///
+/// `<grid-line>` 文法（https://drafts.csswg.org/css-grid-2/#typedef-grid-line）：
+/// `auto | <custom-ident> | [<integer> && <custom-ident>?] | [ span && <integer>? && <custom-ident>? ]`
 #[derive(Debug, Clone, PartialEq)]
 pub enum GridLineValue {
     /// auto。
     Auto,
-    /// 行号（1-based，负数为从末尾计数）。
-    Line(i16),
-    /// span N（跨越 N 条轨道）。
-    Span(u16),
+    /// 行号（1-based，负数为从末尾计数）+ 可选命名线（`1`、`-2`、`1 a`、`a 3`）。
+    Line {
+        /// 行号，非 0。
+        line: i16,
+        /// `<custom-ident>` 命名线。
+        name: Option<String>,
+    },
+    /// `span` 组合（`span`、`span 2`、`span a`、`span 2 a`）。
+    Span {
+        /// 正整数轨道数（≠0）。
+        count: Option<u16>,
+        /// `<custom-ident>` 命名线。
+        name: Option<String>,
+    },
     /// 命名区域或命名网格线（grid-area: header / grid-column-start: content-start）。
     Name(String),
 }

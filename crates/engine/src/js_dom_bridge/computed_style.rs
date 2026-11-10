@@ -3422,8 +3422,25 @@ fn place_2value_min(align: &str, justify: &str) -> String {
 fn grid_line_to_css(line: &GridLineValue) -> String {
     match line {
         GridLineValue::Auto => "auto".to_string(),
-        GridLineValue::Line(n) => n.to_string(),
-        GridLineValue::Span(n) => format!("span {}", n),
+        GridLineValue::Line { line, name } => match name {
+            // [<integer> && <custom-ident>?] canonical：整数在前（css-grid-2 §7.1，
+            // 对齐 grid_cssom::grid_line_canonical 的 LineName 形）。
+            Some(name) => format!("{line} {name}"),
+            None => line.to_string(),
+        },
+        // [ span && <integer>? && <custom-ident>? ] canonical：span 前缀 + 整数 + 命名线序。
+        GridLineValue::Span { count, name } => {
+            let mut out = String::from("span");
+            if let Some(c) = count {
+                out.push(' ');
+                out.push_str(&c.to_string());
+            }
+            if let Some(n) = name {
+                out.push(' ');
+                out.push_str(n);
+            }
+            out
+        }
         GridLineValue::Name(s) => s.clone(),
     }
 }

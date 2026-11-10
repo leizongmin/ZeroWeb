@@ -35,26 +35,26 @@ fn test_grid_explicit_row_column_placement() {
 
     // item1: row 1, col 1（左上角）
     let mut s1 = ComputedStyle::default();
-    s1.grid_row_start = GridLineValue::Line(1);
-    s1.grid_row_end = GridLineValue::Line(2);
-    s1.grid_column_start = GridLineValue::Line(1);
-    s1.grid_column_end = GridLineValue::Line(2);
+    s1.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    s1.grid_row_end = GridLineValue::Line { line: 2, name: None };
+    s1.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    s1.grid_column_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(item1, s1);
 
     // item2: row 2, col 3（中间行，最右列）
     let mut s2 = ComputedStyle::default();
-    s2.grid_row_start = GridLineValue::Line(2);
-    s2.grid_row_end = GridLineValue::Line(3);
-    s2.grid_column_start = GridLineValue::Line(3);
-    s2.grid_column_end = GridLineValue::Line(4);
+    s2.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    s2.grid_row_end = GridLineValue::Line { line: 3, name: None };
+    s2.grid_column_start = GridLineValue::Line { line: 3, name: None };
+    s2.grid_column_end = GridLineValue::Line { line: 4, name: None };
     styles.insert(item2, s2);
 
     // item3: row 3, col 2（最底行，中间列）
     let mut s3 = ComputedStyle::default();
-    s3.grid_row_start = GridLineValue::Line(3);
-    s3.grid_row_end = GridLineValue::Line(4);
-    s3.grid_column_start = GridLineValue::Line(2);
-    s3.grid_column_end = GridLineValue::Line(3);
+    s3.grid_row_start = GridLineValue::Line { line: 3, name: None };
+    s3.grid_row_end = GridLineValue::Line { line: 4, name: None };
+    s3.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    s3.grid_column_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(item3, s3);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
@@ -1647,34 +1647,34 @@ fn test_layout_grid_gap() {
 
     // item1: row 1, col 1
     let mut s1 = ComputedStyle::default();
-    s1.grid_row_start = GridLineValue::Line(1);
-    s1.grid_row_end = GridLineValue::Line(2);
-    s1.grid_column_start = GridLineValue::Line(1);
-    s1.grid_column_end = GridLineValue::Line(2);
+    s1.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    s1.grid_row_end = GridLineValue::Line { line: 2, name: None };
+    s1.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    s1.grid_column_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(item1, s1);
 
     // item2: row 1, col 2
     let mut s2 = ComputedStyle::default();
-    s2.grid_row_start = GridLineValue::Line(1);
-    s2.grid_row_end = GridLineValue::Line(2);
-    s2.grid_column_start = GridLineValue::Line(2);
-    s2.grid_column_end = GridLineValue::Line(3);
+    s2.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    s2.grid_row_end = GridLineValue::Line { line: 2, name: None };
+    s2.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    s2.grid_column_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(item2, s2);
 
     // item3: row 2, col 1
     let mut s3 = ComputedStyle::default();
-    s3.grid_row_start = GridLineValue::Line(2);
-    s3.grid_row_end = GridLineValue::Line(3);
-    s3.grid_column_start = GridLineValue::Line(1);
-    s3.grid_column_end = GridLineValue::Line(2);
+    s3.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    s3.grid_row_end = GridLineValue::Line { line: 3, name: None };
+    s3.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    s3.grid_column_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(item3, s3);
 
     // item4: row 2, col 2
     let mut s4 = ComputedStyle::default();
-    s4.grid_row_start = GridLineValue::Line(2);
-    s4.grid_row_end = GridLineValue::Line(3);
-    s4.grid_column_start = GridLineValue::Line(2);
-    s4.grid_column_end = GridLineValue::Line(3);
+    s4.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    s4.grid_row_end = GridLineValue::Line { line: 3, name: None };
+    s4.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    s4.grid_column_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(item4, s4);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

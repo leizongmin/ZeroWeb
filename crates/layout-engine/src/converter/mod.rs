@@ -1501,10 +1501,10 @@ fn resolve_named_area(value: &GridLineValue, parent_areas: Option<&GridAreaMap>,
     match value {
         GridLineValue::Name(name) => match parent_areas.and_then(|areas| areas.get(name)) {
             Some(&(rs, re, cs, ce)) => match which {
-                "row-start" => GridLineValue::Line(rs),
-                "row-end" => GridLineValue::Line(re),
-                "col-start" => GridLineValue::Line(cs),
-                "col-end" => GridLineValue::Line(ce),
+                "row-start" => GridLineValue::Line { line: rs, name: None },
+                "row-end" => GridLineValue::Line { line: re, name: None },
+                "col-start" => GridLineValue::Line { line: cs, name: None },
+                "col-end" => GridLineValue::Line { line: ce, name: None },
                 _ => GridLineValue::Auto,
             },
             None => GridLineValue::Name(name.clone()),
