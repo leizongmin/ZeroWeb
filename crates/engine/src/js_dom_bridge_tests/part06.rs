@@ -5409,9 +5409,13 @@ fn test_cssom_declared_color_context_normalization_t48() {
     // ① CSS-wide keywords：全属性有效、declared 序列化 ASCII lowercase（CSS Cascading
     //    Level 4 §7.1-§7.4 + Level 5 revert-layer；Blink 154 活体 t48 oracle a1-a5/a10——
     //    color 上下文五键 + `INHERIT !important` 形）。
-    // ② 系统色：CSS Color 4 §6.3 declared 值 ASCII lowercase（同 §16.2 命名色；活体
-    //    oracle b-*：modern 19 键 - listitemtext + deprecated 23 键 = Chrome 154 接受面；
-    //    LISTITEMTEXT Chrome 不接受→整声明丢弃。DC-2 次批 part11 管线接入后 ZW 同弃
+    // ② 系统色：CSS Color 4 §6.2 declared 值 ASCII lowercase（同 §16.2 命名色；活体
+    //    oracle b-*：§6.2 modern 19 键 + Appendix A deprecated 23 键 = Chrome 154
+    //    接受面 42 键（t57 oracle r2 m01-m19/ac01-ac03/d01-d42 全案；T57 返修
+    //    TV-T57-F1 再勘正——原注「modern 20 键 - listitem - listitemtext + 23」
+    //    前提与算术双错）；
+    //    LISTITEM/LISTITEMTEXT 非规范键（§6.2 清单无）且 Chrome 活体全大小写形
+    //    reject（r2 li01-li05）→整声明丢弃。DC-2 次批 part11 管线接入后 ZW 同弃
     //（css-color-invalid-named 184 行同语义），分歧形状钉解除、翻正为 Blink 对齐）。
     // ③ legacy 颜色函数文本归一（T46 TV-2：函数名 lowercase + 参数逗号空格 + 数字文本
     //    规范形 '.5'→'0.5'/'0.50'→'0.5'/'255.0'→'255'/'+255'→'255'，活体 oracle d1-d5/n3/n6）；
@@ -5610,5 +5614,68 @@ fn test_cssom_rule_style_csstext_quoted_semicolon_t49fix() {
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
         r##"{"ruleUrlDataUri":"url(\"data:image/png;base64,AAA\")","ruleContentSemi":"\"a;b\"","ruleColorNorm":"red"}"##,
         "T49 返修 DF-2 规则面钉：_parseDeclarations 引号形整值（url 引号形 + content 引号形 + 同块归一不损）"
+    );
+}
+
+#[test]
+fn test_cssom_system_color_set_lock_t57() {
+    // T57（P 池 T48 DF-1 listitem oracle 消化；返修轮补键 accentcolortext——首轮
+    // TV-F2/DF-01 引擎内部不一致）：系统色接受面逐键锁定 + listitem 族 reject 形。
+    // Chrome 154 接受面 = CSS Color 4 §6.2 modern 19 键 + Appendix A deprecated
+    // 23 键 = 42 键（t57 oracle r2 m01-m19/ac01-ac03/d01-d42 逐键实证：42 键全
+    // accept 且 declared 读回小写；listitem 族全大小写形 reject，li01-li05）；
+    // ZW 侧 _zwSystemColorSet 42 键与 Chrome 154 逐键恒一——首轮 41 键缺
+    // accentcolortext（parser named_colors.rs 与 part11 面已认、本集合漏键的内部
+    // 不一致面，返修补齐；行为变化=declared 归一路径 accept accentcolortext），
+    // 本钉锁集合防漂移，补 DF-1「无 oracle 证据」缺口（T48 钉仅 12 键代表 + 形状钉）。
+    // https://www.w3.org/TR/css-color-4/#css-system-colors
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             var sys = ['canvas','canvastext','linktext','visitedtext','activetext',\
+               'buttonface','buttontext','buttonborder','field','fieldtext','highlight',\
+               'highlighttext','mark','marktext','graytext','accentcolor','accentcolortext','selecteditem',\
+               'selecteditemtext','activeborder','activecaption','appworkspace','background',\
+               'buttonhighlight','buttonshadow','captiontext','inactiveborder',\
+               'inactivecaption','inactivecaptiontext','infobackground','infotext','menu',\
+               'menutext','scrollbar','threeddarkshadow','threedface','threedhighlight',\
+               'threedlightshadow','threedshadow','window','windowframe','windowtext'];\
+             var sysOut = {};\
+             sys.forEach(function (k) {\
+               __st.cssText = 'color: ' + k.toUpperCase();\
+               sysOut[k] = __st.color;\
+             });\
+             var rej = {};\
+             ['LISTITEM','listitem','ListItemText','LISTITEMTEXT','listitemtext',\
+              'LISTITEMFOO'].forEach(function (k) {\
+               __st.cssText = 'color: ' + k;\
+               rej[k] = __st.color;\
+             });\
+             globalThis.__t57 = {sys: sysOut, rej: rej};\
+             JSON.stringify(globalThis.__t57);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__t57)").unwrap().value,
+        r##"{"sys":{"canvas":"canvas","canvastext":"canvastext","linktext":"linktext","visitedtext":"visitedtext","activetext":"activetext","buttonface":"buttonface","buttontext":"buttontext","buttonborder":"buttonborder","field":"field","fieldtext":"fieldtext","highlight":"highlight","highlighttext":"highlighttext","mark":"mark","marktext":"marktext","graytext":"graytext","accentcolor":"accentcolor","accentcolortext":"accentcolortext","selecteditem":"selecteditem","selecteditemtext":"selecteditemtext","activeborder":"activeborder","activecaption":"activecaption","appworkspace":"appworkspace","background":"background","buttonhighlight":"buttonhighlight","buttonshadow":"buttonshadow","captiontext":"captiontext","inactiveborder":"inactiveborder","inactivecaption":"inactivecaption","inactivecaptiontext":"inactivecaptiontext","infobackground":"infobackground","infotext":"infotext","menu":"menu","menutext":"menutext","scrollbar":"scrollbar","threeddarkshadow":"threeddarkshadow","threedface":"threedface","threedhighlight":"threedhighlight","threedlightshadow":"threedlightshadow","threedshadow":"threedshadow","window":"window","windowframe":"windowframe","windowtext":"windowtext"},"rej":{"LISTITEM":"","listitem":"","ListItemText":"","LISTITEMTEXT":"","listitemtext":"","LISTITEMFOO":""}}"##,
+        "T57 系统色 42 键接受面逐键锁定 + listitem 族 reject（Chrome 154 恒一——返修补键 accentcolortext，T48 DF-1 oracle 补齐）"
     );
 }
