@@ -49,6 +49,29 @@
     return _zwJusIsHtmlElement(node, ['xmp', 'listing']);
   }
 
+  // SLC 溶解声明收割（2026-11-10 数据丢失刀，见 apply unwrap 臂 carry 注）：
+  // 只收四值命令——forecolor/hilitecolor/fontsize/fontname 的 specified 读面
+  // 直读对应 style/font 声明；boolean 命令（bold/italic/underline/strikethrough/
+  // subscript）specified 读面会错读他族声明（hilite 形探针 bold=yellow 实证），
+  // 不入收割（其 vals2 restore 维持 spec 行为不变）。
+  function _zwFbqHarvestBlockValues(block) {
+    var out = [];
+    var carryCmds = ['forecolor', 'hilitecolor', 'fontsize', 'fontname'];
+    for (var i = 0; i < carryCmds.length; i++) {
+      var val = null;
+      try { val = _zwVaSpecifiedValue(block, carryCmds[i]); } catch (_eFbqH) {}
+      if (val !== null) out.push([carryCmds[i], val]);
+    }
+    return out;
+  }
+
+  // 收割值落块本体的 style 属性名（forceValue property 映射同口径）。
+  function _zwFbqCarryProperty(command) {
+    return command === 'fontsize' ? 'font-size'
+      : (command === 'fontname' ? 'font-family'
+        : (command === 'forecolor' ? 'color' : 'background-color'));
+  }
+
   // node 的后代中存在 prohibited paragraph child（getDescendants 不含自身；
   // 手爬 childNodes 栈，spec getDescendants(node).some(isProhibitedParagraphChild)）。
   function _zwFbqHasProhibitedParagraphChildDescendant(node) {
@@ -258,10 +281,40 @@
       // 表，Chrome 不解包（语料十行录音元素整体入新块，见 _zwFbqIsWrapOnlyBlock
       // 注）——unwrap 门豁免，走 else 臂 wrap 单元整体。聚合停止条件仍用全表
       // （xmp/listing 阻断连续 sibling 并入同一 sublist，单元素独立成块）。
+      var fbqCarry = [];
       if (_zwIparaIsSingleLineContainer(nodeList[0])
           && !_zwFbqIsWrapOnlyBlock(nodeList[0])) {
         sublist = Array.prototype.slice.call(nodeList[0].childNodes);
+        // Chrome delta（SLC 溶解声明 carry，2026-11-10 数据丢失刀）：Chrome
+        // formatBlock 把被替换块的内联声明转移到替换块本体——语料
+        // `<div style=color:blue>[foo]</div>` + <p> 录音 `<p style=
+        // "color:rgb(0, 0, 255)">[foo]</p>`，stylewithcss true/false 双变体
+        // 同形（:1834-1857 八行），无 font/span 内联载体。spec 的 vals2
+        // record→dissolve→restore 路径在本引擎把裸文本 forceValue 成载体
+        //（font/span），共享尾 wrap 的新块落进载体（disallowed 父）→
+        // fixDisallowed 允许子臂拆父 + 对块二次 forceValue 再裹载体——链条
+        // 终态宿主清空、内容序列化丢失（TRACE 级实锤：unwrap 后 foo 入
+        // font 载体，wrap done hostkids=0，fixdone tree=null，RET 仍
+        // [true]——part06 异常壳掩盖）。数据修复优先于兼容面：溶解前收割
+        // 块级声明（forecolor/hilitecolor/fontsize/fontname 四值命令，
+        // boolean 命令 specified 读面缺省错读他族声明——hilite 形探针
+        // bold=yellow 实证——不入收割），等值匹配的 vals2 三元组抑制
+        // restore（更深自有值的子树照常 forceValue），wrap 成块后声明落
+        // 块本体（setStyleProp CSSOM 归一 color:rgb 形，fixDisallowed 前
+        // 落——块 specified 即值，爬升面自然短路不再 forceValue）。
+        fbqCarry = _zwFbqHarvestBlockValues(nodeList[0]);
         var vals2 = _zwDelRecordValues(sublist);
+        if (fbqCarry.length) {
+          vals2 = vals2.filter(function (t2) {
+            for (var ci = 0; ci < fbqCarry.length; ci++) {
+              if (fbqCarry[ci][0] === t2[1]
+                  && _zwVaEquivalentValues(t2[1], t2[2], fbqCarry[ci][1])) {
+                return false;
+              }
+            }
+            return true;
+          });
+        }
         // "Remove the first member of node list from its parent, preserving
         // its descendants."
         _zwJusRemovePreservingDescendants(nodeList[0]);
@@ -290,8 +343,15 @@
             return _zwJusIsHtmlElement(n, v)
               && n.attributes && n.attributes.length === 0;
           };
-      _zwListFixDisallowedAncestors(_zwJusWrap(sublist, sibCrit,
-        function () { return document.createElement(v); }, true));
+      var fbqBlock = _zwJusWrap(sublist, sibCrit,
+        function () { return document.createElement(v); }, true);
+      if (fbqCarry.length && fbqBlock && fbqBlock.nodeType === 1) {
+        for (var ci2 = 0; ci2 < fbqCarry.length; ci2++) {
+          _zwVaSetStyleProp(fbqBlock, _zwFbqCarryProperty(fbqCarry[ci2][0]),
+            fbqCarry[ci2][1]);
+        }
+      }
+      _zwListFixDisallowedAncestors(fbqBlock);
     }
     return true;
   };
