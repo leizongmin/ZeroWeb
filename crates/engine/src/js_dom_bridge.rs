@@ -6099,6 +6099,13 @@ pub fn generate_js_dom_shim() -> &'static str {
         // https://drafts.csswg.org/css-color-4/
         // https://drafts.csswg.org/css-color-5/
         s.push_str(include_str!("js_dom_shim/part11-color.js"));
+        // part11 后半（2026-11-10 wptfyi-css DC-2 次批后半）：computed 真数学
+        // 管线（css-color-4 转换枢纽 XYZ D65/D50 + Bradford、lab/oklab 精确
+        // 常数；color-mix() 插值——缺省权重/alpha 双轨归一/hue 归一位置弧/none
+        // carry；relative color——通道关键字+alpha 关键字+chanexpr 满量程 +
+        // 三角/exponent calc；hsl/hwb none 保形序列化；color() 跨空间 gamma）。
+        // 后挂覆盖 part11-color.js 的 computed 别名（declared 归一仍走前者）。
+        s.push_str(include_str!("js_dom_shim/part11-computed-color.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

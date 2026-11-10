@@ -1841,7 +1841,18 @@
     try {
       if (el.style && typeof el.style.getPropertyValue === 'function') {
         var v = el.style.getPropertyValue(prop);
-        if (v) return String(v).trim();
+        if (v) {
+          // raw 影子优先（css-color-4 §missing：declared 写面归一消解
+          // `rgb(128 none none)` → `rgb(128, 0, 0)` 是 valid corpus 规范化面，
+          // computed corpus 期望 `color(srgb 0.50196078 none none)` 保 none——
+          // part03 _zwRawByHandle 影子在归一变形时存原值，本读取点取回交
+          // part11-computed-color 管线；其余属性/形态影子为空，走归一形）。
+          if (typeof el.style.__zwRawDecl === 'function') {
+            var rv = el.style.__zwRawDecl(prop);
+            if (rv) return String(rv).trim();
+          }
+          return String(v).trim();
+        }
       }
     } catch (_ePST) {}
     return _zwPlainStyleDecls(el)[prop] || '';

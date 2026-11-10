@@ -6,8 +6,11 @@
 //    `getComputedStyle().color`（test_computed_value）——完整指定 legacy 形
 //（named/hex/rgb/hsl/hwb）解析为 8 位 rgb()/rgba() 逗号形；带 `none` 分量的
 // hsl/hwb 保留原函数形（css-color-4 §missing：缺失分量色不可序列化为 legacy 形，
-// Blink 实测 `hsl(none none none)` 计算值保形）；rgb 恒消解（rgb 无 powerless
-// 分量，none≈0）；lab/lch/oklab/oklch/color() 恒保留各自空间形并归一分量。
+// Blink 实测 `hsl(none none none)` 计算值保形）；rgb 恒消解（valid corpus 声明
+// 规范化期望 `rgb(128 none none)` → `rgb(128, 0, 0)`；computed 面 none 传播由
+// part03 raw 影子承担）；lab/lch/oklab/oklch/color() 恒保留各自空间形并归一分量
+//（8 位有效——round-trip 同精度；hue 6 位——css-values-4 序列化，corpus
+// 73.3386 精确面）。
 // color-mix()/relative color/contrast-color()/light-dark() 本批**原文透传**
 //（declared 保原串、computed 返 null 走既有 host 链——次批后续补，无回归）。
 //
@@ -19,7 +22,8 @@
 //
 // 口径依据（Chrome 154 corpus oracle + Blink 154 活体）：
 //   - named 保关键词小写形；hex → rgb8；rgb/rgba（legacy 逗号 + 现代空白）恒
-//     8 位逗号形；hsl/hwb 全指定 → rgb8，带 none → 保留形（% 落数去 %）；
+//     8 位逗号形（含 none 消解——valid corpus 声明规范化面）；hsl/hwb 全指定 →
+//     rgb8，带 none → 保留形（% 落数去 %）；
 //   - alpha：=1 省略、<1 数值（legacy 形 3 位小数封顶——#FFFA → 0.667 钉面）、
 //     ≤0 → 0、`none` 保留 ` / none`；
 //   - calc() 声明面只折常量 + 乘法操作数排序（数→量→函数原子；
@@ -609,7 +613,7 @@
       if (f.kind === 'num') return { t: 'num', v: f.v, u: f.u, fromCalc: true };
       return { t: 'calc', text: f.text };
     }
-    var m = /^([+-]?(?:\d*\.\d+|\d+\.?\d*))(%|deg|grad|rad|turn)?$/.exec(s);
+    var m = /^([+-]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?)(%|deg|grad|rad|turn)?$/.exec(s);
     if (m) {
       var u = m[2] || '';
       var v = parseFloat(m[1]);
@@ -934,8 +938,12 @@
         return 'rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', ' + _zwCAlpha8(a) + ')';
       }
       case 'rgb': {
-        var rr = _zwCRgbResolve(c.comps, c.alpha);
-        if (rr != null) return rr;
+        // declared 恒消解（css-color-4 §serializing：valid corpus
+        // 'rgb(128 none none)' 声明规范化期望 'rgb(128, 0, 0)'）；computed 面
+        // none 传播不走此路——part03 inline 写存 raw 影子（_zwInlineRawStyle）
+        // + part01c computed 读取点取 raw（__zwInlineRawDecl）。
+        var rr2 = _zwCRgbResolve(c.comps, c.alpha);
+        if (rr2 != null) return rr2;
         return _zwCRgbRetained(c.comps, c.alpha);
       }
       case 'hsl': case 'hwb': {
@@ -985,7 +993,10 @@
             out.push(_zwCSig6(ov));
             continue;
           }
-          out.push(_zwCNum(ov));
+          // lab 族分量 8 位有效（与 computed 面序列化同精度——round-trip 步把
+          // computed 串回设 declared 时 6 位舍入会毁 RT 等值，corpus
+          // 'oklab(0.36666664 0.46666664 0.56666664)' 实证）。
+          out.push(_zwCSig8(ov));
         }
         return c.form + '(' + out.join(' ') + _zwCAlphaDeclText(c.alpha, false) + ')';
       }
@@ -995,7 +1006,9 @@
           var qc = c.comps[qi];
           if (qc.t === 'none') { oc2.push('none'); continue; }
           if (qc.t === 'calc' || qc.fromCalc) { oc2.push(_zwCCompDeclText(qc)); continue; }
-          oc2.push(_zwCNum(qc.u === '%' ? qc.v / 100 : qc.v));
+          // 通道 8 位有效（round-trip：computed 串回设 declared 后再求值须
+          // 等值——6 位舍入曾致 corpus mix RT '0.66666667'→'0.666667' 翻红）。
+          oc2.push(_zwCSig8(qc.u === '%' ? qc.v / 100 : qc.v));
         }
         return 'color(' + c.space + ' ' + oc2.join(' ') + _zwCAlphaDeclText(c.alpha, false) + ')';
       }

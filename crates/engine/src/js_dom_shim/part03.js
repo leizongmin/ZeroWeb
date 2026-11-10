@@ -30106,6 +30106,36 @@ return e;
     return { value: s, priority: '' };
   }
 
+  // DC-2 次批后半：inline style raw 影子（css-color-4 §missing none 传播面）。
+  // 声明写面归一（_zwNormalizeDeclValue）把 `rgb(128 none none)` 消解为
+  // `rgb(128, 0, 0)`——valid corpus 声明规范化期望该形，但 computed corpus 期望
+  // `color(srgb 0.50196078 none none)` 保 none。归一改变文本且原值含 none 时按
+  // 元素存原始文本（handle 键 WeakMap / sel 键 Map——el.style 代理每次访问重建，
+  // 代理对象自身不能作键），part01c computed 读取点经 style 代理 `__zwRawDecl`
+  // 取回，交 part11-computed-color 管线。无 none/未变形清条目（不随写面膨胀）。
+  // **已知限制**：① 仅 inline IDL 写路径（setProperty/style.color=）——cssText
+  // 整体写经 _parseDeclarations 归一后逐属性落库，影子未接（FIXME(compat)：语料
+  // 出现 cssText 写 none 色时补）；② 样式表声明面（part06 rule style）同缺
+  //（语料 computed-rgb 全走 inline，先例 CSS Style Attributes §2）。
+  var _zwRawByHandle = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var _zwRawBySel = new Map();
+  // handle 键仅限对象（WeakMap CanBeHeldWeakly：set 非对象键 TypeError
+  // 'Invalid value used as weak map key'——wpt-runner 嵌入 handle 为宿主侧
+  // 标量 id，实证 valid-rgb 页 16 写面翻红）；非对象 handle 与 get 路由同源
+  // 落 sel 键 Map，读写两侧一致。
+  function _zwRawHandleKey(handle) {
+    return handle != null && _zwRawByHandle
+      && (typeof handle === 'object' || typeof handle === 'function');
+  }
+  function _zwRawStyleGet(sel, handle) {
+    if (_zwRawHandleKey(handle)) return _zwRawByHandle.get(handle) || null;
+    return _zwRawBySel.get(sel) || null;
+  }
+  function _zwRawStyleSet(sel, handle, map) {
+    if (_zwRawHandleKey(handle)) { _zwRawByHandle.set(handle, map); return; }
+    _zwRawBySel.set(sel, map);
+  }
+
   function _styleProxy(sel, handle) {
     var readRaw = function() {
       // R3194：sel 走 latest-wins（`__zw_get_style_lw` replay pending style mutation），闭合 sync set→read
@@ -30186,6 +30216,15 @@ return e;
         var core = _zwNormalizeDeclValue(pri.value, prop);
         if (core === null) return;
         v = pri.priority ? core + ' !important' : core;
+        // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
+        // none → 存原值；其余形态清条目。
+        var shadow = _zwRawStyleGet(sel, handle);
+        if (pri.value !== core && /none/i.test(pri.value) && !/none/i.test(core)) {
+          if (!shadow) { shadow = {}; _zwRawStyleSet(sel, handle, shadow); }
+          shadow[prop] = pri.value;
+        } else if (shadow) {
+          delete shadow[prop];
+        }
       }
       if (handle) __zw_set_style_handle(handle, prop, v);
       else __zw_set_style(sel, prop, v);
@@ -30204,6 +30243,14 @@ return e;
         if (ps === 'cssText') return readRaw();
         if (ps === 'length') return propNames().length;
         if (ps === 'getPropertyValue') return function(name) { return readProp(name); };
+        // DC-2 次批后半：raw 影子读取（part01c computed 链专用，非 CSSOM 公开面——
+        // 双下划线名避开属性枚举/for-in 消费面）。
+        if (ps === '__zwRawDecl') {
+          return function(name) {
+            var shadow = _zwRawStyleGet(sel, handle);
+            return shadow ? (shadow[_styleDeclName(name)] || '') : '';
+          };
+        }
         // R3193：getPropertyPriority 返 "important"（声明带 !important）/ ""（spec；旧 stub 恒 ""）。
         if (ps === 'getPropertyPriority') {
           return function(name) {
@@ -30228,6 +30275,8 @@ return e;
             // T50：与写/读同 `_styleDeclName` 归一（'COLOR' 删 'color' 声明——Blink 154
             // 活体 t50 oracle b13/g04 案，removeProperty 名参 ASCII case-insensitive）。
             var prop = _styleDeclName(name);
+            var shadow = _zwRawStyleGet(sel, handle);
+            if (shadow) delete shadow[prop];
             if (handle && typeof __zw_remove_style_handle === 'function') {
               __zw_remove_style_handle(handle, prop);
             } else if (!handle && typeof __zw_remove_style === 'function') {
