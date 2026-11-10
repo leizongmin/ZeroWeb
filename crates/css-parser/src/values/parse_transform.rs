@@ -1971,7 +1971,7 @@ fn shadow_length_is_valid(raw: &str, value: &LengthValue, allow_negative: bool) 
 /// 解析 CSS text-shadow 值。
 ///
 /// 格式：`"none"` | `"<color>? && <offset-x> <offset-y> [<blur-radius>] && <color>?"`。
-pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
+pub fn parse_text_shadow(value: &str, dark: bool) -> Option<TextShadowValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(TextShadowValue {
@@ -1995,7 +1995,7 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
     let lengths: Vec<&str> = owned
         .iter()
         .filter_map(|s| {
-            if !color_found && let Some(c) = parse_color(s) {
+            if !color_found && let Some(c) = parse_color_with_scheme(s, dark) {
                 color = c;
                 color_found = true;
                 return None;
@@ -2035,7 +2035,7 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
 /// `none` → 空 Vec；否则顶层逗号分割（paren-aware，`rgb()`/`rgba()` 内部逗号保持一体）
 /// 后逐个 parse_text_shadow，任一失败 → None。语义镜像 parse_box_shadow_list。
 /// R4137：`none` 与列表混排同样整条非法（同 box-shadow，见彼处注释）。
-pub fn parse_text_shadow_list(value: &str) -> Option<Vec<TextShadowValue>> {
+pub fn parse_text_shadow_list(value: &str, dark: bool) -> Option<Vec<TextShadowValue>> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(Vec::new());
@@ -2049,7 +2049,7 @@ pub fn parse_text_shadow_list(value: &str) -> Option<Vec<TextShadowValue>> {
         if p.eq_ignore_ascii_case("none") {
             return None;
         }
-        shadows.push(parse_text_shadow(p)?);
+        shadows.push(parse_text_shadow(p, dark)?);
     }
     Some(shadows)
 }
@@ -2114,7 +2114,7 @@ pub fn split_paren_aware_tokens(s: &str) -> Vec<String> {
 /// 解析 CSS box-shadow 值。
 ///
 /// 格式：`"none"` | `"[inset] <offset-x> <offset-y> [<blur>] [<spread>] [<color>]"`。
-pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
+pub fn parse_box_shadow(value: &str, dark: bool) -> Option<BoxShadowValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(BoxShadowValue {
@@ -2147,7 +2147,7 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
             inset = true;
             continue;
         }
-        if !color_found && let Some(c) = parse_color(s) {
+        if !color_found && let Some(c) = parse_color_with_scheme(s, dark) {
             color = c;
             color_found = true;
             continue;
@@ -2234,7 +2234,7 @@ fn split_top_level_commas(s: &str) -> Option<Vec<String>> {
 /// 列表混排（`red 0 0, none, ...`）整条非法——旧实现把 none 当普通 shadow 段
 /// 解析为零偏移阴影，非法列表被接受（box-shadow-invalid-001：前一条合法 inset
 /// 阴影被非法列表覆盖 → 红方裸露）。
-pub fn parse_box_shadow_list(value: &str) -> Option<Vec<BoxShadowValue>> {
+pub fn parse_box_shadow_list(value: &str, dark: bool) -> Option<Vec<BoxShadowValue>> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(Vec::new());
@@ -2248,7 +2248,7 @@ pub fn parse_box_shadow_list(value: &str) -> Option<Vec<BoxShadowValue>> {
         if p.eq_ignore_ascii_case("none") {
             return None;
         }
-        shadows.push(parse_box_shadow(p)?);
+        shadows.push(parse_box_shadow(p, dark)?);
     }
     Some(shadows)
 }

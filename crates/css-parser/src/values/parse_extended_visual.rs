@@ -425,16 +425,16 @@ pub enum CaretColorValue {
 /// 解析 CSS caret-color 属性值。
 ///
 /// 支持格式：`auto` 或任意有效 CSS 颜色值。
-pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
-    fn parse_one(token: &str) -> Option<CaretColorValue> {
+pub fn parse_caret_color(value: &str, dark: bool) -> Option<CaretColorValue> {
+    fn parse_one(token: &str, dark: bool) -> Option<CaretColorValue> {
         if token.eq_ignore_ascii_case("auto") {
             return Some(CaretColorValue::Auto);
         }
-        parse_color(token).map(CaretColorValue::Color)
+        parse_color_with_scheme(token, dark).map(CaretColorValue::Color)
     }
     let v = value.trim();
     let mut parts = v.split_ascii_whitespace();
-    let first = parse_one(parts.next()?)?;
+    let first = parse_one(parts.next()?, dark)?;
     match parts.next() {
         None => Some(first),
         // 两值形式（css-ui-4 §5.2.2）：第二值 = block caret 覆盖字符的文字色。
@@ -442,7 +442,7 @@ pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
             if parts.next().is_some() {
                 return None;
             }
-            let second = parse_one(second)?;
+            let second = parse_one(second, dark)?;
             Some(CaretColorValue::TwoValue(Box::new(first), Box::new(second)))
         }
     }

@@ -82,12 +82,28 @@ pass）；color-mix 插值空间别名折叠 `'in xyz' ≡ 'in xyz-d65'`——xy
 法证与 v8 终账（对 cc8 净 +26 逐页 0 回归）见
 [证据](evidence/2026-11-11-dc2-color-raw-shadow-mix-alias.md)。）
 
+**DC-2 color 通道批完成（11-11 上午）**：light-dark() 双通道建模 + system
+color dark 面板 + color-scheme 级联读取（提交 640d5f4e4）——shim part11
+`_zwCCParseFn` light-dark 分支（支值暂存 AST 延迟 resolve，currentColor 支
+走属性上下文）+ `_zwCCUsedSchemeDark` 沿父链合成（空格分词，light dark 双
+token 保守 light 对齐 parse_color_scheme_dark）+ `_zwCCSystemDark` 12 键
+dark 面板 + part01c color-scheme 级联分支（inline→作者臂→父链）+ Rust
+dark 臂 menu 扩键——color corpus **10,782 → 10,801（净 +19），逐页 0 回归**
+（system-color-compute +8、system-color-support +9、parsing/relative-color
++2 意外收；values 2,213P 零漂移）。通道分野定谳：support 页（动态元素）走
+shim plain 臂、compute/consistency 页走宿主 cascade，两改动面互不越界
+（consistency 页 ''=='' 空串钉面零变化）。残余挂账：light-dark image 上下文
+31F、Typed-OM 相对色 2F、currentcolor-in-light-dark 宿主黑 1F、fill/stroke
+gCS 读数 2F、shadow/caret/column-rule dark 贯穿（姊妹实例 zeroweb-2-b0 在飞
+接手）。
+[证据](evidence/2026-11-11-dc2-lightdark-scheme-system.md)
+
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 九批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试 |
+| DC-2 按簇收敛 | 十批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,801 逐页 0 回归 |
 | DC-3 全量对账 | 待执行 | 验收线 182,392 项通过，同 revision 周跑产物待补 |
 
 碰撞记录：11-11 凌晨 union 树 engine 全量 7F（img/svg settle + websocket

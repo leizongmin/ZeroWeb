@@ -1590,7 +1590,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         // ── Column Rule Color 属性 ──
         "column-rule-color" => {
-            if let Some(v) = values::parse_color(value) {
+            // dark 传播：system color 关键字按 used scheme 取面板（与 color 臂
+            // parse_color_fn 同口径——system-color-compute 页 Menu 差分驱动）。
+            if let Some(v) = values::parse_color_with_scheme(value, style.color_scheme_dark) {
                 style.column_rule_color = v;
                 return true;
             }
@@ -1732,7 +1734,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "caret-color" => {
-            if let Some(v) = values::parse_caret_color(value) {
+            if let Some(v) = values::parse_caret_color(value, style.color_scheme_dark) {
                 style.caret_color = match v {
                     zero_css_parser::values::CaretColorValue::Auto => CaretColorComputedValue::Auto,
                     zero_css_parser::values::CaretColorValue::Color(c) => CaretColorComputedValue::Color(c),
@@ -2254,7 +2256,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "text-shadow" => {
-            if let Some(list) = zero_css_parser::values::parse_text_shadow_list(value) {
+            if let Some(list) = zero_css_parser::values::parse_text_shadow_list(value, style.color_scheme_dark) {
                 style.text_shadow = list
                     .into_iter()
                     .map(|v| TextShadowComputedValue {
@@ -2269,7 +2271,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         // box-shadow（CSS Backgrounds §7.2：<shadow>#，多阴影列表，R2304）。
         "box-shadow" => {
-            if let Some(list) = zero_css_parser::values::parse_box_shadow_list(value) {
+            if let Some(list) = zero_css_parser::values::parse_box_shadow_list(value, style.color_scheme_dark) {
                 style.box_shadow = list
                     .into_iter()
                     .map(|v| BoxShadowComputedValue {

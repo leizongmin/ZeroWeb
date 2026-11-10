@@ -3465,7 +3465,7 @@ fn debug_r4138_parse_bisect() {
         ("calc-blur", "10px 20px calc(3em + 12px) black"),
         ("full", "calc(1em + 10px) calc(2em + 11px) calc(3em + 12px) black"),
     ] {
-        let r = zero_css_parser::values::parse_box_shadow(val);
+        let r = zero_css_parser::values::parse_box_shadow(val, false);
         println!("{label}: {}", if r.is_some() { "OK" } else { "None" });
     }
 }

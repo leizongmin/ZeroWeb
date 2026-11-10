@@ -10,7 +10,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.csswg.org/css-ui-4/#appearance-switching
         "appearance" => values::parse_appearance(value).is_some(),
         "accent-color" => values::parse_accent_color(value).is_some(),
-        "caret-color" => values::parse_caret_color(value).is_some(),
+        "caret-color" => values::parse_caret_color(value, false).is_some(),
         // https://drafts.csswg.org/compositing-1/#mix-blend-mode
         "mix-blend-mode" => values::parse_mix_blend_mode(value).is_some(),
         "isolation" => values::parse_isolation(value).is_some(),
@@ -35,8 +35,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.fxtf.org/filter-effects-1/
         "filter" | "backdrop-filter" => values::parse_filter_list(value).is_some(),
         // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers
-        "text-shadow" => values::parse_text_shadow_list(value).is_some(),
-        "box-shadow" => values::parse_box_shadow_list(value).is_some(),
+        "text-shadow" => values::parse_text_shadow_list(value, false).is_some(),
+        "box-shadow" => values::parse_box_shadow_list(value, false).is_some(),
         // https://drafts.csswg.org/css-text-decor-3/#text-emphasis-property
         "text-emphasis" => shorthand_supported(property, value),
         // https://www.w3.org/TR/css-flexbox-1/#flex-property

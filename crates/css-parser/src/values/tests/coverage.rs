@@ -532,7 +532,7 @@ fn test_gradient_unknown_type() {
 
 #[test]
 fn test_text_shadow_basic_two_values() {
-    let result = parse_text_shadow("2px 2px");
+    let result = parse_text_shadow("2px 2px", false);
     assert!(result.is_some());
 }
 
@@ -540,37 +540,37 @@ fn test_text_shadow_basic_two_values() {
 fn test_text_shadow_with_color_first() {
     // R2477：CSS Text Decoration §3 `<length>{2,3} && <color>?` 的 `&&` 允许颜色任意位置。
     // 此处测长度在前、颜色在末（blur 后）的合法语法。
-    let result = parse_text_shadow("2px 2px 4px red");
+    let result = parse_text_shadow("2px 2px 4px red", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_text_shadow_with_color_last() {
-    let result = parse_text_shadow("2px 2px red");
+    let result = parse_text_shadow("2px 2px red", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_text_shadow_with_blur_and_color() {
-    let result = parse_text_shadow("2px 2px 4px rgba(0,0,0,0.5)");
+    let result = parse_text_shadow("2px 2px 4px rgba(0,0,0,0.5)", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_text_shadow_color_then_blur() {
-    let result = parse_text_shadow("2px 2px red 4px");
+    let result = parse_text_shadow("2px 2px red 4px", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_text_shadow_none() {
-    let result = parse_text_shadow("none");
+    let result = parse_text_shadow("none", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_text_shadow_too_few_values() {
-    assert!(parse_text_shadow("2px").is_none());
+    assert!(parse_text_shadow("2px", false).is_none());
 }
 
 #[test]
@@ -583,7 +583,7 @@ fn test_text_shadow_rejects_invalid_length_grammar() {
         "2px 2px infpx",
         "2px 2px NaNpx",
     ] {
-        assert!(parse_text_shadow(value).is_none(), "{value} should be rejected");
+        assert!(parse_text_shadow(value, false).is_none(), "{value} should be rejected");
     }
 }
 
@@ -591,48 +591,49 @@ fn test_text_shadow_rejects_invalid_length_grammar() {
 
 #[test]
 fn test_text_shadow_list_none_is_empty() {
-    let list = parse_text_shadow_list("none").expect("none → Some(空 Vec)");
+    let list = parse_text_shadow_list("none", false).expect("none → Some(空 Vec)");
     assert!(list.is_empty(), "none 应解析为空阴影列表");
 }
 
 #[test]
 fn test_text_shadow_list_single() {
-    let list = parse_text_shadow_list("2px 2px 4px red").expect("单阴影 → Some");
+    let list = parse_text_shadow_list("2px 2px 4px red", false).expect("单阴影 → Some");
     assert_eq!(list.len(), 1);
 }
 
 #[test]
 fn test_text_shadow_list_multiple_comma() {
     // 顶层逗号分割：3 个独立阴影
-    let list = parse_text_shadow_list("1px 1px red, 2px 2px green, 3px 3px blue").expect("多阴影 → Some");
+    let list = parse_text_shadow_list("1px 1px red, 2px 2px green, 3px 3px blue", false).expect("多阴影 → Some");
     assert_eq!(list.len(), 3, "应拆为 3 个阴影");
 }
 
 #[test]
 fn test_text_shadow_list_rgb_internal_commas_preserved() {
     // paren-aware：rgba()/rgb() 的内部逗号不应拆分 → 仍是 2 个阴影
-    let list = parse_text_shadow_list("1px 1px rgb(0, 0, 0), 2px 2px rgba(255, 0, 0, 0.5)").expect("含函数逗号 → Some");
+    let list =
+        parse_text_shadow_list("1px 1px rgb(0, 0, 0), 2px 2px rgba(255, 0, 0, 0.5)", false).expect("含函数逗号 → Some");
     assert_eq!(list.len(), 2, "rgb()/rgba() 内部逗号必须保持一体，应为 2 个阴影");
 }
 
 #[test]
 fn test_text_shadow_list_any_invalid_is_none() {
     // 任意单个阴影解析失败 → 整列表 None
-    assert!(parse_text_shadow_list("1px 1px red, bogus, 2px 2px blue").is_none());
+    assert!(parse_text_shadow_list("1px 1px red, bogus, 2px 2px blue", false).is_none());
 }
 
 #[test]
 fn test_text_shadow_list_empty_is_none() {
     // 空字符串 / 纯空白 → None
-    assert!(parse_text_shadow_list("").is_none());
-    assert!(parse_text_shadow_list("   ").is_none());
+    assert!(parse_text_shadow_list("", false).is_none());
+    assert!(parse_text_shadow_list("   ", false).is_none());
 }
 
 #[test]
 fn test_text_shadow_list_empty_comma_items_are_invalid() {
-    assert!(parse_text_shadow_list("1px 1px red,").is_none());
-    assert!(parse_text_shadow_list(", 1px 1px red").is_none());
-    assert!(parse_text_shadow_list("1px 1px red,, 2px 2px blue").is_none());
+    assert!(parse_text_shadow_list("1px 1px red,", false).is_none());
+    assert!(parse_text_shadow_list(", 1px 1px red", false).is_none());
+    assert!(parse_text_shadow_list("1px 1px red,, 2px 2px blue", false).is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -641,60 +642,60 @@ fn test_text_shadow_list_empty_comma_items_are_invalid() {
 
 #[test]
 fn test_box_shadow_basic() {
-    let result = parse_box_shadow("2px 2px");
+    let result = parse_box_shadow("2px 2px", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_with_blur() {
-    let result = parse_box_shadow("2px 2px 4px");
+    let result = parse_box_shadow("2px 2px 4px", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_with_spread() {
-    let result = parse_box_shadow("2px 2px 4px 1px");
+    let result = parse_box_shadow("2px 2px 4px 1px", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_with_color() {
-    let result = parse_box_shadow("2px 2px 4px red");
+    let result = parse_box_shadow("2px 2px 4px red", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_inset() {
-    let result = parse_box_shadow("inset 2px 2px 4px red");
+    let result = parse_box_shadow("inset 2px 2px 4px red", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_duplicate_inset_is_invalid() {
-    assert!(parse_box_shadow("inset 1px 1px inset").is_none());
-    assert!(parse_box_shadow("1px 1px inset inset").is_none());
+    assert!(parse_box_shadow("inset 1px 1px inset", false).is_none());
+    assert!(parse_box_shadow("1px 1px inset inset", false).is_none());
 }
 
 #[test]
 fn test_box_shadow_inset_with_spread() {
-    let result = parse_box_shadow("inset 2px 2px 4px 1px red");
+    let result = parse_box_shadow("inset 2px 2px 4px 1px red", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_none() {
-    let result = parse_box_shadow("none");
+    let result = parse_box_shadow("none", false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_box_shadow_too_few_values() {
-    assert!(parse_box_shadow("2px").is_none());
+    assert!(parse_box_shadow("2px", false).is_none());
 }
 
 #[test]
 fn test_box_shadow_rejects_invalid_length_grammar() {
-    assert!(parse_box_shadow("-2px -3px 4px -1px red").is_some());
+    assert!(parse_box_shadow("-2px -3px 4px -1px red", false).is_some());
     for value in [
         "2px 2px -1px",
         "2px 2px 10%",
@@ -703,7 +704,7 @@ fn test_box_shadow_rejects_invalid_length_grammar() {
         "2px 2px infpx",
         "2px 2px NaNpx",
     ] {
-        assert!(parse_box_shadow(value).is_none(), "{value} should be rejected");
+        assert!(parse_box_shadow(value, false).is_none(), "{value} should be rejected");
     }
 }
 
@@ -711,13 +712,13 @@ fn test_box_shadow_rejects_invalid_length_grammar() {
 
 #[test]
 fn test_box_shadow_list_none_is_empty() {
-    let list = parse_box_shadow_list("none").expect("none → Some(空 Vec)");
+    let list = parse_box_shadow_list("none", false).expect("none → Some(空 Vec)");
     assert!(list.is_empty(), "none 应解析为空阴影列表");
 }
 
 #[test]
 fn test_box_shadow_list_single() {
-    let list = parse_box_shadow_list("2px 2px 4px red").expect("单阴影 → Some");
+    let list = parse_box_shadow_list("2px 2px 4px red", false).expect("单阴影 → Some");
     assert_eq!(list.len(), 1);
     assert!(list[0].inset == false);
 }
@@ -725,21 +726,22 @@ fn test_box_shadow_list_single() {
 #[test]
 fn test_box_shadow_list_multiple_comma() {
     // 顶层逗号分割：3 个独立阴影
-    let list = parse_box_shadow_list("1px 1px red, 2px 2px green, 3px 3px blue").expect("多阴影 → Some");
+    let list = parse_box_shadow_list("1px 1px red, 2px 2px green, 3px 3px blue", false).expect("多阴影 → Some");
     assert_eq!(list.len(), 3, "应拆为 3 个阴影");
 }
 
 #[test]
 fn test_box_shadow_list_rgb_internal_commas_preserved() {
     // paren-aware：rgb()/rgba() 的内部逗号不应拆分 → 仍是 2 个阴影
-    let list = parse_box_shadow_list("1px 1px rgb(0, 0, 0), 2px 2px rgba(255, 0, 0, 0.5)").expect("含函数逗号 → Some");
+    let list =
+        parse_box_shadow_list("1px 1px rgb(0, 0, 0), 2px 2px rgba(255, 0, 0, 0.5)", false).expect("含函数逗号 → Some");
     assert_eq!(list.len(), 2, "rgb()/rgba() 内部逗号必须保持一体，应为 2 个阴影");
 }
 
 #[test]
 fn test_box_shadow_list_inset_mixed() {
     // 列表中可混入 inset
-    let list = parse_box_shadow_list("inset 1px 1px red, 2px 2px blue").expect("混 inset → Some");
+    let list = parse_box_shadow_list("inset 1px 1px red, 2px 2px blue", false).expect("混 inset → Some");
     assert_eq!(list.len(), 2);
     assert!(list[0].inset, "首个应为 inset");
     assert!(!list[1].inset, "第二个应为 outset");
@@ -748,21 +750,21 @@ fn test_box_shadow_list_inset_mixed() {
 #[test]
 fn test_box_shadow_list_any_invalid_is_none() {
     // 任意单个阴影解析失败 → 整列表 None（CSS 错误恢复：整条声明无效）
-    assert!(parse_box_shadow_list("1px 1px red, bogus, 2px 2px blue").is_none());
+    assert!(parse_box_shadow_list("1px 1px red, bogus, 2px 2px blue", false).is_none());
 }
 
 #[test]
 fn test_box_shadow_list_empty_is_none() {
     // 空字符串 / 纯空白 → None（无有效阴影）
-    assert!(parse_box_shadow_list("").is_none());
-    assert!(parse_box_shadow_list("   ").is_none());
+    assert!(parse_box_shadow_list("", false).is_none());
+    assert!(parse_box_shadow_list("   ", false).is_none());
 }
 
 #[test]
 fn test_box_shadow_list_empty_comma_items_are_invalid() {
-    assert!(parse_box_shadow_list("1px 1px red,").is_none());
-    assert!(parse_box_shadow_list(", 1px 1px red").is_none());
-    assert!(parse_box_shadow_list("1px 1px red,, 2px 2px blue").is_none());
+    assert!(parse_box_shadow_list("1px 1px red,", false).is_none());
+    assert!(parse_box_shadow_list(", 1px 1px red", false).is_none());
+    assert!(parse_box_shadow_list("1px 1px red,, 2px 2px blue", false).is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════
