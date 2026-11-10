@@ -352,13 +352,31 @@ fn test_resolve_grid_placement_with_line_numbers() {
 fn test_resolve_grid_placement_with_span() {
     let mut style = ComputedStyle::default();
     style.grid_row_start = GridLineValue::Line { line: 1, name: None };
-    style.grid_row_end = GridLineValue::Span { count: Some(2), name: None };
-    style.grid_column_start = GridLineValue::Span { count: Some(3), name: None };
+    style.grid_row_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
+    style.grid_column_start = GridLineValue::Span {
+        count: Some(3),
+        name: None,
+    };
     style.grid_column_end = GridLineValue::Line { line: 5, name: None };
     let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
     assert_eq!(rs, GridLineValue::Line { line: 1, name: None });
-    assert_eq!(re, GridLineValue::Span { count: Some(2), name: None });
-    assert_eq!(cs, GridLineValue::Span { count: Some(3), name: None });
+    assert_eq!(
+        re,
+        GridLineValue::Span {
+            count: Some(2),
+            name: None
+        }
+    );
+    assert_eq!(
+        cs,
+        GridLineValue::Span {
+            count: Some(3),
+            name: None
+        }
+    );
     assert_eq!(ce, GridLineValue::Line { line: 5, name: None });
 }
 

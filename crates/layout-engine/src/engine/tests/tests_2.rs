@@ -378,9 +378,15 @@ fn test_grid_row_and_column_span() {
     // big: spans 2 cols, 2 rows
     let mut big_style = ComputedStyle::default();
     big_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
-    big_style.grid_column_end = GridLineValue::Span { count: Some(2), name: None };
+    big_style.grid_column_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     big_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
-    big_style.grid_row_end = GridLineValue::Span { count: Some(2), name: None };
+    big_style.grid_row_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     styles.insert(big, big_style);
 
     // small: col 3, row 1

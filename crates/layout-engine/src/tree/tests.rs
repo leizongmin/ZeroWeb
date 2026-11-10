@@ -1358,7 +1358,10 @@ fn test_build_grid_items_all_span_placement() {
     // item1: column span 2
     let mut item1_style = ComputedStyle::default();
     item1_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
-    item1_style.grid_column_end = GridLineValue::Span { count: Some(2), name: None };
+    item1_style.grid_column_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     item1_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
     item1_style.grid_row_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(item1, item1_style);
@@ -1366,7 +1369,10 @@ fn test_build_grid_items_all_span_placement() {
     // item2: column span 1, 下一行（会溢出到隐式行）
     let mut item2_style = ComputedStyle::default();
     item2_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
-    item2_style.grid_column_end = GridLineValue::Span { count: Some(1), name: None };
+    item2_style.grid_column_end = GridLineValue::Span {
+        count: Some(1),
+        name: None,
+    };
     item2_style.grid_row_start = GridLineValue::Line { line: 2, name: None };
     item2_style.grid_row_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(item2, item2_style);

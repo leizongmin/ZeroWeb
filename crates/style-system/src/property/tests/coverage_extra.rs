@@ -16,13 +16,25 @@ fn test_parse_grid_line_named_area_various() {
 
 #[test]
 fn test_parse_grid_line_negative() {
-    assert!(matches!(parse_grid_line("-1"), Some(GridLineValue::Line { line: -1, name: None })));
-    assert!(matches!(parse_grid_line("-5"), Some(GridLineValue::Line { line: -5, name: None })));
+    assert!(matches!(
+        parse_grid_line("-1"),
+        Some(GridLineValue::Line { line: -1, name: None })
+    ));
+    assert!(matches!(
+        parse_grid_line("-5"),
+        Some(GridLineValue::Line { line: -5, name: None })
+    ));
 }
 
 #[test]
 fn test_parse_grid_line_span_various() {
-    assert!(matches!(parse_grid_line("span 3"), Some(GridLineValue::Span { count: Some(3), name: None })));
+    assert!(matches!(
+        parse_grid_line("span 3"),
+        Some(GridLineValue::Span {
+            count: Some(3),
+            name: None
+        })
+    ));
     // `span3` 无空格是合法 custom-ident 非 span 组合（css-grid-2 §7.1 `span` 须为
     // 独立 token；前缀匹配系既有 token 边界缺陷，随组合形建模一并纠正）。
     assert!(matches!(parse_grid_line("span3"), Some(GridLineValue::Name(_))));
@@ -31,7 +43,10 @@ fn test_parse_grid_line_span_various() {
     // span + 命名线（css-grid-2 `[ span && <integer>? && <custom-ident>? ]`）。
     assert!(matches!(
         parse_grid_line("span abc"),
-        Some(GridLineValue::Span { count: None, name: Some(_) })
+        Some(GridLineValue::Span {
+            count: None,
+            name: Some(_)
+        })
     ));
 }
 
@@ -39,7 +54,13 @@ fn test_parse_grid_line_span_various() {
 fn test_parse_grid_line_span_keyword_is_case_insensitive() {
     // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
     // CSS-defined grid-line `span` keyword is ASCII case-insensitive.
-    assert!(matches!(parse_grid_line("SPAN 3"), Some(GridLineValue::Span { count: Some(3), name: None })));
+    assert!(matches!(
+        parse_grid_line("SPAN 3"),
+        Some(GridLineValue::Span {
+            count: Some(3),
+            name: None
+        })
+    ));
     // 无空格形态仍是 custom-ident（大小写不敏感性质由带空格形态验证）。
     assert!(matches!(parse_grid_line("SpAn3"), Some(GridLineValue::Name(_))));
     assert!(matches!(parse_grid_line("SPANISH"), Some(GridLineValue::Name(_))));

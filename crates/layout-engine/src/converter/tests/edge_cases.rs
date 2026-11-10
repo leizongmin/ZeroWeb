@@ -420,7 +420,10 @@ fn test_convert_grid_line_name_preserved() {
 /// 测试 convert_grid_line：Span 值。
 #[test]
 fn test_convert_grid_line_span() {
-    let result = convert_grid_line(&GridLineValue::Span { count: Some(3), name: None });
+    let result = convert_grid_line(&GridLineValue::Span {
+        count: Some(3),
+        name: None,
+    });
     assert_eq!(result, taffy::style::GridPlacement::from_span(3));
 }
 

@@ -853,7 +853,10 @@ fn test_grid_with_span() {
 
     let mut wide_style = ComputedStyle::default();
     wide_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
-    wide_style.grid_column_end = GridLineValue::Span { count: Some(2), name: None };
+    wide_style.grid_column_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     wide_style.width = LengthValue::Px(200.0);
     wide_style.height = LengthValue::Px(100.0);
     styles.insert(wide_item, wide_style);

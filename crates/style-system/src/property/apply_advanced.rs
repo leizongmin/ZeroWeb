@@ -479,12 +479,10 @@ fn border_image_source_to_computed(
             image: Box::new(border_image_source_branch_to_computed(*image, dark)),
             filters: filters.into_iter().map(filter_value_to_computed).collect(),
         },
-        BorderImageSourceValue::LightDark { light, dark: dark_branch } => {
-            border_image_source_branch_to_computed(
-                (*if dark { dark_branch } else { light }).clone(),
-                dark,
-            )
-        }
+        BorderImageSourceValue::LightDark {
+            light,
+            dark: dark_branch,
+        } => border_image_source_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark),
     }
 }
 
@@ -497,9 +495,10 @@ fn border_image_source_branch_to_computed(
     use zero_css_parser::values::BorderImageSourceValue;
     match v {
         BorderImageSourceValue::None => BorderImageSourceComputedValue::TransparentImage,
-        BorderImageSourceValue::LightDark { light, dark: dark_branch } => {
-            border_image_source_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark)
-        }
+        BorderImageSourceValue::LightDark {
+            light,
+            dark: dark_branch,
+        } => border_image_source_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark),
         other => border_image_source_to_computed(other, dark),
     }
 }
@@ -522,9 +521,10 @@ fn bg_image_value_to_computed(
                 filters: filters.into_iter().map(filter_value_to_computed).collect(),
             }
         }
-        zero_css_parser::values::BackgroundImageValue::LightDark { light, dark: dark_branch } => {
-            bg_image_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark)
-        }
+        zero_css_parser::values::BackgroundImageValue::LightDark {
+            light,
+            dark: dark_branch,
+        } => bg_image_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark),
     }
 }
 
@@ -536,9 +536,10 @@ fn bg_image_branch_to_computed(
 ) -> BackgroundImageComputedValue {
     match v {
         zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::TransparentImage,
-        zero_css_parser::values::BackgroundImageValue::LightDark { light, dark: dark_branch } => {
-            bg_image_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark)
-        }
+        zero_css_parser::values::BackgroundImageValue::LightDark {
+            light,
+            dark: dark_branch,
+        } => bg_image_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark),
         other => bg_image_value_to_computed(other, dark),
     }
 }

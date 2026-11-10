@@ -1065,9 +1065,21 @@ fn test_parse_grid_auto_flow_variants() {
 #[test]
 fn test_parse_grid_line_variants() {
     assert!(matches!(parse_grid_line("auto"), Some(GridLineValue::Auto)));
-    assert!(matches!(parse_grid_line("1"), Some(GridLineValue::Line { line: 1, name: None })));
-    assert!(matches!(parse_grid_line("-1"), Some(GridLineValue::Line { line: -1, name: None })));
-    assert!(matches!(parse_grid_line("span 2"), Some(GridLineValue::Span { count: Some(2), name: None })));
+    assert!(matches!(
+        parse_grid_line("1"),
+        Some(GridLineValue::Line { line: 1, name: None })
+    ));
+    assert!(matches!(
+        parse_grid_line("-1"),
+        Some(GridLineValue::Line { line: -1, name: None })
+    ));
+    assert!(matches!(
+        parse_grid_line("span 2"),
+        Some(GridLineValue::Span {
+            count: Some(2),
+            name: None
+        })
+    ));
     // `span3` 无空格是合法 custom-ident 非 span 组合（css-grid-2 §7.1 `span` 须为独立 token）。
     assert!(matches!(parse_grid_line("span3"), Some(GridLineValue::Name(_))));
     assert!(matches!(parse_grid_line("header"), Some(GridLineValue::Name(_))));

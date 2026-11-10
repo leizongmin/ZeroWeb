@@ -661,14 +661,21 @@ pub(super) fn convert_grid_line(value: &GridLineValue) -> taffy::style::GridPlac
         // line-names 解析面）。FIXME(css-grid-2 §8): 消费模板命名线表后改
         // NamedLine/NamedSpan 精确落位。
         GridLineValue::Line { line, .. } => taffy::style::GridPlacement::from_line_index(*line),
-        GridLineValue::Span { count: Some(count), name: None } => taffy::style::GridPlacement::from_span(*count),
+        GridLineValue::Span {
+            count: Some(count),
+            name: None,
+        } => taffy::style::GridPlacement::from_span(*count),
         // 'span a' / 'span 2 a'：span 至第 n 条命名线（css-grid-2 §8.3——命名线
         // 不足时计所有隐式线）。
-        GridLineValue::Span { count, name: Some(name) } => {
-            taffy::style::GridPlacement::NamedSpan(name.clone(), count.unwrap_or(1))
-        }
+        GridLineValue::Span {
+            count,
+            name: Some(name),
+        } => taffy::style::GridPlacement::NamedSpan(name.clone(), count.unwrap_or(1)),
         // 裸 `span`：无计数无名线，span 1（css-grid-2 §8.3 缺省跨度）。
-        GridLineValue::Span { count: None, name: None } => taffy::style::GridPlacement::Span(1),
+        GridLineValue::Span {
+            count: None,
+            name: None,
+        } => taffy::style::GridPlacement::Span(1),
         GridLineValue::Name(name) => taffy::style::GridPlacement::NamedLine(name.clone(), 0),
     }
 }

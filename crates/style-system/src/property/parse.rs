@@ -107,7 +107,10 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
     }
     match (int_of(tokens[0]), tokens.len()) {
         (Some(n), 1) => Some(GridLineValue::Line { line: n, name: None }),
-        (Some(n), 2) => ident_of(tokens[1]).map(|name| GridLineValue::Line { line: n, name: Some(name) }),
+        (Some(n), 2) => ident_of(tokens[1]).map(|name| GridLineValue::Line {
+            line: n,
+            name: Some(name),
+        }),
         (None, 1) => ident_of(tokens[0]).map(GridLineValue::Name),
         // [<integer> && <custom-ident>?] 任意序：ident 在前整数在后。
         (None, 2) => {

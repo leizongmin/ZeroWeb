@@ -1887,7 +1887,6 @@ fn test_parse_counter_set_invalid() {
 
 #[test]
 fn test_parse_background_image_light_dark() {
-
     // 双 url 支。
     assert_eq!(
         parse_background_image("light-dark(url('light.png'), url('dark.png'))"),

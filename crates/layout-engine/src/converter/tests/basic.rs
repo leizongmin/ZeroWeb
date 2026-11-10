@@ -434,7 +434,10 @@ fn test_convert_grid_placement() {
 fn test_convert_grid_span() {
     use zero_style_system::GridLineValue;
     let mut style = ComputedStyle::default();
-    style.grid_column_start = GridLineValue::Span { count: Some(2), name: None };
+    style.grid_column_start = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     style.grid_row_start = GridLineValue::Line { line: -1, name: None };
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.grid_column.start, taffy::style::GridPlacement::from_span(2));

@@ -151,7 +151,10 @@ pub fn apply_property_value_with_quirks(
                             }
                         }
                         ListStyleImageValue::Url(url) => ListStyleImageComputedValue::Url(url),
-                        ListStyleImageValue::LightDark { light, dark: dark_branch } => {
+                        ListStyleImageValue::LightDark {
+                            light,
+                            dark: dark_branch,
+                        } => {
                             let pick = if dark { *dark_branch } else { *light };
                             resolve(pick, dark, true)
                         }
