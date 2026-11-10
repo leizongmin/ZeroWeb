@@ -17103,15 +17103,55 @@
   // （None，spec 事件处理器不继承触发脚本 nonce，体内 import() 的 module fetch 被
   // 宿主 CSP 检查阻止）；字符串 timer 传**注册期捕获**的脚本 nonce（字符串编译继承
   // nonce）。swapper 未注册（QuickJS 后端）typeof 降级零变更。
-  function _zwCallHandlerSwapBase(fn, thisArg, ev, base, nonce) {
+  function _zwCallHandlerSwapBase(fn, thisArg, ev, base, nonce, cred, win, doc) {
     var swap = typeof globalThis.__zwSwapImportReferrer === 'function' && base != null;
     var prev = swap ? globalThis.__zwSwapImportReferrer(base) : null;
     var swapN = typeof globalThis.__zwSwapImportNonce === 'function';
     var prevN = swapN ? globalThis.__zwSwapImportNonce(nonce) : null;
+    // s382（string timer 文档上下文面，调用方 = s90 字符串 timer 臂传第 6-8 参；inline
+    // 处理器臂 5 参形 → 本臂全部 no-op 零漂移）：cred 非 undefined → 换入注册期捕获
+    // credentials（s340 同语义——fire 窗槽值已被后续段复位行改写）；win 在场 → 换入
+    // 子文档窗——裸 `window`/`self`/`document` 换形参化（globalThis 三属性均普通可写
+    // 赋值定义，part01:12357/part06:7668）+ s339 双槽置位（动态 import IIFE 包裹在求
+    // 值时读 `__zwActiveIframeWin`，es_module s339 桥；模块体 `window[id]=…` 须落子
+    // 窗）。finally 换回含槽缺席恢复（delete），求值窗零外溢。
+    var swapC = cred !== undefined;
+    var prevC = undefined;
+    if (swapC) {
+      prevC = '__zwActiveScriptCred' in globalThis ? globalThis.__zwActiveScriptCred : undefined;
+      globalThis.__zwActiveScriptCred = cred;
+    }
+    var prevW = undefined, prevSelf = undefined, prevD = undefined;
+    var prevSlotW = undefined, prevSlotD = undefined;
+    if (win != null) {
+      prevW = globalThis.window;
+      prevSelf = globalThis.self;
+      prevD = globalThis.document;
+      prevSlotW = '__zwActiveIframeWin' in globalThis ? globalThis.__zwActiveIframeWin : undefined;
+      prevSlotD = '__zwActiveIframeDoc' in globalThis ? globalThis.__zwActiveIframeDoc : undefined;
+      globalThis.window = win;
+      globalThis.self = win;
+      if (doc != null) globalThis.document = doc;
+      globalThis.__zwActiveIframeWin = win;
+      if (doc != null) globalThis.__zwActiveIframeDoc = doc;
+    }
     try { return fn.call(thisArg, ev); }
     finally {
       if (swap) globalThis.__zwSwapImportReferrer(prev);
       if (swapN) globalThis.__zwSwapImportNonce(prevN);
+      if (swapC) {
+        if (prevC === undefined) delete globalThis.__zwActiveScriptCred;
+        else globalThis.__zwActiveScriptCred = prevC;
+      }
+      if (win != null) {
+        globalThis.window = prevW;
+        globalThis.self = prevSelf;
+        if (doc != null) globalThis.document = prevD;
+        if (prevSlotW === undefined) delete globalThis.__zwActiveIframeWin;
+        else globalThis.__zwActiveIframeWin = prevSlotW;
+        if (prevSlotD === undefined) delete globalThis.__zwActiveIframeDoc;
+        else globalThis.__zwActiveIframeDoc = prevSlotD;
+      }
     }
   }
   function _zwCallHandlerDocBase(fn, thisArg, ev) {

@@ -3541,6 +3541,14 @@
           return { name: p339[0], had: p339[1], val: p339[1] ? globalThis[p339[0]] : undefined };
         });
       } catch (_e339cap) {}
+      // s382：合并体求值窗置位子文档槽——段内字符串 timer 臂（s90）注册期捕获的
+      // 文档上下文通道（credentials 有 s340 段序前置复位行，window/document 无等
+      // 价通道）。缺此臂时子文档顶层字符串 timer 捕获空槽，fire 窗编译体裸 window
+      // 解析宿主（探针 A/B 实证 face）。恢复随 finally 窗（与 s339 同形）。
+      var _zwSlotW382 = '__zwActiveIframeWin' in globalThis ? globalThis.__zwActiveIframeWin : undefined;
+      var _zwSlotD382 = '__zwActiveIframeDoc' in globalThis ? globalThis.__zwActiveIframeDoc : undefined;
+      globalThis.__zwActiveIframeWin = win;
+      globalThis.__zwActiveIframeDoc = doc;
       try {
         fn.call(
           win, win, win, globalThis, globalThis, doc, loc,
@@ -3548,6 +3556,10 @@
           win.Response, win.URL, win.caches, win.history
         );
       } finally {
+        if (_zwSlotW382 === undefined) delete globalThis.__zwActiveIframeWin;
+        else globalThis.__zwActiveIframeWin = _zwSlotW382;
+        if (_zwSlotD382 === undefined) delete globalThis.__zwActiveIframeDoc;
+        else globalThis.__zwActiveIframeDoc = _zwSlotD382;
         try {
           if (_zwReg339Pre) {
             for (var _ri339 = 0; _ri339 < _zwReg339Pre.length; _ri339++) {
@@ -7646,15 +7658,26 @@
     // 值、finally 换回（同 inline 处理器换基模式，part03 `_zwCallHandlerSwapBase`）。
     // s92（string-compilation CSP nonce 面）：nonce 同捕获——spec 字符串编译继承触发
     // 脚本 nonce，fire 窗换入注册期捕获值（无 swapper 捕获 '' 恒等）。
+    // s382（string timer 文档上下文面）：cred/子文档槽同捕获——`new Function` 编译体
+    // 裸 `window`/`document` 解析宿主全局（globalThis.window=globalThis，part06），
+    // 非注册段合并体形参（子窗）；`.then(window.resolve)` 引用解析落顶窗致子文档
+    // promise_test 链断裂（dynamic-imports-credentials-setTimeout 文件级 Timeout 根因，
+    // 探针 A/B：编译体内 window===globalThis 槽值 undefined，闭包臂经作用域链正确解
+    // 析子窗）。credentials 槽同理：fire 窗槽值 = 段序末尾复位行值，非注册 script 元素
+    // mode。子文档槽在注册窗的置位通道 = s339 体调度窗 + s382 合并体求值窗。
     if (typeof fn === 'string') {
       var _zwCapBase = (typeof globalThis.__zwSwapImportReferrer === 'function')
         ? globalThis.__zwSwapImportReferrer() : null;
       var _zwCapNonce = (typeof globalThis.__zwSwapImportNonce === 'function')
         ? globalThis.__zwSwapImportNonce() : '';
+      var _zwCapCred = globalThis.__zwActiveScriptCred;
+      var _zwCapWin = globalThis.__zwActiveIframeWin;
+      var _zwCapDoc = globalThis.__zwActiveIframeDoc;
       var _zwCompiled = new Function(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
-          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce);
+          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce,
+            _zwCapCred, _zwCapWin, _zwCapDoc);
         }
         return _zwCompiled.apply(this, arguments);
       };
@@ -7695,15 +7718,20 @@
     // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
     // s91：注册期捕获脚本基同 setTimeout（fire 时 swap 求值 finally 换回）。
     // s92：nonce 同捕获（字符串编译继承触发脚本 nonce）。
+    // s382：cred/子文档槽同捕获（setTimeout 臂同注释）。
     if (typeof fn === 'string') {
       var _zwCapBaseI = (typeof globalThis.__zwSwapImportReferrer === 'function')
         ? globalThis.__zwSwapImportReferrer() : null;
       var _zwCapNonceI = (typeof globalThis.__zwSwapImportNonce === 'function')
         ? globalThis.__zwSwapImportNonce() : '';
+      var _zwCapCredI = globalThis.__zwActiveScriptCred;
+      var _zwCapWinI = globalThis.__zwActiveIframeWin;
+      var _zwCapDocI = globalThis.__zwActiveIframeDoc;
       var _zwCompiledI = new Function(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
-          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI);
+          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI,
+            _zwCapCredI, _zwCapWinI, _zwCapDocI);
         }
         return _zwCompiledI.apply(this, arguments);
       };
