@@ -1438,6 +1438,7 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
             let parts = split_top_level_selector_list(a).unwrap_or_else(|| vec![a]);
             let mut list = Vec::with_capacity(parts.len());
             for part in parts {
+                let part = trim_ascii_ws(part);
                 // complex 实参（顶层组合器/空白）conservative 不支持——解析失败 →
                 // 整个选择器 unsupported（与 shim handle 面语义对齐，不宽松吞错；
                 // tokenize 深度感知，`[title="a b"]` 引号/括号内空白不算组合器）。
