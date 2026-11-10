@@ -5492,7 +5492,7 @@ fn test_cssom_declared_color_context_normalization_t48() {
     assert_eq!(
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
         r##"{"anchorNamedUpper":"red","anchorHex4":"rgba(255, 0, 0, 0.667)","anchorBorderNamed":"border: 1px solid red;","anchorInvalidHexDrop":"","anchorBorderInvalidHex":"","cwwInherit":"inherit","cwwInitial":"initial","cwwUnset":"unset","cwwRevert":"revert","cwwRevertLayer":"revert-layer","cwwInheritImportant":"color: inherit !important;","sysCanvas":"canvas","sysButtonText":"buttontext","sysGrayText":"graytext","sysAccentColor":"accentcolor","sysSelectedItemText":"selecteditemtext","sysDepActiveCaption":"activecaption","sysDepInfoText":"infotext","sysDepThreeDShadow":"threedshadow","sysDepWindowText":"windowtext","sysDepBackground":"background","sysListItemNotAccepted":"","sysInBgShorthand":"background: canvas;","funcTight":"rgb(255, 0, 0)","funcUpper":"rgb(255, 0, 0)","funcAlphaDot5":"rgba(255, 0, 0, 0.5)","funcAlphaTrailing0":"rgba(255, 0, 0, 0.5)","funcWs":"rgb(255, 0, 0)","funcIntFloat":"rgb(255, 0, 0)","funcPlus":"rgb(255, 0, 0)","funcInBorder":"border: 1px solid rgb(255, 0, 0);","funcInBg":"background: rgb(255, 0, 0);","funcHslNoConvert":"rgb(255, 0, 0)","funcModernNoConvert":"rgb(255, 0, 0)","funcNoClamp":"rgb(255, 0, 0)","funcAlphaNoClamp":"rgba(255, 0, 0, 0)"}"##,
-        "T48 <color> 上下文归一全案（csswide lowercase + 系统色 41 键 + legacy 函数文本归一 + 转换面 DC-2 翻正为 Blink 对齐 + T46/T47 锚点）"
+        "T48 <color> 上下文归一全案（csswide lowercase + 系统色 42 键 + legacy 函数文本归一 + 转换面 DC-2 翻正为 Blink 对齐 + T46/T47 锚点）"
     );
 }
 
