@@ -707,7 +707,8 @@ fn test_query_selector_not_pseudo() {
 // https://www.w3.org/TR/selectors-4/#negation）——实参为 selector list，任一内层
 // 命中即否决，全不命中才通过。修前实参按单复合宽松解析（类名段分隔集不含逗号，
 // `.x,.missing` 吞成单类名 `x,missing`）→ 内层恒不匹配 → 否定失效全通过。
-// 20 键：列表语义 6Δ + complex 实参拒绝 4Δ + 单实参不变性/护栏负案 10 绿。
+// 23 键：列表语义 6Δ + complex 实参拒绝 4Δ + 单实参不变性/护栏负案 10 绿 +
+// DF-T56-1 返修 s326 混合列表伪类直评 3 键（2Δ 红先行 + 1 回归绿键）。
 #[test]
 fn test_query_not_selector_list_t56() {
     let doc = parse_html(
@@ -718,6 +719,8 @@ fn test_query_not_selector_list_t56() {
          <p id='p1' class='x'></p>\
          <ul id='u'><li id='l1' class='skip'>1</li><li id='l2'>2</li>\
          <li id='l3' class='skip'>3</li><li id='l4'>4</li></ul>\
+         <select id='sel'><option id='o1'></option><option id='o2'></option>\
+         <option id='o3' class='miss'></option></select>\
          </body></html>",
     );
     let root = doc.root();
@@ -766,6 +769,29 @@ fn test_query_not_selector_list_t56() {
     let nested_query = first_id(&doc, "div:not(:is(.a,.b))");
     // 空实参非法（非 forgiving 列表）。
     let empty_valid = selector_is_valid("div:not()");
+    // DF-T56-1 返修：s326 延后复评臂（:not 列表含 `:filtered` 内层时经 Document
+    // 复评）混合列表非 Filtered 内层须按 pos 完整直评（伪类语义不可静默丢弃）——
+    // `option:not(:filtered, :first-child)` 应只否决真 first-child 项与被过滤项。
+    let opt_not_filtered_first = ids_join(
+        &doc,
+        &doc.query_selector_all(root, "option:not(:filtered, :first-child)"),
+    );
+    let mut doc_injected = parse_html(
+        "<html><body><select id='sel'><option id='o1'></option><option id='o2'></option>\
+         <option id='o3'></option></select></body></html>",
+    );
+    let inj_root = doc_injected.root();
+    let inj_o2 = doc_injected.query_selector(inj_root, "#o2").unwrap();
+    doc_injected.set_filtered_options(vec![inj_o2]);
+    let opt_not_filtered_first_inj = ids_join(
+        &doc_injected,
+        &doc_injected.query_selector_all(inj_root, "option:not(:filtered, :first-child)"),
+    );
+    // s326 主消费面回归键：注入后 :not(:filtered) 否决被过滤项（行为不变）。
+    let opt_not_filtered_inj = ids_join(
+        &doc_injected,
+        &doc_injected.query_selector_all(inj_root, "option:not(:filtered)"),
+    );
     let actual = format!(
         "{{\"listDiv\":\"{list_div}\",\"listSpan\":\"{list_span}\",\"listLi\":\"{list_li}\",\
          \"listOrderFirst\":\"{list_order_first}\",\"listVetoFirst\":\"{list_veto_first}\",\
@@ -775,7 +801,10 @@ fn test_query_not_selector_list_t56() {
          \"complexGtQuery\":\"{gt_query}\",\"complexDescValid\":\"{desc_valid}\",\
          \"complexDescQuery\":\"{desc_query}\",\"attrSpaceValid\":\"{attr_valid}\",\
          \"attrSpaceQuery\":\"{attr_query}\",\"nestedIsValid\":\"{nested_valid}\",\
-         \"nestedIsQuery\":\"{nested_query}\",\"emptyValid\":\"{empty_valid}\"}}"
+         \"nestedIsQuery\":\"{nested_query}\",\"emptyValid\":\"{empty_valid}\",\
+         \"notFilteredFirstNoInject\":\"{opt_not_filtered_first}\",\
+         \"notFilteredFirstInjected\":\"{opt_not_filtered_first_inj}\",\
+         \"notFilteredOnlyInjected\":\"{opt_not_filtered_inj}\"}}"
     );
     let expected = concat!(
         r#"{"listDiv":"b,d","listSpan":"s2","listLi":"l2,l4","listOrderFirst":"b","#,
@@ -783,9 +812,11 @@ fn test_query_not_selector_list_t56() {
         r#""singlePseudoArg":"l2,l3,l4","chainedNot":"l2,l4","idNotHit":"p1","idNotVeto":"","#,
         r#""complexGtValid":"false","complexGtQuery":"","complexDescValid":"false","#,
         r#""complexDescQuery":"","attrSpaceValid":"true","attrSpaceQuery":"a,b,c","#,
-        r#""nestedIsValid":"false","nestedIsQuery":"","emptyValid":"false"}"#
+        r#""nestedIsValid":"false","nestedIsQuery":"","emptyValid":"false","#,
+        r#""notFilteredFirstNoInject":"o2,o3","notFilteredFirstInjected":"o3","#,
+        r#""notFilteredOnlyInjected":"o1,o3"}"#
     );
-    assert_eq!(actual, expected, "T56 :not 列表实参 selector-list 语义全案（20 键）");
+    assert_eq!(actual, expected, "T56 :not 列表实参 selector-list 语义全案（23 键）");
 }
 
 #[test]

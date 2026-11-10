@@ -2200,8 +2200,9 @@ impl Document {
             // `:filtered` 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见
             // query.rs Not 臂注）；守卫臂只接 Filtered 形，其余内层维持直评语义。
             // 任一内层命中即否决（Selectors L4 <negation>）：`:filtered` 内层静态
-            // 成分（tag/class/attr）直评 + is_filtered_option 经 Document 复评，
-            // 其余内层静态成分直评。
+            // 成分（tag/class/attr）直评 + is_filtered_option 经 Document 复评；
+            // 其余内层 matches_full(elem, pos) 完整直评（含伪类位置语义——DF-T56-1：
+            // 静态 matches 丢伪类使 `:not(:filtered, :first-child)` 恒否决）。
             crate::query::PseudoClass::Not(list)
                 if list.iter().any(|inner| {
                     inner
@@ -2218,7 +2219,7 @@ impl Document {
                             NodeKind::Element(elem) => Some(elem),
                             _ => None,
                         })
-                        .map(|elem| inner.matches(elem))
+                        .map(|elem| inner.matches_full(elem, pos))
                         .unwrap_or(false);
                     if inner
                         .pseudos
