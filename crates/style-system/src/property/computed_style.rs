@@ -457,6 +457,8 @@ pub struct ComputedStyle {
     pub image_rendering: ImageRenderingValue,
     /// isolation 属性。
     pub isolation: IsolationValue,
+    /// overlay 属性（CSS Position 4，top layer 成员标记）。
+    pub overlay: OverlayValue,
 
     // ── Break ──
     /// break-inside 属性。

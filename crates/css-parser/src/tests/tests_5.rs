@@ -1191,6 +1191,22 @@ fn test_parse_isolation_edge_cases() {
     assert_eq!(parse_isolation("inherit"), None);
 }
 
+#[test]
+/// 测试 parse_overlay 所有关键字（none、auto）、大小写不敏感及无效输入（CSS Position 4）。
+fn test_parse_overlay_edge_cases() {
+    use crate::values::{OverlayValue, parse_overlay};
+    // 所有关键字
+    assert_eq!(parse_overlay("none"), Some(OverlayValue::None));
+    assert_eq!(parse_overlay("auto"), Some(OverlayValue::Auto));
+    // 大小写不敏感
+    assert_eq!(parse_overlay("NONE"), Some(OverlayValue::None));
+    assert_eq!(parse_overlay("  Auto  "), Some(OverlayValue::Auto));
+    // 无效输入
+    assert_eq!(parse_overlay("isolate"), None);
+    assert_eq!(parse_overlay(""), None);
+    assert_eq!(parse_overlay("inherit"), None);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 32. parse_box_shadow / parse_text_shadow / parse_background_image 边界条件测试
 // ═══════════════════════════════════════════════════════════════════════

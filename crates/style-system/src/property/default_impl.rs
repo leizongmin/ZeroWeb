@@ -275,6 +275,7 @@ impl Default for ComputedStyle {
             box_decoration_break: BoxDecorationBreakValue::Slice,
             image_rendering: ImageRenderingValue::Auto,
             isolation: IsolationValue::Auto,
+            overlay: OverlayValue::None,
 
             // Break
             break_inside: BreakInsideValue::Auto,

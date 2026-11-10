@@ -434,6 +434,25 @@ pub fn parse_isolation(value: &str) -> Option<IsolationValue> {
     }
 }
 
+/// CSS overlay 属性值（CSS Position 4）。
+/// https://drafts.csswg.org/css-position-4/#overlay
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverlayValue {
+    /// none（初始值——不进 top layer）。
+    None,
+    /// auto（top layer 成员由 UA 规则/作者声明授予）。
+    Auto,
+}
+
+/// 解析 CSS overlay 属性值。
+pub fn parse_overlay(value: &str) -> Option<OverlayValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(OverlayValue::None),
+        "auto" => Some(OverlayValue::Auto),
+        _ => None,
+    }
+}
+
 /// CSS break-inside 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BreakInsideValue {

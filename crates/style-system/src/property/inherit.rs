@@ -1316,6 +1316,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.isolation = default_style.isolation;
             true
         }
+        "overlay" => {
+            style.overlay = default_style.overlay;
+            true
+        }
         // Break
         "break-inside" => {
             style.break_inside = default_style.break_inside;

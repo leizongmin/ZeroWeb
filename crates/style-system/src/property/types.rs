@@ -717,6 +717,16 @@ pub enum IsolationValue {
     Isolate,
 }
 
+/// CSS overlay 属性值（CSS Position 4）——top layer 成员标记。
+/// https://drafts.csswg.org/css-position-4/#overlay
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverlayValue {
+    /// none（初始值——不在 top layer）。
+    None,
+    /// auto（UA 规则/作者声明授予 top layer 成员资格）。
+    Auto,
+}
+
 /// CSS break-inside 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BreakInsideValue {
@@ -1780,6 +1790,8 @@ pub enum PropertyValue {
     ImageRendering(ImageRenderingValue),
     /// isolation 值。
     Isolation(IsolationValue),
+    /// overlay 值（CSS Position 4）。
+    Overlay(OverlayValue),
     /// break-inside 值。
     BreakInside(BreakInsideValue),
     /// break-before 值。

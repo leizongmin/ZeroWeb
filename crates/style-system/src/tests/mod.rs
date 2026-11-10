@@ -29,4 +29,5 @@ mod shadow_host_segment;
 mod shadow_slotted_segment;
 mod shorthand_coverage;
 mod style_system_coverage;
+mod ua_dialog_overlay;
 mod ua_dialog_visibility;

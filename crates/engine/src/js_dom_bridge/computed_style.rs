@@ -520,6 +520,13 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "writing-mode" => writing_mode_str(&style.writing_mode),
         "object-fit" => object_fit_str(&style.object_fit),
         "isolation" => isolation_str(&style.isolation),
+        // overlay（CSS Position 4）：computed 值关键字 none/auto（top layer 成员标记，
+        // dialog:modal UA 注入见 style-system lib.rs s377 块）。
+        // https://drafts.csswg.org/css-position-4/#overlay
+        "overlay" => match style.overlay {
+            zero_style_system::OverlayValue::None => "none".to_string(),
+            zero_style_system::OverlayValue::Auto => "auto".to_string(),
+        },
         "mix-blend-mode" => mix_blend_mode_str(&style.mix_blend_mode),
         "pointer-events" => pointer_events_str(&style.pointer_events),
         "user-select" => user_select_str(&style.user_select),

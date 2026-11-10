@@ -288,21 +288,27 @@ thread_local! {
     static APPLIED_RUNNER_MODAL_KEY: RefCell<(usize, usize, usize)> = const { RefCell::new((0, 0, 0)) };
 }
 
-/// runner 模态 dialog selector 集合（s373，2026-11-10）：shim `showModal()`/
-/// `close()` 尾部同步经 `__zw_set_modal_state` 宿主回调全量推送
-/// `_zwDialogModalAllSels()` 现值，gCS 代际槽 compute 前经
-/// [`apply_runner_modal_state`] 注入槽 doc 的 `modal_dialogs`——UA
-/// `dialog:modal { visibility: visible }`（style-system UA 注入）与 `:modal`
-/// 样式判定的 runner 面真相源。
-///
-/// 同步推送而非探测环拍间轮询：WPT test() 是同步函数——`showModal()` 后同 turn
-/// 内立即 `getComputedStyle` 断言（modal-dialog-in-visibility-hidden 三断言同
-/// turn 连跑），拍间轮询的集合滞后一拍（showModal 前的旧值）→ gCS 面恒 stale。
-/// pipeline `set_modal_dialog_selectors`（探测环仍喂）只服务 render fresh-parse
-/// 的每帧新 Document，gCS 走的代际槽 doc 是另一生命周期。全局 `RwLock` 非
-/// thread_local——镜像 [`QUERY_STYLE_OVERRIDE`] 先例（写入方与 compute 消费方
-/// 不必同线程）。`None` = 非 runner 环境（真渲染路径）→ 注入零干扰。
-static RUNNER_MODAL_SELECTORS: LazyLock<RwLock<Option<Arc<Vec<String>>>>> = LazyLock::new(|| RwLock::new(None));
+// runner 模态 dialog selector 集合（s373，2026-11-10）：shim `showModal()`/
+// `close()` 尾部同步经 `__zw_set_modal_state` 宿主回调全量推送
+// `_zwDialogModalAllSels()` 现值，gCS 代际槽 compute 前经
+// `apply_runner_modal_state` 注入槽 doc 的 `modal_dialogs`——UA
+// `dialog:modal { visibility: visible }`（style-system UA 注入）与 `:modal`
+// 样式判定的 runner 面真相源。
+//
+// 同步推送而非探测环拍间轮询：WPT test() 是同步函数——`showModal()` 后同 turn
+// 内立即 `getComputedStyle` 断言（modal-dialog-in-visibility-hidden 三断言同
+// turn 连跑），拍间轮询的集合滞后一拍（showModal 前的旧值）→ gCS 面恒 stale。
+// pipeline `set_modal_dialog_selectors`（探测环仍喂）只服务 render fresh-parse
+// 的每帧新 Document，gCS 走的代际槽 doc 是另一生命周期。s377 改 **thread_local**
+// （原全局 `RwLock`）：webview `execute_script` 直呼同线程（`&mut self`，宿主回调
+// 在 JS 栈内同步触发），同 webview 的推送与 gCS 消费恒同线程；runner 并行 jobs
+//（rayon 每线程独立 webview）下全局槽跨 job 串台——s377 注入重算使串台 modal 态
+// 直接写进他案 styles（dialog-overlay/visibility-hidden 非 modal 断言 got
+// auto/visible，solo 全绿/并行 sweep 红）。thread_local 按线程归属隔离（webview
+// 单线程执行序保证）。`None` = 非 runner 环境（真渲染路径）→ 注入零干扰。
+thread_local! {
+    static RUNNER_MODAL_SELECTORS: RefCell<Option<Arc<Vec<String>>>> = const { RefCell::new(None) };
+}
 
 /// `__zw_set_modal_state` 宿主回调（shim showModal/close/reset 同步点调用）：
 /// 全量替换模态 selector 集合。逗号分隔串（`_zwDialogModalAllSels()` 原始形态），
@@ -314,9 +320,9 @@ pub fn set_runner_modal_dialog_selectors(raw: &str) {
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .collect();
-    if let Ok(mut slot) = RUNNER_MODAL_SELECTORS.write() {
-        *slot = Some(Arc::new(list));
-    }
+    RUNNER_MODAL_SELECTORS.with(|slot| {
+        *slot.borrow_mut() = Some(Arc::new(list));
+    });
 }
 
 /// gCS 代际槽 compute 前注入 runner 模态态（见 [`RUNNER_MODAL_SELECTORS`]）。
@@ -341,7 +347,7 @@ fn apply_runner_modal_state(
     drain_gen: usize,
     style_version: usize,
 ) {
-    let Some(sels) = RUNNER_MODAL_SELECTORS.read().ok().and_then(|slot| slot.clone()) else {
+    let Some(sels) = RUNNER_MODAL_SELECTORS.with(|slot| slot.borrow().clone()) else {
         return; // 非 runner 环境（真渲染路径走 pipeline 注入）→ 零干扰
     };
     let key = (Arc::as_ptr(&sels) as usize, drain_gen, style_version);
@@ -354,8 +360,40 @@ fn apply_runner_modal_state(
         .iter()
         .filter_map(|sel| slot.3.query_selector(slot.3.root(), sel))
         .collect();
-    slot.3.set_modal_dialogs(ids);
+    // s377：modal 态变化须反映进 slot styles——showModal/close 的 open 属性 SetAttr
+    // 非 style 类 mutation，finish_generation_update 的增量 compute changed 集不含
+    // dialog → styles 停在注入前旧态（dialog-overlay「Computed overlay on open
+    // dialog expected auto got none」根因；visibility-hidden 案绿是恰有作者 style
+    // mutation 驱动 changed={dialog} 重算的偶然覆盖，非注入汇点自身闭环）。注入后对
+    // 旧∪新 modal 集∪后代定向重算（:modal UA decl 变 dialog 本体 computed；
+    // visibility 注入经继承面波及后代）。shadow scopes 在场走全量兜底（同
+    // finish_generation_update 退化门语义）。
+    let prev: Vec<NodeId> = slot.3.modal_dialogs().to_vec();
+    let state_changed = prev != ids;
+    slot.3.set_modal_dialogs(ids.clone());
     APPLIED_RUNNER_MODAL_KEY.with(|cell| *cell.borrow_mut() = key);
+    if !state_changed {
+        return;
+    }
+    let mut modal_changed = prev;
+    modal_changed.extend(ids.iter().copied());
+    modal_changed.sort_unstable();
+    modal_changed.dedup();
+    let mut with_descendants = modal_changed.clone();
+    for &id in &modal_changed {
+        with_descendants.extend(slot.3.collect_descendants(id));
+    }
+    with_descendants.sort_unstable();
+    with_descendants.dedup();
+    let mut sys = StyleSystem::new();
+    // 视口与全量/增量路径同源（compute_styles_for_doc / finish_generation_update 的
+    // 1280×800 默认）。
+    sys.set_viewport(1280.0, 800.0);
+    if slot.10.is_empty() {
+        sys.compute_styles_incremental(&slot.3, &slot.5, &with_descendants, &mut slot.4);
+    } else {
+        slot.4 = sys.compute_styles_with_shadow(&slot.3, &slot.5, &slot.10);
+    }
 }
 
 thread_local! {

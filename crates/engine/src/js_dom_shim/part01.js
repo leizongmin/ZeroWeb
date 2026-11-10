@@ -11998,6 +11998,15 @@
   // 不抛，同旧 stub 行为）；handle-only（无 sel）→ ''。
   globalThis.getComputedStyle = function(elt, _pseudo) {
     var sel = elt && elt.__zwSelector;
+    // s377（CSS Position 4 §overlay）：`::backdrop` 第二参通道——此前 `_pseudo` 被忽略，
+    // `getComputedStyle(dialog, '::backdrop')` 返回 dialog 本体面板。dialog-overlay 钉面
+    // 分流：::backdrop 的 overlay 恒 'none'（UA 不授予 backdrop top layer 资格——
+    // 'does not get its overlay property changed'），本体 modal 态经 UA 注入为 'auto'。
+    // 其余属性回落本体查询（FIXME 近似：作者 `::backdrop` 规则级联与 UA backdrop
+    // 面板未建——modal-dialog-display-contents（reftest 域）display 断言依赖回落
+    // 形态，独立挂账）。null/undefined 参 = 元素本体（CSSOM-1 语法），现状零漂移。
+    // https://drafts.csswg.org/css-position-4/#overlay
+    var isBackdropPseudo = _pseudo === '::backdrop';
     // s161（html-semantics M2）：动态元素（createElement 产物，`__zwHandle` 身份，
     // 无 __zwSelector）宿主 gCS 通道——host 按 handle 重放 pending 区间物化视图后
     // 级联查值（spec：getComputedStyle 对任意元素返回计算值，
@@ -12006,6 +12015,9 @@
     var hdl = !sel && elt && elt.__zwHandle;
     var hasHost = sel && typeof __zw_get_computed_style === 'function';
     var query = function(prop) {
+      // s377：::backdrop 伪元素的 overlay 恒 'none'（UA 不授予 backdrop top layer
+      // 资格，dialog-overlay 两子测 ::backdrop 断言钉面）。
+      if (isBackdropPseudo && prop === 'overlay') return 'none';
       if (hasHost) {
         try { return __zw_get_computed_style(sel, prop); } catch (_e) { return ''; }
       }

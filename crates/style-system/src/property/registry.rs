@@ -241,6 +241,7 @@ impl PropertyRegistry {
             "box-decoration-break" => Some(BoxDecorationBreak(BoxDecorationBreakValue::Slice)),
             "image-rendering" => Some(ImageRendering(ImageRenderingValue::Auto)),
             "isolation" => Some(Isolation(IsolationValue::Auto)),
+            "overlay" => Some(Overlay(OverlayValue::None)),
 
             // Break
             "break-inside" => Some(BreakInside(BreakInsideValue::Auto)),
@@ -624,6 +625,7 @@ impl PropertyRegistry {
             "box-decoration-break",
             "image-rendering",
             "isolation",
+            "overlay",
             "break-inside",
             "break-before",
             "break-after",

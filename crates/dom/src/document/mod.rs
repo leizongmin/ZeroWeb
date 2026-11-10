@@ -1429,6 +1429,12 @@ impl Document {
         self.modal_dialogs = ids;
     }
 
+    /// 读当前运行时模态 dialog 集合（s377：gCS 代际槽注入面比对新旧集用——
+    /// modal 态变化才付定向重算，见 engine `apply_runner_modal_state`）。
+    pub fn modal_dialogs(&self) -> &[NodeId] {
+        &self.modal_dialogs
+    }
+
     /// 注入运行时过滤 option 集合（filterable select `:filtered`；shim 过滤算法
     /// 经 engine 桥线程局槽逐查询注入，镜像 `set_active_element` 通道）。判定面见
     /// `filtered` 子模块（`is_filtered_option`）。

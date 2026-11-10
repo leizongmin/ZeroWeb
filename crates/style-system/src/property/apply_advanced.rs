@@ -1033,6 +1033,16 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── Overlay 属性（CSS Position 4，top layer 成员标记）──
+        "overlay" => {
+            if let Some(v) = values::parse_overlay(value) {
+                style.overlay = match v {
+                    zero_css_parser::values::OverlayValue::None => OverlayValue::None,
+                    zero_css_parser::values::OverlayValue::Auto => OverlayValue::Auto,
+                };
+                return true;
+            }
+        }
         // ── Break 属性 ──
         "break-inside" => {
             if let Some(v) = values::parse_break_inside(value) {

@@ -2098,6 +2098,14 @@ impl StyleSystem {
         // https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3
         if pseudo.is_none() && tag_name.as_deref() == Some("dialog") && doc.is_modal_dialog(element) {
             ua_decl_inputs.push(("visibility".to_string(), "visible".to_string(), false, (0, 0, 0), None));
+            // s377：`dialog:modal { overlay: auto }`（CSS Position 4 §overlay——top layer
+            // 成员资格由 UA 规则授予，Chromium UA sheet 同形）。modal-dialog 处于 top
+            // layer 期间 computed overlay 为 auto，关闭后回落 none
+            //（dialog-overlay「changes computed overlay to 'auto' and back to 'none'」
+            // 钉面）。::backdrop 不注入（`pseudo.is_none()` 门——backdrop 的 overlay
+            // 恒 none，同案「does not get its overlay property changed」钉面）。
+            // https://drafts.csswg.org/css-position-4/#overlay
+            ua_decl_inputs.push(("overlay".to_string(), "auto".to_string(), false, (0, 0, 0), None));
         }
         // R-s31 备注：dialog UA **定位**（`dialog { position: absolute; inset-inline: 0;
         // margin: auto }` + `dialog:modal { position: fixed; inset-block: 0 }`，
