@@ -14847,8 +14847,22 @@
           var fcFormRoot = _zwLiveTreeRoot(sel ? _wrapSelector(sel) : _makeProxy(null, handle));
           var arr = listed.split('|').filter(Boolean).map(_zwQueryWrapIdentity);
           for (var hi = 0; hi < arr.length; hi++) {
-            if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1
-                && (!fcFormRoot || _zwLiveTreeRoot(arr[hi]) === fcFormRoot)) push(arr[hi]);
+            var keep = arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1
+                && (!fcFormRoot || _zwLiveTreeRoot(arr[hi]) === fcFormRoot);
+            // s391 reset-on-move 门（HTML §4.10.18.3 to reset the form owner）：
+            // host 列表按解析期侧表收集，控件被脚本移出后指针关联失效，须退出
+            // elements/named items（WPT form_owner_and_table_3 面的收集侧镜像）。
+            // 门只作用于指针关联条目：form= 属性关联移动后经重解析保留（owner 复原
+            // 等值不位移），live 祖先链命中 form 的条目走祖先关联移动无关——两者
+            // 免门防误伤。桥不可用/异常不设门，保守沿用旧行为（同 s390b 风格）。
+            if (keep) {
+              var kAttr = null;
+              try { kAttr = arr[hi].getAttribute('form'); } catch (_eKf) {}
+              if ((kAttr === null || kAttr === '') && !_zwLiveFormAncestor(arr[hi])) {
+                keep = _zwParseParentUnmoved(arr[hi], arr[hi].__zwSelector || '');
+              }
+            }
+            if (keep) push(arr[hi]);
           }
         }
       } catch (_e) {}
