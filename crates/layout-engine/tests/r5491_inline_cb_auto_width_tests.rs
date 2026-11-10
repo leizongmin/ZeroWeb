@@ -3,8 +3,11 @@
 //! → taffy percent 相对物化层（blk content − inline margin）解算——floats-149 形
 //! `.block`（无宽）内 span 50% 得 380（分母 760 = 800 − inline ml 40），chromium
 //! 相对块容器 800 解 400 → nested 级联 fit 判定 `380<=380` 边界翻转并排重叠
-//!（s2 (380,0)）。修复后 w=400 → 级联逐行降带 (0,0)/(0,18)/(0,36)、blk h=54
-//!（chromium oracle multi-ml40 同构形 3 float 逐行 18px 同值）。
+//!（s2 (380,0)）。修复后 w=400 → band0 降带 (0,0)/(0,18)、f3 band1 边界 fit
+//! 并排 (400,18)、blk h=36（R5493 fresh chromium oracle 定谳；R5490 旧 oracle
+//! multi-ml40 记录勘误：该页实为单 span Ahem 文本折 3 行的 float，非 3 float
+//! 逐行，green=18 非 54——float y 序列与 blk 值以 R5493 fresh oracle 为准，
+//! 宽度分母断言不受影响）。
 //!
 //! 空探针 span（无文本 + 显式 height）聚焦宽度分母与级联位，避开 strut 语义
 //!（缺陷 X 域，另行归因修复）。
@@ -86,7 +89,8 @@ fn assert_geometry(
 }
 
 /// 主锚：blk/body/html 全 auto 宽（fill 上溯至文档根＝viewport 800）→ span 50%
-/// ＝400（chromium 对齐；旧径物化层分母 760 解 380）→ 级联逐行降带、blk h=54。
+/// ＝400（chromium 对齐；旧径物化层分母 760 解 380）→ f1/f2 band0/降带、f3
+/// band1 cursor 400 边界 fit 并排、blk h=36（float 带底，R5493）。
 #[test]
 fn r5491_auto_width_block_pct_resolves_against_block_container() {
     let html = r#"<html><head><style>
@@ -107,10 +111,10 @@ span { float: left; width: 50%; height: 18px; }
         [
             (0.0, 0.0, 400.0, 18.0),
             (0.0, 18.0, 400.0, 18.0),
-            (0.0, 36.0, 400.0, 18.0),
+            (400.0, 18.0, 400.0, 18.0),
         ],
         800.0,
-        54.0,
+        36.0,
     );
 }
 
@@ -135,15 +139,16 @@ span { float: left; width: 50%; height: 18px; }
         [
             (0.0, 0.0, 400.0, 18.0),
             (0.0, 18.0, 400.0, 18.0),
-            (0.0, 36.0, 400.0, 18.0),
+            (400.0, 18.0, 400.0, 18.0),
         ],
         800.0,
-        54.0,
+        36.0,
     );
 }
 
 /// fill 上溯中段：auto 宽祖先自身 margin 参与差式——wrap ml 100 → blk content 700
-/// → span 50%＝350（旧径物化层 660 解 330）；s2 fit 判定 700 > 660 不 fit → 降带。
+/// → span 50%＝350（旧径物化层 660 解 330）；s2 band0 cursor 490（350＋链偏移
+/// 140）不 fit → 降带；s3 band1 cursor 350 边界 fit 并排 (450,18)。
 #[test]
 fn r5491_auto_width_chain_subtracts_ancestor_margin() {
     let html = r#"<html><head><style>
@@ -165,15 +170,16 @@ span { float: left; width: 50%; height: 18px; }
         [
             (100.0, 0.0, 350.0, 18.0),
             (100.0, 18.0, 350.0, 18.0),
-            (100.0, 36.0, 350.0, 18.0),
+            (450.0, 18.0, 350.0, 18.0),
         ],
         700.0,
-        54.0,
+        36.0,
     );
 }
 
 /// 自身 margin 参与差式：blk ml 60 → content 740 → span 50%＝370（旧径物化层
-/// 700 解 350）；s2 fit 判定 740 > 700 不 fit → 降带。
+/// 700 解 350）；s2 band0 cursor 410 不 fit → 降带；s3 band1 cursor 370 边界
+/// fit 并排 (430,18)。
 #[test]
 fn r5491_auto_width_block_subtracts_own_margin() {
     let html = r#"<html><head><style>
@@ -194,9 +200,9 @@ span { float: left; width: 50%; height: 18px; }
         [
             (60.0, 0.0, 370.0, 18.0),
             (60.0, 18.0, 370.0, 18.0),
-            (60.0, 36.0, 370.0, 18.0),
+            (430.0, 18.0, 370.0, 18.0),
         ],
         740.0,
-        54.0,
+        36.0,
     );
 }

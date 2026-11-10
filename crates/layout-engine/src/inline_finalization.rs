@@ -3544,20 +3544,49 @@ fn remeasure_text_with_float_exclusions_inner(
                     } else {
                         placed_r.last().copied()
                     };
-                    let (ty, tx) = if let Some((py, px, pw, ph)) = prev {
+                    // R5493（CSS2 §9.5.1 × inline box 侧 margin 首 fragment 语义，
+                    // chromium oracle p14/p20b/p22/h 形定谳）：候选目标带 band =
+                    // max(锚行, prev 顶)（rule 2 顶不低于前 float）。链偏移只在目标带
+                    // ＝本 wrapper 首行（anchor_y）时计入——inline 侧 margin 随盒首
+                    // fragment 生效，float 降带后同 wrapper 的后继 float 落在续行
+                    // fragment，不再带链偏移（ml40 形 f2 cursor 440 降带 (0,18)、f3
+                    // band2 cursor 400 边界 fit 并排 (400,18)；右 float 镜像 f3 (0,18)；
+                    // wrap ml100 链形 f3 (350,18) 同；p20b band0 第三 float 仍含链偏移
+                    // cursor 680 → 130px 降带，ml 只豁免降带后的续行）。fit 判定带占用
+                    // ＝已落位序列中 y==band 的最右者（源序单调、同带不重叠），跨带
+                    // prev（R5487④ 双层形 float2：band 18 无同带占用）不参与 cursor
+                    //——空带 fit 放带缘（own ml / 极值缘），chromium ④ (0,18) 维持。
+                    let (ty, tx) = if let Some((py, _, _, ph)) = prev {
+                        let band = (*anchor_y).max(py);
+                        let chain_offset = if band == *anchor_y { nf.chain_offset } else { 0.0 };
                         if nf.is_left {
-                            let cursor = px + pw + nf.chain_offset;
-                            if nf.width <= (cw - cursor) {
-                                ((*anchor_y).max(py), px + pw)
+                            let band_occ = placed.iter().rev().find(|p| p.0 == band).copied();
+                            if let Some((oy, ox, ow, oh)) = band_occ {
+                                let cursor = ox + ow + chain_offset;
+                                if nf.width <= (cw - cursor) {
+                                    (band, ox + ow)
+                                } else {
+                                    (oy + oh, nf.margin_left)
+                                }
+                            } else if nf.width <= (cw - chain_offset) {
+                                (band, nf.margin_left)
                             } else {
-                                ((*anchor_y).max(py + ph), nf.margin_left)
+                                (band.max(py + ph), nf.margin_left)
                             }
                         } else {
-                            let avail = px - nf.chain_offset;
-                            if nf.width <= avail {
-                                ((*anchor_y).max(py), px - nf.width)
+                            let band_occ = placed_r.iter().rev().find(|p| p.0 == band).copied();
+                            let extreme = (cw - nf.width - nf.margin_right).max(0.0);
+                            if let Some((oy, ox, _, oh)) = band_occ {
+                                let avail = ox - chain_offset;
+                                if nf.width <= avail {
+                                    (band, ox - nf.width)
+                                } else {
+                                    (oy + oh, extreme)
+                                }
+                            } else if nf.width <= (cw - chain_offset) {
+                                (band, extreme)
                             } else {
-                                ((*anchor_y).max(py + ph), (cw - nf.width - nf.margin_right).max(0.0))
+                                (band.max(py + ph), extreme)
                             }
                         }
                     } else {
@@ -3889,7 +3918,25 @@ fn remeasure_text_with_float_exclusions_inner(
                     0.0
                 }
             } else {
-                text_height.max(float_bottom)
+                // R5493（CSS2 §10.6.7 × §9.4.2，chromium p23 oracle）：BFC 根高同样
+                // 计零高行盒 strut——行盒存在（非零 mpb 信号）且 text_height=0 时
+                // max(strut, float_bottom)（p23：flow-root + inline ml40 + 单 10px
+                // float，带底 10 < strut 18 → 容器 18；p6/p7/p19 带底 > strut 时
+                // float 带底胜出）。竖排/multicol 排除口径同 R5492 臂；kill-switch
+                // 同 `ZW_INLINE_ZEROBOX_STRUT`（0 → 纯 float_bottom 旧径）。
+                let strut_floor = if bfc_gate
+                    && establishes_bfc
+                    && !in_multicol
+                    && !inline_ctx.vertical
+                    && text_height <= 0.0
+                    && crate::inline::inline_zerobox_strut_enabled()
+                    && inline_ctx.has_nonzero_mpb_inline_part.get()
+                {
+                    inline_ctx.container_strut_line_height
+                } else {
+                    0.0
+                };
+                text_height.max(float_bottom).max(strut_floor)
             };
             // 更新容器的内容高度：文本环绕 float 后可能需要更大的高度。
             // ★ R1616：仅 height:auto 容器才按 float/文本底扩展——definite height
