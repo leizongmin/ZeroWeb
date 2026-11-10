@@ -4009,6 +4009,23 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：inline
+    // style 写面值校验——`el.style.rotate = 'asin()'` 非法形整体拒绝（WPT invalid
+    // 面驱动）。裁决委托 [`zero_style_system::validate_decl_value`]（白名单口径：
+    // 表外属性放行，兼容面零回退）；返 "true"/"false"。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_validate_decl_value",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            if zero_style_system::validate_decl_value(prop, value) {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }),
+    );
+
     // S194（html-semantics M2）：`input type=email` 值清洗的域部 IDN 转换臂
     //（HTML §4.10.5.5 E-mail state；WPT forms/the-input-element/email-value-idn.html
     // 钉态）。入参为 email 值最后一个 '@' 之后的域部原串；合成 http:// 前缀
@@ -4031,6 +4048,42 @@ pub fn register_dom_callbacks(
                     u.host_str().unwrap_or("").to_string()
                 }
                 _ => String::new(),
+            }
+        }),
+    );
+
+    // wptfyi-css DC-2 grid 批次（G1 shim 面）：grid 家族声明值 canonical 化整值
+    // 委托（shim `_zwNormalizeDeclValue` grid 臂消费——非法整值返 "null"（拒，
+    // T47 DF-3 同语义），合法返 canonical 串；CSS 全局关键字放行 echo 小写）。
+    // 实现复用 [`crate::dom_bindings::grid_cssom::canonicalize_grid_decl`]（与
+    // native 绑定 setter 同源——单实现双通道）。camelCase 名先折叠 kebab（IDL
+    // 写形 `style.gridArea` 经 Proxy set trap 传原名）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_grid_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            match crate::dom_bindings::grid_cssom::canonicalize_grid_decl(&camel_to_kebab_name(prop), value) {
+                Some(v) => v,
+                None => "null".to_string(),
+            }
+        }),
+    );
+
+    // wptfyi-css DC-2 grid 批次（G1 shim 面）：CSSStyleDeclaration supported
+    // property names 支持面清单查询（shim `_zwMStyleProxy` has trap 消费——
+    // `'prop in style'` 对 Proxy 名此前恒 false，grid-layout-properties 等语料
+    // 127 子测试在门）。清单 [`crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_
+    // PROPS`]（grid 家族 + 核心簇）；camelCase 名折叠 kebab 后比对；custom
+    // `--*` 由 shim 侧直接放行不进本回调。返 "true"/"false"。
+    sandbox.register_callback(
+        "__zw_style_supported_prop",
+        Box::new(|args: &[String]| -> String {
+            let name = args.first().map(String::as_str).unwrap_or("");
+            if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str()) {
+                "true".to_string()
+            } else {
+                "false".to_string()
             }
         }),
     );
@@ -4175,6 +4228,26 @@ pub fn publish_live_query_doc(doc: Option<Rc<RefCell<zero_dom::Document>>>) {
 /// js-dom M3 R100：把一批已应用的 mutations append 进线程本地历史（webview apply 前调用）。
 pub fn append_mutation_history(batch: &[DomMutation]) {
     MUTATION_HISTORY.with(|h| h.borrow_mut().extend(batch.iter().cloned()));
+}
+
+/// camelCase→kebab 折叠（`dom_bindings::css_style_declaration::camel_to_kebab`
+/// 同语义镜像：`cssFloat`/`styleFloat`→`float` 特例 + 逐大写字母加连字符小写；
+/// 该 fn 私有于 dom_bindings，宿主回调侧独立同形实现避免跨模块扩面）。grid 批次
+/// `__zw_grid_normalize_decl`/`__zw_style_supported_prop` 名参归一用。
+fn camel_to_kebab_name(name: &str) -> String {
+    if name == "cssFloat" || name == "styleFloat" {
+        return "float".into();
+    }
+    let mut out = String::with_capacity(name.len() + 2);
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('-');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// js-dom M3 R100：清空 mutation 历史（文档换代——`load_html` 调用；旧页记录在新页无效）。

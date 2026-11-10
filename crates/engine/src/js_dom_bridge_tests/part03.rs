@@ -1933,12 +1933,13 @@ fn test_get_computed_style_grid_container() {
         <div id=\"ts-num\" style=\"tab-size: 4;\"></div>\
         <div id=\"def\"></div>\
         </body></html>";
-    // grid-auto-flow 默认 row；column / dense（ZeroWeb 解析 dense→RowDense 多词）。
+    // grid-auto-flow 默认 row；column / dense（ZeroWeb 解析 dense→RowDense）。
+    // 简写序列化：`row dense` 组合 canonical 为 `dense`（CSS Grid §3.5.3，语料锚定）。
     assert_eq!(computed_style_property(html, "#def", "grid-auto-flow"), "row");
     assert_eq!(computed_style_property(html, "#gaf-col", "grid-auto-flow"), "column");
     assert_eq!(
         computed_style_property(html, "#gaf-dense", "grid-auto-flow"),
-        "row dense"
+        "dense"
     );
     // container-type 默认 normal；size / inline-size。
     assert_eq!(computed_style_property(html, "#def", "container-type"), "normal");
@@ -5220,3 +5221,63 @@ fn test_cssom_decl_name_fold_wordfinal_xx_t55() {
     );
 }
 
+
+#[test]
+fn test_style_proxy_invalid_value_rejected_t54() {
+    // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单属性
+    // 非法值整体拒绝（赋值忽略保留原值）；合法 math 形落库；白名单外属性放行
+    //（兼容面零回退钉）。宿主回调 __zw_validate_decl_value → style-system
+    // validate_decl_value（transform 族/数值槽）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\n\
+             globalThis.__r1 = (d.style.transform = 'rotate(asin())', d.style.getPropertyValue('transform'));\n\
+             globalThis.__r2 = (d.style.rotate = 'asin()', d.style.getPropertyValue('rotate'));\n\
+             globalThis.__r3 = (d.style.zIndex = 'round(1dag)', d.style.getPropertyValue('z-index'));\n\
+             globalThis.__r4 = (d.style.transform = 'rotate(45deg)', d.style.getPropertyValue('transform'));\n\
+             globalThis.__r5 = (d.style.rotate = 'acos(1)', d.style.getPropertyValue('rotate'));\n\
+             globalThis.__r6 = (d.style.zIndex = 'sign(-3)', d.style.getPropertyValue('z-index'));\n\
+             globalThis.__r7 = (d.style.marginLeft = 'round(23px, 10px)', d.style.getPropertyValue('margin-left'));\n\
+             globalThis.__r8 = (d.style.width = 'not-a-width-grammar', d.style.getPropertyValue('width'));\n\
+             globalThis.__r9 = (d.style.transform = 'inherit', d.style.getPropertyValue('transform'));\n\
+             globalThis.__r10 = (d.style.transform = '', d.style.getPropertyValue('transform'));",
+        )
+        .unwrap();
+    let mut val = |k: &str| sandbox.execute(k).unwrap().value;
+    assert_eq!(val("globalThis.__r1"), "", "transform 非法 math 形拒绝（原值保留空）");
+    assert_eq!(val("globalThis.__r2"), "", "rotate 非法 math 形拒绝");
+    assert_eq!(val("globalThis.__r3"), "", "z-index 非法 math 形拒绝");
+    assert_eq!(val("globalThis.__r4"), "rotate(45deg)", "transform 合法值落库");
+    assert_eq!(val("globalThis.__r5"), "acos(1)", "rotate 裸 math 函数落库（文法内）");
+    assert_eq!(val("globalThis.__r6"), "sign(-3)", "z-index 裸 math 函数落库");
+    assert_eq!(
+        val("globalThis.__r7"), "round(23px, 10px)",
+        "margin-left math 两参形落库"
+    );
+    assert_eq!(
+        val("globalThis.__r8"), "not-a-width-grammar",
+        "白名单外属性放行（零回退钉）"
+    );
+    assert_eq!(
+        val("globalThis.__r9"), "inherit",
+        "css-wide keyword 白名单放行（落库保留，应用语义在 cascade 层）"
+    );
+    assert_eq!(val("globalThis.__r10"), "", "空值 = 声明移除");
+}

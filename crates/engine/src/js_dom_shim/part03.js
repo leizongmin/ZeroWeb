@@ -22745,6 +22745,36 @@
   // 声明胜（R3213）、getPropertyValue 返值不含 !important（R3193）、-- 自定义属性大小写
   // 敏感。写序：同名声明移除（常规 ci / 自定义精确）后尾部追加 `name: value`，空值 =
   // 仅移除（CSSOM set 空串删声明——normalizeSerializedStyle 的 color='' 往返依赖）。
+  // supported property names `has` 面共享臂（cssom-1 §CSSStyleDeclaration supported
+  // property names）：接口成员 + custom `--*` + 索引名（[0, length)——propNames thunk
+  // 按需取长，非索引名零开销）+ 引擎支持面 CSS 属性（宿主清单
+  // `__zw_style_supported_prop`，camelCase 名宿主侧折叠 kebab；注册名 snake_case
+  // ——callbacks.rs register_callback 名参逐字落 globalThis，宿主回调返 JS 字符串，
+  // 比较用 'true' 字面量）+ Object.prototype 基础成员放行（Proxy has trap 返 false
+  // 即「不存在」——不放行会误杀 `'toString' in style` 等原型链真值面）。
+  // 缺宿主清单时前四类真值（polyfill 兜底链零漂移）。
+  // _styleProxy（sel/handle 面）与 _zwMStyleProxy（物化 plain 面）两个 style 面板
+  // 共用——此前两者均无 has trap，`in` 对 Proxy 名恒 false，grid-layout-properties
+  // 等语料 assert_true(prop in style) 127 子测试在门（wptfyi-css DC-2 grid 批次）。
+  // https://www.w3.org/TR/cssom-1/#cssstyledeclaration-supported-property-names
+  var _zwStyleHasBase = {};
+  function _zwStyleHas(p, propNames) {
+    var ps = String(p);
+    if (ps === 'cssText' || ps === 'length' || ps === 'getPropertyValue' ||
+        ps === 'getPropertyPriority' || ps === 'setProperty' || ps === 'removeProperty' ||
+        ps === 'item') return true;
+    if (ps.charAt(0) === '-' && ps.charAt(1) === '-') return true;
+    if (ps in _zwStyleHasBase) return true;
+    var idx = parseInt(ps, 10);
+    if (!isNaN(idx) && String(idx) === ps) {
+      return idx >= 0 && idx < propNames().length;
+    }
+    if (typeof globalThis.__zw_style_supported_prop === 'function') {
+      return globalThis.__zw_style_supported_prop(ps) === 'true';
+    }
+    return false;
+  }
+
   function _zwMStyleProxy(node) {
     var readRaw = function () {
       var v = node.getAttribute('style');
@@ -22820,6 +22850,16 @@
         var pri = _styleValueAndPriority(v);
         var core = _zwNormalizeDeclValue(pri.value, want);
         if (core === null) return; // T47 DF-3：非法 color → 赋值忽略，保留原值
+        // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单
+        // 属性（transform 族/数值槽——宿主 [`validate_decl_value`] 裁决）非法值整体
+        // 拒绝（赋值忽略保留原值，同 T47 DF-3 形态）。表外属性/shorthand/css-wide
+        // keyword 宿主侧放行（FIXME: 逐 parser 覆盖扩面）；host 未注册（polyfill/
+        // WebView 兜底链）不校验，零行为漂移。core 归一后校验（优先级后缀已剥离）。
+        // 宿主回调返 JS 字符串（shim 通用约定，见 part01c `=== 'false'` 先例），
+        // 比较须用字符串 'false' 而非 boolean。
+        // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
+        if (core !== '' && typeof __zw_validate_decl_value === 'function'
+            && __zw_validate_decl_value(want, core) === 'false') return;
         v = pri.priority ? core + ' !important' : core;
       }
       var parts = readRaw().split(';');
@@ -22840,6 +22880,7 @@
       node.setAttribute('style', out.join('; '));
     };
     return new Proxy({}, {
+      has: function (_t, p) { return _zwStyleHas(p, propNames); },
       get: function (_t, p) {
         var ps = String(p);
         if (ps === 'cssText') return readRaw();
@@ -30346,6 +30387,17 @@ return e;
         var pri = _styleValueAndPriority(raw);
         var core = _zwNormalizeDeclValue(pri.value, prop);
         if (core === null) return;
+        // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单
+        // 属性（transform 族/数值槽——宿主 [`validate_decl_value`] 裁决）非法值整体
+        // 拒绝（赋值忽略保留原值，同 T47 DF-3 形态）。表外属性/shorthand/css-wide
+        // keyword 宿主侧放行（FIXME: 逐 parser 覆盖扩面）；host 未注册（polyfill/
+        // WebView 兜底链）不校验，零行为漂移。engine 物化元素（sel/handle 面）的
+        // inline style 写走本实现——WPT 语料 `el.style[prop] = v` 全落此臂。宿主回调
+        // 返 JS 字符串（shim 通用约定，见 part01c `=== 'false'` 先例），比较须用
+        // 字符串 'false' 而非 boolean。
+        // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
+        if (core !== '' && typeof __zw_validate_decl_value === 'function'
+            && __zw_validate_decl_value(prop, core) === 'false') return;
         v = pri.priority ? core + ' !important' : core;
         // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
         // none → 存原值；其余形态清条目。
@@ -30369,6 +30421,7 @@ return e;
         .filter(Boolean);
     };
     return new Proxy({}, {
+      has: function(_t, p) { return _zwStyleHas(p, propNames); },
       get: function(_t, p) {
         var ps = String(p);
         if (ps === 'cssText') return readRaw();

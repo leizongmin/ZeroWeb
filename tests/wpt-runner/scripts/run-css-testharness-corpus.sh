@@ -155,7 +155,9 @@ while read -r f; do
     ran=$((ran + 1))
   fi
   pass=$((pass + p)); fail=$((fail + fl)); timeout=$((timeout + t)); unsupported=$((unsupported + un))
-done < <(find "${DATA_DIR}" \( -name '*.html' -o -name '*.htm' \) | sort)
+# `.any.js` window 变体与 html 页同进名册（runner 谓词 idlharness/worker 专有面
+# 排除，空产出 `[]` 记账；wptfyi-css DC-2——typed-om numeric-objects 等 11 案）。
+done < <(find "${DATA_DIR}" \( -name '*.html' -o -name '*.htm' -o -name '*.any.js' \) | sort)
 
 if [[ -n "${JSON_DIR}" ]]; then
   # 分片 JSON 合并：transcript 各 `==== <rel>` 块体即该案 runner --json（数组），

@@ -171,6 +171,34 @@ fn parse_z_index_invalid() {
 }
 
 #[test]
+/// z-index `<integer>` 文法位接受顶层 L4 数学函数（CSS Values 4 §10.5；wptfyi-css
+/// DC-2 values math 桶：signs-abs-computed 以 `z-index: sign(-3)` 形态驱动）。
+/// 整数维度 computed 取整；长度/角度型别拒绝维持。
+fn parse_z_index_math_function() {
+    use crate::property::parse::parse_z_index;
+    use crate::property::types::ZIndexValue;
+    // sign(-3) = -1；abs(-2) = 2；pow(2,3) = 8；round(1.4, 1) 取整 1（round 需双参，
+    // WPT round-mod-rem-invalid 单参形 invalid）；calc(2) 直通。
+    for (value, expected) in [
+        ("sign(-3)", -1_i32),
+        ("abs(-2)", 2),
+        ("pow(2, 3)", 8),
+        ("round(1.4, 1)", 1),
+        ("calc(2)", 2),
+    ] {
+        match parse_z_index(value) {
+            Some(ZIndexValue::Integer(v)) => assert_eq!(v, expected, "z-index: {value}"),
+            other => panic!("z-index: {value} 应解析为 Integer({expected})，实际 {other:?}"),
+        }
+    }
+    // 非法面：长度叶（<length> 混入 integer 槽）、角度产出函数、域外 asin、单参 round。
+    assert!(parse_z_index("calc(10px)").is_none(), "z-index: 10px 应拒绝");
+    assert!(parse_z_index("atan2(1, 2)").is_none(), "z-index: atan2 角度结果应拒绝");
+    assert!(parse_z_index("acos(2)").is_none(), "z-index: acos(2) 域外应拒绝");
+    assert!(parse_z_index("round(1.4)").is_none(), "z-index: 单参 round 应拒绝");
+}
+
+#[test]
 /// 解析无效的 CSS cursor 值
 fn parse_cursor_invalid() {
     assert!(crate::property::parse::parse_cursor("invalid").is_none());

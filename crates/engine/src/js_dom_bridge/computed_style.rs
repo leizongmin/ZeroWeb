@@ -983,11 +983,13 @@ fn break_inside_to_css(b: &BreakInsideValue) -> String {
 }
 
 /// grid-auto-flow：CSS Grid 自动放置算法单值序列化。初值 row；dense 组合为多词值。
+/// 简写序列化规则（CSS Grid §3.5.3）：`row dense` 组合序列化为 `dense`——row 关键字
+/// 仅在与 dense 同书时被省略（`column dense` 全保）；语料 grid-auto-flow 锚定。
 fn grid_auto_flow_to_css(g: &GridAutoFlowValue) -> String {
     match g {
         GridAutoFlowValue::Row => "row",
         GridAutoFlowValue::Column => "column",
-        GridAutoFlowValue::RowDense => "row dense",
+        GridAutoFlowValue::RowDense => "dense",
         GridAutoFlowValue::ColumnDense => "column dense",
     }
     .to_string()

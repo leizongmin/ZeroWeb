@@ -1,4 +1,5 @@
-use super::{CalcExpr, eval_calc, parse_math_function};
+use super::parse_extended::calc_expr_is_number;
+use super::{eval_calc, parse_math_function};
 
 pub(super) fn parse_finite_number_math(value: &str) -> Option<f64> {
     let trimmed = value.trim();
@@ -14,20 +15,6 @@ pub(super) fn parse_finite_number_math(value: &str) -> Option<f64> {
     }
     let value = eval_calc(&expr, None)?;
     value.is_finite().then_some(value)
-}
-
-fn calc_expr_is_number(expr: &CalcExpr) -> bool {
-    match expr {
-        CalcExpr::Number(_) => true,
-        CalcExpr::Length(_) => false,
-        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
-        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_number),
-        CalcExpr::Clamp { min, val, max } => {
-            calc_expr_is_number(min) && calc_expr_is_number(val) && calc_expr_is_number(max)
-        }
-        CalcExpr::UnaryOp(_, inner) => calc_expr_is_number(inner),
-        CalcExpr::BinaryMathOp(_, left, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
-    }
 }
 
 fn contains_dimension_token(input: &str) -> bool {

@@ -1157,3 +1157,63 @@ pub fn calc_expr_is_length_percentage(expr: &CalcExpr) -> bool {
         CalcExpr::UnaryOp(_, _) | CalcExpr::BinaryMathOp(_, _, _) => false,
     }
 }
+
+/// 判断 math 表达式是否整体为 <number> 类型：每个叶子都是纯 number（CSS Values
+/// §8.1 类型一致性；长度/百分比叶子拒绝）。角度产出函数（asin/acos/atan/atan2）
+/// 结果为 <angle>（f64 承载弧度），对 number 文法位无效——scale/z-index 等槽位
+/// 借此拒绝 `scale: atan2(1,2)` 类混型。
+pub fn calc_expr_is_number(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Number(_) => true,
+        CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_number),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_number(min) && calc_expr_is_number(val) && calc_expr_is_number(max)
+        }
+        // sin/cos/tan（角度输入弧度归一，parse 期 Number 化）→ number；
+        // asin/acos/atan/atan2 → <angle>，非 number。
+        CalcExpr::UnaryOp(op, inner) => {
+            !matches!(op, UnaryMathOp::Asin | UnaryMathOp::Acos | UnaryMathOp::Atan) && calc_expr_is_number(inner)
+        }
+        CalcExpr::BinaryMathOp(op, left, right) => {
+            op != &BinaryMathOp::Atan2 && calc_expr_is_number(left) && calc_expr_is_number(right)
+        }
+    }
+}
+
+/// 判断 math 表达式是否含 <length> 叶（角度/纯 number 文法位无效混入——acos(1px)、
+/// atan2(0, 1px)、calc(10px) 类混型据此拒绝；角度 parse 期已 Number 化，Length 是
+/// 唯一非法叶型）。
+pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Length(_) => true,
+        CalcExpr::Number(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_length(min) || calc_expr_has_length(val) || calc_expr_has_length(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_has_length(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
+    }
+}
+
+/// 判断 math 表达式是否含角度产出函数（asin/acos/atan/atan2）——求值结果为
+/// 弧度（f64），消费方转度后入 <angle> 文法位（individual rotate 批次）。
+pub fn calc_expr_has_angle_result(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::UnaryOp(op, inner) => {
+            matches!(op, UnaryMathOp::Asin | UnaryMathOp::Acos | UnaryMathOp::Atan) || calc_expr_has_angle_result(inner)
+        }
+        CalcExpr::BinaryMathOp(op, left, right) => {
+            *op == BinaryMathOp::Atan2 || calc_expr_has_angle_result(left) || calc_expr_has_angle_result(right)
+        }
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_has_angle_result(left) || calc_expr_has_angle_result(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_angle_result),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_angle_result(min) || calc_expr_has_angle_result(val) || calc_expr_has_angle_result(max)
+        }
+        _ => false,
+    }
+}

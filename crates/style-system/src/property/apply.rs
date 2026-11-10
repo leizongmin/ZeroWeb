@@ -1621,6 +1621,135 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
     }
 }
 
+/// inline style 写面值文法校验（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4
+/// 文法）——`el.style.rotate = 'asin()'` 等非法形须整体拒绝（赋值忽略保留原值，
+/// WPT invalid 面 `acos-asin-atan-atan2-invalid.html` 63 子测试驱动）。
+///
+/// **白名单口径**（FIXME: 逐 parser 覆盖扩面）：仅校验引擎文法已验证支持的属性；
+/// 表外属性一律放行——registry 认但 parser 有假阴性缺口的属性（grid 子格形、
+/// 未接线的函数形等）全量收紧会把合法值误拒（活站 inline style 兼容面回退）。
+/// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
+/// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
+pub fn validate_decl_value(property: &str, value: &str) -> bool {
+    const VALIDATED_PROPERTIES: [&str; 6] = ["transform", "rotate", "scale", "translate", "z-index", "margin-left"];
+    let prop = property.trim().to_ascii_lowercase();
+    if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
+        return true;
+    }
+    let v = value.trim();
+    if v.is_empty() {
+        return true;
+    }
+    match v.to_ascii_lowercase().as_str() {
+        "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
+        _ => {}
+    }
+    // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/random()/
+    // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
+    // 恒拒，会误拒引擎 store+serialize 路径本已正常的合法值（values corpus v5e
+    // progress/calc-mix/random serialize 页 -12 回归根因）。文法断言只对实现面
+    // 函数调用生效（引擎实现集见 [`IMPLEMENTED_VALUE_FUNCTIONS`]）。
+    if value_has_unimplemented_function(v) {
+        return true;
+    }
+    let mut scratch = ComputedStyle::default();
+    apply_property_value(&mut scratch, &prop, v)
+}
+
+/// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
+/// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
+/// 未实现面放行。
+const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 38] = [
+    "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign",
+    "sqrt", "exp", "log", "sin", "cos", "tan", "asin", "acos", "atan", "matrix", "matrix3d",
+    "translate", "translate3d", "translatex", "translatey", "translatez", "scale", "scale3d",
+    "scalex", "scaley", "scalez", "rotate", "rotate3d", "rotatex", "rotatey", "rotatez",
+];
+
+/// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；
+/// URL/字符串字面量内形态属未实现面，放行方向正确）。
+fn value_has_unimplemented_function(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // ident 起始（字母/-/_）
+        if !(bytes[i].is_ascii_alphabetic() || bytes[i] == b'-' || bytes[i] == b'_') {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
+        {
+            i += 1;
+        }
+        // ident 后随 `(`（允许空白）→ 函数调用
+        let mut j = i;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n') {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'(' && !IMPLEMENTED_VALUE_FUNCTIONS.contains(&&lower[start..i]) {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod t54_validate_decl_value_tests {
+    use super::*;
+
+    #[test]
+    fn whitelist_properties_reject_invalid_math_forms() {
+        // WPT invalid 面（acos-asin-atan-atan2-invalid.html）：无参/坏单位/悬空
+        // 运算符形整体拒绝。
+        assert!(!validate_decl_value("transform", "rotate(asin())"));
+        assert!(!validate_decl_value("transform", "rotate(asin(1dag))"));
+        assert!(!validate_decl_value("transform", "rotate(asin(1deg + )"));
+        assert!(!validate_decl_value("rotate", "asin()"));
+        assert!(!validate_decl_value("z-index", "round(1dag)"));
+    }
+
+    #[test]
+    fn whitelist_properties_accept_valid_math_and_plain_forms() {
+        assert!(validate_decl_value("transform", "rotate(45deg)"));
+        assert!(validate_decl_value("rotate", "acos(1)"));
+        assert!(validate_decl_value("scale", "2"));
+        assert!(validate_decl_value("translate", "10px 20px"));
+        assert!(validate_decl_value("z-index", "sign(-3)"));
+        assert!(validate_decl_value("margin-left", "round(23px, 10px)"));
+    }
+
+    #[test]
+    fn tentative_unimplemented_functions_pass_through() {
+        // v5e -12 回归钉：progress()/calc-mix()/random()/sibling-index() 属未实现面
+        // ——store 原文（apply oracle 恒拒会误拒引擎 store+serialize 正常的合法值）。
+        // WPT progress-serialize / calc-mix-serialize / random-serialize 以
+        // `scale(progress(...))` 形态驱动 transform 槽。
+        assert!(validate_decl_value("transform", "scale(progress(100px, 0px, 100px))"));
+        assert!(validate_decl_value("transform", "scale(calc-mix(1 50%, 3 50%))"));
+        assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
+        assert!(validate_decl_value("transform", "scale(calc(sibling-index() * 1px))"));
+        assert!(validate_decl_value("scale", "calc-mix(1)"));
+    }
+
+    #[test]
+    fn passthrough_faces_return_true() {
+        // 白名单外属性放行（parser 假阴性兼容面零回退）。
+        assert!(validate_decl_value("width", "not-a-width-grammar"));
+        assert!(validate_decl_value("unknown-prop", "anything"));
+        // shorthand 放行（apply 链无展开臂）。
+        assert!(validate_decl_value("margin", "10px 20px"));
+        // css-wide keyword 与空值恒真。
+        for kw in ["inherit", "INHERIT", "initial", "unset", "revert", "revert-layer"] {
+            assert!(validate_decl_value("transform", kw), "{kw} 放行");
+        }
+        assert!(validate_decl_value("transform", ""));
+        assert!(validate_decl_value("transform", "   "));
+    }
+}
+
 #[cfg(test)]
 mod r4086_stretch_tests {
     use super::*;
