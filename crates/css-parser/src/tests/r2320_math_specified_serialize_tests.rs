@@ -9,9 +9,7 @@
 //! driving: wptfyi-css DC-2 values serialize 桶（sin-cos-tan-serialize 230 /
 //! acos-asin-atan-atan2-serialize 62，WPT css-values，wptfyi-90-plan DC-2）。
 
-use crate::values::{
-    fold_math_specified, parse_transform, MathFoldKind, TransformValue,
-};
+use crate::values::{MathFoldKind, TransformValue, fold_math_specified, parse_transform};
 
 #[test]
 fn transform_rotate_function_accepts_math() {
@@ -32,7 +30,10 @@ fn transform_rotate_function_rejects_invalid_forms() {
     // invalid 面（acos-asin-atan-atan2-invalid / sin-cos-tan-invalid 语法形）。
     assert!(parse_transform("rotate(asin())").is_none(), "空参拒绝");
     assert!(parse_transform("rotate(asin(1dag))").is_none(), "坏单位拒绝");
-    assert!(parse_transform("rotate(atan(45deg))").is_none(), "asin/acos/atan 角度叶拒绝");
+    assert!(
+        parse_transform("rotate(atan(45deg))").is_none(),
+        "asin/acos/atan 角度叶拒绝"
+    );
     assert!(parse_transform("rotate(asin(90px))").is_none(), "长度叶拒绝");
     assert!(parse_transform("rotate(acos(1deg, 2deg))").is_none(), "双参拒绝");
     // sin/cos/tan 与 atan2 角度/时值实参仍合法。
@@ -60,7 +61,10 @@ fn fold_angle_kind() {
     assert_eq!(fold_math_specified("acos(1)", Angle).as_deref(), Some("calc(0deg)"));
     assert_eq!(fold_math_specified("acos(-1)", Angle).as_deref(), Some("calc(180deg)"));
     assert_eq!(fold_math_specified("asin(0.5)", Angle).as_deref(), Some("calc(30deg)"));
-    assert_eq!(fold_math_specified("atan(infinity)", Angle).as_deref(), Some("calc(90deg)"));
+    assert_eq!(
+        fold_math_specified("atan(infinity)", Angle).as_deref(),
+        Some("calc(90deg)")
+    );
     assert_eq!(
         fold_math_specified("acos(2)", Angle).as_deref(),
         Some("calc(NaN * 1deg)")

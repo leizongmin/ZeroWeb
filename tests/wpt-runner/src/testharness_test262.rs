@@ -1,4 +1,4 @@
-//! Test262 上游执行通道（wptfyi-runtime goal，docs/goal/wptfyi-runtime.md DC-1）。
+//! Test262 上游执行通道（wptfyi-runtime goal，docs/goal/archive/wptfyi-runtime.md DC-1）。
 //!
 //! 独立模块而非并入 [`crate::testharness`]（2000 行约束，testharness_wasm_core
 //! 先例），复用其执行底座（`run_testharness_html_inner` / `corpus_case_timeout`）。
@@ -270,7 +270,7 @@ fn test262_case_skipped(relative: &str, source: &str) -> bool {
         return true;
     }
     // ShadowRealm.importValue 真加载面（r11 勘察证据
-    // docs/goal/wptfyi-runtime/evidence/dc2-test262-shadowrealm-2026-11-10.md）：
+    // docs/goal/archive/wptfyi-runtime/evidence/dc2-test262-shadowrealm-2026-11-10.md）：
     // engine dynamic import 桥按 classic 页面 slot 契约实现，shadow realm 场景
     // 违背 V8 内核期望——import-value 案进程级 SIGTRAP 连累整轮，module 变体
     // 三案依赖同一成功路径。划界 skip（同步校验面照常执行）。
@@ -368,7 +368,7 @@ fn build_test262_wrapper(
         // module 变体（serve Test262WindowModuleTestHandler 同款）：import 成功且
         // 非 async → 直接收口；拒绝 → 分类。上游拒绝臂 = `setTimeout(() => throw)`
         // 靠浏览器把 timer 未捕获异常报成 window error——ZW 引擎未实现该报告
-        //（FIXME 挂账 docs/goal/wptfyi-runtime/master.md，属共享路径，须跨通道
+        //（FIXME 挂账 docs/goal/archive/wptfyi-runtime/master.md，属共享路径，须跨通道
         // 基线重验后再修）；此处直接派发同构 ErrorEvent（同 target/listener/
         // event.error 语义），reporter on_error 分类路径逐字不变。
         body.push_str(&format!(

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Goal: wptfyi-runtime（编号 48——五目标之「Test262、Encoding 与 Wasm」，2026-11-09 立项）
-# third_party/test262 上游语料 vendoring（契约见 docs/goal/wptfyi-runtime.md DC-1）。
+# third_party/test262 上游语料 vendoring（契约见 docs/goal/archive/wptfyi-runtime.md DC-1）。
 #
 # 与 lib.sh 逐文件 fetch 不同：test262 是 5.3 万文件的整目录 vendored 子树
 # （上游 web-platform-tests/wpt 内 third_party/test262，见 vendored.toml——

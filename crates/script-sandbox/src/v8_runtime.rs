@@ -412,13 +412,7 @@ fn dynamic_import_source_phase_callback<'s, 'i>(
 ) -> Option<v8::Local<'s, v8::Promise>> {
     // 求值期（kEvaluation/kDefer）原样走既有宿主逻辑（行为与注册前恒等）。
     if phase != v8::ModuleImportPhase::kSource {
-        return dynamic_import_callback(
-            scope,
-            host_defined_options,
-            resource_name,
-            specifier,
-            import_attributes,
-        );
+        return dynamic_import_callback(scope, host_defined_options, resource_name, specifier, import_attributes);
     }
     let promise_resolver = v8::PromiseResolver::new(scope)?;
     if let Some(m) = v8::String::new(scope, "source phase import is not available") {
@@ -933,10 +927,7 @@ impl V8Sandbox {
         isolate.set_host_import_module_dynamically_callback(dynamic_import_callback);
         // source-phase 动态 import（`import.source()`）宿主回调——见
         // [dynamic_import_source_phase_callback] 语义说明。
-        isolate
-            .set_host_import_module_with_phase_dynamically_callback(
-                dynamic_import_source_phase_callback,
-            );
+        isolate.set_host_import_module_with_phase_dynamically_callback(dynamic_import_source_phase_callback);
 
         // ShadowRealm 宿主回调（ECMA-262 §ShadowRealm，HostCreateShadowRealmContext）：
         // V8 内核已实现 realm/evaluate/wrapped function 语义，仅宿主 context 缺省

@@ -1660,10 +1660,44 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
 /// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
 /// 未实现面放行。
 const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 38] = [
-    "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign",
-    "sqrt", "exp", "log", "sin", "cos", "tan", "asin", "acos", "atan", "matrix", "matrix3d",
-    "translate", "translate3d", "translatex", "translatey", "translatez", "scale", "scale3d",
-    "scalex", "scaley", "scalez", "rotate", "rotate3d", "rotatex", "rotatey", "rotatez",
+    "calc",
+    "min",
+    "max",
+    "clamp",
+    "round",
+    "mod",
+    "rem",
+    "hypot",
+    "pow",
+    "atan2",
+    "abs",
+    "sign",
+    "sqrt",
+    "exp",
+    "log",
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "matrix",
+    "matrix3d",
+    "translate",
+    "translate3d",
+    "translatex",
+    "translatey",
+    "translatez",
+    "scale",
+    "scale3d",
+    "scalex",
+    "scaley",
+    "scalez",
+    "rotate",
+    "rotate3d",
+    "rotatex",
+    "rotatey",
+    "rotatez",
 ];
 
 /// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；
@@ -1679,9 +1713,7 @@ fn value_has_unimplemented_function(value: &str) -> bool {
             continue;
         }
         let start = i;
-        while i < bytes.len()
-            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
-        {
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_') {
             i += 1;
         }
         // ident 后随 `(`（允许空白）→ 函数调用

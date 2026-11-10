@@ -1,20 +1,20 @@
 # WPT 全量通过率 · Test262、Encoding 与 Wasm
 
-**状态** Active\
+**状态** ✅ Completed（2026-11-11——DC-1~3 全部完成：三目录合计 1,393,984 ≥ 验收线 1,393,955，对 11-07 基线净增 76,029 ≥ 76,000；终态见 [终局对账](wptfyi-runtime/evidence/dc3-final-reconciliation-2026-11-11.md)）\
 **立项** 2026-11-09，按用户要求拆分高贡献 WPT 缺口，支持 Rally 无人值守推进。\
-**父目标** [ZeroWeb](zero-web.md)\
+**父目标** [ZeroWeb](../zero-web.md)\
 **控制面** [master.md](wptfyi-runtime/master.md)\
-**共同计分与运行规则** [五目标计划](../compat/wptfyi-90-plan.md)
+**共同计分与运行规则** [五目标计划](../../compat/wptfyi-90-plan.md)
 
 ## 基线与目标
 
-2026-11-07 已发布快照中，本目标目录已通过 1,317,955 / 1,398,399。`third_party/test262` 53,794 个上游生成路径均未覆盖，`encoding` 余 23,847 项，`wasm` 余 2,803 项。复用 [Encoding 归档](archive/encoding-compat-v2.md) 和 [Wasm 归档](archive/wasm-compat.md)。[WPT Test262 是独立测试类型](https://web-platform-tests.org/running-tests/command-line-arguments.html)，其 [serve 包装器](https://github.com/web-platform-tests/wpt/blob/8c04fb8d43/tools/serve/serve.py) 提供 harness、provider 和负例等元数据。
+2026-11-07 已发布快照中，本目标目录已通过 1,317,955 / 1,398,399。`third_party/test262` 53,794 个上游生成路径均未覆盖，`encoding` 余 23,847 项，`wasm` 余 2,803 项。复用 [Encoding 归档](encoding-compat-v2.md) 和 [Wasm 归档](wasm-compat.md)。[WPT Test262 是独立测试类型](https://web-platform-tests.org/running-tests/command-line-arguments.html)，其 [serve 包装器](https://github.com/web-platform-tests/wpt/blob/8c04fb8d43/tools/serve/serve.py) 提供 harness、provider 和负例等元数据。
 
 把 `third_party/test262、encoding、wasm` 的上游语料接入可复跑的 ZeroWeb 执行链，在同口径全量报告中净增 **76,000** 项通过，达到至少 **1,393,955** 项。保留同 revision 路径级证据，并随最新周跑另报上游漂移。
 
 ## 范围与协作
 
-以 ZeroWeb 发布配置的 V8 运行时为主。Test262 只计能对应到固定 WPT revision 的真实生成 URL、语义和结果。Encoding 与 Wasm 只计各自一级目录，HTML 下的表单编码归 HTML 目标。JS 桥共享写面与 zero-web 流协调。 按 [run-rules](../rally/run-rules.md) 处理共享面冲突。有活跃流在同一写面时，先推进独立语料、对账和失败归类。
+以 ZeroWeb 发布配置的 V8 运行时为主。Test262 只计能对应到固定 WPT revision 的真实生成 URL、语义和结果。Encoding 与 Wasm 只计各自一级目录，HTML 下的表单编码归 HTML 目标。JS 桥共享写面与 zero-web 流协调。 按 [run-rules](../../rally/run-rules.md) 处理共享面冲突。有活跃流在同一写面时，先推进独立语料、对账和失败归类。
 
 ## 里程碑与完成条件
 

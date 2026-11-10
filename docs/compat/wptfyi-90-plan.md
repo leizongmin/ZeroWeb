@@ -13,7 +13,7 @@
 | 1. [CSS 子测试](../goal/wptfyi-css.md) | `css` | 166,939 | +7.36 pp | 153,000 | +6.74 pp |
 | 2. [Editing、Selection 与 Input Events](../goal/wptfyi-editing.md) | `editing`、`selection`、`input-events` | 138,411 | +6.10 pp | 130,000 | +5.73 pp |
 | 3. [HTML、XHTML 与 DOM 接口](../goal/wptfyi-html.md) | `html` | 88,227 | +3.89 pp | 81,000 | +3.57 pp |
-| 4. [Test262、Encoding 与 Wasm](../goal/wptfyi-runtime.md) | `third_party/test262`、`encoding`、`wasm` | 80,444 | +3.55 pp | 76,000 | +3.35 pp |
+| 4. [Test262、Encoding 与 Wasm](../goal/archive/wptfyi-runtime.md)（已完成 2026-11-11，净增 76,029） | `third_party/test262`、`encoding`、`wasm` | 80,444 | +3.55 pp | 76,000 | +3.35 pp |
 | 5. [WebCrypto](../goal/archive/wptfyi-webcrypto.md)（已完成 2026-11-10） | `WebCryptoAPI` | 44,093 | +1.94 pp | 31,000 | +1.37 pp |
 | 合计 | | 518,114 | +22.83 pp | 471,000 | +20.76 pp |
 

@@ -6,7 +6,7 @@
 
 weekly run [42801058132](https://github.com/leizongmin/ZeroWeb/actions/runs/42801058132)
 （HEAD `3bfccdfa3`）快照已由 cron 落库
-（[coverage-2026-11-10](../../../compat/wptfyi/coverage-2026-11-10.md)，与
+（[coverage-2026-11-10](../../../../compat/wptfyi/coverage-2026-11-10.md)，与
 `/tmp/dc3-artifacts/wptfyi-coverage/` 产物逐字一致）：test262 51,838 +
 encoding 1,151,530 + wasm 190,526 = **1,393,894**，对验收线 1,393,955
 **差 61**。三目录拆解：

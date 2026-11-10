@@ -430,7 +430,7 @@ fetch-wpt-wasm-core:
 testharness-wasm-core: target-disk-guard fetch-wpt-wasm fetch-wpt-wasm-core target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-wasm-core $(if $(FILTER),$(FILTER),)
 
-# wptfyi-runtime goal DC-1（docs/goal/wptfyi-runtime.md）：third_party/test262 上游
+# wptfyi-runtime goal DC-1（docs/goal/archive/wptfyi-runtime.md）：third_party/test262 上游
 # 语料 vendoring（goals/48-test262-runtime.sh——git partial clone + cone sparse，
 # pin = lib.sh WPT_REV，vendored.toml 记 test262 上游 rev b66872a9）+ runner 通道
 # （testharness_test262.rs——上游 serve 包装链折叠单页执行，变体名 .test262.html /
