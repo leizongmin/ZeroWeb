@@ -2094,6 +2094,19 @@
   // 无小写后随的大写连续段先折叠小写再走 `_stylePropName`（camelCase 宽容接受
   // backgroundColor → background-color 与 webkit IDL 前缀特例语义不变；'COLOR' →
   // 'color'，cssText 整体写/规则样式两路共享本函数，同修）。
+  // T54 勘误（DF-T50-N1）：上记折叠「无小写后随」判定漏了词尾边界——camel 词尾大写
+  // 段（'backgroundPositionX' 词尾 'X'，后随串尾前瞻通过）同被原地折小写，camel 边界
+  // 先于 `_stylePropName` 丢失 → 'background-positionx' 缺陷形（词中段/词首段
+  // T49-T53 已收口，词尾形遗漏）。本钉加 (?<![a-z]) 前顾限定：折叠仅取词首/连字符后
+  // 大写段（kebab 书写形全大写连字，'COLOR'/'Z-INDEX'/vendor 形语义不变）；camel
+  // 词尾大写段不折叠，落 `_stylePropName` camel 算法（cssom-1
+  // §camel-cased-attribute-to-css-attribute：每大写字母 → '-' + 小写，词尾同规则）→
+  // 'background-position-x'。Blink 154 活体（t54-oracle-result.txt，Chrome
+  // 154.0.8037.92 headless 2026-11-10）：IDL backgroundPositionX/Y → cssText
+  // 'background-position-x: 10px;'（names ['background-position-x']），无连字符形
+  // 'background-positionx' 读拒；负案 custom `--` case-sensitive/词中 camel/vendor
+  // 三形/全大写连写形全数同向。五面共享本函数（规则 T49/IDL T50/csstext/keyframe
+  // T51/物化面板 T52-T53），修一处全链继承（钉 test_cssom_decl_name_fold_wordfinal_t54）。
   function _styleDeclName(name) {
     // DF-T50-1（T50 返修）：trim 先于 `--` 早退——早退先于 trim 时尾空白 custom
     // 名参（'--FOO '）未修剪透传：写面落 host（merge_style_property 存储侧
@@ -2109,7 +2122,7 @@
     // test_cssom_idl_whitespace_name_t50fix 锁定。
     var s = String(name).trim();
     if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
-    var folded = s.replace(/[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
+    var folded = s.replace(/(?<![a-z])[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
     return _stylePropName(folded).toLowerCase();
   }
 
