@@ -3,7 +3,7 @@
 //! 与 [`super::text::Painter::paint_input_value`]（R1660）/ `paint_img_element` 同属「元素特化
 //! paint」。独立成文件因 `text.rs` 已超 2000 行（CLAUDE.md §5 文件大小控制）。
 
-use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::{LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
@@ -359,6 +359,14 @@ impl super::Painter {
             return;
         };
         if !matches!(&node.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("summary")) {
+            return;
+        }
+        // css-lists-3 §list-style-type（https://www.w3.org/TR/css-lists-3/#list-style-type-property）：
+        // `list-style-type: none` 抑制标记，与 ul/ol marker 臂同判据（text_list.rs 的
+        // ListStyleTypeValue::None 抑制先例）。站点对 summary 声明 none（如 github
+        // Primer `summary{list-style:none}`）并以 ::after 自绘 caret 时，无条件原生
+        // disclosure 三角即双画（zinc B-1 heal 臂定谳）——以绘制源真理收口。
+        if style.list_style_type == ListStyleTypeValue::None {
             return;
         }
         let font_size: f32 = match style.font_size {

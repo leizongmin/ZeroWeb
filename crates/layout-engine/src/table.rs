@@ -26,7 +26,7 @@ pub(crate) use crate::table_types::*;
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{DisplayValue, FloatValue};
+use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FloatValue};
 
 use zero_dom::NodeId;
 
@@ -247,7 +247,7 @@ fn adjust_table_layout_inner(
                 } else {
                     let old_height = root.children[run_start].height;
                     layout_table(&mut root.children[run_start], doc, styles, inline_fonts);
-                    reflow_siblings_after_table_height_change(root, run_start, old_height, true);
+                    reflow_siblings_after_table_height_change(root, run_start, old_height, true, styles);
                     for child in &mut root.children[run_start].children {
                         adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
                     }
@@ -269,7 +269,7 @@ fn adjust_table_layout_inner(
                     styles,
                     inline_fonts,
                 );
-                reflow_siblings_after_table_height_change(root, idx, old_height, true);
+                reflow_siblings_after_table_height_change(root, idx, old_height, true, styles);
                 // R2061：abspos table 内容高确定后按 §10.3.7 重算垂直 auto-margin 居中
                 //（old_height = taffy stretch 高 = CB 可用）。在调用方调用覆盖 build_grid
                 // 空表早返路径与正常路径；非 abspos table 经 recenter 内部 gate no-op。
@@ -299,7 +299,7 @@ fn adjust_table_layout_inner(
                         .node_id
                         .and_then(|id| styles.get(&id))
                         .is_some_and(|s| matches!(s.height, zero_css_parser::values::LengthValue::Px(_)));
-                    reflow_siblings_after_table_height_change(root, idx, old_height, !parent_height_definite);
+                    reflow_siblings_after_table_height_change(root, idx, old_height, !parent_height_definite, styles);
                 }
                 idx += 1;
             }
@@ -423,6 +423,7 @@ fn reflow_siblings_after_table_height_change(
     table_idx: usize,
     old_table_height: f32,
     update_parent_height: bool,
+    styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     if !matches!(parent.writing_mode, WritingModeValue::HorizontalTb) {
         return;
@@ -434,6 +435,52 @@ fn reflow_siblings_after_table_height_change(
     // delta（100−200=−100）加到父高度 → 父 200→100 塌缩 → abspos CB 跟着塌缩 →
     // margin:auto 垂直居中失效（表格贴顶）。abspos/fixed table 须早返，不触父/兄弟。
     if parent.children[table_idx].is_absolute || parent.children[table_idx].is_fixed {
+        return;
+    }
+    // CSS2 §9.4.1/§9.5（https://www.w3.org/TR/CSS22/visuren.html#block-formatting）：
+    // 浮动盒 out of flow——不参与块流兄弟堆叠，其高度变化不得按 delta 位移后续
+    // in-flow 兄弟，也不得按 delta 回填父高（浮动对容器高的贡献由 BFC float
+    // containment pass 重算，非此处的运行游标记账）。github trending：article 首子
+    // div.float-right（星标按钮容器，float:right）随内层 BtnGroup 空伪元素表收缩
+    // 44→28，旧实现把 h2/p/footer 整体上移 16 并回填 article 高 286→270，
+    // 16 卡级联 −256（列表容器 4219→3963 实证）。
+    if !matches!(parent.children[table_idx].float, FloatValue::None) {
+        return;
+    }
+    // css-flexbox-1 §4（https://www.w3.org/TR/css-flexbox-1/#flex-items）：flex item
+    // 不参与块流——row 方向 flex 容器中 table item 的高度收缩（空 display:table 子由
+    // taffy stretch 高塌回内容高 0）不位移任何兄弟（主轴水平、兄弟沿 main axis 排布），
+    // auto 交叉尺寸 = max(in-flow item bottom) 而非「运行游标 + delta」。此前块流语义
+    // 把后继 item 兄弟 y 上移 delta、容器高同步塌缩（github trending BtnGroup
+    // `::before/::after` 空表 ×34：宿主 flex 高 18→0、兄弟文本 y −18 实证）。column
+    // 方向 main 轴即垂直，块流式位移近似成立，维持既有路径。
+    let parent_is_row_flex = parent.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+            && matches!(
+                s.flex_direction,
+                FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+            )
+    });
+    if parent_is_row_flex {
+        if update_parent_height {
+            let parent_height_definite = parent
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.height, zero_css_parser::values::LengthValue::Px(_)));
+            if !parent_height_definite {
+                let mut max_bottom = 0.0_f32;
+                for c in &parent.children {
+                    if c.is_absolute || c.is_fixed || !matches!(c.float, FloatValue::None) {
+                        continue;
+                    }
+                    max_bottom = max_bottom.max(c.y + c.height);
+                }
+                let padding_border =
+                    parent.padding_top + parent.padding_bottom + parent.border_top + parent.border_bottom;
+                parent.height = max_bottom + padding_border;
+                parent.content_height = max_bottom;
+            }
+        }
         return;
     }
     let height_delta = parent.children[table_idx].height - old_table_height;

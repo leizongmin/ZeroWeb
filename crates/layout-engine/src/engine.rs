@@ -1002,6 +1002,52 @@ impl LayoutEngine {
                 )
             },
         );
+        // R54xx：row flex auto 条目 flex base 权威修正（apply_flex_item_base_authority，
+        // 与 intrinsic/abspos shrink 等 pass 同一 re-run 组的独立前置小循环）。嵌套 flex
+        // 链（.hdr→.rgt→items）外层修正后内层 laid 才残缺暴露——每轮 fire 后重跑 taffy
+        // 并重提 box 树，≤3 轮收敛（trending 头部 2 层嵌套）。无缺陷形态页面首轮扫描即
+        // 返回 false，零重跑。kill-switch `ZW_FLEX_BASE_AUTHORITY=0`（pass 内单读）。
+        for _ in 0..3 {
+            if !Self::apply_flex_item_base_authority(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc) {
+                break;
+            }
+            let available_space = taffy::geometry::Size {
+                width: AvailableSpace::Definite(self.effective_root_layout_width()),
+                height: AvailableSpace::Definite(self.viewport_height),
+            };
+            let inline_fonts = self.inline_font_context(&font_overrides);
+            let _ = taffy_tree.compute_layout_with_measure(
+                root_id,
+                available_space,
+                |known_dimensions, available_space, _node_id, context, _style| {
+                    let dom_id = match context {
+                        Some(id) => *id,
+                        None => return (Size::ZERO, None),
+                    };
+                    let (size, baseline) = measure_text_content_with_baseline(
+                        doc,
+                        styles,
+                        dom_id,
+                        known_dimensions,
+                        available_space,
+                        &intrinsic_for_r695,
+                        inline_fonts,
+                        r109.run_in_prepended.get(&dom_id).copied(),
+                    );
+                    (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
+                },
+            );
+            root_box = Self::extract_layout(
+                &taffy_tree,
+                root_id,
+                &taffy_to_dom,
+                styles,
+                &WritingModeValue::HorizontalTb,
+                doc,
+                &r109,
+                false,
+            );
+        }
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img

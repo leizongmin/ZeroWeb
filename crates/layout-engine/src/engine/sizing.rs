@@ -2416,6 +2416,116 @@ impl LayoutEngine {
     /// （(25-15)×8+10=90 / (25-15)×19+10=200）。025 八行期望全 200（ref 平铺），
     /// ZW rows 5-8 渲 475/371/475/475。
     ///
+    /// R54xx（css-flexbox-1 §4.1 flex base size + css-sizing-3 §5.1 max-content）：
+    /// row flex auto 条目的 flex base 权威修正。taffy 首趟对「直接文本 + inline 级
+    /// 元素子」混合内容子树的内容计量不可靠——converter 把 inline 级元素映射为
+    /// taffy Block（R109），非叶盒按 Block 堆叠取 max-content = max(子) 且匿名文本
+    /// 不在 taffy 树中不可见，flex item 的 auto basis 被解成残缺宽（github trending
+    /// 头部 summary "Spoken Language: Any" 被解成 span 26px，真实 inline 内容
+    /// 168px）。ZW 测量（flex_item_base_size → box_content_max_width，inline 内容经
+    /// dom_inline_text walk 求和）语义正确——本 pass 在第一趟布局后对失准条目改写
+    /// flex_basis = ZW 基准并 mark_dirty，由调用方重跑 taffy 重解（R5407 同机制）。
+    /// ZW 基准为 border-box 口径（flex_item_base_size 文档契约），写入按条目
+    /// box-sizing 补偿（css-sizing-3 §5.3 box-sizing + R4360 同口径）：taffy 对
+    /// ContentBox 条目给 flex_basis 叠加 padding_border_sum（taffy-local flexbox.rs
+    /// determine_flex_base_size 的 box_sizing_adjustment 臂），BorderBox 条目不加
+    /// ——BorderBox 原值写入、ContentBox 写 content 口径（基准 - 水平 frame），
+    /// 否则带 padding/border 条目外宽溢出 frame。
+    ///
+    /// 触发条件（全部满足）：父 row/row-reverse flex + nowrap（wrap 换行后 base > laid
+    /// 合法，跳过）+ 条目 width/basis auto + 水平书写 + 非替换非定位 + 主轴无 auto
+    /// margin + 子树含混合 inline 内容形态（直接文本 + inline 级元素子，静态缺陷
+    /// 形态，先于昂贵测量）+ ZW 基准 > laid + 0.5 + 容器可行（其余 in-flow 条目
+    /// laid outer 之和 + 本基准 ≤ 容器 content 宽 + 0.5）——真收缩语境不触发，不改
+    /// 变既有收缩分配。gap 保守取 0（欠估 leftover → 安全向少触发）。嵌套 flex 链
+    /// （.hdr→.rgt→items）外层修正后内层 laid 才残缺暴露——调用方以小循环（≤3 轮
+    /// compute+extract）收敛。kill-switch `ZW_FLEX_BASE_AUTHORITY=0`（pass 内单读）。
+    pub(super) fn apply_flex_item_base_authority(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+    ) -> bool {
+        use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue};
+        if std::env::var("ZW_FLEX_BASE_AUTHORITY").as_deref() == Ok("0") {
+            return false;
+        }
+
+        // 静态预门共用 `intrinsic_sizing::subtree_has_mixed_inline_content`（R54xx
+        // taffy 盲区形态判定，与 R4032 臂同源）。
+
+        fn walk(
+            b: &LayoutBox,
+            parent_box: Option<&LayoutBox>,
+            parent_style: Option<&ComputedStyle>,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+            doc: &Document,
+        ) -> bool {
+            let mut changed = false;
+            let my_style = b.node_id.and_then(|id| styles.get(&id));
+            if let (Some(id), Some(pb), Some(ps)) = (b.node_id, parent_box, parent_style)
+                && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(
+                    ps.flex_direction,
+                    FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                )
+                && matches!(ps.flex_wrap, FlexWrapValue::Nowrap)
+                && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+                && !b.is_replaced
+                && !b.is_absolute
+                && !b.is_fixed
+                && let Some(item_style) = styles.get(&id)
+                && matches!(item_style.width, LengthValue::Auto)
+                && matches!(item_style.flex_basis, zero_style_system::FlexBasisValue::Auto)
+                && !matches!(item_style.margin_left, LengthValue::Auto)
+                && !matches!(item_style.margin_right, LengthValue::Auto)
+                && crate::intrinsic_sizing::subtree_has_mixed_inline_content(b, styles, doc)
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+            {
+                let base = crate::intrinsic_sizing::flex_item_base_size(b, doc, styles, None);
+                if base > b.width + 0.5 {
+                    // 容器可行：其余 in-flow 条目 laid outer + 本基准 ≤ 容器 content 宽
+                    //（css-flexbox §4.1：可行则不收缩，基准即权威；不可行 = 真收缩，
+                    // 本 pass 不介入）。gap 保守 0（欠估 leftover → 少触发，安全向）。
+                    let content_w = pb.width - pb.padding_left - pb.padding_right - pb.border_left - pb.border_right;
+                    let others: f32 = pb
+                        .children
+                        .iter()
+                        .filter(|c| !c.is_absolute && !c.is_fixed && !std::ptr::eq(*c, b))
+                        .map(|c| c.width + c.margin_left + c.margin_right)
+                        .sum();
+                    if base + others <= content_w + 0.5 {
+                        // css-sizing-3 §5.3 box-sizing + R4360 同口径补偿：base 为 ZW
+                        // border-box 基准（flex_item_base_size 契约），taffy 对 ContentBox
+                        // 条目给 flex_basis 叠加 padding_border_sum（taffy-local flexbox.rs
+                        // determine_flex_base_size 的 box_sizing_adjustment 臂），BorderBox
+                        // 条目不加——BorderBox 原值写入、ContentBox 写 content 口径
+                        // （base - frame），否则条目外宽溢出 frame。
+                        let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                        let basis = if matches!(item_style.box_sizing, BoxSizingValue::BorderBox) {
+                            base
+                        } else {
+                            base - frame
+                        };
+                        st.flex_basis = taffy::style::Dimension::length(basis.max(0.5));
+                        let _ = taffy_tree.set_style(tid, st);
+                        let _ = taffy_tree.mark_dirty(tid);
+                        changed = true;
+                    }
+                }
+            }
+            for c in &b.children {
+                changed |= walk(c, Some(b), my_style, taffy_tree, dom_to_taffy, styles, doc);
+            }
+            changed
+        }
+        walk(root, None, None, taffy_tree, dom_to_taffy, styles, doc)
+    }
+
     /// 本 pass **必须后于 `apply_flex_cross_from_flexed_main`**（R4992 干扰假设：前置
     /// 写入使 item main definite Px → 该 pass 门触发重写 cross/尺寸链致 rows 6/8 写入
     /// 丢失）。实现 = 清 taffy aspect_ratio（R4990 同法防反传）+ definite size.main =

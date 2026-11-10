@@ -175,6 +175,56 @@ fn test_normalize_merges_adjacent_text_nodes() {
     assert_eq!(doc.text_content(parent), Some("hello world".to_string()));
 }
 
+/// 测试 normalize 不跨越 synthetic 边界合并文本（见 [`crate::node::NodeData::synthetic`]，
+/// 伪元素替身文本）：替身↔真实互不吸收——替身内容并进真实节点会经序列化泄漏，
+/// 真实内容并进替身则随替身从序列化消失；同侧（真实-真实 / 替身-替身）正常合并。
+#[test]
+fn test_normalize_does_not_merge_across_synthetic_boundary() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+
+    // parent 子节点：syn("★") + text("A") + text("B") + syn("tail") + text("C")
+    let syn1 = doc.create_text_node("★");
+    doc.get_mut(syn1).unwrap().synthetic = true;
+    let t1 = doc.create_text_node("A");
+    let t2 = doc.create_text_node("B");
+    let syn2 = doc.create_text_node("tail");
+    doc.get_mut(syn2).unwrap().synthetic = true;
+    let t3 = doc.create_text_node("C");
+
+    doc.append_child(parent, syn1).unwrap();
+    doc.append_child(parent, t1).unwrap();
+    doc.append_child(parent, t2).unwrap();
+    doc.append_child(parent, syn2).unwrap();
+    doc.append_child(parent, t3).unwrap();
+
+    doc.normalize(parent);
+
+    // 期望：★（替身独占）、AB（真实合并）、tail（替身独占）、C（真实独占）
+    assert_eq!(doc.child_count(parent), 4);
+    let children = doc.child_nodes(parent);
+    let rendered: Vec<(bool, String)> = children
+        .iter()
+        .filter_map(|&id| {
+            let n = doc.get(id)?;
+            match &n.kind {
+                crate::node::NodeKind::Text(t) => Some((n.synthetic, t.content.clone())),
+                _ => None,
+            }
+        })
+        .collect();
+    assert_eq!(
+        rendered,
+        vec![
+            (true, "★".to_string()),
+            (false, "AB".to_string()),
+            (true, "tail".to_string()),
+            (false, "C".to_string()),
+        ],
+        "normalize 不得跨越 synthetic 边界合并"
+    );
+}
+
 /// 测试移除元素之间的空文本节点。
 #[test]
 fn test_normalize_removes_empty_text_nodes() {
