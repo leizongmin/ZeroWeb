@@ -703,6 +703,91 @@ fn test_query_selector_not_pseudo() {
     assert_eq!(not_first.len(), 3);
 }
 
+// T56（P28 RC-1）：`:not(<selector-list>)` 规范语义全案钉（Selectors 4 <negation>，
+// https://www.w3.org/TR/selectors-4/#negation）——实参为 selector list，任一内层
+// 命中即否决，全不命中才通过。修前实参按单复合宽松解析（类名段分隔集不含逗号，
+// `.x,.missing` 吞成单类名 `x,missing`）→ 内层恒不匹配 → 否定失效全通过。
+// 20 键：列表语义 6Δ + complex 实参拒绝 4Δ + 单实参不变性/护栏负案 10 绿。
+#[test]
+fn test_query_not_selector_list_t56() {
+    let doc = parse_html(
+        "<html><body>\
+         <div id='a' class='x'></div><div id='b'></div>\
+         <div id='c' class='missing'></div><div id='d' title='a b'></div>\
+         <span id='s1' class='a'></span><span id='s2'></span><span id='s3' class='b'></span>\
+         <p id='p1' class='x'></p>\
+         <ul id='u'><li id='l1' class='skip'>1</li><li id='l2'>2</li>\
+         <li id='l3' class='skip'>3</li><li id='l4'>4</li></ul>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_join = |doc: &Document, nodes: &[NodeId]| -> String {
+        nodes
+            .iter()
+            .map(|id| match doc.get(*id).map(|n| &n.kind) {
+                Some(NodeKind::Element(e)) => e.id.as_deref().unwrap_or("").to_string(),
+                _ => String::new(),
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let first_id = |doc: &Document, sel: &str| -> String {
+        doc.query_selector(root, sel)
+            .map(|id| match doc.get(id).map(|n| &n.kind) {
+                Some(NodeKind::Element(e)) => e.id.as_deref().unwrap_or("").to_string(),
+                _ => String::new(),
+            })
+            .unwrap_or_default()
+    };
+    // 列表实参——任一内层命中即否决。
+    let list_div = ids_join(&doc, &doc.query_selector_all(root, "div:not(.x,.missing)"));
+    let list_span = ids_join(&doc, &doc.query_selector_all(root, "span:not(.a,.b)"));
+    let list_li = ids_join(&doc, &doc.query_selector_all(root, "li:not(.skip,.missing)"));
+    let list_order_first = first_id(&doc, "div:not(.missing,.x)");
+    let list_veto_first = first_id(&doc, "div:not(.x,.missing)");
+    let list_space = ids_join(&doc, &doc.query_selector_all(root, "div:not(.x, .missing)"));
+    // 单实参不变性（CSS3 单复合语义保持）。
+    let single_arg = ids_join(&doc, &doc.query_selector_all(root, "div:not(.x)"));
+    let single_pseudo = ids_join(&doc, &doc.query_selector_all(root, "li:not(:first-child)"));
+    let chained = ids_join(&doc, &doc.query_selector_all(root, "ul > li:not(.skip):not(.missing)"));
+    let id_hit = first_id(&doc, "p:not(#nope)");
+    let id_veto = first_id(&doc, "p:not(#p1)");
+    // complex 实参（顶层组合器/空白）conservative 拒绝——整个选择器 unsupported。
+    let gt_valid = selector_is_valid("div:not(.a > .b)");
+    let gt_query = first_id(&doc, "div:not(.a > .b)");
+    let desc_valid = selector_is_valid("div:not(.a .b)");
+    let desc_query = first_id(&doc, "div:not(.a .b)");
+    // 护栏：引号内空白属属性值、非组合器——不得过拒。
+    let attr_valid = selector_is_valid(r#"div:not([title="a b"])"#);
+    let attr_query = ids_join(&doc, &doc.query_selector_all(root, r#"div:not([title="a b"])"#));
+    // 函数式伪类嵌套 conservative 拒绝（伪类实参抽取在首个 `)` 截断 → 外层
+    // 余 dangling `)` 落段解析 else 臂 → 非法；修后保持）。
+    let nested_valid = selector_is_valid("div:not(:is(.a,.b))");
+    let nested_query = first_id(&doc, "div:not(:is(.a,.b))");
+    // 空实参非法（非 forgiving 列表）。
+    let empty_valid = selector_is_valid("div:not()");
+    let actual = format!(
+        "{{\"listDiv\":\"{list_div}\",\"listSpan\":\"{list_span}\",\"listLi\":\"{list_li}\",\
+         \"listOrderFirst\":\"{list_order_first}\",\"listVetoFirst\":\"{list_veto_first}\",\
+         \"listSpaceAfterComma\":\"{list_space}\",\"singleArg\":\"{single_arg}\",\
+         \"singlePseudoArg\":\"{single_pseudo}\",\"chainedNot\":\"{chained}\",\
+         \"idNotHit\":\"{id_hit}\",\"idNotVeto\":\"{id_veto}\",\"complexGtValid\":\"{gt_valid}\",\
+         \"complexGtQuery\":\"{gt_query}\",\"complexDescValid\":\"{desc_valid}\",\
+         \"complexDescQuery\":\"{desc_query}\",\"attrSpaceValid\":\"{attr_valid}\",\
+         \"attrSpaceQuery\":\"{attr_query}\",\"nestedIsValid\":\"{nested_valid}\",\
+         \"nestedIsQuery\":\"{nested_query}\",\"emptyValid\":\"{empty_valid}\"}}"
+    );
+    let expected = concat!(
+        r#"{"listDiv":"b,d","listSpan":"s2","listLi":"l2,l4","listOrderFirst":"b","#,
+        r#""listVetoFirst":"b","listSpaceAfterComma":"b,d","singleArg":"b,c,d","#,
+        r#""singlePseudoArg":"l2,l3,l4","chainedNot":"l2,l4","idNotHit":"p1","idNotVeto":"","#,
+        r#""complexGtValid":"false","complexGtQuery":"","complexDescValid":"false","#,
+        r#""complexDescQuery":"","attrSpaceValid":"true","attrSpaceQuery":"a,b,c","#,
+        r#""nestedIsValid":"false","nestedIsQuery":"","emptyValid":"false"}"#
+    );
+    assert_eq!(actual, expected, "T56 :not 列表实参 selector-list 语义全案（20 键）");
+}
+
 #[test]
 fn test_query_selector_nth_last() {
     let doc = parse_html("<html><body><ul><li>1</li><li>2</li><li>3</li><li>4</li></ul></body></html>");

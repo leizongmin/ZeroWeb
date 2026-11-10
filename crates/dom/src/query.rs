@@ -81,9 +81,14 @@ pub enum PseudoClass {
     PseudoElement,
     /// `:empty`——无子节点（含文本；spec：无 element/text 子，注释允许，本实现简化为无任何子）。
     Empty,
-    /// `:not(simple)`——否定伪类，匹配**不**满足内嵌简单选择器的元素（CSS3 语义：内嵌仅简单选择器，
-    /// 无组合器）。内嵌可为含伪类的简单选择器（如 `:not(:first-child)`）。
-    Not(SimpleSelector),
+    /// `:not(<selector-list>)`——否定伪类（Selectors L4 §4.3 <negation>，
+    /// https://www.w3.org/TR/selectors-4/#negation）：实参为 selector list，
+    /// **任一内层命中即否决**，全不命中才通过。内层为 compound simple selector
+    /// （可含伪类，如 `:not(:first-child)`）。complex 实参（含顶层组合器/空白）
+    /// 与函数式伪类嵌套 conservative 不支持——解析失败 → 整个选择器 unsupported
+    /// （与 shim handle 面语义对齐，不宽松吞错）。
+    /// FIXME(selectors-4): complex 实参（`.a > .b`）规范允许，待选择器引擎升级放开。
+    Not(Vec<SimpleSelector>),
     /// `:is(s1, s2, …)` / `:where(…)`——选择器列表，匹配满足**任一**内嵌简单选择器的元素。
     /// `:where` 语义同 `:is`（区别仅在特异性，本引擎无特异性概念，故共用）。
     Is(Vec<SimpleSelector>),
@@ -499,17 +504,20 @@ impl SimpleSelector {
             PseudoClass::Empty => pos.is_empty,
             // R159：伪元素——DOM querySelector **恒不匹配**（spec 伪元素不是元素）。
             PseudoClass::PseudoElement => false,
-            // :not(inner)——否定（内嵌经 matches_full 递归评估，可含伪类）。
-            // s326：inner 含 `:filtered`（运行时注入态）时延后返 true——deferred-true
+            // :not(<selector-list>)——任一内层命中即否决（Selectors L4 <negation>）。
+            // s326：任一内层含 `:filtered`（运行时注入态）时延后返 true——deferred-true
             // 在 Not 内层泄漏会使 `:not(:filtered)`（filterable select 语料主消费面
             // `visibleOptions()`）恒 false；延后由 Document::element_matches_selector
-            // 复评（镜像 :active 顶层面）。其余 inner 维持既有直评（:not(:target) 等
+            // 复评（镜像 :active 顶层面）。其余内层维持既有直评（:not(:target) 等
             // 否定嵌套局限不变——泛化修复超本切片范围）。
-            PseudoClass::Not(inner) => {
-                if inner.pseudos.iter().any(|p| matches!(p, PseudoClass::Filtered)) {
+            PseudoClass::Not(list) => {
+                if list
+                    .iter()
+                    .any(|inner| inner.pseudos.iter().any(|p| matches!(p, PseudoClass::Filtered)))
+                {
                     true
                 } else {
-                    !inner.matches_full(elem, pos)
+                    !list.iter().any(|inner| inner.matches_full(elem, pos))
                 }
             }
             // :is/:where(list)——任一内嵌匹配则真。
@@ -1419,8 +1427,29 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "before" | "after" | "first-line" | "first-letter" | "slotted" | "selection" | "marker" | "placeholder"
         | "backdrop" => Some(PseudoClass::PseudoElement),
         "empty" => Some(PseudoClass::Empty),
-        // :not(simple)——CSS3 否定伪类，内嵌经 parse_simple_selector（可含伪类，如 :not(:first-child)）。
-        "not" => Some(PseudoClass::Not(parse_simple_selector(args?)?)),
+        // :not(<selector-list>)——Selectors L4 §4.3 <negation>
+        //（https://www.w3.org/TR/selectors-4/#negation）：实参按顶层逗号拆
+        // selector list（复用转义对/`(`/`[` 深度感知拆分器），**任一内层命中即
+        // 否决**，全不命中才通过。修前按单复合宽松解析——类名段分隔集不含逗号，
+        // `.x,.missing` 吞成单类名 `x,missing` → 内层恒不匹配 → 否定失效全通过
+        //（T56/P28 RC-1 根因）。
+        "not" => {
+            let a = args?;
+            let parts = split_top_level_selector_list(a).unwrap_or_else(|| vec![a]);
+            let mut list = Vec::with_capacity(parts.len());
+            for part in parts {
+                // complex 实参（顶层组合器/空白）conservative 不支持——解析失败 →
+                // 整个选择器 unsupported（与 shim handle 面语义对齐，不宽松吞错；
+                // tokenize 深度感知，`[title="a b"]` 引号/括号内空白不算组合器）。
+                // FIXME(selectors-4): <negation> 实参允许 complex selector，暂不支持。
+                if tokenize_combinators(part).len() > 1 {
+                    return None;
+                }
+                list.push(parse_simple_selector(part)?);
+            }
+            // parts 恒非空（无顶层逗号落单段、空段经上方 `?` 早退），list 同。
+            Some(PseudoClass::Not(list))
+        }
         // :is()/:where()——选择器列表（按 `,` 拆为多个 SimpleSelector，任一匹配）。
         // `:where` 语义同 `:is`（区别仅特异性，本引擎无特异性概念）。
         "is" | "where" => {
@@ -2008,7 +2037,9 @@ mod tests {
         assert_eq!(sel.tag.as_deref(), Some("div"));
         assert_eq!(sel.pseudos.len(), 1);
         match &sel.pseudos[0] {
-            PseudoClass::Not(inner) => {
+            PseudoClass::Not(list) => {
+                assert_eq!(list.len(), 1);
+                let inner = &list[0];
                 assert!(inner.tag.is_none());
                 assert_eq!(inner.classes, vec!["skip"]);
             }
@@ -2017,7 +2048,7 @@ mod tests {
         // :not(:first-child)——内嵌含伪类。
         let sel = parse_simple_selector("li:not(:first-child)").unwrap();
         match &sel.pseudos[0] {
-            PseudoClass::Not(inner) => assert_eq!(inner.pseudos, vec![PseudoClass::FirstChild]),
+            PseudoClass::Not(list) => assert_eq!(list[0].pseudos, vec![PseudoClass::FirstChild]),
             other => panic!("expected Not, got {other:?}"),
         }
         // 空 :not() → None。
