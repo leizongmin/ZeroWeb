@@ -225,6 +225,17 @@ fn default_on(name: &str) -> bool {
     std::env::var(name).as_deref() != Ok("0")
 }
 
+/// s387（whatwg/html#3748 / bugzil.la/2028130 收敛语义，IFC 收集侧）：select 内
+/// option/optgroup 收集抑制——author display 声明覆盖 R1679 UA `display:none` 后
+/// contents/inline 形态 option 仍经 IFC 收集物化元素键控盒（上游 closed select
+/// 位於 display:none picker 子树，无论 author 声明为何都无盒）。与 R1679 抑制、
+/// tree.rs build_subtree 汇聚点臂同 gate（`ZW_SELECT_SUPPRESS_OPTIONS=0` 回退）。
+/// driving: WPT select-option-display-inherit 子测 3。default-on。
+pub(super) fn select_options_suppress() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_SELECT_SUPPRESS_OPTIONS"));
+    selected(*VALUE, || default_on("ZW_SELECT_SUPPRESS_OPTIONS"))
+}
+
 fn opt_in(name: &str) -> bool {
     std::env::var(name).as_deref() == Ok("1")
 }

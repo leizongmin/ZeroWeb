@@ -2784,6 +2784,40 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("summary")))
 }
 
+/// select 盒面抑制（whatwg/html#3748 收敛语义，build_subtree 汇聚点消费）：
+/// select 内 option/optgroup 元素判定——自身为 option/optgroup 且祖先链含
+/// `<select>`（option 经 optgroup 间接嵌套两形态均命中）。select 之外的 option
+///（datalist 等无语料钉面）不在本谓词内。
+fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
+    let is_control_tag = doc.get(id).is_some_and(|n| {
+        matches!(&n.kind, NodeKind::Element(e) if {
+            let name = e.local_name();
+            name.eq_ignore_ascii_case("option") || name.eq_ignore_ascii_case("optgroup")
+        })
+    });
+    if !is_control_tag {
+        return false;
+    }
+    let mut cur = doc.parent_node(id);
+    while let Some(pid) = cur {
+        if doc
+            .get(pid)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
+        {
+            return true;
+        }
+        cur = doc.parent_node(pid);
+    }
+    false
+}
+
+/// select 盒面抑制 kill-switch（R5346 纪律：OnceLock 进程级单读，env::var 不入
+/// per-node 热路径）。与 R1679 option UA 抑制同 gate。
+fn select_options_suppress_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0"))
+}
+
 /// R2439：元素 `content` 属性是否为 `url()`（element-replacement，CSS Content §content-property）。
 /// content:url() 的普通元素应**自身**变 replaced（element-becomes-replaced）：抑制其全部真实
 /// 子节点（含匿名文本），元素盒自身按 image 固有尺寸 sizing + paint 渲染图片（绕 R109 IFC
@@ -3293,6 +3327,27 @@ fn build_subtree(
 ) -> taffy::NodeId {
     // LAY-08: 先检查 display:none 再克隆，避免对隐藏元素做不必要的堆分配
     if styles.get(&dom_id).is_some_and(|s| s.display == DisplayValue::None) {
+        let hidden_style = taffy::Style {
+            display: taffy::style::Display::None,
+            ..taffy::Style::default()
+        };
+        return ctx
+            .taffy
+            .new_leaf(hidden_style)
+            .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+    }
+
+    // whatwg/html#3748 / bugzil.la/2028130 收敛语义（盒面）：closed select 的
+    // option/optgroup 在上游位於 display:none 的 picker shadow 子树——无论 author
+    // display 声明为何都不生成盒。ZW 无 picker 物化（customizable-select A2 簇
+    // 立项面），R1679 的 UA `display:none`（`ua_default_display`）仅覆盖无 author
+    // 声明形态；author 声明（如 `display:inherit` → computed contents）覆盖 UA
+    // 后盒重新物化。此处按 build_subtree 汇聚点把 select 内 option/optgroup 摘出
+    // 盒面（镜像上游 picker-none 面）；computed display 面不受影响（gCS 仍报
+    // 级联胜者，style-system 9.2 调整负责 inherit→contents）。与 R1679 抑制同
+    // gate（ZW_SELECT_SUPPRESS_OPTIONS=0 回退）。driving: WPT
+    // select-option-display-inherit 子测 3（closed 单选 option 零 gBCR）。
+    if select_options_suppress_enabled() && is_suppressed_select_control_child(doc, dom_id) {
         let hidden_style = taffy::Style {
             display: taffy::style::Display::None,
             ..taffy::Style::default()
@@ -4979,6 +5034,14 @@ fn build_subtree(
                     children_with_order.sort_by_key(|&(_, order, seq, _)| (order, seq));
 
                     for &(child_dom, _, _, hoisted) in &children_with_order {
+                        // s387：select 抑制臂（同 build_subtree 汇聚点谓词/gate）——
+                        // author display 声明覆盖 R1679 UA none 后，contents 形态 option
+                        // 经下方 R3848 虚拟盒臂物化元素键控 taffy 盒（上游 closed select
+                        // 位於 display:none picker 子树，无论 author 声明为何都无盒）。
+                        // driving: WPT select-option-display-inherit 子测 3。
+                        if select_options_suppress_enabled() && is_suppressed_select_control_child(doc, child_dom) {
+                            continue;
+                        }
                         // R3848：提升文本类 → 匿名 taffy leaf。虚拟盒（contents 元素）装饰清零
                         //（contents 无 principal box 装饰）且 context=元素 id（完整 IFC，pre
                         // 折行正确）；散文本 context=文本节点 id（flex/grid 同构，单行 trim）。
