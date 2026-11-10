@@ -550,6 +550,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_auto),
         // ── transform（R2715）── CSS Transforms L1/L2 计算值 = 函数列表（Chromium 返 resolved matrix，diverge）。
         "transform" => transform_to_css(&style.transform),
+        // ── individual transforms（R4201）── rotate/translate/scale 计算值发射；缺臂曾致
+        // math 函数值 parse 成功但 getComputedStyle 返缺省（WPT values-trig computed 面全红根因）。
+        "rotate" => individual_opt_to_css(style.individual_rotate.as_ref()),
+        "translate" => individual_opt_to_css(style.individual_translate.as_ref()),
+        "scale" => individual_opt_to_css(style.individual_scale.as_ref()),
         // ── transform-origin（R2716）── 2 LengthValue 经 length_to_css，空格连接。
         "transform-origin" => {
             transform_origin_to_css(&style.transform_origin_x, &style.transform_origin_y, font_size_px)
@@ -3536,6 +3541,54 @@ fn empty_cells_to_css(e: &EmptyCellsComputedValue) -> String {
     .to_string()
 }
 
+/// individual transform 属性（css-transforms-2 §individual-transforms）计算值序列化：
+/// computed = as specified——rotate 轴形 `x|y <angle>`、`<number>{3} <angle>`；translate
+/// 单值省略 Y=0（% 经 mixed_len 保真）；scale 单值（parse 已把 `2` 归一
+/// `Scale(2, Some(2))`，arity 丢失 → sy==sx 回退单值形态，FIXME: 渲染等价启发，
+/// `scale: 2 2` 会序列化为 `2`）。individual 文法不产生的变体回落函数形。
+pub(crate) fn individual_transform_to_css(f: &TransformFunction) -> String {
+    use TransformFunction as Tf;
+    match f {
+        Tf::RotateZ(deg) => format!("{}deg", format_num(*deg, "")),
+        Tf::RotateX(deg) => format!("x {}deg", format_num(*deg, "")),
+        Tf::RotateY(deg) => format!("y {}deg", format_num(*deg, "")),
+        Tf::Rotate3d(x, y, z, angle) => format!(
+            "{} {} {} {}deg",
+            format_num(*x, ""),
+            format_num(*y, ""),
+            format_num(*z, ""),
+            format_num(*angle, "")
+        ),
+        Tf::Translate(tx, ty) => {
+            if *ty == 0.0 {
+                format_num(*tx, "px")
+            } else {
+                format!("{} {}", format_num(*tx, "px"), format_num(*ty, "px"))
+            }
+        }
+        Tf::TranslateMixed(tx, txp, ty, typ) => {
+            if *ty == 0.0 && !*typ {
+                mixed_len(*tx, *txp)
+            } else {
+                format!("{} {}", mixed_len(*tx, *txp), mixed_len(*ty, *typ))
+            }
+        }
+        Tf::Scale(sx, sy) => match sy {
+            Some(sy) if *sy != *sx => {
+                format!("{} {}", format_num(*sx, ""), format_num(*sy, ""))
+            }
+            _ => format_num(*sx, ""),
+        },
+        other => transform_function_to_css(other),
+    }
+}
+
+/// individual transform 属性初值 none（[`ComputedStyle`] 的 `individual_*` 为
+/// `Option`）→ `none`；有值走 [`individual_transform_to_css`]。
+fn individual_opt_to_css(v: Option<&TransformFunction>) -> String {
+    v.map_or_else(|| "none".to_string(), individual_transform_to_css)
+}
+
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew
 /// 角度为 `deg`；scale 系数无单位；matrix 6 分量无单位。
 pub(crate) fn transform_function_to_css(f: &TransformFunction) -> String {
@@ -3632,5 +3685,54 @@ mod r5401_safe_overflow_serialization_tests {
         assert_eq!(alignment_str(&AlignmentValue::Center), "center");
         assert_eq!(align_content_to_css(&AlignContentValue::SafeFlexEnd), "safe flex-end");
         assert_eq!(align_content_to_css(&AlignContentValue::SafeStart), "safe start");
+    }
+}
+
+#[cfg(test)]
+mod r4201_individual_transform_serialization_tests {
+    //! R4201（css-transforms-2 §individual-transforms）：rotate/translate/scale 计算值
+    //! 发射序列化——computed = as specified（WPT values-trig computed 面驱动，
+    //! `acos-asin-atan-atan2-computed.html` 24 子测试依赖本发射臂）。
+
+    use super::{individual_opt_to_css, individual_transform_to_css};
+    use zero_css_parser::values::TransformFunction as Tf;
+
+    #[test]
+    fn rotate_computes_as_specified() {
+        assert_eq!(individual_transform_to_css(&Tf::RotateZ(45.0)), "45deg");
+        // 零角不省单位（acos(1) → 0deg 的等价断言面）。
+        assert_eq!(individual_transform_to_css(&Tf::RotateZ(0.0)), "0deg");
+        assert_eq!(individual_transform_to_css(&Tf::RotateX(30.0)), "x 30deg");
+        assert_eq!(individual_transform_to_css(&Tf::RotateY(-15.5)), "y -15.5deg");
+        assert_eq!(
+            individual_transform_to_css(&Tf::Rotate3d(1.0, 2.0, 3.0, 60.0)),
+            "1 2 3 60deg"
+        );
+        // individual 文法不产生的变体回落函数形。
+        assert_eq!(individual_transform_to_css(&Tf::Rotate(45.0)), "rotate(45deg)");
+        assert_eq!(individual_opt_to_css(None), "none");
+    }
+
+    #[test]
+    fn translate_computes_single_value_when_ty_zero() {
+        assert_eq!(individual_transform_to_css(&Tf::Translate(10.0, 0.0)), "10px");
+        assert_eq!(individual_transform_to_css(&Tf::Translate(10.0, 20.0)), "10px 20px");
+        // 单值 % 形（TranslateMixed(tx, pct, 0, false)）保 % 且省零 Y。
+        assert_eq!(
+            individual_transform_to_css(&Tf::TranslateMixed(10.0, true, 0.0, false)),
+            "10%"
+        );
+        assert_eq!(
+            individual_transform_to_css(&Tf::TranslateMixed(10.0, false, 20.0, true)),
+            "10px 20%"
+        );
+    }
+
+    #[test]
+    fn scale_computes_single_value_when_factors_equal() {
+        // parse 把 `scale: 2` 归一 Scale(2, Some(2))——sy==sx 回退单值形态。
+        assert_eq!(individual_transform_to_css(&Tf::Scale(2.0, Some(2.0))), "2");
+        assert_eq!(individual_transform_to_css(&Tf::Scale(2.0, Some(3.0))), "2 3");
+        assert_eq!(individual_transform_to_css(&Tf::Scale(0.5, None)), "0.5");
     }
 }
