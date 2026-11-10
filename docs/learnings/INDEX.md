@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（261）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（263）
 
+- 2026-11-11 [inline style 写面有三条实现臂——值校验/归一类改动必须三处同形](bugs/2026-11/2026-11-11-inline-style-three-write-arms.md) — engine, style-system, css-parser
+- 2026-11-11 [css-color none 保形回归：raw 影子保存条件误排 + 基线巧合通过](bugs/2026-11/2026-11-11-css-color-raw-shadow-accidental-pass.md) — engine
 - 2026-11-09 [shim appendChild 隐式 detach 缺口状态相关——孤立探针同码全绿不等于实现正确，执行态分歧用窗口克隆+side-band trace 定位](bugs/2026-11/2026-11-09-shim-appendchild-implicit-detach-state-gap.md) — engine
 - 2026-11-09 [数值分桶中点扫描在整档值上系统性差一档](bugs/2026-11/2026-11-09-numeric-bucket-midpoint-scan-off-by-one.md) — engine
 - 2026-11-09 [FD walk 吸收臂设计前先逐迭代 trace 执行路径——静态模型把 br-branch 当落点，实际 walk cond1 已先吃掉 br](bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md) — engine
@@ -358,8 +360,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（45）
+## Platform — 平台与环境相关经验（46）
 
+- 2026-11-11 [make test 外层兜底三连杀——RSS 求和守卫不配双腿并行编译，顶层守卫归 cgroup](platform/2026-11/2026-11-11-make-test-outer-guard-rss-vs-cgroup.md) — Makefile,test-guard
 - 2026-11-10 [weekly coverage 快照组级摆动的产物法证——页超时截断三征定谳](platform/2026-11/2026-11-10-wpt-weekly-page-timeout-truncation-attribution.md) — zero-wpt-runner,wptfyi-runtime
 - 2026-11-09 [wpt testharness 断言消息只在 Fail 输出——状态转储用聚合单断言](platform/2026-11/2026-11-09-wpt-testharness-fail-only-dump-aggregation.md) — wpt-runner, engine
 - 2026-11-08 [GitHub PR baseRefOid 粘滞锚：head push 不重锚，main 未前进时 PR 侧事件也不重锚](platform/2026-11/2026-11-08-github-pr-base-ref-oid-anchor-drift.md) — crates/engine
