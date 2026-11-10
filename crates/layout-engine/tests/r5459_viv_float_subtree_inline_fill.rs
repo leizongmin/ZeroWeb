@@ -11,6 +11,10 @@
 //! fill 后 float 贴缘性质保持）、R4446（正交域 fill 臂，显式排除 float 子树）。
 //! 塌陷机制＝taffy same-BFC 排除 float（block.rs is_in_same_bfc）→ float contribution
 //! sizing；与 R4428 viv 打包排除无关（ZW_VIV_SIZING=0 不恢复 fill，R5459 勘误）。
+//!
+//! R5498 根帧转置后链值更新：body 行内 fill 源由 ICB 物理宽（784=800−16 旧错轴态）
+//! 归位 ICB 物理高（584=600−16），fill 语义不变＝.vp h=body content height（oracle
+//! 002 同语义），784/768→584/568。
 
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 
@@ -46,8 +50,8 @@ fn compute(html: &str) -> LayoutResult {
 #[test]
 fn viv_float_subtree_container_fills_inline_axis() {
     let result = compute(HTML);
-    // body：html content 系 (8,8)，800 视口 − 16 margin = 784（only-grow：body 自身
-    // 子树含 float 但 784 ≥ html content_height，fill 臂不收缩既有 ≥ fill 域）。
+    // body：html content 系 (8,8)，ICB 高 600 − 16 margin = 584（R5498 根帧转置后
+    // 行内轴=ICB 物理高；only-grow：fill 臂不收缩既有 ≥ fill 域）。
     let (body, vp, float_box) = {
         let body = result
             .root
@@ -68,19 +72,19 @@ fn viv_float_subtree_container_fills_inline_axis() {
         (body, vp, float_box)
     };
     assert!(
-        (body.height - 784.0).abs() <= 0.5,
-        "body 既有 784 不得被 only-grow 收缩，实得 h={}",
+        (body.height - 584.0).abs() <= 0.5,
+        "body 既有 584 不得被 only-grow 收缩，实得 h={}",
         body.height
     );
-    // .vp 行内轴 fill：h = body content_height 784（margin 0），ch = fill − 16 border。
+    // .vp 行内轴 fill：h = body content_height 584（margin 0），ch = fill − 16 border。
     assert!(
-        (vp.height - 784.0).abs() <= 0.5,
-        ".vp 行内轴 fill body content height 784（塌陷态 h=56），实得 h={}",
+        (vp.height - 584.0).abs() <= 0.5,
+        ".vp 行内轴 fill body content height 584（塌陷态 h=56），实得 h={}",
         vp.height
     );
     assert!(
-        (vp.content_height - 768.0).abs() <= 0.5,
-        ".vp content_height = fill − frame 768（垂直 IFC max_depth 源），实得 ch={}",
+        (vp.content_height - 568.0).abs() <= 0.5,
+        ".vp content_height = fill − frame 568（垂直 IFC max_depth 源），实得 ch={}",
         vp.content_height
     );
     // R5457 性质保持：行内轴 fill ≠ float 流几何——float 贴容器 content 右缘
@@ -107,10 +111,11 @@ fn non_float_subtree_untouched_by_fill_gate() {
             .expect("body 盒");
         body.children.iter().find(|c| c.node_id.is_some()).expect(".vp 盒")
     };
-    // 非 float 子树：taffy 交换帧 stretch 已 fill 784，本臂不触碰（同值断言＝哨戒）。
+    // 非 float 子树：taffy 交换帧 stretch 已 fill 584（R5498 转置链），本臂不触碰
+    //（同值断言＝哨戒）。
     assert!(
-        (vp.height - 784.0).abs() <= 0.5,
-        "无 float 子树 .vp 维持 taffy fill 784（gate 不误伤），实得 h={}",
+        (vp.height - 584.0).abs() <= 0.5,
+        "无 float 子树 .vp 维持 taffy fill 584（gate 不误伤），实得 h={}",
         vp.height
     );
 }

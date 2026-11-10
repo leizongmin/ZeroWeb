@@ -34,19 +34,28 @@ fn compute(html: &str, css: &str) -> LayoutResult {
     engine.compute(&doc, &styles)
 }
 
-fn find_ortho(root: &zero_layout_engine::types::LayoutBox) -> &zero_layout_engine::types::LayoutBox {
-    fn walk(b: &zero_layout_engine::types::LayoutBox) -> Option<&zero_layout_engine::types::LayoutBox> {
+/// 找正交块盒并返回 (绝对 x, 盒引用)——LayoutBox.x 为父相对坐标（paint walk 按
+/// `abs = parent_abs + padding + border + b.x` 累加），R5498 根帧转置链右缘锚定后
+/// 根盒 x 非 0，块流位断言须按绝对坐标（paint 同式累加）。
+fn find_ortho(root: &zero_layout_engine::types::LayoutBox) -> (f32, &zero_layout_engine::types::LayoutBox) {
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        parent_abs_x: f32,
+    ) -> Option<(f32, &zero_layout_engine::types::LayoutBox)> {
+        // 本盒 border-box 绝对 x = 父绝对原点（已含父 frame）+ 本盒父相对 x。
+        let abs_x = parent_abs_x + b.x;
         if !b.writing_mode.is_vertical_block_flow() && b.node_id.is_some() && b.is_block_level && b.border_left > 30.0 {
-            return Some(b);
+            return Some((abs_x, b));
         }
+        let child_origin = abs_x + b.padding_left + b.border_left;
         for c in &b.children {
-            if let Some(f) = walk(c) {
-                return Some(f);
+            if let Some(hit) = walk(c, child_origin) {
+                return Some(hit);
             }
         }
         None
     }
-    walk(root).expect("正交块盒在树")
+    walk(root, 0.0).expect("正交块盒在树")
 }
 
 fn body_html(content: &str) -> String {
@@ -56,7 +65,7 @@ fn body_html(content: &str) -> String {
 #[test]
 fn full_text_fills_icb_constraint_border_box() {
     let r = compute(&body_html(FULL_NUMS), CSS);
-    let ob = find_ortho(&r.root);
+    let (ob_abs_x, ob) = find_ortho(&r.root);
     // 旧版本失败证据：「应 800（border-box = ICB 约束）实得 130」（塌父收缩宽）。
     assert!(
         (ob.width - 800.0).abs() < 0.5,
@@ -75,11 +84,14 @@ fn full_text_fills_icb_constraint_border_box() {
         ob.height,
         ob.content_height
     );
-    // vertical-rl 块流起始 = 右缘：x 左移 delta 保右缘（parent-local 右缘 = 旧 130）。
+    // vertical-rl 块流起始 = 右缘：R5498 根帧转置链收口后祖先链 block extent = Σ 终值
+    // 子宽（html/body/#cb = ob 800，旧延迟债「父祖先链宽度不回写……R5460 html root
+    // sizing 链同账」随转置销账），ob 右缘贴链右缘 = ICB 宽 800（chromium 语义；
+    // 旧引擎祖先链滞留预解 junk，右缘 130 = 旧 #cb 塌宽）。
     assert!(
-        (ob.x + ob.width - 130.0).abs() < 0.5,
-        "右缘应保持 130（块流位），实得 x={} w={}",
-        ob.x,
+        (ob_abs_x + ob.width - 800.0).abs() < 0.5,
+        "右缘应保持 800（块流位贴 ICB 右缘），实得 abs_x={} w={}",
+        ob_abs_x,
         ob.width
     );
 }
@@ -87,7 +99,7 @@ fn full_text_fills_icb_constraint_border_box() {
 #[test]
 fn short_text_shrinks_to_max_content() {
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), CSS);
-    let ob = find_ortho(&r.root);
+    let (ob_abs_x, ob) = find_ortho(&r.root);
     // shrink-to-fit 内容响应：短文本 max-content 196（10 数单行，content 基）→
     // border-box 266。R5463 修正：intrinsic_sizing 返回 border-box 基（含 frame），
     // stf 公式消费前剥 frame——旧钉锁的双计值 336（=196+70+70）已勘误。
@@ -102,11 +114,11 @@ fn short_text_shrinks_to_max_content() {
         ob.height,
         ob.content_height
     );
-    // 右缘保持（vrl 块流起始）。
+    // 右缘贴链右缘 = ICB 宽 800（R5498 链收口；旧祖先链 junk 右缘 90）。
     assert!(
-        (ob.x + ob.width - 90.0).abs() < 0.5,
-        "右缘应保持 90，实得 x={} w={}",
-        ob.x,
+        (ob_abs_x + ob.width - 800.0).abs() < 0.5,
+        "右缘应保持 800，实得 abs_x={} w={}",
+        ob_abs_x,
         ob.width
     );
 }
@@ -116,14 +128,14 @@ fn vlr_block_start_is_left_edge_x_unchanged() {
     // vertical-lr 父：块流起始 = 左缘，宽 grow 右缘自由伸展，x 不动。
     let css_vlr = CSS.replace("vertical-rl", "vertical-lr");
     let r = compute(&body_html(FULL_NUMS), &css_vlr);
-    let ob = find_ortho(&r.root);
+    let (ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 800.0).abs() < 0.5 && (ob.height - 130.0).abs() < 0.5,
         "vlr 域同规则 800×130，实得 {}×{}",
         ob.width,
         ob.height
     );
-    assert!(ob.x.abs() < 0.5, "vlr 块流起始 = 左缘 x 不动，实得 {}", ob.x);
+    assert!(ob_abs_x.abs() < 0.5, "vlr 块流起始 = 左缘 x 不动，实得 {}", ob_abs_x);
 }
 
 #[test]
@@ -134,7 +146,7 @@ fn explicit_width_and_definite_cb_untouched() {
         "div#ob { border: blue solid 35px; width: 400px;",
     );
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), &css_400);
-    let ob = find_ortho(&r.root);
+    let (ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 470.0).abs() < 0.5,
         "显式宽 400+frame=470 不越权，实得 {}",
@@ -145,7 +157,7 @@ fn explicit_width_and_definite_cb_untouched() {
     // 不触态 90；该域主判例移 r5463_definite_cb_orthog_stf.rs）。
     let css_cb = CSS.replace("div#cb { width: auto; }", "div#cb { width: 400px; }");
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), &css_cb);
-    let ob = find_ortho(&r.root);
+    let (ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 266.0).abs() < 0.5,
         "definite CB 400 域 stf 收缩 196+frame=266，实得 {}",
@@ -161,7 +173,7 @@ fn float_orthog_child_untouched() {
         "div#ob { float: left; border: blue solid 35px; width: auto;",
     );
     let r = compute(&body_html("01 02 03"), &css_float);
-    let ob = find_ortho(&r.root);
+    let (ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 126.0).abs() < 0.5,
         "float 正交子不触（维持 R5456 域 126），实得 {}",
