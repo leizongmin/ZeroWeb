@@ -83,7 +83,7 @@ pass）；color-mix 插值空间别名折叠 `'in xyz' ≡ 'in xyz-d65'`——xy
 [证据](evidence/2026-11-11-dc2-color-raw-shadow-mix-alias.md)。）
 
 **DC-2 color 通道批完成（11-11 上午）**：light-dark() 双通道建模 + system
-color dark 面板 + color-scheme 级联读取（提交 640d5f4e4）——shim part11
+color dark 面板 + color-scheme 级联读取（提交 639bed48a）——shim part11
 `_zwCCParseFn` light-dark 分支（支值暂存 AST 延迟 resolve，currentColor 支
 走属性上下文）+ `_zwCCUsedSchemeDark` 沿父链合成（空格分词，light dark 双
 token 保守 light 对齐 parse_color_scheme_dark）+ `_zwCCSystemDark` 12 键
@@ -92,10 +92,19 @@ dark 臂 menu 扩键——color corpus **10,782 → 10,801（净 +19），逐页
 （system-color-compute +8、system-color-support +9、parsing/relative-color
 +2 意外收；values 2,213P 零漂移）。通道分野定谳：support 页（动态元素）走
 shim plain 臂、compute/consistency 页走宿主 cascade，两改动面互不越界
-（consistency 页 ''=='' 空串钉面零变化）。残余挂账：light-dark image 上下文
-31F、Typed-OM 相对色 2F、currentcolor-in-light-dark 宿主黑 1F、fill/stroke
-gCS 读数 2F、shadow/caret/column-rule dark 贯穿（姊妹实例 zeroweb-2-b0 在飞
-接手）。
+（consistency 页 ''=='' 空串钉面零变化）。
+**DC-2 shadow/caret dark 贯穿批完成（11-11 上午，提交 6dd926911）**：
+parse_color_with_scheme dark 贯穿 text-shadow/box-shadow/caret-color/
+column-rule-color 四属性解析链（apply_advanced 四臂读
+style.color_scheme_dark、supports 语法判定传 false、测试调用点适配）+
+case 'system' 分派 dark 优先（LinkText/VisitedText 非空 light 静态值键
+light 优先则 dark 分派永不生效）——color corpus **10,801 → 10,808（净
++7），两批合计 10,782 → 10,808 净 +26 逐页 0 回归**（compute shadow/caret
+差分 4F、support LinkText/VisitedText/SelectedItem 3F 全数兑现；values
+零漂移；干净树 cargo check EXIT=0——zwv10-check.log 101 为提交前旧态
+伪信号）。残余挂账：light-dark image 上下文 31F、Typed-OM 相对色 2F、
+currentcolor-in-light-dark 宿主黑 1F、fill/stroke gCS 读数 2F、consistency
+dark FieldText 5F（UA 表单样式建模）。
 [证据](evidence/2026-11-11-dc2-lightdark-scheme-system.md)
 
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
