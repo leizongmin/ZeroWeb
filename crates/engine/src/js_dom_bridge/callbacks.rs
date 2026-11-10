@@ -4113,7 +4113,8 @@ pub fn register_dom_callbacks(
             // 同 normalize 回调回落口径。
             #[cfg(feature = "v8")]
             {
-                if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str()) {
+                if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str())
+                {
                     "true".to_string()
                 } else {
                     "false".to_string()
