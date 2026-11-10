@@ -17314,8 +17314,12 @@
             var _genRxN = Number(_genR[0]), _genRyN = Number(_genR[1]);
             if (isFinite(_genRxN) && isFinite(_genRyN)) { _genRx = _genRxN; _genRy = _genRyN; }
           }
-          ev.offsetX = Math.max(0, Math.round(_genCx - _genRx));
-          ev.offsetY = Math.max(0, Math.round(_genCy - _genRy));
+          // s378：round 退役——R150（part03 dispatch 期 offsetX 派生）用同公式无
+          // round 浮点覆盖本兜底值，Chrome offsetX 为 double（CSSOM View
+          // §dom-mouseevent-offsetx）；两读数须同构浮点（dialog-form-submission
+          // t5 的 offsetX 与 returnValue 自洽断言面）。
+          ev.offsetX = Math.max(0, _genCx - _genRx);
+          ev.offsetY = Math.max(0, _genCy - _genRy);
         } catch (_eGenOff) {}
       }
       // net-api M3（七）：宿主泛型 click/dblclick 的 clientX/clientY own-property
@@ -17327,10 +17331,12 @@
       // 的中心坐标须一致）。own-property 注入同 ev.detail 泛型注入形态——
       // R108 泛型协议保持不改为 MouseEvent（见上支注记）。
       if (type === 'click' || type === 'dblclick') {
-        // trusted mouse 坐标同步 floor（part05 `_zwMouseCoordInit` 同口径——
-        // Chromium trusted mouse 面本就整数；手动 MouseEvent 面经 ctor floor，
-        // 本通道 detail 注入同 floor 后两读数恒等——submitter-coordinate-value
-        // testdriver/手动双 prong 一致断言面）。
+        // s378：floor 保留但语义重锚——trusted 注入与手动 ctor（part05
+        // `_zwMouseCoordInit` WebIDL long truncate）同构整数化，两通道 ev.clientX
+        // 恒等 → R150 dispatch 期 offsetX 派生、part06/part04 recorder selected
+        // coordinates 三面同源同式（submitter-coordinate-value 双 prong 一致
+        // 断言面不变；Chrome trusted 面虽浮点透传，但两案断言均为自洽/一致断言，
+        // 不钉上游字面值，整数化不翻案）。
         var _genFx = (detail && typeof detail.clientX === 'number') ? Math.floor(detail.clientX) : null;
         var _genFy = (detail && typeof detail.clientY === 'number') ? Math.floor(detail.clientY) : null;
         if (_genFx != null) {
@@ -17341,9 +17347,11 @@
         // 泛型协议），part04 `_zwImgRecordClickCoords`（trap 闭包内嵌，此处不可达）
         // 只在页面事件路径记账，testdriver.click 的中心坐标此前恒丢失（提交面走
         // runner requestSubmit 兜底读 `_zwImgSelCoords` → 恒 (0,0) unactivated 面）。
-        // 此处内联同口径记录（client 坐标 - 盒原点，round + 负值钳 0，键 = `_elKey`
-        // ——offsetX 注入上支同源）——只记账不触发提交（激活/提交语义留宿主 plan
-        // outcome + requestSubmit 兜底，防双导航）；非 image 目标零扰动。
+        // 此处内联同口径记录（client 坐标 - 盒原点，负值钳 0；s378 round 退役——
+        // 与 R150 offset 派生同式无 round，offsetX 与 returnValue 读数恒等——
+        // dialog-form-submission t5 自洽断言面；键 = `_elKey`——offsetX 注入上支
+        // 同源）——只记账不触发提交（激活/提交语义留宿主 plan outcome +
+        // requestSubmit 兜底，防双导航）；非 image 目标零扰动。
         if (type === 'click' && _genFx != null) {
           try {
             var _genRec = document.querySelector(sel);
@@ -17357,8 +17365,8 @@
               }
               globalThis._zwImgSelCoords = globalThis._zwImgSelCoords || {};
               globalThis._zwImgSelCoords[typeof _elKey === 'function' ? _elKey(sel, null) : sel] =
-                [Math.max(0, Math.round(_genFx - _recRx)),
-                 Math.max(0, Math.round(_genFy - _recRy))];
+                [Math.max(0, _genFx - _recRx),
+                 Math.max(0, _genFy - _recRy)];
             }
           } catch (_eImgRec) {}
         }

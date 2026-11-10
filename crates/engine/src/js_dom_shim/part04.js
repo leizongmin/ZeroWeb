@@ -12560,9 +12560,13 @@
               var rStr = String(__zw_getBoundingClientRect(sel) || '');
               var rp = rStr.split(',');
               var rx = Number(rp[0]), ry = Number(rp[1]);
+              // s378：round 退役——selected coordinates 与 offsetX（R150 dispatch
+              // 期派生）同构浮点（Chrome 双读数一致，dialog-form-submission t5
+              // returnValue 与 offsetX 自洽断言）；手动 ctor clientX 为 WebIDL
+              // long 整数，减浮点盒原点结果与 R150 同式同值。
               if (isFinite(rx) && isFinite(ry)) {
-                x = Math.max(0, Math.round(cx - rx));
-                y = Math.max(0, Math.round(cy - ry));
+                x = Math.max(0, cx - rx);
+                y = Math.max(0, cy - ry);
               }
             }
             globalThis._zwImgSelCoords = globalThis._zwImgSelCoords || {};
