@@ -890,9 +890,12 @@ jobs:
           mkdir -p /tmp/zw-results
           # 无 JSON 输出（runner 崩/语料残缺）仍让分片红，但只记账不中断循环
           # ——兄弟套件照跑，红面不扩大（与 fetch 步容错同款契约）。
+          # per-proc 6（run 42843305476 起）：workers 套件 175 案累计 RSS ~4.2–4.36GB
+          # （两 HEAD 3bfccdfa3/f0a23470f 本地同峰，行为面无关），贴着 4GB 帽口跑——
+          # 该 run 被 test-guard 杀树 → 空 JSON → workers 面记 0。6GB 留 ~40% 余量。
           rc=0
           for s in ${{ matrix.shard.suites }}; do
-            ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit ${{ matrix.shard.time_limit }} -- \
+            ./target/test-guard --per-proc-mem 6 --total-mem 8 --time-limit ${{ matrix.shard.time_limit }} -- \
               ./target/release/zero-wpt-runner "testharness-$s" $filter --json \
               > "/tmp/zw-results/testharness-$s${tag:+-$tag}.json" \
               || echo "::warning::testharness-$s 退出码非 0（存在失败用例属预期）"
