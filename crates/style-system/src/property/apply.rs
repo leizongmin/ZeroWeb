@@ -133,10 +133,32 @@ pub fn apply_property_value_with_quirks(
         }
         "list-style-image" => {
             if let Some(v) = zero_css_parser::values::parse_list_style_image(value) {
-                style.list_style_image = match v {
-                    zero_css_parser::values::ListStyleImageValue::None => ListStyleImageComputedValue::None,
-                    zero_css_parser::values::ListStyleImageValue::Url(url) => ListStyleImageComputedValue::Url(url),
-                };
+                // light-dark() 图像上下文选支（css-color-5 §funcdef-light-dark）：
+                // 按 used color-scheme dark flag computed 期展开；支内 none 计算
+                // 为透明图像（#valdef-light-dark-none）。
+                fn resolve(
+                    v: zero_css_parser::values::ListStyleImageValue,
+                    dark: bool,
+                    in_branch: bool,
+                ) -> ListStyleImageComputedValue {
+                    use zero_css_parser::values::ListStyleImageValue;
+                    match v {
+                        ListStyleImageValue::None => {
+                            if in_branch {
+                                ListStyleImageComputedValue::TransparentImage
+                            } else {
+                                ListStyleImageComputedValue::None
+                            }
+                        }
+                        ListStyleImageValue::Url(url) => ListStyleImageComputedValue::Url(url),
+                        ListStyleImageValue::LightDark { light, dark: dark_branch } => {
+                            let pick = if dark { *dark_branch } else { *light };
+                            resolve(pick, dark, true)
+                        }
+                    }
+                }
+                let dark = style.color_scheme_dark;
+                style.list_style_image = resolve(v, dark, false);
                 return true;
             }
         }
@@ -828,13 +850,16 @@ pub fn apply_property_value_with_quirks(
         "fill" => {
             // R4280：SVG2 presentation `fill`（V1 色值子集；`none` → Transparent——
             // 视觉等价于不绘制；url() paint server 未支持 → 声明丢弃）。
-            // 继承语义 V1 不做（直接声明覆盖 corpus 场景；继承由后续切片补）。
+            // system color 按 used color-scheme 在 computed 值时间解析为绝对色
+            //（css-color-4 §resolving-color-values；dark 传播同 apply_advanced 四臂
+            // parse_color_with_scheme 形态）。继承见 inherit_property fill/stroke 臂。
+            // driving: system-color-compute fill 差分断言（parent light / child dark）。
             let v = value.trim();
             if v.eq_ignore_ascii_case("none") {
                 style.fill = Some(zero_css_parser::values::ColorValue::Transparent);
                 return true;
             }
-            if let Some(c) = zero_css_parser::values::parse_color(v) {
+            if let Some(c) = zero_css_parser::values::parse_color_with_scheme(v, style.color_scheme_dark) {
                 style.fill = Some(c);
                 return true;
             }
@@ -842,13 +867,14 @@ pub fn apply_property_value_with_quirks(
         "stroke" => {
             // R5187：SVG2 presentation `stroke`（V1 色值子集，与 fill R4280 同型——
             // `none` → Transparent（视觉等价于不描边）；url() paint server 未支持 →
-            // 声明丢弃。继承语义 V1 不做，同 fill）。
+            // 声明丢弃）。system color dark 传播同 fill。继承见 inherit_property 臂。
+            // driving: system-color-compute stroke 差分断言。
             let v = value.trim();
             if v.eq_ignore_ascii_case("none") {
                 style.stroke = Some(zero_css_parser::values::ColorValue::Transparent);
                 return true;
             }
-            if let Some(c) = zero_css_parser::values::parse_color(v) {
+            if let Some(c) = zero_css_parser::values::parse_color_with_scheme(v, style.color_scheme_dark) {
                 style.stroke = Some(c);
                 return true;
             }

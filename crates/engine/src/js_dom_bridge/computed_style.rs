@@ -1030,6 +1030,8 @@ fn border_spacing_to_css(s: &BorderSpacingComputedValue) -> String {
 fn list_style_image_to_css(i: &ListStyleImageComputedValue) -> String {
     match i {
         ListStyleImageComputedValue::None => "none".to_string(),
+        // light-dark() 支内 none 的 computed 展开（css-color-5 #valdef-light-dark-none）。
+        ListStyleImageComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
         ListStyleImageComputedValue::Url(u) => format!("url(\"{u}\")"),
     }
 }
@@ -1066,6 +1068,8 @@ fn border_image_source_to_css(
     use zero_css_parser::values::GradientValue;
     match s {
         BorderImageSourceComputedValue::None => "none".to_string(),
+        // light-dark() 支内 none 的 computed 展开（css-color-5 #valdef-light-dark-none）。
+        BorderImageSourceComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
         BorderImageSourceComputedValue::Url(u) => format!("url(\"{u}\")"),
         BorderImageSourceComputedValue::Gradient(GradientValue::Linear(g)) => {
             linear_gradient_to_css(g, element_color, font_size_px)
@@ -2720,6 +2724,9 @@ fn image_layer_list_to_css(
         .iter()
         .map(|l| match l {
             BackgroundImageComputedValue::None => "none".to_string(),
+            // light-dark() 支内 none 的 computed 展开（css-color-5
+            // #valdef-light-dark-none）：透明图像序列化，区别于顶层 none。
+            BackgroundImageComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
             BackgroundImageComputedValue::Url(u) => format!("url(\"{u}\")"),
             BackgroundImageComputedValue::Gradient(GradientValue::Linear(g)) => {
                 linear_gradient_to_css(g, element_color, font_size_px)

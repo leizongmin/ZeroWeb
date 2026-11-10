@@ -1881,3 +1881,79 @@ fn test_parse_counter_set_name_value() {
 fn test_parse_counter_set_invalid() {
     assert_eq!(parse_counter_set(""), None);
 }
+
+// ── light-dark() 图像上下文解析测试（css-color-5 §funcdef-light-dark，
+// wptfyi-css light-dark-image 语料锚）──
+
+#[test]
+fn test_parse_background_image_light_dark() {
+
+    // 双 url 支。
+    assert_eq!(
+        parse_background_image("light-dark(url('light.png'), url('dark.png'))"),
+        Some(BackgroundImageValue::LightDark {
+            light: Box::new(BackgroundImageValue::Url("light.png".to_string())),
+            dark: Box::new(BackgroundImageValue::Url("dark.png".to_string())),
+        })
+    );
+    // 支内 none 合法（computed 期展开 image(transparent)）。
+    assert_eq!(
+        parse_background_image("light-dark(none, url('dark.png'))"),
+        Some(BackgroundImageValue::LightDark {
+            light: Box::new(BackgroundImageValue::None),
+            dark: Box::new(BackgroundImageValue::Url("dark.png".to_string())),
+        })
+    );
+    // 渐变支 + 嵌套 light-dark 递归。
+    assert!(matches!(
+        parse_background_image("light-dark(linear-gradient(red, blue), url('dark.png'))"),
+        Some(BackgroundImageValue::LightDark { .. })
+    ));
+    assert!(matches!(
+        parse_background_image("light-dark(light-dark(url('a.png'), url('b.png')), url('c.png'))"),
+        Some(BackgroundImageValue::LightDark { .. })
+    ));
+    // 函数名大小写不敏感。
+    assert!(matches!(
+        parse_background_image("LIGHT-DARK(url(a), url(b))"),
+        Some(BackgroundImageValue::LightDark { .. })
+    ));
+}
+
+#[test]
+fn test_parse_background_image_light_dark_invalid() {
+    // 颜色不是 image：named 色/色值函数支拒绝。
+    assert_eq!(parse_background_image("light-dark(red, green)"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png), red)"), None);
+    assert_eq!(parse_background_image("light-dark(rgb(0, 0, 0), url(a.png))"), None);
+    // arity：0/1/3 参拒绝。
+    assert_eq!(parse_background_image("light-dark()"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png))"), None);
+    assert_eq!(
+        parse_background_image("light-dark(url(a.png), url(b.png), url(c.png))"),
+        None
+    );
+    // 空格分隔双值（无顶层逗号）与空参段拒绝。
+    assert_eq!(parse_background_image("light-dark(url(a.png) url(b.png))"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png),,url(b.png))"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png), )"), None);
+}
+
+#[test]
+fn test_parse_list_style_border_image_light_dark() {
+    // list-style-image 同构（支域 none/url）。
+    assert_eq!(
+        parse_list_style_image("light-dark(url('l.png'), url('d.png'))"),
+        Some(ListStyleImageValue::LightDark {
+            light: Box::new(ListStyleImageValue::Url("l.png".to_string())),
+            dark: Box::new(ListStyleImageValue::Url("d.png".to_string())),
+        })
+    );
+    assert_eq!(parse_list_style_image("light-dark(none, red)"), None);
+    // border-image-source 同构（支域 url/gradient/filter）。
+    assert!(matches!(
+        parse_border_image_source("light-dark(linear-gradient(red, blue), url('d.png'))"),
+        Some(BorderImageSourceValue::LightDark { .. })
+    ));
+    assert_eq!(parse_border_image_source("light-dark(red, url(a.png))"), None);
+}

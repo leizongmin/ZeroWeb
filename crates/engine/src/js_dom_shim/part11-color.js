@@ -1235,6 +1235,66 @@
     var out = _zwCSerializeDeclared(c);
     return out === null ? t + pri : out + pri;
   };
+  // ── image 声明面 light-dark() 浅校验（DC-2 light-dark image 批）──
+  // 仅 image 四属性且整值顶层为 light-dark( 前缀时介入（css-color-5
+  // §funcdef-light-dark 图像上下文）：恰两参顶层逗号 + 支形态校验——none /
+  // 函数形态（url()/*-gradient()/嵌套 light-dark() 递归）合法，无括号单词
+  //（named 色/垃圾 ident）与色值函数（rgb()/hsl() 族）拒——light-dark-image
+  // 语料 invalid 组（arity≠2/空参段/色值支）锚驱动。浅校验与 Rust cascade
+  // 全解析（parse_background_image 家族）分面：白名单外函数形态
+  //（image-set()/cross-fade() 等不支持面）与多图层混合（顶层逗号>1 段）放行
+  // passthrough 零回归。返回：undefined=不介入（passthrough）、null=拒、
+  // 字符串=放行原串。
+  var _zwCImageColorFnRe = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|color-contrast)\(/;
+  var _zwCTopSplitComma = function (s) {
+    // 括号感知顶层逗号分割（part11-computed-color _zwCCTopSplit 同构独立实现，
+    // 不跨文件引用——本文件先于其装配）：段数即顶层逗号数+1；url() 内引号串
+    // 含逗号由括号深度保护（url('a,b.png') 深度 1 不分割）。
+    var segs = [];
+    var depth = 0;
+    var start = 0;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '(') depth++;
+      else if (ch === ')') { if (depth > 0) depth--; }
+      else if (ch === ',' && depth === 0) { segs.push(s.slice(start, i)); start = i + 1; }
+    }
+    segs.push(s.slice(start));
+    return segs;
+  };
+  var _zwCImageLDCheck = function (inner) {
+    // light-dark( 已剥前缀的参串：恰两参且支形态合法 → true。
+    var segs = _zwCTopSplitComma(inner);
+    if (segs.length !== 2) return false;
+    for (var i = 0; i < 2; i++) {
+      var br = segs[i].trim();
+      if (!br) return false; // 空参段（`url(a),,url(b)` / 尾逗号）
+      var bl = _zwCAsciiLower(br);
+      if (bl === 'none') continue;
+      if (_zwCImageColorFnRe.test(bl)) return false; // 色值不是 image
+      if (bl.lastIndexOf('light-dark(', 0) === 0) {
+        if (!br.charAt(br.length - 1) || br.charAt(br.length - 1) !== ')') return false;
+        if (!_zwCImageLDCheck(br.slice(11, -1))) return false;
+        continue;
+      }
+      if (br.indexOf('(') < 0) return false; // 无括号单词：仅 none 合法（named 色/垃圾 ident 拒）
+      // 其余函数形态（url()/*-gradient()/image()/image-set() 等）放行。
+    }
+    return true;
+  };
+  globalThis.__zwImageNormalizeDecl = function (prop, value) {
+    var p = String(prop).toLowerCase();
+    if (p !== 'background-image' && p !== 'mask-image' && p !== 'list-style-image'
+        && p !== 'border-image-source') return undefined;
+    var t = String(value == null ? '' : value).trim();
+    if (_zwCAsciiLower(t).lastIndexOf('light-dark(', 0) !== 0) return undefined;
+    if (t.charAt(t.length - 1) !== ')') return null; // 括号不平衡
+    // 多图层混合（`light-dark(...), url(c)` 整值顶层逗号在函数外）不介入——宿主
+    // parse_background_image_layers 链处理，浅校验保持 passthrough 零回归。
+    if (_zwCTopSplitComma(t).length !== 1) return undefined;
+    var inner = t.slice(11, -1);
+    return _zwCImageLDCheck(inner) ? t : null;
+  };
   // computed：prop 'color'/'opacity'；未建模/系统色 → null（调用方回落既有链）。
   globalThis.__zwComputedColorValue = function (elt, prop, declaredValue) {
     if (prop === 'opacity') return _zwCOpacComputed(declaredValue);

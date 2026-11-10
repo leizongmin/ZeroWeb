@@ -22,6 +22,16 @@ pub enum BorderImageSourceValue {
         /// 空格分隔的滤镜函数列表（filter 属性同一语法，可为空）。
         filters: Vec<FilterValue>,
     },
+    /// light-dark(L, D) — CSS Color 5 图像上下文分支函数
+    ///（https://drafts.csswg.org/css-color-5/#funcdef-light-dark）。语义同
+    /// BackgroundImageValue::LightDark：声明期暂存双支 AST，computed 期按
+    /// used color-scheme 选支展开。
+    LightDark {
+        /// light 支图像。
+        light: Box<BorderImageSourceValue>,
+        /// dark 支图像。
+        dark: Box<BorderImageSourceValue>,
+    },
 }
 
 /// 解析 CSS border-image-source 属性值。
@@ -62,6 +72,21 @@ pub fn parse_border_image_source(value: &str) -> Option<BorderImageSourceValue> 
         return Some(BorderImageSourceValue::Filtered {
             image: Box::new(image),
             filters,
+        });
+    }
+    // light-dark(L, D)（css-color-5 §funcdef-light-dark）：恰两参顶层逗号分割，
+    // 各支递归走 border-image-source 语法；arity/空参/色值支经 `?` 自然拒绝。
+    if value.len() > 11 && value[..11].eq_ignore_ascii_case("light-dark(") && value.ends_with(')') {
+        let inner = &value[11..value.len() - 1];
+        let (light_part, dark_part) = super::parse_extended_visual::split_top_level_comma(inner)?;
+        if super::parse_extended_visual::split_top_level_comma(dark_part).is_some() {
+            return None;
+        }
+        let light = parse_border_image_source(light_part.trim())?;
+        let dark = parse_border_image_source(dark_part.trim())?;
+        return Some(BorderImageSourceValue::LightDark {
+            light: Box::new(light),
+            dark: Box::new(dark),
         });
     }
     None
@@ -406,6 +431,16 @@ pub enum ListStyleImageValue {
     None,
     /// url(<string>) — 列表标记图片。
     Url(String),
+    /// light-dark(L, D) — CSS Color 5 图像上下文分支函数
+    ///（https://drafts.csswg.org/css-color-5/#funcdef-light-dark）。语义同
+    /// BackgroundImageValue::LightDark：声明期暂存双支 AST，computed 期按
+    /// used color-scheme 选支展开（支域同本枚举 none/url）。
+    LightDark {
+        /// light 支图像。
+        light: Box<ListStyleImageValue>,
+        /// dark 支图像。
+        dark: Box<ListStyleImageValue>,
+    },
 }
 
 /// 解析 CSS list-style-image 属性值。
@@ -420,6 +455,21 @@ pub fn parse_list_style_image(value: &str) -> Option<ListStyleImageValue> {
         let inner = value.get(4..value.len() - 1)?;
         let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
         return Some(ListStyleImageValue::Url(url));
+    }
+    // light-dark(L, D)（css-color-5 §funcdef-light-dark）：恰两参顶层逗号分割，
+    // 各支递归走 list-style-image 语法（none/url）。
+    if value.len() > 11 && value[..11].eq_ignore_ascii_case("light-dark(") && value.ends_with(')') {
+        let inner = &value[11..value.len() - 1];
+        let (light_part, dark_part) = super::parse_extended_visual::split_top_level_comma(inner)?;
+        if super::parse_extended_visual::split_top_level_comma(dark_part).is_some() {
+            return None;
+        }
+        let light = parse_list_style_image(light_part.trim())?;
+        let dark = parse_list_style_image(dark_part.trim())?;
+        return Some(ListStyleImageValue::LightDark {
+            light: Box::new(light),
+            dark: Box::new(dark),
+        });
     }
     None
 }

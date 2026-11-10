@@ -1366,6 +1366,8 @@ impl super::super::Painter {
                 return;
             }
             zero_style_system::ListStyleImageComputedValue::None => {}
+            // light-dark() 支内 none 的透明图像展开——无标记图绘制（同 none）。
+            zero_style_system::ListStyleImageComputedValue::TransparentImage => {}
         }
 
         if style.list_style_type == ListStyleTypeValue::None {

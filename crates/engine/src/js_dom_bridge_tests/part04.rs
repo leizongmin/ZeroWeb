@@ -350,6 +350,31 @@ fn test_get_computed_style_grid_lines_r2759() {
 }
 
 #[test]
+fn test_get_computed_style_grid_line_composite_forms_g2a() {
+    // G2a：grid-line 组合形（css-grid-2 §7.1 `[<integer> && <custom-ident>?]` /
+    // `[ span && <integer>? && <custom-ident>? ]`）声明→computed round-trip。
+    // 期望串对齐 WPT css/css-grid/grid-layout-properties.html 锚页断言与
+    // grid_cssom::grid_line_canonical（整数在前、span 前缀序）。
+    let html = "<html><body>\
+        <div id=\"cs1\" style=\"grid-column-start: 1 a;\"></div>\
+        <div id=\"cs2\" style=\"grid-column-start: span a;\"></div>\
+        <div id=\"cs3\" style=\"grid-column-start: span 2 a;\"></div>\
+        <div id=\"gcc\" style=\"grid-column: 1 a / 2 b;\"></div>\
+        <div id=\"gsp\" style=\"grid-column: span a / span b;\"></div>\
+        <div id=\"gaa\" style=\"grid-area: 1 a / 2 b / 3 c / 4 d;\"></div>\
+        </body></html>";
+    // longhand round-trip：整数+命名线 / span+名 / span+整数+名（canonical 序）。
+    assert_eq!(computed_style_property(html, "#cs1", "grid-column-start"), "1 a");
+    assert_eq!(computed_style_property(html, "#cs2", "grid-column-start"), "span a");
+    assert_eq!(computed_style_property(html, "#cs3", "grid-column-start"), "span 2 a");
+    // 简写 pair：两端非 auto 非相等 → "start / end" 全形。
+    assert_eq!(computed_style_property(html, "#gcc", "grid-column"), "1 a / 2 b");
+    assert_eq!(computed_style_property(html, "#gsp", "grid-column"), "span a / span b");
+    // grid-area 4 值 composite（各槽非 auto，无 trailing-drop）。
+    assert_eq!(computed_style_property(html, "#gaa", "grid-area"), "1 a / 2 b / 3 c / 4 d");
+}
+
+#[test]
 fn test_get_computed_style_inset_shorthand_r2760() {
     // R2760：getComputedStyle inset 简写（top/right/bottom/left CSSOM 4 值最小化）。
     // 每项期望串经本地 Chromium 150 oracle 提取，TDD red→green 对齐。ZW 解析 inset 简写
@@ -982,6 +1007,104 @@ fn test_get_computed_style_background_mask_image() {
     // 默认 → none。
     assert_eq!(computed_style_property(html, "#def", "background-image"), "none");
     assert_eq!(computed_style_property(html, "#def", "mask-image"), "none");
+}
+
+#[test]
+fn test_get_computed_style_light_dark_image() {
+    // DC-2 light-dark image 批：light-dark() 图像上下文 computed 选支
+    //（css-color-5 §funcdef-light-dark + #valdef-light-dark-none）——WPT
+    // css-color/light-dark-image.html 口径：按元素 used color-scheme 选支
+    // url/gradient 序列化、支内 none 展开 image(rgba(0, 0, 0, 0))、嵌套
+    // light-dark 递归、invalid（色值支/三参）声明拒回落 none。
+    let html = "<html><body>\
+        <div id=\"l1\" style=\"color-scheme: light; background-image: light-dark(url('light.png'), url('dark.png'));\"></div>\
+        <div id=\"d1\" style=\"color-scheme: dark; background-image: light-dark(url('light.png'), url('dark.png'));\"></div>\
+        <div id=\"l2\" style=\"color-scheme: light; background-image: light-dark(none, url('dark.png'));\"></div>\
+        <div id=\"d2\" style=\"color-scheme: dark; background-image: light-dark(url('light.png'), none);\"></div>\
+        <div id=\"lg\" style=\"color-scheme: light; background-image: light-dark(linear-gradient(red, blue), linear-gradient(green, yellow));\"></div>\
+        <div id=\"dg\" style=\"color-scheme: dark; background-image: light-dark(radial-gradient(red, blue), radial-gradient(green, yellow));\"></div>\
+        <div id=\"dc\" style=\"color-scheme: dark; background-image: light-dark(conic-gradient(red, blue), conic-gradient(green, yellow));\"></div>\
+        <div id=\"lr\" style=\"color-scheme: light; background-image: light-dark(repeating-linear-gradient(red, blue 50px), linear-gradient(green, yellow));\"></div>\
+        <div id=\"n1\" style=\"color-scheme: light; background-image: light-dark(light-dark(url('a.png'), url('b.png')), url('c.png'));\"></div>\
+        <div id=\"n2\" style=\"color-scheme: dark; background-image: light-dark(url('a.png'), light-dark(url('b.png'), url('c.png')));\"></div>\
+        <div id=\"ls\" style=\"color-scheme: dark; list-style-image: light-dark(url('light.png'), url('dark.png'));\"></div>\
+        <div id=\"lsn\" style=\"color-scheme: light; list-style-image: light-dark(none, url('dark.png'));\"></div>\
+        <div id=\"bi\" style=\"color-scheme: dark; border-image-source: light-dark(linear-gradient(red, blue), url('dark.png'));\"></div>\
+        <div id=\"bad-c\" style=\"background-image: light-dark(red, green);\"></div>\
+        <div id=\"bad-mix\" style=\"background-image: light-dark(url(a.png), red);\"></div>\
+        <div id=\"bad-3\" style=\"background-image: light-dark(url(a.png), url(b.png), url(c.png));\"></div>\
+        <div id=\"bad-1\" style=\"background-image: light-dark(url(a.png));\"></div>\
+        <div id=\"inh-p\" style=\"color-scheme: dark; background-image: light-dark(url('light.png'), url('dark.png'));\">\
+        <div id=\"inh-c\" style=\"background-image: inherit;\"></div></div>\
+        </body></html>";
+    // 按元素 used scheme 选支（inline color-scheme: dark → dark 支；light → light 支）。
+    assert_eq!(
+        computed_style_property(html, "#l1", "background-image"),
+        "url(\"light.png\")"
+    );
+    assert_eq!(
+        computed_style_property(html, "#d1", "background-image"),
+        "url(\"dark.png\")"
+    );
+    // 支内 none → image(rgba(0, 0, 0, 0))（#valdef-light-dark-none 特展开；
+    // 顶层 none 仍序列化 none，见 test_get_computed_style_background_mask_image）。
+    assert_eq!(
+        computed_style_property(html, "#l2", "background-image"),
+        "image(rgba(0, 0, 0, 0))"
+    );
+    assert_eq!(
+        computed_style_property(html, "#d2", "background-image"),
+        "image(rgba(0, 0, 0, 0))"
+    );
+    // 渐变支颜色规范化（rgb() 逗号形，复用既有 gradient 序列化）。
+    assert_eq!(
+        computed_style_property(html, "#lg", "background-image"),
+        "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    assert_eq!(
+        computed_style_property(html, "#dg", "background-image"),
+        "radial-gradient(rgb(0, 128, 0), rgb(255, 255, 0))"
+    );
+    assert_eq!(
+        computed_style_property(html, "#dc", "background-image"),
+        "conic-gradient(rgb(0, 128, 0), rgb(255, 255, 0))"
+    );
+    assert_eq!(
+        computed_style_property(html, "#lr", "background-image"),
+        "repeating-linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255) 50px)"
+    );
+    // 嵌套 light-dark：按 scheme 递归选支。
+    assert_eq!(
+        computed_style_property(html, "#n1", "background-image"),
+        "url(\"a.png\")"
+    );
+    assert_eq!(
+        computed_style_property(html, "#n2", "background-image"),
+        "url(\"c.png\")"
+    );
+    // list-style-image / border-image-source 同链（各解析器 LightDark 同构）。
+    assert_eq!(
+        computed_style_property(html, "#ls", "list-style-image"),
+        "url(\"dark.png\")"
+    );
+    assert_eq!(
+        computed_style_property(html, "#lsn", "list-style-image"),
+        "image(rgba(0, 0, 0, 0))"
+    );
+    assert_eq!(
+        computed_style_property(html, "#bi", "border-image-source"),
+        "url(\"dark.png\")"
+    );
+    // invalid（色值支/三参/单参）声明拒 → 回落初始 none。
+    assert_eq!(computed_style_property(html, "#bad-c", "background-image"), "none");
+    assert_eq!(computed_style_property(html, "#bad-mix", "background-image"), "none");
+    assert_eq!(computed_style_property(html, "#bad-3", "background-image"), "none");
+    assert_eq!(computed_style_property(html, "#bad-1", "background-image"), "none");
+    // inherit：子元素继承父的 computed 值（已按父 scheme dark 选中 dark 支）。
+    assert_eq!(
+        computed_style_property(html, "#inh-c", "background-image"),
+        "url(\"dark.png\")"
+    );
 }
 
 #[test]

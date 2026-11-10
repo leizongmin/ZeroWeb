@@ -725,6 +725,8 @@ impl super::Painter {
         }
         let url = match source {
             BorderImageSourceComputedValue::None => return,
+            // light-dark() 支内 none 的透明图像展开——无边框图绘制（同 none）。
+            BorderImageSourceComputedValue::TransparentImage => return,
             BorderImageSourceComputedValue::Url(u) => u.clone(),
             // R3909：gradient 源按同款 9-slice 几何切分绘制（css-backgrounds-3 §6.1）。
             // 渐变无固有尺寸——一次构造覆盖**整个 border-image 绘制区**（含 outset）的

@@ -2097,6 +2097,17 @@
       if (_gnd === 'null') return null;
       return _gnd;
     }
+    // DC-2 light-dark image 批：image 四属性 light-dark() 顶层前缀浅校验
+    //（part11-color.js __zwImageNormalizeDecl——undefined=不介入 passthrough、
+    // null=拒、串=放行原串）。light-dark-image 语料 invalid 组锚（arity≠2/
+    // 空参段/色值支）；未装配（兜底链）不校验零漂移。
+    if (typeof globalThis.__zwImageNormalizeDecl === 'function') {
+      try {
+        var _ind = globalThis.__zwImageNormalizeDecl(propName, raw);
+        if (_ind === null) return null;
+        if (_ind !== undefined) return _ind;
+      } catch (_eIND) {}
+    }
     // DC-2 次批：色/opacity 值模型归一整值委托（part11 css-color-4/5 管线）——
     // 下方分词器会把函数形劈散（css-syntax 函数含空格参数），现代语法（空格形/
     // none powerless/角度单位/hwb·lab 族）必须整值进管线。null=非法（调用方
