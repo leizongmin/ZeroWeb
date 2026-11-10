@@ -257,8 +257,15 @@ fn native_style_named_setter(
     // removeProperty）。`el.style.display = ''` 是 reset inline 样式事实标准高频用法——旧实现 upsert 空值
     // 致 dangling `prop: `（与 setProperty / polyfill merge_style_property 三处同病，本片对称闭合）。
     // css-anchor-1 canonical serialization 与 setProperty 同款（自定义属性原样保留）。
+    // grid 家族声明值 CSSOM 校验 + canonical 序列化（grid_cssom 模块头注）。
     let val = if prop.starts_with("--") || val.trim().is_empty() {
         val
+    } else if super::grid_cssom::is_grid_family_prop(&prop) {
+        match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
+            Some(v) => v,
+            // 非法 grid 值 → 声明忽略（spec setProperty 语义），已有声明保留。
+            None => return v8::Intercepted::kYes,
+        }
     } else {
         zero_css_parser::values::canonicalize_anchor_functions(val.trim())
     };
@@ -308,6 +315,39 @@ fn native_style_named_deleter(
     });
     rv.set_bool(true);
     v8::Intercepted::kYes
+}
+
+/// `in` 动态检查（spec supported property names）：引擎支持面内属性名返
+/// `kYes` + 无 attribute（`'grid-template-columns' in el.style` → true）；
+/// reserved 名与非 CSD fallthrough（`in` false）。缺 query 回调时 V8 对
+/// handler 名恒答 false——grid-layout-properties 等语料
+/// `assert_true(prop in style)` 全挂的主因。
+/// 支持面清单见 grid_cssom::SUPPORTED_STYLE_PROPS（枚举器/length 面另账）。
+fn native_style_named_query(
+    scope: &mut v8::PinScope,
+    key: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Integer>,
+) -> v8::Intercepted {
+    let holder = args.holder();
+    let Some(_) = csd_owner(scope, &holder) else {
+        return v8::Intercepted::kNo;
+    };
+    let Ok(s) = v8::Local::<v8::String>::try_from(key) else {
+        return v8::Intercepted::kNo;
+    };
+    let name = s.to_rust_string_lossy(scope);
+    if RESERVED.contains(&name.as_str()) {
+        return v8::Intercepted::kNo;
+    }
+    let prop = camel_to_kebab(&name);
+    let supported = prop.starts_with("--") || super::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&prop.as_str());
+    if supported {
+        rv.set(v8::Integer::new(scope, 0));
+        v8::Intercepted::kYes
+    } else {
+        v8::Intercepted::kNo
+    }
 }
 
 // ── cssText / length / item / getPropertyValue / setProperty / removeProperty ──
@@ -463,8 +503,15 @@ fn native_style_set_property_invoke(
     }
     // css-anchor-1 canonical serialization：anchor()/anchor-size() 参数序归一（锚元素
     // dashed-ident 固定在前）；自定义属性值 spec 语义原样保留（values::anchor 模块头注）。
+    // grid 家族声明值 CSSOM 校验 + canonical 序列化（grid_cssom 模块头注）。
     let val = if prop.starts_with("--") {
         val
+    } else if super::grid_cssom::is_grid_family_prop(&prop) {
+        match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
+            Some(v) => v,
+            // 非法 grid 值 → 声明忽略（spec setProperty 语义）。
+            None => return,
+        }
     } else {
         zero_css_parser::values::canonicalize_anchor_functions(val.trim())
     };
@@ -556,6 +603,7 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
         v8::NamedPropertyHandlerConfiguration::new()
             .getter(native_style_named_getter)
             .setter(native_style_named_setter)
+            .query(native_style_named_query)
             .deleter(native_style_named_deleter),
     );
     set_style_template(scope, csd);

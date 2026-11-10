@@ -24,6 +24,7 @@ mod event;
 mod event_target;
 mod factories;
 mod gc;
+mod grid_cssom;
 mod html_element;
 mod namednodemap;
 mod node;
