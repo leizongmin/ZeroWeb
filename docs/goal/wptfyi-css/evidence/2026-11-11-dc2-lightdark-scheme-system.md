@@ -53,6 +53,15 @@ results-v9/（json 通道，v8 同口径；日志 zwv9-*）：
 
 链完成并推送（commit 6dd926911，13 文件 +154/−133）：parse_box_shadow(_list)/parse_caret_color 签名+内部 dark 贯穿（box-shadow 2150 色点、caret parse_one 闭包）、apply_advanced 四臂读 style.color_scheme_dark（column-rule-color 换 parse_color_with_scheme）、supports.rs 三处传 false（语法判定 scheme 无关）、测试调用点适配 7 文件（css-parser 5 + values/tests 2；tests/wpt-runner/reftest/tests.rs 最后一个 E0061 由姊妹先修，check --all-targets EXIT=0 确认）。多实例窗口取证：同树 4 姊妹（b9/e2/e5/68）交错编辑互补合并（text-shadow 单影链 4 hunk 由 b9 补齐我的 list 签名缺口；case 'system' dark 优先分派由 b9 落），cargo check 0.34s 缓存命中假象经 touch 强制单 crate 复检验证真态。主体批随 rebase 重写 640d5f4e4→639bed48a。分工终局：v10 记录轮+clippy 复检+测量回填归 b9（本段作者只补链与推送）；期望 v10 收 compute 4F＋support 3F，fill/stroke 2F 与 currentcolor-in-color 1F 维持挂账。
 
+## 4d. v10 记录轮与 provenance 定谳（收口）
+
+results-v10/（json 通道，v9 同口径；日志 zwv10-run-*）：
+
+- **css-color：63 页 10,808P / 202F（对 v9 10,801P 净 +7，逐页零回归）**——system-color-compute 21P/6F → 25P/2F（shadow/caret/column-rule dark 传播兑现 4F，残余 2F 即 fill/stroke 挂账）、system-color-support 18P/3F → 21P/0F（LinkText/VisitedText dark 优先分派＋SelectedItem 补键，页面清零）。
+- **css-values：256 页 2,213P / 3,373F 页级全等零漂移**。
+- provenance 法证（v10 二进制 05:42:29 链接早于 shadow 链提交 32ff9b0a9 05:43:58，build 时链为工作树未提交态）：① build 日志仅重编 zero-wpt-runner（42.82s 收尾链接），css-parser/engine 未重编——cargo 对源变更必触发重编，库 rlib 已含链终态；② 孪生 rebase（05:44:13，tip 32ff9b0a9 → 639bed48a+6dd926911）上游基座仅 02d7349f3（docs/learnings），crates/tests 面重放内容零差异；③ 测量增量 +7 精确命中链预测（compute 4F＋support 3F）且两页独立兑现、零回归。三证互锁，v10 数字对现树 HEAD 6dd926911 有效。
+- 门禁：rebase 后 clippy 复检 CLIPPY-EXIT=0（target-clippy 隔离目录，test-guard 限制内存与墙钟）。
+
 ## 5. 挂账
 
 - 组 A light-dark image 上下文（31F）：需泛化 light-dark + background-image 等属性 computed 序列化建模。
