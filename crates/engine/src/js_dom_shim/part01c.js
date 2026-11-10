@@ -2139,6 +2139,27 @@
       }
       return '1';
     }
+    if (prop === 'color-scheme') {
+      // color-scheme 级联声明读取（css-color-adjust-1 §color-scheme：继承属性）——
+      // 供 light-dark()/system color 求值方合成 used scheme（part11
+      // _zwCCUsedSchemeDark 消费）。inline → 作者臂（qvMode）→ 沿父链首声明，
+      // 声明原文返回（含 normal/only token——token 判定归消费方，与
+      // style-system parse_color_scheme_dark 同口径：无 light/dark token 的
+      // 声明回落文档 scheme，corpus 页无 meta color-scheme 时保守 light）。
+      node = elt; guard = 0;
+      while (node && node.nodeType === 1 && guard++ < 256) {
+        var csRaw = _zwPlainDecl(node, prop);
+        if (!csRaw && qvMode) {
+          try { csRaw = _zwPlainAuthorDecl(node, prop); } catch (_eCSAu) { csRaw = ''; }
+        }
+        if (csRaw) {
+          var csS = String(csRaw).replace(/\/\*[\s\S]*?\*\//g, ' ').trim();
+          if (csS) return csS;
+        }
+        node = node.parentNode;
+      }
+      return '';
+    }
     if (prop === 'color' || prop === 'font-family'
         || prop === 'background-color') {
       var isBg = prop === 'background-color';

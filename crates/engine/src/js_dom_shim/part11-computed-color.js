@@ -181,7 +181,8 @@
     buttonborder: '', buttonface: '', buttontext: '', canvas: '', canvastext: '',
     field: '', fieldtext: '', graytext: '', highlight: '', highlighttext: '',
     infobackground: '', infotext: '', linktext: 'rgb(0, 0, 255)', mark: '',
-    marktext: '', visitedtext: 'rgb(85, 26, 139)',
+    marktext: '', selecteditem: '', selecteditemtext: '',
+    visitedtext: 'rgb(85, 26, 139)',
     // deprecated（css-color-4 § deprecated system colors——保留解析面）。
     activeborder: '', activecaption: '', appworkspace: '', background: '',
     buttonhighlight: '', buttonshadow: '', captiontext: '',
@@ -190,6 +191,44 @@
     threedhighlight: '', threedlightshadow: '', window: '', windowframe: '',
     windowtext: ''
   };
+
+  // dark used-scheme 面板（css-color-4 § system colors：系统色按 used
+  // color-scheme 取 light/dark 面板值；值无 UA 钉面——对齐 css-parser dark 臂
+  // 同款近似：canvas 族 rgb(32, 33, 36)、文本族白）。仅 dark 臂：light 面板
+  // 保持既有静态值/空串（空串=「解析为空」历史口径，system-color-consistency
+  // 页 ''=='' 等值钉面依赖，填 light 实值会成批翻红——FIXME: UA 表单样式建模
+  // 后统一填实）。消费面：system-color-support 页 scheme-aware 12 键
+  // assert_not_equals(light, dark) 差分（plain 臂走查）。
+  var _zwCCSystemDark = {
+    canvas: 'rgb(32, 33, 36)', canvastext: 'rgb(255, 255, 255)',
+    linktext: 'rgb(138, 180, 255)', visitedtext: 'rgb(191, 145, 229)',
+    buttonface: 'rgb(43, 43, 43)', buttontext: 'rgb(255, 255, 255)',
+    field: 'rgb(32, 33, 36)', fieldtext: 'rgb(255, 255, 255)',
+    highlight: 'rgb(13, 71, 161)', selecteditem: 'rgb(13, 71, 161)',
+    appworkspace: 'rgb(32, 33, 36)', scrollbar: 'rgb(60, 64, 67)'
+  };
+
+  // used color-scheme 合成（css-color-adjust-1 §color-scheme；语义对齐
+  // style-system parse_color_scheme_dark）。__zwPlainComputed 第三参 qvMode
+  // 开作者臂，沿父链返回首个 color-scheme 声明原文（part01c color-scheme
+  // 分支）；token 判定须空格分词（'light-dark' 内 \b 会误断词）；light dark
+  // 双 token → 用户偏好决定，runner 环境 prefers_dark 恒 false → 保守 light
+  // （与 Rust 臂 (true,true)→prefers_dark=false 同口径）；无声明/normal/only
+  // → 文档 scheme（corpus color 页无 meta color-scheme 依赖，保守 light）。
+  function _zwCCUsedSchemeDark(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var decl = '';
+    if (typeof globalThis.__zwPlainComputed === 'function') {
+      try {
+        decl = String(globalThis.__zwPlainComputed(el, 'color-scheme', true) || '');
+      } catch (_eUD) { decl = ''; }
+    }
+    if (!decl) return false;
+    var toks = decl.replace(/\/\*[\s\S]*?\*\//g, ' ').toLowerCase().split(/\s+/);
+    var hasLight = toks.indexOf('light') >= 0;
+    var hasDark = toks.indexOf('dark') >= 0;
+    return hasDark && !hasLight;
+  }
 
   // ============ calc 求值器（数字/% 两型；opacity 与色分量共用）============
 
@@ -788,6 +827,17 @@
       return { kind: 'alpha', origin: relA.origin, alphaSpec: alphaSpecA };
     }
     if (fn === 'color-mix') return _zwCCParseMix(inner);
+    if (fn === 'light-dark') {
+      // light-dark( <color>#, <color># )（css-color-5 §light-dark）：恰好两组
+      // 逗号分隔（组内多值 fallback 链是 tentative 语法，corpus 钉面恒 2 组）。
+      // 支值暂存 AST 延迟 resolve（currentColor 支须按属性上下文求值）。
+      var ldGroups = _zwCCTopSplit(inner, ',');
+      if (ldGroups.length !== 2) return null;
+      var ldL = _zwCCParseColorValue(ldGroups[0].trim());
+      var ldD = _zwCCParseColorValue(ldGroups[1].trim());
+      if (!ldL || !ldD) return null;
+      return { kind: 'lightdark', light: ldL, dark: ldD };
+    }
     return null;
   }
 
@@ -1005,8 +1055,23 @@
       case 'transparent':
         return { kind: 'rgb', rgb: [0, 0, 0], alpha: 0, aNone: false, hasNone: false };
       case 'system': {
-        var txt = _zwCCSystem[ast.name];
+        // dark used-scheme 分派（css-color-4 § system colors）：used dark 且
+        // dark 面板有值时 dark 优先（linktext/visitedtext 等非空 light 静态值
+        // 键若 light 优先则 dark 分派永不生效——v9 记录轮 3 案实证），否则
+        // light 面板值（既有静态值/空串口径）。
+        var txt = (_zwCCUsedSchemeDark(el) && _zwCCSystemDark[ast.name])
+          ? _zwCCSystemDark[ast.name]
+          : _zwCCSystem[ast.name];
         return { kind: 'system', text: txt || '' };
+      }
+      case 'lightdark': {
+        // light-dark(L, D) used-scheme 选支（css-color-5 §light-dark）：
+        // https://drafts.csswg.org/css-color-5/#light-dark 。支值递归 resolve——
+        // currentcolor 支走既有 currentcolor 臂（propCtx 'color' 时父链语义
+        // 保持：currentColor 在 color 属性自引用 = 继承值，
+        // light-dark-currentcolor-in-color 钉面）。
+        var wantDark = _zwCCUsedSchemeDark(el);
+        return _zwCCResolve(wantDark ? ast.dark : ast.light, el, depth + 1);
       }
       case 'currentcolor': {
         // currentcolor = 本元素 color 计算值（css-color-4：currentColor 值 =
