@@ -4009,6 +4009,23 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：inline
+    // style 写面值校验——`el.style.rotate = 'asin()'` 非法形整体拒绝（WPT invalid
+    // 面驱动）。裁决委托 [`zero_style_system::validate_decl_value`]（白名单口径：
+    // 表外属性放行，兼容面零回退）；返 "true"/"false"。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_validate_decl_value",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            if zero_style_system::validate_decl_value(prop, value) {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }),
+    );
+
     // S194（html-semantics M2）：`input type=email` 值清洗的域部 IDN 转换臂
     //（HTML §4.10.5.5 E-mail state；WPT forms/the-input-element/email-value-idn.html
     // 钉态）。入参为 email 值最后一个 '@' 之后的域部原串；合成 http:// 前缀

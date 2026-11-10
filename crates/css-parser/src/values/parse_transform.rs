@@ -563,16 +563,24 @@ pub fn parse_individual_translate(value: &str) -> Option<TransformFunction> {
 /// `<number>{3} <angle>` = Rotate3d。轴 + 角度以空白分隔（轴形式时 angle 必须存在）。
 pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
     let value = value.trim();
+    // 裸数学函数整体为单个角度文法位（`rotate: atan2(0, 0)` 等多参形）——
+    // 先于空白/逗号分词尝试：split_transform_value_args 会拆开函数实参表
+    // （`atan2(0, 0)` 被误拆两段，落不进任何文法分支）。轴形式（`x acos(1)`）
+    // 与四元组非数学函数，不进此快路径。
+    if parse_math_function(value).is_some() {
+        let angle = parse_angle_or_math(value)?;
+        return Some(TransformFunction::RotateZ(angle));
+    }
     let parts = split_transform_value_args(value)?;
     match parts.len() {
         1 => {
             // 裸 <angle>（parse_angle 接受纯数字 = deg 数值）或单轴关键字（非法）。
-            let angle = parse_angle(parts[0])?;
+            let angle = parse_angle_or_math(parts[0])?;
             Some(TransformFunction::RotateZ(angle))
         }
         2 => {
             let axis = parts[0].trim().to_ascii_lowercase();
-            let angle = parse_angle(parts[1])?;
+            let angle = parse_angle_or_math(parts[1])?;
             match axis.as_str() {
                 "x" => Some(TransformFunction::RotateX(angle)),
                 "y" => Some(TransformFunction::RotateY(angle)),
@@ -587,7 +595,7 @@ pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
             let x: f64 = parts[0].parse().ok()?;
             let y: f64 = parts[1].parse().ok()?;
             let z: f64 = parts[2].parse().ok()?;
-            let angle = parse_angle(parts[3])?;
+            let angle = parse_angle_or_math(parts[3])?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         _ => None,
@@ -597,7 +605,14 @@ pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
 /// R4201：`scale` 属性值解析——`none | <number> [<number> <number>?]?`。
 /// 单值 = 等比（sx=sy）；双值 = X Y；三值 Z 分量不改 2D 投影（同 scale3d 降级）。
 pub fn parse_individual_scale(value: &str) -> Option<TransformFunction> {
-    let parts = split_transform_value_args(value.trim())?;
+    let value = value.trim();
+    // 裸数学函数整体为单个 <number> 文法位（`scale: round(1.4, 1)` 等多参形）——
+    // 先于空白/逗号分词尝试（同 rotate 批注：分词会拆开函数实参表）。
+    if parse_math_function(value).is_some() {
+        let n = parse_finite_number_math(value)?;
+        return Some(TransformFunction::Scale(n, Some(n)));
+    }
+    let parts = split_transform_value_args(value)?;
     if parts.is_empty() || parts.len() > 3 {
         return None;
     }
@@ -850,6 +865,32 @@ fn parse_scale_number_arg(value: &str) -> Option<f64> {
         return parse_css_number(stripped).map(|n| n / 100.0);
     }
     parse_transform_number(value)
+}
+
+/// `<angle>` 文法位接受顶层 L4 数学函数（CSS Values 4 §10.5：math function 可用于
+/// 对应类型文法位）。[`parse_angle`] 快路径 + math 求值：含角度产出函数
+///（asin/acos/atan/atan2，wptfyi-css DC-2 values trig 桶主驱动——WPT
+/// acos-asin-atan-atan2-computed 以 `rotate: acos(1)` 形态驱动）的式子结果为
+/// 弧度 → 度；纯 number 式按度直读（与 [`parse_css_number`] unitless 宽容口径
+/// 一致）。角度单位算术（`calc(45deg + 1turn)`）CalcParser 尚不支持——FIXME 挂账。
+fn parse_angle_or_math(s: &str) -> Option<f64> {
+    if let Some(angle) = parse_angle(s) {
+        return Some(angle);
+    }
+    let expr = parse_math_function(s)?;
+    // <angle> 文法位不容 <length> 混入：长度叶使 acos(1px)/atan2(0, 1px)/
+    // calc(10px) 类式子整体无效（CSS Values 4 §10.5 型别一致；calcExpr 角度
+    // parse 期 Number 化，Length 是唯一非法叶型）。
+    if calc_expr_has_length(&expr) {
+        return None;
+    }
+    let value = eval_calc(&expr, None)?;
+    let deg = if calc_expr_has_angle_result(&expr) {
+        value.to_degrees()
+    } else {
+        value
+    };
+    deg.is_finite().then_some(deg)
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。

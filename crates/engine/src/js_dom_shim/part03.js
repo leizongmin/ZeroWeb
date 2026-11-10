@@ -22721,6 +22721,16 @@
         var pri = _styleValueAndPriority(v);
         var core = _zwNormalizeDeclValue(pri.value, want);
         if (core === null) return; // T47 DF-3：非法 color → 赋值忽略，保留原值
+        // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单
+        // 属性（transform 族/数值槽——宿主 [`validate_decl_value`] 裁决）非法值整体
+        // 拒绝（赋值忽略保留原值，同 T47 DF-3 形态）。表外属性/shorthand/css-wide
+        // keyword 宿主侧放行（FIXME: 逐 parser 覆盖扩面）；host 未注册（polyfill/
+        // WebView 兜底链）不校验，零行为漂移。core 归一后校验（优先级后缀已剥离）。
+        // 宿主回调返 JS 字符串（shim 通用约定，见 part01c `=== 'false'` 先例），
+        // 比较须用字符串 'false' 而非 boolean。
+        // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
+        if (core !== '' && typeof __zw_validate_decl_value === 'function'
+            && __zw_validate_decl_value(want, core) === 'false') return;
         v = pri.priority ? core + ' !important' : core;
       }
       var parts = readRaw().split(';');
@@ -30247,6 +30257,17 @@ return e;
         var pri = _styleValueAndPriority(raw);
         var core = _zwNormalizeDeclValue(pri.value, prop);
         if (core === null) return;
+        // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单
+        // 属性（transform 族/数值槽——宿主 [`validate_decl_value`] 裁决）非法值整体
+        // 拒绝（赋值忽略保留原值，同 T47 DF-3 形态）。表外属性/shorthand/css-wide
+        // keyword 宿主侧放行（FIXME: 逐 parser 覆盖扩面）；host 未注册（polyfill/
+        // WebView 兜底链）不校验，零行为漂移。engine 物化元素（sel/handle 面）的
+        // inline style 写走本实现——WPT 语料 `el.style[prop] = v` 全落此臂。宿主回调
+        // 返 JS 字符串（shim 通用约定，见 part01c `=== 'false'` 先例），比较须用
+        // 字符串 'false' 而非 boolean。
+        // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
+        if (core !== '' && typeof __zw_validate_decl_value === 'function'
+            && __zw_validate_decl_value(prop, core) === 'false') return;
         v = pri.priority ? core + ' !important' : core;
         // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
         // none → 存原值；其余形态清条目。

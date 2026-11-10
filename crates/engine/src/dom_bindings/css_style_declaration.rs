@@ -260,6 +260,14 @@ fn native_style_named_setter(
     // grid 家族声明值 CSSOM 校验 + canonical 序列化（grid_cssom 模块头注）。
     let val = if prop.starts_with("--") || val.trim().is_empty() {
         val
+    } else if !zero_style_system::validate_decl_value(&prop, val.trim()) {
+        // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单
+        // 属性（transform 族/数值槽——[`zero_style_system::validate_decl_value`] 裁决，
+        // 表外属性/shorthand/css-wide keyword 放行）非法值整体拒绝——赋值忽略、已有
+        // 声明保留（spec setProperty 语义，同下方 grid 非法值臂同形态）。WPT css-values
+        // acos-asin-atan-atan2-invalid 63 子测试以 `rotate(asin())` 形态驱动（wptfyi-css
+        // DC-2 values trig 桶）。
+        return v8::Intercepted::kYes;
     } else if super::grid_cssom::is_grid_family_prop(&prop) {
         match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
             Some(v) => v,
@@ -506,6 +514,10 @@ fn native_style_set_property_invoke(
     // grid 家族声明值 CSSOM 校验 + canonical 序列化（grid_cssom 模块头注）。
     let val = if prop.starts_with("--") {
         val
+    } else if !zero_style_system::validate_decl_value(&prop, val.trim()) {
+        // T54：白名单属性非法值整体拒绝（同 [`native_style_named_setter`] T54 臂——
+        // setProperty 与 IDL setter 同语义）。
+        return;
     } else if super::grid_cssom::is_grid_family_prop(&prop) {
         match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
             Some(v) => v,

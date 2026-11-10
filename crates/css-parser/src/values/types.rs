@@ -880,6 +880,12 @@ pub enum BinaryMathOp {
     Hypot,
     /// round(a, b) —— a 四舍五入到 b 的最近整数倍（nearest 策略，半值远离零）。
     Round,
+    /// round(up, a, b) —— 向 +∞ 取整到 b 的整数倍（CSS Values 4 §11.4 策略关键字）。
+    RoundUp,
+    /// round(down, a, b) —— 向 -∞ 取整到 b 的整数倍。
+    RoundDown,
+    /// round(to-zero, a, b) —— 向零截断到 b 的整数倍。
+    RoundToZero,
     /// mod(a, b) —— 取模（结果符号同 b，floor 除法）。
     Mod,
     /// rem(a, b) —— 余数（结果符号同 a，trunc 除法）。
@@ -1369,9 +1375,35 @@ impl<'a> CalcParser<'a> {
         Some(CalcExpr::UnaryOp(op, Box::new(inner)))
     }
 
+    /// 尝试消费 round 策略关键字首参（up/down/nearest/to-zero，大小写不敏感，
+    /// 后随 ws* ',' 才算命中——`upper` 类更长 ident 不误吞）；命中消费返回对应
+    /// 变体，未命中不消费、返回 None（普通双参形）。
+    fn try_consume_round_strategy(&mut self) -> Option<BinaryMathOp> {
+        const STRATEGIES: [(&str, BinaryMathOp); 4] = [
+            ("up", BinaryMathOp::RoundUp),
+            ("down", BinaryMathOp::RoundDown),
+            ("nearest", BinaryMathOp::Round),
+            ("to-zero", BinaryMathOp::RoundToZero),
+        ];
+        let rest = &self.input[self.pos..];
+        let trimmed = rest.trim_start();
+        let keyword_ws = rest.len() - trimmed.len();
+        let (kw, op) = STRATEGIES.iter().find(|(name, _)| {
+            trimmed.len() >= name.len()
+                && trimmed[..name.len()].eq_ignore_ascii_case(name)
+                && trimmed[name.len()..].trim_start().starts_with(',')
+        })?;
+        let after_kw = &trimmed[kw.len()..];
+        let comma_ws = after_kw.len() - after_kw.trim_start().len();
+        self.pos += keyword_ws + kw.len() + comma_ws + 1; // +1 = ','
+        Some(*op)
+    }
+
     /// 尝试解析 CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem/atan2。
     /// 命中则消费前缀 + 解析 2 个逗号分隔参数 + 消费 `)`；否则不消费、返回 None。
-    /// round 的 rounding-strategy 关键字形式（round(nearest, A, B)）defer —— 仅支持 round(A, B)。
+    /// round 支持 rounding-strategy 关键字形式（round(up, A, B) 等，见
+    /// [`Self::try_consume_round_strategy`]）；step 为 ±Infinity 的边界形
+    /// （round(up, 1, Infinity) → calc(Infinity)）求值 NaN 化不命中——FIXME 挂账。
     fn try_parse_binary_math(&mut self) -> Option<CalcExpr> {
         if self.depth >= MAX_CALC_DEPTH {
             return None;
@@ -1391,11 +1423,31 @@ impl<'a> CalcParser<'a> {
         } else {
             return None;
         };
+        // round 策略关键字首参（CSS Values 4 §11.4 rounding-strategy：up/down/
+        // nearest/to-zero + ws* ','）。仅 Round 形命中后尝试；未命中不消费——
+        // 普通双参 round(A, B) 照旧。策略 idents 非法位置（round(1, nearest, 12)、
+        // round(nearest, 1, nearest)）由后续参数解析失败整体拒绝。
+        let strategy = if op == BinaryMathOp::Round {
+            // nearest 即默认 Round 求值——命中与否由 flag 记账（round(nearest, A)
+            // 单参形合法，与裸单参 round(A) invalid 区分）。
+            self.try_consume_round_strategy()
+        } else {
+            None
+        };
+        let has_strategy = strategy.is_some();
+        let op = strategy.unwrap_or(op);
         self.depth += 1;
         let args = self.parse_comma_list()?;
-        if args.len() != 2 {
-            return None;
-        }
+        // 双参为常规形；策略 + 单参合法（CSS Values 4 §11.4：round(<strategy>, A)
+        // step 缺省 1——WPT round-function.html `round(down, -1.5)` 驱动）；裸单参
+        // （无策略）invalid（round-mod-rem-invalid：round(0px)/round(0deg)）。
+        let args: Vec<CalcExpr> = match args.len() {
+            2 => args,
+            1 if has_strategy => {
+                vec![args.into_iter().next()?, CalcExpr::Number(1.0)]
+            }
+            _ => return None,
+        };
         self.skip_whitespace();
         if !self.try_consume(")") {
             return None;
@@ -1804,6 +1856,9 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 BinaryMathOp::Hypot => Some(av.hypot(bv)),
                 // round(x, 0) = x；否则 (x/y).round()*y（nearest，半值远离零）。
                 BinaryMathOp::Round => Some(if bv == 0.0 { av } else { (av / bv).round() * bv }),
+                BinaryMathOp::RoundUp => Some(if bv == 0.0 { av } else { (av / bv).ceil() * bv }),
+                BinaryMathOp::RoundDown => Some(if bv == 0.0 { av } else { (av / bv).floor() * bv }),
+                BinaryMathOp::RoundToZero => Some(if bv == 0.0 { av } else { (av / bv).trunc() * bv }),
                 // mod(x, 0) 无效 → None；否则 x - y*floor(x/y)（符号同 y）。
                 BinaryMathOp::Mod => {
                     if bv == 0.0 {

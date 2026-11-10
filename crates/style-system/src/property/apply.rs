@@ -1621,6 +1621,74 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
     }
 }
 
+/// inline style 写面值文法校验（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4
+/// 文法）——`el.style.rotate = 'asin()'` 等非法形须整体拒绝（赋值忽略保留原值，
+/// WPT invalid 面 `acos-asin-atan-atan2-invalid.html` 63 子测试驱动）。
+///
+/// **白名单口径**（FIXME: 逐 parser 覆盖扩面）：仅校验引擎文法已验证支持的属性；
+/// 表外属性一律放行——registry 认但 parser 有假阴性缺口的属性（grid 子格形、
+/// 未接线的函数形等）全量收紧会把合法值误拒（活站 inline style 兼容面回退）。
+/// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
+/// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
+pub fn validate_decl_value(property: &str, value: &str) -> bool {
+    const VALIDATED_PROPERTIES: [&str; 6] = ["transform", "rotate", "scale", "translate", "z-index", "margin-left"];
+    let prop = property.trim().to_ascii_lowercase();
+    if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
+        return true;
+    }
+    let v = value.trim();
+    if v.is_empty() {
+        return true;
+    }
+    match v.to_ascii_lowercase().as_str() {
+        "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
+        _ => {}
+    }
+    let mut scratch = ComputedStyle::default();
+    apply_property_value(&mut scratch, &prop, v)
+}
+
+#[cfg(test)]
+mod t54_validate_decl_value_tests {
+    use super::*;
+
+    #[test]
+    fn whitelist_properties_reject_invalid_math_forms() {
+        // WPT invalid 面（acos-asin-atan-atan2-invalid.html）：无参/坏单位/悬空
+        // 运算符形整体拒绝。
+        assert!(!validate_decl_value("transform", "rotate(asin())"));
+        assert!(!validate_decl_value("transform", "rotate(asin(1dag))"));
+        assert!(!validate_decl_value("transform", "rotate(asin(1deg + )"));
+        assert!(!validate_decl_value("rotate", "asin()"));
+        assert!(!validate_decl_value("z-index", "round(1dag)"));
+    }
+
+    #[test]
+    fn whitelist_properties_accept_valid_math_and_plain_forms() {
+        assert!(validate_decl_value("transform", "rotate(45deg)"));
+        assert!(validate_decl_value("rotate", "acos(1)"));
+        assert!(validate_decl_value("scale", "2"));
+        assert!(validate_decl_value("translate", "10px 20px"));
+        assert!(validate_decl_value("z-index", "sign(-3)"));
+        assert!(validate_decl_value("margin-left", "round(23px, 10px)"));
+    }
+
+    #[test]
+    fn passthrough_faces_return_true() {
+        // 白名单外属性放行（parser 假阴性兼容面零回退）。
+        assert!(validate_decl_value("width", "not-a-width-grammar"));
+        assert!(validate_decl_value("unknown-prop", "anything"));
+        // shorthand 放行（apply 链无展开臂）。
+        assert!(validate_decl_value("margin", "10px 20px"));
+        // css-wide keyword 与空值恒真。
+        for kw in ["inherit", "INHERIT", "initial", "unset", "revert", "revert-layer"] {
+            assert!(validate_decl_value("transform", kw), "{kw} 放行");
+        }
+        assert!(validate_decl_value("transform", ""));
+        assert!(validate_decl_value("transform", "   "));
+    }
+}
+
 #[cfg(test)]
 mod r4086_stretch_tests {
     use super::*;
