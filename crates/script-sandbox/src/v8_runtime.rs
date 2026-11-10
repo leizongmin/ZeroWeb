@@ -639,6 +639,9 @@ impl Drop for MicrotasksExplicitGuard {
 /// 进程级 `Once` 防重复初始化（V8 平台初始化须全局一次）。
 pub fn ensure_v8_initialized() {
     V8_INIT.call_once(|| {
+        // ShadowRealm 内建（ECMA-262 §ShadowRealm——V8 内核已实现，harmony flag
+        // 默认关闭）：平台初始化前开启，全 isolate 可见。
+        v8::V8::set_flags_from_string("--harmony-shadow-realm");
         let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，
         // 且在所有Isolate创建之前完成。
@@ -886,6 +889,21 @@ impl V8Sandbox {
         let dynamic_import = Arc::new(std::sync::Mutex::new(DynamicImportState::default()));
         isolate.set_slot(dynamic_import.clone());
         isolate.set_host_import_module_dynamically_callback(dynamic_import_callback);
+
+        // ShadowRealm 宿主回调（ECMA-262 §ShadowRealm，HostCreateShadowRealmContext）：
+        // V8 内核已实现 realm/evaluate/wrapped function 语义，仅宿主 context 缺省
+        // ——默认抛 "Not supported"。返回裸 ECMAScript context（无 window/DOM
+        // shim——规范要求纯 JS realm；新 context 用 isolate 默认微任务队列）。
+        isolate.set_host_create_shadow_realm_context_callback(|scope| {
+            Some(v8::Context::new(
+                scope,
+                v8::ContextOptions {
+                    global_template: None,
+                    global_object: None,
+                    microtask_queue: None,
+                },
+            ))
+        });
 
         // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
         // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
@@ -4442,6 +4460,53 @@ mod tests {
             settled.lock().unwrap().as_deref(),
             Some("rejected:Error:Not supported"),
             "无宿主 resolver 保持 V8 默认 Error: Not supported"
+        );
+    }
+
+    // ShadowRealm 激活钉面（r11 切片——ECMA-262 §ShadowRealm；flag + 宿主
+    // context 回调缺一即全簇翻红）：构造器可见、实例 API 面、evaluate 同步
+    // 完成值返回、wrapped function 跨 realm 调用、非 primitive 返回 TypeError。
+    // 断言自包含（execute 包裹求值，var 不跨 execute 落 global）。
+    #[test]
+    fn test_shadowrealm_activate_and_evaluate() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        assert_eq!(
+            sandbox.execute("typeof ShadowRealm").unwrap().value,
+            "function",
+            "harmony flag + host callback 任一缺失即 'undefined'"
+        );
+        assert_eq!(
+            sandbox
+                .execute(
+                    "var r = new ShadowRealm(); JSON.stringify([typeof r, typeof r.evaluate, typeof r.importValue])"
+                )
+                .unwrap()
+                .value,
+            r#"["object","function","function"]"#
+        );
+        // evaluate 同步返回完成值（primitive 直通）。
+        assert_eq!(
+            sandbox.execute("new ShadowRealm().evaluate('1 + 2')").unwrap().value,
+            "3"
+        );
+        // evaluate 返回的函数是 wrapped function——主 realm 直接调用、参数原样
+        // 传入新 realm。
+        assert_eq!(
+            sandbox
+                .execute(
+                    "var r2 = new ShadowRealm(); var wf = r2.evaluate('(function (a, b) { return a * b; })'); wf(6, 7)"
+                )
+                .unwrap()
+                .value,
+            "42"
+        );
+        // 非 primitive 返回值 → TypeError（wrapped value 契约）。
+        assert_eq!(
+            sandbox
+                .execute("try { new ShadowRealm().evaluate('({})'); 'no-throw'; } catch (e) { e.constructor.name; }")
+                .unwrap()
+                .value,
+            "TypeError"
         );
     }
 }

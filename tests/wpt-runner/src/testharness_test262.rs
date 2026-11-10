@@ -269,6 +269,20 @@ fn test262_case_skipped(relative: &str, source: &str) -> bool {
     if name.ends_with("_FIXTURE.js") {
         return true;
     }
+    // ShadowRealm.importValue 真加载面（r11 勘察证据
+    // docs/goal/wptfyi-runtime/evidence/dc2-test262-shadowrealm-2026-11-10.md）：
+    // engine dynamic import 桥按 classic 页面 slot 契约实现，shadow realm 场景
+    // 违背 V8 内核期望——import-value 案进程级 SIGTRAP 连累整轮，module 变体
+    // 三案依赖同一成功路径。划界 skip（同步校验面照常执行）。
+    const SHADOW_REALM_IMPORT_VALUE_SKIPPED: [&str; 4] = [
+        "import-value.js",
+        "throws-if-import-value-does-not-exist.js",
+        "throws-typeerror-import-syntax-error.js",
+        "throws-typeerror-import-throws.js",
+    ];
+    if relative.contains("ShadowRealm/prototype/importValue/") && SHADOW_REALM_IMPORT_VALUE_SKIPPED.contains(&name) {
+        return true;
+    }
     parse_test262_meta(source).is_none()
 }
 

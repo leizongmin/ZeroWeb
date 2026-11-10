@@ -5220,7 +5220,7 @@
         'ReferenceError', 'SyntaxError', 'EvalError', 'URIError', 'AggregateError',
         'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent',
         'decodeURIComponent', 'encodeURI', 'decodeURI', 'structuredClone',
-        'TextEncoder', 'TextDecoder', 'Intl',
+        'TextEncoder', 'TextDecoder', 'Intl', 'ShadowRealm',
       ];
       for (var _zwRi = 0; _zwRi < _zwRealmIntrinsics.length; _zwRi++) {
         var _zwRName = _zwRealmIntrinsics[_zwRi];
@@ -17321,6 +17321,41 @@
           { value: _et37d.value, writable: true, enumerable: false, configurable: true });
       }
     }
+  })();
+
+  // ShadowRealm.prototype.importValue 的 exportName 字符串先行校验（ShadowRealm
+  // 提案 §ShadowRealm.prototype.importValue 步 4：IsString 检查在 ToString
+  // 之前——非 string 直接 TypeError，不触发 toString）。V8
+  // --harmony-shadow-realm 内核实现先 ToString 再检（旧草案顺序），
+  // test262 throws-if-exportname-not-string 以 toString 调用计数钉当前顺序。
+  // descriptor/name/length 三断言面（w/e/c、own name/length）逐字保留。
+  // https://tc39.es/proposal-shadowrealm/#sec-shadowrealm.prototype.importvalue
+  (function () {
+    if (typeof ShadowRealm !== 'function' || !ShadowRealm.prototype) return;
+    var _zwIvOriginal = ShadowRealm.prototype.importValue;
+    if (typeof _zwIvOriginal !== 'function') return;
+    // 方法简写（ES2015）：无 [[Construct]] 槽——not-constructor 断言面
+    // （isConstructor 助手经 new 探测，普通函数表达式可构造即假）。
+    var _zwIvHolder = {
+      importValue(specifier, exportName) {
+        // 步序对齐（步 3 → 步 4）：非 string exportName 亦先 ToString(specifier)
+        //（其 abrupt——Test262Error 之类——优先传出，valueOf/toString 调用恰一
+        // 次），再 TypeError。Object.create(null) 无继承 toString 面——
+        // String() 与规范 ToString 同走 ToPrimitive(hint string)。
+        if (typeof exportName !== 'string') {
+          specifier = String(specifier);
+          throw new TypeError('importValue: exportName must be a string');
+        }
+        return _zwIvOriginal.call(this, specifier, exportName);
+      },
+    };
+    var _zwIvPatched = _zwIvHolder.importValue;
+    // name/length own 面落位（方法简写推断值同字面——仅可写性收口为规范
+    // {writable:false}）；w/e/c 与 name/length 断言面逐字保留。
+    Object.defineProperty(_zwIvPatched, 'name', { writable: false });
+    Object.defineProperty(_zwIvPatched, 'length', { writable: false });
+    Object.defineProperty(ShadowRealm.prototype, 'importValue',
+      { value: _zwIvPatched, writable: true, enumerable: false, configurable: true });
   })();
 
   // NPO backing + iframe 名 live 扫描（gen 缓存防热路径：未命中名的 unqualified/global
