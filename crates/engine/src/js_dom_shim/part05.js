@@ -14838,9 +14838,17 @@
       try {
         var listed = __zw_form_controls(sel);
         if (listed) {
+          // s390b 同树门（HTML §13.2.6.1 step 21 同树约束）：host 列表按解析期指针
+          // 侧表收集，引擎视图是原始标记重解析、不感知 JS 视图同 turn 移除——脚本
+          // 解析中途移除 owner form 后，指针关联控件不得再入 elements/named items
+          //（WPT form_owner_and_table_2 `f['image1']` 面）。owner 与控件 live 根
+          // 不同树即丢弃；同树（form= 跨树关联、detached 双离树 R4005 案）保持原
+          // 行为。owner 根取不到（wrap 异常）不设门，保守沿用旧行为。
+          var fcFormRoot = _zwLiveTreeRoot(sel ? _wrapSelector(sel) : _makeProxy(null, handle));
           var arr = listed.split('|').filter(Boolean).map(_zwQueryWrapIdentity);
           for (var hi = 0; hi < arr.length; hi++) {
-            if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1) push(arr[hi]);
+            if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1
+                && (!fcFormRoot || _zwLiveTreeRoot(arr[hi]) === fcFormRoot)) push(arr[hi]);
           }
         }
       } catch (_e) {}

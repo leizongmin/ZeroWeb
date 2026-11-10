@@ -145,6 +145,13 @@ pub struct Document {
     /// 字段（NodeData 尺寸敏感：ElementData 加 Option<NodeId> 曾致 dom 微基准全线 +2-3x
     /// 劣化——分配/layout 阈值效应）；仅 template 元素有条目，绝大多数文档空表。
     template_contents_map: HashMap<NodeId, NodeId>,
+    /// 解析期 form 元素指针关联侧表（HTML §13.2.4.4 form element pointer）：
+    /// html5ever 在 form-associated 元素创建时按指针约束检查通过经
+    /// `TreeSink::associate_with_form` 上报（parser.rs），覆盖坏标记位——表格 foster
+    /// parenting 的 `<form>`（form 非 input 祖先）与 `<form>` 被隐式闭合后指针未清
+    /// 的兄弟控件。同 template_contents_map 侧表理由（NodeData 尺寸敏感）；常规嵌套
+    /// 两路同判不写表。动态创建（createElement/appendChild）不经解析器无条目。
+    form_owner_map: HashMap<NodeId, NodeId>,
     /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
     slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
     /// 45 号 shadow-dom-rendering M3 手动臂：`slotAssignment: 'manual'` shadow root
@@ -192,6 +199,7 @@ impl Document {
         Self {
             nodes,
             root,
+            form_owner_map: HashMap::new(),
             id_map: HashMap::new(),
             url: None,
             referrer: None,
@@ -218,11 +226,13 @@ impl Document {
         nodes: SlotMap<NodeId, NodeData>,
         root: NodeId,
         template_contents_map: HashMap<NodeId, NodeId>,
+        form_owner_map: HashMap<NodeId, NodeId>,
     ) -> Self {
         let mut doc = Self {
             nodes,
             root,
             template_contents_map,
+            form_owner_map,
             id_map: HashMap::new(),
             url: None,
             referrer: None,
@@ -1988,6 +1998,16 @@ impl Document {
     /// WC-M2：登记/更新 template 的 contents fragment（parser/克隆/导入）。
     pub fn set_template_contents(&mut self, template: NodeId, frag: NodeId) {
         self.template_contents_map.insert(template, frag);
+    }
+
+    /// 解析期 form 元素指针关联查询（HTML §13.2.4.4 form element pointer：
+    /// "points to the last `form` element that was opened and whose end tag has not
+    /// yet been seen"）。仅解析器上报的对（§13.2.6.1 create an element step 21），
+    /// 覆盖坏标记位——表格 foster parenting 的 form 与被隐式闭合 form 的指针残留；
+    /// 未命中由调用方回落祖先链（常规嵌套两路同判）。动态创建控件无条目（spec
+    /// 动态插入只认 `form` 属性）。
+    pub fn parse_form_owner(&self, id: NodeId) -> Option<NodeId> {
+        self.form_owner_map.get(&id).copied()
     }
 
     /// WC-M2：template contents 的子节点列表（无 contents/无 template → 空）。

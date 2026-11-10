@@ -1929,6 +1929,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 解析期 form 元素指针关联（HTML §13.2.4.4）——控件 owner form 的唯一选择器
+    // （无关联返空）。shim `.form` getter 的指针位兜底（本地 form 属性/祖先两路
+    // 落空后调用；foster-parented form 与隐式闭合指针残留祖行走不可达）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_parse_form_owner",
+        Box::new(move |args| {
+            let control = args.first().map(String::from).unwrap_or_default();
+            with_query_view_doc(&html, &m, |doc, _| parse_form_owner_selector_doc(doc, &control))
+        }),
+    );
+
     // 元素遍历/导航 API：children/firstElementChild/lastElementChild/childElementCount（子列表）、
     // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
     let html = Arc::clone(dom_html);

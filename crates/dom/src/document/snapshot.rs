@@ -45,6 +45,7 @@ impl Document {
             event_listeners: Default::default(),
             shadow_roots: self.shadow_roots.clone(),
             template_contents_map: self.template_contents_map.clone(),
+            form_owner_map: self.form_owner_map.clone(),
             slot_assignments: self.slot_assignments.clone(),
             manual_slot_assignments: self.manual_slot_assignments.clone(),
             focus_element: self.focus_element,

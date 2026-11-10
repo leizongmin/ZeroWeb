@@ -4786,7 +4786,10 @@ fn element_local_name(doc: &Document, node: NodeId) -> &str {
         .unwrap_or("")
 }
 
-/// 解析 form-associated 元素的 owner。存在 `form` 属性时只按其值关联，不回落祖先。
+/// 解析 form-associated 元素的 owner。存在 `form` 属性时只按其值关联，不回落；
+/// 次查解析期 form 元素指针侧表（HTML §13.2.4.4——表格 foster-parented form、被
+/// 隐式闭合 form 的指针残留等坏标记位）；最后回落最近 form 祖先（动态创建控件
+/// 无指针条目，嵌套常规位）。
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
 fn form_owner_node(doc: &Document, control: NodeId) -> Option<NodeId> {
     if let Some(form_id) = doc.get_attribute(control, "form") {
@@ -4796,6 +4799,9 @@ fn form_owner_node(doc: &Document, control: NodeId) -> Option<NodeId> {
                     .get_attribute(*node, "id")
                     .is_some_and(|candidate| candidate == form_id)
         });
+    }
+    if let Some(owner) = doc.parse_form_owner(control) {
+        return Some(owner);
     }
     let mut current = doc.parent_node(control);
     while let Some(ancestor) = current {

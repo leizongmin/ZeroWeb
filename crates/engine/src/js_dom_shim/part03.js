@@ -19364,6 +19364,22 @@
     } catch (_e5000s) {}
     return _sn;
   }
+  // s390b：live 视图同树根判定——proxy 沿 parentNode 上行到根（null parent 止），
+  // 两 proxy 根引用相等 = 同一棵（live 文档树或同一 detached 树）。`===` 可作树
+  // 身份比较的缓存前提：wrap/getElementById 产物同 _proxyCache（R331/R4005），
+  // 同元素恒同 proxy 对象。parentNode 链是同 turn 变更立即可见的 live 通道
+  //（R2302 判例：host getElementById/query 索引对同 turn id 变更/移除 stale，
+  // proxy 链 live）——解析期 form 元素指针关联的 liveness 同树门以此为准。
+  function _zwLiveTreeRoot(p) {
+    var r = p, hops = 0;
+    while (r && hops++ < 64) {
+      var par = null;
+      try { par = r.parentNode; } catch (_eLtr) { break; }
+      if (!par) break;
+      r = par;
+    }
+    return r;
+  }
   function _realTag(sel, handle) {
     // R-baidu3：批量 tag 缓存命中（part05 _zwTagCache——getElementsByTagName('*')
     // 枚举时经 __zw_query_all_tagged 灌入）。印章 = (apply 代际, pending 记账长度)，
@@ -22402,6 +22418,22 @@
     for (var ancestor = node.parentNode; ancestor; ancestor = ancestor.parentNode) {
       if (isTplNode(ancestor)) break;
       if (ancestor.nodeType === 1 && ancestor.localName === 'form') return ancestor;
+    }
+    // 解析期 form 元素指针兜底（HTML §13.2.4.4 form element pointer，host 侧表
+    // `__zw_parse_form_owner`）：祖行走不可达的坏标记位——表格 foster-parented
+    // `<form>`（form 是 table 兄弟，input 在 td 内祖先链无 form）与被隐式闭合
+    // `<form>` 的指针残留（`</div>` 弹栈不清指针，后续兄弟控件仍关联）。
+    // html5ever 对 template 内容不上报（§13.2.6.1 step 21 非 template 内容约束），
+    // R5196 不越界面维持；form= 属性已在上方 findForm 判定，本桥仅补指针位。
+    if (typeof __zw_parse_form_owner === 'function') {
+      try {
+        var _pfoSel = __zw_parse_form_owner(node.__zwSelector || '');
+        if (_pfoSel) {
+          return (typeof _zwQueryWrapIdentity === 'function')
+            ? _zwQueryWrapIdentity(_pfoSel)
+            : ((typeof _wrapSelector === 'function') ? _wrapSelector(_pfoSel) : null);
+        }
+      } catch (_ePfo) {}
     }
     return null;
   }
@@ -32087,6 +32119,28 @@ return e;
                 if (fChainTag === 'FORM') return fnode;
                 if (fChainTag === 'TEMPLATE') break;
                 try { fnode = fnode.parentNode; } catch (_eFp) { break; }
+              }
+              // s390：解析期 form 元素指针兜底（HTML §13.2.4.4）——本地 form 属性与
+              // 祖先两路落空后查指针侧表，覆盖表格 foster-parented `<form>`（form 是
+              // table 兄弟非控件祖先）与被隐式闭合 `<form>` 的指针残留。handle-only
+              // proxy（动态 createElement 产物）无解析期条目，查表恒空不误关联。
+              // s390b 同树门（HTML §13.2.6.1 step 21：关联要求 intendedParent 与指针
+              // form 同树）——引擎视图是原始标记重解析（解析期脚本效应只在 JS 视图），
+              // 桥查表无法感知「脚本解析中途移除指针 form」（WPT
+              // form_owner_and_table_2 面），门放 shim 侧：owner wrap 与控件 proxy
+              // 的 live 根不同树即不关联（detached owner 根 = 自身 ≠ 控件根）。
+              if (sel && typeof __zw_parse_form_owner === 'function') {
+                try {
+                  var _pfoSel = __zw_parse_form_owner(sel);
+                  if (_pfoSel && typeof _zwLiveTreeRoot === 'function') {
+                    var _pfoOwner = (typeof _zwQueryWrapIdentity === 'function')
+                      ? _zwQueryWrapIdentity(_pfoSel)
+                      : ((typeof _wrapSelector === 'function') ? _wrapSelector(_pfoSel) : null);
+                    if (_pfoOwner && _zwLiveTreeRoot(_pfoOwner) === _zwLiveTreeRoot(proxy)) {
+                      return _pfoOwner;
+                    }
+                  }
+                } catch (_ePfoTrap) {}
               }
             } catch (_e) {}
             return null;

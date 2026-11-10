@@ -240,9 +240,16 @@ impl Document {
         }
     }
 
-    /// 表单宿主：最近的 `<form>` 祖先元素。注：`form` 属性跨树关联未实现。
+    /// 表单宿主：解析期 form 元素指针关联（HTML §13.2.4.4，[`Document::parse_form_owner`]）
+    /// 优先，未命中回落最近 `<form>` 祖先。指针侧表覆盖坏标记位——表格 foster parenting
+    /// 的 `<form>`（form 非 input 祖先）与 `<form>` 被隐式闭合（如 `</div>` 弹栈）后指针
+    /// 未清的兄弟控件；常规嵌套两路同判。`form` 属性跨树关联（spec owner 算法首查项）
+    /// 在 engine shim 层实现（js_dom_bridge `form_owner_node`），本查询不含。
     /// `pub(super)`：R3284 validation.rs 子模块复用（radio required 组求值）。
     pub(super) fn form_owner(&self, node: NodeId) -> Option<NodeId> {
+        if let Some(owner) = self.parse_form_owner(node) {
+            return Some(owner);
+        }
         let mut cur = self.parent_node(node);
         while let Some(p) = cur {
             if self.element_local_name(p) == Some("form") {
