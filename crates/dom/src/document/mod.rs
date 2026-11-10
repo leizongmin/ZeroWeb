@@ -2196,26 +2196,42 @@ impl Document {
             // `:filtered` filterable select 过滤态（s326，whatwg/html #12050 谱系），
             // 延后至此经 filtered 子模块复评（注入通道见 set_filtered_options 注记）。
             crate::query::PseudoClass::Filtered => self.is_filtered_option(node),
-            // `:not(:filtered)` 否定嵌套（s326）——matches_full 对 inner 含 `:filtered`
-            // 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见 query.rs Not 臂注）；
-            // 守卫臂只接 Filtered 形，其余 inner 维持 matches_full 直评语义（落 `_ => true`）。
-            // inner 静态成分（tag/class/attr）直评 + `:filtered` 经 Document 复评。
-            crate::query::PseudoClass::Not(inner)
-                if inner
-                    .pseudos
-                    .iter()
-                    .any(|p| matches!(p, crate::query::PseudoClass::Filtered)) =>
+            // `:not(...:filtered...)` 否定嵌套（s326）——matches_full 对任一内层含
+            // `:filtered` 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见
+            // query.rs Not 臂注）；守卫臂只接 Filtered 形，其余内层维持直评语义。
+            // 任一内层命中即否决（Selectors L4 <negation>）：`:filtered` 内层静态
+            // 成分（tag/class/attr）直评 + is_filtered_option 经 Document 复评；
+            // 其余内层 matches_full(elem, pos) 完整直评（含伪类位置语义——DF-T56-1：
+            // 静态 matches 丢伪类使 `:not(:filtered, :first-child)` 恒否决）。
+            crate::query::PseudoClass::Not(list)
+                if list.iter().any(|inner| {
+                    inner
+                        .pseudos
+                        .iter()
+                        .any(|p| matches!(p, crate::query::PseudoClass::Filtered))
+                }) =>
             {
-                let static_hit = self
-                    .nodes
-                    .get(node)
-                    .and_then(|n| match &n.kind {
-                        NodeKind::Element(elem) => Some(elem),
-                        _ => None,
-                    })
-                    .map(|elem| inner.matches(elem))
-                    .unwrap_or(false);
-                !(static_hit && self.is_filtered_option(node))
+                let veto = list.iter().any(|inner| {
+                    let static_hit = self
+                        .nodes
+                        .get(node)
+                        .and_then(|n| match &n.kind {
+                            NodeKind::Element(elem) => Some(elem),
+                            _ => None,
+                        })
+                        .map(|elem| inner.matches_full(elem, pos))
+                        .unwrap_or(false);
+                    if inner
+                        .pseudos
+                        .iter()
+                        .any(|p| matches!(p, crate::query::PseudoClass::Filtered))
+                    {
+                        static_hit && self.is_filtered_option(node)
+                    } else {
+                        static_hit
+                    }
+                });
+                !veto
             }
             // `:valid`/`:invalid`/`:in-range`/`:out-of-range` 须约束属性上下文，延后至此经
             // validation 子模块复评（HTML §4.10.20 + CSS Selectors L4）。
