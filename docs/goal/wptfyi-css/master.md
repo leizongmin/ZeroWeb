@@ -24,18 +24,24 @@ computed-mix 0→930）。
 +527/-17：relative origin 折叠/color-mix method 与权重规范化/calc 规范形/
 rest alpha 行为表/浅面基座委托）——css-color 簇 63 页 **Pass 9,318 →
 10,530**（+1,212），逐页不降 **2 增/61 平/0 回归**（contrast 透传修复后
-恢复）。残余 480 归三桶：color-layers 语法面（93 invalid + 10 valid）、
-light-dark、杂项 computed（alpha-invalid、system-color 族等）。
+恢复）。
+**DC-2 四批完成**：语法面收批（part11-computed-color.js +205/-3：relative
+通道表槽类型校验/color-mix hue 方法空间门/alpha() 声明面/color-layers
+声明面与 computed 入口）——css-color 簇 63 页 **Pass 10,530 → 10,756**
+（+226），逐页不降 **5 增/58 平/0 回归**（cc7 校验过严 -20 回归修正后）。
+残余 254 归三桶：computed 校验/序列化残余（relative 69、rgb 21 等）、
+light-dark 32、system-color 55。
 **卡点**：无阻塞。
-**下一步**：DC-2 再批未 fetch 目录语料扩面（~8.1k）；`.any.js` 变体通道
-（588）；color-layers/light-dark 建模；DC-3 全量对账。
+**下一步**：DC-2 未 fetch 目录语料扩面（~8.1k）；`.any.js` 变体通道
+（588）；light-dark/system-color 建模；DC-3 全量对账（需最终 HEAD
+新周跑——42801058132 已完成但 HEAD 3bfccdfa3 不含 color 簇三批增量）。
 
 [执行契约](../wptfyi-css.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 再批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530 |
+| DC-2 按簇收敛 | 四批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756 |
 | DC-3 全量对账 | 待执行 | 验收线 182,392 项通过，同 revision 周跑产物待补 |
 
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
