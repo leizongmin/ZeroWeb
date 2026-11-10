@@ -5095,25 +5095,31 @@
       // `error.constructor === w.TypeError` 由 report 侧用主 TypeError 构造满足
       //（_zwRealmError 印记 win 上的 TypeError 即主转发，constructor 恒等）。
       TypeError: globalThis.TypeError,
-      // R187（js-dom M4）：Proxy 转发 + revocable 印记——`eventListenerGlobalObject.Proxy
-      // .revocable(...)` 的 proxy 产物印记 `_zwRealmWin`（WPT cross-realm #4/#5：revoked
-      // Proxy 作为 listener，TypeError 须上报到 iframe realm win）。
+      // R187（js-dom M4）＋ s376 修正：Proxy **可调用/可构造**转发——旧包装仅
+      // { revocable }（普通对象非函数），`new w.Proxy(t, h)` 报
+      // "Proxy is not a constructor"（test262 Proxy/apply|construct/arguments-realm
+      // 簇实证）。构造产物与 revocable 产物同款 realm 印记 + __zwRealmOf 注册表
+      // （revoke 后属性 Get 抛、印记不可读时派发点经 Map 反查创建 realm）。
       Proxy: (function () {
-        var P = {
-          revocable: function (target, handler) {
-            var r = globalThis.Proxy.revocable(target, handler);
-            try { r.proxy._zwRealmWin = win; } catch (_e187p) {}
-            // R187：realm 注册表——proxy revoke 后属性 Get 抛（印记不可读），Map 键
-            // 引用不触 trap，派发点 stamp 读取失败时经 __zwRealmOf 反查创建 realm。
-            try {
-              if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
-              globalThis.__zwRealmOf.set(r.proxy, win);
-            } catch (_e187m) {}
-            return r;
-          },
+        function BoundProxy(target, handler) {
+          var p = new globalThis.Proxy(target, handler);
+          try {
+            p._zwRealmWin = win;
+            if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+            globalThis.__zwRealmOf.set(p, win);
+          } catch (_e187px) {}
+          return p;
+        }
+        BoundProxy.revocable = function (target, handler) {
+          var r = globalThis.Proxy.revocable(target, handler);
+          try { r.proxy._zwRealmWin = win; } catch (_e187p) {}
+          try {
+            if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+            globalThis.__zwRealmOf.set(r.proxy, win);
+          } catch (_e187m) {}
+          return r;
         };
-        try { P.revocable.prototype = globalThis.Proxy.revocable && globalThis.Proxy.revocable.prototype; } catch (_e187q) {}
-        return P;
+        return BoundProxy;
       })(),
       // R140（js-dom M4）：EventTarget 构造器（WPT Event-dispatch-throwing-multiple-globals
       // 的 `new w2.EventTarget()`——iframe win 的跨 realm 事件目标面）。
@@ -5188,6 +5194,40 @@
         if (typeof _r181Ctor === 'function') win[_r181Table[_r181Tag]] = _r181Ctor;
       }
     } catch (_e181w) {}
+    // s376（wptfyi-runtime DC-2）：JS 内建转发面——$262.createRealm().global 的 JS
+    // 内建存在性缺口（test262 eval/intrinsics 簇 ~50 案「eval/ArrayBuffer/[TA.name]
+    // is not a function/constructor」「g.eval is not a function」——模拟 iframe win
+    // 此前仅 DOM 构造器转发，JS 内建不在 win 对象上，with(window) 脚本取内建走
+    // 实际作用域链穿透）。R187 同款**转发本体**（主 realm 同一引用——instanceof/
+    // constructor identity 断言面自然成立；跨 realm intrinsic distinctness 与
+    // per-realm 默认 this 案不支持，维持单 realm 近似既定边界）。eval 为域内
+    // scoped 形态：with(win) 直接 eval——var/function 声明落 win（真实 realm
+    // indirect eval 的「var 落 realm 全局」近似；严格模式 eval 自建环境不落 win，
+    // spec 同）。性能：纯属性挂接，字面量已定义面（Object/Function/Array/
+    // Error/TypeError）不覆盖。
+    // https://tc39.es/ecma262/#sec-performeval
+    try {
+      win.eval = function (src) {
+        return new Function('window', '__zwRealmEvalSrc', 'with(window){ return eval(__zwRealmEvalSrc); }')(win, src);
+      };
+      var _zwRealmIntrinsics = [
+        'Reflect', 'Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef',
+        'FinalizationRegistry', 'Promise', 'ArrayBuffer', 'SharedArrayBuffer',
+        'DataView', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array',
+        'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
+        'BigInt64Array', 'BigUint64Array', 'Atomics', 'JSON', 'Math', 'RegExp',
+        'Date', 'Number', 'String', 'Boolean', 'Symbol', 'BigInt', 'RangeError',
+        'ReferenceError', 'SyntaxError', 'EvalError', 'URIError', 'AggregateError',
+        'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent',
+        'decodeURIComponent', 'encodeURI', 'decodeURI', 'structuredClone',
+        'TextEncoder', 'TextDecoder', 'Intl',
+      ];
+      for (var _zwRi = 0; _zwRi < _zwRealmIntrinsics.length; _zwRi++) {
+        var _zwRName = _zwRealmIntrinsics[_zwRi];
+        if (win[_zwRName] !== undefined) continue;
+        if (globalThis[_zwRName] !== undefined) win[_zwRName] = globalThis[_zwRName];
+      }
+    } catch (_e376w) {}
     // R356（js-dom M1 L2-d3d-r2 前置切片）：iframe realm 的 **timer 面**——
     // 子文档脚本（common.js 的 `setTimeoutToWindow`、事件时序用例的定时延迟）
     // 经 iframe window 调 setTimeout/clearTimeout，旧 win 无此名 "not a
