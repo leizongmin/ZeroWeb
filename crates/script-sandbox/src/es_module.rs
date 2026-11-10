@@ -2597,14 +2597,17 @@ fn statement_continues_with_attributes(statement: &str, lookahead: &[char]) -> b
 /// - 逐顶层语句（[`split_statements`]，切准后 prev 上下文按语句复位）语句内
 ///   上下文感知扫描：字符串/模板/注释/正则内 await 跳过（[`is_regex_literal_start`]
 ///   同口径）；模板插值内欠检测不计；
-/// - 深度门：`{`/`(`/`[` 加深，await 仅深度 0 计——函数声明体/箭头块体/对象字面量
-///   （含方法体）/类体天然在括号内被排除；
+/// - 深度门：仅 `{` 加深，await 仅深度 0 计——函数声明体/箭头块体/对象字面量
+///   （含方法体）/类体天然在大括号内被排除；括号/方括号不引入函数作用域，
+///   括号内 await（`fn(await 1)` 调用实参/`(await p)` 分组/数组字面量形）按
+///   深度 0 命中（s375——module 保留字语义下不存在标识符误判面，动态面另有
+///   V8 双腿探针（[`crate::module_tla_probe`]）仲裁扫描器未命中源）；
 /// - `=>` 守卫：语句深度 0 出现箭头后本语句 await 一律不计（表达式体箭头
 ///   `async () => await x` 的 await 属函数内；跨逗号同语句欠检测可接受）；
 /// - 前邻 `.`/标识符续字符（成员访问 `obj.await` / 词缀 `xawait`）不计。
 ///
-/// 欠检测残面（文档化，均维持现状）：括号内 await（`(await p)` 形）、模板插值内、
-/// 块语句 `{ await x; }`、深度 0 `=>` 后逗号续项。
+/// 欠检测残面（文档化，均维持现状）：模板插值内、块语句 `{ await x; }`
+/// （动态面由探针覆盖）、深度 0 `=>` 后逗号续项。
 pub fn module_source_has_top_level_await(source: &str) -> bool {
     split_statements(source)
         .iter()
@@ -2767,12 +2770,17 @@ fn statement_scan_has_top_level_await(statement: &str) -> bool {
             return true;
         }
         match b {
-            b'(' | b'[' | b'{' => {
+            // s375：深度门只计 `{`——括号/方括号不引入函数作用域（函数体/类体/
+            // 方法体全为大括号），括号内 await（调用实参 `(await p)`/`fn(await 1)`
+            // 形）在 module 语义只能为 await 表达式（await 是 module 保留字，
+            // 不存在标识符误判面），按深度 0 命中——export-class-decl-await-expr
+            // 簇 19 案实证（此前欠检测 + 探针 None（import/export 声明）双阻）。
+            b'{' => {
                 depth += 1;
                 prev = Some(b);
                 prev_word.clear();
             }
-            b')' | b']' | b'}' => {
+            b'}' => {
                 depth = depth.saturating_sub(1);
                 prev = Some(b);
                 prev_word.clear();
@@ -5118,9 +5126,9 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         assert!(compiled.contains("await Promise.resolve();"));
     }
 
-    // s269：TLA 探测矩阵——命中面（语句头 await / 解构绑定初始化 await）与
-    // 排除面（async 函数体/async 块体箭头/promise_test 回调形/字符串与注释与
-    // 正则内/成员访问/表达式箭头守卫）。欠检测残面（(await p) 形）钉现状值。
+    // s269：TLA 探测矩阵——命中面（语句头 await / 解构绑定初始化 await / s375
+    // 括号内 await）与排除面（async 函数体/async 块体箭头/promise_test 回调形/
+    // 字符串与注释与正则内/成员访问/表达式箭头守卫）。
     #[test]
     fn test_top_level_await_detection_faces_s269() {
         assert!(module_source_has_top_level_await(
@@ -5154,9 +5162,23 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         assert!(!module_source_has_top_level_await(
             "const o = { async m() { await g(); } };\nexport { o };"
         ));
-        // 欠检测残面钉现状：括号内 await（(await p) 形）不计（维持同步编译）。
-        assert!(!module_source_has_top_level_await(
+        // s375：括号内 await 按深度 0 命中（括号不引入函数作用域；module 保留字
+        // 语义下只能为 await 表达式）——分组/调用实参/导出声明 extends 实参形。
+        assert!(module_source_has_top_level_await(
             "const v = (await p).q;\nexport { v };"
+        ));
+        assert!(module_source_has_top_level_await(
+            "assert.sameValue(await mod, 'default');"
+        ));
+        assert!(module_source_has_top_level_await(
+            "function fn() {\n  return function() {};\n}\nexport class C extends fn(await 1) {};"
+        ));
+        // 数组字面量同面
+        assert!(module_source_has_top_level_await("const a = [await p];\nexport { a };"));
+        // 排除面保持：括号包裹的函数体内 await 仍排除（深度门只认大括号）
+        assert!(!module_source_has_top_level_await("fn(function() { await g(); });"));
+        assert!(!module_source_has_top_level_await(
+            "promise_test(async t => { await import('./x.js'); });"
         ));
     }
 
