@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{FontWeightValue, LengthValue};
+use zero_css_parser::values::{ColorValue, FontWeightValue, LengthValue};
 use zero_dom::QuirksMode;
 
 use crate::cascade::CascadeOrder;
@@ -386,6 +386,19 @@ pub fn compute_inherited_style_with_quirks(
             Some(parent) => resolve_match_parent(&parent.text_align, &parent.direction),
             None => crate::property::TextAlignValue::Start,
         };
+    }
+
+    // CSS Color 3 §currentColor / css-color-5 §light-dark：`color` 属性值内的
+    // currentColor（含 light-dark() 选中分支的 currentColor）computed 值 = inherit，
+    // 即父元素计算色。继承完成后解析（相对字重 resolve_relative_font_weight 同型
+    // 后置位；shim plain 臂 __zwComputedColor propCtx 'color' 已有同语义——宿主
+    // cascade 面此前缺失直落黑）。根元素无父保持 CurrentColor（gCS resolve 回落黑，
+    // 旧行为）。parent.color 已递归归一（父元素 compute 同一本函数）。
+    // driving: light-dark-currentcolor-in-color（期望 parent green，此前 got 黑）。
+    if style.color == ColorValue::CurrentColor
+        && let Some(parent) = parent_style
+    {
+        style.color = parent.color.clone();
     }
 
     style

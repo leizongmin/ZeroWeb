@@ -15,6 +15,18 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.color_scheme_dark = parent.color_scheme_dark;
             true
         }
+        "fill" | "stroke" => {
+            // SVG2 presentation 属性（R4280/R5187 存储）：fill/stroke 均为继承属性
+            //（SVG2 §fill-stroke Inherited: yes；apply.rs 注的「继承由后续切片补」
+            // 在此落地——driving: system-color-compute fill/stroke inherit child
+            // 差分断言）。
+            if property == "fill" {
+                child.fill = parent.fill.clone();
+            } else {
+                child.stroke = parent.stroke.clone();
+            }
+            true
+        }
         "font-family" => {
             child.font_family = parent.font_family.clone();
             true

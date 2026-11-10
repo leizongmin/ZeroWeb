@@ -336,6 +336,20 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         //（css-color-adjust-1 https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop ）。
         "color-scheme" => style.color_scheme_decl.clone().unwrap_or_else(|| "normal".to_string()),
         "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
+        // ── fill / stroke（R4280/R5187 SVG2 presentation 色值）── gCS 读出面（此前
+        // 读数缺位：system-color-compute getPropertyValue("fill"/"stroke") 返 ''，
+        // specified/inherited 同空串 assert_not_equals 失败）。None = 未声明未继承 →
+        // SVG2 初始值 fill 黑 / stroke none。FIXME: `none` 声明存储为 Transparent
+        //（apply.rs R4280 臂），与作者显式 transparent 在此同串 "rgba(0, 0, 0, 0)"
+        //——区分需存储层新变体，语料未钉，暂记。
+        "fill" => match &style.fill {
+            Some(c) => color_to_css(&crate::resolve_color_current(c, element_color)),
+            None => "rgb(0, 0, 0)".to_string(),
+        },
+        "stroke" => match &style.stroke {
+            Some(c) => color_to_css(&crate::resolve_color_current(c, element_color)),
+            None => "none".to_string(),
+        },
         // ── background 简写（R2757）── 各 longhand 早覆（image/position/size/repeat/attachment/clip/origin）；
         // 简写恒完整规范形重组（无省略），Chromium 150 oracle 锚定。单层正确（多层受 ZW 单值存储限）。
         "background" => background_shorthand_to_css(style, element_color, font_size_px),
