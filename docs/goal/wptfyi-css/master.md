@@ -4,7 +4,8 @@
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
-face css-color 10,905→10,970，至 cqw 容器基座刀）。
+face css-color 10,905→10,970，至 cqw 容器基座刀；values face
+css-values 2,426→2,450，至 round 除零批）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -56,6 +57,17 @@ color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 round 除零语义批完成（11-11 深夜）**：css-values-4 §round-func round
+族四臂撤 `bv==0→av` 特判走 IEEE NaN（types.rs，g6b 定谳修复——特判被
+0061c7fff opacity 折叠白名单翻成 declared `calc(1)` 才暴露语义分裂；mod/rem
+None 臂留下一批）——css-values 语料 **2,442 → 2,450 净 +8 逐页零回归**
+（round-function +2、round-mod-rem-computed +4、serialize specified +2；
+漂移页恰 round 族三页、253 页逐位一致，顺带核清 f415be99c/9d243bc67 对
+values 语料零影响）。残余分桶：computed 两腿（opacity NaN censor 一行缺 +
+经典 transform matrix 化在册桶）、mod/rem B=0 +16（§10.5 同段 NaN，下批
+首选）、B=±∞ 有符号零桶（FIXME types.rs:1420）、单参 round ×2。
+[证据](evidence/2026-11-11-dc2-round-divzero-nan.md)
 
 **DC-2 组F 布局刀3 完成（11-11 晚）**：anchor() inset 求值 + 双介入门（提交
 405b12a3c + be4c89a60 fmt 补）——物理边/center/纯百分比/bare 缺省边 = f 槽
@@ -113,6 +125,20 @@ valid 页 1F + calc-container 1F 写面 canonicalization、calc-container 1F
 cqw 容器宽（桶 1 同根因随收）。color 长尾桶 5 收口，剩桶 1（cqw ~10F，
 根因已定谳）为主收割面。
 [证据](evidence/2026-11-11-dc2-contrast-color-computed-face.md)
+
+**DC-2 round 除零批完成（11-11 深夜）**：css-values-4 §round-func round 族
+四臂撤 `bv==0→av` 特判走 IEEE NaN（types.rs，g6b 定谳修复；0061c7fff opacity
+折叠白名单翻出语义分裂的 1 回归所在腿随批修正）——css-values 语料
+**2,442 → 2,450 净 +8 逐页零回归**（round-function +2、round-mod-rem-computed
++4、serialize specified +2；漂移页恰 round 族三页，253 页逐位一致顺带核清
+f415be99c/9d243bc67 对 values 语料零影响）。css-parser lib 3107P/0F（旧断言
+`round(x,0)=x` 退役改钉 NaN + 新增四策略 B=0 全 NaN 钉）；make test 3877P/9F
+与 g7b 归因账逐项一致（7F 在册 + 2F f415be99c execCommand），本批零新增。
+残余分桶：mod/rem B=0 §10.5 同段 NaN（+16 预期，g9 微批编辑点已探明）、
+serialize computed 两腿（opacity NaN censor 一行缺 §10.12 + 经典 transform
+matrix 化在册 UNCLAIMED 桶）、B=±∞ 有符号零桶（FIXME types.rs:1420）、单参
+round ×2（nearest 平局朝 +∞，Rust .round() 半值远离零不等价）。
+[证据](evidence/2026-11-11-dc2-round-divzero-nan.md)
 
 **DC-2 color cqw 容器基座刀完成（11-11 晚）**：css-conditional-5
 §container-lengths 计算面落地（提交 9d243bc67，part11-color 单文件）——

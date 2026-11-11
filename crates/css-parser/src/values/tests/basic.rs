@@ -240,7 +240,12 @@ fn test_eval_calc_binary_math() {
     assert_eq!(eval("calc(round(2.5, 1))"), Some(3.0), "2.5 半值远离零 → 3");
     assert_eq!(eval("calc(round(7, 5))"), Some(5.0), "7 → 最近 5 的倍数");
     assert_eq!(eval("calc(round(8, 5))"), Some(10.0), "8 → 最近 10 的倍数");
-    assert_eq!(eval("calc(round(1.4, 0))"), Some(1.4), "round(x, 0) = x");
+    // round：B=0 → NaN（css-values-4 §round-func；WPT round-function
+    // round(5, 0) ≡ calc(NaN)——旧码 `round(x, 0) = x` 特判已撤，g6b 定谳）。
+    assert!(
+        eval("calc(round(1.4, 0))").map(|v| v.is_nan()).unwrap_or(false),
+        "round(x, 0) = NaN"
+    );
     // mod：floor 除法，结果符号同 b。
     assert_eq!(eval("calc(mod(-1, 3))"), Some(2.0), "mod(-1,3)=2（符号同 3）");
     assert_eq!(eval("calc(mod(4, 3))"), Some(1.0));
@@ -2126,6 +2131,23 @@ fn test_parse_math_function_bare_trig_eval() {
     let expr = parse_math_function("pow(2, 10)").expect("bare pow() should parse");
     assert!(matches!(&expr, CalcExpr::BinaryMathOp(BinaryMathOp::Pow, _, _)));
     assert_eq!(eval_calc(&expr, None), Some(1024.0));
+}
+
+#[test]
+fn test_parse_math_function_round_div_zero_nan() {
+    // css-values-4 §round-func：B=0 → NaN（非实参原值回退）——WPT
+    // round-function `round(5, 0) ≡ calc(NaN)` 与 round-mod-rem-serialize
+    // `calc(round(1, 0))` 期望 calc(NaN)/censor 0 驱动。
+    for (src, strategy) in [
+        ("round(5, 0)", "nearest"),
+        ("round(up, 1, 0)", "up"),
+        ("round(down, 1, 0)", "down"),
+        ("round(to-zero, 1, 0)", "to-zero"),
+    ] {
+        let expr = parse_math_function(src).expect("bare round should parse");
+        let v = eval_calc(&expr, None);
+        assert!(v.map(|x| x.is_nan()).unwrap_or(false), "{strategy}: {v:?}");
+    }
 }
 
 #[test]

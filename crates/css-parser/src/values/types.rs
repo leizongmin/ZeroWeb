@@ -1886,11 +1886,15 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                     if r.is_nan() { None } else { Some(r) }
                 }
                 BinaryMathOp::Hypot => Some(av.hypot(bv)),
-                // round(x, 0) = x；否则 (x/y).round()*y（nearest，半值远离零）。
-                BinaryMathOp::Round => Some(if bv == 0.0 { av } else { (av / bv).round() * bv }),
-                BinaryMathOp::RoundUp => Some(if bv == 0.0 { av } else { (av / bv).ceil() * bv }),
-                BinaryMathOp::RoundDown => Some(if bv == 0.0 { av } else { (av / bv).floor() * bv }),
-                BinaryMathOp::RoundToZero => Some(if bv == 0.0 { av } else { (av / bv).trunc() * bv }),
+                // round 族：B=0 → NaN（css-values-4 §round-func："If B is 0, the
+                // result is NaN."——IEEE 路径自然产出 a/0=±∞、±∞*0=NaN；
+                // specified 序列化 calc(NaN) / computed censor-to-zero 由
+                // serialize_math 管线既有 NaN 面承接，asin/acos 同道）。
+                // 否则 (a/b) 按策略取整 × b（nearest 半值远离零）。
+                BinaryMathOp::Round => Some((av / bv).round() * bv),
+                BinaryMathOp::RoundUp => Some((av / bv).ceil() * bv),
+                BinaryMathOp::RoundDown => Some((av / bv).floor() * bv),
+                BinaryMathOp::RoundToZero => Some((av / bv).trunc() * bv),
                 // mod(x, 0) 无效 → None；否则 x - y*floor(x/y)（符号同 y）。
                 BinaryMathOp::Mod => {
                     if bv == 0.0 {
