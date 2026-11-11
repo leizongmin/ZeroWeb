@@ -1819,19 +1819,26 @@
   var _zwPlainUaMono = { tt: 1, code: 1, kbd: 1, samp: 1, pre: 1, listing: 1,
     xmp: 1, plaintext: 1 };
   // inline style 属性文本的朴素声明扫描（style IDL 缺位形态的兜底——pending 形
-  // 无 .style）。返 { prop: value }（prop kebab 小写、value trim）。
+  // 无 .style）。返 { prop: value }（prop kebab 小写、value trim）。文本半边
+  // 独立导出（cssom 写回刀 2026-11-11：_zwVaSetStyleProp 读核验需按 attr 权威
+  // 面文本扫描——getAttribute 接 CSSOM replay 后元素入参面不再恒等 attr 权威）。
+  function _zwPlainStyleDeclsText(st) {
+    var out = {};
+    var parts = String(st == null ? '' : st).split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var seg = parts[i];
+      var at = seg.indexOf(':');
+      if (at <= 0) continue;
+      var k = seg.slice(0, at).trim().toLowerCase();
+      if (k) out[k] = seg.slice(at + 1).trim();
+    }
+    return out;
+  }
   function _zwPlainStyleDecls(el) {
     var out = {};
     try {
       var st = String(el.getAttribute && el.getAttribute('style') || '');
-      var parts = st.split(';');
-      for (var i = 0; i < parts.length; i++) {
-        var seg = parts[i];
-        var at = seg.indexOf(':');
-        if (at <= 0) continue;
-        var k = seg.slice(0, at).trim().toLowerCase();
-        if (k) out[k] = seg.slice(at + 1).trim();
-      }
+      out = _zwPlainStyleDeclsText(st);
     } catch (_ePD) {}
     return out;
   }
@@ -2506,6 +2513,23 @@
       }
       return 'rgba(0, 0, 0, 0)';
     }
+    if (cmd === 'bold' || cmd === 'italic' || cmd === 'underline'
+        || cmd === 'strikethrough' || cmd === 'subscript' || cmd === 'superscript') {
+      // DC-2 P2 apply 面（2026-11-11）：六 inline format 命令 effective 值
+      //（vendored getEffectiveCommandValue :2069 同构——sub/sup inline 链、
+      // decoration 祖先走查、weight/style resolved 读）经 P1 读面载体
+      // _zwFmtEffectiveValue（UA 元素表补 host gCS 盲区，h1-h6/th 已入表）。
+      // 无源填 CSS 初值：bold 400 / italic normal（vendored gCS 恒返——等值
+      // 门依赖 400≡normal 早退，置 '' 会对裸文本误发 span）；decoration 无线
+      // 返 null、sub/sup 无标签返 null（同 vendored null 契约）。
+      var fv = _zwFmtEffectiveValue(cmd, node);
+      if (fv == null || fv === '') {
+        if (cmd === 'bold') return '400';
+        if (cmd === 'italic') return 'normal';
+        return null;
+      }
+      return String(fv);
+    }
     var prop = cmd === 'fontsize' ? 'font-size'
       : (cmd === 'fontname' ? 'font-family' : 'color');
     var v;
@@ -2649,10 +2673,12 @@
   // FIXME: 作者样式表规则臂未接（六语料数据文件零 <style> 块，无消费面）；
   //   h1-h6/th 加粗 UA 面未建；font 简写（font: bold …）与 bolder/lighter
   //   相对关键字未解析。
-  // FIXME: state override 写面未接（part01d _zwVaStateOverrides 只清不写）
-  //   ——collapsed exec typing 态由 part06 __zwTypingTags 兜底（读序：本面
-  //   state false 后置检查）。
-  var _zwFmtUaWeight = { b: '700', strong: '700' };
+  // state override（2026-11-11 P3）：写面 part01d _zwVaSetSelectionValue 无
+  //   formattable 臂（__zw_ce_value_state_override 读数导出）；本面入口
+  //   override 先行（读序 ⓪），collapsed exec typing 态另有 part06
+  //   __zwTypingTags 兜底（读序 override 之后）。
+  var _zwFmtUaWeight = { b: '700', strong: '700',
+    h1: '700', h2: '700', h3: '700', h4: '700', h5: '700', h6: '700', th: '700' };
   var _zwFmtUaStyle = { i: 'italic', em: 'italic', cite: 'italic',
     dfn: 'italic', 'var': 'italic', address: 'italic' };
   // text-decoration 逐元素 own 值表（非继承；HTML 渲染节 15.3.1）。
@@ -2750,6 +2776,10 @@
       : cmd === 'strikethrough' ? 'line-through'
       : cmd === 'subscript' ? 'subscript' : 'superscript');
   }
+  // 激活值判定导出（part01d state override 写面消费）——vendored
+  // setStateOverride 的 inlineCommandActivatedValues 命中判定（:2974-2976），
+  // 激活值表单点复用（bold 600 cutoff Chrome delta 同此）。
+  globalThis.__zw_ce_format_activated = _zwFmtActivated;
   // 查询入口：返 { state, indeterm }（命中六命令）或 null（调用方回落）。
   // formattable 普查复用值面 _zwValGetAllEffectivelyContained +
   // _zwValIsFormattableQI（含 extraneous br 的 Chrome delta 口径）。
@@ -2758,10 +2788,24 @@
     var six = { bold: 1, italic: 1, underline: 1, strikethrough: 1,
       subscript: 1, superscript: 1 };
     if (!six[c]) return null;
+    // spec myQueryCommandState（vendored :609-621）读序：state override 已设
+    // → state 直返 override（写面 part01d _zwVaSetSelectionValue 无
+    // formattable 臂）；indeterm 不走 override（vendored
+    // myQueryCommandIndeterm :593-605 纯 DOM）——qI 与 qS 同消费本入口，故
+    // override 只覆盖返回值 .state，不得提前 return（swcss 跨 span
+    // qI-after 两例回归实证，2026-11-11）。
+    var ovStateQ = undefined;
+    try {
+      ovStateQ = (typeof globalThis.__zw_ce_value_state_override === 'function')
+        ? globalThis.__zw_ce_value_state_override(c) : undefined;
+    } catch (_eFqOv) {}
     try {
       var sel = globalThis.getSelection ? globalThis.getSelection() : null;
       var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
-      if (!rng) return { state: false, indeterm: false };
+      if (!rng) {
+        return { state: ovStateQ !== undefined ? !!ovStateQ : false,
+          indeterm: false };
+      }
       var isSubSup = c === 'subscript' || c === 'superscript';
       var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattableQI);
       var hit = 0;
@@ -2782,6 +2826,7 @@
       var indeterm = isSubSup
         ? (tgt > 0 && tgt < nodes.length) || mixed
         : hit > 0 && hit < nodes.length;
+      if (ovStateQ !== undefined) state = !!ovStateQ;
       return { state: state, indeterm: indeterm };
     } catch (_eFq) {
       return null;

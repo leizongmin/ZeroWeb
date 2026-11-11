@@ -164,6 +164,16 @@
 #     本地删除收口径：the-script-element 域 4F→2F（残 F=143/052 流式物化长挂）；
 #     probe8/9/10 系列（module/）为 Pass 中的行为钉，维持本地回归保护不删。
 #     upgrade 后探针不回归（从未入库）。
+#   - resources/blank.html 缺失（html/semantics/embedded-content/
+#     {the-object-element/object-javascript-url.html,the-embed-element/
+#     embed-javascript-url.html} 双案 insertObjectNavigable 以 data|src=
+#     /resources/blank.html 导航；s404 勘根定性两案文件级 Timeout 悬挂腿为
+#     语料 404——error 代替 load，await onload 恒挂（s227 同族）；已按
+#     lib.sh WPT_REV pin 315976933870b34d6ea30e3f6643403edae678ba 从上游
+#     gh api contents 原件补入 379B（md5 04daab423587fe91a71fdb654fe1a417；
+#     jsdelivr/raw 双超时改 gh 通道取件，2026-11-11）——升级新 ref 后需
+#     重新补。goal 脚本 25-html-semantics-compat.sh ③段已挂 fetch_raw
+#     常驻重拉条目）
 
 set -euo pipefail
 

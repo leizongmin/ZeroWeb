@@ -889,7 +889,8 @@ fn test_eval_calc_divide_by_zero() {
         CalcOp::Divide,
         Box::new(CalcExpr::Number(0.0)),
     );
-    assert_eq!(eval_calc(&expr, None), None);
+    // CSS Values 4 §10.6：除零按 IEEE 产出 ±∞，非无效值。
+    assert_eq!(eval_calc(&expr, None), Some(f64::INFINITY));
 }
 
 #[test]

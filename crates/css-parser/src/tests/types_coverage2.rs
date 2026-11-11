@@ -64,9 +64,10 @@ fn test_calc_division() {
 
 #[test]
 fn test_calc_division_by_zero() {
+    // CSS Values 4 §10.6：除零为 IEEE ±∞。
     let expr = parse_calc("calc(100px / 0)").unwrap();
     let result = eval_calc(&expr, None);
-    assert!(result.is_none());
+    assert_eq!(result, Some(f64::INFINITY));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

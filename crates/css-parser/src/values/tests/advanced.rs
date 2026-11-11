@@ -20,13 +20,12 @@ fn test_parse_tab_size_invalid() {
 // 边界条件/错误路径边缘测试
 // ═══════════════════════════════════════════════════════════════════
 
-/// 测试 eval_calc 除以零返回 None
+/// 测试 eval_calc 除以零按 IEEE 产出 +∞（CSS Values 4 §10.6）
 #[test]
 fn test_eval_calc_divide_by_zero() {
     let expr = parse_calc("calc(10px / 0)").unwrap();
     let result = eval_calc(&expr, None);
-    // 除以 0 应返回 None（除法分支的边界保护）
-    assert_eq!(result, None);
+    assert_eq!(result, Some(f64::INFINITY));
 }
 
 /// 测试 parse_length 边界条件：负值、零值、无单位非零、科学计数法

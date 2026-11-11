@@ -3054,7 +3054,10 @@
     var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
     if (!tag) return false;
     // DC-2 P1（2026-11-11）：spec state 读面——读序按 spec queryCommandState
-    //（state override 先行 → 否则 computed state）：① typing-state 兜底
+    //（state override 先行 → 否则 computed state）：⓪ state override（P3
+    // 2026-11-11 写面接通后实义——collapsed exec 六命令激活值记账，part01d
+    // _zwVaSetSelectionValue 无 formattable 臂；解除面 override=false 不再被
+    // ① 遮蔽）；① typing-state 兜底
     //（__zwTypingTags，spec state override 的既有近似载体——2026-11-01
     // multitest 状态命令族：collapsed exec 不改 DOM 而 qS 立即 true）；②
     // computed state——effective command value（computed style 判定）+ 含域
@@ -3064,6 +3067,12 @@
     // collapsed/non-collapsed 两处）保持 _zwQueryFormatStateDom 旧读——
     // apply/unwrap 机制是宿主直子 <tag> 形，style span 解除属 apply 面
     //（P2 innerHTML 长尾）。
+    try {
+      var ovStateQ = (typeof globalThis.__zw_ce_value_state_override === 'function')
+        ? globalThis.__zw_ce_value_state_override(String(cmd == null ? '' : cmd).toLowerCase())
+        : undefined;
+      if (ovStateQ !== undefined) return !!ovStateQ;
+    } catch (_eQsOv) {}
     try {
       var ttagsQ = globalThis.__zwTypingTags;
       if (Array.isArray(ttagsQ) && ttagsQ.indexOf(tag) >= 0) return true;
@@ -5287,9 +5296,18 @@
                 globalThis.__zwTypingLink = String(arguments[2] == null ? '' : arguments[2]);
               }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
-                // 切片 4 toggle 语义：起点已在 <tag> 包裹内 → 解除；否则包裹。
+                // DC-2 P2 apply 面（2026-11-11）：六 format 命令走 vendored
+                // setSelectionValue 全流程引擎（part01d __zw_ce_format_apply：
+                // 跨段落 wrap / 跨边界 merge / push-down / clearValue 摘壳，
+                // spec action 直译）——替换 R3254-M3 切片 4 flat 模型（宿主直
+                // 子文本 splice、嵌套/跨段落 defer 零变更面，DC-2 triage
+                // state 下游 624/indeterm 72 与 innerHTML 转换族根因）。state
+                // 判定随 vendored action（激活面全命中读，含 computed style）；
+                // flat 臂降级为引擎缺失 fallback。
                 try {
-                  if (_zwQueryFormatStateDom(cmd)) {
+                  if (typeof globalThis.__zw_ce_format_apply === 'function') {
+                    globalThis.__zw_ce_format_apply(cmd);
+                  } else if (_zwQueryFormatStateDom(cmd)) {
                     _zwExecCmdUnwrapFormat(host2, rng2, fmtTag2);
                   } else {
                     _zwExecCmdApplyFormat(host2, rng2, fmtTag2);
@@ -5587,6 +5605,12 @@
         globalThis.__zwStyleWithCSS =
           arguments[2] === true
           || String(arguments[2] == null ? '' : arguments[2]).toLowerCase() === 'true';
+        // DC-2 P3（2026-11-11）：模式已变即同步 Query——misc 语料单命令案
+        //（[["stylewithcss","true"]]）的 qS-after 读数在本次 exec 后无后续
+        // execCommand 再快照，入口滞后模型恒读 pre-exec 值（misc 28F 实证）；
+        // 本臂出口补拍使 after 读数对齐 Chrome 录音（mode 变后值）。其余命令
+        // 不改 mode，入口快照语义不变（justifycenter 250/250 口径）。
+        globalThis.__zwStyleWithCSSQuery = !!globalThis.__zwStyleWithCSS;
       } else if (cmd === 'selectall') {
         // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
         // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
@@ -7968,6 +7992,9 @@
     // 后续读走已注册值（幂等，重复派发 no-op）。
     if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
       try { globalThis.__zwStartParserIframes(); } catch (_eS6p) {}
+      // s403（html-semantics M2 切片 403）：parser 期静态 object[data] 静默启航
+      //（嵌套文档脚本通道；S6 同款扫描位，定义在 part04）。
+      try { if (typeof globalThis.__zwStartParserObjects === 'function') globalThis.__zwStartParserObjects(); } catch (_eObjSp) {}
       // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + R56h 闸门队列
       // drain——DOMContentLoaded 已派（runner 生命周期串先派 DCL 再派 load）、
       // window load listener 未跑，img load/error 在此窗口统一落点（spec「图片

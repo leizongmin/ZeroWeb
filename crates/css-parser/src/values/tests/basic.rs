@@ -240,7 +240,12 @@ fn test_eval_calc_binary_math() {
     assert_eq!(eval("calc(round(2.5, 1))"), Some(3.0), "2.5 半值远离零 → 3");
     assert_eq!(eval("calc(round(7, 5))"), Some(5.0), "7 → 最近 5 的倍数");
     assert_eq!(eval("calc(round(8, 5))"), Some(10.0), "8 → 最近 10 的倍数");
-    assert_eq!(eval("calc(round(1.4, 0))"), Some(1.4), "round(x, 0) = x");
+    // round：B=0 → NaN（css-values-4 §round-func；WPT round-function
+    // round(5, 0) ≡ calc(NaN)——旧码 `round(x, 0) = x` 特判已撤，g6b 定谳）。
+    assert!(
+        eval("calc(round(1.4, 0))").map(|v| v.is_nan()).unwrap_or(false),
+        "round(x, 0) = NaN"
+    );
     // mod：floor 除法，结果符号同 b。
     assert_eq!(eval("calc(mod(-1, 3))"), Some(2.0), "mod(-1,3)=2（符号同 3）");
     assert_eq!(eval("calc(mod(4, 3))"), Some(1.0));
@@ -249,10 +254,18 @@ fn test_eval_calc_binary_math() {
     assert_eq!(eval("calc(rem(-1, 3))"), Some(-1.0), "rem(-1,3)=-1（符号同 -1）");
     assert_eq!(eval("calc(rem(4, 3))"), Some(1.0));
     assert_eq!(eval("calc(rem(1, -3))"), Some(1.0), "rem(1,-3)=1（符号同 1）");
-    // 无效：pow 产生 NaN（负底非整指数）→ None；mod/rem 除零 → None。
+    // 无效：pow 产生 NaN（负底非整指数）→ None；mod/rem 除零 → NaN（§10.5
+    // "If B is 0, the result is NaN."——WPT round-mod-rem-computed
+    // mod(4, 0)/rem(4, 0) ≡ calc(NaN) 等价类驱动）。
     assert_eq!(eval("calc(pow(-2, 0.5))"), None, "pow(-2,0.5)=NaN → None");
-    assert_eq!(eval("calc(mod(1, 0))"), None, "mod(x,0) → None");
-    assert_eq!(eval("calc(rem(1, 0))"), None, "rem(x,0) → None");
+    assert!(
+        eval("calc(mod(1, 0))").map(|v| v.is_nan()).unwrap_or(false),
+        "mod(x,0) → NaN"
+    );
+    assert!(
+        eval("calc(rem(1, 0))").map(|v| v.is_nan()).unwrap_or(false),
+        "rem(x,0) → NaN"
+    );
     // 嵌套：pow(round(2.4,1)=2, 3) = 8。
     assert_eq!(eval("calc(pow(round(2.4, 1), 3))"), Some(8.0));
 }
@@ -269,9 +282,11 @@ fn test_parse_calc_binary_math() {
         parse_math_function("calc(mod(4, 3))").unwrap(),
         CalcExpr::BinaryMathOp(BinaryMathOp::Mod, _, _)
     ));
-    // 参数数 ≠ 2 → None。
+    // 参数数 ≠ 2 → None（hypot 例外：§10.8 变参 1+，≥3 参嵌套求值）。
     assert!(parse_math_function("calc(pow(2))").is_none());
-    assert!(parse_math_function("calc(hypot(1, 2, 3))").is_none());
+    let hypot3 = parse_math_function("calc(hypot(1, 2, 3))").expect("hypot 变参应解析");
+    let v = eval_calc(&hypot3, None).unwrap();
+    assert!((v - 14_f64.sqrt()).abs() < 1e-9, "hypot(1,2,3) = √14，实际 {v}");
 }
 
 #[test]
@@ -2124,6 +2139,23 @@ fn test_parse_math_function_bare_trig_eval() {
     let expr = parse_math_function("pow(2, 10)").expect("bare pow() should parse");
     assert!(matches!(&expr, CalcExpr::BinaryMathOp(BinaryMathOp::Pow, _, _)));
     assert_eq!(eval_calc(&expr, None), Some(1024.0));
+}
+
+#[test]
+fn test_parse_math_function_round_div_zero_nan() {
+    // css-values-4 §round-func：B=0 → NaN（非实参原值回退）——WPT
+    // round-function `round(5, 0) ≡ calc(NaN)` 与 round-mod-rem-serialize
+    // `calc(round(1, 0))` 期望 calc(NaN)/censor 0 驱动。
+    for (src, strategy) in [
+        ("round(5, 0)", "nearest"),
+        ("round(up, 1, 0)", "up"),
+        ("round(down, 1, 0)", "down"),
+        ("round(to-zero, 1, 0)", "to-zero"),
+    ] {
+        let expr = parse_math_function(src).expect("bare round should parse");
+        let v = eval_calc(&expr, None);
+        assert!(v.map(|x| x.is_nan()).unwrap_or(false), "{strategy}: {v:?}");
+    }
 }
 
 #[test]

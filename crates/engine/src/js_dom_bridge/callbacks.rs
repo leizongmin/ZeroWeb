@@ -3170,8 +3170,13 @@ pub fn register_dom_callbacks(
         "__zw_get_style_lw_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            style_from_mutations_lw(&list, &handle)
+            // OPTIMIZATION: 全队列正序 replay → 增量索引投影（t8c 同型）。原实现每读
+            // O(全队列) 扫描 + 逐 op 折叠，编辑命令风格读风暴下每读全批扫描把
+            // multitest-ab 单连续执行页（628 夹具）推过 300s 引擎脚本门（Exp A 撤臂
+            // 完走 10092 行定谳热源唯此回调）。投影语义与 [`style_from_mutations_lw`]
+            // 逐构造恒等（同 merge/remove 折叠函数正序跨调用持版，折叠成本移至水位
+            // 推进每 op 恰一次），水位增量 + drain 代际失效同 [`with_shared_state_index`]。
+            shared_state_style(&m, &handle)
         }),
     );
 
@@ -4797,6 +4802,10 @@ struct HandleStateIndex {
     /// handle → 属性名首现序（`attribute_names_from_mutations` 顺序语义：Remove 即从
     /// 序列摘除，重设按新名尾追加——正序 replay 等价）。
     attr_order: std::collections::HashMap<String, Vec<String>>,
+    /// handle → 累积 inline style（`__zw_get_style_lw_handle` 投影：[`style_from_mutations_lw`]
+    /// 正序 replay 的增量对偶——同 merge/remove 折叠函数跨调用持版，语义逐构造恒等；
+    /// 缺席 = 无 style-affecting 记录，空串 = 有记录净空）。
+    styles: std::collections::HashMap<String, String>,
 }
 
 impl HandleStateIndex {
@@ -4829,6 +4838,11 @@ impl HandleStateIndex {
                 if !order.iter().any(|n| n == name) {
                     order.push(name.clone());
                 }
+                // style 投影整体覆盖（`el.style.cssText=` / `setAttribute('style')`——
+                // cssom-1 update-style-attribute 可见面对偶，与 replay 臂同语义）。
+                if name.eq_ignore_ascii_case("style") {
+                    self.styles.insert(handle.clone(), value.clone());
+                }
             }
             DomMutation::RemoveAttrOnHandle { handle, name } => {
                 // tombstone 必须落图（原扫描语义：Remove 是一等记录——同批无前序
@@ -4837,6 +4851,26 @@ impl HandleStateIndex {
                 if let Some(order) = self.attr_order.get_mut(handle) {
                     order.retain(|n| n != name);
                 }
+                // style 投影清空（`removeAttribute('style')`）。
+                if name.eq_ignore_ascii_case("style") {
+                    self.styles.insert(handle.clone(), String::new());
+                }
+            }
+            DomMutation::SetStyleOnHandle {
+                handle,
+                property,
+                value,
+            } => {
+                // r2320 折叠 + merge 同 [`style_from_mutations_lw`] SetStyle 臂同形
+                //（折叠在此处一次完成，读侧零解析）。
+                let folded =
+                    zero_css_parser::values::fold_decl_specified(property, value).unwrap_or_else(|| value.clone());
+                let cur = self.styles.entry(handle.clone()).or_default();
+                *cur = merge_style_property(cur.as_str(), property, &folded);
+            }
+            DomMutation::RemoveStyleOnHandle { handle, property } => {
+                let cur = self.styles.entry(handle.clone()).or_default();
+                *cur = remove_style_property(cur.as_str(), property);
             }
             _ => {}
         }
@@ -4947,6 +4981,13 @@ fn shared_state_attr(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str, 
     with_shared_state_index(m, |idx| {
         idx.attrs.get(handle).and_then(|names| names.get(name).cloned())
     })
+}
+
+/// 当前批 handle inline style 读（索引投影版 [`style_from_mutations_lw`]）。空串 =
+/// 无 style-affecting 记录或净空——与全扫 replay 返回值恒等（等价性由
+/// `handle_state_style_projection_tests` 钉测：随机 op 序列任意前缀逐案全等）。
+fn shared_state_style(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str) -> String {
+    with_shared_state_index(m, |idx| idx.styles.get(handle).cloned().unwrap_or_default())
 }
 
 /// 历史层 handle 属性读（同 [`shared_state_attr`] 语义）。
@@ -5525,5 +5566,177 @@ mod subtree_deep_json_unsafe_tests {
         assert_eq!(arr.len(), 1, "td context 单条目");
         assert_eq!(arr[0]["tag"], "div");
         assert_eq!(arr[0]["sr"]["m"], "open", "context 路径物化同态");
+    }
+}
+
+#[cfg(test)]
+mod handle_state_style_projection_tests {
+    use super::*;
+
+    /// 投影主钉：随机 op 序列**任意前缀**上，增量投影与 [`style_from_mutations_lw`]
+    /// 全扫 replay 逐案全等（`__zw_get_style_lw_handle` 索引化改写的等价性闭合——
+    /// 读侧零漂移的形式化证据）。覆盖四类 style-affecting 记录 + 非 style attr 干扰
+    /// + 多 handle 交错。
+    #[test]
+    fn projection_equals_full_replay_on_every_prefix() {
+        // xorshift64 确定性伪随机（不引 rand 依赖，种子固定可复现）。
+        let mut s: u64 = 0x9E3779B97F4A7C15;
+        let mut next = move || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        let handles = ["h1", "h2", "h3"];
+        let props = ["color", "background-color", "margin-left", "font-size", "opacity"];
+        let values = ["red", "blue", "1px", "2em", "0.5", "calc(1px + 2px)"];
+        let m: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        for step in 0..300 {
+            let h = handles[(next() as usize) % handles.len()];
+            let p = props[(next() as usize) % props.len()];
+            let v = values[(next() as usize) % values.len()];
+            let op = match (next() as usize) % 7 {
+                0 => DomMutation::SetStyleOnHandle {
+                    handle: h.into(),
+                    property: p.into(),
+                    value: v.into(),
+                },
+                1 => DomMutation::RemoveStyleOnHandle {
+                    handle: h.into(),
+                    property: p.into(),
+                },
+                2 => DomMutation::SetAttrOnHandle {
+                    handle: h.into(),
+                    name: "style".into(),
+                    value: format!("{p}:{v}"),
+                },
+                3 => DomMutation::RemoveAttrOnHandle {
+                    handle: h.into(),
+                    name: "style".into(),
+                },
+                // 非 style attr 干扰：投影不得受扰动。
+                4 => DomMutation::SetAttrOnHandle {
+                    handle: h.into(),
+                    name: "id".into(),
+                    value: v.into(),
+                },
+                5 => DomMutation::RemoveAttrOnHandle {
+                    handle: h.into(),
+                    name: "id".into(),
+                },
+                _ => DomMutation::SetStyleOnHandle {
+                    handle: h.into(),
+                    property: p.into(),
+                    value: String::new(),
+                },
+            };
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(op);
+            // 任意前缀不变式：每 push 后，三 handle 投影 == 全扫 replay。
+            //（投影读与全扫读互斥分句——索引内部会短锁 m，不得持手锁跨调用，
+            // std Mutex 不可重入，同 #38 形态禁令。）
+            for handle in handles {
+                let proj = with_shared_state_index(&m, |idx| idx.styles.get(handle).cloned().unwrap_or_default());
+                let full = style_from_mutations_lw(&m.lock().unwrap_or_else(|e| e.into_inner()), handle);
+                assert_eq!(proj, full, "step {step} handle {handle} 投影漂移");
+            }
+        }
+    }
+
+    /// 定形序列钉：cssText 覆盖 / removeAttribute 清空 / removeProperty 净空 /
+    /// `STYLE` 大小写不敏感——每形态终值逐案断言（不只依赖随机序列碰面）。
+    #[test]
+    fn shaped_sequences_end_values() {
+        let run = |ops: Vec<DomMutation>| {
+            let m: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(ops));
+            shared_state_style(&m, "h")
+        };
+        // per-prop merge → cssText 整体覆盖。
+        assert_eq!(
+            run(vec![
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into(),
+                    value: "red".into()
+                },
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "opacity".into(),
+                    value: "0.5".into()
+                },
+                DomMutation::SetAttrOnHandle {
+                    handle: "h".into(),
+                    name: "style".into(),
+                    value: "color:blue".into()
+                },
+            ]),
+            style_from_mutations_lw(
+                &[
+                    DomMutation::SetStyleOnHandle {
+                        handle: "h".into(),
+                        property: "color".into(),
+                        value: "red".into()
+                    },
+                    DomMutation::SetStyleOnHandle {
+                        handle: "h".into(),
+                        property: "opacity".into(),
+                        value: "0.5".into()
+                    },
+                    DomMutation::SetAttrOnHandle {
+                        handle: "h".into(),
+                        name: "style".into(),
+                        value: "color:blue".into()
+                    },
+                ],
+                "h"
+            )
+        );
+        // merge 后 removeAttribute('style') 净空。
+        assert_eq!(
+            run(vec![
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into(),
+                    value: "red".into()
+                },
+                DomMutation::RemoveAttrOnHandle {
+                    handle: "h".into(),
+                    name: "style".into()
+                },
+            ]),
+            ""
+        );
+        // merge 后 removeProperty 净空（有记录净空 ≠ 无记录缺席，同返 ""）。
+        assert_eq!(
+            run(vec![
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into(),
+                    value: "red".into()
+                },
+                DomMutation::RemoveStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into()
+                },
+            ]),
+            ""
+        );
+        // 无 style-affecting 记录（仅非 style attr）→ ""。
+        assert_eq!(
+            run(vec![DomMutation::SetAttrOnHandle {
+                handle: "h".into(),
+                name: "id".into(),
+                value: "x".into()
+            }]),
+            ""
+        );
+        // `STYLE` 大小写不敏感（replay 臂 eq_ignore_ascii_case 对偶）。
+        assert_eq!(
+            run(vec![DomMutation::SetAttrOnHandle {
+                handle: "h".into(),
+                name: "STYLE".into(),
+                value: "color:red".into()
+            }]),
+            "color:red"
+        );
     }
 }

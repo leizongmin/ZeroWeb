@@ -320,7 +320,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "position" => position_value_str(&style.position),
         "visibility" => visibility_value_str(&style.visibility),
         "opacity" => {
-            let o = style.opacity;
+            // CSS Values 4 §10.12 Range Checking：顶层计算 NaN computed 侧
+            // censor-to-zero（r2320 individual transform 同规约先例）——
+            // `opacity: calc(round(1,0))` computed 期望 '0'（WPT
+            // round-mod-rem-serialize NaN 组）。
+            let o = if style.opacity.is_nan() { 0.0 } else { style.opacity };
             // 整数 opacity 打印无小数点（"1"/"0"），与 real browser getComputedStyle 一致。
             if o == o.trunc() {
                 format!("{}", o as i32)

@@ -1291,6 +1291,28 @@
             }
           } catch (_eS6sweep) {}
         };
+        // s403（html-semantics M2 切片 403）：parser 期静态 object[data] 启航——
+        // _zwStartConnectedObject 此前仅动态插入钩子（append 链）接线，解析期
+        // object 无人启航：嵌套文档脚本（object-handler 的 parent 回调链）永不
+        // 执行 → 文件级 Timeout。window load 派发前一次性**静默**物化（S6 同款
+        // 扫描位；fireEvents=false）——嵌套文档脚本通道 + 消费面，不派 load/error：
+        // 渲染静态 object 的终态事件面 spec 有（渲染步 load），但语料无驱动面且
+        // display:none 双案（object-in-display-none-load-event /
+        // object-image-display-none-loading）钉「不渲染 → 不派 load」——静默面
+        // 规避事件回归，事件仍由动态插入臂/消费读按既有语义服务。
+        // FIXME(object-static-events)：渲染静态 object 不派终态事件（spec 偏差
+        // 记档——恢复需 rendered 门（祖先链 display walk）+ 事件面，语料踩坑再扩）。
+        globalThis.__zwStartParserObjects = globalThis.__zwStartParserObjects || function () {
+          try {
+            var objs = document.querySelectorAll('object');
+            for (var i = 0; i < objs.length; i++) {
+              var hasData = false;
+              try { hasData = !!objs[i].getAttribute('data'); } catch (_eObjSwD) {}
+              if (!hasData) continue;
+              _zwStartConnectedObject(objs[i], true, false);
+            }
+          } catch (_eObjSweep) {}
+        };
         // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + 运行期 img 事件
         // 排队 drain——window 'load' 派发前调用（part06 dispatchEvent load 分支，与
         // R139/S6 同款扫描位）。
@@ -4062,7 +4084,20 @@
             // 兜底覆盖 host 无第二个同 local ns 实例的读（"First set attribute" 簇——host
             // 首实例缺席时按实例层 local first-match）。含大写限定名的 NS 实例不可经非 NS
             // 族命中（WPT "Only lowercase attributes are returned"）。
-            var v = handle
+            // cssom-1 update-style-attribute 同步可见面（editing-compat CSSOM 写回刀，
+            // 2026-11-11）：handle 面 CSSOM 声明写（`el.style.x=v` → SetStyleOnHandle）入
+            // pending log，attr 真同步只在批 flush（js_dom_bridge `apply_style_property`）
+            // ——JS 同步读窗内 `__zw_get_attr_handle('style')` 读 stale 字面量（sel 面
+            // R2995 走 `__zw_get_attr_lw` 已 pending-aware，两面不对称）。style 属性读接
+            // `__zw_get_style_lw_handle`（R3199 正序 replay：SetAttr(style) 整体覆盖 /
+            // SetStyle per-prop merge）＝声明块变更立即反映到 style attr 读。序列化面
+            //（innerHTML/outerHTML）经同读路径传播。回调缺省（polyfill）回落原读零漂移。
+            // replay 空 ≠ 缺省：attr 在（快照或 pending 全删）→ present-empty ""，R3190
+            // 语义由共用尾部 present 判定承担。
+            // https://drafts.csswg.org/cssom-1/#update-style-attribute
+            var v = (n === 'style' && handle && typeof __zw_get_style_lw_handle === 'function')
+              ? (__zw_get_style_lw_handle(handle) || '')
+              : handle
               ? __zw_get_attr_handle(handle, n)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
             // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
@@ -8467,6 +8502,8 @@
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
                 // s399：object 插入步同排（动态插入启动资源取回 + 终态 load/error）。
                 _zwStartConnectedObject(ceAdded[ci], cePconn);
+                // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
+                _zwStartConnectedEmbed(ceAdded[ci], cePconn);
               }
               // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
               //（given-prong——spec details element insertion steps；open toggle 已在
@@ -11190,6 +11227,8 @@
                 _zwStartConnectedIframe(added[ci], cePconn);
                 // s399：object 插入步同排（与 appendChild 循环同款）。
                 _zwStartConnectedObject(added[ci], cePconn);
+                // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
+                _zwStartConnectedEmbed(added[ci], cePconn);
                 // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
                 // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
                 // mutation → selection 重记录 + 重验；element/picture 门在

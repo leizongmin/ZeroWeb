@@ -11677,6 +11677,10 @@
         // `_r159HtmlAttrs` 槽（R159 提取）或其 documentElement 的 lang 属性。
         var s173 = String(sel);
         var src173 = _zwMOuterHtml(n);
+        // cssom 写回刀（2026-11-11）：根自身序列化快照——镜像剔除的全等键（见下
+        // R310b 注）。未包装路径与 src173 同源零额外开销；R173 lang 包装改写 src173 后
+        // 重取自身序列化（罕见路径）。
+        var _r188RootSelf = src173;
         // R308（js-dom M4）：**DocumentFragment 根的序列化源**——`_zwMOuterHtml` 对
         // nodeType 11 返 ''（非元素短路），fragment 上下文的查询源恒空 → `matches`
         // 的 root-up-track 上行到 fragment 后候选恒 0（WPT Element-matches Fragment
@@ -11712,6 +11716,7 @@
           } catch (_e173o) { langAttr173 = ''; }
           if (langAttr173) {
             src173 = '<html lang="' + langAttr173.replace(/"/g, '&quot;') + '"><body>' + src173 + '</body></html>';
+            _r188RootSelf = String(n.outerHTML);
           }
         }
         var arr = JSON.parse(__zw_parse_html_query(src173, String(sel), '1', url173, '1')); // R161: filter_synthetic（R173：url173 = :target 的 fragment 上下文；R188：head 同滤——host 侧）
@@ -11730,12 +11735,22 @@
           // → ctrlStore addEvents null.addEventListener → connect 断 → store 不全 →
           // 页面 React 构造器 TypeError → Next 全局错误页）。真镜像经序列化重解析
           // 属性恒一致——tag+id+class 三键同值才剔除；class 归一空白后比对。
+          // cssom 写回刀（2026-11-11）：三键仍会误切「同 tag+id+class 但其余
+          // 属性不同」的真后代——editing corpus outdent 页根宿主 `<div contenteditable>`
+          // 与引擎 outdent 产物 `<div style=…>` 三键全空值同型，harness
+          // normalizeSerializedStyle 的 `wrapper.querySelectorAll("[style]")`（tests.js
+          // :5499）因首命中被误切恒 count=0，8 行 compare innerHTML 恒红。补第四键
+          // **整串序列化全等**（host parse payload 自带 `outer` 字段；三键恒等只有
+          // outer 也恒等才是「重解析后与根逐字节一致」的真镜像——R310b 自述不变式的
+          // 完整执行）。纯字符串比对，无额外 host 往返（_r188RootSelf 未包装路径
+          // 即 src173 本体）。
           var _r188C = '';
           try { _r188C = String(n.getAttribute && (n.getAttribute('class') != null ? n.getAttribute('class') : (n.className != null ? n.className : '')) || '').replace(/\s+/g, ' ').trim(); } catch (_e188cr) {}
           var _r188F = arr[0];
           if (_r188F && String(_r188F.tag || '').toLowerCase() === _r188T
               && String(_r188F.id || '') === _r188I
-              && String(_r188F.cls != null ? _r188F.cls : '').replace(/\s+/g, ' ').trim() === _r188C) {
+              && String(_r188F.cls != null ? _r188F.cls : '').replace(/\s+/g, ' ').trim() === _r188C
+              && String(_r188F.outer || '') === String(_r188RootSelf || '')) {
             arr = arr.slice(1);
           }
         }
