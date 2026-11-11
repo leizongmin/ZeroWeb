@@ -1,8 +1,8 @@
 # CSSOM style 写回刀 — outdent 残红 8→0（F2P=169）
 
-**日期**: 2026-11-11
-**刀体**: bc69c69cf（4 文件 +57/−12）＋刀二笔索引化 callbacks.rs（25e533139）；重锚谱系：rebase 重放 0a435f0a1/0ff1bc92c（他流 s405 14b6ca724 并入后，已推送）
-**门禁批**: batch-cssom-writeback-v1.1（v1 L0 门值算术自误 ABORT 后重射；v1.1 L3 mt 主页 300s 截断 ABORT→刀二索引化）→ v1.3 组合树重锚版暂缓发射（s405 碰撞，见批终值节）
+**日期**: 2026-11-11（刀体）～2026-11-12（终门收口）
+**刀体**: bc69c69cf（4 文件 +57/−12）＋刀二笔索引化 callbacks.rs（25e533139）；重锚谱系：rebase 重放 0a435f0a1/0ff1bc92c（他流 s405 14b6ca724 并入后，已推送）＋刀三笔仲裁修复 f95fdd4d9（CE 插入 walk 三臂共享单次 tag 读）＋r307 回归修复 ed556aacc（第四键比对剥本侧 no-ns 标记）
+**门禁批**: batch-cssom-writeback-v1.1（v1 L0 门值算术自误 ABORT 后重射；v1.1 L3 mt 主页 300s 截断 ABORT→刀二索引化）→ v1.3 暂缓（s405 碰撞）→ **v1.3.2 ALL-DONE 收口**（2026-11-12 05:22:27，head ed556aacc bin aa77d3b8，八腿全绿；v1.3.1 语料七腿绿/L6 名册漂移 ABORT 归因收口见下节）
 **基线**: census 3a528a13f（ind-c1-*）＋ v1.2 残红账（odt-outdent-fails.txt，12 corpus + 7 probe）
 
 ## 根因（读侧定谳，闭合 outdent v1.1 五级诊断探针）
@@ -205,6 +205,26 @@ v1.3.1 语料七腿全绿后 L6 ABORT（failed=10 vs 名册 7，3881P）。三�
 v1.3.1 语料七腿判读绑定 f95fdd4d9 字节态，对新头失效——v1.3.2 全腿在新头重跑，
 judge 仍 vs 既有 census/基线日志（零漂移判据不变）；L6 期望 failed==9（名册
 2026-11-12 档）。锚更新：S4 4→5（修复行）、新增 S9=`_r188RootSelfCmp`==2。
+
+## 终门 v1.3.2 ALL-DONE 收口（2026-11-12 04:29:35→05:22:27）
+
+head ed556aacc（r307 修复 + 名册档 + 控制面入账后重锚，rebase 并入 origin docs
+06c57fed2 零引擎面）bin aa77d3b8079229b02129978c13d108c1 逐腿记账恒一，~53min：
+
+- **L0 probe** 217P/5F 恰集（vs pfc-probe-failkeys.txt 零漂移）✓
+- **L3b mt-ab** rc=0 **10092P/0F/0T** + judge-dps vs cssom-ab-perffix.log 严格
+  四零 ✓——墙钟仲裁修复后 300s 门内完走在新头兑现（stamp epoch 快道入站后
+  余量进一步放宽）
+- **L1 outdent** 2763P/9F，judge F2P=169/P2F=0/lost=0/residF=4 恰集 ✓
+- **L2 indent** 1302P/27F + judge 零漂 VERDICT OK ✓
+- **L3 mt 主页** 10090P/2F，四零 + residF 恒 rbv2 两键 ✓
+- **L4 singles×5** iol 1759 / iul 2061 / ip 6989 / ilb 1658 / ihtml 1446 全零漂 ✓
+- **L5 exec×3** 零漂 ✓
+- **L6 enginelib** 3895P/9F == 名册 2026-11-12 档 ✓（r307 修复在场 +1P−1F）
+
+刀体四笔（trap pending-aware / R188 第四键 / part01c 导出 / part01d attr 基底）
+＋索引化二笔＋仲裁三笔在组合树（s407/s408/stamp epoch/g12 并入态）语义零漂移，
+CSSOM 写回刀正式收口：outdent 页 CSSOM 8 残红族闭合维持 F2P=169，页残红 12→4。
 
 ## 残红账（不变）
 
