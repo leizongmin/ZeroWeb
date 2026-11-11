@@ -1649,6 +1649,21 @@ impl Painter {
         self.backface_3d_ctx_enabled = enabled;
     }
 
+    /// T60：测试内直改 R5296/R5350 门态（`inline_ca_expand_enabled` +
+    /// `inline_bg_ml_gate_enabled`，仅 `cfg(test)` 编译，生产路径不可达）。
+    ///
+    /// 背景：两门在 [`Self::new`] 构造期单次快照 `ZW_INLINE_CA_EXPAND` /
+    /// `ZW_INLINE_BG_ML_GATE`（进程级全局）。lib 单测若在进程内 set_var/remove_var
+    /// 翻转窗与并行用例的 `Painter::new()` 构造窗重叠，即错读门态——r5296 钉案
+    /// 集成轮时红时不红（T44/T47/T55/T56/T58 五轮归因一致）。构造后经本 setter
+    /// 直改字段绕开进程级 env，竞态根除（guidelines #19：进程级全局资源跨模块
+    /// 串行化——此处直接不触全局资源）。
+    #[cfg(test)]
+    pub(crate) fn set_inline_gates_for_test(&mut self, ca_expand: bool, ml_gate: bool) {
+        self.inline_ca_expand_enabled = ca_expand;
+        self.inline_bg_ml_gate_enabled = ml_gate;
+    }
+
     /// M2-S1b：取走本帧收集的动画作用域（调用方在视口剔除时做区间修复）。
     pub fn take_animation_scopes(&mut self) -> Vec<PaintAnimationScope> {
         std::mem::take(&mut self.animation_scopes)
