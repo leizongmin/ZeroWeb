@@ -5,7 +5,8 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
-css-values 2,426→2,787，至 serialize canonical 折叠刀2+round B=±∞ 策略表）。
+css-values 2,426→2,882，至 serialize canonical 折叠刀2+round B=±∞ 策略表
++calc-mix() 全链刀（g14 首账，minmax -1 由 0f1c0639d 收复后 g14b 复核轮在跑）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -56,7 +57,7 @@ unbalanced 形；serialize 残 ~42F——resolution 29 主体未动（image-set 
 前置刀，deferred）+ length ~2/angle ~8/number ~3 散形 + signs-abs computed
 残 ~94F/invalid 52F——`abs()` 空参文法、font-weight 非白名单属性写面/
 serialize 4F）、
-%-mixing CalcContext 族（calc-mix-serialize 113F + calc-mix-computed 53F 主体）、
+%-mixing CalcContext 族（calc-mix 主刀后残余：serialize 62F——sibling-index() 形 ~25F 需 DOM 求值 + 外层 calc() 嵌套 % 排序 ~12F 树递归 serialize + computed 串面散形；computed 28F——% calc 保留形 length_to_css 空串等）、
 独立桶 line-break-ch
 194F / random() 141F / attr-all-types 103F / viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
@@ -66,6 +67,17 @@ color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 g14 批首账（11-12 早，calc-mix 主刀 6d3e3af16 + layout 漏臂 c1a069a1c
++ minmax 回归修复 0f1c0639d 并行流收口）**：CSS Values 5 `calc-mix()` 全链
+（parse 文法门/求值公式/指定值折叠/invalid 拒收，实现面与 provenance 事故
+见证据）——css-values g14 语料首账 **2,787 → 2,882 净 +95**（calc-mix
+serialize +51/computed +25/invalid +12 全清、minmax-length-serialize +8）；
+回归 -1（minmax-length-percent 4 行）根因 eval Min/Max filter_map 丢 %
+实参，并行流同 clone 碰头同期修复（eval 全实参参与 + 本流 fold % 门叠加
+入库 0f1c0639d，规则 9 碰头信号记证据），单页复核 4 行翻回。g14b 复核轮
+（values + 六套件）并行流在跑，权威账以 g14b 为准。
+[证据](evidence/2026-11-12-dc2-g14-calc-mix-batch-step.md)
 
 **DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：
 前轮双 session（knife2 dev + e1 姊妹）rate-limit 双中断，本 session 按认领
