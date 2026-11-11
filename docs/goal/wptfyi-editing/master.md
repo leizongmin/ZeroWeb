@@ -37,12 +37,15 @@ selection-face 片——本地 census 51,695/35,631（
 面下周跑生效（census 口径 +~33k）与 input-events（201/3,378）等 0 覆盖面
 接线。六 format 文件残余 206F 为 P2 既有长尾（u/s decl 面多值偏序、
 styled-child 分解再裹、bold/italic/sub/sup 值面）。
-**下一步** ①u/s decl 面壳多值偏序折叠（`foo<s style="text-decoration:
-overline">` +underline 长手合并族 ~19 例 + 零变化簇卷位 ×2，接 ⑤ 同门
-decl 臂）；②bold 数值权重边界 merge（84F 大头）、italic var/dfn 归一、
-sub/sup vertical-align 邻 span；③selection bidi（0/92）、shadow-dom
-（27/113）、input-events 小桶按产物归类开修；④下周快照落做 DC-3 同口径
-对账（净增 ≥130,000 + 邻域回退核对，P2/P3 语料全量增量随周跑入账）。
+**下一步** ①decl 面壳多值偏序批（四形录形已实取，判据探针
+`zz-probe-d5decl.html` 6 case 常驻——wrap-out 保壳 / 溶解合并 / 全溶解
+零产物 / 分解转形，落点 ⑦ residualDecls 下潜门 decl 壳分族 + removal
+分解面元素形，见 carrier-fold 证据残余节）；②bold 数值权重边界
+merge（84F 大头）、italic var/dfn 归一、sub/sup vertical-align 邻
+span；③selection bidi（0/92）、shadow-dom（27/113）、input-events 小桶
+按产物归类开修；④下周快照落做 DC-3 同口径对账（净增 ≥130,000 + 邻域
+回退核对，P2/P3 语料全量增量随周跑入账；face 哨兵探针现为 9 个，d5decl
+新增 6F 判据，修复落地后逐案翻转）。
 
 [执行契约](../wptfyi-editing.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 

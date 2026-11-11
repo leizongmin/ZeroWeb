@@ -65,4 +65,18 @@ diff 空）。multitest P 差全落 `?9001-last` 慢页门杀进度差（us3mt �
   语义 ~19 例）；② 部分选区 styled-child 分解再裹（`<u>foo[b<span>ar]
   </span>z</u>` 族）；③ 零变化簇残余（`foo<s>[bar]</s>` +strike ×2 卷
   位差）。
+- **①簇录形实取**（2026-11-12 探针
+  `zz-probe-d5decl.html` 常驻判据 6 case，期望 = data/underline.js:538+
+  /data/strikethrough.js 原文）：decl 壳（inline text-decoration 替换
+  tag face）apply 族当前恒下潜内裹，Chrome 分四形——
+  (a) wrap-out 保壳：u-decl + 命令 css-true/css-false 双 flag（`<span
+  style="underline"><u style="overline">` / `<u><u style="overline">`，
+  新裹在 decl 壳外、decl 原样）；(b) 溶解合并：s-decl + underline
+  css-true、u-overline + strike css-true（`<span style="underline
+  overline">` 单壳，tag 消失）；(c) 全溶解零产物：u-lineThru + strike
+  css-true 全含（`foo[bar]baz`，inline decl 抵 tag face 后 toggle-off
+  残壳不值钱）；(d) 分解转形：u-lineThru 部分选区 +strike（`b</u>…` 段
+  转 `<span style="line-through">`，选中段裸化）。落点 = ⑦
+  residualDecls 下潜门 decl 壳分族 + removal 分解面元素形，与 ② 簇
+  （styled-child 分解）同机器。
 - bold 84F / italic 24F / sub+sup 26F 面未动（master ② 清单）。
