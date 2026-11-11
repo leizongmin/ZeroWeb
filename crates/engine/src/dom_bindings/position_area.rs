@@ -35,8 +35,14 @@ enum Axis {
     NoneKw,
 }
 
+/// 关键字是否为 position-area 轴类关键字（`position-try-fallbacks` 段内
+/// position-area 形判定用——返回类型不外泄，`Axis` 保持私有）。
+pub(crate) fn is_area_kw(kw: &str) -> bool {
+    classify_kw(kw).is_some()
+}
+
 /// 关键字 → 轴类；表外 ident 返 `None`。
-fn classify(kw: &str) -> Option<Axis> {
+fn classify_kw(kw: &str) -> Option<Axis> {
     match kw {
         "left" | "right" | "span-left" | "span-right" | "x-start" | "x-end" | "span-x-start" | "span-x-end"
         | "self-x-start" | "self-x-end" | "span-self-x-start" | "span-self-x-end" => Some(Axis::H),
@@ -79,7 +85,7 @@ pub(crate) fn canonicalize_decl(value: &str) -> Option<String> {
     let toks: Vec<&str> = lower.split_whitespace().collect();
     match toks.len() {
         // 单关键字：none/center/span-all/任一轴关键字，echo。
-        1 => classify(toks[0]).map(|_| toks[0].to_string()),
+        1 => classify_kw(toks[0]).map(|_| toks[0].to_string()),
         2 => serialize_decl_pair(toks[0], toks[1]),
         // 三关键字及以上非法（语料 `top left top` 钉面）。
         _ => None,
@@ -88,7 +94,7 @@ pub(crate) fn canonicalize_decl(value: &str) -> Option<String> {
 
 /// 双关键字 CSSOM canonical 序列化（输入假定 ASCII 小写、单词元）。
 fn serialize_decl_pair(a: &str, b: &str) -> Option<String> {
-    let (ka, kb) = (classify(a)?, classify(b)?);
+    let (ka, kb) = (classify_kw(a)?, classify_kw(b)?);
     use Axis::*;
     // 全折叠/保序对（与轴无关）。
     match (ka, kb) {
@@ -127,7 +133,7 @@ fn serialize_decl_pair(a: &str, b: &str) -> Option<String> {
     // 单轴关键字 + span-all：span-all 冗余丢弃（轴歧义族除外——保输入序）。
     if ka == SpanAll || kb == SpanAll {
         let k = if ka == SpanAll { b } else { a };
-        return match classify(k) {
+        return match classify_kw(k) {
             Some(Se) | Some(SSe) => Some(format!("{a} {b}")),
             Some(H) | Some(V) | Some(B) | Some(I) | Some(SB) | Some(SI) => Some(k.to_string()),
             _ => None,
@@ -199,10 +205,10 @@ pub(crate) fn computed_value(decl: &str) -> String {
         [a, b] => (*a, *b),
         _ => return v.to_string(),
     };
-    let Some(ka) = classify(a) else {
+    let Some(ka) = classify_kw(a) else {
         return v.to_string();
     };
-    let Some(kb) = classify(b) else {
+    let Some(kb) = classify_kw(b) else {
         return v.to_string();
     };
     use Axis::*;

@@ -2145,6 +2145,77 @@
       }
       return '1';
     }
+    if (prop === 'position-anchor' || prop === 'position-visibility'
+        || prop === 'position-try-order' || prop === 'position-try-fallbacks'
+        || prop === 'anchor-name' || prop === 'anchor-scope') {
+      // wptfyi-css 组 F：css-anchor-position-1 anchor 族声明面 computed——全族
+      // 非继承（position-area 先例同构）：只读自身 inline 声明，computed =
+      // as-specified（canonicalize 折叠后恒等）；空声明返属性初始值
+      //（position-anchor normal / position-visibility anchors-visible /
+      // position-try-order normal / position-try-fallbacks·anchor-name·
+      // anchor-scope none）。CSS-wide keyword 计算期语义（CSS Cascading 4
+      // §6-§7）：initial/unset/revert/revert-layer → 初始值；inherit 强制取
+      // 父链首个非 css-wide 声明的计算值（§7.3 对非继承属性亦生效——
+      // assert_not_inherited inherit 步钉）。折叠面单点在
+      // dom_bindings::anchor_props::computed_value（grid G1 单实现双通道同型，
+      // 经 __zw_anchor_computed 回调薄委托）。
+      // FIXME: 作者样式表声明臂未接（_zwPlainDecl 只读 inline；语料全 inline）。
+      // https://drafts.csswg.org/css-anchor-position-1/
+      var _zwAnchorCv = function (p, raw) {
+        try { return globalThis.__zw_anchor_computed(p, String(raw)) || ''; }
+        catch (_eAC) { return ''; }
+      };
+      var aRaw = _zwPlainDecl(elt, prop);
+      if (!aRaw) return _zwAnchorCv(prop, '');
+      var aS = String(aRaw).trim().toLowerCase();
+      if (aS === 'inherit') {
+        node = elt.parentNode; guard = 0;
+        while (node && node.nodeType === 1 && guard++ < 256) {
+          var aInh = _zwPlainDecl(node, prop);
+          if (aInh) {
+            var aInhS = String(aInh).trim().toLowerCase();
+            if (aInhS === 'inherit' || aInhS === 'initial' || aInhS === 'unset'
+                || aInhS === 'revert' || aInhS === 'revert-layer') {
+              node = node.parentNode;
+              continue;
+            }
+            return _zwAnchorCv(prop, aInh);
+          }
+          node = node.parentNode;
+        }
+        return _zwAnchorCv(prop, '');
+      }
+      if (aS === 'initial' || aS === 'unset' || aS === 'revert'
+          || aS === 'revert-layer') {
+        return _zwAnchorCv(prop, '');
+      }
+      return _zwAnchorCv(prop, aRaw);
+    }
+    if (prop === 'position-try') {
+      // 组 F：position-try 简写 computed = 两长手 inline 声明合成（order=normal
+      // 省略 / 双初始折叠 'none'——join 规则与 dom_bindings::anchor_props::
+      // join_position_try 同形，一致性由语料 round-trip 钉）。双长手均无声明返
+      // ''（gCS 通道无源空串契约）。css-wide 简写写面拆分时双长手同 keyword
+      //（Rust split_position_try css-wide 臂），此处按长手各读。
+      var _zwTryJoin = function (o, f) {
+        if (o === 'normal' && f === 'none') return 'none';
+        if (o === 'normal') return f;
+        if (f === 'none') return o + ' none';
+        return o + ' ' + f;
+      };
+      var tO = _zwPlainDecl(elt, 'position-try-order');
+      var tF = _zwPlainDecl(elt, 'position-try-fallbacks');
+      if (!tO && !tF) return '';
+      var oS = String(tO || 'normal').trim().toLowerCase();
+      var fS = String(tF || 'none').trim().toLowerCase();
+      if (oS === 'initial' || oS === 'unset' || oS === 'revert'
+          || oS === 'revert-layer') oS = 'normal';
+      else if (oS === 'inherit') oS = 'normal'; // 简写级联近似（语料全 inline 直写）
+      if (fS === 'initial' || fS === 'unset' || fS === 'revert'
+          || fS === 'revert-layer') fS = 'none';
+      else if (fS === 'inherit') fS = 'none';
+      return _zwTryJoin(oS, fS);
+    }
     if (prop === 'position-area') {
       // wptfyi-css 组F：css-anchor-position-1 §position-area 计算值——非继承
       //（position-area-computed assert_not_inherited 锚），只读自身 inline 声明；

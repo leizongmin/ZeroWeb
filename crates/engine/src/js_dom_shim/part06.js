@@ -2116,6 +2116,29 @@
       if (_pav === 'null') return null;
       return _pav;
     }
+    // wptfyi-css 组 F（css-anchor-position anchor 族声明面）：position-anchor/
+    // position-visibility/position-try 简写族/anchor-name/anchor-scope 七属性
+    // 文法校验 + canonical 序列化整值委托（grid_cssom/position_area G1 单实现
+    // 双通道同型；非法整值返 'null' 拒、合法返 canonical 串、var()/ident() 保形
+    // 均在 Rust 侧收口）。回调未注册（兜底链）不校验零漂移。
+    // https://drafts.csswg.org/css-anchor-position-1/
+    if (typeof globalThis.__zw_anchor_normalize_decl === 'function'
+        && (propName === 'position-anchor' || propName === 'position-visibility'
+            || propName === 'position-try-order' || propName === 'position-try-fallbacks'
+            || propName === 'position-try' || propName === 'anchor-name'
+            || propName === 'anchor-scope')) {
+      var _anv = globalThis.__zw_anchor_normalize_decl(propName, raw);
+      if (_anv === 'null') return null;
+      return _anv;
+    }
+    // 组 F：通用 inset/size/margin 属性域值含 anchor()/anchor-size() 调用时的
+    // 属性域 + 参数文法拒面（anchor-parse-invalid/anchor-size-parse-invalid 语料
+    // 钉）。var() 混合形 parse 期不校验（替换后校验语义，保形放行先于本臂）。
+    // 合法形原文保形（校验器只拒不重写——valid 语料 round-trip echo 钉）。
+    if (raw.indexOf('anchor(') >= 0 && raw.indexOf('var(') < 0
+        && typeof globalThis.__zw_anchor_func_check === 'function') {
+      if (globalThis.__zw_anchor_func_check(propName, raw) !== 'true') return null;
+    }
     // DC-2 light-dark image 批：image 四属性 light-dark() 顶层前缀浅校验
     //（part11-color.js __zwImageNormalizeDecl——undefined=不介入 passthrough、
     // null=拒、串=放行原串）。light-dark-image 语料 invalid 组锚（arity≠2/

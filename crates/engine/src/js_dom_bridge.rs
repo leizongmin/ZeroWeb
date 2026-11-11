@@ -5920,6 +5920,22 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
             return false;
         }
     }
+    // 组 F 批：anchor 族七属性（position-anchor/position-visibility/position-try
+    // 简写族/anchor-name/anchor-scope）文法面由 [`dom_bindings::anchor_props`]
+    // 裁决（同上——style-system 注册表不含族属性，computed-testcommon 以
+    // `CSS.supports(prop, v)` 前置门，position-area 先例同型）。
+    #[cfg(feature = "v8")]
+    {
+        if crate::dom_bindings::anchor_props::is_anchor_family_prop(prop) {
+            return crate::dom_bindings::anchor_props::canonicalize_decl(prop, val).is_some();
+        }
+        // 通用 inset/size/margin 属性域值含 anchor()/anchor-size() 调用时按
+        // 函数参数文法裁决（anchor-parse-invalid/anchor-size-parse-invalid 拒面
+        // 同源；合法形 `CSS.supports('top', 'anchor(--foo left)')` 判真）。
+        if val.contains("anchor(") {
+            return crate::dom_bindings::anchor_props::anchor_funcs_valid(prop, val);
+        }
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
 }
