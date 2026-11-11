@@ -3839,7 +3839,15 @@
       get href() { return _objLHref(); },
       set href(v) {
         var next = null;
-        try { next = new globalThis.URL(String(v), _objLHref()).href; } catch (_eObjLN) { return; }
+        try { next = new globalThis.URL(String(v), _objLHref()).href; } catch (_eObjLN) {
+          // s406：URL 解析失败回落 `_zwResolveIframeSrc` 容差（iframe href 写侧
+          // `__zw_reload_iframe` 同口径——`//{{hosts[][nonexistent]}}/` 字面残留
+          //（runner 替换表无此 token）在导航臂须落取回失败语义而非静默中止；
+          // embed-network-error 子测3「navigating an existing embed: nonexistent
+          // host」driving——embed 失败恒 load，静默中止令 harness 挂起）。
+          try { next = _zwResolveIframeSrc(String(v)); } catch (_eObjLN2) { return; }
+          if (!next) return;
+        }
         if (next === _objLHref()) return;
         try { _zwObjectNavigateEntry(entry, objKey, next, sel, handle); } catch (_eObjLNav) {}
       },
@@ -3870,8 +3878,8 @@
   // http(s) 臂取回分诊同 `_zwLoadObjectResource`（fetch + Content-Type 单源，
   // s399 三臂口径）：2xx text/html → 重物化（新 doc+win+脚本重放；entry.fired
   // 保持——导航不重派 load）；其余终态 → fallback 语义（doc/win 槽空，无
-  // navigable）。导航失败不重派事件（fired 门 once-terminal 近似，FIXME：spec
-  // 每次 fetch 失败均派 error——语料无驱动面）。data 属性不动
+  // navigable）。导航失败事件面 s406 收口（`_zwObjectNavFail`——embed 重派
+  // load，object 静默近似维持）。data 属性不动
   //（object-handler「嵌套导航后 data 属性不更新」断言链）。
   function _zwObjectNavigateEntry(entry, objKey, url, sel, handle) {
     // s404 javascript: 臂（spec #javascript-protocol：navigate 到 javascript:
@@ -3910,11 +3918,11 @@
       wire = String(__zw_fetch('objnav:' + objKey + ':nav', 'GET', url, '', '', '', '', '', '', '', '') || '');
     } catch (_eObjNavF) { wire = ''; }
     if (!wire || wire.indexOf('__zw_fetch_error:') === 0) {
-      entry.state = 'error'; entry.doc = null; entry.win = null; return;
+      _zwObjectNavFail(entry, sel, handle); return;
     }
     var parts = String(wire).split('\x1f');
     var status = String(parts[0] || '').replace(/^__zwfr:/, '');
-    if (!/^2/.test(status)) { entry.state = 'error'; entry.doc = null; entry.win = null; return; }
+    if (!/^2/.test(status)) { _zwObjectNavFail(entry, sel, handle); return; }
     var ct = '';
     if (parts.length > 2) {
       var hdrs = String(parts[2] || '').split('\x1e');
@@ -3928,7 +3936,21 @@
       _zwObjectMaterializeDoc(entry, objKey, url, body, sel, handle);
       entry.state = 'done';
     } else {
-      entry.state = 'error'; entry.doc = null; entry.win = null;
+      _zwObjectNavFail(entry, sel, handle);
+    }
+  }
+  // s406：嵌套导航失败终态共享臂（原三处 inline error 置位收拢）——embed entry
+  // 失败重派终态事件（embed-network-error 3/4 驱动案「existingEmbed location.href
+  // 导航失败 → 第二 load、error 恒不派」——与 s405 初载核 `_zwFireObjectResultEvent`
+  // 失败映射同一出口）；object 保持静默（fired 门 once-terminal 近似维持，FIXME：
+  // spec 每次 fetch 失败均派 error——object 侧语料无导航失败事件驱动面）。
+  function _zwObjectNavFail(entry, sel, handle) {
+    entry.state = 'error';
+    entry.doc = null;
+    entry.win = null;
+    if (entry.embed) {
+      entry.fired = false;
+      _zwFireObjectResultEvent(entry, sel, handle);
     }
   }
   // s399：object load/error 事件派发（终态一次——`fired` 门幂等；_defer 微任务派发
@@ -13028,6 +13050,33 @@
               if (nm177 === prop) return ifrNamed[nIdx].contentWindow;
             }
           } catch (_e177n) {}
+          // html-semantics M2 切片 406：embed/object named access（embed-network-error
+          // 「frames.existingEmbed1.location.href」断言入口——R177 帧代理 iframe-only
+          // 残面收口）。embed 无 contentWindow IDL → 经 _zwObjectNavCache entry.win
+          // 解析（s403 物化核；object 同通道）；spec named access 值算法「唯一 named
+          // 元素有嵌套浏览上下文 → 返其 WindowProxy」——无 win（未物化/error 态）不
+          // 解析。扫描走缓存序（≈物化序近似树序，同 window[N] FIXME 口径——
+          // document 逗号查询无 pending 回落，动态插入面 querySelectorAll 恒 miss，
+          // 桥测实证）；连接态与 live name 属性读同 _zwWindowLengthCount 口径。
+          // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+          try {
+            var oKeys177 = Object.keys(_zwObjectNavCache);
+            for (var oIdx177 = 0; oIdx177 < oKeys177.length; oIdx177++) {
+              var oe177 = _zwObjectNavCache[oKeys177[oIdx177]];
+              if (!(oe177 && oe177.win)) continue;
+              var oeConn177 = true;
+              try {
+                if (oe177.sel || oe177.handle) oeConn177 = _makeProxy(oe177.sel, oe177.handle).isConnected !== false;
+              } catch (_e177oc) { oeConn177 = false; }
+              if (!oeConn177) continue;
+              var nmOb177 = '';
+              try {
+                nmOb177 = oe177.handle ? __zw_get_attr_handle(oe177.handle, 'name')
+                  : (oe177.sel ? __zw_get_attr(oe177.sel, 'name') : '');
+              } catch (_e177on) {}
+              if (String(nmOb177 || '') === prop) return oe177.win;
+            }
+          } catch (_e177o) {}
         }
         return undefined;
       },

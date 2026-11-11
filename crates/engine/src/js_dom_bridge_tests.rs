@@ -131,3 +131,8 @@ include!("js_dom_bridge_tests/part104_s404_object_window_index_javascript_nav.rs
 // 53 号 s405 embed 动态加载链：插入钩子启航（共享加载核 src 属性读）+ 失败终态
 // 映射 load + javascript: 全静默 + src IDL 重启臂 + window[N] 活跃集合计入钉。
 include!("js_dom_bridge_tests/part105_s405_embed_dynamic_load.rs");
+
+// 54 号 s406 frames named access 扩 embed/object + 嵌套导航失败终态：R177 帧代理
+// named face 收口（embed-network-error 子测 3/4 driving）+ 失败三臂收拢（embed
+// 重派 load / object 静默保持）钉。
+include!("js_dom_bridge_tests/part106_s406_frames_named_embed_nav_fail.rs");
