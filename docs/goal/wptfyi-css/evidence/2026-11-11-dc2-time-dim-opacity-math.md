@@ -66,8 +66,11 @@
   `js_dom_bridge/callbacks.rs` 为上游 CSSOM 提交（0a435f0a1/0ff1bc92c，另一流，
   g9b 基线之后入 main）带入的未格式化测试代码，非本批改动面；`cargo fmt
   -p zero-engine` 修复（+97/-22，剥空白全等比对：仅 8 处 struct pattern 尾逗号
-  + 换行重排，零内容差异），独立 `style(engine)` 提交。②mktest-g10b 秒退
-  rustc ENOENT（systemd service 未注入 cargo PATH，脚本问题非仓库问题）。
+  + 换行重排，零内容差异），独立 `style(engine)` 提交。②mktest-g10b（同名两跑：
+  首跑死于 service 未注入 cargo PATH——rustc ENOENT 即退，日志被重跑覆盖）重跑
+  编译 6m19s 后 fingerprint 写入 ENOENT——并发 make 入口的 target-disk-guard
+  分级清理撞上在途 cargo 编译窗（共享树双门禁竞态，非仓库代码缺陷；
+  target 85G>50G 阈值触发 tier-1 incremental 清理）。
   ③mktest-g10c `test-guard 无法启动测试 artifact`——R4323-F 在案瞬态（暖缓存
   + 并发 clippy 抢锁失稳窗，R4335 同例复跑全绿）。④mktest-g10d 权威账：
   **3,881 passed / 10 failed**（g9b 3,879/9 基线 +2P）。
