@@ -149,3 +149,8 @@ include!("js_dom_bridge_tests/part107_s407_embed_static_fallback.rs");
 // non-parser-created-doc.html 红根修复（headEl appendChild 链 + plain 产物
 // `sheet` 访问器 + _makeStyleSheet 门 plain owner 臂）钉。
 include!("js_dom_bridge_tests/part108_s408_detached_style_sheet.rs");
+
+// 57 号 s409 script-created link stylesheet 不阻塞 script：s163 延迟仿真相对
+// URL 归一（发题侧）+ 阻塞计数门控到 parser-inserted 面（script-created-link
+// 双案红根修复）钉。
+include!("js_dom_bridge_tests/part109_s409_script_created_link_stylesheet.rs");

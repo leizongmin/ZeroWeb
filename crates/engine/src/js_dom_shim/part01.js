@@ -7182,6 +7182,27 @@
     // send 计时器判定共用——`D < T` 时 load 先至、不挂 timeout 计时器，见彼处注记）。
     globalThis._zwFetchSimDelay = function (_us) {
       try {
+        // s409（html-semantics M2 切片 409，2026-11-12）：前缀/路径判定前先对页
+        // base 归一相对 URL。script-created link 插入臂 `_zwSsVisitCss(_ssHref,
+        // …)` 发题传**原始 href**（相对形 `stylesheet.py?delay=1`——part03
+        // MaybeStart 语义，_ssAbs 只作 memo/mixed 门），s163 interactions 前缀
+        // 分支按绝对形态设计 → 相对形 miss → delay 仿真不生效，瞬时取回在脚本
+        // 间微任务排空点完成（runner 端点零 sleep，静态路由即时交付），两案
+        // assert_false「still pending」恒红（style 双胞胎 Pass 正因 @import 内层
+        // URL 解析时已绝对化、延迟臂命中）。解析失败/无 base 回落原始形（旧行
+        // 为兜底）。trickle/delay.py 判定均为 query/子串形不受归一影响。
+        if (!/^https?:/i.test(String(_us))
+            && typeof __zw_parse_url === 'function') {
+          try {
+            var _b409 = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : (globalThis.location ? globalThis.location.href : '');
+            if (_b409) {
+              var _j409 = JSON.parse(__zw_parse_url(_us, _b409) || 'null');
+              if (_j409 && _j409.href) _us = _j409.href;
+            }
+          } catch (_e409p) {}
+        }
         // s163（html-semantics M2 切片 163）：interactions stylesheet.py 端点 delay
         // 参数（秒）——runner 端点已即时交付（host sleep 冻结 JS 求值，同步契约下
         // 取回时点对页面不后移，script-created-link 两案 assert_false「still pending」

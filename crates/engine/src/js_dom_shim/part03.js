@@ -7122,10 +7122,16 @@
         // s349：script-blocking 在飞计数——media 匹配臂计数（s163 defer 臂
         // _ssMediaBlocks false 不计数，spec 非 matching sheet 不阻塞 parsing
         // script）；同步 error 臂（mixed 门/取回抛，_zwSsVisitCss 同 tick 回调）
-        // 自归零无泄漏。
-        if (_ssMediaBlocks) _zwSsBlockPending++;
+        // 自归零无泄漏。s409：仅 **parser-inserted** 面计数（noOverlay=true =
+        // s152 静态交错扫描臂）。spec the-link-element：script-created
+        // stylesheet 不入 script-blocking 集（script-created-link 两案断言面
+        // 「not script-blocking」）——动态插入/attr 变更臂（noOverlay falsy）若
+        // 也计数，s349 等待泵会把 delay 取回等完再放行后继脚本，延迟仿真
+        // （s409 fetch 发题侧）被泵消解，assert_false「still pending」照样红。
+        // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+        if (_ssMediaBlocks && noOverlay === true) _zwSsBlockPending++;
         globalThis._zwSsVisitCss(_ssHref, _ssAbs, 0, function (_ssV) {
-          if (_ssMediaBlocks) _zwSsBlockPending--;
+          if (_ssMediaBlocks && noOverlay === true) _zwSsBlockPending--;
           if (_ssKey != null) {
             _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
             if (_ssV === 'load') {

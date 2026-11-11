@@ -2,35 +2,68 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 408 收口（detached 文档 style 元素 LinkStyle sheet
-+ headEl 本地树三件套，driving 1F→P）：the-style-element 10F 勘根定谳——1F
-driving（non-parser-created-doc.html：`createHTMLDocument().createElement
-('style')` + `doc.head.appendChild` 后 `assert_true(!!style.sheet)`）四层红根
-——headEl 无本地树方法（R126 docEl 同族漏网：appendChild 落全局
-Node.prototype，childNodes 不插、parentNode 不设）+ plain `_zwMEl` 产物无
-sheet 路由（main getter 分支按 sel/handle 代理匹配不命中）+ R5271b 门对
-plain owner 恒 false（`_zwIsConnected` 只认主文档形态，尾部 rect probe 恒
-false；spec LinkStyle：sheet 在任意文档树内即存在，detached 树含）+
-createElement 时直挂先例位（R5256 dialog / s69 img.decode）。施工三件：
-part03 headEl 三件套镜像 docEl trio（R126 语义 + NotFound 校验 + 迭代器/
-range 守卫）+ part03 detached STYLE 产物直挂 `sheet` 访问器（type 门镜像
-R3036 s156/s160 精确匹配语义）+ part06 `_makeStyleSheet` 门扩 plain owner 臂
-（parentNode 链 walk 到 nodeType 9，64 步防环；sel/handle 形态维持
-`_zwIsConnected` 不变；出树 gate false null 保持、回挂指纹命中同对象——
-R5271 [SameObject] 缓存跨门一致）+ 常驻钉 part108 双测（driving 镜像+树接线
-+身份+门矩阵 / detached type 门五案）。验证：双钉全绿；单元 engine
-**3886P/10F**（+2 钉，失败清单逐名 = 9 在册 + r307 HEAD 既有红单列零位移）+
-webview 849P/2F；driving solo F→P；the-style-element 目录干净跑
-**34P/0F/9T/6NotRun**（9T = tentative/ CSP + constructed-stylesheets 大机制
-独立候选）；全树 sweep ×2 join **恰 1 STATE-DIFF 全 driving F→Pass 双跑一致
-真 new=0**（run2 8484 keys 8243P/215F/26T；run1 含遗留探针 7 键单列；cross
-state-diff=1 = customizable-select watchdog 家族同二进制翻转单列）；过程
-陷阱：勘根探针目录 solo 污染（P6 旧架构断言恒红，删后归零——probe 卫生纪律
-重申）。fmt（本切片文件）干净（callbacks.rs HEAD 既有 fmt 脏承 s407 单列）/
-clippy clean/smoke 双 PASS；**本流域在册红 215F+24T→214F+24T**（−1F）。
-下一步：散单续勘（links 族 4F / the-input-element 散单 / tentative/
-constructed-stylesheets 机制勘根后按簇决策 / 挂账池承 s404/s405）；
-A2+D 簇立项征询仍待用户决策。
+**状态**: Active——M2 切片 409 收口（script-created link stylesheet 不阻塞
+script，driving 2F→P）：interactions-of-styling-and-scripting 目录清零——
+script-created-link / dynamic-render-blocking-link 双案红根两层——发题侧
+相对 URL miss s163 延迟分支（`_zwSsVisitCss` 传原始 href，`_zwFetchSimDelay`
+interactions 前缀分支按绝对形态设计，相对形 miss → delay 0 瞬时发题，取回
+在脚本间微任务排空点完成 styleExists 恒真；style 双胞胎 Pass 正因 @import
+内层 URL 解析时已绝对化）+ s349 阻塞计数缺 parser-inserted 限定（修复①后
+延迟发题 1000ms，动态臂若仍计数，等待泵把延迟取回等完再放行后继脚本——
+延迟仿真被泵消解；spec the-link-element：script-created stylesheet 不入
+script-blocking 集）。施工三件：part01 `_zwFetchSimDelay` 发题前对页 base
+归一（非 https?: 经 `__zw_parse_url` + `_zwDocBaseURL`，解析失败回落原始
+形；trickle/delay.py query 形判定不受影响）+ part03 `_ssDoVisit` 计数
+`noOverlay === true` 限定（= s152 静态交错扫描臂；动态插入/attr 变更臂不
+计数，media 门语义不变）+ 常驻钉 part109 双测（mid-window 计数门 + 检查点
+后发题齐写且相对形 URL 归一 wire 面 / `_zwFetchSimDelay` 纯函数六案）。
+验证：双钉全绿；单元 engine **3896P/10F**（+10P = 双钉 2 + 并行流合入
+8〔p39 epoch 族 d3f5eb3a5 + engine NaN censor 钉 6fe8fad31〕，失败清单
+逐名 = s408 10F 零位移）+ webview 849P/2F 同形；driving solo interactions
+目录 9 键全 Pass（runner token `_b409` 钉证新鲜）；全树 sweep ×2 join 对
+s408 干净基线 **恰 2 STATE-DIFF 全 driving F→Pass 真 new=0**（双跑全等
+8484 keys 8245P/213F/26T，cross state-diff=0；select-home-end 本轮双跑
+T 形在册 s292 watchdog flake 族单列；join-1 另见 s408 run1 遗留探针 7 键
+GONE 单列）；过程陷阱：钉①挂起 = assert_eq! 宏格式化参数二次 lock 自死锁
+（判别式 guard 临时横跨宏展开存活、失败路径才触发——match 判别式 guard
+死锁 learning 同根因宏变体已补录；yama ptrace_scope=1 gdb 后台进程不可
+attach，相位探针+看门狗定位）+ 桥测「同步段零发题」假设错误（V8 每次
+execute 末尾自动泵微任务检查点，_defer 发题链同 execute 内排空，runner
+timer wheel 真时序窗由钉②纯函数面 + driving solo 承载）。fmt 全仓净
+（callbacks.rs 既有脏已由并行流 7c24ec52c 清偿）/clippy clean/smoke 双
+PASS；**本流域在册红 214F+24T→212F+24T**（−2F）。下一步：document-metadata
+已清零，散单续勘（the-input-element 散单 3F / tentative/ constructed-
+stylesheets 机制勘根后按簇决策 / 挂账池承 s404/s405）；A2+D 簇立项征询仍待
+用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 408 收口）——detached 文档 style 元素 LinkStyle sheet + headEl 本地树三件套（driving 1F→P）**: commit 34c06eeb5，账本 evidence/2026-11-12-m2s408-detached-style-sheet.md。原 Active 段留档——the-style-element 10F 勘根定谳——1F
+> driving（non-parser-created-doc.html：`createHTMLDocument().createElement
+> ('style')` + `doc.head.appendChild` 后 `assert_true(!!style.sheet)`）四层红根
+> ——headEl 无本地树方法（R126 docEl 同族漏网：appendChild 落全局
+> Node.prototype，childNodes 不插、parentNode 不设）+ plain `_zwMEl` 产物无
+> sheet 路由（main getter 分支按 sel/handle 代理匹配不命中）+ R5271b 门对
+> plain owner 恒 false（`_zwIsConnected` 只认主文档形态，尾部 rect probe 恒
+> false；spec LinkStyle：sheet 在任意文档树内即存在，detached 树含）+
+> createElement 时直挂先例位（R5256 dialog / s69 img.decode）。施工三件：
+> part03 headEl 三件套镜像 docEl trio（R126 语义 + NotFound 校验 + 迭代器/
+> range 守卫）+ part03 detached STYLE 产物直挂 `sheet` 访问器（type 门镜像
+> R3036 s156/s160 精确匹配语义）+ part06 `_makeStyleSheet` 门扩 plain owner 臂
+> （parentNode 链 walk 到 nodeType 9，64 步防环；sel/handle 形态维持
+> `_zwIsConnected` 不变；出树 gate false null 保持、回挂指纹命中同对象——
+> R5271 [SameObject] 缓存跨门一致）+ 常驻钉 part108 双测（driving 镜像+树接线
+> +身份+门矩阵 / detached type 门五案）。验证：双钉全绿；单元 engine
+> **3886P/10F**（+2 钉，失败清单逐名 = 9 在册 + r307 HEAD 既有红单列零位移）+
+> webview 849P/2F；driving solo F→P；the-style-element 目录干净跑
+> **34P/0F/9T/6NotRun**（9T = tentative/ CSP + constructed-stylesheets 大机制
+> 独立候选）；全树 sweep ×2 join **恰 1 STATE-DIFF 全 driving F→Pass 双跑一致
+> 真 new=0**（run2 8484 keys 8243P/215F/26T；run1 含遗留探针 7 键单列；cross
+> state-diff=1 = customizable-select watchdog 家族同二进制翻转单列）；过程
+> 陷阱：勘根探针目录 solo 污染（P6 旧架构断言恒红，删后归零——probe 卫生纪律
+> 重申）。fmt（本切片文件）干净（callbacks.rs HEAD 既有 fmt 脏承 s407 单列）/
+> clippy clean/smoke 双 PASS；**本流域在册红 215F+24T→214F+24T**（−1F）。
+> 下一步：散单续勘（links 族 4F / the-input-element 散单 / tentative/
+> constructed-stylesheets 机制勘根后按簇决策 / 挂账池承 s404/s405）；
+> A2+D 簇立项征询仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 407 收口）——静态 embed 链 + fallback 子内容激活（六 driving 键 F→P 全解挂）**: commit 610bbae31，账本 evidence/2026-11-12-m2s407-embed-static-fallback.md。原 Active 段留档——
 > the-embed-element 静态链 6F 三层勘根——静态 embed 无人启航（s405 FIXME 收口
