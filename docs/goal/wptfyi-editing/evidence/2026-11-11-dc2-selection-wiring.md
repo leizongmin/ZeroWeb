@@ -61,10 +61,12 @@ ui-edit 分片的 `fetch-wpt-selection` 一直指向旧版 `fetch-selection-subs
 | **合计** | | **119** | **96,284** | **92,867** | **96.5%** |
 
 面覆盖贴近上游总量：96,284 vs 上游 96,745 子测试（差 461 = 随库探针与
-undo-redo.html iframe 案不进片的口径差）。失败总量 **3,417**，按片
-er9（850）> er8（779）> er2（335）> er4 = er10（278）> er1（263）>
-er5（210）> er3（206）> er7（126）> er6（89）> er0（3）——DC-2 最大簇
-是 er9/er8 两个 format 命令组，delete 组（原估"最重簇"）实际 96.1%。
+undo-redo.html iframe 案不进片的口径差）。失败总量 **3,414 Fail + 3
+Timeout**，按片 er9（850）> er8（779）> er2（334）> er4 = er10（278）>
+er1（262）> er5（210）> er3（206）> er7（126）> er6（89）> er0（2）——
+DC-2 最大簇是 er9/er8 两个 format 命令组，delete 组（原估"最重簇"）
+实际 96.1%；全量归类见
+[fail-cluster-triage](2026-11-11-dc2-fail-cluster-triage.md)。
 
 er2 内部低过率小簇：undo-redo-after-mutation 0/7、
 typing-text-in-direct-child-of-editing-host 6/16、
