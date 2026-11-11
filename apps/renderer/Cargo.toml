@@ -45,8 +45,9 @@ libc = "0.2"
 
 [features]
 default = ["v8"]
-# T62/G4 先导分配仪器（非默认）：开启后编译 apps/renderer/src/alloc_trace.rs
-# 并在 lib 尾部接线 #[global_allocator]。默认构建不含仪器（零开销判据）。
+# T62/G4 先导分配仪器（非默认）：开启后编译 apps/renderer/src/alloc_trace.rs，
+# #[global_allocator] 接线在 bin（apps/renderer/src/main.rs，lib 下游不带）。
+# 默认构建不含仪器（零开销判据）。
 alloc-trace = ["dep:backtrace"]
 # 镜像 browser 的 feature 传播——下游 v8-gated 代码（webview.rs sandbox 创建、
 # engine/page-runtime v8 路径）须随本 bin 的 v8/quickjs 一并开启，否则 `cargo build

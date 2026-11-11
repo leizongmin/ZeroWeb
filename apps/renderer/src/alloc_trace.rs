@@ -78,16 +78,17 @@ static CONFIG: OnceLock<TraceConfig> = OnceLock::new();
 /// 分配调用序号（采样计数器；与状态锁分离，采样判定无锁）。
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
+/// dump 落盘序号（进程内单调递增）：文件名去重成分，同毫秒同 reason 的
+/// 触发不再碰撞覆写（T62 DF F3）。
+static DUMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
 /// 聚合状态（site 表 + net 表）；懒初始化，锁内首次使用时构造。
 static STATE: Mutex<Option<TraceState>> = Mutex::new(None);
 
 // 重入守卫（thread_local）：记录路径自身的分配（回溯捕获、格式化、表扩容）
 // 直通 [`System`]，防止无限递归。const 初始化不分配。
-// LAST_SITE：最近一次采样 site 提示（net 表归属用，采样与 net track 同调用栈
-// 时命中，错过则记 unattributed——net 归属是尽力而为，dump 如实标注）。
 thread_local! {
     static RECORDING: Cell<bool> = const { Cell::new(false) };
-    static LAST_SITE: Cell<u64> = const { Cell::new(0) };
     #[cfg(test)]
     static TEST_MAX_SITES: Cell<Option<usize>> = const { Cell::new(None) };
 }
@@ -290,11 +291,6 @@ fn recording() -> bool {
     RECORDING.with(Cell::get)
 }
 
-/// 最近一次本线程采样到的 site 哈希（net 表归属提示）。
-fn last_site_hint() -> u64 {
-    LAST_SITE.with(Cell::get)
-}
-
 /// `init_from_env` 的注入形（测试与未来宿主定制入口）。
 ///
 /// 次序不变量：CONFIG 先落，ENABLED 后置 Release——读者以 Relaxed 读到
@@ -309,6 +305,10 @@ pub(crate) fn init_with_config(config: TraceConfig, enabled: bool) {
         {
             spawn_dump_thread();
         }
+        // 局限（T62 DF F2）：bin 路径本事件先于 tracing 订阅者初始化（bin
+        // main() 首句调用 init_from_env），实际不可观测——保留供注入形/宿主
+        // 定制入口（订阅者可能已就绪）；启用确认走 dump 产物与测量 driver
+        // 判据。
         tracing::info!(target: "alloc_trace", enabled = true, "alloc trace enabled");
     }
 }
@@ -340,6 +340,12 @@ pub fn init_from_env() {
 /// 分配侧记录入口（`TracingAllocator` 成功分配后调用）。
 ///
 /// `ptr` 仅取整做 net 表键；采样路径在锁外完成回溯与解析，锁内只做表更新。
+///
+/// net 表 site 归属为同调用直通两态（T62 DF F1 契约）：本次调用采样命中→
+/// 采样哈希经局部变量直通入表；未采样一律记 unattributed 哨兵 0——不继承
+/// 线程历史采样 site，杜绝跨调用栈错归属；采样命中但捕获不足落哨兵键 0 者
+/// 同归 unattributed 桶。dump 侧 0 哨兵渲染为 `unattributed`，与直击条目
+/// （site 表实帧窗）可区分。
 pub(crate) fn record_alloc(size: usize, ptr: usize) {
     if recording() {
         return;
@@ -347,6 +353,9 @@ pub(crate) fn record_alloc(size: usize, ptr: usize) {
     let _guard = RecordingGuard::enter();
     let Some(config) = CONFIG.get() else { return };
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    // site 提示只在本次调用内传递：采样哈希是局部变量，调用返回即消失，
+    // 线程上不残留任何历史 site 状态（无跨调用栈继承面）。
+    let mut site_hint = 0u64;
     if seq.is_multiple_of(config.sample_every as u64) {
         let (ips, captured) = capture_frame_ips();
         let hash = site_signature(&ips[..captured]);
@@ -354,13 +363,13 @@ pub(crate) fn record_alloc(size: usize, ptr: usize) {
         outer
             .get_or_insert_with(TraceState::new)
             .record_sample(size, hash, ips, captured);
+        site_hint = hash;
     }
     if size >= config.net_min_bytes {
-        let site = last_site_hint();
         let mut outer = state();
         outer
             .get_or_insert_with(TraceState::new)
-            .track_live(ptr, size, site, config.max_live_entries);
+            .track_live(ptr, size, site_hint, config.max_live_entries);
     }
 }
 
@@ -376,7 +385,10 @@ pub(crate) fn record_dealloc(ptr: usize) {
     }
 }
 
-/// realloc 净记账：旧块出 net 表、新块按 site 提示入表（≈一次 alloc 事件）。
+/// realloc 净记账：旧块出 net 表、新块入表（≈一次 alloc 事件）。
+///
+/// 本路径无回溯采样，新块按 alloc 侧同口径落 unattributed 哨兵 0——不继承
+/// 线程历史采样 site（T62 DF F1）。
 pub(crate) fn record_realloc(old_ptr: usize, new_ptr: usize, new_size: usize) {
     if recording() {
         return;
@@ -387,8 +399,7 @@ pub(crate) fn record_realloc(old_ptr: usize, new_ptr: usize, new_size: usize) {
     let Some(active) = outer.as_mut() else { return };
     active.untrack_live(old_ptr);
     if new_size >= config.net_min_bytes {
-        let site = last_site_hint();
-        active.track_live(new_ptr, new_size, site, config.max_live_entries);
+        active.track_live(new_ptr, new_size, 0, config.max_live_entries);
     }
 }
 
@@ -417,7 +428,6 @@ fn capture_frame_ips() -> ([usize; MAX_CAPTURE_FRAMES], usize) {
 fn site_signature(ips: &[usize]) -> u64 {
     if ips.len() <= SKIP_FRAMES {
         // 捕获不足（极端：展开器直接失败）——固定键聚合并如实标注。
-        LAST_SITE.with(|c| c.set(0));
         return 0;
     }
     let end = (SKIP_FRAMES + SIGNATURE_FRAMES).min(ips.len());
@@ -425,9 +435,7 @@ fn site_signature(ips: &[usize]) -> u64 {
     for ip in &ips[SKIP_FRAMES..end] {
         ip.hash(&mut hasher);
     }
-    let hash = hasher.finish();
-    LAST_SITE.with(|c| c.set(hash));
-    hash
+    hasher.finish()
 }
 
 /// dump 时把 site 存储的原始 IP 窗渲染为空格分隔 `0x…` 模块相对偏移摘要
@@ -484,9 +492,11 @@ fn process_pss_kb() -> Option<u64> {
     crate::mem_reclaim::read_process_pss_kb()
 }
 
-/// dump 快照为 JSON 并写 `dir/alloc-trace-<ms>-<reason>.json`；返回写入路径。
+/// dump 快照为 JSON 并写 `dir/alloc-trace-<ms>-<seq>-<reason>.json`；返回写入路径。
 ///
 /// `dir` 显式给定时优先（测试入口）；否则回落配置 `dump_dir`；两者皆无返回 Err。
+/// 落盘原子（同目录 temp 写 + rename，T62 DF F3）：中断留下的是 temp 残件，
+/// 目标名要么完整要么不出现；序号成分保证同毫秒同 reason 不碰撞覆写。
 /// 整体处于重入守卫内：锁内格式化/写盘的自身分配直通 [`System`]，不自锁。
 pub(crate) fn dump_snapshot_to(dir: Option<&Path>, reason: &str) -> Result<PathBuf, String> {
     if recording() {
@@ -503,9 +513,20 @@ pub(crate) fn dump_snapshot_to(dir: Option<&Path>, reason: &str) -> Result<PathB
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let path = dir.join(format!("alloc-trace-{ms}-{reason}.json"));
+    let seq = DUMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let path = dir.join(format!("alloc-trace-{ms}-{seq}-{reason}.json"));
     let json = snapshot_json(config, &reason);
-    std::fs::write(&path, json).map_err(|e| format!("write dump failed: {e}"))?;
+    let tmp = dir.join(format!("alloc-trace-{ms}-{seq}-{reason}.json.tmp"));
+    std::fs::write(&tmp, json).map_err(|e| format!("write dump {} failed: {e}", tmp.display()))?;
+    // 同目录 rename 同文件系统原子：目标要么缺要么完整，无撕裂 JSON。
+    if let Err(error) = std::fs::rename(&tmp, &path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!(
+            "rename dump {} -> {} failed: {error}",
+            tmp.display(),
+            path.display()
+        ));
+    }
     tracing::info!(target: "alloc_trace", path = %path.display(), reason, "alloc trace dumped");
     Ok(path)
 }
@@ -626,16 +647,25 @@ fn spawn_dump_thread() {
             if let Ok(reason) = std::fs::read_to_string(&trigger) {
                 let _ = std::fs::remove_file(&trigger);
                 let reason = reason.lines().next().unwrap_or("trigger");
-                let _ = dump_snapshot_to(Some(&dir), reason);
+                // 检查点失败不静默（T62 DF F2：磁盘满/权限等要有线索）；
+                // 订阅者此时已初始化，事件有效。不 panic——dump 线程必须
+                // 存活到下一检查点。
+                if let Err(error) = dump_snapshot_to(Some(&dir), reason) {
+                    tracing::warn!(target: "alloc_trace", reason = %reason, error = %error, "alloc trace trigger dump failed");
+                }
                 continue;
             }
             if last_periodic.elapsed().is_ok_and(|elapsed| elapsed >= period) {
                 last_periodic = SystemTime::now();
-                let _ = dump_snapshot_to(Some(&dir), "periodic");
+                if let Err(error) = dump_snapshot_to(Some(&dir), "periodic") {
+                    tracing::warn!(target: "alloc_trace", error = %error, "alloc trace periodic dump failed");
+                }
             }
         }
     });
     if let Err(error) = spawned {
+        // 局限同 init_with_config：bin 路径先于订阅者，本事件不可观测
+        // （dump 缺失由测量 driver 的检查点判据兜底检出）。
         tracing::warn!(target: "alloc_trace", %error, "alloc trace dump thread spawn failed");
     }
 }
@@ -811,15 +841,19 @@ mod tests {
 
     /// 全局单例链路（OnceLock 每测试进程仅可初始化一次，全局相关断言合并进
     /// 本测试；其余用例只触纯状态面，避免跨用例进程态互扰——learnings #19）。
-    /// 覆盖：注入形初始化 → 记录入口前进 totals → 注入态 → dump 落盘合法
-    /// JSON 且 totals 一致。ENABLED 保持 false：不污染同进程其他用例的分配
-    /// 路径（全局接线的行为验证走测量轮 dump 产物与二进制符号核对）。
+    /// 覆盖：注入形初始化 → net 归属同调用直通两态（T62 DF F1 回归：采样
+    /// 命中调用的 ≥net_min 条目直通本次采样 site；未采样调用落 unattributed
+    /// 哨兵 0，不得继承线程历史采样）→ 记录入口前进 totals → 注入态 →
+    /// dump 落盘合法 JSON 且 totals/哨兵渲染一致（site=0 条目标注
+    /// `unattributed`，与直击条目可区分）。ENABLED 保持 false：不污染同进程
+    /// 其他用例的分配路径（全局接线的行为验证走测量轮 dump 产物与二进制
+    /// 符号核对）。
     #[test]
     fn global_init_record_and_dump_roundtrip() {
         let dir = std::env::temp_dir().join(format!("zw-alloc-trace-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let _ = CONFIG.set(TraceConfig {
-            sample_every: 1,
+            sample_every: 2,
             max_sites: 64,
             net_min_bytes: 1024,
             max_live_entries: 64,
@@ -829,17 +863,43 @@ mod tests {
         {
             // 状态锁 guard 不跨 record_* 调用：Mutex 不可重入，持锁进入
             // record_dealloc 的内层 state() 即同线程自死锁（T62 gdb 栈实证）。
+            // SEQ 只由测试驱动的 record_* 前进（ENABLED=false，分配器不入
+            // 记录路径），单线程顺序调用可钉住采样窗命中/错过。
+            SEQ.store(0, Ordering::Relaxed);
             let before = {
                 let outer = state();
                 outer.as_ref().map(|s| s.sampled_allocs).unwrap_or(0)
             };
+            // 直通正例（T62 DF F1）：seq=0 命中采样窗（2 的倍数），同一次
+            // 调用 ≥net_min 入 net 表——条目 site 必须是本次采样哈希（site
+            // 表实键），而非哨兵 0。
             record_alloc(4096, 0x9000);
-            let after = {
+            {
                 let outer = state();
-                outer.as_ref().map(|s| s.sampled_allocs).unwrap_or(0)
-            };
-            assert_eq!(after, before + 1, "sample_every=1 时采样必须前进");
+                let active = outer.as_ref().expect("record_alloc 后状态必已构造");
+                assert_eq!(active.sampled_allocs, before + 1, "seq=0 命中采样窗必须前进");
+                let live_site = active.live.get(&0x9000).expect("≥net_min 必入 net 表").site;
+                assert_ne!(live_site, 0, "采样命中调用的 net 条目必须直通 site 而非哨兵");
+                assert!(
+                    active.sites.contains_key(&live_site),
+                    "直通 site 必须是同调用入 site 表的实键"
+                );
+            }
             record_dealloc(0x9000);
+            // 未采样负例（T62 DF F1）：seq=1 错过采样窗，≥net_min 入表——
+            // site 必须落 unattributed 哨兵 0，不得继承上一调用的采样哈希。
+            record_alloc(8192, 0x9100);
+            {
+                let outer = state();
+                let active = outer.as_ref().expect("状态必已构造");
+                assert_eq!(active.sampled_allocs, before + 1, "未采样调用不得前进采样计数");
+                let live_site = active.live.get(&0x9100).expect("≥net_min 必入 net 表").site;
+                assert_eq!(
+                    live_site, 0,
+                    "未采样 ≥net_min 必落 unattributed 哨兵，不得继承历史采样 site"
+                );
+            }
+            record_dealloc(0x9100);
             // 注入确定性状态供 dump 断言（独立锁作用域）：原始 IP 窗含注入值
             // 0x7f00/0x7f08，exe 基址解析失败时渲染绝对 IP、成功时渲染相对
             // 偏移——两种形态都以 "0x7f" 前缀锚定同一注入值。
@@ -853,6 +913,9 @@ mod tests {
                 frames[1] = 0x7f08;
                 fresh.record_sample(4096, hasher.finish(), frames, 2);
                 fresh.track_live(0x7000, 8192, hasher.finish(), 16);
+                // unattributed 腿（T62 DF F1）：site=0 哨兵条目在 dump
+                // live_top 渲染 `unattributed`，与直击条目可区分。
+                fresh.track_live(0x7001, 4096, 0, 16);
                 *outer = Some(fresh);
             }
         }
@@ -860,7 +923,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("dump 文件可读");
         let value: serde_json::Value = serde_json::from_str(&text).expect("dump 必须是合法 JSON");
         assert_eq!(value["schema_version"], 1);
-        assert_eq!(value["totals"]["live_tracked_blocks"], 1);
+        assert_eq!(value["totals"]["live_tracked_blocks"], 2);
         let rendered = value["traffic_top"][0]["frames"].as_str().unwrap();
         let tokens: Vec<&str> = rendered.split(' ').collect();
         assert_eq!(tokens.len(), 2, "captured=2 只渲染两帧：{rendered}");
@@ -869,6 +932,12 @@ mod tests {
         // 注入帧 0x7f00/0x7f08：公共减数（exe 基址，有无皆可）下差值必为 8。
         assert_eq!(v1.wrapping_sub(v0), 8, "注入帧差值必须保持：{rendered}");
         assert_eq!(value["live_top"][0]["live_bytes"], 8192);
+        // live_top 按 bytes desc 排序：8192 直击条目在前、4096 哨兵条目在后。
+        assert_eq!(
+            value["live_top"][1]["frames"], "unattributed",
+            "site=0 哨兵条目必须如实标注，与直击条目可区分",
+        );
+        assert_eq!(value["live_top"][1]["hash"], "0000000000000000");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
