@@ -1819,19 +1819,26 @@
   var _zwPlainUaMono = { tt: 1, code: 1, kbd: 1, samp: 1, pre: 1, listing: 1,
     xmp: 1, plaintext: 1 };
   // inline style 属性文本的朴素声明扫描（style IDL 缺位形态的兜底——pending 形
-  // 无 .style）。返 { prop: value }（prop kebab 小写、value trim）。
+  // 无 .style）。返 { prop: value }（prop kebab 小写、value trim）。文本半边
+  // 独立导出（cssom 写回刀 2026-11-11：_zwVaSetStyleProp 读核验需按 attr 权威
+  // 面文本扫描——getAttribute 接 CSSOM replay 后元素入参面不再恒等 attr 权威）。
+  function _zwPlainStyleDeclsText(st) {
+    var out = {};
+    var parts = String(st == null ? '' : st).split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var seg = parts[i];
+      var at = seg.indexOf(':');
+      if (at <= 0) continue;
+      var k = seg.slice(0, at).trim().toLowerCase();
+      if (k) out[k] = seg.slice(at + 1).trim();
+    }
+    return out;
+  }
   function _zwPlainStyleDecls(el) {
     var out = {};
     try {
       var st = String(el.getAttribute && el.getAttribute('style') || '');
-      var parts = st.split(';');
-      for (var i = 0; i < parts.length; i++) {
-        var seg = parts[i];
-        var at = seg.indexOf(':');
-        if (at <= 0) continue;
-        var k = seg.slice(0, at).trim().toLowerCase();
-        if (k) out[k] = seg.slice(at + 1).trim();
-      }
+      out = _zwPlainStyleDeclsText(st);
     } catch (_ePD) {}
     return out;
   }

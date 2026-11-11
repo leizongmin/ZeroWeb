@@ -4084,7 +4084,20 @@
             // 兜底覆盖 host 无第二个同 local ns 实例的读（"First set attribute" 簇——host
             // 首实例缺席时按实例层 local first-match）。含大写限定名的 NS 实例不可经非 NS
             // 族命中（WPT "Only lowercase attributes are returned"）。
-            var v = handle
+            // cssom-1 update-style-attribute 同步可见面（editing-compat CSSOM 写回刀，
+            // 2026-11-11）：handle 面 CSSOM 声明写（`el.style.x=v` → SetStyleOnHandle）入
+            // pending log，attr 真同步只在批 flush（js_dom_bridge `apply_style_property`）
+            // ——JS 同步读窗内 `__zw_get_attr_handle('style')` 读 stale 字面量（sel 面
+            // R2995 走 `__zw_get_attr_lw` 已 pending-aware，两面不对称）。style 属性读接
+            // `__zw_get_style_lw_handle`（R3199 正序 replay：SetAttr(style) 整体覆盖 /
+            // SetStyle per-prop merge）＝声明块变更立即反映到 style attr 读。序列化面
+            //（innerHTML/outerHTML）经同读路径传播。回调缺省（polyfill）回落原读零漂移。
+            // replay 空 ≠ 缺省：attr 在（快照或 pending 全删）→ present-empty ""，R3190
+            // 语义由共用尾部 present 判定承担。
+            // https://drafts.csswg.org/cssom-1/#update-style-attribute
+            var v = (n === 'style' && handle && typeof __zw_get_style_lw_handle === 'function')
+              ? (__zw_get_style_lw_handle(handle) || '')
+              : handle
               ? __zw_get_attr_handle(handle, n)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
             // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；

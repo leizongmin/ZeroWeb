@@ -377,7 +377,17 @@
       }
     } catch (_eSp) {}
     try {
-      var decls = _zwPlainStyleDecls(el);
+      // cssom 写回刀（2026-11-11）：读核验基底换 **attr 权威面**。getAttribute
+      // 的 style 分支接 CSSOM replay（part04 cssom-1 注，2026-11-11）后，经
+      // getAttribute 读基底会看到本函数刚 setProperty 的 pending 值 → cur==valS
+      // 跳过 attr 合并 → 声明只剩队列内 SetStyleOnHandle，innerHTML 视图在
+      // flush 前读不到 → 序列化丢声明（nested styled-ol outdent 语料 forceValue
+      // 载体 span 丢 color 实证，odt :628/:658 P2F）。本函数头注契约不变：attr
+      // 为权威——handle 元素走 attr 粒度回调（不索引 SetStyleOnHandle，恒回
+      // attr 真值），plain 元素保持原 getAttribute 面。
+      var decls = (el.__zwHandle && typeof __zw_get_attr_handle === 'function')
+        ? _zwPlainStyleDeclsText(String(__zw_get_attr_handle(el.__zwHandle, 'style') || ''))
+        : _zwPlainStyleDecls(el);
       var cur = String(decls[prop] == null ? '' : decls[prop]);
       if (cur !== valS) {
         if (valS === '') delete decls[prop];
