@@ -4,7 +4,7 @@
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
-face css-color 10,905→10,948）。
+face css-color 10,905→10,962，至 contrast computed 刀）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -398,3 +398,17 @@ target/release/zero-wpt-runner 重建无任何 journal 痕迹（裸跑构建，�
 守卫纪律），构建起点落在 21:09:57 contrast-color WIP shim 编辑前后 40-90s
 编译窗内——该二进制是否含此 WIP 需行为法证，引用该二进制的他流账注意
 shim 面归因。本流 g6b 账（20:56-20:58）早于该构建，纯 HEAD 无污染。
+**11-11 晚 contrast WIP/g7 链归属定案（跨 session 消息，ba↔本流）**：
+21:09:57 WIP 编辑者最可能为 ba 上轮（其压缩恢复误判自写线索成立；本流前轮
+g7 脚本按「树上 WIP」法证口吻处理未认领编辑）——g7 核验脚本由本流前轮
+21:10-21:19 写就（g6 撞碰避让改名），ba unit zw-g7-contrast-2118 执行；
+提交单点 36de2a6f6+0f65b27df（ba）。zz-caprobe 探针页与 zw-g6-color-2104
+unit 均非本流手笔。本 session 认领账：g7 结果逐页归因分析（+14 中 +4 真收割
++10 探针锚）+ mktest 账（见下条）。
+**11-11 晚 make test 9F 归因（unit zw-g7b-mktest-2230，f415be99c+contrast
+树）**：3877P/**9F**——7F 为在册欠账组；新增 2F = part06.rs
+`test_execcommand_format_apply_r3254_m3` / `_toggle_state_r3254_m3_slice4`，
+静态归因 **f415be99c**（六 inline format apply 切 `__zw_ce_format_apply`
+直译引擎、part06.js ±30，未同步断言旧 SetInnerHtml 载体契约的 2 个 Rust
+单测；part06.rs 上游最后改动 11ebb0757，历史账 7F 恒定）——editing 流域
+落地态回归，待其流修复，本流 color hunks 零交集。
