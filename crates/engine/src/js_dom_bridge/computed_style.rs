@@ -794,11 +794,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── transition/animation 簇（R2743）── 列表属性，逗号分隔；空→各 CSS 初值。
         // timing-function（含 steps() 位置歧义）defer 到后续轮核实，本轮不含。
         "transition-property" => string_list_to_css(&style.transition_property, "all"),
-        "transition-duration" => time_list_to_css(&style.transition_duration, "0s"),
-        "transition-delay" => time_list_to_css(&style.transition_delay, "0s"),
+        "transition-duration" => time_list_to_css(&style.transition_duration, "0s", true),
+        "transition-delay" => time_list_to_css(&style.transition_delay, "0s", false),
         "animation-name" => string_list_to_css(&style.animation_name, "none"),
-        "animation-duration" => time_list_to_css(&style.animation_duration, "0s"),
-        "animation-delay" => time_list_to_css(&style.animation_delay, "0s"),
+        "animation-duration" => time_list_to_css(&style.animation_duration, "0s", true),
+        "animation-delay" => time_list_to_css(&style.animation_delay, "0s", false),
         "animation-iteration-count" => iter_count_list_to_css(&style.animation_iteration_count),
         "animation-direction" => enum_list_to_css(&style.animation_direction, "normal", animation_direction_str),
         "animation-fill-mode" => enum_list_to_css(&style.animation_fill_mode, "none", animation_fill_mode_str),
@@ -2474,11 +2474,21 @@ fn string_list_to_css(list: &[String], default: &str) -> String {
 
 /// 时间列表（transition/animation duration·delay，f64 秒）：空→`default`（`0s`），
 /// 否则逗号分隔 `Ns`（整数无小数点 `2s` / 小数去尾零 `0.3s`，经 [`format_num`]）。
-fn time_list_to_css(list: &[f64], default: &str) -> String {
+/// computed 期 censor（css-values-4 §10.6/§10.12，calc-infinity-nan-computed
+/// 驱动）：NaN 两族均钳 0（`animation-duration: calc(NaN * 1s)` → `0s`，
+/// format_num 对 NaN 直通 "NaN" 输出不钳）；`non_negative` 槽（duration 族
+/// `[0s,∞)`）负值钳 0。±∞ 保留（format_num i64 饱和覆盖 ≥1e6 断言面）。
+fn time_list_to_css(list: &[f64], default: &str, non_negative: bool) -> String {
     if list.is_empty() {
         default.to_string()
     } else {
-        list.iter().map(|t| format_num(*t, "s")).collect::<Vec<_>>().join(", ")
+        list.iter()
+            .map(|t| {
+                let t = if t.is_nan() || (non_negative && *t < 0.0) { 0.0 } else { *t };
+                format_num(t, "s")
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -3743,7 +3753,7 @@ mod r4201_individual_transform_serialization_tests {
     //! 发射序列化——computed = as specified（WPT values-trig computed 面驱动，
     //! `acos-asin-atan-atan2-computed.html` 24 子测试依赖本发射臂）。
 
-    use super::{individual_opt_to_css, individual_transform_to_css};
+    use super::{individual_opt_to_css, individual_transform_to_css, time_list_to_css};
     use zero_css_parser::values::TransformFunction as Tf;
 
     #[test]
@@ -3796,5 +3806,18 @@ mod r4201_individual_transform_serialization_tests {
         assert_eq!(individual_transform_to_css(&Tf::Scale(f64::NAN, Some(2.0))), "0 2");
         assert_eq!(individual_transform_to_css(&Tf::RotateZ(f64::NAN)), "0deg");
         assert_eq!(individual_transform_to_css(&Tf::Translate(f64::NAN, 20.0)), "0px 20px");
+    }
+
+    #[test]
+    fn time_list_censors_nan_and_negative_duration_at_computed() {
+        // css-values-4 §10.6/§10.12（calc-infinity-nan-computed 驱动）：
+        // duration 族 `[0s,∞)` NaN 与负值均钳 0；delay 族仅 NaN 钨（负 delay
+        // 合法）；±∞ 保留（format_num 饱和覆盖 ≥1e6 断言面）。
+        assert_eq!(time_list_to_css(&[f64::NAN, 2.0], "0s", true), "0s, 2s");
+        assert_eq!(time_list_to_css(&[-1.5, f64::NAN], "0s", true), "0s, 0s");
+        assert_eq!(time_list_to_css(&[-1.5, f64::NAN], "0s", false), "-1.5s, 0s");
+        assert_eq!(time_list_to_css(&[f64::INFINITY], "0s", true), "9223372036854775807s");
+        // 空列表回退 default 零漂移。
+        assert_eq!(time_list_to_css(&[], "0s", true), "0s");
     }
 }

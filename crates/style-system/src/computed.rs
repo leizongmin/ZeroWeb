@@ -265,7 +265,13 @@ fn resolve_length_inner(
                 root_ic_width: root_metrics.ic_width,
                 ..Default::default()
             };
-            zero_css_parser::values::eval_calc_with_context(expr, &ctx).unwrap_or(0.0)
+            // css-values-4 §10.6/§10.12：NaN 求值结果 computed 期 censor 为 0
+            //（`width: calc(NaN * 1px)` → "0px"，calc-infinity-nan-computed
+            // 驱动；直通会序列化 "NaNpx"）；±∞ 保留（序列化 i64 饱和覆盖 ≥1e6
+            // 断言面）。求值 None（IACVT 型门漏网）维持回退 0.0。
+            zero_css_parser::values::eval_calc_with_context(expr, &ctx)
+                .map(|v| if v.is_nan() { 0.0 } else { v })
+                .unwrap_or(0.0)
         }
         // fit-content() 递归解析内部值
         LengthValue::FitContent(inner) => resolve_length_with_font_metrics(
@@ -2066,5 +2072,21 @@ mod tests {
         let start = 4; // position of '(' after 'var'
         let end = find_matching_paren(s, start);
         assert_eq!(end, Some(s.len() - 1));
+    }
+
+    #[test]
+    /// css-values-4 §10.6/§10.12：Calc 求值 NaN computed 期 censor 为 0（
+    /// `width: calc(NaN * 1px)` → "0px"，calc-infinity-nan-computed 驱动；
+    /// 直通会序列化 "NaNpx"）；±∞ 保留（序列化饱和覆盖 ≥1e6 断言面）；
+    /// 非 NaN 路径零漂移。
+    fn test_resolve_length_calc_nan_censors_to_zero() {
+        let nan_expr = zero_css_parser::values::parse_math_function("calc(NaN * 1px)").unwrap();
+        assert_eq!(resolve_length(&LengthValue::Calc(Box::new(nan_expr)), 16.0, None, None), 0.0);
+
+        let inf_expr = zero_css_parser::values::parse_math_function("calc(infinity * 1px)").unwrap();
+        assert!(resolve_length(&LengthValue::Calc(Box::new(inf_expr)), 16.0, None, None).is_infinite());
+
+        let finite = zero_css_parser::values::parse_math_function("calc(1px * 3)").unwrap();
+        assert_eq!(resolve_length(&LengthValue::Calc(Box::new(finite)), 16.0, None, None), 3.0);
     }
 }

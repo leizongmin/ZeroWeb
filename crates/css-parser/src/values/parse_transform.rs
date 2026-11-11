@@ -186,7 +186,9 @@ pub enum TimeUnit {
 
 /// 解析 CSS animation-duration 属性值。
 ///
-/// 支持格式如 `"1s"`、`"500ms"`、`"0.5s"`。
+/// 支持格式如 `"1s"`、`"500ms"`、`"0.5s"`，及 `<time>` 槽数学形
+///（css-animations-1 §propdef-animation-duration `<time [0s,∞]># | auto#`，
+/// CSS Values 4 §10.5 数学函数可作任意槽位）。
 pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
     let v = value.trim().to_ascii_lowercase();
     if v.ends_with("ms") {
@@ -200,7 +202,18 @@ pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
             return Some(AnimationDurationValue::Time(n, TimeUnit::S));
         }
     }
-    None
+    // 数学形（g11 批挂账兑现：`animation-duration: calc(1s / 3)` 等）——纯
+    // Time 叶门同 [`parse_time`] 数学形（裸 Number/Length 混型叶拒）。NaN/±∞
+    // 求值结果合法非 invalid（css-values-4 §10.10/§10.6，computed 期 censor
+    // 由消费面承担——calc-infinity-nan-computed `animation-duration:
+    // calc(NaN * 1s)` / `calc(infinity * 1s)` "is a supported value" 驱动）；
+    // 范围钳 `[0s,∞)`（负值）属 §10.12 computed 期，不在 parse 期套。裸
+    // `infinite` 关键字仍拒（animation-duration-invalid 语料钉）。
+    let expr = parse_time_calc(value.trim())?;
+    if !calc_expr_is_pure_time(&expr) {
+        return None;
+    }
+    super::types::eval_calc_with_default_font(&expr).map(|secs| AnimationDurationValue::Time(secs, TimeUnit::S))
 }
 
 // ── CSS Animation Iteration Count 值类型 ────────────────────────────
@@ -327,14 +340,17 @@ pub fn parse_time(value: &str) -> Option<f64> {
         // mod/rem/min/max/clamp 等；driving: round-mod-rem-computed
         // transition-delay used-value 等价类）——allow_time 解析 + 纯 Time
         // 叶门 + 数值求值（秒）。裸 Number/Length 混型叶拒（spec invalid）。
+        // NaN/±∞ 求值结果合法非 invalid（§10.10/§10.6，computed 期 censor 由
+        // 消费面承担；calc-infinity-nan-computed `transition-delay:
+        // calc(1s / sign(1em - 16px))`=±∞ / `calc(NaN * 1s)` 驱动——拒收会令
+        // T54 写面误弃合法声明）。None（log(-1) 等 IACVT）仍拒。
         // FIXME(types.rs:1420 同族)：step ±∞ 边界形 NaN 化不命中，∞ 槽位
         // 管线在册桶另刀。
         let expr = parse_time_calc(value)?;
         if !calc_expr_is_pure_time(&expr) {
             return None;
         }
-        let v = eval_calc(&expr, None)?;
-        v.is_finite().then_some(v)
+        super::types::eval_calc_with_default_font(&expr)
     }
 }
 

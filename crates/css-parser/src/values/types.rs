@@ -3,6 +3,8 @@
 //! 定义 CSS 属性值的类型化表示：长度、颜色、显示、布局等枚举类型，
 //! 以及 calc() 表达式的 AST（CalcExpr、CalcContext、CalcParser）。
 
+use super::parse_extended::calc_expr_is_number;
+
 /// CSS 长度值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum LengthValue {
@@ -1642,7 +1644,20 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Time(_) => true,
         CalcExpr::Number(_) | CalcExpr::Length(_) => false,
-        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_pure_time(left) && calc_expr_is_pure_time(right),
+        CalcExpr::BinaryOp(left, op, right) => match op {
+            CalcOp::Add | CalcOp::Subtract => calc_expr_is_pure_time(left) && calc_expr_is_pure_time(right),
+            // css-values-4 §10.1 型检查：标量乘除 `<time> * <number>` /
+            // `<time> / <number>`（乘法反向同）型别合法（MTTime）——标量侧按
+            // §10.5 型别表判 <number>（`calc(NaN * 1s)`、`calc(1s / 3)`、
+            // `calc(1s / sign(1em - 16px))` 语料形）；time·time / time/time
+            // 与 Length/Angle 混型仍拒（time±number 既有口径不变）。
+            // https://drafts.csswg.org/css-values-4/#calc-type-checking
+            CalcOp::Multiply => {
+                (calc_expr_is_pure_time(left) && calc_expr_is_number(right))
+                    || (calc_expr_is_number(left) && calc_expr_is_pure_time(right))
+            }
+            CalcOp::Divide => calc_expr_is_pure_time(left) && calc_expr_is_number(right),
+        },
         CalcExpr::BinaryMathOp(_, a, b) => calc_expr_is_pure_time(a) && calc_expr_is_pure_time(b),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_pure_time),
         CalcExpr::Clamp { min, val, max } => {
@@ -1815,6 +1830,22 @@ pub fn eval_calc(expr: &CalcExpr, parent_length: Option<f64>) -> Option<f64> {
     eval_calc_with_context(expr, &ctx)
 }
 
+/// 数学形 parse 期求值（write-face 型别/求值门用）：em/rem 按浏览器默认字体
+/// 16px 基准可解析——WPT 语料形 `calc(1s / sign(1em - 16px))` /
+/// `scale: calc(1 / sign(1em - 16px))` 的 em 实参依计算期字体，parse 期合法
+/// 性判定须可解析而非 None（Chromium parse 期不持字体状态，槽位合法性不随
+/// 字体变化；calc-infinity-nan-computed 写面驱动）。计算期以真实字体重解析
+/// 的语义差异在册（语料断言面为写面支持性与 ≥1e6 钳，对基准不敏感）。
+/// %/vw/vh 无父长/视口基准仍 fail-closed（None→求值 None→拒）。
+pub fn eval_calc_with_default_font(expr: &CalcExpr) -> Option<f64> {
+    let ctx = CalcContext {
+        font_size: Some(16.0),
+        root_font_size: Some(16.0),
+        ..Default::default()
+    };
+    eval_calc_with_context(expr, &ctx)
+}
+
 /// 使用完整上下文计算 CSS calc() 表达式的像素值。
 ///
 /// 支持所有单位：px、百分比、em、rem、vh、vw、vmin、vmax、ch。
@@ -1876,8 +1907,16 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 CalcOp::Divide => Some(lv / rv),
             }
         }
+        // CSS Values 4 §10.6（Infinities and NaNs）：min/max 任一实参 NaN →
+        // 结果 NaN。IEEE `f64::min`/`f64::max` 忽略 NaN（`max(15px, NaN)` 误产
+        // 15px），毒化丢失后 computed 期 censor（§10.12）不触发——
+        // calc-infinity-nan-computed `max(15px, calc(NaN * 1px))` 期望 0px 驱动。
+        // https://drafts.csswg.org/css-values-4/#calc-infinities
         CalcExpr::Min(args) => {
             let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            if vals.iter().any(|v| v.is_nan()) {
+                return Some(f64::NAN);
+            }
             if vals.is_empty() {
                 None
             } else {
@@ -1886,6 +1925,9 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
         }
         CalcExpr::Max(args) => {
             let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            if vals.iter().any(|v| v.is_nan()) {
+                return Some(f64::NAN);
+            }
             if vals.is_empty() {
                 None
             } else {
