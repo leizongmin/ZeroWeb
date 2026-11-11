@@ -4,8 +4,9 @@
 （证据 [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md)）。基线口径：11-10
 快照 editing/run 0/120 文件（探针陷阱，0 过）、editing/other 12,997 过、selection
 2,728 过、input-events 201 过；目标三目录对 11-07 基线净增 130,000。
-**卡点** DC-1 的 CI 验证未跑——分片已 push，待 dispatch weekly
-（run_wptfyi_coverage）取 CI 证据；本地管道面验证已过（underline+italic 双文件
+**卡点** DC-1 的 CI 验证在跑——weekly coverage 已 dispatch
+（[run 42947347500](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)，
+分片在 `fb30d4f08`）；本地管道面验证已过（underline+italic 双文件
 完整变体入 JSON）。
 **下一步** weekly CI 结果回来后：①核 11 片编辑面 CI 入账（重点 slow 簇
 multitest/delete/insertparagraph 是否超预算，超了按 form-encode 先例再拆）；
