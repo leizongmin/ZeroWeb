@@ -13526,12 +13526,14 @@
           return r ? r.h : 0;
         }
         if (prop === 'offsetTop') {
+          // CSSOM View spec 化：相对 offsetParent padding edge，round 最近整数
+          //（_zwOffsetOffset 内含回落 viewport 近似的兼容臂）。
           var r = _zwLayoutRectTrap(sel, handle);
-          return r ? r.y : 0;
+          return _zwOffsetOffset(sel, handle, r, 'top');
         }
         if (prop === 'offsetLeft') {
           var r = _zwLayoutRectTrap(sel, handle);
-          return r ? r.x : 0;
+          return _zwOffsetOffset(sel, handle, r, 'left');
         }
         // scrollWidth/scrollHeight：滚动内容尺寸。布局 rect 无 overflow 数据（不含滚动展开量），
         // 近似为 client 尺寸（同 offsetWidth/Height 的 border-box 近似）。对「content 是否溢出」
@@ -13563,23 +13565,20 @@
           var _iframeSrc = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
           return _iframeSrc ? _zwResolveFetchUrl(_iframeSrc) : '';
         }
-        // offsetParent：最近 positioned 祖先（position != static）或 body，detached/hidden → null。
-        // 布局 rect 无 style 信息，无法精确算 positioned 祖先；近似：有 rect（已渲染）→ body proxy，
-        // 无 rect（detached/display:none）→ null。dominant 用法 `el.offsetParent === null` 可见性判定
-        // 正确（visible→非 null body / hidden→null）；`offsetTop - offsetParent.offsetTop` 嵌套坐标
-        // 为近似（offsetTop 本就 viewport-relative，见上注）。
+        // offsetParent：spec 算法（CSSOM View §dom-htmlelement-offsetparent）——最近
+        // positioned 祖先或最近 CB 建立者祖先（transform/perspective/filter/contain）
+        // 或最近 td/th/table 祖先，无命中 → body；fixed 自身 CB=viewport → null；
+        // detached/hidden（无 rect）→ null。html/body → null（R4003c 保持——
+        // 「沿 offsetParent 上行」遍历死循环防护仍由 body/html null 与 body 回落终止性
+        //（walk 64 深度守卫）双保险）。walk 与换算细节见 part05 _zwOffsetParentSel。
+        // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
         if (prop === 'offsetParent') {
-          // R4003c（html-semantics M2 切片 15）：html/body 自身 offsetParent → null
-          //（CSSOM View §offsetParent——body/html 无 offset parent，real browser
-          // `document.body.offsetParent === null`）。此前 body 有 rect → 自返 body，
-          // 「沿 offsetParent 上行累积坐标」的页面惯用遍历死循环——inert-label-focus
-          // 语料 clickOn 坐标累积 90s Execution timeout 实证（R4003b focus 前递使
-          // 该脚本首次走到 clickOn 而暴露）。
-          // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
           var _opTag = _realTag(sel, handle);
           if (_opTag === 'BODY' || _opTag === 'HTML') return null;
           var rp = _zwLayoutRectTrap(sel, handle);
-          return rp ? _wrapSelector('body') : null;
+          if (!rp) return null;
+          var _opSel = _zwOffsetParentSel(sel, handle);
+          return _opSel ? _wrapSelector(_opSel) : null;
         }
         // R3036：`element.sheet`——`<style>`/`<link rel=stylesheet>` 元素的 CSSStyleSheet（CSSOM 入口）。
         // CSS-in-JS 库（styled-components/emotion）+ 样式表操作代码经 `.sheet.cssRules`/`insertRule` 读改规则。
