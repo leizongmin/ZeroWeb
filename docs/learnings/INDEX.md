@@ -5,10 +5,13 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（265）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（268）
 
+- 2026-11-11 [复绑批三类终局：在飞 pull 混合二进制、白名单漏刀键静默死亡、锚表盲区](bugs/2026-11/2026-11-11-rebind-batch-inflight-pull-and-whitelist-domain.md) — tests/wpt-runner, .acceptance/dps
+- 2026-11-11 [探针页缺 /common/subset-tests.js 会整页空转假绿——P>0 门防不住，须恰集计数门](bugs/2026-11/2026-11-11-probe-missing-subset-tests-include-idle-false-green.md) — tests/wpt-runner, editing-compat
 - 2026-11-11 [镜像类重排的复合安全性：装饰感知 gap 重分配破坏对合，恒等面须语义级短路](bugs/2026-11/2026-11-11-mirror-reorder-involution-breaks-decorations.md) — layout-engine
 - 2026-11-11 [inline style 写面有三条实现臂——值校验/归一类改动必须三处同形](bugs/2026-11/2026-11-11-inline-style-three-write-arms.md) — engine, style-system, css-parser
+- 2026-11-11 [FILTER 子串匹配会拉入探针页——judge 键剥页名即碰撞，判读必须页键过滤](bugs/2026-11/2026-11-11-filter-substring-pulls-probe-page-page-keyed-judge.md) — tests/wpt-runner, editing-compat
 - 2026-11-11 [css-color none 保形回归：raw 影子保存条件误排 + 基线巧合通过](bugs/2026-11/2026-11-11-css-color-raw-shadow-accidental-pass.md) — engine
 - 2026-11-11 [cargo test --exact 须完整测试路径：裸名/短前缀全 filtered 0P 假绿 EXIT=0](bugs/2026-11/2026-11-11-cargo-test-exact-needs-full-path.md) — engine,testing
 - 2026-11-09 [shim appendChild 隐式 detach 缺口状态相关——孤立探针同码全绿不等于实现正确，执行态分歧用窗口克隆+side-band trace 定位](bugs/2026-11/2026-11-09-shim-appendchild-implicit-detach-state-gap.md) — engine
