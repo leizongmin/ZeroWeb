@@ -1043,23 +1043,42 @@
     //   - css flag false：inline decl 面 → 跳过 ⑦ 下潜、落尾臂外裹（styled
     //     span 录形 `<u><span style=…>…</span></u>`）；作者面（类载体）→
     //     下潜内容侧（`<span class=…><u>…</u></span>` 录形）。
-    //   门内仅 span 形壳（u/i/b styled 壳维持 ⑦ 既有路径）；子级过滤臂同 ⑦
-    //   vendored step 原文。
+    //   门内壳形 DC-2 ⑤ 扩（2026-11-12）：span 之外 ins/del 元素载体入同门
+    //   ——ins/del 录形保壳短手原位并（`foo<ins>[bar]</ins>baz` +strike
+    //   css-true = `<ins style="text-decoration:underline line-through">`，
+    //   strike.js:389；`foo<del>[bar]</del>baz` +underline css-true =
+    //   `<del style="text-decoration:underline line-through">`，
+    //   underline.js:419——内容语义壳不溶解，与 u/s/strike 溶解臂分族）。
+    //   ins/del bare 壳 tag face（underline/line-through）入 tdUsFace；css-
+    //   false 走下潜内容侧（`<ins><strike>[bar]</strike></ins>`、
+    //   `<del><u>[bar]</u></del>` strike.js:389/underline.js:424 实证）。
+    //   bare ins + underline 无变化录形由 F6b effective 等值门早退、del +
+    //   strike 零变化由 removal 不解 del 保（均不入本门）。
+    //   门内仅 span/ins/del 形壳（u/s styled 壳维持 ⑦ 既有路径）；子级过滤臂
+    //   同 ⑦ vendored step 原文。
     if (node.nodeType === 1) {
       var usSpan = (command === 'underline' || command === 'strikethrough')
-        && _zwJusTag(node) === 'span' && _zwVaIsAllowedChild(node, 'span');
+        && (_zwJusTag(node) === 'span' || _zwJusTag(node) === 'ins'
+          || _zwJusTag(node) === 'del')
+        && _zwVaIsAllowedChild(node, 'span');
       var tdUsInline = '';
       var tdUsAuthor = '';
+      var tdUsTag = '';
       if (usSpan) {
         try { tdUsInline = _zwPlainDecl(node, 'text-decoration') || ''; } catch (_eUcF1) { tdUsInline = ''; }
         if (!tdUsInline) {
           try { tdUsAuthor = _zwPlainAuthorDecl(node, 'text-decoration') || ''; } catch (_eUcF2) { tdUsAuthor = ''; }
         }
+        if (!tdUsInline && !tdUsAuthor) {
+          if (_zwJusTag(node) === 'ins') tdUsTag = 'underline';
+          else if (_zwJusTag(node) === 'del') tdUsTag = 'line-through';
+        }
       }
-      var tdUsFace = tdUsInline || tdUsAuthor;
+      var tdUsFace = tdUsInline || tdUsAuthor || tdUsTag;
       if (usSpan && tdUsFace && _zwVaCssFlag()) {
         var canonUs = ['underline', 'overline', 'line-through'];
         var mergeUs = [newValue];
+        if (tdUsTag && mergeUs.indexOf(tdUsTag) === -1) mergeUs.push(tdUsTag);
         if (tdUsInline) {
           var toksUs = String(tdUsInline).toLowerCase().split(/\s+/);
           for (var ti = 0; ti < toksUs.length; ti++) {
@@ -1068,6 +1087,8 @@
               mergeUs.push(toksUs[ti]);
             }
           }
+        }
+        if (mergeUs.length > 1) {
           mergeUs.sort(function (a, b) { return canonUs.indexOf(a) - canonUs.indexOf(b); });
         }
         _zwVaSetStyleProp(node, 'text-decoration', mergeUs.join(' '));
@@ -1095,6 +1116,49 @@
           return;
         }
       }
+      // DC-2 ⑤（2026-11-12）：css-true bare 元素载体折叠溶解——u/s/strike
+      //   全含壳（tag face，无 inline/author decl）自身溶解、tag 值并入新裹
+      //   inline 面短手（Chrome 录形 `foo<u>[bar]</u>baz` +strike css-true =
+      //   `<span style="text-decoration:underline line-through">[bar]</span>baz`，
+      //   data/strikethrough.js:182、underline.js:241 `foo<s>[bar]</s>baz` +
+      //   underline 同形；ins/del 不走本门——内容语义壳保形原位并，上方
+      //   span/ins/del 门已截）。decl 面载体（inline/author，长手折叠/溶解
+      //   族）不入本门。端点序 insertBefore→搬移→removeChild：par 层 insert
+      //   的 +1 陈旧恰被同位 removeChild 抵消（(par,k≤idx) 与 (par,k≥idx+1)
+      //   净移 0），壳内端点由 _zwJusMovePreservingRanges 随子搬移。
+      if (_zwVaCssFlag() && node.nodeType === 1
+          && (command === 'underline' || command === 'strikethrough')) {
+        var tgDs = _zwJusTag(node);
+        var faceDs = tgDs === 'u' ? 'underline'
+          : (tgDs === 's' || tgDs === 'strike') ? 'line-through' : '';
+        if (faceDs) {
+          var declDs = '';
+          try { declDs = _zwPlainDecl(node, 'text-decoration') || ''; } catch (_eDs1) { declDs = ''; }
+          if (!declDs) {
+            try { declDs = _zwPlainAuthorDecl(node, 'text-decoration') || ''; } catch (_eDs2) { declDs = ''; }
+          }
+          if (!declDs) {
+            var canonDs = ['underline', 'overline', 'line-through'];
+            var mergeDs = [newValue];
+            if (mergeDs.indexOf(faceDs) === -1) mergeDs.push(faceDs);
+            mergeDs.sort(function (a, b) { return canonDs.indexOf(a) - canonDs.indexOf(b); });
+            var spanDs = document.createElement('span');
+            _zwVaSetStyleProp(spanDs, 'text-decoration', mergeDs.join(' '));
+            if (node.parentNode) {
+              node.parentNode.insertBefore(spanDs, node);
+              var kidsDs = [];
+              for (i = 0; i < node.childNodes.length; i++) {
+                kidsDs.push(node.childNodes[i]);
+              }
+              for (i = 0; i < kidsDs.length; i++) {
+                _zwJusMovePreservingRanges(kidsDs[i], spanDs, spanDs.childNodes.length);
+              }
+              if (node.parentNode) node.parentNode.removeChild(node);
+            }
+            return;
+          }
+        }
+      }
       if (!usSpan || !tdUsFace) {
         var ownFacePre = '';
         var parFacePre = '';
@@ -1102,6 +1166,18 @@
         try {
           if (node.parentNode) parFacePre = __zwPlainComputed(node.parentNode, property);
         } catch (_eVaPar) {}
+        // DC-2 ⑤（2026-11-12）：⑦ own face 补 tag face 臂——plain computed
+        //   走查无 text-decoration 臂（part01c __zwPlainComputed 无该属性臂），
+        //   bare u/s/strike 壳 ownFacePre 恒空致整壳外裹（css-false nest-
+        //   inside 录形 `foo<u><strike>[bar]</strike></u>baz` = strike.js:182、
+        //   underline.js:246 `foo<s><u>[bar]</u></s>baz` 同形——应下潜子级而
+        //   非外绕；ins/del 由上方保壳门下潜截走，不达此处）。仅 u/s 命令面
+        //   补臂，其余命令路径零影响。
+        if ((command === 'underline' || command === 'strikethrough') && ownFacePre === '') {
+          var tg7 = _zwJusTag(node);
+          ownFacePre = tg7 === 'u' ? 'underline'
+            : (tg7 === 's' || tg7 === 'strike') ? 'line-through' : '';
+        }
         var ownGenuine = ownFacePre !== '' && ownFacePre !== parFacePre;
         var residualDecls = false;
         try {
