@@ -899,6 +899,60 @@ mod tests {
         assert_eq!(state.live_untracked, 1);
     }
 
+    /// realloc replacement 挂回不受 net 表上限卡：begin 让出的槽位语义下，
+    /// 满表并发占满后替换块仍须入表，否则新块漏记（R3-C1 回归钉）。
+    #[test]
+    fn realloc_replacement_reinsert_ignores_live_cap() {
+        let mut state = TraceState::new();
+        state.track_live(0x1000, 200_000, 7, 1);
+        let entry = state.take_live(0x1000).expect("begin 必摘到在表条目");
+        assert_eq!(entry.size, 200_000);
+        assert!(
+            !state.live.contains_key(&0x1000) && state.live_sites.is_empty(),
+            "begin 后旧条目与 site 聚合清位"
+        );
+        state.track_live(0x2000, 200_000, 7, 1); // 并发分配占满 begin 让出的预算
+        state.track_live_realloc(0x3000, 250_000, 0); // replacement 挂回，无卡
+        assert_eq!(state.live.len(), 2, "replacement 不受 max_live_entries 卡");
+        assert_eq!(state.live_untracked, 0, "replacement 挂回不计 untracked");
+        assert_eq!(
+            state.live_sites.get(&0).map(|a| a.blocks),
+            Some(1),
+            "哨兵 site 聚合入账"
+        );
+    }
+
+    /// realloc abort 回滚不受表满丢弃：begin 与 System.realloc 之间并发分配
+    /// 占满预算时，restore_live 仍须挂回原条目（槽位在 begin 已让出，R3-C1）。
+    #[test]
+    fn realloc_abort_restore_survives_full_table() {
+        let mut state = TraceState::new();
+        state.track_live(0x1000, 200_000, 7, 1);
+        let entry = state.take_live(0x1000).expect("begin 摘条目");
+        state.track_live(0x2000, 200_000, 7, 1); // 并发分配占满预算
+        state.restore_live(0x1000, entry); // 回滚挂回，无卡
+        assert_eq!(state.live.len(), 2, "表满仍恢复原条目");
+        let agg = state.live_sites.get(&7).expect("site 聚合恢复");
+        assert_eq!(agg.blocks, 2);
+        assert_eq!(agg.bytes, 400_000);
+        assert_eq!(state.live_untracked, 0);
+    }
+
+    /// 非 replacement finish 与 record_alloc 同受 net 表上限卡：预算被并发
+    /// 分配占满时拒绝入表并计 live_untracked（降级可观测不静默，R3-C1）。
+    #[test]
+    fn realloc_non_replacement_reflow_counts_untracked() {
+        let mut state = TraceState::new();
+        state.track_live(0x1000, 200_000, 7, 1);
+        let entry = state.take_live(0x1000).expect("begin 摘条目");
+        assert_eq!(entry.size, 200_000);
+        state.track_live(0x2000, 200_000, 7, 1); // 并发分配占满预算
+        state.track_live(0x3000, 250_000, 0, 1); // 非 replacement：卡上限
+        assert_eq!(state.live.len(), 1, "非 replacement 受 max_live_entries 卡");
+        assert_eq!(state.live_untracked, 1, "拒入表计 live_untracked");
+        assert_eq!(state.live_sites.get(&7).map(|a| a.blocks), Some(1), "并发条目不受影响");
+    }
+
     /// reason 白名单净化：不可信字符归 `_`，空串回落固定值。
     #[test]
     fn reason_is_sanitized() {
