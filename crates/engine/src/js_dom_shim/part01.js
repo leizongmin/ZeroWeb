@@ -3667,7 +3667,14 @@
         entry.state = 'done';
       } else {
         entry.url = _objData;
-        entry.state = 'image';
+        // s407：essence 可渲染面判定（spec #the-object-element 处理模型「资源类型
+        // 无法渲染 → fallback 内容步」）——text/* 与 image/*（含 image/svg+xml）
+        // 按「可渲染」落 image 臂（allowed-schemas data:,Hello text/plain load 面
+        // + document-getters SVG data: null 面保持）；其余 essence（如
+        // application/x-does-not-exist）→ 'fallback'：元素不产生渲染内容，静态
+        // 扫描的子内容激活门（part04 `__zwStartParserObjects` 祖先门）据此放行
+        // fallback 子 embed/object（embed-in-object-fallback-2 驱动案）。
+        entry.state = /^(text\/|image\/)/i.test(_objDpEss) ? 'image' : 'fallback';
       }
       if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
       return entry;
@@ -3958,13 +3965,17 @@
   // 出口，iframe 同款）、bubbles/cancelable=false（object-events 接口断言面）。
   function _zwFireObjectResultEvent(entry, sel, handle) {
     if (!entry || entry.fired) return;
-    if (entry.state !== 'done' && entry.state !== 'image' && entry.state !== 'error') return;
+    if (entry.state !== 'done' && entry.state !== 'image' && entry.state !== 'error'
+        && entry.state !== 'fallback') return;
     entry.fired = true;
     // s405 embed 失败语义：语料 embed-network-error 四子测钉「失败路径（nonexistent
     // host / X-Frame-Options）→ load 派、error 恒不派」——embed 终态 error（display
     // no plugin，无 navigable）映射 load。object 保持 error（allowed-schemas
-    // javascript: not-allowed 钉 error 面）。
-    var _objEvType = (entry.state === 'error') ? (entry.embed ? 'load' : 'error') : 'load';
+    // javascript: not-allowed 钉 error 面）。s407：'fallback'（data: 不可渲染
+    // essence）与 error 同映射——object 渲染失败派 error、embed 恒 load（语料
+    // fallback 两案仅钉子内容激活面，元素事件无钉——spec render-fail → error 近似）。
+    var _objEvType = (entry.state === 'error' || entry.state === 'fallback')
+      ? (entry.embed ? 'load' : 'error') : 'load';
     _defer(function () {
       try {
         var _objTarget = _makeProxy(sel, handle);

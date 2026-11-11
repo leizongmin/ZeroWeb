@@ -136,3 +136,8 @@ include!("js_dom_bridge_tests/part105_s405_embed_dynamic_load.rs");
 // named face 收口（embed-network-error 子测 3/4 driving）+ 失败三臂收拢（embed
 // 重派 load / object 静默保持）钉。
 include!("js_dom_bridge_tests/part106_s406_frames_named_embed_nav_fail.rs");
+
+// 55 号 s407 静态 embed 链 + fallback 子内容激活：parser 扫描扩 EMBED（src 启航
+// + media/loaded-ancestor 双门）+ object 祖先门 + data: 不可渲染 essence
+// 'fallback' 态（子内容激活 + 渲染失败事件映射）钉。
+include!("js_dom_bridge_tests/part107_s407_embed_static_fallback.rs");

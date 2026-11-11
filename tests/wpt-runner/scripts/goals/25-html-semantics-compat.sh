@@ -153,6 +153,11 @@ fetch_raw "html/semantics/popovers/resources/toggle-event-source-test.js"
 # 仅 testharness 基建 5 件，blank.html 缺 404 → error 代替 load → await onload
 # 恒挂 → 文件级 Timeout，s227 同族勘根）。
 fetch_raw "resources/blank.html"
+# s407：embed-in-object-fallback{,-2}.html 子文档资产——child doc 按 query 参数
+# 置父标志（parent[childNLoaded]=true）。语料 the-embed-element/ 目录缺该文件
+# 404 → embed 失败 → load 派但标志恒 false → assert_true(child1Loaded) 快败
+# （s227/s404 语料缺口同族勘根）。
+fetch_raw "html/semantics/embedded-content/the-embed-element/embed-in-object-fallback-subdocument.html"
 
 # ③b css/text 数据模块语料资源（s108 待决①销账，用户授权 2026-10-31）：css-module/
 # text-module 用例引用面。缺口机制 = M1 首拉（2026-10-15）时扩展白名单尚无 .css

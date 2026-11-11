@@ -1302,14 +1302,96 @@
         // 规避事件回归，事件仍由动态插入臂/消费读按既有语义服务。
         // FIXME(object-static-events)：渲染静态 object 不派终态事件（spec 偏差
         // 记档——恢复需 rendered 门（祖先链 display walk）+ 事件面，语料踩坑再扩）。
+        // html-semantics M2 切片 407（2026-11-12）：静态扫描扩 EMBED + fallback
+        // 子内容激活门。embed-document.html / content-visibility 双案红根 = 静态
+        // embed 无人启航（s405 FIXME(embed-static-events)）——embed-iframe.html 子
+        // 文档永不物化 → `parent.childLoaded` 恒 false。三面扩展：
+        // ① object 循环加祖先门 + 同步直调（原 `_zwStartConnectedObject` defer 异步
+        //   会把启动序打散——祖先门须读先行元素终态；load 派发位无 mutation 风暴，
+        //   同步安全，s403 物化核本就同步取回）。门双臂 truthy 跳过：祖先
+        //   video/audio（media 元素内 object 被忽略，不启航——object-ignored-in-
+        //   media-element 驱动案：旧 defer 启航时子文档 `nestingTest.step`
+        //   step-after-done 被 harness 吞掉假绿，同步启航子脚本落活测试
+        //   assert_unreached → 文件红，spec 本义即不加载）或祖先 object entry
+        //   state ∈ {done,image}（渲染成功 → 子内容惰性，spec fallback 内容不渲染
+        //   步）——object-in-object-fallback-2 驱动案（loaded 祖先内 should-not-load
+        //   子 object 此前被平扫误启 → assert_unreached → 文件 F）。
+        // ② 新 EMBED 循环：src 在场 + being rendered 才启航（embed 无 data 属性；
+        //   失败 → load 派语义静默面不变——fireEvents=false 只是不派元素事件）。
+        //   rendered 门复用 R3074 `_zwCheckVisibility`（display:none 于自身或任一
+        //   祖先 → not rendered 不启航；content-visibility 不在判面——cv 双 driving
+        //   案不受影响）——embed-represent-nothing-04 驱动案（never-rendered embed
+        //   代表空、不加载：display:none 内 embed-iframe 子文档 `parent.childLoaded`
+        //   置旗面不得发生）。embed-document + content-visibility 双案驱动。
+        // ③ 激活门双臂：祖先 video/audio（media 元素不可渲染媒体时 fallback 内容
+        //   也不激活——embed-ignored/object-ignored-in-media-element 双钉面，在册
+        //   2P 保护）或祖先 object 渲染成功 → 跳过；其余（无 object 祖先 / 祖先
+        //   error / fallback / 无 data 属性无 entry）→ 启航（embed-in-object-fallback
+        //   obj1/obj2 无 data → 子 embed 激活驱动案）。
+        // FIXME(embed-static-events) 本位收口：静态 embed/object 仍不派终态元素
+        // 事件（fireEvents=false——object-static-events 同族 spec 偏差记档）。
+        // 成本注记（guidelines #26）：门 walk 每元素一次、仅 load 派发位单遍执行，
+        // 非热循环；`__zw_parent`/`_realTag` 为 host 桥读，元素数 = 页面
+        // embed/object 总数（个位量级）。
         globalThis.__zwStartParserObjects = globalThis.__zwStartParserObjects || function () {
+          // 祖先链静态门（sel 上行）：返 'media'（video/audio 祖先）/'loaded'
+          //（渲染成功 object 祖先）/''（放行）。键形态双查：QSA proxy 走 handle 键
+          //（runner R100 反查），桥测环境无 handle 注册走 sel 键（与 start 键派生
+          // 同形——`el.__zwHandle ? _elKey(null,h) : _elKey(sel,null)`）。
+          function _zwStaticAncGate407(sel) {
+            var cur = sel;
+            var walk = 0;
+            while (cur && walk++ < 64) {
+              var tag = '';
+              try { tag = String(_realTag(cur, null) || '').toUpperCase(); } catch (_eGt407) {}
+              if (tag === 'VIDEO' || tag === 'AUDIO') return 'media';
+              if (tag === 'OBJECT') {
+                var h407 = '';
+                try { h407 = String(typeof __zw_handle_for_selector === 'function' ? (__zw_handle_for_selector(cur) || '') : ''); } catch (_eGh407) {}
+                var oe407 = null;
+                try { oe407 = _zwObjectNavCache[h407 ? _elKey(null, h407) : _elKey(cur, null)] || null; } catch (_eGo407) {}
+                if (oe407 && (oe407.state === 'done' || oe407.state === 'image')) return 'loaded';
+              }
+              try { cur = __zw_parent(cur); } catch (_eGp407) { cur = ''; }
+              if (!cur) break;
+            }
+            return '';
+          }
           try {
             var objs = document.querySelectorAll('object');
             for (var i = 0; i < objs.length; i++) {
               var hasData = false;
               try { hasData = !!objs[i].getAttribute('data'); } catch (_eObjSwD) {}
               if (!hasData) continue;
-              _zwStartConnectedObject(objs[i], true, false);
+              var objSel407 = objs[i].__zwSelector || null;
+              // handle-only proxy（runner R100 反查 QSA 包装，__zwSelector 空）反解
+              // sel 供祖先门 walk（R4400 同款 `__zw_selector_for_handle` 反解；失败
+              // 落门旁路——桥测环境 QSA 为 sel proxy 不触发）。
+              if (!objSel407 && objs[i].__zwHandle && typeof __zw_selector_for_handle === 'function') {
+                try { objSel407 = String(__zw_selector_for_handle(objs[i].__zwHandle) || '') || null; } catch (_eObjRs407) { objSel407 = null; }
+              }
+              // 门 truthy 跳过（media + loaded 双臂——①注）。
+              if (objSel407 && _zwStaticAncGate407(objSel407)) continue;
+              var objKey407 = objs[i].__zwHandle ? _elKey(null, objs[i].__zwHandle) : _elKey(objSel407, null);
+              if (!objKey407) continue;
+              try { _zwLoadObjectResource(objKey407, objSel407, objs[i].__zwHandle || null, false, false); } catch (_eObjL407) {}
+            }
+            var embs = document.querySelectorAll('embed');
+            for (var j = 0; j < embs.length; j++) {
+              var hasSrc = false;
+              try { hasSrc = !!embs[j].getAttribute('src'); } catch (_eEmbSwS) {}
+              if (!hasSrc) continue;
+              var embSel407 = embs[j].__zwSelector || null;
+              if (!embSel407 && embs[j].__zwHandle && typeof __zw_selector_for_handle === 'function') {
+                try { embSel407 = String(__zw_selector_for_handle(embs[j].__zwHandle) || '') || null; } catch (_eEmbRs407) { embSel407 = null; }
+              }
+              if (embSel407 && _zwStaticAncGate407(embSel407)) continue;
+              // being rendered 门（②注——R3074 复用；sel 反解失败 → not rendered
+              // 保守不启航）。cv 祖先不在判面，embed-document-under-cv 双案照启。
+              if (embSel407 && !_zwCheckVisibility(embSel407, embs[j].__zwHandle || null)) continue;
+              var embKey407 = embs[j].__zwHandle ? _elKey(null, embs[j].__zwHandle) : _elKey(embSel407, null);
+              if (!embKey407) continue;
+              try { _zwLoadObjectResource(embKey407, embSel407, embs[j].__zwHandle || null, false, true); } catch (_eEmbL407) {}
             }
           } catch (_eObjSweep) {}
         };

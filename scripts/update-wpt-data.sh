@@ -174,6 +174,13 @@
 #     jsdelivr/raw 双超时改 gh 通道取件，2026-11-11）——升级新 ref 后需
 #     重新补。goal 脚本 25-html-semantics-compat.sh ③段已挂 fetch_raw
 #     常驻重拉条目）
+#   - the-embed-element/embed-in-object-fallback-subdocument.html 缺失
+#     （embed-in-object-fallback.html 3 处 + 子文档案依赖；s407 勘根定性
+#     embed-in-object-fallback 1F 悬挂腿为语料 404——child doc 按 query 参数
+#     置父标志 parent[childNLoaded]=true，404 → 标志恒 false → assert 快败；
+#     已按同 pin 从上游 gh api contents 原件补入 75B（md5
+#     63ccc3fdd572090b5c0beb3c3137f262，2026-11-12）——升级新 ref 后需
+#     重新补。goal 脚本 ③段已挂 fetch_raw 常驻重拉条目）
 
 set -euo pipefail
 
