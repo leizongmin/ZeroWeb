@@ -35,6 +35,12 @@ pub(crate) use runtime::RendererRuntime;
 #[cfg(target_os = "android")]
 pub use runtime::run_android_role;
 
+// T62/G4 先导分配仪器：默认不编译（非默认 feature `alloc-trace`），产品构建
+// 零代码、零数据、分配路径不变；接线（#[global_allocator] + env 快照初始化）
+// 在 bin 入口 main.rs——bin 作用域，lib 下游与 lib 测试不带包装分配器。
+#[cfg(feature = "alloc-trace")]
+pub mod alloc_trace;
+
 #[cfg(test)]
 #[path = "gpu_isolation_tests.rs"]
 mod gpu_isolation_tests;
