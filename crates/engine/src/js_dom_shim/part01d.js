@@ -152,6 +152,12 @@
     if (v1 === null && v2 === null) return true;
     if (typeof v1 !== 'string' || typeof v2 !== 'string') return false;
     if (v1 === v2) return true;
+    if (cmd === 'bold') {
+      // DC-2 P2 apply 面（2026-11-11）：vendored equivalentValues :3133 原文——
+      // bold≡700、normal≡400（UA 表数值读数与 keyword 新值同值判定）。
+      return (v1 === 'bold' && v2 === '700') || (v1 === '700' && v2 === 'bold')
+        || (v1 === 'normal' && v2 === '400') || (v1 === '400' && v2 === 'normal');
+    }
     if (cmd === 'forecolor' || cmd === 'backcolor' || cmd === 'hilitecolor') {
       // ③'-a：forecolor tag 模式指定形比较（keyword 壳 ≢ rgb 新值——:382
       // keyword 外壳切分 vs :387 hex 外壳合并录形）；css 模式保持归一键
@@ -783,7 +789,17 @@
     }
     var prop = command === 'fontsize' ? 'font-size'
       : (command === 'fontname' ? 'font-family'
-        : (command === 'forecolor' ? 'color' : 'background-color'));
+        : (command === 'forecolor' ? 'color'
+          // DC-2 P2 apply 面（2026-11-11）：六 format 命令声明清值臂
+          //（vendored relevantCssProperty :2476 同构；text-decoration 偏序
+          // 删除（仅剥 line-through/underline 保留他值）未接——多值声明
+          // delta 挂 recordCurrentOverrides 侧，FIXME 见 forceValue 注）。
+          : (command === 'bold' ? 'font-weight'
+            : (command === 'italic' ? 'font-style'
+              : ((command === 'underline' || command === 'strikethrough')
+                ? 'text-decoration'
+                : (command === 'subscript' || command === 'superscript')
+                  ? 'vertical-align' : 'background-color')))));
     if (_zwPlainDecl(element, prop)) {
       _zwVaSetStyleProp(element, prop, '');
       try {
@@ -861,6 +877,12 @@
           continue;
         }
         if (child === ancestorList[ancestorList.length - 1]) continue;
+        // Chrome delta（⑨ extraneous br，2026-11-11）：push-down 重裹臂跳过
+        // br——vendored forceValue 会把壳外 br 独立重裹（`foo<sup>[bar]<br>
+        // </sup>` 解除录形 vendored = `foobar<sup><br></sup>`），Chrome 录形
+        // br 不携壳（= `foobar<br>`，superscript 语料 2 变体实证）。直接选中
+        // 的 br 仍走主循环 forceValue（multitest `[<br>]` 包裹形不受此门）。
+        if (child.nodeType === 1 && _zwJusTag(child) === 'br') continue;
         // Chrome delta（⑧ push-down 载体形，2026-11-05）：flag=false +
         // fontsize + font 属性载体（specified）→ wrap 臂带 raw 源（size attr
         // 原串保留，font6 size="6" ≠ 归一 "7" 实证）；其余走 vendored 归一。
@@ -893,6 +915,23 @@
     var i;
     if (_zwVaIsAllowedChild(node, 'span')) {
       var sibCrit = function (n) {
+        // DC-2 P2（2026-11-11）Chrome delta：css flag true 下 wrap 不并入 tag
+        // 形兄弟——`<b>foo</b>[bar]<b>baz</b>` swcss(true) 录形 = 三段并列
+        // `<b>foo</b><span style=font-weight:bold>bar</span><b>baz</b>`，
+        // vendored sibCrit 无 flag 门（isSimpleModifiable 命中裸 b）→ 并入
+        // 前后 b 得 `<b>foobarbaz</b>` 误形（multitest css-true 族 ~104 失败
+        // 实证；Chrome 引擎不按 vendored 算法实现，录形为 oracle）。css 模式
+        // 仅 span（style 形）兄弟可并（`<span style=…>foo</span>[bar]<span
+        // style=…>baz</span>` css-true 录形仍合并单 span）；tag 模式不变
+        //（swcss(false) 录形 `<b>foobarbaz</b>`）。sub/sup 例外：Chrome
+        // css-true 亦合并单元素壳（`<span>[foo</span> <span>bar]</span>` sub
+        // 期望 `<sub><span>foo</span> <span>bar</span></sub>` 单壳——subscript/
+        // superscript 语料 2 变体实证，2026-11-11）。后续
+        // _zwVaCrossTagContinuation 复用本 crit，css 模式同门语义一致。
+        var nT = _zwJusTag(n);
+        if (_zwVaCssFlag() && nT !== 'span' && nT !== 'sub' && nT !== 'sup') {
+          return false;
+        }
         return _zwVaIsSimpleModifiable(n)
           && _zwVaEquivalentValues(command, _zwVaSpecifiedValue(n, command), newValue)
           && _zwVaLooselyEquivalent(command, _zwValEffectiveValue(n, command), newValue, true);
@@ -965,7 +1004,16 @@
     }
     var property = command === 'fontsize' ? 'font-size'
       : (command === 'fontname' ? 'font-family'
-        : (command === 'forecolor' ? 'color' : 'background-color'));
+        : (command === 'forecolor' ? 'color'
+          // DC-2 P2 apply 面（2026-11-11）：六 format 命令 relevantCssProperty
+          //（vendored :2857 同构）——CSS flag true 的 span 样式形 + 尾臂冗余
+          // 声明判定消费。
+          : (command === 'bold' ? 'font-weight'
+            : (command === 'italic' ? 'font-style'
+              : ((command === 'underline' || command === 'strikethrough')
+                ? 'text-decoration'
+                : (command === 'subscript' || command === 'superscript')
+                  ? 'vertical-align' : 'background-color')))));
     // Chrome delta（⑦ probe-tJ 实证，2026-11-04）：nodeType 1 且**自面**读数
     // ≠ 新值 → 不外裹、直接下潜子级。自面读数必须在包裹前取——fontsize 的
     // 外裹改变继承链，post-wrap 读数恒落 wrapper 值（tJ: small 裹进 font
@@ -1041,6 +1089,32 @@
         newParent = document.createElement('font');
         newParent.setAttribute('face', newValue);
       }
+      // DC-2 P2 apply 面（2026-11-11）：六 format 命令元素臂（vendored
+      // :2821-2853 原文——flag=false 恒标签形；值门同原文）。fresh 标签的
+      // effective 读数（UA 表 b→700/s→line-through）使 :1086 尾臂不加冗余
+      // style 声明——录形恒裸 <b>/<i>/<u>/<s>。
+      if (command === 'bold' && (newValue === 'bold' || newValue === '700')) {
+        newParent = document.createElement('b');
+      }
+      if (command === 'italic' && newValue === 'italic') {
+        newParent = document.createElement('i');
+      }
+      if (command === 'strikethrough' && newValue === 'line-through') {
+        newParent = document.createElement('s');
+      }
+      if (command === 'underline' && newValue === 'underline') {
+        newParent = document.createElement('u');
+      }
+    }
+    // sub/sup 恒元素形无 flag 门（vendored :2860-2877 原文位置——Chrome
+    // styleWithCSS true 亦落 <sub>/<sup>，无 span 样式形）。
+    if ((command === 'subscript' || command === 'superscript')
+        && newValue === 'subscript') {
+      newParent = document.createElement('sub');
+    }
+    if ((command === 'subscript' || command === 'superscript')
+        && newValue === 'superscript') {
+      newParent = document.createElement('sup');
     }
     if (!newParent) {
       newParent = document.createElement('span');
@@ -1224,6 +1298,30 @@
   // textEl/plain-元素 ref——**解析文本 ref（无印无章）全分支 miss 静默丢弃**，
   // 故「克隆后插到 el 之后」的任何 ref（baz 等文本兄弟）不可用；start 侧克隆
   // 落 el 之前天然避开，end 侧免克隆彻底绕开（fix4 trace8-9 实证链）。
+  // peel 残料 Chrome delta（⑩，2026-11-11）：移出片段后壳内残余**全为不可见
+  // 节点**（extraneous br / 空白文本）时壳整体溶解（余料裸落、元素移除）——
+  // `foo<sup>[bar]<br></sup>` 解除录形 = `foobar<br>`，peel 端侧 bare-move 后
+  // sup 留装 br（vendored 无此门，forceValue 独立重裹形同左），Chrome 不留
+  // 空壳（superscript 语料 2 变体实证）。残余含可见内容时保持既有保留行为。
+  function _zwVaPeelDissolveInvisibleRemnant(el) {
+    if (!el || !el.parentNode) return;
+    var remKids = [];
+    for (var rk = 0; rk < el.childNodes.length; rk++) {
+      remKids.push(el.childNodes[rk]);
+    }
+    if (!remKids.length) return;
+    for (var rk2 = 0; rk2 < remKids.length; rk2++) {
+      var rkN = remKids[rk2];
+      var inv = rkN.nodeType === 3 ? _zwVaIsWsText(rkN) : _zwJusIsInvisible(rkN);
+      if (!inv) return;
+    }
+    var elIdxR = _zwJusNodeIndex(el);
+    for (var rk3 = 0; rk3 < remKids.length; rk3++) {
+      _zwJusMovePreservingRanges(remKids[rk3], el.parentNode, elIdxR + rk3);
+    }
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }
+
   function _zwVaPeelOne(el, isStart, command) {
     var rng = _zwVaGetActiveRange();
     if (!rng || !el.parentNode) return;
@@ -1256,6 +1354,7 @@
       for (var k = 0; k < ci; k++) {
         _zwJusMovePreservingRanges(kids[k], clone, k);
       }
+      _zwVaPeelDissolveInvisibleRemnant(el);
       _zwVaPeelCarry.push(clone);
     } else {
       var elIdx = _zwJusNodeIndex(el);
@@ -1292,7 +1391,8 @@
           _zwJusMovePreservingRanges(kids[k2], parent, elIdx + k2);
         }
       }
-      _zwVaPeelCarry.push(el);
+      _zwVaPeelDissolveInvisibleRemnant(el);
+      if (el.parentNode) _zwVaPeelCarry.push(el);
     }
   }
 
@@ -1672,6 +1772,16 @@
     else if (command === 'hilitecolor') delete _zwVaValueOverrides.backcolor;
   }
 
+  function _zwVaSetStateOverride(command, newState) {
+    _zwVaOverridesReset();
+    _zwVaStateOverrides[command] = newState;
+  }
+
+  function _zwVaGetStateOverride(command) {
+    _zwVaOverridesReset();
+    return _zwVaStateOverrides[command];
+  }
+
   // normalizeFontSize（参考实现 :3192）——非法 → null；clamp 1-7；±3 相对模式。
   function _zwVaNormalizeFontSize(value) {
     value = String(value == null ? '' : value).trim();
@@ -1739,6 +1849,19 @@
       if (_zwValIsFormattable(containedAll[i])) { anyFormattable = true; break; }
     }
     if (!anyFormattable) {
+      // spec setSelectionValue 无 formattable 臂（vendored :2972-2991）：六
+      // inline 命令（即带 inlineCommandActivatedValues 者）按激活值命中写
+      // state override（bold state 假落 'bold' 命中 → true；真落 'normal'
+      // 未命中 → false，解除面 qS-after=false 期望源）；sub/sup 互斥 unset
+      // 对侧。此前只记账 value override（P1 FIXME 挂账）。
+      var actF = (typeof globalThis.__zw_ce_format_activated === 'function')
+        ? globalThis.__zw_ce_format_activated : null;
+      var sixSw = command === 'bold' || command === 'italic'
+        || command === 'underline' || command === 'strikethrough'
+        || command === 'subscript' || command === 'superscript';
+      if (sixSw && actF) _zwVaSetStateOverride(command, !!actF(command, newValue));
+      if (command === 'subscript') delete _zwVaStateOverrides.superscript;
+      else if (command === 'superscript') delete _zwVaStateOverrides.subscript;
       _zwVaSetValueOverride(command, newValue);
       return;
     }
@@ -1775,8 +1898,18 @@
       rng.setStart(newStart[0], newStart[1]);
       rng.setEnd(newEnd[0], newEnd[1]);
       var selE = globalThis.getSelection();
+      // DC-2 P2（2026-11-11）：重绑走公共 API 会经 _zwSync 的 swcss 选区清除臂
+      //（part06 F1'-B）在 apply 中途清 __zwStyleWithCSS——forceValue span/元素
+      // 取型在重绑之后读 flag（`foo[bar]baz` swcss(true) 尾文本触发本臂 →
+      // <b> 误形，multitest 161 css-true 失败实证；`foobar` 端点=长度不触发本
+      // 臂故孤立探针不可复现）。Chrome 恒不清该 flag（document 全局）；本仓
+      // 清除臂是 typing 隔离近似，跨案隔离仍由每案 setup 公共 addRange 承担，
+      // 此处内部重绑按 apply 前值回填。override 清除不回填（apply 不读
+      // override，跨案 setup 清点同前）。
+      var swPrev = globalThis.__zwStyleWithCSS;
       selE.removeAllRanges();
       selE.addRange(rng);
+      globalThis.__zwStyleWithCSS = swPrev;
     }
 
     // 祖先链 style 属性规范形直出：Chrome 录制端 normalizeSerializedStyle 对
@@ -1951,6 +2084,14 @@
       return _zwVaNormalizeCssColor(v) || v;
     }
     return v;
+  };
+
+  // —— state override 读数导出（part01c __zw_ce_format_query 与 part06
+  // _zwQueryFormatState 消费）——未设返 undefined（调用方区分「无 override」）；
+  // 读前走 reset（选区变动作废旧 override，同 value 侧惯用法）。vendored
+  // getStateOverride :1124-1128 对应面。
+  globalThis.__zw_ce_value_state_override = function (cmd) {
+    return _zwVaGetStateOverride(String(cmd));
   };
 
   // —— typing 值 override 快照导出（part01 __zw_ce_inserttext_mutate 消费）
@@ -2142,5 +2283,69 @@
       return true;
     }
     _zwVaSetSelectionValue('fontname', value);
+    return true;
+  };
+
+  // —— 六 format 命令 action 入口（part06 execCommand 非 collapsed 臂单点调
+  // 用；DC-2 P2 apply 面，2026-11-11）——vendored action 原文直译（bold :3119/
+  // italic :3464/strikethrough :3592/underline :3674/subscript :3609/
+  // superscript :3641）：state 真落解除值（bold/italic 落 normal、underline/
+  // strikethrough 落 null），假落激活值；sub/sup 两段式（先 null 清对侧与既
+  // 有值，state false 再落目标值——互斥经 clearValue 摘壳自然达成）。state 读
+  // = spec myQueryCommandState 激活面（P1 __zw_ce_format_query；state override
+  // 未接同 P1 挂账）。非六命令返 null（调用方回落）。
+  globalThis.__zw_ce_format_apply = function (cmd) {
+    var c = String(cmd == null ? '' : cmd).toLowerCase();
+    var six = { bold: 1, italic: 1, underline: 1, strikethrough: 1,
+      subscript: 1, superscript: 1 };
+    if (!six[c]) return null;
+    // Chrome delta（⑪ 不可编辑端点门，2026-11-11）：选区任一边界位置落在
+    // contenteditable=false 子树内 → 整条命令 no-op（rc=true，DOM 零变更）
+    // ——vendored 按 editable 过滤 contained 后仍会对可编辑片段落值，
+    // Chrome 对边界入非编辑区的命令恒不应用（bold 语料 11 变体实证：
+    // `fo[o<span cef>b]ar</span>baz` 期望原样、`<span cef>[bar]</span>` qS
+    // after=false）。中段穿越（边界位置均在可编辑区）不受此门。边界位置
+    // 解析：文本容器即本节点；元素容器取 offset 处子节点（offset=末端为
+    // 宿主缘，可编辑——`{…}` 选形端点落在 editing host 元素上不触发）。
+    try {
+      var rngCef = _zwVaGetActiveRange();
+      if (rngCef) {
+        var cefBn = function (cont, off) {
+          if (!cont) return null;
+          if (cont.nodeType === 3) return cont;
+          var kidsB = cont.childNodes;
+          if (off < kidsB.length) return kidsB[off];
+          return null;
+        };
+        var bnS = cefBn(rngCef.startContainer, rngCef.startOffset);
+        var bnE = cefBn(rngCef.endContainer, rngCef.endOffset);
+        if ((bnS !== null && !_zwJusIsEditable(bnS))
+            || (bnE !== null && !_zwJusIsEditable(bnE))) {
+          return true;
+        }
+      }
+    } catch (_eCefG) {}
+    var state = false;
+    var fq = (typeof globalThis.__zw_ce_format_query === 'function')
+      ? globalThis.__zw_ce_format_query(c) : null;
+    if (fq) state = fq.state;
+    if (c === 'bold') {
+      _zwVaSetSelectionValue('bold', state ? 'normal' : 'bold');
+      return true;
+    }
+    if (c === 'italic') {
+      _zwVaSetSelectionValue('italic', state ? 'normal' : 'italic');
+      return true;
+    }
+    if (c === 'underline') {
+      _zwVaSetSelectionValue('underline', state ? null : 'underline');
+      return true;
+    }
+    if (c === 'strikethrough') {
+      _zwVaSetSelectionValue('strikethrough', state ? null : 'line-through');
+      return true;
+    }
+    _zwVaSetSelectionValue(c, null);
+    if (!state) _zwVaSetSelectionValue(c, c);
     return true;
   };
