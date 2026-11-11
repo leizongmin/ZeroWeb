@@ -63,7 +63,11 @@ fn format_number_6dp(value: f64) -> String {
         return "NaN".into();
     }
     if value.is_infinite() {
-        return if value > 0.0 { "infinity".into() } else { "-infinity".into() };
+        return if value > 0.0 {
+            "infinity".into()
+        } else {
+            "-infinity".into()
+        };
     }
     let mut s = format!("{:.6}", value);
     if s.contains('.') {
@@ -112,10 +116,7 @@ pub(crate) fn inverse_trig_arg_has_angle_unit(value: &str) -> bool {
         // `atan2(` 因 '(' 不紧随 'atan' 天然不命中）。
         let hit = ["asin(", "acos(", "atan("].iter().find(|name| {
             lower[i..].starts_with(*name)
-                && (i == 0
-                    || !(bytes[i - 1].is_ascii_alphanumeric()
-                        || bytes[i - 1] == b'-'
-                        || bytes[i - 1] == b'_'))
+                && (i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_'))
         });
         let Some(name) = hit else {
             i += 1;
@@ -156,10 +157,9 @@ fn span_has_angle_unit(span: &str) -> bool {
         while let Some(pos) = span[from..].find(unit) {
             let start = from + pos;
             let end = start + unit.len();
-            let prev_is_num =
-                start > 0 && (bytes[start - 1].is_ascii_digit() || bytes[start - 1] == b'.');
-            let next_is_ident = end < bytes.len()
-                && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'-' || bytes[end] == b'_');
+            let prev_is_num = start > 0 && (bytes[start - 1].is_ascii_digit() || bytes[start - 1] == b'.');
+            let next_is_ident =
+                end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'-' || bytes[end] == b'_');
             if prev_is_num && !next_is_ident {
                 return true;
             }
@@ -218,7 +218,10 @@ mod tests {
         assert_eq!(fold_math_specified("asin(-1)", Angle).as_deref(), Some("calc(-90deg)"));
         assert_eq!(fold_math_specified("atan(1)", Angle).as_deref(), Some("calc(45deg)"));
         assert_eq!(fold_math_specified("atan(0)", Angle).as_deref(), Some("calc(0deg)"));
-        assert_eq!(fold_math_specified("atan(infinity)", Angle).as_deref(), Some("calc(90deg)"));
+        assert_eq!(
+            fold_math_specified("atan(infinity)", Angle).as_deref(),
+            Some("calc(90deg)")
+        );
         assert_eq!(
             fold_math_specified("atan2(37.320508075, 10)", Angle).as_deref(),
             Some("calc(75deg)")
