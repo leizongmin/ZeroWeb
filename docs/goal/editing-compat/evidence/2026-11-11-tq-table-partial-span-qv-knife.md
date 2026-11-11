@@ -56,3 +56,15 @@ tq gate v1 ABORT @mt（20114/2 vs 期望 20182/2）。judge 域逐行对账定�
   变量定位毒化源）。窗化段零漂移支持「连续段跨案状态链毒化 setup」方向
   （窗界重置掩盖链效应，与 editing-corpus 窗界伪影先例同构）。
 - fb/probe/单文件/exec 各腿过门数据不受影响（本批红线在 mt 腿之后未跑）。
+
+### 复绑链 v3→v7（组合态前进重立红线，判读域终绑 13535525b，2026-11-11 晨收口）
+
+v1 复绑后他流三波入站（s396→4a0d1ba65、s397/Typed-OM 相对色/grid var()→718e0f0e6、position-area 文法基座→13535525b）均触运行时面，按复绑先例逐波全腿重立；judge 基线 rbv2-\*（fbpara 复绑 v2 批）+ bfl-probe-win/k11（boolface 批），同门不放宽。
+
+- **v3 双 ABORT（batch-tq-rebind-v3，08:3x 发射 @d85dc7114）**：①fb 主门自 ABORT——修复页实测 5042/4 vs 预测 5043/3，10 伪影键 9 翻绿、R7（idx171 pre-div qV-before）未翻；fb13 预研预证 Chrome 录音会话在 idx171 前自身复位（非 exec 链），单门版静默执行模型不可复现 → R7 归录音协议伪影（#37 判据）除名挂账，fb 门改 5042/4、白名单 10→9；②rollover pull 并入 s396 → HEAD 4a0d1ba65，mt 腿起将 rebuild 混合二进制，孤儿发射轮/监视轮清场后停批，probe 双腿（旧二进制）判读不跨批传递。
+- **v4 静默死亡定谳（08:54:46 发射 @4a0d1ba65）**：probe 双窗过门 → fb 计数过门（5042/4 恰期望）→ judge 基础度量真 OK（P2F=0/lost 0/rows 恒一）→ **白名单断言 False → heredoc `|| exit 1` 无标记静默退出**（09:13，mt 发射前）。定谳＝判读规格错、行为零漂移：v4 白名单 9 键**漏计 4 个 tq 刀键**（rbv2-fb 为 tq 刀前基线，该 4 键 vs 刀前基线必现 F2P），F2P 实测 13=9+4 恰正确集。修复＝白名单 9→13 键（逐字节取自 v4 实测日志）+ heredoc 失败路径补 ABORT 标记。
+- **v5 入站漂移自弃（09:26 ABORT）**：重锚 718e0f0e6 后 09:17:40 pull fast-forward 入站 5 提交（s397 module parse→part01c+6/es_module/webview；Typed-OM 相对色→part10-typed-om+55/part11-computed-color+84；grid CSSOM var()→grid_cssom.rs+40）——launch 锚捕获 part01c md5 漂移自弃；域净（part01g 刀锚 3b9918c4 恒一）。v6 重锚 part01c a3ae1b41 + **5 点入站漂移层扩锚**（part10-typed-om/part11-computed-color/grid_cssom/es_module/webview）。
+- **v6 停批 ABORT-EXTERNAL（09:30:02 发射 @718e0f0e6，09:44 接手轮执行）**：在飞中 rollover 轮开工 pull（09:33）并入 **13535525b**（position-area：position_area.rs 新建 +470 / **js_dom_bridge.rs +14——锚表内 6fcefc20→27f402be** / callbacks.rs +44 锚表盲区新文件）。f6bwin 腿跑旧二进制过门 2092/0；k11 腿 make rebuild → **混合二进制**（k11 224/17 judge OK＝probe 域零漂移实证，判读不跨批传递），fb 腿 3min 处接手轮停批（v3② 同型先例；杀序 脚本→腿树→fd 穷举锁零残留）。
+- **v7 全绿 ALL-DONE（09:43:55 发射 @13535525b，11:24:17 ALL-DONE，墙钟 1h40m 含 foreign 租户争抢窗）**：bridge 重锚 27f402be + **2 点新锚 callbacks c9a06c39 / position_area 3c72fbbd**（补锚表盲区）；锚复读 OK → probe f6bwin 2092/0 + k11 224/17 judge OK → fb **5042/4** 恰期望（judge rows 5046 恒一 P 5029→5042 F 17→4 **F2P=13 恰集**＝9 伪影+4 刀键，P2F=0 post-only 0 lost 0）→ mt **20182/2** 恰期望（judge F2P 0/P2F 0/post-only 0/lost 0，X37 2F 稳定）→ singles iol 1759/iul 2061/ip 6989（残 206F 恒）/ilb 1658/ihtml 1446 零漂移 → exec×3 零漂移 → enginelib 3846P/7F 名册双门 OK → battery 420/880/1104/552/3456/2607/1455 全 F=0 T=0 → binary sig 六串 + tq-knife ×2。**VERDICT OK——判读域终绑 13535525b（含他流 s396/s397/typed-om/grid-var/position-area 组合态）**。日志 batch-tq-rebind-v7.log（tqr7-\* 前缀，本地 .acceptance/dps）。
+
+**链教训三条**：①judge 白名单期望须含「刀键 vs 刀前基线」的必现 F2P（v4 漏计静默死亡先例；heredoc 失败路径必须带 ABORT 标记防静默退出）；②复绑批锚表须覆盖入站 range 的全部 crates/ 运行时面**含新增文件**（v5 五点扩锚、v7 又两度补锚实证）；③rollover 开工 pull 与在飞批互斥——开工先查在飞批（flock/pid/日志终态标记），在飞时先停批或延 pull，launch 锚断言不复核中途入站（v6 毒化实锤）。
