@@ -1,0 +1,130 @@
+# CSSOM style 写回刀 — outdent 残红 8→0（F2P=169）
+
+**日期**: 2026-11-11
+**刀体**: bc69c69cf（4 文件 +57/−12）＋刀二笔索引化 callbacks.rs（25e533139）；重锚谱系：rebase 重放 0a435f0a1/0ff1bc92c（他流 s405 14b6ca724 并入后，已推送）
+**门禁批**: batch-cssom-writeback-v1.1（v1 L0 门值算术自误 ABORT 后重射；v1.1 L3 mt 主页 300s 截断 ABORT→刀二索引化）→ v1.3 组合树重锚版暂缓发射（s405 碰撞，见批终值节）
+**基线**: census 3a528a13f（ind-c1-*）＋ v1.2 残红账（odt-outdent-fails.txt，12 corpus + 7 probe）
+
+## 根因（读侧定谳，闭合 outdent v1.1 五级诊断探针）
+
+语料 harness `normalizeSerializedStyle`（tests.js :5499）末段
+`node.setAttribute("style", node.getAttribute("style").replace(...))` 读 **style attr**。
+引擎 CSSOM 属性写臂 `_styleProxy.setProp`（part03）经 `__zw_set_style_handle` 回调
+**只排队**（callbacks.rs DomMutation::SetStyleOnHandle，不同步 apply）——attr 真同步只在批
+flush（js_dom_bridge.rs `apply_style_property`）。JS 同步读窗内 `getAttribute('style')`
+读 stale 字面量 → normalize 的颜色归一（`color: blue` → `color:rgb(0, 0, 255)`）无法落进
+序列化 → 8 行 compare innerHTML 恒红。读面不对称：`node.style` 读（lw replay）已
+pending-aware，attr 面读（`__zw_get_attr_handle`）不 aware。
+
+## 刀体四笔
+
+1. **part04 getAttribute trap**：handle 面 style 属性读接 `__zw_get_style_lw_handle`
+   正序 replay（cssom-1 update-style-attribute 同步可见面；polyfill 回落原读零漂移）。
+   normalize 末步 setAttribute 落归一形 → innerHTML 序列化经 attr 粒度双层索引可见。
+2. **part03 R188 镜像剔除第四键**：三键（tag+id+class）剔除会误切「同三键但其余属性
+   不同」的真后代——outdent 页根宿主 `<div contenteditable>` 与引擎产物
+   `<div style=…>` 三键全空同型，harness `wrapper.querySelectorAll("[style]")` 首命中
+   被误切恒 count=0。补第四键整串序列化全等（host parse payload `outer` 字段 vs
+   `_r188RootSelf` 根自身序列化快照；纯字符串比对无额外 host 往返）。
+3. **part01c**：`_zwPlainStyleDeclsText` 文本半边从 `_zwPlainStyleDecls` 独立导出。
+4. **part01d 读核验基底换 attr 权威面**：`_zwVaSetStyleProp` 经 getAttribute 读基底会
+   看到自己刚 setProperty 的 pending 值 → cur==valS 跳过 attr 合并 → 序列化丢声明
+   （nested styled-ol forceValue 载体 span 丢 color，odt :628/:658 P2F）。handle 元素
+   改走 attr 粒度回调 `__zw_get_attr_handle`（不索引 SetStyleOnHandle，恒回 attr 真值）。
+
+## 预验（发射前三重）
+
+| 预验 | 结果 |
+|------|------|
+| outdent+probe 全页（cssom-pf2-final.log） | 2763P/9F，残红键集恰 = 4 corpus（2 dPS-qV-before + 2 ws-bq）+ 5 probe dPS；F2P=169（161 基线 + 8 CSSOM 闭），P2F=0 |
+| indent 全页（cssom-pf2-indent.log） | 1302P/27F，残红集与 census 基线逐字节恒等——15:1x Critical 预登记的 margin×19/text-decoration×30/background×15 P2F 爆炸雷实测未爆 |
+| zz-diag-styleattr 探针（probe12-fixed.log） | 嵌套 styled-ol 两新红四假设（H1-H4）got 与 oracle 逐字节 MATCH |
+
+机制注：`style_from_mutations_lw` handle 面空基底＋当前批 replay（js_dom_bridge.rs
+:5460 注），normalize 同 tick 内先 setProperty（本批 SetStyle 入队）再读 getAttribute →
+replay 含本批条目；indent 页实测证明跨形态（engine-created wrapper 载体）无截断伪红。
+
+## v1.1 L3 ABORT 与性能归因（multitest-ab 300s 脚本门）
+
+mt 腿 20180/2 vs 期望 20182/2：multitest.html 主页键集四零（零漂移），ab 页丢末夹具
+（#628/628 forwarddelete white-space:pre 2 断言）——单连续 JS 执行 628 夹具页被刀的
+热路径开销推过 300s 引擎脚本门（ZW_SCRIPT_TIMEOUT_MS），击杀点恰剩末夹具＝截断症状
+非行为漂移（同夹具 multitest.html 窗页全绿为证）。
+
+归因（Exp A 撤臂 A/B）：撤 part04 trap style 臂（TEMP-EXP-A）后 ab 页完走
+10092P/0F＝与基线逐字节恒一 → **热源唯 trap 每读调 `__zw_get_style_lw_handle` 的
+全批 O(list) 线性扫描**（`style_from_mutations_lw`）；其余三笔零漂移零开销嫌疑排除。
+序列化读（`_zwMOuterHtml` 直读 n.attributes）不经 trap 非热源；热调用方＝编辑命令实现
+全树的 getAttribute('style') 走查（量级吻合）。处置＝归因修复非调阈值（perf-gate
+政策：禁为过门禁调 ZW_SCRIPT_TIMEOUT_MS）。
+
+## 刀体第二笔：索引化 replay（callbacks.rs）
+
+`HandleStateIndex` 增 `styles` 投影（t8c 增量索引同型扩展）：apply() 内
+SetAttrOnHandle(style)/RemoveAttrOnHandle(style) 臂整体覆盖/清空＋新增
+SetStyleOnHandle/RemoveStyleOnHandle 臂（`fold_decl_specified` 折叠＋
+merge/remove_style_property 与 `style_from_mutations_lw` **同函数**正序累积——投影
+语义与全扫 replay 逐构造恒等，折叠成本移至水位推进每 op 恰一次）；
+`__zw_get_style_lw_handle` 回调弃全批扫描改接 `shared_state_style`。失效模型与已
+发运 attrs 索引同（drain 代际 bump＋回缩防御）。part04 trap 臂语义不变。
+
+等价性钉测（新增 2，全绿）：`projection_equals_full_replay_on_every_prefix`
+（xorshift 300 op 确定性序列，任意前缀三 handle 投影≡全扫 replay）＋
+`shaped_sequences_end_values`（cssText 覆盖/removeAttribute 净空/removeProperty
+净空/非 style attr 干扰/`STYLE` 大小写五形态）；R3199 端到端集成测试
+（sandbox set→read）过；既有 handle_tag_memo_tests 5/5 无回归。
+
+## 批终值与门禁史
+
+- **v1**（19:28，bc69c69cf）：L0 门值算术自误 ABORT（215+2=217 非 220）。
+- **v1.1**（重射）：L0 probe 217/5 ✓、L1 outdent judge F2P=169/P2F=0/lost=0/residF=4 ✓、
+  L2 indent 1302/27 ✓；**L3 mt 主页 20180/2 vs 期望 20182/2 ABORT**——multitest.html
+  主页单连续 JS 执行被刀一 trap 全批 O(list) replay 推过 300s 脚本门，末夹具 2 断言
+  截断（mt 键集四零零漂移，纯截断非行为漂移）→ 刀二索引化。
+- **knife-only 组合树 preflight 全绿**（pres405.log，22:23，bin ebb0ed68，head 25e533139）
+  五腿：probe 217/5 恰集、outdent 2763P/9F judge F2P=169/P2F=0/lost=0/residF=4 恰集、
+  indent 1302/27 零漂 VERDICT OK、mt 10090/2 judge 四零＋residF=2（rbv2 在册两键）、
+  ab 10092/0/0 零漂 VERDICT OK——刀二后 multitest-ab 回 300s 门内完走。
+- **终门 v1.3**（组合树重锚版，占位符未实例化）暂缓发射，见下节。
+
+## s405 碰撞：multitest-ab 再推过 300s 脚本门（v1.3 暂缓，2026-11-12 记档）
+
+pull --rebase 并入他流 14b6ca724（s405 embed 动态加载链，wptfyi-css 流）后刀体重放
+（0a435f0a1/0ff1bc92c，已推送）。换基正中已记教训「preflight 与批之间不得有源码变更」
+（s405 触及 part01/part04/part05/part11-color，part04 与刀体同文件域 rebase 无冲突合并）
+→ 组合树重跑 preflight（23:12-23:54，bin c178799f，head 0ff1bc92c）：
+
+- **行为四腿与 pres405 逐字节恒等**：probe 217/5 恰集、outdent 2763P/9F judge
+  F2P=169/P2F=0/lost=0/residF=4 恰集、indent 1302/27 VERDICT OK、mt 10090/2 四零＋
+  residF=2——刀体语义在组合树零漂移。
+- **ab 页 9702P/0F/0T vs 基线 10092P/0F/0T，lost=390**（shared 键四零；lost 全落截断
+  尾块）；腿墙钟 23:49:51→23:54:53 ≈ 302s = 300s 脚本门击杀签名；截断点
+  `[["insertparagraph",…]] "<div>abc{<s></s><b><i>de]f</i></b>ghi</div>"`（语料 96%
+  处），基线末夹具 forwarddelete white-space:pre 未跑到。
+
+归因（两点位唯一源差）：knife-only（ebb0ed68）ab 完走 10092 ≤300s；knife+s405
+（c178799f）截断 9702 @302s（全页线性估 ~312s）。s405 给 part04 CE 插入步循环加
+第三个 per-node 钩子 `_zwStartConnectedEmbed`，tag 判定 `_realTag()` 宿主桥调用——
+与既有 `_zwStartConnectedIframe`（IFRAME/FRAME）/`_zwStartConnectedObject`（OBJECT）
+完全同型；per-insertion 宿主桥调用 2→3 次，累积成本耗尽刀二索引化买回的余量。
+
+处置：engine 属并行规则 §9 共享面且他流 session 活跃（当晚多流协作仲裁高峰）→
+不硬解不代修；L3b 门值 10092 硬编码＋judge 四零 vs cssom-ab-perffix.log，截断态发射
+必 ABORT 无新信息，故不空跑。恢复条件：s405 流恢复 ab 页 300s 门内余量（如钩子
+tag 判定降本为字符串先行）或两流协调处置 → 重跑组合树 preflight 五腿对账 →
+按新 preflight 实测值实例化 v1.3（EXPECTED_HEAD/MT_P/MT_F2P_SIGNED）发射。
+
+## 残红账（不变）
+
+- 2 dPS-qV-before：录音会话顺序泄漏链（窗界伪影定性沿用）
+- 2 ws-bq compare：`<blockquote> <p>[foo]</p> </blockquote>` spec-vs-Blink 分歧
+  （indentNodes 无 ws-only 特例，Blink 原生行为，需刻意兼容偏离臂，独立挂账）
+- probe 页 5 dPS：同录音链伪影族
+
+## 教训
+
+- **批门值必须从 preflight 日志直接算术导出**：v1 把「215P/7F 闭 2 compare」误写为
+  220P（正确 217P；fails→passes 是移动不是追加）。v1.2 同族教训（锚规格先 grep 现树
+  实值）三度实证后第四次：凡数字门，先对账总数恒一再登记。
+- **corpus preflight 与批之间不得有源码变更**：18:31 preflight（仅 part03）的 2 新红
+  差点被当成最终树状态判读；mtime 对账（源 18:58 > preflight 18:31）后重跑才定谳。
