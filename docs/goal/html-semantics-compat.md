@@ -2,7 +2,21 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 397 收口（module parse 失败缓存语义施工 1F→P + current-pixel-density 域分诊定谳路由）：s373
+**状态**: Active——M2 切片 398 收口（OBJECT contentWindow 嵌套浏览上下文面施工 2F→P）：R5274「runner 无
+object 嵌套浏览上下文→contentWindow 恒 null」按 spec #the-object-element 处理模型收口——part01 新增
+`_zwObjectNavCache`（独立缓存，不混 iframe 缓存语义）+ `_zwLoadObjectNavigable`（首读惰性物化：无 data
+/ fetch 缺席 / 非 2xx / Content-Type 非 text/html → null；text/html → _zwMakeIframeDoc+_zwMakeIframeWin
++ win.name 创建时点 name 内容属性快照）+ part04 R5274 臂拆臂（contentWindow 接管线、contentDocument 恒
+null 边界保持、getSVGDocument/EMBED 不动）+ part100 桥测两钉九面。验证：driving solo object-attributes
+4F→4P 文件全绿；全树 sweep 双跑 join 对 s397 基线 gone/new 恰为 driving 2 对 + 他流探针案单列零意外位移
+（sweep2 stable 8209P/218F/37T unique 8464，其中 1F=共享语料上渲染流 radio 探针残留单列）；单元 engine
+3843P/7F 在册同形（含 part100 两钉）+ webview 848P/2F 基线同形 + script-sandbox 全绿；smoke 双 PASS；
+fmt/clippy clean；**本流域在册红 219F+37T→217F+37T**。残差：object contentDocument 访问面（historical/
+object-handler）+ object-events 动态 data IDL setter 加载链散单池留存。下一步：本流域散单（focus
+scroll-into-view 1F / link-rel shadow DOM CSSOM）或 object contentDocument 中型切片（同管线扩臂 +
+historical/object-handler/object-events 三案联动）或等簇 D 决策开特性施工。
+
+> **▶ 承前（2026-11-11 M2 切片 397 收口）——module parse 失败缓存语义施工（1F→P）+ current-pixel-density 域分诊定谳路由**: commit eead007d0，账本 evidence/2026-11-11-m2s397-module-parse-failure-cache.md。s373
 parse 预检把 parse 失败发 tag 3（态④逐次新 SyntaxError）违 module map 失败记账语义——新契约 **tag 5**（webview
 compile_module_contract gate 臂发射，仅此一臂；native resolver parse_gate=None / defer 面无 gate 零暴露）+
 shim `__zw_load_module` 态⑤（首抛 SyntaxError 入 `__moduleFailures[resolved]` 复抛同对象，s87 四态扩五态）+
@@ -15,8 +29,6 @@ sizing.rs:3354 R695 `.max(1.0)` 钳制抬升 s219 密度折算亚像素/零固�
 无固有尺寸供给（alt 文本/default object size 渲染面缺失，layout 主体→渲染流 + shim IDL rendered-width 臂配套本流）；
 svg-img-density-vs-zoom 3F=CSS `zoom` 属性面→渲染流；dialog 居中簇 8F=既有 R-s31 挂账确认；tabular 4F=
 表布局亚像素/rowspan 面归渲染流；forms 主池 146F 里 142F=customizable-select 特性族（簇 D 同族待用户决策）。
-下一步：本流域散单（object.contentWindow 2F 中型切片 / focus scroll-into-view / link-rel shadow DOM CSSOM）
-或等簇 D 决策开特性施工。
 
 > **▶ 承前（2026-11-11 M2 切片 396 收口）——object/embed width/height 内容属性 dimension hint 施工（#attr-dimensions 同口径，4F→P）**: commit 4a0d1ba65（429 中断 session 残件接手收口，rebase origin/main 5 笔渲染流提交零冲突），账本 evidence/2026-11-11-m2s396-object-embed-dimension-hints.md。collect_presentational_hints 增 `"object"|"embed"` 臂（html_length_attr 同口径）+ 单测四面钉死；driving solo 4F→4P（object.contentWindow 2F 独立面不动）、全树 join gone/new 恰为 driving 4 对、select-home-end T/F 时序 flake 单列定谳、单元零新增红、smoke 双 PASS，在册红 224F+37T→220F+37T。残差 object.contentWindow 留散单池；分诊由 s397 接力。
 
@@ -6970,6 +6982,10 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 398**：OBJECT contentWindow 嵌套浏览上下文面施工轮（2F→P，shim 双点+桥测）——spec #the-object-element 处理模型收口：part01 `_zwObjectNavCache`（独立缓存，不混 `_iframeDocCache`——object 嵌套 navigable 不走 iframe SW 观察/history 账本/servedDoc 成熟翻转链）+ `_zwLoadObjectNavigable`（首读惰性物化：无 data/fetch 缺席/非 2xx/Content-Type 非 text/html → null；text/html → `_zwMakeIframeDoc`+`_zwMakeIframeWin`+win.name 创建时点 name 内容属性快照——object-attributes「name 改后 contentWindow.name 仍 'o'」断言链）+ part04 R5274 臂拆臂（contentWindow 接管线、contentDocument 恒 null 边界保持、getSVGDocument/EMBED 不动）+ part100 桥测两钉九面（含 404/无 data/image/* 三 null 面+同 identity+R5274 恒 null 保持）。driving solo object-attributes 4F→4P 文件全绿；全树 sweep 双跑 join 对 s397 基线 gone/new 恰 driving 2 对零意外位移（sweep2 8209P/218F/37T unique 8464，全域 218F 含他流 radio 探针残留 1F 单列——共享 gitignored 语料上渲染流探针把上游断言体替换成恒红诊断，非本流面归渲染流处置，s343 先例 headline 排除）；单元 engine 3843P/7F 在册同形（part100 两钉在列）、webview 848P/2F 基线同形、script-sandbox 全绿；smoke 双 PASS（legacy 42/42 struct PASS）；fmt/clippy clean。过程记两点：①自建 iframe win.name 探针实测 win 字面量无 name 槽（browsers 域 browsing_context_name 族欠账不属本流域）且 `<iframe` 字面主源被 skip 谓词静默排除零案 exit 1（s341 坑复现）；②pairs join 连环伪影两轮——`tr ' '` 全转子测名内空格/单侧转换字节形态不一致均产 2.3MB 假位移，两侧同 `sed 's/ /\x1f/'` 首空格形态才闭合（s287/s292 教训重演）。**本流域在册红 219F+37T→217F+37T**。残差：object contentDocument 访问面（historical/object-handler）+ object-events 动态 data IDL setter 加载链散单留存。账本
+  [evidence/2026-11-11-m2s398-object-content-window.md](html-semantics-compat/evidence/2026-11-11-m2s398-object-content-window.md)。
+- **2026-11-11 M2 切片 397**：module parse 失败缓存语义施工轮（1F→P，webview tag-5 契约 + shim 态⑤）——s373 parse 预检把 parse 失败发 tag 3（逐次新 SyntaxError）违 module map 失败记账语义；新契约 tag 5 仅 webview compile_module_contract gate 臂发射（native/defer 面零暴露），shim `__zw_load_module` 态⑤首抛 SyntaxError 入 `__moduleFailures[resolved]` 复抛同对象（s87 四态扩五态），part99 桥测钉死 tag5 同对象 identity/tag3 逐次新对象对照。driving solo dynamic-imports-script-error 11P/0F；全树 sweep 双跑 join 对 s396 基线恰 driving 1 对零意外位移（sweep2 8207P/219F/37T unique 8463）；单元 script-sandbox 全绿、webview 848P/2F（2F 预存 env 红 stash 归因首记基线）、engine 3840P/7F 在册同形；smoke 双 PASS；fmt/clippy clean；**在册红 220F+37T→219F+37T**。同轮分诊定谳（s392 方法论）：current-pixel-density 10F 两根（basic 3F=sizing.rs R695 `.max(1.0)` 钳制根→渲染流；error 7F=broken img 尺寸供给根→渲染流+shim IDL 臂配套本流）、svg-img-density-vs-zoom 3F=CSS zoom 面→渲染流、dialog 居中簇 8F=R-s31 在册、tabular 4F=表布局亚像素归渲染流、forms 主池 146F 里 142F=customizable-select 特性族（簇 D 待用户决策）。账本
+  [evidence/2026-11-11-m2s397-module-parse-failure-cache.md](html-semantics-compat/evidence/2026-11-11-m2s397-module-parse-failure-cache.md)。
 - **2026-11-11 M2 切片 396**：object/embed width/height 内容属性 dimension hint 施工轮（4F→P，style-system 单臂零 shim 改动）——HTML rendering #attr-dimensions 同口径（rules for parsing dimension attribute values，html_length_attr 与 img/table 臂同型）；单测四面钉死（object 100/50、embed 100/100、50% 透传、无属性零 hint）；iframe/video 同属规范面但语料无 driving F 面不扩臂。driving solo 4F→4P（object-attributes width/height "auto"→100px/50px + embed-dimension exit 0 全绿；object.contentWindow 2F 独立面不动）；全树 sweep 双跑 join 对 s395 基线 gone/new 恰为 driving 4 对零意外位移（sweep2 稳定复跑 8209P/220F/37T unique 8463）；select-home-end-pagedown-pageup.optional T/F 时序 flake 定谳单列（同二进制 T/F 双跑翻转+零 object/embed 零 width 属性机制排除+solo 恒 Fail 真态，s393/s394/s395 三代 sweep 恒 T）；单元 style-system 2516P/0F、engine 3835P/8F（7F 在册同形+r5296 渲染流 R5484 已在册 env 竞态本轮命中）零新增红；smoke 双 PASS；**在册红 224F+37T→220F+37T**。承上一 session 429 残件（WIP+clippy 已就绪）接手完成全链验收。账本
   [evidence/2026-11-11-m2s396-object-embed-dimension-hints.md](html-semantics-compat/evidence/2026-11-11-m2s396-object-embed-dimension-hints.md)。
 - **2026-11-11 M2 切片 395**：动态 append rect 供给链勘根+施工轮（2F→P）——五探针钉死：flush 后 host 全可见

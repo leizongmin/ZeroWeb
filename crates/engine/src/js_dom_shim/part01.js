@@ -2846,6 +2846,11 @@
   // ——最近活动 frame 优先；_zwJointFrameBackTarget 消费）。
   var _zwIframeNavSeq = 0;
   var _zwIframeFetchSeq = 0;
+  // html-semantics M2 切片 398：OBJECT 嵌套浏览上下文（contentWindow）缓存
+  //（object key → { doc, win, state, url }）——独立于 _iframeDocCache：object
+  // 嵌套 navigable 不走 iframe 的 SW 观察/history 账本/servedDoc 成熟翻转链
+  //（part02 SW refresh 遍历等 iframe 消费面零混入）。导航清空（页级）。
+  var _zwObjectNavCache = {};
   function _zwIframeKindFromUrl(url) {
     return /\.xhtml(\?|#|$)/i.test(url) ? 'xhtml'
       : (/\.html?(\?|#|$)/i.test(url) ? 'html'
@@ -3583,6 +3588,70 @@
         try { win.unexpectedException = _eR206o; } catch (_eR206ow) {}
       }
     }
+  }
+
+  // html-semantics M2 切片 398：OBJECT 嵌套浏览上下文物化（contentWindow 消费点
+  // part04 R5274 臂调用）——spec
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+  // 处理模型：resource fetch 成功且确定类型为 text/html 时 object 表示嵌套浏览
+  // 上下文（named target），contentWindow 返回其 active window proxy（#dom-object-
+  // contentwindow）；fetch 失败/替换内容类型无嵌套 navigable → null。runner 近似
+  //（FIXME）：类型判定按响应 Content-Type 单源（无 MIME sniffing 全链）；嵌套文档
+  // 不执行子文档脚本、不派 object load 事件（iframe R206 通道不接——object-events
+  // 动态 data IDL setter 面散单另案）。name 快照：嵌套 navigable 命名取**创建时点**
+  // name 内容属性值；之后内容属性增删不影响（browsing context name 独立记账——
+  // object-attributes「name 改后 contentWindow.name 仍 'o'」断言链）。缓存在首次
+  // contentWindow 读时惰性物化（`<body onload>` handler 内首读时序——同步 fetch
+  // 契约下读即就绪，R115 同款）；error 态 entry 复用缓存（同 identity，fallback
+  // 判定不重复 fetch）。
+  function _zwLoadObjectNavigable(objKey, sel, handle) {
+    var entry = _zwObjectNavCache[objKey];
+    if (entry) return entry;
+    entry = { doc: null, win: null, state: 'loading', url: '' };
+    _zwObjectNavCache[objKey] = entry;
+    var _objData = '';
+    try { _objData = handle ? __zw_get_attr_handle(handle, 'data') : (sel ? __zw_get_attr(sel, 'data') : ''); } catch (_eObjD) {}
+    // 无 data 属性：不发起取回，无嵌套浏览上下文（处理模型无资源可取 → nothing；
+    // object-attributes obj2 type=image/png null 断言面）。
+    if (!_objData || typeof __zw_fetch !== 'function') return entry;
+    var _objUrl = '';
+    try { _objUrl = _zwResolveIframeSrc(_objData); } catch (_eObjU) { entry.state = 'error'; return entry; }
+    entry.url = _objUrl;
+    var _objWire = '';
+    try {
+      _objWire = String(__zw_fetch(
+        'objnav:' + objKey, 'GET', _objUrl, '', '', '', '', '', '', '', ''
+      ) || '');
+    } catch (_eObjF) { entry.state = 'error'; return entry; }
+    if (!_objWire || _objWire.indexOf('__zw_fetch_error:') === 0) { entry.state = 'error'; return entry; }
+    // 响应 wire（fetch_bridge serialize_response）：`__zwfr:` + status \x1f
+    // statusText \x1f headers \x1f body——同 _zwFinishIframeEntry 解析。
+    var parts = String(_objWire).split('\x1f');
+    var status = String(parts[0] || '').replace(/^__zwfr:/, '');
+    // 非 2xx → fallback（spec：fetch 失败即 fallback 内容，无嵌套浏览上下文；
+    // object-attributes obj3 data=missing.html 404 null 断言面）。
+    if (!/^2/.test(status)) { entry.state = 'error'; return entry; }
+    var ct = '';
+    if (parts.length > 2) {
+      var hdrsObj = String(parts[2] || '').split('\x1e');
+      for (var ho = 0; ho + 1 < hdrsObj.length; ho += 2) {
+        if (String(hdrsObj[ho]).toLowerCase() === 'content-type' && !ct) ct = _zwWireUnescape(hdrsObj[ho + 1]);
+      }
+    }
+    // text/html 才建嵌套浏览上下文；image/* 等替换内容与其它类型无嵌套
+    // navigable（document-getters-return-null-for-cross-origin 的 SVG data: URL
+    // 面同口径 null）。
+    if (!/^text\/html\b/i.test(String(ct || ''))) { entry.state = 'error'; return entry; }
+    var body = parts.length > 3 ? parts.slice(3).join('\x1f') : '';
+    entry.doc = _zwMakeIframeDoc('html', body);
+    try { entry.doc._zwURL = _objUrl; } catch (_eObjUrl) {}
+    entry.win = _zwMakeIframeWin(entry.doc, objKey, {}, null);
+    try { if (entry.doc.__r115SetWin) entry.doc.__r115SetWin(entry.win); } catch (_eObjW) {}
+    var _objName = '';
+    try { _objName = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : ''); } catch (_eObjN) {}
+    try { entry.win.name = String(_objName || ''); } catch (_eObjNW) {}
+    entry.state = 'done';
+    return entry;
   }
 
   function _zwLoadIframeEntry(frameKey, rawSrc, flags) {

@@ -1711,7 +1711,21 @@
           if (prop === 'getSVGDocument') {
             return function () { return null; };
           }
-          if (_zwIframeTag === 'OBJECT') return null;
+          if (_zwIframeTag === 'OBJECT') {
+            // s398（html-semantics M2 切片 398）：contentWindow 接嵌套浏览上下文面
+            //（spec #dom-object-contentwindow：成功加载 text/html 资源的 object
+            // 表示嵌套 navigable，contentWindow 返回其 window proxy；fetch 失败/
+            // 替换内容/无 data 属性 → null）——part01 _zwLoadObjectNavigable 惰性
+            // 物化（缓存、name 快照、Content-Type 门）。contentDocument 保持恒
+            // null（historical/object-handler 的嵌套文档访问面散单另案——本臂只
+            // 接 driving object-attributes 断言链）。
+            if (prop === 'contentWindow') {
+              var _objNav = typeof _zwLoadObjectNavigable === 'function'
+                ? _zwLoadObjectNavigable(key, sel, handle) : null;
+              return (_objNav && _objNav.win) ? _objNav.win : null;
+            }
+            return null;
+          }
         }
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
         // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；

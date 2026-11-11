@@ -106,3 +106,7 @@ include!("js_dom_bridge_tests/part98_s363_mixed_eager_defer.rs");
 
 // 47 号 s397 module parse 失败缓存面：tag 5 同对象复抛 + tag 3 逐次新对象对照钉。
 include!("js_dom_bridge_tests/part99_s397_module_parse_failure.rs");
+
+// 48 号 s398 OBJECT contentWindow 嵌套浏览上下文面：text/html 物化 + name 快照
+// + 四面 null 分类 + R5274 恒 null 面保持钉。
+include!("js_dom_bridge_tests/part100_s398_object_content_window.rs");
