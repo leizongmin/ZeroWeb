@@ -2081,12 +2081,18 @@ mod tests {
     /// 非 NaN 路径零漂移。
     fn test_resolve_length_calc_nan_censors_to_zero() {
         let nan_expr = zero_css_parser::values::parse_math_function("calc(NaN * 1px)").unwrap();
-        assert_eq!(resolve_length(&LengthValue::Calc(Box::new(nan_expr)), 16.0, None, None), 0.0);
+        assert_eq!(
+            resolve_length(&LengthValue::Calc(Box::new(nan_expr)), 16.0, None, None),
+            0.0
+        );
 
         let inf_expr = zero_css_parser::values::parse_math_function("calc(infinity * 1px)").unwrap();
         assert!(resolve_length(&LengthValue::Calc(Box::new(inf_expr)), 16.0, None, None).is_infinite());
 
         let finite = zero_css_parser::values::parse_math_function("calc(1px * 3)").unwrap();
-        assert_eq!(resolve_length(&LengthValue::Calc(Box::new(finite)), 16.0, None, None), 3.0);
+        assert_eq!(
+            resolve_length(&LengthValue::Calc(Box::new(finite)), 16.0, None, None),
+            3.0
+        );
     }
 }

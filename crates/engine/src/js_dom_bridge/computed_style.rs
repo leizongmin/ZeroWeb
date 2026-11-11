@@ -2484,7 +2484,11 @@ fn time_list_to_css(list: &[f64], default: &str, non_negative: bool) -> String {
     } else {
         list.iter()
             .map(|t| {
-                let t = if t.is_nan() || (non_negative && *t < 0.0) { 0.0 } else { *t };
+                let t = if t.is_nan() || (non_negative && *t < 0.0) {
+                    0.0
+                } else {
+                    *t
+                };
                 format_num(t, "s")
             })
             .collect::<Vec<_>>()

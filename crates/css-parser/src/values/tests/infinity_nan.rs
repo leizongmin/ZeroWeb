@@ -23,8 +23,16 @@ fn test_min_max_nan_poison_propagates() {
 #[test]
 fn test_parse_time_math_accepts_nan_and_infinity() {
     assert!(parse_time("calc(NaN * 1s)").map(|v| v.is_nan()).unwrap_or(false));
-    assert!(parse_time("calc(infinity * 1s)").map(|v| v.is_infinite() && v > 0.0).unwrap_or(false));
-    assert!(parse_time("calc(1s / sign(1em - 16px))").map(|v| v.is_infinite()).unwrap_or(false));
+    assert!(
+        parse_time("calc(infinity * 1s)")
+            .map(|v| v.is_infinite() && v > 0.0)
+            .unwrap_or(false)
+    );
+    assert!(
+        parse_time("calc(1s / sign(1em - 16px))")
+            .map(|v| v.is_infinite())
+            .unwrap_or(false)
+    );
     // 既有 IACVT/混型拒收零漂移。
     assert_eq!(parse_time("min(1s, 0)"), None);
     assert_eq!(parse_time("NaNs"), None);
