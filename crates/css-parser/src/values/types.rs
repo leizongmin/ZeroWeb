@@ -3,7 +3,11 @@
 //! 定义 CSS 属性值的类型化表示：长度、颜色、显示、布局等枚举类型，
 //! 以及 calc() 表达式的 AST（CalcExpr、CalcContext、CalcParser）。
 
-use super::parse_extended::calc_expr_is_number;
+use super::calc_mix::{
+    CalcMixItem, CalcMixWeight, eval_mix, expr_has_percentage_leaf, literal_percentage, mix_math_type,
+};
+use super::parse_extended::{CalcMathType, calc_expr_is_number};
+use super::serialize_math::span_has_top_level_angle_unit;
 
 /// CSS 长度值。
 #[derive(Debug, Clone, PartialEq)]
@@ -849,6 +853,10 @@ pub enum CalcExpr {
     UnaryOp(UnaryMathOp, Box<CalcExpr>),
     /// CSS Values L4 双参数数学函数：pow/hypot/round/mod/rem（driving: R2280 CSS Values L4 数学函数）。
     BinaryMathOp(BinaryMathOp, Box<CalcExpr>, Box<CalcExpr>),
+    /// CSS Values 5 calc-mix() 值混合（tentative；语料/语义见
+    /// [`crate::values::calc_mix`]）——项族同型（§10.5），权重 clamp/缺失
+    /// 分配/分母 max(Σ,100) 求值。
+    Mix(Vec<CalcMixItem>),
 }
 
 /// CSS Values L4 单参数数学函数运算符（number → number）。
@@ -1319,6 +1327,16 @@ impl<'a> CalcParser<'a> {
                 val: Box::new(val),
                 max: Box::new(max),
             }
+        } else if self.try_consume_function("calc-mix") {
+            // CSS Values 5 calc-mix() 嵌套形（`calc(10px + calc-mix(...))`）——
+            // 实参项表含内部逗号/权重空格分隔，独立于 min/max 逗号表。
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let items = self.parse_mix_args()?;
+            self.depth -= 1;
+            CalcExpr::Mix(items)
         } else if let Some(b) = self.try_parse_binary_math() {
             // CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
             b
@@ -1515,15 +1533,99 @@ impl<'a> CalcParser<'a> {
         Some(args)
     }
 
+    /// 解析 calc-mix() 实参项表（嵌套臂与 [`parse_calc_mix`] 共用；调用方
+    /// 已消费 `calc-mix(`，本方法消费到末项/`)`——`)` 由本方法吃掉，全文
+    /// 入口（inner 无尾括号）以 EOF 结束）。空项/尾逗号/空函数拒
+    ///（calc-mix-invalid 语料组）；权重字面 `<percentage [0,100]>` 范围门、
+    /// calc() 形权重 % 叶门、项族型别一致门（§10.5）。
+    fn parse_mix_args(&mut self) -> Option<Vec<CalcMixItem>> {
+        let mut items = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            if rest.is_empty() || rest.starts_with(')') || rest.starts_with(',') {
+                // 空函数 / 空项 / 尾逗号（`calc-mix(1, )`、`calc-mix(0,, 0)`）。
+                return None;
+            }
+            let value_start = self.pos;
+            let value = self.parse_expr()?;
+            let value_raw = self.input[value_start..self.pos].trim();
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            let weight = if rest.is_empty() || rest.starts_with(',') || rest.starts_with(')') {
+                None // 缺失权重（分配剩余）。
+            } else if let Some((pct, len)) = literal_percentage(rest) {
+                // 字面 `<percentage [0,100]>`：越界拒（`1 150%`/`1 -50%`）；
+                // calc() 形权重不受字面范围门（求值期 clamp）。
+                if !(0.0..=100.0).contains(&pct) {
+                    return None;
+                }
+                self.pos += len;
+                Some(CalcMixWeight::Literal(pct))
+            } else {
+                let w = self.parse_expr()?;
+                if !expr_has_percentage_leaf(&w) {
+                    return None; // `1 50` 裸 number 权重拒。
+                }
+                self.skip_whitespace();
+                let rest = self.peek_rest();
+                if !rest.is_empty() && !rest.starts_with(',') && !rest.starts_with(')') {
+                    return None;
+                }
+                Some(CalcMixWeight::Expr(w))
+            };
+            items.push(CalcMixItem {
+                value,
+                raw: value_raw.into(),
+                weight,
+            });
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            if rest.starts_with(',') {
+                self.pos += 1;
+            } else if rest.starts_with(')') {
+                self.pos += 1;
+                break;
+            } else if rest.is_empty() {
+                break;
+            } else {
+                return None;
+            }
+        }
+        // 项族型别一致门（angle 叶原文 provenance——parse_atom 已把角度单位
+        // Number 化为弧度，树内型别信息丢失）。
+        let has_angle: Vec<bool> = items
+            .iter()
+            .map(|it| span_has_top_level_angle_unit(&it.raw.to_ascii_lowercase()))
+            .collect();
+        if mix_math_type(&items, &has_angle) == CalcMathType::Invalid {
+            return None;
+        }
+        Some(items)
+    }
+
     /// 解析原子操作数（数值或带单位的长度值）。
     fn parse_atom(&mut self) -> Option<CalcExpr> {
         self.skip_whitespace();
         let rest = self.peek_rest();
 
-        // 从当前位置读取到下一个运算符、空白、右括号或逗号
+        // 从当前位置读取到下一个运算符、空白、右括号或逗号。空白同为 token 界
+        //（calc-mix 值/权重对空格分隔——`calc-mix(1 50%)` 的值原子须止于 `1`，
+        // 否则权重被吞进 token；合法 calc 原子从不含内部空白，既有形态零漂移）。
         let end = rest
             .bytes()
-            .position(|b| b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b')' || b == b',')
+            .position(|b| {
+                b == b'+'
+                    || b == b'-'
+                    || b == b'*'
+                    || b == b'/'
+                    || b == b')'
+                    || b == b','
+                    || b == b' '
+                    || b == b'\t'
+                    || b == b'\n'
+                    || b == b'\r'
+            })
             .unwrap_or(rest.len());
 
         if end == 0 {
@@ -1662,6 +1764,13 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
             calc_expr_is_pure_time(min) && calc_expr_is_pure_time(val) && calc_expr_is_pure_time(max)
         }
         CalcExpr::UnaryOp(_, inner) => calc_expr_is_pure_time(inner),
+        CalcExpr::Mix(items) => items.iter().all(|it| {
+            calc_expr_is_pure_time(&it.value)
+                && match &it.weight {
+                    None | Some(CalcMixWeight::Literal(_)) => true,
+                    Some(CalcMixWeight::Expr(w)) => calc_expr_is_pure_time(w),
+                }
+        }),
     }
 }
 
@@ -1671,7 +1780,9 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
 /// 返回统一的 [`CalcExpr`] 表达式树。
 pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
     let value = value.trim();
-    if math_function_inner(value, "calc").is_some() {
+    if math_function_inner(value, "calc-mix").is_some() {
+        parse_calc_mix(value)
+    } else if math_function_inner(value, "calc").is_some() {
         parse_calc(value)
     } else if math_function_inner(value, "min").is_some() {
         parse_min(value)
@@ -1720,6 +1831,29 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
     }
 }
 
+/// 解析 CSS Values 5 calc-mix() 值混合（tentative）。
+///
+/// 文法：`calc-mix( <calc-sum> [ <percentage> | <calc-sum 含 % 叶> ]? (#) )`——
+/// 逗号分隔项，每项 = 值表达式 + 可选权重；字面权重 `<percentage [0,100]>`
+///（范围门 parse 期），calc() 形权重须含 % 叶。项族型别一致门见
+/// [`crate::values::calc_mix::mix_math_type`]。
+///
+/// <https://drafts.csswg.org/css-values-5/#calc-mix>
+pub fn parse_calc_mix(value: &str) -> Option<CalcExpr> {
+    let inner = math_function_inner(value, "calc-mix")?;
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+        allow_time: false,
+    };
+    let items = parser.parse_mix_args()?;
+    Some(CalcExpr::Mix(items))
+}
+
 /// 数学函数形判定：值（trim 后）顶层为 `<数学函数名>(...)` 形。plain 值
 ///（`1s`/`10px`）为 false——serialize_math fold 面 plain 指定值不折叠
 ///（specified 原样保留），fold_decl_specified 的 Time 槽形状门用（共享 calc
@@ -1727,9 +1861,9 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
 pub fn is_math_function_value(value: &str) -> bool {
     let value = value.trim();
     // 与 parse_math_function 分派名单同步（含 calc 包裹与 §11.3 裸数学函数）。
-    const NAMES: [&str; 21] = [
+    const NAMES: [&str; 22] = [
         "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign", "sqrt", "exp",
-        "log", "sin", "cos", "tan", "asin", "acos", "atan",
+        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix",
     ];
     NAMES.iter().any(|n| math_function_inner(value, n).is_some())
 }
@@ -1893,6 +2027,14 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
         CalcExpr::BinaryMathOp(_, a, b) => {
             rewrite_calc_lh(a, used_line_height);
             rewrite_calc_lh(b, used_line_height);
+        }
+        CalcExpr::Mix(items) => {
+            for it in items {
+                rewrite_calc_lh(&mut it.value, used_line_height);
+                if let Some(CalcMixWeight::Expr(w)) = &mut it.weight {
+                    rewrite_calc_lh(w, used_line_height);
+                }
+            }
         }
     }
 }
@@ -2081,6 +2223,9 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 BinaryMathOp::Atan2 => Some(av.atan2(bv)),
             }
         }
+        // CSS Values 5 calc-mix()：权重 clamp/缺失分配/分母 max(Σ,100)
+        //（语义与语料钉面见 [`crate::values::calc_mix::eval_mix`]）。
+        CalcExpr::Mix(items) => eval_mix(items, ctx),
     }
 }
 

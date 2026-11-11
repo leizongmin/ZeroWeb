@@ -1021,6 +1021,9 @@ fn calc_contains_percentage(expr: &CalcExpr) -> bool {
         }
         CalcExpr::UnaryOp(_, inner) => calc_contains_percentage(inner),
         CalcExpr::BinaryMathOp(_, a, b) => calc_contains_percentage(a) || calc_contains_percentage(b),
+        // calc-mix：仅项值含百分比才需布局期解析；权重（字面或 calc() 形）是纯
+        // 混合系数（% 直读数值、无父基准换算），不阻塞 computed 期求值。
+        CalcExpr::Mix(items) => items.iter().any(|it| calc_contains_percentage(&it.value)),
     }
 }
 

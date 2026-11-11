@@ -1219,6 +1219,23 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                 MTInvalid
             }
         }
+        // calc-mix()：项族同型 → 结果同族（angle 叶原文 provenance 判定在
+        // parse_mix_args 门已完成，此处树内同族一致性复核）。
+        CalcExpr::Mix(items) => {
+            let mut first: Option<CalcMathType> = None;
+            for it in items {
+                let t = calc_expr_math_type(&it.value);
+                if t == MTInvalid {
+                    return MTInvalid;
+                }
+                match first {
+                    None => first = Some(t),
+                    Some(f) if f != t => return MTInvalid,
+                    _ => {}
+                }
+            }
+            first.unwrap_or(MTInvalid)
+        }
         CalcExpr::UnaryOp(op, inner) => {
             let it = calc_expr_math_type(inner);
             match op {
@@ -1312,6 +1329,10 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
         }
         CalcExpr::UnaryOp(_, inner) => calc_expr_has_length(inner),
         CalcExpr::BinaryMathOp(_, left, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
+        CalcExpr::Mix(items) => items.iter().any(|it| {
+            calc_expr_has_length(&it.value)
+                || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if calc_expr_has_length(w))
+        }),
     }
 }
 
@@ -1330,6 +1351,10 @@ pub fn calc_expr_has_angle_result(expr: &CalcExpr) -> bool {
         CalcExpr::Clamp { min, val, max } => {
             calc_expr_has_angle_result(min) || calc_expr_has_angle_result(val) || calc_expr_has_angle_result(max)
         }
+        CalcExpr::Mix(items) => items.iter().any(|it| {
+            calc_expr_has_angle_result(&it.value)
+                || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if calc_expr_has_angle_result(w))
+        }),
         _ => false,
     }
 }

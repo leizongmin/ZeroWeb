@@ -5,6 +5,7 @@
 //! specified 值序列化须把全常量数学函数折叠为 `calc(<结果>)` 规范文本。
 //! 折叠原语在此（css-parser 面）；调用方（inline style 读回/写面归一）按需接线。
 
+use super::calc_mix::{CalcMixItem, CalcMixWeight};
 use super::parse_extended::{calc_expr_has_angle_result, calc_expr_has_length, calc_expr_is_number};
 use super::types::{
     CalcExpr, LengthValue, eval_calc, eval_calc_with_default_font, is_math_function_value, parse_math_function,
@@ -99,6 +100,9 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
 /// 语料行驱动）；否则整体塌缩为 `calc(<n>)`/`calc(<n><unit>)`（min/max 含
 /// NaN 亦塌缩——结果单位取树首维度叶，§10.6 毒化语义求值期已定）。
 fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
+    if let CalcExpr::Mix(items) = expr {
+        return fold_mix_dimension(items, expr);
+    }
     if scalar_value(expr).is_some_and(|v| v.is_nan()) {
         if let Some([min, val, max]) = find_divergent_nan_clamp(expr) {
             return Some(format!(
@@ -110,6 +114,80 @@ fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
         }
     }
     Some(format!("calc({})", scalar_fold_inner(expr)?))
+}
+
+/// calc-mix() 指定值折叠（CSS Values 5 tentative，serialize/computed 语料钉面）：
+/// ① 任一 calc() 形权重 → 原样保留（None——serialize 页
+/// `calc-mix(1 calc(150%), 3 100%)` 行，Chrome/Blink 口径：指定值期不折叠
+/// calc 形权重）；② 全零塌缩（无缺失且全字面 0 → `calc(0<首项单位>)`，
+/// % 项树标量求值 fail 的救面——`calc-mix(1% 0%, 3px 0%)` → `calc(0%)`）；
+/// ③ 标量塌缩（全字面权重 + 值可解析 → `calc(<n>[unit])`）；
+/// ④ 归一化串（布局依赖树——em 等项标量不可解析：缺失填充/Σ>100% 归一/
+/// 零权重缺失项丢弃，值项复用原文保单位原貌）。
+fn fold_mix_dimension(items: &[CalcMixItem], expr: &CalcExpr) -> Option<String> {
+    if items.iter().any(|it| matches!(it.weight, Some(CalcMixWeight::Expr(_)))) {
+        return None;
+    }
+    let all_zero = !items.is_empty()
+        && items
+            .iter()
+            .all(|it| matches!(it.weight, Some(CalcMixWeight::Literal(p)) if p == 0.0));
+    if all_zero {
+        let suffix = dimension_suffix(&items[0].value);
+        return Some(format!("calc({})", format_dimension_inner(0.0, suffix)));
+    }
+    if let Some(v) = scalar_value(expr) {
+        return Some(format!("calc({})", format_dimension_inner(v, dimension_suffix(expr))));
+    }
+    fold_mix_normalized(items)
+}
+
+/// calc-mix() 指定值归一化串：缺失权重填充 `max(0, 100-Σ)/n`、填充为零的
+/// 缺失项丢弃、Σ>100% 全项除以 Σ（serialize 页「more than 100%」组
+/// `calc-mix(10px 75%, 3em 75%, 5em, 7em)` → `calc-mix(10px 50%, 3em 50%)`）；
+/// Σ<100% 且无缺失时保持原权重（同页 25% 组不归一）。可达性：仅布局依赖
+/// 树（标量不可解析）——全字面权重 number 树标量恒可解析，本臂仅 Length
+/// 槽可达。
+fn fold_mix_normalized(items: &[CalcMixItem]) -> Option<String> {
+    let n_missing = items.iter().filter(|it| it.weight.is_none()).count();
+    let sum_explicit: f64 = items
+        .iter()
+        .filter_map(|it| match &it.weight {
+            Some(CalcMixWeight::Literal(p)) => Some(p.clamp(0.0, 100.0)),
+            _ => None,
+        })
+        .sum();
+    let fill = if n_missing > 0 {
+        (100.0 - sum_explicit).max(0.0) / n_missing as f64
+    } else {
+        0.0
+    };
+    let mut parts: Vec<(&str, f64)> = Vec::with_capacity(items.len());
+    for it in items {
+        match &it.weight {
+            Some(CalcMixWeight::Literal(p)) => parts.push((&it.raw, p.clamp(0.0, 100.0))),
+            None => {
+                if fill > 0.0 {
+                    parts.push((&it.raw, fill));
+                }
+                // fill=0（Σ≥100%）→ 缺失项丢弃。
+            }
+            Some(CalcMixWeight::Expr(_)) => return None,
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let total: f64 = parts.iter().map(|(_, w)| *w).sum();
+    // 归一化除数按百分数口径：Σ>100% 时各项 w/(Σ/100)（75%/75% 组 → 50%），
+    // Σ≤100% 保持原权重数字。
+    let div = if total > 100.0 { total / 100.0 } else { 1.0 };
+    let inner = parts
+        .iter()
+        .map(|(raw, w)| format!("{} {}%", raw, format_number_6dp(w / div)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!("calc-mix({})", inner))
 }
 
 /// 树内首个「任一实参 NaN 且实参 canonical 单位分歧」clamp 节点（左序深先）。
@@ -131,6 +209,15 @@ fn find_divergent_nan_clamp(expr: &CalcExpr) -> Option<[&CalcExpr; 3]> {
         }
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().find_map(find_divergent_nan_clamp),
         CalcExpr::UnaryOp(_, inner) => find_divergent_nan_clamp(inner),
+        CalcExpr::Mix(items) => items
+            .iter()
+            .filter_map(|it| {
+                find_divergent_nan_clamp(&it.value).or_else(|| match &it.weight {
+                    Some(CalcMixWeight::Expr(w)) => find_divergent_nan_clamp(w),
+                    _ => None,
+                })
+            })
+            .next(),
     }
 }
 
@@ -182,6 +269,9 @@ fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
             .or_else(|| dimension_suffix(val))
             .or_else(|| dimension_suffix(max)),
         CalcExpr::UnaryOp(_, inner) => dimension_suffix(inner),
+        // calc-mix()：树首维度叶 = 首项维度叶（全零塌缩与 NaN 塌缩的单位
+        // provenance——`calc-mix(1% 0%, 3px 0%)` → `calc(0%)` 首项 % 语料钉面）。
+        CalcExpr::Mix(items) => items.iter().find_map(|it| dimension_suffix(&it.value)),
     }
 }
 
@@ -227,6 +317,9 @@ fn expr_has_time_leaf(expr: &CalcExpr) -> bool {
             expr_has_time_leaf(min) || expr_has_time_leaf(val) || expr_has_time_leaf(max)
         }
         CalcExpr::UnaryOp(_, inner) => expr_has_time_leaf(inner),
+        CalcExpr::Mix(items) => items.iter().any(|it| {
+            expr_has_time_leaf(&it.value) || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if expr_has_time_leaf(w))
+        }),
     }
 }
 
@@ -247,8 +340,9 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "rotate" => fold_math_specified(v, MathFoldKind::Angle),
         "scale" | "opacity" => fold_math_specified(v, MathFoldKind::Number),
         // 尺寸/时长槽数学形 canonical 折叠（g12 刀2：CSD 层 camelCase→kebab
-        // 归一后到达，白名单 kebab 形）。
-        "width" => fold_math_specified(v, MathFoldKind::Length),
+        // 归一后到达，白名单 kebab 形）。text-indent 为 <length-percentage> 槽
+        //（calc-mix 语料 serialize 页驱动 + calc(20% + 10px) 接受面回归钉）。
+        "width" | "text-indent" => fold_math_specified(v, MathFoldKind::Length),
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }

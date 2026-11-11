@@ -627,6 +627,9 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
             divide_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
         }
         CalcExpr::BinaryMathOp(_, _, _) => Some(ClipPathCalcType::Number),
+        // clip-path 槽无 calc-mix() 文法位（CSS Values 5 tentative 未接线，
+        // 无语料驱动案）——fail-closed 兜底。
+        CalcExpr::Mix(_) => None,
         CalcExpr::Min(args) | CalcExpr::Max(args) => same_clip_path_calc_types(args),
         CalcExpr::Clamp { min, val, max } => {
             let ty = clip_path_calc_type(min)?;

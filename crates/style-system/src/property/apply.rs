@@ -1642,7 +1642,10 @@ pub(crate) fn text_indent_length_is_valid(raw: &str, value: &LengthValue) -> boo
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Percentage(v) => v.is_finite(),
-        LengthValue::Calc(_) => true,
+        // calc 树须 <length-percentage> 族（§10.5 型别一致）：纯 number 式
+        //（`calc(5)`、calc-mix 全 number 项）拒——calc-mix-invalid 语料
+        // `test_invalid_length_percentage('calc-mix(1 50%, 3 50%)')` 驱动。
+        LengthValue::Calc(expr) => values::calc_expr_is_length_percentage(expr),
         _ => false,
     }
 }
@@ -1793,7 +1796,7 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
 /// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
 /// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
 /// 未实现面放行。
-const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 38] = [
+const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 39] = [
     "calc",
     "min",
     "max",
@@ -1815,6 +1818,9 @@ const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 38] = [
     "asin",
     "acos",
     "atan",
+    // CSS Values 5 calc-mix()（tentative 实现面：parse/fold/eval 全链）——
+    // 从 passthrough 集转入文法断言集（invalid 页空项/字面权重范围/跨型拒）。
+    "calc-mix",
     "matrix",
     "matrix3d",
     "translate",
@@ -1900,15 +1906,69 @@ mod t54_validate_decl_value_tests {
 
     #[test]
     fn tentative_unimplemented_functions_pass_through() {
-        // v5e -12 回归钉：progress()/calc-mix()/random()/sibling-index() 属未实现面
+        // v5e -12 回归钉：progress()/random()/sibling-index() 属未实现面
         // ——store 原文（apply oracle 恒拒会误拒引擎 store+serialize 正常的合法值）。
-        // WPT progress-serialize / calc-mix-serialize / random-serialize 以
-        // `scale(progress(...))` 形态驱动 transform 槽。
+        // WPT progress-serialize / random-serialize 以 `scale(progress(...))` 形态
+        // 驱动 transform 槽。calc-mix 已实现化（见
+        // [`Self::calc_mix_implemented_grammar_gates`]），不在本钉面。
         assert!(validate_decl_value("transform", "scale(progress(100px, 0px, 100px))"));
-        assert!(validate_decl_value("transform", "scale(calc-mix(1 50%, 3 50%))"));
         assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
         assert!(validate_decl_value("transform", "scale(calc(sibling-index() * 1px))"));
+    }
+
+    #[test]
+    fn calc_mix_implemented_grammar_gates() {
+        // calc-mix 实现化（CSS Values 5 tentative，invalid/serialize 页驱动）：
+        // 从 passthrough 集转入文法断言集——合法形放行、跨族/越界权重拒。
         assert!(validate_decl_value("scale", "calc-mix(1)"));
+        assert!(validate_decl_value("scale", "calc-mix(1 50%, 3 50%)"));
+        assert!(validate_decl_value("transform", "scale(calc-mix(1 50%, 3 50%))"));
+        // number 位（scale）拒 length/angle 族与文法拒形（invalid 页驱动）。
+        assert!(!validate_decl_value("scale", "calc-mix(1px 50%, 3px 50%)"));
+        assert!(!validate_decl_value("scale", "calc-mix(1deg 50%, 3turn 50%)"));
+        assert!(!validate_decl_value("scale", "calc-mix(1 150%, 3)"));
+        assert!(!validate_decl_value("scale", "calc-mix(1 50, 3)"));
+        assert!(!validate_decl_value("scale", "calc-mix(1% 50%, 3 50%)"));
+        assert!(!validate_decl_value("scale", "calc-mix()"));
+        // text-indent（length-percentage 位）：length 族放行、number/angle 族拒
+        //（apply 链 text_indent_length_is_valid §10.5 型别门）。
+        assert!(apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc-mix(10px 50%, 3em 50%)"
+        ));
+        assert!(!apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc-mix(1 50%, 3 50%)"
+        ));
+        assert!(!apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc-mix(1deg 50%, 3turn 50%)"
+        ));
+        assert!(!apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc-mix(1% 50%, 3 50%)"
+        ));
+        // 既有 calc 形零漂移：length-percentage 树放行、纯 number/angle 树拒
+        //（`calc(5)` 此前经 `Calc(_) => true` 误放行，本刀收口）。
+        assert!(apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc(20% + 10px)"
+        ));
+        assert!(!apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc(5)"
+        ));
+        assert!(!apply_property_value(
+            &mut ComputedStyle::default(),
+            "text-indent",
+            "calc(45deg)"
+        ));
     }
 
     #[test]

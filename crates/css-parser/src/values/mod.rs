@@ -4,6 +4,7 @@
 
 pub mod anchor;
 pub mod anchor_area;
+pub mod calc_mix;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;
@@ -19,6 +20,7 @@ pub mod types;
 
 // Re-export all public items.
 pub use anchor::*;
+pub use calc_mix::{CalcMixItem, CalcMixWeight};
 pub use color::*;
 pub use color_math::*;
 pub use named_colors::*;
