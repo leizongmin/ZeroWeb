@@ -1715,16 +1715,17 @@
             // s398（html-semantics M2 切片 398）：contentWindow 接嵌套浏览上下文面
             //（spec #dom-object-contentwindow：成功加载 text/html 资源的 object
             // 表示嵌套 navigable，contentWindow 返回其 window proxy；fetch 失败/
-            // 替换内容/无 data 属性 → null）——part01 _zwLoadObjectNavigable 惰性
-            // 物化（缓存、name 快照、Content-Type 门）。contentDocument 保持恒
-            // null（historical/object-handler 的嵌套文档访问面散单另案——本臂只
-            // 接 driving object-attributes 断言链）。
-            if (prop === 'contentWindow') {
-              var _objNav = typeof _zwLoadObjectNavigable === 'function'
-                ? _zwLoadObjectNavigable(key, sel, handle) : null;
-              return (_objNav && _objNav.win) ? _objNav.win : null;
-            }
-            return null;
+            // 替换内容/无 data 属性 → null）。
+            // s399（html-semantics M2 切片 399）：contentDocument 同管线扩臂
+            //（spec #dom-object-contentdocument：嵌套文档为同源 → 活 Document，
+            // 跨源/无嵌套 navigable → null）——historical/object-handler 的嵌套
+            // 文档访问面。两成员共用惰性物化（缓存、name 快照、Content-Type 门、
+            // data:/about:blank 特例），fireEvents=false——读不触发 load，事件仅
+            // 从插入钩子（_zwStartConnectedObject）/data IDL setter 链派发。
+            var _objNav = typeof _zwLoadObjectResource === 'function'
+              ? _zwLoadObjectResource(key, sel, handle, false) : null;
+            if (prop === 'contentWindow') return (_objNav && _objNav.win) ? _objNav.win : null;
+            return (_objNav && _objNav.doc) ? _objNav.doc : null;
           }
         }
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
@@ -8464,6 +8465,8 @@
               for (var ci = 0; ci < ceAdded.length; ci++) {
                 _ceApplyConn(ceAdded[ci], cePconn);
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
+                // s399：object 插入步同排（动态插入启动资源取回 + 终态 load/error）。
+                _zwStartConnectedObject(ceAdded[ci], cePconn);
               }
               // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
               //（given-prong——spec details element insertion steps；open toggle 已在
@@ -11185,6 +11188,8 @@
               for (var ci = 0; ci < added.length; ci++) {
                 _ceApplyConn(added[ci], cePconn);
                 _zwStartConnectedIframe(added[ci], cePconn);
+                // s399：object 插入步同排（与 appendChild 循环同款）。
+                _zwStartConnectedObject(added[ci], cePconn);
                 // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
                 // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
                 // mutation → selection 重记录 + 重验；element/picture 门在

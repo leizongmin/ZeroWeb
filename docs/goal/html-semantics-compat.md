@@ -2,19 +2,23 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 398 收口（OBJECT contentWindow 嵌套浏览上下文面施工 2F→P）：R5274「runner 无
-object 嵌套浏览上下文→contentWindow 恒 null」按 spec #the-object-element 处理模型收口——part01 新增
-`_zwObjectNavCache`（独立缓存，不混 iframe 缓存语义）+ `_zwLoadObjectNavigable`（首读惰性物化：无 data
-/ fetch 缺席 / 非 2xx / Content-Type 非 text/html → null；text/html → _zwMakeIframeDoc+_zwMakeIframeWin
-+ win.name 创建时点 name 内容属性快照）+ part04 R5274 臂拆臂（contentWindow 接管线、contentDocument 恒
-null 边界保持、getSVGDocument/EMBED 不动）+ part100 桥测两钉九面。验证：driving solo object-attributes
-4F→4P 文件全绿；全树 sweep 双跑 join 对 s397 基线 gone/new 恰为 driving 2 对 + 他流探针案单列零意外位移
-（sweep2 stable 8209P/218F/37T unique 8464，其中 1F=共享语料上渲染流 radio 探针残留单列）；单元 engine
-3843P/7F 在册同形（含 part100 两钉）+ webview 848P/2F 基线同形 + script-sandbox 全绿；smoke 双 PASS；
-fmt/clippy clean；**本流域在册红 219F+37T→217F+37T**。残差：object contentDocument 访问面（historical/
-object-handler）+ object-events 动态 data IDL setter 加载链散单池留存。下一步：本流域散单（focus
-scroll-into-view 1F / link-rel shadow DOM CSSOM）或 object contentDocument 中型切片（同管线扩臂 +
-historical/object-handler/object-events 三案联动）或等簇 D 决策开特性施工。
+**状态**: Active——M2 切片 399 收口（object 动态加载链施工，driving 8 键 T→P）：s398 惰性物化半
+（消费读触发）补齐 spec #the-object-element 处理模型**触发面**——part01 `_zwLoadObjectNavigable`
+泛化为 `_zwLoadObjectResource`（+fireEvents 终态事件：2xx 含 image/* → trusted load、fetch 失败/
+非 2xx/无法渲染 → trusted error、fired 门终态一次、about:blank 特例不 fetch 直建、data: URL 显式
+门）+ `_zwStartConnectedObject` 插入步（part04 appendChild/append 两循环同排；parser 扫描不做）+
+part04 contentDocument 扩臂（同管线物化，fireEvents=false 读不触发；R5009 URL 反射写臂加 OBJECT.data
+排除）+ part05 data IDL setter 臂（isConnected 门 + 旧 entry 删除重启）+ `_zwMakeIframeWin` 挂
+`win.Window`（instanceof 面）。part100 钉①(f) 翻转 + part101 桥测两钉六相位。验证：driving solo
+historical 4P + object-events 4P（含 about:blank instanceof）+ document-getters 3P 回归；全树 sweep
+双跑 join 对 s398 基线位移精确归因（gone 5T = 4 object 文件级 T + s398 探针 T；new 14 = 8P driving +
+6F 新显形 = allowed-schemas blob:/data:/http(s): 4F + cross-origin fallback 2F——管线推进后测试体
+首次可完成的未竟面显形，8209 基线 P 零丢失；sweep2 stable 8217P/225F/31T unique 8473）；单元 engine
+3953P/7F 在册同形（含 part100/101 四钉）+ webview 2F 基线同形 + script-sandbox 全绿；smoke 双 PASS；
+fmt/clippy clean；**本流域在册红 217F+37T→224F+31T**（+6F 新显形承接 +1F flake 家族真态并账）。残差：
+object-handler 嵌套脚本通道 + object-javascript-url T + 新显形 6F（fallback 内容渲染/blob: 通道）
+散单池留存。下一步：object fallback 内容渲染切片（新显形 6F 同根因承接——spec fallback 步子节点
+DOM 化）或本流域散单（focus scroll-into-view 1F / link-rel shadow DOM CSSOM）或等簇 D 决策开特性施工。
 
 > **▶ 承前（2026-11-11 M2 切片 397 收口）——module parse 失败缓存语义施工（1F→P）+ current-pixel-density 域分诊定谳路由**: commit eead007d0，账本 evidence/2026-11-11-m2s397-module-parse-failure-cache.md。s373
 parse 预检把 parse 失败发 tag 3（态④逐次新 SyntaxError）违 module map 失败记账语义——新契约 **tag 5**（webview
@@ -6982,6 +6986,8 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 399**：object 动态加载链施工轮（driving 8 键 T→P，shim 三点+桥测扩面）——s398 惰性物化半补齐 spec #the-object-element 处理模型**触发面**：part01 `_zwLoadObjectNavigable` 泛化 `_zwLoadObjectResource`（fireEvents 终态事件面：2xx 含 image/* 替换内容→trusted load、fetch 失败/非 2xx/无法渲染→trusted error、`fired` 门终态一次 + _defer 微任务 + __zwMakeTrustedEvent 出口 bubbles/cancelable=false；about:blank 特例不 fetch 直建空 doc+win（iframe R130 语义）；data: URL 显式门不物化——FIXME data:text/html 留）+ `_zwStartConnectedObject` 插入步（与 _zwStartConnectedIframe 同形 _defer 异步，part04 appendChild/append 两循环同排调用，parser 扫描不做）+ part04 contentDocument 扩臂（同管线物化 fireEvents=false 读不触发，#dom-object-contentdocument）+ part05 data IDL setter 臂（R5009 URL 反射写臂加 `!(OBJECT && data)` 排除同款 + isConnected 门 + 旧 entry 删除重启语义，detached 只写属性）+ `_zwMakeIframeWin` 挂 `win.Window`（named FE prototype=_zwChildWinProto37，instanceof 沿 win 原型链命中，iframe/object 共用）。part100 钉①(f) 翻转（contentDocument 恒 null 边界→物化面）+ part101 桥测新建两钉六相位（A trusted load 七 flags+嵌套文档 origin；B 404 trusted error；C about:blank instanceof；D detached 只写属性；E image/* load+null 保持；F 重启序列 error,load）。driving solo historical 4P + object-events 4P + document-getters 3P 回归；全树 sweep 双跑 join 对 s398 基线位移精确归因（sweep2 stable 8217P/225F/31T unique 8473；gone 5T = 4 object 文件级 T + s398 探针 T；new 14 = 8P driving + 6F 新显形——allowed-schemas blob:/data:/http(s): 4F + cross-origin fallback 2F 为「管线推进后测试体首次可完成」的未竟面显形，8209 基线 P 零丢失零转红）；单元 engine 3953P/7F 在册同形（part100/101 四钉在列）、webview 2F 基线同形、script-sandbox 452P/0F；smoke 双 PASS；fmt/clippy clean（过程记三点：①R5009 URL 反射写臂抢占 OBJECT.data——`_REFLECTED_URL_TAGS` 表内成员 `obj.data=` 落 961 行纯属性写臂即返回，专用臂永不可达，按 IFRAME/IMG/SCRIPT src 先例加排除；②连接态判定 `_ceParentConnected` 对 plain handle 元素恒 false（`_ceConn` 只记 custom/plain 对象章），须 script s96 同款 `_makeProxy(sel,handle).isConnected===true`；③桥测闭包持 `&mut sandbox` 跨 execute 触发 E0499（s398 E0596 同族），改文件级自由函数传参）。**本流域在册红 217F+37T→224F+31T**（+6F 新显形承接 +1F select-home-end 非 detailed 键 flake 家族真态并账；driving 8 键 T→P）。残差：object-handler 嵌套脚本通道（R206 移植面）+ object-javascript-url T + 新显形 6F（fallback 内容 DOM 化/blob: 通道）散单池留存——fallback 渲染切片为下一候选。账本
+  [evidence/2026-11-11-m2s399-object-dynamic-load.md](html-semantics-compat/evidence/2026-11-11-m2s399-object-dynamic-load.md)。
 - **2026-11-11 M2 切片 398**：OBJECT contentWindow 嵌套浏览上下文面施工轮（2F→P，shim 双点+桥测）——spec #the-object-element 处理模型收口：part01 `_zwObjectNavCache`（独立缓存，不混 `_iframeDocCache`——object 嵌套 navigable 不走 iframe SW 观察/history 账本/servedDoc 成熟翻转链）+ `_zwLoadObjectNavigable`（首读惰性物化：无 data/fetch 缺席/非 2xx/Content-Type 非 text/html → null；text/html → `_zwMakeIframeDoc`+`_zwMakeIframeWin`+win.name 创建时点 name 内容属性快照——object-attributes「name 改后 contentWindow.name 仍 'o'」断言链）+ part04 R5274 臂拆臂（contentWindow 接管线、contentDocument 恒 null 边界保持、getSVGDocument/EMBED 不动）+ part100 桥测两钉九面（含 404/无 data/image/* 三 null 面+同 identity+R5274 恒 null 保持）。driving solo object-attributes 4F→4P 文件全绿；全树 sweep 双跑 join 对 s397 基线 gone/new 恰 driving 2 对零意外位移（sweep2 8209P/218F/37T unique 8464，全域 218F 含他流 radio 探针残留 1F 单列——共享 gitignored 语料上渲染流探针把上游断言体替换成恒红诊断，非本流面归渲染流处置，s343 先例 headline 排除）；单元 engine 3843P/7F 在册同形（part100 两钉在列）、webview 848P/2F 基线同形、script-sandbox 全绿；smoke 双 PASS（legacy 42/42 struct PASS）；fmt/clippy clean。过程记两点：①自建 iframe win.name 探针实测 win 字面量无 name 槽（browsers 域 browsing_context_name 族欠账不属本流域）且 `<iframe` 字面主源被 skip 谓词静默排除零案 exit 1（s341 坑复现）；②pairs join 连环伪影两轮——`tr ' '` 全转子测名内空格/单侧转换字节形态不一致均产 2.3MB 假位移，两侧同 `sed 's/ /\x1f/'` 首空格形态才闭合（s287/s292 教训重演）。**本流域在册红 219F+37T→217F+37T**。残差：object contentDocument 访问面（historical/object-handler）+ object-events 动态 data IDL setter 加载链散单留存。账本
   [evidence/2026-11-11-m2s398-object-content-window.md](html-semantics-compat/evidence/2026-11-11-m2s398-object-content-window.md)。
 - **2026-11-11 M2 切片 397**：module parse 失败缓存语义施工轮（1F→P，webview tag-5 契约 + shim 态⑤）——s373 parse 预检把 parse 失败发 tag 3（逐次新 SyntaxError）违 module map 失败记账语义；新契约 tag 5 仅 webview compile_module_contract gate 臂发射（native/defer 面零暴露），shim `__zw_load_module` 态⑤首抛 SyntaxError 入 `__moduleFailures[resolved]` 复抛同对象（s87 四态扩五态），part99 桥测钉死 tag5 同对象 identity/tag3 逐次新对象对照。driving solo dynamic-imports-script-error 11P/0F；全树 sweep 双跑 join 对 s396 基线恰 driving 1 对零意外位移（sweep2 8207P/219F/37T unique 8463）；单元 script-sandbox 全绿、webview 848P/2F（2F 预存 env 红 stash 归因首记基线）、engine 3840P/7F 在册同形；smoke 双 PASS；fmt/clippy clean；**在册红 220F+37T→219F+37T**。同轮分诊定谳（s392 方法论）：current-pixel-density 10F 两根（basic 3F=sizing.rs R695 `.max(1.0)` 钳制根→渲染流；error 7F=broken img 尺寸供给根→渲染流+shim IDL 臂配套本流）、svg-img-density-vs-zoom 3F=CSS zoom 面→渲染流、dialog 居中簇 8F=R-s31 在册、tabular 4F=表布局亚像素归渲染流、forms 主池 146F 里 142F=customizable-select 特性族（簇 D 待用户决策）。账本

@@ -2,19 +2,23 @@
 // 浏览上下文面。
 //
 // R5274（part87）钉死的是「无 data 资源/无 fetch 通道 → 恒 null」尾步；本切片
-// 接通 contentWindow 消费点的惰性物化管线（part01 _zwLoadObjectNavigable）：
-// 成功加载 text/html 资源 → contentWindow 返回嵌套 navigable 的 window proxy
-//（spec #dom-object-contentwindow）；fetch 失败（404）/替换内容类型（image/*）/
-// 无 data 属性 → null（#the-object-element 处理模型尾步）。name 快照：嵌套
-// navigable 命名取创建时点 name 内容属性值，之后内容属性增删不影响
-//（object-attributes「name 改后 contentWindow.name 仍 'o'」断言链）。
-// contentDocument 恒 null 边界保持（嵌套文档访问面散单另案）。
+// 接通 contentWindow 消费点的惰性物化管线（part01 _zwLoadObjectResource，s399
+// 由 _zwLoadObjectNavigable 泛化）：成功加载 text/html 资源 → contentWindow
+// 返回嵌套 navigable 的 window proxy（spec #dom-object-contentwindow）；fetch
+// 失败（404）/替换内容类型（image/*）/无 data 属性 → null（#the-object-element
+// 处理模型尾步）。name 快照：嵌套 navigable 命名取创建时点 name 内容属性值，
+// 之后内容属性增删不影响（object-attributes「name 改后 contentWindow.name
+// 仍 'o'」断言链）。
+// s399（2026-11-11）：contentDocument 同管线扩臂（spec #dom-object-contentdocument，
+// 同源嵌套文档 → 活 Document）——钉①(f) 由「恒 null 边界」翻转为物化面；SVG
+// data: URL（钉②）经 data: 门保 null。
 // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
 
 /// 钉①：四面分类 + name 快照 + 同 identity。
 /// 断言翻转：OBJECT contentWindow 臂被撤（(a) 复落恒 null）；Content-Type 门失效
 ///（(d) image 资源误建 navigable）；name 快照失效（(a2/a3) 读到元素 name 反射
-/// 动态值或 undefined）；缓存失效（(e) 二次读换 identity）。
+/// 动态值或 undefined）；缓存失效（(e) 二次读换 identity）；s399 contentDocument
+/// 扩臂被撤（(f) 复落恒 null）。
 #[test]
 fn object_content_window_nested_navigable_s398() {
     use std::sync::{Arc, Mutex};
@@ -72,7 +76,7 @@ fn object_content_window_nested_navigable_s398() {
              globalThis.__s398c = String(document.getElementById('nodata').contentWindow === null);\n\
              globalThis.__s398d = String(document.getElementById('img').contentWindow === null);\n\
              globalThis.__s398e = String(okEl.contentWindow === win);\n\
-             globalThis.__s398f = String(okEl.contentDocument === null);",
+             globalThis.__s398f = String(okEl.contentDocument !== null);",
         )
         .unwrap();
     let mut assert_s398 = |id: &str, expected: &str, msg: &str| {
@@ -90,7 +94,7 @@ fn object_content_window_nested_navigable_s398() {
     assert_s398("c", "true", "(c) 无 data 属性 → 不取回，contentWindow null（object-attributes obj2 面）");
     assert_s398("d", "true", "(d) image/* 替换内容类型 → 无嵌套 navigable，contentWindow null");
     assert_s398("e", "true", "(e) 二次读同 identity（entry 缓存）");
-    assert_s398("f", "true", "(f) contentDocument 恒 null 边界保持（R5274 尾步不扩）");
+    assert_s398("f", "true", "(f) contentDocument 同管线物化（s399 扩臂——同源嵌套文档返活 Document）");
 }
 
 /// 钉②：SVG data: URL（opaque origin 替换内容）与无 fetch 通道保 R5274 恒 null

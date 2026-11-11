@@ -967,6 +967,9 @@
             && !(_realTag(sel, handle) === 'FRAME' && p === 'src')
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
+            // s399：OBJECT.data 除外——专用分支（属性写 + 连接态重启资源取回，
+            // 下方 data setter 臂）。
+            && !(_realTag(sel, handle) === 'OBJECT' && p === 'data')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
           // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
           // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
@@ -1098,6 +1101,29 @@
               _defer(function () {
                 _dispatchWithBubble(_imKey, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
               });
+            }
+          }
+        } else if (p === 'data' && _realTag(sel, handle) === 'OBJECT') {
+          // html-semantics M2 切片 399：object data IDL setter 运行时加载
+          //（spec .../iframe-embed-object.html#the-object-element 处理模型——
+          // 已连接 object 的 data 内容属性更新重启资源取回，终态派 load/error；
+          // object-events `obj.data = ...` 动态加载驱动案）。镜像 R56h IMG src
+          // setter 形态：先写内容属性（IDL 反射 round-trip），再按连接态触发
+          // 加载链（detached 只写属性——插入钩子接入时启动）。
+          if (handle) __zw_set_attr_handle(handle, 'data', String(value));
+          else __zw_set_attr(sel, 'data', String(value));
+          moAttr = 'data';
+          var _objConn399 = false;
+          // 连接判定走 isConnected（script s96 同款——_ceConn 只记 custom/plain
+          // 对象章，plain handle 元素查 _ceConn 恒 false）。
+          try { _objConn399 = _makeProxy(sel, handle).isConnected === true; } catch (_eObjConn399) {}
+          if (_objConn399 && typeof _zwLoadObjectResource === 'function') {
+            var _objKey399 = _elKey(sel, handle);
+            if (_objKey399) {
+              // 重启语义：data 更新换资源，旧终态 entry 作废重建（事件 fired 门
+              // 随 entry 重建——新资源重新派终态）。
+              if (_zwObjectNavCache[_objKey399]) delete _zwObjectNavCache[_objKey399];
+              _zwLoadObjectResource(_objKey399, sel, handle, true);
             }
           }
         } else if (p === 'href' && _zwIsSvgNsEl(sel, handle)) {
@@ -5388,6 +5414,14 @@
       Object.defineProperty(_zwChildWinProto37, 'constructor',
         { value: Object, writable: true, enumerable: false, configurable: true });
       Object.setPrototypeOf(win, _zwChildWinProto37);
+      // html-semantics M2 切片 399：嵌套 window 暴露 Window interface 对象
+      //（spec WebIDL WindowProxy [[Get]] 走 Window interface——object-events
+      // about:blank 案 `obj.contentWindow instanceof obj.contentWindow.Window`
+      // 断言链；iframe/object 共用本函数同面）。prototype 指向 child win 原型
+      //——instanceof 沿 win 原型链命中 _zwChildWinProto37。
+      var _zwWinCtor399 = function Window() {};
+      _zwWinCtor399.prototype = _zwChildWinProto37;
+      win.Window = _zwWinCtor399;
     } catch (_e37cw2) {}
     }
     return win;
