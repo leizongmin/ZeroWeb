@@ -2,24 +2,43 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 401 收口（探测环 doctype 丢失 quirks 翻转修复，driving 1F→P）：散单 focus
-scroll-into-view 1F 八步探针链勘根定谳——真根因非 focus/scroll 臂而是**宿主重建源丢文档声明**：runner
-探测环（take_probe，mutation_version 门控）dump `documentElement.outerHTML`（按 DOM §4.4 元素序列化不含
-doctype）喂 `refresh_if_html_changed` 整页覆盖 cached_html → re-parse 无声明落 Quirks → DOM_SOURCE 翻转
-→ compatMode=BackCompat + scrollingElement 分派 body → `scrollTop` 读 0（R5257 scroll 臂健康，scroll
-实际发生 sy=650；波及面 = 所有 testharness 页首个 mutation 批后的探测环刷新）。修复：webview.rs
-`refresh_if_html_changed` 入差分/替换前 `restore_live_doctype` 归一——活文档有 doctype 子节点则前缀补回
-（自持续：修复后重建源恒带声明），真 quirks 页透传不凭空补；webview Cargo.toml 加 zero-dom 依赖；
-basic.rs 常驻钉两面（带声明页刷新恒 CSS1Compat + quirks 页透传仍 BackCompat）。验证：探针复跑 marks 恒
-CSS1Compat + `seT=650`；driving solo 1F→P 三跑全绿；the-input-element 域 solo 1848 行零位移（fdtcb 1T=
-并发 clone 编译撞负载，×2 复跑 80P 定谳）；全树 sweep 双跑 join 对 s400 基线**迁移矩阵 = Fail→Pass ×1
-恰 driving、stable 双跑位同、Pass→Fail ×0**（home-end 双键 T↔F 在册 flake 单列；dialog-overlay 渲染流
-flake 键本轮双跑全绿归属渲染流复核；srcset `\r` 子测行 = s400 截断族漏记补记恒 P；gone ×1 = 探针行出账
-销案）；单元 webview **849P/2F**（= s400 +1 新钉，2F 在册同形）；smoke 双 PASS；fmt/clippy clean；
-**本流域在册红 218F+31T→216F+31T**（−1 driving 修复 −1 radio 探针残留行出账销案 −1 dialog-overlay 按
-事实出账归属渲染流复核）。残差：脚本移除 doctype 节点后重建源再丢声明的架构面（compatMode parse 派生
-非存储字段，FIXME 单列）。下一步：本流域散单（link-rel shadow DOM CSSOM，先核 s168b referent）或
-object-handler 嵌套文档脚本通道（R206 object 移植）或等簇 D 决策开特性施工。
+**状态**: Active——M2 切片 402 收口（shadow 森林 handle 身份跨探测环刷新重建，driving 1F→P）：referent
+核验定谳 s168b 修复的 link-rel-attribute shadow 案在 M3 Batch 2 声明式模板回环（38b972751）后回红——
+**M3 序列化回环回归非 s168b 面失效**：shim `_zwSrQualifies180` list 臂 + serializer ShadowRoot 臂对命令式
+根恒发 `<template shadowrootmode>` → 探测环 dump 携标记 → refresh re-parse 物化 shadow 树——树不丢，丢的是
+**handle 身份**（序列化不带 handle 标记，`nodes[handle]` 只来自重放窗口，drain 尽后窗口空 → shadow 树内
+handle 全落空 → gCS ''；探针 v4 A/B：t30/byHandle30 `""→rgb(0,128,0)`）。施工：新模块 js_dom_bridge/
+shadow_forest.rs（森林切片三遍算法——种子+最后归属→成员闭包→顺序过滤；light 宿主命令式 shadow 整树
+prune 迭代不动点防 unknown handle Err 截断尾链 + strip_declarative_shadow_templates 深度配平剥模板 span，
+9 单测）+ computed_style_by_handle 增 `prefix_has_shadow && base_has_marker` 分支（剥模板基座 parse +
+森林切片重放重注册 handle + 窗口续放；s168 臂语义不变）。验证：单元 engine 3874P/7F 在册逐名同形 +
+webview 849P/2F 同形；driving solo **2P/1F→3P/0F** 三跑全绿；the-link-element 114P（s168b 时代 1F
+stylesheet-media-change-no-fetch 区间内 intervening 修复现绿）；全树 sweep 双跑 join 对当轮 stash 基线
+**sweep2 = stable 8474 + Fail→Pass ×1 恰 driving + new/gone ×0**（sweep1 差异 = fdtcb 截断 4 键 +
+home-end T→F 在册 flake 家族；基线对 s401 cur 漂移 = 探针 1F 已删 + home-end 振荡，corpus 真红零位移）；
+fmt/clippy clean；**本流域在册红 216F+31T→215F+31T**（−1 driving）。残差：light 宿主命令式 shadow 刷新后
+子树视图缺（lenient 不劣化，恢复需宿主 handle→dump 节点重锚 forward map 通道，FIXME 单列）+ sel 子
+move-in 剥模板基座 miss（无 handle 面不受影响）+ 剥模板子串判病态串近似（与 shim `_zwStripEchoHtml180`
+FIXME 同族）。探针勘根毕删（probe hygiene）。下一步：object-handler 嵌套文档脚本通道（R206 object 移植）
+或本流域散单续勘或等簇 D 决策开特性施工。
+
+> **▶ 承前（2026-11-11 M2 切片 401 收口）——探测环 doctype 丢失 quirks 翻转修复（driving 1F→P）**: commit bd2e21aff，账本 evidence/2026-11-11-m2s401-refresh-doctype-quirks-flip.md。原 Active 段留档——散单 focus
+> scroll-into-view 1F 八步探针链勘根定谳——真根因非 focus/scroll 臂而是**宿主重建源丢文档声明**：runner
+> 探测环（take_probe，mutation_version 门控）dump `documentElement.outerHTML`（按 DOM §4.4 元素序列化不含
+> doctype）喂 `refresh_if_html_changed` 整页覆盖 cached_html → re-parse 无声明落 Quirks → DOM_SOURCE 翻转
+> → compatMode=BackCompat + scrollingElement 分派 body → `scrollTop` 读 0（R5257 scroll 臂健康，scroll
+> 实际发生 sy=650；波及面 = 所有 testharness 页首个 mutation 批后的探测环刷新）。修复：webview.rs
+> `refresh_if_html_changed` 入差分/替换前 `restore_live_doctype` 归一——活文档有 doctype 子节点则前缀补回
+> （自持续：修复后重建源恒带声明），真 quirks 页透传不凭空补；webview Cargo.toml 加 zero-dom 依赖；
+> basic.rs 常驻钉两面（带声明页刷新恒 CSS1Compat + quirks 页透传仍 BackCompat）。验证：探针复跑 marks 恒
+> CSS1Compat + `seT=650`；driving solo 1F→P 三跑全绿；the-input-element 域 solo 1848 行零位移（fdtcb 1T=
+> 并发 clone 编译撞负载，×2 复跑 80P 定谳）；全树 sweep 双跑 join 对 s400 基线**迁移矩阵 = Fail→Pass ×1
+> 恰 driving、stable 双跑位同、Pass→Fail ×0**（home-end 双键 T↔F 在册 flake 单列；dialog-overlay 渲染流
+> flake 键本轮双跑全绿归属渲染流复核；srcset `\r` 子测行 = s400 截断族漏记补记恒 P；gone ×1 = 探针行出账
+> 销案）；单元 webview **849P/2F**（= s400 +1 新钉，2F 在册同形）；smoke 双 PASS；fmt/clippy clean；
+> **本流域在册红 218F+31T→216F+31T**（−1 driving 修复 −1 radio 探针残留行出账销案 −1 dialog-overlay 按
+> 事实出账归属渲染流复核）。残差：脚本移除 doctype 节点后重建源再丢声明的架构面（compatMode parse 派生
+> 非存储字段，FIXME 单列）。账本=evidence/2026-11-11-m2s401-refresh-doctype-quirks-flip.md
 
 > **▶ 承前（2026-11-11 M2 切片 400 收口）——object scheme 取回面 + window.length（driving 6F→P）**: commit b6793f4ad，账本 evidence/2026-11-11-m2s400-object-schemes-window-length.md。原 Active 段留档——s399 新显形
 6F 勘根推翻「fallback 内容 DOM 化」设想（两族真根因 = allowed-schemas 4F scheme 解码缺位 + cross-origin
@@ -7011,6 +7030,8 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 402**：shadow 森林 handle 身份跨探测环刷新重建轮（driving 1F→P，engine 新模块+分支重构）——referent 核验定谳 s168b 修复的 link-rel-attribute shadow 案在 M3 Batch 2 声明式模板回环（38b972751）后回红（M3 序列化回环回归非 s168b 面失效）：shim `_zwSrQualifies180` list 臂 + serializer ShadowRoot 臂对命令式根恒发 `<template shadowrootmode>` → 探测环 dump 携标记 → refresh re-parse 物化 shadow 树——**树不丢，丢的是 handle 身份**（序列化不带 handle 标记，`__zw_get_computed_style_by_handle` 的 `nodes[handle]` 只来自重放窗口 `[applied..count)`，drain 尽后窗口空 → shadow 树内 handle 全落空 → gCS ''；探针 v4 A/B：t30/byHandle30 `""→rgb(0,128,0)`；刷新后新 attach 的 shadow 一个探测周期后同病实证）。施工：新模块 js_dom_bridge/shadow_forest.rs——`shadow_forest_mutations` 森林切片三遍 O(n)（①种子+最后归属表：handle 锚 placement 覆盖写 child→parent 最终归属口径——dump 已是终态真相，forest→light 挪回不重放防双份；②成员闭包记忆化下行+环防御；③顺序过滤发射；light 宿主命令式 shadow 整树 prune 迭代至不动点——宿主 create 不重放则 attach 发射必撞 unknown host handle Err 中止切片尾部，根出种子子树全弃重放零 Err 后继链不截断）+ `strip_declarative_shadow_templates` 深度配平剥声明式模板 span（普通 template 保留，无标记串零开销透传）9 单测 + computed_style_by_handle 增 `prefix_has_shadow && base_has_marker` 分支（剥模板基座 parse + 森林切片重放重注册 handle + 窗口 `[applied..count)` 照旧续放；s168 臂 else 分支语义不变，两臂分流互斥）。验证：单元 9 新钉全过 + engine lib 3874P/7F 在册逐名同形（img settle ×2/fetch/SW/response/websocket 时序族）+ webview 849P/2F 同形；driving solo **2P/1F→3P/0F**（solo+sweep1+sweep2 三跑全绿）；the-link-element 114P+探针（s168b 时代 1F stylesheet-media-change-no-fetch 区间内 intervening 修复现绿非本刀）；全树 sweep 双跑 join 对当轮 stash 基线（8475 pairs=8227P/218F/32T raw 含探针 1F）**sweep2 = stable 8474 + Fail→Pass ×1 恰 driving + new/gone ×0**（sweep1 差异键 = fdtcb 文件级 T 截断 4 子测在册 flake + home-end T→F 在册家族振荡；基线对 s401 cur 漂移 = 探针新增 1F 已删 + home-end 振荡——corpus 真红零位移；join 键字段反转重演 s401 在册坑——s401 cur2.pairs.u 是 state\x1fkey 形本轮 key\x1fstate，先对齐方向再 join）；fmt/clippy clean（matches! 闭包内 ref 绑定 E0027 去显式 ref；clippy doc_lazy_continuation 续行缩进）。**本流域在册红 216F+31T→215F+31T**（−1 driving；探针行勘根毕删下轮出账）。残差：light 宿主命令式 shadow 刷新后子树视图缺（lenient 不劣化，恢复需宿主 handle→dump 节点重锚 forward map 通道 FIXME 单列）+ sel 子 move-in 剥模板基座 miss（无 handle 面不受影响）+ 剥模板子串判病态串近似（与 shim `_zwStripEchoHtml180` FIXME 同族）。账本
+  [evidence/2026-11-11-m2s402-shadow-forest-handle-rebuild.md](html-semantics-compat/evidence/2026-11-11-m2s402-shadow-forest-handle-rebuild.md)。
 - **2026-11-11 M2 切片 401**：探测环 doctype 丢失 quirks 翻转修复轮（driving 1F→P，webview 单点+常驻钉）——散单 focus scroll-into-view 1F 八步探针链勘根定谳：直调 `ro.focus()` 同步读 scroll 完美（R5257 臂健康，`foc:seT=650,sy=650` 精确最近对齐）→ 键盘路径 `sy=650 seT=0` 发散 → final `cm=BackCompat seTag=BODY` → 早读 CSS1Compat → 相位标 t2 翻转 → 受控对照 `setAttribute+await` 即翻转（纯 setTimeout 不翻）→ `dt=html kids=2` shim 侧保声明而 DOM_SOURCE quirks——**真根因 = 宿主重建源丢文档声明**：runner 探测环（take_probe mutation_version 门控）dump `documentElement.outerHTML`（DOM §4.4 元素序列化不含 doctype）喂 `refresh_if_html_changed` 整页覆盖 cached_html → re-parse 无声明落 Quirks → compatMode=BackCompat + scrollingElement 分派 body → `scrollTop` 读 0；**波及面 = 所有 testharness 页首个 mutation 批后的探测环刷新**（quirks 敏感断言面才显形）。修复：webview.rs `refresh_if_html_changed` 入差分/替换前 `restore_live_doctype` 归一（活文档有 doctype 子节点 → `doc.outer_html(dt_child)` 前缀补回，同入 runner_probe_html 差分基线与 cached_html 比对形态稳定；真 quirks 页透传不凭空补；首个修复刷新后重建源恒带声明——自持续；共享路径单点修优于 runner 两 dump 点各补）+ webview Cargo.toml 加 zero-dom workspace 依赖（`zero_dom::NodeKind` inline 路径）+ basic.rs 常驻钉 `test_runner_refresh_preserves_doctype_s401` 两面（带声明页刷新恒 CSS1Compat + quirks 页透传仍 BackCompat，s371 强制分叉同款相位）。验证：探针复跑 marks 恒 CSS1Compat + `seTag=HTML seT=650`；driving solo 1F→P 三跑全绿（solo+sweep1+sweep2）；the-input-element 域 solo 1848 行零位移（fdtcb 1T=ZeroWeb-2 并发编译撞负载 `/proc` cwd 核归属，×2 复跑 80P 定谳；`zz-s401-focus-scroll-probe.html` 残留=前段 429 会话探针 0，清理后重跑干净+顺带销案 s400「radio 探针残留案」挂账）；全树 sweep 双跑 join 对 s400 基线（unique 8473，LC_ALL+C grep -a+awk hash-join）**Fail→Pass ×1 恰 driving、stable 双跑位同（除 2 键）、Pass→Fail ×0**（home-end 双键 T↔F 在册 flake 家族单列；dialog-overlay 渲染流 flake 键本轮双跑全绿归属渲染流复核；srcset `\r` 子测行=s400 截断族漏记 solo+双跑恒 P 补记；gone ×1=driving 文件 probe diagnostics 探针行出账非位移；raw cur unique 8474=8225P/216F/33T vs 基线 8222P/218F/33T）；单元 webview **849P/2F**（=s400 +1 新钉，2F 在册逐名同形）；smoke 双 PASS；fmt/clippy clean（过程记三点：①U+E015 PUA 字面不可见——探针 `keyDown("")` 实含 EE 80 95 字节，显示空串致 Edit/heredoc 找不到「原串」，`cat -A` 核字节为准；②join 键字段反转——keyed 文件 `key\x1fstate` 用 field 2 做 join 键 = state 分组叉积假挂起，join 键恒 field 1 或对 pairs 直接 awk hash-join；③s400 headline「217F」= raw 218F 剔探针行单列记法，口径连续性换算先对 raw 文件重算）。**本流域在册红 218F+31T→216F+31T**（−1 driving 修复 −1 radio 探针残留行出账销案 −1 dialog-overlay 按事实出账归属渲染流复核）。残差：脚本移除 doctype 节点后重建源再丢声明架构面（compatMode parse 派生非存储字段，FIXME 单列）。账本
   [evidence/2026-11-11-m2s401-refresh-doctype-quirks-flip.md](html-semantics-compat/evidence/2026-11-11-m2s401-refresh-doctype-quirks-flip.md)。
 - **2026-11-11 M2 切片 400**：object scheme 取回面 + window.length 施工轮（driving 6F→P，shim 单文件+桥测）——s399 新显形 6F 勘根推翻「fallback 内容 DOM 化」设想（allowed-schemas 4F 断言消息 `Unhandled rejection: "error"`、cross-origin 2F `window.length` undefined，两案 fallback 子节点断言均已过→两族真根因 = scheme 解码缺位 + Window length getter 缺席）：part01 `_zwLoadObjectResource` 扩三臂——data: 换 `_zwDataURLProcessor` 解码（fetch() 通路同源；null→error、text/html essence→done 物化、其余→'image' success 无 navigable）+ blob: 走 `_zwBlobStore` 命中（origin 门正则同 fetch() scheme-fetch + `_zw_blobBytes` + TextDecoder；miss/跨源→error）+ bare-origin http(s) 合成空 text/html 嵌套文档（路径空或仅 /?/#；URL.canParse + _zwFetchBadPort 双门；FIXME 服务端目录语义）+ 抽 `_zwObjectMaterializeDoc` 五路共用物化核（about:blank/data/blob/http/bare-origin 收编 s398 内联段；entry 增 sel/handle 快照）+ host fetch 分诊**保持 s399 三臂**（其余类型→error——runner 对 bogus-scheme URL 宽松 2xx 信号不可信，object-events file:/http: error 案 load-bearing，首跑回归即证）+ part01 新增 `_zwWindowLengthCount()` + `Object.defineProperty(globalThis,'length',{get,enumerable:true,configurable:false})`（[LegacyUnforgeable] 形态，装 R177 frames 后；iframe 计 `_iframeDocCache` win 有且非 `_zwSwDestroyed`、object 计 `_zwObjectNavCache` win 有且 `_makeProxy(sel,handle).isConnected`——s96 先例；error 态无 win 自然不计）。part102 桥测两钉七相位（A-G data:/blob: 面：text/plain 替换内容 load+null 保持、text/html win+doc 物化+location.href 印记、无效 data: RFC 2397 failure error、blob 同源物化/text/plain null/跨源 error/revoked error、host fetch 零调用日志断言；L 相位 window.length 0→1→3→error 不计→移除递减→destroyed 递减 + descriptor enumerable/configurable:false + bare-origin 不走 host fetch）。验证：driving solo the-object-element 目录 40P（allowed-schemas **6P** 4F→P、cross-origin **2P** 2F→P、historical/object-events/object-attributes 4P 保持、object-javascript-url 1P+1T 半开、object-handler T 挂账）+ document-getters 3P 回归 exit 0；全树 sweep 双跑 join 对 s399 基线**迁移矩阵 Fail→Pass ×6 恰 driving 集、Pass→Pass ×8216 零转红零丢失、零 new/gone**（Fail→Timeout ×2 = select-home-end flake 家族真态 F 单列；dialog-overlay 1 键双跑不稳定=渲染流负载 flake 不入稳定集；stable 8222P/217F/33T unique 8473）；单元 engine 3955P/7F（= s399 3953P +2P 本切片新钉；7F 在册逐名同形）、webview 848P/2F 同形、script-sandbox 452P/0F；smoke 双 PASS；fmt/clippy clean（过程记四点：①bare-origin 正则过宽——`http://test:test` 无效 port 经 `[^\/]*` 剥离路径空误入合成臂派 load，须 parse 合法+bad port 双门；②host fetch 分诊翻 success 是反回归——s399「其余类型→error」臂对 runner 宽松 2xx load-bearing，file: 案首跑即翻 load，回退三臂、text/plain success 面由 data:/blob: 臂内语义承载；③grep 二进制日志静默零案——sweep 日志含 NUL（image body 落 Fail 行），无 `-a` 只出提示行 pairs 缩水 3734 行（s344 坑重踩）；④join 漏 `-t '\x1f'` 键含空格时首 token join → 85 万行叉积）。**本流域在册红 224F+31T→218F+31T**（−6 driving）。残差：bare-origin 目录语义 shim 近似 + host 非 text/html 非 image→error 保持（FIXME in part01）+ window.length frame/未消费 iframe 惰性物化不计 + object-handler 嵌套脚本通道（R206 移植面）+ object-javascript-url 剩余子测。账本

@@ -81,6 +81,11 @@ pub use label::*;
 mod form_activation;
 pub use form_activation::*;
 
+// s402（html-semantics M2）：shadow 森林切片过滤 + 声明式模板剥除（by-handle 视图
+// 重建消费——handle 身份跨探测环刷新的重建面）。
+mod shadow_forest;
+pub use shadow_forest::{shadow_forest_mutations, strip_declarative_shadow_templates};
+
 // `register_dom_callbacks` —— 全部 `__zw_*` 回调注册（R2976 从本文件拆出，控制主文件行数）。最大单体函数。
 #[cfg(feature = "script-runtime")]
 mod callbacks;
