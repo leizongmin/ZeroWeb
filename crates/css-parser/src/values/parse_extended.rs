@@ -1236,6 +1236,9 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
             }
             first.unwrap_or(MTInvalid)
         }
+        // tree-counting 函数产出 <integer>（§tree-counting 型别表 <number> 族
+        // 同口径）——`1 * sibling-index()` 乘法臂据此按 number × number 合法。
+        CalcExpr::TreeCounting(_) => MTNumber,
         CalcExpr::UnaryOp(op, inner) => {
             let it = calc_expr_math_type(inner);
             match op {
@@ -1333,6 +1336,8 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
             calc_expr_has_length(&it.value)
                 || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if calc_expr_has_length(w))
         }),
+        // tree-counting 叶是 DOM 序号产出（无维度单位，非 <length>）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 

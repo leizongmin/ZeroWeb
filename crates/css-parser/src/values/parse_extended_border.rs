@@ -630,6 +630,9 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
         // clip-path 槽无 calc-mix() 文法位（CSS Values 5 tentative 未接线，
         // 无语料驱动案）——fail-closed 兜底。
         CalcExpr::Mix(_) => None,
+        // clip-path 槽无 tree-counting 文法位（DOM 兄弟序依赖、parse 期
+        // opaque 无语料驱动案）——fail-closed 兜底。
+        CalcExpr::TreeCounting(_) => None,
         CalcExpr::Min(args) | CalcExpr::Max(args) => same_clip_path_calc_types(args),
         CalcExpr::Clamp { min, val, max } => {
             let ty = clip_path_calc_type(min)?;

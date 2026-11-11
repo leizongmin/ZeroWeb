@@ -1631,6 +1631,8 @@ fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bo
         CalcExpr::BinaryMathOp(_, a, b) => calc_expr_contains_percentage(a) || calc_expr_contains_percentage(b),
         // calc-mix：仅项值含百分比需布局期解析；权重纯混合系数不阻塞。
         CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_contains_percentage(&it.value)),
+        // tree-counting 叶是 DOM 序号产出（无百分比）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 
@@ -1652,6 +1654,8 @@ fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
         CalcExpr::BinaryMathOp(_, a, b) => calc_expr_has_length(a) || calc_expr_has_length(b),
         // calc-mix：项值叶判定（权重是纯系数，parse 文法门已保证权重树无长度叶）。
         CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_has_length(&it.value)),
+        // tree-counting 叶是 DOM 序号产出（非 <length>）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 

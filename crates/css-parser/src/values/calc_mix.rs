@@ -94,6 +94,8 @@ pub(crate) fn expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
             expr_has_percentage_leaf(&it.value)
                 || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if expr_has_percentage_leaf(w))
         }),
+        // tree-counting 叶无百分比（权重表达式文法门 `%` 叶判定只看维度叶）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 
@@ -107,6 +109,8 @@ pub(crate) fn expr_contains_mix(expr: &CalcExpr) -> bool {
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(expr_contains_mix),
         CalcExpr::Clamp { min, val, max } => expr_contains_mix(min) || expr_contains_mix(val) || expr_contains_mix(max),
         CalcExpr::UnaryOp(_, inner) => expr_contains_mix(inner),
+        // tree-counting 叶非 Mix 节点。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 
@@ -202,7 +206,16 @@ pub(crate) fn eval_mix(items: &[CalcMixItem], ctx: &CalcContext) -> Option<f64> 
             *w = fill;
         }
         total += *w;
-        let v = super::types::eval_calc_with_context(&it.value, ctx)?;
+        let v = match super::types::eval_calc_with_context(&it.value, ctx) {
+            Some(v) => v,
+            // 符号零（公式 0·v = 0）：权重为 0 的不可求值项贡献 0——DOM 依赖
+            // 树（sibling-index() 等求值桥挂账期）不阻塞整体解析（serialize 页
+            // `calc-mix(1 * sibling-index() 0%, 3 100%)` → `calc(3)` 语料行
+            // 注记「0% so calc-mix() can still be resolved」）。可求值项照常
+            // 相乘（NaN·0 = NaN 毒化不丢，IEEE 传播链保持）。
+            None if *w == 0.0 => 0.0,
+            None => return None,
+        };
         acc += v * *w;
     }
     // 分母 max(Σ, 100)：Σ<100% 稀释不归一（`calc-mix(1 25%, 3 25%)` = 1），

@@ -419,6 +419,9 @@ fn counter_calc_type(expr: &CalcExpr) -> Option<CounterCalcType> {
         // counter() 槽无 calc-mix() 文法位（CSS Values 5 tentative 未接线，
         // 无语料驱动案）——fail-closed 兜底。
         CalcExpr::Mix(_) => None,
+        // counter() 槽无 tree-counting 文法位（DOM 兄弟序与计数器求值域正交，
+        // 无语料驱动案）——fail-closed 兜底。
+        CalcExpr::TreeCounting(_) => None,
         // counter() 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
         // 之外本不可达，fail-closed 兜底）。
         CalcExpr::Time(_) => None,

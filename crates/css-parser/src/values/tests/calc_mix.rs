@@ -286,9 +286,131 @@ fn test_calc_mix_fold_outer_calc_nested_canonical_sum() {
 
 #[test]
 fn test_calc_mix_fold_outer_calc_nested_guards() {
-    // 挂账保持：sibling-index() 形（DOM 桥求值域）不项化——原文透传。
+    // tree-counting 叶（DOM 桥求值域）指定值归一化串复用项原文——非零权重
+    // 标量不可解析落归一化臂，50/50 组恒等输出（serialize 页
+    // 「Parse-time unresolveable value」首行，读出文本与写入原文一致）。
     assert_eq!(
         fold_decl_specified("scale", "calc-mix(1 * sibling-index() 50%, 3 50%)"),
+        Some("calc-mix(1 * sibling-index() 50%, 3 50%)".into())
+    );
+}
+
+// ---- tree-counting 叶（CSS Values 5 §tree-counting，tentative）——serialize/
+// computed 语料「Parse-time unresolveable value/weight」桶 parse/eval/fold 钉面 ----
+
+#[test]
+fn test_tree_counting_parse_and_type_gates() {
+    // 无实参合法形（calc 包裹与裸函数、calc-mix 项值/权重位）。
+    assert!(parse_math_function("calc(sibling-index())").is_some());
+    assert!(parse_math_function("calc(sibling-count() * 10px)").is_some());
+    assert!(parse_math_function("sibling-index()").is_some());
+    assert!(parse_math_function("sibling-count()").is_some());
+    assert!(parse_calc_mix("calc-mix(1 * sibling-index() 50%, 3 50%)").is_some());
+    assert!(parse_calc_mix("calc-mix(1 calc(50% * sibling-index()), 3 50%)").is_some());
+    // 带实参形草案未定稿（无语料驱动案）——拒。
+    assert_eq!(parse_math_function("sibling-index(2)"), None);
+    assert_eq!(parse_math_function("sibling-count(odd)"), None);
+    // 型别：<integer>（§tree-counting → number 族）——`1 * sibling-index()`
+    // 乘法臂 number × number 合法；length 位（<length-percentage>）不含。
+    assert!(calc_expr_is_number(
+        &parse_math_function("calc(1 * sibling-index())").unwrap()
+    ));
+    assert!(!calc_expr_is_length_percentage(
+        &parse_math_function("calc(sibling-index())").unwrap()
+    ));
+    // 求值不可达（DOM 兄弟序依赖，CalcContext 无 DOM 视图）。
+    assert_eq!(
+        eval_calc(&parse_math_function("calc(sibling-index())").unwrap(), None),
+        None
+    );
+}
+
+#[test]
+fn test_tree_counting_eval_symbolic_zero() {
+    // 符号零（0·v = 0）：0% 权重 × 不可求值项不阻塞整体——serialize 页
+    // `calc-mix(1 * sibling-index() 0%, 3 100%)` 行注记「0% so calc-mix()
+    // can still be resolved」（权重 100/100 → 3）。
+    assert_eq!(
+        eval_calc(
+            &parse_calc_mix("calc-mix(1 * sibling-index() 0%, 3 100%)").unwrap(),
+            None
+        ),
+        Some(3.0)
+    );
+    // 全零权重（含 sibling-index() 项）→ 0（computed 页 used 语料同形）。
+    assert_eq!(
+        eval_calc(
+            &parse_calc_mix("calc-mix(1 0%, 3 0%, 5 * sibling-index() 0%)").unwrap(),
+            None
+        ),
+        Some(0.0)
+    );
+    // 非零权重 × 不可求值项 → 整体不可解析（None）。
+    assert_eq!(
+        eval_calc(
+            &parse_calc_mix("calc-mix(1 * sibling-index() 50%, 3 50%)").unwrap(),
+            None
+        ),
+        None
+    );
+    // NaN 毒化保持：可求值 NaN 项 × 0 权重仍 NaN（IEEE 传播链不因符号零门丢失）。
+    assert!(
+        eval_calc(&parse_calc_mix("calc-mix(calc(NaN * 1) 0%, 3 100%)").unwrap(), None).is_some_and(|v| v.is_nan())
+    );
+}
+
+#[test]
+fn test_tree_counting_fold_specified_corpus() {
+    // 全零塌缩：单位取首项维度叶（sibling-index() 叶无单位，or_else 溯源
+    // `1% *` / `5px *` 的维度叶——serialize 页 unresolved/resolved 组）。
+    assert_eq!(
+        fold_decl_specified("scale", "calc-mix(1 0%, 3 0%, 5 * sibling-index() 0%)"),
+        Some("calc(0)".into())
+    );
+    assert_eq!(
+        fold_decl_specified("width", "calc-mix(1px 0%, 3px 0%, 5px * sibling-index() 0%)"),
+        Some("calc(0px)".into())
+    );
+    assert_eq!(
+        fold_decl_specified("text-indent", "calc-mix(1% 0%, 3% 0%, 5% * sibling-index() 0%)"),
+        Some("calc(0%)".into())
+    );
+    assert_eq!(
+        fold_decl_specified("width", "calc-mix(1% * sibling-index() 0%, 3px 0%)"),
+        Some("calc(0%)".into())
+    );
+    assert_eq!(
+        fold_decl_specified("width", "calc-mix(1px * sibling-index() 0%, 3% 0%)"),
+        Some("calc(0px)".into())
+    );
+    // 归一化串：缺失权重 fill=0 丢弃（5, 7），项原文保形（serialize 页
+    // 「Parse-time unresolveable value」组）。
+    assert_eq!(
+        fold_decl_specified("scale", "calc-mix(1 * sibling-index() 50%, 3 50%, 5, 7)"),
+        Some("calc-mix(1 * sibling-index() 50%, 3 50%)".into())
+    );
+    // 符号零标量塌缩 → `calc(3)`（number 位）。
+    assert_eq!(
+        fold_decl_specified("scale", "calc-mix(1 * sibling-index() 0%, 3 100%)"),
+        Some("calc(3)".into())
+    );
+    // Parse-time unresolveable weight：calc() 形权重（含 sibling-index()）→
+    // Expr 门原样保留（serialize 页「Parse-time unresolveable weight」组）。
+    assert_eq!(
+        fold_decl_specified("scale", "calc-mix(1 calc(50% * sibling-index()), 3 50%)"),
+        None
+    );
+    assert_eq!(
+        fold_decl_specified("scale", "calc-mix(1 calc(50% * sibling-index()), 3 50%, 5, 7)"),
+        None
+    );
+    // 嵌套和串：非零权重 Mix 叶不可项化 → 整体放弃、原文透传（serialize 页
+    // 「All values use dimension resolving」sibling 行，期望 = 原文）。
+    assert_eq!(
+        fold_decl_specified(
+            "text-indent",
+            "calc(10px + calc-mix(10% * sibling-index() 50%, 30% 50%))"
+        ),
         None
     );
 }

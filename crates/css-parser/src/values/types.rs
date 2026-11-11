@@ -857,6 +857,22 @@ pub enum CalcExpr {
     /// [`crate::values::calc_mix`]）——项族同型（§10.5），权重 clamp/缺失
     /// 分配/分母 max(Σ,100) 求值。
     Mix(Vec<CalcMixItem>),
+    /// CSS Values 5 tree-counting 函数叶（tentative）——DOM 兄弟序依赖的
+    /// `<integer>` 产出，parse 期 opaque：求值需引擎 DOM 桥注入兄弟序
+    ///（FIXME: 桥接挂账——style-system computed/layout-engine used 面接入）；
+    /// 解析/型别/权重门参与求值不可达（[`CalcContext`] 无 DOM 视图返 None）。
+    /// <https://drafts.csswg.org/css-values-5/#tree-counting>
+    TreeCounting(TreeCountingFn),
+}
+
+/// CSS Values 5 tree-counting 函数（tentative，§tree-counting）。
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TreeCountingFn {
+    /// `sibling-index()`：元素在父级子元素序中的 1-based 序号。
+    SiblingIndex,
+    /// `sibling-count()`：父级子元素总数。
+    SiblingCount,
 }
 
 /// CSS Values L4 单参数数学函数运算符（number → number）。
@@ -1190,6 +1206,26 @@ impl<'a> CalcParser<'a> {
         }
     }
 
+    /// 尝试解析 CSS Values 5 tree-counting 函数（无实参形）：
+    /// `sibling-index()` / `sibling-count()`。命中则消费前缀 + 空白 + `)`，
+    /// 返回 [`CalcExpr::TreeCounting`] 叶；带实参形（草案未定稿，无语料驱动）
+    /// 不消费、返 None。
+    /// <https://drafts.csswg.org/css-values-5/#tree-counting>
+    fn try_parse_tree_counting(&mut self) -> Option<CalcExpr> {
+        let f = if self.try_consume_function("sibling-index") {
+            TreeCountingFn::SiblingIndex
+        } else if self.try_consume_function("sibling-count") {
+            TreeCountingFn::SiblingCount
+        } else {
+            return None;
+        };
+        self.skip_whitespace();
+        if !self.try_consume(")") {
+            return None;
+        }
+        Some(CalcExpr::TreeCounting(f))
+    }
+
     /// 解析顶层表达式（处理 + - 运算符，优先级较低）。
     fn parse_expr(&mut self) -> Option<CalcExpr> {
         let mut left = self.parse_term()?;
@@ -1337,6 +1373,10 @@ impl<'a> CalcParser<'a> {
             let items = self.parse_mix_args()?;
             self.depth -= 1;
             CalcExpr::Mix(items)
+        } else if let Some(f) = self.try_parse_tree_counting() {
+            // CSS Values 5 tree-counting 叶（sibling-index()/sibling-count()，
+            // 无实参形）——parse 期 opaque，型别 <integer>。
+            f
         } else if let Some(b) = self.try_parse_binary_math() {
             // CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
             b
@@ -1771,6 +1811,8 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
                     Some(CalcMixWeight::Expr(w)) => calc_expr_is_pure_time(w),
                 }
         }),
+        // tree-counting 叶产出 <integer>（非 <time>）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 
@@ -1807,6 +1849,8 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
         || math_function_inner(value, "asin").is_some()
         || math_function_inner(value, "acos").is_some()
         || math_function_inner(value, "atan").is_some()
+        || math_function_inner(value, "sibling-index").is_some()
+        || math_function_inner(value, "sibling-count").is_some()
     {
         // CSS Values 4 §11.3 裸数学函数（无 calc() 包裹——round/mod/rem/hypot/
         // pow/atan2、abs/sign/sqrt/exp/log、trig sin/cos/tan/asin/acos/atan，
@@ -2036,6 +2080,8 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
                 }
             }
         }
+        // tree-counting 叶无 lh 单位（DOM 序号），重写不可达。
+        CalcExpr::TreeCounting(_) => {}
     }
 }
 
@@ -2228,6 +2274,10 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
         // CSS Values 5 calc-mix()：权重 clamp/缺失分配/分母 max(Σ,100)
         //（语义与语料钉面见 [`crate::values::calc_mix::eval_mix`]）。
         CalcExpr::Mix(items) => eval_mix(items, ctx),
+        // tree-counting 叶：DOM 兄弟序依赖，CalcContext 无 DOM 视图——求值
+        // 不可达（None）；消费方按「不可解析」既有 fail 策略（fold 塌缩臂/
+        // eval_mix 符号零门）。FIXME: 引擎 DOM 桥求值挂账（computed/used 面）。
+        CalcExpr::TreeCounting(_) => None,
     }
 }
 

@@ -1025,6 +1025,9 @@ pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
         // calc-mix：仅项值含百分比才需布局期解析；权重（字面或 calc() 形）是纯
         // 混合系数（% 直读数值、无父基准换算），不阻塞 computed 期求值。
         CalcExpr::Mix(items) => items.iter().any(|it| calc_contains_percentage(&it.value)),
+        // tree-counting 叶是 DOM 序号产出（无百分比；求值桥挂账期 eval 返
+        // None 由消费方 fail 策略兜底）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 

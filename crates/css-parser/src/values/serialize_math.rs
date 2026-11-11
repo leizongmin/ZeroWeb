@@ -349,6 +349,8 @@ fn find_divergent_nan_clamp(expr: &CalcExpr) -> Option<[&CalcExpr; 3]> {
                 })
             })
             .next(),
+        // tree-counting 叶非复合节点（无 clamp 实参位）。
+        CalcExpr::TreeCounting(_) => None,
     }
 }
 
@@ -403,6 +405,9 @@ fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
         // calc-mix()：树首维度叶 = 首项维度叶（全零塌缩与 NaN 塌缩的单位
         // provenance——`calc-mix(1% 0%, 3px 0%)` → `calc(0%)` 首项 % 语料钉面）。
         CalcExpr::Mix(items) => items.iter().find_map(|it| dimension_suffix(&it.value)),
+        // tree-counting 叶无维度单位（DOM 序号 <integer>）——or_else/find_map
+        // 链继续向其余叶溯源（`1% * sibling-index()` 单位取 % 叶）。
+        CalcExpr::TreeCounting(_) => None,
     }
 }
 
@@ -451,6 +456,8 @@ fn expr_has_time_leaf(expr: &CalcExpr) -> bool {
         CalcExpr::Mix(items) => items.iter().any(|it| {
             expr_has_time_leaf(&it.value) || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if expr_has_time_leaf(w))
         }),
+        // tree-counting 叶产出 <integer>（非 <time>）。
+        CalcExpr::TreeCounting(_) => false,
     }
 }
 
