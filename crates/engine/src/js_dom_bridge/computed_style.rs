@@ -8,11 +8,12 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
-    BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorHueMethod, ColorInterpolation,
-    ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue,
-    FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue,
-    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, RadialGradient,
-    RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction, TransformValue, VisibilityValue,
+    BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
+    ClipPathValue, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient,
+    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
+    GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
+    PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue,
+    TransformFunction, TransformValue, VisibilityValue, eval_calc_with_context,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -1442,6 +1443,11 @@ fn format_num(v: f64, suffix: &str) -> String {
     }
 }
 
+/// getComputedStyle 视口基准，与 compute_document_styles 一致（默认 1280×800）——
+/// length_to_css 与 calc_computed_to_css 共用。
+const GCS_VIEWPORT_W: f64 = 1280.0;
+const GCS_VIEWPORT_H: f64 = 800.0;
+
 /// 把已计算的 [`LengthValue`] 序列化为 CSS 字符串（getComputedStyle 长度族）。
 ///
 /// `compute_styles` 经 `resolve_computed_style` 已把主要字段的 em/rem/vw/vh/vmin/vmax/ch/非 % calc
@@ -1460,9 +1466,6 @@ fn letter_spacing_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 }
 
 fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
-    // viewport 与 compute_document_styles 一致（getComputedStyle 默认 1280×800）。
-    const VW: f64 = 1280.0;
-    const VH: f64 = 800.0;
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),
         LengthValue::Percentage(v) => format_num(*v, "%"),
@@ -1470,13 +1473,214 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         LengthValue::MinContent => "min-content".to_string(),
         LengthValue::MaxContent => "max-content".to_string(),
         LengthValue::FitContent(_) => "fit-content".to_string(),
-        // 含 % 的 calc 无容器尺寸无法解析（非 % calc 已被 resolve_computed_style 转 Px）→ ''。
-        LengthValue::Calc(_) => String::new(),
+        // 含 % 的 calc：computed 通道 canonical 化（css-values-4 §10.11——静态项
+        // 求值 + % 项保留）；不可 canonical 化 → ''（fail-soft，与既有行为一致）。
+        // geometric used 通道 % 需 layout 解析（模块头 in-master 限制），该桶挂账。
+        LengthValue::Calc(expr) => calc_computed_to_css(expr, font_size_px).unwrap_or_default(),
         // em/rem/vw/vh/vmin/vmax/ch：兜底解析残余相对单位为 px。
         other => format_num(
-            zero_style_system::resolve_length(other, font_size_px, Some(VW), Some(VH)),
+            zero_style_system::resolve_length(other, font_size_px, Some(GCS_VIEWPORT_W), Some(GCS_VIEWPORT_H)),
             "px",
         ),
+    }
+}
+
+/// computed 通道 CalcExpr → CSS 串（css-values-4 §10.11 computed canonical 口径）。
+///
+/// Chrome gCS length 族 computed：静态可求值子树按 font/viewport 基准求值为 px
+/// （无 parent_length——桥层无 layout，geometric used 通道 % 解析挂账）；% 项
+/// 保留：单项解包 `N%`、与静态项混合保 canonical `calc(...)`——零 px 项丢弃、
+/// 零 % 项保留（语料实证 `calc(10% + 0px)` computed → `10%` 而
+/// `calc(0% + 10px)` 原样保留）；calc-mix() 全零字面权重塌缩取首项单位族
+/// （语料页 FIXME「混族 matches the first item」）。不可 canonical 化
+/// （Expr 权重/未知函数值项/乘除含 % 树）→ `None`。
+fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64) -> Option<String> {
+    let ctx = CalcContext {
+        font_size: Some(font_size_px),
+        root_font_size: Some(16.0),
+        viewport_width: Some(GCS_VIEWPORT_W),
+        viewport_height: Some(GCS_VIEWPORT_H),
+        ..Default::default()
+    };
+    // ① 全静态（无 % 叶——全零权重 % 值 Mix 的 eval_mix 标量 0 会抹掉单位族，
+    // % 族语义必须走 ② 保留）：整体求值为 px。
+    if !calc_has_percentage_leaf(expr) {
+        if let Some(v) = eval_calc_with_context(expr, &ctx) {
+            return Some(format_num(v, "px"));
+        }
+    }
+    // ② 含 % 项：加法脊项化 → canonical 序拼装（% 项在前、其余保序）。
+    let terms = calc_terms(expr, &ctx)?;
+    let mut pcts: Vec<f64> = Vec::new();
+    let mut pxs: Vec<f64> = Vec::new();
+    for t in terms {
+        match t {
+            CompTerm::Pct(v) => pcts.push(v),
+            CompTerm::Px(v) => pxs.push(v),
+        }
+    }
+    pxs.retain(|v| *v != 0.0); // 零 px 项丢弃；% 项（含 0%）保留
+    let mut parts: Vec<(f64, &'static str)> = pcts.into_iter().map(|v| (v, "%")).collect();
+    parts.extend(pxs.into_iter().map(|v| (v, "px")));
+    match parts.len() {
+        0 => Some("0px".to_string()),
+        1 => Some(format_num(parts[0].0, parts[0].1)),
+        _ => {
+            let mut s = String::from("calc(");
+            for (i, (v, u)) in parts.iter().enumerate() {
+                if i == 0 {
+                    s.push_str(&format_num(*v, u));
+                } else if *v >= 0.0 {
+                    s.push_str(&format!(" + {}", format_num(*v, u)));
+                } else {
+                    s.push_str(&format!(" - {}", format_num(-v, u)));
+                }
+            }
+            s.push(')');
+            Some(s)
+        }
+    }
+}
+
+/// 项化中间表示：百分比项（computed 保留）与静态 px 项。
+#[derive(Debug, Clone, Copy)]
+enum CompTerm {
+    Pct(f64),
+    Px(f64),
+}
+
+/// 加法脊项化：Add/Subtract 展平（符号沿 Subtract 右臂传播）；静态子树求值
+/// 为 px 项；`%` 叶保留为 % 项；calc-mix() 字面权重面求值/全零塌缩；其余
+/// （乘除含 %、Expr 权重、未知函数值项、非折叠 min/max/clamp 含 %）→ None。
+fn calc_terms(expr: &CalcExpr, ctx: &CalcContext) -> Option<Vec<CompTerm>> {
+    match expr {
+        CalcExpr::BinaryOp(l, CalcOp::Add, r) => {
+            let mut t = calc_terms(l, ctx)?;
+            t.extend(calc_terms(r, ctx)?);
+            Some(t)
+        }
+        CalcExpr::BinaryOp(l, CalcOp::Subtract, r) => {
+            let mut t = calc_terms(l, ctx)?;
+            t.extend(calc_terms(r, ctx)?.into_iter().map(neg_term));
+            Some(t)
+        }
+        CalcExpr::Length(LengthValue::Percentage(v)) => Some(vec![CompTerm::Pct(*v)]),
+        CalcExpr::Mix(items) => mix_terms(items, ctx),
+        _ => {
+            // 静态子树（不含 %）→ px 项；含 % 的其他复合形不项化。
+            if calc_has_percentage_leaf(expr) {
+                None
+            } else {
+                eval_calc_with_context(expr, ctx).map(|v| vec![CompTerm::Px(v)])
+            }
+        }
+    }
+}
+
+fn neg_term(t: CompTerm) -> CompTerm {
+    match t {
+        CompTerm::Pct(v) => CompTerm::Pct(-v),
+        CompTerm::Px(v) => CompTerm::Px(-v),
+    }
+}
+
+/// 子树是否含 `%` 叶（桥层本地 walker——css-parser 的
+/// `expr_has_percentage_leaf` 为 pub(crate) 不出 crate）。
+fn calc_has_percentage_leaf(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::BinaryOp(l, _, r) => {
+            calc_has_percentage_leaf(l) || calc_has_percentage_leaf(r)
+        }
+        CalcExpr::Min(v) | CalcExpr::Max(v) => v.iter().any(calc_has_percentage_leaf),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_has_percentage_leaf(min)
+                || calc_has_percentage_leaf(val)
+                || calc_has_percentage_leaf(max)
+        }
+        CalcExpr::UnaryOp(_, a) => calc_has_percentage_leaf(a),
+        CalcExpr::BinaryMathOp(_, a, b) => {
+            calc_has_percentage_leaf(a) || calc_has_percentage_leaf(b)
+        }
+        CalcExpr::Mix(items) => items.iter().any(|it| calc_has_percentage_leaf(&it.value)),
+        _ => false,
+    }
+}
+
+/// 取表达式左先序首维叶（全零塌缩单位族判定用；`5px * sibling-index()` 形
+/// 取乘法左臂 px 叶——零权重塌缩不求值，函数叶忽略）。
+fn first_dim_leaf(expr: &CalcExpr) -> Option<LengthValue> {
+    match expr {
+        CalcExpr::Length(lv) => match lv {
+            LengthValue::Percentage(_) | LengthValue::Px(_) => Some(lv.clone()),
+            _ => None,
+        },
+        CalcExpr::BinaryOp(l, _, r) => first_dim_leaf(l).or_else(|| first_dim_leaf(r)),
+        CalcExpr::Min(v) | CalcExpr::Max(v) => v.iter().find_map(first_dim_leaf),
+        CalcExpr::Clamp { val, .. } => first_dim_leaf(val),
+        _ => None,
+    }
+}
+
+/// calc-mix() 项化（字面权重面，css-values-5 §10.5）：有效权重（clamp
+/// [0,100] + 缺失填充 max(0,100-Σ)/n）全为零 → 塌缩取首项单位族；否则
+/// 同族值项按公式 Σ(vᵢ·wᵢ)/max(Σ,100) 求值（全 % 值项产 % 项——%
+/// 无 parent_length 不可走整体求值，此处按 % 口径直算；全静态 px 值项
+/// 产 px 项）。Expr 权重（sibling-index 桶）/混族非零权重（语料 FIXME
+/// 在册 undefined）→ None。
+fn mix_terms(items: &[CalcMixItem], ctx: &CalcContext) -> Option<Vec<CompTerm>> {
+    // 权重面：字面 clamp [0,100]；缺失按公式 max(0,100-Σ字面)/n 原位填充
+    // （对齐 css-parser eval_mix；Expr 权重形挂 sibling-index 桶，本刀不展开）。
+    let slots: Vec<Option<f64>> = items
+        .iter()
+        .map(|it| match it.weight {
+            Some(CalcMixWeight::Literal(p)) => Some(p.clamp(0.0, 100.0)),
+            _ => None,
+        })
+        .collect();
+    let literal_total: f64 = slots.iter().filter_map(|x| *x).sum();
+    let missing = slots.iter().filter(|x| x.is_none()).count();
+    let fill = (100.0 - literal_total).max(0.0) / missing.max(1) as f64;
+    let w: Vec<f64> = slots
+        .into_iter()
+        .map(|x| x.unwrap_or(fill))
+        .collect();
+    let total: f64 = w.iter().sum();
+    // 全零塌缩：首项单位族（% 叶 → 0%；px 维叶 → 0px；无数维叶 → None）。
+    if total <= 0.0 {
+        return match first_dim_leaf(&items[0].value) {
+            Some(LengthValue::Percentage(_)) => Some(vec![CompTerm::Pct(0.0)]),
+            Some(_) => Some(vec![CompTerm::Px(0.0)]),
+            None => None,
+        };
+    }
+    let div = total.max(100.0);
+    let mut pct_sum = 0.0;
+    let mut px_sum = 0.0;
+    let mut pct_seen = false;
+    let mut px_seen = false;
+    for (it, wi) in items.iter().zip(w.iter()) {
+        if *wi == 0.0 {
+            continue;
+        }
+        match it.value {
+            CalcExpr::Length(LengthValue::Percentage(v)) => {
+                pct_seen = true;
+                pct_sum += v * wi;
+            }
+            _ => {
+                px_seen = true;
+                px_sum += eval_calc_with_context(&it.value, ctx)? * wi;
+            }
+        }
+    }
+    if pct_seen && px_seen {
+        return None;
+    }
+    if pct_seen {
+        Some(vec![CompTerm::Pct(pct_sum / div)])
+    } else {
+        Some(vec![CompTerm::Px(px_sum / div)])
     }
 }
 
@@ -3823,5 +4027,160 @@ mod r4201_individual_transform_serialization_tests {
         assert_eq!(time_list_to_css(&[f64::INFINITY], "0s", true), "9223372036854775807s");
         // 空列表回退 default 零漂移。
         assert_eq!(time_list_to_css(&[], "0s", true), "0s");
+    }
+}
+
+#[cfg(test)]
+mod computed_calc_serialize_tests {
+    //! css-values-4 §10.11 / CSS Values 5 §10.5 computed 通道 calc/calc-mix
+    //! 串化（`length_to_css` Calc 臂）：静态项求值、% 项保留 canonical
+    //! （零 px 项丢弃、零 % 项保留）、全零字面权重塌缩取首项单位族。
+    //! 语料驱动：calc-mix-serialize.tentative / calc-mix-computed.tentative
+    //! （挂账 43F 桶 Tier 1 面；width used %-形挂 layout 桶不在本面）。
+
+    use super::{calc_computed_to_css, length_to_css};
+    use zero_css_parser::values::{
+        CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, LengthValue, TreeCountingFn,
+    };
+
+    fn px(v: f64) -> CalcExpr {
+        CalcExpr::Length(LengthValue::Px(v))
+    }
+    fn pct(v: f64) -> CalcExpr {
+        CalcExpr::Length(LengthValue::Percentage(v))
+    }
+    fn em(v: f64) -> CalcExpr {
+        CalcExpr::Length(LengthValue::Em(v))
+    }
+    fn add(l: CalcExpr, r: CalcExpr) -> CalcExpr {
+        CalcExpr::BinaryOp(Box::new(l), CalcOp::Add, Box::new(r))
+    }
+    fn mix(items: Vec<(CalcExpr, Option<f64>)>) -> CalcExpr {
+        CalcExpr::Mix(
+            items
+                .into_iter()
+                .map(|(value, w)| CalcMixItem {
+                    value,
+                    raw: "".into(),
+                    weight: w.map(CalcMixWeight::Literal),
+                })
+                .collect(),
+        )
+    }
+    fn calc(items: CalcExpr) -> LengthValue {
+        LengthValue::Calc(Box::new(items))
+    }
+
+    #[test]
+    fn static_mix_resolves_to_px_with_font() {
+        // calc-mix(10em 50%, 30px 50%) @font-size:10px → 65px。
+        assert_eq!(
+            length_to_css(&calc(mix(vec![(em(10.0), Some(50.0)), (px(30.0), Some(50.0))])), 10.0),
+            "65px"
+        );
+        // calc-mix(10px 75%, 3em 75%) @10px → (75·10 + 75·30)/150 = 20px。
+        assert_eq!(
+            length_to_css(&calc(mix(vec![(px(10.0), Some(75.0)), (em(3.0), Some(75.0))])), 10.0),
+            "20px"
+        );
+    }
+
+    #[test]
+    fn zero_weight_collapse_takes_first_item_family() {
+        // % 首项：0% 保留（text-indent computed 口径）。
+        assert_eq!(length_to_css(&calc(mix(vec![(pct(1.0), Some(0.0))])), 16.0), "0%");
+        // px 首项：塌缩 0px。
+        assert_eq!(length_to_css(&calc(mix(vec![(px(1.0), Some(0.0))])), 16.0), "0px");
+        // 三项全零 + 末项值含 %（未知函数值项同机制——塌缩只读首项）。
+        assert_eq!(
+            length_to_css(
+                &calc(mix(vec![
+                    (px(1.0), Some(0.0)),
+                    (px(3.0), Some(0.0)),
+                    (add(px(5.0), pct(5.0)), Some(0.0)),
+                ])),
+                16.0
+            ),
+            "0px"
+        );
+    }
+
+    #[test]
+    fn percentage_terms_survive_in_canonical_sum() {
+        // calc(10px + calc-mix(1% 0%, 3px 0%)) → calc(0% + 10px)（零 % 项保留）。
+        assert_eq!(
+            length_to_css(
+                &calc(add(
+                    px(10.0),
+                    mix(vec![(pct(1.0), Some(0.0)), (px(3.0), Some(0.0))])
+                )),
+                16.0
+            ),
+            "calc(0% + 10px)"
+        );
+        // calc(10% + calc-mix(1px 0%, 3% 0%)) → 10%（零 px 项丢弃、单项解包）。
+        assert_eq!(
+            length_to_css(
+                &calc(add(
+                    pct(10.0),
+                    mix(vec![(px(1.0), Some(0.0)), (pct(3.0), Some(0.0))])
+                )),
+                16.0
+            ),
+            "10%"
+        );
+        // calc(10px + calc-mix(1px 0%, 3% 0%)) → 10px。
+        assert_eq!(
+            length_to_css(
+                &calc(add(
+                    px(10.0),
+                    mix(vec![(px(1.0), Some(0.0)), (pct(3.0), Some(0.0))])
+                )),
+                16.0
+            ),
+            "10px"
+        );
+    }
+
+    #[test]
+    fn percent_value_mix_weighted_sum_keeps_percent() {
+        // calc(10px + calc-mix(10% 50%, 30% 50%)) → calc(20% + 10px)。
+        assert_eq!(
+            length_to_css(
+                &calc(add(
+                    px(10.0),
+                    mix(vec![(pct(10.0), Some(50.0)), (pct(30.0), Some(50.0))])
+                )),
+                16.0
+            ),
+            "calc(20% + 10px)"
+        );
+    }
+
+    #[test]
+    fn non_canonicalizable_bails_to_empty() {
+        // 值项含 tree-counting 叶（sibling 桶，桥层无 DOM 视图 eval None）
+        // + 非零权重 → ''（sibling 桶另刀接 DOM 注入）。
+        assert_eq!(
+            calc_computed_to_css(
+                &mix(vec![
+                    (
+                        CalcExpr::TreeCounting(TreeCountingFn::SiblingIndex),
+                        Some(50.0)
+                    ),
+                    (px(3.0), Some(50.0)),
+                ]),
+                16.0
+            ),
+            None
+        );
+        // 混族非零权重（语料 FIXME undefined）→ ''。
+        assert_eq!(
+            length_to_css(
+                &calc(mix(vec![(pct(1.0), Some(50.0)), (px(3.0), Some(50.0))])),
+                16.0
+            ),
+            ""
+        );
     }
 }
