@@ -1322,12 +1322,25 @@ pub(crate) fn shrink_inline_blocks_to_content(
                     0.0
                 } else {
                     let avail = (box_node.width - frame).max(0.0);
-                    box_node
+                    let mut target = box_node
                         .children
                         .iter()
                         .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
                         .map(|c| c.margin_left + c.width + c.margin_right)
-                        .fold(avail, f32::max)
+                        .fold(avail, f32::max);
+                    // R5506（CSS2 §10.3.9/§10.4 used 值约束）：grow 目标按自身 definite
+                    // max-width 钳——taffy 初布局已把盒钳在 max-width，本腿取流内子已布局
+                    // margin-box 越钳回写，盒被撑出钳外（inline-block 父 max-width:120 +
+                    // 定宽 inline-block 子 300 → used 宽 300 应 120）。Calc 混合式排除沿
+                    // R5368 clamp_box_max_contribution 同款（% 项伪值解析）；% max-width
+                    // 的 used 域钳需 CB 宽，本 pass 无父宽上下文（FIXME）。
+                    if let Some(cs) = box_node.node_id.and_then(|id| styles.get(&id))
+                        && !matches!(cs.max_width, LengthValue::Calc(_))
+                        && let Some(cap) = crate::intrinsic_sizing::resolve_intrinsic_real_length(&cs.max_width, cs)
+                    {
+                        target = target.min(cap + frame);
+                    }
+                    target
                 };
                 let mut write_w = shrink_border_box;
                 let mut write_cw = content_max_w;

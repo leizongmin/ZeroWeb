@@ -1066,3 +1066,6 @@ mod s372_popover_ua_fixed_tests;
 /// wptfyi-css 组F 布局刀2：position-area 区域定位 pass 端到端
 ///（css-anchor-position-1 §position-area，3×3 网格格满填语义）。
 mod g1f_anchor_pos_tests;
+/// R5506（CSS2 §10.3.9/§10.4）：inline-block shrink grow 腿自身 max-width 钳——
+/// 原子/块级定宽子越钳回写修复五锚。
+mod r5506_ib_grow_maxwidth_cap_tests;
