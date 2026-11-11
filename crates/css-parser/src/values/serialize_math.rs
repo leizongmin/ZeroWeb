@@ -68,8 +68,8 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
 ///
 /// 消费方：inline style 写面（native CSD canonicalize 链）与读出视图
 ///（mutation log replay `style_from_mutations_lw`）。白名单仅本轮有 WPT
-/// 驱动案的属性：transform（rotate 族 wrapper 折叠）、rotate/scale（裸数学
-/// 函数）。其余属性原样保留。
+/// 驱动案的属性：transform（rotate/scale 族 wrapper 折叠）、rotate/scale/
+/// opacity（裸数学函数）。其余属性原样保留。
 pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
     let v = value.trim();
     if v.is_empty() {
@@ -78,7 +78,7 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
     match prop {
         "transform" => fold_transform_math_specified(v),
         "rotate" => fold_math_specified(v, MathFoldKind::Angle),
-        "scale" => fold_math_specified(v, MathFoldKind::Number),
+        "scale" | "opacity" => fold_math_specified(v, MathFoldKind::Number),
         _ => None,
     }
 }
@@ -613,6 +613,15 @@ mod tests {
             fold_decl_specified("rotate", "acos(-1)").as_deref(),
             Some("calc(180deg)")
         );
+        // opacity 裸数学函数折叠（hypot-pow-sqrt-serialize `calc(pow(1,1) - 0.5)`
+        // → `calc(0.5)` 驱动）；普通值/非数学原样。
+        assert_eq!(
+            fold_decl_specified("opacity", "calc(pow(1,1) - 0.5)").as_deref(),
+            Some("calc(0.5)")
+        );
+        assert_eq!(fold_decl_specified("opacity", "abs(1)").as_deref(), Some("calc(1)"));
+        assert_eq!(fold_decl_specified("opacity", "0.5"), None);
+        assert_eq!(fold_decl_specified("opacity", "calc(1px + 2px)"), None);
         // 白名单外属性 / 非数学值 / 空值保留原文。
         assert_eq!(fold_decl_specified("width", "calc(1px + 2px)"), None);
         assert_eq!(fold_decl_specified("transform", "rotate(45deg) scale(2)"), None);
