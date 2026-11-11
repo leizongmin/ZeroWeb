@@ -1169,9 +1169,14 @@
         var sV = (sN || s !== s) ? 0 : Math.min(100, Math.max(0, s));
         var lV = (lN || l !== l) ? 0 : Math.min(100, Math.max(0, l));
         var rgb = _zwCCHslToRgb(hV, sV / 100, lV / 100);
+        // srcBare：S/L 槽 % 语法跟随（css-color-4 computed 序列化 echo 输入形
+        // ——'hsl(120 80% none)' → '% 形'、RT 'hsl(270 50 none)' → 裸形；
+        // % 输入声明面剥 % 后由 part03 raw 影子供原文，裸输入无影子走 store
+        // 形——两侧判据一致；数组槽位 = [sBare, lBare]）。
         return { kind: 'rgb', rgb: rgb,
           alpha: _zwCCAlphaNum(ast.alpha), aNone: _zwCCIsNone(ast.alpha), hasNone: anyNone2,
-          srcComps: [hN ? 'none' : hV, sN ? 'none' : sV, lN ? 'none' : lV], srcKind: 'hsl' };
+          srcComps: [hN ? 'none' : hV, sN ? 'none' : sV, lN ? 'none' : lV], srcKind: 'hsl',
+          srcBare: [!(ast.comps[1] && ast.comps[1].pct != null), !(ast.comps[2] && ast.comps[2].pct != null)] };
       }
       case 'hwb': {
         var h2 = _zwCCSpecAngle(ast.comps[0]);
@@ -1182,9 +1187,11 @@
         var wV = (wN || w !== w) ? 0 : Math.min(100, Math.max(0, w));
         var bV = (bN || b !== b) ? 0 : Math.min(100, Math.max(0, b));
         var rgb2 = _zwCCHwbToRgb(h2V, wV / 100, bV / 100);
+        // srcBare：W/B 槽 % 语法跟随（同 hsl 臂——数组槽位 = [wBare, bBare]）。
         return { kind: 'rgb', rgb: rgb2,
           alpha: _zwCCAlphaNum(ast.alpha), aNone: _zwCCIsNone(ast.alpha), hasNone: anyNone3,
-          srcComps: [h2N ? 'none' : h2V, wN ? 'none' : wV, bN ? 'none' : bV], srcKind: 'hwb' };
+          srcComps: [h2N ? 'none' : h2V, wN ? 'none' : wV, bN ? 'none' : bV], srcKind: 'hwb',
+          srcBare: [!(ast.comps[1] && ast.comps[1].pct != null), !(ast.comps[2] && ast.comps[2].pct != null)] };
       }
       case 'lab': case 'lch': case 'oklab': case 'oklch': {
         var isOk = (ast.kind === 'oklab' || ast.kind === 'oklch');
@@ -1826,22 +1833,25 @@
     return 'color(srgb ' + parts.join(' ') + (a ? ' / ' + a : '') + ')';
   }
 
-  // hsl/hwb none 保形（powerless；h 度、s/l/w/b 百分值）。declared 面在写侧
-  // 已剥 %（color-valid-* corpus 锚 'hsl(120 80% none)' → 'hsl(120 80 none)'），
-  // computed 面读同一 store——无条件补 % 恰复 WPT computed 期望
-  //（'hsl(120 80% none)'，color-computed-hsl/hwb 锚；2026-11-11 srcBare 分量
-  // 裸形跟随实验证伪回退——store 已丢输入语法，跟随只会复刻 declared 剥 %）。
+  // hsl/hwb none 保形（powerless；h 度、s/l/w/b 值）。% vs 裸按输入语法 echo：
+  // relative 输出恒裸（'hsl(270 50 none)' 语料锚）；direct 声明随原文——% 输入
+  // 经 raw 影子取原文 parse（srcBare=false → '%'），裸输入（RT 回设形）无影子
+  // 走 store 裸形（srcBare=true）。bare 参数布尔（全裸，relative 臂）或
+  // [sBare, lBare]/[wBare, bBare] 数组（direct parse 臂）。declared 面仍在写侧
+  // 剥 %（color-valid-* corpus 锚 'hsl(120 80% none)' → 'hsl(120 80 none)'）。
   function _zwCCSerialHslNone(srcComps, alpha, aNone, bare) {
+    var bl = Array.isArray(bare) ? bare : [!!bare, !!bare];
     var h = srcComps[0] === 'none' ? 'none' : _zwCCNum(((srcComps[0] % 360) + 360) % 360);
-    var s = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bare ? '' : '%');
-    var l = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bare ? '' : '%');
+    var s = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bl[0] ? '' : '%');
+    var l = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bl[1] ? '' : '%');
     var a = _zwCCAlphaStr(alpha, aNone);
     return 'hsl(' + h + ' ' + s + ' ' + l + (a ? ' / ' + a : '') + ')';
   }
   function _zwCCSerialHwbNone(srcComps, alpha, aNone, bare) {
+    var bl = Array.isArray(bare) ? bare : [!!bare, !!bare];
     var h = srcComps[0] === 'none' ? 'none' : _zwCCNum(((srcComps[0] % 360) + 360) % 360);
-    var w = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bare ? '' : '%');
-    var b = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bare ? '' : '%');
+    var w = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bl[0] ? '' : '%');
+    var b = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bl[1] ? '' : '%');
     var a = _zwCCAlphaStr(alpha, aNone);
     return 'hwb(' + h + ' ' + w + ' ' + b + (a ? ' / ' + a : '') + ')';
   }
@@ -1850,9 +1860,11 @@
     var parts = [];
     for (var i = 0; i < 3; i++) {
       if (srcComps[i] === 'none') { parts.push('none'); continue; }
-      // lch/oklch hue（index 2）6 位有效（css-values-4；corpus 73.3386 精确面），
-      // L/C 8 位（round-trip 同精度）。
-      parts.push(i === 2 && (fn === 'lch' || fn === 'oklch') ? _zwCCSig6(srcComps[i]) : _zwCCNum(srcComps[i]));
+      // L/C/hue 8 位（round-trip 同精度）：hue 走 echo——store 声明面对 decimal
+      // hue 已 echo（part11-color.js lab 族 hue echo），8 位回显幂等保 RT
+      //（corpus '33.690066'/'73.3386' 双锚：rad 输入声明面折 6 位 decimal 后
+      // 回显同形；computed 面只见 store 串，无需重复单位换算）。
+      parts.push(_zwCCNum(srcComps[i]));
     }
     var a = _zwCCAlphaStr(alpha, aNone);
     return fn + '(' + parts.join(' ') + (a ? ' / ' + a : '') + ')';

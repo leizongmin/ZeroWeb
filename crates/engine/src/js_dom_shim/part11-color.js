@@ -843,7 +843,10 @@
           // hue：角度或数或 none；fromCalc 保折出单位与符号（corpus lch(calc(20deg*2)…) → calc(40deg)）。
           if (lc.t === 'num' && !lc.fromCalc) {
             if (lc.u !== '' && !(lc.u === 'deg' || lc.u === 'grad' || lc.u === 'rad' || lc.u === 'turn')) return null;
-            if (lc.u === 'grad' || lc.u === 'rad' || lc.u === 'turn') lc.v = _zwCAngleToDeg(lc.v, lc.u);
+            if (lc.u === 'grad' || lc.u === 'rad' || lc.u === 'turn') {
+              lc.v = _zwCAngleToDeg(lc.v, lc.u);
+              lc.fromAngleConv = true; // 单位换算旗标——声明面 hue 6 位序列化判据（corpus 1.28rad → 73.3386；decimal echo 面 RT '33.690066'）
+            }
             lc.u = '';
           }
         } else if (lc.t === 'num' && lc.u !== '' && lc.u !== '%') return null; // L/C 槽禁角度
@@ -990,7 +993,11 @@
             ov = Math.max(0, ov); // chroma clamp [0,∞)（corpus lch(20 -20 0) → 0）
           } else if (oi === 2 && (c.form === 'lch' || c.form === 'oklch')) {
             ov = ((ov % 360) + 360) % 360; // hue mod 360（corpus 380deg → 20）
-            out.push(_zwCSig6(ov));
+            // decimal hue echo（RT 幂等面——computed 串回设时 6 位舍入毁等值，
+            // corpus RT 'lch(0.70000031 54.083273 33.690066)' 实证）；角度单位
+            // 换算（rad/grad/turn→deg，parse 期 fromAngleConv 旗标）仍 6 位
+            //（corpus 1.28rad → 73.3386 精确面）。
+            out.push(oc.fromAngleConv ? _zwCSig6(ov) : _zwCSig8(ov));
             continue;
           }
           // lab 族分量 8 位有效（与 computed 面序列化同精度——round-trip 步把

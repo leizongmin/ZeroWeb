@@ -12246,6 +12246,16 @@
                 && typeof globalThis.__zwPlainComputed === 'function') {
               var _irGV = '';
               try { _irGV = String(elt.style.getPropertyValue(kp) || ''); } catch (_eIR1) {}
+              // raw 影子优先（css-color-4 §missing none 传播面）：声明写面归一
+              // 消解 rgb none → store 串恒 legacy 形，NeedsPlain 判 false 抢答
+              // 落宿主读数（probe-none B1/B2 实证 gcs=rgb(0,0,0)）；影子存归一
+              // 前原文，判定以原文为准（part01c _zwPlainDecl 同判据）。
+              try {
+                if (typeof elt.style.__zwRawDecl === 'function') {
+                  var _rvGV = elt.style.__zwRawDecl(kp);
+                  if (_rvGV) _irGV = String(_rvGV);
+                }
+              } catch (_eIR1b) {}
               if (_irGV && globalThis.__zwCssColorNeedsPlain(_irGV)) {
                 try {
                   var _pcGV2 = globalThis.__zwPlainComputed(elt, kp);
@@ -12298,6 +12308,13 @@
             && typeof globalThis.__zwPlainComputed === 'function') {
           var _irV = '';
           try { _irV = String(elt.style.getPropertyValue(_kpC) || ''); } catch (_eIR2) {}
+          // raw 影子优先（同 getPropertyValue 臂——none 传播判定以归一前原文为准）。
+          try {
+            if (typeof elt.style.__zwRawDecl === 'function') {
+              var _rvV = elt.style.__zwRawDecl(_kpC);
+              if (_rvV) _irV = String(_rvV);
+            }
+          } catch (_eIR2b) {}
           if (_irV && globalThis.__zwCssColorNeedsPlain(_irV)) {
             try {
               var _pcV2 = globalThis.__zwPlainComputed(elt, _kpC);
