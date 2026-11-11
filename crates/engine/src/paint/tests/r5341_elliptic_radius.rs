@@ -18,15 +18,14 @@ fn has_vert(verts: &[(f32, f32)], px: f32, py: f32) -> bool {
         .any(|(x, y)| (*x - px).abs() < 0.6 && (*y - py).abs() < 0.6)
 }
 
-/// 进程级 env 互斥：from_style_with_box 读 `ZW_ELLIPTIC_RADIUS`，本文件全部用例
-/// 抢同一把锁（kill-switch 用例 set/remove 期间其余用例不得解析半径）。
-static R5341_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+// T61：kill-switch 用例经 [`BorderRadiusSpec::from_style_with_box_gated`] 参数
+// 注入门态（生产入口 OnceLock 进程快照后不再触进程级 env，组内 env 锁随之撤除
+// ——T60 setter 同范式）。
 
 /// 40×100 `border-radius: 50%`（纯单值，槽位缺省）：水平按宽解析 rx=20、垂直按高
 /// 重解析 ry=50（§5.1 两轴各自相对对应边）——非方盒为椭圆角，非胶囊。
 #[test]
 fn test_r5341_percent_ellipse_two_axis_resolution() {
-    let _guard = R5341_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut style = ComputedStyle::default();
     for r in [
         &mut style.border_top_left_radius,
@@ -62,7 +61,6 @@ fn test_r5341_percent_ellipse_two_axis_resolution() {
 /// 无随 rx 分支）——四角各存各值。
 #[test]
 fn test_r5341_slot_ry_per_corner_resolution() {
-    let _guard = R5341_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut style = ComputedStyle::default();
     for r in [
         &mut style.border_top_left_radius,
@@ -84,12 +82,9 @@ fn test_r5341_slot_ry_per_corner_resolution() {
 }
 
 /// kill-switch `ZW_ELLIPTIC_RADIUS=0`：ry=rx（旧单轴渲染），40×100 50% 回胶囊。
-/// env var 用例，抢锁防并行互踩（R5084 同款形态）。
+/// 门态经 `from_style_with_box_gated` 参数注入（T61，≡ env=0）。
 #[test]
 fn test_r5341_kill_switch_restores_single_axis() {
-    let _guard = R5341_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::set_var("ZW_ELLIPTIC_RADIUS", "0") };
-
     let mut style = ComputedStyle::default();
     for r in [
         &mut style.border_top_left_radius,
@@ -99,8 +94,7 @@ fn test_r5341_kill_switch_restores_single_axis() {
     ] {
         *r = LengthValue::Percentage(50.0);
     }
-    let spec = BorderRadiusSpec::from_style_with_box(&style, 40.0, 100.0);
-    unsafe { std::env::remove_var("ZW_ELLIPTIC_RADIUS") };
+    let spec = BorderRadiusSpec::from_style_with_box_gated(&style, 40.0, 100.0, false);
     assert_eq!(spec.ry, spec.rx4(), "kill-switch 下 ry 随 rx（旧单轴）");
     assert_eq!(spec.rx4(), [20.0; 4]);
 }
@@ -110,7 +104,6 @@ fn test_r5341_kill_switch_restores_single_axis() {
 /// 各边和与旧 4 项逐项一致，f 逐位同旧（位兼容）。
 #[test]
 fn test_r5341_pill_shrink_bit_compatible() {
-    let _guard = R5341_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut style = ComputedStyle::default();
     for r in [
         &mut style.border_top_left_radius,
@@ -134,7 +127,6 @@ fn test_r5341_pill_shrink_bit_compatible() {
 /// 与旧单轴逐位一致。
 #[test]
 fn test_r5341_square_percent_unchanged() {
-    let _guard = R5341_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut style = ComputedStyle::default();
     for r in [
         &mut style.border_top_left_radius,

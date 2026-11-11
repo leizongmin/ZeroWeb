@@ -321,6 +321,18 @@ pub struct Painter {
     /// 只回退 step 8 相位重排——css-transforms-1 App E step 8：transformed 与 positioned
     /// 同层按 tree order）。OFF 反证由 corpus OFF 轮承担（R3858 教训）。
     pub(crate) transform_paint_phase_enabled: bool,
+    /// R5083（css-backgrounds-3 §4.4 corner transitions）：相邻 Solid 边框角部对角线
+    /// 分色开关。`ZW_BORDER_DIAGONAL_JOIN=0` 回退整幅矩形（旧行为）。T61 起构造期
+    /// 单次读取，热路径零 env 查询（此前逐次 paint 读，r5296 同族进程 env 竞态面）。
+    pub(crate) border_diagonal_join_enabled: bool,
+    /// R5084（css-backgrounds-3 §5.2/§5.6）：border-image 绘制过程语义开关（切片
+    /// 重叠 + middle 缩放因子）。`ZW_BORDER_IMAGE_DRAW_PROCESS=0` 回退旧近似。
+    /// T61 起构造期单次读取，热路径零 env 查询。
+    pub(crate) border_image_draw_process_enabled: bool,
+    /// R5085：变换叶实心盒直绘开关（跳过 TP 后处理重采样，transform-origin-01
+    /// 驱动）。`ZW_TRANSFORM_SOLID_FILL_DIRECT=0` 回退 TransformPrimitive 路径。
+    /// T61 起构造期单次读取，热路径零 env 查询。
+    pub(crate) transform_solid_fill_direct_enabled: bool,
     /// R5176：multicol 片段领地深度——cso 片段循环 / nested-spanner 片段循环期间 >0。
     /// 领地内变换子**不**重排到 step 8（无 scope 收集器可达 cso 子树——scope collect
     /// 对 multicol 的 cso 子整支跳过；主循环若排除则盒永久丢失），保持 in-flow 片段
@@ -1583,6 +1595,9 @@ impl Painter {
             backface_3d_ctx_enabled: std::env::var("ZW_BACKFACE_3D_CTX").as_deref() != Ok("0"),
             parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
             transform_paint_phase_enabled: std::env::var("ZW_TRANSFORM_PAINT_PHASE").as_deref() != Ok("0"),
+            border_diagonal_join_enabled: std::env::var("ZW_BORDER_DIAGONAL_JOIN").as_deref() != Ok("0"),
+            border_image_draw_process_enabled: std::env::var("ZW_BORDER_IMAGE_DRAW_PROCESS").as_deref() != Ok("0"),
+            transform_solid_fill_direct_enabled: std::env::var("ZW_TRANSFORM_SOLID_FILL_DIRECT").as_deref() != Ok("0"),
             multicol_fragment_depth: 0,
             collapse_cell_phase: None,
             paint_skip_nodes: HashSet::new(),
@@ -1662,6 +1677,36 @@ impl Painter {
     pub(crate) fn set_inline_gates_for_test(&mut self, ca_expand: bool, ml_gate: bool) {
         self.inline_ca_expand_enabled = ca_expand;
         self.inline_bg_ml_gate_enabled = ml_gate;
+    }
+
+    /// T61：测试内直改 R5083 门态（`border_diagonal_join_enabled`，仅 `cfg(test)`
+    /// 编译，生产路径不可达）。≡ kill-switch `ZW_BORDER_DIAGONAL_JOIN=0` 传 `false`。
+    ///
+    /// 背景：本门原为逐次 paint 读 `ZW_BORDER_DIAGONAL_JOIN`（进程级全局），lib
+    /// 单测 set_var/remove_var 翻转窗与并行用例 paint 读窗重叠即错读（r5296 同族
+    /// 竞态面）。构造后经本 setter 直改字段绕开进程级 env，竞态根除（guidelines
+    /// #19：不触进程级全局资源）。
+    #[cfg(test)]
+    pub(crate) fn set_border_diagonal_join_for_test(&mut self, enabled: bool) {
+        self.border_diagonal_join_enabled = enabled;
+    }
+
+    /// T61：测试内直改 R5084 门态（`border_image_draw_process_enabled`，仅
+    /// `cfg(test)` 编译，生产路径不可达）。≡ kill-switch
+    /// `ZW_BORDER_IMAGE_DRAW_PROCESS=0` 传 `false`。竞态背景同
+    /// [`Self::set_border_diagonal_join_for_test`]。
+    #[cfg(test)]
+    pub(crate) fn set_border_image_draw_process_for_test(&mut self, enabled: bool) {
+        self.border_image_draw_process_enabled = enabled;
+    }
+
+    /// T61：测试内直改 R5085 门态（`transform_solid_fill_direct_enabled`，仅
+    /// `cfg(test)` 编译，生产路径不可达）。≡ kill-switch
+    /// `ZW_TRANSFORM_SOLID_FILL_DIRECT=0` 传 `false`。竞态背景同
+    /// [`Self::set_border_diagonal_join_for_test`]。
+    #[cfg(test)]
+    pub(crate) fn set_transform_solid_fill_direct_for_test(&mut self, enabled: bool) {
+        self.transform_solid_fill_direct_enabled = enabled;
     }
 
     /// M2-S1b：取走本帧收集的动画作用域（调用方在视口剔除时做区间修复）。
@@ -5600,7 +5645,7 @@ impl Painter {
                             }),
                             TransformValue::None => false,
                         };
-                    let solid_leaf_fill = std::env::var("ZW_TRANSFORM_SOLID_FILL_DIRECT").as_deref() != Ok("0")
+                    let solid_leaf_fill = self.transform_solid_fill_direct_enabled
                         && !inside_transformed_ancestor
                         && style.backdrop_filter.is_empty()
                         && style.individual_rotate.is_none()

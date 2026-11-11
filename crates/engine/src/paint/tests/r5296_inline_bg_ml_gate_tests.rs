@@ -20,12 +20,19 @@ use zero_style_system::StyleSystem;
 
 use super::super::painter::Painter;
 
-/// 搭建「inline-block div（大 line-height）+ 蓝底单行 span」页并走 layout → paint。
+/// 搭建「inline-block div（大 line-height）+ 蓝底单行 span」页并走 layout。
 ///
-/// `ca_expand`/`ml_gate` 经 [`Painter::set_inline_gates_for_test`] 构造后直改
-/// 门态字段（T60：进程内 set_var 翻转窗与并行用例构造窗重叠会错读门态）。
-/// 返回（图元、span 布局盒——树几何 = 行盒域，R4379/R4383 判例）。
-fn paint_inflated_span_page(line_height_css: &str, ca_expand: bool, ml_gate: bool) -> (RenderPrimitives, LayoutBox) {
+/// P41 拆出共享体：主走查钉（[`paint_inflated_span_page`]）与脏矩形路线钉
+///（[`paint_inflated_span_page_in_rect`]）共用页搭建，保证两钉同页同几何。
+/// 返回（doc、styles、layout 根、span 布局盒——树几何 = 行盒域，R4379/R4383 判例）。
+fn build_inflated_span_page(
+    line_height_css: &str,
+) -> (
+    zero_dom::Document,
+    std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+    std::sync::Arc<LayoutBox>,
+    LayoutBox,
+) {
     let css = format!(
         "body {{ margin: 0 }} #d {{ font: 100px Ahem; display: inline-block; line-height: {line_height_css}; }} #s {{ background: #00F; }}"
     );
@@ -57,9 +64,36 @@ fn paint_inflated_span_page(line_height_css: &str, ca_expand: bool, ml_gate: boo
         }
         found.expect("span 布局盒应存在")
     };
+    (doc, styles, result.root, span)
+}
+
+/// 搭建页并经主走查 `Painter::paint` 施绘（r5296 门态消费走 `paint_node_inner`
+/// skip 门臂）。
+///
+/// `ca_expand`/`ml_gate` 经 [`Painter::set_inline_gates_for_test`] 构造后直改
+/// 门态字段（T60：进程内 set_var 翻转窗与并行用例构造窗重叠会错读门态）。
+/// 返回（图元、span 布局盒——树几何 = 行盒域，R4379/R4383 判例）。
+fn paint_inflated_span_page(line_height_css: &str, ca_expand: bool, ml_gate: bool) -> (RenderPrimitives, LayoutBox) {
+    let (doc, styles, root, span) = build_inflated_span_page(line_height_css);
     let mut painter = Painter::new();
     painter.set_inline_gates_for_test(ca_expand, ml_gate);
-    painter.paint(&result.root, &styles, Some(&doc));
+    painter.paint(&root, &styles, Some(&doc));
+    (painter.into_primitives(), span)
+}
+
+/// P41：同页经脏矩形增量路线 [`Painter::paint_in_rect`] 施绘（门态消费走
+/// `paint_node_in_rect` 的 `ml_gate_lh` 臂——与主走查 `paint_node_inner` 臂谓词
+/// 同源、代码独立复制）。脏区覆盖全页，增量快剔不剪除目标子树。
+fn paint_inflated_span_page_in_rect(
+    line_height_css: &str,
+    ca_expand: bool,
+    ml_gate: bool,
+) -> (RenderPrimitives, LayoutBox) {
+    let (doc, styles, root, span) = build_inflated_span_page(line_height_css);
+    let mut painter = Painter::new();
+    painter.set_inline_gates_for_test(ca_expand, ml_gate);
+    let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, 800.0, 600.0);
+    painter.paint_in_rect(&root, &styles, &dirty, Some(&doc));
     (painter.into_primitives(), span)
 }
 
@@ -149,3 +183,53 @@ fn r5296_true_multiline_span_bg_still_per_fragment() {
         "3 条背景应分处 3 行（y 互异），实得 {ys:?}"
     );
 }
+
+/// P41（T60 TV-F2 承接）：脏矩形增量路线的 ml_gate_lh 臂单点回归钉。
+///
+/// T60 TV 变异定谳：主走查臂（`paint_node_inner` skip 门，4141 域）单点恒开可被
+/// 上方钉案相位②检出（MUT2 红），而 `paint_node_in_rect` 臂单点恒开 2P/0F 绿
+///（MUT1）——既有钉案只驱动 `Painter::paint` 主走查，不触脏矩形路线，该臂无独立
+/// 断言。本钉以同页（共享 [`build_inflated_span_page`]）经 `paint_in_rect` 驱动
+/// 该臂消费点，双相位按探针实测形状锁定（见下方「形状参考」注释）：门关相位
+/// 仅剩 fragment 旧几何；脏矩形臂单点恒开变异（抑制失效回 box-level 双矩形）下
+/// 门关相位必红。
+#[test]
+fn r5296_dirty_rect_route_ml_gate_pinned() {
+    let approx = |a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)| {
+        (a.0 - b.0).abs() <= 0.5 && (a.1 - b.1).abs() <= 0.5 && (a.2 - b.2).abs() <= 0.5 && (a.3 - b.3).abs() <= 0.5
+    };
+
+    // 相位① 门开（默认）：box-level bg 施画——内容区锚定矩形在场。脏矩形路线
+    // 现状另发射行盒域矩形（见上「形状参考」注释；门逻辑 T60 已字段化，本切片
+    // 未触，双矩形为该路线既有形状）。臂回归漂移时两矩形集合必变。
+    let (prims, _span) = paint_inflated_span_page_in_rect("200px", true, true);
+    let fills = blue_fills(&prims);
+    assert_eq!(fills.len(), 2, "门开现状 = 行盒域 + 内容锚定两条，实得 {fills:?}");
+    assert!(
+        fills.iter().any(|&f| approx(f, (0.0, 100.0, 200.0, 100.0))),
+        "门开应含内容区锚定矩形 (0,100,200,100)，实得 {fills:?}"
+    );
+    assert!(
+        fills.iter().any(|&f| approx(f, (0.0, 50.0, 200.0, 200.0))),
+        "门开应含行盒域矩形 (0,50,200,200)，实得 {fills:?}"
+    );
+
+    // 相位② 门关（setter 双 false ≡ kill-switch）：抑制阈值回退 1.5×fs 高度代理
+    // → box-level bg 抑制生效 → 仅剩 fragment 路径旧 frag.y 位 (0,-20,200,200)
+    //（= baseline−lh 上溢，与主走查钉相位②同源几何）。脏矩形臂单点恒开变异
+    //（抑制失效回 box-level）下本相位必红。
+    let (prims_off, _span_off) = paint_inflated_span_page_in_rect("200px", false, false);
+    let fills_off = blue_fills(&prims_off);
+    assert_eq!(fills_off.len(), 1, "门关应仅剩 fragment 旧几何一条，实得 {fills_off:?}");
+    assert!(
+        approx(fills_off[0], (0.0, -20.0, 200.0, 200.0)),
+        "门关 fragment 几何应 = (0,-20,200,200)，实得 {:?}",
+        fills_off[0]
+    );
+}
+
+// P41 脏矩形路线双相位形状参考（探针实测 2026-11-11）：
+// - 门开 = [(0, 50, 200, 200), (0, 100, 200, 100)]（行盒域 + 内容区锚定两条——
+//   该路线 bg 臂未做 R5171 收敛的既有形状，非本切片引入）；
+// - 门关 = [(0, -20, 200, 200)]（仅 fragment 路径旧 frag.y 位，与主走查钉相位②
+//   同源几何）。
