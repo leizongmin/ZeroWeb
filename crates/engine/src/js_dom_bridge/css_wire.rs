@@ -227,8 +227,79 @@ pub fn style_rules_text(text: &str) -> String {
                 css_declarations_to_string(&sr.declarations)
             );
             entries.push(format!("{}\x1e{}", selector_text, css_text));
+        } else if let zero_css_parser::Rule::PositionTry(ptr) = rule {
+            // @position-try wire 条目（wptfyi-css at-position-try-cssom）：selectorText
+            // 字段 = `@position-try <name>`（真实选择器不可能以 `@` 起头，shim 侧据此
+            // 分派 CSSPositionTryRule 物化）；cssText 按 CSSOM 规则序列化形
+            //（空声明块 `{ }` 单空格，Chrome 同形）。声明白名单裁剪归 shim 描述符面。
+            // https://drafts.csswg.org/css-anchor-position-1/#interfaces
+            let name = serialize_css_ident(&ptr.name);
+            let decls = css_declarations_to_string(&ptr.declarations);
+            let css_text = if decls.is_empty() {
+                format!("@position-try {} {{ }}", name)
+            } else {
+                format!("@position-try {} {{ {} }}", name, decls)
+            };
+            entries.push(format!("@position-try {}\x1e{}", name, css_text));
         }
-        // @-rule / keyframes / @media defer（cssRules 读仅 StyleRule）
+        // 其余 @-rule / keyframes / @media defer（cssRules 读仅 StyleRule + position-try）
     }
     entries.join("\x1f")
+}
+
+/// CSSOM serialize an identifier（cssom-1 §serialize-an-identifier）——标识符
+/// 重新转义。tokenizer 解码过的 ident（`--\{` → `--{`）回序列化时按字符合法性
+/// 重新转义：合法 ident 字符直排，其余单字符 `\X` 转义（语料 `--{` → `--\{`）。
+/// NULL → U+FFFD（css-syntax-3 §input-preprocessing 同源口径）。
+fn serialize_css_ident(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\0' => out.push('\u{FFFD}'),
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => out.push(c),
+            c if (c as u32) >= 0xA0 && c != '\u{7F}' => out.push(c),
+            _ => {
+                out.push('\\');
+                out.push(c);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod position_try_wire_tests {
+    use super::style_rules_text;
+
+    #[test]
+    /// wire 条目格式：selectorText 字段 = `@position-try <name>`，cssText 声明带尾分号。
+    fn wire_position_try_entry_format() {
+        let w = style_rules_text("@position-try --pf { top: 1px; }");
+        assert_eq!(w, "@position-try --pf\x1e@position-try --pf { top: 1px; }");
+    }
+
+    #[test]
+    /// 空声明块：cssText 序列化为单空格空块 `{ }`（CSSOM 规则序列化形，Chrome 同形）。
+    fn wire_position_try_empty_block() {
+        let w = style_rules_text("@position-try --empty { }");
+        assert_eq!(w, "@position-try --empty\x1e@position-try --empty { }");
+    }
+
+    #[test]
+    /// 转义块名重转义：tokenizer 解码 `--\{` → `--{`，wire 序列化按
+    /// serialize an identifier 重新转义回 `--\{`。
+    fn wire_position_try_escaped_name_reescaped() {
+        let w = style_rules_text("@position-try --\\{ { inset: 0; }");
+        assert_eq!(w, "@position-try --\\{\x1e@position-try --\\{ { inset: 0; }");
+    }
+
+    #[test]
+    /// 与 Style 规则混排：wire 条目顺序保持源序，`\x1f` 分隔、`\x1e` 分字段。
+    fn wire_position_try_mixed_with_style_rules() {
+        let w = style_rules_text("h1 { color: red; } @position-try --p { top: 1px; }");
+        assert_eq!(
+            w,
+            "h1\x1eh1 { color: red; }\x1f@position-try --p\x1e@position-try --p { top: 1px; }"
+        );
+    }
 }

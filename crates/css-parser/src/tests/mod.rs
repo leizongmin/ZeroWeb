@@ -96,6 +96,8 @@ mod parser_coverage;
 mod parser_coverage_extra;
 mod parser_coverage_final;
 mod parser_coverage_simple;
+/// `@position-try` at-rule 解析契约测试。
+mod position_try_at_rule;
 mod property_at_rule;
 /// R2280 + CSS Values 4 §10.5：individual rotate/scale 数学函数文法位测试。
 mod r2280_math_function_slots_tests;

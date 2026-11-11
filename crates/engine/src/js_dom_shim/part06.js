@@ -2250,7 +2250,12 @@
   // `<style>` 源）。**已知限制**：① 视觉生效于下次 render（flush 写源→cascade 异步，同 R2809）；
   // ② `!important` 并入 value（getPropertyValue 含 '!important'、getPropertyPriority 返 ''，同 element.style
   // 既有简化）；③ 仅 type===1 StyleRule（@-rule 无 style）；④ set 空串 = remove（spec 一致，避免 emit `prop: `）。
-  function _makeRuleStyle(rule, flushFn) {
+  // allowedSet（wptfyi-css @position-try 描述符白名单）：可选键集过滤——载入/cssText
+  // 写入时裁剪键集外声明（length/item/cssText 只含白名单键，语料 `--x`/`color`
+  // 案），setProp 键集外整体忽略（Blink CSSPositionTryDescriptors 同形）；get 面
+  // 键集外返 undefined（由调用方 Proxy get 判，本函数内 readProp 返 ''）。
+  function _makeRuleStyle(rule, flushFn, allowedSet) {
+    var ptAllow = function (name) { return !allowedSet || allowedSet[name] === 1; };
     var bodyText = function () {
       var t = rule.cssText || '';
       var lo = t.indexOf('{');
@@ -2258,6 +2263,9 @@
       return lo >= 0 ? t.slice(lo + 1, hi >= 0 ? hi : t.length) : t;
     };
     var decls = _parseDeclarations(bodyText());
+    if (allowedSet) {
+      decls = decls.filter(function (d) { return ptAllow(d.name); });
+    }
     function findIdx(name) {
       var want = _styleDeclName(name);
       for (var i = 0; i < decls.length; i++) if (decls[i].name === want) return i;
@@ -2278,6 +2286,7 @@
     }
     function setProp(name, value) {
       var prop = _styleDeclName(name);
+      if (!ptAllow(prop)) return;
       var raw = String(value == null ? '' : value).trim();
       // T46 DF-3：IDL 属性写/setProperty 写与 cssText 写同归一（Blink 活体
       // style.color='RED' 读回 'red'——本表 idlWriteUpper/setPropertyUpper 案，
@@ -2309,7 +2318,7 @@
     }
     return new Proxy({}, {
       get: function (_t, p) {
-        var ps = String(p);
+        var ps = typeof p === 'string' ? p : String(p);
         if (ps === 'cssText') return declsText();
         if (ps === 'length') return decls.length;
         if (ps === 'getPropertyValue') return function (name) { return readProp(name); };
@@ -2317,11 +2326,19 @@
         if (ps === 'setProperty') return function (name, value) { setProp(name, value); return undefined; };
         if (ps === 'removeProperty') return function (name) { return removeProp(name); };
         if (ps === 'item') return function (i) { var d = decls[i | 0]; return d ? d.name : ''; };
+        // 白名单键集外属性名（非 special 键）→ undefined（CSSPositionTryDescriptors
+        // [color] 案；special/方法键先行，Symbol 键不受影响）。
+        if (allowedSet && typeof p === 'string' && !ptAllow(_styleDeclName(ps))) return undefined;
         return readProp(ps);
       },
       set: function (_t, p, v) {
         var ps = String(p);
-        if (ps === 'cssText') { decls = _parseDeclarations(String(v == null ? '' : v)); rebuild(); return true; }
+        if (ps === 'cssText') {
+          decls = _parseDeclarations(String(v == null ? '' : v));
+          if (allowedSet) decls = _zwPtFilterDecls(decls);
+          rebuild();
+          return true;
+        }
         setProp(ps, v);
         return true;
       }
@@ -2342,6 +2359,25 @@
     // 与 replaceSync 先切分后进这里的顺序无涉。
     // https://www.w3.org/TR/css-syntax-3/#input-preprocessing
     var t = String(text == null ? '' : text).replace(/\0/g, '�').trim();
+    // @position-try 插入面（css-anchor-position-1 §at-ruledef-position-try；wptfyi-css
+    // at-position-try-parse）：恰好一个 <dashed-ident> 坓名 + `{}` 块体（语句形/缺块
+    // 非法）；块体描述符白名单 + !important 拒（_zwPtFilterDecls）。校验失败抛
+    // SyntaxError DOMException（cssom-1 insertRule 非法规则文本语义，语料
+    // assert_throws_dom 钉）。块名原文保形（`--\{` 转义形往返不重写）。
+    // https://drafts.csswg.org/css-anchor-position-1/#interfaces
+    var ptParse = /^@position-try([\s\S]*)$/i.exec(t);
+    if (ptParse) {
+      var ptRest = ptParse[1];
+      var ptBrace = ptRest.indexOf('{');
+      var ptPrelude = (ptBrace >= 0 ? ptRest.slice(0, ptBrace) : ptRest).trim();
+      if (ptBrace < 0 || !/^--(?:[A-Za-z0-9_\u0080-￿-]|\\[\s\S])+$/.test(ptPrelude)) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': '@position-try' requires exactly one <dashed-ident> name and a block.",
+          'SyntaxError');
+      }
+      var ptBody = ptRest.slice(ptBrace + 1).replace(/}\s*$/, '').trim();
+      return _makePtRule(ptPrelude, ptBody, parentSheet, flushFn);
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2370,6 +2406,66 @@
   // CSSMediaRule…）常量与 instanceof 面整体建模未做，语料扩展时按案补。
   if (typeof globalThis.CSSImportRule !== 'function') {
     globalThis.CSSImportRule = function CSSImportRule() {};
+  }
+  // wptfyi-css at-position-try-cssom：CSSPositionTryRule / CSSPositionTryDescriptors
+  // 接口全局（css-anchor-position-1 §interfaces）——wire `@position-try` 条目物化为
+  // 该类实例（instanceof 面同 s163 CSSImportRule 空壳模式）。
+  if (typeof globalThis.CSSPositionTryRule !== 'function') {
+    globalThis.CSSPositionTryRule = function CSSPositionTryRule() {};
+  }
+  if (typeof globalThis.CSSPositionTryDescriptors !== 'function') {
+    globalThis.CSSPositionTryDescriptors = function CSSPositionTryDescriptors() {};
+  }
+  // @position-try 描述符白名单（css-anchor-position-1 §position-try-desc：
+  // Chrome CSSPositionTryDescriptors allowed properties，at-position-try-cssom
+  // 语料 supported_properties 表同源）——描述符面读写在键集外整体不可见。
+  var _zwPtAllowed = {
+    'margin': 1, 'margin-top': 1, 'margin-right': 1, 'margin-bottom': 1, 'margin-left': 1,
+    'margin-block': 1, 'margin-block-start': 1, 'margin-block-end': 1,
+    'margin-inline': 1, 'margin-inline-start': 1, 'margin-inline-end': 1,
+    'inset': 1, 'top': 1, 'left': 1, 'right': 1, 'bottom': 1,
+    'inset-block': 1, 'inset-block-start': 1, 'inset-block-end': 1,
+    'inset-inline': 1, 'inset-inline-start': 1, 'inset-inline-end': 1,
+    'width': 1, 'height': 1, 'min-width': 1, 'max-width': 1, 'min-height': 1, 'max-height': 1,
+    'block-size': 1, 'min-block-size': 1, 'max-block-size': 1,
+    'inline-size': 1, 'min-inline-size': 1, 'max-inline-size': 1,
+    'place-self': 1, 'align-self': 1, 'justify-self': 1,
+    'position-anchor': 1, 'position-area': 1
+  };
+  // 描述符声明过滤：白名单键 + !important 拒（css-anchor-position-1 §position-try-desc
+  // 描述符语法不含 !important，at-position-try-parse/allowed-declarations 语料钉）。
+  // 块内 @-规则/嵌套/垃圾内容经 _parseDeclarations 无 `:` 段跳过语义静默消解
+  //（css-syntax-3 §consume-a-block 内容忽略）。
+  function _zwPtFilterDecls(decls) {
+    var out = [];
+    for (var i = 0; i < decls.length; i++) {
+      var d = decls[i];
+      if (!_zwPtAllowed[d.name] || /!\s*important/i.test(d.value)) continue;
+      out.push(d);
+    }
+    return out;
+  }
+  // @position-try 规则物化（wire 读面 + insertRule 写面共用构造——单实现双通道，
+  // grid G1 同型）：nameText 为块名文本（wire 侧已按 cssom-1 §serialize-an-identifier
+  // 重转义；insertRule 侧原文保形），declText 为块体声明文本。cssText canonical 形：
+  // 空块 `{ }` 单空格（at-position-try-parse 序列化断言钉）。描述符 = per-rule style
+  // 基座 + 白名单过滤，原型挂 CSSPositionTryDescriptors（instanceof 面）。
+  function _makePtRule(nameText, declText, parentSheet, flushFn) {
+    var decls = _zwPtFilterDecls(_parseDeclarations(declText));
+    var sel = '@position-try ' + nameText;
+    var dt = _zwSerializeDecls(decls);
+    var rule = Object.create((globalThis.CSSPositionTryRule && globalThis.CSSPositionTryRule.prototype) || Object.prototype);
+    rule.name = nameText;
+    rule.selectorText = sel;
+    rule.cssText = dt ? sel + ' { ' + dt + ' }' : sel + ' { }';
+    rule.style = null;
+    rule.parentStyleSheet = parentSheet;
+    rule.style = _makeRuleStyle(rule, flushFn, _zwPtAllowed);
+    if (rule.style && globalThis.CSSPositionTryDescriptors &&
+        typeof Object.setPrototypeOf === 'function') {
+      Object.setPrototypeOf(rule.style, globalThis.CSSPositionTryDescriptors.prototype);
+    }
+    return rule;
   }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
   // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
@@ -2439,7 +2535,19 @@
         for (var i = 0; i < entries.length; i++) {
           var parts = entries[i].split('\x1e');
           if (parts.length >= 2) {
-            var r = {
+            // @position-try 条目（wire selectorText 以 `@position-try ` 起头——真实
+            // 选择器不可能）→ CSSPositionTryRule 物化（css-anchor-position-1 §interfaces；
+            // wptfyi-css at-position-try-cssom）。构造走 _makePtRule（与 insertRule 写面
+            // 单实现双通道）；声明再过滤幂等（wire 侧白名单裁剪归 _zwPtFilterDecls 统一）。
+            var r;
+            if (parts[0].lastIndexOf('@position-try ', 0) === 0) {
+              var ptLo = parts[1].indexOf('{');
+              var ptHi = ptLo >= 0 ? parts[1].lastIndexOf('}') : -1;
+              var ptBody = ptLo >= 0 ? parts[1].slice(ptLo + 1, ptHi >= 0 ? ptHi : parts[1].length) : '';
+              rulesCache.push(_makePtRule(parts[0].slice(14), ptBody, ss, flushToOwner));
+              continue;
+            }
+            r = {
               type: 1, // CSSRule.STYLE_RULE
               selectorText: parts[0],
               cssText: parts[1],
