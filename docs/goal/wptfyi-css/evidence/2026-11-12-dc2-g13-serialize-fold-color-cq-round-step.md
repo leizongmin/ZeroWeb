@@ -1,8 +1,8 @@
 # DC-2 g13：serialize canonical 折叠刀2 + 通用色通道 cq/sign 面 + round B=±∞ 策略表
 
 日期：2026-11-12。基线：HEAD `12ece659e`（g12b 五套件入账后）。
-本批三提交：`b54f6fc35`（css-parser serialize 刀2 + clamp NaN 毒化）、
-`e77dee8df`（engine part11 通用色通道）、`9a3ae810b`（round B=±∞ 策略表，
+本批三提交：`dcb81aad7`（css-parser serialize 刀2 + clamp NaN 毒化）、
+`cc22f08e1`（engine part11 通用色通道）、`3351e0577`（round B=±∞ 策略表，
 见 §3）。
 
 前轮双 session（knife2 dev + e1 姊妹）在同 5 小时 rate-limit 窗口双双中断，
@@ -11,7 +11,7 @@
 重建二进制重录权威账（results-g13，消除前轮 knife2 values 轮与 e1c 重建
 同 target 竞争的 provenance 疑点——g13 values/color 数字与前轮逐字节一致）。
 
-## 1. serialize 刀2（css-parser，b54f6fc35）
+## 1. serialize 刀2（css-parser，dcb81aad7）
 
 勘根笔记：.acceptance/wptfyi-css/notes-g12-knife2-rooting.md（本地未跟踪）。
 css-values-4 §10.11 specified 常量折叠从 Number/Angle 扩 Length/Time：
@@ -34,7 +34,7 @@ css-values-4 §10.11 specified 常量折叠从 Number/Angle 扩 Length/Time：
 serialize canonical 全形态表、round ∞ 表）；style-system lib 2516 全绿；
 clippy `--all-targets -D warnings` 零告警。
 
-## 2. 通用色通道 cq/sign 面（engine，e77dee8df）
+## 2. 通用色通道 cq/sign 面（engine，cc22f08e1）
 
 勘根：master.md 挂账「calc-container 2F（part11-computed-color 通用通道
 prop=background-color 不经本入口）」+ color-mix `sign(100em - 1px)` 语料形。
@@ -75,7 +75,7 @@ css-values（其余五套件语料零 `round(...∞)` 形，grep 定谳）。
 单测钉 `test_round_infinite_step_strategy_table`（round-function 16 行 +
 signed-zero clamp 端到端 8 形）；css-parser lib 3118 全绿、clippy 零告警。
 
-## 4. 权威账（results-g13，HEAD e77dee8df 单二进制，systemd unit
+## 4. 权威账（results-g13，HEAD cc22f08e1 单二进制，systemd unit
 zw-g13-batch-0345，test-guard --per-proc-mem 4 --total-mem 8 --time-limit 3540，
 transcript 唯一目录）
 

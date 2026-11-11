@@ -67,24 +67,24 @@ out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
 
-**DC-2 g13 批完成（11-12 凌晨，三提交 b54f6fc35/e77dee8df/9a3ae810b）**：
+**DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：
 前轮双 session（knife2 dev + e1 姊妹）rate-limit 双中断，本 session 按认领
 笔记分别验证、分开提交，提交态 HEAD 单二进制重录权威账（results-g13/g13b，
 systemd unit zw-g13-batch-0345/zw-g13b-values-0432）。① **serialize 刀2**
-（css-parser，b54f6fc35）：§10.11 常量折叠扩 Length/Time 槽——width 与
+（css-parser，dcb81aad7）：§10.11 常量折叠扩 Length/Time 槽——width 与
 transition/animation duration/delay 四属性入 fold_decl_specified 白名单；
 非有限值 §10.6 canonical 发射 `calc(NaN|±infinity * 1<unit>)` 因子归一
 （树首维度叶单位，物理单位 parse 期归一 px/ms 归一 s）；clamp NaN+实参
 单位分歧结构外提逐 arg 规范化；两级求值仅非有限穿透 em/％ 基准；angle 位
 ±∞ 由拒折改 canonical 放行（§10.10）；连带修 eval_calc_with_context clamp
 臂 NaN 丢毒（f64::min/max 链洗毒，§10.6 任一实参 NaN → NaN 先行短路）。
-② **通用色通道 cq/sign 面**（engine，e77dee8df）：part11-color 导出
+② **通用色通道 cq/sign 面**（engine，cc22f08e1）：part11-color 导出
 `__zwContainerInlineSize` 基座探针，part11-computed-color 通用通道补
 cqw/cqi/cqh/em/px 单位叶（cqh FIXME → NaN fail-closed）+ sign()/abs()
 函数臂（§sign-related）+ color-mix 嵌套 calc 权重括号平衡扫描 + contrast-color
 声明面 `color(calc 槽)` 规范形——css-color **10,970 → 10,972 净 +2 零
 回归**（mix sign 形 +1、contrast-color calc-container +1）。
-③ **round B=±∞ 策略表**（css-parser，9a3ae810b）：clamp 毒化门落地暴露
+③ **round B=±∞ 策略表**（css-parser，3351e0577）：clamp 毒化门落地暴露
 signed-zero -5 回归（IEEE 直算 0×∞ 产 NaN，基线由 clamp 洗毒掩盖）——按
 round-function/signed-zero 语料钉面实现策略表（nearest/to-zero → ±0 签号
 随 A；up 正 A → +∞；down 负 A → −∞；B 符号无关），在册 FIXME types.rs:1420
