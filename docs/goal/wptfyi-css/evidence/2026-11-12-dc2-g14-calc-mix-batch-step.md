@@ -35,6 +35,25 @@ layout-engine converter 两个 calc 谓词（contains_percentage/has_length）�
 minmax 修复红利：minmax-length-percent-serialize +3（`min(1px)`/`max(1px)`/
 `min(1px, 2px)` specified 塌缩行，混 % 形回归同步清零）、minmax-length-
 serialize +8→+9。calc-mix 三页与首账一致（serialize +51/computed +25/
-invalid +12）。serialize 残 62F 三分：sibling-index() 形 ~26（DOM 桥求值）、
+invalid +12）。computed 页残 28F 二分：sibling-index() 形 ~10（并入 DOM 桶，
+两页合计 ~36F）+ used-value serialize 空串域 ~18（`expected "0px" got ""`，
+与 serialize 页 computed 串面同域，合计 ~34F）。serialize 残 62F 三分：
+sibling-index() 形 ~26（DOM 桥求值）、
 外层 calc() 嵌套 % 排序 ~20（树递归 serialize）、computed 串面 ~16（em 等
-布局依赖项 computed 直读/全零形）。六套件零回归对账由 g14b-six 轮收口。
+布局依赖项 computed 直读/全零形）。invalid 残 6F 精确归类：transform-origin-z/
+text-indent 两槽 × number 族/angle 族/%+number 混族三形——scale 槽 12 拒形全绿
+反证解析层门已生效，缺口在 shim CSSOM e.style 直设路径的属性槽型别门
+（style-system apply 门被绕过），修复方向为 css-parser 槽位 fold 的 family
+收敛（Length/Number/angle/time 槽各按 mix_math_type 比对）。
+注：values JSON 事后被 six 批 values 段 merge，217 路径出现 ×2 重复条目、
+transcript-css-values-g14b.log 被其段覆盖——对该 JSON 再 diff 必须按路径
+去重取条目，权威数字以 diff-vs-g13b.txt（base 2787 / new 2887 / +100）
+为凭。
+六套件零回归对账由 g14b-six 轮收口。
+
+## 6. g14b-six 六套件对账收官（Result=success，results-g14b/diffs-vs-g13.txt）
+
+余五套件对 results-g13 批账逐页零漂移：color 10,972 ±0、transitions 200
+±0、animations 238 ±0、transforms 228 ±0、easing 51 ±0——本批共享路径
+改动（parse_atom 空白 token 界、Min/Max eval 全实参、fold % 叶树门）对
+五套件语料零扰动，批终 **净 +100 零回归**。
