@@ -1,7 +1,7 @@
 # DC-2 g17/g17b 批：computed 通道 calc/calc-mix canonical 串化 + 配对伪通过转真
 
 日期：2026-11-12　刀：engine 桥 `length_to_css` Calc 臂单面（两提交：
-9dbe26c80 主刀 +72 行刀身、1e496148f 单参 min/max 恒等与 Abs 非负塌缩
+9dbe26c80 主刀 +72 行刀身、be008fdd7 单参 min/max 恒等与 Abs 非负塌缩
 补臂 +72/-2）；前置 g15 批收口（2,903P）。
 
 ## 1. 根因与实现面
@@ -33,7 +33,7 @@ g15 在 minmax-length-percent-computed（30P）与 hypot-pow-sqrt-computed
 |----|----------|---|--------|
 | g15 基线 | g14b+g15 刀 | 2,903 | — |
 | g17 | 9dbe26c80（SIB+主刀） | 2,953 | +50 |
-| g17b | 1e496148f + 他流在制 random 刀 | **3,032** | **+129** |
+| g17b | be008fdd7 + 他流在制 random 刀 | **3,032** | **+129** |
 
 - g17 分页：增益 8 页 +78（calc-mix-serialize +35、calc-mix-computed +16、
   minmax-length-serialize +12、border-radius +8/+2、minmax-percent-serialize
