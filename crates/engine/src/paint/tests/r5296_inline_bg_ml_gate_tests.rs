@@ -22,8 +22,10 @@ use super::super::painter::Painter;
 
 /// 搭建「inline-block div（大 line-height）+ 蓝底单行 span」页并走 layout → paint。
 ///
+/// `ca_expand`/`ml_gate` 经 [`Painter::set_inline_gates_for_test`] 构造后直改
+/// 门态字段（T60：进程内 set_var 翻转窗与并行用例构造窗重叠会错读门态）。
 /// 返回（图元、span 布局盒——树几何 = 行盒域，R4379/R4383 判例）。
-fn paint_inflated_span_page(line_height_css: &str) -> (RenderPrimitives, LayoutBox) {
+fn paint_inflated_span_page(line_height_css: &str, ca_expand: bool, ml_gate: bool) -> (RenderPrimitives, LayoutBox) {
     let css = format!(
         "body {{ margin: 0 }} #d {{ font: 100px Ahem; display: inline-block; line-height: {line_height_css}; }} #s {{ background: #00F; }}"
     );
@@ -56,6 +58,7 @@ fn paint_inflated_span_page(line_height_css: &str) -> (RenderPrimitives, LayoutB
         found.expect("span 布局盒应存在")
     };
     let mut painter = Painter::new();
+    painter.set_inline_gates_for_test(ca_expand, ml_gate);
     painter.paint(&result.root, &styles, Some(&doc));
     (painter.into_primitives(), span)
 }
@@ -75,11 +78,11 @@ fn blue_fills(prims: &RenderPrimitives) -> Vec<(f32, f32, f32, f32)> {
 /// Ahem 100px dormant 常数 content area = 1.0×fs = 100（ascent 0.8 + descent 0.2，
 /// inline_finalization 记录臂同源）；树盒高 = 行盒 200。收缩锚定 ⇒ 背景矩形
 /// ⊆ 树盒（修复前 frag.y 位 = baseline−200 上溢出盒）。双相位共用一测试函数
-///（Painter 构造期读 env，进程级竞态纪律）。
+///（门态经 `set_inline_gates_for_test` 注入，T60 竞态纪律：不触进程级 env）。
 #[test]
 fn r5296_single_line_inflated_lh_span_bg_box_level_content_anchored() {
     // 相位① 默认（门开）：背景 = 内容区锚定，收缩进树盒。
-    let (prims, span) = paint_inflated_span_page("200px");
+    let (prims, span) = paint_inflated_span_page("200px", true, true);
     let fills = blue_fills(&prims);
     assert_eq!(fills.len(), 1, "单 span 单行应恰一背景矩形，实得 {fills:?}");
     let (x, y, w, h) = fills[0];
@@ -96,16 +99,12 @@ fn r5296_single_line_inflated_lh_span_bg_box_level_content_anchored() {
         span.y + span.height
     );
 
-    // 相位② kill-switch=0（门关）：回退高度代理 → fragment 路径旧 frag.y 位
+    // 相位② 门关（setter 双 false ≡ kill-switch `ZW_INLINE_BG_ML_GATE=0` +
+    // `ZW_INLINE_CA_EXPAND=0`）：回退高度代理 → fragment 路径旧 frag.y 位
     //（背景 = [baseline−200, baseline]，高 200、上溢出树盒）。
     // R5350：扩张轴（默认开）把 fragment bg 站整盒化（内容区锚），本相位钉
-    // R5296 门关旧几何——同钉轴关态（`ZW_INLINE_CA_EXPAND=0`）。
-    // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
-    unsafe { std::env::set_var("ZW_INLINE_BG_ML_GATE", "0") };
-    unsafe { std::env::set_var("ZW_INLINE_CA_EXPAND", "0") };
-    let (prims_off, span_off) = paint_inflated_span_page("200px");
-    unsafe { std::env::remove_var("ZW_INLINE_BG_ML_GATE") };
-    unsafe { std::env::remove_var("ZW_INLINE_CA_EXPAND") };
+    // R5296 门关旧几何——同钉轴关态。
+    let (prims_off, span_off) = paint_inflated_span_page("200px", false, false);
     let fills_off = blue_fills(&prims_off);
     assert_eq!(fills_off.len(), 1, "kill-switch 相位应恰一背景矩形，实得 {fills_off:?}");
     let (_, y_off, _, h_off) = fills_off[0];
