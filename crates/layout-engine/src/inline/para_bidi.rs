@@ -16,8 +16,12 @@
 //!（x 镜像）——R5337 起 parity 近似收口，见 `exact_l2_permutation`。
 //!
 //! 边界（FIXME 谱系，翻默认前置逐项收口）：
-//! - 段落基方向取**首个** Text run 的 CSS direction（未直读容器 style；direction
-//!   为继承属性，无 inline 覆盖页等价）；
+//! - 段落基方向取**首个** Text run 的 CSS direction（direction 为继承属性，无
+//!   inline 覆盖页等价）；R5501 起纯原子盒行（无 Text run）回落容器 direction
+//!   （HL1 段落基方向部分收口），有 Text run 页基方向来源不变；
+//! - R5501 起（`ZW_PARA_BIDI_BOX_LEVEL` 门，默认开）段落基方向 RTL 本身即激活
+//!   信号（CSS2 §9.4.2 行内级盒右→左排布，chromium oracle V1/V4/v6 实测整行
+//!   item 序反转），且原子 inline 盒按基 level（1）参与行级序列重排；
 //! - 行级 L2 自 R5337 起**精确**（`exact_l2_permutation` 逐层反转 + 行级跨片段
 //!   逐层序列反序，`visual_levels` 携带完整 level 值）——R5122 parity 近似的
 //!   ≥2 层嵌套组序缺口（bidi-011 LRO 偶层跨片段反序实证）已收口；精确性以
@@ -59,6 +63,11 @@ pub(crate) struct ParaBidiPlan {
     pub item_levels: Vec<Option<Vec<u8>>>,
     /// 任一字符 resolved level 为奇数（存在 RTL 呈现，需要行级组序重排）。
     pub has_rtl: bool,
+    /// R5501：段落基方向为 RTL（CSS2 §9.4.2 行内级盒右→左排布）——行级 L2
+    /// 序列重排据此把无 level 数据片段（原子 inline 盒）按基 level（=1）参与
+    /// 序列（`ZW_PARA_BIDI_BOX_LEVEL` 门）。基 LTR 时无 level 片段按 level 0
+    /// 恒为序列边界（旧语义）。
+    pub base_rtl: bool,
 }
 
 /// 对 IFC 全部 Text run 做段落级 UBA 解析。
@@ -67,9 +76,19 @@ pub(crate) struct ParaBidiPlan {
 /// ① 无 `bidi_override`/`is_plaintext_bidi`/`is_isolated_bidi` run（特例路径各自
 /// 校准，不混排；isolate 为 R5337 补——未映射 X5-X8 前透明拼接会把 `<bdi>` 标记
 /// 文本与后继内容跨边界重排，chromium 探针 `X⦿RW⦿⦿IL⦿` B/C 行分叉实证）；
-/// ② 至少一个 run 文本含 bidi 信号（控制符/RTL 脚本）；
-/// ③ 至少一个 run 段落级 level 非全 0（有真实改写）。
-pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
+/// ② 至少一个 run 文本含 bidi 信号（控制符/RTL 脚本）；R5501 起放宽——
+/// `box_level_ext`（调用方合成：`ZW_PARA_BIDI_BOX_LEVEL` 门 ∧ 水平 IFC）为真时
+/// **段落基方向 RTL 本身即信号**（纯 ASCII/原子盒 RTL 页整行 item 序须反转，
+/// chromium oracle V1/V4/v6 实测，CSS2 §9.4.2），基方向取首个 Text run 的 CSS
+/// direction，无 Text run（纯原子盒行）时回落 `container_is_rtl`（direction
+/// 继承属性，容器值即段落基——HL1；既有页基方向来源不变，零扰动）；
+/// ③ 至少一个 run 段落级 level 非全 0（有真实改写）；R5501 起，基 RTL 时原子
+/// 盒 item（按基 level 1 参与行级重排）同样计入。
+pub(crate) fn resolve(
+    items: &[InlineItem],
+    container_is_rtl: Option<bool>,
+    box_level_ext: bool,
+) -> Option<ParaBidiPlan> {
     let mut texts: Vec<&str> = Vec::new();
     let mut base_is_rtl: Option<bool> = None;
     for item in items {
@@ -83,7 +102,13 @@ pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
             }
         }
     }
-    if !texts.iter().any(|t| has_bidi_signal(t)) {
+    // R5501：无 Text run（纯原子盒行）回落容器 direction（HL1 段落基方向）。
+    if box_level_ext && base_is_rtl.is_none() {
+        base_is_rtl = container_is_rtl;
+    }
+    let base_rtl = base_is_rtl.unwrap_or(false);
+    // 门②：bidi 信号，或（ext ∧ 基方向 RTL——纯 ASCII/原子盒 RTL 页，无需脚本信号）。
+    if !texts.iter().any(|t| has_bidi_signal(t)) && !(box_level_ext && base_rtl) {
         return None;
     }
 
@@ -115,6 +140,12 @@ pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
     let mut texts_iter = texts.iter();
     for item in items {
         if !matches!(item, InlineItem::Text(_)) {
+            // R5501（CSS2 §9.4.2）：基方向 RTL 时原子 inline 盒按基 level（1）参与
+            // 行级序列重排——chromium oracle v6 实测混排整行反转（DOM 首文本最右），
+            // 原子盒为序列单元而非边界。ext 关或基 LTR 维持旧边界语义。
+            if box_level_ext && base_rtl && matches!(item, InlineItem::InlineBlock(_)) {
+                any_transform = true;
+            }
             item_levels.push(None);
             continue;
         }
@@ -138,10 +169,19 @@ pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
         }
     }
 
+    // R5501：基 RTL 本身即需要行级组序重排（纯 ASCII 页字符全偶 level，行序
+    // 反转仍必须发生——原子盒/行序由行级 L2 的基 level 参与承担）。
+    if box_level_ext && base_rtl {
+        has_rtl = true;
+    }
     if !any_transform {
         return None;
     }
-    Some(ParaBidiPlan { item_levels, has_rtl })
+    Some(ParaBidiPlan {
+        item_levels,
+        has_rtl,
+        base_rtl,
+    })
 }
 
 /// R5122（phase 2）/ R5337（精确化）：片段内完整 L2——按 level 值逐层反转极大
@@ -201,6 +241,66 @@ mod tests {
         })
     }
 
+    /// R5501：`direction:rtl` run（生产管线 collect_items 从 `style.direction`
+    /// 填 `is_rtl`，测试直构须显式置位）。
+    fn rtl_text_item(text: &str) -> InlineItem {
+        let mut run = match text_item(text) {
+            InlineItem::Text(run) => run,
+            _ => unreachable!(),
+        };
+        run.is_rtl = true;
+        InlineItem::Text(run)
+    }
+
+    /// R5501：直构原子盒（无 DOM 邻接——GL 旁带恒 false）。
+    fn box_item() -> InlineItem {
+        InlineItem::InlineBlock(crate::inline::InlineBlockBox {
+            width: 100.0,
+            height: 50.0,
+            baseline: 50.0,
+            node_id: NodeId::default(),
+            vertical_align: VerticalAlignValue::Baseline,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            prev_char_gl: false,
+            next_char_gl: false,
+        })
+    }
+
+    /// R5501（CSS2 §9.4.2）：基方向 RTL 的纯 ASCII 页无需 RTL 脚本信号即激活
+    /// （chromium oracle V1/V4/v6：整行 item 序须反转）；plan 标记 base_rtl 且
+    /// has_rtl（行级组序重排门开）。
+    #[test]
+    fn base_rtl_activates_without_script_signal() {
+        let items = vec![rtl_text_item("ABC def")];
+        let plan = resolve(&items, Some(true), true).expect("基方向 RTL 必须激活");
+        assert!(plan.base_rtl);
+        assert!(plan.has_rtl);
+        // ASCII 全偶 level（L run in RTL 基 = level 2）——字符面零反转，
+        // 行序由行级 L2 的基 level 参与承担。
+        let lv = plan.item_levels[0].as_ref().expect("RTL 基下 ASCII 必须携带 level");
+        assert!(lv.iter().all(|&l| l == 2));
+    }
+
+    /// R5501：纯原子盒行（无 Text run）基方向回落容器 direction（HL1）——
+    /// 容器 RTL → 激活且原子盒计入 transform；容器 LTR → 旧门（无信号）不激活。
+    #[test]
+    fn boxes_only_falls_back_to_container_direction() {
+        let items = vec![box_item(), box_item()];
+        let plan = resolve(&items, Some(true), true).expect("容器 RTL 必须激活纯盒行");
+        assert!(plan.base_rtl);
+        assert!(plan.has_rtl);
+        assert!(resolve(&items, Some(false), true).is_none(), "容器 LTR 无信号不激活");
+        // 有 Text run 页基方向仍取首个 run（既有来源零扰动）：LTR run 在场时
+        // 容器 RTL 不改变基方向判定。
+        let mixed = vec![rtl_text_item("hello"), box_item()];
+        let plan = resolve(&mixed, Some(true), true).expect("信号面（RTL 基激活）");
+        assert!(plan.base_rtl, "首个 run 的 CSS direction=rtl——基仍 RTL");
+        assert!(plan.has_rtl);
+    }
+
     /// bidi-001 形态：RLO 在 span 文本内开启、作用域跨到兄弟文本节点——兄弟整段
     /// 均匀奇 level 必须拿到段落级 level（per-run 路径按 LTR 基恒等，永不反转）。
     #[test]
@@ -210,7 +310,7 @@ mod tests {
             text_item("FFFEEEDDD\u{202C}"),
             text_item("JJJKKKLLL"),
         ];
-        let plan = resolve(&items).expect("RLO 跨 run 信号必须激活段落级 UBA");
+        let plan = resolve(&items, None, false).expect("RLO 跨 run 信号必须激活段落级 UBA");
         assert!(plan.has_rtl);
         // item1：前缀 level 0，RLO 后 IIIHHHGGG level 1（UAX #9 X9：控制符不携带
         // 自身 level，随周边文段——RLO 归 level 0，不可见不影响呈现）。
@@ -232,7 +332,7 @@ mod tests {
     #[test]
     fn plain_ltr_page_not_activated() {
         let items = vec![text_item("hello world"), text_item("  second")];
-        assert!(resolve(&items).is_none());
+        assert!(resolve(&items, None, false).is_none());
     }
 
     /// 元素级 bidi-override run 在场 → 整体回退既有校准路径（phase 1 不混排）。
@@ -250,7 +350,7 @@ mod tests {
         };
         overridden.bidi_override = Some(true);
         let items = vec![InlineItem::Text(overridden), text_item("\u{05D0}\u{05D1}")];
-        assert!(resolve(&items).is_none());
+        assert!(resolve(&items, None, false).is_none());
     }
 
     /// R5337：`<bdi>`/`unicode-bidi: isolate` run 在场 → 整体回退 per-run 路径
@@ -270,10 +370,10 @@ mod tests {
         };
         isolated.is_isolated_bidi = true;
         let items = vec![InlineItem::Text(isolated), text_item("\u{0661}\u{0660}")];
-        assert!(resolve(&items).is_none());
+        assert!(resolve(&items, None, false).is_none());
         // 守卫腿：无 isolate run 的同形页照常激活（翻默认主面不收窄）。
         let plain = vec![text_item("\u{0661}\u{0660}. "), text_item("\u{0661}\u{0660}")];
-        assert!(resolve(&plain).is_some());
+        assert!(resolve(&plain, None, false).is_some());
     }
 
     /// R5122 phase 2 / R5337 精确化：片段内完整 L2——逐层反转 ≥L 连续段。

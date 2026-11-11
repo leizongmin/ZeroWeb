@@ -508,6 +508,11 @@ pub struct InlineFormattingContext {
     /// 逐字符 level）；`break_items_into_lines` 开头 `take()` 消费（Text run 改走
     /// `BidiFragmentCursor::with_levels`），`has_rtl` 供行级 L2 组序重排门。
     pub(crate) para_bidi_plan: Option<para_bidi::ParaBidiPlan>,
+    /// R5501（CSS2 §9.4.2 RTL 行内盒序）：段落基方向 RTL 且 `ZW_PARA_BIDI_BOX_LEVEL`
+    /// 门开（仅水平 IFC——竖排行装配另臂）时置位；行级 L2 序列重排据此把无 level
+    /// 数据片段（原子 inline 盒）按基 level（=1）参与序列。计划在
+    /// `break_items_into_lines` 开头被 `take()`，故在消费前快照于此。
+    pub(crate) para_base_rtl: bool,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -599,6 +604,7 @@ impl InlineFormattingContext {
             text_transform_overrides: NodeIdMap::default(),
             column_fragmentation: None,
             para_bidi_plan: None,
+            para_base_rtl: false,
         }
     }
 
@@ -1447,16 +1453,27 @@ impl InlineFormattingContext {
         // R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA
         //（R5337 起默认开）。门：容器级 bidi-override 关闭（R3319/R3836
         // 校准路径不混排）+ resolve 内部门（无元素级 override/plaintext run + 存在
-        // bidi 信号 + 任一 run level 非 0）。不拆分 items（拆分会新增词间折行机会），
-        // 计划经 `para_bidi_plan` 字段交 `break_items_into_lines` 消费（with_levels
-        // 光标）。详见 inline/para_bidi.rs 模块头。
+        // bidi 信号（R5501 起段落基方向 RTL 同为信号）+ 任一 run level 非 0）。
+        // 不拆分 items（拆分会新增词间折行机会），计划经 `para_bidi_plan` 字段交
+        // `break_items_into_lines` 消费（with_levels 光标）。详见 inline/para_bidi.rs
+        // 模块头。R5501：容器 direction 传入 resolve（纯原子盒行的基方向回落源，HL1）。
+        // R5501（CSS2 §9.4.2）：基方向 RTL 激活门只在水平 IFC 放开（竖排行装配
+        // 另臂，guidelines #29 域分离；sideways-lr dir=rtl 页实证竖排泄漏返工）。
+        // 环境旗标在 IFC 边界读一次（guidelines #9），传入 resolve。
+        let box_level_ext = runtime_flags::para_bidi_box_level() && !self.vertical;
         self.para_bidi_plan = if self.bidi_override_direction.is_none() && runtime_flags::para_bidi() {
-            para_bidi::resolve(&items)
+            let container_is_rtl = styles
+                .get(&container)
+                .is_some_and(|s| matches!(s.direction, zero_style_system::property::DirectionValue::Rtl));
+            para_bidi::resolve(&items, Some(container_is_rtl), box_level_ext)
         } else {
             None
         };
         // 行级组序重排门先读（break 开头 take() 消费计划）。
         let para_has_rtl = self.para_bidi_plan.as_ref().is_some_and(|plan| plan.has_rtl);
+        // R5501（CSS2 §9.4.2）：基方向 RTL 的行级序列重排把无 level 片段（原子盒）
+        // 按基 level 参与（ext 已含水平门）。计划在 break 开头 take()，消费前快照。
+        self.para_base_rtl = box_level_ext && self.para_bidi_plan.as_ref().is_some_and(|plan| plan.base_rtl);
         self.break_items_into_lines(items);
         if para_has_rtl {
             self.reorder_lines_l2_for_para_bidi();

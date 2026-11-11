@@ -27,6 +27,16 @@ pub(super) fn inline_zerobox_strut() -> bool {
     selected(*VALUE, || default_on("ZW_INLINE_ZEROBOX_STRUT"))
 }
 
+/// R5501（CSS2 §9.4.2 RTL 行内盒序）：段落基方向 RTL 时激活段落级 UBA（无需 RTL
+/// 脚本信号；纯 ASCII/原子盒 RTL 页 chromium oracle V1/V4/v6 实证整行 item 序
+/// 反转），且行级 L2 序列重排把无 level 数据片段（原子 inline 盒）按基 level（=1）
+/// 参与序列。default-on，`ZW_PARA_BIDI_BOX_LEVEL=0` 回退旧门（RTL 脚本/控制符
+/// 信号才激活、无 level 片段恒序列边界）。
+pub(super) fn para_bidi_box_level() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_PARA_BIDI_BOX_LEVEL"));
+    selected(*VALUE, || default_on("ZW_PARA_BIDI_BOX_LEVEL"))
+}
+
 pub(super) fn debug_ifc() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| std::env::var("ZW_DEBUG_IFC").is_ok());
     selected(*VALUE, || std::env::var("ZW_DEBUG_IFC").is_ok())
