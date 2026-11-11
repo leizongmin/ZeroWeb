@@ -126,7 +126,9 @@ g15）。残余：sibling 非零权重行 + tree-counting 家族
 一致；增益 8 页 +78（两刀合力 + 9db 串化刀 minmax/border-radius 面），
 回归 2 页 -28（min/max/hypot %+px used 值等值面——g15 双侧空串假通过
 修正，min/max used 串化臂 fail-closed 残）归 9db 串面流挂账，净账仍
-+50。五套件漂移对账待他流电池收齐后补录（evidence §6）。
++50。六套件漂移对账已补录（evidence §6）：color/transitions/animations/
+easing ±0、transforms +1（9db 刀 calc 支持外溢增益）、values 累计 +66
+——六套件页级零回归。
 [证据](evidence/2026-11-12-dc2-g16-tree-counting-step.md)
 
 **DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：
