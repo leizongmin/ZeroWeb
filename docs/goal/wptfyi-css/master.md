@@ -2,8 +2,8 @@
 
 **2026-11-11 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
-已落库未入快照增量约 +1.4k（values serialize/color 三批/grid CSSOM/typed-om
-anyjs，见 DC-2 各批账）。
+已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
+grid/anchor 各批，至 @position-try CSSOM 批 anchor 语料 9,893→10,182）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
