@@ -41,10 +41,11 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
 **卡点**：无阻塞。
-**下一步**：grid G2b——grid-template-* used 值（taffy detailed_layout_info
-接线，gCS 通道需 layout 树，架构面独立批）；DC-3 全量对账（等批次平台期
-dispatch 周跑，HEAD 已含 color/values/grid 各批增量）；light-dark/
-system-color 建模残余。
+**下一步**：组 F——css-anchor-position position-area 语法面（decl 校验+canonical
+序列化 + computed 样式暴露，DC-3 预备 A 类第四候选 ~2,400F：position-area-parsing
+1,800F + position-area-computed 633F，shim 声明门/computed 属性列表/supports 三面）；
+DC-3 全量对账（等批次平台期 dispatch 周跑，HEAD 已含 color/values/grid 各批增量）；
+light-dark/system-color 建模残余；grid G2b（taffy detailed_layout_info，架构面）。
 
 **DC-2 values 批完成（11-11 凌晨）**：L4 数学函数进 transform/数值槽位 +
 T54 inline style 写面值校验（三写臂：native CSD / shim writeDecl / shim
@@ -149,6 +150,11 @@ ident）；锚页残余 25F 全为 grid-template-* used 值族挂账 G2b（taffy
 detailed_layout_info 接线，架构面独立批）。
 [证据](evidence/2026-11-11-dc2-grid-line-composite-model.md)
 
+**DC-2 组 E 批完成（11-11 午后）**：Typed-OM 相对色骨架保形 + sibling-index()/count() 求值 + decl canon light-dark 保形 + var() 作者臂（part10 `_zwOmRelativeSkeletonText` 骨架检测 + part11 `__zwCssRelativeOrigin` 出口/`_zwCCSubSibling` 三刀位/`_zwCCDeclColorCanonic` light-dark 保形/part01c `__zwPlainAuthorDecl` 作者快照出口）——probe 家族 6 页 2439P/69F（对 v10 净 +2）；e2final 终验三语料：**css-color 10,842P（对 v10 净 +34 逐页零回归，本批面 +2**，relative-color-with-system-color 页 1P/2F→3P/0F 清零；同树在库批兑现 +32）**、values 2,213P 零漂移、typed-om 对 v5b -4**（G1 门 var() 误拒，非本批面，随放行刀复位）。事后归谳：computed 页 13 个 var 案根因在 calc 通道算术与 modern 形态序列化（var 查找既有通路已通），var 作者臂按守卫面保留零钉面交付挂账。
+[证据](evidence/2026-11-11-dc2-typed-om-relative-skeleton.md)
+
+**DC-2 grid var() 放行刀完成（11-11 午后）**：canonicalize_grid_decl 含 var() 值 parse 期放行（grid_cssom.rs 单实现双通道一处 + 单测）——typed-om **9,872P = v5b 基线复位零 diff**（4 案 'Can set grid-* to var() references' 翻回）；css-grid 对 v13 共 635 页逐案零漂移（case 列表 654 = 635 共页 + 19 数据目录漂移页 37P，subgrid fetch + 探针遗留，非批面；探针页已清出数据目录）。
+
 **DC-3 预备完成（11-11 上午）**：周跑 reconciliation runbook + 验收核对清单 +
 缺口三分类地图（A 语义 ~34k / B 布局 ~85k / C 零通过 API 门 ~950，对 90 子组
 全 144,109 缺口）+ A 类四桶失败逐案归类（values 3,380F：abs/sign used-value
@@ -168,7 +174,7 @@ DC-3 终跑须最终 HEAD）。合并树验证：fmt EXIT=0、clippy(v8) PASS；
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 十三批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70）；[fill/stroke gCS + currentColor 宿主解析](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)：v11 10,808 → 10,840（本批面 +3，compute 页清零）；[grid-line 组合形模型](evidence/2026-11-11-dc2-grid-line-composite-model.md)：css-grid v13 净 +26 零回归、锚页 94 → 115（fmt 收敛 9f025bc66） |
+| DC-2 按簇收敛 | 十四批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70）；[fill/stroke gCS + currentColor 宿主解析](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)：v11 10,808 → 10,840（本批面 +3，compute 页清零）；[grid-line 组合形模型](evidence/2026-11-11-dc2-grid-line-composite-model.md)：css-grid v13 净 +26 零回归、锚页 94 → 115（fmt 收敛 9f025bc66）；[Typed-OM 相对色骨架 + sibling 求值](evidence/2026-11-11-dc2-typed-om-relative-skeleton.md)：css-color e2final 净 +34 零回归（本批 +2 页清零）+ grid var() 放行刀 typed-om 9,872P 复位 |
 | DC-3 全量对账 | 预备完成，终跑待批次平台期 | [预备 runbook + 缺口地图](evidence/2026-11-11-dc3-prep-reconciliation-runbook.md)：验收线 182,392，11-10 快照后尚余 ~129.9k；周跑 dispatch 管线与分片截断核对清单已备，v14+ 起报号 |
 
 碰撞记录：11-11 凌晨 union 树 engine 全量 7F（img/svg settle + websocket

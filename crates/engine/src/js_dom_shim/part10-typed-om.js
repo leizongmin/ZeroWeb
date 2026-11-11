@@ -1755,10 +1755,63 @@
   }
 
   // ===== 13. Element.prototype 挂接 =====
+  // 相对色 computed 面骨架（css-color-5 §relative-colors，WPT
+  // relative-color-with-system-color 钉面）：inline 声明为
+  // `fn(from <origin> <channels>)` 且 origin 折叠为 currentcolor 时，Typed-OM
+  // computed 值保形骨架 `fn(from currentcolor <channels>)`——getComputedStyle
+  // 返回 resolved 色，故骨架检测须按 inline 声明原文先行。origin 为绝对色
+  //（system color 等）时返 ''，保持宿主 resolved 通道（computed 整体解析）。
+  function _zwOmRelativeSkeletonText(decl, el) {
+    var m = /^([a-zA-Z][-\w]*)\(\s*from\s+([\s\S]+)\)$/.exec(String(decl).trim());
+    if (!m) return '';
+    var fnL = m[1].toLowerCase();
+    if (fnL !== 'hsl' && fnL !== 'hwb' && fnL !== 'lab' && fnL !== 'lch'
+      && fnL !== 'oklab' && fnL !== 'oklch' && fnL !== 'rgb' && fnL !== 'color') return '';
+    // origin：函数块（括号配平）或单个 ident；其余取 channels 原文。
+    var rest = m[2].trim();
+    var origin = null, channels = '';
+    var fo = /^([a-zA-Z][-\w]*)\s*\(/.exec(rest);
+    if (fo) {
+      var depth = 0;
+      for (var i = fo[0].length - 1; i < rest.length; i++) {
+        var ch = rest.charAt(i);
+        if (ch === '(') depth++;
+        else if (ch === ')') { depth--; if (!depth) { origin = rest.slice(0, i + 1); channels = rest.slice(i + 1).trim(); break; } }
+      }
+    } else {
+      var io = /^([a-zA-Z][-\w]*)(?:\s+([\s\S]+))?$/.exec(rest);
+      if (io) { origin = io[1]; channels = io[2] || ''; }
+    }
+    if (!origin) return '';
+    if (globalThis.__zwCssRelativeOrigin(origin, el) !== 'currentcolor') return '';
+    if (channels) {
+      // sibling-index() → 元素在父级子列表的 1-based 索引；找不到（detached）
+      // 保留原文不编造。sibling-count() 未建模（FIXME）。
+      var p = el && el.parentNode;
+      if (p && p.children) {
+        for (var k = 0; k < p.children.length; k++) {
+          if (p.children[k] === el) {
+            channels = channels.replace(/sibling-index\s*\(\s*\)/gi, String(k + 1));
+            break;
+          }
+        }
+      }
+    }
+    return fnL + '(from currentcolor' + (channels ? ' ' + channels : '') + ')';
+  }
   function _zwOmComputedProp(el, prop) {
     // 复用 part01 getComputedStyle 代理回调链（注册元素 sel/handle 路由由
-    // 既有面完成），零新 Rust 回调。
+    // 既有面完成），零新 Rust 回调。颜色属性的相对色骨架面（上）先于宿主
+    // resolved 读数。
     var text = '';
+    try {
+      var decl = (el && el.style && String(el.style.getPropertyValue(prop) || '')) || '';
+      if (decl && (prop === 'color' || /-color$/.test(prop) || prop === 'fill' || prop === 'stroke')
+        && typeof globalThis.__zwCssRelativeOrigin === 'function') {
+        text = _zwOmRelativeSkeletonText(decl, el);
+      }
+    } catch (_eRS) { text = ''; }
+    if (text !== '') return text;
     if (globalThis.getComputedStyle) {
       try { text = String(globalThis.getComputedStyle(el).getPropertyValue(prop) || ''); } catch (_eG) { text = ''; }
     }

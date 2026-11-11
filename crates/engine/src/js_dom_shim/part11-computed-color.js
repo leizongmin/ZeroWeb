@@ -230,6 +230,25 @@
     return hasDark && !hasLight;
   }
 
+  // 相对色 origin 骨架判定（css-color-5 §relative-colors，Typed-OM computed
+  // 面钉面 relative-color-with-system-color）：origin 折叠到 currentcolor 时
+  // computed 值骨架保形 'hsl(from currentcolor ...)'（currentcolor 依赖 used
+  // value 上下文，computed 时间不解析）；origin 为绝对色（system color/具名
+  // 色/light-dark 绝对支）时 computed 整体解析，返 '' 由调用方走宿主 resolved
+  // 通道。var() 支未展开（FIXME：保守走宿主）。
+  function _zwCCOriginSkeleton(originText, el) {
+    var s = _zwCCStripComments(String(originText == null ? '' : originText)).trim();
+    if (!s) return '';
+    if (s.toLowerCase() === 'currentcolor') return 'currentcolor';
+    var fnHead = /^([a-zA-Z][-\w]*)\s*\(([\s\S]*)\)$/.exec(s);
+    if (fnHead && fnHead[1].toLowerCase() === 'light-dark') {
+      var groups = _zwCCTopSplit(fnHead[2], ',');
+      if (groups.length !== 2) return '';
+      return _zwCCOriginSkeleton(_zwCCUsedSchemeDark(el) ? groups[1] : groups[0], el);
+    }
+    return '';
+  }
+
   // ============ calc 求值器（数字/% 两型；opacity 与色分量共用）============
 
   // 返回 {v, pct} 或 NaN（类型错/非法/除零 → NaN；消费面 NaN→0 对齐
@@ -676,6 +695,9 @@
     var t = String(alphaText).trim();
     var low = t.toLowerCase();
     if (_zwCCChanKw.indexOf(low) >= 0) return { chan: low };
+    // sibling-index()/sibling-count() 槽文本存 chanexpr（resolve 期
+    // _zwCCEvalRel 尾参 el 求值；裸函数非 calc 文法，_zwCCCalcSpec 不认）。
+    if (t.indexOf('sibling-') >= 0) return { chanexpr: t };
     var calc = _zwCCCalcSpec(t);
     if (calc) return calc;
     return _zwCCNumSpec(t) || { chan: low };
@@ -969,6 +991,10 @@
     var t = String(text).trim();
     var low = t.toLowerCase();
     if (_zwCCChanKw.indexOf(low) >= 0) return { chan: low };
+    // sibling-index()/sibling-count() 槽存 chanexpr（裸函数非 calc 文法；
+    // resolve 期 _zwCCEvalRel 尾参 el 求值——relative-color-with-system-color
+    // test3 钉面）。
+    if (t.indexOf('sibling-') >= 0) return { chanexpr: t };
     var calc = _zwCCCalcSpec(t);
     if (calc) return calc;
     var num = _zwCCNumSpec(t);
@@ -1043,6 +1069,17 @@
       var v = _zwCCInlineDecl(p, name);
       if (v) return v;
       p = p.parentNode;
+    }
+    // 作者样式表臂（页级 `html { --x: ... }` 声明——inline 链查空后经 part01c
+    // 作者快照沿父链首声明；color-computed-relative-color var(--accent/--color/
+    // --mycolor/--mygray) 13 案钉面）。
+    if (typeof globalThis.__zwPlainAuthorDecl === 'function') {
+      var q = el; guard = 0;
+      while (q && q.nodeType === 1 && guard++ < 256) {
+        var v2 = globalThis.__zwPlainAuthorDecl(q, name);
+        if (v2) return String(v2);
+        q = q.parentNode;
+      }
     }
     return '';
   }
@@ -1212,7 +1249,7 @@
           if (ast.alphaSpec.chan !== 'alpha') return null;
           nA = ar.alpha;
         } else if (ast.alphaSpec.chanexpr != null) {
-          var evA3 = _zwCCEvalRel(ast.alphaSpec.chanexpr, null, null, 1, ar.alpha);
+          var evA3 = _zwCCEvalRel(ast.alphaSpec.chanexpr, null, null, 1, ar.alpha, el);
           if (evA3 !== evA3) return null;
           nA = Math.min(1, Math.max(0, evA3));
         } else {
@@ -1245,6 +1282,7 @@
   // 文本 → 解析颜色（var() 展开；currentcolor 沿父链；无效返 null）。
   function _zwCCResolveText(text, el, depth) {
     var s = String(text == null ? '' : text).trim();
+    s = _zwCCSubSibling(s, el);
     var vm = /^([\s\S]*?)var\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*([\s\S]+?)\s*)?\)([\s\S]*)$/.exec(s);
     if (vm) {
       var val = el ? _zwCCVarLookup(el, vm[2]) : '';
@@ -1573,8 +1611,8 @@
     return { channels: channels, alpha: alphaVal, alphaNone: origAlphaNone(), none: isPol ? convNone : [false, false, false] };
   }
 
-  function _zwCCEvalRel(expr, kws, channels, scale, alphaVal) {
-    var subs = String(expr);
+  function _zwCCEvalRel(expr, kws, channels, scale, alphaVal, el) {
+    var subs = _zwCCSubSibling(String(expr), el);
     var i, re;
     if (kws) {
       for (i = 0; i < kws.length; i++) {
@@ -1625,7 +1663,7 @@
         return pv / 100;
       }
       if (sp.calc != null) {
-        var r = _zwCCEval(sp.calc);
+        var r = _zwCCEval(_zwCCSubSibling(sp.calc, el));
         if (r !== r) return NaN;
         if (r.pct) return toOut({ pct: r.v }, i);
         // calc 数值结果 = 原生域直用（语料 'calc(sin(pi / 4) * 100)' → l=70.71；
@@ -1686,7 +1724,7 @@
           : space === 'lch' ? [100, 150, 360]
           : space === 'oklab' ? [1, 0.4, 0.4]
           : space === 'oklch' ? [1, 0.4, 360] : [1, 1, 1];
-        var ev = _zwCCEvalRel(sp.chanexpr, kws, chanVals, relScale[i]);
+        var ev = _zwCCEvalRel(sp.chanexpr, kws, chanVals, relScale[i], el);
         if (ev !== ev) return null;
         if (legacyRgb && space === 'srgb') ev = ev / 255;
         out.push(ev);
@@ -1717,7 +1755,7 @@
         alphaOut = (orig.none && orig.none[aIdx]) ? 'none' : Math.min(1, Math.max(0, aChan));
       }
     } else if (ast.alpha.chanexpr != null) {
-      var evA = _zwCCEvalRel(ast.alpha.chanexpr, null, null, 1, orig.alphaNone ? 0 : orig.alpha);
+      var evA = _zwCCEvalRel(ast.alpha.chanexpr, null, null, 1, orig.alphaNone ? 0 : orig.alpha, el);
       if (evA !== evA) return null;
       alphaOut = evA;
     } else {
@@ -1909,6 +1947,33 @@
     }
     if (r.kind === 'relative-out') return _zwCCSerialRelative(r);
     return '';
+  }
+
+  // 相对色 origin 骨架出口（part10 Typed-OM computedStyleMap 消费）：返
+  // 'currentcolor'（骨架态）或 ''（绝对色态/不可判定 → 宿主 resolved 通道）。
+  globalThis.__zwCssRelativeOrigin = function (originText, el) {
+    try { return _zwCCOriginSkeleton(originText, el); } catch (_eOR) { return ''; }
+  };
+
+  // sibling-index()/sibling-count() 文本替换（css-values-5 级联依赖函数；
+  // 钉面 color-computed-relative-color 'calc(h + 180 * sibling-index())'
+  // 期望 hue+180、alpha-color-parsing-valid 'alpha(from green /
+  // sibling-count())' valid、relative-color-with-system-color test3）。
+  // el 缺席（CSS.supports/decl oracle 支持性通道）取哨兵 1——语法可解析即
+  // 支持；el 存在按父级子列表 1-based 索引/总数（lightseagreen lch hue
+  // 190.11+180*1=10.11 钉面确证 1-based）；找不到（detached）取 0。
+  function _zwCCSubSibling(expr, el) {
+    var s = String(expr == null ? '' : expr);
+    if (s.indexOf('sibling-') < 0) return s;
+    var p = el && el.nodeType === 1 ? el.parentNode : null;
+    var idx = 0, cnt = 0;
+    if (p && p.children) {
+      cnt = p.children.length;
+      for (var k = 0; k < cnt; k++) if (p.children[k] === el) { idx = k + 1; break; }
+    }
+    if (el == null) { idx = 1; cnt = 1; }
+    return s.replace(/sibling-index\s*\(\s*\)/gi, String(idx))
+            .replace(/sibling-count\s*\(\s*\)/gi, String(cnt));
   }
 
   // computed 颜色：raw 声明文本 → computed 序列化串；无效/不可解析回退基座。
@@ -2210,6 +2275,10 @@
       return { s: ro };
     }
     if (ast.kind === 'alpha') return { raw: t };
+    // light-dark decl 面保形（css-color-5：声明回读不折叠选支——relative
+    // origin 经 decl canon 折叠会丢失 currentcolor 语义，Typed-OM 相对色骨架
+    // 面 relative-color-with-system-color 钉面依赖 origin 原文）。
+    if (ast.kind === 'lightdark') return { raw: t };
     if (ast.kind === 'named' || ast.kind === 'system') return { s: _zwCCDecodeEscapes(t).toLowerCase() };
     if (ast.kind === 'currentcolor') return { s: 'currentcolor' };
     if (ast.kind === 'transparent') return { s: 'transparent' };
@@ -2264,6 +2333,9 @@
     if (!t) return false;
     var low = t.toLowerCase();
     if (low === 'none') return true;
+    // sibling-index()/sibling-count() 函数形文法合法（css-values-5；求值归
+    // resolve 期 sibling 替换——decl 面只校验槽文法）。
+    if (t.indexOf('sibling-') >= 0) return true;
     if (/^calc\(/i.test(t)) {
       // calc 内通道关键字按无单位数代换（Chrome corpus 行为）。加减法混型即
       // 拒：关键字项与带维数项（%/角度）直接相加减——'calc(h + 1deg)'/

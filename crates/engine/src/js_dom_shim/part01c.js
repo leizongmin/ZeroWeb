@@ -2107,6 +2107,12 @@
     return NaN;
   }
   // 入口：prop 为 kebab-case；仅应答四属性，其余返 ''（调用方维持旧行为）。
+  // 作者样式表声明查询出口（part11 var() 展开消费——页级 `html { --x: ... }`
+  // 声明臂；_zwPlainAuthorDecl 通用 prop，custom property 命名直达）。
+  globalThis.__zwPlainAuthorDecl = function (el, prop) {
+    try { return _zwPlainAuthorDecl(el, prop) || ''; } catch (_ePADx) { return ''; }
+  };
+
   globalThis.__zwPlainComputed = function (elt, prop, qvMode) {
     if (!elt || elt.nodeType !== 1) return '';
     var guard = 0;
