@@ -1988,6 +1988,9 @@
             .replace(/sibling-count\s*\(\s*\)/gi, String(cnt));
   }
 
+  // RCS 形判别（css-color-5 §relative-colors）：色函数 'from' 语法，10 函数面。
+  var _zwCCRcsFormRe = /(^|[^\w-])(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(\s*from\s/i;
+
   // computed 颜色：raw 声明文本 → computed 序列化串；无效/不可解析回退基座。
   // propCtx（可选）：触发求值的属性名——'color' 时 currentcolor 走父链，
   // 其余先试本元素 color（css-color-4 §5.3 currentcolor 域语义）。
@@ -2001,8 +2004,27 @@
     _zwCCPropCtx = String(propCtx == null ? '' : propCtx);
     try {
       var rawS = String(raw == null ? '' : raw);
-      if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('var(') >= 0
-          || rawS.indexOf('\\') >= 0) {
+      if (rawS.indexOf('var(') >= 0) {
+        // RCS+var 面（css-color-5 §relative-colors）：宿主替换经 Rust
+        // parse_relative_color 恒 legacy 形（calc 通道拒→invalid→黑；WPT 现代
+        // 形期望下宿主不可能通过，接管域无 pass→fail 面）。本管线 var 臂
+        //（_zwCCVarLookup inline+作者快照级联近似）+ chanexpr calc 通道 +
+        // 现代形序列化完备——RCS 形（'from' 语法，或纯 var 引用且替换值含
+        // 'from'）先试自解；自解失败/非 RCS 形保基座→宿主零漂移。
+        var vrHit = _zwCCRcsFormRe.test(rawS);
+        if (!vrHit) {
+          var nmV = /^\s*var\(\s*(--[a-zA-Z0-9_-]+)/.exec(rawS);
+          var lvV = nmV && el ? _zwCCVarLookup(el, nmV[1]) : '';
+          vrHit = !!lvV && _zwCCRcsFormRe.test(lvV);
+        }
+        if (vrHit) {
+          var rVar = null;
+          try { rVar = _zwCCResolveText(rawS, el, 0); } catch (_eVR) { rVar = null; }
+          if (rVar) return _zwCCSerialResolve(rVar);
+        }
+        return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      }
+      if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('\\') >= 0) {
         return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
       }
       var r = null;
