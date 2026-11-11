@@ -240,3 +240,32 @@ CSSOM 写回刀正式收口：outdent 页 CSSOM 8 残红族闭合维持 F2P=169�
   实值）三度实证后第四次：凡数字门，先对账总数恒一再登记。
 - **corpus preflight 与批之间不得有源码变更**：18:31 preflight（仅 part03）的 2 新红
   差点被当成最终树状态判读；mtime 对账（源 18:58 > preflight 18:31）后重跑才定谳。
+- **诊断日志独立命名**：ab 丢行首例原始日志被复跑同名覆写，仅存账本摘录数字；
+  诊断样本日志应独立文件名（`-bad1` 后缀）留存，复跑前先 `mv`。
+
+## 终门 v1.3.2 换基重锚（2026-11-12 05:36→06:36，c2fc734ab→5c02b84d4）
+
+收口 pull --rebase 并入组合增量（对账细目见 `.acceptance/dps/ACTIVE-BATCH.md` 05:3x 条）：
+bb1c1256e（wptfyi-editing P3：part01c `_zwFmtDecorationOf` 作者规则臂＋part01d
+`_zwVaForceValue` u/s 载体原位并/下潜，自带门 F2P=26/P2F=0/newF=0）＋cc22f08e1
+（part11 通用色通道 +4/computed-color 173 行）＋3364ff226（s409 script-created link
+不阻塞 script：part01 +21/part03 阻塞计数门 +12，与 R188 面 11747 行无交集）＋
+c1a069a1c（layout-engine converter 补 `CalcExpr::Mix` 臂——渲染流编译红灯，本流重锚
+批首射即撞 E0004 rc=101，其修复已先行推送）＋docs 3 笔。按 v1.3.1→v1.3.2 先例，
+v1.3.2 门值对组合树须重锚。
+
+重锚批 `batch-cssom-mt-reanchor.sh` @5c02b84d4 三腿实测（log `batch-cssom-mt-reanchor.log`）：
+
+- **S1..S9 锚重放恒等** 3/2/1/5/1/3/1/3/2；r307 修复在场（`_r188RootSelfCmp` grep=2）
+- **L6R enginelib** 3897P/**9F**（s409 新增测试 +2P，failed==9 名册恒一）✓
+- **L3b ab** **10092P/0F/0T** 满额 ✓（bin 6f46bc78）
+- **L3 mt** **10090P/2F** 与 v1.3.2 锚逐数恒等，judge 四零（F2P=0——P3 账本预言的
+  u/s 正漂移在 mt 主页实测未发生），residF 恒 rbv2 两键 ✓
+
+**ab 腿瞬态丢行观察（同二进制非确定性）**：首射 ab 实测 P=9994（−98 行/22 组合
+chain×fixture 整丢、post-only=0 非改名、F=0/T=0/rc=0 无错误标记；形态全为跨元素/
+跨块 delete·forwarddelete 接合后 inserttext——table 跨格、b×CFR 穿透、ws:pre 跨段、
+flex/grid 跨 span、跨 div），复跑同 bin 满额 10092。ab 腿存在运行间非确定性丢行形态
+一例；judge-dps ab 剖面对 lost=98 判 VERDICT OK（剖面容忍 lost），严格计数门为拦截
+该形态的有效门。组合认证以复跑满额为准；根因 hunting 挂账下轮择期（复现法：ab 腿
+连跑 N 次测丢行率）。
