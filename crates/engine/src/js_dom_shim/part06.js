@@ -2135,7 +2135,9 @@
     // 属性域 + 参数文法拒面（anchor-parse-invalid/anchor-size-parse-invalid 语料
     // 钉）。var() 混合形 parse 期不校验（替换后校验语义，保形放行先于本臂）。
     // 合法形原文保形（校验器只拒不重写——valid 语料 round-trip echo 钉）。
-    if (raw.indexOf('anchor(') >= 0 && raw.indexOf('var(') < 0
+    // `anchor-size(` 不含 `anchor(` 子串（anchor 与 `(` 间有 `-`），双形并查。
+    if ((raw.indexOf('anchor(') >= 0 || raw.indexOf('anchor-size(') >= 0)
+        && raw.indexOf('var(') < 0
         && typeof globalThis.__zw_anchor_func_check === 'function') {
       if (globalThis.__zw_anchor_func_check(propName, raw) !== 'true') return null;
     }

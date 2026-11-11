@@ -12408,6 +12408,21 @@
                 if (_paGV !== '') return _paGV;
               } catch (_ePAGV) {}
             }
+            // wptfyi-css 组F：anchor 族宿主回声覆盖（position-area 同构——host 对
+            // registry 外未设值/设值属性分别回 'initial'/'inherit' 字面量与 ''，
+            // 两条都失真；族计算值 = as-specified 恒等或固定初始值，一律 plain
+            // 优先，__zwPlainComputed 无声明返族初始值）。position-try 简写由
+            // __zwPlainComputed 内部按双长手合成。
+            // https://drafts.csswg.org/css-anchor-position-1/
+            if ((kp === 'position-anchor' || kp === 'position-visibility'
+                || kp === 'position-try-order' || kp === 'position-try-fallbacks'
+                || kp === 'position-try' || kp === 'anchor-name' || kp === 'anchor-scope')
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              try {
+                var _anGV = globalThis.__zwPlainComputed(elt, kp);
+                if (_anGV !== '') return _anGV;
+              } catch (_eANGV) {}
+            }
             // DC-2 次批：宿主 partial-parse 抢答覆盖（注释形/currentcolor/
             // 现代色形宿主产出错误计算值——part11 __zwCssColorNeedsPlain
             // 判定），inline 命中即落 plain 重读（spec 正确值）。legacy 形
@@ -12483,6 +12498,18 @@
             var _paV2 = globalThis.__zwPlainComputed(elt, _kpC);
             if (_paV2 !== '') return _paV2;
           } catch (_ePAV2) {}
+        }
+        // wptfyi-css 组F：anchor 族宿主回声覆盖（同 getPropertyValue 臂——
+        // test_computed_value 走 `getComputedStyle(target)[prop]` 直取形）。
+        // https://drafts.csswg.org/css-anchor-position-1/
+        if ((_kpC === 'position-anchor' || _kpC === 'position-visibility'
+            || _kpC === 'position-try-order' || _kpC === 'position-try-fallbacks'
+            || _kpC === 'position-try' || _kpC === 'anchor-name' || _kpC === 'anchor-scope')
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          try {
+            var _anV2 = globalThis.__zwPlainComputed(elt, _kpC);
+            if (_anV2 !== '') return _anV2;
+          } catch (_eANV2) {}
         }
         if (_csV !== '' && (_kpC === 'color' || _kpC === 'background-color')
             && elt && elt.style

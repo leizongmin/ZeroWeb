@@ -5932,7 +5932,8 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
         // 通用 inset/size/margin 属性域值含 anchor()/anchor-size() 调用时按
         // 函数参数文法裁决（anchor-parse-invalid/anchor-size-parse-invalid 拒面
         // 同源；合法形 `CSS.supports('top', 'anchor(--foo left)')` 判真）。
-        if val.contains("anchor(") {
+        // `anchor-size(` 不含 `anchor(` 子串（anchor 与 `(` 间有 `-`），双形并查。
+        if val.contains("anchor(") || val.contains("anchor-size(") {
             return crate::dom_bindings::anchor_props::anchor_funcs_valid(prop, val);
         }
     }
