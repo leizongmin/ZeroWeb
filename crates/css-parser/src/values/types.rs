@@ -1427,8 +1427,6 @@ impl<'a> CalcParser<'a> {
     /// 命中则消费前缀 + 解析逗号分隔参数 + 消费 `)`；否则不消费、返回 None。
     /// round 支持 rounding-strategy 关键字形式（round(up, A, B) 等，见
     /// [`Self::try_consume_round_strategy`]）；hypot 变参 1+（§10.8，单参 ≡ abs）。
-    /// step 为 ±Infinity 的边界形
-    /// （round(up, 1, Infinity) → calc(Infinity)）求值 NaN 化不命中——FIXME 挂账。
     fn try_parse_binary_math(&mut self) -> Option<CalcExpr> {
         if self.depth >= MAX_CALC_DEPTH {
             return None;
@@ -2030,10 +2028,48 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 // specified 序列化 calc(NaN) / computed censor-to-zero 由
                 // serialize_math 管线既有 NaN 面承接，asin/acos 同道）。
                 // 否则 (a/b) 按策略取整 × b（nearest 半值远离零）。
-                BinaryMathOp::Round => Some((av / bv).round() * bv),
-                BinaryMathOp::RoundUp => Some((av / bv).ceil() * bv),
-                BinaryMathOp::RoundDown => Some((av / bv).floor() * bv),
-                BinaryMathOp::RoundToZero => Some((av / bv).trunc() * bv),
+                // B=±∞（A 有限）策略表（同段；round-function/signed-zero 语料
+                // 钉面）：nearest/to-zero → ±0 签号随 A；up → 正 A 给 +∞（余
+                // ±0 签号随 A）；down → 负 A 给 −∞（余 ±0 签号随 A）；B 符号
+                // 无关（round(5,±∞) 同 +0 钉）。IEEE 直算 x*B 在 0×∞ 处产 NaN
+                // 丢语义（clamp NaN 毒化门落地前由 clamp min/max 链洗毒掩盖）。
+                // https://drafts.csswg.org/css-values-4/#round-func
+                BinaryMathOp::Round => {
+                    if bv.is_infinite() && av.is_finite() {
+                        Some(round_infinite_signed_zero(av))
+                    } else {
+                        Some((av / bv).round() * bv)
+                    }
+                }
+                BinaryMathOp::RoundUp => {
+                    if bv.is_infinite() && av.is_finite() {
+                        Some(if av > 0.0 {
+                            f64::INFINITY
+                        } else {
+                            round_infinite_signed_zero(av)
+                        })
+                    } else {
+                        Some((av / bv).ceil() * bv)
+                    }
+                }
+                BinaryMathOp::RoundDown => {
+                    if bv.is_infinite() && av.is_finite() {
+                        Some(if av < 0.0 {
+                            f64::NEG_INFINITY
+                        } else {
+                            round_infinite_signed_zero(av)
+                        })
+                    } else {
+                        Some((av / bv).floor() * bv)
+                    }
+                }
+                BinaryMathOp::RoundToZero => {
+                    if bv.is_infinite() && av.is_finite() {
+                        Some(round_infinite_signed_zero(av))
+                    } else {
+                        Some((av / bv).trunc() * bv)
+                    }
+                }
                 // mod：x - y*floor(x/y)（符号同 y）。B=0 → NaN（css-values-4
                 // §10.5 mod()/rem()："If B is 0, the result is NaN."——IEEE
                 // 路径自然产出 0*floor(±∞)=NaN；序列化/censor 同 round 族
@@ -2046,6 +2082,12 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
             }
         }
     }
+}
+
+/// round 族 B=±∞（A 有限）的 ±0 结果：签号随 A（css-values-4 §round-func
+/// "pos and +0 go to +0, neg and -0 go to -0"）。
+fn round_infinite_signed_zero(av: f64) -> f64 {
+    if av.is_sign_negative() { -0.0 } else { 0.0 }
 }
 
 /// 将长度值解析为像素值。

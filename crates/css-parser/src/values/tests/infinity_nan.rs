@@ -92,6 +92,57 @@ fn test_clamp_nan_poison_propagates() {
     assert_eq!(eval_calc(&expr, None), Some(100.0));
 }
 
+/// round 族 B=±∞（A 有限）策略表（css-values-4 §round-func；round-function/
+/// signed-zero 语料钉面）：nearest/to-zero → ±0 签号随 A；up → 正 A 给 +∞、
+/// 余 ±0；down → 负 A 给 −∞、余 ±0；B 符号无关；A=±∞ 有限步 → A 原样、
+/// 双 ∞ → NaN。IEEE 直算 x*B 在 0×∞ 产 NaN 丢语义——clamp NaN 毒化门落地后
+/// 曾暴露为 signed-zero -5 回归（旧 clamp min/max 链洗毒掩盖）。
+#[test]
+fn test_round_infinite_step_strategy_table() {
+    let ev = |s: &str| eval_calc(&parse_math_function(s).unwrap(), None);
+    // nearest/to-zero：±0 签号随 A（signed-zero 语料 round(nearest, ±0/±1, ∞) 行）。
+    let plus_zero = |v: Option<f64>| matches!(v, Some(v) if v == 0.0 && !v.is_sign_negative());
+    let minus_zero = |v: Option<f64>| matches!(v, Some(v) if v == 0.0 && v.is_sign_negative());
+    assert!(plus_zero(ev("round(5, infinity)")));
+    assert!(plus_zero(ev("round(5, -infinity)")));
+    assert!(minus_zero(ev("round(-5, infinity)")));
+    assert!(plus_zero(ev("round(nearest, 0, infinity)")));
+    assert!(minus_zero(ev("round(nearest, -0, infinity)")));
+    assert!(plus_zero(ev("round(nearest, 1, infinity)")));
+    assert!(minus_zero(ev("round(nearest, -1, infinity)")));
+    assert!(plus_zero(ev("round(to-zero, 5, infinity)")));
+    assert!(minus_zero(ev("round(to-zero, -5, -infinity)")));
+    // up：正 A → +∞；±0/负 A → ±0 签号随 A。
+    assert_eq!(ev("round(up, 1, infinity)"), Some(f64::INFINITY));
+    assert!(plus_zero(ev("round(up, 0, infinity)")));
+    assert!(minus_zero(ev("round(up, -0, infinity)")));
+    assert!(minus_zero(ev("round(up, -1, infinity)")));
+    // down：负 A → −∞；±0/正 A → ±0 签号随 A。
+    assert_eq!(ev("round(down, -1, infinity)"), Some(f64::NEG_INFINITY));
+    assert!(minus_zero(ev("round(down, -0, infinity)")));
+    assert!(plus_zero(ev("round(down, 0, infinity)")));
+    assert!(plus_zero(ev("round(down, 1, infinity)")));
+    // A=±∞ 边界：有限步 → A 原样；双 ∞ → NaN。
+    assert_eq!(ev("round(infinity, 5)"), Some(f64::INFINITY));
+    assert_eq!(ev("round(-infinity, 5)"), Some(f64::NEG_INFINITY));
+    assert!(matches!(ev("round(infinity, infinity)"), Some(v) if v.is_nan()));
+    // signed-zero clamp 端到端形（回归驱动案）：clamp(-1, 1/sign(round), 1)。
+    let clamp_form = |inner: &str| {
+        eval_calc(
+            &parse_math_function(&format!("clamp(-1, 1 / sign({inner}), 1)")).unwrap(),
+            None,
+        )
+    };
+    // A=+0/正有限 → 1；A=−0/−1 → −1（1/±0 → ±∞、1/±1 → ±1）。
+    assert_eq!(clamp_form("round(nearest,  0, infinity)"), Some(1.0));
+    assert_eq!(clamp_form("round(nearest,  1, infinity)"), Some(1.0));
+    assert_eq!(clamp_form("round(up,  0, infinity)"), Some(1.0));
+    assert_eq!(clamp_form("round(down,  0, infinity)"), Some(1.0));
+    assert_eq!(clamp_form("round(down,  1, infinity)"), Some(1.0));
+    assert_eq!(clamp_form("round(nearest, -1, infinity)"), Some(-1.0));
+    assert_eq!(clamp_form("round(nearest, -0, infinity)"), Some(-1.0));
+}
+
 /// specified 常量折叠 canonical 形（§10.11/§10.6，calc-infinity-nan-serialize
 /// 五页语料驱动）：非有限 × 维度 → `calc(NaN|±infinity * 1<unit>)`；物理单位
 /// parse 期归一 px、ms 归一 s；min/max NaN 塌缩树首维度单位；clamp NaN 单位
