@@ -146,7 +146,7 @@ fn explicit_width_and_definite_cb_untouched() {
         "div#ob { border: blue solid 35px; width: 400px;",
     );
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), &css_400);
-    let (ob_abs_x, ob) = find_ortho(&r.root);
+    let (_ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 470.0).abs() < 0.5,
         "显式宽 400+frame=470 不越权，实得 {}",
@@ -157,7 +157,7 @@ fn explicit_width_and_definite_cb_untouched() {
     // 不触态 90；该域主判例移 r5463_definite_cb_orthog_stf.rs）。
     let css_cb = CSS.replace("div#cb { width: auto; }", "div#cb { width: 400px; }");
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), &css_cb);
-    let (ob_abs_x, ob) = find_ortho(&r.root);
+    let (_ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 266.0).abs() < 0.5,
         "definite CB 400 域 stf 收缩 196+frame=266，实得 {}",
@@ -173,7 +173,7 @@ fn float_orthog_child_untouched() {
         "div#ob { float: left; border: blue solid 35px; width: auto;",
     );
     let r = compute(&body_html("01 02 03"), &css_float);
-    let (ob_abs_x, ob) = find_ortho(&r.root);
+    let (_ob_abs_x, ob) = find_ortho(&r.root);
     assert!(
         (ob.width - 126.0).abs() < 0.5,
         "float 正交子不触（维持 R5456 域 126），实得 {}",
