@@ -104,6 +104,16 @@ container_width 未接（computed.rs:253 `..Default::default()`，container 参�
 在手未喂）——语料页容器动态宽（1000→100px sign 翻转）两面都接不住。
 详见 .acceptance/wptfyi-css/triage-color-longtail-63f.md。
 
+**DC-2 color contrast-color computed 刀完成（11-11 晚）**：css-color-5
+§contrast-color computed 臂（提交 36de2a6f6，part11 parse/WCAG 选白黑/
+顶层零漂移门三件）——css-color 语料 **10,948 → 10,962 净 +14 零回归**，
+真收割 color-computed-contrast-color-function.html 4F→0F 全清（+4）；
++10 为 zz-caprobe 探针页首入账（本地锚非真实缺口）。残余 3F 分面挂账：
+valid 页 1F + calc-container 1F 写面 canonicalization、calc-container 1F
+cqw 容器宽（桶 1 同根因随收）。color 长尾桶 5 收口，剩桶 1（cqw ~10F，
+根因已定谳）为主收割面。
+[证据](evidence/2026-11-11-dc2-contrast-color-computed-face.md)
+
 **DC-2 组F 布局刀2 完成（11-11 午后）**：position-area 区域定位布局 pass
 （提交 5af93e7e0）——css-parser anchor_area.rs 区域格矩阵单点下沉（canonical
 串→3×3 格，axis_of 显式归类 + 双 shared 词对首词=block/次词=inline + self 族
