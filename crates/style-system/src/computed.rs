@@ -1008,7 +1008,8 @@ fn resolve_length_field(
 ///
 /// 包含百分比的 calc 表达式无法在计算值阶段完全解析，
 /// 因为百分比需要相对于包含块的尺寸，这在布局阶段才可知。
-fn calc_contains_percentage(expr: &CalcExpr) -> bool {
+/// property 写面文法门复用（transform-origin-z `<length>` 位的 % 排除）。
+pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),

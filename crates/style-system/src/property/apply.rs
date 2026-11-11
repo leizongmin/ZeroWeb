@@ -2,6 +2,7 @@
 
 use super::parse::*;
 use super::types::*;
+use crate::computed::calc_contains_percentage;
 use zero_css_parser::values;
 
 /// https://drafts.csswg.org/css-fonts-4/#absolute-size-mapping
@@ -1729,13 +1730,19 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 10] = [
+    const VALIDATED_PROPERTIES: [&str; 12] = [
         "transform",
         "rotate",
         "scale",
         "translate",
         "z-index",
         "margin-left",
+        // text-indent（<length-percentage> && hanging? && each-line?——css-text-3
+        // §text-indent）与 transform-origin-z（<length>——css-transforms-2
+        // §transform-origin）：calc-mix-invalid 语料 6F 收口（number/angle/混族
+        // calc-mix 此前白名单外放行 store 原文），分派臂见文末。
+        "text-indent",
+        "transform-origin-z",
         // <time> 族写面文法门（css-transitions-1 §transition-delay-property /
         // §transition-duration-property + css-animations-1 §animation-delay/
         // §animation-duration）——apply_advanced 四臂既存（parse_time_list/
@@ -1787,6 +1794,50 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 let mut scratch = ComputedStyle::default();
                 apply_property_value(&mut scratch, &prop, v)
             }
+        };
+    }
+    // text-indent 关键字形（css-text-3 §text-indent：`<length-percentage> && hanging?
+    // && each-line?`——`&&` 组合分量任意序、关键字各至多一次）。apply 链 TextIndent
+    // 槽仅收 <length-percentage>，关键字形在此剥离裁决：裸关键字（长度位必在）/重复
+    // 关键字拒；余下 token 重新过 apply oracle（css-text parsing 语料
+    // text-indent-valid/invalid 驱动；纯 <length-percentage> 形不经此臂，走文末 oracle）。
+    // https://drafts.csswg.org/css-text-3/#text-indent-property
+    if prop == "text-indent"
+        && v.split_whitespace()
+            .any(|t| t.eq_ignore_ascii_case("hanging") || t.eq_ignore_ascii_case("each-line"))
+    {
+        let mut hanging = false;
+        let mut each_line = false;
+        let mut core = Vec::new();
+        for token in v.split_whitespace() {
+            match token.to_ascii_lowercase().as_str() {
+                "hanging" if !hanging => hanging = true,
+                "each-line" if !each_line => each_line = true,
+                _ => core.push(token),
+            }
+        }
+        if core.is_empty() {
+            return false;
+        }
+        let mut scratch = ComputedStyle::default();
+        return apply_property_value(&mut scratch, &prop, &core.join(" "));
+    }
+    // transform-origin-z（css-transforms-2 §transform-origin：z 分量 `<length>`——
+    // 无 %，含 % 的 calc 树同拒）。registry 未收该属性（apply 链无臂）→ apply
+    // oracle 不可用，parser 型别门直裁（calc-mix-invalid 语料 test_invalid_length
+    // 三形驱动：number Mix / angle Mix / %·number 混族 Mix）。
+    // https://drafts.csswg.org/css-transforms-2/#transform-origin-property
+    if prop == "transform-origin-z" {
+        return match parse_length_or_math(v) {
+            Some(value) => {
+                !matches!(value, LengthValue::Percentage(_))
+                    && match &value {
+                        LengthValue::Calc(expr) => !calc_contains_percentage(expr),
+                        _ => true,
+                    }
+                    && text_indent_length_is_valid(v, &value)
+            }
+            None => false,
         };
     }
     let mut scratch = ComputedStyle::default();
@@ -1969,6 +2020,75 @@ mod t54_validate_decl_value_tests {
             "text-indent",
             "calc(45deg)"
         ));
+    }
+
+    #[test]
+    fn calc_mix_invalid_length_slots_write_face_gates() {
+        // calc-mix-invalid 语料 6F 收口（2026-11-12 g14b 勘根）：text-indent /
+        // transform-origin-z 槽 number/angle/混族 calc-mix 此前白名单外放行
+        // store 原文——写面文法门接入后整拒（runner shim
+        // __zw_validate_decl_value 与 native bindings 同源裁决）。
+        // text-indent：<length-percentage> 位（§10.5 型别一致门）。
+        for v in [
+            "calc-mix(1 50%, 3 50%)",
+            "calc-mix(1deg 50%, 3turn 50%)",
+            "calc-mix(1% 50%, 3 50%)",
+        ] {
+            assert!(!validate_decl_value("text-indent", v), "{v} 应拒");
+        }
+        // transform-origin-z：<length> 位（% 与含 % calc 拒——registry 未收 →
+        // parser 型别门直裁）。
+        for v in [
+            "calc-mix(1 50%, 3 50%)",
+            "calc-mix(1deg 50%, 3turn 50%)",
+            "calc-mix(1% 50%, 3 50%)",
+            "50%",
+            "calc(50% + 10px)",
+            "10",
+            "auto",
+            "10deg",
+        ] {
+            assert!(!validate_decl_value("transform-origin-z", v), "{v} 应拒");
+        }
+        // 合法形零漂移：length / length 族 calc-mix / length 族 calc 放行。
+        assert!(validate_decl_value("transform-origin-z", "10px"));
+        assert!(validate_decl_value("transform-origin-z", "calc(10px + 2em)"));
+        assert!(validate_decl_value(
+            "transform-origin-z",
+            "calc-mix(10px 50%, 30px 50%)"
+        ));
+    }
+
+    #[test]
+    fn text_indent_keyword_forms_write_face() {
+        // css-text-3 §text-indent `&&` 组合文法（css-text parsing 语料
+        // text-indent-valid/invalid 驱动）：关键字任意序各至多一次、长度位必在。
+        // 合法关键字形放行（store 原文——readback 重排序归一面不在本门）。
+        for v in [
+            "10px hanging",
+            "20% each-line",
+            "calc(2em + 3ex) hanging each-line",
+            "hanging calc(50% + 60px)",
+            "each-line 10px",
+            "hanging 20% each-line",
+        ] {
+            assert!(validate_decl_value("text-indent", v), "{v} 应放行");
+        }
+        // invalid 页全形：裸关键字/重复关键字/双长度/unitless number/auto。
+        for v in [
+            "hanging",
+            "each-line",
+            "auto",
+            "10",
+            "10px hanging 20px",
+            "hanging 20% hanging",
+            "each-line each-line",
+        ] {
+            assert!(!validate_decl_value("text-indent", v), "{v} 应拒");
+        }
+        // 纯 length-percentage 形不经关键字臂、仍走 apply oracle（零漂移钉）。
+        assert!(validate_decl_value("text-indent", "calc(50% + 60px)"));
+        assert!(validate_decl_value("text-indent", "-30px"));
     }
 
     #[test]

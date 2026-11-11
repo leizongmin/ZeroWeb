@@ -5,8 +5,9 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
-css-values 2,426→2,887，至 serialize canonical 折叠刀2+round B=±∞ 策略表
-+calc-mix() 全链刀（g14b 权威账净 +100 零回归，六套件对账零漂移）。
+css-values 2,426→2,893，至 serialize canonical 折叠刀2+round B=±∞ 策略表
++calc-mix() 全链刀（g14b 权威账净 +100 零回归，六套件对账零漂移）
++写面文法门收口（g14c invalid 残 6F 清零）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -80,6 +81,11 @@ serialize +51/computed +25/invalid +12 全清、minmax-length-serialize +8）；
 三页 +88 与首账一致、minmax-length-serialize +9、minmax-length-percent-
 serialize +3——minmax 修复红利，-1 收复外加 4 新塌缩行）；六套件对账
 color/transitions/animations/transforms/easing 逐位 ±0 零漂移。**批终净 +100。**
+g14c 写面收口（同日）：§5 归类 invalid 残 6F 勘根为 shim CSSOM 写面
+`validate_decl_value` 白名单缺口（非 parse/fold 层）——text-indent（§10.5
+型别门 + css-text-3 hanging/each-line `&&` 组合关键字臂）与 transform-origin-z
+（registry 未收 → parser 型别门直裁 + % 排除）入白名单 10→12——invalid 页
+12P→**18P 全清**，css-values 全量 256 案 2,887 → **2,893 净 +6 零回归**。
 [证据](evidence/2026-11-12-dc2-g14-calc-mix-batch-step.md)
 
 **DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：

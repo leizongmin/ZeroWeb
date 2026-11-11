@@ -57,3 +57,31 @@ transcript-css-values-g14b.log 被其段覆盖——对该 JSON 再 diff 必须�
 ±0、animations 238 ±0、transforms 228 ±0、easing 51 ±0——本批共享路径
 改动（parse_atom 空白 token 界、Min/Max eval 全实参、fold % 叶树门）对
 五套件语料零扰动，批终 **净 +100 零回归**。
+
+## 7. g14c 写面文法门收口：invalid 残 6F 清零（本流，11-12 午后）
+
+§5 归类的 6F 勘根落地：缺口确在 shim CSSOM e.style 写面——`part03.js`
+IDL set trap 经宿主回调 `__zw_validate_decl_value` → style-system
+[`validate_decl_value`] 白名单裁决（scale 槽 12 拒形全绿正因此门生效），
+白名单 10 属性不含 text-indent/transform-origin-z → 两槽任何值放行 store
+原文 → invalid 断言读回原文 F。§5 预设的「css-parser 槽位 fold family
+收敛」方向未取：实测无需动 parse/fold 链（解析层本就正确拒形）。
+
+**修复（style-system 写面，白名单 10→12）**：
+- `text-indent` 入白名单——纯 length-percentage 形走既有 apply oracle
+  （text_indent_length_is_valid §10.5 型别门，lib 钉已在）；新增关键字
+  分派臂承 css-text-3 `&&` 组合文法（hanging/each-line 任意序各至多一次、
+  长度位必在）——关键字形剥离裁决防 css-text parsing 语料 valid 页 6 关键
+  字形回归（剥离后重过 oracle，store 原文语义不变）。
+- `transform-origin-z` 入白名单 + 专臂：registry 未收该属性（apply 链无
+  臂）→ parse_length_or_math + text_indent_length_is_valid + % 排除
+  （computed.rs calc_contains_percentage 提 pub(crate) 复用，flat % 与含
+  % calc 树同拒——`<length>` 位无百分比）。
+
+**验证**：style-system lib 2519 全绿（新增 2 钉：两槽 calc-mix 三形拒 +
+transform-origin-z 合法形零漂移 + text-indent 关键字 valid/invalid 全形
+14+7）；engine shim 面 test_style_proxy 2 绿；g14c 单二进制复核——
+invalid 页 18P/0F（12P→18P）；css-values 全量 256 案 **2,887 → 2,893
+净 +6 页级/test 级零回归**（唯一增益页 calc-mix-invalid +6）；五套件
+语料静态扫 text-indent/transform-origin-z JS 写面零暴露（无需重跑）。
+**values face 累计 2,426 → 2,893（本刀三提交 + 写面收口）**。
