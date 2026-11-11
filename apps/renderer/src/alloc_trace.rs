@@ -219,12 +219,15 @@ impl TraceState {
             }
             None => {
                 if self.sites.len() < self.max_sites_limit() {
-                    self.sites.insert(hash, SiteStats {
-                        allocs: 1,
-                        bytes: size as u64,
-                        frames,
-                        captured,
-                    });
+                    self.sites.insert(
+                        hash,
+                        SiteStats {
+                            allocs: 1,
+                            bytes: size as u64,
+                            frames,
+                            captured,
+                        },
+                    );
                 } else {
                     self.dropped_sites += 1;
                 }
@@ -412,7 +415,7 @@ pub(crate) fn record_dealloc(ptr: usize) {
 }
 
 /// realloc 起始：旧指针仍唯一持有，先出 net 表（与 `record_dealloc` 同序）。
-pub(crate) fn record_realloc_begin(old_ptr: usize) -> Option<LiveEntry> {
+fn record_realloc_begin(old_ptr: usize) -> Option<LiveEntry> {
     if recording() {
         return None;
     }
@@ -426,7 +429,7 @@ pub(crate) fn record_realloc_begin(old_ptr: usize) -> Option<LiveEntry> {
 ///
 /// `replacement` 为 true 表示 begin 已摘下旧块（槽位已让出），可不经
 /// `max_live_entries` 卡；否则与 `record_alloc` 同样受 net 表上限约束。
-pub(crate) fn record_realloc_finish(new_ptr: usize, new_size: usize, replacement: bool) {
+fn record_realloc_finish(new_ptr: usize, new_size: usize, replacement: bool) {
     if recording() {
         return;
     }
@@ -444,7 +447,7 @@ pub(crate) fn record_realloc_finish(new_ptr: usize, new_size: usize, replacement
 }
 
 /// realloc 失败回滚：`System.realloc` 返 null 时原块仍在，挂回 begin 摘下条目。
-pub(crate) fn record_realloc_abort(old_ptr: usize, entry: LiveEntry) {
+fn record_realloc_abort(old_ptr: usize, entry: LiveEntry) {
     if recording() {
         return;
     }
