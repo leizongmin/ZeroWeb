@@ -77,6 +77,11 @@ merge/remove_style_property 与 `style_from_mutations_lw` **同函数**正序累
 ## 批终值与门禁史
 
 - **v1**（19:28，bc69c69cf）：L0 门值算术自误 ABORT（215+2=217 非 220）。
+- **v1.3.1**（2026-11-12 02:15，head f95fdd4d9 bin c4de0e4f）：L0 probe 217/5 恰集 ✓、
+  L3b ab 10092/0/0 + judge 严格四零 ✓（墙钟修复后门内完走兑现）、L1 outdent
+  F2P=169/P2F=0/lost=0/residF=4 恰集 ✓、L2 indent 1302/27 ✓、L3 mt 10090/2
+  四零+residF=2 ✓、L4 singles×5 ✓、L5 exec×3 ✓；**L6 enginelib ABORT**：
+  failed=10 vs 名册 7——3 新红归因见下节。语料七腿全绿传递。
 - **v1.1**（重射）：L0 probe 217/5 ✓、L1 outdent judge F2P=169/P2F=0/lost=0/residF=4 ✓、
   L2 indent 1302/27 ✓；**L3 mt 主页 20180/2 vs 期望 20182/2 ABORT**——multitest.html
   主页单连续 JS 执行被刀一 trap 全批 O(list) replay 推过 300s 脚本门，末夹具 2 断言
@@ -158,6 +163,48 @@ tag 判定降本为字符串先行）或两流协调处置 → 重跑组合树 p
   入站提交对 embed 面亦零行为影响。
   the-iframe-element 目录不跑：归 navigation-compat 通道零执行记账，iframe 臂由
   机械恒等＋probe/ab 恒等覆盖。
+
+## 终门 v1.3.1 L6 enginelib 名册漂移 7→10：三新红归因与 r307 修复（2026-11-12）
+
+v1.3.1 语料七腿全绿后 L6 ABORT（failed=10 vs 名册 7，3881P）。三新红逐名归因：
+
+1. **r307_tree_order_identity_domains = 本刀真回归（当日修复）**。wptfyi-css g10
+   批 A/B 已钉死窗口（db74aad18 含 CSSOM 两提交红 vs g9b 14b6ca724+g9 绿，
+   14b6ca724..db74aad18 恰 = CSSOM 两笔 + css-parser mod/rem 非引擎面）。
+   根因：刀一笔第四键的比对两侧序列化源不对称——本侧快照（`_zwMOuterHtml`）
+   经 R174 no-ns 标记臂对 `createElementNS('', …)` 后代写 ` data-zw-empty-ns=""`，
+   host 侧重解析经 `apply_empty_ns_markers` 剔标记——含空 ns 元素的树两侧恒不等，
+   真镜像漏剔，`querySelectorAll('*')` 结果混入**查询根自身**（res=16/trav=15、
+   首元素=根镜像 div#root；detach/indoc 两域红，fragment 域 R308 子串路径不适用
+   故 16/16 恒真）。语料树无空 ns 元素故七腿零暴露。修复：比对前剥本侧标记
+   （`_r188RootSelfCmp`，part03.js 一行；src173 本体不动——host 解析仍需标记
+   还原空 ns 查询语义）。单测复跑绿；全 enginelib 3895P/9F（修复 +1P −1F）。
+   备考：等值串法此窗已两度破坏（R310b 三键误切→第四键→标记不对称），后续再破
+   即升级宿主侧结构化镜像根判定（parse payload 带镜像根标识，弃文本全等）。
+2. **test_execcommand_format_apply_r3254_m3 / toggle_state_r3254_m3_slice4 =
+   f415be99c 既有跨流红（他流已认账本流认领）**。html-semantics s406 evidence
+   stash A/B 三重实证归因 f415be99c（DC-2 P2 六 inline format apply 切 vendored
+   setSelectionValue 全流程，JS-only 未同步 2 单测——旧断言绑 SetInnerHtml 契约，
+   vendored 改 granular mutation 流）。本流 mock 探针实测：flat bold 净效应正确
+   （CreateTextNode/SetChildText/AppendChild/SetTextOnHandle/CreateElement/
+   InsertBefore/RemoveHandle/AppendChildByHandle 十 op 净 `fo<b>ob</b>az`）；
+   **toggle 解除臂存疑**：shim 视图 `pre.innerHTML` 读 "ob"（既非原 markup 亦非
+   语料期望 preobpost），mutation 流 RemoveChildAt+Remove 净 host 丢 "ob" 文本
+   （prepost）——而 corpus 真实路径全绿（F2P=1,174 零 newF，compare 行命令后读
+   innerHTML）。真实主机写面正确性与 mock 环境两视图分歧未定谳：测试同步须先
+   做 vendored unwrap 写面根因刀，不得把数据丢失签名钉为期望契约。2F 记账维持
+   红（名册 2026-11-12 档 9 红=7+2），根因刀独立立项下轮首选。
+3. 其余 7 红与 2026-11-09 档恒一（img/svg settle → svg 流；fetch/response/ws/
+   iframe-worker 族 → net/webview 域）。名册档
+   [enginelib-red-roster-2026-11-12.txt](enginelib-red-roster-2026-11-12.txt)。
+
+**换基声明（v1.3.1→v1.3.2）**：v1.3.1 ABORT 后 pull --rebase 并入 origin 20+ 提交
+（s407 embed 静态链 610bbae31、s408 detached style sheet 34c06eeb5、stamp epoch
+快道 45e1be731/d3f5eb3a5、g12 数学求值管线、layout r5504/R5505、site-opt merge 等，
+35 文件 +2,685——其中 part01/part03/part04/part05/part06 shim 面均被触及）。
+v1.3.1 语料七腿判读绑定 f95fdd4d9 字节态，对新头失效——v1.3.2 全腿在新头重跑，
+judge 仍 vs 既有 census/基线日志（零漂移判据不变）；L6 期望 failed==9（名册
+2026-11-12 档）。锚更新：S4 4→5（修复行）、新增 S9=`_r188RootSelfCmp`==2。
 
 ## 残红账（不变）
 

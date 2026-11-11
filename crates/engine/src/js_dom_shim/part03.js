@@ -11747,10 +11747,19 @@
           var _r188C = '';
           try { _r188C = String(n.getAttribute && (n.getAttribute('class') != null ? n.getAttribute('class') : (n.className != null ? n.className : '')) || '').replace(/\s+/g, ' ').trim(); } catch (_e188cr) {}
           var _r188F = arr[0];
+          // R307 回归修复（2026-11-12，CSSOM 写回刀窗 0a435f0a1/0ff1bc92c 引入）：
+          // 第四键的两侧序列化源不对称——本侧快照经 R174 no-ns 标记臂携带
+          // ` data-zw-empty-ns=""`（createElementNS('', …) 树），host 侧重解析经
+          // apply_empty_ns_markers 已剔标记（js_dom_bridge.rs R174 注：还原后
+          // 「剔标记属性」）→ 含空 ns 后代的树两侧恒不等，真镜像漏剔，qSA 结果
+          // 混入查询根自身（WPT ParentNode-querySelector-All tree-order：
+          // res=16/trav=15、首元素=根镜像 div#root）。比对前剥本侧标记与 host
+          // 对齐；src173 本体不动（host 解析仍需标记还原空 ns 查询语义）。
+          var _r188RootSelfCmp = String(_r188RootSelf || '').replace(/ data-zw-empty-ns=""/g, '');
           if (_r188F && String(_r188F.tag || '').toLowerCase() === _r188T
               && String(_r188F.id || '') === _r188I
               && String(_r188F.cls != null ? _r188F.cls : '').replace(/\s+/g, ' ').trim() === _r188C
-              && String(_r188F.outer || '') === String(_r188RootSelf || '')) {
+              && String(_r188F.outer || '') === _r188RootSelfCmp) {
             arr = arr.slice(1);
           }
         }
