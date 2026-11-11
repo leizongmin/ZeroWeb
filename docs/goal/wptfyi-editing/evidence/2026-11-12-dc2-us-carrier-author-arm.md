@@ -74,5 +74,9 @@ P2 挂账簇 4（8 P2F）清账 + inline 载体双形解挂：gCS 作者样式�
 - strike 80F / underline 32F 长尾 = P2 既有清单：多值 decoration 偏序
   删除（`foo<s>[bar]</s>baz` 族，clearValue FIXME 挂账）、跨段落
   merge、table 选形、styled-child wrap。
+- 批入账前 pull --rebase（28+ 并行流入：P39 epoch 章/tag stamp 快道/
+  CE walk tagHint 等 engine-shim perf + css g13 批）后 rebuild
+  复验 u/s 两文件：underline 2115/32、strikethrough 2067/80 恒等
+  ——+26 存活，归因干净。
 - 粗体/斜体值面作者臂（bold/italic 的 class 载体）未接——语料当前零
   `<style>` 消费面，挂后续。
