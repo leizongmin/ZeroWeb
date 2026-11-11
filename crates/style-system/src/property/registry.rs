@@ -200,6 +200,12 @@ impl PropertyRegistry {
 
             // Transform
             "transform" => Some(Transform(zero_css_parser::values::TransformValue::None)),
+            // 独立变换三属性（css-transforms-2 §individual-transforms）：初始 none。
+            // PropertyValue 无独立变体，借用 Transform(None) 表义（duration 族借
+            // Number(0.0) 同型先例）；真实重置在 apply_initial_value
+            //（individual_* 字段置 None）。known_properties 白名单接入随
+            // CSS.supports 门修复（js_dom_bridge decl_supported 前置）。
+            "rotate" | "translate" | "scale" => Some(Transform(zero_css_parser::values::TransformValue::None)),
             "transform-origin" => Some(Length(LengthValue::Percentage(50.0))),
             "perspective" => Some(Length(LengthValue::Px(0.0))),
             "perspective-origin" => Some(Length(LengthValue::Percentage(50.0))),
@@ -588,6 +594,9 @@ impl PropertyRegistry {
             "outline-color",
             "outline-offset",
             "transform",
+            "rotate",
+            "translate",
+            "scale",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",

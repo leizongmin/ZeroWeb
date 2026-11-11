@@ -1153,6 +1153,21 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.transform_origin_declared = false;
             true
         }
+        // 独立变换三属性（css-transforms-2 §individual-transforms）：初始 none——
+        // individual_* 字段置 None（registry known_properties 白名单接入配套，
+        // CSS.supports 门修复 g12 批）。
+        "rotate" => {
+            style.individual_rotate = None;
+            true
+        }
+        "translate" => {
+            style.individual_translate = None;
+            true
+        }
+        "scale" => {
+            style.individual_scale = None;
+            true
+        }
         "perspective" => {
             style.perspective = default_style.perspective;
             true

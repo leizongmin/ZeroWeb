@@ -752,6 +752,19 @@ fn test_css_escape_supports_r2785() {
             .value,
         "false|false"
     );
+    // 独立变换三属性走 known_properties + apply 链（g12 批：registry 缺项使
+    // `CSS.supports('scale', …)` 短路 false——computed-testcommon 前置门整页
+    // 翻红，calc-infinity-nan-computed scale ∞ 组驱动）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('scale','2') + '|' + CSS.supports('rotate','45deg') + '|' + \
+                 CSS.supports('translate','10px') + '|' + CSS.supports('scale','calc(infinity)')"
+            )
+            .unwrap()
+            .value,
+        "true|true|true|true"
+    );
     // CSS.supports 单参：括号条件 / 声明 / not。
     assert_eq!(
         sandbox
