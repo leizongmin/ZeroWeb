@@ -272,15 +272,21 @@ impl TraceState {
         }
     }
 
-    /// realloc 失败回滚：挂回 begin 前摘下的条目。
-    fn restore_live(&mut self, ptr: usize, entry: LiveEntry, max_entries: usize) {
-        if self.live.len() >= max_entries {
-            self.live_untracked += 1;
-            return;
-        }
+    /// realloc 失败回滚：挂回 begin 前摘下的条目（不因表满丢弃——槽位在 begin
+    /// 已让出，与 `System.realloc` 之间并发分配可能占满预算）。
+    fn restore_live(&mut self, ptr: usize, entry: LiveEntry) {
         let site = entry.site;
         let size = entry.size;
         if self.live.insert(ptr, entry).is_none() {
+            let agg = self.live_sites.entry(site).or_default();
+            agg.blocks += 1;
+            agg.bytes += size as u64;
+        }
+    }
+
+    /// realloc 成功：挂回替换块（同 `restore_live`，不二次卡 `max_live_entries`）。
+    fn track_live_realloc(&mut self, ptr: usize, size: usize, site: u64) {
+        if self.live.insert(ptr, LiveEntry { site, size }).is_none() {
             let agg = self.live_sites.entry(site).or_default();
             agg.blocks += 1;
             agg.bytes += size as u64;
@@ -429,7 +435,7 @@ pub(crate) fn record_realloc_finish(new_ptr: usize, new_size: usize) {
     let mut outer = state();
     let Some(active) = outer.as_mut() else { return };
     if new_size >= config.net_min_bytes {
-        active.track_live(new_ptr, new_size, 0, config.max_live_entries);
+        active.track_live_realloc(new_ptr, new_size, 0);
     }
 }
 
@@ -443,7 +449,7 @@ pub(crate) fn record_realloc_abort(old_ptr: usize, entry: LiveEntry) {
     let mut outer = state();
     let Some(active) = outer.as_mut() else { return };
     if entry.size >= config.net_min_bytes {
-        active.restore_live(old_ptr, entry, config.max_live_entries);
+        active.restore_live(old_ptr, entry);
     }
 }
 
