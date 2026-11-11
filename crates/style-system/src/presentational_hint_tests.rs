@@ -510,6 +510,39 @@ fn img_border_attr_maps_to_border_hint() {
     );
 }
 
+/// s396：HTML rendering #attr-dimensions——object/embed width/height 内容属性映射
+/// dimension 属性 hint（object-attributes 与 embed-dimension 钉面 100px/50px）。
+#[test]
+fn object_embed_width_height_attrs_map_to_dimension_hints() {
+    let doc = parse_html("<body><object data=\"x\" width=\"100\" height=\"50\"></object></body>");
+    let obj = doc.get_elements_by_tag_name("object")[0];
+    let hints = collect_presentational_hints(&doc, obj);
+    assert!(
+        hints.iter().any(|(p, v)| p == "width" && v == "100px"),
+        "object width=100 → width:100px, got hints: {hints:?}"
+    );
+    assert!(
+        hints.iter().any(|(p, v)| p == "height" && v == "50px"),
+        "object height=50 → height:50px, got hints: {hints:?}"
+    );
+    let doc2 = parse_html("<body><embed src=\"x\" width=\"100\" height=\"100\"></body>");
+    let emb = doc2.get_elements_by_tag_name("embed")[0];
+    let hints2 = collect_presentational_hints(&doc2, emb);
+    assert!(
+        hints2.iter().any(|(p, v)| p == "width" && v == "100px")
+            && hints2.iter().any(|(p, v)| p == "height" && v == "100px"),
+        "embed width/height=100 → 100px hints, got: {hints2:?}"
+    );
+    // 百分比透传（img 同口径）；无属性零 hint。
+    let doc3 = parse_html("<body><object width=\"50%\"></object></body>");
+    let obj3 = doc3.get_elements_by_tag_name("object")[0];
+    let hints3 = collect_presentational_hints(&doc3, obj3);
+    assert!(
+        hints3.iter().any(|(p, v)| p == "width" && v == "50%") && hints3.len() == 1,
+        "object width=50% → width:50% only, got: {hints3:?}"
+    );
+}
+
 #[test]
 fn heading_gets_ua_font_size_and_weight() {
     let doc = parse_html("<body><h1>Title</h1><h2>Section</h2></body>");

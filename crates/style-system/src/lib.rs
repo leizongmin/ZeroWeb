@@ -3286,6 +3286,17 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                 hints.push(("border".to_string(), format!("{bw}px solid")));
             }
         }
+        // s396（HTML rendering #attr-dimensions）：object/embed 的 width/height 内容属性
+        // 与 img 同面映射 dimension 属性（rules for parsing dimension attribute values，
+        // html_length_attr 同口径）。object-attributes（getComputedStyle width=100px/
+        // height=50px）与 embed-dimension（100px/100px）钉面。
+        "object" | "embed" => {
+            for attr in ["width", "height"] {
+                if let Some(v) = elem_attr(elem, attr).and_then(|v| html_length_attr(&v)) {
+                    hints.push((attr.to_string(), v));
+                }
+            }
+        }
         "table" => {
             if let Some(bg) = elem_attr(elem, "bgcolor") {
                 hints.push(("background-color".to_string(), normalize_html_color(&bg)));

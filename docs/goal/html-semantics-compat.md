@@ -2,19 +2,20 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 395 收口（动态 append rect 供给链勘根+施工，2F→P）：勘根五探针钉死链路——runner shim
-结构变更拆 shim 树（同步）+宿主 wire（异步 drain，execute_script 尾 flush+apply 尾刷 snapshot）两层；**P6 决定性
-实证**：动态节点 flush 后 host 全可见且几何正确（`#p5dyn` rect 8,58,70,20），缺口单点=in-process rect 回调
-（callbacks.rs:733）无 handle→selector 解析臂，shim proxy 身份恒 handle-only（querySelector 去重返原 proxy）→
-裸 handle 非法 selector 恒 miss。施工=shim 单侧：part05 三 helper（`_zwRectIdent` id 身份派生 /
-`_zwLocalDefiniteRect` 双轴 definite 本地 0 基盒兜底 / `_zwLayoutRectTrap` 组合），part04 五 geometry trap 消费面
-换接；**雷区先钉后动刀**——`_layoutRect` 本体裸语义零变化（img IDL rendered 臂 945 与 trap 同源，s284
-attr 期望面隔离），img 机具走 host 回调直连不经 trap。验证：driving 2F→P 全翻转；naturalWidth 金丝雀 join 匹配域
-258/258 零真位移（5 差集全为 solo 路径过滤 scope 伪位移）；全树 join gone 2F=new 2P 恰为 driving 两键、零意外
-位移；单元 3834P/7F 在册同形零新增；smoke 双 PASS；**全树在册红 226F+37T→224F+37T**。残差：无 id+无 definite
-尺寸动态元素 flush 前仍 0；`__zw_resolve_handle_selector` forward map 空返勘根挂账（低优先）。下一步：forms 树
+**状态**: Active——M2 切片 396 收口（object/embed width/height 内容属性 dimension hint 施工，4F→P）：HTML
+rendering #attr-dimensions 同口径单臂——collect_presentational_hints 增 `"object"|"embed"` 臂（html_length_attr：
+无单位数→px、百分比透传，img/table 臂同型），单测四面钉死（object 100/50、embed 100/100、50% 透传、无属性零
+hint）；iframe/video 同属规范面但语料无 driving F 面不扩臂（需求内原则）。验证：driving solo 4F→4P（object-
+attributes width/height "auto"→"100px"/"50px"、embed-dimension exit 0 全绿；object.contentWindow 2F 独立面
+不动）；全树 sweep 双跑 join 对 s395 基线 gone/new 恰为 driving 4 对零意外位移（sweep2 稳定复跑
+8209P/220F/37T unique 8463）；select-home-end-pagedown-pageup.optional T/F 时序 flake 单列定谳——同二进制双跑
+T/F 翻转+机制排除（文件零 object/embed 零 width 属性）+solo 恒 Fail 真态+s393/s394/s395 三代 sweep 恒 T；
+单元 style-system 2516P/0F + engine 3835P/8F（7F 在册同形+r5296 渲染流 R5484 已在册 env 竞态，s395 轮通过
+本轮命中）零新增红；smoke 双 PASS；fmt/clippy clean；**全树在册红 224F+37T→220F+37T**。承 429 中断 session
+残件（WIP+clippy 已就绪）接手完成验收。残差：object.contentWindow 嵌套浏览上下文面留散单池。下一步：forms 树
 散单/分诊推进或按域 solo 分诊（承 s392 方法论）。
 
+> **▶ 承前（2026-11-11 M2 切片 395 收口）——动态 append rect 供给链勘根施工收口（geometry trap 身份派生+definite 本地兜底 2F→P）**: commit 613ce6a54，账本 evidence/2026-11-11-m2s395-dynamic-append-rect-supply-chain.md。五探针钉死 shim 两层 flush 链+in-process rect 回调 handle-only 缺口，shim 三 helper 五消费面换接、`_layoutRect` 裸语义不动（s284 雷区隔离）；naturalWidth 金丝雀 join 零真位移、全树 join 2F→P 精确归因，在册红 226F+37T→224F+37T。残差：无 id+无 definite 尺寸动态元素 flush 前仍 0、`__zw_resolve_handle_selector` forward map 空返低优先挂账。散单/solo 分诊由 s396 接力（embedded-content 域 object/embed dimension hint）。
 > **▶ 承前（2026-11-11 M2 切片 391 收口）——form owner reset-on-move 读时门施工收口（fci 1F→0F 域收官）**: commit e26772068，账本 evidence/2026-11-11-m2s391-form-owner-reset-on-move.md。解析期 parent 选择器桥+shim 指针关联 liveness 门三面，table_3 F→P、全树零回归零翻转；fci 域 corpus 红清零，全树键级基线 8504。散单分诊由 s392 接力。
 
 > **▶ 承前（2026-11-10 M2 切片 390 收口）——form 元素指针关联施工收口（fci 4F→1F）**: commit f0a23470f（s390 主切片+基线对账），账本 evidence/2026-11-10-m2s390-form-pointer-association.md。指针关联三面落地（解析期侧表+桥通道+shim 同树门）与 table_2 中途回归修复（s390b）同轮；driving 4F→4P、全树零回归零翻转。残差 table_3 1F 已由 s391 接力。
@@ -6964,6 +6965,8 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 396**：object/embed width/height 内容属性 dimension hint 施工轮（4F→P，style-system 单臂零 shim 改动）——HTML rendering #attr-dimensions 同口径（rules for parsing dimension attribute values，html_length_attr 与 img/table 臂同型）；单测四面钉死（object 100/50、embed 100/100、50% 透传、无属性零 hint）；iframe/video 同属规范面但语料无 driving F 面不扩臂。driving solo 4F→4P（object-attributes width/height "auto"→100px/50px + embed-dimension exit 0 全绿；object.contentWindow 2F 独立面不动）；全树 sweep 双跑 join 对 s395 基线 gone/new 恰为 driving 4 对零意外位移（sweep2 稳定复跑 8209P/220F/37T unique 8463）；select-home-end-pagedown-pageup.optional T/F 时序 flake 定谳单列（同二进制 T/F 双跑翻转+零 object/embed 零 width 属性机制排除+solo 恒 Fail 真态，s393/s394/s395 三代 sweep 恒 T）；单元 style-system 2516P/0F、engine 3835P/8F（7F 在册同形+r5296 渲染流 R5484 已在册 env 竞态本轮命中）零新增红；smoke 双 PASS；**在册红 224F+37T→220F+37T**。承上一 session 429 残件（WIP+clippy 已就绪）接手完成全链验收。账本
+  [evidence/2026-11-11-m2s396-object-embed-dimension-hints.md](html-semantics-compat/evidence/2026-11-11-m2s396-object-embed-dimension-hints.md)。
 - **2026-11-11 M2 切片 395**：动态 append rect 供给链勘根+施工轮（2F→P）——五探针钉死：flush 后 host 全可见
   （P6 rect 8,58,70,20）、缺口=in-process rect 回调无 handle→selector 臂 + shim proxy 身份恒 handle-only；施工
   shim 单侧三 helper（_zwRectIdent/_zwLocalDefiniteRect/_zwLayoutRectTrap）+五 trap 消费面换接，`_layoutRect`
