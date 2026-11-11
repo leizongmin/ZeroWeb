@@ -1,8 +1,8 @@
 # CSSOM style 写回刀 — outdent 残红 8→0（F2P=169）
 
 **日期**: 2026-11-11（刀体）～2026-11-12（终门收口）
-**刀体**: bc69c69cf（4 文件 +57/−12）＋刀二笔索引化 callbacks.rs（25e533139）；重锚谱系：rebase 重放 0a435f0a1/0ff1bc92c（他流 s405 14b6ca724 并入后，已推送）＋刀三笔仲裁修复 f95fdd4d9（CE 插入 walk 三臂共享单次 tag 读）＋r307 回归修复 ed556aacc（第四键比对剥本侧 no-ns 标记）
-**门禁批**: batch-cssom-writeback-v1.1（v1 L0 门值算术自误 ABORT 后重射；v1.1 L3 mt 主页 300s 截断 ABORT→刀二索引化）→ v1.3 暂缓（s405 碰撞）→ **v1.3.2 ALL-DONE 收口**（2026-11-12 05:22:27，head ed556aacc bin aa77d3b8，八腿全绿；v1.3.1 语料七腿绿/L6 名册漂移 ABORT 归因收口见下节）
+**刀体**: bc69c69cf（4 文件 +57/−12）＋刀二笔索引化 callbacks.rs（25e533139）；重锚谱系：rebase 重放 0a435f0a1/0ff1bc92c（他流 s405 14b6ca724 并入后，已推送）＋刀三笔仲裁修复 f95fdd4d9（CE 插入 walk 三臂共享单次 tag 读）＋r307 回归修复 30f1edbee（第四键比对剥本侧 no-ns 标记）
+**门禁批**: batch-cssom-writeback-v1.1（v1 L0 门值算术自误 ABORT 后重射；v1.1 L3 mt 主页 300s 截断 ABORT→刀二索引化）→ v1.3 暂缓（s405 碰撞）→ **v1.3.2 ALL-DONE 收口**（2026-11-12 05:22:27，head 30f1edbee bin aa77d3b8，八腿全绿；v1.3.1 语料七腿绿/L6 名册漂移 ABORT 归因收口见下节）
 **基线**: census 3a528a13f（ind-c1-*）＋ v1.2 残红账（odt-outdent-fails.txt，12 corpus + 7 probe）
 
 ## 根因（读侧定谳，闭合 outdent v1.1 五级诊断探针）
@@ -208,7 +208,7 @@ judge 仍 vs 既有 census/基线日志（零漂移判据不变）；L6 期望 f
 
 ## 终门 v1.3.2 ALL-DONE 收口（2026-11-12 04:29:35→05:22:27）
 
-head ed556aacc（r307 修复 + 名册档 + 控制面入账后重锚，rebase 并入 origin docs
+head 30f1edbee（r307 修复 + 名册档 + 控制面入账后重锚，rebase 并入 origin docs
 06c57fed2 零引擎面）bin aa77d3b8079229b02129978c13d108c1 逐腿记账恒一，~53min：
 
 - **L0 probe** 217P/5F 恰集（vs pfc-probe-failkeys.txt 零漂移）✓
