@@ -41,7 +41,8 @@
 //!
 //! ## 回溯采集与离线符号解析
 //!
-//! 采样走 `backtrace` crate 原始 IP 展开（`trace` 帧回调，不符号化，微秒级）；
+//! 采样走帧指针遍历取原始 IP（不符号化、不调 libunwind/`dl_iterate_phdr`，
+//! 避免 `GlobalAlloc` 热路径与动态装载器锁死锁）；
 //! site 签名 = 机器帧之后固定窗口原始 IP 的哈希（进程内稳定）。摘要与 dump 落
 //! **模块相对偏移**（运行时 IP − 主映像 PIE 加载基址，`/proc/self/maps` 一次性
 //! 解析），符号名由测量侧离线 `addr2line`/`llvm-symbolizer` 批量解析。不走
@@ -63,7 +64,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard, Once, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// feature 构建下进程级启用位（`init_from_env` 置位后不再翻转）。
@@ -329,11 +330,6 @@ pub(crate) fn init_with_config(config: TraceConfig, enabled: bool) {
     let _ = CONFIG.set(config);
     if enabled {
         ENABLED.store(true, Ordering::Release);
-        if let Some(cfg) = CONFIG.get()
-            && cfg.dump_dir.is_some()
-        {
-            spawn_dump_thread();
-        }
         // 局限（T62 DF F2）：bin 路径本事件先于 tracing 订阅者初始化（bin
         // main() 首句调用 init_from_env），实际不可观测——保留供注入形/宿主
         // 定制入口（订阅者可能已就绪）；启用确认走 dump 产物与测量 driver
@@ -364,6 +360,20 @@ pub fn init_from_env() {
         ),
     };
     init_with_config(config, enabled);
+}
+
+static DUMP_THREAD: Once = Once::new();
+
+/// 沙箱安装后启动 dump 线程（须晚于 `run_desktop_role` 的 seccomp/landlock）。
+pub fn start_dump_thread_after_sandbox() {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    DUMP_THREAD.call_once(|| {
+        if CONFIG.get().is_some_and(|cfg| cfg.dump_dir.is_some()) {
+            spawn_dump_thread();
+        }
+    });
 }
 
 /// 分配侧记录入口（`TracingAllocator` 成功分配后调用）。
@@ -460,20 +470,65 @@ fn record_realloc_abort(old_ptr: usize, entry: LiveEntry) {
     }
 }
 
-/// 原始 IP 回溯捕获（帧回调展开，不符号化——符号解析全部离线）。
-/// 返回（IP 数组，实捕获数）；展开器失败时捕获数为 0。
+/// 原始 IP 回溯捕获（帧指针遍历，不符号化——符号解析全部离线）。
+/// 返回（IP 数组，实捕获数）；无帧指针或栈不可信时捕获数为 0。
 fn capture_frame_ips() -> ([usize; MAX_CAPTURE_FRAMES], usize) {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        capture_frame_ips_via_frame_pointer()
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        ([0usize; MAX_CAPTURE_FRAMES], 0)
+    }
+}
+
+/// 帧指针栈遍历（不走 libunwind，不占用 glibc 动态装载器锁）。
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn capture_frame_ips_via_frame_pointer() -> ([usize; MAX_CAPTURE_FRAMES], usize) {
     let mut ips = [0usize; MAX_CAPTURE_FRAMES];
     let mut count = 0usize;
-    backtrace::trace(|frame| {
-        if count >= MAX_CAPTURE_FRAMES {
-            return false;
+    let mut frame_ptr = current_frame_pointer();
+    while count < MAX_CAPTURE_FRAMES && frame_ptr != 0 {
+        if frame_ptr & (std::mem::size_of::<usize>() - 1) != 0 {
+            break;
         }
-        ips[count] = frame.ip() as usize;
+        // SAFETY: 仅只读探测 RBP/x29 链上的返回地址；不可信指针即停止。
+        let (next_fp, return_addr) = unsafe {
+            let slot = frame_ptr as *const usize;
+            (*slot, *slot.add(1))
+        };
+        if return_addr == 0 {
+            break;
+        }
+        if next_fp <= frame_ptr || next_fp - frame_ptr > 1 << 20 {
+            break;
+        }
+        ips[count] = return_addr;
         count += 1;
-        true
-    });
+        frame_ptr = next_fp;
+    }
     (ips, count)
+}
+
+#[cfg(target_arch = "x86_64")]
+fn current_frame_pointer() -> usize {
+    let fp: usize;
+    // SAFETY: 只读当前 RBP。
+    unsafe {
+        std::arch::asm!("mov {}, rbp", out(reg) fp);
+    }
+    fp
+}
+
+#[cfg(target_arch = "aarch64")]
+fn current_frame_pointer() -> usize {
+    let fp: usize;
+    // SAFETY: 只读当前 x29。
+    unsafe {
+        std::arch::asm!("mov {}, x29", out(reg) fp);
+    }
+    fp
 }
 
 /// site 签名：跳过机器帧后取 [`SIGNATURE_FRAMES`] 个原始 IP 哈希（进程内
@@ -843,9 +898,14 @@ mod tests {
     }
 
     /// 真实捕获面：展开器在测试二进制里取到非零帧（回溯链路可用性）。
+    #[inline(never)]
+    fn capture_frame_ips_anchor() -> ([usize; MAX_CAPTURE_FRAMES], usize) {
+        capture_frame_ips()
+    }
+
     #[test]
     fn capture_frame_ips_returns_real_stack() {
-        let (ips, captured) = capture_frame_ips();
+        let (ips, captured) = capture_frame_ips_anchor();
         assert!(captured > 0, "回溯必须捕获到帧");
         assert!(ips[..captured].iter().all(|ip| *ip != 0), "捕获帧 IP 必须非零");
     }
