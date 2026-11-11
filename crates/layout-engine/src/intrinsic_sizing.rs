@@ -679,9 +679,8 @@ fn box_content_max_width_inner(
         }
         // R4136：固有测量中 Calc(P%±Npx) margin 只取 px 部分（% → 0）；普通 margin 照用。
         let (ml, mr) = intrinsic_margin_contribution(child, styles);
-        let is_inline_level = child
-            .node_id
-            .and_then(|id| styles.get(&id))
+        let child_style = child.node_id.and_then(|id| styles.get(&id));
+        let is_inline_level = child_style
             .map(|s| {
                 matches!(
                     s.display,
@@ -842,7 +841,15 @@ fn box_content_max_width_inner(
                 // `dom_inline_content_max_width` 原子回调按**段**入账（段内 文本+原子
                 // 求和、段间取 max，css-sizing-3 max-content 按强制断行分行取最宽）。
                 // 递归宽含原子全贡献（内容+自身 frame 经 ml+mr 外框），loop 本臂加 0。
-                let w = (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
+                // R5505（css-sizing-3 §5.2）：递归值经自身 definite max/min-width 贡献钳
+                //（clamp_box_max_contribution，与 block_intrinsic_width_ex R5310/R5368 臂
+                // 同款）——inline-block-non-replaced-width-003：子 span max-width:4em
+                // （240 裸值）须钳至 120 定义父 preferred 宽，漏钳时父 shrink-to-fit
+                // 写 240 红背景暴露。
+                let w = (clamp_box_max_contribution(child, child_style, box_content_max_width(child, doc, styles))
+                    + ml
+                    + mr)
+                    .max(0.0);
                 if let Some(cid) = child.node_id {
                     ib_atom_seg.insert(cid, w);
                 }
@@ -878,7 +885,11 @@ fn box_content_max_width_inner(
                 // 递归叶分支实测 text_w=100 正确）；形态门未命中只说明递归便宜（纯文本叶），不
                 // 说明 outer_w 可信。ZW_MIXED_BARE_TEXT=0 时不改道（无 walk 消费方，
                 // 保持 inline_sum 旧语义防原子丢失）。
-                let w = (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
+                // R5505：递归值同经 max/min-width 贡献钳（见上方 destretch 臂注）。
+                let w = (clamp_box_max_contribution(child, child_style, box_content_max_width(child, doc, styles))
+                    + ml
+                    + mr)
+                    .max(0.0);
                 if let Some(cid) = child.node_id {
                     ib_atom_seg.insert(cid, w);
                 }
@@ -910,7 +921,15 @@ fn box_content_max_width_inner(
             if definite_child_w {
                 block_max = block_max.max(outer_w.max(0.0));
             } else {
-                block_max = block_max.max(box_content_max_width(child, doc, styles));
+                // R5505（css-sizing-3 §5.2）：auto 宽块级子递归值经自身 definite max/min-width
+                // 贡献钳（R5368 在 block_intrinsic_width_ex 已有同款；本函数此前裸测）——
+                // inline-block-non-replaced-width-004：子 div max-width:4em 递归 240 须钳 120
+                // 定义父 preferred 宽。
+                block_max = block_max.max(clamp_box_max_contribution(
+                    child,
+                    child_style,
+                    box_content_max_width(child, doc, styles),
+                ));
             }
         }
     }
