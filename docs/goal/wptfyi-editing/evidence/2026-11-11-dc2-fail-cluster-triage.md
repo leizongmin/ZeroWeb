@@ -19,7 +19,10 @@ stylewithcss 42、justify 四命令 44、零散 24。
 
 同一共享路径：命令 **state/effective command value** 计算
 （[execCommand 规范](https://w3c.github.io/editing/execCommand.html) state
-定义——按 computed style 判定，非 DOM 标记形态）。失败上下文族：
+定义——按 computed style 判定，非 DOM 标记形态）。当前实现在
+`crates/engine/src/js_dom_shim/part06.js:5491-5560`
+（queryCommandIndeterm/State/Value 三臂，state 按"选区起点所在 inline
+包裹链"近似，R3254-M3 切片 4）——与规范口径的差距即本簇主因。失败上下文族：
 
 - 字体计算值边界：`font-weight: 100..900` 数值边界、`font-style: oblique`
   计入 italic、`queryCommandIndeterm` 混合选区；
