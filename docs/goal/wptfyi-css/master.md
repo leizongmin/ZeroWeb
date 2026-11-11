@@ -5,7 +5,7 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,970，至 cqw 容器基座刀；values face
-css-values 2,426→2,450，至 round 除零批）。
+css-values 2,426→2,464，至 mod/rem 除零批）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -50,13 +50,29 @@ position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor
 anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallback
 布局 ~43F（溢出检查 + last-successful 状态机 + @position-try 应用引擎）、
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数 9 腿
-（css-parser 侧已备，下批候选）；其余散页；anchor-ident-function 求值面 12F
+（定谳拆分：opacity validity 3 + transform matrix 6，分别并入 validity 放行
+与 matrix 化桶）、values 数学函数 validity 放行 ~47F（opacity-validity 32 +
+transition-delay used-value 15，parse 臂拒 calc 族，css-parser 折叠已备——
+g9 残余主桶，下批首选）；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；DC-3 全量对账
 （等批次平台期 dispatch 周跑，HEAD 已含 color/values/grid/anchor 各批增量）；
 color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 mod/rem 除零批完成（11-11 深夜）**：css-values-4 §10.5 mod()/rem() B=0
+None（无效）臂撤除改 IEEE NaN（types.rs，round 族 g8 同道）+ opacity computed
+NaN censor-to-zero（§10.12，r2320 先例；语料 inert 定谳——语料 computed 读走
+shim 侧、宿主 face 今日不可达，保留为 validity 放行刀负载臂）——css-values
+语料 **2,450 → 2,464 净 +14 逐页零回归**（computed +12 mod/rem B=0、serialize
++2 specified `calc(NaN)` 形）；css-color 10,970P 零漂移；css-parser lib
+3107P/0F；make test 3879P/9F 逐名同形在册组零新增。provenance：22:04 初步跑
+混合树（构建窗内编辑）经 g9b 干净复跑 byte-identical 归因清白；ba 流在途
+part11 js hunks 收纳 stash@{0} 待认领（语料中性有 color 零漂移旁证）。残余
+主桶 = 数学函数 validity 放行 ~47F（opacity 32 + transition-delay 15，下批
+首选）+ serialize scale-matrix 5 / computed-NaN 6（shim censor 臂）。
+[证据](evidence/2026-11-11-dc2-modrem-nan-opacity-censor.md)
 
 **DC-2 round 除零语义批完成（11-11 深夜）**：css-values-4 §round-func round
 族四臂撤 `bv==0→av` 特判走 IEEE NaN（types.rs，g6b 定谳修复——特判被
