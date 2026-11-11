@@ -5906,6 +5906,20 @@ pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
 /// 声明是否被 ZW 支持（已知属性 + 值可 apply）。
 #[cfg(feature = "script-runtime")]
 fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val: &str) -> bool {
+    // 组 F 批（css-anchor-position-1）：`position-area` 文法面由
+    // [`dom_bindings::position_area`] 裁决（style-system 注册表不含该属性——
+    // computed-testcommon 每 test 以 `CSS.supports('position-area', v)` 前置门）。
+    if prop == "position-area" {
+        #[cfg(feature = "v8")]
+        {
+            return crate::dom_bindings::position_area::canonicalize_decl(val).is_some();
+        }
+        #[cfg(not(feature = "v8"))]
+        {
+            let _ = (style, val);
+            return false;
+        }
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
 }

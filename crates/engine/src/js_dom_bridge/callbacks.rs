@@ -4099,6 +4099,50 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css DC-2 组 F 批（css-anchor-position-1）：`position-area` 声明值
+    // canonical 化整值委托（shim `_zwNormalizeDeclValue` 臂消费——非法整值返 "null"
+    // 拒写，合法返 canonical 串；CSS-wide 归小写、var() 原文保形）。实现复用
+    // [`crate::dom_bindings::position_area::canonicalize_decl`]（与 native 绑定
+    // setter 同源——单实现双通道）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_position_area_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let value = args.first().map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                match crate::dom_bindings::position_area::canonicalize_decl(value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = value;
+                "null".to_string()
+            }
+        }),
+    );
+
+    // 组 F 批：`position-area` computed 值折叠委托（shim part01 gCS plain 臂消费——
+    // declared canonical 串 → computed 串：逻辑 long→short、span-all 轴消解、center
+    // 槽位归位；输入非法 echo 防御）。实现
+    // [`crate::dom_bindings::position_area::computed_value`]。
+    sandbox.register_callback(
+        "__zw_position_area_computed",
+        Box::new(|args: &[String]| -> String {
+            let decl = args.first().map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                crate::dom_bindings::position_area::computed_value(decl)
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = decl;
+                "none".to_string()
+            }
+        }),
+    );
+
     // wptfyi-css DC-2 grid 批次（G1 shim 面）：CSSStyleDeclaration supported
     // property names 支持面清单查询（shim `_zwMStyleProxy` has trap 消费——
     // `'prop in style'` 对 Proxy 名此前恒 false，grid-layout-properties 等语料

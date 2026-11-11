@@ -32,6 +32,7 @@ pub(crate) mod grid_cssom;
 mod html_element;
 mod namednodemap;
 mod node;
+pub(crate) mod position_area;
 
 use std::cell::RefCell;
 use std::rc::Rc;
