@@ -4,7 +4,7 @@
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
-face css-color 10,905→10,962，至 contrast computed 刀）。
+face css-color 10,905→10,970，至 cqw 容器基座刀）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -113,6 +113,17 @@ valid 页 1F + calc-container 1F 写面 canonicalization、calc-container 1F
 cqw 容器宽（桶 1 同根因随收）。color 长尾桶 5 收口，剩桶 1（cqw ~10F，
 根因已定谳）为主收割面。
 [证据](evidence/2026-11-11-dc2-contrast-color-computed-face.md)
+
+**DC-2 color cqw 容器基座刀完成（11-11 晚）**：css-conditional-5
+§container-lengths 计算面落地（提交 9d243bc67，part11-color 单文件）——
+`__zwComputedColorValue` 入口经 gCS 宿主 query 通道探明最近 container-type
+≠ normal 祖先内联尺寸置入 `_zwCCqwBase`，sign eval cq 单位按 N·W/100 求值；
+无基座（declared 面/fail-closed）保 ×1000 兜底零漂移。css-color 语料
+**10,962 → 10,970 净 +8 零回归**——桶 1 主收割：lab 页 4F 全清（页账
+120P/0F）+ color-function/hsl/hwb 各 +1 + rgb +1。残余挂账：calc-container
+2F（part11-computed-color 通用通道 prop=background-color 不经本入口，另刀）、
+color-mix 100em 案（em 元素字号面）、rgb 残 1F（桶 4 转义域）。
+[证据](evidence/2026-11-11-dc2-cqw-container-base-face.md)
 
 **DC-2 组F 布局刀2 完成（11-11 午后）**：position-area 区域定位布局 pass
 （提交 5af93e7e0）——css-parser anchor_area.rs 区域格矩阵单点下沉（canonical
