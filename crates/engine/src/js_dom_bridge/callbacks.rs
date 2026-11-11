@@ -4856,11 +4856,15 @@ impl HandleStateIndex {
                     self.styles.insert(handle.clone(), String::new());
                 }
             }
-            DomMutation::SetStyleOnHandle { handle, property, value } => {
+            DomMutation::SetStyleOnHandle {
+                handle,
+                property,
+                value,
+            } => {
                 // r2320 折叠 + merge 同 [`style_from_mutations_lw`] SetStyle 臂同形
                 //（折叠在此处一次完成，读侧零解析）。
-                let folded = zero_css_parser::values::fold_decl_specified(property, value)
-                    .unwrap_or_else(|| value.clone());
+                let folded =
+                    zero_css_parser::values::fold_decl_specified(property, value).unwrap_or_else(|| value.clone());
                 let cur = self.styles.entry(handle.clone()).or_default();
                 *cur = merge_style_property(cur.as_str(), property, &folded);
             }
@@ -5592,14 +5596,39 @@ mod handle_state_style_projection_tests {
             let p = props[(next() as usize) % props.len()];
             let v = values[(next() as usize) % values.len()];
             let op = match (next() as usize) % 7 {
-                0 => DomMutation::SetStyleOnHandle { handle: h.into(), property: p.into(), value: v.into() },
-                1 => DomMutation::RemoveStyleOnHandle { handle: h.into(), property: p.into() },
-                2 => DomMutation::SetAttrOnHandle { handle: h.into(), name: "style".into(), value: format!("{p}:{v}") },
-                3 => DomMutation::RemoveAttrOnHandle { handle: h.into(), name: "style".into() },
+                0 => DomMutation::SetStyleOnHandle {
+                    handle: h.into(),
+                    property: p.into(),
+                    value: v.into(),
+                },
+                1 => DomMutation::RemoveStyleOnHandle {
+                    handle: h.into(),
+                    property: p.into(),
+                },
+                2 => DomMutation::SetAttrOnHandle {
+                    handle: h.into(),
+                    name: "style".into(),
+                    value: format!("{p}:{v}"),
+                },
+                3 => DomMutation::RemoveAttrOnHandle {
+                    handle: h.into(),
+                    name: "style".into(),
+                },
                 // 非 style attr 干扰：投影不得受扰动。
-                4 => DomMutation::SetAttrOnHandle { handle: h.into(), name: "id".into(), value: v.into() },
-                5 => DomMutation::RemoveAttrOnHandle { handle: h.into(), name: "id".into() },
-                _ => DomMutation::SetStyleOnHandle { handle: h.into(), property: p.into(), value: String::new() },
+                4 => DomMutation::SetAttrOnHandle {
+                    handle: h.into(),
+                    name: "id".into(),
+                    value: v.into(),
+                },
+                5 => DomMutation::RemoveAttrOnHandle {
+                    handle: h.into(),
+                    name: "id".into(),
+                },
+                _ => DomMutation::SetStyleOnHandle {
+                    handle: h.into(),
+                    property: p.into(),
+                    value: String::new(),
+                },
             };
             m.lock().unwrap_or_else(|e| e.into_inner()).push(op);
             // 任意前缀不变式：每 push 后，三 handle 投影 == 全扫 replay。
@@ -5624,15 +5653,39 @@ mod handle_state_style_projection_tests {
         // per-prop merge → cssText 整体覆盖。
         assert_eq!(
             run(vec![
-                DomMutation::SetStyleOnHandle { handle: "h".into(), property: "color".into(), value: "red".into() },
-                DomMutation::SetStyleOnHandle { handle: "h".into(), property: "opacity".into(), value: "0.5".into() },
-                DomMutation::SetAttrOnHandle { handle: "h".into(), name: "style".into(), value: "color:blue".into() },
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into(),
+                    value: "red".into()
+                },
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "opacity".into(),
+                    value: "0.5".into()
+                },
+                DomMutation::SetAttrOnHandle {
+                    handle: "h".into(),
+                    name: "style".into(),
+                    value: "color:blue".into()
+                },
             ]),
             style_from_mutations_lw(
                 &[
-                    DomMutation::SetStyleOnHandle { handle: "h".into(), property: "color".into(), value: "red".into() },
-                    DomMutation::SetStyleOnHandle { handle: "h".into(), property: "opacity".into(), value: "0.5".into() },
-                    DomMutation::SetAttrOnHandle { handle: "h".into(), name: "style".into(), value: "color:blue".into() },
+                    DomMutation::SetStyleOnHandle {
+                        handle: "h".into(),
+                        property: "color".into(),
+                        value: "red".into()
+                    },
+                    DomMutation::SetStyleOnHandle {
+                        handle: "h".into(),
+                        property: "opacity".into(),
+                        value: "0.5".into()
+                    },
+                    DomMutation::SetAttrOnHandle {
+                        handle: "h".into(),
+                        name: "style".into(),
+                        value: "color:blue".into()
+                    },
                 ],
                 "h"
             )
@@ -5640,27 +5693,49 @@ mod handle_state_style_projection_tests {
         // merge 后 removeAttribute('style') 净空。
         assert_eq!(
             run(vec![
-                DomMutation::SetStyleOnHandle { handle: "h".into(), property: "color".into(), value: "red".into() },
-                DomMutation::RemoveAttrOnHandle { handle: "h".into(), name: "style".into() },
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into(),
+                    value: "red".into()
+                },
+                DomMutation::RemoveAttrOnHandle {
+                    handle: "h".into(),
+                    name: "style".into()
+                },
             ]),
             ""
         );
         // merge 后 removeProperty 净空（有记录净空 ≠ 无记录缺席，同返 ""）。
         assert_eq!(
             run(vec![
-                DomMutation::SetStyleOnHandle { handle: "h".into(), property: "color".into(), value: "red".into() },
-                DomMutation::RemoveStyleOnHandle { handle: "h".into(), property: "color".into() },
+                DomMutation::SetStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into(),
+                    value: "red".into()
+                },
+                DomMutation::RemoveStyleOnHandle {
+                    handle: "h".into(),
+                    property: "color".into()
+                },
             ]),
             ""
         );
         // 无 style-affecting 记录（仅非 style attr）→ ""。
         assert_eq!(
-            run(vec![DomMutation::SetAttrOnHandle { handle: "h".into(), name: "id".into(), value: "x".into() }]),
+            run(vec![DomMutation::SetAttrOnHandle {
+                handle: "h".into(),
+                name: "id".into(),
+                value: "x".into()
+            }]),
             ""
         );
         // `STYLE` 大小写不敏感（replay 臂 eq_ignore_ascii_case 对偶）。
         assert_eq!(
-            run(vec![DomMutation::SetAttrOnHandle { handle: "h".into(), name: "STYLE".into(), value: "color:red".into() }]),
+            run(vec![DomMutation::SetAttrOnHandle {
+                handle: "h".into(),
+                name: "STYLE".into(),
+                value: "color:red".into()
+            }]),
             "color:red"
         );
     }
