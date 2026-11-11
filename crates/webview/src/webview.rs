@@ -8547,6 +8547,14 @@ fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, sp
     }
 }
 
+/// s373：module goal parse 预检回调窗的 scope 类型按 feature 归一——v8 形状为
+/// scoped 回调窗转借的 `PinScope`；quickjs 形状无 V8 scope，恒以 `None` 穿透
+///（注册点 cfg 互斥分支传 `None`，预检/探针窗缺席维持既有放行）。
+#[cfg(feature = "v8")]
+type CompileParseGateScope<'a, 'b> = zero_script_sandbox::v8::PinScope<'a, 'b>;
+#[cfg(not(feature = "v8"))]
+type CompileParseGateScope<'a, 'b> = ();
+
 /// s373：`__zw_compile_module` 回调体（Plain/Scoped 两注册形态共享——宿主参数
 /// 解析、import map 应用、deferred/eager 分派、契约调用）。`parse_gate` 穿 eager
 /// 契约（scoped 回调窗 scope 转借，module goal parse 预检，见
@@ -8557,7 +8565,7 @@ fn zw_compile_module_shim_body(
     args: &[String],
     fetcher: &ScriptSourceFetcher,
     import_map: &Option<zero_script_sandbox::ImportMap>,
-    parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
+    parse_gate: Option<&mut CompileParseGateScope<'_, '_>>,
 ) -> String {
     let spec = args.first().map(String::as_str).unwrap_or("");
     let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
@@ -8625,6 +8633,7 @@ fn zw_compile_module_shim_body(
     )
 }
 
+#[cfg_attr(not(feature = "v8"), allow(unused_mut))] // quickjs 形状预检/探针窗缺席，mut 无消费点
 fn compile_module_contract(
     fetcher: &ScriptSourceFetcher,
     parent: &str,
@@ -8635,7 +8644,7 @@ fn compile_module_contract(
     // s373：module goal parse 预检的调用窗 scope（`HostCallback::Scoped` 回调窗转借；
     // None = 无预检通道——classic native resolver 面与降级 Plain 形态，维持既有放行）。
     // s374：同一窗复用 TLA 探针注入（gate 后 reborrow，见 Ok 臂）。
-    mut parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
+    mut parse_gate: Option<&mut CompileParseGateScope<'_, '_>>,
 ) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -8669,6 +8678,9 @@ fn compile_module_contract(
             // parse_gate=None，v8_runtime 契约解析器不暴露新态）。
             // https://tc39.es/ecma262/#sec-parsemodule
             // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+            // quickjs 形状无 scoped 通道（parse_gate 恒 None），预检块整体缺席
+            //（cfg 门控，语义同 Plain 形态既有放行）。
+            #[cfg(feature = "v8")]
             if let Some(scope) = parse_gate.as_deref_mut()
                 && let Some(source) = reg.get(&resolved)
                 && let Some(msg) = zero_script_sandbox::module_parse_gate(scope, source, &resolved)
@@ -8684,6 +8696,9 @@ fn compile_module_contract(
             //（module_tla_probe 双腿函数体编译）回收深度门漏检面（裸块/if 块
             // await）。转换段结束 clear 恢复扫描器判定路径。无窗路径
             //（native resolver/classic 面，parse_gate=None）不注入，维持扫描器现状。
+            // s374 探针窗同 parse_gate cfg 门控——quickjs 形状无窗路径，维持
+            // 扫描器判定现状（无窗路径不注入，见上注）。
+            #[cfg(feature = "v8")]
             if let Some(scope) = parse_gate.as_deref_mut() {
                 let tla_map = reg
                     .iter()
@@ -8740,6 +8755,7 @@ fn compile_module_contract(
 ///（`{exports, depsPromise, runBody}`），依赖图急切求值、入口体延迟。失败面镜像
 /// eager 契约：链接失败 tag 3 逐次新 SyntaxError、其余空串 TypeError。
 /// https://tc39.es/proposal-defer-import-eval/
+#[cfg_attr(not(feature = "v8"), allow(unused_mut))] // 同上：quickjs 形状窗缺席
 fn compile_module_contract_deferred(
     fetcher: &ScriptSourceFetcher,
     parent: &str,
@@ -8748,7 +8764,7 @@ fn compile_module_contract_deferred(
     // s374：同 eager 变体的回调窗 scope（defer 面 TLA 探针注入；None = 无窗路径
     // 维持扫描器判定）。defer 面暂不接 module parse 预检（defer 簇 test262 71 案
     // 已定性 V8 引擎侧不回收，见 dc2-test262-cluster-triage 证据文）。
-    mut parse_gate: Option<&mut zero_script_sandbox::v8::PinScope>,
+    mut parse_gate: Option<&mut CompileParseGateScope<'_, '_>>,
 ) -> Option<String> {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -8767,6 +8783,8 @@ fn compile_module_contract_deferred(
             let resolved = resolve_document_url(parent, spec);
             // s374：TLA 判定注入（同 eager 变体的单调不减设计，s374-r3，见
             // compile_module_contract 注记）——defer 面 is_async 判定同漏检面。
+            // s374 探针窗同 eager 变体 cfg 门控（quickjs 形状无窗，见上注）。
+            #[cfg(feature = "v8")]
             if let Some(scope) = parse_gate.as_deref_mut() {
                 let tla_map = reg
                     .iter()

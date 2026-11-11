@@ -19321,6 +19321,48 @@
   // R-baidu3 风暴路径预防：同视图内重复枚举零宿主往返；印章不符即整体失效，语义与
   // 逐元素宿主查询一致）。
   var _zwSelNsCache = { gen: -1, added: -1, removed: -1, map: new Map() };
+  // P39r2（siteopt github r2，2026-11-11）：sel→ns 失配窗口章（epoch 界定）。
+  // _zwSelNsCache 印章每脚本 mutation drain 后失配 → 失配窗口内每次 namespaceURI
+  // 读（get trap tagName/localName/nodeName 的 R5000 foreign 判定 + ns 面 getter）
+  // 都打 `__zw_get_ns` 宿主往返——github home 75s 全量谱 get_ns 20.4 万次（27.4%），
+  // 与 get_tag 合计 55% 为页面脚本推进分钟级主源。spec namespaceURI 不可变
+  // （https://dom.spec.whatwg.org/#dom-node-namespaceuri）是对同一元素而言——
+  // sel↔元素绑定可变（重挂/重建），r1 的「drain→apply 间隙宿主视图未变」前提被
+  // 缺陷首轮 DF-1/DF-2 执行探针证伪（tag 面宿主查询在记账时即重放 pending，视图
+  // 随记账演进；ns 面回归窗口自 apply 起算）：章改为 epoch 界定——视图演进必经
+  // 记账（`_zwHCLiveInvalidate`）/ apply（`__zw_apply_generation_bump`）/ reset
+  // （`__zw_reset_pending_state`）三者之一，钩子处强制清章（`_zwP39EpochInvalidate`），
+  // 读取侧另以 (gen, pending 数组身份, 长度) 惰性闸自愈（`_zwP39EpochSync`）；同
+  // epoch 内宿主视图不变，章服务本 epoch 权威读值。失配窗口同 sel 首读付一次宿主
+  // 重灌（r1 为 0 次——r2 用正确性换的价）。写入点：宿主命中与 `_zwSelNsCache`
+  // 表命中（R5000 detach miss 归一 '' 的已知限制同现状，PR #80 缺陷审查记档）。
+  // 章失效域与 `_zwTagCache`/`_zwSelNsCache` 印章语义对齐并由三钩子加固；id 覆写
+  // （R125）等 attr 面绑定漂移与表同域（既有语义，不在本切片）。
+  var _zwSelNsSeen = new Map();
+  // P39r2 epoch 界定基建（tag/ns 两章共用）：`_zwP39Epoch` 记最近一次章重建时的
+  // 视图代际指纹 (gen, added 数组身份+长度, removed 数组身份+长度)；数组身份防
+  // R51c 压实/对冲换数组与 splice+append 恢复长度的印章碰撞。`_zwP39EpochSync`
+  // 为读取侧惰性闸（指纹不符即清），`_zwP39EpochInvalidate` 为钩子侧强制清
+  // （记账/apply/reset 是构造性的视图演进事件，指纹可能恰好相等）。
+  var _zwP39TagSeen = new Map();
+  var _zwP39Epoch = null;
+  function _zwP39EpochSync() {
+    var g = _zwApplyGeneration();
+    var a = _zwPendingAdded;
+    var r = _zwPendingRemoved;
+    var e = _zwP39Epoch;
+    if (e === null || e.g !== g || e.aa !== a || e.al !== a.length
+        || e.ra !== r || e.rl !== r.length) {
+      _zwP39Epoch = { g: g, aa: a, al: a.length, ra: r, rl: r.length };
+      _zwP39TagSeen.clear();
+      _zwSelNsSeen.clear();
+    }
+  }
+  function _zwP39EpochInvalidate() {
+    _zwP39Epoch = null;
+    _zwP39TagSeen.clear();
+    _zwSelNsSeen.clear();
+  }
   // t7（bilibili 稳态轮询满核）：_zwSelNs 的批量灌注口——`__zw_query_all_tagged`
   // payload（sel\x1ftag[\x1fns]）在 _zwDocAllElements 枚举时一次往返建全量 sel→ns
   // 表。缺此通道时轮询页每次视图换代印章失效 → 过滤循环对全量元素逐个
@@ -19353,19 +19395,39 @@
   function _zwSelNs(sel, handle) {
     if (handle || !sel || typeof __zw_get_ns !== 'function') return '';
     var _snk = String(sel);
+    _zwP39EpochSync();
+    var _nsFresh = false;
     try {
       if (_zwSelNsCache.gen === _zwApplyGeneration()
           && _zwSelNsCache.added === _zwPendingAdded.length
           && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+        _nsFresh = true;
         var _snhit = _zwSelNsCache.map.get(_snk);
-        if (_snhit !== undefined) return _snhit;
+        if (_snhit !== undefined) {
+          // P39：表命中即权威——顺带刷新章（同 `_realTag` 的 `_zwSelSeenTag`
+          // 刷新逻辑），防重绑定演进后失配窗口服务旧章值。
+          try { _zwSelNsSeen.set(_snk, _snhit); } catch (_eNsFr) {}
+          return _snhit;
+        }
       }
     } catch (_e5000g) {}
+    // P39r2：stamp 失配窗口章快道（epoch 界定，语义论证见 `_zwSelNsSeen` 声明处；
+    // 函数头部 `_zwP39EpochSync` 已对齐本 epoch）。`_nsFresh` 守卫保持 stamp 新鲜
+    // 窗口的宿主权威语义与 R5000 原链逐位一致。
+    if (!_nsFresh) {
+      try {
+        var _nsSeen = _zwSelNsSeen.get(_snk);
+        if (_nsSeen !== undefined) return _nsSeen;
+      } catch (_eNsSeen) {}
+    }
     var _sn = '';
     try {
       _sn = String(__zw_get_ns(sel) || '');
       if (_sn === 'http://www.w3.org/1999/xhtml') _sn = '';
     } catch (_e5000sn) {}
+    try {
+      _zwSelNsSeen.set(_snk, _sn);
+    } catch (_eNsStamp) {}
     try {
       if (_zwSelNsCache.gen !== _zwApplyGeneration()
           || _zwSelNsCache.added !== _zwPendingAdded.length
@@ -19434,15 +19496,50 @@
     // 枚举时经 __zw_query_all_tagged 灌入）。印章 = (apply 代际, pending 记账长度)，
     // 不符即走原链——apply 后同 sel 重绑定新元素的窗口不服务旧 tag，语义与逐元素
     // 宿主查询一致。只正缓存枚举命中的 sel，miss 不缓存。
+    if (sel) _zwP39EpochSync();
+    var _tcFresh = false;
     if (sel && _zwTagCache) {
       try {
         if (_zwTagCache.gen === _zwApplyGeneration()
             && _zwTagCache.added === _zwPendingAdded.length
             && _zwTagCache.removed === _zwPendingRemoved.length) {
+          _tcFresh = true;
           var _tct = _zwTagCache.map.get(String(sel));
-          if (_tct) return _zwAsciiUpper(_tct);
+          if (_tct) {
+            // P39r2：表命中即权威——顺带刷新 epoch 章（`_zwP39TagSeen`，函数头部
+            // sync 已对齐本 epoch）。R4200 `_zwSelSeenTag` 写面恢复宿主命中
+            // first-time 原语义（r1 曾在此顺写永久章——DF-1 证伪后章面全部 epoch
+            // 界定）。
+            try {
+              _zwP39TagSeen.set(String(sel), String(_tct));
+            } catch (_eSstFr) {}
+            return _zwAsciiUpper(_tct);
+          }
         }
       } catch (_eTagCache) {}
+    }
+    // P39r2（siteopt github r2，2026-11-11）：stamp 失配窗口章快道（epoch 界定）。
+    // _zwTagCache 印章三元组（apply 代际 + pending 记账）每脚本 mutation drain 后
+    // 失配 → 上一视图 payload 表整面失效，本函数在窗口内每次调用都打
+    // `__zw_get_tag` 宿主往返——github home 75s 全量谱 get_tag 20.6 万次（宿主
+    // 调用 74.3 万次的 27.7%），每次 tagName/localName/nodeName get trap 读
+    // （part04 元素 getter 面 → 本函数）均付一次 IPC 基价 → 页面脚本推进分钟级
+    // 的主源。章 = `_zwP39TagSeen`（epoch 界定——r1 复用 R4200 永久章的前提
+    // 「drain→apply 间隙宿主视图未变」被缺陷首轮 DF-1/DF-2 执行探针证伪：tag 面
+    // 宿主查询在记账时即重放 pending 结构性 mutations（callbacks.rs
+    // with_query_view_doc），宿主视图随记账演进；spec tagName 不可变是对同一元素
+    // 而言（https://dom.spec.whatwg.org/#dom-element-tagname），sel↔元素绑定可变，
+    // 跨 epoch 服务旧章值即服务旧元素的 tag）。epoch 翻转（记账 `_zwHCLiveInvalidate`
+    // / apply `__zw_apply_generation_bump` / reset `__zw_reset_pending_state`，钩子
+    // 强制清章 + 读取侧惰性闸，见 `_zwP39EpochSync` 声明处）后，同 sel 失配窗口
+    // 首读付一次宿主重灌、二读零往返（r1 为全窗零往返——r2 用正确性换的价）。
+    // `_tcFresh` 守卫：stamp 新鲜走上方 `_zwTagCache` 权威表；R4200「sel 重解析
+    // 换 tag 的窗口 host 必命中，印章只在 miss 服务」的误服务面语义原样保持。
+    if (sel && !_tcFresh) {
+      try {
+        var _sstFast = _zwP39TagSeen.get(String(sel));
+        if (_sstFast) return _zwAsciiUpper(String(_sstFast));
+      } catch (_eSstFast) {}
     }
     if (sel && typeof __zw_get_tag === 'function') {
       try {
@@ -19460,6 +19557,8 @@
           var _r4200sk = String(sel);
           var _r4200st = globalThis._zwSelSeenTag || (globalThis._zwSelSeenTag = {});
           if (!_r4200st[_r4200sk]) _r4200st[_r4200sk] = String(t);
+          // P39r2：宿主命中即本 epoch 权威——章重灌（覆盖写，函数头部 sync 已对齐）。
+          try { _zwP39TagSeen.set(_r4200sk, String(t)); } catch (_eP39Tw) {}
           return _zwAsciiUpper(t);
         }
       } catch (_e) {}

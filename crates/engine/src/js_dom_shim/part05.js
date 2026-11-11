@@ -12699,6 +12699,9 @@
     // 相等（如新文档首快照），旧文档 ns 表不得跨代服务；置失配态走懒填充重灌。
     _zwSelNsCache.gen = -1;
     _zwSelNsCache.map = new Map();
+    // P39r2：失配窗口章随快照换代强制作废——reset 不 bump 代际，reset 后印章指纹
+    // 可与 apply 后态相等（(G,0,0) 撞 (G,0,0)），章不得跨文档服务（t7/D2 同源）。
+    _zwP39EpochInvalidate();
     // t8：快照换代树结构可能整体变化——parent 关系缓存随代作废（同上防跨代）。
     _zwParentLinkBump();
   };
@@ -12821,6 +12824,10 @@
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
     // R-baidu3：批量 tag 缓存随 apply 代际作废（同 sel 重绑定新元素窗口不服务旧 tag）。
     _zwTagCache = null;
+    // P39r2：失配窗口章随 apply 代际强制作废——`__zw_get_ns` 纯快照，ns 面章的
+    // 回归窗口自 apply 起算（缺陷首轮 DF-2 执行探针实证）；兼作章内存按 epoch
+    // 回收的锚点（缺陷首轮 DF-4）。
+    _zwP39EpochInvalidate();
     // t8/PR91（G-A 返修）：parent 关系缓存随 apply 代际作废。applied view 只把
     // InsertAdjacent/SetInnerHtml/SetOuterHtml/Remove 族融合进查询（AppendChild/handle
     // 链族不应用，R51c proxy 身份约束）——该族结构变更的 `__zw_parent` 答案在**本
@@ -13561,6 +13568,10 @@
     // slice36（RP-3 动态名面）：展开面交还调用方（part01 `_mo_notify` 在反链记账后
     // 尾叫 `_zwNADynamicSync`——contains/树序判定依赖的 `_zwNodeParent` 反链在该时点
     // 已记/已删，本函数内反链尚未落账，不能就地做连接性判定）。
+    // P39r2：结构性记账即视图演进（tag 面宿主查询在记账时即重放 pending——缺陷
+    // 首轮 DF-1 执行探针实证），失配窗口章随记账强制作废；压实/对冲换数组与
+    // splice+append 恢复长度的印章碰撞由本钩子兜住（惰性闸的指纹位不覆盖后者）。
+    _zwP39EpochInvalidate();
     return { addFlat: addFlat, remFlat: remFlat, inDoc: _r54InDoc };
   }
 
