@@ -5,7 +5,7 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,970，至 cqw 容器基座刀；values face
-css-values 2,426→2,572，至 time 族写面白名单+auto 修正批）。
+css-values 2,426→2,641，至 ∞/NaN 数学求值管线刀1）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -50,10 +50,11 @@ position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor
 anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallback
 布局 ~43F（溢出检查 + last-successful 状态机 + @position-try 应用引擎）、
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
-transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g11 后）：∞ 桶
-（calc-infinity-nan-computed 56F + serialize 五页 123F——length 41/angle 16/
-number 8/resolution 29/time 29，specified 值 Infinity/NaN 规范形
-`calc(NaN * 1px)`/`calc(infinity * 1s)` 因子归一 + signs-abs computed 101F/
+transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g12 后）：∞ 桶
+（calc-infinity-nan-computed 残 ~36F：rotate 14 → matrix 化桶 + %-CB 形 +
+unbalanced 形；serialize 五页残 ~116F——length 41/resolution 29/time 29 主体
+未动 + angle/number 残，刀2 = fold_math_specified 扩 Infinity/NaN 规范形
+`calc(NaN * 1px)`/`calc(infinity * 1s)` 因子归一 + signs-abs computed 残 ~94F/
 invalid 52F——`abs()` 空参文法、font-weight 非白名单属性写面/serialize 4F，
 FIXME types.rs:1420 round step ±∞ 族）、
 %-mixing CalcContext 族（calc-mix-serialize 113F + calc-mix-computed 53F 主体）、
@@ -66,6 +67,32 @@ color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 ∞/NaN 数学求值管线刀1批完成（11-12 凌晨，g12）**：css-values-4 §10.6/§10.12
+兑现（calc-infinity-nan-computed 桶）——min/max 任一实参 NaN → 结果 NaN（IEEE
+`f64::min/max` 忽略 NaN 丢毒）+ computed 期 censor（style-system resolve Calc
+NaN→0；engine `time_list_to_css` duration 族负值/两族 NaN 钳 0，±∞ 保留走
+format_num 饱和覆盖 ≥1e6 断言）+ 写面放行（`parse_time` math 臂撤 `is_finite`
+门；`parse_animation_duration` 补数学形臂兑现 g11 挂账；`<number>` 槽 ±∞ 放行 +
+`has_length` 叶扫描换 `is_number` 结果型别门救 `sign(<length>)`）+ 连带型别基建
+（purity 门标量乘除 `<time>×/÷<number>` 合法 §10.1；`eval_calc_with_default_font`
+parse 期 em/rem 16px 基准，%/vw/vh fail-closed）——css-values 语料
+**2,572 → 2,641 净 +69 零回归**（test gains=69 losses=0，10 页增：
+calc-infinity-nan-computed 9→29、round-mod-rem-computed +16、signs-abs-computed
++7、serialize angle/number +7 部分自解）；transitions 对 g11b +2、animations
++2 零回归；transforms/easing pre-flip A/B（results-g12pre 独立二进制对照）
+零回归——easing 字节级零差，transforms -40 集中 rotate/scale/translate-
+parsing-computed 三页 = 对照臂 registry 缺臂归因（非本批），g12c 干净复跑
+（registry WIP 在树、单写者 transcript）定谳 **223 → 228 净 +5 test 级零
+回归**（sign(1em-1px) 形 5 案：scale-computed 21→23/scale-valid 8→9/
+sign-function 0→2），signs-abs-serialize 16P/F0 全清。**批终账五套件
+values +69/transitions +2/animations +2/transforms +5/easing ±0，合计净
++78 零回归。**单测 +6 钉（css-parser infinity_nan.rs 4/style-system
+1/engine 1）；三 crate clippy 零告警；make test 同例推迟（同树他流 WIP 污染
+归属，g10/g11 先例）。残余：calc-infinity-nan-computed ~36F（rotate matrix 化
+桶 14 + %-CB 形 + unbalanced）、serialize 五页 ~116F（刀2）、signs-abs
+invalid 52F 不动。
+[证据](evidence/2026-11-12-dc2-infinity-nan-math-pipeline.md)
 
 **DC-2 <time> 族写面文法门批完成（11-12 凌晨，g11/g11b）**：T54 写面校验白名单
 扩 4 属性（transition-delay/duration、animation-delay/duration，
