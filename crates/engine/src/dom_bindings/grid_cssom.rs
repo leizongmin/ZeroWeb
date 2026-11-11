@@ -29,6 +29,14 @@ pub(crate) fn canonicalize_grid_decl(prop: &str, value: &str) -> Option<String> 
     {
         return Some(value.to_ascii_lowercase());
     }
+    // css-variables-1 §3：值含 var() 的声明 parse 期恒有效（token stream 原文
+    // 存储，computed-value 期替换后才按属性文法重验）——grid 文法校验器不识别
+    // var 文法，先放行。css-typed-om 语料 'Can set grid-* to var() references'
+    // 钉面（v5b 9,872P 基线，G1 门引入 -4 回退）。
+    // https://drafts.csswg.org/css-variables-1/#using-variables
+    if value.contains("var(") {
+        return Some(value.to_string());
+    }
     match prop {
         "grid-auto-flow" => canonicalize_auto_flow(value),
         "grid-template-columns" | "grid-template-rows" => {
@@ -367,3 +375,35 @@ pub(crate) const SUPPORTED_STYLE_PROPS: &[&str] = &[
     "animation",
     "box-sizing",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // css-variables-1 §3：值含 var() 的声明 parse 期恒有效（G1 门曾误拒，
+    // css-typed-om 'Can set grid-* to var() references' 钉面 -4 回退）。
+    // https://drafts.csswg.org/css-variables-1/#using-variables
+    #[test]
+    fn test_grid_decl_var_reference_accepted_at_parse_time() {
+        for prop in [
+            "grid-auto-flow",
+            "grid-template-columns",
+            "grid-template-rows",
+            "grid-template-areas",
+            "grid-row-start",
+            "grid-area",
+        ] {
+            assert_eq!(
+                canonicalize_grid_decl(prop, "var(--A)").as_deref(),
+                Some("var(--A)"),
+                "var() reference must be accepted for {prop}"
+            );
+        }
+        // CSS-wide keyword 臂不回退；非 var 非法值仍拒（声明忽略语义保持）。
+        assert_eq!(
+            canonicalize_grid_decl("grid-auto-flow", "INHERIT").as_deref(),
+            Some("inherit")
+        );
+        assert_eq!(canonicalize_grid_decl("grid-auto-flow", "nonsense"), None);
+    }
+}
