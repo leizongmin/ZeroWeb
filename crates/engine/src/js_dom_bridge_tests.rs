@@ -118,3 +118,7 @@ include!("js_dom_bridge_tests/part101_s399_object_dynamic_load.rs");
 // 50 号 s400 object scheme 取回面 + window.length：data:/blob:/bare-origin 解码
 // 七面 + LegacyUnforgeable 计数（iframe/object entry + destroy/移除递减）钉。
 include!("js_dom_bridge_tests/part102_s400_object_schemes_window_length.rs");
+
+// 51 号 s403 object 嵌套文档脚本通道：parser 静态启航（静默）+ R206 脚本移植
+// （parent 回调链）+ 嵌套导航重物化 + named access morph + replaceState 槽钉。
+include!("js_dom_bridge_tests/part103_s403_object_nested_scripts.rs");

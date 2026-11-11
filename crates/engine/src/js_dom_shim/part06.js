@@ -7968,6 +7968,9 @@
     // 后续读走已注册值（幂等，重复派发 no-op）。
     if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
       try { globalThis.__zwStartParserIframes(); } catch (_eS6p) {}
+      // s403（html-semantics M2 切片 403）：parser 期静态 object[data] 静默启航
+      //（嵌套文档脚本通道；S6 同款扫描位，定义在 part04）。
+      try { if (typeof globalThis.__zwStartParserObjects === 'function') globalThis.__zwStartParserObjects(); } catch (_eObjSp) {}
       // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + R56h 闸门队列
       // drain——DOMContentLoaded 已派（runner 生命周期串先派 DCL 再派 load）、
       // window load listener 未跑，img load/error 在此窗口统一落点（spec「图片

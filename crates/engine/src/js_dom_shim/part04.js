@@ -1291,6 +1291,28 @@
             }
           } catch (_eS6sweep) {}
         };
+        // s403（html-semantics M2 切片 403）：parser 期静态 object[data] 启航——
+        // _zwStartConnectedObject 此前仅动态插入钩子（append 链）接线，解析期
+        // object 无人启航：嵌套文档脚本（object-handler 的 parent 回调链）永不
+        // 执行 → 文件级 Timeout。window load 派发前一次性**静默**物化（S6 同款
+        // 扫描位；fireEvents=false）——嵌套文档脚本通道 + 消费面，不派 load/error：
+        // 渲染静态 object 的终态事件面 spec 有（渲染步 load），但语料无驱动面且
+        // display:none 双案（object-in-display-none-load-event /
+        // object-image-display-none-loading）钉「不渲染 → 不派 load」——静默面
+        // 规避事件回归，事件仍由动态插入臂/消费读按既有语义服务。
+        // FIXME(object-static-events)：渲染静态 object 不派终态事件（spec 偏差
+        // 记档——恢复需 rendered 门（祖先链 display walk）+ 事件面，语料踩坑再扩）。
+        globalThis.__zwStartParserObjects = globalThis.__zwStartParserObjects || function () {
+          try {
+            var objs = document.querySelectorAll('object');
+            for (var i = 0; i < objs.length; i++) {
+              var hasData = false;
+              try { hasData = !!objs[i].getAttribute('data'); } catch (_eObjSwD) {}
+              if (!hasData) continue;
+              _zwStartConnectedObject(objs[i], true, false);
+            }
+          } catch (_eObjSweep) {}
+        };
         // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + 运行期 img 事件
         // 排队 drain——window 'load' 派发前调用（part06 dispatchEvent load 分支，与
         // R139/S6 同款扫描位）。
