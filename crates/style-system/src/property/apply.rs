@@ -1104,6 +1104,48 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // ── CSS Anchor Positioning（css-anchor-position-1）四属性 ──
+        // 原文小写存储（文法校验/区域解析单点在 engine dom_bindings，声明面批
+        // anchor_props/position_area 同矩阵；样式承载只存原文供布局期消费）。
+        // 空值声明（`prop: ;`）parse 层不达此处；`none`/`auto` 存 None 语义同未声明。
+        "anchor-name" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.anchor_name = None;
+            } else {
+                style.anchor_name = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-anchor" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "auto" {
+                style.position_anchor = None;
+            } else {
+                style.position_anchor = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-area" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.position_area = None;
+            } else {
+                style.position_area = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-try-fallbacks" => {
+            // FIXME(css-anchor-position-1 §position-try-prop)：`position-try` 简写
+            // 拆分臂未接（stylesheet 声明面；shim CSSOM 面已拆，part03）。
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.position_try_fallbacks = None;
+            } else {
+                style.position_try_fallbacks = Some(v.into_boxed_str());
+            }
+            return true;
+        }
         "overflow-x" => {
             if let Some(v) = values::parse_overflow(value) {
                 style.overflow_x = v;
