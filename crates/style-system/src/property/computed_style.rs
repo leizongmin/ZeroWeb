@@ -306,6 +306,36 @@ pub struct ComputedStyle {
     /// z-index 属性。
     pub z_index: ZIndexValue,
 
+    // ── CSS Anchor Positioning（css-anchor-position-1）──
+    /// `anchor-name` 属性（锚声明列表，小写原文存储——解析/校验/布局期区域计算
+    /// 单点在 engine `dom_bindings::anchor_props`/`position_area`，样式承载只存
+    /// 原文；None = 未声明）。非继承。
+    pub anchor_name: Option<Box<str>>,
+    /// `position-anchor` 属性（默认锚名，小写原文；None = auto/未声明）。
+    pub position_anchor: Option<Box<str>>,
+    /// `position-area` 属性（canonical 串原文；None = none/未声明）。
+    pub position_area: Option<Box<str>>,
+    /// `position-try-fallbacks` 属性原文（css-anchor-position-1
+    /// §position-try-fallbacks；none/空 → None）。布局期 fallback 机制未建模
+    ///（anchor_pos pass 对非 None 声明不介入——内置 flip 需区域溢出检查 +
+    /// last-successful 状态机，custom `--pt` 需 shim 期 fallback 应用引擎），
+    /// 声明承载供门控与后续 fallback 引擎消费。非继承。
+    pub position_try_fallbacks: Option<Box<str>>,
+    /// `top: anchor(...)` 声明原文（css-anchor-position-1 §anchor；仅含
+    /// `anchor(` 函数形的声明承载——布局期 anchor_pos pass 求值后回填 inset，
+    /// 本字段置位时对应 inset 槽存 Auto。None = 非 anchor() 声明/未声明）。
+    /// 非继承。
+    pub anchor_inset_top: Option<Box<str>>,
+    /// `right: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
+    /// 非继承。
+    pub anchor_inset_right: Option<Box<str>>,
+    /// `bottom: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
+    /// 非继承。
+    pub anchor_inset_bottom: Option<Box<str>>,
+    /// `left: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
+    /// 非继承。
+    pub anchor_inset_left: Option<Box<str>>,
+
     // ── Overflow ──
     /// overflow-x 属性。
     pub overflow_x: OverflowValue,

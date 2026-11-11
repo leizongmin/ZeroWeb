@@ -107,6 +107,36 @@
   };
   var _zwCCssWide = { inherit: 1, initial: 1, unset: 1, revert: 1, 'revert-layer': 1 };
 
+  // 计算面容器查询单位基座（css-conditional-5 §container-lengths）：cq 单位按
+  // 最近 container-type ≠ normal 祖先的 content 尺寸求值。__zwComputedColorValue
+  // 入口按元素探明并置入（null=无元素/未探明 → 调用方保既有视口派生兜底）。
+  // FIXME: 容器宽 auto（无显式 px 声明）需布局 used 值，现探不明即兜底；
+  // cqh 高度轴与具名容器（container-name 选择性查询）未建模——corpus 桶 1 均
+  // cqw+显式 px 容器，随实证面扩。
+  var _zwCCqwBase = null;
+  function _zwCContainerInlineSize(elt) {
+    try {
+      var a = elt && elt.nodeType === 1 ? elt.parentNode : null;
+      var gcs = globalThis.getComputedStyle;
+      while (a && a.nodeType === 1) {
+        var ct = '';
+        try { ct = String(gcs ? (gcs(a).getPropertyValue('container-type') || '') : ''); } catch (_eCT) { ct = ''; }
+        if (ct && ct !== 'normal') {
+          var w = '';
+          try { w = String(gcs ? (gcs(a).getPropertyValue('width') || '') : ''); } catch (_eCW) { w = ''; }
+          var m = /^\s*([+-]?\d*\.?\d+)px\s*$/i.exec(w);
+          if (m) {
+            var fv = parseFloat(m[1]);
+            if (isFinite(fv)) return fv;
+          }
+          return null; // 容器命中但内联尺寸探不明：fail-closed，不虚构
+        }
+        a = a.parentNode;
+      }
+    } catch (_eCI) { /* 原型链/分离节点异常 → 兜底 */ }
+    return null;
+  }
+
   // CSS 标识符大小写折叠仅 ASCII（css-syntax §3.3.10；Unicode 同形字不折叠——
   // corpus invalid-named 钉 U+212A KELVIN SIGN 形 blacK/darKblue 必须拒识别）。
   function _zwCAsciiLower(s) {
@@ -366,8 +396,17 @@
               .replace(/(\d*\.?\d+)em/g, function (_, n) { return String(parseFloat(n) * 16); })
               .replace(/(\d*\.?\d+)px/g, function (_, n) { return n; })
               .replace(/(\d*\.?\d+)%/g, function (_, n) { return n; })
-              // 容器查询单位无容器上下文时按视口派生大正值（corpus sign(2cqw - 10px) → +1）。
-              .replace(/(\d*\.?\d+)(cqw|cqh|cqi)/g, function (_, n) { return String(parseFloat(n) * 1000); });
+              // 容器查询单位：计算面容器基座在手（__zwComputedColorValue 探明
+              // 最近 container-type ≠ normal 祖先内联尺寸）按 cqw = N·W/100 求值
+              //（css-conditional-5 §container-lengths；cqi 水平书写 ≡ cqw）；
+              // 无基座（declared 面/未探明）保视口派生大正值兜底
+              //（corpus sign(2cqw - 10px) → +1）。cqh 高度轴未建模同兜底。
+              .replace(/(\d*\.?\d+)(cqw|cqh|cqi)/g, function (_, n, u) {
+                if (_zwCCqwBase != null && (u === 'cqw' || u === 'cqi')) {
+                  return String(parseFloat(n) * _zwCCqwBase / 100);
+                }
+                return String(parseFloat(n) * 1000);
+              });
             if (!/[^0-9+\-*\/().\s]/.test(inner) && !/%/.test(inner)) {
               var sv = _zwCArith(inner);
               if (sv != null && isFinite(sv)) return { kind: 'num', v: sv > 0 ? 1 : sv < 0 ? -1 : 0, u: '' };
@@ -1306,7 +1345,13 @@
   globalThis.__zwComputedColorValue = function (elt, prop, declaredValue) {
     if (prop === 'opacity') return _zwCOpacComputed(declaredValue);
     if (prop !== 'color') return null;
-    var c = _zwCParse(String(declaredValue == null ? '' : declaredValue).trim(), true); // 计算面：sign()/容器单位原子求值
+    _zwCCqwBase = _zwCContainerInlineSize(elt); // cq 单位容器基座（css-conditional-5 §container-lengths）
+    var c;
+    try {
+      c = _zwCParse(String(declaredValue == null ? '' : declaredValue).trim(), true); // 计算面：sign()/容器单位原子求值
+    } finally {
+      _zwCCqwBase = null;
+    }
     if (!c || c.form === 'raw' || c.form === 'csswide') return null;
     try {
       return _zwCSerializeComputed(c, elt, false);

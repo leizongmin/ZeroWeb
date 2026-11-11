@@ -968,8 +968,9 @@
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
             // s399：OBJECT.data 除外——专用分支（属性写 + 连接态重启资源取回，
-            // 下方 data setter 臂）。
+            // 下方 data setter 臂）。s405：EMBED.src 同除外（embed 专用重启臂）。
             && !(_realTag(sel, handle) === 'OBJECT' && p === 'data')
+            && !(_realTag(sel, handle) === 'EMBED' && p === 'src')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
           // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
           // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
@@ -1124,6 +1125,27 @@
               // 随 entry 重建——新资源重新派终态）。
               if (_zwObjectNavCache[_objKey399]) delete _zwObjectNavCache[_objKey399];
               _zwLoadObjectResource(_objKey399, sel, handle, true);
+            }
+          }
+        } else if (p === 'src' && _realTag(sel, handle) === 'EMBED') {
+          // html-semantics M2 切片 405：embed src IDL setter 运行时加载（spec
+          // .../iframe-embed-object.html#the-embed-element-setup-steps——已连接
+          // embed 的 src 内容属性更新重启资源取回；embed-change-src
+          // 「reload with new content when the src attribute is changed」驱动案）。
+          // 镜像上方 s399 OBJECT.data 臂形态：先写内容属性（IDL 反射 round-trip），
+          // 再按连接态重启加载链（detached 只写属性——插入钩子接入时启动）。
+          if (handle) __zw_set_attr_handle(handle, 'src', String(value));
+          else __zw_set_attr(sel, 'src', String(value));
+          moAttr = 'src';
+          var _embConn405 = false;
+          try { _embConn405 = _makeProxy(sel, handle).isConnected === true; } catch (_eEmbConn405) {}
+          if (_embConn405 && typeof _zwLoadObjectResource === 'function') {
+            var _embKey405 = _elKey(sel, handle);
+            if (_embKey405) {
+              // 重启语义：src 更新换资源，旧终态 entry 作废重建（事件 fired 门
+              // 随 entry 重建——新资源重新派终态）。
+              if (_zwObjectNavCache[_embKey405]) delete _zwObjectNavCache[_embKey405];
+              _zwLoadObjectResource(_embKey405, sel, handle, true, true);
             }
           }
         } else if (p === 'href' && _zwIsSvgNsEl(sel, handle)) {
@@ -14864,6 +14886,76 @@
       } catch (_e) {}
     }
     return _zwLocalDefiniteRect(sel, handle);
+  }
+
+  // CSSOM View §offsetParent/offsetLeft/offsetTop spec 化（wptfyi-css 组F 布局刀1）：
+  // offsetParent 算法——最近 positioned（position != static）或 containing block
+  // 建立者祖先（transform/perspective/filter != none、contain
+  // paint/layout/content/strict）或最近 td/th/table 祖先，单遍取最近命中；fixed
+  // 自身仅 CB 建立者可命中（fixed 不被 positioned 祖先包含——CB=viewport 时
+  // offsetParent null，WPT offsetParent-fixed oracle）；html/body → null（R4003c
+  // 保持）；无 rect → null（detached / display:none 祖先语义不变）。
+  // offsetLeft/Top = 相对 offsetParent padding edge（减 op border 宽），round 最近
+  // 整数（subpixel-sizes-and-offsets 钉 5.5→6）；op 无 rect 或宿主回调缺失时回落
+  // viewport 近似。旧实现 offsetLeft/Top 恒 viewport 相对、offsetParent 恒 body
+  // proxy 近似——相对语义断言面（anchor/position-area/cssom-view offset 族）全挂，
+  // 本刀升级。
+  // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
+  function _zwOffsetCbEstablisher(p) {
+    var t = __zw_get_computed_style(p, 'transform');
+    if (t && t !== 'none') return true;
+    var pp = __zw_get_computed_style(p, 'perspective');
+    if (pp && pp !== 'none') return true;
+    var f = __zw_get_computed_style(p, 'filter');
+    if (f && f !== 'none') return true;
+    var c = __zw_get_computed_style(p, 'contain');
+    if (c && (c === 'paint' || c === 'layout' || c === 'content' || c === 'strict')) return true;
+    return false;
+  }
+  // 返回：选择器字符串（positioned / CB 建立者 / td/th/table 祖先命中）、'body'
+  //（无命中回落）、null（fixed 且无 CB 建立者——offsetParent null）。
+  function _zwOffsetParentSel(sel, handle) {
+    var cur = sel;
+    var guard = 0;
+    var hasCS = typeof __zw_get_computed_style === 'function';
+    var isFixed = hasCS && __zw_get_computed_style(sel, 'position') === 'fixed';
+    while (cur && guard++ < 64) {
+      var p = (typeof __zw_parent === 'function') ? __zw_parent(cur) : null;
+      if (!p) break;
+      var pTag = _realTag(p, null);
+      if (pTag === 'BODY') return isFixed ? null : 'body';
+      if (hasCS) {
+        // fixed 的 CB 不是 positioned 祖先（除非其为 CB 建立者）——跳过 positioned 判定。
+        if (!isFixed) {
+          var pos = __zw_get_computed_style(p, 'position');
+          if (pos && pos !== 'static') return p;
+        }
+        if (_zwOffsetCbEstablisher(p)) return p;
+      }
+      if (pTag === 'TD' || pTag === 'TH' || pTag === 'TABLE') return p;
+      cur = p;
+    }
+    return isFixed ? null : 'body';
+  }
+  // offsetLeft/offsetTop 换算：相对 offsetParent padding edge，round 最近整数。
+  function _zwOffsetOffset(sel, handle, r, axis) {
+    if (!r) return 0;
+    var myTag = _realTag(sel, handle);
+    if (myTag === 'BODY' || myTag === 'HTML') return axis === 'left' ? r.x : r.y;
+    if (typeof __zw_get_computed_style !== 'function' || typeof __zw_parent !== 'function') {
+      return axis === 'left' ? r.x : r.y;
+    }
+    if (__zw_get_computed_style(sel, 'position') === 'fixed') {
+      // offsetParent null → 相对初始 containing block（viewport）。
+      return Math.round(axis === 'left' ? r.x : r.y);
+    }
+    var opSel = _zwOffsetParentSel(sel, handle);
+    if (!opSel) return Math.round(axis === 'left' ? r.x : r.y);
+    var opRect = _zwLayoutRectTrap(opSel, null);
+    if (!opRect) return axis === 'left' ? r.x : r.y;
+    var opBorder = parseFloat(__zw_get_computed_style(opSel, axis === 'left' ? 'border-left-width' : 'border-top-width'));
+    if (!isFinite(opBorder)) opBorder = 0;
+    return Math.round((axis === 'left' ? r.x - opRect.x : r.y - opRect.y) - opBorder);
   }
 
   // getBoundingClientRect/getClientRects 共用（R2828）：从 `__zw_getBoundingClientRect(id)` 解析

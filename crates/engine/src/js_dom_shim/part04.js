@@ -1291,6 +1291,28 @@
             }
           } catch (_eS6sweep) {}
         };
+        // s403（html-semantics M2 切片 403）：parser 期静态 object[data] 启航——
+        // _zwStartConnectedObject 此前仅动态插入钩子（append 链）接线，解析期
+        // object 无人启航：嵌套文档脚本（object-handler 的 parent 回调链）永不
+        // 执行 → 文件级 Timeout。window load 派发前一次性**静默**物化（S6 同款
+        // 扫描位；fireEvents=false）——嵌套文档脚本通道 + 消费面，不派 load/error：
+        // 渲染静态 object 的终态事件面 spec 有（渲染步 load），但语料无驱动面且
+        // display:none 双案（object-in-display-none-load-event /
+        // object-image-display-none-loading）钉「不渲染 → 不派 load」——静默面
+        // 规避事件回归，事件仍由动态插入臂/消费读按既有语义服务。
+        // FIXME(object-static-events)：渲染静态 object 不派终态事件（spec 偏差
+        // 记档——恢复需 rendered 门（祖先链 display walk）+ 事件面，语料踩坑再扩）。
+        globalThis.__zwStartParserObjects = globalThis.__zwStartParserObjects || function () {
+          try {
+            var objs = document.querySelectorAll('object');
+            for (var i = 0; i < objs.length; i++) {
+              var hasData = false;
+              try { hasData = !!objs[i].getAttribute('data'); } catch (_eObjSwD) {}
+              if (!hasData) continue;
+              _zwStartConnectedObject(objs[i], true, false);
+            }
+          } catch (_eObjSweep) {}
+        };
         // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + 运行期 img 事件
         // 排队 drain——window 'load' 派发前调用（part06 dispatchEvent load 分支，与
         // R139/S6 同款扫描位）。
@@ -4062,7 +4084,20 @@
             // 兜底覆盖 host 无第二个同 local ns 实例的读（"First set attribute" 簇——host
             // 首实例缺席时按实例层 local first-match）。含大写限定名的 NS 实例不可经非 NS
             // 族命中（WPT "Only lowercase attributes are returned"）。
-            var v = handle
+            // cssom-1 update-style-attribute 同步可见面（editing-compat CSSOM 写回刀，
+            // 2026-11-11）：handle 面 CSSOM 声明写（`el.style.x=v` → SetStyleOnHandle）入
+            // pending log，attr 真同步只在批 flush（js_dom_bridge `apply_style_property`）
+            // ——JS 同步读窗内 `__zw_get_attr_handle('style')` 读 stale 字面量（sel 面
+            // R2995 走 `__zw_get_attr_lw` 已 pending-aware，两面不对称）。style 属性读接
+            // `__zw_get_style_lw_handle`（R3199 正序 replay：SetAttr(style) 整体覆盖 /
+            // SetStyle per-prop merge）＝声明块变更立即反映到 style attr 读。序列化面
+            //（innerHTML/outerHTML）经同读路径传播。回调缺省（polyfill）回落原读零漂移。
+            // replay 空 ≠ 缺省：attr 在（快照或 pending 全删）→ present-empty ""，R3190
+            // 语义由共用尾部 present 判定承担。
+            // https://drafts.csswg.org/cssom-1/#update-style-attribute
+            var v = (n === 'style' && handle && typeof __zw_get_style_lw_handle === 'function')
+              ? (__zw_get_style_lw_handle(handle) || '')
+              : handle
               ? __zw_get_attr_handle(handle, n)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
             // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
@@ -8467,6 +8502,8 @@
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
                 // s399：object 插入步同排（动态插入启动资源取回 + 终态 load/error）。
                 _zwStartConnectedObject(ceAdded[ci], cePconn);
+                // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
+                _zwStartConnectedEmbed(ceAdded[ci], cePconn);
               }
               // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
               //（given-prong——spec details element insertion steps；open toggle 已在
@@ -11190,6 +11227,8 @@
                 _zwStartConnectedIframe(added[ci], cePconn);
                 // s399：object 插入步同排（与 appendChild 循环同款）。
                 _zwStartConnectedObject(added[ci], cePconn);
+                // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
+                _zwStartConnectedEmbed(added[ci], cePconn);
                 // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
                 // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
                 // mutation → selection 重记录 + 重验；element/picture 门在
@@ -13526,12 +13565,14 @@
           return r ? r.h : 0;
         }
         if (prop === 'offsetTop') {
+          // CSSOM View spec 化：相对 offsetParent padding edge，round 最近整数
+          //（_zwOffsetOffset 内含回落 viewport 近似的兼容臂）。
           var r = _zwLayoutRectTrap(sel, handle);
-          return r ? r.y : 0;
+          return _zwOffsetOffset(sel, handle, r, 'top');
         }
         if (prop === 'offsetLeft') {
           var r = _zwLayoutRectTrap(sel, handle);
-          return r ? r.x : 0;
+          return _zwOffsetOffset(sel, handle, r, 'left');
         }
         // scrollWidth/scrollHeight：滚动内容尺寸。布局 rect 无 overflow 数据（不含滚动展开量），
         // 近似为 client 尺寸（同 offsetWidth/Height 的 border-box 近似）。对「content 是否溢出」
@@ -13563,23 +13604,20 @@
           var _iframeSrc = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
           return _iframeSrc ? _zwResolveFetchUrl(_iframeSrc) : '';
         }
-        // offsetParent：最近 positioned 祖先（position != static）或 body，detached/hidden → null。
-        // 布局 rect 无 style 信息，无法精确算 positioned 祖先；近似：有 rect（已渲染）→ body proxy，
-        // 无 rect（detached/display:none）→ null。dominant 用法 `el.offsetParent === null` 可见性判定
-        // 正确（visible→非 null body / hidden→null）；`offsetTop - offsetParent.offsetTop` 嵌套坐标
-        // 为近似（offsetTop 本就 viewport-relative，见上注）。
+        // offsetParent：spec 算法（CSSOM View §dom-htmlelement-offsetparent）——最近
+        // positioned 祖先或最近 CB 建立者祖先（transform/perspective/filter/contain）
+        // 或最近 td/th/table 祖先，无命中 → body；fixed 自身 CB=viewport → null；
+        // detached/hidden（无 rect）→ null。html/body → null（R4003c 保持——
+        // 「沿 offsetParent 上行」遍历死循环防护仍由 body/html null 与 body 回落终止性
+        //（walk 64 深度守卫）双保险）。walk 与换算细节见 part05 _zwOffsetParentSel。
+        // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
         if (prop === 'offsetParent') {
-          // R4003c（html-semantics M2 切片 15）：html/body 自身 offsetParent → null
-          //（CSSOM View §offsetParent——body/html 无 offset parent，real browser
-          // `document.body.offsetParent === null`）。此前 body 有 rect → 自返 body，
-          // 「沿 offsetParent 上行累积坐标」的页面惯用遍历死循环——inert-label-focus
-          // 语料 clickOn 坐标累积 90s Execution timeout 实证（R4003b focus 前递使
-          // 该脚本首次走到 clickOn 而暴露）。
-          // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
           var _opTag = _realTag(sel, handle);
           if (_opTag === 'BODY' || _opTag === 'HTML') return null;
           var rp = _zwLayoutRectTrap(sel, handle);
-          return rp ? _wrapSelector('body') : null;
+          if (!rp) return null;
+          var _opSel = _zwOffsetParentSel(sel, handle);
+          return _opSel ? _wrapSelector(_opSel) : null;
         }
         // R3036：`element.sheet`——`<style>`/`<link rel=stylesheet>` 元素的 CSSStyleSheet（CSSOM 入口）。
         // CSS-in-JS 库（styled-components/emotion）+ 样式表操作代码经 `.sheet.cssRules`/`insertRule` 读改规则。

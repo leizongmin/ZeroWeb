@@ -1164,11 +1164,11 @@ fn test_parse_calc_nested_multiply_divide() {
 }
 
 #[test]
-/// 测试 calc() 中除以零返回 None
+/// 测试 calc() 中除以零按 IEEE 产出 +∞（CSS Values 4 §10.6）
 fn test_eval_calc_divide_by_zero() {
     let expr = parse_calc("calc(100px / 0)").unwrap();
     let result = eval_calc(&expr, None);
-    assert_eq!(result, None);
+    assert_eq!(result, Some(f64::INFINITY));
 }
 
 #[test]

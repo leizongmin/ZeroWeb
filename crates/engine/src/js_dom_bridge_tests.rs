@@ -118,3 +118,21 @@ include!("js_dom_bridge_tests/part101_s399_object_dynamic_load.rs");
 // 50 号 s400 object scheme 取回面 + window.length：data:/blob:/bare-origin 解码
 // 七面 + LegacyUnforgeable 计数（iframe/object entry + destroy/移除递减）钉。
 include!("js_dom_bridge_tests/part102_s400_object_schemes_window_length.rs");
+
+// 51 号 s403 object 嵌套文档脚本通道：parser 静态启航（静默）+ R206 脚本移植
+// （parent 回调链）+ 嵌套导航重物化 + named access morph + replaceState 槽钉。
+include!("js_dom_bridge_tests/part103_s403_object_nested_scripts.rs");
+
+// 52 号 s404 object window[N] 索引 + javascript: 导航：WindowProperties 索引层
+// （own accessor 物化序近似树序 + descriptor/越界/移除重排）+ data 属性静默
+// fallback + 完成值求值通道（percent-decode → 重物化 → load 重派/静默中止）钉。
+include!("js_dom_bridge_tests/part104_s404_object_window_index_javascript_nav.rs");
+
+// 53 号 s405 embed 动态加载链：插入钩子启航（共享加载核 src 属性读）+ 失败终态
+// 映射 load + javascript: 全静默 + src IDL 重启臂 + window[N] 活跃集合计入钉。
+include!("js_dom_bridge_tests/part105_s405_embed_dynamic_load.rs");
+
+// 54 号 s406 frames named access 扩 embed/object + 嵌套导航失败终态：R177 帧代理
+// named face 收口（embed-network-error 子测 3/4 driving）+ 失败三臂收拢（embed
+// 重派 load / object 静默保持）钉。
+include!("js_dom_bridge_tests/part106_s406_frames_named_embed_nav_fail.rs");

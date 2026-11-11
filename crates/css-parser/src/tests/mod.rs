@@ -128,3 +128,6 @@ mod transform_coverage;
 mod types_coverage;
 mod types_coverage2;
 mod values_coverage;
+/// CSS Values 4 §10.5 型别表 + §10.9 IEEE sign/除零 + §10.8 hypot 变参 +
+/// §10.11 scale 族折叠（WPT signs-abs / hypot-pow-sqrt 桶驱动）。
+mod values_math_type_table_tests;

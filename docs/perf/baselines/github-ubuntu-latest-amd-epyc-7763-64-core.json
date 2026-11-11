@@ -54,9 +54,9 @@
     },
     {
       "id": "mb/zero-canvas/fill_rect_1000",
-      "p95": 8251784.90625,
+      "p95": 8198125.666666667,
       "tier": "budget",
-      "tightened_at": "2026-11-06T13:37:49Z"
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "mb/zero-canvas/path_ops_1000_segments",
@@ -210,14 +210,15 @@
     },
     {
       "id": "mb/zero-engine/paint_complex_page_500_elements",
-      "p95": 1077518.7857142857,
+      "p95": 946449.8552631579,
       "tier": "budget",
-      "tightened_at": "2026-11-01T17:32:41Z"
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "mb/zero-engine/paint_simple_page_100_elements",
-      "p95": 216982.09701492538,
-      "tier": "budget"
+      "p95": 191622.99837662338,
+      "tier": "budget",
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "mb/zero-host-runtime/create_100_window_configs",
@@ -289,9 +290,9 @@
     },
     {
       "id": "mb/zero-net/parse_url",
-      "p95": 445.6112806777127,
+      "p95": 440.11895217620764,
       "tier": "budget",
-      "tightened_at": "2026-11-01T17:32:42Z"
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "mb/zero-protocol/ipc_deserialize_10000",
@@ -348,9 +349,9 @@
     },
     {
       "id": "mb/zero-render-foundation/full_scene/raster_1500_fills_1080p",
-      "p95": 7638557.076923077,
+      "p95": 7465855.416666667,
       "tier": "budget",
-      "tightened_at": "2026-11-01T17:32:42Z"
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "mb/zero-render-foundation/glyph_cache/insert",
@@ -384,9 +385,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/execute_loop_1k",
-      "p95": 434501.38285714283,
+      "p95": 415389.6418918919,
       "tier": "budget",
-      "tightened_at": "2026-11-06T15:51:00Z"
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_simple_expression",
@@ -635,9 +636,9 @@
     },
     {
       "id": "page/morning/parse_ms",
-      "p95": 0.494823,
+      "p95": 0.49417600000000006,
       "tier": "budget",
-      "tightened_at": "2026-11-07T13:41:59Z"
+      "tightened_at": "2026-11-11T13:35:09Z"
     },
     {
       "id": "page/morning/style_ms",

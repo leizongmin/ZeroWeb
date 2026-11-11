@@ -1067,6 +1067,15 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "top" => {
+            // CSS Anchor Positioning §anchor()：inset 槽 anchor() 形原文承载
+            //（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位基线）。
+            // "anchor-size(" 无 "anchor(" 子串不误捕（inset 属性本不接受
+            // anchor-size，非法形走既有 parse 拒面）。
+            if value.contains("anchor(") {
+                style.anchor_inset_top = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.top = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.top = v;
@@ -1075,6 +1084,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "right" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_right = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.right = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.right = v;
@@ -1083,6 +1097,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "bottom" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_bottom = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.bottom = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.bottom = v;
@@ -1091,6 +1110,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "left" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_left = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.left = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.left = v;
@@ -1103,6 +1127,48 @@ pub fn apply_property_value_with_quirks(
                 style.z_index = v;
                 return true;
             }
+        }
+        // ── CSS Anchor Positioning（css-anchor-position-1）四属性 ──
+        // 原文小写存储（文法校验/区域解析单点在 engine dom_bindings，声明面批
+        // anchor_props/position_area 同矩阵；样式承载只存原文供布局期消费）。
+        // 空值声明（`prop: ;`）parse 层不达此处；`none`/`auto` 存 None 语义同未声明。
+        "anchor-name" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.anchor_name = None;
+            } else {
+                style.anchor_name = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-anchor" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "auto" {
+                style.position_anchor = None;
+            } else {
+                style.position_anchor = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-area" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.position_area = None;
+            } else {
+                style.position_area = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-try-fallbacks" => {
+            // FIXME(css-anchor-position-1 §position-try-prop)：`position-try` 简写
+            // 拆分臂未接（stylesheet 声明面；shim CSSOM 面已拆，part03）。
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.position_try_fallbacks = None;
+            } else {
+                style.position_try_fallbacks = Some(v.into_boxed_str());
+            }
+            return true;
         }
         "overflow-x" => {
             if let Some(v) = values::parse_overflow(value) {

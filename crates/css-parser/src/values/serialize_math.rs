@@ -68,8 +68,8 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
 ///
 /// 消费方：inline style 写面（native CSD canonicalize 链）与读出视图
 ///（mutation log replay `style_from_mutations_lw`）。白名单仅本轮有 WPT
-/// 驱动案的属性：transform（rotate 族 wrapper 折叠）、rotate/scale（裸数学
-/// 函数）。其余属性原样保留。
+/// 驱动案的属性：transform（rotate/scale 族 wrapper 折叠）、rotate/scale/
+/// opacity（裸数学函数）。其余属性原样保留。
 pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
     let v = value.trim();
     if v.is_empty() {
@@ -78,28 +78,37 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
     match prop {
         "transform" => fold_transform_math_specified(v),
         "rotate" => fold_math_specified(v, MathFoldKind::Angle),
-        "scale" => fold_math_specified(v, MathFoldKind::Number),
+        "scale" | "opacity" => fold_math_specified(v, MathFoldKind::Number),
         _ => None,
     }
 }
 
 /// transform 列表 wrapper 折叠：rotate/rotatex/rotatey/rotatez/rotate3d 的角度
-/// 实参为数学函数时以 [`fold_math_specified`]（Angle）折叠替换，其余函数与原文
-/// 大小写保留；无折叠发生返 `None`。skew 族未接线（FIXME：无驱动案，WPT
-/// serialize 页仅 rotate 族）。
+/// 实参、scale/scalex/scaley/scalez/scale3d 的 number 实参为数学函数时以
+/// [`fold_math_specified`] 折叠替换，其余函数与原文大小写保留；无折叠发生返
+/// `None`。skew 族未接线（FIXME：无驱动案，WPT serialize 页仅 rotate/scale 族）。
 pub fn fold_transform_math_specified(value: &str) -> Option<String> {
     const ANGLE_FNS: [&str; 5] = ["rotate(", "rotatex(", "rotatey(", "rotatez(", "rotate3d("];
+    // scale 族 number 槽（hypot-pow-sqrt-serialize `scale(pow(1,1))`、
+    // signs-abs-serialize `scale(abs(1))` 案驱动）。
+    const SCALE_FNS: [&str; 5] = ["scale(", "scalex(", "scaley(", "scalez(", "scale3d("];
     let lower = value.to_ascii_lowercase();
     let bytes = lower.as_bytes();
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
-        // 函数名 + '('；名前不得为 ident 字符（排除嵌套 ident 段误命中）。
-        let hit = ANGLE_FNS.iter().find(|name| {
-            lower[i..].starts_with(*name)
-                && (i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_'))
-        });
-        let Some(name) = hit else {
+        // 函数名 + '('；名前不得为 ident 字符（排除嵌套 ident 段误命中；
+        // `scalex(`/`scaley(`/`scalez(`/`scale3d(` 起始不同，不命中 `scale(`）。
+        let hit = ANGLE_FNS
+            .iter()
+            .map(|name| (*name, MathFoldKind::Angle))
+            .chain(SCALE_FNS.iter().map(|name| (*name, MathFoldKind::Number)))
+            .find(|(name, _)| {
+                lower[i..].starts_with(name)
+                    && (i == 0
+                        || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_'))
+            });
+        let Some((name, kind)) = hit else {
             i += 1;
             continue;
         };
@@ -118,17 +127,22 @@ pub fn fold_transform_math_specified(value: &str) -> Option<String> {
             // 括号不平衡——非法面整体保留原文。
             return None;
         }
-        // rotate3d(x y z angle)（空白/逗号分隔）：仅末 token（角度实参）折叠替换；
-        // 其余单角度形整体折叠。
+        // rotate3d(x y z angle)/scale3d(x, y, z) 多实参形逐 token 折叠替换
+        //（rotate3d 仅末 token 为角度；scale3d 三 number token 各自折叠）；
+        // 其余单参形整体折叠。
         let span = &lower[open..j - 1];
-        let folded = if *name == "rotate3d(" {
+        let folded = if name == "rotate3d(" {
             let trimmed = span.trim_end();
             let tok_rel = trimmed.rfind([' ', ',']).map(|p| p + 1).unwrap_or(0);
             let tok = trimmed[tok_rel..].trim_start();
             let tok_start = open + tok_rel + (trimmed[tok_rel..].len() - tok.len());
             fold_math_specified(tok.trim(), MathFoldKind::Angle).map(|f| (tok_start, j - 1, f))
+        } else if name == "scale3d(" {
+            fold_scale3d_tokens(&lower, open, j - 1, &mut replacements);
+            i = j;
+            continue;
         } else {
-            fold_math_specified(span.trim(), MathFoldKind::Angle).map(|f| (open, j - 1, f))
+            fold_math_specified(span.trim(), kind).map(|f| (open, j - 1, f))
         };
         if let Some(f) = folded {
             replacements.push(f);
@@ -148,6 +162,36 @@ pub fn fold_transform_math_specified(value: &str) -> Option<String> {
     }
     out.push_str(&value[last..]);
     Some(out)
+}
+
+/// scale3d(sx, sy, sz) 逗号分隔三 number 实参逐 token 折叠（常量数学函数各以
+/// [`fold_math_specified`]（Number）替换，大小写保留）。切分括号感知——实参
+/// 内嵌 math 函数（`pow(1,1)`）的逗号不分裂 token。任意折叠未发生不产条目。
+fn fold_scale3d_tokens(lower: &str, open: usize, close: usize, replacements: &mut Vec<(usize, usize, String)>) {
+    let span = &lower[open..close];
+    let mut tok_start = open;
+    let mut depth = 0usize;
+    for (idx, ch) in span.bytes().enumerate() {
+        match ch {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            b',' if depth == 0 => {
+                fold_scale3d_token(lower, tok_start, open + idx, replacements);
+                tok_start = open + idx + 1;
+            }
+            _ => {}
+        }
+    }
+    fold_scale3d_token(lower, tok_start, close, replacements);
+}
+
+/// 折叠单个 token 跨度 [start, end)（Number 槽）。
+fn fold_scale3d_token(lower: &str, start: usize, end: usize, replacements: &mut Vec<(usize, usize, String)>) {
+    let tok = lower[start..end].trim();
+    if let Some(f) = fold_math_specified(tok, MathFoldKind::Number) {
+        let s = start + (lower[start..end].len() - lower[start..end].trim_start().len());
+        replacements.push((s, end, f));
+    }
 }
 
 /// CSSOM serialize-a-number 口径：最多 6 位小数、去尾零、`-0` 归 `0`；
@@ -569,6 +613,15 @@ mod tests {
             fold_decl_specified("rotate", "acos(-1)").as_deref(),
             Some("calc(180deg)")
         );
+        // opacity 裸数学函数折叠（hypot-pow-sqrt-serialize `calc(pow(1,1) - 0.5)`
+        // → `calc(0.5)` 驱动）；普通值/非数学原样。
+        assert_eq!(
+            fold_decl_specified("opacity", "calc(pow(1,1) - 0.5)").as_deref(),
+            Some("calc(0.5)")
+        );
+        assert_eq!(fold_decl_specified("opacity", "abs(1)").as_deref(), Some("calc(1)"));
+        assert_eq!(fold_decl_specified("opacity", "0.5"), None);
+        assert_eq!(fold_decl_specified("opacity", "calc(1px + 2px)"), None);
         // 白名单外属性 / 非数学值 / 空值保留原文。
         assert_eq!(fold_decl_specified("width", "calc(1px + 2px)"), None);
         assert_eq!(fold_decl_specified("transform", "rotate(45deg) scale(2)"), None);

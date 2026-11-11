@@ -1457,10 +1457,11 @@ impl InlineFormattingContext {
         // 不拆分 items（拆分会新增词间折行机会），计划经 `para_bidi_plan` 字段交
         // `break_items_into_lines` 消费（with_levels 光标）。详见 inline/para_bidi.rs
         // 模块头。R5501：容器 direction 传入 resolve（纯原子盒行的基方向回落源，HL1）。
-        // R5501（CSS2 §9.4.2）：基方向 RTL 激活门只在水平 IFC 放开（竖排行装配
-        // 另臂，guidelines #29 域分离；sideways-lr dir=rtl 页实证竖排泄漏返工）。
-        // 环境旗标在 IFC 边界读一次（guidelines #9），传入 resolve。
-        let box_level_ext = runtime_flags::para_bidi_box_level() && !self.vertical;
+        // R5501（CSS2 §9.4.2）：环境旗标在 IFC 边界读一次（guidelines #9），传入
+        // resolve。R5503（css-writing-modes-3 §2）：激活门放开到竖排 IFC——竖排 rtl
+        // 行内轴推进（行内起点=底 + 整行 item 序反转）由 `break_items_into_columns`
+        // 按 `para_base_rtl` 镜像消费；水平臂 L2 行级 pass 保持水平门（下方 gate）。
+        let box_level_ext = runtime_flags::para_bidi_box_level();
         self.para_bidi_plan = if self.bidi_override_direction.is_none() && runtime_flags::para_bidi() {
             let container_is_rtl = styles
                 .get(&container)
@@ -1475,7 +1476,11 @@ impl InlineFormattingContext {
         // 按基 level 参与（ext 已含水平门）。计划在 break 开头 take()，消费前快照。
         self.para_base_rtl = box_level_ext && self.para_bidi_plan.as_ref().is_some_and(|plan| plan.base_rtl);
         self.break_items_into_lines(items);
-        if para_has_rtl {
+        // R5502 插桩实证（evidence/r5502-…md §三）：竖排列真实装配片段 source levels
+        // 恒空 → 本 pass 从未触发；且其 ② x 镜像在竖排是块轴物理位（错轴）、① 字符级
+        // L2 对已烘焙视觉序的竖排文本是二次重排——显式保持水平门，竖排 rtl 另走
+        // break_items_into_columns 的行内轴镜像。
+        if para_has_rtl && !self.vertical {
             self.reorder_lines_l2_for_para_bidi();
         }
         // R3836：容器级 RTL bidi-override 的行级 run 序反转（UAX #9 L2——重排按行
@@ -2594,6 +2599,41 @@ impl InlineFormattingContext {
             }
             col.ascent = max_ascent;
             col.descent = max_descent;
+        }
+
+        // R5503（css-writing-modes-3 §2 direction + css-logical 语义）：竖排 rtl 行内轴
+        // 推进——基方向 rtl 时行内起点 = 行内终点缘（列底），整行 item 序反转（原子盒
+        // 与文本 run 同为反转单元；run/segment 内字形序不变，even run visual=logical，
+        // R5502 chromium oracle P1-P8 实证）。装配后逐列做行内轴镜像
+        // `y' = c − y − h`：vec 保持 DOM 序，反转隐含在镜像里（与水平臂
+        // `mirror_reverse_fragment_xs` 轴转置同构）；gap/margin 几何随镜像翻转，item
+        // 自身 inline-end 侧保持不变。镜像常数 c = max(container_width + s, depth_end)
+        // （container_width 竖排 = 行内可用深度 content_height，R1099）：definite 深度
+        // 富余 → 内容锚定行内终点缘（每列独立底锚，P8 多列实证）；溢出 clamp 到
+        // depth_end → 纯列内反转恒无负 y。s = 列末 fragment 尾空格 advance——R4433
+        // 行尾空格悬挂语义：锚定缘 = 可见字形缘，空格悬到缘外（P8 字形贴底缘实测）。
+        // auto 竖排 sizing 为 R1099/R1052 同族既有债务域，本臂不外溢（镜像无负 y）。
+        // 旗标链：para_base_rtl 已含 ZW_PARA_BIDI_BOX_LEVEL（=0 双臂回退旧世界，R3858）。
+        if self.para_base_rtl {
+            // 尾空格 advance 需 `&self` 度量（advance_of），先于 `&mut` 镜像遍历逐列
+            // 取出，避 E0502。
+            let hangs: Vec<f32> = self
+                .lines
+                .iter()
+                .map(|col| {
+                    col.runs
+                        .last()
+                        .filter(|r| r.text.ends_with(' '))
+                        .map_or(0.0, |r| self.advance_of(' ', None, r.font_size, r.is_ahem))
+                })
+                .collect();
+            for (col, hang_space) in self.lines.iter_mut().zip(hangs) {
+                let depth_end = col.runs.iter().map(|r| r.y + r.height).fold(0.0_f32, f32::max);
+                let c = (self.container_width + hang_space).max(depth_end);
+                for run in &mut col.runs {
+                    run.y = c - run.y - run.height;
+                }
+            }
         }
 
         // 计算每列的 x 坐标（沿 x 轴排列）

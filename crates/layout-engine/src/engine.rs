@@ -178,6 +178,7 @@ use crate::inline_finalization::*;
 pub(crate) mod abspos;
 use abspos::*;
 mod abspos_sizing;
+mod anchor_pos;
 pub(crate) mod inline_wrapper_box;
 use abspos_sizing::*;
 // R965：taffy 后处理步骤（adjust_inline_block_positions / sort_children_by_css_order /
@@ -1514,6 +1515,12 @@ impl LayoutEngine {
         if !abspos::subtree_has_float(&root_box) {
             fix_abspos_static_position_y(&mut root_box, styles);
         }
+
+        // 11.7c wptfyi-css 组F 布局刀2+3：position-area 区域定位（css-anchor-
+        // position-1 §position-area）——锚注册收集（anchor-name → 视口几何）+
+        // anchored 元素 3×3 网格区域定位（htb 第一刀）；刀3 anchor() inset 函数
+        // 求值（物理边/center/百分比/fallback）。（ZW_ANCHOR_AREA=0 kill-switch）
+        anchor_pos::apply_anchor_position_area(&mut root_box, styles);
 
         // 11.8 后处理（R1371）：abspos flex 容器（top+bottom 拉出 definite height）内替换
         // flex item 的 cross-stretch + transferred-size。taffy 在 content layout 后才解析

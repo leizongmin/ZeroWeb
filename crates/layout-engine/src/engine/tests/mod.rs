@@ -1062,3 +1062,7 @@ mod r5477_bfc_root_displace_tests;
 
 /// s372：[popover] UA position:fixed 几何契约（closedby-complex light-dismiss 命中前提）。
 mod s372_popover_ua_fixed_tests;
+
+/// wptfyi-css 组F 布局刀2：position-area 区域定位 pass 端到端
+///（css-anchor-position-1 §position-area，3×3 网格格满填语义）。
+mod g1f_anchor_pos_tests;

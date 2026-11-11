@@ -3,6 +3,7 @@
 //! 定义 CSS 属性值的类型化表示，以及解析函数。
 
 pub mod anchor;
+pub mod anchor_area;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;

@@ -882,33 +882,57 @@ pub(super) fn computed_style_by_handle(
                         && **se == *shadow_entries
             );
             if !same {
-                let mut doc = parse_html(html);
-                let mut nodes: HashMap<String, NodeId> = HashMap::new();
                 let m = pending();
                 let start = applied.min(m.len());
-                // s168（html-semantics M2）：attachShadow 已应用前缀 × 基座未携声明式
-                // shadow → 全量重放。游标发布与基座换代非配对的宿主形态（testharness
-                // runner 的 dom_html 注册期原文：游标已推进而基座不含 JS 落地效果）下，
-                // parse(基座) 缺 [0..applied) 的 shadow 树状态，[applied..] 重放永不及物
-                // ——shadow 树内 handle 全部落空。基座含声明式形态时（drain 重序列化
-                // 回环，serializer ShadowRoot 臂 → parse 侧 materialize），shadow 树已在
-                // 基座，维持 [applied..] 窗语义不变（生产 cached_html 形态，防双计）。
-                // https://dom.spec.whatwg.org/#dom-element-attachshadow
-                let start = if !html.contains("shadowrootmode")
-                    && m[..start].iter().any(|mm| {
-                        matches!(
-                            mm,
-                            DomMutation::AttachShadow { .. } | DomMutation::AttachShadowOnHandle { .. }
-                        )
-                    }) {
-                    0
+                let prefix_has_shadow = m[..start].iter().any(|mm| {
+                    matches!(
+                        mm,
+                        DomMutation::AttachShadow { .. } | DomMutation::AttachShadowOnHandle { .. }
+                    )
+                });
+                let base_has_marker = html.contains("shadowrootmode");
+                let mut doc;
+                let mut nodes: HashMap<String, NodeId> = HashMap::new();
+                if prefix_has_shadow && base_has_marker {
+                    // s402（html-semantics M2）：基座携声明式标记（drain 重序列化回环
+                    // 或探测环 dump——shim `_zwSrQualifies180` list 臂对命令式根恒收、
+                    // serializer ShadowRoot 臂同形；典型触发形态 = 队列已 drain 尽、
+                    // 窗口 [applied..count) 空）→ parse 物化的 shadow 树无 handle 身份
+                    //（序列化不带 handle 标记），森林 handle 全部落空。重建 = 基座剥
+                    // 声明式模板 span（parse 不物化，交给重放）+ 森林切片
+                    //（[`super::shadow_forest_mutations`]——最终归属闭包过滤的
+                    // [0..applied) 前缀）重放：Create*/attach/append 链在视图 doc
+                    // 重注册全部森林 handle。切片就地对 (m, start) 计算，无跨发布
+                    // 滞后；重放窗口 [applied..count) 照旧续放 pending 尾。
+                    // https://dom.spec.whatwg.org/#dom-element-attachshadow
+                    let forest = super::shadow_forest_mutations(&m, start);
+                    doc = parse_html(&super::strip_declarative_shadow_templates(html));
+                    // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
+                    // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
+                    // applier 内部）。两段调用共用 nodes 持久表：切片注册的 handle 供
+                    // 窗口段解析（applier 入口从 persistent_nodes 预植 ephemeral 表）。
+                    let _ = super::apply_dom_mutations_full(&mut doc, &forest, None, Some(&mut nodes), None, None);
+                    let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
                 } else {
-                    start
-                };
-                // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
-                // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
-                // applier 内部）。
-                let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
+                    doc = parse_html(html);
+                    // s168（html-semantics M2）：attachShadow 已应用前缀 × 基座未携声明式
+                    // shadow → 全量重放。游标发布与基座换代非配对的宿主形态（testharness
+                    // runner 的 dom_html 注册期原文：游标已推进而基座不含 JS 落地效果）下，
+                    // parse(基座) 缺 [0..applied) 的 shadow 树状态，[applied..] 重放永不及物
+                    // ——shadow 树内 handle 全部落空。基座含声明式形态时（drain 重序列化
+                    // 回环，serializer ShadowRoot 臂 → parse 侧 materialize），shadow 树已在
+                    // 基座，维持 [applied..] 窗语义不变（生产 cached_html 形态，防双计）。
+                    // https://dom.spec.whatwg.org/#dom-element-attachshadow
+                    let start = if prefix_has_shadow && !base_has_marker {
+                        0
+                    } else {
+                        start
+                    };
+                    // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
+                    // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
+                    // applier 内部）。
+                    let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
+                }
                 // s168：compute_styles_for_doc 为三通道共汇点——shadow 条目融合在其内部。
                 let (mut styles, _) = compute_styles_for_doc(&doc, &css);
                 apply_intrinsic_size_overrides(&doc, &mut styles);
