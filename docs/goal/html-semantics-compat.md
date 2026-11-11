@@ -2,39 +2,73 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 409 收口（script-created link stylesheet 不阻塞
-script，driving 2F→P）：interactions-of-styling-and-scripting 目录清零——
-script-created-link / dynamic-render-blocking-link 双案红根两层——发题侧
-相对 URL miss s163 延迟分支（`_zwSsVisitCss` 传原始 href，`_zwFetchSimDelay`
-interactions 前缀分支按绝对形态设计，相对形 miss → delay 0 瞬时发题，取回
-在脚本间微任务排空点完成 styleExists 恒真；style 双胞胎 Pass 正因 @import
-内层 URL 解析时已绝对化）+ s349 阻塞计数缺 parser-inserted 限定（修复①后
-延迟发题 1000ms，动态臂若仍计数，等待泵把延迟取回等完再放行后继脚本——
-延迟仿真被泵消解；spec the-link-element：script-created stylesheet 不入
-script-blocking 集）。施工三件：part01 `_zwFetchSimDelay` 发题前对页 base
-归一（非 https?: 经 `__zw_parse_url` + `_zwDocBaseURL`，解析失败回落原始
-形；trickle/delay.py query 形判定不受影响）+ part03 `_ssDoVisit` 计数
-`noOverlay === true` 限定（= s152 静态交错扫描臂；动态插入/attr 变更臂不
-计数，media 门语义不变）+ 常驻钉 part109 双测（mid-window 计数门 + 检查点
-后发题齐写且相对形 URL 归一 wire 面 / `_zwFetchSimDelay` 纯函数六案）。
-验证：双钉全绿；单元 engine **3896P/10F**（+10P = 双钉 2 + 并行流合入
-8〔p39 epoch 族 d3f5eb3a5 + engine NaN censor 钉 6fe8fad31〕，失败清单
-逐名 = s408 10F 零位移）+ webview 849P/2F 同形；driving solo interactions
-目录 9 键全 Pass（runner token `_b409` 钉证新鲜）；全树 sweep ×2 join 对
-s408 干净基线 **恰 2 STATE-DIFF 全 driving F→Pass 真 new=0**（双跑全等
-8484 keys 8245P/213F/26T，cross state-diff=0；select-home-end 本轮双跑
-T 形在册 s292 watchdog flake 族单列；join-1 另见 s408 run1 遗留探针 7 键
-GONE 单列）；过程陷阱：钉①挂起 = assert_eq! 宏格式化参数二次 lock 自死锁
-（判别式 guard 临时横跨宏展开存活、失败路径才触发——match 判别式 guard
-死锁 learning 同根因宏变体已补录；yama ptrace_scope=1 gdb 后台进程不可
-attach，相位探针+看门狗定位）+ 桥测「同步段零发题」假设错误（V8 每次
-execute 末尾自动泵微任务检查点，_defer 发题链同 execute 内排空，runner
-timer wheel 真时序窗由钉②纯函数面 + driving solo 承载）。fmt 全仓净
-（callbacks.rs 既有脏已由并行流 7c24ec52c 清偿）/clippy clean/smoke 双
-PASS；**本流域在册红 214F+24T→212F+24T**（−2F）。下一步：document-metadata
-已清零，散单续勘（the-input-element 散单 3F / tentative/ constructed-
-stylesheets 机制勘根后按簇决策 / 挂账池承 s404/s405）；A2+D 簇立项征询仍待
-用户决策。
+**状态**: Active——M2 切片 410 收口（send_keys Enter formless 无隐式提交
+目标默认动作 no-op，driving 1F→P；checkable 父 label 2F 渲染域移交）：
+the-input-element 散单双案勘根——①date-readonly-keyboard：readonly date
+三键序（Space/↓/Enter）断言 value 不变，Space 落 plan_text_insert
+ReadOnlyTarget→scroll_fallback 既有兜底、↓ 走 scroll 键分支均存活，
+Enter（uE007）落 `_ =>` 默认动作臂无 formless 判定 → Submit → webview 查
+enclosing form 无 → noop(NotApplicable) → dispatch_action 只豁免
+DisabledTarget → 错误串 reject send_keys promise 链 → 整案 unhandled
+rejection；真浏览器语义 implicit submission 以 form owner 为前提，formless
+= 无默认动作 = 静默 no-op（键序 keydown/keyup 照常完成）。施工 runner
+`enter_formless_noop` 臂（`!buttonish && uE007|uE006 && 非 CE 宿主 &&
+无 enclosing form`——三重例外保既有绿面：formless buttonish click 通道
+优先、CE insertParagraph 活在 webview Submit 臂不得跳过、form 内隐式提交
+族不动；探针函数 script_gen 既有，纯 runner 组合零引擎改动）。②checkable
+-active-onblur-with-click 2F（父 label press）：桥测探针证 shim `:active`
+路由健康（`_zwLabeledControl` DFS + `__zwSetActiveFromSel` 祖先 walk 命中
+cb2），corpus 探针证根因 = 父 label `getBoundingClientRect` = 0,0,0,0
+（子 input 12,79,13,13 / following label 32,12.2,26.4,18.6 实矩形对照）
+→ pointerMove origin (2,2) 落 BODY → :active=BODY；根因 layout-engine
+inline-container boxing（含混排内容 label 未产盒），按 s405 先例移交渲染
+域记账，本流域不设 workaround。验证：driving solo date-readonly Pass
+（dir-solo 全目录复核非 FILTER 假绿；旧二进制证据 = s409 sweep Fail 行）；
+单元 engine **3897P/9F**（对 s409 名册 diff 恰 r307_tree_order_identity
+_domains F→P——本切片 runner-only 不感知，favorable 位移归并行流合入域）+
+webview 849P/2F 零位移；fmt/clippy clean；sweep ×2 join-1 **恰 1 STATE-
+DIFF = driving F→Pass** new=0/gone=0 键集 8484 全等（run1 8246P/212F/26T、
+run2 8246P/214F/24T，Δ = select-home-end 两键 T↔F s292 watchdog flake 族
+漂移单列，Home/End/PageUp/PageDown 键序案 Enter 路径不涉）；**本流域在册红
+212F+24T→211F+24T**（−1F；checkable 2F 保持 F 归因单列，渲染域解挂后再
+−2F）。下一步：maxlength-number 1T 勘根（file-level Timeout 先验语料资产
+s227 先例）/ tentative/ constructed-stylesheets 9T 机制勘根后按簇决策 /
+挂账池承 s404/s405；A2+D 簇立项征询仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 409 收口）——script-created link stylesheet 不阻塞 script（driving 2F→P）**: commit 3364ff226，账本 evidence/2026-11-12-m2s409-script-created-link-stylesheet.md。原 Active 段留档—— M2 切片 409 收口（script-created link stylesheet 不阻塞
+> script，driving 2F→P）：interactions-of-styling-and-scripting 目录清零——
+> script-created-link / dynamic-render-blocking-link 双案红根两层——发题侧
+> 相对 URL miss s163 延迟分支（`_zwSsVisitCss` 传原始 href，`_zwFetchSimDelay`
+> interactions 前缀分支按绝对形态设计，相对形 miss → delay 0 瞬时发题，取回
+> 在脚本间微任务排空点完成 styleExists 恒真；style 双胞胎 Pass 正因 @import
+> 内层 URL 解析时已绝对化）+ s349 阻塞计数缺 parser-inserted 限定（修复①后
+> 延迟发题 1000ms，动态臂若仍计数，等待泵把延迟取回等完再放行后继脚本——
+> 延迟仿真被泵消解；spec the-link-element：script-created stylesheet 不入
+> script-blocking 集）。施工三件：part01 `_zwFetchSimDelay` 发题前对页 base
+> 归一（非 https?: 经 `__zw_parse_url` + `_zwDocBaseURL`，解析失败回落原始
+> 形；trickle/delay.py query 形判定不受影响）+ part03 `_ssDoVisit` 计数
+> `noOverlay === true` 限定（= s152 静态交错扫描臂；动态插入/attr 变更臂不
+> 计数，media 门语义不变）+ 常驻钉 part109 双测（mid-window 计数门 + 检查点
+> 后发题齐写且相对形 URL 归一 wire 面 / `_zwFetchSimDelay` 纯函数六案）。
+> 验证：双钉全绿；单元 engine **3896P/10F**（+10P = 双钉 2 + 并行流合入
+> 8〔p39 epoch 族 d3f5eb3a5 + engine NaN censor 钉 6fe8fad31〕，失败清单
+> 逐名 = s408 10F 零位移）+ webview 849P/2F 同形；driving solo interactions
+> 目录 9 键全 Pass（runner token `_b409` 钉证新鲜）；全树 sweep ×2 join 对
+> s408 干净基线 **恰 2 STATE-DIFF 全 driving F→Pass 真 new=0**（双跑全等
+> 8484 keys 8245P/213F/26T，cross state-diff=0；select-home-end 本轮双跑
+> T 形在册 s292 watchdog flake 族单列；join-1 另见 s408 run1 遗留探针 7 键
+> GONE 单列）；过程陷阱：钉①挂起 = assert_eq! 宏格式化参数二次 lock 自死锁
+> （判别式 guard 临时横跨宏展开存活、失败路径才触发——match 判别式 guard
+> 死锁 learning 同根因宏变体已补录；yama ptrace_scope=1 gdb 后台进程不可
+> attach，相位探针+看门狗定位）+ 桥测「同步段零发题」假设错误（V8 每次
+> execute 末尾自动泵微任务检查点，_defer 发题链同 execute 内排空，runner
+> timer wheel 真时序窗由钉②纯函数面 + driving solo 承载）。fmt 全仓净
+> （callbacks.rs 既有脏已由并行流 7c24ec52c 清偿）/clippy clean/smoke 双
+> PASS；**本流域在册红 214F+24T→212F+24T**（−2F）。下一步：document-metadata
+> 已清零，散单续勘（the-input-element 散单 3F / tentative/ constructed-
+> stylesheets 机制勘根后按簇决策 / 挂账池承 s404/s405）；A2+D 簇立项征询仍待
+> 用户决策。
+>
 
 > **▶ 承前（2026-11-12 M2 切片 408 收口）——detached 文档 style 元素 LinkStyle sheet + headEl 本地树三件套（driving 1F→P）**: commit 34c06eeb5，账本 evidence/2026-11-12-m2s408-detached-style-sheet.md。原 Active 段留档——the-style-element 10F 勘根定谳——1F
 > driving（non-parser-created-doc.html：`createHTMLDocument().createElement
@@ -7127,6 +7161,29 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-12 M2 切片 410**：send_keys Enter formless 无隐式提交目标
+  默认动作 no-op 施工轮（driving 1F→P，runner 单文件 +23 行）——
+  the-input-element 散单双案勘根：date-readonly-keyboard Enter 落 Submit
+  臂 → formless noop(NotApplicable) → dispatch_action 不豁免 → send_keys
+  链 reject → unhandled rejection（真浏览器 implicit submission 以 form
+  owner 为前提，formless 无动作）；施工 `enter_formless_noop` 臂三重例外
+  （buttonish click 优先 / CE insertParagraph 不跳过 / form 内隐式提交族
+  不动）。checkable 父 label 2F 勘根：桥测探针证 shim :active 路由健康、
+  corpus 探针证父 label 零矩形 0,0,0,0（子/following 实矩形对照）→
+  pointerdown 落 BODY，根因 layout-engine inline-container boxing 归渲染
+  域（s405 先例移交记账）。验证：solo Pass；engine 3897P/9F（名册 diff 恰
+  r307 F→P favorable 归并行流）+ webview 849P/2F 零位移；fmt/clippy
+  clean；sweep ×2 join-1 恰 1 STATE-DIFF = driving F→Pass、new=0/gone=0
+  键集 8484 全等（select-home-end T↔F 族漂移单列）；**在册红
+  212F+24T→211F+24T**（−1F）。下一步：maxlength-number 1T 勘根 /
+  constructed-stylesheets 9T 机制勘根 / 挂账池承 s404/s405。
+- **2026-11-12 M2 切片 409**（账补记 2026-11-12，收口轮轮次账条目缺漏
+  补录）：script-created link stylesheet 不阻塞 script 施工轮（driving
+  2F→P，shim 两文件 + 桥测钉）——双层红根：s163 延迟仿真相对 URL miss
+  （发题侧 base 归一）+ s349 阻塞计数缺 parser-inserted 限定；
+  interactions-of-styling-and-scripting 目录清零。详见 Active 段留档与账本
+  evidence/2026-11-12-m2s409-script-created-link-stylesheet.md；**在册红
+  214F+24T→212F+24T**（−2F）。
 - **2026-11-12 M2 切片 408**：detached 文档 style 元素 LinkStyle sheet +
   headEl 本地树三件套施工轮（driving 1F→P，shim 两文件+桥测钉）——
   the-style-element 10F 勘根定谳：唯一 corpus 驱动案 non-parser-created-doc

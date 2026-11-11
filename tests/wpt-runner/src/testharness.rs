@@ -12645,6 +12645,26 @@ fn apply_testdriver_command(
                         // 序 keydown → （默认动作可有可无）→ keyup；旧版 return 跳过
                         // keyup 使页面 keyup 门铃永挂（WPT uievents/textInput
                         // enter-input 的 no-textInput 驱动））。
+                        // s410（html-semantics M2）：Enter **无 enclosing form 且非
+                        // buttonish 非 CE 宿主** = 无隐式提交目标，默认动作 no-op——
+                        // 键序 keydown→keyup 照常完成、不 reject 链（真浏览器语义：
+                        // implicit submission 以 form owner 为前提，无表单则无动作；
+                        // date-readonly-keyboard：readonly date 三键序断言 value 不变，
+                        // 旧版 Enter 落 Submit 臂 → formless noop(NotApplicable) →
+                        // send_keys 链 reject → 整案 unhandled rejection）。CE 宿主
+                        // 例外（insertParagraph 默认动作活在 webview Submit 臂，不得
+                        // 跳过）；form 内目标例外（隐式提交族既有绿面不动）。
+                        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+                        let enter_formless_noop = !enter_formless_buttonish
+                            && (character == '\u{E007}' || character == '\u{E006}')
+                            && webview
+                                .execute_script(&zero_engine::script_contenteditable_probe(&selector))
+                                .map(|v| v.trim() != "1")
+                                .unwrap_or(false)
+                            && webview
+                                .execute_script(&zero_engine::script_enclosing_form_probe(&selector))
+                                .map(|v| v.trim() != "1")
+                                .unwrap_or(false);
                         let mut action_error = None;
                         if enter_formless_buttonish {
                             let click_detail = zero_engine::DomEventDetail {
@@ -12655,6 +12675,9 @@ fn apply_testdriver_command(
                             let click_script =
                                 zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
                             let _ = webview.execute_script(&click_script);
+                        } else if enter_formless_noop {
+                            // 无默认动作——只完成键事件序（keydown 已派、keyup 在
+                            // 分支尾部恒派）。
                         } else if is_tab {
                             action_error = dispatch_tab_focus(webview, true);
                         } else {
