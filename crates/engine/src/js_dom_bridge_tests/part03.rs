@@ -5227,7 +5227,7 @@ fn test_style_proxy_invalid_value_rejected_t54() {
     // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单属性
     // 非法值整体拒绝（赋值忽略保留原值）；合法 math 形落库；白名单外属性放行
     //（兼容面零回退钉）。宿主回调 __zw_validate_decl_value → style-system
-    // validate_decl_value（transform 族/数值槽）。
+    // validate_decl_value（transform 族/数值槽/random width 槽）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -5255,7 +5255,7 @@ fn test_style_proxy_invalid_value_rejected_t54() {
              globalThis.__r5 = (d.style.rotate = 'acos(1)', d.style.getPropertyValue('rotate'));\n\
              globalThis.__r6 = (d.style.zIndex = 'sign(-3)', d.style.getPropertyValue('z-index'));\n\
              globalThis.__r7 = (d.style.marginLeft = 'round(23px, 10px)', d.style.getPropertyValue('margin-left'));\n\
-             globalThis.__r8 = (d.style.width = 'not-a-width-grammar', d.style.getPropertyValue('width'));\n\
+             globalThis.__r8 = (d.style.height = 'not-a-width-grammar', d.style.getPropertyValue('height'));\n\
              globalThis.__r9 = (d.style.transform = 'inherit', d.style.getPropertyValue('transform'));\n\
              globalThis.__r10 = (d.style.transform = '', d.style.getPropertyValue('transform'));",
         )
@@ -5275,7 +5275,7 @@ fn test_style_proxy_invalid_value_rejected_t54() {
     );
     assert_eq!(
         val("globalThis.__r8"), "not-a-width-grammar",
-        "白名单外属性放行（零回退钉）"
+        "白名单外属性放行（零回退钉；width 已入表——random 文法门槽）"
     );
     assert_eq!(
         val("globalThis.__r9"), "inherit",

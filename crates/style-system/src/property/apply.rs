@@ -1730,7 +1730,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 12] = [
+    const VALIDATED_PROPERTIES: [&str; 13] = [
         "transform",
         "rotate",
         "scale",
@@ -1754,6 +1754,9 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "transition-duration",
         "animation-delay",
         "animation-duration",
+        // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
+        // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
+        "width",
     ];
     let prop = property.trim().to_ascii_lowercase();
     if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
@@ -1767,7 +1770,31 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
         _ => {}
     }
-    // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/random()/
+    // random() 文法门（CSS Values 5 §random，tentative）：值内每个 `random(`
+    // 调用逐处过 css-parser 文法（identification 组合/节数门/族一致）+ 族随
+    // 属性槽校验，任一 invalid → 整拒；全 valid → 放行 store 原文（apply 链
+    // 未实现 random()，经 oracle 会误杀——serialize 页 71 接受形零漂移锚）。
+    // invalid 页 39 形全 width 槽。
+    // https://drafts.csswg.org/css-values-5/#random
+    {
+        let mut random_valid = true;
+        let mut had_random = false;
+        for args in extract_random_args(v) {
+            had_random = true;
+            let ok = match values::parse_random_args(&args) {
+                Some(spec) => values::random_family_allowed(&prop, spec.family),
+                None => false,
+            };
+            if !ok {
+                random_valid = false;
+                break;
+            }
+        }
+        if had_random {
+            return random_valid;
+        }
+    }
+    // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
     // 恒拒，会误拒引擎 store+serialize 路径本已正常的合法值（values corpus v5e
     // progress/calc-mix/random serialize 页 -12 回归根因）。文法断言只对实现面
@@ -1890,6 +1917,52 @@ const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 39] = [
     "rotatey",
     "rotatez",
 ];
+
+/// 提取值内全部 `random(` 调用的实参原文（ASCII 大小写不敏感、括号配平——
+/// 嵌套 calc 形如 `random(calc(1px + 2px), 3px)` 取到最外层配对为止）。
+fn extract_random_args(value: &str) -> Vec<String> {
+    let lower = value.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    while i + 7 <= bytes.len() {
+        if &lower[i..i + 7] != "random(" {
+            i += 1;
+            continue;
+        }
+        // ident 边界：前随字母/数字/-/_ 的 `random(` 属更长 ident（`foorandom(`
+        // 类），非本函数调用。
+        if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_') {
+            i += 1;
+            continue;
+        }
+        let start = i + 7;
+        let mut depth = 1usize;
+        let mut j = start;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        if depth == 0 {
+            out.push(value[start..j].trim().to_string());
+            i = j + 1;
+        } else {
+            // 括号不闭合（病态形，random-invalid `random(1px, )` 类的极端面
+            // 不在此列——闭括号缺失由整体文法门兜底拒）。
+            break;
+        }
+    }
+    out
+}
 
 /// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；
 /// URL/字符串字面量内形态属未实现面，放行方向正确）。
@@ -2093,8 +2166,10 @@ mod t54_validate_decl_value_tests {
 
     #[test]
     fn passthrough_faces_return_true() {
-        // 白名单外属性放行（parser 假阴性兼容面零回退）。
-        assert!(validate_decl_value("width", "not-a-width-grammar"));
+        // 白名单外属性放行（parser 假阴性兼容面零回退）。width 已入白名单
+        //（g16 random() 文法门槽，见 [`Self::random_grammar_gate`]），钉例换
+        // 同槽位未入表的 height。
+        assert!(validate_decl_value("height", "not-a-width-grammar"));
         assert!(validate_decl_value("unknown-prop", "anything"));
         // shorthand 放行（apply 链无展开臂）。
         assert!(validate_decl_value("margin", "10px 20px"));
@@ -2191,6 +2266,61 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transition-delay", "var(--d)"));
         assert!(validate_decl_value("transition-delay", "min(calc(1s + var(--x)), 2s)"));
         assert!(validate_decl_value("transition-duration", "random(1s, 2s)"));
+    }
+
+    #[test]
+    fn random_grammar_gate() {
+        // CSS Values 5 §random 文法门（random-invalid 39 形 / random-serialize
+        // 71 接受形，全走 width 槽——invalid 页唯一属性）。valid 形放行 store
+        // 原文（serialize 页零漂移锚），invalid 形整拒。
+        // serialize 页接受形（width 槽）。
+        for v in [
+            "random(0px, 100px)",
+            "random(fixed 0.5, 0px, 100px)",
+            "random(auto, 0px, 100px)",
+            "random(--foo, 0px, 100px)",
+            "random(--foo element-scoped, 0px, 100px)",
+            "random(element-scoped, 0px, 100px)",
+            "random(property-index-scoped, 0px, 100px)",
+            "random(element-scoped property-scoped, 0px, 100px)",
+            "random(property-index-scoped element-scoped , 0px, 100px)",
+            "random(--foo element-scoped property-index-scoped, 0px, 100px)",
+            "random(0px, 100px, 3px)",
+            "random(--foo, 10px, 20%)",
+            "random(--foo, 100px, 0px)",
+        ] {
+            assert!(validate_decl_value("width", v), "{v} 应放行");
+        }
+        // invalid 页拒形（结构残缺/identification 错组/双 UA 域）。
+        for v in [
+            "random()",
+            "random( )",
+            "random(,)",
+            "random(1px, )",
+            "random(,1px)",
+            "random(1px)",
+            "random(1px,2px,)",
+            "random(1px,2px,1px foo)",
+            "random(foo, 1px, 2px)",
+            "random(\"--foo\", 1px, 2px)",
+            "random(--foo --bar, 1px, 2px)",
+            "random(fixed -1, 1px, 2px)",
+            "random(fixed 0.5px, 1px, 2px)",
+            "random(element-scoped uawidth, 1px, 2px)",
+            "random(property-scoped ua-width-1, 1px, 2px)",
+            "random(property-index-scoped --foo property-scoped, 1px, 2px)",
+        ] {
+            assert!(!validate_decl_value("width", v), "{v} 应拒");
+        }
+        // 族随属性槽：width（length 槽）拒 angle 族（invalid 页 `10deg, 20deg` 行
+        // ——文法 valid，槽位拒）；嵌套形放行（transform 复合槽无语料钉面）。
+        assert!(!validate_decl_value("width", "random(10deg, 20deg)"));
+        assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
+        // 非 random width 值零漂移（oracle 通道既序）。
+        assert!(validate_decl_value("width", "10px"));
+        assert!(validate_decl_value("width", "auto"));
+        assert!(validate_decl_value("width", "calc(50% - 10px)"));
+        assert!(validate_decl_value("width", "min-content"));
     }
 }
 
