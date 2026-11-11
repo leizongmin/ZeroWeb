@@ -867,6 +867,19 @@
       if (!ldL || !ldD) return null;
       return { kind: 'lightdark', light: ldL, dark: ldD };
     }
+    if (fn === 'contrast-color') {
+      // contrast-color(<color>)（css-color-5 §contrast-color）：恰一 <color>
+      // 实参，多参/空参拒。mix 侧/relative origin 位置的内参需基础形可解析
+      // （'contrast-color(blue)' 侧、'rgb(from contrast-color(blue) r g b)'
+      // origin）；顶层基础形的零漂移由 __zwComputedColor 门保（回退宿主
+      // R5107——关键字/系统色/currentcolor/嵌套 contrast 宿主已解析）。
+      // https://drafts.csswg.org/css-color-5/#contrast-color
+      var ctIn = inner.trim();
+      if (!ctIn || _zwCCTopSplit(ctIn, ',').length !== 1) return null;
+      var ciAst = _zwCCParseColorValue(ctIn);
+      if (!ciAst) return null;
+      return { kind: 'contrast', inner: ciAst };
+    }
     return null;
   }
 
@@ -1116,6 +1129,24 @@
         // light-dark-currentcolor-in-color 钉面）。
         var wantDark = _zwCCUsedSchemeDark(el);
         return _zwCCResolve(wantDark ? ast.dark : ast.light, el, depth + 1);
+      }
+      case 'contrast': {
+        // contrast-color(<color>)（css-color-5 §contrast-color）：内色解析后
+        // 取白/黑中 WCAG 对比高者（判据与 engine paint/color.rs
+        // contrast_color_of 一致：L ≤ 0.17913 → 白，(L+0.05)² ≤ 0.05·1.05）；
+        // 结果不携带内色 alpha（宿主 R5107 同口径——
+        // 'color(srgb 1 0 1 / 0.5)' 期望无 alpha rgb() 形）。
+        var ctR = _zwCCResolve(ast.inner, el, depth + 1);
+        if (!ctR || !ctR.rgb) return null;
+        var ctL = [0, 0, 0];
+        for (var ctI = 0; ctI < 3; ctI++) {
+          var ctC = Math.min(1, Math.max(0, Number(ctR.rgb[ctI])));
+          ctL[ctI] = ctC <= 0.04045 ? ctC / 12.92 : Math.pow((ctC + 0.055) / 1.055, 2.4);
+        }
+        var ctPick = (0.2126 * ctL[0] + 0.7152 * ctL[1] + 0.0722 * ctL[2]) <= 0.17913
+          ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
+        var ctAst = _zwCCParseColorValue(ctPick);
+        return ctAst ? _zwCCResolve(ctAst, el, depth + 1) : null;
       }
       case 'currentcolor': {
         // currentcolor = 本元素 color 计算值（css-color-4：currentColor 值 =
@@ -2068,6 +2099,17 @@
         return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
       }
       if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('\\') >= 0) {
+        return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      }
+      // contrast-color 顶层零漂移门（css-color-5 §contrast-color）：基础形内参
+      //（不含 color-mix/light-dark/相对 from/嵌套 contrast-color/calc()）保宿主
+      // R5107 路径——关键字/系统色/currentcolor/嵌套 contrast 宿主已正确解析
+      //（覆盖前同路径）；建模域内参（color-mix 嵌套实参宿主 parse_color 不
+      // 建模、calc() 通道宿主 contrast 臂不解析——decl valid 1F + computed 1F
+      // 双面实证）落入下方通用解析，由 kind 'contrast' 臂接管。sign()/abs()
+      // 已在前置臂先行送宿主（cqw 等运行时环境形不在此域）。
+      var ctGate = /^contrast-color\(([\s\S]*)\)$/i.exec(rawS.trim());
+      if (ctGate && !/(^|[^\w-])(color-mix|light-dark|contrast-color)\(|from[\s(]|calc\(/i.test(ctGate[1])) {
         return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
       }
       var r = null;
