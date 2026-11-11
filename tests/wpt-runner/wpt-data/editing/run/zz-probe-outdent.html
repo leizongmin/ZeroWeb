@@ -13,6 +13,7 @@
 <script src=../include/tests.js></script>
 <script src=../data/outdent.js></script>
 <script src=/resources/testharness.js></script>
+<script src="/common/subset-tests.js"></script>
 <script src=/resources/testharnessreport.js></script>
 <script>
 "use strict";
@@ -48,8 +49,10 @@
         pick('<blockquote><p>foo[bar]</p><p>baz</p></blockquote><p>extra', OD),
         // bq 跨段全展开
         pick('<blockquote><p>foo[bar</p><p>b]az</p></blockquote><p>extra', OD),
-        // webkit-indent-blockquote（simple indentation 元素族，class 存活换壳）
-        pick('webkit-indent-blockquote', OD),
+        // webkit-indent-blockquote（simple indentation 元素族，class 存活换壳；
+        // 语料该族条目全带 stylewithcss+dPS 前导，无裸 outdent 条目）
+        pick('webkit-indent-blockquote',
+             '[["stylewithcss","true"],["defaultparagraphseparator","div"],["outdent",""]]'),
         // bq id=abc 换壳 div（dPS div / p 双行）
         pick('<blockquote id=abc>foo[bar]baz</blockquote>', DD),
         pick('<blockquote id=abc>foo[bar]baz</blockquote>', DP),
@@ -66,8 +69,8 @@
         pick('foo<ol><li style=color:blue>[bar]</ol>baz', DD),
         // 空白 li 变体
         pick('<ol> <li>[foo]</li> </ol>', DD),
-        // 单 li 内块载体（h1 不换 p）
-        pick('<ol><li><h1>[foo]</h1></ol>', DD),
+        // 单 li 内块载体（h1 不换 p；语料该条目 setup 为裸 outdent）
+        pick('<ol><li><h1>[foo]</h1></ol>', OD),
         // bq+list 混合（bq unwrap 列表保留）
         pick('<blockquote><ol><li>[foo]</ol></blockquote><p>extra', OD),
         // li 内 table
