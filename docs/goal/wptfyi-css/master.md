@@ -5,7 +5,7 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,970，至 cqw 容器基座刀；values face
-css-values 2,426→2,464，至 mod/rem 除零批）。
+css-values 2,426→2,516，至 time 维度+opacity 数学臂批）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -49,17 +49,38 @@ position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor
 复杂形/动态 ~98F（anchor-name-003/anchor-position-004/anchor-inside-outside/
 anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallback
 布局 ~43F（溢出检查 + last-successful 状态机 + @position-try 应用引擎）、
-inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数 9 腿
-（定谳拆分：opacity validity 3 + transform matrix 6，分别并入 validity 放行
-与 matrix 化桶）、values 数学函数 validity 放行 ~47F（opacity-validity 32 +
-transition-delay used-value 15，parse 臂拒 calc 族，css-parser 折叠已备——
-g9 残余主桶，下批首选）；其余散页；anchor-ident-function 求值面 12F
+inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
+transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g10 后）：∞ 桶
+（signs-abs-computed 残 101F + calc-infinity-nan 56F，FIXME types.rs:1420 族）、
+%-mixing CalcContext 族（calc-mix-serialize 113F + calc-mix-computed 53F 主体）、
+time invalid 形 minmax-time-invalid 52F（拒收面对齐）、独立桶 line-break-ch
+194F / random() 141F / attr-all-types 103F / viewport-units 84F / calc-size 62F /
+progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；DC-3 全量对账
 （等批次平台期 dispatch 周跑，HEAD 已含 color/values/grid/anchor 各批增量）；
 color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 time 维度+opacity 数学臂批完成（11-11 深夜，g10）**：CSS Values §6.3
+<time> 维度接入 calc 型别表（`CalcExpr::Time` 秒底 + `allow_time` 门控：共享
+calc 入口保持 time-closed、time 槽专用 `parse_time_calc` 入口 + 纯度判定拒混型，
+五处既有构造点全补 false）+ `<opacity>` 数学函数臂（parse_layout 活版，
+§10.12 NaN censor-to-zero 先于 ±∞ fail-closed 门——censor 后置则不可达，钉住；
+±∞ 挂 FIXME(types.rs:1420) ∞ 桶）——css-values 语料 **2,464 → 2,516 净 +52
+逐页零回归**（净增远超批前预估 +15：time 槽解锁是全家族效应——minmax-time
+computed+serialize +30、round/mod/rem time 实参形 +12、calc-time +6、sign/abs/
+hypot time 形 +4，6 页增益）；css-color 10,970P 零漂移；css-parser lib
+3111P/0F。g9 残余主桶「数学函数 validity 放行 ~47F」就此清账（opacity/transition
+页已出失败榜）。make test 权威账 **3,881P/10F**（重跑链：fmt 门死→
+`cargo fmt -p zero-engine` 机械修复独立 style 提交→systemd PATH/artifact
+在案瞬态两次→全量走通；在册 9F 同形 + r307_tree_order_identity_domains
+新红——探针 db74aad18 复跑红钉死 ba 流 CSSOM 两提交窗口 0a435f0a1/
+0ff1bc92c，g10 豁免，修复归 rendering 流碰头账）。残余主桶 = ∞
+（FIXME types.rs:1420 族）+ %-mixing（CalcContext 族）
++ time invalid 形 + 独立大桶（ch/random/calc-mix/attr/viewport）。
+[证据](evidence/2026-11-11-dc2-time-dim-opacity-math.md)
 
 **DC-2 mod/rem 除零批完成（11-11 深夜）**：css-values-4 §10.5 mod()/rem() B=0
 None（无效）臂撤除改 IEEE NaN（types.rs，round 族 g8 同道）+ opacity computed
