@@ -820,3 +820,43 @@ fn test_runner_refresh_shadow_rect_s371() {
         "runner 同款结构性刷新后 shadow 内容 rect 应保持非零: {after}"
     );
 }
+
+/// s401（html-semantics）：runner 探测环 doctype 保真钉——探测环喂
+/// `refresh_if_html_changed` 的 shim 序列化以 `<html>` 为根（documentElement.outerHTML
+/// 按规范不含 doctype），整页替换重建曾丢文档类型声明 → re-parse 落 Quirks
+/// （compatMode / scrollingElement quirks 分派全族翻转，
+/// radio-focused-and-scrolled-into-view 1F 勘根案）。钉两面：带声明页刷新后恒
+/// 标准模式；真 quirks 页（无声明）透传不凭空补声明。
+#[test]
+fn test_runner_refresh_preserves_doctype_s401() {
+    // 带声明页：刷新后 compatMode 仍 CSS1Compat（DOM_SOURCE 活文档 quirks 态不翻转）。
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<!DOCTYPE html><html><body><div id='a'>x</div></body></html>", None);
+    let shim = wv
+        .execute_script("document.documentElement ? document.documentElement.outerHTML : ''")
+        .expect("outerHTML 序列化应成功");
+    assert!(
+        !shim.contains("<!DOCTYPE"),
+        "shim 序列化按规范不含 doctype（bug 前提面）: {shim}"
+    );
+    // runner 真实相位同款：序列化与 cached_html 可分叉（追加注释强制分叉，s371
+    // 同款）——doctype 归一后的串入差分与替换。
+    let forced = wv.refresh_if_html_changed(format!("{shim}<!-- s401 -->").trim());
+    assert!(forced, "强制分叉应走真刷新臂");
+    let cm = wv.execute_script("document.compatMode").expect("compatMode 应可读");
+    assert_eq!(
+        cm, "CSS1Compat",
+        "探测环刷新后不得落 Quirks（doctype 丢失即 quirks 全族翻转）"
+    );
+
+    // 真 quirks 页：无 doctype 子节点可补回 → 原样透传，刷新后仍 BackCompat。
+    let mut q = WebView::new(WebViewConfig::default());
+    q.load_html("<html><body><div id='b'>y</div></body></html>", None);
+    let shim2 = q
+        .execute_script("document.documentElement ? document.documentElement.outerHTML : ''")
+        .expect("outerHTML 序列化应成功");
+    let forced2 = q.refresh_if_html_changed(format!("{shim2}<!-- s401 -->").trim());
+    assert!(forced2, "quirks 页强制分叉应走真刷新臂");
+    let cm2 = q.execute_script("document.compatMode").expect("compatMode 应可读");
+    assert_eq!(cm2, "BackCompat", "真 quirks 页刷新后仍为 quirks（不凭空补 doctype）");
+}
