@@ -16,15 +16,19 @@
 //!    `2026-08-17-snapshot-process-lifetime-paint-flags`），热路径无 getenv。
 //! 3. **feature 构建且启用**：记录路径仅追加固有 [`System`] 调用之后的簿记
 //!    （采样回溯 + 有界表更新），不改变分配结果、大小或布局。仪器自身内存
-//!    有界：site 表 ≤ `max_sites` 条（丢弃计数封口），net 表 ≤
-//!    `max_live_entries` 条，合计 ≲ 数 MiB，dump totals 中如实申报。
+//!    有界：site 表 ≤ `max_sites` 条（丢弃计数封口，紧凑记录 ≲10MiB）、
+//!    net 表 ≤ `max_live_entries` 条（≲3MiB），合计最坏 ~12MiB，dump
+//!    totals 中如实申报。
 //!
 //! ## 环境变量（`init_from_env` 进程快照，一次性）
 //!
 //! - `ZW_ALLOC_TRACE=1`：启用记录（默认关）。
 //! - `ZW_ALLOC_TRACE_SAMPLE_EVERY`：每 N 次分配采样一次回溯（默认 256）。
-//! - `ZW_ALLOC_TRACE_MAX_SITES`：site 聚合表上限（默认 2048；满后新 site 计入
-//!   `dropped_sites`，不驱逐——保 Top-N 稳定且表有界）。
+//! - `ZW_ALLOC_TRACE_MAX_SITES`：site 聚合表上限（默认 65536；满后新 site 计入
+//!   `dropped_sites`，不驱逐——保 Top-N 稳定且表有界）。紧凑 site 记录
+//!   （原始 IP 窗数组，dump 时渲染偏移）使 65536 条 ≲10MiB、live 表 ≲3MiB，
+//!   合计最坏 ~12MiB，dump totals 如实申报；T62 attempt3 实证 2048 表在
+//!   启动期即被 V8/JIT 唯一调用点灌满（dropped 53.6 万），故取 65536。
 //! - `ZW_ALLOC_TRACE_NET_MIN`：进入 net（存活）表的块大小下限字节（默认 64 KiB；
 //!   覆盖 glibc mmap 阈值之上、arena/位图大块面，net 出「增长」而非「流量」）。
 //! - `ZW_ALLOC_TRACE_MAX_LIVE`：net 表条目上限（默认 65536；满后新大块计入
@@ -99,10 +103,6 @@ const SKIP_FRAMES: usize = 3;
 /// site 签名取跳过机器帧之后的原始 IP 帧数。
 const SIGNATURE_FRAMES: usize = 6;
 
-/// site 摘要字符串截断上限（字节）——有界内存预算的组成部分
-/// （12 帧 `0x…` 偏移 ≈ 220 字节，正常不触顶）。
-const EXCERPT_MAX_CHARS: usize = 600;
-
 /// dump 输出的 site 条目数（traffic 与 live 各取 Top-N）。
 const DUMP_TOP_N: usize = 16;
 
@@ -124,15 +124,22 @@ pub(crate) struct TraceConfig {
 }
 
 /// 单 site 的流量聚合（采样口径，外推系数 = `sample_every`）。
-#[derive(Clone, Debug, Default)]
+///
+/// 帧窗存原始 IP 数组（紧凑定长 96B）而非字符串摘要：V8/JIT 运行期的唯一
+/// 调用点数量级在数十万，紧凑记录把表容量从 ~2Ki 条提到 64Ki 条仍 ≲10MiB
+/// （T62 attempt3 实证 2048 表启动期即满，dropped_sites 53.6 万——页面期
+/// 新 site 全丢会让 traffic 面偏 startup）。偏移摘要在 dump 时按 exe 基址
+/// 现渲染，符号仍由分析侧离线解析。
+#[derive(Clone, Debug)]
 struct SiteStats {
     /// 采到的分配次数。
     allocs: u64,
     /// 采到的分配字节合计。
     bytes: u64,
-    /// 首采时模块相对偏移摘要（≤[`EXCERPT_MAX_CHARS`] 字节，空格分隔
-    /// `0x…`；符号名由分析侧离线解析）。
-    frames: String,
+    /// 首采时完整原始 IP 窗（≤[`MAX_CAPTURE_FRAMES`] 帧；不足部分为 0）。
+    frames: [usize; MAX_CAPTURE_FRAMES],
+    /// 首采时实际捕获帧数。
+    captured: usize,
 }
 
 /// net 表条目（按指针跟踪的大块存活记录）。
@@ -201,7 +208,7 @@ impl TraceState {
     }
 
     /// 记录一次采样到的分配（流量 + site 表）。
-    fn record_sample(&mut self, size: usize, hash: u64, frames: String) {
+    fn record_sample(&mut self, size: usize, hash: u64, frames: [usize; MAX_CAPTURE_FRAMES], captured: usize) {
         self.sampled_allocs += 1;
         self.sampled_bytes += size as u64;
         match self.sites.get_mut(&hash) {
@@ -217,6 +224,7 @@ impl TraceState {
                             allocs: 1,
                             bytes: size as u64,
                             frames,
+                            captured,
                         },
                     );
                 } else {
@@ -315,7 +323,10 @@ pub fn init_from_env() {
     let enabled = zero_runtime_config::enabled_when_true("ZW_ALLOC_TRACE");
     let config = TraceConfig {
         sample_every: zero_runtime_config::positive_usize("ZW_ALLOC_TRACE_SAMPLE_EVERY", 256),
-        max_sites: zero_runtime_config::positive_usize("ZW_ALLOC_TRACE_MAX_SITES", 2048),
+        // 65536 × 紧凑记录（hash 8 + counters 16 + 窗 96 + 表开销）≈ <10MiB：
+        // V8/JIT 运行期唯一调用点量级数十万（T62 attempt3：2048 表在启动期
+        // 即满、dropped_sites 53.6 万），表太小会让 traffic 面偏 startup。
+        max_sites: zero_runtime_config::positive_usize("ZW_ALLOC_TRACE_MAX_SITES", 65536),
         net_min_bytes: zero_runtime_config::positive_usize("ZW_ALLOC_TRACE_NET_MIN", 64 * 1024),
         max_live_entries: zero_runtime_config::positive_usize("ZW_ALLOC_TRACE_MAX_LIVE", 1 << 16),
         dump_dir: zero_runtime_config::optional_path("ZW_ALLOC_TRACE_DUMP_DIR"),
@@ -338,11 +349,11 @@ pub(crate) fn record_alloc(size: usize, ptr: usize) {
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     if seq.is_multiple_of(config.sample_every as u64) {
         let (ips, captured) = capture_frame_ips();
-        let (hash, frames) = site_signature(&ips[..captured]);
+        let hash = site_signature(&ips[..captured]);
         let mut outer = state();
         outer
             .get_or_insert_with(TraceState::new)
-            .record_sample(size, hash, frames);
+            .record_sample(size, hash, ips, captured);
     }
     if size >= config.net_min_bytes {
         let site = last_site_hint();
@@ -398,15 +409,16 @@ fn capture_frame_ips() -> ([usize; MAX_CAPTURE_FRAMES], usize) {
 }
 
 /// site 签名：跳过机器帧后取 [`SIGNATURE_FRAMES`] 个原始 IP 哈希（进程内
-/// 稳定键）；摘要落模块相对偏移（运行时 IP − 主映像 PIE 加载基址），符号名
-/// 由测量侧离线解析。哈希键为原始 IP 而非符号名：同 site 跨线程/跨次捕获
-/// 逐字恒等，代价是二进制变化（重编译）间键不迁移——仪器按次进程生命周期
-/// 运转，该边界可接受。
-fn site_signature(ips: &[usize]) -> (u64, String) {
+/// 稳定键）。偏移摘要改在 dump 时由存储的原始窗现渲染（见
+/// [`render_frames`]）——采样热路径不再构造字符串（V8/JIT 运行期唯一
+/// 调用点量级数十万，attempt3 实证 2048 表即满）。哈希键为原始 IP 而非
+/// 符号名：同 site 跨线程/跨次捕获逐字恒等，代价是二进制变化（重编译）
+/// 间键不迁移——仪器按次进程生命周期运转，该边界可接受。
+fn site_signature(ips: &[usize]) -> u64 {
     if ips.len() <= SKIP_FRAMES {
         // 捕获不足（极端：展开器直接失败）——固定键聚合并如实标注。
         LAST_SITE.with(|c| c.set(0));
-        return (0, String::from("unresolved"));
+        return 0;
     }
     let end = (SKIP_FRAMES + SIGNATURE_FRAMES).min(ips.len());
     let mut hasher = DefaultHasher::new();
@@ -414,9 +426,21 @@ fn site_signature(ips: &[usize]) -> (u64, String) {
         ip.hash(&mut hasher);
     }
     let hash = hasher.finish();
+    LAST_SITE.with(|c| c.set(hash));
+    hash
+}
+
+/// dump 时把 site 存储的原始 IP 窗渲染为空格分隔 `0x…` 模块相对偏移摘要
+/// （`rel = ip − exe_base` 即 ELF 静态 vaddr，addr2line 直接可用；基址解析
+/// 失败退回绝对 IP 并由 dump `exe_base: null` 如实标注）。captured=0 渲染
+/// 为 `unresolved`。
+fn render_frames(stats: &SiteStats) -> String {
+    if stats.captured == 0 {
+        return String::from("unresolved");
+    }
     let base = exe_load_base();
     let mut excerpt = String::new();
-    for ip in ips {
+    for ip in &stats.frames[..stats.captured] {
         if !excerpt.is_empty() {
             excerpt.push(' ');
         }
@@ -425,12 +449,8 @@ fn site_signature(ips: &[usize]) -> (u64, String) {
             None => *ip,
         };
         excerpt.push_str(&format!("{rel:#x}"));
-        if excerpt.len() > EXCERPT_MAX_CHARS {
-            break;
-        }
     }
-    LAST_SITE.with(|c| c.set(hash));
-    (hash, excerpt)
+    excerpt
 }
 
 /// 主映像加载基址（PIE 运行基址；进程内 OnceLock 缓存）：`/proc/self/maps`
@@ -528,7 +548,7 @@ fn snapshot_json(config: &TraceConfig, reason: &str) -> String {
                 "hash": format!("{hash:016x}"),
                 "sampled_allocs": stats.allocs,
                 "sampled_bytes": stats.bytes,
-                "frames": stats.frames,
+                "frames": render_frames(stats),
             })
         })
         .collect();
@@ -536,7 +556,7 @@ fn snapshot_json(config: &TraceConfig, reason: &str) -> String {
         .iter()
         .take(DUMP_TOP_N)
         .map(|(hash, agg)| {
-            let frames = state.sites.get(hash).map(|s| s.frames.clone()).unwrap_or_else(|| {
+            let frames = state.sites.get(hash).map(render_frames).unwrap_or_else(|| {
                 if **hash == 0 {
                     String::from("unattributed")
                 } else {
@@ -673,29 +693,53 @@ unsafe impl GlobalAlloc for TracingAllocator {
 mod tests {
     use super::*;
 
-    /// site 签名（纯函数面）：同一原始窗口哈希恒等、摘要恒等；签名窗内任一
-    /// 帧变化即换键（调用点差异产生不同签名是产品语义——T62 探针实证：两次
-    /// 捕获 ips[0..4] 恒等、ips[4] 差 48 字节 = 测试函数两个不同调用点的返回
-    /// 地址）；捕获不足 SKIP_FRAMES 落 unresolved 哨兵键 0。
+    /// site 签名（纯函数面）：同一原始窗口哈希恒等；签名窗内任一帧变化即
+    /// 换键（调用点差异产生不同签名是产品语义——T62 探针实证：两次捕获
+    /// ips[0..4] 恒等、ips[4] 差 48 字节 = 测试函数两个不同调用点的返回
+    /// 地址）；捕获不足 SKIP_FRAMES 落哨兵键 0。
     #[test]
     fn site_signature_is_stable_per_call_site() {
         let ips = [0x1110, 0x2220, 0x3330, 0x4440, 0x5550, 0x6660, 0x7770, 0x8880];
-        let (h1, e1) = site_signature(&ips);
-        let (h2, e2) = site_signature(&ips);
+        let h1 = site_signature(&ips);
+        let h2 = site_signature(&ips);
         assert_eq!(h1, h2, "同一原始窗口签名哈希必须恒等");
-        assert!(!e1.is_empty());
-        assert_eq!(e1, e2, "同一原始窗口摘要必须逐字恒等");
-        assert_eq!(e1.split(' ').count(), 8, "摘要逐帧落偏移");
 
         let mut shifted = ips;
         shifted[3] = 0x9990; // 签名窗（≥SKIP_FRAMES）内帧变化
-        let (h3, _) = site_signature(&shifted);
+        let h3 = site_signature(&shifted);
         assert_ne!(h3, h1, "签名窗内帧变化必须换键");
 
         let short = [0x1110, 0x2220];
-        let (h4, e4) = site_signature(&short);
-        assert_eq!(h4, 0, "捕获不足落哨兵键 0");
-        assert_eq!(e4, "unresolved");
+        assert_eq!(site_signature(&short), 0, "捕获不足落哨兵键 0");
+    }
+
+    /// dump 渲染：原始窗按 captured 渲染偏移，相邻注入帧差值保持（有无
+    /// 基址都成立——基址是公共减数）；captured=0 落 unresolved 哨兵。
+    #[test]
+    fn render_frames_renders_window_with_relative_offsets() {
+        let mut frames = [0usize; MAX_CAPTURE_FRAMES];
+        frames[0] = 0x7f00;
+        frames[1] = 0x7f08;
+        let stats = SiteStats {
+            allocs: 1,
+            bytes: 9,
+            frames,
+            captured: 2,
+        };
+        let rendered = render_frames(&stats);
+        let tokens: Vec<&str> = rendered.split(' ').collect();
+        assert_eq!(tokens.len(), 2, "captured=2 只渲染两帧：{rendered}");
+        let v0 = usize::from_str_radix(tokens[0].trim_start_matches("0x"), 16).unwrap();
+        let v1 = usize::from_str_radix(tokens[1].trim_start_matches("0x"), 16).unwrap();
+        assert_eq!(v1.wrapping_sub(v0), 8, "相邻帧差值必须保持（公共减数）");
+
+        let empty = SiteStats {
+            allocs: 0,
+            bytes: 0,
+            frames: [0; MAX_CAPTURE_FRAMES],
+            captured: 0,
+        };
+        assert_eq!(render_frames(&empty), "unresolved");
     }
 
     /// 真实捕获面：展开器在测试二进制里取到非零帧（回溯链路可用性）。
@@ -722,7 +766,9 @@ mod tests {
         for i in 0..5u64 {
             let mut hasher = DefaultHasher::new();
             i.hash(&mut hasher);
-            state.record_sample(100, hasher.finish(), format!("site-{i}"));
+            let mut frames = [0usize; MAX_CAPTURE_FRAMES];
+            frames[0] = i as usize + 0x10;
+            state.record_sample(100, hasher.finish(), frames, 1);
         }
         TEST_MAX_SITES.with(|m| m.set(None));
         assert_eq!(state.sites.len(), 2, "表长必须钉在上限");
@@ -794,13 +840,18 @@ mod tests {
             };
             assert_eq!(after, before + 1, "sample_every=1 时采样必须前进");
             record_dealloc(0x9000);
-            // 注入确定性状态供 dump 断言（独立锁作用域）。
+            // 注入确定性状态供 dump 断言（独立锁作用域）：原始 IP 窗含注入值
+            // 0x7f00/0x7f08，exe 基址解析失败时渲染绝对 IP、成功时渲染相对
+            // 偏移——两种形态都以 "0x7f" 前缀锚定同一注入值。
             {
                 let mut outer = state();
                 let mut fresh = TraceState::new();
                 let mut hasher = DefaultHasher::new();
                 "dumper".hash(&mut hasher);
-                fresh.record_sample(4096, hasher.finish(), String::from("dump::site"));
+                let mut frames = [0usize; MAX_CAPTURE_FRAMES];
+                frames[0] = 0x7f00;
+                frames[1] = 0x7f08;
+                fresh.record_sample(4096, hasher.finish(), frames, 2);
                 fresh.track_live(0x7000, 8192, hasher.finish(), 16);
                 *outer = Some(fresh);
             }
@@ -810,7 +861,13 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&text).expect("dump 必须是合法 JSON");
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["totals"]["live_tracked_blocks"], 1);
-        assert_eq!(value["traffic_top"][0]["frames"], "dump::site");
+        let rendered = value["traffic_top"][0]["frames"].as_str().unwrap();
+        let tokens: Vec<&str> = rendered.split(' ').collect();
+        assert_eq!(tokens.len(), 2, "captured=2 只渲染两帧：{rendered}");
+        let v0 = usize::from_str_radix(tokens[0].trim_start_matches("0x"), 16).unwrap();
+        let v1 = usize::from_str_radix(tokens[1].trim_start_matches("0x"), 16).unwrap();
+        // 注入帧 0x7f00/0x7f08：公共减数（exe 基址，有无皆可）下差值必为 8。
+        assert_eq!(v1.wrapping_sub(v0), 8, "注入帧差值必须保持：{rendered}");
         assert_eq!(value["live_top"][0]["live_bytes"], 8192);
         let _ = std::fs::remove_dir_all(&dir);
     }
