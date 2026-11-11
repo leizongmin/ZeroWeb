@@ -10,7 +10,11 @@ css-values 2,426→2,893，至 serialize canonical 折叠刀2+round B=±∞ 策�
 +写面文法门收口（g14c invalid 残 6F 清零）
 +嵌套和串刀（g15 净 +10 零回归，values face 2,903）
 +tree-counting 叶/符号零刀（g16 净 +14 零回归，values face 2,917；提交态
-组合权威账 g17 2,953，含 9db computed 串化刀）。
+组合权威账 g17 2,953，含 9db computed 串化刀）
++computed canonical 串化刀全套（9db 主刀 + 2e8 补臂，g17/g17b 两轮：
+minmax/hypot 单参配对 28 案 g15 空串对空串伪通过转真通过，values face
+2,917→**3,032** 净 +129，calc 族逐页零损失；分页归因与组合态污染分账见
+evidence 2026-11-12-dc2-g17）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -50,8 +54,8 @@ WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
 **卡点**：无阻塞。random() 141F 桶并行流分工在制：文法刀（parse_random §random
 全文法 + 写面 random 臂 valid 放行/invalid 拒/non-length 族随槽拒，css-parser +
 style-system 面）本流认领；eval/求值刀（sha256 种子 + element/property 上下文 +
-supports 门 + computed 数值化）涉 engine 面，与 computed 串面刀（engine
-computed_style.rs 在制流）排队后接。
+supports 门 + computed 数值化）涉 engine 面——computed 串面刀已落库
+（9db+2e8），排队解除可接。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
