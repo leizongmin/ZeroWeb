@@ -1882,6 +1882,10 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transform", "rotate(45deg)"));
         assert!(validate_decl_value("rotate", "acos(1)"));
         assert!(validate_decl_value("scale", "2"));
+        // g12：±∞ 数学形放行（§10.6，calc-infinity-nan-computed scale ≥1e6 驱动）。
+        assert!(validate_decl_value("scale", "calc(infinity)"));
+        assert!(validate_decl_value("scale", "calc(max(infinity, 10))"));
+        assert!(validate_decl_value("scale", "calc(1 / sign(1em - 16px))"));
         assert!(validate_decl_value("translate", "10px 20px"));
         assert!(validate_decl_value("z-index", "sign(-3)"));
         assert!(validate_decl_value("margin-left", "round(23px, 10px)"));
@@ -1973,7 +1977,10 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transition-delay", "-0.5s"));
         // g10 家族：min/max/round 数学形（MTTime 型别推进）。
         assert!(validate_decl_value("transition-delay", "min(1s, 2s)"));
-        assert!(validate_decl_value("transition-delay", "max(1000ms, min(2000ms, 1.5s))"));
+        assert!(validate_decl_value(
+            "transition-delay",
+            "max(1000ms, min(2000ms, 1.5s))"
+        ));
         assert!(validate_decl_value("transition-delay", "round(10s, 6s)"));
         assert!(validate_decl_value("transition-delay", "calc(10s + 500ms)"));
         // `<time>#` 逗号列表（transitions 语料 events-004 写形）。
