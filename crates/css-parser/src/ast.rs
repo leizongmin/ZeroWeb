@@ -38,6 +38,11 @@ pub enum Rule {
     Property(PropertyRule),
     /// @counter-style 规则（CSS Counter Styles 3 §3）。driving: R2392。
     CounterStyle(CounterStyleRule),
+    /// @position-try 规则（CSS Anchor Positioning §position-try-fallbacks）。
+    /// 块体为描述符声明列表（inset/margin/size/self-alignment/position-anchor/
+    /// position-area 族；白名单校验归 CSSOM 面与 cascade 应用面）。driving:
+    /// wptfyi-css at-position-try-cssom（CSSPositionTryRule CSSOM 读面 wire 通道）。
+    PositionTry(PositionTryRule),
 }
 
 /// CSS @import 规则。
@@ -579,4 +584,19 @@ pub struct ContainerSizeCondition {
     pub range_min: Option<String>,
     /// 范围查询的上界（如 `200px <= width <= 500px` 中的 `500px`）。
     pub range_max: Option<String>,
+}
+
+/// @position-try 规则（CSS Anchor Positioning §position-try-fallbacks）。
+///
+/// 格式：`@position-try --pf { top: 10px; left: anchor(right); }`
+/// 块体为描述符声明列表（声明级解析保留原文序与原值文本；描述符白名单
+/// （inset/margin/size/self-alignment/position-anchor/position-area 族）校验归
+/// CSSOM 面（CSSPositionTryDescriptors）与 cascade 应用面，解析层不裁剪）。
+#[derive(Debug, Clone)]
+pub struct PositionTryRule {
+    /// 坓名（custom ident；转义已由 tokenizer 解码——序列化面按
+    /// cssom-1 §serialize-an-identifier 重新转义）。
+    pub name: String,
+    /// 描述符声明列表（原文序）。
+    pub declarations: Vec<Declaration>,
 }

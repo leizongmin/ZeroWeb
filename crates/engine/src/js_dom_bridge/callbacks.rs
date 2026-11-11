@@ -3140,7 +3140,13 @@ pub fn register_dom_callbacks(
                         property,
                         value,
                     } if s == selector => {
-                        style = merge_style_property(&style, property, value);
+                        // r2320（CSS Values 4 §10.11）：声明值 specified 折叠——与
+                        // [`style_from_mutations_lw`] handle 臂同形（mutation log 保留
+                        // 原文，sel 读出视图折叠）。WPT css-values serialize 桶解析
+                        // 元素 #target 走本 sel 臂（sin-cos-tan-serialize 驱动）。
+                        let folded = zero_css_parser::values::fold_decl_specified(property, value)
+                            .unwrap_or_else(|| value.clone());
+                        style = merge_style_property(&style, property, &folded);
                     }
                     DomMutation::RemoveStyle { selector: s, property } if s == selector => {
                         style = remove_style_property(&style, property);
@@ -4076,9 +4082,158 @@ pub fn register_dom_callbacks(
         Box::new(|args: &[String]| -> String {
             let prop = args.first().map(String::as_str).unwrap_or("");
             let value = args.get(1).map(String::as_str).unwrap_or("");
-            match crate::dom_bindings::grid_cssom::canonicalize_grid_decl(&camel_to_kebab_name(prop), value) {
-                Some(v) => v,
-                None => "null".to_string(),
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落 "null"（拒写），
+            // 与 compat_mode 桥「双引擎缺席回落同口径」先例一致（R5334）。
+            #[cfg(feature = "v8")]
+            {
+                match crate::dom_bindings::grid_cssom::canonicalize_grid_decl(&camel_to_kebab_name(prop), value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
+            }
+        }),
+    );
+
+    // wptfyi-css DC-2 组 F 批（css-anchor-position-1）：`position-area` 声明值
+    // canonical 化整值委托（shim `_zwNormalizeDeclValue` 臂消费——非法整值返 "null"
+    // 拒写，合法返 canonical 串；CSS-wide 归小写、var() 原文保形）。实现复用
+    // [`crate::dom_bindings::position_area::canonicalize_decl`]（与 native 绑定
+    // setter 同源——单实现双通道）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_position_area_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let value = args.first().map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                match crate::dom_bindings::position_area::canonicalize_decl(value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = value;
+                "null".to_string()
+            }
+        }),
+    );
+
+    // 组 F 批：`position-area` computed 值折叠委托（shim part01 gCS plain 臂消费——
+    // declared canonical 串 → computed 串：逻辑 long→short、span-all 轴消解、center
+    // 槽位归位；输入非法 echo 防御）。实现
+    // [`crate::dom_bindings::position_area::computed_value`]。
+    sandbox.register_callback(
+        "__zw_position_area_computed",
+        Box::new(|args: &[String]| -> String {
+            let decl = args.first().map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                crate::dom_bindings::position_area::computed_value(decl)
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = decl;
+                "none".to_string()
+            }
+        }),
+    );
+
+    // wptfyi-css DC-2 组 F 批（css-anchor-position-1）：anchor 族七属性声明值
+    // canonical 化整值委托（shim `_zwNormalizeDeclValue` 臂消费——非法整值返
+    // "null" 拒写，合法返 canonical 串；CSS-wide 归小写、var()/ident() 原文保形；
+    // position-try 简写返 canonical 简写串）。实现复用
+    // [`crate::dom_bindings::anchor_props::canonicalize_decl`]（与 `CSS.supports`
+    // decl_supported 臂同源——单实现双通道）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_anchor_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                match crate::dom_bindings::anchor_props::canonicalize_decl(prop, value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
+            }
+        }),
+    );
+
+    // 组 F 批：anchor 族 computed 值委托（shim part01 gCS plain 臂消费——declared
+    // canonical 串恒等 echo，空声明返属性初始值：position-anchor normal /
+    // position-visibility anchors-visible / position-try-order normal /
+    // position-try-fallbacks·anchor-name·anchor-scope none）。实现
+    // [`crate::dom_bindings::anchor_props::computed_value`]。
+    sandbox.register_callback(
+        "__zw_anchor_computed",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let decl = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                crate::dom_bindings::anchor_props::computed_value(prop, decl)
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, decl);
+                String::new()
+            }
+        }),
+    );
+
+    // 组 F 批：`position-try` 简写拆分委托（shim part03 element style setProp 臂
+    // 消费——canonical 简写串 → (order, fallbacks) 长手对，U+001F 分隔单串返回；
+    // 非法返 "null"）。实现 [`crate::dom_bindings::anchor_props::split_position_try`]。
+    sandbox.register_callback(
+        "__zw_anchor_try_split",
+        Box::new(|args: &[String]| -> String {
+            let value = args.first().map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                match crate::dom_bindings::anchor_props::split_position_try(value) {
+                    Some((o, f)) => format!("{o}\u{1f}{f}"),
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = value;
+                "null".to_string()
+            }
+        }),
+    );
+
+    // 组 F 批：anchor()/anchor-size() 函数值校验委托（shim `_zwNormalizeDeclValue`
+    // 通用属性臂消费——值含 anchor 调用时属性域 + 参数文法拒面判定，返 "true"/
+    // "false"；合法/无调用值保形放行不重写）。实现
+    // [`crate::dom_bindings::anchor_props::anchor_funcs_valid`]。
+    sandbox.register_callback(
+        "__zw_anchor_func_check",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                if crate::dom_bindings::anchor_props::anchor_funcs_valid(prop, value) {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "true".to_string()
             }
         }),
     );
@@ -4093,9 +4248,20 @@ pub fn register_dom_callbacks(
         "__zw_style_supported_prop",
         Box::new(|args: &[String]| -> String {
             let name = args.first().map(String::as_str).unwrap_or("");
-            if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str()) {
-                "true".to_string()
-            } else {
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落 "false"（has 不命中），
+            // 同 normalize 回调回落口径。
+            #[cfg(feature = "v8")]
+            {
+                if crate::dom_bindings::grid_cssom::SUPPORTED_STYLE_PROPS.contains(&camel_to_kebab_name(name).as_str())
+                {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (name,);
                 "false".to_string()
             }
         }),
@@ -4247,6 +4413,8 @@ pub fn append_mutation_history(batch: &[DomMutation]) {
 /// 同语义镜像：`cssFloat`/`styleFloat`→`float` 特例 + 逐大写字母加连字符小写；
 /// 该 fn 私有于 dom_bindings，宿主回调侧独立同形实现避免跨模块扩面）。grid 批次
 /// `__zw_grid_normalize_decl`/`__zw_style_supported_prop` 名参归一用。
+/// 仅 v8 消费臂引用（同 `dom_bindings` 门），非 v8 腿不编译防 dead_code。
+#[cfg(feature = "v8")]
 fn camel_to_kebab_name(name: &str) -> String {
     if name == "cssFloat" || name == "styleFloat" {
         return "float".into();

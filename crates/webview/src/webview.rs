@@ -1277,6 +1277,14 @@ impl WebView {
         if html.is_empty() {
             return false;
         }
+        // s401(html-semantics M2)：shim 序列化以 `<html>` 为根（documentElement.outerHTML
+        // 按规范不含 doctype——https://dom.spec.whatwg.org/#dom-element-outerhtml），整页
+        // 替换重建丢 doctype 声明会让 re-parse 落 Quirks（compatMode / scrollingElement
+        // quirks 分派等怪癖行为全族翻转，无 doctype 即 quirks 判定见
+        // https://html.spec.whatwg.org/multipage/syntax.html#the-initial-insertion-mode）。
+        // 入差分与替换前从活文档补回 doctype；活文档无 doctype（真 quirks 页）原样透传。
+        let repaired = self.restore_live_doctype(html);
+        let html = repaired.as_str();
         // 差分基线 = 上次探测 html（非 cached_html——remove→re-append 净零变更的
         // 「回程」也要刷新一次，否则布局停留在移除态）。
         let changed = match &self.runner_probe_html {
@@ -1307,6 +1315,29 @@ impl WebView {
         }
         self.refresh_layout_rect_snapshot();
         true
+    }
+
+    /// s401：入参序列化缺 doctype 前缀且活文档有 doctype 子节点 → 前缀补回（探针环
+    /// `documentElement.outerHTML` 的重建源保 quirks 态不失真）。补回后的串同时入
+    /// `runner_probe_html` 差分基线与 `cached_html`，前后迭代比对形态稳定。
+    fn restore_live_doctype(&self, html: &str) -> String {
+        let trimmed = html.trim_start();
+        if trimmed.len() >= 9 && trimmed.as_bytes()[..9].eq_ignore_ascii_case(b"<!doctype") {
+            return html.to_string();
+        }
+        let Some(doc_rc) = self.pipeline.cached_doc_shared() else {
+            return html.to_string();
+        };
+        let doc = doc_rc.borrow();
+        for &child in &doc.get(doc.root()).map(|n| n.children.clone()).unwrap_or_default() {
+            if matches!(
+                doc.get(child).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::DocumentType(_))
+            ) {
+                return format!("{}{}", doc.outer_html(child), html);
+            }
+        }
+        html.to_string()
     }
 
     /// js-dom R150：从当前布局树刷新 `layout_rect_snapshot`（render/apply 后调用——
@@ -8637,11 +8668,14 @@ fn compile_module_contract(
             // export、await-as-identifier、strict with 等）在转换面放行，test262
             // module 变体负例（negative phase=parse）依赖引擎原生拒绝；IIFE 编译前
             // 对取回源做原生 ParseModule 检查（scope 窗形态，见 module_parse_gate）。
-            // 失败 → tag 3 契约（逐次新 SyntaxError reject，shim `__zw_load_module`
-            // / v8 settle_dynamic_import 两侧既有消费面）——spec：parse 失败先于
-            // 依赖求值，误 fetch 已发生但取回源不再执行（escape-sequence-import
-            // 判据：入口 parse 失败直接 SyntaxError）。未发布提案静态形式
-            //（import defer/source，s360 超集承接面）由 gate 腿豁免。
+            // 失败 → tag 5 契约（s397：parse 失败按 module map 失败记账语义走缓存
+            // 复抛同对象，shim `__zw_load_module` 态⑤；旧 tag 3 逐次新 SyntaxError
+            // 违 spec——WPT dynamic-imports-script-error「the same error object for
+            // parse error」钉面）——spec：parse 失败先于依赖求值，误 fetch 已发生
+            // 但取回源不再执行（escape-sequence-import 判据：入口 parse 失败直接
+            // SyntaxError）。未发布提案静态形式（import defer/source，s360 超集承接
+            // 面）由 gate 腿豁免。tag 5 仅本臂发射（native resolver 路径
+            // parse_gate=None，v8_runtime 契约解析器不暴露新态）。
             // https://tc39.es/ecma262/#sec-parsemodule
             // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
             // quickjs 形状无 scoped 通道（parse_gate 恒 None），预检块整体缺席
@@ -8651,8 +8685,8 @@ fn compile_module_contract(
                 && let Some(source) = reg.get(&resolved)
                 && let Some(msg) = zero_script_sandbox::module_parse_gate(scope, source, &resolved)
             {
-                tracing::warn!("module parse 预检拒绝，契约按 tag 3 面拒绝: {resolved}");
-                return format!("3\u{1f}{resolved}\u{1f}{msg}");
+                tracing::warn!("module parse 预检拒绝，契约按 tag 5 缓存失败面拒绝: {resolved}");
+                return format!("5\u{1f}{resolved}\u{1f}{msg}");
             }
             // s374：TLA 判定注入（同 parse_gate 回调窗）——依赖图全源预判定后经
             // `set_tla_overrides` 穿给转换层 is_async 判定。**单调不减设计

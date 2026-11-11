@@ -613,6 +613,84 @@ fn test_offsetparent_body_null_r4003c() {
     );
 }
 
+/// wptfyi-css 组F 布局刀1：offsetParent/offsetLeft/offsetTop CSSOM View spec 化——
+/// 最近 positioned 祖先命中（相对 padding edge 换算 + round 最近整数）、fixed 无
+/// CB 建立者 → offsetParent null（offsetLeft/Top 相对 viewport）、td 祖先命中。
+/// transform/perspective/filter/contain 建立者判定面与 proxy 恒等形由 WPT
+/// offsetParent-fixed / offsetParent_element_test 语料覆盖（lib 沙箱 mock rect
+/// 无布局树，同一 walk 判定逻辑此处钉关键字分支）。
+#[test]
+fn test_offsetparent_spec_positioned_walk_and_relative_offsets() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"rel\" style=\"position:relative\">\
+           <div id=\"child\"></div>\
+         </div>\
+         <div id=\"fx\" style=\"position:fixed\"></div>\
+         <table id=\"tbl\"><tr><td id=\"cell\"><span id=\"incell\"></span></td></tr></table>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // mock rect：per-selector 视口 rect；body/table/detached 无 rect（链上不命中 rect
+    // 依赖面）。rel 与 child 边框 0 → offsetLeft = 30−10、offsetTop = 50−20。
+    let rects: std::collections::HashMap<&str, &str> = std::collections::HashMap::from([
+        ("#rel", "10,20,200,100"),
+        ("#child", "30,50,100,50"),
+        ("#fx", "5.4,6.6,10,10"),
+        ("#cell", "40,60,80,40"),
+        ("#incell", "44,64,20,20"),
+    ]);
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(move |args| {
+            match args.first() {
+                Some(s) => rects.get(s.as_str()).copied().unwrap_or("").to_string(),
+                None => String::new(),
+            }
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__op = [\
+             document.querySelector('#child').offsetParent.id || '?',\
+             document.querySelector('#incell').offsetParent.id || '?',\
+             String(document.querySelector('#fx').offsetParent === null),\
+             String(document.body.offsetParent === null)].join('|');\
+             globalThis.__ov = [\
+             document.querySelector('#child').offsetLeft,\
+             document.querySelector('#child').offsetTop,\
+             document.querySelector('#fx').offsetLeft,\
+             document.querySelector('#fx').offsetTop,\
+             document.querySelector('#incell').offsetLeft,\
+             document.querySelector('#incell').offsetTop].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__op").unwrap().value,
+        "rel|cell|true|true",
+        "OP：positioned 祖先命中 / td 祖先命中 / fixed 无 CB 建立者 null / body null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ov").unwrap().value,
+        "20,30,5,7,4,4",
+        "OV：相对 padding edge 换算（child 20,30；fx viewport round 5.4→5/6.6→7；incell 4,4）"
+    );
+}
+
 /// R4004（html-semantics M2 切片 16）：label 激活行为转发面。交互内容判定
 ///（HTML §4.2.6.2：a[href]/audio[controls]/button/details/iframe/img[usemap]/
 /// input(type≠hidden)/label/select/textarea/video[controls]，仅 HTML 命名空间，

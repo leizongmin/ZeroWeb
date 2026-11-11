@@ -133,10 +133,35 @@ pub fn apply_property_value_with_quirks(
         }
         "list-style-image" => {
             if let Some(v) = zero_css_parser::values::parse_list_style_image(value) {
-                style.list_style_image = match v {
-                    zero_css_parser::values::ListStyleImageValue::None => ListStyleImageComputedValue::None,
-                    zero_css_parser::values::ListStyleImageValue::Url(url) => ListStyleImageComputedValue::Url(url),
-                };
+                // light-dark() 图像上下文选支（css-color-5 §funcdef-light-dark）：
+                // 按 used color-scheme dark flag computed 期展开；支内 none 计算
+                // 为透明图像（#valdef-light-dark-none）。
+                fn resolve(
+                    v: zero_css_parser::values::ListStyleImageValue,
+                    dark: bool,
+                    in_branch: bool,
+                ) -> ListStyleImageComputedValue {
+                    use zero_css_parser::values::ListStyleImageValue;
+                    match v {
+                        ListStyleImageValue::None => {
+                            if in_branch {
+                                ListStyleImageComputedValue::TransparentImage
+                            } else {
+                                ListStyleImageComputedValue::None
+                            }
+                        }
+                        ListStyleImageValue::Url(url) => ListStyleImageComputedValue::Url(url),
+                        ListStyleImageValue::LightDark {
+                            light,
+                            dark: dark_branch,
+                        } => {
+                            let pick = if dark { *dark_branch } else { *light };
+                            resolve(pick, dark, true)
+                        }
+                    }
+                }
+                let dark = style.color_scheme_dark;
+                style.list_style_image = resolve(v, dark, false);
                 return true;
             }
         }
@@ -828,13 +853,16 @@ pub fn apply_property_value_with_quirks(
         "fill" => {
             // R4280：SVG2 presentation `fill`（V1 色值子集；`none` → Transparent——
             // 视觉等价于不绘制；url() paint server 未支持 → 声明丢弃）。
-            // 继承语义 V1 不做（直接声明覆盖 corpus 场景；继承由后续切片补）。
+            // system color 按 used color-scheme 在 computed 值时间解析为绝对色
+            //（css-color-4 §resolving-color-values；dark 传播同 apply_advanced 四臂
+            // parse_color_with_scheme 形态）。继承见 inherit_property fill/stroke 臂。
+            // driving: system-color-compute fill 差分断言（parent light / child dark）。
             let v = value.trim();
             if v.eq_ignore_ascii_case("none") {
                 style.fill = Some(zero_css_parser::values::ColorValue::Transparent);
                 return true;
             }
-            if let Some(c) = zero_css_parser::values::parse_color(v) {
+            if let Some(c) = zero_css_parser::values::parse_color_with_scheme(v, style.color_scheme_dark) {
                 style.fill = Some(c);
                 return true;
             }
@@ -842,13 +870,14 @@ pub fn apply_property_value_with_quirks(
         "stroke" => {
             // R5187：SVG2 presentation `stroke`（V1 色值子集，与 fill R4280 同型——
             // `none` → Transparent（视觉等价于不描边）；url() paint server 未支持 →
-            // 声明丢弃。继承语义 V1 不做，同 fill）。
+            // 声明丢弃）。system color dark 传播同 fill。继承见 inherit_property 臂。
+            // driving: system-color-compute stroke 差分断言。
             let v = value.trim();
             if v.eq_ignore_ascii_case("none") {
                 style.stroke = Some(zero_css_parser::values::ColorValue::Transparent);
                 return true;
             }
-            if let Some(c) = zero_css_parser::values::parse_color(v) {
+            if let Some(c) = zero_css_parser::values::parse_color_with_scheme(v, style.color_scheme_dark) {
                 style.stroke = Some(c);
                 return true;
             }
@@ -1038,6 +1067,15 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "top" => {
+            // CSS Anchor Positioning §anchor()：inset 槽 anchor() 形原文承载
+            //（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位基线）。
+            // "anchor-size(" 无 "anchor(" 子串不误捕（inset 属性本不接受
+            // anchor-size，非法形走既有 parse 拒面）。
+            if value.contains("anchor(") {
+                style.anchor_inset_top = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.top = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.top = v;
@@ -1046,6 +1084,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "right" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_right = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.right = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.right = v;
@@ -1054,6 +1097,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "bottom" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_bottom = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.bottom = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.bottom = v;
@@ -1062,6 +1110,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "left" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_left = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.left = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.left = v;
@@ -1074,6 +1127,48 @@ pub fn apply_property_value_with_quirks(
                 style.z_index = v;
                 return true;
             }
+        }
+        // ── CSS Anchor Positioning（css-anchor-position-1）四属性 ──
+        // 原文小写存储（文法校验/区域解析单点在 engine dom_bindings，声明面批
+        // anchor_props/position_area 同矩阵；样式承载只存原文供布局期消费）。
+        // 空值声明（`prop: ;`）parse 层不达此处；`none`/`auto` 存 None 语义同未声明。
+        "anchor-name" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.anchor_name = None;
+            } else {
+                style.anchor_name = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-anchor" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "auto" {
+                style.position_anchor = None;
+            } else {
+                style.position_anchor = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-area" => {
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.position_area = None;
+            } else {
+                style.position_area = Some(v.into_boxed_str());
+            }
+            return true;
+        }
+        "position-try-fallbacks" => {
+            // FIXME(css-anchor-position-1 §position-try-prop)：`position-try` 简写
+            // 拆分臂未接（stylesheet 声明面；shim CSSOM 面已拆，part03）。
+            let v = value.trim().to_ascii_lowercase();
+            if v.is_empty() || v == "none" {
+                style.position_try_fallbacks = None;
+            } else {
+                style.position_try_fallbacks = Some(v.into_boxed_str());
+            }
+            return true;
         }
         "overflow-x" => {
             if let Some(v) = values::parse_overflow(value) {

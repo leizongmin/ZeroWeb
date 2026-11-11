@@ -133,6 +133,8 @@ pub(super) fn bg_clip_text_solid_color(
         let layer = layer.inner();
         let c = match layer {
             BackgroundImageComputedValue::None => continue,
+            // light-dark() 支内 none 的透明图像展开——无纯色可提取（同 none）。
+            BackgroundImageComputedValue::TransparentImage => continue,
             BackgroundImageComputedValue::Gradient(g) => gradient_solid_color(g, &st.color)?,
             BackgroundImageComputedValue::Url(u) => {
                 // R4553 门：纯色缓存命中 + 该层平铺参数全默认（默认 repeat 平铺纯色图 ≡

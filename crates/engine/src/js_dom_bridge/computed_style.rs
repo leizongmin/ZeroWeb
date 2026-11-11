@@ -336,6 +336,20 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         //（css-color-adjust-1 https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop ）。
         "color-scheme" => style.color_scheme_decl.clone().unwrap_or_else(|| "normal".to_string()),
         "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
+        // ── fill / stroke（R4280/R5187 SVG2 presentation 色值）── gCS 读出面（此前
+        // 读数缺位：system-color-compute getPropertyValue("fill"/"stroke") 返 ''，
+        // specified/inherited 同空串 assert_not_equals 失败）。None = 未声明未继承 →
+        // SVG2 初始值 fill 黑 / stroke none。FIXME: `none` 声明存储为 Transparent
+        //（apply.rs R4280 臂），与作者显式 transparent 在此同串 "rgba(0, 0, 0, 0)"
+        //——区分需存储层新变体，语料未钉，暂记。
+        "fill" => match &style.fill {
+            Some(c) => color_to_css(&crate::resolve_color_current(c, element_color)),
+            None => "rgb(0, 0, 0)".to_string(),
+        },
+        "stroke" => match &style.stroke {
+            Some(c) => color_to_css(&crate::resolve_color_current(c, element_color)),
+            None => "none".to_string(),
+        },
         // ── background 简写（R2757）── 各 longhand 早覆（image/position/size/repeat/attachment/clip/origin）；
         // 简写恒完整规范形重组（无省略），Chromium 150 oracle 锚定。单层正确（多层受 ZW 单值存储限）。
         "background" => background_shorthand_to_css(style, element_color, font_size_px),
@@ -1030,6 +1044,8 @@ fn border_spacing_to_css(s: &BorderSpacingComputedValue) -> String {
 fn list_style_image_to_css(i: &ListStyleImageComputedValue) -> String {
     match i {
         ListStyleImageComputedValue::None => "none".to_string(),
+        // light-dark() 支内 none 的 computed 展开（css-color-5 #valdef-light-dark-none）。
+        ListStyleImageComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
         ListStyleImageComputedValue::Url(u) => format!("url(\"{u}\")"),
     }
 }
@@ -1066,6 +1082,8 @@ fn border_image_source_to_css(
     use zero_css_parser::values::GradientValue;
     match s {
         BorderImageSourceComputedValue::None => "none".to_string(),
+        // light-dark() 支内 none 的 computed 展开（css-color-5 #valdef-light-dark-none）。
+        BorderImageSourceComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
         BorderImageSourceComputedValue::Url(u) => format!("url(\"{u}\")"),
         BorderImageSourceComputedValue::Gradient(GradientValue::Linear(g)) => {
             linear_gradient_to_css(g, element_color, font_size_px)
@@ -2720,6 +2738,9 @@ fn image_layer_list_to_css(
         .iter()
         .map(|l| match l {
             BackgroundImageComputedValue::None => "none".to_string(),
+            // light-dark() 支内 none 的 computed 展开（css-color-5
+            // #valdef-light-dark-none）：透明图像序列化，区别于顶层 none。
+            BackgroundImageComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
             BackgroundImageComputedValue::Url(u) => format!("url(\"{u}\")"),
             BackgroundImageComputedValue::Gradient(GradientValue::Linear(g)) => {
                 linear_gradient_to_css(g, element_color, font_size_px)
@@ -3415,8 +3436,25 @@ fn place_2value_min(align: &str, justify: &str) -> String {
 fn grid_line_to_css(line: &GridLineValue) -> String {
     match line {
         GridLineValue::Auto => "auto".to_string(),
-        GridLineValue::Line(n) => n.to_string(),
-        GridLineValue::Span(n) => format!("span {}", n),
+        GridLineValue::Line { line, name } => match name {
+            // [<integer> && <custom-ident>?] canonical：整数在前（css-grid-2 §7.1，
+            // 对齐 grid_cssom::grid_line_canonical 的 LineName 形）。
+            Some(name) => format!("{line} {name}"),
+            None => line.to_string(),
+        },
+        // [ span && <integer>? && <custom-ident>? ] canonical：span 前缀 + 整数 + 命名线序。
+        GridLineValue::Span { count, name } => {
+            let mut out = String::from("span");
+            if let Some(c) = count {
+                out.push(' ');
+                out.push_str(&c.to_string());
+            }
+            if let Some(n) = name {
+                out.push(' ');
+                out.push_str(n);
+            }
+            out
+        }
         GridLineValue::Name(s) => s.clone(),
     }
 }
@@ -3550,36 +3588,41 @@ fn empty_cells_to_css(e: &EmptyCellsComputedValue) -> String {
 /// `scale: 2 2` 会序列化为 `2`）。individual 文法不产生的变体回落函数形。
 pub(crate) fn individual_transform_to_css(f: &TransformFunction) -> String {
     use TransformFunction as Tf;
+    // CSS Values 4 §10.12 Range Checking：顶层计算 NaN 结果不外泄，computed 值侧
+    // 规约为零（"censored into a zero value"；±∞ clamp 到上下文允许范围，individual
+    // transform 数值域无界不 clamp）。WPT sin-cos-tan-serialize NaN 组 computed/
+    // used 断言 computed(scale, NaN) === computed(scale, "0") 驱动（2026-11-11 r2320）。
+    let n = |v: &f64| if v.is_nan() { 0.0 } else { *v };
     match f {
-        Tf::RotateZ(deg) => format!("{}deg", format_num(*deg, "")),
-        Tf::RotateX(deg) => format!("x {}deg", format_num(*deg, "")),
-        Tf::RotateY(deg) => format!("y {}deg", format_num(*deg, "")),
+        Tf::RotateZ(deg) => format!("{}deg", format_num(n(deg), "")),
+        Tf::RotateX(deg) => format!("x {}deg", format_num(n(deg), "")),
+        Tf::RotateY(deg) => format!("y {}deg", format_num(n(deg), "")),
         Tf::Rotate3d(x, y, z, angle) => format!(
             "{} {} {} {}deg",
-            format_num(*x, ""),
-            format_num(*y, ""),
-            format_num(*z, ""),
-            format_num(*angle, "")
+            format_num(n(x), ""),
+            format_num(n(y), ""),
+            format_num(n(z), ""),
+            format_num(n(angle), "")
         ),
         Tf::Translate(tx, ty) => {
-            if *ty == 0.0 {
-                format_num(*tx, "px")
+            if n(ty) == 0.0 {
+                format_num(n(tx), "px")
             } else {
-                format!("{} {}", format_num(*tx, "px"), format_num(*ty, "px"))
+                format!("{} {}", format_num(n(tx), "px"), format_num(n(ty), "px"))
             }
         }
         Tf::TranslateMixed(tx, txp, ty, typ) => {
-            if *ty == 0.0 && !*typ {
-                mixed_len(*tx, *txp)
+            if n(ty) == 0.0 && !*typ {
+                mixed_len(n(tx), *txp)
             } else {
-                format!("{} {}", mixed_len(*tx, *txp), mixed_len(*ty, *typ))
+                format!("{} {}", mixed_len(n(tx), *txp), mixed_len(n(ty), *typ))
             }
         }
         Tf::Scale(sx, sy) => match sy {
-            Some(sy) if *sy != *sx => {
-                format!("{} {}", format_num(*sx, ""), format_num(*sy, ""))
+            Some(sy) if n(sy) != n(sx) => {
+                format!("{} {}", format_num(n(sx), ""), format_num(n(sy), ""))
             }
-            _ => format_num(*sx, ""),
+            _ => format_num(n(sx), ""),
         },
         other => transform_function_to_css(other),
     }
@@ -3736,5 +3779,18 @@ mod r4201_individual_transform_serialization_tests {
         assert_eq!(individual_transform_to_css(&Tf::Scale(2.0, Some(2.0))), "2");
         assert_eq!(individual_transform_to_css(&Tf::Scale(2.0, Some(3.0))), "2 3");
         assert_eq!(individual_transform_to_css(&Tf::Scale(0.5, None)), "0.5");
+    }
+
+    #[test]
+    fn individual_transform_censors_nan_at_computed() {
+        // CSS Values 4 §10.12：顶层计算 NaN 结果 computed 侧规约为零——
+        // `scale: calc(sin(infinity))` 与 `scale: 0` computed 串一致（WPT
+        // sin-cos-tan-serialize NaN 组 computed/used 断言）。
+        assert_eq!(individual_transform_to_css(&Tf::Scale(f64::NAN, Some(f64::NAN))), "0");
+        // NaN≠NaN 不可穿透单值形判断：规约后才比较 sy==sx（NaN 与 0 都规约 0）。
+        assert_eq!(individual_transform_to_css(&Tf::Scale(f64::NAN, Some(0.0))), "0");
+        assert_eq!(individual_transform_to_css(&Tf::Scale(f64::NAN, Some(2.0))), "0 2");
+        assert_eq!(individual_transform_to_css(&Tf::RotateZ(f64::NAN)), "0deg");
+        assert_eq!(individual_transform_to_css(&Tf::Translate(f64::NAN, 20.0)), "0px 20px");
     }
 }

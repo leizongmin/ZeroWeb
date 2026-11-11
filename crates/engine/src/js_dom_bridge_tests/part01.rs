@@ -1147,17 +1147,18 @@ fn test_layout_geometry_e2e() {
             .value,
         "50"
     );
-    // offsetTop/Left = rect y/x（viewport 相对，近似）。
+    // offsetTop/Left = 相对 offsetParent padding edge（CSSOM View spec；mock 下 #d
+    // 与 body 同 rect "10,20,100,50"、body 无 border → 相对偏移 0,0）。
     assert_eq!(
         sandbox.execute("document.querySelector('#d').offsetTop").unwrap().value,
-        "20"
+        "0"
     );
     assert_eq!(
         sandbox
             .execute("document.querySelector('#d').offsetLeft")
             .unwrap()
             .value,
-        "10"
+        "0"
     );
     // visibility 检查（修旧 undefined>0=false bug）。
     assert_eq!(

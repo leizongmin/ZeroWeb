@@ -4099,6 +4099,35 @@
     }
     return [n, String(value), undefined];
   }
+  // s394：textarea wrap=hard wrapping transformation（HTML §4.10.11 The textarea
+  // element，https://html.spec.whatwg.org/multipage/form-elements.html#attr-textarea-wrap-hard）
+  // ——entry 构造面（constructing the entry list）对 wrap=hard 的 textarea 值按
+  // cols 无条件折行（字符计数、非 layout 面）：LF 切行，超 cols 段逐段截断。
+  // 不进 API value（.value 读面不折行，仅 entry 面——wrapping-transformation
+  // window 的 round-trip 判据：变换幂等，输出行均 ≤ cols，重变换零变化）。
+  // cols 读 IDL face（R5009 片 d limited 解析 fallback 20）；soft/默认态原值
+  // 返回（raw value LF 归一臂零变化，LF-only 恒不出 CR）。
+  function _zwTaHardWrap(val, el) {
+    var _hard = false;
+    try { _hard = /^hard$/i.test(String(el.getAttribute('wrap') || '')); } catch (_eW) { _hard = false; }
+    if (!_hard) return val;
+    var _cols = 20;
+    try {
+      var _c = el.cols;
+      if (typeof _c === 'number' && _c > 0) _cols = Math.min(_c, 2147483647);
+    } catch (_eC) {}
+    var _out = [];
+    var _lines = String(val).split('\n');
+    for (var _i = 0; _i < _lines.length; _i++) {
+      var _ln = _lines[_i];
+      while (_ln.length > _cols) {
+        _out.push(_ln.slice(0, _cols));
+        _ln = _ln.slice(_cols);
+      }
+      _out.push(_ln);
+    }
+    return _out.join('\n');
+  }
   // net-api M4-S19：(form, submitter) 双参构造（HTML spec §constructing-the-form-data-set）
   // ——submitter 校验（非 submit 按钮 → TypeError；非本 form 属主 → NotFoundError）+
   // submitter 条目按树序插入（image 按钮 → name.x/name.y）+ 'formdata' 事件派发
@@ -4272,7 +4301,11 @@
               }
             } catch (_eFdi) {}
           } else if (type !== 'submit' && type !== 'button' && type !== 'reset' && type !== 'image') {
-            this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
+            // s394：textarea wrap=hard 折行（wrapping transformation，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-entry-list）。
+            var _fdV = f.value != null ? String(f.value) : '';
+            if (tag === 'textarea') _fdV = _zwTaHardWrap(_fdV, f);
+            this._p.push([String(name), _fdV, undefined]);
           }
         }
       } catch (_e) { /* best-effort：枚举失败则按空 FormData */ }

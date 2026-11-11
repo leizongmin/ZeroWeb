@@ -443,6 +443,11 @@ impl<'a> Parser<'a> {
                     self.consume_property_rule().map(Rule::Property)
                 } else if name.eq_ignore_ascii_case("counter-style") {
                     self.consume_counter_style_rule().map(Rule::CounterStyle)
+                } else if name.eq_ignore_ascii_case("position-try") {
+                    // https://drafts.csswg.org/css-anchor-position-1/#at-ruledef-position-try
+                    // prelude 非法（非 custom ident）→ None 走链尾 skip_malformed_qualified_rule
+                    // 消耗整条 extent（block 不泄漏成顶层规则）。
+                    self.consume_position_try_rule().map(Rule::PositionTry)
                 } else if name.eq_ignore_ascii_case("namespace") {
                     // R3757（CSS Namespaces 3 §5）：@namespace <prefix>? <url>; —— 注册前缀
                     // 到 Parser 状态供后续 `prefix|name` 选择器解析；规则本体不进入样式表

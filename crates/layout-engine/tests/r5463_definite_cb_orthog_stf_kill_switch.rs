@@ -2,6 +2,10 @@
 //! 11.12 pass 整体关闭（含 R5463 definite-CB 扩展），复现旧塌陷——definite-CB 域
 //! 正交块按父循环首趟收缩宽断行（w=66/cw=60，3 数/行），块轴塌 ICB fill（h=784）。
 //! 主判例 r5463_definite_cb_orthog_stf.rs 断言相反方向。
+//!
+//! R5498 起本锚同时关 `ZW_ROOT_FRAME_TRANSPOSE`（同 r5462 kill-switch）：所钉几何是
+//! 旧根帧世界的 stf-off 塌陷；仅关 stf 的转置新世界 taffy 交换帧 junk 另一套值，
+//! 无契约钉定。
 
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 
@@ -38,8 +42,9 @@ fn find_ortho(root: &zero_layout_engine::types::LayoutBox) -> &zero_layout_engin
 #[test]
 fn kill_switch_restores_legacy_collapse() {
     // Rust 2024：set_var 为 unsafe（进程全局可变）；pass 入口首读 env 前生效
-    //（R5461/R5462 同款模式）。
+    //（R5461/R5462 同款模式）。R5498：连根帧转置一并还原（旧世界锚）。
     unsafe { std::env::set_var("ZW_ORTHO_BLOCK_STF", "0") };
+    unsafe { std::env::set_var("ZW_ROOT_FRAME_TRANSPOSE", "0") };
     let nums: String = (1..=100)
         .map(|i| format!("{:02} ", if i == 100 { 0 } else { i }))
         .collect();

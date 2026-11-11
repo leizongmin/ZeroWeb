@@ -1483,7 +1483,10 @@ impl InlineFormattingContext {
     /// 探针模型（`X⦿RLO RW⦿⦿LRO IL⦿` → `XILWR`）。
     ///
     /// 近似面（FIXME 谱系）：反转片段的 shaped kerning 级宽度漂移（reftest 主面
-    /// Ahem 等宽零差异）；无 level 数据片段（per-run 路径产物）按 level 0 恒等。
+    /// Ahem 等宽零差异）；无 level 数据片段（per-run 路径产物）按 level 0 恒等——
+    /// R5501 起基方向 RTL 例外：`para_base_rtl` 置位时无 level 片段（原子 inline
+    /// 盒）按基 level（=1）参与序列重排（CSS2 §9.4.2 行内级盒右→左排布，chromium
+    /// oracle V1/V4/v6 实测；基 LTR 维持 level 0 边界语义——LTR 行内盒本就 level 0）。
     /// UAX #9 L2：https://unicode.org/reports/tr9/#L2
     pub(crate) fn reorder_lines_l2_for_para_bidi(&mut self) {
         for line in &mut self.lines {
@@ -1535,18 +1538,40 @@ impl InlineFormattingContext {
                 .runs
                 .iter()
                 .map(|r| {
-                    r.source.as_ref().and_then(|s| {
-                        (!s.visual_levels.is_empty())
-                            .then(|| {
-                                let min = s.visual_levels.iter().copied().min()?;
-                                let max = s.visual_levels.iter().copied().max()?;
-                                Some((min, max))
-                            })
-                            .flatten()
-                    })
+                    // R5501（CSS2 §9.4.2）：基方向 RTL 时无 level 数据片段（原子
+                    // inline 盒）按基 level（1）参与——rtl 行全部内容片段 level ≥1，
+                    // l=1 时序列恰为整行、straddle/uniform 守卫天然通过；基 LTR
+                    // 维持 None 边界（ltr 行内盒 level 0，chromium 同）。
+                    r.source
+                        .as_ref()
+                        .and_then(|s| {
+                            (!s.visual_levels.is_empty())
+                                .then(|| {
+                                    let min = s.visual_levels.iter().copied().min()?;
+                                    let max = s.visual_levels.iter().copied().max()?;
+                                    Some((min, max))
+                                })
+                                .flatten()
+                        })
+                        .or_else(|| self.para_base_rtl.then_some((1u8, 1u8)))
                 })
                 .collect();
             let line_max = frag_min_max.iter().flatten().map(|&(_, max)| max).max().unwrap_or(0);
+            // R5501（UAX #9 L2 恒等面）：行内**无任何奇 level 参与者**（全偶——
+            // RTL 段基纯强 L 内容，两次反转抵消＝视觉序恒逻辑序，chromium
+            // bidi-box-model-014 探针实测与 LTR div 逐像素一致）→ 行级序列恒等，
+            // 整个降层循环跳过。此前全偶行也要跑 l=2+l=1 双次镜像，二次镜像依赖
+            // 「原占用跨度内重排」的对合性——装饰感知 gap 重分配（负 gap 钳 0）破
+            // 坏对合：span margin-left 2em 行双镜像后 x 净移 120px（First/Second
+            // 视觉序反转实证）。奇 level 参与判定 = 片段 min/max 任一奇（原子盒
+            // 基 level 1 由上方 para_base_rtl 回落提供）。
+            let line_has_odd = frag_min_max
+                .iter()
+                .flatten()
+                .any(|&(min, max)| min % 2 == 1 || max % 2 == 1);
+            if !line_has_odd {
+                continue;
+            }
             let mut l = line_max;
             while l >= 1 {
                 let in_seq: Vec<bool> = frag_min_max.iter().map(|mm| mm.is_some_and(|(min, _)| min >= l)).collect();

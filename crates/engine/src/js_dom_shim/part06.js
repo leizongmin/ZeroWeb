@@ -143,6 +143,10 @@
             if (globalThis.__zwOpacityComputed(String(value)) !== '') return true;
           } catch (_eSO) {}
         }
+        // position-area（组F）不设 JS 前置钩：宿主 decl_supported 已加
+        // position-area 臂（js_dom_bridge.rs，dom_bindings::position_area
+        // 裁决）——host 路径即可判真，同型双钩冗余不落。
+        // https://drafts.csswg.org/css-anchor-position-1/#position-area
       }
       if (typeof __zw_css_supports !== 'function') return false;
       if (arguments.length >= 2) return __zw_css_supports(String(prop), String(value)) === '1';
@@ -1929,12 +1933,20 @@
   // CSS Color 4 §6.1 named colors 全表（148 键，ASCII lowercase，§6.1 "ASCII
   // case-insensitive"）——`|` 包边整串按 `|kw|` 整词 indexOf（无 keyword 前缀误命中）。
   var _zwNamedColorSet = '|aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|';
-  // CSS Color 4 §6.3 system colors——declared 值 ASCII lowercase（同 §16.2 命名色；
-  // Blink 154 活体 t48 oracle b-*）。接受面 = modern 19 键 − listitemtext + deprecated
-  // 23 键 = 41 键：LISTITEMTEXT Chrome 154 不接受（`color: LISTITEMTEXT` 整声明丢弃），
-  // 不入表 → ZW 侧按未知 ident 逐字透传（既定无 ident 拒绝面限制，t48 分歧形状钉）。
+  // CSS Color 4 §6.2 system colors（§6.3 是 transparent 关键字）+ Appendix A
+  // deprecated system colors——declared 值 ASCII lowercase（同 §16.2 命名色；§15.5
+  // system color declared = ASCII lowercase）。接受面 = §6.2 modern 19 键 +
+  // Appendix A deprecated 23 键 = 42 键（Blink 154 活体 t48 oracle b-*、t57 oracle
+  // r2 m01-m19/ac01-ac03/d01-d42 全案：42 键逐键 accept 且 declared 读回小写）。
+  // T57 返修补键 accentcolortext（§6.2 规范键，r2 oracle m02/ac01-ac03/d17 三形
+  // accept+lowercase 实证）——消除引擎内部不一致（parser named_colors.rs 与
+  // part11 color/computed 面已认，唯本集合漏键，t57 首轮 TV-F2/DF-01）。
+  // LISTITEM/LISTITEMTEXT 非规范键（TR CRD 2026-10-09 §6.2 清单无此二键）且
+  // Chrome 154 活体全大小写形 reject（`color: ListItem` 等整声明丢弃，t57 oracle
+  // r2 li01-li05），不入表 → ZW 侧按未知 ident 逐字透传（既定无 ident 拒绝面限
+  // 制，t48 分歧形状钉、t57 42 键集合逐键锁定 + listitem 族 reject 六形钉）。
   // https://www.w3.org/TR/css-color-4/#css-system-colors
-  var _zwSystemColorSet = '|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|mark|marktext|graytext|accentcolor|selecteditem|selecteditemtext|activeborder|activecaption|appworkspace|background|buttonhighlight|buttonshadow|captiontext|inactiveborder|inactivecaption|inactivecaptiontext|infobackground|infotext|menu|menutext|scrollbar|threeddarkshadow|threedface|threedhighlight|threedlightshadow|threedshadow|window|windowframe|windowtext|';
+  var _zwSystemColorSet = '|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|mark|marktext|graytext|accentcolor|accentcolortext|selecteditem|selecteditemtext|activeborder|activecaption|appworkspace|background|buttonhighlight|buttonshadow|captiontext|inactiveborder|inactivecaption|inactivecaptiontext|infobackground|infotext|menu|menutext|scrollbar|threeddarkshadow|threedface|threedhighlight|threedlightshadow|threedshadow|window|windowframe|windowtext|';
   // CSS-wide keywords（CSS Cascading and Inheritance Level 4 §7.1-§7.4 inherit/initial/
   // unset/revert + Level 5 revert-layer）：全属性有效，declared 序列化 ASCII lowercase
   //（Blink 154 活体 t48 oracle a1-a5 color 上下文、a6-a9/x1 animation-name 与
@@ -2089,6 +2101,57 @@
       if (_gnd === 'null') return null;
       return _gnd;
     }
+    // wptfyi-css 组F（css-anchor-position position-area 语法面）：decl 校验 +
+    // canonical 序列化整值委托——grid_cssom G1 单实现双通道同型（组F 撞车仲裁
+    // 定案：文法/序列化矩阵单点在 dom_bindings::position_area，Rust 侧单测以
+    // position-area-parsing/computed 语料为 oracle；shim 薄委托经
+    // __zw_position_area_normalize_decl 回调）。'null' 哨兵=拒（赋值忽略保留
+    // 原值）；空串 echo Some("")（remove 语义归 setProp 空串臂）；CSS-wide
+    // 归小写、var() 原文保形均在 Rust 侧收口。回调未注册（兜底链）不校验
+    // 零漂移。
+    // https://drafts.csswg.org/css-anchor-position-1/#position-area
+    if (propName === 'position-area'
+        && typeof globalThis.__zw_position_area_normalize_decl === 'function') {
+      var _pav = globalThis.__zw_position_area_normalize_decl(raw);
+      if (_pav === 'null') return null;
+      return _pav;
+    }
+    // wptfyi-css 组 F（css-anchor-position anchor 族声明面）：position-anchor/
+    // position-visibility/position-try 简写族/anchor-name/anchor-scope 七属性
+    // 文法校验 + canonical 序列化整值委托（grid_cssom/position_area G1 单实现
+    // 双通道同型；非法整值返 'null' 拒、合法返 canonical 串、var()/ident() 保形
+    // 均在 Rust 侧收口）。回调未注册（兜底链）不校验零漂移。
+    // https://drafts.csswg.org/css-anchor-position-1/
+    if (typeof globalThis.__zw_anchor_normalize_decl === 'function'
+        && (propName === 'position-anchor' || propName === 'position-visibility'
+            || propName === 'position-try-order' || propName === 'position-try-fallbacks'
+            || propName === 'position-try' || propName === 'anchor-name'
+            || propName === 'anchor-scope')) {
+      var _anv = globalThis.__zw_anchor_normalize_decl(propName, raw);
+      if (_anv === 'null') return null;
+      return _anv;
+    }
+    // 组 F：通用 inset/size/margin 属性域值含 anchor()/anchor-size() 调用时的
+    // 属性域 + 参数文法拒面（anchor-parse-invalid/anchor-size-parse-invalid 语料
+    // 钉）。var() 混合形 parse 期不校验（替换后校验语义，保形放行先于本臂）。
+    // 合法形原文保形（校验器只拒不重写——valid 语料 round-trip echo 钉）。
+    // `anchor-size(` 不含 `anchor(` 子串（anchor 与 `(` 间有 `-`），双形并查。
+    if ((raw.indexOf('anchor(') >= 0 || raw.indexOf('anchor-size(') >= 0)
+        && raw.indexOf('var(') < 0
+        && typeof globalThis.__zw_anchor_func_check === 'function') {
+      if (globalThis.__zw_anchor_func_check(propName, raw) !== 'true') return null;
+    }
+    // DC-2 light-dark image 批：image 四属性 light-dark() 顶层前缀浅校验
+    //（part11-color.js __zwImageNormalizeDecl——undefined=不介入 passthrough、
+    // null=拒、串=放行原串）。light-dark-image 语料 invalid 组锚（arity≠2/
+    // 空参段/色值支）；未装配（兜底链）不校验零漂移。
+    if (typeof globalThis.__zwImageNormalizeDecl === 'function') {
+      try {
+        var _ind = globalThis.__zwImageNormalizeDecl(propName, raw);
+        if (_ind === null) return null;
+        if (_ind !== undefined) return _ind;
+      } catch (_eIND) {}
+    }
     // DC-2 次批：色/opacity 值模型归一整值委托（part11 css-color-4/5 管线）——
     // 下方分词器会把函数形劈散（css-syntax 函数含空格参数），现代语法（空格形/
     // none powerless/角度单位/hwb·lab 族）必须整值进管线。null=非法（调用方
@@ -2212,7 +2275,12 @@
   // `<style>` 源）。**已知限制**：① 视觉生效于下次 render（flush 写源→cascade 异步，同 R2809）；
   // ② `!important` 并入 value（getPropertyValue 含 '!important'、getPropertyPriority 返 ''，同 element.style
   // 既有简化）；③ 仅 type===1 StyleRule（@-rule 无 style）；④ set 空串 = remove（spec 一致，避免 emit `prop: `）。
-  function _makeRuleStyle(rule, flushFn) {
+  // allowedSet（wptfyi-css @position-try 描述符白名单）：可选键集过滤——载入/cssText
+  // 写入时裁剪键集外声明（length/item/cssText 只含白名单键，语料 `--x`/`color`
+  // 案），setProp 键集外整体忽略（Blink CSSPositionTryDescriptors 同形）；get 面
+  // 键集外返 undefined（由调用方 Proxy get 判，本函数内 readProp 返 ''）。
+  function _makeRuleStyle(rule, flushFn, allowedSet) {
+    var ptAllow = function (name) { return !allowedSet || allowedSet[name] === 1; };
     var bodyText = function () {
       var t = rule.cssText || '';
       var lo = t.indexOf('{');
@@ -2220,6 +2288,9 @@
       return lo >= 0 ? t.slice(lo + 1, hi >= 0 ? hi : t.length) : t;
     };
     var decls = _parseDeclarations(bodyText());
+    if (allowedSet) {
+      decls = decls.filter(function (d) { return ptAllow(d.name); });
+    }
     function findIdx(name) {
       var want = _styleDeclName(name);
       for (var i = 0; i < decls.length; i++) if (decls[i].name === want) return i;
@@ -2240,6 +2311,7 @@
     }
     function setProp(name, value) {
       var prop = _styleDeclName(name);
+      if (!ptAllow(prop)) return;
       var raw = String(value == null ? '' : value).trim();
       // T46 DF-3：IDL 属性写/setProperty 写与 cssText 写同归一（Blink 活体
       // style.color='RED' 读回 'red'——本表 idlWriteUpper/setPropertyUpper 案，
@@ -2271,7 +2343,7 @@
     }
     return new Proxy({}, {
       get: function (_t, p) {
-        var ps = String(p);
+        var ps = typeof p === 'string' ? p : String(p);
         if (ps === 'cssText') return declsText();
         if (ps === 'length') return decls.length;
         if (ps === 'getPropertyValue') return function (name) { return readProp(name); };
@@ -2279,11 +2351,19 @@
         if (ps === 'setProperty') return function (name, value) { setProp(name, value); return undefined; };
         if (ps === 'removeProperty') return function (name) { return removeProp(name); };
         if (ps === 'item') return function (i) { var d = decls[i | 0]; return d ? d.name : ''; };
+        // 白名单键集外属性名（非 special 键）→ undefined（CSSPositionTryDescriptors
+        // [color] 案；special/方法键先行，Symbol 键不受影响）。
+        if (allowedSet && typeof p === 'string' && !ptAllow(_styleDeclName(ps))) return undefined;
         return readProp(ps);
       },
       set: function (_t, p, v) {
         var ps = String(p);
-        if (ps === 'cssText') { decls = _parseDeclarations(String(v == null ? '' : v)); rebuild(); return true; }
+        if (ps === 'cssText') {
+          decls = _parseDeclarations(String(v == null ? '' : v));
+          if (allowedSet) decls = _zwPtFilterDecls(decls);
+          rebuild();
+          return true;
+        }
         setProp(ps, v);
         return true;
       }
@@ -2304,6 +2384,25 @@
     // 与 replaceSync 先切分后进这里的顺序无涉。
     // https://www.w3.org/TR/css-syntax-3/#input-preprocessing
     var t = String(text == null ? '' : text).replace(/\0/g, '�').trim();
+    // @position-try 插入面（css-anchor-position-1 §at-ruledef-position-try；wptfyi-css
+    // at-position-try-parse）：恰好一个 <dashed-ident> 坓名 + `{}` 块体（语句形/缺块
+    // 非法）；块体描述符白名单 + !important 拒（_zwPtFilterDecls）。校验失败抛
+    // SyntaxError DOMException（cssom-1 insertRule 非法规则文本语义，语料
+    // assert_throws_dom 钉）。块名原文保形（`--\{` 转义形往返不重写）。
+    // https://drafts.csswg.org/css-anchor-position-1/#interfaces
+    var ptParse = /^@position-try([\s\S]*)$/i.exec(t);
+    if (ptParse) {
+      var ptRest = ptParse[1];
+      var ptBrace = ptRest.indexOf('{');
+      var ptPrelude = (ptBrace >= 0 ? ptRest.slice(0, ptBrace) : ptRest).trim();
+      if (ptBrace < 0 || !/^--(?:[A-Za-z0-9_\u0080-￿-]|\\[\s\S])+$/.test(ptPrelude)) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': '@position-try' requires exactly one <dashed-ident> name and a block.",
+          'SyntaxError');
+      }
+      var ptBody = ptRest.slice(ptBrace + 1).replace(/}\s*$/, '').trim();
+      return _makePtRule(ptPrelude, ptBody, parentSheet, flushFn);
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2332,6 +2431,66 @@
   // CSSMediaRule…）常量与 instanceof 面整体建模未做，语料扩展时按案补。
   if (typeof globalThis.CSSImportRule !== 'function') {
     globalThis.CSSImportRule = function CSSImportRule() {};
+  }
+  // wptfyi-css at-position-try-cssom：CSSPositionTryRule / CSSPositionTryDescriptors
+  // 接口全局（css-anchor-position-1 §interfaces）——wire `@position-try` 条目物化为
+  // 该类实例（instanceof 面同 s163 CSSImportRule 空壳模式）。
+  if (typeof globalThis.CSSPositionTryRule !== 'function') {
+    globalThis.CSSPositionTryRule = function CSSPositionTryRule() {};
+  }
+  if (typeof globalThis.CSSPositionTryDescriptors !== 'function') {
+    globalThis.CSSPositionTryDescriptors = function CSSPositionTryDescriptors() {};
+  }
+  // @position-try 描述符白名单（css-anchor-position-1 §position-try-desc：
+  // Chrome CSSPositionTryDescriptors allowed properties，at-position-try-cssom
+  // 语料 supported_properties 表同源）——描述符面读写在键集外整体不可见。
+  var _zwPtAllowed = {
+    'margin': 1, 'margin-top': 1, 'margin-right': 1, 'margin-bottom': 1, 'margin-left': 1,
+    'margin-block': 1, 'margin-block-start': 1, 'margin-block-end': 1,
+    'margin-inline': 1, 'margin-inline-start': 1, 'margin-inline-end': 1,
+    'inset': 1, 'top': 1, 'left': 1, 'right': 1, 'bottom': 1,
+    'inset-block': 1, 'inset-block-start': 1, 'inset-block-end': 1,
+    'inset-inline': 1, 'inset-inline-start': 1, 'inset-inline-end': 1,
+    'width': 1, 'height': 1, 'min-width': 1, 'max-width': 1, 'min-height': 1, 'max-height': 1,
+    'block-size': 1, 'min-block-size': 1, 'max-block-size': 1,
+    'inline-size': 1, 'min-inline-size': 1, 'max-inline-size': 1,
+    'place-self': 1, 'align-self': 1, 'justify-self': 1,
+    'position-anchor': 1, 'position-area': 1
+  };
+  // 描述符声明过滤：白名单键 + !important 拒（css-anchor-position-1 §position-try-desc
+  // 描述符语法不含 !important，at-position-try-parse/allowed-declarations 语料钉）。
+  // 块内 @-规则/嵌套/垃圾内容经 _parseDeclarations 无 `:` 段跳过语义静默消解
+  //（css-syntax-3 §consume-a-block 内容忽略）。
+  function _zwPtFilterDecls(decls) {
+    var out = [];
+    for (var i = 0; i < decls.length; i++) {
+      var d = decls[i];
+      if (!_zwPtAllowed[d.name] || /!\s*important/i.test(d.value)) continue;
+      out.push(d);
+    }
+    return out;
+  }
+  // @position-try 规则物化（wire 读面 + insertRule 写面共用构造——单实现双通道，
+  // grid G1 同型）：nameText 为块名文本（wire 侧已按 cssom-1 §serialize-an-identifier
+  // 重转义；insertRule 侧原文保形），declText 为块体声明文本。cssText canonical 形：
+  // 空块 `{ }` 单空格（at-position-try-parse 序列化断言钉）。描述符 = per-rule style
+  // 基座 + 白名单过滤，原型挂 CSSPositionTryDescriptors（instanceof 面）。
+  function _makePtRule(nameText, declText, parentSheet, flushFn) {
+    var decls = _zwPtFilterDecls(_parseDeclarations(declText));
+    var sel = '@position-try ' + nameText;
+    var dt = _zwSerializeDecls(decls);
+    var rule = Object.create((globalThis.CSSPositionTryRule && globalThis.CSSPositionTryRule.prototype) || Object.prototype);
+    rule.name = nameText;
+    rule.selectorText = sel;
+    rule.cssText = dt ? sel + ' { ' + dt + ' }' : sel + ' { }';
+    rule.style = null;
+    rule.parentStyleSheet = parentSheet;
+    rule.style = _makeRuleStyle(rule, flushFn, _zwPtAllowed);
+    if (rule.style && globalThis.CSSPositionTryDescriptors &&
+        typeof Object.setPrototypeOf === 'function') {
+      Object.setPrototypeOf(rule.style, globalThis.CSSPositionTryDescriptors.prototype);
+    }
+    return rule;
   }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
   // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
@@ -2401,7 +2560,19 @@
         for (var i = 0; i < entries.length; i++) {
           var parts = entries[i].split('\x1e');
           if (parts.length >= 2) {
-            var r = {
+            // @position-try 条目（wire selectorText 以 `@position-try ` 起头——真实
+            // 选择器不可能）→ CSSPositionTryRule 物化（css-anchor-position-1 §interfaces；
+            // wptfyi-css at-position-try-cssom）。构造走 _makePtRule（与 insertRule 写面
+            // 单实现双通道）；声明再过滤幂等（wire 侧白名单裁剪归 _zwPtFilterDecls 统一）。
+            var r;
+            if (parts[0].lastIndexOf('@position-try ', 0) === 0) {
+              var ptLo = parts[1].indexOf('{');
+              var ptHi = ptLo >= 0 ? parts[1].lastIndexOf('}') : -1;
+              var ptBody = ptLo >= 0 ? parts[1].slice(ptLo + 1, ptHi >= 0 ? ptHi : parts[1].length) : '';
+              rulesCache.push(_makePtRule(parts[0].slice(14), ptBody, ss, flushToOwner));
+              continue;
+            }
+            r = {
               type: 1, // CSSRule.STYLE_RULE
               selectorText: parts[0],
               cssText: parts[1],
@@ -2864,38 +3035,45 @@
   function _zwQueryFormatStateDom(cmd) {
     var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
     if (!tag) return false;
+    // DC-2 P1（2026-11-11）：spec DOM-only state 读（typing 态不进本读——
+    // gate14：ttags fallback 只进 queryCommandState 读面，不进臂内 toggle
+    // 判定）。委托 part01c __zw_ce_format_query（effective command value
+    // computed style 判定 + 含域 formattable 全量命中；算法与 UA 元素表见
+    // 其挂载注释），替换起点祖先链 tagName 近似。toggle 方向随 spec Action
+    //（state true → 解除）——style span/strong 载体的解除属 apply 面
+    //（P2）；跨段落 apply defer 面同 P2。
     try {
-      var sel = (typeof _getSelection === 'function') ? _getSelection() : null;
-      var rng = sel && sel.rangeCount > 0 ? sel._ranges[0] : null;
-      if (!rng) return false;
-      var node = rng.startContainer;
-      var guard = 0;
-      while (node && guard++ < 256) {
-        // 元素节点：tagName 匹配（大小写不敏感——HTML 解析产出大写 tagName）。
-        if (node.nodeType === 1) {
-          var tn = String(node.tagName || '').toLowerCase();
-          if (tn === tag) return true;
-          // 宿主直子文本的包裹判定由祖先链命中（<b> 在链上）。继续上行。
-        }
-        node = node.parentNode;
-      }
+      var fqD = typeof globalThis.__zw_ce_format_query === 'function'
+        ? globalThis.__zw_ce_format_query(String(cmd == null ? '' : cmd).toLowerCase())
+        : null;
+      if (fqD) return fqD.state;
     } catch (_eQs) {}
     return false;
   }
   function _zwQueryFormatState(cmd) {
     var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
     if (!tag) return false;
-    if (_zwQueryFormatStateDom(cmd)) return true;
-    // editing-compat multitest 状态命令族（2026-11-01）：typing-state fallback——
-    // Chrome stateOverride 语义：collapsed 选区执行 format 命令不改 DOM，但
-    // queryCommandState 立即返 true（typing 包裹态存活，直到 toggle 关闭或
-    // typing 落点离弃包裹）；语料 `[["bold",""],["insertorderedlist",""]]`
-    // qState-after expected true、caret 未动的 `bold+delete` 同面。ttags 是该
-    // 态的既有载体（collapsed 臂维护），读面补兜底。
+    // DC-2 P1（2026-11-11）：spec state 读面——读序按 spec queryCommandState
+    //（state override 先行 → 否则 computed state）：① typing-state 兜底
+    //（__zwTypingTags，spec state override 的既有近似载体——2026-11-01
+    // multitest 状态命令族：collapsed exec 不改 DOM 而 qS 立即 true）；②
+    // computed state——effective command value（computed style 判定）+ 含域
+    // formattable 全量命中（算法与 UA 元素表见 part01c __zw_ce_format_query
+    // 挂载注释），替换 R3254-M3 切片 4 的起点祖先链 tagName 近似（style
+    // span/元素语义/跨段落混合选区三族失败主因）。exec toggle 臂（下方
+    // collapsed/non-collapsed 两处）保持 _zwQueryFormatStateDom 旧读——
+    // apply/unwrap 机制是宿主直子 <tag> 形，style span 解除属 apply 面
+    //（P2 innerHTML 长尾）。
     try {
       var ttagsQ = globalThis.__zwTypingTags;
       if (Array.isArray(ttagsQ) && ttagsQ.indexOf(tag) >= 0) return true;
     } catch (_eQsT) {}
+    try {
+      var fqS = typeof globalThis.__zw_ce_format_query === 'function'
+        ? globalThis.__zw_ce_format_query(String(cmd == null ? '' : cmd).toLowerCase())
+        : null;
+      if (fqS) return fqS.state;
+    } catch (_eQsF) {}
     return false;
   }
   // toggle 解除包裹（切片 4）：选区起点祖先链中找到宿主直子的 <tag> 元素，把其
@@ -5144,12 +5322,14 @@
               // 43 行 delete+inserttext compare 翻红同病；inserttext/五值命令/style
               // 命令 spec false 自记自还（vendored recordCurrentOverrides/
               // restoreStatesAndValues），裹之即 final2 3 行 styleWithCSS 形翻红；
-              // outdent spec true 但无实应用臂（零变更无重锚）不需要。包裹点在
+              // outdent 实应用臂接通后并入（2026-11-11 outdent 刀，spec preservesOverrides:
+// true——wrap/split 重锚同病）。包裹点在
               // delete 臂后、结构命令臂前：insertparagraph 臂的 ipara 分支已自管
               //（part01f :1533 同款 finally 块），外层与内层快照同态、PutRaw+
               // Reanchor 幂等；fallback 分支（paragraph_split_at）与 ilb/justify/
               // iol/iul/inserthtml 臂裸奔 = mt 残 40 键 qV 族红源。
               var cmdPresOv = (cmd === 'formatblock' || cmd === 'indent'
+                || cmd === 'outdent'
                 || cmd === 'inserthorizontalrule' || cmd === 'insertimage'
                 || cmd === 'insertorderedlist' || cmd === 'insertunorderedlist'
                 || cmd === 'insertparagraph' || cmd === 'insertlinebreak'
@@ -5315,6 +5495,12 @@
               && typeof globalThis.__zw_ce_indent_apply === 'function') {
                 try { globalThis.__zw_ce_indent_apply(); } catch (_eIdt) {}
               }
+              // outdent 实应用（2026-11-11 outdent 刀：census 171 compare 行全红
+              // got==输入树 no-op → part01g vendored outdentNode+action 忠实移植）。
+              if (cmd === 'outdent' && rng2 && host2
+              && typeof globalThis.__zw_ce_outdent_apply === 'function') {
+                try { globalThis.__zw_ce_outdent_apply(); } catch (_eOdt) {}
+              }
               if (cmd === 'inserthorizontalrule' && rng2 && host2
               && typeof globalThis.__zw_ce_hr_apply === 'function') {
                 try { globalThis.__zw_ce_hr_apply(); } catch (_eHr) {}
@@ -5445,11 +5631,13 @@
     //（_zwQueryCommandState；defer 面——styleWithCSS/undo/justify* 等——返 false）。
     queryCommandSupported: function (commandId) { return _zwQueryCommandState(commandId).supported; },
     queryCommandEnabled: function (commandId) { return _zwQueryCommandState(commandId).enabled; },
-    // R3254-M3 切片 4：queryCommandState 真实反射——format 命令按选区起点包裹态
-    //（祖先链 tagName 匹配）；其余命令 false（状态面未接，documented）。
+    // R3254-M3 切片 4：queryCommandState 真实反射——format 命令 state 走
+    // spec 读面（DC-2 P1，2026-11-11：computed style + 含域 formattable
+    // 判定，part01c __zw_ce_format_query；此前为起点祖先链 tagName 近似）；
+    // 其余命令 false（状态面未接，documented）。
     // editing-compat justify 簇（2026-10-31）：justify* 前置 dispatch；Indeterm
-    // 此前完全缺失（调用抛 TypeError → run 语料 indeterm 列全灭），非 justify
-    // 命令按 legacy 语义返 false（run 语料无 justify 之外的 indeterm 断言面）。
+    // 此前完全缺失（调用抛 TypeError → run 语料 indeterm 列全灭）；list/fb/
+    // 五值命令/format 六命令（DC-2 P1）后接各自读面。
     queryCommandIndeterm: function (commandId) {
       var jf = _zwQueryJustifyFace(commandId);
       if (jf) return jf.indeterm;
@@ -5476,6 +5664,14 @@
         ? globalThis.__zw_ce_value_query(String(commandId == null ? '' : commandId).toLowerCase())
         : null;
       if (vf) return vf.indeterm;
+      // editing-compat format state 簇（2026-11-11）：六 inline format 命令
+      // Indeterm——四命令 part-not-all / sub-sup mixed 语义（算法见 part01c
+      // __zw_ce_format_query 挂载注释）。此前恒 false（混合选区 indeterm
+      // 断言族全灭，DC-2 triage 66 例）。
+      var ff = (typeof globalThis.__zw_ce_format_query === 'function')
+        ? globalThis.__zw_ce_format_query(String(commandId == null ? '' : commandId).toLowerCase())
+        : null;
+      if (ff) return ff.indeterm;
       return false;
     },
     queryCommandState: function (commandId) {

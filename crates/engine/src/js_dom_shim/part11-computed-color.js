@@ -36,6 +36,11 @@
   var _zwCCPrevComputed = typeof globalThis.__zwComputedColor === 'function'
     ? globalThis.__zwComputedColor : null;
 
+  // currentcolor 求值的属性上下文（__zwComputedColor 第三参入口暂存）：
+  // 'color' 走父链（css-color-4 §5.3 自引用=继承）、其余先试自元素。模块态 +
+  // 入口 save/restore——嵌套 __zwPlainComputed 再入（currentcolor 链）不 clobber。
+  var _zwCCPropCtx = '';
+
   // ============ 基础工具 ============
 
   // 去注释（声明文本经 inline style 原样存储，解析前剥离）。
@@ -176,7 +181,8 @@
     buttonborder: '', buttonface: '', buttontext: '', canvas: '', canvastext: '',
     field: '', fieldtext: '', graytext: '', highlight: '', highlighttext: '',
     infobackground: '', infotext: '', linktext: 'rgb(0, 0, 255)', mark: '',
-    marktext: '', visitedtext: 'rgb(85, 26, 139)',
+    marktext: '', selecteditem: '', selecteditemtext: '',
+    visitedtext: 'rgb(85, 26, 139)',
     // deprecated（css-color-4 § deprecated system colors——保留解析面）。
     activeborder: '', activecaption: '', appworkspace: '', background: '',
     buttonhighlight: '', buttonshadow: '', captiontext: '',
@@ -185,6 +191,63 @@
     threedhighlight: '', threedlightshadow: '', window: '', windowframe: '',
     windowtext: ''
   };
+
+  // dark used-scheme 面板（css-color-4 § system colors：系统色按 used
+  // color-scheme 取 light/dark 面板值；值无 UA 钉面——对齐 css-parser dark 臂
+  // 同款近似：canvas 族 rgb(32, 33, 36)、文本族白）。仅 dark 臂：light 面板
+  // 保持既有静态值/空串（空串=「解析为空」历史口径，system-color-consistency
+  // 页 ''=='' 等值钉面依赖，填 light 实值会成批翻红——FIXME: UA 表单样式建模
+  // 后统一填实）。消费面：system-color-support 页 scheme-aware 12 键
+  // assert_not_equals(light, dark) 差分（plain 臂走查）。
+  var _zwCCSystemDark = {
+    canvas: 'rgb(32, 33, 36)', canvastext: 'rgb(255, 255, 255)',
+    linktext: 'rgb(138, 180, 255)', visitedtext: 'rgb(191, 145, 229)',
+    buttonface: 'rgb(43, 43, 43)', buttontext: 'rgb(255, 255, 255)',
+    field: 'rgb(32, 33, 36)', fieldtext: 'rgb(255, 255, 255)',
+    highlight: 'rgb(13, 71, 161)', selecteditem: 'rgb(13, 71, 161)',
+    appworkspace: 'rgb(32, 33, 36)', scrollbar: 'rgb(60, 64, 67)'
+  };
+
+  // used color-scheme 合成（css-color-adjust-1 §color-scheme；语义对齐
+  // style-system parse_color_scheme_dark）。__zwPlainComputed 第三参 qvMode
+  // 开作者臂，沿父链返回首个 color-scheme 声明原文（part01c color-scheme
+  // 分支）；token 判定须空格分词（'light-dark' 内 \b 会误断词）；light dark
+  // 双 token → 用户偏好决定，runner 环境 prefers_dark 恒 false → 保守 light
+  // （与 Rust 臂 (true,true)→prefers_dark=false 同口径）；无声明/normal/only
+  // → 文档 scheme（corpus color 页无 meta color-scheme 依赖，保守 light）。
+  function _zwCCUsedSchemeDark(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var decl = '';
+    if (typeof globalThis.__zwPlainComputed === 'function') {
+      try {
+        decl = String(globalThis.__zwPlainComputed(el, 'color-scheme', true) || '');
+      } catch (_eUD) { decl = ''; }
+    }
+    if (!decl) return false;
+    var toks = decl.replace(/\/\*[\s\S]*?\*\//g, ' ').toLowerCase().split(/\s+/);
+    var hasLight = toks.indexOf('light') >= 0;
+    var hasDark = toks.indexOf('dark') >= 0;
+    return hasDark && !hasLight;
+  }
+
+  // 相对色 origin 骨架判定（css-color-5 §relative-colors，Typed-OM computed
+  // 面钉面 relative-color-with-system-color）：origin 折叠到 currentcolor 时
+  // computed 值骨架保形 'hsl(from currentcolor ...)'（currentcolor 依赖 used
+  // value 上下文，computed 时间不解析）；origin 为绝对色（system color/具名
+  // 色/light-dark 绝对支）时 computed 整体解析，返 '' 由调用方走宿主 resolved
+  // 通道。var() 支未展开（FIXME：保守走宿主）。
+  function _zwCCOriginSkeleton(originText, el) {
+    var s = _zwCCStripComments(String(originText == null ? '' : originText)).trim();
+    if (!s) return '';
+    if (s.toLowerCase() === 'currentcolor') return 'currentcolor';
+    var fnHead = /^([a-zA-Z][-\w]*)\s*\(([\s\S]*)\)$/.exec(s);
+    if (fnHead && fnHead[1].toLowerCase() === 'light-dark') {
+      var groups = _zwCCTopSplit(fnHead[2], ',');
+      if (groups.length !== 2) return '';
+      return _zwCCOriginSkeleton(_zwCCUsedSchemeDark(el) ? groups[1] : groups[0], el);
+    }
+    return '';
+  }
 
   // ============ calc 求值器（数字/% 两型；opacity 与色分量共用）============
 
@@ -498,6 +561,13 @@
   // 官方 XYZ↔LMS 矩阵直接作用在绝对 D65 XYZ 上（css-color-4 § oklab，
   // D65 白点互映核验：M1·white→(1,1,1)，M1i·(1,1,1)→white）。
   var _zwCCOkM1i = [[1.2270138535, -0.5577999757, 0.2812561490], [-0.0405801784, 1.1122568696, -0.0716767866], [-0.0763812845, -0.4214819784, 1.5861632204]];
+  // OkM1/OkM2 数值真逆（Gauss-Jordan，13 位字面；f64 往返 ~1e-15）。发表逆
+  // 精度实证：OkM1i 松（与真逆偏差 7.6e-4，链内致 e-5 级输出噪声）、OkM2i
+  // 本系真逆（偏差 5.5e-8）。仅嵌套 relative-out 原生直转臂消费——发表逆
+  // （OkM1i/OkM2i）仍供序列化投影面（8 位语料锚按发表常数判定，全局换
+  // 真逆会漂锚）。
+  var _zwCCOkM1t = [[1.226885850081, -0.5578177139334, 0.2813924209634], [-0.04057593472673, 1.112286907645, -0.07171110613332], [-0.07637352998276, -0.4214930601520, 1.586923891347]];
+  var _zwCCOkM2t = [[0.999999998451, 0.396337792174, 0.215803758061], [1.00000000888, -0.105561342324, -0.0638541747717], [1.00000005467, -0.089484182095, -1.29148553786]];
   function _zwCCXyzToOklab(xyz) {
     var lms = _zwCCMatVec(_zwCCOkM1, xyz);
     var lp = Math.cbrt(lms[0]), mp = Math.cbrt(lms[1]), sp = Math.cbrt(lms[2]);
@@ -632,6 +702,9 @@
     var t = String(alphaText).trim();
     var low = t.toLowerCase();
     if (_zwCCChanKw.indexOf(low) >= 0) return { chan: low };
+    // sibling-index()/sibling-count() 槽文本存 chanexpr（resolve 期
+    // _zwCCEvalRel 尾参 el 求值；裸函数非 calc 文法，_zwCCCalcSpec 不认）。
+    if (t.indexOf('sibling-') >= 0) return { chanexpr: t };
     var calc = _zwCCCalcSpec(t);
     if (calc) return calc;
     return _zwCCNumSpec(t) || { chan: low };
@@ -783,6 +856,17 @@
       return { kind: 'alpha', origin: relA.origin, alphaSpec: alphaSpecA };
     }
     if (fn === 'color-mix') return _zwCCParseMix(inner);
+    if (fn === 'light-dark') {
+      // light-dark( <color>#, <color># )（css-color-5 §light-dark）：恰好两组
+      // 逗号分隔（组内多值 fallback 链是 tentative 语法，corpus 钉面恒 2 组）。
+      // 支值暂存 AST 延迟 resolve（currentColor 支须按属性上下文求值）。
+      var ldGroups = _zwCCTopSplit(inner, ',');
+      if (ldGroups.length !== 2) return null;
+      var ldL = _zwCCParseColorValue(ldGroups[0].trim());
+      var ldD = _zwCCParseColorValue(ldGroups[1].trim());
+      if (!ldL || !ldD) return null;
+      return { kind: 'lightdark', light: ldL, dark: ldD };
+    }
     return null;
   }
 
@@ -806,6 +890,12 @@
     var valid = ['srgb', 'srgb-linear', 'display-p3', 'display-p3-linear', 'a98-rgb',
       'prophoto-rgb', 'rec2020', 'xyz', 'xyz-d50', 'xyz-d65', 'hsl', 'hwb', 'lab', 'lch', 'oklab', 'oklch'];
     if (valid.indexOf(space) < 0) return null;
+    // 别名折叠：'in xyz' ≡ 'in xyz-d65'（css-color-4/5 xyz 别名；与 color()
+    // 解析侧同规）。side 自空间解析已折叠（'color(xyz …)' → space 'xyz-d65'），
+    // _zwCCMixSide 按 space 全等匹配 own 形——不折叠则 'color-mix(in xyz,
+    // color(xyz none …), …)' side 匹配失败走 rgb 回退丢 none 旗标（none→0 全
+    // 权重归一，WPT color-computed-color-mix-function 13 案 2026-11-11）。
+    if (_zwCCSpaces[space]) space = _zwCCSpaces[space].alias || space;
     function calcW(expr) {
       var ev = _zwCCEval(expr);
       if (ev !== ev) return null;
@@ -908,6 +998,10 @@
     var t = String(text).trim();
     var low = t.toLowerCase();
     if (_zwCCChanKw.indexOf(low) >= 0) return { chan: low };
+    // sibling-index()/sibling-count() 槽存 chanexpr（裸函数非 calc 文法；
+    // resolve 期 _zwCCEvalRel 尾参 el 求值——relative-color-with-system-color
+    // test3 钉面）。
+    if (t.indexOf('sibling-') >= 0) return { chanexpr: t };
     var calc = _zwCCCalcSpec(t);
     if (calc) return calc;
     var num = _zwCCNumSpec(t);
@@ -983,6 +1077,17 @@
       if (v) return v;
       p = p.parentNode;
     }
+    // 作者样式表臂（页级 `html { --x: ... }` 声明——inline 链查空后经 part01c
+    // 作者快照沿父链首声明；color-computed-relative-color var(--accent/--color/
+    // --mycolor/--mygray) 13 案钉面）。
+    if (typeof globalThis.__zwPlainAuthorDecl === 'function') {
+      var q = el; guard = 0;
+      while (q && q.nodeType === 1 && guard++ < 256) {
+        var v2 = globalThis.__zwPlainAuthorDecl(q, name);
+        if (v2) return String(v2);
+        q = q.parentNode;
+      }
+    }
     return '';
   }
 
@@ -994,14 +1099,42 @@
       case 'transparent':
         return { kind: 'rgb', rgb: [0, 0, 0], alpha: 0, aNone: false, hasNone: false };
       case 'system': {
-        var txt = _zwCCSystem[ast.name];
+        // dark used-scheme 分派（css-color-4 § system colors）：used dark 且
+        // dark 面板有值时 dark 优先（linktext/visitedtext 等非空 light 静态值
+        // 键若 light 优先则 dark 分派永不生效——v9 记录轮 3 案实证），否则
+        // light 面板值（既有静态值/空串口径）。
+        var txt = (_zwCCUsedSchemeDark(el) && _zwCCSystemDark[ast.name])
+          ? _zwCCSystemDark[ast.name]
+          : _zwCCSystem[ast.name];
         return { kind: 'system', text: txt || '' };
+      }
+      case 'lightdark': {
+        // light-dark(L, D) used-scheme 选支（css-color-5 §light-dark）：
+        // https://drafts.csswg.org/css-color-5/#light-dark 。支值递归 resolve——
+        // currentcolor 支走既有 currentcolor 臂（propCtx 'color' 时父链语义
+        // 保持：currentColor 在 color 属性自引用 = 继承值，
+        // light-dark-currentcolor-in-color 钉面）。
+        var wantDark = _zwCCUsedSchemeDark(el);
+        return _zwCCResolve(wantDark ? ast.dark : ast.light, el, depth + 1);
       }
       case 'currentcolor': {
         // currentcolor = 本元素 color 计算值（css-color-4：currentColor 值 =
         // 继承的 color）。委托 __zwPlainComputed(p, 'color', true)——qvMode
         // 臂恒开（WPT computed 页锚：#container{color:rgb(255,0,0)} 样式表
         // 声明，inline-only 爬升读不到）；part11 再解析（legacy 值原形透传）。
+        // 非 color 属性上下文先试本元素（css-color-4 §5.3：currentcolor 用于
+        // background-color 等属性取本元素 color 计算值——relative-color 语料
+        // target inline color 实证，仅爬父链漏自元素恒黑）；color 属性自身
+        // （_zwCCPropCtx 'color'）保持父链优先（自引用=继承语义，防自递归）。
+        if (_zwCCPropCtx !== 'color' && el && el.nodeType === 1
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          var cstrSelf = '';
+          try { cstrSelf = globalThis.__zwPlainComputed(el, 'color', true); } catch (_eCCSE) { cstrSelf = ''; }
+          if (cstrSelf) {
+            var subSelf = _zwCCResolveText(cstrSelf, el, depth + 1);
+            if (subSelf) return subSelf;
+          }
+        }
         var p = el && el.parentNode, guard = 0;
         while (p && p.nodeType === 1 && guard++ < 256) {
           var cstr = '';
@@ -1043,9 +1176,14 @@
         var sV = (sN || s !== s) ? 0 : Math.min(100, Math.max(0, s));
         var lV = (lN || l !== l) ? 0 : Math.min(100, Math.max(0, l));
         var rgb = _zwCCHslToRgb(hV, sV / 100, lV / 100);
+        // srcBare：S/L 槽 % 语法跟随（css-color-4 computed 序列化 echo 输入形
+        // ——'hsl(120 80% none)' → '% 形'、RT 'hsl(270 50 none)' → 裸形；
+        // % 输入声明面剥 % 后由 part03 raw 影子供原文，裸输入无影子走 store
+        // 形——两侧判据一致；数组槽位 = [sBare, lBare]）。
         return { kind: 'rgb', rgb: rgb,
           alpha: _zwCCAlphaNum(ast.alpha), aNone: _zwCCIsNone(ast.alpha), hasNone: anyNone2,
-          srcComps: [hN ? 'none' : hV, sN ? 'none' : sV, lN ? 'none' : lV], srcKind: 'hsl' };
+          srcComps: [hN ? 'none' : hV, sN ? 'none' : sV, lN ? 'none' : lV], srcKind: 'hsl',
+          srcBare: [!(ast.comps[1] && ast.comps[1].pct != null), !(ast.comps[2] && ast.comps[2].pct != null)] };
       }
       case 'hwb': {
         var h2 = _zwCCSpecAngle(ast.comps[0]);
@@ -1056,9 +1194,11 @@
         var wV = (wN || w !== w) ? 0 : Math.min(100, Math.max(0, w));
         var bV = (bN || b !== b) ? 0 : Math.min(100, Math.max(0, b));
         var rgb2 = _zwCCHwbToRgb(h2V, wV / 100, bV / 100);
+        // srcBare：W/B 槽 % 语法跟随（同 hsl 臂——数组槽位 = [wBare, bBare]）。
         return { kind: 'rgb', rgb: rgb2,
           alpha: _zwCCAlphaNum(ast.alpha), aNone: _zwCCIsNone(ast.alpha), hasNone: anyNone3,
-          srcComps: [h2N ? 'none' : h2V, wN ? 'none' : wV, bN ? 'none' : bV], srcKind: 'hwb' };
+          srcComps: [h2N ? 'none' : h2V, wN ? 'none' : wV, bN ? 'none' : bV], srcKind: 'hwb',
+          srcBare: [!(ast.comps[1] && ast.comps[1].pct != null), !(ast.comps[2] && ast.comps[2].pct != null)] };
       }
       case 'lab': case 'lch': case 'oklab': case 'oklch': {
         var isOk = (ast.kind === 'oklab' || ast.kind === 'oklch');
@@ -1123,7 +1263,7 @@
           if (ast.alphaSpec.chan !== 'alpha') return null;
           nA = ar.alpha;
         } else if (ast.alphaSpec.chanexpr != null) {
-          var evA3 = _zwCCEvalRel(ast.alphaSpec.chanexpr, null, null, 1, ar.alpha);
+          var evA3 = _zwCCEvalRel(ast.alphaSpec.chanexpr, null, null, 1, ar.alpha, el);
           if (evA3 !== evA3) return null;
           nA = Math.min(1, Math.max(0, evA3));
         } else {
@@ -1156,6 +1296,7 @@
   // 文本 → 解析颜色（var() 展开；currentcolor 沿父链；无效返 null）。
   function _zwCCResolveText(text, el, depth) {
     var s = String(text == null ? '' : text).trim();
+    s = _zwCCSubSibling(s, el);
     var vm = /^([\s\S]*?)var\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*([\s\S]+?)\s*)?\)([\s\S]*)$/.exec(s);
     if (vm) {
       var val = el ? _zwCCVarLookup(el, vm[2]) : '';
@@ -1374,7 +1515,7 @@
       return { kind: 'labmix', space: ast.space, coords: out, none: outNone, alpha: alpha, aNone: bothANone,
         rgb: _zwCCMixCoordsToRgb(ast.space, out) };
     }
-    return { kind: 'colormix', space: ast.space === 'xyz' ? 'xyz-d65' : ast.space, comps: out, none: outNone, alpha: alpha, aNone: bothANone,
+    return { kind: 'colormix', space: ast.space, comps: out, none: outNone, alpha: alpha, aNone: bothANone,
       rgb: _zwCCMixCoordsToRgb(ast.space, out) };
   }
 
@@ -1448,6 +1589,23 @@
       }
       return { channels: nc, alpha: alphaVal, alphaNone: origAlphaNone(), none: origNone(nn) };
     }
+    // 嵌套 relative-out oklab 族跨空间原生直转（css-color-5 nested relative；
+    // 语料 'color(from oklab(from color(xyz-d50 0.99 0.88 0.77) l a b)
+    // xyz-d50 x y z)' 精确 0.99 断言）：rgb 投影往返链经 OkM1i 发表松逆
+    // （偏差 7.6e-4）引入 e-5 级输出噪声，此处以数值真逆直配——f64 往返
+    // ~1e-15。lab/lch native cbrt 对自逆（同形 corpus PASS），不 入此臂；
+    // hsl/hwb native 越界往返归 out-of-gamut 桶。
+    if (r.kind === 'relative-out' && r.chans
+        && (r.space === 'oklab' || r.space === 'oklch')
+        && (space === 'xyz' || space === 'xyz-d50' || space === 'xyz-d65')) {
+      var o3 = r.space === 'oklch'
+        ? [r.chans[0], r.chans[1] * Math.cos(r.chans[2] * Math.PI / 180), r.chans[1] * Math.sin(r.chans[2] * Math.PI / 180)]
+        : r.chans.slice();
+      var x65 = _zwCCMatVec(_zwCCOkM1t, _zwCCMatVec(_zwCCOkM2t, o3).map(function (q) { return q * q * q; }));
+      // 'xyz' 与 d65 同系（css-color-4 color() xyz 别名 d65 口径）。
+      var xv = space === 'xyz-d50' ? _zwCCMatVec(_zwCCD65toD50, x65) : x65;
+      return { channels: xv, alpha: alphaVal, alphaNone: origAlphaNone(), none: origNone(r.none) };
+    }
     var rgb = r.rgb;
     var channels, convNone = [false, false, false];
     if (space === 'srgb') channels = rgb.slice();
@@ -1484,8 +1642,8 @@
     return { channels: channels, alpha: alphaVal, alphaNone: origAlphaNone(), none: isPol ? convNone : [false, false, false] };
   }
 
-  function _zwCCEvalRel(expr, kws, channels, scale, alphaVal) {
-    var subs = String(expr);
+  function _zwCCEvalRel(expr, kws, channels, scale, alphaVal, el) {
+    var subs = _zwCCSubSibling(String(expr), el);
     var i, re;
     if (kws) {
       for (i = 0; i < kws.length; i++) {
@@ -1536,7 +1694,7 @@
         return pv / 100;
       }
       if (sp.calc != null) {
-        var r = _zwCCEval(sp.calc);
+        var r = _zwCCEval(_zwCCSubSibling(sp.calc, el));
         if (r !== r) return NaN;
         if (r.pct) return toOut({ pct: r.v }, i);
         // calc 数值结果 = 原生域直用（语料 'calc(sin(pi / 4) * 100)' → l=70.71；
@@ -1597,7 +1755,7 @@
           : space === 'lch' ? [100, 150, 360]
           : space === 'oklab' ? [1, 0.4, 0.4]
           : space === 'oklch' ? [1, 0.4, 360] : [1, 1, 1];
-        var ev = _zwCCEvalRel(sp.chanexpr, kws, chanVals, relScale[i]);
+        var ev = _zwCCEvalRel(sp.chanexpr, kws, chanVals, relScale[i], el);
         if (ev !== ev) return null;
         if (legacyRgb && space === 'srgb') ev = ev / 255;
         out.push(ev);
@@ -1628,7 +1786,7 @@
         alphaOut = (orig.none && orig.none[aIdx]) ? 'none' : Math.min(1, Math.max(0, aChan));
       }
     } else if (ast.alpha.chanexpr != null) {
-      var evA = _zwCCEvalRel(ast.alpha.chanexpr, null, null, 1, orig.alphaNone ? 0 : orig.alpha);
+      var evA = _zwCCEvalRel(ast.alpha.chanexpr, null, null, 1, orig.alphaNone ? 0 : orig.alpha, el);
       if (evA !== evA) return null;
       alphaOut = evA;
     } else {
@@ -1699,18 +1857,25 @@
     return 'color(srgb ' + parts.join(' ') + (a ? ' / ' + a : '') + ')';
   }
 
-  // hsl/hwb none 保形（powerless；h 度、s/l/w/b 百分值）。
+  // hsl/hwb none 保形（powerless；h 度、s/l/w/b 值）。% vs 裸按输入语法 echo：
+  // relative 输出恒裸（'hsl(270 50 none)' 语料锚）；direct 声明随原文——% 输入
+  // 经 raw 影子取原文 parse（srcBare=false → '%'），裸输入（RT 回设形）无影子
+  // 走 store 裸形（srcBare=true）。bare 参数布尔（全裸，relative 臂）或
+  // [sBare, lBare]/[wBare, bBare] 数组（direct parse 臂）。declared 面仍在写侧
+  // 剥 %（color-valid-* corpus 锚 'hsl(120 80% none)' → 'hsl(120 80 none)'）。
   function _zwCCSerialHslNone(srcComps, alpha, aNone, bare) {
+    var bl = Array.isArray(bare) ? bare : [!!bare, !!bare];
     var h = srcComps[0] === 'none' ? 'none' : _zwCCNum(((srcComps[0] % 360) + 360) % 360);
-    var s = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bare ? '' : '%');
-    var l = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bare ? '' : '%');
+    var s = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bl[0] ? '' : '%');
+    var l = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bl[1] ? '' : '%');
     var a = _zwCCAlphaStr(alpha, aNone);
     return 'hsl(' + h + ' ' + s + ' ' + l + (a ? ' / ' + a : '') + ')';
   }
   function _zwCCSerialHwbNone(srcComps, alpha, aNone, bare) {
+    var bl = Array.isArray(bare) ? bare : [!!bare, !!bare];
     var h = srcComps[0] === 'none' ? 'none' : _zwCCNum(((srcComps[0] % 360) + 360) % 360);
-    var w = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bare ? '' : '%');
-    var b = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bare ? '' : '%');
+    var w = srcComps[1] === 'none' ? 'none' : _zwCCNum(srcComps[1]) + (bl[0] ? '' : '%');
+    var b = srcComps[2] === 'none' ? 'none' : _zwCCNum(srcComps[2]) + (bl[1] ? '' : '%');
     var a = _zwCCAlphaStr(alpha, aNone);
     return 'hwb(' + h + ' ' + w + ' ' + b + (a ? ' / ' + a : '') + ')';
   }
@@ -1719,9 +1884,11 @@
     var parts = [];
     for (var i = 0; i < 3; i++) {
       if (srcComps[i] === 'none') { parts.push('none'); continue; }
-      // lch/oklch hue（index 2）6 位有效（css-values-4；corpus 73.3386 精确面），
-      // L/C 8 位（round-trip 同精度）。
-      parts.push(i === 2 && (fn === 'lch' || fn === 'oklch') ? _zwCCSig6(srcComps[i]) : _zwCCNum(srcComps[i]));
+      // L/C/hue 8 位（round-trip 同精度）：hue 走 echo——store 声明面对 decimal
+      // hue 已 echo（part11-color.js lab 族 hue echo），8 位回显幂等保 RT
+      //（corpus '33.690066'/'73.3386' 双锚：rad 输入声明面折 6 位 decimal 后
+      // 回显同形；computed 面只见 store 串，无需重复单位换算）。
+      parts.push(_zwCCNum(srcComps[i]));
     }
     var a = _zwCCAlphaStr(alpha, aNone);
     return fn + '(' + parts.join(' ') + (a ? ' / ' + a : '') + ')';
@@ -1818,22 +1985,79 @@
     return '';
   }
 
+  // 相对色 origin 骨架出口（part10 Typed-OM computedStyleMap 消费）：返
+  // 'currentcolor'（骨架态）或 ''（绝对色态/不可判定 → 宿主 resolved 通道）。
+  globalThis.__zwCssRelativeOrigin = function (originText, el) {
+    try { return _zwCCOriginSkeleton(originText, el); } catch (_eOR) { return ''; }
+  };
+
+  // sibling-index()/sibling-count() 文本替换（css-values-5 级联依赖函数；
+  // 钉面 color-computed-relative-color 'calc(h + 180 * sibling-index())'
+  // 期望 hue+180、alpha-color-parsing-valid 'alpha(from green /
+  // sibling-count())' valid、relative-color-with-system-color test3）。
+  // el 缺席（CSS.supports/decl oracle 支持性通道）取哨兵 1——语法可解析即
+  // 支持；el 存在按父级子列表 1-based 索引/总数（lightseagreen lch hue
+  // 190.11+180*1=10.11 钉面确证 1-based）；找不到（detached）取 0。
+  function _zwCCSubSibling(expr, el) {
+    var s = String(expr == null ? '' : expr);
+    if (s.indexOf('sibling-') < 0) return s;
+    var p = el && el.nodeType === 1 ? el.parentNode : null;
+    var idx = 0, cnt = 0;
+    if (p && p.children) {
+      cnt = p.children.length;
+      for (var k = 0; k < cnt; k++) if (p.children[k] === el) { idx = k + 1; break; }
+    }
+    if (el == null) { idx = 1; cnt = 1; }
+    return s.replace(/sibling-index\s*\(\s*\)/gi, String(idx))
+            .replace(/sibling-count\s*\(\s*\)/gi, String(cnt));
+  }
+
+  // RCS 形判别（css-color-5 §relative-colors）：色函数 'from' 语法，10 函数面。
+  var _zwCCRcsFormRe = /(^|[^\w-])(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(\s*from\s/i;
+
   // computed 颜色：raw 声明文本 → computed 序列化串；无效/不可解析回退基座。
-  globalThis.__zwComputedColor = function (raw, el) {
+  // propCtx（可选）：触发求值的属性名——'color' 时 currentcolor 走父链，
+  // 其余先试本元素 color（css-color-4 §5.3 currentcolor 域语义）。
+  globalThis.__zwComputedColor = function (raw, el, propCtx) {
     // 环境依赖形回退基座（part11-color.js declared 折叠面）：sign()/abs() 需
     // 字体/容器/视口单位运行时环境（corpus sign(1em - 10px)/sign(2cqw - 10px)
     // 实证——基座对可静态求值形有正确解）；var() 需自定义属性级联；反斜杠 =
     // CSS 转义（host 词法器处理，如 'r\\67 b(...)'）。基座无效形返 null →
     // 调用方宿主链（覆盖前同路径，零漂移）。
-    var rawS = String(raw == null ? '' : raw);
-    if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('var(') >= 0
-        || rawS.indexOf('\\') >= 0) {
-      return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+    var prevCtx = _zwCCPropCtx;
+    _zwCCPropCtx = String(propCtx == null ? '' : propCtx);
+    try {
+      var rawS = String(raw == null ? '' : raw);
+      if (rawS.indexOf('var(') >= 0) {
+        // RCS+var 面（css-color-5 §relative-colors）：宿主替换经 Rust
+        // parse_relative_color 恒 legacy 形（calc 通道拒→invalid→黑；WPT 现代
+        // 形期望下宿主不可能通过，接管域无 pass→fail 面）。本管线 var 臂
+        //（_zwCCVarLookup inline+作者快照级联近似）+ chanexpr calc 通道 +
+        // 现代形序列化完备——RCS 形（'from' 语法，或纯 var 引用且替换值含
+        // 'from'）先试自解；自解失败/非 RCS 形保基座→宿主零漂移。
+        var vrHit = _zwCCRcsFormRe.test(rawS);
+        if (!vrHit) {
+          var nmV = /^\s*var\(\s*(--[a-zA-Z0-9_-]+)/.exec(rawS);
+          var lvV = nmV && el ? _zwCCVarLookup(el, nmV[1]) : '';
+          vrHit = !!lvV && _zwCCRcsFormRe.test(lvV);
+        }
+        if (vrHit) {
+          var rVar = null;
+          try { rVar = _zwCCResolveText(rawS, el, 0); } catch (_eVR) { rVar = null; }
+          if (rVar) return _zwCCSerialResolve(rVar);
+        }
+        return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      }
+      if (/(^|[^\w-])(sign|abs)\(/i.test(rawS) || rawS.indexOf('\\') >= 0) {
+        return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      }
+      var r = null;
+      try { r = _zwCCResolveText(raw, el, 0); } catch (_eCR) { r = null; }
+      if (!r) return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
+      return _zwCCSerialResolve(r);
+    } finally {
+      _zwCCPropCtx = prevCtx;
     }
-    var r = null;
-    try { r = _zwCCResolveText(raw, el, 0); } catch (_eCR) { r = null; }
-    if (!r) return _zwCCPrevComputed ? _zwCCPrevComputed(raw, el) : '';
-    return _zwCCSerialResolve(r);
   };
 
   // CSS.supports 钩子：颜色值可解析性（系统色同为合法值）。
@@ -2109,6 +2333,10 @@
       return { s: ro };
     }
     if (ast.kind === 'alpha') return { raw: t };
+    // light-dark decl 面保形（css-color-5：声明回读不折叠选支——relative
+    // origin 经 decl canon 折叠会丢失 currentcolor 语义，Typed-OM 相对色骨架
+    // 面 relative-color-with-system-color 钉面依赖 origin 原文）。
+    if (ast.kind === 'lightdark') return { raw: t };
     if (ast.kind === 'named' || ast.kind === 'system') return { s: _zwCCDecodeEscapes(t).toLowerCase() };
     if (ast.kind === 'currentcolor') return { s: 'currentcolor' };
     if (ast.kind === 'transparent') return { s: 'transparent' };
@@ -2163,6 +2391,9 @@
     if (!t) return false;
     var low = t.toLowerCase();
     if (low === 'none') return true;
+    // sibling-index()/sibling-count() 函数形文法合法（css-values-5；求值归
+    // resolve 期 sibling 替换——decl 面只校验槽文法）。
+    if (t.indexOf('sibling-') >= 0) return true;
     if (/^calc\(/i.test(t)) {
       // calc 内通道关键字按无单位数代换（Chrome corpus 行为）。加减法混型即
       // 拒：关键字项与带维数项（%/角度）直接相加减——'calc(h + 1deg)'/
@@ -2202,6 +2433,13 @@
       // 纯字面 calc：结果类型槽检查——角度仅 hue 槽、hue 槽禁百分比。
       if (!hueSlot && /(?:\d)\s*(?:deg|turn|rad|grad)(?![\w-])/i.test(inner)) return false;
       if (hueSlot && /(?:\d)\s*%(?![\w-])/.test(inner)) return false;
+      return true;
+    }
+    // 裸数学函数形（css-values-4 § math functions，corpus 'pow(l, 1)' 直写
+    // 形钉面）：decl 面只校验函数名白名单与括号平衡——求值归 resolve 期
+    // _zwCCEvalRel（_zwCCCalcSpec 裸函数形同路由 chanexpr）。calc( 已由上臂
+    // 先行；色函数名不在白名单（嵌套相对色非通道文法）。
+    if (/^\s*-?(atan2|pow|hypot|round|mod|rem|sin|cos|tan|asin|acos|atan|sqrt|log|exp|sign|abs|clamp|min|max)\(/i.test(t) && /\)$/.test(t)) {
       return true;
     }
     var nm = /^[-+]?(\d+\.?\d*|\.\d+)(%|deg|turn|rad|grad)?$/i.exec(t);

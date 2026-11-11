@@ -274,6 +274,19 @@ fn native_style_named_setter(
             // 非法 grid 值 → 声明忽略（spec setProperty 语义），已有声明保留。
             None => return v8::Intercepted::kYes,
         }
+    } else if prop == "position-area" {
+        match super::position_area::canonicalize_decl(val.trim()) {
+            Some(v) => v,
+            // 非法 position-area → 声明忽略（css-anchor-position-1，语料
+            // position-area-parsing invalid 矩阵），已有声明保留。
+            None => return v8::Intercepted::kYes,
+        }
+    } else if let Some(folded) = zero_css_parser::values::fold_decl_specified(&prop, val.trim()) {
+        // r2320（CSS Values 4 §10.11）：数学函数 specified 值常量折叠——
+        // `rotate(acos(1))` 存为 `rotate(calc(0deg))`（WPT css-values
+        // serialize 桶：sin-cos-tan-serialize / acos-asin-atan-atan2-serialize
+        // 以 specified 读回等价断言驱动；无折叠点返 None 走原值臂）。
+        folded
     } else {
         zero_css_parser::values::canonicalize_anchor_functions(val.trim())
     };
@@ -524,6 +537,16 @@ fn native_style_set_property_invoke(
             // 非法 grid 值 → 声明忽略（spec setProperty 语义）。
             None => return,
         }
+    } else if prop == "position-area" {
+        match super::position_area::canonicalize_decl(val.trim()) {
+            Some(v) => v,
+            // 非法 position-area → 声明忽略（同 named setter 臂语义）。
+            None => return,
+        }
+    } else if let Some(folded) = zero_css_parser::values::fold_decl_specified(&prop, val.trim()) {
+        // r2320（CSS Values 4 §10.11）：数学函数 specified 值常量折叠（同
+        // [`native_style_named_setter`] r2320 臂）。
+        folded
     } else {
         zero_css_parser::values::canonicalize_anchor_functions(val.trim())
     };

@@ -425,16 +425,16 @@ pub enum CaretColorValue {
 /// 解析 CSS caret-color 属性值。
 ///
 /// 支持格式：`auto` 或任意有效 CSS 颜色值。
-pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
-    fn parse_one(token: &str) -> Option<CaretColorValue> {
+pub fn parse_caret_color(value: &str, dark: bool) -> Option<CaretColorValue> {
+    fn parse_one(token: &str, dark: bool) -> Option<CaretColorValue> {
         if token.eq_ignore_ascii_case("auto") {
             return Some(CaretColorValue::Auto);
         }
-        parse_color(token).map(CaretColorValue::Color)
+        parse_color_with_scheme(token, dark).map(CaretColorValue::Color)
     }
     let v = value.trim();
     let mut parts = v.split_ascii_whitespace();
-    let first = parse_one(parts.next()?)?;
+    let first = parse_one(parts.next()?, dark)?;
     match parts.next() {
         None => Some(first),
         // 两值形式（css-ui-4 §5.2.2）：第二值 = block caret 覆盖字符的文字色。
@@ -442,7 +442,7 @@ pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
             if parts.next().is_some() {
                 return None;
             }
-            let second = parse_one(second)?;
+            let second = parse_one(second, dark)?;
             Some(CaretColorValue::TwoValue(Box::new(first), Box::new(second)))
         }
     }
@@ -719,6 +719,18 @@ pub enum BackgroundImageValue {
         /// 空格分隔的滤镜函数列表（filter 属性同一语法，可为空）。
         filters: Vec<FilterValue>,
     },
+    /// light-dark(L, D) — CSS Color 5 图像上下文分支函数
+    ///（https://drafts.csswg.org/css-color-5/#funcdef-light-dark）。恰两参，各支为
+    /// \<image\>（支内 none 合法——computed 期展开为 image(transparent)，
+    /// https://drafts.csswg.org/css-color-5/#valdef-light-dark-none）；颜色不是
+    /// \<image\>，色值支经递归解析自然拒绝。声明期暂存双支 AST，computed 期按
+    /// used color-scheme 选支展开（style-system apply 臂）。
+    LightDark {
+        /// light 支图像（按 used scheme 为 light 时选中）。
+        light: Box<BackgroundImageValue>,
+        /// dark 支图像（按 used scheme 为 dark 时选中）。
+        dark: Box<BackgroundImageValue>,
+    },
 }
 
 impl BackgroundImageValue {
@@ -774,6 +786,25 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
         return Some(BackgroundImageValue::Filtered {
             image: Box::new(image),
             filters,
+        });
+    }
+
+    // light-dark(L, D)（css-color-5 §funcdef-light-dark）：恰两参顶层逗号分割，
+    // 各支递归走 background-image 语法（url/gradient/filter/嵌套 light-dark 皆可）。
+    // 支内 none 合法（computed 期特展开 image(transparent)）；单参/三参/空参段/
+    // 色值支经 `?` 自然拒绝。
+    if value.len() > 11 && value[..11].eq_ignore_ascii_case("light-dark(") && value.ends_with(')') {
+        let inner = &value[11..value.len() - 1];
+        let (light_part, dark_part) = split_top_level_comma(inner)?;
+        // 三参及以上：首个顶层逗号右侧仍有顶层逗号 → 非法（arity 判定）。
+        if split_top_level_comma(dark_part).is_some() {
+            return None;
+        }
+        let light = parse_background_image(light_part.trim())?;
+        let dark = parse_background_image(dark_part.trim())?;
+        return Some(BackgroundImageValue::LightDark {
+            light: Box::new(light),
+            dark: Box::new(dark),
         });
     }
 

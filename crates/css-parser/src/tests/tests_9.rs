@@ -442,13 +442,13 @@ fn test_grid_area_too_many_values() {
 
 #[test]
 fn test_text_shadow_with_color_no_blur() {
-    let s = parse_text_shadow("2px 3px red").unwrap();
+    let s = parse_text_shadow("2px 3px red", false).unwrap();
     assert!(matches!(s.blur_radius, LengthValue::Px(0.0)));
 }
 
 #[test]
 fn test_text_shadow_with_blur_and_color() {
-    let s = parse_text_shadow("2px 3px 4px blue").unwrap();
+    let s = parse_text_shadow("2px 3px 4px blue", false).unwrap();
     // blur=4px, color=blue
     if let ColorValue::Rgba(r, g, b, _a) = s.color {
         assert_eq!(r, 0);
@@ -459,13 +459,13 @@ fn test_text_shadow_with_blur_and_color() {
 
 #[test]
 fn test_box_shadow_with_spread() {
-    let s = parse_box_shadow("2px 3px 4px 5px red").unwrap();
+    let s = parse_box_shadow("2px 3px 4px 5px red", false).unwrap();
     assert!(!s.inset);
 }
 
 #[test]
 fn test_box_shadow_inset_with_all() {
-    let s = parse_box_shadow("inset 1px 2px 3px 4px black").unwrap();
+    let s = parse_box_shadow("inset 1px 2px 3px 4px black", false).unwrap();
     assert!(s.inset);
 }
 
@@ -1499,8 +1499,8 @@ fn test_list_style_image_url() {
 #[test]
 fn test_caret_color_values() {
     use crate::values::CaretColorValue;
-    assert_eq!(parse_caret_color("auto"), Some(CaretColorValue::Auto));
-    let c = parse_caret_color("red");
+    assert_eq!(parse_caret_color("auto", false), Some(CaretColorValue::Auto));
+    let c = parse_caret_color("red", false);
     assert!(matches!(c, Some(CaretColorValue::Color(_))));
 }
 

@@ -1153,6 +1153,8 @@ impl super::Painter {
 
             match layer {
                 BackgroundImageComputedValue::None => {}
+                // light-dark() 支内 none 的透明图像展开——无背景绘制（同 none）。
+                BackgroundImageComputedValue::TransparentImage => {}
                 BackgroundImageComputedValue::Url(url) => {
                     let key = image_resource_key(url, self.document_url.as_deref());
 
@@ -2464,6 +2466,8 @@ impl super::Painter {
                     // URL 蒙版需要图像加载基础设施，暂不实现
                 }
                 BackgroundImageComputedValue::None => {}
+                // light-dark() 支内 none 的透明图像展开——无蒙版（同 none）。
+                BackgroundImageComputedValue::TransparentImage => {}
                 // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
                 BackgroundImageComputedValue::Filtered { .. } => {}
             }

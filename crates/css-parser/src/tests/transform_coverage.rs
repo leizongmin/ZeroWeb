@@ -124,7 +124,7 @@ fn test_grid_area_empty_before_slash() {
 // 测试 text-shadow 的错误参数数量
 #[test]
 fn test_text_shadow_invalid_args_count() {
-    let result = parse_text_shadow("2px");
+    let result = parse_text_shadow("2px", false);
     assert!(result.is_none());
 }
 
@@ -133,7 +133,7 @@ fn test_text_shadow_invalid_args_count() {
 /// 解析失败回退实心黑。
 #[test]
 fn test_text_shadow_rgba_with_spaces_keeps_alpha() {
-    let s = parse_text_shadow("2px 2px 4px rgba(0, 0, 0, 0.5)").unwrap();
+    let s = parse_text_shadow("2px 2px 4px rgba(0, 0, 0, 0.5)", false).unwrap();
     if let ColorValue::Rgba(_, _, _, a) = s.color {
         assert_eq!(a, 128, "rgba(0,0,0,0.5) alpha 应≈128，不应丢失为 255");
     }
@@ -142,7 +142,7 @@ fn test_text_shadow_rgba_with_spaces_keeps_alpha() {
 // 测试 box-shadow 的错误参数数量
 #[test]
 fn test_box_shadow_invalid_args_count() {
-    let result = parse_box_shadow("2px");
+    let result = parse_box_shadow("2px", false);
     assert!(result.is_none());
 }
 
@@ -150,7 +150,7 @@ fn test_box_shadow_invalid_args_count() {
 #[test]
 fn test_box_shadow_invalid_args() {
     // 测试只有 inset 关键字，没有其他值
-    let result = parse_box_shadow("inset");
+    let result = parse_box_shadow("inset", false);
     assert!(result.is_none());
 }
 

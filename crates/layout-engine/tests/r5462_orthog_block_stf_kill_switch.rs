@@ -1,6 +1,10 @@
 //! R5462 kill-switch 回退锚（独立进程，R3858 教训）：`ZW_ORTHO_BLOCK_STF=0` 时
 //! 11.12 pass 关闭，复现旧塌陷——正交块级 htb 子按父收缩宽断行（w=130），
 //! 块轴塌 ICB fill（h=784）。主判例 r5462_orthog_block_stf.rs 断言相反方向。
+//!
+//! R5498 起本锚同时关 `ZW_ROOT_FRAME_TRANSPOSE`：所钉几何是**旧根帧世界**的
+//! stf-off 塌陷（旧混合帧 taffy 约束断行 130）；仅关 stf 的转置新世界是另一套
+//! taffy 交换帧 junk（断行约束随交换轴变，w=150），无契约钉定、非本锚标的。
 
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 
@@ -32,8 +36,9 @@ fn find_ortho(root: &zero_layout_engine::types::LayoutBox) -> &zero_layout_engin
 #[test]
 fn kill_switch_restores_legacy_collapse() {
     // Rust 2024：set_var 为 unsafe（进程全局可变）；pass 入口首读 env 前生效
-    //（R5461 同款模式）。
+    //（R5461 同款模式）。R5498：连根帧转置一并还原（旧世界锚，见文件头）。
     unsafe { std::env::set_var("ZW_ORTHO_BLOCK_STF", "0") };
+    unsafe { std::env::set_var("ZW_ROOT_FRAME_TRANSPOSE", "0") };
     let nums: String = (1..=100)
         .map(|i| format!("{:02} ", if i == 100 { 0 } else { i }))
         .collect();

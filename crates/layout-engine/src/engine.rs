@@ -178,6 +178,7 @@ use crate::inline_finalization::*;
 pub(crate) mod abspos;
 use abspos::*;
 mod abspos_sizing;
+mod anchor_pos;
 pub(crate) mod inline_wrapper_box;
 use abspos_sizing::*;
 // R965：taffy 后处理步骤（adjust_inline_block_positions / sort_children_by_css_order /
@@ -564,11 +565,27 @@ impl LayoutEngine {
         let dom_to_taffy: HashMap<NodeId, taffy::NodeId> =
             taffy_to_dom.iter().map(|(&t_id, &d_id)| (d_id, t_id)).collect();
 
-        // 2. 计算布局
-        let available_space = taffy::geometry::Size {
-            width: AvailableSpace::Definite(self.effective_root_layout_width()),
-            height: AvailableSpace::Definite(self.viewport_height),
+        // R5498 根帧转置：根元素 vertical 时其 CB（ICB）书写模式随根传播为 vertical
+        //（见 tree.rs root_cb_writing_mode）——根 available space 转置（taffy 宽=ICB
+        // 物理高 / 高=ICB 物理宽，只被根节点消费，子树空间经 taffy 逐层解析不受影响），
+        // 根 extract 与后处理 walk 的根父书写模式同源取 root_cb_wm。
+        let root_cb_wm = crate::tree::root_cb_writing_mode(doc, styles);
+        let root_frame_transposed = root_cb_wm.is_vertical_block_flow();
+        let root_available_space = taffy::geometry::Size {
+            width: if root_frame_transposed {
+                AvailableSpace::Definite(self.viewport_height)
+            } else {
+                AvailableSpace::Definite(self.effective_root_layout_width())
+            },
+            height: if root_frame_transposed {
+                AvailableSpace::Definite(self.effective_root_layout_width())
+            } else {
+                AvailableSpace::Definite(self.viewport_height)
+            },
         };
+
+        // 2. 计算布局
+        let available_space = root_available_space;
         let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
 
@@ -659,13 +676,14 @@ impl LayoutEngine {
             dump_taffy_tree(&taffy_tree, &taffy_to_dom, root_id, 0);
         }
 
-        // 3. 提取 LayoutBox 树（根元素使用 HorizontalTb 作为父级 writing mode）（根元素使用 HorizontalTb 作为父级 writing mode）
+        // 3. 提取 LayoutBox 树（根父书写模式 = R5498 根帧转置后的有效 ICB 帧见 root_cb_wm；
+        //    根 horizontal 时仍 HorizontalTb 旧行为）
         let mut root_box = Self::extract_layout(
             &taffy_tree,
             root_id,
             &taffy_to_dom,
             styles,
-            &WritingModeValue::HorizontalTb,
+            &root_cb_wm,
             doc,
             &r109,
             false,
@@ -1011,10 +1029,8 @@ impl LayoutEngine {
             if !Self::apply_flex_item_base_authority(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc) {
                 break;
             }
-            let available_space = taffy::geometry::Size {
-                width: AvailableSpace::Definite(self.effective_root_layout_width()),
-                height: AvailableSpace::Definite(self.viewport_height),
-            };
+            // R5498 根帧转置：重跑与首趟同根 available space（转置见 root_available_space）。
+            let available_space = root_available_space;
             let inline_fonts = self.inline_font_context(&font_overrides);
             let _ = taffy_tree.compute_layout_with_measure(
                 root_id,
@@ -1042,7 +1058,7 @@ impl LayoutEngine {
                 root_id,
                 &taffy_to_dom,
                 styles,
-                &WritingModeValue::HorizontalTb,
+                &root_cb_wm,
                 doc,
                 &r109,
                 false,
@@ -1062,10 +1078,8 @@ impl LayoutEngine {
             || changed_hoisted_item
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
-            let available_space = taffy::geometry::Size {
-                width: AvailableSpace::Definite(self.effective_root_layout_width()),
-                height: AvailableSpace::Definite(self.viewport_height),
-            };
+            // R5498 根帧转置：重跑与首趟同根 available space（转置见 root_available_space）。
+            let available_space = root_available_space;
             let inline_fonts = self.inline_font_context(&font_overrides);
             let _ = taffy_tree.compute_layout_with_measure(
                 root_id,
@@ -1094,7 +1108,7 @@ impl LayoutEngine {
                 root_id,
                 &taffy_to_dom,
                 styles,
-                &WritingModeValue::HorizontalTb,
+                &root_cb_wm,
                 doc,
                 &r109,
                 false,
@@ -1291,7 +1305,9 @@ impl LayoutEngine {
         );
 
         // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
-        shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
+        //（R5498 根帧转置：根父帧取 root_cb_wm——根 vertical 时根 taffy 交换帧
+        // 原生 content sizing，本臂对根不再以 htb 父帧误触发）
+        shrink_vertical_blocks_to_content(&mut root_box, styles, &root_cb_wm);
 
         // 5.6 后处理：width:auto 的 inline-block 收缩到内容宽度（shrink-to-fit，§10.3.9）
         shrink_inline_blocks_to_content(
@@ -1299,7 +1315,7 @@ impl LayoutEngine {
             doc,
             styles,
             self.inline_font_context(&font_overrides),
-            &WritingModeValue::HorizontalTb,
+            &root_cb_wm,
         );
 
         // 5.7 后处理（R109 §9.2.1.1）：split inline 的匿名块片段收缩到文本宽 +
@@ -1316,6 +1332,8 @@ impl LayoutEngine {
 
         // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
         // 空 inline 元素的 line-height 贡献需要通过 IFC 正确计算
+        //（R5498 根帧转置：根父帧取 root_cb_wm——根 vertical 时 viv 臂
+        // R4428 对根容器按行内可用深度取 IFC max_depth，与交换帧一致）
         let mut positioned_inline_blocks = crate::NodeIdSet::default();
         remeasure_inline_only_containers(
             &mut root_box,
@@ -1324,7 +1342,7 @@ impl LayoutEngine {
             &intrinsic_for_r695,
             &mut positioned_inline_blocks,
             inline_fonts,
-            &WritingModeValue::HorizontalTb,
+            &root_cb_wm,
             false,
         );
 
@@ -1497,6 +1515,12 @@ impl LayoutEngine {
         if !abspos::subtree_has_float(&root_box) {
             fix_abspos_static_position_y(&mut root_box, styles);
         }
+
+        // 11.7c wptfyi-css 组F 布局刀2+3：position-area 区域定位（css-anchor-
+        // position-1 §position-area）——锚注册收集（anchor-name → 视口几何）+
+        // anchored 元素 3×3 网格区域定位（htb 第一刀）；刀3 anchor() inset 函数
+        // 求值（物理边/center/百分比/fallback）。（ZW_ANCHOR_AREA=0 kill-switch）
+        anchor_pos::apply_anchor_position_area(&mut root_box, styles);
 
         // 11.8 后处理（R1371）：abspos flex 容器（top+bottom 拉出 definite height）内替换
         // flex item 的 cross-stretch + transferred-size。taffy 在 content layout 后才解析
@@ -1718,6 +1742,9 @@ impl LayoutEngine {
             styles,
             self.viewport_height,
             self.viewport_width,
+            // R5498 根帧转置：根父帧同源取 root_cb_wm（根 vertical 时根亦 viv 容器，
+            // 单子 viv 链 block-size Σ 收口随转置放开）。
+            &root_cb_wm,
         );
 
         // 12.8 R1972 vertical child inline-fill（experimental，env ZW_VERTICAL_CHILD_FILL=1 开启，
@@ -1878,9 +1905,21 @@ impl LayoutEngine {
         }
 
         // 重新计算布局（taffy 只重算脏节点）
+        // R5498 根帧转置：与全量路径同源——根 vertical 时根 available space 转置
+        //（taffy 宽=ICB 物理高 / 高=ICB 物理宽），根 extract 根父帧取 root_cb_wm。
+        let root_cb_wm = crate::tree::root_cb_writing_mode(doc, styles);
+        let root_frame_transposed = root_cb_wm.is_vertical_block_flow();
         let available_space = taffy::geometry::Size {
-            width: AvailableSpace::Definite(root_layout_width),
-            height: AvailableSpace::Definite(viewport_height),
+            width: if root_frame_transposed {
+                AvailableSpace::Definite(viewport_height)
+            } else {
+                AvailableSpace::Definite(root_layout_width)
+            },
+            height: if root_frame_transposed {
+                AvailableSpace::Definite(root_layout_width)
+            } else {
+                AvailableSpace::Definite(viewport_height)
+            },
         };
         let _ = cached.taffy.compute_layout_with_measure(
             cached.root_id,
@@ -1911,7 +1950,7 @@ impl LayoutEngine {
             cached.root_id,
             &cached.taffy_to_dom,
             styles,
-            &WritingModeValue::HorizontalTb,
+            &root_cb_wm,
             doc,
             &cached.r109,
             false,

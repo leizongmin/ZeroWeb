@@ -133,10 +133,15 @@ pub fn apply_vertical_block_flow(
     styles: &HashMap<NodeId, ComputedStyle>,
     icb_height: f32,
     icb_width: f32,
+    root_parent_wm: &WritingModeValue,
 ) {
     if std::env::var("ZW_VERTICAL_BLOCK_FLOW").as_deref() == Ok("0") {
         return;
     }
+    // R5498 根帧转置链收口：根父帧同源取 root_cb_wm（根 vertical 时根亦 viv 容器）；
+    // 单子 viv 链（html→body→… 逐级单块子）的 block-size Σ 收口仅转置开启时放开
+    //（kill-switch `ZW_ROOT_FRAME_TRANSPOSE=0` 逐字节还原旧 gate 行为）。冷路径单读。
+    let single_child_viv = std::env::var("ZW_ROOT_FRAME_TRANSPOSE").as_deref() != Ok("0");
     // R4428：viv（vertical 父）放开臂——与 remeasure viv extent 臂同一实验 knob
     //（ZW_VIV_SIZING）。bottom-up 递归天然级联：子容器宽度先落定，父层 restack 用新值。
     // float 子树排除：viv 域 float 流定位（§9.5）依赖 taffy 原始几何，restack/尺寸改写
@@ -149,10 +154,11 @@ pub fn apply_vertical_block_flow(
     apply_inner(
         root,
         styles,
-        &WritingModeValue::HorizontalTb,
+        root_parent_wm,
         viv,
         &mut float_width_rewritten,
         column_cb_anchor,
+        single_child_viv,
     );
     anchor_vrl_root_children(root, styles);
     let vrl_anchor_dx = anchor_vrl_root_box(root, icb_width);
@@ -619,7 +625,7 @@ fn apply_vertical_block_flow_sizing_inner(
                 }
             }
         }
-        let Some(block_indices) = vertical_block_child_indices_ex(b, styles, &parent_wm, viv_enabled) else {
+        let Some(block_indices) = vertical_block_child_indices_ex(b, styles, &parent_wm, viv_enabled, false) else {
             continue;
         };
         // 排除 float 容器：float 有自有 shrink-to-fit 宽度算法（§10.3.5），taffy 重跑强制宽度
@@ -714,7 +720,7 @@ pub fn vertical_block_child_indices(
     styles: &HashMap<NodeId, ComputedStyle>,
     parent_wm: &WritingModeValue,
 ) -> Option<Vec<usize>> {
-    vertical_block_child_indices_ex(b, styles, parent_wm, false)
+    vertical_block_child_indices_ex(b, styles, parent_wm, false, false)
 }
 
 /// R4428：`allow_vertical_parent` 臂（env `ZW_VIV_SIZING` default-on，`=0` kill-switch）——
@@ -722,11 +728,20 @@ pub fn vertical_block_child_indices(
 /// apply_vertical_writing_mode 轴交换进 taffy，消费方须按交换帧赋值
 ///（见 apply_vertical_block_flow_sizing_inner 的 viv 分支）；postprocess 路径
 ///（apply_inner）不放开——其 width 改写无 taffy 重跑传播，兄弟 x 会滞留旧值重叠。
+///
+/// R5498：`allow_single_child_viv`（仅 postprocess 路径传）——viv 容器（vertical 父 +
+/// ZW_VIV_SIZING on + 无 float 子树）gate 放开到 **≥1** 块级子：单子链（html→body→…）
+/// 的 taffy block extent 在叶被后处理重解（正交 stf R5462、inline fill 等）后滞留预解
+/// junk，Σ 收口按终值子几何回写并 restack（bottom-up 级联自洽：子宽先落定，父层用
+/// 新值；width_definite_keep/R5464 列锚既有守卫同臂生效）。仅 R5498 根帧转置开启时传
+///（`ZW_ROOT_FRAME_TRANSPOSE=0` 逐字节还原 ≥2 gate）；layout-time sizing 路径不传
+///（step 3.x Σ 仍预解值）。
 pub fn vertical_block_child_indices_ex(
     b: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     parent_wm: &WritingModeValue,
     allow_vertical_parent: bool,
+    allow_single_child_viv: bool,
 ) -> Option<Vec<usize>> {
     let is_vertical = b.writing_mode.is_vertical_block_flow();
     let viv = allow_vertical_parent && b.writing_mode.is_vertical_block_flow() && parent_wm.is_vertical_block_flow();
@@ -809,7 +824,10 @@ pub fn vertical_block_child_indices_ex(
     if any_pct_margin {
         return None;
     }
-    if block_indices.len() < 2 {
+    // R5498 单子 viv 链放开：恰好 1 个块级子（0 子 = 纯 inline 内容容器，宽度归
+    // IFC 行内机制，Σ 收口会清零——r5498 V1 html w 34→16 实证后收窄）。
+    let single_child_viv_ok = allow_single_child_viv && viv && block_indices.len() == 1;
+    if block_indices.len() < 2 && !single_child_viv_ok {
         return None;
     }
     Some(block_indices)
@@ -855,6 +873,7 @@ fn apply_inner(
     viv: bool,
     float_width_rewritten: &mut Vec<NodeId>,
     column_cb_anchor: bool,
+    allow_single_child_viv: bool,
 ) {
     // 先递归子（用本盒 wm 作子父 wm），再处理本盒——自底向上。
     let own_wm = b.writing_mode.clone();
@@ -867,10 +886,11 @@ fn apply_inner(
             child_viv,
             float_width_rewritten,
             column_cb_anchor,
+            allow_single_child_viv,
         );
     }
 
-    let Some(block_indices) = vertical_block_child_indices_ex(b, styles, parent_wm, viv) else {
+    let Some(block_indices) = vertical_block_child_indices_ex(b, styles, parent_wm, viv, allow_single_child_viv) else {
         return;
     };
 
@@ -1748,6 +1768,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         let b1 = &container.children[0];
         let b2 = &container.children[1];
@@ -1777,6 +1798,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         let b1 = &container.children[0];
         let b2 = &container.children[1];
@@ -1797,6 +1819,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         assert_eq!(container.children[1].x, 50.0, "HorizontalTb 容器不应被改");
         assert_eq!(container.width, 800.0, "HorizontalTb 容器 width 不变");
@@ -1814,6 +1837,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         assert_eq!(container.width, 800.0, "单子容器不应触发 width 修正");
     }
@@ -1834,6 +1858,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         // B1（DOM 首）右起：B1.x > B2.x（RTL），容器宽 = Σ 子宽 + frame = 104。
         assert!(
@@ -1871,6 +1896,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         assert_eq!(container.children[1].x, 50.0, "definite-width abspos 容器不应被改");
         assert_eq!(container.width, 800.0, "definite-width abspos 容器 width 不变");
@@ -1895,6 +1921,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         assert!(
             (container.width - 104.0).abs() < 0.5,
@@ -1916,6 +1943,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         assert_eq!(h_container.width, 800.0, "horizontal table-cell 容器 width 不变");
     }
@@ -1937,6 +1965,7 @@ mod tests {
             false,
             &mut Vec::new(),
             true,
+            false,
         );
         // 容器未被重定位（B2 保留错误的「对角」初值 x=50，width 不变）。
         assert_eq!(container.children[1].x, 50.0, "percent-margin 容器不应被重定位");

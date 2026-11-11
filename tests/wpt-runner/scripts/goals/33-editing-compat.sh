@@ -19,8 +19,9 @@ GOAL="editing-compat"
 GOAL_FETCH_DEEP=1
 # run/ + other/ 是用例面；include/（implementation.js/tests.js/editor-test-utils.js/
 # reset.css）与 data/（per-command 期望矩阵 bold.js 等）是 run/ 用例的共享依赖——
-# DC-1「include/ 共享 helper 随目录拉取」。两目录无 .html，fetch_dir_deep 幂等
-# 快路径不会跳过（每次重列 2 次 API，可接受）。
+# DC-1「include/ 共享 helper 随目录拉取」。幂等按拉取完成标记判（lib.sh
+# fetch_dir_deep；run/ 内随库 zz-probe-* 探针曾把「有 .html 即跳过」快路径
+# 在干净 checkout 骗过——wptfyi-editing DC-1，run 42499865933 实证）。
 DIRS=(
   "editing/run"
   "editing/other"

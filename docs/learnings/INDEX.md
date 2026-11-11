@@ -5,8 +5,15 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（261）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（268）
 
+- 2026-11-11 [复绑批三类终局：在飞 pull 混合二进制、白名单漏刀键静默死亡、锚表盲区](bugs/2026-11/2026-11-11-rebind-batch-inflight-pull-and-whitelist-domain.md) — tests/wpt-runner, .acceptance/dps
+- 2026-11-11 [探针页缺 /common/subset-tests.js 会整页空转假绿——P>0 门防不住，须恰集计数门](bugs/2026-11/2026-11-11-probe-missing-subset-tests-include-idle-false-green.md) — tests/wpt-runner, editing-compat
+- 2026-11-11 [镜像类重排的复合安全性：装饰感知 gap 重分配破坏对合，恒等面须语义级短路](bugs/2026-11/2026-11-11-mirror-reorder-involution-breaks-decorations.md) — layout-engine
+- 2026-11-11 [inline style 写面有三条实现臂——值校验/归一类改动必须三处同形](bugs/2026-11/2026-11-11-inline-style-three-write-arms.md) — engine, style-system, css-parser
+- 2026-11-11 [FILTER 子串匹配会拉入探针页——judge 键剥页名即碰撞，判读必须页键过滤](bugs/2026-11/2026-11-11-filter-substring-pulls-probe-page-page-keyed-judge.md) — tests/wpt-runner, editing-compat
+- 2026-11-11 [css-color none 保形回归：raw 影子保存条件误排 + 基线巧合通过](bugs/2026-11/2026-11-11-css-color-raw-shadow-accidental-pass.md) — engine
+- 2026-11-11 [cargo test --exact 须完整测试路径：裸名/短前缀全 filtered 0P 假绿 EXIT=0](bugs/2026-11/2026-11-11-cargo-test-exact-needs-full-path.md) — engine,testing
 - 2026-11-09 [shim appendChild 隐式 detach 缺口状态相关——孤立探针同码全绿不等于实现正确，执行态分歧用窗口克隆+side-band trace 定位](bugs/2026-11/2026-11-09-shim-appendchild-implicit-detach-state-gap.md) — engine
 - 2026-11-09 [数值分桶中点扫描在整档值上系统性差一档](bugs/2026-11/2026-11-09-numeric-bucket-midpoint-scan-off-by-one.md) — engine
 - 2026-11-09 [FD walk 吸收臂设计前先逐迭代 trace 执行路径——静态模型把 br-branch 当落点，实际 walk cond1 已先吃掉 br](bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md) — engine
@@ -358,8 +365,11 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（45）
+## Platform — 平台与环境相关经验（48）
 
+- 2026-11-11 [make test 外层兜底三连杀——RSS 求和守卫不配双腿并行编译，顶层守卫归 cgroup](platform/2026-11/2026-11-11-make-test-outer-guard-rss-vs-cgroup.md) — Makefile,test-guard
+- 2026-11-11 [delivery-check CLI catch 吞真实错误只打 Usage：直调函数取 REAL_ERROR](platform/2026-11/2026-11-11-delivery-check-swallows-real-error.md) — platform,testing
+- 2026-11-11 [Bugbot CURSOR_SUMMARY 注记 append 致 PR body 漂移：恢复协议 = edit 字节恒等 → 立即重跑 ready](platform/2026-11/2026-11-11-bugbot-cursor-summary-body-drift.md) — platform
 - 2026-11-10 [weekly coverage 快照组级摆动的产物法证——页超时截断三征定谳](platform/2026-11/2026-11-10-wpt-weekly-page-timeout-truncation-attribution.md) — zero-wpt-runner,wptfyi-runtime
 - 2026-11-09 [wpt testharness 断言消息只在 Fail 输出——状态转储用聚合单断言](platform/2026-11/2026-11-09-wpt-testharness-fail-only-dump-aggregation.md) — wpt-runner, engine
 - 2026-11-08 [GitHub PR baseRefOid 粘滞锚：head push 不重锚，main 未前进时 PR 侧事件也不重锚](platform/2026-11/2026-11-08-github-pr-base-ref-oid-anchor-drift.md) — crates/engine

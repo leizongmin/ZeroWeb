@@ -409,9 +409,9 @@ fn test_convert_grid_placement() {
     use zero_style_system::GridLineValue;
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Grid;
-    style.grid_column_start = GridLineValue::Line(1);
-    style.grid_column_end = GridLineValue::Line(3);
-    style.grid_row_start = GridLineValue::Line(2);
+    style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    style.grid_column_end = GridLineValue::Line { line: 3, name: None };
+    style.grid_row_start = GridLineValue::Line { line: 2, name: None };
     style.grid_row_end = GridLineValue::Auto;
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(
@@ -434,8 +434,11 @@ fn test_convert_grid_placement() {
 fn test_convert_grid_span() {
     use zero_style_system::GridLineValue;
     let mut style = ComputedStyle::default();
-    style.grid_column_start = GridLineValue::Span(2);
-    style.grid_row_start = GridLineValue::Line(-1);
+    style.grid_column_start = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
+    style.grid_row_start = GridLineValue::Line { line: -1, name: None };
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.grid_column.start, taffy::style::GridPlacement::from_span(2));
     assert_eq!(
@@ -565,10 +568,10 @@ fn test_resolve_named_area_with_map() {
 
     // Name 被解析
     let val = resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "row-start");
-    assert_eq!(val, GridLineValue::Line(1));
+    assert_eq!(val, GridLineValue::Line { line: 1, name: None });
 
     let val = resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "col-end");
-    assert_eq!(val, GridLineValue::Line(3));
+    assert_eq!(val, GridLineValue::Line { line: 3, name: None });
 
     // 未匹配的名称保留为显式 named line，由 Taffy 按 line-name 列表解析。
     let val = resolve_named_area(
@@ -583,8 +586,8 @@ fn test_resolve_named_area_with_map() {
     assert_eq!(val, GridLineValue::Name("header".to_string()));
 
     // 非 Name 值不变
-    let val = resolve_named_area(&GridLineValue::Line(2), Some(&areas), "row-start");
-    assert_eq!(val, GridLineValue::Line(2));
+    let val = resolve_named_area(&GridLineValue::Line { line: 2, name: None }, Some(&areas), "row-start");
+    assert_eq!(val, GridLineValue::Line { line: 2, name: None });
 }
 
 // ── float/clear 转换测试 ──
@@ -688,10 +691,10 @@ fn test_grid_area_name_resolution() {
     style.grid_column_end = GridLineValue::Name("nav".to_string());
 
     let (rs, re, cs, ce) = resolve_grid_placement(&style, Some(&areas));
-    assert_eq!(rs, GridLineValue::Line(2), "row-start should be 2");
-    assert_eq!(re, GridLineValue::Line(3), "row-end should be 3");
-    assert_eq!(cs, GridLineValue::Line(1), "col-start should be 1");
-    assert_eq!(ce, GridLineValue::Line(2), "col-end should be 2");
+    assert_eq!(rs, GridLineValue::Line { line: 2, name: None }, "row-start should be 2");
+    assert_eq!(re, GridLineValue::Line { line: 3, name: None }, "row-end should be 3");
+    assert_eq!(cs, GridLineValue::Line { line: 1, name: None }, "col-start should be 1");
+    assert_eq!(ce, GridLineValue::Line { line: 2, name: None }, "col-end should be 2");
 }
 
 /// 测试 minmax() 中 auto 作为最小值和最大值。

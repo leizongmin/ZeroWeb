@@ -2846,6 +2846,11 @@
   // ——最近活动 frame 优先；_zwJointFrameBackTarget 消费）。
   var _zwIframeNavSeq = 0;
   var _zwIframeFetchSeq = 0;
+  // html-semantics M2 切片 398：OBJECT 嵌套浏览上下文（contentWindow）缓存
+  //（object key → { doc, win, state, url }）——独立于 _iframeDocCache：object
+  // 嵌套 navigable 不走 iframe 的 SW 观察/history 账本/servedDoc 成熟翻转链
+  //（part02 SW refresh 遍历等 iframe 消费面零混入）。导航清空（页级）。
+  var _zwObjectNavCache = {};
   function _zwIframeKindFromUrl(url) {
     return /\.xhtml(\?|#|$)/i.test(url) ? 'xhtml'
       : (/\.html?(\?|#|$)/i.test(url) ? 'html'
@@ -3585,6 +3590,204 @@
     }
   }
 
+  // html-semantics M2 切片 398：OBJECT 嵌套浏览上下文物化（contentWindow 消费点
+  // part04 R5274 臂调用）——spec
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+  // 处理模型：resource fetch 成功且确定类型为 text/html 时 object 表示嵌套浏览
+  // 上下文（named target），contentWindow 返回其 active window proxy（#dom-object-
+  // contentwindow）；fetch 失败/替换内容类型无嵌套 navigable → null。runner 近似
+  //（FIXME）：类型判定按响应 Content-Type 单源（无 MIME sniffing 全链）；嵌套文档
+  // 不执行子文档脚本（iframe R206 通道不接——object-handler 嵌套脚本面散单另案）。
+  // name 快照：嵌套 navigable 命名取**创建时点** name 内容属性值；之后内容属性
+  // 增删不影响（browsing context name 独立记账——object-attributes「name 改后
+  // contentWindow.name 仍 'o'」断言链）。缓存在首次 contentWindow 读时惰性物化
+  //（`<body onload>` handler 内首读时序——同步 fetch 契约下读即就绪，R115 同款）；
+  // error 态 entry 复用缓存（同 identity，fallback 判定不重复 fetch）。
+  // html-semantics M2 切片 399：动态加载链扩展（fireEvents）——spec 处理模型
+  // fetch/render 步的 load/error 事件面（插入连接/data IDL setter 触发，part04
+  // _zwStartConnectedObject / part05 data setter 臂调用）：成功（任何 2xx 资源，
+  // 含 image 替换内容）→ trusted load（bubbles/cancelable=false，iframe 元素 load
+  // 同款 __zwMakeTrustedEvent）；fetch 失败/非 2xx → trusted error。
+  // about:blank 特例：不 fetch，直建空 HTML 文档 + win（iframe R130 面——初始导航
+  // 到 about:blank 语义，object-events「load event of about:blank」驱动案）。
+  // html-semantics M2 切片 400：scheme 取回面扩围（object-allowed-schemas 驱动）——
+  // data:（_zwDataURLProcessor 解码，fetch() 通路同源；text/html → 嵌套上下文，
+  // 其余 → 替换内容 success）、blob:（_zwBlobStore 命中，fetch() 通路 scheme-fetch
+  // 同语义：同源 + store 命中）、bare-origin http(s)（路径空或仅 /，parse 合法 +
+  // 非 bad port 门——真实 WPT server 返目录 listing 200，runner 静态 fallback 对
+  // 目录 404；FIXME：服务端目录语义，shim 侧合成空 text/html）。host fetch 路径
+  // 内容分诊保持 s399 三臂（其余类型 error——runner 对 bogus-scheme 的 2xx 信号
+  // 不可信，object-events file:/http: error 案），data:/blob: 臂内部 text/plain
+  // 面按 spec 成功解码即 load（allowed-schemas data: 驱动案）。
+  function _zwLoadObjectResource(objKey, sel, handle, fireEvents) {
+    var entry = _zwObjectNavCache[objKey];
+    if (entry && entry.state !== 'loading') {
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
+    if (!entry) {
+      entry = { doc: null, win: null, state: 'loading', url: '', fired: false, sel: sel || null, handle: handle || null };
+      _zwObjectNavCache[objKey] = entry;
+    }
+    var _objData = '';
+    try { _objData = handle ? __zw_get_attr_handle(handle, 'data') : (sel ? __zw_get_attr(sel, 'data') : ''); } catch (_eObjD) {}
+    // 无 data 属性：不发起取回，无嵌套浏览上下文（处理模型无资源可取 → nothing；
+    // object-attributes obj2 type=image/png null 断言面）。不 fire（nothing 无事件）。
+    if (!_objData) return entry;
+    // data: URL：in-shim 解码（RFC 2397；fetch() 通路 _zwDataURLProcessor 同源）。
+    // 解码失败 → error；text/html → 嵌套上下文；其余类型 → success 无 navigable
+    //（document-getters SVG data: URL null 面保持——image/svg+xml 落 success 臂）。
+    if (/^data:/i.test(_objData)) {
+      var _objDp = (typeof _zwDataURLProcessor === 'function') ? _zwDataURLProcessor(_objData) : null;
+      if (!_objDp) { entry.state = 'error'; if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle); return entry; }
+      var _objDpEss = String(_objDp.contentType || '').split(';')[0].trim();
+      if (/^text\/html$/i.test(_objDpEss)) {
+        var _objDpBody = '';
+        try { _objDpBody = new TextDecoder().decode(_objDp.body); } catch (_eObjDpDec) { _objDpBody = ''; }
+        _zwObjectMaterializeDoc(entry, objKey, _objData, _objDpBody, sel, handle);
+        entry.state = 'done';
+      } else {
+        entry.url = _objData;
+        entry.state = 'image';
+      }
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
+    // blob: URL：_zwBlobStore 命中（同源门——fetch() 通路 scheme-fetch 同语义）。
+    // 未注册/跨源 → network error 语义；text/html → 嵌套上下文，其余 → success。
+    if (/^blob:/i.test(_objData)) {
+      var _objBlob = null;
+      try {
+        var _objOrigin = (globalThis.location && globalThis.location.origin) || '';
+        var _objOm = /^([^\/]+:\/\/[^\/]*)\//.exec(_objData.slice(5));
+        if (_objOm && _objOm[1] === _objOrigin && typeof _zwBlobStore !== 'undefined'
+            && Object.prototype.hasOwnProperty.call(_zwBlobStore, _objData)) {
+          _objBlob = _zwBlobStore[_objData];
+        }
+      } catch (_eObjBl) {}
+      if (!_objBlob) { entry.state = 'error'; if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle); return entry; }
+      var _objBlEss = String(_objBlob && _objBlob.type || '').split(';')[0].trim();
+      if (/^text\/html$/i.test(_objBlEss)) {
+        var _objBlBody = '';
+        try { _objBlBody = new TextDecoder().decode(typeof _zw_blobBytes === 'function' ? _zw_blobBytes(_objBlob) : new Uint8Array(0)); } catch (_eObjBlDec) { _objBlBody = ''; }
+        _zwObjectMaterializeDoc(entry, objKey, _objData, _objBlBody, sel, handle);
+        entry.state = 'done';
+      } else {
+        entry.url = _objData;
+        entry.state = 'image';
+      }
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
+    // about:blank：初始导航空文档（不 fetch——iframe R130 同语义；object-events
+    // about:blank 案断言嵌套浏览上下文 + load 事件）。
+    if (_objData === 'about:blank') {
+      _zwObjectMaterializeDoc(entry, objKey, 'about:blank', '', sel, handle);
+      entry.state = 'done';
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
+    if (typeof __zw_fetch !== 'function') return entry;
+    var _objUrl = '';
+    try { _objUrl = _zwResolveIframeSrc(_objData); } catch (_eObjU) { entry.state = 'error'; if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle); return entry; }
+    entry.url = _objUrl;
+    // bare-origin http(s)（路径空或仅 /，query/fragment 不作路径）：真实 WPT
+    // server 返目录 listing 200 text/html；runner 静态 fallback 对目录 404。
+    // 门：URL 须 parse 合法 + 非 bad port（'http://test:test' 无效 port 落 host
+    // fetch error 面——object-events 驱动案；_zwFetchSchemeDispatch http 臂同门）。
+    // FIXME：服务端目录语义近似——shim 侧合成空 text/html 嵌套文档
+    //（object-allowed-schemas http(s)://origin 面驱动）。
+    var _objPath = /^https?:\/\//i.test(_objUrl) ? _objUrl.replace(/^https?:\/\/[^\/]*/i, '') : null;
+    var _objPathOk = false;
+    if (_objPath !== null) {
+      _objPathOk = true;
+      try { if (typeof URL !== 'undefined' && URL.canParse && !URL.canParse(_objUrl)) _objPathOk = false; } catch (_eObjCP) {}
+      var _objPm = /^https?:\/\/[^\/?#]*:(\d{1,5})(?=[\/?#]|$)/i.exec(_objUrl);
+      if (_objPm && typeof _zwFetchBadPort === 'function' && _zwFetchBadPort(_objPm[1])) _objPathOk = false;
+    }
+    if (_objPathOk && (_objPath === '' || _objPath === '/' || _objPath.charAt(0) === '?' || _objPath.charAt(0) === '#')) {
+      _zwObjectMaterializeDoc(entry, objKey, _objUrl, '', sel, handle);
+      entry.state = 'done';
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
+    var _objWire = '';
+    try {
+      _objWire = String(__zw_fetch(
+        'objnav:' + objKey, 'GET', _objUrl, '', '', '', '', '', '', '', ''
+      ) || '');
+    } catch (_eObjF) { entry.state = 'error'; if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle); return entry; }
+    if (!_objWire || _objWire.indexOf('__zw_fetch_error:') === 0) {
+      entry.state = 'error';
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
+    // 响应 wire（fetch_bridge serialize_response）：`__zwfr:` + status \x1f
+    // statusText \x1f headers \x1f body——同 _zwFinishIframeEntry 解析。
+    var parts = String(_objWire).split('\x1f');
+    var status = String(parts[0] || '').replace(/^__zwfr:/, '');
+    // 非 2xx → fallback（spec：fetch 失败即 fallback 内容，无嵌套浏览上下文；
+    // object-attributes obj3 data=missing.html 404 null 断言面 + object-events
+    // error 事件案 + cross-origin fallback 案）。
+    if (!/^2/.test(status)) { entry.state = 'error'; if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle); return entry; }
+    var ct = '';
+    if (parts.length > 2) {
+      var hdrsObj = String(parts[2] || '').split('\x1e');
+      for (var ho = 0; ho + 1 < hdrsObj.length; ho += 2) {
+        if (String(hdrsObj[ho]).toLowerCase() === 'content-type' && !ct) ct = _zwWireUnescape(hdrsObj[ho + 1]);
+      }
+    }
+    var ctEssence = String(ct || '').split(';')[0].trim();
+    // text/html → 嵌套浏览上下文（doc+win 物化，s398 管线）；image/* → 替换内容
+    //（无嵌套 navigable，load 事件照派——spec 成功渲染即 load，object-events
+    // blue.png 案）；其它类型无法渲染 → error（spec fallback 步——s400 保持 s399
+    // 分诊：runner fetch 对 bogus-scheme URL 2xx 信号不可信，宽放会把 object-events
+    // file:/http: error 案翻成 load）。
+    if (/^text\/html\b/i.test(ctEssence)) {
+      var body = parts.length > 3 ? parts.slice(3).join('\x1f') : '';
+      _zwObjectMaterializeDoc(entry, objKey, _objUrl, body, sel, handle);
+      entry.state = 'done';
+    } else if (/^image\//i.test(ctEssence) && !/svg/i.test(ctEssence)) {
+      entry.state = 'image';
+    } else {
+      entry.state = 'error';
+    }
+    if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+    return entry;
+  }
+  // s400：object 嵌套文档物化共享核（text/html 三路共用——data:/blob:/http(s)
+  // wire/about:blank/bare-origin）：doc+win+URL 印记+win.name 创建时点快照
+  //（object-attributes「name 改后 contentWindow.name 仍 'o'」断言链）。
+  function _zwObjectMaterializeDoc(entry, objKey, url, bodyHtml, sel, handle) {
+    entry.url = url;
+    entry.doc = _zwMakeIframeDoc('html', bodyHtml);
+    try { entry.doc._zwURL = url; } catch (_eObjMu) {}
+    entry.win = _zwMakeIframeWin(entry.doc, objKey, {}, null);
+    try { if (entry.doc.__r115SetWin) entry.doc.__r115SetWin(entry.win); } catch (_eObjMw) {}
+    var _objMn = '';
+    try { _objMn = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : ''); } catch (_eObjMn2) {}
+    try { entry.win.name = String(_objMn || ''); } catch (_eObjMnw) {}
+  }
+  // s399：object load/error 事件派发（终态一次——`fired` 门幂等；_defer 微任务派发
+  // 同 iframe 元素 load 时序，onload property 先赋值）。trusted（__zwMakeTrustedEvent
+  // 出口，iframe 同款）、bubbles/cancelable=false（object-events 接口断言面）。
+  function _zwFireObjectResultEvent(entry, sel, handle) {
+    if (!entry || entry.fired) return;
+    if (entry.state !== 'done' && entry.state !== 'image' && entry.state !== 'error') return;
+    entry.fired = true;
+    var _objEvType = (entry.state === 'error') ? 'error' : 'load';
+    _defer(function () {
+      try {
+        var _objTarget = _makeProxy(sel, handle);
+        if (!_objTarget || typeof _objTarget.dispatchEvent !== 'function') return;
+        var _objEv = (typeof globalThis.__zwMakeTrustedEvent === 'function')
+          ? globalThis.__zwMakeTrustedEvent(_objEvType)
+          : new globalThis.Event(_objEvType, { __zwTrusted: true });
+        _objTarget.dispatchEvent(_objEv);
+      } catch (_eObjEv) {}
+    });
+  }
+
   function _zwLoadIframeEntry(frameKey, rawSrc, flags) {
     flags = _zwIframeSandboxFlags(frameKey, flags);
     var _r115Entry = { doc: null, win: null, state: 'loading', history: [], flags: flags };
@@ -3901,6 +4104,30 @@
             : new globalThis.Event('load', { __zwTrusted: true }));
         } catch (_eIframeLoad) {}
       });
+    });
+  }
+  // html-semantics M2 切片 399：object 插入步（spec
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+  // object element insertion steps——插入已连接树即启动资源取回，终态派 load/error）。
+  // 与 _zwStartConnectedIframe 同形：动态插入钩子（part04 appendChild/append 两路
+  // 同排调用；parser 扫描不做——静态 object 无事件 driving 断言，消费面惰性物化
+  // 已覆盖）。_defer 异步启动（spec fetch 异步）；事件经 _zwFireObjectResultEvent
+  // 终态一次（缓存 fired 门防插入钩子 + 消费读双派）。
+  function _zwStartConnectedObject(el, connected) {
+    if (!connected || !el) return;
+    var tag = '';
+    try {
+      tag = typeof _realTag === 'function'
+        ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
+        : String(el.tagName || '');
+    } catch (_eObjTag) {
+      tag = String(el.tagName || '');
+    }
+    if (String(tag || el.tagName || '').toUpperCase() !== 'OBJECT') return;
+    _defer(function () {
+      var objKey = el.__zwHandle ? _elKey(null, el.__zwHandle) : _elKey(el.__zwSelector || null, null);
+      if (!objKey) return;
+      try { _zwLoadObjectResource(objKey, el.__zwSelector || null, el.__zwHandle || null, true); } catch (_eObjStart) {}
     });
   }
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——
@@ -12167,6 +12394,35 @@
               return 'static';
             }
             var _csGV = query(kp);
+            // wptfyi-css 组F：position-area 宿主回声覆盖——host 对 registry 外
+            // 未设值属性回 'initial'/'inherit' 字面量兜底，非空短路下方 plain
+            // 臂使初始值 'none' / 非继承两钉失守（paprobe position-area-computed
+            // 残余 2F 根因；设值时 host apply-miss 回 '' 走臂已通）。计算值空间
+            // 恒为关键词文法（none 或九类组），无 'initial'/'inherit' 合形，一律
+            // plain 优先（__zwPlainComputed 无声明返 'none' 初值）。
+            // https://drafts.csswg.org/css-anchor-position-1/#position-area
+            if (kp === 'position-area'
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              try {
+                var _paGV = globalThis.__zwPlainComputed(elt, kp);
+                if (_paGV !== '') return _paGV;
+              } catch (_ePAGV) {}
+            }
+            // wptfyi-css 组F：anchor 族宿主回声覆盖（position-area 同构——host 对
+            // registry 外未设值/设值属性分别回 'initial'/'inherit' 字面量与 ''，
+            // 两条都失真；族计算值 = as-specified 恒等或固定初始值，一律 plain
+            // 优先，__zwPlainComputed 无声明返族初始值）。position-try 简写由
+            // __zwPlainComputed 内部按双长手合成。
+            // https://drafts.csswg.org/css-anchor-position-1/
+            if ((kp === 'position-anchor' || kp === 'position-visibility'
+                || kp === 'position-try-order' || kp === 'position-try-fallbacks'
+                || kp === 'position-try' || kp === 'anchor-name' || kp === 'anchor-scope')
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              try {
+                var _anGV = globalThis.__zwPlainComputed(elt, kp);
+                if (_anGV !== '') return _anGV;
+              } catch (_eANGV) {}
+            }
             // DC-2 次批：宿主 partial-parse 抢答覆盖（注释形/currentcolor/
             // 现代色形宿主产出错误计算值——part11 __zwCssColorNeedsPlain
             // 判定），inline 命中即落 plain 重读（spec 正确值）。legacy 形
@@ -12177,6 +12433,16 @@
                 && typeof globalThis.__zwPlainComputed === 'function') {
               var _irGV = '';
               try { _irGV = String(elt.style.getPropertyValue(kp) || ''); } catch (_eIR1) {}
+              // raw 影子优先（css-color-4 §missing none 传播面）：声明写面归一
+              // 消解 rgb none → store 串恒 legacy 形，NeedsPlain 判 false 抢答
+              // 落宿主读数（probe-none B1/B2 实证 gcs=rgb(0,0,0)）；影子存归一
+              // 前原文，判定以原文为准（part01c _zwPlainDecl 同判据）。
+              try {
+                if (typeof elt.style.__zwRawDecl === 'function') {
+                  var _rvGV = elt.style.__zwRawDecl(kp);
+                  if (_rvGV) _irGV = String(_rvGV);
+                }
+              } catch (_eIR1b) {}
               if (_irGV && globalThis.__zwCssColorNeedsPlain(_irGV)) {
                 try {
                   var _pcGV2 = globalThis.__zwPlainComputed(elt, kp);
@@ -12223,12 +12489,41 @@
         var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
         // DC-2 次批：宿主 partial-parse 抢答覆盖（同 getPropertyValue 臂注释）。
         var _kpC = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
+        // wptfyi-css 组F：position-area 宿主回声覆盖（同 getPropertyValue 臂——
+        // host 未设值 'initial'/'inherit' 字面量兜底短路 plain 臂，plain 优先）。
+        // https://drafts.csswg.org/css-anchor-position-1/#position-area
+        if (_kpC === 'position-area'
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          try {
+            var _paV2 = globalThis.__zwPlainComputed(elt, _kpC);
+            if (_paV2 !== '') return _paV2;
+          } catch (_ePAV2) {}
+        }
+        // wptfyi-css 组F：anchor 族宿主回声覆盖（同 getPropertyValue 臂——
+        // test_computed_value 走 `getComputedStyle(target)[prop]` 直取形）。
+        // https://drafts.csswg.org/css-anchor-position-1/
+        if ((_kpC === 'position-anchor' || _kpC === 'position-visibility'
+            || _kpC === 'position-try-order' || _kpC === 'position-try-fallbacks'
+            || _kpC === 'position-try' || _kpC === 'anchor-name' || _kpC === 'anchor-scope')
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          try {
+            var _anV2 = globalThis.__zwPlainComputed(elt, _kpC);
+            if (_anV2 !== '') return _anV2;
+          } catch (_eANV2) {}
+        }
         if (_csV !== '' && (_kpC === 'color' || _kpC === 'background-color')
             && elt && elt.style
             && typeof globalThis.__zwCssColorNeedsPlain === 'function'
             && typeof globalThis.__zwPlainComputed === 'function') {
           var _irV = '';
           try { _irV = String(elt.style.getPropertyValue(_kpC) || ''); } catch (_eIR2) {}
+          // raw 影子优先（同 getPropertyValue 臂——none 传播判定以归一前原文为准）。
+          try {
+            if (typeof elt.style.__zwRawDecl === 'function') {
+              var _rvV = elt.style.__zwRawDecl(_kpC);
+              if (_rvV) _irV = String(_rvV);
+            }
+          } catch (_eIR2b) {}
           if (_irV && globalThis.__zwCssColorNeedsPlain(_irV)) {
             try {
               var _pcV2 = globalThis.__zwPlainComputed(elt, _kpC);
@@ -12247,7 +12542,7 @@
           var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
           if (_pcP === 'color' || _pcP === 'font-size'
               || _pcP === 'font-family' || _pcP === 'background-color'
-              || _pcP === 'opacity') {
+              || _pcP === 'opacity' || _pcP === 'position-area') {
             try {
               var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
               if (_pcV !== '') return _pcV;
@@ -12499,6 +12794,41 @@
       },
     });
   })();
+  // html-semantics M2 切片 400：`window.length`（HTML spec Window 的
+  // [LegacyUnforgeable] 属性——当前文档树内嵌套浏览上下文计数）。计数面：iframe
+  //（_iframeDocCache——win 已物化且未被 removeChild 移除，_zwSwDestroyed 印记）+
+  // object（_zwObjectNavCache——win 已物化且元素仍在文档树，s400 entry 存 sel/handle；
+  // error 态无 win 自然不计，fallback 语义 window.length===0 断言面）。FIXME：frame
+  // 元素/未消费 iframe 的惰性物化不计（_iframeDocCache entry 仅在 contentWindow 面
+  // 创建——R177 frames Proxy 的 DOM 枚举口径与缓存口径并存）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#dom-length
+  function _zwWindowLengthCount() {
+    var n = 0;
+    try {
+      var iKeys = Object.keys(_iframeDocCache);
+      for (var i = 0; i < iKeys.length; i++) {
+        var ie = _iframeDocCache[iKeys[i]];
+        if (ie && ie.win && !ie._zwSwDestroyed) n++;
+      }
+    } catch (_eWLc1) {}
+    try {
+      var oKeys = Object.keys(_zwObjectNavCache);
+      for (var j = 0; j < oKeys.length; j++) {
+        var oe = _zwObjectNavCache[oKeys[j]];
+        if (!(oe && oe.win)) continue;
+        var connected = true;
+        try {
+          if (oe.sel || oe.handle) connected = _makeProxy(oe.sel, oe.handle).isConnected !== false;
+        } catch (_eWLc2) { connected = false; }
+        if (connected) n++;
+      }
+    } catch (_eWLc3) {}
+    return n;
+  }
+  Object.defineProperty(globalThis, 'length', {
+    enumerable: true, configurable: false,
+    get: function () { return _zwWindowLengthCount(); },
+  });
   // js-dom M4 R33：`Window.event`（HTML spec `current event`，legacy IE 全局）。Window 须 own `event`
   // 属性，初值 undefined（spec dispatch 前 window.event === undefined）；dispatch 期 = 正在派发的 event
   //（innermost，嵌套 dispatch 后恢复外层）；dispatch 后回 undefined。_dispatchWithBubble（part03）在派发

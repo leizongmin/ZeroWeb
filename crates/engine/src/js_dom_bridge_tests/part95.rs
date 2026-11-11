@@ -437,6 +437,39 @@ fn navigator_plugins_instance_shapes_t44() {
     assert_eq!(parts[17], "{}", "JSON.stringify 空 own 面（同 Chrome）");
 }
 
+// T58（site-optimizer perf-mem T58）：navigator.pdfViewerEnabled 常驻回归钉。行为面
+// 为 T44 同切片在案：part02.js navigator 字面量 `pdfViewerEnabled: false`
+//（part02.js:9457-9462 T44 注记）——上游 WPT plugins-and-mimetypes.html 首测属性
+// 存在 + boolean 类型，且为插件断言分支选择键（falsy → 空插件集断言臂，与 headless
+// 诚实空集一致；Chrome 的 true 侧绑定其 PDF 家族插件条目，不模仿条目内容）。T44
+// 三钉只盖 plugins/mimeTypes 接口与实例面，本钉补属性面（此前全测试树零
+// pdfViewerEnabled 断言）。不钉 own-vs-prototype 实现位（非 T44 契约面）。
+// https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-pdfviewerenabled
+#[test]
+fn navigator_pdf_viewer_enabled_t58() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__r58 = [
+               String('pdfViewerEnabled' in navigator),
+               typeof navigator.pdfViewerEnabled,
+               String(navigator.pdfViewerEnabled === false),
+             ].join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r58").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(
+        parts[0], "true",
+        "navigator 上须存在 pdfViewerEnabled 属性（上游 plugins-and-mimetypes.html 首测面）"
+    );
+    assert_eq!(parts[1], "boolean", "pdfViewerEnabled 须为 boolean 类型");
+    assert_eq!(
+        parts[2], "true",
+        "pdfViewerEnabled === false（falsy 侧空插件集断言臂，与 headless 诚实空集一致）"
+    );
+}
+
 // T43 B6 邻近变体（TV-F3）：iframe 包装路。part05.js IframeXMLHttpRequest 构造真实
 // XMLHttpRequest 实例（stamp _zwXhrBaseUrl/_zwXhrFetch own 属性）并共享主 realm 原型——
 // 原型委派不受实例自有附加属性遮蔽（委派器只查 this 的 _zwImpl_<name> 槽），wrapper

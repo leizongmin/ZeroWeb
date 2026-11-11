@@ -337,29 +337,47 @@ fn test_resolve_grid_placement_auto() {
 #[test]
 fn test_resolve_grid_placement_with_line_numbers() {
     let mut style = ComputedStyle::default();
-    style.grid_row_start = GridLineValue::Line(2);
-    style.grid_row_end = GridLineValue::Line(4);
-    style.grid_column_start = GridLineValue::Line(1);
-    style.grid_column_end = GridLineValue::Line(3);
+    style.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    style.grid_row_end = GridLineValue::Line { line: 4, name: None };
+    style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    style.grid_column_end = GridLineValue::Line { line: 3, name: None };
     let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
-    assert_eq!(rs, GridLineValue::Line(2));
-    assert_eq!(re, GridLineValue::Line(4));
-    assert_eq!(cs, GridLineValue::Line(1));
-    assert_eq!(ce, GridLineValue::Line(3));
+    assert_eq!(rs, GridLineValue::Line { line: 2, name: None });
+    assert_eq!(re, GridLineValue::Line { line: 4, name: None });
+    assert_eq!(cs, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(ce, GridLineValue::Line { line: 3, name: None });
 }
 
 #[test]
 fn test_resolve_grid_placement_with_span() {
     let mut style = ComputedStyle::default();
-    style.grid_row_start = GridLineValue::Line(1);
-    style.grid_row_end = GridLineValue::Span(2);
-    style.grid_column_start = GridLineValue::Span(3);
-    style.grid_column_end = GridLineValue::Line(5);
+    style.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    style.grid_row_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
+    style.grid_column_start = GridLineValue::Span {
+        count: Some(3),
+        name: None,
+    };
+    style.grid_column_end = GridLineValue::Line { line: 5, name: None };
     let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
-    assert_eq!(rs, GridLineValue::Line(1));
-    assert_eq!(re, GridLineValue::Span(2));
-    assert_eq!(cs, GridLineValue::Span(3));
-    assert_eq!(ce, GridLineValue::Line(5));
+    assert_eq!(rs, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(
+        re,
+        GridLineValue::Span {
+            count: Some(2),
+            name: None
+        }
+    );
+    assert_eq!(
+        cs,
+        GridLineValue::Span {
+            count: Some(3),
+            name: None
+        }
+    );
+    assert_eq!(ce, GridLineValue::Line { line: 5, name: None });
 }
 
 #[test]
@@ -374,10 +392,10 @@ fn test_resolve_grid_placement_named_area() {
     areas.insert("header".to_string(), (1, 2, 1, 4));
 
     let (rs, re, cs, ce) = resolve_grid_placement(&style, Some(&areas));
-    assert_eq!(rs, GridLineValue::Line(1)); // row-start
-    assert_eq!(re, GridLineValue::Line(2)); // row-end
-    assert_eq!(cs, GridLineValue::Line(1)); // col-start
-    assert_eq!(ce, GridLineValue::Line(4)); // col-end
+    assert_eq!(rs, GridLineValue::Line { line: 1, name: None }); // row-start
+    assert_eq!(re, GridLineValue::Line { line: 2, name: None }); // row-end
+    assert_eq!(cs, GridLineValue::Line { line: 1, name: None }); // col-start
+    assert_eq!(ce, GridLineValue::Line { line: 4, name: None }); // col-end
 }
 
 #[test]

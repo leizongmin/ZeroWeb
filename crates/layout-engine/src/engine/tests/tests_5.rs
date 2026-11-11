@@ -1107,26 +1107,29 @@ fn test_grid_explicit_row_span_2() {
 
     // tall_item: 第一列，跨两行
     let mut tall_style = ComputedStyle::default();
-    tall_style.grid_column_start = GridLineValue::Line(1);
-    tall_style.grid_column_end = GridLineValue::Line(2);
-    tall_style.grid_row_start = GridLineValue::Line(1);
-    tall_style.grid_row_end = GridLineValue::Span(2);
+    tall_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    tall_style.grid_column_end = GridLineValue::Line { line: 2, name: None };
+    tall_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    tall_style.grid_row_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     styles.insert(tall_item, tall_style);
 
     // normal_item1: 第二列，第一行
     let mut ns1 = ComputedStyle::default();
-    ns1.grid_column_start = GridLineValue::Line(2);
-    ns1.grid_column_end = GridLineValue::Line(3);
-    ns1.grid_row_start = GridLineValue::Line(1);
-    ns1.grid_row_end = GridLineValue::Line(2);
+    ns1.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    ns1.grid_column_end = GridLineValue::Line { line: 3, name: None };
+    ns1.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    ns1.grid_row_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(normal_item1, ns1);
 
     // normal_item2: 第二列，第二行
     let mut ns2 = ComputedStyle::default();
-    ns2.grid_column_start = GridLineValue::Line(2);
-    ns2.grid_column_end = GridLineValue::Line(3);
-    ns2.grid_row_start = GridLineValue::Line(2);
-    ns2.grid_row_end = GridLineValue::Line(3);
+    ns2.grid_column_start = GridLineValue::Line { line: 2, name: None };
+    ns2.grid_column_end = GridLineValue::Line { line: 3, name: None };
+    ns2.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    ns2.grid_row_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(normal_item2, ns2);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
@@ -1426,18 +1429,21 @@ fn test_grid_span_3_fills_all_columns() {
 
     // wide_item: 跨三列（span 3），占满第一行
     let mut wide_style = ComputedStyle::default();
-    wide_style.grid_column_start = GridLineValue::Line(1);
-    wide_style.grid_column_end = GridLineValue::Span(3);
-    wide_style.grid_row_start = GridLineValue::Line(1);
-    wide_style.grid_row_end = GridLineValue::Line(2);
+    wide_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    wide_style.grid_column_end = GridLineValue::Span {
+        count: Some(3),
+        name: None,
+    };
+    wide_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    wide_style.grid_row_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(wide_item, wide_style);
 
     // below_item: 第二行第一列
     let mut below_style = ComputedStyle::default();
-    below_style.grid_column_start = GridLineValue::Line(1);
-    below_style.grid_column_end = GridLineValue::Line(2);
-    below_style.grid_row_start = GridLineValue::Line(2);
-    below_style.grid_row_end = GridLineValue::Line(3);
+    below_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    below_style.grid_column_end = GridLineValue::Line { line: 2, name: None };
+    below_style.grid_row_start = GridLineValue::Line { line: 2, name: None };
+    below_style.grid_row_end = GridLineValue::Line { line: 3, name: None };
     styles.insert(below_item, below_style);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

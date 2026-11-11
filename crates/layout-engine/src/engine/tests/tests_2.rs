@@ -377,18 +377,24 @@ fn test_grid_row_and_column_span() {
 
     // big: spans 2 cols, 2 rows
     let mut big_style = ComputedStyle::default();
-    big_style.grid_column_start = GridLineValue::Line(1);
-    big_style.grid_column_end = GridLineValue::Span(2);
-    big_style.grid_row_start = GridLineValue::Line(1);
-    big_style.grid_row_end = GridLineValue::Span(2);
+    big_style.grid_column_start = GridLineValue::Line { line: 1, name: None };
+    big_style.grid_column_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
+    big_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    big_style.grid_row_end = GridLineValue::Span {
+        count: Some(2),
+        name: None,
+    };
     styles.insert(big, big_style);
 
     // small: col 3, row 1
     let mut small_style = ComputedStyle::default();
-    small_style.grid_column_start = GridLineValue::Line(3);
-    small_style.grid_column_end = GridLineValue::Line(4);
-    small_style.grid_row_start = GridLineValue::Line(1);
-    small_style.grid_row_end = GridLineValue::Line(2);
+    small_style.grid_column_start = GridLineValue::Line { line: 3, name: None };
+    small_style.grid_column_end = GridLineValue::Line { line: 4, name: None };
+    small_style.grid_row_start = GridLineValue::Line { line: 1, name: None };
+    small_style.grid_row_end = GridLineValue::Line { line: 2, name: None };
     styles.insert(small, small_style);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

@@ -2107,6 +2107,12 @@
     return NaN;
   }
   // 入口：prop 为 kebab-case；仅应答四属性，其余返 ''（调用方维持旧行为）。
+  // 作者样式表声明查询出口（part11 var() 展开消费——页级 `html { --x: ... }`
+  // 声明臂；_zwPlainAuthorDecl 通用 prop，custom property 命名直达）。
+  globalThis.__zwPlainAuthorDecl = function (el, prop) {
+    try { return _zwPlainAuthorDecl(el, prop) || ''; } catch (_ePADx) { return ''; }
+  };
+
   globalThis.__zwPlainComputed = function (elt, prop, qvMode) {
     if (!elt || elt.nodeType !== 1) return '';
     var guard = 0;
@@ -2138,6 +2144,149 @@
         return '';
       }
       return '1';
+    }
+    if (prop === 'position-anchor' || prop === 'position-visibility'
+        || prop === 'position-try-order' || prop === 'position-try-fallbacks'
+        || prop === 'anchor-name' || prop === 'anchor-scope') {
+      // wptfyi-css 组 F：css-anchor-position-1 anchor 族声明面 computed——全族
+      // 非继承（position-area 先例同构）：只读自身 inline 声明，computed =
+      // as-specified（canonicalize 折叠后恒等）；空声明返属性初始值
+      //（position-anchor normal / position-visibility anchors-visible /
+      // position-try-order normal / position-try-fallbacks·anchor-name·
+      // anchor-scope none）。CSS-wide keyword 计算期语义（CSS Cascading 4
+      // §6-§7）：initial/unset/revert/revert-layer → 初始值；inherit 强制取
+      // 父链首个非 css-wide 声明的计算值（§7.3 对非继承属性亦生效——
+      // assert_not_inherited inherit 步钉）。折叠面单点在
+      // dom_bindings::anchor_props::computed_value（grid G1 单实现双通道同型，
+      // 经 __zw_anchor_computed 回调薄委托）。
+      // FIXME: 作者样式表声明臂未接（_zwPlainDecl 只读 inline；语料全 inline）。
+      // https://drafts.csswg.org/css-anchor-position-1/
+      var _zwAnchorCv = function (p, raw) {
+        try { return globalThis.__zw_anchor_computed(p, String(raw)) || ''; }
+        catch (_eAC) { return ''; }
+      };
+      var aRaw = _zwPlainDecl(elt, prop);
+      if (!aRaw) return _zwAnchorCv(prop, '');
+      var aS = String(aRaw).trim().toLowerCase();
+      if (aS === 'inherit') {
+        node = elt.parentNode; guard = 0;
+        while (node && node.nodeType === 1 && guard++ < 256) {
+          var aInh = _zwPlainDecl(node, prop);
+          if (aInh) {
+            var aInhS = String(aInh).trim().toLowerCase();
+            if (aInhS === 'inherit' || aInhS === 'initial' || aInhS === 'unset'
+                || aInhS === 'revert' || aInhS === 'revert-layer') {
+              node = node.parentNode;
+              continue;
+            }
+            return _zwAnchorCv(prop, aInh);
+          }
+          node = node.parentNode;
+        }
+        return _zwAnchorCv(prop, '');
+      }
+      if (aS === 'initial' || aS === 'unset' || aS === 'revert'
+          || aS === 'revert-layer') {
+        return _zwAnchorCv(prop, '');
+      }
+      return _zwAnchorCv(prop, aRaw);
+    }
+    if (prop === 'position-try') {
+      // 组 F：position-try 简写 computed = 两长手 inline 声明合成（order=normal
+      // 省略 / 双初始折叠 'none'——join 规则与 dom_bindings::anchor_props::
+      // join_position_try 同形，一致性由语料 round-trip 钉）。双长手均无声明返
+      // ''（gCS 通道无源空串契约）。css-wide 简写写面拆分时双长手同 keyword
+      //（Rust split_position_try css-wide 臂），此处按长手各读。
+      var _zwTryJoin = function (o, f) {
+        if (o === 'normal' && f === 'none') return 'none';
+        if (o === 'normal') return f;
+        if (f === 'none') return o + ' none';
+        return o + ' ' + f;
+      };
+      var tO = _zwPlainDecl(elt, 'position-try-order');
+      var tF = _zwPlainDecl(elt, 'position-try-fallbacks');
+      if (!tO && !tF) return '';
+      var oS = String(tO || 'normal').trim().toLowerCase();
+      var fS = String(tF || 'none').trim().toLowerCase();
+      if (oS === 'initial' || oS === 'unset' || oS === 'revert'
+          || oS === 'revert-layer') oS = 'normal';
+      else if (oS === 'inherit') oS = 'normal'; // 简写级联近似（语料全 inline 直写）
+      if (fS === 'initial' || fS === 'unset' || fS === 'revert'
+          || fS === 'revert-layer') fS = 'none';
+      else if (fS === 'inherit') fS = 'none';
+      return _zwTryJoin(oS, fS);
+    }
+    if (prop === 'position-area') {
+      // wptfyi-css 组F：css-anchor-position-1 §position-area 计算值——非继承
+      //（position-area-computed assert_not_inherited 锚），只读自身 inline 声明；
+      // 折叠管线（逻辑 long→short 同形塌缩、span-all 槽位消歧 `start span-all` →
+      // block-start / `span-all start` → inline-start、center 槽位归位）单点在
+      // dom_bindings::position_area::computed_value（grid G1 单实现双通道同型，
+      // 经 __zw_position_area_computed 回调薄委托）。无声明返初始值 'none'。
+      // CSS-wide keyword 计算期语义（CSS Cascading 4 §6-§7）：initial/unset/
+      // revert/revert-layer → 属性初始值 'none'（非继承且 UA 层无 position-area
+      // 声明可回退——assert_initial 钉）；inherit 强制取父链首个非 css-wide 声明
+      // 的计算值（§7.3 对非继承属性亦生效——assert_not_inherited inherit 步钉）。
+      // 回显原文曾撞 host 'initial'/'inherit' 兜底字面量（paprobe 残余 2F 根因）。
+      // FIXME: 作者样式表声明臂未接（_zwPlainDecl 只读 inline；语料两页全 inline）。
+      var paRaw = _zwPlainDecl(elt, 'position-area');
+      if (!paRaw) return 'none';
+      var paS = String(paRaw).trim().toLowerCase();
+      if (paS === 'inherit') {
+        node = elt.parentNode; guard = 0;
+        while (node && node.nodeType === 1 && guard++ < 256) {
+          var paInh = _zwPlainDecl(node, 'position-area');
+          if (paInh) {
+            var paInhS = String(paInh).trim().toLowerCase();
+            if (paInhS === 'inherit' || paInhS === 'initial' || paInhS === 'unset'
+                || paInhS === 'revert' || paInhS === 'revert-layer') {
+              node = node.parentNode;
+              continue;
+            }
+            if (typeof globalThis.__zw_position_area_computed === 'function') {
+              try {
+                var paCV = globalThis.__zw_position_area_computed(String(paInh));
+                if (paCV !== '') return paCV;
+              } catch (_ePACI) {}
+            }
+            return '';
+          }
+          node = node.parentNode;
+        }
+        return 'none';
+      }
+      if (paS === 'initial' || paS === 'unset' || paS === 'revert'
+          || paS === 'revert-layer') {
+        return 'none';
+      }
+      if (typeof globalThis.__zw_position_area_computed === 'function') {
+        try {
+          var paV = globalThis.__zw_position_area_computed(String(paRaw));
+          if (paV !== '') return paV;
+        } catch (_ePAC) {}
+      }
+      return '';
+    }
+    if (prop === 'color-scheme') {
+      // color-scheme 级联声明读取（css-color-adjust-1 §color-scheme：继承属性）——
+      // 供 light-dark()/system color 求值方合成 used scheme（part11
+      // _zwCCUsedSchemeDark 消费）。inline → 作者臂（qvMode）→ 沿父链首声明，
+      // 声明原文返回（含 normal/only token——token 判定归消费方，与
+      // style-system parse_color_scheme_dark 同口径：无 light/dark token 的
+      // 声明回落文档 scheme，corpus 页无 meta color-scheme 时保守 light）。
+      node = elt; guard = 0;
+      while (node && node.nodeType === 1 && guard++ < 256) {
+        var csRaw = _zwPlainDecl(node, prop);
+        if (!csRaw && qvMode) {
+          try { csRaw = _zwPlainAuthorDecl(node, prop); } catch (_eCSAu) { csRaw = ''; }
+        }
+        if (csRaw) {
+          var csS = String(csRaw).replace(/\/\*[\s\S]*?\*\//g, ' ').trim();
+          if (csS) return csS;
+        }
+        node = node.parentNode;
+      }
+      return '';
     }
     if (prop === 'color' || prop === 'font-family'
         || prop === 'background-color') {
@@ -2198,7 +2347,9 @@
           var cv = '';
           if (!isCC) cv = _zwPlainColorSpec(raw, node);
           if (!cv && typeof globalThis.__zwComputedColor === 'function') {
-            try { cv = globalThis.__zwComputedColor(raw, node); } catch (_eCC) { cv = ''; }
+            // 第三参属性上下文：currentcolor 在 color 属性自身走父链（自引用
+            // =继承），background-color 等先试本元素（css-color-4 §5.3）。
+            try { cv = globalThis.__zwComputedColor(raw, node, prop); } catch (_eCC) { cv = ''; }
           }
           if (cv) {
             // background-color：透明声明视作无（transparent 爬升等价形——
@@ -2458,5 +2609,181 @@
       return { value: v == null ? '' : String(v), indeterm: indeterm };
     } catch (_eVQ) {
       return { value: '', indeterm: false };
+    }
+  };
+
+  // ============================================================
+  // editing-compat format state 簇（2026-11-11）：六 inline format 命令
+  //（bold/italic/underline/strikethrough/subscript/superscript）的
+  // queryCommandState/Indeterm 读面（wptfyi-editing DC-2 P1 共享路径）。
+  //
+  // 归因（DC-2 triage：er8/er9 纯 state 失败 632 例与 innerHTML 失败零共现
+  // ——DOM 已对、读出错了）：此前 queryCommandState = 选区起点祖先链
+  // tagName 匹配（part06 R3254-M3 切片 4 近似），与 spec state 语义三处
+  // 差距即主因：① computed style 判定缺失（style span/元素语义族读不出，
+  // u/s 跨样式族方向性误报）；② 判定域错位（spec = 含域 formattable 全量
+  // 命中，非起点单点——跨段落/ce=false 混合选区族）；③ Indeterm 恒 false
+  //（混合选区族）。
+  //
+  // 算法按 spec 移植（https://w3c.github.io/editing/docs/execCommand/）：
+  //   - state（inline command activated values）：含域（effectively
+  //     contained）formattable node 全命中 activated values；无 contained
+  //     → active range start node 读法。
+  //   - Indeterm：四 format 命令 part-not-all；sub/sup = ≥1 target 值且
+  //     ≥1 他值、或任一 "mixed"。
+  //   - effective command value：Text 归父；bold/italic = relevant CSS
+  //     property 解析值（font-weight/font-style，等价词 bold≡700）；
+  //     underline/strikethrough = node 或任一祖先 text-decoration 解析值
+  //     含 underline/line-through（非继承属性，逐元素 own 值）；
+  //     subscript/superscript = inline 祖先链 sub/sup 标签计数
+  //     （both→"mixed"；Gecko 语义定谳，非 vertical-align）。
+  //   - activated values：bold {bold,600,700,800,900}（600 cutoff，Chrome
+  //     口径）；italic {italic,oblique}；underline {underline}；
+  //     strikethrough {line-through}；subscript {subscript}；
+  //     superscript {superscript}。
+  // CSS 解析与值面同构（host gCS 对 plain 元素 miss，probe t16）：host
+  // 优先、miss 落 JS 走查——inline style → UA 元素表（HTML 渲染节 15.3.1：
+  // b,strong bold / i,em,cite,dfn,var,address italic / u,ins underline /
+  // s,strike,del line-through；a[href] 同 a:link underline 臂先例）→ 继承
+  // 走查（font-weight/font-style 继承）。
+  // FIXME: 作者样式表规则臂未接（六语料数据文件零 <style> 块，无消费面）；
+  //   h1-h6/th 加粗 UA 面未建；font 简写（font: bold …）与 bolder/lighter
+  //   相对关键字未解析。
+  // FIXME: state override 写面未接（part01d _zwVaStateOverrides 只清不写）
+  //   ——collapsed exec typing 态由 part06 __zwTypingTags 兜底（读序：本面
+  //   state false 后置检查）。
+  var _zwFmtUaWeight = { b: '700', strong: '700' };
+  var _zwFmtUaStyle = { i: 'italic', em: 'italic', cite: 'italic',
+    dfn: 'italic', 'var': 'italic', address: 'italic' };
+  // text-decoration 逐元素 own 值表（非继承；HTML 渲染节 15.3.1）。
+  function _zwFmtUaDecoration(tagL, hasHref) {
+    if (tagL === 'u' || tagL === 'ins') return 'underline';
+    if (tagL === 's' || tagL === 'strike' || tagL === 'del') return 'line-through';
+    if (tagL === 'a' && hasHref) return 'underline';
+    return '';
+  }
+  // 继承链 resolved prop：host gCS → inline style → UA 元素表 → 父链上行
+  //（font-weight/font-style 继承属性；无源返空，不填初值——state 比较面
+  // 自然 false，同值面无源返空契约）。
+  function _zwFmtResolvedProp(elt, camel, kebab, uaTab) {
+    var node = elt;
+    var guard = 0;
+    while (node && node.nodeType === 1 && guard++ < 256) {
+      var v = '';
+      try { v = _zwJusCs(node, camel); } catch (_eFcs) { v = ''; }
+      if (v) return String(v);
+      var d = '';
+      try { d = _zwPlainDecl(node, kebab) || ''; } catch (_eFpd) { d = ''; }
+      if (!d && uaTab) {
+        var tagL = String(node.tagName || '').toLowerCase();
+        d = uaTab[tagL] || '';
+      }
+      if (d) return String(d);
+      node = node.parentNode;
+    }
+    return '';
+  }
+  // 单元素 text-decoration own 值（host → inline → UA 表；非继承不爬升）。
+  function _zwFmtDecorationOf(el) {
+    var v = '';
+    try { v = _zwJusCs(el, 'textDecoration'); } catch (_eFtd) { v = ''; }
+    if (v) return String(v);
+    var d = '';
+    try { d = _zwPlainDecl(el, 'text-decoration') || ''; } catch (_eFtd2) { d = ''; }
+    if (d) return d;
+    var tagL = String(el.tagName || '').toLowerCase();
+    var href = null;
+    try { href = el.getAttribute && el.getAttribute('href'); } catch (_eFhr) {}
+    return _zwFmtUaDecoration(tagL, href != null);
+  }
+  // effective command value（六命令；返回 string 或 null）。
+  function _zwFmtEffectiveValue(cmd, node) {
+    if (!node) return null;
+    if (node.nodeType !== 1) {
+      var p = node.parentNode;
+      if (!p || p.nodeType !== 1) return null;
+      node = p;
+    }
+    if (cmd === 'subscript' || cmd === 'superscript') {
+      var gS = 0;
+      var subHit = false;
+      var supHit = false;
+      var nS = node;
+      while (nS && _zwJusIsInlineNode(nS) && gS++ < 256) {
+        var tnS = String(nS.tagName || '').toLowerCase();
+        if (tnS === 'sub') subHit = true;
+        else if (tnS === 'sup') supHit = true;
+        nS = nS.parentNode;
+      }
+      if (subHit && supHit) return 'mixed';
+      if (subHit) return 'subscript';
+      if (supHit) return 'superscript';
+      return null;
+    }
+    if (cmd === 'underline' || cmd === 'strikethrough') {
+      var want = cmd === 'underline' ? 'underline' : 'line-through';
+      var gD = 0;
+      var nD = node;
+      while (nD && nD.nodeType === 1 && gD++ < 256) {
+        var dv = _zwFmtDecorationOf(nD);
+        if (dv && String(dv).toLowerCase().indexOf(want) >= 0) return want;
+        nD = nD.parentNode;
+      }
+      return null;
+    }
+    var isBold = cmd === 'bold';
+    var v = _zwFmtResolvedProp(node,
+      isBold ? 'fontWeight' : 'fontStyle',
+      isBold ? 'font-weight' : 'font-style',
+      isBold ? _zwFmtUaWeight : _zwFmtUaStyle);
+    if (!v) return null;
+    return String(v).toLowerCase();
+  }
+  function _zwFmtActivated(cmd, v) {
+    if (v == null) return false;
+    if (cmd === 'bold') {
+      return ['bold', '600', '700', '800', '900']
+        .indexOf(String(v).toLowerCase()) >= 0;
+    }
+    if (cmd === 'italic') return v === 'italic' || v === 'oblique';
+    return v === (cmd === 'underline' ? 'underline'
+      : cmd === 'strikethrough' ? 'line-through'
+      : cmd === 'subscript' ? 'subscript' : 'superscript');
+  }
+  // 查询入口：返 { state, indeterm }（命中六命令）或 null（调用方回落）。
+  // formattable 普查复用值面 _zwValGetAllEffectivelyContained +
+  // _zwValIsFormattableQI（含 extraneous br 的 Chrome delta 口径）。
+  globalThis.__zw_ce_format_query = function (cmd) {
+    var c = String(cmd == null ? '' : cmd).toLowerCase();
+    var six = { bold: 1, italic: 1, underline: 1, strikethrough: 1,
+      subscript: 1, superscript: 1 };
+    if (!six[c]) return null;
+    try {
+      var sel = globalThis.getSelection ? globalThis.getSelection() : null;
+      var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
+      if (!rng) return { state: false, indeterm: false };
+      var isSubSup = c === 'subscript' || c === 'superscript';
+      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattableQI);
+      var hit = 0;
+      var tgt = 0;
+      var mixed = false;
+      var i;
+      for (i = 0; i < nodes.length; i++) {
+        var v = _zwFmtEffectiveValue(c, nodes[i]);
+        if (_zwFmtActivated(c, v)) hit++;
+        if (isSubSup) {
+          if (v === (c === 'subscript' ? 'subscript' : 'superscript')) tgt++;
+          else if (v === 'mixed') mixed = true;
+        }
+      }
+      var state = nodes.length
+        ? hit === nodes.length
+        : _zwFmtActivated(c, _zwFmtEffectiveValue(c, rng.startContainer));
+      var indeterm = isSubSup
+        ? (tgt > 0 && tgt < nodes.length) || mixed
+        : hit > 0 && hit < nodes.length;
+      return { state: state, indeterm: indeterm };
+    } catch (_eFq) {
+      return null;
     }
   };

@@ -420,21 +420,24 @@ fn test_convert_grid_line_name_preserved() {
 /// 测试 convert_grid_line：Span 值。
 #[test]
 fn test_convert_grid_line_span() {
-    let result = convert_grid_line(&GridLineValue::Span(3));
+    let result = convert_grid_line(&GridLineValue::Span {
+        count: Some(3),
+        name: None,
+    });
     assert_eq!(result, taffy::style::GridPlacement::from_span(3));
 }
 
 /// 测试 convert_grid_line：负 Line 值。
 #[test]
 fn test_convert_grid_line_negative_line() {
-    let result = convert_grid_line(&GridLineValue::Line(-2));
+    let result = convert_grid_line(&GridLineValue::Line { line: -2, name: None });
     assert_eq!(result, taffy::style::GridPlacement::from_line_index(-2));
 }
 
 /// 测试 convert_grid_line：零 Line 值。
 #[test]
 fn test_convert_grid_line_zero_line() {
-    let result = convert_grid_line(&GridLineValue::Line(0));
+    let result = convert_grid_line(&GridLineValue::Line { line: 0, name: None });
     assert_eq!(result, taffy::style::GridPlacement::from_line_index(0));
 }
 
@@ -895,19 +898,19 @@ fn test_resolve_named_area_all_which_values() {
     // 测试所有 which 值
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "row-start"),
-        GridLineValue::Line(2)
+        GridLineValue::Line { line: 2, name: None }
     );
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "row-end"),
-        GridLineValue::Line(4)
+        GridLineValue::Line { line: 4, name: None }
     );
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "col-start"),
-        GridLineValue::Line(3)
+        GridLineValue::Line { line: 3, name: None }
     );
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "col-end"),
-        GridLineValue::Line(5)
+        GridLineValue::Line { line: 5, name: None }
     );
 
     // 测试未知 which 值

@@ -145,7 +145,6 @@
 
     var range = _zwVaGetActiveRange();
     if (!range) return true;
-
     // Chrome delta（可编辑链守卫）：起点叶子到编辑宿主链上遇不可编辑元素 →
     // 拦（不应用，零树变更）但 **返 true**——该形 Chrome ret 录音 [true]（语料
     // 条目 362 `{ <span cE=false>A/B/C }` 真意 wrap 不可编辑节点、本引擎不
@@ -156,7 +155,7 @@
     // 守卫拒（ret=false 对齐 Chrome）。`<div><div contenteditable=false><div
     // contenteditable>[foo]` 形链内层 div 可编辑不拦照 wrap（ret=true）。
     // display:block span 岛形（条目 360）链全程可编辑不拦。
-    var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset);
+    var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset, false);
     if (!sl) return false;
     var cur = sl;
     var fbqHost = null;
@@ -457,42 +456,86 @@
   // https://w3c.github.io/editing/execCommand.html#the-formatblock-command
   var _zwFbqValueBlockNames = _zwFbqFormattableNames.concat(['dl']);
 
-  // 端点 → 可见叶子（元素锚归一）：offset 0 取树序首个可见无子后代；否则取末
-  // 个。文本锚直接用。（Chromium VisiblePosition 归一：元素边界位置折叠进内侧
-  // 叶子端点——`{<p>foo</p>}` brace 全含形 qV-before 录音 "p" 实证终点 (host,1)
-  // 折回 p 内末叶。）
-  function _zwFbqEdgeLeaf(node, offset) {
-    if (node.nodeType === 3) return node;
-    var stack = [node];
-    var found = null;
-    var forward = offset === 0;
-    while (stack.length) {
-      var n = stack.pop();
-      if (!n) continue;
-      if (n.nodeType === 3 || !n.childNodes || n.childNodes.length === 0) {
-        if (_zwJusIsVisible(n)) {
-          found = n;
-          if (forward) return n;
+  // 端点 → 可见叶子（元素锚归一）。文本锚直接用。元素锚按边界点折叠语义取
+  // 行走域（2026-11-10 table partial-span qV 刀）：START 端 0<o<len 向前折
+  // child[o] 子树首可见叶（行走域 [o,len)——`<tr data-start=1>` 起端折入
+  // td2 内新块首叶，formatblock.js :83/:88/:418/:423 qV-after 录音
+  // "div"/"p"）；END 端 0<o<len 向后折 child[o-1] 子树末可见叶（行走域
+  // [0,o) 逆序早返——终点 (tr,2) 折回 td2 内新块与起端同块）；折叠域内无
+  // 可见叶时回落全域旧走法（`{<p><p> <p>foo</p>}` apply 后新块含
+  // [" ","foo"] 两文本节点、终点 (div,1) 折域 [0,1) 仅空白不可见，不回落
+  // 会返 null 使 qV-after 丢 "div"——语料 4 条目实证）；其余形行走全域
+  // 且恒读树序首可见叶（旧侧行为全保：`{<p>foo</p>}` 终点 (host,1) 全域
+  // 读首叶爬回 p 录音 "p"、o=0 首叶锚全保——逆序不早返时 found 依次覆
+  // 盖，终值仍为域内树序首叶）。
+  function _zwFbqEdgeLeaf(node, offset, isEnd) {
+    // 单域行走：[lo,hi) 前向早返 / 逆序按 earlyBack 早返（全域逆序不早返
+    // 时 found 依次覆盖，终值=域内树序首可见叶，旧走法原样）。
+    function walk(lo, hi, forward, earlyBack) {
+      var stack = [];
+      var found = null;
+      var i;
+      if (len) {
+        if (forward) {
+          for (i = hi - 1; i >= lo; i--) stack.push(kids[i]);
+        } else {
+          for (i = lo; i < hi; i++) stack.push(kids[i]);
         }
       } else {
-        var kids = n.childNodes;
-        var i;
-        if (forward) {
-          for (i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+        stack.push(node);
+      }
+      while (stack.length) {
+        var n = stack.pop();
+        if (!n) continue;
+        if (n.nodeType === 3 || !n.childNodes || n.childNodes.length === 0) {
+          if (_zwJusIsVisible(n)) {
+            found = n;
+            if (forward || earlyBack) return n;
+          }
         } else {
-          for (i = 0; i < kids.length; i++) stack.push(kids[i]);
+          var nk = n.childNodes;
+          if (forward) {
+            for (i = nk.length - 1; i >= 0; i--) stack.push(nk[i]);
+          } else {
+            for (i = 0; i < nk.length; i++) stack.push(nk[i]);
+          }
         }
       }
+      return found;
     }
-    return found;
+    if (node.nodeType === 3) return node;
+    var kids = node.childNodes;
+    var len = kids ? kids.length : 0;
+    var interior = offset > 0 && offset < len;
+    // 折叠域分派：内区锚（0<o<len）按端侧折入邻子树（END 折域需早返取末
+    // 叶）；边界锚保持全域旧走法（o=0 前向早返 / 其余逆序不早返）。
+    var lo = 0;
+    var hi = len;
+    var forward = offset === 0;
+    var earlyBack = false;
+    if (interior) {
+      if (isEnd) {
+        hi = offset;
+        forward = false;
+        earlyBack = true;
+      } else {
+        lo = offset;
+        forward = true;
+      }
+    }
+    var leaf = walk(lo, hi, forward, earlyBack);
+    if (leaf === null && interior) {
+      leaf = walk(0, len, false, false);
+    }
+    return leaf;
   }
 
   // 端点叶子 → FB 块：命中 _zwFbqValueBlockNames 且可编辑 → 返元素；爬至
   // editing host 或断链 → null。无 prohibited-paragraph veto：`<div><ol><li>
   // [foo]</ol></div>` qV-before 录音 "div"（:1784，div 含 li 仍返名），veto
   // 会使该形误返 ""。
-  function _zwFbqVisBlock(node, offset) {
-    var leaf = _zwFbqEdgeLeaf(node, offset);
+  function _zwFbqVisBlock(node, offset, isEnd) {
+    var leaf = _zwFbqEdgeLeaf(node, offset, isEnd);
     if (!leaf) return null;
     var cur = leaf;
     var g = 0;
@@ -564,9 +607,9 @@
   globalThis.__zw_ce_fb_value = function () {
     var range = _zwVaGetActiveRange();
     if (!range) return '';
-    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
+    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset, false);
     if (!b1) return '';
-    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
+    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset, true);
     if (!b2) return '';
     if (b1 === b2) return _zwJusTag(b1);
     // Chrome delta（范围多块面，2026-11-10 fb 读面刀）：同型多块按 tag 相等读
@@ -591,12 +634,13 @@
   // 公共祖先等）；同型多块（含 `<p>[foo<p>bar]<p>baz` 尾块形 :708 录音 false）、
   // 单块、异型爬达共同祖先形（`<dl><dt>[foo<dd>bar]</dl>` fbVals=div 条目
   // qI 录音 false）→ false。同形 fbVals=p 条目 qI 录音 true 与 fbVals=div
-  // false 互斥＝录音会话顺序泄漏签名，残留 2 行维持红挂账。
+  // false 互斥＝录音会话顺序泄漏签名，残留 2 行维持红挂账。端点折叠语义随
+  // table partial-span qV 刀同步贯通（起点向前折/终点向后折，qV 同口径）。
   globalThis.__zw_ce_fb_indeterm = function () {
     var range = _zwVaGetActiveRange();
     if (!range) return false;
-    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
-    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
+    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset, false);
+    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset, true);
     if (!b1 || !b2) return !!(b1 || b2);
     if (_zwJusTag(b1) === _zwJusTag(b2)) return false;
     return !_zwFbqCommonVisBlock(b1, b2);
@@ -694,6 +738,224 @@
         sublist.push(nodeList.shift());
       }
       _zwFbqIndentNodes(sublist);
+    }
+    return true;
+  };
+
+  // —— outdent 刀（2026-11-11）：outdent 语料 census v1 全 171 compare 行红，
+  // got == 输入树（命令整体 no-op）——根因 = outdent 无实应用臂（part06 旧注
+  // 「零变更无重锚不需要」）。刀体 = vendored outdentNode（:5520-5692）+
+  // outdent action（:8209-8311）忠实移植，依赖 helper 全已存在（indentNodes/
+  // splitParent/fixDisallowedAncestors/normalizeSublists/indentation 元素判据/
+  // removePreservingDescendants/setTagName/recordValues/restoreValues）。
+  // spec：https://w3c.github.io/editing/execCommand.html#outdent。
+  // spec styleWithCSS 对 outdent 无分支（语料 swcss=true 行期望与 plain 同形，
+  // 均为 unwrap/换壳面）。
+  function _zwFbqHasEditableDescendant(node) {
+    var stack = Array.prototype.slice.call(node.childNodes || []);
+    var g = 0;
+    while (stack.length && g++ < 4096) {
+      var c = stack.pop();
+      if (_zwJusIsEditable(c)) return true;
+      var kids = c.childNodes;
+      for (var i = 0; kids && i < kids.length; i++) stack.push(kids[i]);
+    }
+    return false;
+  }
+
+  // outdentNode（vendored implementation.js :5520-5692 忠实移植）。
+  function _zwFbqOutdentNode(node) {
+    // "If node is not editable, abort these steps."
+    if (!_zwJusIsEditable(node)) return;
+    // "If node is a simple indentation element, remove node, preserving its
+    // descendants. Then abort these steps."
+    if (_zwListIsSimpleIndentationElement(node)) {
+      _zwJusRemovePreservingDescendants(node);
+      return;
+    }
+    // "If node is an indentation element:"
+    if (_zwListIsIndentationElement(node)) {
+      // "Unset the dir attribute of node, if any."
+      node.removeAttribute('dir');
+      // "Unset the margin, padding, and border CSS properties of node."
+      node.style.margin = '';
+      node.style.padding = '';
+      node.style.border = '';
+      if (node.getAttribute('style') == ''
+      || node.getAttribute('style') == 'border-width: initial; border-color: initial; ') {
+        node.removeAttribute('style');
+      }
+      // "Set the tag name of node to "div"."
+      _zwJusSetTagName(node, 'div');
+      // "Abort these steps."
+      return;
+    }
+    // "Let current ancestor be node's parent."
+    var currentAncestor = node.parentNode;
+    // "Let ancestor list be a list of nodes, initially empty."
+    var ancestorList = [];
+    // "While current ancestor is an editable Element that is neither a simple
+    // indentation element nor an ol nor a ul, append current ancestor to
+    // ancestor list and then set current ancestor to its parent."
+    while (_zwJusIsEditable(currentAncestor)
+    && currentAncestor.nodeType == 1
+    && !_zwListIsSimpleIndentationElement(currentAncestor)
+    && !_zwJusIsHtmlElement(currentAncestor, ['ol', 'ul'])) {
+      ancestorList.push(currentAncestor);
+      currentAncestor = currentAncestor.parentNode;
+    }
+    // "If current ancestor is not an editable simple indentation element:"
+    if (!_zwJusIsEditable(currentAncestor)
+    || !_zwListIsSimpleIndentationElement(currentAncestor)) {
+      // "Let current ancestor be node's parent."
+      currentAncestor = node.parentNode;
+      // "Let ancestor list be the empty list."
+      ancestorList = [];
+      // "While current ancestor is an editable Element that is neither an
+      // indentation element nor an ol nor a ul, append current ancestor to
+      // ancestor list and then set current ancestor to its parent."
+      while (_zwJusIsEditable(currentAncestor)
+      && currentAncestor.nodeType == 1
+      && !_zwListIsIndentationElement(currentAncestor)
+      && !_zwJusIsHtmlElement(currentAncestor, ['ol', 'ul'])) {
+        ancestorList.push(currentAncestor);
+        currentAncestor = currentAncestor.parentNode;
+      }
+    }
+    // "If node is an ol or ul and current ancestor is not an editable
+    // indentation element:"
+    if (_zwJusIsHtmlElement(node, ['ol', 'ul'])
+    && (!_zwJusIsEditable(currentAncestor)
+    || !_zwListIsIndentationElement(currentAncestor))) {
+      // "Unset the reversed, start, and type attributes of node."
+      node.removeAttribute('reversed');
+      node.removeAttribute('start');
+      node.removeAttribute('type');
+      // "Let children be the children of node."
+      var children = Array.prototype.slice.call(node.childNodes);
+      // "If node has attributes, and its parent is not an ol or ul, set the
+      // tag name of node to "div"."
+      if (node.attributes.length
+      && !_zwJusIsHtmlElement(node.parentNode, ['ol', 'ul'])) {
+        _zwJusSetTagName(node, 'div');
+      } else {
+        // "Record the values of node's children, remove node preserving its
+        // descendants, restore the values."
+        var values = _zwDelRecordValues(Array.prototype.slice.call(node.childNodes));
+        _zwJusRemovePreservingDescendants(node);
+        _zwDelRestoreValues(values);
+      }
+      // "Fix disallowed ancestors of each member of children."
+      for (var ci = 0; ci < children.length; ci++) {
+        _zwListFixDisallowedAncestors(children[ci]);
+      }
+      // "Abort these steps."
+      return;
+    }
+    // "If current ancestor is not an editable indentation element, abort."
+    if (!_zwJusIsEditable(currentAncestor)
+    || !_zwListIsIndentationElement(currentAncestor)) {
+      return;
+    }
+    // "Append current ancestor to ancestor list."
+    ancestorList.push(currentAncestor);
+    // "Let original ancestor be current ancestor."
+    var originalAncestor = currentAncestor;
+    // "While ancestor list is not empty:"
+    while (ancestorList.length) {
+      // "Let current ancestor be the last member of ancestor list, and remove
+      // the last member."
+      currentAncestor = ancestorList.pop();
+      // "Let target be the child of current ancestor that is equal to either
+      // node or the last member of ancestor list."
+      var target = node.parentNode == currentAncestor
+        ? node
+        : ancestorList[ancestorList.length - 1];
+      // "If target is an inline node that is not a br, and its nextSibling is
+      // a br, remove target's nextSibling from its parent."
+      if (_zwJusIsInlineNode(target)
+      && !_zwJusIsHtmlElement(target, 'br')
+      && _zwJusIsHtmlElement(target.nextSibling, 'br')) {
+        target.parentNode.removeChild(target.nextSibling);
+      }
+      // "Let preceding siblings be the preceding siblings of target, and let
+      // following siblings be the following siblings of target."
+      var tIdx = _zwJusNodeIndex(target);
+      var kids = currentAncestor.childNodes;
+      var precedingSiblings = Array.prototype.slice.call(kids, 0, tIdx);
+      var followingSiblings = Array.prototype.slice.call(kids, 1 + tIdx);
+      // "Indent preceding siblings."
+      _zwFbqIndentNodes(precedingSiblings);
+      // "Indent following siblings."
+      _zwFbqIndentNodes(followingSiblings);
+    }
+    // "Outdent original ancestor."
+    _zwFbqOutdentNode(originalAncestor);
+  }
+
+  // outdent action（vendored implementation.js :8209-8311 忠实移植）。
+  globalThis.__zw_ce_outdent_apply = function () {
+    var range = _zwVaGetActiveRange();
+    if (!range) return true;
+    // "Let items be a list of all lis that are ancestor containers of the
+    // range's start and/or end node."（树序；vendored 端臂停 cca、start 臂
+    // 爬至根——两臂守卫不对称是 vendored 原样，非移植笔误。）
+    var cca = _zwFbqCommonAncestor(range.startContainer, range.endContainer);
+    var items = [];
+    var n = range.endContainer;
+    while (n && n !== cca) {
+      if (_zwJusIsHtmlElement(n, 'li')) items.unshift(n);
+      n = n.parentNode;
+    }
+    n = range.startContainer;
+    while (n) {
+      if (_zwJusIsHtmlElement(n, 'li')) items.unshift(n);
+      n = n.parentNode;
+    }
+    // "For each item in items, normalize sublists of item."
+    var i;
+    for (i = 0; i < items.length; i++) {
+      _zwListNormalizeSublists(items[i]);
+    }
+    // "Block-extend the active range, and let new range be the result."
+    var newRange = _zwJusBlockExtend(range, false);
+    // "Let node list be the contained nodes whose last member is not an
+    // ancestor; node is editable; and node has no editable descendants, or is
+    // an ol or ul, or is an li whose parent is an ol or ul."
+    var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
+      return _zwJusIsEditable(node)
+        && (!_zwFbqHasEditableDescendant(node)
+        || _zwJusIsHtmlElement(node, ['ol', 'ul'])
+        || (_zwJusIsHtmlElement(node, 'li')
+            && _zwJusIsHtmlElement(node.parentNode, ['ol', 'ul'])));
+    });
+    // "While node list is not empty: ..."
+    while (nodeList.length) {
+      // "While the first member of node list is an ol or ul or is not the
+      // child of an ol or ul, outdent it and remove it from node list."
+      while (nodeList.length
+      && (_zwJusIsHtmlElement(nodeList[0], ['ol', 'ul'])
+      || !_zwJusIsHtmlElement(nodeList[0].parentNode, ['ol', 'ul']))) {
+        _zwFbqOutdentNode(nodeList.shift());
+      }
+      // "If node list is empty, break."
+      if (!nodeList.length) break;
+      // "Let sublist be [first], extended over consecutive nextSiblings that
+      // are not ol or ul."
+      var sublist = [nodeList.shift()];
+      while (nodeList.length
+      && nodeList[0] === sublist[sublist.length - 1].nextSibling
+      && !_zwJusIsHtmlElement(nodeList[0], ['ol', 'ul'])) {
+        sublist.push(nodeList.shift());
+      }
+      // "Record the values of sublist; split the parent of sublist with new
+      // parent null; fix disallowed ancestors; restore the values."
+      var values = _zwDelRecordValues(sublist);
+      _zwListSplitParent(sublist);
+      for (var j = 0; j < sublist.length; j++) {
+        _zwListFixDisallowedAncestors(sublist[j]);
+      }
+      _zwDelRestoreValues(values);
     }
     return true;
   };

@@ -59,16 +59,23 @@ fetch_raw() {
 fetch_dir_html() {
   local dir="$1" depth="${2:-0}"
   local local_dir="${WPT_DATA}/${dir}"
-  # 幂等快路径：WPT_REV 固定 → 文件集稳定；已拉过且未 FORCE=1 则跳过 API 列目录
-  # （避免未认证 60 req/h 限流 403 阻断）。注意：仅当目录已含 .html 才跳过——
-  # 用例全在子目录的域（如 web-animations/）每次仍会重列，属预期。
-  if [[ "${FORCE:-0}" != "1" && -d "${local_dir}" ]]; then
-    if compgen -G "${local_dir}/*.html" > /dev/null; then
-      echo "  ${dir}: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）"
-      return 0
-    fi
+  # 幂等快路径：WPT_REV 固定 → 文件集稳定；拉取完成标记在且未 FORCE=1 则跳过
+  # API 列目录（避免未认证 60 req/h 限流 403 阻断）。标记而非「目录已有 .html」
+  # 判幂等——仓库会往语料目录提交回归见证探针（wpt-data/editing/run/zz-probe-*.html
+  # 随库），干净 checkout（CI）上「有 .html 即跳过」被探针骗过、上游语料永不
+  # 拉取（run 42499865933 catch-all-3 实证：editing/run 停在 20 探针案，周跑
+  # JSON 上游 0 命中）。历史已拉目录（无标记）首跑重列一次 API 后补标记，幂等恢复。
+  if [[ "${FORCE:-0}" != "1" && -f "${local_dir}/.goal-fetched-${WPT_REV}" ]]; then
+    echo "  ${dir}: 拉取完成标记（${WPT_REV:0:9}）在，跳过（FORCE=1 可强制重列）"
+    return 0
+  fi
+  # FORCE=1 先摘旧标记：强制重拉中途失败时失败分支不写新标记，留旧标记会让
+  # 下次非 FORCE 跑按「已拉过」跳过、漏掉本次没拉到的文件。
+  if [[ "${FORCE:-0}" == "1" ]]; then
+    rm -f "${local_dir}/.goal-fetched-${WPT_REV}"
   fi
   local listing
+  local FAILED_FETCHES_BEFORE="${FAILED_FETCHES}"
   # ?ref=<pin>：列目录与 raw 拉取同 rev——不加 ref 会列默认分支 HEAD，
   # HEAD 与 pin 漂移时列出 pin 中不存在的文件 → 404。
   # python3 解析拿 type：子目录递归一层（depth<1），防 API 限流不深挖。
@@ -136,6 +143,12 @@ for entry in json.load(sys.stdin):
         ;;
     esac
   done <<< "${listing}"
+  # 本目录全量拉完且无失败才写完成标记（有失败不写——下次重跑续拉；
+  # 子目录失败计入同一计数器，父目录一并保守不写）。
+  if [[ "${FAILED_FETCHES}" -eq "${FAILED_FETCHES_BEFORE:-${FAILED_FETCHES}}" ]]; then
+    mkdir -p "${local_dir}"
+    : > "${local_dir}/.goal-fetched-${WPT_REV}"
+  fi
 }
 
 FAILED_FETCHES=0
@@ -149,15 +162,19 @@ FAILED_FETCHES=0
 fetch_dir_deep() {
   local dir="$1"
   local local_dir="${WPT_DATA}/${dir}"
-  # 幂等快路径：目录已含 .any.js/.html 用例即视为已拉过（FORCE=1 重拉）。
-  if [[ "${FORCE:-0}" != "1" && -d "${local_dir}" ]]; then
-    if compgen -G "${local_dir}/*.any.js" > /dev/null || compgen -G "${local_dir}/*.html" > /dev/null; then
-      echo "  ${dir}: 已含用例，跳过深挖（FORCE=1 可强制重拉）"
-      return 0
-    fi
+  # 幂等快路径：拉取完成标记在即视为已拉过（FORCE=1 重拉）——标记语义同
+  # fetch_dir_html（探针陷阱 run 42499865933 实证，见该函数头注释）。
+  if [[ "${FORCE:-0}" != "1" && -f "${local_dir}/.goal-fetched-${WPT_REV}" ]]; then
+    echo "  ${dir}: 拉取完成标记（${WPT_REV:0:9}）在，跳过深挖（FORCE=1 可强制重拉）"
+    return 0
+  fi
+  # FORCE=1 先摘旧标记（语义同 fetch_dir_html——防强制重拉失败残留旧标记）。
+  if [[ "${FORCE:-0}" == "1" ]]; then
+    rm -f "${local_dir}/.goal-fetched-${WPT_REV}"
   fi
   # 首段 SHA 从根树（commit sha 可直接作 tree-ish）拿；多段目录逐层下钻。
   local tree_sha segments seg query_sha
+  local FAILED_FETCHES_BEFORE="${FAILED_FETCHES}"
   IFS='/' read -r -a segments <<< "${dir}"
   query_sha="${WPT_REV}"
   tree_sha=""
@@ -246,6 +263,11 @@ for entry in d["tree"]:
         ;;
     esac
   done <<< "${listing}"
+  # 完成标记写入语义同 fetch_dir_html（无失败才写；失败续拉重跑补写）。
+  if [[ "${FAILED_FETCHES}" -eq "${FAILED_FETCHES_BEFORE}" ]]; then
+    mkdir -p "${local_dir}"
+    : > "${local_dir}/.goal-fetched-${WPT_REV}"
+  fi
 }
 
 goals_fetch_all() {

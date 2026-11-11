@@ -763,6 +763,11 @@ pub(crate) fn build_layout_tree_with_r109(
     let root = doc.root();
     let first_element = find_first_element(doc, root);
 
+    // R5498 根帧转置：根元素 vertical 时其 CB（ICB）书写模式随根传播为 vertical
+    //（css-writing-modes-3 §7.1）——根节点亦交换进 taffy，与 body 及以下同帧
+    //（R5497 缺陷 4：混合帧对使 body 行内 fill 消费 ICB 物理宽而非行内轴）。
+    let root_cb_wm = root_cb_writing_mode(doc, styles);
+
     let root_taffy_id = build_subtree(
         &mut ctx,
         doc,
@@ -770,7 +775,7 @@ pub(crate) fn build_layout_tree_with_r109(
         first_element,
         None,
         false,
-        WritingModeValue::HorizontalTb,
+        root_cb_wm,
         viewport_width,
         viewport_height,
     );
@@ -862,6 +867,28 @@ fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
     }
 
     node
+}
+
+/// R5498（css-writing-modes-3 §7.1 根元素书写模式传播）：根元素的有效 CB（ICB）
+/// 书写模式——根元素书写模式为 vertical 时传播至视口/ICB，根的包含块同为
+/// vertical 帧。此前根节点按父=视口 htb 不交换进 taffy（轴交换 gate=父书写模式），
+/// html→body 形成混合帧对：taffy 把根 auto 物理宽拉伸到 ICB 宽，body（交换帧）
+/// auto 行内消费该物理宽而非 ICB 行内轴（物理高）——viv 根链行内 fill 全走错轴
+///（R5497 缺陷 4 定谳：探针 V1 body=784=800−16 随 ICB 宽、V3 随视口宽不随高；
+/// chromium fresh oracle vrl-007 全链 fill ICB 高链）。返回根自身 wm（根节点随
+/// 之交换进 taffy，available space 由消费方转置）；根 horizontal 或开关关闭时
+/// 返回 HorizontalTb（旧行为零变化）。
+/// kill-switch `ZW_ROOT_FRAME_TRANSPOSE=0`（冷路径单读，构建/计算每 pass 一次）。
+pub(crate) fn root_cb_writing_mode(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> WritingModeValue {
+    if std::env::var("ZW_ROOT_FRAME_TRANSPOSE").as_deref() == Ok("0") {
+        return WritingModeValue::HorizontalTb;
+    }
+    let root = find_first_element(doc, doc.root());
+    styles
+        .get(&root)
+        .map(|s| s.writing_mode.clone())
+        .filter(|wm| wm.is_vertical_block_flow())
+        .unwrap_or(WritingModeValue::HorizontalTb)
 }
 
 /// 递归构建 DOM 子树对应的 taffy 子树。
@@ -3089,7 +3116,9 @@ fn grid_track_adjacency_explicit(
         styles
             .get(&items[i])
             .and_then(|st| match st.grid_column_start {
-                zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => Some((n as usize) - 1),
+                zero_style_system::property::types::GridLineValue::Line { line: n, .. } if n >= 1 => {
+                    Some((n as usize) - 1)
+                }
                 _ => None,
             })
             .unwrap_or(i % cols)
@@ -3098,7 +3127,9 @@ fn grid_track_adjacency_explicit(
         styles
             .get(&items[i])
             .and_then(|st| match st.grid_row_start {
-                zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => Some((n as usize) - 1),
+                zero_style_system::property::types::GridLineValue::Line { line: n, .. } if n >= 1 => {
+                    Some((n as usize) - 1)
+                }
                 _ => None,
             })
             .unwrap_or(i / cols)
@@ -3693,7 +3724,7 @@ fn build_subtree(
                 if col_autofit || row_autofit {
                     let explicit_line = |v: &zero_style_system::property::types::GridLineValue| -> Option<usize> {
                         match v {
-                            zero_style_system::property::types::GridLineValue::Line(n) if *n >= 1 => {
+                            zero_style_system::property::types::GridLineValue::Line { line: n, .. } if *n >= 1 => {
                                 Some((*n as usize) - 1)
                             }
                             _ => None,

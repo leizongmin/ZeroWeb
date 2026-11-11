@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_at": "2026-11-10T17:04:32+00:00",
+  "generated_at": "2026-11-10T17:44:15+00:00",
   "runs": [
    {
     "browser": "chrome",
@@ -31,22 +31,22 @@
   "compare_runs": [
    {
     "browser": "ladybird",
-    "version": "1.0-93fb09ccfd4",
+    "version": "1.0-6a488f6931f",
     "revision": "de15fbf9d7",
-    "created_at": "2026-11-10T16:49:26.886881Z"
+    "created_at": "2026-11-10T17:27:12.093182Z"
    }
   ],
   "denominator": "三家 summary 并集路径；子测试分母=三家 c[1] 最大值，ZeroWeb 跑过的文件取 max(浏览器, ZW 实际子测试数)"
  },
  "totals": {
   "den_files": 126750,
-  "covered_files": 70852,
-  "uncovered_files": 55898,
-  "zw_full_pass_files": 60999,
+  "covered_files": 71027,
+  "uncovered_files": 55723,
+  "zw_full_pass_files": 61156,
   "den_subtests": 2269627,
-  "zw_passes": 1691243,
-  "pass_rate": 0.7452,
-  "coverage_file_rate": 0.559
+  "zw_passes": 1691939,
+  "pass_rate": 0.7455,
+  "coverage_file_rate": 0.5604
  },
  "browsers": {
   "chrome": {
@@ -71,10 +71,10 @@
    "pass_rate": 0.9413
   },
   "ladybird": {
-   "full_pass_files": 113901,
+   "full_pass_files": 113898,
    "den_files": 126208,
-   "subtest_passes": 2167569,
-   "den_subtests": 2245255,
+   "subtest_passes": 2167507,
+   "den_subtests": 2245213,
    "pass_rate": 0.9654
   }
  },
@@ -2455,6 +2455,54 @@
    "zw_passes": 1251,
    "zw_env_fails": 0
   },
+  "workers": {
+   "den_files": 141,
+   "covered_files": 84,
+   "full_pass_files": 75,
+   "den_subtests": 449,
+   "zw_passes": 192,
+   "zw_env_fails": 0
+  },
+  "workers/baseurl": {
+   "den_files": 7,
+   "covered_files": 3,
+   "full_pass_files": 0,
+   "den_subtests": 7,
+   "zw_passes": 0,
+   "zw_env_fails": 0
+  },
+  "workers/constructors": {
+   "den_files": 35,
+   "covered_files": 13,
+   "full_pass_files": 12,
+   "den_subtests": 146,
+   "zw_passes": 106,
+   "zw_env_fails": 0
+  },
+  "workers/examples": {
+   "den_files": 6,
+   "covered_files": 2,
+   "full_pass_files": 2,
+   "den_subtests": 10,
+   "zw_passes": 4,
+   "zw_env_fails": 0
+  },
+  "workers/interfaces": {
+   "den_files": 80,
+   "covered_files": 63,
+   "full_pass_files": 61,
+   "den_subtests": 214,
+   "zw_passes": 144,
+   "zw_env_fails": 0
+  },
+  "workers/semantics": {
+   "den_files": 35,
+   "covered_files": 10,
+   "full_pass_files": 7,
+   "den_subtests": 521,
+   "zw_passes": 250,
+   "zw_env_fails": 0
+  },
   "audio-session": {
    "den_files": 3,
    "covered_files": 0,
@@ -2719,22 +2767,6 @@
    "zw_passes": 0,
    "zw_env_fails": 0
   },
-  "workers/examples": {
-   "den_files": 6,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 10,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "workers/interfaces": {
-   "den_files": 80,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 214,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
   "workers/modules": {
    "den_files": 27,
    "covered_files": 0,
@@ -2988,14 +3020,6 @@
    "covered_files": 0,
    "full_pass_files": 0,
    "den_subtests": 1,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "workers/semantics": {
-   "den_files": 35,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 521,
    "zw_passes": 0,
    "zw_env_fails": 0
   },
@@ -4543,14 +4567,6 @@
    "zw_passes": 0,
    "zw_env_fails": 0
   },
-  "workers/constructors": {
-   "den_files": 35,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 146,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
   "accessibility": {
    "den_files": 1,
    "covered_files": 0,
@@ -4788,14 +4804,6 @@
    "covered_files": 0,
    "full_pass_files": 0,
    "den_subtests": 115,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "workers": {
-   "den_files": 141,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 449,
    "zw_passes": 0,
    "zw_env_fails": 0
   },
@@ -5828,14 +5836,6 @@
    "covered_files": 0,
    "full_pass_files": 0,
    "den_subtests": 33,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "workers/baseurl": {
-   "den_files": 7,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 7,
    "zw_passes": 0,
    "zw_env_fails": 0
   },

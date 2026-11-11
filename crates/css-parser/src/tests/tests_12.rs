@@ -362,7 +362,7 @@ fn test_r2315_gradient_single_position_byte_identical() {
 
 #[test]
 fn test_text_shadow_hex_color() {
-    let s = parse_text_shadow("2px 3px #ff0000").unwrap();
+    let s = parse_text_shadow("2px 3px #ff0000", false).unwrap();
     if let ColorValue::Rgba(r, g, b, _) = s.color {
         assert_eq!(r, 255);
         assert_eq!(g, 0);
@@ -372,7 +372,7 @@ fn test_text_shadow_hex_color() {
 
 #[test]
 fn test_box_shadow_hex_color_with_spread() {
-    let s = parse_box_shadow("2px 3px 4px 5px #00ff00").unwrap();
+    let s = parse_box_shadow("2px 3px 4px 5px #00ff00", false).unwrap();
     if let ColorValue::Rgba(_, g, _, _) = s.color {
         assert_eq!(g, 255);
     }
@@ -380,7 +380,7 @@ fn test_box_shadow_hex_color_with_spread() {
 
 #[test]
 fn test_box_shadow_inset_hex() {
-    let s = parse_box_shadow("inset 1px 1px 2px rgba(0,0,0,0.5)").unwrap();
+    let s = parse_box_shadow("inset 1px 1px 2px rgba(0,0,0,0.5)", false).unwrap();
     assert!(s.inset);
 }
 
@@ -393,7 +393,7 @@ fn test_box_shadow_inset_hex() {
 #[test]
 fn test_box_shadow_rgba_with_spaces_keeps_alpha() {
     // 带空格的标准格式——修复前 alpha 错为 255（实心黑）
-    let s = parse_box_shadow("0 1px 3px rgba(0, 0, 0, 0.08)").unwrap();
+    let s = parse_box_shadow("0 1px 3px rgba(0, 0, 0, 0.08)", false).unwrap();
     match s.color {
         ColorValue::Rgba(r, g, b, a) => {
             assert_eq!([r, g, b], [0, 0, 0]);
@@ -402,7 +402,7 @@ fn test_box_shadow_rgba_with_spaces_keeps_alpha() {
         other => panic!("expected Rgba, got {:?}", other),
     }
     // 无空格格式仍正确
-    let s2 = parse_box_shadow("0 1px 3px rgba(0,0,0,0.08)").unwrap();
+    let s2 = parse_box_shadow("0 1px 3px rgba(0,0,0,0.08)", false).unwrap();
     if let ColorValue::Rgba(_, _, _, a) = s2.color {
         assert_eq!(a, 20);
     }
@@ -427,7 +427,7 @@ fn test_box_shadow_rgba_with_spaces_keeps_alpha() {
 #[test]
 fn test_text_shadow_color_first_keyword() {
     // `red 2px 2px` —— 颜色在前（CSS && 合法）。改前 None（丢）。
-    let s = parse_text_shadow("red 2px 2px").expect("color-first text-shadow 应解析");
+    let s = parse_text_shadow("red 2px 2px", false).expect("color-first text-shadow 应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(2.0));
     assert_eq!(s.offset_y, LengthValue::Px(2.0));
@@ -437,7 +437,7 @@ fn test_text_shadow_color_first_keyword() {
 #[test]
 fn test_text_shadow_color_first_hex_with_blur() {
     // `#0f0 1px 2px 3px` —— driving css-pseudo/marker-text-shadow（颜色在前 + 模糊）。
-    let s = parse_text_shadow("#0f0 1px 2px 3px").expect("color-first hex 应解析");
+    let s = parse_text_shadow("#0f0 1px 2px 3px", false).expect("color-first hex 应解析");
     assert!(matches!(s.color, ColorValue::Rgba(0, 255, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(1.0));
     assert_eq!(s.offset_y, LengthValue::Px(2.0));
@@ -447,7 +447,7 @@ fn test_text_shadow_color_first_hex_with_blur() {
 #[test]
 fn test_text_shadow_color_middle() {
     // `2px red 2px` —— 颜色在中。改前 None（parts[1]=red parse_length 失败）。
-    let s = parse_text_shadow("2px red 2px").expect("color-middle text-shadow 应解析");
+    let s = parse_text_shadow("2px red 2px", false).expect("color-middle text-shadow 应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(2.0));
     assert_eq!(s.offset_y, LengthValue::Px(2.0));
@@ -458,7 +458,7 @@ fn test_text_shadow_color_middle() {
 fn test_text_shadow_blur_after_color_not_dropped() {
     // `2px 2px red 4px` —— 改前 red 占 parts[2] 被当 color，4px 静默丢（blur=0）。
     // 正确：长度序列 = 2px 2px 4px → ox=2 oy=2 blur=4；color=red。
-    let s = parse_text_shadow("2px 2px red 4px").expect("应解析");
+    let s = parse_text_shadow("2px 2px red 4px", false).expect("应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.blur_radius, LengthValue::Px(4.0), "4px 不得被丢，应为 blur");
 }
@@ -466,7 +466,7 @@ fn test_text_shadow_blur_after_color_not_dropped() {
 #[test]
 fn test_box_shadow_color_first() {
     // `rgba(0,255,0,1) 10px 10px` —— driving css-backgrounds/box-shadow-005。
-    let s = parse_box_shadow("rgba(0,255,0,1) 10px 10px").expect("color-first box-shadow 应解析");
+    let s = parse_box_shadow("rgba(0,255,0,1) 10px 10px", false).expect("color-first box-shadow 应解析");
     assert!(matches!(s.color, ColorValue::Rgba(0, 255, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(10.0));
     assert_eq!(s.offset_y, LengthValue::Px(10.0));
@@ -477,7 +477,7 @@ fn test_box_shadow_color_first() {
 fn test_box_shadow_color_middle_with_spread() {
     // `10px red 20px 5px 3px` —— 颜色在中 + spread（4 长度）。改前 parts[1]=red → None（丢）。
     // 抽 red 后长度 = [10,20,5,3] → ox=10 oy=20 blur=5 spread=3。
-    let s = parse_box_shadow("10px red 20px 5px 3px").expect("color-middle box-shadow 应解析");
+    let s = parse_box_shadow("10px red 20px 5px 3px", false).expect("color-middle box-shadow 应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(10.0));
     assert_eq!(s.offset_y, LengthValue::Px(20.0));
@@ -488,7 +488,7 @@ fn test_box_shadow_color_middle_with_spread() {
 #[test]
 fn test_box_shadow_color_first_with_inset_anywhere() {
     // 颜色在前 + inset 在末（最常见组合）：`red 10px 10px inset`。
-    let s = parse_box_shadow("red 10px 10px inset").expect("color-first + inset-last 应解析");
+    let s = parse_box_shadow("red 10px 10px inset", false).expect("color-first + inset-last 应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(10.0));
     assert_eq!(s.offset_y, LengthValue::Px(10.0));

@@ -85,10 +85,22 @@ fn test_columns_shorthand_with_width_and_count() {
 fn test_grid_area_shorthand_four_values() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let s = compute_style(&doc, div, &[("grid-area", "1 / 2 / 3 / 4")]);
-    assert_eq!(s.grid_row_start, crate::property::GridLineValue::Line(1));
-    assert_eq!(s.grid_row_end, crate::property::GridLineValue::Line(3));
-    assert_eq!(s.grid_column_start, crate::property::GridLineValue::Line(2));
-    assert_eq!(s.grid_column_end, crate::property::GridLineValue::Line(4));
+    assert_eq!(
+        s.grid_row_start,
+        crate::property::GridLineValue::Line { line: 1, name: None }
+    );
+    assert_eq!(
+        s.grid_row_end,
+        crate::property::GridLineValue::Line { line: 3, name: None }
+    );
+    assert_eq!(
+        s.grid_column_start,
+        crate::property::GridLineValue::Line { line: 2, name: None }
+    );
+    assert_eq!(
+        s.grid_column_end,
+        crate::property::GridLineValue::Line { line: 4, name: None }
+    );
 }
 
 #[test]

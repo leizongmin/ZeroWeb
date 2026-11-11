@@ -401,6 +401,41 @@ impl<'a> Parser<'a> {
     /// prelude 必须是自定义属性名（以 `--` 起始的标识符）；body 是描述符声明块
     /// （`syntax` / `inherits` / `initial-value`），用 `consume_declaration_block` 解析。
     /// 名称非法（非 `--` 起始）或块缺失 → 返回 None（上层做畸形恢复，消费残余 extent）。
+    /// 消耗 @position-try 规则。
+    ///
+    /// 格式：`@position-try --pf { top: 10px; left: anchor(right); }`
+    /// prelude 为 custom ident（`--` 前缀，tokenizer 已解码转义）；块体按声明级
+    /// 解析（css-anchor-position-1 §at-ruledef-position-try：描述符语法校验归
+    /// CSSOM/cascade 面，解析层保留全量声明原文序）。无名/非 `{` 形返回 None
+    /// 由上层丢弃（残余 extent 消耗语义同 @font-face 臂）。
+    pub(super) fn consume_position_try_rule(&mut self) -> Option<PositionTryRule> {
+        self.skip_whitespace();
+        // prelude：块名（custom ident，`--foo` 整体为单个 Ident token）。
+        let name = match self.peek().clone() {
+            Token::Ident(s) if s.starts_with("--") => {
+                self.advance();
+                s
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            // 非 `{`（如 `@position-try --pf;` 语句形式）：返回 None，上层消费残余。
+            return None;
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        Some(PositionTryRule { name, declarations })
+    }
+
     pub(super) fn consume_property_rule(&mut self) -> Option<PropertyRule> {
         self.skip_whitespace();
         // prelude：自定义属性名（`--foo` 整体为单个 Ident token）。

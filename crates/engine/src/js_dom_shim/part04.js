@@ -1711,7 +1711,22 @@
           if (prop === 'getSVGDocument') {
             return function () { return null; };
           }
-          if (_zwIframeTag === 'OBJECT') return null;
+          if (_zwIframeTag === 'OBJECT') {
+            // s398（html-semantics M2 切片 398）：contentWindow 接嵌套浏览上下文面
+            //（spec #dom-object-contentwindow：成功加载 text/html 资源的 object
+            // 表示嵌套 navigable，contentWindow 返回其 window proxy；fetch 失败/
+            // 替换内容/无 data 属性 → null）。
+            // s399（html-semantics M2 切片 399）：contentDocument 同管线扩臂
+            //（spec #dom-object-contentdocument：嵌套文档为同源 → 活 Document，
+            // 跨源/无嵌套 navigable → null）——historical/object-handler 的嵌套
+            // 文档访问面。两成员共用惰性物化（缓存、name 快照、Content-Type 门、
+            // data:/about:blank 特例），fireEvents=false——读不触发 load，事件仅
+            // 从插入钩子（_zwStartConnectedObject）/data IDL setter 链派发。
+            var _objNav = typeof _zwLoadObjectResource === 'function'
+              ? _zwLoadObjectResource(key, sel, handle, false) : null;
+            if (prop === 'contentWindow') return (_objNav && _objNav.win) ? _objNav.win : null;
+            return (_objNav && _objNav.doc) ? _objNav.doc : null;
+          }
         }
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
         // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；
@@ -8450,6 +8465,8 @@
               for (var ci = 0; ci < ceAdded.length; ci++) {
                 _ceApplyConn(ceAdded[ci], cePconn);
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
+                // s399：object 插入步同排（动态插入启动资源取回 + 终态 load/error）。
+                _zwStartConnectedObject(ceAdded[ci], cePconn);
               }
               // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
               //（given-prong——spec details element insertion steps；open toggle 已在
@@ -11171,6 +11188,8 @@
               for (var ci = 0; ci < added.length; ci++) {
                 _ceApplyConn(added[ci], cePconn);
                 _zwStartConnectedIframe(added[ci], cePconn);
+                // s399：object 插入步同排（与 appendChild 循环同款）。
+                _zwStartConnectedObject(added[ci], cePconn);
                 // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
                 // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
                 // mutation → selection 重记录 + 重验；element/picture 门在
@@ -12814,7 +12833,11 @@
                     _pairs.push([_nm, _c.value != null ? _c.value : '']);
                   }
                 } else if (_tg === 'TEXTAREA') {
-                  _pairs.push([_nm, _c.value != null ? _c.value : '']);
+                  // s394：wrap=hard 折行（wrapping transformation，entry 面共享
+                  // _zwTaHardWrap；API value 面不折行，
+                  // https://html.spec.whatwg.org/multipage/form-elements.html#attr-textarea-wrap-hard）。
+                  var _taV = _c.value != null ? _c.value : '';
+                  _pairs.push([_nm, _zwTaHardWrap(_taV, _c)]);
                 } else if (_tg === 'SELECT') {
                   // review M3/m1：entry 取 selectedness 为真**且非 disabled** 的 option；
                   // 全未选中（无 selected 属性）→ spec select 默认选中语义回落首个非
@@ -13444,8 +13467,12 @@
             // View spec：gBCR 返回布局盒；注册表本地几何仅兜底 created/detached 无布局
             // 元素（R34xx 原始受众，_domRectFromId 未命中时）。
             // https://drafts.csswg.org/cssom-view/#dom-element-getboundingclientrect
-            var _zwLayoutR = _domRectFromId(sel || handle);
+            var _zwLayoutR = _domRectFromId(_zwRectIdent(sel, handle));
             if (_zwLayoutR) return _zwLayoutR;
+            // s395：handle-only 同 turn（flush 前）host miss → 本地 definite 盒兜底
+            //（_zwLocalDefiniteRect 注——CSSOM View 强制布局语义的 flush 前近似）。
+            var _zwLoc = _zwLocalDefiniteRect(sel, handle);
+            if (_zwLoc) return _makeDomRect(_zwLoc.x, _zwLoc.y, _zwLoc.w, _zwLoc.h);
             // R34xx：注册的纯文本元素（无布局 rect）→ 本地 0 基几何（测试归一化绝对位置）。
             if (typeof _zwTextElBoundingRect === 'function') {
               var _zwR = _zwTextElBoundingRect(sel, handle);
@@ -13462,7 +13489,12 @@
         // inline 多行收缩为单 rect（无 per-line-box，documented）；handle-only detached 无 layout → []。
         if (prop === 'getClientRects') {
           return function() {
-            var r = _domRectFromId(sel || handle);
+            var r = _domRectFromId(_zwRectIdent(sel, handle));
+            if (!r) {
+              // s395：同 gBCR 的 handle-only 本地 definite 兜底。
+              var _lr = _zwLocalDefiniteRect(sel, handle);
+              if (_lr) r = _makeDomRect(_lr.x, _lr.y, _lr.w, _lr.h);
+            }
             return r ? [r] : [];
           };
         }
@@ -13474,7 +13506,7 @@
         // content-box（缺 border 数据，此处≈offset，近似）；offsetTop/Left 应相对 offsetParent（此处
         // 相对 viewport，顶层元素精确、嵌套近似）——近似对 visibility/sizing 检查足够。
         if (prop === 'offsetWidth' || prop === 'clientWidth') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           // 根元素（html）clientWidth = viewport 宽（CSSOM View spec；shim 布局 rect 根盒
           // 宽即 viewport 宽，此处恒等，显式化以免 rect 未命中时返 0）。
           if (prop === 'clientWidth' && _realTag(sel, handle) === 'HTML') {
@@ -13490,26 +13522,28 @@
           if (prop === 'clientHeight' && _realTag(sel, handle) === 'HTML') {
             return globalThis.innerHeight | 0;
           }
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.h : 0;
         }
         if (prop === 'offsetTop') {
-          var r = _layoutRect(sel, handle);
-          return r ? r.y : 0;
+          // CSSOM View spec 化：相对 offsetParent padding edge，round 最近整数
+          //（_zwOffsetOffset 内含回落 viewport 近似的兼容臂）。
+          var r = _zwLayoutRectTrap(sel, handle);
+          return _zwOffsetOffset(sel, handle, r, 'top');
         }
         if (prop === 'offsetLeft') {
-          var r = _layoutRect(sel, handle);
-          return r ? r.x : 0;
+          var r = _zwLayoutRectTrap(sel, handle);
+          return _zwOffsetOffset(sel, handle, r, 'left');
         }
         // scrollWidth/scrollHeight：滚动内容尺寸。布局 rect 无 overflow 数据（不含滚动展开量），
         // 近似为 client 尺寸（同 offsetWidth/Height 的 border-box 近似）。对「content 是否溢出」
         // 精确判定不足，但对 `el.scrollHeight > 0` 等 sizing 检查足够（消除旧 undefined 返回）。
         if (prop === 'scrollWidth') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.w : 0;
         }
         if (prop === 'scrollHeight') {
-          var r = _layoutRect(sel, handle);
+          var r = _zwLayoutRectTrap(sel, handle);
           return r ? r.h : 0;
         }
         // R3047：scrollTop/scrollLeft 读 `_scrollOffsets[key]`（程序化滚动 round-trip 自洽；默认未滚动 → 0）。
@@ -13531,23 +13565,20 @@
           var _iframeSrc = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
           return _iframeSrc ? _zwResolveFetchUrl(_iframeSrc) : '';
         }
-        // offsetParent：最近 positioned 祖先（position != static）或 body，detached/hidden → null。
-        // 布局 rect 无 style 信息，无法精确算 positioned 祖先；近似：有 rect（已渲染）→ body proxy，
-        // 无 rect（detached/display:none）→ null。dominant 用法 `el.offsetParent === null` 可见性判定
-        // 正确（visible→非 null body / hidden→null）；`offsetTop - offsetParent.offsetTop` 嵌套坐标
-        // 为近似（offsetTop 本就 viewport-relative，见上注）。
+        // offsetParent：spec 算法（CSSOM View §dom-htmlelement-offsetparent）——最近
+        // positioned 祖先或最近 CB 建立者祖先（transform/perspective/filter/contain）
+        // 或最近 td/th/table 祖先，无命中 → body；fixed 自身 CB=viewport → null；
+        // detached/hidden（无 rect）→ null。html/body → null（R4003c 保持——
+        // 「沿 offsetParent 上行」遍历死循环防护仍由 body/html null 与 body 回落终止性
+        //（walk 64 深度守卫）双保险）。walk 与换算细节见 part05 _zwOffsetParentSel。
+        // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
         if (prop === 'offsetParent') {
-          // R4003c（html-semantics M2 切片 15）：html/body 自身 offsetParent → null
-          //（CSSOM View §offsetParent——body/html 无 offset parent，real browser
-          // `document.body.offsetParent === null`）。此前 body 有 rect → 自返 body，
-          // 「沿 offsetParent 上行累积坐标」的页面惯用遍历死循环——inert-label-focus
-          // 语料 clickOn 坐标累积 90s Execution timeout 实证（R4003b focus 前递使
-          // 该脚本首次走到 clickOn 而暴露）。
-          // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
           var _opTag = _realTag(sel, handle);
           if (_opTag === 'BODY' || _opTag === 'HTML') return null;
-          var rp = _layoutRect(sel, handle);
-          return rp ? _wrapSelector('body') : null;
+          var rp = _zwLayoutRectTrap(sel, handle);
+          if (!rp) return null;
+          var _opSel = _zwOffsetParentSel(sel, handle);
+          return _opSel ? _wrapSelector(_opSel) : null;
         }
         // R3036：`element.sheet`——`<style>`/`<link rel=stylesheet>` 元素的 CSSStyleSheet（CSSOM 入口）。
         // CSS-in-JS 库（styled-components/emotion）+ 样式表操作代码经 `.sheet.cssRules`/`insertRule` 读改规则。

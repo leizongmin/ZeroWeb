@@ -8,8 +8,11 @@
 //! 持 LayoutBox，bg 走盒级站，本臂门不触发）。部分行高亮维持挂账；clip:text
 //! 恒色 owner 与元素 bg 同款抑制。
 
+use zero_layout_engine::LayoutEngine;
 use zero_render_foundation::color::Color;
+use zero_style_system::StyleSystem;
 
+use super::super::painter::Painter;
 use crate::pipeline::RenderPipeline;
 
 /// 整contents 选中 orphan inline：green 选区 fill 与 red 元素 bg **逐 run 同矩
@@ -65,20 +68,27 @@ fn sel_fill_rect_matches_element_bg_rect_and_paints_above() {
 /// 透明元素 bg 的 owner 仍铺选区 fill（门扩展臂，非 has_bg 搭载）；逐 run 矩形
 /// 同行不连体（词间隙留空，R5269 行级连体回归锚）。
 /// R5350：本测钉 R5270 站**逐 run**几何——扩张轴（默认开）把站 fill 与元素
-/// bg 同公式整盒化（带域），逐 run 锚钉在轴关态（`ZW_INLINE_CA_EXPAND=0`，
-/// Rust 2024 set_var 为 unsafe；扩张轴几何锚在 crates/engine/tests/
-/// r5350_inline_ca_expand_axis.rs 独立进程——R3858 教训：进程内 set_var 与
-/// 并行单测互踩）。
+/// bg 同公式整盒化（带域），逐 run 锚钉在轴关态。T60：轴关态经
+/// `set_inline_gates_for_test` 构造后注入、直构 Painter 走 layout → paint
+///（进程内 set_var 翻转窗与并行用例构造窗重叠会错读门态，R3858 教训；
+/// ml_gate 传 true 保默认开态；扩张轴几何锚在 crates/engine/tests/
+/// r5350_inline_ca_expand_axis.rs 独立进程）。
 #[test]
 fn transparent_bg_owner_still_gets_selection_fill() {
-    unsafe { std::env::set_var("ZW_INLINE_CA_EXPAND", "0") };
-    let mut pipeline = RenderPipeline::new(800.0, 600.0);
-    pipeline.set_text_selections(vec![("#test".to_string(), 0, 13)]);
-    let result = pipeline.render_html(
-        r#"<body style="margin:0"><p style="margin:0">intro</p><div id="test" style="display:inline; color: fuchsia; font: 50px Ahem">Selected Text</div></body>"#,
-        "div::selection { background-color: rgb(0,128,0); color: aqua }",
-    );
-    let prims = result.primitives();
+    let html = r#"<body style="margin:0"><p style="margin:0">intro</p><div id="test" style="display:inline; color: fuchsia; font: 50px Ahem">Selected Text</div></body>"#;
+    let css = "div::selection { background-color: rgb(0,128,0); color: aqua }";
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let mut painter = Painter::new();
+    painter.set_inline_gates_for_test(false, true);
+    painter.set_text_selections(vec![("#test".to_string(), 0, 13)]);
+    painter.paint(&result.root, &styles, Some(&doc));
+    let prims = painter.into_primitives();
     let mut greens: Vec<_> = prims
         .fills
         .iter()
@@ -102,7 +112,6 @@ fn transparent_bg_owner_still_gets_selection_fill() {
         "逐 run 矩形不连体（词间隙不铺），实际 {:?}",
         greens
     );
-    unsafe { std::env::remove_var("ZW_INLINE_CA_EXPAND") };
 }
 
 /// clip:text 恒色 owner 与元素 bg 同款抑制——站触发（orphan 形）下选区 fill

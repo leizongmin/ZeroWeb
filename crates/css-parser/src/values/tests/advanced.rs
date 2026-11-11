@@ -420,13 +420,13 @@ fn test_parse_accent_color_invalid() {
 
 #[test]
 fn test_parse_caret_color_auto() {
-    assert_eq!(parse_caret_color("auto"), Some(CaretColorValue::Auto));
+    assert_eq!(parse_caret_color("auto", false), Some(CaretColorValue::Auto));
 }
 
 #[test]
 fn test_parse_caret_color_named() {
     assert_eq!(
-        parse_caret_color("green"),
+        parse_caret_color("green", false),
         Some(CaretColorValue::Color(ColorValue::Rgba(0, 128, 0, 255)))
     );
 }
@@ -434,7 +434,7 @@ fn test_parse_caret_color_named() {
 #[test]
 fn test_parse_caret_color_hex() {
     assert_eq!(
-        parse_caret_color("#abcdef"),
+        parse_caret_color("#abcdef", false),
         Some(CaretColorValue::Color(ColorValue::Rgba(0xAB, 0xCD, 0xEF, 255)))
     );
 }
@@ -442,15 +442,15 @@ fn test_parse_caret_color_hex() {
 #[test]
 fn test_parse_caret_color_transparent() {
     assert_eq!(
-        parse_caret_color("transparent"),
+        parse_caret_color("transparent", false),
         Some(CaretColorValue::Color(ColorValue::Transparent))
     );
 }
 
 #[test]
 fn test_parse_caret_color_invalid() {
-    assert_eq!(parse_caret_color("not-a-color"), None);
-    assert_eq!(parse_caret_color(""), None);
+    assert_eq!(parse_caret_color("not-a-color", false), None);
+    assert_eq!(parse_caret_color("", false), None);
 }
 
 // ── caret-color 两值形式（css-ui-4 §5.2.2，R5383）──
@@ -458,7 +458,7 @@ fn test_parse_caret_color_invalid() {
 #[test]
 fn test_parse_caret_color_two_value() {
     assert_eq!(
-        parse_caret_color("black white"),
+        parse_caret_color("black white", false),
         Some(CaretColorValue::TwoValue(
             Box::new(CaretColorValue::Color(ColorValue::Rgba(0, 0, 0, 255))),
             Box::new(CaretColorValue::Color(ColorValue::Rgba(255, 255, 255, 255)))
@@ -470,14 +470,14 @@ fn test_parse_caret_color_two_value() {
 fn test_parse_caret_color_two_value_auto_forms() {
     // 第一值 auto（caret-color: auto white）与第二值 auto（black auto）均合法。
     assert_eq!(
-        parse_caret_color("auto white"),
+        parse_caret_color("auto white", false),
         Some(CaretColorValue::TwoValue(
             Box::new(CaretColorValue::Auto),
             Box::new(CaretColorValue::Color(ColorValue::Rgba(255, 255, 255, 255)))
         ))
     );
     assert_eq!(
-        parse_caret_color("black auto"),
+        parse_caret_color("black auto", false),
         Some(CaretColorValue::TwoValue(
             Box::new(CaretColorValue::Color(ColorValue::Rgba(0, 0, 0, 255))),
             Box::new(CaretColorValue::Auto)
@@ -488,8 +488,8 @@ fn test_parse_caret_color_two_value_auto_forms() {
 #[test]
 fn test_parse_caret_color_two_value_invalid() {
     // 三值非法；第二值非颜色/auto 非法。
-    assert_eq!(parse_caret_color("red green blue"), None);
-    assert_eq!(parse_caret_color("red bogus"), None);
+    assert_eq!(parse_caret_color("red green blue", false), None);
+    assert_eq!(parse_caret_color("red bogus", false), None);
 }
 
 // ── caret-shape（css-ui-4 §5.2.3，R5383）──
@@ -1563,7 +1563,7 @@ fn test_parse_filter_accepts_length_units() {
 /// 格式 "2px 3px red"：offset-x + offset-y + color，blur 默认为 0
 #[test]
 fn test_parse_text_shadow_color_only_no_blur() {
-    let result = parse_text_shadow("2px 3px red").unwrap();
+    let result = parse_text_shadow("2px 3px red", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(3.0));
     assert_eq!(result.blur_radius, LengthValue::Px(0.0));
@@ -1577,32 +1577,32 @@ fn test_parse_text_shadow_color_only_no_blur() {
 #[test]
 fn test_parse_shadow_omitted_color_defaults_to_currentcolor() {
     // text-shadow 无颜色
-    let ts = parse_text_shadow("2px 3px").unwrap();
+    let ts = parse_text_shadow("2px 3px", false).unwrap();
     assert_eq!(
         ts.color,
         ColorValue::CurrentColor,
         "text-shadow 省略颜色应默认 currentColor"
     );
     // text-shadow 有 blur 无颜色
-    let ts_blur = parse_text_shadow("2px 3px 4px").unwrap();
+    let ts_blur = parse_text_shadow("2px 3px 4px", false).unwrap();
     assert_eq!(ts_blur.color, ColorValue::CurrentColor);
     // box-shadow 无颜色
-    let bs = parse_box_shadow("2px 3px").unwrap();
+    let bs = parse_box_shadow("2px 3px", false).unwrap();
     assert_eq!(
         bs.color,
         ColorValue::CurrentColor,
         "box-shadow 省略颜色应默认 currentColor"
     );
     // box-shadow 有 blur/spread 无颜色
-    let bs_full = parse_box_shadow("2px 3px 4px 5px").unwrap();
+    let bs_full = parse_box_shadow("2px 3px 4px 5px", false).unwrap();
     assert_eq!(bs_full.color, ColorValue::CurrentColor);
     // 显式颜色仍保留（不被默认覆盖）
     assert_eq!(
-        parse_text_shadow("2px 3px red").unwrap().color,
+        parse_text_shadow("2px 3px red", false).unwrap().color,
         ColorValue::Rgba(255, 0, 0, 255)
     );
     assert_eq!(
-        parse_box_shadow("2px 3px red").unwrap().color,
+        parse_box_shadow("2px 3px red", false).unwrap().color,
         ColorValue::Rgba(255, 0, 0, 255)
     );
 }
@@ -1704,7 +1704,7 @@ fn test_parse_filter_drop_shadow() {
 /// 解析为 ox=5 oy=10 color=red（改前按固定下标 parts[0]=length 致整条丢）。
 #[test]
 fn test_parse_box_shadow_color_at_start() {
-    let s = parse_box_shadow("red 5px 10px").expect("color-first 合法应解析");
+    let s = parse_box_shadow("red 5px 10px", false).expect("color-first 合法应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(5.0));
     assert_eq!(s.offset_y, LengthValue::Px(10.0));
@@ -1717,16 +1717,16 @@ fn test_parse_box_shadow_color_at_start() {
 #[test]
 fn test_r4137_shadow_none_in_list_rejected() {
     // box-shadow：none 混排 → None；纯列表 → 正常解析
-    assert_eq!(parse_box_shadow_list("red 0px -100px, none, blue 1px 1px"), None);
-    assert_eq!(parse_box_shadow_list("none, red 0px -100px"), None);
-    let list = parse_box_shadow_list("red 0px -100px, blue 1px 1px").expect("纯列表合法");
+    assert_eq!(parse_box_shadow_list("red 0px -100px, none, blue 1px 1px", false), None);
+    assert_eq!(parse_box_shadow_list("none, red 0px -100px", false), None);
+    let list = parse_box_shadow_list("red 0px -100px, blue 1px 1px", false).expect("纯列表合法");
     assert_eq!(list.len(), 2);
     // none 单独 → 空列表（合法）
-    assert_eq!(parse_box_shadow_list("none"), Some(Vec::new()));
+    assert_eq!(parse_box_shadow_list("none", false), Some(Vec::new()));
     // text-shadow 同语义
-    assert_eq!(parse_text_shadow_list("red 0px 0px, none"), None);
-    assert_eq!(parse_text_shadow_list("none"), Some(Vec::new()));
-    let tl = parse_text_shadow_list("red 1px 1px, blue 2px 2px").expect("纯列表合法");
+    assert_eq!(parse_text_shadow_list("red 0px 0px, none", false), None);
+    assert_eq!(parse_text_shadow_list("none", false), Some(Vec::new()));
+    let tl = parse_text_shadow_list("red 1px 1px, blue 2px 2px", false).expect("纯列表合法");
     assert_eq!(tl.len(), 2);
 }
 
@@ -1738,16 +1738,17 @@ fn test_r4137_shadow_none_in_list_rejected() {
 #[test]
 fn test_r4138_shadow_calc_lengths() {
     // 完整驱动案形态（offset×2 + blur 全 calc）
-    let s = parse_box_shadow("calc(1em + 10px) calc(2em + 11px) calc(3em + 12px) black").expect("calc 三槽应解析");
+    let s =
+        parse_box_shadow("calc(1em + 10px) calc(2em + 11px) calc(3em + 12px) black", false).expect("calc 三槽应解析");
     assert!(matches!(s.offset_x, LengthValue::Calc(_)));
     assert!(matches!(s.offset_y, LengthValue::Calc(_)));
     assert!(matches!(s.blur_radius, LengthValue::Calc(_)));
     // spread 槽 calc 同样合法
-    assert!(parse_box_shadow("10px 20px 30px calc(3em + 12px) black").is_some());
+    assert!(parse_box_shadow("10px 20px 30px calc(3em + 12px) black", false).is_some());
     // blur 的 calc px 分量为负 → 非法（blur/spread 非负约束）
-    assert_eq!(parse_box_shadow("10px 20px calc(3em - 12px) black"), None);
+    assert_eq!(parse_box_shadow("10px 20px calc(3em - 12px) black", false), None);
     // text-shadow blur 槽同语义
-    assert!(parse_text_shadow("10px 20px calc(3em + 12px)").is_some());
+    assert!(parse_text_shadow("10px 20px calc(3em + 12px)", false).is_some());
 }
 
 // ── empty-cells ──
@@ -1879,4 +1880,79 @@ fn test_parse_counter_set_name_value() {
 #[test]
 fn test_parse_counter_set_invalid() {
     assert_eq!(parse_counter_set(""), None);
+}
+
+// ── light-dark() 图像上下文解析测试（css-color-5 §funcdef-light-dark，
+// wptfyi-css light-dark-image 语料锚）──
+
+#[test]
+fn test_parse_background_image_light_dark() {
+    // 双 url 支。
+    assert_eq!(
+        parse_background_image("light-dark(url('light.png'), url('dark.png'))"),
+        Some(BackgroundImageValue::LightDark {
+            light: Box::new(BackgroundImageValue::Url("light.png".to_string())),
+            dark: Box::new(BackgroundImageValue::Url("dark.png".to_string())),
+        })
+    );
+    // 支内 none 合法（computed 期展开 image(transparent)）。
+    assert_eq!(
+        parse_background_image("light-dark(none, url('dark.png'))"),
+        Some(BackgroundImageValue::LightDark {
+            light: Box::new(BackgroundImageValue::None),
+            dark: Box::new(BackgroundImageValue::Url("dark.png".to_string())),
+        })
+    );
+    // 渐变支 + 嵌套 light-dark 递归。
+    assert!(matches!(
+        parse_background_image("light-dark(linear-gradient(red, blue), url('dark.png'))"),
+        Some(BackgroundImageValue::LightDark { .. })
+    ));
+    assert!(matches!(
+        parse_background_image("light-dark(light-dark(url('a.png'), url('b.png')), url('c.png'))"),
+        Some(BackgroundImageValue::LightDark { .. })
+    ));
+    // 函数名大小写不敏感。
+    assert!(matches!(
+        parse_background_image("LIGHT-DARK(url(a), url(b))"),
+        Some(BackgroundImageValue::LightDark { .. })
+    ));
+}
+
+#[test]
+fn test_parse_background_image_light_dark_invalid() {
+    // 颜色不是 image：named 色/色值函数支拒绝。
+    assert_eq!(parse_background_image("light-dark(red, green)"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png), red)"), None);
+    assert_eq!(parse_background_image("light-dark(rgb(0, 0, 0), url(a.png))"), None);
+    // arity：0/1/3 参拒绝。
+    assert_eq!(parse_background_image("light-dark()"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png))"), None);
+    assert_eq!(
+        parse_background_image("light-dark(url(a.png), url(b.png), url(c.png))"),
+        None
+    );
+    // 空格分隔双值（无顶层逗号）与空参段拒绝。
+    assert_eq!(parse_background_image("light-dark(url(a.png) url(b.png))"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png),,url(b.png))"), None);
+    assert_eq!(parse_background_image("light-dark(url(a.png), )"), None);
+}
+
+#[test]
+fn test_parse_list_style_border_image_light_dark() {
+    // list-style-image 同构（支域 none/url）。
+    assert_eq!(
+        parse_list_style_image("light-dark(url('l.png'), url('d.png'))"),
+        Some(ListStyleImageValue::LightDark {
+            light: Box::new(ListStyleImageValue::Url("l.png".to_string())),
+            dark: Box::new(ListStyleImageValue::Url("d.png".to_string())),
+        })
+    );
+    assert_eq!(parse_list_style_image("light-dark(none, red)"), None);
+    // border-image-source 同构（支域 url/gradient/filter）。
+    assert!(matches!(
+        parse_border_image_source("light-dark(linear-gradient(red, blue), url('d.png'))"),
+        Some(BorderImageSourceValue::LightDark { .. })
+    ));
+    assert_eq!(parse_border_image_source("light-dark(red, url(a.png))"), None);
 }

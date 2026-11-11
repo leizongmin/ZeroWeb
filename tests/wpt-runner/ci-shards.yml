@@ -31,10 +31,24 @@ shards:
     fetch: "fetch-wpt-html-semantics fetch-wpt-web-components"
     fetch_scripts: ""
     time_limit: 10800
+  # 2026-11-11 wptfyi-editing DC-2 扩面：selection 移出 ui-edit 独立成片——
+  # 旧 fetch-selection-subset.sh 显式清单 ~60 案只入账 31/231 覆盖文件（11-10
+  # 快照 2,821 过）；fetch-wpt-selection 已切 23 号 lib.sh deep 拉取（~184 案 +
+  # 拉取完成标记幂等）。runner selection 通道递归扫 selection/ + flat 扫
+  # editing/ + editing/other（SELECTION_TEST_SUBDIRS）——fetch 须带 fetch-wpt-editing
+  # 供后两目录；与 editing-run 11 片 / editing-other catch-all 的路径重叠由
+  # 对账器按路径 max 语义去重（merge_zw_results 最完整一次执行胜出，不双记）。
+  - name: selection-face
+    suites: "selection"
+    fetch: "fetch-wpt-selection fetch-wpt-editing"
+    fetch_scripts: ""
+    script_timeout: 300000
+    case_timeout: 300
+    time_limit: 7200
   - name: ui-edit
-    suites: "selection uievents touch-events keyboard pointerlock dnd"
+    suites: "uievents touch-events keyboard pointerlock dnd"
     fetch: >-
-      fetch-wpt-selection fetch-wpt-uievents fetch-wpt-touch-events
+      fetch-wpt-uievents fetch-wpt-touch-events
       fetch-wpt-keyboard fetch-wpt-pointerlock fetch-wpt-dnd
     fetch_scripts: ""
     time_limit: 3600
@@ -300,3 +314,120 @@ shards:
     fetch: ""
     fetch_scripts: ""
     time_limit: 1800
+  # 2026-11-11 wptfyi-editing goal DC-1：editing/run 全量入账。此前 catch-all
+  # 形态跑不动的三件事：①语料 fetch 被随库 zz-probe-* 探针骗过幂等快路径
+  # （run 42499865933 实证 20 探针案、上游 0 命中；lib.sh 已改拉取完成标记）；
+  # ②catch-all 缺省 script_timeout 90s 截断 run 面大变体（M2 实证 aborted
+  # declared 0）——各片提额 300s（corpus 脚本 run 通道同款预算）；③whole-suite
+  # 单进程 42 案 ~96.7k 子测试超 per-suite 预算——按文件全路径 pipe 组拆 11 片
+  # （runner 侧 editing filter 支持 `|` 任一命中），子测试负载按 M1 基线逐案
+  # 计数均衡（96,663 ÷ 11 ≈ 8.8k/片），组间互斥——同套件多片 result_tag 必须
+  # 互异（merge-multiple 平铺同名覆盖），且互斥保证同名 case 不跨片重复
+  # （aggregate 按同名可疑去重会丢账）。探针 zz-probe-* 非上游路径不进任何片
+  # （本地见证面走 FILTER=zz-probe 定向）。预算：slow 簇按变体×300s 满额估
+  # （delete 8 变体 ~2.4k s、multitest 10 变体 ~3k s），本地实测 bold 4 变体
+  # ~60s（2026-11-11 校准），time_limit 10800 容 ~3× CI 减速；超预算失败形态
+  # 安全（该脸记 0 + 分片红，下轮按 form-encode 先例再拆）。case_timeout 3600：
+  # editing 通道按案计 corpus_case_timeout()（缺省 30s）——本地校准 bold 单案
+  # 4 变体 ~60s 已超缺省，CI 分片 in-process 整面跑会被逐案掐死记 0（M1 全量面
+  # 本地 ~30min 串行、slow 尾案 ~12min，3600 容 CI ~3× 减速仍有余）。editing-other
+  # 面仍走 catch-all（快面，90s 看门狗足够——M2 后 other 全量 ~13k P 实证）。
+  - name: editing-run-0
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/multitest.html"
+    result_tag: er0
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-1
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/forwarddelete.html|editing/run/createlink.html|editing/run/createlink-with-selecting-img.html|editing/run/caret-navigation-around-line-break.html|editing/run/caret-navigation-after-removing-line-break.html|editing/run/caretnavigation.html"
+    result_tag: er1
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-2
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/delete.html|editing/run/delete-list-items-in-table-cell.html|editing/run/delete-to-make-editing-host-empty.html|editing/run/misc.html|editing/run/unlink.html|editing/run/insert-list-items-in-table-cell.html|editing/run/undo-redo-after-mutation.html|editing/run/typing-text-in-direct-child-of-editing-host.html"
+    result_tag: er2
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-3
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/insertparagraph.html|editing/run/hilitecolor.html|editing/run/backcolor.html"
+    result_tag: er3
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-4
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/justifycenter.html|editing/run/indent.html|editing/run/superscript.html"
+    result_tag: er4
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-5
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/formatblock.html|editing/run/subscript.html|editing/run/insertimage.html"
+    result_tag: er5
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-6
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/justifyright.html|editing/run/forecolor.html"
+    result_tag: er6
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-7
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/justifyfull.html|editing/run/fontname.html|editing/run/fontsize.html"
+    result_tag: er7
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-8
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/bold.html|editing/run/inserttext.html|editing/run/outdent.html"
+    result_tag: er8
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-9
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/justifyleft.html|editing/run/strikethrough.html|editing/run/underline.html|editing/run/italic.html"
+    result_tag: er9
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800
+  - name: editing-run-10
+    suites: "editing-run"
+    fetch: "fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/run/removeformat.html|editing/run/insertunorderedlist.html|editing/run/insertorderedlist.html|editing/run/insertlinebreak.html|editing/run/inserthtml.html|editing/run/inserthorizontalrule.html"
+    result_tag: er10
+    script_timeout: 300000
+    case_timeout: 3600
+    time_limit: 10800

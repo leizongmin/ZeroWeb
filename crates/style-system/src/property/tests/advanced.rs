@@ -229,10 +229,76 @@ fn test_parse_text_overflow_all_variants() {
 }
 
 #[test]
-/// parse_grid_line: span 不带空格
+/// parse_grid_line: span 不带空格——`span2` 是合法 custom-ident 非 span 组合
+/// （css-grid-2 §7.1 `<grid-line>` 文法，`span` 须为独立 token；前缀匹配系
+/// 既有 token 边界缺陷，随组合形建模一并纠正）。
 fn test_parse_grid_line_span_no_space() {
-    assert_eq!(parse_grid_line("span2"), Some(GridLineValue::Span(2)));
-    assert_eq!(parse_grid_line("span3"), Some(GridLineValue::Span(3)));
+    assert_eq!(parse_grid_line("span2"), Some(GridLineValue::Name("span2".to_string())));
+    assert_eq!(parse_grid_line("span3"), Some(GridLineValue::Name("span3".to_string())));
+}
+
+#[test]
+/// parse_grid_line: 组合形——`[<integer> && <custom-ident>?]` 与
+/// `[ span && <integer>? && <custom-ident>? ]` 任意序（css-grid-2 §7.1）。
+fn test_parse_grid_line_composite_forms() {
+    // <integer> <custom-ident>（整数在前）
+    assert_eq!(
+        parse_grid_line("1 a"),
+        Some(GridLineValue::Line {
+            line: 1,
+            name: Some("a".to_string())
+        })
+    );
+    // <custom-ident> <integer>（任意序）
+    assert_eq!(
+        parse_grid_line("a 3"),
+        Some(GridLineValue::Line {
+            line: 3,
+            name: Some("a".to_string())
+        })
+    );
+    // 负行号 + 命名线
+    assert_eq!(
+        parse_grid_line("-2 c"),
+        Some(GridLineValue::Line {
+            line: -2,
+            name: Some("c".to_string())
+        })
+    );
+    // span 组合：无名线 / 带名线 / 带整数与名线（任意序）
+    assert_eq!(
+        parse_grid_line("span"),
+        Some(GridLineValue::Span {
+            count: None,
+            name: None
+        })
+    );
+    assert_eq!(
+        parse_grid_line("span a"),
+        Some(GridLineValue::Span {
+            count: None,
+            name: Some("a".to_string())
+        })
+    );
+    assert_eq!(
+        parse_grid_line("span 2 a"),
+        Some(GridLineValue::Span {
+            count: Some(2),
+            name: Some("a".to_string())
+        })
+    );
+    assert_eq!(
+        parse_grid_line("span a 2"),
+        Some(GridLineValue::Span {
+            count: Some(2),
+            name: Some("a".to_string())
+        })
+    );
+    // 非法组合整体拒绝：0 计数、负 span、多余组分
+    assert_eq!(parse_grid_line("span 0"), None);
+    assert_eq!(parse_grid_line("span -1"), None);
+    assert_eq!(parse_grid_line("1 a b"), None);
+    assert_eq!(parse_grid_line("span 2 a b"), None);
 }
 
 #[test]
@@ -536,7 +602,7 @@ fn test_grid_area_named_area() {
 fn test_grid_area_auto() {
     let mut style = ComputedStyle::default();
     // 先设置非 auto 值
-    style.grid_row_start = GridLineValue::Line(1);
+    style.grid_row_start = GridLineValue::Line { line: 1, name: None };
     assert!(apply_property_value(&mut style, "grid-area", "auto"));
     assert_eq!(style.grid_row_start, GridLineValue::Auto);
     assert_eq!(style.grid_row_end, GridLineValue::Auto);
@@ -549,10 +615,10 @@ fn test_grid_area_auto() {
 fn test_grid_area_four_line_numbers() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-area", "1 / 2 / 3 / 4"));
-    assert_eq!(style.grid_row_start, GridLineValue::Line(1));
-    assert_eq!(style.grid_row_end, GridLineValue::Line(2));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(3));
-    assert_eq!(style.grid_column_end, GridLineValue::Line(4));
+    assert_eq!(style.grid_row_start, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(style.grid_row_end, GridLineValue::Line { line: 2, name: None });
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 3, name: None });
+    assert_eq!(style.grid_column_end, GridLineValue::Line { line: 4, name: None });
 }
 
 #[test]
@@ -560,9 +626,9 @@ fn test_grid_area_four_line_numbers() {
 fn test_grid_area_two_values() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-area", "1 / 3"));
-    assert_eq!(style.grid_row_start, GridLineValue::Line(1));
+    assert_eq!(style.grid_row_start, GridLineValue::Line { line: 1, name: None });
     assert_eq!(style.grid_row_end, GridLineValue::Auto);
-    assert_eq!(style.grid_column_start, GridLineValue::Line(3));
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 3, name: None });
     assert_eq!(style.grid_column_end, GridLineValue::Auto);
 }
 
@@ -571,9 +637,9 @@ fn test_grid_area_two_values() {
 fn test_grid_area_three_values() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-area", "1 / 3 / 2"));
-    assert_eq!(style.grid_row_start, GridLineValue::Line(1));
-    assert_eq!(style.grid_row_end, GridLineValue::Line(3));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(2));
+    assert_eq!(style.grid_row_start, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(style.grid_row_end, GridLineValue::Line { line: 3, name: None });
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 2, name: None });
     assert_eq!(style.grid_column_end, GridLineValue::Auto);
 }
 
@@ -582,10 +648,22 @@ fn test_grid_area_three_values() {
 fn test_grid_area_with_span() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-area", "2 / span 2 / 3 / span 3"));
-    assert_eq!(style.grid_row_start, GridLineValue::Line(2));
-    assert_eq!(style.grid_row_end, GridLineValue::Span(2));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(3));
-    assert_eq!(style.grid_column_end, GridLineValue::Span(3));
+    assert_eq!(style.grid_row_start, GridLineValue::Line { line: 2, name: None });
+    assert_eq!(
+        style.grid_row_end,
+        GridLineValue::Span {
+            count: Some(2),
+            name: None
+        }
+    );
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 3, name: None });
+    assert_eq!(
+        style.grid_column_end,
+        GridLineValue::Span {
+            count: Some(3),
+            name: None
+        }
+    );
 }
 
 #[test]
@@ -593,8 +671,8 @@ fn test_grid_area_with_span() {
 fn test_grid_column_shorthand() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-column", "1 / 3"));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(1));
-    assert_eq!(style.grid_column_end, GridLineValue::Line(3));
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(style.grid_column_end, GridLineValue::Line { line: 3, name: None });
 }
 
 #[test]
@@ -602,7 +680,7 @@ fn test_grid_column_shorthand() {
 fn test_grid_column_single_value() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-column", "2"));
-    assert_eq!(style.grid_column_start, GridLineValue::Line(2));
+    assert_eq!(style.grid_column_start, GridLineValue::Line { line: 2, name: None });
     assert_eq!(style.grid_column_end, GridLineValue::Auto);
 }
 
@@ -611,8 +689,14 @@ fn test_grid_column_single_value() {
 fn test_grid_row_shorthand() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-row", "1 / span 2"));
-    assert_eq!(style.grid_row_start, GridLineValue::Line(1));
-    assert_eq!(style.grid_row_end, GridLineValue::Span(2));
+    assert_eq!(style.grid_row_start, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(
+        style.grid_row_end,
+        GridLineValue::Span {
+            count: Some(2),
+            name: None
+        }
+    );
 }
 
 #[test]
@@ -654,22 +738,28 @@ fn test_parse_grid_area_shorthand() {
     assert_eq!(result.3, GridLineValue::Auto);
 
     let result = parse_grid_area_shorthand("1 / 3 / 2 / 4").unwrap();
-    assert_eq!(result.0, GridLineValue::Line(1));
-    assert_eq!(result.1, GridLineValue::Line(3));
-    assert_eq!(result.2, GridLineValue::Line(2));
-    assert_eq!(result.3, GridLineValue::Line(4));
+    assert_eq!(result.0, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(result.1, GridLineValue::Line { line: 3, name: None });
+    assert_eq!(result.2, GridLineValue::Line { line: 2, name: None });
+    assert_eq!(result.3, GridLineValue::Line { line: 4, name: None });
 }
 
 #[test]
 /// 测试 parse_grid_line_shorthand 函数
 fn test_parse_grid_line_shorthand() {
     let result = parse_grid_line_shorthand("1 / 3").unwrap();
-    assert_eq!(result.0, GridLineValue::Line(1));
-    assert_eq!(result.1, GridLineValue::Line(3));
+    assert_eq!(result.0, GridLineValue::Line { line: 1, name: None });
+    assert_eq!(result.1, GridLineValue::Line { line: 3, name: None });
 
     let result = parse_grid_line_shorthand("span 2 / 5").unwrap();
-    assert_eq!(result.0, GridLineValue::Span(2));
-    assert_eq!(result.1, GridLineValue::Line(5));
+    assert_eq!(
+        result.0,
+        GridLineValue::Span {
+            count: Some(2),
+            name: None
+        }
+    );
+    assert_eq!(result.1, GridLineValue::Line { line: 5, name: None });
 
     let result = parse_grid_line_shorthand("auto").unwrap();
     assert_eq!(result.0, GridLineValue::Auto);

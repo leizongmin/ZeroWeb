@@ -104,5 +104,20 @@ include!("js_dom_bridge_tests/part97_m3_shadow_probe.rs");
 // 46 号 s363 mixed eager/defer 同 URL 记录共享：defer 面命中 eager 缓存零再求值钉。
 include!("js_dom_bridge_tests/part98_s363_mixed_eager_defer.rs");
 
+// 47 号 s397 module parse 失败缓存面：tag 5 同对象复抛 + tag 3 逐次新对象对照钉。
+include!("js_dom_bridge_tests/part99_s397_module_parse_failure.rs");
+
+// 48 号 s398 OBJECT contentWindow 嵌套浏览上下文面：text/html 物化 + name 快照
+// + 四面 null 分类 + R5274 恒 null 面保持钉。
+include!("js_dom_bridge_tests/part100_s398_object_content_window.rs");
+
+// 49 号 s399 object 动态加载链：插入钩子 load/error 事件面 + data IDL setter
+// 重启 + about:blank 嵌套上下文 + win.Window interface + image/detached 边界钉。
+include!("js_dom_bridge_tests/part101_s399_object_dynamic_load.rs");
+
+// 50 号 s400 object scheme 取回面 + window.length：data:/blob:/bare-origin 解码
+// 七面 + LegacyUnforgeable 计数（iframe/object entry + destroy/移除递减）钉。
+include!("js_dom_bridge_tests/part102_s400_object_schemes_window_length.rs");
+
 // P39（siteopt github r1）：tagName/namespaceURI stamp 失配窗口永久章快道回归。
 include!("js_dom_bridge_tests/part99_p39_tag_ns_stamp_memo.rs");

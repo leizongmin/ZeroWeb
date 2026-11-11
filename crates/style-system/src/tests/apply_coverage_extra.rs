@@ -1065,10 +1065,23 @@ fn test_parse_grid_auto_flow_variants() {
 #[test]
 fn test_parse_grid_line_variants() {
     assert!(matches!(parse_grid_line("auto"), Some(GridLineValue::Auto)));
-    assert!(matches!(parse_grid_line("1"), Some(GridLineValue::Line(1))));
-    assert!(matches!(parse_grid_line("-1"), Some(GridLineValue::Line(-1))));
-    assert!(matches!(parse_grid_line("span 2"), Some(GridLineValue::Span(2))));
-    assert!(matches!(parse_grid_line("span3"), Some(GridLineValue::Span(3))));
+    assert!(matches!(
+        parse_grid_line("1"),
+        Some(GridLineValue::Line { line: 1, name: None })
+    ));
+    assert!(matches!(
+        parse_grid_line("-1"),
+        Some(GridLineValue::Line { line: -1, name: None })
+    ));
+    assert!(matches!(
+        parse_grid_line("span 2"),
+        Some(GridLineValue::Span {
+            count: Some(2),
+            name: None
+        })
+    ));
+    // `span3` 无空格是合法 custom-ident 非 span 组合（css-grid-2 §7.1 `span` 须为独立 token）。
+    assert!(matches!(parse_grid_line("span3"), Some(GridLineValue::Name(_))));
     assert!(matches!(parse_grid_line("header"), Some(GridLineValue::Name(_))));
     // 0 是非法的 grid line 值
     assert!(parse_grid_line("0").is_none());
@@ -1086,7 +1099,7 @@ fn test_parse_grid_line_shorthand_no_slash() {
     let result = parse_grid_line_shorthand("2");
     assert!(result.is_some());
     let (start, end) = result.unwrap();
-    assert!(matches!(start, GridLineValue::Line(2)));
+    assert!(matches!(start, GridLineValue::Line { line: 2, name: None }));
     assert!(matches!(end, GridLineValue::Auto));
 }
 

@@ -25,6 +25,11 @@ pub enum BackgroundImageComputedValue {
         /// 滤镜函数计算值列表（可为空 = 无滤镜）。
         filters: Vec<super::FilterComputedValue>,
     },
+    /// image(rgba(0, 0, 0, 0)) — light-dark() 支内 none 的 computed 展开（css-color-5
+    /// #valdef-light-dark-none：light-dark() 图像上下文内的 none 计算为透明图像，
+    /// 序列化 `image(rgba(0, 0, 0, 0))`；与顶层 none（序列化 `none`）分野）。
+    /// 选支展开在 cascade 期完成，故本变体只由 light-dark 支内语义产生。
+    TransparentImage,
 }
 
 impl BackgroundImageComputedValue {
@@ -191,6 +196,9 @@ pub enum BorderImageSourceComputedValue {
         /// 滤镜函数列表（filter 属性同一语义）。
         filters: Vec<super::FilterComputedValue>,
     },
+    /// image(rgba(0, 0, 0, 0)) — light-dark() 支内 none 的 computed 展开
+    ///（css-color-5 #valdef-light-dark-none，同 BackgroundImageComputedValue::TransparentImage）。
+    TransparentImage,
 }
 
 impl BorderImageSourceComputedValue {
@@ -304,4 +312,7 @@ pub enum ListStyleImageComputedValue {
     None,
     /// url(<string>)。
     Url(String),
+    /// image(rgba(0, 0, 0, 0)) — light-dark() 支内 none 的 computed 展开
+    ///（css-color-5 #valdef-light-dark-none，同 BackgroundImageComputedValue::TransparentImage）。
+    TransparentImage,
 }

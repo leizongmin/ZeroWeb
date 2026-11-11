@@ -5265,7 +5265,9 @@ fn test_style_proxy_invalid_value_rejected_t54() {
     assert_eq!(val("globalThis.__r2"), "", "rotate 非法 math 形拒绝");
     assert_eq!(val("globalThis.__r3"), "", "z-index 非法 math 形拒绝");
     assert_eq!(val("globalThis.__r4"), "rotate(45deg)", "transform 合法值落库");
-    assert_eq!(val("globalThis.__r5"), "acos(1)", "rotate 裸 math 函数落库（文法内）");
+    // r2320（§10.11）：rotate 裸 math 函数读出面折叠为 calc 规范形（原 raw
+    // echo 口径随 serialize 等价断言作废）。
+    assert_eq!(val("globalThis.__r5"), "calc(0deg)", "rotate 裸 math 函数折叠读出（acos(1)=0rad）");
     assert_eq!(val("globalThis.__r6"), "sign(-3)", "z-index 裸 math 函数落库");
     assert_eq!(
         val("globalThis.__r7"), "round(23px, 10px)",
@@ -5280,4 +5282,102 @@ fn test_style_proxy_invalid_value_rejected_t54() {
         "css-wide keyword 白名单放行（落库保留，应用语义在 cascade 层）"
     );
     assert_eq!(val("globalThis.__r10"), "", "空值 = 声明移除");
+}
+
+#[test]
+fn test_style_math_specified_fold_read_r2320() {
+    // r2320（CSS Values 4 §10.11）：数学函数 specified 值常量折叠——inline
+    // style 读出视图返 calc(...) 规范形。WPT css-values serialize 桶主驱动：
+    // sin-cos-tan-serialize（type: number → scale 槽）/ acos-asin-atan-atan2-
+    // serialize（transform: rotate(...) wrapper 形）。mutation log 保留原文、
+    // 读出折叠（style_from_mutations_lw 读出面）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\n\
+             globalThis.__f1 = (d.style.transform = 'rotate(acos(1))', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f2 = (d.style.scale = 'cos(0)', d.style.getPropertyValue('scale'));\n\
+             globalThis.__f3 = (d.style.rotate = 'acos(2)', d.style.getPropertyValue('rotate'));\n\
+             globalThis.__f4 = (d.style.transform = 'rotate(calc(0deg))', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f5 = (d.style.transform = 'rotate(acos(1)) scale(2)', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f6 = (d.style.transform = 'rotate(atan(45deg))', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f7 = (d.style.transform = 'rotate(45deg)', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f8 = (d.style.scale = 'calc(sin(0) + 0.5)', d.style.getPropertyValue('scale'));\n\
+             globalThis.__f9 = (d.style.transform = 'rotate(acos(-1))', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f10 = (d.style.transform = 'rotate(calc(acos(-1)))', d.style.getPropertyValue('transform'));\n\
+             globalThis.__f11 = (d.style.transform = 'rotate(calc(180deg))', d.style.getPropertyValue('transform'));\n\
+             var s = document.querySelector('#d').style;\n\
+             globalThis.__g1 = (s.scale = 'cos(0)', s.getPropertyValue('scale'));\n\
+             globalThis.__g2 = (s.transform = 'rotate(acos(1))', s.getPropertyValue('transform'));",
+        )
+        .unwrap();
+    let mut val = |k: &str| sandbox.execute(k).unwrap().value;
+    assert_eq!(
+        val("globalThis.__f1"), "rotate(calc(0deg))",
+        "transform wrapper 数学角度实参折叠"
+    );
+    assert_eq!(val("globalThis.__f2"), "calc(1)", "scale 裸数学函数折叠（number 槽）");
+    assert_eq!(
+        val("globalThis.__f3"), "calc(NaN * 1deg)",
+        "NaN 域外折叠（§10.10 合法，Blink 口径）"
+    );
+    assert_eq!(
+        val("globalThis.__f4"), "rotate(calc(0deg))",
+        "已折叠形读出幂等（WPT 等价断言双侧同形关键）"
+    );
+    assert_eq!(
+        val("globalThis.__f5"), "rotate(calc(0deg)) scale(2)",
+        "混合列表仅折叠 rotate 族跨度"
+    );
+    assert_eq!(
+        val("globalThis.__f6"), "rotate(calc(0deg)) scale(2)",
+        "asin/acos/atan 角度叶仍拒（invalid 面——写拒绝保留前一声明，spec setProperty 语义）"
+    );
+    assert_eq!(
+        val("globalThis.__f7"), "rotate(45deg)",
+        "非数学角度值原样保留"
+    );
+    assert_eq!(
+        val("globalThis.__f8"), "calc(0.5)",
+        "scale calc 内数学式折叠（sin(0)+0.5 → 0.5）"
+    );
+    assert_eq!(
+        val("globalThis.__f9"), "rotate(calc(180deg))",
+        "非零 acos 结果弧度→度（acos(-1)=π rad→180deg，has_angle_result 臂）"
+    );
+    assert_eq!(
+        val("globalThis.__f10"), "rotate(calc(180deg))",
+        "calc 包裹形 acos 折叠（型别标记在 calc 内保留）"
+    );
+    assert_eq!(
+        val("globalThis.__f11"), "rotate(calc(180deg))",
+        "非零平角度叶往返恒等（parse 期 Number 化弧度还原——serialize 页期望值双侧同形关键）"
+    );
+
+    // sel 臂端到端钉（callbacks.rs `__zw_get_style_lw` 内联 replay fold）：解析
+    // 元素（querySelector 面，corpus serialize 页 #target 同形态）读写闭环。
+    assert_eq!(
+        val("globalThis.__g1"), "calc(1)",
+        "解析元素 sel 读臂折叠（__zw_get_style_lw 内联 replay）"
+    );
+    assert_eq!(
+        val("globalThis.__g2"), "rotate(calc(0deg))",
+        "解析元素 transform wrapper 折叠（sel 臂）"
+    );
 }

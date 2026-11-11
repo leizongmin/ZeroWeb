@@ -81,6 +81,11 @@ pub use label::*;
 mod form_activation;
 pub use form_activation::*;
 
+// s402（html-semantics M2）：shadow 森林切片过滤 + 声明式模板剥除（by-handle 视图
+// 重建消费——handle 身份跨探测环刷新的重建面）。
+mod shadow_forest;
+pub use shadow_forest::{shadow_forest_mutations, strip_declarative_shadow_templates};
+
 // `register_dom_callbacks` —— 全部 `__zw_*` 回调注册（R2976 从本文件拆出，控制主文件行数）。最大单体函数。
 #[cfg(feature = "script-runtime")]
 mod callbacks;
@@ -5476,7 +5481,15 @@ pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> Strin
                 property,
                 value,
             } if h == handle => {
-                style = merge_style_property(&style, property, value);
+                // r2320（CSS Values 4 §10.11）：声明值 specified 折叠——数学函数
+                // 值在读出视图折叠为 calc(...) 规范形（mutation log 保留原文）。
+                // WPT css-values serialize 桶以 `el.style.transform =
+                // 'rotate(acos(1))'` 读回 `rotate(calc(0deg))` 驱动（engine 物化
+                // 元素 inline style 读全走本函数——`__zw_get_style_lw`/
+                // `__zw_get_style_lw_handle` 同源）。
+                let folded =
+                    zero_css_parser::values::fold_decl_specified(property, value).unwrap_or_else(|| value.clone());
+                style = merge_style_property(&style, property, &folded);
             }
             DomMutation::RemoveStyleOnHandle { handle: h, property } if h == handle => {
                 style = remove_style_property(&style, property);
@@ -5898,6 +5911,37 @@ pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
 /// 声明是否被 ZW 支持（已知属性 + 值可 apply）。
 #[cfg(feature = "script-runtime")]
 fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val: &str) -> bool {
+    // 组 F 批（css-anchor-position-1）：`position-area` 文法面由
+    // [`dom_bindings::position_area`] 裁决（style-system 注册表不含该属性——
+    // computed-testcommon 每 test 以 `CSS.supports('position-area', v)` 前置门）。
+    if prop == "position-area" {
+        #[cfg(feature = "v8")]
+        {
+            return crate::dom_bindings::position_area::canonicalize_decl(val).is_some();
+        }
+        #[cfg(not(feature = "v8"))]
+        {
+            let _ = (style, val);
+            return false;
+        }
+    }
+    // 组 F 批：anchor 族七属性（position-anchor/position-visibility/position-try
+    // 简写族/anchor-name/anchor-scope）文法面由 [`dom_bindings::anchor_props`]
+    // 裁决（同上——style-system 注册表不含族属性，computed-testcommon 以
+    // `CSS.supports(prop, v)` 前置门，position-area 先例同型）。
+    #[cfg(feature = "v8")]
+    {
+        if crate::dom_bindings::anchor_props::is_anchor_family_prop(prop) {
+            return crate::dom_bindings::anchor_props::canonicalize_decl(prop, val).is_some();
+        }
+        // 通用 inset/size/margin 属性域值含 anchor()/anchor-size() 调用时按
+        // 函数参数文法裁决（anchor-parse-invalid/anchor-size-parse-invalid 拒面
+        // 同源；合法形 `CSS.supports('top', 'anchor(--foo left)')` 判真）。
+        // `anchor-size(` 不含 `anchor(` 子串（anchor 与 `(` 间有 `-`），双形并查。
+        if val.contains("anchor(") || val.contains("anchor-size(") {
+            return crate::dom_bindings::anchor_props::anchor_funcs_valid(prop, val);
+        }
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
 }

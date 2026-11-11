@@ -52,51 +52,74 @@ pub fn parse_grid_auto_flow(value: &str) -> Option<GridAutoFlowValue> {
 
 /// 解析 CSS grid line 值（用于 grid-column/row-start/end）。
 ///
-/// 支持格式：`auto`、`1`（行号）、`-1`（从末尾）、`span 2`。
+/// `<grid-line>` 文法（https://drafts.csswg.org/css-grid-2/#typedef-grid-line）：
+/// `auto | <custom-ident> | [<integer> && <custom-ident>?] | [ span && <integer>? && <custom-ident>? ]`
+/// —— `auto`、`1`、`-1`、`a`、`1 a`、`a 3`、`span`、`span 2`、`span a`、`span 2 a`
+/// （`&&` 任意序，canonical 整数在前）。关键字 ASCII 大小写不敏感；行号非 0，
+/// span 整数为正；命名线按 grid-line 语境校验（拒绝 auto/span 关键字、数值字面量、
+/// 数字开头 token 与 `/`，对齐 grid_cssom::grid_line_custom_ident）。
 pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("auto") {
         return Some(GridLineValue::Auto);
     }
-    // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
-    // CSS-defined grid-line `span` keyword is ASCII case-insensitive; its integer is positive.
-    if let Some(span_str) = strip_grid_span_keyword(value) {
-        let span: u16 = span_str.trim().parse().ok()?;
-        if span == 0 {
-            return None;
-        }
-        return Some(GridLineValue::Span(span));
-    }
-    if let Ok(line) = value.parse::<i16>() {
-        if line == 0 {
-            return None; // 0 是非法的 grid line 值
-        }
-        return Some(GridLineValue::Line(line));
-    }
-    // Non-numeric custom identifiers are named areas or explicit named lines.
-    // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
-    // A named area is resolved first; otherwise the identifier names a grid line.
-    if !value.is_empty() && !value.starts_with(|c: char| c.is_ascii_digit()) && !value.contains('/') {
-        return Some(GridLineValue::Name(value.to_string()));
-    }
-    None
-}
-
-fn strip_grid_span_keyword(value: &str) -> Option<&str> {
-    let bytes = value.as_bytes();
-    if bytes.len() < 4 || !bytes[..4].eq_ignore_ascii_case(b"span") {
+    let tokens: Vec<&str> = value.split_ascii_whitespace().collect();
+    if tokens.is_empty() || tokens.len() > 3 {
         return None;
     }
-    let rest = &value[4..];
-    if rest.is_empty()
-        || rest
-            .as_bytes()
-            .first()
-            .is_some_and(|byte| byte.is_ascii_whitespace() || byte.is_ascii_digit())
-    {
-        return Some(rest);
+    // 整数槽：行号非 0（0 是非法的 grid line 值）；i16 解析失败即按 ident 候选处理。
+    let int_of = |t: &str| -> Option<i16> {
+        let n: i16 = t.parse().ok()?;
+        (n != 0).then_some(n)
+    };
+    // <custom-ident> 校验（grid-line 语境，对齐 grid_cssom::grid_line_custom_ident）。
+    let ident_of = |t: &str| -> Option<String> {
+        if t.eq_ignore_ascii_case("auto")
+            || t.eq_ignore_ascii_case("span")
+            || t.parse::<f64>().is_ok()
+            || t.starts_with(|c: char| c.is_ascii_digit())
+            || t.contains('/')
+        {
+            return None;
+        }
+        Some(t.to_string())
+    };
+    if tokens[0].eq_ignore_ascii_case("span") {
+        // [ span && <integer>? && <custom-ident>? ]：span 后整数须为正（u16 域），
+        // 整数与 ident 各至多一组分，其余 token 整体拒绝。
+        let mut count = None;
+        let mut name = None;
+        for token in &tokens[1..] {
+            if let Some(n) = int_of(token) {
+                if count.is_some() {
+                    return None;
+                }
+                count = Some(u16::try_from(n).ok()?);
+            } else {
+                let s = ident_of(token)?;
+                if name.is_some() {
+                    return None;
+                }
+                name = Some(s);
+            }
+        }
+        return Some(GridLineValue::Span { count, name });
     }
-    None
+    match (int_of(tokens[0]), tokens.len()) {
+        (Some(n), 1) => Some(GridLineValue::Line { line: n, name: None }),
+        (Some(n), 2) => ident_of(tokens[1]).map(|name| GridLineValue::Line {
+            line: n,
+            name: Some(name),
+        }),
+        (None, 1) => ident_of(tokens[0]).map(GridLineValue::Name),
+        // [<integer> && <custom-ident>?] 任意序：ident 在前整数在后。
+        (None, 2) => {
+            let name = ident_of(tokens[0])?;
+            let line = int_of(tokens[1])?;
+            Some(GridLineValue::Line { line, name: Some(name) })
+        }
+        _ => None,
+    }
 }
 
 /// 解析 CSS grid-area 简写并展开为四个 GridLineValue。

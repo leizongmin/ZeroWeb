@@ -681,17 +681,15 @@ fn test_border_image_filter_function_emits_piece_filters() {
     }
 }
 
-/// R5084 组共用 env 锁——kill-switch 用例改写进程全局 `ZW_BORDER_IMAGE_DRAW_PROCESS`，
-/// 同组用例须串行防互踩（R5083 `R5083_ENV_LOCK` 同款形态；workspace 并行相位实测
-/// 无锁时 kill-switch 的 env=0 窗口会让 §5.2 用例读到旧路径翻红）。
-static R5084_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// R5084：css-backgrounds-3 §5.2 — slice 值之和 ≥ 源图维时，对应边片与 middle 源
 /// 为空（零面积源矩形 → 不发射），角部切片保持原值整幅参与。驱动案
 /// border-image-006（默认 slice 100% + 1×1 源）与 border-image-slice-006。
+///
+/// T61 起 kill-switch 用例经 `Painter::set_border_image_draw_process_for_test`
+/// 注入门态（构造期字段快照后不再触进程级 env，组内 env 锁随之撤除——T60 setter
+/// 同范式）。
 #[test]
 fn test_border_image_slice_overflow_edges_empty() {
-    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     use zero_style_system::{
         BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
         BorderImageSliceComputedValue, BorderImageSourceComputedValue,
@@ -753,7 +751,6 @@ fn test_border_image_slice_overflow_edges_empty() {
 /// 整图自然尺寸，居中后窗口恰为源图中央 green 区）。
 #[test]
 fn test_border_image_middle_natural_tile_repeat() {
-    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     use zero_style_system::{
         BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
         BorderImageSliceComputedValue, BorderImageSourceComputedValue,
@@ -831,7 +828,6 @@ fn test_border_image_middle_natural_tile_repeat() {
 /// 驱动案 border-image-slice-fill-001。
 #[test]
 fn test_border_image_middle_factor_from_top_slice() {
-    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     use zero_style_system::{
         BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
         BorderImageSliceComputedValue, BorderImageSourceComputedValue,
@@ -900,14 +896,10 @@ fn test_border_image_middle_factor_from_top_slice() {
 }
 
 /// R5084 kill-switch：`ZW_BORDER_IMAGE_DRAW_PROCESS=0` 恢复旧近似（重叠切片等比
-/// 缩减使边片非空 + 零面积源片整图映射回退 + middle 恒 stretch）。env var 用例，
-/// 抢锁防并行互踩（R5083 同款形态）。
+/// 缩减使边片非空 + 零面积源片整图映射回退 + middle 恒 stretch）。门态经 setter
+/// 注入（T61，≡ env=0）。
 #[test]
 fn test_r5084_border_image_draw_process_kill_switch() {
-    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
-    unsafe { std::env::set_var("ZW_BORDER_IMAGE_DRAW_PROCESS", "0") };
-
     use zero_style_system::{
         BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
         BorderImageSliceComputedValue, BorderImageSourceComputedValue,
@@ -941,6 +933,7 @@ fn test_r5084_border_image_draw_process_kill_switch() {
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
+    painter.set_border_image_draw_process_for_test(false);
     painter
         .image_natural_sizes
         .insert(super::super::helpers::image_resource_key("one.png", None), (1.0, 1.0));
@@ -949,7 +942,6 @@ fn test_r5084_border_image_draw_process_kill_switch() {
     // 旧路径：切片等比缩减（各 0.5px）→ 边片源矩形零宽仍发射（整图映射回退）→
     // 4 角 + 4 边 = 8 片（边区 30×10 非零）。
     let images = painter.primitives().images.clone();
-    unsafe { std::env::remove_var("ZW_BORDER_IMAGE_DRAW_PROCESS") };
     assert_eq!(
         images.len(),
         8,
@@ -1046,11 +1038,10 @@ fn test_r5355_border_image_intrinsic_less_source_number_slice_raster_space() {
     );
 }
 // ── R5085：变换叶实心盒直绘（transform-origin-01 驱动）─────────────────
-
-/// R5085 组共用 env 锁——kill-switch 用例改写进程全局 `ZW_TRANSFORM_SOLID_FILL_DIRECT`，
-/// 同组用例须串行防互踩（R5083/R5084 同款形态；并行相位无锁时直绘用例会读到
-/// env=0 走旧路径翻红）。
-static R5085_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+//
+// T61 起 kill-switch 用例经 `Painter::set_transform_solid_fill_direct_for_test`
+// 注入门态（构造期字段快照后不再触进程级 env，组内 env 锁随之撤除——T60 setter
+// 同范式）。
 
 /// R5085：叶实心盒 + transform（rotate）→ 背景以四角映射 path_fill 直绘，
 /// 不发射 TransformPrimitive——CPU raster apply_transform_post 的「union rect
@@ -1058,7 +1049,6 @@ static R5085_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// 先绘 #blue 在 #red 变换 union 内被 shuffle 成 50×50 碎块）。
 #[test]
 fn test_r5085_transform_solid_leaf_fill_direct_path() {
-    let _guard = R5085_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     use zero_css_parser::values::{TransformFunction, TransformValue};
 
     let mut doc = zero_dom::Document::new();
@@ -1103,12 +1093,9 @@ fn test_r5085_transform_solid_leaf_fill_direct_path() {
 }
 
 /// R5085 kill-switch：`ZW_TRANSFORM_SOLID_FILL_DIRECT=0` 恢复 TransformPrimitive
-/// 后处理路径（fill + transforms 各 1）。env 用例抢锁防并行互踩（R5084 同款）。
+/// 后处理路径（fill + transforms 各 1）。门态经 setter 注入（T61，≡ env=0）。
 #[test]
 fn test_r5085_transform_solid_fill_direct_kill_switch() {
-    let _guard = R5085_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::set_var("ZW_TRANSFORM_SOLID_FILL_DIRECT", "0") };
-
     use zero_css_parser::values::{TransformFunction, TransformValue};
 
     let mut doc = zero_dom::Document::new();
@@ -1122,9 +1109,9 @@ fn test_r5085_transform_solid_fill_direct_kill_switch() {
     styles.insert(nid, style);
 
     let mut painter = Painter::new();
+    painter.set_transform_solid_fill_direct_for_test(false);
     painter.paint(&layout, &styles, Some(&doc));
     let prims = painter.primitives();
-    unsafe { std::env::remove_var("ZW_TRANSFORM_SOLID_FILL_DIRECT") };
 
     assert_eq!(prims.fills.len(), 1, "legacy path keeps the plain fill");
     assert_eq!(prims.transforms.len(), 1, "legacy path emits TransformPrimitive");

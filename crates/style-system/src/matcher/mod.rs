@@ -3748,6 +3748,10 @@ fn collect_from_rules(
                         // @counter-style 规则不参与元素级选择器匹配（计数系统由 list-style
                         // 消费层从 CSS 提取并注入），跳过。
                     }
+                    zero_css_parser::ast::Rule::PositionTry(_) => {
+                        // @position-try 规则不参与元素级选择器匹配（fallback 声明由
+                        // position fallback 应用面消费，当前 CSSOM wire 读面），跳过。
+                    }
                 }
             }
             // 最后一个 At 规则之后的 Style 候选余量

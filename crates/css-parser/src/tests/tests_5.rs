@@ -140,7 +140,7 @@ fn test_parse_word_spacing_normal() {
 #[test]
 /// 测试 parse_text_shadow 的 "none" 值
 fn test_parse_text_shadow_none() {
-    let result = parse_text_shadow("none").unwrap();
+    let result = parse_text_shadow("none", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(0.0));
     assert_eq!(result.offset_y, LengthValue::Px(0.0));
     assert_eq!(result.blur_radius, LengthValue::Px(0.0));
@@ -150,7 +150,7 @@ fn test_parse_text_shadow_none() {
 #[test]
 /// 测试 parse_text_shadow 基本偏移（无模糊、无颜色 → currentColor，CSS Text Deco §3）
 fn test_parse_text_shadow_basic() {
-    let result = parse_text_shadow("2px 2px").unwrap();
+    let result = parse_text_shadow("2px 2px", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert_eq!(result.blur_radius, LengthValue::Px(0.0));
@@ -160,7 +160,7 @@ fn test_parse_text_shadow_basic() {
 #[test]
 /// 测试 parse_text_shadow 带模糊半径（无颜色 → currentColor）
 fn test_parse_text_shadow_with_blur() {
-    let result = parse_text_shadow("2px 2px 4px").unwrap();
+    let result = parse_text_shadow("2px 2px 4px", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert_eq!(result.blur_radius, LengthValue::Px(4.0));
@@ -170,7 +170,7 @@ fn test_parse_text_shadow_with_blur() {
 #[test]
 /// 测试 parse_text_shadow 带命名颜色
 fn test_parse_text_shadow_with_color() {
-    let result = parse_text_shadow("2px 2px red").unwrap();
+    let result = parse_text_shadow("2px 2px red", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert_eq!(result.blur_radius, LengthValue::Px(0.0));
@@ -180,7 +180,7 @@ fn test_parse_text_shadow_with_color() {
 #[test]
 /// 测试 parse_box_shadow 的 "none" 值
 fn test_parse_box_shadow_none() {
-    let result = parse_box_shadow("none").unwrap();
+    let result = parse_box_shadow("none", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(0.0));
     assert_eq!(result.offset_y, LengthValue::Px(0.0));
     assert_eq!(result.blur_radius, LengthValue::Px(0.0));
@@ -192,7 +192,7 @@ fn test_parse_box_shadow_none() {
 #[test]
 /// 测试 parse_box_shadow 基本偏移
 fn test_parse_box_shadow_basic() {
-    let result = parse_box_shadow("2px 2px").unwrap();
+    let result = parse_box_shadow("2px 2px", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert!(!result.inset);
@@ -201,7 +201,7 @@ fn test_parse_box_shadow_basic() {
 #[test]
 /// 测试 parse_box_shadow 带 inset 关键字、模糊和颜色
 fn test_parse_box_shadow_inset() {
-    let result = parse_box_shadow("inset 2px 2px 4px black").unwrap();
+    let result = parse_box_shadow("inset 2px 2px 4px black", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert_eq!(result.blur_radius, LengthValue::Px(4.0));
@@ -1214,17 +1214,17 @@ fn test_parse_overlay_edge_cases() {
 #[test]
 /// 测试 parse_box_shadow 空字符串返回 None。
 fn test_edge_parse_box_shadow_empty() {
-    assert_eq!(parse_box_shadow(""), None);
-    assert_eq!(parse_box_shadow("   "), None);
+    assert_eq!(parse_box_shadow("", false), None);
+    assert_eq!(parse_box_shadow("   ", false), None);
 }
 
 #[test]
 /// 测试 parse_box_shadow 仅 inset 关键字。
 fn test_edge_parse_box_shadow_inset_only() {
     // "inset" alone has no offset values → parts.len() < 2 → None
-    assert_eq!(parse_box_shadow("inset"), None);
+    assert_eq!(parse_box_shadow("inset", false), None);
     // "inset" with valid offsets should parse correctly
-    let result = parse_box_shadow("inset 3px 4px").unwrap();
+    let result = parse_box_shadow("inset 3px 4px", false).unwrap();
     assert!(result.inset);
     assert_eq!(result.offset_x, LengthValue::Px(3.0));
     assert_eq!(result.offset_y, LengthValue::Px(4.0));
@@ -1233,7 +1233,7 @@ fn test_edge_parse_box_shadow_inset_only() {
 #[test]
 /// 测试 parse_box_shadow 带颜色值 "5px 5px 10px red"。
 fn test_edge_parse_box_shadow_with_named_color() {
-    let result = parse_box_shadow("5px 5px 10px red").unwrap();
+    let result = parse_box_shadow("5px 5px 10px red", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(5.0));
     assert_eq!(result.offset_y, LengthValue::Px(5.0));
     assert_eq!(result.blur_radius, LengthValue::Px(10.0));
@@ -1245,8 +1245,8 @@ fn test_edge_parse_box_shadow_with_named_color() {
 #[test]
 /// 测试 parse_text_shadow 空字符串返回 None。
 fn test_edge_parse_text_shadow_empty() {
-    assert_eq!(parse_text_shadow(""), None);
-    assert_eq!(parse_text_shadow("   "), None);
+    assert_eq!(parse_text_shadow("", false), None);
+    assert_eq!(parse_text_shadow("   ", false), None);
 }
 
 #[test]
@@ -1254,7 +1254,7 @@ fn test_edge_parse_text_shadow_empty() {
 /// R2477：CSS Text Decoration §3 `<length>{2,3} && <color>?` 的 `&&` 允许颜色在任意位置，
 /// `red 2px 3px` 合法 → ox=2 oy=3 color=red（改前按固定下标 parts[0]=length 致丢）。
 fn test_edge_parse_text_shadow_color_first() {
-    let s = parse_text_shadow("red 2px 3px").expect("color-first 合法应解析");
+    let s = parse_text_shadow("red 2px 3px", false).expect("color-first 合法应解析");
     assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
     assert_eq!(s.offset_x, LengthValue::Px(2.0));
     assert_eq!(s.offset_y, LengthValue::Px(3.0));
@@ -1263,7 +1263,7 @@ fn test_edge_parse_text_shadow_color_first() {
 #[test]
 /// 测试 parse_text_shadow 大偏移量（无颜色 → currentColor）。
 fn test_edge_parse_text_shadow_large_offset() {
-    let result = parse_text_shadow("9999px 8888px 100px").unwrap();
+    let result = parse_text_shadow("9999px 8888px 100px", false).unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(9999.0));
     assert_eq!(result.offset_y, LengthValue::Px(8888.0));
     assert_eq!(result.blur_radius, LengthValue::Px(100.0));

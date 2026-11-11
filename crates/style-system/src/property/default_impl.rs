@@ -182,6 +182,15 @@ impl Default for ComputedStyle {
             bottom: auto_length.clone(),
             left: auto_length,
             z_index: ZIndexValue::Auto,
+            // CSS Anchor Positioning 初值：三属性均未声明（css-anchor-position-1）。
+            anchor_name: None,
+            position_anchor: None,
+            position_area: None,
+            position_try_fallbacks: None,
+            anchor_inset_top: None,
+            anchor_inset_right: None,
+            anchor_inset_bottom: None,
+            anchor_inset_left: None,
 
             // Overflow
             overflow_x: OverflowValue::Visible,

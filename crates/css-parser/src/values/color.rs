@@ -159,6 +159,13 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         if matches!(l.as_str(), "canvas" | "window") {
             return Some(ColorValue::Rgba(32, 33, 36, 255));
         }
+        // menu：dark 面板暗底（system-color-compute 页 Menu 差分断言驱动——
+        // specified(child,dark) 与 inherited(child←parent light) 须异值：light
+        // 静态白（named → Canvas 组），dark 暗底使「system color 在 computed
+        // 值时间解析为绝对色」成立）。
+        if matches!(l.as_str(), "menu") {
+            return Some(ColorValue::Rgba(43, 43, 43, 255));
+        }
         if matches!(
             l.as_str(),
             "canvastext" | "captiontext" | "infotext" | "menutext" | "windowtext"

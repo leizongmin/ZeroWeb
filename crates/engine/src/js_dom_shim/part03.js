@@ -30390,9 +30390,31 @@ return e;
       return found;
     };
     // getPropertyValue 返值**不含** !important（spec；旧返 "red !important"）。
-    var readProp = function(name) {
+    // wptfyi-css 组 F：position-try 简写合成读（两长手 inline 声明 → 简写串；
+    // order=normal 省略 / 双初始折叠 'none'——与 dom_bindings::anchor_props::
+    // join_position_try 同形，一致性由语料 round-trip 钉；双长手均无声明返 ''，
+    // gCS 通道无源空串契约同形）。
+    var _zwTryJoinStyle = function (o, f) {
+      if (o === 'normal' && f === 'none') return 'none';
+      if (o === 'normal') return f;
+      if (f === 'none') return o + ' none';
+      return o + ' ' + f;
+    };
+    var readLonghand = function(name) {
       var v = readDeclValue(name);
       return v == null ? '' : _styleValueAndPriority(v).value;
+    };
+    var readProp = function(name) {
+      if (_styleDeclName(name) === 'position-try') {
+        var tO = readLonghand('position-try-order');
+        var tF = readLonghand('position-try-fallbacks');
+        if (!tO && !tF) return '';
+        return _zwTryJoinStyle(
+          _styleValueAndPriority(tO || 'normal').value,
+          _styleValueAndPriority(tF || 'none').value
+        );
+      }
+      return readLonghand(name);
     };
     var setProp = function(name, value) {
       // T50：写面名参接 `_styleDeclName`（与规则样式/声明文本面同函数，DF-1 同根收口）——
@@ -30420,6 +30442,57 @@ return e;
       // 原样透传宿主（R3211 空值删声明语义在宿主 merge 侧，须保持可达）。
       var raw = String(value);
       var v = raw;
+      // wptfyi-css 组 F：position-try 简写拆分臂（css-anchor-position-1
+      // §position-try-prop shorthand——写简写拆 `position-try-order` +
+      // `position-try-fallbacks` 两长手落库，`position-try` 键本身不占声明位
+      //（test_shorthand_value style.length 断言钉面）；空值 = remove 语义清双
+      // 长手（CSSOM 空串删除，spec 一致）。归一（canonical 简写串/null 拒）在
+      // _zwNormalizeDeclValue anchor 族臂先行；csswide keyword 拆分双长手同
+      // keyword（Rust split css-wide 臂）。拆分回调未注册（兜底链）回落通用
+      // 写入路径零漂移。
+      if (prop === 'position-try') {
+        var ptPri = _styleValueAndPriority(raw);
+        var ptCore = _zwNormalizeDeclValue(ptPri.value, prop);
+        if (ptCore === null) return;
+        var _ptStore = function (k, val) {
+          if (handle) __zw_set_style_handle(handle, k, val);
+          else __zw_set_style(sel, k, val);
+        };
+        if (ptCore === '') {
+          if (handle && typeof __zw_remove_style_handle === 'function') {
+            __zw_remove_style_handle(handle, 'position-try-order');
+            __zw_remove_style_handle(handle, 'position-try-fallbacks');
+          } else if (typeof __zw_remove_style === 'function') {
+            __zw_remove_style(sel, 'position-try-order');
+            __zw_remove_style(sel, 'position-try-fallbacks');
+          }
+          var ptSh = _zwRawStyleGet(sel, handle);
+          if (ptSh) {
+            delete ptSh['position-try-order'];
+            delete ptSh['position-try-fallbacks'];
+          }
+          _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+          return;
+        }
+        if (typeof globalThis.__zw_anchor_try_split === 'function') {
+          var ptSplit = String(globalThis.__zw_anchor_try_split(ptCore));
+          var ptSep = ptSplit.indexOf('');
+          if (ptSep > 0) {
+            var ptO = ptSplit.slice(0, ptSep);
+            var ptF = ptSplit.slice(ptSep + 1);
+            _ptStore('position-try-order', ptPri.priority ? ptO + ' !important' : ptO);
+            _ptStore('position-try-fallbacks', ptPri.priority ? ptF + ' !important' : ptF);
+            var ptSh2 = _zwRawStyleGet(sel, handle);
+            if (ptSh2) {
+              delete ptSh2['position-try-order'];
+              delete ptSh2['position-try-fallbacks'];
+            }
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+            return;
+          }
+        }
+        return; // 拆分失败（未知 canonical 形）不落库——与 null 拒同语义
+      }
       if (prop.charAt(0) !== '-' || prop.charAt(1) !== '-') {
         var pri = _styleValueAndPriority(raw);
         var core = _zwNormalizeDeclValue(pri.value, prop);
@@ -30437,9 +30510,13 @@ return e;
             && __zw_validate_decl_value(prop, core) === 'false') return;
         v = pri.priority ? core + ' !important' : core;
         // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
-        // none → 存原值；其余形态清条目。
+        // none → 存原值。core 保 none 形（hsl/hwb % 剥除后仍含 none 字面）同样
+        // 须存——分量语法（% vs 裸）在 core 已不可逆，computed none 保形只能从
+        // 原值恢复（WPT color-computed-hsl/hwb 'hsl(120 80% none)' 群 2026-11-11
+        // 实证；旧 `!/none/i.test(core)` 条件把该群排除在影子外，computed 读裸
+        // decl 丢 %）；其余形态清条目。
         var shadow = _zwRawStyleGet(sel, handle);
-        if (pri.value !== core && /none/i.test(pri.value) && !/none/i.test(core)) {
+        if (pri.value !== core && /none/i.test(pri.value)) {
           if (!shadow) { shadow = {}; _zwRawStyleSet(sel, handle, shadow); }
           shadow[prop] = pri.value;
         } else if (shadow) {
@@ -30496,7 +30573,24 @@ return e;
             // T50：与写/读同 `_styleDeclName` 归一（'COLOR' 删 'color' 声明——Blink 154
             // 活体 t50 oracle b13/g04 案，removeProperty 名参 ASCII case-insensitive）。
             var prop = _styleDeclName(name);
+            // 组 F：position-try 简写删除 = 清双长手（写面拆分臂的逆；position-try
+            // 键本身不占声明位）。
             var shadow = _zwRawStyleGet(sel, handle);
+            if (prop === 'position-try') {
+              if (shadow) {
+                delete shadow['position-try-order'];
+                delete shadow['position-try-fallbacks'];
+              }
+              if (handle && typeof __zw_remove_style_handle === 'function') {
+                __zw_remove_style_handle(handle, 'position-try-order');
+                __zw_remove_style_handle(handle, 'position-try-fallbacks');
+              } else if (typeof __zw_remove_style === 'function') {
+                __zw_remove_style(sel, 'position-try-order');
+                __zw_remove_style(sel, 'position-try-fallbacks');
+              }
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+              return prev;
+            }
             if (shadow) delete shadow[prop];
             if (handle && typeof __zw_remove_style_handle === 'function') {
               __zw_remove_style_handle(handle, prop);

@@ -527,7 +527,7 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。renderer/tab 宿主有 runtime_iifes
     // 编译缓存，重复调用不重复取回；webview 进程内路径无宿主缓存（重复动态 import 同模块
     // 重复取回+编译，副作用不重复——转池候选）。
-    // s87（html-semantics-compat dynamic-import must-reject 面）失败四态（HTML spec
+    // s87（html-semantics-compat dynamic-import must-reject 面）失败五态（HTML spec
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
     // module map 失败记账语义；WPT dynamic-imports-fetch-error/script-error 判据）：
     // ① 宿主返空 = 顶层取回失败（404/500/MIME/跨源/解析失败）→ **每次**调用抛新
@@ -542,6 +542,11 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     //   link 失败不完成模块记录、不入 module map，逐次新错误对象（WPT
     //   dynamic-imports-script-error「instantiation error」判据 SyntaxError +
     //   differentErrorObjects；s87 ③ 旧口径「暂并入」翻案独立成态）。
+    // ⑤ s397：宿主返 `5\u{1f}resolved\u{1f}message` = module goal parse 预检失败
+    //   （webview v8 窗 gate 臂）→ 首抛新 SyntaxError 且记入 `__moduleFailures`，
+    //   重调复抛**同对象**——parse 失败属 module map 失败记账（与态③ parse-eval
+    //   抛错同语义；与态④链接失败「逐次新对象」相反）。WPT
+    //   dynamic-imports-script-error「the same error object for parse error」钉面。
     // s267（动态 import 取回缓存面）：`(spec, parent, type)` → resolved 记账后，
     // 同键复 import 且命名空间在缓存时**跳过宿主取回**直接回缓存实例——HTML
     // module map 语义（fetch-a-single-module-script 命中即复用，复 import 不再
@@ -573,6 +578,21 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     out.push_str("    var p3 = r.slice(2);\n");
     out.push_str("    var m3 = p3.indexOf('\\u001f');\n");
     out.push_str("    throw new SyntaxError(m3 >= 0 ? p3.slice(m3 + 1) : p3);\n");
+    out.push_str("  }\n");
+    // s397（html-semantics-compat module parse 失败缓存面）：tag 5 = module goal
+    // parse 预检失败（webview compile_module_contract gate 臂发射）——parse 失败
+    // 是 module map 失败记账（同 URL 复 import 复抛**同对象**，与态③ parse-eval
+    // 抛错同语义；态④链接失败逐次新对象的面不适用）。首抛构造 SyntaxError 入
+    // `__moduleFailures[resolved]`，后续同键命中复抛同对象。与 tag 3 同序前置
+    // （resolved 通用提取前分派——tag 5 载荷首段是 tag 字节非 resolved）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    out.push_str("  if (sep === 1 && r.charCodeAt(0) === 53) {\n");
+    out.push_str("    var p5 = r.slice(2);\n");
+    out.push_str("    var m5 = p5.indexOf('\\u001f');\n");
+    out.push_str("    var r5 = m5 >= 0 ? p5.slice(0, m5) : '';\n");
+    out.push_str("    var msg5 = m5 >= 0 ? p5.slice(m5 + 1) : p5;\n");
+    out.push_str("    if (!__moduleFailures[r5]) __moduleFailures[r5] = new SyntaxError(msg5);\n");
+    out.push_str("    throw __moduleFailures[r5];\n");
     out.push_str("  }\n");
     out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
     // s363（mixed eager/defer 同 URL 记录共享——spec module map 单键，两视图同一记录）：

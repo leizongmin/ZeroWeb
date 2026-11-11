@@ -427,11 +427,29 @@
             if (_inputValuesSet[key] !== true) _inputValues[key] = String(value);
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-defaultvalue
+            // spec defaultValue setter：default value override 为 null → String replace
+            // all 写 child text content（override 保持 null——output.html「defaultValue
+            // is set to 10: value is updated」断言面，value getter 活读即新值）；非
+            // null → 仅覆写 override（value 模式后代文本不动——output.html
+            // 「defaultValue is set to 15」value/textContent 保持 20 断言面）。旧恒写
+            // override + 以 _outputValue 空判写文本：override 被抢先吞掉，null 臂的
+            // 文本写因视图 stale 读回旧值（s392 分诊 1F）。
             var _odv = String(value);
-            _outputDefault[key] = _odv;
-            if (_outputValue[key] == null) {
+            if (_outputDefault[key] == null) {
               if (handle) __zw_set_text_handle(handle, _odv);
               else __zw_set_text(sel, _odv);
+              // 视图同步与 value setter 同链（R49/r2846 同根因）：裸 host 写不进 JS
+              // pending 融合视图——本地文本重注册，同 turn value/textContent 读新值。
+              if (typeof _zwRegisterTextEl === 'function' && !handle) {
+                try {
+                  if (_odv !== '') _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _odv);
+                  else if (typeof _zwUnregisterTextEl === 'function') {
+                    _zwUnregisterTextEl(_makeProxy(sel, handle));
+                  }
+                } catch (_eOdvR) {}
+              }
+            } else {
+              _outputDefault[key] = _odv;
             }
           }
         } else if (p === 'defaultSelected') {
@@ -949,6 +967,9 @@
             && !(_realTag(sel, handle) === 'FRAME' && p === 'src')
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
+            // s399：OBJECT.data 除外——专用分支（属性写 + 连接态重启资源取回，
+            // 下方 data setter 臂）。
+            && !(_realTag(sel, handle) === 'OBJECT' && p === 'data')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
           // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
           // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
@@ -1080,6 +1101,29 @@
               _defer(function () {
                 _dispatchWithBubble(_imKey, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
               });
+            }
+          }
+        } else if (p === 'data' && _realTag(sel, handle) === 'OBJECT') {
+          // html-semantics M2 切片 399：object data IDL setter 运行时加载
+          //（spec .../iframe-embed-object.html#the-object-element 处理模型——
+          // 已连接 object 的 data 内容属性更新重启资源取回，终态派 load/error；
+          // object-events `obj.data = ...` 动态加载驱动案）。镜像 R56h IMG src
+          // setter 形态：先写内容属性（IDL 反射 round-trip），再按连接态触发
+          // 加载链（detached 只写属性——插入钩子接入时启动）。
+          if (handle) __zw_set_attr_handle(handle, 'data', String(value));
+          else __zw_set_attr(sel, 'data', String(value));
+          moAttr = 'data';
+          var _objConn399 = false;
+          // 连接判定走 isConnected（script s96 同款——_ceConn 只记 custom/plain
+          // 对象章，plain handle 元素查 _ceConn 恒 false）。
+          try { _objConn399 = _makeProxy(sel, handle).isConnected === true; } catch (_eObjConn399) {}
+          if (_objConn399 && typeof _zwLoadObjectResource === 'function') {
+            var _objKey399 = _elKey(sel, handle);
+            if (_objKey399) {
+              // 重启语义：data 更新换资源，旧终态 entry 作废重建（事件 fired 门
+              // 随 entry 重建——新资源重新派终态）。
+              if (_zwObjectNavCache[_objKey399]) delete _zwObjectNavCache[_objKey399];
+              _zwLoadObjectResource(_objKey399, sel, handle, true);
             }
           }
         } else if (p === 'href' && _zwIsSvgNsEl(sel, handle)) {
@@ -5370,6 +5414,14 @@
       Object.defineProperty(_zwChildWinProto37, 'constructor',
         { value: Object, writable: true, enumerable: false, configurable: true });
       Object.setPrototypeOf(win, _zwChildWinProto37);
+      // html-semantics M2 切片 399：嵌套 window 暴露 Window interface 对象
+      //（spec WebIDL WindowProxy [[Get]] 走 Window interface——object-events
+      // about:blank 案 `obj.contentWindow instanceof obj.contentWindow.Window`
+      // 断言链；iframe/object 共用本函数同面）。prototype 指向 child win 原型
+      //——instanceof 沿 win 原型链命中 _zwChildWinProto37。
+      var _zwWinCtor399 = function Window() {};
+      _zwWinCtor399.prototype = _zwChildWinProto37;
+      win.Window = _zwWinCtor399;
     } catch (_e37cw2) {}
     }
     return win;
@@ -6761,8 +6813,17 @@
     // SPLIT:__n4 实证）。修：重挂时缓存命中但与传入 child 不同 → 以 **A 翻转缓存**
     //（页面视角 identity = A；B 是 remove 窗口期的孤儿重建，不被页面持有——live-NL
     // 数组的 stale B 成员在下次 refresh 时按 `arr[i] !== view[i]` 覆写为 A，天然收敛）。
+    // s393（html-semantics M2）：翻转目标须是 **shim proxy**（R315 本义——页面持有的
+    // canonical 视图 A）。R368/R4004 盖章 plain stub（own `addEventListener` 转发壳）
+    // 绝不能入缓存：`_makeProxy` 契约恒返 proxy——stub 入缓存后壳转发
+    // `_makeProxy(null, h)` 取回 stub 自身 → `_p.addEventListener` 即壳 → 无限自递归
+    //（RangeError：clicking-noninteractive-unlabelable-content 模板克隆 img 深嵌
+    // handle 容器下 addEventListener 两案根因）。own-`addEventListener` 探针精确命中
+    // 盖章 stub（proxy 的 gOPD trap 对方法名恒 miss——方法走 get trap 命名臂，无 own
+    // 数据属性）；页面持有的 proxy A 不携带该 own 键，R315 重挂翻转面零变化。
     if (child.__zwHandle && _proxyCache['@' + child.__zwHandle]
-        && _proxyCache['@' + child.__zwHandle] !== child) {
+        && _proxyCache['@' + child.__zwHandle] !== child
+        && !Object.prototype.hasOwnProperty.call(child, 'addEventListener')) {
       _proxyCache['@' + child.__zwHandle] = child;
     }
     var arr = _handleChildren[parentHandle] || (_handleChildren[parentHandle] = []);
@@ -14750,6 +14811,140 @@
       } catch (_e) {}
     }
     return null;
+  }
+
+  // s395：geometry trap 身份派生——handle-only（sel 空）动态元素的 in-process rect
+  // 回调（callbacks.rs `__zw_getBoundingClientRect`）无 handle→selector 解析臂
+  //（多进程 rect_bridge.rs 版有；in-process 版刻意收窄——s284 勘根：全局点亮曾致
+  // clone img 真实 rect 泄入 attr 期望面 naturalWidth 族），裸 handle 非合法
+  // selector 恒 miss（zw394 probe P2：同 turn rect/tag 双空）。元素带 id 时以
+  // '#'+id 作 rect 身份（host find_by_selector('#id') 解析；flush 后动态节点
+  // host 全可见——probe P6 实证：同 sel 1.5s 后 rect 8,58,70,20 正确）。无 id
+  // 维持 handle（现状恒 0 语义不变）。
+  function _zwRectIdent(sel, handle) {
+    if (sel || !handle) return sel || handle;
+    try {
+      var _rid = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, 'id') : null;
+      if (_rid) return '#' + _rid;
+    } catch (_eRid) {}
+    return handle;
+  }
+  // s395：definite 尺寸本地几何兜底（仅 handle-only——sel 身份的 host miss =
+  // 未布局/display:none，0 语义保持）。created 元素同 turn（mutation flush 前）
+  // host 无节点（probe P2 实证），而 CSSOM View geometry 读须先 update the
+  // rendering（强制布局语义，rect_bridge.rs:239 同注）——flush 前的同 turn 读数
+  // 以本地 0 基 definite 盒兜底（R34xx 文本几何 0 基兜底同型）。双轴均 definite
+  //（inline style px / 维度属性无单位数——img width/height attr 即 presentational
+  // hint 面，computed 50px 已由 probe v2 A 臂实证）才兜底；缺轴/百分比/auto →
+  // null（现状 0 不变）。刻意不进 _layoutRect：img IDL width/height rendered 臂
+  //（part04 `__zw_img` 尺寸臂）与 gBCR 同源消费 _layoutRect——s284 attr 期望面
+  // 雷区，本兜底仅 geometry trap 消费面接线。
+  function _zwLocalDefiniteRect(sel, handle) {
+    if (sel || !handle) return null;
+    function _pxLen(v) {
+      if (v == null) return null;
+      var m = /^\s*(\d+(?:\.\d+)?)px\s*$/i.exec(String(v));
+      return m ? +m[1] : null;
+    }
+    function _dim(getter, name) {
+      try {
+        var p = _pxLen(typeof getter === 'function' ? getter(handle, name) : null);
+        if (p != null) return p;
+        var a = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, name) : null;
+        if (a != null && /^\s*\d+(?:\.\d+)?\s*$/.test(String(a))) return +String(a).trim();
+      } catch (_eDim) {}
+      return null;
+    }
+    var _gs = typeof __zw_get_style_lw_handle === 'function' ? __zw_get_style_lw_handle : null;
+    var _w = _dim(_gs, 'width');
+    var _h = _dim(_gs, 'height');
+    if (_w == null || _h == null) return null;
+    return { x: 0, y: 0, w: _w, h: _h };
+  }
+  // s395：geometry trap 专用 rect 读取——身份派生 + host 查询 + 本地 definite 兜底。
+  // `_layoutRect` 保持裸语义（img IDL rendered 臂等既有消费者零变化）。
+  function _zwLayoutRectTrap(sel, handle) {
+    var id = _zwRectIdent(sel, handle);
+    if (id && typeof __zw_getBoundingClientRect === 'function') {
+      try {
+        var s = __zw_getBoundingClientRect(id);
+        if (s && s.indexOf(',') >= 0) {
+          var p = s.split(',');
+          return { x: +p[0], y: +p[1], w: +p[2], h: +p[3] };
+        }
+      } catch (_e) {}
+    }
+    return _zwLocalDefiniteRect(sel, handle);
+  }
+
+  // CSSOM View §offsetParent/offsetLeft/offsetTop spec 化（wptfyi-css 组F 布局刀1）：
+  // offsetParent 算法——最近 positioned（position != static）或 containing block
+  // 建立者祖先（transform/perspective/filter != none、contain
+  // paint/layout/content/strict）或最近 td/th/table 祖先，单遍取最近命中；fixed
+  // 自身仅 CB 建立者可命中（fixed 不被 positioned 祖先包含——CB=viewport 时
+  // offsetParent null，WPT offsetParent-fixed oracle）；html/body → null（R4003c
+  // 保持）；无 rect → null（detached / display:none 祖先语义不变）。
+  // offsetLeft/Top = 相对 offsetParent padding edge（减 op border 宽），round 最近
+  // 整数（subpixel-sizes-and-offsets 钉 5.5→6）；op 无 rect 或宿主回调缺失时回落
+  // viewport 近似。旧实现 offsetLeft/Top 恒 viewport 相对、offsetParent 恒 body
+  // proxy 近似——相对语义断言面（anchor/position-area/cssom-view offset 族）全挂，
+  // 本刀升级。
+  // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
+  function _zwOffsetCbEstablisher(p) {
+    var t = __zw_get_computed_style(p, 'transform');
+    if (t && t !== 'none') return true;
+    var pp = __zw_get_computed_style(p, 'perspective');
+    if (pp && pp !== 'none') return true;
+    var f = __zw_get_computed_style(p, 'filter');
+    if (f && f !== 'none') return true;
+    var c = __zw_get_computed_style(p, 'contain');
+    if (c && (c === 'paint' || c === 'layout' || c === 'content' || c === 'strict')) return true;
+    return false;
+  }
+  // 返回：选择器字符串（positioned / CB 建立者 / td/th/table 祖先命中）、'body'
+  //（无命中回落）、null（fixed 且无 CB 建立者——offsetParent null）。
+  function _zwOffsetParentSel(sel, handle) {
+    var cur = sel;
+    var guard = 0;
+    var hasCS = typeof __zw_get_computed_style === 'function';
+    var isFixed = hasCS && __zw_get_computed_style(sel, 'position') === 'fixed';
+    while (cur && guard++ < 64) {
+      var p = (typeof __zw_parent === 'function') ? __zw_parent(cur) : null;
+      if (!p) break;
+      var pTag = _realTag(p, null);
+      if (pTag === 'BODY') return isFixed ? null : 'body';
+      if (hasCS) {
+        // fixed 的 CB 不是 positioned 祖先（除非其为 CB 建立者）——跳过 positioned 判定。
+        if (!isFixed) {
+          var pos = __zw_get_computed_style(p, 'position');
+          if (pos && pos !== 'static') return p;
+        }
+        if (_zwOffsetCbEstablisher(p)) return p;
+      }
+      if (pTag === 'TD' || pTag === 'TH' || pTag === 'TABLE') return p;
+      cur = p;
+    }
+    return isFixed ? null : 'body';
+  }
+  // offsetLeft/offsetTop 换算：相对 offsetParent padding edge，round 最近整数。
+  function _zwOffsetOffset(sel, handle, r, axis) {
+    if (!r) return 0;
+    var myTag = _realTag(sel, handle);
+    if (myTag === 'BODY' || myTag === 'HTML') return axis === 'left' ? r.x : r.y;
+    if (typeof __zw_get_computed_style !== 'function' || typeof __zw_parent !== 'function') {
+      return axis === 'left' ? r.x : r.y;
+    }
+    if (__zw_get_computed_style(sel, 'position') === 'fixed') {
+      // offsetParent null → 相对初始 containing block（viewport）。
+      return Math.round(axis === 'left' ? r.x : r.y);
+    }
+    var opSel = _zwOffsetParentSel(sel, handle);
+    if (!opSel) return Math.round(axis === 'left' ? r.x : r.y);
+    var opRect = _zwLayoutRectTrap(opSel, null);
+    if (!opRect) return axis === 'left' ? r.x : r.y;
+    var opBorder = parseFloat(__zw_get_computed_style(opSel, axis === 'left' ? 'border-left-width' : 'border-top-width'));
+    if (!isFinite(opBorder)) opBorder = 0;
+    return Math.round((axis === 'left' ? r.x - opRect.x : r.y - opRect.y) - opBorder);
   }
 
   // getBoundingClientRect/getClientRects 共用（R2828）：从 `__zw_getBoundingClientRect(id)` 解析
