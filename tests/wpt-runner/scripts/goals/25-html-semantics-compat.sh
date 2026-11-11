@@ -148,6 +148,11 @@ fetch_raw "close-watcher/resources/helpers.js"
 fetch_raw "html/interaction/focus/the-autofocus-attribute/resources/utils.js"
 fetch_raw "html/semantics/popovers/resources/popover-utils.js"
 fetch_raw "html/semantics/popovers/resources/toggle-event-source-test.js"
+# s404：顶层 /resources/ 助资产——object/embed-javascript-url 双案
+# insertObjectNavigable 以 data|src=/resources/blank.html 导航（语料 resources/
+# 仅 testharness 基建 5 件，blank.html 缺 404 → error 代替 load → await onload
+# 恒挂 → 文件级 Timeout，s227 同族勘根）。
+fetch_raw "resources/blank.html"
 
 # ③b css/text 数据模块语料资源（s108 待决①销账，用户授权 2026-10-31）：css-module/
 # text-module 用例引用面。缺口机制 = M1 首拉（2026-10-15）时扩展白名单尚无 .css

@@ -2,40 +2,38 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 403 收口（object 嵌套文档脚本通道 R206 移植，driving 文件级
-Timeout→双子测 Pass）：object-handler.html 勘根三面缺通道——parser 静态 object 无人启航
-（`_zwStartConnectedObject` 仅动态插入钩子接线）+ 嵌套文档脚本不执行（`_zwObjectMaterializeDoc`
-无 R206 通道）+ 嵌套导航面缺（嵌套 location.href 写/named access morph/嵌套
-history.replaceState）。施工三件：part04 `__zwStartParserObjects`（S6 同款扫描位，**静默**
-fireEvents=false——display:none 双案钉「不渲染不派 load」，FIXME(object-static-events) 记档）
-+ part06 window load 派发分支同位接线 + part01 `_zwStartConnectedObject` 三参化 +
-`_zwObjectMaterializeDoc` 重写（doc._zwURL 槽/R206 全参 win/win.location 挂
-`_zwObjectLocation`/named access morph——parse 期 `_installNamedAccess` 装元素 face，spec
-navigable 值须 WindowProxy，identity 守卫 element/prevWin/undefined/`_zwRunIframeScripts`
-接通）+ 新 `_zwObjectLocation`（href get 读 URL 槽；set URL 解析同值 no-op、异值导航；
-protocol/host/pathname/search/hash 面；assign/replace/reload 委托）+ `_zwObjectNavigateEntry`
-（`objnav:` fetch 通道，2xx text/html 重物化+脚本重放；error/非 2xx → state='error'、
-doc/win=null fallback 语义；data 属性不动）。**回环修复**：materialize 首行 `state='done'`
-先行——嵌套脚本执行中的 contentDocument/contentWindow 消费读走 `_zwLoadObjectResource`
-早返门，'loading' 期落穿=重取回+重物化自递归（桥测 A 链 170 连 fetch 实证，回调链
-href0:false 循环 ~145 轮）。验证：part103 桥测 ×2 全绿（回调链五断言序 href0/na/rs/href1/
-data 全 true+静默事件空+终态 doc 停 test1+fetch 恰两取回+fallback 零取回；二次 sweep 零重
-取回+导航 404 fallback 语义）；单元 engine **3877P/7F** 在册逐名同形（+2 新钉）；driving
-solo **双子测 Pass**+余红 3 案（object-javascript-url T/constraint-validation F/
-in-object-fallback-2 F）s402 基线同态；全树 sweep ×2（idle）join 对 s402 base 8475
-pairs（8227P/218F/32T raw）：**object-handler ×2 NEW Pass 稳定 + link-rel Fail→Pass
-（s402 修复在册复测确认）**，ilf Pass→Fail 定谳**环境漂移单列**（stash no-WIP 二分 idle
-×3 同红钉证非本切片引入，成因未究挂观察池），selopt Fail↔Timeout/dialog-overlay/checkable
-flake 振荡单列（基线已红/已属在册家族），GONE=object-handler 文件 T（胜）+selopt 文件键
-（形态翻）+zz-probe（s402 探针已删出账）；fmt/clippy clean；**本流域在册红
-215F+31T→215F+30T**（−1T object-handler 文件级 Timeout 化双 Pass；ilf 漂移 +1F 单列不入
-切片口径，下轮基线刷新定夺）。过程陷阱入册：sweep 归因遇并发负载污染（ZeroSeed test-all
-+ZeroWeb-2 并发 load 227/16 核）——**真回归定谳必须 stash no-WIP 对照跑，单跑 with-WIP
-不足**；test-guard `--compile-first` 仅支持 cargo test（clippy 挂旗标被拒）。下一步：本流域
-散单续勘（挂账池承 s402：forward map 空返勘根/渲染流 5 面/form-submission-target 6T/
-sizes-auto 半边/A2+D 簇立项征询）或 object-javascript-url 勘根（solo 余红最近邻）；簇 D
-仍待用户决策。
+**状态**: Active——M2 切片 404 收口（object `window[N]` 索引 + javascript: URL 导航面，
+driving 文件级 Timeout→三子测 Pass）：object-javascript-url.html 文件级 Timeout 双层勘根
+（s227 同族资产先行）——语料 /resources/blank.html 缺席（insertObjectNavigable 404→error
+代替 load→await onload 恒挂，state dump `pending:2` 证挂起非 TypeError；资产已补 gh api
+pin 渠道+goal 脚本 fetch_raw 常驻条目+update-wpt-data.sh 挂账注释）+ `window[N]` 索引通道
+缺（named access 正则滤数字属性从不安装）+ javascript: 导航臂缺。施工三面 shim：
+`_zwWindowIndexedWin` + `defineProperty(globalThis,'0'..'15')` 索引层（own accessor
+enumerable:false 防 keys/for-in 漏出、configurable:true 保页面数值全局遮蔽，活跃集合同
+`_zwWindowLengthCount` 口径，物化序≈树序近似 FIXME）+ `_zwLoadObjectResource` javascript:
+data 属性臂（静默 fallback，子测1「do nothing」钉面，error 事件从同臂族派）+
+`_zwObjectNavigateEntry` javascript: 臂（#javascript-protocol：opaque path
+percent-decode→R206 形参遮蔽+函数内 `return eval(body)` 完成值透出→字符串重物化+fired
+复位+load 重派（URL 槽不动）；非字符串/抛错静默中止；realm 回落页面 realm FIXME）。验证：
+part104 桥测 ×2 全绿（索引物化序+descriptor+越界+移除动态重排+读面零 fetch；data 臂 error
+无 load 零 fetch+完成值重物化 load 1→2+percent-decode 落 doc+URL 槽不动+javascript:1
+静默中止+初载恰一取回）；单元 engine **3879P/7F** 在册逐名同形（+2 新钉，失败清单 diff
+逐名相等）+ webview 849P/2F 同形；driving solo **三子测 Pass**（do nothing/fire load/
+not fire load 三断言全中）；全树 sweep ×2（idle）join 对 s403 idle pairs（8478/8475，
+8226P/217-221F/31-32T raw）：**object-javascript-url 文件级 T 键双跑 GONE + 两子测 NEW
+Pass 稳定**（子测1 基线已 Pass，本轮三子测齐报），selopt 家族形态翻/checkable F→P（振荡族
+落有利侧）/dialog-overlay F→P flake 单列，modulepreload-referrerpolicy P→F 同二进制跨跑
+翻转=s292 时序 flake 新观察挂池；object-allowed-schemas 六键全 P（javascript: not-allowed
+error 期望面经新臂保持）+ object-handler 2P 保持；fmt/clippy clean；**本流域在册红
+215F+30T→215F+29T**（−1T object-javascript-url 文件级 Timeout 化三子测 Pass；F 口径零
+位移）。过程陷阱：`--compile-first` 仅支持 cargo test 重踩一次（cargo build 挂旗标被拒，
+s403 已入册本轮管道脚本固化去旗标）；跨导航 WindowProxy identity 不保（重物化建新 win，
+s403 同型）——corpus 断言面均为 fresh 读不触，桥测改 live 解析等价断言+FIXME 记档。
+下一步：**s405 embed 动态加载链**（s399 镜像，embed twin 文件 T 唯一施工解）或本流域散单
+续勘（挂账池承 s403：forward map 空返勘根/渲染流 5 面/form-submission-target 6T/
+sizes-auto 半边/ilf 观察池+modulepreload 新观察）；A2+D 簇立项征询仍待用户决策。
 
+> **▶ 承前（2026-11-11 M2 切片 403 收口）——object 嵌套文档脚本通道（R206 移植）+ parser 静态启航（driving 文件级 Timeout→双子测 P）**: commit 918079506，账本 evidence/2026-11-11-m2s403-object-nested-script-channel.md。原 Active 段留档——object-handler.html 勘根三面缺通道（parser 静态 object 无人启航 + 嵌套文档脚本不执行 + 嵌套导航面缺：嵌套 location.href 写/named access morph/嵌套 history.replaceState）。施工：part04 `__zwStartParserObjects`（S6 同款扫描位，**静默** fireEvents=false——display:none 双案钉「不渲染不派 load」，FIXME(object-static-events) 记档）+ part06 window load 派发分支同位接线 + part01 `_zwStartConnectedObject` 三参化 + `_zwObjectMaterializeDoc` 重写（doc._zwURL 槽/R206 全参 win/win.location 挂 `_zwObjectLocation`/named access morph——parse 期装元素 face，spec navigable 值须 WindowProxy，identity 守卫 element/prevWin/undefined/`_zwRunIframeScripts` 接通）+ 新 `_zwObjectLocation`（href get 读 URL 槽；set 同值 no-op 异值导航；hash setter URL 槽近似 FIXME）+ `_zwObjectNavigateEntry`（`objnav:` fetch 通道，2xx text/html 重物化+脚本重放；error→state='error' fallback 语义，data 属性不动）。**回环修复**：materialize 首行 `state='done'` 先行——'loading' 期嵌套脚本消费读落穿 `_zwLoadObjectResource` 早返门=重取回+重物化自递归（桥测 A 链 170 连 fetch 实证）。验证：part103 桥测 ×2 全绿 + 单元 3877P/7F 在册逐名同形 + driving solo 双子测 Pass + 全树 sweep ×2（idle）join：object-handler ×2 NEW Pass 稳定 + link-rel Fail→Pass（s402 修复复测确认），ilf Pass→Fail 定谳**环境漂移单列**（stash no-WIP 二分 idle ×3 同红钉证，成因未究挂观察池），selopt/dialog-overlay/checkable flake 振荡单列；fmt/clippy clean；**本流域在册红 215F+31T→215F+30T**（−1T object-handler）。过程陷阱入册：sweep 归因遇并发负载污染（load 227/16 核）——**真回归定谳必须 stash no-WIP 对照跑，单跑 with-WIP 不足**；test-guard `--compile-first` 仅支持 cargo test（clippy 挂旗标被拒）。
 > **▶ 承前（2026-11-11 M2 切片 402 收口）——shadow 森林 handle 身份跨探测环刷新重建（driving 1F→P）**: commit 49a3b2db8，账本 evidence/2026-11-11-m2s402-shadow-forest-handle-rebuild.md。原 Active 段留档——referent
 > 核验定谳 s168b 修复的 link-rel-attribute shadow 案在 M3 Batch 2 声明式模板回环（38b972751）后回红——
 > **M3 序列化回环回归非 s168b 面失效**：shim `_zwSrQualifies180` list 臂 + serializer ShadowRoot 臂对命令式
@@ -7064,6 +7062,8 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-11 M2 切片 404**：object `window[N]` 索引访问 + javascript: URL 导航面施工轮（driving 文件级 Timeout→三子测 Pass，shim 单文件+语料资产+桥测）——object-javascript-url.html 文件级 Timeout 双层勘根（s227 同族先验语料资产再验引擎）：①语料 `/resources/blank.html` 缺席（insertObjectNavigable 以 `data='/resources/blank.html'` 导航→404→error 代替 load→子测 2/3 首个 `await onload` 恒挂，state dump `{"loaded":true,"pending":2,"phase":4,"tests":3}` 证挂起非 TypeError；资产 gh api pin 31597693 渠道补齐 379B md5 04daab42…，goal 脚本 ③段挂 `fetch_raw "resources/blank.html"` 常驻重拉+update-wpt-data.sh 挂账注释「升级新 ref 后需重新补」）；②`window[N]` 索引通道缺（named access `_installNamedAccess` 正则 `/^[A-Za-z_$][A-Za-z0-9_$]*$/` 滤数字属性从不安装，资产补后 `window[0]` undefined→TypeError 快败）；③javascript: 导航臂缺（`_zwObjectNavigateEntry` 直落 fetch 通道）。施工三面 shim（part01）：`_zwWindowIndexedWin(idx)` + `defineProperty(globalThis,'0'..'15')` 索引层（own accessor enumerable:false 防 keys/for-in 漏出+configurable:true 保页面数值全局可遮蔽——spec own 属性优先 WindowProperties；活跃集合同 `_zwWindowLengthCount` 口径 iframe _iframeDocCache 未 destroy+object _zwObjectNavCache 已连元素；FIXME 物化序≈树序近似+16 上限截断+WindowProperties 异对象层不可整体 Proxy 化）+ `_zwLoadObjectResource` javascript: data 属性臂（静默 fallback state='error'，子测1「should do nothing」钉面；error 事件从同臂族 data: 解码失败/blob: 跨源；FIXME spec 网络错误语义精确面——完成值字符串虽建文档，语料仅钉无 load）+ `_zwObjectNavigateEntry` javascript: 臂（#javascript-protocol：href setter 先经 URL 解析 opaque path 百分号编码 `%22test%22`→**percent-decode**（spec 明确；decodeURIComponent 残缺 % 抛错回落原文）→R206 形参遮蔽+函数体内 `return eval(body)` 完成值透出（window/self/parent/top/document/location/navigator/history 遮蔽到嵌套上下文，其余全局回落页面 realm FIXME）→字符串完成值 `entry.fired=false` 复位+`_zwObjectMaterializeDoc`（URL 槽传 entry.url 不动）+`_zwFireObjectResultEvent`（navigate entry 无 fireEvents 参数，导航完成恒派 load spec 对齐）；非字符串/脚本抛错静默中止 doc 不动无事件，FIXME report the error 近似）。embed 孪生案（embed-javascript-url.html 同构）不同径不混本刀：embed 无插入钩子/加载链/嵌套 navigable——s405 候选。part104 桥测两钉：`window_indexed_access_faces_s404`（iframe+object 物化序索引+length=2+越界 undefined+descriptor get/enum:false/cfg:true/keys 不漏+移除动态重排 [1]→[0]→undefined+索引/length 读零 fetch）+`object_javascript_url_faces_s404`（data=javascript:"foo" error 无 load 零 fetch+window[0]=contentWindow+完成值字符串重物化 load 1→2+percent-decode 落 doc+URL 槽停 blank.html+javascript:1 静默中止无第三 load+obj2 初载恰一取回+javascript: URL 不落 host fetch）。验证：桥测 ×2 全绿（J4 断言过强返工一次——跨导航 WindowProxy identity 不保：`_zwMakeIframeWin` prevWin 通道不保 identity 重物化建新 win，s403 同型 named access 重 morph，corpus 断言面均为 fresh 读不触——改 live 解析等价 `window[0]===o2.contentWindow`+FIXME 记档）+ 单元 engine **3879P/7F** 在册逐名同形（失败清单 diff 逐名相等；+2 新钉全绿）+ webview 849P/2F 同形 + driving solo **三子测 Pass** + 全树 sweep ×2（idle，runner exit=1=带失败退出码口径 s403 同值非截断）join 对 s403 idle pairs（8478/8475，8226P/217-221F/31-32T raw）：**object-javascript-url 文件级 T 键双跑 GONE+`'javascript:"test"'`/`'javascript:1'` 两子测 NEW Pass 稳定**（子测1 do-nothing 基线已 Pass——文件挂起前已上报，本轮三子测齐报；raw 8228-8229P/217F/30-31T），selopt 家族形态翻（detailed 文件键 T↔F 跨跑+optional 文件键 run1 单现 T=s387 在册截断族）/checkable F→P（振荡族落有利侧，无因果路径）/dialog-overlay F→P（在册跨跑族）flake 单列，modulepreload-referrerpolicy P→F 同二进制跨跑翻转=s292 判据时序 flake 新观察挂池；object-allowed-schemas 六键全 P（javascript: not-allowed error 期望面经新 load 臂保持）+ object-handler 2P 保持（s403 修复在册复测确认）；fmt/clippy clean（`--compile-first` 仅支持 cargo test 重踩一次——cargo build 挂旗标被拒，s403 已入册本轮管道脚本固化去旗标）。**本流域在册红 215F+30T→215F+29T**（−1T object-javascript-url 文件级 Timeout 化三子测 Pass；F 口径零位移）。残差：`window[N]` 索引序物化序近似树序+16 上限截断+跨导航 WindowProxy identity 不保（重物化建新 win，corpus fresh 读不触 FIXME 记档）+ javascript: 求值 realm 回落页面 realm+脚本抛错静默无 console 上报面+data 属性 javascript: error 事件面 spec 精确语义语料仅钉无 load。账本
+  [evidence/2026-11-11-m2s404-object-javascript-url.md](html-semantics-compat/evidence/2026-11-11-m2s404-object-javascript-url.md)。
 - **2026-11-11 M2 切片 403**：object 嵌套文档脚本通道施工轮（R206 移植，driving 文件级 Timeout→双子测 Pass，纯 shim 三文件）——object-handler.html 勘根三面缺通道（parser 静态 object 无人启航——`_zwStartConnectedObject` 仅动态插入钩子接线/嵌套文档脚本不执行——`_zwObjectMaterializeDoc` 无 R206 通道/嵌套导航面缺——嵌套 location.href 写+named access morph+嵌套 history.replaceState 均无物）。施工：part04 `__zwStartParserObjects`（S6 同款扫描位，**静默** fireEvents=false——display:none 双案钉「不渲染不派 load」，FIXME(object-static-events) 记档 spec 偏差，恢复需 rendered 门）+ part06 window load 派发分支 `__zwStartParserIframes()` 后同位接线 + part01 `_zwStartConnectedObject` 三参化 + `_zwObjectMaterializeDoc` 重写（doc._zwURL 槽/R206 全参 win/win.location 挂 `_zwObjectLocation`/named access morph——parse 期 `_installNamedAccess` 装元素 face，spec navigable 值算法单 named 元素带嵌套上下文→WindowProxy，identity 守卫 element/prevWin/undefined/`_zwRunIframeScripts` 接通）+ 新 `_zwObjectLocation`（href get 读 `entry.doc._zwURL`；set `new URL` 解析同值 no-op、异值走导航；protocol/host/hostname/pathname/search/hash/origin 面，hash setter URL 槽近似 FIXME）+ `_zwObjectNavigateEntry`（fetch `objnav:<key>:nav`，2xx text/html 重物化+脚本重放，error/非 2xx→state='error'、doc/win=null fallback 语义，data 属性不动）。**回环修复**：materialize 首行 `state='done'` 先行——嵌套脚本执行中 contentWindow/contentDocument 消费读走 `_zwLoadObjectResource` 早返门（'loading' 期落穿=重取回+重物化自递归，桥测 A 链 170 连 fetch 实证、回调 href0:false 循环 ~145 轮；各臂尾部 state 赋值成幂等 no-op）。验证：part103 桥测 ×2 全绿（回调链五断言序 href0/na/rs/href1/data 全 true+静默事件空+终态 doc 停 test1+fetch 恰两取回+fallback 零取回；二次 sweep 零重取回+导航 404 fallback 语义+幂等）+ 单元 engine **3877P/7F** 在册逐名同形（+2 新钉全绿）+ driving solo **双子测 Pass**（余红 3 案 object-javascript-url T/constraint-validation F/in-object-fallback-2 F = s402 基线同态）+ 全树 sweep ×2（idle）join 对 s402 base 8475 pairs（8227P/218F/32T raw）：**object-handler ×2 NEW Pass 稳定 + link-rel Fail→Pass（s402 修复在册复测确认）**，ilf Pass→Fail 定谳**环境漂移单列**（stash no-WIP 二分 idle ×3 同红钉证非本切片引入，成因未究挂观察池——真回归定谳必须 no-WIP 对照跑单跑 with-WIP 不足），selopt Fail↔Timeout/dialog-overlay/checkable flake 振荡单列（基线已红/在册家族），GONE=object-handler 文件 T（胜）+selopt 文件键（形态翻）+zz-probe（s402 探针已删出账）+ fmt/clippy clean（`--compile-first` 仅支持 cargo test——clippy 挂旗标被拒去旗标）。**本流域在册红 215F+31T→215F+30T**（−1T object-handler 文件级 Timeout 化双 Pass；ilf 漂移 +1F 单列不入切片口径，下轮基线刷新定夺）。残差：静态 object 渲染终态事件不派（FIXME 单列）+ `_zwObjectLocation` hash setter URL 槽近似 + origin 无 about:blank 特例（语料无钉面）+ 嵌套 window.length/frames 面未接（s400 近似在册）+ 嵌套导航 objnav 通道不走 R56h inflight 闸门（text/html 无延迟 load 面）+ ilf 环境漂移成因未究。账本
   [evidence/2026-11-11-m2s403-object-nested-script-channel.md](html-semantics-compat/evidence/2026-11-11-m2s403-object-nested-script-channel.md)。
 - **2026-11-11 M2 切片 402**：shadow 森林 handle 身份跨探测环刷新重建轮（driving 1F→P，engine 新模块+分支重构）——referent 核验定谳 s168b 修复的 link-rel-attribute shadow 案在 M3 Batch 2 声明式模板回环（38b972751）后回红（M3 序列化回环回归非 s168b 面失效）：shim `_zwSrQualifies180` list 臂 + serializer ShadowRoot 臂对命令式根恒发 `<template shadowrootmode>` → 探测环 dump 携标记 → refresh re-parse 物化 shadow 树——**树不丢，丢的是 handle 身份**（序列化不带 handle 标记，`__zw_get_computed_style_by_handle` 的 `nodes[handle]` 只来自重放窗口 `[applied..count)`，drain 尽后窗口空 → shadow 树内 handle 全落空 → gCS ''；探针 v4 A/B：t30/byHandle30 `""→rgb(0,128,0)`；刷新后新 attach 的 shadow 一个探测周期后同病实证）。施工：新模块 js_dom_bridge/shadow_forest.rs——`shadow_forest_mutations` 森林切片三遍 O(n)（①种子+最后归属表：handle 锚 placement 覆盖写 child→parent 最终归属口径——dump 已是终态真相，forest→light 挪回不重放防双份；②成员闭包记忆化下行+环防御；③顺序过滤发射；light 宿主命令式 shadow 整树 prune 迭代至不动点——宿主 create 不重放则 attach 发射必撞 unknown host handle Err 中止切片尾部，根出种子子树全弃重放零 Err 后继链不截断）+ `strip_declarative_shadow_templates` 深度配平剥声明式模板 span（普通 template 保留，无标记串零开销透传）9 单测 + computed_style_by_handle 增 `prefix_has_shadow && base_has_marker` 分支（剥模板基座 parse + 森林切片重放重注册 handle + 窗口 `[applied..count)` 照旧续放；s168 臂 else 分支语义不变，两臂分流互斥）。验证：单元 9 新钉全过 + engine lib 3874P/7F 在册逐名同形（img settle ×2/fetch/SW/response/websocket 时序族）+ webview 849P/2F 同形；driving solo **2P/1F→3P/0F**（solo+sweep1+sweep2 三跑全绿）；the-link-element 114P+探针（s168b 时代 1F stylesheet-media-change-no-fetch 区间内 intervening 修复现绿非本刀）；全树 sweep 双跑 join 对当轮 stash 基线（8475 pairs=8227P/218F/32T raw 含探针 1F）**sweep2 = stable 8474 + Fail→Pass ×1 恰 driving + new/gone ×0**（sweep1 差异键 = fdtcb 文件级 T 截断 4 子测在册 flake + home-end T→F 在册家族振荡；基线对 s401 cur 漂移 = 探针新增 1F 已删 + home-end 振荡——corpus 真红零位移；join 键字段反转重演 s401 在册坑——s401 cur2.pairs.u 是 state\x1fkey 形本轮 key\x1fstate，先对齐方向再 join）；fmt/clippy clean（matches! 闭包内 ref 绑定 E0027 去显式 ref；clippy doc_lazy_continuation 续行缩进）。**本流域在册红 216F+31T→215F+31T**（−1 driving；探针行勘根毕删下轮出账）。残差：light 宿主命令式 shadow 刷新后子树视图缺（lenient 不劣化，恢复需宿主 handle→dump 节点重锚 forward map 通道 FIXME 单列）+ sel 子 move-in 剥模板基座 miss（无 handle 面不受影响）+ 剥模板子串判病态串近似（与 shim `_zwStripEchoHtml180` FIXME 同族）。账本

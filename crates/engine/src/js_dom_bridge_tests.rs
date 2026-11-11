@@ -122,3 +122,8 @@ include!("js_dom_bridge_tests/part102_s400_object_schemes_window_length.rs");
 // 51 号 s403 object 嵌套文档脚本通道：parser 静态启航（静默）+ R206 脚本移植
 // （parent 回调链）+ 嵌套导航重物化 + named access morph + replaceState 槽钉。
 include!("js_dom_bridge_tests/part103_s403_object_nested_scripts.rs");
+
+// 52 号 s404 object window[N] 索引 + javascript: 导航：WindowProperties 索引层
+// （own accessor 物化序近似树序 + descriptor/越界/移除重排）+ data 属性静默
+// fallback + 完成值求值通道（percent-decode → 重物化 → load 重派/静默中止）钉。
+include!("js_dom_bridge_tests/part104_s404_object_window_index_javascript_nav.rs");

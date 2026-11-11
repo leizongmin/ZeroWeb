@@ -3635,6 +3635,18 @@
     // 无 data 属性：不发起取回，无嵌套浏览上下文（处理模型无资源可取 → nothing；
     // object-attributes obj2 type=image/png null 断言面）。不 fire（nothing 无事件）。
     if (!_objData) return entry;
+    // s404 javascript: data 属性：静默 fallback（object-javascript-url 子测1钉面
+    //「javascript: in data attribute should do nothing」——onload unreached；语料
+    // 注释=fetch 落 network error → fallback）。spec 对象处理模型 javascript: URL
+    // 的 fetch 面走 #javascript-protocol 求值非网络取回——完成值字符串虽建文档，
+    // 初载 data 属性通道语料钉「无 load」，近似为 error 臂（不物化）。error 事件
+    // 派发从同臂族（data: 解码失败/blob: 跨源），FIXME：spec 网络错误语义精确面
+    //（error 事件 vs 求值建文档）语料仅钉无 load，事件面无钉。
+    if (/^javascript:/i.test(_objData)) {
+      entry.state = 'error';
+      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      return entry;
+    }
     // data: URL：in-shim 解码（RFC 2397；fetch() 通路 _zwDataURLProcessor 同源）。
     // 解码失败 → error；text/html → 嵌套上下文；其余类型 → success 无 navigable
     //（document-getters SVG data: URL null 面保持——image/svg+xml 落 success 臂）。
@@ -3856,6 +3868,36 @@
   // 每次 fetch 失败均派 error——语料无驱动面）。data 属性不动
   //（object-handler「嵌套导航后 data 属性不更新」断言链）。
   function _zwObjectNavigateEntry(entry, objKey, url, sel, handle) {
+    // s404 javascript: 臂（spec #javascript-protocol：navigate 到 javascript:
+    // URL = 在目标 browsing context 求值脚本体；完成值为字符串 → 以该串为内容
+    // 建文档继续导航、否则静默中止——object-javascript-url 双案断言面：
+    // `javascript:"test"` 重物化并派 load、`javascript:1` 不派不清文档）。求值
+    // 通道 = R206 形参遮蔽 + 函数体内直接 eval（完成值透出；window/self/parent/
+    // top/document/location 遮蔽到嵌套上下文——其余全局回落页面 realm，FIXME
+    // 近似）。URL 槽不动（javascript: 导航文档 URL 保持——spec 精确面 FIXME）。
+    // 脚本抛错静默中止（spec report the error 近似——语料无 console 断言面）。
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#javascript-protocol
+    if (/^javascript:/i.test(String(url))) {
+      var _objJsBody = String(url).replace(/^javascript:/i, '');
+      // href setter 先经 URL 解析（opaque path 百分号编码——`"test"` 序列化为
+      // %22test%22）；spec #javascript-protocol 以「percent-decode the URL 的
+      // path」为脚本源。decodeURIComponent 对残缺 % 序列抛错 → 回落原文
+      //（data 属性/setAttribute 直通路径未编码，原文即脚本源）。
+      try { _objJsBody = decodeURIComponent(_objJsBody); } catch (_eObjJsDec) {}
+      var _objJsRes;
+      try {
+        var _objJsFn = new Function('window', 'self', 'parent', 'top', 'document', 'location',
+          'navigator', 'history', 'return eval(' + JSON.stringify(_objJsBody) + ');');
+        _objJsRes = _objJsFn(entry.win, entry.win, globalThis, globalThis, entry.doc,
+          entry.win && entry.win.location, entry.win && entry.win.navigator,
+          entry.win && entry.win.history);
+      } catch (_eObjJs) { return; }
+      if (typeof _objJsRes !== 'string') return;
+      entry.fired = false;  // 同 entry 重复导航 load 重派（once-terminal 门复位——导航完成恒派 load）
+      _zwObjectMaterializeDoc(entry, objKey, entry.url, _objJsRes, sel, handle);
+      _zwFireObjectResultEvent(entry, sel, handle);
+      return;
+    }
     if (typeof __zw_fetch !== 'function') return;
     var wire = '';
     try {
@@ -12991,6 +13033,54 @@
     enumerable: true, configurable: false,
     get: function () { return _zwWindowLengthCount(); },
   });
+  // html-semantics M2 切片 404：`window[N]` 索引访问（Window 支持索引属性访问嵌套
+  // browsing context 的 WindowProxy，树序；WindowProperties 异对象层）。活跃集合与
+  // 计数口径同 `_zwWindowLengthCount`（iframe _iframeDocCache + object
+  // _zwObjectNavCache；object-javascript-url `window[0].location.href` 断言入口）。
+  // FIXME：索引序 = 缓存插入序近似树序（缓存项惰性物化，消费序≈树序，语料单嵌套
+  // 无乱序钉面）；WindowProperties 异对象层不可整体 Proxy 化，索引层以 own accessor
+  // 0..15 落地——enumerable:false 防 for-in 漏出，configurable:true 保页面自有数值
+  // 全局赋值可遮蔽（spec：own 属性优先于 WindowProperties）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#windowproxy
+  function _zwWindowIndexedWin(idx) {
+    var n = 0;
+    try {
+      var iKeys = Object.keys(_iframeDocCache);
+      for (var i = 0; i < iKeys.length; i++) {
+        var ie = _iframeDocCache[iKeys[i]];
+        if (ie && ie.win && !ie._zwSwDestroyed) {
+          if (n === idx) return ie.win;
+          n++;
+        }
+      }
+    } catch (_eWIW1) {}
+    try {
+      var oKeys = Object.keys(_zwObjectNavCache);
+      for (var j = 0; j < oKeys.length; j++) {
+        var oe = _zwObjectNavCache[oKeys[j]];
+        if (!(oe && oe.win)) continue;
+        var connected = true;
+        try {
+          if (oe.sel || oe.handle) connected = _makeProxy(oe.sel, oe.handle).isConnected !== false;
+        } catch (_eWIW2) { connected = false; }
+        if (connected) {
+          if (n === idx) return oe.win;
+          n++;
+        }
+      }
+    } catch (_eWIW3) {}
+    return undefined;
+  }
+  for (var _zi404 = 0; _zi404 < 16; _zi404++) {
+    (function (_zk404) {
+      try {
+        Object.defineProperty(globalThis, String(_zk404), {
+          configurable: true, enumerable: false,
+          get: function () { return _zwWindowIndexedWin(_zk404); },
+        });
+      } catch (_eWIW4) {}
+    })(_zi404);
+  }
   // js-dom M4 R33：`Window.event`（HTML spec `current event`，legacy IE 全局）。Window 须 own `event`
   // 属性，初值 undefined（spec dispatch 前 window.event === undefined）；dispatch 期 = 正在派发的 event
   //（innermost，嵌套 dispatch 后恢复外层）；dispatch 后回 undefined。_dispatchWithBubble（part03）在派发
