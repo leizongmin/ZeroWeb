@@ -8499,11 +8499,24 @@
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < ceAdded.length; ci++) {
                 _ceApplyConn(ceAdded[ci], cePconn);
-                _zwStartConnectedIframe(ceAdded[ci], cePconn);
+                // OPTIMIZATION: 三 start-connected 臂（iframe/object/embed）共享单次
+                // _realTag host 读——CE 插入 walk 每新增节点 3→1 次 __zw_* 回调往返
+                //（learnings #26 trap 域成本；tag 判定表达式与三臂原逻辑逐字同形，
+                // s405 第三臂把 multitest-ab 整页脚本推过 300s 门 390 行截断）。
+                var _scTagUp = '';
+                try {
+                  _scTagUp = typeof _realTag === 'function'
+                    ? _realTag(ceAdded[ci].__zwSelector || null, ceAdded[ci].__zwHandle || null)
+                    : String(ceAdded[ci].tagName || '');
+                } catch (_eScTagUp) {
+                  _scTagUp = String(ceAdded[ci].tagName || '');
+                }
+                _scTagUp = String(_scTagUp || ceAdded[ci].tagName || '').toUpperCase();
+                _zwStartConnectedIframe(ceAdded[ci], cePconn, _scTagUp);
                 // s399：object 插入步同排（动态插入启动资源取回 + 终态 load/error）。
-                _zwStartConnectedObject(ceAdded[ci], cePconn);
+                _zwStartConnectedObject(ceAdded[ci], cePconn, undefined, _scTagUp);
                 // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
-                _zwStartConnectedEmbed(ceAdded[ci], cePconn);
+                _zwStartConnectedEmbed(ceAdded[ci], cePconn, undefined, _scTagUp);
               }
               // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
               //（given-prong——spec details element insertion steps；open toggle 已在
@@ -11224,11 +11237,21 @@
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < added.length; ci++) {
                 _ceApplyConn(added[ci], cePconn);
-                _zwStartConnectedIframe(added[ci], cePconn);
+                // OPTIMIZATION: 同上 appendChild 循环——三臂共享单次 _realTag host 读。
+                var _scTagUp = '';
+                try {
+                  _scTagUp = typeof _realTag === 'function'
+                    ? _realTag(added[ci].__zwSelector || null, added[ci].__zwHandle || null)
+                    : String(added[ci].tagName || '');
+                } catch (_eScTagUp) {
+                  _scTagUp = String(added[ci].tagName || '');
+                }
+                _scTagUp = String(_scTagUp || added[ci].tagName || '').toUpperCase();
+                _zwStartConnectedIframe(added[ci], cePconn, _scTagUp);
                 // s399：object 插入步同排（与 appendChild 循环同款）。
-                _zwStartConnectedObject(added[ci], cePconn);
+                _zwStartConnectedObject(added[ci], cePconn, undefined, _scTagUp);
                 // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
-                _zwStartConnectedEmbed(added[ci], cePconn);
+                _zwStartConnectedEmbed(added[ci], cePconn, undefined, _scTagUp);
                 // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
                 // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
                 // mutation → selection 重记录 + 重验；element/picture 门在

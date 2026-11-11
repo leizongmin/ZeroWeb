@@ -4253,15 +4253,22 @@
     } catch (_eLoad) {}
     return entry;
   };
-  function _zwStartConnectedIframe(frame, connected) {
+  // tagHint（可选，已 toUpperCase 的调用方共享 tag 读）：CE 插入 walk 三臂同排时
+  // 每新增节点共享单次 _realTag host 往返（learnings #26 trap 域成本——原三臂各读
+  // 一次为 3 次 __zw_* 回调，multitest-ab 整页脚本 300s 门击杀）；缺省走原读。
+  function _zwStartConnectedIframe(frame, connected, tagHint) {
     if (!connected || !frame) return;
     var tag = '';
-    try {
-      tag = typeof _realTag === 'function'
-        ? _realTag(frame.__zwSelector || null, frame.__zwHandle || null)
-        : String(frame.tagName || '');
-    } catch (_eIframeTag) {
-      tag = String(frame.tagName || '');
+    if (typeof tagHint === 'string') {
+      tag = tagHint;
+    } else {
+      try {
+        tag = typeof _realTag === 'function'
+          ? _realTag(frame.__zwSelector || null, frame.__zwHandle || null)
+          : String(frame.tagName || '');
+      } catch (_eIframeTag) {
+        tag = String(frame.tagName || '');
+      }
     }
     var _stTagUp = String(tag || frame.tagName || '').toUpperCase();
     // s188：frame 插入步同 iframe 建 child navigable（spec
@@ -4304,15 +4311,19 @@
   //（缓存 fired 门防插入钩子 + 消费读双派）。fireEvents 缺省 true（插入钩子面）；
   // s403 静态扫描传 false——静默物化（嵌套文档脚本通道 + 消费面），不派终态事件
   //（渲染静态 object 的 load/error 事件 spec 偏差记档在扫描位）。
-  function _zwStartConnectedObject(el, connected, fireEvents) {
+  function _zwStartConnectedObject(el, connected, fireEvents, tagHint) {
     if (!connected || !el) return;
     var tag = '';
-    try {
-      tag = typeof _realTag === 'function'
-        ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
-        : String(el.tagName || '');
-    } catch (_eObjTag) {
-      tag = String(el.tagName || '');
+    if (typeof tagHint === 'string') {
+      tag = tagHint;
+    } else {
+      try {
+        tag = typeof _realTag === 'function'
+          ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
+          : String(el.tagName || '');
+      } catch (_eObjTag) {
+        tag = String(el.tagName || '');
+      }
     }
     if (String(tag || el.tagName || '').toUpperCase() !== 'OBJECT') return;
     _defer(function () {
@@ -4329,15 +4340,19 @@
   // FIXME(embed-static-events)：parser 静态扫描不接（语料驱动案全动态插入；静态
   // embed 现存 Pass 案 document-getters-return-null-for-cross-origin 零触碰——
   // 静态面事件 spec 偏差同 FIXME(object-static-events) 族记档）。
-  function _zwStartConnectedEmbed(el, connected, fireEvents) {
+  function _zwStartConnectedEmbed(el, connected, fireEvents, tagHint) {
     if (!connected || !el) return;
     var tag = '';
-    try {
-      tag = typeof _realTag === 'function'
-        ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
-        : String(el.tagName || '');
-    } catch (_eEmbTag) {
-      tag = String(el.tagName || '');
+    if (typeof tagHint === 'string') {
+      tag = tagHint;
+    } else {
+      try {
+        tag = typeof _realTag === 'function'
+          ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
+          : String(el.tagName || '');
+      } catch (_eEmbTag) {
+        tag = String(el.tagName || '');
+      }
     }
     if (String(tag || el.tagName || '').toUpperCase() !== 'EMBED') return;
     _defer(function () {
