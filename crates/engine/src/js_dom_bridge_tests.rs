@@ -103,3 +103,6 @@ include!("js_dom_bridge_tests/part97_m3_shadow_probe.rs");
 
 // 46 号 s363 mixed eager/defer 同 URL 记录共享：defer 面命中 eager 缓存零再求值钉。
 include!("js_dom_bridge_tests/part98_s363_mixed_eager_defer.rs");
+
+// 47 号 s397 module parse 失败缓存面：tag 5 同对象复抛 + tag 3 逐次新对象对照钉。
+include!("js_dom_bridge_tests/part99_s397_module_parse_failure.rs");

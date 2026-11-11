@@ -2,18 +2,23 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 396 收口（object/embed width/height 内容属性 dimension hint 施工，4F→P）：HTML
-rendering #attr-dimensions 同口径单臂——collect_presentational_hints 增 `"object"|"embed"` 臂（html_length_attr：
-无单位数→px、百分比透传，img/table 臂同型），单测四面钉死（object 100/50、embed 100/100、50% 透传、无属性零
-hint）；iframe/video 同属规范面但语料无 driving F 面不扩臂（需求内原则）。验证：driving solo 4F→4P（object-
-attributes width/height "auto"→"100px"/"50px"、embed-dimension exit 0 全绿；object.contentWindow 2F 独立面
-不动）；全树 sweep 双跑 join 对 s395 基线 gone/new 恰为 driving 4 对零意外位移（sweep2 稳定复跑
-8209P/220F/37T unique 8463）；select-home-end-pagedown-pageup.optional T/F 时序 flake 单列定谳——同二进制双跑
-T/F 翻转+机制排除（文件零 object/embed 零 width 属性）+solo 恒 Fail 真态+s393/s394/s395 三代 sweep 恒 T；
-单元 style-system 2516P/0F + engine 3835P/8F（7F 在册同形+r5296 渲染流 R5484 已在册 env 竞态，s395 轮通过
-本轮命中）零新增红；smoke 双 PASS；fmt/clippy clean；**全树在册红 224F+37T→220F+37T**。承 429 中断 session
-残件（WIP+clippy 已就绪）接手完成验收。残差：object.contentWindow 嵌套浏览上下文面留散单池。下一步：forms 树
-散单/分诊推进或按域 solo 分诊（承 s392 方法论）。
+**状态**: Active——M2 切片 397 收口（module parse 失败缓存语义施工 1F→P + current-pixel-density 域分诊定谳路由）：s373
+parse 预检把 parse 失败发 tag 3（态④逐次新 SyntaxError）违 module map 失败记账语义——新契约 **tag 5**（webview
+compile_module_contract gate 臂发射，仅此一臂；native resolver parse_gate=None / defer 面无 gate 零暴露）+
+shim `__zw_load_module` 态⑤（首抛 SyntaxError 入 `__moduleFailures[resolved]` 复抛同对象，s87 四态扩五态）+
+part99 桥测钉死 tag5 同对象 identity/tag3 逐次新对象对照。验证：driving solo dynamic-imports-script-error
+11P/0F（1F→0F）；全树 sweep 双跑 join 对 s396 基线 gone/new 恰为 driving 1 对零意外位移（sweep2 stable 8207P/
+219F/37T unique 8463）；单元 script-sandbox 全绿 + webview 848P/2F（2F stash 归因旧树同红=预存 env 红，首记
+基线）+ engine 3840P/7F 在册同形零新增红；smoke 双 PASS；fmt/clippy clean；**全树在册红 220F+37T→219F+37T**。
+同轮分诊定谳（s392 方法论，非 forms 大池全域扫荡）：current-pixel-density 10F 两根入账——basic 3F 根=layout-engine
+sizing.rs:3354 R695 `.max(1.0)` 钳制抬升 s219 密度折算亚像素/零固有尺寸（0.0256/0→1px），error 7F 根=broken img
+无固有尺寸供给（alt 文本/default object size 渲染面缺失，layout 主体→渲染流 + shim IDL rendered-width 臂配套本流）；
+svg-img-density-vs-zoom 3F=CSS `zoom` 属性面→渲染流；dialog 居中簇 8F=既有 R-s31 挂账确认；tabular 4F=
+表布局亚像素/rowspan 面归渲染流；forms 主池 146F 里 142F=customizable-select 特性族（簇 D 同族待用户决策）。
+下一步：本流域散单（object.contentWindow 2F 中型切片 / focus scroll-into-view / link-rel shadow DOM CSSOM）
+或等簇 D 决策开特性施工。
+
+> **▶ 承前（2026-11-11 M2 切片 396 收口）——object/embed width/height 内容属性 dimension hint 施工（#attr-dimensions 同口径，4F→P）**: commit 4a0d1ba65（429 中断 session 残件接手收口，rebase origin/main 5 笔渲染流提交零冲突），账本 evidence/2026-11-11-m2s396-object-embed-dimension-hints.md。collect_presentational_hints 增 `"object"|"embed"` 臂（html_length_attr 同口径）+ 单测四面钉死；driving solo 4F→4P（object.contentWindow 2F 独立面不动）、全树 join gone/new 恰为 driving 4 对、select-home-end T/F 时序 flake 单列定谳、单元零新增红、smoke 双 PASS，在册红 224F+37T→220F+37T。残差 object.contentWindow 留散单池；分诊由 s397 接力。
 
 > **▶ 承前（2026-11-11 M2 切片 395 收口）——动态 append rect 供给链勘根施工收口（geometry trap 身份派生+definite 本地兜底 2F→P）**: commit 613ce6a54，账本 evidence/2026-11-11-m2s395-dynamic-append-rect-supply-chain.md。五探针钉死 shim 两层 flush 链+in-process rect 回调 handle-only 缺口，shim 三 helper 五消费面换接、`_layoutRect` 裸语义不动（s284 雷区隔离）；naturalWidth 金丝雀 join 零真位移、全树 join 2F→P 精确归因，在册红 226F+37T→224F+37T。残差：无 id+无 definite 尺寸动态元素 flush 前仍 0、`__zw_resolve_handle_selector` forward map 空返低优先挂账。散单/solo 分诊由 s396 接力（embedded-content 域 object/embed dimension hint）。
 > **▶ 承前（2026-11-11 M2 切片 391 收口）——form owner reset-on-move 读时门施工收口（fci 1F→0F 域收官）**: commit e26772068，账本 evidence/2026-11-11-m2s391-form-owner-reset-on-move.md。解析期 parent 选择器桥+shim 指针关联 liveness 门三面，table_3 F→P、全树零回归零翻转；fci 域 corpus 红清零，全树键级基线 8504。散单分诊由 s392 接力。
