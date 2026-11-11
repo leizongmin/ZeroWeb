@@ -91,10 +91,16 @@ clamp [0,1]，css-values-4 §10.12/§10.13 NaN 规约在管线内）。裸 numbe
     fix1 钳制往返族的 hsl 中继变体）。
   - 其余 61 页逐页 pass/fail 精确不变（compare-corpus.py 对账）。
   - 批次累计：10,905 → **10,948（净 +43）**。
-- **css-anchor-position 语料 253 页（20:14，results-g5/css-anchor-position.json）**：
-  **11,863P/953F，对 g4 账面逐页零漂移**（zw-g5-anchor-2136 unit，
-  run-g5-anchor.sh，复用 fd1-gate2 二进制不重建；fix4/5 仅触色值管线，
-  anchor 几何零通路实证）。
+- **css-anchor-position 语料 253 页（20:14，zw-g5-anchor-2136 unit）**：
+  **11,863P/953F，对 g4 账面逐页零漂移**（run-g5-anchor.sh，复用 fd1-gate2
+  二进制不重建；fix4/5 仅触色值管线，anchor 几何零通路实证）。完整账现存
+  results-g5/css-anchor-position.json.partial-collision-2040——三写竞态处置
+  改名（见控制面碰撞记录），账面数字为改名前原样。
+- **第二证（20:37 账面，zw-g5-anchor-2152 unit，同一 20:08 二进制）**：
+  上游 253 页仍 **11,863P/953F 精确零漂移**（compare-corpus.py 页级对账，
+  union 255 页中仅 2 页为漂移源）；本轮多出的 2 页是他流新放入本地语料目录
+  的 gitignored zz-g6probe 探针页（zz-g6probe-mut 0p/4f、zz-g6probe-pab
+  2p/5f，wpt-data 整目录 .gitignore:87，不入上游语料基线，非本批携带）。
 
 ## 残留与后续刀
 
