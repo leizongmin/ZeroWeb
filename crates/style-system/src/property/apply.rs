@@ -1726,7 +1726,25 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 6] = ["transform", "rotate", "scale", "translate", "z-index", "margin-left"];
+    const VALIDATED_PROPERTIES: [&str; 10] = [
+        "transform",
+        "rotate",
+        "scale",
+        "translate",
+        "z-index",
+        "margin-left",
+        // <time> 族写面文法门（css-transitions-1 §transition-delay-property /
+        // §transition-duration-property + css-animations-1 §animation-delay/
+        // §animation-duration）——apply_advanced 四臂既存（parse_time_list/
+        // parse_non_negative_time_list 逗号列表 + 负 delay 合法、duration 非负），
+        // 白名单接入即启用 min/max/round 等数学形与畸形参拒收（driving:
+        // minmax-time-invalid 52F——`min()`/`min(1s, )`/`min(0px)` 等写面此前
+        // 无校验原文透传）。
+        "transition-delay",
+        "transition-duration",
+        "animation-delay",
+        "animation-duration",
+    ];
     let prop = property.trim().to_ascii_lowercase();
     if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
         return true;
@@ -1746,6 +1764,27 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 函数调用生效（引擎实现集见 [`IMPLEMENTED_VALUE_FUNCTIONS`]）。
     if value_has_unimplemented_function(v) {
         return true;
+    }
+    // css-animations-2 §propdef-animation-duration（`<time [0s,∞]># | auto#`，
+    // csswg#6530 滚动驱动 auto 时长；项列表化——shorthand `auto, 1s` 形合法）：
+    // 逐 top-level 逗号项校验，`auto` 项放行、其余项走原 apply 裁决。引擎
+    // resolved-value 通道透传原文（animation-duration-computed 期望
+    // getComputedStyle 恒 `auto`），apply 语义臂本批不扩面。
+    if prop == "animation-duration" {
+        return match super::apply_advanced::split_top_level_commas(v) {
+            Some(items) => items.iter().all(|item| {
+                let item = item.trim();
+                item.eq_ignore_ascii_case("auto") || {
+                    let mut scratch = ComputedStyle::default();
+                    apply_property_value(&mut scratch, &prop, item)
+                }
+            }),
+            // 括号/引号不闭合等病态形 → 原 apply 裁决。
+            None => {
+                let mut scratch = ComputedStyle::default();
+                apply_property_value(&mut scratch, &prop, v)
+            }
+        };
     }
     let mut scratch = ComputedStyle::default();
     apply_property_value(&mut scratch, &prop, v)
@@ -1881,6 +1920,90 @@ mod t54_validate_decl_value_tests {
         }
         assert!(validate_decl_value("transform", ""));
         assert!(validate_decl_value("transform", "   "));
+    }
+
+    #[test]
+    fn time_family_rejects_malformed_math_and_wrong_units() {
+        // WPT minmax-time-invalid.html 语法检查桶（52F 页全形代表集）：
+        // 空参/悬空运算符/缺逗号/双逗号/坏单位。
+        for v in [
+            "min()",
+            "min( )",
+            "min(,)",
+            "min(1mt)",
+            "min(1s, )",
+            "min(, 1s)",
+            "min(1s + )",
+            "min(1s - )",
+            "min(1s * )",
+            "min(1s / )",
+            "min(1s 2s)",
+            "min(1s, , 2s)",
+            "max()",
+            "max(1dag)",
+            "max(1s, , 2s)",
+        ] {
+            assert!(!validate_decl_value("transition-delay", v), "{v} 应拒");
+        }
+        // 类型检查桶：unitless 0 与非 time 单位（含 0px/0%/0deg/0Hz/0dpi/0fr）
+        // 混入 time 槽 spec invalid（css-values-4 §10.1 型检查）。
+        for v in [
+            "min(0)",
+            "min(0%)",
+            "min(0px)",
+            "min(0deg)",
+            "min(0Hz)",
+            "min(0dpi)",
+            "min(0fr)",
+            "min(1s, 0)",
+            "min(1s, 0px)",
+            "max(0)",
+            "max(1s, 0deg)",
+        ] {
+            assert!(!validate_decl_value("transition-delay", v), "{v} 应拒");
+        }
+    }
+
+    #[test]
+    fn time_family_accepts_plain_math_and_list_forms() {
+        // 合法形（同页 test_valid 面 + transitions 语料写形）：
+        assert!(validate_decl_value("transition-delay", "1s"));
+        assert!(validate_decl_value("transition-delay", "200ms"));
+        // 负 delay 合法（css-transitions-1 §transition-delay：<time> 可负）。
+        assert!(validate_decl_value("transition-delay", "-0.5s"));
+        // g10 家族：min/max/round 数学形（MTTime 型别推进）。
+        assert!(validate_decl_value("transition-delay", "min(1s, 2s)"));
+        assert!(validate_decl_value("transition-delay", "max(1000ms, min(2000ms, 1.5s))"));
+        assert!(validate_decl_value("transition-delay", "round(10s, 6s)"));
+        assert!(validate_decl_value("transition-delay", "calc(10s + 500ms)"));
+        // `<time>#` 逗号列表（transitions 语料 events-004 写形）。
+        assert!(validate_decl_value("transition-delay", "0.01s, 0.02s"));
+        assert!(validate_decl_value("transition-delay", "min(1s, 2s), 3s"));
+        // duration 非负 + animation 族同面。
+        assert!(validate_decl_value("transition-duration", "1s"));
+        assert!(validate_decl_value("transition-duration", "1s, 2s"));
+        assert!(!validate_decl_value("transition-duration", "-1s"));
+        assert!(!validate_decl_value("transition-duration", "1dag"));
+        assert!(validate_decl_value("animation-delay", "min(1s, 2s)"));
+        assert!(validate_decl_value("animation-duration", "0s, 0.5s"));
+        assert!(!validate_decl_value("animation-duration", "min(0px)"));
+        // css-animations-2 §propdef-animation-duration `auto` 关键字（csswg#6530
+        // 滚动驱动；项列表化，shorthand `auto, 1s` 混合形合法）；大小写不敏感。
+        assert!(validate_decl_value("animation-duration", "auto"));
+        assert!(validate_decl_value("animation-duration", "auto, 1s"));
+        assert!(validate_decl_value("animation-duration", "AUTO"));
+        // delay 与 transition-duration 无 auto 关键字（css-animations-2 §propdef-
+        // animation-delay 仅 <time>#；css-transitions-1 无 auto）。
+        assert!(!validate_decl_value("animation-delay", "auto"));
+        assert!(!validate_decl_value("transition-duration", "auto"));
+    }
+
+    #[test]
+    fn time_family_unimplemented_and_var_escape() {
+        // var()/未实现函数放行（与 transform 槽同一逃逸门）。
+        assert!(validate_decl_value("transition-delay", "var(--d)"));
+        assert!(validate_decl_value("transition-delay", "min(calc(1s + var(--x)), 2s)"));
+        assert!(validate_decl_value("transition-duration", "random(1s, 2s)"));
     }
 }
 

@@ -5,7 +5,7 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,970，至 cqw 容器基座刀；values face
-css-values 2,426→2,516，至 time 维度+opacity 数学臂批）。
+css-values 2,426→2,572，至 time 族写面白名单+auto 修正批）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -50,10 +50,14 @@ position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor
 anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallback
 布局 ~43F（溢出检查 + last-successful 状态机 + @position-try 应用引擎）、
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
-transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g10 后）：∞ 桶
-（signs-abs-computed 残 101F + calc-infinity-nan 56F，FIXME types.rs:1420 族）、
+transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g11 后）：∞ 桶
+（calc-infinity-nan-computed 56F + serialize 五页 123F——length 41/angle 16/
+number 8/resolution 29/time 29，specified 值 Infinity/NaN 规范形
+`calc(NaN * 1px)`/`calc(infinity * 1s)` 因子归一 + signs-abs computed 101F/
+invalid 52F——`abs()` 空参文法、font-weight 非白名单属性写面/serialize 4F，
+FIXME types.rs:1420 round step ±∞ 族）、
 %-mixing CalcContext 族（calc-mix-serialize 113F + calc-mix-computed 53F 主体）、
-time invalid 形 minmax-time-invalid 52F（拒收面对齐）、独立桶 line-break-ch
+独立桶 line-break-ch
 194F / random() 141F / attr-all-types 103F / viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；DC-3 全量对账
@@ -62,6 +66,22 @@ color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 <time> 族写面文法门批完成（11-12 凌晨，g11/g11b）**：T54 写面校验白名单
+扩 4 属性（transition-delay/duration、animation-delay/duration，
+`VALIDATED_PROPERTIES` 6→10，apply.rs；零 apply 逻辑改动——apply_advanced 四臂
+既存，白名单接入即启用 min/max/round 数学形与畸形参拒收）+ 语料跑捕获回归
+同批修正（css-animations-2 §propdef-animation-duration `auto` 关键字
+csswg#6530 滚动驱动：animation-duration 逐 top-level 逗号项校验、auto 项放行，
+`split_top_level_commas` 提升 pub(crate) 复用；shorthand `auto, 1s` 混合形
+合法）——css-values 语料 **2,516 → 2,572 净 +56 逐页零回归**（minmax-time-invalid
+0P/52F→52P/0F 单页全清、percentage-without-context +4 四属性家族 sign(50%) 形
+拒收；g11b 修正后复跑对 g11 逐页 byte-identical）；transitions 对 v3 陈旧基线
+净 +13、animations 净 +11，页级与 test 级均零回归（g11 首跑
+animation-duration-computed 5→4 回归被逐页 diff 捕获、修正后复位——白名单批
+必须配基线 diff 的实证）。style-system lib 2,515P/0F（+3 钉）；clippy 零告警。
+挂账：parse_animation_duration 数学函数形（白名单使其写面可见，无语料页驱动）。
+[证据](evidence/2026-11-12-dc2-time-family-write-face-whitelist.md)
 
 **DC-2 time 维度+opacity 数学臂批完成（11-11 深夜，g10）**：CSS Values §6.3
 <time> 维度接入 calc 型别表（`CalcExpr::Time` 秒底 + `allow_time` 门控：共享

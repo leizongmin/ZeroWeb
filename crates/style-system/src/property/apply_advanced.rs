@@ -48,7 +48,7 @@ fn parse_time_list(value: &str) -> Option<Vec<f64>> {
     Some(out)
 }
 
-fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
+pub(crate) fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
     // CSS comma-separated value lists split on top-level commas; quoted strings
     // and nested function arguments keep their internal commas.
     let mut start = 0;
