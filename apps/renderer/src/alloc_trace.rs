@@ -471,7 +471,15 @@ fn record_realloc_abort(old_ptr: usize, entry: LiveEntry) {
 }
 
 /// 原始 IP 回溯捕获（帧指针遍历，不符号化——符号解析全部离线）。
-/// 返回（IP 数组，实捕获数）；无帧指针或栈不可信时捕获数为 0。
+/// 返回（IP 数组，实捕获数）；中链不可信时截断保留已得前缀（部分捕获，
+/// 非全有全无）。
+///
+/// 已知限制（R4-C1 如实披露）：遍历合法性靠启发式（对齐 + 单调 + 1MiB
+/// 步长帽），不校验映射有效性；在惯例省帧指针的 ABI（Windows x64 等）
+/// 上 rbp/x29 可能被改作通用寄存器——首读解引用未映射值即 SIGSEGV，
+/// 发生在全局分配器路径内属进程级故障。缓解面：仪器默认关 + feature/env
+/// 双门控 + 测量面限定（arm64 x29 与 SysV 调试约定保留 FP）；无 FP 保证
+/// 平台不启用测量（`ZW_ALLOC_TRACE` 不设）即不触达该路径。
 fn capture_frame_ips() -> ([usize; MAX_CAPTURE_FRAMES], usize) {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
@@ -493,7 +501,10 @@ fn capture_frame_ips_via_frame_pointer() -> ([usize; MAX_CAPTURE_FRAMES], usize)
         if frame_ptr & (std::mem::size_of::<usize>() - 1) != 0 {
             break;
         }
-        // SAFETY: 仅只读探测 RBP/x29 链上的返回地址；不可信指针即停止。
+        // SAFETY: 只读解引用 fp 与 fp+1 两字。假设 fp 指向已映射可读栈内存——
+        // 该假设在无 FP 保证 ABI 上不成立（首读无映射校验，风险披露见
+        // capture_frame_ips 文档）；环内后续步靠对齐+单调+1MiB 启发式截断，
+        // 不构成映射保证。
         let (next_fp, return_addr) = unsafe {
             let slot = frame_ptr as *const usize;
             (*slot, *slot.add(1))
