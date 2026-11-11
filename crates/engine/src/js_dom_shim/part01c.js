@@ -2611,3 +2611,179 @@
       return { value: '', indeterm: false };
     }
   };
+
+  // ============================================================
+  // editing-compat format state 簇（2026-11-11）：六 inline format 命令
+  //（bold/italic/underline/strikethrough/subscript/superscript）的
+  // queryCommandState/Indeterm 读面（wptfyi-editing DC-2 P1 共享路径）。
+  //
+  // 归因（DC-2 triage：er8/er9 纯 state 失败 632 例与 innerHTML 失败零共现
+  // ——DOM 已对、读出错了）：此前 queryCommandState = 选区起点祖先链
+  // tagName 匹配（part06 R3254-M3 切片 4 近似），与 spec state 语义三处
+  // 差距即主因：① computed style 判定缺失（style span/元素语义族读不出，
+  // u/s 跨样式族方向性误报）；② 判定域错位（spec = 含域 formattable 全量
+  // 命中，非起点单点——跨段落/ce=false 混合选区族）；③ Indeterm 恒 false
+  //（混合选区族）。
+  //
+  // 算法按 spec 移植（https://w3c.github.io/editing/docs/execCommand/）：
+  //   - state（inline command activated values）：含域（effectively
+  //     contained）formattable node 全命中 activated values；无 contained
+  //     → active range start node 读法。
+  //   - Indeterm：四 format 命令 part-not-all；sub/sup = ≥1 target 值且
+  //     ≥1 他值、或任一 "mixed"。
+  //   - effective command value：Text 归父；bold/italic = relevant CSS
+  //     property 解析值（font-weight/font-style，等价词 bold≡700）；
+  //     underline/strikethrough = node 或任一祖先 text-decoration 解析值
+  //     含 underline/line-through（非继承属性，逐元素 own 值）；
+  //     subscript/superscript = inline 祖先链 sub/sup 标签计数
+  //     （both→"mixed"；Gecko 语义定谳，非 vertical-align）。
+  //   - activated values：bold {bold,600,700,800,900}（600 cutoff，Chrome
+  //     口径）；italic {italic,oblique}；underline {underline}；
+  //     strikethrough {line-through}；subscript {subscript}；
+  //     superscript {superscript}。
+  // CSS 解析与值面同构（host gCS 对 plain 元素 miss，probe t16）：host
+  // 优先、miss 落 JS 走查——inline style → UA 元素表（HTML 渲染节 15.3.1：
+  // b,strong bold / i,em,cite,dfn,var,address italic / u,ins underline /
+  // s,strike,del line-through；a[href] 同 a:link underline 臂先例）→ 继承
+  // 走查（font-weight/font-style 继承）。
+  // FIXME: 作者样式表规则臂未接（六语料数据文件零 <style> 块，无消费面）；
+  //   h1-h6/th 加粗 UA 面未建；font 简写（font: bold …）与 bolder/lighter
+  //   相对关键字未解析。
+  // FIXME: state override 写面未接（part01d _zwVaStateOverrides 只清不写）
+  //   ——collapsed exec typing 态由 part06 __zwTypingTags 兜底（读序：本面
+  //   state false 后置检查）。
+  var _zwFmtUaWeight = { b: '700', strong: '700' };
+  var _zwFmtUaStyle = { i: 'italic', em: 'italic', cite: 'italic',
+    dfn: 'italic', 'var': 'italic', address: 'italic' };
+  // text-decoration 逐元素 own 值表（非继承；HTML 渲染节 15.3.1）。
+  function _zwFmtUaDecoration(tagL, hasHref) {
+    if (tagL === 'u' || tagL === 'ins') return 'underline';
+    if (tagL === 's' || tagL === 'strike' || tagL === 'del') return 'line-through';
+    if (tagL === 'a' && hasHref) return 'underline';
+    return '';
+  }
+  // 继承链 resolved prop：host gCS → inline style → UA 元素表 → 父链上行
+  //（font-weight/font-style 继承属性；无源返空，不填初值——state 比较面
+  // 自然 false，同值面无源返空契约）。
+  function _zwFmtResolvedProp(elt, camel, kebab, uaTab) {
+    var node = elt;
+    var guard = 0;
+    while (node && node.nodeType === 1 && guard++ < 256) {
+      var v = '';
+      try { v = _zwJusCs(node, camel); } catch (_eFcs) { v = ''; }
+      if (v) return String(v);
+      var d = '';
+      try { d = _zwPlainDecl(node, kebab) || ''; } catch (_eFpd) { d = ''; }
+      if (!d && uaTab) {
+        var tagL = String(node.tagName || '').toLowerCase();
+        d = uaTab[tagL] || '';
+      }
+      if (d) return String(d);
+      node = node.parentNode;
+    }
+    return '';
+  }
+  // 单元素 text-decoration own 值（host → inline → UA 表；非继承不爬升）。
+  function _zwFmtDecorationOf(el) {
+    var v = '';
+    try { v = _zwJusCs(el, 'textDecoration'); } catch (_eFtd) { v = ''; }
+    if (v) return String(v);
+    var d = '';
+    try { d = _zwPlainDecl(el, 'text-decoration') || ''; } catch (_eFtd2) { d = ''; }
+    if (d) return d;
+    var tagL = String(el.tagName || '').toLowerCase();
+    var href = null;
+    try { href = el.getAttribute && el.getAttribute('href'); } catch (_eFhr) {}
+    return _zwFmtUaDecoration(tagL, href != null);
+  }
+  // effective command value（六命令；返回 string 或 null）。
+  function _zwFmtEffectiveValue(cmd, node) {
+    if (!node) return null;
+    if (node.nodeType !== 1) {
+      var p = node.parentNode;
+      if (!p || p.nodeType !== 1) return null;
+      node = p;
+    }
+    if (cmd === 'subscript' || cmd === 'superscript') {
+      var gS = 0;
+      var subHit = false;
+      var supHit = false;
+      var nS = node;
+      while (nS && _zwJusIsInlineNode(nS) && gS++ < 256) {
+        var tnS = String(nS.tagName || '').toLowerCase();
+        if (tnS === 'sub') subHit = true;
+        else if (tnS === 'sup') supHit = true;
+        nS = nS.parentNode;
+      }
+      if (subHit && supHit) return 'mixed';
+      if (subHit) return 'subscript';
+      if (supHit) return 'superscript';
+      return null;
+    }
+    if (cmd === 'underline' || cmd === 'strikethrough') {
+      var want = cmd === 'underline' ? 'underline' : 'line-through';
+      var gD = 0;
+      var nD = node;
+      while (nD && nD.nodeType === 1 && gD++ < 256) {
+        var dv = _zwFmtDecorationOf(nD);
+        if (dv && String(dv).toLowerCase().indexOf(want) >= 0) return want;
+        nD = nD.parentNode;
+      }
+      return null;
+    }
+    var isBold = cmd === 'bold';
+    var v = _zwFmtResolvedProp(node,
+      isBold ? 'fontWeight' : 'fontStyle',
+      isBold ? 'font-weight' : 'font-style',
+      isBold ? _zwFmtUaWeight : _zwFmtUaStyle);
+    if (!v) return null;
+    return String(v).toLowerCase();
+  }
+  function _zwFmtActivated(cmd, v) {
+    if (v == null) return false;
+    if (cmd === 'bold') {
+      return ['bold', '600', '700', '800', '900']
+        .indexOf(String(v).toLowerCase()) >= 0;
+    }
+    if (cmd === 'italic') return v === 'italic' || v === 'oblique';
+    return v === (cmd === 'underline' ? 'underline'
+      : cmd === 'strikethrough' ? 'line-through'
+      : cmd === 'subscript' ? 'subscript' : 'superscript');
+  }
+  // 查询入口：返 { state, indeterm }（命中六命令）或 null（调用方回落）。
+  // formattable 普查复用值面 _zwValGetAllEffectivelyContained +
+  // _zwValIsFormattableQI（含 extraneous br 的 Chrome delta 口径）。
+  globalThis.__zw_ce_format_query = function (cmd) {
+    var c = String(cmd == null ? '' : cmd).toLowerCase();
+    var six = { bold: 1, italic: 1, underline: 1, strikethrough: 1,
+      subscript: 1, superscript: 1 };
+    if (!six[c]) return null;
+    try {
+      var sel = globalThis.getSelection ? globalThis.getSelection() : null;
+      var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
+      if (!rng) return { state: false, indeterm: false };
+      var isSubSup = c === 'subscript' || c === 'superscript';
+      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattableQI);
+      var hit = 0;
+      var tgt = 0;
+      var mixed = false;
+      var i;
+      for (i = 0; i < nodes.length; i++) {
+        var v = _zwFmtEffectiveValue(c, nodes[i]);
+        if (_zwFmtActivated(c, v)) hit++;
+        if (isSubSup) {
+          if (v === (c === 'subscript' ? 'subscript' : 'superscript')) tgt++;
+          else if (v === 'mixed') mixed = true;
+        }
+      }
+      var state = nodes.length
+        ? hit === nodes.length
+        : _zwFmtActivated(c, _zwFmtEffectiveValue(c, rng.startContainer));
+      var indeterm = isSubSup
+        ? (tgt > 0 && tgt < nodes.length) || mixed
+        : hit > 0 && hit < nodes.length;
+      return { state: state, indeterm: indeterm };
+    } catch (_eFq) {
+      return null;
+    }
+  };

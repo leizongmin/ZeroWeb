@@ -3033,38 +3033,45 @@
   function _zwQueryFormatStateDom(cmd) {
     var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
     if (!tag) return false;
+    // DC-2 P1（2026-11-11）：spec DOM-only state 读（typing 态不进本读——
+    // gate14：ttags fallback 只进 queryCommandState 读面，不进臂内 toggle
+    // 判定）。委托 part01c __zw_ce_format_query（effective command value
+    // computed style 判定 + 含域 formattable 全量命中；算法与 UA 元素表见
+    // 其挂载注释），替换起点祖先链 tagName 近似。toggle 方向随 spec Action
+    //（state true → 解除）——style span/strong 载体的解除属 apply 面
+    //（P2）；跨段落 apply defer 面同 P2。
     try {
-      var sel = (typeof _getSelection === 'function') ? _getSelection() : null;
-      var rng = sel && sel.rangeCount > 0 ? sel._ranges[0] : null;
-      if (!rng) return false;
-      var node = rng.startContainer;
-      var guard = 0;
-      while (node && guard++ < 256) {
-        // 元素节点：tagName 匹配（大小写不敏感——HTML 解析产出大写 tagName）。
-        if (node.nodeType === 1) {
-          var tn = String(node.tagName || '').toLowerCase();
-          if (tn === tag) return true;
-          // 宿主直子文本的包裹判定由祖先链命中（<b> 在链上）。继续上行。
-        }
-        node = node.parentNode;
-      }
+      var fqD = typeof globalThis.__zw_ce_format_query === 'function'
+        ? globalThis.__zw_ce_format_query(String(cmd == null ? '' : cmd).toLowerCase())
+        : null;
+      if (fqD) return fqD.state;
     } catch (_eQs) {}
     return false;
   }
   function _zwQueryFormatState(cmd) {
     var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
     if (!tag) return false;
-    if (_zwQueryFormatStateDom(cmd)) return true;
-    // editing-compat multitest 状态命令族（2026-11-01）：typing-state fallback——
-    // Chrome stateOverride 语义：collapsed 选区执行 format 命令不改 DOM，但
-    // queryCommandState 立即返 true（typing 包裹态存活，直到 toggle 关闭或
-    // typing 落点离弃包裹）；语料 `[["bold",""],["insertorderedlist",""]]`
-    // qState-after expected true、caret 未动的 `bold+delete` 同面。ttags 是该
-    // 态的既有载体（collapsed 臂维护），读面补兜底。
+    // DC-2 P1（2026-11-11）：spec state 读面——读序按 spec queryCommandState
+    //（state override 先行 → 否则 computed state）：① typing-state 兜底
+    //（__zwTypingTags，spec state override 的既有近似载体——2026-11-01
+    // multitest 状态命令族：collapsed exec 不改 DOM 而 qS 立即 true）；②
+    // computed state——effective command value（computed style 判定）+ 含域
+    // formattable 全量命中（算法与 UA 元素表见 part01c __zw_ce_format_query
+    // 挂载注释），替换 R3254-M3 切片 4 的起点祖先链 tagName 近似（style
+    // span/元素语义/跨段落混合选区三族失败主因）。exec toggle 臂（下方
+    // collapsed/non-collapsed 两处）保持 _zwQueryFormatStateDom 旧读——
+    // apply/unwrap 机制是宿主直子 <tag> 形，style span 解除属 apply 面
+    //（P2 innerHTML 长尾）。
     try {
       var ttagsQ = globalThis.__zwTypingTags;
       if (Array.isArray(ttagsQ) && ttagsQ.indexOf(tag) >= 0) return true;
     } catch (_eQsT) {}
+    try {
+      var fqS = typeof globalThis.__zw_ce_format_query === 'function'
+        ? globalThis.__zw_ce_format_query(String(cmd == null ? '' : cmd).toLowerCase())
+        : null;
+      if (fqS) return fqS.state;
+    } catch (_eQsF) {}
     return false;
   }
   // toggle 解除包裹（切片 4）：选区起点祖先链中找到宿主直子的 <tag> 元素，把其
@@ -5622,11 +5629,13 @@
     //（_zwQueryCommandState；defer 面——styleWithCSS/undo/justify* 等——返 false）。
     queryCommandSupported: function (commandId) { return _zwQueryCommandState(commandId).supported; },
     queryCommandEnabled: function (commandId) { return _zwQueryCommandState(commandId).enabled; },
-    // R3254-M3 切片 4：queryCommandState 真实反射——format 命令按选区起点包裹态
-    //（祖先链 tagName 匹配）；其余命令 false（状态面未接，documented）。
+    // R3254-M3 切片 4：queryCommandState 真实反射——format 命令 state 走
+    // spec 读面（DC-2 P1，2026-11-11：computed style + 含域 formattable
+    // 判定，part01c __zw_ce_format_query；此前为起点祖先链 tagName 近似）；
+    // 其余命令 false（状态面未接，documented）。
     // editing-compat justify 簇（2026-10-31）：justify* 前置 dispatch；Indeterm
-    // 此前完全缺失（调用抛 TypeError → run 语料 indeterm 列全灭），非 justify
-    // 命令按 legacy 语义返 false（run 语料无 justify 之外的 indeterm 断言面）。
+    // 此前完全缺失（调用抛 TypeError → run 语料 indeterm 列全灭）；list/fb/
+    // 五值命令/format 六命令（DC-2 P1）后接各自读面。
     queryCommandIndeterm: function (commandId) {
       var jf = _zwQueryJustifyFace(commandId);
       if (jf) return jf.indeterm;
@@ -5653,6 +5662,14 @@
         ? globalThis.__zw_ce_value_query(String(commandId == null ? '' : commandId).toLowerCase())
         : null;
       if (vf) return vf.indeterm;
+      // editing-compat format state 簇（2026-11-11）：六 inline format 命令
+      // Indeterm——四命令 part-not-all / sub-sup mixed 语义（算法见 part01c
+      // __zw_ce_format_query 挂载注释）。此前恒 false（混合选区 indeterm
+      // 断言族全灭，DC-2 triage 66 例）。
+      var ff = (typeof globalThis.__zw_ce_format_query === 'function')
+        ? globalThis.__zw_ce_format_query(String(commandId == null ? '' : commandId).toLowerCase())
+        : null;
+      if (ff) return ff.indeterm;
       return false;
     },
     queryCommandState: function (commandId) {

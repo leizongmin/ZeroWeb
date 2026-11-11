@@ -1,0 +1,71 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- DC-2 P1 读面见证探针（wptfyi-editing，2026-11-11）：六 inline format 命令
+     queryCommandState/Indeterm 的 spec state 读面（part01c
+     __zw_ce_format_query：computed style effective command value + 含域
+     formattable 全命中判定）。全部断言只读不 exec——apply 面缺口
+    （跨段落 wrap、跨边界 merge 属 P2）不影响本探针。
+     证据：docs/goal/wptfyi-editing/evidence/2026-11-11-dc2-p1-format-state.md。 -->
+<title>zz-probe-fmtstate</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+var container = document.getElementById("test-container");
+var sel = getSelection();
+function setupSelect(html, pathA, offA, pathB, offB) {
+  container.innerHTML = "<div contenteditable>" + html + "</div>";
+  var div = container.querySelector("div[contenteditable]");
+  function resolve(path) {
+    var n = div;
+    for (var i = 0; i < path.length; i++) n = n.childNodes[path[i]];
+    return n;
+  }
+  var a = resolve(pathA), b = resolve(pathB);
+  var r = document.createRange();
+  r.setStart(a, offA);
+  r.setEnd(b, offB);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+function q(cmd) {
+  return JSON.stringify(globalThis.__zw_ce_format_query(cmd));
+}
+// D1：style span 载体——computed style 判定（此前起点祖先链 tagName 近似读不出）。
+test(function() {
+  setupSelect("<span style=\"font-weight: bold\">foo</span>", [0,0], 0, [0,0], 3);
+  assert_equals(q("bold"), "{\"state\":true,\"indeterm\":false}", "D1 style-span bold");
+}, "D1 style-span bold state (computed style)");
+// D2：plain 文本基线。
+test(function() {
+  setupSelect("foo", [0], 0, [0], 3);
+  assert_equals(q("bold"), "{\"state\":false,\"indeterm\":false}", "D2 plain no bold");
+}, "D2 plain text state false");
+// D3：元素载体（UA 元素表臂）。
+test(function() {
+  setupSelect("<b>foo</b>", [0,0], 0, [0,0], 3);
+  assert_equals(q("bold"), "{\"state\":true,\"indeterm\":false}", "D3 b element bold");
+}, "D3 b element state true");
+// D4：text-decoration 面（u 元素，逐元素 own 值走查）。
+test(function() {
+  setupSelect("<u>foo</u>", [0,0], 0, [0,0], 3);
+  assert_equals(q("underline"), "{\"state\":true,\"indeterm\":false}", "D4 u underline");
+}, "D4 u underline state true");
+// D5：part-not-all Indeterm（plain+bold 混合选区）。
+test(function() {
+  setupSelect("foobar<b>baz</b>quz", [0], 3, [1,0], 3);
+  assert_equals(q("bold"), "{\"state\":false,\"indeterm\":true}", "D5 mixed part-not-all indeterm");
+}, "D5 mixed selection indeterm true");
+// D6：font-weight 600 激活值边界（Chrome 口径 cutoff）。
+test(function() {
+  setupSelect("<span style=\"font-weight: 600\">foo</span>", [0,0], 0, [0,0], 3);
+  assert_equals(q("bold"), "{\"state\":true,\"indeterm\":false}", "D6 weight 600 cutoff");
+}, "D6 font-weight 600 activated");
+// D7：sub 嵌套 sub——inline 祖先链计数，both→mixed 不触发（同标签不混合）。
+test(function() {
+  setupSelect("<sub>x<sub>y</sub></sub>", [0,1,0], 0, [0,1,0], 1);
+  assert_equals(q("subscript"), "{\"state\":true,\"indeterm\":false}", "D7 nested sub");
+}, "D7 sub-in-sub state true");
+</script>
