@@ -405,6 +405,21 @@ impl BorderRadiusSpec {
     /// R5341 counter-hebrew-nested 之外的 border-shape-outline-with-border-double-ellipse
     /// （corpus ref 侧 40×100 `border-radius: 50%` 误渲染胶囊）。
     pub fn from_style_with_box(style: &ComputedStyle, box_w: f32, box_h: f32) -> Self {
+        // T61：kill-switch 进程级快照（OnceLock 单次读取，热路径零 `env::var`——
+        // 2026-08-17「进程级 Paint 开关不应在 fragment 热路径读取」范式；此前逐次
+        // 解析半径都上锁扫描 environ，r5341/basic/border_image 同族进程 env 竞态面）。
+        // 测试经 [`Self::from_style_with_box_gated`] 参数注入门态，不触进程级 env
+        //（guidelines #19 竞态纪律）。
+        static ELLIPTIC_RADIUS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let elliptic_radius =
+            *ELLIPTIC_RADIUS.get_or_init(|| std::env::var("ZW_ELLIPTIC_RADIUS").as_deref() != Ok("0"));
+        Self::from_style_with_box_gated(style, box_w, box_h, elliptic_radius)
+    }
+
+    /// [`Self::from_style_with_box`] 的显式门态变体：`elliptic_radius=false` ≡
+    /// kill-switch `ZW_ELLIPTIC_RADIUS=0`（ry=rx 旧单轴渲染）。仅测试注入使用
+    ///（T61，T60 setter 同范式）；生产入口走 [`Self::from_style_with_box`] 进程快照。
+    pub fn from_style_with_box_gated(style: &ComputedStyle, box_w: f32, box_h: f32, elliptic_radius: bool) -> Self {
         let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
         let rx_declared = [
             &style.border_top_left_radius,
@@ -433,7 +448,7 @@ impl BorderRadiusSpec {
                 }
             }
         }
-        if std::env::var("ZW_ELLIPTIC_RADIUS").as_deref() == Ok("0") {
+        if !elliptic_radius {
             spec.ry = spec.rx4();
         }
         spec.shrink_overlapping_corners(box_w, box_h);

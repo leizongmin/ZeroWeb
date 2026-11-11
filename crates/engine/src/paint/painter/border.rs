@@ -450,7 +450,7 @@ impl super::Painter {
         // 过渡不可见，保留整幅矩形省两次路径填充。零宽/隐藏边不适用——§4.4「另一边
         // 占据整个过渡区」，即现有整幅矩形行为。collapse 表格走冲突解决半厚绘制，
         // 不在本域。kill-switch ZW_BORDER_DIAGONAL_JOIN=0 恢复整幅矩形（旧行为）。
-        let diagonal_joins = !collapse && std::env::var("ZW_BORDER_DIAGONAL_JOIN").as_deref() != Ok("0");
+        let diagonal_joins = !collapse && self.border_diagonal_join_enabled;
         let is_solid_style = |s: &BorderStyleValue| matches!(s, BorderStyleValue::Solid);
         let corner_join = |a: bool, b: bool, ca: &ColorValue, cb: &ColorValue, ta: f32, tb: f32| {
             a && b && ca != cb && ta >= 1.0 && tb >= 1.0
@@ -794,7 +794,7 @@ impl super::Painter {
         // R5084：css-backgrounds-3 §5.2 切片重叠语义 + §5.6 绘制过程（middle 缩放因子
         // 与 repeat 平铺）。kill-switch ZW_BORDER_IMAGE_DRAW_PROCESS=0 恢复旧近似
         //（重叠等比缩减使边片非空 + middle 恒 stretch 整区域）。
-        let draw_process = std::env::var("ZW_BORDER_IMAGE_DRAW_PROCESS").as_deref() != Ok("0");
+        let draw_process = self.border_image_draw_process_enabled;
 
         // 切片几何 = (iw, ih, st, sr, sb, sl)；nine_slice 与 middle 因子共用。
         let slice_geom: Option<(f32, f32, f32, f32, f32, f32)> = img_size.and_then(|(iw, ih)| {

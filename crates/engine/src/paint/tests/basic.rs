@@ -351,13 +351,11 @@ fn test_painter_border_all_sides() {
 /// 角部矩形按「外角点 → 内角点」对角线分色——水平边矩形退让出角部，两侧各补一个
 /// 三角形（chromium mitre join 语义；border-radius-greater-than-width 驱动）。
 ///
-/// kill-switch 用例以 env var 表达（`ZW_BORDER_DIAGONAL_JOIN`），本组用例先抢锁
-/// 防并行互踩；毒化容忍（前序 panic 不连坐）——R5077 同款形态。
-static R5083_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+/// T61 起 kill-switch 用例经 [`Painter::set_border_diagonal_join_for_test`] 注入
+/// 门态（构造期字段快照后不再触进程级 env，set_var 翻转窗与并行用例 paint 读窗
+/// 的竞态根除——T60 setter 同范式），组内 env 锁随之撤除。
 #[test]
 fn test_r5083_border_corner_diagonal_join_triangles() {
-    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("div");
     // 左上角：top 10 红 × left 6 蓝（非方形角部，对角线连 (0,0)→(6,10)）
@@ -401,7 +399,6 @@ fn test_r5083_border_corner_diagonal_join_triangles() {
 /// R5083：相邻边框等色时过渡不可见——保留整幅矩形，不发射三角形。
 #[test]
 fn test_r5083_border_corner_diagonal_equal_colors_no_triangles() {
-    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("div");
     let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 10.0, 0.0, 0.0, 6.0);
@@ -427,7 +424,6 @@ fn test_r5083_border_corner_diagonal_equal_colors_no_triangles() {
 /// R5083：一侧零宽/隐藏时另一边占据整个过渡区（§4.4）——不发射三角形。
 #[test]
 fn test_r5083_border_corner_diagonal_zero_width_side_no_triangles() {
-    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("div");
     // left 宽 0（style solid 但 width 0 → 不绘制）
@@ -449,11 +445,9 @@ fn test_r5083_border_corner_diagonal_zero_width_side_no_triangles() {
 }
 
 /// R5083：kill-switch ZW_BORDER_DIAGONAL_JOIN=0 恢复整幅矩形（旧行为）。
+/// 门态经 setter 注入（T61，≡ env=0）。
 #[test]
 fn test_r5083_border_corner_diagonal_kill_switch() {
-    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
-    unsafe { std::env::set_var("ZW_BORDER_DIAGONAL_JOIN", "0") };
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("div");
     let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 10.0, 0.0, 0.0, 6.0);
@@ -467,12 +461,12 @@ fn test_r5083_border_corner_diagonal_kill_switch() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.set_border_diagonal_join_for_test(false);
     painter.paint(&layout, &styles, None);
 
     assert_eq!(painter.primitives().fills.len(), 2);
     assert_eq!(painter.primitives().fills[0].rect.origin.x, 0.0, "旧行为：top 矩形全宽");
     assert!(painter.primitives().path_fills.is_empty());
-    unsafe { std::env::remove_var("ZW_BORDER_DIAGONAL_JOIN") };
 }
 
 /// 测试嵌套盒子的绘制。
