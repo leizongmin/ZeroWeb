@@ -1342,6 +1342,10 @@
     return _zwCImageLDCheck(inner) ? t : null;
   };
   // computed：prop 'color'/'opacity'；未建模/系统色 → null（调用方回落既有链）。
+  // 容器内联尺寸探针出口（part11-computed-color 通用通道 cq 基座同源复用）：
+  // 返回最近 container-type ≠ normal 祖先显式 px 宽（number）或 null。
+  globalThis.__zwContainerInlineSize = _zwCContainerInlineSize;
+
   globalThis.__zwComputedColorValue = function (elt, prop, declaredValue) {
     if (prop === 'opacity') return _zwCOpacComputed(declaredValue);
     if (prop !== 'color') return null;
