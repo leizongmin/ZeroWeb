@@ -416,6 +416,9 @@ fn counter_calc_type(expr: &CalcExpr) -> Option<CounterCalcType> {
     match expr {
         CalcExpr::Number(_) => Some(CounterCalcType::Number),
         CalcExpr::Length(_) => Some(CounterCalcType::Length),
+        // counter() 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
+        // 之外本不可达，fail-closed 兜底）。
+        CalcExpr::Time(_) => None,
         CalcExpr::BinaryOp(left, op, right) => {
             let left = counter_calc_type(left)?;
             let right = counter_calc_type(right)?;

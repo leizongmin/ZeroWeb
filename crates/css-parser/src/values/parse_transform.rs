@@ -323,7 +323,18 @@ pub fn parse_time(value: &str) -> Option<f64> {
         let seconds = n.trim().parse::<f64>().ok()?;
         seconds.is_finite().then_some(seconds)
     } else {
-        None
+        // css-values-4 §10.5/§11 数学形 over <time>（round(10s,6s)=12s、
+        // mod/rem/min/max/clamp 等；driving: round-mod-rem-computed
+        // transition-delay used-value 等价类）——allow_time 解析 + 纯 Time
+        // 叶门 + 数值求值（秒）。裸 Number/Length 混型叶拒（spec invalid）。
+        // FIXME(types.rs:1420 同族)：step ±∞ 边界形 NaN 化不命中，∞ 槽位
+        // 管线在册桶另刀。
+        let expr = parse_time_calc(value)?;
+        if !calc_expr_is_pure_time(&expr) {
+            return None;
+        }
+        let v = eval_calc(&expr, None)?;
+        v.is_finite().then_some(v)
     }
 }
 

@@ -1146,11 +1146,15 @@ pub enum CalcMathType {
     LengthPercentage,
     /// `<angle>`（asin/acos/atan/atan2 产出；f64 承载弧度）。
     Angle,
+    /// `<time>`（css-values-4 §6.3；CalcExpr::Time 叶秒值承载）。
+    Time,
     /// 型别不一致（混族/实参型别不符）——整式无效。
     Invalid,
 }
 
-use CalcMathType::{Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber};
+use CalcMathType::{
+    Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber, Time as MTTime,
+};
 
 /// CSS Values 4 §10.5 型别表：递归计算 math 式的结果文法族。
 ///
@@ -1165,6 +1169,7 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
     match expr {
         CalcExpr::Number(_) => MTNumber,
         CalcExpr::Length(_) => MTLength,
+        CalcExpr::Time(_) => MTTime,
         CalcExpr::BinaryOp(left, op, right) => {
             let lt = calc_expr_math_type(left);
             let rt = calc_expr_math_type(right);
@@ -1183,11 +1188,13 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                     (MTNumber, MTNumber) => MTNumber,
                     (MTNumber, MTLength) | (MTLength, MTNumber) => MTLength,
                     (MTNumber, MTAngle) | (MTAngle, MTNumber) => MTAngle,
+                    (MTNumber, MTTime) | (MTTime, MTNumber) => MTTime,
                     _ => MTInvalid, // length²/angle²/length·angle 无量纲型别，§8.1 无效
                 },
                 CalcOp::Divide => match (lt, rt) {
                     (MTNumber, MTNumber) => MTNumber,
                     (MTLength, MTNumber) | (MTAngle, MTNumber) => lt,
+                    (MTTime, MTNumber) => MTTime,
                     // FIXME: 同族相除（length/length→number 比值）未支持，无驱动案。
                     _ => MTInvalid,
                 },
@@ -1297,6 +1304,7 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Length(_) => true,
         CalcExpr::Number(_) => false,
+        CalcExpr::Time(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
         CalcExpr::Clamp { min, val, max } => {

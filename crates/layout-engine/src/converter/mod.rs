@@ -1616,6 +1616,8 @@ fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bo
     match expr {
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
+        // Time 叶无百分比（time 槽专用原子，length 槽解析不可达）。
+        CalcExpr::Time(_) => false,
         CalcExpr::BinaryOp(left, _, right) => {
             calc_expr_contains_percentage(left) || calc_expr_contains_percentage(right)
         }
@@ -1637,6 +1639,8 @@ fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
     match expr {
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => !matches!(lv, LengthValue::Percentage(_)),
+        // Time 叶非长度（time 槽专用原子，length 槽解析不可达）。
+        CalcExpr::Time(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
         CalcExpr::Clamp { min, val, max } => {

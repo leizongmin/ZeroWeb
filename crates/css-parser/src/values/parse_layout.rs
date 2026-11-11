@@ -242,12 +242,33 @@ pub fn parse_opacity(value: &str) -> Option<f64> {
             return None;
         }
         Some((pct / 100.0).clamp(0.0, 1.0))
-    } else {
-        let num: f64 = value.parse().ok()?;
+    } else if let Ok(num) = value.parse::<f64>() {
         if !num.is_finite() {
             return None;
         }
         Some(num.clamp(0.0, 1.0))
+    } else {
+        // css-values-4 §5.1 <opacity>：数学函数/calc() 形为合法 number 槽位
+        //（round(1.1,1)→1、mod(1,1)→0；driving: round-mod-rem-serialize
+        // opacity specified 等价类 + 写面 validity）。number 型门拒 px/deg
+        // 混型叶；§10.12 Range Checking：NaN censor-to-zero 在此入库（0.0），
+        // ∞ 形 fail-closed None（∞ opacity 有效但槽位承载未建模——
+        // FIXME(types.rs:1420 同族) ∞ 管线桶另刀）。
+        let expr = parse_math_function(value)?;
+        if !calc_expr_is_number(&expr) {
+            return None;
+        }
+        let v = eval_calc(&expr, None)?;
+        // §10.12 Range Checking：NaN censor-to-zero 在此入库（0.0）；±∞
+        // fail-closed None（∞ opacity 有效但槽位承载未建模——
+        // FIXME(types.rs:1420 同族) ∞ 管线桶另刀）。
+        if v.is_nan() {
+            return Some(0.0);
+        }
+        if !v.is_finite() {
+            return None;
+        }
+        Some(v.clamp(0.0, 1.0))
     }
 }
 

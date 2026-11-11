@@ -823,6 +823,11 @@ pub enum CalcExpr {
     Number(f64),
     /// 长度值（带单位）。
     Length(LengthValue),
+    /// 时间值（秒；css-values-4 §6.3 <time>：s/ms 两单位，ms 归一为秒）。
+    /// 仅 [`parse_time_calc`](Self) 的 allow_time 解析产出——共享 calc 入口
+    /// （parse_calc/parse_math_function 等）保持拒 time 原子，length/angle
+    /// 消费方零行为漂移。
+    Time(f64),
     /// 二元运算：left op right。
     BinaryOp(Box<CalcExpr>, CalcOp, Box<CalcExpr>),
     /// min() 函数：取所有参数中的最小值。
@@ -1125,6 +1130,10 @@ struct CalcParser<'a> {
     pos: usize,
     /// 当前递归深度。
     depth: u32,
+    /// 允许 <time> 原子（s/ms → [`CalcExpr::Time`]，css-values-4 §6.3）。
+    /// 仅 time 槽入口（[`parse_time_calc`]）置 true；共享 calc 入口恒 false，
+    /// 避免 `calc(10s)` 经数值捷径在 length 槽变合法（spec 应 invalid）。
+    allow_time: bool,
 }
 
 /// 最大递归深度限制。
@@ -1547,6 +1556,26 @@ impl<'a> CalcParser<'a> {
             return Some(CalcExpr::Number(rad));
         }
 
+        // css-values-4 §6.3 <time> 原子（s/ms，ms 归一为秒）——仅 allow_time
+        // 解析（parse_time_calc）接受；先于 length 臂（`10s` 非 length 单位
+        // 本会 None，次序仅防 `Xs` 未来单位语义混淆）。
+        if self.allow_time {
+            let lower = token.to_ascii_lowercase();
+            let secs = if let Some(n) = lower.strip_suffix("ms") {
+                n.trim().parse::<f64>().ok().map(|v| v / 1000.0)
+            } else if let Some(n) = lower.strip_suffix('s') {
+                n.trim().parse::<f64>().ok()
+            } else {
+                None
+            };
+            if let Some(v) = secs {
+                if v.is_finite() {
+                    return Some(CalcExpr::Time(v));
+                }
+                return None;
+            }
+        }
+
         // 尝试解析为长度值
         if let Some(length) = parse_length(token) {
             return Some(CalcExpr::Length(length));
@@ -1571,6 +1600,7 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
         input: inner,
         pos: 0,
         depth: 0,
+        allow_time: false,
     };
 
     let expr = parser.parse_expr()?;
@@ -1582,6 +1612,44 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
     }
 
     Some(expr)
+}
+
+/// 解析 time 槽数学表达式（css-values-4 §10.5/§11 over <time>）。
+///
+/// 与 [`parse_calc`] 同一解析器，但置 `allow_time` 旗标接受 `s`/`ms` 原子
+///（`round(10s,6s)`、`calc(min(1s, 500ms))` 等形）。产出须经
+/// [`calc_expr_is_pure_time`] 类型门后才能求值消费——该门拒绝裸 Number 叶，
+/// `calc(10s + 1)` 等混型（spec invalid）不透。
+pub fn parse_time_calc(value: &str) -> Option<CalcExpr> {
+    let mut parser = CalcParser {
+        input: value.trim(),
+        pos: 0,
+        depth: 0,
+        allow_time: true,
+    };
+    let expr = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(expr)
+}
+
+/// 纯 Time 维度门：仅 [`CalcExpr::Time`] 叶与结构容器（±*/ round/mod/rem/
+/// min/max/clamp/abs/sign 等）——裸 [`CalcExpr::Number`] 叶拒绝（time±number
+/// 混型 spec invalid，css-values-4 §10.1 型检查），Length/Angle 叶天然拒。
+pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Time(_) => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_pure_time(left) && calc_expr_is_pure_time(right),
+        CalcExpr::BinaryMathOp(_, a, b) => calc_expr_is_pure_time(a) && calc_expr_is_pure_time(b),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_pure_time),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_pure_time(min) && calc_expr_is_pure_time(val) && calc_expr_is_pure_time(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_is_pure_time(inner),
+    }
 }
 
 /// 解析 CSS 数学函数（calc/min/max/clamp）。
@@ -1626,6 +1694,7 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
             input: value,
             pos: 0,
             depth: 0,
+            allow_time: false,
         };
         let expr = parser.parse_expr()?;
         parser.skip_whitespace();
@@ -1666,6 +1735,7 @@ pub fn parse_min(value: &str) -> Option<CalcExpr> {
         input: inner,
         pos: 0,
         depth: 0,
+        allow_time: false,
     };
     let args = parser.parse_comma_list()?;
     parser.skip_whitespace();
@@ -1687,6 +1757,7 @@ pub fn parse_max(value: &str) -> Option<CalcExpr> {
         input: inner,
         pos: 0,
         depth: 0,
+        allow_time: false,
     };
     let args = parser.parse_comma_list()?;
     parser.skip_whitespace();
@@ -1708,6 +1779,7 @@ pub fn parse_clamp(value: &str) -> Option<CalcExpr> {
         input: inner,
         pos: 0,
         depth: 0,
+        allow_time: false,
     };
     let min = parser.parse_expr()?;
     parser.skip_whitespace();
@@ -1759,6 +1831,7 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
                 *lv = LengthValue::Px(*v * used_line_height);
             }
         }
+        CalcExpr::Time(_) => {}
         CalcExpr::BinaryOp(left, _, right) => {
             rewrite_calc_lh(left, used_line_height);
             rewrite_calc_lh(right, used_line_height);
@@ -1787,6 +1860,8 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
     match expr {
         CalcExpr::Number(n) => Some(*n),
         CalcExpr::Length(lv) => resolve_length_to_px(lv, ctx),
+        // Time 叶按秒出数值（消费方为 time 槽——parse_time 纯 Time 叶门后到达）。
+        CalcExpr::Time(v) => Some(*v),
         CalcExpr::BinaryOp(left, op, right) => {
             let lv = eval_calc_with_context(left, ctx)?;
             let rv = eval_calc_with_context(right, ctx)?;

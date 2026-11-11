@@ -614,6 +614,9 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
         CalcExpr::Length(length) => {
             clip_path_length_is_valid("", length, true).then_some(ClipPathCalcType::LengthPercentage)
         }
+        // clip-path 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
+        // 之外本不可达，fail-closed 兜底）。
+        CalcExpr::Time(_) => None,
         CalcExpr::BinaryOp(left, CalcOp::Add | CalcOp::Subtract, right) => {
             same_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
         }

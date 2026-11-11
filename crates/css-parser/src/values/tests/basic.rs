@@ -2190,3 +2190,76 @@ fn test_parse_math_function_plain_values_still_rejected() {
     assert!(parse_math_function("10px").is_none());
     assert!(parse_math_function("roundish(1px, 2px)").is_none());
 }
+
+#[test]
+fn test_parse_time_calc_math_over_time_units() {
+    // css-values-4 §10.5/§11 数学形 over <time>——transition-delay used-value
+    // 等价类驱动：round(10s,6s)=12s、mod(10s,6s)=4s、rem(10s,6000ms)=4s、
+    // s/ms 混型归一秒。
+    let cases = [
+        ("round(10s, 6s)", 12.0),
+        ("mod(10s, 6s)", 4.0),
+        ("rem(10s, 6s)", 4.0),
+        ("round(10000ms, 6s)", 12.0),
+        ("mod(10s, 6000ms)", 4.0),
+        ("rem(10000ms, 6s)", 4.0),
+    ];
+    for (src, want) in cases {
+        let expr = parse_time_calc(src).unwrap_or_else(|| panic!("{src} should parse"));
+        assert!(calc_expr_is_pure_time(&expr), "{src} is pure-time");
+        let v = eval_calc(&expr, None).unwrap_or_else(|| panic!("{src} should eval"));
+        assert!((v - want).abs() < 1e-9, "{src} -> {want}s, got {v}");
+    }
+}
+
+#[test]
+fn test_parse_time_calc_rejects_mixed_and_shared_entry_stays_closed() {
+    // 型门：裸 Number 混型叶拒（time±number spec invalid）；共享 calc 入口
+    // 不受 allow_time 影响（length 槽 `calc(10s)` 恒 invalid 零漂移）。
+    let expr = parse_time_calc("calc(10s + 1)").expect("parses structurally");
+    assert!(!calc_expr_is_pure_time(&expr), "time+number mixed leaf rejected");
+    assert!(
+        parse_time_calc("10px").is_none() || {
+            // Length 叶结构性可解析（parse_length 臂）但纯 Time 门拒。
+            let e = parse_time_calc("10px").expect("10px parses as Length leaf");
+            !calc_expr_is_pure_time(&e)
+        }
+    );
+    assert!(parse_calc("10s").is_none(), "shared calc entry stays time-closed");
+    assert!(
+        parse_calc("calc(10s + 5s)").is_none(),
+        "shared calc entry stays time-closed (nested)"
+    );
+}
+
+#[test]
+fn test_parse_time_math_forms_via_parse_time() {
+    // transition-delay/duration 槽入口端到端：数学形翻绿、裸形零漂移、
+    // 非法形恒拒。
+    assert_eq!(parse_time("round(10s,6s)"), Some(12.0));
+    assert_eq!(parse_time("mod(10ms,6ms)"), Some(4.0e-3));
+    assert_eq!(parse_time("6000ms"), Some(6.0));
+    assert_eq!(parse_time("0.5s"), Some(0.5));
+    assert_eq!(parse_time("10px"), None);
+    assert_eq!(parse_time("calc(10s + 1)"), None);
+}
+
+#[test]
+fn test_parse_opacity_math_function_forms() {
+    // css-values-4 §5.1 <opacity> 数学形放行（round-mod-rem-serialize
+    // opacity specified 等价类）+ §10.12 NaN censor-to-zero 入库 + number
+    // 型门拒混型。
+    assert_eq!(parse_opacity("round(1.1,1)"), Some(1.0));
+    assert_eq!(parse_opacity("mod(1,1)"), Some(0.0));
+    assert_eq!(parse_opacity("rem(1,1)"), Some(0.0));
+    assert_eq!(parse_opacity("round(1,0)"), Some(0.0), "NaN censors to 0");
+    assert_eq!(parse_opacity("clamp(0, 0.5, 1)"), Some(0.5));
+    // 越界 clamp [0,1]（used-value Range Checking 同语义）。
+    assert_eq!(parse_opacity("round(2.5,1)"), Some(1.0));
+    // 型门：length/angle/time 槽混型拒。
+    assert_eq!(parse_opacity("calc(1px + 2px)"), None);
+    assert_eq!(parse_opacity("round(10s,6s)"), None);
+    // 裸 number/% 既有路径零漂移。
+    assert_eq!(parse_opacity("0.25"), Some(0.25));
+    assert_eq!(parse_opacity("50%"), Some(0.5));
+}
