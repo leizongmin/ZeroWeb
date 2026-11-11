@@ -143,6 +143,10 @@
             if (globalThis.__zwOpacityComputed(String(value)) !== '') return true;
           } catch (_eSO) {}
         }
+        // position-area（组F）不设 JS 前置钩：宿主 decl_supported 已加
+        // position-area 臂（js_dom_bridge.rs，dom_bindings::position_area
+        // 裁决）——host 路径即可判真，同型双钩冗余不落。
+        // https://drafts.csswg.org/css-anchor-position-1/#position-area
       }
       if (typeof __zw_css_supports !== 'function') return false;
       if (arguments.length >= 2) return __zw_css_supports(String(prop), String(value)) === '1';
@@ -2096,6 +2100,21 @@
       var _gnd = globalThis.__zw_grid_normalize_decl(propName, raw);
       if (_gnd === 'null') return null;
       return _gnd;
+    }
+    // wptfyi-css 组F（css-anchor-position position-area 语法面）：decl 校验 +
+    // canonical 序列化整值委托——grid_cssom G1 单实现双通道同型（组F 撞车仲裁
+    // 定案：文法/序列化矩阵单点在 dom_bindings::position_area，Rust 侧单测以
+    // position-area-parsing/computed 语料为 oracle；shim 薄委托经
+    // __zw_position_area_normalize_decl 回调）。'null' 哨兵=拒（赋值忽略保留
+    // 原值）；空串 echo Some("")（remove 语义归 setProp 空串臂）；CSS-wide
+    // 归小写、var() 原文保形均在 Rust 侧收口。回调未注册（兜底链）不校验
+    // 零漂移。
+    // https://drafts.csswg.org/css-anchor-position-1/#position-area
+    if (propName === 'position-area'
+        && typeof globalThis.__zw_position_area_normalize_decl === 'function') {
+      var _pav = globalThis.__zw_position_area_normalize_decl(raw);
+      if (_pav === 'null') return null;
+      return _pav;
     }
     // DC-2 light-dark image 批：image 四属性 light-dark() 顶层前缀浅校验
     //（part11-color.js __zwImageNormalizeDecl——undefined=不介入 passthrough、

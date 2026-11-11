@@ -2145,6 +2145,57 @@
       }
       return '1';
     }
+    if (prop === 'position-area') {
+      // wptfyi-css 组F：css-anchor-position-1 §position-area 计算值——非继承
+      //（position-area-computed assert_not_inherited 锚），只读自身 inline 声明；
+      // 折叠管线（逻辑 long→short 同形塌缩、span-all 槽位消歧 `start span-all` →
+      // block-start / `span-all start` → inline-start、center 槽位归位）单点在
+      // dom_bindings::position_area::computed_value（grid G1 单实现双通道同型，
+      // 经 __zw_position_area_computed 回调薄委托）。无声明返初始值 'none'。
+      // CSS-wide keyword 计算期语义（CSS Cascading 4 §6-§7）：initial/unset/
+      // revert/revert-layer → 属性初始值 'none'（非继承且 UA 层无 position-area
+      // 声明可回退——assert_initial 钉）；inherit 强制取父链首个非 css-wide 声明
+      // 的计算值（§7.3 对非继承属性亦生效——assert_not_inherited inherit 步钉）。
+      // 回显原文曾撞 host 'initial'/'inherit' 兜底字面量（paprobe 残余 2F 根因）。
+      // FIXME: 作者样式表声明臂未接（_zwPlainDecl 只读 inline；语料两页全 inline）。
+      var paRaw = _zwPlainDecl(elt, 'position-area');
+      if (!paRaw) return 'none';
+      var paS = String(paRaw).trim().toLowerCase();
+      if (paS === 'inherit') {
+        node = elt.parentNode; guard = 0;
+        while (node && node.nodeType === 1 && guard++ < 256) {
+          var paInh = _zwPlainDecl(node, 'position-area');
+          if (paInh) {
+            var paInhS = String(paInh).trim().toLowerCase();
+            if (paInhS === 'inherit' || paInhS === 'initial' || paInhS === 'unset'
+                || paInhS === 'revert' || paInhS === 'revert-layer') {
+              node = node.parentNode;
+              continue;
+            }
+            if (typeof globalThis.__zw_position_area_computed === 'function') {
+              try {
+                var paCV = globalThis.__zw_position_area_computed(String(paInh));
+                if (paCV !== '') return paCV;
+              } catch (_ePACI) {}
+            }
+            return '';
+          }
+          node = node.parentNode;
+        }
+        return 'none';
+      }
+      if (paS === 'initial' || paS === 'unset' || paS === 'revert'
+          || paS === 'revert-layer') {
+        return 'none';
+      }
+      if (typeof globalThis.__zw_position_area_computed === 'function') {
+        try {
+          var paV = globalThis.__zw_position_area_computed(String(paRaw));
+          if (paV !== '') return paV;
+        } catch (_ePAC) {}
+      }
+      return '';
+    }
     if (prop === 'color-scheme') {
       // color-scheme 级联声明读取（css-color-adjust-1 §color-scheme：继承属性）——
       // 供 light-dark()/system color 求值方合成 used scheme（part11

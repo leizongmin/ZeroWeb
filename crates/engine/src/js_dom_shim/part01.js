@@ -12236,6 +12236,20 @@
               return 'static';
             }
             var _csGV = query(kp);
+            // wptfyi-css 组F：position-area 宿主回声覆盖——host 对 registry 外
+            // 未设值属性回 'initial'/'inherit' 字面量兜底，非空短路下方 plain
+            // 臂使初始值 'none' / 非继承两钉失守（paprobe position-area-computed
+            // 残余 2F 根因；设值时 host apply-miss 回 '' 走臂已通）。计算值空间
+            // 恒为关键词文法（none 或九类组），无 'initial'/'inherit' 合形，一律
+            // plain 优先（__zwPlainComputed 无声明返 'none' 初值）。
+            // https://drafts.csswg.org/css-anchor-position-1/#position-area
+            if (kp === 'position-area'
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              try {
+                var _paGV = globalThis.__zwPlainComputed(elt, kp);
+                if (_paGV !== '') return _paGV;
+              } catch (_ePAGV) {}
+            }
             // DC-2 次批：宿主 partial-parse 抢答覆盖（注释形/currentcolor/
             // 现代色形宿主产出错误计算值——part11 __zwCssColorNeedsPlain
             // 判定），inline 命中即落 plain 重读（spec 正确值）。legacy 形
@@ -12302,6 +12316,16 @@
         var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
         // DC-2 次批：宿主 partial-parse 抢答覆盖（同 getPropertyValue 臂注释）。
         var _kpC = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
+        // wptfyi-css 组F：position-area 宿主回声覆盖（同 getPropertyValue 臂——
+        // host 未设值 'initial'/'inherit' 字面量兜底短路 plain 臂，plain 优先）。
+        // https://drafts.csswg.org/css-anchor-position-1/#position-area
+        if (_kpC === 'position-area'
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          try {
+            var _paV2 = globalThis.__zwPlainComputed(elt, _kpC);
+            if (_paV2 !== '') return _paV2;
+          } catch (_ePAV2) {}
+        }
         if (_csV !== '' && (_kpC === 'color' || _kpC === 'background-color')
             && elt && elt.style
             && typeof globalThis.__zwCssColorNeedsPlain === 'function'
@@ -12333,7 +12357,7 @@
           var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
           if (_pcP === 'color' || _pcP === 'font-size'
               || _pcP === 'font-family' || _pcP === 'background-color'
-              || _pcP === 'opacity') {
+              || _pcP === 'opacity' || _pcP === 'position-area') {
             try {
               var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
               if (_pcV !== '') return _pcV;
