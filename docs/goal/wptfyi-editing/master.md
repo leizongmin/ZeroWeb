@@ -20,24 +20,31 @@ sibCrit css 门 + cef 端点门 + peel 残料溶解 + styleWithCSS 出口补拍�
 multitest+misc 哨兵共享断言逐名恒等；rebase 后 u/s 两文件复验
 2115/32、2067/80 恒等，证据
 [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md)。
+**P3 追加·strike 新裹标签 delta**（同日）：css-false 新裹 `<s>`→
+`<strike>`（Chrome 录形为准，单行共享路径）——strike 2067/80→2104/43，
+F2P 37 逐名翻转零回归、mt/misc 哨兵 fail 集恒等，证据
+[dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md)。
 selection 扩面已接线待下周跑生效：fetch 切 deep（184 案）、独立
 selection-face 片——本地 census 51,695/35,631（
 [census](evidence/2026-11-11-dc2-selection-face-census.json)）。
 **卡点** 无阻塞；距 146,184 验收线差 37,125，大头在 selection deep
 面下周跑生效（census 口径 +~33k）与 input-events（201/3,378）等 0 覆盖面
-接线。六 format 文件残余 253F 为 P2 既有长尾。
-**下一步** ①六文件残余 253F 长尾按簇开修（bold 数值权重边界 merge、
-u/s 多值 decoration 偏序删除、italic var/dfn 归一、sub/sup
-vertical-align 邻 span）；②selection bidi（0/92）、shadow-dom
-（27/113）、input-events 小桶按产物归类开修；③下周快照落做 DC-3 同口径
-对账（净增 ≥130,000 + 邻域回退核对，P2/P3 语料全量增量随周跑入账）。
+接线。六 format 文件残余 216F 为 P2 既有长尾。
+**下一步** ①P2 apply 主循环 effectively-contained 元素处理开修
+（u/s/ins/del 载体：css-true push-down 折叠入新裹后溶解 `foo<u>[bar]</u>`
+形、css-false 文本级嵌套 wrap `<u><strike>[bar]</strike></u>` 形——
+高卷积共享路径，改前先核 vendored 分解/下潜步骤）；②bold 数值权重
+边界 merge、italic var/dfn 归一、sub/sup vertical-align 邻 span；
+③selection bidi（0/92）、shadow-dom（27/113）、input-events 小桶按产物
+归类开修；④下周快照落做 DC-3 同口径对账（净增 ≥130,000 + 邻域回退
+核对，P2/P3 语料全量增量随周跑入账）。
 
 [执行契约](../wptfyi-editing.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 完成（11/11 片；快照 109,059/154,595） | [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md) + [dc2-selection-wiring](evidence/2026-11-11-dc2-selection-wiring.md) |
-| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（三面 +1,647 断言级零新增失败）；**P3 作者载体臂（8 P2F 清账，+26 零回归）**；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md)：六文件残余 253F 长尾 |
+| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（三面 +1,647 断言级零新增失败）；**P3 作者载体臂（8 P2F 清账 +26）+ strike 新裹标签 delta（+37），均零回归**；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md)：六文件残余 216F 长尾 |
 | DC-3 全量对账 | 对账口径就绪（净增 +92,875，距线 37,125） | coverage-2026-11-11 快照 + 验收线 146,184 |
 
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
