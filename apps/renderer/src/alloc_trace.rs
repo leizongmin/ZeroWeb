@@ -250,6 +250,11 @@ impl TraceState {
 
     /// net 表 untrack（释放侧）；未知指针（小块或溢出块）静默略过。
     fn untrack_live(&mut self, ptr: usize) {
+        let _ = self.take_live(ptr);
+    }
+
+    /// 摘下 live 条目（realloc 起始或显式 untrack）；指针仍唯一持有者时调用。
+    fn take_live(&mut self, ptr: usize) -> Option<LiveEntry> {
         if let Some(entry) = self.live.remove(&ptr) {
             let mut remove_agg = false;
             if let Some(agg) = self.live_sites.get_mut(&entry.site) {
@@ -261,6 +266,24 @@ impl TraceState {
             if remove_agg {
                 self.live_sites.remove(&entry.site);
             }
+            Some(entry)
+        } else {
+            None
+        }
+    }
+
+    /// realloc 失败回滚：挂回 begin 前摘下的条目。
+    fn restore_live(&mut self, ptr: usize, entry: LiveEntry, max_entries: usize) {
+        if self.live.len() >= max_entries {
+            self.live_untracked += 1;
+            return;
+        }
+        let site = entry.site;
+        let size = entry.size;
+        if self.live.insert(ptr, entry).is_none() {
+            let agg = self.live_sites.entry(site).or_default();
+            agg.blocks += 1;
+            agg.bytes += size as u64;
         }
     }
 }
@@ -385,11 +408,19 @@ pub(crate) fn record_dealloc(ptr: usize) {
     }
 }
 
-/// realloc 净记账：旧块出 net 表、新块入表（≈一次 alloc 事件）。
-///
-/// 本路径无回溯采样，新块按 alloc 侧同口径落 unattributed 哨兵 0——不继承
-/// 线程历史采样 site（T62 DF F1）。
-pub(crate) fn record_realloc(old_ptr: usize, new_ptr: usize, new_size: usize) {
+/// realloc 起始：旧指针仍唯一持有，先出 net 表（与 `record_dealloc` 同序）。
+pub(crate) fn record_realloc_begin(old_ptr: usize) -> Option<LiveEntry> {
+    if recording() {
+        return None;
+    }
+    let _guard = RecordingGuard::enter();
+    let mut outer = state();
+    let active = outer.as_mut()?;
+    active.take_live(old_ptr)
+}
+
+/// realloc 成功：新块入 net 表（无回溯采样，site 哨兵 0——T62 DF F1）。
+pub(crate) fn record_realloc_finish(new_ptr: usize, new_size: usize) {
     if recording() {
         return;
     }
@@ -397,9 +428,22 @@ pub(crate) fn record_realloc(old_ptr: usize, new_ptr: usize, new_size: usize) {
     let Some(config) = CONFIG.get() else { return };
     let mut outer = state();
     let Some(active) = outer.as_mut() else { return };
-    active.untrack_live(old_ptr);
     if new_size >= config.net_min_bytes {
         active.track_live(new_ptr, new_size, 0, config.max_live_entries);
+    }
+}
+
+/// realloc 失败回滚：`System.realloc` 返 null 时原块仍在，挂回 begin 摘下条目。
+pub(crate) fn record_realloc_abort(old_ptr: usize, entry: LiveEntry) {
+    if recording() {
+        return;
+    }
+    let _guard = RecordingGuard::enter();
+    let Some(config) = CONFIG.get() else { return };
+    let mut outer = state();
+    let Some(active) = outer.as_mut() else { return };
+    if entry.size >= config.net_min_bytes {
+        active.restore_live(old_ptr, entry, config.max_live_entries);
     }
 }
 
@@ -709,11 +753,24 @@ unsafe impl GlobalAlloc for TracingAllocator {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // 旧块出表须先于 System.realloc（同 dealloc 序）：扩缩容后旧地址可能
+        // 立即被并发分配复用，延后 untrack 会误摘新占有者条目。
+        let preserved = if ENABLED.load(Ordering::Relaxed) && !recording() {
+            record_realloc_begin(ptr as usize)
+        } else {
+            None
+        };
         // SAFETY: System.realloc 按 GlobalAlloc 契约处理扩缩容；失败返 null
-        // 时原块不动，簿记仅在新块非空后执行。
+        // 时原块不动，须回滚 begin 摘表。
         let new = unsafe { System.realloc(ptr, layout, new_size) };
-        if !new.is_null() && ENABLED.load(Ordering::Relaxed) && !recording() {
-            record_realloc(ptr as usize, new as usize, new_size);
+        if new.is_null() {
+            if let Some(entry) = preserved {
+                record_realloc_abort(ptr as usize, entry);
+            }
+            return new;
+        }
+        if ENABLED.load(Ordering::Relaxed) && !recording() {
+            record_realloc_finish(new as usize, new_size);
         }
         new
     }
