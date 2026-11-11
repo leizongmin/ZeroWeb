@@ -1164,8 +1164,12 @@
       }
       // DC-2 P2 apply 面（2026-11-11）：六 format 命令元素臂（vendored
       // :2821-2853 原文——flag=false 恒标签形；值门同原文）。fresh 标签的
-      // effective 读数（UA 表 b→700/s→line-through）使 :1086 尾臂不加冗余
-      // style 声明——录形恒裸 <b>/<i>/<u>/<s>。
+      // effective 读数（UA 表 b→700/strike→line-through）使 :1086 尾臂不加
+      // 冗余 style 声明——录形恒裸 <b>/<i>/<u>/<strike>。Chrome delta
+      // （DC-2 ③，2026-11-12）：strikethrough 新裹标签 Chrome 录形用
+      // <strike>（语料 foo[bar]baz css-false 期望 foo<strike>[bar]</strike>baz
+      // 实证；上游 vendored 原文 s 但 WPT 期望以 Chrome 录形为准）——原 <s>
+      // 形 strike 文件 50 例 innerHTML 全簇红根因。
       if (command === 'bold' && (newValue === 'bold' || newValue === '700')) {
         newParent = document.createElement('b');
       }
@@ -1173,7 +1177,7 @@
         newParent = document.createElement('i');
       }
       if (command === 'strikethrough' && newValue === 'line-through') {
-        newParent = document.createElement('s');
+        newParent = document.createElement('strike');
       }
       if (command === 'underline' && newValue === 'underline') {
         newParent = document.createElement('u');
