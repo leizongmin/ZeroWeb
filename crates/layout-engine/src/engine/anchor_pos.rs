@@ -253,7 +253,10 @@ fn apply_inset_walk(
             // 失配（锚滚移而目标不动 → 坐标系失配）过滤为无锚 → 回落 fallback/
             // 槽位既有行为（显式名与 position-anchor 默认锚同口径）。
             let lookup = |n: &str| gated_lookup(anchors, n, child_sc);
-            let default_geo = s.position_anchor.as_deref().and_then(|n| gated_lookup(anchors, n, child_sc));
+            let default_geo = s
+                .position_anchor
+                .as_deref()
+                .and_then(|n| gated_lookup(anchors, n, child_sc));
             let resolve = |raw: &str, slot: &str, cb_size: f32| {
                 resolve_anchor_inset(raw, slot, cb_size, &lookup, default_geo, (cb_x, cb_y), &s.font_size)
             };
