@@ -1024,49 +1024,112 @@
                 ? 'text-decoration'
                 : (command === 'subscript' || command === 'superscript')
                   ? 'vertical-align' : 'background-color')))));
-    // Chrome delta（⑦ probe-tJ 实证，2026-11-04）：nodeType 1 且**自面**读数
-    // ≠ 新值 → 不外裹、直接下潜子级。自面读数必须在包裹前取——fontsize 的
-    // 外裹改变继承链，post-wrap 读数恒落 wrapper 值（tJ: small 裹进 font
-    // size=1 后读 10px 误等值，下潜臂失效）。自面判别 = plain 走查值非空且
-    // ≠ 父链走查值（解析落点在 node 本体：UA 规则元素 small/big/tt/code/
-    // kbd/samp、残余声明面）；无自面但 style attr 残余其他声明（tI 多 prop
-    // span 摘净冲突属性后）同样下潜（Chrome 对 styled wrapper 的包裹收在
-    // 内容侧）。裸 span/无自面无残余 → 维持外裹（语料既有单层外裹形，
-    // fix3 A1 span1 面）。子级过滤臂 = vendored step 原文。
+    // Chrome delta（DC-2 ① 载体原位面，2026-11-11）：u/s 命令对全含选区的
+    // **decoration 载体 span**（inline decl 或作者规则面）的落点面——⑦ 下潜
+    // 臂的 text-decoration 例外（strike/underline 语料 class 载体 + styled
+    // span 录形；data 注释原文 "Should update text-decoration declaration in
+    // the <span> which is a container of the range"）。裸 span（无任何
+    // decoration 面）不入本门——跨 span 裸壳组录形 = 单外裹（`<span
+    // [foo</span> <span>bar]</span>` css-true/css-false 均整组外裹单壳，
+    // fix2 既有行为，本刀零漂移）。effectively contained 元素子级恒全含，
+    // forceValue(span) 只在壳级全选形到达，局部选区（b[a]r 族）不入本门：
+    //   - css flag true：原位并 style——新值与 inline 既有 line token 合并后按
+    //     canonical 位序输出（[underline,overline,line-through] Chrome CSSOM
+    //     序；strike 语料 underline 载体 + strike css-true 录形
+    //     `underline line-through`，与 underline 载体同序，新值不前置；
+    //     blink/color/style 长手丢弃。class 载体补 style attr，作者 token
+    //     不入 inline 面——class=underline + strike css-true 录形仅
+    //     line-through，余值仍由类规则级联供给）。
+    //   - css flag false：inline decl 面 → 跳过 ⑦ 下潜、落尾臂外裹（styled
+    //     span 录形 `<u><span style=…>…</span></u>`）；作者面（类载体）→
+    //     下潜内容侧（`<span class=…><u>…</u></span>` 录形）。
+    //   门内仅 span 形壳（u/i/b styled 壳维持 ⑦ 既有路径）；子级过滤臂同 ⑦
+    //   vendored step 原文。
     if (node.nodeType === 1) {
-      var ownFacePre = '';
-      var parFacePre = '';
-      try { ownFacePre = __zwPlainComputed(node, property); } catch (_eVaPre) {}
-      try {
-        if (node.parentNode) parFacePre = __zwPlainComputed(node.parentNode, property);
-      } catch (_eVaPar) {}
-      var ownGenuine = ownFacePre !== '' && ownFacePre !== parFacePre;
-      var residualDecls = false;
-      try {
-        var declsPre = _zwPlainStyleDecls(node);
-        for (var kr in declsPre) {
-          if (Object.prototype.hasOwnProperty.call(declsPre, kr)) {
-            residualDecls = true;
-            break;
-          }
+      var usSpan = (command === 'underline' || command === 'strikethrough')
+        && _zwJusTag(node) === 'span' && _zwVaIsAllowedChild(node, 'span');
+      var tdUsInline = '';
+      var tdUsAuthor = '';
+      if (usSpan) {
+        try { tdUsInline = _zwPlainDecl(node, 'text-decoration') || ''; } catch (_eUcF1) { tdUsInline = ''; }
+        if (!tdUsInline) {
+          try { tdUsAuthor = _zwPlainAuthorDecl(node, 'text-decoration') || ''; } catch (_eUcF2) { tdUsAuthor = ''; }
         }
-      } catch (_eRd) {}
-      if (ownGenuine || residualDecls) {
-        var kids3 = [];
-        for (i = 0; i < node.childNodes.length; i++) {
-          var kid3 = node.childNodes[i];
-          if (kid3.nodeType === 1) {
-            var specKid3 = _zwVaSpecifiedValue(kid3, command);
-            if (specKid3 !== null && !_zwVaEquivalentValues(command, newValue, specKid3)) {
-              continue;
+      }
+      var tdUsFace = tdUsInline || tdUsAuthor;
+      if (usSpan && tdUsFace && _zwVaCssFlag()) {
+        var canonUs = ['underline', 'overline', 'line-through'];
+        var mergeUs = [newValue];
+        if (tdUsInline) {
+          var toksUs = String(tdUsInline).toLowerCase().split(/\s+/);
+          for (var ti = 0; ti < toksUs.length; ti++) {
+            if (toksUs[ti] && canonUs.indexOf(toksUs[ti]) !== -1
+                && mergeUs.indexOf(toksUs[ti]) === -1) {
+              mergeUs.push(toksUs[ti]);
             }
           }
-          kids3.push(kid3);
+          mergeUs.sort(function (a, b) { return canonUs.indexOf(a) - canonUs.indexOf(b); });
         }
-        for (i = 0; i < kids3.length; i++) {
-          _zwVaForceValue(kids3[i], command, newValue);
-        }
+        _zwVaSetStyleProp(node, 'text-decoration', mergeUs.join(' '));
         return;
+      }
+      if (usSpan && tdUsFace && !_zwVaCssFlag()) {
+        if (tdUsInline) {
+          // inline decl 面（styled）：跳过 ⑦ 下潜，落尾臂外裹。
+        } else {
+          // 作者面载体（类壳）：下潜内容侧（子级过滤臂同 ⑦ vendored step 原文）。
+          var kidsUs = [];
+          for (i = 0; i < node.childNodes.length; i++) {
+            var kidUs = node.childNodes[i];
+            if (kidUs.nodeType === 1) {
+              var specKidUs = _zwVaSpecifiedValue(kidUs, command);
+              if (specKidUs !== null && !_zwVaEquivalentValues(command, newValue, specKidUs)) {
+                continue;
+              }
+            }
+            kidsUs.push(kidUs);
+          }
+          for (i = 0; i < kidsUs.length; i++) {
+            _zwVaForceValue(kidsUs[i], command, newValue);
+          }
+          return;
+        }
+      }
+      if (!usSpan || !tdUsFace) {
+        var ownFacePre = '';
+        var parFacePre = '';
+        try { ownFacePre = __zwPlainComputed(node, property); } catch (_eVaPre) {}
+        try {
+          if (node.parentNode) parFacePre = __zwPlainComputed(node.parentNode, property);
+        } catch (_eVaPar) {}
+        var ownGenuine = ownFacePre !== '' && ownFacePre !== parFacePre;
+        var residualDecls = false;
+        try {
+          var declsPre = _zwPlainStyleDecls(node);
+          for (var kr in declsPre) {
+            if (Object.prototype.hasOwnProperty.call(declsPre, kr)) {
+              residualDecls = true;
+              break;
+            }
+          }
+        } catch (_eRd) {}
+        if (ownGenuine || residualDecls) {
+          var kids3 = [];
+          for (i = 0; i < node.childNodes.length; i++) {
+            var kid3 = node.childNodes[i];
+            if (kid3.nodeType === 1) {
+              var specKid3 = _zwVaSpecifiedValue(kid3, command);
+              if (specKid3 !== null && !_zwVaEquivalentValues(command, newValue, specKid3)) {
+                continue;
+              }
+            }
+            kids3.push(kid3);
+          }
+          for (i = 0; i < kids3.length; i++) {
+            _zwVaForceValue(kids3[i], command, newValue);
+          }
+          return;
+        }
       }
     }
     var newParent = null;

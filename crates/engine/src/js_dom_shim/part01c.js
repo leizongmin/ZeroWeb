@@ -2670,9 +2670,10 @@
   // b,strong bold / i,em,cite,dfn,var,address italic / u,ins underline /
   // s,strike,del line-through；a[href] 同 a:link underline 臂先例）→ 继承
   // 走查（font-weight/font-style 继承）。
-  // FIXME: 作者样式表规则臂未接（六语料数据文件零 <style> 块，无消费面）；
-  //   h1-h6/th 加粗 UA 面未建；font 简写（font: bold …）与 bolder/lighter
-  //   相对关键字未解析。
+  // FIXME: 作者样式表规则臂 u/s decoration 面已接（2026-11-11
+  //   _zwFmtDecorationOf——reset.css 类选择器载体 state 读），bold/italic
+  //   值面未接；h1-h6/th 加粗 UA 面未建；font 简写（font: bold …）与
+  //   bolder/lighter 相对关键字未解析。
   // state override（2026-11-11 P3）：写面 part01d _zwVaSetSelectionValue 无
   //   formattable 臂（__zw_ce_value_state_override 读数导出）；本面入口
   //   override 先行（读序 ⓪），collapsed exec typing 态另有 part06
@@ -2709,7 +2710,12 @@
     }
     return '';
   }
-  // 单元素 text-decoration own 值（host → inline → UA 表；非继承不爬升）。
+  // 单元素 text-decoration own 值（host → inline → 作者表 → UA 表；非继承
+  // 不爬升）。作者臂（2026-11-11 wptfyi-editing DC-2 ①）：host gCS 对
+  // <link> 作者样式表盲、inline/UA 表不含类选择器声明——reset.css
+  // `.line-through/.underline` 载体 span state 读 false 误应用外裹（strike/
+  // underline 语料 8 P2F 实证）。复用 ③'-c 作者快照匹配机具（同款有界简单
+  // 选择器域）；级联序作者 > UA、inline > 作者，插在 inline 后 UA 前。
   function _zwFmtDecorationOf(el) {
     var v = '';
     try { v = _zwJusCs(el, 'textDecoration'); } catch (_eFtd) { v = ''; }
@@ -2717,6 +2723,9 @@
     var d = '';
     try { d = _zwPlainDecl(el, 'text-decoration') || ''; } catch (_eFtd2) { d = ''; }
     if (d) return d;
+    var dA = '';
+    try { dA = _zwPlainAuthorDecl(el, 'text-decoration') || ''; } catch (_eFtdA) { dA = ''; }
+    if (dA) return dA;
     var tagL = String(el.tagName || '').toLowerCase();
     var href = null;
     try { href = el.getAttribute && el.getAttribute('href'); } catch (_eFhr) {}
