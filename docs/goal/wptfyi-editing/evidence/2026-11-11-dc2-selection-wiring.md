@@ -41,14 +41,15 @@ ui-edit 分片的 `fetch-wpt-selection` 一直指向旧版 `fetch-selection-subs
   主要在 root addRange/collapse 矩阵族。
 - CI 预算校验：17 min × ~3× CI 减速 ≈ 51 min ≪ time_limit 7200。
 
-## CI 首批 editing/run 实证（run 42947347500，10/11 片完成）
+## CI 首批 editing/run 实证（run 42947347500，11/11 片全部成功）
 
-10/11 片成功（仅 er2 delete 组在跑，[run](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）：
+11/11 片成功（[run](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）：
 
 | 片 | 文件 | variants | subtests | pass | 过率 |
 |---|---|---:|---:|---:|---:|
 | er0 | multitest | 10 | 9,980 | 9,977 | 100.0% |
 | er1 | forwarddelete 组 6 文件 | 13 | 7,858 | 7,595 | 96.7% |
+| er2 | delete 组 8 文件 | 18 | 8,664 | 8,329 | 96.1% |
 | er3 | insertparagraph 组 3 文件 | 10 | 9,439 | 9,233 | 97.8% |
 | er4 | justifycenter/indent/superscript | 9 | 8,805 | 8,527 | 96.8% |
 | er5 | formatblock/subscript/insertimage | 8 | 7,249 | 7,039 | 97.1% |
@@ -57,12 +58,23 @@ ui-edit 分片的 `fetch-wpt-selection` 一直指向旧版 `fetch-selection-subs
 | er8 | bold/inserttext/outdent | 10 | 8,607 | 7,828 | 91.0% |
 | er9 | justifyleft/strikethrough/underline/italic | 12 | 8,870 | 8,020 | 90.4% |
 | er10 | removeformat/lists/hr/linebreak/inserthtml | 10 | 10,262 | 9,984 | 97.3% |
-| **合计** | | **93** | **87,620** | **84,538** | **96.5%** |
+| **合计** | | **119** | **96,284** | **92,867** | **96.5%** |
+
+面覆盖贴近上游总量：96,284 vs 上游 96,745 子测试（差 461 = 随库探针与
+undo-redo.html iframe 案不进片的口径差）。失败总量 **3,417**，按片
+er9（850）> er8（779）> er2（335）> er4 = er10（278）> er1（263）>
+er5（210）> er3（206）> er7（126）> er6（89）> er0（3）——DC-2 最大簇
+是 er9/er8 两个 format 命令组，delete 组（原估"最重簇"）实际 96.1%。
+
+er2 内部低过率小簇：undo-redo-after-mutation 0/7、
+typing-text-in-direct-child-of-editing-host 6/16、
+delete-to-make-editing-host-empty 4/12、insert-list-items-in-table-cell
+83/112；delete.html 本体 7,437/7,663（97.1%，全片唯一 Timeout）。
 
 **slow 簇未超预算，无需再拆**：er0 multitest 10 变体全出（仅 1 子测试
-Timeout）；er1 forwarddelete 8 变体 7,390/7,191（1 子测试 Timeout）；
-er3 insertparagraph 组零 Timeout。案级 case_timeout 3600 / 片级
-time_limit 10800 对最重案均有余量。
+Timeout）；er1 forwarddelete（1 子测试 Timeout）；er2 delete.html 全片
+唯一另一处 Timeout；er3 insertparagraph 组零 Timeout。案级
+case_timeout 3600 / 片级 time_limit 10800 对最重案均有余量。
 
 **本地标定勘误**：cal1 的 delete/forwarddelete >1800s 是并发负载污染的
 虚高（cal1 delete 跑时 pipe-smoke/bold 校准同时在跑）——CI 实际
