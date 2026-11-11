@@ -84,6 +84,26 @@ calc-infinity-nan +2）；css-color 10,948P 零回归；engine 腿 3875P/7F 既�
 used-value NaN/∞ 钳制、angle 叶 provenance。
 [证据](evidence/2026-11-11-dc2-values-math-type-table-face.md)
 
+**DC-2 g6b HEAD 核验账（11-11 晚）**：纯 HEAD 二进制（g6 build）双腿对账——
+css-values 语料 fd2 基线 **2,426 → 2,442 净 +16**（0061c7fff opacity 折叠腿兑现：
+exp-log/minmax-number/hypot-pow-sqrt/calc-infinity-nan 四页各 +4P）；round-mod-rem
+1 回归，根因 = round 族四臂 `bv==0→av` 特判（types.rs:1890-1893，af02f52bf 旧码
+「round(x, 0) = x」）违反 css-values-4 §round-func——WPT 配对 `calc(NaN)` 实证
+round(1,0)≡NaN，mod/rem None 臂+shim NaN→0 面故未回归；折叠白名单把 declared
+折成 `calc(1)` 才暴露语义分裂。修法（values 域）：去四臂特判走 IEEE NaN，
+预计连带翻绿 round specified opacity/scale 2 腿。hypot-pow-sqrt 单页 16P/9F：
+**UNCLAIMED「apply.rs 九函数微批」定谳关闭**——九函数已在库且求值正确
+（scale(1)/scale(0.5) 实证），简报过时；9 红腿真因两面：① opacity 写面
+validity 拒裸数学函数（3 腿，parse_opacity 值校验——折叠就绪但声明未存上）
+② transform computed 未 matrix 化（6 腿；css-values 同因簇 **40 红腿/5 页**：
+progress-serialize 14/minmax 10/hypot-pow-sqrt 6/round-mod-rem 6/exp-log 4；
+css-transforms 面 UNCLAIMED，progress() 函数本体亦未实现）。color 桶 1
+（cqw 入色值数学 ~10F）根因定谳两面：shim 基座 cqw 视口×1000 近似
+（part11-color.js:370）+ host `LengthValue::Calc` 求值 CalcContext
+container_width 未接（computed.rs:253 `..Default::default()`，container 参数
+在手未喂）——语料页容器动态宽（1000→100px sign 翻转）两面都接不住。
+详见 .acceptance/wptfyi-css/triage-color-longtail-63f.md。
+
 **DC-2 组F 布局刀2 完成（11-11 午后）**：position-area 区域定位布局 pass
 （提交 5af93e7e0）——css-parser anchor_area.rs 区域格矩阵单点下沉（canonical
 串→3×3 格，axis_of 显式归类 + 双 shared 词对首词=block/次词=inline + self 族
@@ -361,3 +381,10 @@ fd1 二进制补跑——跨流同面时以「验证分账、提交单点」收�
 等场环 ps 全局 grep 卡异 clone runner ~30 分钟（ZeroWeb-3 editing run），
 已修为 /proc/*/cwd|exe 树归属过滤（见
 docs/learnings/platform/2026-11/2026-11-11-clone-blind-wait-loop-ps-grep.md）。
+**11-11 晚 g6 系命名撞碰与无 journal 构建**：21:04-21:09 他流 unit
+zw-g6-color-2104 跑 make test exit=2（脚本 banner 亦复用「== g6 done ==」——
+g6 系名与他流撞碰，本流后续核验链改 g7 系命名避让）；21:10:37
+target/release/zero-wpt-runner 重建无任何 journal 痕迹（裸跑构建，违 systemd
+守卫纪律），构建起点落在 21:09:57 contrast-color WIP shim 编辑前后 40-90s
+编译窗内——该二进制是否含此 WIP 需行为法证，引用该二进制的他流账注意
+shim 面归因。本流 g6b 账（20:56-20:58）早于该构建，纯 HEAD 无污染。
