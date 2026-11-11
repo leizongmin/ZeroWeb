@@ -41,8 +41,15 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
 **卡点**：无阻塞。
-**下一步**：组 F 布局行为桶——position-area scrolling/insets/wm-dir/
-align-justify/in-position-try ~329F（需 anchor 定位布局实现）；DC-3 全量对账（等批次
+**下一步**：组 F 两桶（ptcssom2 残余 2,638F 归类）：**声明面文法桶 ~142F
+七页零布局依赖**——position-anchor 12F（拒非 dashed/多值，初始 normal）、
+position-visibility 19F（always/anchors-valid/anchors-visible/no-overflow
+文法）、position-try-fallbacks 24F（flip-block/flip-inline/flip-start
+try-tactic）、position-try 简写+order canonical 27F（most-width 族）、
+anchor()/anchor-size() 属性域有效性+畸形参数拒 47F（anchor-parse-invalid
+25F/anchor-size-parse-invalid 22F）、ident() 函数接受面 13F；**布局桶
+~2,470F**（anchor-position-writing-modes 单页 1,296F 纯布局几何 + position-area
+329F + try fallback 布局族，需 anchor 定位布局实现，架构面独立批）；DC-3 全量对账（等批次
 平台期 dispatch 周跑，HEAD 已含 color/values/grid/anchor 各批增量）；color
 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆已清；hsl 嵌套 1F/系统色
 27F/out-of-gamut 20F/opacity calc 20F 等共 ~105F）；light-dark/system-color 建模残余；
