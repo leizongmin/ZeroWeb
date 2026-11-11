@@ -8489,6 +8489,8 @@
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
                 // s399：object 插入步同排（动态插入启动资源取回 + 终态 load/error）。
                 _zwStartConnectedObject(ceAdded[ci], cePconn);
+                // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
+                _zwStartConnectedEmbed(ceAdded[ci], cePconn);
               }
               // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
               //（given-prong——spec details element insertion steps；open toggle 已在
@@ -11212,6 +11214,8 @@
                 _zwStartConnectedIframe(added[ci], cePconn);
                 // s399：object 插入步同排（与 appendChild 循环同款）。
                 _zwStartConnectedObject(added[ci], cePconn);
+                // s405：embed 插入步同排（同一加载核，src 属性读 + 失败映射 load）。
+                _zwStartConnectedEmbed(added[ci], cePconn);
                 // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
                 // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
                 // mutation → selection 重记录 + 重验；element/picture 门在

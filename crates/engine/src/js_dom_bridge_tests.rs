@@ -127,3 +127,7 @@ include!("js_dom_bridge_tests/part103_s403_object_nested_scripts.rs");
 // （own accessor 物化序近似树序 + descriptor/越界/移除重排）+ data 属性静默
 // fallback + 完成值求值通道（percent-decode → 重物化 → load 重派/静默中止）钉。
 include!("js_dom_bridge_tests/part104_s404_object_window_index_javascript_nav.rs");
+
+// 53 号 s405 embed 动态加载链：插入钩子启航（共享加载核 src 属性读）+ 失败终态
+// 映射 load + javascript: 全静默 + src IDL 重启臂 + window[N] 活跃集合计入钉。
+include!("js_dom_bridge_tests/part105_s405_embed_dynamic_load.rs");

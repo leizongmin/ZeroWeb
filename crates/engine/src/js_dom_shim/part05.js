@@ -968,8 +968,9 @@
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
             // s399：OBJECT.data 除外——专用分支（属性写 + 连接态重启资源取回，
-            // 下方 data setter 臂）。
+            // 下方 data setter 臂）。s405：EMBED.src 同除外（embed 专用重启臂）。
             && !(_realTag(sel, handle) === 'OBJECT' && p === 'data')
+            && !(_realTag(sel, handle) === 'EMBED' && p === 'src')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
           // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
           // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
@@ -1124,6 +1125,27 @@
               // 随 entry 重建——新资源重新派终态）。
               if (_zwObjectNavCache[_objKey399]) delete _zwObjectNavCache[_objKey399];
               _zwLoadObjectResource(_objKey399, sel, handle, true);
+            }
+          }
+        } else if (p === 'src' && _realTag(sel, handle) === 'EMBED') {
+          // html-semantics M2 切片 405：embed src IDL setter 运行时加载（spec
+          // .../iframe-embed-object.html#the-embed-element-setup-steps——已连接
+          // embed 的 src 内容属性更新重启资源取回；embed-change-src
+          // 「reload with new content when the src attribute is changed」驱动案）。
+          // 镜像上方 s399 OBJECT.data 臂形态：先写内容属性（IDL 反射 round-trip），
+          // 再按连接态重启加载链（detached 只写属性——插入钩子接入时启动）。
+          if (handle) __zw_set_attr_handle(handle, 'src', String(value));
+          else __zw_set_attr(sel, 'src', String(value));
+          moAttr = 'src';
+          var _embConn405 = false;
+          try { _embConn405 = _makeProxy(sel, handle).isConnected === true; } catch (_eEmbConn405) {}
+          if (_embConn405 && typeof _zwLoadObjectResource === 'function') {
+            var _embKey405 = _elKey(sel, handle);
+            if (_embKey405) {
+              // 重启语义：src 更新换资源，旧终态 entry 作废重建（事件 fired 门
+              // 随 entry 重建——新资源重新派终态）。
+              if (_zwObjectNavCache[_embKey405]) delete _zwObjectNavCache[_embKey405];
+              _zwLoadObjectResource(_embKey405, sel, handle, true, true);
             }
           }
         } else if (p === 'href' && _zwIsSvgNsEl(sel, handle)) {

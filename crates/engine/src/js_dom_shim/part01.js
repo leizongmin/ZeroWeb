@@ -3620,19 +3620,22 @@
   // 内容分诊保持 s399 三臂（其余类型 error——runner 对 bogus-scheme 的 2xx 信号
   // 不可信，object-events file:/http: error 案），data:/blob: 臂内部 text/plain
   // 面按 spec 成功解码即 load（allowed-schemas data: 驱动案）。
-  function _zwLoadObjectResource(objKey, sel, handle, fireEvents) {
+  function _zwLoadObjectResource(objKey, sel, handle, fireEvents, isEmbed) {
     var entry = _zwObjectNavCache[objKey];
     if (entry && entry.state !== 'loading') {
       if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
       return entry;
     }
     if (!entry) {
-      entry = { doc: null, win: null, state: 'loading', url: '', fired: false, sel: sel || null, handle: handle || null };
+      entry = { doc: null, win: null, state: 'loading', url: '', fired: false, sel: sel || null, handle: handle || null, embed: !!isEmbed };
       _zwObjectNavCache[objKey] = entry;
     }
+    // s405：embed 共用本加载核（src 属性——embed 元素无 data 内容属性；embed:
+    // 标记驱使终态事件映射与 javascript: 静默面分叉，见 _zwFireObjectResultEvent）。
+    var _objAttrName = isEmbed ? 'src' : 'data';
     var _objData = '';
-    try { _objData = handle ? __zw_get_attr_handle(handle, 'data') : (sel ? __zw_get_attr(sel, 'data') : ''); } catch (_eObjD) {}
-    // 无 data 属性：不发起取回，无嵌套浏览上下文（处理模型无资源可取 → nothing；
+    try { _objData = handle ? __zw_get_attr_handle(handle, _objAttrName) : (sel ? __zw_get_attr(sel, _objAttrName) : ''); } catch (_eObjD) {}
+    // 无 data/src 属性：不发起取回，无嵌套浏览上下文（处理模型无资源可取 → nothing；
     // object-attributes obj2 type=image/png null 断言面）。不 fire（nothing 无事件）。
     if (!_objData) return entry;
     // s404 javascript: data 属性：静默 fallback（object-javascript-url 子测1钉面
@@ -3642,9 +3645,12 @@
     // 初载 data 属性通道语料钉「无 load」，近似为 error 臂（不物化）。error 事件
     // 派发从同臂族（data: 解码失败/blob: 跨源），FIXME：spec 网络错误语义精确面
     //（error 事件 vs 求值建文档）语料仅钉无 load，事件面无钉。
+    // s405 embed：javascript: src 全静默（embed-javascript-url 子测1同钉面——
+    //「should do nothing」且 embed 失败面按语料 embed-network-error 钉「load 派、
+    // error 恒不派」，javascript: 非取回失败不走该语义 → 零事件）。
     if (/^javascript:/i.test(_objData)) {
       entry.state = 'error';
-      if (fireEvents) _zwFireObjectResultEvent(entry, sel, handle);
+      if (fireEvents && !entry.embed) _zwFireObjectResultEvent(entry, sel, handle);
       return entry;
     }
     // data: URL：in-shim 解码（RFC 2397；fetch() 通路 _zwDataURLProcessor 同源）。
@@ -3932,7 +3938,11 @@
     if (!entry || entry.fired) return;
     if (entry.state !== 'done' && entry.state !== 'image' && entry.state !== 'error') return;
     entry.fired = true;
-    var _objEvType = (entry.state === 'error') ? 'error' : 'load';
+    // s405 embed 失败语义：语料 embed-network-error 四子测钉「失败路径（nonexistent
+    // host / X-Frame-Options）→ load 派、error 恒不派」——embed 终态 error（display
+    // no plugin，无 navigable）映射 load。object 保持 error（allowed-schemas
+    // javascript: not-allowed 钉 error 面）。
+    var _objEvType = (entry.state === 'error') ? (entry.embed ? 'load' : 'error') : 'load';
     _defer(function () {
       try {
         var _objTarget = _makeProxy(sel, handle);
@@ -4287,6 +4297,31 @@
       var objKey = el.__zwHandle ? _elKey(null, el.__zwHandle) : _elKey(el.__zwSelector || null, null);
       if (!objKey) return;
       try { _zwLoadObjectResource(objKey, el.__zwSelector || null, el.__zwHandle || null, fireEvents !== false); } catch (_eObjStart) {}
+    });
+  }
+  // html-semantics M2 切片 405：embed 动态加载链（spec
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-embed-element-setup-steps
+  // ——动态插入启航 src 资源取回，与 object 同一加载核 `_zwLoadObjectResource`
+  // （embed: 标记 → src 属性读 + 失败终态映射 load + javascript: 全静默）。共享
+  // _zwObjectNavCache → window[N]/window.length 活跃集合自动计入（s404 索引层）。
+  // FIXME(embed-static-events)：parser 静态扫描不接（语料驱动案全动态插入；静态
+  // embed 现存 Pass 案 document-getters-return-null-for-cross-origin 零触碰——
+  // 静态面事件 spec 偏差同 FIXME(object-static-events) 族记档）。
+  function _zwStartConnectedEmbed(el, connected, fireEvents) {
+    if (!connected || !el) return;
+    var tag = '';
+    try {
+      tag = typeof _realTag === 'function'
+        ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
+        : String(el.tagName || '');
+    } catch (_eEmbTag) {
+      tag = String(el.tagName || '');
+    }
+    if (String(tag || el.tagName || '').toUpperCase() !== 'EMBED') return;
+    _defer(function () {
+      var embKey = el.__zwHandle ? _elKey(null, el.__zwHandle) : _elKey(el.__zwSelector || null, null);
+      if (!embKey) return;
+      try { _zwLoadObjectResource(embKey, el.__zwSelector || null, el.__zwHandle || null, fireEvents !== false, true); } catch (_eEmbStart) {}
     });
   }
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——
