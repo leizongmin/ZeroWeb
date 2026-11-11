@@ -113,6 +113,51 @@ pull --rebase 并入他流 14b6ca724（s405 embed 动态加载链，wptfyi-css �
 必 ABORT 无新信息，故不空跑。恢复条件：s405 流恢复 ab 页 300s 门内余量（如钩子
 tag 判定降本为字符串先行）或两流协调处置 → 重跑组合树 preflight 五腿对账 →
 按新 preflight 实测值实例化 v1.3（EXPECTED_HEAD/MT_P/MT_F2P_SIGNED）发射。
+→ 恢复条件已由下一节仲裁修复兑现（本流自修，非调阈值）。
+
+## 碰撞仲裁修复：CE 插入 walk 三 start-connected 臂共享单次 tag 读（2026-11-12）
+
+刀体第三笔（084612c5e → rebase 后 f95fdd4d9，已推送；part01.js 三臂签名 + part04.js
+两插入循环，65+/27−）：
+
+- **设计**：`_zwStartConnectedIframe/Object/Embed` 增可选 `tagHint` 尾参（已
+  toUpperCase 的调用方共享 tag 读；缺省走原读零变化）；part04 两 CE 插入循环把
+  `_realTag` 读 hoist 到循环体单次（判定表达式与臂内原逻辑逐字同形），每新增节点
+  `__zw_*` 宿主回调 **3→1 次**。语义恒等：spec tagName 不可变
+  （dom.spec.whatwg.org/#dom-element-tagname）；hint 空串回落 `tag || el.tagName`
+  与原式同形；解析期静态扫描调用点（part04 :1290/:1312）不传 hint 走原读不变。
+  归因修复非调阈值（perf-gate 政策禁调 ZW_SCRIPT_TIMEOUT_MS）。
+- **测量链**（multitest-ab leg 墙钟）：
+
+  | 树 | 租户 | 结果 |
+  |----|------|------|
+  | 3 读/节点（c178799f） | solo | 302s 截断 9702 行（上节） |
+  | 1 读/节点（bin 6f532726） | 2 租户 | 306s 截断 9984 行（争抢污染不可定谳） |
+  | 1 读/节点（bin 6f532726） | solo | **286s 完走 10092P/0F/0T** |
+
+  solo 终判 judge-dps vs cssom-ab-perffix.log：rows 10092→10092 **严格四零逐行
+  恒等**。单调性佐证：修复后每节点 1 读 < s405 前 2 读基线（同门通过），达标由
+  结构保证。租户判读教训复证：9984/306s 一份测量若无 `ps` 租户核对险些误判
+  「修复不足」——墙钟测量必须 solo（wallclock-contention 教训）。
+- **组合树重锚**：rebase 并入 origin 7 提交（s406 284a7bbb4 frames.named 扩
+  embed/object、5fc0d203a callbacks.rs fmt 机械修复、f06979d02/8409a3b7b
+  css-values time/opacity、c4bce8a46 docs）→ f95fdd4d9。s406 未触 part04，
+  part01 改动区（~3839-3936/13028）与三臂区（~4231-4330）不重叠，rebase 零冲突。
+  探针冒烟 217P/5F **FAILKEYS-IDENTICAL**（bin c4de0e4f）；S1-S8 锚复验
+  3/2/1/4/1/3/1/3 全对齐。
+- **协作记档**：5fc0d203a 是他流对本刀两笔（0ff1bc92c/0a435f0a1 入 main 未过 fmt
+  门）的 callbacks.rs 机械 fmt 兜底——共享 make test fmt 前置被他流堵上，刀体
+  Rust 面此后提交须 `cargo fmt` 自检。
+- **终树回归面**（head f95fdd4d9，bin c4de0e4f）：embed 钉值对照（s406 后
+  network-error 应 4P 全解挂，余按 s405 钉值）＋ object 目录 per-file checkout
+  翻转 A/B（f29f04cf3~1 两文件 → 父态基线 vs HEAD）——**全绿**：
+  object rows 46→46 严格四零 VERDICT OK；embed 15P/12F，钉值 6/6 精确命中
+  （network-error 4P=s406 全解挂兑现、javascript-url 3P、change-src 1P、
+  allowed-schemas 5F、change-src-2 1F、document-getters 1P），与本流 rebase 前
+  run（13P/14F）差值恰 = s406 network-error 2F→2P，余键零漂移——fmt/css-values
+  入站提交对 embed 面亦零行为影响。
+  the-iframe-element 目录不跑：归 navigation-compat 通道零执行记账，iframe 臂由
+  机械恒等＋probe/ab 恒等覆盖。
 
 ## 残红账（不变）
 
