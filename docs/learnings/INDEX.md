@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（264）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（265）
 
+- 2026-11-11 [镜像类重排的复合安全性：装饰感知 gap 重分配破坏对合，恒等面须语义级短路](bugs/2026-11/2026-11-11-mirror-reorder-involution-breaks-decorations.md) — layout-engine
 - 2026-11-11 [inline style 写面有三条实现臂——值校验/归一类改动必须三处同形](bugs/2026-11/2026-11-11-inline-style-three-write-arms.md) — engine, style-system, css-parser
 - 2026-11-11 [css-color none 保形回归：raw 影子保存条件误排 + 基线巧合通过](bugs/2026-11/2026-11-11-css-color-raw-shadow-accidental-pass.md) — engine
 - 2026-11-11 [cargo test --exact 须完整测试路径：裸名/短前缀全 filtered 0P 假绿 EXIT=0](bugs/2026-11/2026-11-11-cargo-test-exact-needs-full-path.md) — engine,testing
