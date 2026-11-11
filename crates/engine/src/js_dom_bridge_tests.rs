@@ -114,3 +114,7 @@ include!("js_dom_bridge_tests/part100_s398_object_content_window.rs");
 // 49 号 s399 object 动态加载链：插入钩子 load/error 事件面 + data IDL setter
 // 重启 + about:blank 嵌套上下文 + win.Window interface + image/detached 边界钉。
 include!("js_dom_bridge_tests/part101_s399_object_dynamic_load.rs");
+
+// 50 号 s400 object scheme 取回面 + window.length：data:/blob:/bare-origin 解码
+// 七面 + LegacyUnforgeable 计数（iframe/object entry + destroy/移除递减）钉。
+include!("js_dom_bridge_tests/part102_s400_object_schemes_window_length.rs");
