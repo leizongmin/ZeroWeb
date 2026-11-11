@@ -276,8 +276,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（34）
+## Patterns — 可复用代码模式与最佳实践（35）
 
+- 2026-11-11 [竖排 rtl 行内轴镜像与 run 内字形序的 parity 结构](patterns/2026-11/2026-11-11-vertical-rtl-inline-mirror-glyph-order-parity.md) — layout-engine
 - 2026-11-09 [样式 carry 刀的捕获三形分账与壳级缩放口径](patterns/2026-11/2026-11-09-style-carry-capture-consume-routing.md) — engine
 - 2026-11-08 [自源 reftest 争议语义定谳：ref 页行为语义 = ZW 自身对应实现，先读 ref 页写法再对 ZW 同路径数值](patterns/2026-11/2026-11-08-self-source-ref-page-semantics-equal-zw-implementation.md) — layout-engine,testing
 - 2026-11-07 [共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main](patterns/2026-11/2026-11-07-shared-tree-push-via-temp-worktree.md) — docs/goal/editing-compat
@@ -365,10 +366,11 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（48）
+## Platform — 平台与环境相关经验（49）
 
 - 2026-11-11 [make test 外层兜底三连杀——RSS 求和守卫不配双腿并行编译，顶层守卫归 cgroup](platform/2026-11/2026-11-11-make-test-outer-guard-rss-vs-cgroup.md) — Makefile,test-guard
 - 2026-11-11 [delivery-check CLI catch 吞真实错误只打 Usage：直调函数取 REAL_ERROR](platform/2026-11/2026-11-11-delivery-check-swallows-real-error.md) — platform,testing
+- 2026-11-11 [多 clone 并行时 ps 全局 grep 等场环会卡在异 clone 进程上](platform/2026-11/2026-11-11-clone-blind-wait-loop-ps-grep.md) — rally,parallel-streams
 - 2026-11-11 [Bugbot CURSOR_SUMMARY 注记 append 致 PR body 漂移：恢复协议 = edit 字节恒等 → 立即重跑 ready](platform/2026-11/2026-11-11-bugbot-cursor-summary-body-drift.md) — platform
 - 2026-11-10 [weekly coverage 快照组级摆动的产物法证——页超时截断三征定谳](platform/2026-11/2026-11-10-wpt-weekly-page-timeout-truncation-attribution.md) — zero-wpt-runner,wptfyi-runtime
 - 2026-11-09 [wpt testharness 断言消息只在 Fail 输出——状态转储用聚合单断言](platform/2026-11/2026-11-09-wpt-testharness-fail-only-dump-aggregation.md) — wpt-runner, engine

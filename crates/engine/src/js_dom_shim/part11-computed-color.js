@@ -1220,7 +1220,15 @@
         var labC = isPolar ? [L, C, H] : [L, C, B];
         // rgb 投影（mix/origin 消费面）。
         var labAbs = isPolar ? [L, C * Math.cos(H * Math.PI / 180), C * Math.sin(H * Math.PI / 180)] : [L, C, B];
-        var xyz = isOk ? _zwCCOklabToXyz(labAbs) : _zwCCMatVec(_zwCCD50toD65, _zwCCLabToXyz(labAbs));
+        // rgb 投影 oklab 族走数值真逆（OkM1t/OkM2t 13 位——f64 往返 ~1e-15）：
+        // 发表逆 OkM1i 对真逆偏差 7.6e-4，域外语料 1e-4 容差下 r/b 通道超差
+        //（'rgb(from oklab(1 0.365 -0.16) r g b)' want 1.59297 got 1.5930931
+        // 实证）；Chrome 内部链与真逆一致（预期值逐位复核）。自形序列化面
+        //（_zwCCOklabToXyz）保发表常数口径不变——该面 8 位语料锚按发表
+        // 常数判定，全局换真逆漂锚。
+        var xyz = isOk
+          ? _zwCCMatVec(_zwCCOkM1t, _zwCCMatVec(_zwCCOkM2t, labAbs).map(function (q) { return q * q * q; }))
+          : _zwCCMatVec(_zwCCD50toD65, _zwCCLabToXyz(labAbs));
         var lin = _zwCCFromXyz65('srgb', xyz);
         var rgb3 = [_zwCCLinToSrgb(lin[0]), _zwCCLinToSrgb(lin[1]), _zwCCLinToSrgb(lin[2])];
         // own 形：lab 族 computed 保自形（'lab(50% 20 -30)' → 'lab(50 20 -30)'，
@@ -1348,7 +1356,12 @@
     if (space === 'srgb') return { chans: rgb.slice(), none: none };
     if (space === 'hsl') {
       var v = _zwCCRgbToHsl(rgb[0], rgb[1], rgb[2]);
-      none[0] = v[1] <= 1e-9 || v[2] <= 0 || v[2] >= 1;
+      // powerless hue 判据 = 真消色（css-color-4 §hsl：s=0 或 l 恰 0/1）。
+      // s<0 / l 出 [0,1] 是域外转换（s=C/(1−|2L−1|) 域外为负）——色相有定，
+      // 不坍缩 none：语料 'color-mix(in hsl, lab(100 104.3 -50.9) 100%)' want
+      // color(srgb 1.59343 …)（h=311.2 参与回读展开），none 化致 hsl(none …)
+      // 自形保形分支失真（mix-out-of-gamut 2F 实证）。
+      none[0] = Math.abs(v[1]) <= 1e-9 || Math.abs(v[2]) <= 1e-9 || Math.abs(v[2] - 1) <= 1e-9;
       return { chans: [v[0], v[1] * 100, v[2] * 100], none: none };
     }
     if (space === 'hwb') {
@@ -1808,7 +1821,13 @@
       // 'calc(... * infinity)'→100）；C ≥ 0 不设上限；hue 归一 0..360。
       else if (space === 'lch') v2 = j === 0 ? Math.min(100, Math.max(0, v2)) : j === 1 ? Math.max(0, v2) : ((v2 % 360) + 360) % 360;
       else if (space === 'oklch') v2 = j === 0 ? Math.min(1, Math.max(0, v2)) : j === 1 ? Math.max(0, v2) : ((v2 % 360) + 360) % 360;
-      else if (space === 'hsl' || space === 'hwb') v2 = j === 0 ? ((v2 % 360) + 360) % 360 : Math.max(0, v2);
+      // hsl/hwb：hue 归一 0..360；s/l/w/b 不设下限——域外转换 s=C/(1−|2L−1|)
+      // 为负、w/b 携负，floor 会毁 color(srgb) 回读展开（css-color-4
+      // §outside-gamut + css-color-5 §serial-relative-color 保形；语料
+      // 'hsl(from lab(100 104.3 -50.9) h s l)' want color(srgb 1.5935 …)——
+      // s=−5.5486 floor 成 0 即灰 1.09，'hwb(from oklab(0 …) h w b)'
+      // w=−0.0456 锚同理；域外 hue 有定，见 _zwCCMixSide powerless 注）。
+      else if (space === 'hsl' || space === 'hwb') v2 = j === 0 ? ((v2 % 360) + 360) % 360 : v2;
       clamped.push(v2);
     }
     // rgb 投影（alpha() origin 消费面）+ chans（目标空间原生坐标——嵌套
@@ -1923,13 +1942,13 @@
       else if (space === 'hwb') rgbv = _zwCCHwbToRgb(out.comps[0], out.comps[1] / 100, out.comps[2] / 100);
       else rgbv = out.comps.slice();
       var a = _zwCCAlphaStr(aNone ? null : out.alpha, aNone);
-      // color() 与 legacy rgb 相对输出不钳通道（css-color-5 相对色 computed
-      // 值以 color(srgb) 保形、保 out-of-gamut 精度——语料嵌套无损往返
-      // 'color(from rgb(from color(xyz-d50 0.99 ...) r g b) xyz-d50 x y z)'
-      // 经 clamp 后回不到 0.99 实证；hsl/hwb 目标仍钳）。
-      var cl = out.fn === 'color' || out.fn === 'rgb' || out.fn === 'rgba';
+      // 相对输出不钳通道（css-color-4 §outside-gamut + css-color-5
+      // §serial-relative-color：域外值 color(srgb) 保形不 gamut-map；mozilla
+      // wg-decisions#1125——color() 与 legacy rgb/hsl/hwb 目标一律不钳，
+      // hsl/hwb 经 hue 回读展开后负通道原样携带，语料 out-of-gamut 页
+      // 20F（hsl/hwb 目标钳致 (0,1,0) 形）钉面）。
       var comps = [];
-      for (var i = 0; i < 3; i++) comps.push(out.none[i] ? 'none' : _zwCCNum(cl ? rgbv[i] : Math.min(1, Math.max(0, rgbv[i]))));
+      for (var i = 0; i < 3; i++) comps.push(out.none[i] ? 'none' : _zwCCNum(rgbv[i]));
       return 'color(srgb ' + comps.join(' ') + (a ? ' / ' + a : '') + ')';
     }
     if (space === 'lab' || space === 'lch' || space === 'oklab' || space === 'oklch') {

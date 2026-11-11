@@ -12450,6 +12450,31 @@
                 } catch (_ePC3) {}
               }
             }
+            // wptfyi-css 组E（css-color-3 §opacity computed）：宿主对 opacity
+            // 数学函数形（calc()/min()/max()/clamp()）不认 → parse_opacity 拒
+            // → 级联落初始值 1 抢答；写面已常量折叠存 calc(N) 形（part11
+            // _zwCOpacNormalize，opacity-valid 30P 钉），inline 命中数学形即
+            // 落 plain 重读（__zwOpacityComputed clamp [0,1]——css-values-4
+            // §10.12/§10.13 NaN 规约在管线内）。裸 number/% 形宿主可正确产出
+            // → 不覆盖（零漂移）。
+            if (_csGV !== '' && kp === 'opacity'
+                && elt && elt.style
+                && typeof globalThis.__zwPlainComputed === 'function') {
+              var _irOp = '';
+              try { _irOp = String(elt.style.getPropertyValue('opacity') || ''); } catch (_eIO1) {}
+              try {
+                if (typeof elt.style.__zwRawDecl === 'function') {
+                  var _rvOp = elt.style.__zwRawDecl('opacity');
+                  if (_rvOp) _irOp = String(_rvOp);
+                }
+              } catch (_eIO1b) {}
+              if (_irOp && /^(calc|min|max|clamp)\(/i.test(_irOp.trim())) {
+                try {
+                  var _pcOp = globalThis.__zwPlainComputed(elt, 'opacity');
+                  if (_pcOp !== '') return _pcOp;
+                } catch (_ePO1) {}
+              }
+            }
             // editing-compat style-with-value 簇（2026-11-01）：plain 元素四属性
             // 计算值 JS 侧级联解析（inline style → font 表现提示 → 继承走查 →
             // UA 缺省）。host 通道只覆盖 sel/handle 注册元素，语料 vendored 查询
@@ -12529,6 +12554,26 @@
               var _pcV2 = globalThis.__zwPlainComputed(elt, _kpC);
               if (_pcV2 !== '') return _pcV2;
             } catch (_ePC4) {}
+          }
+        }
+        // wptfyi-css 组E：opacity 数学形宿主抢答覆盖（同 getPropertyValue 臂——
+        // test_computed_value 走 `getComputedStyle(target)[prop]` 直取形）。
+        if (_csV !== '' && _kpC === 'opacity'
+            && elt && elt.style
+            && typeof globalThis.__zwPlainComputed === 'function') {
+          var _irO = '';
+          try { _irO = String(elt.style.getPropertyValue('opacity') || ''); } catch (_eIO2) {}
+          try {
+            if (typeof elt.style.__zwRawDecl === 'function') {
+              var _rvO = elt.style.__zwRawDecl('opacity');
+              if (_rvO) _irO = String(_rvO);
+            }
+          } catch (_eIO2b) {}
+          if (_irO && /^(calc|min|max|clamp)\(/i.test(_irO.trim())) {
+            try {
+              var _pcO = globalThis.__zwPlainComputed(elt, 'opacity');
+              if (_pcO !== '') return _pcO;
+            } catch (_ePO2) {}
           }
         }
         if (_csV === '') {
