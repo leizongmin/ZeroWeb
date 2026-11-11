@@ -2066,27 +2066,29 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
         // 15px），毒化丢失后 computed 期 censor（§10.12）不触发——
         // calc-infinity-nan-computed `max(15px, calc(NaN * 1px))` 期望 0px 驱动。
         // https://drafts.csswg.org/css-values-4/#calc-infinities
+        // min/max 全实参参与：任一实参不可解析（无 ctx 的 %/lh 等）→ 整体
+        // None——旧 filter_map 静默丢不可解析项（`min(20px, 10%)` 误塌缩
+        // `calc(20px)`，minmax-length-percent-serialize 指定值语料回归钉）。
+        // NaN 毒化短路语义不变（NaN 实参 eval 返 Some(NaN)，不会被丢）。
         CalcExpr::Min(args) => {
-            let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            let mut vals = Vec::with_capacity(args.len());
+            for a in args {
+                vals.push(eval_calc_with_context(a, ctx)?);
+            }
             if vals.iter().any(|v| v.is_nan()) {
                 return Some(f64::NAN);
             }
-            if vals.is_empty() {
-                None
-            } else {
-                Some(vals.into_iter().reduce(f64::min).unwrap())
-            }
+            vals.into_iter().reduce(f64::min) // 空实参 → None。
         }
         CalcExpr::Max(args) => {
-            let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            let mut vals = Vec::with_capacity(args.len());
+            for a in args {
+                vals.push(eval_calc_with_context(a, ctx)?);
+            }
             if vals.iter().any(|v| v.is_nan()) {
                 return Some(f64::NAN);
             }
-            if vals.is_empty() {
-                None
-            } else {
-                Some(vals.into_iter().reduce(f64::max).unwrap())
-            }
+            vals.into_iter().reduce(f64::max) // 空实参 → None。
         }
         CalcExpr::Clamp { min, val, max } => {
             let min_v = eval_calc_with_context(min, ctx)?;

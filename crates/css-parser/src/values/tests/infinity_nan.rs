@@ -237,3 +237,21 @@ fn test_fold_specified_infinity_nan_canonical_forms() {
         Some("calc(NaN * 1deg)")
     );
 }
+
+/// min/max 全实参参与：任一实参不可解析（无 ctx 的 %）→ 整体不可解析——
+/// 旧 filter_map 静默丢 % 实参（`min(20px, 10%)` 误塌缩 `calc(20px)`），
+/// minmax-length-percent-serialize 指定值语料回归钉（g14 轮 -1 捕获）。
+#[test]
+fn test_min_max_partial_unresolvable_is_none() {
+    // 混 % 形：无 ctx 不可解析 → fold None（指定值原样保留）。
+    assert_eq!(eval_calc(&parse_min("min(20px, 10%)").unwrap(), None), None);
+    assert_eq!(eval_calc(&parse_min("min(10%, 20px)").unwrap(), None), None);
+    assert_eq!(eval_calc(&parse_max("max(20px, 10%)").unwrap(), None), None);
+    assert_eq!(fold_decl_specified("width", "min(20px, 10%)"), None);
+    // 全可解析形零漂移（px-only 塌缩与 NaN 毒化不变）。
+    assert_eq!(eval_calc(&parse_min("min(20px, 10px)").unwrap(), None), Some(10.0));
+    assert!(matches!(
+        eval_calc(&parse_min("min(15px, calc(NaN * 1px))").unwrap(), None),
+        Some(v) if v.is_nan()
+    ));
+}

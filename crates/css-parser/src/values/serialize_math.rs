@@ -113,6 +113,19 @@ fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
             ));
         }
     }
+    // 有限百分比树不标量塌缩：eval 对 % 叶直读数值（无布局基准），min/max
+    // 混 % 形会丢维度语义（`min(20px, 10%)` 误塌 `calc(20px)`——minmax-length-
+    // percent-serialize 语料行）；`calc(100% + 50%)` 保留原文同口径（§10.6
+    // 两级求值③）。非有限毒化形不拦——`calc(1% * NaN)` → `calc(NaN * 1%)`
+    // canonical 依赖 % 叶单位 provenance（calc-infinity-nan-serialize-length
+    // 语料桶）。
+    if super::calc_mix::expr_has_percentage_leaf(expr) {
+        let v = scalar_value(expr)?;
+        if !v.is_finite() {
+            return Some(format!("calc({})", format_dimension_inner(v, dimension_suffix(expr))));
+        }
+        return None;
+    }
     Some(format!("calc({})", scalar_fold_inner(expr)?))
 }
 
