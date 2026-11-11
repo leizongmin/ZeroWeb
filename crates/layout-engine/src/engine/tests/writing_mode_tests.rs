@@ -295,6 +295,52 @@ fn test_abspos_vertical_rl_direction_rtl_mirrors_inline_position() {
     );
 }
 
+/// 回归（R5504）：`direction:rtl` 下**空** abspos span（零内容 fragment → R4430 Fix C
+/// synth 静态位）同样沿 inline 轴镜像。R5503 尾镜像臂激活时 synth y 已是前文**视觉**
+/// 终点，盒视觉起点 = synth y − 盒高；旧 flow 式（container_width − y − h）在此二次翻转。
+/// 镜像不变式与 found-fragment 臂（上一测试）同一恒等式：rtl_top + ltr_top + h == CB
+/// inline extent。
+#[test]
+fn test_abspos_vertical_rl_direction_rtl_mirrors_empty_span_synth_position() {
+    fn span_y(direction: &str) -> (f32, f32) {
+        let html = format!(
+            r#"<html style="writing-mode:vertical-rl"><body>
+      <div id="cb" style="background:red; direction:{dir}; font:80px/1 monospace; height:320px; width:320px; position:relative">1 2 34<span id="s" style="position:absolute; top:auto; bottom:auto; height:auto; color:green"></span></div>
+    </body></html>"#,
+            dir = direction
+        );
+        let doc = zero_dom::parse_html(&html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(elem) = &n.kind
+                && elem.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let cb = find("cb", &doc, &result.root).expect("cb");
+        let s = find("s", &doc, &result.root).expect("span #s");
+        (s.y - cb.y, s.height)
+    }
+    let (ltr_y, h) = span_y("ltr");
+    let (rtl_y, _) = span_y("rtl");
+    assert_ne!(
+        ltr_y, rtl_y,
+        "direction:rtl must change empty abspos span static position (ltr_y={ltr_y}, rtl_y={rtl_y})"
+    );
+    assert!(
+        (ltr_y + rtl_y + h - 320.0).abs() < 0.5,
+        "rtl must mirror empty span synth position: ltr_y({ltr_y}) + rtl_y({rtl_y}) + h({h}) should == 320"
+    );
+}
+
 /// 回归：CSS §10.3.3 — 根元素 margin-left/right 均为 auto 且边框盒宽度小于视口时，
 /// 应水平居中。taffy 对嵌套 block 正确处理 auto margin 居中，但对根节点不应用
 ///（根无父级提供居中上下文）。验证 compute() 的根居中补丁（html-display-table-ref 用例）。

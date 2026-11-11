@@ -859,8 +859,8 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
         // fragment → R1550/branch-1 无静态位可用，盒滞留 taffy 原点/静态 y=0）。
         // 容器无任何 inline 片段时维持 no-op（taffy 原点即空容器静态位）。
         let synth_pos = fragment_opt
-            .map(|f| (f.x, f.y))
-            .or_else(|| fragments.last().map(|last| (last.x, last.y + last.height)));
+            .map(|f| (f.x, f.y, f.y))
+            .or_else(|| fragments.last().map(|last| (last.x, last.y + last.height, last.y)));
         if let Some(fragment) = fragment_opt {
             let style = styles.get(&child_node_id);
             let all_inset_auto = style.is_some_and(|s| {
@@ -927,10 +927,18 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
 
                 // CSS §10.3.7 + writing-modes §7.1：direction:rtl 下 abspos 静态位置镜像。
                 // container_width 在垂直模式 = CB 视觉高度（inline 可用尺寸）。
+                // R5504（R5503 交互修正）：上方 IFC 尾镜像臂（para_base_rtl，R5503）已把
+                // fragment 坐标烘成**视觉位**——flow 共享起点（run 与假想盒同 inline-start）
+                // 经 y'=c−y−h 镜像后共享**视觉终点**，盒视觉起点 = fragment 视觉终点 −
+                // 盒高（c 无关、逐列成立）。旧 flow 坐标镜像式在此会二次翻转
+                //（R334 回归测试 164≠40 实证）；kill-switch（ZW_PARA_BIDI_BOX_LEVEL=0）
+                // 下 para_base_rtl 恒 false，走原 flow 式回旧世界。
                 let cb_direction_rtl = styles
                     .get(&container_node_id)
                     .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
-                if cb_direction_rtl {
+                if cb_direction_rtl && inline_ctx.para_base_rtl {
+                    child.y = (fragment.y + fragment.height - child.height).max(0.0);
+                } else if cb_direction_rtl {
                     child.y = (container_width - child.y - child.height).max(0.0);
                 }
 
@@ -967,7 +975,7 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
                     store_abspos_child_font_metrics(child, doc, styles, child_node_id, fragment);
                 }
             }
-        } else if let Some((sx, sy)) = synth_pos {
+        } else if let Some((sx, sy, sy_start)) = synth_pos {
             // R4430 Fix C：合成静态位按 R4425 轴分工镜像应用（无 fragment → 无内容
             // 测量：height shrink 与 font-metrics 存储均不适用，维持 taffy 解）。
             let style = styles.get(&child_node_id);
@@ -986,10 +994,18 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
                 }
                 // direction:rtl CB 的 inline 静态位镜像（与 found-fragment 路径同式：
                 // rtl 在 vertical 模式反转 inline 基方向 → y 取镜像）。
+                // R5504：para_base_rtl（R5503 尾镜像臂）激活时 fragment 坐标已是**视觉
+                // 位**。空盒假想流位 = 前文流**终点** p（非 found 臂的共享流起点）——
+                // 末片段流终点 b = c − 视觉起点 sy_start，故镜像视觉起点 = c − p − h
+                // = sy_start − h（c 无关）。旧 flow 式（c − sy − h）把视觉终点当流
+                // 坐标；本例末片段镜像对称（flow=视觉=[120..200]）使两式偶合，一般
+                // 几何下不对称即二次翻转。kill-switch 下走原 flow 式。
                 let cb_direction_rtl = styles
                     .get(&container_node_id)
                     .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
-                if cb_direction_rtl {
+                if cb_direction_rtl && inline_ctx.para_base_rtl {
+                    child.y = (sy_start - child.height).max(0.0);
+                } else if cb_direction_rtl {
                     child.y = (container_width - child.y - child.height).max(0.0);
                 }
                 // 物理 x（block 轴）：仅 left/right 均 auto（R4425 轴分工）。
