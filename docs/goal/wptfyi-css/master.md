@@ -5,8 +5,8 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
-css-values 2,426→2,882，至 serialize canonical 折叠刀2+round B=±∞ 策略表
-+calc-mix() 全链刀（g14 首账，minmax -1 由 0f1c0639d 收复后 g14b 复核轮在跑）。
+css-values 2,426→2,887，至 serialize canonical 折叠刀2+round B=±∞ 策略表
++calc-mix() 全链刀（g14b 权威账净 +100 零回归，六套件对账零漂移）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -75,8 +75,11 @@ grid G2b（taffy detailed_layout_info，架构面）。
 serialize +51/computed +25/invalid +12 全清、minmax-length-serialize +8）；
 回归 -1（minmax-length-percent 4 行）根因 eval Min/Max filter_map 丢 %
 实参，并行流同 clone 碰头同期修复（eval 全实参参与 + 本流 fold % 门叠加
-入库 0f1c0639d，规则 9 碰头信号记证据），单页复核 4 行翻回。g14b 复核轮
-（values + 六套件）并行流在跑，权威账以 g14b 为准。
+入库 0f1c0639d，规则 9 碰头信号记证据），单页复核 4 行翻回。g14b 复核轮收口
+（0f1c0639d 单二进制）：values 2,787 → **2,887 净 +100 零回归**（calc-mix
+三页 +88 与首账一致、minmax-length-serialize +9、minmax-length-percent-
+serialize +3——minmax 修复红利，-1 收复外加 4 新塌缩行）；六套件对账
+color/transitions/animations/transforms/easing 逐位 ±0 零漂移。**批终净 +100。**
 [证据](evidence/2026-11-12-dc2-g14-calc-mix-batch-step.md)
 
 **DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：
