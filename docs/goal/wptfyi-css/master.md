@@ -8,7 +8,9 @@ face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
 css-values 2,426→2,893，至 serialize canonical 折叠刀2+round B=±∞ 策略表
 +calc-mix() 全链刀（g14b 权威账净 +100 零回归，六套件对账零漂移）
 +写面文法门收口（g14c invalid 残 6F 清零）
-+嵌套和串刀（g15 净 +10 零回归，values face 2,903）。
++嵌套和串刀（g15 净 +10 零回归，values face 2,903）
++tree-counting 叶/符号零刀（g16 净 +14 零回归，values face 2,917；提交态
+组合权威账 g17 2,953，含 9db computed 串化刀）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -45,7 +47,11 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 / Pass 1,381**（transitions 185 / om-view 545 / geometry 209 / animations 225
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
-**卡点**：无阻塞。
+**卡点**：无阻塞。random() 141F 桶并行流分工在制：文法刀（parse_random §random
+全文法 + 写面 random 臂 valid 放行/invalid 拒/non-length 族随槽拒，css-parser +
+style-system 面）本流认领；eval/求值刀（sha256 种子 + element/property 上下文 +
+supports 门 + computed 数值化）涉 engine 面，与 computed 串面刀（engine
+computed_style.rs 在制流）排队后接。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
@@ -101,6 +107,27 @@ calc 嵌套」桶指定值 10F 收口——`fold_mix_nest_sum` 嵌套臂（Binar
 存储透传实证——length_to_css Calc 空串域 + 单项解包 + 零项丢弃 + %
 解析通道）。
 [证据](evidence/2026-11-12-dc2-g15-calc-mix-nest-step.md)
+
+**DC-2 g16 批完成（11-12，tree-counting 叶/符号零刀，ed76acefb）**：
+CSS Values 5 §tree-counting 接入——`CalcExpr::TreeCounting` 新叶
+（sibling-index()/sibling-count() 无参文法，parse 期 opaque，求值返 None
+挂 DOM 桥 FIXME）+ eval_mix **符号零**（0 权重 × 不可求值项贡献 0，语料
+"0% so calc-mix() can still be resolved" 注记；NaN·0 毒化保持）+ 型别/
+权重门/串行/fail-closed 槽全臂扫（编译器驱动穷举核对）。单页探针（纯本刀
+二进制）serialize 76→111P/computed 25→41P/invalid 18/18 稳，孤立 +51；
+css-values 全量 256 案 **2,903 → 2,917 净 +14 页级零回归**（test 级 2 例
+Pass→Fail 为 g15 意外通过修正——raw 透传期初始值假通过，现收敛进
+computed 串面既有桶；组合二进制含他流 computed 串化刀，已提交
+9dbe26c80，serialize 组合态 88P 对探针 111P 差 -23 归其面，处处 ≥
+g15）。残余：sibling 非零权重行 + tree-counting 家族
+23 页 DOM 值面（DOM 桥桶）、computed 串面（他流落账后重盘）。
+提交态组合权威账（results-g17，bin 9dbe26c80 两刀齐，07:06 落盘）：
+2,903 → **2,953 净 +50**，serialize 111/128、computed 41/53 与本刀探针
+一致；增益 8 页 +78（两刀合力 + 9db 串化刀 minmax/border-radius 面），
+回归 2 页 -28（min/max/hypot %+px used 值等值面——g15 双侧空串假通过
+修正，min/max used 串化臂 fail-closed 残）归 9db 串面流挂账，净账仍
++50。五套件漂移对账待他流电池收齐后补录（evidence §6）。
+[证据](evidence/2026-11-12-dc2-g16-tree-counting-step.md)
 
 **DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：
 前轮双 session（knife2 dev + e1 姊妹）rate-limit 双中断，本 session 按认领
