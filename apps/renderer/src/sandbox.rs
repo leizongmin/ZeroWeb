@@ -392,6 +392,9 @@ mod landlock {
         // ⑦ 进程内存探针（T13 S7：`mem_reclaim::read_process_pss_kb` 读
         //    /proc/self/smaps_rollup）。
         add_optional_rule(ruleset_fd, "/proc/self/smaps_rollup", FS_RO_FILE);
+        // T62/G4 alloc-trace：`exe_load_base` 一次性解析 PIE 基址读
+        // /proc/self/maps（dump 相对偏移锚点）。
+        add_optional_rule(ruleset_fd, "/proc/self/maps", FS_RO_FILE);
 
         // ⑧ 开发追踪面（env 显式指定路径才授；未设不授任何写面）。
         for key in [
@@ -399,6 +402,7 @@ mod landlock {
             "ZW_MAINLOOP_TRACE",
             "ZW_EXEC_TIMING",
             "ZW_AUTOMATION_TRACE",
+            "ZW_ALLOC_TRACE_DUMP_DIR",
         ] {
             if let Ok(path) = std::env::var(key)
                 && path != "1"
