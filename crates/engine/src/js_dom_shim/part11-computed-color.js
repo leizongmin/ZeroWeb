@@ -561,6 +561,13 @@
   // 官方 XYZ↔LMS 矩阵直接作用在绝对 D65 XYZ 上（css-color-4 § oklab，
   // D65 白点互映核验：M1·white→(1,1,1)，M1i·(1,1,1)→white）。
   var _zwCCOkM1i = [[1.2270138535, -0.5577999757, 0.2812561490], [-0.0405801784, 1.1122568696, -0.0716767866], [-0.0763812845, -0.4214819784, 1.5861632204]];
+  // OkM1/OkM2 数值真逆（Gauss-Jordan，13 位字面；f64 往返 ~1e-15）。发表逆
+  // 精度实证：OkM1i 松（与真逆偏差 7.6e-4，链内致 e-5 级输出噪声）、OkM2i
+  // 本系真逆（偏差 5.5e-8）。仅嵌套 relative-out 原生直转臂消费——发表逆
+  // （OkM1i/OkM2i）仍供序列化投影面（8 位语料锚按发表常数判定，全局换
+  // 真逆会漂锚）。
+  var _zwCCOkM1t = [[1.226885850081, -0.5578177139334, 0.2813924209634], [-0.04057593472673, 1.112286907645, -0.07171110613332], [-0.07637352998276, -0.4214930601520, 1.586923891347]];
+  var _zwCCOkM2t = [[0.999999998451, 0.396337792174, 0.215803758061], [1.00000000888, -0.105561342324, -0.0638541747717], [1.00000005467, -0.089484182095, -1.29148553786]];
   function _zwCCXyzToOklab(xyz) {
     var lms = _zwCCMatVec(_zwCCOkM1, xyz);
     var lp = Math.cbrt(lms[0]), mp = Math.cbrt(lms[1]), sp = Math.cbrt(lms[2]);
@@ -1582,6 +1589,23 @@
       }
       return { channels: nc, alpha: alphaVal, alphaNone: origAlphaNone(), none: origNone(nn) };
     }
+    // 嵌套 relative-out oklab 族跨空间原生直转（css-color-5 nested relative；
+    // 语料 'color(from oklab(from color(xyz-d50 0.99 0.88 0.77) l a b)
+    // xyz-d50 x y z)' 精确 0.99 断言）：rgb 投影往返链经 OkM1i 发表松逆
+    // （偏差 7.6e-4）引入 e-5 级输出噪声，此处以数值真逆直配——f64 往返
+    // ~1e-15。lab/lch native cbrt 对自逆（同形 corpus PASS），不 入此臂；
+    // hsl/hwb native 越界往返归 out-of-gamut 桶。
+    if (r.kind === 'relative-out' && r.chans
+        && (r.space === 'oklab' || r.space === 'oklch')
+        && (space === 'xyz' || space === 'xyz-d50' || space === 'xyz-d65')) {
+      var o3 = r.space === 'oklch'
+        ? [r.chans[0], r.chans[1] * Math.cos(r.chans[2] * Math.PI / 180), r.chans[1] * Math.sin(r.chans[2] * Math.PI / 180)]
+        : r.chans.slice();
+      var x65 = _zwCCMatVec(_zwCCOkM1t, _zwCCMatVec(_zwCCOkM2t, o3).map(function (q) { return q * q * q; }));
+      // 'xyz' 与 d65 同系（css-color-4 color() xyz 别名 d65 口径）。
+      var xv = space === 'xyz-d50' ? _zwCCMatVec(_zwCCD65toD50, x65) : x65;
+      return { channels: xv, alpha: alphaVal, alphaNone: origAlphaNone(), none: origNone(r.none) };
+    }
     var rgb = r.rgb;
     var channels, convNone = [false, false, false];
     if (space === 'srgb') channels = rgb.slice();
@@ -2409,6 +2433,13 @@
       // 纯字面 calc：结果类型槽检查——角度仅 hue 槽、hue 槽禁百分比。
       if (!hueSlot && /(?:\d)\s*(?:deg|turn|rad|grad)(?![\w-])/i.test(inner)) return false;
       if (hueSlot && /(?:\d)\s*%(?![\w-])/.test(inner)) return false;
+      return true;
+    }
+    // 裸数学函数形（css-values-4 § math functions，corpus 'pow(l, 1)' 直写
+    // 形钉面）：decl 面只校验函数名白名单与括号平衡——求值归 resolve 期
+    // _zwCCEvalRel（_zwCCCalcSpec 裸函数形同路由 chanexpr）。calc( 已由上臂
+    // 先行；色函数名不在白名单（嵌套相对色非通道文法）。
+    if (/^\s*-?(atan2|pow|hypot|round|mod|rem|sin|cos|tan|asin|acos|atan|sqrt|log|exp|sign|abs|clamp|min|max)\(/i.test(t) && /\)$/.test(t)) {
       return true;
     }
     var nm = /^[-+]?(\d+\.?\d*|\.\d+)(%|deg|turn|rad|grad)?$/i.exec(t);
