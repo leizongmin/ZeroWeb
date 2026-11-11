@@ -6,7 +6,7 @@
 
 ## 批程
 
-`batch-ind-census-v1.sh`（.acceptance/dps/）：零源码变更测量批，无锚门/judge 基线（本跑产出即新基线）；域绑定＝发射 HEAD + delta 入档（ind-census-domain-delta.txt，vs 13535525b 24 文件）＋双腿间 HEAD 复核。ensure_solo 逐字节复用 v7（foreign 租户等待）。发射 11:56:34，ALL-DONE 12:00:37。
+`batch-ind-census-v1.sh`（.acceptance/dps/）：零源码变更测量批，无锚门/judge 基线（本跑产出即新基线）；域绑定＝发射 HEAD + delta 入档（ind-census-domain-delta.txt，vs 13535525b 24 文件）＋双腿间 HEAD 复核。ensure_solo 逐字节复用 v7（foreign 租户等待）。发射 11:56:34，ALL-DONE 12:00:37 为 relay 合并口径：attempt-1（owner 发射）indent 腿完成后会话拆除杀批 → writer 轮接力补走 outdent 腿（12:00:37 完走）→ owner attempt-2 重射 12:03:33 双腿绿双跑恒一复证；现存产物 ind-c1-* 为 attempt-2 生成，relay 链存 .attempt1。
 
 - head **3a528a13f**（=origin/main，origin/main..HEAD 空）；bin md5 **570d87f14f194853d9e5db97352f1c2d**
 - 腿：`make testharness-editing-run-one FILTER=<page> TIME_LIMIT=1800`（make 既有 fetch/disk-guard/test-guard/runner-release 链），ZW_SCRIPT_TIMEOUT_MS=300000
@@ -26,7 +26,7 @@
 | 族 | 数 | 代表形 |
 |---|---|---|
 | ol 嵌套列表 indent | 4 | `<ol><li>foo<ol><li>bar</ol>[baz]</ol>`——第三 li 缩进与既有嵌套 ol 的交互 |
-| blockquote 相邻/聚合 | 6 | `[foo]<blockquote>bar</blockquote>`、`<blockquote style="margin-right: 0"><p>foo[bar</p><p>b]az</p></blockquote>`（块内跨段 ×4＋相邻聚合 ×2） |
+| blockquote 相邻/聚合 | 10 | `[foo]<blockquote>bar</blockquote>`、`<blockquote style="margin-right: 0"><p>foo[bar</p><p>b]az</p></blockquote>`（块内跨段 ×4＋相邻 ×2＋sandwich `<blockquote>foo</blockquote>[bar]<blockquote>baz</blockquote>` ×1＋ws 邻接 `</blockquote> <p>[bar]` 形 ×3——v1 收口核验勘误补行 11/17/18/19，枚举总和 27 对账） |
 | br 边界 | 7 | `foo[bar]<br>baz`、`foobar<br>[ba]z`、`<ul><li>a<br>{<br>}</li>`＋collapsed-at-br ×3（`<p>{}<br>foo`） |
 | table tbody 跨行 | 1 | `<tbody data-start=0 data-end=1>` 部分跨行（apply 面，tq 刀 qV 读面同页不同面） |
 | rtl 混排 div | 1 | `<div><p>Foo[barbaz<p dir=rtl>…]` 跨两段含 rtl |
