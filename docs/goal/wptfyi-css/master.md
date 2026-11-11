@@ -7,7 +7,8 @@ grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流�
 face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
 css-values 2,426→2,893，至 serialize canonical 折叠刀2+round B=±∞ 策略表
 +calc-mix() 全链刀（g14b 权威账净 +100 零回归，六套件对账零漂移）
-+写面文法门收口（g14c invalid 残 6F 清零）。
++写面文法门收口（g14c invalid 残 6F 清零）
++嵌套和串刀（g15 净 +10 零回归，values face 2,903）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -87,6 +88,19 @@ g14c 写面收口（同日）：§5 归类 invalid 残 6F 勘根为 shim CSSOM �
 （registry 未收 → parser 型别门直裁 + % 排除）入白名单 10→12——invalid 页
 12P→**18P 全清**，css-values 全量 256 案 2,887 → **2,893 净 +6 零回归**。
 [证据](evidence/2026-11-12-dc2-g14-calc-mix-batch-step.md)
+
+**DC-2 g15 批完成（11-12，calc-mix 嵌套和串刀）**：serialize 页「外层
+calc 嵌套」桶指定值 10F 收口——`fold_mix_nest_sum` 嵌套臂（BinaryOp 和差
+树叶项化：标量直读/裸 % 叶系数直读/Mix 叶塌缩项化，同单位常量合并、%
+项前置其余保序、单项塌缩复用）+ 纯 % 值项字面权重加权和符号解析（保 %
+维度，used 值期才需基准）+ `expr_contains_mix` 路由/`filled_literal_weights`
+填充表与归一化臂共用——单页 66→76P，css-values 全量 256 案 2,893 →
+**2,903 净 +10 零回归**（对 g14b 口径 2,887→2,903 净 +16：g14c 文法门
+同轮单二进制，分页归因 serialize +10/invalid +6）。残余：sibling-index()
+桶 37F（DOM 桥兄弟序求值）、computed/used 串面桶 43F（computed 通道非
+存储透传实证——length_to_css Calc 空串域 + 单项解包 + 零项丢弃 + %
+解析通道）。
+[证据](evidence/2026-11-12-dc2-g15-calc-mix-nest-step.md)
 
 **DC-2 g13 批完成（11-12 凌晨，三提交 dcb81aad7/cc22f08e1/3351e0577）**：
 前轮双 session（knife2 dev + e1 姊妹）rate-limit 双中断，本 session 按认领
