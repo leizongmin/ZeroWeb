@@ -2508,7 +2508,24 @@
       // 影响）。守卫兜底 true（_zwIsConnected 异常时不引入行为差）。
       var _conn5271 = true;
       try {
-        if (typeof _zwIsConnected === 'function') _conn5271 = _zwIsConnected(owner.__zwSelector, owner.__zwHandle);
+        if (owner.__zwSelector || owner.__zwHandle) {
+          // s408 前本面只认 sel/handle——live/handle 形态维持 _zwIsConnected 判定不变。
+          if (typeof _zwIsConnected === 'function') _conn5271 = _zwIsConnected(owner.__zwSelector, owner.__zwHandle);
+        } else {
+          // s408（html-semantics M2 切片 408，2026-11-12）：plain owner（detached
+          // 文档 `_zwMEl` 产物——无 sel/handle）走本地 parentNode 链 walk。spec
+          // LinkStyle：sheet 在任意**文档树**内即存在（detached doc 树含——
+          // non-parser-created-doc.html 断言面；未挂载 LinkStyle.html
+          // not-in-a-Document 案 walk 无根返 false → null 保持）。_zwIsConnected
+          // 只认主文档形态，plain owner 尾部 rect probe 恒 false。
+          // https://drafts.csswg.org/cssom-1/#dom-linkstyle-sheet
+          _conn5271 = false;
+          var _w408 = owner, _w408g = 0;
+          while (_w408 && _w408g++ < 64) {
+            if (_w408.nodeType === 9) { _conn5271 = true; break; }
+            try { _w408 = _w408.parentNode; } catch (_w408e) { break; }
+          }
+        }
       } catch (_conn5271e) { _conn5271 = true; }
       if (!_conn5271) return null;
       var _fp5271 = '';

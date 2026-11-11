@@ -26165,6 +26165,62 @@
         Object.setPrototypeOf(headEl, globalThis.HTMLHeadElement.prototype);
       }
     } catch (_e130b) {}
+    // s408（html-semantics M2，2026-11-12）：headEl 本地树三件套——R126 docEl 同款
+    // 缺口补齐（non-parser-created-doc.html `doc.head.appendChild(style)`：headEl
+    // 旧无本地方法，appendChild 落全局 Node.prototype 且 plain 子节点无效果——
+    // childNodes 不插、parentNode 不设，createHTMLDocument + createElement('style')
+    // 的 CSS-in-JS 时序全链断）。语义镜像 docEl trio：appendChild 先移旧父
+    //（reparent 幂等），_r223SetParent 建 own parentNode（plain 子走 defineProperty
+    // 遮蔽臂），push + _r130WireSiblings 兄弟接线；removeChild 带 spec
+    // dom-node-pre-remove NotFound 校验（子判定走本对象 childNodes identity）+
+    // live 迭代器/range 迁移守卫（docEl 同款，plain 子多为 no-op，保 R81
+    // NodeIterator 遍历面一致性）；insertBefore 同款。残差记档：跨文档 adopt
+    // 子树传播（R330 ownerDocument 重指）与 CE 连接态派发（WC-M1）未接线——
+    // headEl 子 corpus 无钉（FIXME(headEl-adopt)）；body 字面（R3017 detached
+    // root 形态）无本地树方法，corpus 未驱动不动。
+    headEl.appendChild = function (c) {
+      if (!c) return c;
+      if (c.nodeType === 11) {
+        var fk = c.childNodes || [];
+        for (var fi = 0; fi < fk.length; fi++) this.appendChild(fk[fi]);
+        return c;
+      }
+      if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e408ha) {} }
+      _r223SetParent(c, headEl);
+      this.childNodes.push(c);
+      _r130WireSiblings(headEl.childNodes);
+      return c;
+    };
+    headEl.removeChild = function (c) {
+      if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+        throw new globalThis.TypeError(
+          "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+      }
+      for (var i = 0; i < this.childNodes.length; i++) {
+        if (this.childNodes[i] === c) {
+          if (globalThis._zwNotifyIteratorsRemove) {
+            try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e408hb) {}
+          }
+          try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_e408hc) {}
+          this.childNodes.splice(i, 1);
+          if (c.parentNode === headEl) c.parentNode = null;
+          _r130WireSiblings(this.childNodes);
+          return c;
+        }
+      }
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+        'NotFoundError');
+    };
+    headEl.insertBefore = function (c, ref) {
+      if (!c) return c;
+      if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e408hd) {} }
+      var i = ref ? this.childNodes.indexOf(ref) : -1;
+      if (i < 0) { _r223SetParent(c, headEl); this.childNodes.push(c); }
+      else { _r223SetParent(c, headEl); this.childNodes.splice(i, 0, c); }
+      _r130WireSiblings(headEl.childNodes);
+      return c;
+    };
     // R130：body 同款接线（HTMLBodyElement）。
     try {
       if (globalThis.HTMLBodyElement && globalThis.HTMLBodyElement.prototype) {
@@ -27259,6 +27315,35 @@
               return s;
             }, undefined);
           };
+        }
+        // s408（html-semantics M2 切片 408，2026-11-12）：detached 文档 STYLE 产物接
+        // LinkStyle `sheet`。spec cssom-1 #dom-linkstyle-sheet + html
+        // #update-a-style-block：style 元素在**任意**文档树内即建 style sheet
+        //（detached doc 树含——无 browsing context 只影响 active，不妨碍 sheet；
+        // non-parser-created-doc.html `createHTMLDocument().createElement('style')`
+        // + head.appendChild 后读 sheet 断言面）。旧 plain `_zwMEl` 产物无属性读取
+        // 层路由（main sheet getter 分支按 sel/handle 代理匹配，R3036 注记的
+        // handle-only detached 形态返 null 即此缺口），`.sheet` 恒 undefined。
+        // R5256 dialog / s69 img.decode 同款 createElement 时直挂；文档树成员判定
+        // 走 `_makeStyleSheet` 统一门（s408 扩 plain owner 臂，见 part06），不在
+        // 本面重复 walk；规则读经 `_makeSheetBuild` 空 wire 臂（detached 树无
+        // mutation 历史——FIXME(style-detached-rules)：textContent 内联规则未接
+        // CSSOM，cssRules 恒空，corpus 无钉）。
+        // https://drafts.csswg.org/cssom-1/#dom-linkstyle-sheet
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'style') {
+          try {
+            Object.defineProperty(e, 'sheet', {
+              get: function () {
+                // type 门镜像 part04 R3036 getter（s156/s160：非空且 ASCII-CI 精确
+                // 非 text/css → null；缺省与空串不设门；无 trimming/parameters）。
+                var _st408 = '';
+                try { _st408 = String(e.getAttribute('type') == null ? '' : e.getAttribute('type')); } catch (_e408t) {}
+                if (_st408 !== '' && _st408.toLowerCase() !== 'text/css') return null;
+                try { return _makeStyleSheet(e); } catch (_e408s) { return null; }
+              },
+              configurable: true,
+            });
+          } catch (_e408def) {}
         }
                 // WC-M1 切片 4：customized built-in——createElement(localName, { is }) 命中
         // registered entry（localName 匹配）→ 升级 + is 内容属性。**registry 按 document

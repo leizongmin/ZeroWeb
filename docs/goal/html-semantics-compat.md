@@ -2,35 +2,64 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 407 收口（静态 embed 链 + fallback 子内容激活，
-六 driving 键 F→P 全解挂）：the-embed-element 静态链 6F 三层勘根——静态 embed
-无人启航（s405 FIXME 收口位，embed-iframe 子文档永不物化 `parent.childLoaded`
-恒 false）+ s403 object 平扫误启 loaded 祖先内 should-not-load 子内容
-（assert_unreached 文件红，spec fallback 内容不渲染步）+ s404 data: 不可渲染
-essence 误映射 `image` 可渲染面（祖先门读不到渲染失败信号）。施工四件：
-part04 `__zwStartParserObjects` 重写（`_zwStaticAncGate407` 祖先链门——media
-祖先 / object 祖先 entry ∈ {done,image} 双臂 truthy 跳过；object 循环同步直调
-须读先行元素终态；新 EMBED 循环 src + **being rendered 门**复用 R3074
-`_zwCheckVisibility` display:none 祖先链 walk——cv 不在判面双 driving 案不受
-影响；QSA handle proxy `__zw_selector_for_handle` 反解 R4400 先例）+ part01
-data: essence `/^(text\/|image\/)/i` → image 其余 → 新 `fallback` 态 +
-`_zwFireObjectResultEvent` gate 加 fallback 映射 object?error:load（text/plain
-与 SVG data: 口径保持）+ 语料资产 embed-in-object-fallback-subdocument.html
-（s227/s404 语料缺口同族，fetch_raw 常驻 + update-wpt-data.sh 挂账）+ 常驻钉
-part107 三测（启航链门面/激活矩阵+动态事件/双红回归面）。验证：桥测三钉全绿；
-单元 engine **3884P/10F**（失败清单逐名 = s406 在册 9 + r307 HEAD 既有红单列）
-+ webview 849P/2F；driving solo 门修复后 embed 目录 8 关键面全 Pass + object
-目录 object-ignored 复绿；全树 sweep ×2 **8484 keys 8242P/216F/26T 双跑全等
-join-cross state-diff=0**（s292 协议）、join 恰 6 STATE-DIFF 全 driving F→Pass
-真 new=0；过程陷阱：首轮终局 join 抓双红（represent-nothing-04 never-rendered
-须 rendered 门 / object-ignored 旧 defer 启航 step-after-done 假绿 vs 同步启航
-踩活测试——门语义缺口 A/B 实证非时序本质，两案修复钉③）；customizable-select
-2 键 F→Timeout 文件零 embed/object 引用 + stash A/B HEAD 二进制亦 T → watchdog
-边界翻转族单列。fmt（本切片文件）干净（callbacks.rs HEAD 既有 fmt 脏并行流
-0ff1bc92c 负债单列）/clippy clean/smoke 双 PASS；**本流域在册红
-221F+24T→215F+24T**（−6F）。下一步：散单续勘（the-style-element 10F 未归因
-面 / links 族 4F / the-input-element 散单 / 挂账池承 s404/s405）；has_width
-/SVG rect 渲染面移交渲染域记账；A2+D 簇立项征询仍待用户决策。
+**状态**: Active——M2 切片 408 收口（detached 文档 style 元素 LinkStyle sheet
++ headEl 本地树三件套，driving 1F→P）：the-style-element 10F 勘根定谳——1F
+driving（non-parser-created-doc.html：`createHTMLDocument().createElement
+('style')` + `doc.head.appendChild` 后 `assert_true(!!style.sheet)`）四层红根
+——headEl 无本地树方法（R126 docEl 同族漏网：appendChild 落全局
+Node.prototype，childNodes 不插、parentNode 不设）+ plain `_zwMEl` 产物无
+sheet 路由（main getter 分支按 sel/handle 代理匹配不命中）+ R5271b 门对
+plain owner 恒 false（`_zwIsConnected` 只认主文档形态，尾部 rect probe 恒
+false；spec LinkStyle：sheet 在任意文档树内即存在，detached 树含）+
+createElement 时直挂先例位（R5256 dialog / s69 img.decode）。施工三件：
+part03 headEl 三件套镜像 docEl trio（R126 语义 + NotFound 校验 + 迭代器/
+range 守卫）+ part03 detached STYLE 产物直挂 `sheet` 访问器（type 门镜像
+R3036 s156/s160 精确匹配语义）+ part06 `_makeStyleSheet` 门扩 plain owner 臂
+（parentNode 链 walk 到 nodeType 9，64 步防环；sel/handle 形态维持
+`_zwIsConnected` 不变；出树 gate false null 保持、回挂指纹命中同对象——
+R5271 [SameObject] 缓存跨门一致）+ 常驻钉 part108 双测（driving 镜像+树接线
++身份+门矩阵 / detached type 门五案）。验证：双钉全绿；单元 engine
+**3886P/10F**（+2 钉，失败清单逐名 = 9 在册 + r307 HEAD 既有红单列零位移）+
+webview 849P/2F；driving solo F→P；the-style-element 目录干净跑
+**34P/0F/9T/6NotRun**（9T = tentative/ CSP + constructed-stylesheets 大机制
+独立候选）；全树 sweep ×2 join **恰 1 STATE-DIFF 全 driving F→Pass 双跑一致
+真 new=0**（run2 8484 keys 8243P/215F/26T；run1 含遗留探针 7 键单列；cross
+state-diff=1 = customizable-select watchdog 家族同二进制翻转单列）；过程
+陷阱：勘根探针目录 solo 污染（P6 旧架构断言恒红，删后归零——probe 卫生纪律
+重申）。fmt（本切片文件）干净（callbacks.rs HEAD 既有 fmt 脏承 s407 单列）/
+clippy clean/smoke 双 PASS；**本流域在册红 215F+24T→214F+24T**（−1F）。
+下一步：散单续勘（links 族 4F / the-input-element 散单 / tentative/
+constructed-stylesheets 机制勘根后按簇决策 / 挂账池承 s404/s405）；
+A2+D 簇立项征询仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 407 收口）——静态 embed 链 + fallback 子内容激活（六 driving 键 F→P 全解挂）**: commit 610bbae31，账本 evidence/2026-11-12-m2s407-embed-static-fallback.md。原 Active 段留档——
+> the-embed-element 静态链 6F 三层勘根——静态 embed 无人启航（s405 FIXME 收口
+> 位，embed-iframe 子文档永不物化 `parent.childLoaded` 恒 false）+ s403 object
+> 平扫误启 loaded 祖先内 should-not-load 子内容（assert_unreached 文件红，
+> spec fallback 内容不渲染步）+ s404 data: 不可渲染 essence 误映射 `image`
+> 可渲染面（祖先门读不到渲染失败信号）。施工四件：part04
+> `__zwStartParserObjects` 重写（`_zwStaticAncGate407` 祖先链门——media 祖先 /
+> object 祖先 entry ∈ {done,image} 双臂 truthy 跳过；object 循环同步直调须读
+> 先行元素终态；新 EMBED 循环 src + **being rendered 门**复用 R3074
+> `_zwCheckVisibility` display:none 祖先链 walk——cv 不在判面双 driving 案不
+> 受影响；QSA handle proxy `__zw_selector_for_handle` 反解 R4400 先例）+
+> part01 data: essence `/^(text\/|image\/)/i` → image 其余 → 新 `fallback` 态
+> + `_zwFireObjectResultEvent` gate 加 fallback 映射 object?error:load（
+> text/plain 与 SVG data: 口径保持）+ 语料资产
+> embed-in-object-fallback-subdocument.html（s227/s404 语料缺口同族，fetch_raw
+> 常驻 + update-wpt-data.sh 挂账）+ 常驻钉 part107 三测（启航链门面/激活矩阵
+> +动态事件/双红回归面）。验证：桥测三钉全绿；单元 engine **3884P/10F**（失
+> 败清单逐名 = s406 在册 9 + r307 HEAD 既有红单列）+ webview 849P/2F；driving
+> solo 门修复后 embed 目录 8 关键面全 Pass + object 目录 object-ignored 复绿；
+> 全树 sweep ×2 **8484 keys 8242P/216F/26T 双跑全等 join-cross state-diff=0**
+> （s292 协议）、join 恰 6 STATE-DIFF 全 driving F→Pass 真 new=0；过程陷阱：
+> 首轮终局 join 抓双红（represent-nothing-04 never-rendered 须 rendered 门 /
+> object-ignored 旧 defer 启航 step-after-done 假绿 vs 同步启航踩活测试——门
+> 语义缺口 A/B 实证非时序本质，两案修复钉③）；customizable-select 2 键
+> F→Timeout 文件零 embed/object 引用 + stash A/B HEAD 二进制亦 T → watchdog
+> 边界翻转族单列。fmt（本切片文件）干净（callbacks.rs HEAD 既有 fmt 脏并行流
+> 0ff1bc92c 负债单列）/clippy clean/smoke 双 PASS；**本流域在册红
+> 221F+24T→215F+24T**（−6F）。
 
 > **▶ 承前（2026-11-11 M2 切片 406 收口）——frames named access 扩 embed/object + 嵌套导航失败终态（embed-network-error 4 子测全解挂）**: commit 284a7bbb4，账本 evidence/2026-11-11-m2s406-frames-named-embed-nav-fail.md。原 Active 段留档——network-error 余 2F 双层勘根（R177 帧代理 named access iframe-only——embed 无 contentWindow IDL，named 值须经 `_zwObjectNavCache` entry.win 承载 + `_zwObjectLocation` href setter `new URL` 对 `//{{hosts[][nonexistent]}}/` 字面（runner 替换表无此 token）抛 Invalid URL 静默中止、零导航零事件 harness 挂起，iframe twin 同输入过 = 写侧走 `_zwResolveIframeSrc` 容差）。施工三件：part01 R177 frames Proxy named access 追加缓存序扫描（entry.win 在场 + isConnected 连接门 + live name 属性匹配 → 返 entry.win，spec named access 值算法；绕开 document 逗号查询 pending 合并纯 tag 门缺口——首版树序 querySelectorAll('embed,object') 动态插入面恒 miss 桥测实证，FIXME(qsa-comma-pending) 记档）+ `_zwObjectNavigateEntry` 失败三臂收拢 `_zwObjectNavFail`（state='error' + doc/win 槽清空 + embed entry fired 门复位重派 `_zwFireObjectResultEvent`——失败 → load 派 error 恒不派 s405 同一出口；object 静默保持 part103 钉面不破）+ href setter URL 解析失败回落 `_zwResolveIframeSrc` 容差（iframe 写侧同口径）。验证：part106 桥测全绿 + 单元 engine 3880P/9F（HEAD stash A/B 逐名相等，9F=7 既有 + execcommand 2F HEAD 既有跨流红 46b582b78 归因 f415be99c editing 流）+ webview 849P/2F；driving solo embed-network-error 4P/0F 全解挂、目录余 F 逐键同态；全树 sweep ×2 join run1 恰 2 STATE-DIFF 全 network-error F→Pass、run2 同 + select-event/focus 两整文件 T 塌缩 flake 单列、跨跑 state-diff=0；fmt/clippy clean；**在册红 223F+24T→221F+24T**（−2F）。过程注记：sweep-1 test-guard 会话 rollover 外部 SIGTERM（exit 143）runner 孤儿补完全树 cross 验证（单列非掩盖）。下一步：散单续勘或本切片（静态链 6F）——承前 s405 挂账池不变。
 > **▶ 承前（2026-11-11 M2 切片 405 收口）——embed 动态加载链（s399 镜像，the-embed-element 目录 5 文件级 Timeout 全解挂）**: commit 14b6ca724，账本 evidence/2026-11-11-m2s405-embed-dynamic-load.md。原 Active 段留档——embed 元素零加载面勘根（无插入钩子/无加载核/无嵌套navigable；s404 在册 5 个 embed 文件级 T 全指向缺链）+ 语料钉 embed 失败语义定界——**失败 → load 派、error 恒不派**（embed-network-error 四子测 onload=done/onerror=unreached，与 object 相反）+ javascript: src 全静默（「should do nothing」）。施工四件：part01 `_zwLoadObjectResource` 五参化（+isEmbed——entry 增印记、src 属性读、javascript: 臂 `fireEvents && !entry.embed` 全静默）+ `_zwFireObjectResultEvent`事件映射（error 态 → embed 派 load）+ 新 `_zwStartConnectedEmbed`（镜像`_zwStartConnectedObject`，共享 `_zwObjectNavCache` → window[N]/window.length 活跃集合自动计入）+ part04 两插入路同排 + part05 R5009 排除 EMBED.src + 新 src IDLsetter 重启臂（镜像 s399 OBJECT.data——已连接 embed src 更新作废旧 entry 重启）。FIXME(embed-static-events)：parser 静态扫描不接（语料驱动案全动态插入；静态 Pass 案零触碰防回归）。验证：part105 桥测 ×2 全绿（javascript: 全链镜像——零事件/window[0] 嵌套上下文/完成值重物化 load 1→2/window[0].document 读面/javascript:1静默中止/零 fetch；404→load 派 error 不派+error 态不计索引+data:text/html 物化+src重启 fired 门复位第二 load+doc 换新）；单元 engine **3881P/7F** 在册逐名同形（+2 新钉）+ webview 849P/2F 同形；driving solo（the-embed-element 全目录）**5 文件级 T 全解挂**——javascript-url 3P（driving 全中）+ change-src 1P（重启臂兑现，/media/ 资产不需要）+ network-error 2P+2F（余 F=frames.named 通道缺）+ allowed-schemas 5F（余F=has_width offsetWidth>0 渲染面）+ change-src-2 1F（余 F=SVG rect 尺寸渲染面），目录余 13 键逐键同态零回归；全树 sweep ×2 join（基线 s404 pairs，启动遇并发负载突发15min load 91 回落后放行）：**13 NEW + 5 GONE 恰 embed 族双跑逐键一致**（确定性），selopt 家族 T↔F 形态翻/modulepreload F↔P 振荡/run2 select-event+fdtcb 整文件 T 塌缩（cross join 证 run1 基线同态=s292 时序 flake，s403 负载族）flake 单列；fmt/clippyclean；**本流域在册红 215F+29T→223F+24T**（−5T embed 解挂；+8F 子测起跑真面新显形——has_width 5F+frames.named 2F+rect 1F，全为渲染/帧代理域已定界未竟面）。过程陷阱：桥测 L1 断言自误（双 insert 后 length 应 1 非 0——error 态不计由 window[0] 身份面承载）。下一步：**frames.named 扩 embed/object 面**（R177 帧代理 iframe-only，network-error 余 2F，本流域小刀）或散单续勘（挂账池承 s404：forward map 空返勘根/渲染流 5 面/form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察池）；has_width/SVG rect 渲染面移交渲染域记账；A2+D 簇立项征询仍待用户决策。
@@ -7065,6 +7094,44 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-12 M2 切片 408**：detached 文档 style 元素 LinkStyle sheet +
+  headEl 本地树三件套施工轮（driving 1F→P，shim 两文件+桥测钉）——
+  the-style-element 10F 勘根定谳：唯一 corpus 驱动案 non-parser-created-doc
+  （`createHTMLDocument().createElement('style')` + `doc.head.appendChild` 后
+  `assert_true(!!style.sheet)`）四层红根：headEl 无本地树方法（R126 docEl 同
+  族漏网——appendChild 落全局 Node.prototype，childNodes 不插、parentNode 不
+  设，探针 P1/P7 实证）+ plain `_zwMEl` 产物无 sheet 路由（main getter 分支
+  按 sel/handle 代理匹配不命中，探针 P6）+ R5271b 门对 plain owner 恒 false
+  （`_zwIsConnected` 双 undefined → 尾部 rect probe false；spec LinkStyle：
+  sheet 在任意文档树内即存在，detached 树含；未挂载 null 保持 LinkStyle.html
+  not-in-a-Document 面）+ createElement 时直挂先例（R5256 dialog / s69
+  img.decode）。施工三件：①part03 headEl 三件套（appendChild/removeChild/
+  insertBefore 镜像 docEl trio R126 语义——先移旧父 + `_r223SetParent` +
+  `_r130WireSiblings`；removeChild 带 NotFound 校验 + 迭代器/range 守卫；
+  FIXME(headEl-adopt)：R330 adopt 传播与 CE 派发未接线 corpus 无钉；body
+  字面未驱动不动）②part03 detached STYLE 产物直挂 `sheet` 访问器（type 门
+  镜像 part04 R3036 s156/s160 精确匹配；体走 `_makeStyleSheet` 统一门单实现；
+  FIXME(style-detached-rules)：textContent 内联规则未接 CSSOM cssRules 恒空）
+  ③part06 `_makeStyleSheet` R5271b 门扩 plain owner 臂（parentNode 链 walk
+  到 nodeType 9，64 步防环；sel/handle 形态不变；出树 gate false、回挂指纹
+  命中同对象 R5271 缓存跨门一致）。常驻钉 part108 双测（driving 镜像+树接线
+  +[SameObject] 身份+出树/回挂门矩阵+cssRules 恒空面 / detached type 门五案
+  jibberish→null·TeXt/CsS→obj·空串→obj·带空白→null）。验证：双钉全绿
+  （detached_ 28 passed）；单元 engine **3886P/10F**（+2 钉，失败清单逐名 =
+  9 在册 + r307 单列零位移）+ webview 849P/2F；driving solo F→P；
+  the-style-element 目录干净跑 **34P/0F/9T/6NotRun**（9T = tentative/ CSP +
+  constructed-stylesheets 大机制独立候选）；全树 sweep ×2 join 恰 1
+  STATE-DIFF 全 driving F→Pass 双跑一致真 new=0（run2 8484 keys
+  8243P/215F/26T；run1 8491 keys 含遗留探针 7 键单列——sweep-1 起跑时探针
+  未删；cross state-diff=1 = customizable-select watchdog 家族同二进制翻转
+  单列）；过程陷阱：勘根探针目录 solo 污染（P6 旧架构断言恒红——修复走
+  plain 访问器路线非 handle 形态，探针断言过时；且勘根前 `ls` 误报不存在是
+  路径层级算错一级——probe 卫生纪律「勘根毕即删」重申）；钉首编 E0308
+  （`Arc::new` 漏 `Mutex::new` 包裹，照抄锚点丢中间层）。fmt（本切片文件）
+  干净（callbacks.rs HEAD 既有 fmt 脏承 s407 单列）/clippy clean/smoke 双
+  PASS；**本流域在册红 215F+24T→214F+24T**（−1F）。下一步：散单续勘
+  （links 族 4F / the-input-element 散单 / tentative/ constructed-stylesheets
+  机制勘根后按簇决策）；A2+D 簇立项征询仍待用户决策。
 - **2026-11-12 M2 切片 407**：静态 embed 链 + fallback 子内容激活施工轮（六
   driving 键 F→P 全解挂，shim 两文件+桥测+语料资产）——driving 六键
   （the-embed-element 5 + the-object-element twin 1，s406 收口在册 F）三层勘根：

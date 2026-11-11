@@ -144,3 +144,8 @@ include!("js_dom_bridge_tests/part106_s406_frames_named_embed_nav_fail.rs");
 // + media/loaded-ancestor 双门）+ object 祖先门 + data: 不可渲染 essence
 // 'fallback' 态（子内容激活 + 渲染失败事件映射）钉。
 include!("js_dom_bridge_tests/part107_s407_embed_static_fallback.rs");
+
+// 56 号 s408 detached 文档 style 元素 LinkStyle sheet + headEl 本地树三件套：
+// non-parser-created-doc.html 红根修复（headEl appendChild 链 + plain 产物
+// `sheet` 访问器 + _makeStyleSheet 门 plain owner 臂）钉。
+include!("js_dom_bridge_tests/part108_s408_detached_style_sheet.rs");
