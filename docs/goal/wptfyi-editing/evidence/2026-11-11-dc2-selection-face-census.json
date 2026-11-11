@@ -1,0 +1,88 @@
+{
+ "meta": {
+  "runner_budgets": "ZW_SCRIPT_TIMEOUT_MS unset(90s default) + case timeout 30s default, wall ~17min local",
+  "corpus": "selection deep 184 files + editing + editing/other",
+  "date": "2026-11-11"
+ },
+ "totals": {
+  "entries": 664,
+  "subtests": 51695,
+  "pass": 35631
+ },
+ "by_dir": {
+  "selection/textcontrols": {
+   "entries": 9,
+   "subtests": 78,
+   "pass": 76,
+   "fail": 2,
+   "timeout": 0
+  },
+  "selection(root)": {
+   "entries": 92,
+   "subtests": 35652,
+   "pass": 22307,
+   "fail": 13338,
+   "timeout": 3
+  },
+  "selection/anonymous": {
+   "entries": 3,
+   "subtests": 13,
+   "pass": 10,
+   "fail": 3,
+   "timeout": 0
+  },
+  "selection/bidi": {
+   "entries": 3,
+   "subtests": 92,
+   "pass": 0,
+   "fail": 92,
+   "timeout": 0
+  },
+  "selection/caret": {
+   "entries": 7,
+   "subtests": 31,
+   "pass": 15,
+   "fail": 16,
+   "timeout": 0
+  },
+  "selection/contenteditable": {
+   "entries": 12,
+   "subtests": 252,
+   "pass": 170,
+   "fail": 82,
+   "timeout": 0
+  },
+  "selection/shadow-dom": {
+   "entries": 22,
+   "subtests": 81,
+   "pass": 19,
+   "fail": 62,
+   "timeout": 0
+  },
+  "editing/other": {
+   "entries": 516,
+   "subtests": 15496,
+   "pass": 13034,
+   "fail": 2461,
+   "timeout": 1
+  }
+ },
+ "timeout_cases": [
+  {
+   "case": "selection/selection-focused-element-becomes-nonfocusable.html",
+   "subtests": 2
+  },
+  {
+   "case": "selection/selection-nested-video.html",
+   "subtests": 1
+  },
+  {
+   "case": "selection/stringifier_editable_element.tentative.html",
+   "subtests": 12
+  },
+  {
+   "case": "editing/other/exec-command-without-editable-element.tentative.html",
+   "subtests": 1
+  }
+ ]
+}

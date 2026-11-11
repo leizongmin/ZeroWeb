@@ -315,10 +315,12 @@ testharness-dom-native: target-disk-guard fetch-wpt-dom target/test-guard zero-w
 	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # editing goal M1 / DC-1：上游 selection/ Selection API 可观察面 testharness 基线。
-# 用例 gitignored（fetch-selection-subset.sh 按需拉取）。filter 按路径子串透传：
+# 用例 gitignored（23 号 goal 脚本 lib.sh deep 拉取，拉取完成标记幂等——
+# wptfyi-editing DC-2 扩面：旧 fetch-selection-subset.sh 显式清单 ~60 案只够
+# ui-edit 快照 31/231 覆盖文件，deep 拉全 ~200 案进 CI）。filter 按路径子串透传：
 # make testharness-selection FILTER=getSelection。
 fetch-wpt-selection:
-	bash tests/wpt-runner/scripts/fetch-selection-subset.sh
+	bash tests/wpt-runner/scripts/goals/23-selection-compat.sh
 
 testharness-selection: target-disk-guard fetch-wpt-selection target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-selection $(if $(FILTER),$(FILTER),)

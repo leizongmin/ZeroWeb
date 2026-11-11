@@ -31,10 +31,24 @@ shards:
     fetch: "fetch-wpt-html-semantics fetch-wpt-web-components"
     fetch_scripts: ""
     time_limit: 10800
+  # 2026-11-11 wptfyi-editing DC-2 扩面：selection 移出 ui-edit 独立成片——
+  # 旧 fetch-selection-subset.sh 显式清单 ~60 案只入账 31/231 覆盖文件（11-10
+  # 快照 2,821 过）；fetch-wpt-selection 已切 23 号 lib.sh deep 拉取（~184 案 +
+  # 拉取完成标记幂等）。runner selection 通道递归扫 selection/ + flat 扫
+  # editing/ + editing/other（SELECTION_TEST_SUBDIRS）——fetch 须带 fetch-wpt-editing
+  # 供后两目录；与 editing-run 11 片 / editing-other catch-all 的路径重叠由
+  # 对账器按路径 max 语义去重（merge_zw_results 最完整一次执行胜出，不双记）。
+  - name: selection-face
+    suites: "selection"
+    fetch: "fetch-wpt-selection fetch-wpt-editing"
+    fetch_scripts: ""
+    script_timeout: 300000
+    case_timeout: 300
+    time_limit: 7200
   - name: ui-edit
-    suites: "selection uievents touch-events keyboard pointerlock dnd"
+    suites: "uievents touch-events keyboard pointerlock dnd"
     fetch: >-
-      fetch-wpt-selection fetch-wpt-uievents fetch-wpt-touch-events
+      fetch-wpt-uievents fetch-wpt-touch-events
       fetch-wpt-keyboard fetch-wpt-pointerlock fetch-wpt-dnd
     fetch_scripts: ""
     time_limit: 3600
