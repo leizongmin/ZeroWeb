@@ -9047,6 +9047,10 @@
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(child); } catch (_e87f) {}
               }
+              // R5450：注销 tombstone——insertBefore 跨父 textEl 移动臂据
+              // `__zwUnregFromSel !== 目标父 sel` 判别「同父恢复」（相等 → R87 重注册
+              // 路径）与「跨父移动」（不等 → AdjacentText wire 臂）。
+              child.__zwUnregFromSel = sel;
               _zwUnregisterTextEl(_r87Self);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
               return child;
@@ -9127,6 +9131,8 @@
                   _rdNx = _rdSi + 1 < _rdSib.length ? _rdSib[_rdSi + 1] : null;
                 }
               } catch (_eRdS) {}
+              // R5450：注销 tombstone（同上方 R87 分支——跨父移动判别信号）。
+              child.__zwUnregFromSel = sel;
               try { child.parentNode = null; } catch (_eRdP) {}
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _rdPv, nextSibling: _rdNx });
               // R140 同款：live childNodes 同步（sel 路径）。
@@ -9745,6 +9751,49 @@
                 }
               }
             }
+            // R5450（editing-compat，vendored unwrap 挂载面）：**跨父 textEl 移动**——
+            // sel 基元父 + sel ref + 无 handle 文本子（clearValue 摘壳臂的
+            // _zwJusMovePreservingRanges 挂载：base 文本子从壳内移入基元父）。旧路径
+            // 双面丢失：R87 把移动子注册成目标父的**整内容种子**（base 兄弟被遮蔽，
+            // 视图坍缩成移动子自身），且注册副作用致 refNode.__zwSelector 评估失配
+            //（入口有值、链头 falsy）→ 全 wire 分支落空零 op → 随后摘壳 Remove 把
+            // 文本从 host 永久抹掉。修复：AdjacentText 按 ref 锚位物化（host 时序 =
+            // 文本落壳前 → 摘壳 → 语义等价 pre-insert 到壳原位）；簿记镜像 R334
+            //（_zwSelPendingParent 链 + childList record——pending 桶 overlay 承载
+            // 融合视图，base 兄弟不受扰）。判别「同父恢复」（removeChild tombstone
+            // `__zwUnregFromSel` === 目标父 sel → 让位 R87 重注册路径）与「跨父移动」
+            //（tombstone 存在且不等 → 本臂）。**tombstone 必须存在**：从未注册的新鲜
+            // 文本（undefined）不走本臂——语料常规 insertBefore 文本插入高频落旧径，
+            // 否则本臂 wire+簿记+SiblingBase 全清把 ab 页热路径推过 300s 脚本门
+            //（2026-11-12 A/B 实测 pre-knife 252s vs 双臂开放 ~305s 截断）。
+            // 已注册文本子的父（种子视图）不在本臂语义内——
+            // `!_zwLocalChildNodes` 门留 R87 原路径。
+            if (newNode && !newNode.__zwHandle && newNode.__zwIsText && sel && !handle
+                && refNode && refNode.__zwSelector
+                && typeof newNode.__zwUnregFromSel !== 'undefined' && newNode.__zwUnregFromSel !== sel
+                && typeof _zwLocalChildNodes === 'function' && !_zwLocalChildNodes(sel, handle)
+                && typeof __zw_insert_adjacent_text === 'function') {
+              try {
+                __zw_insert_adjacent_text(refNode.__zwSelector, 'beforebegin',
+                  String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
+              } catch (_eTxtMvW) {}
+              try {
+                var _txtMvKids = _childNodeList(sel, handle);
+                var _txtMvPrev = null;
+                for (var _txtMvi = 0; _txtMvi < _txtMvKids.length; _txtMvi++) {
+                  if (_txtMvKids[_txtMvi] === refNode) { _txtMvPrev = _txtMvi > 0 ? _txtMvKids[_txtMvi - 1] : null; break; }
+                }
+                newNode._zwSelPendingParent = { parentSel: sel, nextSibling: refNode || null, prevSibling: _txtMvPrev || null };
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _txtMvPrev, nextSibling: refNode || null });
+                if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+                  _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+                }
+                if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+                try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newNode); } catch (_eTxtMvR) {}
+                _ceApplyConn(newNode, _ceParentConnected(sel, handle));
+              } catch (_eTxtMvN) {}
+              return newNode;
+            }
             // R87：注册文本子恢复（removeChild 注销后 oldParent.insertBefore(node,
             // oldSibling) 重新入树——WPT NodeIterator-removal 恢复段；旧无 handle
             // 直接静默 no-op → firstChild 恒 null、后续子测试 setup 全断）。重注册
@@ -10196,6 +10245,28 @@
                 else if (typeof _zwIb9Serialized === 'function' && _zwIb9Serialized(newNode)) {
                   // 跨批悬停风险窗口 → 序列化落地（见下方 sel 父带位分支注记）。
                   __zw_insert_adjacent_html(sel, 'beforeend', _zwIb9Serialized(newNode));
+                } else if (!newNode.__zwHandle && newNode.__zwIsText
+                    && typeof newNode.__zwUnregFromSel !== 'undefined' && newNode.__zwUnregFromSel !== sel
+                    && typeof _zwLocalChildNodes === 'function' && !_zwLocalChildNodes(sel, handle)
+                    && typeof __zw_insert_adjacent_text === 'function') {
+                  // R5450：跨父 textEl 移动的 append 变体（上方 sel 父带位臂同款语义，
+                  // ref null → 尾位挂载；_zwJusMovePreservingRanges 壳居末位时走此形态）。
+                  try {
+                    __zw_insert_adjacent_text(sel, 'beforeend',
+                      String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
+                  } catch (_eTxtApW) {}
+                  try {
+                    var _txtApKids = _childNodeList(sel, handle);
+                    var _txtApPrev = _txtApKids.length ? _txtApKids[_txtApKids.length - 1] : null;
+                    newNode._zwSelPendingParent = { parentSel: sel, nextSibling: null, prevSibling: _txtApPrev || null };
+                    _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _txtApPrev, nextSibling: null });
+                    if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+                      _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+                    }
+                    if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+                    try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newNode); } catch (_eTxtApR) {}
+                    _ceApplyConn(newNode, _ceParentConnected(sel, handle));
+                  } catch (_eTxtApN) {}
                 } else __zw_append_child(sel, newNode.__zwHandle);
                 // js-dom M3 R97：appendChild 路径（1869 行起）有 _recordHandleChild，本分支
                 // 旧缺——host 记账后 JS 侧 registry 不含 newNode，容器 childNodes 视图漏子

@@ -12185,6 +12185,13 @@
         for (var q = 0; q < res.length; q++) {
           if (res[q] === link.nextSibling) { pos = q; break; }
         }
+      } else if (link.prevSibling && _resSeen.has(link.prevSibling)) {
+        // R5450：nextSibling 锚同 turn 被移除（overlay 先剔 removed 后并 added——
+        // insertBefore(ob, b) 后同 turn removeChild(b)，锚 b 已剔，prev 兄弟仍在）
+        // → 回落 prev 后插 = 被移除锚的原位。无该字段的旧 link 行为不变（尾插）。
+        for (var q5450 = 0; q5450 < res.length; q5450++) {
+          if (res[q5450] === link.prevSibling) { pos = q5450 + 1; break; }
+        }
       }
       // sel 子旧位剔除：移动语义（旧父可能就是同一父——快照基底已含本节点），
       // 先删旧位再按 nextSibling 插新位。
