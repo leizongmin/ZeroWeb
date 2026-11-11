@@ -77,3 +77,112 @@ fn test_parse_finite_number_math_accepts_infinity() {
     ));
     assert_eq!(parse_animation_iteration_count("calc(infinity)"), None);
 }
+
+/// clamp 任一实参 NaN → 结果 NaN（§10.6）——IEEE `min`/`max` 链式折叠忽略
+/// NaN 会洗毒（旧实现 `clamp(NaN, 0, 10)` 误产 0，computed 期 censor §10.12
+/// 不触发）；min>max 退化（回退 MIN）不 panic 语义保留（R3344）。
+#[test]
+fn test_clamp_nan_poison_propagates() {
+    let expr = parse_clamp("clamp(NaN, 0, 10)").unwrap();
+    assert!(matches!(eval_calc(&expr, None), Some(v) if v.is_nan()));
+    let expr = parse_clamp("clamp(0, 10, NaN)").unwrap();
+    assert!(matches!(eval_calc(&expr, None), Some(v) if v.is_nan()));
+    // min>max 退化不 panic。
+    let expr = parse_clamp("clamp(100px, 50px, 10px)").unwrap();
+    assert_eq!(eval_calc(&expr, None), Some(100.0));
+}
+
+/// specified 常量折叠 canonical 形（§10.11/§10.6，calc-infinity-nan-serialize
+/// 五页语料驱动）：非有限 × 维度 → `calc(NaN|±infinity * 1<unit>)`；物理单位
+/// parse 期归一 px、ms 归一 s；min/max NaN 塌缩树首维度单位；clamp NaN 单位
+/// 分歧保结构逐实参规范化；% 维度仅非有限折叠（有限 % 式布局依赖不折叠）；
+/// plain 指定值原样保留。
+#[test]
+fn test_fold_specified_infinity_nan_canonical_forms() {
+    use super::super::serialize_math::{MathFoldKind, fold_decl_specified};
+    let fold_w = |v| fold_decl_specified("width", v);
+    // <length> 槽：NaN/±∞ canonical、物理单位归一 px、% 维度、finite 形。
+    assert_eq!(fold_w("calc(1px * NaN)").as_deref(), Some("calc(NaN * 1px)"));
+    assert_eq!(fold_w("calc(1in * NaN)").as_deref(), Some("calc(NaN * 1px)"));
+    assert_eq!(fold_w("calc(1% * NaN)").as_deref(), Some("calc(NaN * 1%)"));
+    assert_eq!(fold_w("calc(1px * infinity)").as_deref(), Some("calc(infinity * 1px)"));
+    assert_eq!(
+        fold_w("calc(1px * -infinity)").as_deref(),
+        Some("calc(-infinity * 1px)")
+    );
+    assert_eq!(fold_w("calc(1px * 1/infinity)").as_deref(), Some("calc(0px)"));
+    assert_eq!(
+        fold_w("calc(1px * clamp(-Infinity, 0, infinity))").as_deref(),
+        Some("calc(0px)")
+    );
+    assert_eq!(
+        fold_w("calc(1px * clamp(-inFinity, infinity, 10))").as_deref(),
+        Some("calc(10px)")
+    );
+    assert_eq!(
+        fold_w("calc(1 * clamp(-INFINITY*20px, 0px, infiniTY*10px))").as_deref(),
+        Some("calc(0px)")
+    );
+    // min/max NaN 塌缩树首维度单位（pt/cm→px；px,em 混型取 px）。
+    assert_eq!(
+        fold_w("calc(1 * max(INFinity*3px, 0px))").as_deref(),
+        Some("calc(infinity * 1px)")
+    );
+    assert_eq!(
+        fold_w("calc(1 * min(nan*3px, 0px))").as_deref(),
+        Some("calc(NaN * 1px)")
+    );
+    assert_eq!(
+        fold_w("calc(1 * min(NaN * 1pt, NaN * 1cm))").as_deref(),
+        Some("calc(NaN * 1px)")
+    );
+    assert_eq!(
+        fold_w("calc(1 * min(NaN * 2px, NaN * 4em))").as_deref(),
+        Some("calc(NaN * 1px)")
+    );
+    // clamp NaN 单位分歧保结构逐实参规范化；重折叠幂等（写面 + 读回双链）。
+    let structured = "calc(1 * clamp(NaN * 2em, NaN * 4px, NaN * 8pt))";
+    let folded = fold_w(structured).unwrap();
+    assert_eq!(folded, "clamp(NaN * 1em, NaN * 1px, NaN * 1px)");
+    assert_eq!(fold_w(&folded).as_deref(), Some(folded.as_str()));
+    // plain/布局依赖值不折叠（specified 原样保留）。
+    assert_eq!(fold_w("10px"), None);
+    assert_eq!(fold_w("calc(100% + 50px)"), None);
+    assert_eq!(fold_w("calc(1px + 1em)"), None);
+    // <time> 槽：ms 归一 s、plain 时长不折叠。
+    let fold_t = |v| fold_decl_specified("animation-duration", v);
+    assert_eq!(fold_t("calc(1s * NaN)").as_deref(), Some("calc(NaN * 1s)"));
+    assert_eq!(fold_t("calc(1ms * NaN)").as_deref(), Some("calc(NaN * 1s)"));
+    assert_eq!(fold_t("calc(1s * 1/infinity)").as_deref(), Some("calc(0s)"));
+    assert_eq!(fold_t("calc(1 * min(nan*3s, 0s))").as_deref(), Some("calc(NaN * 1s)"));
+    assert_eq!(fold_t("1s"), None);
+    assert_eq!(fold_t("2.5s"), None);
+    // <number> 槽：裸 canonical 形、clamp NaN 塌缩（单位一致臂）。
+    let fold_n = |v| fold_decl_specified("opacity", v);
+    assert_eq!(fold_n("calc(1 * max(nAn*2, 0))").as_deref(), Some("calc(NaN)"));
+    assert_eq!(fold_n("calc(1 * clamp(0, 10, NaN))").as_deref(), Some("calc(NaN)"));
+    assert_eq!(fold_n("5"), None);
+    // <angle> 槽（transform wrapper）：±∞ canonical（§10.10 无穷合法非 invalid）。
+    assert_eq!(
+        fold_decl_specified("transform", "rotate(calc(1deg * NaN))").as_deref(),
+        Some("rotate(calc(NaN * 1deg))")
+    );
+    assert_eq!(
+        fold_decl_specified("transform", "rotate(calc(1deg * infinity))").as_deref(),
+        Some("rotate(calc(infinity * 1deg))")
+    );
+    assert_eq!(
+        fold_decl_specified("transform", "rotate(calc(1deg * -infinity))").as_deref(),
+        Some("rotate(calc(-infinity * 1deg))")
+    );
+    assert_eq!(
+        fold_decl_specified("transform", "rotate(calc(1deg * 1/infinity))").as_deref(),
+        Some("rotate(calc(0deg))")
+    );
+    // MathFoldKind 直连面（ Angle 槽 ±∞）零漂移抽检。
+    use super::super::serialize_math::fold_math_specified;
+    assert_eq!(
+        fold_math_specified("calc(1turn * NaN)", MathFoldKind::Angle).as_deref(),
+        Some("calc(NaN * 1deg)")
+    );
+}

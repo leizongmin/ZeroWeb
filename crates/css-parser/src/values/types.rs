@@ -1722,6 +1722,20 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
     }
 }
 
+/// 数学函数形判定：值（trim 后）顶层为 `<数学函数名>(...)` 形。plain 值
+///（`1s`/`10px`）为 false——serialize_math fold 面 plain 指定值不折叠
+///（specified 原样保留），fold_decl_specified 的 Time 槽形状门用（共享 calc
+/// 入口拒 time 原子，无法先经 [`parse_math_function`] 验形）。
+pub fn is_math_function_value(value: &str) -> bool {
+    let value = value.trim();
+    // 与 parse_math_function 分派名单同步（含 calc 包裹与 §11.3 裸数学函数）。
+    const NAMES: [&str; 21] = [
+        "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign", "sqrt", "exp",
+        "log", "sin", "cos", "tan", "asin", "acos", "atan",
+    ];
+    NAMES.iter().any(|n| math_function_inner(value, n).is_some())
+}
+
 fn math_function_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
     // https://drafts.csswg.org/css-values-4/#calc-notation
     let value = value.trim();
@@ -1938,11 +1952,19 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
             let min_v = eval_calc_with_context(min, ctx)?;
             let val_v = eval_calc_with_context(val, ctx)?;
             let max_v = eval_calc_with_context(max, ctx)?;
+            // CSS Values 4 §10.6（Infinities and NaNs）：任一实参 NaN → 结果 NaN。
+            // IEEE `f64::min`/`f64::max` 忽略 NaN——下方链式折叠会把毒洗掉
+            //（`clamp(NaN, 0, 10)` 误产 0，computed 期 censor §10.12 不触发），
+            // 先行毒化短路。calc-infinity-nan-serialize 语料 clamp 行驱动。
+            // https://drafts.csswg.org/css-values-4/#calc-infinities
+            if min_v.is_nan() || val_v.is_nan() || max_v.is_nan() {
+                return Some(f64::NAN);
+            }
             // CSS Values §11：clamp 语义 = max(MIN, min(VAL, MAX))。
-            // 注意：不可用 `f64::clamp`——std 在 `min > max` 或含 NaN 时 **panic**
+            // 注意：不可用 `f64::clamp`——std 在 `min > max` 时 **panic**
             //（R3344 deep-review：`calc(clamp(100px,50px,10px))` MIN>MAX 致渲染进程
             // panic，攻击者 CSS 可触发）。`min`/`max` 显式实现 min>max 退化（回退到
-            // MIN）且对 NaN 安全（NaN 比较恒 false，传播为 NaN 而非 panic）。
+            // MIN）；NaN 已由上方门短路，此处恒有限值。
             // https://www.w3.org/TR/css-values-3/#calc-range
             Some(val_v.min(max_v).max(min_v))
         }

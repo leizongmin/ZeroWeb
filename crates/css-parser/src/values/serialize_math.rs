@@ -6,7 +6,10 @@
 //! 折叠原语在此（css-parser 面）；调用方（inline style 读回/写面归一）按需接线。
 
 use super::parse_extended::{calc_expr_has_angle_result, calc_expr_has_length, calc_expr_is_number};
-use super::types::{eval_calc, parse_math_function};
+use super::types::{
+    CalcExpr, LengthValue, eval_calc, eval_calc_with_default_font, is_math_function_value, parse_math_function,
+    parse_time_calc,
+};
 
 /// 折叠结果的文法型别（决定 NaN/单位序列化形态）。
 ///
@@ -14,38 +17,60 @@ use super::types::{eval_calc, parse_math_function};
 ///   NaN 序列化 `calc(NaN)`。
 /// - [`MathFoldKind::Angle`]：`<angle>` 文法位（rotate 等）——结果弧度转度，
 ///   NaN 序列化 `calc(NaN * 1deg)`（Chrome/Blink 口径，WPT serialize 页期望）。
+/// - [`MathFoldKind::Length`]：`<length>` 文法位（width 等尺寸槽）——物理
+///   单位（in/cm/mm/q/pt/pc）parse 期已归一 px。
+/// - [`MathFoldKind::Time`]：`<time>` 文法位（transition/animation duration/
+///   delay 槽）——ms parse 期已归一 s。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MathFoldKind {
     /// `<number>` 文法位。
     Number,
     /// `<angle>` 文法位。
     Angle,
+    /// `<length>` 文法位。
+    Length,
+    /// `<time>` 文法位。
+    Time,
 }
 
 /// CSS Values 4 §10.11：数学函数 specified 值常量折叠。
 ///
-/// 输入值为纯数学函数（calc/min/max/clamp/裸 trig 等，[`parse_math_function`]
-/// 面）时求值并产出规范文本；非数学函数、含长度叶（型别不符）、`<number>`
-/// 位非 number 式、角度位 ±Infinity 结果——均返 `None`（调用方保留原文）。
-/// NaN 结果合法（§10.10），照常折叠。
+/// 输入值为纯数学函数（calc/min/max/clamp/裸 trig 等）时求值并产出规范文本；
+/// 非数学函数、型别不符（`<number>`/`<angle>` 位含 <length> 叶、`<length>`/
+/// `<time>` 位无本维度叶）——均返 `None`（调用方保留原文）。NaN/±∞ 结果合法
+///（§10.10），canonical 发射（§10.6）。
 ///
 /// <https://drafts.csswg.org/css-values-4/#calc-serialize>
 pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
-    let expr = parse_math_function(value)?;
+    // Time 槽须数学函数形（plain `1s` 原样保留）——共享 calc 入口拒 time 原子
+    //（CalcExpr::Time 注），先验形再经 allow_time 入口重 parse。
+    if matches!(kind, MathFoldKind::Time) && !is_math_function_value(value) {
+        return None;
+    }
+    let expr = match kind {
+        MathFoldKind::Time => parse_time_calc(value)?,
+        _ => parse_math_function(value)?,
+    };
     // <angle>/<number> 文法位不容 <length> 叶混入（§10.5 型别一致，与
     // parse_angle_or_math 同口径）。
-    if calc_expr_has_length(&expr) {
+    if calc_expr_has_length(&expr) && !matches!(kind, MathFoldKind::Length) {
         return None;
     }
-    if matches!(kind, MathFoldKind::Number) && !calc_expr_is_number(&expr) {
-        return None;
+    match kind {
+        // <number> 位非 number 式拒（scale 槽 `calc(10px)` 等）。
+        MathFoldKind::Number if !calc_expr_is_number(&expr) => return None,
+        // <length> 位须含长度叶（纯 number 式属 number 位，尺寸槽不折叠——
+        // `width: calc(5)` 的裁决留给写面文法门）。
+        MathFoldKind::Length if dimension_suffix(&expr).is_none() => return None,
+        // <time> 位须含 time 叶（同上；`animation-duration: calc(3)` 不折叠）。
+        MathFoldKind::Time if !expr_has_time_leaf(&expr) => return None,
+        _ => {}
     }
-    // Angle 槽单位叶 provenance 用原文串（求值 f64 无单位信息，先行绑定）。
-    let has_unit = matches!(kind, MathFoldKind::Angle) && span_has_top_level_angle_unit(&value.to_ascii_lowercase());
-    let value = eval_calc(&expr, None)?;
-    Some(match kind {
-        MathFoldKind::Number => format_calc_number(value),
+    match kind {
         MathFoldKind::Angle => {
+            // Angle 槽单位叶 provenance 用原文串（求值 f64 无单位信息，先行绑定）。
+            let has_unit = span_has_top_level_angle_unit(&value.to_ascii_lowercase());
+            let value = eval_calc(&expr, None)?;
             // 求值口径全弧度 → 度的两条 provenance：①角度产出函数
             //（asin/acos/atan/atan2）；②trig 实参外角度单位叶——CalcParser
             // parse 期把 `180deg` 类平角度叶 Number 化为弧度（型别标记丢失），
@@ -59,9 +84,150 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
             } else {
                 value
             };
-            format_calc_angle(deg)?
+            Some(format!("calc({})", format_dimension_inner(deg, Some("deg"))))
         }
+        // Number/Length/Time 标量折叠（% /字体维度两级求值见 scalar_value）。
+        _ => fold_dimension_calc(&expr),
+    }
+}
+
+/// 维度标量折叠入口：整体求值 NaN 且树内存在「任一实参 NaN 且实参 canonical
+/// 单位分歧」clamp 节点时结构外提（§10.6——NaN × 任意数恒 NaN，外层标量上下文
+/// 丢弃，clamp 实参单位维度信息保留到 used-value 期 censor；
+/// `calc(1 * clamp(NaN * 2em, NaN * 4px, NaN * 8pt))` →
+/// `clamp(NaN * 1em, NaN * 1px, NaN * 1px)`，calc-infinity-nan-serialize-length
+/// 语料行驱动）；否则整体塌缩为 `calc(<n>)`/`calc(<n><unit>)`（min/max 含
+/// NaN 亦塌缩——结果单位取树首维度叶，§10.6 毒化语义求值期已定）。
+fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
+    if scalar_value(expr).is_some_and(|v| v.is_nan()) {
+        if let Some([min, val, max]) = find_divergent_nan_clamp(expr) {
+            return Some(format!(
+                "clamp({}, {}, {})",
+                scalar_fold_inner(min)?,
+                scalar_fold_inner(val)?,
+                scalar_fold_inner(max)?
+            ));
+        }
+    }
+    Some(format!("calc({})", scalar_fold_inner(expr)?))
+}
+
+/// 树内首个「任一实参 NaN 且实参 canonical 单位分歧」clamp 节点（左序深先）。
+fn find_divergent_nan_clamp(expr: &CalcExpr) -> Option<[&CalcExpr; 3]> {
+    match expr {
+        CalcExpr::Clamp { min, val, max } => {
+            let args = [min.as_ref(), val.as_ref(), max.as_ref()];
+            let any_nan = args.iter().any(|a| scalar_value(a).is_some_and(|v| v.is_nan()));
+            let suffixes = args.map(dimension_suffix);
+            let divergent = suffixes[0] != suffixes[1] || suffixes[1] != suffixes[2];
+            if any_nan && divergent {
+                return Some(args);
+            }
+            args.into_iter().find_map(find_divergent_nan_clamp)
+        }
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => None,
+        CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => {
+            find_divergent_nan_clamp(a).or_else(|| find_divergent_nan_clamp(b))
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().find_map(find_divergent_nan_clamp),
+        CalcExpr::UnaryOp(_, inner) => find_divergent_nan_clamp(inner),
+    }
+}
+
+/// 两级求值（§10.6 非有限值与参考维度无关；有限维度依赖值不折叠）：
+/// ①无 ctx 求值（px/s/纯 number 树可达）；②失败→默认字体基准重试
+///（em/rem 树，NaN/∞ 与字体无关；有限 em 值依赖实际字体，不折叠）；
+/// ③仍失败→parent_length=0 参考核证（% 树；有限 % 式布局依赖，不折叠——
+/// `calc(100% + 50%)` 保留原文，Chrome 同口径）。
+fn scalar_value(expr: &CalcExpr) -> Option<f64> {
+    match eval_calc(expr, None) {
+        Some(v) => Some(v),
+        None => match eval_calc_with_default_font(expr) {
+            Some(v) if !v.is_finite() => Some(v),
+            None => eval_calc(expr, Some(0.0)).filter(|v| !v.is_finite()),
+            _ => None,
+        },
+    }
+}
+
+/// 折叠内文（无 calc 包裹）：有限 → `<n>`/`<n><unit>`；NaN/±∞ →
+/// `NaN|±infinity * 1<unit>`（§10.6 canonical，`calc(NaN * 1px)` 语料形态）；
+/// 无维度叶裸形态（number 位 `calc(NaN)`）。
+fn format_dimension_inner(value: f64, suffix: Option<&str>) -> String {
+    match (value.is_finite(), suffix) {
+        (true, Some(s)) => format!("{}{}", format_number_6dp(value), s),
+        (true, None) | (false, None) => format_number_6dp(value),
+        (false, Some(s)) => format!("{} * 1{}", format_number_6dp(value), s),
+    }
+}
+
+/// 标量折叠内文：求值（[`scalar_value`] 两级）+ 树首维度叶 canonical 单位。
+fn scalar_fold_inner(expr: &CalcExpr) -> Option<String> {
+    Some(format_dimension_inner(scalar_value(expr)?, dimension_suffix(expr)))
+}
+
+/// 树首维度叶 canonical 单位后缀（左序第一个 Length/Time 叶——min/max NaN
+/// 塌缩与非有限发射的单位 provenance；物理单位 parse 期已归一 px、ms 归一 s，
+/// 后缀即 canonical 形）。无维度叶 → None（number 位）。
+fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
+    match expr {
+        CalcExpr::Number(_) => None,
+        CalcExpr::Length(lv) => length_suffix(lv),
+        CalcExpr::Time(_) => Some("s"),
+        CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => {
+            dimension_suffix(a).or_else(|| dimension_suffix(b))
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().find_map(dimension_suffix),
+        CalcExpr::Clamp { min, val, max } => dimension_suffix(min)
+            .or_else(|| dimension_suffix(val))
+            .or_else(|| dimension_suffix(max)),
+        CalcExpr::UnaryOp(_, inner) => dimension_suffix(inner),
+    }
+}
+
+/// [`LengthValue`] 维度原子 → canonical 后缀（calc 树内仅维度原子可达；
+/// 关键字/嵌套式防御臂返 None）。
+fn length_suffix(lv: &LengthValue) -> Option<&'static str> {
+    Some(match lv {
+        LengthValue::Px(_) => "px",
+        LengthValue::Em(_) => "em",
+        LengthValue::Ex(_) => "ex",
+        LengthValue::Rex(_) => "rex",
+        LengthValue::Cap(_) => "cap",
+        LengthValue::Rcap(_) => "rcap",
+        LengthValue::Rem(_) => "rem",
+        LengthValue::Vh(_) => "vh",
+        LengthValue::Vw(_) => "vw",
+        LengthValue::Vmin(_) => "vmin",
+        LengthValue::Vmax(_) => "vmax",
+        LengthValue::Cqw(_) => "cqw",
+        LengthValue::Cqh(_) => "cqh",
+        LengthValue::Cqi(_) => "cqi",
+        LengthValue::Cqb(_) => "cqb",
+        LengthValue::Cqmin(_) => "cqmin",
+        LengthValue::Cqmax(_) => "cqmax",
+        LengthValue::Ch(_) => "ch",
+        LengthValue::Rch(_) => "rch",
+        LengthValue::Ic(_) => "ic",
+        LengthValue::Ric(_) => "ric",
+        LengthValue::Lh(_) => "lh",
+        LengthValue::Percentage(_) => "%",
+        _ => return None,
     })
+}
+
+/// 树内是否含 [`CalcExpr::Time`] 叶（<time> 位折叠门）。
+fn expr_has_time_leaf(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Time(_) => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => expr_has_time_leaf(a) || expr_has_time_leaf(b),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(expr_has_time_leaf),
+        CalcExpr::Clamp { min, val, max } => {
+            expr_has_time_leaf(min) || expr_has_time_leaf(val) || expr_has_time_leaf(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => expr_has_time_leaf(inner),
+    }
 }
 
 /// 声明值 specified 折叠入口（按属性分派；None = 保留原文）。
@@ -69,7 +235,8 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
 /// 消费方：inline style 写面（native CSD canonicalize 链）与读出视图
 ///（mutation log replay `style_from_mutations_lw`）。白名单仅本轮有 WPT
 /// 驱动案的属性：transform（rotate/scale 族 wrapper 折叠）、rotate/scale/
-/// opacity（裸数学函数）。其余属性原样保留。
+/// opacity（裸数学函数）、width + transition/animation duration/delay
+///（calc-infinity-nan-serialize-length/time 语料桶）。其余属性原样保留。
 pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
     let v = value.trim();
     if v.is_empty() {
@@ -79,6 +246,12 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "transform" => fold_transform_math_specified(v),
         "rotate" => fold_math_specified(v, MathFoldKind::Angle),
         "scale" | "opacity" => fold_math_specified(v, MathFoldKind::Number),
+        // 尺寸/时长槽数学形 canonical 折叠（g12 刀2：CSD 层 camelCase→kebab
+        // 归一后到达，白名单 kebab 形）。
+        "width" => fold_math_specified(v, MathFoldKind::Length),
+        "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
+            fold_math_specified(v, MathFoldKind::Time)
+        }
         _ => None,
     }
 }
@@ -220,23 +393,6 @@ fn format_number_6dp(value: f64) -> String {
         s = "0".into();
     }
     s
-}
-
-/// `<number>` 折叠形态：`calc(<n>)`。
-fn format_calc_number(value: f64) -> String {
-    format!("calc({})", format_number_6dp(value))
-}
-
-/// `<angle>` 折叠形态：`calc(<n>deg)`；NaN → `calc(NaN * 1deg)`；±Infinity
-/// 拒折（返 None——`<angle>` 位不容无穷，保守口径）。
-fn format_calc_angle(deg: f64) -> Option<String> {
-    if deg.is_infinite() {
-        return None;
-    }
-    if deg.is_nan() {
-        return Some("calc(NaN * 1deg)".into());
-    }
-    Some(format!("calc({}deg)", format_number_6dp(deg)))
 }
 
 /// 检测 asin/acos/atan（单参反三角）实参跨度内是否出现角度单位叶。
@@ -510,8 +666,12 @@ mod tests {
         assert_eq!(fold_math_specified("asin(90px)", Angle), None);
         // <number> 位不容角度产出式（结果为 <angle>）。
         assert_eq!(fold_math_specified("acos(1)", Number), None);
-        // 角度位 ±Infinity 拒折（保守口径）。
-        assert_eq!(fold_math_specified("calc(infinity)", Angle), None);
+        // 角度位 ±∞ canonical 发射（§10.10 无穷合法非 invalid——
+        // calc-infinity-nan-serialize-angle ±∞ 行驱动，旧拒折口径已翻案）。
+        assert_eq!(
+            fold_math_specified("calc(infinity)", Angle).as_deref(),
+            Some("calc(infinity * 1deg)")
+        );
     }
 
     #[test]
@@ -622,8 +782,12 @@ mod tests {
         assert_eq!(fold_decl_specified("opacity", "abs(1)").as_deref(), Some("calc(1)"));
         assert_eq!(fold_decl_specified("opacity", "0.5"), None);
         assert_eq!(fold_decl_specified("opacity", "calc(1px + 2px)"), None);
-        // 白名单外属性 / 非数学值 / 空值保留原文。
-        assert_eq!(fold_decl_specified("width", "calc(1px + 2px)"), None);
+        // 白名单外属性 / 非数学值 / 空值保留原文；width 已接线（g12 刀2
+        // calc-infinity-nan-serialize-length 桶），纯 px 式折叠 canonical 形。
+        assert_eq!(
+            fold_decl_specified("width", "calc(1px + 2px)").as_deref(),
+            Some("calc(3px)")
+        );
         assert_eq!(fold_decl_specified("transform", "rotate(45deg) scale(2)"), None);
         assert_eq!(fold_decl_specified("scale", "2"), None);
         assert_eq!(fold_decl_specified("scale", ""), None);
