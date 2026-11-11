@@ -1328,7 +1328,20 @@ impl<'a> CalcParser<'a> {
         };
 
         if neg {
-            expr = CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(expr));
+            // 一元负号按字面叶直取负：`-0` 是带符号单 number token（CSS syntax
+            // 词法），0-x 重写会把 -0 折成 +0（sign(-0) 语义丢失）、把长度叶
+            // 左侧毒化为 number（abs(-10px) 型别丢失）。Number 叶直接取负；
+            // Length 叶以 `0px - x` 保族重写（求值数值不变，%需 ctx 不可作被
+            // 减数）；其余式保留 `0 - x` 重写。
+            expr = match expr {
+                CalcExpr::Number(n) => CalcExpr::Number(-n),
+                CalcExpr::Length(_) => CalcExpr::BinaryOp(
+                    Box::new(CalcExpr::Length(LengthValue::Px(0.0))),
+                    CalcOp::Subtract,
+                    Box::new(expr),
+                ),
+                other => CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(other)),
+            };
         }
 
         Some(expr)
@@ -1400,9 +1413,10 @@ impl<'a> CalcParser<'a> {
     }
 
     /// 尝试解析 CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem/atan2。
-    /// 命中则消费前缀 + 解析 2 个逗号分隔参数 + 消费 `)`；否则不消费、返回 None。
+    /// 命中则消费前缀 + 解析逗号分隔参数 + 消费 `)`；否则不消费、返回 None。
     /// round 支持 rounding-strategy 关键字形式（round(up, A, B) 等，见
-    /// [`Self::try_consume_round_strategy`]）；step 为 ±Infinity 的边界形
+    /// [`Self::try_consume_round_strategy`]）；hypot 变参 1+（§10.8，单参 ≡ abs）。
+    /// step 为 ±Infinity 的边界形
     /// （round(up, 1, Infinity) → calc(Infinity)）求值 NaN 化不命中——FIXME 挂账。
     fn try_parse_binary_math(&mut self) -> Option<CalcExpr> {
         if self.depth >= MAX_CALC_DEPTH {
@@ -1440,12 +1454,16 @@ impl<'a> CalcParser<'a> {
         let args = self.parse_comma_list()?;
         // 双参为常规形；策略 + 单参合法（CSS Values 4 §11.4：round(<strategy>, A)
         // step 缺省 1——WPT round-function.html `round(down, -1.5)` 驱动）；裸单参
-        // （无策略）invalid（round-mod-rem-invalid：round(0px)/round(0deg)）。
-        let args: Vec<CalcExpr> = match args.len() {
-            2 => args,
-            1 if has_strategy => {
+        // （无策略）invalid（round-mod-rem-invalid：round(0px)/round(0deg)）；
+        // hypot 变参 1+（§10.8，hypot-pow-sqrt-serialize `hypot(1)` 驱动）。
+        let args: Vec<CalcExpr> = match (op, args.len()) {
+            (_, 2) => args,
+            // has_strategy 仅来自 round 策略关键字（op 已换 RoundUp/Down/
+            // ToZero 变体），单参 step 缺省 1。
+            (_, 1) if has_strategy => {
                 vec![args.into_iter().next()?, CalcExpr::Number(1.0)]
             }
+            (BinaryMathOp::Hypot, 1..) => args,
             _ => return None,
         };
         self.skip_whitespace();
@@ -1453,7 +1471,20 @@ impl<'a> CalcParser<'a> {
             return None;
         }
         self.depth -= 1;
+        let n = args.len();
         let mut iter = args.into_iter();
+        // hypot(A) ≡ abs(A)（数学恒等，§10.8 单参形）；≥2 参以嵌套 Hypot 表示
+        //（hypot(hypot(a₁,a₂),a₃)…——求值/型别与平铺同口径）。
+        if op == BinaryMathOp::Hypot {
+            let first = iter.next()?;
+            return Some(if n == 1 {
+                CalcExpr::UnaryOp(UnaryMathOp::Abs, Box::new(first))
+            } else {
+                iter.fold(first, |acc, e| {
+                    CalcExpr::BinaryMathOp(BinaryMathOp::Hypot, Box::new(acc), Box::new(e))
+                })
+            });
+        }
         Some(CalcExpr::BinaryMathOp(
             op,
             Box::new(iter.next()?),
@@ -1763,13 +1794,11 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 CalcOp::Add => Some(lv + rv),
                 CalcOp::Subtract => Some(lv - rv),
                 CalcOp::Multiply => Some(lv * rv),
-                CalcOp::Divide => {
-                    if rv == 0.0 {
-                        None
-                    } else {
-                        Some(lv / rv)
-                    }
-                }
+                // CSS Values 4 §10.6：除零按 IEEE 语义产出 ±∞（1/0⁺=+∞、1/0⁻=-∞、
+                // 0/0=NaN），非无效值——signs-abs-computed
+                // `clamp(-1, calc(1 / sign(sign(0px))), 1)` 案驱动。
+                // https://drafts.csswg.org/css-values-4/#calc-infinities
+                CalcOp::Divide => Some(lv / rv),
             }
         }
         CalcExpr::Min(args) => {
@@ -1805,11 +1834,17 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
             let v = eval_calc_with_context(inner, ctx)?;
             match op {
                 UnaryMathOp::Abs => Some(v.abs()),
-                // CSS Values L4 sign：>0→1、<0 或 -0→-1、+0→0（f64::signum(0.0)=1.0 不符 spec）。
-                UnaryMathOp::Sign => Some(if v > 0.0 {
+                // CSS Values 4 §10.9 sign：NaN→NaN；>0→1、<0→-1；±0 按 IEEE
+                // 符号位传零（sign(-0)=-0——`1 / sign(sign(-0))` = -∞ 驱动案）。
+                // https://drafts.csswg.org/css-values-4/#sign-function
+                UnaryMathOp::Sign => Some(if v.is_nan() {
+                    f64::NAN
+                } else if v > 0.0 {
                     1.0
-                } else if v.is_sign_negative() {
+                } else if v < 0.0 {
                     -1.0
+                } else if v.is_sign_negative() {
+                    -0.0
                 } else {
                     0.0
                 }),

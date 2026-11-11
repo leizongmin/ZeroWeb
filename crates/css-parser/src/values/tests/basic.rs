@@ -269,9 +269,11 @@ fn test_parse_calc_binary_math() {
         parse_math_function("calc(mod(4, 3))").unwrap(),
         CalcExpr::BinaryMathOp(BinaryMathOp::Mod, _, _)
     ));
-    // 参数数 ≠ 2 → None。
+    // 参数数 ≠ 2 → None（hypot 例外：§10.8 变参 1+，≥3 参嵌套求值）。
     assert!(parse_math_function("calc(pow(2))").is_none());
-    assert!(parse_math_function("calc(hypot(1, 2, 3))").is_none());
+    let hypot3 = parse_math_function("calc(hypot(1, 2, 3))").expect("hypot 变参应解析");
+    let v = eval_calc(&hypot3, None).unwrap();
+    assert!((v - 14_f64.sqrt()).abs() < 1e-9, "hypot(1,2,3) = √14，实际 {v}");
 }
 
 #[test]

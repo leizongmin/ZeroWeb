@@ -1137,49 +1137,157 @@ fn column_width_length_is_valid(value: &LengthValue) -> bool {
     }
 }
 
-/// 判断 math 表达式是否整体为 <length-percentage> 类型：每个叶子都是带维度的
-/// 长度/百分比值。纯 number 叶子（如 `clamp(100px, 5, 300px)` 的 `5`）与之混合
-/// 属 CSS Values §8.1 类型不一致，整式无效。
-pub fn calc_expr_is_length_percentage(expr: &CalcExpr) -> bool {
+/// CSS Values 4 §10.5 math 函数结果文法族（型别表归类结果）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CalcMathType {
+    /// `<number>`（无单位数）。
+    Number,
+    /// `<length-percentage>`（长度/百分比同族，%可混 px）。
+    LengthPercentage,
+    /// `<angle>`（asin/acos/atan/atan2 产出；f64 承载弧度）。
+    Angle,
+    /// 型别不一致（混族/实参型别不符）——整式无效。
+    Invalid,
+}
+
+use CalcMathType::{Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber};
+
+/// CSS Values 4 §10.5 型别表：递归计算 math 式的结果文法族。
+///
+/// 关键规则：`sign(X)` 结果恒 `<number>`（实参任意型别——`sign(1px)`=1，
+/// signs-abs-computed 30 案驱动）；`abs(A)`/`round/mod/rem/hypot` 结果随同族
+/// 实参（`abs(10px)` 在长度槽合法）；乘除按 §8.1 维度算术（number·length=length、
+/// length/number=length）；`sqrt/exp/log/sin/cos/tan` 实参仅 `<number>`；
+/// 反三角产出 `<angle>`。
+///
+/// <https://drafts.csswg.org/css-values-4/#calc-type-checking>
+pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
     match expr {
-        CalcExpr::Number(_) => false,
-        CalcExpr::Length(_) => true,
-        CalcExpr::BinaryOp(left, _, right) => {
-            calc_expr_is_length_percentage(left) && calc_expr_is_length_percentage(right)
+        CalcExpr::Number(_) => MTNumber,
+        CalcExpr::Length(_) => MTLength,
+        CalcExpr::BinaryOp(left, op, right) => {
+            let lt = calc_expr_math_type(left);
+            let rt = calc_expr_math_type(right);
+            if lt == MTInvalid || rt == MTInvalid {
+                return MTInvalid;
+            }
+            match op {
+                CalcOp::Add | CalcOp::Subtract => {
+                    if lt == rt {
+                        lt
+                    } else {
+                        MTInvalid
+                    }
+                }
+                CalcOp::Multiply => match (lt, rt) {
+                    (MTNumber, MTNumber) => MTNumber,
+                    (MTNumber, MTLength) | (MTLength, MTNumber) => MTLength,
+                    (MTNumber, MTAngle) | (MTAngle, MTNumber) => MTAngle,
+                    _ => MTInvalid, // length²/angle²/length·angle 无量纲型别，§8.1 无效
+                },
+                CalcOp::Divide => match (lt, rt) {
+                    (MTNumber, MTNumber) => MTNumber,
+                    (MTLength, MTNumber) | (MTAngle, MTNumber) => lt,
+                    // FIXME: 同族相除（length/length→number 比值）未支持，无驱动案。
+                    _ => MTInvalid,
+                },
+            }
         }
-        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_length_percentage),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => {
+            let Some(first) = args.first() else {
+                return MTInvalid;
+            };
+            let first = calc_expr_math_type(first);
+            if first != MTInvalid && args.iter().all(|a| calc_expr_math_type(a) == first) {
+                first
+            } else {
+                MTInvalid
+            }
+        }
         CalcExpr::Clamp { min, val, max } => {
-            calc_expr_is_length_percentage(min)
-                && calc_expr_is_length_percentage(val)
-                && calc_expr_is_length_percentage(max)
+            let t = calc_expr_math_type(min);
+            if t != MTInvalid && calc_expr_math_type(val) == t && calc_expr_math_type(max) == t {
+                t
+            } else {
+                MTInvalid
+            }
         }
-        // abs/sign/sqrt/exp/log/pow/hypot/round/mod/rem 均为 number → number。
-        CalcExpr::UnaryOp(_, _) | CalcExpr::BinaryMathOp(_, _, _) => false,
+        CalcExpr::UnaryOp(op, inner) => {
+            let it = calc_expr_math_type(inner);
+            match op {
+                // abs(A) 结果随 A 型别（§10.5 表）。
+                UnaryMathOp::Abs => it,
+                // sign(X) 结果恒 <number>，实参任意型别（§10.5）。
+                UnaryMathOp::Sign => MTNumber,
+                // sqrt/exp/log + trig：实参仅 <number>（trig 角度实参 parse 期
+                // 已弧度 Number 化），结果 <number>。
+                UnaryMathOp::Sqrt
+                | UnaryMathOp::Exp
+                | UnaryMathOp::Log
+                | UnaryMathOp::Sin
+                | UnaryMathOp::Cos
+                | UnaryMathOp::Tan => {
+                    if it == MTNumber {
+                        MTNumber
+                    } else {
+                        MTInvalid
+                    }
+                }
+                // 反三角：实参仅 <number>，结果 <angle>。
+                UnaryMathOp::Asin | UnaryMathOp::Acos | UnaryMathOp::Atan => {
+                    if it == MTNumber {
+                        MTAngle
+                    } else {
+                        MTInvalid
+                    }
+                }
+            }
+        }
+        CalcExpr::BinaryMathOp(op, a, b) => {
+            let at = calc_expr_math_type(a);
+            let bt = calc_expr_math_type(b);
+            match op {
+                // pow(X, Y) 实参仅 <number>，结果 <number>。
+                BinaryMathOp::Pow => {
+                    if at == MTNumber && bt == MTNumber {
+                        MTNumber
+                    } else {
+                        MTInvalid
+                    }
+                }
+                // atan2(Y, X) 同族实参（任意族），结果 <angle>。
+                BinaryMathOp::Atan2 => {
+                    if at == bt && at != MTInvalid {
+                        MTAngle
+                    } else {
+                        MTInvalid
+                    }
+                }
+                // round/mod/rem/hypot：同族实参，结果同族（round(<strategy>, A)
+                // 缺省 step 的 Number(1.0) 补位叶同族）。
+                _ => {
+                    if at == bt && at != MTInvalid {
+                        at
+                    } else {
+                        MTInvalid
+                    }
+                }
+            }
+        }
     }
 }
 
-/// 判断 math 表达式是否整体为 <number> 类型：每个叶子都是纯 number（CSS Values
-/// §8.1 类型一致性；长度/百分比叶子拒绝）。角度产出函数（asin/acos/atan/atan2）
-/// 结果为 <angle>（f64 承载弧度），对 number 文法位无效——scale/z-index 等槽位
-/// 借此拒绝 `scale: atan2(1,2)` 类混型。
+/// 判断 math 表达式是否整体为 <length-percentage> 类型（§10.5 型别表归类；
+/// `abs(10px)`/`hypot(1px, 2px)` 等长度族函数式随型别表合法化）。
+pub fn calc_expr_is_length_percentage(expr: &CalcExpr) -> bool {
+    calc_expr_math_type(expr) == MTLength
+}
+
+/// 判断 math 表达式是否整体为 <number> 类型（§10.5 型别表归类：角度产出函数
+/// 结果为 <angle> 非 number——scale/z-index 等槽位借此拒绝 `scale: atan2(1,2)`
+/// 类混型；`sign(1px)` 为合法 number 放行）。
 pub fn calc_expr_is_number(expr: &CalcExpr) -> bool {
-    match expr {
-        CalcExpr::Number(_) => true,
-        CalcExpr::Length(_) => false,
-        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
-        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_number),
-        CalcExpr::Clamp { min, val, max } => {
-            calc_expr_is_number(min) && calc_expr_is_number(val) && calc_expr_is_number(max)
-        }
-        // sin/cos/tan（角度输入弧度归一，parse 期 Number 化）→ number；
-        // asin/acos/atan/atan2 → <angle>，非 number。
-        CalcExpr::UnaryOp(op, inner) => {
-            !matches!(op, UnaryMathOp::Asin | UnaryMathOp::Acos | UnaryMathOp::Atan) && calc_expr_is_number(inner)
-        }
-        CalcExpr::BinaryMathOp(op, left, right) => {
-            op != &BinaryMathOp::Atan2 && calc_expr_is_number(left) && calc_expr_is_number(right)
-        }
-    }
+    calc_expr_math_type(expr) == MTNumber
 }
 
 /// 判断 math 表达式是否含 <length> 叶（角度/纯 number 文法位无效混入——acos(1px)、

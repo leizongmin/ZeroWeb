@@ -196,12 +196,11 @@ fn test_parse_calc_invalid_inputs() {
     assert!(crate::values::parse_calc("calc(100px + )").is_none());
     assert!(crate::values::parse_calc("calc( + 50px)").is_none());
 
-    // 除零
+    // 除零（CSS Values 4 §10.6：IEEE ±∞，非无效值）
     let calc = crate::values::parse_calc("calc(100px / 0)");
     assert!(calc.is_some());
-    // 执行时应该返回 None
     let result = crate::values::eval_calc(&calc.unwrap(), Some(100.0));
-    assert!(result.is_none());
+    assert_eq!(result, Some(f64::INFINITY));
 }
 
 #[test]
