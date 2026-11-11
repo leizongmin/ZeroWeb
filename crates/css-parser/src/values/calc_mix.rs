@@ -97,6 +97,19 @@ pub(crate) fn expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
     }
 }
 
+/// 树内是否含 calc-mix 节点（嵌套和串折叠路由——顶层非 Mix 但树内嵌
+/// calc-mix() 时 serialize_math 走 canonical 和串臂）。
+pub(crate) fn expr_contains_mix(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Mix(_) => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => expr_contains_mix(a) || expr_contains_mix(b),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(expr_contains_mix),
+        CalcExpr::Clamp { min, val, max } => expr_contains_mix(min) || expr_contains_mix(val) || expr_contains_mix(max),
+        CalcExpr::UnaryOp(_, inner) => expr_contains_mix(inner),
+    }
+}
+
 /// calc-mix() 项族型别一致性门（§10.5 同族）：全项同文法族，任一无效 →
 /// [`CalcMathType::Invalid`]。angle 叶 parse 期已 Number 化（弧度），以项值
 /// 原文顶层角度单位判定（serialize_math `span_has_top_level_angle_unit` 同款

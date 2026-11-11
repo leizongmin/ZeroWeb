@@ -8,7 +8,7 @@
 use super::calc_mix::{CalcMixItem, CalcMixWeight};
 use super::parse_extended::{calc_expr_has_angle_result, calc_expr_has_length, calc_expr_is_number};
 use super::types::{
-    CalcExpr, LengthValue, eval_calc, eval_calc_with_default_font, is_math_function_value, parse_math_function,
+    CalcExpr, CalcOp, LengthValue, eval_calc, eval_calc_with_default_font, is_math_function_value, parse_math_function,
     parse_time_calc,
 };
 
@@ -103,6 +103,9 @@ fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
     if let CalcExpr::Mix(items) = expr {
         return fold_mix_dimension(items, expr);
     }
+    if let Some(s) = fold_mix_nest_sum(expr) {
+        return Some(s);
+    }
     if scalar_value(expr).is_some_and(|v| v.is_nan()) {
         if let Some([min, val, max]) = find_divergent_nan_clamp(expr) {
             return Some(format!(
@@ -138,6 +141,20 @@ fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
 /// ④ 归一化串（布局依赖树——em 等项标量不可解析：缺失填充/Σ>100% 归一/
 /// 零权重缺失项丢弃，值项复用原文保单位原貌）。
 fn fold_mix_dimension(items: &[CalcMixItem], expr: &CalcExpr) -> Option<String> {
+    if let Some((v, suffix)) = mix_leaf_term(items, expr) {
+        return Some(format!("calc({})", format_dimension_inner(v, suffix)));
+    }
+    if items.iter().any(|it| matches!(it.weight, Some(CalcMixWeight::Expr(_)))) {
+        return None;
+    }
+    fold_mix_normalized(items)
+}
+
+/// Mix 叶项化（嵌套和串收集面，[`fold_mix_dimension`] 前两臂共用）：Expr 形
+/// 权重不可项化；全字面零权重塌缩 (0, 首项单位)；标量可解析塌缩 (值, 树首
+/// 单位)。布局依赖树（em 等）返 None——顶层走归一化串臂、嵌套和串整体
+/// 放弃项化。
+fn mix_leaf_term(items: &[CalcMixItem], expr: &CalcExpr) -> Option<(f64, Option<&'static str>)> {
     if items.iter().any(|it| matches!(it.weight, Some(CalcMixWeight::Expr(_)))) {
         return None;
     }
@@ -146,22 +163,30 @@ fn fold_mix_dimension(items: &[CalcMixItem], expr: &CalcExpr) -> Option<String> 
             .iter()
             .all(|it| matches!(it.weight, Some(CalcMixWeight::Literal(p)) if p == 0.0));
     if all_zero {
-        let suffix = dimension_suffix(&items[0].value);
-        return Some(format!("calc({})", format_dimension_inner(0.0, suffix)));
+        return Some((0.0, dimension_suffix(&items[0].value)));
     }
-    if let Some(v) = scalar_value(expr) {
-        return Some(format!("calc({})", format_dimension_inner(v, dimension_suffix(expr))));
+    // 纯 % 值项字面权重混合：加权和符号解析保 % 维度（% 叶 scalar_value
+    // 无基准盲区补面——`calc(10px + calc-mix(10% 50%, 30% 50%))` →
+    // `calc(20% + 10px)` 语料行；权重/填充/分母公式同 eval_mix，used 值
+    // 期才需布局基准）。
+    if let Some(ws) = filled_literal_weights(items) {
+        if let Some(acc) = items.iter().zip(&ws).try_fold(0.0, |acc, (it, w)| match &it.value {
+            CalcExpr::Length(LengthValue::Percentage(p)) => Some(acc + p * w),
+            _ => None,
+        }) {
+            let denom = ws.iter().copied().sum::<f64>().max(100.0);
+            return Some((acc / denom, dimension_suffix(expr)));
+        }
     }
-    fold_mix_normalized(items)
+    scalar_value(expr).map(|v| (v, dimension_suffix(expr)))
 }
 
-/// calc-mix() 指定值归一化串：缺失权重填充 `max(0, 100-Σ)/n`、填充为零的
-/// 缺失项丢弃、Σ>100% 全项除以 Σ（serialize 页「more than 100%」组
-/// `calc-mix(10px 75%, 3em 75%, 5em, 7em)` → `calc-mix(10px 50%, 3em 50%)`）；
-/// Σ<100% 且无缺失时保持原权重（同页 25% 组不归一）。可达性：仅布局依赖
-/// 树（标量不可解析）——全字面权重 number 树标量恒可解析，本臂仅 Length
-/// 槽可达。
-fn fold_mix_normalized(items: &[CalcMixItem]) -> Option<String> {
+/// 字面权重有效值表：clamp [0,100] + 缺失填充 `max(0,100-Σ)/n`；含 Expr 形
+/// 权重 → None。归一化串臂与 % 值符号解析臂共用（公式同 eval_mix 求值期）。
+fn filled_literal_weights(items: &[CalcMixItem]) -> Option<Vec<f64>> {
+    if items.iter().any(|it| matches!(it.weight, Some(CalcMixWeight::Expr(_)))) {
+        return None;
+    }
     let n_missing = items.iter().filter(|it| it.weight.is_none()).count();
     let sum_explicit: f64 = items
         .iter()
@@ -175,18 +200,31 @@ fn fold_mix_normalized(items: &[CalcMixItem]) -> Option<String> {
     } else {
         0.0
     };
+    Some(
+        items
+            .iter()
+            .map(|it| match &it.weight {
+                Some(CalcMixWeight::Literal(p)) => p.clamp(0.0, 100.0),
+                _ => fill,
+            })
+            .collect(),
+    )
+}
+
+/// calc-mix() 指定值归一化串：缺失权重填充 `max(0, 100-Σ)/n`、填充为零的
+/// 缺失项丢弃、Σ>100% 全项除以 Σ（serialize 页「more than 100%」组
+/// `calc-mix(10px 75%, 3em 75%, 5em, 7em)` → `calc-mix(10px 50%, 3em 50%)`）；
+/// Σ<100% 且无缺失时保持原权重（同页 25% 组不归一）。可达性：仅布局依赖
+/// 树（标量不可解析）——全字面权重 number 树标量恒可解析，本臂仅 Length
+/// 槽可达。
+fn fold_mix_normalized(items: &[CalcMixItem]) -> Option<String> {
+    let ws = filled_literal_weights(items)?;
     let mut parts: Vec<(&str, f64)> = Vec::with_capacity(items.len());
-    for it in items {
-        match &it.weight {
-            Some(CalcMixWeight::Literal(p)) => parts.push((&it.raw, p.clamp(0.0, 100.0))),
-            None => {
-                if fill > 0.0 {
-                    parts.push((&it.raw, fill));
-                }
-                // fill=0（Σ≥100%）→ 缺失项丢弃。
-            }
-            Some(CalcMixWeight::Expr(_)) => return None,
+    for (it, w) in items.iter().zip(&ws) {
+        if it.weight.is_some() || *w > 0.0 {
+            parts.push((&it.raw, *w));
         }
+        // fill=0（Σ≥100%）→ 缺失项丢弃。
     }
     if parts.is_empty() {
         return None;
@@ -201,6 +239,86 @@ fn fold_mix_normalized(items: &[CalcMixItem]) -> Option<String> {
         .collect::<Vec<_>>()
         .join(", ");
     Some(format!("calc-mix({})", inner))
+}
+
+/// 嵌套 calc-mix 树的指定值 canonical 和串（CSS Values 4 §10.9 指定值
+/// canonical 化；calc-mix serialize 语料「外层 calc 嵌套」桶驱动）：顶层非
+/// Mix 但加法树含 Mix 叶——各叶项化（标量叶直读、Mix 叶按 [`mix_leaf_term`]
+/// 塌缩取维度），同单位常量合并、% 项前置其余保序、单项落既有塌缩串
+///（`calc(10px + calc-mix(1% 0%, 3px 0%))` → `calc(0% + 10px)`）。
+/// min/max/clamp/数学函数复合节点、布局依赖叶、number 位 Mix 叶不可项化
+/// → None 保持原文（sibling-index() 形挂账同理）。
+fn fold_mix_nest_sum(expr: &CalcExpr) -> Option<String> {
+    if !super::calc_mix::expr_contains_mix(expr) {
+        return None;
+    }
+    let mut terms = Vec::new();
+    collect_sum_terms(expr, 1.0, &mut terms)?;
+    let mut merged: Vec<(f64, Option<&'static str>)> = Vec::new();
+    for (v, s) in terms {
+        if let Some(m) = merged.iter_mut().find(|(_, ms)| *ms == s) {
+            m.0 += v;
+        } else {
+            merged.push((v, s));
+        }
+    }
+    // % 项前置（语料面 px+% 形 canonical 序）；FIXME(canonical): 完整单位序
+    //（number < % < 各 canonical 单位序）待全值域钉面。
+    merged.sort_by_key(|(_, s)| if *s == Some("%") { 0 } else { 1 });
+    if let [(v, s)] = &merged[..] {
+        return Some(format!("calc({})", format_dimension_inner(*v, *s)));
+    }
+    let inner = merged
+        .iter()
+        .map(|(v, s)| format_dimension_inner(*v, *s))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    Some(format!("calc({})", inner))
+}
+
+/// 加法树叶收集（符号沿 Subtract 右臂传播）；非有限值毒化返 None（NaN
+/// 塌缩臂接手）。乘除实参位、min/max/clamp/数学函数节点不展开——叶级
+/// 常量项化仅覆盖纯和差树。
+fn collect_sum_terms(expr: &CalcExpr, sign: f64, terms: &mut Vec<(f64, Option<&'static str>)>) -> Option<()> {
+    match expr {
+        CalcExpr::BinaryOp(l, op, r) => match op {
+            CalcOp::Add => {
+                collect_sum_terms(l, sign, terms)?;
+                collect_sum_terms(r, sign, terms)
+            }
+            CalcOp::Subtract => {
+                collect_sum_terms(l, sign, terms)?;
+                collect_sum_terms(r, -sign, terms)
+            }
+            _ => None,
+        },
+        CalcExpr::Mix(items) => {
+            let (v, suffix) = mix_leaf_term(items, expr)?;
+            if !v.is_finite() {
+                return None;
+            }
+            // number 位 Mix 叶在维度和串中不可项化（number+length 型别混入，
+            // 语料无驱动形；None 落回既有标量塌缩臂零漂移）。
+            suffix?;
+            terms.push((sign * v, suffix));
+            Some(())
+        }
+        // 裸 % 叶：无 ctx 不可标量求值（scalar_value 两级 fallback 均滤有限
+        // 值）——系数直读，% 即 canonical 后缀（`calc(10% + 0%)` 合并面）。
+        CalcExpr::Length(LengthValue::Percentage(p)) => {
+            terms.push((sign * *p, Some("%")));
+            Some(())
+        }
+        _ => {
+            let v = scalar_value(expr)?;
+            if !v.is_finite() {
+                return None;
+            }
+            let suffix = dimension_suffix(expr)?;
+            terms.push((sign * v, Some(suffix)));
+            Some(())
+        }
+    }
 }
 
 /// 树内首个「任一实参 NaN 且实参 canonical 单位分歧」clamp 节点（左序深先）。

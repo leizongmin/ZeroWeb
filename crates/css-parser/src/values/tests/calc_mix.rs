@@ -255,18 +255,38 @@ fn test_calc_mix_fold_all_zero_collapse() {
     );
 }
 
-// ---- 挂账形钉（当前原文透传，树递归 % 排序折叠未接线）----
+// ---- 嵌套和串钉（外层 calc 树递归项化 + 单位排序，serialize_math
+// `fold_mix_nest_sum`——serialize 语料「外层 calc 嵌套」桶指定值 10 面）----
 
 #[test]
-fn test_calc_mix_fold_outer_calc_nested_passthrough() {
-    // FIXME(挂账): 外层 calc() 嵌套的 % 排序折叠（语料期望
-    // `calc(10px + calc-mix(1% 0%, 3px 0%))` → `calc(0% + 10px)`）需树递归
-    // serialize 与单位排序，本刀未接线——原文透传与 passthrough 语义一致
-    //（serialized-as-self 至少不劣于原文丢改）。sibling-index() 形同理挂账。
+fn test_calc_mix_fold_outer_calc_nested_canonical_sum() {
+    // CSS Values 4 §10.9 指定值 canonical 和串：Mix 叶塌缩项化 + 同单位
+    // 常量合并 + % 项前置其余保序（语料期望五形逐字钉面）。
     assert_eq!(
-        fold_decl_specified("width", "calc(10px + calc-mix(1% 0%, 3px 0%))"),
-        None
+        fold_decl_specified("width", "calc(10px + calc-mix(1% 0%, 3px 0%))").as_deref(),
+        Some("calc(0% + 10px)")
     );
+    assert_eq!(
+        fold_decl_specified("width", "calc(10% + calc-mix(1% 0%, 3px 0%))").as_deref(),
+        Some("calc(10%)")
+    );
+    assert_eq!(
+        fold_decl_specified("width", "calc(10px + calc-mix(1px 0%, 3% 0%))").as_deref(),
+        Some("calc(10px)")
+    );
+    assert_eq!(
+        fold_decl_specified("width", "calc(10% + calc-mix(1px 0%, 3% 0%))").as_deref(),
+        Some("calc(10% + 0px)")
+    );
+    assert_eq!(
+        fold_decl_specified("width", "calc(10px + calc-mix(10% 50%, 30% 50%))").as_deref(),
+        Some("calc(20% + 10px)")
+    );
+}
+
+#[test]
+fn test_calc_mix_fold_outer_calc_nested_guards() {
+    // 挂账保持：sibling-index() 形（DOM 桥求值域）不项化——原文透传。
     assert_eq!(
         fold_decl_specified("scale", "calc-mix(1 * sibling-index() 50%, 3 50%)"),
         None
