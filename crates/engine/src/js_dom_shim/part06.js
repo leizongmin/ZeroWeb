@@ -5290,12 +5290,14 @@
               // 43 行 delete+inserttext compare 翻红同病；inserttext/五值命令/style
               // 命令 spec false 自记自还（vendored recordCurrentOverrides/
               // restoreStatesAndValues），裹之即 final2 3 行 styleWithCSS 形翻红；
-              // outdent spec true 但无实应用臂（零变更无重锚）不需要。包裹点在
+              // outdent 实应用臂接通后并入（2026-11-11 outdent 刀，spec preservesOverrides:
+// true——wrap/split 重锚同病）。包裹点在
               // delete 臂后、结构命令臂前：insertparagraph 臂的 ipara 分支已自管
               //（part01f :1533 同款 finally 块），外层与内层快照同态、PutRaw+
               // Reanchor 幂等；fallback 分支（paragraph_split_at）与 ilb/justify/
               // iol/iul/inserthtml 臂裸奔 = mt 残 40 键 qV 族红源。
               var cmdPresOv = (cmd === 'formatblock' || cmd === 'indent'
+                || cmd === 'outdent'
                 || cmd === 'inserthorizontalrule' || cmd === 'insertimage'
                 || cmd === 'insertorderedlist' || cmd === 'insertunorderedlist'
                 || cmd === 'insertparagraph' || cmd === 'insertlinebreak'
@@ -5460,6 +5462,12 @@
               if (cmd === 'indent' && rng2 && host2
               && typeof globalThis.__zw_ce_indent_apply === 'function') {
                 try { globalThis.__zw_ce_indent_apply(); } catch (_eIdt) {}
+              }
+              // outdent 实应用（2026-11-11 outdent 刀：census 171 compare 行全红
+              // got==输入树 no-op → part01g vendored outdentNode+action 忠实移植）。
+              if (cmd === 'outdent' && rng2 && host2
+              && typeof globalThis.__zw_ce_outdent_apply === 'function') {
+                try { globalThis.__zw_ce_outdent_apply(); } catch (_eOdt) {}
               }
               if (cmd === 'inserthorizontalrule' && rng2 && host2
               && typeof globalThis.__zw_ce_hr_apply === 'function') {

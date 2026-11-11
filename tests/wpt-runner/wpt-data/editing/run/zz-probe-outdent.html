@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- outdent 刀探针（2026-11-11）：census v1 171 compare 行全红 got==输入树
+     （outdent 无实应用臂）。刀体 = vendored outdentNode/action 忠实移植
+     （part01g）。本探针按「输入串 + setup」从语料 browserTests 取真条目
+     复用 runConformanceTest 全断言面（compare + return + qS/qV/qI before/after），
+     覆盖 census 八族代表 + 恒等守卫一行。条目查找失配 = FAIL（防语料漂移）。 -->
+<title>zz-probe-outdent</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=../data/outdent.js></script>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+
+(function() {
+    // 同语料页：移除 inline script 节点保持 body 整洁（本块自身已执行，安全）。
+    [].forEach.call(document.querySelectorAll("script"), function(node) {
+        if (node.src) return;
+        node.parentNode.removeChild(node);
+    });
+    // 同语料页 hack：语料生成期 swcss 终态为 true，期望行按此对齐。
+    try { document.execCommand("styleWithCSS", false, "true") } catch(e) {}
+
+    var missing = [];
+    function pick(inputSub, setupJson) {
+        for (var i = 0; i < browserTests.length; i++) {
+            var t = browserTests[i];
+            if (t[0].indexOf(inputSub) !== -1
+            && JSON.stringify(t[1]) === setupJson) {
+                return t;
+            }
+        }
+        missing.push(inputSub + " @ " + setupJson);
+        return null;
+    }
+
+    var OD = '[["outdent",""]]';
+    var DD = '[["defaultparagraphseparator","div"],["outdent",""]]';
+    var DP = '[["defaultparagraphseparator","p"],["outdent",""]]';
+
+    var picks = [
+        // bq pull 单段（真差异样例：尾后 br 归属）
+        pick('<blockquote><p>foo[bar]</p><p>baz</p></blockquote><p>extra', OD),
+        // bq 跨段全展开
+        pick('<blockquote><p>foo[bar</p><p>b]az</p></blockquote><p>extra', OD),
+        // webkit-indent-blockquote（simple indentation 元素族，class 存活换壳）
+        pick('webkit-indent-blockquote', OD),
+        // bq id=abc 换壳 div（dPS div / p 双行）
+        pick('<blockquote id=abc>foo[bar]baz</blockquote>', DD),
+        pick('<blockquote id=abc>foo[bar]baz</blockquote>', DP),
+        // bq style color（margin 清除 + style 存活）
+        pick('<blockquote style="color: blue">foo[bar]baz</blockquote>', DD),
+        // ol 中段拆列表（dPS div / p 双行）
+        pick('<ol><li>foo<li>[bar]<li>baz</ol>', DD),
+        pick('<ol><li>foo<li>[bar]<li>baz</ol>', DP),
+        // 嵌套 li 提升
+        pick('<ol><li>foo<ol><li>b[a]r</ol><li>baz</ol>', OD),
+        // ol 属性换壳 div
+        pick('foo<ol id=abc><li>[bar]</ol>baz', DD),
+        // li 属性存活（value/id/style）
+        pick('foo<ol><li style=color:blue>[bar]</ol>baz', DD),
+        // 空白 li 变体
+        pick('<ol> <li>[foo]</li> </ol>', DD),
+        // 单 li 内块载体（h1 不换 p）
+        pick('<ol><li><h1>[foo]</h1></ol>', DD),
+        // bq+list 混合（bq unwrap 列表保留）
+        pick('<blockquote><ol><li>[foo]</ol></blockquote><p>extra', OD),
+        // li 内 table
+        pick('<ol><li>[]a<table><tr><td><br></table></ol>', DD),
+        // 恒等守卫（census 该行 Pass，刀后须保持）
+        pick('<ol><li>foo</ol>[bar]', OD)
+    ];
+
+    test(function() {
+        assert_equals(missing.length, 0, "pick 失配: " + JSON.stringify(missing));
+        for (var i = 0; i < picks.length; i++) {
+            assert_not_equals(picks[i], null, "pick[" + i + "] null");
+        }
+    }, "PICKS-FOUND");
+
+    for (var i = 0; i < picks.length; i++) {
+        if (picks[i]) runConformanceTest(picks[i]);
+    }
+
+    document.getElementById("test-container").parentNode
+        .removeChild(document.getElementById("test-container"));
+})();
+</script>
