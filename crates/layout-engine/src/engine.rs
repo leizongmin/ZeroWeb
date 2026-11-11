@@ -1516,9 +1516,10 @@ impl LayoutEngine {
             fix_abspos_static_position_y(&mut root_box, styles);
         }
 
-        // 11.7c wptfyi-css 组F 布局刀2：position-area 区域定位（css-anchor-position-1
-        // §position-area）——锚注册收集（anchor-name → 视口几何）+ anchored 元素
-        // 3×3 网格区域定位（htb 第一刀；ZW_ANCHOR_AREA=0 kill-switch）。
+        // 11.7c wptfyi-css 组F 布局刀2+3：position-area 区域定位（css-anchor-
+        // position-1 §position-area）——锚注册收集（anchor-name → 视口几何）+
+        // anchored 元素 3×3 网格区域定位（htb 第一刀）；刀3 anchor() inset 函数
+        // 求值（物理边/center/百分比/fallback）。（ZW_ANCHOR_AREA=0 kill-switch）
         anchor_pos::apply_anchor_position_area(&mut root_box, styles);
 
         // 11.8 后处理（R1371）：abspos flex 容器（top+bottom 拉出 definite height）内替换

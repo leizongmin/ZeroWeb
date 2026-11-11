@@ -1067,6 +1067,15 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "top" => {
+            // CSS Anchor Positioning §anchor()：inset 槽 anchor() 形原文承载
+            //（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位基线）。
+            // "anchor-size(" 无 "anchor(" 子串不误捕（inset 属性本不接受
+            // anchor-size，非法形走既有 parse 拒面）。
+            if value.contains("anchor(") {
+                style.anchor_inset_top = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.top = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.top = v;
@@ -1075,6 +1084,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "right" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_right = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.right = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.right = v;
@@ -1083,6 +1097,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "bottom" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_bottom = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.bottom = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.bottom = v;
@@ -1091,6 +1110,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "left" => {
+            if value.contains("anchor(") {
+                style.anchor_inset_left = Some(value.trim().to_ascii_lowercase().into_boxed_str());
+                style.left = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.left = v;

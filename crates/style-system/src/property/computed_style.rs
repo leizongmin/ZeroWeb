@@ -321,6 +321,20 @@ pub struct ComputedStyle {
     /// last-successful 状态机，custom `--pt` 需 shim 期 fallback 应用引擎），
     /// 声明承载供门控与后续 fallback 引擎消费。非继承。
     pub position_try_fallbacks: Option<Box<str>>,
+    /// `top: anchor(...)` 声明原文（css-anchor-position-1 §anchor；仅含
+    /// `anchor(` 函数形的声明承载——布局期 anchor_pos pass 求值后回填 inset，
+    /// 本字段置位时对应 inset 槽存 Auto。None = 非 anchor() 声明/未声明）。
+    /// 非继承。
+    pub anchor_inset_top: Option<Box<str>>,
+    /// `right: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
+    /// 非继承。
+    pub anchor_inset_right: Option<Box<str>>,
+    /// `bottom: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
+    /// 非继承。
+    pub anchor_inset_bottom: Option<Box<str>>,
+    /// `left: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
+    /// 非继承。
+    pub anchor_inset_left: Option<Box<str>>,
 
     // ── Overflow ──
     /// overflow-x 属性。
