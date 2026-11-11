@@ -1895,22 +1895,13 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                 BinaryMathOp::RoundUp => Some((av / bv).ceil() * bv),
                 BinaryMathOp::RoundDown => Some((av / bv).floor() * bv),
                 BinaryMathOp::RoundToZero => Some((av / bv).trunc() * bv),
-                // mod(x, 0) 无效 → None；否则 x - y*floor(x/y)（符号同 y）。
-                BinaryMathOp::Mod => {
-                    if bv == 0.0 {
-                        None
-                    } else {
-                        Some(av - bv * (av / bv).floor())
-                    }
-                }
-                // rem(x, 0) 无效 → None；否则 x % y（符号同 x）。
-                BinaryMathOp::Rem => {
-                    if bv == 0.0 {
-                        None
-                    } else {
-                        Some(av % bv)
-                    }
-                }
+                // mod：x - y*floor(x/y)（符号同 y）。B=0 → NaN（css-values-4
+                // §10.5 mod()/rem()："If B is 0, the result is NaN."——IEEE
+                // 路径自然产出 0*floor(±∞)=NaN；序列化/censor 同 round 族
+                // 既有 NaN 管线。
+                BinaryMathOp::Mod => Some(av - bv * (av / bv).floor()),
+                // rem：x % y（符号同 x）。B=0 → NaN（css-values-4 §10.5 同段）。
+                BinaryMathOp::Rem => Some(av % bv),
                 // atan2(y, x) —— 二参数反正切（弧度 (-π,π]），恒有效。
                 BinaryMathOp::Atan2 => Some(av.atan2(bv)),
             }

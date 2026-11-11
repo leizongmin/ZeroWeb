@@ -254,10 +254,18 @@ fn test_eval_calc_binary_math() {
     assert_eq!(eval("calc(rem(-1, 3))"), Some(-1.0), "rem(-1,3)=-1（符号同 -1）");
     assert_eq!(eval("calc(rem(4, 3))"), Some(1.0));
     assert_eq!(eval("calc(rem(1, -3))"), Some(1.0), "rem(1,-3)=1（符号同 1）");
-    // 无效：pow 产生 NaN（负底非整指数）→ None；mod/rem 除零 → None。
+    // 无效：pow 产生 NaN（负底非整指数）→ None；mod/rem 除零 → NaN（§10.5
+    // "If B is 0, the result is NaN."——WPT round-mod-rem-computed
+    // mod(4, 0)/rem(4, 0) ≡ calc(NaN) 等价类驱动）。
     assert_eq!(eval("calc(pow(-2, 0.5))"), None, "pow(-2,0.5)=NaN → None");
-    assert_eq!(eval("calc(mod(1, 0))"), None, "mod(x,0) → None");
-    assert_eq!(eval("calc(rem(1, 0))"), None, "rem(x,0) → None");
+    assert!(
+        eval("calc(mod(1, 0))").map(|v| v.is_nan()).unwrap_or(false),
+        "mod(x,0) → NaN"
+    );
+    assert!(
+        eval("calc(rem(1, 0))").map(|v| v.is_nan()).unwrap_or(false),
+        "rem(x,0) → NaN"
+    );
     // 嵌套：pow(round(2.4,1)=2, 3) = 8。
     assert_eq!(eval("calc(pow(round(2.4, 1), 3))"), Some(8.0));
 }
