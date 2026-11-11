@@ -13,7 +13,7 @@ use zero_css_parser::values::{
     ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
     GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
     PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue,
-    TransformFunction, TransformValue, VisibilityValue, eval_calc_with_context,
+    TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -1565,6 +1565,23 @@ fn calc_terms(expr: &CalcExpr, ctx: &CalcContext) -> Option<Vec<CompTerm>> {
             Some(t)
         }
         CalcExpr::Length(LengthValue::Percentage(v)) => Some(vec![CompTerm::Pct(*v)]),
+        // min()/max() 单参恒等（css-values-4 §10.4：min(A) ≡ A、max(A) ≡ A）——
+        // 塌缩为该参数的项化（minmax-length-percent-computed `min(1px + 1%)`
+        // used-value 配对驱动）；多参含 % 不项化（语料无驱动，fail-closed）。
+        CalcExpr::Min(args) | CalcExpr::Max(args) if args.len() == 1 => calc_terms(&args[0], ctx),
+        // abs(A) = |A|（css-values-4 §10.7；hypot(A) 单参形 parse 期已塌缩为
+        // Abs，hypot-pow-sqrt-computed 配对驱动）：项全非负时 |Σ| = Σ 塌缩为
+        // 项化；可能为负 → fail-closed（|Σ| 不可加法项化）。
+        CalcExpr::UnaryOp(UnaryMathOp::Abs, inner) => {
+            let t = calc_terms(inner, ctx)?;
+            if t.iter()
+                .all(|v| matches!(v, CompTerm::Pct(x) | CompTerm::Px(x) if *x >= 0.0))
+            {
+                Some(t)
+            } else {
+                None
+            }
+        }
         CalcExpr::Mix(items) => mix_terms(items, ctx),
         _ => {
             // 静态子树（不含 %）→ px 项；含 % 的其他复合形不项化。
@@ -4040,7 +4057,7 @@ mod computed_calc_serialize_tests {
 
     use super::{calc_computed_to_css, length_to_css};
     use zero_css_parser::values::{
-        CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, LengthValue, TreeCountingFn,
+        CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, LengthValue, TreeCountingFn, UnaryMathOp,
     };
 
     fn px(v: f64) -> CalcExpr {
@@ -4181,6 +4198,59 @@ mod computed_calc_serialize_tests {
                 16.0
             ),
             ""
+        );
+    }
+
+    #[test]
+    fn min_max_single_arg_collapses_to_argument_terms() {
+        // css-values-4 §10.4 min(A) ≡ A、max(A) ≡ A：used-value 配对
+        // minmax-length-percent-computed `min(1px + 1%)` ≡ `calc(1px + 1%)`
+        // → 同串 canonical calc(1% + 1px)。
+        assert_eq!(
+            length_to_css(
+                &calc(CalcExpr::Min(vec![add(px(1.0), pct(1.0))])),
+                16.0
+            ),
+            "calc(1% + 1px)"
+        );
+        assert_eq!(
+            length_to_css(
+                &calc(CalcExpr::Max(vec![add(px(96.0), pct(1.0))])),
+                16.0
+            ),
+            "calc(1% + 96px)"
+        );
+        // 多参含 % 不项化（fail-closed，语料无驱动）→ ''。
+        assert_eq!(
+            length_to_css(
+                &calc(CalcExpr::Min(vec![px(1.5), pct(10.0)])),
+                16.0
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn abs_nonneg_terms_collapse_negative_bails() {
+        // hypot(A) 单参形 parse 塌缩为 Abs（css-parser）：abs(0% + 772.333px)
+        // → calc(0% + 772.333px)（hypot-pow-sqrt-computed 配对驱动）。
+        assert_eq!(
+            calc_computed_to_css(
+                &CalcExpr::UnaryOp(UnaryMathOp::Abs, Box::new(add(pct(0.0), px(772.333)))),
+                16.0
+            ),
+            Some("calc(0% + 772.333px)".to_string())
+        );
+        // 含负项 |Σ| ≠ Σ → fail-closed None。
+        assert_eq!(
+            calc_computed_to_css(
+                &CalcExpr::UnaryOp(
+                    UnaryMathOp::Abs,
+                    Box::new(add(px(10.0), pct(-30.0)))
+                ),
+                16.0
+            ),
+            None
         );
     }
 }
