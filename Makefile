@@ -1144,11 +1144,14 @@ testharness-editing-other: fetch-wpt-editing target-disk-guard target/test-guard
 # run 通道单案与 corpus 批同款 300s 脚本预算（run-editing-testharness-corpus.sh :73-75；
 # runner 缺省 90s 看门狗截断大同步段变体——2026-11-03 gate27 电池 v1 实证
 # insertparagraph 12min 截断 6,512P/141F/1T rc=2，与 corpus 基线缺 ~542 断言不可比）。
+# FILTER 单引号包裹：分片面 filter 含 `|`（wptfyi-editing DC-1 按文件组拆分片），
+# 不引则 make 展开后被 /bin/sh 当管道符（2026-11-11 实证 rc=127）；CI 侧 weekly.yml
+# 先赋变量再展开不经 shell 重解析，无此问题。空 FILTER 不传参（runner 全量语义不变）。
 testharness-editing-run-one: fetch-wpt-editing target-disk-guard target/test-guard zero-wpt-runner-release
-	ZW_SCRIPT_TIMEOUT_MS=300000 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),600) -- ./target/release/zero-wpt-runner testharness-editing-run $(if $(FILTER),$(FILTER),)
+	ZW_SCRIPT_TIMEOUT_MS=300000 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),600) -- ./target/release/zero-wpt-runner testharness-editing-run $(if $(FILTER),'$(FILTER)',)
 
 testharness-editing-other-one: fetch-wpt-editing target-disk-guard target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-editing-other $(if $(FILTER),$(FILTER),)
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-editing-other $(if $(FILTER),'$(FILTER)',)
 
 # security-hardening goal M1（docs/goal/archive/security-hardening.md）：上游 content-security-policy/
 # + mixed-content/ + secure-contexts/ 三 corpus window 可执行子集（fetch 脚本 sparse

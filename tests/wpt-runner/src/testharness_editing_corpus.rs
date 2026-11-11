@@ -79,7 +79,9 @@ fn collect_scan_dirs(wpt_root: &Path, dir: &Path, out: &mut Vec<String>) {
 }
 
 /// Run one upstream editing corpus directory（run / other 共用底座）。`scan_root`
-/// 为 wpt_root 相对目录（如 `editing/run`）。filter 按路径子串过滤。
+/// 为 wpt_root 相对目录（如 `editing/run`）。filter 按路径子串过滤，`|` 分隔
+/// 多个候选任一命中即收（test262 通道先例）——ci-shards.yml 的 editing-run
+/// 分片按文件全路径 pipe 组平衡子测试负载，单子串选不出互斥文件组。
 fn run_editing_corpus_dir(
     wpt_root: &Path,
     scan_root: &str,
@@ -118,7 +120,7 @@ fn run_editing_corpus_dir(
                 continue;
             }
             let relative = format!("{subdir}/{file_name}");
-            if filter.is_some_and(|filter| !relative.contains(filter)) {
+            if filter.is_some_and(|filter| !filter.split('|').any(|part| relative.contains(part))) {
                 continue;
             }
             let Ok(source) = read_corpus_to_string(&path) else {
