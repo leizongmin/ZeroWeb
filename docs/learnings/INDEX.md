@@ -5,8 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（265）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（269）
 
+- 2026-11-11 [复合命令里 `git stash pop` 不能无条件执行：push 失败后 pop 弹出陈年旧 stash](bugs/2026-11/2026-11-11-stash-pop-unconditional-compound-command.md) — tooling
+- 2026-11-11 [审查报告的 evidence 引用必须是 {path, sha256} 对象形态，字符串形态在账本绑定日爆断](bugs/2026-11/2026-11-11-review-report-evidence-ref-object-form.md) — site_optimizer
+- 2026-11-11 [reftest「可疑 case 审计列表」是尾部截断子集，行为零变化判定必须比对全量失败集](bugs/2026-11/2026-11-11-reftest-suspicious-audit-list-not-full-failures.md) — wpt_runner
+- 2026-11-11 [复绑批三类终局：在飞 pull 混合二进制、白名单漏刀键静默死亡、锚表盲区](bugs/2026-11/2026-11-11-rebind-batch-inflight-pull-and-whitelist-domain.md) — tests/wpt-runner, .acceptance/dps
 - 2026-11-11 [镜像类重排的复合安全性：装饰感知 gap 重分配破坏对合，恒等面须语义级短路](bugs/2026-11/2026-11-11-mirror-reorder-involution-breaks-decorations.md) — layout-engine
 - 2026-11-11 [inline style 写面有三条实现臂——值校验/归一类改动必须三处同形](bugs/2026-11/2026-11-11-inline-style-three-write-arms.md) — engine, style-system, css-parser
 - 2026-11-11 [css-color none 保形回归：raw 影子保存条件误排 + 基线巧合通过](bugs/2026-11/2026-11-11-css-color-raw-shadow-accidental-pass.md) — engine
