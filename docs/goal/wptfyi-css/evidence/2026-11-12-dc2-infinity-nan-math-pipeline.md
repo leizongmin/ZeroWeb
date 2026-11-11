@@ -117,6 +117,26 @@ test 级零回归**（gains=5 losses=0，3 页增）——全部为 sign(<length
 transitions +2、animations +2、transforms +5、easing ±0，合计净 +78，
 页级与 test 级零回归。**
 
+### values 面 registry 补账（results-g12b/css-values.json，g12b values 轮）
+
+registry 批（0a0c910df）在 values 面的独立增益（g12b values 轮 01:53，
+registry WIP 在树，对 results-g12 前驱）：**2,641 → 2,646 净 +5 逐页零
+回归**——calc-infinity-nan-computed 29→34，scale ∞ number 组 5 案翻账
+（`calc(infinity)`/`calc(max(infinity, 10))`/`calc(-infinity * 10)`/
+`calc(1 / sign(1em - 16px))`/`calc(1 / (-1 * sign(1em - 16px)))`）——
+CSS.supports 前置门放行后经本批 ±∞ 放行 parse 链兑现（两批互补：registry
+开门、本批放形）。values face 批终修正 2,426 → **2,646**，五套件合计净
+**+83**（values +74、transitions +2、animations +2、transforms +5、easing
+±0）。
+
+### g12b transforms 轮 transcript flake 记档
+
+g12b transforms 轮（01:54）merge exit=2 无 JSON 产物：composited-under-
+rotateY-180deg.html 在 transcript 输出**两份** `[]` JSON 块（g12 主轮与
+g12-ab 基线轮同页均单块）→ 聚合器 "Extra data: line 2" 解析败。同二进制
+单页复跑不复现（非确定性双发射，疑 page 超时/重试双 dump 竞态）；runner
+健壮性挂账：块体解析宜容忍/去重重发，非本批引入。
+
 ## 碰头与协作记录
 
 - 远端入 3 提交（610bbae31 s407 embed / 13133a2f2 R5504 入账 /
@@ -136,3 +156,15 @@ transitions +2、animations +2、transforms +5、easing ±0，合计净 +78，
   registry-knownprops 验证轮同 JSON dir）：transforms merge 双双零产出，
   easing 三轮同值（51P）不受扰；教训续录——同 dir 并发 corpus 轮各自唯一
   transcript/dir。
+
+## g12b 收尾增量（registry/known_properties 落树后 values 复跑）
+
+- results-g12b/css-values.json（本流 g12b 轮，02:53 前驱 results-g12 对照）：
+  **2,641 → 2,646 净 +5 逐页零回归**——增益全落 calc-infinity-nan-computed
+  scale 组（29→34）：rotate/translate/scale 入 known_properties（0a0c910df，
+  含 inherit initial-value 臂 + engine part02 supports 钉）解封
+  `CSS.supports('scale', …)` 前置门后，`calc(infinity)`/`calc(max(infinity,
+  10))`/`calc(-infinity * 10)` 等写面 case 前置断言翻真。master.md 头部
+  values face 同步 2,641→2,646。
+- 门禁：HEAD(0a0c910df) 推送后复跑 css-parser lib 3,115P/0F、style-system
+  lib 2,516P/0F、engine time_list 钉 1P——终态绿。

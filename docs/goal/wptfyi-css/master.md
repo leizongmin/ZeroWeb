@@ -5,7 +5,7 @@
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
 face css-color 10,905→10,970，至 cqw 容器基座刀；values face
-css-values 2,426→2,641，至 ∞/NaN 数学求值管线刀1）。
+css-values 2,426→2,646，至 ∞/NaN 数学求值管线刀1+registry 前置门收尾）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -51,7 +51,7 @@ anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallbac
 布局 ~43F（溢出检查 + last-successful 状态机 + @position-try 应用引擎）、
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
 transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g12 后）：∞ 桶
-（calc-infinity-nan-computed 残 ~36F：rotate 14 → matrix 化桶 + %-CB 形 +
+（calc-infinity-nan-computed 残 ~31F：rotate 14 → matrix 化桶 + %-CB 形 +
 unbalanced 形；serialize 五页残 ~116F——length 41/resolution 29/time 29 主体
 未动 + angle/number 残，刀2 = fold_math_specified 扩 Infinity/NaN 规范形
 `calc(NaN * 1px)`/`calc(infinity * 1s)` 因子归一 + signs-abs computed 残 ~94F/
@@ -86,10 +86,18 @@ parsing-computed 三页 = 对照臂 registry 缺臂归因（非本批），g12c 
 （registry WIP 在树、单写者 transcript）定谳 **223 → 228 净 +5 test 级零
 回归**（sign(1em-1px) 形 5 案：scale-computed 21→23/scale-valid 8→9/
 sign-function 0→2），signs-abs-serialize 16P/F0 全清。**批终账五套件
-values +69/transitions +2/animations +2/transforms +5/easing ±0，合计净
-+78 零回归。**单测 +6 钉（css-parser infinity_nan.rs 4/style-system
+values +69/transitions +2/animations +2/transforms +5/easing ±0，加 registry
+values 侧补账 +5（见下段与证据 g12b values 轮段），合计净 +83 零回归。**
+
+**DC-2 registry known_properties 收尾（g12b，0a0c910df 后增量对账
+results-g12b）：rotate/translate/scale 入属性清单解封 CSS.supports 前置门
+（computed-testcommon 整页前置翻红根因）+ inherit initial-value 臂 + engine
+part02 supports 钉——values 复跑 2,641 → **2,646 净 +5 零回归**
+（calc-infinity-nan-computed scale `CSS.supports` 组 29→34），transforms
+228（对照 g12 186 = registry 维度 +42，批内 sign 形 +5 已上段入账）。
+单测 +6 钉（css-parser infinity_nan.rs 4/style-system
 1/engine 1）；三 crate clippy 零告警；make test 同例推迟（同树他流 WIP 污染
-归属，g10/g11 先例）。残余：calc-infinity-nan-computed ~36F（rotate matrix 化
+归属，g10/g11 先例）。残余：calc-infinity-nan-computed ~31F（rotate matrix 化
 桶 14 + %-CB 形 + unbalanced）、serialize 五页 ~116F（刀2）、signs-abs
 invalid 52F 不动。
 [证据](evidence/2026-11-12-dc2-infinity-nan-math-pipeline.md)
