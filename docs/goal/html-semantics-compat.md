@@ -9,14 +9,15 @@ checkout，零注释零上游）静机 ior ×3 全 Fail** vs 同源 s413 批二�
 （11-12 20:04）Pass ×2——同源不同构建/时点翻转，s414 注释与上游五
 commit 双双排除，翻转维度收窄到源码之外（rustc 并行 codegen 产物布
 局漂移 → 堆布局/分配序，或运行时环境时点敏感；20:04 批二进制已被覆
-盖不可直复跑）。勘根三腿排程：腿 1 同源连构建 sha256 二分（产物确定
-性）→ 腿 2 `_zwOptStateKeyOf` plain stamp dump + `_mo_notify` 臂相
-位双构建对比探针（s236 机制域 + s373 时序 dump 先例，首位）→ 勘根收
-口后按根因域定施工/挂账。ior 键勘根收口前按在册红记账不抹（flake
+盖不可直复跑）。腿 1 已落锤（同源 touch-rebuild sha256 **A≠B** 非逐位可复现实证 +
+双构建 ior ×3 全 Fail，连前计 6 构建连 Fail）→ 腿 2 探针插桩升首位
+（`_zwOptStateKeyOf` stamp dump + `_mo_notify` 臂相位，直答当前
+Fail 失灵臂，s236 机制域 + s373 先例）→ 勘根收口后按根因域定施工/
+挂账。ior 键勘根收口前按在册红记账不抹（flake
 治理）。**本流域在册红 213F+16T**（s414 收口口径，见 s414 账本；NotRun
 5 不变）。过程事件：429 断点接手收口 s414 + target-disk-guard × 活动
-构建竞态全清教训已录 s414 账本。下一步：s415 腿 2 探针插桩 / 腿 1
-sha256 机械腿；constructed-stylesheets 1T 勘根候选 / 挂账池承
+构建竞态全清教训已录 s414 账本。下一步：s415 腿 2 探针插桩（首位）；
+constructed-stylesheets 1T 勘根候选 / 挂账池承
 s404/s405/s411/s412/s413/s414（外链模块基座 map 键错配/`.sheet` kind
 固定面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5
 面/form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察

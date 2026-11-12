@@ -21,9 +21,9 @@ commit：本账本随 docs commit（零代码变更轮）
 
 **源归因排除**：纯 s413 源重建二进制 Fail ×3 vs 同源 s413 批二进制 Pass ×2——同源不同构建/不同时点翻转。s414 注释（已证 inert：纯注释 + attr 树无注释同态）与上游五 commit（attr 树不含）双双排除。翻转维度残留在**源码之外**：构建产物布局（rustc 并行 codegen 非逐位可复现 → codegen 单元划分/内联决策漂移 → 堆布局/分配序漂移）或运行时环境（同二进制跨时点翻转假设待检验——20:04 批二进制已被 23:12 重建覆盖，无法直接复跑）。
 
-**勘根方向收窄（下轮腿）**：
-1. 同源连构建二进制 sha256 对比 → 构建产物确定性二分（产物逐位同 → 翻转在运行时环境；不同 → 构建布局敏感实证）。
-2. 失败面探针插桩：`_zwOptStateKeyOf` plain stamp 值 dump + `_mo_notify` per-point/container 臂相位记录（s236 状态键归一机制，s373 时序 dump 先例）——两构建对比 stamp 序列分歧点。
+**勘根方向收窄（腿排程）**：
+1. ~~同源连构建二进制 sha256 对比~~ **腿 1 已落锤（11-13 03:00，/tmp/s415/leg1-*）**：main 树（9204a0b31 基）同源 touch-rebuild 双构建 sha256 **A=af305840… / B=44a383b1… 不同**——rustc 输出非逐位可复现实证；双构建各 ior ×3 全 Fail（连前计 6 构建连 Fail：23:12 批 / attr / A / B——随机 regime 假设概率坍缩）。产物非确定 + 全近期构建同态 → 「20:04 Pass」 outlier 解释收窄为构建布局域（某 layout regime 触发/豁免 bug，20:04 构建落豁免侧）或机器时点状态。
+2. **腿 2（首位）失败面探针插桩**：`_zwOptStateKeyOf` plain stamp 值 dump + `_mo_notify` per-point/container 臂相位记录（s236 状态键归一机制，s373 时序 dump 先例）——定位当前 Fail 的失灵臂（fragment 迁移后 selectedness 重算哪层断链）；探针直答「为何 Fail」，「为何 20:04 Pass」降为次级（修复优先于考古）。
 3. 该子测断言对象为 fragment 双 option 迁移后的 selectedness 重算——与 s236 subtest 5 同根机制域（`_mo_notify` 钩挂位次/affKey 逐点臂），探针复用其插桩法。
 
 ## 口径影响
