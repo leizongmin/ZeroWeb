@@ -5,8 +5,28 @@
 //! `bitmap_top` maps to `y_offset = bitmap_top - height`.
 
 use crate::font::{FontError, GlyphBitmap, OpenTypeVariation};
+use std::borrow::Borrow;
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
+use std::sync::Arc;
+
+/// FT face 持有的共享字体字节：包 `Arc<Vec<u8>>` 适配 `Borrow<[u8]>`（
+/// `Arc<Vec<u8>>` 只实现 `Borrow<Vec<u8>>`，FreeType 需要切片借用以按
+/// `new_memory_face2` 原地解析）。face cache 由此直接引用 loader `font_data`
+/// 的共享份，face 创建/清空不再逐份拷贝字体字节（CJK TTC 单份 19.48MB，
+/// 多 face/多线程下倍增）。
+//
+// OPTIMIZATION: face 持共享 Arc 而非整份拷贝——cache clear 后下一枚字形不再
+// 重新 to_vec 19.48MB 级 TTC 字节（净活驻留 ×N + free+realloc churn 面）；
+// FreeType 解析同字节，渲染输出零变化。
+#[derive(Clone)]
+struct SharedFontBytes(Arc<Vec<u8>>);
+
+impl Borrow<[u8]> for SharedFontBytes {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 enum GlyphSelector {
     CodePoint(char),
@@ -22,13 +42,13 @@ struct VariationAxis {
 }
 
 struct CachedFace {
-    face: freetype::Face<Vec<u8>>,
+    face: freetype::Face<SharedFontBytes>,
     axes: Box<[VariationAxis]>,
     applied_variations: Box<[([u8; 4], u32)]>,
 }
 
 impl CachedFace {
-    fn new(face: freetype::Face<Vec<u8>>, font_bytes: &[u8], face_index: u32) -> Self {
+    fn new(face: freetype::Face<SharedFontBytes>, font_bytes: &[u8], face_index: u32) -> Self {
         let axes = rustybuzz::ttf_parser::Face::parse(font_bytes, face_index)
             .map(|face| {
                 face.variation_axes()
@@ -99,8 +119,9 @@ impl CachedFace {
 
 thread_local! {
     static FT_LIB: OnceCell<freetype::Library> = const { OnceCell::new() };
-    // Face<Vec<u8>> owns its font bytes. Reusing it avoids reparsing large TTC
-    // files for every glyph; low-frequency font rotation clears the small cache.
+    // Face<SharedFontBytes> shares the loader's font bytes (zero-copy face
+    // creation). Reusing it avoids reparsing large TTC files for every glyph;
+    // low-frequency font rotation clears the small cache.
     static FT_FACE_CACHE: RefCell<HashMap<u64, CachedFace>> = RefCell::new(HashMap::new());
     static RASTER_STAT: RefCell<(u64, f64)> = const { RefCell::new((0, 0.0)) };
 }
@@ -129,7 +150,7 @@ fn with_lib<R>(f: impl FnOnce(&freetype::Library) -> R) -> R {
 }
 
 pub(crate) fn rasterize(
-    font_bytes: &[u8],
+    font_bytes: &Arc<Vec<u8>>,
     face_index: u32,
     code_point: char,
     size: f32,
@@ -168,7 +189,7 @@ pub(crate) fn rasterize(
 }
 
 pub(crate) fn rasterize_indexed(
-    font_bytes: &[u8],
+    font_bytes: &Arc<Vec<u8>>,
     face_index: u32,
     glyph_index: u16,
     size: f32,
@@ -187,7 +208,7 @@ pub(crate) fn rasterize_indexed(
 }
 
 fn rasterize_inner(
-    font_bytes: &[u8],
+    font_bytes: &Arc<Vec<u8>>,
     face_index: u32,
     selector: GlyphSelector,
     size: f32,
@@ -201,8 +222,12 @@ fn rasterize_inner(
                 if cache.len() >= FACE_CACHE_MAX {
                     cache.clear();
                 }
+                // OPTIMIZATION: face 持共享 Arc（零拷贝 face 创建），见 SharedFontBytes。
                 let face = lib
-                    .new_memory_face2(font_bytes.to_vec(), isize::try_from(face_index).unwrap_or(0))
+                    .new_memory_face2(
+                        SharedFontBytes(Arc::clone(font_bytes)),
+                        isize::try_from(face_index).unwrap_or(0),
+                    )
                     .map_err(|error| FontError::ParseFailed(format!("FreeType new_memory_face: {error:?}")))?;
                 cache.insert(key, CachedFace::new(face, font_bytes, face_index));
             }
@@ -256,7 +281,7 @@ fn rasterize_inner(
 
 /// Measures the default-instance advance without producing a bitmap.
 pub(crate) fn measure_advance(
-    font_bytes: &[u8],
+    font_bytes: &Arc<Vec<u8>>,
     face_index: u32,
     code_point: char,
     size: f32,
@@ -272,8 +297,12 @@ pub(crate) fn measure_advance(
                 if cache.len() >= FACE_CACHE_MAX {
                     cache.clear();
                 }
+                // OPTIMIZATION: face 持共享 Arc（零拷贝 face 创建），见 SharedFontBytes。
                 let face = lib
-                    .new_memory_face2(font_bytes.to_vec(), isize::try_from(face_index).unwrap_or(0))
+                    .new_memory_face2(
+                        SharedFontBytes(Arc::clone(font_bytes)),
+                        isize::try_from(face_index).unwrap_or(0),
+                    )
                     .map_err(|error| FontError::ParseFailed(format!("FreeType new_memory_face: {error:?}")))?;
                 cache.insert(key, CachedFace::new(face, font_bytes, face_index));
             }

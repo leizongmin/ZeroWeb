@@ -24,6 +24,9 @@
 //!
 //! - `ZW_ALLOC_TRACE=1`：启用记录（默认关）。
 //! - `ZW_ALLOC_TRACE_SAMPLE_EVERY`：每 N 次分配采样一次回溯（默认 256）。
+//!   例外（T64 修订一）：块 ≥ `ZW_ALLOC_TRACE_NET_MIN` 的大块**恒采**——净活
+//!   面归属不依赖撞样（totals 的 sampled_allocs/sampled_bytes 含全部大块，
+//!   traffic 面据此偏大块，两侧同仪器构建下 A/B 可比）。
 //! - `ZW_ALLOC_TRACE_MAX_SITES`：site 聚合表上限（默认 65536；满后新 site 计入
 //!   `dropped_sites`，不驱逐——保 Top-N 稳定且表有界）。紧凑 site 记录
 //!   （原始 IP 窗数组，dump 时渲染偏移）使 65536 条 ≲10MiB、live 表 ≲3MiB，
@@ -380,11 +383,13 @@ pub fn start_dump_thread_after_sandbox() {
 ///
 /// `ptr` 仅取整做 net 表键；采样路径在锁外完成回溯与解析，锁内只做表更新。
 ///
-/// net 表 site 归属为同调用直通两态（T62 DF F1 契约）：本次调用采样命中→
-/// 采样哈希经局部变量直通入表；未采样一律记 unattributed 哨兵 0——不继承
-/// 线程历史采样 site，杜绝跨调用栈错归属；采样命中但捕获不足落哨兵键 0 者
-/// 同归 unattributed 桶。dump 侧 0 哨兵渲染为 `unattributed`，与直击条目
-/// （site 表实帧窗）可区分。
+/// net 表 site 归属为同调用直通两态（T62 DF F1 契约 + T64 修订一）：本次调用
+/// 采样命中**或块大小 ≥ `net_min_bytes`**→本次捕获的哈希经局部变量直通入表
+/// （大块恒采使 live_top 大块归属不依赖 1/128 撞样——T62 formal 二进制早于
+/// 8990221ed，其 live 面三族轮换即未采样大块归属不可靠的实证）；其余一律记
+/// unattributed 哨兵 0——不继承线程历史采样 site，杜绝跨调用栈错归属；
+/// 命中但捕获不足落哨兵键 0 者同归 unattributed 桶。dump 侧 0 哨兵渲染为
+/// `unattributed`，与直击条目（site 表实帧窗）可区分。
 pub(crate) fn record_alloc(size: usize, ptr: usize) {
     if recording() {
         return;
@@ -395,7 +400,7 @@ pub(crate) fn record_alloc(size: usize, ptr: usize) {
     // site 提示只在本次调用内传递：采样哈希是局部变量，调用返回即消失，
     // 线程上不残留任何历史 site 状态（无跨调用栈继承面）。
     let mut site_hint = 0u64;
-    if seq.is_multiple_of(config.sample_every as u64) {
+    if seq.is_multiple_of(config.sample_every as u64) || size >= config.net_min_bytes {
         let (ips, captured) = capture_frame_ips();
         let hash = site_signature(&ips[..captured]);
         let mut outer = state();
@@ -735,6 +740,9 @@ fn snapshot_json(config: &TraceConfig, reason: &str) -> String {
             "max_sites": config.max_sites,
             "net_min_bytes": config.net_min_bytes,
             "max_live_entries": config.max_live_entries,
+            // T64 修订一：≥net_min 大块恒采（归属完备化）——分析侧按此判读
+            // totals 口径（sampled_* 含全部大块）。
+            "big_alloc_always_sampled": true,
         },
         "totals": {
             "alloc_calls": SEQ.load(Ordering::Relaxed),
@@ -1037,12 +1045,12 @@ mod tests {
     /// 全局单例链路（OnceLock 每测试进程仅可初始化一次，全局相关断言合并进
     /// 本测试；其余用例只触纯状态面，避免跨用例进程态互扰——learnings #19）。
     /// 覆盖：注入形初始化 → net 归属同调用直通两态（T62 DF F1 回归：采样
-    /// 命中调用的 ≥net_min 条目直通本次采样 site；未采样调用落 unattributed
-    /// 哨兵 0，不得继承线程历史采样）→ 记录入口前进 totals → 注入态 →
-    /// dump 落盘合法 JSON 且 totals/哨兵渲染一致（site=0 条目标注
-    /// `unattributed`，与直击条目可区分）。ENABLED 保持 false：不污染同进程
-    /// 其他用例的分配路径（全局接线的行为验证走测量轮 dump 产物与二进制
-    /// 符号核对）。
+    /// 命中调用的 ≥net_min 条目直通本次采样 site；T64 修订一扩为 ≥net_min
+    /// 大块恒采，未采样小块不入 net 表且不继承线程历史采样）→ 记录入口前进
+    /// totals → 注入态 → dump 落盘合法 JSON 且 totals/哨兵渲染一致（site=0
+    /// 条目标注 `unattributed`，与直击条目可区分）。ENABLED 保持 false：不污染
+    /// 同进程其他用例的分配路径（全局接线的行为验证走测量轮 dump 产物与
+    /// 二进制符号核对）。
     #[test]
     fn global_init_record_and_dump_roundtrip() {
         let dir = std::env::temp_dir().join(format!("zw-alloc-trace-test-{}", std::process::id()));
@@ -1069,6 +1077,7 @@ mod tests {
             // 调用 ≥net_min 入 net 表——条目 site 必须是本次采样哈希（site
             // 表实键），而非哨兵 0。
             record_alloc(4096, 0x9000);
+            let first_site;
             {
                 let outer = state();
                 let active = outer.as_ref().expect("record_alloc 后状态必已构造");
@@ -1079,19 +1088,26 @@ mod tests {
                     active.sites.contains_key(&live_site),
                     "直通 site 必须是同调用入 site 表的实键"
                 );
+                first_site = live_site;
             }
             record_dealloc(0x9000);
-            // 未采样负例（T62 DF F1）：seq=1 错过采样窗，≥net_min 入表——
-            // site 必须落 unattributed 哨兵 0，不得继承上一调用的采样哈希。
+            // 大块恒采正例（T64 修订一）：seq=1 错过采样窗但 8192 ≥ net_min
+            // （注入配置 1024）——大块恒真采：采样计数前进 + 本次实采哈希直通
+            // 入表。不落哨兵、不继承历史采样 site（继承形态不调 record_sample，
+            // 采样计数不会前进——本腿以「计数前进 + site ∈ site 表」联合钉死
+            // 真采；两调用在同一测试函数体内，签名窗同起点、哈希同值属正确
+            // 行为，不构成继承判据）。
             record_alloc(8192, 0x9100);
             {
                 let outer = state();
                 let active = outer.as_ref().expect("状态必已构造");
-                assert_eq!(active.sampled_allocs, before + 1, "未采样调用不得前进采样计数");
-                let live_site = active.live.get(&0x9100).expect("≥net_min 必入 net 表").site;
-                assert_eq!(
-                    live_site, 0,
-                    "未采样 ≥net_min 必落 unattributed 哨兵，不得继承历史采样 site"
+                assert_eq!(active.sampled_allocs, before + 2, "≥net_min 大块恒采必须前进采样计数");
+                let big_site = active.live.get(&0x9100).expect("≥net_min 必入 net 表").site;
+                assert_ne!(big_site, 0, "大块恒采必须直通本次实采哈希而非哨兵");
+                assert_eq!(big_site, first_site, "同一调用窗签名稳定（同函数体两调用）");
+                assert!(
+                    active.sites.contains_key(&big_site),
+                    "大块直通 site 必须是同调用入 site 表的实键"
                 );
             }
             record_dealloc(0x9100);

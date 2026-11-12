@@ -280,9 +280,10 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（36）
+## Patterns — 可复用代码模式与最佳实践（37）
 
 - 2026-11-12 [rustfmt 规范形等价判定——「机械格式化零行为变化」归因的确定性判法](patterns/2026-11/2026-11-12-rustfmt-canonical-form-byte-equivalence-judgment.md) — crates/dom
+- 2026-11-12 [集成 roster 提取算法——取最后一个 `^failures:$` 块到 `test result:` 行收口](patterns/2026-11/2026-11-12-integration-roster-extraction-last-failures-block.md) — site-optimizer verify, cargo libtest
 - 2026-11-11 [竖排 rtl 行内轴镜像与 run 内字形序的 parity 结构](patterns/2026-11/2026-11-11-vertical-rtl-inline-mirror-glyph-order-parity.md) — layout-engine
 - 2026-11-09 [样式 carry 刀的捕获三形分账与壳级缩放口径](patterns/2026-11/2026-11-09-style-carry-capture-consume-routing.md) — engine
 - 2026-11-08 [自源 reftest 争议语义定谳：ref 页行为语义 = ZW 自身对应实现，先读 ref 页写法再对 ZW 同路径数值](patterns/2026-11/2026-11-08-self-source-ref-page-semantics-equal-zw-implementation.md) — layout-engine,testing
@@ -371,10 +372,12 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（52）
+## Platform — 平台与环境相关经验（54）
 
 - 2026-11-12 [review 类 intent 的 expectedStage 约束——implementing 态直派必被拒](platform/2026-11/2026-11-12-verify-review-intent-expected-stage-constraint.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-11-12 [verifyPresentation 的 visible 归一化包含校验与历史报告行渲染规则](platform/2026-11/2026-11-12-verify-presentation-visible-includes-and-history-rows.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-11-12 [校验器 exit 2 暂时性判读协议——直调探针取真错 + CLI 重跑双过=暂时，确定性复现=断链](platform/2026-11/2026-11-12-validator-transient-exit2-adjudication-protocol.md) — site-optimizer verify-review.mjs, github-web
+- 2026-11-12 [systemd-run scope 的 bash -c 吃不到调用方未 export 变量——单引号双层屏蔽，落盘走错路径快速假成功](platform/2026-11/2026-11-12-systemd-run-scope-env-nonexport-void.md) — systemd-run, bash
 - 2026-11-12 [baseRefOid 重锚后的全链身份续期序列——六处绑定缺一即门禁假败](platform/2026-11/2026-11-12-github-pr-baserefoid-reanchor-identity-renewal-chain.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-11-11 [make test 外层兜底三连杀——RSS 求和守卫不配双腿并行编译，顶层守卫归 cgroup](platform/2026-11/2026-11-11-make-test-outer-guard-rss-vs-cgroup.md) — Makefile,test-guard
 - 2026-11-11 [delivery-check CLI catch 吞真实错误只打 Usage：直调函数取 REAL_ERROR](platform/2026-11/2026-11-11-delivery-check-swallows-real-error.md) — platform,testing
