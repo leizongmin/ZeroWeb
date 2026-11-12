@@ -1143,8 +1143,8 @@ mod tests {
     fn freetype_rasterize_ahem_glyph_end_to_end() {
         // loader.rs 在 crates/render-foundation/src/font/，4 级 .. 回 workspace 根。
         const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
-        let bm =
-            freetype_raster::rasterize(AHEM_TTF, 0, 'X', 20.0, &[]).expect("FreeType should rasterize Ahem 'X' @20px");
+        let bm = freetype_raster::rasterize(&Arc::new(AHEM_TTF.to_vec()), 0, 'X', 20.0, &[])
+            .expect("FreeType should rasterize Ahem 'X' @20px");
         // Ahem 方块：位图非空，宽高 ≈ 20px（FreeType @20px 实测 20×20，A4）。
         assert!(
             bm.width > 0 && bm.height > 0,
@@ -2521,6 +2521,7 @@ mod cjk_raster_probe {
         eprintln!("fontdue: {:.3} ms/字", total / 50.0 / chars.len() as f64 * 1000.0);
 
         // freetype_raster（face 缓存生效验证：前 3 次含首次解析 vs 后 47 次命中缓存）
+        let bytes = Arc::new(bytes);
         let mut first_total = 0.0f64;
         let mut rest_total = 0.0f64;
         let mut ok = 0;
