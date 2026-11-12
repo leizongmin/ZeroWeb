@@ -56,7 +56,8 @@ use super::{
     DomMutation,
     computed_style::{
         apply_inline_style_overrides, apply_intrinsic_size_overrides,
-        compute_document_styles_with_inline_overrides_css, compute_styles_for_doc, serialize_computed_property,
+        compute_document_styles_with_inline_overrides_css, compute_styles_for_doc,
+        serialize_computed_property_with_sibling,
     },
 };
 use crate::pipeline::collect_stylesheets_with_parsed_external;
@@ -976,7 +977,11 @@ pub(super) fn computed_style_by_handle(
         };
         styles
             .get(&nid)
-            .map(|s| serialize_computed_property(s, prop))
+            // g19：sibling ctx 注入（CSS Values 5 §tree-counting）——inset 槽
+            // sibling 叶 Calc 树求值（作用域有 doc+nid）。
+            .map(|s| {
+                serialize_computed_property_with_sibling(s, prop, Some(zero_style_system::sibling_position(doc, nid)))
+            })
             .unwrap_or_default()
     })
 }

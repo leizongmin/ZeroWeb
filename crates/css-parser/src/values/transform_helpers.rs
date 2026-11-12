@@ -77,7 +77,7 @@ pub(super) fn split_transform_args(args: &str) -> Option<Vec<&str>> {
     split_top_level_whitespace_args(args)
 }
 
-fn split_top_level_whitespace_args(input: &str) -> Option<Vec<&str>> {
+pub(super) fn split_top_level_whitespace_args(input: &str) -> Option<Vec<&str>> {
     let mut args = Vec::new();
     let mut depth = 0i32;
     let mut start = None;

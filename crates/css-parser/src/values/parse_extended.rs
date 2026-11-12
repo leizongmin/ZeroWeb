@@ -484,6 +484,65 @@ pub fn parse_counter_list(input: &str) -> Option<Vec<CounterActionValue>> {
     Some(result)
 }
 
+/// [`parse_counter_list`] sibling ctx 变体：整数 token 为数学函数形时按
+/// <integer> 文法位求值（CSS Values 4 §10.5 型别表 + CSS Values 5
+/// §tree-counting；tree-counting 页 `counter-increment: foo calc(sibling-count())`
+/// computed 'foo 5' 断言驱动）。top-level 空白分词（括号内空白不分词——
+/// `calc(2 * x)` 保持单 token）。
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+pub fn parse_counter_list_with_sibling(input: &str, sibling: Option<(u64, u64)>) -> Option<Vec<CounterActionValue>> {
+    let input = input.trim();
+    if input.eq_ignore_ascii_case("none") {
+        return Some(vec![]);
+    }
+    let tokens = super::transform_helpers::split_top_level_whitespace_args(input)?;
+    let mut result = Vec::new();
+    let mut iter = tokens.iter().copied().peekable();
+    while let Some(name) = iter.next() {
+        if !is_counter_name(name) {
+            return None;
+        }
+        // 下一 token 为整数（字面或数学形）则消费；否则整数位缺省。
+        let value = match iter.peek().copied() {
+            Some(t) if t.parse::<i64>().is_ok() => {
+                iter.next();
+                t.parse::<i64>().ok()
+            }
+            Some(t) => {
+                let expr = parse_math_function(t)?;
+                if !calc_expr_is_number(&expr) {
+                    return None;
+                }
+                let v = match sibling {
+                    Some((ordinal, count)) => eval_calc_with_context(
+                        &expr,
+                        &CalcContext {
+                            sibling_ordinal: Some(ordinal),
+                            sibling_count: Some(count),
+                            ..Default::default()
+                        },
+                    )?,
+                    None => eval_calc(&expr, None)?,
+                };
+                if !v.is_finite() {
+                    return None;
+                }
+                iter.next();
+                Some(v.round() as i64)
+            }
+            None => None,
+        };
+        result.push(CounterActionValue {
+            name: name.to_string(),
+            value,
+        });
+    }
+    if result.is_empty() {
+        return None;
+    }
+    Some(result)
+}
+
 // ── CSS Content 值类型 ──────────────────────────────────────────────
 
 /// CSS content 属性值。
@@ -1361,5 +1420,52 @@ pub fn calc_expr_has_angle_result(expr: &CalcExpr) -> bool {
                 || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if calc_expr_has_angle_result(w))
         }),
         _ => false,
+    }
+}
+
+/// 判断 math 表达式是否含 tree-counting 叶（sibling-index()/sibling-count()）——
+/// 写面门分派与 canonical 串化臂的拦截谓词。
+pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::TreeCounting(_) => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_has_tree_counting(left) || calc_expr_has_tree_counting(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_tree_counting),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_tree_counting(min) || calc_expr_has_tree_counting(val) || calc_expr_has_tree_counting(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_has_tree_counting(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => {
+            calc_expr_has_tree_counting(left) || calc_expr_has_tree_counting(right)
+        }
+        // calc-mix() 项/权重内 sibling 叶：serialize 通道走 fold_mix_dimension
+        // 既有原文保留口径，不在本谓词拦截面（写面门对 mix 形放行挂账）。
+        CalcExpr::Mix(_) => false,
+    }
+}
+
+/// sibling-index()/sibling-count() 槽族门（写面门消费，CSS Values 5
+/// §tree-counting）：calc 树整体型别（[`calc_expr_math_type`]；sibling 叶产出
+/// `<integer>` 归 number）与属性槽文法族一致时放行。角度槽同时接受 number 型别
+/// ——角度/`pi` 常量叶 parse 期已弧度化 number（`calc(2rad * pi)` rotate 语料
+/// 钉面）；角度产出函数混入的 angle 型别同槽放行。表外槽放行（complex 槽
+/// 无语料钉面，同 [`random_family_allowed`] 口径）。
+///
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+pub fn tree_counting_slot_valid(prop: &str, expr: &CalcExpr) -> bool {
+    match calc_expr_math_type(expr) {
+        MTInvalid => false,
+        MTNumber => matches!(prop, "scale" | "opacity" | "z-index" | "rotate"),
+        MTLength => {
+            matches!(
+                prop,
+                "width" | "margin-left" | "text-indent" | "transform-origin-z" | "left"
+            )
+        }
+        MTTime => matches!(
+            prop,
+            "transition-delay" | "transition-duration" | "animation-delay" | "animation-duration"
+        ),
+        MTAngle => matches!(prop, "rotate"),
     }
 }

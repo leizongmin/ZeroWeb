@@ -80,7 +80,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "justify-items" | "justify-self" => justify_items_supported(value),
         "place-items" | "place-content" | "place-self" => shorthand_supported(property, value),
         // https://www.w3.org/TR/css-position-3/#propdef-z-index
-        "z-index" => crate::property::parse_z_index(value).is_some(),
+        // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting）。
+        "z-index" => crate::property::parse_z_index_with_sibling(value, Some((1, 1))).is_some(),
         // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
         "aspect-ratio" => aspect_ratio_supported(value),
         // https://drafts.csswg.org/css2/#page-break-props

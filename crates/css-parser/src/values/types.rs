@@ -1146,6 +1146,13 @@ pub struct CalcContext {
     /// 查询容器 content-box 高（px），用于 cqh/cqb 单位（水平书写）。None = 无查询
     /// 容器上下文。
     pub container_height: Option<f64>,
+    // https://drafts.csswg.org/css-values-5/#tree-counting
+    /// 源元素兄弟序（1 基，父元素子内序），用于 sibling-index() 求值。None =
+    /// 无 DOM 视图（纯 parse/序列化消费方）→ 求值 None（既有 fail-closed；
+    /// 0% 权重语料行走 eval_mix 符号零臂不受影响）。根元素 (1, 1)。
+    pub sibling_ordinal: Option<u64>,
+    /// 源元素兄弟计数（父元素子总数；根元素 1），用于 sibling-count() 求值。
+    pub sibling_count: Option<u64>,
 }
 
 /// calc() 表达式解析器内部状态。
@@ -2274,10 +2281,15 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
         // CSS Values 5 calc-mix()：权重 clamp/缺失分配/分母 max(Σ,100)
         //（语义与语料钉面见 [`crate::values::calc_mix::eval_mix`]）。
         CalcExpr::Mix(items) => eval_mix(items, ctx),
-        // tree-counting 叶：DOM 兄弟序依赖，CalcContext 无 DOM 视图——求值
-        // 不可达（None）；消费方按「不可解析」既有 fail 策略（fold 塌缩臂/
-        // eval_mix 符号零门）。FIXME: 引擎 DOM 桥求值挂账（computed/used 面）。
-        CalcExpr::TreeCounting(_) => None,
+        // tree-counting 叶：DOM 兄弟序依赖——引擎桥（style-system 解析/gcs
+        // computed 通道）随 [`CalcContext`] 注入兄弟序（sibling_ordinal/count）；
+        // 无 DOM 视图的消费方（纯 parse/序列化）保持 None fail-closed（0% 权重
+        // 语料行走 eval_mix 符号零臂，不受此影响）。
+        // https://drafts.csswg.org/css-values-5/#tree-counting
+        CalcExpr::TreeCounting(f) => match f {
+            TreeCountingFn::SiblingIndex => ctx.sibling_ordinal.map(|v| v as f64),
+            TreeCountingFn::SiblingCount => ctx.sibling_count.map(|v| v as f64),
+        },
     }
 }
 

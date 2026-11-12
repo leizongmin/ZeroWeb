@@ -62,6 +62,7 @@ pub fn compute_inherited_style(
         QuirksMode::NoQuirks,
         false,
         false,
+        None,
     )
 }
 
@@ -79,6 +80,9 @@ pub fn compute_inherited_style_with_quirks(
     quirks_mode: QuirksMode,
     prefers_dark: bool,
     document_scheme_dark: bool,
+    // CSS Values 5 §tree-counting：源元素 `(兄弟序, 兄弟总数)`（1 基），
+    // sibling-index()/sibling-count() 树求值随真实 apply 注入（None fail-closed）。
+    sibling: Option<(u64, u64)>,
 ) -> ComputedStyle {
     let mut style = ComputedStyle::default();
 
@@ -155,6 +159,7 @@ pub fn compute_inherited_style_with_quirks(
                     v,
                     quirks_mode == QuirksMode::Quirks,
                     prefers_dark,
+                    sibling,
                 );
             }
             KeywordResolution::Initial => {
@@ -296,6 +301,7 @@ pub fn compute_inherited_style_with_quirks(
                     v,
                     quirks_mode == QuirksMode::Quirks,
                     prefers_dark,
+                    sibling,
                 );
             }
         }
@@ -354,6 +360,7 @@ pub fn compute_inherited_style_with_quirks(
             value,
             quirks_mode == QuirksMode::Quirks,
             prefers_dark,
+            sibling,
         );
     }
 

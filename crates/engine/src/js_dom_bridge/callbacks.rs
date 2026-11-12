@@ -2335,7 +2335,10 @@ pub fn register_dom_callbacks(
                 Arc<str>,
                 Arc<Vec<(String, String)>>,
                 Arc<Vec<(String, String, String)>>,
-                HashMap<String, ComputedStyle>,
+                // g19：值附 sibling 位（CSS Values 5 §tree-counting）——命中复用通道
+                // 同样以 sibling ctx 序列化（tree-counting 页 #test 连续多次查询，
+                // 仅 populate 次带 ctx 会让后续查询 fail-soft ''）。
+                HashMap<String, (ComputedStyle, Option<(u64, u64)>)>,
             )>,
         >,
     > = Arc::new(Mutex::new(None));
@@ -2398,9 +2401,10 @@ pub fn register_dom_callbacks(
                 ));
             }
             let (_, _, _, _, _, _, _, map) = cache.as_mut().expect("cs cache populated");
-            // 同 selector 命中 → 直接 serialize（O(1)）。
-            if let Some(style) = map.get(sel) {
-                return serialize_computed_property(style, prop);
+            // 同 selector 命中 → 直接 serialize（O(1)）——g19：带 populate 时缓存的
+            // sibling 位（同元素多次查询逐次带 ctx，tree-counting 叶不 fail-soft）。
+            if let Some((style, sibling)) = map.get(sel) {
+                return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
             // style_version) 代际复用，同代际新 selector 仅 O(节点) 查找——真站每 tick 几十
@@ -2415,15 +2419,21 @@ pub fn register_dom_callbacks(
                 style_version,
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
                 |doc, styles| {
-                    find_by_selector(doc, sel)
-                        .and_then(|node| styles.get(&node))
-                        .map(|style| (serialize_computed_property(style, prop), style.clone()))
+                    find_by_selector(doc, sel).and_then(|node| {
+                        styles.get(&node).map(|style| {
+                            let sibling = Some(zero_style_system::sibling_position(doc, node));
+                            (
+                                serialize_computed_property_with_sibling(style, prop, sibling),
+                                (style.clone(), sibling),
+                            )
+                        })
+                    })
                 },
             );
-            let Some((value, style)) = hit else {
+            let Some((value, entry)) = hit else {
                 return String::new();
             };
-            map.insert((*sel).clone(), style);
+            map.insert((*sel).clone(), entry);
             value
         }),
     );

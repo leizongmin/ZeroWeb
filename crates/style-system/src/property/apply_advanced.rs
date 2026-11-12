@@ -584,7 +584,14 @@ fn filter_value_to_computed(v: zero_css_parser::values::FilterValue) -> FilterCo
     }
 }
 
-pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
+pub fn apply_advanced_property_value(
+    style: &mut ComputedStyle,
+    property: &str,
+    value: &str,
+    // CSS Values 5 §tree-counting：源元素 `(兄弟序, 兄弟总数)`——counter 整数位
+    // 数学形随元素真值求值。
+    sibling: Option<(u64, u64)>,
+) -> bool {
     let value = value.trim();
     match property {
         // ── Transforms ──
@@ -959,13 +966,14 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         // ── Counters 属性 ──
         "counter-reset" => {
-            if let Some(v) = values::parse_counter_list(value) {
+            // sibling ctx 变体：整数位数学函数形求值（字面整数形与旧口径等价）。
+            if let Some(v) = values::parse_counter_list_with_sibling(value, sibling) {
                 style.counter_reset = v;
                 return true;
             }
         }
         "counter-increment" => {
-            if let Some(v) = values::parse_counter_list(value) {
+            if let Some(v) = values::parse_counter_list_with_sibling(value, sibling) {
                 style.counter_increment = v;
                 return true;
             }
@@ -2720,7 +2728,12 @@ mod r4534_border_shape_tests {
     #[test]
     fn border_shape_circle_parses_and_applies() {
         let mut style = ComputedStyle::default();
-        assert!(apply_advanced_property_value(&mut style, "border-shape", "circle()"));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "border-shape",
+            "circle()",
+            None
+        ));
         assert!(matches!(
             style.border_shape,
             zero_css_parser::values::BorderShapeValue::Stroke { .. }
@@ -2733,7 +2746,8 @@ mod r4534_border_shape_tests {
         assert!(apply_advanced_property_value(
             &mut style,
             "border-shape",
-            "polygon(0 0, 100% 0, 100% 100%, 0 100%) margin-box polygon(0 0, 100% 0, 100% 100%, 0 100%) border-box"
+            "polygon(0 0, 100% 0, 100% 100%, 0 100%) margin-box polygon(0 0, 100% 0, 100% 100%, 0 100%) border-box",
+            None
         ));
         assert!(matches!(
             style.border_shape,

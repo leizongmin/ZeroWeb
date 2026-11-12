@@ -644,8 +644,16 @@ impl StyleSystem {
             .any(|s| stylesheet_has_selection_rules(&s.rules));
         // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）。
         // s168：键安全旗标保守并集（shadow 表含键外依赖时禁用缓存）。
-        let cache_safe =
-            stylesheet_cache_safe(stylesheets) && shadow_scopes.iter().all(|s| stylesheet_cache_safe(&s.sheets));
+        // g19：树计数规则页禁用 style_cache——StyleKey 同键兄弟（同 tag/class/id/
+        // 父链）共享 ComputedStyle，sibling-index()/sibling-count() 序数敏感求值
+        // 会毒化（同键第二兄弟复用第一兄弟的求值值）。CSS Values 5 §tree-counting。
+        let tree_counting_active = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_tree_counting(&s.rules));
+        let cache_safe = !tree_counting_active
+            && stylesheet_cache_safe(stylesheets)
+            && shadow_scopes.iter().all(|s| stylesheet_cache_safe(&s.sheets));
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
@@ -763,7 +771,10 @@ impl StyleSystem {
         // R5054：`::selection` 规则在页扫描——通用元素 owner 伪样式存储的零成本门禁
         //（无规则页逐元素伪计算跳过；≡ has_scroll_button_rules S10 同型）。
         let has_selection_rules = stylesheets.iter().any(|s| stylesheet_has_selection_rules(&s.rules));
-        let cache_safe = stylesheet_cache_safe(stylesheets);
+        // g19：树计数规则页禁用 style_cache（同键兄弟序数敏感共享毒化——
+        // compute_styles_with_shadow 全量入口同款；CSS Values 5 §tree-counting）。
+        let tree_counting_active = stylesheets.iter().any(|s| stylesheet_has_tree_counting(&s.rules));
+        let cache_safe = !tree_counting_active && stylesheet_cache_safe(stylesheets);
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
@@ -2856,6 +2867,11 @@ impl StyleSystem {
         let resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
 
         // 5. 计算继承样式（prefers-color-scheme 参与 color-scheme used-scheme 合成）
+        // g19：级联值含 sibling-index()/sibling-count() 形时计算元素兄弟序位置
+        //（1 基；伪元素用 originating element 位置——`element` 即宿主）。var()
+        // 已代入（4.5 后检测），inline/UA 源同覆盖。
+        // https://drafts.csswg.org/css-values-5/#tree-counting
+        let sibling = cascaded_has_tree_counting(&resolved_cascaded).then(|| sibling_position(doc, element));
         let prefers_dark = matches!(self.prefers_color_scheme, PrefersColorSchemeValue::Dark);
         let style = inheritance::compute_inherited_style_with_quirks(
             parent_style,
@@ -2864,6 +2880,7 @@ impl StyleSystem {
             quirks_mode,
             prefers_dark,
             self.document_color_scheme_dark,
+            sibling,
         );
 
         // 6. 解析计算值（相对单位转换）
@@ -4313,6 +4330,78 @@ fn stylesheet_has_pseudo_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
         }
     }
     false
+}
+
+/// CSS Values 5 §tree-counting 规则在页扫描（S10 同型零成本门禁）：样式表
+/// 声明值含 sibling-index()/sibling-count() 时启用。用途仅 S11 style_cache
+/// 禁用（同键兄弟序数敏感共享毒化）；每元素的兄弟序计算由级联值检测门控
+///（[`cascaded_has_tree_counting`]，含 inline/var 源）。扫描范围与
+/// [`stylesheet_has_pseudo_rules`] 同口径：Style 规则声明 + 嵌套 @块
+///（@keyframes 页本批不接）。
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+fn stylesheet_has_tree_counting(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for decl in &style_rule.declarations {
+                    if decl_value_has_tree_counting(&decl.value) {
+                        return true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_tree_counting(nested)
+                {
+                    return true;
+                }
+            }
+            // 其余 @规则（@import/@font-face...）不含声明值。
+            _ => {}
+        }
+    }
+    false
+}
+
+/// 声明值含 tree-counting 函数形（大小写不敏感——函数名 parse 期
+/// eq_ignore_ascii_case 同口径）。
+fn decl_value_has_tree_counting(value: &str) -> bool {
+    let v = value.to_ascii_lowercase();
+    v.contains("sibling-index(") || v.contains("sibling-count(")
+}
+
+/// 级联值表含 tree-counting 函数形（每元素求值门控：仅 sibling 页承担
+/// 兄弟序遍历开销；var() 已代入后检测，覆盖 inline/UA 源）。
+fn cascaded_has_tree_counting(cascaded: &HashMap<String, String>) -> bool {
+    cascaded.values().any(|v| decl_value_has_tree_counting(v))
+}
+
+/// 元素兄弟序位置（CSS Values 5 §tree-counting）：父元素的子**元素**列表中的
+/// 1 基序数 + 总数。父为非元素节点（document——根元素路径）或 detached →
+/// (1, 1)（规范：根元素序 1、计数 1）；伪元素用 originating element 位置
+///（调用方传宿主 element）。子列表遍历 O(兄弟数)，仅树计数页执行。
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+pub fn sibling_position(doc: &Document, element: NodeId) -> (u64, u64) {
+    let Some(parent) = doc.parent_node(element) else {
+        return (1, 1);
+    };
+    let mut ordinal = 0u64;
+    let mut count = 0u64;
+    for child in doc.child_nodes(parent) {
+        let Some(node) = doc.get(child) else { continue };
+        if matches!(node.kind, NodeKind::Element(_)) {
+            count += 1;
+            if child == element {
+                ordinal = count;
+            }
+        }
+    }
+    if ordinal == 0 {
+        // element 不在父的元素子列表（detached 等）——规范 (1, 1)。
+        (1, 1)
+    } else {
+        (ordinal, count)
+    }
 }
 
 /// R4262（CSS Overflow 5 §scroll-buttons）：规则树是否含 `::scroll-button` 选择器

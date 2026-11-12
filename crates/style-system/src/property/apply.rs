@@ -50,7 +50,7 @@ pub(crate) fn parse_length_or_math_quirks(value: &str) -> Option<LengthValue> {
 ///
 /// 返回 true 表示成功设置。
 pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
-    apply_property_value_with_quirks(style, property, value, false, false)
+    apply_property_value_with_quirks(style, property, value, false, false, None)
 }
 
 /// 将属性字符串值设置到 ComputedStyle 的对应字段。
@@ -59,6 +59,11 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
 ///
 /// 当 `quirks_mode` 为 true 时，颜色解析使用 quirks mode 宽容规则
 /// （如接受不带 # 的十六进制、纯数字颜色值），长度解析接受裸数字视为 px。
+///
+/// `sibling`：源元素 `(兄弟序, 兄弟总数)`（1 基；CSS Values 5 §tree-counting），
+/// 供 sibling-index()/sibling-count() 树求值；None = 探测/无 DOM 视图（求值
+/// fail-closed）。探测面（cascade 合法性/CSS.supports）传序数无关哨兵
+/// `Some((1, 1))`——合法性判定不依赖真值（范围敏感属性除外，在册局限）。
 pub fn apply_property_value_with_quirks(
     style: &mut ComputedStyle,
     property: &str,
@@ -68,6 +73,7 @@ pub fn apply_property_value_with_quirks(
     // normal→文档 scheme 回落），此处的 prefers 不再直接参与——保留参数以兼容
     // 调用点签名。
     _prefers_dark: bool,
+    sibling: Option<(u64, u64)>,
 ) -> bool {
     // 不在此 trim：声明值经 consume_declaration deferred-whitespace 已无首尾空白 token
     // （inline style 经 parse_inline_style 自行 trim，presentational hints 产 clean 值，
@@ -1066,6 +1072,15 @@ pub fn apply_property_value_with_quirks(
                 style.order = v;
                 return true;
             }
+            // <integer> 文法位接受顶层数学函数（CSS Values 4 §10.5 型别表：
+            // math function 可用于对应类型文法位；tree-counting 页 `order:
+            // calc(2 * sibling-count())` 形态驱动）。型别须整体 <number>，
+            // 求值四舍五入取整 + i32 clamp（与 parse_z_index 同口径）。
+            // https://drafts.csswg.org/css-values-4/#calc-type-checking
+            if let Some(v) = super::parse::eval_int_math_value(value, sibling) {
+                style.order = v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+                return true;
+            }
         }
         "top" => {
             // CSS Anchor Positioning §anchor()：inset 槽 anchor() 形原文承载
@@ -1124,7 +1139,10 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "z-index" => {
-            if let Some(v) = parse_z_index(value) {
+            // sibling ctx 注入：sibling-index()/sibling-count() 树随元素真值
+            // 求值（tree-counting 页 zIndex '2' 断言驱动）；None = 探测路径
+            // （哨兵由调用方注入）。
+            if let Some(v) = parse_z_index_with_sibling(value, sibling) {
                 style.z_index = v;
                 return true;
             }
@@ -1348,7 +1366,7 @@ pub fn apply_property_value_with_quirks(
         }
         _ => {
             // 高级属性委托给 apply_advanced 模块
-            if super::apply_advanced::apply_advanced_property_value(style, property, value) {
+            if super::apply_advanced::apply_advanced_property_value(style, property, value, sibling) {
                 return true;
             }
         }
@@ -1759,6 +1777,60 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "width",
     ];
     let prop = property.trim().to_ascii_lowercase();
+    // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
+    // tentative）：值含 tree-counting 函数形时整值走槽族门——calc 树（裸函数形
+    // wrap 统一 parse）+ [`tree_counting_slot_valid`]（槽文法族一致），invalid →
+    // 整拒；valid 放行走 [`fold_decl_specified`] canonical 串化（left/z-index
+    // 分派：空白归一/静态积规范单位/单叶 calc 解包）。位于白名单检查之前——
+    // left 等表外槽同样收口（槽族表外条目放行，complex 槽无语料钉面）。math
+    // 形（calc 前缀/裸函数前缀）parse 失败 = 文法 invalid → 整拒（带参
+    // `sibling-index(100px)`、非时槽 `calc(1s * sibling-index())`——time 叶共享
+    // calc 入口拒，槽族门亦必拒）；非 math 形（`content: "sibling-index()"`
+    // 字符串字面、color() 嵌套等复合上下文）放行——apply oracle 通道既有拒面
+    // 兜底，不在此重复收口（FIXME: color() 实参槽型别门挂账，tree-counting
+    // parsing 页 2F）。
+    // https://drafts.csswg.org/css-values-5/#tree-counting
+    {
+        let v = value.trim();
+        let lower = v.to_ascii_lowercase();
+        if lower.contains("sibling-index(") || lower.contains("sibling-count(") {
+            let is_time_slot = matches!(
+                prop.as_str(),
+                "transition-delay" | "transition-duration" | "animation-delay" | "animation-duration"
+            );
+            // math 形判定：calc 包裹或裸函数起始（引号字符串字面等非 math 形
+            // 不收 parse-fail 拒面——content 等槽的字符串值合法含函数名文本）。
+            let math_shaped = lower.starts_with("calc(")
+                || lower.starts_with("sibling-index(")
+                || lower.starts_with("sibling-count(");
+            // 裸函数形（无 calc 包裹）wrap 成单叶 calc 树统一 parse（z-index
+            // <integer> 槽语料形态；裸 sibling 叶产出 <integer> = number 型别，
+            // 槽族门同样裁决）。
+            let probe = if lower.starts_with("calc(") {
+                v.to_string()
+            } else {
+                format!("calc({v})")
+            };
+            // Time 叶仅 allow_time 入口可达（共享 calc 入口拒 time 原子——
+            // CalcExpr::Time 注）。
+            let parsed = if is_time_slot {
+                values::parse_time_calc(&probe)
+            } else {
+                values::parse_math_function(&probe)
+            };
+            match parsed {
+                Some(expr) => {
+                    if !values::tree_counting_slot_valid(&prop, &expr) {
+                        return false;
+                    }
+                }
+                // math 形 parse 失败：无参文法/槽族文法下唯一可能是 invalid
+                // 形（带参/时槽 time 叶）→ 拒；非 math 形放行（oracle 兜底）。
+                None if math_shaped => return false,
+                None => {}
+            }
+        }
+    }
     if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
         return true;
     }
@@ -2321,6 +2393,130 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("width", "auto"));
         assert!(validate_decl_value("width", "calc(50% - 10px)"));
         assert!(validate_decl_value("width", "min-content"));
+    }
+
+    #[test]
+    fn sibling_grammar_gate() {
+        // CSS Values 5 §tree-counting 写面门（calc-sibling-function-parsing 语料
+        // 13 invalid / 23 valid 形逐钉）。valid 形放行（fold_decl_specified
+        // left/z-index 分派 canonical 串化）；invalid 形整拒。
+        // valid 面（槽族一致）。
+        for (prop, v) in [
+            ("left", "calc(1px * sibling-index())"),
+            ("left", "calc(1em * sibling-index())"),
+            ("left", "calc(1rem * sibling-count())"),
+            ("left", "calc(1vh * sibling-index())"),
+            ("left", "calc(1ch * sibling-count())"),
+            ("left", "calc(1% * sibling-index())"),
+            ("left", "calc(5% * sibling-count())"),
+            ("rotate", "calc(10deg * sibling-index())"),
+            ("rotate", "calc(sibling-index() * 2rad * pi)"),
+            ("rotate", "calc(1turn * sibling-count())"),
+            ("opacity", "calc(0.1 * sibling-index())"),
+            ("scale", "calc(2 * sibling-count())"),
+            ("z-index", "sibling-index()"),
+            ("z-index", "sibling-count()"),
+            ("z-index", "calc(2 * sibling-index())"),
+            ("animation-duration", "calc(1s * sibling-index())"),
+            ("animation-duration", "calc(100ms * sibling-count())"),
+        ] {
+            assert!(validate_decl_value(prop, v), "{prop}: {v} 应放行");
+        }
+        // invalid 面（槽族错配，parse 可达形）。
+        for (prop, v) in [
+            ("left", "calc(10 * sibling-index())"),
+            ("rotate", "calc(1px * sibling-index())"),
+            ("opacity", "calc(1px * sibling-count())"),
+            ("animation-duration", "calc(1px * sibling-index())"),
+            ("animation-duration", "calc(1deg * sibling-index())"),
+            ("left", "sibling-index()"),
+        ] {
+            assert!(!validate_decl_value(prop, v), "{prop}: {v} 应拒");
+        }
+        // Time 叶被共享 calc 入口拒（math 形 parse 失败 → 门整拒——非时槽 time
+        // 叶本就槽族 invalid；rotate/opacity 槽 parse 亦拒 time 原子兜底）。
+        for (prop, v) in [
+            ("rotate", "calc(1s * sibling-index())"),
+            ("opacity", "calc(1ms * sibling-index())"),
+        ] {
+            assert!(!validate_decl_value(prop, v), "{prop}: {v} 应拒");
+        }
+        // 带参形（无参文法 invalid，math 形 parse 失败）→ 拒（parsing 页语料形）。
+        assert!(!validate_decl_value("left", "calc(1px * sibling-index(100px))"));
+        assert!(!validate_decl_value("left", "calc(1px * sibling-index(1))"));
+        assert!(!validate_decl_value("z-index", "sibling-index(100px)"));
+        assert!(!validate_decl_value("z-index", "sibling-count(1)"));
+        // color() 实参槽嵌套形放行挂账（FIXME: color 通道型别门）。
+        assert!(validate_decl_value(
+            "color",
+            "color(srgb calc(0.1 * sibling-index()) 0.5 0.5)"
+        ));
+        // 非 math 形（引号字符串字面含函数名文本）放行——parse-fail 拒面只收
+        // calc/裸函数前缀（content 字符串值合法含任意文本）。
+        assert!(validate_decl_value("content", "\"sibling-index()\""));
+        // 非 sibling 值零漂移。
+        assert!(validate_decl_value("left", "10px"));
+        assert!(validate_decl_value("z-index", "5"));
+        assert!(validate_decl_value("z-index", "auto"));
+    }
+
+    #[test]
+    fn sibling_apply_eval_with_truth() {
+        // CSS Values 5 §tree-counting 真值求值：tree-counting 页断言形态
+        //（#test 序 2 / 计 5）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value_with_quirks(
+            &mut style,
+            "z-index",
+            "calc(sibling-index())",
+            false,
+            false,
+            Some((2, 5))
+        ));
+        assert_eq!(style.z_index, ZIndexValue::Integer(2));
+        // 哨兵 (1,1)（探测口径）：合法性序数无关。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value_with_quirks(
+            &mut style,
+            "z-index",
+            "calc(2 * sibling-index())",
+            false,
+            false,
+            Some((1, 1))
+        ));
+        assert_eq!(style.z_index, ZIndexValue::Integer(2));
+        // None fail-closed（无 DOM 视图）：声明拒。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value_with_quirks(
+            &mut style,
+            "z-index",
+            "calc(sibling-index())",
+            false,
+            false,
+            None
+        ));
+        // order math 臂（新接线）：真值 + clamp。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value_with_quirks(
+            &mut style,
+            "order",
+            "calc(sibling-count() * 2)",
+            false,
+            false,
+            Some((2, 5))
+        ));
+        assert_eq!(style.order, 10);
+        // 裸字面 order 零漂移。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value_with_quirks(
+            &mut style,
+            "order",
+            "-3",
+            false,
+            false,
+            Some((2, 5))
+        ));
+        assert_eq!(style.order, -3);
     }
 }
 

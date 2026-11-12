@@ -2091,7 +2091,10 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "container-name" => crate::property::parse_container_name(trimmed).is_some(),
         // https://drafts.csswg.org/css-content-3/#content-property
         // Keep generated content support checks aligned with the direct declaration parsers.
-        "counter-reset" | "counter-increment" => parse_counter_list(trimmed).is_some(),
+        // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting）。
+        "counter-reset" | "counter-increment" => {
+            zero_css_parser::values::parse_counter_list_with_sibling(trimmed, Some((1, 1))).is_some()
+        }
         "counter-set" => parse_counter_set(trimmed).is_some(),
         "content" => parse_content(trimmed).is_some(),
         "quotes" => parse_quotes(trimmed).is_some(),

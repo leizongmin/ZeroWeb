@@ -28,6 +28,8 @@ mod shadow_host_segment;
 /// 45 号 M2：`::slotted` 段级联测试。
 mod shadow_slotted_segment;
 mod shorthand_coverage;
+/// g19：sibling-index()/sibling-count() 兄弟序位置 + 端到端。
+mod sibling_tree_counting;
 mod style_system_coverage;
 mod ua_dialog_overlay;
 mod ua_dialog_visibility;

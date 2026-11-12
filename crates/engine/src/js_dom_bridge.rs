@@ -5943,7 +5943,10 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
         }
     }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
-        && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
+        // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
+        // tree-counting 页 `CSS.supports('z-index', 'calc(2 * sibling-index())')`
+        // 判真形态；序数敏感的范围门属性存在哨兵假阳局限，在册）。
+        && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false, Some((1, 1)))
 }
 
 /// supports-condition 递归求值。优先用 css-parser 的 [`parse_supports_condition`]（完整处理

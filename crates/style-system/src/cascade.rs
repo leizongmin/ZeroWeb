@@ -915,7 +915,10 @@ fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut
         return true;
     }
     // 有效性检查（apply-on-dummy）：color-scheme 合法性不依赖 prefers，传 light=false。
-    apply_property_value_with_quirks(dummy, property, value, quirks, false)
+    // sibling 哨兵 (1,1)：cascade 合法性与兄弟序无关（winner 字符串缓存兄弟序
+    // 无关——真实 apply 在 inheritance 每元素缓存外重跑）；序数敏感的范围门属性
+    //（font-weight 100-900 等）存在哨兵假阳局限（在册）。
+    apply_property_value_with_quirks(dummy, property, value, quirks, false, Some((1, 1)))
 }
 
 /// 是否为 CSS-wide 关键字（合法，但非 apply 直接解析，由 inheritance/compute 处理）。

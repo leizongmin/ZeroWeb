@@ -272,7 +272,7 @@ pub fn lookup_computed_property(
     let Some(style) = styles.get(&node) else {
         return String::new();
     };
-    serialize_computed_property(style, prop)
+    serialize_computed_property_with_sibling(style, prop, Some(zero_style_system::sibling_position(doc, node)))
 }
 
 /// 把 [`ComputedStyle`] 的单个属性序列化为 CSS 字符串（kebab-case 属性名）。覆盖：
@@ -295,6 +295,44 @@ pub fn lookup_computed_property(
 /// 此处无 layout 故返计算值；对 font-size/border-radius/gap/letter-spacing 等非 geometric 属性
 /// 与 real browser 一致）。
 pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
+    serialize_computed_property_with_sibling(style, prop, None)
+}
+
+/// [`serialize_computed_property`] sibling ctx 变体（CSS Values 5 §tree-counting，
+/// g19）：inset 槽含 sibling-index()/sibling-count() 叶的 Calc 树以注入 ctx 求值
+/// 串化——tree-counting 页 `left: calc(10% + 100px * sibling-index())` →
+/// `calc(10% + 200px)`（#test 序 2）断言驱动。主通道 Calc 求值无 sibling ctx
+/// fail-soft ''，其余形态委托主通道零漂移。`sibling` 由调用方（cache/gcs 线程，
+/// 有 doc+node 上下文）经 [`zero_style_system::sibling_position`] 计算。
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+pub fn serialize_computed_property_with_sibling(
+    style: &ComputedStyle,
+    prop: &str,
+    sibling: Option<(u64, u64)>,
+) -> String {
+    if let Some((ordinal, count)) = sibling {
+        let lv = match prop.trim().to_ascii_lowercase().as_str() {
+            "left" => Some(&style.left),
+            "top" => Some(&style.top),
+            "right" => Some(&style.right),
+            "bottom" => Some(&style.bottom),
+            _ => None,
+        };
+        if let Some(LengthValue::Calc(expr)) = lv
+            && zero_css_parser::values::calc_expr_has_tree_counting(expr)
+        {
+            let font_size_px = match &style.font_size {
+                LengthValue::Px(v) => *v,
+                _ => 16.0,
+            };
+            return calc_computed_to_css(expr, font_size_px, Some((ordinal, count))).unwrap_or_default();
+        }
+    }
+    serialize_computed_property_impl(style, prop)
+}
+
+/// [`serialize_computed_property`] 主实现（sibling 变体委托兜底）。
+fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String {
     // css-variables-1：自定义属性名 case-sensitive（禁 lowercase 归一），且不经
     // kebab 属性分支——计算值 = 指定 token 流经 var() 完整替换（使用点上下文 =
     // 元素自身 custom_properties；环检测 resolve_var 既有）。未声明返 ''（同标准属性）。
@@ -1476,7 +1514,7 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         // 含 % 的 calc：computed 通道 canonical 化（css-values-4 §10.11——静态项
         // 求值 + % 项保留）；不可 canonical 化 → ''（fail-soft，与既有行为一致）。
         // geometric used 通道 % 需 layout 解析（模块头 in-master 限制），该桶挂账。
-        LengthValue::Calc(expr) => calc_computed_to_css(expr, font_size_px).unwrap_or_default(),
+        LengthValue::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
         // em/rem/vw/vh/vmin/vmax/ch：兜底解析残余相对单位为 px。
         other => format_num(
             zero_style_system::resolve_length(other, font_size_px, Some(GCS_VIEWPORT_W), Some(GCS_VIEWPORT_H)),
@@ -1494,20 +1532,26 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// `calc(0% + 10px)` 原样保留）；calc-mix() 全零字面权重塌缩取首项单位族
 /// （语料页 FIXME「混族 matches the first item」）。不可 canonical 化
 /// （Expr 权重/未知函数值项/乘除含 % 树）→ `None`。
-fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64) -> Option<String> {
+///
+/// `sibling`：源元素 `(兄弟序, 兄弟总数)`（CSS Values 5 §tree-counting），
+/// sibling-index()/sibling-count() 叶随注入求值；None fail-closed（主通道
+/// [`length_to_css`] 探测/无 DOM 视图口径）。
+fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
     let ctx = CalcContext {
         font_size: Some(font_size_px),
         root_font_size: Some(16.0),
         viewport_width: Some(GCS_VIEWPORT_W),
         viewport_height: Some(GCS_VIEWPORT_H),
+        sibling_ordinal: sibling.map(|(o, _)| o),
+        sibling_count: sibling.map(|(_, c)| c),
         ..Default::default()
     };
     // ① 全静态（无 % 叶——全零权重 % 值 Mix 的 eval_mix 标量 0 会抹掉单位族，
     // % 族语义必须走 ② 保留）：整体求值为 px。
-    if !calc_has_percentage_leaf(expr) {
-        if let Some(v) = eval_calc_with_context(expr, &ctx) {
-            return Some(format_num(v, "px"));
-        }
+    if !calc_has_percentage_leaf(expr)
+        && let Some(v) = eval_calc_with_context(expr, &ctx)
+    {
+        return Some(format_num(v, "px"));
     }
     // ② 含 % 项：加法脊项化 → canonical 序拼装（% 项在前、其余保序）。
     let terms = calc_terms(expr, &ctx)?;
@@ -1606,19 +1650,13 @@ fn neg_term(t: CompTerm) -> CompTerm {
 fn calc_has_percentage_leaf(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Length(LengthValue::Percentage(_)) => true,
-        CalcExpr::BinaryOp(l, _, r) => {
-            calc_has_percentage_leaf(l) || calc_has_percentage_leaf(r)
-        }
+        CalcExpr::BinaryOp(l, _, r) => calc_has_percentage_leaf(l) || calc_has_percentage_leaf(r),
         CalcExpr::Min(v) | CalcExpr::Max(v) => v.iter().any(calc_has_percentage_leaf),
         CalcExpr::Clamp { min, val, max } => {
-            calc_has_percentage_leaf(min)
-                || calc_has_percentage_leaf(val)
-                || calc_has_percentage_leaf(max)
+            calc_has_percentage_leaf(min) || calc_has_percentage_leaf(val) || calc_has_percentage_leaf(max)
         }
         CalcExpr::UnaryOp(_, a) => calc_has_percentage_leaf(a),
-        CalcExpr::BinaryMathOp(_, a, b) => {
-            calc_has_percentage_leaf(a) || calc_has_percentage_leaf(b)
-        }
+        CalcExpr::BinaryMathOp(_, a, b) => calc_has_percentage_leaf(a) || calc_has_percentage_leaf(b),
         CalcExpr::Mix(items) => items.iter().any(|it| calc_has_percentage_leaf(&it.value)),
         _ => false,
     }
@@ -1658,10 +1696,7 @@ fn mix_terms(items: &[CalcMixItem], ctx: &CalcContext) -> Option<Vec<CompTerm>> 
     let literal_total: f64 = slots.iter().filter_map(|x| *x).sum();
     let missing = slots.iter().filter(|x| x.is_none()).count();
     let fill = (100.0 - literal_total).max(0.0) / missing.max(1) as f64;
-    let w: Vec<f64> = slots
-        .into_iter()
-        .map(|x| x.unwrap_or(fill))
-        .collect();
+    let w: Vec<f64> = slots.into_iter().map(|x| x.unwrap_or(fill)).collect();
     let total: f64 = w.iter().sum();
     // 全零塌缩：首项单位族（% 叶 → 0%；px 维叶 → 0px；无数维叶 → None）。
     if total <= 0.0 {
@@ -4127,10 +4162,7 @@ mod computed_calc_serialize_tests {
         // calc(10px + calc-mix(1% 0%, 3px 0%)) → calc(0% + 10px)（零 % 项保留）。
         assert_eq!(
             length_to_css(
-                &calc(add(
-                    px(10.0),
-                    mix(vec![(pct(1.0), Some(0.0)), (px(3.0), Some(0.0))])
-                )),
+                &calc(add(px(10.0), mix(vec![(pct(1.0), Some(0.0)), (px(3.0), Some(0.0))]))),
                 16.0
             ),
             "calc(0% + 10px)"
@@ -4138,10 +4170,7 @@ mod computed_calc_serialize_tests {
         // calc(10% + calc-mix(1px 0%, 3% 0%)) → 10%（零 px 项丢弃、单项解包）。
         assert_eq!(
             length_to_css(
-                &calc(add(
-                    pct(10.0),
-                    mix(vec![(px(1.0), Some(0.0)), (pct(3.0), Some(0.0))])
-                )),
+                &calc(add(pct(10.0), mix(vec![(px(1.0), Some(0.0)), (pct(3.0), Some(0.0))]))),
                 16.0
             ),
             "10%"
@@ -4149,10 +4178,7 @@ mod computed_calc_serialize_tests {
         // calc(10px + calc-mix(1px 0%, 3% 0%)) → 10px。
         assert_eq!(
             length_to_css(
-                &calc(add(
-                    px(10.0),
-                    mix(vec![(px(1.0), Some(0.0)), (pct(3.0), Some(0.0))])
-                )),
+                &calc(add(px(10.0), mix(vec![(px(1.0), Some(0.0)), (pct(3.0), Some(0.0))]))),
                 16.0
             ),
             "10px"
@@ -4181,22 +4207,17 @@ mod computed_calc_serialize_tests {
         assert_eq!(
             calc_computed_to_css(
                 &mix(vec![
-                    (
-                        CalcExpr::TreeCounting(TreeCountingFn::SiblingIndex),
-                        Some(50.0)
-                    ),
+                    (CalcExpr::TreeCounting(TreeCountingFn::SiblingIndex), Some(50.0)),
                     (px(3.0), Some(50.0)),
                 ]),
-                16.0
+                16.0,
+                None
             ),
             None
         );
         // 混族非零权重（语料 FIXME undefined）→ ''。
         assert_eq!(
-            length_to_css(
-                &calc(mix(vec![(pct(1.0), Some(50.0)), (px(3.0), Some(50.0))])),
-                16.0
-            ),
+            length_to_css(&calc(mix(vec![(pct(1.0), Some(50.0)), (px(3.0), Some(50.0))])), 16.0),
             ""
         );
     }
@@ -4207,27 +4228,15 @@ mod computed_calc_serialize_tests {
         // minmax-length-percent-computed `min(1px + 1%)` ≡ `calc(1px + 1%)`
         // → 同串 canonical calc(1% + 1px)。
         assert_eq!(
-            length_to_css(
-                &calc(CalcExpr::Min(vec![add(px(1.0), pct(1.0))])),
-                16.0
-            ),
+            length_to_css(&calc(CalcExpr::Min(vec![add(px(1.0), pct(1.0))])), 16.0),
             "calc(1% + 1px)"
         );
         assert_eq!(
-            length_to_css(
-                &calc(CalcExpr::Max(vec![add(px(96.0), pct(1.0))])),
-                16.0
-            ),
+            length_to_css(&calc(CalcExpr::Max(vec![add(px(96.0), pct(1.0))])), 16.0),
             "calc(1% + 96px)"
         );
         // 多参含 % 不项化（fail-closed，语料无驱动）→ ''。
-        assert_eq!(
-            length_to_css(
-                &calc(CalcExpr::Min(vec![px(1.5), pct(10.0)])),
-                16.0
-            ),
-            ""
-        );
+        assert_eq!(length_to_css(&calc(CalcExpr::Min(vec![px(1.5), pct(10.0)])), 16.0), "");
     }
 
     #[test]
@@ -4237,18 +4246,17 @@ mod computed_calc_serialize_tests {
         assert_eq!(
             calc_computed_to_css(
                 &CalcExpr::UnaryOp(UnaryMathOp::Abs, Box::new(add(pct(0.0), px(772.333)))),
-                16.0
+                16.0,
+                None
             ),
             Some("calc(0% + 772.333px)".to_string())
         );
         // 含负项 |Σ| ≠ Σ → fail-closed None。
         assert_eq!(
             calc_computed_to_css(
-                &CalcExpr::UnaryOp(
-                    UnaryMathOp::Abs,
-                    Box::new(add(px(10.0), pct(-30.0)))
-                ),
-                16.0
+                &CalcExpr::UnaryOp(UnaryMathOp::Abs, Box::new(add(px(10.0), pct(-30.0)))),
+                16.0,
+                None
             ),
             None
         );

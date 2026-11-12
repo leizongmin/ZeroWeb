@@ -1032,8 +1032,43 @@ fn flex_basis_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     }
 }
 
+/// <integer> 文法位数学形求值（CSS Values 4 §10.5：math function 可用于对应
+/// 类型文法位）：parse + 整体 <number> 型别门 + 求值四舍五入取整。`sibling`
+/// 为 `Some((序, 总))` 时 sibling-index()/sibling-count() 树随注入值求值，
+/// None fail-closed（CSS Values 5 §tree-counting；tree-counting 页
+/// `z-index: calc(2 * sibling-index())` / `order: calc(2 * sibling-count())`
+/// 形态驱动）。
+/// <https://drafts.csswg.org/css-values-5/#tree-counting>
+pub(crate) fn eval_int_math_value(value: &str, sibling: Option<(u64, u64)>) -> Option<i64> {
+    let expr = values::parse_math_function(value)?;
+    if !values::calc_expr_is_number(&expr) {
+        return None;
+    }
+    let v = match sibling {
+        Some((ordinal, count)) => values::eval_calc_with_context(
+            &expr,
+            &values::CalcContext {
+                sibling_ordinal: Some(ordinal),
+                sibling_count: Some(count),
+                ..Default::default()
+            },
+        )?,
+        None => values::eval_calc(&expr, None)?,
+    };
+    if !v.is_finite() {
+        return None;
+    }
+    Some(v.round() as i64)
+}
+
 /// 解析 CSS z-index 值。
 pub fn parse_z_index(value: &str) -> Option<ZIndexValue> {
+    parse_z_index_with_sibling(value, None)
+}
+
+/// [`parse_z_index`] sibling ctx 变体：真实 apply 传元素 `(序, 总)` 真值，
+/// 探测面传序数无关哨兵 `Some((1, 1))`。
+pub fn parse_z_index_with_sibling(value: &str, sibling: Option<(u64, u64)>) -> Option<ZIndexValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("auto") {
         return Some(ZIndexValue::Auto);
@@ -1042,22 +1077,15 @@ pub fn parse_z_index(value: &str) -> Option<ZIndexValue> {
     // WPT（z-index-001/012）用 INT32_MIN-1 (-2147483649) / INT32_MAX+1 (2147483648) 验证
     // 极端值处理。旧 `i32::parse` 超范围失败返 None → 声明被丢弃 → 元素回退 auto(0) 致
     // 错序（red 盖 green，应反之）。clamp 到 i32::MIN/MAX 保排序正确（极端值仍是最负/最正）。
-    let int: i64 = value.parse().ok().or_else(|| {
+    let int: i64 = value
+        .parse()
+        .ok()
         // <integer> 文法位接受顶层 L4 数学函数（CSS Values 4 §10.5：math function
         // 可用于对应类型文法位；wptfyi-css DC-2 values math 桶——signs-abs-computed
         // 以 `z-index: sign(-3)` 形态驱动）。型别须整体 <number>（calc_expr_is_number
         // 拒长度/角度叶），求值四舍五入取整（css-values-4 整数维度 computed 取整；
         // sign/abs/round 已整不受影响）。
-        let expr = values::parse_math_function(value)?;
-        if !values::calc_expr_is_number(&expr) {
-            return None;
-        }
-        let v = values::eval_calc(&expr, None)?;
-        if !v.is_finite() {
-            return None;
-        }
-        Some(v.round() as i64)
-    })?;
+        .or_else(|| eval_int_math_value(value, sibling))?;
     let clamped = int.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
     Some(ZIndexValue::Integer(clamped))
 }

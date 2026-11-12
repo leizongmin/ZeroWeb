@@ -6,10 +6,12 @@
 //! 折叠原语在此（css-parser 面）；调用方（inline style 读回/写面归一）按需接线。
 
 use super::calc_mix::{CalcMixItem, CalcMixWeight};
-use super::parse_extended::{calc_expr_has_angle_result, calc_expr_has_length, calc_expr_is_number};
+use super::parse_extended::{
+    calc_expr_has_angle_result, calc_expr_has_length, calc_expr_has_tree_counting, calc_expr_is_number,
+};
 use super::types::{
-    CalcExpr, CalcOp, LengthValue, eval_calc, eval_calc_with_default_font, is_math_function_value, parse_math_function,
-    parse_time_calc,
+    CalcExpr, CalcOp, LengthValue, TreeCountingFn, eval_calc, eval_calc_with_default_font, is_math_function_value,
+    parse_math_function, parse_time_calc,
 };
 
 /// 折叠结果的文法型别（决定 NaN/单位序列化形态）。
@@ -57,6 +59,12 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
     if calc_expr_has_length(&expr) && !matches!(kind, MathFoldKind::Length) {
         return None;
     }
+    // tree-counting 叶（sibling-index()/sibling-count()）串化臂：opaque 函数形
+    // canonical（CSS Values 5 §tree-counting；calc-sibling-function-parsing 语料
+    // 钉面）——先于标量求值（求值无 DOM 视图恒 None）。
+    if calc_expr_has_tree_counting(&expr) {
+        return fold_tree_counting_calc(&expr, kind, value);
+    }
     match kind {
         // <number> 位非 number 式拒（scale 槽 `calc(10px)` 等）。
         MathFoldKind::Number if !calc_expr_is_number(&expr) => return None,
@@ -90,6 +98,161 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
         // Number/Length/Time 标量折叠（% /字体维度两级求值见 scalar_value）。
         _ => fold_dimension_calc(&expr),
     }
+}
+
+/// 含 tree-counting 叶的纯 calc 树 specified 串化（CSS Values 5 §tree-counting
+/// 写面 canonical；calc-sibling-function-parsing 语料 20 形钉面）：
+///
+/// - 顶层乘法链拆因子：单 sibling 叶（opaque，函数名归一 `sibling-index( )` →
+///   `sibling-index()`）殿后；静态因子单原子时保维度原子 canonical（Length 位
+///   `1em`/`1%` 布局依赖不折叠——原文回显）；
+/// - Angle/Time/Number 位静态积 opaque→1 掩码求值 + 规范单位（`2rad * pi` →
+///   `360deg`、`100ms` → `0.1s`；角度 deg 换算 provenance 与 [`fold_math_specified`]
+///   Angle 臂同口径）；
+/// - 无静态因子 → calc 包裹解包（`calc(sibling-index())` → `sibling-index()`）；
+/// - 加减/min/max/clamp/trig 包裹、多 opaque、除法链含 opaque → None 保留原文
+///   （FIXME: 无语料钉面）。
+fn fold_tree_counting_calc(expr: &CalcExpr, kind: MathFoldKind, src: &str) -> Option<String> {
+    let factors = flatten_multiply_chain(expr)?;
+    let mut opaque: Option<&'static str> = None;
+    let mut statics: Vec<&CalcExpr> = Vec::new();
+    for f in factors {
+        match f {
+            CalcExpr::TreeCounting(fn_) => {
+                if opaque.is_some() {
+                    return None;
+                }
+                opaque = Some(match fn_ {
+                    TreeCountingFn::SiblingIndex => "sibling-index()",
+                    TreeCountingFn::SiblingCount => "sibling-count()",
+                });
+            }
+            other => statics.push(other),
+        }
+    }
+    let opaque_str = opaque?;
+    let static_str = match statics.as_slice() {
+        // 单 opaque 叶：calc 包裹解包（z-index 语料 `calc(sibling-index())`
+        // → `sibling-index()` 钉面）。
+        [] => return Some(opaque_str.to_string()),
+        // Length 位单静态原子保维度 canonical（`1em`/`1%` 原文回显；布局
+        // 依赖值不折叠——求值无基准）。
+        [CalcExpr::Length(lv)] if kind == MathFoldKind::Length => {
+            format!("{}{}", format_number_6dp(length_atom_value(lv)?), length_suffix(lv)?)
+        }
+        _ => fold_static_masked(expr, kind, src)?,
+    };
+    Some(format!("calc({static_str} * {opaque_str})"))
+}
+
+/// 静态积串化：opaque 叶 → 1 掩码后整体求值（纯静态树，无 DOM 视图可达），
+/// Angle/Time/Number 按槽位规范单位发射。
+fn fold_static_masked(expr: &CalcExpr, kind: MathFoldKind, src: &str) -> Option<String> {
+    let mut masked = expr.clone();
+    mask_tree_counting(&mut masked, 1.0);
+    let v = eval_calc(&masked, None)?;
+    Some(match kind {
+        // 角度 deg 换算 provenance（角度产出函数 / 原文单位叶）与
+        // [`fold_math_specified`] Angle 臂同口径。
+        MathFoldKind::Angle => {
+            let deg = if calc_expr_has_angle_result(&masked) || span_has_top_level_angle_unit(&src.to_ascii_lowercase())
+            {
+                v.to_degrees()
+            } else {
+                v
+            };
+            format_dimension_inner(deg, Some("deg"))
+        }
+        MathFoldKind::Time => format_dimension_inner(v, Some("s")),
+        _ => format_dimension_inner(v, None),
+    })
+}
+
+/// 后序遍历：树内全部 tree-counting 叶替换为数值（掩码求值用）。
+fn mask_tree_counting(expr: &mut CalcExpr, v: f64) {
+    match expr {
+        CalcExpr::TreeCounting(_) => *expr = CalcExpr::Number(v),
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => {}
+        CalcExpr::BinaryOp(l, _, r) => {
+            mask_tree_counting(l, v);
+            mask_tree_counting(r, v);
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter_mut().for_each(|a| mask_tree_counting(a, v)),
+        CalcExpr::Clamp { min, val, max } => {
+            mask_tree_counting(min, v);
+            mask_tree_counting(val, v);
+            mask_tree_counting(max, v);
+        }
+        CalcExpr::UnaryOp(_, inner) => mask_tree_counting(inner, v),
+        // calc-mix() 项/权重内 opaque：串化边界外（fold_mix_dimension 先路由）。
+        CalcExpr::Mix(_) => {}
+        CalcExpr::BinaryMathOp(_, l, r) => {
+            mask_tree_counting(l, v);
+            mask_tree_counting(r, v);
+        }
+    }
+}
+
+/// 顶层乘法链因子展开（仅 [`CalcOp::Multiply`]；其他复合形态返 None）。
+fn flatten_multiply_chain(expr: &CalcExpr) -> Option<Vec<&CalcExpr>> {
+    match expr {
+        CalcExpr::BinaryOp(l, CalcOp::Multiply, r) => {
+            let mut out = flatten_multiply_chain(l)?;
+            out.extend(flatten_multiply_chain(r)?);
+            Some(out)
+        }
+        CalcExpr::TreeCounting(_) => Some(vec![expr]),
+        // 加减/min/max/函数包裹等复合树含 opaque：串化边界外（FIXME 无钉面）。
+        _ if calc_expr_has_tree_counting(expr) => None,
+        leaf => Some(vec![leaf]),
+    }
+}
+
+/// [`LengthValue`] calc 树可达维度原子的数值（关键字/嵌套式防御臂返 None）。
+fn length_atom_value(lv: &LengthValue) -> Option<f64> {
+    Some(match lv {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Cqw(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Lh(v)
+        | LengthValue::Percentage(v) => *v,
+        _ => return None,
+    })
+}
+
+/// 裸 sibling 函数形识别（无 calc 包裹；容忍内部空白 `sibling-index( )`）——
+/// z-index `<integer>` 槽语料形态。返回归一函数名。
+fn sibling_bare_fn(v: &str) -> Option<&'static str> {
+    let lower = v.trim().to_ascii_lowercase();
+    for (name, canonical) in [
+        ("sibling-index", "sibling-index()"),
+        ("sibling-count", "sibling-count()"),
+    ] {
+        if let Some(rest) = lower.strip_prefix(name) {
+            if rest.trim() == "()" {
+                return Some(canonical);
+            }
+        }
+    }
+    None
 }
 
 /// 维度标量折叠入口：整体求值 NaN 且树内存在「任一实参 NaN 且实参 canonical
@@ -483,6 +646,30 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "width" | "text-indent" => fold_math_specified(v, MathFoldKind::Length),
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
+        }
+        // left 槽仅 sibling 树串化（`sibling-index( )` 空白归一；非 sibling
+        // calc 形不折叠——inline store 原文行为零漂移，% 树布局依赖保留）。
+        "left" => {
+            let expr = parse_math_function(v)?;
+            if calc_expr_has_tree_counting(&expr) {
+                fold_tree_counting_calc(&expr, MathFoldKind::Length, v)
+            } else {
+                None
+            }
+        }
+        // z-index：裸 sibling 函数形归一 + calc 包裹 sibling 树（单 opaque 叶
+        // 解包 `calc(sibling-index())` → `sibling-index()` 语料钉面）；非
+        // sibling 形不折叠（parse_z_index 通道原文往返）。
+        "z-index" => {
+            if let Some(canonical) = sibling_bare_fn(v) {
+                return Some(canonical.to_string());
+            }
+            let expr = parse_math_function(v)?;
+            if calc_expr_has_tree_counting(&expr) {
+                fold_tree_counting_calc(&expr, MathFoldKind::Number, v)
+            } else {
+                None
+            }
         }
         _ => None,
     }

@@ -109,6 +109,8 @@ mod r5076_scale_percent_tests;
 mod r5400_qualified_rule_recovery_tests;
 mod r5401_safe_overflow_position_tests;
 mod review_r3344;
+/// sibling-index()/sibling-count() 求值 + 写面 canonical 串化钉面（g19）。
+mod sibling_tree_counting_tests;
 /// 45 号 M2：`::slotted(<compound-selector>)` 解析契约与特异性。
 mod slotted_selector;
 mod tests_1;
