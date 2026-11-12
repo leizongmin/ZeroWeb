@@ -19,52 +19,26 @@ mod validation;
 
 // ── 查询位置索引（p125）──────────────────────────────────────────────
 
-/// p125 每查询位置索引：元素父 → (元素子 → sibling 位置)（type_complexity 拆别名）。
+/// p125 位置索引：元素父 → (元素子 → sibling 位置)（type_complexity 拆别名）。
 type QueryPosIndex = HashMap<NodeId, HashMap<NodeId, crate::query::ElementPosition>>;
 
-// 单次查询线程局部的 sibling 位置索引：`元素父 → (元素子 → ElementPosition)`。
+/// selector 解析缓存容量上界（`selector_chain_cache`/`simple_selector_cache`
+/// 共用）：超限整体 clear 而非 LRU——防 pathological 页面（脚本逐次构造唯一
+/// selector 文本）驻留无界；正常页面查询集远小于此。
+const SELECTOR_CACHE_CAP: usize = 256;
+
+// sibling 位置索引：`元素父 → (元素子 → ElementPosition)`，字段化驻留于
+// [`Document`]（T63 churn 治理——旧实现为 thread_local 每查询装/卸，每次查询
+// 全弃重建，采样归因的 hashbrown churn 主导面）。
 //
-// `query_selector`/`query_selector_all`（含 shadow 变体）入口经 [`QueryPosIndexGuard`]
-// 装载：外层查询装载、嵌套查询（`:has()`/`:nth-child(an+b of S)` 延后复评）复用同一
-// 索引、最外层 Drop 时卸载。装载期间 [`Document::compute_element_position`] 首次访问
-// 某个元素父即一次批量计算其**全部**元素子的位置并回填——宽兄弟页面（github trending
-// select-menu 846 个同父 `<a>`）的链选择器 DFS 从「每节点 O(兄弟) 两次遍历 + Vec 分配」
-// 塌缩为摊销 O(1)/节点。索引未装载的单点调用（`matches`/`closest`）行为不变。
-thread_local! {
-    static QUERY_POS_INDEX: std::cell::RefCell<Option<QueryPosIndex>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// [`QUERY_POS_INDEX`] 的 RAII 守卫：仅最外层查询装载/卸载，嵌套查询复用。
-struct QueryPosIndexGuard {
-    installed: bool,
-}
-
-impl QueryPosIndexGuard {
-    /// 装载索引（已装载则复用，不重复初始化）。
-    fn install() -> Self {
-        let installed = QUERY_POS_INDEX.with(|slot| {
-            let mut borrow = slot.borrow_mut();
-            if borrow.is_some() {
-                false
-            } else {
-                *borrow = Some(HashMap::new());
-                true
-            }
-        });
-        Self { installed }
-    }
-}
-
-impl Drop for QueryPosIndexGuard {
-    fn drop(&mut self) {
-        if self.installed {
-            QUERY_POS_INDEX.with(|slot| {
-                *slot.borrow_mut() = None;
-            });
-        }
-    }
-}
+// 查询族（`query_selector`/`query_selector_all` 含 shadow 变体、嵌套查询
+// `:has()`/`:nth-child(an+b of S)` 延后复评）共享同一常驻索引；
+// [`Document::compute_element_position`] 首次访问某个元素父即一次批量计算其
+// **全部**元素子的位置并回填——宽兄弟页面（github trending select-menu 846 个
+// 同父 `<a>`）的链选择器 DFS 从「每节点 O(兄弟) 两次遍历 + Vec 分配」塌缩为
+// 摊销 O(1)/节点。结构变化全清（[`Self::invalidate_query_pos_index`] 调用点
+// 全集，宁过勿漏）；slotmap NodeId 世代键跨文档可数值碰撞，故不进全局/TLS，
+// 随 Document 实例生命周期隔离。
 
 // ── DocumentPosition ─────────────────────────────────────────────────
 
@@ -185,6 +159,20 @@ pub struct Document {
     /// 呈现 + getComputedStyle）待渲染流 A2 appearance:base-select 交付后镜像
     /// `inject_focus_state` 逐帧注入，语料现只钉 DOM 查询面。
     filtered_options: Vec<NodeId>,
+    /// p125 位置索引的字段化驻留（T63 churn 治理，见模块顶 [`QueryPosIndex`] 注）。
+    /// 失效契约：结构变化（children 写点）调 [`Self::invalidate_query_pos_index`]
+    /// 全清——宁过勿漏（索引是纯缓存，重算恢复，清空无语义风险；漏清则伪类
+    /// 位置评估读到过期 sibling 序，正确性红线）。
+    query_pos_index: std::cell::RefCell<QueryPosIndex>,
+    /// selector 文本 → 已解析链缓存（T63 churn 治理）：`parse_selector_chain`
+    /// 为纯文本→AST（无 DOM 引用、无内部可变），同文本恒同产物，Arc 共享免
+    /// 逐查询重解析（采样归因第三主导面）。键=trim 后真实输入文本；容量上界
+    /// [`SELECTOR_CACHE_CAP`] 超限整体 clear（pathological 动态 selector 文本
+    /// 不驻留）；解析失败不缓存（失败路径罕见，不占驻留）。
+    selector_chain_cache: std::cell::RefCell<HashMap<Box<str>, std::sync::Arc<crate::query::SelectorChain>>>,
+    /// 同 [`Self::selector_chain_cache`]，单 compound 形（`matches`/`closest`/
+    /// `:has` inner/`:nth-child(of S)`/shadow 查询）。
+    simple_selector_cache: std::cell::RefCell<HashMap<Box<str>, std::sync::Arc<crate::query::SimpleSelector>>>,
 }
 
 impl Document {
@@ -216,6 +204,9 @@ impl Document {
             modal_dialogs: Vec::new(),
             active_element: None,
             filtered_options: Vec::new(),
+            query_pos_index: std::cell::RefCell::new(HashMap::new()),
+            selector_chain_cache: std::cell::RefCell::new(HashMap::new()),
+            simple_selector_cache: std::cell::RefCell::new(HashMap::new()),
         }
     }
 
@@ -248,6 +239,9 @@ impl Document {
             modal_dialogs: Vec::new(),
             active_element: None,
             filtered_options: Vec::new(),
+            query_pos_index: std::cell::RefCell::new(HashMap::new()),
+            selector_chain_cache: std::cell::RefCell::new(HashMap::new()),
+            simple_selector_cache: std::cell::RefCell::new(HashMap::new()),
         };
         // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现（builder 的 TreeSink 不维护 id_map；成本与旧实现
         // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
@@ -414,6 +408,9 @@ impl Document {
             return Err(DomError::WouldCreateCycle);
         }
 
+        // children 结构变化 → 位置索引全清（失效契约见 invalidate_query_pos_index）。
+        self.invalidate_query_pos_index();
+
         // 如果 child 已有父节点，先从原父节点移除
         self.detach(child);
 
@@ -482,6 +479,9 @@ impl Document {
             old_value: None,
         });
 
+        // children 结构变化 → 位置索引全清（失效契约见 invalidate_query_pos_index）。
+        self.invalidate_query_pos_index();
+
         // 从父节点子列表中移除
         if let Some(parent_data) = self.nodes.get_mut(parent) {
             parent_data.children.retain(|&id| id != child);
@@ -534,6 +534,8 @@ impl Document {
         // R3350：必须在**计算 ref_idx 之前** detach——当 new_node 本身就是 parent 的子节点时，
         // detach 会把它从 parent.children 移除，使 ref_node 的索引左移；若先算 ref_idx 再 detach，
         // 得到的索引指向错误位置（如 `insert_before(parent, A, D)` 在 [A,B,C,D] 上得 A 末尾而非 D 前）。
+        // children 结构变化 → 位置索引全清（失效契约见 invalidate_query_pos_index）。
+        self.invalidate_query_pos_index();
         self.detach(new_node);
 
         // detach 后重新查找 ref_node 的位置——此时 children 已反映移除 new_node 后的真实状态。
@@ -603,6 +605,8 @@ impl Document {
         // 如果 new_child 已有父节点，先从原父节点移除。
         // R3350：必须在**计算 old_idx 之前** detach——当 new_child 本身就是 parent 的子节点且位于
         // old_child 之前时，detach 使列表左移，old_idx 越界（`children[old_idx]` panic）。
+        // children 结构变化 → 位置索引全清（失效契约见 invalidate_query_pos_index）。
+        self.invalidate_query_pos_index();
         self.detach(new_child);
 
         // detach 后重新查找 old_child 的位置——此时 children 已反映移除 new_child 后的真实状态。
@@ -989,6 +993,8 @@ impl Document {
                     }
                 }
                 NodeKind::Element(_) | NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
+                    // children 结构变化 → 位置索引全清（失效契约见 invalidate_query_pos_index）。
+                    self.invalidate_query_pos_index();
                     // 清除所有子节点
                     let children: Vec<NodeId> = self.nodes.get(id).map(|n| n.children.clone()).unwrap_or_default();
 
@@ -1184,20 +1190,17 @@ impl Document {
     ///（spec `querySelector` 接受列表——R57 FV M3：`form.querySelectorAll('input, button')`
     /// 等子树/文档级列表查询；旧实现把列表当单选择器解析失败 → 空结果）。
     pub fn query_selector(&self, root: NodeId, selector: &str) -> Option<NodeId> {
-        let _pos_index = QueryPosIndexGuard::install();
         if let Some(parts) = crate::query::split_top_level_selector_list(crate::trim_ascii_ws(selector))
             && parts.len() > 1
         {
             // 列表：单次 DFS 文档序，首个命中任一段（chain 解析失败的段跳过）。
-            let chains: Vec<crate::query::SelectorChain> = parts
-                .iter()
-                .filter_map(|p| crate::query::parse_selector_chain(p))
-                .collect();
+            let chains: Vec<std::sync::Arc<crate::query::SelectorChain>> =
+                parts.iter().filter_map(|p| self.cached_selector_chain(p)).collect();
             // R145：任一段显式寻址 template → direct-address 例外（不跳过 template 子树）。
-            let skip = !chains.iter().any(Self::chain_addresses_template);
+            let skip = !chains.iter().any(|c| Self::chain_addresses_template(c));
             return self.find_first_matching_chains_opt(root, &chains, skip);
         }
-        let chain = crate::query::parse_selector_chain(crate::trim_ascii_ws(selector))?;
+        let chain = self.cached_selector_chain(crate::trim_ascii_ws(selector))?;
         if chain.parts.len() == 1 {
             return self.find_first_matching_opt(root, &chain.parts[0], true);
         }
@@ -1211,21 +1214,18 @@ impl Document {
     ///
     /// 支持逗号分隔的选择器列表（spec 语义；文档序、去重——每个节点只判一次）。
     pub fn query_selector_all(&self, root: NodeId, selector: &str) -> Vec<NodeId> {
-        let _pos_index = QueryPosIndexGuard::install();
         if let Some(parts) = crate::query::split_top_level_selector_list(crate::trim_ascii_ws(selector))
             && parts.len() > 1
         {
-            let chains: Vec<crate::query::SelectorChain> = parts
-                .iter()
-                .filter_map(|p| crate::query::parse_selector_chain(p))
-                .collect();
+            let chains: Vec<std::sync::Arc<crate::query::SelectorChain>> =
+                parts.iter().filter_map(|p| self.cached_selector_chain(p)).collect();
             let mut result = Vec::new();
             // R145：同 query_selector 的 template direct-address 例外。
-            let skip = !chains.iter().any(Self::chain_addresses_template);
+            let skip = !chains.iter().any(|c| Self::chain_addresses_template(c));
             self.collect_matching_chains_opt(root, &chains, &mut result, skip);
             return result;
         }
-        let chain = match crate::query::parse_selector_chain(crate::trim_ascii_ws(selector)) {
+        let chain = match self.cached_selector_chain(crate::trim_ascii_ws(selector)) {
             Some(c) => c,
             None => return vec![],
         };
@@ -1253,7 +1253,7 @@ impl Document {
     ///（常见用法，如 `el.matches('.btn')`/`'div.active'`）；非法/组合器选择器 → `false`（不 panic）。
     /// 非 Element 节点 → `false`。
     pub fn matches(&self, node: NodeId, selector: &str) -> bool {
-        let Some(simple) = crate::query::parse_simple_selector(crate::trim_ascii_ws(selector)) else {
+        let Some(simple) = self.cached_simple_selector(crate::trim_ascii_ws(selector)) else {
             return false;
         };
         self.element_matches_selector(node, &simple)
@@ -1264,7 +1264,7 @@ impl Document {
     /// 从 `node` 沿 parent 链上溯（含自身），返首个匹配**复合选择器**的节点 NodeId；无匹配 → `None`。
     /// 同 [`Self::matches`]：仅 compound（无组合器）；非法选择器 → `None`。
     pub fn closest(&self, node: NodeId, selector: &str) -> Option<NodeId> {
-        let simple = crate::query::parse_simple_selector(crate::trim_ascii_ws(selector))?;
+        let simple = self.cached_simple_selector(crate::trim_ascii_ws(selector))?;
         let mut cur = Some(node);
         while let Some(c) = cur {
             if self.element_matches_selector(c, &simple) {
@@ -1373,6 +1373,10 @@ impl Document {
         }
 
         // 第三遍：从父节点子列表中移除标记的节点，清除父引用
+        // （有移除才失效——children 结构变化契约见 invalidate_query_pos_index）
+        if !to_remove.is_empty() {
+            self.invalidate_query_pos_index();
+        }
         for &id in &to_remove {
             if let Some(parent_data) = self.nodes.get_mut(node_id) {
                 parent_data.children.retain(|&c| c != id);
@@ -2044,8 +2048,9 @@ impl Document {
         if skip_templates && self.is_query_opaque(id) {
             return None;
         }
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（每访问节点一个 Vec 分配——DFS
+        // churn 归因面之二）；全链 &self 共享借用，迭代期 children 不变。
+        for &child in &node_data.children {
             if self.is_shadow_root_node(child) {
                 continue;
             }
@@ -2072,8 +2077,8 @@ impl Document {
         if skip_templates && self.is_query_opaque(id) {
             return None;
         }
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+        for &child in &node_data.children {
             if self.is_shadow_root_node(child) {
                 continue;
             }
@@ -2088,7 +2093,7 @@ impl Document {
     fn find_first_matching_chains_opt(
         &self,
         id: NodeId,
-        chains: &[crate::query::SelectorChain],
+        chains: &[std::sync::Arc<crate::query::SelectorChain>],
         skip_templates: bool,
     ) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
@@ -2100,8 +2105,8 @@ impl Document {
         if skip_templates && self.is_query_opaque(id) {
             return None;
         }
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+        for &child in &node_data.children {
             if self.is_shadow_root_node(child) {
                 continue;
             }
@@ -2279,18 +2284,20 @@ impl Document {
             // :has(> inner)——直接元素子 c **自身**匹配 inner（单简单选择器，常见 `:has(> .foo)`）。
             // 不搜 c 的后代（那会是 `:has(> * inner)` 语义，致假阳性）。inner 含组合器（如
             // `:has(> .a .b)`）的相对求值为 follow-up（parse_simple_selector 对含空格者返非预期 → 不匹配）。
-            let children = self.nodes.get(node).map(|n| n.children.to_vec()).unwrap_or_default();
-            let sel = crate::query::parse_simple_selector(inner);
-            for c in children {
-                let is_elem = self
-                    .nodes
-                    .get(c)
-                    .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
-                if is_elem
-                    && let Some(sel) = &sel
-                    && self.element_matches_selector(c, sel)
-                {
-                    return true;
+            // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+            let sel = self.cached_simple_selector(inner);
+            if let Some(node_data) = self.nodes.get(node) {
+                for &c in &node_data.children {
+                    let is_elem = self
+                        .nodes
+                        .get(c)
+                        .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
+                    if is_elem
+                        && let Some(sel) = &sel
+                        && self.element_matches_selector(c, sel)
+                    {
+                        return true;
+                    }
                 }
             }
             false
@@ -2311,9 +2318,9 @@ impl Document {
     /// 延后复评）；style-system `:nth-child(an+b of S)` CSS 匹配为独立实现（matcher::matches_nth_child_of）。
     fn matches_nth_child_of(&self, node: NodeId, nth: &crate::query::Nth, of_selectors: &[String], last: bool) -> bool {
         // 元素自身须匹配 of S（否则不参与计数）。
-        let of_compiled: Vec<crate::query::SimpleSelector> = of_selectors
+        let of_compiled: Vec<std::sync::Arc<crate::query::SimpleSelector>> = of_selectors
             .iter()
-            .filter_map(|s| crate::query::parse_simple_selector(s))
+            .filter_map(|s| self.cached_simple_selector(s))
             .collect();
         if of_compiled.is_empty() {
             return false; // of S 全非法 → 无元素可计数。
@@ -2326,17 +2333,19 @@ impl Document {
             // 根元素：唯一元素兄弟，匹配 S 时位置=1。
             return nth.matches(1);
         };
-        let siblings: Vec<NodeId> = self.nodes.get(parent).map(|p| p.children.to_vec()).unwrap_or_default();
         // 仅计元素兄弟中匹配 S 的。
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
         let mut matched: Vec<NodeId> = Vec::new();
-        for sib in &siblings {
-            if self
-                .nodes
-                .get(*sib)
-                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
-                && of_compiled.iter().any(|sel| self.element_matches_selector(*sib, sel))
-            {
-                matched.push(*sib);
+        if let Some(parent_data) = self.nodes.get(parent) {
+            for &sib in &parent_data.children {
+                if self
+                    .nodes
+                    .get(sib)
+                    .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                    && of_compiled.iter().any(|sel| self.element_matches_selector(sib, sel))
+                {
+                    matched.push(sib);
+                }
             }
         }
         let target = if last {
@@ -2347,6 +2356,50 @@ impl Document {
             matched.iter().position(|&c| c == node).map(|i| (i + 1) as i32)
         };
         target.is_some_and(|pos| nth.matches(pos))
+    }
+
+    /// 结构变化后清空位置索引（T63 字段化驻留的失效契约，宁过勿漏）。
+    ///
+    /// 调用点全集 = children 结构写点：`append_child`/`remove_child`/
+    /// `insert_before`/`replace_child`/`set_text_content`（元素类分支）/
+    /// `normalize`（有移除时）/`attach_shadow_full`（shadow.rs）/`clear_children`
+    ///（selectedcontent.rs）。`clone_node`/`import_node` 的 push 目标为克隆新树
+    ///（新 NodeId 不入索引）无需失效；解析期写点在 builder 表（Document 尚未
+    /// 构造）无需失效。索引是纯缓存，重算恢复，清空无语义风险。
+    pub(crate) fn invalidate_query_pos_index(&self) {
+        self.query_pos_index.borrow_mut().clear();
+    }
+
+    /// selector 文本 → 已解析链（T63 解析缓存）：命中免逐查询重 parse（采样归因
+    /// 第三主导面）。`parse_selector_chain` 为纯文本→AST，同文本恒同产物，Arc
+    /// 共享安全。慢路径先 parse 后借写（borrow 纪律：读借放/写借放不跨评估）。
+    fn cached_selector_chain(&self, text: &str) -> Option<std::sync::Arc<crate::query::SelectorChain>> {
+        if let Some(hit) = self.selector_chain_cache.borrow().get(text) {
+            return Some(std::sync::Arc::clone(hit));
+        }
+        let chain = crate::query::parse_selector_chain(text)?;
+        let arc = std::sync::Arc::new(chain);
+        let mut cache = self.selector_chain_cache.borrow_mut();
+        if cache.len() >= SELECTOR_CACHE_CAP {
+            cache.clear();
+        }
+        cache.insert(Box::from(text), std::sync::Arc::clone(&arc));
+        Some(arc)
+    }
+
+    /// 同 [`Self::cached_selector_chain`]，单 compound 形。
+    fn cached_simple_selector(&self, text: &str) -> Option<std::sync::Arc<crate::query::SimpleSelector>> {
+        if let Some(hit) = self.simple_selector_cache.borrow().get(text) {
+            return Some(std::sync::Arc::clone(hit));
+        }
+        let sel = crate::query::parse_simple_selector(text)?;
+        let arc = std::sync::Arc::new(sel);
+        let mut cache = self.simple_selector_cache.borrow_mut();
+        if cache.len() >= SELECTOR_CACHE_CAP {
+            cache.clear();
+        }
+        cache.insert(Box::from(text), std::sync::Arc::clone(&arc));
+        Some(arc)
     }
 
     /// 计算元素的 sibling 位置上下文（伪类评估用）。
@@ -2383,27 +2436,23 @@ impl Document {
             pos.type_count = 1;
             return pos;
         };
-        // OPTIMIZATION(p125)：查询索引装载时先查、miss 则一次批量回填该父的全部
+        // OPTIMIZATION(p125 + T63)：常驻索引先查、miss 则一次批量回填该父的全部
         // 元素子位置，免逐节点重算（宽兄弟页面每节点两次全兄弟遍历 + Vec 分配，
-        // 846 同父锚点单查询 64ms 的放大器）；未装载（matches/closest 单调用）也走
-        // 同一批量构建一次，逐字段与旧两遍遍历同值。
-        let cached = QUERY_POS_INDEX.with(|slot| {
-            slot.borrow()
-                .as_ref()
-                .and_then(|index| index.get(&parent))
-                .and_then(|children| children.get(&node))
-                .copied()
-        });
+        // 846 同父锚点单查询 64ms 的放大器）；跨查询复用（T63 字段化驻留）后，
+        // matches/closest 单调用同样命中此前查询留下的表。borrow 纪律：读/写
+        // 各自单表达式借放，不跨评估（避免与嵌套查询重入冲突）。
+        let cached = self
+            .query_pos_index
+            .borrow()
+            .get(&parent)
+            .and_then(|children| children.get(&node))
+            .copied();
         if let Some(pos) = cached {
             return pos;
         }
         let built = self.build_child_positions(parent);
         let built_pos = built.get(&node).copied();
-        QUERY_POS_INDEX.with(|slot| {
-            if let Some(index) = slot.borrow_mut().as_mut() {
-                index.insert(parent, built);
-            }
-        });
+        self.query_pos_index.borrow_mut().insert(parent, built);
         match built_pos {
             Some(p) => p,
             None => {
@@ -2598,8 +2647,8 @@ impl Document {
             return;
         }
 
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+        for &child in &node_data.children {
             if self.is_shadow_root_node(child) {
                 continue;
             }
@@ -2611,7 +2660,7 @@ impl Document {
     fn collect_matching_chains_opt(
         &self,
         id: NodeId,
-        chains: &[crate::query::SelectorChain],
+        chains: &[std::sync::Arc<crate::query::SelectorChain>],
         result: &mut Vec<NodeId>,
         skip_templates: bool,
     ) {
@@ -2629,8 +2678,8 @@ impl Document {
             return;
         }
 
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+        for &child in &node_data.children {
             if self.is_shadow_root_node(child) {
                 continue;
             }
@@ -2646,8 +2695,8 @@ impl Document {
         {
             return Some(id);
         }
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+        for &child in &node_data.children {
             // 不进入嵌套的 ShadowRoot
             if let Some(child_data) = self.nodes.get(child)
                 && matches!(child_data.kind, NodeKind::ShadowRoot(_))
@@ -2674,8 +2723,8 @@ impl Document {
             result.push(id);
         }
 
-        let children: Vec<NodeId> = node_data.children.to_vec();
-        for child in children {
+        // OPTIMIZATION(T63)：借用迭代替代 to_vec（同上）。
+        for &child in &node_data.children {
             // 不进入嵌套的 ShadowRoot
             if let Some(child_data) = self.nodes.get(child)
                 && matches!(child_data.kind, NodeKind::ShadowRoot(_))

@@ -134,6 +134,8 @@ impl Document {
 
         // 将 ShadowRoot 作为宿主的子节点追加
         // （ShadowRoot 存在于宿主的子列表中，但封装边界阻止外部查询穿透）
+        // children 结构变化 → 位置索引全清（失效契约见 mod.rs invalidate_query_pos_index）。
+        self.invalidate_query_pos_index();
         if let Some(host_data) = self.nodes.get_mut(host) {
             host_data.children.push(shadow_id);
         }
@@ -724,8 +726,7 @@ impl Document {
     /// 类似 `query_selector`，但范围限定在 shadow DOM 树内，
     /// 不会穿透到嵌套的 ShadowRoot 边界。
     pub fn query_selector_shadow(&self, shadow_root: NodeId, selector: &str) -> Option<NodeId> {
-        let _pos_index = super::QueryPosIndexGuard::install();
-        let parsed = crate::query::parse_simple_selector(selector)?;
+        let parsed = self.cached_simple_selector(selector)?;
         self.find_first_matching_shadow(shadow_root, &parsed)
     }
 
@@ -734,8 +735,7 @@ impl Document {
     /// 类似 `query_selector_all`，但范围限定在 shadow DOM 树内，
     /// 不会穿透到嵌套的 ShadowRoot 边界。
     pub fn query_selector_all_shadow(&self, shadow_root: NodeId, selector: &str) -> Vec<NodeId> {
-        let _pos_index = super::QueryPosIndexGuard::install();
-        let parsed = match crate::query::parse_simple_selector(selector) {
+        let parsed = match self.cached_simple_selector(selector) {
             Some(s) => s,
             None => return vec![],
         };
