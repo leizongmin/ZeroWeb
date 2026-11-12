@@ -74,3 +74,20 @@ R2-MUT 对照（exec#1 5 条 flat2 mutation vs ctrl 面全 9 条 ByHandle）：`
 - **r7 三场景探针终态**（mutation 流 + JS body_html + tree dump + replay inner_html 四方对，探针已删）：B（doc-end 平宿主 italic）js=replay=`<i>foo</i>baz`；C（尾随兄弟）双侧同；A（嵌套宿主跨边界 bold）js=replay=`fo<b>o</b>barbaz` 双侧一致。scene B 修复后流形：CreateTextNode(baz)/SetChildText(0,foo)/AppendChild(baz)/CreateElement(i)/InsertChildAt(0,i)/RemoveChildAt(1)/CreateTextNode(foo2)/AppendChildByHandle(i,foo2) → host 逐批 apply=[i[foo],baz]。
 - **解钉**：italic_after_prior_cmd `#[ignore]` 解除（期望 `<i>foo</i>baz` 不变），enginelib 预检参与跑 PASS；nested_cross_b 维持 `#[ignore]`——plumbing 面已通（scene A 双侧一致），剩余缺口=vendored contained 集算法面二次 re-wrap 从未发生（期望 `fo<b>o<b>b</b>ar</b>baz`）→ **算法刀独立**（修复方向 a 的 contained 集子刀）。Form A（splitText 裸子 trim 欠发射）本刀未触，维持挂账。
 - 预检（脏树 enginelib 全量）：3910P/7F/1I——7 红逐名 ⊆ 名册 2026-11-12 档（该档 9 红，其中 2 个 CSSOM 窗 execcommand 红在现 HEAD 已回绿），**零新增红**；卫兵钉测 doc_end_selection 单跑 PASS。门禁批八腿（gate v1 同基同判据）随件发射。
+
+## 嵌套簇 B1 根因刀门禁收口（2026-11-12 21:08，gate v1 八腿全绿零 ABORT）
+
+| 腿 | 终值 | 判据 | 结果 |
+|---|---|---|---|
+| L0 probe zz-probe-outdent | 217/5 | 恰集（failkeys vs pfc diff 空） | OK |
+| L3b ab fresh | 10092P/0F/0T wall=272s | 基线全 P 严格 + judge 四零 | OK |
+| L1 outdent 主门 | rows 2550 恒一；F2P=169/P2F=0/lost=0/residF=4 恰键 | vs ind-c1 census | OK |
+| L2 indent | 1302P/27F + judge OK | vs ind-c1-indent | OK |
+| L3 mt 主页 | rows 10092 恒一；F2P=0（signed=0/unsigned=0）/P2F=0/po_fail=0/lost=0/residF=2 | vs cssom-mt-reanchor；残红=X37 双键恒一 | OK |
+| L4 singles×5 | iol 1759/iul 2061/ip 6989/ilb 1658/ihtml 1446 | vs rbv2 judge VERDICT OK | OK |
+| L5 exec×3 | 三页 judge VERDICT OK | 零漂移 | OK |
+| L6 enginelib | 3910P/7F/1I failed==7 逐名=本刀预检档 | 名册恒一（+1P/−1I=解钉测参与跑） | OK |
+
+- **判读**：八腿与 D2 gate v1 基线逐项恒一（outdent 169/4、mt X37 双键、singles 五值同值）——零 flip 零漂移，B1 修复域（裸文本 ref 壳插）语料零暴露，与 D2 同判读形态；行为覆盖=解钉测 italic_after_prior_cmd 承载（批内 enginelib 腿参与跑 PASS，3910P/1I 即含其绿）。
+- **字节绑定**：全腿 bin=104bd716380d94b41e6036bc9d47d653 恒一（HEAD ef5eef318 make 目标产物，签名 `__zw_insert_child_at`=3/`_zwBaseIdxShiftForAdded`=6/`ZW_INSERT_CHILD_AT`=2 全中）；脚本头锚 ad6ff2a84023e5252d01e0efcd7555b4 为裸 cargo build 产物，L0 即被 make 自有 feature 集重建取代——判读以腿级 echo md5 为准（账本 20:17 条更正）。
+- 残余挂账：nested_cross_b 算法刀（vendored contained 集二次 re-wrap，期望 `fo<b>o<b>b</b>ar</b>baz`）、Form A（splitText 裸子 trim 欠发射）、verdict 共笔节去重（择期 docs pass）、shim 视图序缺陷与 ab 瞬态丢行率账（择期）。
