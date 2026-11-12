@@ -29,7 +29,12 @@ PRNG + min/max/step 公式 + compute 期元素级原位替换 + % 叶 fixed-echo
 supports 哨兵门，values face 3,111→**3,214** 净 +103 零回归——
 random-computed +95/random-item-computed +5/item-nested +2/unresolvable
 +1，五套件 Pass 级零漂移，探针两轮洞修复 16P/169F→116P/69F，见 evidence
-2026-11-12-dc2-g21-random-eval-face2）。
+2026-11-12-dc2-g21-random-eval-face2）
++random-item 写面文法门（g22：§funcdef-random-item 实参文法裁决——
+key 节缺失/项表空/顶层 `!;]`/块残片/括号未闭合五类 invalid 形三写臂共用
+门，values face 3,214→**3,228** 净 +14 零回归，random-item-invalid 14F
+全页清零，五套件 Pass 级 ±0，见 evidence
+2026-11-12-dc2-g22-random-item-write-grammar）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -72,9 +77,10 @@ tree-counting 家族残 89F 分桶挂账（color 实参槽 2F/伪元素 Face 3 2
 10 页/invalidation/container/descriptors/media/shadow/tree-scoped/gradient/
 trig）。random() 串化（g20 serialize 42F→3F，残 color 通道嵌套 D 桶）与
 播种求值全链已落（g21：random-computed 141F→46F、random-item-computed
-28F→23F）；random 残桶分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族
-supports 8F/shim gCS raw 回显与 color 黑值 ~25F/item-invalid 写面文法
-14F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21 evidence §5）。
+28F→23F）+ 写面文法门已落（g22：item-invalid 14F 清零）；random 残桶
+分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族 supports 8F/shim gCS raw
+回显与 color 黑值 ~25F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21
+evidence §5）。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
@@ -93,7 +99,7 @@ tree-counting 家族残 89F（g19 后：keyframe 10 页、invalidation/container
 descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
 实参槽 2F + 伪元素 Face 3 2F——见 evidence g19 §5 分桶）、
 独立桶 line-break-ch
-194F / random 族残 ~100F（g21 后，见 g21 evidence §5）/ attr-all-types 103F / viewport-units 84F / calc-size 62F /
+194F / random 族残 ~86F（g22 后，见 g21 evidence §5）/ attr-all-types 103F / viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；DC-3 全量对账
 （等批次平台期 dispatch 周跑，HEAD 已含 color/values/grid/anchor 各批增量）；
@@ -123,6 +129,24 @@ unresolvable-argument +1），五套件 Pass 级零漂移（transitions F 计数
 管线重现）/engine 3,909 过（7 失败在册既有组——editing 流近期修复后
 10→7，逐名核对）/rustfmt clean/定向 clippy 零告警。
 [证据](evidence/2026-11-12-dc2-g21-random-eval-face2.md)
+
+**DC-2 g22 批完成（11-12，random-item 写面文法门）**：CSS Values 5
+§funcdef-random-item 实参文法裁决（任意替换函数 parse 期仅实参文法，
+属性族型别替换后承担）——css-parser `random_item_args_valid`（括号/
+花括号三层配平 + key 节缺失即非法 + 项表非空 + 逐项 `{…}` 整包裹或
+裸项、裸项顶层禁 `!;]` 块内豁免）挂 `eval_random_item_call` 头部 +
+style-system apply.rs `random_item_calls_valid` 写面门（引号状态机
+ident 边界扫描、调用未闭合 fail-closed、逐调用转文法裁决）接线
+validate_decl_value 白名单检查之前（font-family 等表外槽同收）——
+native CSD/shim writeDecl/sel-handle 三写臂共用单实现。探针
+random-item-invalid 0P/14F→**14P/0F 全页清零**、random-item-valid 21P
+零回归、家族 7 页 ±0；六套件权威账 values **3,214 → 3,228 净 +14 逐页
+零回归**，五套件 Pass 级 ±0（transitions/animations F ±1 为页面超时
+截断枚举差伪影，Pass/Timeout 双锚定）。单测 css-parser 3,173 全绿
+（+1 文法矩阵 38 断言）/style-system 2,526 全绿/engine 3,909 过（7F
+在册既有组，本树含 peer editing bold 批零交互）/定向 clippy 零告警/
+fmt clean。
+[证据](evidence/2026-11-12-dc2-g22-random-item-write-grammar.md)
 
 **DC-2 g19 批完成（11-12，sibling 求值桥/写面文法收口刀）**：CSS Values 5
 §tree-counting DOM 求值桥三面切片——CalcContext 注入求值契约（sibling_
