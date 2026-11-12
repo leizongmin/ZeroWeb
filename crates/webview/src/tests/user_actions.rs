@@ -284,6 +284,50 @@ fn text_actions_enforce_readonly_and_maxlength() {
 }
 
 #[test]
+fn maxlength_does_not_apply_outside_text_like_input_states_s411() {
+    // https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength
+    // s411（html-semantics M2 切片）：maxlength 仅适用于 Text/Search/URL/Tel/
+    // Email/Password 六态——type=number 限长 1 时续键不再 MaxLengthReached noop
+    //（maxlength-number.html：number + maxlength=1 键入 '1234' 断言 value 全
+    // 保留；旧版第二键起 noop → dispatch_action 错误串 reject send_keys 链 →
+    // 案面 unhandled rejection 挂死 → 文件 Timeout）。非法 type 值按 invalid
+    // value default 落 Text 态 → 限制仍生效（对照腿）。
+    let html = r#"<html><body>
+        <input id="num" type="number" maxlength="1">
+        <input id="weird" type="foo" maxlength="1">
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/maxlength-number");
+    webview.load_html(html, None);
+    let num = webview.page_node_ref_for_selector("#num").expect("num ref");
+    let weird = webview.page_node_ref_for_selector("#weird").expect("weird ref");
+
+    for ch in ["1", "2", "3"] {
+        let result = webview
+            .dispatch_user_action(request(num, HtmlUserAction::InsertText { text: ch.to_string() }))
+            .expect("number insert");
+        assert!(result.changed, "number 续键 {ch} 不限长应写入");
+    }
+    assert_eq!(
+        webview.form_control_value_overrides().get("#num").map(String::as_str),
+        Some("123")
+    );
+
+    // 非法 type 值 → Text 态（invalid value default）→ maxlength 仍生效。
+    webview
+        .dispatch_user_action(request(weird, HtmlUserAction::InsertText { text: "1".to_string() }))
+        .expect("weird first insert");
+    let second = webview
+        .dispatch_user_action(request(weird, HtmlUserAction::InsertText { text: "2".to_string() }))
+        .expect("weird second insert");
+    assert_eq!(second.noop_reason, Some(ActionNoopReason::MaxLengthReached));
+    assert_eq!(
+        webview.form_control_value_overrides().get("#weird").map(String::as_str),
+        Some("1")
+    );
+}
+
+#[test]
 fn minlength_validation_only_applies_to_user_edits() {
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#suffering-from-being-too-short
     let html = r#"<html><body>

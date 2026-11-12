@@ -9715,11 +9715,19 @@
     var inserted = String(ch);
     // t2-pd2a：maxlength（live，UTF-16 计）——同 plan_text_insert 的截断语义
     //（retained = value.len16 − 选区宽；allowed = max − retained；超出截断，空则 no-op）。
+    // s411（html-semantics M2）：maxlength 仅适用于 text/search/url/tel/email/
+    // password 六态 + textarea——type=number 等其余态**属性不适用即无截断语义**
+    //（maxlength-number.html：number + maxlength=1 键入 '1234' 断言 value 全保留；
+    // 旧版误读 attr → 第二键起 MaxLengthReached noop → send_keys 链 reject →
+    // 无 catch 的 .then 案 unhandled rejection 挂死 → 文件 Timeout）。
     // https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength
     var maxLen = null;
     try {
-      var ml = el.getAttribute && el.getAttribute('maxlength');
-      if (ml != null && /^\d+$/.test(String(ml).trim())) maxLen = parseInt(String(ml).trim(), 10);
+      var _miTy = _zwNormalizeInputType(el.getAttribute('type'));
+      if (_miTy === 'text' || _miTy === 'search' || _miTy === 'url' || _miTy === 'tel' || _miTy === 'email' || _miTy === 'password') {
+        var ml = el.getAttribute && el.getAttribute('maxlength');
+        if (ml != null && /^\d+$/.test(String(ml).trim())) maxLen = parseInt(String(ml).trim(), 10);
+      }
     } catch (_eMl) {}
     if (maxLen != null) {
       var retained = cur.length - (end - start);

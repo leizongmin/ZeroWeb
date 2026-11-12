@@ -52,6 +52,34 @@ struct DomScriptResult {
     changed: bool,
 }
 
+/// s411（html-semantics M2）：`maxlength` 是否适用该 input type——仅
+/// Text/Search/URL/Tel/Email/Password 六态适用（textarea 非 input，调用侧
+/// 已按 tag 分流）。缺省（空串）与非法关键字按 spec missing/invalid value
+/// default 落 Text 态 → 适用（shim `_zwNormalizeInputType` R3901 关键字
+/// 白名单同规则）；已识别的非文本关键字 → 属性不适用。
+/// https://html.spec.whatwg.org/multipage/input.html#attr-input-type
+fn maxlength_applies_to_input_type(raw: &str) -> bool {
+    !matches!(
+        raw.to_ascii_lowercase().as_str(),
+        "button"
+            | "checkbox"
+            | "color"
+            | "date"
+            | "datetime-local"
+            | "file"
+            | "hidden"
+            | "image"
+            | "month"
+            | "number"
+            | "radio"
+            | "range"
+            | "reset"
+            | "submit"
+            | "time"
+            | "week"
+    )
+}
+
 impl WebView {
     /// 返回当前文档中 selector 对应的 scoped node reference。
     #[doc(hidden)]
@@ -287,14 +315,28 @@ impl WebView {
                 else {
                     return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
                 };
+                // s411（html-semantics M2）：maxlength 仅适用于 text/search/url/tel/
+                // email/password 六态 + textarea——type=number 等其余态**属性不适用
+                // 即无截断语义**，plan 侧不限长（与 shim `__zw_text_input` live 守卫
+                // 同口径；maxlength-number.html：number + maxlength=1 键入 '1234'
+                // 断言 value 全保留，旧版第二键起 MaxLengthReached noop → send_keys
+                // 链 reject）。
+                // https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength
+                let maxlength_applies = !zero_engine::query_tag_from_html(&html, &selector)
+                    .eq_ignore_ascii_case("INPUT")
+                    || maxlength_applies_to_input_type(&zero_engine::query_attr_from_html(&html, &selector, "type"));
                 let state = TextActionState {
                     value,
                     selection_start,
                     selection_end,
                     read_only: zero_engine::has_attribute(&html, &selector, "readonly"),
-                    max_length: zero_engine::query_attr_from_html(&html, &selector, "maxlength")
-                        .parse()
-                        .ok(),
+                    max_length: if maxlength_applies {
+                        zero_engine::query_attr_from_html(&html, &selector, "maxlength")
+                            .parse()
+                            .ok()
+                    } else {
+                        None
+                    },
                 };
                 // 计划仅作 noop 判定（Err = 旧契约原因面）；Ok 不取其写计划。
                 let plan_only_reason = plan_html_action(

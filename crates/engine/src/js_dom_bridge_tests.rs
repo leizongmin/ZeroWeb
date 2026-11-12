@@ -154,3 +154,8 @@ include!("js_dom_bridge_tests/part108_s408_detached_style_sheet.rs");
 // URL 归一（发题侧）+ 阻塞计数门控到 parser-inserted 面（script-created-link
 // 双案红根修复）钉。
 include!("js_dom_bridge_tests/part109_s409_script_created_link_stylesheet.rs");
+
+// 58 号 s411 maxlength 适用态门：maxlength 仅六文本态适用（number 不限长
+// maxlength-number.html 红根修复）+ text 既有绿面 + 非法 type 值 Text 态
+// invalid default 对照钉。
+include!("js_dom_bridge_tests/part110_s411_input_maxlength_number.rs");
