@@ -3432,10 +3432,7 @@ fn wc_case_skipped(relative: &str) -> bool {
         "highlightsFromPoint",
         "offsetX-offsetY",
     ];
-    if RENDER_CONTAINS.iter().any(|needle| name.contains(needle)) {
-        return true;
-    }
-    false
+    RENDER_CONTAINS.iter().any(|needle| name.contains(needle))
 }
 
 /// Run the pinned upstream Web Components subset（web-components M1 / DC-1）。

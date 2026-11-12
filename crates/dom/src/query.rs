@@ -946,10 +946,7 @@ fn selector_lexically_valid(s: &str) -> bool {
     }
     // 顶层以组合器符号开头（`>*` / `+a` / `~a`）——相对选择器形态，matches 不接受。
     let first = s.bytes().next().unwrap();
-    if matches!(first, b'>' | b'+' | b'~' | b',') {
-        return false;
-    }
-    true
+    !matches!(first, b'>' | b'+' | b'~' | b',')
 }
 
 pub(crate) fn split_top_level_selector_list(s: &str) -> Option<Vec<&str>> {

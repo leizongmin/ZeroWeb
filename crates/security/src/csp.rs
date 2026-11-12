@@ -492,10 +492,7 @@ impl ContentSecurityPolicy {
         let Some(host) = host else { return false };
 
         // host 必须以 "." + domain 结尾，或等于 domain（"*." 不包括根域名本身）
-        if host.ends_with(&format!(".{domain}")) {
-            return true;
-        }
-        false
+        host.ends_with(&format!(".{domain}"))
     }
 
     /// 从 URL 字符串提取主机名部分。

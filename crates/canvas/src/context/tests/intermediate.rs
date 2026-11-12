@@ -942,14 +942,14 @@ fn test_linear_gradient_many_stops_ordering() {
         grad.add_color_stop(offset, color);
     }
     assert_eq!(grad.stops.len(), 10);
-    for i in 0..10 {
+    for (i, stop) in grad.stops.iter().enumerate() {
         let expected_offset = i as f32 * 0.1;
         assert!(
-            (grad.stops[i].offset - expected_offset).abs() < f32::EPSILON,
+            (stop.offset - expected_offset).abs() < f32::EPSILON,
             "第 {} 个停止点偏移量应为 {}，实际 {}",
             i,
             expected_offset,
-            grad.stops[i].offset
+            stop.offset
         );
     }
 

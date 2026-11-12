@@ -1288,13 +1288,10 @@ pub fn parse_container_name(value: &str) -> Option<Option<String>> {
 }
 
 fn container_name_ident_supported(value: &str) -> bool {
-    if matches!(
+    !matches!(
         value.to_ascii_lowercase().as_str(),
         "none" | "default" | "not" | "and" | "or" | "inherit" | "initial" | "unset" | "revert" | "revert-layer"
-    ) {
-        return false;
-    }
-    true
+    )
 }
 
 /// 解析 font-family 值。

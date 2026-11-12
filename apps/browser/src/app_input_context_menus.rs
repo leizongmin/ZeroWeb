@@ -705,10 +705,7 @@ impl BrowserApp {
         };
         let bridge_y_top = menu_y.min(sub_y);
         let bridge_y_bot = (menu_y + menu_h).max(sub_y + sub_h);
-        if xf >= left_x && xf <= right_x && yf >= bridge_y_top && yf <= bridge_y_bot {
-            return true;
-        }
-        false
+        xf >= left_x && xf <= right_x && yf >= bridge_y_top && yf <= bridge_y_bot
     }
 
     /// 激活子菜单中当前 hover 的子项。

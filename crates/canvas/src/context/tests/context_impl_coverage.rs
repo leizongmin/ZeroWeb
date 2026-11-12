@@ -25,9 +25,7 @@ fn test_context_clear_rect_entire_canvas() {
 fn test_context_clear_rect_partial_canvas() {
     let mut ctx = CanvasContext::new(10, 10);
     // Fill the canvas first
-    for i in 0..400 {
-        ctx.pixel_buffer[i] = 255;
-    }
+    ctx.pixel_buffer[..400].fill(255);
     ctx.clear_rect(2.0, 2.0, 4.0, 4.0);
     // Check that only cleared area is 0
     for y in 0..10 {
@@ -374,9 +372,7 @@ fn test_context_put_image_data_out_of_bounds() {
     let mut ctx = CanvasContext::new(10, 10);
     let mut src_img = ctx.create_image_data(5, 5);
     // Fill with non-zero data
-    for i in 0..(5 * 5 * 4) {
-        src_img.data[i] = 255;
-    }
+    src_img.data[..(5 * 5 * 4)].fill(255);
 
     ctx.put_image_data(&src_img, 8, 8);
     // Should only copy the part that fits
@@ -393,12 +389,7 @@ fn test_context_create_pattern_with_repetition() {
     let ctx = CanvasContext::new(10, 10);
     let mut pattern_data = ctx.create_image_data(5, 5);
     // Fill pattern with red
-    for i in 0..(5 * 5 * 4) {
-        pattern_data.data[i] = 255;
-        if i % 4 == 3 {
-            pattern_data.data[i] = 255;
-        }
-    }
+    pattern_data.data[..(5 * 5 * 4)].fill(255);
 
     let pattern = ctx.create_pattern(pattern_data, PatternRepetition::Repeat);
     assert!(!pattern.image_data.data.is_empty());
@@ -579,8 +570,8 @@ fn test_context_draw_image_sized() {
     let mut ctx = CanvasContext::new(20, 20);
     let mut img_data = ctx.create_image_data(10, 10);
     // Fill with a pattern（10×10×4 = 400 字节）
-    for i in 0..(10 * 10 * 4) {
-        img_data.data[i] = (i % 255) as u8;
+    for (i, px) in img_data.data.iter_mut().enumerate() {
+        *px = (i % 255) as u8;
     }
 
     // Draw image at full size
@@ -604,9 +595,7 @@ fn test_context_draw_image_zero_size() {
 fn test_context_draw_image_out_of_bounds() {
     let mut ctx = CanvasContext::new(10, 10);
     let mut img_data = ctx.create_image_data(5, 5);
-    for i in 0..100 {
-        img_data.data[i] = 255;
-    }
+    img_data.data[..100].fill(255);
 
     ctx.draw_image(&img_data, -5.0, -5.0);
 }
