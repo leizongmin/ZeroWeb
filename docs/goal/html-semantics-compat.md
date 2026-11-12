@@ -2,42 +2,85 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 413 收口（声明式 CSS module parse 期 map 注册
-+ import 命中免 fetch + kind 固定，tentative/ 11 文件全绿收口）：
-import 簇余红勘根定谳——basic-import/fixed 2 file-T + 3 allowed 文件
-6 NotRun 的真缺口 = 声明式 style module 的 parse 期 map 注册（s412 已
-勘定底座：s249 fetch-backed CSS module 全链 + adoptedStyleSheets 汇总
-下发在库）+ import 命中 map 免 fetch + fixed-at-parse-time 存活载体。
-kind 固定勘根：变异路径逐批 re-parse 序列化快照（NodeId 键旗标即死）
-→ 选 html TEXT 载体 `data-zw-declmod` 标记属性（load_html parse 期插
-入，跨 re-parse 免费存活；级联门单点覆盖双 collect 路径）。spec：声明
-式 CSS module（MSEdgeExplainers，tentative）——`<style type=module
-specifier=foo>` 首遇为准入 map、import sheet from "foo" with {type:
-"css"} 得 CSSStyleSheet default 导出、元素不入级联且 `.sheet` 不暴露
-（undefined）、type/specifier 移除或重插不复活（kind 固定）、CSP 阻止
-者不可 import。施工四臂：extract `StyleElementCsp` +specifier/开标签
-偏移三字段；webview `declarative_css_modules` 快照 +
-`prepare_declarative_style_modules`（CSP 门后播种——is_module &&
-未 blocked && specifier 非空，first-wins，逆序插标记+幂等守卫）+ map
-穿静态收集顶部命中臂（先于裸 specifier 检查——语料裸值形态）与
-shim/native 双动态通道 + 合成体共享 `css_module_synth_source`（s249
-复用）；engine `style_sheet_if_eligible` ⓪ 标记门（先于 type 门）；
-shim `.sheet` getter module 臂返 undefined（trim+ci 与 s412 is_module
-同判字）。验证：driving solo ×2 **11 文件 37 子测全 Pass**（0F/0T/
-0NotRun——目录余 style-error-01 1T 为 @import fetch 面先于本切片
-在册非 import 簇）；单元 engine
-**3909P/7F**（+1P 扩钉；7F 在册同名清单零位移）+ webview **852P/2F**
-（+1P 双相钉；image_decoder/csp_connect_gate 在册对）；fmt/clippy
-clean（css-parser random.rs 跨流红单列 -A 复验）；sweep ×2 双跑全等
-**8275P/212F/17T + 5 NotRun**，join-cross 零位移，join-b（基线 s412
-终稿批）恰 19 new/2 gone state-diff=0 纯 driving；make test 全量见
-s413 账本。**本流域在册红 212F+19T→212F+17T**（−2T），NotRun 11→5
-（−6）。下一步：constructed-stylesheets 1T 同族勘根候选 / 挂账池承
-s404/s405/s411/s412（forward map 空返勘根/渲染流 5 面/
+**状态**: Active——M2 切片 414 收口（the-style-element 余红勘根定谳：
+动态 style @import 事件臂 = 引擎分歧非缺口，勘根不施工收口 + 语料
+css-red.txt 补拉）：style-error-01 1T（慢性在册 s161 起）四点定谳——
+上游 wpt-metadata META.yml 唯一条目 = chrome crbug 1232491 覆盖
+style-error-01（error 语义面无全绿引擎，t404 子测上游注释弃用）；
+style-load-after-mutate 零条目全绿（s162 driving 在册 Pass）；两案对
+动态臂语义互斥（error vs load）钉死弃实现——probe3b 注入实证 error
+臂可行（d_err=1，`_zwSsVisitCss` 链复用）但必翻转后者 load 面；静态
+扫描臂 404 error 语义（style_events 在册绿）不受影响。语料资产缺口修
+复（s227 先验判据同型）：style-error-01 引用 support/css-red.txt（上
+游 200 text/plain MIME 真形态）缺席 = fetch_dir_html .txt opt-in 固化
+坑（③b 同型），goal 脚本 ③j fetch_raw 补拉（pin 315976933 落盘
+21B）——补后 solo 复验仍 1T 零行为变化吻合预期。FIXME 注记入
+part03.js load fallthrough 臂前（分歧证据链 + `__zw_get_text_handle`
+script-created 读回空串实测备引用）。验证：driving solo
+the-style-element 62P+1T（tentative/ 11 文件 37P 保持；补语料前后
+leg1 逐行 diff 空）；sweep ×2 双跑全等 **8274P/214F/16T + 5 NotRun**，
+join-cross 零位移；join-b（基线 s413 终稿批）恰 2 state-diff——
+**ior jQuery append() P→F 定谳真新红**（11 天稳定 Pass→确定性 Fail：
+静机 flake4 ×3 F + 重建二进制〔bd41f9bd2 含上游五 commit〕×3 F，跨
+两代二进制持续，非本切片可归因〔零功能 delta，style 目录零位移实
+证〕，勘根挂账下轮首位按 s235 三跑归因）+ home-end-detailed file
+T→F 形迁移（红集不变，flake4 静机连跑展开↔塌缩双向翻转实证）；make
+test 全量（429 断点接手 + target-disk-guard × 活动构建竞态全清后
+rebase 终稿树 bd41f9bd2 冷启动重建重跑）：**154 腿 153 绿 + 仅
+engine lib 在册红腿**（3910P/7F 失败清单与 s413 逐名 diff IDENTICAL
+零位移，+1P 归并行流合入域 part11-color）+ webview battery 853P/1F
+（csp_connect_gate 在册，image_decoder favorable flake 绿）+ fmt/
+clippy strict 净（random.rs 跨流红上游已清偿）；**本流域在册红
+212F+17T→213F+16T**（+1F = ior 真新红勘根挂账；余 +1F−1T = 形迁移
+红集不变）。下一步：**ior jQuery append() 新红勘根（三跑归因协议）
+升首位** / constructed-stylesheets 1T 勘根候选 / 挂账池承
+s404/s405/s411/s412/s413（外链模块基座 map 键错配/`.sheet` kind 固定
+面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5 面/
 form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察池/
 适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
 unhandled-rejection 换算）；checkable 父 label 2F 渲染域移交承 s410；
 select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 413 收口）——声明式 CSS module parse 期 map 注册
+> + import 免 fetch + kind 固定（tentative/ 11 文件全绿收口）**: commit 谱系
+> git log s413，账本 evidence/2026-11-12-m2s413-style-module-import-map.md。原 Active
+> 段留档——
+> M2 切片 413 收口（声明式 CSS module parse 期 map 注册
+> + import 命中免 fetch + kind 固定，tentative/ 11 文件全绿收口）：
+> import 簇余红勘根定谳——basic-import/fixed 2 file-T + 3 allowed 文件
+> 6 NotRun 的真缺口 = 声明式 style module 的 parse 期 map 注册（s412 已
+> 勘定底座：s249 fetch-backed CSS module 全链 + adoptedStyleSheets 汇总
+> 下发在库）+ import 命中 map 免 fetch + fixed-at-parse-time 存活载体。
+> kind 固定勘根：变异路径逐批 re-parse 序列化快照（NodeId 键旗标即死）
+> → 选 html TEXT 载体 `data-zw-declmod` 标记属性（load_html parse 期插
+> 入，跨 re-parse 免费存活；级联门单点覆盖双 collect 路径）。spec：声明
+> 式 CSS module（MSEdgeExplainers，tentative）——`<style type=module
+> specifier=foo>` 首遇为准入 map、import sheet from "foo" with {type:
+> "css"} 得 CSSStyleSheet default 导出、元素不入级联且 `.sheet` 不暴露
+> （undefined）、type/specifier 移除或重插不复活（kind 固定）、CSP 阻止
+> 者不可 import。施工四臂：extract `StyleElementCsp` +specifier/开标签
+> 偏移三字段；webview `declarative_css_modules` 快照 +
+> `prepare_declarative_style_modules`（CSP 门后播种——is_module &&
+> 未 blocked && specifier 非空，first-wins，逆序插标记+幂等守卫）+ map
+> 穿静态收集顶部命中臂（先于裸 specifier 检查——语料裸值形态）与
+> shim/native 双动态通道 + 合成体共享 `css_module_synth_source`（s249
+> 复用）；engine `style_sheet_if_eligible` ⓪ 标记门（先于 type 门）；
+> shim `.sheet` getter module 臂返 undefined（trim+ci 与 s412 is_module
+> 同判字）。验证：driving solo ×2 **11 文件 37 子测全 Pass**（0F/0T/
+> 0NotRun——目录余 style-error-01 1T 为 @import fetch 面先于本切片
+> 在册非 import 簇）；单元 engine
+> **3909P/7F**（+1P 扩钉；7F 在册同名清单零位移）+ webview **852P/2F**
+> （+1P 双相钉；image_decoder/csp_connect_gate 在册对）；fmt/clippy
+> clean（css-parser random.rs 跨流红单列 -A 复验）；sweep ×2 双跑全等
+> **8275P/212F/17T + 5 NotRun**，join-cross 零位移，join-b（基线 s412
+> 终稿批）恰 19 new/2 gone state-diff=0 纯 driving；make test 全量见
+> s413 账本。**本流域在册红 212F+19T→212F+17T**（−2T），NotRun 11→5
+> （−6）。下一步：constructed-stylesheets 1T 同族勘根候选 / 挂账池承
+> s404/s405/s411/s412（forward map 空返勘根/渲染流 5 面/
+> form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察池/
+> 适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
+> unhandled-rejection 换算）；checkable 父 label 2F 渲染域移交承 s410；
+> select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 412 收口）——声明式 CSS module 双臂 CSP
 > + 元素站 error 面（tentative/ CSP 簇 6 文件解挂）**: commit 谱系
