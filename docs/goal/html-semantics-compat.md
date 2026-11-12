@@ -2,38 +2,68 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 410 收口（send_keys Enter formless 无隐式提交
-目标默认动作 no-op，driving 1F→P；checkable 父 label 2F 渲染域移交）：
-the-input-element 散单双案勘根——①date-readonly-keyboard：readonly date
-三键序（Space/↓/Enter）断言 value 不变，Space 落 plan_text_insert
-ReadOnlyTarget→scroll_fallback 既有兜底、↓ 走 scroll 键分支均存活，
-Enter（uE007）落 `_ =>` 默认动作臂无 formless 判定 → Submit → webview 查
-enclosing form 无 → noop(NotApplicable) → dispatch_action 只豁免
-DisabledTarget → 错误串 reject send_keys promise 链 → 整案 unhandled
-rejection；真浏览器语义 implicit submission 以 form owner 为前提，formless
-= 无默认动作 = 静默 no-op（键序 keydown/keyup 照常完成）。施工 runner
-`enter_formless_noop` 臂（`!buttonish && uE007|uE006 && 非 CE 宿主 &&
-无 enclosing form`——三重例外保既有绿面：formless buttonish click 通道
-优先、CE insertParagraph 活在 webview Submit 臂不得跳过、form 内隐式提交
-族不动；探针函数 script_gen 既有，纯 runner 组合零引擎改动）。②checkable
--active-onblur-with-click 2F（父 label press）：桥测探针证 shim `:active`
-路由健康（`_zwLabeledControl` DFS + `__zwSetActiveFromSel` 祖先 walk 命中
-cb2），corpus 探针证根因 = 父 label `getBoundingClientRect` = 0,0,0,0
-（子 input 12,79,13,13 / following label 32,12.2,26.4,18.6 实矩形对照）
-→ pointerMove origin (2,2) 落 BODY → :active=BODY；根因 layout-engine
-inline-container boxing（含混排内容 label 未产盒），按 s405 先例移交渲染
-域记账，本流域不设 workaround。验证：driving solo date-readonly Pass
-（dir-solo 全目录复核非 FILTER 假绿；旧二进制证据 = s409 sweep Fail 行）；
-单元 engine **3897P/9F**（对 s409 名册 diff 恰 r307_tree_order_identity
-_domains F→P——本切片 runner-only 不感知，favorable 位移归并行流合入域）+
-webview 849P/2F 零位移；fmt/clippy clean；sweep ×2 join-1 **恰 1 STATE-
-DIFF = driving F→Pass** new=0/gone=0 键集 8484 全等（run1 8246P/212F/26T、
-run2 8246P/214F/24T，Δ = select-home-end 两键 T↔F s292 watchdog flake 族
-漂移单列，Home/End/PageUp/PageDown 键序案 Enter 路径不涉）；**本流域在册红
-212F+24T→211F+24T**（−1F；checkable 2F 保持 F 归因单列，渲染域解挂后再
-−2F）。下一步：maxlength-number 1T 勘根（file-level Timeout 先验语料资产
-s227 先例）/ tentative/ constructed-stylesheets 9T 机制勘根后按簇决策 /
-挂账池承 s404/s405；A2+D 簇立项征询仍待用户决策。
+**状态**: Active——M2 切片 411 收口（maxlength 仅适用六文本态，driving
+1T→P；the-input-element 目录 3F+1T 散单全解挂清零）：
+maxlength-number file-Timeout 勘根——`<input type=number maxlength=1>`
+send_keys "1234" 断言 value 全保留无 .catch：plan 侧 TextActionState
+.max_length 无条件读 attr → 第二键起 MaxLengthReached noop →
+dispatch_action 只豁免 DisabledTarget → 错误串 reject send_keys 链 →
+unhandled rejection → harness 静挂至预算 → 文件 Timeout（对照腿
+number-invalid-scientific Pass 锁定 maxlength 单因子）。spec：maxlength
+仅适用 text/search/url/tel/email/password 六态 + textarea，missing/
+invalid value default 落 Text 态仍适用。施工双写同口径门：webview plan
+`maxlength_applies_to_input_type`（16 已识别非文本态黑名单，空串/非法值
+判适用——与 shim R3901 normalize 语义对齐）+ shim `__zw_text_input` live
+守卫 `_zwNormalizeInputType` 六态白名单；常驻钉 part110 三腿 + webview
+plan 钉（number 连键全保留 + 非法 type 限长对照）。验证：driving solo
+maxlength-number Pass（dir-solo 复核；number-invalid/date-readonly 不
+回归、checkable 2F 保持）；单元 engine **3904P/10F**（在册 9F 逐名零
+位移 + t49 cssom 单列〔并行流 99c573d30 width 槽拒打破 b1fdb1db7 钉，
+clean HEAD stash 复跑归因〕）+ webview 850P/2F 零位移；fmt/clippy clean
+（跨流三处门禁违例机械清偿独立 commit——computed_style collapsible_if +
+两处 fmt 脏，80e8738d0）；sweep ×2 双跑全等 8249P/212F/25T join-cross
+零位移，join-1 对 s410 run1 恰 1 new/1 gone（maxlength 子测试 Pass↔
+file 键 Timeout 键形迁移）state-diff=0 纯 driving 位移，join-2 另
+2 STATE-DIFF = select 族 T 形漂移单列；focus-dynamic dir-solo Timeout =
+clippy 并发争用 flake（sweep 双跑 120 子测全 Pass + 隔离 solo exit=0，
+单列不在册）；make test 154 腿 153 绿 + 仅 engine lib 在册红腿。**本流域
+在册红 211F+24T→211F+23T**（−1T；select 族 ±2 随正相回摆单列，checkable
+2F 保持 F 渲染域移交）。下一步：tentative/ constructed-stylesheets 9T
+机制勘根后按簇决策 / 挂账池承 s404/s405（新增：适用态打满 reject 面、
+maxLength/minLength IDL 不适用态反射、unhandled-rejection 换算）；
+A2+D 簇立项征询仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 410 收口）——send_keys Enter formless 无隐式提交目标默认动作 no-op（date-readonly-keyboard 1F 解挂；checkable 父 label 2F 渲染域移交）**: commit eee7caa1f，账本 evidence/2026-11-12-m2s410-send-keys-enter-formless-noop.md。原 Active 段留档——
+> the-input-element 散单双案勘根——①date-readonly-keyboard：readonly date
+> 三键序（Space/↓/Enter）断言 value 不变，Space 落 plan_text_insert
+> ReadOnlyTarget→scroll_fallback 既有兜底、↓ 走 scroll 键分支均存活，
+> Enter（uE007）落 `_ =>` 默认动作臂无 formless 判定 → Submit → webview 查
+> enclosing form 无 → noop(NotApplicable) → dispatch_action 只豁免
+> DisabledTarget → 错误串 reject send_keys promise 链 → 整案 unhandled
+> rejection；真浏览器语义 implicit submission 以 form owner 为前提，formless
+> = 无默认动作 = 静默 no-op（键序 keydown/keyup 照常完成）。施工 runner
+> `enter_formless_noop` 臂（`!buttonish && uE007|uE006 && 非 CE 宿主 &&
+> 无 enclosing form`——三重例外保既有绿面：formless buttonish click 通道
+> 优先、CE insertParagraph 活在 webview Submit 臂不得跳过、form 内隐式提交
+> 族不动；探针函数 script_gen 既有，纯 runner 组合零引擎改动）。②checkable
+> -active-onblur-with-click 2F（父 label press）：桥测探针证 shim `:active`
+> 路由健康（`_zwLabeledControl` DFS + `__zwSetActiveFromSel` 祖先 walk 命中
+> cb2），corpus 探针证根因 = 父 label `getBoundingClientRect` = 0,0,0,0
+> （子 input 12,79,13,13 / following label 32,12.2,26.4,18.6 实矩形对照）
+> → pointerMove origin (2,2) 落 BODY → :active=BODY；根因 layout-engine
+> inline-container boxing（含混排内容 label 未产盒），按 s405 先例移交渲染
+> 域记账，本流域不设 workaround。验证：driving solo date-readonly Pass
+> （dir-solo 全目录复核非 FILTER 假绿；旧二进制证据 = s409 sweep Fail 行）；
+> 单元 engine **3897P/9F**（对 s409 名册 diff 恰 r307_tree_order_identity
+> _domains F→P——本切片 runner-only 不感知，favorable 位移归并行流合入域）+
+> webview 849P/2F 零位移；fmt/clippy clean；sweep ×2 join-1 **恰 1 STATE-
+> DIFF = driving F→Pass** new=0/gone=0 键集 8484 全等（run1 8246P/212F/26T、
+> run2 8246P/214F/24T，Δ = select-home-end 两键 T↔F s292 watchdog flake 族
+> 漂移单列，Home/End/PageUp/PageDown 键序案 Enter 路径不涉）；**本流域在册红
+> 212F+24T→211F+24T**（−1F；checkable 2F 保持 F 归因单列，渲染域解挂后再
+> −2F）。下一步：maxlength-number 1T 勘根（file-level Timeout 先验语料资产
+> s227 先例）/ tentative/ constructed-stylesheets 9T 机制勘根后按簇决策 /
+> 挂账池承 s404/s405；A2+D 簇立项征询仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 409 收口）——script-created link stylesheet 不阻塞 script（driving 2F→P）**: commit 3364ff226，账本 evidence/2026-11-12-m2s409-script-created-link-stylesheet.md。原 Active 段留档—— M2 切片 409 收口（script-created link stylesheet 不阻塞
 > script，driving 2F→P）：interactions-of-styling-and-scripting 目录清零——
@@ -7161,6 +7191,21 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-12 M2 切片 411**：maxlength 仅适用六文本态施工轮（driving
+  1T→P，webview plan 门 + shim live 守卫 + 桥测钉 part110 + webview 钉）
+  ——maxlength-number file-Timeout 勘根三层：number-invalid 对照锁定
+  maxlength 单因子、相位探针定位 char '2' 起 MaxLengthReached noop、挂死
+  链 = dispatch_action 不豁免 → send_keys 链 reject → 无 .catch 案面
+  unhandled rejection 挂至预算。双写同口径门（16 非文本态黑名单 + shim
+  normalize 六态白名单，missing/invalid default 落 Text 判适用）。
+  验证：solo Pass；engine 3904P/10F（在册 9F 零位移 + 并行流 t49 单列，
+  clean HEAD stash 复跑归因）+ webview 850P/2F 零位移；sweep ×2 双跑全等
+  8249P/212F/25T join-cross 零位移、join-1 对 s410 恰 1 new/1 gone 纯
+  driving 位移 state-diff=0；跨流三处门禁违例（clippy collapsible_if +
+  两处 fmt）机械清偿独立 commit；focus-dynamic 争用 flake 单列不在册。
+  **在册红 211F+24T→211F+23T**（−1T）。下一步：constructed-stylesheets
+  9T 机制勘根 / 挂账池承 s404/s405（新增适用态打满 reject 面 /
+  maxLength IDL 不适用态反射 / unhandled-rejection 换算）。
 - **2026-11-12 M2 切片 410**：send_keys Enter formless 无隐式提交目标
   默认动作 no-op 施工轮（driving 1F→P，runner 单文件 +23 行）——
   the-input-element 散单双案勘根：date-readonly-keyboard Enter 落 Submit
