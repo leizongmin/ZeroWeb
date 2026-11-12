@@ -1,74 +1,48 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-12 · Active**。DC-1 落定：weekly 快照 109,059/154,595，对
+**2026-11-13 · Active**。DC-1 落定：weekly 快照 109,059/154,595，对
 11-07 基线净增 +92,875（CI
 [run 42947347500](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）。
-DC-2 P1 读面落地（六 format 命令 qS/qI spec 化 +114，证据
-[dc2-p1-format-state](evidence/2026-11-11-dc2-p1-format-state.md)）；
-**P2 apply 面 vendored 引擎落地**：六 inline format 命令非 collapsed
-execCommand 切 `__zw_ce_format_apply`（spec action 直译：跨段落 wrap /
-跨边界 merge / push-down / clearValue 摘壳 + state override 写面 +
-sibCrit css 门 + cef 端点门 + peel 残料溶解 + styleWithCSS 出口补拍）。
-三面同树前后二进制对跑断言级 **净增 +1,647 零新增失败**：六 format
-文件 10,499/1,430→11,657/272（F2P 1,174）、font 族 +95、multitest
-+380（F 恒 2）+misc 6F 转绿——证据
-[dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md)。
-**P3 作者载体臂落地**（2026-11-12）：gCS 作者样式表规则臂（state 读
-插 `_zwPlainAuthorDecl`，读序 host→inline→作者表→UA）+ u/s 载体 span
-原位并/下潜双形（apply 写面落点门，vendored 录形直译）——8 P2F 清账，
-面 1 六文件+探针 11,722/279→11,748/253（F2P 26 零回归零漂移）、面 2
-multitest+misc 哨兵共享断言逐名恒等；rebase 后 u/s 两文件复验
-2115/32、2067/80 恒等，证据
-[dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md)。
-**P3 追加·strike 新裹标签 delta**（同日）：css-false 新裹 `<s>`→
-`<strike>`（Chrome 录形为准，单行共享路径）——strike 2067/80→2104/43，
-F2P 37 逐名翻转零回归、mt/misc 哨兵 fail 集恒等，证据
-[dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md)。
-**P2 主循环 ⑤·元素载体折叠**（同日）：effectively-contained u/s/ins/del
-三臂（ins/del 入落点门保壳原位并/下潜、css-true bare u/s/strike 折叠
-溶解入新裹 span、⑦ own face 补 tag face 臂 nest-inside）——六文件
-11,785/216→11,795/206（F2P 10 逐名落目标簇零回归）、mt/misc 哨兵 fail
-集恒等，证据
-[dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md)。
-**P2 主循环 ①·decl 面壳多值偏序**（同日）：u/s decl 面壳（inline
-`text-decoration` 替换 tag face）apply/removal 分族清账——长手
-`text-decoration-line` 指定/computed 回退、清值偏序删除（剥命令 token
-canon 位序重写）、⑦ 门 ADD 四形（wrap-out 保壳/溶解合并/换形 longhand/
-css-false 保壳转形）、strike decl 壳切分抽裹、removal 重物化分解转形、
-span decl 壳切刻（录形 data/underline.js、data/strikethrough.js 直译）
-——六文件+探针 11,796/231→11,866/161（F2P=70 零回归零漂移）、mt/misc
-哨兵 fail 集逐名恒等，证据
-[dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md)。
-**P2 主循环 ②·bold 数值权重边界 + cef 门 rc 面**（同日）：bold 并值
-候选排除 strong、ADD 激活值恒不切分数值壳祖先、toggle-off 剥壳重物化
-（css-false decl ≡700 转 b）、六命令 cef 门 rc=false 化（editing host
-缘豁免）——face 1 六文件+12 探针 11,870/185→11,930/125（F2P=60 =
-bold 42 + d6cef 2 + d6diag 16，零回归零漂移；bold 84F→42F）；mt/misc
-哨兵 fail 集逐名恒等；rebase 入 webview CSP 组合态后 bold+双探针
-3,076 行复验恒等，证据
-[dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md)。
+DC-2 P1 读面 + P2 apply 引擎 + P3 作者载体臂累计落地后，**P2 主循环
+③·bold/italic 载体吸收与边界挖入**（2026-11-13，d7 批）：resolved
+prop 读序重排（inline→作者表→host gCS→UA，notbold 类壳 qS 读面）、
+阻断载体递归+独占壳 unwrap、bold/italic 边界挖入门（bare 载体 +
+range 全含收窄）、toggle-off css-true 残料 span 化 + b#purple 属性
+提升、merge-through-carrier 吸收臂（M 族七形，cite/dfn/var 链尾
+tag face 归一顺带清账 italic 归一簇）——face 1 断言级 **+55 零回归**
+（F2P=55/P2F=0/名集漂移空；bold 42F→13F、italic 24F→18F、d7diag
+新增 20 case 全绿），face 2 mt/misc fail/timeout 恒名、P 差 +66 全落
+`?9001-last` 慢页门非确定性；上 session 落码未验证，本 session 对跑
+纠偏（初版 ④ u/s/sub/sup gCS 信号臂逆录形弃用，详见证据前言），证据
+[dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md)。
+更早批次：P1 读面 +114、P2 apply 面 +1,647、P3 作者载体 +26、strike
+新裹标签 +37、主循环 ⑤ 元素载体折叠 +10、① decl 面壳多值偏序 +70、
+② bold 数值权重边界 + cef 门 rc 面 +60（证据见下表与
+[evidence/](evidence/) 目录）。
 selection 扩面已接线待下周跑生效：fetch 切 deep（184 案）、独立
 selection-face 片——本地 census 51,695/35,631（
 [census](evidence/2026-11-11-dc2-selection-face-census.json)）。
 **卡点** 无阻塞；距 146,184 验收线差 37,125，大头在 selection deep
 面下周跑生效（census 口径 +~33k）与 input-events（201/3,378）等 0 覆盖面
-接线。六 format 文件残余 119F 为 P2 既有长尾（bold 42F：notbold 指定值
-读面/跨 merge 邻接/数值壳边缘三簇、d6diag 哨兵余红 6 case 即代表；
-u/s 20F：styled-child 分解再裹 ×10 + 零变化/读面 ×10；italic 24F、
-sub/sup 26F；含既有诊断 7F）。
-**下一步** ①bold 残余 42F 三簇（notbold 类指定值读面、跨 merge 邻接、
-数值壳 partial）、italic var/dfn 归一、sub/sup vertical-align 邻 span；
-②selection bidi（0/92）、shadow-dom（27/113）、input-events 小桶按产物
-归类开修；③下周快照落做 DC-3 同口径对账（净增 ≥130,000 + 邻域回退核对，
-P2/P3 语料全量增量随周跑入账；face 哨兵探针 12 个：d5decl 6 case +
-d5diag 20 case 全绿、d6cef 3 case + d6diag 20/26 绿）。
+接线。六 format 文件残余 70F 为 P2 既有长尾（bold 13F：700/900 壳
+partial 读面 ×6、跨块 b>p 载体 ×2、qS 杂项 ×5；italic 18F：css-true
+i 边界残料 span 化、var/dfn/cite css-true 形、oblique/邻接壳；u/s
+20F：styled-child 分解再裹 ×10 + 零变化/读面 ×10；sub/sup 26F；含
+既有诊断 7F）。
+**下一步** ①bold 残余 13F（700/900 壳 partial 读面、跨块载体）、
+italic css-true i 边界残料 span 化（⑥ 之 italic 臂）、sub/sup
+vertical-align 邻 span；②selection bidi（0/92）、shadow-dom
+（27/113）、input-events 小桶按产物归类开修；③下周快照落做 DC-3
+同口径对账（净增 ≥130,000 + 邻域回退核对，P2/P3 语料全量增量随周跑
+入账；face 哨兵探针：d5decl/d5diag/d6cef 全绿、d6diag 24/25、
+d7diag 20 case 全绿）。
 
 [执行契约](../wptfyi-editing.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 完成（11/11 片；快照 109,059/154,595） | [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md) + [dc2-selection-wiring](evidence/2026-11-11-dc2-selection-wiring.md) |
-| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（三面 +1,647 断言级零新增失败）；P3 作者载体臂（+26）+ strike 新裹标签 delta（+37）+ 主循环 ⑤ 元素载体折叠（+10）+ ① decl 面壳多值偏序（+70）+ ② bold 数值权重边界 + cef 门 rc 面（+60），均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md)：六文件残余 119F 长尾 |
+| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（三面 +1,647 断言级零新增失败）；P3 作者载体臂（+26）+ strike 新裹标签 delta（+37）+ 主循环 ⑤ 元素载体折叠（+10）+ ① decl 面壳多值偏序（+70）+ ② bold 数值权重边界 + cef 门 rc 面（+60）+ ③ bold/italic 载体吸收与边界挖入（+55），均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md)：六文件残余 70F 长尾 |
 | DC-3 全量对账 | 对账口径就绪（净增 +92,875，距线 37,125） | coverage-2026-11-11 快照 + 验收线 146,184 |
 
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
