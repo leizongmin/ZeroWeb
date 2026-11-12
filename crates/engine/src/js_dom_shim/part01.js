@@ -8791,7 +8791,22 @@
             // miss 时 overlay 的 R5450 prev 回落此前只覆盖 `_zwSelPendingParent` 槽形态
             //（textEl 臂手写槽带 prev），`_zwNodeParent` 链接恒缺 → handle 子的 pending
             // 定位少一档兜底。record 的 previousSibling 本就是 spec 字段，镜像即得。
-            _zwNodeParent[_npC.__zwHandle] = { parentSel: sel || null, parentHandle: handle || null, nextSibling: baseRecord.nextSibling || null, prevSibling: baseRecord.previousSibling || null };
+            // s415（html-semantics M2）批内锚修正——record 级 sibling 字段是**整批**
+            // 首尾锚（spec childList record 每记录一对，R47 fragment flatten 批形态
+            // previousSibling = 插入前容器 lastChild），逐子镜像把批内每个子都挂到同一
+            // prev 锚；overlay 合并（`_zwOverlayPendingChildNodes` prev 定位插入）对
+            // 同锚依次落位时逐个插在锚后同一位，后插者把先插者推后 → **批内序倒转**
+            //（WPT inserted-or-removed「jQuery append()」批视图 [Second, ws, First]
+            // 倒序 → selectedness 走查翻转实证）。批内子锚 = 邻位子（首子 prev 接
+            // record 锚、末子 next 接 record 锚），spec 兄弟语义本就如此；锚按节点
+            // identity 消费（R5450 同口径，文本邻位同样可定位）。
+            _zwNodeParent[_npC.__zwHandle] = {
+              parentSel: sel || null, parentHandle: handle || null,
+              nextSibling: (_npI + 1 < _npA.length && _npA[_npI + 1])
+                ? _npA[_npI + 1] : (baseRecord.nextSibling || null),
+              prevSibling: (_npI > 0 && _npA[_npI - 1])
+                ? _npA[_npI - 1] : (baseRecord.previousSibling || null)
+            };
           }
         }
       }

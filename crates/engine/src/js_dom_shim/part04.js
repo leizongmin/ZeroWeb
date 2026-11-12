@@ -11752,7 +11752,17 @@
                         // 重放进查询视图（with_query_view_doc 结构级子集）——补偿代理对文档级
                         // 枚举恒冗余（plain IAH 同 turn gEBT 双计实证），打标供 part05 剔除；
                         // handle 父槽（parentSel null）不打标——handle 空间内容不进视图回放。
-                        _iahN._zwSelPendingParent = { parentSel: _iahParentSel || null, parentHandle: _iahParentHandle || null, nextSibling: _iahRef, inViewReplay: !!(_iahParentSel) };
+                        // s415（html-semantics M2）：槽锚逐子真锚——_iahRef 是 record 级
+                        // **整批共享后继**（afterbegin=旧首子），全批同锚会在 overlay 合并
+                        // prev/next 定位与集合重排的同锚依次落位下倒转批内序（t8e iAH 批
+                        // 钉实证 [I,B,SPAN,EM]）；批内子后继 = 邻位子（R4600 variadic 槽
+                        // 「项 i 后继 = 项 i+1」同型），末子/无后继接 record 锚。
+                        _iahN._zwSelPendingParent = {
+                          parentSel: _iahParentSel || null, parentHandle: _iahParentHandle || null,
+                          nextSibling: (_iahi + 1 < _iahAdded.length && _iahAdded[_iahi + 1]) ? _iahAdded[_iahi + 1] : _iahRef,
+                          prevSibling: (_iahi > 0 && _iahAdded[_iahi - 1]) ? _iahAdded[_iahi - 1] : null,
+                          inViewReplay: !!(_iahParentSel)
+                        };
                         if (_iahHostProxy) {
                           try { _iahN.parentNode = _iahHostProxy; } catch (_eiahpp) {}
                         }

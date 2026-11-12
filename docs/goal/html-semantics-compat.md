@@ -2,33 +2,40 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 415 round-1 落锤（ior jQuery append() 新红归因：**双通道键分裂 + 重复处理定谳，未施工**）——s414 定谳真新红（11 天稳定 Pass→确定性
-Fail）三跑归因首轮落锤：**纯 0079443c6 源重建二进制（detached
-checkout，零注释零上游）静机 ior ×3 全 Fail** vs 同源 s413 批二进制
-（11-12 20:04）Pass ×2——同源不同构建/时点翻转，s414 注释与上游五
-commit 双双排除，翻转维度收窄到源码之外（rustc 并行 codegen 产物布
-局漂移 → 堆布局/分配序，或运行时环境时点敏感；20:04 批二进制已被覆
-盖不可直复跑）。腿 1 已落锤（同源 touch-rebuild sha256 **A≠B** 非逐位可复现实证 +
-双构建 ior ×3 全 Fail，连前计 6 构建连 Fail）→ 腿 2 探针插桩已落锤
-（11-13 04:20）：`appendChild(fragment)` **一次变异双通道双记录**——
-JS plain 批记录先处理正确归一 Second（11 天 Pass 既有路径），native
-延迟排空（`drain_native_mutations_to_mo` → `__zw_mo_notify_native`）
-以身份键重跑插入臂、该时点选项枚举序倒转 → clean 键面分裂（归一写在
-plainOpt:p* 键，@ 键不可见回落属性 true）→ **First 翻胜**，Fail 签名
-逐字吻合（dump 108 事件全量，探针语料 3/3 复现，插桩零 regime 位移）。
-Pass/Fail = 双记录处理序/键面随构建布局漂移——20:04 批落无翻转侧。
-插桩已逐字节还原（sha256 一致）、探针语料已删、清回构建 C ior ×3 全
-Fail 零残留。ior 键勘根收口前按在册红记账不抹（flake
-治理）。**本流域在册红 213F+16T**（s414 收口口径，见 s414 账本；NotRun
-5 不变）。过程事件：429 断点接手收口 s414 + target-disk-guard × 活动
-构建竞态全清教训已录 s414 账本。下一步：s415 腿 3＝native 排空域勘根（重复处理根因修复方向定夺，去重/抑制候选 + 全量 sweep 验证；键分裂备选）；
-constructed-stylesheets 1T 勘根候选 / 挂账池承
-s404/s405/s411/s412/s413/s414（外链模块基座 map 键错配/`.sheet` kind
-固定面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5
-面/form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察
-池/适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
-unhandled-rejection 换算）；checkable 父 label 2F 渲染域移交承 s410；
-select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
+**状态**: Active——M2 切片 415 收口（ior jQuery append() 新红根因修复落锤：**B1 批内同锚倒转，四件套真锚语义统一，1F 解挂**）——s414 定谳真新红（11 天稳定
+Pass→确定性 Fail）勘根四腿闭环：round-1「同源不同构建翻转，源归因排
+除」系**树误标**（s413 批二进制 20:04 构建早于 B1 patch 5d26a28eb
+20:13 与收口 commit 0079443c6 22:04，实为 pre-B1 vs post-B1 **异源**
+对比）；腿 1 rustc sha256 非确定性真实但退出因果链；腿 2「native 排
+空双通道重复处理」经 kill-switch A/B（`ZW_MO_HOST_TRIGGER=0` Fail 持
+续）+ v2 探针（moq ts 字段实证 fragment 流单记录，leg-2 dump 误绑下
+一 subtest 的 innerHTML 记录）撤回；腿 3 v3 视图源探针定谳真机制——
+**B1 在 `_mo_notify` childList 臂给批内每子镜像 record 级 prevSibling
+（整批首尾锚非逐子锚），overlay 合并同锚顺插 LIFO 倒转批视图**
+（[First,ws,Second]→[Second,ws,First]→selectedness last-wins 翻
+转），11 天 Pass 期 = pre-B1 正确尾插路径。修复四件套（真锚语义统
+一）：part01 链接臂逐子真锚 + part05 `_zwHCTreeOrderSync` 倒序处理
+（真锚下后位兄弟先落位）+ part05 `_zwBaseIdxShiftForAdded` next
+miss 回落 prev + part04 iAH 槽锚逐子真锚（R4600 同型先例）；首
+轮 maketest 暴 t8e 多节点批新红（共享/真锚双读方语义冲突）→ 二
+次消费方全量审计闭环。验证：ior ×3 全 Pass + t8e 全家 7/7；终稿
+sweep ×2 对 s414 join 双腿**恰 2 state-diff**（ior Fail→Pass 定靶 +
+home-end 双文件族内 T↔F 换位漂移红集不变）**new=0 gone=0**、
+cross 仅族内漂移、数字闭合逐项无残差；make test 全量 155 腿 154
+绿 + 仅 engine lib 在册红腿 3911P/**7F** 失败清单逐名 IDENTICAL 零
+位移（t8e 回绿）。**本流域在册红 212F+16T**（s415 收口口径，213F+16T
+−1F ior 解挂；NotRun 5 不变）。挂账新增：pending bucket 重复条目
+parentSel 字符串 `"null"`（inert 合并跳过，记账面候选）。过程事件：
+sweep/maketest 并行期 release 重建窗口 runner 127 ×2 + make-test 后
+target-disk-guard 删 release 产物 127 ×1（重建补跑收口，「make test
+后须重建 release runner」在案再证）。下一步：constructed-stylesheets
+1T 勘根候选 / 挂账池承 s404/s405/s411/s412/s413/s414（外链模块基座
+map 键错配/`.sheet` kind 固定面不全/标记属性外泄/多进程 parity/
+forward map 空返勘根/渲染流 5 面/form-submission-target 6T/sizes-auto
+半边/ilf+modulepreload 观察池/适用态打满 reject 面/maxLength-minLength
+IDL 不适用态反射/unhandled-rejection 换算 + bucket 重复条目）；checkable
+父 label 2F 渲染域移交承 s410；select/combobox（簇 D）与 A2+D 簇立项
+征询仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 414 收口）——the-style-element 余红勘根定谳：
 > 动态 style @import 事件臂 = 引擎分歧非缺口（勘根不施工收口 + 语料
@@ -7343,6 +7350,23 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-13 M2 切片 415**：ior jQuery append() 新红根因修复收口轮
+  （driving 1F→P，shim 四件套：part01 链接臂逐子真锚 + part05
+  TreeOrderSync 倒序/BaseIdxShift prev 回落 + part04 iAH 槽锚逐子
+  真锚）——四腿勘根闭环：round-1「同源翻转」系树误标（s413 批构建
+  20:04 早于 B1 5d26a28eb 20:13 与收口 commit 22:04，实为异源）、
+  腿 1 rustc 非确定性真实但退出因果链、腿 2 native 排空假说
+  kill-switch 证伪 + 探针 ts 缺失误绑撤回、腿 3 视图源探针定谳
+  B1 record 级 prevSibling 逐子镜像 → 同锚顺插 LIFO 倒转批视图。
+  首轮 maketest 暴 t8e 多节点批新红（共享/真锚双读方语义冲突）→
+  消费方全量审计四件套收口。验证：ior ×3 全 Pass + t8e 7/7；终稿
+  sweep ×2 join 双腿恰 2 state-diff（ior F→P + home-end 族内换位）
+  new=0 gone=0、cross 仅族内漂移、数字闭合无残差；make test 155 腿
+  154 绿 + engine lib 3911P/7F 逐名 IDENTICAL 零位移。
+  **在册红 213F+16T→212F+16T**（−1F ior 解挂）。挂账新增 bucket
+  重复条目 parentSel 字符串 "null"。详
+  evidence/2026-11-13-m2s415-ior-jquery-append-attribution.md（腿 3
+  节 + 卷首/腿 2 更正注）。
 - **2026-11-12 M2 切片 413**：声明式 CSS module parse 期 map 注册施工轮
   （tentative/ 11 文件全绿：2T→子测 P 键形迁移 + 6 NotRun→9P；webview
   map 快照 + prepare 播种 + collect 顶部命中臂四消费方穿参 + engine ⓪

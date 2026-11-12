@@ -12969,9 +12969,14 @@
       var ln = _zwNodeParent[e.__zwHandle];
       if (!ln || ln.parentSel !== sel) continue;
       var at = -1;
+      // s415：逐子真锚（part01 `_mo_notify` childList 臂）下批内非末子的 next 锚 =
+      // pending 兄弟（不在基底缓存），else-if 串联使 prev 臂够不着 → 平移计数漏计。
+      // 改 next miss 回落 prev 双查——批首经 prev=record 外锚解析、末子 next 直命中，
+      // 计数与 B1 共享锚时代逐条对齐；锚缺省（尾插）或双 miss 仍不平移，契约不变。
       if (ln.nextSibling) {
         for (var q = 0; q < baseArr.length; q++) { if (baseArr[q] === ln.nextSibling) { at = q; break; } }
-      } else if (ln.prevSibling) {
+      }
+      if (at < 0 && ln.prevSibling) {
         for (var q2 = 0; q2 < baseArr.length; q2++) { if (baseArr[q2] === ln.prevSibling) { at = q2 + 1; break; } }
       }
       if (at >= 0 && at <= refIdx) out++;
@@ -13683,7 +13688,13 @@
       if (!lc.scopeHandle && !lc.scopeSel) continue;
       var scoped = lc.scopeHandle ? (lc.scopeHandle === mutHandle) : (lc.scopeSel === mutSel);
       if (!scoped) continue;
-      for (var a = 0; a < addFlat.length; a++) {
+      // s415（html-semantics M2）：倒序处理——链接面已改逐子真锚（part01 `_mo_notify`
+      // childList 臂，B1 record 级共享锚退役），批内成员的 next 锚是邻位兄弟；倒序使
+      // 后位兄弟先落位，前位成员锚到已就位兄弟即插其前（正序会在锚兄弟尚未重排时
+      // 跳过移动 → v1 缺陷形 [a,y,b,x] 复原，t8e 多节点批钉实测红）。末子仍锚 record
+      // 外部锚，归纳成立；锚不在集合的走查链（文本/未入集合兄弟）经真锚逐位逃逸。
+      // 单子批倒序=正序（单元素），零行为漂移。
+      for (var a = addFlat.length - 1; a >= 0; a--) {
         var nd = addFlat[a];
         if (!nd) continue;
         var cur = lc.elements();
