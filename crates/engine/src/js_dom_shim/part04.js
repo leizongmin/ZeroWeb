@@ -9101,6 +9101,13 @@
                       if (_rdRei >= 0 && _rdRei < _rdBi) _rdIdx--;
                     }
                   }
+                  // 嵌套簇 B1（2026-11-12）：同批先行**插入**的对偶平移——InsertChildAt
+                  // 等已出批结构插入 apply 后目标基底索引右移（先行移除左移的既有循环
+                  // 只覆盖减向；嵌套 wrap 序 RemoveChildAt 前有同父 InsertChildAt 实证：
+                  // 未计插入平移使 idx0 打到新插的壳上——replay foobaz 壳被误删根因）。
+                  if (_rdB && _rdB.added.length && typeof _zwBaseIdxShiftForAdded === 'function') {
+                    _rdIdx = _zwBaseIdxShiftForAdded(_rdB.added, _rdBase, sel, _rdIdx);
+                  }
                 }
               }
               if (_rdIdx < 0 && typeof child.__zwChildIndex === 'number') _rdIdx = child.__zwChildIndex;
@@ -10087,6 +10094,11 @@
               // handle，按融合视图位次 splice）——R265 靶点。
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子）。
               var ceAdded;
+              // 嵌套簇 B1（2026-11-12）：新臂（bare 文本 ref）的视图锚覆盖——tail record 的
+              // nextSibling/previousSibling 缺省取调用方持有的 refNode 家族对象，文本 wrapper
+              // 跨代际 identity 恒 miss → overlay pending 落尾。命中臂把锚改写为**同一份融合
+              // 读取**的成员（fresh wrapper——overlay 定位按 identity，锚必须是当前列表对象）。
+              var _ibNxtAnchor = null, _ibPrevAnchor = null;
               // DocumentFragment：flatten 子节点（refNode 非 null 时插到 ref 前，null 时 append）。
               if (_fragmentHandles[newNode.__zwHandle]) {
                 ceAdded = (_handleChildren[newNode.__zwHandle] || []).slice();
@@ -10428,6 +10440,75 @@
                   ceAdded = [newNode];
                   try { __zw_insert_before(sel, newNode.__zwHandle, _posRef); } catch (_ePosIns) {}
                 }
+              } else if (sel && !handle && newNode.__zwHandle && newNode.nodeType === 1
+                  && refNode && refNode.nodeType === 3 && !refNode.__zwHandle && !refNode.__zwSelector
+                  && typeof __zw_insert_child_at === 'function') {
+                // 嵌套簇 B1（2026-11-12）：sel 父 + handle 元素子 + **bare 文本 ref**——上方
+                // 全部分支 miss（s165/R265 需 handle 父或 handle ref；R5058 限文本子；
+                // D3 限元素 ref）→ 旧形态静默穿透（host 无 mutation + tail record 锚陈旧
+                // 家族对象 → overlay pending 落尾）。_zwVaWrap 壳插（嵌套 wrap 语料
+                // nested_cross_b / italic_after_prior_cmd 序错根因）即此形态。
+                // 发射索引 = **apply 时 host 坐标**（RemoveChildAt 同契约）：基底缓存
+                // identity 优先、data 回退（文本 wrapper 每次访问新建，跨代际 identity 恒
+                // miss），再计同批先行同父移除（左移）/插入（右移，`_zwBaseIdxShiftForAdded`）
+                // ；基底缺缓存回落融合序（best effort）。锚读走融合视图（overlay pending
+                // 定位按 identity，锚须当前列表成员；基底成员 ref 时两读同对象）。全 miss
+                // 兜底 append 尾部（旧行为）。文本子（R5058 域）不入本臂——近似落位语义
+                // 保持其语料面不变。kill-switch：回调未注册（ZW_INSERT_CHILD_AT=0）→ 本臂
+                // 跳过走旧形态。
+                // https://dom.spec.whatwg.org/#concept-node-pre-insert
+                var _nbKids = null;
+                try { _nbKids = _childNodeList(sel, null); } catch (_eNbKids) {}
+                var _nbAt = (_nbKids && _nbKids.length) ? _nbKids.indexOf(refNode) : -1;
+                if (_nbAt < 0 && _nbKids) {
+                  for (var _nbQ = 0; _nbQ < _nbKids.length; _nbQ++) {
+                    var _nbW = _nbKids[_nbQ];
+                    if (_nbW && _nbW.nodeType === 3 && String(_nbW.data) === String(refNode.data)) { _nbAt = _nbQ; break; }
+                  }
+                }
+                var _nbIdx = -1;
+                var _nbBase = (typeof _zwChildBaseCache !== 'undefined' && _zwChildBaseCache)
+                  ? _zwChildBaseCache.get(sel) : null;
+                if (_nbBase && _nbBase.length) {
+                  for (var _nbBi = 0; _nbBi < _nbBase.length; _nbBi++) {
+                    if (_nbBase[_nbBi] === refNode) { _nbIdx = _nbBi; break; }
+                  }
+                  if (_nbIdx < 0) {
+                    for (var _nbBq = 0; _nbBq < _nbBase.length; _nbBq++) {
+                      var _nbBw = _nbBase[_nbBq];
+                      if (_nbBw && _nbBw.nodeType === 3 && String(_nbBw.data) === String(refNode.data)) { _nbIdx = _nbBq; break; }
+                    }
+                  }
+                  if (_nbIdx >= 0) {
+                    var _nbB = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+                      ? _zwPendingByParent.get(sel) : null;
+                    if (_nbB && _nbB.removed.length) {
+                      for (var _nbBr = 0; _nbBr < _nbB.removed.length; _nbBr++) {
+                        var _nbBre = _nbB.removed[_nbBr];
+                        if (!_nbBre || _nbBre === refNode) continue;
+                        var _nbBrei = -1;
+                        for (var _nbBre2 = 0; _nbBre2 < _nbBase.length; _nbBre2++) {
+                          if (_nbBase[_nbBre2] === _nbBre) { _nbBrei = _nbBre2; break; }
+                        }
+                        if (_nbBrei >= 0 && _nbBrei < _nbIdx) _nbIdx--;
+                      }
+                    }
+                    if (_nbB && _nbB.added.length && typeof _zwBaseIdxShiftForAdded === 'function') {
+                      _nbIdx = _zwBaseIdxShiftForAdded(_nbB.added, _nbBase, sel, _nbIdx);
+                    }
+                  }
+                }
+                if (_nbIdx < 0) _nbIdx = _nbAt; // 基底缺缓存回落融合序
+                ceAdded = [newNode];
+                if (_nbIdx >= 0) {
+                  try { __zw_insert_child_at(sel, String(_nbIdx), newNode.__zwHandle); } catch (_eNbIca) {}
+                  if (_nbAt >= 0) {
+                    _ibNxtAnchor = _nbKids[_nbAt] || null;
+                    _ibPrevAnchor = _nbAt > 0 ? (_nbKids[_nbAt - 1] || null) : null;
+                  }
+                } else {
+                  try { __zw_append_child(sel, newNode.__zwHandle); } catch (_eNbApc) {}
+                }
               }
               // R5356b（editing-compat inline-host B 簇，2026-10-31）：frag 种子宿主
               // live-list 同步——插入节点 splice 进种子 nodes（ref identity 定位；
@@ -10458,11 +10539,13 @@
               // spec insertBefore(fragment) record 不含 fragment 自身）。nextSibling=refNode
               //（spec record 字段：插入位置的后继）+ previousSibling（refNode 的前兄弟；WPT
               // "Range.insertNode" 断言 previousSibling）。
-              var _ibPrev = null;
-              try {
-                if (refNode && refNode.previousSibling) _ibPrev = refNode.previousSibling;
-              } catch (_e) {}
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded || [newNode], removedNodes: [], previousSibling: _ibPrev, nextSibling: refNode || null });
+              var _ibPrev = _ibPrevAnchor;
+              if (_ibPrev == null) {
+                try {
+                  if (refNode && refNode.previousSibling) _ibPrev = refNode.previousSibling;
+                } catch (_e) {}
+              }
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded || [newNode], removedNodes: [], previousSibling: _ibPrev, nextSibling: _ibNxtAnchor || refNode || null });
               // R140：live childNodes 同步（insertBefore 记账后）。
               try {
                 if (globalThis._zwLiveNLSync) {

@@ -756,6 +756,21 @@
     if (oldParent && typeof oldParent.removeChild === 'function') {
       try { oldParent.removeChild(node); } catch (_eJrm) {}
     }
+    // 嵌套簇 B2（2026-11-12）：bare 文本子（sel 域解析 wrapper / 工厂产物，无 handle）
+    // 入 **handle 壳**（createElement 产物容器）——appendChild trap 对该形态只做本地
+    // `_handleChildren` 记账（R84 臂）不发 host mutation，壳内容在 host 侧永久为空
+    //（嵌套 wrap 语料 `<i>foo</i>` 壳空根因）。摘挂已完成（上方 removeChild 的
+    // RemoveChildAt 已先出批），此处补「CreateTextNode + AppendChildByHandle」净效果
+    // 等价发射：host 侧以新句柄文本子落地（同批 Create 注册后 append 解析）。本函数
+    // 只服务编辑 move/wrap 流（innerHTML 解析 / cloneNode / shadow 装配不经此处），
+    // 发射面天然限于编辑域。
+    if (node && node.nodeType === 3 && !node.__zwHandle && newParent.__zwHandle
+        && typeof __zw_create_text === 'function' && typeof __zw_append_child_handle === 'function') {
+      try {
+        var _b2h = __zw_create_text(String(node.data != null ? node.data : (node.__nv || '')));
+        if (_b2h) __zw_append_child_handle(newParent.__zwHandle, _b2h);
+      } catch (_eJb2) {}
+    }
     var ref = newParent.childNodes && idx < newParent.childNodes.length
       ? newParent.childNodes[idx] : null;
     try {

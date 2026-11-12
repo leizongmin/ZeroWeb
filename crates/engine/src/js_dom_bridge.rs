@@ -304,6 +304,21 @@ pub enum DomMutation {
         /// 参考节点句柄。
         ref_handle: String,
     },
+    /// editing-compat 嵌套簇 B1（2026-11-12）：sel 父 + handle 子 + **bare 文本 ref** 的带位
+    /// 插入——`parent.insertBefore(child, bareTextRef)`。bare 文本 ref 无 handle 亦无唯一
+    /// selector，[`DomMutation::InsertBefore`] 的 `ref_selector` 无法寻址（旧 shim 该形态
+    /// 静默穿透：host 无 mutation + 视图 fallback 落尾，嵌套 wrap 语料序错根因）。shim 按
+    /// 融合视图（identity 优先、data 回退）算出 ref 当前索引后以此变体按索引插入。索引越界
+    /// （视图与 host 漂移）降级 append 尾部（insertBefore(node, null) 语义，同
+    /// [`DomMutation::InsertBeforeByHandleHandle`] 的 ref miss 约定）。
+    InsertChildAt {
+        /// 父元素唯一选择器。
+        parent_selector: String,
+        /// childNodes 中的插入索引（含文本/注释的全节点序）。
+        child_index: usize,
+        /// 子节点句柄。
+        child_handle: String,
+    },
     /// 对 create 句柄设置属性（append 前 `el.id = ...` 等）。
     SetAttrOnHandle {
         /// 节点句柄。
@@ -1382,6 +1397,10 @@ fn rewrite_pending_id_selectors(
                 parent_selector: selector,
                 ..
             }
+            | DomMutation::InsertChildAt {
+                parent_selector: selector,
+                ..
+            }
             | DomMutation::SetChildText {
                 parent_selector: selector,
                 ..
@@ -2066,6 +2085,30 @@ pub fn apply_dom_mutations_full(
                         doc.append_child(parent, child).map_err(|e| e.to_string())?;
                     }
                 }
+            }
+            // 嵌套簇 B1：按 child 索引插入（bare 文本 ref 的索引寻址对偶——同
+            // [`DomMutation::SetChildText`]/[`DomMutation::RemoveChildAt`] 的
+            // 「父 sel + childNodes 全节点序索引」定位口径）。父 miss lenient warn+跳过
+            //（同 InsertBefore arm）；索引越界降级 append 尾部（ref miss 语义等价）。
+            DomMutation::InsertChildAt {
+                parent_selector,
+                child_index,
+                child_handle,
+            } => {
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    tracing::warn!("apply DOM mutations: insert_child_at parent no match, skipped: {parent_selector}");
+                    continue;
+                };
+                let child = handles
+                    .get(&child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                let kids = doc.child_nodes(parent);
+                let result = match kids.get(child_index).copied() {
+                    Some(ref_node) => doc.insert_before(parent, child, ref_node),
+                    None => doc.append_child(parent, child),
+                };
+                result.map_err(|e| e.to_string())?;
             }
             DomMutation::SetAttrOnHandle { handle, name, value } => {
                 let node = handles

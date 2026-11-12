@@ -11616,11 +11616,40 @@
       var _cur = function () { return String(node.nodeValue != null ? node.nodeValue : ''); };
       var _write = function (nv) {
         var _moTgt = _mo_id(null, parentSel);
-        var _old = (_moTgt != null && _mo_any_wants_char_old(_moTgt)) ? _cur() : null;
+        var _pre = _cur();
+        var _old = (_moTgt != null && _mo_any_wants_char_old(_moTgt)) ? _pre : null;
+        // 嵌套簇 scene A 缺陷①（2026-11-12）：__zwChildIndex 是**构造时**索引戳——同
+        // turn 结构插入（insertBefore/appendChild）使 childNodes 序漂移后按戳写即命中
+        // 错节点（r7 探针 MUT SetChildText{#ce,2} 按陈旧戳打到漂移后位次实证）。写前按
+        // 融合视图现算：identity 优先（基缓存 wrapper 家族内命中）；戳槽校验（戳位是
+        // 文本且数据 === 写前值 → 戳仍可信，免全扫兼防重名歧义）；data 回退（跨代际新
+        // 建 wrapper identity miss，同 R301 兜底口径）。全 miss 回退戳（旧行为）。
+        // R48 原语义（构造时戳）在无同 turn 结构变异的热路径（Range-mutations
+        // dataChange 族）下恒走戳槽校验命中，无行为变化。
+        var _wIdx = null;
+        try {
+          var _wKids = _childNodeList(parentSel, null);
+          if (_wKids && _wKids.length) {
+            for (var _wQ = 0; _wQ < _wKids.length; _wQ++) {
+              if (_wKids[_wQ] === node) { _wIdx = _wQ; break; }
+            }
+            if (_wIdx == null) {
+              var _wStamp = node.__zwChildIndex | 0;
+              var _wStampOk = _wKids[_wStamp] && _wKids[_wStamp].nodeType === 3
+                && String(_wKids[_wStamp].data) === _pre;
+              if (!_wStampOk) {
+                for (var _wQ2 = 0; _wQ2 < _wKids.length; _wQ2++) {
+                  var _wW = _wKids[_wQ2];
+                  if (_wW && _wW.nodeType === 3 && String(_wW.data) === _pre) { _wIdx = _wQ2; break; }
+                }
+              }
+            }
+          }
+        } catch (_eWidx) {}
         // textContent 不在此回写（下方 R260 accessor 化后 setter 会再进 _write——互递归）；
         // accessor getter 读 __nv，视图一致。
         node.__nv = nv; node.length = nv.length;
-        __zw_set_child_text(parentSel, String(node.__zwChildIndex || 0), nv);
+        __zw_set_child_text(parentSel, String(_wIdx != null ? _wIdx : (node.__zwChildIndex || 0)), nv);
         _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node.__zwNotifyTarget || node });
       };
       // R260（js-dom M4）：parsed 文本/注释的 live-range 边界调整（spec
@@ -12923,6 +12952,32 @@
   globalThis.__zwPendReselGet = function (sel) {
     return _zwPendReselBySel.get(String(sel)) || null;
   };
+  // 嵌套簇 B1（2026-11-12）：pending added 条目对「apply 时 host 坐标」的平移量。
+  // 契约：RemoveChildAt/InsertChildAt 的索引是 **apply 时 host 坐标**（批内 FIFO——
+  // 本 mutation apply 时，同批先行同父结构插入已落 host，目标基底索引右移；先行
+  // 移除左移，由各发射点自计）。条目平移判定：handle 子（`_zwNodeParent` 反链在册
+  // ——已出批 wire 的形态）；nextSibling/prevSibling 锚在基底缓存 identity 解析
+  //（锚来自发射点当前读 = 基底成员家族）；锚缺省（尾插，在目标之后）或 identity
+  // miss → 不平移。sel 子（移动补偿，无 host mutation）与 bare 解析产物
+  //（innerHTML= 整体替换语义不可组合）不计。
+  function _zwBaseIdxShiftForAdded(addedArr, baseArr, sel, refIdx) {
+    if (!addedArr || !addedArr.length || !baseArr || refIdx < 0) return refIdx;
+    var out = refIdx;
+    for (var i = 0; i < addedArr.length; i++) {
+      var e = addedArr[i];
+      if (!e || !e.__zwHandle || typeof _zwNodeParent === 'undefined' || !_zwNodeParent) continue;
+      var ln = _zwNodeParent[e.__zwHandle];
+      if (!ln || ln.parentSel !== sel) continue;
+      var at = -1;
+      if (ln.nextSibling) {
+        for (var q = 0; q < baseArr.length; q++) { if (baseArr[q] === ln.nextSibling) { at = q; break; } }
+      } else if (ln.prevSibling) {
+        for (var q2 = 0; q2 < baseArr.length; q2++) { if (baseArr[q2] === ln.prevSibling) { at = q2 + 1; break; } }
+      }
+      if (at >= 0 && at <= refIdx) out++;
+    }
+    return out;
+  }
   function _zwPendBucket(sel, handle) {
     var key = sel ? sel : '_h:' + String(handle == null ? '' : handle);
     var b = _zwPendingByParent.get(key);

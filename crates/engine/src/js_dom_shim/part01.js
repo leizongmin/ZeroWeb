@@ -8787,7 +8787,11 @@
         for (var _npI = 0; _npI < _npA.length; _npI++) {
           var _npC = _npA[_npI];
           if (_npC && _npC.__zwHandle) {
-            _zwNodeParent[_npC.__zwHandle] = { parentSel: sel || null, parentHandle: handle || null, nextSibling: baseRecord.nextSibling || null };
+            // 嵌套簇 B1（2026-11-12）：补 prevSibling 锚——nextSibling identity 跨代际
+            // miss 时 overlay 的 R5450 prev 回落此前只覆盖 `_zwSelPendingParent` 槽形态
+            //（textEl 臂手写槽带 prev），`_zwNodeParent` 链接恒缺 → handle 子的 pending
+            // 定位少一档兜底。record 的 previousSibling 本就是 spec 字段，镜像即得。
+            _zwNodeParent[_npC.__zwHandle] = { parentSel: sel || null, parentHandle: handle || null, nextSibling: baseRecord.nextSibling || null, prevSibling: baseRecord.previousSibling || null };
           }
         }
       }
@@ -8796,6 +8800,40 @@
         for (var _npJ = 0; _npJ < _npR.length; _npJ++) {
           var _npD = _npR[_npJ];
           if (_npD && _npD.__zwHandle) delete _zwNodeParent[_npD.__zwHandle];
+        }
+        // 嵌套簇 B1（2026-11-12）：**锚重定向**（链塌缩）——同 turn 被移除的节点若仍是
+        // pending added 条目的 next/prev 锚（wrap 流：壳插锚 = 随即被搬空的裸 ref——
+        // nested_cross_b JS 侧 `<i>` 落尾根因：next 锚被移除、prev 缺失，overlay 两锚
+        // 皆 miss 落尾），把锚改指被移除节点自身的原邻（本 record 的 sibling 字段 =
+        // pre-remove 时刻读）。record 未带 sibling 字段（undefined）或新锚同在本批
+        // removed 集（连环移除）→ 保守不动（死锚留待后续 record 塌缩 / R5450 prev
+        // 回落）。R5450 兼容：其场景（next 锚被移除 + prev 兄弟在册）重定向后
+        // next=原邻 ∈ res 命中同位，prev 回落路径为等价后备。
+        if (baseRecord.type === 'childList'
+            && (baseRecord.nextSibling !== undefined || baseRecord.previousSibling !== undefined)
+            && sel != null && typeof _zwPendingByParent === 'object' && _zwPendingByParent) {
+          var _npRset = null;
+          for (var _npJ2 = 0; _npJ2 < _npR.length; _npJ2++) {
+            if (_npR[_npJ2]) { if (!_npRset) _npRset = new Set(); _npRset.add(_npR[_npJ2]); }
+          }
+          var _npBk = _npRset ? _zwPendingByParent.get(sel) : null;
+          if (_npBk && _npBk.added.length) {
+            for (var _npK = 0; _npK < _npBk.added.length; _npK++) {
+              var _npE = _npBk.added[_npK];
+              if (!_npE) continue;
+              var _npLn = (_npE.__zwHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent)
+                ? _zwNodeParent[_npE.__zwHandle] : (_npE._zwSelPendingParent || null);
+              if (!_npLn) continue;
+              if (_npLn.nextSibling && _npRset.has(_npLn.nextSibling)
+                  && baseRecord.nextSibling !== undefined && !_npRset.has(baseRecord.nextSibling)) {
+                _npLn.nextSibling = baseRecord.nextSibling || null;
+              }
+              if (_npLn.prevSibling && _npRset.has(_npLn.prevSibling)
+                  && baseRecord.previousSibling !== undefined && !_npRset.has(baseRecord.previousSibling)) {
+                _npLn.prevSibling = baseRecord.previousSibling || null;
+              }
+            }
+          }
         }
       }
       // s236（html-semantics M2 切片 236）：R3909 ask-for-a-reset 汇流触发——与 s111

@@ -3761,6 +3761,33 @@ pub fn register_dom_callbacks(
         );
     }
 
+    // editing-compat 嵌套簇 B1（2026-11-12）：sel 父 + handle 子 + bare 文本 ref 的带位
+    // 插入——`__zw_insert_child_at(parentSel, childIndex, childHandle)`（与
+    // `__zw_set_child_text`/`__zw_remove_child_at` 同「父 sel + child 索引」定位口径；
+    // bare ref 无 selector 可寻址，[`DomMutation::InsertBefore`] 覆盖不了）。
+    // kill-switch：`ZW_INSERT_CHILD_AT=0` 回退（off 臂不注册回调，shim 新臂的 typeof
+    // guard 落回旧静默形态），照 `ZW_REMOVE_CHILD_AT` 先例。
+    if std::env::var("ZW_INSERT_CHILD_AT").as_deref() != Ok("0") {
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_insert_child_at",
+            Box::new(move |args| {
+                if args.len() >= 3
+                    && let Ok(idx) = args[1].parse::<usize>()
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::InsertChildAt {
+                            parent_selector: args[0].clone(),
+                            child_index: idx,
+                            child_handle: args[2].clone(),
+                        });
+                }
+                "ok".into()
+            }),
+        );
+    }
+
     // editing-compat D1（marker 语料管线）：sel 域 innerHTML= 解析子树的 CharacterData
     // 写/移除持久化——定位 = 锚 sel + child-index 下行路径（解析子树中间层元素无唯一
     // selector，单级 child_index 不够；路径由 shim 自目标节点上行收集）。kill-switch：

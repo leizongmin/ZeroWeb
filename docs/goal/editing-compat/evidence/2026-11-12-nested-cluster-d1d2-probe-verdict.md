@@ -61,3 +61,16 @@ R2-MUT 对照（exec#1 5 条 flat2 mutation vs ctrl 面全 9 条 ByHandle）：`
 - **B2**（movePreserving 裸子 append 静默）：`_zwJusMovePreservingRanges`（part01c.js:717）removeChild index 型发射 OK，insert/append 对裸子静默 → 重放缺成员搬移步骤（D1 机制链第 3 步）。
 
 修复方向：a) **身份/发射统一**（推荐）——selector 域视图 per-generation 身份缓存 + 裸子首触 stamp（须 Rust 契约同步，影响面广独立刀）；b) 浅修=发射补全（JS 序错依旧，不推荐单独走）。解除前置：两枚 #[ignore]（nested_cross_b 期望 `fo<b>o<b>b</b>ar</b>baz` / italic_after_prior_cmd 期望 `<i>foo</i>baz`，钉已就位）+ Form A 精确臂探针。
+
+## 嵌套簇 B1 根因刀定谳（2026-11-12 晚，刀体提交随件）
+
+- **根因修正**：上图 B1 行「part01d.js:643 wrap ref 身份分裂→catch fallback appendChild 序错」是状态表象非根因。实根因=insertBefore trap 分发链（part04.js:9555 起）对「sel 父 + handle 元素子 + **bare 文本 ref**」形态**全臂 miss**（R5058 限 newNode 文本子、D3 `_zwPosSelOf` 限 ref 元素、s165 限 ref 带章）→ 零发射零 host 变更 + JS 本地插入照常 → overlay pending 落尾 → JS 序错 `baz<i>foo</i>`、host replay 缺壳插。italic_after_prior_cmd / nested_cross_b 双红同根；旧注记的「override 状态依赖」归因同为此状态表象。
+- 三缺陷修复面（同 turn 连锁，缺一不闭合）：
+  1. **发射缺失**：insertBefore trap 新分发臂——门=sel 父+元素子（带 handle）+裸文本 ref；融合视图 `_childNodeList` 定位 ref 序 → 基底缓存坐标（identity→data 回退→removed 左移→`_zwBaseIdxShiftForAdded` 同批先行插入平移）→ `__zw_insert_child_at(sel, idx, childHandle)`；越界降级 `__zw_append_child`（insertBefore(node,null) 语义）。Rust 侧 `DomMutation::InsertChildAt` 变体+applier+callback（kill-switch `ZW_INSERT_CHILD_AT`）。
+  2. **apply 时 host 坐标契约**（新定谳）：RemoveChildAt/InsertChildAt 的 child_index 是 **apply 时 host 坐标** = 基底缓存序 − 同批先行同父移除 + 同批先行同父插入。旧 removeChild trap 只计减向（replay foobaz 壳被误删根因=缺加向平移）；`_zwBaseIdxShiftForAdded`（part05.js）在 removeChild trap 与新臂双侧接入。
+  3. **overlay 锚死链**：pending added 链接的 next/prev 锚指向同 turn 被移除节点（wrap 流壳插锚=裸 ref 随即搬空）→ 两锚皆 miss 落尾。修=`_mo_notify` removed record 携被移除节点原邻，pending 链接锚∈removed 集一步重定向塌缩；`_zwNodeParent` 链接补 `prevSibling` 槽（R5450 prev 回落此前只覆盖 `_zwSelPendingParent` 槽形态）。
+  4. 附带：`_write` 陈旧 `__zwChildIndex` 戳（wrapper 构造时索引，同 turn 结构插入后失真）→ 写前融合视图现算（identity→戳槽 data 校验→data 回退→戳兜底）。
+  5. **B2 同刀闭合**：`_zwJusMovePreservingRanges` 裸文本子入 handle 壳 → CreateTextNode+AppendChildByHandle 净效果发射（限编辑 move/wrap 流，innerHTML/cloneNode/shadow 装配不经此处）。
+- **r7 三场景探针终态**（mutation 流 + JS body_html + tree dump + replay inner_html 四方对，探针已删）：B（doc-end 平宿主 italic）js=replay=`<i>foo</i>baz`；C（尾随兄弟）双侧同；A（嵌套宿主跨边界 bold）js=replay=`fo<b>o</b>barbaz` 双侧一致。scene B 修复后流形：CreateTextNode(baz)/SetChildText(0,foo)/AppendChild(baz)/CreateElement(i)/InsertChildAt(0,i)/RemoveChildAt(1)/CreateTextNode(foo2)/AppendChildByHandle(i,foo2) → host 逐批 apply=[i[foo],baz]。
+- **解钉**：italic_after_prior_cmd `#[ignore]` 解除（期望 `<i>foo</i>baz` 不变），enginelib 预检参与跑 PASS；nested_cross_b 维持 `#[ignore]`——plumbing 面已通（scene A 双侧一致），剩余缺口=vendored contained 集算法面二次 re-wrap 从未发生（期望 `fo<b>o<b>b</b>ar</b>baz`）→ **算法刀独立**（修复方向 a 的 contained 集子刀）。Form A（splitText 裸子 trim 欠发射）本刀未触，维持挂账。
+- 预检（脏树 enginelib 全量）：3910P/7F/1I——7 红逐名 ⊆ 名册 2026-11-12 档（该档 9 红，其中 2 个 CSSOM 窗 execcommand 红在现 HEAD 已回绿），**零新增红**；卫兵钉测 doc_end_selection 单跑 PASS。门禁批八腿（gate v1 同基同判据）随件发射。

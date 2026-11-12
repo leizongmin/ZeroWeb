@@ -1977,15 +1977,16 @@ document.execCommand("forwarddelete", false, "");
 }
 
 #[test]
-#[ignore = "apply 面嵌套簇待独立根因刀（enginelib 名册 2026-11-12 档 bold pair 注记延伸）：\
-foo<b>bar</b>baz 选 'obar'（end 入 baz[1] 跨边界）→ vendored 流三缺陷组合——\
-① base 文本 data 写走物化时 __zwChildIndex 戳，同 turn 头部结构插入后戳陈旧\
-（SetChildText(#ce,2,\"b\") 实况 host 全子索引 2=b 元素 → lenient skip → 流错位）；\
-② vendored contained 集在本 range 形态为空 → wrap 元素缺发射（边界 split 落了、包裹没落，隔离跑甚至全 no-op）；\
-③ 跨命令 override 泄漏（①步 state override 残留改变 ①b 分支路径，状态依赖不可复现单跑）。\
-迁移自 test_execcommand_format_apply_r3254_m3 ①b（旧断言绑 s406 前 SetInnerHtml 契约；\
-replay 实况 \"foobarbazaz\" 为数据丢失签名，按名册纪律不得钉为期望契约）。\
-根因刀后本测试解除 ignore 并钉净效果期望。"]
+#[ignore = "嵌套簇 scene A 算法级缺口独立刀（B1 发射面已由 2026-11-12 根因刀修复）：\
+foo<b>bar</b>baz 选 'obar'（end 入 baz[1] 跨边界）——plumbing 面已通：\
+① __zwChildIndex 陈旧戳已修（_write 融合视图现算 identity/戳校验/data 回退，\
+SetChildText 命中漂移后真位）；② bare 文本 ref 壳插已发射（InsertChildAt 契约，\
+r7 探针 scene A JS 视图与 replay 已双侧一致 fo<b>o</b>barbaz）。\
+剩余缺口为 vendored contained 集算法面：本 range 形态二次 re-wrap（旧 <b> 溶解后\
+'b'+右侧切片的重包裹）从未发生——期望 fo<b>o<b>b</b>ar</b>baz 需 wrap 算法补\
+re-wrap 步，非 plumbing 缺陷。旧注记的 ③ override 泄漏归因经 r7 定谳为 B1 静默\
+穿透的状态表象（italic_after_prior_cmd 同族已解钉）。\
+算法刀落地后解除 ignore 并钉净效果期望。"]
 fn test_execcommand_format_apply_nested_cross_b_r3254_m3() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -2033,13 +2034,6 @@ document.execCommand("bold", false, "");
 }
 
 #[test]
-#[ignore = "apply 面跨命令状态依赖簇（同 nested_cross_b 迁出注记的缺陷③独立案）：\
-ce-flat2 选 'foo' + italic——隔离跑为纯 no-op（零 mutation），有先行 bold 命令的序列跑\
-发射破坏性流（replay 净效果 \"baz\"，'foo' 与 <i> 包裹双丢）。先行命令的 state/value\
-override 残留改变后续命令分支路径（vendored override 清除依赖选区变化臂，mock 序列的\
-removeAllRanges/addRange 未触发清除），状态依赖使本断言无法在共享 sandbox 序列中钉值。\
-迁移自 test_execcommand_format_apply_r3254_m3 ③（旧断言绑 s406 前 SetInnerHtml 契约）。\
-根因刀（override 生命周期 + no-op 分歧归因）后解除 ignore 并钉净效果期望 <i>foo</i>baz。"]
 fn test_execcommand_format_apply_italic_after_prior_cmd_r3254_m3() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -2071,6 +2065,12 @@ document.execCommand("italic", false, "");
         )
         .unwrap();
     {
+        // 嵌套簇 B1 根因刀解钉（2026-11-12）：旧注记归因「override 状态依赖」实为
+        // insertBefore trap 对 sel 父 + handle 子 + bare 文本 ref 形态全臂 miss——隔离
+        // 跑零 mutation（壳插静默穿透）、序列跑破坏性流（壳 append 落尾 + RemoveChildAt
+        // 未计同批插入平移误删）。修复（InsertChildAt 契约 + 基底坐标平移 + 锚重定向 +
+        // movePreserving B2 发射）后双侧净效果 <i>foo</i>baz（r7 三场景探针定谳，
+        // evidence/2026-11-12-nested-cluster-d1d2-probe-verdict.md 延记）。
         let m = mutations.lock().unwrap().clone();
         let mut doc = parse_html(
             "<html><body><div id=ce-flat2 contenteditable>foobaz</div></body></html>",
