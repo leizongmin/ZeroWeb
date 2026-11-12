@@ -51,11 +51,13 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 / Pass 1,381**（transitions 185 / om-view 545 / geometry 209 / animations 225
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
-**卡点**：无阻塞。random() 141F 桶并行流分工在制：文法刀（parse_random §random
-全文法 + 写面 random 臂 valid 放行/invalid 拒/non-length 族随槽拒，css-parser +
-style-system 面）本流认领；eval/求值刀（sha256 种子 + element/property 上下文 +
-supports 门 + computed 数值化）涉 engine 面——computed 串面刀已落库
-（9db+be0），排队解除可接。
+**卡点**：无阻塞。random() 文法刀已落库（99c573d30：parse_random identification
+全组合——element 域 × UA 域任意序/双 UA 域拒/auto shorthand/fixed [0,1)，
+写面 width 槽入白名单 invalid 整拒 valid 放行 store 原文；probe random-invalid
+39F→39P 收口、serialize 42F/29P 与 computed 141F 零漂移，见 evidence
+2026-11-12-dc2-g18）；剩余 eval/求值刀（sha256 种子 + element/property 上下文 +
+supports 门 + computed 数值化 + canonical 串化 shorthand 补全——serialize 42F
+主体）涉 engine 面，computed 串面刀已落库（9db+be0），排队解除可接。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
