@@ -2,37 +2,73 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 411 收口（maxlength 仅适用六文本态，driving
-1T→P；the-input-element 目录 3F+1T 散单全解挂清零）：
-maxlength-number file-Timeout 勘根——`<input type=number maxlength=1>`
-send_keys "1234" 断言 value 全保留无 .catch：plan 侧 TextActionState
-.max_length 无条件读 attr → 第二键起 MaxLengthReached noop →
-dispatch_action 只豁免 DisabledTarget → 错误串 reject send_keys 链 →
-unhandled rejection → harness 静挂至预算 → 文件 Timeout（对照腿
-number-invalid-scientific Pass 锁定 maxlength 单因子）。spec：maxlength
-仅适用 text/search/url/tel/email/password 六态 + textarea，missing/
-invalid value default 落 Text 态仍适用。施工双写同口径门：webview plan
-`maxlength_applies_to_input_type`（16 已识别非文本态黑名单，空串/非法值
-判适用——与 shim R3901 normalize 语义对齐）+ shim `__zw_text_input` live
-守卫 `_zwNormalizeInputType` 六态白名单；常驻钉 part110 三腿 + webview
-plan 钉（number 连键全保留 + 非法 type 限长对照）。验证：driving solo
-maxlength-number Pass（dir-solo 复核；number-invalid/date-readonly 不
-回归、checkable 2F 保持）；单元 engine **3904P/10F**（在册 9F 逐名零
-位移 + t49 cssom 单列〔并行流 99c573d30 width 槽拒打破 b1fdb1db7 钉，
-clean HEAD stash 复跑归因〕）+ webview 850P/2F 零位移；fmt/clippy clean
-（跨流三处门禁违例本流机械清偿 commit 经 rebase 判零 delta 跳过——并行流
-g18/g19 上游同批自偿；rebase 后树双钉复跑绿 + fmt/clippy 复验净）；
-sweep ×2 双跑全等 8249P/212F/25T join-cross
-零位移，join-1 对 s410 run1 恰 1 new/1 gone（maxlength 子测试 Pass↔
-file 键 Timeout 键形迁移）state-diff=0 纯 driving 位移，join-2 另
-2 STATE-DIFF = select 族 T 形漂移单列；focus-dynamic dir-solo Timeout =
-clippy 并发争用 flake（sweep 双跑 120 子测全 Pass + 隔离 solo exit=0，
-单列不在册）；make test 154 腿 153 绿 + 仅 engine lib 在册红腿。**本流域
-在册红 211F+24T→211F+23T**（−1T；select 族 ±2 随正相回摆单列，checkable
-2F 保持 F 渲染域移交）。下一步：tentative/ constructed-stylesheets 9T
-机制勘根后按簇决策 / 挂账池承 s404/s405（新增：适用态打满 reject 面、
-maxLength/minLength IDL 不适用态反射、unhandled-rejection 换算）；
-A2+D 簇立项征询仍待用户决策。
+**状态**: Active——M2 切片 412 收口（声明式 CSS module 双臂 CSP + 元素站
+error 面，tentative/ CSP 簇 6 文件解挂）：
+the-style-element/tentative/ 11 文件按簇勘根定谳——簇 1 CSP 面 6 文件
+（style-element-csp-{blocked,both-blocked,nonce-script-only,nonce-style-only,
+script-src-blocked,style-src-blocked-script-src-allowed}，案面断言
+securitypolicyviolation 派发 + 元素站 error 事件 + 内容清空）双层红根：
+gate_inline_styles 单臂只查 style-src（module 具 module script + style
+双重身份，`script-src nonce` 政策下无 nonce module 漏阻 →
+script-src-blocked 案 violation 缺派）+ 被阻 module 无元素站 error 派发
+（error 是 module 提案语义——普通 style 无 error 面）→ error 子测
+pending 挂死至文件预算（file-T）。spec：declarative CSS modules 提案
+（MSEdgeExplainers，tentative）——CSP 检查点 style-src + script-src
+双臂（script 臂内容 raw sha256 与 inline script 同口径，hash 源含缘
+空白），任一臂阻止 → 内容清空 + 每臂一条 violation + 元素站 error
+（`is_module && 首条目` 防双派）。施工双写同口径门：extract
+`StyleElementCsp.is_module`（type trim 后 ASCII 大小写不敏感恰 module）+
+gate script 臂 + script_gen `script_dispatch_style_event_by_ordinal`
+（ordinal 与 extract 全量文档序同口径，run 尾统一派发点）+ 常驻钉
+extract 四案 + webview 双腿。验证：driving solo 6 文件 18 子测全 Pass
+（余红 basic-import/fixed 2T + allowed 3 文件 6NotRun 属 import 簇
+单列候选零位移）；单元 engine **3908P/7F**（零新增红；−3 favorable =
+execcommand 2F 编辑流上游修复 + t49 cssom 渲染流修复，并行流合入域
+单列）+ webview 851P/2F 零位移；fmt/clippy clean（css-parser
+random.rs unused-var 跨流红单列——渲染流 g20 刚落文件不代修，
+-A unused_variables 定向复验本流两 crate 净）；sweep ×2 双跑全等
+8256P/212F/19T + 11 NotRun，join-cross 零位移，join-b（基线 s411
+pairs-b 终稿批）恰 9 new/6 gone 键形迁移 state-diff=0 纯 driving；
+make test 154 腿 153 绿 + 仅 engine lib 在册红腿；**本流域在册红
+212F+25T→212F+19T**（−6T）。下一步：tentative/ import
+簇 s413 候选（module map + `import "foo" with {type:"css"}` +
+adoptedStyleSheets 应用 + fixed-at-parse-time；底座 adoptedStyleSheets
+汇总下发/CSSStyleSheet shim 已存在）/ constructed-stylesheets 1T 与
+import 簇同族可合并勘根 / 挂账池承 s404/s405/s411；A2+D 簇立项征询
+仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 411 收口）——maxlength 仅适用六文本态（driving
+> maxlength-number 1T 解挂；the-input-element 目录 3F+1T 散单全解挂清零）**:
+> commit 谱系 git log s411，账本 evidence/2026-11-12-m2s411-input-maxlength-state-gate.md。原 Active 段留档——
+> maxlength-number file-Timeout 勘根——`<input type=number maxlength=1>`
+> send_keys "1234" 断言 value 全保留无 .catch：plan 侧 TextActionState
+> .max_length 无条件读 attr → 第二键起 MaxLengthReached noop →
+> dispatch_action 只豁免 DisabledTarget → 错误串 reject send_keys 链 →
+> unhandled rejection → harness 静挂至预算 → 文件 Timeout（对照腿
+> number-invalid-scientific Pass 锁定 maxlength 单因子）。spec：maxlength
+> 仅适用 text/search/url/tel/email/password 六态 + textarea，missing/
+> invalid value default 落 Text 态仍适用。施工双写同口径门：webview plan
+> `maxlength_applies_to_input_type`（16 已识别非文本态黑名单，空串/非法值
+> 判适用——与 shim R3901 normalize 语义对齐）+ shim `__zw_text_input` live
+> 守卫 `_zwNormalizeInputType` 六态白名单；常驻钉 part110 三腿 + webview
+> plan 钉（number 连键全保留 + 非法 type 限长对照）。验证：driving solo
+> maxlength-number Pass（dir-solo 复核；number-invalid/date-readonly 不
+> 回归、checkable 2F 保持）；单元 engine **3904P/10F**（在册 9F 逐名零
+> 位移 + t49 cssom 单列〔并行流 99c573d30 width 槽拒打破 b1fdb1db7 钉，
+> clean HEAD stash 复跑归因〕）+ webview 850P/2F 零位移；fmt/clippy clean
+> （跨流三处门禁违例本流机械清偿 commit 经 rebase 判零 delta 跳过——并行流
+> g18/g19 上游同批自偿；rebase 后树双钉复跑绿 + fmt/clippy 复验净）；
+> sweep ×2 双跑全等 8249P/212F/25T join-cross
+> 零位移，join-1 对 s410 run1 恰 1 new/1 gone（maxlength 子测试 Pass↔
+> file 键 Timeout 键形迁移）state-diff=0 纯 driving 位移，join-2 另
+> 2 STATE-DIFF = select 族 T 形漂移单列；focus-dynamic dir-solo Timeout =
+> clippy 并发争用 flake（sweep 双跑 120 子测全 Pass + 隔离 solo exit=0，
+> 单列不在册）；make test 154 腿 153 绿 + 仅 engine lib 在册红腿。**本流域
+> 在册红 211F+24T→211F+23T**（−1T；select 族 ±2 随正相回摆单列，checkable
+> 2F 保持 F 渲染域移交）。下一步：tentative/ constructed-stylesheets 9T
+> 机制勘根后按簇决策 / 挂账池承 s404/s405（新增：适用态打满 reject 面、
+> maxLength/minLength IDL 不适用态反射、unhandled-rejection 换算）；
+> A2+D 簇立项征询仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 410 收口）——send_keys Enter formless 无隐式提交目标默认动作 no-op（date-readonly-keyboard 1F 解挂；checkable 父 label 2F 渲染域移交）**: commit eee7caa1f，账本 evidence/2026-11-12-m2s410-send-keys-enter-formless-noop.md。原 Active 段留档——
 > the-input-element 散单双案勘根——①date-readonly-keyboard：readonly date
