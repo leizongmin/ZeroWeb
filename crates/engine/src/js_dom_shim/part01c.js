@@ -2710,19 +2710,31 @@
     if (tagL === 'a' && hasHref) return 'underline';
     return '';
   }
-  // 继承链 resolved prop：host gCS → inline style → UA 元素表 → 父链上行
-  //（font-weight/font-style 继承属性；无源返空，不填初值——state 比较面
-  // 自然 false，同值面无源返空契约）。
+  // 继承链 resolved prop：inline style → 作者表 → host gCS → UA 元素表 →
+  // 父链上行（font-weight/font-style 继承属性；无源返空，不填初值——state
+  // 比较面自然 false，同值面无源返空契约）。own 声明臂在 host 读前的级联
+  // 依据：继承属性下元素自身声明（inline/作者/UA）恒胜继承值，而 host gCS
+  // 读数混入父链继承（`.notbold{font-weight:normal}` 载体在 <b> 内 host 读
+  // bold 继承致 state 读 true 误判，bold.js notbold 簇 14F 实证），故
+  // inline/作者先行；与 _zwFmtDecorationOf 的 host 先行序不矛盾——
+  // text-decoration 非继承，host 读仅 own 值无继承污染。
+  // 作者臂（2026-11-12 wptfyi-editing DC-2 bold 值面批）：host gCS 对
+  // <link> 作者样式表盲、inline/UA 表不含类选择器声明——复用 ③'-c 作者
+  // 快照匹配机具（同款有界简单选择器域），级联序作者 > UA、inline > 作者。
   function _zwFmtResolvedProp(elt, camel, kebab, uaTab) {
     var node = elt;
     var guard = 0;
     while (node && node.nodeType === 1 && guard++ < 256) {
+      var d = '';
+      try { d = _zwPlainDecl(node, kebab) || ''; } catch (_eFpd) { d = ''; }
+      if (!d) {
+        try { d = _zwPlainAuthorDecl(node, kebab) || ''; } catch (_eFpa) { d = ''; }
+      }
+      if (d) return String(d);
       var v = '';
       try { v = _zwJusCs(node, camel); } catch (_eFcs) { v = ''; }
       if (v) return String(v);
-      var d = '';
-      try { d = _zwPlainDecl(node, kebab) || ''; } catch (_eFpd) { d = ''; }
-      if (!d && uaTab) {
+      if (uaTab) {
         var tagL = String(node.tagName || '').toLowerCase();
         d = uaTab[tagL] || '';
       }

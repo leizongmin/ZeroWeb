@@ -1126,7 +1126,13 @@
           && _zwVaEquivalentValues(command, _zwVaSpecifiedValue(n, command), newValue)
           && _zwVaLooselyEquivalent(command, _zwValEffectiveValue(n, command), newValue, true);
       };
+      var parPreMerge = node.parentNode;
       _zwVaWrap([node], sibCrit, function () { return null; }, command);
+      // DC-2 ⑦：早并落位面载体吸收（M2/M4 右并、M6 左并形——wrap 复用邻接
+      // 同 face 壳后载体链吸入该壳）。
+      if (node.parentNode && node.parentNode !== parPreMerge) {
+        _zwVaAbsorbCarrierSiblings(node.parentNode, command, newValue);
+      }
     }
     // Chrome delta（⑦ br 包裹面，2026-11-05）：invisible br（extraneous 形，
     // 如 `<p>[foo<p><br><p>bar]` 中块 `<p><br></p>`）不作 invisible 早退——
@@ -1483,6 +1489,53 @@
         }
       }
     }
+    // DC-2 ③（2026-11-12 wptfyi-editing bold 值面批）：bold/italic 阻断载体
+    // 递归臂 + 独占载体外层壳 unwrap（bold.js:858-885 notbold 簇 + abc<i>
+    // 录形直译）。contained 非简单可改性元素且无本命令 specified（类/身份壳、
+    // 他命令 tag face）不被外裹——forceValue 下潜内容侧，载体原位保留
+    //（`[foo<span class=notbold>bar</span>baz]` css-false =
+    // `<b>foo<span class="notbold"><b>bar</b></span>baz</b>`、
+    // `abc<i>[def]</i>ghi` = `abc<i><b>def</b></i>ghi`）。裸 span（零属性、
+    // 无他命令面）不入本门（语料无录形，保 vendored 外裹形）；数值壳
+    //（specified 非空）不入本门——d6 批 400 壳内裹 F2P 面保形。css-true
+    // 新裹仍 span 形（外层 b1 与 baz 并值经 sibCrit 既有面）。
+    // 独占载体 unwrap（D16/P15 录形）：`<b><span class=notbold>[foo]</span>
+    // </b>` 递归内裹后外层 b 仅含单个阻断载体 → 外层壳摘除、载体升位
+    //（`<span class="notbold"><b>[foo]</b></span>`；css-true 外层 span decl
+    // 壳同判）。多子外层（D15 外层 b 含 foo+载体+baz）不入本门。
+    if ((command === 'bold' || command === 'italic')
+        && node.nodeType === 1
+        && _zwVaIsAllowedChild(node, 'span')
+        && _zwVaSpecifiedValue(node, command) === null
+        && !_zwVaIsSimpleModifiable(node)
+        && (node.hasAttribute
+            && (node.hasAttribute('class') || node.hasAttribute('id')
+                || ['i', 'em', 'b', 'strong', 's', 'strike', 'u', 'sub',
+                    'sup', 'font', 'a']
+                  .indexOf(_zwJusTag(node)) !== -1))) {
+      var kidsBC = [];
+      for (i = 0; i < node.childNodes.length; i++) {
+        kidsBC.push(node.childNodes[i]);
+      }
+      for (i = 0; i < kidsBC.length; i++) {
+        _zwVaForceValue(kidsBC[i], command, newValue);
+      }
+      var pfBC = node.parentNode;
+      if (pfBC && pfBC.nodeType === 1 && !_zwJusIsEditingHost(pfBC)
+          && pfBC.childNodes && pfBC.childNodes.length === 1) {
+        var pfTagBC = _zwJusTag(pfBC);
+        var pfFaceBC = pfTagBC === 'span'
+          ? _zwVaSpecifiedValue(pfBC, command)
+          : ((command === 'bold' && pfTagBC === 'b')
+             || (command === 'italic' && pfTagBC === 'i'))
+            ? newValue : null;
+        if (pfFaceBC !== null
+            && _zwVaEquivalentValues(command, pfFaceBC, newValue)) {
+          _zwVaUnwrapElement(pfBC);
+        }
+      }
+      return;
+    }
     var newParent = null;
     // fontsize xxx-large 特例（spec :2696 原文 (!cssStylingFlag || newValue ==
     // "xxx-large")；vendored 同）——CSS flag true 也走 font size 属性形。
@@ -1589,6 +1642,9 @@
       _zwVaSetStyleProp(newParent, property, newValue);
     }
     _zwJusMovePreservingRanges(node, newParent, newParent.childNodes.length);
+    // DC-2 ⑦：新裹落位面载体吸收（M1/M2/M5/M7 无并值候选形——fresh face 落
+    // 位后载体链吸入；css-true span 形在 helper 内按录形换形 tag 单壳）。
+    _zwVaAbsorbCarrierSiblings(newParent, command, newValue);
     _zwVaCrossTagContinuation(newParent, command, sibCrit);
   }
 
@@ -1636,6 +1692,122 @@
     }
     node.parentNode.insertBefore(candidate, node.nextSibling);
     _zwJusMovePreservingRanges(node, candidate, -1);
+  }
+
+  // DC-2 ⑦（2026-11-12 d7 批）：bold/italic 载体吸收臂（merge-through-carrier，
+  // data/bold.js:813-847 M 族录形直译）。face 并值/新裹落位后，邻接「阻断载
+  // 体」（specified 空 + 独子元素链贯通至命令 tag face）整链吸入 face 并摘链
+  // 内冗余 face：`<i><b>foo</b></i>[bar]<b>baz</b>` = `<b><i>foo</i>barbaz</b>`、
+  // `<font color=blue face=monospace><b>foo</b></font>[bar]` =
+  // `<b><font color="blue" face="monospace">foo</font>bar</b>`、
+  // `<b>foo</b>[bar]<i><b>baz</b></i>` = `<b>foobar<i>baz</i></b>`——载体内容
+  // 原为命令值（链尾 face specified ≡ newValue），吸收后语义不变；链尾非命
+  // 令 face（裸 `<i>baz</i>` 内容非 bold）不吸（`<b>foo</b>[bar]<i>baz</i>`
+  // 保段并列，语义门）。css-true 吸收形录形恒 tag face 单壳（M 族 css-true
+  // 四形均 `<b>…</b>`）——face 为 span style 形且确有可吸载体时先并/换形：
+  // 邻接同值 tag face 壳（sibCrit 同判但不受 css 门）优先并值（M3 css-true
+  // 左 b 并入），否则 face 换形 tag 剥命令 decl（tag specified 供给同值）；
+  // 纯 b 邻接 css-true 无载体形不入本臂（d6 css 门 F2P 面保三段并列）。
+  function _zwVaAbsorbCarrierSiblings(faceEl, command, newValue) {
+    if (!faceEl || !faceEl.parentNode || faceEl.parentNode.nodeType !== 1) return;
+    if (command !== 'bold' && command !== 'italic') return;
+    var tgAbs = command === 'bold' ? 'b' : 'i';
+    var chainFaceOf = function (c) {
+      var cur = c;
+      var guardC = 0;
+      while (cur && guardC++ < 64) {
+        var kidsC = cur.childNodes;
+        if (kidsC.length !== 1 || kidsC[0].nodeType !== 1) break;
+        cur = kidsC[0];
+      }
+      if (cur === c) return null;
+      var specC = null;
+      try { specC = _zwVaSpecifiedValue(cur, command); } catch (_eCc1) { specC = null; }
+      if (specC !== null && _zwVaEquivalentValues(command, specC, newValue)) return cur;
+      return null;
+    };
+    var absorbable = function (c) {
+      if (!c || c.nodeType !== 1 || !_zwJusIsEditable(c)) return false;
+      if (!_zwVaIsAllowedChild(c, 'span')) return false;
+      var specA = null;
+      try { specA = _zwVaSpecifiedValue(c, command); } catch (_eCc2) { specA = null; }
+      if (specA !== null) return false;
+      return chainFaceOf(c) !== null;
+    };
+    var prevC = faceEl.previousSibling;
+    var nextC = faceEl.nextSibling;
+    var hasCarrier = absorbable(prevC) || absorbable(nextC);
+    if (!hasCarrier) return;
+    if (_zwVaCssFlag() && _zwJusTag(faceEl) === 'span') {
+      var specP = null;
+      var prevT = prevC && prevC.nodeType === 1 ? prevC : null;
+      if (prevT) {
+        try { specP = _zwVaSpecifiedValue(prevT, command); } catch (_eCc3) { specP = null; }
+      }
+      if (prevT && _zwJusTag(prevT) === tgAbs && _zwVaIsSimpleModifiable(prevT)
+          && specP !== null && _zwVaEquivalentValues(command, specP, newValue)) {
+        // 邻接同值 tag face 壳并值：face 内容右移入壳，face 移除（face = 壳）。
+        var kidsM = [];
+        for (var kM = 0; kM < faceEl.childNodes.length; kM++) {
+          kidsM.push(faceEl.childNodes[kM]);
+        }
+        for (var kM2 = 0; kM2 < kidsM.length; kM2++) {
+          _zwJusMovePreservingRanges(kidsM[kM2], prevT, prevT.childNodes.length);
+        }
+        prevT.parentNode.removeChild(faceEl);
+        faceEl = prevT;
+      } else {
+        // face 换形 tag：手工搬移换形（③'-b fontB 同构——_zwJusSetTagName 于
+        // 新裹元素 + 选区端点在位形不可用，trace r6-r8 实证中止不转换）。
+        // 命令 decl 不搬（tag face specified 供给同值，录形无 decl）。
+        var bNew = document.createElement(tgAbs);
+        var kidsSw = [];
+        for (var kSw = 0; kSw < faceEl.childNodes.length; kSw++) {
+          kidsSw.push(faceEl.childNodes[kSw]);
+        }
+        var parSw = faceEl.parentNode;
+        var idxSw = _zwJusNodeIndex(faceEl);
+        _zwVaShiftEndpointsForInsert(parSw, idxSw);
+        parSw.insertBefore(bNew, faceEl);
+        for (var kSw2 = 0; kSw2 < kidsSw.length; kSw2++) {
+          _zwJusMovePreservingRanges(kidsSw[kSw2], bNew, kSw2);
+        }
+        parSw.removeChild(faceEl);
+        faceEl = bNew;
+      }
+    }
+    if (absorbable(faceEl.previousSibling)) {
+      var chainP = chainFaceOf(faceEl.previousSibling);
+      _zwJusMovePreservingRanges(faceEl.previousSibling, faceEl, 0);
+      if (chainP && chainP.parentNode) _zwVaUnwrapElement(chainP);
+    }
+    if (absorbable(faceEl.nextSibling)) {
+      var chainN = chainFaceOf(faceEl.nextSibling);
+      _zwJusMovePreservingRanges(faceEl.nextSibling, faceEl, faceEl.childNodes.length);
+      if (chainN && chainN.parentNode) _zwVaUnwrapElement(chainN);
+    }
+    // DC-2 ⑦（2026-11-12 d7 批）：css-true 后侧同值 tag face 并值——carrier
+    // 吸收换形后邻接裸 b/i 壳并入落位面（M3 录形 data/bold.js:825
+    // `<b><i>foo</i>[bar]baz</b>` 去标记）。早臂复用/无 carrier 形不经此门
+    // （hasCarrier 已滤），d6 css-true 三段无载体形不触。
+    if (_zwVaCssFlag() && faceEl.parentNode) {
+      var nextT2 = faceEl.nextSibling;
+      var specN2 = null;
+      if (nextT2 && nextT2.nodeType === 1) {
+        try { specN2 = _zwVaSpecifiedValue(nextT2, command); } catch (_eCc4) { specN2 = null; }
+      }
+      if (nextT2 && _zwJusTag(nextT2) === tgAbs && _zwVaIsSimpleModifiable(nextT2)
+          && specN2 !== null && _zwVaEquivalentValues(command, specN2, newValue)) {
+        var kidsN2 = [];
+        for (var kN2 = 0; kN2 < nextT2.childNodes.length; kN2++) {
+          kidsN2.push(nextT2.childNodes[kN2]);
+        }
+        for (var kN3 = 0; kN3 < kidsN2.length; kN3++) {
+          _zwJusMovePreservingRanges(kidsN2[kN3], faceEl, faceEl.childNodes.length);
+        }
+        nextT2.parentNode.removeChild(nextT2);
+      }
+    }
   }
 
   // —— 引擎安全 splitText（part04 splitText 仅 handle-based wrapper；plain 文本
@@ -2014,21 +2186,35 @@
       // 录形，下方 cssFlag+span 既有 continue 面即绿）；tag 面 b/strong 无
       // decl 不入转形（strong 部分选区无录形，保守保原形）。
       if (command === 'bold' && newValue === 'normal') {
-        if (!cssFlag) {
-          var fwB0 = '';
-          try { fwB0 = _zwPlainDecl(cw, 'font-weight') || ''; } catch (_eBw0) { fwB0 = ''; }
-          if (fwB0
-              && _zwVaEquivalentValues('bold', String(fwB0).trim().toLowerCase(),
-                'bold')) {
-            var bB0 = _zwJusSetTagName(cw, 'b');
-            _zwVaSetStyleProp(bB0, 'font-weight', '');
-            try {
-              var atB0 = bB0.getAttribute('style');
-              if (atB0 !== null && String(atB0).trim() === '') {
-                bB0.removeAttribute('style');
-              }
-            } catch (_eBw1) {}
-          }
+        var fwB0 = '';
+        try { fwB0 = _zwPlainDecl(cw, 'font-weight') || ''; } catch (_eBw0) { fwB0 = ''; }
+        if (!cssFlag && fwB0
+            && _zwVaEquivalentValues('bold', String(fwB0).trim().toLowerCase(),
+              'bold')) {
+          var bB0 = _zwJusSetTagName(cw, 'b');
+          _zwVaSetStyleProp(bB0, 'font-weight', '');
+          try {
+            var atB0 = bB0.getAttribute('style');
+            if (atB0 !== null && String(atB0).trim() === '') {
+              bB0.removeAttribute('style');
+            }
+          } catch (_eBw1) {}
+          _zwVaPeelCarry[i] = bB0;
+        }
+        // DC-2 ⑥（2026-11-12 d7 批）：css-true tag face 残料 span 化——
+        // css-false 切分幸存 b 保 tag（既有绿面 foo[b]<b>ar</b>baz 录形
+        // :923-927），css-true 录形恒 span style 形（:918-922
+        // `foo[<b>b]ar</b>baz` = `foo[b]<span style="font-weight:bold">ar
+        // </span>baz`、:928-933 `foo<b>ba[r</b>]baz` =
+        // `foo<span style="font-weight:bold">ba</span>rbaz`——首/尾侧载体
+        // 皆换形）。decl 壳不入（css-true span-N 保形 :476 既有面）；strong
+        // 无录形保守保原形。
+        if (cssFlag && !fwB0 && _zwJusTag(cw) === 'b') {
+          // 换形替换式（_zwJusSetTagName 返新元素）——回写 carry 槽位，
+          // 下游 hoist 门须读到在树壳（P1 css-true 录形实证）。
+          var spanBn = _zwJusSetTagName(cw, 'span');
+          _zwVaSetStyleProp(spanBn, 'font-weight', 'bold');
+          _zwVaPeelCarry[i] = spanBn;
         }
         continue;
       }
@@ -2120,6 +2306,107 @@
         _zwJusMovePreservingRanges(kids[k], span, k);
       }
       parent.removeChild(cw);
+    }
+    // DC-2 ⑥（2026-11-12 d7 批）：bold toggle-off 双侧载体身份属性提升
+    //（b#purple 录形直译，data/bold.js:433-442：`<b id=purple>bar [baz]
+    // qoz</b>` css-false = `<span id="purple"><b>bar </b>baz<b> qoz</b></b>
+    // </span>` 剥标记形）——两翼载体同 tag、属性集相同且含非 style 身份
+    // 属性、同父相邻（中缝仅裸文本）→ 属性全部提升至外裹 span，两翼剥属
+    // 性（录形两翼恒裸 face）。css-true 两翼先经上方换形臂为 span-bold，
+    // 提升后 = 录形 `<span id="purple"><span style=…>bar </span>baz<span
+    // style=…> qoz</span></span>`。单侧载体（P6/P7 族）不入本门；纯 decl
+    // 壳两翼（700/900 full 拆分族 D3/D4 录形无外裹）由 style 属性门排除。
+    if (command === 'bold' && newValue === 'normal'
+        && _zwVaPeelCarry.length === 2) {
+      var faH = _zwVaPeelCarry[0];
+      var fbH = _zwVaPeelCarry[1];
+      var attrPairsH = function (el) {
+        var outH = [];
+        try {
+          var atH = el.attributes;
+          if (!atH) return null;
+          for (var kH = 0; kH < atH.length; kH++) {
+            outH.push(String(atH[kH].name || '').toLowerCase()
+              + '=' + String(atH[kH].value || ''));
+          }
+        } catch (_eHh) { return null; }
+        return outH;
+      };
+      if (faH && fbH && faH.nodeType === 1 && fbH.nodeType === 1
+          && faH.parentNode && faH.parentNode === fbH.parentNode
+          && _zwJusTag(faH) === _zwJusTag(fbH)
+          && _zwJusIsEditable(faH) && _zwJusIsEditable(fbH)) {
+        var atsH = attrPairsH(faH);
+        var ats2H = attrPairsH(fbH);
+        // style 面细判：仅命令换形 decl（font-weight:bold——css-true 残料转
+        // 形产物）可入；700/900 decl 壳等其余 style 面排除（D3/D4 录形无外
+        // 裹）。其余属性恒须非 style 身份属性。
+        var badDeclH = false;
+        if (atsH) {
+          for (var hH = 0; hH < atsH.length; hH++) {
+            if (atsH[hH].slice(0, 6) === 'style=') {
+              var declsH = {};
+              try { declsH = _zwPlainStyleDecls(faH) || {}; } catch (_eHh5) { declsH = {}; }
+              var hasOwnH = Object.prototype.hasOwnProperty;
+              for (var dH in declsH) {
+                if (!hasOwnH.call(declsH, dH)) continue;
+                var dvH = String(declsH[dH] || '').trim().toLowerCase();
+                if (String(dH).toLowerCase() !== 'font-weight' || dvH !== 'bold') {
+                  badDeclH = true;
+                  break;
+                }
+              }
+              if (badDeclH) break;
+            }
+          }
+        }
+        if (atsH && ats2H && atsH.length && !badDeclH
+            && atsH.slice().sort().join('|') === ats2H.slice().sort().join('|')) {
+          var midH = [];
+          var reachedH = false;
+          for (var mH = faH.nextSibling; mH; mH = mH.nextSibling) {
+            if (mH === fbH) { reachedH = true; break; }
+            midH.push(mH);
+          }
+          var noElemH = reachedH;
+          for (var mH2 = 0; mH2 < midH.length; mH2++) {
+            if (midH[mH2].nodeType === 1) noElemH = false;
+          }
+          if (noElemH) {
+            var parH = faH.parentNode;
+            var spanH = document.createElement('span');
+            try {
+              var atH2 = faH.attributes;
+              for (var hH2 = 0; hH2 < atH2.length; hH2++) {
+                // 身份属性提升外裹；style 面留在两翼（css-true 换形 decl 录形
+                // `<span id=purple><span style=font-weight:bold>…` 两翼保形）。
+                if (String(atH2[hH2].name || '').toLowerCase() === 'style') continue;
+                spanH.setAttribute(atH2[hH2].name, atH2[hH2].value);
+              }
+            } catch (_eHh2) {}
+            var idxH = _zwJusNodeIndex(faH);
+            _zwVaShiftEndpointsForInsert(parH, idxH);
+            parH.insertBefore(spanH, faH);
+            _zwJusMovePreservingRanges(faH, spanH, 0);
+            for (var mH3 = 0; mH3 < midH.length; mH3++) {
+              _zwJusMovePreservingRanges(midH[mH3], spanH, spanH.childNodes.length);
+            }
+            _zwJusMovePreservingRanges(fbH, spanH, spanH.childNodes.length);
+            try {
+              var atH3 = faH.attributes;
+              while (atH3.length > 0) {
+                if (String(atH3[0].name || '').toLowerCase() === 'style') break;
+                faH.removeAttribute(atH3[0].name);
+              }
+              var atH4 = fbH.attributes;
+              while (atH4.length > 0) {
+                if (String(atH4[0].name || '').toLowerCase() === 'style') break;
+                fbH.removeAttribute(atH4[0].name);
+              }
+            } catch (_eHh3) {}
+          }
+        }
+      }
     }
   }
 
@@ -2645,7 +2932,70 @@
         }
       }
       if (_zwVaIsAllowedChild(node, 'span')) {
-        _zwVaForceValue(node, command, newValue);
+        // DC-2 ④（2026-11-12 d7 批）：边界挖进元素内部且 range 全部内容落
+        // 该元素之内时元素不作整裹单元（Chrome 录形 abc 族分型，data/bold.js
+        // :1045-1080：端点落 i 内的 `abc<i>[def]</i>ghi` / `abc<i>{def}</i>ghi`
+        // （{ } 于 i 子级层）/ `abc<i>[def</i>]ghi` / `abc[<i>def]</i>ghi`
+        // 只裹文本 = `abc<i><b>def</b></i>ghi`；端点在元素层紧贴 i 两缘的
+        // `abc[<i>def</i>]ghi` / `abc{<i>def</i>}ghi` 裹整 i =
+        // `abc<b><i>def</i></b>ghi`）。vendored effectively-contained 祖先臂
+        // （spec 同判）在前组也把 i 计入 contained 集 → forceValue(i) 外裹
+        // 整 i 逆录形。本门只摘 forceValue 分发（其文本节点仍在集内单独走
+        // 裹），pushDownValues 与集构造不动。仅 bold/italic 命令面：u/s/sub/
+        // sup 载体带 UA/类语义（`foo<s>[bar]</s>baz` +underline css-true
+        // 录形 = decl 合并 `text-decoration:underline line-through`、s 溶解
+        // ——非摘单元裹内形），且 shim gCS 对 UA 表读数不可靠（face 对跑两
+        // 轮实证：signal 门两形均产 `<s><span …>` 保壳内裹逆录形），本门不
+        // 扩面，u/s/sub/sup 恒整裹走既有 forceValue merge/保壳录形面。
+        // spec 维度（d7 face 对跑实证）：带命令指定值或命令属性自有 inline
+        // 声明（任意 token）的元素不摘——decl 壳/数值壳走既有 conflict 面；
+        // 无指定值无声明裸面（abc 之 i）才摘单元走文本级裹。
+        // 挖入收窄（d7 face 对跑实证）：端点触内仍须 range 全部内容落
+        // node 之内——单侧端点为紧邻兄弟缘偏序等界的 `abc<i>[def</i>]ghi`
+        // 端 = (ghi,0)，与双 span 跨选 `<span>[foo</span> <span>bar]</span>`
+        // （range 越 span 含 span 外空格与后 span 内容）拓扑同形而录形相反；
+        // bp 序裁 node 起界 ≤ rngStart 且 rngEnd ≤ node 末界，(子,0)/
+        // (子,全长) 偏序记 1 的等界按相等收。越界形不摘（forceValue 整裹
+        // node 后靠 sibling 复用并拢 = 双 span 录形 `<b><span>foo</span>
+        // <span>bar</span></b>` 既有绿面）。
+        var specDgVa = null;
+        try { specDgVa = _zwVaSpecifiedValue(node, command); } catch (_eDg0) { specDgVa = null; }
+        var ownDgVa = '';
+        try {
+          ownDgVa = _zwPlainDecl(node, command === 'bold' ? 'font-weight'
+            : 'font-style') || '';
+        } catch (_eDg1) { ownDgVa = ''; }
+        var digsVa = node.nodeType === 1
+          && (command === 'bold' || command === 'italic')
+          && specDgVa === null
+          && !String(ownDgVa).trim()
+          && (rng.startContainer === node
+              || _zwJusIsAncestorOf(node, rng.startContainer)
+              || rng.endContainer === node
+              || _zwJusIsAncestorOf(node, rng.endContainer));
+        if (digsVa) {
+          var parVw = node.parentNode;
+          var idxVw = _zwJusNodeIndex(node);
+          var edgeLenVw = function (nVw) {
+            return nVw.nodeType === 3 ? nVw.length : nVw.childNodes.length;
+          };
+          var cmpVw = _zwJusBpCompare(parVw, idxVw, rng.startContainer, rng.startOffset);
+          var startVw = cmpVw <= 0
+            || (cmpVw === 1
+                && rng.startOffset === edgeLenVw(rng.startContainer)
+                && rng.startContainer.parentNode === parVw
+                && _zwJusNodeIndex(rng.startContainer) === idxVw - 1);
+          var cmp2Vw = _zwJusBpCompare(rng.endContainer, rng.endOffset, parVw, idxVw + 1);
+          var endVw = cmp2Vw <= 0
+            || (cmp2Vw === 1
+                && rng.endOffset === 0
+                && rng.endContainer.parentNode === parVw
+                && _zwJusNodeIndex(rng.endContainer) === idxVw + 1);
+          if (!(startVw && endVw)) digsVa = false;
+        }
+        if (!digsVa) {
+          _zwVaForceValue(node, command, newValue);
+        }
       }
     }
 

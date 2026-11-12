@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>.notbold { font-weight: normal } #purple { color: purple }</style>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+// 语料标记语义（editor.js setup 直译）：[] 于文本节点 → 文本内 offset；
+// {} 于文本节点 → 元素层边界（父节点 childIndex + 前导内容修正），
+// 孤立标记文本节点按 childIndex 原位。
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.search(/[\[{]/);
+    var ei = data.search(/[\]}]/);
+    if (si !== -1) {
+      var mch = data.charAt(si);
+      if (mch === '[') {
+        startNode = n;
+        startOffset = data.slice(0, si).replace(/[\[\]{}]/g, "").length;
+      } else {
+        startNode = n.parentNode;
+        startOffset = Array.prototype.indexOf.call(n.parentNode.childNodes, n)
+          + (si > 0 ? 1 : 0);
+      }
+    }
+    if (ei !== -1) {
+      var mce = data.charAt(ei);
+      if (mce === ']') {
+        endNode = n;
+        endOffset = data.slice(0, ei).replace(/[\[\]{}]/g, "").length;
+      } else {
+        endNode = n.parentNode;
+        endOffset = Array.prototype.indexOf.call(n.parentNode.childNodes, n)
+          + (ei > 0 ? 1 : 0);
+      }
+    }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+
+// DC-2 ④（2026-11-12 d7 批）bold 载体 merge/拆分/读面余量诊断：want =
+// data/bold.js 录形原文去选区标记。当前形态见各 case 失败信息 GOT=；
+// 逐案清账后常驻判据另落 d7bold。
+function d7probe(tag, input, seq, want, asserts) {
+  test(function() {
+    setupCorp(input);
+    for (var i = 0; i < seq.length; i++) {
+      document.execCommand(seq[i][0], false, seq[i][1]);
+    }
+    assert_equals(host.innerHTML, want.replace(/[\[\]{}]/g, ""), tag + ' GOT=');
+    if (asserts) {
+      for (var j = 0; j < asserts.length; j++) {
+        var a = asserts[j];
+        var got;
+        if (a[0] === 'qS') got = document.queryCommandState(a[1]);
+        else if (a[0] === 'qV') got = document.queryCommandValue(a[1]);
+        else got = document.queryCommandIndeterm(a[1]);
+        assert_equals(got, a[2], tag + ' ' + a[0] + '(' + a[1] + ') GOT=');
+      }
+    }
+  }, tag);
+}
+// —— abc 族分型（:1045-1080）——
+d7probe("A1 abc i [def] css-false", 'abc<i>[def]</i>ghi',
+  [["stylewithcss","false"],["bold",""]], 'abc<i><b>def</b></i>ghi');
+d7probe("A2 abc [i def i] css-false", 'abc[<i>def</i>]ghi',
+  [["stylewithcss","false"],["bold",""]], 'abc<b><i>def</i></b>ghi');
+d7probe("A3 abc i {def} css-false", 'abc<i>{def}</i>ghi',
+  [["stylewithcss","false"],["bold",""]], 'abc<i><b>def</b></i>ghi');
+d7probe("A4 abc {i def i} css-false", 'abc{<i>def</i>}ghi',
+  [["stylewithcss","false"],["bold",""]], 'abc<b><i>def</i></b>ghi');
+d7probe("A5 abc i [def /i] css-false", 'abc<i>[def</i>]ghi',
+  [["stylewithcss","false"],["bold",""]], 'abc<i><b>def</b></i>ghi');
+d7probe("A6 abc [i def] /i css-false", 'abc[<i>def]</i>ghi',
+  [["stylewithcss","false"],["bold",""]], 'abc<i><b>def</b></i>ghi');
+// —— M 族 merge-through-carrier（:813-847）——
+d7probe("M1 i-b |bar| i-b css-true", '<i><b>foo</b></i>[bar]<i><b>baz</b></i>',
+  [["stylewithcss","true"],["bold",""]], '<b><i>foo</i>bar<i>baz</i></b>');
+d7probe("M2 i-b |bar| i-b css-false", '<i><b>foo</b></i>[bar]<i><b>baz</b></i>',
+  [["stylewithcss","false"],["bold",""]], '<b><i>foo</i>bar<i>baz</i></b>');
+d7probe("M3 i-b |bar| b css-true", '<i><b>foo</b></i>[bar]<b>baz</b>',
+  [["stylewithcss","true"],["bold",""]], '<b><i>foo</i>barbaz</b>');
+d7probe("M4 i-b |bar| b css-false", '<i><b>foo</b></i>[bar]<b>baz</b>',
+  [["stylewithcss","false"],["bold",""]], '<b><i>foo</i>barbaz</b>');
+d7probe("M5 b |bar| i-b css-true", '<b>foo</b>[bar]<i><b>baz</b></i>',
+  [["stylewithcss","true"],["bold",""]], '<b>foobar<i>baz</i></b>');
+d7probe("M6 b |bar| i-b css-false", '<b>foo</b>[bar]<i><b>baz</b></i>',
+  [["stylewithcss","false"],["bold",""]], '<b>foobar<i>baz</i></b>');
+d7probe("M7 font-b |bar| def", '<font color=blue face=monospace><b>foo</b></font>[bar]',
+  [["bold",""]], '<b><font color="blue" face="monospace">foo</font>bar</b>');
+// —— b#purple 带属性拆分（:433-442）——
+d7probe("P1 purple partial css-true", '<b id=purple>bar [baz] qoz</b>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span id="purple"><span style="font-weight:bold">bar </span>baz<span style="font-weight:bold"> qoz</span></span>');
+d7probe("P2 purple partial css-false", '<b id=purple>bar [baz] qoz</b>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span id="purple"><b>bar </b>baz<b> qoz</b></span>');
+// —— 700/900 partial 壳拆分（:688-702）——
+d7probe("P3 700 partial css-true", '<span style="font-weight: 700">foo[barbaz</span>}',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:700">foo</span>barbaz',
+  [['qS','bold',false]]);
+d7probe("P4 700 partial css-false", '<span style="font-weight: 700">foo[barbaz</span>}',
+  [["stylewithcss","false"],["bold",""]],
+  '<b>foo</b>barbaz',
+  [['qS','bold',false]]);
+d7probe("P5 900 partial def", '<span style="font-weight: 900">foo[barbaz</span>}',
+  [["bold",""]],
+  '<span style="font-weight:900">foo</span>barbaz',
+  [['qS','bold',false]]);
+// —— css-true b 残料 span 化（:918-933）——
+d7probe("P6 foo [b b]ar css-true", 'foo[<b>b]ar</b>baz',
+  [["stylewithcss","true"],["bold",""]],
+  'foo[b]<span style="font-weight:bold">ar</span>baz');
+d7probe("P7 foo b ba[r /b] css-true", 'foo<b>ba[r</b>]baz',
+  [["stylewithcss","true"],["bold",""]],
+  'foo<span style="font-weight:bold">ba</span>rbaz');
+</script>
+</body>
