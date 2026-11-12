@@ -22,7 +22,14 @@ values face 3,032→**3,072** 净 +40 零回归，五套件 ±0；两轮探针 4
 +random canonical 串化刀（g20：§9.4.1 `<random-key>` parse 期 canonical
 化挂 fold_decl_specified 头部单点接线 5 写面站，values face 3,072→
 **3,111** 净 +39 零回归，五套件 ±0；random-serialize 42F 收口 39F 残
-color 通道嵌套 3F 挂账，见 evidence 2026-11-12-dc2-g20-random-canonical）。
+color 通道嵌套 3F 挂账，见 evidence 2026-11-12-dc2-g20-random-canonical）
++random 播种求值全链刀（g21：§9.4 Evaluating sha256 doc/element 双 seed
+PRNG + min/max/step 公式 + compute 期元素级原位替换 + % 叶 fixed-echo
+保留形 gCS 直读表 + style_cache prescan 禁用 + 简写前 canonical 化 +
+supports 哨兵门，values face 3,111→**3,214** 净 +103 零回归——
+random-computed +95/random-item-computed +5/item-nested +2/unresolvable
++1，五套件 Pass 级零漂移，探针两轮洞修复 16P/169F→116P/69F，见 evidence
+2026-11-12-dc2-g21-random-eval-face2）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -63,10 +70,11 @@ WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
 + 写面门两洞修复；probe family 31P→56P 净 +25、values 净 +40 五套件 ±0），
 tree-counting 家族残 89F 分桶挂账（color 实参槽 2F/伪元素 Face 3 2F/keyframe
 10 页/invalidation/container/descriptors/media/shadow/tree-scoped/gradient/
-trig）。random() canonical 串化已落（g20 serialize 42F→3F，残 color 通道
-嵌套 D 桶）；random() eval 刀 Face 2（sha256 种子 + element/property 上下文
-+ supports 门 + computed 数值化——random-computed 141F +
-random-item-computed 28F）与 computed 串面刀（9db+be0 已落）排队可接。
+trig）。random() 串化（g20 serialize 42F→3F，残 color 通道嵌套 D 桶）与
+播种求值全链已落（g21：random-computed 141F→46F、random-item-computed
+28F→23F）；random 残桶分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族
+supports 8F/shim gCS raw 回显与 color 黑值 ~25F/item-invalid 写面文法
+14F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21 evidence §5）。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
@@ -85,7 +93,7 @@ tree-counting 家族残 89F（g19 后：keyframe 10 页、invalidation/container
 descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
 实参槽 2F + 伪元素 Face 3 2F——见 evidence g19 §5 分桶）、
 独立桶 line-break-ch
-194F / random() 141F / attr-all-types 103F / viewport-units 84F / calc-size 62F /
+194F / random 族残 ~100F（g21 后，见 g21 evidence §5）/ attr-all-types 103F / viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；DC-3 全量对账
 （等批次平台期 dispatch 周跑，HEAD 已含 color/values/grid/anchor 各批增量）；
@@ -93,6 +101,28 @@ color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 g21 批完成（11-12，random 播种求值全链 Face 2）**：CSS Values 5
+§9.4 Evaluating random()/random-item()——css-parser 求值器（`RandomEvalContext`
+doc/element 双 seed sha256 PRNG + SENTINEL 支持性哨兵 + min/max/step 网格
+公式（epsilon 顶格/reversed clamp/NaN±∞ 直通/step≤0 忽略）+ % 叶
+`random(fixed <R>,…)` fixed-echo 保留形 + random-item 顶层逗号切分整体
+替换）；style-system compute 期步骤 4.7 元素级原位替换（全数值改写级联
+文本下游 apply 消费、保留形入 `ComputedStyle::random_computed` gCS 直读
+表）+ `stylesheet_has_random` prescan 禁 style_cache（g19 同型——StyleKey
+同键兄弟共享而 seed 含元素标识，§9.4 sharing 毒化）+ `canon_random_inputs`
+简写前以原声明属性名 canonical 化（longhand 视图展开破 margin-top/bottom
+同 key 同值语义）+ cascade 写面/engine decl_supported 哨兵替换裁决。
+探针两轮洞修复（gCS cache-hit 位漏 + 简写拆分后 longhand 名分键）
+16P/169F→**116P/69F**；六套件权威账 values **3,111 → 3,214 净 +103 逐页
+零回归**（random-computed +95/random-item-computed +5/item-nested +2/
+unresolvable-argument +1），五套件 Pass 级零漂移（transitions F 计数差为
+基线轮页面超时截断伪影——inherit-001/002 各 1 Timeout 未枚举 vs 全量
+枚举 560F+1T，Pass 均 0、timeout 21=21）。单测 css-parser 3,172 全绿
+（random 求值组 13 案）/style-system 2,526 全绿（+1 inline random-item
+管线重现）/engine 3,909 过（7 失败在册既有组——editing 流近期修复后
+10→7，逐名核对）/rustfmt clean/定向 clippy 零告警。
+[证据](evidence/2026-11-12-dc2-g21-random-eval-face2.md)
 
 **DC-2 g19 批完成（11-12，sibling 求值桥/写面文法收口刀）**：CSS Values 5
 §tree-counting DOM 求值桥三面切片——CalcContext 注入求值契约（sibling_
