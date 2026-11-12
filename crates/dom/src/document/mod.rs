@@ -2370,6 +2370,17 @@ impl Document {
         self.query_pos_index.borrow_mut().clear();
     }
 
+    /// 回归钉测专用：位置索引当前父键条目数（0 = 已失效清空）。
+    ///
+    /// `#[doc(hidden)]`：仅供 `crates/dom/tests/t63_mutation_index_invalidation.rs`
+    /// 直断 children 写点的失效契约——集成测试是独立 crate，`pub(crate)`/
+    /// `#[cfg(test)]` 可见性对其不可达，只能以只读 helper 最小暴露。只读快照，
+    /// 无生产语义，不构成公开 API 契约面。
+    #[doc(hidden)]
+    pub fn query_pos_index_len(&self) -> usize {
+        self.query_pos_index.borrow().len()
+    }
+
     /// selector 文本 → 已解析链（T63 解析缓存）：命中免逐查询重 parse（采样归因
     /// 第三主导面）。`parse_selector_chain` 为纯文本→AST，同文本恒同产物，Arc
     /// 共享安全。慢路径先 parse 后借写（borrow 纪律：读借放/写借放不跨评估）。
