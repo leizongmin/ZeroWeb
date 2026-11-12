@@ -128,9 +128,10 @@ fn r5509_bii_single_cell_baseline_unchanged() {
                 .is_some_and(|s| matches!(s.display, zero_style_system::property::DisplayValue::TableCell))
         })
         .expect("cell box must exist");
-    // 已知既有现象（R5509 证伪 stash 新旧同值）：单格态 tr 高 78 = cell 60 + 一行
-    // 18——行高多计一行，真渲染（v2 单格）不可见（cell 画 59px 正确），不属本缺陷
-    // 域，此处不锚行高，仅锚无 valign 位移。
+    // R5509 时点的既有现象（stash 证伪新旧同值）：单格态 tr 高 78 = cell 60 + 一行
+    // 18——行高多计一行；R5510 已修复（表内盒高度作者补写 content_height，见
+    // r5510_table_row_backfill_invariant_tests），此处仍不锚行高（行高契约归 R5510
+    // 锚），仅锚无 valign 位移。
     let carrier = td1
         .children
         .iter()

@@ -2676,6 +2676,12 @@ fn apply_collapse_content_half_shift(
     }
 }
 
+/// 行/行组子树是否含 r109 拆分载体（R5510 content_height 补写门控：
+/// 唯一已证驱动案见 position_cells 行盒写点注释）。
+fn subtree_has_r109_split(b: &LayoutBox) -> bool {
+    b.is_r109_split || b.children.iter().any(subtree_has_r109_split)
+}
+
 /// 根据 grid 结构和列宽定位每个单元格。
 fn position_cells(
     table_box: &mut LayoutBox,
@@ -3140,6 +3146,24 @@ fn position_cells(
             }
             row_box.width = table_content_width - 2.0 * perimeter_x;
             row_box.height = row_height;
+            // R5510（CSS2 §17.5.3 行高 × R109 backfill delta-add 不变式）：行盒高由本
+            // pass 直接写入而 content_height 留 taffy 旧值，破坏 backfill_r109_
+            // anon_block_heights arm② 依赖的 height = content_height + frame 不变式
+            // （行无自身框，ZW 网格模型 collapse 边框在 paint 侧半带、separate 边框在
+            // cell 上）。行高吃 r109 拆分载体 taffy 陈旧值时（唯一 cell 内容为载体，
+            // 真范围要等 engine 步骤 12/12.1 回填），backfill delta = max_bottom −
+            // content_height 叠加在已含陈旧行高的 height 上：tr 18+60=78、行组/表/
+            // body 复利。补写后 delta 恰为陈旧槽 vs 真范围的欠计，h_new = max_bottom
+            // 精确落真值。
+            // 门控＝taffy content_height 与网格行高不一致 ∧ 行子树含 r109 拆分载体：
+            // 唯一已证驱动案（R5509 单格态）。无条件补写会改变 arm② 的 delta 叠加
+            // 与其兄弟位移臂——tao-087/088（畸形表生成 unwrapped Inline 子行，
+            // arm② 兄弟位移恰为其与参照对齐的承担者）corpus solo×3 双二进制
+            // 确定性回归，故收窄到已证域；|ch−R|≤0.5 时补写为亚像素 no-op，
+            // 省去载体子树遍历。
+            if (row_box.content_height - row_height).abs() > 0.5 && subtree_has_r109_split(row_box) {
+                row_box.content_height = row_height;
+            }
         }
 
         // 定位每个单元格（§17.6.1）
@@ -4209,6 +4233,13 @@ fn update_row_group_positions(
             row_group.y = new_y;
             row_group.width = new_w;
             row_group.height = new_h;
+            // R5510：行组盒同位不变式补写（同 position_cells 行盒注释——total_h 由
+            // 本 pass 写入，content_height 留旧值会同型叠加 backfill 欠计 delta）。
+            // 同款门控：仅 r109 载体域（无条件补写改变 arm② delta 叠加，tao-087/
+            // 088 确定性回归）。
+            if (row_group.content_height - new_h).abs() > 0.5 && subtree_has_r109_split(row_group) {
+                row_group.content_height = new_h;
+            }
         }
     }
 }

@@ -1078,3 +1078,8 @@ mod r5508_fit_content_avail_floor_tests;
 
 /// R5509（CSS2 §17.5.3 × §9.2.1.1）：block-in-inline 双格表 valign 载体流范围回归锚。
 mod r5509_bii_valign_carrier_tests;
+
+/// R5510（CSS2 §17.5.3 行高 × R109 backfill delta-add 不变式）：表内盒（行/行组）
+/// 高度作者补写 content_height——单格态行高吃拆分载体陈旧值时 tr/行组/表全链
+/// 复利膨胀消除。
+mod r5510_table_row_backfill_invariant_tests;

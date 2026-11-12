@@ -14,6 +14,7 @@ use crate::table_types::*;
 use crate::types::LayoutBox;
 
 use super::get_row_box_mut;
+use super::subtree_has_r109_split;
 
 pub(super) fn position_cells_vertical(
     table_box: &mut LayoutBox,
@@ -250,6 +251,14 @@ pub(super) fn position_cells_vertical(
                 row_box.y = row_rel_dy;
                 row_box.width = row_block_size;
                 row_box.height = row_inline_extent;
+                // R5510：与水平 position_cells 行盒同位不变式补写（height 由本 pass
+                // 直接写入，content_height 留旧值会叠加 backfill 欠计 delta）。同款
+                // 门控：仅 taffy 值与网格行高不一致 ∧ 子树含 r109 拆分载体的已证域
+                // （无条件补写改变 arm② delta 叠加与其兄弟位移，tao-087/088 确定性
+                // 回归；|ch−R|≤0.5 补写为亚像素 no-op，省载体子树遍历）。
+                if (row_box.content_height - row_inline_extent).abs() > 0.5 && subtree_has_r109_split(row_box) {
+                    row_box.content_height = row_inline_extent;
+                }
             }
         }
 
@@ -452,6 +461,11 @@ pub(super) fn position_cells_vertical(
         group.y = g_rel_dy;
         group.width = (max_right - min_x).max(0.0);
         group.height = row_inline_extent;
+        // R5510：行组盒同位不变式补写（同 position_cells_vertical 行盒注释），
+        // 同款门控：仅 r109 载体域（无条件补写改变 arm② delta 叠加）。
+        if (group.content_height - row_inline_extent).abs() > 0.5 && subtree_has_r109_split(group) {
+            group.content_height = row_inline_extent;
+        }
         for row_child in &mut group.children {
             row_child.x -= *min_x;
         }
