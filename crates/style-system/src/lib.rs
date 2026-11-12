@@ -2664,6 +2664,69 @@ impl StyleSystem {
         // media/container 上下文只影响上方 matching 收集（键前已执行）；custom properties
         // 与继承只影响下方阶段（不在缓存范围）。命中判定做键的逐字段完整比对（见
         // CascadeCache——预过滤哈希仅桶定位，碰撞退化为桶内线性查找而非错误命中）。
+        // CSS Values 5 §attr-notations：attr() 替换函数形——级联输入**前**做元素级替换
+        //（is_cascade_value_valid 的 attr 门按文法放行真调用，替换落在此处）：替换产物
+        // 若为 css-wide 关键字（attr(fallback, inherit) / data-foo="revert" 等）须进入
+        // 既有级联关键字机制（revert origin 截止、longhand 展开），故必须先于 expand+
+        // cascade。替换后值逐元素异（同声明文本不同属性值）——attr 活跃时跳过级联缓存
+        // 读写（同下方 custom-gather 缓存 own_attr_active 先例）。IACVT（属性缺失/型
+        // 不合且无 fallback）→ 丢该声明（级联门「按未声明处理」同口径——FIXME:
+        // guaranteed-invalid 语义细化）。伪元素按 originating element 解析属性——
+        // element 指针在 pseudo 场景非 originating，暂不替换（attr 文本走既有级联门
+        // 放行路径）。https://drafts.csswg.org/css-values-5/#attr-notations
+        let author_attr_active = pseudo.is_none()
+            && (hints.iter().any(|(_, v)| zero_css_parser::values::has_attr_word(v))
+                || matching
+                    .iter()
+                    .any(|(_, v, ..)| zero_css_parser::values::has_attr_word(v))
+                || host_matching
+                    .iter()
+                    .any(|(_, v, ..)| zero_css_parser::values::has_attr_word(v))
+                || slotted_matching
+                    .iter()
+                    .any(|(_, v, ..)| zero_css_parser::values::has_attr_word(v))
+                || inline_decls
+                    .iter()
+                    .any(|(_, v, _)| zero_css_parser::values::has_attr_word(v)));
+        let mut hints = hints;
+        let mut matching = matching;
+        let mut host_matching = host_matching;
+        let mut slotted_matching = slotted_matching;
+        let mut inline_decls = inline_decls;
+        if author_attr_active {
+            let reader = |name: &str| doc.get_attribute(element, name);
+            // 取 URL 属性集收口 [`attr_target_fetches_url`]（css-values-5 §attr
+            // security 共享清单——写面门同源）。content 的 attr() 为标准字符串
+            // 形态不取 URL，不在集合；FIXME: 集合随 ZW 取 URL 面扩展
+            //（mask/filter src() 等）。
+            let fetches_url = |prop: &str| zero_css_parser::values::attr_target_fetches_url(prop);
+            let subst = |prop: &str, v: &mut String| -> bool {
+                if !zero_css_parser::values::has_attr_word(v) {
+                    return true;
+                }
+                match zero_css_parser::values::substitute_attr_values_checked(v, &reader) {
+                    // 无 attr 词误扫或替换无变化（attr 词在注释/字符串内等）→ 原值保留。
+                    Some((std::borrow::Cow::Borrowed(_), _)) => true,
+                    Some((std::borrow::Cow::Owned(sub), tainted)) => {
+                        // 污染替换进取 URL 属性 → 声明 invalid（initial 即 none 形，
+                        // attr-security 语料钉面）。
+                        // https://drafts.csswg.org/css-values-5/#attr-security
+                        if tainted && fetches_url(prop) {
+                            return false;
+                        }
+                        *v = sub;
+                        true
+                    }
+                    // IACVT → 调用方丢整条声明。
+                    None => false,
+                }
+            };
+            hints.retain_mut(|(_, v)| subst("", v));
+            matching.retain_mut(|(p, v, ..)| subst(p, v));
+            host_matching.retain_mut(|(p, v, ..)| subst(p, v));
+            slotted_matching.retain_mut(|(p, v, ..)| subst(p, v));
+            inline_decls.retain_mut(|(p, v, _)| subst(p, v));
+        }
         let cache_key_ref = CascadeKeyRef {
             hints: &hints,
             matching: &matching,
@@ -2673,7 +2736,11 @@ impl StyleSystem {
             ua: &ua_decl_inputs,
             quirks: quirks_mode == QuirksMode::Quirks,
         };
-        let outcome: std::sync::Arc<CascadeOutcome> = match self.cascade_cache.lookup_ref(&cache_key_ref) {
+        let outcome: std::sync::Arc<CascadeOutcome> = match if author_attr_active {
+            None
+        } else {
+            self.cascade_cache.lookup_ref(&cache_key_ref)
+        } {
             Some(hit) => hit,
             None => {
                 // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式
@@ -2792,8 +2859,11 @@ impl StyleSystem {
                     cascaded,
                     orders: cascade_orders,
                 });
-                self.cascade_cache
-                    .insert_ref(&cache_key_ref, std::sync::Arc::clone(&produced));
+                // attr 活跃元素：替换后值逐元素异（键=声明文本），不入共享缓存防毒化。
+                if !author_attr_active {
+                    self.cascade_cache
+                        .insert_ref(&cache_key_ref, std::sync::Arc::clone(&produced));
+                }
                 produced
             }
         };
@@ -2840,13 +2910,62 @@ impl StyleSystem {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             own_custom.sort();
-            let cached = self.custom_gather_cache.iter().rev().find(|(k, _)| {
-                k.registered_gen == self.registered_properties_gen
-                    && std::sync::Arc::ptr_eq(&k.parent, parent_custom)
-                    && k.own_custom == own_custom
-            });
+            // CSS Values 5 §attr-notations：attr() 在 custom property 值内
+            // 识别（--x: attr(data-foo) 语料面）——compute 期元素级替换，var
+            // 消费方经 resolve_var 拿已替换文本。含 attr( 的组合逐元素异值
+            // （缓存键＝声明文本，不区分属性表状态）——跳过缓存读写防毒化；
+            // 父表值已在本元素祖先 compute 期替换（attr( 已消失），无需重扫。
+            // 替换失败（属性缺失/型不合且无 fallback——IACVT）→ 丢自身项
+            // （回落继承同名——FIXME: guaranteed-invalid 语义细化）。
+            // https://drafts.csswg.org/css-values-5/#attr-notations
+            let own_attr_active = own_custom
+                .iter()
+                .any(|(_, v)| zero_css_parser::values::has_attr_word(v));
+            // CSS Values 5 §attr-notations：attr() 在 custom property 值内
+            // 识别（--x: attr(data-foo) 语料面）——compute 期元素级替换，var
+            // 消费方经 resolve_var 拿已替换文本。outcome 为同键兄弟共享缓存
+            //（属性表逐元素异值）——替换落本地视图，共享 Arc 只读不回写防
+            // 毒化；含 attr( 的组合逐元素异值（缓存键＝声明文本，不区分属性
+            // 表状态）——跳过 s220 缓存读写。父表值已在本元素祖先 compute 期
+            // 替换（attr( 已消失），无需重扫。替换失败（属性缺失/型不合且无
+            // fallback——IACVT）→ 丢自身项（回落继承同名——FIXME:
+            // guaranteed-invalid 语义细化）。
+            // https://drafts.csswg.org/css-values-5/#attr-notations
+            let cached = if own_attr_active {
+                None
+            } else {
+                self.custom_gather_cache.iter().rev().find(|(k, _)| {
+                    k.registered_gen == self.registered_properties_gen
+                        && std::sync::Arc::ptr_eq(&k.parent, parent_custom)
+                        && k.own_custom == own_custom
+                })
+            };
             if let Some((_, hit)) = cached {
                 hit.clone()
+            } else if own_attr_active {
+                let reader = |name: &str| doc.get_attribute(element, name);
+                let mut view = cascaded.clone();
+                let mut iacvt: Vec<String> = Vec::new();
+                for (k, v) in view.iter_mut() {
+                    if !k.starts_with("--") || !zero_css_parser::values::has_attr_word(v) {
+                        continue;
+                    }
+                    match zero_css_parser::values::substitute_attr_values(v, &reader) {
+                        Some(std::borrow::Cow::Owned(sub)) => *v = sub,
+                        Some(std::borrow::Cow::Borrowed(_)) => {}
+                        None => iacvt.push(k.clone()),
+                    }
+                }
+                // IACVT：丢自身项（回落继承同名——FIXME: guaranteed-invalid
+                // 语义细化）。
+                for k in iacvt {
+                    view.remove(&k);
+                }
+                CustomProperties::new(gather_custom_properties(
+                    &view,
+                    parent_custom,
+                    &self.registered_properties,
+                ))
             } else {
                 let built = CustomProperties::new(gather_custom_properties(
                     cascaded,

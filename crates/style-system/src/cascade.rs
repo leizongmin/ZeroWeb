@@ -914,6 +914,15 @@ fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut
     {
         return true;
     }
+    // CSS Values 5 §attr-notations：attr() 替换函数形——真调用（词边界+字面
+    // 状态机甄别，dataattr( 词假阳不认）文法 valid → 延迟 compute 期元素级
+    // 替换后裁决（4.75 步；级联面无属性表，合法性不可判定——同 var() 提前
+    // 放行）；文法 invalid（attr(!)/type(<invalid>) 等）→ 级联丢（写面
+    // validate_decl_value 对未实现函数原文放行 store，此门收口）。
+    // https://drafts.csswg.org/css-values-5/#attr-notations
+    if zero_css_parser::values::has_attr_call(value) {
+        return zero_css_parser::values::attr_calls_valid(value);
+    }
     // CSS Values 5 §9 random()/random-item()：raw 形 apply oracle 拒（求值函数
     // 未接线 apply）——哨兵上下文播种替换后按替换文本裁决。哨兵 seed 无关
     // （合法性判定不依赖真值，apply-on-dummy 同口径）；% 叶 fixed-echo 保留形

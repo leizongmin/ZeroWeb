@@ -505,7 +505,11 @@ fn native_style_set_property_invoke(
         return;
     };
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
-    let val = string_arg(scope, &args, 1);
+    // WebIDL nullable `CSSOMString? value = ""`：JS null 归空串（cssom-1 `dom-cssstyledeclaration-
+    // setproperty` 空值臂 ≡ removeProperty）。string_arg 的 ToString(null)="null" 会把 null 写成
+    // 4 字符串毒化空值臂——清理面 `setProperty(prop, null)` 恒被值校验拒 → 既有声明永移除不掉。
+    // https://drafts.csswg.org/cssom-1/#dom-cssstyledeclaration-setproperty
+    let val = super::local_value_to_string_null_as_empty(scope, args.get(1));
     if prop.is_empty() {
         return;
     }

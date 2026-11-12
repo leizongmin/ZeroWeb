@@ -30687,7 +30687,11 @@ return e;
         // 先剥离 value 末尾既存 !important（priority arg 显式控制优先级，非 value 字符串）。
         if (ps === 'setProperty') {
           return function(name, value, priority) {
-            var v = String(value).replace(/\s*!\s*important\s*$/i, '').trim();
+            // WebIDL nullable `CSSOMString? value = ""`：null 归空串（cssom-1
+            // setProperty 空值臂 ≡ removeProperty——语料 cleanup 面全部走此参；
+            // String(null)="null" 四字符会被值校验拒 → 声明永移除不掉）。
+            // https://drafts.csswg.org/cssom-1/#dom-cssstyledeclaration-setproperty
+            var v = String(value == null ? '' : value).replace(/\s*!\s*important\s*$/i, '').trim();
             var hasImp = priority !== undefined && String(priority).trim().toLowerCase() === 'important';
             if (hasImp) v = v + ' !important';
             setProp(name, v);
