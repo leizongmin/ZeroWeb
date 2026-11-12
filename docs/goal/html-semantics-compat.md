@@ -2,44 +2,71 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 414 收口（the-style-element 余红勘根定谳：
-动态 style @import 事件臂 = 引擎分歧非缺口，勘根不施工收口 + 语料
-css-red.txt 补拉）：style-error-01 1T（慢性在册 s161 起）四点定谳——
-上游 wpt-metadata META.yml 唯一条目 = chrome crbug 1232491 覆盖
-style-error-01（error 语义面无全绿引擎，t404 子测上游注释弃用）；
-style-load-after-mutate 零条目全绿（s162 driving 在册 Pass）；两案对
-动态臂语义互斥（error vs load）钉死弃实现——probe3b 注入实证 error
-臂可行（d_err=1，`_zwSsVisitCss` 链复用）但必翻转后者 load 面；静态
-扫描臂 404 error 语义（style_events 在册绿）不受影响。语料资产缺口修
-复（s227 先验判据同型）：style-error-01 引用 support/css-red.txt（上
-游 200 text/plain MIME 真形态）缺席 = fetch_dir_html .txt opt-in 固化
-坑（③b 同型），goal 脚本 ③j fetch_raw 补拉（pin 315976933 落盘
-21B）——补后 solo 复验仍 1T 零行为变化吻合预期。FIXME 注记入
-part03.js load fallthrough 臂前（分歧证据链 + `__zw_get_text_handle`
-script-created 读回空串实测备引用）。验证：driving solo
-the-style-element 62P+1T（tentative/ 11 文件 37P 保持；补语料前后
-leg1 逐行 diff 空）；sweep ×2 双跑全等 **8274P/214F/16T + 5 NotRun**，
-join-cross 零位移；join-b（基线 s413 终稿批）恰 2 state-diff——
-**ior jQuery append() P→F 定谳真新红**（11 天稳定 Pass→确定性 Fail：
-静机 flake4 ×3 F + 重建二进制〔bd41f9bd2 含上游五 commit〕×3 F，跨
-两代二进制持续，非本切片可归因〔零功能 delta，style 目录零位移实
-证〕，勘根挂账下轮首位按 s235 三跑归因）+ home-end-detailed file
-T→F 形迁移（红集不变，flake4 静机连跑展开↔塌缩双向翻转实证）；make
-test 全量（429 断点接手 + target-disk-guard × 活动构建竞态全清后
-rebase 终稿树 bd41f9bd2 冷启动重建重跑）：**154 腿 153 绿 + 仅
-engine lib 在册红腿**（3910P/7F 失败清单与 s413 逐名 diff IDENTICAL
-零位移，+1P 归并行流合入域 part11-color）+ webview battery 853P/1F
-（csp_connect_gate 在册，image_decoder favorable flake 绿）+ fmt/
-clippy strict 净（random.rs 跨流红上游已清偿）；**本流域在册红
-212F+17T→213F+16T**（+1F = ior 真新红勘根挂账；余 +1F−1T = 形迁移
-红集不变）。下一步：**ior jQuery append() 新红勘根（三跑归因协议）
-升首位** / constructed-stylesheets 1T 勘根候选 / 挂账池承
-s404/s405/s411/s412/s413（外链模块基座 map 键错配/`.sheet` kind 固定
-面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5 面/
-form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察池/
-适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
+**状态**: Active——M2 切片 415 round-1 进行中（ior jQuery append()
+新红归因：**源归因排除**）——s414 定谳真新红（11 天稳定 Pass→确定性
+Fail）三跑归因首轮落锤：**纯 0079443c6 源重建二进制（detached
+checkout，零注释零上游）静机 ior ×3 全 Fail** vs 同源 s413 批二进制
+（11-12 20:04）Pass ×2——同源不同构建/时点翻转，s414 注释与上游五
+commit 双双排除，翻转维度收窄到源码之外（rustc 并行 codegen 产物布
+局漂移 → 堆布局/分配序，或运行时环境时点敏感；20:04 批二进制已被覆
+盖不可直复跑）。勘根三腿排程：腿 1 同源连构建 sha256 二分（产物确定
+性）→ 腿 2 `_zwOptStateKeyOf` plain stamp dump + `_mo_notify` 臂相
+位双构建对比探针（s236 机制域 + s373 时序 dump 先例，首位）→ 勘根收
+口后按根因域定施工/挂账。ior 键勘根收口前按在册红记账不抹（flake
+治理）。**本流域在册红 213F+16T**（s414 收口口径，见 s414 账本；NotRun
+5 不变）。过程事件：429 断点接手收口 s414 + target-disk-guard × 活动
+构建竞态全清教训已录 s414 账本。下一步：s415 腿 2 探针插桩 / 腿 1
+sha256 机械腿；constructed-stylesheets 1T 勘根候选 / 挂账池承
+s404/s405/s411/s412/s413/s414（外链模块基座 map 键错配/`.sheet` kind
+固定面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5
+面/form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察
+池/适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
 unhandled-rejection 换算）；checkable 父 label 2F 渲染域移交承 s410；
 select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 414 收口）——the-style-element 余红勘根定谳：
+> 动态 style @import 事件臂 = 引擎分歧非缺口（勘根不施工收口 + 语料
+> css-red.txt 补拉）**: commit 谱系 git log s414，账本
+> evidence/2026-11-12-m2s414-style-import-event-divergence.md（round-1 续轮账本
+> evidence/2026-11-13-m2s415-ior-jquery-append-attribution.md）。原 Active 段留档——
+> M2 切片 414 收口（the-style-element 余红勘根定谳：
+> 动态 style @import 事件臂 = 引擎分歧非缺口，勘根不施工收口 + 语料
+> css-red.txt 补拉）：style-error-01 1T（慢性在册 s161 起）四点定谳——
+> 上游 wpt-metadata META.yml 唯一条目 = chrome crbug 1232491 覆盖
+> style-error-01（error 语义面无全绿引擎，t404 子测上游注释弃用）；
+> style-load-after-mutate 零条目全绿（s162 driving 在册 Pass）；两案对
+> 动态臂语义互斥（error vs load）钉死弃实现——probe3b 注入实证 error
+> 臂可行（d_err=1，`_zwSsVisitCss` 链复用）但必翻转后者 load 面；静态
+> 扫描臂 404 error 语义（style_events 在册绿）不受影响。语料资产缺口修
+> 复（s227 先验判据同型）：style-error-01 引用 support/css-red.txt（上
+> 游 200 text/plain MIME 真形态）缺席 = fetch_dir_html .txt opt-in 固化
+> 坑（③b 同型），goal 脚本 ③j fetch_raw 补拉（pin 315976933 落盘
+> 21B）——补后 solo 复验仍 1T 零行为变化吻合预期。FIXME 注记入
+> part03.js load fallthrough 臂前（分歧证据链 + `__zw_get_text_handle`
+> script-created 读回空串实测备引用）。验证：driving solo
+> the-style-element 62P+1T（tentative/ 11 文件 37P 保持；补语料前后
+> leg1 逐行 diff 空）；sweep ×2 双跑全等 **8274P/214F/16T + 5 NotRun**，
+> join-cross 零位移；join-b（基线 s413 终稿批）恰 2 state-diff——
+> **ior jQuery append() P→F 定谳真新红**（11 天稳定 Pass→确定性 Fail：
+> 静机 flake4 ×3 F + 重建二进制〔bd41f9bd2 含上游五 commit〕×3 F，跨
+> 两代二进制持续，非本切片可归因〔零功能 delta，style 目录零位移实
+> 证〕，勘根挂账下轮首位按 s235 三跑归因）+ home-end-detailed file
+> T→F 形迁移（红集不变，flake4 静机连跑展开↔塌缩双向翻转实证）；make
+> test 全量（429 断点接手 + target-disk-guard × 活动构建竞态全清后
+> rebase 终稿树 bd41f9bd2 冷启动重建重跑）：**154 腿 153 绿 + 仅
+> engine lib 在册红腿**（3910P/7F 失败清单与 s413 逐名 diff IDENTICAL
+> 零位移，+1P 归并行流合入域 part11-color）+ webview battery 853P/1F
+> （csp_connect_gate 在册，image_decoder favorable flake 绿）+ fmt/
+> clippy strict 净（random.rs 跨流红上游已清偿）；**本流域在册红
+> 212F+17T→213F+16T**（+1F = ior 真新红勘根挂账；余 +1F−1T = 形迁移
+> 红集不变）。下一步：**ior jQuery append() 新红勘根（三跑归因协议）
+> 升首位** / constructed-stylesheets 1T 勘根候选 / 挂账池承
+> s404/s405/s411/s412/s413（外链模块基座 map 键错配/`.sheet` kind 固定
+> 面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5 面/
+> form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察池/
+> 适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
+> unhandled-rejection 换算）；checkable 父 label 2F 渲染域移交承 s410；
+> select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 413 收口）——声明式 CSS module parse 期 map 注册
 > + import 免 fetch + kind 固定（tentative/ 11 文件全绿收口）**: commit 谱系
