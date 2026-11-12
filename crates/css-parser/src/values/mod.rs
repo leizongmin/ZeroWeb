@@ -33,7 +33,7 @@ pub use parse_misc::*;
 pub use parse_transform::*;
 pub use random::{
     RandomEvalContext, RandomFamily, RandomSpec, canonicalize_random_keys, parse_random_args, random_family_allowed,
-    substitute_random_values,
+    random_item_args_valid, substitute_random_values,
 };
 pub use serialize_math::*;
 pub use types::*;

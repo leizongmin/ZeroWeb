@@ -1831,6 +1831,21 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             }
         }
     }
+    // random-item() 写面文法门（CSS Values 5 §funcdef-random-item，tentative）：
+    // 任意替换函数 parse 期仅实参文法裁决（属性族型别在替换后承担）——
+    // 位于白名单检查之前，font-family 等表外槽同样收口（random-item-invalid
+    // 语料 14F 驱动：`(auto, !)`/未闭合花括号/块残片形此前原文透传 store）。
+    // invalid → 整拒；valid 放行 store 原文（compute 期播种替换承担求值，
+    // §9.4；与 cascade/supports 站同函数单实现——eval_random_item_call 臂）。
+    // random() 家族型别门保持白名单槽位（下方既有臂——表外属性无族表）。
+    // https://drafts.csswg.org/css-values-5/#funcdef-random-item
+    {
+        let v = value.trim();
+        let lower = v.to_ascii_lowercase();
+        if lower.contains("random-item(") && !random_item_calls_valid(v, &lower) {
+            return false;
+        }
+    }
     if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
         return true;
     }
@@ -2034,6 +2049,75 @@ fn extract_random_args(value: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// 值内全部 `random-item(` 调用实参文法裁决（CSS Values 5
+/// §funcdef-random-item 写面门）。调用未闭合（`random-item(auto,` 括号
+/// 缺失）→ invalid——与 random() 提取器 break 放行不同，本门 spec 钉面
+/// （random-item-invalid 语料）。字符串字面内 `random-item(` 文本由引号
+/// 状态机跳过（`content: "random-item()"` 不触发）。
+fn random_item_calls_valid(value: &str, lower: &str) -> bool {
+    let bytes = lower.as_bytes();
+    let needle = b"random-item(";
+    let mut i = 0;
+    let mut in_string: Option<u8> = None;
+    let mut escaped = false;
+    while i < bytes.len() {
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        let b = bytes[i];
+        if let Some(q) = in_string {
+            if b == b'\\' {
+                escaped = true;
+            } else if b == q {
+                in_string = None;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            in_string = Some(b);
+            i += 1;
+            continue;
+        }
+        if i + needle.len() > bytes.len() || bytes[i..i + needle.len()] != needle[..] {
+            i += 1;
+            continue;
+        }
+        // ident 边界：前随字母/数字/-/_ 的命中属更长 ident（`foorandom-item(`）。
+        if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_') {
+            i += 1;
+            continue;
+        }
+        let start = i + needle.len();
+        let mut depth = 1usize;
+        let mut j = start;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        if depth != 0 {
+            // 括号不闭合 → invalid（语料 `random-item(auto,` 形）。
+            return false;
+        }
+        if !values::random_item_args_valid(&value[start..j]) {
+            return false;
+        }
+        i = j + 1;
+    }
+    true
 }
 
 /// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；

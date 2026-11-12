@@ -1086,6 +1086,169 @@ fn split_item_list(args: &str) -> Vec<&str> {
     out
 }
 
+/// random-item() 实参文法（CSS Values 5 §funcdef-random-item，tentative）：
+/// 任意替换函数 parse 期仅实参文法裁决（属性族型别在替换后承担，测试注记
+/// 「only its argument grammar is validated at parse time」）——
+/// `random-item( <random-key>? , <declaration-value># )`：
+/// - 首 key 节判定与求值器同口径（花括号起始节非 key；`parse_key_section`
+///   成功 → key 形，items 自次节起）；key 缺省形要求首节非空——空首节
+///   （`random-item( )`/`random-item(, serif, …)`）与空实参 invalid。
+/// - 项表 ≥1 项；**空项合法**（`random-item(auto, )`/`(auto, ,)` 语料钉面）。
+/// - 每项为 `<declaration-value>`：引号内字符豁免；括号深 0 处禁 `!` `;`
+///   `]`（§css-syntax declaration-value 排除集）；含花括号的项必须恰为
+///   整项 `{…}` 包裹（块内顶层逗号属值本体；`{a} extra`/`extra {a}`/
+///   未闭合 `{a` invalid——random-item-invalid 语料钉面；块项与裸项混排、
+///   多块项合法——random-item-valid 语料钉面）。
+/// - 全实参括号/花括号配平（`rgb(1, 2` 未闭合 invalid）。
+///
+/// <https://drafts.csswg.org/css-values-5/#funcdef-random-item>
+pub fn random_item_args_valid(args: &str) -> bool {
+    if !random_scan_balanced(args) {
+        return false;
+    }
+    let sections = split_item_list(args);
+    let key_absent_empty = match sections.first() {
+        Some(first) => !first.trim().starts_with('{') && parse_key_section(first).is_none() && first.trim().is_empty(),
+        None => true,
+    };
+    if key_absent_empty {
+        return false;
+    }
+    let items: &[&str] = match sections.first() {
+        Some(first) if !first.trim().starts_with('{') && parse_key_section(first).is_some() => &sections[1..],
+        _ => &sections[..],
+    };
+    if items.is_empty() {
+        return false;
+    }
+    items.iter().all(|item| random_item_value_valid(item))
+}
+
+/// 全实参结构配平：引号状态机 + 括号/花括号深度（负深或残余深 = 未闭合）。
+fn random_scan_balanced(args: &str) -> bool {
+    let mut depth_paren = 0i32;
+    let mut depth_brace = 0i32;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    for ch in args.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if let Some(q) = in_string {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                in_string = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => in_string = Some(ch),
+            '(' => depth_paren += 1,
+            ')' => {
+                depth_paren -= 1;
+                if depth_paren < 0 {
+                    return false;
+                }
+            }
+            '{' => depth_brace += 1,
+            '}' => {
+                depth_brace -= 1;
+                if depth_brace < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth_paren == 0 && depth_brace == 0 && in_string.is_none()
+}
+
+/// 单个 item 的 `<declaration-value>` 文法：整项 `{…}` 包裹（块内禁顶层
+/// `!` `;` `]`）或无花括号裸项（顶层禁 `!` `;` `]`，含花括号残片即 invalid）。
+fn random_item_value_valid(item: &str) -> bool {
+    let t = item.trim();
+    if t.starts_with('{') {
+        let Some(close) = random_match_block(t) else {
+            return false;
+        };
+        if close != t.len() - 1 {
+            // 块后残留（`{a} extra`）——非整项包裹。
+            return false;
+        }
+        return random_scan_no_forbidden(&t[1..close]);
+    }
+    if t.contains('{') || t.contains('}') {
+        // 花括号残片（`{a`/`a}`/`extra {a}`）——花括号仅可整项包裹。
+        return false;
+    }
+    random_scan_no_forbidden(t)
+}
+
+/// 首字符 `{` 的配对 `}` 字节偏移（引号内括号不计深；无配对返回 None）。
+fn random_match_block(t: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    for (idx, ch) in t.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if let Some(q) = in_string {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                in_string = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => in_string = Some(ch),
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 顶层（括号深 0、引号外）`!` `;` `]` 排除扫描（§css-syntax
+/// declaration-value 排除集；块/函数内不在本层面裁决）。
+fn random_scan_no_forbidden(s: &str) -> bool {
+    let mut depth_paren = 0usize;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    for ch in s.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if let Some(q) = in_string {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                in_string = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => in_string = Some(ch),
+            '(' => depth_paren += 1,
+            ')' => depth_paren = depth_paren.saturating_sub(1),
+            '!' | ';' | ']' if depth_paren == 0 => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
 /// 嵌套 fixed 内层替换产物钳制（`fixed random(1, 2)` → `fixed 1.x` →
 /// `fixed 0.9999999999999999`；`fixed random(-2, -1)` → `fixed 0`）：替换
 /// 产物不再过写面字面 range 门（substitution 语义），求值期按 §9.4 clamp
@@ -1123,6 +1286,11 @@ fn clamp_substituted_fixed(args: &str) -> String {
 ///（spec 同序——item 文本恰为 key keyword 形时归 key）；`var(` 实参
 /// fail-closed（注册 custom prop 代入序挂账）。
 fn eval_random_item_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEvalContext) -> Option<String> {
+    // 实参文法门（§funcdef-random-item——parse 期仅实参文法裁决；写面门
+    // 同函数单实现）。结构 invalid fail-closed。
+    if !random_item_args_valid(args) {
+        return None;
+    }
     if args.to_ascii_lowercase().contains("var(") {
         return None;
     }
@@ -1371,6 +1539,60 @@ mod tests {
     fn item_empty_and_gap_invalid() {
         assert!(substitute_random_values("random-item(fixed 0.5, red, , blue)", "color", &ctx()).is_none());
         assert!(substitute_random_values("random-item(fixed 0.5)", "color", &ctx()).is_none());
+    }
+
+    #[test]
+    fn item_args_grammar_matrix() {
+        // random-item-invalid 语料 16 形（写面门/求值门同函数单实现）。
+        for bad in [
+            "",                           // random-item()
+            " ",                          // random-item( )
+            "auto",                       // random-item(auto)——零项
+            ", serif, sans-serif",        // 空 key 槽
+            "auto, !",                    // 顶层 !
+            "auto, ;",                    // 顶层 ;
+            "auto, }",                    // 顶层 }
+            "auto, ]",                    // 顶层 ]
+            "auto, {serif",               // 块未闭合
+            "auto, serif}",               // 残片
+            "auto, {Times, serif",        // 块未闭合含逗号
+            "{auto, serif, sans-serif",   // 块起始未闭合
+            "auto, {Times, serif} extra", // 块后残留
+            "auto, extra {Times, serif}", // 块前内容
+            "auto, rgb(1, 2",             // 括号未闭合
+        ] {
+            assert!(!random_item_args_valid(bad), "须 invalid: {bad:?}");
+        }
+        // random-item-valid 语料钉面（空项/多块/块裸混排/裸 ident key 槽/
+        // var key 槽/负 fixed/空白变体）。
+        for ok in [
+            "auto, serif",
+            "auto, serif, sans-serif, monospace",
+            "auto ,serif ,sans-serif",
+            "auto , serif , sans-serif",
+            "auto, ",
+            "auto, serif,",
+            "auto, , serif",
+            "auto, ,",
+            "auto, {Times, serif}, {Arial, sans-serif}",
+            "auto, {Times, serif}, sans-serif, {monospace}",
+            "auto, {Times, serif}",
+            "auto, { Times, serif }, { Arial, sans-serif }",
+            "auto, {Times, serif}, { Arial, sans-serif }",
+            "auto, { monospace }",
+            "--x, serif, sans-serif",
+            "fixed 0.5, serif, sans-serif",
+            "serif, sans-serif",
+            "foo, serif, sans-serif",
+            "fixed -0.5, serif, sans-serif",
+            "property-scoped, serif, sans-serif",
+            "var(--key), serif, sans-serif",
+        ] {
+            assert!(random_item_args_valid(ok), "须 valid: {ok:?}");
+        }
+        // 函数/字符串内排除集豁免（括号深/引号内 `!;]` 合法）。
+        assert!(random_item_args_valid("auto, rgb(1, !, 2)"));
+        assert!(random_item_args_valid("auto, \";\""));
     }
 
     #[test]
