@@ -68,6 +68,12 @@ execcommand`）：6 passed / 0 failed / 1 ignored（nested_cross_b 既有
 ignore 恒态，B1 解钉 italic_after_prior_cmd 恒绿）。本批仅改 .js
 shim，Rust 面零变化，clippy 无新增检查对象。
 
+rebase 复验：push 前入组合态 12 commit（并行流 editing-compat 嵌套簇
+E1 移除侧坐标刀 d39a9b062 同写面解钉 nested_cross_b 等），守卫重建
+runner 于新 HEAD 全 face 1 复跑：对原 base 断言级 F2P=55/P2F=0/
+newF=0 恒等（goneF 仅 d7trace——本批验后移除的临时探针）；对 E1 前
+after 面 0/0/0，d7 批与 E1/D1 刀零交互，组合态干净。
+
 ## 数字
 
 face 1：base 15,343/167 → after **15,398/112**：
