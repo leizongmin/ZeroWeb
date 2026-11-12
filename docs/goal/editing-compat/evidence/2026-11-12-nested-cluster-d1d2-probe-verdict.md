@@ -24,7 +24,7 @@ R2-MUT 对照（exec#1 5 条 flat2 mutation vs ctrl 面全 9 条 ByHandle）：`
 
 - D2 修复（part01c.js 7 行）已复验有效，建议 writer 棒按门禁批先入库协议收口（guard → commit → 重锚 release bin → 批腿 judge 基准复用 gate v4 的 ind-c1/cssom-mt-reanchor/rbv2 日志）。
 - D1 面两选项：a) 深修=物化身份保持（重解析物化前按身份对账/引用重绑，双 wrapper 家族 apply 面变体，影响面广须独立刀）；b) 浅修=只解 mutation 发射缺失（JS 序错依旧，重放断言仍不成立，不推荐）。倾向 a，与 writer __zwFmtErr 探针（part06.js 5332 脏改，抓 `_eFmt` 异常面）判读合流。
-- 两枚 #[ignore]（nested_cross_b / italic_after_prior_cmd）解除前置=D1 修复 + 净效果期望钉（`<i>foo</i>baz` / `fo<b>o<b>b</b>ar</b>az`）。
+- 两枚 #[ignore]（nested_cross_b / italic_after_prior_cmd）解除前置=D1 修复 + 净效果期望钉（`<i>foo</i>baz` / `fo<b>o<b>b</b>ar</b>baz`；期望钉须保宿主原文 `foo<b>bar</b>baz` 全文本——`az` 形少 b 为笔误，与 replay 实况 `foobarbazaz` 数据丢失签名互证）。
 - 探针还原义务：part06.rs/part01d.js 探针 hunk 已由本棒 checkout 还原（**披露：checkout 抹掉了 writer 的 part06.rs R2 探针块**——writer 判读依赖时可从 r4/r5 log 的 R2-MUT/R2-PROBE 输出与本文机制链重建）；part06.js `__zwFmtErr` 探针（writer 在飞）未触碰。
 
 ## 门禁批收口（batch-nested-d2-gate-v1 ALL-DONE，2026-11-12 15:17）
