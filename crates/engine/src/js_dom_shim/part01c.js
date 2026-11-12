@@ -2424,7 +2424,13 @@
     }
     var stop = _zwJusNextNodeDescendants(range.endContainer);
     var out = [];
-    while (node && _zwJusIsBefore(node, stop) && guard++ < 65536) {
+    // stop=null 卫兵（同 :399 F6b 先例；2026-11-12 嵌套簇刀 D2 臂）：end 界落
+    // 文档链顶（endContainer 为末节点 → NextNodeDescendants 走根返 null）时
+    // isBefore(x, null) 恒假 → 走查空转 → contained 集空 → 六 format 命令落
+    // override-only 臂（qS override 翻转、DOM 零变更）——嵌套簇两枚 #[ignore]
+    // 探针 r4 定谳（nested-probe-r4.log：containedAll=0 + selval-return）。
+    // 真页面选区终点即文档末节点为合法形态，迭代至树尽。
+    while (node && (!stop || _zwJusIsBefore(node, stop)) && guard++ < 65536) {
       if (_zwValIsEffectivelyContained(node, range) && condition(node)) {
         out.push(node);
       }

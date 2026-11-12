@@ -2087,6 +2087,68 @@ document.execCommand("italic", false, "");
 }
 
 #[test]
+fn test_execcommand_format_apply_doc_end_selection_r3254_m3() {
+    // D2 卫兵钉测（2026-11-12 嵌套簇刀，nested-probe-r4/r5 定谳）：选区终点落
+    // 文档链顶（endContainer 为文档末节点 → _zwJusNextNodeDescendants 返 null）
+    // 时 _zwValGetAllEffectivelyContained 走查不得空转——旧判 `while (node &&
+    // isBefore(node, stop))` 对 stop=null 恒假 → contained 集空 → 六 format 命令
+    // 落 override-only 臂（qS 翻转、DOM 零变更）。宿主用 JS createElement 建
+    // （handle 章完整，隔离嵌套簇 D1 解析宿主物化身份分裂面——该面仍 #[ignore]
+    // 于 nested_cross_b / italic_after_prior_cmd 两案），append 后其文本即文档
+    // 末节点，复现 stop=null 形；净效果 replay 断言同 ① 口径。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r##"
+var h = document.createElement("div");
+h.id = "d2h";
+h.setAttribute("contenteditable", "");
+document.body.appendChild(h);
+// 三个独立 createTextNode（全部持章）——选区取整节点，避开嵌套簇 D1/M-wire
+// 章-裸不对称下的 splitText data-setter 欠发射面（挂账独立刀）。
+h.appendChild(document.createTextNode("foo"));
+h.appendChild(document.createTextNode("ob"));
+h.appendChild(document.createTextNode("az"));
+var t3 = h.lastChild;
+var r = document.createRange();
+r.setStart(t3, 0);
+r.setEnd(t3, 2);
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+document.execCommand("italic", false, "");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap().clone();
+        let mut doc = parse_html("<html><body></body></html>");
+        apply_dom_mutations(&mut doc, &m).expect("doc-end italic batch must apply");
+        let host = find_by_selector(&doc, "#d2h").expect("d2h must resolve");
+        assert_eq!(
+            doc.inner_html(host),
+            "fooob<i>az</i>",
+            "文档末选区 execCommand('italic') 净效果须包裹整节点（stop=null 不得空转走查），实际: {}",
+            doc.inner_html(host),
+        );
+    }
+}
+
+#[test]
 fn test_query_command_reflect_r3254_m3_slice3() {
     // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/
     // queryCommandEnabled 真实反射——按实际接通命令面判定（替换无条件 true 桩）。
