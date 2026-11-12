@@ -610,7 +610,7 @@
 3. **单文件语料账面**：iol/iul 等伪影族维持除名不追（清单见各轮 evidence），真债清零。
 4. **每刀红线（全程有效）**：judge 元组口径 F2P≥0 且 P2F=0 / post-only=0 / lost=0 / rows 恒等；enginelib 名册恒一（名单常驻 [evidence/enginelib-red-roster-2026-11-07.txt](editing-compat/evidence/enginelib-red-roster-2026-11-07.txt)，变化当轮新增带日期档案不覆盖旧档）；make test 红面逐项归因，无新增不明红。
 
-**节奏**：按簇普查→归因→刀；簇序按残键数降序（2026-11-12 重普：exec1 474 > ip 206 > ihtml 119 > ilb 33 > indent 27 > outdent 9；旧档「mt inserttext compare 172 键」已消——census 源出 knife9 2026-11-07，mt 现残 F=2 @gate v4 重锚，inserttext 签名残留全日志仅 61）；族归属普查见 [evidence](editing-compat/evidence/2026-11-12-residual-family-census-r5450.md)（exec1 单文件 tentative 面 54%、ip div/p 子族、ihtml 宽散）。伪影嫌疑行一律先按 #37 判据核窗界分布与 exec 证据再开工，不直接归因引擎债。
+**节奏**：按簇普查→归因→刀；簇序按残键数降序（2026-11-12 重普：exec1 474 > ip 206 > ihtml 119 > ilb 33 > indent 27 > outdent 9；旧档「mt inserttext compare 172 键」已消——census 源出 knife9 2026-11-07，mt 现残 F=2 @gate v4 重锚，inserttext 签名残留全日志仅 61）；族归属普查见 [evidence](editing-compat/evidence/2026-11-12-residual-family-census-r5450.md)（exec1 单文件 tentative 面 54%、ip div/p 子族、ihtml 宽散）；ihtml 119 机制深普（2026-11-13）：101/119 键 NOOP=插入未到达——块级载荷拆分插入路径缺失（~63 键，与 ip 刀拆分原语共享）+ styled-span/raw-text/CE-false 场景选区解析惰性（~37 键独立道），见 [evidence](editing-compat/evidence/2026-11-13-ihtml-residual-mechanism-census.md)。伪影嫌疑行一律先按 #37 判据核窗界分布与 exec 证据再开工，不直接归因引擎债。
 
 ### M3+ 划界
 
