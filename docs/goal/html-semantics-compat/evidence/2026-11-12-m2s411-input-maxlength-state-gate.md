@@ -55,7 +55,7 @@ spec 锚：maxlength 属性仅适用于 text/search/url/tel/email/password 六�
 - **maxLength IDL 反射面**：`_REFLECTED_UINT.maxLength { a:'maxlength', d:-1 }`（part01.js）为无条件属性反射——spec 对不适用态（number 等）getter 应返 -1（属性不适用=缺省）；当前 number + maxlength=1 读 `elem.maxLength` 返 1。纯 IDL 读面，本切片语料无 driving；与 minLength 同族，挂账池记。
 - webview 门与 shim 门为**双写同口径**（plan noop 判定 + 原子脚本 live 守卫各自门控）——未来若 maxlength 适用态清单变化（无此规范演化迹象），两处需同步。
 - unhandled-rejection→Fail 换算缺失是 runner 通用面（任何 .then-无-catch 案 + reject 型链都会挂到预算），影响面 = 文件级 Timeout 不可区分根因；上 testharness.js 上游语义（harness 有 unhandled rejection 追踪）属 runner 换算层缺口，挂账池记（勘根成本高，无当前 driving）。
-- 跨流门禁清偿（computed_style.rs clippy/fmt + css-parser mod 序）与本切片改动分 commit，语义零变化；最终经 rebase 判零 delta 弃用（并行流 g18/g19 上游同批自偿），rebase 后树（fix 4800bff24 + docs 本 commit 谱系）双钉复跑绿 + fmt/clippy 复验净。切片验证数字（电池/sweep/make test）绑定 rebase 前树（f8e5fb351 + 本切片 delta）——g18/g19 仅 css-values/sibling 桥面，html/semantics 语义面不感知；rebase 后钉态复验零位移。
+- 跨流门禁清偿（computed_style.rs clippy/fmt + css-parser mod 序）与本切片改动分 commit，语义零变化；最终经 rebase 判零 delta 弃用（并行流 g18/g19 上游同批自偿），rebase 后树（本切片 fix/docs commit 谱系，git log s411）双钉复跑绿 + fmt/clippy 复验净。切片验证数字（电池/sweep/make test）绑定 rebase 前树（f8e5fb351 + 本切片 delta）——g18/g19 仅 css-values/sibling 桥面，html/semantics 语义面不感知；rebase 后钉态复验零位移。
 
 ## 下一步
 
