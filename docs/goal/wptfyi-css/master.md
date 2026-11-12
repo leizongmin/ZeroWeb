@@ -14,7 +14,11 @@ css-values 2,426→2,893，至 serialize canonical 折叠刀2+round B=±∞ 策�
 +computed canonical 串化刀全套（9db 主刀 + be0 补臂，g17/g17b 两轮：
 minmax/hypot 单参配对 28 案 g15 空串对空串伪通过转真通过，values face
 2,917→**3,032** 净 +129，calc 族逐页零损失；分页归因与组合态污染分账见
-evidence 2026-11-12-dc2-g17）。
+evidence 2026-11-12-dc2-g17）
++sibling 求值桥刀（g19：CalcContext 注入求值 + gCS 三通道 + 写面文法门，
+values face 3,032→**3,072** 净 +40 零回归，五套件 ±0；两轮探针 49P→56P
+修复 cache-hit fail-soft 与 parse-fail 放行两洞，见 evidence
+2026-11-12-dc2-g19-sibling-bridge）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -51,13 +55,13 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 / Pass 1,381**（transitions 185 / om-view 545 / geometry 209 / animations 225
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
-**卡点**：无阻塞。random() 文法刀已落库（99c573d30：parse_random identification
-全组合——element 域 × UA 域任意序/双 UA 域拒/auto shorthand/fixed [0,1)，
-写面 width 槽入白名单 invalid 整拒 valid 放行 store 原文；probe random-invalid
-39F→39P 收口、serialize 42F/29P 与 computed 141F 零漂移，见 evidence
-2026-11-12-dc2-g18）；剩余 eval/求值刀（sha256 种子 + element/property 上下文 +
-supports 门 + computed 数值化 + canonical 串化 shorthand 补全——serialize 42F
-主体）涉 engine 面，computed 串面刀已落库（9db+be0），排队解除可接。
+**卡点**：无阻塞。g19 sibling 求值桥已落库（CalcContext 注入 + gCS 三通道
++ 写面门两洞修复；probe family 31P→56P 净 +25、values 净 +40 五套件 ±0），
+tree-counting 家族残 89F 分桶挂账（color 实参槽 2F/伪元素 Face 3 2F/keyframe
+10 页/invalidation/container/descriptors/media/shadow/tree-scoped/gradient/
+trig）。random() eval 刀（sha256 种子 + element/property 上下文 + supports 门
++ computed 数值化 + canonical 串化 shorthand 补全——serialize 42F 主体）与
+computed 串面刀（9db+be0 已落）排队可接。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
@@ -71,7 +75,10 @@ unbalanced 形；serialize 残 ~42F——resolution 29 主体未动（image-set 
 前置刀，deferred）+ length ~2/angle ~8/number ~3 散形 + signs-abs computed
 残 ~94F/invalid 52F——`abs()` 空参文法、font-weight 非白名单属性写面/
 serialize 4F）、
-%-mixing CalcContext 族（calc-mix 主刀后残余：serialize 62F——sibling-index() 形 ~25F 需 DOM 求值 + 外层 calc() 嵌套 % 排序 ~12F 树递归 serialize + computed 串面散形；computed 28F——% calc 保留形 length_to_css 空串等）、
+%-mixing CalcContext 族（calc-mix 主刀后残余：serialize 62F——sibling-index() 形已收（g19 DOM 求值桥）+ 外层 calc() 嵌套 % 排序 ~12F 树递归 serialize + computed 串面散形；computed 28F——% calc 保留形 length_to_css 空串等）、
+tree-counting 家族残 89F（g19 后：keyframe 10 页、invalidation/container-query/
+descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
+实参槽 2F + 伪元素 Face 3 2F——见 evidence g19 §5 分桶）、
 独立桶 line-break-ch
 194F / random() 141F / attr-all-types 103F / viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
@@ -81,6 +88,30 @@ color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
 grid G2b（taffy detailed_layout_info，架构面）。
+
+**DC-2 g19 批完成（11-12，sibling 求值桥/写面文法收口刀）**：CSS Values 5
+§tree-counting DOM 求值桥三面切片——CalcContext 注入求值契约（sibling_
+ordinal/sibling_count Option，有 ctx 出值无 ctx fail-closed）+ Part A
+css-parser（calc_expr_has_tree_counting/槽族门 tree_counting_slot_valid/
+counter 列表 math 变体/fold_tree_counting_calc 乘链展开+静态积掩码求值：
+Angle deg provenance/Time 秒/Length 原子保维度 canonical）+ Part B
+style-system（sibling_position 元素子序、apply/order/z-index/兜底臂真值、
+style_cache prescan 禁用 + 每元素 cascaded 检测门控零新字段、probe (1,1)
+哨兵接线 cascade/supports/CSS.supports）+ Part C engine gCS 三通道
+（by-selector/cache/lazy 带 sibling_position；inset 槽 sibling 叶注入串化）。
+**两轮探针**（tree-counting 家族 23 页）：probe1 31P→49P 暴露两洞——gCS
+cache-hit 复用通道无 sibling 位（#test 连续查询仅首查带 ctx，left 得 ''，
+「不可达」注释证伪）+ 写面门 parse-fail 放行（带参/非时槽 time 叶 shim 存
+原文）→ map 附 sibling 位 O(1) 透传 + math 形 parse 失败整拒（非 math 形
+放行防 content 字符串误拒）。probe2 **31P→56P 净 +25 家族零回归**：
+parsing 25→45P（残 color() 实参槽 2F 挂账）、主页 0→5P（残伪元素 Face 3
+2F）。values 全量 **3,032 → 3,072 净 +40 零回归**（4 页：两 tree-counting
+页 +25、calc-rounds-to-integer +12 counter/order 整数槽 math 形外溢、
+hypot-pow-sqrt-computed +3 嵌套函数 sibling 叶真值）；五套件对 g16 逐位
+±0（color/transitions/animations/easing/transforms）。单测 css-parser
+3,146 全绿/style-system 2,525+5/engine 3,903 过（10 失败 stash 基线法证
+既有与本批无关）/guarded-clippy 零告警/fmt clean。
+[证据](evidence/2026-11-12-dc2-g19-sibling-bridge.md)
 
 **DC-2 g14 批首账（11-12 早，calc-mix 主刀 6d3e3af16 + layout 漏臂 c1a069a1c
 + minmax 回归修复 0f1c0639d 并行流收口）**：CSS Values 5 `calc-mix()` 全链
