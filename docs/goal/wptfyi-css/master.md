@@ -18,7 +18,11 @@ evidence 2026-11-12-dc2-g17）
 +sibling 求值桥刀（g19：CalcContext 注入求值 + gCS 三通道 + 写面文法门，
 values face 3,032→**3,072** 净 +40 零回归，五套件 ±0；两轮探针 49P→56P
 修复 cache-hit fail-soft 与 parse-fail 放行两洞，见 evidence
-2026-11-12-dc2-g19-sibling-bridge）。
+2026-11-12-dc2-g19-sibling-bridge）
++random canonical 串化刀（g20：§9.4.1 `<random-key>` parse 期 canonical
+化挂 fold_decl_specified 头部单点接线 5 写面站，values face 3,072→
+**3,111** 净 +39 零回归，五套件 ±0；random-serialize 42F 收口 39F 残
+color 通道嵌套 3F 挂账，见 evidence 2026-11-12-dc2-g20-random-canonical）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -59,9 +63,10 @@ WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
 + 写面门两洞修复；probe family 31P→56P 净 +25、values 净 +40 五套件 ±0），
 tree-counting 家族残 89F 分桶挂账（color 实参槽 2F/伪元素 Face 3 2F/keyframe
 10 页/invalidation/container/descriptors/media/shadow/tree-scoped/gradient/
-trig）。random() eval 刀（sha256 种子 + element/property 上下文 + supports 门
-+ computed 数值化 + canonical 串化 shorthand 补全——serialize 42F 主体）与
-computed 串面刀（9db+be0 已落）排队可接。
+trig）。random() canonical 串化已落（g20 serialize 42F→3F，残 color 通道
+嵌套 D 桶）；random() eval 刀 Face 2（sha256 种子 + element/property 上下文
++ supports 门 + computed 数值化——random-computed 141F +
+random-item-computed 28F）与 computed 串面刀（9db+be0 已落）排队可接。
 **下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
@@ -112,6 +117,32 @@ hypot-pow-sqrt-computed +3 嵌套函数 sibling 叶真值）；五套件对 g16 
 3,146 全绿/style-system 2,525+5/engine 3,903 过（10 失败 stash 基线法证
 既有与本批无关）/guarded-clippy 零告警/fmt clean。
 [证据](evidence/2026-11-12-dc2-g19-sibling-bridge.md)
+
+**DC-2 g20 批完成（11-12，random canonical 串化刀 Face 1）**：CSS Values 5
+§9.4.1 Simplification of `<random-key>`——parse 期指定值 canonical 化挂
+`fold_decl_specified` 头部单点接线（native setter 双臂 + bridge replay
+3 站共 5 写面站自动覆盖，engine 侧零改动；custom property 跳过）。
+canonical 机器（values/random.rs）：`parse_key_section` 结构化 key 节
+（fixed 单 token/calc 包裹 lite 求值 [0,1) 无单位门、dashed 至多一最前 ×
+element 至多一 × UA 域至多一组合）+ `canonical_section` 数字节（单 token
+单位归一 ms→s/turn·grad·rad→deg 余原样保往返、多 token calc-sum lite
+求值器——维度×维度/跨单位和差/混除/除零拒）+ `canonical_key_text` 序归一
+（auto/省略展开 `element-scoped ua-<property>-<index>`；
+`property-scoped`→`ua-<property>`、`property-index-scoped`→
+`ua-<property>-<index>` 替换，index = 声明内 random+random-item 1 基序
+canonical 重排前文本序；显式 `--ident`/`element-scoped`/`ua-<ident>` 保留；
+`fixed calc(2 / 4)`→`calc(0.5)` 钉）+ `canonicalize_random_keys` 全值扫描
+（引号状态机含转义/词边界/invalid 不改写/random-item 原样透传仅计
+ordinal）。validate 面经 `parse_random_args` 委派自动获得 calc-sum-lite
+接受面。探针（filter=random 20 页）**136P→175P 恰中 +39 预测零回归**：
+random-serialize 29P/42F→**68P/3F**（A key 展开/替换 28 + B 单位归一 4 +
+C 实参 lite 折叠 3 + E 显式 ua-ident 序归一 4；残 3F color 通道嵌套
+D 桶挂账），余 19 页逐位 ±0。values 全量 **3,072 → 3,111 净 +39 零回归**；
+五套件对 g19 ±0。单测 css-parser 3,152 全绿（random 组 11，新增 6：
+42 形矩阵/不变形/字符串与 item 免疫/ordinal/fixed 门矩阵/fold 入口）/
+style-system 2,525+5/engine 3,903 过（10 失败 g19 基线法证既有）/
+guarded-clippy 零告警/fmt clean。
+[证据](evidence/2026-11-12-dc2-g20-random-canonical.md)
 
 **DC-2 g14 批首账（11-12 早，calc-mix 主刀 6d3e3af16 + layout 漏臂 c1a069a1c
 + minmax 回归修复 0f1c0639d 并行流收口）**：CSS Values 5 `calc-mix()` 全链
