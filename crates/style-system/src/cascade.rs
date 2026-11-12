@@ -914,11 +914,44 @@ fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut
     {
         return true;
     }
+    // CSS Values 5 §9 random()/random-item()：raw 形 apply oracle 拒（求值函数
+    // 未接线 apply）——哨兵上下文播种替换后按替换文本裁决。哨兵 seed 无关
+    // （合法性判定不依赖真值，apply-on-dummy 同口径）；% 叶 fixed-echo 保留形
+    // compute 期求值（写面文法门已验），替换文本仍含保留形 → 放行。
+    // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+    if decl_value_has_random_word(value) {
+        match zero_css_parser::values::substitute_random_values(
+            value,
+            property,
+            &zero_css_parser::values::RandomEvalContext::SENTINEL,
+        ) {
+            // 文法/fail-closed → 无效（与 raw apply 拒同观测）。
+            None => return false,
+            // 有替换 → 按替换文本裁决。
+            Some(std::borrow::Cow::Owned(t)) => {
+                let t = t.trim();
+                if !t.contains("random(fixed ") {
+                    // 全数值替换 → 按替换文本 apply 裁决。
+                    return apply_property_value_with_quirks(dummy, property, t, quirks, false, Some((1, 1)));
+                }
+                // % fixed-echo 保留形 → 放行（compute 期播种求值承担）。
+                return true;
+            }
+            // 无真调用（词假阳——字符串字面/长 ident）→ 原文 apply。
+            Some(std::borrow::Cow::Borrowed(_)) => {}
+        }
+    }
     // 有效性检查（apply-on-dummy）：color-scheme 合法性不依赖 prefers，传 light=false。
     // sibling 哨兵 (1,1)：cascade 合法性与兄弟序无关（winner 字符串缓存兄弟序
     // 无关——真实 apply 在 inheritance 每元素缓存外重跑）；序数敏感的范围门属性
     //（font-weight 100-900 等）存在哨兵假阳局限（在册）。
     apply_property_value_with_quirks(dummy, property, value, quirks, false, Some((1, 1)))
+}
+
+/// 值含 random 函数词（ASCII 大小写不敏感词级粗扫——精确识别在替换器内；
+/// 词假阳无害，替换器按词边界+括号配对甄别）。
+fn decl_value_has_random_word(value: &str) -> bool {
+    value.as_bytes().windows(6).any(|w| w.eq_ignore_ascii_case(b"random"))
 }
 
 /// 是否为 CSS-wide 关键字（合法，但非 apply 直接解析，由 inheritance/compute 处理）。

@@ -651,7 +651,14 @@ impl StyleSystem {
             .iter()
             .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
             .any(|s| stylesheet_has_tree_counting(&s.rules));
+        // g21：random 求值规则页同禁 style_cache（同键兄弟共享 ComputedStyle
+        // 而 seed 含元素标识——§9.4 sharing 毒化；g19 同型）。
+        let random_active = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_random(&s.rules));
         let cache_safe = !tree_counting_active
+            && !random_active
             && stylesheet_cache_safe(stylesheets)
             && shadow_scopes.iter().all(|s| stylesheet_cache_safe(&s.sheets));
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
@@ -774,7 +781,9 @@ impl StyleSystem {
         // g19：树计数规则页禁用 style_cache（同键兄弟序数敏感共享毒化——
         // compute_styles_with_shadow 全量入口同款；CSS Values 5 §tree-counting）。
         let tree_counting_active = stylesheets.iter().any(|s| stylesheet_has_tree_counting(&s.rules));
-        let cache_safe = !tree_counting_active && stylesheet_cache_safe(stylesheets);
+        // g21：random 求值规则页同禁 style_cache（g19 同型——seed 含元素标识）。
+        let random_active = stylesheets.iter().any(|s| stylesheet_has_random(&s.rules));
+        let cache_safe = !tree_counting_active && !random_active && stylesheet_cache_safe(stylesheets);
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
@@ -2686,13 +2695,13 @@ impl StyleSystem {
                         .iter()
                         .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
                         .collect();
-                    for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
+                    for (prop, val, imp, spec) in shorthand::expand_shorthands(&canon_random_inputs(input)) {
                         expanded_with_layer.push((prop, val, imp, spec, None, false, 0));
                     }
                 }
                 for (property, value, important, specificity, layer_index) in &matching {
-                    let input = (property.clone(), value.clone(), *important, *specificity);
-                    let expanded = shorthand::expand_shorthands(&[input]);
+                    let input = vec![(property.clone(), value.clone(), *important, *specificity)];
+                    let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
                         expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 0));
                     }
@@ -2700,8 +2709,8 @@ impl StyleSystem {
                 // 45 号 M1：宿主段声明展开——tree_context=1（shadow 树上下文）。
                 // 仅本元素为 shadow host 且其树有样式表时非空（收集见上方步骤 1）。
                 for (property, value, important, specificity, layer_index) in &host_matching {
-                    let input = (property.clone(), value.clone(), *important, *specificity);
-                    let expanded = shorthand::expand_shorthands(&[input]);
+                    let input = vec![(property.clone(), value.clone(), *important, *specificity)];
+                    let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
                         expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
                     }
@@ -2710,8 +2719,8 @@ impl StyleSystem {
                 // 宿主段；css-cascade-5 §6.1：外树 normal 胜 shadow 段 normal、important
                 // 反转）。仅被分配元素非空（收集见上方步骤 1.2）。
                 for (property, value, important, specificity, layer_index) in &slotted_matching {
-                    let input = (property.clone(), value.clone(), *important, *specificity);
-                    let expanded = shorthand::expand_shorthands(&[input]);
+                    let input = vec![(property.clone(), value.clone(), *important, *specificity)];
+                    let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
                         expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
                     }
@@ -2722,7 +2731,7 @@ impl StyleSystem {
                         .iter()
                         .map(|(p, v, imp)| (p.clone(), v.clone(), *imp, (1, 0, 0)))
                         .collect();
-                    let expanded = shorthand::expand_shorthands(&input);
+                    let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
                         // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
                         //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
@@ -2738,7 +2747,7 @@ impl StyleSystem {
                             (property.clone(), value.clone(), *important, *specificity)
                         })
                         .collect();
-                    shorthand::expand_shorthands(&shorthand_inputs)
+                    shorthand::expand_shorthands(&canon_random_inputs(shorthand_inputs))
                 } else {
                     Vec::new()
                 };
@@ -2864,7 +2873,42 @@ impl StyleSystem {
 
         // 4.6. R2873：var() pending-substitution 第二阶段——把含 var() 的简写（4.5 步已代入）
         // 重新展开为长属性。须在 var() 解析之后、计算继承样式之前。
-        let resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
+        let mut resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
+
+        // 4.7. CSS Values 5 §9：random()/random-item() 播种求值替换（compute 期
+        // 元素视图——doc/element seed 入 cache name，§9.4 sharing；写面 canonical
+        // key 已显式化，var 代入值的 omitted-key 展开由替换器内补，序数与写面
+        // canonicalize 同 1 基合并序）。全数值可解析调用原位改写级联文本（下游
+        // apply 消费数值形，typed 字段照常承载）；% 叶 fixed-echo 保留形存
+        // [`ComputedStyle::random_computed`]（gCS 直读），级联文本保原文（apply
+        // oracle 拒 raw 形 → typed 字段回落继承/初始——保留形仅为 gCS 观察面）。
+        // custom property 值不替换（§9.4 substitution 语义：random 在未注册
+        // 自定义属性内不识别）。
+        // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+        let mut random_computed: HashMap<String, String> = HashMap::new();
+        if resolved_cascaded.values().any(|v| decl_value_has_random(v)) {
+            use slotmap::Key as _;
+            let random_ctx = zero_css_parser::values::RandomEvalContext {
+                doc_seed: std::ptr::from_ref(doc) as u64,
+                element_seed: Some(element.data().as_ffi()),
+            };
+            for (prop, val) in resolved_cascaded.iter_mut() {
+                if prop.starts_with("--") || !decl_value_has_random(val) {
+                    continue;
+                }
+                if let Some(std::borrow::Cow::Owned(sub)) =
+                    zero_css_parser::values::substitute_random_values(val, prop, &random_ctx)
+                {
+                    if decl_value_has_random(&sub) {
+                        // % 叶 fixed-echo 保留形——计算值表承载，级联保原文。
+                        random_computed.insert(prop.clone(), sub.trim().to_string());
+                    } else {
+                        *val = sub;
+                    }
+                }
+                // 无真调用（假阳）/fail-closed（var 实参等）→ 保原文。
+            }
+        }
 
         // 5. 计算继承样式（prefers-color-scheme 参与 color-scheme used-scheme 合成）
         // g19：级联值含 sibling-index()/sibling-count() 形时计算元素兄弟序位置
@@ -2873,7 +2917,7 @@ impl StyleSystem {
         // https://drafts.csswg.org/css-values-5/#tree-counting
         let sibling = cascaded_has_tree_counting(&resolved_cascaded).then(|| sibling_position(doc, element));
         let prefers_dark = matches!(self.prefers_color_scheme, PrefersColorSchemeValue::Dark);
-        let style = inheritance::compute_inherited_style_with_quirks(
+        let mut style = inheritance::compute_inherited_style_with_quirks(
             parent_style,
             &resolved_cascaded,
             cascade_orders,
@@ -2882,6 +2926,9 @@ impl StyleSystem {
             self.document_color_scheme_dark,
             sibling,
         );
+        // g21：random % 叶 fixed-echo 保留形挂表（compute 期承载；非继承，
+        // 每元素独立——gCS 序列化直读，见 4.7 步）。
+        style.random_computed = random_computed;
 
         // 6. 解析计算值（相对单位转换）
         // 提取父元素的计算 font-size，用于子元素 font-size 的 em 解析
@@ -4374,6 +4421,66 @@ fn decl_value_has_tree_counting(value: &str) -> bool {
 /// 兄弟序遍历开销；var() 已代入后检测，覆盖 inline/UA 源）。
 fn cascaded_has_tree_counting(cascaded: &HashMap<String, String>) -> bool {
     cascaded.values().any(|v| decl_value_has_tree_counting(v))
+}
+
+/// 声明值含 random 函数词（`random`/`random-item` 共同前缀，ASCII 大小写
+/// 不敏感词级粗扫——精确调用识别在 css-parser 替换器内部；字符串字面/更长
+/// ident 内命中属无害假阳，替换器按词边界+括号配对甄别）。
+fn decl_value_has_random(value: &str) -> bool {
+    value.as_bytes().windows(6).any(|w| w.eq_ignore_ascii_case(b"random"))
+}
+
+/// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
+/// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
+/// `ua-margin-2` 显式 key），简写拆分后的各 longhand 共享同一显式 key——
+/// top/bottom 同值、left/right 同值（§9.4 sharing 属性分量取自原声明）。
+/// 展开后（longhand 视图）再展开会以 longhand 名分键——margin-top/bottom
+/// 异 seed 语义破（random-computed 语料 shorthand 桶钉面）。非简写声明的
+/// canonical 化与 compute 期 omitted 展开 same-seed（单调用 ordinal 双路同 1），
+/// 预 canonical 化幂等无害。custom property 与无 random 词声明零改动快路径。
+/// <https://drafts.csswg.org/css-values-5/#random-key-simplification>
+fn canon_random_inputs(
+    input: Vec<(String, String, bool, (u32, u32, u32))>,
+) -> Vec<(String, String, bool, (u32, u32, u32))> {
+    input
+        .into_iter()
+        .map(|(prop, val, imp, spec)| {
+            if prop.starts_with("--") || !decl_value_has_random(&val) {
+                return (prop, val, imp, spec);
+            }
+            let canon = zero_css_parser::values::canonicalize_random_keys(&val, &prop).unwrap_or(val);
+            (prop, canon, imp, spec)
+        })
+        .collect()
+}
+
+/// 样式表规则含 random 函数形声明值（g21 compute 期播种求值的门禁
+/// prescan——命中页禁用 style_cache：StyleKey 同键兄弟共享 ComputedStyle，
+/// 而 random seed 含元素标识（§9.4 element-scoped/省略 key sharing），第二
+/// 兄弟复用第一兄弟求值值即毒化。tree-counting prescan 同型）。
+/// <https://drafts.csswg.org/css-values-5/#random-sharing>
+fn stylesheet_has_random(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for decl in &style_rule.declarations {
+                    if decl_value_has_random(&decl.value) {
+                        return true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_random(nested)
+                {
+                    return true;
+                }
+            }
+            // 其余 @规则（@import/@font-face...）不含声明值。
+            _ => {}
+        }
+    }
+    false
 }
 
 /// 元素兄弟序位置（CSS Values 5 §tree-counting）：父元素的子**元素**列表中的

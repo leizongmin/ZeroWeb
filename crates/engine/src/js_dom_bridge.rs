@@ -5942,6 +5942,52 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
             return crate::dom_bindings::anchor_props::anchor_funcs_valid(prop, val);
         }
     }
+    // CSS Values 5 §9 random()/random-item()：raw 形 apply oracle 拒——哨兵
+    // 上下文播种替换后按替换文本裁决（seed 无关支持性判定，cascade
+    // apply-on-dummy 同口径）。% 叶 fixed-echo 保留形判真（文法 valid 由替换
+    // 期 parse 保证；支持性不依赖求值真值）。
+    // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+    if val.as_bytes().windows(6).any(|w| w.eq_ignore_ascii_case(b"random")) {
+        return match zero_css_parser::values::substitute_random_values(
+            val,
+            prop,
+            &zero_css_parser::values::RandomEvalContext::SENTINEL,
+        ) {
+            // 文法 invalid / fail-closed → 不支持。
+            None => false,
+            Some(sub) => match sub {
+                std::borrow::Cow::Owned(t) => {
+                    let t = t.trim();
+                    if t.contains("random(fixed ") {
+                        // % fixed-echo 保留形 → 判真。
+                        zero_style_system::PropertyRegistry::known_properties().contains(&prop)
+                    } else {
+                        zero_style_system::PropertyRegistry::known_properties().contains(&prop)
+                            && zero_style_system::apply_property_value_with_quirks(
+                                style,
+                                prop,
+                                t,
+                                false,
+                                false,
+                                Some((1, 1)),
+                            )
+                    }
+                }
+                // 无真调用（词假阳）→ 原文裁决。
+                std::borrow::Cow::Borrowed(_) => {
+                    zero_style_system::PropertyRegistry::known_properties().contains(&prop)
+                        && zero_style_system::apply_property_value_with_quirks(
+                            style,
+                            prop,
+                            val,
+                            false,
+                            false,
+                            Some((1, 1)),
+                        )
+                }
+            },
+        };
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
         // tree-counting 页 `CSS.supports('z-index', 'calc(2 * sibling-index())')`

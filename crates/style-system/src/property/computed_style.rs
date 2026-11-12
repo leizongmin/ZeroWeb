@@ -712,6 +712,13 @@ pub struct ComputedStyle {
     /// 使用点经 [`resolve_var`](crate::resolve_var) 完整解析）。继承属性：子元素共享父链
     /// Arc（自身声明覆盖时才重建）。供 getComputedStyle `--` 查询暴露（R5114）。
     pub custom_properties: CustomProperties,
+    /// CSS Values 5 §9.3：random() % 叶不可解析（unresolvable percentage）的
+    /// **计算值保留形**——属性 → `random(fixed <R>, ...)` 文本（key 换显式
+    /// fixed）。全数值可解析的 random 调用在 compute 期原位替换进级联文本
+    /// （typed 字段照常承载），仅本表承载 gCS 序列化直读面。非继承；
+    /// 每元素重算（seed 含元素标识，跨元素不同——sharing §9.4 语义）。
+    /// <https://drafts.csswg.org/css-values-5/#random-evaluating>
+    pub random_computed: std::collections::HashMap<String, String>,
 }
 
 /// 自定义属性共享表（不可变；父子链经 `Arc` 共享避免逐元素克隆）。

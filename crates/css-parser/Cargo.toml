@@ -9,6 +9,8 @@ license.workspace = true
 thiserror = { workspace = true }
 compact_str = { workspace = true }
 serde = { workspace = true }
+# random() 播种求值（CSS Values 5 §9.4 random cache name → PRNG base value）
+sha2 = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

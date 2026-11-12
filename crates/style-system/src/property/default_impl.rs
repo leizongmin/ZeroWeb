@@ -12,6 +12,8 @@ impl Default for ComputedStyle {
         Self {
             // R5114：自定义属性共享表（css-variables-1；缺省空静态实例）。
             custom_properties: ComputedStyle::empty_custom_properties(),
+            // CSS Values 5 §9.3 random % 叶保留形（计算值表；缺省空）。
+            random_computed: std::collections::HashMap::new(),
             // 盒模型
             display: DisplayValue::Inline,
             position: PositionValue::Static,

@@ -47,6 +47,23 @@ fn test_inline_style_color() {
     );
 }
 
+/// g21（CSS Values 5 §9.5）：inline random-item() 求值替换——选中 item 整体
+/// 替换后走常规 apply（fixed 0 → 首项）。random-item-computed 语料 color 槽
+/// 形（browser 面黑值回归的管线内最小重现）。
+#[test]
+fn test_inline_style_random_item_color() {
+    let (doc, div) =
+        make_doc_with_inline_style("color: random-item(fixed 0, rgb(1, 0, 0), rgb(0, 1, 0), rgb(0, 0, 1))");
+    let stylesheets = CssParser::parse_stylesheet("");
+    let mut sys = StyleSystem::new();
+    let style = sys.compute_element_style(&doc, div, &[], None);
+    assert_eq!(
+        style.color,
+        ColorValue::Rgba(1, 0, 0, 255),
+        "random-item fixed 0 → 首项"
+    );
+}
+
 #[test]
 fn test_inline_style_font_size() {
     let (doc, div) = make_doc_with_inline_style("font-size: 18px");

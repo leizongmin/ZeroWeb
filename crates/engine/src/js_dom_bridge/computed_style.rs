@@ -346,6 +346,13 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         });
     }
     let p = raw_name.to_ascii_lowercase();
+    // CSS Values 5 §9.3：random() % 叶不可解析的计算值保留形（`random(fixed
+    // <R>, ...)`）直读——typed 字段未承载（compute 期 apply oracle 拒 raw 形），
+    // 本表是唯一观察面。每元素独立（seed 含元素标识）。
+    // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+    if let Some(echo) = style.random_computed.get(&p) {
+        return echo.clone();
+    }
     // 元素自身计算 color，作 currentColor 解析上下文（color 属性本身则 currentColor→自解析）。
     let element_color = &style.color;
     // 元素 font-size（resolve 阶段已为 Px）供长度族兜底解析残余相对单位（em/rem/vw 等）。

@@ -10,6 +10,7 @@ zero-css-parser = { workspace = true }
 zero-dom = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+slotmap = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
