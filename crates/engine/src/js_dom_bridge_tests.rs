@@ -169,3 +169,7 @@ include!("js_dom_bridge_tests/part111_s421_pending_handle_rect.rs");
 // （object-constraint-validation 1F 根因——setCustomValidity 后 checkValidity
 // 恒应 true，candidacy 门缺失 customError 落穿）。
 include!("js_dom_bridge_tests/part112_s422_object_constraint_validation.rs");
+
+// 编辑命令兼容 Form A 小刀：splitText 头截断欠发射面双向钉测（D2 v1 形复现，
+// 红=欠发射复发按流归因 / 绿=已被 B1/D1/E1 吸收转常驻正期望）。
+include!("js_dom_bridge_tests/part111_form_a_splittrim_probe.rs");
