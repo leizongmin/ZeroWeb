@@ -1096,7 +1096,34 @@
       }
     }
     var i;
-    if (_zwVaIsAllowedChild(node, 'span')) {
+    // DC-2 ③（2026-11-13 d8 批）：阻断载体资格两轴——bcEligVa 入尾部下潜臂
+    //（face 保留 + 内容侧内裹）；bcSkipWrapVa 额外跳过入口 allowed-child
+    // 外裹臂。d8 批扩列（cite/dfn/var，仅 newValue 'normal' 关值面）必须跳
+    // 外裹：关值无 tag 臂，外裹落裸 span 且独占 unwrap 子臂 pfFaceBC 恒 null
+    // 不摘（data/italic.js:218-235 `foo{<cite>bar</cite>}baz` 双 flag 录形 =
+    // face 保留 + 内嵌 span font-style:normal，外裹裸 span 非录形）；d7
+    // 集合（类/身份壳 + 命令 tag face）维持 d7 既有外裹-下潜-unwrap 时序
+    //（face 对跑实证跳外裹逆录形：notbold ADD 面 ③ 内裹 b 被 ⑦ 吸收臂跨
+    // 载体并吞拆组，`[foo<span class=notbold>bar</span>baz]` =
+    // `<b>foo</b><b><span class=notbold>bar</span>baz</b>` 误形 6 断言 P2F，
+    // 见 zz-probe-d8trace 复现档）。扩面仅限关值：ADD 面 cite/dfn/var 无
+    // 独立录形（bold.js 零 cite 用例、italic.js:435-452 ON 跨 cite = range
+    // 外裹形），维持外裹 + 冗余壳 normalize 既有绿面。
+    var tgBcVa = node.nodeType === 1 ? _zwJusTag(node) : null;
+    var bcNewVa = newValue === 'normal'
+      && (tgBcVa === 'cite' || tgBcVa === 'dfn' || tgBcVa === 'var');
+    var bcEligVa = (command === 'bold' || command === 'italic')
+      && node.nodeType === 1
+      && _zwVaIsAllowedChild(node, 'span')
+      && _zwVaSpecifiedValue(node, command) === null
+      && !_zwVaIsSimpleModifiable(node)
+      && node.hasAttribute
+      && (node.hasAttribute('class') || node.hasAttribute('id')
+          || ['i', 'em', 'b', 'strong', 's', 'strike', 'u', 'sub', 'sup',
+              'font', 'a'].indexOf(tgBcVa) !== -1
+          || bcNewVa);
+    var bcSkipWrapVa = bcEligVa && bcNewVa;
+    if (_zwVaIsAllowedChild(node, 'span') && !bcSkipWrapVa) {
       var sibCrit = function (n) {
         // DC-2 P2（2026-11-11）Chrome delta：css flag true 下 wrap 不并入 tag
         // 形兄弟——`<b>foo</b>[bar]<b>baz</b>` swcss(true) 录形 = 三段并列
@@ -1489,11 +1516,12 @@
         }
       }
     }
-    // DC-2 ③（2026-11-12 wptfyi-editing bold 值面批）：bold/italic 阻断载体
-    // 递归臂 + 独占载体外层壳 unwrap（bold.js:858-885 notbold 簇 + abc<i>
-    // 录形直译）。contained 非简单可改性元素且无本命令 specified（类/身份壳、
-    // 他命令 tag face）不被外裹——forceValue 下潜内容侧，载体原位保留
-    //（`[foo<span class=notbold>bar</span>baz]` css-false =
+    // DC-2 ③（2026-11-12 wptfyi-editing bold 值面批；d8 批资格判定前置至
+    // 入口外裹臂前——bcEligVa 同面含 d8 cite/dfn/var 关值扩列，注释见入口）：
+    // bold/italic 阻断载体递归臂 + 独占载体外层壳 unwrap（bold.js:858-885
+    // notbold 簇 + abc<i> 录形直译）。contained 非简单可改性元素且无本命令
+    // specified（类/身份壳、他命令 tag face）不被外裹——forceValue 下潜内容
+    // 侧，载体原位保留（`[foo<span class=notbold>bar</span>baz]` css-false =
     // `<b>foo<span class="notbold"><b>bar</b></span>baz</b>`、
     // `abc<i>[def]</i>ghi` = `abc<i><b>def</b></i>ghi`）。裸 span（零属性、
     // 无他命令面）不入本门（语料无录形，保 vendored 外裹形）；数值壳
@@ -1503,16 +1531,7 @@
     // </b>` 递归内裹后外层 b 仅含单个阻断载体 → 外层壳摘除、载体升位
     //（`<span class="notbold"><b>[foo]</b></span>`；css-true 外层 span decl
     // 壳同判）。多子外层（D15 外层 b 含 foo+载体+baz）不入本门。
-    if ((command === 'bold' || command === 'italic')
-        && node.nodeType === 1
-        && _zwVaIsAllowedChild(node, 'span')
-        && _zwVaSpecifiedValue(node, command) === null
-        && !_zwVaIsSimpleModifiable(node)
-        && (node.hasAttribute
-            && (node.hasAttribute('class') || node.hasAttribute('id')
-                || ['i', 'em', 'b', 'strong', 's', 'strike', 'u', 'sub',
-                    'sup', 'font', 'a']
-                  .indexOf(_zwJusTag(node)) !== -1))) {
+    if (bcEligVa) {
       var kidsBC = [];
       for (i = 0; i < node.childNodes.length; i++) {
         kidsBC.push(node.childNodes[i]);
@@ -2215,6 +2234,44 @@
           var spanBn = _zwJusSetTagName(cw, 'span');
           _zwVaSetStyleProp(spanBn, 'font-weight', 'bold');
           _zwVaPeelCarry[i] = spanBn;
+        }
+        continue;
+      }
+      // DC-2 ⑥（2026-11-13 d8 批）：italic toggle-off peel 幸存壳重物化——
+      // bold ⑥ 之 italic 镜像。css-false 且壳 decl ≡italic 转 i 剥 decl
+      //（data/italic.js:655-657 首侧幸存壳 `<span style="font-style:italic">
+      // fo[o</span>…` = `<i>fo</i>[ob]<span style="font-style:oblique">ar
+      // </span>`、:665-667 尾侧幸存壳 `<span style="font-style:italic">b]ar
+      // </span>` = `<i>ar</i>`；oblique 非等值自然排除——equivalentValues
+      // italic 恒字符串等值无数值面，:652/:662 css-true decl 壳保形不入转
+      // 形）；css-true tag face 残料 span 化（:585-589 `foo[<i>b]ar</i>baz`
+      // = `foo[b]<span style="font-style:italic">ar</span>baz`、:595-599
+      // `foo<i>ba[r</i>]baz` = `foo<span style="font-style:italic">ba</span>
+      // [r]baz`、:294-297 中段双壳同形——首/尾/中段载体皆换形；css-false
+      // 切分幸存 i 保 tag 既有绿面 :590-594/:600-604/:299-302）。em 无录形
+      // 保守保原形。
+      if (command === 'italic' && newValue === 'normal') {
+        var fsI0 = '';
+        try { fsI0 = _zwPlainDecl(cw, 'font-style') || ''; } catch (_eIs0) { fsI0 = ''; }
+        if (!cssFlag && fsI0
+            && _zwVaEquivalentValues('italic', String(fsI0).trim().toLowerCase(),
+              'italic')) {
+          var iI0 = _zwJusSetTagName(cw, 'i');
+          _zwVaSetStyleProp(iI0, 'font-style', '');
+          try {
+            var atI0 = iI0.getAttribute('style');
+            if (atI0 !== null && String(atI0).trim() === '') {
+              iI0.removeAttribute('style');
+            }
+          } catch (_eIs1) {}
+          _zwVaPeelCarry[i] = iI0;
+        }
+        if (cssFlag && !fsI0 && _zwJusTag(cw) === 'i') {
+          // 换形替换式（bold ⑥ 同款）——回写 carry 槽位，下游 hoist 门须
+          // 读到在树壳（css-true 录形实证）。
+          var spanIt0 = _zwJusSetTagName(cw, 'span');
+          _zwVaSetStyleProp(spanIt0, 'font-style', 'italic');
+          _zwVaPeelCarry[i] = spanIt0;
         }
         continue;
       }
