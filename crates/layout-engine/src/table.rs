@@ -3350,11 +3350,28 @@ fn position_cells(
                 // valign 失效；且 abspos 静态位 = valign 后的内容流原点（chromium 空内容
                 // cell middle 居中 +50 → 绿块恰盖红；position-absolute-dynamic-static-
                 // position-table-cell 实证：ZW 旧静态位滞留 cell 顶，translate 后露红）。
+                // R5509（CSS2 §17.5.3 valign × §9.2.1.1 匿名块拆分）：r109 拆分载体
+                // （inline 含 block 子）的自身盒高在表格 pass 时点仍是 taffy 片段叶的
+                // 陈旧值（首片段行高）；全范围要等 engine 步骤 12/12.1（compute_final
+                // + R109 backfill）才回填。valign 按盒高求和会漏计后续片段
+                //（block-in-inline-001：载体 18 vs 真范围 54 → 假 available=36 →
+                // middle dy=18 内容下移露 td 底色，参照格随后被增长 delta 推下 18）。
+                // 片段子盒相对几何在 taffy 转换时已正确，流范围 max(y+h) 即真值。
+                let kid_flow_height = |c: &LayoutBox| -> f32 {
+                    let extent = if c.is_r109_split {
+                        c.children
+                            .iter()
+                            .fold(c.height, |acc, g| acc.max(g.y + g.height + g.margin_bottom))
+                    } else {
+                        c.height
+                    };
+                    extent + c.margin_top + c.margin_bottom
+                };
                 let content_height: f32 = cell_box
                     .children
                     .iter()
                     .filter(|c| !c.is_absolute && !c.is_fixed)
-                    .map(|c| c.height + c.margin_top + c.margin_bottom)
+                    .map(kid_flow_height)
                     .sum();
                 // 子元素 y 是相对单元格 content box 度量的，故可用对齐空间应基于
                 // content_height（content 区高）而非 height（border-box 高）。

@@ -1075,3 +1075,6 @@ mod r5507_min_kw_content_floor_tests;
 /// R5508（css-sizing-3 §5.2）：裸 fit-content（min/max-width）fit-content 公式
 /// 语义——stretch-fit 地板 + 写入臂保留 size.width 六锚。
 mod r5508_fit_content_avail_floor_tests;
+
+/// R5509（CSS2 §17.5.3 × §9.2.1.1）：block-in-inline 双格表 valign 载体流范围回归锚。
+mod r5509_bii_valign_carrier_tests;
