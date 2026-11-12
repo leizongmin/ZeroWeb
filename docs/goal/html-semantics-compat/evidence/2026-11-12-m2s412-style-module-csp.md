@@ -50,7 +50,7 @@ spec 锚：declarative CSS modules 提案（MSEdgeExplainers/ShadowDOM explainer
 
 ## 残差与边界
 
-- **簇 2 import 面单列候选**：module map + `import ... with { type: "css" }` + `document.adoptedStyleSheets` 应用闭环 + fixed-at-parse-time 语义（basic-import/fixed 2 file-T + 3 allowed 文件 6 NotRun）。底座（adoptedStyleSheets 汇总下发、CSSStyleSheet shim）已存在，缺 module map 注册与绑定——勘根成本中等，s413 候选首位。
+- **簇 2 import 面单列候选**：module map + `import ... with { type: "css" }` + `document.adoptedStyleSheets` 应用闭环 + fixed-at-parse-time 语义（basic-import/fixed 2 file-T + 3 allowed 文件 6 NotRun）。底座已存在且**比预期更厚**——s249 fetch-backed CSS module 动态 import 全链在库（`import('./x.css', {with:{type:'css'}})` → `script_source_fetcher` 带 `__zw_mtype=css` 标记取回 → shim CSSOM → CSSStyleSheet default 导出，webview.rs s249 钉；标记拼接 :8915 / literal 合成消费 :9013）+ adoptedStyleSheets 汇总下发（computed_style_cache.rs）。**真缺口 = 声明式 style module 的 parse 期 map 注册**（specifier→inline css 内容，first-wins）+ **静态 import 与动态 import 命中 map 免 fetch**（现 `import "foo"` 落 fetch 路径 404/挂 → module script 不完成 → allowed 案 `.done()` 不达、basic-import/fixed loaded:false）；fixed-at-parse-time（specifier/内容/移除改写不回写 map）+ CSP-blocked module 不注册面勘根。注册播种点自然位 = gate_inline_styles 已有的 is_module 迭代（本切片 `StyleElementCsp.is_module` 钉位）。s413 候选首位，勘根成本中等偏低。
 - **error 面仅 module**：普通 blocked style 派 violation 不派 error（提案语义）；若未来 HTML spec 正文化声明式 module，门面（`is_module` 判定）与派发面（`style_error`）两处同步。
 - 双臂 sha256 口径：script 臂 hash 源为 raw 内容（含缘空白）——与 inline script 检查同口径；style 臂维持既有 trim 后 hash 面。
 - css-parser random.rs unused-variable clippy 红承渲染流台账（本切片 strict 跑唯一 red，-A 单列复验）。
