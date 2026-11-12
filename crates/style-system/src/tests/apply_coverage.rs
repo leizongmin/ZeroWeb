@@ -1562,3 +1562,27 @@ fn test_apply_image_rendering_variants() {
         assert!(ok, "image-rendering: {} should apply", v);
     }
 }
+
+// === viewport 单位 gate 回归（g24）===
+//
+// css-values-4 §viewport-relative-lengths：plain vw/vh/vmin/vmax 直解为基类变体，
+// sv*/lv*/dv*/vb/vi 为 provenance 变体——接受面 gate 两者都必须放行。
+// 回归：45839398c 曾把 gap/padding gate 的基类臂替换成 20 个 provenance 变体，
+// `padding-top: 10vw` 被拒 → gCS 回落 0px（viewport-units-css2-001 4F）。
+#[test]
+fn test_apply_viewport_unit_gates() {
+    let units = [
+        "vw", "vh", "vmin", "vmax", "svh", "svw", "lvh", "lvw", "dvh", "dvw", "vb", "vi",
+    ];
+    for u in units {
+        let (ok, style) = apply("padding-top", &format!("10{}", u));
+        assert!(ok, "padding-top: 10{} should apply", u);
+        let (ok2, style2) = apply("gap", &format!("10{}", u));
+        assert!(ok2, "gap: 10{} should apply", u);
+        // 负值仍拒（gate 的 is_finite && >= 0 语义不变）
+        let mut neg = style.clone();
+        assert!(!apply_property_value(&mut neg, "padding-top", &format!("-10{}", u)));
+        let mut neg2 = style2.clone();
+        assert!(!apply_property_value(&mut neg2, "gap", &format!("-10{}", u)));
+    }
+}

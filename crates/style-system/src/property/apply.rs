@@ -1389,7 +1389,12 @@ fn gap_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Cap(v)
         | LengthValue::Rcap(v)
         | LengthValue::Rem(v)
-        // g24：viewport 单位族 provenance 变体，接受面等价（此前 parse 期塌缩基类单位）。
+        // g24：viewport 单位族 provenance 变体，接受面等价（此前 parse 期塌缩新增
+        // 20 形为基类单位——基类 vw/vh/vmin/vmax 自身仍直解为本变体，两者并 accept）。
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
         | LengthValue::Svh(v)
         | LengthValue::Svw(v)
         | LengthValue::Svmin(v)
@@ -1525,7 +1530,12 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Cap(v)
         | LengthValue::Rcap(v)
         | LengthValue::Rem(v)
-        // g24：viewport 单位族 provenance 变体，接受面等价（此前 parse 期塌缩基类单位）。
+        // g24：viewport 单位族 provenance 变体，接受面等价（此前 parse 期塌缩新增
+        // 20 形为基类单位——基类 vw/vh/vmin/vmax 自身仍直解为本变体，两者并 accept）。
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
         | LengthValue::Svh(v)
         | LengthValue::Svw(v)
         | LengthValue::Svmin(v)
