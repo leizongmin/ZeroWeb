@@ -9111,13 +9111,28 @@
                 }
               }
               if (_rdIdx < 0 && typeof child.__zwChildIndex === 'number') _rdIdx = child.__zwChildIndex;
-              if (_rdIdx < 0) {
-                try {
-                  var _rdKids = _childNodeList(sel, handle);
-                  for (var _rdKi = 0; _rdKi < _rdKids.length; _rdKi++) {
-                    if (_rdKids[_rdKi] === child) { _rdIdx = _rdKi; break; }
-                  }
-                } catch (_eRdK) {}
+              // E1（2026-11-13 嵌套簇刀）：融合视图列表一次物化，兜底/终验/兄弟 record
+              // 三消费共用（原兄弟块二次物化，净调用数不增）。兜底口径同 R5340 臂——
+              // 融合序每步移除后现算＝apply 时该子落位。
+              var _rdFused = null;
+              try { _rdFused = _childNodeList(sel, handle); } catch (_eRdV) {}
+              if (_rdIdx < 0 && _rdFused) {
+                for (var _rdKi = 0; _rdKi < _rdFused.length; _rdKi++) {
+                  if (_rdFused[_rdKi] === child) { _rdIdx = _rdKi; break; }
+                }
+              }
+              // 终验（身份校验）：戳是**物化时父内**索引——跨父移动（溶壳摘子）后属旧
+              // 父序；基缓存 identity 命中也可能带过期序，同批先行裸 AdjacentText 插入
+              // 无 handle 不进 _zwBaseIdxShiftForAdded 平移。nested_cross_b 实证双错：
+              // 溶壳后 'bar' 戳 0 → RemoveChildAt(#ce,0) 打到 'fo'（host 文本丢失、
+              // JS/host 双视图分裂）；'b' 基路径 idx1 打到 b2 壳。校验=计算位在融合
+              // 视图仍是本子，失配且线性可定位才改写（旁路视图融合 miss 保旧行为）。
+              if (_rdIdx >= 0 && _rdFused && _rdFused[_rdIdx] !== child) {
+                var _rdVi = -1;
+                for (var _rdV = 0; _rdV < _rdFused.length; _rdV++) {
+                  if (_rdFused[_rdV] === child) { _rdVi = _rdV; break; }
+                }
+                if (_rdVi >= 0) _rdIdx = _rdVi;
               }
               if (_rdIdx >= 0 && typeof __zw_remove_child_at === 'function') {
                 try { __zw_remove_child_at(sel, String(_rdIdx)); } catch (_eRdH) {}
@@ -9128,10 +9143,11 @@
               }
               // R262 同款：live-range 边界迁移先于任何树状态变化（pre-remove 末段）。
               try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eRdR) {}
-              // R294/R188 同款：record sibling 字段读融合视图，先于断链。
+              // R294/R188 同款：record sibling 字段读融合视图，先于断链（E1 复用上方
+              // 物化列表——同一同步块内融合态未变）。
               var _rdPv = null, _rdNx = null;
               try {
-                var _rdSib = _childNodeList(sel, handle);
+                var _rdSib = _rdFused || _childNodeList(sel, handle);
                 var _rdSi = _rdSib.indexOf(child);
                 if (_rdSi >= 0) {
                   _rdPv = _rdSi > 0 ? _rdSib[_rdSi - 1] : null;
@@ -9767,7 +9783,10 @@
             // 文本从 host 永久抹掉。修复：AdjacentText 按 ref 锚位物化（host 时序 =
             // 文本落壳前 → 摘壳 → 语义等价 pre-insert 到壳原位）；簿记镜像 R334
             //（_zwSelPendingParent 链 + childList record——pending 桶 overlay 承载
-            // 融合视图，base 兄弟不受扰）。判别「同父恢复」（removeChild tombstone
+            // 融合视图，base 兄弟不受扰）。JS 视图 parentNode 链接（_zwForceParentLink，
+            // t8i/R212 臂同款）缺一不可：兄弟 getter 经 node.parentNode 动态求值，
+            // 缺链则移动文本 next/previousSibling 恒 null，vendored 兄弟行走
+            //（_zwJusNextNode，editing contained 集）在移动文本处截断。判别「同父恢复」（removeChild tombstone
             // `__zwUnregFromSel` === 目标父 sel → 让位 R87 重注册路径）与「跨父移动」
             //（tombstone 存在且不等 → 本臂）。**tombstone 必须存在**：从未注册的新鲜
             // 文本（undefined）不走本臂——语料常规 insertBefore 文本插入高频落旧径，
@@ -9790,6 +9809,13 @@
                 for (var _txtMvi = 0; _txtMvi < _txtMvKids.length; _txtMvi++) {
                   if (_txtMvKids[_txtMvi] === refNode) { _txtMvPrev = _txtMvi > 0 ? _txtMvKids[_txtMvi - 1] : null; break; }
                 }
+                // D1：重挂 parentNode（t8i/R218 臂 _zwForceParentLink 同款）——
+                // 仅有 pending 槽时兄弟 getter 仍恒 null。
+                try {
+                  if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                    _zwForceParentLink(newNode, _makeProxy(sel, handle));
+                  }
+                } catch (_eTxtMvpl) {}
                 newNode._zwSelPendingParent = { parentSel: sel, nextSibling: refNode || null, prevSibling: _txtMvPrev || null };
                 _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _txtMvPrev, nextSibling: refNode || null });
                 if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
@@ -10270,6 +10296,12 @@
                   try {
                     var _txtApKids = _childNodeList(sel, handle);
                     var _txtApPrev = _txtApKids.length ? _txtApKids[_txtApKids.length - 1] : null;
+                    // D1：重挂 parentNode（上方带位臂同款，注释见彼处）。
+                    try {
+                      if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                        _zwForceParentLink(newNode, _makeProxy(sel, handle));
+                      }
+                    } catch (_eTxtAppl) {}
                     newNode._zwSelPendingParent = { parentSel: sel, nextSibling: null, prevSibling: _txtApPrev || null };
                     _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _txtApPrev, nextSibling: null });
                     if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {

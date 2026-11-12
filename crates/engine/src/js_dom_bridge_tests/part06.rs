@@ -1888,10 +1888,10 @@ document.execCommand("bold", false, "");
             doc.inner_html(host),
         );
     }
-    // ①b：嵌套标签宿主的 bold（跨既有 <b> 切分）迁出至独立 #[ignore] 测试
+    // ①b：嵌套标签宿主的 bold（跨既有 <b> 切分）迁出至独立测试
     // `test_execcommand_format_apply_nested_cross_b_r3254_m3`——apply 面嵌套簇
-    // （陈旧 __zwChildIndex 戳 + vendored 流 wrap 缺发射 + 跨命令 override 泄漏）
-    // 待独立根因刀，见该测试注记与控制面挂账。
+    // 已解钉（B1 壳插契约 2026-11-12 + E1 移除侧坐标终验 2026-11-13，期望钉
+    // 按 bold.js 同形实录校正为 flat 合并），见该测试注记。
     // ②：collapsed caret bold → 不变更（无选区不包裹）。vendored 契约同步：计数
     // 对象从 SetInnerHtml 改为 mutation 总数（granular 流无 SetInnerHtml 可数）。
     let n_before_collapse = mutations.lock().unwrap().len();
@@ -1977,17 +1977,18 @@ document.execCommand("forwarddelete", false, "");
 }
 
 #[test]
-#[ignore = "嵌套簇 scene A 算法级缺口独立刀（B1 发射面已由 2026-11-12 根因刀修复）：\
-foo<b>bar</b>baz 选 'obar'（end 入 baz[1] 跨边界）——plumbing 面已通：\
-① __zwChildIndex 陈旧戳已修（_write 融合视图现算 identity/戳校验/data 回退，\
-SetChildText 命中漂移后真位）；② bare 文本 ref 壳插已发射（InsertChildAt 契约，\
-r7 探针 scene A JS 视图与 replay 已双侧一致 fo<b>o</b>barbaz）。\
-剩余缺口为 vendored contained 集算法面：本 range 形态二次 re-wrap（旧 <b> 溶解后\
-'b'+右侧切片的重包裹）从未发生——期望 fo<b>o<b>b</b>ar</b>baz 需 wrap 算法补\
-re-wrap 步，非 plumbing 缺陷。旧注记的 ③ override 泄漏归因经 r7 定谳为 B1 静默\
-穿透的状态表象（italic_after_prior_cmd 同族已解钉）。\
-算法刀落地后解除 ignore 并钉净效果期望。"]
 fn test_execcommand_format_apply_nested_cross_b_r3254_m3() {
+    // 嵌套簇 scene A 解钉（2026-11-13 算法刀定谳）：foo<b>bar</b>baz 选 'obar'
+    // （end 入 baz[1] 跨边界）+ bold。旧 #[ignore] 注记的「vendored contained
+    // 集二次 re-wrap 缺口（期望 fo<b>o<b>b</b>ar</b>baz）」系 spec 推演误读——
+    // WPT 语料 bold.js 记录同形 `fo[o<b>bar</b>b]az` styleWithCSS=false 变体
+    // Chrome 实录为 **flat 合并** `fo<b>[obarb]</b>az`（完全含于选区的旧 <b>
+    // 溶解、选区内全部文本并入单个新 <b>，无嵌套重包裹）。前置已由三笔闭合：
+    // ① B1 根因刀（2026-11-12）——bare 文本 ref 壳插 InsertChildAt 契约 +
+    // apply 坐标平移；② D1——跨父移动文本的 JS 视图 parentNode 链接（缺链则
+    // _zwJusNextNode 兄弟行走截断，contained 集丢 'bar'/'b'，只剩 fo<b>o</b>
+    // barbaz）；③ E1（本刀）——slice24 RemoveChildAt 指数终验（'bar' 戳 0
+    // 打到 'fo'、'b' 基路径 idx1 打到新壳，host 文本丢失 JS/host 分裂）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -2026,8 +2027,8 @@ document.execCommand("bold", false, "");
         let host = find_by_selector(&doc, "#ce").expect("ce must resolve");
         assert_eq!(
             doc.inner_html(host),
-            "fo<b>o<b>b</b>ar</b>baz",
-            "嵌套宿主 bold 净效果须产出结构合法的包裹 HTML（跨既有 <b> 切分——合并 defer），实际: {}",
+            "fo<b>obarb</b>az",
+            "嵌套宿主 bold 净效果须等于 Chrome 实录 flat 合并（旧 <b> 溶解 + 选区文本并入单个新 <b>，语料 bold.js fo[o<b>bar</b>b]az 同形），实际: {}",
             doc.inner_html(host),
         );
     }
@@ -2093,8 +2094,8 @@ fn test_execcommand_format_apply_doc_end_selection_r3254_m3() {
     // 时 _zwValGetAllEffectivelyContained 走查不得空转——旧判 `while (node &&
     // isBefore(node, stop))` 对 stop=null 恒假 → contained 集空 → 六 format 命令
     // 落 override-only 臂（qS 翻转、DOM 零变更）。宿主用 JS createElement 建
-    // （handle 章完整，隔离嵌套簇 D1 解析宿主物化身份分裂面——该面仍 #[ignore]
-    // 于 nested_cross_b / italic_after_prior_cmd 两案），append 后其文本即文档
+    // （handle 章完整；嵌套簇两案 nested_cross_b / italic_after_prior_cmd 已解
+    // 钉，解析宿主 wrap 流达 replay 断言），append 后其文本即文档
     // 末节点，复现 stop=null 形；净效果 replay 断言同 ① 口径。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
