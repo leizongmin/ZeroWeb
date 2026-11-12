@@ -247,6 +247,8 @@ fn replace_children_with_clones_of(doc: &mut Document, option: crate::node::Node
 
 /// 「clear a selectedcontent」解析面：清空全部子节点并断开父链。
 fn clear_children(doc: &mut Document, sc: crate::node::NodeId) {
+    // children 结构变化 → 位置索引全清（失效契约见 mod.rs invalidate_query_pos_index）。
+    doc.invalidate_query_pos_index();
     let old = match doc.get_mut(sc) {
         Some(nd) => std::mem::take(&mut nd.children),
         None => return,

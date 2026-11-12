@@ -52,6 +52,12 @@ impl Document {
             modal_dialogs: self.modal_dialogs.clone(),
             active_element: self.active_element,
             filtered_options: self.filtered_options.clone(),
+            // 缓存面复位（位置索引/selector 解析缓存不携带——快照=解析初态，
+            // 树相同则首次查询重算即得同表，携带反而绑死快照刻的派生态）。
+            // hashbrown 版（allocator_api2 全局分配器形态，与字段类型一致）。
+            query_pos_index: std::cell::RefCell::new(hashbrown::HashMap::new()),
+            selector_chain_cache: std::cell::RefCell::new(hashbrown::HashMap::new()),
+            simple_selector_cache: std::cell::RefCell::new(hashbrown::HashMap::new()),
         }
     }
 }
