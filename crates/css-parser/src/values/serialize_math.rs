@@ -536,7 +536,7 @@ fn scalar_value(expr: &CalcExpr) -> Option<f64> {
 /// 折叠内文（无 calc 包裹）：有限 → `<n>`/`<n><unit>`；NaN/±∞ →
 /// `NaN|±infinity * 1<unit>`（§10.6 canonical，`calc(NaN * 1px)` 语料形态）；
 /// 无维度叶裸形态（number 位 `calc(NaN)`）。
-fn format_dimension_inner(value: f64, suffix: Option<&str>) -> String {
+pub(crate) fn format_dimension_inner(value: f64, suffix: Option<&str>) -> String {
     match (value.is_finite(), suffix) {
         (true, Some(s)) => format!("{}{}", format_number_6dp(value), s),
         (true, None) | (false, None) => format_number_6dp(value),
@@ -635,6 +635,18 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
     let v = value.trim();
     if v.is_empty() {
         return None;
+    }
+    // CSS Values 5 §9.4.1：random() key parse 期 canonical 化（auto/省略展开
+    // + `ua-` ident 替换 + 序归一 + 实参节单位归一/lite 折叠）。置于属性分派
+    // 之前——random-serialize 语料跨白名单槽（height/font-size）与白名单槽
+    //（width/rotate/time 族）同刀；custom property 值 random 不识别（§9.4
+    // substitution 语义）跳过。消费方（写面四站：native CSD 双臂 + mutation
+    // replay 三站）共享本入口。
+    // https://drafts.csswg.org/css-values-5/#random-key-simplification
+    if !prop.starts_with("--") {
+        if let Some(c) = super::random::canonicalize_random_keys(v, prop) {
+            return Some(c);
+        }
     }
     match prop {
         "transform" => fold_transform_math_specified(v),

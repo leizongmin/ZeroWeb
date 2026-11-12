@@ -149,3 +149,192 @@ fn test_random_family_allowed_by_property() {
     assert!(random_family_allowed("transform", RandomFamily::Angle));
     assert!(random_family_allowed("max-lines", RandomFamily::Number));
 }
+
+// ---- §9.4.1 <random-key> parse 期 canonical 化（random-serialize 页 42F
+// 分桶钉面：A key 展开/替换 28、B 单位归一 4、C 实参 lite 折叠 3、E 显式
+// ua-ident 序归一 4；D color 通道嵌套挂账不在此刀）----
+
+#[test]
+fn test_random_canonicalize_key_expansion_and_reorder() {
+    // auto/省略 key → element-scoped ua-<prop>-<index> 展开（A 桶）。
+    assert_eq!(
+        canonicalize_random_keys("random(0px, 100px)", "width").as_deref(),
+        Some("random(element-scoped ua-width-1, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(auto, 0px, 100px)", "height").as_deref(),
+        Some("random(element-scoped ua-height-1, 0px, 100px)")
+    );
+    // property-scoped/index-scoped → ua-<prop>[-<index>] 替换（关键字摘除）。
+    assert_eq!(
+        canonicalize_random_keys("random(property-scoped, 0px, 100px)", "font-size").as_deref(),
+        Some("random(ua-font-size, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(property-index-scoped, 0px, 100px)", "width").as_deref(),
+        Some("random(ua-width-1, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo property-index-scoped, 0px, 100px)", "width").as_deref(),
+        Some("random(--foo ua-width-1, 0px, 100px)")
+    );
+    // element 域 × UA 域任意序 → 序归一 [--ident] element-scoped ua-ident。
+    assert_eq!(
+        canonicalize_random_keys("random(element-scoped property-scoped, 0px, 100px)", "width").as_deref(),
+        Some("random(element-scoped ua-width, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(property-scoped element-scoped, 0px, 100px)", "height").as_deref(),
+        Some("random(element-scoped ua-height, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo property-scoped element-scoped, 0px, 100px)", "height").as_deref(),
+        Some("random(--foo element-scoped ua-height, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(property-index-scoped element-scoped , 0px, 100px)", "width").as_deref(),
+        Some("random(element-scoped ua-width-1, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys(
+            "random(--foo property-index-scoped element-scoped , 0px, 100px)",
+            "width"
+        )
+        .as_deref(),
+        Some("random(--foo element-scoped ua-width-1, 0px, 100px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys(
+            "random(--foo element-scoped property-index-scoped, 0px, 100px)",
+            "width"
+        )
+        .as_deref(),
+        Some("random(--foo element-scoped ua-width-1, 0px, 100px)")
+    );
+    // step 节透传（A 桶 3px 形）。
+    assert_eq!(
+        canonicalize_random_keys("random(0px, 100px, 3px)", "height").as_deref(),
+        Some("random(element-scoped ua-height-1, 0px, 100px, 3px)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(property-scoped, 0px, 100px, 3px)", "width").as_deref(),
+        Some("random(ua-width, 0px, 100px, 3px)")
+    );
+    // 显式 ua-ident 原样保留、仅序归一（E 桶）。
+    assert_eq!(
+        canonicalize_random_keys("random(ua-height-1 element-scoped, 10px, 20%)", "width").as_deref(),
+        Some("random(element-scoped ua-height-1, 10px, 20%)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo ua-x element-scoped, 10px, 20%)", "width").as_deref(),
+        Some("random(--foo element-scoped ua-x, 10px, 20%)")
+    );
+}
+
+#[test]
+fn test_random_canonicalize_section_units_and_lite_fold() {
+    // B 桶：单位归一 ms→s / turn·grad→deg；canonical 单位（s/deg）原样。
+    assert_eq!(
+        canonicalize_random_keys("random(25deg, 1turn)", "rotate").as_deref(),
+        Some("random(element-scoped ua-rotate-1, 25deg, 360deg)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo, 25deg, 1turn, 5deg)", "rotate").as_deref(),
+        Some("random(--foo, 25deg, 360deg, 5deg)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(25ms, 50s)", "transition-delay").as_deref(),
+        Some("random(element-scoped ua-transition-delay-1, 0.025s, 50s)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo, 25ms, 50s, 5s)", "transition-delay").as_deref(),
+        Some("random(--foo, 0.025s, 50s, 5s)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo, 100grad, 1turn)", "rotate").as_deref(),
+        Some("random(--foo, 90deg, 360deg)")
+    );
+    // C 桶：实参节 lite 折叠（保单位语义；calc 包裹形保包裹）。
+    assert_eq!(
+        canonicalize_random_keys("random(10 * 100px, 200em / 2)", "width").as_deref(),
+        Some("random(element-scoped ua-width-1, 1000px, 100em)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(--foo, 10 * 100px, 200em / 2)", "width").as_deref(),
+        Some("random(--foo, 1000px, 100em)")
+    );
+    assert_eq!(
+        canonicalize_random_keys("random(fixed calc(2 / 4), 0px, 100px)", "width").as_deref(),
+        Some("random(fixed calc(0.5), 0px, 100px)")
+    );
+}
+
+#[test]
+fn test_random_canonicalize_roundtrip_unchanged() {
+    // 已 canonical/无改写点形 → None（调用方保留原文）。
+    assert!(canonicalize_random_keys("random(fixed 0.5, 0px, 100px)", "width").is_none());
+    assert!(canonicalize_random_keys("random(--foo, 0px, 100px)", "width").is_none());
+    assert!(canonicalize_random_keys("random(element-scoped, 0px, 100px)", "width").is_none());
+    // 转义 ident 原样（serialize 页 `--\{` / `ua-\{` 行）。
+    assert!(canonicalize_random_keys("random(--\\{ element-scoped, 0px, 100px, 3px)", "width").is_none());
+    assert!(canonicalize_random_keys("random(element-scoped ua-\\{, 0px, 100px, 3px)", "width").is_none());
+    // 混合族同族单位原样（`1em, 200rem` 行）。
+    assert!(canonicalize_random_keys("random(--foo, 1em, 200rem)", "width").is_none());
+    // 嵌套 calc 形内 --foo 纯 key 调用不改写（serialize 页 `calc(2 *
+    // random(--foo, 0px, 100px))` 行现状过锚）。
+    assert!(canonicalize_random_keys("calc(2 * random(--foo, 0px, 100px))", "width").is_none());
+    // invalid 形不改写。
+    assert!(canonicalize_random_keys("random(foo, 1px, 2px)", "width").is_none());
+    // 无 random 值。
+    assert!(canonicalize_random_keys("10px", "width").is_none());
+}
+
+#[test]
+fn test_random_canonicalize_string_and_item_immunity() {
+    // 字符串字面内函数名不识别（content 文本值合法含函数名）。
+    assert!(canonicalize_random_keys("\"random(0px, 100px)\"", "content").is_none());
+    assert!(canonicalize_random_keys("\"pre random(0px, 100px)\"", "content").is_none());
+    // random-item 指定值原样（arbitrary substitution 序列化不 canonical 化）。
+    assert!(canonicalize_random_keys("random-item(auto, serif, sans-serif)", "font-family").is_none());
+    // random-item 计入 index 序但不改写；后随 random( 取序 2。
+    assert_eq!(
+        canonicalize_random_keys("random-item(--x, a) random(0px, 100px)", "width").as_deref(),
+        Some("random-item(--x, a) random(element-scoped ua-width-2, 0px, 100px)")
+    );
+    // 同值多调用序数递增（§9.4 margin shorthand 语义）。
+    assert_eq!(
+        canonicalize_random_keys("random(0px, 1px) random(0px, 2px)", "margin").as_deref(),
+        Some("random(element-scoped ua-margin-1, 0px, 1px) random(element-scoped ua-margin-2, 0px, 2px)")
+    );
+}
+
+#[test]
+fn test_random_parse_calc_sum_sections() {
+    // calc-sum-lite 节写面门接受面（serialize 页 C 桶三形）。
+    let spec = parse_random_args("10 * 100px, 200em / 2").unwrap();
+    assert_eq!(spec.family, RandomFamily::Length);
+    assert!(!spec.has_fixed);
+    let spec = parse_random_args("fixed calc(2 / 4), 0px, 100px").unwrap();
+    assert!(spec.has_fixed);
+    assert_eq!(spec.family, RandomFamily::Length);
+    // fixed 实参门：calc 形须无单位 [0,1)。
+    assert!(parse_random_args("fixed calc(1px / 2), 0px, 100px").is_none());
+    assert!(parse_random_args("fixed calc(2), 0px, 100px").is_none());
+    assert!(parse_random_args("fixed 2 / 4, 0px, 100px").is_none());
+    // lite 语法门：双操作数相邻拒（invalid 页 `1px foo` 同族超纲形）。
+    assert!(parse_random_args("10 100px, 2px").is_none());
+    assert!(parse_random_args("1px + 1em, 2px").is_none());
+}
+
+#[test]
+fn test_random_fold_decl_entry() {
+    // fold 入口接线：白名单外槽（height）同样 canonical 化；custom property
+    // 跳过（§9.4 substitution 语义）。
+    assert_eq!(
+        fold_decl_specified("height", "random(0px, 100px)").as_deref(),
+        Some("random(element-scoped ua-height-1, 0px, 100px)")
+    );
+    assert!(fold_decl_specified("--x", "random(0px, 100px)").is_none());
+    assert!(fold_decl_specified("width", "random(foo, 1px, 2px)").is_none());
+    assert!(fold_decl_specified("width", "10px").is_none());
+}

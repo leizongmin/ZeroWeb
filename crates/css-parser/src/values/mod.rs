@@ -31,7 +31,7 @@ pub use parse_extended_visual::*;
 pub use parse_layout::*;
 pub use parse_misc::*;
 pub use parse_transform::*;
-pub use random::{RandomFamily, RandomSpec, parse_random_args, random_family_allowed};
+pub use random::{RandomFamily, RandomSpec, canonicalize_random_keys, parse_random_args, random_family_allowed};
 pub use serialize_math::*;
 pub use types::*;
 
