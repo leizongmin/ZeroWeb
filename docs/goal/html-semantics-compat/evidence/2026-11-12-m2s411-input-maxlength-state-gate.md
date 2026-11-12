@@ -30,7 +30,7 @@ spec 锚：maxlength 属性仅适用于 text/search/url/tel/email/password 六�
 2. **runner 直跑 filter 坑重踩**：`--filter maxlength-number` 直跑静默空集——单文件 solo 必须走 `make testharness-html-semantics FILTER=<名>`（make 目标传裸值位置参数，s168 既有条目）。
 3. **shim 语法门必跑**：shim JS 非编译面，改动后 `node --check` 须按 js_dom_bridge.rs include_str! 拼接序（part01/part01b/part02..06/part01c-h/part02a/part07/part08a/part08/part08c/part08b/part08d/part09/part09b/part10-typed-om/part11-color/part11-computed-color，25 文件）拼装检查——单文件 check 假报（s373 既有）。本轮全装检查 PASS。
 4. **重启动后先核对上轮断点再施工**：429 打断的上轮已留全套勘根/施工 WIP 与 /tmp/s411 验证工件（sweep/join/maketest 日志），但**常驻钉未写、证据未绑定终稿代码**——接手轮须重跑电池与 sweep 换终稿证据，不得沿用 WIP 树数字入账（本轮电池与 sweep ×2 全部终稿重跑）。
-5. **并行流合入踩掉共享门禁**（碰头信号，已机械清偿 + 单列记账）：HEAD 两处 fmt 脏（css-parser values/mod.rs mod 序〔random() 刀 99c573d30〕+ engine computed_style.rs 测试区〔calc serialize 钉〕）+ 一处 clippy -D warnings 红（computed_style.rs collapsible_if）令 `make test` fmt 腿与全图 clippy 全停。三处均机械等价变换（mod 排序 / rustfmt / if 收拢 let-chain），对侧 clone 工作面（layout-engine sizing WIP）与涉改文件零重叠，独立 commit 清偿并飞书通报。
+5. **并行流合入踩掉共享门禁**（碰头信号，已机械清偿 + 单列记账）：HEAD 两处 fmt 脏（css-parser values/mod.rs mod 序〔random() 刀 99c573d30〕+ engine computed_style.rs 测试区〔calc serialize 钉〕）+ 一处 clippy -D warnings 红（computed_style.rs collapsible_if）令 `make test` fmt 腿与全图 clippy 全停。三处均机械等价变换（mod 排序 / rustfmt / if 收拢 let-chain），对侧 clone 工作面（layout-engine sizing WIP）与涉改文件零重叠，独立 commit 清偿并飞书通报。**rebase 结局**：push 前 pull --rebase 撞并行流 g18/g19 新落（sibling 求值桥 / random() probe 收口）——其上游已同批自偿三处违例，本流清偿 commit 判零 delta `rebase --skip` 弃用；rebase 后树双钉复跑绿 + fmt/clippy 复验净。
 6. **并行流钉被并行流改造打破**：HEAD 上 t49 cssom inline style 钉（b1fdb1db7，11-07 落）红——同流 1 分钟后的 99c573d30「写面 width 槽 invalid 拒」改造了 widthHexVerbatim 断言面（'#F00' 逐字保留 → ''）。stash 后 clean HEAD 复跑同红，归因铁证非本切片位移；engine 电池名册 t49 单列（css-parser/CSSOM 域，渲染流台账）。
 7. **CPU 争用 flake 单列**：dir-solo 首跑与 clippy 并发，`focus-dynamic-type-change-on-blur`（22×5 RAF tick 子测试，RAF_FRAME_DRIVEN 时序敏感）文件级 Timeout；sweep 双跑同文件 120 子测试全 Pass + 隔离 solo 复跑 exit=0 全绿——争用 flake 不在册（s292 族判据：同二进制状态翻转 = 时序 flake）。
 
@@ -55,7 +55,7 @@ spec 锚：maxlength 属性仅适用于 text/search/url/tel/email/password 六�
 - **maxLength IDL 反射面**：`_REFLECTED_UINT.maxLength { a:'maxlength', d:-1 }`（part01.js）为无条件属性反射——spec 对不适用态（number 等）getter 应返 -1（属性不适用=缺省）；当前 number + maxlength=1 读 `elem.maxLength` 返 1。纯 IDL 读面，本切片语料无 driving；与 minLength 同族，挂账池记。
 - webview 门与 shim 门为**双写同口径**（plan noop 判定 + 原子脚本 live 守卫各自门控）——未来若 maxlength 适用态清单变化（无此规范演化迹象），两处需同步。
 - unhandled-rejection→Fail 换算缺失是 runner 通用面（任何 .then-无-catch 案 + reject 型链都会挂到预算），影响面 = 文件级 Timeout 不可区分根因；上 testharness.js 上游语义（harness 有 unhandled rejection 追踪）属 runner 换算层缺口，挂账池记（勘根成本高，无当前 driving）。
-- 跨流门禁清偿（computed_style.rs clippy/fmt + css-parser mod 序）与本切片改动分 commit，语义零变化；渲染流后续 rebase 无冲突面（其 WIP 在 layout-engine sizing）。
+- 跨流门禁清偿（computed_style.rs clippy/fmt + css-parser mod 序）与本切片改动分 commit，语义零变化；最终经 rebase 判零 delta 弃用（并行流 g18/g19 上游同批自偿），rebase 后树（fix 4800bff24 + docs 本 commit 谱系）双钉复跑绿 + fmt/clippy 复验净。切片验证数字（电池/sweep/make test）绑定 rebase 前树（f8e5fb351 + 本切片 delta）——g18/g19 仅 css-values/sibling 桥面，html/semantics 语义面不感知；rebase 后钉态复验零位移。
 
 ## 下一步
 

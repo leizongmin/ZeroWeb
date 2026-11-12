@@ -20,8 +20,9 @@ maxlength-number Pass（dir-solo 复核；number-invalid/date-readonly 不
 回归、checkable 2F 保持）；单元 engine **3904P/10F**（在册 9F 逐名零
 位移 + t49 cssom 单列〔并行流 99c573d30 width 槽拒打破 b1fdb1db7 钉，
 clean HEAD stash 复跑归因〕）+ webview 850P/2F 零位移；fmt/clippy clean
-（跨流三处门禁违例机械清偿独立 commit——computed_style collapsible_if +
-两处 fmt 脏，80e8738d0）；sweep ×2 双跑全等 8249P/212F/25T join-cross
+（跨流三处门禁违例本流机械清偿 commit 经 rebase 判零 delta 跳过——并行流
+g18/g19 上游同批自偿；rebase 后树双钉复跑绿 + fmt/clippy 复验净）；
+sweep ×2 双跑全等 8249P/212F/25T join-cross
 零位移，join-1 对 s410 run1 恰 1 new/1 gone（maxlength 子测试 Pass↔
 file 键 Timeout 键形迁移）state-diff=0 纯 driving 位移，join-2 另
 2 STATE-DIFF = select 族 T 形漂移单列；focus-dynamic dir-solo Timeout =
@@ -7202,7 +7203,8 @@ M3 其余九域依序推进 → M4 总收口归档。
   clean HEAD stash 复跑归因）+ webview 850P/2F 零位移；sweep ×2 双跑全等
   8249P/212F/25T join-cross 零位移、join-1 对 s410 恰 1 new/1 gone 纯
   driving 位移 state-diff=0；跨流三处门禁违例（clippy collapsible_if +
-  两处 fmt）机械清偿独立 commit；focus-dynamic 争用 flake 单列不在册。
+  两处 fmt）机械清偿 commit（rebase 判零 delta 跳过——并行流 g18/g19
+  同批自偿）；focus-dynamic 争用 flake 单列不在册。
   **在册红 211F+24T→211F+23T**（−1T）。下一步：constructed-stylesheets
   9T 机制勘根 / 挂账池承 s404/s405（新增适用态打满 reject 面 /
   maxLength IDL 不适用态反射 / unhandled-rejection 换算）。
