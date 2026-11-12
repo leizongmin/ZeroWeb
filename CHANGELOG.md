@@ -14,6 +14,11 @@
 
 ### 新增
 
+- **CSS Values 值面续扩（wptfyi-css DC-2 g14–g23，2026-11-12/13）**：min/max/clamp canonical 保持串化 + 写面 math 文法/槽族门 + clamp none 重写（invalid 语料 155F 清零，css-values 3,228→3,553）；random() 播种求值全链（sha256 doc/element 双 seed compute 期原位替换，+103）与 random-item() 写面文法门（+14）；attr() 值支持批（parse/替换/级联门/CSSOM cleanup null 臂）；viewport 单位 provenance 保形（sv*/lv*/dv*/vi/vb 20 形 parse 期保留变体）+ gap/padding 接受面补回 viewport 基类单位臂。
+- **inline format 嵌套簇与 bold/italic 值面（editing，2026-11-12/13）**：bold 数值权重边界 merge + 六命令 cef 门 rc=false 化（+60）、bold/italic 载体吸收与边界挖入五臂（+55）、italic toggle-off 值面两臂（peel 镜像 + 阻断载体资格两轴化，+12）；嵌套簇 B1/D2/E1+D1 根因刀收口（裸文本 ref 壳插发射、apply 时坐标平移、overlay 锚重定向等）——六 format 文件残余 161F→65F。
+- **声明式 CSS module 与 style @import（html-semantics s412/s413，2026-11-12/13）**：声明式 CSS module 双臂 CSP 门 + 元素站 error 面 + parse 期 map 注册 + import 免 fetch + kind 固定——tentative/ CSP 簇 6 文件解挂、11 文件全绿收口；style @import 动态臂勘根定谳引擎分歧不施工。
+- **渲染修复族（R5506–R5509，2026-11-12/13）**：inline-block shrink grow 腿自身 max-width used 值钳；min-width content 关键字 × definite width 内容基地板；裸 fit-content（min/max-width）avail 地板公式化（窄 CB 域语义修复 + chained shrink-to-fit 三刀）；双格表 valign 对 r109 载体按片段流范围求和（block-in-inline-001/002 幽灵红带消除）——corpus 账面 688F→684F（R5507 −1、R5509 −3，真修 4 含外赠 2）。
+- **性能刀（2026-11-12/13）**：FT face 共享字体字节——消除 face cache 整份拷贝（render-foundation）；renderer alloc-trace 大块恒采（净活归因完备化）。
 - **CSS Values 4 数学语义与 css-color 扩面（wptfyi-css DC-2，2026-11-11/12）**：CSS Values 4 §10.5 型别表 + IEEE sign/除零语义——round/mod/rem 除零改 NaN、∞/NaN 数学求值管线（min/max NaN 毒化 + computed 期 censor）；time 维度接入 calc 型别表 + opacity 数学函数臂；rotate/translate/scale 入 known_properties 白名单（CSS.supports 门补 initial-value 完整臂）；css-values 2,218→2,646；css-color 域外保形序列化五修 + contrast-color() computed 臂 + cqw 容器基座，10,905→10,970。
 - **embed/object 语义族（html-semantics s403–s408，2026-11-11/12）**：object 嵌套文档脚本通道、object `window[N]` 索引 + javascript: 导航臂、embed 动态加载链（the-embed-element 5 文件级 Timeout 全解挂）、`frames.named` 扩 embed/object + 嵌套导航失败容差、静态 embed 链 + fallback 子内容激活、detached 文档 style 元素 LinkStyle sheet + headEl 本地树三件套。
 - **inline format 命令 vendored 直译引擎（editing，2026-11-11/12）**：bold/italic/underline/strikethrough/subscript/superscript 非 collapsed execCommand 从 flat 模型切换 spec action 直译——跨段落 wrap、跨边界 merge、push-down、clearValue 摘壳 + state override 写面；六 format 文件 10,499/1,430→11,657/272，断言级净增 +1,647 零新增失败。
