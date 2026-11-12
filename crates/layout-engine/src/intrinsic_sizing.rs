@@ -287,7 +287,14 @@ fn kw_aware_max_width(
     let Some((min_w, max_w)) = own else {
         return measure(box_node, doc, styles);
     };
-    let is_kw = |v: &LengthValue| matches!(v, LengthValue::MinContent | LengthValue::MaxContent);
+    // R5508：裸 fit-content（apply 层映射 FitContent(100%)）入 kw 语义——内容基关键字族，
+    // 贡献按 content-only 口径（R5375 同理由：specified 宽在使用侧钳制，不参与 W_max）。
+    // 仅 100% 标记（bare fit-content 专用）；fit-content(definite/其他 %) 拼写保持原路径。
+    let is_kw = |v: &LengthValue| {
+        matches!(v, LengthValue::MinContent | LengthValue::MaxContent)
+            || matches!(v, LengthValue::FitContent(inner)
+                if matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON))
+    };
     if !is_kw(&min_w) && !is_kw(&max_w) {
         return measure(box_node, doc, styles);
     }
@@ -326,7 +333,12 @@ fn kw_aware_max_width(
         let capped = full.min(content_min);
         return capped.max(min_resolved(&min_w, frame, full));
     }
-    if matches!(max_w, LengthValue::MaxContent) {
+    if matches!(max_w, LengthValue::MaxContent)
+        // R5508：裸 fit-content（FitContent(100%)）同 max-content 内容基贡献口径——
+        // 保持 MaxContent 别名时代（R1018）的 content-only 语义，own_explicit 不回抬。
+        || matches!(max_w, LengthValue::FitContent(inner)
+            if matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON))
+    {
         // R5375（css-sizing-3 §5.2 content-based contribution）：`max-width:max-content`
         // 盒对父 intrinsic 宽的贡献 = **内容基**（own_explicit 不参与——specified 宽在
         // max-width 使用侧钳制，used = min(200px, max-content 100) = 100，贡献应 100
@@ -940,7 +952,27 @@ fn box_content_max_width_inner(
                     .node_id
                     .and_then(|cid| styles.get(&cid))
                     .and_then(|cs| resolve_intrinsic_real_length(&cs.width, cs))
-                    .is_some();
+                    .is_some()
+                // R5508：min/max-width 持 avail 依赖 FitContent 关键字（裸 fit-content ≡
+                // fit-content(stretch-fit)、% arg——arg 非 real length）的定宽子**不按 laid
+                // 宽贡献**：其 used 值经 sizing pass 公式臂 min(W_max, max(W_min, cb_w)) 按
+                // CB 收缩后，laid 反映 used 值而非 intrinsic 语境贡献（fit-content 在
+                // max-content 语境 avail = ∞ → 贡献 = W_max 内容基，css-sizing-3 §5.2）。
+                // R4568 读 laid 会让 shrink-to-fit 父的 W_max 跟随子 used 值自引用收敛
+                //（chained fit-content-min-inline-size 形：子地板 cb_w=父首趟宽 → 塌 50 →
+                // 父测子 laid 50 → cb_w 定格 50，应 100/100 chromium oracle）。排除后落
+                // R5505 递归臂 → kw_aware R5507 臂 max(own_def, content) 恒定语境无关。
+                // fit-content(real length) arg 语境无关（L 替代 stretch-fit，§5.2）不排除；
+                // MinContent/MaxContent 贡献与 floor 同源内容基（laid==贡献）不排除。
+                && !child
+                .node_id
+                .and_then(|cid| styles.get(&cid))
+                .is_some_and(|cs| {
+                    [&cs.min_width, &cs.max_width]
+                        .into_iter()
+                        .any(|lw| matches!(lw, LengthValue::FitContent(inner)
+                            if resolve_intrinsic_real_length(inner, cs).is_none()))
+                });
             if definite_child_w {
                 block_max = block_max.max(outer_w.max(0.0));
             } else {
@@ -1424,7 +1456,24 @@ fn clamp_fit_content_child_contribution(
             None => None,
         }
     };
-    let floor = limit(&cs.min_width, min_fit, w_min);
+    let floor = limit(
+        &cs.min_width,
+        min_fit,
+        // R5508：裸 fit-content（FitContent(100%) ≡ fit-content(stretch-fit)，css-sizing-3
+        // §5.2）在 intrinsic 语境 avail = ∞ → 公式 = min(W_max, max(W_min, ∞)) = W_max——
+        // cyclic floor 退化 **W_max**（内容基）而非 W_min。R5037 的 w_min 退化是对「% 相对
+        // 不可得 CB」的保守近似，bare 100% 有确定语义（= 全部可用空间）不在其列：50px CB
+        // 链 min-width:fit-content + width:10px + 2×50px 原子子盒对 shrink-to-fit 父的
+        // 贡献测 50（w_min 地板）塌缩父级，chromium 100 定谳。fit-content(其他 %) 维持
+        // w_min（corpus 绿口径不动）。max 侧 cyclic cap 本就 w_max，bare 同值不变。
+        if matches!(&cs.min_width, LengthValue::FitContent(inner)
+            if matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON))
+        {
+            Some(w_max)
+        } else {
+            w_min
+        },
+    );
     let cap = limit(&cs.max_width, max_fit, Some(w_max));
     base.max(floor.unwrap_or(0.0)).min(cap.unwrap_or(f32::MAX))
 }

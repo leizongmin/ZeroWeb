@@ -231,7 +231,7 @@ pub fn apply_property_value_with_quirks(
                 if style.writing_mode.is_vertical_block_flow() {
                     style.min_height = v;
                 } else {
-                    style.min_width = v;
+                    style.min_width = map_bare_fit_content_avail(value, v);
                 }
                 return true;
             }
@@ -265,7 +265,7 @@ pub fn apply_property_value_with_quirks(
                 if style.writing_mode.is_vertical_block_flow() {
                     style.max_height = v;
                 } else {
-                    style.max_width = v;
+                    style.max_width = map_bare_fit_content_avail(value, v);
                 }
                 return true;
             }
@@ -296,7 +296,7 @@ pub fn apply_property_value_with_quirks(
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.min_width = v;
+                style.min_width = map_bare_fit_content_avail(value, v);
                 return true;
             }
         }
@@ -318,7 +318,7 @@ pub fn apply_property_value_with_quirks(
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.max_width = v;
+                style.max_width = map_bare_fit_content_avail(value, v);
                 return true;
             }
         }
@@ -1448,6 +1448,24 @@ fn sizing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::MaxContent
         | LengthValue::Calc(_)
         | LengthValue::Stretch => true,
+    }
+}
+
+/// R5508（css-sizing-3 §5.2）：min/max-width 裸 `fit-content` 关键字保留 fit-content
+/// 公式语义。共享 `parse_length` 把裸 fit-content 映射 MaxContent（R1018，width/height
+/// 域 layout trigger 等价、保持不动），但 min/max-width 的 fit-content =
+/// min(W_max, max(W_min, stretch-fit))——`max(W_min, avail)` 地板与 MaxContent（纯
+/// W_max cap）在窄 CB 域分叉（chromium oracle 定谳：50px 容器内 width:300px +
+/// max-width:fit-content + 不可断子 90px → used 90 溢出容器；MaxContent 别名经
+/// sizing pass 写入走 CB 地板塌 50）。映射 `FitContent(100%)` ＝
+/// fit-content(stretch-fit)（% arg 由 sizing pass 公式臂按 CB 解析），与显式
+/// `fit-content(100%)` 拼写收敛（§5.2 同值）。仅物理水平轴槽位调用；块轴镜像
+///（min/max-height）别名不动（独立子问题挂账）。
+fn map_bare_fit_content_avail(raw: &str, value: LengthValue) -> LengthValue {
+    if raw.eq_ignore_ascii_case("fit-content") {
+        LengthValue::FitContent(Box::new(LengthValue::Percentage(100.0)))
+    } else {
+        value
     }
 }
 

@@ -1072,3 +1072,6 @@ mod r5506_ib_grow_maxwidth_cap_tests;
 /// R5507（css-sizing-3 §5.2/§5.3）：min-width content 关键字 × definite width
 /// 交叉域内容基地板——测量守卫压制修复 + 写入不再清 size.width 四锚。
 mod r5507_min_kw_content_floor_tests;
+/// R5508（css-sizing-3 §5.2）：裸 fit-content（min/max-width）fit-content 公式
+/// 语义——stretch-fit 地板 + 写入臂保留 size.width 六锚。
+mod r5508_fit_content_avail_floor_tests;

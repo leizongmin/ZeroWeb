@@ -1041,6 +1041,13 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
         // Calc 表达式：按 CSS Values 求值时机降级（与 convert_length_to_dimension
         // 共用 convert_calc_dimension——max 侧 Auto 语义 = 不钳制，同函数覆盖）。
         LengthValue::Calc(expr) => convert_calc_dimension(expr, vw, vh),
+        // R5508：裸 fit-content（apply 层映射 FitContent(100%)）max 侧 pass1 不预钳——
+        // taffy percent max 会把定宽盒 pass1 压到 CB 地板，压掉 sizing pass 的触发条件
+        //（b.width > target）；fit-content 的 min(W_min, avail) 地板可高于 CB。公式值由
+        // sizing pass fit_target 写入（cb_w 语境）。
+        LengthValue::FitContent(inner) if matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON) => {
+            taffy::style::Dimension::auto()
+        }
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
         // R4224（css-sizing-4 #stretch-fit-sizing + csswg #11044）：max 侧 stretch = CB
         // content 尺寸（margin ignoring）——百分比不扣 margin 同语义；CB 尺寸 indefinite
@@ -1061,6 +1068,12 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
 fn convert_min_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::Dimension {
     match value {
         LengthValue::Stretch => taffy::style::Dimension::percent(1.0),
+        // R5508：裸 fit-content（apply 层映射 FitContent(100%)）min 侧 pass1 不预地板——
+        // taffy percent min 会把定宽盒 pass1 撑到 CB（wide CB 下压制 sizing pass 的
+        // b.width < target 触发）；公式地板由 sizing pass fit_target 写入。
+        LengthValue::FitContent(inner) if matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON) => {
+            taffy::style::Dimension::auto()
+        }
         other => convert_length_to_dimension(other, vw, vh),
     }
 }

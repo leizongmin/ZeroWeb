@@ -94,12 +94,29 @@ impl LayoutEngine {
         //（css-sizing-3 #valdef-width-fit-content-length-percentage；root 的 CB = viewport）。
         // R5456：栈携带 parent WM——R5368 float 钉宽域门需要正交语境（父 vertical）
         // 排除（见 stf_pin_on 域门注）。
-        let mut stack: Vec<(&LayoutBox, f32, WritingModeValue)> =
-            vec![(root, root.width.max(0.0), WritingModeValue::HorizontalTb)];
-        while let Some((b, cb_w, parent_wm)) = stack.pop() {
+        // R5508：栈携带父级 content-based 尺寸标记——裸 fit-content 的 stretch-fit arg
+        // 仅在 CB 尺寸 definite 可解时取 cb_w（见 kw_fit_arg 注）。
+        let cb_is_content_based = |node: &LayoutBox| -> bool {
+            node.node_id
+                .and_then(|pid| styles.get(&pid))
+                .is_some_and(|ps| match &ps.width {
+                    LengthValue::MaxContent | LengthValue::MinContent | LengthValue::FitContent(_) => true,
+                    // auto + float = shrink-to-fit（fit-content 域），avail 同样不定。
+                    LengthValue::Auto if !matches!(ps.float, FloatValue::None) => true,
+                    _ => false,
+                })
+        };
+        let mut stack: Vec<(&LayoutBox, f32, WritingModeValue, bool)> =
+            vec![(root, root.width.max(0.0), WritingModeValue::HorizontalTb, false)];
+        while let Some((b, cb_w, parent_wm, parent_stf)) = stack.pop() {
             let self_frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
             let child_cb = (b.width - self_frame).max(0.0);
-            stack.extend(b.children.iter().map(|c| (c, child_cb, b.writing_mode.clone())));
+            let self_stf = cb_is_content_based(b);
+            stack.extend(
+                b.children
+                    .iter()
+                    .map(|c| (c, child_cb, b.writing_mode.clone(), self_stf)),
+            );
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
             // 仅水平书写模式的 flex/grid 容器，或 R1018 block-level（width:max-content/fit-content）
@@ -169,6 +186,11 @@ impl LayoutEngine {
                 LengthValue::MinContent | LengthValue::MaxContent => true,
                 LengthValue::FitContent(inner) => {
                     crate::intrinsic_sizing::resolve_intrinsic_real_length(inner, s).is_some()
+                        // R5508：裸 fit-content（apply 层映射 FitContent(100%)）——100% ≡
+                        // stretch-fit 有确定语义（= CB 宽），由公式臂按 cb_w 解析。R5036
+                        // 的 % 排除针对相对 CB 的任意 %（当时公式臂无 CB 语境），100% 不在
+                        // 其列（fit-content(50%) 等 R5036 旧绿机制保持不动）。
+                        || matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON)
                 }
                 _ => false,
             };
@@ -219,7 +241,22 @@ impl LayoutEngine {
             }
             // R5036：fit-content(L) 关键字的 arg 与目标值标记（公式 min(W_max, max(W_min, L))）。
             let kw_fit_arg = |v: &LengthValue| match v {
-                LengthValue::FitContent(inner) => crate::intrinsic_sizing::resolve_intrinsic_real_length(inner, s),
+                LengthValue::FitContent(inner) => {
+                    crate::intrinsic_sizing::resolve_intrinsic_real_length(inner, s).or_else(|| {
+                        // R5508：裸 fit-content（FitContent(100%)）——公式 arg = stretch-fit
+                        // = CB 宽（css-sizing-3 §5.2 fit-content ≡ fit-content(stretch-fit)），
+                        // **仅当 CB 尺寸 definite 可解**。CB 自身 content-based（width 关键字/
+                        // auto+float shrink-to-fit，parent_stf）时 avail 不定 → intrinsic 语境
+                        // avail = ∞ → 公式退化 W_max（arg=None → fit_target=intrinsic，与
+                        // R5507 MaxContent 别名时代语义同值；shrink-to-fit 父先按子的 intrinsic
+                        // 贡献解宽，子 used 地板随 CB 定格——chained fit-content-min-inline-size
+                        // 形 single-shot pass 下 cb_w 是父首趟塌缩宽，取之会把父级拖到 50/50
+                        // 自引用收敛，chromium 100/100 定谳）。
+                        matches!(inner.as_ref(), LengthValue::Percentage(p) if (*p - 100.0).abs() < f64::EPSILON)
+                            .then_some(if parent_stf { None } else { Some(cb_w) })
+                            .flatten()
+                    })
+                }
                 _ => None,
             };
             let kw_min_fit_arg = if matches!(s.min_width, LengthValue::FitContent(_)) {
@@ -320,11 +357,31 @@ impl LayoutEngine {
             };
             let need_min = mincontent_block || is_fitcontent || kw_min_fit_arg.is_some() || kw_max_fit_arg.is_some();
             let min_intrinsic = if need_min && is_block {
+                // width:min-content 的 used 值测量（mincontent_block，R5036/R1304）保持
+                // include_own 全口径——content-only 变体把 include_own=false 沿递归传播，
+                // 子树内**所有**嵌套定宽盒的 own_explicit 一并被剥（table-intrinsic-size-
+                // 001：min-content 外层 × inline-size:30px 定宽 table 实测 1.04% 偏移翻红），
+                // 该口径只服务 fit-content 公式（下臂 fit_min_intrinsic），不入此臂。
                 let w = crate::intrinsic_sizing::block_min_content_width(b, doc, styles);
                 (w > 0.5).then_some(w)
             } else {
                 None
             };
+            // R5508（公式隐藏面④）：fit-content 公式的 W_min 按 **content-only** 口径测
+            //（R5037 同款，其贡献钳制 has_definite_width 臂同源）——include_own 全口径会把
+            // 自身声明定宽抬进 W_min（width:300px + max-width:fit-content 盒测 300），
+            // max(W_min, avail) 恒 ≥ 300 地板永不绑定，fit-content 的 avail 地板语义整体
+            // 失效（chromium oracle：50px CB 内 width:300px + max-width:fit-content +
+            // 2×50px 原子子应 50，include_own 口径实测 100）。width:fit-content(arg) 域
+            // style.width 仍为 FitContent(arg) 关键字、resolve 记 None → own 不抬升，两口径
+            // 同值不受影响。仅公式语境消费；与 mincontent_block 并存时两测并存、各走各臂。
+            let fit_min_intrinsic =
+                if (is_fitcontent || kw_min_fit_arg.is_some() || kw_max_fit_arg.is_some()) && is_block {
+                    let w = crate::intrinsic_sizing::block_min_content_width_content_only(b, doc, styles);
+                    (w > 0.5).then_some(w)
+                } else {
+                    None
+                };
             let intrinsic = if mincontent_block {
                 // R5036：R1304 max-content 近似换真 min-content（测量失败/塌 0 退化旧近似）。
                 min_intrinsic.unwrap_or(intrinsic)
@@ -336,7 +393,7 @@ impl LayoutEngine {
             let fit_target = |arg: Option<f32>| -> f32 {
                 let max_c = intrinsic;
                 match arg {
-                    Some(a) => match min_intrinsic {
+                    Some(a) => match fit_min_intrinsic {
                         Some(min_c) => max_c.min(min_c.max(a)),
                         None => max_c.min(a),
                     },
@@ -522,7 +579,13 @@ impl LayoutEngine {
                     }
                     if kw_max {
                         let target = kw_max_fit_arg.map_or(intrinsic, fit_target);
-                        style.size.width = taffy::style::Dimension::auto();
+                        // R5508：不再清 size.width（旧置 auto）——taffy 块级 auto 拉伸到 CB
+                        //（stretch-fit 解析基），窄 CB × 定宽 > cap 时丢失声明宽：
+                        // width:300px + max-width:fit-content + 不可断子 90px 于 50px CB 应
+                        // used = min(300, fit-content=90) = 90 溢出容器，旧法塌 min(50, 90)
+                        // = 50（chromium oracle 定谳）。保留 converter size.width（definite =
+                        // 声明宽、auto = auto），taffy 约束求解 max ≥ size 自动取小
+                        //（css-sizing-3 §5.2 max-width 胜 width；kw_min 对称修复见 R5507）。
                         style.max_size.width = taffy::style::Dimension::length(target);
                     }
                 } else {
