@@ -838,6 +838,19 @@ if(__zwEl)__zwEl.dispatchEvent(new Event('{esc_ty}'));}}catch(_e){{}}}})()"
     )
 }
 
+/// 构造「按全量 `<style>` 元素文档序序号派发元素级事件」的 shim 脚本（s412）。宿主在
+/// CSP 阻止声明式 CSS module（`<style type=module>`）时执行：序号口径与
+/// [`extract_style_elements_csp`] 的全量 `<style>` 元素文档序一致（run 尾统一派发点
+/// 页面脚本已执行、listener 已注册）。`ty` = "error"。
+pub fn script_dispatch_style_event_by_ordinal(style_ordinal: usize, ty: &str) -> String {
+    let esc_ty = escape_js_string(ty);
+    format!(
+        "(function(){{try{{\
+var __zwEl=document.getElementsByTagName('style')[{style_ordinal}];\
+if(__zwEl)__zwEl.dispatchEvent(new Event('{esc_ty}'));}}catch(_e){{}}}})()"
+    )
+}
+
 /// 构造「派发 `securitypolicyviolation` 事件」的 shim 脚本（security-hardening M2-s1，
 /// spec CSP3 §report-the-violation——被 CSP 阻止的脚本在其执行点派发违规事件）。
 ///

@@ -204,6 +204,101 @@ document.addEventListener('securitypolicyviolation', function(e) {
     assert!(vio.contains(r#""t":"STYLE""#), "target 为被阻止 style 元素: {vio}");
 }
 
+/// s412（html-semantics M2）：声明式 CSS module 双臂 CSP 检查——`<style type=module>`
+/// 具 module script + style 双重身份，两腿镜像 driving corpus（tentative/
+/// style-element-csp-*，file-Timeout→Pass 面）：
+/// 腿 A `script-src 'nonce-s'; style-src 'unsafe-inline'`——无 nonce module 被
+/// script 臂阻止：violation effectiveDirective=script-src-elem（恰一条）+ 元素站
+/// error（addEventListener 面——onerror attr 被 script-src-attr 检查点阻止，corpus
+/// 同款用 addEventListener 注册）+ 内容清空；普通 style 零位移（script 臂不适用）。
+/// 腿 B `style-src 'none'`（无 script-src）——module 被 style 臂阻止：violation
+/// style-src-elem + onerror attr 面派发（无 script-src 政策 attr 编译放行）。
+#[test]
+fn csp_style_gate_module_script_arm_blocks_and_fires_error_s412() {
+    // 腿 A：script 臂阻止 + addEventListener error 面（csp-script-src-blocked 形）。
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-abc123'; style-src 'unsafe-inline';">
+<style id="mod" type="module" specifier="foo">
+    #test {color:blue}
+</style>
+<style id="plain">body{color:red}</style>
+<script nonce="abc123">
+globalThis.__vio = [];
+globalThis.__modError = 0;
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push(e.effectiveDirective + '@' + (e.target && e.target.tagName));
+});
+document.getElementById('mod').addEventListener('error', function() {
+  globalThis.__modError = 1;
+});
+</script>
+</head><body></body></html>"#;
+    let _ = wv.fetch_page_images(html, "https://wpt.test/csp/case.html");
+    wv.load_html(html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert_eq!(
+        vio, r#"["script-src-elem@STYLE"]"#,
+        "module 被 script 臂阻止（style-src unsafe-inline 放行——violation 恰一条）: {vio}"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__modError)").unwrap(),
+        "1",
+        "被阻止声明式 module 派发元素站 error（addEventListener）"
+    );
+    assert!(
+        wv.execute_script("document.getElementById('mod').textContent.trim()")
+            .unwrap()
+            .is_empty(),
+        "被阻止 module 内容清空"
+    );
+    assert!(
+        !wv.execute_script("document.getElementById('plain').textContent.trim()")
+            .unwrap()
+            .is_empty(),
+        "普通 style 不入 script 臂（style-src unsafe-inline 放行，内容保留）"
+    );
+
+    // 腿 B：style 臂阻止 + onerror attr 面（csp-blocked 形——无 script-src 政策，
+    // attr 编译放行）。
+    let mut wv2 = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv2.prepare_document_state("https://wpt.test/csp/case-b.html");
+    let html_b = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="style-src 'none';">
+<style id="mod" type="module" specifier="foo" onerror="globalThis.__modError = 1;">
+    #test {color:blue}
+</style>
+<script>
+globalThis.__modError = 0;
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push(e.effectiveDirective);
+});
+</script>
+</head><body></body></html>"#;
+    let _ = wv2.fetch_page_images(html_b, "https://wpt.test/csp/case-b.html");
+    wv2.load_html(html_b, None);
+    wv2.run_page_scripts().expect("run page scripts");
+    let vio_b = wv2.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert_eq!(
+        vio_b, r#"["style-src-elem"]"#,
+        "module 被 style 臂阻止（violation 恰一条——无 script-src 政策不产 script 臂）: {vio_b}"
+    );
+    assert_eq!(
+        wv2.execute_script("String(globalThis.__modError)").unwrap(),
+        "1",
+        "被阻止声明式 module 派发元素站 error（onerror attr）"
+    );
+}
+
 /// connect-src 检查点（security-hardening M2-s5）：`connect-src 'none'` 下 fetch
 /// 被阻止（reject 面）+ violation document 站派发（effectiveDirective=connect-src）。
 #[test]

@@ -2010,6 +2010,13 @@ pub struct StyleElementCsp {
     pub content_start: usize,
     /// 内容结束字节偏移（原文， exclusive——`</style` 之前）。
     pub content_end: usize,
+    /// s412（html-semantics M2）：声明式 CSS module 判定——开标签 `type` 属性
+    /// （trim 后 ASCII 大小写不敏感）恰为 `module`。此类元素按 CSS module scripts
+    /// 提案（tentative，Edge explainer）具 module script + style 双重身份，宿主
+    /// 检查点须**同时**过 style-src 与 script-src（普通 style 只查 style-src），
+    /// 阻断时另派 error 事件（module 语义——普通 style 无 error 面）。
+    /// https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+    pub is_module: bool,
 }
 
 /// 从开标签文本提取属性值（security-hardening M2-s3 / s92 string-compilation CSP
@@ -2114,6 +2121,7 @@ pub fn extract_style_elements_csp(html: &str) -> Vec<StyleElementCsp> {
             content: html[content_abs_start..content_abs_start + content_len].to_string(),
             content_start: content_abs_start,
             content_end: content_abs_start + content_len,
+            is_module: attr_from_open_tag(open_tag, "type").is_some_and(|t| t.trim().eq_ignore_ascii_case("module")),
         });
         cursor = content_abs_start + content_len;
     }
@@ -2480,6 +2488,25 @@ mod tests {
         assert_eq!(infos[1].nonce, None);
         assert_eq!(infos[1].content, "p { color: blue }");
         assert_eq!(&html[infos[1].content_start..infos[1].content_end], "p { color: blue }");
+    }
+
+    /// s412（html-semantics M2）：声明式 CSS module 判定——开标签 `type` 属性
+    /// trim 后 ASCII 大小写不敏感恰为 `module`；缺省/普通 `text/css`/其他值均为
+    /// false。序号对齐全量 `<style>` 元素文档序（CSP 检查点消费口径不变）。
+    #[test]
+    fn extract_style_elements_csp_module_flag_s412() {
+        let html = "<html><head>\
+            <style type=\"module\" specifier=\"foo\">#a{color:blue}</style>\
+            <style type=\"TEXT/CSS\">#b{color:red}</style>\
+            <style TYPE=' Module '>#c{color:green}</style>\
+            <style>#d{color:black}</style>\
+            </head><body></body></html>";
+        let infos = extract_style_elements_csp(html);
+        assert_eq!(infos.len(), 4);
+        assert!(infos[0].is_module, "type=module 判定为声明式 CSS module");
+        assert!(!infos[1].is_module, "type=text/css 为普通 style");
+        assert!(infos[2].is_module, "type 值含缘空白 + 大小写混合仍判定 module");
+        assert!(!infos[3].is_module, "缺省 type 非 module");
     }
 
     /// meta CSP 政策提取（security-hardening M2-s1）：head 内生效、body 内忽略、

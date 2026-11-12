@@ -15,9 +15,10 @@ use zero_engine::{
     extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
     register_dom_callbacks, resolve_document_url, script_classic_catch_tail, script_clear_current_script,
     script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
-    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_cache_probe,
-    script_module_entry_precheck, script_module_eval_error_report, script_report_module_failure,
-    script_report_module_failure_cached, script_set_current_script,
+    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation,
+    script_dispatch_style_event_by_ordinal, script_module_cache_probe, script_module_entry_precheck,
+    script_module_eval_error_report, script_report_module_failure, script_report_module_failure_cached,
+    script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -454,6 +455,10 @@ struct PendingCspStyleViolation {
     target_selector: Option<String>,
     /// 外链 stylesheet 附带 link error 事件（abs href）。
     link_error: Option<String>,
+    /// s412：被阻止的声明式 CSS module（`<style type=module>`）附带 error 事件
+    ///（按 target_tag/target_ordinal 元素站派发——module 语义，普通 style 阻断
+    /// 无 error 面；同元素双臂违规只在首个入队条目置位，防 error 双派）。
+    style_error: bool,
 }
 
 /// t8k：webview 进程内 WS 宿主的 connect-src 门（security-hardening M2-s5 同位——
@@ -482,6 +487,7 @@ impl zero_engine::ws_bridge::WsHost for CspGateWsHost {
                     target_ordinal: usize::MAX,
                     target_selector: None,
                     link_error: None,
+                    style_error: false,
                 });
             }
             self.emitter.emit(
@@ -1119,6 +1125,10 @@ impl WebView {
     /// security-hardening M2-s3：inline `<style>` 检查（nonce/hash/unsafe-inline）——
     /// 被阻止元素内容 span 原地置空白（保留字节长度以免影响其余原文偏移消费方）+
     /// violation 入队（元素站 target = style 元素全量序号）。放行面零改动。
+    /// s412：声明式 CSS module（`type=module`）双臂检查——module 具 module script +
+    /// style 双重身份，除 style-src（style 臂）外还须过 script-src（script 臂，
+    /// 内容 raw 文本 sha256 与 inline script 检查同口径）；任一臂阻止即 block +
+    /// error 事件入队（`style_error`，同元素只在首个条目置位防双派）。
     fn gate_inline_styles<'a>(&mut self, html: &'a str) -> std::borrow::Cow<'a, str> {
         let infos = extract_style_elements_csp(html);
         if infos.is_empty() {
@@ -1136,20 +1146,36 @@ impl WebView {
             let violation = self
                 .security_context
                 .check_style_hashes(info.nonce.as_deref(), &hashes, None);
-
-            let Some(violation) = violation else {
-                continue;
+            // s412 script 臂：module 的 script 身份检查（raw 文本 sha256——与 inline
+            // script 检查同口径，hash 源含缘空白）。
+            let script_violation = if info.is_module {
+                let script_hash = zero_security::csp::script_hash_sha256_base64(&info.content);
+                self.security_context
+                    .check_script(info.nonce.as_deref(), Some(&script_hash), None)
+            } else {
+                None
             };
+
+            if violation.is_none() && script_violation.is_none() {
+                continue;
+            }
             blocked_spans.push((info.content_start, info.content_end));
-            self.pending_csp_style_violations.push(PendingCspStyleViolation {
-                effective_directive: violation.effective_directive,
-                blocked_uri: violation.blocked_uri,
-                original_policy: violation.original_policy,
-                target_tag: "style",
-                target_ordinal: ordinal,
-                target_selector: None,
-                link_error: None,
-            });
+            let mut first_of_element = true;
+            for v in [violation, script_violation].into_iter().flatten() {
+                self.pending_csp_style_violations.push(PendingCspStyleViolation {
+                    effective_directive: v.effective_directive,
+                    blocked_uri: v.blocked_uri,
+                    original_policy: v.original_policy,
+                    target_tag: "style",
+                    target_ordinal: ordinal,
+                    target_selector: None,
+                    link_error: None,
+                    // error 面是 module 语义（普通 style 阻断无 error）——仅 module 且
+                    // 首条目置位，防同元素双臂违规 error 双派。
+                    style_error: info.is_module && first_of_element,
+                });
+                first_of_element = false;
+            }
         }
         if blocked_spans.is_empty() {
             return std::borrow::Cow::Borrowed(html);
@@ -1596,6 +1622,7 @@ impl WebView {
                     target_ordinal: link_ordinal,
                     target_selector: None,
                     link_error: Some(fetch_url.clone()),
+                    style_error: false,
                 });
                 continue;
             }
@@ -4182,6 +4209,7 @@ impl WebView {
                                 target_ordinal: usize::MAX,
                                 target_selector: args.get(1).cloned(),
                                 link_error: None,
+                                style_error: false,
                             });
                         }
                         "1".to_string()
@@ -4303,6 +4331,7 @@ impl WebView {
                                     target_ordinal: usize::MAX,
                                     target_selector: None,
                                     link_error: None,
+                                    style_error: false,
                                 });
                             }
                             return "__zw_fetch_error:csp-connect-src-blocked".to_string();
@@ -4613,6 +4642,7 @@ impl WebView {
                                 target_ordinal: usize::MAX,
                                 target_selector: None,
                                 link_error: None,
+                                style_error: false,
                             });
                         }
                         return String::new();
@@ -5520,6 +5550,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                                 target_ordinal: usize::MAX,
                                 target_selector: None,
                                 link_error: None,
+                                style_error: false,
                             });
                         }
                         "1".to_string()
@@ -5547,6 +5578,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                                         target_ordinal: usize::MAX,
                                         target_selector: None,
                                         link_error: None,
+                                        style_error: false,
                                     });
                                 }
                                 "0".to_string()
@@ -5868,6 +5900,11 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             for item in &style_violations {
                 if let Some(href) = &item.link_error {
                     let _ = sandbox.execute(&script_dispatch_link_event(href, "error"));
+                }
+                // s412：被阻止的声明式 CSS module error 事件（元素站，target 序号与
+                // extract_style_elements_csp 全量文档序同口径；同元素只在首个条目置位）。
+                if item.style_error && item.target_tag == "style" {
+                    let _ = sandbox.execute(&script_dispatch_style_event_by_ordinal(item.target_ordinal, "error"));
                 }
                 let snippet = script_dispatch_securitypolicyviolation(
                     usize::MAX,
