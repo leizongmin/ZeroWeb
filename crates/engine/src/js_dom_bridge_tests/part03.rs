@@ -4253,9 +4253,13 @@ fn test_cssom_inline_style_decl_value_normalization_t49() {
     // DC-2 次批翻正（2026-11-10）：modernSpaceVerbatim/ruleModernSpace 原
     // `rgb(255 0 0)` verbatim 钉——part11 declared 归一接线后按 css-color-4 §5
     // legacy 序列化输出 `rgb(255, 0, 0)`（Chrome 声明面口径，T48 分词归一同形）。
+    // width 槽翻正（2026-11-12，99c573d30 同步）：widthHexVerbatim 原 `#F00`
+    // verbatim 钉——width 写面接文法门 invalid 拒/valid 放行后，`#F00` 非
+    // <length>|<percentage>|auto 等合法 width 值 → 声明整体拒读回 ''（CSSOM
+    // §the-cssstyledeclaration-interface 解析失败即忽略；Chrome oracle 同形）。
     assert_eq!(
         sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
-        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255, 0, 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"#F00","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255, 0, 0)","ruleCwwInherit":"inherit"}"##,
+        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255, 0, 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255, 0, 0)","ruleCwwInherit":"inherit"}"##,
         "T49 inline style 声明写归一全案（T48 管线同语义 + !important 两形 + 非法忽略 + inline/规则恒等 + part11 现代空格形 legacy 序列化）"
     );
 }

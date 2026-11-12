@@ -1,0 +1,26 @@
+# enginelib 已知红名册（2026-11-12 boldpair 档，vendored unwrap 写面根因刀 dbfc027c9〔7d02707ba amend 后终态〕，7 红恒一）
+# 相对 2026-11-12 档（9 红）变化：
+# -2 js_dom_bridge::tests::test_execcommand_format_apply_r3254_m3 /
+#    test_execcommand_toggle_state_r3254_m3_slice4（bold pair，f415be99c 认账项）
+#    ——本刀（part04 跨父 textEl 移动臂双形态 + tombstone 判别 + part05 overlay
+#    prevSibling 回落）闭合 unwrap 写面真数据丢失根因后转绿：
+#    - toggle_state 断言零改动（'preobpost' shim 视图即期望契约），写面修复后按原
+#      断言转绿；
+#    - format_apply ①② 改 vendored 契约净效果 replay（mutation 切片 apply 到新鲜
+#      引擎 doc 比对 host inner_html，与语料 compare 行同口径，不钉 granular op 形
+#      状）；①b（嵌套跨既有 <b>）与 ③（italic 先行命令序列）迁出为 #[ignore] 簇
+#      测试具名挂账（apply 面嵌套簇三缺陷 + 跨命令 override 泄漏第四缺陷，
+#      根因刀后解除 ignore 并钉净效果期望——见 evidence 2026-11-12
+#      unwrap-writeface-boldpair-r5450 挂账节）。
+# enginelib 实测 3904P/7F/2I @dbfc027c9（gate v4 fresh 重跑定谳；v1 腿 3904P/7F/2I
+# 跑在存在性门并入前的 7d02707ba 形态，计数相同=存在性门不触碰 enginelib 面），7 红逐名：
+# 全部为 2026-11-12 档既有外部债（五红 CSSOM 序列化 s249 形变 + ws×2 + fetch/iframe-sw/
+# websocket 等已移交域），零新增红。
+# 名册变化当轮新增带日期文件，不覆盖旧档。
+js_dom_bridge::tests::img_runtime_deferred_settle_r5275
+js_dom_bridge::tests::svg_img_settle_density_r5277
+js_dom_bridge::tests::test_fetch_filtered_response_type_matrix
+js_dom_bridge::tests::test_iframe_service_worker_messages_dispatch_to_iframe_container
+js_dom_bridge::tests::test_response_body_readable_stream_r2967
+js_dom_bridge::tests::test_t8k_websocket_error_nonterminal
+js_dom_bridge::tests::test_t8k_websocket_event_flow_open_message_close
