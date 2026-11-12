@@ -68,9 +68,12 @@ zw-g22-full-2100，release 二进制 = 本树 HEAD 43d476e64 + g22 WIP）
   random-item-invalid 0P/14F → **14P/0F**，其余 255 页 ±0——含
   random-item-valid 21P 保持、random-item-computed 8P/23F 持平）。
 - 五套件 Pass 级零漂移：color 10,972 ±0、transitions 200 ±0、
-  animations 238 ±0、easing 51 ±0、transforms 229 ±0。transitions
-  F +1（2,279→2,280）与 animations F +1/T −1（716→717/8→7）为页面
-  超时截断的子测试枚举差伪影（g21 同类，Pass/Timeout 双锚定）。
+  animations 238 ±0、easing 51 ±0（全账逐位 ±0）、transforms 229 ±0。
+  Fail 子测试计数差两处均为枚举伪影非行为回退：transitions
+  event-dispatch.tentative +1F 系子测试 `Restart transition after
+  canceling transition immediately` g21 未枚举（页 22→23 子测试
+  枚举差，无 Pass→Fail 翻转）；animations T 8→7 页超时枚举差
+  （Fail +1 对应，Pass ±0）。
 
 ## 5. 残余桶（random 族更新）
 

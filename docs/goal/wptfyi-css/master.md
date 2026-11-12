@@ -99,7 +99,7 @@ tree-counting 家族残 89F（g19 后：keyframe 10 页、invalidation/container
 descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
 实参槽 2F + 伪元素 Face 3 2F——见 evidence g19 §5 分桶）、
 独立桶 line-break-ch
-194F / random 族残 ~86F（g22 后，见 g21 evidence §5）/ attr-all-types 103F / viewport-units 84F / calc-size 62F /
+194F / random 族残 ~86F（g22 后，见 g22 evidence §5）/ attr-all-types 103F / viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；DC-3 全量对账
 （等批次平台期 dispatch 周跑，HEAD 已含 color/values/grid/anchor 各批增量）；
