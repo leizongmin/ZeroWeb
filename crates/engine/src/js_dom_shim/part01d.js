@@ -222,18 +222,28 @@
     // 'yellow'，fb 溶解后 restore 五连幻载体（背景块 + <b>[foo]</b> + fb 探针
     // 五嵌套背景 span 实证；纯背景形更走 wrap-in-carrier→fixDisallowed 链内容
     // 全失）；且 b/i/u/s/sub/sup 标签形从不刹车，爬升穿壳到根误记 null。
-    // sub/sup 只读标签（vendored 无 vertical-align 面）；strike/underline 的
-    // style 声明面先于标签面（声明不含该线值时直接 null，不落标签）。
+    // sub/sup 只读标签（vendored 无 vertical-align 面）。
     if (cmd === 'subscript' || cmd === 'superscript') {
       var tVaS = _zwJusTag(el);
       if (tVaS === 'sup') return 'superscript';
       if (tVaS === 'sub') return 'subscript';
       return null;
     }
+    // strike/underline 的 style 声明面先于标签面：短手 text-decoration 与
+    // 长手 text-decoration-line 在 Chrome 是同一逻辑属性（声明层长手写入
+    // 在 getSpecifiedCommandValue 读回同一值）。短手缺位时长手回退读——
+    // 本引擎 Site A 溶解换形产物即长手形（strikethrough.js:492/:532 录形
+    // `<span style="text-decoration-line:…">`），指定值链读不到会令
+    // forceValue 等值门误判重裹（T14c/T15c 探针实证）；长手存在但不含
+    // 该线值同样返 null 掩蔽标签面。
     if (cmd === 'strikethrough') {
       var tdVaS = _zwPlainDecl(el, 'text-decoration');
       if (tdVaS) {
         return tdVaS.indexOf('line-through') !== -1 ? 'line-through' : null;
+      }
+      var tdLs = _zwPlainDecl(el, 'text-decoration-line');
+      if (tdLs) {
+        return tdLs.indexOf('line-through') !== -1 ? 'line-through' : null;
       }
       var tVaS2 = _zwJusTag(el);
       return (tVaS2 === 's' || tVaS2 === 'strike') ? 'line-through' : null;
@@ -242,6 +252,10 @@
       var tdVaU = _zwPlainDecl(el, 'text-decoration');
       if (tdVaU) {
         return tdVaU.indexOf('underline') !== -1 ? 'underline' : null;
+      }
+      var tdLu = _zwPlainDecl(el, 'text-decoration-line');
+      if (tdLu) {
+        return tdLu.indexOf('underline') !== -1 ? 'underline' : null;
       }
       return _zwJusTag(el) === 'u' ? 'underline' : null;
     }
@@ -407,6 +421,32 @@
         else el.removeAttribute('style');
       }
     } catch (_eSp2) {}
+  }
+
+  // DC-2 ①（2026-11-12）：text-decoration 换形壳 attr 直写——丢继承 shorthand
+  //（SetTagName 拷贝的原 `text-decoration:` 声明）后直写目标声明（prop 空
+  // 串 = 仅丢弃），空串出 attr 整删。Chrome 换形录形 attr 恒单声明
+  //（strikethrough.js:492/:537 `style="text-decoration-line:…"`、:497 换 u
+  // 剥 decl）——SetStyleProp 叠加路径会并出 `text-decoration:…;
+  // text-decoration-line:…` 双声明错形（computed 读面亦被旧 shorthand 短路
+  // 致后续等值门误判重裹）。直写使 CSSOM store 按 attr 重放（规范形语义同
+  // _zwVaCanonicalizeAncestorStyleAttrs）。
+  function _zwVaWriteTdDeclOnly(el, prop, val) {
+    try {
+      var decls = _zwPlainStyleDecls(el);
+      delete decls['text-decoration'];
+      if (prop && val) decls[prop] = val;
+      else if (prop) delete decls[prop];
+      var parts = [];
+      for (var k in decls) {
+        if (Object.prototype.hasOwnProperty.call(decls, k)) {
+          parts.push(k + ':' + decls[k]);
+        }
+      }
+      var serial = parts.join('; ');
+      if (serial) el.setAttribute('style', serial);
+      else el.removeAttribute('style');
+    } catch (_eTdW) {}
   }
 
   // —— isAllowedChild（参考实现 :1572）——inline contents 白名单 +
@@ -802,15 +842,54 @@
         : (command === 'forecolor' ? 'color'
           // DC-2 P2 apply 面（2026-11-11）：六 format 命令声明清值臂
           //（vendored relevantCssProperty :2476 同构；text-decoration 偏序
-          // 删除（仅剥 line-through/underline 保留他值）未接——多值声明
-          // delta 挂 recordCurrentOverrides 侧，FIXME 见 forceValue 注）。
+          // 删除已于 2026-11-12 接入，见下方 decl 重写臂）。
           : (command === 'bold' ? 'font-weight'
             : (command === 'italic' ? 'font-style'
               : ((command === 'underline' || command === 'strikethrough')
                 ? 'text-decoration'
                 : (command === 'subscript' || command === 'superscript')
                   ? 'vertical-align' : 'background-color')))));
-    if (_zwPlainDecl(element, prop)) {
+    // DC-2 ①（2026-11-12）：text-decoration 偏序删除——decl 含命令 token 时
+    // 仅剥该 token 重写声明（junk 丢弃、canon 位序 [underline, overline,
+    // line-through]；Chrome 录形 underline.js:725-761 junk 族
+    // `line-through overline underline` − underline → `overline line-through`、
+    // :479-483 `underline line-through` − underline → `line-through` 实证）。
+    // 剥空照旧整删（s-underline 全选 `foo[bar]baz` 录形链 :831 null → :2114
+    // attributeless 解壳既有绿面；u-lineThru + strike 全选同链）。他 prop
+    // 维持整删。
+    if (prop === 'text-decoration'
+        && (command === 'underline' || command === 'strikethrough')) {
+      var remCv = command === 'underline' ? 'underline' : 'line-through';
+      var canonCv = ['underline', 'overline', 'line-through'];
+      var declCv = '';
+      try { declCv = _zwPlainDecl(element, 'text-decoration') || ''; } catch (_eCv1) { declCv = ''; }
+      if (declCv) {
+        var toksCv = String(declCv).toLowerCase().split(/\s+/);
+        var survCv = [];
+        for (var tCv = 0; tCv < toksCv.length; tCv++) {
+          if (toksCv[tCv] && canonCv.indexOf(toksCv[tCv]) !== -1
+              && toksCv[tCv] !== remCv && survCv.indexOf(toksCv[tCv]) === -1) {
+            survCv.push(toksCv[tCv]);
+          }
+        }
+        survCv.sort(function (a, b) { return canonCv.indexOf(a) - canonCv.indexOf(b); });
+        // 直写 attr 同切刻臂（CSSOM `k: v` 空格形泄漏规避，见该处注）；
+        // 剥空走整删（delete + 空 attr 移除），:831 recheck null → :2114
+        // attributeless 解壳链不变。
+        var declsCv = _zwPlainStyleDecls(element);
+        if (survCv.length) declsCv['text-decoration'] = survCv.join(' ');
+        else delete declsCv['text-decoration'];
+        var partsCv = [];
+        for (var kCv in declsCv) {
+          if (Object.prototype.hasOwnProperty.call(declsCv, kCv)) {
+            partsCv.push(kCv + ':' + declsCv[kCv]);
+          }
+        }
+        var serialCv = partsCv.join('; ');
+        if (serialCv) element.setAttribute('style', serialCv);
+        else element.removeAttribute('style');
+      }
+    } else if (_zwPlainDecl(element, prop)) {
       _zwVaSetStyleProp(element, prop, '');
       try {
         var attr = element.getAttribute('style');
@@ -921,6 +1000,100 @@
     // 感知 white-space 属性，pre 格式化空白不受此门。
     if (node.nodeType === 3 && _zwJusIsWhitespaceNode(node)) {
       return;
+    }
+    // DC-2 ①（2026-11-12）：s/strike decl 壳内 strike ADD 部分选区切分抽裹
+    // ——spec(s, strike) 因 inline decl 掩 tag face 恒 null（split 冲突判定
+    // 不 peel → 既有面恒内裹不切分），Chrome 录形却切分（strikethrough.js
+    // :500-507 `foo<s style="text-decoration: underline">b[a]r</s>baz` +
+    // strike = `b</s><span …>a</span><s>r</s>` 分解三段形）。门：strike ADD
+    // 且命令 token = 壳 tag face（line-through）、壳带不含 line-through 的
+    // inline decl；u 壳对位形（:564-571）恒内裹不入本门。中段 css-true 落
+    // longhand span(text-decoration-line: canon(decl)∪line-through)（:502/
+    // :542）；css-false 落 [span(text-decoration-line: 非 u 映射 token)] >
+    // [u] > strike 嵌套（:507 u>strike、:547 span(ld:overline)>strike）。
+    if (command === 'strikethrough' && newValue === 'line-through'
+        && node.nodeType === 3 && node.parentNode
+        && _zwVaIsAllowedChild(node, 'span')) {
+      var shellSb = null;
+      var declSb = '';
+      var nSb = node.parentNode;
+      var gSb = 0;
+      while (nSb && gSb++ < 256) {
+        if (nSb.nodeType !== 1 || !_zwJusIsEditable(nSb)) break;
+        if (_zwJusIsEditingHost(nSb) || _zwJusIsBlockNode(nSb)) break;
+        var tgSb = _zwJusTag(nSb);
+        if (tgSb === 's' || tgSb === 'strike') {
+          var dSb = '';
+          try { dSb = _zwPlainDecl(nSb, 'text-decoration') || ''; } catch (_eVaSb) { dSb = ''; }
+          if (dSb && String(dSb).toLowerCase().indexOf('line-through') === -1) {
+            shellSb = nSb;
+            declSb = dSb;
+          }
+          break;
+        }
+        nSb = nSb.parentNode;
+      }
+      if (shellSb) {
+        _zwVaPeelOne(shellSb, true, command);
+        // end 侧走既有裸移（_zwVaCarrierResidualStyling 对 u/s 命令恒 false，
+        // 残余 el 保后段 decl 原样入 PeelCarry；本臂 ADD 面重物化门不入）。
+        _zwVaPeelOne(shellSb, false, command);
+        if (!node.parentNode) return;
+        var canonSb = ['underline', 'overline', 'line-through'];
+        var toksSb = String(declSb).toLowerCase().split(/\s+/);
+        var survSb = [];
+        for (var tSb = 0; tSb < toksSb.length; tSb++) {
+          if (toksSb[tSb] && canonSb.indexOf(toksSb[tSb]) !== -1
+              && toksSb[tSb] !== 'line-through'
+              && survSb.indexOf(toksSb[tSb]) === -1) {
+            survSb.push(toksSb[tSb]);
+          }
+        }
+        survSb.sort(function (a, b) { return canonSb.indexOf(a) - canonSb.indexOf(b); });
+        var wrapSb = null;
+        var innerSb = null;
+        if (_zwVaCssFlag()) {
+          var mergedSb = survSb.slice();
+          if (mergedSb.indexOf('line-through') === -1) mergedSb.push('line-through');
+          mergedSb.sort(function (a, b) { return canonSb.indexOf(a) - canonSb.indexOf(b); });
+          wrapSb = document.createElement('span');
+          _zwVaSetStyleProp(wrapSb, 'text-decoration-line', mergedSb.join(' '));
+          innerSb = wrapSb;
+        } else {
+          var nonMapSb = [];
+          var uSb = null;
+          for (var nSb2 = 0; nSb2 < survSb.length; nSb2++) {
+            if (survSb[nSb2] !== 'underline') nonMapSb.push(survSb[nSb2]);
+          }
+          if (nonMapSb.length) {
+            wrapSb = document.createElement('span');
+            _zwVaSetStyleProp(wrapSb, 'text-decoration-line', nonMapSb.join(' '));
+            innerSb = wrapSb;
+          }
+          if (survSb.indexOf('underline') !== -1) {
+            uSb = document.createElement('u');
+            if (innerSb) {
+              innerSb.appendChild(uSb);
+            } else {
+              wrapSb = uSb;
+            }
+            innerSb = uSb;
+          }
+          var stSb = document.createElement('strike');
+          if (innerSb) {
+            innerSb.appendChild(stSb);
+          } else {
+            wrapSb = stSb;
+          }
+          innerSb = stSb;
+        }
+        var parSb = node.parentNode;
+        var idxSb = _zwJusNodeIndex(node);
+        _zwVaShiftEndpointsForInsert(parSb, idxSb);
+        parSb.insertBefore(wrapSb, node);
+        _zwJusMovePreservingRanges(node, innerSb, 0);
+        return;
+      }
     }
     var i;
     if (_zwVaIsAllowedChild(node, 'span')) {
@@ -1154,6 +1327,101 @@
                 _zwJusMovePreservingRanges(kidsDs[i], spanDs, spanDs.childNodes.length);
               }
               if (node.parentNode) node.parentNode.removeChild(node);
+            }
+            return;
+          }
+        }
+      }
+      // DC-2 ①（2026-11-12）：decl 面壳（inline text-decoration 替换 tag
+      // face）ADD 分族——⑦ residualDecls 下潜门对 decl 壳产生内裹，Chrome
+      // 录形按壳 tag 与命令 token 关系分族（data/underline.js:514-577、
+      // data/strikethrough.js:474-563 录形直译）。仅 decl 面入本门（decl 空
+      // = tag face 载体走 ⑤ 折叠臂/⑦ 下潜既有绿面）；junk token 丢弃、canon
+      // 位序 [underline, overline, line-through]：
+      //   - u 壳 + underline（命令 token = 壳 tag face）：外裹保壳——css-true
+      //     span(text-decoration:newValue)（underline.js:516/:560）、css-false
+      //     u（:521/:565）；
+      //   - u 壳 + strike：css-true 溶解换形 shorthand span(decl∪line-through)
+      //     （strikethrough.js:556）；css-false 外裹 strike 保壳（:561）；
+      //   - s/strike 壳 + underline：css-true 溶解换形 shorthand span(decl∪
+      //     underline)（underline.js:540）；css-false 外裹 u 保壳（:545）；
+      //   - s/strike 壳 + strike（命令 token = 壳 tag face）：css-true 溶解
+      //     换形 **longhand** span(text-decoration-line: decl∪line-through)
+      //     （strikethrough.js:492/:532）；css-false 壳转形 + 内裹 strike——
+      //     surviving=[underline] 换 u 剥 decl（:497）、余者换 span
+      //     (text-decoration-line: surviving)（:537）。
+      if ((command === 'underline' || command === 'strikethrough')
+          && node.nodeType === 1) {
+        var tgSa = _zwJusTag(node);
+        var declSa = '';
+        try {
+          declSa = _zwPlainDecl(node, 'text-decoration') || '';
+        } catch (_eVaSa0) { declSa = ''; }
+        if ((tgSa === 'u' || tgSa === 's' || tgSa === 'strike') && declSa) {
+          var canonSa = ['underline', 'overline', 'line-through'];
+          var remSa = command === 'underline' ? 'underline' : 'line-through';
+          var toksSa = String(declSa).toLowerCase().split(/\s+/);
+          var survSa = [];
+          for (var tSa = 0; tSa < toksSa.length; tSa++) {
+            if (toksSa[tSa] && canonSa.indexOf(toksSa[tSa]) !== -1
+                && survSa.indexOf(toksSa[tSa]) === -1) {
+              survSa.push(toksSa[tSa]);
+            }
+          }
+          survSa.sort(function (a, b) { return canonSa.indexOf(a) - canonSa.indexOf(b); });
+          if (survSa.length) {
+            var mergedSa = survSa.slice();
+            if (mergedSa.indexOf(remSa) === -1) mergedSa.push(remSa);
+            mergedSa.sort(function (a, b) { return canonSa.indexOf(a) - canonSa.indexOf(b); });
+            if (_zwVaCssFlag()) {
+              if (tgSa === 'u' && command === 'underline') {
+                // 外裹 span(newValue)，壳原样（underline.js:516/:560）。
+                var spanSa = document.createElement('span');
+                _zwVaSetStyleProp(spanSa, 'text-decoration', newValue);
+                node.parentNode.insertBefore(spanSa, node);
+                _zwJusMovePreservingRanges(node, spanSa, 0);
+                return;
+              }
+              if (tgSa === 'u' || command === 'underline') {
+                // 溶解换形 shorthand span（strikethrough.js:556 /
+                // underline.js:540）。
+                var spanSa2 = _zwJusSetTagName(node, 'span');
+                _zwVaWriteTdDeclOnly(spanSa2, 'text-decoration', mergedSa.join(' '));
+                return;
+              }
+              // s/strike + strike css-true：溶解换形 longhand（:492/:532）。
+              var spanSa3 = _zwJusSetTagName(node, 'span');
+              _zwVaWriteTdDeclOnly(spanSa3, 'text-decoration-line', mergedSa.join(' '));
+              return;
+            }
+            if (command === 'underline') {
+              // css-false 外裹 u 保壳（underline.js:521/:545/:565）。
+              var uSa = document.createElement('u');
+              node.parentNode.insertBefore(uSa, node);
+              _zwJusMovePreservingRanges(node, uSa, 0);
+              return;
+            }
+            if (tgSa === 'u') {
+              // u + strike css-false：外裹 strike 保壳（strikethrough.js:561）。
+              var stSa = document.createElement('strike');
+              node.parentNode.insertBefore(stSa, node);
+              _zwJusMovePreservingRanges(node, stSa, 0);
+              return;
+            }
+            // s/strike + strike css-false：壳转形 + 内裹 strike（:497/:537）。
+            var carriedSa;
+            if (survSa.length === 1 && survSa[0] === 'underline') {
+              carriedSa = _zwJusSetTagName(node, 'u');
+              _zwVaWriteTdDeclOnly(carriedSa, '', '');
+            } else {
+              carriedSa = _zwJusSetTagName(node, 'span');
+              _zwVaWriteTdDeclOnly(carriedSa, 'text-decoration-line', survSa.join(' '));
+            }
+            var stSa2 = document.createElement('strike');
+            carriedSa.insertBefore(stSa2, carriedSa.firstChild);
+            var kidsSa = [].slice.call(carriedSa.childNodes);
+            for (var kSa = 1; kSa < kidsSa.length; kSa++) {
+              _zwJusMovePreservingRanges(kidsSa[kSa], stSa2, stSa2.childNodes.length);
             }
             return;
           }
@@ -1438,6 +1706,15 @@
   // peel 载体记录：{el}——start 侧 = 属性克隆，end 侧 = 残余 el（外段后缀
   // 载体）。供 _zwVaRematerializeCarries 嵌套 flag-form 重物化消费。
   var _zwVaPeelCarry = [];
+  // u/s 移除面 start 克隆「保 tag」登记（DC-2 ①，2026-11-12）：移除区贯穿
+  // 元素尾（选区末端容器在 el 之外）→ css-true 幸存前段保原 tag 不换形
+  // span（`foo<u>ba[r</u>]baz` css-true = `foo<u>ba</u>rbaz` 录形
+  // underline.js:658-662、`<strike>fo[o</strike><s>b]ar</s>` 保 strike
+  // :710-714）；末端在 el 内容内（含末文本尾界，`<u>foo[bar]baz</u>`）
+  // → 内段形照旧换形 span（:178-182 录形）。供
+  // _zwVaRematerializeCarries 查询；_zwVaSplitConflictingInline 入口随
+  // _zwVaPeelCarry 一并清空。
+  var _zwVaPeelKeepTag = [];
 
   // 单祖先单侧 peel（无边界重写设计——随动自动保界）。两侧机制不对称：
   // · start 侧：外段前缀 [0..ci) 移入 el 的属性克隆（保样式），克隆以 **ref=el**
@@ -1483,6 +1760,27 @@
     var ci = _zwVaEdgeComposite(el, cont, off);
     if (ci < 0) return;
     var len = el.childNodes.length;
+    // 保形登记须在子级搬移前判定（搬移后 childNodes.length 已缩、容器已随动）。
+    var keepTagP = false;
+    if (isStart && (command === 'underline' || command === 'strikethrough')) {
+      var ecK = rng.endContainer;
+      var inElK = false;
+      try { inElK = el === ecK || el.contains(ecK); } catch (_ePk) { inElK = false; }
+      if (!inElK) {
+        // 贯穿尾界分命令：strike 克隆恒保 tag（`<strike>fo[o</strike><s>b]ar
+        // </s>` = 保 strike，strike.js:710-714——出口已持线值仍保）；u 克隆仅
+        // 出口无命令线值时保（`foo<u>ba[r</u>]baz` 出口落普通内容 = 保 u，
+        // underline.js:658-662；`<u>fo[o</u><ins>b]ar</ins>` 出口入持
+        // underline 的 ins = 换形 span，:713-717）。
+        if (command === 'strikethrough') {
+          keepTagP = true;
+        } else {
+          var effK = null;
+          try { effK = _zwValEffectiveValue(ecK, command); } catch (_ePk2) { effK = null; }
+          keepTagP = !(effK && String(effK).indexOf('underline') !== -1);
+        }
+      }
+    }
     if (isStart ? ci <= 0 : ci >= len) return;
     var parent = el.parentNode;
     var kids = [].slice.call(el.childNodes);
@@ -1508,6 +1806,7 @@
         _zwJusMovePreservingRanges(kids[k], clone, k);
       }
       _zwVaPeelDissolveInvisibleRemnant(el);
+      if (keepTagP) _zwVaPeelKeepTag.push(clone);
       _zwVaPeelCarry.push(clone);
     } else {
       var elIdx = _zwJusNodeIndex(el);
@@ -1563,6 +1862,7 @@
   function _zwVaSplitConflictingInline(command, newValue) {
     _zwVaPeelRestore = [];
     _zwVaPeelCarry = [];
+    _zwVaPeelKeepTag = [];
     var isBg = command === 'backcolor' || command === 'hilitecolor';
     var fcS = null;
     if (isBg) {
@@ -1623,11 +1923,72 @@
   // font1 fs4 flag=true 期望 font attr 载体恒保形（L378，tA2 恒绿面）；flag=
   // false 嵌套恒 font attr（fs4b L438）；span/style 载体已 flag-form（克隆归一
   // 臂 + 祖先规范形直出）不动。
-  function _zwVaRematerializeCarries(command) {
+  function _zwVaRematerializeCarries(command, newValue) {
     var cssFlag = _zwVaCssFlag();
     for (var i = 0; i < _zwVaPeelCarry.length; i++) {
       var cw = _zwVaPeelCarry[i];
       if (!cw || !cw.parentNode) continue;
+      // DC-2 ①（2026-11-12）：u/s 移除面（newValue null）peel 幸存壳重物化
+      // ——克隆/残余 el 携壳 tag + inline decl（或裸 tag face）按 Chrome 分解
+      // 录形转形（data/underline.js:504-513 s-underline、:520-528 u-lineThru
+      // +strike、:648-656 u 残 el、:703-721 跨 ins 载体；data/strikethrough.js
+      // 同构）。decl 残值 = canon∩decl − 命令 token（junk 丢弃、canon 位序）：
+      //   css-true：换形 span，decl := 残值非空 ? 残值 : [removed]（:506
+      //     span(removed) 录形——选中段裸化、外围段保完整视觉）；
+      //   css-false：decl 残值非空保 tag 改 decl（无语料保守形）；残值空换
+      //     tag(removed)（underline→u、line-through→strike，:511/:527 录形）
+      //     剥 decl；裸 tag face（无 decl）保 tag 不动（css-false 既有绿面
+      //     :651-655 u 残壳、styled-child css-false 族）。
+      if (newValue === null
+          && (command === 'underline' || command === 'strikethrough')) {
+        var declRm = '';
+        try { declRm = _zwPlainDecl(cw, 'text-decoration') || ''; } catch (_eRm0) { declRm = ''; }
+        var tgRm = _zwJusTag(cw);
+        if (declRm || tgRm === 'u' || tgRm === 's' || tgRm === 'strike') {
+          var remRm = command === 'underline' ? 'underline' : 'line-through';
+          var canonRm = ['underline', 'overline', 'line-through'];
+          var toksRm = declRm ? String(declRm).toLowerCase().split(/\s+/) : [];
+          var survRm = [];
+          for (var tRm = 0; tRm < toksRm.length; tRm++) {
+            if (toksRm[tRm] && canonRm.indexOf(toksRm[tRm]) !== -1
+                && toksRm[tRm] !== remRm && survRm.indexOf(toksRm[tRm]) === -1) {
+              survRm.push(toksRm[tRm]);
+            }
+          }
+          survRm.sort(function (a, b) { return canonRm.indexOf(a) - canonRm.indexOf(b); });
+          if (cssFlag) {
+            // bare 壳保形门（DC-2 ①）：s 裸壳恒保 tag（strikethrough.js
+            // :271-280/:655-663 内段/进首段录形——s 幸存段不换形 span，与
+            // u/strike 分解形不同）；u/strike 移除区贯穿元素尾的 start 克隆
+            // 保 tag（underline.js:658-662、strike.js:710-718 录形，登记见
+            // _zwVaPeelKeepTag）。decl 面壳与内段 u/strike 照旧换形 span
+            //（underline.js:178-182、strike.js:331-335、:648-652 录形）。
+            if (!declRm && (tgRm === 's'
+                || _zwVaPeelKeepTag.indexOf(cw) !== -1)) {
+              continue;
+            }
+            var spanRm = _zwJusSetTagName(cw, 'span');
+            _zwVaSetStyleProp(spanRm, 'text-decoration',
+              (survRm.length ? survRm : [remRm]).join(' '));
+          } else if (declRm) {
+            if (survRm.length) {
+              _zwVaSetStyleProp(cw, 'text-decoration', survRm.join(' '));
+            } else {
+              var repRm = _zwJusSetTagName(cw, remRm === 'underline' ? 'u' : 'strike');
+              _zwVaSetStyleProp(repRm, 'text-decoration', '');
+              try {
+                var atRm = repRm.getAttribute('style');
+                if (atRm !== null && String(atRm).trim() === '') {
+                  repRm.removeAttribute('style');
+                }
+              } catch (_eRm1) {}
+            }
+          }
+          // 裸 tag face（无 decl）css-false：保 tag 原样（:651-655 u 残壳、
+          // styled-child css-false 族既有绿面）。
+          continue;
+        }
+      }
       // ③'-b（tag 模式 forecolor span 载体臂）：peel 克隆载体恒为 span+style
       // 形（克隆路径 _zwVaNormalizeStyleAttrCss 归一 rgb），tag 模式语料期望
       // legacy font attr 形（forecolor.js :441 `foo<font color="#a52a2a">b</
@@ -2074,13 +2435,106 @@
     // tests.js 归一范围 = wrapper 后代）直出规范形，got 与录制面无条件对齐。
     _zwVaCanonicalizeAncestorStyleAttrs(rng);
 
+    // DC-2 ①（2026-11-12）：span decl 壳切刻面——u/s 移除面部分选区、壳
+    // decl 剥除命令 token 后仍有 canon 残值时，Chrome 录形不切分壳：壳 decl
+    // 原位重写为残值、选区外首尾段在壳内以移除 token 形内裹（underline.js
+    // :484-493 `foo<span style="text-decoration: underline line-through">
+    // b[a]r</span>baz` css-true = 壳保 line-through + b/r 段
+    // `<span style="text-decoration:underline">` 内裹、css-false 内裹 u；
+    // strikethrough.js:479-487 内裹 span/strike 同构）。重写后 specified
+    // 含命令 token 面为 null → split 冲突判定自然跳过（不 peel 保壳）；
+    // 全选残值形（junk 族 :725-761）同链只落 decl 重写（首尾段为空）。
+    if ((command === 'underline' || command === 'strikethrough')
+        && newValue === null) {
+      var remSk = command === 'underline' ? 'underline' : 'line-through';
+      var canonSk = ['underline', 'overline', 'line-through'];
+      var seenSk = [];
+      var edgesSk = [rng.startContainer, rng.endContainer];
+      for (var eSk = 0; eSk < edgesSk.length; eSk++) {
+        var nSk = edgesSk[eSk];
+        if (nSk && nSk.nodeType !== 1) nSk = nSk.parentNode;
+        var gSk = 0;
+        while (nSk && nSk.nodeType === 1 && gSk++ < 256) {
+          if (!_zwJusIsEditable(nSk)
+              || _zwJusIsEditingHost(nSk) || _zwJusIsBlockNode(nSk)) break;
+          if (_zwJusTag(nSk) === 'span' && seenSk.indexOf(nSk) === -1) {
+            seenSk.push(nSk);
+            var dSk = '';
+            try { dSk = _zwPlainDecl(nSk, 'text-decoration') || ''; } catch (_eSk0) { dSk = ''; }
+            var toksSk = dSk ? String(dSk).toLowerCase().split(/\s+/) : [];
+            var survSk = [];
+            for (var tSk = 0; tSk < toksSk.length; tSk++) {
+              if (toksSk[tSk] && canonSk.indexOf(toksSk[tSk]) !== -1
+                  && toksSk[tSk] !== remSk && survSk.indexOf(toksSk[tSk]) === -1) {
+                survSk.push(toksSk[tSk]);
+              }
+            }
+            if (survSk.length) {
+              var kidsSk = [].slice.call(nSk.childNodes);
+              var sPosSk = -1;
+              var ePosSk = -1;
+              for (var pSk = 0; pSk < kidsSk.length; pSk++) {
+                var hitSk = kidsSk[pSk];
+                var mSk = rng.startContainer;
+                while (mSk && mSk.parentNode !== nSk) mSk = mSk.parentNode;
+                if (mSk === hitSk) sPosSk = pSk;
+                mSk = rng.endContainer;
+                while (mSk && mSk.parentNode !== nSk) mSk = mSk.parentNode;
+                if (mSk === hitSk) ePosSk = pSk;
+              }
+              // 端点确实落本壳内（含全选形——首尾段为空仅 decl 重写）才动；
+              // 链上无关 decl 壳零触碰。
+              if (sPosSk !== -1 || ePosSk !== -1) {
+                survSk.sort(function (a, b) {
+                  return canonSk.indexOf(a) - canonSk.indexOf(b);
+                });
+                // 直写 attr（不走 SetStyleProp）：既有解析壳 CSSOM 有 pending
+                // 值，setValue 路径 cur==valS 跳手写回时 getAttribute/序列化
+                // 见 CSSOM `k: v` 空格形（cssom-1），Chrome 录制端 cssText
+                // 往返为 `k:v` 无空格规范形。setAttribute 外写使 CSSOM store
+                // 按 attr 重放（规范形直出同链 _zwVaCanonicalizeAncestorStyle
+                // Attrs 既有语义）。
+                var declsSk = _zwPlainStyleDecls(nSk);
+                declsSk['text-decoration'] = survSk.join(' ');
+                var partsSk = [];
+                for (var kSk in declsSk) {
+                  if (Object.prototype.hasOwnProperty.call(declsSk, kSk)) {
+                    partsSk.push(kSk + ':' + declsSk[kSk]);
+                  }
+                }
+                nSk.setAttribute('style', partsSk.join('; '));
+                var cutSk = remSk === 'underline' ? 'u' : 'strike';
+                for (var hSk = 0; hSk < sPosSk; hSk++) {
+                  var wSk = document.createElement(_zwVaCssFlag() ? 'span' : cutSk);
+                  if (_zwVaCssFlag()) {
+                    _zwVaSetStyleProp(wSk, 'text-decoration', remSk);
+                  }
+                  nSk.insertBefore(wSk, kidsSk[hSk]);
+                  _zwJusMovePreservingRanges(kidsSk[hSk], wSk, 0);
+                }
+                for (var tSk2 = ePosSk + 1; tSk2 < kidsSk.length; tSk2++) {
+                  var xSk = document.createElement(_zwVaCssFlag() ? 'span' : cutSk);
+                  if (_zwVaCssFlag()) {
+                    _zwVaSetStyleProp(xSk, 'text-decoration', remSk);
+                  }
+                  nSk.insertBefore(xSk, kidsSk[tSk2]);
+                  _zwJusMovePreservingRanges(kidsSk[tSk2], xSk, 0);
+                }
+              }
+            }
+          }
+          nSk = nSk.parentNode;
+        }
+      }
+    }
+
     // Chromium delta 切分 pass（⑦ 包裹形状，2026-11-04）：部分含选区的
     // specified 冲突祖先行内 peel / 块级 push-down，先于 contained 清值
     // （peel 后中段元素升格 contained → 既有 clearValue 简单可改性摘壳臂
     // （:598 简单可改性分支）自然收口中段裸元素）。
     _zwVaSplitConflictingInline(command, newValue);
     // peel 载体嵌套 flag-form 重物化（⑧）：见函数注。
-    _zwVaRematerializeCarries(command);
+    _zwVaRematerializeCarries(command, newValue);
 
     // contained element clearValue pass。
     var elements = _zwValGetAllEffectivelyContained(rng, function (node) {

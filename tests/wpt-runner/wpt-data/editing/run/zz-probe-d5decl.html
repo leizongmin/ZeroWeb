@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+// 语料 setupDiv 文本标记语义：[]/{} 于文本节点 → 文本 offset 选区
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.indexOf("[");
+    var ei = data.replace(/\[/g, "").indexOf("]");
+    if (si !== -1) { startNode = n; startOffset = si; }
+    if (ei !== -1) { endNode = n; endOffset = ei; }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+// DC-2 ⑤ 后 decl 面壳判据：u/s 带 inline text-decoration 壳的 apply 录形
+// 对照（期望值 = Chrome 录形 data/underline.js / data/strikethrough.js 原文，
+// 2026-11-12 诊断实取）。当前形态见各 case 失败信息 GOT=；修复落点 =
+// ⑦ residualDecls 下潜门的 u/s decl 壳外裹/溶解分族（多值偏序批）。
+function d5decl(tag, input, seq, want) {
+  test(function() {
+    setupCorp(input);
+    for (var i = 0; i < seq.length; i++) {
+      document.execCommand(seq[i][0], false, seq[i][1]);
+    }
+    assert_equals(host.innerHTML, want, tag);
+  }, tag);
+}
+d5decl("A u-overline +underline css-true",
+  'foo<u style="text-decoration: overline">[bar]</u>baz',
+  [["styleWithCSS","true"],["underline",""]],
+  'foo<span style="text-decoration:underline"><u style="text-decoration:overline">bar</u></span>baz');
+d5decl("B u-overline +underline css-false",
+  'foo<u style="text-decoration: overline">[bar]</u>baz',
+  [["styleWithCSS","false"],["underline",""]],
+  'foo<u><u style="text-decoration:overline">bar</u></u>baz');
+d5decl("C s-overline +underline css-true",
+  'foo<s style="text-decoration: overline">[bar]</s>baz',
+  [["styleWithCSS","true"],["underline",""]],
+  'foo<span style="text-decoration:underline overline">bar</span>baz');
+d5decl("D s-overline +underline css-false",
+  'foo<s style="text-decoration: overline">[bar]</s>baz',
+  [["styleWithCSS","false"],["underline",""]],
+  'foo<u><s style="text-decoration:overline">bar</s></u>baz');
+d5decl("E u-lineThru b[a]r +strike css-true",
+  'foo<u style="text-decoration: line-through">b[a]r</u>baz',
+  [["styleWithCSS","true"],["strikethrough",""]],
+  'foo<span style="text-decoration:line-through">b</span>a<span style="text-decoration:line-through">r</span>baz');
+d5decl("F u-overline +strike css-true",
+  'foo<u style="text-decoration: overline">[bar]</u>baz',
+  [["styleWithCSS","true"],["strikethrough",""]],
+  'foo<span style="text-decoration:overline line-through">bar</span>baz');
+</script>
+</body>

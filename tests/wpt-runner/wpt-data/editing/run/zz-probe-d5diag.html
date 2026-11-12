@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.indexOf("[");
+    var ei = data.replace(/\[/g, "").indexOf("]");
+    if (si !== -1) { startNode = n; startOffset = si; }
+    if (ei !== -1) { endNode = n; endOffset = ei; }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+// DC-2 ① decl 面壳多值偏序扩展判据（期望 = data/underline.js /
+// data/strikethrough.js 录形原文去选区标记 [ ]——本探针对比裸 innerHTML，
+// 语料期望串内的 [] 标记是选区锚点非内容）。T6 为既有绿面回归哨兵
+//（p 块载体，本批不动）。
+function d5diag(tag, input, seq, want) {
+  test(function() {
+    setupCorp(input);
+    for (var i = 0; i < seq.length; i++) {
+      document.execCommand(seq[i][0], false, seq[i][1]);
+    }
+    assert_equals(host.innerHTML, want, tag);
+  }, tag);
+}
+// toggle-off 分解面（removal survivors / span carve / junk 偏序）
+d5diag("T1 U3p underline-decl s partial css-true",
+  'foo<s style="text-decoration: underline">b[a]r</s>baz',
+  [["stylewithcss","true"],["underline",""]],
+  'foo<span style="text-decoration:underline">b</span>a<span style="text-decoration:underline">r</span>baz');
+d5diag("T2 U3p css-false",
+  'foo<s style="text-decoration: underline">b[a]r</s>baz',
+  [["stylewithcss","false"],["underline",""]],
+  'foo<u>b</u>a<u>r</u>baz');
+d5diag("T3 S3p lineThru-decl u partial css-true",
+  'foo<u style="text-decoration: line-through">b[a]r</u>baz',
+  [["stylewithcss","true"],["strikethrough",""]],
+  'foo<span style="text-decoration:line-through">b</span>a<span style="text-decoration:line-through">r</span>baz');
+d5diag("T4 S3p css-false",
+  'foo<u style="text-decoration: line-through">b[a]r</u>baz',
+  [["stylewithcss","false"],["strikethrough",""]],
+  'foo<strike>b</strike>a<strike>r</strike>baz');
+d5diag("T5 bare-u full toggle-off css-true（分解转 span）",
+  '<u>foo[bar]baz</u>',
+  [["stylewithcss","true"],["underline",""]],
+  '<span style="text-decoration:underline">foo</span>bar<span style="text-decoration:underline">baz</span>');
+d5diag("T6 p-decl css-true",
+  '<p style="text-decoration: underline">foo[bar]baz</p>',
+  [["stylewithcss","true"],["underline",""]],
+  '<p><span style="text-decoration:underline">foo</span>bar<span style="text-decoration:underline">baz</span></p>');
+d5diag("T7 span-carve partial css-true",
+  'foo<span style="text-decoration: underline line-through">b[a]r</span>baz',
+  [["stylewithcss","true"],["underline",""]],
+  'foo<span style="text-decoration:line-through"><span style="text-decoration:underline">b</span>a<span style="text-decoration:underline">r</span></span>baz');
+d5diag("T8 span-carve partial css-false",
+  'foo<span style="text-decoration: underline line-through">b[a]r</span>baz',
+  [["stylewithcss","false"],["underline",""]],
+  'foo<span style="text-decoration:line-through"><u>b</u>a<u>r</u></span>baz');
+d5diag("T9 junk-span toggle-off full css-true",
+  'abc<span style="text-decoration:line-through overline underline">[def]</span>ghi',
+  [["stylewithcss","true"],["underline",""]],
+  'abc<span style="text-decoration:overline line-through">def</span>ghi');
+// s-shell strike ADD 分解抽裹（Site B 切分机器）
+d5diag("T10 P-S1 s-underline partial +strike css-true",
+  'foo<s style="text-decoration: underline">b[a]r</s>baz',
+  [["stylewithcss","true"],["strikethrough",""]],
+  'foo<s style="text-decoration:underline">b</s><span style="text-decoration-line:underline line-through">a</span><s style="text-decoration:underline">r</s>baz');
+d5diag("T11 P-S2 css-false",
+  'foo<s style="text-decoration: underline">b[a]r</s>baz',
+  [["stylewithcss","false"],["strikethrough",""]],
+  'foo<s style="text-decoration:underline">b</s><u><strike>a</strike></u><s style="text-decoration:underline">r</s>baz');
+d5diag("T12 P-S5 s-overline partial +strike css-true",
+  'foo<s style="text-decoration: overline">b[a]r</s>baz',
+  [["stylewithcss","true"],["strikethrough",""]],
+  'foo<s style="text-decoration:overline">b</s><span style="text-decoration-line:overline line-through">a</span><s style="text-decoration:overline">r</s>baz');
+d5diag("T13 P-S6 css-false",
+  'foo<s style="text-decoration: overline">b[a]r</s>baz',
+  [["stylewithcss","false"],["strikethrough",""]],
+  'foo<s style="text-decoration:overline">b</s><span style="text-decoration-line:overline"><strike>a</strike></span><s style="text-decoration:overline">r</s>baz');
+// 全选 toggle-on（Site A decl 壳分族）
+d5diag("T14 S2 s-underline full +strike css-false",
+  'foo<s style="text-decoration: underline">[bar]</s>baz',
+  [["stylewithcss","false"],["strikethrough",""]],
+  'foo<u><strike>bar</strike></u>baz');
+d5diag("T14c S8c s-underline full +strike css-true",
+  'foo<s style="text-decoration: underline">[bar]</s>baz',
+  [["stylewithcss","true"],["strikethrough",""]],
+  'foo<span style="text-decoration-line:underline line-through">bar</span>baz');
+d5diag("T15 S6 s-overline full +strike css-false",
+  'foo<s style="text-decoration: overline">[bar]</s>baz',
+  [["stylewithcss","false"],["strikethrough",""]],
+  'foo<span style="text-decoration-line:overline"><strike>bar</strike></span>baz');
+d5diag("T15c S6c s-overline full +strike css-true",
+  'foo<s style="text-decoration: overline">[bar]</s>baz',
+  [["stylewithcss","true"],["strikethrough",""]],
+  'foo<span style="text-decoration-line:overline line-through">bar</span>baz');
+d5diag("T16 S8 u-overline full +strike css-false",
+  'foo<u style="text-decoration: overline">[bar]</u>baz',
+  [["stylewithcss","false"],["strikethrough",""]],
+  'foo<strike><u style="text-decoration:overline">bar</u></strike>baz');
+d5diag("T16c S8c u-overline full +strike css-true",
+  'foo<u style="text-decoration: overline">[bar]</u>baz',
+  [["stylewithcss","true"],["strikethrough",""]],
+  'foo<span style="text-decoration:overline line-through">bar</span>baz');
+d5diag("T17 U6 s-overline full +underline css-false",
+  'foo<s style="text-decoration: overline">[bar]</s>baz',
+  [["stylewithcss","false"],["underline",""]],
+  'foo<u><s style="text-decoration:overline">bar</s></u>baz');
+</script>
+</body>

@@ -2723,6 +2723,12 @@
     var d = '';
     try { d = _zwPlainDecl(el, 'text-decoration') || ''; } catch (_eFtd2) { d = ''; }
     if (d) return d;
+    // 长手回退：text-decoration 与 text-decoration-line 同一逻辑属性
+    //（Chrome computed 由 line/style/color 合成；Site A 溶解换形只写长手
+    // 形，strikethrough.js:492/:532 录形），state 读不得因只写长手而盲。
+    var dL = '';
+    try { dL = _zwPlainDecl(el, 'text-decoration-line') || ''; } catch (_eFtdL) { dL = ''; }
+    if (dL) return dL;
     var dA = '';
     try { dA = _zwPlainAuthorDecl(el, 'text-decoration') || ''; } catch (_eFtdA) { dA = ''; }
     if (dA) return dA;
