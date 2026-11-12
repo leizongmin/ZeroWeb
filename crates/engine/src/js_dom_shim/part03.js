@@ -6778,6 +6778,18 @@
                 ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))) || '');
           } catch (_eSqT) { _sqType = ''; }
           if (_sqType !== '' && _sqType.toLowerCase() !== 'text/css') return;
+          // FIXME(compat)：动态 style 的 @import 取回/事件臂未建模（load
+          // fallthrough 与 Chromium 对齐——s414 勘根定谳该面为引擎分歧非缺口：
+          // 上游 wpt-metadata style-error-01.html 挂 Chromium bug 链接
+          //（crbug 1232491，error 语义面无全绿引擎；该文件内 t404 子测上游
+          // 亦注释弃用）、style-load-after-mutate.html 零条目（load 语义全绿，
+          // s162 driving case）——两案互斥钉死 import 失败的事件语义，error
+          // 语义动态臂 probe3b 已实证可行（d_err=1，`_zwSsVisitCss` 链复用）
+          // 但必翻转后者，弃。静态扫描臂 404 error 语义（style_events 在册绿）
+          // 不受影响。另：__zw_get_text_handle 对 script-created 元素读回空串
+          //（文本未落 host doc 回放表），shim 代理 `.textContent` 才是 turn 内
+          // 正确文本源（probe3b 实测）。
+          // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
           if (typeof _dispatchWithBubble !== 'function' || typeof _makeEvent !== 'function') return;
           _zwStyleLoadFired[_sqKey] = true;
           _dispatchWithBubble(_sqKey, sel, handle,

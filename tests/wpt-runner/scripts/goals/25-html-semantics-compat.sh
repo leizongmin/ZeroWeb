@@ -246,6 +246,16 @@ fetch_raw "images/arrow-oriented-upright.jpg"
 # 位移按语料变更归因，非回归（s295 账本）。
 fetch_raw "html/semantics/embedded-content/the-img-element/image.png"
 
+# ③j the-style-element 助资产（s414）：style-error-01.html 动态 style 的
+# @import "support/css-red.txt" 引用面——上游为 200 text/plain（error 事件
+# MIME 失败路径真形态），缺席时落 404 网络错误路径，两条 error 路径不可区分
+#（s227 先验判据同型）。M1 首拉 support/ 空目录 = fetch_dir_html .txt opt-in
+# 固化坑（③b 同坑）。基准变更注记：补语料后 style-error-01 维持文件级
+# Timeout 不变（动态创建臂未建模，s414 勘根定谳引擎分歧非缺口——上游
+# wpt-metadata 挂 crbug 1232491），下轮全量 join 零位移预期；若未来实现
+# 动态 @import 事件臂，以本资产为 MIME 真形态基准。
+fetch_raw "html/semantics/document-metadata/the-style-element/support/css-red.txt"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"
