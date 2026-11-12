@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（271）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（272）
 
+- 2026-11-12 [门禁批 judge 伪绿两形：页滤空转 rows=0 与 grep 捕获 test result 摘要行](bugs/2026-11/2026-11-12-gate-judge-vacuous-rows-and-summary-line-capture.md) — tooling,testing
 - 2026-11-11 [复合命令里 `git stash pop` 不能无条件执行：push 失败后 pop 弹出陈年旧 stash](bugs/2026-11/2026-11-11-stash-pop-unconditional-compound-command.md) — tooling
 - 2026-11-11 [审查报告的 evidence 引用必须是 {path, sha256} 对象形态，字符串形态在账本绑定日爆断](bugs/2026-11/2026-11-11-review-report-evidence-ref-object-form.md) — site_optimizer
 - 2026-11-11 [reftest「可疑 case 审计列表」是尾部截断子集，行为零变化判定必须比对全量失败集](bugs/2026-11/2026-11-11-reftest-suspicious-audit-list-not-full-failures.md) — wpt_runner
