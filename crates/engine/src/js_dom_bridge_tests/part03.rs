@@ -5273,9 +5273,11 @@ fn test_style_proxy_invalid_value_rejected_t54() {
     // echo 口径随 serialize 等价断言作废）。
     assert_eq!(val("globalThis.__r5"), "calc(0deg)", "rotate 裸 math 函数折叠读出（acos(1)=0rad）");
     assert_eq!(val("globalThis.__r6"), "sign(-3)", "z-index 裸 math 函数落库");
+    // g23（§10.11）：margin-left 已接线 Length 折叠——round(23px, 10px) 读出
+    // 折叠 calc(20px)（原 raw echo 口径随 serialize 等价断言作废，r2320 同例）。
     assert_eq!(
-        val("globalThis.__r7"), "round(23px, 10px)",
-        "margin-left math 两参形落库"
+        val("globalThis.__r7"), "calc(20px)",
+        "margin-left math 两参形折叠读出"
     );
     assert_eq!(
         val("globalThis.__r8"), "not-a-width-grammar",

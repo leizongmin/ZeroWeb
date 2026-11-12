@@ -196,10 +196,11 @@ fn test_fold_specified_infinity_nan_canonical_forms() {
     let folded = fold_w(structured).unwrap();
     assert_eq!(folded, "clamp(NaN * 1em, NaN * 1px, NaN * 1px)");
     assert_eq!(fold_w(&folded).as_deref(), Some(folded.as_str()));
-    // plain/布局依赖值不折叠（specified 原样保留）。
+    // plain 值不折叠；布局依赖树走 canonical 保持串化（g23 §10.6 sort——
+    // 已 canonical 形幂等保形，`calc(1px + 1em)` 排序归一）。
     assert_eq!(fold_w("10px"), None);
-    assert_eq!(fold_w("calc(100% + 50px)"), None);
-    assert_eq!(fold_w("calc(1px + 1em)"), None);
+    assert_eq!(fold_w("calc(100% + 50px)").as_deref(), Some("calc(100% + 50px)"));
+    assert_eq!(fold_w("calc(1px + 1em)").as_deref(), Some("calc(1em + 1px)"));
     // <time> 槽：ms 归一 s、plain 时长不折叠。
     let fold_t = |v| fold_decl_specified("animation-duration", v);
     assert_eq!(fold_t("calc(1s * NaN)").as_deref(), Some("calc(NaN * 1s)"));
@@ -247,7 +248,11 @@ fn test_min_max_partial_unresolvable_is_none() {
     assert_eq!(eval_calc(&parse_min("min(20px, 10%)").unwrap(), None), None);
     assert_eq!(eval_calc(&parse_min("min(10%, 20px)").unwrap(), None), None);
     assert_eq!(eval_calc(&parse_max("max(20px, 10%)").unwrap(), None), None);
-    assert_eq!(fold_decl_specified("width", "min(20px, 10%)"), None);
+    // 混 % 形 fold 走 canonical 保持串化（g23——多实参保序，指定值原形）。
+    assert_eq!(
+        fold_decl_specified("width", "min(20px, 10%)").as_deref(),
+        Some("min(20px, 10%)")
+    );
     // 全可解析形零漂移（px-only 塌缩与 NaN 毒化不变）。
     assert_eq!(eval_calc(&parse_min("min(20px, 10px)").unwrap(), None), Some(10.0));
     assert!(matches!(

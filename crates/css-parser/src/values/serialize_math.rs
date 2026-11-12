@@ -96,6 +96,9 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
             Some(format!("calc({})", format_dimension_inner(deg, Some("deg"))))
         }
         // Number/Length/Time 标量折叠（% /字体维度两级求值见 scalar_value）。
+        // Length 位标量塌缩失败（有限 %/布局依赖叶树——min/max/clamp
+        // serialize 语料面）→ canonical 保持串化（§10.6 sort）。
+        MathFoldKind::Length => fold_dimension_calc(&expr).or_else(|| canonical_math_specified(&expr)),
         _ => fold_dimension_calc(&expr),
     }
 }
@@ -439,6 +442,287 @@ fn fold_mix_nest_sum(expr: &CalcExpr) -> Option<String> {
     Some(format!("calc({})", inner))
 }
 
+// === min/max/clamp canonical 保持串化（CSS Values 4 §10.6 sort / §10.9）===
+//
+// [`fold_dimension_calc`] 布局依赖树（有限 %、em/vh 等叶）不塌缩时的
+// canonical 面——minmax/clamp serialize 语料钉面（margin-left/margin-top
+// 槽）：`min(1% + 1px)` → `calc(1% + 1px)`、`min(20px, 10%)` 保序、
+// `calc(min(10% + 1px) + max(1em + 10%) + min(10% + 20px))` →
+// `calc(30% + 1em + 21px)`、`calc(0px - clamp(1px, 1em, 1vh))` verbatim。
+
+/// [`LengthValue`] 维度原子系数直读（canonical 叶项化——布局依赖值不解析，
+/// 与 [`length_suffix`] 变体名单同形；关键字/嵌套式防御臂返 None）。
+fn length_leaf_value(lv: &LengthValue) -> Option<f64> {
+    Some(match lv {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Cqw(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Lh(v)
+        | LengthValue::Percentage(v) => *v,
+        _ => return None,
+    })
+}
+
+/// min/max/clamp 树 specified 值 canonical 保持串化（§10.6 sort / §10.9）：
+///
+/// - min/max 多实参**保序**（指定值语义序——`min(20px, 10%)` 不重排），逐
+///   实参 canonical；单参 ≡ calc(实参) 解包（§10.5）；clamp 三实参保序；
+/// - 和串叶项 canonical：同单位系数合并、`-0` 归一（`format_number_6dp`）、
+///   排序 number → % → 维度（单位 ASCII CI 升序——`30% + 1em + 21px`）；
+///   min/max/clamp 节点殿后保源序（`0px - clamp(1px, 1em, 1vh)`），可标量
+///   折叠节点（全 px/s 树）塌缩为标量项；
+/// - 乘积项 number 系数前置、sum 语境括号化（`1px + (0.4 * min(1em, 1px))`）；
+/// - 无法确证形态（除法节点、多非标量因子、trig/abs 复合等）返 None——
+///   调用方保留原文（零回归边界）。
+pub(crate) fn canonical_math_specified(expr: &CalcExpr) -> Option<String> {
+    match expr {
+        CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. } => {
+            let args: Vec<&CalcExpr> = match expr {
+                CalcExpr::Min(a) | CalcExpr::Max(a) => a.iter().collect(),
+                CalcExpr::Clamp { min, val, max } => vec![min.as_ref(), val.as_ref(), max.as_ref()],
+                _ => unreachable!(),
+            };
+            let name = match expr {
+                CalcExpr::Min(_) => "min",
+                CalcExpr::Max(_) => "max",
+                _ => "clamp",
+            };
+            match args.as_slice() {
+                // 单参 min/max ≡ calc(实参)（§10.5）；clamp 单参形非法，
+                // parse 不可达——canonical 与 parse 文法一致按和串兜底。
+                [only] if !matches!(expr, CalcExpr::Clamp { .. }) => {
+                    Some(format!("calc({})", canonical_sum_terms(only)?))
+                }
+                _ => {
+                    let parts = args.iter().map(|a| canonical_math_arg(a)).collect::<Option<Vec<_>>>()?;
+                    Some(format!("{}({})", name, parts.join(", ")))
+                }
+            }
+        }
+        _ => Some(format!("calc({})", canonical_sum_terms(expr)?)),
+    }
+}
+
+/// min/max/clamp 单实参 canonical 串（实参序保留）：嵌套函数节点递归
+/// [`canonical_math_specified`]，和差树/叶 → canonical 和串。
+fn canonical_math_arg(expr: &CalcExpr) -> Option<String> {
+    match expr {
+        CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. } => canonical_math_specified(expr),
+        _ => canonical_sum_terms(expr),
+    }
+}
+
+/// 和差树 canonical 和串：项收集（[`collect_canonical_terms`]）→ 同单位
+/// 标量合并 → 排序（number/%/维度 ASCII CI）→ 节点殿后发射。
+fn canonical_sum_terms(expr: &CalcExpr) -> Option<String> {
+    let mut scalars: Vec<(f64, Option<&'static str>)> = Vec::new();
+    let mut nodes: Vec<(bool, String)> = Vec::new();
+    collect_canonical_terms(expr, 1.0, &mut scalars, &mut nodes)?;
+    // 同单位标量合并（-0 归一由 format_number_6dp 发射面处理）。
+    let mut merged: Vec<(f64, Option<&'static str>)> = Vec::new();
+    for (v, u) in scalars {
+        match merged.iter_mut().find(|(_, mu)| *mu == u) {
+            Some(m) => m.0 += v,
+            None => merged.push((v, u)),
+        }
+    }
+    // 排序：number → % → 维度（单位 ASCII CI 升序；稳定序保同键源序）。
+    merged.sort_by_key(|(_, u)| match u {
+        None => (0u8, String::new()),
+        Some("%") => (1u8, String::new()),
+        Some(s) => (2u8, s.to_ascii_lowercase()),
+    });
+    let mut parts: Vec<String> = Vec::new();
+    for (v, u) in &merged {
+        if parts.is_empty() {
+            parts.push(format_dimension_inner(*v, *u));
+        } else if *v < 0.0 {
+            parts.push(format!("- {}", format_dimension_inner(-*v, *u)));
+        } else {
+            parts.push(format!("+ {}", format_dimension_inner(*v, *u)));
+        }
+    }
+    for (positive, node) in &nodes {
+        if parts.is_empty() {
+            // 殿首节点：负号节点未钉面 → None 保留原文。
+            if !*positive {
+                return None;
+            }
+            parts.push(node.clone());
+        } else {
+            parts.push(format!("{} {}", if *positive { "+" } else { "-" }, node));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join(" "))
+}
+
+/// 递归项收集（符号沿 Subtract 右臂传播）：标量项（叶系数直读、可折叠
+/// min/max/clamp 节点、乘积链）与节点项（不可折叠 min/max/clamp）。
+/// 除法节点、单参解包外的复合形态返 None（canonical bail——原文保留）。
+fn collect_canonical_terms(
+    expr: &CalcExpr,
+    sign: f64,
+    scalars: &mut Vec<(f64, Option<&'static str>)>,
+    nodes: &mut Vec<(bool, String)>,
+) -> Option<()> {
+    match expr {
+        CalcExpr::BinaryOp(l, op, r) => match op {
+            CalcOp::Add => {
+                collect_canonical_terms(l, sign, scalars, nodes)?;
+                collect_canonical_terms(r, sign, scalars, nodes)
+            }
+            CalcOp::Subtract => {
+                // parser 一元负号伪形零锚（parse_factor 负 Length 叶 `0px - x` /
+                // 负式 `0 - x` 保族重写）：左臂零锚不落项，右臂直接反号——
+                // `-5%` 类负叶 canonical 幂等（伪 0px 项入和会改写恒等形）。
+                if is_zero_anchor(l) {
+                    return collect_canonical_terms(r, -sign, scalars, nodes);
+                }
+                collect_canonical_terms(l, sign, scalars, nodes)?;
+                collect_canonical_terms(r, -sign, scalars, nodes)
+            }
+            CalcOp::Multiply => canonical_product_term(expr, sign, scalars, nodes),
+            // 除法节点无语料钉面——保留原文。
+            CalcOp::Divide => None,
+        },
+        CalcExpr::Min(args) | CalcExpr::Max(args) => match args.as_slice() {
+            // 单参 min/max ≡ calc(实参)（§10.5）——和内解包
+            //（`calc(min(10% + 1px) + max(1em + 10%) + …)` 项合并语料钉面）。
+            [only] => collect_canonical_terms(only, sign, scalars, nodes),
+            _ => {
+                if let Some(v) = scalar_value(expr) {
+                    if !v.is_finite() {
+                        return None;
+                    }
+                    let suffix = dimension_suffix(expr)?;
+                    scalars.push((sign * v, Some(suffix)));
+                    return Some(());
+                }
+                nodes.push((sign > 0.0, canonical_math_specified(expr)?));
+                Some(())
+            }
+        },
+        CalcExpr::Clamp { .. } => {
+            if let Some(v) = scalar_value(expr) {
+                if !v.is_finite() {
+                    return None;
+                }
+                let suffix = dimension_suffix(expr)?;
+                scalars.push((sign * v, Some(suffix)));
+                return Some(());
+            }
+            nodes.push((sign > 0.0, canonical_math_specified(expr)?));
+            Some(())
+        }
+        CalcExpr::Number(n) => {
+            scalars.push((sign * *n, None));
+            Some(())
+        }
+        CalcExpr::Time(v) => {
+            scalars.push((sign * *v, Some("s")));
+            Some(())
+        }
+        // 长度叶系数直读（不解析——em/vh/% 布局依赖值保留维度；物理单位
+        // parse 期已归一 px，系数即 canonical）。
+        CalcExpr::Length(lv) => {
+            let suffix = length_suffix(lv)?;
+            scalars.push((sign * length_leaf_value(lv)?, Some(suffix)));
+            Some(())
+        }
+        // 其余复合形态（trig/abs 节点、calc-mix、tree-counting）无语料钉面
+        // ——保留原文。
+        _ => None,
+    }
+}
+
+/// 乘积链 canonical 项（§10.6：number 因子合并、系数前置）：因子全数值 →
+/// 标量；单一非数值因子 → 节点项——和差树因子 `c * (…)`、函数节点因子
+/// `c * node`（sum 语境括号化由调用方包法承担——本函数产出含外括号）、
+/// 单维度叶因子系数直读合并。多非数值因子返 None。
+fn canonical_product_term(
+    expr: &CalcExpr,
+    sign: f64,
+    scalars: &mut Vec<(f64, Option<&'static str>)>,
+    nodes: &mut Vec<(bool, String)>,
+) -> Option<()> {
+    let factors = flatten_multiply_factors(expr)?;
+    let mut coeff = sign;
+    let mut non_number: Vec<&CalcExpr> = Vec::new();
+    for f in factors {
+        match f {
+            CalcExpr::Number(n) => coeff *= *n,
+            _ => non_number.push(f),
+        }
+    }
+    match non_number.as_slice() {
+        // 纯数值积 → 无量纲标量。
+        [] => {
+            scalars.push((coeff, None));
+            Some(())
+        }
+        // 单一和差树因子 → `c * (…)`（number-first §10.6 canonical 乘积形）。
+        [CalcExpr::BinaryOp(_, CalcOp::Add, _) | CalcExpr::BinaryOp(_, CalcOp::Subtract, _)] => {
+            let inner = canonical_sum_terms(non_number[0])?;
+            nodes.push((true, format!("({} * ({}))", format_number_6dp(coeff), inner)));
+            Some(())
+        }
+        // 单一函数节点因子 → `(c * node)`。
+        [CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. }] => {
+            let inner = canonical_math_specified(non_number[0])?;
+            nodes.push((true, format!("({} * {})", format_number_6dp(coeff), inner)));
+            Some(())
+        }
+        // 单一维度叶因子 → 系数并入标量项（`2 * 1em` ≡ `2em` 叶直读）。
+        [CalcExpr::Length(lv)] => {
+            let suffix = length_suffix(lv)?;
+            scalars.push((coeff * length_leaf_value(lv)?, Some(suffix)));
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+/// 顶层乘法链因子展开（仅 Multiply 递归；因子位非乘积复合原样保留——
+/// 由调用方按单因子分派）。
+fn flatten_multiply_factors(expr: &CalcExpr) -> Option<Vec<&CalcExpr>> {
+    match expr {
+        CalcExpr::BinaryOp(l, CalcOp::Multiply, r) => {
+            let mut out = flatten_multiply_factors(l)?;
+            out.extend(flatten_multiply_factors(r)?);
+            Some(out)
+        }
+        leaf => Some(vec![leaf]),
+    }
+}
+
+/// parser 一元负号伪形零锚判定（parse_factor 负号保族重写锚——Length 叶
+/// `Px(0)`、其余式 `Number(0)`；数值恒 0.0）。
+fn is_zero_anchor(expr: &CalcExpr) -> bool {
+    matches!(expr, CalcExpr::Number(n) if *n == 0.0)
+        || matches!(expr, CalcExpr::Length(LengthValue::Px(p)) if *p == 0.0)
+}
+
 /// 加法树叶收集（符号沿 Subtract 右臂传播）；非有限值毒化返 None（NaN
 /// 塌缩臂接手）。乘除实参位、min/max/clamp/数学函数节点不展开——叶级
 /// 常量项化仅覆盖纯和差树。
@@ -654,8 +938,10 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "scale" | "opacity" => fold_math_specified(v, MathFoldKind::Number),
         // 尺寸/时长槽数学形 canonical 折叠（g12 刀2：CSD 层 camelCase→kebab
         // 归一后到达，白名单 kebab 形）。text-indent 为 <length-percentage> 槽
-        //（calc-mix 语料 serialize 页驱动 + calc(20% + 10px) 接受面回归钉）。
-        "width" | "text-indent" => fold_math_specified(v, MathFoldKind::Length),
+        //（calc-mix 语料 serialize 页驱动 + calc(20% + 10px) 接受面回归钉）；
+        // margin-top/margin-left 为 g23 minmax/clamp serialize 语料 margin 槽
+        // 驱动（canonical 保持串化，§10.6 sort）。
+        "width" | "text-indent" | "margin-top" | "margin-left" => fold_math_specified(v, MathFoldKind::Length),
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }
@@ -1246,5 +1532,207 @@ mod tests {
         // 无折叠点 / 括号不平衡 → None（保留原文）。
         assert_eq!(fold_transform_math_specified("scale(2) translateX(10px)"), None);
         assert_eq!(fold_transform_math_specified("rotate(acos(1)"), None);
+    }
+
+    #[test]
+    fn none_clamp_rewrite_margin_serialize_table() {
+        // clamp-length-serialize.html none 形（margin-top 槽，CSS Values 4
+        // §comp-func none 实参 = 对应界不限）：clamp(none,A,B)≡min(A,B)、
+        // clamp(A,B,none)≡max(A,B)、clamp(none,A,none)≡A（裸值兜底臂）。
+        // 空白变体（`clamp(none , 30px, 33px)`）同刀（§comp-func 文法）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(none , 30px, 33px)").as_deref(),
+            Some("calc(30px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(33px, 30px, none)").as_deref(),
+            Some("calc(33px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(none, 30px, none)").as_deref(),
+            Some("calc(30px)")
+        );
+        // 嵌套 none 形内层先归约（clamp-partial-serialize.tentative 混合形）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(1px, 2px, clamp(none, 4px, 5em))").as_deref(),
+            Some("clamp(1px, 2px, min(4px, 5em))")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(1px, 2px, clamp(3em, 4px, none))").as_deref(),
+            Some("clamp(1px, 2px, max(3em, 4px))")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(clamp(none, 2em, 3px), 4px, clamp(none, 6px, 7em))").as_deref(),
+            Some("clamp(min(2em, 3px), 4px, min(6px, 7em))")
+        );
+        assert_eq!(
+            fold_decl_specified(
+                "margin-top",
+                "clamp(clamp(none, 2em, none), 4px, clamp(none, 6em, none))"
+            )
+            .as_deref(),
+            Some("clamp(2em, 4px, 6em)")
+        );
+        // none 首参/尾参单独形（clamp-partial 语料）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(none, 2px, 3em)").as_deref(),
+            Some("min(2px, 3em)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(1em, 2px, none)").as_deref(),
+            Some("max(1em, 2px)")
+        );
+        // none 落 val 位：非法（重写器保原文 → parse 拒）。
+        assert_eq!(fold_decl_specified("margin-top", "clamp(10px, none, 20px)"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(none, none, none)"), None);
+        assert_eq!(fold_decl_specified("z-index", "clamp(10, none, 20)"), None);
+    }
+
+    #[test]
+    fn clamp_margin_serialize_table() {
+        // clamp-length-serialize.html 静态/注释/大小写/负值形（margin-top 槽）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(1px, 2px, 3px)").as_deref(),
+            Some("calc(2px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(10px, 35px, 30px)").as_deref(),
+            Some("calc(30px)")
+        );
+        // 注释 = 空白（css-syntax-3 §4.4）：`clamp(10px, 35px /*foo*/, 30px)`。
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(10px, 35px /*foo*/, 30px)").as_deref(),
+            Some("calc(30px)")
+        );
+        // 大小写不敏感（单位/函数名）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "clamp(1PX, 2px, 3px)").as_deref(),
+            Some("calc(2px)")
+        );
+        // calc 包裹负值：标量塌缩臂（既有面）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(0px - clamp(10px, 20px, 30px))").as_deref(),
+            Some("calc(-20px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(0px - clamp(30px, 100px, 20px))").as_deref(),
+            Some("calc(-30px)")
+        );
+        // 布局依赖 clamp 节点保形：负首节点 bail → fold None → 原文回显
+        //（语料 verbatim 期望经 raw 回显达成——§10.9 指定值语义序）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(0px - clamp(1px, 1em, 1vh))"),
+            None
+        );
+        // 语法残形拒（clamp-length-invalid 恰集抽样）。
+        assert_eq!(fold_decl_specified("margin-top", "clamp()"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp( )"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(,)"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(1px, )"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(1px, 1px)"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(1px, , 1px)"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(1px, 1px, )"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(1px, 1px, 1px, )"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(1px 1px 1px)"), None);
+        assert_eq!(fold_decl_specified("margin-top", "clamp(-none, 1px, 1px)"), None);
+    }
+
+    #[test]
+    fn minmax_canonical_margin_serialize_table() {
+        // minmax-percentage/length-percent/length-serialize 期望表（margin-left/
+        // margin-top 槽；CSS Values 4 §10.6 sort——% 前置、维度单位 ASCII CI
+        // 升序、同单位合并、-0 归一、多实参保序、单参 ≡ calc() 解包）。
+        // text-indent 既有接线回归钉（g12 面）。
+        assert_eq!(
+            fold_decl_specified("text-indent", "calc(20% + 10px)").as_deref(),
+            Some("calc(20% + 10px)")
+        );
+        // % 项化。
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(1%)").as_deref(),
+            Some("calc(1%)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(1% + 1px)").as_deref(),
+            Some("calc(1% + 1px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(1px + 1%)").as_deref(),
+            Some("calc(1% + 1px)")
+        );
+        // 多实参保序、逐实参 canonical。
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(10% + 30px, 5em + 5%)").as_deref(),
+            Some("min(10% + 30px, 5% + 5em)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(20px, 10%)").as_deref(),
+            Some("min(20px, 10%)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(3%, 2%, 1%)").as_deref(),
+            Some("min(3%, 2%, 1%)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(1em, 21px)").as_deref(),
+            Some("min(1em, 21px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(1px, 1em)").as_deref(),
+            Some("min(1px, 1em)")
+        );
+        // -0 归一（format_number_6dp）。
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(-0%, 0%)").as_deref(),
+            Some("min(0%, 0%)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-left", "min(-1%, 1%)").as_deref(),
+            Some("min(-1%, 1%)")
+        );
+        // 单参解包和内合并（§10.5 min(X) ≡ calc(X)）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(min(10% + 1px) + max(1em + 10%) + min(10% + 20px))").as_deref(),
+            Some("calc(30% + 1em + 21px)")
+        );
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(1em + max(10% + 20px) + 5% + min(1em + 10%) + 10px)").as_deref(),
+            Some("calc(25% + 2em + 30px)")
+        );
+        // 可标量折叠 min 节点塌缩 + 不可折叠 max 节点保形殿后（§10.6 sort）。
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(min(1px, 1in) + max(100px + 1em, 10px + 1in) + 1px)").as_deref(),
+            Some("calc(2px + max(1em + 100px, 106px))")
+        );
+        // 乘积项：number 系数前置、sum 语境括号化。
+        assert_eq!(
+            fold_decl_specified("margin-top", "calc(2 * (.2 * min(1em, 1px)) + 1px)").as_deref(),
+            Some("calc(1px + (0.4 * min(1em, 1px)))")
+        );
+        // 和内乘积链 + 节点和排序（minmax-percentage-serialize 钉面）。
+        assert_eq!(
+            fold_decl_specified("margin-left", "max((min(10%, 30px) + 10px) * 2 + 10px, 5em + 5%)").as_deref(),
+            Some("max(10px + (2 * (10px + min(10%, 30px))), 5% + 5em)")
+        );
+        // 复合形态（UnaryOp）保原文（canonical bail——零回归边界）。
+        assert_eq!(fold_decl_specified("margin-left", "calc(abs(-1%) + 1px)"), None);
+    }
+
+    #[test]
+    fn round_mod_rem_opacity_serialize_table() {
+        // round-mod-rem-serialize.html spec 腿（opacity 槽；§round-func）。
+        assert_eq!(
+            fold_decl_specified("opacity", "round(1.1,1)").as_deref(),
+            Some("calc(1)")
+        );
+        assert_eq!(fold_decl_specified("opacity", "mod(1,1)").as_deref(), Some("calc(0)"));
+        assert_eq!(fold_decl_specified("opacity", "rem(1,1)").as_deref(), Some("calc(0)"));
+        // B=0 → NaN（§10.10 合法）。
+        assert_eq!(
+            fold_decl_specified("opacity", "calc(round(1,0))").as_deref(),
+            Some("calc(NaN)")
+        );
+        // 非 math 值 / 混族保留原文（既有面）。
+        assert_eq!(fold_decl_specified("opacity", "0.5"), None);
     }
 }

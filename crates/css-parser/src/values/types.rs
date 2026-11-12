@@ -1173,10 +1173,26 @@ struct CalcParser<'a> {
 const MAX_CALC_DEPTH: u32 = 10;
 
 impl<'a> CalcParser<'a> {
-    /// 跳过前导空白。
+    /// 跳过前导空白与注释（css-syntax-3 §4.4：注释与空白等价——clamp serialize
+    /// 语料 `clamp(10px, 35px /*foo*/, 30px)` 形驱动）。未闭合注释消费至输入尾
+    /// （tokenizer 注释 token 的 EOF 终止规则同形）。
+    /// <https://drafts.csswg.org/css-syntax-3/#comment>
     fn skip_whitespace(&mut self) {
-        while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace() {
-            self.pos += 1;
+        loop {
+            while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace() {
+                self.pos += 1;
+            }
+            if self.input[self.pos..].starts_with("/*") {
+                match self.input[self.pos + 2..].find("*/") {
+                    Some(end) => {
+                        self.pos += 2 + end + 2;
+                        continue;
+                    }
+                    // 未闭合注释：消费至输入尾。
+                    None => self.pos = self.input.len(),
+                }
+            }
+            break;
         }
     }
 
@@ -1829,6 +1845,15 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
 /// 返回统一的 [`CalcExpr`] 表达式树。
 pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
     let value = value.trim();
+    // clamp() `none` 实参文本级重写（§comp-func）先行：内层先归约至稳定。
+    // 重写产物可能为裸值形（`clamp(none, 30px, none)` ≡ `30px`，非函数形）
+    // ——落 plain-expr 兜底臂（仅重写发生时可达，通用文法面不放宽）。
+    let rewritten = rewrite_none_clamps(value);
+    let value: &str = match &rewritten {
+        Some(r) => r.as_str(),
+        None => value,
+    };
+    let none_rewritten = rewritten.is_some();
     if math_function_inner(value, "calc-mix").is_some() {
         parse_calc_mix(value)
     } else if math_function_inner(value, "calc").is_some() {
@@ -1877,9 +1902,130 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
             return None;
         }
         Some(expr)
+    } else if none_rewritten {
+        // none 重写产物兜底臂（§comp-func 重写语义，仅 `none_rewritten` 时
+        // 可达）：裸值形（`clamp(none, A, none)` ≡ `A`）或重写展开后的表达
+        // 式残形，全文 plain expr parse（与 §11.3 裸函数臂同构）。
+        let mut parser = CalcParser {
+            input: value,
+            pos: 0,
+            depth: 0,
+            allow_time: false,
+        };
+        let expr = parser.parse_expr()?;
+        parser.skip_whitespace();
+        if parser.pos < parser.input.len() {
+            return None;
+        }
+        Some(expr)
     } else {
         None
     }
+}
+
+/// clamp() `none` 实参文本级重写（CSS Values 4 §comp-func：`none` 实参 =
+/// 对应界不限——parse 树无 none 叶表示，parse 期重写为等价函数形）：
+///
+/// - `clamp(none, A, B)` ≡ `min(A, B)`；
+/// - `clamp(A, B, none)` ≡ `max(A, B)`；
+/// - `clamp(none, A, none)` ≡ `A`（裸值——调用方 plain-expr 兜底臂承接）。
+///
+/// 嵌套 clamp 实参内的 none 形内层先归约，循环至稳定。无 `none` 实参、
+/// 未闭合括号不介入（保原文——上层 parse 拒面不变）；`none` 落 val 位或
+/// 实参残缺 → None（非法形，上层 parse 原文拒绝）。
+/// <https://drafts.csswg.org/css-values-4/#comp-func>
+fn rewrite_none_clamps(value: &str) -> Option<String> {
+    if !value.to_ascii_lowercase().contains("none") {
+        return None;
+    }
+    let mut out = value.to_string();
+    let mut changed = false;
+    loop {
+        let lower = out.to_ascii_lowercase();
+        let bytes = lower.as_bytes();
+        // 最内层（实参跨度内无嵌套 clamp(）且含 none 的 clamp( 调用（左序首个）。
+        let mut target: Option<(usize, usize)> = None; // (函数名起点, 闭括号位)
+        let mut i = 0;
+        while i + 6 <= bytes.len() {
+            if &lower[i..i + 6] != "clamp(" {
+                i += 1;
+                continue;
+            }
+            // ident 边界（`x-clamp(` 前缀非 clamp 调用）。
+            if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_') {
+                i += 1;
+                continue;
+            }
+            // 配平括号取实参跨度（math 值无字符串字面量——引号面不处理）。
+            let mut depth = 1usize;
+            let mut j = i + 6;
+            while j < bytes.len() {
+                match bytes[j] {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            if depth != 0 {
+                // 未闭合：上层 parse 拒，重写器不介入。
+                break;
+            }
+            let span = &lower[i + 6..j];
+            if span.contains("none") && !span.contains("clamp(") {
+                target = Some((i, j));
+                break;
+            }
+            i += 6;
+        }
+        let (start, close) = match target {
+            Some(p) => p,
+            // 无可归约 none-clamp：已稳定。
+            None => break,
+        };
+        let parts: Vec<&str> = split_top_level_commas(&out[start + 6..close])
+            .into_iter()
+            .map(str::trim)
+            .collect();
+        let is_none = |p: &str| p.eq_ignore_ascii_case("none");
+        let replacement = match parts.as_slice() {
+            [a, b, c] if is_none(a) && is_none(c) => (*b).to_string(),
+            [a, b, c] if is_none(a) => format!("min({}, {})", b, c),
+            [a, b, c] if is_none(c) => format!("max({}, {})", a, b),
+            // none 落 val 位或实参数 ≠ 3：非法形——保原文，上层 parse 拒。
+            _ => return None,
+        };
+        out.replace_range(start..close + 1, &replacement);
+        changed = true;
+    }
+    changed.then_some(out)
+}
+
+/// 顶层逗号分割（括号深度感知——none 重写实参切分；math 值无字符串字面量，
+/// 引号面不处理）。
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let mut segs = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                segs.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    segs.push(&s[start..]);
+    segs
 }
 
 /// 解析 CSS Values 5 calc-mix() 值混合（tentative）。

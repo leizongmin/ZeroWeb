@@ -1864,6 +1864,56 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return false;
         }
     }
+    // math 函数形通用文法+槽族型别门（CSS Values 4 §10.5 calc-type-checking，
+    // 写面）：值顶层为数学函数形（22 名单，[`values::is_math_function_value`]）
+    // 时整值过 parse（文法裁决——min() 空/残参/裸单参 round 等拒）+ 槽族型别
+    // 表（[`math_slot_family_valid`]）。位于白名单检查之前——border-left-width/
+    // height/letter-spacing/margin-top/opacity 等 minmax/clamp/round-mod-rem
+    // invalid 语料 155F 槽此前无门原文透传 store；替换函数形（var()/env()/
+    // attr()/random() 族/progress()/if()/calc-size()/url()）parse 树不可达，
+    // 豁免交各自既有门；parse 失败时非单函数平衡跨度（双 calc 拐角——
+    // [`is_single_spanning_math_value`]）与未知函数实参（inherit() 类——
+    // [`has_unknown_function_token`]）同豁免交 oracle（g22 零漂移）；
+    // custom property 值任意文法（CSS Parsing 3 §custom-properties）豁免。
+    // 未知槽族仅文法门放行（FIXME: 逐 parser 族扩面）。
+    // https://drafts.csswg.org/css-values-4/#calc-type-checking
+    {
+        let v = value.trim();
+        if !prop.starts_with("--")
+            && !v.is_empty()
+            && values::is_math_function_value(v)
+            && !value_has_substitution_function(v)
+        {
+            let is_time_slot = matches!(
+                prop.as_str(),
+                "transition-delay" | "transition-duration" | "animation-delay" | "animation-duration"
+            );
+            // Time 叶仅 allow_time 入口可达（共享 calc 入口拒 time 原子——
+            // CalcExpr::Time 注）。
+            let parsed = if is_time_slot {
+                values::parse_time_calc(v)
+            } else {
+                values::parse_math_function(v)
+            };
+            match parsed {
+                // 文法 invalid → 整拒；两豁免交 oracle 既有裁决（g22 零漂移）：
+                // 非单函数平衡跨度（`calc(50%) calc(25%)` 双 calc 拐角语法——
+                // [`is_single_spanning_math_value`]，border-radius-002 钉面）、
+                // 未知函数实参（css-values-5 inherit() 类——
+                // [`has_unknown_function_token`]）。
+                None => {
+                    if is_single_spanning_math_value(v) && !has_unknown_function_token(v) {
+                        return false;
+                    }
+                }
+                Some(expr) => {
+                    if !math_slot_family_valid(&prop, &expr, v) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
     if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
         return true;
     }
@@ -2067,6 +2117,206 @@ fn extract_random_args(value: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// 值内替换/未接线函数形检测（math 门豁免集）：var()/env()/attr()（替换
+/// 函数——parse 树不可达，substitution 后型别在 computed 期）；random()/
+/// random-item()（自有文法门，validate_decl_value 既有臂）；progress()/if()/
+/// calc-size()/url()（引擎未接线，写面 oracle/通道既有兜底）。子串扫描：
+/// math 形值无字符串字面量误报面（content 等槽非 math 形不达本门）。
+fn value_has_substitution_function(value: &str) -> bool {
+    const NEEDLES: [&str; 9] = [
+        "var(",
+        "env(",
+        "attr(",
+        "random(",
+        "random-item(",
+        "progress(",
+        "if(",
+        "calc-size(",
+        "url(",
+    ];
+    let lower = value.to_ascii_lowercase();
+    NEEDLES.iter().any(|n| lower.contains(n))
+}
+
+/// math 门豁免二：值整体为单个括号平衡的已知数学函数调用判定——
+/// [`values::is_math_function_value`] 是前缀 + 尾括号的朴素跨度检查
+///（不感知配平，`calc(50%) calc(25%)` 双 calc 拐角语法也判真），parse
+/// 前先经本函数收紧：配平点非整值末字符即多函数/混排形（getComputedStyle-
+/// border-radius-002 语料钉面），交 oracle 既有裁决。
+fn is_single_spanning_math_value(value: &str) -> bool {
+    // 与 css-parser `is_math_function_value` 分派名单同步（22 数学函数）。
+    const NAMES: [&str; 22] = [
+        "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign", "sqrt", "exp",
+        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix",
+    ];
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    for name in NAMES {
+        if !lower.starts_with(name) || bytes.get(name.len()) != Some(&b'(') {
+            continue;
+        }
+        let mut depth = 0usize;
+        for (idx, &b) in bytes.iter().enumerate().skip(name.len()) {
+            if b == b'(' {
+                depth += 1;
+            } else if b == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    // 配平点必须为整值末字符（尾随空白容许）。
+                    return v[idx + 1..].trim().is_empty();
+                }
+            }
+        }
+    }
+    false
+}
+
+/// math 门豁免三：值内未知函数 token（[`IMPLEMENTED_VALUE_FUNCTIONS`] 集外
+/// `fn(` 调用——css-values-5 inherit() 类 parse 树不可达面）交 oracle 既有
+/// 裁决（g22 零漂移）。ident 边界同 [`extract_random_args`]（`-`/alnum/`_`
+/// 前随者属更长 ident）。
+fn has_unknown_function_token(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !bytes[i].is_ascii_alphabetic() && bytes[i] != b'-' && bytes[i] != b'_' {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_') {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'(' {
+            let ident = &lower[start..i];
+            if !IMPLEMENTED_VALUE_FUNCTIONS.contains(&ident) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// number 槽文本级角度单位 token 扫描（§10.5 number 槽 angle-provenance
+/// 补面）：角度叶 parse 期弧度 Number 化（CalcParser 注——`0deg` 产出纯
+/// number 树），型别表失去角度 provenance，文本扫描补 `min(0deg)`/`round(1,
+/// 0deg)` 类 number 槽拒绝面（minmax-number-invalid 26 型别行）。简化子串
+/// 扫描：math 形值无字符串字面量，单位串即命中。
+fn has_angle_unit_token(value: &str) -> bool {
+    const UNITS: [&str; 4] = ["deg", "grad", "rad", "turn"];
+    UNITS.iter().any(|u| value.contains(u))
+}
+
+/// 剥离三角函数调用实参跨度（sin/cos/tan/asin/acos/atan/atan2 的括号平衡
+/// 段）——角度是其合法定义域（§trig-funcs：`sin(30deg)` 返回 <number>），
+/// [`has_angle_unit_token`] 扫描前先剥，避免误伤三角实参角
+/// （sin-cos-tan-serialize 语料 270P 面）；calc 族裸角度叶不受扰
+/// （`round(1, 0deg)` 仍拒）。非 ASCII 字节按原样保留（UTF-8 安全）。
+fn strip_trig_argument_spans(value: &str) -> String {
+    const TRIG: [&str; 7] = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2"];
+    let lower = value.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(value.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut span_len = None;
+        for name in TRIG {
+            let ident_start =
+                i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_');
+            if lower[i..].starts_with(name) && ident_start && bytes.get(i + name.len()) == Some(&b'(') {
+                span_len = Some(name.len());
+                break;
+            }
+        }
+        if let Some(n) = span_len {
+            let mut depth = 0usize;
+            let mut j = i + n;
+            while j < bytes.len() {
+                if bytes[j] == b'(' {
+                    depth += 1;
+                } else if bytes[j] == b')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            i = j + 1;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// math 形槽族型别门（CSS Values 4 §10.5 型别表 × 属性文法族）：calc 树结果
+/// 文法族与属性槽一致时放行，不一致拒。槽族三档：
+///
+/// - **LengthOnly**（% 不可）：border 宽度族/outline-width/column-rule-width
+///   （<line-width> = <length [0,∞]>）+ transform-origin-z（<length>，既有臂
+///   同口径——calc-mix-invalid 语料收口面保零漂移）；
+/// - **LengthPercentage**（% 可）：尺寸/边距/缩进/字距/left；
+/// - **Number**（<number>）：opacity/scale——角度单位文本扫描补 provenance
+///   （[`has_angle_unit_token`]）；rotate（<angle> 槽）容 number（角度产出
+///   弧度 Number 化与 bare-number-as-deg 同口径）。
+///
+/// 表外槽放行（仅文法门已过——FIXME: 逐 parser 族扩面）。Invalid 型别二分：
+/// 无除法拒（混族和树——`min(1px, 0s)` 类，无代数抵消路径），含除法放行交
+/// fold/computed 链（除法单位幂抵消——getComputedStyle-calc-mixed-units-003
+/// 钉面）；Time 仅 time 槽可达（共享 calc 入口拒 time 原子），落未知臂文法
+/// 门已过即放行。
+/// https://drafts.csswg.org/css-values-4/#calc-type-checking
+fn math_slot_family_valid(prop: &str, expr: &values::CalcExpr, raw: &str) -> bool {
+    use values::CalcMathType::{self, Angle, Invalid, LengthPercentage, Number};
+    let mt = values::calc_expr_math_type(expr);
+    // Invalid 二分（getComputedStyle-calc-mixed-units-003 语料钉面）：线性
+    // 型别在内层乘积节点判 Invalid（`calc(5px * 10lh / 1px)` 的 px*lh），
+    // 但除法单位代数幂可抵消（px·lh/px → lh，Chrome 同口径计算值 1000px）
+    // ——含除法放行交 fold/computed 链裁决（后续槽族臂按 mt 匹配，Invalid
+    // 不落臂）；无除法的混族（`min(1px, 0s)`）无抵消路径，保持拒绝。
+    if mt == Invalid {
+        return raw.contains('/');
+    }
+    // 按槽族分派（树型 × 槽文法族一致才放行）；Time 树仅 time 槽可达
+    //（parse_time_calc 入口）——落未知臂文法门已过即放行。
+    match prop {
+        // <line-width>（<length [0,∞]>，% 不可）+ transform-origin-z（<length>，
+        // 既有臂同口径——calc-mix-invalid 语料收口面保零漂移）。
+        "border-top-width"
+        | "border-right-width"
+        | "border-bottom-width"
+        | "border-left-width"
+        | "border-block-start-width"
+        | "border-block-end-width"
+        | "border-inline-start-width"
+        | "border-inline-end-width"
+        | "outline-width"
+        | "column-rule-width"
+        | "transform-origin-z" => mt == CalcMathType::LengthPercentage && !calc_contains_percentage(expr),
+        // <length-percentage> 槽（% 可）：尺寸/边距/缩进/字距/left。
+        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height" | "margin-top" | "margin-left"
+        | "text-indent" | "letter-spacing" | "left" => mt == LengthPercentage,
+        // <number>|<percentage> 槽（opacity/scale，css-transforms-2 §individual-
+        // transform-properties）：number 树角度单位 token 扫描补 provenance
+        //（角度叶 parse 期 Number 化——[`has_angle_unit_token`]）；% 树须真含
+        // % 叶（LengthPercentage 族塌缩 px 长度——`min(0px)` 拒，minmax-number-
+        // invalid 现存通过行）。
+        "opacity" | "scale" => {
+            (mt == Number && !has_angle_unit_token(&strip_trig_argument_spans(raw)))
+                || (mt == LengthPercentage && calc_contains_percentage(expr))
+        }
+        // <angle> 槽容 number（角度产出弧度 Number 化与 bare-number-as-deg
+        // 同口径）。
+        "rotate" => matches!(mt, Angle | Number),
+        // 未知槽族：文法门已过，放行（FIXME: 逐 parser 族扩面）。
+        _ => true,
+    }
 }
 
 /// 值内全部 `random-item(` 调用实参文法裁决（CSS Values 5
@@ -2619,6 +2869,265 @@ mod t54_validate_decl_value_tests {
             Some((2, 5))
         ));
         assert_eq!(style.order, -3);
+    }
+
+    #[test]
+    fn math_grammar_slot_family_gate() {
+        // CSS Values 4 §10.5 math 形通用文法+槽族型别门（g23：minmax/clamp/
+        // round-mod-rem invalid 六页 155F 槽收口——border-left-width 48 形 /
+        // opacity 42 形 / margin-left 10 形 / height 32 形 / letter-spacing
+        // 23 形恰集；语料只覆盖这些槽，测试按恰集全量断言）。
+        // border-left-width（<line-width> = <length [0,∞]>，% 不可）：语法 24
+        // + 型别 24（number/%/time/frequency/resolution/flex 叶混入即无效）。
+        for v in [
+            "min()",
+            "min( )",
+            "min(,)",
+            "min(1py)",
+            "min(1px, )",
+            "min(, 1px)",
+            "min(1px + )",
+            "min(1px - )",
+            "min(1px * )",
+            "min(1px / )",
+            "min(1px 2px)",
+            "min(1px, , 2px)",
+            "max()",
+            "max( )",
+            "max(,)",
+            "max(1py)",
+            "max(1px, )",
+            "max(, 1px)",
+            "max(1px + )",
+            "max(1px - )",
+            "max(1px * )",
+            "max(1px / )",
+            "max(1px 2px)",
+            "max(1px, , 2px)",
+            "min(0)",
+            "min(0%)",
+            "min(0s)",
+            "min(0Hz)",
+            "min(0dpi)",
+            "min(0fr)",
+            "min(1px, 0)",
+            "min(1px, 0%)",
+            "min(1px, 0s)",
+            "min(1px, 0Hz)",
+            "min(1px, 0dpi)",
+            "min(1px, 0fr)",
+            "max(0)",
+            "max(0%)",
+            "max(0s)",
+            "max(0Hz)",
+            "max(0dpi)",
+            "max(0fr)",
+            "max(1px, 0)",
+            "max(1px, 0%)",
+            "max(1px, 0s)",
+            "max(1px, 0Hz)",
+            "max(1px, 0dpi)",
+            "max(1px, 0fr)",
+        ] {
+            assert!(!validate_decl_value("border-left-width", v), "{v} 应拒");
+        }
+        // opacity（<number> 槽）：语法 22 + 型别 20（number 槽不容 %/px/s/
+        // deg——deg 叶 parse 期 Number 化，文本 token 扫描补拒绝面）。
+        for v in [
+            "min()",
+            "min( )",
+            "min(,)",
+            "min(1, )",
+            "min(, 1)",
+            "min(1 + )",
+            "min(1 - )",
+            "min(1 * )",
+            "min(1 / )",
+            "min(1 2)",
+            "min(1, , 2)",
+            "max()",
+            "max( )",
+            "max(,)",
+            "max(1, )",
+            "max(, 1)",
+            "max(1 + )",
+            "max(1 - )",
+            "max(1 * )",
+            "max(1 / )",
+            "max(1 2)",
+            "max(1, , 2)",
+            "min(0Hz)",
+            "min(0dpi)",
+            "min(0fr)",
+            "min(1, 1%)",
+            "min(1, 0px)",
+            "min(1, 0s)",
+            "min(1, 0deg)",
+            "min(1, 0Hz)",
+            "min(1, 0dpi)",
+            "min(1, 0fr)",
+            "max(0Hz)",
+            "max(0dpi)",
+            "max(0fr)",
+            "max(1, 1%)",
+            "max(1, 0px)",
+            "max(1, 0s)",
+            "max(1, 0deg)",
+            "max(1, 0Hz)",
+            "max(1, 0dpi)",
+            "max(1, 0fr)",
+            "min(0deg)",
+        ] {
+            assert!(!validate_decl_value("opacity", v), "{v} 应拒");
+        }
+        // margin-left（<length-percentage> 槽，% 可、混族不可）：percentage 页
+        // 6 形 + length-percent 页 4 形（min(1%, 0)/max(1%, 0) 双页重复去重）。
+        for v in [
+            "min(0deg)",
+            "min(1%, 0)",
+            "min(1%, 0deg)",
+            "max(0deg)",
+            "max(1%, 0)",
+            "max(1%, 0deg)",
+            "min(1px, 0)",
+            "max(1px, 0)",
+        ] {
+            assert!(!validate_decl_value("margin-left", v), "{v} 应拒");
+        }
+        // height（<length-percentage> 槽）：round/mod/rem 型别行 bare+calc ×2
+        //（round-mod-rem-invalid 32F 恰集——0px 首参/混族次参，×2 包裹展开）。
+        for core in [
+            "round(0px)",
+            "round(0px, 0s)",
+            "round(0px, 0deg)",
+            "round(0px, 0Hz)",
+            "round(0px, 0dpi)",
+            "round(0px, 0fr)",
+            "mod(0px, 0s)",
+            "mod(0px, 0deg)",
+            "mod(0px, 0Hz)",
+            "mod(0px, 0dpi)",
+            "mod(0px, 0fr)",
+            "rem(0px, 0s)",
+            "rem(0px, 0deg)",
+            "rem(0px, 0Hz)",
+            "rem(0px, 0dpi)",
+            "rem(0px, 0fr)",
+        ] {
+            assert!(!validate_decl_value("height", core), "{core} 应拒");
+            assert!(
+                !validate_decl_value("height", &format!("calc({core})")),
+                "calc({core}) 应拒"
+            );
+        }
+        // letter-spacing（<length-percentage> 槽）：语法 12 + none 实参滥用 11
+        //（clamp-length-invalid 23F 恰集）。
+        for v in [
+            "clamp()",
+            "clamp( )",
+            "clamp(,)",
+            "clamp(1px, )",
+            "clamp(, 1px)",
+            "clamp(1px, 1px)",
+            "clamp(1px, , 1px)",
+            "clamp(, 1px, 1px)",
+            "clamp(1px, 1px, )",
+            "clamp(1px, 1px, 1px, )",
+            "clamp(1px 1px 1px)",
+            "clamp(0, 10rem, 100%)",
+            "clamp(none, none, none)",
+            "clamp(none, none + none, none)",
+            "clamp(none, none + 1, none)",
+            "clamp(-none, 1px, 1px)",
+            "clamp(10px, none * none, 20px)",
+            "clamp(10px, 2px * none, 20px)",
+            "clamp(10px, 2px + none, 20px)",
+            "clamp(10px + none, 10px / 2px + none, 20px / none)",
+            "clamp(10px, -none, 20px)",
+            "clamp(10px, 15px, abs(none) * 1px)",
+            "clamp(10px, 15px, abs(none * 1px))",
+        ] {
+            assert!(!validate_decl_value("letter-spacing", v), "{v} 应拒");
+        }
+        // valid 形放行（新接线槽 + 既有槽零漂移）。
+        for (prop, v) in [
+            ("border-left-width", "min(10px, 20px)"),
+            ("margin-left", "min(1%, 2%)"),
+            ("margin-left", "min(10% + 30px, 5em + 5%)"),
+            ("margin-top", "clamp(none , 30px, 33px)"),
+            ("margin-top", "min(10px, 33px)"),
+            ("width", "min(1em, 10%)"),
+            // 除法单位代数幂抵消形（getComputedStyle-calc-mixed-units-003 四
+            // P 钉面）——线性型别内层 Invalid 但含除法放行交 fold/computed 链。
+            ("width", "calc(5px * 10lh / 1px)"),
+            ("width", "calc(4px * 4em / 1px)"),
+            ("width", "calc(400px / 4lh * 1px)"),
+            ("width", "calc(100px * 1px / 1px / 1)"),
+            // 双 calc 拐角语法（getComputedStyle-border-radius-002 五~八钉面）
+            // 与未知函数实参（css-values-5 inherit()，inherit-function-parsing
+            // 钉面）——parse-None 双豁免交 oracle 既有裁决（g22 零漂移）。
+            ("border-top-left-radius", "calc(50%) calc(25%)"),
+            ("left", "calc(inherit(--x) + 1px)"),
+            ("text-indent", "calc(20% + 10px)"),
+            ("opacity", "round(1.1,1)"),
+            ("opacity", "min(1, 2)"),
+            ("opacity", "calc(25% * 2)"),
+            ("opacity", "min(50%, 60%)"),
+            ("letter-spacing", "clamp(10px, 15px, 20px)"),
+            ("letter-spacing", "calc(100%)"),
+            ("height", "clamp(0px, 30px, 100px)"),
+            ("height", "round(5px, 2px)"),
+            ("rotate", "min(0deg)"),
+            ("transform-origin-z", "calc(1px + 2px)"),
+            ("transition-duration", "min(1s, 2s)"),
+            ("width", "10px"),
+            ("opacity", "0.5"),
+            ("margin-left", "10%"),
+        ] {
+            assert!(validate_decl_value(prop, v), "{prop}: {v} 应放行");
+        }
+        // 槽族门收口面：LengthOnly 槽拒 %（transform-origin-z 既有臂同口径——
+        // calc-mix-invalid 收口面保零漂移）；number 槽角度 token 扫描（scale）。
+        assert!(!validate_decl_value("transform-origin-z", "calc(1px + 1%)"));
+        // Invalid 无除法二分：无抵消路径的长度×长度积拒（003 反面——除法缺席
+        // 即线性型别终判）；三角实参角是合法定义域（§trig-funcs，剥跨度后
+        // token 扫描不误伤），三角长度实参仍拒。
+        assert!(!validate_decl_value("width", "calc(1px * 1em)"));
+        // parse 失败双豁免（oracle 既有裁决，g22 零漂移）：非单函数平衡跨度
+        //（`calc(50%) calc(25%)` 双 calc 拐角语法——border-radius-002 五~八
+        // 四 P 钉面）与未知函数实参（css-values-5 inherit()——
+        // inherit-function-parsing 钉面）。
+        assert!(validate_decl_value("border-top-left-radius", "calc(50%) calc(25%)"));
+        assert!(validate_decl_value("border-top-right-radius", "calc(50%) calc(25%)"));
+        assert!(validate_decl_value("left", "calc(inherit(--x) + 1px)"));
+        assert!(validate_decl_value("opacity", "sin(30deg)"));
+        assert!(validate_decl_value("opacity", "cos(66.66666666grad)"));
+        assert!(validate_decl_value("opacity", "tan(0.125turn)"));
+        assert!(validate_decl_value(
+            "opacity",
+            "calc(sin(30deg) + cos(60deg) + tan(45deg))"
+        ));
+        assert!(validate_decl_value("opacity", "sin(cos(1turn))"));
+        assert!(!validate_decl_value("opacity", "sin(1px)"));
+        assert!(!validate_decl_value("opacity", "calc(cos(infinity) * 1px)"));
+        // number 槽 %/px 区分（LengthPercentage 族塌缩——px 长度拒、% 叶放行；
+        // scale 为白名单槽，gate 放行后仍走 oracle 既有裁决面）。
+        assert!(!validate_decl_value("opacity", "min(0px)"));
+        assert!(!validate_decl_value("scale", "calc(1px * 2)"));
+        assert!(!validate_decl_value("scale", "min(0grad)"));
+        assert!(!validate_decl_value("scale", "round(1, 0.5turn)"));
+        assert!(!validate_decl_value("transition-duration", "min(0px)"));
+        // 豁免面：替换函数/未接线函数 parse 树不可达交既有门；custom property
+        // 值任意文法（CSS Parsing 3）。
+        assert!(validate_decl_value("width", "calc(var(--x) + 1px)"));
+        assert!(validate_decl_value("opacity", "var(--o)"));
+        assert!(validate_decl_value("margin-left", "calc(progress(50%) * 1px)"));
+        assert!(validate_decl_value("width", "random(1px, 2px)"));
+        assert!(validate_decl_value("--x", "min(1px, )"));
+        // plain 值/非 math 形零漂移（gate 不触发）。
+        assert!(validate_decl_value("border-left-width", "2px"));
+        assert!(validate_decl_value("border-left-width", "thick"));
+        assert!(validate_decl_value("height", "auto"));
     }
 }
 

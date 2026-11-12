@@ -1228,6 +1228,19 @@
     var s = String(value == null ? '' : value).trim();
     var low = _zwCAsciiLower(s);
     if (_zwCCssWide[low]) return low;
+    // math 函数形透传（css-values-4 §11 math functions）：round/mod/rem/
+    // hypot/pow/abs/sign/trig 等 _zwCComp 不识别的函数形此前 null 拒
+    //（round-mod-rem-serialize spec 语料 3F 根因）——形状识别放行，文法/
+    // 槽族型别裁决交宿主 __zw_validate_decl_value（opacity = <number> 族，
+    // §10.5 calc-type-checking），canonical 折叠交读面 fold_decl_specified。
+    // calc/min/max/clamp 不入透传（css-color parsing/opacity-valid 11F 根因：
+    // _zwCComp c.t==='calc' 臂即 canonical 折叠口径——calc(25% * 2) →
+    // calc(50%)、min(50%, 0%) → calc(0%)，旁路即丢折叠）。
+    // https://drafts.csswg.org/css-values-4/#calc-notation
+    if (/^(round|mod|rem|hypot|pow|atan2|abs|sign|sqrt|exp|log|sin|cos|tan|asin|acos|atan|calc-mix)\(/i.test(low)
+        && low.charAt(low.length - 1) === ')') {
+      return s;
+    }
     var c = _zwCComp(s);
     if (!c || (c.t === 'num' && c.u !== '' && c.u !== '%')) return null;
     if (c.t === 'calc') return c.text;
