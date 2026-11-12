@@ -225,6 +225,27 @@ fn length_atom_value(lv: &LengthValue) -> Option<f64> {
         | LengthValue::Vw(v)
         | LengthValue::Vmin(v)
         | LengthValue::Vmax(v)
+        // g24：viewport 单位族系数直读（provenance 变体全集）。
+        | LengthValue::Svh(v)
+        | LengthValue::Svw(v)
+        | LengthValue::Svmin(v)
+        | LengthValue::Svmax(v)
+        | LengthValue::Svb(v)
+        | LengthValue::Svi(v)
+        | LengthValue::Lvh(v)
+        | LengthValue::Lvw(v)
+        | LengthValue::Lvmin(v)
+        | LengthValue::Lvmax(v)
+        | LengthValue::Lvb(v)
+        | LengthValue::Lvi(v)
+        | LengthValue::Dvh(v)
+        | LengthValue::Dvw(v)
+        | LengthValue::Dvmin(v)
+        | LengthValue::Dvmax(v)
+        | LengthValue::Dvb(v)
+        | LengthValue::Dvi(v)
+        | LengthValue::Vb(v)
+        | LengthValue::Vi(v)
         | LengthValue::Cqw(v)
         | LengthValue::Cqh(v)
         | LengthValue::Cqi(v)
@@ -236,6 +257,7 @@ fn length_atom_value(lv: &LengthValue) -> Option<f64> {
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Lh(v)
+        | LengthValue::Rlh(v)
         | LengthValue::Percentage(v) => *v,
         _ => return None,
     })
@@ -465,6 +487,27 @@ fn length_leaf_value(lv: &LengthValue) -> Option<f64> {
         | LengthValue::Vw(v)
         | LengthValue::Vmin(v)
         | LengthValue::Vmax(v)
+        // g24：viewport 单位族系数直读（provenance 变体全集）。
+        | LengthValue::Svh(v)
+        | LengthValue::Svw(v)
+        | LengthValue::Svmin(v)
+        | LengthValue::Svmax(v)
+        | LengthValue::Svb(v)
+        | LengthValue::Svi(v)
+        | LengthValue::Lvh(v)
+        | LengthValue::Lvw(v)
+        | LengthValue::Lvmin(v)
+        | LengthValue::Lvmax(v)
+        | LengthValue::Lvb(v)
+        | LengthValue::Lvi(v)
+        | LengthValue::Dvh(v)
+        | LengthValue::Dvw(v)
+        | LengthValue::Dvmin(v)
+        | LengthValue::Dvmax(v)
+        | LengthValue::Dvb(v)
+        | LengthValue::Dvi(v)
+        | LengthValue::Vb(v)
+        | LengthValue::Vi(v)
         | LengthValue::Cqw(v)
         | LengthValue::Cqh(v)
         | LengthValue::Cqi(v)
@@ -476,6 +519,7 @@ fn length_leaf_value(lv: &LengthValue) -> Option<f64> {
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Lh(v)
+        | LengthValue::Rlh(v)
         | LengthValue::Percentage(v) => *v,
         _ => return None,
     })
@@ -873,6 +917,27 @@ fn length_suffix(lv: &LengthValue) -> Option<&'static str> {
         LengthValue::Vw(_) => "vw",
         LengthValue::Vmin(_) => "vmin",
         LengthValue::Vmax(_) => "vmax",
+        // g24：sv*/lv*/dv*/vb/vi 单位 provenance 串化（§viewport-relative-lengths）。
+        LengthValue::Svh(_) => "svh",
+        LengthValue::Svw(_) => "svw",
+        LengthValue::Svmin(_) => "svmin",
+        LengthValue::Svmax(_) => "svmax",
+        LengthValue::Svb(_) => "svb",
+        LengthValue::Svi(_) => "svi",
+        LengthValue::Lvh(_) => "lvh",
+        LengthValue::Lvw(_) => "lvw",
+        LengthValue::Lvmin(_) => "lvmin",
+        LengthValue::Lvmax(_) => "lvmax",
+        LengthValue::Lvb(_) => "lvb",
+        LengthValue::Lvi(_) => "lvi",
+        LengthValue::Dvh(_) => "dvh",
+        LengthValue::Dvw(_) => "dvw",
+        LengthValue::Dvmin(_) => "dvmin",
+        LengthValue::Dvmax(_) => "dvmax",
+        LengthValue::Dvb(_) => "dvb",
+        LengthValue::Dvi(_) => "dvi",
+        LengthValue::Vb(_) => "vb",
+        LengthValue::Vi(_) => "vi",
         LengthValue::Cqw(_) => "cqw",
         LengthValue::Cqh(_) => "cqh",
         LengthValue::Cqi(_) => "cqi",
@@ -884,6 +949,7 @@ fn length_suffix(lv: &LengthValue) -> Option<&'static str> {
         LengthValue::Ic(_) => "ic",
         LengthValue::Ric(_) => "ric",
         LengthValue::Lh(_) => "lh",
+        LengthValue::Rlh(_) => "rlh",
         LengthValue::Percentage(_) => "%",
         _ => return None,
     })
@@ -940,8 +1006,11 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // 归一后到达，白名单 kebab 形）。text-indent 为 <length-percentage> 槽
         //（calc-mix 语料 serialize 页驱动 + calc(20% + 10px) 接受面回归钉）；
         // margin-top/margin-left 为 g23 minmax/clamp serialize 语料 margin 槽
-        // 驱动（canonical 保持串化，§10.6 sort）。
-        "width" | "text-indent" | "margin-top" | "margin-left" => fold_math_specified(v, MathFoldKind::Length),
+        // 驱动（canonical 保持串化，§10.6 sort）；height 为 g24
+        // calc-dimension-serialization-order 语料 height 槽驱动（同面）。
+        "width" | "text-indent" | "margin-top" | "margin-left" | "height" => {
+            fold_math_specified(v, MathFoldKind::Length)
+        }
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }
@@ -1716,6 +1785,50 @@ mod tests {
         );
         // 复合形态（UnaryOp）保原文（canonical bail——零回归边界）。
         assert_eq!(fold_decl_specified("margin-left", "calc(abs(-1%) + 1px)"), None);
+    }
+
+    #[test]
+    fn viewport_provenance_dimension_sort_table() {
+        // calc-dimension-serialization-order.html 语料钉面（height 槽；CSS
+        // Values 4 §sort-a-calculations-children：% 先于全部维度、维度按单位
+        // ASCII CI 升序、sv*/lv*/dv*/vb/vi 单位 provenance 保留不塌缩不合并）。
+        // 相邻对扫（语料全矩阵抽样）+ 全序反排重建。
+        for (input, expected) in [
+            ("calc(1ch + 3%)", "calc(3% + 1ch)"),
+            ("calc(3% + 1ch)", "calc(3% + 1ch)"),
+            ("calc(1cqh + 1cqb)", "calc(1cqb + 1cqh)"),
+            ("calc(1cqw + 1cqi)", "calc(1cqi + 1cqw)"),
+            ("calc(1dvh + 1dvb)", "calc(1dvb + 1dvh)"),
+            ("calc(1dvw + 1dvi)", "calc(1dvi + 1dvw)"),
+            ("calc(1svw + 1svb)", "calc(1svb + 1svw)"),
+            ("calc(1vw + 1vi)", "calc(1vi + 1vw)"),
+            ("calc(1vh + 1vb)", "calc(1vb + 1vh)"),
+            // distinct 单位不合并、排序归一（svh ≠ lvh ≠ dvh；collapse 回归钉）。
+            ("calc(1svh + 1lvh)", "calc(1lvh + 1svh)"),
+            ("calc(1lvh + 1dvh)", "calc(1dvh + 1lvh)"),
+            // 全序：语料 sortedTerms 反排 → canonical 序（43 维度 + %）。
+            (
+                "calc(1vw + 1vmin + 1vmax + 1vi + 1vh + 1vb + 1svw + 1svmin + 1svmax + 1svi + 1svh + 1svb \
+                 + 1rlh + 1ric + 1rex + 1rem + 1rch + 1rcap + 1px + 1lvw + 1lvmin + 1lvmax + 1lvi + 1lvh + 1lvb \
+                 + 1lh + 1ic + 1ex + 1em + 1dvw + 1dvmin + 1dvmax + 1dvi + 1dvh + 1dvb + 1cqw + 1cqmin + 1cqmax \
+                 + 1cqi + 1cqh + 1cqb + 1ch + 1cap + 3%)",
+                "calc(3% + 1cap + 1ch + 1cqb + 1cqh + 1cqi + 1cqmax + 1cqmin + 1cqw + 1dvb + 1dvh + 1dvi \
+                 + 1dvmax + 1dvmin + 1dvw + 1em + 1ex + 1ic + 1lh + 1lvb + 1lvh + 1lvi + 1lvmax + 1lvmin + 1lvw \
+                 + 1px + 1rcap + 1rch + 1rem + 1rex + 1ric + 1rlh + 1svb + 1svh + 1svi + 1svmax + 1svmin + 1svw \
+                 + 1vb + 1vh + 1vi + 1vmax + 1vmin + 1vw)",
+            ),
+        ] {
+            assert_eq!(
+                fold_decl_specified("height", input).as_deref(),
+                Some(expected),
+                "{input}"
+            );
+        }
+        // 非白名单槽零漂移（width 槽既有面）。
+        assert_eq!(
+            fold_decl_specified("width", "calc(1ch + 3%)").as_deref(),
+            Some("calc(3% + 1ch)")
+        );
     }
 
     #[test]

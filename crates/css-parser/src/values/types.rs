@@ -35,6 +35,53 @@ pub enum LengthValue {
     Vmin(f64),
     /// vmax 单位。
     Vmax(f64),
+    // https://drafts.csswg.org/css-values-4/#viewport-relative-lengths
+    // CSS Values 4 small/large/dynamic viewport 单位与 inline/block 轴单位——
+    // 2026-11-12 g24 起 parse 期保留单位 provenance（此前 sv*/lv*/dv*/vi/vb
+    // parse 期塌缩 Vh/Vw/Vmin/Vmax，canonical 串化丢单位致
+    // calc-dimension-serialization-order 全页 44F；ZW 桌面单视口模型下
+    // small/large/dynamic 解析等价基类单位，inline/block 水平书写 ≡ vw/vh，
+    // 仅串化面保形）。全部 20 形：
+    /// svh 单位（small viewport height）。
+    Svh(f64),
+    /// svw 单位（small viewport width）。
+    Svw(f64),
+    /// svmin 单位（small viewport 较小轴 1%）。
+    Svmin(f64),
+    /// svmax 单位（small viewport 较大轴 1%）。
+    Svmax(f64),
+    /// svb 单位（small viewport block 轴 1%，水平书写 ≡ svh）。
+    Svb(f64),
+    /// svi 单位（small viewport inline 轴 1%，水平书写 ≡ svw）。
+    Svi(f64),
+    /// lvh 单位（large viewport height）。
+    Lvh(f64),
+    /// lvw 单位（large viewport width）。
+    Lvw(f64),
+    /// lvmin 单位（large viewport 较小轴 1%）。
+    Lvmin(f64),
+    /// lvmax 单位（large viewport 较大轴 1%）。
+    Lvmax(f64),
+    /// lvb 单位（large viewport block 轴 1%，水平书写 ≡ lvh）。
+    Lvb(f64),
+    /// lvi 单位（large viewport inline 轴 1%，水平书写 ≡ lvw）。
+    Lvi(f64),
+    /// dvh 单位（dynamic viewport height）。
+    Dvh(f64),
+    /// dvw 单位（dynamic viewport width）。
+    Dvw(f64),
+    /// dvmin 单位（dynamic viewport 较小轴 1%）。
+    Dvmin(f64),
+    /// dvmax 单位（dynamic viewport 较大轴 1%）。
+    Dvmax(f64),
+    /// dvb 单位（dynamic viewport block 轴 1%，水平书写 ≡ dvh）。
+    Dvb(f64),
+    /// dvi 单位（dynamic viewport inline 轴 1%，水平书写 ≡ dvw）。
+    Dvi(f64),
+    /// vb 单位（viewport block 轴 1%，水平书写 ≡ vh）。
+    Vb(f64),
+    /// vi 单位（viewport inline 轴 1%，水平书写 ≡ vw）。
+    Vi(f64),
     // https://drafts.csswg.org/css-conditional-5/#container-lengths
     /// cqw 单位（查询容器 content-box 宽的 1%）。
     Cqw(f64),
@@ -60,6 +107,10 @@ pub enum LengthValue {
     /// lh 单位（元素自身的 used line-height）。css-values-4 字体相对单位；解析消费方
     /// 无 line-height 上下文时按近似值回退（见 resolve_length Lh 臂）。
     Lh(f64),
+    /// rlh 单位（根元素 used line-height）。css-values-4 同节；g24 起 parse 产出
+    ///（calc-dimension-serialization-order 语料维度表含 1rlh——此前整值 parse 拒，
+    /// canonical 串化不可达）。解析消费方无根 line-height 上下文时 fail-closed。
+    Rlh(f64),
     /// 百分比值（0-100）。
     Percentage(f64),
     /// auto 关键字。
@@ -1139,6 +1190,10 @@ pub struct CalcContext {
     /// 元素 used line-height（px），用于 lh 单位（css-values-4：lh = 元素 used
     /// line-height）。无上下文的消费方保持 None → Lh 求值 None（保守 fail-closed）。
     pub line_height: Option<f64>,
+    /// 根元素 used line-height（px），用于 rlh 单位（css-values-4：rlh = 根元素
+    /// used line-height）。无上下文的消费方保持 None → Rlh 求值 None（同 Lh
+    /// fail-closed 口径）。
+    pub root_line_height: Option<f64>,
     // https://drafts.csswg.org/css-conditional-5/#container-lengths
     /// 查询容器 content-box 宽（px），用于 cqw/cqi 单位（水平书写）。None = 无查询
     /// 容器上下文 → cq 求值 None（消费方按 fallback 语义回退视口）。
@@ -2458,16 +2513,36 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Cap(v) => ctx.cap_height.map(|height| v * height),
         LengthValue::Rcap(v) => ctx.root_cap_height.map(|height| v * height),
         LengthValue::Rem(v) => ctx.root_font_size.map(|rfs| v * rfs),
-        LengthValue::Vh(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
-        LengthValue::Vw(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
-        LengthValue::Vmin(v) => match (ctx.viewport_width, ctx.viewport_height) {
-            (Some(vw), Some(vh)) => Some(v * vw.min(vh) / 100.0),
-            _ => None,
-        },
-        LengthValue::Vmax(v) => match (ctx.viewport_width, ctx.viewport_height) {
-            (Some(vw), Some(vh)) => Some(v * vw.max(vh) / 100.0),
-            _ => None,
-        },
+        // sv*/lv*/dv* 桌面单视口 ≡ 基类单位；vb 族 block 轴 ≡ vh 族、vi 族 inline
+        // 轴 ≡ vw 族（水平书写，见 enum 注）。
+        LengthValue::Vh(v)
+        | LengthValue::Svh(v)
+        | LengthValue::Lvh(v)
+        | LengthValue::Dvh(v)
+        | LengthValue::Vb(v)
+        | LengthValue::Svb(v)
+        | LengthValue::Lvb(v)
+        | LengthValue::Dvb(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
+        LengthValue::Vw(v)
+        | LengthValue::Svw(v)
+        | LengthValue::Lvw(v)
+        | LengthValue::Dvw(v)
+        | LengthValue::Vi(v)
+        | LengthValue::Svi(v)
+        | LengthValue::Lvi(v)
+        | LengthValue::Dvi(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
+        LengthValue::Vmin(v) | LengthValue::Svmin(v) | LengthValue::Lvmin(v) | LengthValue::Dvmin(v) => {
+            match (ctx.viewport_width, ctx.viewport_height) {
+                (Some(vw), Some(vh)) => Some(v * vw.min(vh) / 100.0),
+                _ => None,
+            }
+        }
+        LengthValue::Vmax(v) | LengthValue::Svmax(v) | LengthValue::Lvmax(v) | LengthValue::Dvmax(v) => {
+            match (ctx.viewport_width, ctx.viewport_height) {
+                (Some(vw), Some(vh)) => Some(v * vw.max(vh) / 100.0),
+                _ => None,
+            }
+        }
         LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
         LengthValue::Rch(v) => ctx.root_ch_width.map(|cw| v * cw),
         LengthValue::Ic(v) => ctx.ic_width.map(|width| v * width),
@@ -2476,6 +2551,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         // line_height 时精确求值（消费方如 layout 的 line-clamp:auto clamp 路径）；
         // 无上下文保持 None（保守 fail-closed）。
         LengthValue::Lh(v) => ctx.line_height.map(|lh| v * lh),
+        LengthValue::Rlh(v) => ctx.root_line_height.map(|rlh| v * rlh),
         // https://drafts.csswg.org/css-conditional-5/#container-lengths
         // cq 单位：按查询容器 content 尺寸求值。cqi/cqb 水平书写 ≡ cqw/cqh
         //（vertical writing-mode 轴交换暂未建模——与 ZW writing-mode 单位处理同域挂账）。
@@ -2623,18 +2699,34 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vw" => Some(LengthValue::Vw(num)),
         "vmin" => Some(LengthValue::Vmin(num)),
         "vmax" => Some(LengthValue::Vmax(num)),
-        // CSS Values 4 视口单位（small/large/dynamic viewport）：ZW 视口模型为桌面单视口，
-        // svh/lvh/dvh 在桌面等价于 vh（移动端动态 UI 高度差异未建模）。映射到既有变体，
-        // 修复前这些合法单位返回 None 致声明被丢弃。
-        "svh" | "lvh" | "dvh" => Some(LengthValue::Vh(num)),
-        "svw" | "lvw" | "dvw" => Some(LengthValue::Vw(num)),
-        "svmin" | "lvmin" | "dvmin" => Some(LengthValue::Vmin(num)),
-        "svmax" | "lvmax" | "dvmax" => Some(LengthValue::Vmax(num)),
-        // CSS Values 4 视口 inline/block 单位：`vi`=1% 视口 inline 轴、`vb`=1% 视口 block 轴
-        //（含 small/large/dynamic 变体）。ZW 仅水平书写模式布局（vertical-mode R1043 待授权），
-        // 水平 tb 下 inline=水平、block=垂直，故 vi≡vw、vb≡vh（同 R2359 sv*/lv*/dv* 模式）。
-        "vi" | "svi" | "lvi" | "dvi" => Some(LengthValue::Vw(num)),
-        "vb" | "svb" | "lvb" | "dvb" => Some(LengthValue::Vh(num)),
+        // CSS Values 4 视口单位（small/large/dynamic viewport）：g24 起保留单位
+        // provenance（各自变体，canonical 串化保形）；ZW 视口模型为桌面单视口，
+        // sv*/lv*/dv* 解析消费方等价基类单位（移动端动态 UI 高度差异未建模）。
+        // 2026-11-12 前这些单位 parse 期塌缩 Vh/Vw/Vmin/Vmax。
+        "svh" => Some(LengthValue::Svh(num)),
+        "lvh" => Some(LengthValue::Lvh(num)),
+        "dvh" => Some(LengthValue::Dvh(num)),
+        "svw" => Some(LengthValue::Svw(num)),
+        "lvw" => Some(LengthValue::Lvw(num)),
+        "dvw" => Some(LengthValue::Dvw(num)),
+        "svmin" => Some(LengthValue::Svmin(num)),
+        "lvmin" => Some(LengthValue::Lvmin(num)),
+        "dvmin" => Some(LengthValue::Dvmin(num)),
+        "svmax" => Some(LengthValue::Svmax(num)),
+        "lvmax" => Some(LengthValue::Lvmax(num)),
+        "dvmax" => Some(LengthValue::Dvmax(num)),
+        // CSS Values 4 视口 inline/block 单位：`vi`=1% 视口 inline 轴、`vb`=1% 视口
+        // block 轴（含 small/large/dynamic 变体）。ZW 仅水平书写模式布局
+        //（vertical-mode R1043 待授权），水平 tb 下 inline=水平、block=垂直，
+        // 解析消费方 vi 族 ≡ vw 族、vb 族 ≡ vh 族。
+        "vi" => Some(LengthValue::Vi(num)),
+        "svi" => Some(LengthValue::Svi(num)),
+        "lvi" => Some(LengthValue::Lvi(num)),
+        "dvi" => Some(LengthValue::Dvi(num)),
+        "vb" => Some(LengthValue::Vb(num)),
+        "svb" => Some(LengthValue::Svb(num)),
+        "lvb" => Some(LengthValue::Lvb(num)),
+        "dvb" => Some(LengthValue::Dvb(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "rch" if std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rch(num)),
         "ic" if std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0") => Some(LengthValue::Ic(num)),
@@ -2644,13 +2736,19 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         // `max-height: 4lh` / `4.5lh`。解析消费方按元素自身 line-height 解析（layout
         // clamp 路径）；无上下文的 resolve_length 回退近似。
         "lh" => Some(LengthValue::Lh(num)),
+        // rlh = 根元素 used line-height（css-values-4 #lh 同节；root 族 variant
+        // 门继承基单位——lh 不设门，rlh 同）。
+        "rlh" => Some(LengthValue::Rlh(num)),
         // https://drafts.csswg.org/css-conditional-5/#container-lengths
         // cq 容器查询单位（R4125）：1cqw/cqi = 查询容器 content 宽 1%，1cqh/cqb =
         // content 高 1%（水平书写下 cqi/cqb ≡ cqw/cqh）；cqmin/cqmax 取两轴小/大。
         // 消费方按最近 container-type ≠ normal 祖先 content 尺寸解析（style-system
         // computed 阶段，R4124 容器链顶）；无查询容器 → fallback 回退视口。
-        "cqw" | "cqi" => Some(LengthValue::Cqw(num)),
-        "cqh" | "cqb" => Some(LengthValue::Cqh(num)),
+        // cqi/cqb g24 起保留 provenance（水平书写解析 ≡ cqw/cqh，串化保原单位）。
+        "cqw" => Some(LengthValue::Cqw(num)),
+        "cqi" => Some(LengthValue::Cqi(num)),
+        "cqh" => Some(LengthValue::Cqh(num)),
+        "cqb" => Some(LengthValue::Cqb(num)),
         "cqmin" => Some(LengthValue::Cqmin(num)),
         "cqmax" => Some(LengthValue::Cqmax(num)),
         "%" => Some(LengthValue::Percentage(num)),

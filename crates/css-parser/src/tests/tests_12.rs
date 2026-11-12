@@ -551,58 +551,43 @@ fn test_parse_length_various() {
 
 #[test]
 /// R2359：CSS Values 4 视口单位（svh/lvh/dvh 等）解析。ZW 视口模型为桌面单视口，
-/// small/large/dynamic viewport 三者等价于 vh/vw/vmin/vmax（移动端动态 UI 差异未建模）。
-/// 修复前这些单位返回 None → 声明被丢弃；现映射到既有变体。
+/// small/large/dynamic viewport 解析消费方等价于 vh/vw/vmin/vmax（移动端动态 UI
+/// 差异未建模）。修复前这些单位返回 None → 声明被丢弃；g24 起保留单位 provenance
+///（各自变体——canonical 串化保形，calc-dimension-serialization-order 语料）。
 fn test_parse_length_viewport_units_4() {
-    for h in ["svh", "lvh", "dvh"] {
-        assert!(
-            matches!(parse_length(&format!("100{h}")), Some(LengthValue::Vh(100.0))),
-            "{h}"
-        );
-    }
-    for w in ["svw", "lvw", "dvw"] {
-        assert!(
-            matches!(parse_length(&format!("50{w}")), Some(LengthValue::Vw(50.0))),
-            "{w}"
-        );
-    }
-    for min in ["svmin", "lvmin", "dvmin"] {
-        assert!(
-            matches!(parse_length(&format!("5{min}")), Some(LengthValue::Vmin(5.0))),
-            "{min}"
-        );
-    }
-    for max in ["svmax", "lvmax", "dvmax"] {
-        assert!(
-            matches!(parse_length(&format!("5{max}")), Some(LengthValue::Vmax(5.0))),
-            "{max}"
-        );
-    }
+    assert!(matches!(parse_length("100svh"), Some(LengthValue::Svh(100.0))));
+    assert!(matches!(parse_length("100lvh"), Some(LengthValue::Lvh(100.0))));
+    assert!(matches!(parse_length("100dvh"), Some(LengthValue::Dvh(100.0))));
+    assert!(matches!(parse_length("50svw"), Some(LengthValue::Svw(50.0))));
+    assert!(matches!(parse_length("50lvw"), Some(LengthValue::Lvw(50.0))));
+    assert!(matches!(parse_length("50dvw"), Some(LengthValue::Dvw(50.0))));
+    assert!(matches!(parse_length("5svmin"), Some(LengthValue::Svmin(5.0))));
+    assert!(matches!(parse_length("5lvmin"), Some(LengthValue::Lvmin(5.0))));
+    assert!(matches!(parse_length("5dvmin"), Some(LengthValue::Dvmin(5.0))));
+    assert!(matches!(parse_length("5svmax"), Some(LengthValue::Svmax(5.0))));
+    assert!(matches!(parse_length("5lvmax"), Some(LengthValue::Lvmax(5.0))));
+    assert!(matches!(parse_length("5dvmax"), Some(LengthValue::Dvmax(5.0))));
     // 大小写不敏感（与既有 vh/vw 一致）
-    assert!(matches!(parse_length("100DVH"), Some(LengthValue::Vh(100.0))));
+    assert!(matches!(parse_length("100DVH"), Some(LengthValue::Dvh(100.0))));
 }
 
 #[test]
 /// R2373：CSS Values 4 视口 inline/block 单位（vi/vb 及其 small/large/dynamic 变体）。
 /// `vi` = 1% 视口 inline 轴，`vb` = 1% 视口 block 轴。ZW 仅支持水平书写模式布局
-///（vertical-mode R1043 待授权），水平 tb 下 inline=水平、block=垂直，故 vi≡vw、vb≡vh。
-/// 修复前这些合法单位返回 None → 声明被丢弃；现映射到既有变体（与 R2359 sv*/lv*/dv* 同模式）。
+///（vertical-mode R1043 待授权），水平 tb 下 inline=水平、block=垂直，解析消费方
+/// vi 族 ≡ vw 族、vb 族 ≡ vh 族。g24 起保留单位 provenance（各自变体）。
 fn test_parse_length_viewport_inline_block_units() {
-    for i in ["vi", "svi", "lvi", "dvi"] {
-        assert!(
-            matches!(parse_length(&format!("100{i}")), Some(LengthValue::Vw(100.0))),
-            "{i}"
-        );
-    }
-    for b in ["vb", "svb", "lvb", "dvb"] {
-        assert!(
-            matches!(parse_length(&format!("50{b}")), Some(LengthValue::Vh(50.0))),
-            "{b}"
-        );
-    }
+    assert!(matches!(parse_length("100vi"), Some(LengthValue::Vi(100.0))));
+    assert!(matches!(parse_length("100svi"), Some(LengthValue::Svi(100.0))));
+    assert!(matches!(parse_length("100lvi"), Some(LengthValue::Lvi(100.0))));
+    assert!(matches!(parse_length("100dvi"), Some(LengthValue::Dvi(100.0))));
+    assert!(matches!(parse_length("50vb"), Some(LengthValue::Vb(50.0))));
+    assert!(matches!(parse_length("50svb"), Some(LengthValue::Svb(50.0))));
+    assert!(matches!(parse_length("50lvb"), Some(LengthValue::Lvb(50.0))));
+    assert!(matches!(parse_length("50dvb"), Some(LengthValue::Dvb(50.0))));
     // 大小写不敏感（与既有 vh/vw 一致）
-    assert!(matches!(parse_length("100VI"), Some(LengthValue::Vw(100.0))));
-    assert!(matches!(parse_length("50SVB"), Some(LengthValue::Vh(50.0))));
+    assert!(matches!(parse_length("100VI"), Some(LengthValue::Vi(100.0))));
+    assert!(matches!(parse_length("50SVB"), Some(LengthValue::Svb(50.0))));
 }
 
 #[test]

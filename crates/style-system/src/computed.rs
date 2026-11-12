@@ -170,20 +170,37 @@ fn resolve_length_inner(
         LengthValue::Cap(v) => v * font_size * font_metrics.map_or(0.8, |metrics| metrics.cap_height),
         LengthValue::Rcap(v) => v * root_metrics.cap_height.unwrap_or(ROOT_FONT_SIZE * 0.8),
         LengthValue::Rem(v) => v * ROOT_FONT_SIZE,
-        LengthValue::Vh(v) => {
+        // g24：sv*/lv*/dv* 与 vb/vi 为 provenance 变体（css-values-4
+        // §viewport-relative-lengths），桌面单视口模型下解析等价基类单位：
+        // vh 族 ≡ vb 族（块轴）、vw 族 ≡ vi 族（行轴）、sv* ≡ 基类。
+        LengthValue::Vh(v)
+        | LengthValue::Svh(v)
+        | LengthValue::Lvh(v)
+        | LengthValue::Dvh(v)
+        | LengthValue::Vb(v)
+        | LengthValue::Svb(v)
+        | LengthValue::Lvb(v)
+        | LengthValue::Dvb(v) => {
             let vh = viewport_height.unwrap_or(900.0);
             v * vh / 100.0
         }
-        LengthValue::Vw(v) => {
+        LengthValue::Vw(v)
+        | LengthValue::Svw(v)
+        | LengthValue::Lvw(v)
+        | LengthValue::Dvw(v)
+        | LengthValue::Vi(v)
+        | LengthValue::Svi(v)
+        | LengthValue::Lvi(v)
+        | LengthValue::Dvi(v) => {
             let vw = viewport_width.unwrap_or(1440.0);
             v * vw / 100.0
         }
-        LengthValue::Vmin(v) => {
+        LengthValue::Vmin(v) | LengthValue::Svmin(v) | LengthValue::Lvmin(v) | LengthValue::Dvmin(v) => {
             let vw = viewport_width.unwrap_or(1440.0);
             let vh = viewport_height.unwrap_or(900.0);
             v * vw.min(vh) / 100.0
         }
-        LengthValue::Vmax(v) => {
+        LengthValue::Vmax(v) | LengthValue::Svmax(v) | LengthValue::Lvmax(v) | LengthValue::Dvmax(v) => {
             let vw = viewport_width.unwrap_or(1440.0);
             let vh = viewport_height.unwrap_or(900.0);
             v * vw.max(vh) / 100.0
@@ -197,6 +214,10 @@ fn resolve_length_inner(
         // css-values-4 UA 惯例 1lh ≈ 1.2em 近似（line-clamp:auto 的 layout clamp 路径
         // 用元素真实 line-height 精确解析，不走此臂）。无字体上下文同近似。
         LengthValue::Lh(v) => v * font_size * 1.2,
+        // rlh = 根元素 used line-height（css-values-4 #lh 同节）。通用 resolve 无根
+        // line-height 上下文，同 1lh 臂的 1.2em UA 近似口径取根字号（layout 精确
+        // 路径暂未接 rlh——FIXME: root_line_height 上下文待 layout 侧接线）。
+        LengthValue::Rlh(v) => v * ROOT_FONT_SIZE * 1.2,
         // https://drafts.csswg.org/css-conditional-5/#container-lengths
         // cq 单位：按最近 container-type ≠ normal 祖先的 content 尺寸求值（R4124
         // 容器链顶）。cqi/cqb 水平书写 ≡ cqw/cqh（vertical writing-mode 轴交换与

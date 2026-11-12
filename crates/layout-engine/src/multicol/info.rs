@@ -47,13 +47,32 @@ pub(super) fn length_to_px(value: &LengthValue, container_width: f32, font_size_
         LengthValue::Cap(v) => *v as f32 * font_size_px * 0.8,
         LengthValue::Rcap(v) => *v as f32 * 16.0 * 0.8,
         LengthValue::Rem(v) => *v as f32 * 16.0,
-        LengthValue::Vw(v) => *v as f32 * 8.0,
-        LengthValue::Vh(v) => *v as f32 * 6.0,
+        // g24：viewport 单位族 provenance 变体，桌面单视口模型解析等价基类
+        //（800×600 硬视口：1vw=8px、1vh=6px）。
+        LengthValue::Vw(v)
+        | LengthValue::Svw(v)
+        | LengthValue::Lvw(v)
+        | LengthValue::Dvw(v)
+        | LengthValue::Vi(v)
+        | LengthValue::Svi(v)
+        | LengthValue::Lvi(v)
+        | LengthValue::Dvi(v) => *v as f32 * 8.0,
+        LengthValue::Vh(v)
+        | LengthValue::Svh(v)
+        | LengthValue::Lvh(v)
+        | LengthValue::Dvh(v)
+        | LengthValue::Vb(v)
+        | LengthValue::Svb(v)
+        | LengthValue::Lvb(v)
+        | LengthValue::Dvb(v) => *v as f32 * 6.0,
         // R3749：column-width math 形式（`columns: 2 calc(6em + 5px)`）在 apply 阶段存为
         // Calc；用容器宽度/字号上下文求值，无法求值（如需 viewport 外部上下文）时回退 0。
         // R3766：lh 单位（css-values-4）——multicol 上下文无 line-height，按 1.2em 近似
         //（与 resolve_length Lh 臂同近似）。
         LengthValue::Lh(v) => *v as f32 * font_size_px * 1.2,
+        // rlh = 根元素 used line-height（css-values-4 #lh 同节）——multicol 上下文无根
+        // line-height，按根字号 1.2em 近似（Rex/Rcap 根字号 16.0 同口径）。
+        LengthValue::Rlh(v) => *v as f32 * 16.0 * 1.2,
         // R4125：cq 单位（css-conditional-5 container lengths）——multicol 上下文无
         // 查询容器信息，fail-closed 0（column-width: cq 极罕见；有容器上下文的解析在
         // style-system computed 阶段已完成，残留至此视为无上下文）。
@@ -75,8 +94,12 @@ pub(super) fn length_to_px(value: &LengthValue, container_width: f32, font_size_
                 .unwrap_or(0.0)
         }
         LengthValue::Auto => 0.0,
-        LengthValue::Vmin(v) => (*v as f32) * 6.0,
-        LengthValue::Vmax(v) => (*v as f32) * 8.0,
+        LengthValue::Vmin(v) | LengthValue::Svmin(v) | LengthValue::Lvmin(v) | LengthValue::Dvmin(v) => {
+            (*v as f32) * 6.0
+        }
+        LengthValue::Vmax(v) | LengthValue::Svmax(v) | LengthValue::Lvmax(v) | LengthValue::Dvmax(v) => {
+            (*v as f32) * 8.0
+        }
         LengthValue::Ch(v) => *v as f32 * 8.0,
         LengthValue::Rch(v) => *v as f32 * 8.0,
         LengthValue::Ic(v) => *v as f32 * font_size_px,
