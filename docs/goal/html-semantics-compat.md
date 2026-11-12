@@ -2,21 +2,26 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 415 round-1 进行中（ior jQuery append()
-新红归因：**源归因排除**）——s414 定谳真新红（11 天稳定 Pass→确定性
+**状态**: Active——M2 切片 415 round-1 落锤（ior jQuery append() 新红归因：**双通道键分裂 + 重复处理定谳，未施工**）——s414 定谳真新红（11 天稳定 Pass→确定性
 Fail）三跑归因首轮落锤：**纯 0079443c6 源重建二进制（detached
 checkout，零注释零上游）静机 ior ×3 全 Fail** vs 同源 s413 批二进制
 （11-12 20:04）Pass ×2——同源不同构建/时点翻转，s414 注释与上游五
 commit 双双排除，翻转维度收窄到源码之外（rustc 并行 codegen 产物布
 局漂移 → 堆布局/分配序，或运行时环境时点敏感；20:04 批二进制已被覆
 盖不可直复跑）。腿 1 已落锤（同源 touch-rebuild sha256 **A≠B** 非逐位可复现实证 +
-双构建 ior ×3 全 Fail，连前计 6 构建连 Fail）→ 腿 2 探针插桩升首位
-（`_zwOptStateKeyOf` stamp dump + `_mo_notify` 臂相位，直答当前
-Fail 失灵臂，s236 机制域 + s373 先例）→ 勘根收口后按根因域定施工/
-挂账。ior 键勘根收口前按在册红记账不抹（flake
+双构建 ior ×3 全 Fail，连前计 6 构建连 Fail）→ 腿 2 探针插桩已落锤
+（11-13 04:20）：`appendChild(fragment)` **一次变异双通道双记录**——
+JS plain 批记录先处理正确归一 Second（11 天 Pass 既有路径），native
+延迟排空（`drain_native_mutations_to_mo` → `__zw_mo_notify_native`）
+以身份键重跑插入臂、该时点选项枚举序倒转 → clean 键面分裂（归一写在
+plainOpt:p* 键，@ 键不可见回落属性 true）→ **First 翻胜**，Fail 签名
+逐字吻合（dump 108 事件全量，探针语料 3/3 复现，插桩零 regime 位移）。
+Pass/Fail = 双记录处理序/键面随构建布局漂移——20:04 批落无翻转侧。
+插桩已逐字节还原（sha256 一致）、探针语料已删、清回构建 C ior ×3 全
+Fail 零残留。ior 键勘根收口前按在册红记账不抹（flake
 治理）。**本流域在册红 213F+16T**（s414 收口口径，见 s414 账本；NotRun
 5 不变）。过程事件：429 断点接手收口 s414 + target-disk-guard × 活动
-构建竞态全清教训已录 s414 账本。下一步：s415 腿 2 探针插桩（首位）；
+构建竞态全清教训已录 s414 账本。下一步：s415 腿 3＝native 排空域勘根（重复处理根因修复方向定夺，去重/抑制候选 + 全量 sweep 验证；键分裂备选）；
 constructed-stylesheets 1T 勘根候选 / 挂账池承
 s404/s405/s411/s412/s413/s414（外链模块基座 map 键错配/`.sheet` kind
 固定面不全/标记属性外泄/多进程 parity/forward map 空返勘根/渲染流 5
