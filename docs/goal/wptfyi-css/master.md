@@ -34,7 +34,15 @@ random-computed +95/random-item-computed +5/item-nested +2/unresolvable
 key 节缺失/项表空/顶层 `!;]`/块残片/括号未闭合五类 invalid 形三写臂共用
 门，values face 3,214→**3,228** 净 +14 零回归，random-item-invalid 14F
 全页清零，五套件 Pass 级 ±0，见 evidence
-2026-11-12-dc2-g22-random-item-write-grammar）。
+2026-11-12-dc2-g22-random-item-write-grammar）
++min/max/clamp canonical 保持串化 + 写面 math 文法/槽族门 + clamp none
+重写（g23：§10.6 canonical 排序保持串化 margin 槽接线 + §10.5 写面
+22 数学函数文法×槽族型别门（LengthOnly/LengthPercentage/Number 三档 +
+Invalid 除法二分）+ §comp-func clamp(none,…) parse 期重写 + shim math
+函数形透传（calc/min/max/clamp 排除保 `_zwCComp` 折叠口径），values face
+3,228→**3,553** 净 +325 零回归（invalid 桶 208+serialize 桶 ~117），五
+套件 Pass/Timeout 双锚定零漂移，见 evidence
+2026-11-12-dc2-g23-minmax-serialize-write-gate）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -71,7 +79,8 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 / Pass 1,381**（transitions 185 / om-view 545 / geometry 209 / animations 225
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
-**卡点**：无阻塞。g19 sibling 求值桥已落库（CalcContext 注入 + gCS 三通道
+**卡点**：无阻塞。g23 minmax/clamp serialize+写面门已落库（values 净
++325 五套件 ±0，invalid 桶清账）。g19 sibling 求值桥已落库（CalcContext 注入 + gCS 三通道
 + 写面门两洞修复；probe family 31P→56P 净 +25、values 净 +40 五套件 ±0），
 tree-counting 家族残 89F 分桶挂账（color 实参槽 2F/伪元素 Face 3 2F/keyframe
 10 页/invalidation/container/descriptors/media/shadow/tree-scoped/gradient/
@@ -88,12 +97,13 @@ position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor
 anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallback
 布局 ~43F（溢出检查 + last-successful 状态机 + @position-try 应用引擎）、
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
-transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g13 后）：∞ 桶
+transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g23 后）：∞ 桶
 （calc-infinity-nan-computed 残 ~31F：rotate 14 → matrix 化桶 + %-CB 形 +
-unbalanced 形；serialize 残 ~42F——resolution 29 主体未动（image-set parse
-前置刀，deferred）+ length ~2/angle ~8/number ~3 散形 + signs-abs computed
-残 ~94F/invalid 52F——`abs()` 空参文法、font-weight 非白名单属性写面/
-serialize 4F）、
+unbalanced 形）、serialize 散形残余（resolution 29 主体未动（image-set parse
+前置刀，deferred）+ length ~2/angle ~8/number ~3）、signs-abs computed
+残 ~94F + invalid 残 ~9F（g23 invalid 门已收 43）——`abs()` 空参文法、
+font-weight 非白名单属性写面/serialize 4F、invalid 门表外槽族放行
+（FIXME 逐 parser 族扩面）、
 %-mixing CalcContext 族（calc-mix 主刀后残余：serialize 62F——sibling-index() 形已收（g19 DOM 求值桥）+ 外层 calc() 嵌套 % 排序 ~12F 树递归 serialize + computed 串面散形；computed 28F——% calc 保留形 length_to_css 空串等）、
 tree-counting 家族残 89F（g19 后：keyframe 10 页、invalidation/container-query/
 descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
@@ -129,6 +139,35 @@ unresolvable-argument +1），五套件 Pass 级零漂移（transitions F 计数
 管线重现）/engine 3,909 过（7 失败在册既有组——editing 流近期修复后
 10→7，逐名核对）/rustfmt clean/定向 clippy 零告警。
 [证据](evidence/2026-11-12-dc2-g21-random-eval-face2.md)
+
+**DC-2 g23 批完成（11-12，min/max/clamp canonical 串化 + 写面 math 门 +
+clamp none 重写，四刀 A-D）**：CSS Values 4 §10.6/§10.5/§comp-func——
+刀 A serialize_math.rs：min/max/clamp specified 值 canonical 保持串化
+（布局依赖树不塌缩时排序保持发射：多实参保序/单参 ≡ calc() 解包/同单位
+合并/-0 归一/number→%→维度 ASCII CI 排序/节点殿后/乘积系数前置，除法·
+复合形态 bail 保原文零回归边界），Length 槽白名单接线 margin-top/left；
+刀 B types.rs：clamp() `none` 实参 parse 期重写（clamp(none,A,B)≡min、
+clamp(A,B,none)≡max、双 none ≡ 裸值兜底臂，嵌套内层先归约）+
+skip_whitespace 注释等价空白（css-syntax-3 §4.4）；刀 C apply.rs：写面
+math 形通用文法+槽族型别门（22 函数名单 × parse_math_function 文法裁决 ×
+槽族型别表 LengthOnly/LengthPercentage/Number 三档 + 角度 token 扫描补
+number 槽 provenance + Invalid 除法二分放行单位幂抵消形，豁免三臂：
+替换函数/双 calc 拐角/未知函数实参），validate_decl_value 白名单前接线
+三写臂共用；刀 D engine part11-color.js：shim math 函数形透传
+（round/mod/rem/hypot/pow/atan2/abs/sign/trig/calc-mix——calc/min/max/
+clamp 排除，防绕过 `_zwCComp` canonical 折叠臂）。**首轮全量（g23 2230）
+暴露刀 D 首版 -11 color 回归**（透传含 calc 族旁路折叠），收窄名单后
+g23b 复跑归零。**六套件权威账 values 3,228 → 3,553 净 +325 零回归**
+（invalid 桶 208：minmax-length +48/minmax-number +42/round-mod-rem +32/
+clamp-length +23/signs-abs +43/hypot-pow-sqrt +10 等；serialize 桶
+~117：clamp-length-serialize +45/clamp-partial +16/minmax 四页 +17 等；
+computed 桶 clamp-length +9/clamp-integer +5），css-color 10,972 零漂移
+（flip=0 reg=0），transitions/animations/easing/transforms Pass/Timeout
+双锚定逐位一致（transitions 1,122 条 Fail->None 为 g21 在册超时页枚举
+伪影族，Timeout 页集 21=21 恒同）。单测 css-parser 3,177 全绿（+4
+serialize 表）/style-system 2,527 全绿（+1 槽族门矩阵）/engine 3,909 过
+（7F 在册组）/定向 clippy 零告警/fmt clean（跑后收口两处机械漂移）。
+[证据](evidence/2026-11-12-dc2-g23-minmax-serialize-write-gate.md)
 
 **DC-2 g22 批完成（11-12，random-item 写面文法门）**：CSS Values 5
 §funcdef-random-item 实参文法裁决（任意替换函数 parse 期仅实参文法，
