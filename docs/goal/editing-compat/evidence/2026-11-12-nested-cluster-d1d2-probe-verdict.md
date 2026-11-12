@@ -91,3 +91,10 @@ R2-MUT 对照（exec#1 5 条 flat2 mutation vs ctrl 面全 9 条 ByHandle）：`
 - **判读**：八腿与 D2 gate v1 基线逐项恒一（outdent 169/4、mt X37 双键、singles 五值同值）——零 flip 零漂移，B1 修复域（裸文本 ref 壳插）语料零暴露，与 D2 同判读形态；行为覆盖=解钉测 italic_after_prior_cmd 承载（批内 enginelib 腿参与跑 PASS，3910P/1I 即含其绿）。
 - **字节绑定**：全腿 bin=104bd716380d94b41e6036bc9d47d653 恒一（HEAD ef5eef318 make 目标产物，签名 `__zw_insert_child_at`=3/`_zwBaseIdxShiftForAdded`=6/`ZW_INSERT_CHILD_AT`=2 全中）；脚本头锚 ad6ff2a84023e5252d01e0efcd7555b4 为裸 cargo build 产物，L0 即被 make 自有 feature 集重建取代——判读以腿级 echo md5 为准（账本 20:17 条更正）。
 - 残余挂账：nested_cross_b 算法刀（vendored contained 集二次 re-wrap，期望 `fo<b>o<b>b</b>ar</b>baz`）、Form A（splitText 裸子 trim 欠发射）、verdict 共笔节去重（择期 docs pass）、shim 视图序缺陷与 ab 瞬态丢行率账（择期）。
+
+## 嵌套簇 B1 复绑批终绑（2026-11-12 22:33，gate v2 组合态判读域绑定）
+
+pull --rebase 后推送树 e1488f6c8 并入他流 PR #298（selector-churn：dom document 位置索引字段化+part01d/part06 shim +73/+26）与 bold 数值权重 merge + 六命令 cef 门 rc=false 化——与 B1 刀 insertBefore trap/apply 坐标平移语义相邻，组合态以 batch-nested-b1-gate-v2.sh 全八腿复跑终绑（判据同 v1，基线改对 v1 post 日志零漂移门；mt 允许 signed F2P、unsigned 一律红）。
+
+- **终态**：ALL-DONE 2026-11-12T22:33:07+08:00（21:16:49 起跑 76min）head=e1488f6c8 bin=95ceadfea4c5a7fcb9983e2509c818a9 全腿恒一（签名 3/6/2/2 全中）——probe 217/5 恰集（failkeys vs v1 diff 空）、ab 10092/0/0 wall=257s、outdent rows 2550 恒一 F2P=0/P2F=0/lost=0/residF=4 恰键、indent 1302/27、mt rows 10092 恒一 F2P=0（**signed=0/unsigned=0**）P2F=0/po_fail=0/lost=0/residF=2（X37 双键）、singles×5 1759/2061/6989/1658/1446 恒一、exec×3 judge OK、enginelib 3910P/7F/1I 名册 7 逐名恒一。
+- **定谳**：他流入站（selector-churn 索引面 + bold/cef 命令面）对 B1 刀全域零交互零漂移——mt signed-F2P 允许位未动用（他流 bold 修复不触及 multitest 语料面），outdent/indent/probe 恰集键逐位恒一；B1 判读域终绑 e1488f6c8。
