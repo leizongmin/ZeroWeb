@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.indexOf("[");
+    var ei = data.replace(/\[/g, "").indexOf("]");
+    if (si !== -1) { startNode = n; startOffset = si; }
+    if (ei !== -1) { endNode = n; endOffset = ei; }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function d6rc(tag, input, wantRc) {
+  test(function() {
+    setupCorp(input);
+    var rc = document.execCommand('bold', false, '');
+    assert_equals(rc, wantRc, 'rc');
+  }, tag);
+}
+d6rc("T1 corpus nested start-editable end-noneditable",
+  '<span contenteditable=false>foo<span contenteditable=true>ba[r</span>b]az</span>', false);
+d6rc("T2 mid-traverse control (both boundaries editable)",
+  'fo[o<span contenteditable=false>bar</span>b]az', true);
+d6rc("T3 direct cef span end-only",
+  'fo[o<span contenteditable=false>b]ar</span>baz', false);
+</script>
+</body>
+</html>

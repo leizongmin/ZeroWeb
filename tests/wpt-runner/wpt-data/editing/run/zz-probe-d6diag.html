@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>.notbold { font-weight: normal } #purple { color: purple }</style>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+// 语料 setupDiv 文本标记语义：[]/{} 于文本节点 → 文本 offset 选区
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.indexOf("[");
+    var ei = data.replace(/\[/g, "").indexOf("]");
+    if (si !== -1) { startNode = n; startOffset = si; }
+    if (ei !== -1) { endNode = n; endOffset = ei; }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+
+// DC-2 ②（2026-11-12）bold 数值权重边界批诊断：期望 = data/bold.js 录形
+// 原文去选区标记 [ ]（裸 innerHTML 对比，标记是选区锚点非内容）。当前形态
+// 见各 case 失败信息 GOT=；修复落点 = bold wrap-in 非激活壳不切 + toggle-off
+// 剥壳重物化 + cef 门 rc=false 化，逐案清账后常驻判据另落 d6bold。
+function d6diag(tag, input, seq, want, wantRange) {
+  test(function() {
+    setupCorp(input);
+    if (wantRange) {
+      var r = document.createRange();
+      r.setStart(wantRange[0], wantRange[1]);
+      r.setEnd(wantRange[2], wantRange[3]);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+    }
+    for (var i = 0; i < seq.length; i++) {
+      document.execCommand(seq[i][0], false, seq[i][1]);
+    }
+    assert_equals(host.innerHTML, want, tag);
+  }, tag);
+}
+function d6rc(tag, input, wantRc) {
+  test(function() {
+    setupCorp(input);
+    var rc = document.execCommand("bold", false, "");
+    assert_equals(rc, wantRc, tag + " rc");
+  }, tag);
+}
+// —— 数值权重 wrap-in（≤500 壳不切、内裹）——
+d6diag("D1 400 full css-true",
+  '<span style="font-weight: 400">foo[bar]baz</span>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:400">foo<span style="font-weight:bold">bar</span>baz</span>');
+d6diag("D2 400 full css-false",
+  '<span style="font-weight: 400">foo[bar]baz</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span style="font-weight:400">foo<b>bar</b>baz</span>');
+d6diag("D5 400 head css-true",
+  '<span style="font-weight: 400">[foobar]baz</span>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:400"><span style="font-weight:bold">foobar</span>baz</span>');
+d6diag("D7 400 tail css-true",
+  '<span style="font-weight: 400">foo[barbaz]</span>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:400">foo<span style="font-weight:bold">barbaz</span></span>');
+d6diag("D9 500|600 css-true",
+  '<span style=font-weight:500>fo[o</span><span style=font-weight:600>b]ar</span>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:500">fo<span style="font-weight:bold">o</span></span><span style="font-weight:600"><span style="font-weight:bold">b</span>ar</span>');
+d6diag("D10 500|600 css-false",
+  '<span style=font-weight:500>fo[o</span><span style=font-weight:600>b]ar</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span style="font-weight:500">fo<b>o</b></span><span style="font-weight:600"><b>b</b>ar</span>');
+// —— 数值权重 toggle-off（≥600 激活、剥壳裸化 + 两翼重裹）——
+d6diag("D3 700 full css-true",
+  '<span style="font-weight: 700">foo[bar]baz</span>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:700">foo</span>bar<span style="font-weight:700">baz</span>');
+d6diag("D4 700 full css-false",
+  '<span style="font-weight: 700">foo[bar]baz</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<b>foo</b>bar<b>baz</b>');
+d6diag("D6 700 head css-false",
+  '<span style="font-weight: 700">[foobar]baz</span>',
+  [["stylewithcss","false"],["bold",""]],
+  'foobar<b>baz</b>');
+d6diag("D8 700 tail css-false",
+  '<span style="font-weight: 700">foo[barbaz]</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<b>foo</b>barbaz');
+d6diag("D11 600|700 css-true",
+  '<span style=font-weight:600>fo[o</span><span style=font-weight:700>b]ar</span>',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:600">fo</span>ob<span style="font-weight:700">ar</span>');
+d6diag("D12 600|700 css-false",
+  '<span style=font-weight:600>fo[o</span><span style=font-weight:700>b]ar</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span style="font-weight:600">fo</span>ob<b>ar</b>');
+d6diag("D13 700|800 css-false",
+  '<span style=font-weight:700>fo[o</span><span style=font-weight:800>b]ar</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<b>fo</b>ob<span style="font-weight:800">ar</span>');
+d6diag("D14 900 full css-false",
+  '<span style="font-weight: 900">foo[bar]baz</span>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span style="font-weight:900">foo</span>bar<span style="font-weight:900">baz</span>');
+// —— notbold 类壳（class 无 decl）——
+d6diag("D15 notbold full css-false",
+  '[foo<span class=notbold>bar</span>baz]',
+  [["stylewithcss","false"],["bold",""]],
+  '<b>foo<span class="notbold"><b>bar</b></span>baz</b>');
+d6diag("D16 notbold-in-b full css-false",
+  '<b><span class=notbold>[foo]</span></b>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span class="notbold"><b>foo</b></span>');
+d6diag("D17 notbold-in-b partial css-false",
+  '<b><span class=notbold>foo[bar]baz</span></b>',
+  [["stylewithcss","false"],["bold",""]],
+  '<b><span class="notbold">foo<b>bar</b>baz</span></b>');
+// —— strong/b 邻接 merge 簇——
+d6diag("D18 strong-next fresh b",
+  'foo<strong>bar</strong>[baz]',
+  [["bold",""]],
+  'foo<strong>bar</strong><b>baz</b>');
+d6diag("D19 strong-mid fresh b",
+  '<strong>foo</strong>[bar]<strong>baz</strong>',
+  [["bold",""]],
+  '<strong>foo</strong><b>bar</b><strong>baz</b>');
+d6diag("D20 b-prev merge b",
+  '<b>foo</b>[bar]<strong>baz</strong>',
+  [["bold",""]],
+  '<b>foobar</b><strong>baz</strong>');
+d6diag("D21 i-b | b cross merge css-true",
+  '<i><b>foo</b></i>[bar]<b>baz</b>',
+  [["stylewithcss","true"],["bold",""]],
+  '<b><i>foo</i>barbaz</b>');
+// —— b 带 attr toggle-off 换形——
+d6diag("D22 b#purple partial toggle-off css-false",
+  '<b id=purple>bar [baz] qoz</b>',
+  [["stylewithcss","false"],["bold",""]],
+  '<span id="purple"><b>bar </b>baz<b> qoz</b></span>');
+// —— cef 门 rc 化（DOM 零变更 + rc=false）——
+d6rc("D23 cef selection rc=false",
+  'foo<span contenteditable=false>[bar]</span>baz', false);
+d6rc("D24 cef end-in-noneditable rc=false",
+  'fo[o<span contenteditable=false>b]ar</span>baz', false);
+d6rc("D25 cef nested end-in-noneditable rc=false",
+  '<span contenteditable=false>fo[o<span contenteditable=true>bar</span>b]az</span>', false);
+</script>
+</body>

@@ -5188,6 +5188,32 @@
             }
             node2 = node2.parentNode;
           }
+          // Chrome delta（⑪ rc 面，DC-2 ② 2026-11-12）：六 format 命令选区任一
+          // 边界位置（文本容器即本节点；元素容器取 offset 处子节点）既非
+          // editable 又非 editing host（spec enabled 前提，implementation.js
+          // :579-582——`<span cef>foo<span cet>ba[r</span>b]az</span>` 起点在
+          // 内层 host、终点在 cef 壳尾文本，host2 爬升取内层致 inHost2=false
+          // 走不到下方事件块，故 hoist 到 host 解析前；D23-D25/语料
+          // data/bold.js:103-167 录形 rc=[false]、零事件零 DOM；对照中段穿越
+          // 形 `fo[o<span cef>bar</span>b]az` 边界均在可编辑区 rc=true 不受此
+          // 门；边界落嵌套 editing host 元素 = spec enabled 成立不触发）。
+          if (_zwExecCmdFormatTag[cmd] && rng2) {
+            var cefBn2 = function (cont, off) {
+              if (!cont) return null;
+              if (cont.nodeType === 3) return cont;
+              var kidsC = cont.childNodes;
+              if (off < kidsC.length) return kidsC[off];
+              return null;
+            };
+            var bnS2 = cefBn2(rng2.startContainer, rng2.startOffset);
+            var bnE2 = cefBn2(rng2.endContainer, rng2.endOffset);
+            if ((bnS2 !== null && !_zwJusIsEditable(bnS2)
+                  && !_zwJusIsEditingHost(bnS2))
+                || (bnE2 !== null && !_zwJusIsEditable(bnE2)
+                  && !_zwJusIsEditingHost(bnE2))) {
+              return false;
+            }
+          }
           // spec（execCommand 编辑命令前提）：**整个选区**在单一 editing host 内才应用
           //（WPT 'Partially-selected editable content'/'Selection spans two editing
           // hosts' target=null → 0 事件断言）。end 侧越出 host → no-op。

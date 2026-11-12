@@ -1112,6 +1112,13 @@
         // superscript 语料 2 变体实证，2026-11-11）。后续
         // _zwVaCrossTagContinuation 复用本 crit，css 模式同门语义一致。
         var nT = _zwJusTag(n);
+        // DC-2 ②（2026-11-12）：bold 并值候选排除 strong——strong 邻接录形
+        // 恒独立 fresh b 不并入（data/bold.js:270-282 `foo<strong>bar</strong>
+        // [baz]`/`<strong>foo</strong>[bar]<strong>baz</strong>` 两翼 fresh b、
+        // :285-287 `<b>foo</b>[bar]<strong>baz</strong>` 仅并入前 b、:298
+        // strong|b css-false 仅并入后 b；vendored isSimpleModifiable 同判
+        // strong/b 致误并）。b 候选不受此门（:287/:300 录形并入 b）。
+        if (command === 'bold' && nT === 'strong') return false;
         if (_zwVaCssFlag() && nT !== 'span' && nT !== 'sub' && nT !== 'sup') {
           return false;
         }
@@ -1904,8 +1911,17 @@
         if (_zwJusIsEditingHost(par) || _zwJusIsBlockNode(par)
             || !_zwJusIsEditable(par)) break;
         var spec = _zwVaSpecifiedValue(par, command);
+        // DC-2 ②（2026-11-12）：bold ADD（newValue 为激活值 bold/600-900）
+        // 恒不切分带 bold 指定值祖先——非激活数值壳（100-500/normal）与
+        // 激活数值壳（600/800，bold 等值集仅 700 故仍入 conflict 分支）录形
+        // 均保壳内裹（data/bold.js:593-700 数值权重、:988-1000 300|400/
+        // 400|500/500|600 邻接对、:926-1005 邻接 span 簇：`<span 500>fo[o
+        // </span><span 600>b]ar</span>` 期望两壳原形 + 壳内 bold 载体）。
+        // toggle-off（newValue null/'normal'）切分面不受此门。
         if (spec !== null && !_zwVaEquivalentValues(command, spec, newValue)
-            && (!isBg || par === fcS)) {
+            && (!isBg || par === fcS)
+            && !(command === 'bold'
+                && ((parseInt(newValue, 10) || 0) >= 600 || newValue === 'bold'))) {
           chain.push(par);
         }
         n = par;
@@ -1988,6 +2004,33 @@
           // styled-child css-false 族既有绿面）。
           continue;
         }
+      }
+      // DC-2 ②（2026-11-12）：bold toggle-off（newValue 'normal'）peel 幸存
+      // 壳重物化——css-false 且壳 decl ≡700（bold 等值）转 b 剥 decl（
+      // data/bold.js:479-483 录形两翼 fresh b：`<span style="font-weight:
+      // 700">foo[bar]baz</span>` → `<b>foo</b>bar<b>baz</b>`）；600/800/900
+      // 非等值壳保 span 原形（:484/:489/:700 录形两翼 span-N 保形——D12/
+      // D13 600|700、700|800 邻接形同证）；css-true 恒 span-N 保形（:476
+      // 录形，下方 cssFlag+span 既有 continue 面即绿）；tag 面 b/strong 无
+      // decl 不入转形（strong 部分选区无录形，保守保原形）。
+      if (command === 'bold' && newValue === 'normal') {
+        if (!cssFlag) {
+          var fwB0 = '';
+          try { fwB0 = _zwPlainDecl(cw, 'font-weight') || ''; } catch (_eBw0) { fwB0 = ''; }
+          if (fwB0
+              && _zwVaEquivalentValues('bold', String(fwB0).trim().toLowerCase(),
+                'bold')) {
+            var bB0 = _zwJusSetTagName(cw, 'b');
+            _zwVaSetStyleProp(bB0, 'font-weight', '');
+            try {
+              var atB0 = bB0.getAttribute('style');
+              if (atB0 !== null && String(atB0).trim() === '') {
+                bB0.removeAttribute('style');
+              }
+            } catch (_eBw1) {}
+          }
+        }
+        continue;
       }
       // ③'-b（tag 模式 forecolor span 载体臂）：peel 克隆载体恒为 span+style
       // 形（克隆路径 _zwVaNormalizeStyleAttrCss 归一 rgb），tag 模式语料期望
@@ -2906,14 +2949,18 @@
     var six = { bold: 1, italic: 1, underline: 1, strikethrough: 1,
       subscript: 1, superscript: 1 };
     if (!six[c]) return null;
-    // Chrome delta（⑪ 不可编辑端点门，2026-11-11）：选区任一边界位置落在
-    // contenteditable=false 子树内 → 整条命令 no-op（rc=true，DOM 零变更）
-    // ——vendored 按 editable 过滤 contained 后仍会对可编辑片段落值，
-    // Chrome 对边界入非编辑区的命令恒不应用（bold 语料 11 变体实证：
-    // `fo[o<span cef>b]ar</span>baz` 期望原样、`<span cef>[bar]</span>` qS
-    // after=false）。中段穿越（边界位置均在可编辑区）不受此门。边界位置
-    // 解析：文本容器即本节点；元素容器取 offset 处子节点（offset=末端为
-    // 宿主缘，可编辑——`{…}` 选形端点落在 editing host 元素上不触发）。
+    // Chrome delta（⑪ 不可编辑端点门，2026-11-11；rc=false 化 DC-2 ②
+    // 2026-11-12）：选区任一边界位置落在 contenteditable=false 子树内 →
+    // 整条命令 no-op（rc=false，DOM 零变更）——vendored 按 editable 过滤
+    // contained 后仍会对可编辑片段落值；Chrome 对边界入非编辑区的命令
+    // 恒不应用且 execCommand 返回 false（data/bold.js:103-167 录形：
+    // `fo[o<span cef>b]ar</span>baz`/`<span cef>fo[o<span ce>b]ar</span>
+    // baz</span>` 期望原样 + [false]；对照中段穿越形 `fo[o<span cef>
+    // bar</span>b]az` 边界均在可编辑区 → rc=true 两翼落值）。余五命令
+    // 语料无 cef 录形，门仅 bold 实证、按命令面共享逻辑保持一致。边界
+    // 位置解析：文本容器即本节点；元素容器取 offset 处子节点（offset=
+    // 末端为宿主缘，可编辑——`{…}` 选形端点落在 editing host 元素上
+    // 不触发）。
     try {
       var rngCef = _zwVaGetActiveRange();
       if (rngCef) {
@@ -2926,9 +2973,11 @@
         };
         var bnS = cefBn(rngCef.startContainer, rngCef.startOffset);
         var bnE = cefBn(rngCef.endContainer, rngCef.endOffset);
-        if ((bnS !== null && !_zwJusIsEditable(bnS))
-            || (bnE !== null && !_zwJusIsEditable(bnE))) {
-          return true;
+        if ((bnS !== null && !_zwJusIsEditable(bnS)
+              && !_zwJusIsEditingHost(bnS))
+            || (bnE !== null && !_zwJusIsEditable(bnE)
+              && !_zwJusIsEditingHost(bnE))) {
+          return false;
         }
       }
     } catch (_eCefG) {}
