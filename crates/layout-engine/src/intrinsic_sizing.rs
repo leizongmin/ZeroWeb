@@ -249,7 +249,7 @@ pub(crate) fn box_content_max_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
-    kw_aware_max_width(box_node, doc, styles, |b, d, s| {
+    kw_aware_max_width(box_node, doc, styles, false, |b, d, s| {
         box_content_max_width_inner(b, d, s, true)
     })
 }
@@ -262,7 +262,7 @@ pub(crate) fn box_content_max_width_content_only(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
-    kw_aware_max_width(box_node, doc, styles, |b, d, s| {
+    kw_aware_max_width(box_node, doc, styles, true, |b, d, s| {
         box_content_max_width_inner(b, d, s, false)
     })
 }
@@ -277,6 +277,7 @@ fn kw_aware_max_width(
     box_node: &LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    content_only: bool,
     measure: impl Fn(&LayoutBox, &Document, &HashMap<NodeId, ComputedStyle>) -> f32,
 ) -> f32 {
     let own = box_node
@@ -333,6 +334,28 @@ fn kw_aware_max_width(
         // 测 200 应 100 实证）。直接走 inner content-only（不经本包装——防递归重入）；
         // own_ar（R3792 transferred）与文本/子树内容保留，.item（R4151）不塌。
         return box_content_max_width_inner(box_node, doc, styles, false);
+    }
+    // R5507（css-sizing-3 §5.2 + §5.3 used-value 约束；fit-content-min-inline-size 取证）：
+    // min-width content 关键字 + 自身 definite width——full 口径测量被
+    // box_content_max_width_inner 尾部 walk 的 definite-width 守卫压制（own_explicit > 0
+    // 时 atom/inline 子的段核算 walk 不运行，children_inner 塌 0 → 叶回退 = 声明宽），
+    // min 关键字的下限语义整体丢失（width:10px + min-width:fit-content(→MaxContent
+    // R1018) 内容 100 → 测 10 应 100；chromium oracle 同页 100 定谳）。min 关键字 =
+    // 内容基下限，贡献 = max(声明宽, 内容测量)（§5.2 min-width 胜 width 取大；
+    // width:200px + min-width:min-content 内容 50 → 贡献 200 仍成立）。content-only
+    // 直测 inner（不经本包装防递归重入，子树子盒各自经递归 box_content_max_width
+    // 消费自己的关键字）；content_only 语境（R5037 W_max 公式口径）不带 own 抬升，
+    // 维持 content-only 语义不进本臂。无 definite width 时 full 已是内容基（守卫门
+    // own_explicit ≤ 0.5 不触发），不重测（性能口径同 R5310 塌 0 门）。
+    if !content_only
+        && is_kw(&min_w)
+        && let Some(own_def) = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+    {
+        let content = box_content_max_width_inner(box_node, doc, styles, false);
+        return content.max(own_def + frame);
     }
     full
 }

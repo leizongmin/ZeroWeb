@@ -1069,3 +1069,6 @@ mod g1f_anchor_pos_tests;
 /// R5506（CSS2 §10.3.9/§10.4）：inline-block shrink grow 腿自身 max-width 钳——
 /// 原子/块级定宽子越钳回写修复五锚。
 mod r5506_ib_grow_maxwidth_cap_tests;
+/// R5507（css-sizing-3 §5.2/§5.3）：min-width content 关键字 × definite width
+/// 交叉域内容基地板——测量守卫压制修复 + 写入不再清 size.width 四锚。
+mod r5507_min_kw_content_floor_tests;

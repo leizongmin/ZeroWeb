@@ -510,9 +510,14 @@ impl LayoutEngine {
                     // 钳主轴）；max-width 关键字 → max_size.width=intrinsic。写入前清 converter
                     // 的 length(0) 伪影（min_width 关键字被映射 length(0)，会与新 min_size 冲突
                     // 取 0——须同步抬到 intrinsic）。
+                    // R5507：kw_min 臂不再清 size.width（旧置 auto）——taffy 块级 auto 拉伸
+                    // 到 CB 宽（converter mod.rs width:auto→auto 拉伸语义），宽 CB 下 min-width
+                    // 关键字盒被过填充（fit-content-min-inline-size：body 直下 inner
+                    // width:10px + min-width:fit-content 应 100 非 CB 满宽）。保留 converter
+                    // 的 size.width（definite = 声明宽、auto = auto），taffy 约束求解
+                    // min ≥ size 自动取大（css-sizing-3 §5.3 min-width 胜 width）。
                     if kw_min {
                         let target = kw_min_fit_arg.map_or(intrinsic, fit_target);
-                        style.size.width = taffy::style::Dimension::auto();
                         style.min_size.width = taffy::style::Dimension::length(target);
                     }
                     if kw_max {
