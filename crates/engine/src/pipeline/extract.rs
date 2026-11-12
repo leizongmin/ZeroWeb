@@ -2017,6 +2017,17 @@ pub struct StyleElementCsp {
     /// 阻断时另派 error 事件（module 语义——普通 style 无 error 面）。
     /// https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
     pub is_module: bool,
+    /// s413（html-semantics M2）：`specifier` 属性值（缺失/空 → None）——声明式
+    /// module 的模块名，宿主据此注册 parse 期 module map（specifier→内联 CSS）。
+    /// https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+    pub specifier: Option<String>,
+    /// s413（html-semantics M2）：开标签起始偏移（原文，`<` 处）——parse 期标记
+    /// 幂等守卫（已标记开标签跳过重插）。
+    pub open_tag_start: usize,
+    /// s413（html-semantics M2）：开标签结束偏移（原文，`>` 之后 exclusive）——
+    /// 宿主 parse 期标记（`data-zw-declmod`）插入点（`>` 之前），身份标记经序列化
+    /// 快照跨 mutation 重 parse 存活。
+    pub open_tag_end: usize,
 }
 
 /// 从开标签文本提取属性值（security-hardening M2-s3 / s92 string-compilation CSP
@@ -2122,6 +2133,9 @@ pub fn extract_style_elements_csp(html: &str) -> Vec<StyleElementCsp> {
             content_start: content_abs_start,
             content_end: content_abs_start + content_len,
             is_module: attr_from_open_tag(open_tag, "type").is_some_and(|t| t.trim().eq_ignore_ascii_case("module")),
+            specifier: attr_from_open_tag(open_tag, "specifier").filter(|s| !s.is_empty()),
+            open_tag_start: abs_start,
+            open_tag_end: content_abs_start,
         });
         cursor = content_abs_start + content_len;
     }
@@ -2493,6 +2507,8 @@ mod tests {
     /// s412（html-semantics M2）：声明式 CSS module 判定——开标签 `type` 属性
     /// trim 后 ASCII 大小写不敏感恰为 `module`；缺省/普通 `text/css`/其他值均为
     /// false。序号对齐全量 `<style>` 元素文档序（CSP 检查点消费口径不变）。
+    /// s413：`specifier` 属性值与开标签结束偏移同批钉（map 注册 + parse 期标记
+    /// 插入点消费面）。
     #[test]
     fn extract_style_elements_csp_module_flag_s412() {
         let html = "<html><head>\
@@ -2500,13 +2516,31 @@ mod tests {
             <style type=\"TEXT/CSS\">#b{color:red}</style>\
             <style TYPE=' Module '>#c{color:green}</style>\
             <style>#d{color:black}</style>\
+            <style type=module specifier=bar data-x>#e{color:gray}</style>\
             </head><body></body></html>";
         let infos = extract_style_elements_csp(html);
-        assert_eq!(infos.len(), 4);
+        assert_eq!(infos.len(), 5);
         assert!(infos[0].is_module, "type=module 判定为声明式 CSS module");
+        assert_eq!(infos[0].specifier.as_deref(), Some("foo"), "specifier 属性值提取");
         assert!(!infos[1].is_module, "type=text/css 为普通 style");
+        assert_eq!(infos[1].specifier, None, "普通 style 无 specifier");
         assert!(infos[2].is_module, "type 值含缘空白 + 大小写混合仍判定 module");
+        assert_eq!(infos[2].specifier, None, "module 缺 specifier → None");
         assert!(!infos[3].is_module, "缺省 type 非 module");
+        assert!(infos[4].is_module, "无引号属性值 + 前缀异名属性不扰 specifier 提取");
+        assert_eq!(infos[4].specifier.as_deref(), Some("bar"));
+        // s413：open_tag_end 指向 `>` 之后（内容起点）——标记插入点 = `>` 之前。
+        for (i, info) in infos.iter().enumerate() {
+            assert_eq!(
+                info.open_tag_end, info.content_start,
+                "元素 {i} open_tag_end 与 content_start 对齐（`>` 后 exclusive）"
+            );
+            assert_eq!(
+                &html[info.open_tag_end - 1..info.open_tag_end],
+                ">",
+                "元素 {i} open_tag_end 前一字节为开标签 `>`"
+            );
+        }
     }
 
     /// meta CSP 政策提取（security-hardening M2-s1）：head 内生效、body 内忽略、

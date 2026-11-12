@@ -691,6 +691,16 @@ pub struct WebView {
     /// stylesheet）violation 队列——元素站派发需 shim 就绪 + 页面 listener 注册，
     /// 延后到 run_page_scripts 页面脚本之后统一派发。
     pending_csp_style_violations: Vec<PendingCspStyleViolation>,
+    /// s413（html-semantics M2）：被 CSP 阻止的 `<style>` 元素全量文档序序号——
+    /// 声明式 module map 注册排除面（阻止的 module 不可 import）。gate_inline_styles
+    /// 每载赋值重置（CSP 关闭分支清空）。
+    csp_blocked_style_ordinals: Vec<usize>,
+    /// s413（html-semantics M2）：声明式 CSS module map——parse 期 `<style
+    /// type=module specifier>` 注册（首遇为准，CSP 阻止者排除），键 = specifier
+    /// 属性按页面 URL 解析。静态/动态 import 命中免 fetch 直接合成 CSSStyleSheet
+    /// 模块（Arc：shim/native 回调闭包 'static 捕获）。load_html 每载重建。
+    /// https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+    declarative_css_modules: std::sync::Arc<Vec<(String, String)>>,
     /// security-hardening M2-s5：connect 面被阻止 violation 共享队列（Arc——`__zw_fetch`
     /// 回调为 'static 闭包，运行期推入；run 尾统一元素站/document 站派发）。
     pending_csp_connect_violations: std::sync::Arc<std::sync::Mutex<Vec<PendingCspStyleViolation>>>,
@@ -946,6 +956,8 @@ impl WebView {
             pending_csp_img_blocks: Vec::new(),
             pending_csp_style_violations: Vec::new(),
             pending_csp_connect_violations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            csp_blocked_style_ordinals: Vec::new(),
+            declarative_css_modules: std::sync::Arc::new(Vec::new()),
             referrer: None,
             title: None,
             loading: false,
@@ -1131,7 +1143,10 @@ impl WebView {
     /// error 事件入队（`style_error`，同元素只在首个条目置位防双派）。
     fn gate_inline_styles<'a>(&mut self, html: &'a str) -> std::borrow::Cow<'a, str> {
         let infos = extract_style_elements_csp(html);
+        // s413：被阻止元素序号随每次载入重建（声明式 module map 注册排除面消费）。
+        let mut blocked_ordinals: Vec<usize> = Vec::new();
         if infos.is_empty() {
+            self.csp_blocked_style_ordinals = blocked_ordinals;
             return std::borrow::Cow::Borrowed(html);
         }
         let mut owned = html.to_string();
@@ -1160,6 +1175,7 @@ impl WebView {
                 continue;
             }
             blocked_spans.push((info.content_start, info.content_end));
+            blocked_ordinals.push(ordinal);
             let mut first_of_element = true;
             for v in [violation, script_violation].into_iter().flatten() {
                 self.pending_csp_style_violations.push(PendingCspStyleViolation {
@@ -1178,11 +1194,65 @@ impl WebView {
             }
         }
         if blocked_spans.is_empty() {
+            self.csp_blocked_style_ordinals = blocked_ordinals;
             return std::borrow::Cow::Borrowed(html);
         }
+        self.csp_blocked_style_ordinals = blocked_ordinals;
         // 等长空白替换（偏移不受影响；CSS 解析得空样式表）。
         for (start, end) in blocked_spans {
             owned.replace_range(start..end, " ".repeat(end - start).as_str());
+        }
+        std::borrow::Cow::Owned(owned)
+    }
+
+    /// s413（html-semantics M2）：声明式 CSS module parse 期处理（载入期一次）——
+    /// ① module map 注册：`<style type=module specifier=X>` 按文档序首遇为准注册
+    /// specifier→内联 CSS（键 = specifier 按页面 URL 解析；CSP 阻止序号排除——
+    /// 阻止的 module 不可 import，提案「阻断即加载失败」语义）；missing/空 specifier
+    /// 不注册。② parse 期身份标记：全部 type=module style 元素开标签插
+    /// `data-zw-declmod`（tentative 提案 kind 在 parse 期固定——后续移除
+    /// type/specifier、移除重插均不使元素转回普通 style；本引擎突变渲染路径重
+    /// parse html 快照、NodeId 不跨代，标记以属性载体随序列化存活）。标记不参与
+    /// CSP hash/nonce 检查（gate 先于此运行，标记后不再有 CSP 检查点）。
+    /// https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+    fn prepare_declarative_style_modules<'a>(&mut self, html: &'a str) -> std::borrow::Cow<'a, str> {
+        let infos = extract_style_elements_csp(html);
+        let module_ordinals: Vec<usize> = infos
+            .iter()
+            .enumerate()
+            .filter(|(_, info)| info.is_module)
+            .map(|(ordinal, _)| ordinal)
+            .collect();
+        if module_ordinals.is_empty() {
+            self.declarative_css_modules = std::sync::Arc::new(Vec::new());
+            return std::borrow::Cow::Borrowed(html);
+        }
+        let page_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let blocked = &self.csp_blocked_style_ordinals;
+        let mut entries: Vec<(String, String)> = Vec::new();
+        for (ordinal, info) in infos.iter().enumerate() {
+            if !info.is_module || blocked.contains(&ordinal) {
+                continue;
+            }
+            let Some(spec) = info.specifier.as_deref() else {
+                continue;
+            };
+            let key = resolve_document_url(&page_url, spec);
+            if !entries.iter().any(|(k, _)| *k == key) {
+                entries.push((key, info.content.clone()));
+            }
+        }
+        self.declarative_css_modules = std::sync::Arc::new(entries);
+        // 标记插入倒序进行（前序插入不扰后序偏移）；已标记开标签跳过（幂等——
+        // 已标记 html 再入 load_html 的重载形态不重复插入）。
+        let mut owned = html.to_string();
+        for ordinal in module_ordinals.iter().rev() {
+            let info = &infos[*ordinal];
+            let open_tag = &html[info.open_tag_start..info.open_tag_end];
+            if open_tag.to_ascii_lowercase().contains("data-zw-declmod") {
+                continue;
+            }
+            owned.insert_str(info.open_tag_end - 1, " data-zw-declmod=\"\"");
         }
         std::borrow::Cow::Owned(owned)
     }
@@ -1199,8 +1269,13 @@ impl WebView {
             self.security_context.set_document_csp(&policies);
             self.gate_inline_styles(html)
         } else {
+            self.csp_blocked_style_ordinals.clear();
             std::borrow::Cow::Borrowed(html)
         };
+        // s413（html-semantics M2）：声明式 CSS module parse 期处理——type=module
+        // style 元素插身份标记（kind 固定跨 mutation 重 parse 存活）+ map 注册
+        //（首遇为准，CSP 阻止者排除；先 CSP 后标记，标记不参与 hash/nonce 检查）。
+        let html = self.prepare_declarative_style_modules(&html);
         self.document_generation = self.document_generation.wrapping_add(1);
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
@@ -4531,6 +4606,9 @@ impl WebView {
         //（__zw_compile_module / V8 原生）、import.meta.resolve 经宿主回调同源；
         // renderer/tab 多进程宿主既有形态对齐（js_worker parse_page_import_map）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+        // s413：声明式 CSS module map 同点位取用（静态图收集 + shim/native 动态
+        // import 回调闭包捕获——load_html parse 期注册的只读快照）。
+        let decl_css_modules = std::sync::Arc::clone(&self.declarative_css_modules);
         let page_import_map = zero_engine::extract_import_map_json(&html)
             .into_iter()
             .find_map(|json| {
@@ -4585,6 +4663,8 @@ impl WebView {
             // fetch defer）→ 返 IIFE（__zw_load_module eval 为 namespace）。browser/renderer 多进程模式各自注册
             //（http fetch + collect_module_deps 递归）；本进程内路径用 fetcher + 单层 imports 空存根。
             let map_compile = page_import_map.clone();
+            // s413：声明式 CSS module map 穿动态 import shim 回调（Arc clone，'static）。
+            let decl_compile = std::sync::Arc::clone(&decl_css_modules);
             // s373：module 变体负例通道——scoped 形态（回调窗 scope 转借 parse gate，
             // `HostCallback::Scoped`）优先，module goal parse 预检在回调窗内完成；
             // 非 v8 构建（quickjs-only）无 scoped 通道，Plain 形态预检缺席维持既有
@@ -4597,13 +4677,15 @@ impl WebView {
             sandbox.register_scoped_callback(
                 "__zw_compile_module",
                 Box::new(move |scope, args| {
-                    zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, Some(scope))
+                    zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, &decl_compile, Some(scope))
                 }),
             );
             #[cfg(not(feature = "v8"))]
             sandbox.register_callback(
                 "__zw_compile_module",
-                Box::new(move |args| zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, None)),
+                Box::new(move |args| {
+                    zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, &decl_compile, None)
+                }),
             );
             // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
             // 构造器/事件处理器上下文源码重写不可达）。复用同一编译契约（三态标记）。
@@ -4622,6 +4704,8 @@ impl WebView {
             // s260：Blocked → 返空串 → v8_runtime TypeError reject
             //（与 CSP violation 拒绝同通道；不回退 parent-join）。
             let map_native = page_import_map.clone();
+            // s413：声明式 CSS module map 穿 V8 原生 resolver（Arc clone，'static）。
+            let decl_native = std::sync::Arc::clone(&decl_css_modules);
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
                 move |spec: &str, parent: &str, nonce: &str, type_attr: &str, credentials: &str| {
                     if spec.is_empty() {
@@ -4654,6 +4738,7 @@ impl WebView {
                         parent,
                         &spec_eff,
                         if type_attr.is_empty() { None } else { Some(type_attr) },
+                        &decl_native,
                         // s268：动态 import() 元素级 referrerpolicy 未穿（resolver
                         // 契约无元素上下文；doc 默认链回落，同上方 shim 面）。
                         None,
@@ -4703,6 +4788,8 @@ impl WebView {
             // 入口键 = `{parent}#!zw-dyn-inline`（s94 内联缓存键同形——模块体相对
             // import 的解析基不变；跨调用无 memoization，每次插入为独立模块记录）。
             // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            // s413：声明式 CSS module map 捕获（Arc clone——move 闭包 'static）。
+            let decl_inline = std::sync::Arc::clone(&decl_css_modules);
             sandbox.register_callback(
                 "__zw_compile_inline_module",
                 Box::new(move |args| {
@@ -4724,6 +4811,9 @@ impl WebView {
                             spec,
                             true,
                             type_attr.as_deref(),
+                            // s413：声明式 CSS module map 同源命中（动态插入内联
+                            // module 的静态 import 同免 fetch）。
+                            &decl_inline,
                             // s268：动态插入内联 module 无元素策略属性——doc 默认链
                             // 回落（同动态 import 面）。
                             None,
@@ -5351,6 +5441,7 @@ impl WebView {
                             spec,
                             true,
                             type_attr.as_deref(),
+                            &decl_css_modules,
                             script_referrer,
                             None,
                             &mut registry,
@@ -8597,11 +8688,14 @@ type CompileParseGateScope<'a, 'b> = ();
 /// 契约（scoped 回调窗 scope 转借，module goal parse 预检，见
 /// [`compile_module_contract`]）；Plain 形态传 `None`（预检缺席维持既有放行）。
 /// deferred 臂不预检（defer 超集承接面，test262 defer 语义桶无 parse 负例需求）。
+/// s413：`declarative_css` = 声明式 CSS module map（load_html parse 期注册快照，
+/// 收集链顶部命中免 fetch，eager/deferred 契约同穿）。
 #[allow(clippy::type_complexity)] // 镜像 HostCallback 闭包形态（parse gate scope 转借）
 fn zw_compile_module_shim_body(
     args: &[String],
     fetcher: &ScriptSourceFetcher,
     import_map: &Option<zero_script_sandbox::ImportMap>,
+    declarative_css: &[(String, String)],
     parse_gate: Option<&mut CompileParseGateScope<'_, '_>>,
 ) -> String {
     let spec = args.first().map(String::as_str).unwrap_or("");
@@ -8633,6 +8727,7 @@ fn zw_compile_module_shim_body(
             fetcher,
             parent,
             &spec_eff,
+            declarative_css,
             if credentials.is_empty() || credentials == "same-origin" {
                 None
             } else {
@@ -8648,6 +8743,7 @@ fn zw_compile_module_shim_body(
         parent,
         &spec_eff,
         if type_attr.is_empty() { None } else { Some(type_attr) },
+        declarative_css,
         // s268：动态 import() 元素级 referrerpolicy 未穿（回调契约
         // 无元素上下文；doc 默认链回落）——语料无钉面，spec 动态面
         // 挂账（s116 module-import-referrer 同域）。
@@ -8670,12 +8766,15 @@ fn zw_compile_module_shim_body(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // s413：声明式 map 穿参 +1 形参（8 参——s338 同法既有面）
 #[cfg_attr(not(feature = "v8"), allow(unused_mut))] // quickjs 形状预检/探针窗缺席，mut 无消费点
 fn compile_module_contract(
     fetcher: &ScriptSourceFetcher,
     parent: &str,
     spec: &str,
     type_attr: Option<&str>,
+    // s413：声明式 CSS module map（收集链顶部命中免 fetch——静态图收集同源）。
+    declarative_css: &[(String, String)],
     referrer_policy: Option<&str>,
     credentials: Option<&str>,
     // s373：module goal parse 预检的调用窗 scope（`HostCallback::Scoped` 回调窗转借；
@@ -8691,6 +8790,7 @@ fn compile_module_contract(
         spec,
         false,
         type_attr,
+        declarative_css,
         referrer_policy,
         credentials,
         &mut reg,
@@ -8791,12 +8891,15 @@ fn compile_module_contract(
 /// [`zero_script_sandbox::compile_dependency_iife_deferred`] 编译为记录对象 IIFE
 ///（`{exports, depsPromise, runBody}`），依赖图急切求值、入口体延迟。失败面镜像
 /// eager 契约：链接失败 tag 3 逐次新 SyntaxError、其余空串 TypeError。
+/// s413：声明式 CSS module map 同穿（入口 type_attr=None 面下 map 命中仅
+/// type=css 的 import 语句自带属性臂生效——defer 语料无 css 面，机制对齐 eager）。
 /// https://tc39.es/proposal-defer-import-eval/
 #[cfg_attr(not(feature = "v8"), allow(unused_mut))] // 同上：quickjs 形状窗缺席
 fn compile_module_contract_deferred(
     fetcher: &ScriptSourceFetcher,
     parent: &str,
     spec: &str,
+    declarative_css: &[(String, String)],
     credentials: Option<&str>,
     // s374：同 eager 变体的回调窗 scope（defer 面 TLA 探针注入；None = 无窗路径
     // 维持扫描器判定）。defer 面暂不接 module parse 预检（defer 簇 test262 71 案
@@ -8811,6 +8914,7 @@ fn compile_module_contract_deferred(
         spec,
         false,
         None,
+        declarative_css,
         None,
         credentials,
         &mut reg,
@@ -8876,18 +8980,45 @@ fn compile_module_contract_deferred(
 /// 解析后同 URL → visited 命中一次取回，两导入方查找同落该键
 ///（module/imports.html imports-self-inner 实证面）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
-#[allow(clippy::too_many_arguments)] // s338：credentials 穿参 +1 形参（9 参——既有图收集签名面）
+/// s249/s413：CSS 数据模块合成源（fetch 通道与声明式 map 通道同形）——
+/// `export default (function(){ … new CSSStyleSheet().replaceSync(<literal>) … })();`
+/// sheet 构造复用页面 shim CSSOM（R2809 constructable sheet），default 导入得
+/// constructable CSSStyleSheet 实例。literal 用 serde_json 字符串转义（String 形态
+/// 序列化无错误路径，Err 不可达时回落空串字面量——原 fetch 通道 map_err 同效）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+fn css_module_synth_source(css: &str) -> String {
+    let literal = serde_json::to_string(css).unwrap_or_else(|_| "\"\"".to_string());
+    format!("export default (function(){{var s=new CSSStyleSheet();s.replaceSync({literal});return s;}})();")
+}
+
+#[allow(clippy::too_many_arguments)] // s413：声明式 map 穿参 +1 形参（10 参——s338 同法既有面）
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
     spec: &str,
     is_dep: bool,
     type_attr: Option<&str>,
+    // s413（html-semantics M2）：声明式 CSS module map（load_html parse 期注册快照）。
+    declarative_css: &[(String, String)],
     referrer_policy: Option<&str>,
     credentials: Option<&str>,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
 ) -> Result<(), ModuleGraphFailure> {
+    // s413（html-semantics M2）：声明式 CSS module map 命中 → 免 fetch 直接合成
+    // CSSStyleSheet 模块（s249 fetch 通道同形合成源）。插在裸名失败检查**之前**——
+    // 静态 `import "foo" with {type:"css"}`（is_dep=true 裸名）经 map 命中放行，
+    // 未命中维持既有 DepResolution。查键 = specifier 按 import 基解析（内联模块基 =
+    // 页面 URL，与注册侧口径一致）；**外链模块基不同面为已知限制**（注册键按页面
+    // URL，语料 import 全部内联模块承载，无钉面）。
+    // https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+    if type_attr == Some("css") {
+        let key = resolve_document_url(parent_url, spec);
+        if let Some((_, css)) = declarative_css.iter().find(|(k, _)| *k == key) {
+            registry.register(&key, &css_module_synth_source(css));
+            return Ok(());
+        }
+    }
     // s87：裸 specifier（无 `./` `../` `/` 前缀、非绝对 URL）无 import map 即解析失败
     // （依赖面归属 DepResolution——parse 期失败随顶层记账；顶层裸 specifier 由 JS 侧
     // 按取回失败逐次新对象处理，对齐 WPT bad-module-specifier 行判据）。
@@ -9011,20 +9142,11 @@ fn collect_module_deps_recursive(
     // constructable CSSStyleSheet 实例。CSS parse 错误不拒模块（CSSOM best-effort
     // 容错，WPT css-module-parse-error 判据）；MIME 校验在 runner fetcher 数据模块
     // intent 臂（`__zw_mtype` 标记消费侧）。合成 literal 用 serde_json 字符串转义
-    //（合法 JS 字符串字面量）。多行 CSS 原文经转义内嵌单行。
+    //（合法 JS 字符串字面量）。多行 CSS 原文经转义内嵌单行。s413：合成源抽共享
+    // helper（fetch 通道与声明式 map 通道同形）。
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
     if type_attr == Some("css") {
-        let fetch_failure = || {
-            if is_dep {
-                ModuleGraphFailure::DepFetch
-            } else {
-                ModuleGraphFailure::TopFetch
-            }
-        };
-        let literal = serde_json::to_string(&source).map_err(|_| fetch_failure())?;
-        let synth =
-            format!("export default (function(){{var s=new CSSStyleSheet();s.replaceSync({literal});return s;}})();");
-        registry.register(&url, &synth);
+        registry.register(&url, &css_module_synth_source(&source));
         return Ok(());
     }
     // s249（text module）：`with { type: "text" }` → 响应体作字符串字面量合成
@@ -9047,13 +9169,15 @@ fn collect_module_deps_recursive(
         // s268：descendant 逐层继承顶层元素的策略（图内请求 Referrer 策略 = 发起
         // 取回的 script 元素策略；嵌套模块自身属性面语料无钉 FIXME——spec 各请求
         // 按其发起元素就近取属性，本通道先按顶层继承口径收口三数据模块 face）。
-        // s338：credentials 同口径逐层继承入口 mode。
+        // s338：credentials 同口径逐层继承入口 mode。s413：声明式 map 同穿
+        // （嵌套模块内的 css import 同源命中——查键按嵌套模块自身 URL 基解析）。
         collect_module_deps_recursive(
             fetcher,
             &url,
             &imp,
             true,
             attr.as_deref(),
+            declarative_css,
             referrer_policy,
             credentials,
             registry,
@@ -10765,6 +10889,131 @@ mod redirect_tests {
             "#test { background-color: red; }",
             "sheet 规则经 shim CSSOM 解析（命名色逐字——T45 撤回 s249 归一：Blink 活体 style/rule cssText 持 named 形，rgb() 形属 getComputedStyle 计算管线；CSSOM §serialize-a-declaration-block）"
         );
+    }
+
+    /// s413 回归钉（双相单测——adopted css 槽是进程级全局（R-t2qq D1），并行测试
+    /// 线程间互染，拆两 #[test] 必 flake；同进程顺序两相 + 相间清槽）：
+    /// 相 A（basic-import 面锚）——声明式 CSS module parse 期 map 注册 + import 命中
+    /// map 免 fetch（fetcher 探针空 = 零取回）、初始不入级联黑、`.sheet` 不暴露
+    /// undefined、同 specifier first-wins、adopt 应用蓝；
+    /// 相 B（fixed 面锚）——kind 固定（fixed-at-parse-time）：type 属性移除后元素不
+    /// 复活为普通 style（级联仍黑：parse 期 `data-zw-declmod` 标记随 html 快照跨
+    /// mutation re-parse 存活，级联门按标记排除；NodeId 旗标方案在 re-parse 即死，
+    /// 标记在 html TEXT 所以存活）；parse 期 map 注册不受属性移除影响——动态
+    /// import('m') 仍命中（fetcher 取回即 Err = map miss 快速失败）。
+    /// https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/style-modules.md
+    #[test]
+    fn declarative_style_module_map_and_kind_fixation_s413() {
+        // 相 A：map 注册 + 静态 import 零 fetch + first-wins + adopt 应用。
+        zero_engine::js_dom_bridge::set_active_adopted_css("");
+        let fetched: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let fetched_c = std::sync::Arc::clone(&fetched);
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                move |_parent: &str, spec: &str| -> Result<String, String> {
+                    fetched_c.lock().unwrap().push(spec.to_string());
+                    Ok(String::new())
+                },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <style type=module specifier=foo>#test {color:blue}</style>\
+             <style type=module specifier=foo>#test {color:red}</style>\
+             <div id=test>t</div>\
+             <script>globalThis.__init = getComputedStyle(document.getElementById('test')).color;</script>\
+             <script type=\"module\">\
+             import sheet from \"foo\" with { type: \"css\" };\
+             globalThis.__text = sheet.cssRules[0].cssText;\
+             globalThis.__sheet = String(document.querySelector('style').sheet);\
+             document.adoptedStyleSheets = [sheet];\
+             globalThis.__after = getComputedStyle(document.getElementById('test')).color;\
+             </script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict().expect("页面不 abort");
+        assert!(
+            fetched.lock().unwrap().is_empty(),
+            "map 命中免 fetch——声明式 specifier 不落取回路径: {:?}",
+            fetched.lock().unwrap()
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__init)").unwrap(),
+            "rgb(0, 0, 0)",
+            "声明式 module style 不入级联——初始色默认黑"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__sheet)").unwrap(),
+            "undefined",
+            "声明式 module 元素不暴露 .sheet（undefined 非 null）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__text)").unwrap(),
+            "#test { color: blue; }",
+            "first-wins——同 specifier 首个元素内容入 map"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "rgb(0, 0, 255)",
+            "import 产 sheet 经 adoptedStyleSheets 应用"
+        );
+        drop(wv);
+        // 相 A 收尾清槽：adopted 槽进程级共享，蓝规则文本不跨相泄漏（part56 复位法）。
+        zero_engine::js_dom_bridge::set_active_adopted_css("");
+
+        // 相 B：kind 固定 + 动态 import map 命中。fetcher 取回即 map miss（R3091
+        // 门：动态 import 机制仅 fetcher 配置时注册，缺省配置 import() 落 V8 默认
+        // reject 测不到命中面）。
+        let cfg_b = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, spec: &str| -> Result<String, String> {
+                    Err(format!("s413: map miss——声明式 specifier 不落取回路径: {spec}"))
+                },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg_b);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <style type=module specifier=m id=mod>#test {color:red}</style>\
+             <div id=test>t</div>\
+             <script>globalThis.__init = getComputedStyle(document.getElementById('test')).color;</script>\
+             <script type=\"module\">\
+             import('m', { with: { type: 'css' } }).then(function (m2) {\
+               globalThis.__dyn = m2.default.cssRules[0].cssText;\
+             }, function (e) { globalThis.__dyn = 'reject:' + e; });</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict().expect("页面不 abort");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__init)").unwrap(),
+            "rgb(0, 0, 0)",
+            "声明式 module style 不入级联——初始色默认黑"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__dyn)").unwrap(),
+            "#test { color: red; }",
+            "动态 import 命中 parse 期 map 免 fetch"
+        );
+        // type 移除（元素表面转普通 style 形）→ 标记存活 → 级联门仍排除。
+        wv.apply_dom_mutations_and_render(&[DomMutation::RemoveAttr {
+            selector: "#mod".to_string(),
+            name: "type".to_string(),
+        }])
+        .expect("type 移除 apply 成功");
+        assert_eq!(
+            wv.execute_script("getComputedStyle(document.getElementById('test')).color")
+                .unwrap(),
+            "rgb(0, 0, 0)",
+            "kind 固定——type 移除后不复活为普通 style（标记跨 re-parse 存活）"
+        );
+        zero_engine::js_dom_bridge::set_active_adopted_css("");
     }
 
     /// s268 回归钉：script 元素级 referrerpolicy 穿入静态 import 图（`__zw_lp` 标记

@@ -3957,6 +3957,16 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
 /// #PCDATA 实体解码，R4022）产表。s167 从 [`collect_stylesheets_with_parsed_external`]
 /// 提取——blob 路径与交错路径（[`collect_interleaved_external`]）共用。
 fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Stylesheet> {
+    // ⓪ s413（html-semantics M2）：声明式 CSS module parse 期身份标记——宿主载入期
+    // 对 type=module style 元素插入（webview prepare_declarative_style_modules）。
+    // tentative 提案：元素 kind 在 parse 期固定——后续移除 type/specifier、移除重插
+    // 均不使元素转回普通 style（style-element-fixed 四「kind 固定」子测钉面；标记
+    // 以属性载体随序列化快照跨 mutation 重 parse 存活——本引擎突变渲染路径重 parse
+    // html 快照、NodeId 标记不跨代）。
+    // https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+    if doc.get_attribute(style_id, "data-zw-declmod").is_some() {
+        return None;
+    }
     // ① style-eligible（type 门）：type 属性存在且非空且非 ASCII 大小写不敏感
     // `text/css` → sheet 未创建（规则不入级联）。spec 精确匹配（无 trimming、无
     // parameters）——WPT style_type_html 钉："" 应用、TEXT/CsS 应用、" text/css " /

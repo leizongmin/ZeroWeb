@@ -2,40 +2,79 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 412 收口（声明式 CSS module 双臂 CSP + 元素站
-error 面，tentative/ CSP 簇 6 文件解挂）：
-the-style-element/tentative/ 11 文件按簇勘根定谳——簇 1 CSP 面 6 文件
-（style-element-csp-{blocked,both-blocked,nonce-script-only,nonce-style-only,
-script-src-blocked,style-src-blocked-script-src-allowed}，案面断言
-securitypolicyviolation 派发 + 元素站 error 事件 + 内容清空）双层红根：
-gate_inline_styles 单臂只查 style-src（module 具 module script + style
-双重身份，`script-src nonce` 政策下无 nonce module 漏阻 →
-script-src-blocked 案 violation 缺派）+ 被阻 module 无元素站 error 派发
-（error 是 module 提案语义——普通 style 无 error 面）→ error 子测
-pending 挂死至文件预算（file-T）。spec：declarative CSS modules 提案
-（MSEdgeExplainers，tentative）——CSP 检查点 style-src + script-src
-双臂（script 臂内容 raw sha256 与 inline script 同口径，hash 源含缘
-空白），任一臂阻止 → 内容清空 + 每臂一条 violation + 元素站 error
-（`is_module && 首条目` 防双派）。施工双写同口径门：extract
-`StyleElementCsp.is_module`（type trim 后 ASCII 大小写不敏感恰 module）+
-gate script 臂 + script_gen `script_dispatch_style_event_by_ordinal`
-（ordinal 与 extract 全量文档序同口径，run 尾统一派发点）+ 常驻钉
-extract 四案 + webview 双腿。验证：driving solo 6 文件 18 子测全 Pass
-（余红 basic-import/fixed 2T + allowed 3 文件 6NotRun 属 import 簇
-单列候选零位移）；单元 engine **3908P/7F**（零新增红；−3 favorable =
-execcommand 2F 编辑流上游修复 + t49 cssom 渲染流修复，并行流合入域
-单列）+ webview 851P/2F 零位移；fmt/clippy clean（css-parser
-random.rs unused-var 跨流红单列——渲染流 g20 刚落文件不代修，
--A unused_variables 定向复验本流两 crate 净）；sweep ×2 双跑全等
-8256P/212F/19T + 11 NotRun，join-cross 零位移，join-b（基线 s411
-pairs-b 终稿批）恰 9 new/6 gone 键形迁移 state-diff=0 纯 driving；
-make test 154 腿 153 绿 + 仅 engine lib 在册红腿；**本流域在册红
-212F+25T→212F+19T**（−6T）。下一步：tentative/ import
-簇 s413 候选（module map + `import "foo" with {type:"css"}` +
-adoptedStyleSheets 应用 + fixed-at-parse-time；底座 adoptedStyleSheets
-汇总下发/CSSStyleSheet shim 已存在）/ constructed-stylesheets 1T 与
-import 簇同族可合并勘根 / 挂账池承 s404/s405/s411；A2+D 簇立项征询
-仍待用户决策。
+**状态**: Active——M2 切片 413 收口（声明式 CSS module parse 期 map 注册
++ import 命中免 fetch + kind 固定，tentative/ 11 文件全绿收口）：
+import 簇余红勘根定谳——basic-import/fixed 2 file-T + 3 allowed 文件
+6 NotRun 的真缺口 = 声明式 style module 的 parse 期 map 注册（s412 已
+勘定底座：s249 fetch-backed CSS module 全链 + adoptedStyleSheets 汇总
+下发在库）+ import 命中 map 免 fetch + fixed-at-parse-time 存活载体。
+kind 固定勘根：变异路径逐批 re-parse 序列化快照（NodeId 键旗标即死）
+→ 选 html TEXT 载体 `data-zw-declmod` 标记属性（load_html parse 期插
+入，跨 re-parse 免费存活；级联门单点覆盖双 collect 路径）。spec：声明
+式 CSS module（MSEdgeExplainers，tentative）——`<style type=module
+specifier=foo>` 首遇为准入 map、import sheet from "foo" with {type:
+"css"} 得 CSSStyleSheet default 导出、元素不入级联且 `.sheet` 不暴露
+（undefined）、type/specifier 移除或重插不复活（kind 固定）、CSP 阻止
+者不可 import。施工四臂：extract `StyleElementCsp` +specifier/开标签
+偏移三字段；webview `declarative_css_modules` 快照 +
+`prepare_declarative_style_modules`（CSP 门后播种——is_module &&
+未 blocked && specifier 非空，first-wins，逆序插标记+幂等守卫）+ map
+穿静态收集顶部命中臂（先于裸 specifier 检查——语料裸值形态）与
+shim/native 双动态通道 + 合成体共享 `css_module_synth_source`（s249
+复用）；engine `style_sheet_if_eligible` ⓪ 标记门（先于 type 门）；
+shim `.sheet` getter module 臂返 undefined（trim+ci 与 s412 is_module
+同判字）。验证：driving solo ×2 **11 文件 37 子测全 Pass**（0F/0T/
+0NotRun——目录余 style-error-01 1T 为 @import fetch 面先于本切片
+在册非 import 簇）；单元 engine
+**3909P/7F**（+1P 扩钉；7F 在册同名清单零位移）+ webview **852P/2F**
+（+1P 双相钉；image_decoder/csp_connect_gate 在册对）；fmt/clippy
+clean（css-parser random.rs 跨流红单列 -A 复验）；sweep ×2 双跑全等
+**8275P/212F/17T + 5 NotRun**，join-cross 零位移，join-b（基线 s412
+终稿批）恰 19 new/2 gone state-diff=0 纯 driving；make test 全量见
+s413 账本。**本流域在册红 212F+19T→212F+17T**（−2T），NotRun 11→5
+（−6）。下一步：constructed-stylesheets 1T 同族勘根候选 / 挂账池承
+s404/s405/s411/s412（forward map 空返勘根/渲染流 5 面/
+form-submission-target 6T/sizes-auto 半边/ilf+modulepreload 观察池/
+适用态打满 reject 面/maxLength-minLength IDL 不适用态反射/
+unhandled-rejection 换算）；checkable 父 label 2F 渲染域移交承 s410；
+select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
+
+> **▶ 承前（2026-11-12 M2 切片 412 收口）——声明式 CSS module 双臂 CSP
+> + 元素站 error 面（tentative/ CSP 簇 6 文件解挂）**: commit 谱系
+> git log s412，账本 evidence/2026-11-12-m2s412-style-module-csp.md。原 Active
+> 段留档——
+> the-style-element/tentative/ 11 文件按簇勘根定谳——簇 1 CSP 面 6 文件
+> （style-element-csp-{blocked,both-blocked,nonce-script-only,nonce-style-only,
+> script-src-blocked,style-src-blocked-script-src-allowed}，案面断言
+> securitypolicyviolation 派发 + 元素站 error 事件 + 内容清空）双层红根：
+> gate_inline_styles 单臂只查 style-src（module 具 module script + style
+> 双重身份，`script-src nonce` 政策下无 nonce module 漏阻 →
+> script-src-blocked 案 violation 缺派）+ 被阻 module 无元素站 error 派发
+> （error 是 module 提案语义——普通 style 无 error 面）→ error 子测
+> pending 挂死至文件预算（file-T）。spec：declarative CSS modules 提案
+> （MSEdgeExplainers，tentative）——CSP 检查点 style-src + script-src
+> 双臂（script 臂内容 raw sha256 与 inline script 同口径，hash 源含缘
+> 空白），任一臂阻止 → 内容清空 + 每臂一条 violation + 元素站 error
+> （`is_module && 首条目` 防双派）。施工双写同口径门：extract
+> `StyleElementCsp.is_module`（type trim 后 ASCII 大小写不敏感恰 module）+
+> gate script 臂 + script_gen `script_dispatch_style_event_by_ordinal`
+> （ordinal 与 extract 全量文档序同口径，run 尾统一派发点）+ 常驻钉
+> extract 四案 + webview 双腿。验证：driving solo 6 文件 18 子测全 Pass
+> （余红 basic-import/fixed 2T + allowed 3 文件 6NotRun 属 import 簇
+> 单列候选零位移）；单元 engine **3908P/7F**（零新增红；−3 favorable =
+> execcommand 2F 编辑流上游修复 + t49 cssom 渲染流修复，并行流合入域
+> 单列）+ webview 851P/2F 零位移；fmt/clippy clean（css-parser
+> random.rs unused-var 跨流红单列——渲染流 g20 刚落文件不代修，
+> -A unused_variables 定向复验本流两 crate 净）；sweep ×2 双跑全等
+> 8256P/212F/19T + 11 NotRun，join-cross 零位移，join-b（基线 s411
+> pairs-b 终稿批）恰 9 new/6 gone 键形迁移 state-diff=0 纯 driving；
+> make test 154 腿 153 绿 + 仅 engine lib 在册红腿；**本流域在册红
+> 212F+25T→212F+19T**（−6T）。下一步：tentative/ import
+> 簇 s413 候选（module map + `import "foo" with {type:"css"}` +
+> adoptedStyleSheets 应用 + fixed-at-parse-time；底座 adoptedStyleSheets
+> 汇总下发/CSSStyleSheet shim 已存在）/ constructed-stylesheets 1T 与
+> import 簇同族可合并勘根 / 挂账池承 s404/s405/s411；A2+D 簇立项征询
+> 仍待用户决策。
 
 > **▶ 承前（2026-11-12 M2 切片 411 收口）——maxlength 仅适用六文本态（driving
 > maxlength-number 1T 解挂；the-input-element 目录 3F+1T 散单全解挂清零）**:
@@ -7228,6 +7267,36 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-12 M2 切片 413**：声明式 CSS module parse 期 map 注册施工轮
+  （tentative/ 11 文件全绿：2T→子测 P 键形迁移 + 6 NotRun→9P；webview
+  map 快照 + prepare 播种 + collect 顶部命中臂四消费方穿参 + engine ⓪
+  标记门 + shim `.sheet` undefined 臂）——kind 固定载体勘根：变异路径
+  逐批 re-parse 快照（NodeId 旗标即死）→ html TEXT `data-zw-declmod`
+  标记属性。map 键 page URL 基注册/import parent 基查找（语料全内联
+  承载恒一致）；命中臂先于裸 specifier 检查（语料裸值形态）；CSP 阻止
+  者不注册。陷阱：单测无 fetcher → 动态 import 机制注册面整体缺席
+  （R3091 门，V8 默认 "Not supported"——fetcher 兼探针修正）；
+  ACTIVE_ADOPTED_CSS 进程级槽并行测试互染（R-t2qq 既有语义）→ 双相
+  合并单测 + 相间清槽。
+  验证：solo ×2 37 子测全 Pass（0F/0T/0NotRun；目录余 style-error-01
+  1T 非 import 簇在册）；engine 3909P/7F（+1P，
+  在册 7F 零位移）+ webview 852P/2F（+1P，在册对零新增）；fmt/clippy
+  clean（css-parser random.rs 跨流单列）；sweep ×2 双跑全等
+  8275P/212F/17T + 5 NotRun，join-cross 零位移、join-b 对 s412 恰
+  19 new/2 gone state-diff=0 纯 driving。
+  **在册红 212F+19T→212F+17T**（−2T），NotRun 11→5。下一步：
+  constructed-stylesheets 1T 同族勘根 / 挂账池承 s404/s405/s411/s412；
+  select/combobox（簇 D）与 A2+D 簇立项征询仍待用户决策。
+- **2026-11-12 M2 切片 412**（账补记 2026-11-12，s413 收口轮补齐——
+  429 断点恢复会话轮次账条目缺漏）：声明式 CSS module 双臂 CSP +
+  元素站 error 面施工轮（tentative/ CSP 簇 6 文件解挂，extract
+  is_module + gate script 臂 + script_gen 元素站 ordinal 派发 + 常驻
+  钉两件）——单臂只查 style-src 漏阻 + 被阻 module 无 error 派发双层
+  红根。验证：solo 18 子测全 Pass；engine 3908P/7F（−3 favorable 并行
+  流合入域）+ webview 851P/2F；sweep ×2 全等 8256P/212F/19T + 11
+  NotRun，join-b 对 s411 恰 9 new/6 gone state-diff=0。**在册红
+  212F+25T→212F+19T**（−6T）。详 evidence/2026-11-12-m2s412-style-
+  module-csp.md。
 - **2026-11-12 M2 切片 411**：maxlength 仅适用六文本态施工轮（driving
   1T→P，webview plan 门 + shim live 守卫 + 桥测钉 part110 + webview 钉）
   ——maxlength-number file-Timeout 勘根三层：number-invalid 对照锁定

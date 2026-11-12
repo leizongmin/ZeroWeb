@@ -13898,6 +13898,13 @@
             // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
             var _shType = (handle ? __zw_get_attr_handle(handle, 'type')
               : (sel ? __zw_get_attr(sel, 'type') : '')) || '';
+            // s413（html-semantics M2）：声明式 CSS module 元素不暴露 sheet——返回
+            // undefined（非 null；style-element-basic-import「The 'sheet' element is
+            // not exposed for declarative modules」=== undefined 钉面；判定口径与
+            // 宿主 module 门同——trim 后 ASCII 大小写不敏感恰为 module）。普通非法
+            // type 维持下方既有 null 门（style_type_html 钉面不变）。
+            // https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/ShadowDOM/explainer.md
+            if (String(_shType).trim().toLowerCase() === 'module') return undefined;
             if (String(_shType) !== '' && String(_shType).toLowerCase() !== 'text/css') return null;
             if (_shTag === 'LINK') {
               var _lrel = (handle ? __zw_get_attr_handle(handle, 'rel') : (sel ? __zw_get_attr(sel, 'rel') : '')) || '';
