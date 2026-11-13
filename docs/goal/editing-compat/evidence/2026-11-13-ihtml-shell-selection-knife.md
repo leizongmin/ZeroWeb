@@ -20,11 +20,11 @@
 
 ### 语料门禁批 batch-ihtml-shell-gate-v1（ALL-DONE 22:38:26，~33min 五腿全绿零 ABORT）
 
-- 锚：head 20f3df096、bin 92485383b8c191b58e2ce8a9c1d0ace5（特征串函数+调用点双验）；基线 E1 r2 post（e1-*.log @ffdcd28af bin 788d4b10），上游 d12-d14/s415-s422 已并入树，flip 归因按命令族签名先分家族再定刀体因果。
+- 锚：head 20f3df096（build/判读时）、bin 92485383b8c191b58e2ce8a9c1d0ace5（特征串函数+调用点双验）；推送时 pull --rebase 并入上游 e8168e43a（window.length 他流），刀提交等价换号 20f3df096→20521a2ba，刀面四文件（part06.js/bridge_tests 注册/两探针档）blob 逐字节对账零 diff，bin md5 不变；基线 E1 r2 post（e1-*.log @ffdcd28af bin 788d4b10），上游 d12-d14/s415-s422 已并入树，flip 归因按命令族签名先分家族再定刀体因果。
 - L1 ihtml 腿：**F 119→106，F2P=13 全落轴二族**（styledspan 8：全含/跨壳起止/双壳溶解形；rawtext 2：xmp/script 纯文本拼接；pre 3：块载荷解包含 collapsed/全选同臂），P2F=0，lost=0，rows 1565 全对账（rc=2 为失败计数退出非截断），judge OK。
 - L2 ab 腿：10092/0/0 严格 wall=236s judge OK。
 - L3 mt 腿：rc=2 P=10090 F=2 T=0 wall=1626s，judge **全零漂移**——rows 10092→10092、F2P=0（ihtml=0/other=0）、P2F=0、po_fail=0、lost=0、残红恰 2（X37 维持）；468 个 inserthtml 键全 P 面零翻越，跨命令面零回归定谳。
-- L4 enginelib：3918 passed / **7 failed 名册逐名恒一**（rc=101=失败计数退出；passed 3911→3918 = +4 本刀探针 + 3 上游新钉测参与跑）。
+- L4 enginelib：3918 passed / **7 failed 名册逐名恒一**（rc=101=失败计数退出；passed 3911→3918 = +4 本刀探针 + 2 上游新钉测（s421/s422 各 1）+ 1 Form A 钉测参与跑）。
 
 ## 已知非门红点（不挂本刀账）
 
