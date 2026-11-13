@@ -51,6 +51,8 @@ mod r5453_clamp_ellipsis_container_font_tests;
 mod r5454_clamp_justify_ellipsis_item_tests;
 /// R5469：fit 门断行新行首词放不下 float 缩短带下绕（CSS2 §9.5 rule 8，c5525-fltmrgn-000）。
 mod r5469_postbreak_word_float_fit_probe;
+/// R5515：img 原子基线 = margin box 底边（CSS2 §10.8.1，box-sizing-009 驱动）。
+mod r5515_replaced_baseline_margin_edge_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

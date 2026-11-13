@@ -1382,22 +1382,27 @@ is_isolated_bidi: style.is_some_and(|s| {
                                     .unwrap_or((0.0, 0.0));
                                 let atom_w = w + border_w;
                                 let atom_h = h + border_h;
-                                // img 替换元素的基线在底部边缘
+                                // img 替换元素的基线 = margin box 底边（CSS2 §10.8.1）。baseline
+                                // 字段口径 = border box 顶到基线的距离（R3904：margin_top 由
+                                // ascent 循环另加），故补 margin_bottom——mb≠0 时 va=baseline
+                                // 落位与行盒 ascent 同步取 margin box（box-sizing-009 t01/t02
+                                // t04 ±mb 驱动，R5418 挂账①销账）；mb=0 值恒等零扰动。
+                                let img_mb = img_style
+                                    .map(|s| Self::resolve_inline_margin(&s.margin_bottom, s))
+                                    .unwrap_or(0.0);
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {
                                     width: atom_w,
                                     height: atom_h,
                                     node_id: child_id,
                                     vertical_align,
-                                    baseline: atom_h,
+                                    baseline: atom_h + img_mb,
                                     margin_top: img_style
                                         .map(|s| Self::resolve_inline_margin(&s.margin_top, s))
                                         .unwrap_or(0.0),
                                     margin_right: img_style
                                         .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
                                         .unwrap_or(0.0),
-                                    margin_bottom: img_style
-                                        .map(|s| Self::resolve_inline_margin(&s.margin_bottom, s))
-                                        .unwrap_or(0.0),
+                                    margin_bottom: img_mb,
                                     margin_left: img_style
                                         .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
                                         .unwrap_or(0.0),
