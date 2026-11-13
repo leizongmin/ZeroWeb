@@ -965,9 +965,12 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
     // 上下文内不重写 → 运行时编译体走 V8 原生动态 import() 宿主回调（classic/module
     // 页面 s88/s90 已接通槽位 referrer；SW 上下文动态 import 本就 spec 禁止，prelude
     // stub 维持 TypeError 语义）。
-    // 已知限制：正则字面量内的引号（如 `/['"]/`）会把扫描器带入字符串态——后续真实
-    // `import(` 漏重写降级走原生回调（页面上下文行为正确，仅 referrer 取槽位而非词法
-    // 穿参）；全量 JS 词法器不做，按 t8j-r2 轻量精神取舍。
+    // 正则字面量感知（g2 切片）：代码态/`${}` 表达式态遇裸 `/`（非 `//`/`/*`）
+    // 按 [`slash_starts_regex`] 以前一有效 token 判正则起点，正则体逐字节直通——
+    // 旧版无感知时压缩单行 bundle 的 `/^\//`（转义斜杠+闭合斜杠）被误读为 `//`
+    // 行注释，单行文件伪注释吞噬至 EOF，后续真实 `import(` 漏重写。残余限制：
+    // 块注释 `*/` 闭合后紧邻、跨行 ASI 位（prev token `)`/`]`）的正则按除法侧
+    // 直通——与修复前行为一致，输出交 V8 parse 兜底。
     let bytes = source.as_bytes();
     let mut out = String::with_capacity(source.len());
     let mut stack: Vec<RewriteCtx> = Vec::new();
@@ -1045,6 +1048,12 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
                     i += 2;
                     continue;
                 }
+                // 裸 `/`：正则起点按 [`slash_starts_regex`] 判定入直通态——正则体
+                // 内 `import(` 是字面文本不重写；无感知时 `/^\//` 被误读为 `//`
+                // 伪行注释吞噬至 EOF，后续真实 `import(` 全漏重写（g2 切片）。
+                b'/' if slash_starts_regex(&out) => {
+                    stack.push(RewriteCtx::Regex(false));
+                }
                 _ => {}
             }
             let step = source[i..].chars().next().map_or(1, char::len_utf8);
@@ -1120,6 +1129,26 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
                 }
                 match c {
                     b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(c)),
+                    // `${}` 表达式区是完整代码语境——注释/正则同代码态处理：
+                    // `` `x${p.replace(/^\//,"")}y` `` 形无正则感知时 `/^\//`
+                    // 误读为伪行注释，至行尾/闭合反引号全部漏重写（g2 切片）。
+                    b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                        stack.push(RewriteCtx::LineComment);
+                        out.push_str("//");
+                        i += 2;
+                        continue;
+                    }
+                    b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                        stack.push(RewriteCtx::BlockComment);
+                        out.push_str("/*");
+                        i += 2;
+                        continue;
+                    }
+                    b'/' => {
+                        if slash_starts_regex(&out) {
+                            stack.push(RewriteCtx::Regex(false));
+                        }
+                    }
                     b'{' => *depth += 1,
                     b'}' => {
                         if *depth == 0 {
@@ -1127,6 +1156,41 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
                         } else {
                             *depth -= 1;
                         }
+                    }
+                    _ => {}
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::Regex(in_class) => {
+                // 正则体逐字节直通（`import.meta`/`import(` 是字面文本，不替换）；
+                // `[...]` 字符类内 `/` 是普通字符（`/[/]/` 形），转义对直拷
+                //（`\/`、类内 `\]` 均不改变定界结构）。
+                match c {
+                    b'\\' => {
+                        let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                        out.push_str(&source[i..i + step]);
+                        i += step;
+                        if i < source.len() {
+                            let step2 = source[i..].chars().next().map_or(1, char::len_utf8);
+                            out.push_str(&source[i..i + step2]);
+                            i += step2;
+                        }
+                        continue;
+                    }
+                    b'[' => *in_class = true,
+                    b']' => *in_class = false,
+                    b'/' if !*in_class => {
+                        // 闭合 `/`：弹栈，flags（gimsuyvd 等字母）随后吞入。
+                        stack.pop();
+                        out.push('/');
+                        i += 1;
+                        while i < source.len() && bytes[i].is_ascii_alphabetic() {
+                            out.push(bytes[i] as char);
+                            i += 1;
+                        }
+                        continue;
                     }
                     _ => {}
                 }
@@ -1166,9 +1230,13 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
 /// 成 `_importMeta/syntax/…` → fetch 404 → 13 案假红。本函数镜像
 /// `rewrite_imports_impl` 的上下文状态机：仅代码态（栈空或模板 `${}` 表达
 /// 式区）且标识符边界成立时替换；字符串/模板文本段/注释内原样直通（转义
-/// 对逐字符拷贝防切多字节）。已知限制同 `rewrite_imports_impl`：正则字面
-/// 量内的引号（如 `/['"]/`）会把扫描器带入字符串态——后续代码态 `import.meta`
-/// 漏替换，输出原文交 V8 parse 拒绝，按 t8j-r2 轻量精神取舍。
+/// 对逐字符拷贝防切多字节）。正则字面量感知（g2 切片）经 [`slash_starts_regex`]：
+/// 代码态/`${}` 表达式态裸 `/` 按前一有效 token 判起点，正则体直通（`import.meta`
+/// 是字面文本不替换）——旧版无感知时压缩单行 bundle 的 `/^\//`（转义斜杠+闭合
+/// 斜杠）被误读为 `//` 行注释，单行文件伪注释吞噬至 EOF，后续 `import.meta` 漏
+/// 替换交 V8 拒绝「Cannot use 'import.meta' outside a module」（github.com
+/// react-core.js 三 defer 入口全灭实证）。残余限制同 `rewrite_imports_impl`：
+/// 注释闭合后/跨行 ASI 位的正则判除法侧直通，输出交 V8 parse 兜底。
 pub(crate) fn rewrite_import_meta_refs(source: &str) -> String {
     let bytes = source.as_bytes();
     let mut out = String::with_capacity(source.len());
@@ -1202,6 +1270,14 @@ pub(crate) fn rewrite_import_meta_refs(source: &str) -> String {
                     out.push_str("/*");
                     i += 2;
                     continue;
+                }
+                // 裸 `/`：正则起点按 [`slash_starts_regex`] 判定入直通态——正则体
+                // 内 `import.meta` 是字面文本不替换；无感知时 `/^\//` 的「转义斜杠
+                // +闭合斜杠」被误读为 `//` 行注释，压缩单行 bundle 伪注释吞噬至
+                // EOF，后续 import.meta 全漏替换（github.com react-core.js 三
+                // defer 入口全灭实证，g2 切片）。
+                b'/' if slash_starts_regex(&out) => {
+                    stack.push(RewriteCtx::Regex(false));
                 }
                 _ => {}
             }
@@ -1255,6 +1331,25 @@ pub(crate) fn rewrite_import_meta_refs(source: &str) -> String {
                 }
                 match c {
                     b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(c)),
+                    // `${}` 表达式区是完整代码语境——注释/正则同代码态处理
+                    //（`` `x${p.replace(/^\//,"")}y` `` 形，同 g2 切片根因）。
+                    b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                        stack.push(RewriteCtx::LineComment);
+                        out.push_str("//");
+                        i += 2;
+                        continue;
+                    }
+                    b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                        stack.push(RewriteCtx::BlockComment);
+                        out.push_str("/*");
+                        i += 2;
+                        continue;
+                    }
+                    b'/' => {
+                        if slash_starts_regex(&out) {
+                            stack.push(RewriteCtx::Regex(false));
+                        }
+                    }
                     b'{' => *depth += 1,
                     b'}' => {
                         if *depth == 0 {
@@ -1262,6 +1357,41 @@ pub(crate) fn rewrite_import_meta_refs(source: &str) -> String {
                         } else {
                             *depth -= 1;
                         }
+                    }
+                    _ => {}
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::Regex(in_class) => {
+                // 正则体逐字节直通（`import.meta`/`import(` 是字面文本，不替换）；
+                // `[...]` 字符类内 `/` 是普通字符（`/[/]/` 形），转义对直拷
+                //（`\/`、类内 `\]` 均不改变定界结构）。
+                match c {
+                    b'\\' => {
+                        let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                        out.push_str(&source[i..i + step]);
+                        i += step;
+                        if i < source.len() {
+                            let step2 = source[i..].chars().next().map_or(1, char::len_utf8);
+                            out.push_str(&source[i..i + step2]);
+                            i += step2;
+                        }
+                        continue;
+                    }
+                    b'[' => *in_class = true,
+                    b']' => *in_class = false,
+                    b'/' if !*in_class => {
+                        // 闭合 `/`：弹栈，flags（gimsuyvd 等字母）随后吞入。
+                        stack.pop();
+                        out.push('/');
+                        i += 1;
+                        while i < source.len() && bytes[i].is_ascii_alphabetic() {
+                            out.push(bytes[i] as char);
+                            i += 1;
+                        }
+                        continue;
                     }
                     _ => {}
                 }
@@ -1304,6 +1434,65 @@ enum RewriteCtx {
     LineComment,
     /// `/* */` 块注释（至 `*/`）。
     BlockComment,
+    /// 正则字面量态（值 = 是否在字符类 `[...]` 内——类内 `/` 不闭合正则）。
+    Regex(bool),
+}
+
+/// 代码态裸 `/`（非 `//`/`/*` 前缀）是否为正则字面量起点——按已发射缓冲回扫
+/// 前一有效 token 启发式判定。ECMA-262 词法文法的正则/除法二义性需 token 级
+/// input element 分流，字符级扫描器不可精确判定；规则按压缩单行 bundle 的实际
+/// 形态校准，歧义位一律取除法侧（与修复前直通行为一致，不引入新误吞面）。
+/// `++`/`--` 按最大咬合判除法（`i++/2` 形；`a+++ /re/` 极罕见形态误判，接受）。
+/// 残余限制：块注释 `*/` 闭合后、跨行 ASI 位（prev token `)`/`]`）的正则判除法
+/// 侧——漏识别的后果与修复前全局行为相同（正则体内引号带入字符串态），输出
+/// 交 V8 parse 兜底。
+/// https://tc39.es/ecma262/#sec-ecmascript-language-lexical-grammar
+fn slash_starts_regex(emitted: &str) -> bool {
+    let b = emitted.as_bytes();
+    let mut e = b.len();
+    while e > 0 && b[e - 1].is_ascii_whitespace() {
+        e -= 1;
+    }
+    let Some(prev) = e.checked_sub(1).map(|k| b[k]) else {
+        return true; // 缓冲起点 = 程序/表达式起始位（`/re/.test(x)` 合法开头）
+    };
+    match prev {
+        // `}` 后除法无左操作数（语句位正则唯一合法）；开括号/操作符后 regex-first。
+        b'}' | b'(' | b'[' | b'{' | b',' | b';' | b':' | b'=' | b'?' | b'!' | b'&' | b'|' | b'*' | b'%' | b'<'
+        | b'>' | b'~' | b'^' => true,
+        // `++`/`--` 最大咬合后判除法（`i++/2`）；单 `+`/`-`（双目或一元位）regex-first。
+        b'+' | b'-' => e < 2 || b[e - 2] != prev,
+        // 除法唯一高频读法（`(a+b)/2`、`a.b/c`）；`/` 含块注释 `*/` 闭合尾（残余限制）。
+        b')' | b']' | b'.' | b'/' => false,
+        // 标识符尾：回扫整词判 regex-first 关键字（`return/^a$/.test` 形）；
+        // 其余标识符/数字字面量后除法。
+        c if is_identifier_continue_byte(c) => {
+            let word_end = e;
+            let mut word_start = word_end;
+            while word_start > 0 && is_identifier_continue_byte(b[word_start - 1]) {
+                word_start -= 1;
+            }
+            matches!(
+                &emitted[word_start..word_end],
+                "return"
+                    | "typeof"
+                    | "instanceof"
+                    | "in"
+                    | "of"
+                    | "new"
+                    | "delete"
+                    | "void"
+                    | "throw"
+                    | "case"
+                    | "do"
+                    | "else"
+                    | "yield"
+                    | "await"
+            )
+        }
+        // 字符串/模板定界尾等其他形态 → 除法侧。
+        _ => false,
+    }
 }
 
 /// 从模块源码中提取全部 `import` 依赖标识符（静态 `import` + 动态 `import()`）。
@@ -3690,6 +3879,66 @@ mod tests {
             rewrite_import_meta_refs("ximport.meta reimport.meta import.metax"),
             "ximport.meta reimport.meta import.metax",
             "标识符边界外（前后缀）不替换"
+        );
+    }
+
+    // g2 切片（正则字面量感知）：压缩单行 bundle 的 `/^\//`（转义斜杠+闭合斜杠）
+    // 曾被误读为 `//` 行注释，伪注释吞噬至 EOF，后续 import.meta 漏替换 → V8
+    // 拒绝「Cannot use 'import.meta' outside a module」（github.com react-core.js
+    // 三个 defer module 入口全灭实证）。`rewrite_imports_impl` 同构镜像同缺口。
+    #[test]
+    fn test_rewrite_regex_literal_awareness_g2() {
+        // 单行最小复现形：正则内转义斜杠 + 同行后续 import.meta。
+        assert_eq!(
+            rewrite_import_meta_refs("const path=\"/a/b/\",t=path.replace(/^\\//,\"\"),u=import.meta.url;"),
+            "const path=\"/a/b/\",t=path.replace(/^\\//,\"\"),u=_importMeta.url;",
+            "正则内转义斜杠不再误开行注释，同行 import.meta 照常替换"
+        );
+        // 旧已知限制修复：正则内引号（/['"]/）不再把扫描器带入字符串态。
+        assert_eq!(
+            rewrite_import_meta_refs("var r=/['\"]/g;var u=import.meta.url;"),
+            "var r=/['\"]/g;var u=_importMeta.url;",
+            "正则内引号不再误开字符串态"
+        );
+        // regex-first 关键字：return 后正则。
+        assert_eq!(
+            rewrite_import_meta_refs("function f(){return/^a$/.test(u)}var u=import.meta.url;"),
+            "function f(){return/^a$/.test(u)}var u=_importMeta.url;",
+            "return 后正则识别"
+        );
+        // 除法不误判：`(a+b)/2`、`i++/2` 后续替换不受扰。
+        let div = "var c=(a+b)/2,d=i++/2,u=import.meta.url;";
+        assert_eq!(
+            rewrite_import_meta_refs(div),
+            "var c=(a+b)/2,d=i++/2,u=_importMeta.url;",
+            "除法形态不误入正则态"
+        );
+        // 字符类内斜杠：/[/]/ 不在类内 `/` 处提前闭合。
+        assert_eq!(
+            rewrite_import_meta_refs("var r=/[/]/,u=import.meta.url;"),
+            "var r=/[/]/,u=_importMeta.url;",
+            "字符类内斜杠不提前闭合"
+        );
+        // 转义闭合斜杠 + flags 后恢复代码态。
+        assert_eq!(
+            rewrite_import_meta_refs("var r=/a\\/b/gi,u=import.meta.url;"),
+            "var r=/a\\/b/gi,u=_importMeta.url;",
+            "转义闭合斜杠+flags 后恢复代码态"
+        );
+        // 模板表达式区内正则与注释直通、后续替换不受扰。
+        assert_eq!(
+            rewrite_import_meta_refs("var s=`x${p.replace(/^\\//,\"\")}y${/*c*/q}z`;var u=import.meta.url;"),
+            "var s=`x${p.replace(/^\\//,\"\")}y${/*c*/q}z`;var u=_importMeta.url;",
+            "模板表达式区内正则与注释直通"
+        );
+        // rewrite_imports_impl 同构缺口镜像：正则后真实动态 import( 照常重写。
+        assert_eq!(
+            rewrite_dynamic_imports("var t=p.replace(/^\\//,\"\");import('./x.js');"),
+            concat!(
+                "var t=p.replace(/^\\//,\"\");",
+                "__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './x.js');"
+            ),
+            "正则不再阻断后续动态 import 重写"
         );
     }
 

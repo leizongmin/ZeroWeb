@@ -250,7 +250,12 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             script_index,
             external_abs.as_deref(),
         ) {
-            warn!("page script error: {e}");
+            // 脚本身份（序号/module 性/外链 src）随错误行输出——无身份的编译错误无法
+            // 归因到具体 script 元素（github.com import.meta ×3 诊断即卡在此）。
+            warn!(
+                "page script error [#{script_index} module={is_module} src={}] : {e}",
+                external_abs.as_deref().unwrap_or("(inline)")
+            );
             // R2940 mirror：未捕获脚本错误 → window.onerror（legacy 5-arg）+ window 'error' ErrorEvent，
             // 使 Sentry / analytics / GA 等错误上报库 hook 触发（与 browser tab_scripts 对齐）。
             report_uncaught_error(ctx.js_worker, &base, &e);
