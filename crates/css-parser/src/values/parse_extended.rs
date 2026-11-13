@@ -436,9 +436,11 @@ pub fn parse_counter_action(input: &str) -> Option<CounterActionValue> {
 }
 
 fn is_counter_name(name: &str) -> bool {
+    // `default` 保留（css-counter-styles-3 §counter-style-name；counter-increment
+    // invalid 语料 `default 1` 拒形驱动，valid 语料零 default 名形）。
     if matches!(
         name.to_ascii_lowercase().as_str(),
-        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "default"
     ) {
         return false;
     }
@@ -508,7 +510,10 @@ pub fn parse_counter_list_with_sibling(input: &str, sibling: Option<(u64, u64)>)
                 iter.next();
                 t.parse::<i64>().ok()
             }
-            Some(t) => {
+            // math 形守卫：函数形必含 `(`，custom-ident 不含——名后跟名形
+            // （counter-increment-computed `myCounter otherCounter -8`）此前
+            // 误吞名 token 送 parse_math_function 整拒。
+            Some(t) if t.contains('(') => {
                 let expr = parse_math_function(t)?;
                 if !calc_expr_is_number(&expr) {
                     return None;
@@ -530,11 +535,64 @@ pub fn parse_counter_list_with_sibling(input: &str, sibling: Option<(u64, u64)>)
                 iter.next();
                 Some(v.round() as i64)
             }
-            None => None,
+            // 名后跟名形：整数位缺省，名 token 留给下一轮。
+            Some(_) | None => None,
         };
         result.push(CounterActionValue {
             name: name.to_string(),
             value,
+        });
+    }
+    if result.is_empty() {
+        return None;
+    }
+    Some(result)
+}
+
+/// counter-increment 写面文法门：仅文法裁决、不求值（CSS Lists 3 §counter-increment
+/// `[ <counter-name> <integer>? ]#`，<https://drafts.csswg.org/css-lists-3/#counter-increment>）。
+/// 名 = <custom-ident>（[`is_counter_name`]——css-wide 关键字与 `none` 排除），
+/// 整数位 = <integer> 字面或 <math-function> 形（型别 <number>；求值延后到 apply
+/// 站——supports/写面门无容器 ctx，eval fail-closed 会误拒 `sign(2cqw - 10px)`
+/// 类合法形）。`none` 单置返空列表。非法形返 None：`none chapter`（none 非单置）、
+/// `reversed(chapter)`（counter-reset 专属；custom-ident 文法不含括号）、首位非名
+/// （`3`/`99 imagenum`）、顶层逗号分隔（`section -1, imagenum 99`）、非整数槽
+/// （`section 3.14`）、css-wide 关键字带后缀（`inherit 1`）。
+pub fn parse_counter_list_grammar(input: &str) -> Option<Vec<CounterActionValue>> {
+    let input = input.trim();
+    if input.eq_ignore_ascii_case("none") {
+        return Some(vec![]);
+    }
+    let tokens = super::transform_helpers::split_top_level_whitespace_args(input)?;
+    // counter 文法无逗号分隔；math 形内逗号合法（`min(1px, 2px)` 括号内
+    // 不分词单 token，`(` 存在豁免）。
+    if tokens.iter().any(|t| !t.contains('(') && t.contains(',')) {
+        return None;
+    }
+    let mut result = Vec::new();
+    let mut iter = tokens.iter().copied().peekable();
+    while let Some(name) = iter.next() {
+        if !is_counter_name(name) {
+            return None;
+        }
+        // 整数位文法（不消费求值）：字面 <integer> 或 math 形（型别 <number>，
+        // `reversed(chapter)` 等非数学函数名单形拒）。
+        if let Some(t) = iter.peek().copied() {
+            if t.parse::<i64>().is_ok() || t.contains('(') {
+                if t.contains('(') {
+                    let expr = parse_math_function(t)?;
+                    if !calc_expr_is_number(&expr) {
+                        return None;
+                    }
+                }
+                iter.next();
+            }
+        }
+        // 文法门不求值：value 位 None（求值在 apply 站
+        // [`parse_counter_list_with_sibling`]）。
+        result.push(CounterActionValue {
+            name: name.to_string(),
+            value: None,
         });
     }
     if result.is_empty() {

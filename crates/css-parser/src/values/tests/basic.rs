@@ -1031,6 +1031,44 @@ fn test_parse_counter_list_invalid() {
 }
 
 #[test]
+fn test_parse_counter_list_grammar_invalid_page_forms() {
+    // css-lists parsing counter-increment-invalid 语料 13 形逐拒
+    //（css-lists-3 §counter-increment `[ <counter-name> <integer>? ]#`）。
+    assert_eq!(parse_counter_list_grammar("none chapter"), None);
+    assert_eq!(parse_counter_list_grammar("reversed(none)"), None);
+    assert_eq!(parse_counter_list_grammar("reversed(chapter)"), None);
+    assert_eq!(parse_counter_list_grammar("3"), None);
+    assert_eq!(parse_counter_list_grammar("99 imagenum"), None);
+    // 顶层逗号分隔（counter 文法无逗号）。
+    assert_eq!(parse_counter_list_grammar("section -1, imagenum 99"), None);
+    // 非整数槽（3.14 非字面 <integer>、非 math 形）。
+    assert_eq!(parse_counter_list_grammar("section 3.14"), None);
+    // css-wide 关键字带后缀 + default 保留（css-counter-styles-3
+    // §counter-style-name）。
+    for kw in ["inherit", "initial", "unset", "default", "revert", "revert-layer"] {
+        assert_eq!(parse_counter_list_grammar(&format!("{kw} 1")), None, "{kw} 1");
+    }
+}
+
+#[test]
+fn test_parse_counter_list_grammar_valid_page_forms() {
+    // valid 语料形态逐放行（文法门不求值——math 形 value 位 None）。
+    assert!(parse_counter_list_grammar("none").unwrap().is_empty());
+    assert_eq!(parse_counter_list_grammar("chapter").unwrap().len(), 1);
+    assert_eq!(parse_counter_list_grammar("section -1").unwrap().len(), 1);
+    assert_eq!(parse_counter_list_grammar("first -1 second third 99").unwrap().len(), 3);
+    // math 形整数位（型别 <number>；`reversed(` 非数学函数名单形拒）。
+    assert!(parse_counter_list_grammar("section calc(1)").is_some());
+    assert!(parse_counter_list_grammar("section calc(-2.5)").is_some());
+    assert!(parse_counter_list_grammar("section calc(10 + (5 * sign(2cqw - 10px)))").is_some());
+    assert_eq!(parse_counter_list_grammar("section reversed(chapter)"), None);
+    // 重复名合法；多名列表；转义空格名超 top-level 分词面（写面站豁免，
+    // 文法门拒——fold None 保留原文）。
+    assert!(parse_counter_list_grammar("a 1 b 2 c 3 a 4 b 5").is_some());
+    assert_eq!(parse_counter_list_grammar("a\\ 8 9"), None);
+}
+
+#[test]
 fn test_parse_content_normal() {
     assert_eq!(parse_content("normal"), Some(ContentValue::Normal));
 }

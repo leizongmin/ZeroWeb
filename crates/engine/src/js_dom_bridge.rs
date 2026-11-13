@@ -6031,6 +6031,18 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
             },
         };
     }
+    // CSS Lists 3 §counter-increment：文法门（不求值——math 整数位 eval 需容器
+    // ctx，apply oracle sibling 哨兵 (1,1) 无 container_width，`sign(2cqw - 10px)`
+    // 类合法形 fail-closed 误拒；求值在 apply 站）。
+    // <https://drafts.csswg.org/css-lists-3/#counter-increment>
+    if prop == "counter-increment" {
+        // 转义 ident（`a\ 8 9` 转义空格名合法形）超 top-level 分词文法面判真
+        //（写面同款豁免；FIXME: custom-ident 转义序列词法挂账）。
+        if val.contains('\\') {
+            return true;
+        }
+        return zero_css_parser::values::parse_counter_list_grammar(val).is_some();
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
         // tree-counting 页 `CSS.supports('z-index', 'calc(2 * sibling-index())')`

@@ -8,6 +8,7 @@
 use super::calc_mix::{CalcMixItem, CalcMixWeight};
 use super::parse_extended::{
     calc_expr_has_angle_result, calc_expr_has_length, calc_expr_has_tree_counting, calc_expr_is_number,
+    parse_counter_list_grammar,
 };
 use super::types::{
     CalcExpr, CalcOp, LengthValue, TreeCountingFn, eval_calc, eval_calc_with_default_font, is_math_function_value,
@@ -1038,8 +1039,37 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
                 None
             }
         }
+        // counter-increment 指定值 canonical 串化：<integer> 位缺省补 1
+        //（css-lists-3 canonical serialization——`chapter` → `chapter 1`、
+        // `first -1 second third 99` → `first -1 second 1 third 99`，valid 语料
+        // 驱动）；math 形整数位原文保留（`section calc(1)` 恒等）；非法形
+        // None 保留原文（`a\ 8 9` 转义名超 top-level 分词文法面透传）。
+        "counter-increment" => fold_counter_increment_specified(v),
         _ => None,
     }
+}
+
+/// counter-increment 指定值 canonical 串化：文法前置（[`parse_counter_list_grammar`]，
+/// 非法形 None = 消费站保留原文），随后按 token 流重放补隐式整数位 1——math 形
+/// 位与字面整数位原文保留、单空 join（`calc(10 + (5 * sign(2cqw - 10px)))` 内部
+/// 空白保持）。`none` 单置恒等。
+fn fold_counter_increment_specified(v: &str) -> Option<String> {
+    if v.eq_ignore_ascii_case("none") {
+        return Some("none".to_string());
+    }
+    parse_counter_list_grammar(v)?;
+    let tokens = super::transform_helpers::split_top_level_whitespace_args(v)?;
+    let mut out: Vec<&str> = Vec::new();
+    let mut iter = tokens.iter().copied().peekable();
+    while let Some(name) = iter.next() {
+        out.push(name);
+        match iter.peek().copied() {
+            // 整数位：字面或 math 形原文保留；否则缺省位补 1。
+            Some(t) if t.parse::<i64>().is_ok() || t.contains('(') => out.push(iter.next().unwrap()),
+            _ => out.push("1"),
+        }
+    }
+    Some(out.join(" "))
 }
 
 /// transform 列表 wrapper 折叠：rotate/rotatex/rotatey/rotatez/rotate3d 的角度
@@ -1577,6 +1607,41 @@ mod tests {
         assert_eq!(fold_decl_specified("transform", "rotate(45deg) scale(2)"), None);
         assert_eq!(fold_decl_specified("scale", "2"), None);
         assert_eq!(fold_decl_specified("scale", ""), None);
+    }
+
+    #[test]
+    fn fold_counter_increment_canonical() {
+        // counter-increment-valid 语料 canonical 串化：<integer> 位缺省补 1
+        //（css-lists-3 canonical serialization）。
+        assert_eq!(
+            fold_decl_specified("counter-increment", "chapter").as_deref(),
+            Some("chapter 1")
+        );
+        assert_eq!(
+            fold_decl_specified("counter-increment", "first -1 second third 99").as_deref(),
+            Some("first -1 second 1 third 99")
+        );
+        // math 形整数位原文保留（单空 join、内部空白保持）；none 单置恒等；
+        // 字面整数位恒等。
+        assert_eq!(
+            fold_decl_specified("counter-increment", "section calc(1)").as_deref(),
+            Some("section calc(1)")
+        );
+        assert_eq!(
+            fold_decl_specified("counter-increment", "section calc(10 + (5 * sign(2cqw - 10px)))").as_deref(),
+            Some("section calc(10 + (5 * sign(2cqw - 10px)))")
+        );
+        assert_eq!(
+            fold_decl_specified("counter-increment", "none").as_deref(),
+            Some("none")
+        );
+        assert_eq!(
+            fold_decl_specified("counter-increment", "a 1 b 2 c 3 d 4 e 5").as_deref(),
+            Some("a 1 b 2 c 3 d 4 e 5")
+        );
+        // 非法形 / 转义名（超 top-level 分词面）None = 保留原文。
+        assert_eq!(fold_decl_specified("counter-increment", "none chapter"), None);
+        assert_eq!(fold_decl_specified("counter-increment", "a\\ 8 9"), None);
     }
 
     #[test]

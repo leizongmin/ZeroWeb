@@ -1945,7 +1945,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 13] = [
+    const VALIDATED_PROPERTIES: [&str; 14] = [
         "transform",
         "rotate",
         "scale",
@@ -1972,6 +1972,11 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
         // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
         "width",
+        // counter-increment 写面文法门（css-lists-3 §counter-increment）：invalid
+        // 页 13 形（`none chapter`/`reversed(chapter)`/`3`/`99 imagenum`/顶层逗号/
+        // `section 3.14`/css-wide 带后缀）此前白名单外放行 store；分派臂见
+        // [`validate_decl_value`] 中段（value_has_unimplemented_function 之前）。
+        "counter-increment",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2127,6 +2132,22 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         if had_random {
             return random_valid;
         }
+    }
+    // counter-increment 写面文法门（css-lists-3 §counter-increment：`none` 单置、
+    // 名 = <custom-ident>（css-wide/none 排除）、整数位 = <integer> 字面或
+    // <math-function> 形、无逗号分隔；文法裁决不求值——求值在 apply 站
+    // parse_counter_list_with_sibling，容器 ctx 依赖见 decl_supported counter
+    // 臂注）。置于 value_has_unimplemented_function 之前——`reversed(` 不在
+    // 已实现函数名单，未实现放行臂会先行误放 `reversed(chapter)`。
+    // <https://drafts.csswg.org/css-lists-3/#counter-increment>
+    if prop == "counter-increment" {
+        // 转义 ident（css-lists valid 语料 `a\ 8 9` 转义空格名）超 top-level
+        // 空白分词文法面，保留既有放行（store 原文——该形语料序列化恒等）。
+        // FIXME: custom-ident 转义序列词法挂账。
+        if v.contains('\\') {
+            return true;
+        }
+        return values::parse_counter_list_grammar(v).is_some();
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -2989,6 +3010,34 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("left", "10px"));
         assert!(validate_decl_value("z-index", "5"));
         assert!(validate_decl_value("z-index", "auto"));
+    }
+
+    #[test]
+    fn counter_increment_write_gate() {
+        // css-lists-3 §counter-increment 写面文法门：invalid 语料 13 形逐拒
+        //（`reversed(` 不在已实现函数名单——臂位于未实现放行门之前）。
+        assert!(!validate_decl_value("counter-increment", "none chapter"));
+        assert!(!validate_decl_value("counter-increment", "reversed(none)"));
+        assert!(!validate_decl_value("counter-increment", "reversed(chapter)"));
+        assert!(!validate_decl_value("counter-increment", "3"));
+        assert!(!validate_decl_value("counter-increment", "99 imagenum"));
+        assert!(!validate_decl_value("counter-increment", "section -1, imagenum 99"));
+        assert!(!validate_decl_value("counter-increment", "section 3.14"));
+        for kw in ["inherit", "initial", "unset", "default", "revert", "revert-layer"] {
+            assert!(!validate_decl_value("counter-increment", &format!("{kw} 1")), "{kw} 1");
+        }
+        // valid 面（含 math 形整数位——文法裁决不求值）；`none` 单置放行。
+        assert!(validate_decl_value("counter-increment", "none"));
+        assert!(validate_decl_value("counter-increment", "myCounter otherCounter -8"));
+        assert!(validate_decl_value(
+            "counter-increment",
+            "myCounter calc(10 + (sign(2cqw - 10px) * 5))"
+        ));
+        // 转义空格名（`a\ 8 9`）超 top-level 分词面保留既有放行
+        //（FIXME: custom-ident 转义序列词法挂账）。
+        assert!(validate_decl_value("counter-increment", "a\\ 8 9"));
+        // css-wide 关键字裸形放行（Cascading 4 §7.3 上下文无关）。
+        assert!(validate_decl_value("counter-increment", "inherit"));
     }
 
     #[test]
