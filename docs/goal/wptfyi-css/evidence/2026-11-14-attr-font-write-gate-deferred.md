@@ -120,4 +120,8 @@ cascade.rs `is_cascade_value_valid` 注释所称「4.75 步」后置重裁站从
   账撞断前已落盘，四小套件由补跑链恢复，终账以此处数字为准。
 
 单测终数：css-parser 3,190 / style-system 2,533 全绿；clippy
---deny warnings 零告警；rustfmt clean。
+--deny warnings 零告警；rustfmt clean。make test 全量（zw-g31-mktest4
+门禁）：155 个 test 目标中 154 个零失败，唯一非零为 engine lib
+3,923P/7F——与在册欠账组同数（zwv6-maketest3/ptcssom2-maketest-2 旧
+门禁日志同组同数确认，fetch/websocket/img-settle 域，先于本批），
+零新增失败。
