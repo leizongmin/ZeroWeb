@@ -155,6 +155,32 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     })
 }
 
+/// s428：element 的 select 祖先是否 listbox 形态（`multiple` 在场，或 `size`
+/// 属性解析值大于 1；HTML 渲染规范
+/// <https://html.spec.whatwg.org/multipage/rendering.html#the-select-element-2>，
+/// size 非法/缺席按默认 1 计）。style-system 不能反向依赖 layout-engine——谓词与
+/// layout 侧 tree.rs `select_is_listbox_form` 同判据本地副本；gate 由调用方承担。
+/// driving: WPT select-listbox-touch.optional / select-multiple-resize（s388 判例①面）。
+fn select_ancestor_is_listbox_form(doc: &Document, element: NodeId) -> bool {
+    let mut cur = doc.parent_node(element);
+    while let Some(pid) = cur {
+        if doc
+            .get(pid)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
+        {
+            if doc.get_attribute(pid, "multiple").is_some() {
+                return true;
+            }
+            return doc
+                .get_attribute(pid, "size")
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .is_some_and(|size| size > 1);
+        }
+        cur = doc.parent_node(pid);
+    }
+    false
+}
+
 /// R2856：`<q>` 元素 `quotes: auto` 时按内容语言解析的默认引号对表（CSS Generated
 /// Content §4.2 + CLDR typographical 引号数据）。
 ///
@@ -2046,7 +2072,7 @@ impl StyleSystem {
             && is_html_ns
             && let Some(display) = ua_default_display(tag)
         {
-            let display_str = match display {
+            let mut display_str = match display {
                 DisplayValue::Block => "block",
                 DisplayValue::Table => "table",
                 DisplayValue::InlineTable => "inline-table",
@@ -2065,6 +2091,20 @@ impl StyleSystem {
                 DisplayValue::ListItem => "list-item",
                 _ => "inline",
             };
+            // s428 listbox 形态 carve-out：`<select multiple>` / `size>1` 上游不落
+            // picker-none 包裹，option/optgroup 行以 inline listbox 渲染（HTML 渲染
+            // 规范 the-select-element-2）——UA display 由 none 改 block（行盒近似，
+            // 谓词与 layout 侧 tree.rs 抑制臂同判据）。closed 形态 UA none 路径不变。
+            // kill-switch `ZW_SELECT_LISTBOX_FORM=0` 回退（R5346 纪律：LazyLock 单读）。
+            static SELECT_LISTBOX_FORM: std::sync::LazyLock<bool> =
+                std::sync::LazyLock::new(|| std::env::var("ZW_SELECT_LISTBOX_FORM").as_deref() != Ok("0"));
+            if matches!(display, DisplayValue::None)
+                && (tag.eq_ignore_ascii_case("option") || tag.eq_ignore_ascii_case("optgroup"))
+                && *SELECT_LISTBOX_FORM
+                && select_ancestor_is_listbox_form(doc, element)
+            {
+                display_str = "block";
+            }
             ua_decl_inputs.push(("display".to_string(), display_str.to_string(), false, (0, 0, 0), None));
         }
         // R3290：HTMLDialogElement.open 显式覆盖——`<dialog>` 默认 display:none（ua_default_display），
