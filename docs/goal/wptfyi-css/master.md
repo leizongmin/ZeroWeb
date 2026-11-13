@@ -42,7 +42,17 @@ Invalid 除法二分）+ §comp-func clamp(none,…) parse 期重写 + shim math
 函数形透传（calc/min/max/clamp 排除保 `_zwCComp` 折叠口径），values face
 3,228→**3,553** 净 +325 零回归（invalid 桶 208+serialize 桶 ~117），五
 套件 Pass/Timeout 双锚定零漂移，见 evidence
-2026-11-12-dc2-g23-minmax-serialize-write-gate）。
+2026-11-12-dc2-g23-minmax-serialize-write-gate）
++attr() 值支持批 + CSSOM cleanup null 臂（g24：css-values-5 §attr-notations
+parse/型别/替换全链 + 预级联全源替换 + §attr security 污染丢声明 +
+cascade 文法门 + fallback 维度型拒 numberish；**根因修复 shim sel/handle 臂
+setProperty(prop, null)**——String(null)="null" 四字符被值校验拒致声明永移
+除不掉，native 同病同修；写面门机制尝试后撤回（插桩定谳值级 mismatch 须
+accept-then-drop，cleanup 修复后两语义收敛）；五面 attr-all-types 103F→19F
+净 +84 零回归/attr-cycle +7/security 23/23 维持；**values 全量 256 页对账
+3,553→3,735 净 +182 零回归页**（12 页全涨——calc-dimension-serialization-
+order +44/calc-serialization-002 +17 为 cleanup 共享路径红利），见 evidence
+2026-11-13-dc2-g24-attr-write-cleanup）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -109,7 +119,9 @@ tree-counting 家族残 89F（g19 后：keyframe 10 页、invalidation/container
 descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
 实参槽 2F + 伪元素 Face 3 2F——见 evidence g19 §5 分桶）、
 独立桶 line-break-ch
-194F / random 族残 ~86F（g22 后，见 g22 evidence §5）/ attr-all-types 103F / viewport-units 84F / calc-size 62F /
+194F / random 族残 ~86F（g22 后，见 g22 evidence §5）/ attr 残 49F（g24 后：
+all-types 19 + cycle 15 + css-wide 14 + IACVT 1，attr+var 延迟组合/EOF 括号/
+css-wide fallback 等未实现特征，见 g24 evidence §残余）/ viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
 （`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；**DC-3 v14 周跑已
 dispatch**（run 43240558696，11-12 14:45Z 起，HEAD 74c4f245f 含 color/values/
@@ -141,6 +153,33 @@ unresolvable-argument +1），五套件 Pass 级零漂移（transitions F 计数
 管线重现）/engine 3,909 过（7 失败在册既有组——editing 流近期修复后
 10→7，逐名核对）/rustfmt clean/定向 clippy 零告警。
 [证据](evidence/2026-11-12-dc2-g21-random-eval-face2.md)
+
+**DC-2 g24 批完成（11-13，attr() 值支持 + CSSOM cleanup null 臂根因）**：
+CSS Values 5 §attr-notations 全链——css-parser `values/attr.rs` 新增（调用
+扫描文法裁决含乘数紧贴钉 174/union/乘数形、型别选择子 DefaultString/Unit/
+Syntax 十六形、Angle/Time math 折叠臂、compute 期元素级文本替换 IACVT/
+taint 标记、fallback 维度型拒 numberish 其余原文透传）；style-system 预级联
+块全源声明替换 + §attr security 取 URL 属性污染丢声明；cascade
+`is_cascade_value_valid` attr() 文法门（valid 放行延迟裁决/invalid 级联丢）。
+**根因修复**：shim `_styleProxy` sel/handle 臂 `setProperty(prop, null)`
+String(null)="null" 四字符被值校验拒致**声明永移除不掉**——语料
+test_invalid_attr 尾部 cleanup 全体受累（in-run 捕获值全为残留）；native
+`native_style_set_property_invoke` 同病同修（WebIDL nullable
+`CSSOMString? = ""`）。**写面门机制（两阶段属性包协议）尝试后整体撤回**：
+插桩定谳门读数准确但语义错误——值级 mismatch（文法合法）须 accept 存 raw
+走 cascade IACVT-drop（unset），仅文法 invalid 才 no-op；cleanup 修复后每
+测试起点干净、两语义收敛，无需写面门。**五面权威账（vs g24attr4 中期基线
+零回归）**：attr-all-types 19F（+14：58/62/74/128/130-136/155/163/174，
+vs g23b 累计 103F→19F 净 +84）/attr-cycle +7/security 23/23 满血维持/
+css-wide 14F/IACVT 1F 持平；残余 49F 全为中期轮已有（attr+var 延迟组合/
+EOF 括号恢复/DefaultString font-family computed 通道/单位型合法性/css-wide
+fallback——挂账特征清单见 evidence）。单测 css-parser 3,184 全绿（attr
+106）/style-system 2,528 全绿/clippy 零告警/fmt clean/pre-commit guard
+PASS（1184 行零发现）/**make test 全量 424 passed 0 failed**（systemd
+service 形态，Result=success）；探针链定谳 cleanup 三角（setProperty(null) 挂/
+removeProperty 过/setAttribute('style','') 过→shim setProperty null 臂），
+diag 页跑后删除不入库。
+[证据](evidence/2026-11-13-dc2-g24-attr-write-cleanup.md)
 
 **DC-2 g23 批完成（11-12，min/max/clamp canonical 串化 + 写面 math 门 +
 clamp none 重写，四刀 A-D）**：CSS Values 4 §10.6/§10.5/§comp-func——
