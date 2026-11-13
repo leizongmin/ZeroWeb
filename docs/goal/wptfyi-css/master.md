@@ -139,7 +139,12 @@ font-weight-computed 48→**56** +8P，css-fonts 全量 2,472→**2,480P** 净 +
 零回归，单测 2,533 全绿。lighter-bolder 页 22F 定性转桶：页子元素经
 cloneNode 克隆，gCS fontWeight 空串（探针四变异钉面——克隆节点样式合成
 缺口，shim/桥面非 css face）；font-weight-matching 14F 转挂 @font-face
-描述符匹配算法桶；installed-fonts 6F 宿主测试字体环境依赖定性不计缺口，
+描述符匹配算法桶（g32 归因定谳：ExtractedFontFace 已带 weight 描述符、
+face 请求已带 weightNum 注册，缺口在运行时字体键选择——font_load_bridge
+R2417 按 ≥600 二值粗体键塌缩，无 face 级 css-fonts-4 §5.4 匹配
+（font-weight-matching 页期望表 420→450 face 的 [400,500] 向上区间查找
+钉面）；架构面批：faces 注册表 + §5.4 desired→face 选择接入
+text_shaping/font_resolution，跨 3 crate）；installed-fonts 6F 宿主测试字体环境依赖定性不计缺口，
 见 evidence 2026-11-14-font-weight-relative-table）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
