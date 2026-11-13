@@ -159,3 +159,8 @@ include!("js_dom_bridge_tests/part109_s409_script_created_link_stylesheet.rs");
 // maxlength-number.html 红根修复）+ text 既有绿面 + 非法 type 值 Text 态
 // invalid default 对照钉。
 include!("js_dom_bridge_tests/part110_s411_input_maxlength_number.rs");
+
+// s421 pending 视图 handle rect：createElement 产物裸 handle 身份在 mutation
+// pending 窗口内的真几何（embed-allowed-schemas 5F 根因——load 同 turn 派发先于
+// apply，快照无 rect 恒 0）。
+include!("js_dom_bridge_tests/part111_s421_pending_handle_rect.rs");

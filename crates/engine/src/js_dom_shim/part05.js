@@ -14998,7 +14998,34 @@
       var _rid = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, 'id') : null;
       if (_rid) return '#' + _rid;
     } catch (_eRid) {}
+    // s421：embed/object 无内容态零 rect 门——represents-nothing 面几何恒零
+    //（_zwEmbedObjectNoContent 注；upstream embed-change-src-2 ① oracle：无 src
+    // append 后同 turn gBCR width === 0）。done（内容已取回）放行 pending 视图臂。
+    if (_zwEmbedObjectNoContent(handle)) return null;
     return handle;
+  }
+  // s421：embed/object 无内容态零 rect 门（handle-only 人口——sel 空且无 id，
+  // `_zwRectIdent` 尾段）。动态创建 embed/object 的 represents-nothing 面（无
+  // src/data——加载链未启航 entry 缺席；取回未完成 loading；取回失败 error）
+  // 返 true → rect 身份置空 → 宿主查询打掉、本地 definite 兜底原样（= 修复前
+  // 零语义）。done（内容已取回——spec 处理模型 fetch/render 步成功面）放行
+  // pending 视图臂（embed-allowed-schemas has_width 面drv + onload 同 turn
+  // offsetWidth 读）。selector 身份（静态 embed/object 快照面）不进门——静态
+  // 加载链本就不接（FIXME(embed-static-events)），快照 784×0 行为原样。
+  // 放行态 = 取回成功面：'done'（嵌套文档物化）与 'image'（可渲染 essence——
+  // text/*、image/* 成功解码即 load，embed-allowed-schemas data:,Hello 驱动案）。
+  // 收窄态 = represents nothing：entry 缺席（无 src 未启航）、'loading'（取回
+  // 未完成）、'error'（取回失败）、'fallback'（essence 不可渲染）。
+  function _zwEmbedObjectNoContent(handle) {
+    try {
+      var tag = String(typeof _realTag === 'function' ? (_realTag(null, handle) || '') : '').toLowerCase();
+      if (tag !== 'embed' && tag !== 'object') return false;
+      var key = typeof _elKey === 'function' ? (_elKey(null, handle) || '') : '';
+      var entry = key ? _zwObjectNavCache[key] : null;
+      return !entry || entry.state === 'loading' || entry.state === 'error' || entry.state === 'fallback';
+    } catch (_eNoContent) {
+      return false;
+    }
   }
   // s395：definite 尺寸本地几何兜底（仅 handle-only——sel 身份的 host miss =
   // 未布局/display:none，0 语义保持）。created 元素同 turn（mutation flush 前）

@@ -2,27 +2,52 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 420 收口（createPattern video 源臂 + ImageBitmap
-污染旗标传播落锤：**security.pattern.fillStyle.sub 余 8F 清账——video ×6 +
-ImageBitmap ×2 全翻 Pass，驱动案 14/14 全绿**；账本
-evidence/2026-11-13-m2s420-video-pattern-imagebitmap-taint.md）——s419 遗留
-8F 勘根两层：①video ×6 = createPattern 无 video 源臂（掉通用 null 路径 →
-pattern null → 不污染；引擎 canvas 面无 video 像素表面——runner 媒体面为
-文件读模拟无解码帧，帧表面 FIXME 记档）；②bitmap ×2 = createImageBitmap
-已捕获 `_zwBitmapUnclean` 而 createPattern 位图臂不消费。修复：video 臂以
-1×1 透明 wire 建 pattern（readyState≥2 门，无帧内容断言面不伪造帧）+ 污染面
-src 请求 URL 与 redirect.py location 静态解析数据 URL 双面 OR 判
-（HTTP-redirect fetch 语义逐面命中：face1/3 请求面、face2 数据面；跨源重
-定向起点即污染，不因终跳同源豁免）+ 位图臂 `patUnclean =
-!!_zwBitmapUnclean` 一行补全。验证：solo 14/14 + 周边 pattern 面 ×7 零
-扰动；sweep ×2 对 s419 双基线两轮均 0 new + 恰 8 driving F→P（唯余簇 D 族
-T↔F 在册闪变）、终态全同。在册红 221F+14T（归一簇 D 面）→ **213F+14T**
-（−8F 清账 + 簇 D optional 文件键 F→T 翻回；本轮双文件 optional=T/
-detailed=F，随轮闪变红集恒定）。下一步：挂账池承
-s416/s417/s420（渲染流 6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 /
-A2+D 簇 / checkable parent-label 2F / video 帧像素表面 FIXME——
-drawImage(video)/createImageBitmap(video) 与 2d.pattern.video.* 功能面）
-勘根首位。
+**状态**: Active——M2 切片 421 收口（pending 视图 handle rect 落锤：**裸 handle
+身份在 mutation pending 窗口内的真几何 + embed/object 无内容态零 rect 门，
+embed-allowed-schemas 5F 清账**；账本
+evidence/2026-11-13-m2s421-pending-handle-rect.md）——s420 挂账 A2 簇勘根两面：
+①时序面 = embed load 经 `_defer` 同 turn 派发先于宿主 apply+重渲染，onload 里
+offsetWidth 读快照恒空（动态 embed 无 rect）；②身份面 = createElement 产物裸
+handle `__n{n}` 非 selector，find_by_selector 永不命中；s395/s284 判明宿主侧
+全局 handle→selector 解析是 attr 期望面雷区。修复四件套：宿主 `__n` 前缀
+pending 臂（仅 `style_version > applied` 窗口，drained 返空串=旧行为）+
+`pending_view_handle_rect` 复用 handle 视图槽（重放 pending 区间物化链 + 新算
+布局 + HANDLE_RECT_CACHE 键含视口）+ webview `set_pending_layout_viewport`
+同步 + shim `_zwEmbedObjectNoContent` 门（embed/object handle-only 人口，
+loading/error/fallback/缺席收窄恒零，done/image 放行——represents nothing
+语义；首版只放行 done 令 embed-change-src-2 断言①回归「expected 0 but got
+784」，message 级归因抓出后改白名单收窄态归位）。验证：unit 7 断言面 1P +
+js_dom_bridge 全模块 1429P/7F 在册慢性红腿逐名 IDENTICAL + solo embed 目录
+7F→2F（5 driving 清账；余 2F 在册渲染流 intrinsic sizing 面）+ sweep ×2 对
+s420 双基线两轮均恰 5 driving F→P、new 红 0（唯簇 D 族 T↔F 与 sizes-auto
+超时上报在册闪变）。在册红 213F+14T → **204F+14T**（归一簇 D/sizes-auto
+闪变面后稳定 −5F；轮 2 raw 205F+15T 系簇 D optional 成行）。下一步：挂账池承
+s416/s417/s420/s421（渲染流 6 面 + embed intrinsic sizing 面 ×2 /
+sizes-auto F5 用户门 / 簇 D select 立项征询 / checkable parent-label 2F /
+video 帧像素表面 FIXME / A1 drained 态与 s284 联合勘根）勘根首位。
+
+> **▶ 承前（2026-11-13 M2 切片 420 收口）——createPattern video 源臂 + ImageBitmap 污染旗标传播（security.pattern.fillStyle.sub 余 8F 清账）**：commit 谱系 git log s420（8605e2734），账本 evidence/2026-11-13-m2s420-video-pattern-imagebitmap-taint.md。原 Active 段留档——
+> **状态**: Active——M2 切片 420 收口（createPattern video 源臂 + ImageBitmap
+> 污染旗标传播落锤：**security.pattern.fillStyle.sub 余 8F 清账——video ×6 +
+> ImageBitmap ×2 全翻 Pass，驱动案 14/14 全绿**；账本
+> evidence/2026-11-13-m2s420-video-pattern-imagebitmap-taint.md）——s419 遗留
+> 8F 勘根两层：①video ×6 = createPattern 无 video 源臂（掉通用 null 路径 →
+> pattern null → 不污染；引擎 canvas 面无 video 像素表面——runner 媒体面为
+> 文件读模拟无解码帧，帧表面 FIXME 记档）；②bitmap ×2 = createImageBitmap
+> 已捕获 `_zwBitmapUnclean` 而 createPattern 位图臂不消费。修复：video 臂以
+> 1×1 透明 wire 建 pattern（readyState≥2 门，无帧内容断言面不伪造帧）+ 污染面
+> src 请求 URL 与 redirect.py location 静态解析数据 URL 双面 OR 判
+> （HTTP-redirect fetch 语义逐面命中：face1/3 请求面、face2 数据面；跨源重
+> 定向起点即污染，不因终跳同源豁免）+ 位图臂 `patUnclean =
+> !!_zwBitmapUnclean` 一行补全。验证：solo 14/14 + 周边 pattern 面 ×7 零
+> 扰动；sweep ×2 对 s419 双基线两轮均 0 new + 恰 8 driving F→P（唯余簇 D 族
+> T↔F 在册闪变）、终态全同。在册红 221F+14T（归一簇 D 面）→ **213F+14T**
+> （−8F 清账 + 簇 D optional 文件键 F→T 翻回；本轮双文件 optional=T/
+> detailed=F，随轮闪变红集恒定）。下一步：挂账池承
+> s416/s417/s420（渲染流 6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 /
+> A2+D 簇 / checkable parent-label 2F / video 帧像素表面 FIXME——
+> drawImage(video)/createImageBitmap(video) 与 2d.pattern.video.* 功能面）
+> 勘根首位。
 
 > **▶ 承前（2026-11-13 M2 切片 419 收口）——SVG `<image>` 载入链接通（插入臂 + createPattern SVG 源面）+ security.pattern.fillStyle.sub 文件级 T 解挂**：commit 谱系 git log s419（d4d0e58a8），账本 evidence/2026-11-13-m2s419-svg-image-load-chain.md。原 Active 段留档——
 > **状态**: Active——M2 切片 419 收口（SVG `<image>` 载入链接通落锤：**插入臂 +

@@ -3444,6 +3444,10 @@ impl WebView {
         // 桥接真值（inner/outer ← config；screen 保持设备常量语义）。此时页面脚本未运行，
         // 无 resize 监听器/MQL，事件派发与 matchMedia 重评为 no-op。
         let (w, h) = (self.config.width as f64, self.config.height as f64);
+        // s421：pending 视图 rect 布局 viewport 同步（引擎 handle 视图槽）——动态元素
+        // pending 窗口几何与渲染管线同视口（runner 进程内路径；多进程 renderer 走
+        // rect_bridge 自有视口 cell）。
+        zero_engine::js_dom_bridge::set_pending_layout_viewport(self.config.width, self.config.height);
         let sync = zero_engine::script_user_resize(w, h);
         sandbox
             .execute(&sync)

@@ -797,6 +797,7 @@ thread_local! {
 pub fn clear_generation_cache() {
     GENERATION_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_VIEW_CACHE.with(|cell| *cell.borrow_mut() = None);
+    HANDLE_RECT_CACHE.with(|cell| *cell.borrow_mut() = None);
     if let Ok(mut r) = DRAIN_RECORD.lock() {
         *r = None;
     }
@@ -983,6 +984,163 @@ pub(super) fn computed_style_by_handle(
                 serialize_computed_property_with_sibling(s, prop, Some(zero_style_system::sibling_position(doc, nid)))
             })
             .unwrap_or_default()
+    })
+}
+
+thread_local! {
+    /// s421：pending 视图布局 viewport——进程内 webview 布局 viewport 真值（shim 安装期
+    /// [`set_pending_layout_viewport`] 同步 config 宽高）。未同步（测试线程/未接线宿主）
+    /// 回落 M3 约定 1280×800（rect_bridge 同缺省）。thread_local 与视图槽同线程域——
+    /// host 回调仅在 js worker 单线程执行。
+    static PENDING_VIEWPORT: RefCell<(u32, u32)> = const { RefCell::new((0, 0)) };
+
+    /// s421：pending 视图 rect 表——handle 视图槽（[`HANDLE_VIEW_CACHE`]）同键下的
+    /// `NodeId(u64) → rect` 布局结果（纯值表）。同代际第二次查询起 O(1) 查表；键含
+    /// css/adopted/entries/shadow entries 级联源分量（同视图槽键理由）+ 视口宽高
+    ///（auto 几何随视口走——rect_bridge `RECT_LAYOUT_CACHE` 同键理由）。换代（导航/
+    /// 新注册）经 [`clear_generation_cache`] 清空。
+    static HANDLE_RECT_CACHE: RefCell<
+        Option<(
+            String,
+            usize,
+            usize,
+            usize,
+            usize,
+            u32,
+            u32,
+            Arc<str>,
+            Arc<str>,
+            Arc<Vec<(String, String)>>,
+            Arc<Vec<(String, String, String)>>,
+            HashMap<u64, (f32, f32, f32, f32)>,
+        )>,
+    > = const { RefCell::new(None) };
+}
+
+/// s421：进程内 webview 布局 viewport 真值装填——pending 视图布局与渲染管线同视口
+///（runner/浏览器进程内路径 shim 安装期调；多进程 renderer 走 rect_bridge 自有视口
+/// cell，不经此）。
+pub fn set_pending_layout_viewport(width: u32, height: u32) {
+    PENDING_VIEWPORT.with(|slot| *slot.borrow_mut() = (width, height));
+}
+
+/// s421：pending 视图 handle rect——`__zw_getBoundingClientRect` 对 `createElement`
+/// 产物（裸 handle `__n{n}` 身份，s395 `_zwRectIdent` 无 id 动态元素恒落此）在
+/// mutation pending 窗口（队列长 > applied 游标）内的真实几何。
+///
+/// CSSOM View：rect 读须先 update the style and layout steps（rect_bridge M3 同注）。
+/// 进程内 webview 的 rect 回调此前只读渲染后快照——load 事件经 `_defer` 于同 turn
+/// 派发（先于 apply+重渲染），embed/object 等动态元素在 load handler 里的
+/// offsetWidth/getBoundingClientRect 恒 0（embed-allowed-schemas 5F 根因）。
+/// 视图 = handle 视图槽（[`computed_style_by_handle`] 同槽同键：parse 基座 + 权威
+/// applier 重放 pending 区间 `[applied..count)` 物化 handle 链 + 全文档级联 + 固有
+/// 尺寸覆盖），布局 = `zero_layout_engine::LayoutEngine`（渲染管线同相位）+ rect
+/// 填表 = `HitTestCache::fill_layout_rect_snapshot`（生产渲染同语义）。
+///
+/// **跨批 handle 不解析**：nodes 表只覆盖本批 pending 区间；已 drain 物化进基座的
+/// handle（前批产物）返 None——宿主回调回落空串（= 旧行为）。s284 勘根的 clone-img
+/// attr 期望面雷区刻意不点亮：drain 后 img 几何仍由 selector 路径快照承载，本臂只在
+/// pending 窗口生效。
+///
+/// 视图槽填充复用 [`computed_style_by_handle`]（同键同视图，prop 查询值弃用——
+/// nodes/styles 是本函数取用面）；rect 表单槽缓存，同代际第二次查询起 O(1)。
+pub(super) fn pending_view_handle_rect(
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    view_gen: usize,
+    applied: usize,
+    handle: &str,
+    pending: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<(f32, f32, f32, f32)> {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
+    let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
+    let vw = if vw_raw == 0 { 1280.0 } else { vw_raw as f32 };
+    let vh = if vh_raw == 0 { 800.0 } else { vh_raw as f32 };
+    // 视图槽填充（同键命中零成本；重放只发生在换代分支）。
+    let _ = computed_style_by_handle(
+        html,
+        drain_gen,
+        style_version,
+        view_gen,
+        applied,
+        handle,
+        "width",
+        None,
+        pending,
+    );
+    HANDLE_VIEW_CACHE.with(|view_cell| {
+        let view = view_cell.borrow();
+        let (h, g, v, vg, ap, c, a, e, se, doc, nodes, styles) = view.as_ref()?;
+        // 防御键比对（视图槽换代竞态理论上同线程同步不可达；键漂移即弃读不误供给）。
+        if h != html
+            || *g != drain_gen
+            || *v != style_version
+            || *vg != view_gen
+            || *ap != applied
+            || **c != *css
+            || **a != *adopted
+            || **e != *entries
+            || **se != *shadow_entries
+        {
+            return None;
+        }
+        // 跨批（已 drain 物化进基座）handle——刻意不解析（见函数头注 s284 雷区）。
+        let nid = *nodes.get(handle)?;
+        let key = crate::hit_test::node_id_to_u64(nid);
+        // rect 表命中 → O(1) 查表。
+        let cached = HANDLE_RECT_CACHE.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .filter(|(ch, cg, cv, cvg, cap, cw, cht, cc, ca, ce, cse, _)| {
+                    ch == html
+                        && *cg == drain_gen
+                        && *cv == style_version
+                        && *cvg == view_gen
+                        && *cap == applied
+                        && *cw == vw_raw
+                        && *cht == vh_raw
+                        && **cc == *css
+                        && **ca == *adopted
+                        && **ce == *entries
+                        && **cse == *shadow_entries
+                })
+                .and_then(|(_, _, _, _, _, _, _, _, _, _, _, map)| map.get(&key).copied())
+        });
+        if cached.is_some() {
+            return cached;
+        }
+        // miss → 视图布局（渲染管线同相位）+ rect 填表（生产渲染同语义）。
+        let mut engine = zero_layout_engine::LayoutEngine::new(vw, vh);
+        let layout = engine.compute(doc, styles);
+        let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, styles);
+        let store = crate::rect_bridge::new_layout_rect_snapshot();
+        cache.fill_layout_rect_snapshot(&store);
+        let map = store.lock().ok()?.clone();
+        HANDLE_RECT_CACHE.with(|cell| {
+            *cell.borrow_mut() = Some((
+                html.to_string(),
+                drain_gen,
+                style_version,
+                view_gen,
+                applied,
+                vw_raw,
+                vh_raw,
+                Arc::clone(&css),
+                Arc::clone(&adopted),
+                Arc::clone(&entries),
+                Arc::clone(&shadow_entries),
+                map,
+            ));
+        });
+        HANDLE_RECT_CACHE.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|(_, _, _, _, _, _, _, _, _, _, _, map)| map.get(&key).copied())
+        })
     })
 }
 

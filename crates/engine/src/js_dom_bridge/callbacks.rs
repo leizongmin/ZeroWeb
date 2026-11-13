@@ -737,6 +737,39 @@ pub fn register_dom_callbacks(
             if sel.is_empty() {
                 return String::new();
             }
+            // s421：handle 身份（`__n{n}` 裸 handle——createElement 产物，s395
+            // `_zwRectIdent` 无 id 动态元素恒落此）pending 臂。load/async 事件经
+            // `_defer` 于同 turn 派发（先于宿主 apply+重渲染），动态元素在事件
+            // handler 里的 offsetWidth/getBoundingClientRect 此前恒 0（快照无该
+            // 元素 rect；CSSOM View：rect 读须先 update the style and layout
+            // steps）——pending 窗口内经 handle 视图（基座重放 pending 区间）现算
+            // 布局取真几何（[`computed_style_cache::pending_view_handle_rect`]）。
+            // drain 后不解析（跨批 handle 返 None 回落空串 = 旧行为）——s284
+            // clone-img attr 期望面雷区刻意不点亮：drain 后 img 几何仍由 selector
+            // 路径快照承载，本臂只在 pending 窗口生效。
+            // https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+            if sel.starts_with("__n") {
+                let snap = rs_html.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let mlist = rs_mut.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let style_version = mlist.len();
+                let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
+                let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
+                let applied = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+                if style_version > applied
+                    && let Some((x, y, w, h)) = super::computed_style_cache::pending_view_handle_rect(
+                        &snap,
+                        drain_gen,
+                        style_version,
+                        view_gen,
+                        applied,
+                        sel,
+                        || mlist.clone(),
+                    )
+                {
+                    return format!("{x},{y},{w},{h}");
+                }
+                return String::new();
+            }
             // selector → NodeId：live doc 优先（进程内 webview 常驻发布），
             // miss 回落查询快照 re-parse（与 __zw_query_match 同源逻辑）。
             let node_id = LIVE_QUERY_DOC.with(|slot| {
