@@ -280,9 +280,22 @@ fn is_invalid_enum_value(property: &str, value: &str) -> bool {
 ///
 /// 当前映射（CSS Text 3 §5.3）：
 /// - `word-wrap` → `overflow-wrap`（遗留别名，二者完全等价）
-fn canonical_property_name(property: &str) -> &str {
+pub(crate) fn canonical_property_name(property: &str) -> &str {
     match property {
         "word-wrap" => "overflow-wrap",
+        // css-fonts-4 §font-width-prop：font-width 为 font-stretch 的**新名**（同一属性、
+        // 同一 computed 值），font-stretch 为 legacy alias——ZW 存储槽 `style.font_stretch`
+        // 单字段。不 canonical 化前两名声明各占独立级联槽位写同一字段（终值 HashMap
+        // 迭代序硬币翻转），且 font-width 单独声明时主循环 apply 后继承填充循环发现
+        // `font-stretch` 槽「未声明」→ 父值覆盖（font-width-computed 全腿回初始值实证）。
+        // canonical 化后同槽位按 CascadeOrder（position）竞争，后声明胜。font-width
+        // 与 word-wrap 的差异：font-width 仍注册进 PropertyRegistry（decl_supported
+        // 尾门 `known_properties().contains` 驱动 CSS.supports/valid 语料，注销即全
+        // 拒），因此继承填充循环需显式跳过 canonical 别名（inheritance.rs 以本函数
+        // 比对）；直接 apply/validate/serialize 通道按原名接受（apply_advanced 双名
+        // 臂、validate 白名单、gCS 序列化臂）。
+        // https://drafts.csswg.org/css-fonts-4/#font-width-prop
+        "font-width" => "font-stretch",
         // CSS Logical Properties（sizing 族）：R5128 起不再在此 canonical 化——canonical
         // 化把映射钉死在 horizontal-tb（block-size→height），垂直书写模式经 converter 轴
         // 交换后落在行内轴（block-size 在 vertical-lr 应为物理宽，实证渲染为物理高 →

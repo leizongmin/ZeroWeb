@@ -145,6 +145,14 @@ pub struct ComputedStyle {
     pub font_family: Vec<String>,
     /// font-size 属性。
     pub font_size: LengthValue,
+    /// font-* 槽数学形 eval 的 font 相对单位基准（父级 computed font-size
+    /// px；css-properties-values-api #dependency-cycles-via-relative-units
+    /// tentative 口径——font 属性的 font 相对单位按父级字体解析，与
+    /// font-size 属性同基准防循环；font-property-unit-cycles 期望 parent
+    /// em 30 与自身 font-size 10 分离驱动）。inheritance 预应用段注入；
+    /// 独立 apply 调用（CSSOM 写面/CSS.supports 哨兵）无父上下文为 None
+    /// → eval 回落 [`Self::font_size`]。
+    pub parent_font_size: Option<f32>,
     /// font-weight 属性。
     pub font_weight: FontWeightValue,
     /// font-style 属性。

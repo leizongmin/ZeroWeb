@@ -1079,7 +1079,10 @@ pub fn parse_font_stretch(value: &str) -> Option<f32> {
         _ => value
             .strip_suffix('%')
             .and_then(|number| number.parse::<f32>().ok())
-            .filter(|percentage| percentage.is_finite() && *percentage > 0.0),
+            // css-fonts-4 §font-width-prop 文法 `normal | <percentage [0,∞]> |
+            // 关键字`：0% valid（font-width-computed round-trip 0% 腿驱动）、
+            // 负 % invalid。
+            .filter(|percentage| percentage.is_finite() && *percentage >= 0.0),
     }
 }
 

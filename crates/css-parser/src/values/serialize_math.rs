@@ -1016,6 +1016,43 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "width" | "text-indent" | "margin-top" | "margin-left" | "height" | "text-size-adjust" => {
             fold_math_specified(v, MathFoldKind::Length)
         }
+        // css-fonts-4 §font-weight-numeric / §font-width-prop：font-* 数值槽
+        // math 形 canonical 折叠（font-weight-valid `calc(100 + 100)` →
+        // `calc(200)`、font-width-valid `calc(100% + 100%)` → `calc(200%)`
+        // 语料驱动；plain number/percentage/关键字形 parse 失败 None 保留
+        // 原文零漂移）。font-width 为 font-stretch legacy alias（同槽同折）。
+        "font-weight" => fold_math_specified(v, MathFoldKind::Number),
+        "font-stretch" | "font-width" => fold_math_specified(v, MathFoldKind::Length),
+        // css-fonts-5 §font-size-adjust-prop 指定值 canonical 串化：ex-height
+        // 为初始 metric，串化剥离（`ex-height 0.5` → `0.5`/`ex-height
+        // from-font` → `from-font`/`ex-height calc(0.5)` → `calc(0.5)`——
+        // font-size-adjust-valid 语料钉面；裸 <number> 与 ex-height 前缀
+        // 等价）；其余 metric 保持前缀 + basis math canonical 折叠
+        //（`cap-height calc(0.5 + 1)` → `cap-height calc(1.5)`；sign 树形
+        // 不折叠保留原文，乘法重排挂账）。metric 前缀空白剥除不进 calc
+        // 内部切分；非 metric 两 token/单 token 形 None 保留原文零漂移。
+        // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+        "font-size-adjust" => {
+            let lv = v.to_ascii_lowercase();
+            let (metric, rest) = lv.split_once(char::is_whitespace)?;
+            if !matches!(
+                metric,
+                "ex-height" | "cap-height" | "ch-width" | "ic-width" | "ic-height"
+            ) {
+                return None;
+            }
+            let rest = rest.trim();
+            let folded = if rest == "from-font" {
+                rest.to_string()
+            } else {
+                fold_math_specified(rest, MathFoldKind::Number).unwrap_or_else(|| rest.to_string())
+            };
+            if metric == "ex-height" {
+                Some(folded)
+            } else {
+                Some(format!("{metric} {folded}"))
+            }
+        }
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }
@@ -1589,6 +1626,32 @@ mod tests {
             Some("calc(180deg)")
         );
         assert_eq!(fold_decl_specified("scale", "cos(0)").as_deref(), Some("calc(1)"));
+        // css-fonts-5 §font-size-adjust-prop：初始 metric ex-height 串化剥离
+        // + 其余 metric 前缀保持（font-size-adjust-valid 语料钉面）。
+        assert_eq!(
+            fold_decl_specified("font-size-adjust", "ex-height 0.5").as_deref(),
+            Some("0.5")
+        );
+        assert_eq!(
+            fold_decl_specified("font-size-adjust", "ex-height from-font").as_deref(),
+            Some("from-font")
+        );
+        assert_eq!(
+            fold_decl_specified("font-size-adjust", "ex-height calc(0.5)").as_deref(),
+            Some("calc(0.5)")
+        );
+        assert_eq!(
+            fold_decl_specified("font-size-adjust", "cap-height calc(0.5 + 1)").as_deref(),
+            Some("cap-height calc(1.5)")
+        );
+        // sign 树形不折叠保留原文（乘法重排挂账）；单 token/未知 metric 形
+        // None 保留原文零漂移。
+        assert_eq!(
+            fold_decl_specified("font-size-adjust", "cap-height calc(10 + (sign(20cqw - 10px) * 5))").as_deref(),
+            Some("cap-height calc(10 + (sign(20cqw - 10px) * 5))")
+        );
+        assert_eq!(fold_decl_specified("font-size-adjust", "0.5"), None);
+        assert_eq!(fold_decl_specified("font-size-adjust", "em 1.0"), None);
         assert_eq!(
             fold_decl_specified("rotate", "acos(-1)").as_deref(),
             Some("calc(180deg)")

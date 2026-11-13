@@ -1,6 +1,6 @@
 # CSS 子测试控制面
 
-**2026-11-13 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
+**2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
@@ -100,6 +100,113 @@ MTLength，`calc(10% * sibling-index())` 接受腿）+ fold_decl_specified 尺�
 size-adjust −1 桶闭环——四小回归全处置完毕；残挂账：gCS 通道无
 text-size-adjust computed 串化臂（computed 6F + interpolation 1F），见
 evidence 2026-11-13-text-size-adjust-percentage-slot）。
++font-* 数值槽 calc 接入批（g29：font-weight/font-size-adjust/font-stretch 三槽
+math 形接入 + parent_font_size 父级字体基准（css-properties-values-api
+#dependency-cycles-via-relative-units）+ **font-width 级联槽位分裂定谳修复**
+——font-width 与 font-stretch 各占独立级联槽位写同字段 `style.font_stretch`，
+继承填充循环把 font-stretch 判「未声明」用父值覆盖（font-width-computed 全腿
+回初始值实证）；canonical_property_name 收 font-width→font-stretch + 填充循环
+别名跳过（注册保留供 CSS.supports 尾门）。css-parser 侧：font-weight 连续
+`<number [1,1000]>`、parse_font_stretch 0% valid、fold_decl_specified 三槽
+接线；apply 侧：% 保持型 eval + Px 叶 Add/Sub 锚语义窄门 + calc 负 %
+解析期不 clamp/computed 钳 0。css-fonts 全量 2,375→**2,411P** 净 +36
+（font-width-invalid 8P 全页清零、font-width-computed 12→28P、
+font-weight-invalid 2P 全清）；unit-cycles 单页 5→**20P**（G1 直置 35 腿
+全绿）；单测 3,188/2,531 全绿；残余挂账：sign(20cqw) 容器实参+乘法重排
+串化 6F、bolder/lighter 相对权重表 42F、font-size-adjust-invalid 写面门
+57F、size-adjust 串化 14F、G2/G3 typed compute 75F、inline decl alias 腿
+1F，见 evidence 2026-11-14-font-slot-calc-parent-basis）。
++font-size-adjust 写面文法门批（g30：css-fonts-5 §font-size-adjust-prop
+——VALIDATED_PROPERTIES 19th + 文法门（整值 math 前置放行 / metric 前缀
+空白剥离 + basis 复检 from-font|非负数|math，不进 calc 内部切分；inf/nan
+is_finite 门拒；invalid 57 形——apply 链 parse splitn 结构虽拒，shim
+CSSOM store 不经 apply 回显原文即 Fail）+ fold_decl_specified 指定值
+串化臂（初始 metric ex-height 剥离、cap-height 等 metric 保持 + basis
+math canonical 折叠，sign 树形保留原文）；invalid 0P/57F→**57P/0F 全页
+清零**、valid 14→18P/1F（残 sign 乘法重排 1F）、computed 10P/10F 不变；
+css-fonts 全量 2,411→**2,472P** 净 +61 零回归、unit-cycles 20P 零漂移；
+单测 3,188/2,532 全绿；残挂账：computed 通道 from-font 解析刀（真实字体
+度量 0.5 vs 相对单位合成比 0.8 口径分离）+ calc 负数 computed 钳 0 +
+sign 容器实参，见 evidence 2026-11-14-font-size-adjust-write-gate；
+animations 插值通道 3+ 页（font-size-adjust/stretch-interpolation 等
+1F/页）并入桶 5 挂账）。同轮双 session 竞态记：对端 session 曾以
+「g29 遗留认领」入口写重复 g30 条目并暂存在途件，本 session 收敛取
+实现方账（evidence 同名文件），重复段已摘除——先手提交去碰撞。
++font-weight 相对权重表 css-fonts-4 边界（g31：resolve_relative_font_weight
+旧 css-fonts-3 400/600/800 边界整表更替为 §5.2 #relative-weights 表
+——bolder 350/550/900（≥900 保持原值）、lighter 100/550/750（<100 保持）。
+font-weight-computed 48→**56** +8P，css-fonts 全量 2,472→**2,480P** 净 +8
+零回归，单测 2,533 全绿。lighter-bolder 页 22F 定性转桶：页子元素经
+cloneNode 克隆，gCS fontWeight 空串（探针四变异钉面——克隆节点样式合成
+缺口，shim/桥面非 css face）；font-weight-matching 14F 转挂 @font-face
+描述符匹配算法桶（g32 归因定谳：ExtractedFontFace 已带 weight 描述符、
+face 请求已带 weightNum 注册，缺口在运行时字体键选择——font_load_bridge
+R2417 按 ≥600 二值粗体键塌缩，无 face 级 css-fonts-4 §5.4 匹配
+（font-weight-matching 页期望表 420→450 face 的 [400,500] 向上区间查找
+钉面）；架构面批：faces 注册表 + §5.4 desired→face 选择接入
+text_shaping/font_resolution，跨 3 crate）；installed-fonts 6F 宿主测试字体环境依赖定性不计缺口，
+见 evidence 2026-11-14-font-weight-relative-table）。
++lighter/bolder JS plain 通道臂（g31 续：克隆子树 gCS host face miss
+救回——lighter-bolder 页 22 腿 gCS 返空串，五轮探针切面定谳 cloneNode
+批量物化的克隆子件不入 HANDLE_VIEW_CACHE.nodes 表、无 selector 可走
+正置表回落，host 视图对该子树 face 盲；part01c `__zwPlainComputed`
+新增 font-weight 臂（继承走查 + zwFwResolved 父链递归查 css-fonts-4
+§5.2 表，invalid 声明视同无声明上行，css-wide 族回落 400，序列化对齐
+宿主 font_weight_str）+ part01 gCS 直取形 plain 回落白名单补
+font-weight 第 7 项（与 getPropertyValue 通用回落臂对齐，两臂对称）；
+lighter-bolder **0→22P 全页清零**，css-fonts 2,480→**2,502P**，见
+evidence 2026-11-14-bolder-lighter-relative-weight）。
++attr() font 槽写面拒收 + var 实参 deferred 形修复批（css-values 对
+trigfix **−13** 回归全案：**对称失败真相**——trigfix 时代
+parse_font_weight 域 [100,900] 百倍数使语料 attr helper expected 侧
+同样不可解析、双侧 400 相等即过，g29 连续域让 expected 真出值打破
+对称暴露 elem 侧缺陷；**洞 A** apply.rs font-*/font-size-adjust 写面
+分支豁免集补 value_has_substitution_function（attr()/var() 替换文本
+放行 store、computed 期重裁，此前只放行 math 形 → setProperty 整拒）
++ **洞 B** `attr(var(--x))` deferred 形预级联站当 IACVT 丢整条声明、
+cascade.rs 所称 4.75 步重裁站从未建成——attr.rs
+substitute_attr_values_deferring 变体（deferred 原文保留 + 实参部数
+档案）+ lib.rs 4.75 attr 重裁站（resolve_var_in_cascaded 后重扫，invalid
+/IACVT 丢声明、url 污染同 attr-security 口径）+ **结构冻结刀**
+（css-values-5：attr() 实参部数 parse 期定型，var 代入只填槽不新增
+实参分隔——AttrCall.arg_parts + substitute_attr_values_readjudicate
+按档案冻结；首版全量重评使 argument-grammar sub 8 翻红定谳补刀）。
+css-values 全量 3,920→**3,935**（+15 页级零回归：attr-all-types
+150→159、argument-grammar 8→14 唯余预存 sub 9；对 trigfix 3,933 净
+**+2** 反超）+ css-color 10,972 恒一 + css-fonts/四小套件页级零漂移
+（transitions 200/animations 238/transforms 229/easing 51）；单测
+css-parser 3,190/style-system 2,533 全绿；残挂账：argument-grammar
+sub 9（custom property 站 attr 语义）、attr-all-types 18F（<color>
+型别/type(*) 嵌套/non-existent 族），见 evidence
+2026-11-14-attr-font-write-gate-deferred；运行事故记：target-disk-guard
+三级清库撞在飞对账链（runner 二进制中途消失），三大件账完整落盘幸免，
+四小套件经 zw-g31-small4 补跑零漂移闭账——重型 make 入口与在跑链
+错峰纪律强化）。
++system-color-consistency 27F 全清批（g32：UA 表单系统色关键词化 S1' 值自洽
+端到端 + 写面门替换函数豁免补刀）——原 triage「关键词身份回声」假设经探针
+证伪（页为真值自洽比对：控件 gCS 读数 == inline 系统色计算值，scheme-aware
+双轮），实修三面：engine computed_style.rs border-color 简写聚合臂（四边独立
+currentcolor 解析 + CSSOM 最短形去重，此前读数缺位返 ''→ falsy 回落字面假象）
++ css-parser color.rs dark 面板扩键（buttonface/threedface/buttonhighlight→43/
+buttontext·buttonshadow→白/buttonborder·threed 族→117/field→32,33,36/
+fieldtext→白，与 shim _zwCCSystemDark 对齐，light 面板不变）+ style-system
+R1396 UA 默认关键词化（button→ButtonText/ButtonFace/ButtonBorder；input 按钮
+族 type=button|submit|reset|color→ButtonFace/ButtonBorder；文本族与
+select/textarea→Field；border-color longhand 后置覆写 border 简写色槽）。
+**solo 35P/27F→62P/0F 全页清零**；css-color 全量 **10,972→10,999 净 +27 逐页
+零回归**，values 3,935 精确持平/cssom 1,968 逐页字节级一致/四小 Pass 级零漂移；
+typed-om 首轮 −2 三页漂移全归因 g27/g28 写面门缺替换函数豁免（g24 洞 A 同型）
+——**补刀 apply.rs counter-increment/text-size-adjust 两门头部
+value_has_substitution_function 豁免**（typed-om 9,870→9,872 对 v14 基线恰归零：
+font-stretch 0% g29 红利 +1 抵 −3.14% 负 % typed-value 两层校验残挂 −1；
+css-lists g27/css-size-adjust g28 收口态逐页精确一致）。make test 3932P/7F
+（7F 在册组）/clippy 零告警/fmt clean/product-smoke EXIT=0（welcome 双宽
+struct PASS）+ product-smoke-legacy 42 fixture struct 0 失败（37-form-controls
+PASS）；UA 关键词化可见像素漂移为有意 spec 对齐（button bg 239→240/text
+8→0/border 118→128、input 按钮族 bg 白→240、dark 轮全面板化）；make reftest
+725 项 0 失败；探针页
+zz-probe-syscolor/zz-probe-forensic/zz-probe-none 已清出数据目录，见 evidence
+2026-11-14-system-color-ua-keyword。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -163,8 +270,13 @@ numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回�
 下轮周跑验 9,872 显影，见 evidence §9）+ 四小回归余账（properties-values-api
 −5 已闭；writing-modes −4 瞬态定性/lists −2 已由 g27 闭账/size-adjust −1
 已由 g28 闭账——四小全处置完毕）；g26 trig 型别门残余
-三桶（font-* 数值槽 calc 接入 30 腿——按 css-properties-values-api
-#dependency-cycles-via-relative-units 以父级字体为基准/registered custom
+三桶（~~font-* 数值槽 calc 接入 30 腿~~ **已由 g29 落地**——三槽 math 形 +
+父级字体基准 + font-width 槽位分裂修复，css-fonts 净 +36/unit-cycles 5→20P，
+残 sign(20cqw) 容器实参/~~bolder-lighter 权重表~~（**已由 g31+g31续
+全闭账**——Rust 表 computed +8P + JS plain 通道臂 lighter-bolder
+22F→22P 全页清零；matching 14F 转字体匹配桶、installed-fonts 6F 环境定性）/~~size-adjust invalid 写面
+门~~（**已由 g30 闭账** 57P）等七桶见 evidence
+2026-11-14-font-slot-calc-parent-basis §5/registered custom
 property typed compute 60 腿/rotate 槽裸 math 函数 + serialize ctx 25F +
 atan2 percentage 实参 eval）；之后组 F 布局桶（刀1 offset CSSOM + 刀2
 position-area + 刀3 anchor()
@@ -198,7 +310,8 @@ grid/anchor/g13-g23 各批增量；产物 coverage-2026-11-12：css 60,545/196,8
 四小回归 −12 待归因；见 evidence 2026-11-13-dc3-v14-reconciliation）；
 color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
-余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
+余长尾 ~39F，系统色 consistency 27F **已由 g32 闭账**）；light-dark/system-color
+建模残余（consistency 页闭、support/compute 页 dark FieldText 残挂账）；
 grid G2b（taffy detailed_layout_info，架构面）。
 
 **DC-2 g21 批完成（11-12，random 播种求值全链 Face 2）**：CSS Values 5
@@ -842,7 +955,7 @@ DC-3 终跑须最终 HEAD）。合并树验证：fmt EXIT=0、clippy(v8) PASS；
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
-| DC-2 按簇收敛 | 二十四批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70）；[fill/stroke gCS + currentColor 宿主解析](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)：v11 10,808 → 10,840（本批面 +3，compute 页清零）；[grid-line 组合形模型](evidence/2026-11-11-dc2-grid-line-composite-model.md)：css-grid v13 净 +26 零回归、锚页 94 → 115（fmt 收敛 9f025bc66）；[Typed-OM 相对色骨架 + sibling 求值](evidence/2026-11-11-dc2-typed-om-relative-skeleton.md)：css-color e2final 净 +34 零回归（本批 +2 页清零）+ grid var() 放行刀 typed-om 9,872P 复位；[position-area 语法面](evidence/2026-11-11-dc2-position-area-grammar-face.md)：anchorbase 7460P → 9893P 净 +2433F 逐页零回归（parsing 1800F/computed 633F 双页全清，撞车仲裁 grid G1 单实现双通道）；[color none 序列化保形 + hue echo](evidence/2026-11-11-dc2-color-none-serialization-face.md)：css-color 10,842 → 10,887 净 +45 零回归（rgb none 门影子优先/hsl-hwb srcBare 裸形跟随/lab hue echo 双锚，typed-om +4 为在库批兑现）；[RCS+var 入口放行](evidence/2026-11-11-dc2-color-var-origin-rcs-entry.md)：css-color 10,887 → 10,900 净 +13 零回归（var-origin 相对色 13F，形桶 + calc 桶，values/typed-om 持平）；[嵌套 relative 真逆直转](evidence/2026-11-11-dc2-color-nested-relative-true-inverse.md)：css-color 10,900 → 10,905 净 +5 零回归（oklab/oklch 嵌套 4 案 + pow 裸函数形 1 案，values 连带 +5，双 spawn 孤儿采纳）；[@position-try CSSOM 面](evidence/2026-11-11-dc2-position-try-cssom-face.md)：anchor 语料 9,893 → 10,182 净 +289 零回归（CSSOM 读面 +265、insertRule 写面 +24，parse/allowed-declarations 全翻，残余 1F 布局依赖）；[anchor 族声明面文法](evidence/2026-11-11-dc2-anchor-family-decl-face.md)：anchor 语料 10,182 → 10,455 净 +273 零回归（18 页清零：声明面文法桶 ~142F 全数兑现 + computed 五页 + order 行为页连带）；[offset CSSOM spec 化刀1](evidence/2026-11-11-dc2-offset-cssom-spec-face.md)：anchor 语料 10,455 → 10,485 净 +30 零回归（offsetParent spec 算法 + offsetLeft/Top 相对 padding edge，十六页 improved）；[position-area 区域定位布局刀2](evidence/2026-11-11-dc2-position-area-layout-face.md)：anchor 语料 10,485 → 10,549 净 +64 零回归（区域格矩阵单点下沉 + 两段式布局 pass，in-position-try 64 案单页全清）；[color 域外保形五修 + opacity 数学形读面](evidence/2026-11-11-dc2-color-out-of-gamut-opacity-face.md)：css-color 10,905 → 10,948 净 +43 逐页零回归（opacity-computed/out-of-gamut/mix-out-of-gamut 三页清零，跨流补刀合入批）；[anchor() inset 求值 + 双介入门布局刀3](evidence/2026-11-11-dc2-anchor-inset-gate-face.md)：anchor 语料 10,549 → 11,863 净 +1,314 逐页零回归（writing-modes-001 单页 1,296F 全清，三轮零漂移，inline/滚上下文双门语料实证）；[serialize 刀2 + 通用色通道 cq/sign 面 + round B=±∞ 策略表（g13）](evidence/2026-11-12-dc2-g13-serialize-fold-color-cq-round-step.md)：values 2,646 → 2,787 净 +141、color 10,970 → 10,972 净 +2，五套件合计净 +143 逐页零回归（clamp NaN 毒化暴露的 round ∞ 缺口同批兑现，FIXME types.rs:1420 清账） |
+| DC-2 按簇收敛 | 二十五批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70）；[fill/stroke gCS + currentColor 宿主解析](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)：v11 10,808 → 10,840（本批面 +3，compute 页清零）；[grid-line 组合形模型](evidence/2026-11-11-dc2-grid-line-composite-model.md)：css-grid v13 净 +26 零回归、锚页 94 → 115（fmt 收敛 9f025bc66）；[Typed-OM 相对色骨架 + sibling 求值](evidence/2026-11-11-dc2-typed-om-relative-skeleton.md)：css-color e2final 净 +34 零回归（本批 +2 页清零）+ grid var() 放行刀 typed-om 9,872P 复位；[position-area 语法面](evidence/2026-11-11-dc2-position-area-grammar-face.md)：anchorbase 7460P → 9893P 净 +2433F 逐页零回归（parsing 1800F/computed 633F 双页全清，撞车仲裁 grid G1 单实现双通道）；[color none 序列化保形 + hue echo](evidence/2026-11-11-dc2-color-none-serialization-face.md)：css-color 10,842 → 10,887 净 +45 零回归（rgb none 门影子优先/hsl-hwb srcBare 裸形跟随/lab hue echo 双锚，typed-om +4 为在库批兑现）；[RCS+var 入口放行](evidence/2026-11-11-dc2-color-var-origin-rcs-entry.md)：css-color 10,887 → 10,900 净 +13 零回归（var-origin 相对色 13F，形桶 + calc 桶，values/typed-om 持平）；[嵌套 relative 真逆直转](evidence/2026-11-11-dc2-color-nested-relative-true-inverse.md)：css-color 10,900 → 10,905 净 +5 零回归（oklab/oklch 嵌套 4 案 + pow 裸函数形 1 案，values 连带 +5，双 spawn 孤儿采纳）；[@position-try CSSOM 面](evidence/2026-11-11-dc2-position-try-cssom-face.md)：anchor 语料 9,893 → 10,182 净 +289 零回归（CSSOM 读面 +265、insertRule 写面 +24，parse/allowed-declarations 全翻，残余 1F 布局依赖）；[anchor 族声明面文法](evidence/2026-11-11-dc2-anchor-family-decl-face.md)：anchor 语料 10,182 → 10,455 净 +273 零回归（18 页清零：声明面文法桶 ~142F 全数兑现 + computed 五页 + order 行为页连带）；[offset CSSOM spec 化刀1](evidence/2026-11-11-dc2-offset-cssom-spec-face.md)：anchor 语料 10,455 → 10,485 净 +30 零回归（offsetParent spec 算法 + offsetLeft/Top 相对 padding edge，十六页 improved）；[position-area 区域定位布局刀2](evidence/2026-11-11-dc2-position-area-layout-face.md)：anchor 语料 10,485 → 10,549 净 +64 零回归（区域格矩阵单点下沉 + 两段式布局 pass，in-position-try 64 案单页全清）；[color 域外保形五修 + opacity 数学形读面](evidence/2026-11-11-dc2-color-out-of-gamut-opacity-face.md)：css-color 10,905 → 10,948 净 +43 逐页零回归（opacity-computed/out-of-gamut/mix-out-of-gamut 三页清零，跨流补刀合入批）；[anchor() inset 求值 + 双介入门布局刀3](evidence/2026-11-11-dc2-anchor-inset-gate-face.md)：anchor 语料 10,549 → 11,863 净 +1,314 逐页零回归（writing-modes-001 单页 1,296F 全清，三轮零漂移，inline/滚上下文双门语料实证）；[serialize 刀2 + 通用色通道 cq/sign 面 + round B=±∞ 策略表（g13）](evidence/2026-11-12-dc2-g13-serialize-fold-color-cq-round-step.md)：values 2,646 → 2,787 净 +141、color 10,970 → 10,972 净 +2，五套件合计净 +143 逐页零回归（clamp NaN 毒化暴露的 round ∞ 缺口同批兑现，FIXME types.rs:1420 清账）；[attr() var 实参 deferred 重裁站 + font 槽写面豁免 + bolder/lighter JS 通道臂（g31续）](evidence/2026-11-14-attr-font-write-gate-deferred.md)：values 3,920 → 3,935（attr-all-types +9/argument-grammar +6 回位，对 trigfix 净 +2 反超）、fonts 2,502（lighter-bolder 22F→22P 全页清零）、color 10,972 恒一、四小套件 360 页零漂移；[system-color UA 关键词化 + 写面门豁免（g32）](evidence/2026-11-14-system-color-ua-keyword.md)：css-color 10,972 → 10,999 净 +27 逐页零回归（system-color-consistency 35P/27F→62P/0F 全页清零）、typed-om 9,872 归位（g27/g28 门豁免补刀）、cssom/values/四小零漂移 |
 | DC-3 全量对账 | v14 周跑完成（run 43240558696），css 60,545/196,806（30.76%，对 11-11 净 +4,293） | [预备 runbook + 缺口地图](evidence/2026-11-11-dc3-prep-reconciliation-runbook.md) + [v14 对账](evidence/2026-11-13-dc3-v14-reconciliation.md)：三家 @ a17acfbc8a + corpus pins 核对 ✓；验收线 182,392 尚余 ~121.8k（结构判断维持）；分片核对——grid 精确一致/values/color 达阈值、**typed-om −43 = `.any.js`
 通道周跑从未发过（fetch 排除机制定谳，fetch-b 目标已修待周跑显影，见
 evidence §9）**；cssom −533 = serialize-values.html 页级崩已归因+已修复（window.length [Replaceable] descriptor 修正，探针 533P 精确回位）；四小回归 −5 = font-property-unit-cycles trig 型别门**已修复**（g26，5P 真实回位，见 [trig 型别门 evidence](evidence/2026-11-13-trig-typegate-font-unit-cycles.md)）；−4/−2/−1 已定位形态待修；zw_env_fails=0 |
@@ -880,7 +993,10 @@ keyword 身份端到端。序列（组E 五修落地后开）：css-parser Syste
 解析 → style-system used-time scheme-aware resolve（apply.rs:66-80 管道在）
 → engine UA 表单字面量 keyword 化 → shim 光表 keyword echo
 （part11-computed-color.js:199 FIXME 到期：UA form modeling 落地破光表
-''=='' 术）。预期全兑现 27F。
+''=='' 术）。预期全兑现 27F。**已闭账（g32，11-14）**：11-14 探针实证推翻
+原 S1 假设（页为真值自洽比对非回声；S2「结构性不可行」结论同被推翻——值
+对齐由 scheme-aware 双轮自洽达成，不依赖具体值），修法三面与终账见
+evidence 2026-11-14-system-color-ua-keyword 与 triage 11-14 重写版。
 **11-11 晚 color 组E 多流协作**：5a 流验证四修批期间，第三方会话（83/d3
 询认未回）在工作树补刀 fix4/5（powerless hue 收窄 + hsl floor 撤除）并扩写
 证据文件——5a 审 diff 后按仲裁认领合批（五修一提交，提交信息记协作来源）；

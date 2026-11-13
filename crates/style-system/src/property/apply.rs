@@ -624,6 +624,16 @@ pub fn apply_property_value_with_quirks(
                 style.font_weight = v;
                 return true;
             }
+            // math 函数形（css-fonts-4 §font-weight-numeric <number [1,1000]> +
+            // css-values-4 §10.5 calc-containing；font-property-unit-cycles
+            // `font-weight: calc(1 * tan(atan2(1em, 1px)))` 5 腿驱动——font 相对
+            // 单位按父级字体解析，合成期 style.font_size 已继承父值）。域检查
+            // 为 computed clamp 语义（css-fonts-4：calc 形值域 clamp——语料
+            // `calc(0)` valid、computed 1）。
+            if let Some(n) = eval_font_slot_math_number(value, font_slot_font_px(style)) {
+                style.font_weight = FontWeightValue::Absolute(n.clamp(1.0, 1000.0).round() as u16);
+                return true;
+            }
         }
         "font-style" => {
             if let Some(v) = values::parse_font_style(value) {
@@ -638,7 +648,9 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "font-size-adjust" => {
-            if let Some(v) = parse_font_size_adjust(value) {
+            // 字体 ctx 变体：basis math 形的 font 相对单位按父级字体 eval
+            //（font-property-unit-cycles 5 腿驱动，见 parse_font_size_adjust_with_font）。
+            if let Some(v) = parse_font_size_adjust_with_font(value, Some(font_slot_font_px(style))) {
                 style.font_size_adjust = v;
                 return true;
             }
@@ -1639,6 +1651,139 @@ fn font_size_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     padding_length_is_valid(raw, value)
 }
 
+/// font 槽数学 eval 的字体基准（px）：父级 computed font-size 优先
+///（css-properties-values-api #dependency-cycles-via-relative-units tentative
+/// 口径——font-* 属性 font 相对单位按父级字体解析，inheritance 预应用段
+/// 注入 [`ComputedStyle::parent_font_size`]）；独立 apply 调用（CSSOM 写面/
+/// CSS.supports 哨兵）回落自身 font_size、非解析形态兜底默认 16px。
+pub(crate) fn font_slot_font_px(style: &ComputedStyle) -> f64 {
+    if let Some(v) = style.parent_font_size {
+        return v as f64;
+    }
+    match style.font_size {
+        LengthValue::Px(v) => v,
+        _ => 16.0,
+    }
+}
+
+/// font 槽数学形 eval：<number> 型别门 + 父级字体基准（css-values-4 §10.5
+/// calc-containing + css-properties-values-api #dependency-cycles-via-relative-units
+/// ——font-* 属性的 font 相对单位按父元素字体解析，font-property-unit-cycles
+/// 30 腿驱动）。
+pub(crate) fn eval_font_slot_math_number(value: &str, font_size: f64) -> Option<f64> {
+    let expr = values::parse_math_function(value.trim())?;
+    if !values::calc_expr_is_number(&expr) {
+        return None;
+    }
+    values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))
+}
+
+/// font-stretch <percentage> 槽数学形 eval：% 保持型——Percentage 叶产出
+/// 百分数数值（`1%` → 1.0，对齐 parse_font_stretch 字面 % 存法），number 叶
+/// 产出数值；数学函数节点（tan/atan2 等，number 语义）走通用 eval、font
+/// ctx 解析实参内 font 相对单位。顶层算术树先过
+/// [`font_stretch_percentage_tree_valid`] 型别门（拒绝对长度叶与 % × %）。
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-stretch-prop
+/// https://drafts.csswg.org/css-values-4/#calc-containing
+pub(crate) fn eval_font_slot_math_percentage(value: &str, font_size: f64) -> Option<f64> {
+    let expr = values::parse_math_function(value.trim())?;
+    if !font_stretch_percentage_tree_valid(&expr, false) {
+        return None;
+    }
+    let ctx = super::parse::font_slot_calc_context(font_size);
+    eval_percentage_preserving(&expr, &ctx)
+}
+
+/// <percentage> 槽 calc 树型别门：跳过数学函数节点（UnaryOp/BinaryMathOp/
+/// Min/Max/Clamp/Mix/TreeCounting——实参域由 parse_math_function 独立型别
+/// 门管，如 `atan2(1em, 1px)` 长度比合法）后的可见叶只容 percentage/number；
+/// 乘法两侧不得同时含 % 叶（css-values-4 §10.5 乘法规则：<percentage> 只容
+/// 与 <number> 乘除）。
+///
+/// `percent_ctx` = 该子树位于 Add/Sub 且**兄弟侧含 % 叶**（css-values-4
+/// §10.5 型别统一：<percentage> 槽的 px+% 混合以 px 数值为锚归一——解析器
+/// 把 `-100%` 归一成 `0px - 100%`（font-width-valid `calc(-100%)` 钉面，
+/// WPT oracle computed 0%），故 Add/Sub 下与 % 同侧树的 Px 叶合法且按数值
+/// 参与；乘除/孤立 Px 仍拒（`calc(1px * 2)` 域外拒面回归钉）。
+fn font_stretch_percentage_tree_valid(expr: &values::CalcExpr, percent_ctx: bool) -> bool {
+    use values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::Number(_) => true,
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::Length(LengthValue::Px(_)) => percent_ctx,
+        CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(left, op, right) => {
+            match op {
+                // css-values-4 §10.5 乘法规则：% 只容与 number 乘（两侧不得
+                // 均含 % 叶）；乘除下子树脱离 % 锚上下文（px 叶拒）。
+                CalcOp::Multiply | CalcOp::Divide => {
+                    if has_percentage_leaf(left) && has_percentage_leaf(right) {
+                        return false;
+                    }
+                    if let CalcOp::Divide = op
+                        && has_percentage_leaf(right)
+                    {
+                        return false;
+                    }
+                    font_stretch_percentage_tree_valid(left, false) && font_stretch_percentage_tree_valid(right, false)
+                }
+                // Add/Sub：各侧以「另一侧含 % 叶」为 px 叶锚上下文。
+                CalcOp::Add | CalcOp::Subtract => {
+                    let l_pct = has_percentage_leaf(left);
+                    let r_pct = has_percentage_leaf(right);
+                    font_stretch_percentage_tree_valid(left, r_pct) && font_stretch_percentage_tree_valid(right, l_pct)
+                }
+            }
+        }
+        // 数学函数节点 opaque：实参域独立型别门。
+        CalcExpr::UnaryOp(..)
+        | CalcExpr::BinaryMathOp(..)
+        | CalcExpr::Min(..)
+        | CalcExpr::Max(..)
+        | CalcExpr::Clamp { .. }
+        | CalcExpr::Mix(..)
+        | CalcExpr::TreeCounting(_) => true,
+        CalcExpr::Time(_) => false,
+    }
+}
+
+fn has_percentage_leaf(expr: &values::CalcExpr) -> bool {
+    use values::{CalcExpr, LengthValue};
+    match expr {
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::BinaryOp(l, _, r) => has_percentage_leaf(l) || has_percentage_leaf(r),
+        _ => false,
+    }
+}
+
+/// % 保持型递归 eval（型别已由 [`font_stretch_percentage_tree_valid`] 裁定）：
+/// Percentage 叶产出百分数数值，数学函数节点走 number 语义通用 eval。
+fn eval_percentage_preserving(expr: &values::CalcExpr, ctx: &values::CalcContext) -> Option<f64> {
+    use values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::Number(n) => Some(*n),
+        CalcExpr::Length(LengthValue::Percentage(p)) => Some(*p),
+        // Add/Sub 下与 % 同树的 px 叶按数值参与（css-values-4 §10.5 型别统一
+        // 锚语义——`0px - 100%` 归一伪影，font_stretch_percentage_tree_valid
+        // 已裁上下文，此处直出数值）。
+        CalcExpr::Length(LengthValue::Px(v)) => Some(*v),
+        CalcExpr::BinaryOp(left, op, right) => {
+            let lv = eval_percentage_preserving(left, ctx)?;
+            let rv = eval_percentage_preserving(right, ctx)?;
+            match op {
+                CalcOp::Add => Some(lv + rv),
+                CalcOp::Subtract => Some(lv - rv),
+                CalcOp::Multiply => Some(lv * rv),
+                // css-values-4 §10.6：除零 IEEE 语义（±∞/NaN），后续 clamp 域收口。
+                CalcOp::Divide => Some(lv / rv),
+            }
+        }
+        other => values::eval_calc_with_context(other, ctx),
+    }
+}
+
 pub(crate) fn border_width_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     let raw = raw.trim().to_ascii_lowercase();
     match raw.as_str() {
@@ -1945,7 +2090,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 15] = [
+    const VALIDATED_PROPERTIES: [&str; 19] = [
         "transform",
         "rotate",
         "scale",
@@ -1983,6 +2128,26 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // tree-counting 前置门 + 通用 math 门后放行 store（% 槽 canonical
         // 折叠在 fold_decl_specified text-size-adjust 臂）。
         "text-size-adjust",
+        // font-* 数值槽写面文法门（css-fonts-4 §font-weight-numeric
+        // `<number [1,1000]>` + §font-width-prop `normal | <percentage [0,∞]> |
+        // 关键字`；font-width 为 font-stretch legacy alias）：invalid 语料
+        //（font-weight-invalid `auto`/`bold 900`、字面负 %）此前白名单外放行
+        // store 原文；math 形放行 store（通用 math 门已裁文法），字面/关键字形
+        // apply oracle 兜底拒面（parse_font_weight 域门/parse_font_stretch
+        // 域门）；canonical 折叠在 fold_decl_specified font-* 臂。
+        "font-weight",
+        "font-stretch",
+        "font-width",
+        // font-size-adjust 写面文法门（css-fonts-5 §font-size-adjust-prop
+        // `none | [<metric>]? [from-font | <number [0,∞]>]`，metric ∈
+        // ex-height|cap-height|ch-width|ic-width|ic-height）：invalid 页 57 形
+        //（`auto`/负数/`0.5 ex-height` 反序/未知 metric `em`/`ch`/`ic`/裸
+        // metric/`<metric> none`/双 basis 三 token/`none`·`from-font` 带后缀）
+        // 此前白名单外放行 store 原文——apply 链 parse_font_size_adjust
+        // splitn 结构虽拒，shim CSSOM store 不经 apply，e.style 回显原文即
+        // Fail。math 整值形前置放行（通用 math 门裁语法）、metric + math
+        // basis 形逐 token 文法裁决，eval 留 apply 链带 font ctx。
+        "font-size-adjust",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2147,6 +2312,13 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 已实现函数名单，未实现放行臂会先行误放 `reversed(chapter)`。
     // <https://drafts.csswg.org/css-lists-3/#counter-increment>
     if prop == "counter-increment" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——css-values-3 §3.3
+        // var() 在属性文法内恒语法合法，有效性延后 computed 期替换重裁（g24
+        // 洞 A 同型豁免；typed-om「Can set counter-increment to var()
+        // references」g27 门拒收回归根因）。
+        if value_has_substitution_function(v) {
+            return true;
+        }
         // 转义 ident（css-lists valid 语料 `a\ 8 9` 转义空格名）超 top-level
         // 空白分词文法面，保留既有放行（store 原文——该形语料序列化恒等）。
         // FIXME: custom-ident 转义序列词法挂账。
@@ -2162,6 +2334,12 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 在 fold_decl_specified）。
     // <https://drafts.csswg.org/css-size-adjust-1/#adjustment-property>
     if prop == "text-size-adjust" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——同 counter-increment
+        // 臂豁免（css-values-3 §3.3；typed-om var() references 组 g28 门拒收
+        // 回归根因），有效性 computed 期替换重裁。
+        if value_has_substitution_function(v) {
+            return true;
+        }
         if values::is_math_function_value(v) {
             return true;
         }
@@ -2175,6 +2353,57 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 .parse::<f64>()
                 .map(|n| n.is_finite() && n >= 0.0)
                 .unwrap_or(false);
+    }
+    // font-* 数值槽写面文法门（css-fonts-4 §font-weight-numeric +
+    // §font-width-prop）：math 形放行 store（font-property-unit-cycles calc 形
+    // 15 腿通道——apply 臂 eval 接线，eval fail-closed 由 apply oracle 拒），
+    // 非 math 形 apply oracle 兜底（parse_font_weight 域 [1,1000]/
+    // parse_font_stretch 关键字 + <percentage [0,∞)>——font-weight-invalid
+    // `auto`/`bold 900` 拒面同源）。替换函数形（attr()/var() 等）同样放行
+    // store 原文——oracle 对替换前文本恒拒（attr-all-types font-weight attr
+    // 形写面 -8 回归根因：g29 本分支只放行 math 形，g29 连续域使 expected
+    // 侧 `10` 可解析打破 trigfix 双侧对称 400，attr 文本被拒回落初始 400
+    // 即 Fail），computed 期级联替换后按属性文法重裁。
+    // <https://drafts.csswg.org/css-fonts-4/#font-weight-numeric>
+    // <https://drafts.csswg.org/css-fonts-4/#font-width-prop>
+    if matches!(prop.as_str(), "font-weight" | "font-stretch" | "font-width") {
+        if values::is_math_function_value(v) || value_has_substitution_function(v) {
+            return true;
+        }
+        let mut scratch = ComputedStyle::default();
+        return apply_property_value(&mut scratch, &prop, v);
+    }
+    // font-size-adjust 写面文法门（css-fonts-5 §font-size-adjust-prop
+    // `none | [<metric>]? [from-font | <number [0,∞]>]`，metric ∈
+    // ex-height|cap-height|ch-width|ic-width|ic-height）：整值 math 前置放行
+    //（语法由通用 math 门裁，eval 留 apply 链带 font ctx）；其余按首个空白
+    // 剥 metric 前缀后 basis 复检——basis 为 from-font、非负字面数或 math
+    // 函数。反序 number+metric、未知 metric（`em`/`ch`/`ic`）、裸 metric、
+    // `none`/`from-font` 带任何后缀、三 token 双 basis 全拒
+    //（font-size-adjust-invalid 57 形此前白名单外放行 store 原文——apply 链
+    // parse_font_size_adjust splitn 结构虽拒，shim CSSOM store 不经 apply，
+    // e.style 回显原文即 Fail）。空白剥前缀不进 calc 内部切分，
+    // `ex-height calc(1 * tan(atan2(1em, 1px)))` 型多空格 math basis 保真。
+    // 字面 CSS `inf`/`nan` 经 f64 parse 后 is_finite 门拒。
+    // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+    if prop == "font-size-adjust" {
+        let lv = v.to_ascii_lowercase();
+        // 替换函数形放行 store 原文——basisOk 对 `attr(…)`/`var(…)` 文本恒拒，
+        // 同 font-* 分支口径（computed 期级联替换后重裁）。
+        if value_has_substitution_function(&lv) {
+            return true;
+        }
+        let basis_ok = |t: &str| {
+            t == "from-font"
+                || t.parse::<f64>().is_ok_and(|x| x.is_finite() && x >= 0.0)
+                || values::is_math_function_value(t)
+        };
+        if lv == "none" || basis_ok(&lv) {
+            return true;
+        }
+        return lv.split_once(char::is_whitespace).is_some_and(|(m, rest)| {
+            matches!(m, "ex-height" | "cap-height" | "ch-width" | "ic-width" | "ic-height") && basis_ok(rest.trim())
+        });
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -3063,6 +3292,10 @@ mod t54_validate_decl_value_tests {
         // 转义空格名（`a\ 8 9`）超 top-level 分词面保留既有放行
         //（FIXME: custom-ident 转义序列词法挂账）。
         assert!(validate_decl_value("counter-increment", "a\\ 8 9"));
+        // 替换函数形放行 store（css-values-3 §3.3，computed 期重裁）。
+        assert!(validate_decl_value("counter-increment", "var(--A)"));
+        assert!(validate_decl_value("counter-increment", "attr(data-n)"));
+        assert!(validate_decl_value("counter-increment", "chapter var(--step)"));
         // css-wide 关键字裸形放行（Cascading 4 §7.3 上下文无关）。
         assert!(validate_decl_value("counter-increment", "inherit"));
     }
@@ -3082,8 +3315,71 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("text-size-adjust", "0%"));
         assert!(validate_decl_value("text-size-adjust", "calc(10% + 5%)"));
         assert!(validate_decl_value("text-size-adjust", "calc(10% * sibling-index())"));
+        // 替换函数形放行 store（css-values-3 §3.3，computed 期重裁）；负 %
+        // 字面形仍写面拒（css-size-adjust invalid 页 round-trip 断言）。
+        assert!(validate_decl_value("text-size-adjust", "var(--A)"));
+        assert!(validate_decl_value("text-size-adjust", "attr(data-zoom %)"));
         // css-wide 关键字裸形放行。
         assert!(validate_decl_value("text-size-adjust", "inherit"));
+    }
+
+    #[test]
+    fn font_size_adjust_write_gate() {
+        // css-fonts-5 §font-size-adjust-prop 写面文法门：invalid 语料 57 形拒
+        //——`auto`/负数/反序 number+metric/未知 metric（`em`/`ch`/`ic`）/
+        // 裸 metric/`<metric> none`/双 basis 三 token/`none`·`from-font`
+        // 带后缀/字面 inf·nan。
+        assert!(!validate_decl_value("font-size-adjust", "auto"));
+        assert!(!validate_decl_value("font-size-adjust", "-10"));
+        assert!(!validate_decl_value("font-size-adjust", "0.5 ex-height"));
+        assert!(!validate_decl_value("font-size-adjust", "em 1.0"));
+        assert!(!validate_decl_value("font-size-adjust", "ch 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "ic 1.0"));
+        for metric in ["ex-height", "cap-height", "ch-width", "ic-width", "ic-height"] {
+            assert!(!validate_decl_value("font-size-adjust", metric));
+            assert!(!validate_decl_value("font-size-adjust", &format!("{metric} none")));
+            assert!(!validate_decl_value("font-size-adjust", &format!("{metric} ex-height")));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} from-font 0.5")
+            ));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} 0.5 from-font")
+            ));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} none from-font")
+            ));
+        }
+        assert!(!validate_decl_value("font-size-adjust", "none none"));
+        assert!(!validate_decl_value("font-size-adjust", "none 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "none from-font"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font none"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font ex-height"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font from-font"));
+        assert!(!validate_decl_value("font-size-adjust", "inf"));
+        assert!(!validate_decl_value("font-size-adjust", "nan"));
+        assert!(!validate_decl_value("font-size-adjust", "ex-height inf"));
+        // valid 语料形：none / 非负数 / from-font / metric 前缀两 token /
+        // math 整值 + metric + math basis（多空格 calc 保真——空白剥前缀不进
+        // calc 内部切分）。
+        assert!(validate_decl_value("font-size-adjust", "none"));
+        assert!(validate_decl_value("font-size-adjust", "0.5"));
+        assert!(validate_decl_value("font-size-adjust", "from-font"));
+        assert!(validate_decl_value("font-size-adjust", "ex-height 0.5"));
+        assert!(validate_decl_value("font-size-adjust", "cap-height from-font"));
+        assert!(validate_decl_value("font-size-adjust", "EX-HEIGHT 0.5"));
+        assert!(validate_decl_value("font-size-adjust", "calc(0.5)"));
+        assert!(validate_decl_value("font-size-adjust", "ex-height calc(0.5)"));
+        assert!(validate_decl_value("font-size-adjust", "cap-height calc(0.5 + 1)"));
+        assert!(validate_decl_value(
+            "font-size-adjust",
+            "ex-height calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        // css-wide 关键字裸形放行。
+        assert!(validate_decl_value("font-size-adjust", "inherit"));
     }
 
     #[test]
@@ -3143,6 +3439,137 @@ mod t54_validate_decl_value_tests {
             Some((2, 5))
         ));
         assert_eq!(style.order, -3);
+    }
+
+    #[test]
+    fn font_slot_math_write_gate() {
+        // css-fonts-4 + css-properties-values-api
+        // #dependency-cycles-via-relative-units：font-* 数值槽 math 形以父级
+        // 字体为 font 相对单位基准——合成期经 [`ComputedStyle::parent_font_size`]
+        // 注入（inheritance 预应用段，font-property-unit-cycles 期望 parent em
+        // 30 与自身 font-size 10 分离驱动）；独立 apply（无父上下文）回落自身
+        // font_size。容器 30px → em 30/ex·cap 24/ch 15/ic 30（派生度量
+        // 0.8/0.5/1.0）。tan(atan2(y, x)) = y/x（弧度无精度损失面）。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(10.0);
+        style.parent_font_size = Some(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-weight",
+            "calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(30));
+
+        // 无父上下文（CSSOM 写面/CSS.supports 哨兵）→ 回落自身 font_size。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-weight",
+            "calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(30));
+
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-weight",
+            "calc(1 * tan(atan2(1ch, 1px)))"
+        ));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(15));
+
+        // css-fonts-4 §font-weight-numeric：calc 形值域 clamp（语料 calc(0)
+        // valid、computed 1；calc(-100) → 1）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "calc(0)"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(1));
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "calc(-100)"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(1));
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "calc(100 + 100)"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(200));
+        // 非 number 型别 math 形拒（fail-closed）。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-weight", "calc(1px + 2px)"));
+
+        // font-size-adjust <number> 槽：basis math 形走 with_font eval
+        //（tan 浮点尾差，f64 直存容差断言）。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-size-adjust",
+            "calc(1 * tan(atan2(1ex, 1px)))"
+        ));
+        assert!(matches!(
+            &style.font_size_adjust,
+            FontSizeAdjustValue::Adjust { metric: None, basis: FontSizeAdjustBasis::Number(n) }
+                if (n - 24.0).abs() < 1e-9
+        ));
+
+        // font-stretch <percentage> 槽：% 保持型 eval（1% × 30 → 30）。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-stretch",
+            "calc(1% * tan(atan2(1em, 1px)))"
+        ));
+        assert_eq!(style.font_stretch, 30.0);
+        // 纯 % 算术与字面零漂移。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-stretch", "calc(50% + 25%)"));
+        assert_eq!(style.font_stretch, 75.0);
+        // % × % 型别不符拒（css-values-4 §10.5 乘法规则）。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-stretch", "calc(50% * 50%)"));
+        // 绝对长度叶拒（<percentage> 槽不容 px）。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-stretch", "calc(1px * 2)"));
+
+        // css-fonts-4 §font-width-prop 文法 `normal | <percentage [0,∞]>`：
+        // 0% valid、负 % invalid；font-width legacy alias 同槽（known-properties
+        // 注册 → CSS.supports 前置门判真）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-stretch", "0%"));
+        assert_eq!(style.font_stretch, 0.0);
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-width", "234.5%"));
+        assert_eq!(style.font_stretch, 234.5);
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-width", "-100%"));
+        assert!(apply_property_value(&mut style, "font-width", "normal"));
+        // calc 负 %：解析期不 clamp（css-values-4 §10.5，font-width-valid 钉
+        // valid）、computed 钳 0（font-width-computed 0% 腿 oracle）。解析器
+        // 把 `-100%` 归一成 `0px - 100%`——Add/Sub 下与 % 同树的 px 叶按数值
+        // 参与（px 锚伪影）；乘除下孤立 px 仍拒（上 `calc(1px * 2)` 拒面）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-width", "calc(-100%)"));
+        assert_eq!(style.font_stretch, 0.0);
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-stretch", "calc(-100%)"));
+        assert_eq!(style.font_stretch, 0.0);
+
+        // font-* 写面文法门：invalid 语料拒（font-weight-invalid 页形）。
+        assert!(!validate_decl_value("font-weight", "auto"));
+        assert!(!validate_decl_value("font-weight", "bold 900"));
+        assert!(!validate_decl_value("font-stretch", "-100%"));
+        // math 形放行 store（apply 站 eval）。
+        assert!(validate_decl_value("font-weight", "calc(0)"));
+        assert!(validate_decl_value("font-stretch", "calc(100%)"));
+        // css-fonts-4 §font-weight-numeric 域外拒。
+        assert!(!validate_decl_value("font-weight", "1001"));
+        // 替换函数形放行 store 原文（attr-all-types font-weight attr 形写面
+        // -8 回归根因钉面：oracle 对替换前文本恒拒，computed 期级联替换后
+        // 重裁）。
+        // https://drafts.csswg.org/css-values-5/#attr-notations
+        assert!(validate_decl_value("font-weight", "attr(data-foo type(<number>))"));
+        assert!(validate_decl_value("font-weight", "attr(var(--x))"));
+        assert!(validate_decl_value("font-weight", "attr(data-foo number)"));
+        assert!(validate_decl_value("font-stretch", "attr(data-foo wdth)"));
+        assert!(validate_decl_value("font-size-adjust", "attr(data-foo type(<number>))"));
     }
 
     #[test]

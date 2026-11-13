@@ -853,9 +853,13 @@ pub fn parse_font_weight(value: &str) -> Option<FontWeightValue> {
         "bolder" => Some(FontWeightValue::Bolder),
         "lighter" => Some(FontWeightValue::Lighter),
         s => {
-            let w: u16 = s.parse().ok()?;
-            if (100..=900).contains(&w) {
-                Some(FontWeightValue::Absolute(w))
+            // css-fonts-4 §font-weight-numeric：<number [1,1000]>（连续 number，
+            // 非 100 倍数合法——font-weight-valid 语料 `1`/`1000`/`101`/`150.25`
+            // 驱动；math 函数形走 apply 层 eval 接入，此为字面 number 面）。
+            // 存储为 u16 round；非整数串化保真挂账（Absolute(u16) 既有结构）。
+            let w: f64 = s.parse().ok()?;
+            if w.is_finite() && (1.0..=1000.0).contains(&w) {
+                Some(FontWeightValue::Absolute(w.round() as u16))
             } else {
                 None
             }

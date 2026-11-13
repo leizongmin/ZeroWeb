@@ -922,6 +922,10 @@ mod r5333_flex_infinite_grow_tests;
 /// overflow visible 自动最小保留、row 轴 cross 域既有行为守卫
 ///（fieldset-as-item-overflow）。
 mod r5334_flex_scroll_item_min_tests;
+/// R5517（CSS2 §10.4）纯文本 float 收缩值 min/max-width 交叉约束钳锚——驱动案
+/// css-sizing/box-sizing-content-box-003 ref 腿（float min-width:250px 被词宽收缩
+/// 覆盖回 ~10px，双 float 应并排填满 500px 容器）。
+mod r5517_float_minmax_clamp_tests;
 /// t-zchip（css-flexbox-1 §9.2.E）flex 容器内 block 子项 flex base size 探测量得
 /// min-content（chips 竖排）而非 max-content——GitHub trending nav.subnav 塌缩回归。
 mod t_zchip_flex_block_nav_tests;

@@ -2,46 +2,211 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 425 收口（seltouch 重归因轮 + 表格池跨流
-复验，零源码改动；账本
-evidence/2026-11-14-m2s425-seltouch-reattribution-tablepool-reverify.md）
-——**seltouch 施工候选除名转挂账（归因修正）**：勘根下探修正 s424
-「runner M3 注入面」单面定性——真实阻塞为双面：①**渲染流 listbox 行
-渲染面（硬前置）**：select 内 option 布局盒抑制谓词
-`is_suppressed_select_control_child`（layout-engine/tree.rs:2818，
-R1679+s387 同 gate，kill-switch ZW_SELECT_SUPPRESS_OPTIONS）**不分
-single/multiple 形态** → `<select multiple>` option 无布局盒 → rect 桥
-快照无键（rect_bridge.rs:121 逐有 node_id 盒填表）→ shim gBCR 零 rect
-→ runner resolve_pointer_target best-scan width>0&&height>0 门
-（testharness.rs:11639）跳过 option → 命中回落 SELECT，click 派发不在
-option；②**engine option 激活臂**：`_zwHasOwnActivationBehavior`
-（part03.js:17455）无 OPTION 停靠位 + post-activation 段无 act:option
-分支——即使命中落到 option 也不选中。**M3 touch 注入面排除**（推翻
-s64/s386/s424 一脉「touch 注入通道缺席」归因）：corpus 三断言只查
-option.selected 状态；runner Actions touch 指针标签透传 composed click
-无 pointerType 门（part06.js:19710 仅隐式捕获臂，19722 起 click 组合
-照常）——selection 断言不依赖 touchstart/touchend。语义参照在场：host
-plan_option（page-runtime/html_actions.rs:440）multiple→toggle 不清
-他人 + script_set_option_selected（script_gen.rs:439）content attribute
-写面与语料三断言逐条吻合；engine 臂方案定型在案（OPTION 停靠位 +
-act:option 分支 gate `_zwUaDispatch===true` 镜像 act:button 先例 +
-toggle 镜像 plan_option + input/change 派发 SELECT 镜像
-`__zw_select_key_action` 形），渲染面到货后施工。与 s388
-multiple-resize 判例同位同源（同一抑制谓词不分形态，s388 判例「任一
-单独施工不能翻绿」）——seltouch 与 multiple-resize 共享渲染面首件；
-差异 = 渲染面落地后本车道尚需 engine 臂第二刀才翻绿。**表格池跨流
-复验零漂移**：渲染流 R5516（d2c3897da）到货后 runner 重建自 HEAD
-（test-guard 包裹 build 46s exit 0），solo colspan **2F**（
-`expected 53 but got 51.99985` 逐字同 s424）/ rowspan-0 **1F+1P** /
-rowspan-0-quirks **1F+1P**（clientHeight `expected >20 got 20`）——
-R5516 匿名 cell margin 面不波及本池三键，域计数零位移（在册红维持
-s424 终态 202F+13T / 201F+14T 口径）。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：渲染流 listbox
-形态 carve-out 到货 → 施工 engine act:option 臂（solo seltouch +
-the-select-element 目录回归 + 全域 sweep ×2 join 对 s424 双基线
-/tmp/s424/pairs-{1,2}.txt）；其余候选维持挂账待触发（dialog R-s31 簇/
-img density/embed sizing face 到货复验；门决策后 video P1+P2 或簇 D
-A2 分诊续）。
+**状态**: Active——M2 切片 432 收口（links 域 a/area target=_blank aux
+臂施工轮，**T 池 4 键全解挂，stable-P +34 零消失**；账本
+evidence/2026-11-14-m2s432-anchor-target-blank-aux-context.md）——shim
+JS 三刀（零 Rust 改动）：①part03.js `_zwAnchorActivate` `_blank` 臂
+（target own-expando→attr→`<base>` 回落 + rel 语义矩阵 spec window
+opening steps + `_zwLoadIframeEntry('__zwAuxAnchor:<seq>')` 合成 + 瞬态
+激活消费；static/IDL 双 href 形）；②part01.js `_zwRunIframeScripts` aux
+形参注入（flags.aux 项形参表追加 `opener`/`close` 快照，非 aux 逐字节
+不变——R206 裸标识符只达形参表，links 端点裸 `opener` 落宿主 globalThis
+undefined → ReferenceError 死于 postMessage 前是 implicit_noopener 双文件
+26 子测挂的根因；form 端点 `window.opener` 限定名故 s431 不暴露）；③
+part06.js `__zw_dispatch_event` 指针 click 锚激活臂（派发尾 A/AREA 跑
+`_zwAnchorActivate`，门 = pointerType 在场 ∧ pointerId≠−1——键盘合成
+click（pointerId −1）与 webdriver 折叠 click（R108 pointerType null，
+激活归宿主 anchor_click_target 管线）均不越界；修复前 Actions 指针 click
+事件序全齐（po,mo,mo,ck,body-ck）而激活臂不跑 → useractivation mouse
+臂挂 + promise_test 串行阻塞后续 area 两子测）。验证：25 part 拼装 OK
+（153,625 行）；release 重建 exit 0；solo 恰集 ×5 全绿（implicit×2 +
+rel-clearing exit 0 ×3 + useractivation 4/4P + 探针双 P）；全域 sweep ×2
+终验（探针 7 文件全删后）stable join 对 s431 组合态双基线——**stable-P
+8274→8308（+34 零消失：implicit 13+13 + rel-clearing 4 + useractivation
+4）/ stable-T 8→2（−6：4 目标文件键 + select-event/focus-dynamic 在册
+flake 翻绿不入账）/ stable-F 200→204（+4 customizable-select home-end
+簇 D 跨轮翻红，与施工面零交集）/ 沾染 2→1（C-NEW 0）**。**挂用户门
+维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：s433
+红池分诊续（残余 stable-T 2 键 = 簇 D 家族；门决策后 video P1+P2 或
+簇 D A2）；window.open 真弹窗链评估轮（s431 defer 项）；dialog R-s31
+簇/img density/embed sizing face 到货复验。**组合态整验（他流两笔合入
+后重跑）**：editing ip M2 壳族三臂（0ee05d644，part01f.js）+ css
+system-color（349a891ed）合入交付树后全链重跑——拼装 OK（153,829 行）+
+release 重建 exit 0 + solo ×6 全绿 + sweep ×2 join **stable-P 8308 逐键
+零漂移（+34 集合恒等）**，F/T 差异全收敛在簇 D 家族成员跨轮轮换，到货
+零账面位移。
+
+> **▶ 承前（2026-11-14 M2 切片 431 收口）——form target=_blank aux
+> 上下文施工轮（6T 全解挂，稳定红面 214→207）**：账本
+> evidence/2026-11-14-m2s431-form-target-blank-aux-context.md。原 Active
+> 段留档——四文件五刀：①part04.js S4J ⑤b base target 回落（form 无
+> target 属性时 base target 参与 navigable 选择，rel-base-target 钉面）；
+> ②part04.js `_blank` 臂（rel 语义矩阵按 spec window opening steps——
+> noopener 强制=显式 noopener/noreferrer 或无显式 opener、referrer 送达=
+> 非 noreferrer；合成 aux entry 复用 `_zwLoadIframeEntry` 全链，POST 附
+> method/body/headersWire multipart boundary 保真；提交后消费瞬态激活）；
+> ③part01.js finish referrer flags 预置（noreferrer→''，缺省父 href
+> 不变）；④part01.js aux opener/close 预置（opener 顶层 win 引用/null=
+> 强制 + close 无操作消 endpoint TypeError 双层上报逸出）——③④先于子
+> 文档脚本执行落位（finish 内同步执行的时序约束，flags 是唯一预置通道）；
+> ⑤py_routes `route_form_target_request_header`（镜像 upstream helper
+> content-type 门 + BroadcastChannel 回投，注册于非 GET 兜底门之前）+
+> runner 单测双臂。勘根定性：6T=5 engine（rel×4+useractivation，根因 ⑤b
+> 无 `_blank` 臂）+ 1 runner 端点仿真缺位（.py 不执行非 engine 缺陷）。
+> 验证：25 part 拼装 node --check OK（153,473 行）；runner release 重建
+> exit 0；solo 恰集六文件全绿（rel×4 各 7P + useractivation 3P 三触发臂
+> + request-header 1P）；全域 sweep ×2（8484 键/轮）join 对 s430 双基线
+> ——**stable-F 200=200 / stable-P 8242→8274（+32 零消失，全落目标目录）
+> / stable-T 14→7（−7）/ 沾染 0→1**（detailed.optional 双轮态分裂翻入，
+> 簇 D 在册家族时序闪变，与施工面零交集）。本轮 join 首跑假零漂移（脚本
+> cur 行误指旧基线 pairs）由 headline 三数与恰集矛盾揭破——教训入账本。
+> **组合态整验（429 打断恢复轮）**：pull --rebase 合入他流三笔（editing
+> v3.2 / css bolder-lighter / css attr()，均触 part01.js 共享面）后终稿
+> 树全链重跑——solo ×6 逐键保真 32P 零红 + ut2/clippy 重跑 exit 0 +
+> sweep ×2 join 对 s431 双基线 **F/P 双桶逐键零漂移**；T 桶 7→8 与沾染
+> 1→2 全落在册 flake 族（select-event/focus-dynamic 负载闪变 solo ×2
+> 定谳 + home-end.optional 簇 D 翻转），到货零账面位移。**基线移交**：
+> 本轮（s432）join 已改用 /tmp/s431/pairs-{3,4}.txt。**残留记账**：
+> form-target-iframe/multi-globals 不入 runner 语料（skip 规则，零账面
+> 影响）；POST-to-static 兜底=net-infra 面；window.open 真弹窗链 defer
+> （s432 下一步转评估轮候选）。
+
+> **▶ 承前（2026-11-14 M2 切片 430 收口）——engine act:option 臂施工
+> 轮（双刀合龙，seltouch 稳定翻绿，稳定红面 215→214 首个真实解挂）**：
+> 账本 evidence/2026-11-14-m2s430-option-activation-arm.md。原 Active
+> 段留档——part03.js 单文件两处（R5530）：①`_zwHasOwnActivationBehavior`
+> OPTION 停靠位（nearest 止步，closed 形态 option 无布局盒天然不入，激活
+> 面与 s428 carve-out listbox 判据精确对齐）；②dispatch post 段
+> act:option 分支（gate `_zwUaDispatch===true` 镜像 act:button；
+> `_zwOptNearestSelect` 无归属不激活 + own disabled 门（FIXME
+> optgroup/fieldset 继承链）；toggle 经 option.selected IDL setter——
+> R3909 ask-for-reset 自带形态分零新增逻辑；实际翻转才派 input+change
+> 到 SELECT 镜像 `__zw_select_key_action` 派发形）。验证：25 part 拼装
+> node --check OK；solo 三连（seltouch 1P 翻绿 6 断言全过 /
+> display-inherit 3/3P s387 回归清 / multiple-resize 1F 同形如预判）；
+> 目录回归 (key,state) 级差异 12 行全落两处（seltouch F→P + home-end 簇
+> D 家族 file 级→8 子测级表示漂移红位不变）；全域 sweep ×2 join 对
+> s429 双基线——stable-F 202→200 / stable-T 13→14 / stable-P
+> 8239→8242 / 沾染 0：seltouch F→P 双轮稳定（解挂），detailed.optional
+> F→T 桶内重排（簇 D 在册家族），checkable 沾染双轮自愈回 stable-P
+> （反证 s429 时序归因）。总口径稳定红 214（200F+14T）。基线移交
+> s431 用 /tmp/s430/pairs-{1,2}.txt。挂用户门维持不变。
+
+> **▶ 承前（2026-11-14 M2 切片 429 收口）——五笔他流到货组合态整验轮
+> （零源码改动）**：账本
+> evidence/2026-11-14-m2s429-arrivals-combined-state-reverify.md。原
+> Active 段留档——s428 窗口累计 5 笔到货（渲染 ac2566689 font-weight
+> 相对权重表 + 3df4f287a docs；editing d1d418daf insertParagraph 壳三族 +
+> bdbe581a6 strike 判向 + 65b06cbba 壳尾重开 v3.1），与本域四面零文件
+> 交集，runner 重建自 HEAD 21d097d93（guarded 1m33s）→ 全域 sweep ×2 →
+> stable-set join 对 s428 双基线——稳定三桶逐键零漂移（stable-F 202=202 /
+> stable-T 13=13；stable-P 8241→8239 的 −2 = 在册 flake 键
+> checkable-active-onblur-with-click following-label 2 子测转沾染：同二
+> 进制双轮异态 r1 2P / r2 2F = 时序非代码，到货零输入/指针面交集，
+> parent-label 2F 在册稳定红未动）。口径：稳定红 215（202F+13T）不变，
+> 沾染桶 0→2。基线移交 s430 用 /tmp/s429/pairs-{1,2}.txt。挂用户门维持
+> 不变。
+
+> **▶ 承前（2026-11-14 M2 切片 428 收口）——select listbox 形态
+> carve-out 施工轮（四面 +92/-1）**：commit 21d097d93；账本
+> evidence/2026-11-14-m2s428-select-listbox-form-carve-out.md。原 Active
+> 段留档——**归属修正**：s425 曾将 listbox carve-out 保守归渲染流；复核
+> s387（7a90cb732，本车道 style-system+layout-engine 三面同 kill-switch）
+> 确认面归属跟 driving corpus 走，carve-out 归位本车道并施工：listbox
+> 判据（HTML 渲染规范 §the-select-element-2：`multiple` 在场或 `size`
+> 解析值 >1）+ gate `ZW_SELECT_LISTBOX_FORM`（default-on，`=0` 回退 s387
+> 形态盲抑制）合入四面——tree.rs 抑制臂放行（谓词 gate 合入版 pub 复用）
+> + collect_items Path A 谓词放行 + style-system UA 注入 option/optgroup
+> display:block（谓词同判据本地副本，不反向依赖 layout-engine）+ engine
+> paint_select_value listbox 形态不绘单值标签；s387 display:inherit hook
+> 刻意不动（上游 gCS(option)=contents 语义本就 form-agnostic，其
+> multiple-select 子测即现成回归面）。验证：check/fmt/clippy(-D)/release
+> build 清；三 solo 如预判（display-inherit 3/3P 回归清／resize 1F ③④
+> 不可达维持／seltouch 1F 待引擎臂）；探针实锤 UA 注入 + option 几何非零
+> （scroll overflow 记账系独立缺失面，零账面影响）；目录回归 stable=328
+> diff=0；product-smoke + legacy exit 0；全域 sweep ×2 join 对 s427 双
+> 基线——**stable-P 8241=8241 零动**，唯一 delta = 簇 D flake 键
+> detailed.optional T→F 表示漂移（三证归因非本轮引入：裸 select 无
+> multiple/size 谓词休眠 + s424 旧二进制已现同一 F 表示 + 病根 4 pending
+> 恒定），总病根口径不变；join 结论经两次独立 r2 全程跑逐字复核一致。
+> 他流到货挂账：sweep 运行窗口 main 落四笔（bdbe581a6/d1d418daf/
+> ac2566689/3df4f287a，零文件交集、pre-arrival 树孤立归因保住），组合态
+> 复验移交 s429。挂用户门：GB-20261114-VIDEO + GB-20261031（簇 D）+
+> s137 维持。
+
+> **▶ 承前（2026-11-14 M2 切片 427 收口）——组合态全域复验轮（零源码改动）**：账本
+> evidence/2026-11-14-m2s427-combined-state-full-sweep.md。原 Active 段留档——
+> **状态**: Active——M2 切片 427 收口（组合态全域复验轮，零源码改动；
+> 账本 evidence/2026-11-14-m2s427-combined-state-full-sweep.md）——s424
+> 全域 sweep 后 main 落三笔他流变更（R5516 匿名 cell margin d2c3897da /
+> PR #301 navigator 共享面 a46a05e03 / css-fonts calc 298f54c14），本域
+> 8458 键组合态计数首次整验：runner 重建自 HEAD（guarded 47.8s）→ 全域
+> sweep ×2 → stable-set join 对 s424 双基线——**零漂移零翻转**（stable-F
+> 201=201 / stable-P 8241=8241 集合逐键相同；唯一 delta = 簇 D flake 键
+> select-home-end-pagedown-pageup-detailed.optional s424 沾染 F/T 双态 →
+> s427 双轮稳定 T，记账桶不变）；s427 raw 双轮收敛同 201F+14T（沾染 1→0，
+> 簇 D 家族本轮无闪变）。总口径 **201F+14T 不变**。**基线移交**：后续
+> 施工轮 join 改用 /tmp/s427/pairs-{1,2}.txt（双轮收敛沾染 0）。**挂用户
+> 门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：与
+> s425 相同等待面——渲染流 listbox 形态 carve-out 到货 → 施工 engine
+> act:option 臂（solo seltouch + the-select-element 目录回归 + 全域
+> sweep ×2 join 对 s427 双基线）；dialog R-s31 簇/img density/embed
+> sizing face 到货复验；门决策后 video P1+P2 或簇 D A2 分诊续。
+
+> **▶ 承前（2026-11-14 M2 切片 426 收口）——styleerr 弃案复核轮（零源码改动）**：账本
+> evidence/2026-11-14-m2s426-styleerr-reconfirm.md。原 Active 段留档——
+> 池余标签「s164 FIXME（styleerr）」触发候选再勘根，独立重推到 s414
+> 证据链后**维持弃案判决**：①上游分歧非缺口（wpt-metadata live 复核
+> style-error-01 唯一条目 = crbug 1232491，error 语义面无全绿引擎；
+> CSSOM import 失败 → 父 sheet 照常 load 系 spec 一致语义、全引擎同态）；
+> ②两案互斥（style-load-after-mutate 全引擎绿 load 语义 vs
+> style-error-01 error 语义）；③s426 新增评估**404/MIME 失败类区分构形**
+> （`_zwSsVisitCss` settle 值携带失败类 `error:http`/`error`——404 类保
+> load、MIME 类翻 error，两案可同时绿）并**弃置**：语料形合而规不合——
+> 上游期望本身 stale，单引擎特设事件规则与 spec 一致语义相悖，不为翻键
+> 偏离 spec（s392 navigation M3 排除域同款判决逻辑）。再开锚不变
+> （crbug 1232491 收敛或单案语料面）。**池标签修正**：归因收口枚举
+> 「s164 FIXME（styleerr error 事件臂）」→「s414 分歧定谳弃案（上游分歧
+> crbug 1232491 + 两案互斥；s426 复核维持，404/MIME 区分构形已评估
+> 弃置）」——s426 为最后未定谳标签关闭轮，池确认无再推导空间。组合态
+> 漂移补记：PR #301 navigator（part02.js 共享面）合并后 drift solo
+> （button-click-submits 12/12、toBlob.jpeg/png 1/1）零漂移。
+
+> **▶ 承前（2026-11-14 M2 切片 425 收口）——seltouch 重归因轮 + 表格池
+> 跨流复验（零源码改动）**：账本
+> evidence/2026-11-14-m2s425-seltouch-reattribution-tablepool-reverify.md。
+> 原 Active 段留档——
+> **状态**: Active——M2 切片 425 收口——**seltouch 施工候选除名转挂账（归因修正）**：勘根下探修正 s424
+> 「runner M3 注入面」单面定性——真实阻塞为双面：①**渲染流 listbox 行
+> 渲染面（硬前置）**：select 内 option 布局盒抑制谓词
+> `is_suppressed_select_control_child`（layout-engine/tree.rs:2818，
+> R1679+s387 同 gate，kill-switch ZW_SELECT_SUPPRESS_OPTIONS）**不分
+> single/multiple 形态** → `<select multiple>` option 无布局盒 → rect 桥
+> 快照无键（rect_bridge.rs:121 逐有 node_id 盒填表）→ shim gBCR 零 rect
+> → runner resolve_pointer_target best-scan width>0&&height>0 门
+> （testharness.rs:11639）跳过 option → 命中回落 SELECT，click 派发不在
+> option；②**engine option 激活臂**：`_zwHasOwnActivationBehavior`
+> （part03.js:17455）无 OPTION 停靠位 + post-activation 段无 act:option
+> 分支——即使命中落到 option 也不选中。**M3 touch 注入面排除**（推翻
+> s64/s386/s424 一脉「touch 注入通道缺席」归因）：corpus 三断言只查
+> option.selected 状态；runner Actions touch 指针标签透传 composed click
+> 无 pointerType 门（part06.js:19710 仅隐式捕获臂，19722 起 click 组合
+> 照常）——selection 断言不依赖 touchstart/touchend。语义参照在场：host
+> plan_option（page-runtime/html_actions.rs:440）multiple→toggle 不清
+> 他人 + script_set_option_selected（script_gen.rs:439）content attribute
+> 写面与语料三断言逐条吻合；engine 臂方案定型在案（OPTION 停靠位 +
+> act:option 分支 gate `_zwUaDispatch===true` 镜像 act:button 先例 +
+> toggle 镜像 plan_option + input/change 派发 SELECT 镜像
+> `__zw_select_key_action` 形），渲染面到货后施工。与 s388
+> multiple-resize 判例同位同源（同一抑制谓词不分形态，s388 判例「任一
+> 单独施工不能翻绿」）——seltouch 与 multiple-resize 共享渲染面首件；
+> 差异 = 渲染面落地后本车道尚需 engine 臂第二刀才翻绿。**表格池跨流
+> 复验零漂移**：渲染流 R5516（d2c3897da）到货后 runner 重建自 HEAD
+> （test-guard 包裹 build 46s exit 0），solo colspan **2F**（
+> `expected 53 but got 51.99985` 逐字同 s424）/ rowspan-0 **1F+1P** /
+> rowspan-0-quirks **1F+1P**（clientHeight `expected >20 got 20`）——
+> R5516 匿名 cell margin 面不波及本池三键，域计数零位移（在册红维持
+> s424 终态 202F+13T / 201F+14T 口径）。
 
 > **▶ 承前（2026-11-14 M2 切片 424 收口）——红池分诊轮三段产出：video
 > 立项评估落账（挂 GB-20261114-VIDEO）+ 余件单红逐件归因 +

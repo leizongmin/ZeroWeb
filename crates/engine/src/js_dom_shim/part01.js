@@ -3010,7 +3010,14 @@
       } catch (_e23bid) {}
       try { entry.doc._zwURL = effectiveUrl; } catch (_e115u) {}
       // https://html.spec.whatwg.org/multipage/dom.html#dom-document-referrer
-      try { entry.doc._zwReferrer = _zwCurrentHref(); } catch (_e115r) {}
+      // s431（html-semantics M2 切片 431）：aux 上下文（form target=_blank 提交）
+      // flags.referrer 预置——noreferrer 导航致 ''（form-submission-target reltester
+      // 断言面）。子文档脚本在本 finish 内执行、脚本期同步读 referrer，返回值侧
+      // 覆写为时已晚，故走 flags 通道预落位；无 flags.referrer 时缺省父 href 不变。
+      try {
+        entry.doc._zwReferrer = (entry.flags && entry.flags.referrer != null)
+          ? String(entry.flags.referrer) : _zwCurrentHref();
+      } catch (_e115r) {}
       try { if (entry._zwSwClientId) entry.doc._zwSwClientId = entry._zwSwClientId; } catch (_e115c) {}
       // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
       // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
@@ -3031,6 +3038,18 @@
       // per-realm 实例（part05 R364 工厂产物）挂 doc，供 owner-doc realm 升级路由查表
       // （工厂 innerHTML setter 的 node-document realm 解析；无 win（no-src）时不挂）。
       try { if (entry.win && entry.win.customElements) entry.doc._zwCERegistry = entry.win.customElements; } catch (_e365r) {}
+      // s431：aux 上下文（form target=_blank 提交，auxiliary browsing context 近似）
+      // ——opener/close 预置须先于子文档脚本（endpoint 类端点在脚本期同步读
+      // window.opener 并 postMessage）。opener 非空 = WindowProxy 近似（顶层 win
+      // 引用，真开窗器语义）；null = noopener 强制（rel 显式 noopener/noreferrer，
+      // 或 target=_blank 缺省强制无显式 opener——reltester formUsesTargetBlank
+      // 同判，spec window opening steps）。close 无操作面：browsing context 关闭
+      // 语义不建（headless aux 生命周期随 entry），仅消端点 window.close() 的
+      // TypeError 逸出（脚本期吞错 + 事件通道 _zwReportListenerError 上报双层）。
+      if (entry.flags && entry.flags.aux) {
+        try { entry.win.opener = entry.flags.opener != null ? entry.flags.opener : null; } catch (_eAuxOp) {}
+        try { entry.win.close = function () {}; } catch (_eAuxCl) {}
+      }
       entry.state = 'done';
       entry.url = typeof effectiveUrl === 'string' && effectiveUrl ? effectiveUrl : url;
       _zwSyncIframeWindowHistory(entry);
@@ -3523,9 +3542,23 @@
       var _omWrapped = /(^|[^\w.$])on(message|popstate)\s*=[^=]/.test(combined206)
         ? 'with(window){' + _zwRealmShadow + combined206 + exportSuffix206 + '\n}'
         : _zwRealmShadow + combined206 + exportSuffix206;
+      // s432（html-semantics M2 切片 432）：aux 上下文裸 `opener`/`close` 形参。
+      // links target_blank_implicit_noopener 端点读**裸** `opener`（form 双胞胎端
+      // 点用 window.opener 限定名，R206 既有形参已达——s431 通过而 links 挂的分歧
+      // 面恰在此）。合并 Function 形参表无 opener，裸名解析落宿主 globalThis →
+      // undefined → `opener !== null` ReferenceError，端点死于 postMessage 之前
+      //（零投递 → async_test 全 pending → 文件级 Timeout；zz-probe-aux2 实证 aux
+      // 端点脚本已运行、仅裸名解析断）。仅 aux 项注入：flags.aux 与 finish 的
+      // opener/close 预置同门同序（上方 3049 行先置 win.opener/win.close，本参数
+      // 快照恰在其后）；参数快照值语义（端点只读面）。非 aux iframe 形参表逐字
+      // 节不变。
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-window-object
+      var _zwAuxNames206 = (flags && flags.aux) ? ['opener', 'close'] : [];
+      var _zwAuxVals206 = _zwAuxNames206.length ? [win.opener, win.close] : [];
       var fn = new Function(
-        'window', 'self', 'parent', 'top', 'document', 'location',
-        'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
+        ['window', 'self', 'parent', 'top', 'document', 'location',
+         'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history']
+          .concat(_zwAuxNames206).join(','),
         _omWrapped);
       // s339：上方注入段的注册包装对**宿主全局** `promise_test`/`test`/`async_test`
       // 写包装——子文档 harness 的注册 API 是 IIFE 内绑定、合并 fn 作用域无同名局部，
@@ -3555,10 +3588,11 @@
       globalThis.__zwActiveIframeWin = win;
       globalThis.__zwActiveIframeDoc = doc;
       try {
-        fn.call(
-          win, win, win, globalThis, globalThis, doc, loc,
-          win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
-          win.Response, win.URL, win.caches, win.history
+        fn.apply(
+          win,
+          [win, win, globalThis, globalThis, doc, loc,
+           win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
+           win.Response, win.URL, win.caches, win.history].concat(_zwAuxVals206)
         );
       } finally {
         if (_zwSlotW382 === undefined) delete globalThis.__zwActiveIframeWin;
@@ -13000,7 +13034,8 @@
           var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
           if (_pcP === 'color' || _pcP === 'font-size'
               || _pcP === 'font-family' || _pcP === 'background-color'
-              || _pcP === 'opacity' || _pcP === 'position-area') {
+              || _pcP === 'opacity' || _pcP === 'position-area'
+              || _pcP === 'font-weight') {
             try {
               var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
               if (_pcV !== '') return _pcV;

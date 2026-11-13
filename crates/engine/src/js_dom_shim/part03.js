@@ -17381,7 +17381,7 @@
 
   // R154（js-dom M4）：元素是否有自身 activation behavior（HTML 各元素激活定义的静态
   // 近似——供 nearest-activation 止步判定）。checkbox/radio INPUT 由调用方先行处理
-  // （其 disabled/click() 语义特殊），此处枚举其余五类。
+  // （其 disabled/click() 语义特殊），此处枚举其余六类。
   function _zwHasOwnActivationBehavior(tag, sel, handle) {
     if (!tag) return false;
     if (tag === 'A' || tag === 'AREA') {
@@ -17390,6 +17390,13 @@
       return !!href;
     }
     if (tag === 'LABEL' || tag === 'DETAILS' || tag === 'SUMMARY') return true;
+    // R5530（html-semantics M2 切片 430）：OPTION 有 listbox 选中激活（HTML 渲染
+    // 规范 §the-select-element-2 listbox 形态；spec 未述 pick 激活正式定义，
+    // Chromium listbox 语义近似，语料 select-listbox-touch.optional 同标
+    // .optional）——nearest 止步后由 dispatch post 段 act:option 分支承接
+    // （UA 通道门内自检 select 归属/disabled，closed 形态 option 无布局盒
+    // （s428 抑制谓词）天然不入本判定）。
+    if (tag === 'OPTION') return true;
     if (tag === 'INPUT' || tag === 'BUTTON') {
       var ty = '';
       try { ty = handle ? __zw_get_attr_handle(handle, 'type') : (sel ? __zw_get_attr(sel, 'type') : null); } catch (_e2) { ty = ''; }
@@ -18545,6 +18552,34 @@
           // dismiss 案 test_driver.click(showmodalbutton) 断言面）。submit/reset
           // 仍不落本段——runner click 命令 S4J submit_script 承接，本段只补 invoker。
           try { _zwInvokerCommandActivate(_r112Act.sel, _r112Act.handle); } catch (_e4400b) {}
+        } else if (_r112Act.type === 'act:option' && event._zwUaDispatch === true) {
+          // R5530（html-semantics M2 切片 430）：UA 通道坐标点击落 listbox
+          // option——选中翻转激活（HTML 渲染规范 §the-select-element-2 listbox
+          // 形态；spec 未述 pick 激活正式定义，Chromium listbox 语义近似，语料
+          // select-listbox-touch.optional 同标 .optional——上游注明 touch 激活
+          // 行为 spec 未述）。toggle 经 option.selected IDL setter（R3908b
+          // selectedness+dirtiness 写面）——R3909 ask-for-reset 自带形态分：
+          // 非 multiple 互斥清兄弟、multiple 不清他人（本语料钉面）。实际翻转
+          // 才派 input+change 到所属 SELECT（镜像 __zw_select_key_action 派发
+          // 形）。无所属 select（datalist option）与 disabled option 不激活。
+          // FIXME: disabled 经 optgroup/fieldset 继承链未查（语料无钉面）。
+          try {
+            var _r5530Os = _zwOptNearestSelect(_r112Act.sel, _r112Act.handle);
+            if (_r5530Os) {
+              var _r5530Dis = '0';
+              try { _r5530Dis = _r112Act.handle ? __zw_has_attr_handle(_r112Act.handle, 'disabled') : __zw_has_attr(_r112Act.sel, 'disabled'); } catch (_e5530d) {}
+              if (_r5530Dis !== '1') {
+                var _r5530Opt = _makeProxy(_r112Act.sel, _r112Act.handle);
+                var _r5530Before = !!_r5530Opt.selected;
+                _r5530Opt.selected = !_r5530Before;
+                if (!!_r5530Opt.selected !== _r5530Before) {
+                  var _r5530Sel = _makeProxy(_r5530Os.sel, _r5530Os.hnd);
+                  _r5530Sel.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
+                  _r5530Sel.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+                }
+              }
+            }
+          } catch (_e5530a) {}
         } else if (_r112Act.type === 'act:a' || _r112Act.type === 'act:area') {
           // R5239（html-semantics M2 切片 37）：nearest activation target 是
           // A/AREA（target 为其后代——anchor-with-inline-element 语料：a[href]
@@ -30844,6 +30879,67 @@ return e;
     // download/cross-origin 面——WPT navigate-anchor-download / -cross-origin /
     // -same-origin-cross-document / -same-url 族）。
     else if (_r154Href && globalThis.location) {
+      // s432（html-semantics M3 links 面）：A/AREA target=_blank 臂——auxiliary
+      // browsing context 近似，复用 s431 form _blank 臂的合成 entry 管线（flags
+      // 通道 + part01 finish aux opener/close/referrer 预置 + BroadcastChannel
+      // 回投——同一 JS VM 跨 entry 天然可达）。spec 链：following hyperlinks 的
+      // target 缺省步（plan to navigate：元素 target 属性 → Document base
+      // target）+ window opening steps 的 _blank noopener 缺省强制 / noreferrer
+      // 逐 token 判定。rel 每次激活新鲜读（rel-attribute-clearing 钉面：IDL 写
+      // 改写 rel 后下击按新值判定，禁缓存）。target 读同 href 双通道（own
+      // expando 优先——`a.target = '_blank'` IDL 写可能落 expando；attr 回落）
+      // + base target 缺省（target_blank_implicit_noopener_base 钉面）。瞬态
+      // 激活消费同 form 臂（target_blank_useractivation 钉面：开窗后 isActive
+      // 须 false）。download 线程态清空后 return（不触达当前文档导航——语料
+      // file 级 Timeout 根因：endpoint 不存在 → BroadcastChannel 永不回投 →
+      // harness 挂起）。
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#window-opening-steps
+      var _r154Target = '';
+      try {
+        var _p154t = _makeProxy(sel, handle);
+        if (_p154t && Object.prototype.hasOwnProperty.call(_p154t, 'target')
+            && _p154t.target != null && _p154t.target !== '') {
+          _r154Target = String(_p154t.target);
+        }
+      } catch (_e154tg) {}
+      if (!_r154Target) {
+        try { _r154Target = handle ? __zw_get_attr_handle(handle, 'target') : (__zw_get_attr(sel, 'target') || ''); } catch (_e154ta) { _r154Target = ''; }
+      }
+      if (!_r154Target) {
+        try {
+          var _r154Bt = globalThis.document.querySelector('base');
+          if (_r154Bt) _r154Target = String(_r154Bt.getAttribute('target') || '');
+        } catch (_e154tb) {}
+      }
+      if (_r154Target === '_blank') {
+        var _r154Rel = ' ';
+        try {
+          var _p154r = _makeProxy(sel, handle);
+          var _r154RelRaw = _p154r ? _p154r.rel : undefined;
+          if (typeof _r154RelRaw !== 'string') {
+            _r154RelRaw = String(handle ? __zw_get_attr_handle(handle, 'rel') : (__zw_get_attr(sel, 'rel') || ''));
+          }
+          _r154Rel = ' ' + String(_r154RelRaw || '').toLowerCase().replace(/\s+/g, ' ').trim() + ' ';
+        } catch (_e154rr) {}
+        var _r154Noop = _r154Rel.indexOf(' noopener ') >= 0;
+        var _r154Noref = _r154Rel.indexOf(' noreferrer ') >= 0;
+        var _r154Opn = _r154Rel.indexOf(' opener ') >= 0;
+        var _r154Flags = {
+          aux: true,
+          opener: (_r154Noop || _r154Noref || !_r154Opn) ? null : globalThis,
+        };
+        if (_r154Noref) _r154Flags.referrer = '';
+        try {
+          var _r154BaseU = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL() : String(globalThis.location.href || 'about:blank');
+          var _r154Abs = new URL(String(_r154Href), _r154BaseU).href;
+          globalThis.__zwAnchorAuxSeq = (globalThis.__zwAnchorAuxSeq | 0) + 1;
+          _zwLoadIframeEntry('__zwAuxAnchor:' + globalThis.__zwAnchorAuxSeq, _r154Abs, _r154Flags);
+        } catch (_e154ax) {}
+        globalThis.__zwNavDownloadRequest = null;
+        _zwTransientActive = false;
+        return;
+      }
       var _r154Se = null;
       try { _r154Se = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se2) { _r154Se = null; }
       try {

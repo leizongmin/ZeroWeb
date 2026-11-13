@@ -132,6 +132,13 @@ pub fn compute_inherited_style_with_quirks(
     }
 
     // 先处理所有级联属性
+    // g29：font-* 槽数学形（font-weight/font-size-adjust/font-stretch calc 形）
+    // 的 font 相对单位按**父级**字体解析（css-properties-values-api
+    // #dependency-cycles-via-relative-units tentative 口径，与 font-size 属性
+    // 同基准防循环；font-property-unit-cycles parent em 30 vs 自身 10 分离
+    // 驱动）——须在 font-size 单点预应用覆盖自身值之前捕获。无父上下文存
+    // None，apply 期回落自身 font_size（CSSOM 写面/CSS.supports 哨兵口径）。
+    style.parent_font_size = parent_style.map(|p| parent_font_size_px(Some(p)) as f32);
     // R4642（css-cascade computed values）：`font-size` 先行应用——所有 font 相对长度
     //（em）在 apply 期急切解析时读取 `style.font_size`（如 box-shadow/text-shadow/
     // border-image-outset 的 `resolve_effect_length`），而主循环按胜者 HashMap 迭代序
@@ -310,6 +317,13 @@ pub fn compute_inherited_style_with_quirks(
     // 对没有级联值的继承属性，从父元素继承
     if let Some(parent) = parent_style {
         for property in PropertyRegistry::known_properties() {
+            // canonical 别名（css-fonts-4 §font-width-prop font-width 等——注册保持
+            // CSS.supports 通道，级联槽位为 canonical 名）不参与填充：别名本身永不入
+            // 级联表，按「未声明」继承会用父值覆盖 canonical 槽位已应用的元素自身值
+            //（font-width-computed 全腿回初始值实证）。
+            if super::cascade::canonical_property_name(property) != *property {
+                continue;
+            }
             if !cascaded.contains_key(*property) && PropertyRegistry::is_inherited(property) {
                 inherit_property(parent, &mut style, property);
             }
@@ -451,21 +465,31 @@ fn is_logical_property_name(property: &str) -> bool {
     )
 }
 
+// css-fonts-4 §5.2 #relative-weights 相对权重表（bolder：<350→400、350-549→
+// 700、550-899→900、≥900 保持原值；lighter：<100 保持、100-549→100、
+// 550-749→400、≥750→700）——边界 350/550/900 与 100/550/750 实证钉面
+//（font-weight-lighter-bolder 页 22 腿：base 99 lighter 保 99 / 901 bolder
+// 保 901）。旧 css-fonts-3 400/600/800 边界整表淘汰。
+// <https://drafts.csswg.org/css-fonts-4/#relative-weights>
 fn resolve_relative_font_weight(weight: &FontWeightValue, parent_style: Option<&ComputedStyle>) -> FontWeightValue {
     let parent_weight = parent_style
         .map(|parent| font_weight_absolute(&parent.font_weight))
         .unwrap_or(400);
     match weight {
-        FontWeightValue::Bolder => FontWeightValue::Absolute(if parent_weight < 400 {
+        FontWeightValue::Bolder => FontWeightValue::Absolute(if parent_weight < 350 {
             400
-        } else if parent_weight < 600 {
+        } else if parent_weight < 550 {
             700
-        } else {
+        } else if parent_weight < 900 {
             900
+        } else {
+            parent_weight
         }),
-        FontWeightValue::Lighter => FontWeightValue::Absolute(if parent_weight < 600 {
+        FontWeightValue::Lighter => FontWeightValue::Absolute(if parent_weight < 100 {
+            parent_weight
+        } else if parent_weight < 550 {
             100
-        } else if parent_weight < 800 {
+        } else if parent_weight < 750 {
             400
         } else {
             700
@@ -1502,5 +1526,49 @@ mod tests {
             "继承字号 32px 应为 em 基准，实际 {:?}",
             style.transform
         );
+    }
+
+    #[test]
+    fn test_relative_font_weight_table_css_fonts_4() {
+        // css-fonts-4 §5.2 #relative-weights 表（font-weight-lighter-bolder 页
+        // 22 腿实证边界：bolder 350/550/900、lighter 100/550/750；≥900 bolder
+        // 与 <100 lighter 保持原值）。
+        let parent_of = |w: u16| {
+            let mut s = ComputedStyle::default();
+            s.font_weight = FontWeightValue::Absolute(w);
+            s
+        };
+        let resolve = |w: u16, rel: FontWeightValue| match resolve_relative_font_weight(&rel, Some(&parent_of(w))) {
+            FontWeightValue::Absolute(n) => n,
+            other => panic!("expected Absolute, got {other:?}"),
+        };
+        for (base, expect) in [
+            (99u16, 400u16),
+            (100, 400),
+            (349, 400),
+            (350, 700),
+            (549, 700),
+            (550, 900),
+            (749, 900),
+            (899, 900),
+            (900, 900),
+            (901, 901),
+        ] {
+            assert_eq!(resolve(base, FontWeightValue::Bolder), expect, "bolder for {base}");
+        }
+        for (base, expect) in [
+            (99u16, 99u16),
+            (100, 100),
+            (349, 100),
+            (350, 100),
+            (549, 100),
+            (550, 400),
+            (749, 400),
+            (750, 700),
+            (899, 700),
+            (900, 700),
+        ] {
+            assert_eq!(resolve(base, FontWeightValue::Lighter), expect, "lighter for {base}");
+        }
     }
 }

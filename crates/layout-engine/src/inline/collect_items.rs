@@ -2867,6 +2867,10 @@ fn atomic_boundary_char_gl(
 /// s387：option/optgroup 元素且祖先链含 `<select>`（select 抑制谓词，与 tree.rs
 /// build_subtree 汇聚点臂同判据；消费点见 collect walk 的 select 抑制臂——
 /// whatwg/html#3748 收敛语义，`runtime_flags::select_options_suppress` gate）。
+/// s428 listbox 形态 carve-out：multiple/size>1 select 不落 picker-none 包裹，
+/// option 行正常收集（HTML 渲染规范 the-select-element-2；与 tree.rs 抑制臂同
+/// 判据，`crate::tree::select_listbox_render_enabled` gate 合入版复用，
+/// `ZW_SELECT_LISTBOX_FORM=0` 回退形态盲抑制）。
 fn is_select_control_descendant(doc: &Document, id: NodeId) -> bool {
     let is_control_tag = doc.get(id).is_some_and(|n| {
         matches!(&n.kind, NodeKind::Element(e) if {
@@ -2882,6 +2886,9 @@ fn is_select_control_descendant(doc: &Document, id: NodeId) -> bool {
         if doc.get(pid).is_some_and(|n| {
             matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select"))
         }) {
+            if crate::tree::select_listbox_render_enabled(doc, pid) {
+                return false;
+            }
             return true;
         }
         cur = doc.parent_node(pid);

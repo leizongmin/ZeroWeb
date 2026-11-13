@@ -172,6 +172,31 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         ) {
             return Some(ColorValue::Rgba(255, 255, 255, 255));
         }
+        // 表单族五键（system-color-consistency 页 dark 轮驱动）：UA 表单默认改
+        // 关键词声明（style-system R1396 臂）后，控件读数与作者 inline 声明两侧
+        // 同走本解析，dark 面板取值使两轮自洽成立。值对齐 engine shim
+        // _zwCCSystemDark 既有近似（buttonface 暗底 43/canvas 族 32,33,36、文本
+        // 白）；buttonborder shim 无既有钉面，取暗底按钮描边中灰近似（页两侧同
+        // 走本臂，自洽不依赖具体值）。light 面板 = named_colors 静态值不变。
+        // https://www.w3.org/TR/css-color-4/#css-system-colors
+        if matches!(l.as_str(), "buttonface" | "threedface" | "buttonhighlight") {
+            return Some(ColorValue::Rgba(43, 43, 43, 255));
+        }
+        if matches!(l.as_str(), "buttontext" | "buttonshadow") {
+            return Some(ColorValue::Rgba(255, 255, 255, 255));
+        }
+        if matches!(
+            l.as_str(),
+            "buttonborder" | "threeddarkshadow" | "threedhighlight" | "threedlightshadow"
+        ) {
+            return Some(ColorValue::Rgba(117, 117, 117, 255));
+        }
+        if matches!(l.as_str(), "field") {
+            return Some(ColorValue::Rgba(32, 33, 36, 255));
+        }
+        if matches!(l.as_str(), "fieldtext") {
+            return Some(ColorValue::Rgba(255, 255, 255, 255));
+        }
     }
 
     // 命名颜色
@@ -2066,8 +2091,12 @@ mod tests {
         assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
         assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
         assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
-        assert_eq!(parse_font_weight("50"), None); // out of range
-        assert_eq!(parse_font_weight("950"), None); // out of range
+        // css-fonts-4 §font-weight-numeric 连续 <number [1,1000]>（旧 100-900
+        // 文法 out-of-range 断言更新——font-weight-valid 语料 `1`/`101` 同证）。
+        assert_eq!(parse_font_weight("50"), Some(FontWeightValue::Absolute(50)));
+        assert_eq!(parse_font_weight("950"), Some(FontWeightValue::Absolute(950)));
+        assert_eq!(parse_font_weight("0"), None);
+        assert_eq!(parse_font_weight("1001"), None);
     }
 
     // ── parse_font_style ────────────────────────────────────────────────

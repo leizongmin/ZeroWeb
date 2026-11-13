@@ -155,6 +155,32 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     })
 }
 
+/// s428：element 的 select 祖先是否 listbox 形态（`multiple` 在场，或 `size`
+/// 属性解析值大于 1；HTML 渲染规范
+/// <https://html.spec.whatwg.org/multipage/rendering.html#the-select-element-2>，
+/// size 非法/缺席按默认 1 计）。style-system 不能反向依赖 layout-engine——谓词与
+/// layout 侧 tree.rs `select_is_listbox_form` 同判据本地副本；gate 由调用方承担。
+/// driving: WPT select-listbox-touch.optional / select-multiple-resize（s388 判例①面）。
+fn select_ancestor_is_listbox_form(doc: &Document, element: NodeId) -> bool {
+    let mut cur = doc.parent_node(element);
+    while let Some(pid) = cur {
+        if doc
+            .get(pid)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
+        {
+            if doc.get_attribute(pid, "multiple").is_some() {
+                return true;
+            }
+            return doc
+                .get_attribute(pid, "size")
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .is_some_and(|size| size > 1);
+        }
+        cur = doc.parent_node(pid);
+    }
+    false
+}
+
 /// R2856：`<q>` 元素 `quotes: auto` 时按内容语言解析的默认引号对表（CSS Generated
 /// Content §4.2 + CLDR typographical 引号数据）。
 ///
@@ -2046,7 +2072,7 @@ impl StyleSystem {
             && is_html_ns
             && let Some(display) = ua_default_display(tag)
         {
-            let display_str = match display {
+            let mut display_str = match display {
                 DisplayValue::Block => "block",
                 DisplayValue::Table => "table",
                 DisplayValue::InlineTable => "inline-table",
@@ -2065,6 +2091,20 @@ impl StyleSystem {
                 DisplayValue::ListItem => "list-item",
                 _ => "inline",
             };
+            // s428 listbox 形态 carve-out：`<select multiple>` / `size>1` 上游不落
+            // picker-none 包裹，option/optgroup 行以 inline listbox 渲染（HTML 渲染
+            // 规范 the-select-element-2）——UA display 由 none 改 block（行盒近似，
+            // 谓词与 layout 侧 tree.rs 抑制臂同判据）。closed 形态 UA none 路径不变。
+            // kill-switch `ZW_SELECT_LISTBOX_FORM=0` 回退（R5346 纪律：LazyLock 单读）。
+            static SELECT_LISTBOX_FORM: std::sync::LazyLock<bool> =
+                std::sync::LazyLock::new(|| std::env::var("ZW_SELECT_LISTBOX_FORM").as_deref() != Ok("0"));
+            if matches!(display, DisplayValue::None)
+                && (tag.eq_ignore_ascii_case("option") || tag.eq_ignore_ascii_case("optgroup"))
+                && *SELECT_LISTBOX_FORM
+                && select_ancestor_is_listbox_form(doc, element)
+            {
+                display_str = "block";
+            }
             ua_decl_inputs.push(("display".to_string(), display_str.to_string(), false, (0, 0, 0), None));
         }
         // R3290：HTMLDialogElement.open 显式覆盖——`<dialog>` 默认 display:none（ua_default_display），
@@ -2429,12 +2469,23 @@ impl StyleSystem {
                 // R1396：表单控件默认外观（Chromium UA html.css）。旧实现把 button/input 渲成
                 // 纯文本（无 bg/border/padding），legacy 表单页不可读。此处补 ButtonFace 近似灰
                 // bg + 边框 + padding 使控件可见（产品验收口径「结构不崩、核心语义可见」）。
-                // 精确像素匹配系统色 ButtonFace/Canvas 须系统色支持（后续），当前用近似 hex。
+                // S1（2026-11-14，css-color 系统色批）：色面从近似 hex 改系统色关键词声明——
+                // button 走 ButtonText/ButtonFace/ButtonBorder，input 按钮族（type=button|
+                // submit|reset|color，Chromium html.css 同组）走 ButtonFace/ButtonBorder，
+                // 文本族与 select/textarea 走 Field。关键词经 parse_color_with_scheme 按
+                // 元素 used color-scheme 解析（dark 面板见 css-parser color.rs），使
+                // system-color-consistency 页「系统色 == 控件对应属性读数」自洽成立（此前
+                // 近似 hex 与关键词静态值错位 239/240、8/0，且 dark 轮不随 scheme 翻转）。
+                // border-color 以显式 longhand 声明后置覆盖 border 简写展开的色槽（简写
+                // 几何 2px/1px solid 不变）。文本族不加 color 声明：继承 html 默认色
+                //（light 黑/dark 白）已与 FieldText 两轮同值，显式声明反覆写作者继承面。
+                // https://html.spec.whatwg.org/multipage/rendering.html#the-button-element
+                // https://www.w3.org/TR/css-color-4/#css-system-colors
                 "button" => {
-                    ua_decl_inputs.push(("color".to_string(), "#080808".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("color".to_string(), "ButtonText".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push((
                         "background-color".to_string(),
-                        "#efefef".to_string(),
+                        "ButtonFace".to_string(),
                         false,
                         (0, 0, 0),
                         None,
@@ -2442,6 +2493,13 @@ impl StyleSystem {
                     ua_decl_inputs.push((
                         "border".to_string(),
                         "2px solid #767676".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push((
+                        "border-color".to_string(),
+                        "ButtonBorder".to_string(),
                         false,
                         (0, 0, 0),
                         None,
@@ -2458,9 +2516,23 @@ impl StyleSystem {
                     ua_decl_inputs.push(("padding".to_string(), "1px 6px".to_string(), false, (0, 0, 0), None));
                 }
                 "input" | "select" | "textarea" => {
+                    // input 按钮族判定（type 属性大小写不敏感，缺省 = text）：HTML 渲染
+                    // 规范将 submit/reset/color 与 button 同组呈现（Chromium UA html.css
+                    // `[type=button i]` 等选择器同形）。缺失/非按钮族 → Field。
+                    let input_buttonish = if tag == "input" {
+                        matches!(
+                            doc.get_attribute(element, "type")
+                                .unwrap_or_else(|| "text".to_string())
+                                .to_ascii_lowercase()
+                                .as_str(),
+                            "button" | "submit" | "reset" | "color"
+                        )
+                    } else {
+                        false
+                    };
                     ua_decl_inputs.push((
                         "background-color".to_string(),
-                        "white".to_string(),
+                        if input_buttonish { "ButtonFace" } else { "Field" }.to_string(),
                         false,
                         (0, 0, 0),
                         None,
@@ -2476,6 +2548,15 @@ impl StyleSystem {
                         (0, 0, 0),
                         None,
                     ));
+                    if input_buttonish {
+                        ua_decl_inputs.push((
+                            "border-color".to_string(),
+                            "ButtonBorder".to_string(),
+                            false,
+                            (0, 0, 0),
+                            None,
+                        ));
+                    }
                     ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
                     if tag == "textarea" {
                         // https://html.spec.whatwg.org/multipage/rendering.html#the-textarea-element-2
@@ -2693,6 +2774,12 @@ impl StyleSystem {
         let mut host_matching = host_matching;
         let mut slotted_matching = slotted_matching;
         let mut inline_decls = inline_decls;
+        // 延迟调用结构冻结档案（css-values-5 §attr-notations）：prop → 延迟
+        // 调用 parse 实参部数（扫描序）。4.75 重裁站按此拒绝 substitution
+        // 新增实参分隔（argument-grammar sub8 形：声明无 fallback、var 代入
+        // 产出 fallback → IACVT）。跨层同名 prop 档案按扫描序拼接——胜出层
+        // 之外的档案混入时序对齐近似（FIXME: 随 corpus 扩面再按层归属精化）。
+        let mut attr_deferred_parts: HashMap<String, Vec<usize>> = HashMap::new();
         if author_attr_active {
             let reader = |name: &str| doc.get_attribute(element, name);
             // 取 URL 属性集收口 [`attr_target_fetches_url`]（css-values-5 §attr
@@ -2700,14 +2787,33 @@ impl StyleSystem {
             // 形态不取 URL，不在集合；FIXME: 集合随 ZW 取 URL 面扩展
             //（mask/filter src() 等）。
             let fetches_url = |prop: &str| zero_css_parser::values::attr_target_fetches_url(prop);
-            let subst = |prop: &str, v: &mut String| -> bool {
+            let mut subst = |prop: &str, v: &mut String| -> bool {
                 if !zero_css_parser::values::has_attr_word(v) {
                     return true;
                 }
-                match zero_css_parser::values::substitute_attr_values_checked(v, &reader) {
-                    // 无 attr 词误扫或替换无变化（attr 词在注释/字符串内等）→ 原值保留。
-                    Some((std::borrow::Cow::Borrowed(_), _)) => true,
-                    Some((std::borrow::Cow::Owned(sub), tainted)) => {
+                // 替换函数序 var→attr（css-values-5 §substitution）：实参含
+                // var()/env() 的 deferred 形不求值不拒——原文保留至 4.75 重裁站
+                //（var 代入后 attr 调用具体化重评）。具体形照常求值。
+                // https://drafts.csswg.org/css-values-5/#attr-notations
+                match zero_css_parser::values::substitute_attr_values_deferring(v, &reader) {
+                    // 无 attr 词误扫或替换无变化（attr 词在注释/字符串内、
+                    // 全 deferred 调用等）→ 原值保留。
+                    Some((std::borrow::Cow::Borrowed(_), _, deferred)) => {
+                        if !deferred.is_empty() {
+                            attr_deferred_parts
+                                .entry(prop.to_string())
+                                .or_default()
+                                .extend(deferred);
+                        }
+                        true
+                    }
+                    Some((std::borrow::Cow::Owned(sub), tainted, deferred)) => {
+                        if !deferred.is_empty() {
+                            attr_deferred_parts
+                                .entry(prop.to_string())
+                                .or_default()
+                                .extend(deferred);
+                        }
                         // 污染替换进取 URL 属性 → 声明 invalid（initial 即 none 形，
                         // attr-security 语料钉面）。
                         // https://drafts.csswg.org/css-values-5/#attr-security
@@ -2993,6 +3099,52 @@ impl StyleSystem {
         // 4.6. R2873：var() pending-substitution 第二阶段——把含 var() 的简写（4.5 步已代入）
         // 重新展开为长属性。须在 var() 解析之后、计算继承样式之前。
         let mut resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
+
+        // 4.75. CSS Values 5 §attr-notations：attr() 重裁站（替换函数序
+        // var→attr）。预级联站对实参含 var()/env() 的 deferred 调用原文保留
+        //（substitute_attr_values_deferring），4.5 代入后本站重扫：attr 调用
+        // 已具体化，任一文法 invalid / IACVT → 丢整条声明；替换产物 url 污染
+        // + 取 URL 属性 → 同预级联站 attr-security 口径拒。延迟调用按
+        // attr_deferred_parts 档案结构冻结（substitution 不得新增实参分隔）。
+        // 每元素独立（attribute 值依赖），置 outcome 缓存之后。
+        // <https://drafts.csswg.org/css-values-5/#attr-notations>
+        if resolved_cascaded
+            .values()
+            .any(|v| zero_css_parser::values::has_attr_word(v))
+        {
+            let attr_reader = |name: &str| doc.get_attribute(element, name);
+            let mut iacvt_props: Vec<String> = Vec::new();
+            for (prop, val) in resolved_cascaded.iter_mut() {
+                if prop.starts_with("--") || !zero_css_parser::values::has_attr_word(val) {
+                    continue;
+                }
+                let checked = match attr_deferred_parts.get(prop) {
+                    Some(expected) => {
+                        zero_css_parser::values::substitute_attr_values_readjudicate(val, &attr_reader, expected)
+                    }
+                    None => zero_css_parser::values::substitute_attr_values_checked(val, &attr_reader),
+                };
+                match checked {
+                    Some((std::borrow::Cow::Owned(sub), tainted)) => {
+                        if tainted && zero_css_parser::values::attr_target_fetches_url(prop) {
+                            iacvt_props.push(prop.clone());
+                        } else {
+                            *val = sub;
+                        }
+                    }
+                    // 无真调用（词假阳/全延迟残留——4.5 未代入的 env() 等）
+                    // → 原值保留。
+                    Some((std::borrow::Cow::Borrowed(_), _)) => {}
+                    // IACVT / 文法 invalid / 结构冻结违反 → 丢整条声明。
+                    None => {
+                        iacvt_props.push(prop.clone());
+                    }
+                }
+            }
+            for k in iacvt_props {
+                resolved_cascaded.remove(&k);
+            }
+        }
 
         // 4.7. CSS Values 5 §9：random()/random-item() 播种求值替换（compute 期
         // 元素视图——doc/element seed 入 cache name，§9.4 sharing；写面 canonical

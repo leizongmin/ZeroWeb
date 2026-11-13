@@ -2815,6 +2815,10 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
 /// select 内 option/optgroup 元素判定——自身为 option/optgroup 且祖先链含
 /// `<select>`（option 经 optgroup 间接嵌套两形态均命中）。select 之外的 option
 ///（datalist 等无语料钉面）不在本谓词内。
+/// s428 listbox 形态 carve-out：上游 picker-none 子树包裹仅 closed 下拉形态——
+/// `<select multiple>` / `size>1` 恒以 inline listbox 渲染 option 行（HTML 渲染
+/// 规范 https://html.spec.whatwg.org/multipage/rendering.html#the-select-element-2
+/// ），不落入本谓词（kill-switch `ZW_SELECT_LISTBOX_FORM=0` 回退形态盲抑制）。
 fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
     let is_control_tag = doc.get(id).is_some_and(|n| {
         matches!(&n.kind, NodeKind::Element(e) if {
@@ -2831,6 +2835,10 @@ fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
             .get(pid)
             .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
         {
+            // listbox 形态（multiple/size>1）不抑制：option 行由盒面/IFC 正常承载。
+            if select_listbox_render_enabled(doc, pid) {
+                return false;
+            }
             return true;
         }
         cur = doc.parent_node(pid);
@@ -2843,6 +2851,34 @@ fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
 fn select_options_suppress_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0"))
+}
+
+/// select listbox 形态判定（HTML 渲染规范 §the-select-element-2）：listbox =
+/// `multiple` 属性在场，或 `size` 属性解析值 > 1；`size` 缺席或非 "valid
+/// non-negative integer"（trim 后全 ASCII 数字）按默认 1 计。driving: WPT
+/// select-listbox-touch.optional / select-multiple-resize（s388 判例①面）。
+pub fn select_is_listbox_form(doc: &Document, select_id: NodeId) -> bool {
+    if !doc
+        .get(select_id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
+    {
+        return false;
+    }
+    if doc.get_attribute(select_id, "multiple").is_some() {
+        return true;
+    }
+    doc.get_attribute(select_id, "size")
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .is_some_and(|size| size > 1)
+}
+
+/// listbox 形态渲染臂激活判定（gate 合入版，供 collect_items 谓词与 engine paint
+/// 侧复用——runtime_flags 为 pub(super) 不可跨 crate）：`ZW_SELECT_LISTBOX_FORM`
+/// gate-on 且 select 为 listbox 形态。R5346 纪律：OnceLock 进程级单读。
+pub fn select_listbox_render_enabled(doc: &Document, select_id: NodeId) -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let enabled = *ENABLED.get_or_init(|| std::env::var("ZW_SELECT_LISTBOX_FORM").as_deref() != Ok("0"));
+    enabled && select_is_listbox_form(doc, select_id)
 }
 
 /// R2439：元素 `content` 属性是否为 `url()`（element-replacement，CSS Content §content-property）。

@@ -97,6 +97,7 @@ impl Default for ComputedStyle {
             // 字体
             font_family: vec![],
             font_size: LengthValue::Px(16.0),
+            parent_font_size: None,
             font_weight: FontWeightValue::Normal,
             font_style: FontStyleValue::Normal,
             line_height: LineHeightValue::Normal,
