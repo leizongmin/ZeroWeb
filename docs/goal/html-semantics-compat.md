@@ -2,28 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 429 收口（五笔他流到货组合态整验轮，零源码
-改动；账本
-evidence/2026-11-14-m2s429-arrivals-combined-state-reverify.md）——
-s428 窗口累计 5 笔到货（渲染 ac2566689 font-weight 相对权重表 +
-3df4f287a docs；editing d1d418daf insertParagraph 壳三族 + bdbe581a6
-strike 判向 + 65b06cbba 壳尾重开 v3.1），与本域四面零文件交集，runner
-重建自 HEAD 21d097d93（guarded 1m33s）→ 全域 sweep ×2 → stable-set
-join 对 s428 双基线——**稳定三桶逐键零漂移**（stable-F 202=202 /
-stable-T 13=13；stable-P 8241→8239 的 −2 = 在册 flake 键
-checkable-active-onblur-with-click following-label 2 子测转沾染：同二
-进制双轮异态 r1 2P / r2 2F = 时序非代码，到货零输入/指针面交集，
-parent-label 2F 在册稳定红未动；失败形 :active 命中 null，ZeroWeb-3
-multitest 长跑重叠为环境放大因子）。口径：**稳定红 215（202F+13T）不
-变，沾染桶 0→2**。**基线移交**：s430 join 改用
-/tmp/s429/pairs-{1,2}.txt（沾染 2 单列，稳定复归以 NEW 可见）。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
-下一步：**s430 engine act:option 臂施工**（s425 定型设计：OPTION 停靠
-位 + act:option post-activation gate `_zwUaDispatch===true` 镜像
-act:button + toggle 镜像 plan_option——双刀合龙 seltouch 翻绿判据；
-solo + 目录回归 + 全域 sweep ×2 join 对 s429 双基线）；dialog R-s31
-簇/img density/embed sizing face 到货复验；门决策后 video P1+P2 或
-簇 D A2 分诊续。
+**状态**: Active——M2 切片 430 收口（engine act:option 臂施工轮，双刀合龙
+**seltouch 稳定翻绿，稳定红面 215→214 首个真实解挂**；账本
+evidence/2026-11-14-m2s430-option-activation-arm.md）——part03.js 单文件
+两处（R5530）：①`_zwHasOwnActivationBehavior` OPTION 停靠位（nearest 止
+步，closed 形态 option 无布局盒天然不入，激活面与 s428 carve-out listbox
+判据精确对齐）；②dispatch post 段 act:option 分支（gate
+`_zwUaDispatch===true` 镜像 act:button；`_zwOptNearestSelect` 无归属不激活
++ own disabled 门（FIXME optgroup/fieldset 继承链）；toggle 经 option.selected
+IDL setter——R3909 ask-for-reset 自带形态分零新增逻辑；实际翻转才派
+input+change 到 SELECT 镜像 `__zw_select_key_action` 派发形）。验证：25 part
+拼装 node --check OK；solo 三连（seltouch 1P 翻绿 6 断言全过 /
+display-inherit 3/3P s387 回归清 / multiple-resize 1F 同形如预判）；目录
+回归 (key,state) 级差异 12 行全落两处（seltouch F→P + home-end 簇 D 家族
+file 级→8 子测级表示漂移红位不变）；全域 sweep ×2 join 对 s429 双基线——
+**stable-F 202→200 / stable-T 13→14 / stable-P 8239→8242 / 沾染 0**：
+seltouch F→P 双轮稳定（解挂），detailed.optional F→T 桶内重排（簇 D 在册
+家族），checkable 沾染双轮自愈回 stable-P（反证 s429 时序归因）。总口径
+**稳定红 214（200F+14T）**。**基线移交**：后续施工轮 join 改用
+/tmp/s430/pairs-{1,2}.txt。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D——seltouch 解挂不关闭该门，余成员 selmany/selfocus
+base-select 门在册）+ s137。下一步：dialog R-s31 簇/img density/embed
+sizing face 到货复验；scroll overflow 记账（可选优化面）维持挂账；门决策
+后 video P1+P2 或簇 D A2 分诊续。
+
+> **▶ 承前（2026-11-14 M2 切片 429 收口）——五笔他流到货组合态整验轮
+> （零源码改动）**：账本
+> evidence/2026-11-14-m2s429-arrivals-combined-state-reverify.md。原
+> Active 段留档——s428 窗口累计 5 笔到货（渲染 ac2566689 font-weight
+> 相对权重表 + 3df4f287a docs；editing d1d418daf insertParagraph 壳三族 +
+> bdbe581a6 strike 判向 + 65b06cbba 壳尾重开 v3.1），与本域四面零文件
+> 交集，runner 重建自 HEAD 21d097d93（guarded 1m33s）→ 全域 sweep ×2 →
+> stable-set join 对 s428 双基线——稳定三桶逐键零漂移（stable-F 202=202 /
+> stable-T 13=13；stable-P 8241→8239 的 −2 = 在册 flake 键
+> checkable-active-onblur-with-click following-label 2 子测转沾染：同二
+> 进制双轮异态 r1 2P / r2 2F = 时序非代码，到货零输入/指针面交集，
+> parent-label 2F 在册稳定红未动）。口径：稳定红 215（202F+13T）不变，
+> 沾染桶 0→2。基线移交 s430 用 /tmp/s429/pairs-{1,2}.txt。挂用户门维持
+> 不变。
 
 > **▶ 承前（2026-11-14 M2 切片 428 收口）——select listbox 形态
 > carve-out 施工轮（四面 +92/-1）**：commit 21d097d93；账本
