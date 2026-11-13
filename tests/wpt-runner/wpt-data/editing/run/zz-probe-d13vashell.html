@@ -1,0 +1,101 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>d13 sentry - sub/sup vertical-align conflict shell peel</title>
+<link rel=stylesheet href=../include/reset.css>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+// d13 哨兵（2026-11-13 锁定修复后行为）：sub/sup ADD 面 vertical-align
+// 冲突壳两族。期望形按语料 Chrome 录音（spec 算法为嵌套形，语料数据与
+// spec 算法相悖——vendored implementation.js 复现嵌套形实证）：
+//   F1 全包形：`foo<span style=vertical-align:X>[bar]</span>baz` +
+//   subscript → `foo<sub>bar</sub>baz`（壳摘除换 tag，任意 va 值）；
+//   F2 跨选区形：`<sub>fo[o</sub><span style=vertical-align:X>b]ar</span>`
+//   → `<sub>foob</sub><span style="vertical-align:X">ar</span>`（被选段
+//   抽出并入既有 sub，残段保壳）。
+// 引擎面：split-conflict 链对 sub/sup 补 va decl 祖先（peel 抽取）+
+// contained clearValue pass 剥 va decl、摘空解包（forceValue 顶层裹 tag）。
+// 本页 Fail = 冲突壳臂回退信号。语料族：data/subscript.js:399-417 /
+// data/superscript.js:400-418。
+function nextnode(node) {
+  if (node.firstChild) return node.firstChild;
+  while (node) {
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+  }
+}
+function nodeindex(node) {
+  if (!node.parentNode) return 0;
+  return Array.prototype.indexOf.call(node.parentNode.childNodes, node);
+}
+function mywalk(node, html) {
+  node.innerHTML = html;
+  var sn = null, so = 0, en = null, eo = 0;
+  var cur = node;
+  while (true) {
+    if (!cur || (cur != node && !(cur.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+    if (cur.nodeType != 3) { cur = nextnode(cur); continue; }
+    var dA = cur.data.replace(/\]/g, "");
+    var iA = dA.indexOf("[");
+    var dB = cur.data.replace(/\[/g, "");
+    var iB = dB.indexOf("]");
+    cur.data = cur.data.replace(/[\[\]]/g, "");
+    if (iA != -1) { sn = cur; so = iA; }
+    if (iB != -1) { en = cur; eo = iB; }
+    var dC = cur.data.replace(/\}/g, "");
+    var iC = dC.indexOf("{");
+    var dD = cur.data.replace(/\{/g, "");
+    var iD = dD.indexOf("}");
+    if (iC == 0) { sn = cur.parentNode; so = nodeindex(cur); }
+    else if (iC != -1) { sn = cur.parentNode; so = nodeindex(cur) + 1; }
+    if (iD == 0) { en = cur.parentNode; eo = nodeindex(cur); }
+    else if (iD != -1) { en = cur.parentNode; eo = nodeindex(cur) + 1; }
+    cur.data = cur.data.replace(/[{}]/g, "");
+    if (!cur.data.length) {
+      if (cur == sn || cur == en) throw "bracket in empty text";
+      var old = cur;
+      cur = nextnode(cur);
+      old.parentNode.removeChild(old);
+    } else {
+      cur = nextnode(cur);
+    }
+  }
+  return [sn, so, en, eo];
+}
+function vashellCase(input, cmd, expected, label) {
+  test(function() {
+    var tc = document.getElementById('test-container');
+    tc.innerHTML = "<div contenteditable></div><p>test";
+    var host = document.querySelector("div[contenteditable]");
+    var pts = mywalk(host, input);
+    var r = document.createRange();
+    r.setStart(pts[0], pts[1]); r.setEnd(pts[2], pts[3]);
+    if (r.collapsed) r.setEnd(pts[0], pts[1]);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    document.execCommand(cmd, false, "");
+    assert_equals(host.innerHTML, expected, 'got=');
+  }, label);
+}
+vashellCase('foo<span style="vertical-align:sub">[bar]</span>baz', 'subscript',
+  'foo<sub>bar</sub>baz', 'd13 F1 sub-shell full-cover -> tag (subscript)');
+vashellCase('foo<span style="vertical-align:super">[bar]</span>baz', 'subscript',
+  'foo<sub>bar</sub>baz', 'd13 F1 super-shell full-cover -> tag (subscript)');
+vashellCase('foo<span style="vertical-align:top">[bar]</span>baz', 'subscript',
+  'foo<sub>bar</sub>baz', 'd13 F1 top-shell full-cover -> tag (subscript)');
+vashellCase('foo<span style="vertical-align:bottom">[bar]</span>baz', 'superscript',
+  'foo<sup>bar</sup>baz', 'd13 F1 bottom-shell full-cover -> tag (superscript)');
+vashellCase('<sub>fo[o</sub><span style="vertical-align:sub">b]ar</span>', 'subscript',
+  '<sub>foob</sub><span style="vertical-align:sub">ar</span>',
+  'd13 F2 sub-shell straddle -> merge into sub');
+vashellCase('<sub>fo[o</sub><span style="vertical-align:top">b]ar</span>', 'subscript',
+  '<sub>foob</sub><span style="vertical-align:top">ar</span>',
+  'd13 F2 top-shell straddle -> merge into sub');
+vashellCase('<sup>fo[o</sup><span style="vertical-align:super">b]ar</span>', 'superscript',
+  '<sup>foob</sup><span style="vertical-align:super">ar</span>',
+  'd13 F2 super-shell straddle -> merge into sup');
+</script>
+</body>
+</html>

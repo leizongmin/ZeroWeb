@@ -2022,7 +2022,27 @@
         for (var a = 0; a < at.length; a++) {
           try {
             var an = at[a].name, av = at[a].value;
-            if (an.toLowerCase() === 'style') av = _zwVaNormalizeStyleAttrCss(av);
+            if (an.toLowerCase() === 'style') {
+              av = _zwVaNormalizeStyleAttrCss(av);
+              // sub/sup ADD 面冲突壳：被覆盖段克隆不继承 vertical-align
+              // decl（Chrome 录形覆盖侧新面 = sub/sup 包裹，decl 随原壳
+              // 残段留存；声明侧 strip 与 Arm B 同机——decl 直删重写）。
+              // _zwPlainStyleDecls 读元素 attr，克隆壳先落 style 再剥读。
+              if (command === 'subscript' || command === 'superscript') {
+                clone.setAttribute('style', av);
+                var dvC = _zwPlainStyleDecls(clone);
+                if (dvC['vertical-align'] != null) {
+                  delete dvC['vertical-align'];
+                  var pvC = [];
+                  for (var kvC in dvC) {
+                    if (Object.prototype.hasOwnProperty.call(dvC, kvC)) {
+                      pvC.push(kvC + ':' + dvC[kvC]);
+                    }
+                  }
+                  av = pvC.join('; ');
+                }
+              }
+            }
             clone.setAttribute(an, av);
           } catch (_ePa) {}
         }
@@ -2142,11 +2162,26 @@
         // `fo[o<span style="font-style:oblique">b]ar</span>baz` 期望壳内
         // `<span style="font-style:italic">b</span>` 嵌套，非抽取合并）。
         // toggle-off（newValue null/'normal'）切分面不受此门。
-        if (spec !== null && !_zwVaEquivalentValues(command, spec, newValue)
+        // sub/sup ADD 面 vertical-align 冲突壳（Chrome delta，2026-11-13）：
+        // vendored getSpecifiedCommandValue 对 sub/sup 仅认 tag face，inline
+        // vertical-align decl 壳（任意值——sub/super/top/bottom 录形同链）
+        // 不入 conflict 链 → peel 不抽取、跨选区段不并入既有 sub/sup，产出
+        // 壳内嵌套（data/subscript.js:399-417 va 邻壳族期望抽取并拢形
+        // `<sub>fo[ob]</sub><span style=vertical-align:…>ar</span>`；spec
+        // 算法嵌套形与 Chrome 录形相悖，语料按 Chrome 录音）。ADD 面任一
+        // va 值皆冲突；toggle-off（newValue null）面维持 tag-only 既有行为。
+        var vaConf = false;
+        if ((command === 'subscript' || command === 'superscript')
+            && newValue != null && spec === null) {
+          try { vaConf = !!(_zwPlainDecl(par, 'vertical-align')); }
+          catch (_eVaP) { vaConf = false; }
+        }
+        if ((spec !== null && !_zwVaEquivalentValues(command, spec, newValue)
             && (!isBg || par === fcS)
             && !(command === 'bold'
                 && ((parseInt(newValue, 10) || 0) >= 600 || newValue === 'bold'))
-            && !(command === 'italic' && newValue === 'italic')) {
+            && !(command === 'italic' && newValue === 'italic'))
+            || vaConf) {
           chain.push(par);
         }
         n = par;
@@ -2965,6 +3000,39 @@
       var elC = elements[i];
       var specC = _zwVaSpecifiedValue(elC, command);
       _zwVaClearValue(elC, command);
+      // sub/sup ADD 面 vertical-align 冲突壳剥离（Chrome delta，2026-11-13，
+      // F1 全包形）：vendored clearValue 因 specified null 早退（tag-only
+      // 面），壳 style 原样滞留 → forceValue 新 `<sub>/<sup>` 套进壳内嵌套
+      // （data/subscript.js:405/415 `foo<span style=vertical-align:…>
+      // [bar]</span>baz` 期望摘壳换 tag 形 `foo<sub>[bar]</sub>baz`）。
+      // Chrome removeInlineStyle 对冲突 prop 直删：剥 vertical-align decl；
+      // style 摘空且属性全空 → 解包（kids 升格，forceValue 顶层裹 tag）；
+      // 残余 decl 壳保壳（Chrome 残值形同构）。toggle-off 面不动。
+      if ((command === 'subscript' || command === 'superscript')
+          && newValue != null
+          && specC === null && elC.parentNode) {
+        var vaDeclB = '';
+        try { vaDeclB = _zwPlainDecl(elC, 'vertical-align') || ''; }
+        catch (_eVb0) { vaDeclB = ''; }
+        if (vaDeclB) {
+          var declsB = _zwPlainStyleDecls(elC);
+          delete declsB['vertical-align'];
+          var partsB = [];
+          for (var kB in declsB) {
+            if (Object.prototype.hasOwnProperty.call(declsB, kB)) {
+              partsB.push(kB + ':' + declsB[kB]);
+            }
+          }
+          if (partsB.length) {
+            elC.setAttribute('style', partsB.join('; '));
+          } else {
+            elC.removeAttribute('style');
+          }
+          if (_zwVaIsAttributeless(elC)) {
+            _zwVaUnwrapElement(elC);
+          }
+        }
+      }
       // Chromium delta：fully contained 的 legacy font 并值成属性（不另起
       // 包裹）——`<font size=7>[abc]</font>` +forecolor 期望
       // `<font color="#ff0000" size="7">`、三属性 font +fontname 期望 face

@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（275）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（276）
 
+- 2026-11-13 [wpt editing 语料红账判读：切片伪失败与期望形真值源](bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md) — engine,tests
 - 2026-11-13 [plain 树 mutator 缺 R263 插入补偿致 live-range 塌缩](bugs/2026-11/2026-11-13-live-range-insert-compensation-plain-mutators.md) — engine
 - 2026-11-13 [不变式补写类修复的最终形态必须由 corpus 全量 A/B 定谳——四门全绿仍拦出确定性真回归](bugs/2026-11/2026-11-13-invariant-backfill-write-gated-by-corpus-ab.md) — layout-engine
 - 2026-11-13 [forceValue 的 'normal' 是合法 ADD 面参数，不能当移除面拦截](bugs/2026-11/2026-11-13-forcevalue-normal-is-valid-add-face-param.md) — engine

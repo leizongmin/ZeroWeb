@@ -189,14 +189,21 @@ MEl 面与 proxy 面按 parent 对象形态互斥分流，无双补偿风险。
 
 ### 残余账目与归属（bold 8F = 2F + 6F）
 
-- **2F（?2001-3000 无 stylewithcss 前置的 900 case）**：新鲜单 case
-  探针页在 css=true/false 两宇宙均产期望形，corpus 页失败是页内跨
-  case 状态污染，归 d9 账目②（cssFlag 生命周期 + state override
-  残留）。polluted 种子（collapsed bold toggle-off 前置）未复现，
-  留②专项。
+**d13 修订**：本节"页内跨 case 状态污染归②"的归属判定瓦解——900
+case 与 cssFlag qS 族是**语料切片割裂伪失败**（条目 139/75/204 被
+meta variant 边界割断，注册期副作用无条件执行而 execCommand 闭包只在
+窗口内执行，割裂条目 got=输入原样；Chrome 于 wpt.fyi 同红）。机制、
+条目编号公式与探针实证见
+[dc2-sub-sup-va-shell](2026-11-13-dc2-sub-sup-va-shell.md)；
+d9 账目②（cssFlag 生命周期 + state override 残留）随之撤项。
+2F 真差异保留：b-in-i 块边界嵌套 ×2（条目 82/83）。
+
+- ~~2F（?2001-3000 无 stylewithcss 前置的 900 case）~~：新鲜单 case
+  探针页在 css=true/false 两宇宙均产期望形——后经 d13 定谳为切片割裂
+  伪失败（非页内污染），归伪失败账。
 - 6F 长尾：bold 壳全选 toggle-off ×2（?1001-2000 cssfalse）、b>i
   嵌套 ×2（?1001-2000 双 css）、cssFlag qS-before ×2（?3001-last
-  cssfalse 100 族）——前两类是 P2 既有长尾，第三类归②。
+  cssfalse 100 族）——前两类是 P2 既有长尾，第三类归切片伪失败。
 
 ### 哨兵处置
 
