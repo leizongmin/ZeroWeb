@@ -2793,13 +2793,20 @@ fn position_cells(
                     if let Some(cb) = cell_box {
                         // R5282：winner-center 行槽口径（content+padding 基 + 上下格线
                         // 胜者半宽），与 position_cells 装配循环同源。
-                        h = h.max(if collapse_winner {
-                            let wt = winner_h.get(row_idx).copied().unwrap_or(0.0);
-                            let wb = winner_h.get(row_idx + 1).copied().unwrap_or(0.0);
-                            winner_center_row_slot_height(cb, wt, wb)
-                        } else {
-                            cb.height
-                        });
+                        // R5516：分配输入须与装配行高度量同源——taffy 隔离盒高漏计
+                        // 末子 margin-bottom（§8.3.1 BFC 内子 margin 留盒内，
+                        // anonymous-table-cell-margin-collapsing：td taffy 50 vs 真值
+                        // 100），分配按 taffy 摊 extras、装配再按 R1390 aware 兜底，
+                        // 差额双计（rows 125/25 表 150，应 100/0 表 100）。
+                        h = h
+                            .max(if collapse_winner {
+                                let wt = winner_h.get(row_idx).copied().unwrap_or(0.0);
+                                let wb = winner_h.get(row_idx + 1).copied().unwrap_or(0.0);
+                                winner_center_row_slot_height(cb, wt, wb)
+                            } else {
+                                cb.height
+                            })
+                            .max(cell_float_aware_content_height(cb, styles));
                     }
                 }
             }
@@ -4247,5 +4254,8 @@ fn update_row_group_positions(
 /// R5318 替换叶盒 cell intrinsic 固有宽（css-sizing-3 §5.1 + CSS2 §10.3.2，c42-ibx-pad-000）。
 #[cfg(test)]
 mod r5318_replaced_leaf_cell_tests;
+/// R5516 匿名 cell margin 抑制 + 行高分配输入 aware floor（CSS2 §17.4/§17.5.3）。
+#[cfg(test)]
+mod r5516_implicit_cell_margin_tests;
 #[cfg(test)]
 mod tests;

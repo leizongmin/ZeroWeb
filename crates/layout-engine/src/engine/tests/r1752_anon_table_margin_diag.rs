@@ -1,13 +1,11 @@
-//! R1752：anonymous-table-cell-margin-collapsing（css-tables，3.40% diff）已知 bug characterization。
-//!
-//! chromium ref = filled-green-100px-square（table 100×100）。ZW 渲染 table **110×150**
-//!（行溢出 height:100px）。根因（LAYOUT_DUMP 实证）：ZW **不生成匿名 table-cell 盒**
-//!（CSS2 §17.2.1：table-row 的 block 子应被包成 anon TableCell）——block div 直接作
-//! TableRow 子 → table model 破坏 → margin 不穿过 anon cell 折叠 → 行高累加溢出。
-//!
-//! **结构性 table-model 改动，高风险**（同 R1630 broad-table-regresses 谱系），须
-//! dedicated RFC + slices，非 quick fix。本测试 characterize 当前 buggy 行为（table h≈150），
-//! 当 anon table-cell generation 实现后 h 应回到 ~100，此断言失败提示更新。
+//! R1752 / R5516：anonymous-table-cell-margin-collapsing（css-tables，R1752 记档 3.40%、
+//! R5099 记档 2.77%）——chromium ref = filled-green-100px-square（table 100×100）。
+//! ZW 旧态渲染 table ≈110×150（行溢出 height:100px）：table-row 的块级子按匿名
+//! table-cell 入网格（CSS2 §17.2.1），converter 的 margin applies-to（§17.4）与
+//! R5281 BFC 隔离均按自身 display=TableCell 判，匿名 cell 旁路——margin 全额入账
+//! 且子 margin 塌穿 cell→row→table。R5516 落地匿名 cell margin 抑制 + 隔离 +
+//! 行高分配输入 aware floor（table.rs content_row_heights），表高回到 ~100，
+//! 本测试按原 characterization 自述翻转为修复锚。
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
 use zero_css_parser::values::DisplayValue;
@@ -49,13 +47,17 @@ fn r1752_anon_table_margin_collapsing_current_behavior() {
         stack.extend(b.children.iter());
     }
     let t = table.expect("table box");
-    // KNOWN BUG（characterization）：当前 ZW table h≈150（行溢出 height:100px，因 anon
-    // table-cell 未生成 + margin 不折叠）。chromium 应 h≈100。当 anon table-cell generation
-    // RFC 落地，此断言会失败 → 改为 assert h≈100。
+    // R5516 修复锚（原 characterization 自述翻转）：表高应回到 ~100（chromium 同），
+    // 行高分配吃满 definite target（100 + 0），行 2/3 无内容不吸收 extras。
     assert!(
-        (t.height - 150.0).abs() < 10.0,
-        "R1752 characterization: 当前 ZW table h≈{:.0}（已知 bug：anon table-cell 未生成，\
-         行溢出 height:100px；chromium 应 ~100）。修复后更新为 ~100。",
+        (t.height - 100.0).abs() < 10.0,
+        "R1752/R5516: table h 应 ≈100（匿名 cell margin 抑制 + 隔离 + 分配对齐后），\
+         实得 {:.0}",
         t.height
+    );
+    assert!(
+        (t.margin_top - 0.0).abs() < 0.01,
+        "R5516: table 自身 margin_top 应 0（首 cell margin 不再塌至表顶），实得 {}",
+        t.margin_top
     );
 }
