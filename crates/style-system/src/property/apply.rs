@@ -2312,6 +2312,13 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 已实现函数名单，未实现放行臂会先行误放 `reversed(chapter)`。
     // <https://drafts.csswg.org/css-lists-3/#counter-increment>
     if prop == "counter-increment" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——css-values-3 §3.3
+        // var() 在属性文法内恒语法合法，有效性延后 computed 期替换重裁（g24
+        // 洞 A 同型豁免；typed-om「Can set counter-increment to var()
+        // references」g27 门拒收回归根因）。
+        if value_has_substitution_function(v) {
+            return true;
+        }
         // 转义 ident（css-lists valid 语料 `a\ 8 9` 转义空格名）超 top-level
         // 空白分词文法面，保留既有放行（store 原文——该形语料序列化恒等）。
         // FIXME: custom-ident 转义序列词法挂账。
@@ -2327,6 +2334,12 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 在 fold_decl_specified）。
     // <https://drafts.csswg.org/css-size-adjust-1/#adjustment-property>
     if prop == "text-size-adjust" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——同 counter-increment
+        // 臂豁免（css-values-3 §3.3；typed-om var() references 组 g28 门拒收
+        // 回归根因），有效性 computed 期替换重裁。
+        if value_has_substitution_function(v) {
+            return true;
+        }
         if values::is_math_function_value(v) {
             return true;
         }
@@ -3279,6 +3292,10 @@ mod t54_validate_decl_value_tests {
         // 转义空格名（`a\ 8 9`）超 top-level 分词面保留既有放行
         //（FIXME: custom-ident 转义序列词法挂账）。
         assert!(validate_decl_value("counter-increment", "a\\ 8 9"));
+        // 替换函数形放行 store（css-values-3 §3.3，computed 期重裁）。
+        assert!(validate_decl_value("counter-increment", "var(--A)"));
+        assert!(validate_decl_value("counter-increment", "attr(data-n)"));
+        assert!(validate_decl_value("counter-increment", "chapter var(--step)"));
         // css-wide 关键字裸形放行（Cascading 4 §7.3 上下文无关）。
         assert!(validate_decl_value("counter-increment", "inherit"));
     }
@@ -3298,6 +3315,10 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("text-size-adjust", "0%"));
         assert!(validate_decl_value("text-size-adjust", "calc(10% + 5%)"));
         assert!(validate_decl_value("text-size-adjust", "calc(10% * sibling-index())"));
+        // 替换函数形放行 store（css-values-3 §3.3，computed 期重裁）；负 %
+        // 字面形仍写面拒（css-size-adjust invalid 页 round-trip 断言）。
+        assert!(validate_decl_value("text-size-adjust", "var(--A)"));
+        assert!(validate_decl_value("text-size-adjust", "attr(data-zoom %)"));
         // css-wide 关键字裸形放行。
         assert!(validate_decl_value("text-size-adjust", "inherit"));
     }

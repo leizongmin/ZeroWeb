@@ -407,6 +407,36 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "border-right-color" => color_to_css(&crate::resolve_color_current(&style.border_right_color, element_color)),
         "border-bottom-color" => color_to_css(&crate::resolve_color_current(&style.border_bottom_color, element_color)),
         "border-left-color" => color_to_css(&crate::resolve_color_current(&style.border_left_color, element_color)),
+        // ── border-color 简写 gCS 读出 ── 四边聚合（此前读数缺位返 ''，
+        // system-color-consistency 页 getPropertyValue("border-color") 空串经
+        // computed-testcommon `if (!computed) computed = specified` 回落为字面
+        // 关键词致 ButtonBorder 桶 8F）。序列化按 CSSOM 简写最短形去重：l==r 时
+        // b==t 且 r==t → 1 值，b==t → 2 值「top right」，否则 3 值；l≠r → 4 值
+        //（top right bottom left 序）。各边独立 currentcolor 解析（与 longhand
+        // 臂同通道）。
+        // https://drafts.csswg.org/css-color-4/#css-system-colors
+        // https://drafts.csswg.org/cssom-1/#serialize-a-css-value
+        "border-color" => {
+            let sides = [
+                color_to_css(&crate::resolve_color_current(&style.border_top_color, element_color)),
+                color_to_css(&crate::resolve_color_current(&style.border_right_color, element_color)),
+                color_to_css(&crate::resolve_color_current(&style.border_bottom_color, element_color)),
+                color_to_css(&crate::resolve_color_current(&style.border_left_color, element_color)),
+            ];
+            if sides[3] == sides[1] {
+                if sides[2] == sides[0] {
+                    if sides[1] == sides[0] {
+                        sides[0].clone()
+                    } else {
+                        format!("{} {}", sides[0], sides[1])
+                    }
+                } else {
+                    format!("{} {} {}", sides[0], sides[1], sides[2])
+                }
+            } else {
+                sides.join(" ")
+            }
+        }
         "outline-color" => color_to_css(&crate::resolve_color_current(&style.outline_color, element_color)),
         // ── 长度族（计算值；resolve_computed_style 已把主要相对单位解析为 Px）──
         "width" => length(&style.width),

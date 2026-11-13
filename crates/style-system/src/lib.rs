@@ -2469,12 +2469,23 @@ impl StyleSystem {
                 // R1396：表单控件默认外观（Chromium UA html.css）。旧实现把 button/input 渲成
                 // 纯文本（无 bg/border/padding），legacy 表单页不可读。此处补 ButtonFace 近似灰
                 // bg + 边框 + padding 使控件可见（产品验收口径「结构不崩、核心语义可见」）。
-                // 精确像素匹配系统色 ButtonFace/Canvas 须系统色支持（后续），当前用近似 hex。
+                // S1（2026-11-14，css-color 系统色批）：色面从近似 hex 改系统色关键词声明——
+                // button 走 ButtonText/ButtonFace/ButtonBorder，input 按钮族（type=button|
+                // submit|reset|color，Chromium html.css 同组）走 ButtonFace/ButtonBorder，
+                // 文本族与 select/textarea 走 Field。关键词经 parse_color_with_scheme 按
+                // 元素 used color-scheme 解析（dark 面板见 css-parser color.rs），使
+                // system-color-consistency 页「系统色 == 控件对应属性读数」自洽成立（此前
+                // 近似 hex 与关键词静态值错位 239/240、8/0，且 dark 轮不随 scheme 翻转）。
+                // border-color 以显式 longhand 声明后置覆盖 border 简写展开的色槽（简写
+                // 几何 2px/1px solid 不变）。文本族不加 color 声明：继承 html 默认色
+                //（light 黑/dark 白）已与 FieldText 两轮同值，显式声明反覆写作者继承面。
+                // https://html.spec.whatwg.org/multipage/rendering.html#the-button-element
+                // https://www.w3.org/TR/css-color-4/#css-system-colors
                 "button" => {
-                    ua_decl_inputs.push(("color".to_string(), "#080808".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("color".to_string(), "ButtonText".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push((
                         "background-color".to_string(),
-                        "#efefef".to_string(),
+                        "ButtonFace".to_string(),
                         false,
                         (0, 0, 0),
                         None,
@@ -2482,6 +2493,13 @@ impl StyleSystem {
                     ua_decl_inputs.push((
                         "border".to_string(),
                         "2px solid #767676".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push((
+                        "border-color".to_string(),
+                        "ButtonBorder".to_string(),
                         false,
                         (0, 0, 0),
                         None,
@@ -2498,9 +2516,23 @@ impl StyleSystem {
                     ua_decl_inputs.push(("padding".to_string(), "1px 6px".to_string(), false, (0, 0, 0), None));
                 }
                 "input" | "select" | "textarea" => {
+                    // input 按钮族判定（type 属性大小写不敏感，缺省 = text）：HTML 渲染
+                    // 规范将 submit/reset/color 与 button 同组呈现（Chromium UA html.css
+                    // `[type=button i]` 等选择器同形）。缺失/非按钮族 → Field。
+                    let input_buttonish = if tag == "input" {
+                        matches!(
+                            doc.get_attribute(element, "type")
+                                .unwrap_or_else(|| "text".to_string())
+                                .to_ascii_lowercase()
+                                .as_str(),
+                            "button" | "submit" | "reset" | "color"
+                        )
+                    } else {
+                        false
+                    };
                     ua_decl_inputs.push((
                         "background-color".to_string(),
-                        "white".to_string(),
+                        if input_buttonish { "ButtonFace" } else { "Field" }.to_string(),
                         false,
                         (0, 0, 0),
                         None,
@@ -2516,6 +2548,15 @@ impl StyleSystem {
                         (0, 0, 0),
                         None,
                     ));
+                    if input_buttonish {
+                        ua_decl_inputs.push((
+                            "border-color".to_string(),
+                            "ButtonBorder".to_string(),
+                            false,
+                            (0, 0, 0),
+                            None,
+                        ));
+                    }
                     ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
                     if tag == "textarea" {
                         // https://html.spec.whatwg.org/multipage/rendering.html#the-textarea-element-2
