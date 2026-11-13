@@ -3542,9 +3542,23 @@
       var _omWrapped = /(^|[^\w.$])on(message|popstate)\s*=[^=]/.test(combined206)
         ? 'with(window){' + _zwRealmShadow + combined206 + exportSuffix206 + '\n}'
         : _zwRealmShadow + combined206 + exportSuffix206;
+      // s432（html-semantics M2 切片 432）：aux 上下文裸 `opener`/`close` 形参。
+      // links target_blank_implicit_noopener 端点读**裸** `opener`（form 双胞胎端
+      // 点用 window.opener 限定名，R206 既有形参已达——s431 通过而 links 挂的分歧
+      // 面恰在此）。合并 Function 形参表无 opener，裸名解析落宿主 globalThis →
+      // undefined → `opener !== null` ReferenceError，端点死于 postMessage 之前
+      //（零投递 → async_test 全 pending → 文件级 Timeout；zz-probe-aux2 实证 aux
+      // 端点脚本已运行、仅裸名解析断）。仅 aux 项注入：flags.aux 与 finish 的
+      // opener/close 预置同门同序（上方 3049 行先置 win.opener/win.close，本参数
+      // 快照恰在其后）；参数快照值语义（端点只读面）。非 aux iframe 形参表逐字
+      // 节不变。
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-window-object
+      var _zwAuxNames206 = (flags && flags.aux) ? ['opener', 'close'] : [];
+      var _zwAuxVals206 = _zwAuxNames206.length ? [win.opener, win.close] : [];
       var fn = new Function(
-        'window', 'self', 'parent', 'top', 'document', 'location',
-        'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
+        ['window', 'self', 'parent', 'top', 'document', 'location',
+         'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history']
+          .concat(_zwAuxNames206).join(','),
         _omWrapped);
       // s339：上方注入段的注册包装对**宿主全局** `promise_test`/`test`/`async_test`
       // 写包装——子文档 harness 的注册 API 是 IIFE 内绑定、合并 fn 作用域无同名局部，
@@ -3574,10 +3588,11 @@
       globalThis.__zwActiveIframeWin = win;
       globalThis.__zwActiveIframeDoc = doc;
       try {
-        fn.call(
-          win, win, win, globalThis, globalThis, doc, loc,
-          win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
-          win.Response, win.URL, win.caches, win.history
+        fn.apply(
+          win,
+          [win, win, globalThis, globalThis, doc, loc,
+           win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
+           win.Response, win.URL, win.caches, win.history].concat(_zwAuxVals206)
         );
       } finally {
         if (_zwSlotW382 === undefined) delete globalThis.__zwActiveIframeWin;

@@ -18017,6 +18017,28 @@
     // bubbles:false（上方分支）不向 window 虚站冒泡。sel='html' 仅为 doc 槽位的三合一 key 入口。
     var ok = _dispatchWithBubble(r145Key, r145Handle ? null : sel, r145Handle || null, ev,
       type === 'readystatechange' ? 'doc' : undefined);
+    // s432（html-semantics M2 切片 432）：UA 指针 click 的锚激活默认动作——spec
+    // activation behavior：click 派发未被取消时 A/AREA 跑激活步骤
+    //（https://html.spec.whatwg.org/multipage/interaction.html#run-post-click-activation-steps
+    // —— hyperlinked resource 导航/target=_blank aux 语义）。runner Actions 指针序
+    // 合成的 click（part06 `__zw_pointer_up_sequence` 两合成位，pointerType 在场 +
+    // pointerId 1）此前只派事件不跑激活（zz-probe-c 实证：ck 已派、`_zwAnchorAuxSeq`
+    // 不增、aux 零投递 → target_blank_useractivation mouse 臂挂 + 序列阻塞后续
+    // area 两子测）。门 = 指针生成 click（pointerType != null 且 pointerId ≠ -1）：
+    // 键盘合成 click（ENTER/SPACE 通道 pointerId -1，非指针生成——PE spec）与
+    // webdriver 折叠 click（R108 宿主激活事务，pointerType null 走泛型分支，激活
+    // 归宿主 anchor_click_target 管线）均不越界，无双激活。preventDefault 取消面
+    // 按 spec 跳过（ok falsy）。页面 dispatchEvent/click() API 路径不经本函数，
+    // part04 R154/R106 臂不受影响。
+    if (type === 'click' && ok && detail && detail.pointerType != null
+        && (detail.pointerId == null || detail.pointerId !== -1)) {
+      try {
+        var _zw154TagM = _realTag(r145Handle ? null : sel, r145Handle || null);
+        if (_zw154TagM === 'A' || _zw154TagM === 'AREA') {
+          _zwAnchorActivate(r145Handle ? null : sel, r145Handle || null);
+        }
+      } catch (_e154m) {}
+    }
     // svg-compat-v2 B5：宿主派发通道（UA 合成事件——testdriver.click/runner
     // 输入链）绕过页面 dispatchEvent 与 part05 两通知面，派发尾补 eventbase
     // 通知（SMIL #Eventvalue semantics 不区分 trusted/合成）。restart-never-

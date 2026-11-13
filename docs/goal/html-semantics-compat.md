@@ -2,43 +2,69 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 431 收口（form target=_blank aux 上下文施工轮，
-**6T 全解挂，稳定红面 214→207**；账本
-evidence/2026-11-14-m2s431-form-target-blank-aux-context.md）——四文件
-五刀：①part04.js S4J ⑤b base target 回落（form 无 target 属性时 base
-target 参与 navigable 选择，rel-base-target 钉面）；②part04.js `_blank`
-臂（rel 语义矩阵按 spec window opening steps——noopener 强制=显式
-noopener/noreferrer 或无显式 opener、referrer 送达=非 noreferrer；合成
-aux entry 复用 `_zwLoadIframeEntry` 全链，POST 附 method/body/headersWire
-multipart boundary 保真；提交后消费瞬态激活）；③part01.js finish
-referrer flags 预置（noreferrer→''，缺省父 href 不变）；④part01.js
-aux opener/close 预置（opener 顶层 win 引用/null=强制 + close 无操作消
-endpoint TypeError 双层上报逸出）——③④先于子文档脚本执行落位（finish
-内同步执行的时序约束，flags 是唯一预置通道）；⑤py_routes
-`route_form_target_request_header`（镜像 upstream helper content-type 门
-+ BroadcastChannel 回投，注册于非 GET 兜底门之前）+ runner 单测双臂。
-勘根定性：6T=5 engine（rel×4+useractivation，根因 ⑤b 无 `_blank` 臂）
-+ 1 runner 端点仿真缺位（.py 不执行非 engine 缺陷）。验证：25 part 拼装
-node --check OK（153,473 行）；runner release 重建 exit 0；solo 恰集
-六文件全绿（rel×4 各 7P + useractivation 3P 三触发臂 + request-header
-1P）；全域 sweep ×2（8484 键/轮）join 对 s430 双基线——**stable-F
-200=200 / stable-P 8242→8274（+32 零消失，全落目标目录）/ stable-T
-14→7（−7）/ 沾染 0→1**（detailed.optional 双轮态分裂翻入，簇 D 在册
-家族时序闪变，与施工面零交集）。本轮 join 首跑假零漂移（脚本 cur 行误
-指旧基线 pairs）由 headline 三数与恰集矛盾揭破——教训入账本。
-**组合态整验（429 打断恢复轮）**：pull --rebase 合入他流三笔（editing
-v3.2 / css bolder-lighter / css attr()，均触 part01.js 共享面）后终稿
-树全链重跑——solo ×6 逐键保真 32P 零红 + ut2/clippy 重跑 exit 0 +
-sweep ×2 join 对 s431 双基线 **F/P 双桶逐键零漂移**；T 桶 7→8 与沾染
-1→2 全落在册 flake 族（select-event/focus-dynamic 负载闪变 solo ×2
-定谳 + home-end.optional 簇 D 翻转），到货零账面位移。**基线移交**：
-后续施工轮 join 改用 /tmp/s431/pairs-{1,2}.txt。**残留记账**：
-form-target-iframe/multi-globals 不入 runner 语料（skip 规则，零账面
-影响）；POST-to-static 兜底=net-infra 面；window.open 真弹窗链 defer。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
-下一步：s432 links 域 a/area target=_blank aux 臂（T 池 4 键孪生面，
-基建 s431 已建）；dialog R-s31 簇/img density/embed sizing face 到货
-复验；门决策后 video P1+P2 或簇 D A2 分诊续。
+**状态**: Active——M2 切片 432 收口（links 域 a/area target=_blank aux
+臂施工轮，**T 池 4 键全解挂，stable-P +34 零消失**；账本
+evidence/2026-11-14-m2s432-anchor-target-blank-aux-context.md）——shim
+JS 三刀（零 Rust 改动）：①part03.js `_zwAnchorActivate` `_blank` 臂
+（target own-expando→attr→`<base>` 回落 + rel 语义矩阵 spec window
+opening steps + `_zwLoadIframeEntry('__zwAuxAnchor:<seq>')` 合成 + 瞬态
+激活消费；static/IDL 双 href 形）；②part01.js `_zwRunIframeScripts` aux
+形参注入（flags.aux 项形参表追加 `opener`/`close` 快照，非 aux 逐字节
+不变——R206 裸标识符只达形参表，links 端点裸 `opener` 落宿主 globalThis
+undefined → ReferenceError 死于 postMessage 前是 implicit_noopener 双文件
+26 子测挂的根因；form 端点 `window.opener` 限定名故 s431 不暴露）；③
+part06.js `__zw_dispatch_event` 指针 click 锚激活臂（派发尾 A/AREA 跑
+`_zwAnchorActivate`，门 = pointerType 在场 ∧ pointerId≠−1——键盘合成
+click（pointerId −1）与 webdriver 折叠 click（R108 pointerType null，
+激活归宿主 anchor_click_target 管线）均不越界；修复前 Actions 指针 click
+事件序全齐（po,mo,mo,ck,body-ck）而激活臂不跑 → useractivation mouse
+臂挂 + promise_test 串行阻塞后续 area 两子测）。验证：25 part 拼装 OK
+（153,625 行）；release 重建 exit 0；solo 恰集 ×5 全绿（implicit×2 +
+rel-clearing exit 0 ×3 + useractivation 4/4P + 探针双 P）；全域 sweep ×2
+终验（探针 7 文件全删后）stable join 对 s431 组合态双基线——**stable-P
+8274→8308（+34 零消失：implicit 13+13 + rel-clearing 4 + useractivation
+4）/ stable-T 8→2（−6：4 目标文件键 + select-event/focus-dynamic 在册
+flake 翻绿不入账）/ stable-F 200→204（+4 customizable-select home-end
+簇 D 跨轮翻红，与施工面零交集）/ 沾染 2→1（C-NEW 0）**。**挂用户门
+维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：s433
+红池分诊续（残余 stable-T 2 键 = 簇 D 家族；门决策后 video P1+P2 或
+簇 D A2）；window.open 真弹窗链评估轮（s431 defer 项）；dialog R-s31
+簇/img density/embed sizing face 到货复验。
+
+> **▶ 承前（2026-11-14 M2 切片 431 收口）——form target=_blank aux
+> 上下文施工轮（6T 全解挂，稳定红面 214→207）**：账本
+> evidence/2026-11-14-m2s431-form-target-blank-aux-context.md。原 Active
+> 段留档——四文件五刀：①part04.js S4J ⑤b base target 回落（form 无
+> target 属性时 base target 参与 navigable 选择，rel-base-target 钉面）；
+> ②part04.js `_blank` 臂（rel 语义矩阵按 spec window opening steps——
+> noopener 强制=显式 noopener/noreferrer 或无显式 opener、referrer 送达=
+> 非 noreferrer；合成 aux entry 复用 `_zwLoadIframeEntry` 全链，POST 附
+> method/body/headersWire multipart boundary 保真；提交后消费瞬态激活）；
+> ③part01.js finish referrer flags 预置（noreferrer→''，缺省父 href
+> 不变）；④part01.js aux opener/close 预置（opener 顶层 win 引用/null=
+> 强制 + close 无操作消 endpoint TypeError 双层上报逸出）——③④先于子
+> 文档脚本执行落位（finish 内同步执行的时序约束，flags 是唯一预置通道）；
+> ⑤py_routes `route_form_target_request_header`（镜像 upstream helper
+> content-type 门 + BroadcastChannel 回投，注册于非 GET 兜底门之前）+
+> runner 单测双臂。勘根定性：6T=5 engine（rel×4+useractivation，根因 ⑤b
+> 无 `_blank` 臂）+ 1 runner 端点仿真缺位（.py 不执行非 engine 缺陷）。
+> 验证：25 part 拼装 node --check OK（153,473 行）；runner release 重建
+> exit 0；solo 恰集六文件全绿（rel×4 各 7P + useractivation 3P 三触发臂
+> + request-header 1P）；全域 sweep ×2（8484 键/轮）join 对 s430 双基线
+> ——**stable-F 200=200 / stable-P 8242→8274（+32 零消失，全落目标目录）
+> / stable-T 14→7（−7）/ 沾染 0→1**（detailed.optional 双轮态分裂翻入，
+> 簇 D 在册家族时序闪变，与施工面零交集）。本轮 join 首跑假零漂移（脚本
+> cur 行误指旧基线 pairs）由 headline 三数与恰集矛盾揭破——教训入账本。
+> **组合态整验（429 打断恢复轮）**：pull --rebase 合入他流三笔（editing
+> v3.2 / css bolder-lighter / css attr()，均触 part01.js 共享面）后终稿
+> 树全链重跑——solo ×6 逐键保真 32P 零红 + ut2/clippy 重跑 exit 0 +
+> sweep ×2 join 对 s431 双基线 **F/P 双桶逐键零漂移**；T 桶 7→8 与沾染
+> 1→2 全落在册 flake 族（select-event/focus-dynamic 负载闪变 solo ×2
+> 定谳 + home-end.optional 簇 D 翻转），到货零账面位移。**基线移交**：
+> 本轮（s432）join 已改用 /tmp/s431/pairs-{3,4}.txt。**残留记账**：
+> form-target-iframe/multi-globals 不入 runner 语料（skip 规则，零账面
+> 影响）；POST-to-static 兜底=net-infra 面；window.open 真弹窗链 defer
+> （s432 下一步转评估轮候选）。
 
 > **▶ 承前（2026-11-14 M2 切片 430 收口）——engine act:option 臂施工
 > 轮（双刀合龙，seltouch 稳定翻绿，稳定红面 215→214 首个真实解挂）**：

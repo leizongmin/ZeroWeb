@@ -30879,6 +30879,67 @@ return e;
     // download/cross-origin 面——WPT navigate-anchor-download / -cross-origin /
     // -same-origin-cross-document / -same-url 族）。
     else if (_r154Href && globalThis.location) {
+      // s432（html-semantics M3 links 面）：A/AREA target=_blank 臂——auxiliary
+      // browsing context 近似，复用 s431 form _blank 臂的合成 entry 管线（flags
+      // 通道 + part01 finish aux opener/close/referrer 预置 + BroadcastChannel
+      // 回投——同一 JS VM 跨 entry 天然可达）。spec 链：following hyperlinks 的
+      // target 缺省步（plan to navigate：元素 target 属性 → Document base
+      // target）+ window opening steps 的 _blank noopener 缺省强制 / noreferrer
+      // 逐 token 判定。rel 每次激活新鲜读（rel-attribute-clearing 钉面：IDL 写
+      // 改写 rel 后下击按新值判定，禁缓存）。target 读同 href 双通道（own
+      // expando 优先——`a.target = '_blank'` IDL 写可能落 expando；attr 回落）
+      // + base target 缺省（target_blank_implicit_noopener_base 钉面）。瞬态
+      // 激活消费同 form 臂（target_blank_useractivation 钉面：开窗后 isActive
+      // 须 false）。download 线程态清空后 return（不触达当前文档导航——语料
+      // file 级 Timeout 根因：endpoint 不存在 → BroadcastChannel 永不回投 →
+      // harness 挂起）。
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#window-opening-steps
+      var _r154Target = '';
+      try {
+        var _p154t = _makeProxy(sel, handle);
+        if (_p154t && Object.prototype.hasOwnProperty.call(_p154t, 'target')
+            && _p154t.target != null && _p154t.target !== '') {
+          _r154Target = String(_p154t.target);
+        }
+      } catch (_e154tg) {}
+      if (!_r154Target) {
+        try { _r154Target = handle ? __zw_get_attr_handle(handle, 'target') : (__zw_get_attr(sel, 'target') || ''); } catch (_e154ta) { _r154Target = ''; }
+      }
+      if (!_r154Target) {
+        try {
+          var _r154Bt = globalThis.document.querySelector('base');
+          if (_r154Bt) _r154Target = String(_r154Bt.getAttribute('target') || '');
+        } catch (_e154tb) {}
+      }
+      if (_r154Target === '_blank') {
+        var _r154Rel = ' ';
+        try {
+          var _p154r = _makeProxy(sel, handle);
+          var _r154RelRaw = _p154r ? _p154r.rel : undefined;
+          if (typeof _r154RelRaw !== 'string') {
+            _r154RelRaw = String(handle ? __zw_get_attr_handle(handle, 'rel') : (__zw_get_attr(sel, 'rel') || ''));
+          }
+          _r154Rel = ' ' + String(_r154RelRaw || '').toLowerCase().replace(/\s+/g, ' ').trim() + ' ';
+        } catch (_e154rr) {}
+        var _r154Noop = _r154Rel.indexOf(' noopener ') >= 0;
+        var _r154Noref = _r154Rel.indexOf(' noreferrer ') >= 0;
+        var _r154Opn = _r154Rel.indexOf(' opener ') >= 0;
+        var _r154Flags = {
+          aux: true,
+          opener: (_r154Noop || _r154Noref || !_r154Opn) ? null : globalThis,
+        };
+        if (_r154Noref) _r154Flags.referrer = '';
+        try {
+          var _r154BaseU = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL() : String(globalThis.location.href || 'about:blank');
+          var _r154Abs = new URL(String(_r154Href), _r154BaseU).href;
+          globalThis.__zwAnchorAuxSeq = (globalThis.__zwAnchorAuxSeq | 0) + 1;
+          _zwLoadIframeEntry('__zwAuxAnchor:' + globalThis.__zwAnchorAuxSeq, _r154Abs, _r154Flags);
+        } catch (_e154ax) {}
+        globalThis.__zwNavDownloadRequest = null;
+        _zwTransientActive = false;
+        return;
+      }
       var _r154Se = null;
       try { _r154Se = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se2) { _r154Se = null; }
       try {
