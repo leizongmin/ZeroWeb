@@ -3214,36 +3214,77 @@
     if (frag === '') return;
     var sc = range.startContainer, so = range.startOffset | 0;
     var eo = range.collapsed ? so : (range.endOffset | 0);
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === host)) return;
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
     var kids = host.childNodes || [];
+    // 元素文本长度经 nodeValue 递归求和（OPTIMIZATION：不用 textContent——
+    // 其 getter 全子树串拼接，O(子树) 中间串分配在 4G 守卫线上是 GC 债）。
+    // 本刀提升至函数顶——壳域解析臂同用。
+    var kTextLen = function (n) {
+      if (n.nodeType === 3 || n.__zwIsText) return String(n.nodeValue || '').length;
+      var t = 0;
+      var c = n.childNodes || [];
+      for (var i = 0; i < c.length; i++) t += kTextLen(c[i]);
+      return t;
+    };
+    // 本刀（2026-11-13 ihtml 轴二行内壳刀）：选区任一端点落在一层行内壳内
+    // （sc 在壳内，或 ec 在壳内而 sc 是宿主直子文本）→ 壳域解析。Chrome 实录
+    // （e1-ihtml.log r2 post @ffdcd28af，普查档轴二族）：
+    // ① styled 行内壳内容全含于选区 = 整壳溶解、载荷落选区起点（
+    //   foo<span style>[bar]</span>baz + ab<b>c</b>d → fooab<b>c</b>dbaz；
+    //   跨壳起止 [foo<span>bar]/[bar</span>baz] 与双壳 [bar</span><span>baz]
+    //   同判）；② rawtext 壳（xmp/script 等）内部分选区 = 保壳拼接
+    //   （<xmp>f[o]o</xmp> + abc → <xmp>fabco</xmp>，markup 载荷同——rawtext
+    //   序列化不转义，两侧 parser 字面保真）；③ pre 内块载荷 = 单块解包后拼接
+    //   （<pre>1[23]4</pre> + <pre>abc</pre> → <pre>1abc4</pre>）。
+    // 不合形（部分壳选区、壳带属性/非文本兄弟、更深嵌套、round-trip 失真）
+    // 维持 return 旁路——既有宿主直子主路径零改动。
+    // 钉测 part112_ihtml_shell_sel_probe.rs（四形双向钉）。
+    var shellMode = false, shellHtml = null, shellWant = 0;
+    var ecInShell = false;
+    if (!range.collapsed) {
+      var ecRaw = range.endContainer;
+      ecInShell = !!(ecRaw && (ecRaw.nodeType === 3 || ecRaw.__zwIsText) && ecRaw.parentNode
+        && ecRaw.parentNode !== host && ecRaw.parentNode.parentNode === host);
+    }
+    if (sc.parentNode !== host || ecInShell) {
+      var sr = _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag);
+      if (!sr) return;
+      shellMode = true; shellHtml = sr.html; shellWant = sr.want;
+    }
     var textOffset = 0;
     for (var i = 0; i < kids.length; i++) {
       var k = kids[i];
       if (k === sc) break;
       if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
     }
-    var html = String(host.innerHTML || '');
-    function textToHtmlOffset(htmlStr, want, from, fromSeen) {
-      var seen = fromSeen;
-      for (var j = from; j < htmlStr.length; j++) {
-        if (seen === want) return j;
-        if (htmlStr.charAt(j) === '&') {
-          var semi = htmlStr.indexOf(';', j);
-          if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+    var html, wantStart;
+    if (shellMode) {
+      html = shellHtml; wantStart = shellWant;
+    } else {
+      html = String(host.innerHTML || '');
+      var textToHtmlOffset = function (htmlStr, want, from, fromSeen) {
+        var seen = fromSeen;
+        for (var j = from; j < htmlStr.length; j++) {
+          if (seen === want) return j;
+          if (htmlStr.charAt(j) === '&') {
+            var semi = htmlStr.indexOf(';', j);
+            if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+          }
+          seen++;
         }
-        seen++;
+        return seen === want ? htmlStr.length : -1;
+      };
+      wantStart = textOffset + so;
+      var hStart = textToHtmlOffset(html, wantStart, 0, 0);
+      if (hStart < 0) return;
+      var hEnd = hStart;
+      if (eo > so) {
+        hEnd = textToHtmlOffset(html, wantStart + (eo - so), hStart, wantStart);
+        if (hEnd < 0) hEnd = hStart;
       }
-      return seen === want ? htmlStr.length : -1;
+      html = html.slice(0, hStart) + frag + html.slice(hEnd);
     }
-    var wantStart = textOffset + so;
-    var hStart = textToHtmlOffset(html, wantStart, 0, 0);
-    if (hStart < 0) return;
-    var hEnd = hStart;
-    if (eo > so) {
-      hEnd = textToHtmlOffset(html, wantStart + (eo - so), hStart, wantStart);
-      if (hEnd < 0) hEnd = hStart;
-    }
-    host.innerHTML = html.slice(0, hStart) + frag + html.slice(hEnd);
+    host.innerHTML = html;
     // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → wantStart + frag
     // 解码纯文本长度（tag 序列跳过、实体记 1——与解析产物文本贡献同口径；首版
     // 漏跳 tag 把标记字符计入文本长度，wantCaret 越界落 host 末端，r2 批
@@ -3254,7 +3295,7 @@
     //（editing spec execCommand insertHTML：caret 置插入内容之后）。
     try {
       var nr = document.createRange();
-      if (!/[<]/.test(frag)) {
+      if (!shellMode && !/[<]/.test(frag)) {
         nr.setStart(sc, so + frag.length);
       } else {
         var fragTextLen = 0;
@@ -3273,13 +3314,7 @@
         var wantCaret = wantStart + fragTextLen;
         // 元素文本长度经 nodeValue 递归求和（OPTIMIZATION：不用 textContent——
         // 其 getter 全子树串拼接，O(子树) 中间串分配在 4G 守卫线上是 GC 债）。
-        var kTextLen = function (n) {
-          if (n.nodeType === 3 || n.__zwIsText) return String(n.nodeValue || '').length;
-          var t = 0;
-          var c = n.childNodes || [];
-          for (var i = 0; i < c.length; i++) t += kTextLen(c[i]);
-          return t;
-        };
+        // kTextLen 本刀提升至函数顶（壳域解析臂同用）。
         var kids2 = host.childNodes || [];
         var acc = 0;
         var placed = false;
@@ -3315,6 +3350,149 @@
       nr.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     } catch (_eIhCaret) {}
+  }
+
+  // 本刀（2026-11-13 ihtml 轴二行内壳刀）：inserthtml 壳域解析——选区锚在宿主
+  // 直子壳（行内壳/rawtext 容器）内时产出重建 html 与 caret 文本锚 {html, want}。
+  // 仅支持一层壳（shell.parentNode === host）；端点统一到宿主子文本空间 [ws,we)；
+  // 拼接壳（pre + rawtext：xmp/script/plaintext/listing/style/textarea）= 选区全在
+  // 壳内时壳内拼接保壳（pre 块载荷单块解包；markup 载荷仅 pre 放行——rawtext
+  // 依赖 parser rawtext 保真未证前旁路）；其余壳（styled 行内壳）= 仅支持壳内容
+  // 全含于选区的整壳溶解、载荷落 ws（Chrome 实录全七形）。round-trip 门：重建串
+  // 须等于现串（壳带属性/非文本兄弟/空白实体序列化不合形即旁路）。不合形
+  // return null（主路径旁路维持既有行为）。
+  function _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag) {
+    // 宿主子文本空间：逐子 [s,e) 占位（文本子按长度；元素子按其全文长度）。
+    var spans = [];
+    var acc = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      var len = kTextLen(k);
+      spans.push({ k: k, isT: !!(k.nodeType === 3 || k.__zwIsText), s: acc, e: acc + len });
+      acc += len;
+    }
+    // sc 端点两形：一层壳内（基 = 壳 span.s，壳内前置文本计入）或宿主直子文本
+    // （基 = 自身 span.s）。
+    var shell = null;
+    var ck = [];
+    var scBase = -1;
+    var scBefore = 0;
+    var scShell = sc.parentNode;
+    if (scShell && scShell !== host && scShell.parentNode === host) {
+      shell = scShell;
+      ck = shell.childNodes || [];
+      for (var j = 0; j < ck.length; j++) { if (ck[j] === sc) break; scBefore += kTextLen(ck[j]); }
+    }
+    var run0 = 0;
+    for (var i2 = 0; i2 < spans.length; i2++) {
+      if (spans[i2].k === (shell || sc)) { scBase = run0; break; }
+      run0 += spans[i2].e - spans[i2].s;
+    }
+    if (scBase < 0) return null;
+    var shellTag = shell ? String(shell.tagName || '').toLowerCase() : '';
+    if (shell && !shellTag) return null;
+    // ws = sc 基 + 壳内前置文本 + so；we 按 endContainer 五形归一（同文本子/同壳
+    // 内文本/host 直子文本/另一层壳内文本/host 子边界）。
+    var ws = scBase + scBefore + so;
+    var we;
+    if (range.collapsed) {
+      we = ws;
+    } else {
+      var ec = range.endContainer;
+      var eoEnd = range.endOffset | 0;
+      if (ec === sc) {
+        we = scBase + scBefore + eoEnd;
+      } else if (ec && (ec.nodeType === 3 || ec.__zwIsText)) {
+        var ecShell = ec.parentNode;
+        if (shell && ecShell === shell) {
+          var ecBefore = 0;
+          for (var j2 = 0; j2 < ck.length; j2++) { if (ck[j2] === ec) break; ecBefore += kTextLen(ck[j2]); }
+          we = scBase + ecBefore + eoEnd;
+        } else if (ecShell === host) {
+          var eb = -1;
+          var run = 0;
+          for (var q = 0; q < spans.length; q++) {
+            if (spans[q].k === ec) { eb = run + eoEnd; break; }
+            run += spans[q].e - spans[q].s;
+          }
+          if (eb < 0) return null;
+          we = eb;
+        } else if (ecShell && ecShell !== host && ecShell.parentNode === host) {
+          // ec 在另一层壳内（双壳跨选）：基 = ecShell span.s + 壳内前置 + eoEnd。
+          var ecBase2 = -1;
+          var run2 = 0;
+          for (var q3 = 0; q3 < spans.length; q3++) {
+            if (spans[q3].k === ecShell) { ecBase2 = run2; break; }
+            run2 += spans[q3].e - spans[q3].s;
+          }
+          if (ecBase2 < 0) return null;
+          var ecBefore2 = 0;
+          var ck2 = ecShell.childNodes || [];
+          for (var j3 = 0; j3 < ck2.length; j3++) { if (ck2[j3] === ec) break; ecBefore2 += kTextLen(ck2[j3]); }
+          we = ecBase2 + ecBefore2 + eoEnd;
+        } else return null;
+      } else if (ec === host) {
+        var eb2 = 0;
+        var nKids = range.endOffset | 0;
+        if (nKids > spans.length) nKids = spans.length;
+        for (var q2 = 0; q2 < nKids; q2++) eb2 += spans[q2].e - spans[q2].s;
+        we = eb2;
+      } else return null;
+    }
+    var SPLICE = { xmp: 1, script: 1, plaintext: 1, listing: 1, style: 1, textarea: 1, pre: 1 };
+    if (shell && SPLICE[shellTag]) {
+      // 拼接壳：选区须全在壳内；markup 载荷放行——rawtext 壳序列化不转义
+      // （script/style/xmp rawtext 语义），重建串与 splice 产物两侧 parser 均
+      // 按字面文本保真；round-trip 门——重建串须等于现串。
+      // （scBase 即壳基——拼接臂仅 sc 在壳内形。）
+      if (ws < scBase || we > scBase + kTextLen(shell)) return null;
+      var content = String(shell.innerHTML || '');
+      var preText = '';
+      var postText = '';
+      for (var p = 0; p < spans.length; p++) {
+        if (spans[p].k === shell) continue;
+        if (!spans[p].isT) return null; // 非文本兄弟不合形（重建串保真门）
+        var pv = String(spans[p].k.nodeValue || '');
+        if (spans[p].e <= scBase) preText += pv; else postText += pv;
+      }
+      var rebuilt = preText + '<' + shellTag + '>' + content + '</' + shellTag + '>' + postText;
+      if (String(host.innerHTML || '') !== rebuilt) return null;
+      var wsIn = ws - scBase;
+      var weIn = we - scBase;
+      // pre 内块载荷单块解包（editing spec insertHTML fixup——插入点已在块内时
+      // 单块 fragment 拆壳取子：<pre>1[23]4</pre> + <pre>abc</pre> → 1abc4）。
+      var effFrag = frag;
+      var bm = /^<([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?>([\s\S]*)<\/\1>$/.exec(frag);
+      if (shellTag === 'pre' && bm && /^(p|div|pre|blockquote|ol|ul|h1|h2|h3|h4|h5|h6)$/.test(bm[1].toLowerCase())) {
+        effFrag = bm[2];
+      }
+      var newContent = content.slice(0, wsIn) + effFrag + content.slice(weIn);
+      return { html: preText + '<' + shellTag + '>' + newContent + '</' + shellTag + '>' + postText, want: preText.length + wsIn };
+    }
+    // 其余壳（styled 行内壳）溶解臂：凡壳内容全含于选区 [ws,we) 即整壳溶解、
+    // 载荷落 ws——覆盖 sc/ec 在壳内、宿主直子文本、跨壳/双壳各端点组合；部分
+    // 选区元素子/非文本兄弟不合形 → null。
+    var parts = [];
+    var fragPlaced = false;
+    for (var p2 = 0; p2 < spans.length; p2++) {
+      var sp = spans[p2];
+      if (!sp.isT) {
+        if (ws <= sp.s && sp.e <= we) {
+          if (!fragPlaced) { parts.push(frag); fragPlaced = true; }
+        } else return null;
+      } else {
+        var v = String(sp.k.nodeValue || '');
+        if (sp.e <= ws || sp.s >= we) { parts.push(v); }
+        else if (sp.s <= ws && we <= sp.e) {
+          parts.push(v.slice(0, ws - sp.s)); parts.push(frag); fragPlaced = true; parts.push(v.slice(we - sp.s));
+        }
+        else if (sp.s <= ws) { parts.push(v.slice(0, ws - sp.s)); }
+        else if (we <= sp.e) { if (!fragPlaced) { parts.push(frag); fragPlaced = true; } parts.push(v.slice(we - sp.s)); }
+        else { if (!fragPlaced) { parts.push(frag); fragPlaced = true; } }
+      }
+    }
+    if (!fragPlaced) return null;
+    return { html: parts.join(''), want: ws };
   }
 
   // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作——

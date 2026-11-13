@@ -173,3 +173,8 @@ include!("js_dom_bridge_tests/part112_s422_object_constraint_validation.rs");
 // 编辑命令兼容 Form A 小刀：splitText 头截断欠发射面双向钉测（D2 v1 形复现，
 // 红=欠发射复发按流归因 / 绿=已被 B1/D1/E1 吸收转常驻正期望）。
 include!("js_dom_bridge_tests/part111_form_a_splittrim_probe.rs");
+
+// 编辑命令兼容 ihtml 轴二行内壳刀：inserthtml 宿主直子文本门对选区锚在行内壳
+// /rawtext 容器内的静默 bail 修复双向钉测（styled 壳溶解 / rawtext 壳内拼接 /
+// pre 块载荷解包 / xmp markup 载荷 parser 事实钉）。
+include!("js_dom_bridge_tests/part112_ihtml_shell_sel_probe.rs");
