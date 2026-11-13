@@ -2,41 +2,84 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 424 收口（红池分诊轮三段产出：video 立项
-评估落账 + 余件单红逐件归因 + button-click-submits 施工翻绿；账本
-evidence/2026-11-14-m2s424-redpool-triage-btn-ancestor-activation.md +
-提案 evidence/2026-11-14-video-frame-surface-proposal.md）——**施工**：
-part04.js 单文件三处——新共享帮手 `_zwClickAncestorActivate`（
-`bubbles===true` 门——激活行为沿传播路径逐节点触发 + 跳自身双形态走链
-（sel `__zw_parent` / handle `_zwNodeParent`）+ INPUT/BUTTON eff-type/
-disabled（`_zwButtonEffType`/`_zwFeDisabled`）吸收 walk（type=button 或
-disabled 均止——交互内容遮蔽）+ A/AREA → `_zwAnchorActivate`）+ 两合成
-click 位（dispatchEvent 位 / click() API 位）接线（目标自身 tag ∉
-{A,AREA,INPUT,BUTTON(,LABEL)} 门；LABEL 自身即激活目标 R155 转发面排除
-防双激活）——spec 激活目标 = 最近（含自身）具激活行为祖先
-（interaction.html#the-target-element）。**验证**：25 part 拼装
-node --check OK + solo button-click-submits **12/12 全 Pass 文件级 T
-解挂**（non-bubbling 不提交/disabled .disabled=true 不提交/fieldset 传染
-不提交/legend 豁免提交——钉面全保持）+ the-button-element 目录
-57P/0F/0T（commandfor button 被 walk eff-type 折叠吸收零冲突）+ 全域
-sweep ×2 join 对 s423 双基线（my1 vs b1: stable=8384 diff=1 new=71
-gone=2；my2 vs b2: stable=8454 **diff=0** new=2 gone=1；my2 vs my1:
-stable=8455 diff=1 new=0 gone=0）——new/gone = driving 两子测 Pass +
-select-event 69 子测在册 flake 复原 + 两文件级 T 键出账；唯二 DIFF =
-簇 D home-end{,-detailed}.optional F→T 在册闪变家族；**new 红 0，稳定
-红面 −1T（201F+14T）**。**单红归因收口**：46 单红 + 15T 红池逐件定性
-毕，本车道无剩余可施工单红——余池全部归域（渲染流：colspan 分数列宽
-51.99985 vs 53 / taplh 19.5 分数行盒 / selresize scroll metrics / dialog
-R-s31 簇 / img density s416 / embed intrinsic sizing ×2 / video-loading-
-lazy / select-required-attribute / closed-details-layout-apis / rowspan-0；
-簇 D：selmany/selfocus base-select 门；runner M3：seltouch touch 注入；
-navigation M3：form-submission-target 6T；s137：form-nameditem；s164
-FIXME：styleerr error 事件臂；在册 flake：checkable-active-onblur）。
-**挂用户门**：GB-20261114-VIDEO（video P1/P2/P3 分期决策，提案 §3）+
-GB-20261031（簇 D select 立项征询）+ s137（form-nameditem）维持。下一步：
-等待用户门决策或渲染流到货复验（dialog R-s31 簇/img density/embed
-sizing 面随渲染流修复复验）；决策后开 video P1+P2 canvas wire 消费臂
-切片（提案 §2）或簇 D A2 簇分诊续。
+**状态**: Active——M2 切片 425 收口（seltouch 重归因轮 + 表格池跨流
+复验，零源码改动；账本
+evidence/2026-11-14-m2s425-seltouch-reattribution-tablepool-reverify.md）
+——**seltouch 施工候选除名转挂账（归因修正）**：勘根下探修正 s424
+「runner M3 注入面」单面定性——真实阻塞为双面：①**渲染流 listbox 行
+渲染面（硬前置）**：select 内 option 布局盒抑制谓词
+`is_suppressed_select_control_child`（layout-engine/tree.rs:2818，
+R1679+s387 同 gate，kill-switch ZW_SELECT_SUPPRESS_OPTIONS）**不分
+single/multiple 形态** → `<select multiple>` option 无布局盒 → rect 桥
+快照无键（rect_bridge.rs:121 逐有 node_id 盒填表）→ shim gBCR 零 rect
+→ runner resolve_pointer_target best-scan width>0&&height>0 门
+（testharness.rs:11639）跳过 option → 命中回落 SELECT，click 派发不在
+option；②**engine option 激活臂**：`_zwHasOwnActivationBehavior`
+（part03.js:17455）无 OPTION 停靠位 + post-activation 段无 act:option
+分支——即使命中落到 option 也不选中。**M3 touch 注入面排除**（推翻
+s64/s386/s424 一脉「touch 注入通道缺席」归因）：corpus 三断言只查
+option.selected 状态；runner Actions touch 指针标签透传 composed click
+无 pointerType 门（part06.js:19710 仅隐式捕获臂，19722 起 click 组合
+照常）——selection 断言不依赖 touchstart/touchend。语义参照在场：host
+plan_option（page-runtime/html_actions.rs:440）multiple→toggle 不清
+他人 + script_set_option_selected（script_gen.rs:439）content attribute
+写面与语料三断言逐条吻合；engine 臂方案定型在案（OPTION 停靠位 +
+act:option 分支 gate `_zwUaDispatch===true` 镜像 act:button 先例 +
+toggle 镜像 plan_option + input/change 派发 SELECT 镜像
+`__zw_select_key_action` 形），渲染面到货后施工。与 s388
+multiple-resize 判例同位同源（同一抑制谓词不分形态，s388 判例「任一
+单独施工不能翻绿」）——seltouch 与 multiple-resize 共享渲染面首件；
+差异 = 渲染面落地后本车道尚需 engine 臂第二刀才翻绿。**表格池跨流
+复验零漂移**：渲染流 R5516（d2c3897da）到货后 runner 重建自 HEAD
+（test-guard 包裹 build 46s exit 0），solo colspan **2F**（
+`expected 53 but got 51.99985` 逐字同 s424）/ rowspan-0 **1F+1P** /
+rowspan-0-quirks **1F+1P**（clientHeight `expected >20 got 20`）——
+R5516 匿名 cell margin 面不波及本池三键，域计数零位移（在册红维持
+s424 终态 202F+13T / 201F+14T 口径）。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：渲染流 listbox
+形态 carve-out 到货 → 施工 engine act:option 臂（solo seltouch +
+the-select-element 目录回归 + 全域 sweep ×2 join 对 s424 双基线
+/tmp/s424/pairs-{1,2}.txt）；其余候选维持挂账待触发（dialog R-s31 簇/
+img density/embed sizing face 到货复验；门决策后 video P1+P2 或簇 D
+A2 分诊续）。
+
+> **▶ 承前（2026-11-14 M2 切片 424 收口）——红池分诊轮三段产出：video
+> 立项评估落账（挂 GB-20261114-VIDEO）+ 余件单红逐件归因 +
+> button-click-submits 施工翻绿（span 祖先激活链补齐，稳定红面 −1T）**：
+> commit 2957c3e0a；账本
+> evidence/2026-11-14-m2s424-redpool-triage-btn-ancestor-activation.md +
+> 提案 evidence/2026-11-14-video-frame-surface-proposal.md。原 Active 段留档——
+> **状态**: Active——M2 切片 424 收口——**施工**：
+> part04.js 单文件三处——新共享帮手 `_zwClickAncestorActivate`（
+> `bubbles===true` 门——激活行为沿传播路径逐节点触发 + 跳自身双形态走链
+> （sel `__zw_parent` / handle `_zwNodeParent`）+ INPUT/BUTTON eff-type/
+> disabled（`_zwButtonEffType`/`_zwFeDisabled`）吸收 walk（type=button 或
+> disabled 均止——交互内容遮蔽）+ A/AREA → `_zwAnchorActivate`）+ 两合成
+> click 位（dispatchEvent 位 / click() API 位）接线（目标自身 tag ∉
+> {A,AREA,INPUT,BUTTON(,LABEL)} 门；LABEL 自身即激活目标 R155 转发面排除
+> 防双激活）——spec 激活目标 = 最近（含自身）具激活行为祖先
+> （interaction.html#the-target-element）。**验证**：25 part 拼装
+> node --check OK + solo button-click-submits **12/12 全 Pass 文件级 T
+> 解挂**（non-bubbling 不提交/disabled .disabled=true 不提交/fieldset 传染
+> 不提交/legend 豁免提交——钉面全保持）+ the-button-element 目录
+> 57P/0F/0T（commandfor button 被 walk eff-type 折叠吸收零冲突）+ 全域
+> sweep ×2 join 对 s423 双基线（my1 vs b1: stable=8384 diff=1 new=71
+> gone=2；my2 vs b2: stable=8454 **diff=0** new=2 gone=1；my2 vs my1:
+> stable=8455 diff=1 new=0 gone=0）——new/gone = driving 两子测 Pass +
+> select-event 69 子测在册 flake 复原 + 两文件级 T 键出账；唯二 DIFF =
+> 簇 D home-end{,-detailed}.optional F→T 在册闪变家族；**new 红 0，稳定
+> 红面 −1T（201F+14T）**。**单红归因收口**：46 单红 + 15T 红池逐件定性
+> 毕，本车道无剩余可施工单红——余池全部归域（渲染流：colspan 分数列宽
+> 51.99985 vs 53 / taplh 19.5 分数行盒 / selresize scroll metrics / dialog
+> R-s31 簇 / img density s416 / embed intrinsic sizing ×2 / video-loading-
+> lazy / select-required-attribute / closed-details-layout-apis / rowspan-0；
+> 簇 D：selmany/selfocus base-select 门；runner M3：seltouch touch 注入
+> 【s425 修正：重归因为渲染流 listbox 行渲染硬前置 + engine 激活臂双面，
+> M3 注入面排除】；
+> navigation M3：form-submission-target 6T；s137：form-nameditem；s164
+> FIXME：styleerr error 事件臂；在册 flake：checkable-active-onblur）。
+> **挂用户门**：GB-20261114-VIDEO（video P1/P2/P3 分期决策，提案 §3）+
+> GB-20261031（簇 D select 立项征询）+ s137（form-nameditem）维持。
 
 > **▶ 承前（2026-11-14 M2 切片 424 评估轮）——video 帧像素表面 FIXME 立项评估（挂用户门 GB-20261114-VIDEO，本轮内未决策继续挂账）**：账本 evidence/2026-11-14-video-frame-surface-proposal.md。原 Active 段留档（红形句已按提案 §1.3 solo 实测修正）——
 > **状态**: Active——M2 切片 424 评估轮（**video 帧像素表面 FIXME 立项评估
