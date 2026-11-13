@@ -1950,6 +1950,35 @@
     if (el.parentNode) el.parentNode.removeChild(el);
   }
 
+  // DC-2 桥层（2026-11-13 d12 批）：peel 克隆壳形态随被切壳——被切壳为
+  // plain 形（`__zwHandle` 缺失，_zwMEl 世界；document.querySelector 宿主
+  // 物化即 plain 是既定设计，part03.js:1667）时克隆壳走 cloneNode(false)
+  // （R156 _zwMEl 工厂同形态、方法面全配），否则维持 createElement（handle
+  // 形）。此前克隆壳恒 handle 形：全 handle 树（tc 作用域宿主）吸收自洽，
+  // plain 树混入 handle 壳后 childNodes 记账失配——contained 集构造
+  // 对"选区边界在壳内"判定失败，setSelectionValue 的 clearValue pass 集
+  // 空转、摘壳永不发生（bold/italic 数值壳 toggle-off 语料残余红源，机制
+  // 定谳与双时点实证见 docs/goal/wptfyi-editing/evidence/
+  // 2026-11-13-dc2-bold-toggleoff-universe-diag.md d11 补充节）。style
+  // normalize 面与原手搓 attr 循环等价：原循环仅对 style 值过
+  // _zwVaNormalizeStyleAttrCss，其余属性原样复制——cloneNode 原样复制后
+  // 对 style 属性补 normalize 重写。
+  function _zwVaPeelCloneShell(el, tag) {
+    if (el && el.__zwHandle === undefined) {
+      var pc = null;
+      try { pc = el.cloneNode(false); } catch (_ePcs0) { pc = null; }
+      if (pc && pc.nodeType === 1) {
+        try {
+          var stPc = el.getAttribute ? el.getAttribute('style') : null;
+          if (stPc !== null && stPc !== undefined && String(stPc) !== '') {
+            pc.setAttribute('style', _zwVaNormalizeStyleAttrCss(String(stPc)));
+          }
+        } catch (_ePcs1) {}
+        return pc;
+      }
+    }
+    return document.createElement(tag);
+  }
   function _zwVaPeelOne(el, isStart, command) {
     var rng = _zwVaGetActiveRange();
     if (!rng || !el.parentNode) return;
@@ -1987,7 +2016,7 @@
       leaf: kids[isStart ? ci : ci - 1]
     });
     if (isStart) {
-      var clone = document.createElement(_zwJusTag(el));
+      var clone = _zwVaPeelCloneShell(el, _zwJusTag(el));
       try {
         var at = el.attributes;
         for (var a = 0; a < at.length; a++) {
@@ -2019,7 +2048,7 @@
       // 克隆——移出片段裸落并与前邻已裹片段并拢（`ob` 合一形）；克隆隔断
       // adjacency 后 wrap merge-only 并不拢，故必须真裸移。
       if (_zwVaCarrierResidualStyling(el, command)) {
-        var cloneE = document.createElement(_zwJusTag(el));
+        var cloneE = _zwVaPeelCloneShell(el, _zwJusTag(el));
         try {
           var atE = el.attributes;
           for (var aE = 0; aE < atE.length; aE++) {

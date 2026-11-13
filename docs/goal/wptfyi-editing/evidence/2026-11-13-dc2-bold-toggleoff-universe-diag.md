@@ -119,3 +119,99 @@ selection 片三面。
   + `zz-probe-d11tree.html` 验证页（doc-scope 腿转绿为修复信号）。
 - bold/italic 数值壳残余在桥层修复后预期大幅转绿；届时重对 face 并更新
   本档与哨兵断言。
+
+## d12 补充：根因修订与修复落地（2026-11-13 第三轮，桥层批）
+
+**结论**：d11 的混合树机制要再修一层。克隆壳形态对齐（候选 1）实施后
+got 仍是 re-wrap 形——形态一致是必要非充分，真毒是 **plain 树插入侧
+live-range 边界补偿缺失**。修复两改动后 face 六文件 bold 12F→8F
+（断言级 F2P=4、P2F=0，其余五文件恒等），哨兵页转期望形全绿。d11
+"混合树致记账失配"降级为表象记录，定谳以本节为准。
+
+### 根因修订链
+
+1. **候选 1 实施后 got 不变**：克隆壳按被切壳 plain 化（保持全 plain
+   链）后，doc-scope 宇宙 POST 仍 re-wrap。
+2. **walker 无辜**：手工几何验证页（d12walk，临时页已删）绕过
+   execCommand，直接构造 peel 后树形调 contained walker，双宇宙都能
+   收中（els=[origSpan]）。空转不在 walker 判定，d10/d11 的 walker
+   空转结论作废。
+3. **塌缩现场**：实时 dump 验证页（d12flow，临时页已删）抓到
+   doc-scope 的 live range 在 peel 插壳后塌缩为 (DIV,1)/(DIV,1)，
+   tc-scope 同点为 (barTx,0)/(DIV,2)。塌缩 → `rng.collapsed` →
+   `_zwValIsEffectivelyContained` 早退全 false → clearValue/forceValue
+   零到达。
+4. **setEnd 撞校验**：shift 探针实证 `_zwVaShiftEndpointsForInsert`
+   的 end 边界在宿主分支走 `setEnd(parent, 2)`，插入前 parent 只有
+   1 个孩子，part06 setEnd 校验（offset > nodeLength 抛
+   IndexSizeError）命中，异常被静默 catch——补偿没写进去。
+5. **通道差异**：AFTER-INS 探针实证插壳后 tc-scope eo=2（宿主桥
+   proxy insertBefore → 宿主 mutation → 宿主侧选区自保补偿），
+   doc-scope eo=1（无补偿通道）。
+6. **定谳**：`__zwAdjustRangesForInsert`（R263）只接了 doc/handle 面，
+   plain mutator（`_zwMElInsertBefore`/`_zwMElAppendChild`）缺装。
+
+### 修复（两改动，均已入库工作区）
+
+- part03.js：R263 接入两个 plain mutator。位序契约——必须在
+  parentNode 落位之后调用（钩子以 `inserted.parentNode` 定位新父与
+  新索引，首版放在 `_zwForceParentLink` 之前直接早退，补偿看似接了
+  实则无效）。补偿写 `_endOffsetBase` 槽（R183 accessor 读出面）：
+  插入时刻的合法 end offset 可以超当前孩子数，setEnd 按当前树长校验
+  会拦，accessor 槽直写不受限。`_zwMElRemoveChild` 的 R262 是既有
+  对称先例。
+- part01d.js：peel 克隆壳工厂 `_zwVaPeelCloneShell` 按被切壳形态分流
+  （plain 壳 cloneNode(false) 复制源壳 + style 归一；handle 壳维持
+  createElement），保持全 plain 链——d11 候选 1 原样保留，与本改动
+  叠加生效。
+
+MEl 面与 proxy 面按 parent 对象形态互斥分流，无双补偿风险。
+
+### face 账目
+
+- face 1（六 format 文件，断言级，base=d9c2）：**61F→57F，F2P=4、
+  P2F=0**。bold 3036P/12F → 3040P/8F；italic 3F、underline 4F、
+  strikethrough 16F、subscript 13F、superscript 13F 恒等。F2P 明细：
+  bold?1001-2000 的 700 壳部分选区 toggle-off × innerHTML/qS-after。
+  口径：face-d12.log 跑在摘探针前二进制上（探针为被动诊断钩子，
+  不改逻辑）；摘净重建后另跑 bold.html 全页核对恒等（见哨兵小节）。
+- face 2（multitest + misc，fail 名集口径）：**24=24 恒等，
+  P2F=0/F2P=0**，P 差 +56 全落 multitest 慢页截断窗口（承 d7/d8
+  口径）。
+- 钉测：test-guard 包裹 `cargo test -p zero-engine --lib execcommand`
+  7 passed / 0 failed（独立 CARGO_TARGET_DIR 避让并行构建锁）。
+- selection 面（d9c-runner 基线对修复版全语料）：**断言集字节级恒等**
+  （双侧 35,668P/16,019F，P2F=0/F2P=0）——R263 全局 live-range 补偿对
+  selection 面零扰动。基线为 post-d9 行为态二进制近似（s417 视频修复
+  不涉 selection 面）。
+- HEAD worktree 全量重建不可行（v8 build.rs 归档下载需代理，守卫
+  单元无代理环境），selection 基线退而用 post-d9 行为态二进制。
+
+### 残余账目与归属（bold 8F = 2F + 6F）
+
+- **2F（?2001-3000 无 stylewithcss 前置的 900 case）**：新鲜单 case
+  探针页在 css=true/false 两宇宙均产期望形，corpus 页失败是页内跨
+  case 状态污染，归 d9 账目②（cssFlag 生命周期 + state override
+  残留）。polluted 种子（collapsed bold toggle-off 前置）未复现，
+  留②专项。
+- 6F 长尾：bold 壳全选 toggle-off ×2（?1001-2000 cssfalse）、b>i
+  嵌套 ×2（?1001-2000 双 css）、cssFlag qS-before ×2（?3001-last
+  cssfalse 100 族）——前两类是 P2 既有长尾，第三类归②。
+
+### 哨兵处置
+
+- `zz-probe-d10diag` / `zz-probe-d11tree` 转行为断言（期望形
+  `<span style="font-weight:900">foo</span>barbaz`，doc/tc 双腿，
+  d11tree 另含断言信息保留 shape/climbChain 诊断），修复后全绿；
+  本页此后 Fail 即回退信号。
+- d12flow / d12walk 临时诊断页已删（未入库）。
+- 清理版二进制核对（摘探针重建，/tmp 独立 target 守卫跑）：bold.html
+  全页 3040P/8F 与 face-d12 恒等；两哨兵页重跑全绿（d10diag 1 Pass、
+  d11tree 2 Pass）。
+
+### 支线 bug 清单（d10 节）状态更新
+
+三项未动，仍在桥层范围：tc.querySelector innerHTML 重建后空包装、
+addRange 后 getRangeAt(0) 越界、B2 臂双落地。doc-scope 全 plain 链
+经 R263 补偿后主链不再触发 B2 臂（该臂只在 `newParent.__zwHandle`
+存在时走），主链与三项解耦。

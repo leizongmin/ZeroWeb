@@ -85,16 +85,15 @@ function runLeg(tag, fetchStyle) {
     r.setStart(pts[0], pts[1]); r.setEnd(pts[2], pts[3]);
     if (r.collapsed) r.setEnd(pts[0], pts[1]);
     getSelection().removeAllRanges(); getSelection().addRange(r);
-    var pre = 'PRE:startTx=' + shape(pts[0])
-      + ' climb=' + climbChain(pts[0])
-      + ' hostKids=' + (host.childNodes ? host.childNodes.length : -1)
-      + ' sel=' + String(getSelection().rangeCount);
     document.execCommand("stylewithcss", false, "true");
     document.execCommand("bold", false, "");
-    var post = 'POST:startTx=' + shape(pts[0])
-      + ' climb=' + climbChain(pts[0])
-      + ' got=' + host.innerHTML;
-    assert_equals(pre + ' ' + post, 'SENTINEL', tag);
+    // d12 批（桥层修复落地后转行为断言）：双宇宙都应产出 peel 摘壳形
+    // `<span 900>foo</span>barbaz`。修复前 doc-scope 宇宙 range 在 peel 插壳
+    // 时塌缩（plain mutator 缺 R263 补偿、JS 侧 shift 撞 setEnd 校验），
+    // contained 集空转 → re-wrap 形；机制 dump（shape/climbChain）保留在
+    // 失败信息里作诊断。
+    assert_equals(host.innerHTML, '<span style="font-weight:900">foo</span>barbaz',
+      tag + ' | climb=' + climbChain(pts[0]));
   }, 'd11 ' + tag);
 }
 runLeg('doc-scope', 'document');

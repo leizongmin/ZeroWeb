@@ -21354,6 +21354,15 @@
     // createElement('slot') insertBefore 进 plain clone 宿主后 ns.parentNode 残留
     // null → assignedNodes 根上溯死路。
     _zwForceParentLink(c, node);
+    // R263：live-range 边界补偿（spec concept-range insert 调整；doc/handle 面
+    // 已接线，plain mutator 缺装——document-scope 物化宿主下编辑 peel 插壳不
+    // 补偿选区边界，range 塌缩致 setSelectionValue contained 集空转、摘壳永不
+    // 发生，d12 桥层批对拍定谳）。**parentNode 落位后调用**——钩子以
+    // inserted.parentNode 定位 newParent/newIndex，先于 _zwForceParentLink 时
+    // parentNode 为空直接早退（d12 首版接线无效根因）；补偿写 _endOffsetBase
+    // 槽（R183 accessor 读出面），插入前 target offset 可超当前 kids 数，无
+    // setEnd 校验拦截。
+    try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(c); } catch (_eR263meI) {}
     if (c && c.__zwHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && !_zwNodeParent[c.__zwHandle]) {
       _zwNodeParent[c.__zwHandle] = { parentSel: null, parentHandle: null, plainParent: node, nextSibling: null };
     }
@@ -21411,6 +21420,9 @@
         value: node, writable: true, configurable: true,
       });
     } catch (_eR245dp) { try { c.parentNode = node; } catch (_eR245as) {} }
+    // R263：live-range 边界补偿（同 _zwMElInsertBefore 缺装面注；parentNode 落
+    // 位后调用，R225 fragment 展平臂经递归逐子覆盖）。
+    try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(c); } catch (_eR263meA) {}
     if (c && c.__zwHandle) {
       if (typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
       // R180：plain 父反链（对偶于 handle 父的 _recordHandleChild）——只在无既有链时

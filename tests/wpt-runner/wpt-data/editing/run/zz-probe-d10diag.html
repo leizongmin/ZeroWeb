@@ -8,19 +8,18 @@
 <script src=/resources/testharnessreport.js></script>
 <script>
 "use strict";
-// d10 哨兵（2026-11-13）：bold 700/900 toggle-off 语料残余（bold 12F 中的
-// 数值壳部分选区族）在单 case 纯净页 + document-scope 宿主获取下的最小复现。
-// 当前锁定行为 = re-wrap 形 `<span 900>foo</span><span 900>barbaz</span>`，
-// 期望形 = `<span 900>foo</span>barbaz`。毒根定谳（见
-// docs/goal/wptfyi-editing/evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md）：
-// peel start 切分造两段壳正常，随后 setSelectionValue 的 contained-element
-// clearValue pass 在 document-scope 宿主下集空转（clearValue 零调用、
-// forceValue 零到达，fv/cv 探针实证），摘壳永不发生——毒在 wrapper/handle
-// 桥层（document-scope 与元素作用域 wrapper 的 handle 链/缓存失效族，
-// 与 tc.querySelector 重建后空 children 包装、tc-宇宙 public rangeCount=0
-// 同族）。tc.querySelector（元素作用域）取宿主时本腿为绿（d10 对拍实证），
-// 故宿主获取方式即宇宙开关。引擎桥层修复落地后：本页断言应改为期望形
-// （fail 即修复信号），同时语料 bold.html?2001-3000 数值壳六断言预期转绿。
+// d10 哨兵（2026-11-13 锁定修复后行为）：bold 数值壳 toggle-off（document
+// 作用域宿主）最小复现。期望形 = `<span 900>foo</span>barbaz`（foo 克隆壳
+// 保形 + barbaz 摘壳裸落）。毒根修订定谳（d12 批，见
+// docs/goal/wptfyi-editing/evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md
+// d12 补充节）：peel 插克隆壳的选区边界补偿在 plain 树缺失——宿主面
+// （handle 形 proxy）插壳由桥侧选区自保补偿 (DIV,1)→(DIV,2)；plain mutator
+// 未接 R263 live-range insert 补偿，且 JS 侧 _zwVaShiftEndpointsForInsert
+// 的 setEnd 撞 R288 插入前长度校验静默失败——range 塌缩 (DIV,1)/(DIV,1)，
+// contained 集空转、摘壳永不发生。修复 = R263 接入 _zwMElInsertBefore/
+// _zwMElAppendChild（parentNode 落位后调用）+ peel 克隆壳形态随被切壳
+// （plain 树保全 plain 链）。对照：tc.querySelector（元素作用域）宿主全
+// handle 链此前即绿。本页 Fail = 补偿链回退信号。
 function nextnode(node) {
   if (node.firstChild) return node.firstChild;
   while (node) {
@@ -78,8 +77,8 @@ test(function() {
   document.execCommand("stylewithcss", false, "true");
   document.execCommand("bold", false, "");
   assert_equals(host.innerHTML,
-    '<span style="font-weight:900">foo</span><span style="font-weight:900">barbaz</span>',
-    'd10 baseline (re-wrap, universe-B): got=');
+    '<span style="font-weight:900">foo</span>barbaz',
+    'd10 fixed (peel + unwrap): got=');
 }, 'd10 b900 toggle-off document-scope baseline');
 </script>
 </body>

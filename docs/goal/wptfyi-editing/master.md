@@ -3,21 +3,24 @@
 **2026-11-13 · Active**。DC-1 落定：weekly 快照 109,059/154,595，对
 11-07 基线净增 +92,875（CI
 [run 42947347500](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）。
-**d10/d11 定谳批（无行为修复，桥层专项筹备）**：bold 700/900 toggle-off
-语料残余毒根定谳到 wrapper/handle 桥层宇宙面——document 作用域取宿主时
-peel 切分后 setSelectionValue 的 clearValue pass 集空转（clearValue 零
-调用、forceValue 零到达，探针实证），摘壳永不发生；元素作用域取宿主同页
-全绿，宿主获取方式即宇宙开关。d11 二轮把机制收口到**混合树**：解析子树
-形态随宿主获取方式分裂（tc-scope 全 handle 形 / doc-scope 全 plain 形，
-plain 物化是 `_zwMEl` 既定设计），而 peelOne 克隆壳恒 handle 形
-（createElement 工厂）——plain 树混入 handle 壳后 childNodes 记账失配，
-contained 集空转；tc-scope 全 handle 链上 peel+cv+摘壳全程正常，摘壳
-逻辑本身成立。forceValue 非激活值早退门方向错误负结果入档（ADD 面
-forceValue(…,'normal') 是合法包裹臂，face 对跑 P2F=84 反证，已摘除）。
-face 基线 d9c2 六文件 61F 恒等（摘净构建 bold.html 抽查 3036P/12F 一致）；
-哨兵 zz-probe-d10diag 锁定当前 re-wrap 形，验证页 zz-probe-d11tree
-（doc-scope 腿转绿为修复信号）。修复两候选择一（克隆壳形态对齐 / 混合树
-对账）+ 三面对跑留桥层批实施，证据
+**d12 桥层修复批**：bold 700/900 toggle-off 残余根因修订并落地——
+d10/d11 定谳的"混合树致 contained 集空转"是表象（克隆壳 plain 化对齐
+后 got 不变；手工几何实证 contained walker 双宇宙均正常收中），真毒是
+**plain 树插入侧 live-range 边界补偿缺失**：R263
+`__zwAdjustRangesForInsert` 只接 doc/handle 面，plain mutator 缺装，
+JS 侧 shift 的 `setEnd(parent, kids+1)` 撞 part06 树长校验被静默
+catch，live range 塌缩 → contained 集空 → 摘壳永不发生（tc-scope
+宇宙由宿主桥 proxy insertBefore → 宿主侧选区自保补偿，探针实测
+eo=2 vs doc eo=1）。修复 = plain mutator 接 R263（parentNode 落位后
+调用，补偿写 `_endOffsetBase` 槽绕 setEnd 校验）+ peel 克隆壳按被切
+壳形态分流保持全 plain 链。face 1 六文件断言级 **F2P=4/P2F=0**
+（bold 3036P/12F→3040P/8F，余五文件恒等，61F→57F）；face 2 mt/misc
+fail 名集 24=24 恒等（P 差 +56 全落慢页截断窗口）；钉测 7/7；
+selection 全语料对拍断言集恒等（35,668P/16,019F，P2F=0）；bold 剩余
+8F = 6F 长尾 + 2F（900 corpus
+css=false）定谳页内跨 case 状态污染归②。哨兵 d10diag/d11tree 转期望
+形行为断言全绿（此后 Fail 即回退信号），d10 宇宙面定谳、d11 混合树
+表象与 forceValue 'normal' 负结果入档见证据 d10–d12 节，
 [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)。
 DC-2 P1 读面 + P2 apply 引擎 + P3 作者载体臂累计落地后，**P2 主循环
 ⑥·italic ADD 壳内嵌套 + collapsed qS 记账**（2026-11-13，d9 批）：
@@ -48,32 +51,27 @@ selection-face 片——本地 census 51,695/35,631（
 [census](evidence/2026-11-11-dc2-selection-face-census.json)）。
 **卡点** 无阻塞；距 146,184 验收线差 37,125，大头在 selection deep
 面下周跑生效（census 口径 +~33k）与 input-events（201/3,378）等 0 覆盖面
-接线。六 format 文件残余 61F 为 P2 既有长尾（bold 12F、italic 3F、
-u/s 20F、sub/sup 26F）；**d10 定谳修正 d9 isolation 分诊**：bold/italic
-数值壳残余（700/900 toggle-off 族）不是跨 case 状态面——document 作用域
-单 case 纯净页同样红，毒根为 wrapper/handle 桥层宇宙面（见 d10 证据），
-桥层修复后预期大幅转绿；d9 分诊的 cssFlag 生命周期缺口
-（qS(stylewithcss) before=true ×2）与 state override 跨 case 残留边界
-仍在，u/s/strike 面适用性待复核。
-**下一步** ①DC-2 桥层专项批实施：混合树修复两候选择一（peelOne 克隆壳
-形态对齐被切壳 / handle 壳 childNodes 对 plain 子可见性对账）——先验证
-plain 链摘壳组合再动手，过 face 六文件 + multitest/misc + selection
-三面对跑；机制、候选与支线 bug 清单见
-[d10 证据](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d11
-补充节）；②cssFlag 生命周期
-+ override 残留边界（d9 账目，u/s 面复核）；③selection bidi（0/92）、
-shadow-dom（27/113）、input-events 小桶按产物归类开修、sub/sup
-vertical-align 邻 span；③下周快照落做 DC-3 同口径对账（净增 ≥130,000 +
+接线。六 format 文件残余 57F（bold 8F、italic 3F、u/s 20F、sub/sup
+26F）：bold 2F（900 corpus css=false）定谳页内跨 case 状态污染——新鲜
+单 case 页双 css 宇宙均产期望形（见 d12 证据）；d9 分诊的 cssFlag
+生命周期缺口（qS(stylewithcss) before=true ×2）与 state override 跨
+case 残留边界仍在，u/s/strike 面适用性待复核；桥层支线三 bug
+（tc.querySelector innerHTML 重建后空包装、addRange 后 getRangeAt(0)
+越界、B2 臂双落地）未动，主链经 R263 补偿后已与 B2 臂解耦。
+**下一步** ①cssFlag 生命周期 + override 残留边界（d9 账目②，900
+残余归属，u/s 面复核）；②selection bidi（0/92）、shadow-dom（27/113）、
+input-events 小桶按产物归类开修、sub/sup vertical-align 邻 span；
+③下周快照落做 DC-3 同口径对账（净增 ≥130,000 +
 邻域回退核对，P2/P3 语料全量增量随周跑入账；face 哨兵探针：d5decl/
-d5diag/d6cef/d7diag 全绿、d6diag 24/25、d8diag 11/11、d9diag
-10 case 全绿）。
+d5diag/d6cef/d7diag/d10diag/d11tree 全绿、d6diag 24/25、d8diag 11/11、
+d9diag 10 case 全绿）。
 
 [执行契约](../wptfyi-editing.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 完成（11/11 片；快照 109,059/154,595） | [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md) + [dc2-selection-wiring](evidence/2026-11-11-dc2-selection-wiring.md) |
-| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10 定谳批，无行为修复）：六文件残余 61F 长尾 |
+| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10–d12：宇宙面定谳 + 桥层修复落地，bold 12F→8F 零回归，六文件 57F） |
 | DC-3 全量对账 | 对账口径就绪（净增 +92,875，距线 37,125） | coverage-2026-11-11 快照 + 验收线 146,184 |
 
 碰撞记录：本批 pin 钉测与并行流 D1 的 workspace 全量 test+clippy 共
