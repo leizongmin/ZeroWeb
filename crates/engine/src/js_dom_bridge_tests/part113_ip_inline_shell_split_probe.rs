@@ -409,3 +409,145 @@ document.execCommand("insertparagraph", false, "");
         "⑧ 裸 a 壳 mid-caret：a 层双侧恒重开（内容随侧，href 保留）"
     );
 }
+
+// ===== IP-M1 刀 v3.1 壳尾重开判据表钉测（2026-11-14，v3 首版存活判据回归
+// 14 键 corpus 三方对照重定谳：纯壳尾 fmt/span 重开 br 入链、a 链 nbsp 尾裸
+// br、a 链纯文本尾重开减 a）——got/expect 逐字录自语料实录。====
+
+// ⑨ 壳尾重开（无 a 链）：语料 `<p><b>foo[]</b></p>` dps=div
+// EXP `<p><b>foo</b></p><p><b><br></b></p>`（b 壳重开，br 入壳内首）。
+#[test]
+fn test_insertparagraph_b_shell_end_caret_reopen_m1r1() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce9 contenteditable><p><b>foo</b></p></div>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host9 = document.getElementById("ce9");
+var bt9 = host9.childNodes[0].firstChild.firstChild;
+var r9 = document.createRange();
+r9.setStart(bt9, 3);
+r9.setEnd(bt9, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r9);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce9\").innerHTML")
+            .unwrap()
+            .value,
+        "<p><b>foo</b></p><p><b><br></b></p>",
+        "⑨ 壳尾 caret 无 a 链：fmt 壳重开 br 入链内首（corpus 实录）"
+    );
+}
+
+// ⑩ a 链壳尾 nbsp（重开禁断）：语料 `<p><b><a href=foo>foo&nbsp;[]</a></b></p>` dps=div
+// EXP `<p><b><a href="foo">foo&nbsp;</a></b></p><p><br></p>`（新块裸 br 不重开）。
+#[test]
+fn test_insertparagraph_ba_chain_nbsp_end_caret_bare_m1r2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce10 contenteditable><p><b><a href=foo>foo&nbsp;</a></b></p></div>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host10 = document.getElementById("ce10");
+var bt10 = host10.childNodes[0].firstChild.firstChild.firstChild;
+var r10 = document.createRange();
+r10.setStart(bt10, 4);
+r10.setEnd(bt10, 4);
+getSelection().removeAllRanges();
+getSelection().addRange(r10);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce10\").innerHTML")
+            .unwrap()
+            .value,
+        "<p><b><a href=\"foo\">foo&nbsp;</a></b></p><p><br></p>",
+        "⑩ a 链壳尾 nbsp：不重开壳链（corpus 实录，同构 foo[] 却重开外层 b）"
+    );
+}
+
+// ⑪ a 链壳尾纯文本（重开减 a）：语料 `<p><b><a href=foo>foo[]</a></b></p>` dps=div
+// EXP `<p><b><a href="foo">foo</a></b></p><p><b><br></b></p>`（外层 b 重开，a 不重开）。
+#[test]
+fn test_insertparagraph_ba_chain_plain_end_caret_outer_reopen_m1r3() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce11 contenteditable><p><b><a href=foo>foo</a></b></p></div>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host11 = document.getElementById("ce11");
+var bt11 = host11.childNodes[0].firstChild.firstChild.firstChild;
+var r11 = document.createRange();
+r11.setStart(bt11, 3);
+r11.setEnd(bt11, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r11);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce11\").innerHTML")
+            .unwrap()
+            .value,
+        "<p><b><a href=\"foo\">foo</a></b></p><p><b><br></b></p>",
+        "⑪ a 链壳尾纯文本：外层 fmt 壳重开减 a（corpus 实录，nbsp 尾则裸 br）"
+    );
+}

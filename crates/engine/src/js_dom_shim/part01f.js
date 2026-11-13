@@ -2263,13 +2263,35 @@
       var ipChainC = [];
       var ipRebuiltInnerC = null;
       var ipBrInRebuiltC = false;
-      // A 嵌套族存活判据（2026-11-14）：重开链 = 归一前拆分位上溯 container
-      // 的 fmt/span/a 壳（a 纳入——corpus `<a href>` 嵌套簇新块双侧全链重开，
-      // v2 a 排除致新块缺 a 层）；仅拆分位有后随内容（本位余量或任一祖先层
-      // nextSibling）的壳重开——壳尾 caret 无后随新块裸 br（census `<p><br></p>`
-      // 形，v2 无判据重建致 `<b><a><b><br></b></a></b>` 双裹 P2F）。
+      // 重开判据（2026-11-14 v3.1 corpus 三方对照重定谳）：拆分位有后随内容
+      // （本位余量或任一祖先层 nextSibling）时壳链全量重开含 a（`<a href>
+      // foo[]bar</a>` 双侧 a、`<b>foo&nbsp;[]<br></b><br></a>` 形实录）；纯壳尾
+      // （无后随）时 fmt/span 壳重开 br 入链内首（census M1b `<b><br></b>`、
+      // 带样式 span 重开簇、`<b><a>foo[]</a></b>` 重开外层 b 形）——唯 a 在链
+      // 且拆分位紧邻前字符为 \xa0（`<a><b>foo&nbsp;[]</b></a>` 簇实录 `<p><br>
+      // </p>`，同构 `foo[]` 纯文本尾却重开外层 b，判据落文本面非结构面）时不
+      // 重开。a 本体仅后随内容面重开（spec special element boundary 语义）。
+      // v3 首版存活判据单向跳过重建，回归 14 键 v2 绿面（带样式 span 壳尾 12
+      // + `<b><a>` 2），本版按表修正。
       (function () {
         var ipWalkC = ipM1OrigNode;
+        // 链含 a 预扫（壳尾不重开判据用，先于 walk 定全局）。
+        var ipHasAC = false;
+        (function (n) {
+          var g = 0;
+          while (n && g++ < 64) {
+            if (n === container) break;
+            if (n.nodeType === 1 && _zwJusTag(n) === 'a') {
+              ipHasAC = true;
+              return;
+            }
+            n = n.parentNode;
+          }
+        })(ipM1OrigNode);
+        // 拆分位紧邻前字符 \xa0 判（a 链壳尾 caret 不重开，corpus
+        // `foo&nbsp;[]` vs `foo[]` 同构分叉实录）。
+        var ipNbspC = ipM1OrigNode.nodeType === 3 && ipM1OrigOff > 0
+          && String(ipM1OrigNode.nodeValue || '').charCodeAt(ipM1OrigOff - 1) === 0xa0;
         var ipSurvC = ipM1OrigOff < _zwJusNodeLength(ipM1OrigNode)
           || !!ipM1OrigNode.nextSibling;
         var guardC = 0;
@@ -2278,10 +2300,14 @@
           if (ipWalkC.nodeType === 1) {
             var itnC = _zwJusTag(ipWalkC);
             var ipSurvHereC = ipSurvC || !!ipWalkC.nextSibling;
-            if ((itnC === 'a' || _zwIparaIsFmtShellTag(itnC))
-                && _zwIparaHasVisibleChild(ipWalkC) && ipSurvHereC) {
-              ipChainC.push(ipWalkC);
+            var ipPushC = false;
+            if (itnC === 'a') {
+              ipPushC = ipSurvHereC;
+            } else if (_zwIparaIsFmtShellTag(itnC)) {
+              ipPushC = _zwIparaHasVisibleChild(ipWalkC)
+                && (ipSurvHereC || !ipHasAC || !ipNbspC);
             }
+            if (ipPushC) ipChainC.push(ipWalkC);
             ipSurvC = ipSurvHereC;
           }
           ipWalkC = ipWalkC.parentNode;
