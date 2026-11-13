@@ -5,12 +5,16 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（276）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（280）
 
+- 2026-11-14 [序列上下文 range 位移槽与面值脱钩——同值公开 API 重锚修复](bugs/2026-11/2026-11-14-range-slot-desync-reanchor.md) — engine
+- 2026-11-14 [debug 单测 SIGILL：先 cargo clean -p 排增量缓存毒化，再查逻辑](bugs/2026-11/2026-11-14-debug-test-sigill-incremental-cache.md) — css-parser
 - 2026-11-13 [wpt editing 语料红账判读：切片伪失败与期望形真值源](bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md) — engine,tests
+- 2026-11-13 [暴露给页面 JS 的平台对象必须带接口原型——平面对象让原型定向写污染 Object.prototype](bugs/2026-11/2026-11-13-navigator-interface-prototype-absorbs-proto-writes.md) — engine
 - 2026-11-13 [plain 树 mutator 缺 R263 插入补偿致 live-range 塌缩](bugs/2026-11/2026-11-13-live-range-insert-compensation-plain-mutators.md) — engine
 - 2026-11-13 [不变式补写类修复的最终形态必须由 corpus 全量 A/B 定谳——四门全绿仍拦出确定性真回归](bugs/2026-11/2026-11-13-invariant-backfill-write-gated-by-corpus-ab.md) — layout-engine
 - 2026-11-13 [forceValue 的 'normal' 是合法 ADD 面参数，不能当移除面拦截](bugs/2026-11/2026-11-13-forcevalue-normal-is-valid-add-face-param.md) — engine
+- 2026-11-13 [WebIDL nullable 字符串参数经 ToString 的 null 毒化——双 face 同病 cleanup 失效](bugs/2026-11/2026-11-13-cssom-nullable-string-arg-tostring-poison.md) — engine, js-dom-shim
 - 2026-11-12 [门禁批 judge 伪绿两形：页滤空转 rows=0 与 grep 捕获 test result 摘要行](bugs/2026-11/2026-11-12-gate-judge-vacuous-rows-and-summary-line-capture.md) — tooling,testing
 - 2026-11-11 [复合命令里 `git stash pop` 不能无条件执行：push 失败后 pop 弹出陈年旧 stash](bugs/2026-11/2026-11-11-stash-pop-unconditional-compound-command.md) — tooling
 - 2026-11-11 [审查报告的 evidence 引用必须是 {path, sha256} 对象形态，字符串形态在账本绑定日爆断](bugs/2026-11/2026-11-11-review-report-evidence-ref-object-form.md) — site_optimizer

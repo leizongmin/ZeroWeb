@@ -2733,6 +2733,12 @@ impl StyleSystem {
         let mut host_matching = host_matching;
         let mut slotted_matching = slotted_matching;
         let mut inline_decls = inline_decls;
+        // 延迟调用结构冻结档案（css-values-5 §attr-notations）：prop → 延迟
+        // 调用 parse 实参部数（扫描序）。4.75 重裁站按此拒绝 substitution
+        // 新增实参分隔（argument-grammar sub8 形：声明无 fallback、var 代入
+        // 产出 fallback → IACVT）。跨层同名 prop 档案按扫描序拼接——胜出层
+        // 之外的档案混入时序对齐近似（FIXME: 随 corpus 扩面再按层归属精化）。
+        let mut attr_deferred_parts: HashMap<String, Vec<usize>> = HashMap::new();
         if author_attr_active {
             let reader = |name: &str| doc.get_attribute(element, name);
             // 取 URL 属性集收口 [`attr_target_fetches_url`]（css-values-5 §attr
@@ -2740,14 +2746,33 @@ impl StyleSystem {
             // 形态不取 URL，不在集合；FIXME: 集合随 ZW 取 URL 面扩展
             //（mask/filter src() 等）。
             let fetches_url = |prop: &str| zero_css_parser::values::attr_target_fetches_url(prop);
-            let subst = |prop: &str, v: &mut String| -> bool {
+            let mut subst = |prop: &str, v: &mut String| -> bool {
                 if !zero_css_parser::values::has_attr_word(v) {
                     return true;
                 }
-                match zero_css_parser::values::substitute_attr_values_checked(v, &reader) {
-                    // 无 attr 词误扫或替换无变化（attr 词在注释/字符串内等）→ 原值保留。
-                    Some((std::borrow::Cow::Borrowed(_), _)) => true,
-                    Some((std::borrow::Cow::Owned(sub), tainted)) => {
+                // 替换函数序 var→attr（css-values-5 §substitution）：实参含
+                // var()/env() 的 deferred 形不求值不拒——原文保留至 4.75 重裁站
+                //（var 代入后 attr 调用具体化重评）。具体形照常求值。
+                // https://drafts.csswg.org/css-values-5/#attr-notations
+                match zero_css_parser::values::substitute_attr_values_deferring(v, &reader) {
+                    // 无 attr 词误扫或替换无变化（attr 词在注释/字符串内、
+                    // 全 deferred 调用等）→ 原值保留。
+                    Some((std::borrow::Cow::Borrowed(_), _, deferred)) => {
+                        if !deferred.is_empty() {
+                            attr_deferred_parts
+                                .entry(prop.to_string())
+                                .or_default()
+                                .extend(deferred);
+                        }
+                        true
+                    }
+                    Some((std::borrow::Cow::Owned(sub), tainted, deferred)) => {
+                        if !deferred.is_empty() {
+                            attr_deferred_parts
+                                .entry(prop.to_string())
+                                .or_default()
+                                .extend(deferred);
+                        }
                         // 污染替换进取 URL 属性 → 声明 invalid（initial 即 none 形，
                         // attr-security 语料钉面）。
                         // https://drafts.csswg.org/css-values-5/#attr-security
@@ -3033,6 +3058,52 @@ impl StyleSystem {
         // 4.6. R2873：var() pending-substitution 第二阶段——把含 var() 的简写（4.5 步已代入）
         // 重新展开为长属性。须在 var() 解析之后、计算继承样式之前。
         let mut resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
+
+        // 4.75. CSS Values 5 §attr-notations：attr() 重裁站（替换函数序
+        // var→attr）。预级联站对实参含 var()/env() 的 deferred 调用原文保留
+        //（substitute_attr_values_deferring），4.5 代入后本站重扫：attr 调用
+        // 已具体化，任一文法 invalid / IACVT → 丢整条声明；替换产物 url 污染
+        // + 取 URL 属性 → 同预级联站 attr-security 口径拒。延迟调用按
+        // attr_deferred_parts 档案结构冻结（substitution 不得新增实参分隔）。
+        // 每元素独立（attribute 值依赖），置 outcome 缓存之后。
+        // <https://drafts.csswg.org/css-values-5/#attr-notations>
+        if resolved_cascaded
+            .values()
+            .any(|v| zero_css_parser::values::has_attr_word(v))
+        {
+            let attr_reader = |name: &str| doc.get_attribute(element, name);
+            let mut iacvt_props: Vec<String> = Vec::new();
+            for (prop, val) in resolved_cascaded.iter_mut() {
+                if prop.starts_with("--") || !zero_css_parser::values::has_attr_word(val) {
+                    continue;
+                }
+                let checked = match attr_deferred_parts.get(prop) {
+                    Some(expected) => {
+                        zero_css_parser::values::substitute_attr_values_readjudicate(val, &attr_reader, expected)
+                    }
+                    None => zero_css_parser::values::substitute_attr_values_checked(val, &attr_reader),
+                };
+                match checked {
+                    Some((std::borrow::Cow::Owned(sub), tainted)) => {
+                        if tainted && zero_css_parser::values::attr_target_fetches_url(prop) {
+                            iacvt_props.push(prop.clone());
+                        } else {
+                            *val = sub;
+                        }
+                    }
+                    // 无真调用（词假阳/全延迟残留——4.5 未代入的 env() 等）
+                    // → 原值保留。
+                    Some((std::borrow::Cow::Borrowed(_), _)) => {}
+                    // IACVT / 文法 invalid / 结构冻结违反 → 丢整条声明。
+                    None => {
+                        iacvt_props.push(prop.clone());
+                    }
+                }
+            }
+            for k in iacvt_props {
+                resolved_cascaded.remove(&k);
+            }
+        }
 
         // 4.7. CSS Values 5 §9：random()/random-item() 播种求值替换（compute 期
         // 元素视图——doc/element seed 入 cache name，§9.4 sharing；写面 canonical

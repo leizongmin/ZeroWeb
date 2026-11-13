@@ -1,6 +1,6 @@
 # CSS 子测试控制面
 
-**2026-11-13 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
+**2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
@@ -146,6 +146,42 @@ R2417 按 ≥600 二值粗体键塌缩，无 face 级 css-fonts-4 §5.4 匹配
 钉面）；架构面批：faces 注册表 + §5.4 desired→face 选择接入
 text_shaping/font_resolution，跨 3 crate）；installed-fonts 6F 宿主测试字体环境依赖定性不计缺口，
 见 evidence 2026-11-14-font-weight-relative-table）。
++lighter/bolder JS plain 通道臂（g31 续：克隆子树 gCS host face miss
+救回——lighter-bolder 页 22 腿 gCS 返空串，五轮探针切面定谳 cloneNode
+批量物化的克隆子件不入 HANDLE_VIEW_CACHE.nodes 表、无 selector 可走
+正置表回落，host 视图对该子树 face 盲；part01c `__zwPlainComputed`
+新增 font-weight 臂（继承走查 + zwFwResolved 父链递归查 css-fonts-4
+§5.2 表，invalid 声明视同无声明上行，css-wide 族回落 400，序列化对齐
+宿主 font_weight_str）+ part01 gCS 直取形 plain 回落白名单补
+font-weight 第 7 项（与 getPropertyValue 通用回落臂对齐，两臂对称）；
+lighter-bolder **0→22P 全页清零**，css-fonts 2,480→**2,502P**，见
+evidence 2026-11-14-bolder-lighter-relative-weight）。
++attr() font 槽写面拒收 + var 实参 deferred 形修复批（css-values 对
+trigfix **−13** 回归全案：**对称失败真相**——trigfix 时代
+parse_font_weight 域 [100,900] 百倍数使语料 attr helper expected 侧
+同样不可解析、双侧 400 相等即过，g29 连续域让 expected 真出值打破
+对称暴露 elem 侧缺陷；**洞 A** apply.rs font-*/font-size-adjust 写面
+分支豁免集补 value_has_substitution_function（attr()/var() 替换文本
+放行 store、computed 期重裁，此前只放行 math 形 → setProperty 整拒）
++ **洞 B** `attr(var(--x))` deferred 形预级联站当 IACVT 丢整条声明、
+cascade.rs 所称 4.75 步重裁站从未建成——attr.rs
+substitute_attr_values_deferring 变体（deferred 原文保留 + 实参部数
+档案）+ lib.rs 4.75 attr 重裁站（resolve_var_in_cascaded 后重扫，invalid
+/IACVT 丢声明、url 污染同 attr-security 口径）+ **结构冻结刀**
+（css-values-5：attr() 实参部数 parse 期定型，var 代入只填槽不新增
+实参分隔——AttrCall.arg_parts + substitute_attr_values_readjudicate
+按档案冻结；首版全量重评使 argument-grammar sub 8 翻红定谳补刀）。
+css-values 全量 3,920→**3,935**（+15 页级零回归：attr-all-types
+150→159、argument-grammar 8→14 唯余预存 sub 9；对 trigfix 3,933 净
+**+2** 反超）+ css-color 10,972 恒一 + css-fonts/四小套件页级零漂移
+（transitions 200/animations 238/transforms 229/easing 51）；单测
+css-parser 3,190/style-system 2,533 全绿；残挂账：argument-grammar
+sub 9（custom property 站 attr 语义）、attr-all-types 18F（<color>
+型别/type(*) 嵌套/non-existent 族），见 evidence
+2026-11-14-attr-font-write-gate-deferred；运行事故记：target-disk-guard
+三级清库撞在飞对账链（runner 二进制中途消失），三大件账完整落盘幸免，
+四小套件经 zw-g31-small4 补跑零漂移闭账——重型 make 入口与在跑链
+错峰纪律强化）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -211,9 +247,9 @@ numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回�
 已由 g28 闭账——四小全处置完毕）；g26 trig 型别门残余
 三桶（~~font-* 数值槽 calc 接入 30 腿~~ **已由 g29 落地**——三槽 math 形 +
 父级字体基准 + font-width 槽位分裂修复，css-fonts 净 +36/unit-cycles 5→20P，
-残 sign(20cqw) 容器实参/~~bolder-lighter 权重表~~（**已由 g31 部分闭账**
-computed +8P；余 lighter-bolder 22F 转克隆节点 gCS 桶、matching 14F 转字体
-匹配桶、installed-fonts 6F 环境定性）/~~size-adjust invalid 写面
+残 sign(20cqw) 容器实参/~~bolder-lighter 权重表~~（**已由 g31+g31续
+全闭账**——Rust 表 computed +8P + JS plain 通道臂 lighter-bolder
+22F→22P 全页清零；matching 14F 转字体匹配桶、installed-fonts 6F 环境定性）/~~size-adjust invalid 写面
 门~~（**已由 g30 闭账** 57P）等七桶见 evidence
 2026-11-14-font-slot-calc-parent-basis §5/registered custom
 property typed compute 60 腿/rotate 槽裸 math 函数 + serialize ctx 25F +

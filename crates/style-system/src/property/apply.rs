@@ -2346,11 +2346,15 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 15 腿通道——apply 臂 eval 接线，eval fail-closed 由 apply oracle 拒），
     // 非 math 形 apply oracle 兜底（parse_font_weight 域 [1,1000]/
     // parse_font_stretch 关键字 + <percentage [0,∞)>——font-weight-invalid
-    // `auto`/`bold 900` 拒面同源）。
+    // `auto`/`bold 900` 拒面同源）。替换函数形（attr()/var() 等）同样放行
+    // store 原文——oracle 对替换前文本恒拒（attr-all-types font-weight attr
+    // 形写面 -8 回归根因：g29 本分支只放行 math 形，g29 连续域使 expected
+    // 侧 `10` 可解析打破 trigfix 双侧对称 400，attr 文本被拒回落初始 400
+    // 即 Fail），computed 期级联替换后按属性文法重裁。
     // <https://drafts.csswg.org/css-fonts-4/#font-weight-numeric>
     // <https://drafts.csswg.org/css-fonts-4/#font-width-prop>
     if matches!(prop.as_str(), "font-weight" | "font-stretch" | "font-width") {
-        if values::is_math_function_value(v) {
+        if values::is_math_function_value(v) || value_has_substitution_function(v) {
             return true;
         }
         let mut scratch = ComputedStyle::default();
@@ -2371,6 +2375,11 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
     if prop == "font-size-adjust" {
         let lv = v.to_ascii_lowercase();
+        // 替换函数形放行 store 原文——basisOk 对 `attr(…)`/`var(…)` 文本恒拒，
+        // 同 font-* 分支口径（computed 期级联替换后重裁）。
+        if value_has_substitution_function(&lv) {
+            return true;
+        }
         let basis_ok = |t: &str| {
             t == "from-font"
                 || t.parse::<f64>().is_ok_and(|x| x.is_finite() && x >= 0.0)
@@ -3531,6 +3540,15 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("font-stretch", "calc(100%)"));
         // css-fonts-4 §font-weight-numeric 域外拒。
         assert!(!validate_decl_value("font-weight", "1001"));
+        // 替换函数形放行 store 原文（attr-all-types font-weight attr 形写面
+        // -8 回归根因钉面：oracle 对替换前文本恒拒，computed 期级联替换后
+        // 重裁）。
+        // https://drafts.csswg.org/css-values-5/#attr-notations
+        assert!(validate_decl_value("font-weight", "attr(data-foo type(<number>))"));
+        assert!(validate_decl_value("font-weight", "attr(var(--x))"));
+        assert!(validate_decl_value("font-weight", "attr(data-foo number)"));
+        assert!(validate_decl_value("font-stretch", "attr(data-foo wdth)"));
+        assert!(validate_decl_value("font-size-adjust", "attr(data-foo type(<number>))"));
     }
 
     #[test]
