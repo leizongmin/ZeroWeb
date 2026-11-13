@@ -178,3 +178,7 @@ include!("js_dom_bridge_tests/part111_form_a_splittrim_probe.rs");
 // /rawtext 容器内的静默 bail 修复双向钉测（styled 壳溶解 / rawtext 壳内拼接 /
 // pre 块载荷解包 / xmp markup 载荷 parser 事实钉）。
 include!("js_dom_bridge_tests/part112_ihtml_shell_sel_probe.rs");
+
+// 编辑命令兼容 ip 206 M1 主桶探针：insertParagraph 拆分边界 inline formatting
+// element 复制/丢弃语义三形钉测（b 壳/span 壳 caret 拆分 + 壳全含选区空壳丢弃）。
+include!("js_dom_bridge_tests/part113_ip_inline_shell_split_probe.rs");
