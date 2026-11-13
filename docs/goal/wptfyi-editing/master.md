@@ -3,6 +3,16 @@
 **2026-11-13 · Active**。DC-1 落定：weekly 快照 109,059/154,595，对
 11-07 基线净增 +92,875（CI
 [run 42947347500](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）。
+**d10 定谳批（无行为修复）**：bold 700/900 toggle-off 语料残余毒根定谳
+到 wrapper/handle 桥层宇宙面——document 作用域取宿主时 peel 切分后
+setSelectionValue 的 clearValue pass 集空转（clearValue 零调用、
+forceValue 零到达，探针实证），摘壳永不发生；元素作用域取宿主同页全绿，
+宿主获取方式即宇宙开关。forceValue 非激活值早退门方向错误负结果入档
+（ADD 面 forceValue(…,'normal') 是合法包裹臂，face 对跑 P2F=84 反证，
+已摘除）。face 基线 d9c2 六文件 61F 恒等（摘净构建 bold.html 抽查
+3036P/12F 一致）；哨兵 zz-probe-d10diag 锁定当前 re-wrap 形。桥层修复
+移交独立专项批，证据
+[dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)。
 DC-2 P1 读面 + P2 apply 引擎 + P3 作者载体臂累计落地后，**P2 主循环
 ⑥·italic ADD 壳内嵌套 + collapsed qS 记账**（2026-11-13，d9 批）：
 peel 链 italic 镜像门（ADD 面冲突 decl 壳——oblique——保壳内裹非抽
@@ -33,13 +43,17 @@ selection-face 片——本地 census 51,695/35,631（
 **卡点** 无阻塞；距 146,184 验收线差 37,125，大头在 selection deep
 面下周跑生效（census 口径 +~33k）与 input-events（201/3,378）等 0 覆盖面
 接线。六 format 文件残余 61F 为 P2 既有长尾（bold 12F、italic 3F、
-u/s 20F、sub/sup 26F）；**d9 批 isolation 分诊定谳**：bold/italic
-残余大半为跨 case 状态面（隔离探针 12+ 断言单 case 全绿、语料红）
-——Chrome dict 期望 cssFlag 跨 case 保留（qS(stylewithcss) before
-=true ×2 红为 flag 生命周期缺口）、state override 跨 case 残留边界
-未定谳，d10 专项候选。
-**下一步** ①d10 跨 case 状态面专项（cssFlag 生命周期 + override
-残留边界，isolation 分诊账目在 d9 证据）；②selection bidi（0/92）、
+u/s 20F、sub/sup 26F）；**d10 定谳修正 d9 isolation 分诊**：bold/italic
+数值壳残余（700/900 toggle-off 族）不是跨 case 状态面——document 作用域
+单 case 纯净页同样红，毒根为 wrapper/handle 桥层宇宙面（见 d10 证据），
+桥层修复后预期大幅转绿；d9 分诊的 cssFlag 生命周期缺口
+（qS(stylewithcss) before=true ×2）与 state override 跨 case 残留边界
+仍在，u/s/strike 面适用性待复核。
+**下一步** ①DC-2 桥层专项批（wrapper 缓存失效 + handle 链一致性 +
+MovePreservingRanges B2 臂双落地；三支线 bug 同族清单与修复落点见
+[d10 证据](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)，
+核对 face + multitest/misc + selection 三面）；②cssFlag 生命周期
++ override 残留边界（d9 账目，u/s 面复核）；③selection bidi（0/92）、
 shadow-dom（27/113）、input-events 小桶按产物归类开修、sub/sup
 vertical-align 邻 span；③下周快照落做 DC-3 同口径对账（净增 ≥130,000 +
 邻域回退核对，P2/P3 语料全量增量随周跑入账；face 哨兵探针：d5decl/
@@ -51,7 +65,7 @@ d5diag/d6cef/d7diag 全绿、d6diag 24/25、d8diag 11/11、d9diag
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 完成（11/11 片；快照 109,059/154,595） | [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md) + [dc2-selection-wiring](evidence/2026-11-11-dc2-selection-wiring.md) |
-| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md)：六文件残余 61F 长尾 |
+| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10 定谳批，无行为修复）：六文件残余 61F 长尾 |
 | DC-3 全量对账 | 对账口径就绪（净增 +92,875，距线 37,125） | coverage-2026-11-11 快照 + 验收线 146,184 |
 
 碰撞记录：本批 pin 钉测与并行流 D1 的 workspace 全量 test+clippy 共

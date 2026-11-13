@@ -1,0 +1,86 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>d10 diag - bold 900 partial-selection toggle-off, document-scope host</title>
+<link rel=stylesheet href=../include/reset.css>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+// d10 哨兵（2026-11-13）：bold 700/900 toggle-off 语料残余（bold 12F 中的
+// 数值壳部分选区族）在单 case 纯净页 + document-scope 宿主获取下的最小复现。
+// 当前锁定行为 = re-wrap 形 `<span 900>foo</span><span 900>barbaz</span>`，
+// 期望形 = `<span 900>foo</span>barbaz`。毒根定谳（见
+// docs/goal/wptfyi-editing/evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md）：
+// peel start 切分造两段壳正常，随后 setSelectionValue 的 contained-element
+// clearValue pass 在 document-scope 宿主下集空转（clearValue 零调用、
+// forceValue 零到达，fv/cv 探针实证），摘壳永不发生——毒在 wrapper/handle
+// 桥层（document-scope 与元素作用域 wrapper 的 handle 链/缓存失效族，
+// 与 tc.querySelector 重建后空 children 包装、tc-宇宙 public rangeCount=0
+// 同族）。tc.querySelector（元素作用域）取宿主时本腿为绿（d10 对拍实证），
+// 故宿主获取方式即宇宙开关。引擎桥层修复落地后：本页断言应改为期望形
+// （fail 即修复信号），同时语料 bold.html?2001-3000 数值壳六断言预期转绿。
+function nextnode(node) {
+  if (node.firstChild) return node.firstChild;
+  while (node) {
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+  }
+}
+function nodeindex(node) {
+  if (!node.parentNode) return 0;
+  return Array.prototype.indexOf.call(node.parentNode.childNodes, node);
+}
+function mywalk(node, html) {
+  node.innerHTML = html;
+  var sn = null, so = 0, en = null, eo = 0;
+  var cur = node;
+  while (true) {
+    if (!cur || (cur != node && !(cur.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+    if (cur.nodeType != 3) { cur = nextnode(cur); continue; }
+    var dA = cur.data.replace(/\]/g, "");
+    var iA = dA.indexOf("[");
+    var dB = cur.data.replace(/\[/g, "");
+    var iB = dB.indexOf("]");
+    cur.data = cur.data.replace(/[\[\]]/g, "");
+    if (iA != -1) { sn = cur; so = iA; }
+    if (iB != -1) { en = cur; eo = iB; }
+    var dC = cur.data.replace(/\}/g, "");
+    var iC = dC.indexOf("{");
+    var dD = cur.data.replace(/\{/g, "");
+    var iD = dD.indexOf("}");
+    if (iC == 0) { sn = cur.parentNode; so = nodeindex(cur); }
+    else if (iC != -1) { sn = cur.parentNode; so = nodeindex(cur) + 1; }
+    if (iD == 0) { en = cur.parentNode; eo = nodeindex(cur); }
+    else if (iD != -1) { en = cur.parentNode; eo = nodeindex(cur) + 1; }
+    cur.data = cur.data.replace(/[{}]/g, "");
+    if (!cur.data.length) {
+      if (cur == sn || cur == en) throw "bracket in empty text";
+      var old = cur;
+      cur = nextnode(cur);
+      old.parentNode.removeChild(old);
+    } else {
+      cur = nextnode(cur);
+    }
+  }
+  return [sn, so, en, eo];
+}
+var tc = document.getElementById('test-container');
+test(function() {
+  tc.innerHTML = "<div contenteditable></div><p>test";
+  var host = document.querySelector("div[contenteditable]");
+  var pts = mywalk(host, '<span style="font-weight: 900">foo[barbaz</span>}');
+  var r = document.createRange();
+  r.setStart(pts[0], pts[1]); r.setEnd(pts[2], pts[3]);
+  if (r.collapsed) r.setEnd(pts[0], pts[1]);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+  document.execCommand("stylewithcss", false, "true");
+  document.execCommand("bold", false, "");
+  assert_equals(host.innerHTML,
+    '<span style="font-weight:900">foo</span><span style="font-weight:900">barbaz</span>',
+    'd10 baseline (re-wrap, universe-B): got=');
+}, 'd10 b900 toggle-off document-scope baseline');
+</script>
+</body>
+</html>
