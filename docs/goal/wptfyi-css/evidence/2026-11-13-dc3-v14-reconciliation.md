@@ -116,9 +116,31 @@ css 全 suite `zw_env_fails` = **0** ✓。
 
 ## 8. 下一步
 
-1. typed-om `.any.js` 通道：修 weekly wrapper/corpus 脚本 typed-om 臂，下轮
-   周跑验证 9,872 显影。
+1. ~~typed-om `.any.js` 通道~~ → **已修（§9）**，下轮周跑验证 9,872 显影。
 2. 四小回归（−5/−4/−2/−1）shard artifact 逐文件归因。
 3. 本批修复落库后，cssom 533 于下轮周跑回显（v14 快照仍含 −533，对账以
    本 evidence §6 修复证据为凭）。
 4. DC-3 继续按 DC-2 批次路径推进（master.md 残余桶）。
+
+## 9. typed-om `.any.js` 周跑通道修复（同日追加）
+
+**机制定谳**：`goals/lib.sh` `fetch_dir_html` 默认排除 `.any.js`（line
+106–120，goal 脚本设 `GOAL_PULL_ANY_JS=1` 才拉，fs/wasm/timing 先例）；
+35 号脚本（css-testharness-compat）未设 → CI 全新 checkout 端
+css/css-typed-om 语料永远缺 numeric-objects 11 个 `.any.js` 文件。本地 v5b
+批为 ad-hoc 拉取（文件在本地语料树、不入 git），故本地 runner 变体通道
+（testharness_css_corpus.rs `.any.js` window wrapper，c9f66634c）能跑而
+CI 周跑恒缺——9,872 − 9,829 = 43 精确对账，11-11 与 v14 两轮周跑同值
+（该通道从未在周跑发过）。
+
+**修复**：Makefile `fetch-wpt-css-testharness-b`（css-face-b 分片 fetch
+目标，weekly.yml `matrix.shard.fetch` 直达）设 `GOAL_PULL_ANY_JS=1`。
+范围论证：全 css 语料 `.any.js` 仅三处——typed-om 11（真账面 +43）、
+geometry 1 + filter-effects 1（均 `idlharness.any.js`，runner 谓词
+`css_testharness_case_skipped` 排除 idlharness 专有面，fetch 亦空产出，
+不在本批范围）；fetch-b 其余目录（fonts/shapes/anchor/masking/backgrounds）
+上游无 `.any.js` 形态，环境变量零副作用。
+
+**验证**：本地探针（run-css-testharness-corpus.sh css-typed-om，含
+`.any.js` 名册）对账本地面值；端到端 CI 显影待下轮周跑（核对清单：typed-om
+= 9,872）。

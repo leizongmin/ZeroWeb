@@ -643,8 +643,13 @@ fetch-wpt-css-testharness:
 fetch-wpt-css-testharness-a:
 	CSS_FETCH_ONLY="css/css-values css/selectors css/css-color css/css-align css/css-sizing css/css-transforms css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
 
+# GOAL_PULL_ANY_JS=1：typed-om numeric-objects 11 案 .any.js window 变体（v5b
+# 本地批 +43 的通道面）——lib.sh fetch_dir_html 默认排除 .any.js，CI 全新
+# checkout 端 typed-om 语料缺变体文件致周跑恒 9,829（本地 9,872，差恰 43；
+# 2026-11-13 DC-3 v14 对账定谳）。同目标其余目录的 .any.js（fonts/shapes/
+# anchor/masking/backgrounds）上游无此形态，环境变量无副作用。
 fetch-wpt-css-testharness-b:
-	CSS_FETCH_ONLY="css/css-typed-om css/css-fonts css/css-shapes css/css-anchor-position css/css-masking css/css-backgrounds css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
+	GOAL_PULL_ANY_JS=1 CSS_FETCH_ONLY="css/css-typed-om css/css-fonts css/css-shapes css/css-anchor-position css/css-masking css/css-backgrounds css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
 
 fetch-wpt-css-testharness-c:
 	CSS_FETCH_ONLY="css/motion css/css-grid css/css-text css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
