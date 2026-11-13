@@ -1,41 +1,111 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 423 收口（canvas 导出编码格式面落锤：**toBlob/
-toDataURL type 参数接通——png+jpeg 白名单、非受支持格式 PNG fallback，
-toBlob.jpeg 1F 清账**；账本
-evidence/2026-11-13-m2s423-canvas-export-format.md）——红池分诊三备选排除
-（select-required-attribute=style-system 渲染流 / video-loading-lazy=
-scrollIntoView+intrinsic 渲染流 / closed-details-layout-apis=渲染流）后
-勘根 toBlob.jpeg：shim 四导出位（part05 standalone toDataURL/toBlob + part04
-元素 proxy trap 同对）全部忽略 type，host `__zw_canvas_op('toDataURL')` 仅
-PNG（R2797 jpeg/webp defer）；spec #dom-canvas-toblob 步骤 type parse as
-MIME type、非受支持格式回落 image/png——诚实修复需真 JPEG 编码（谎标 type
-字节仍 PNG 非合规）。修复：①host toDataURL op 扩参（格式 png|jpeg + quality
-1..=100 缺省 92；jpeg 臂直 alpha **合成黑底** rgb×a/255 后
-jpeg-encoder ColorType::Rgba 编码，u16 上限守卫）②shim 四导出位格式归一
-（essence 小写 + 白名单 + PNG fallback）③quality 仅 `typeof === 'number'`
-且 isFinite 且 [0,1] 消费（'bogus'/{}/null/undefined/true/'0.01' → 缺省 92
-——notnumber 面六参数须与无 quality 逐字节一致，`+x` 强转会错消费）。
-新依赖 `jpeg-encoder = "0.6"`（纯 Rust 零依赖编码器；解码面 jpeg-decoder
-既有不变，控制文档/账本同提交记账）。验证：unit part113 六断言面 1P +
-shim 规范序 node --check OK + solo 驱动 1F→1P + the-canvas-element 目录
-**首 sweep 130P/2F 曝光两 collateral 面**（type 忽略期两案走「无 jpeg」捷径
-分支假绿，接通后真断言路径首启：toDataURL.jpeg.alpha 黑底合成面修复① +
-toDataURL.jpeg.quality.notnumber 面修复②）→ 复跑 **132P/0F 零红** +
-engine lib 全量 3914P/7F（+1P）慢性逐名 IDENTICAL + sweep ×2 对 s422 双
-基线 my2 **stable=8454 state-diff=1 new=0 gone=0** 唯 driving F→P、my1
-state-diff=2（+簇 D home-end.optional T→F 在册闪变）+ new=1 =
-textfieldselection/select-event 文件级一次性 Timeout（s419 在册 b1-flake
-同名文件，my2 复原全 Pass）+ make test 154 腿 ok 唯 FAILED 腿 engine lib
-慢性 IDENTICAL。在册红 203F+14T → raw **201F+15T**（归一闪变面后稳定
-−1F；轮 1 raw 203F+14T 含簇 D flap + select-event 一次性 Timeout）。
-下一步：红池分诊续——余件单红逐一分诊勘根（video 帧像素表面 FIXME 跨域
-大件待立项，挂账池承 s416/s417/s420/s421/s422：渲染流 6 面 + embed
-intrinsic sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询
-GB-20261031 用户门 / checkable parent-label 2F / form-nameditem override
-builtins fix#19c 冲突 s137 用户门维持）。
+**日期**: 2026-11-14（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 424 收口（红池分诊轮三段产出：video 立项
+评估落账 + 余件单红逐件归因 + button-click-submits 施工翻绿；账本
+evidence/2026-11-14-m2s424-redpool-triage-btn-ancestor-activation.md +
+提案 evidence/2026-11-14-video-frame-surface-proposal.md）——**施工**：
+part04.js 单文件三处——新共享帮手 `_zwClickAncestorActivate`（
+`bubbles===true` 门——激活行为沿传播路径逐节点触发 + 跳自身双形态走链
+（sel `__zw_parent` / handle `_zwNodeParent`）+ INPUT/BUTTON eff-type/
+disabled（`_zwButtonEffType`/`_zwFeDisabled`）吸收 walk（type=button 或
+disabled 均止——交互内容遮蔽）+ A/AREA → `_zwAnchorActivate`）+ 两合成
+click 位（dispatchEvent 位 / click() API 位）接线（目标自身 tag ∉
+{A,AREA,INPUT,BUTTON(,LABEL)} 门；LABEL 自身即激活目标 R155 转发面排除
+防双激活）——spec 激活目标 = 最近（含自身）具激活行为祖先
+（interaction.html#the-target-element）。**验证**：25 part 拼装
+node --check OK + solo button-click-submits **12/12 全 Pass 文件级 T
+解挂**（non-bubbling 不提交/disabled .disabled=true 不提交/fieldset 传染
+不提交/legend 豁免提交——钉面全保持）+ the-button-element 目录
+57P/0F/0T（commandfor button 被 walk eff-type 折叠吸收零冲突）+ 全域
+sweep ×2 join 对 s423 双基线（my1 vs b1: stable=8384 diff=1 new=71
+gone=2；my2 vs b2: stable=8454 **diff=0** new=2 gone=1；my2 vs my1:
+stable=8455 diff=1 new=0 gone=0）——new/gone = driving 两子测 Pass +
+select-event 69 子测在册 flake 复原 + 两文件级 T 键出账；唯二 DIFF =
+簇 D home-end{,-detailed}.optional F→T 在册闪变家族；**new 红 0，稳定
+红面 −1T（201F+14T）**。**单红归因收口**：46 单红 + 15T 红池逐件定性
+毕，本车道无剩余可施工单红——余池全部归域（渲染流：colspan 分数列宽
+51.99985 vs 53 / taplh 19.5 分数行盒 / selresize scroll metrics / dialog
+R-s31 簇 / img density s416 / embed intrinsic sizing ×2 / video-loading-
+lazy / select-required-attribute / closed-details-layout-apis / rowspan-0；
+簇 D：selmany/selfocus base-select 门；runner M3：seltouch touch 注入；
+navigation M3：form-submission-target 6T；s137：form-nameditem；s164
+FIXME：styleerr error 事件臂；在册 flake：checkable-active-onblur）。
+**挂用户门**：GB-20261114-VIDEO（video P1/P2/P3 分期决策，提案 §3）+
+GB-20261031（簇 D select 立项征询）+ s137（form-nameditem）维持。下一步：
+等待用户门决策或渲染流到货复验（dialog R-s31 簇/img density/embed
+sizing 面随渲染流修复复验）；决策后开 video P1+P2 canvas wire 消费臂
+切片（提案 §2）或簇 D A2 簇分诊续。
+
+> **▶ 承前（2026-11-14 M2 切片 424 评估轮）——video 帧像素表面 FIXME 立项评估（挂用户门 GB-20261114-VIDEO，本轮内未决策继续挂账）**：账本 evidence/2026-11-14-video-frame-surface-proposal.md。原 Active 段留档（红形句已按提案 §1.3 solo 实测修正）——
+> **状态**: Active——M2 切片 424 评估轮（**video 帧像素表面 FIXME 立项评估
+> 落账，挂用户门 GB-20261114-VIDEO**；账本 evidence/2026-11-14-video-frame-
+> surface-proposal.md）——勘根盘点定谳**基建已大半在场**：zero-media 真解码
+> （webm VP9/AV1 + mp4 H.264 feature）+ webview VideoPlayerRegistry 真播放 +
+> runner 播放泵逐帧注入 ImageCache **与 `__zw_get_image_wire` 同键
+> （registry_key=image_resource_key）**——缺口感集中在三层：①shim canvas
+> 消费臂（drawImage 无 video 臂现抛 TypeError / createImageBitmap 四臂无
+> video 落 rejection / createPattern 为 s420 1×1 占位 wire）+ `__zw_get_image_
+> wire` 快照陈旧（run_page_scripts_impl 装载期一次性克隆，播放期新帧 miss，
+> 回落 fetch 臂只解图像容器）；②canPlayType 恒 `''`（part03 三位保守臂）+
+> decode 驱动 resize/playing 事件链缺席；③语料资产 400x300-red-resize-200x150-
+> green.{webm,mp4} 未 fetch（fetch-media-subset.sh 白名单外，上游 pin rev
+> 资产存在性 fetch 时核——本轮 GitHub raw 直连超时）。**分期提案**：P1
+> canvas wire 消费臂（本车道低风险 1 切片，加臂不动机/settle/状态机）→
+> P2 canPlayType 真值 + 资产 fetch（小件；放行使 209 文件 media corpus 部
+> 分面转真断言路径）→ P3 decode 驱动 resize/playing 事件链（跨 zero-media/
+> webview/engine 大头，media corpus 209 文件回归面，**建议另开 RFC 不并入
+> 本车道**）。在册池收益定谳：**唯 resize-during-playback 2F 直接受益且须
+> P1+P2+P3 全链**（红形实测修正=canPlayType 元素臂已真值放行、红形=videoWidth expected
+> 400 got 0 资产缺席——solo s424 修正详见提案账本 §1.3；canPlayType 单独
+> 放行不翻绿，资产缺席 settle 链零维仍派 resize）；P1/P2 单独在册池位移 0（行为诚实性
+> + 2dcontext 未来车道基建）。评估轮零源码改动零行为位移。下一步：红池
+> 分诊续——单红逐件归因续（col-span-limits 2F / textarea-placeholder-
+> lineheight 1F / select 四散单 / style-error-01 1T / button-click-submits
+> 1T 勘根定性）+ 挂账池承 s416-s423 不变（渲染流 6 面 + embed intrinsic
+> sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询 GB-20261031
+> 用户门 / checkable parent-label 2F / form-nameditem override builtins
+> fix#19c 冲突 s137 用户门维持 / video 立项 GB-20261114-VIDEO 用户门）。
+
+> **▶ 承前（2026-11-13 M2 切片 423 收口）——canvas 导出编码格式面（toBlob/
+> toDataURL type 参数接通，toBlob.jpeg 1F 清账）**：commit 谱系 git log
+> s423（e1ce76c9d），账本 evidence/2026-11-13-m2s423-canvas-export-format.md。
+> 原 Active 段留档——**状态**: Active——M2 切片 423 收口（canvas 导出编码
+> 格式面落锤：**toBlob/
+> toDataURL type 参数接通——png+jpeg 白名单、非受支持格式 PNG fallback，
+> toBlob.jpeg 1F 清账**；账本
+> evidence/2026-11-13-m2s423-canvas-export-format.md）——红池分诊三备选排除
+> （select-required-attribute=style-system 渲染流 / video-loading-lazy=
+> scrollIntoView+intrinsic 渲染流 / closed-details-layout-apis=渲染流）后
+> 勘根 toBlob.jpeg：shim 四导出位（part05 standalone toDataURL/toBlob + part04
+> 元素 proxy trap 同对）全部忽略 type，host `__zw_canvas_op('toDataURL')` 仅
+> PNG（R2797 jpeg/webp defer）；spec #dom-canvas-toblob 步骤 type parse as
+> MIME type、非受支持格式回落 image/png——诚实修复需真 JPEG 编码（谎标 type
+> 字节仍 PNG 非合规）。修复：①host toDataURL op 扩参（格式 png|jpeg + quality
+> 1..=100 缺省 92；jpeg 臂直 alpha **合成黑底** rgb×a/255 后
+> jpeg-encoder ColorType::Rgba 编码，u16 上限守卫）②shim 四导出位格式归一
+> （essence 小写 + 白名单 + PNG fallback）③quality 仅 `typeof === 'number'`
+> 且 isFinite 且 [0,1] 消费（'bogus'/{}/null/undefined/true/'0.01' → 缺省 92
+> ——notnumber 面六参数须与无 quality 逐字节一致，`+x` 强转会错消费）。
+> 新依赖 `jpeg-encoder = "0.6"`（纯 Rust 零依赖编码器；解码面 jpeg-decoder
+> 既有不变，控制文档/账本同提交记账）。验证：unit part113 六断言面 1P +
+> shim 规范序 node --check OK + solo 驱动 1F→1P + the-canvas-element 目录
+> **首 sweep 130P/2F 曝光两 collateral 面**（type 忽略期两案走「无 jpeg」捷径
+> 分支假绿，接通后真断言路径首启：toDataURL.jpeg.alpha 黑底合成面修复① +
+> toDataURL.jpeg.quality.notnumber 面修复②）→ 复跑 **132P/0F 零红** +
+> engine lib 全量 3914P/7F（+1P）慢性逐名 IDENTICAL + sweep ×2 对 s422 双
+> 基线 my2 **stable=8454 state-diff=1 new=0 gone=0** 唯 driving F→P、my1
+> state-diff=2（+簇 D home-end.optional T→F 在册闪变）+ new=1 =
+> textfieldselection/select-event 文件级一次性 Timeout（s419 在册 b1-flake
+> 同名文件，my2 复原全 Pass）+ make test 154 腿 ok 唯 FAILED 腿 engine lib
+> 慢性 IDENTICAL。在册红 203F+14T → raw **201F+15T**（归一闪变面后稳定
+> −1F；轮 1 raw 203F+14T 含簇 D flap + select-event 一次性 Timeout）。
+> 下一步：红池分诊续——余件单红逐一分诊勘根（video 帧像素表面 FIXME 跨域
+> 大件待立项，挂账池承 s416/s417/s420/s421/s422：渲染流 6 面 + embed
+> intrinsic sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询
+> GB-20261031 用户门 / checkable parent-label 2F / form-nameditem override
+> builtins fix#19c 冲突 s137 用户门维持）。
 
 > **▶ 承前（2026-11-13 M2 切片 422 收口）——constraint validation candidate 门（object-constraint-validation 1F 清账）+ A1 drained 态勘根定谳闭账**：commit 谱系 git log s422（3e1fd9d31），账本 evidence/2026-11-13-m2s422-object-cv-candidacy-gate.md。原 Active 段留档——
 > **状态**: Active——M2 切片 422 收口（constraint validation candidate 门落锤：

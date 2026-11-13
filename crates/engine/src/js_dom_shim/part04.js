@@ -6533,6 +6533,17 @@
                   }
                 }
               } catch (_e106ds) {}
+              // s424：目标自身非激活元素（A/AREA/INPUT/BUTTON 已由上两分支处理）
+              // 时上溯最近激活祖先——非激活目标嵌在激活元素内时激活落在祖先
+              //（button-click-submits 语料 span 冒泡 dispatchEvent click →
+              // button submit 案）。
+              try {
+                var _r106at = _realTag(sel, handle);
+                if (_r106at !== 'A' && _r106at !== 'AREA' && _r106at !== 'INPUT'
+                    && _r106at !== 'BUTTON') {
+                  _zwClickAncestorActivate(sel, handle, event);
+                }
+              } catch (_e106ac) {}
             }
             return notPrevented;
           };
@@ -6693,6 +6704,14 @@
               var _r154Tag = _realTag(sel, handle);
               if (_r154Tag === 'A' || _r154Tag === 'AREA') {
                 _zwAnchorActivate(sel, handle);
+              }
+              // s424：目标自身非激活元素时上溯最近激活祖先——非激活目标嵌在
+              // 激活元素内时激活落祖先（button-click-submits 语料 span.click()
+              // → button submit 案）。self A/AREA/INPUT/BUTTON 已由上方分支
+              // 处理；LABEL 自身即激活目标（R155 转发面），不再上溯。
+              if (_r154Tag !== 'A' && _r154Tag !== 'AREA' && _r154Tag !== 'INPUT'
+                  && _r154Tag !== 'BUTTON' && _r154Tag !== 'LABEL') {
+                try { _zwClickAncestorActivate(sel, handle, ev); } catch (_e424aa) {}
               }
               // R155（js-dom M4）：LABEL 的 click default action——转发激活到内部第一个
               // labelable 控件（spec the-label-element activation behavior；与
@@ -13007,6 +13026,66 @@
               try { frm.reset(); } catch (_eRst0) {}
             } else {
               _zwRunFormSubmit(_elKey(fs, fh), fs, fh, _makeProxy(sel, handle));
+            }
+          }
+        }
+        // s424（html-semantics）：click 激活目标祖先上溯——spec 激活目标 = 最近
+        //（含自身）具激活行为的祖先（https://html.spec.whatwg.org/multipage/
+        // interaction.html#the-target-element）。两合成 click 位（dispatchEvent
+        // 派发 / click() API）此前仅按 click 目标自身 tag 跑激活分支，非激活目标
+        //（span 等）嵌在激活元素内时祖先激活缺位——button-click-submits 语料
+        // span.click() / span 冒泡 dispatchEvent click 两案 form 不提交（测试
+        // 无 timeout fallback → 文件级 Timeout 挂死）。调用方已按目标自身 tag
+        // 分支（A/AREA/INPUT/BUTTON 自身面），本帮手跳过自身上溯：INPUT/BUTTON
+        // = 表单按钮激活（eff type 经 `_zwButtonEffType`、disabled 传染经
+        // `_zwFeDisabled`——disabled 表单控件无激活行为，不提交/不复位）；A/AREA
+        // = `_zwAnchorActivate`。type=button 或 disabled 均吸收 walk（交互内容
+        // 遮蔽更远祖先——R155 LABEL 分支 interactive 判定同精神）。双形态走链
+        //（sel `__zw_parent` / handle `_zwNodeParent` 反链）同 `_zwSubmitBtnDefaultAction`
+        // form 反查与 `_zwInvokerCommandActivate`（part01，含自身）同精神。
+        function _zwClickAncestorActivate(sel, handle, ev) {
+          // 激活行为在 dispatch 循环沿传播路径逐节点触发——事件不冒泡时祖先
+          // 不在传播路径上，不触发（button-click-submits non-bubbling 案钉面
+          //：「dispatching a non-bubbling event should not trigger submit」）。
+          if (!ev || ev.bubbles !== true) return;
+          var curSel = sel, curHnd = handle, hops = 0;
+          while (curSel || curHnd) {
+            if (hops++ >= 32) break;
+            var moved = false;
+            if (curSel && typeof __zw_parent === 'function') {
+              var ps = '';
+              try { ps = __zw_parent(curSel); } catch (_eCaa0) {}
+              if (ps) { curSel = ps; curHnd = null; moved = true; }
+            }
+            if (!moved && curHnd && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+              var link = _zwNodeParent[curHnd];
+              if (link) {
+                if (link.parentHandle) { curHnd = link.parentHandle; curSel = link.parentSel || null; moved = true; }
+                else if (link.parentSel) { curSel = link.parentSel; curHnd = null; moved = true; }
+              }
+            }
+            if (!moved) break;
+            var tg = null;
+            try { tg = _realTag(curSel, curHnd); } catch (_eCaa1) { tg = null; }
+            if (tg === 'INPUT' || tg === 'BUTTON') {
+              var ty = _zwButtonEffType(curSel, curHnd, tg);
+              var isSub = (tg === 'BUTTON' && (ty === 'submit' || ty === ''))
+                || (tg === 'INPUT' && (ty === 'submit' || ty === 'image'));
+              var isRst = ty === 'reset';
+              if (_zwFeDisabled(curSel, curHnd)) { isSub = false; isRst = false; }
+              if (isSub) {
+                if (tg === 'INPUT' && ty === 'image') {
+                  _zwImgRecordClickCoords(curSel, curHnd, ev);
+                }
+                _zwSubmitBtnDefaultAction(curSel, curHnd, false);
+              } else if (isRst) {
+                _zwSubmitBtnDefaultAction(curSel, curHnd, true);
+              }
+              break;
+            }
+            if (tg === 'A' || tg === 'AREA') {
+              _zwAnchorActivate(curSel, curHnd);
+              break;
             }
           }
         }
