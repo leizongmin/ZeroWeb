@@ -132,6 +132,15 @@ animations 插值通道 3+ 页（font-size-adjust/stretch-interpolation 等
 1F/页）并入桶 5 挂账）。同轮双 session 竞态记：对端 session 曾以
 「g29 遗留认领」入口写重复 g30 条目并暂存在途件，本 session 收敛取
 实现方账（evidence 同名文件），重复段已摘除——先手提交去碰撞。
++font-weight 相对权重表 css-fonts-4 边界（g31：resolve_relative_font_weight
+旧 css-fonts-3 400/600/800 边界整表更替为 §5.2 #relative-weights 表
+——bolder 350/550/900（≥900 保持原值）、lighter 100/550/750（<100 保持）。
+font-weight-computed 48→**56** +8P，css-fonts 全量 2,472→**2,480P** 净 +8
+零回归，单测 2,533 全绿。lighter-bolder 页 22F 定性转桶：页子元素经
+cloneNode 克隆，gCS fontWeight 空串（探针四变异钉面——克隆节点样式合成
+缺口，shim/桥面非 css face）；font-weight-matching 14F 转挂 @font-face
+描述符匹配算法桶；installed-fonts 6F 宿主测试字体环境依赖定性不计缺口，
+见 evidence 2026-11-14-font-weight-relative-table）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -197,7 +206,9 @@ numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回�
 已由 g28 闭账——四小全处置完毕）；g26 trig 型别门残余
 三桶（~~font-* 数值槽 calc 接入 30 腿~~ **已由 g29 落地**——三槽 math 形 +
 父级字体基准 + font-width 槽位分裂修复，css-fonts 净 +36/unit-cycles 5→20P，
-残 sign(20cqw) 容器实参/bolder-lighter 权重表/~~size-adjust invalid 写面
+残 sign(20cqw) 容器实参/~~bolder-lighter 权重表~~（**已由 g31 部分闭账**
+computed +8P；余 lighter-bolder 22F 转克隆节点 gCS 桶、matching 14F 转字体
+匹配桶、installed-fonts 6F 环境定性）/~~size-adjust invalid 写面
 门~~（**已由 g30 闭账** 57P）等七桶见 evidence
 2026-11-14-font-slot-calc-parent-basis §5/registered custom
 property typed compute 60 腿/rotate 槽裸 math 函数 + serialize ctx 25F +

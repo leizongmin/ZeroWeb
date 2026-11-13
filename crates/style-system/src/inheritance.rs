@@ -465,21 +465,31 @@ fn is_logical_property_name(property: &str) -> bool {
     )
 }
 
+// css-fonts-4 §5.2 #relative-weights 相对权重表（bolder：<350→400、350-549→
+// 700、550-899→900、≥900 保持原值；lighter：<100 保持、100-549→100、
+// 550-749→400、≥750→700）——边界 350/550/900 与 100/550/750 实证钉面
+//（font-weight-lighter-bolder 页 22 腿：base 99 lighter 保 99 / 901 bolder
+// 保 901）。旧 css-fonts-3 400/600/800 边界整表淘汰。
+// <https://drafts.csswg.org/css-fonts-4/#relative-weights>
 fn resolve_relative_font_weight(weight: &FontWeightValue, parent_style: Option<&ComputedStyle>) -> FontWeightValue {
     let parent_weight = parent_style
         .map(|parent| font_weight_absolute(&parent.font_weight))
         .unwrap_or(400);
     match weight {
-        FontWeightValue::Bolder => FontWeightValue::Absolute(if parent_weight < 400 {
+        FontWeightValue::Bolder => FontWeightValue::Absolute(if parent_weight < 350 {
             400
-        } else if parent_weight < 600 {
+        } else if parent_weight < 550 {
             700
-        } else {
+        } else if parent_weight < 900 {
             900
+        } else {
+            parent_weight
         }),
-        FontWeightValue::Lighter => FontWeightValue::Absolute(if parent_weight < 600 {
+        FontWeightValue::Lighter => FontWeightValue::Absolute(if parent_weight < 100 {
+            parent_weight
+        } else if parent_weight < 550 {
             100
-        } else if parent_weight < 800 {
+        } else if parent_weight < 750 {
             400
         } else {
             700
@@ -1516,5 +1526,51 @@ mod tests {
             "继承字号 32px 应为 em 基准，实际 {:?}",
             style.transform
         );
+    }
+
+    #[test]
+    fn test_relative_font_weight_table_css_fonts_4() {
+        // css-fonts-4 §5.2 #relative-weights 表（font-weight-lighter-bolder 页
+        // 22 腿实证边界：bolder 350/550/900、lighter 100/550/750；≥900 bolder
+        // 与 <100 lighter 保持原值）。
+        let parent_of = |w: u16| {
+            let mut s = ComputedStyle::default();
+            s.font_weight = FontWeightValue::Absolute(w);
+            s
+        };
+        let resolve = |w: u16, rel: FontWeightValue| {
+            match resolve_relative_font_weight(&rel, Some(&parent_of(w))) {
+                FontWeightValue::Absolute(n) => n,
+                other => panic!("expected Absolute, got {other:?}"),
+            }
+        };
+        for (base, expect) in [
+            (99u16, 400u16),
+            (100, 400),
+            (349, 400),
+            (350, 700),
+            (549, 700),
+            (550, 900),
+            (749, 900),
+            (899, 900),
+            (900, 900),
+            (901, 901),
+        ] {
+            assert_eq!(resolve(base, FontWeightValue::Bolder), expect, "bolder for {base}");
+        }
+        for (base, expect) in [
+            (99u16, 99u16),
+            (100, 100),
+            (349, 100),
+            (350, 100),
+            (549, 100),
+            (550, 400),
+            (749, 400),
+            (750, 700),
+            (899, 700),
+            (900, 700),
+        ] {
+            assert_eq!(resolve(base, FontWeightValue::Lighter), expect, "lighter for {base}");
+        }
     }
 }
