@@ -455,21 +455,22 @@ fn static_dependency_specifiers(source: &str, importer_url: &str, registry: &Mod
     let mut raw = Vec::new();
     for stmt in split_statements(source) {
         let trimmed = stmt.trim();
-        let head = trimmed.split(';').next().unwrap_or(trimmed).trim();
         if let Some(clause) = strip_import_keyword(trimmed) {
-            let clause_head = clause.split(';').next().unwrap_or(clause).trim();
-            if clause_head.starts_with('\'') || clause_head.starts_with('"') || clause_head.starts_with('`') {
-                if let Ok(spec) = extract_string_literal(clause_head) {
+            // s418：语句已由 string-aware split_statements 切出，clause/specifier
+            // 内 `;` 合法（URL query 形），不再按 `;` 截断（同
+            // [`extract_import_specifier_from_rest`] 注）。
+            if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
+                if let Ok(spec) = extract_string_literal(clause) {
                     raw.push(spec);
                 }
-            } else if let Some((_before, spec_part)) = split_from_clause(clause_head)
+            } else if let Some((_before, spec_part)) = split_from_clause(clause)
                 && let Ok(spec) = extract_import_specifier_from_rest(spec_part)
             {
                 raw.push(spec);
             }
         } else if strip_export_keyword(trimmed).is_some()
-            && (head.starts_with('*') || head.starts_with('{'))
-            && let Some((_before, spec_part)) = split_from_clause(head)
+            && (trimmed.starts_with('*') || trimmed.starts_with('{'))
+            && let Some((_before, spec_part)) = split_from_clause(trimmed)
             && let Ok(spec) = extract_import_specifier_from_rest(spec_part)
         {
             raw.push(spec);
@@ -1507,7 +1508,9 @@ fn push_unique_specs(specs: &mut Vec<String>, more: Vec<String>) {
 /// 从 import 语句子句（关键字已剥离）提取模块标识符。
 fn extract_import_specifier(clause: &str) -> Result<String, ScriptError> {
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
-        return extract_string_literal(clause.split(';').next().unwrap_or(clause).trim());
+        // s418：同 [`extract_import_specifier_from_rest`]——spec 内 `;` 合法，
+        // 闭引号截停由 extract_string_literal 承担。
+        return extract_string_literal(clause.trim());
     }
     if let Some((_bindings, spec_part)) = split_from_clause(clause) {
         return extract_import_specifier_from_rest(spec_part);
@@ -1944,7 +1947,9 @@ fn transform_import(
     let clause = strip_defer_prefix(clause);
     // import 'module' — 副作用导入
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
-        let raw_specifier = extract_string_literal(clause.split(';').next().unwrap_or(clause).trim())?;
+        // s418：同 [`extract_import_specifier_from_rest`]——spec 内 `;` 合法，
+        // 不得截断（副作用导入 `import "…;…"` 同形）。
+        let raw_specifier = extract_string_literal(clause.trim())?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, credentials, visited, path)?;
@@ -2270,8 +2275,13 @@ fn module_provides_export(
 
 /// 从 `from '...'` 部分提取模块标识符。
 fn extract_import_specifier_from_rest(s: &str) -> Result<String, ScriptError> {
-    let s = s.split(';').next().unwrap_or(s).trim();
-    extract_string_literal(s)
+    // s418：不得先按 `;` 切分——specifier 字面量内合法含 `;`（URL query 的
+    // `ct=text/css;boundary=…`，content-type-checking 判据面）；R3349 后
+    // [`extract_string_literal`] 已在匹配闭引号处停止、忽略其后 `;`/剩余代码，
+    // 此处旧版截断守卫只会把字面量拦腰截断（unclosed string literal，模块
+    // transform 期 CompileError、元素 error 事件不派 → 页面 async_test 永不
+    // 完成 NotRun）。
+    extract_string_literal(s.trim())
 }
 
 /// s345：具名导入绑定 globalThis getter 安装发射（`import { a as b, c }` 每绑定一条）。
@@ -5467,6 +5477,23 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         assert_eq!(extract_string_literal("'hello'").unwrap(), "hello");
         assert_eq!(extract_string_literal("\"world\"").unwrap(), "world");
         assert!(extract_string_literal("naked").is_err());
+    }
+
+    #[test]
+    fn test_import_specifier_with_semicolon_in_literal() {
+        // s418：specifier 字面量内 `;`（URL query `ct=text/json;boundary=…`，
+        // content-type-checking/valid-content-type 判据面）不截断——R3349 后
+        // extract_string_literal 在匹配闭引号处停止，`;`/with 子句/尾分号均
+        // 为字面量后剩余代码。
+        let spec =
+            extract_import_specifier_from_rest("\"../x.py?ct=text/json;boundary=something\" with { type: \"json\" };")
+                .unwrap();
+        assert_eq!(spec, "../x.py?ct=text/json;boundary=something");
+        assert_eq!(extract_import_specifier("\"../y.py?a;b\"").unwrap(), "../y.py?a;b");
+        assert_eq!(
+            extract_import_specifier("v from \"../z.py?a;b\"").unwrap(),
+            "../z.py?a;b"
+        );
     }
 
     #[test]
