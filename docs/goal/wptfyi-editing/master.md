@@ -3,15 +3,21 @@
 **2026-11-13 · Active**。DC-1 落定：weekly 快照 109,059/154,595，对
 11-07 基线净增 +92,875（CI
 [run 42947347500](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）。
-**d10 定谳批（无行为修复）**：bold 700/900 toggle-off 语料残余毒根定谳
-到 wrapper/handle 桥层宇宙面——document 作用域取宿主时 peel 切分后
-setSelectionValue 的 clearValue pass 集空转（clearValue 零调用、
-forceValue 零到达，探针实证），摘壳永不发生；元素作用域取宿主同页全绿，
-宿主获取方式即宇宙开关。forceValue 非激活值早退门方向错误负结果入档
-（ADD 面 forceValue(…,'normal') 是合法包裹臂，face 对跑 P2F=84 反证，
-已摘除）。face 基线 d9c2 六文件 61F 恒等（摘净构建 bold.html 抽查
-3036P/12F 一致）；哨兵 zz-probe-d10diag 锁定当前 re-wrap 形。桥层修复
-移交独立专项批，证据
+**d10/d11 定谳批（无行为修复，桥层专项筹备）**：bold 700/900 toggle-off
+语料残余毒根定谳到 wrapper/handle 桥层宇宙面——document 作用域取宿主时
+peel 切分后 setSelectionValue 的 clearValue pass 集空转（clearValue 零
+调用、forceValue 零到达，探针实证），摘壳永不发生；元素作用域取宿主同页
+全绿，宿主获取方式即宇宙开关。d11 二轮把机制收口到**混合树**：解析子树
+形态随宿主获取方式分裂（tc-scope 全 handle 形 / doc-scope 全 plain 形，
+plain 物化是 `_zwMEl` 既定设计），而 peelOne 克隆壳恒 handle 形
+（createElement 工厂）——plain 树混入 handle 壳后 childNodes 记账失配，
+contained 集空转；tc-scope 全 handle 链上 peel+cv+摘壳全程正常，摘壳
+逻辑本身成立。forceValue 非激活值早退门方向错误负结果入档（ADD 面
+forceValue(…,'normal') 是合法包裹臂，face 对跑 P2F=84 反证，已摘除）。
+face 基线 d9c2 六文件 61F 恒等（摘净构建 bold.html 抽查 3036P/12F 一致）；
+哨兵 zz-probe-d10diag 锁定当前 re-wrap 形，验证页 zz-probe-d11tree
+（doc-scope 腿转绿为修复信号）。修复两候选择一（克隆壳形态对齐 / 混合树
+对账）+ 三面对跑留桥层批实施，证据
 [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)。
 DC-2 P1 读面 + P2 apply 引擎 + P3 作者载体臂累计落地后，**P2 主循环
 ⑥·italic ADD 壳内嵌套 + collapsed qS 记账**（2026-11-13，d9 批）：
@@ -49,10 +55,12 @@ u/s 20F、sub/sup 26F）；**d10 定谳修正 d9 isolation 分诊**：bold/itali
 桥层修复后预期大幅转绿；d9 分诊的 cssFlag 生命周期缺口
 （qS(stylewithcss) before=true ×2）与 state override 跨 case 残留边界
 仍在，u/s/strike 面适用性待复核。
-**下一步** ①DC-2 桥层专项批（wrapper 缓存失效 + handle 链一致性 +
-MovePreservingRanges B2 臂双落地；三支线 bug 同族清单与修复落点见
-[d10 证据](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)，
-核对 face + multitest/misc + selection 三面）；②cssFlag 生命周期
+**下一步** ①DC-2 桥层专项批实施：混合树修复两候选择一（peelOne 克隆壳
+形态对齐被切壳 / handle 壳 childNodes 对 plain 子可见性对账）——先验证
+plain 链摘壳组合再动手，过 face 六文件 + multitest/misc + selection
+三面对跑；机制、候选与支线 bug 清单见
+[d10 证据](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d11
+补充节）；②cssFlag 生命周期
 + override 残留边界（d9 账目，u/s 面复核）；③selection bidi（0/92）、
 shadow-dom（27/113）、input-events 小桶按产物归类开修、sub/sup
 vertical-align 邻 span；③下周快照落做 DC-3 同口径对账（净增 ≥130,000 +

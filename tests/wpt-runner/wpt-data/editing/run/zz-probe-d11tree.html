@@ -1,0 +1,104 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>d11 tree diag - wrapper shape and climb chain per host-fetch style</title>
+<link rel=stylesheet href=../include/reset.css>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function nextnode(node) {
+  if (node.firstChild) return node.firstChild;
+  while (node) {
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+  }
+}
+function nodeindex(node) {
+  if (!node.parentNode) return 0;
+  return Array.prototype.indexOf.call(node.parentNode.childNodes, node);
+}
+function mywalk(node, html) {
+  node.innerHTML = html;
+  var sn = null, so = 0, en = null, eo = 0;
+  var cur = node;
+  while (true) {
+    if (!cur || (cur != node && !(cur.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+    if (cur.nodeType != 3) { cur = nextnode(cur); continue; }
+    var dA = cur.data.replace(/\]/g, "");
+    var iA = dA.indexOf("[");
+    var dB = cur.data.replace(/\[/g, "");
+    var iB = dB.indexOf("]");
+    cur.data = cur.data.replace(/[\[\]]/g, "");
+    if (iA != -1) { sn = cur; so = iA; }
+    if (iB != -1) { en = cur; eo = iB; }
+    var dC = cur.data.replace(/\}/g, "");
+    var iC = dC.indexOf("{");
+    var dD = cur.data.replace(/\{/g, "");
+    var iD = dD.indexOf("}");
+    if (iC == 0) { sn = cur.parentNode; so = nodeindex(cur); }
+    else if (iC != -1) { sn = cur.parentNode; so = nodeindex(cur) + 1; }
+    if (iD == 0) { en = cur.parentNode; eo = nodeindex(cur); }
+    else if (iD != -1) { en = cur.parentNode; eo = nodeindex(cur) + 1; }
+    cur.data = cur.data.replace(/[{}]/g, "");
+    if (!cur.data.length) {
+      if (cur == sn || cur == en) throw "bracket in empty text";
+      var old = cur;
+      cur = nextnode(cur);
+      old.parentNode.removeChild(old);
+    } else {
+      cur = nextnode(cur);
+    }
+  }
+  return [sn, so, en, eo];
+}
+var tc = document.getElementById('test-container');
+function shape(n) {
+  if (!n) return 'null';
+  var h = 'no-handle';
+  try { h = n.__zwHandle !== undefined ? 'H:' + String(n.__zwHandle) : 'plain'; } catch (e) { h = 'err'; }
+  var kids = -1;
+  try { kids = n.childNodes ? n.childNodes.length : -1; } catch (e) {}
+  return n.nodeType === 3 ? ('tx(' + JSON.stringify(String(n.data || '').slice(0, 6)) + ').' + h)
+    : (n.nodeName + '.' + h + '.kids=' + kids);
+}
+function climbChain(start) {
+  var chain = [];
+  var n = start;
+  var g = 0;
+  while (n && g++ < 12) {
+    chain.push(shape(n));
+    try { n = n.parentNode; } catch (e) { chain.push('pn-err'); break; }
+  }
+  if (!n && g < 12) chain.push('END-null');
+  return chain.join(' < ');
+}
+function runLeg(tag, fetchStyle) {
+  test(function() {
+    tc.innerHTML = "<div contenteditable></div><p>test";
+    var host = fetchStyle === 'document'
+      ? document.querySelector("div[contenteditable]")
+      : tc.querySelector("div[contenteditable]");
+    var pts = mywalk(host, '<span style="font-weight: 900">foo[barbaz</span>}');
+    var r = document.createRange();
+    r.setStart(pts[0], pts[1]); r.setEnd(pts[2], pts[3]);
+    if (r.collapsed) r.setEnd(pts[0], pts[1]);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    var pre = 'PRE:startTx=' + shape(pts[0])
+      + ' climb=' + climbChain(pts[0])
+      + ' hostKids=' + (host.childNodes ? host.childNodes.length : -1)
+      + ' sel=' + String(getSelection().rangeCount);
+    document.execCommand("stylewithcss", false, "true");
+    document.execCommand("bold", false, "");
+    var post = 'POST:startTx=' + shape(pts[0])
+      + ' climb=' + climbChain(pts[0])
+      + ' got=' + host.innerHTML;
+    assert_equals(pre + ' ' + post, 'SENTINEL', tag);
+  }, 'd11 ' + tag);
+}
+runLeg('doc-scope', 'document');
+runLeg('tc-scope', 'tc');
+</script>
+</body>
+</html>

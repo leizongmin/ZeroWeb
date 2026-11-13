@@ -68,6 +68,39 @@ B2 臂双落地）。影响面是语料全域而非 editing 单面，不适合�
 顺手修；建议开 DC-2 桥层专项批，落点核对 face 六文件 + multitest/misc +
 selection 片三面。
 
+## d11 补充：混合树机制定谳（2026-11-13 第二轮）
+
+诊断探针 `tests/wpt-runner/wpt-data/editing/run/zz-probe-d11tree.html`
+（保留为桥层批验证页）对同一用例按宿主获取方式分腿，execCommand 前后
+双时点 dump wrapper 形态（`__zwHandle` 有无）与选区边界爬升链：
+
+- **pre-exec 树形态由宿主获取方式决定整棵解析子树**：tc-scope 宿主为
+  handle 形（`DIV.H:__n3`），innerHTML 解析产物全链 handle 形；doc-scope
+  宿主为 plain 形（`DIV.plain`，`_zwMEl` 物化是既定设计，part03.js:1667
+  注释），解析产物全链 plain 形。
+- **peel 切分的克隆壳恒为 handle 形**（两宇宙一致——peelOne 的
+  `document.createElement` 工厂，part01d.js:2014/:2041）。tc-scope 全
+  handle 树吸收 handle 克隆壳形态一致，链路自洽（POST got = 期望形）；
+  doc-scope plain 树混入 handle 壳即成混合树（POST climb：
+  `tx.plain < SPAN.H:__n1 < DIV.plain`）。
+- 混合树上 handle 形壳的 childNodes 走 handle 侧记账，叠加 B2 臂双账本
+  形态（bare 文本入 handle 壳：host 重建 handle 文本 + JS 侧旧 plain 节点
+  再 insertBefore），"选区边界在壳内"判定失配，contained 集 walker
+  空转——与 d10 定谳的 cv 集空、clearValue 零调用完全吻合。
+- tc-scope 全 handle 链上 peel+cv+摘壳组合全程工作正常：摘壳逻辑本身
+  成立，分歧只在形态一致性。
+
+修复实施的两个候选（桥层批评估择一）：
+
+1. **克隆壳形态对齐**：peelOne 克隆工厂按被切壳形态分流——被切壳为
+   plain 形时克隆壳走 plain 工厂，保持全 plain 链。改动面小（两处
+   createElement），但 plain 链上的摘壳组合从未跑通，须先验证 plain 树
+   的 `_zwJusMovePreservingRanges`/removeChild 摘壳面。
+2. **混合树对账**：修 handle 壳 childNodes 对 plain 子的可见性或
+   contained walker 的混合形态判定。动 walker 共享面，风险更大。
+
+两案都须过 face 六文件 + multitest/misc + selection 三面对跑。
+
 ## 哨兵与基线
 
 - 哨兵页 `tests/wpt-runner/wpt-data/editing/run/zz-probe-d10diag.html`：
@@ -82,6 +115,7 @@ selection 片三面。
 
 ## 待办移交
 
-- 桥层专项批（上述修复方向 + 支线 bug 清单）。
+- 桥层专项批：混合树机制修复（d11 补充节两候选择一）+ 支线 bug 清单
+  + `zz-probe-d11tree.html` 验证页（doc-scope 腿转绿为修复信号）。
 - bold/italic 数值壳残余在桥层修复后预期大幅转绿；届时重对 face 并更新
   本档与哨兵断言。
