@@ -9722,11 +9722,18 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
             if kind_tag == "audio" {
                 reg.register_audio_source(src, bytes.as_ref().clone());
             }
-            committed.push((
-                kind_tag,
-                src.to_string(),
-                reg.duration(src).map(|d| (d * 1000.0) as u64),
-            ));
+            // s417（html-semantics M2）：video 源时长真值同静态 settle 面——
+            // players play 时才建，reg.duration 此处恒 None（单探针容器声明
+            // 时长；audio 字节 open_media 不适用，保持 mirror 读）。
+            let duration_ms = if kind_tag == "video" {
+                match reg.source_media_meta(src) {
+                    Some((_, _, dur_ms)) if dur_ms > 0 => Some(dur_ms),
+                    _ => None,
+                }
+            } else {
+                reg.duration(src).map(|d| (d * 1000.0) as u64)
+            };
+            committed.push((kind_tag, src.to_string(), duration_ms));
         }
         // settle 提交在锁外（execute_script 走 JS 桥，避免锁序交叉）。
         drop(reg);
@@ -9777,8 +9784,17 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                         | zero_engine::MediaResourceElementKind::Source
                             if outcome == "loaded" =>
                         {
-                            let (w, h) = reg.probe_dimensions(&resolved);
-                            (w, h, reg.duration(&resolved).map(|d| (d * 1000.0) as u64))
+                            // s417（html-semantics M2）：单探针 (w,h,durMs)——此前
+                            // duration 走 players（play 时才建，settle 恒空）→
+                            // durationMs 恒 None → shim headless 600 fallback →
+                            // ended 等待案（video_size_preserved_after_ended）
+                            // march 永不达 EOS、挂死文件级 Timeout。
+                            // source_media_meta 现场 open_media 读容器声明时长
+                            //（无宿主面时同 probe_dimensions 探针入口）。
+                            match reg.source_media_meta(&resolved) {
+                                Some((w, h, dur_ms)) => (w, h, (dur_ms > 0).then_some(dur_ms)),
+                                None => (0, 0, None),
+                            }
                         }
                         _ => (0, 0, reg.duration(&resolved).map(|d| (d * 1000.0) as u64)),
                     },

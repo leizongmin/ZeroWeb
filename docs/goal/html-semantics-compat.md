@@ -2,36 +2,69 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 416 勘根收口（current-pixel-density 10F 双面
-归因**均渲染流，勘根不施工移交收口**；账本
-evidence/2026-11-13-m2s416-cpd-crossstream-attribution.md）——solo 复现
-10F 与在册一致：basic 3F（14 子测 11P/3F）三案同签名 `clientWidth
-expected 0 but got 1`（`10000x`/`9e999…x`/`sizes 0px` 三路密度→∞/
-亚像素边界；width/height/naturalWidth 三对已过——naturalWidth 断言值
-即密度折算值，engine 侧折算链 img_selected_pixel_density〔extract.rs:
-770〕+ mod.rs:783-804 除法正确）；error 7F 全败首断言（ref.width=0）。
-basic 根因：layout-engine tree.rs:1704-1709 both-abs 双维臂
-`.max(1.0)` 地板把密度折算固有尺寸（0.0256/0）抬成 1px——10000x→dims
-0.0256、9e999…x→x 描述符非有限候选弃→broken 形态键保留 dim 0、sizes
-0px→dv=256/0=+Inf→dims 0，三路同汇该地板；spec 密度折算固有维可为
-亚像素/0（Chrome clientWidth round→0）。error 根因：broken img alt 盒
-呈现缺失（spec broken 态呈现 alt 文本盒非零尺寸；本库 0×0，7 变体全
-404+alt 断与 ref 同宽高）。两面根修均在 layout-engine/layout+paint =
-渲染流工作面（run-rules 9），移交渲染流挂账 5 面→6 面（方向注记入
-账本：floor 收窄 + 同族 `.max(1.0)` 位点核查 / img fallback content
-呈现）。在册红 212F+16T 不变（移交不除账，承 s410 先例）；无施工零
-行为变化。过程修正：s415 下一步「constructed-stylesheets 1T 勘根
-候选」系**过期指针**（s413 已收口 tentative/ 11 文件 37 子测全 Pass，
-收口时未同步摘除），本轮摘除。下一步：form-submission-target 6T 勘根
-首位 / 挂账池承 s404/s405/s411/s412/s413/s414（外链模块基座 map 键
-错配/`.sheet` kind 固定面不全/标记属性外泄/多进程 parity/forward map
-空返勘根/渲染流 6 面〔+current-pixel-density 10F〕/sizes-auto 半边/
-ilf+modulepreload 观察池/适用态打满 reject 面/maxLength-minLength IDL
-不适用态反射/unhandled-rejection 换算 + bucket 重复条目）；checkable
-父 label 2F 渲染域移交承 s410；select/combobox（簇 D）与 A2+D 簇立项
-征询仍待用户决策。
+**状态**: Active——M2 切片 417 收口（16T 清单分型 + video_size_preserved_after_ended
+1T 勘根修复落锤：**settle duration 真值链 + headless EOS ended 派发，1T 解挂**；账本
+evidence/2026-11-13-m2s417-video-ended-settle-truth.md）——s416 下一步
+「form-submission-target 6T 勘根首位」系**过期指针**（s392 已归因 navigation M3
+门控，line 7618 在案），本轮改以 sweep T 清单证据分型：17 文件级 T（sweep 口径；
+在册 16T = 17 − button-click-submits s392 flake）= 6 form-submission-target M3
+门控 + 4 links target_blank M3 门控（勘根注记：`_zwAnchorActivate`
+part03.js:30774 无 target 属性处理）+ 2 select-home-end 簇D + 1 button-click
+flake + 1 sizes-auto F5 用户门 + 1 canvas security.pattern.fillStyle.sub
+（13-hang 单点 = cross-origin SVGImageElement 载入链 onload 永不派，test #1
+HTMLImageElement 已 Pass——SECURITY_ERR 面半存在；SVG `<image>` 载入链挂账新记）
++ 1 style-error-01（the-style-element 版与 s413 收口的 link-style-error-01
+**同名异案**，慢性文件级 T 不除账）+ 1 video（本轮施工）。video 根因三层：
+runner settle durationMs 恒 None（runner 无 media-process，in-process registry
+`duration()` 读 players——play 时才建 settle 恒空；dims 有真值因
+probe_dimensions 现场探针而 duration 无同款）→ shim 600 fallback 烘焙 → 源子
+元素 video 无 src 属性 play 桥不命中（part06.js `_pSrcRaw` 读 attr）、
+headless march 无 EOS/ended 派发。修复两件套：runner settle 单探针
+`source_media_meta` (w,h,durMs)（testharness.rs static+dynamic 两处；webm
+Info/Duration raw 1008.0→1008ms；matroska duration() 文档自述 ns 实证 raw
+tick，既有 fixture 单测佐证公式正确）+ shim headless EOS ended 派发臂（镜像桥
+ended 臂语义：loop 分叉回卷/played 尾段/ended IDL 翻转/cue exit；600 fallback
+恒惰性不误触）。验证：solo Pass；sweep ×2 pairs join 对 s415 双基线
+**my2-vs-b2 = 0 state-diff + 恰 1 new**（driving Timeout→Pass）；唯一其余差异
+checkable following-label 子测为同二进制双向翻转 flake（b1/b2/m1/m2 四轮
+ck-F·P·F·P；机制排除：无 media 元素文件 settle 零行为变化；慢性 parent-label
+2F 四轮全 F 不变承 s410）。在册红 212F+16T→**212F+15T**（−1T 除账）；
+NotRun 5 不变。make test 全量 155 腿 154 绿 + 仅 engine lib 在册红腿
+3911P/7F 失败清单逐名 IDENTICAL 零位移（对 s415 同名单）；clippy runner
+腿 + fmt 干净。下一步：NotRun 5 css/json-module 外链模块基座 map 键错配勘根
+首位；挂账池承 s416 + SVG `<image>` 载入链新记。
 
-> **▶ 承前（2026-11-13 M2 切片 415 收口）——ior jQuery append() 新红
+> **▶ 承前（2026-11-13 M2 切片 416 勘根收口）——current-pixel-density 10F 双面归因渲染流移交**：commit 谱系 git log s416（db6019177），账本
+evidence/2026-11-13-m2s416-cpd-crossstream-attribution.md。原 Active 段留档——
+> **状态**: Active——M2 切片 416 勘根收口（current-pixel-density 10F 双面
+> 归因**均渲染流，勘根不施工移交收口**；账本
+> evidence/2026-11-13-m2s416-cpd-crossstream-attribution.md）——solo 复现
+> 10F 与在册一致：basic 3F（14 子测 11P/3F）三案同签名 `clientWidth
+> expected 0 but got 1`（`10000x`/`9e999…x`/`sizes 0px` 三路密度→∞/
+> 亚像素边界；width/height/naturalWidth 三对已过——naturalWidth 断言值
+> 即密度折算值，engine 侧折算链 img_selected_pixel_density〔extract.rs:
+> 770〕+ mod.rs:783-804 除法正确）；error 7F 全败首断言（ref.width=0）。
+> basic 根因：layout-engine tree.rs:1704-1709 both-abs 双维臂
+> `.max(1.0)` 地板把密度折算固有尺寸（0.0256/0）抬成 1px——10000x→dims
+> 0.0256、9e999…x→x 描述符非有限候选弃→broken 形态键保留 dim 0、sizes
+> 0px→dv=256/0=+Inf→dims 0，三路同汇该地板；spec 密度折算固有维可为
+> 亚像素/0（Chrome clientWidth round→0）。error 根因：broken img alt 盒
+> 呈现缺失（spec broken 态呈现 alt 文本盒非零尺寸；本库 0×0，7 变体全
+> 404+alt 断与 ref 同宽高）。两面根修均在 layout-engine/layout+paint =
+> 渲染流工作面（run-rules 9），移交渲染流挂账 5 面→6 面（方向注记入
+> 账本：floor 收窄 + 同族 `.max(1.0)` 位点核查 / img fallback content
+> 呈现）。在册红 212F+16T 不变（移交不除账，承 s410 先例）；无施工零
+> 行为变化。过程修正：s415 下一步「constructed-stylesheets 1T 勘根
+> 候选」系**过期指针**（s413 已收口 tentative/ 11 文件 37 子测全 Pass，
+> 收口时未同步摘除），本轮摘除。下一步：form-submission-target 6T 勘根
+> 首位 / 挂账池承 s404/s405/s411/s412/s413/s414（外链模块基座 map 键
+> 错配/`.sheet` kind 固定面不全/标记属性外泄/多进程 parity/forward map
+> 空返勘根/渲染流 6 面〔+current-pixel-density 10F〕/sizes-auto 半边/
+> ilf+modulepreload 观察池/适用态打满 reject 面/maxLength-minLength IDL
+> 不适用态反射/unhandled-rejection 换算 + bucket 重复条目）；checkable
+> 父 label 2F 渲染域移交承 s410；select/combobox（簇 D）与 A2+D 簇立项
+> 征询仍待用户决策。
+——ior jQuery append() 新红
 > B1 批内同锚倒转根因修复，四件套真锚语义统一**：commit 谱系 git log
 > s415（edfdccbd1），账本
 > evidence/2026-11-13-m2s415-ior-jquery-append-attribution.md。原 Active

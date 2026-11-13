@@ -20699,6 +20699,83 @@
             }
           } catch (_eTmoE1) {}
         }
+        // s417（html-semantics M2）：headless EOS ended 派发（无桥沙箱/降级生产面）——
+        // 桥 ended 臂为 bridgeOn+isEnded 门控，无桥 play() 仅墙钟推进（上方 headless
+        // 时钟臂）至流末后 ended 永不派：video_size_preserved_after_ended 的
+        // wait_for("ended") 挂死根因（runner 文件级 Timeout，manifest 唯一 ended
+        // 等待案）。镜像桥 ended 臂语义（loop 分叉回卷/尾段 played/ended IDL 翻转/
+        // cue exit/事件对）；duration 取 settle 真值链（ms.duration——webm 头真值；
+        // headless 600 fallback 墙钟远超 runner 超时，恒惰性不误触）。
+        // https://html.spec.whatwg.org/multipage/media.html#ended-playback
+        if (!ms.bridgeOn && ms.playing && !ms._zwEndedDispatched
+            && typeof ms.duration === 'number' && isFinite(ms.duration) && ms.duration > 0
+            && nowMs >= ms.duration * 1000) {
+          var _hdSel = ms._zwSel || (key.charAt(0) === '@' ? null : key);
+          var _hdHandle = ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null);
+          var _hdLoop = (ms.loop !== undefined) ? ms.loop === true : (function () {
+            try {
+              return (_hdHandle
+                ? __zw_has_attr_handle(_hdHandle, 'loop')
+                : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(_hdSel, 'loop') : __zw_has_attr(_hdSel, 'loop'))) === '1';
+            } catch (_eHdLp) { return false; }
+          })();
+          if (_hdLoop) {
+            // loop 回卷（headless）：墙钟基点重置重播（桥臂 seek+play 镜像——无桥
+            // seek 不可达，origin 重置即游标归零）；尾段 [lastMs, duration] 计入
+            // played（同桥臂口径——全时长覆盖断言面）。
+            var _hdEndMs = ms.duration * 1000;
+            if (_hdEndMs > lastMs) {
+              var _prH = ms._zwPlayedRanges || (ms._zwPlayedRanges = []);
+              var _hdMerged = false;
+              for (var _hi2 = 0; _hi2 < _prH.length; _hi2++) {
+                if (lastMs <= _prH[_hi2][1] + 250 && _hdEndMs >= _prH[_hi2][0] - 250) {
+                  if (lastMs < _prH[_hi2][0]) _prH[_hi2][0] = lastMs;
+                  if (_hdEndMs > _prH[_hi2][1]) _prH[_hi2][1] = _hdEndMs;
+                  _hdMerged = true;
+                  break;
+                }
+              }
+              if (!_hdMerged) _prH.push([lastMs, _hdEndMs]);
+            }
+            ms._zwHeadlessClockOrigin = (typeof performance === 'object' && typeof performance.now === 'function')
+              ? performance.now()
+              : (typeof Date.now === 'function' ? Date.now() : 0);
+            ms.currentTime = 0;
+            ms.ended = false;
+            ms._zwLastMarchMs = 0;
+            ms.seeking = true;
+            _zwMediaFire(_hdSel, _hdHandle, key, 'seeking');
+            var _hdSeeked = function () {
+              var _hdMs2 = _mediaState[key];
+              if (!_hdMs2) return;
+              _hdMs2.seeking = false;
+              _zwMediaFire(_hdSel, _hdHandle, key, 'timeupdate');
+              _zwMediaFire(_hdSel, _hdHandle, key, 'seeked');
+              if (typeof globalThis._zwMediaSeekSync === 'function') {
+                try { globalThis._zwMediaSeekSync(key); } catch (_eHdSs) {}
+              }
+            };
+            if (typeof setTimeout === 'function') setTimeout(_hdSeeked, 0);
+            else _hdSeeked();
+          } else {
+            ms._zwEndedDispatched = true;
+            ms.playing = false;
+            // spec「ended playback」：ended IDL 属性翻转（与桥臂同面）。
+            ms.ended = true;
+            for (var tkH in _elementTextTrack) {
+              var ttH = _elementTextTrack[tkH];
+              if (!ttH || !ttH._zwMarchState) continue;
+              var actH = ttH._zwMarchState;
+              for (var ei2 = actH.length - 1; ei2 >= 0; ei2--) {
+                var cueH = actH[ei2];
+                actH.splice(ei2, 1);
+                try { cueH.dispatchEvent({ type: 'exit', target: cueH, currentTarget: cueH }); } catch (_eTmoH0) {}
+              }
+            }
+            _zwMediaFire(_hdSel, _hdHandle, key, 'timeupdate');
+            _zwMediaFire(_hdSel, _hdHandle, key, 'ended');
+          }
+        }
       }
     } catch (_eTmm) {}
   };
