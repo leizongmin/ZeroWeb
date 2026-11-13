@@ -2171,6 +2171,174 @@
         _zwListFixDisallowedAncestors(container);
         return true;
       }
+      // M2-A flex/grid item 块化（2026-11-14）：container 为 flex/grid 布局容器
+      // 时子元素块级化（CSS flex/grid item 语义）——insertParagraph 拆分发生在
+      // item（行内壳链根）层而非容器层，容器保持完整。corpus 24 键实录三 caret
+      // 位 exp 全形：`[]abc` 前插空 item `<span><br></span>`、`a[]bc` item 对半
+      // `<span>a</span><span>bc</span>`、`abc[]` 尾插空 item（flex/inline-flex/
+      // grid/inline-grid × dps 双面恒一）。门 = node→container 祖先链全为 fmt/
+      // span/a 壳（item 链根为 container 直子）；链含非壳关门落回主拆分（匿名
+      // item 面无语料锚保守不动）。半链构造与 IP-M1 窄门同源（拆分位文本切片、
+      // 右壳重开剥 id），挂载改 container 原位替换；落位经 wired write（桥级
+      // 定谳同 M1：SetInnerHtml 单域替换契约，container 域整域重排），空侧壳链
+      // 内垫 br（左不标记/右带 `__zwPlaceholderBr` 标记写后重打）。
+      if (container.nodeType === 1) {
+        var ipFxD = '';
+        try { ipFxD = String(_zwJusCs(container, 'display') || ''); } catch (_eFxD) {}
+        if (ipFxD === 'flex' || ipFxD === 'inline-flex'
+            || ipFxD === 'grid' || ipFxD === 'inline-grid') {
+          var ipFxChain = [];
+          var ipFxOk = true;
+          (function () {
+            var ipW = node;
+            var ipG = 0;
+            while (ipW && ipG++ < 32) {
+              if (ipW === container) return;
+              if (ipW.nodeType === 1) {
+                var ipT = _zwJusTag(ipW);
+                if (ipT !== 'a' && !_zwIparaIsFmtShellTag(ipT)) {
+                  ipFxOk = false;
+                  return;
+                }
+                ipFxChain.push(ipW);
+              }
+              ipW = ipW.parentNode;
+            }
+            ipFxOk = false;
+          })();
+          if (ipFxOk && ipFxChain.length) {
+            var ipCurL = [];
+            var ipCurR = [];
+            var ipPathC = node;
+            var ipMidC = node.nodeType === 3;
+            var ipLtC = '';
+            var ipRtC = '';
+            if (ipMidC) {
+              var ipDC = String(node.nodeValue == null ? '' : node.nodeValue);
+              ipLtC = ipDC.slice(0, offset);
+              ipRtC = ipDC.slice(offset);
+            }
+            for (var ipI = 0; ipI < ipFxChain.length; ipI++) {
+              var ipE = ipFxChain[ipI];
+              var ipKids = [].slice.call(ipE.childNodes || []);
+              var ipPi = ipPathC === ipE ? offset
+                : (ipPathC ? ipKids.indexOf(ipPathC) : -1);
+              if (ipPi < 0) ipPi = ipKids.length;
+              var ipLE = ipE.cloneNode(false);
+              var ipRE = ipE.cloneNode(false);
+              try { ipRE.removeAttribute('id'); } catch (_eRsF) {}
+              var ipLK = [];
+              var ipRK = [];
+              for (var ipJ = 0; ipJ < ipKids.length; ipJ++) {
+                var ipK = ipKids[ipJ];
+                try { if (ipK.parentNode === ipE) ipE.removeChild(ipK); } catch (_eMkF) {}
+                if (ipJ < ipPi) ipLK.push(ipK);
+                else if (ipJ > ipPi || (ipJ === ipPi && ipPathC === ipE)) {
+                  ipRK.push(ipK);
+                }
+              }
+              for (var ipLa = 0; ipLa < ipLK.length; ipLa++) ipLE.appendChild(ipLK[ipLa]);
+              for (var ipLb = 0; ipLb < ipCurL.length; ipLb++) ipLE.appendChild(ipCurL[ipLb]);
+              if (ipI === 0 && ipMidC && ipLtC) {
+                ipLE.appendChild(document.createTextNode(ipLtC));
+              }
+              var ipRNew = [];
+              if (ipI === 0 && ipMidC && ipRtC) {
+                ipRNew.push(document.createTextNode(ipRtC));
+              }
+              for (var ipRb = 0; ipRb < ipCurR.length; ipRb++) ipRNew.push(ipCurR[ipRb]);
+              for (var ipRc = 0; ipRc < ipRK.length; ipRc++) ipRNew.push(ipRK[ipRc]);
+              for (var ipRd = 0; ipRd < ipRNew.length; ipRd++) ipRE.appendChild(ipRNew[ipRd]);
+              ipCurR = [ipRE];
+              ipCurL = [ipLE];
+              ipPathC = ipE;
+            }
+            var ipFxLE = ipCurL[0];
+            var ipFxRE = ipCurR[0];
+            // 空侧壳链内垫 br：链根下钻 innermost 空壳（左不标记/右标记）。
+            var ipFxPadL = !_zwIparaHasVisibleChild(ipFxLE);
+            if (ipFxPadL) {
+              var ipFxDeepL = ipFxLE;
+              var ipFxGL = 0;
+              while (ipFxGL++ < 16) {
+                var ipFxFL = ipFxDeepL.firstChild;
+                if (ipFxFL && ipFxFL.nodeType === 1 && !ipFxFL.firstChild
+                    && _zwIparaIsFmtShellTag(_zwJusTag(ipFxFL))) {
+                  ipFxDeepL = ipFxFL;
+                  continue;
+                }
+                break;
+              }
+              ipFxDeepL.appendChild(document.createElement('br'));
+            }
+            var ipFxPadR = !_zwIparaHasVisibleChild(ipFxRE);
+            if (ipFxPadR) {
+              var ipFxDeepR = ipFxRE;
+              var ipFxGR = 0;
+              while (ipFxGR++ < 16) {
+                var ipFxFR = ipFxDeepR.firstChild;
+                if (ipFxFR && ipFxFR.nodeType === 1 && !ipFxFR.firstChild
+                    && _zwIparaIsFmtShellTag(_zwJusTag(ipFxFR))) {
+                  ipFxDeepR = ipFxFR;
+                  continue;
+                }
+                break;
+              }
+              var ipFxBrR = document.createElement('br');
+              ipFxBrR.__zwPlaceholderBr = true;
+              ipFxDeepR.appendChild(ipFxBrR);
+            }
+            // wired write（container 域）：item 根位次替换双半，兄弟 item 原序
+            // 随侧保位；序列化整域重排后 caret 重锚右半前导壳链 + 占位 br 重打。
+            var ipFxRoot = ipFxChain[ipFxChain.length - 1];
+            var ipFxIdx = -1;
+            var ipFxSibs = [].slice.call(container.childNodes || []);
+            for (var ipFs = 0; ipFs < ipFxSibs.length; ipFs++) {
+              if (ipFxSibs[ipFs] === ipFxRoot) { ipFxIdx = ipFs; break; }
+            }
+            if (ipFxIdx < 0) ipFxIdx = ipFxSibs.length;
+            try { if (ipFxRoot.parentNode === container) {
+              container.removeChild(ipFxRoot);
+            } } catch (_eFxR) {}
+            var ipFxHtml = '';
+            for (var ipFh = 0; ipFh < ipFxSibs.length; ipFh++) {
+              if (ipFh === ipFxIdx) {
+                ipFxHtml += String(ipFxLE.outerHTML || '')
+                  + String(ipFxRE.outerHTML || '');
+              } else {
+                ipFxHtml += String(ipFxSibs[ipFh].outerHTML || '');
+              }
+            }
+            var ipFxWired = false;
+            try {
+              if (ipFxHtml !== '') {
+                container.innerHTML = ipFxHtml;
+                ipFxWired = true;
+              }
+            } catch (_eFxW) {}
+            if (!ipFxWired) {
+              // wired write 不可用兜底：双半先摘后挂回原位（mutation 流面）。
+              container.insertBefore(ipFxLE, container.childNodes[ipFxIdx] || null);
+              container.insertBefore(ipFxRE, container.childNodes[ipFxIdx + 1] || null);
+            }
+            try {
+              var ipFxRE2 = container.childNodes[ipFxIdx + 1] || container.lastChild;
+              var ipFxShell2 = (typeof globalThis.__zw_ce_caret_in_leading_shell
+                === 'function') ? globalThis.__zw_ce_caret_in_leading_shell(ipFxRE2) : null;
+              if (ipFxShell2) globalThis.getSelection().collapse(ipFxShell2[0], ipFxShell2[1]);
+              else globalThis.getSelection().collapse(ipFxRE2, 0);
+              if (ipFxPadR) {
+                var ipFxBr2 = ipFxShell2 ? ipFxShell2[0].firstChild : ipFxRE2.firstChild;
+                if (ipFxBr2 && ipFxBr2.nodeType === 1
+                    && String(ipFxBr2.tagName || '').toLowerCase() === 'br') {
+                  ipFxBr2.__zwPlaceholderBr = true;
+                }
+              }
+            } catch (_eFxC) {}
+            return true;
+          }
+        }
+      }
       // 主拆分支：newLineRange 归一提边（0 位升父 / 尾位升父，遇禁段落子止）。
       var arMain = _zwVaGetActiveRange();
       var newLineRange = document.createRange();
@@ -2374,11 +2542,47 @@
       // <br></span>`。三档：重建链内首 > fmt 壳链内首 > 裸块尾；带
       // `__zwPlaceholderBr` 标记（typed 段进场后 part01 插入消费扫描摘除，
       // 序列化不可见，corpus ip 面 `<b><br></b>` 实录不回归）。
-      if (!_zwIparaHasVisibleChild(newContainer) && !ipBrInRebuiltC) {
+      // M2-B 壳尾 br 去重（2026-11-14）：`ipBrInRebuiltC` 只覆盖 piece-3 重建
+      // 路径——extract 前导壳携带 br 形（caret 壳尾、壳随 frag 整体落新块）重建
+      // 被 ipLeadSkipC guard 跳过后旗标恒 false，pad 再裸垫第二 br（corpus
+      // assert_in_array 三接受形皆单 br，⑭ 探针 got `<span><br></span><br>`）。
+      // 前导壳链 firstChild 脊下钻探 br，已携即免垫。
+      var ipBrAlreadyC = ipBrInRebuiltC;
+      if (!ipBrAlreadyC) {
+        var ipScanC = newContainer;
+        var ipGSB = 0;
+        while (ipScanC && ipGSB++ < 16) {
+          var ipFcB = ipScanC.firstChild;
+          if (!ipFcB || ipFcB.nodeType !== 1) break;
+          if (_zwJusTag(ipFcB) === 'br') {
+            ipBrAlreadyC = true;
+            break;
+          }
+          if (_zwJusTag(ipFcB) !== 'a' && !_zwIparaIsFmtShellTag(_zwJusTag(ipFcB))) {
+            break;
+          }
+          ipScanC = ipFcB;
+        }
+      }
+      if (!_zwIparaHasVisibleChild(newContainer) && !ipBrAlreadyC) {
         var ipBrC = document.createElement('br');
         ipBrC.__zwPlaceholderBr = true;
         if (ipRebuiltInnerC) {
-          ipRebuiltInnerC.appendChild(ipBrC);
+          // M2-C 多层壳链 br 下钻（2026-11-14）：重建链根为最外层壳，占位 br
+          // 落链根尾致 `<span></span><br></span>`（corpus got）；Chrome 入链内
+          // 首（最深壳），链空置面下钻 innermost 空壳垫底。
+          var ipDeepC = ipRebuiltInnerC;
+          var ipGDC = 0;
+          while (ipGDC++ < 16) {
+            var ipFcC = ipDeepC.firstChild;
+            if (ipFcC && ipFcC.nodeType === 1 && !ipFcC.firstChild
+                && _zwIparaIsFmtShellTag(_zwJusTag(ipFcC))) {
+              ipDeepC = ipFcC;
+              continue;
+            }
+            break;
+          }
+          ipDeepC.appendChild(ipBrC);
         } else if (_zwIpShell) {
           _zwIpShell[0].appendChild(ipBrC);
         } else {

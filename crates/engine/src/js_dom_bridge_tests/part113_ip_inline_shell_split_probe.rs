@@ -599,3 +599,137 @@ document.execCommand("insertparagraph", false, "");
         "⑫ a 外层壳尾纯文本：裸 br 不重开（corpus 实录，b 在 a 内层）"
     );
 }
+
+// ===== IP-M2 刀探针（2026-11-14，span 壳族 34 键 census 三子机制钉）=====
+
+#[test]
+fn test_insertparagraph_flex_item_split_m2a() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce13 contenteditable><div style=display:flex><span>abc</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host13 = document.getElementById("ce13");
+var ft13 = host13.childNodes[0].firstChild.firstChild;
+var r13 = document.createRange();
+r13.setStart(ft13, 1);
+r13.setEnd(ft13, 1);
+getSelection().removeAllRanges();
+getSelection().addRange(r13);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce13\").innerHTML")
+            .unwrap()
+            .value,
+        "<div style=\"display:flex\"><span>a</span><span>bc</span></div>",
+        "⑬ M2-A flex 容器 item 拆分：Chrome 块化 flex item——span 为块界，容器不复制（corpus gate v4 实录：got 双 flex div 复制形）"
+    );
+}
+
+#[test]
+fn test_insertparagraph_shell_trailing_br_dedup_m2b() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce14 contenteditable><div><span style=\"color:rgb(0, 0, 255)\">foo<br></span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host14 = document.getElementById("ce14");
+var st14 = host14.childNodes[0].firstChild.firstChild;
+var r14 = document.createRange();
+r14.setStart(st14, 3);
+r14.setEnd(st14, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r14);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce14\").innerHTML")
+            .unwrap()
+            .value,
+        "<div><span style=\"color:rgb(0, 0, 255)\">foo</span></div><div><span style=\"color:rgb(0, 0, 255)\"><br></span></div>",
+        "⑭ M2-B 壳尾 br 垫底去重：右块壳已携 br 时不再裸垫第二 br（corpus assert_in_array 三接受形皆单 br，got `<span><br></span><br>` 双 br）"
+    );
+}
+
+#[test]
+fn test_insertparagraph_nested_span_br_depth_m2c() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce15 contenteditable><div><span style=\"color:rgb(0, 0, 255)\"><span style=\"background-color:rgb(0, 0, 255)\">foo</span></span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host15 = document.getElementById("ce15");
+var nt15 = host15.childNodes[0].firstChild.firstChild.firstChild;
+var r15 = document.createRange();
+r15.setStart(nt15, 3);
+r15.setEnd(nt15, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r15);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce15\").innerHTML")
+            .unwrap()
+            .value,
+        "<div><span style=\"color:rgb(0, 0, 255)\"><span style=\"background-color:rgb(0, 0, 255)\">foo</span></span></div><div><span style=\"color:rgb(0, 0, 255)\"><span style=\"background-color:rgb(0, 0, 255)\"><br></span></span></div>",
+        "⑮ M2-C 多层壳链 br 入链内首（最深壳）：占位 br 下钻 innermost 壳（corpus got `<span></span><br>` br 落外层壳尾）"
+    );
+}
