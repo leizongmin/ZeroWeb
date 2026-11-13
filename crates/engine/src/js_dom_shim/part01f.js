@@ -1866,6 +1866,8 @@
       // IP-M1 刀 piece 3 用：归一前拆分位（壳内 caret 保留文本宿主，壳链
       // 重开判定以上溯该位的祖先壳为准；归一后 node 已提升到壳外）。
       var ipM1OrigNode = node;
+      // piece 3 存活判据用：同点捕获拆分位偏移（归一提升后 offset 已换义）。
+      var ipM1OrigOff = offset;
       if (node.nodeType === 3 && offset == _zwJusNodeLength(node)) {
         offset = 1 + _zwJusNodeIndex(node);
         node = node.parentNode;
@@ -1959,22 +1961,33 @@
             var ipE = ipM1ChainC[ipI];
             var ipTN = _zwJusTag(ipE);
             var ipKids = [].slice.call(ipE.childNodes || []);
-            var ipPi = ipPathC ? ipKids.indexOf(ipPathC) : -1;
+            // B 族根因修复（2026-11-14）：caret 归一提升到壳本体（壳首 0 位文
+            // 本/壳尾越界位）时 ipPathC === ipE，indexOf 恒 -1 误落壳尾拆分
+            // （整壳随左块，`<b>[]bar</b>` 形 P2F）——拆分位改取 caret 在壳内
+            // offset，路径位直子随右块。
+            var ipPi = ipPathC === ipE ? offset
+              : (ipPathC ? ipKids.indexOf(ipPathC) : -1);
             if (ipPi < 0) ipPi = ipKids.length;
             var ipLE = ipE.cloneNode(false);
-            var ipRE = (ipTN === 'a') ? null : ipE.cloneNode(false);
+            // C 族根因修复（2026-11-14）：右壳重开剥 id（Chrome 实录右半壳仅
+            // 存业务 attr，如 `<b class=y>bar</b>`，id 随左半）。
+            var ipRE = ipE.cloneNode(false);
+            try { ipRE.removeAttribute('id'); } catch (_eRsC) {}
             var ipLK = [];
             var ipRK = [];
             for (var ipJ = 0; ipJ < ipKids.length; ipJ++) {
               var ipK = ipKids[ipJ];
               try { if (ipK.parentNode === ipE) ipE.removeChild(ipK); } catch (_eMk) {}
               if (ipJ < ipPi) ipLK.push(ipK);
-              else if (ipJ > ipPi) ipRK.push(ipK);
+              else if (ipJ > ipPi || (ipJ === ipPi && ipPathC === ipE)) {
+                ipRK.push(ipK);
+              }
             }
             // 左半序：直子左段 → 内层左内容（路径位左半）→ 中点左切片；
-            // 右半序：中点右切片 → 内层右内容 → 直子右段。`<a>` 层不重建右
-            // 壳，右内容上抛并入外层（左链 `<a>` 保留，census 左半 `<a>foo</a>`
-            // 实录）。
+            // 右半序：中点右切片 → 内层右内容 → 直子右段。右壳含 `<a>` 层恒
+            // 重开（2026-11-14 A 裸壳族 corpus 实录 `<a href>foo[]bar</a>` 双
+            // 侧带 a，v2 右内容上抛形 P2F）；右链空置由空壳丢弃摘除（含空
+            // a，壳尾 caret 新块裸 br 形）。
             for (var ipLa = 0; ipLa < ipLK.length; ipLa++) ipLE.appendChild(ipLK[ipLa]);
             for (var ipLb = 0; ipLb < ipCurL.length; ipLb++) ipLE.appendChild(ipCurL[ipLb]);
             if (ipI === 0 && ipMidC && ipLtC) {
@@ -1986,12 +1999,8 @@
             }
             for (var ipRb = 0; ipRb < ipCurR.length; ipRb++) ipRNew.push(ipCurR[ipRb]);
             for (var ipRc = 0; ipRc < ipRK.length; ipRc++) ipRNew.push(ipRK[ipRc]);
-            if (ipRE) {
-              for (var ipRd = 0; ipRd < ipRNew.length; ipRd++) ipRE.appendChild(ipRNew[ipRd]);
-              ipCurR = [ipRE];
-            } else {
-              ipCurR = ipRNew;
-            }
+            for (var ipRd = 0; ipRd < ipRNew.length; ipRd++) ipRE.appendChild(ipRNew[ipRd]);
+            ipCurR = [ipRE];
             ipCurL = [ipLE];
             ipPathC = ipE;
           }
@@ -2016,7 +2025,8 @@
           for (var ipRe = 0; ipRe < ipCurR.length; ipRe++) ipRC.appendChild(ipCurR[ipRe]);
           for (var ipPe = 0; ipPe < ipPostC.length; ipPe++) ipRC.appendChild(ipPostC[ipPe]);
           // 空壳丢弃（piece-2 同语义内联）：双块子树零子 fmt/span 壳摘除至
-          // 不动点；`<a>` 空置保守不摘。
+          // 不动点；空 `<a>` 同摘（2026-11-14 gate 右链 a 恒重开配套——壳尾
+          // caret 右链空 a 落裸 br 形；piece-2 面仍保守不动）。
           (function () {
             var ipGD = 0;
             var ipChD = true;
@@ -2029,7 +2039,7 @@
                   var ipDn = ipDesc[ipDi];
                   if (ipDn.nodeType === 1 && !ipDn.firstChild) {
                     var ipDT = _zwJusTag(ipDn);
-                    if (ipDT !== 'a' && _zwIparaIsFmtShellTag(ipDT)) {
+                    if (ipDT === 'a' || _zwIparaIsFmtShellTag(ipDT)) {
                       try {
                         ipDn.parentNode.removeChild(ipDn);
                         ipChD = true;
@@ -2253,27 +2263,46 @@
       var ipChainC = [];
       var ipRebuiltInnerC = null;
       var ipBrInRebuiltC = false;
+      // A 嵌套族存活判据（2026-11-14）：重开链 = 归一前拆分位上溯 container
+      // 的 fmt/span/a 壳（a 纳入——corpus `<a href>` 嵌套簇新块双侧全链重开，
+      // v2 a 排除致新块缺 a 层）；仅拆分位有后随内容（本位余量或任一祖先层
+      // nextSibling）的壳重开——壳尾 caret 无后随新块裸 br（census `<p><br></p>`
+      // 形，v2 无判据重建致 `<b><a><b><br></b></a></b>` 双裹 P2F）。
       (function () {
         var ipWalkC = ipM1OrigNode;
+        var ipSurvC = ipM1OrigOff < _zwJusNodeLength(ipM1OrigNode)
+          || !!ipM1OrigNode.nextSibling;
         var guardC = 0;
         while (ipWalkC && guardC++ < 64) {
           if (ipWalkC === container) break;
           if (ipWalkC.nodeType === 1) {
             var itnC = _zwJusTag(ipWalkC);
-            if (itnC !== 'a' && _zwIparaIsFmtShellTag(itnC)
-                && _zwIparaHasVisibleChild(ipWalkC)) {
+            var ipSurvHereC = ipSurvC || !!ipWalkC.nextSibling;
+            if ((itnC === 'a' || _zwIparaIsFmtShellTag(itnC))
+                && _zwIparaHasVisibleChild(ipWalkC) && ipSurvHereC) {
               ipChainC.push(ipWalkC);
             }
+            ipSurvC = ipSurvHereC;
           }
           ipWalkC = ipWalkC.parentNode;
         }
       })();
-      if (ipChainC.length
-          && !(typeof globalThis.__zw_ce_caret_in_leading_shell === 'function'
-            && globalThis.__zw_ce_caret_in_leading_shell(newContainer))) {
+      // guard（2026-11-14 A-mid 族）：新块首元素已是 fmt/span/a 壳（中壳
+      // caret partial extract 全链落 frag 形）不重建防双裹——v2 用
+      // __zw_ce_caret_in_leading_shell 仅认 fmt 表，a/span 前导漏检。
+      var ipLeadSkipC = false;
+      if (newContainer.firstChild && newContainer.firstChild.nodeType === 1) {
+        var ipLeadTagC = _zwJusTag(newContainer.firstChild);
+        if (ipLeadTagC === 'a' || ipLeadTagC === 'span'
+            || _zwIparaIsFmtShellTag(ipLeadTagC)) {
+          ipLeadSkipC = true;
+        }
+      }
+      if (ipChainC.length && !ipLeadSkipC) {
         var ipInnerPrevC = null;
         for (var ciC = 0; ciC < ipChainC.length; ciC++) {
           var ipCloneC = ipChainC[ciC].cloneNode(false);
+          try { ipCloneC.removeAttribute('id'); } catch (_eRsP3) {}
           if (ipInnerPrevC) {
             ipCloneC.appendChild(ipInnerPrevC);
           } else {
