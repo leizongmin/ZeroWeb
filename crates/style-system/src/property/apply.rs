@@ -1945,7 +1945,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 14] = [
+    const VALIDATED_PROPERTIES: [&str; 15] = [
         "transform",
         "rotate",
         "scale",
@@ -1977,6 +1977,12 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // `section 3.14`/css-wide 带后缀）此前白名单外放行 store；分派臂见
         // [`validate_decl_value`] 中段（value_has_unimplemented_function 之前）。
         "counter-increment",
+        // text-size-adjust 写面文法门（css-size-adjust-1 §text-size-adjust：
+        // `auto | none | <percentage>`，负 % invalid）：invalid 页 4 形
+        //（`reverse`/`0`/`10px`/`-100%`）此前白名单外放行 store；math 形经
+        // tree-counting 前置门 + 通用 math 门后放行 store（% 槽 canonical
+        // 折叠在 fold_decl_specified text-size-adjust 臂）。
+        "text-size-adjust",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2148,6 +2154,27 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_counter_list_grammar(v).is_some();
+    }
+    // text-size-adjust 写面文法门（css-size-adjust-1 §text-size-adjust：
+    // `auto | none | <percentage>`，负百分比 invalid——invalid 语料
+    // `reverse`/`0`/`10px`/`-100%` 拒形）。math 形放行 store（tree-counting
+    // 前置门已裁 sibling 形槽族、通用 math 门已裁文法；% 槽 canonical 折叠
+    // 在 fold_decl_specified）。
+    // <https://drafts.csswg.org/css-size-adjust-1/#adjustment-property>
+    if prop == "text-size-adjust" {
+        if values::is_math_function_value(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        if lv == "auto" || lv == "none" {
+            return true;
+        }
+        return v.ends_with('%')
+            && v[..v.len() - 1]
+                .trim()
+                .parse::<f64>()
+                .map(|n| n.is_finite() && n >= 0.0)
+                .unwrap_or(false);
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -3038,6 +3065,25 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("counter-increment", "a\\ 8 9"));
         // css-wide 关键字裸形放行（Cascading 4 §7.3 上下文无关）。
         assert!(validate_decl_value("counter-increment", "inherit"));
+    }
+
+    #[test]
+    fn text_size_adjust_write_gate() {
+        // css-size-adjust-1 §text-size-adjust 写面文法门：invalid 语料 4 形拒
+        //（非关键字/无单位数字/长度单位/负百分比）。
+        assert!(!validate_decl_value("text-size-adjust", "reverse"));
+        assert!(!validate_decl_value("text-size-adjust", "0"));
+        assert!(!validate_decl_value("text-size-adjust", "10px"));
+        assert!(!validate_decl_value("text-size-adjust", "-100%"));
+        // valid 语料形：关键字 + 非负百分比 + math 形（树形/同 % 加法）。
+        assert!(validate_decl_value("text-size-adjust", "auto"));
+        assert!(validate_decl_value("text-size-adjust", "none"));
+        assert!(validate_decl_value("text-size-adjust", "200%"));
+        assert!(validate_decl_value("text-size-adjust", "0%"));
+        assert!(validate_decl_value("text-size-adjust", "calc(10% + 5%)"));
+        assert!(validate_decl_value("text-size-adjust", "calc(10% * sibling-index())"));
+        // css-wide 关键字裸形放行。
+        assert!(validate_decl_value("text-size-adjust", "inherit"));
     }
 
     #[test]

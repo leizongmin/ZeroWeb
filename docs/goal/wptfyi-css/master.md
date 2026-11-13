@@ -91,6 +91,15 @@ is_counter_name default 保留排除；invalid 13F→13P/valid 2F→2P/computed
 闭账 +16P；单测 3,187/2,529 全绿；残余挂账：counter eval 容器参数腿
 （apply_advanced 签名无容器 ctx——`sign(2cqw - 10px)` computed 2F），见
 evidence 2026-11-13-counter-increment-grammar-gate）。
++text-size-adjust <percentage> 槽批（g28：css-size-adjust-1 §text-size-adjust
+——tree_counting_slot_valid MTLength 臂收 % 槽（% 叶经 LengthPercentage 归
+MTLength，`calc(10% * sibling-index())` 接受腿）+ fold_decl_specified 尺寸组
+接线（`calc(10% + 5%)` → `calc(15%)` canonical 折叠，plain/sibling 形预验
+零漂移）+ validate_decl_value 白名单 15th 写面门（`auto|none|<percentage>`
+负 % invalid——invalid 页 4 形新收口）；valid 5→7P 两腿回位、invalid 4P，
+size-adjust −1 桶闭环——四小回归全处置完毕；残挂账：gCS 通道无
+text-size-adjust computed 串化臂（computed 6F + interpolation 1F），见
+evidence 2026-11-13-text-size-adjust-percentage-slot）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -133,7 +142,9 @@ GOAL_PULL_ANY_JS=1，待周跑显影）+ 四小回归：properties-values-api �
 **已由 g26 修复**（trig 型别门，5P 真实回位）；writing-modes −4（本地
 13P+1T 反超 shard，瞬态/环境待定性）/css-lists −2 **已由 g27 修复**
 （counter-increment 文法门，invalid 13F→13P/valid 2F→2P/computed +1 同页
-对账，套件 +16P；残 2F 为 counter eval 容器参数腿挂账）/size-adjust −1（text-size-adjust-valid
+对账，套件 +16P；残 2F 为 counter eval 容器参数腿挂账）/size-adjust −1
+**已由 g28 修复**（text-size-adjust % 槽，valid +2P 两腿回位）——四小回归
+全处置完毕。text-size-adjust-valid
 2F：`calc(10% + 5%)` canonical 折叠 + `calc(10% * sibling-index())` 接受）
 仍挂账；cssom −533 已由 g25 修复（下轮周跑回显）。g23 minmax/clamp serialize+写面门已落库（values 净
 +325 五套件 ±0，invalid 桶清账）。g19 sibling 求值桥已落库（CalcContext 注入 + gCS 三通道
@@ -150,8 +161,8 @@ evidence §5）。
 Makefile 目标 GOAL_PULL_ANY_JS=1：lib.sh 默认排除 .any.js 致 CI 语料缺
 numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回补实证，
 下轮周跑验 9,872 显影，见 evidence §9）+ 四小回归余账（properties-values-api
-−5 已闭；writing-modes −4 瞬态定性/lists −2 已由 g27 闭账/
-size-adjust −1 % 折叠 serialize——形态已定位见卡点）；g26 trig 型别门残余
+−5 已闭；writing-modes −4 瞬态定性/lists −2 已由 g27 闭账/size-adjust −1
+已由 g28 闭账——四小全处置完毕）；g26 trig 型别门残余
 三桶（font-* 数值槽 calc 接入 30 腿——按 css-properties-values-api
 #dependency-cycles-via-relative-units 以父级字体为基准/registered custom
 property typed compute 60 腿/rotate 槽裸 math 函数 + serialize ctx 25F +

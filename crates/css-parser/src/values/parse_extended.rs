@@ -1525,6 +1525,10 @@ pub fn tree_counting_slot_valid(prop: &str, expr: &CalcExpr) -> bool {
             matches!(
                 prop,
                 "width" | "margin-left" | "text-indent" | "transform-origin-z" | "left"
+                    // text-size-adjust 为 <percentage> 槽（css-size-adjust-1）——
+                    // % 叶经 LengthPercentage 归 MTLength（text-size-adjust-valid
+                    // `calc(10% * sibling-index())` 接受腿驱动）。
+                    | "text-size-adjust"
             )
         }
         MTTime => matches!(

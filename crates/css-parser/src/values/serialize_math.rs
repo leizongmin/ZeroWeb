@@ -1008,8 +1008,12 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         //（calc-mix 语料 serialize 页驱动 + calc(20% + 10px) 接受面回归钉）；
         // margin-top/margin-left 为 g23 minmax/clamp serialize 语料 margin 槽
         // 驱动（canonical 保持串化，§10.6 sort）；height 为 g24
-        // calc-dimension-serialization-order 语料 height 槽驱动（同面）。
-        "width" | "text-indent" | "margin-top" | "margin-left" | "height" => {
+        // calc-dimension-serialization-order 语料 height 槽驱动（同面）；
+        // text-size-adjust 为 <percentage> 槽（css-size-adjust-1
+        // §text-size-adjust-valid `calc(10% + 5%)` → `calc(15%)` 钉；plain
+        // `200%` parse 失败 None 保留原文零漂移，sibling 树形
+        // fold_tree_counting_calc 恒等保留）。
+        "width" | "text-indent" | "margin-top" | "margin-left" | "height" | "text-size-adjust" => {
             fold_math_specified(v, MathFoldKind::Length)
         }
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
@@ -1607,6 +1611,24 @@ mod tests {
         assert_eq!(fold_decl_specified("transform", "rotate(45deg) scale(2)"), None);
         assert_eq!(fold_decl_specified("scale", "2"), None);
         assert_eq!(fold_decl_specified("scale", ""), None);
+    }
+
+    #[test]
+    fn fold_text_size_adjust_percentage_slot() {
+        // css-size-adjust-1 §text-size-adjust <percentage> 槽（text-size-adjust-valid
+        // 语料两腿）：同 % 加法 canonical 折叠；sibling 树形恒等保留；
+        // plain 关键字/百分数 parse 失败 None 保留原文（已 P 形零漂移）。
+        assert_eq!(
+            fold_decl_specified("text-size-adjust", "calc(10% + 5%)").as_deref(),
+            Some("calc(15%)")
+        );
+        assert_eq!(
+            fold_decl_specified("text-size-adjust", "calc(10% * sibling-index())").as_deref(),
+            Some("calc(10% * sibling-index())")
+        );
+        assert_eq!(fold_decl_specified("text-size-adjust", "200%"), None);
+        assert_eq!(fold_decl_specified("text-size-adjust", "none"), None);
+        assert_eq!(fold_decl_specified("text-size-adjust", "auto"), None);
     }
 
     #[test]
