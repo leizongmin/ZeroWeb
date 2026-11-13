@@ -3,7 +3,7 @@ date: 2026-11-14
 modules: engine
 ---
 
-# shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口五张脸，判读先分面再动手
+# shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口六张脸，判读先分面再动手
 
 ## 问题
 
@@ -37,6 +37,20 @@ apply 侧 InsertBefore arm 的 ref 三查（selector / 批内预解析 / handle 
 vue entry-list/卡片挂接整批静默丢弃；JS 视图 20 子稳定是因为 pending 桶
 的 handle 子豁免 K3 清除——视图/宿主分裂的最终一环。
 
+修法 5 落地后活体复跑仍不落地（降级 append 40 次全执行但落点为
+`global-component-box` 登录组件循环，非卡片挂接），诊断取证挖出**第六脸
+（handle miss 硬错毒批面）**：apply 侧 OnHandle 族的 parent/child/attr
+miss 全部 `ok_or_else(...)?` 硬错中止整批——跨批 refresh 重建后 handle
+表换代清空是活体常态（`unknown parent handle __n232` x5、`unknown handle
+__n2224` x25 每次毒化一批），批内后续 sel 域 mutation 全部丢弃（webview
+apply Err → 快照不更新 → 渲染丢批）。同族 `SetTextOnHandle` 早有 R100
+lenient 口径（warn+skip）与 sel 域 P19 口径（parent/ref 失配 warn+跳过），
+handle 族其余 13 站点是口径未补齐而非设计分叉。MO 审计同时铁证 JS 视图
+侧另一面：entry-list 挂接当时三视图一致（added realPar=wrap、skeleton 同
+毫秒摘除），此后 childNodes 数组静默重置回 [skeleton]（无 MO 记录）而
+元素指针链完整（contains=true、122KB 卡片全在）——视图数组重建机制是
+第七面候选，本轮未动。
+
 ## 根因
 
 - 双族 shim 的可见性补偿分散在四处独立机制（宿主 wire、pending 桶
@@ -57,6 +71,12 @@ vue entry-list/卡片挂接整批静默丢弃；JS 视图 20 子稳定是因为 
   append 两种语义，s185（apply 注释「跨批引用同 handle 视图边界 miss 跳过」）
   把 skip 当设计写进了注释——skip 只在「ref 从未存在」时等价于 append 语义，
   「ref 曾在树中、跨批后失效」的场景语义是丢节点而非丢锚序。
+- 第六脸的根因是同族口径未补齐：SetTextOnHandle 的 R100 lenient（warn+skip）
+  证明「跨批换代失效不是 bug」已被接受过一次，但同族其余 OnHandle 站点
+  （attr/innerHTML/style/append/insert 的 parent/child miss）保留硬错。
+  硬错的破坏力不在 miss 本身（该条丢了就丢了）而在**毒批**：整批 Err 使
+  批内后续 sel 域 mutation 全部不落宿主、不渲染——一条失效条目的代价被
+  放大为整批视图/宿主分裂。
 
 ## 解决
 
@@ -70,6 +90,13 @@ vue entry-list/卡片挂接整批静默丢弃；JS 视图 20 子稳定是因为 
 - 修法 5（第五脸）：apply 侧 InsertBefore arm ref 三查全 miss 改降级
   append（warn 措辞 `degraded to append` 保可观测），对齐 ByHandleHandle
   lenient 约定；锚序损失接受——ref 不在树中本无锚序可保。
+- 修法 6（第六脸）：apply 侧 13 处 handle/fragment miss 站点统一 R100
+  SetTextOnHandle 口径（warn+skip 不中止批）——OnHandle 属性/样式/
+  innerHTML 臂、append/insert 变体的 parent/child miss、fragment 变体
+  parent miss 与 helper 的 fragment miss。判据从「child 悬垂=真 bug」
+  改为「同批 wire 失败才是真 bug；跨批换代失效由 JS 视图权威 + warn
+  留证兜住」。常驻钉双面：miss 条目 skip（不产出效果）+ 同批后续 sel
+  域 mutation 照常落地（不毒批）。
 - 判读先分面：最小复现页按视图布尔字段分组（qsaFinds/htmlGone/
   inChildNodes 分属四张脸），逐字段归因后再决定共享路径改法；禁止
   一把抓的「在插入点补一次全量 wire」式改法——会双计 overlay。
@@ -89,6 +116,8 @@ vue entry-list/卡片挂接整批静默丢弃；JS 视图 20 子稳定是因为 
   桶/overlay 记账了吗？融合序列化会读到吗？drain 后 wrapper 重建 identity
   保持吗？缺一即是本轮四脸之一；再加第五问：wire 落到 apply 后 ref/parent
   寻址 miss 的行为是什么？同一 bridge 内兄弟变体的 miss 语义要对齐。
+  第六问：miss 站点的错误传播是本条 skip 还是整批 `?` 中止？「该条丢失」
+  与「毒批放大」要分开定级——活体面高频跨批失效场景一律本条 skip。
 - bridge 变体的 lenient 约定（skip vs 降级 append）写代码时按「ref 曾在
   树中」的语义判：降级 append；「ref 从未存在/结构性非法」才 skip。注释
   把 skip 写成设计前先跨批场景推演一遍。
@@ -102,5 +131,5 @@ vue entry-list/卡片挂接整批静默丢弃；JS 视图 20 子稳定是因为 
 - T67 诊断定谳（视图分裂四证据链）与本轮修复同源：bench 运行目录
   evidence/t67-diagnosis.md、evidence/t68-op-result.md。
 - 常驻钉：`crates/engine/src/js_dom_bridge_tests/part114_t68_selhandle_registry_sync.rs`
-  （六测：caseA 归并 / caseC 空串 / caseDAsync identity / fragment 双臂 wire /
-  s165 跨批 ref 失效降级 append）。
+  （七测：caseA 归并 / caseC 空串 / caseDAsync identity / fragment 双臂 wire /
+  s165 跨批 ref 失效降级 append / handle miss 不毒批）。

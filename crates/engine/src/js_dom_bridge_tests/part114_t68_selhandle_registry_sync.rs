@@ -500,3 +500,73 @@ fn t68_s165_stale_ref_degrade_append_lands() {
         "ref 有效时子前插于 ref（精确 insertBefore 语义保持）；html={out2}"
     );
 }
+
+/// 案 G 钉（T68 第六面）：handle miss lenient 化不毒化批——跨批 refresh 重建使
+/// handle 表换代清空是活体常态（掘金 feed `unknown handle`/`unknown parent
+/// handle` 每次硬错中止整批，批内后续 sel 域 mutation 全部丢弃，宿主/视图
+/// 分裂放大）。 miss 条目 warn+跳过后，批内其余 mutation 必须照常落地。
+#[test]
+fn t68_handle_miss_lenient_no_batch_poison() {
+    // 属性面：批首 SetAttrOnHandle 引用跨批失效 handle——旧版整批 Err，
+    // 批尾 sel 域 AppendChild 随批全丢；新版前条 skip、后条落地。
+    let html = "<html><body><div id=\"t68g1\"><span class=\"keep\">k</span></div></body></html>";
+    let mutations = vec![
+        DomMutation::SetAttrOnHandle {
+            handle: "__nstale2224".into(),
+            name: "data-x".into(),
+            value: "v".into(),
+        },
+        DomMutation::CreateElement {
+            handle: "__nkid".into(),
+            tag: "p".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__nkid".into(),
+            name: "class".into(),
+            value: "t68gkid".into(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "#t68g1".into(),
+            child_handle: "__nkid".into(),
+        },
+    ];
+    let out = crate::js_dom_bridge::apply_mutations_to_html(html, &mutations)
+        .expect("handle miss 必须跳过该条而非中止整批");
+    assert!(
+        out.contains("t68gkid"),
+        "批内 miss 条目后的 sel 域 mutation 必须照常落地；html={out}"
+    );
+    assert!(
+        !out.contains("data-x"),
+        "miss 条目本身不产出属性（skip 语义，非静默成功）；html={out}"
+    );
+
+    // 结构面：批首 AppendChildByHandle parent handle miss（活体 __n232 形态），
+    // 同批后条 sel 域插入不受毒化。
+    let mutations2 = vec![
+        DomMutation::AppendChildByHandle {
+            parent_handle: "__nstale232".into(),
+            child_handle: "__norphan".into(),
+        },
+        DomMutation::CreateElement {
+            handle: "__nkid2".into(),
+            tag: "p".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__nkid2".into(),
+            name: "class".into(),
+            value: "t68gkid2".into(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "#t68g2".into(),
+            child_handle: "__nkid2".into(),
+        },
+    ];
+    let html2 = "<html><body><div id=\"t68g2\"><span>i</span></div></body></html>";
+    let out2 = crate::js_dom_bridge::apply_mutations_to_html(html2, &mutations2)
+        .expect("parent handle miss 必须跳过该条而非中止整批");
+    assert!(
+        out2.contains("t68gkid2"),
+        "parent handle miss 后同批 sel 域插入必须落地；html={out2}"
+    );
+}
