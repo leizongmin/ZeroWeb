@@ -2039,7 +2039,7 @@ pub fn apply_dom_mutations_full(
                     // https://dom.spec.whatwg.org/#concept-node-pre-insert
                     None => {
                         tracing::warn!(
-                            "apply DOM mutations: insert_before ref no match, degraded to append: {ref_selector}"
+                            "apply DOM mutations: insert_before ref no match, degraded to append: ref={ref_selector} parent={parent_selector} child={child_handle}"
                         );
                         doc.append_child(parent, child).map_err(|e| e.to_string())?;
                     }
