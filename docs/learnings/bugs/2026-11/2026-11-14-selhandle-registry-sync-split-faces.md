@@ -3,7 +3,7 @@ date: 2026-11-14
 modules: engine
 ---
 
-# shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口四张脸，判读先分面再动手
+# shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口五张脸，判读先分面再动手
 
 ## 问题
 
@@ -27,6 +27,16 @@ QSA/TreeWalker 的镜像）不同步。自建最小复现页（t67-minrepro 七�
 4. **查询归并缺形态面**：文档级 QSA 的 pending 归并只有 tag/attr/id
    形态，class 形态（`.cls`）无归并臂——同步窗口恒 miss。
 
+四脸修复后活体掘金仍不落地，取证轮挖出**第五脸（跨批 ref 失效 skip 面）**：
+s165 臂（sel 父 + handle-only ref）wire 把 handle 串填进 ref_selector，
+apply 侧 InsertBefore arm 的 ref 三查（selector / 批内预解析 / handle 表）
+全 miss 后 warn + skip 无降级——该 arm 的同批钉（meta color-scheme）从未
+覆盖跨批常态（`refresh_if_html_changed` 全量重建使 handle 表换代清空），
+而兄弟变体 `InsertBeforeByHandleHandle` 的约定本就是「miss 降级 append」。
+活体铁证：feed 挂载窗口 22 次 `insert_before ref no match, skipped: __n69`，
+vue entry-list/卡片挂接整批静默丢弃；JS 视图 20 子稳定是因为 pending 桶
+的 handle 子豁免 K3 清除——视图/宿主分裂的最终一环。
+
 ## 根因
 
 - 双族 shim 的可见性补偿分散在四处独立机制（宿主 wire、pending 桶
@@ -42,6 +52,11 @@ QSA/TreeWalker 的镜像）不同步。自建最小复现页（t67-minrepro 七�
   必须**正序**。同分支内 appendChild 孪生臂（正序 push）正确、
   insertBefore 带位臂（倒序 push）反转的不对称，说明倒序循环不是
   有意设计而是复写走样。
+- 第五脸的根因是「lenient 约定不对称」：同一套 bridge 里 InsertBeforeByHandle
+  与 InsertBeforeByHandleHandle 对 ref/parent miss 各自选择了 skip 与降级
+  append 两种语义，s185（apply 注释「跨批引用同 handle 视图边界 miss 跳过」）
+  把 skip 当设计写进了注释——skip 只在「ref 从未存在」时等价于 append 语义，
+  「ref 曾在树中、跨批后失效」的场景语义是丢节点而非丢锚序。
 
 ## 解决
 
@@ -52,9 +67,17 @@ QSA/TreeWalker 的镜像）不同步。自建最小复现页（t67-minrepro 七�
   （`_zwQueryWrapIdentity`，pending 窗口反查 miss 零变化）；QSA
   R3902b 预门扩「无组合器含 '.' 形态」。每处带 spec 锚
   （concept-node-pre-insert/remove、concept-tree-child）。
+- 修法 5（第五脸）：apply 侧 InsertBefore arm ref 三查全 miss 改降级
+  append（warn 措辞 `degraded to append` 保可观测），对齐 ByHandleHandle
+  lenient 约定；锚序损失接受——ref 不在树中本无锚序可保。
 - 判读先分面：最小复现页按视图布尔字段分组（qsaFinds/htmlGone/
   inChildNodes 分属四张脸），逐字段归因后再决定共享路径改法；禁止
   一把抓的「在插入点补一次全量 wire」式改法——会双计 overlay。
+- 活体取证教训（第五脸挖出过程）：复现页全绿后活体仍不落地时，①对照
+  探针的查询形态要先对齐归并门覆盖面（QSA `*` 通配不归并，inQSA=false
+  是探针形态假象）；②zw DOM 对象是 Proxy，包装 `Node.prototype.*`
+  采集调用在 zw 臂恒采空（Proxy handler 拦截不走原型链），改走宿主
+  bridge 日志（renderer warn）+ 行为面对照。
 - 槽标记语义跟随事实：noWire 槽标记只在「节点确实不进宿主快照」时
   保留（K3 apply 代际清除豁免、R322 物化豁免按代理返回）；wire 补齐
   后 handle 子是否保留标记按下游消费面判据逐个核（K3 清除判据本就
@@ -64,7 +87,11 @@ QSA/TreeWalker 的镜像）不同步。自建最小复现页（t67-minrepro 七�
 
 - 给双族 shim 加插入路径时，四张脸各过一遍：宿主 wire 发了吗？pending
   桶/overlay 记账了吗？融合序列化会读到吗？drain 后 wrapper 重建 identity
-  保持吗？缺一即是本轮四脸之一。
+  保持吗？缺一即是本轮四脸之一；再加第五问：wire 落到 apply 后 ref/parent
+  寻址 miss 的行为是什么？同一 bridge 内兄弟变体的 miss 语义要对齐。
+- bridge 变体的 lenient 约定（skip vs 降级 append）写代码时按「ref 曾在
+  树中」的语义判：降级 append；「ref 从未存在/结构性非法」才 skip。注释
+  把 skip 写成设计前先跨批场景推演一遍。
 - 「空串是合法结果」的读取面一律 `!= null` 判，不用 `||`；生产端不要
   把空串折叠成 null 交回调用方推断。
 - 写批量插入循环先定迭代方向：宿主 wire / push 型记账正序，固定下标
@@ -75,4 +102,5 @@ QSA/TreeWalker 的镜像）不同步。自建最小复现页（t67-minrepro 七�
 - T67 诊断定谳（视图分裂四证据链）与本轮修复同源：bench 运行目录
   evidence/t67-diagnosis.md、evidence/t68-op-result.md。
 - 常驻钉：`crates/engine/src/js_dom_bridge_tests/part114_t68_selhandle_registry_sync.rs`
-  （五测：caseA 归并 / caseC 空串 / caseDAsync identity / fragment 双臂 wire）。
+  （六测：caseA 归并 / caseC 空串 / caseDAsync identity / fragment 双臂 wire /
+  s165 跨批 ref 失效降级 append）。

@@ -7,7 +7,7 @@
 
 ## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（280）
 
-- 2026-11-14 [shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口四张脸，判读先分面再动手](bugs/2026-11/2026-11-14-selhandle-registry-sync-split-faces.md) — engine
+- 2026-11-14 [shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口五张脸，判读先分面再动手](bugs/2026-11/2026-11-14-selhandle-registry-sync-split-faces.md) — engine
 - 2026-11-14 [序列上下文 range 位移槽与面值脱钩——同值公开 API 重锚修复](bugs/2026-11/2026-11-14-range-slot-desync-reanchor.md) — engine
 - 2026-11-13 [wpt editing 语料红账判读：切片伪失败与期望形真值源](bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md) — engine,tests
 - 2026-11-13 [暴露给页面 JS 的平台对象必须带接口原型——平面对象让原型定向写污染 Object.prototype](bugs/2026-11/2026-11-13-navigator-interface-prototype-absorbs-proto-writes.md) — engine

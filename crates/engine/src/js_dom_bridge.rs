@@ -2012,27 +2012,38 @@ pub fn apply_dom_mutations_full(
                 //（createElement 产物无 selector，静态 sel 父 insertBefore(new, createdRef)
                 // 形态；shim 侧 ref 字段直接填 handle 字符串。selector 域不会与 handle
                 // 字面撞形，先 selector 后 handle 的次序无歧义。meta color-scheme 语料
-                // insert 文件「before existing in head」钉死；跨批引用同 handle 视图边界
-                // miss 跳过。
+                // insert 文件「before existing in head」钉死。
                 let ref_node = match find_by_selector(doc, &ref_selector) {
-                    Some(n) => n,
+                    Some(n) => Some(n),
                     // R4620 editing-compat 扩展：selector 失配（批内前序插入使
                     // `:nth-child` 索引漂移）→ 批前预解析 NodeId 兜底；ref 已被批内
-                    // 摘除（无父）时维持 skip——语义对齐 JS ref 脱离抛错。
+                    // 摘除（无父）时走下方降级——语义对齐 JS ref 脱离抛错。
                     None => match ins_targets.get(&ref_selector).copied() {
-                        Some(id) if doc.get(id).and_then(|n| n.parent).is_some() => id,
-                        _ => match handles.get(&ref_selector).copied() {
-                            Some(n) => n,
-                            None => {
-                                tracing::warn!(
-                                    "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
-                                );
-                                continue;
-                            }
-                        },
+                        Some(id) if doc.get(id).and_then(|n| n.parent).is_some() => Some(id),
+                        _ => handles.get(&ref_selector).copied(),
                     },
                 };
-                doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                match ref_node {
+                    Some(ref_node) => {
+                        doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                    }
+                    // T68 第五面（site-compat juejin feed 归因轮，2026-11-14）：ref 跨批
+                    // 失效（`refresh_if_html_changed` 全量重建后 handle 表换代清空）降级
+                    // **append 尾部**——与 [`DomMutation::InsertBeforeByHandleHandle`] 的
+                    // ref miss lenient 约定对齐（其文档注释「ref 不在树中的语义等价——
+                    // insertBefore(node, null) == appendChild」）。旧版 warn + skip 使
+                    // s165 形态的插入在跨批场景整条静默丢弃：活体掘金 feed 挂载 22 次
+                    // `insert_before ref no match, skipped: __n69`，宿主零落地而 JS 视图
+                    // 经 pending 桶（handle 子豁免 K3 清除）稳定呈现——视图/宿主分裂的
+                    // 最终一环。锚序损失接受（ref 不在树中本无锚序可保）。
+                    // https://dom.spec.whatwg.org/#concept-node-pre-insert
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: insert_before ref no match, degraded to append: {ref_selector}"
+                        );
+                        doc.append_child(parent, child).map_err(|e| e.to_string())?;
+                    }
+                }
             }
             DomMutation::InsertBeforeByHandle {
                 parent_handle,

@@ -429,3 +429,74 @@ fn t68_fragment_view_handle_child_wire_r97_handle_container() {
     crate::js_dom_bridge::apply_dom_mutations(&mut doc, &batch)
         .expect("R97 wire 批 apply 必须成功");
 }
+
+/// 修法 5 钉（s165 跨批 ref 失效降级 append）：`InsertBefore { parent_selector,
+/// child_handle, ref_selector }` 的 ref 三查全 miss（selector / 批内预解析 /
+/// handle 表——ref handle 经 `refresh_if_html_changed` 全量重建换代后失效的
+/// 形态）时**降级 append 尾部落地**，不再 warn + skip 整条丢弃。对齐
+/// [`DomMutation::InsertBeforeByHandleHandle`] 的 ref miss lenient 约定
+///（「ref 不在树中的语义等价——insertBefore(node, null) == appendChild」）。
+/// 活体锚：掘金 feed 挂载窗口 22 次 `insert_before ref no match, skipped:
+/// __n69`（vue entry-list/卡片挂接走 s165 臂，宿主零落地而 JS pending 桶视图
+/// 稳定呈现——视图/宿主分裂最终一环）。同批对照面：ref 有效时仍精确前插。
+/// 规范锚：https://dom.spec.whatwg.org/#concept-node-pre-insert
+#[test]
+fn t68_s165_stale_ref_degrade_append_lands() {
+    // 活体形态：ref 填 handle 串但 handle 表无此条目（跨批换代失效）——
+    // selector 查找 miss、ins_targets miss、handles miss。
+    let html = "<html><body><div id=\"t68s165p\"><span class=\"head\">h</span></div></body></html>";
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__nkid".into(),
+            tag: "p".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__nkid".into(),
+            name: "class".into(),
+            value: "t68s165kid".into(),
+        },
+        // s165 臂 wire 形态：ref_selector = handle 字面（跨批后表内无此条目）。
+        DomMutation::InsertBefore {
+            parent_selector: "#t68s165p".into(),
+            child_handle: "__nkid".into(),
+            ref_selector: "__n69".into(),
+        },
+    ];
+    let out = crate::js_dom_bridge::apply_mutations_to_html(html, &mutations)
+        .expect("stale ref 必须降级 append 而非整批失败");
+    assert!(
+        out.contains("t68s165kid"),
+        "ref 三查全 miss 时子必须降级 append 落地（修复前 skip 静默丢弃）；html={out}"
+    );
+    assert!(
+        out.contains("class=\"t68s165kid\"></p></div>"),
+        "降级 append 落父尾部（ref 不在树中无锚序可保）；html={out}"
+    );
+
+    // 对照面：ref 有效（selector 可解析）时仍精确前插，不被降级影响。
+    let mutations_ok = vec![
+        DomMutation::CreateElement {
+            handle: "__nkid2".into(),
+            tag: "p".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__nkid2".into(),
+            name: "class".into(),
+            value: "t68s165ok".into(),
+        },
+        DomMutation::InsertBefore {
+            parent_selector: "#t68s165p2".into(),
+            child_handle: "__nkid2".into(),
+            ref_selector: "#t68s165ref".into(),
+        },
+    ];
+    let html2 = "<html><body><div id=\"t68s165p2\"><span id=\"t68s165ref\">r</span></div></body></html>";
+    let out2 = crate::js_dom_bridge::apply_mutations_to_html(html2, &mutations_ok)
+        .expect("ref 有效时精确 insert 必须成功");
+    let kid_pos = out2.find("t68s165ok").expect("子落地");
+    let ref_pos = out2.find("t68s165ref").expect("ref 存在");
+    assert!(
+        kid_pos < ref_pos,
+        "ref 有效时子前插于 ref（精确 insertBefore 语义保持）；html={out2}"
+    );
+}
