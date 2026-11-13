@@ -6788,6 +6788,17 @@
               }
               return !_fmAnyInvalid;
             }
+            // s422：constraint validation candidate 门（spec §4.10.5.2.2
+            // #candidate-for-constraint-validation——仅 input/select/textarea/
+            // form-associated custom elements；object/fieldset/output 是
+            // form-associated 但非 candidate）→ checkValidity/reportValidity
+            // 恒 true 且不派 invalid（#dom-cva-checkvalidity/#reportvalidity
+            // 步 1 candidacy 门）。setCustomValidity 仍记 customError（validity
+            // IDL 是被动状态照常翻转——willValidate false 同条款，
+            // object-constraint-validation 驱动案：setCustomValidity 后三断言
+            // 仍 false/true/true）。
+            var _cvTag = _realTag(sel, handle);
+            if (_cvTag === 'OBJECT' || _cvTag === 'FIELDSET' || _cvTag === 'OUTPUT') return true;
             var v = _validityState(key, sel, handle);
             if (!v.valid) {
               _dispatchWithBubble(key, sel, handle, _makeEvent('invalid', { cancelable: true, bubbles: false }));

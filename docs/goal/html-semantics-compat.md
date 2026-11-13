@@ -2,29 +2,61 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 421 收口（pending 视图 handle rect 落锤：**裸 handle
-身份在 mutation pending 窗口内的真几何 + embed/object 无内容态零 rect 门，
-embed-allowed-schemas 5F 清账**；账本
-evidence/2026-11-13-m2s421-pending-handle-rect.md）——s420 挂账 A2 簇勘根两面：
-①时序面 = embed load 经 `_defer` 同 turn 派发先于宿主 apply+重渲染，onload 里
-offsetWidth 读快照恒空（动态 embed 无 rect）；②身份面 = createElement 产物裸
-handle `__n{n}` 非 selector，find_by_selector 永不命中；s395/s284 判明宿主侧
-全局 handle→selector 解析是 attr 期望面雷区。修复四件套：宿主 `__n` 前缀
-pending 臂（仅 `style_version > applied` 窗口，drained 返空串=旧行为）+
-`pending_view_handle_rect` 复用 handle 视图槽（重放 pending 区间物化链 + 新算
-布局 + HANDLE_RECT_CACHE 键含视口）+ webview `set_pending_layout_viewport`
-同步 + shim `_zwEmbedObjectNoContent` 门（embed/object handle-only 人口，
-loading/error/fallback/缺席收窄恒零，done/image 放行——represents nothing
-语义；首版只放行 done 令 embed-change-src-2 断言①回归「expected 0 but got
-784」，message 级归因抓出后改白名单收窄态归位）。验证：unit 7 断言面 1P +
-js_dom_bridge 全模块 1429P/7F 在册慢性红腿逐名 IDENTICAL + solo embed 目录
-7F→2F（5 driving 清账；余 2F 在册渲染流 intrinsic sizing 面）+ sweep ×2 对
-s420 双基线两轮均恰 5 driving F→P、new 红 0（唯簇 D 族 T↔F 与 sizes-auto
-超时上报在册闪变）。在册红 213F+14T → **204F+14T**（归一簇 D/sizes-auto
-闪变面后稳定 −5F；轮 2 raw 205F+15T 系簇 D optional 成行）。下一步：挂账池承
-s416/s417/s420/s421（渲染流 6 面 + embed intrinsic sizing 面 ×2 /
-sizes-auto F5 用户门 / 簇 D select 立项征询 / checkable parent-label 2F /
-video 帧像素表面 FIXME / A1 drained 态与 s284 联合勘根）勘根首位。
+**状态**: Active——M2 切片 422 收口（constraint validation candidate 门落锤：
+**object/fieldset/output 非 candidate——checkValidity/reportValidity 恒 true
+不派 invalid，object-constraint-validation 1F 清账**；账本
+evidence/2026-11-13-m2s422-object-cv-candidacy-gate.md）——s421 挂账 A1
+drained 态与 s284 联合勘根先行定谳 **no-op 闭账**（机制考古：`_layoutRect`
+与 gBCR 同源直通宿主回调，s284 雷区结构性暴露；s421 红池 90 文件逐族核查
+**零 drained 裸 handle 几何断言面**；forward map 基建完备但无驱动面，按简洁
+优先不施工，s395 残差「forward map 空返」同期闭账）+ 红池分诊
+object-constraint-validation 1F 勘根：spec §4.10.5.2.2
+#candidate-for-constraint-validation 仅 input/select/textarea/form-associated
+custom elements，object/fieldset/output 是 form-associated 但非 candidate →
+#dom-cva-checkvalidity/#reportvalidity 步 1 恒 true 不派；shim willValidate
+臂已有 OBJECT→false 而 CV 通用臂无门，setCustomValidity 后 customError 落穿
+v.valid=false → 返 false 派 invalid。修复：part04 CV 臂 FORM 分支后插入
+三 tag candidacy 门（setCustomValidity/validity 被动状态零改动照常翻转，
+willValidate 同条款恒 false 原保持）；part112 单测四断言面（object 驱动案
+镜像双轮三断言 false/true/true + validity.customError=true/.valid=false
+被动翻转 + output/fieldset 同门钉 + input candidate 不越界 + FORM 级遍历臂
+保持）。验证：unit 1P + shim 25 part 规范序拼接 node --check OK + engine
+lib 全量 3913P/7F 在册慢性红腿逐名 IDENTICAL + solo 驱动 1F→1P +
+the-object-element 目录 46P/0F 邻域零扰动 + sweep ×2 对 s421 双基线
+stable=8454 两轮均恰 1 driving F→P、new 红 0（唯 sizes-auto 超时上报与簇 D
+optional 文件键 F→T 在册闪变）+ make test 154 腿 ok 唯 FAILED 腿 engine
+lib 慢性 IDENTICAL、fmt/clippy 门禁腿通过。在册红 204F+14T → **203F+14T**
+（归一闪变面后稳定 −1F；轮 2 raw 202F+15T 系簇 D optional 成行 + sizes-auto
+回摆）。下一步：红池分诊续——余件单红逐一分诊勘根（video 帧像素表面 FIXME
+跨域大件待立项，挂账池承 s416/s417/s420/s421：渲染流 6 面 + embed intrinsic
+sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询 GB-20261031
+用户门 / checkable parent-label 2F / form-nameditem override builtins
+fix#19c 冲突 s137 用户门维持）。
+
+> **▶ 承前（2026-11-13 M2 切片 421 收口）——pending 视图 handle rect + embed/object 无内容态零 rect 门（embed-allowed-schemas 5F 清账）**：commit 谱系 git log s421（effc987e5），账本 evidence/2026-11-13-m2s421-pending-handle-rect.md。原 Active 段留档——
+> **状态**: Active——M2 切片 421 收口（pending 视图 handle rect 落锤：**裸 handle
+> 身份在 mutation pending 窗口内的真几何 + embed/object 无内容态零 rect 门，
+> embed-allowed-schemas 5F 清账**；账本
+> evidence/2026-11-13-m2s421-pending-handle-rect.md）——s420 挂账 A2 簇勘根两面：
+> ①时序面 = embed load 经 `_defer` 同 turn 派发先于宿主 apply+重渲染，onload 里
+> offsetWidth 读快照恒空（动态 embed 无 rect）；②身份面 = createElement 产物裸
+> handle `__n{n}` 非 selector，find_by_selector 永不命中；s395/s284 判明宿主侧
+> 全局 handle→selector 解析是 attr 期望面雷区。修复四件套：宿主 `__n` 前缀
+> pending 臂（仅 `style_version > applied` 窗口，drained 返空串=旧行为）+
+> `pending_view_handle_rect` 复用 handle 视图槽（重放 pending 区间物化链 + 新算
+> 布局 + HANDLE_RECT_CACHE 键含视口）+ webview `set_pending_layout_viewport`
+> 同步 + shim `_zwEmbedObjectNoContent` 门（embed/object handle-only 人口，
+> loading/error/fallback/缺席收窄恒零，done/image 放行——represents nothing
+> 语义；首版只放行 done 令 embed-change-src-2 断言①回归「expected 0 but got
+> 784」，message 级归因抓出后改白名单收窄态归位）。验证：unit 7 断言面 1P +
+> js_dom_bridge 全模块 1429P/7F 在册慢性红腿逐名 IDENTICAL + solo embed 目录
+> 7F→2F（5 driving 清账；余 2F 在册渲染流 intrinsic sizing 面）+ sweep ×2 对
+> s420 双基线两轮均恰 5 driving F→P、new 红 0（唯簇 D 族 T↔F 与 sizes-auto
+> 超时上报在册闪变）。在册红 213F+14T → **204F+14T**（归一簇 D/sizes-auto
+> 闪变面后稳定 −5F；轮 2 raw 205F+15T 系簇 D optional 成行）。下一步：挂账池承
+> s416/s417/s420/s421（渲染流 6 面 + embed intrinsic sizing 面 ×2 /
+> sizes-auto F5 用户门 / 簇 D select 立项征询 / checkable parent-label 2F /
+> video 帧像素表面 FIXME / A1 drained 态与 s284 联合勘根）勘根首位。
 
 > **▶ 承前（2026-11-13 M2 切片 420 收口）——createPattern video 源臂 + ImageBitmap 污染旗标传播（security.pattern.fillStyle.sub 余 8F 清账）**：commit 谱系 git log s420（8605e2734），账本 evidence/2026-11-13-m2s420-video-pattern-imagebitmap-taint.md。原 Active 段留档——
 > **状态**: Active——M2 切片 420 收口（createPattern video 源臂 + ImageBitmap

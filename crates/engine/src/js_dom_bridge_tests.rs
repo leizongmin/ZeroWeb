@@ -164,3 +164,8 @@ include!("js_dom_bridge_tests/part110_s411_input_maxlength_number.rs");
 // pending 窗口内的真几何（embed-allowed-schemas 5F 根因——load 同 turn 派发先于
 // apply，快照无 rect 恒 0）。
 include!("js_dom_bridge_tests/part111_s421_pending_handle_rect.rs");
+
+// s422 constraint validation candidate 门：object/fieldset/output 非 candidate
+// （object-constraint-validation 1F 根因——setCustomValidity 后 checkValidity
+// 恒应 true，candidacy 门缺失 customError 落穿）。
+include!("js_dom_bridge_tests/part112_s422_object_constraint_validation.rs");
