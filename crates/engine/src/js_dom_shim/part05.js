@@ -10506,6 +10506,49 @@
         }
         return null;
       }
+      // s420：HTMLVideoElement 源（spec：以当前帧为位图建 pattern——
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createpattern）。
+      // 引擎媒体面为 runner 文件读模拟（testharness.rs register_source 直读语料
+      // 文件——无解码帧），帧像素表面缺位（FIXME：video 帧表面；drawImage(video) /
+      // createImageBitmap(video) 同缺——本臂不扩），pattern 以 1×1 透明 wire 建
+      // （corpus 无帧内容断言面）。污染面按双 URL 判（HTTP-redirect fetch 语义：
+      // 请求 URL 经跨源即污染 + 数据 URL 跨源亦污染）：src 请求 URL origin +
+      // redirect.py location 静态解析的数据 URL origin（runner 媒体面无 HTTP
+      // 重定向概念，corpus /common/redirect.py?location=<URL> 契约静态建模）——
+      // security.pattern.fillStyle.sub video 三面（直跨源 / 同源 redirect 跳跨源 /
+      // 跨源 redirect 跳同源，OR 联合逐面命中）。readyState < HAVE_CURRENT_DATA(2)
+      // （无当前帧）不建（落下方通用 null 路径，spec 视频无帧 → 无位图）。
+      if (image && typeof image.getContext !== 'function' && String(image.tagName || '').toLowerCase() === 'video') {
+        if ((image.readyState | 0) >= 2) {
+          var vsrc = String(image.currentSrc || image.src ||
+            (image.getAttribute ? String(image.getAttribute('src') || '') : '') || '');
+          var vEff = vsrc;
+          try {
+            var vU = new URL(vsrc, (globalThis.document && globalThis.document.baseURI) ||
+              (globalThis.location && globalThis.location.href) || 'about:blank/');
+            if (String(vU.pathname || '').indexOf('redirect.py') >= 0) {
+              var vq = String(vU.search || '');
+              var vPos = vq.indexOf('location=');
+              if (vPos >= 0) {
+                var vRaw = vq.slice(vPos + 9);
+                var vAmp = vRaw.indexOf('&');
+                if (vAmp >= 0) vRaw = vRaw.slice(0, vAmp);
+                var vLoc = decodeURIComponent(vRaw);
+                if (vLoc) vEff = new URL(vLoc, vU.href).href;
+              }
+            }
+          } catch (_eVidSrc) { vEff = vsrc; }
+          var vpid = String(__zw_canvas_op(h, 'createPattern', '1:1;0,0,0,0', String(repetition || '')));
+          if (vpid && vpid !== '0') {
+            if (!globalThis.CanvasPattern) globalThis.CanvasPattern = function CanvasPattern() {};
+            var vpat = { _zwPattern: vpid };
+            vpat._zwPatUnclean = _zwCanvasSrcCrossOrigin(vsrc) || _zwCanvasSrcCrossOrigin(vEff);
+            Object.setPrototypeOf(vpat, CanvasPattern.prototype);
+            return vpat;
+          }
+          return null;
+        }
+      }
       // R34xx：repetition 校验（spec：''/repeat/repeat-x/repeat-y/no-repeat 合法（大小写敏感）；
       // undefined 抛 SYNTAX_ERR、null → ''（WebIDL DOMString 转换）、非法串抛——
       // 2d.pattern.repeat.*）。DOMException 用 _zwDomException（assert_throws_dom 匹配）。
@@ -10558,6 +10601,12 @@
         // R34xx：ImageBitmap 源（createImageBitmap 产物——offscreen worker 的
         // fetch+createImageBitmap 路径）直接用其 wire 串。
         wire = String(image._zwBitmapWire);
+        // s420：源 origin-clean 旗标传播——createImageBitmap 已捕获（img 源按
+        // src 判跨域、canvas 源继承 ctx 旗标，part05 `_zwBitmapUnclean` 写点），
+        // pattern 使用面（fillStyle/strokeStyle 设值）同污染（spec：源 not
+        // origin-clean → 位图 not origin-clean → pattern 污染画布；
+        // security.pattern.fillStyle.sub unclean ImageBitmap 面）。
+        patUnclean = !!image._zwBitmapUnclean;
       } else if (image && image.data && image.width != null && image.height != null) {
         // ImageData-like：手构 wire（dims;csv）。
         var d = image.data, n = d.length, nums = [];

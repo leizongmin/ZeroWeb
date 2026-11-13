@@ -2,34 +2,56 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 419 收口（SVG `<image>` 载入链接通落锤：**插入臂 +
-no-CORS 通道 + createPattern SVG 源面三件套，security.pattern.fillStyle.sub
-文件级 T 解挂，14 子测首次成行 6P/8F**；账本
-evidence/2026-11-13-m2s419-svg-image-load-chain.md）——驱动案 forEachCanvasSource
-factory #2（cross-origin SVGImageElement：createElementNS + xlink:href +
-appendChild → onload resolve）promise 永不 settle → promise_test 串行队列其余
-13 子测永不启动 → 文件级 Timeout 在册。勘根三层：①engine shim 无 SVG `<image>`
-插入载入面（HTML img 由 src setter 核驱动，SVG image 无 src 语义）→ 复用
-iframe/object/embed 插入臂机（part04 两路 walk + `_zwStartConnected*`）；
-②createPattern 错误臂误判——host `__zw_get_image_size` snapshot-only 无 fetch
-兜底，SVG image 无 naturalWidth → 错误臂提前 return null（G5 wire 臂未达）→
-siAvOk 已载入门跨过错误臂；③裸 fetch 跨源被拒（s153 通道协议）→ 同闭包
-`_zwImgNoCorsChannelDepth` 包裹。修复：part01 新增 `_zwStartConnectedSvgImage`
-（tag IMAGE + SVG-ns 双门，href/xlink:href 回落，fetch→blob→createImageBitmap→
-settle available-images 同 img 键 → load/error 终态；externalResourcesRequired
-忽略，SVG2 已废弃）+ part04 两路接线 + part05 createPattern imgSrc2 href 回落
-与门扩展。探针定谳（真断言镜像 + DIAG dump）：onload → avail{100×50 finalUrl
-记账} → cp:obj unclean=true → td/gi SecurityError 全链闭合。验证：solo 驱动
-文件级 T 消除 14 子测 6P/8F；sweep ×2 join 对 s418 双基线 my1 **0 state-diff**
-（new=124 全归因：驱动 14 + select-event/focus-dynamic b1 flake 残留全绿）、
-my2 **state-diff=1**（select-home-end 簇D 族 T→F 漂移）+ 驱动 new=13+stable=1
-（b2 部分成行同态）+ gone=1；my1≡my2 确定性（直接 join 零差）。基线勘误：
-s418 账本 212F 与 pairs 真值 213F 差 ±1，本轮起以 pairs 为准。在册红 213F+15T →
-**222F+13T raw**（归一簇 D 漂移面后 221F+14T：+8F 新记 video pattern ×6 +
-ImageBitmap ×2、−1T 除账驱动文件级）。下一步：挂账池承 s416/s417/s419（渲染流
-6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 / A2+D 簇 / checkable
-parent-label 2F / video pattern ×6 + ImageBitmap ×2 新面）勘根首位。
+**状态**: Active——M2 切片 420 收口（createPattern video 源臂 + ImageBitmap
+污染旗标传播落锤：**security.pattern.fillStyle.sub 余 8F 清账——video ×6 +
+ImageBitmap ×2 全翻 Pass，驱动案 14/14 全绿**；账本
+evidence/2026-11-13-m2s420-video-pattern-imagebitmap-taint.md）——s419 遗留
+8F 勘根两层：①video ×6 = createPattern 无 video 源臂（掉通用 null 路径 →
+pattern null → 不污染；引擎 canvas 面无 video 像素表面——runner 媒体面为
+文件读模拟无解码帧，帧表面 FIXME 记档）；②bitmap ×2 = createImageBitmap
+已捕获 `_zwBitmapUnclean` 而 createPattern 位图臂不消费。修复：video 臂以
+1×1 透明 wire 建 pattern（readyState≥2 门，无帧内容断言面不伪造帧）+ 污染面
+src 请求 URL 与 redirect.py location 静态解析数据 URL 双面 OR 判
+（HTTP-redirect fetch 语义逐面命中：face1/3 请求面、face2 数据面；跨源重
+定向起点即污染，不因终跳同源豁免）+ 位图臂 `patUnclean =
+!!_zwBitmapUnclean` 一行补全。验证：solo 14/14 + 周边 pattern 面 ×7 零
+扰动；sweep ×2 对 s419 双基线两轮均 0 new + 恰 8 driving F→P（唯余簇 D 族
+T↔F 在册闪变）、终态全同。在册红 221F+14T（归一簇 D 面）→ **213F+14T**
+（−8F 清账 + 簇 D optional 文件键 F→T 翻回；本轮双文件 optional=T/
+detailed=F，随轮闪变红集恒定）。下一步：挂账池承
+s416/s417/s420（渲染流 6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 /
+A2+D 簇 / checkable parent-label 2F / video 帧像素表面 FIXME——
+drawImage(video)/createImageBitmap(video) 与 2d.pattern.video.* 功能面）
+勘根首位。
 
+> **▶ 承前（2026-11-13 M2 切片 419 收口）——SVG `<image>` 载入链接通（插入臂 + createPattern SVG 源面）+ security.pattern.fillStyle.sub 文件级 T 解挂**：commit 谱系 git log s419（d4d0e58a8），账本 evidence/2026-11-13-m2s419-svg-image-load-chain.md。原 Active 段留档——
+> **状态**: Active——M2 切片 419 收口（SVG `<image>` 载入链接通落锤：**插入臂 +
+> no-CORS 通道 + createPattern SVG 源面三件套，security.pattern.fillStyle.sub
+> 文件级 T 解挂，14 子测首次成行 6P/8F**；账本
+> evidence/2026-11-13-m2s419-svg-image-load-chain.md）——驱动案 forEachCanvasSource
+> factory #2（cross-origin SVGImageElement：createElementNS + xlink:href +
+> appendChild → onload resolve）promise 永不 settle → promise_test 串行队列其余
+> 13 子测永不启动 → 文件级 Timeout 在册。勘根三层：①engine shim 无 SVG `<image>`
+> 插入载入面（HTML img 由 src setter 核驱动，SVG image 无 src 语义）→ 复用
+> iframe/object/embed 插入臂机（part04 两路 walk + `_zwStartConnected*`）；
+> ②createPattern 错误臂误判——host `__zw_get_image_size` snapshot-only 无 fetch
+> 兜底，SVG image 无 naturalWidth → 错误臂提前 return null（G5 wire 臂未达）→
+> siAvOk 已载入门跨过错误臂；③裸 fetch 跨源被拒（s153 通道协议）→ 同闭包
+> `_zwImgNoCorsChannelDepth` 包裹。修复：part01 新增 `_zwStartConnectedSvgImage`
+> （tag IMAGE + SVG-ns 双门，href/xlink:href 回落，fetch→blob→createImageBitmap→
+> settle available-images 同 img 键 → load/error 终态；externalResourcesRequired
+> 忽略，SVG2 已废弃）+ part04 两路接线 + part05 createPattern imgSrc2 href 回落
+> 与门扩展。探针定谳（真断言镜像 + DIAG dump）：onload → avail{100×50 finalUrl
+> 记账} → cp:obj unclean=true → td/gi SecurityError 全链闭合。验证：solo 驱动
+> 文件级 T 消除 14 子测 6P/8F；sweep ×2 join 对 s418 双基线 my1 **0 state-diff**
+> （new=124 全归因：驱动 14 + select-event/focus-dynamic b1 flake 残留全绿）、
+> my2 **state-diff=1**（select-home-end 簇D 族 T→F 漂移）+ 驱动 new=13+stable=1
+> （b2 部分成行同态）+ gone=1；my1≡my2 确定性（直接 join 零差）。基线勘误：
+> s418 账本 212F 与 pairs 真值 213F 差 ±1，本轮起以 pairs 为准。在册红 213F+15T →
+> **222F+13T raw**（归一簇 D 漂移面后 221F+14T：+8F 新记 video pattern ×6 +
+> ImageBitmap ×2、−1T 除账驱动文件级）。下一步：挂账池承 s416/s417/s419（渲染流
+> 6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 / A2+D 簇 / checkable
+> parent-label 2F / video pattern ×6 + ImageBitmap ×2 新面）勘根首位。
 > **▶ 承前（2026-11-13 M2 切片 418 收口）——NotRun 5 勘根修复（import specifier 字面量内 `;` 截断）+ script-sandbox transform 面五守卫清除**：commit 谱系 git log s418（55aad5b37），账本 evidence/2026-11-13-m2s418-import-specifier-semicolon.md。原 Active 段留档——
 > **状态**: Active——M2 切片 418 收口（NotRun 5 勘根修复落锤：**import specifier
 > 字面量内 raw `;` 截断——script-sandbox transform 面五守卫清除，NotRun 5→0 清账**；
