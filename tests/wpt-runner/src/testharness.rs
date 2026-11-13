@@ -15748,6 +15748,48 @@ async_test(function(test) {
     }
 
     #[test]
+    fn form_target_request_header_helper_py_channel_roundtrip() {
+        // form-target-request-header 端点臂（s431）：Content-Type 在场 → 'OK'、
+        // 缺席 → 'FAIL'；channelname 取 POST body 首 '=' 后段；回体 text/html
+        // 端点文档（BroadcastChannel postMessage）。
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let url = "https://wpt.test/html/semantics/forms/form-submission-target/resources/form-target-request-header-helper.py";
+        // Content-Type 在场（S4J POST 形——headersWire 带 enctype）。
+        let with_ct = handler(&zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "POST".to_string(),
+            headers: vec![(
+                "content-type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            )],
+            body: Some("channelname=tok_123".to_string()),
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+            cache: None,
+        })
+        .unwrap();
+        assert_eq!(with_ct.status, 200);
+        assert!(with_ct.body.contains("BroadcastChannel('tok_123')"), "channel wired");
+        assert!(with_ct.body.contains("postMessage('OK'"), "OK verdict");
+        // Content-Type 缺席 → FAIL 判定（上游 helper 同门）。
+        let no_ct = handler(&zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "POST".to_string(),
+            headers: Vec::new(),
+            body: Some("channelname=tok_456".to_string()),
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+            cache: None,
+        })
+        .unwrap();
+        assert!(no_ct.body.contains("postMessage('FAIL'"), "FAIL verdict");
+    }
+
+    #[test]
     fn vary_py_handler_respects_request_credentials() {
         let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
         let make_req = |url: &str, credentials: Option<&str>| zero_engine::fetch_bridge::FetchRequest {

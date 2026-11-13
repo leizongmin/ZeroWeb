@@ -2,29 +2,64 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 430 收口（engine act:option 臂施工轮，双刀合龙
-**seltouch 稳定翻绿，稳定红面 215→214 首个真实解挂**；账本
-evidence/2026-11-14-m2s430-option-activation-arm.md）——part03.js 单文件
-两处（R5530）：①`_zwHasOwnActivationBehavior` OPTION 停靠位（nearest 止
-步，closed 形态 option 无布局盒天然不入，激活面与 s428 carve-out listbox
-判据精确对齐）；②dispatch post 段 act:option 分支（gate
-`_zwUaDispatch===true` 镜像 act:button；`_zwOptNearestSelect` 无归属不激活
-+ own disabled 门（FIXME optgroup/fieldset 继承链）；toggle 经 option.selected
-IDL setter——R3909 ask-for-reset 自带形态分零新增逻辑；实际翻转才派
-input+change 到 SELECT 镜像 `__zw_select_key_action` 派发形）。验证：25 part
-拼装 node --check OK；solo 三连（seltouch 1P 翻绿 6 断言全过 /
-display-inherit 3/3P s387 回归清 / multiple-resize 1F 同形如预判）；目录
-回归 (key,state) 级差异 12 行全落两处（seltouch F→P + home-end 簇 D 家族
-file 级→8 子测级表示漂移红位不变）；全域 sweep ×2 join 对 s429 双基线——
-**stable-F 202→200 / stable-T 13→14 / stable-P 8239→8242 / 沾染 0**：
-seltouch F→P 双轮稳定（解挂），detailed.optional F→T 桶内重排（簇 D 在册
-家族），checkable 沾染双轮自愈回 stable-P（反证 s429 时序归因）。总口径
-**稳定红 214（200F+14T）**。**基线移交**：后续施工轮 join 改用
-/tmp/s430/pairs-{1,2}.txt。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D——seltouch 解挂不关闭该门，余成员 selmany/selfocus
-base-select 门在册）+ s137。下一步：dialog R-s31 簇/img density/embed
-sizing face 到货复验；scroll overflow 记账（可选优化面）维持挂账；门决策
-后 video P1+P2 或簇 D A2 分诊续。
+**状态**: Active——M2 切片 431 收口（form target=_blank aux 上下文施工轮，
+**6T 全解挂，稳定红面 214→207**；账本
+evidence/2026-11-14-m2s431-form-target-blank-aux-context.md）——四文件
+五刀：①part04.js S4J ⑤b base target 回落（form 无 target 属性时 base
+target 参与 navigable 选择，rel-base-target 钉面）；②part04.js `_blank`
+臂（rel 语义矩阵按 spec window opening steps——noopener 强制=显式
+noopener/noreferrer 或无显式 opener、referrer 送达=非 noreferrer；合成
+aux entry 复用 `_zwLoadIframeEntry` 全链，POST 附 method/body/headersWire
+multipart boundary 保真；提交后消费瞬态激活）；③part01.js finish
+referrer flags 预置（noreferrer→''，缺省父 href 不变）；④part01.js
+aux opener/close 预置（opener 顶层 win 引用/null=强制 + close 无操作消
+endpoint TypeError 双层上报逸出）——③④先于子文档脚本执行落位（finish
+内同步执行的时序约束，flags 是唯一预置通道）；⑤py_routes
+`route_form_target_request_header`（镜像 upstream helper content-type 门
++ BroadcastChannel 回投，注册于非 GET 兜底门之前）+ runner 单测双臂。
+勘根定性：6T=5 engine（rel×4+useractivation，根因 ⑤b 无 `_blank` 臂）
++ 1 runner 端点仿真缺位（.py 不执行非 engine 缺陷）。验证：25 part 拼装
+node --check OK（153,473 行）；runner release 重建 exit 0；solo 恰集
+六文件全绿（rel×4 各 7P + useractivation 3P 三触发臂 + request-header
+1P）；全域 sweep ×2（8484 键/轮）join 对 s430 双基线——**stable-F
+200=200 / stable-P 8242→8274（+32 零消失，全落目标目录）/ stable-T
+14→7（−7）/ 沾染 0→1**（detailed.optional 双轮态分裂翻入，簇 D 在册
+家族时序闪变，与施工面零交集）。本轮 join 首跑假零漂移（脚本 cur 行误
+指旧基线 pairs）由 headline 三数与恰集矛盾揭破——教训入账本。
+**组合态整验（429 打断恢复轮）**：pull --rebase 合入他流三笔（editing
+v3.2 / css bolder-lighter / css attr()，均触 part01.js 共享面）后终稿
+树全链重跑——solo ×6 逐键保真 32P 零红 + ut2/clippy 重跑 exit 0 +
+sweep ×2 join 对 s431 双基线 **F/P 双桶逐键零漂移**；T 桶 7→8 与沾染
+1→2 全落在册 flake 族（select-event/focus-dynamic 负载闪变 solo ×2
+定谳 + home-end.optional 簇 D 翻转），到货零账面位移。**基线移交**：
+后续施工轮 join 改用 /tmp/s431/pairs-{1,2}.txt。**残留记账**：
+form-target-iframe/multi-globals 不入 runner 语料（skip 规则，零账面
+影响）；POST-to-static 兜底=net-infra 面；window.open 真弹窗链 defer。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
+下一步：s432 links 域 a/area target=_blank aux 臂（T 池 4 键孪生面，
+基建 s431 已建）；dialog R-s31 簇/img density/embed sizing face 到货
+复验；门决策后 video P1+P2 或簇 D A2 分诊续。
+
+> **▶ 承前（2026-11-14 M2 切片 430 收口）——engine act:option 臂施工
+> 轮（双刀合龙，seltouch 稳定翻绿，稳定红面 215→214 首个真实解挂）**：
+> 账本 evidence/2026-11-14-m2s430-option-activation-arm.md。原 Active
+> 段留档——part03.js 单文件两处（R5530）：①`_zwHasOwnActivationBehavior`
+> OPTION 停靠位（nearest 止步，closed 形态 option 无布局盒天然不入，激活
+> 面与 s428 carve-out listbox 判据精确对齐）；②dispatch post 段
+> act:option 分支（gate `_zwUaDispatch===true` 镜像 act:button；
+> `_zwOptNearestSelect` 无归属不激活 + own disabled 门（FIXME
+> optgroup/fieldset 继承链）；toggle 经 option.selected IDL setter——
+> R3909 ask-for-reset 自带形态分零新增逻辑；实际翻转才派 input+change
+> 到 SELECT 镜像 `__zw_select_key_action` 派发形）。验证：25 part 拼装
+> node --check OK；solo 三连（seltouch 1P 翻绿 6 断言全过 /
+> display-inherit 3/3P s387 回归清 / multiple-resize 1F 同形如预判）；
+> 目录回归 (key,state) 级差异 12 行全落两处（seltouch F→P + home-end 簇
+> D 家族 file 级→8 子测级表示漂移红位不变）；全域 sweep ×2 join 对
+> s429 双基线——stable-F 202→200 / stable-T 13→14 / stable-P
+> 8239→8242 / 沾染 0：seltouch F→P 双轮稳定（解挂），detailed.optional
+> F→T 桶内重排（簇 D 在册家族），checkable 沾染双轮自愈回 stable-P
+> （反证 s429 时序归因）。总口径稳定红 214（200F+14T）。基线移交
+> s431 用 /tmp/s430/pairs-{1,2}.txt。挂用户门维持不变。
 
 > **▶ 承前（2026-11-14 M2 切片 429 收口）——五笔他流到货组合态整验轮
 > （零源码改动）**：账本

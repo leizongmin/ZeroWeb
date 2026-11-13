@@ -13646,6 +13646,17 @@
             if (_fTarget === '') {
               try { _fTarget = String(fHandle ? __zw_get_attr_handle(fHandle, 'target') : (__zw_get_attr(fSel, 'target') || '')); } catch (_eT1) {}
             }
+            // s431：base target 回落（spec form-submission-algorithm 的 target 缺省
+            // 步——form 无 target 属性时 Document 的 base target 参与 navigable
+            // 选择；rel-base-target 语料钉面：formUsesTargetBlank 判定与导航目标
+            // 都落 <base target=_blank>）。无 base 或 base 无 target 的文档零变化
+            //（the-form-element 的 base 仅 href，实测不受影响）。
+            if (_fTarget === '') {
+              try {
+                var _fBase = globalThis.document.querySelector('base');
+                if (_fBase) _fTarget = String(_fBase.getAttribute('target') || '');
+              } catch (_eT1b) {}
+            }
             if (_fTarget !== '' && _fTarget !== '_self' && _fTarget !== '_parent' && _fTarget !== '_top' && _fTarget !== '_blank') {
               var _fFrame = null;
               try {
@@ -13667,6 +13678,48 @@
                 try { globalThis.__zw_reload_iframe(_fFrame, _abs, _fFlags); } catch (_eT5) {}
                 return;
               }
+            }
+            // s431：target=_blank 臂——auxiliary browsing context 近似（headless 无
+            // 真顶层窗开窗：以免 DOM 的 entry 管线合成 aux 上下文——_zwLoadIframeEntry
+            // 同步 fetch + finish + 子文档脚本全链复用；BroadcastChannel 注册表同
+            // JS 上下文，端点回投天然可达顶层 channel）。rel 语义（reltester 五文件
+            // 钉面，spec window opening steps 的 _blank noopener 缺省强制）：
+            // noopener 强制 = 显式 noopener/noreferrer 或缺省（无显式 opener）；
+            // referrer 送达 = 非 noreferrer。opener/referrer/close 经 entry.flags
+            // 预置（finish 内子文档脚本执行前落位，见 part01 aux 块）。
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+            if (_fTarget === '_blank') {
+              var _fRel = ' ';
+              try {
+                var _fFormPx = _makeProxy(fSel, fHandle);
+                var _fRelRaw = _fFormPx.rel; // reltester 走 IDL setter → expando（无 FORM rel 反射）
+                if (typeof _fRelRaw !== 'string') {
+                  _fRelRaw = String(fHandle ? __zw_get_attr_handle(fHandle, 'rel') : (__zw_get_attr(fSel, 'rel') || ''));
+                }
+                _fRel = ' ' + String(_fRelRaw || '').toLowerCase().replace(/\s+/g, ' ').trim() + ' ';
+              } catch (_eT6) {}
+              var _fNoop = _fRel.indexOf(' noopener ') >= 0;
+              var _fNoref = _fRel.indexOf(' noreferrer ') >= 0;
+              var _fOpn = _fRel.indexOf(' opener ') >= 0;
+              var _fAuxFlags = {
+                aux: true,
+                opener: (_fNoop || _fNoref || !_fOpn) ? null : globalThis,
+              };
+              if (_fNoref) _fAuxFlags.referrer = '';
+              if (_isPost) {
+                _fAuxFlags.method = 'POST';
+                _fAuxFlags.body = _body;
+                _fAuxFlags.headersWire = 'content-type\x1e'
+                  + (_fEnc === 'multipart/form-data' ? _fEnc + '; boundary=' + _mpBoundary : _fEnc);
+              }
+              try {
+                globalThis.__zwFormAuxSeq = (globalThis.__zwFormAuxSeq | 0) + 1;
+                _zwLoadIframeEntry('__zwAuxTarget:' + globalThis.__zwFormAuxSeq, _abs, _fAuxFlags);
+              } catch (_eT7) {}
+              // window opening steps 的瞬态激活消费（form-target-blank-useractivation
+              // 钉面：_blank 提交后 navigator.userActivation.isActive 须 false）。
+              _zwTransientActive = false;
+              return;
             }
             // ⑥ M2-S4J：navigate 事件先行（form submission 面——formData（POST）/sourceElement
             // （submitter || form）/navigationType（同源 form target：瞬态激活 → push、否则

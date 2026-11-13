@@ -567,6 +567,12 @@ fn py_routes() -> &'static [PyRoute] {
             handle: route_preflight,
         },
         PyRoute {
+            matches: PyRouteMatch::Exact(
+                "html/semantics/forms/form-submission-target/resources/form-target-request-header-helper.py",
+            ),
+            handle: route_form_target_request_header,
+        },
+        PyRoute {
             matches: PyRouteMatch::Custom(pred_method_gate_non_get),
             handle: route_method_not_supported,
         },
