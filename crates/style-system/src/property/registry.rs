@@ -277,6 +277,11 @@ impl PropertyRegistry {
             "font-variant-position" => Some(FontVariantPosition(FontVariantPositionValue::Normal)),
             "font-variant-alternates" => Some(FontVariantAlternates(FontVariantAlternatesValue::Normal)),
             "font-stretch" => Some(Length(LengthValue::Percentage(100.0))),
+            // css-fonts-4 §font-width-prop：font-width 为 font-stretch 的新名
+            //（同一属性同 computed 值），font-stretch 为 legacy alias——注册保持
+            // CSS.supports/decl_supported 通道可用；级联槽位经 canonical_property_name
+            // 并入 font-stretch（别名不独立占槽，继承填充循环跳过别名）。
+            "font-width" => Some(Length(LengthValue::Percentage(100.0))),
 
             // Writing Direction / Tab
             "direction" => Some(Direction(DirectionValue::Ltr)),
@@ -434,6 +439,7 @@ impl PropertyRegistry {
                 | "font-variant-position"
                 | "font-variant-alternates"
                 | "font-stretch"
+                | "font-width"
                 | "direction"
                 | "tab-size"
                 | "text-underline-offset"
@@ -654,6 +660,7 @@ impl PropertyRegistry {
             "font-variant-position",
             "font-variant-alternates",
             "font-stretch",
+            "font-width",
             "direction",
             "unicode-bidi",
             "tab-size",

@@ -195,6 +195,13 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_stretch = parent.font_stretch;
             true
         }
+        // css-fonts-4 §font-width-prop：font-width 为 font-stretch legacy alias，
+        // 同字段同继承语义（级联槽位经 canonical_property_name 并入 font-stretch，
+        // 本臂仅承接显式 inherit 关键字直应用面）。
+        "font-width" => {
+            child.font_stretch = parent.font_stretch;
+            true
+        }
         "direction" => {
             child.direction = parent.direction.clone();
             true
@@ -1419,6 +1426,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "font-stretch" => {
+            style.font_stretch = default_style.font_stretch;
+            true
+        }
+        // css-fonts-4 §font-width-prop：font-width 为 font-stretch legacy alias，
+        // 同字段同初始值。
+        "font-width" => {
             style.font_stretch = default_style.font_stretch;
             true
         }

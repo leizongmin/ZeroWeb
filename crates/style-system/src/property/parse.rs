@@ -661,6 +661,16 @@ fn line_height_length_is_valid(value: &LengthValue) -> bool {
 ///
 /// https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
 pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
+    parse_font_size_adjust_with_font(value, None)
+}
+
+/// [`parse_font_size_adjust`] 字体 ctx 变体：basis math 形的 font 相对单位
+/// eval 以 font_size 为基准（css-properties-values-api
+/// #dependency-cycles-via-relative-units——font-* 属性的 font 相对单位按父级
+/// 字体解析；font-property-unit-cycles `font-size-adjust: calc(1 * tan(atan2(1em,
+/// 1px)))` 腿驱动）。`None` = 旧口径（`eval_calc` 无 ctx，em/ex 等相对叶
+/// fail-closed None）。
+pub fn parse_font_size_adjust_with_font(value: &str, font_size: Option<f64>) -> Option<FontSizeAdjustValue> {
     let value = value.trim().to_ascii_lowercase();
     if value == "none" {
         return Some(FontSizeAdjustValue::None);
@@ -684,16 +694,34 @@ pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
     let basis = if basis_text == "from-font" {
         FontSizeAdjustBasis::FromFont
     } else {
-        let number = basis_text
-            .parse::<f64>()
-            .ok()
-            .or_else(|| values::parse_math_function(basis_text).and_then(|expr| values::eval_calc(&expr, None)))?;
+        let number = basis_text.parse::<f64>().ok().or_else(|| {
+            values::parse_math_function(basis_text).and_then(|expr| match font_size {
+                Some(fs) => values::eval_calc_with_context(&expr, &font_slot_calc_context(fs)),
+                None => values::eval_calc(&expr, None),
+            })
+        })?;
         if !number.is_finite() || number < 0.0 {
             return None;
         }
         FontSizeAdjustBasis::Number(number)
     };
     Some(FontSizeAdjustValue::Adjust { metric, basis })
+}
+
+/// font 槽 math eval 的 CalcContext（font 相对单位按父级字体基准，
+/// css-properties-values-api #dependency-cycles-via-relative-units）：度量
+/// 派生比同 resolve_length_inner 合成口径（ex/cap 0.8、ch 0.5、ic 1.0——
+/// font-property-unit-cycles 期望 em 30/ex 24/cap 24/ch 15/ic 30 钉面）。
+pub(crate) fn font_slot_calc_context(font_size: f64) -> values::CalcContext {
+    values::CalcContext {
+        font_size: Some(font_size),
+        root_font_size: Some(font_size),
+        x_height: Some(font_size * 0.8),
+        cap_height: Some(font_size * 0.8),
+        ch_width: Some(font_size * 0.5),
+        ic_width: Some(font_size * 1.0),
+        ..Default::default()
+    }
 }
 
 /// 解析 CSS text-align 值。

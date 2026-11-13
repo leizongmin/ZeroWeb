@@ -1016,6 +1016,13 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "width" | "text-indent" | "margin-top" | "margin-left" | "height" | "text-size-adjust" => {
             fold_math_specified(v, MathFoldKind::Length)
         }
+        // css-fonts-4 §font-weight-numeric / §font-width-prop：font-* 数值槽
+        // math 形 canonical 折叠（font-weight-valid `calc(100 + 100)` →
+        // `calc(200)`、font-width-valid `calc(100% + 100%)` → `calc(200%)`
+        // 语料驱动；plain number/percentage/关键字形 parse 失败 None 保留
+        // 原文零漂移）。font-width 为 font-stretch legacy alias（同槽同折）。
+        "font-weight" => fold_math_specified(v, MathFoldKind::Number),
+        "font-stretch" | "font-width" => fold_math_specified(v, MathFoldKind::Length),
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }

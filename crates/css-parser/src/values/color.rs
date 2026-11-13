@@ -2066,8 +2066,12 @@ mod tests {
         assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
         assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
         assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
-        assert_eq!(parse_font_weight("50"), None); // out of range
-        assert_eq!(parse_font_weight("950"), None); // out of range
+        // css-fonts-4 §font-weight-numeric 连续 <number [1,1000]>（旧 100-900
+        // 文法 out-of-range 断言更新——font-weight-valid 语料 `1`/`101` 同证）。
+        assert_eq!(parse_font_weight("50"), Some(FontWeightValue::Absolute(50)));
+        assert_eq!(parse_font_weight("950"), Some(FontWeightValue::Absolute(950)));
+        assert_eq!(parse_font_weight("0"), None);
+        assert_eq!(parse_font_weight("1001"), None);
     }
 
     // ── parse_font_style ────────────────────────────────────────────────

@@ -132,6 +132,13 @@ pub fn compute_inherited_style_with_quirks(
     }
 
     // 先处理所有级联属性
+    // g29：font-* 槽数学形（font-weight/font-size-adjust/font-stretch calc 形）
+    // 的 font 相对单位按**父级**字体解析（css-properties-values-api
+    // #dependency-cycles-via-relative-units tentative 口径，与 font-size 属性
+    // 同基准防循环；font-property-unit-cycles parent em 30 vs 自身 10 分离
+    // 驱动）——须在 font-size 单点预应用覆盖自身值之前捕获。无父上下文存
+    // None，apply 期回落自身 font_size（CSSOM 写面/CSS.supports 哨兵口径）。
+    style.parent_font_size = parent_style.map(|p| parent_font_size_px(Some(p)) as f32);
     // R4642（css-cascade computed values）：`font-size` 先行应用——所有 font 相对长度
     //（em）在 apply 期急切解析时读取 `style.font_size`（如 box-shadow/text-shadow/
     // border-image-outset 的 `resolve_effect_length`），而主循环按胜者 HashMap 迭代序
@@ -310,6 +317,13 @@ pub fn compute_inherited_style_with_quirks(
     // 对没有级联值的继承属性，从父元素继承
     if let Some(parent) = parent_style {
         for property in PropertyRegistry::known_properties() {
+            // canonical 别名（css-fonts-4 §font-width-prop font-width 等——注册保持
+            // CSS.supports 通道，级联槽位为 canonical 名）不参与填充：别名本身永不入
+            // 级联表，按「未声明」继承会用父值覆盖 canonical 槽位已应用的元素自身值
+            //（font-width-computed 全腿回初始值实证）。
+            if super::cascade::canonical_property_name(property) != *property {
+                continue;
+            }
             if !cascaded.contains_key(*property) && PropertyRegistry::is_inherited(property) {
                 inherit_property(parent, &mut style, property);
             }

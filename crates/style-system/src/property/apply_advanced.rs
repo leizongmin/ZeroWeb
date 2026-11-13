@@ -1410,6 +1410,22 @@ pub fn apply_advanced_property_value(
                 style.font_stretch = pct;
                 return true;
             }
+            // math 函数形（css-fonts-4 + css-values-4 §10.5 calc-containing；
+            // font-property-unit-cycles `font-stretch: calc(1% * tan(atan2(1em, 1px)))`
+            // 5 腿驱动——font 相对单位按父级字体解析，合成期 style.font_size
+            // 已继承父值）。% 保持型 eval 产出百分数数值；域按 computed-value
+            // clamp 语义收口 <percentage [0,∞)>（css-values-4 §10.5：calc 形
+            // 解析期不 clamp——`calc(-100%)` valid（font-width-valid 钉），computed
+            // 钳 0（font-width-computed 0% 腿驱动）；字面负 % 仍由
+            // parse_font_stretch 域门拒）。
+            if let Some(pct) =
+                super::apply::eval_font_slot_math_percentage(value, super::apply::font_slot_font_px(style))
+            {
+                if pct.is_finite() {
+                    style.font_stretch = pct.max(0.0) as f32;
+                    return true;
+                }
+            }
         }
         // ── Direction 属性 ──
         "direction" => {

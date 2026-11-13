@@ -501,10 +501,23 @@ fn test_parse_font_weight_all() {
     assert_eq!(parse_font_weight("normal"), Some(FontWeightValue::Normal));
     assert_eq!(parse_font_weight("bolder"), Some(FontWeightValue::Bolder));
     assert_eq!(parse_font_weight("lighter"), Some(FontWeightValue::Lighter));
+    // css-fonts-4 §font-weight-numeric：<number [1,1000]>（连续 number，非
+    // 100 倍数合法——font-weight-valid 语料 `1`/`1000`/`101`/`150.25` 驱动）。
+    // 非整数存 u16 round（串化保真挂账）。
+    assert_eq!(parse_font_weight("1"), Some(FontWeightValue::Absolute(1)));
+    assert_eq!(parse_font_weight("1000"), Some(FontWeightValue::Absolute(1000)));
+    assert_eq!(parse_font_weight("101"), Some(FontWeightValue::Absolute(101)));
+    assert_eq!(parse_font_weight("150.25"), Some(FontWeightValue::Absolute(150)));
+    // 连续域内非 100 倍数（旧 100-900 文法产物断言更新——css-fonts-4
+    // §font-weight-numeric 连续 <number [1,1000]>，font-weight-valid 语料
+    // `1`/`101` 同证）。
+    assert_eq!(parse_font_weight("50"), Some(FontWeightValue::Absolute(50)));
+    assert_eq!(parse_font_weight("950"), Some(FontWeightValue::Absolute(950)));
     // 超出范围的值
     assert_eq!(parse_font_weight("0"), None);
-    assert_eq!(parse_font_weight("50"), None);
-    assert_eq!(parse_font_weight("1000"), None);
+    assert_eq!(parse_font_weight("-100"), None);
+    assert_eq!(parse_font_weight("1001"), None);
+    assert_eq!(parse_font_weight("auto"), None);
 }
 
 #[test]

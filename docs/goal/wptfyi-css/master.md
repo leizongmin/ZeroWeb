@@ -100,6 +100,22 @@ MTLength，`calc(10% * sibling-index())` 接受腿）+ fold_decl_specified 尺�
 size-adjust −1 桶闭环——四小回归全处置完毕；残挂账：gCS 通道无
 text-size-adjust computed 串化臂（computed 6F + interpolation 1F），见
 evidence 2026-11-13-text-size-adjust-percentage-slot）。
++font-* 数值槽 calc 接入批（g29：font-weight/font-size-adjust/font-stretch 三槽
+math 形接入 + parent_font_size 父级字体基准（css-properties-values-api
+#dependency-cycles-via-relative-units）+ **font-width 级联槽位分裂定谳修复**
+——font-width 与 font-stretch 各占独立级联槽位写同字段 `style.font_stretch`，
+继承填充循环把 font-stretch 判「未声明」用父值覆盖（font-width-computed 全腿
+回初始值实证）；canonical_property_name 收 font-width→font-stretch + 填充循环
+别名跳过（注册保留供 CSS.supports 尾门）。css-parser 侧：font-weight 连续
+`<number [1,1000]>`、parse_font_stretch 0% valid、fold_decl_specified 三槽
+接线；apply 侧：% 保持型 eval + Px 叶 Add/Sub 锚语义窄门 + calc 负 %
+解析期不 clamp/computed 钳 0。css-fonts 全量 2,375→**2,411P** 净 +36
+（font-width-invalid 8P 全页清零、font-width-computed 12→28P、
+font-weight-invalid 2P 全清）；unit-cycles 单页 5→**20P**（G1 直置 35 腿
+全绿）；单测 3,188/2,531 全绿；残余挂账：sign(20cqw) 容器实参+乘法重排
+串化 6F、bolder/lighter 相对权重表 42F、font-size-adjust-invalid 写面门
+57F、size-adjust 串化 14F、G2/G3 typed compute 75F、inline decl alias 腿
+1F，见 evidence 2026-11-14-font-slot-calc-parent-basis）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -163,8 +179,10 @@ numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回�
 下轮周跑验 9,872 显影，见 evidence §9）+ 四小回归余账（properties-values-api
 −5 已闭；writing-modes −4 瞬态定性/lists −2 已由 g27 闭账/size-adjust −1
 已由 g28 闭账——四小全处置完毕）；g26 trig 型别门残余
-三桶（font-* 数值槽 calc 接入 30 腿——按 css-properties-values-api
-#dependency-cycles-via-relative-units 以父级字体为基准/registered custom
+三桶（~~font-* 数值槽 calc 接入 30 腿~~ **已由 g29 落地**——三槽 math 形 +
+父级字体基准 + font-width 槽位分裂修复，css-fonts 净 +36/unit-cycles 5→20P，
+残 sign(20cqw) 容器实参/bolder-lighter 权重表/size-adjust invalid 写面门等
+七桶见 evidence 2026-11-14-font-slot-calc-parent-basis §5/registered custom
 property typed compute 60 腿/rotate 槽裸 math 函数 + serialize ctx 25F +
 atan2 percentage 实参 eval）；之后组 F 布局桶（刀1 offset CSSOM + 刀2
 position-area + 刀3 anchor()
