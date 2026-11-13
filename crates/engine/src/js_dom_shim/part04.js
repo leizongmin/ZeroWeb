@@ -2375,9 +2375,11 @@
           // 共享——cloneNode 深克隆同消费（stale host 串使克隆丢 pending 子：
           // editing-compat M2，runConformanceTest 的
           // `documentElement.cloneNode(true)` 后 `querySelector('[contenteditable]')`
-          // 恒 null → `.parentNode` TypeError 级联）。空融合（桶空/序列化空）回落
-          // host 直读，语义与本抽函数前逐位一致。
-          return _zwFusedInnerHtmlSel(sel) || __zw_get_inner_html(sel);
+          // 恒 null → `.parentNode` TypeError 级联）。融合结果 null（门未激活/序列化
+          // 失败）回落 host 直读；空串是合法融合结果（T68：桶门激活且唯一子移除后的
+          // 空视图——`||` 折叠会把它交回 stale host 串，t67-minrepro caseC 根因）。
+          var _t68FusedIh = _zwFusedInnerHtmlSel(sel);
+          return _t68FusedIh != null ? _t68FusedIh : __zw_get_inner_html(sel);
         }
         // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。sel-based（已挂载）经 host
         // `__zw_get_outer_html` 真实序列化（含 void 元素 + 属性转义）。R3201：handle-only（createElement 未挂载）
@@ -7433,11 +7435,15 @@
                 // editing-compat M2：sel 源先走 R380 融合序列化（`_zwFusedInnerHtmlSel`
                 // ——pending 子在 host 快照 apply 前不可见，纯 host 串使克隆丢子：
                 // runConformanceTest `documentElement.cloneNode(true)` 后
-                // `querySelector('[contenteditable]')` 恒 null 级联）。桶空/序列化空
-                // 返 null 回落 host 直读（既有行为零变化）。
+                // `querySelector('[contenteditable]')` 恒 null 级联）。融合 null（桶空/
+                // 序列化失败）回落 host 直读（既有行为零变化）；空串保留（T68 同
+                // innerHTML getter——桶门激活下的空视图不被 `||` 折叠交回 stale host 串）。
                 var ih = handle
                   ? __zw_get_inner_html_handle(handle)
-                  : (sel ? ((_zwFusedInnerHtmlSel && _zwFusedInnerHtmlSel(sel)) || __zw_get_inner_html(sel)) : null);
+                  : (sel ? ((function () {
+                      var _t68FusedCl = (_zwFusedInnerHtmlSel && _zwFusedInnerHtmlSel(sel));
+                      return _t68FusedCl != null ? _t68FusedCl : __zw_get_inner_html(sel);
+                    })()) : null);
                 if (ih) {
                   __zw_set_inner_html_handle(nh, ih);
                   _cnd = true;
@@ -9914,7 +9920,19 @@
               try {
                 if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bChildSel);
                 else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bChildSel);
-              } catch (_e334bw) {}
+              } catch (_e334bw) {
+                // T68（吞错显式化）：宿主 wire 失败不中断 DOM 操作语义（JS 侧
+                // `_zwSelPendingParent`/record 记账继续，spec pre-insert 的视图变更不
+                // 依赖引擎旁路成功），但静默吞没会让「视图已挂而宿主未落」的分裂不可
+                // 观测（T67 定谳的注册表 sync 缺口形态）——失败原因显式输出。
+                try {
+                  if (typeof console !== 'undefined' && console.error) {
+                    console.error('[zw-dom] R334 sel-child host wire failed: '
+                      + (_e334bw && _e334bw.message ? _e334bw.message : String(_e334bw))
+                      + ' parent=' + String(sel) + ' child=' + String(_r334bChildSel));
+                  }
+                } catch (_e334bwLog) {}
+              }
               // R4600（html-semantics s26）：重插清同步移除标记（R334 appendChild /
               // R4200 variadic 同款，带位变体此前漏配）——remove→insertBefore 重插后
               // removed 标记残留使 _zwIsConnected 恒 false，closedby/getAttribute 活读
@@ -9986,7 +10004,13 @@
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
               var _r97Kb = _handleChildren[handle];
               var _r97Pos = (refNode && refNode.__zwHandle) ? _r97Kb.indexOf(refNode) : -1;
-              for (var _r97k = _r97Fb.length - 1; _r97k >= 0; _r97k--) {
+              // T68（2026-11-14）：迭代改正序——旧倒序循环在 refNode 无 handle/null
+              //（push 臂）把 fragment 子序反转（appendChild 孪生分支 8090 正序 push
+              // 正确，带位变体不对称）；正序下同位 splice（_r97Pos>=0）与 push（尾
+              // 附）双双保序，与 spec pre-insert 的 fragment 参数逐子保序插入及本
+              // 分支下方 wire 循环的宿主正序一致。
+              // https://dom.spec.whatwg.org/#concept-node-pre-insert
+              for (var _r97k = 0; _r97k < _r97Fb.length; _r97k++) {
                 var _r97cc = _r97Fb[_r97k];
                 if (_r97cc && _r97cc.__zwHandle) {
                   if (_r97Pos >= 0) _r97Kb.splice(_r97Pos, 0, _r97cc);
@@ -10037,6 +10061,38 @@
                   } catch (_e97cn) {}
                 }
               }
+              // T68（site-compat juejin feed 归因轮，2026-11-14）：handle 族子的宿主 wire
+              // 补齐——本分支旧版只做 JS registry splice + `_zwNodeParent` 反链（fragment
+              // 视图无宿主落地），子树在宿主注册表（文档级 QSA/TreeWalker 镜像）永久缺席
+              //（T67 定谳「视图已挂而宿主未落」的 fragment 形态）。wire 语义同 R101 全
+              // handle 形态：refNode 为 handle 节点 → 逐子 `__zw_insert_before_handle_handle`
+              //（apply 侧 ref handle miss 降级 append 尾部）；否则 `__zw_append_child_handle`
+              //。spec pre-insert 的 fragment 参数逐子保序插入——wire 走**正序**（registry
+              // 侧倒序同位 splice 的保序前提不适用于 insert-before-ref/append 的宿主位次）；
+              // 失败显式输出不中断 DOM 语义（R334 同口径：JS 侧记账继续，分裂可观测）。
+              // 真 DocumentFragment 子（`_fragmentHandles` 印记）不逐子 wire——fragment
+              // 整体平展语义归 fragment-handle 分支（append/insertBefore 的
+              // `__zw_append_fragment_children*` 臂），保持既有 JS 侧行为。
+              // https://dom.spec.whatwg.org/#concept-node-pre-insert
+              for (var _r97w = 0; _r97w < _r97Fb.length; _r97w++) {
+                var _r97wc = _r97Fb[_r97w];
+                if (!_r97wc || !_r97wc.__zwHandle || _fragmentHandles[_r97wc.__zwHandle]) continue;
+                try {
+                  if (refNode && refNode.__zwHandle && typeof __zw_insert_before_handle_handle === 'function') {
+                    __zw_insert_before_handle_handle(handle, _r97wc.__zwHandle, refNode.__zwHandle);
+                  } else if (typeof __zw_append_child_handle === 'function') {
+                    __zw_append_child_handle(handle, _r97wc.__zwHandle);
+                  }
+                } catch (_e97hw) {
+                  try {
+                    if (typeof console !== 'undefined' && console.error) {
+                      console.error('[zw-dom] R97 fragment handle-child host wire failed: '
+                        + (_e97hw && _e97hw.message ? _e97hw.message : String(_e97hw))
+                        + ' parent=' + String(handle) + ' child=' + String(_r97wc.__zwHandle));
+                    }
+                  } catch (_e97hwLog) {}
+                }
+              }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Fb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
               var _r97Pb = _ceParentConnected(sel, handle);
               for (var _r97l = 0; _r97l < _r97Fb.length; _r97l++) _ceApplyConn(_r97Fb[_r97l], _r97Pb);
@@ -10069,6 +10125,38 @@
                     _zwForceParentLink(_r97sc, _makeProxy(sel, null));
                   }
                 } catch (_e97sfp) {}
+                // T68（site-compat juejin feed 归因轮，2026-11-14）：handle 族子的宿主
+                // wire 补齐——sel-only 容器此前对 fragment 子一律 noWire（JS 侧 overlay
+                // 承载），handle 族子树在宿主注册表（文档级 QSA/TreeWalker 镜像）永久
+                // 缺席（T67 定谳「视图已挂而宿主未落」的 vue root mount 形态）。wire
+                // 语义同 `__zwHandle` 分支 sel 父臂：refNode 有 selector →
+                // `__zw_insert_before(sel, kidHandle, refSel)`；否则 `__zw_append_child
+                // (sel, kidHandle)`。本循环正序 + 同 ref 前插/尾附 = 宿主位次与 fragment
+                // 子序一致（spec pre-insert 的 fragment 参数逐子保序插入）。失败显式
+                // 输出不中断 DOM 语义（R334 同口径）。槽的 noWire 标记对本臂全子保留：
+                // K3 清除判据不含 handle 节点（`!__zwHandle` 门），R322 物化豁免臂按
+                // 代理返回恰为 identity 保持面（drain 后 identity 走 R331 反查——part05
+                // `_wrapNodeEntry` 'E' 臂同款）；真 DocumentFragment 子（
+                // `_fragmentHandles` 印记）不逐子 wire——整体平展语义归 fragment-handle
+                // 分支。
+                // https://dom.spec.whatwg.org/#concept-node-pre-insert
+                if (_r97sc.__zwHandle && !_fragmentHandles[_r97sc.__zwHandle]) {
+                  try {
+                    if (refNode && refNode.__zwSelector && typeof __zw_insert_before === 'function') {
+                      __zw_insert_before(sel, _r97sc.__zwHandle, refNode.__zwSelector);
+                    } else if (typeof __zw_append_child === 'function') {
+                      __zw_append_child(sel, _r97sc.__zwHandle);
+                    }
+                  } catch (_e97shw) {
+                    try {
+                      if (typeof console !== 'undefined' && console.error) {
+                        console.error('[zw-dom] t8i fragment handle-child host wire failed: '
+                          + (_e97shw && _e97shw.message ? _e97shw.message : String(_e97shw))
+                          + ' parent=' + String(sel) + ' child=' + String(_r97sc.__zwHandle));
+                      }
+                    } catch (_e97shwLog) {}
+                  }
+                }
                 try { _r97sc._zwSelPendingParent = { parentSel: sel, nextSibling: refNode || null, noWire: true }; } catch (_e97ssp) {}
                 try {
                   if (typeof _r97sc.cloneNode !== 'function' && typeof _wcRebuildAsHandle === 'function') {

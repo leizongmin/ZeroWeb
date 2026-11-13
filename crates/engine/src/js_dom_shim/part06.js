@@ -4635,14 +4635,30 @@
       // R3902b：compound（attr 组合）形态的 pending 归并——同 querySelector 的回落面，
       // QSA 镜像（host 已命中与 pending 命中按 key 去重合并；WPT input-untrusted-key-event
       // 逐 type `querySelector` 用单查面，QSA 面为对称完备）。
+      // T68（site-compat juejin feed 归因轮，2026-11-14）：**class 形态纳入**——handle
+      // 族子树（createElement 产物）挂进 sel-only 解析容器后，宿主查询视图对 handle 链
+      // mutation 恒 raw（with_query_view_doc 只应用结构级 mutation，handle 链由 shim
+      // registry 回落——R51c 口径），同步窗口内 `document.querySelectorAll('.cls')`
+      // 的 class 形态在 tag（R161）/attr 复合（本臂原门）/id（s81）之外无 pending 归并
+      // → 指针视图已挂而文档级注册表查询恒 miss（t67-minrepro caseA/B/D/E/F
+      // qsaFinds=false；活体 .entry-list 永不呈现的查询面同因）。归并复用本臂既有
+      // `_matchCompoundOf`（classes 判定已在 R2928 匹配器族），in-doc 门/identity 去重
+      // 同款。预门限定**无组合器**的形态（` >~+`）——含组合器的 complex 语义归 host
+      // 判定，`_parseCompoundOf` 对裸空格吞并不予放行（over-match 防线）。
+      // https://dom.spec.whatwg.org/#concept-node-list-alive
+      var _t68q = String(q || '');
       if (typeof _parseCompoundOf === 'function' && typeof _matchCompoundOf === 'function'
           && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length
-          && String(q || '').indexOf('[') >= 0) {
-        // 轻量预门：同 querySelector 面（含 '[' 的属性复合形态才解析 + pending 扫描——
-        // 常规 miss 高频走本路径，逐次解析/扫描是超线性成本，见上 R3902b 预门注记）。
+          && (_t68q.indexOf('[') >= 0
+              || (_t68q.indexOf('.') >= 0 && !/[ >~+]/.test(_t68q)))) {
+        // 轻量预门：同 querySelector 面（含 '[' 的属性复合形态 / 无组合器的含 '.' 形态
+        // 才解析 + pending 扫描——常规 miss 高频走本路径，逐次解析/扫描是超线性成本，
+        // 见上 R3902b 预门注记）。
         var _r3902bCq = null;
-        try { _r3902bCq = _parseCompoundOf(String(q)); } catch (_e3902bpq) { _r3902bCq = null; }
-        if (_r3902bCq && !_r3902bCq.unsupported && _r3902bCq.attrs.length && !_r3902bCq.pseudos.length) {
+        try { _r3902bCq = _parseCompoundOf(_t68q); } catch (_e3902bpq) { _r3902bCq = null; }
+        if (_r3902bCq && !_r3902bCq.unsupported
+            && (_r3902bCq.attrs.length || _r3902bCq.classes.length)
+            && !_r3902bCq.pseudos.length) {
           var seen3902b = {};
           for (var si3902b = 0; si3902b < out161.length; si3902b++) {
             try { seen3902b[_elKeyOf(out161[si3902b]) || ('s' + si3902b)] = 1; } catch (_e3902bs) {}

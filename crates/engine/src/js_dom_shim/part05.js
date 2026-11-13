@@ -11659,7 +11659,17 @@
   // parentNode=parentProxy）。文本节点无 selector，故用静态对象（nodeValue/textContent/data 只读）。
   function _wrapNodeEntry(entry, parentProxy) {
     if (!entry) return null;
-    if (entry.k === 'E') return _wrapSelector(entry.s);
+    // T68（site-compat juejin feed 归因轮，2026-11-14）：'E' 包装接 R331 identity 反查
+    //（`_zwQueryWrapIdentity`——querySelector 返回点既有语义）——handle 节点 apply 后
+    // 宿主 merge handle→selector，结构 wire drain 后本函数重建的基底 wrapper 若仍走
+    // 裸 `_wrapSelector`（新 sel proxy），childNodes/children 读链与页面持有的原
+    // handle proxy 身份分裂（t67-minrepro caseDAsync：drain 后 qsaFinds=true 而
+    // inChildNodes/inChildren=false——宿主已含子但 JS childNodes 的 indexOf 按对象
+    // 恒等判 miss）。spec live 集合语义：childNodes 成员与查询到的同一节点是**同一
+    // Node 对象**（https://dom.spec.whatwg.org/#concept-tree-child）。pending 窗口
+    // （apply 未落，merge 表未登记）反查 miss → 原行为零变化；命中时 `_proxyCache`
+    // 复用原 handle proxy（R331 注释同款）。
+    if (entry.k === 'E') return _zwQueryWrapIdentity(entry.s);
     var isComment = entry.k === 'C';
     var text = entry.v != null ? entry.v : '';
     // js-dom M4 R48：parsed 文本/注释节点的 CharacterData 方法（appendData/insertData/deleteData/
@@ -12113,7 +12123,15 @@
           _r380Out += _r380n.outerHTML || '';
         }
       }
-      return _r380Out !== '' ? _r380Out : null;
+      // T68（site-compat juejin feed 归因轮，2026-11-14）：**空串是合法融合结果**——
+      // 桶门激活（同 turn 结构变更记账在册）且 walk 后子集为空（唯一子 removeChild 后）
+      // 时，旧 `!== '' → null` 折叠把空视图交回调用方 `||` 回落 host 直读，宿主快照
+      // （apply 未 drain）仍含已移除子 → innerHTML 读回陈旧内容（t67-minrepro caseC
+      // htmlGone=false：childNodesGone/qsaGone/contains 均 true 而序列化 stale）。
+      // spec 概念上序列化已确认为空（concept-node-remove 后父无子）——空串原样返回，
+      // 门未激活/catch 仍 null（调用方回落 host 零变化）。
+      // https://dom.spec.whatwg.org/#concept-node-remove
+      return _r380Out;
     } catch (_e380ih) { return null; /* 序列化失败回落 host 快照 */ }
   }
   // js-dom M4 R51：sel 父 childNodes 的 pending overlay——同步脚本内 mutation（insertBefore/
