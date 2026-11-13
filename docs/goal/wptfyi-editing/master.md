@@ -3,6 +3,28 @@
 **2026-11-13 · Active**。DC-1 落定：weekly 快照 109,059/154,595，对
 11-07 基线净增 +92,875（CI
 [run 42947347500](https://github.com/leizongmin/ZeroWeb/actions/runs/42947347500)）。
+**d14 strike 内部界 peel + sub/sup 残段保面批**：face 1 断言级
+**F2P=15/P2F=0**（37F→22F：strikethrough 16F→7F、subscript 3F→0F、
+superscript 3F→0F，bold/italic/underline 字节级恒等）。四刀：① S1 族
+strike 解除——composite end 侧内部界解析（包裹整体随选区侧、逐层登记
+拖出段）+ peelOne 按壳 specified 值补裹拖出尾段（S1 八变体语料转绿）；
+② 三门控收面（解析限 underline/strikethrough 命令、补偿 longhand 限
+`<s>` 壳 × strike × css-true、drag peel 跳 peelRestore 端点回写）——
+首版无门 face 一度 62F，对账归因后归零；③ sub/sup 嵌套壳残段 retag 到
+最内层壳面（vaInT）+ 贴边 sandwich 门（start/end 链逐层贴边 + end 链
+见 vaInT 面）——语料十行规则「残段保最深 va 壳面」，sup 5F→0F 含 d13
+既有 3F 全 F2P；④ s 壳收编序列化槽（cv 摘 `<s>` 壳设槽 → FV 尾臂 wrap
+落 longhand 合并值，S2c 转绿）。face 2 mt 断言 2=2 / misc 22=22 恒等；
+哨兵电池 fail 名集 34=34；钉测 7/7；selection 部分语料（selection/ 全
+86 页 + editing/other 12 快页）名集 P2F=0，余 ~47 慢页未跑全（delete
+mutation 面单页 ~110s，本轮改动不经 delete 管线，覆盖差非回归——全量
+单次 ~15 分钟超守卫墙钟，分段跑法与坑记入证据）。方法学教训入档：
+**探针期望必须逐条从 data/*.js 直读**（本轮探针 N5/N6 期望自拟互换致
+首版 retag 方向写反、探针假绿掩盖语料真值；face 对账 P2F 名集暴露三处
+门控缺口）。残余：strike 7F（S2a/S2b/S2e ADD 邻壳不吸收 + 方向规则、
+M1 multipara、qI 族 3 条）、bold 8F / italic 3F / underline 4F 维持
+d13 分类。证据见
+[dc2-va-peel-interior-strike-shell](evidence/2026-11-13-dc2-va-peel-interior-strike-shell.md)。
 **d13 sub/sup va 壳批**：sub/sup ADD 面对祖先 inline vertical-align
 decl 壳（任意值）按 Chrome removeInlineStyle 建模先清后裹——split-
 conflict 链补 va decl 祖先（peel 抽取 + sibCrit 并拢邻接 sub/sup）+
@@ -67,20 +89,24 @@ selection-face 片——本地 census 51,695/35,631（
 [census](evidence/2026-11-11-dc2-selection-face-census.json)）。
 **卡点** 无阻塞；距 146,184 验收线差 37,125，大头在 selection deep
 面下周跑生效（census 口径 +~33k）与 input-events（201/3,378）等 0 覆盖面
-接线。六 format 文件残余 37F（bold 8F、italic 3F、u 4F、strike 16F、
-sub/sup 6F），d13 重分类：**伪 ~17F**（切片割裂 harness 固有——bold 6F
-= 条目 139/75/204、italic 1F = 条目 131、u 2F = 条目 65/133、strike
-1-2F，任何浏览器同红，不进修复队列）；**真 ~20F**：sub/sup 嵌套双
-tag 6F（csstrue，Chrome 做同 face 冗余外层坍缩，我方另有
-background-color junk 壳缺陷）、b-in-i/b-in-s 块边界嵌套 bold 2F +
-italic 2F、multipara u 2F + u-qS 条目 134、strike 邻壳族 ~14F（b-in-s
-×2、color/font-size 邻壳、line-through 条目 137，精确分解待批）。d9
+接线。六 format 文件残余 22F（bold 8F、italic 3F、u 4F、strike 7F、
+sub/sup 0F；d14 收账后），d13 重分类 + d14 修订：**伪 ~17F**（切片割
+裂 harness 固有——bold 6F = 条目 139/75/204、italic 1F = 条目 131、
+u 2F = 条目 65/133、strike 1-2F，任何浏览器同红，不进修复队列）；
+**真 ~13F**：strike 7F = S2a/S2b/S2e ADD 面邻壳不吸收 + range-start
+face 方向规则（sibCrit 对 u/s tag 形按 tag 名判同的收窄面）、M1
+multipara 裸 span 溶解、qI 族 3 条（`<strike>…` qI-after、
+`foo<s>[bar]</s>` qI-after/qI-before，切片伪失败族待复核）；b-in-i/
+b-in-s 块边界嵌套 bold 2F + italic 2F、multipara u 2F + u-qS 条目
+134 维持；sub/sup 嵌套双 tag 6F 与 strike S1 八变体/S2c 已 d14 收账
+（junk 壳缺陷随 remat skip 一并消除）。d9
 账目②（cssFlag 生命周期 + override 残留边界）已瓦解并入切片伪失败，
 不再列为修复项；桥层支线三 bug（tc.querySelector innerHTML 重建后空
 包装、addRange 后 getRangeAt(0) 越界、B2 臂双落地）未动，主链经 R263
 补偿后已与 B2 臂解耦。
-**下一步** ①sub/sup 嵌套双 tag 6F（外层坍缩 + junk 壳缺陷）与 strike
-邻壳族 ~14F 精确分解开修；②selection bidi（0/92）、shadow-dom（27/113）、
+**下一步** ①strike 残余 7F（S2a/S2b/S2e sibCrit tag 收窄 + 方向规则、
+M1 multipara 裸 span）与 multipara/跨块族（M1/M2/B1-B4 per-p 拆壳）
+评估开修，selection editing/other ~47 慢页补全；②selection bidi（0/92）、shadow-dom（27/113）、
 input-events 小桶按产物归类开修；③下周快照落做 DC-3 同口径对账（净增
 ≥130,000 + 邻域回退核对，P2/P3 语料全量增量随周跑入账；face 哨兵
 探针：d5decl/d5diag/d6cef/d7diag/d10diag/d11tree/d13vashell 全绿、
@@ -91,7 +117,7 @@ d6diag 24/25、d8diag 11/11、d9diag 10 case 全绿）。
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 完成（11/11 片；快照 109,059/154,595） | [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md) + [dc2-selection-wiring](evidence/2026-11-11-dc2-selection-wiring.md) |
-| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10–d12：宇宙面定谳 + 桥层修复落地，bold 12F→8F 零回归）+ [dc2-sub-sup-va-shell](evidence/2026-11-13-dc2-sub-sup-va-shell.md)（d13：sub/sup va 冲突壳 + 语料红账重分类，F2P=20 零回归，六文件 57F→37F） |
+| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线 | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10–d12：宇宙面定谳 + 桥层修复落地，bold 12F→8F 零回归）+ [dc2-sub-sup-va-shell](evidence/2026-11-13-dc2-sub-sup-va-shell.md)（d13：sub/sup va 冲突壳 + 语料红账重分类，F2P=20 零回归，六文件 57F→37F）+ [dc2-va-peel-interior-strike-shell](evidence/2026-11-13-dc2-va-peel-interior-strike-shell.md)（d14：strike S1 内部界 peel + sub/sup 残段保面 + s 壳收编槽，F2P=15 零回归，六文件 37F→22F） |
 | DC-3 全量对账 | 对账口径就绪（净增 +92,875，距线 37,125） | coverage-2026-11-11 快照 + 验收线 146,184 |
 
 碰撞记录：本批 pin 钉测与并行流 D1 的 workspace 全量 test+clippy 共

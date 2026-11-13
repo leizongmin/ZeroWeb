@@ -1658,7 +1658,25 @@
     // numericFace：fresh font 载体已落 attr 数值形（_zwVaParseSimpleColor），
     // 与 keyword 新值同色——补写 style 声明即冗余（:114/:269 录形 attr-only）。
     if (!_zwVaLooselyEquivalent(command, _zwValEffectiveValue(newParent, command), newValue, true)) {
-      _zwVaSetStyleProp(newParent, property, newValue);
+      // d14：s 壳收编序列化（_zwVaSdCarry 槽，cv pass 设值）——longhand
+      // text-decoration-line 并壳值面（语料分化实证见槽声明处）。
+      if (command === 'strikethrough' && _zwVaCssFlag() && _zwVaSdCarry) {
+        var canonSd = ['underline', 'overline', 'line-through'];
+        var mergeSd = [newValue];
+        var toksSd = String(_zwVaSdCarry).toLowerCase().split(/\s+/);
+        for (var tsSd = 0; tsSd < toksSd.length; tsSd++) {
+          if (toksSd[tsSd] && canonSd.indexOf(toksSd[tsSd]) !== -1
+              && mergeSd.indexOf(toksSd[tsSd]) === -1) {
+            mergeSd.push(toksSd[tsSd]);
+          }
+        }
+        mergeSd.sort(function (aSd, bSd) {
+          return canonSd.indexOf(aSd) - canonSd.indexOf(bSd);
+        });
+        _zwVaSetStyleProp(newParent, 'text-decoration-line', mergeSd.join(' '));
+      } else {
+        _zwVaSetStyleProp(newParent, property, newValue);
+      }
     }
     _zwJusMovePreservingRanges(node, newParent, newParent.childNodes.length);
     // DC-2 ⑦：新裹落位面载体吸收（M1/M2/M5/M7 无并值候选形——fresh face 落
@@ -1877,8 +1895,28 @@
   // 边界复合子索引：把 (cont, off) 换算成 el 的子间隙位。中间层（cont 与 el
   // 之间）边界必须贴子边缘（0 或全长）——中位意味着边界嵌在无关包裹里，peel
   // 无子间隙语义，返 -1 维持旧嵌套行为（cont === el 时任意子间隙合法）。
-  function _zwVaEdgeComposite(el, cont, off) {
-    if (cont === el) return off;
+  // d14（2026-11-13）：end 侧内部界拖出段登记表——复合索引遇内部界（边界
+  // 落非 conflict 链元行内包裹内部，如 S1 族 `<s>foo[b<span>ar]ba</span>z</s>`
+  // 的 ar|ba 落 color span 内部）时该包裹不可切分、整体随选区侧搬出，包裹
+  // 内边界之后的未选中内容失去壳值语境，由 peelOne 搬移后按壳 specified 值
+  // 补偿重裹（Chrome 录形 `<span>ar<strike>ba</strike></span><s>z</s>`，
+  // strikethrough.js:281-311）。复合索引成功返回（p === el）时本表即当次
+  // peel 的拖出段清单；-1 路径（链上无壳）清单丢弃。
+  var _zwVaPeelDragList = [];
+  // d14（2026-11-13）：strike css-true s 壳收编序列化槽——cv pass 摘 `<s>`
+  // 壳时存壳 text-decoration 值面，forceValue 尾臂 wrap 消费：prop 落
+  // longhand text-decoration-line、值并壳面（Chrome 序列化分化实证：s 壳
+  // 语境恒 longhand——S2c `fo[o<s>bar</s>b]az` swcT 期望单 span
+  // text-decoration-line:line-through（:645-650）、s 壳带 decl 合并形亦
+  // longhand（`foo<s style=text-decoration:underline>[bar]</s>` =
+  // text-decoration-line:underline line-through）；u/strike 壳与裸语境恒
+  // shorthand（:182、:225/:378）。壳被 cv 摘后 DC-2 ① decl 壳分族臂无从
+  // 见壳，故以槽跨相位传递。strike REMOVE 面无 wrap 不消费；underline/
+  // css-false 命令双门不触。
+  var _zwVaSdCarry = null;
+  function _zwVaEdgeComposite(el, cont, off, isStart, command) {
+    var dragLocal = [];
+    if (cont === el) { _zwVaPeelDragList = dragLocal; return off; }
     var idx = off;
     var p = cont;
     var guard = 0;
@@ -1886,11 +1924,29 @@
       var par = p.parentNode;
       if (!par) return -1;
       var plen = p.nodeType === 3 ? _zwJusNodeLength(p) : p.childNodes.length;
-      if (idx !== 0 && idx !== plen) return -1;
+      if (idx !== 0 && idx !== plen) {
+        // d14（2026-11-13）：end 侧内部界解析——包裹整体随选区侧，复合索引
+        // 过其槽位（index+1）续爬升；内部界可多层（嵌套非冲突包裹），逐层
+        // 登记拖出尾段。start 侧维持 -1：`ba[r]z` 形 start 界同为内部界，
+        // 现行为绿面广，仅 end 侧收敛（face 六文件对跑守门）。
+        // 命令门限 u/s：bold 数值壳嵌套形（`<b>foo<span normal>bar<b>[baz]
+        // </b>quz</span>qoz</b>`）end 界同落内部位，Chrome 录形外层 b 壳整
+        // 体保留不切（bold.js:413 B 族），解析+补偿在此误触发致 b-outer 溶
+        // 解逆录形——非行线命令一律维持 -1（d13 行为）。
+        if (isStart || (command !== 'underline' && command !== 'strikethrough')) {
+          return -1;
+        }
+        dragLocal.push({ host: p, idx: idx });
+        idx = _zwJusNodeIndex(p) + 1;
+        p = par;
+        continue;
+      }
       idx = (idx === 0 ? 0 : 1) + _zwJusNodeIndex(p);
       p = par;
     }
-    return p === el ? idx : -1;
+    if (p !== el) return -1;
+    _zwVaPeelDragList = dragLocal;
+    return idx;
   }
 
   // peel 后端点回写记录：{side, leaf}——leaf = el 中段首/末保留子级（pre-move
@@ -1984,7 +2040,7 @@
     if (!rng || !el.parentNode) return;
     var cont = isStart ? rng.startContainer : rng.endContainer;
     var off = isStart ? rng.startOffset : rng.endOffset;
-    var ci = _zwVaEdgeComposite(el, cont, off);
+    var ci = _zwVaEdgeComposite(el, cont, off, isStart, command);
     if (ci < 0) return;
     var len = el.childNodes.length;
     // 保形登记须在子级搬移前判定（搬移后 childNodes.length 已缩、容器已随动）。
@@ -2011,10 +2067,16 @@
     if (isStart ? ci <= 0 : ci >= len) return;
     var parent = el.parentNode;
     var kids = [].slice.call(el.childNodes);
-    _zwVaPeelRestore.push({
-      side: isStart ? 'S' : 'E',
-      leaf: kids[isStart ? ci : ci - 1]
-    });
+    // d14（2026-11-13）：内部界解析触发的 end peel 跳过端点回写登记——选区
+    // 尾界已随 movePreserving 骑在原边界叶（Chrome 录形选区尾停最后选中叶，
+    // 回写会把端点移进补偿壳致 qIndeterm-after 读数偏移 ~16 案 P2F）；干净
+    // 边形（dragList 空）维持既有回写（绿面）。
+    if (isStart || !_zwVaPeelDragList.length) {
+      _zwVaPeelRestore.push({
+        side: isStart ? 'S' : 'E',
+        leaf: kids[isStart ? ci : ci - 1]
+      });
+    }
     if (isStart) {
       var clone = _zwVaPeelCloneShell(el, _zwJusTag(el));
       try {
@@ -2088,6 +2150,42 @@
       } else {
         for (var k2 = 0; k2 < ci; k2++) {
           _zwJusMovePreservingRanges(kids[k2], parent, elIdx + k2);
+        }
+      }
+      // d14（2026-11-13）：内部界拖出尾段补偿——非冲突包裹随选区侧整体搬出
+      // 后，其内部边界之后的未选中内容失去壳值语境，按壳 specified 值补裹。
+      // longhand 手搓 span 仅限 s 壳 × strike × css 模式（Chrome 序列化分化
+      // 实证：`<s>` 壳 strike css-true 保 tag + 尾段 longhand
+      // text-decoration-line——strikethrough.js:311 S1g 族；`<u>`/`<strike>`
+      // 壳 css-true 溶解换 shorthand span（underline.js:220、:373）；css-
+      // false 全族保/切 tag 形 :316/:225/:378）——余者走 forceValue 既有
+      // 包裹臂（shorthand span / `<strike>`/`<u>` tag 均由其分流）。
+      // 文本尾直接裹；元素尾走 forceValue 下潜（保留尾内自有样式语境）。
+      // spec 为空的 conflict 壳（sub/sup va decl 臂）不补偿——尾段保壳 decl
+      // 语境由残壳自身承担（F2 录形）。空白文本不补偿（forceValue 同门）。
+      if (_zwVaPeelDragList.length && !isStart) {
+        var specDg = _zwVaSpecifiedValue(el, command);
+        if (specDg !== null) {
+          for (var dgI = 0; dgI < _zwVaPeelDragList.length; dgI++) {
+            var dgE = _zwVaPeelDragList[dgI].host;
+            var dgK = _zwVaPeelDragList[dgI].idx;
+            if (!dgE || !dgE.parentNode) continue;
+            for (var dgJ = dgK; dgJ < dgE.childNodes.length; dgJ++) {
+              var dgN = dgE.childNodes[dgJ];
+              if (dgN.nodeType === 3 && _zwJusIsWhitespaceNode(dgN)) continue;
+              if (dgN.nodeType === 3 && _zwVaCssFlag()
+                  && command === 'strikethrough' && _zwJusTag(el) === 's') {
+                // FIXME: 多叶尾段逐叶独立裹——Chrome 可能并拢单 span，语料
+                // S1 族尾段恒单文本叶，无录形约束。
+                var dgW = document.createElement('span');
+                _zwVaWriteTdDeclOnly(dgW, 'text-decoration-line', specDg);
+                dgE.insertBefore(dgW, dgN);
+                _zwJusMovePreservingRanges(dgN, dgW, 0);
+              } else {
+                _zwVaForceValue(dgN, command, specDg);
+              }
+            }
+          }
         }
       }
       _zwVaPeelDissolveInvisibleRemnant(el);
@@ -2406,6 +2504,15 @@
       // tag 模式在此停臂（镜像改前整函数早退语义），font 载体保持 legacy
       // attr 形；forecolor tag span 载体由上方 ③'-b 臂消费后 continue 不及此。
       if (!cssFlag) continue;
+      // DC-2 ⑥ sub/sup 载体臂（2026-11-13 d14 批）：sub/sup 恒 tag 形不入
+      // flag-form 重物化——vendored :2860-2877 sub/sup 无 span 样式形（本文件
+      // :1607 包裹臂同口径「Chrome styleWithCSS true 亦落 <sub>/<sup>」），
+      // Chrome 录形嵌套族 css-true 亦保 tag 载体（data/subscript.js:236-262
+      // `foo<sup><sup>b[a]r</sup></sup>baz` = `foo<sup>b</sup><sub>a</sub>
+      // <sup>r</sup>baz`）。误入本臂即 span 化 + 下方 prop 链缺 sub/sup 臂
+      // 落 background-color junk（`background-color:superscript` 壳，N 族
+      // 6F 根因，探针 remat-gen 面包屑实证）。
+      if (command === 'subscript' || command === 'superscript') continue;
       var spec = _zwVaSpecifiedValue(cw, command);
       if (spec === null) continue;
       var nested = false;
@@ -2993,12 +3100,19 @@
     _zwVaRematerializeCarries(command, newValue);
 
     // contained element clearValue pass。
+    _zwVaSdCarry = null;
     var elements = _zwValGetAllEffectivelyContained(rng, function (node) {
       return _zwJusIsEditable(node) && node.nodeType === 1;
     });
     for (i = 0; i < elements.length; i++) {
       var elC = elements[i];
       var specC = _zwVaSpecifiedValue(elC, command);
+      if (command === 'strikethrough' && _zwVaCssFlag()
+          && _zwJusTag(elC) === 's') {
+        var sdD = '';
+        try { sdD = _zwPlainDecl(elC, 'text-decoration') || ''; } catch (_eSd0) { sdD = ''; }
+        _zwVaSdCarry = (sdD ? sdD + ' line-through' : 'line-through');
+      }
       _zwVaClearValue(elC, command);
       // sub/sup ADD 面 vertical-align 冲突壳剥离（Chrome delta，2026-11-13，
       // F1 全包形）：vendored clearValue 因 specified null 早退（tag-only
@@ -3531,7 +3645,76 @@
       _zwVaSetSelectionValue('strikethrough', state ? null : 'line-through');
       return true;
     }
+    // DC-2 ⑥（d14 批）：Chrome sub/sup 嵌套双 tag 壳 ADD 面残段保面规则
+    // ——语料统一收敛：残段保自己原有的最深 va 壳面。strip pass（nv=null）
+    // 界剥后残段自然落外层壳，仅贴边 sandwich 全含形（选区两端同栖最内层
+    // va 壳，`foo<sub><sup>b[a]r</sup></sub>baz` N5 / `foo<sup><sub>b[a]r
+    // </sub></sup>baz` N6 形）残段被拖出原最深壳，需在 ADD 前把 strip 残壳
+    // retag 回最内层壳面（vaInT）——N5 残段 sup=命令面经 ADD wrap sibCrit
+    // 并拢 = `foo<sup>b[a]r</sup>baz` 单壳；N6 残段 sub → `foo<sub>b</sub>
+    // <sup>a</sup><sub>r</sub>baz` 三分裂（data/superscript.js:287-322）。
+    // 门开判别 = start 爬升链逐层贴边 + end 链逐层贴边且链上遇见 vaInT
+    // 同面壳；中间子级形（`foo<sub>b<sup>[a]</sup>r</sub>`，start 链 sub
+    // 层非贴边）与跨壳形（`<sup>fo[o</sup><sub>b]ar</sub>`，end 链无
+    // vaInT 面）残段面本就正确，不入门（:287-322 及 :342 三族语料实证，
+    // d13 自然流绿面）。非 sandwich 形 retag 恒 no-op，F2 straddle 与
+    // d13 tag 邻居绿面零扰动。
+    var vaInT = null;
+    var vaSandP = false;
+    if (c === 'subscript' || c === 'superscript') {
+      try {
+        var rngVa = _zwVaGetActiveRange();
+        if (rngVa) {
+          var nVa = rngVa.startContainer;
+          var oVa = rngVa.startOffset;
+          var gVa = 0;
+          var sandS = true;
+          while (nVa && gVa++ < 256) {
+            var plVa = nVa.nodeType === 3 ? _zwJusNodeLength(nVa)
+              : nVa.childNodes.length;
+            if (oVa !== 0 && oVa !== plVa) sandS = false;
+            var pVa = nVa.parentNode;
+            if (!pVa || pVa.nodeType !== 1) break;
+            if (_zwJusIsEditingHost(pVa) || _zwJusIsBlockNode(pVa)) break;
+            var tVa = _zwJusTag(pVa);
+            if ((tVa === 'sub' || tVa === 'sup') && vaInT === null) vaInT = tVa;
+            oVa = (oVa === 0 ? 0 : 1) + _zwJusNodeIndex(nVa);
+            nVa = pVa;
+          }
+          if (vaInT !== null && sandS) {
+            var eVa = rngVa.endContainer;
+            var eoVa = rngVa.endOffset;
+            var gE = 0;
+            while (eVa && gE++ < 256) {
+              var plE = eVa.nodeType === 3 ? _zwJusNodeLength(eVa)
+                : eVa.childNodes.length;
+              if (eoVa !== 0 && eoVa !== plE) break;
+              var peVa = eVa.parentNode;
+              if (!peVa || peVa.nodeType !== 1) break;
+              if (_zwJusIsEditingHost(peVa) || _zwJusIsBlockNode(peVa)) break;
+              if (_zwJusTag(peVa) === vaInT) { vaSandP = true; break; }
+              eoVa = (eoVa === 0 ? 0 : 1) + _zwJusNodeIndex(eVa);
+              eVa = peVa;
+            }
+          }
+        }
+      } catch (_eVaS) {}
+    }
     _zwVaSetSelectionValue(c, null);
-    if (!state) _zwVaSetSelectionValue(c, c);
+    if (!state) {
+      if (c === 'superscript' && vaSandP) {
+        for (var rcI = 0; rcI < _zwVaPeelCarry.length; rcI++) {
+          var rcE = _zwVaPeelCarry[rcI];
+          if (rcE && rcE.nodeType === 1 && rcE.parentNode) {
+            var rtE = _zwJusTag(rcE);
+            if ((rtE === 'sub' || rtE === 'sup') && rtE !== vaInT) {
+              // 换形替换式（_zwJusSetTagName 返新元素）——回写 carry 槽位。
+              _zwVaPeelCarry[rcI] = _zwJusSetTagName(rcE, vaInT);
+            }
+          }
+        }
+      }
+      _zwVaSetSelectionValue(c, c);
+    }
     return true;
   };
