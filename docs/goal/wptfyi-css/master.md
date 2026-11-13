@@ -116,6 +116,22 @@ font-weight-invalid 2P 全清）；unit-cycles 单页 5→**20P**（G1 直置 35
 串化 6F、bolder/lighter 相对权重表 42F、font-size-adjust-invalid 写面门
 57F、size-adjust 串化 14F、G2/G3 typed compute 75F、inline decl alias 腿
 1F，见 evidence 2026-11-14-font-slot-calc-parent-basis）。
++font-size-adjust 写面文法门批（g30：css-fonts-5 §font-size-adjust-prop
+——VALIDATED_PROPERTIES 19th + 文法门（整值 math 前置放行 / metric 前缀
+空白剥离 + basis 复检 from-font|非负数|math，不进 calc 内部切分；inf/nan
+is_finite 门拒；invalid 57 形——apply 链 parse splitn 结构虽拒，shim
+CSSOM store 不经 apply 回显原文即 Fail）+ fold_decl_specified 指定值
+串化臂（初始 metric ex-height 剥离、cap-height 等 metric 保持 + basis
+math canonical 折叠，sign 树形保留原文）；invalid 0P/57F→**57P/0F 全页
+清零**、valid 14→18P/1F（残 sign 乘法重排 1F）、computed 10P/10F 不变；
+css-fonts 全量 2,411→**2,472P** 净 +61 零回归、unit-cycles 20P 零漂移；
+单测 3,188/2,532 全绿；残挂账：computed 通道 from-font 解析刀（真实字体
+度量 0.5 vs 相对单位合成比 0.8 口径分离）+ calc 负数 computed 钳 0 +
+sign 容器实参，见 evidence 2026-11-14-font-size-adjust-write-gate；
+animations 插值通道 3+ 页（font-size-adjust/stretch-interpolation 等
+1F/页）并入桶 5 挂账）。同轮双 session 竞态记：对端 session 曾以
+「g29 遗留认领」入口写重复 g30 条目并暂存在途件，本 session 收敛取
+实现方账（evidence 同名文件），重复段已摘除——先手提交去碰撞。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -181,8 +197,9 @@ numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回�
 已由 g28 闭账——四小全处置完毕）；g26 trig 型别门残余
 三桶（~~font-* 数值槽 calc 接入 30 腿~~ **已由 g29 落地**——三槽 math 形 +
 父级字体基准 + font-width 槽位分裂修复，css-fonts 净 +36/unit-cycles 5→20P，
-残 sign(20cqw) 容器实参/bolder-lighter 权重表/size-adjust invalid 写面门等
-七桶见 evidence 2026-11-14-font-slot-calc-parent-basis §5/registered custom
+残 sign(20cqw) 容器实参/bolder-lighter 权重表/~~size-adjust invalid 写面
+门~~（**已由 g30 闭账** 57P）等七桶见 evidence
+2026-11-14-font-slot-calc-parent-basis §5/registered custom
 property typed compute 60 腿/rotate 槽裸 math 函数 + serialize ctx 25F +
 atan2 percentage 实参 eval）；之后组 F 布局桶（刀1 offset CSSOM + 刀2
 position-area + 刀3 anchor()

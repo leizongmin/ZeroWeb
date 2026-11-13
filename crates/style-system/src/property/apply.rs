@@ -2090,7 +2090,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 18] = [
+    const VALIDATED_PROPERTIES: [&str; 19] = [
         "transform",
         "rotate",
         "scale",
@@ -2138,6 +2138,16 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "font-weight",
         "font-stretch",
         "font-width",
+        // font-size-adjust 写面文法门（css-fonts-5 §font-size-adjust-prop
+        // `none | [<metric>]? [from-font | <number [0,∞]>]`，metric ∈
+        // ex-height|cap-height|ch-width|ic-width|ic-height）：invalid 页 57 形
+        //（`auto`/负数/`0.5 ex-height` 反序/未知 metric `em`/`ch`/`ic`/裸
+        // metric/`<metric> none`/双 basis 三 token/`none`·`from-font` 带后缀）
+        // 此前白名单外放行 store 原文——apply 链 parse_font_size_adjust
+        // splitn 结构虽拒，shim CSSOM store 不经 apply，e.style 回显原文即
+        // Fail。math 整值形前置放行（通用 math 门裁语法）、metric + math
+        // basis 形逐 token 文法裁决，eval 留 apply 链带 font ctx。
+        "font-size-adjust",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2345,6 +2355,33 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         }
         let mut scratch = ComputedStyle::default();
         return apply_property_value(&mut scratch, &prop, v);
+    }
+    // font-size-adjust 写面文法门（css-fonts-5 §font-size-adjust-prop
+    // `none | [<metric>]? [from-font | <number [0,∞]>]`，metric ∈
+    // ex-height|cap-height|ch-width|ic-width|ic-height）：整值 math 前置放行
+    //（语法由通用 math 门裁，eval 留 apply 链带 font ctx）；其余按首个空白
+    // 剥 metric 前缀后 basis 复检——basis 为 from-font、非负字面数或 math
+    // 函数。反序 number+metric、未知 metric（`em`/`ch`/`ic`）、裸 metric、
+    // `none`/`from-font` 带任何后缀、三 token 双 basis 全拒
+    //（font-size-adjust-invalid 57 形此前白名单外放行 store 原文——apply 链
+    // parse_font_size_adjust splitn 结构虽拒，shim CSSOM store 不经 apply，
+    // e.style 回显原文即 Fail）。空白剥前缀不进 calc 内部切分，
+    // `ex-height calc(1 * tan(atan2(1em, 1px)))` 型多空格 math basis 保真。
+    // 字面 CSS `inf`/`nan` 经 f64 parse 后 is_finite 门拒。
+    // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+    if prop == "font-size-adjust" {
+        let lv = v.to_ascii_lowercase();
+        let basis_ok = |t: &str| {
+            t == "from-font"
+                || t.parse::<f64>().is_ok_and(|x| x.is_finite() && x >= 0.0)
+                || values::is_math_function_value(t)
+        };
+        if lv == "none" || basis_ok(&lv) {
+            return true;
+        }
+        return lv.split_once(char::is_whitespace).is_some_and(|(m, rest)| {
+            matches!(m, "ex-height" | "cap-height" | "ch-width" | "ic-width" | "ic-height") && basis_ok(rest.trim())
+        });
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -3254,6 +3291,65 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("text-size-adjust", "calc(10% * sibling-index())"));
         // css-wide 关键字裸形放行。
         assert!(validate_decl_value("text-size-adjust", "inherit"));
+    }
+
+    #[test]
+    fn font_size_adjust_write_gate() {
+        // css-fonts-5 §font-size-adjust-prop 写面文法门：invalid 语料 57 形拒
+        //——`auto`/负数/反序 number+metric/未知 metric（`em`/`ch`/`ic`）/
+        // 裸 metric/`<metric> none`/双 basis 三 token/`none`·`from-font`
+        // 带后缀/字面 inf·nan。
+        assert!(!validate_decl_value("font-size-adjust", "auto"));
+        assert!(!validate_decl_value("font-size-adjust", "-10"));
+        assert!(!validate_decl_value("font-size-adjust", "0.5 ex-height"));
+        assert!(!validate_decl_value("font-size-adjust", "em 1.0"));
+        assert!(!validate_decl_value("font-size-adjust", "ch 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "ic 1.0"));
+        for metric in ["ex-height", "cap-height", "ch-width", "ic-width", "ic-height"] {
+            assert!(!validate_decl_value("font-size-adjust", metric));
+            assert!(!validate_decl_value("font-size-adjust", &format!("{metric} none")));
+            assert!(!validate_decl_value("font-size-adjust", &format!("{metric} ex-height")));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} from-font 0.5")
+            ));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} 0.5 from-font")
+            ));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} none from-font")
+            ));
+        }
+        assert!(!validate_decl_value("font-size-adjust", "none none"));
+        assert!(!validate_decl_value("font-size-adjust", "none 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "none from-font"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font none"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font ex-height"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font from-font"));
+        assert!(!validate_decl_value("font-size-adjust", "inf"));
+        assert!(!validate_decl_value("font-size-adjust", "nan"));
+        assert!(!validate_decl_value("font-size-adjust", "ex-height inf"));
+        // valid 语料形：none / 非负数 / from-font / metric 前缀两 token /
+        // math 整值 + metric + math basis（多空格 calc 保真——空白剥前缀不进
+        // calc 内部切分）。
+        assert!(validate_decl_value("font-size-adjust", "none"));
+        assert!(validate_decl_value("font-size-adjust", "0.5"));
+        assert!(validate_decl_value("font-size-adjust", "from-font"));
+        assert!(validate_decl_value("font-size-adjust", "ex-height 0.5"));
+        assert!(validate_decl_value("font-size-adjust", "cap-height from-font"));
+        assert!(validate_decl_value("font-size-adjust", "EX-HEIGHT 0.5"));
+        assert!(validate_decl_value("font-size-adjust", "calc(0.5)"));
+        assert!(validate_decl_value("font-size-adjust", "ex-height calc(0.5)"));
+        assert!(validate_decl_value("font-size-adjust", "cap-height calc(0.5 + 1)"));
+        assert!(validate_decl_value(
+            "font-size-adjust",
+            "ex-height calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        // css-wide 关键字裸形放行。
+        assert!(validate_decl_value("font-size-adjust", "inherit"));
     }
 
     #[test]
