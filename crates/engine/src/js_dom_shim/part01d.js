@@ -2108,11 +2108,16 @@
         // 均保壳内裹（data/bold.js:593-700 数值权重、:988-1000 300|400/
         // 400|500/500|600 邻接对、:926-1005 邻接 span 簇：`<span 500>fo[o
         // </span><span 600>b]ar</span>` 期望两壳原形 + 壳内 bold 载体）。
+        // DC-2 ⑥（2026-11-13）：italic ADD（newValue 'italic'）镜像同门——
+        // oblique/normal 等冲突 decl 壳保壳内裹（data/italic.js:640-647：
+        // `fo[o<span style="font-style:oblique">b]ar</span>baz` 期望壳内
+        // `<span style="font-style:italic">b</span>` 嵌套，非抽取合并）。
         // toggle-off（newValue null/'normal'）切分面不受此门。
         if (spec !== null && !_zwVaEquivalentValues(command, spec, newValue)
             && (!isBg || par === fcS)
             && !(command === 'bold'
-                && ((parseInt(newValue, 10) || 0) >= 600 || newValue === 'bold'))) {
+                && ((parseInt(newValue, 10) || 0) >= 600 || newValue === 'bold'))
+            && !(command === 'italic' && newValue === 'italic')) {
           chain.push(par);
         }
         n = par;
@@ -3149,6 +3154,27 @@
   // getStateOverride :1124-1128 对应面。
   globalThis.__zw_ce_value_state_override = function (cmd) {
     return _zwVaGetStateOverride(String(cmd));
+  };
+
+  // —— collapsed exec 六命令 state override 记账（part06 typing 臂单点调用，
+  // DC-2 ⑥ d9 批）——on = 命令执行后该命令是否激活，调用方以 DOM-only 读
+  // 取反解出（_zwQueryFormatStateDom 判 state 后取 !state；gate14 双执行语
+  // 义——override-aware 读会把首记 override 反馈进第二次 collapsed toggle
+  // 判定，Chrome 第二次执行不关账，判定不得走 override-aware 面）。记账值 =
+  // !!on：spec actF(cmd, 解出值) 激活值命中 true、解除值未命中 false，布尔
+  // 恒等于命令后激活态。value override 不记：Chrome qV(bold)
+  // 恒 ''（语料 dict 第 6 位），vendored setSelectionValue 记账面会被
+  // __zw_ce_value_override_value 读出 'normal' 化为 delta。此前 collapsed 臂
+  // 零记账 → qS 落回 caret 处 effective state（语料 bold.js:48-52 / italic.js
+  // :53-57 `<b|foo[]bar</b|i>` bold/italic toggle-off qS after=false 双红）。
+  globalThis.__zw_ce_state_override_arm = function (cmd, on) {
+    var c = String(cmd == null ? '' : cmd).toLowerCase();
+    if (c !== 'bold' && c !== 'italic' && c !== 'underline'
+        && c !== 'strikethrough' && c !== 'subscript'
+        && c !== 'superscript') return;
+    _zwVaSetStateOverride(c, !!on);
+    if (c === 'subscript') delete _zwVaStateOverrides.superscript;
+    else if (c === 'superscript') delete _zwVaStateOverrides.subscript;
   };
 
   // —— typing 值 override 快照导出（part01 __zw_ce_inserttext_mutate 消费）

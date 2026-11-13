@@ -5316,6 +5316,24 @@
                   }
                   globalThis.__zwTypingTags = ttags;
                   globalThis.__zwTypingTagsOff = toff;
+                  // DC-2 ⑥ d9 批（2026-11-13）：collapsed exec 六命令 state
+                  // override 记账补接——此前 typing 臂零记账，qS 落回 caret
+                  // 处 effective state（bold.js:48-52 / italic.js:53-57
+                  // `<b|foo[]bar</b|i>` toggle-off qS after=false 双红：caret
+                  // 在壳内 effective=true ≠ 录形）。方向判定与 typing toggle
+                  // 同源 DOM-only（gate14 双执行语义：override-aware 读会把
+                  // 首记 override 反馈进第二次 toggle 判定，Chrome 第二次
+                  // collapsed 执行不关账——本调用置于 typing 臂内同帧复用
+                  // 判定语义）。value override 不记（qV(bold) 恒 '' 口径，
+                  // 见 part01d __zw_ce_state_override_arm 注）。
+                  try {
+                    if (typeof globalThis.__zw_ce_state_override_arm === 'function') {
+                      // on = 命令后激活（= !DOM-only state）——ADD 落 true、
+                      // 解除落 false（actF(cmd, 解出值) 同布尔）。
+                      globalThis.__zw_ce_state_override_arm(
+                        cmd, !_zwQueryFormatStateDom(cmd));
+                    }
+                  } catch (_eOvrArm) {}
                   // DC-4 判别信号（knife11 v5 三笔，2026-11-07）：显式命令
                   // 臂独占记账。__zwTypingTags 双源在案（显式 collapsed
                   // format 命令 + 处方 c delete 前导删 styled 内容——后者

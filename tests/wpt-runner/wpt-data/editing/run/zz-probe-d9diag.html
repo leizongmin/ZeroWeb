@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.search(/[\[{]/);
+    var ei = data.search(/[\]}]/);
+    if (si !== -1) {
+      var mch = data.charAt(si);
+      if (mch === '[') { startNode = n; startOffset = data.slice(0, si).replace(/[\[\]{}]/g, "").length; }
+      else { startNode = n.parentNode; startOffset = Array.prototype.indexOf.call(n.parentNode.childNodes, n) + (si > 0 ? 1 : 0); }
+    }
+    if (ei !== -1) {
+      var mce = data.charAt(ei);
+      if (mce === ']') { endNode = n; endOffset = data.slice(0, ei).replace(/[\[\]{}]/g, "").length; }
+      else { endNode = n.parentNode; endOffset = Array.prototype.indexOf.call(n.parentNode.childNodes, n) + (ei > 0 ? 1 : 0); }
+    }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function d9probe(tag, input, seq, want) {
+  test(function() {
+    setupCorp(input);
+    for (var i = 0; i < seq.length; i++) {
+      document.execCommand(seq[i][0], false, seq[i][1]);
+    }
+    assert_equals(host.innerHTML, want.replace(/[\[\]{}]/g, ""), tag + ' GOT=');
+  }, tag);
+}
+function d9probeS(tag, input, seq, want, asserts) {
+  test(function() {
+    setupCorp(input);
+    for (var i = 0; i < seq.length; i++) {
+      document.execCommand(seq[i][0], false, seq[i][1]);
+    }
+    if (want !== null) {
+      assert_equals(host.innerHTML, want.replace(/[\[\]{}]/g, ""), tag + ' GOT=');
+    }
+    for (var j = 0; j < asserts.length; j++) {
+      assert_equals(document.queryCommandState(asserts[j][0]), asserts[j][1],
+        tag + ' qS(' + asserts[j][0] + ') GOT=');
+    }
+  }, tag);
+}
+// —— collapsed toggle-off qS 解除记账（bold.js:48-52 / italic.js:53-57，
+//    dict 第 2/5 位 = [qS before true, qS after false]；此前 collapsed 臂
+//    零 state override 记账，qS 落回 caret 处 effective=true——DC-2 ⑥
+//    d9 批 __zw_ce_state_override_arm 接线回归守卫）——
+d9probeS("C1 collapsed bold qS off", '<b>foo[]bar</b>',
+  [["bold",""]],
+  null, [["bold",false]]);
+d9probeS("C2 collapsed italic qS off", '<i>foo[]bar</i>',
+  [["italic",""]],
+  null, [["italic",false]]);
+d9probeS("C3 collapsed bold add qS on", 'foo[]bar',
+  [["bold",""]],
+  null, [["bold",true]]);
+// —— 700/900 decl 壳 partial（range 尾越壳，bold.js:688-703）——
+d9probe("B1 700 shell partial css-false", '<span style="font-weight: 700">foo[barbaz</span>}',
+  [["stylewithcss","false"],["bold",""]],
+  '<b>foo</b>[barbaz}');
+d9probe("B2 700 shell partial css-true", '<span style="font-weight: 700">foo[barbaz</span>}',
+  [["stylewithcss","true"],["bold",""]],
+  '<span style="font-weight:700">foo</span>[barbaz}');
+d9probe("B3 900 shell partial css-false", '<span style="font-weight: 900">foo[barbaz</span>}',
+  [["bold",""]],
+  '<span style="font-weight:900">foo</span>[barbaz}');
+// —— italic oblique 壳内嵌套（italic.js:640-647）——
+d9probe("T1 oblique in-range css-true", 'fo[o<span style=font-style:oblique>b]ar</span>baz',
+  [["stylewithcss","true"],["italic",""]],
+  'fo<span style="font-style:italic">[o</span><span style="font-style:oblique"><span style="font-style:italic">b]</span>ar</span>baz');
+d9probe("T2 oblique in-range css-false", 'fo[o<span style=font-style:oblique>b]ar</span>baz',
+  [["stylewithcss","false"],["italic",""]],
+  'fo<i>[o</i><span style="font-style:oblique"><i>b]</i>ar</span>baz');
+d9probe("B4 crossblock b>p css-false", '<b><p>foo[<i>bar</i>}</p><p>baz</p></b>',
+  [["stylewithcss","false"],["bold",""]],
+  '<p><b>foo[</b><i>bar</i>}</p><p><b>baz</b></p>');
+d9probe("B5 crossblock b>p css-true", '<b><p>foo[<i>bar</i>}</p><p>baz</p></b>',
+  [["stylewithcss","true"],["bold",""]],
+  '<p><span style="font-weight:bold">foo[</span><i>bar</i>}</p><p><span style="font-weight:bold">baz</span></p>');

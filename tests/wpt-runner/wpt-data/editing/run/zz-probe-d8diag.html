@@ -104,10 +104,10 @@ d8probe("I6 address css-true", '<i>fo[o</i><address>b]ar</address>',
 d8probe("C3 cite mid partial css-false", 'foo<cite>b[a]r</cite>baz',
   [["stylewithcss","false"],["italic",""]],
   'foo<cite>b<span style="font-style:normal">[a]</span>r</cite>baz');
-// —— I5 collapsed qS 残红代表（语料 :53-57：innerHTML 不变 + qS after 恒
-// true——切分/unwrap 面不动 collapsed 选区，读面残余留 ② 簇）——
-d8probe("I5 collapsed qS stillred", '<i>foo[]bar</i>',
+// —— I5 collapsed qS off-face 守卫（语料 :53-57 dict：innerHTML 不变 +
+// qS after=false——d9 批 collapsed 臂接通后落账，与 d9diag C2 同守卫面）——
+d8probe("I5 collapsed qS off", '<i>foo[]bar</i>',
   [["stylewithcss","false"],["italic",""]],
-  '<i>foo[]bar</i>', [["qS","italic",true]]);
+  '<i>foo[]bar</i>', [["qS","italic",false]]);
 </script>
 </body>
