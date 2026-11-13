@@ -2,31 +2,41 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 426 收口（styleerr 弃案复核轮，零源码改动；
-账本 evidence/2026-11-14-m2s426-styleerr-reconfirm.md）——池余标签
-「s164 FIXME（styleerr）」触发候选再勘根，独立重推到 s414 证据链后
-**维持弃案判决**：①上游分歧非缺口（wpt-metadata live 复核
-style-error-01 唯一条目 = crbug 1232491，error 语义面无全绿引擎；CSSOM
-import 失败 → 父 sheet 照常 load 系 spec 一致语义、全引擎同态）；
-②两案互斥（style-load-after-mutate 全引擎绿 load 语义 vs
-style-error-01 error 语义）；③本轮新增评估**404/MIME 失败类区分构形**
-（`_zwSsVisitCss` settle 值携带失败类 `error:http`/`error`——404 类保
-load、MIME 类翻 error，两案可同时绿）并**弃置**：语料形合而规不合——
-上游期望本身 stale，单引擎特设事件规则与 spec 一致语义相悖，不为翻键
-偏离 spec（s392 navigation M3 排除域同款判决逻辑）。再开锚不变
-（crbug 1232491 收敛或单案语料面）。**池标签修正**：归因收口枚举
-「s164 FIXME（styleerr error 事件臂）」→「s414 分歧定谳弃案（上游分歧
-crbug 1232491 + 两案互斥；s426 复核维持，404/MIME 区分构形已评估
-弃置）」——本轮为最后未定谳标签关闭轮，池确认无再推导空间。组合态
-漂移补记：PR #301 navigator（part02.js 共享面）合并后 drift solo
-（button-click-submits 12/12、toBlob.jpeg/png 1/1）零漂移。域计数零
-位移（在册红维持 202F+13T / 201F+14T 口径）。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：与 s425 相同
-等待面——渲染流 listbox 形态 carve-out 到货 → 施工 engine act:option
-臂（solo seltouch + the-select-element 目录回归 + 全域 sweep ×2 join
-对 s424 双基线 /tmp/s424/pairs-{1,2}.txt）；dialog R-s31 簇/img
-density/embed sizing face 到货复验；门决策后 video P1+P2 或簇 D A2
-分诊续。
+**状态**: Active——M2 切片 427 收口（组合态全域复验轮，零源码改动；
+账本 evidence/2026-11-14-m2s427-combined-state-full-sweep.md）——s424
+全域 sweep 后 main 落三笔他流变更（R5516 匿名 cell margin d2c3897da /
+PR #301 navigator 共享面 a46a05e03 / css-fonts calc 298f54c14），本域
+8458 键组合态计数首次整验：runner 重建自 HEAD（guarded 47.8s）→ 全域
+sweep ×2 → stable-set join 对 s424 双基线——**零漂移零翻转**（stable-F
+201=201 / stable-P 8241=8241 集合逐键相同；唯一 delta = 簇 D flake 键
+select-home-end-pagedown-pageup-detailed.optional s424 沾染 F/T 双态 →
+s427 双轮稳定 T，记账桶不变）；s427 raw 双轮收敛同 201F+14T（沾染 1→0，
+簇 D 家族本轮无闪变）。总口径 **201F+14T 不变**。**基线移交**：后续
+施工轮 join 改用 /tmp/s427/pairs-{1,2}.txt（双轮收敛沾染 0）。**挂用户
+门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：与
+s425 相同等待面——渲染流 listbox 形态 carve-out 到货 → 施工 engine
+act:option 臂（solo seltouch + the-select-element 目录回归 + 全域
+sweep ×2 join 对 s427 双基线）；dialog R-s31 簇/img density/embed
+sizing face 到货复验；门决策后 video P1+P2 或簇 D A2 分诊续。
+
+> **▶ 承前（2026-11-14 M2 切片 426 收口）——styleerr 弃案复核轮（零源码改动）**：账本
+> evidence/2026-11-14-m2s426-styleerr-reconfirm.md。原 Active 段留档——
+> 池余标签「s164 FIXME（styleerr）」触发候选再勘根，独立重推到 s414
+> 证据链后**维持弃案判决**：①上游分歧非缺口（wpt-metadata live 复核
+> style-error-01 唯一条目 = crbug 1232491，error 语义面无全绿引擎；
+> CSSOM import 失败 → 父 sheet 照常 load 系 spec 一致语义、全引擎同态）；
+> ②两案互斥（style-load-after-mutate 全引擎绿 load 语义 vs
+> style-error-01 error 语义）；③s426 新增评估**404/MIME 失败类区分构形**
+> （`_zwSsVisitCss` settle 值携带失败类 `error:http`/`error`——404 类保
+> load、MIME 类翻 error，两案可同时绿）并**弃置**：语料形合而规不合——
+> 上游期望本身 stale，单引擎特设事件规则与 spec 一致语义相悖，不为翻键
+> 偏离 spec（s392 navigation M3 排除域同款判决逻辑）。再开锚不变
+> （crbug 1232491 收敛或单案语料面）。**池标签修正**：归因收口枚举
+> 「s164 FIXME（styleerr error 事件臂）」→「s414 分歧定谳弃案（上游分歧
+> crbug 1232491 + 两案互斥；s426 复核维持，404/MIME 区分构形已评估
+> 弃置）」——s426 为最后未定谳标签关闭轮，池确认无再推导空间。组合态
+> 漂移补记：PR #301 navigator（part02.js 共享面）合并后 drift solo
+> （button-click-submits 12/12、toBlob.jpeg/png 1/1）零漂移。
 
 > **▶ 承前（2026-11-14 M2 切片 425 收口）——seltouch 重归因轮 + 表格池
 > 跨流复验（零源码改动）**：账本
