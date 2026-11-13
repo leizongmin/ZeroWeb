@@ -2152,6 +2152,54 @@
       var r3 = Math.round(px * 1000) / 1000;
       return String(r3) + 'px';
     }
+    if (prop === 'font-weight') {
+      // wptfyi-css g31（css-fonts-4 §5.2 #relative-weights）：继承属性 +
+      // bolder/lighter 相对关键字 computed 依赖父元素计算字重——继承走查
+      // （自 elt 上行首个可解析声明）+ 相对关键字按父链已解析字重查表。
+      // gCS 通道无源返空契约保持（P9-9/R5107 同形）；invalid/不可解析声明
+      // 不参与级联 → 视同无声明继续上行。序列化对齐宿主 font_weight_str
+      //（normal→400/bold→700/number 原值）。
+      // https://drafts.csswg.org/css-fonts-4/#relative-weights
+      var zwFwResolved = function (el, depth) {
+        if (depth > 64) return NaN;
+        var n = el, g = 0;
+        while (n && n.nodeType === 1 && g++ < 256) {
+          var fw = _zwPlainDecl(n, 'font-weight');
+          if (fw) {
+            var s = String(fw).trim().toLowerCase();
+            if (s === 'normal') return 400;
+            if (s === 'bold') return 700;
+            if (s === 'bolder' || s === 'lighter') {
+              // 父元素计算字重：父链首个可解析声明（递归，父链相对关键字
+              // 同表展开）；无源回落初始值 400（CSS Fonts 4 initial
+              // font-weight = normal）。
+              // https://drafts.csswg.org/css-fonts-4/#font-weight-prop
+              var pBase = 400;
+              var p = n.parentNode, g2 = 0;
+              while (p && p.nodeType === 1 && g2++ < 256) {
+                var pv = zwFwResolved(p, depth + 1);
+                if (!isNaN(pv)) { pBase = pv; break; }
+                p = p.parentNode;
+              }
+              if (s === 'bolder') {
+                return pBase < 350 ? 400 : pBase < 550 ? 700 : pBase < 900 ? 900 : pBase;
+              }
+              return pBase < 100 ? pBase : pBase < 550 ? 100 : pBase < 750 ? 400 : 700;
+            }
+            // 'inherit'：语义即父链继承，落循环底部上行同形。
+            if (s === 'initial' || s === 'unset' || s === 'revert'
+                || s === 'revert-layer') return 400;
+            var num = parseFloat(s);
+            if (!isNaN(num)) return num;
+          }
+          n = n.parentNode;
+        }
+        return NaN;
+      };
+      var fwV = zwFwResolved(elt, 0);
+      if (!isNaN(fwV)) return String(fwV);
+      return '';
+    }
     if (prop === 'opacity') {
       // DC-2 次批（css-color-4 § opacity computed）：非继承——只读自身 inline
       // 声明（语料 test_computed_value 全走 inline set）；number/%/calc()/

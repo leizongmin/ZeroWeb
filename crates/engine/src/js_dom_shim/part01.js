@@ -13000,7 +13000,8 @@
           var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
           if (_pcP === 'color' || _pcP === 'font-size'
               || _pcP === 'font-family' || _pcP === 'background-color'
-              || _pcP === 'opacity' || _pcP === 'position-area') {
+              || _pcP === 'opacity' || _pcP === 'position-area'
+              || _pcP === 'font-weight') {
             try {
               var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
               if (_pcV !== '') return _pcV;

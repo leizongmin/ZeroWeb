@@ -1538,11 +1538,9 @@ mod tests {
             s.font_weight = FontWeightValue::Absolute(w);
             s
         };
-        let resolve = |w: u16, rel: FontWeightValue| {
-            match resolve_relative_font_weight(&rel, Some(&parent_of(w))) {
-                FontWeightValue::Absolute(n) => n,
-                other => panic!("expected Absolute, got {other:?}"),
-            }
+        let resolve = |w: u16, rel: FontWeightValue| match resolve_relative_font_weight(&rel, Some(&parent_of(w))) {
+            FontWeightValue::Absolute(n) => n,
+            other => panic!("expected Absolute, got {other:?}"),
         };
         for (base, expect) in [
             (99u16, 400u16),
