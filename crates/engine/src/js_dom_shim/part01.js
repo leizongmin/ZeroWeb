@@ -13280,7 +13280,7 @@
     });
   })();
   // html-semantics M2 切片 400：`window.length`（HTML spec Window 的
-  // [LegacyUnforgeable] 属性——当前文档树内嵌套浏览上下文计数）。计数面：iframe
+  // [Replaceable] 属性——当前文档树内嵌套浏览上下文计数）。计数面：iframe
   //（_iframeDocCache——win 已物化且未被 removeChild 移除，_zwSwDestroyed 印记）+
   // object（_zwObjectNavCache——win 已物化且元素仍在文档树，s400 entry 存 sel/handle；
   // error 态无 win 自然不计，fallback 语义 window.length===0 断言面）。FIXME：frame
@@ -13310,8 +13310,15 @@
     } catch (_eWLc3) {}
     return n;
   }
+  // [Replaceable]（window-object.html#dom-length）= own accessor configurable:
+  // true——非 [LegacyUnforgeable]（四真 unforgeable 为 window/document/location/
+  // top，Chromium window.idl 同分面）；configurable:false 曾致页级顶层
+  // `function length(){}` 重声明抛 SyntaxError 整页崩（cssom serialize-values
+  // .html 533→0——GDI CanDeclareGlobalFunction step 4 对 non-configurable
+  // accessor 返 false）。
+  // FIXME：[Replaceable] setter（赋值重定义为 data property）未落地。
   Object.defineProperty(globalThis, 'length', {
-    enumerable: true, configurable: false,
+    enumerable: true, configurable: true,
     get: function () { return _zwWindowLengthCount(); },
   });
   // html-semantics M2 切片 404：`window[N]` 索引访问（Window 支持索引属性访问嵌套

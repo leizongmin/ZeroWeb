@@ -52,7 +52,19 @@ accept-then-drop，cleanup 修复后两语义收敛）；五面 attr-all-types 1
 净 +84 零回归/attr-cycle +7/security 23/23 维持；**values 全量 256 页对账
 3,553→3,735 净 +182 零回归页**（12 页全涨——calc-dimension-serialization-
 order +44/calc-serialization-002 +17 为 cleanup 共享路径红利），见 evidence
-2026-11-13-dc2-g24-attr-write-cleanup）。
+2026-11-13-dc2-g24-attr-write-cleanup）
++window.length [Replaceable] descriptor 修正（g25：shim part01.js
+configurable:false→true + s400 桥测 L4 pin 同步修正——html-semantics 流
+b6793f4ad 将 [Replaceable] 误读为 [LegacyUnforgeable]，spec 双源定谳（HTML
+Window 接口 `[Replaceable] readonly attribute unsigned long length` +
+Chromium window.idl line 63 + WPT unforgeable 钉测面恰四属性不含 length），
+configurable:false 致顶层 `function length(){}` 走 ECMA-262 GDI
+CanDeclareGlobalFunction step 4 抛 SyntaxError 整页崩——v14 cssom
+serialize-values.html 533→0（页级崩非子测试败）；修复双面验证：s400 桥测
+2 passed（L4 新 pin + 计数/bare-origin/error/移除面全保）+ release 探针
+533P/164F 精确回位（697 总子测试=Chrome 分母，Chrome 同页 686/697）；语料
+仅此一页声明顶层 length()，无同病面；跨流碰头信号入账，见 evidence
+2026-11-13-dc3-v14-reconciliation §6）。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -89,7 +101,11 @@ runner 13 wrapper/dispatch 臂/CLI 子命令 + corpus 脚本显式映射 + Makef
 / Pass 1,381**（transitions 185 / om-view 545 / geometry 209 / animations 225
 等），失败分桶全为引擎能力缺口（startViewTransition / registerProperty /
 WAAPI / 过渡插值 / 布局 overflow 几何），通道本身零缺陷账。
-**卡点**：无阻塞。g23 minmax/clamp serialize+写面门已落库（values 净
+**卡点**：无阻塞。v14 对账完成（§里程碑表）：grid 精确一致、values/color/
+anchor 达阈值；两项收尾挂账——typed-om `.any.js` 通道周跑从未发过（−43
+配置缺口，待修 weekly wrapper/corpus 脚本 typed-om 臂）+ 四小回归 −5/−4/
+−2/−1 待 shard artifact 逐文件归因；cssom −533 已由 g25 修复（下轮周跑
+回显）。g23 minmax/clamp serialize+写面门已落库（values 净
 +325 五套件 ±0，invalid 桶清账）。g19 sibling 求值桥已落库（CalcContext 注入 + gCS 三通道
 + 写面门两洞修复；probe family 31P→56P 净 +25、values 净 +40 五套件 ±0），
 tree-counting 家族残 89F 分桶挂账（color 实参槽 2F/伪元素 Face 3 2F/keyframe
@@ -100,7 +116,11 @@ trig）。random() 串化（g20 serialize 42F→3F，残 color 通道嵌套 D �
 分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族 supports 8F/shim gCS raw
 回显与 color 黑值 ~25F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21
 evidence §5）。
-**下一步**：组 F 布局桶（刀1 offset CSSOM + 刀2 position-area + 刀3 anchor()
+**下一步**：v14 收尾两项——typed-om `.any.js` 周跑通道接线（修 weekly
+wrapper/corpus 脚本 typed-om 臂，下轮周跑验 9,872 显影）+ 四小回归
+（properties-values-api −5/writing-modes −4/lists −2/size-adjust −1）
+shard artifact 逐文件归因；之后组 F 布局桶（刀1 offset CSSOM + 刀2
+position-area + 刀3 anchor()
 inset 求值已落，anchor 语料 11,863P）：anchor 语料残余 953F 分桶——
 position-area wm/dir + align/justify ~114F（非 htb 逻辑轴映射）、anchor()
 复杂形/动态 ~98F（anchor-name-003/anchor-position-004/anchor-inside-outside/
@@ -123,10 +143,11 @@ descriptors/media-query/shadow-dom/tree-scoped/gradient-gcs/trig 各页 + color
 all-types 19 + cycle 15 + css-wide 14 + IACVT 1，attr+var 延迟组合/EOF 括号/
 css-wide fallback 等未实现特征，见 g24 evidence §残余）/ viewport-units 84F / calc-size 62F /
 progress-serialize 55F / position-computed 55F；其余散页；anchor-ident-function 求值面 12F
-（`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；**DC-3 v14 周跑已
-dispatch**（run 43240558696，11-12 14:45Z 起，HEAD 74c4f245f 含 color/values/
-grid/anchor/g13-g23 各批增量；产物 coverage-2026-11-12 预计 11-13 ~05:45Z，
-绝对线与邻域对账待产物）；
+（`ident()` 串接需 calc/sign 求值管线，parse 接受面已通）；**DC-3 v14 周跑
+完成对账**（run 43240558696，11-12 14:45Z 起，HEAD 74c4f245f 含 color/values/
+grid/anchor/g13-g23 各批增量；产物 coverage-2026-11-12：css 60,545/196,806
+净 +4,293；grid 精确一致、typed-om −43 通道缺口、cssom −533 已修复见 g25、
+四小回归 −12 待归因；见 evidence 2026-11-13-dc3-v14-reconciliation）；
 color 挂账桶（var-origin/pow 裸函数形/嵌套 oklab 真逆/hsl 嵌套 1F/
 out-of-gamut 20F/opacity calc 20F/mix-out-of-gamut 2F 已清——组E 批；
 余系统色 27F/长尾 ~39F）；light-dark/system-color 建模残余；
@@ -774,7 +795,7 @@ DC-3 终跑须最终 HEAD）。合并树验证：fmt EXIT=0、clippy(v8) PASS；
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [基线与三分类](evidence/2026-11-10-dc1-baseline-and-classification.md)；快照基线 29,958/196,461（[coverage-2026-11-09](../../compat/wptfyi/coverage-2026-11-09.md)） |
 | DC-2 按簇收敛 | 二十四批完成 | [Typed OM API 入口面](evidence/2026-11-10-dc2-part10-typed-om-api.md)：typed-om 簇 25 → 9830；[css-color 色值管线](evidence/2026-11-10-dc2-part11-color-pipeline.md)：color 簇 1,293 → 7,229；[computed 数学管线](evidence/2026-11-10-dc2-part11-computed-color.md)：color 簇 7,229 → 9,318；[declared 声明面归一](evidence/2026-11-10-dc2-declared-normalization.md)：color 簇 9,318 → 10,530；[语法面收批](evidence/2026-11-10-dc2-color-layers-alpha-decl.md)：color 簇 10,530 → 10,756；[语料扩面 13 目录](evidence/2026-11-10-dc2-corpus-expansion.md)：新 corpus 8,562 子测试 / Pass 1,381；[values 数学槽位 + T54](evidence/2026-11-11-dc2-values-math-slots-t54.md)：values 簇 1,540 → 1,770；[grid 声明面 + has 面](evidence/2026-11-11-dc2-grid-cssom-decl-face.md)：锚页 13 → 94；[values serialize r2320 + color currentcolor ctx](evidence/2026-11-11-dc2-values-serialize-r2320-color-cc-ctx.md)：values v5d 1,548 → 2,213、color +26 子测试；[light-dark + system dark 面板](evidence/2026-11-11-dc2-lightdark-scheme-system.md)：color 10,782 → 10,808 逐页 0 回归（含 shadow/caret dark 贯穿批）；[light-dark 图像上下文](evidence/2026-11-11-dc2-lightdark-image.md)：color 10,808 → 10,840 逐页 0 回归（本批 +29，同树 fill/stroke +3 归 70）；[fill/stroke gCS + currentColor 宿主解析](evidence/2026-11-11-dc2-fill-stroke-gcs-currentcolor-host.md)：v11 10,808 → 10,840（本批面 +3，compute 页清零）；[grid-line 组合形模型](evidence/2026-11-11-dc2-grid-line-composite-model.md)：css-grid v13 净 +26 零回归、锚页 94 → 115（fmt 收敛 9f025bc66）；[Typed-OM 相对色骨架 + sibling 求值](evidence/2026-11-11-dc2-typed-om-relative-skeleton.md)：css-color e2final 净 +34 零回归（本批 +2 页清零）+ grid var() 放行刀 typed-om 9,872P 复位；[position-area 语法面](evidence/2026-11-11-dc2-position-area-grammar-face.md)：anchorbase 7460P → 9893P 净 +2433F 逐页零回归（parsing 1800F/computed 633F 双页全清，撞车仲裁 grid G1 单实现双通道）；[color none 序列化保形 + hue echo](evidence/2026-11-11-dc2-color-none-serialization-face.md)：css-color 10,842 → 10,887 净 +45 零回归（rgb none 门影子优先/hsl-hwb srcBare 裸形跟随/lab hue echo 双锚，typed-om +4 为在库批兑现）；[RCS+var 入口放行](evidence/2026-11-11-dc2-color-var-origin-rcs-entry.md)：css-color 10,887 → 10,900 净 +13 零回归（var-origin 相对色 13F，形桶 + calc 桶，values/typed-om 持平）；[嵌套 relative 真逆直转](evidence/2026-11-11-dc2-color-nested-relative-true-inverse.md)：css-color 10,900 → 10,905 净 +5 零回归（oklab/oklch 嵌套 4 案 + pow 裸函数形 1 案，values 连带 +5，双 spawn 孤儿采纳）；[@position-try CSSOM 面](evidence/2026-11-11-dc2-position-try-cssom-face.md)：anchor 语料 9,893 → 10,182 净 +289 零回归（CSSOM 读面 +265、insertRule 写面 +24，parse/allowed-declarations 全翻，残余 1F 布局依赖）；[anchor 族声明面文法](evidence/2026-11-11-dc2-anchor-family-decl-face.md)：anchor 语料 10,182 → 10,455 净 +273 零回归（18 页清零：声明面文法桶 ~142F 全数兑现 + computed 五页 + order 行为页连带）；[offset CSSOM spec 化刀1](evidence/2026-11-11-dc2-offset-cssom-spec-face.md)：anchor 语料 10,455 → 10,485 净 +30 零回归（offsetParent spec 算法 + offsetLeft/Top 相对 padding edge，十六页 improved）；[position-area 区域定位布局刀2](evidence/2026-11-11-dc2-position-area-layout-face.md)：anchor 语料 10,485 → 10,549 净 +64 零回归（区域格矩阵单点下沉 + 两段式布局 pass，in-position-try 64 案单页全清）；[color 域外保形五修 + opacity 数学形读面](evidence/2026-11-11-dc2-color-out-of-gamut-opacity-face.md)：css-color 10,905 → 10,948 净 +43 逐页零回归（opacity-computed/out-of-gamut/mix-out-of-gamut 三页清零，跨流补刀合入批）；[anchor() inset 求值 + 双介入门布局刀3](evidence/2026-11-11-dc2-anchor-inset-gate-face.md)：anchor 语料 10,549 → 11,863 净 +1,314 逐页零回归（writing-modes-001 单页 1,296F 全清，三轮零漂移，inline/滚上下文双门语料实证）；[serialize 刀2 + 通用色通道 cq/sign 面 + round B=±∞ 策略表（g13）](evidence/2026-11-12-dc2-g13-serialize-fold-color-cq-round-step.md)：values 2,646 → 2,787 净 +141、color 10,970 → 10,972 净 +2，五套件合计净 +143 逐页零回归（clamp NaN 毒化暴露的 round ∞ 缺口同批兑现，FIXME types.rs:1420 清账） |
-| DC-3 全量对账 | v14 周跑在跑（run 43240558696，11-12） | [预备 runbook + 缺口地图](evidence/2026-11-11-dc3-prep-reconciliation-runbook.md)：验收线 182,392；11-11 快照 css 56,252/196,597（28.61%，对 11-10 +3,764）尚余 ~126.1k；v14 dispatch 已执行（无在跑实例核对后），分片截断核对清单已备，产物对账待 11-13 |
+| DC-3 全量对账 | v14 周跑完成（run 43240558696），css 60,545/196,806（30.76%，对 11-11 净 +4,293） | [预备 runbook + 缺口地图](evidence/2026-11-11-dc3-prep-reconciliation-runbook.md) + [v14 对账](evidence/2026-11-13-dc3-v14-reconciliation.md)：三家 @ a17acfbc8a + corpus pins 核对 ✓；验收线 182,392 尚余 ~121.8k（结构判断维持）；分片核对——grid 精确一致/values/color 达阈值、**typed-om −43 = `.any.js` 通道周跑从未发过（配置缺口待修）**；cssom −533 = serialize-values.html 页级崩已归因+已修复（window.length [Replaceable] descriptor 修正，探针 533P 精确回位）；四小回归 −5/−4/−2/−1 待归因；zw_env_fails=0 |
 
 碰撞记录：11-11 凌晨 union 树 engine 全量 7F（img/svg settle + websocket
 族）——values/T54 批写面与该 7 测试零交集（part85/part45 无 style 用法），
@@ -840,3 +861,13 @@ unit 均非本流手笔。本 session 认领账：g7 结果逐页归因分析（
 直译引擎、part06.js ±30，未同步断言旧 SetInnerHtml 载体契约的 2 个 Rust
 单测；part06.rs 上游最后改动 11ebb0757，历史账 7F 恒定）——editing 流域
 落地态回归，待其流修复，本流 color hunks 零交集。
+**11-13 v14 对账 cssom −533 跨流碰头（本流 × html-semantics 流）**：
+html-semantics 流 b6793f4ad（s400 window.length）在 shim part01.js 以
+configurable:false 定义 own accessor，本流 v14 周跑 cssom
+serialize-values.html 顶层 `function length(){}` 走 GDI step 4 抛
+SyntaxError 整页崩（533→0）。归因+语义定谳+修复由本流完成（spec 双源：
+[Replaceable] 非 [LegacyUnforgeable]，Chromium window.idl/WPT unforgeable
+钉测面佐证），对方流 s400 桥测 L4 pin 随修复同步修正
+configurable:true（其余 pin 计数相位/bare-origin/error/移除面全保，桥测
+2 passed 实证）。对方流无需另行动作；engine/shim 共享面后续改动注意
+window.length descriptor 已回归 spec 口径。
