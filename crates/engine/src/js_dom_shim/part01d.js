@@ -3282,6 +3282,49 @@
           continue;
         }
       }
+      // Chromium delta（DC-2 M1，d16 批）：u/s css-true ADD 面全含单成员裸
+      // span 并值不外裹——Chrome 录形 multipara 中段 `<p> <span>bar</span>
+      // </p>` 期望 decl 并到既有 span（`<span style=text-decoration:…>bar
+      // </span>`，data/strikethrough.js:33 css-true、underline.js:33 同构），
+      // 非嵌套外裹。跨壳/多成员 run 维持外裹既有绿面（strikethrough.js:20
+      // 双 span 行录形 = 新外裹）。门限：无 text-decoration decl（部分值
+      // 偏序面走既有 conflict/偏序臂）、spec 无命令值；邻接 contained 成员
+      // 非空白时不并（空白成员 forceValue 入口跳过，不构成 run 连接）。
+      var usMerge = newValue != null
+        && (command === 'underline' || command === 'strikethrough')
+        && _zwVaCssFlag()
+        && node.nodeType === 1
+        && _zwJusTag(node) === 'span'
+        && _zwVaSpecifiedValue(node, command) === null;
+      if (usMerge) {
+        var tdU = '';
+        try {
+          tdU = _zwPlainDecl(node, 'text-decoration') || '';
+        } catch (_eUs0) { tdU = ''; }
+        if (!String(tdU).trim()) {
+          // run 连接判定沿兄弟链双向扫，空白链是连接体（forceValue 跳过
+          // 空白成员但 sibCrit 合并面跨空白并拢——:20 双 span 行实证）。
+          // 判据 = 链上首个非空白节点即连接（无论是否 contained——Range
+          // 半开界下 :20 的 span1 不在集内而 span2 在，成员判定不对称会
+          // 让 span2 误吸收分体式）。
+          var scanU = function (fromU, dirU) {
+            var cu = dirU < 0 ? fromU.previousSibling : fromU.nextSibling;
+            var gu = 0;
+            while (cu && gu++ < 256) {
+              if (!(cu.nodeType === 3 && _zwJusIsWhitespaceNode(cu))) {
+                return true;
+              }
+              cu = dirU < 0 ? cu.previousSibling : cu.nextSibling;
+            }
+            return false;
+          };
+          if (!scanU(node, -1) && !scanU(node, 1)) {
+            _zwVaSetStyleProp(node, 'text-decoration',
+              command === 'underline' ? 'underline' : 'line-through');
+            continue;
+          }
+        }
+      }
       if (_zwVaIsAllowedChild(node, 'span')) {
         // DC-2 ④（2026-11-12 d7 批）：边界挖进元素内部且 range 全部内容落
         // 该元素之内时元素不作整裹单元（Chrome 录形 abc 族分型，data/bold.js
@@ -3716,7 +3759,59 @@
       return true;
     }
     if (c === 'strikethrough') {
-      _zwVaSetSelectionValue(c, state ? null : 'line-through');
+      // DC-2 S2e（d16 批）：strike toggle 方向 Chrome delta——方向判据按
+      // 选区起点位置本地计算，不用 fq.state（vendored 全 contained 普查）。
+      // SUPER-RULE（语料逐行核读，2026-11-14）：REMOVE ⟺ 起点位置（文本
+      // 尾边界前移规范化）命中 line-through 面。:640 `foo<s>ba[r</s>b]az`
+      // mixed（qS before=false）而方向 REMOVE——起点在 <s> 内；对照 :634
+      // S2a `fo[o<s>b]ar</s>baz` 起点裸文本 → ADD。全含形（:331/:336/
+      // :670/:675）起点恒命中 → REMOVE，与 fq.state 臂同向；p/u style 行
+      // （:576/:520）起点命中 style 面 → REMOVE 同录形。方向与 qS 读数
+      // 规则分途（:640 qS before=false 录 REMOVE）。**门限 strikethrough**：
+      // underline 同形语料方向相反（underline.js:640 同形 ADD 壳吸收）且
+      // u 基线无方向红——u 维持 fq.state 既有臂。
+      var wantD = 'line-through';
+      var dirRemove = fq ? !!fq.state : false;
+      try {
+        var rngDir = _zwVaGetActiveRange();
+        if (rngDir) {
+          var hitDir = function (elD) {
+            var gD = 0;
+            while (elD && elD.nodeType === 1 && gD++ < 256) {
+              if (_zwJusIsEditingHost(elD)) break;
+              var vvD = _zwValEffectiveValue(elD, c);
+              if (typeof vvD === 'string'
+                  && _zwVaLooselyEquivalent(c, vvD, wantD, true)) {
+                return true;
+              }
+              elD = elD.parentNode;
+            }
+            return false;
+          };
+          var ctxAtDir = function (cont, off) {
+            if (cont.nodeType === 3) {
+              // 中段/头边界（off=0）→ 本节点父链；尾边界前移规范化 →
+              // 前方下一位置（兄弟最深首叶或父容器）。
+              if (off >= cont.data.length) {
+                var nx = cont.nextSibling;
+                if (nx) {
+                  while (nx.firstChild) nx = nx.firstChild;
+                  return nx.nodeType === 1 ? nx : nx.parentNode;
+                }
+              }
+              return cont.parentNode;
+            }
+            if (off < cont.childNodes.length) {
+              var kd = cont.childNodes[off];
+              while (kd.firstChild) kd = kd.firstChild;
+              return kd.nodeType === 1 ? kd : kd.parentNode;
+            }
+            return cont;
+          };
+          dirRemove = hitDir(ctxAtDir(rngDir.startContainer, rngDir.startOffset));
+        }
+      } catch (_eDirD) {}
+      _zwVaSetSelectionValue(c, dirRemove ? null : wantD);
       return true;
     }
     if (c === 'underline') {
