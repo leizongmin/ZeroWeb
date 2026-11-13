@@ -3384,7 +3384,13 @@ pub(crate) fn flex_row_intrinsic_width(
             .unwrap_or(true);
         if is_item && child.is_block_level {
             count += 1;
-            sum += flex_item_base_size(child, doc, styles, container_cross) + child.margin_left + child.margin_right;
+            // R5513（css-sizing-3 #intrinsic-sizes + csswg #823066，同 R4136 口径）：item
+            // margin 的 Calc(P%±Npx) 形固有测量只取 px 部分——convert 层剥离 px 偏移
+            //（convert_length_to_lpa 注），post-taffy margin_* 的 % 分量在 intrinsic 语境
+            // 无基准解析为 0，裸读丢失 `calc(10% + 100px)` 的 100px（calc-margins-flex：
+            // 容器 min-content 测 0 塌缩，绿面整缺）。
+            let (ml, mr) = intrinsic_margin_contribution(child, styles);
+            sum += flex_item_base_size(child, doc, styles, container_cross) + ml + mr;
         }
     }
     if count == 0 {
@@ -3427,7 +3433,9 @@ pub(crate) fn flex_column_intrinsic_width(
         if is_item && child.is_block_level {
             count += 1;
             // column：computing container width（cross）— container_cross = width 是循环，传 None。
-            let base = flex_item_base_size(child, doc, styles, None) + child.margin_left + child.margin_right;
+            // R5513：calc margin px 分量入账（R4136 口径，row 臂同注）。
+            let (ml, mr) = intrinsic_margin_contribution(child, styles);
+            let base = flex_item_base_size(child, doc, styles, None) + ml + mr;
             if base > max {
                 max = base;
             }

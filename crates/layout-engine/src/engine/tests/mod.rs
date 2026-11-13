@@ -1083,3 +1083,8 @@ mod r5509_bii_valign_carrier_tests;
 /// 高度作者补写 content_height——单格态行高吃拆分载体陈旧值时 tr/行组/表全链
 /// 复利膨胀消除。
 mod r5510_table_row_backfill_invariant_tests;
+
+/// R5513（css-sizing-3 #intrinsic-sizes + csswg #823066）：flex item calc(P%±Npx)
+/// margin 固有测量取 px 分量锚——row/column 容器 min-content 不因 % 分量无基准塌 0
+///（calc-margins-flex），普通 px margin 口径不变。
+mod r5513_flex_calc_margin_intrinsic_tests;
