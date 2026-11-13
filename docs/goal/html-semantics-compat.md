@@ -2,35 +2,63 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 418 收口（NotRun 5 勘根修复落锤：**import specifier
-字面量内 raw `;` 截断——script-sandbox transform 面五守卫清除，NotRun 5→0 清账**；
-账本 evidence/2026-11-13-m2s418-import-specifier-semicolon.md）——s417 指针
-「外链模块基座 map 键错配」**否证**：runner fetch 面全链路对 `;` 处理正确
-（parse_serve_with_content_type_query 只按 `&` 切、essence split 两处判型、
-路由表全臂正确响应）；判别式 = specifier 内 raw `;`（%2B 对照组 + 五案共性）。
-根因（探针定谳）：crates/script-sandbox/src/es_module.rs transform/emission
-五处 `split(';')` 前置守卫（extract_import_specifier_from_rest /
-extract_import_specifier 字面量臂 / transform_import 副作用臂 /
-static_dependency_specifiers head·clause_head）把 spec 字面量腰斩 →
-extract_string_literal 收未闭引号残段 → transform 期 CompileError("unclosed
-string literal") → window error 有而**元素 error 事件不派** → 页面
-onerror=unreached_func 永不触发、async_test 永不完成 → runner NotRun。谱系：
-R3349（b586b97ca）修了 dynamic import()/图收集器面，transform 侧五守卫漏网
-（split_statements 本身 string-aware，守卫纯多余）。修复：四处删守卫直进
-extract_string_literal（闭引号截停）+ 回归测试
-test_import_specifier_with_semicolon_in_literal；export 臂 `starts_with('*')`
-恒假为既有死逻辑按语义忠实保留不顺手修。验证：单元 443/443；探针 DUMP
-`t1-ok`+`t5-ok` 双载入（`;` ct JSON module synth 正确）；solo 双驱动
-content-type-checking 5P / valid-content-type 8P；sweep ×2 join 对 s417 双基线
-**my2-vs-b2 = 0 预外 state-diff + 恰 5 new**（driving NotRun→Pass 成行）；
-my1 两文件级 T（select-event / focus-dynamic）归因负载 flake（四轮矩阵
-b1/b2 全绿·m1 部分完成·m2 同二进制全绿回翻 + solo 对 b2 逐一 stable 零差；
-机制排除：前者无 module 面、后者 spec 无 `;`）；select-home-end 簇D 族漂移 +
-checkable following-label s417 flake 族如册。make test 全量 155 腿 154 绿 + 仅 engine lib 在册红腿 3911P/7F 失败清单逐名 IDENTICAL 零位移（对 s417 同名单），clippy 腿零告警。
-在册红 **212F+15T 不变**；**NotRun 5→0** 清账。下一步：挂账池承 s416/s417
-（渲染流 6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 / A2+D 簇 /
-checkable parent-label 2F / SVG `<image>` 载入链 canvas 13-hang 面）勘根首位。
+**状态**: Active——M2 切片 419 收口（SVG `<image>` 载入链接通落锤：**插入臂 +
+no-CORS 通道 + createPattern SVG 源面三件套，security.pattern.fillStyle.sub
+文件级 T 解挂，14 子测首次成行 6P/8F**；账本
+evidence/2026-11-13-m2s419-svg-image-load-chain.md）——驱动案 forEachCanvasSource
+factory #2（cross-origin SVGImageElement：createElementNS + xlink:href +
+appendChild → onload resolve）promise 永不 settle → promise_test 串行队列其余
+13 子测永不启动 → 文件级 Timeout 在册。勘根三层：①engine shim 无 SVG `<image>`
+插入载入面（HTML img 由 src setter 核驱动，SVG image 无 src 语义）→ 复用
+iframe/object/embed 插入臂机（part04 两路 walk + `_zwStartConnected*`）；
+②createPattern 错误臂误判——host `__zw_get_image_size` snapshot-only 无 fetch
+兜底，SVG image 无 naturalWidth → 错误臂提前 return null（G5 wire 臂未达）→
+siAvOk 已载入门跨过错误臂；③裸 fetch 跨源被拒（s153 通道协议）→ 同闭包
+`_zwImgNoCorsChannelDepth` 包裹。修复：part01 新增 `_zwStartConnectedSvgImage`
+（tag IMAGE + SVG-ns 双门，href/xlink:href 回落，fetch→blob→createImageBitmap→
+settle available-images 同 img 键 → load/error 终态；externalResourcesRequired
+忽略，SVG2 已废弃）+ part04 两路接线 + part05 createPattern imgSrc2 href 回落
+与门扩展。探针定谳（真断言镜像 + DIAG dump）：onload → avail{100×50 finalUrl
+记账} → cp:obj unclean=true → td/gi SecurityError 全链闭合。验证：solo 驱动
+文件级 T 消除 14 子测 6P/8F；sweep ×2 join 对 s418 双基线 my1 **0 state-diff**
+（new=124 全归因：驱动 14 + select-event/focus-dynamic b1 flake 残留全绿）、
+my2 **state-diff=1**（select-home-end 簇D 族 T→F 漂移）+ 驱动 new=13+stable=1
+（b2 部分成行同态）+ gone=1；my1≡my2 确定性（直接 join 零差）。基线勘误：
+s418 账本 212F 与 pairs 真值 213F 差 ±1，本轮起以 pairs 为准。在册红 213F+15T →
+**222F+13T raw**（归一簇 D 漂移面后 221F+14T：+8F 新记 video pattern ×6 +
+ImageBitmap ×2、−1T 除账驱动文件级）。下一步：挂账池承 s416/s417/s419（渲染流
+6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 / A2+D 簇 / checkable
+parent-label 2F / video pattern ×6 + ImageBitmap ×2 新面）勘根首位。
 
+> **▶ 承前（2026-11-13 M2 切片 418 收口）——NotRun 5 勘根修复（import specifier 字面量内 `;` 截断）+ script-sandbox transform 面五守卫清除**：commit 谱系 git log s418（55aad5b37），账本 evidence/2026-11-13-m2s418-import-specifier-semicolon.md。原 Active 段留档——
+> **状态**: Active——M2 切片 418 收口（NotRun 5 勘根修复落锤：**import specifier
+> 字面量内 raw `;` 截断——script-sandbox transform 面五守卫清除，NotRun 5→0 清账**；
+> 账本 evidence/2026-11-13-m2s418-import-specifier-semicolon.md）——s417 指针
+> 「外链模块基座 map 键错配」**否证**：runner fetch 面全链路对 `;` 处理正确
+> （parse_serve_with_content_type_query 只按 `&` 切、essence split 两处判型、
+> 路由表全臂正确响应）；判别式 = specifier 内 raw `;`（%2B 对照组 + 五案共性）。
+> 根因（探针定谳）：crates/script-sandbox/src/es_module.rs transform/emission
+> 五处 `split(';')` 前置守卫（extract_import_specifier_from_rest /
+> extract_import_specifier 字面量臂 / transform_import 副作用臂 /
+> static_dependency_specifiers head·clause_head）把 spec 字面量腰斩 →
+> extract_string_literal 收未闭引号残段 → transform 期 CompileError("unclosed
+> string literal") → window error 有而**元素 error 事件不派** → 页面
+> onerror=unreached_func 永不触发、async_test 永不完成 → runner NotRun。谱系：
+> R3349（b586b97ca）修了 dynamic import()/图收集器面，transform 侧五守卫漏网
+> （split_statements 本身 string-aware，守卫纯多余）。修复：四处删守卫直进
+> extract_string_literal（闭引号截停）+ 回归测试
+> test_import_specifier_with_semicolon_in_literal；export 臂 `starts_with('*')`
+> 恒假为既有死逻辑按语义忠实保留不顺手修。验证：单元 443/443；探针 DUMP
+> `t1-ok`+`t5-ok` 双载入（`;` ct JSON module synth 正确）；solo 双驱动
+> content-type-checking 5P / valid-content-type 8P；sweep ×2 join 对 s417 双基线
+> **my2-vs-b2 = 0 预外 state-diff + 恰 5 new**（driving NotRun→Pass 成行）；
+> my1 两文件级 T（select-event / focus-dynamic）归因负载 flake（四轮矩阵
+> b1/b2 全绿·m1 部分完成·m2 同二进制全绿回翻 + solo 对 b2 逐一 stable 零差；
+> 机制排除：前者无 module 面、后者 spec 无 `;`）；select-home-end 簇D 族漂移 +
+> checkable following-label s417 flake 族如册。make test 全量 155 腿 154 绿 + 仅 engine lib 在册红腿 3911P/7F 失败清单逐名 IDENTICAL 零位移（对 s417 同名单），clippy 腿零告警。
+> 在册红 **212F+15T 不变**；**NotRun 5→0** 清账。下一步：挂账池承 s416/s417
+> （渲染流 6 面 / sizes-auto F5 用户门 / 簇 D select 立项征询 / A2+D 簇 /
+> checkable parent-label 2F / SVG `<image>` 载入链 canvas 13-hang 面）勘根首位。
 > **▶ 承前（2026-11-13 M2 切片 417 收口）——16T 清单分型 + video_size_preserved_after_ended settle 真值链修复**：commit 谱系 git log s417（1c08a3a4a），账本
 evidence/2026-11-13-m2s417-video-ended-settle-truth.md。原 Active 段留档——
 > **状态**: Active——M2 切片 417 收口（16T 清单分型 + video_size_preserved_after_ended

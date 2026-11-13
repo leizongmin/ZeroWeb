@@ -4372,6 +4372,95 @@
       try { _zwLoadObjectResource(embKey, el.__zwSelector || null, el.__zwHandle || null, fireEvents !== false, true); } catch (_eEmbStart) {}
     });
   }
+  // html-semantics M2 切片 419：SVG `<image>` 插入步（SVG2 §embedded
+  // https://www.w3.org/TR/SVG2/embedded.html#ImageElement——插入已连接树即
+  // resolve href/xlink:href → fetch → 终态派 load/error）。与 iframe/object/
+  // embed 插入臂同形：part04 appendChild/append 两路 walk 同排调用（s405 共享
+  // tagHint）。HTML `<image>` 是 img 历史别名（spec
+  // https://html.spec.whatwg.org/multipage/dom.html#htmlunknown-element ），
+  // 门 = tag IMAGE + `_nsHandles` ns SVG（createElementNS 产物登记表，
+  // part06 createElementNS 写点；parser 产物 SVG image 不登记，静态面同
+  // FIXME(object-static-events) 族记档）。settle 写 available-images（同 img
+  // 键——createPattern/drawImage 源消费 + `_zwCanvasSrcCrossOrigin` finalUrl
+  // 重定向记账同款）；事件用 `__zwImgMakeEvent5277`（Event.prototype 形）。
+  // externalResourcesRequired 属性忽略（SVG2 已废弃；断言面 onload 到达即
+  // 通过）。spec href 优先、xlink:href 回落（R34xx errSrc 同序）。
+  function _zwStartConnectedSvgImage(el, connected, tagHint) {
+    if (!connected || !el) return;
+    var tag = '';
+    if (typeof tagHint === 'string') {
+      tag = tagHint;
+    } else {
+      try {
+        tag = typeof _realTag === 'function'
+          ? _realTag(el.__zwSelector || null, el.__zwHandle || null)
+          : String(el.tagName || '');
+      } catch (_eSvgImgTag) {
+        tag = String(el.tagName || '');
+      }
+    }
+    if (String(tag || el.tagName || '').toUpperCase() !== 'IMAGE') return;
+    var _siNs = '';
+    try {
+      _siNs = (el.__zwHandle && _nsHandles[el.__zwHandle] && _nsHandles[el.__zwHandle].namespace) ? String(_nsHandles[el.__zwHandle].namespace) : '';
+    } catch (_eSvgImgNs) { _siNs = ''; }
+    if (_siNs !== 'http://www.w3.org/2000/svg') return;
+    _defer(function () {
+      var href = '';
+      try { href = String(el.getAttribute('href') || ''); } catch (_eSvgImgH0) { href = ''; }
+      if (!href) {
+        try { href = String(el.getAttribute('xlink:href') || ''); } catch (_eSvgImgH1) { href = ''; }
+      }
+      var fire = function (type) {
+        try {
+          el.dispatchEvent(typeof globalThis.__zwImgMakeEvent5277 === 'function'
+            ? globalThis.__zwImgMakeEvent5277(type)
+            : new globalThis.Event(type));
+        } catch (_eSvgImgFire) {}
+      };
+      if (!href || typeof fetch !== 'function') {
+        // 空引用/无 fetch 通道 → error 终态（spec 无可用资源 fail 面）。
+        _defer(fire.bind(null, 'error'));
+        return;
+      }
+      var abs = href;
+      try {
+        abs = new globalThis.URL(href, (globalThis.document && globalThis.document.baseURI) ||
+          (globalThis.location && globalThis.location.href) || 'about:blank/').href;
+      } catch (_eSvgImgUrl) { abs = href; }
+      var fail = function () { _defer(fire.bind(null, 'error')); };
+      // s153 no-CORS 通道旗标（同 img 运行核 part03:3792 形态——SVG `<image>`
+      // 无 crossorigin 属性，恒走 no-cors 通道面；跨源 red.png 断言面）。
+      var _siFetchP = null;
+      try {
+        _zwImgNoCorsChannelDepth++;
+        try { _siFetchP = fetch(abs); } finally { _zwImgNoCorsChannelDepth--; }
+      } catch (_eSvgImgChan) {
+        fail();
+        return;
+      }
+      try {
+        _siFetchP.then(function (resp) {
+          // 网络错误判据同 img 运行核（status 0；https://html.spec.whatwg.org/
+          // multipage/images.html#updating-the-image-data 只门网络错误）。
+          if (!resp.ok && !resp.status) { fail(); return; }
+          resp.blob().then(function (blob) {
+            createImageBitmap(blob).then(function (bm) {
+              try {
+                var fu = '';
+                try { fu = (resp && resp.url) ? String(resp.url) : ''; } catch (_eSvgImgFu) {}
+                globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
+                globalThis._zwAvailableImages[abs] = { width: bm.width, height: bm.height, finalUrl: fu, xo: 'unset' };
+              } catch (_eSvgImgAv) {}
+              _defer(fire.bind(null, 'load'));
+            }, fail);
+          }, fail);
+        }, fail);
+      } catch (_eSvgImgFetch) {
+        fail();
+      }
+    });
+  }
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——
   // setAttributeNS 写入；Attr 节点字段（prefix/localName/namespaceURI）与 NS 读（按 ns+local 匹配
   // 任意 prefix 的存储名）消费。host 侧属性存储是扁平限定名（无 ns），NS 语义须 JS 端登记。

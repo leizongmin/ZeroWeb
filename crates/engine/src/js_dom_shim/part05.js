@@ -10437,10 +10437,29 @@
         // nonexistent 须抛 InvalidStateError）。
         var nw = image.naturalWidth;
         if (nw === undefined || nw === null) nw = 0;
+        // s419：SVG `<image>` 已载入判定——host size 探针只查 load 期快照
+        //（webview.rs `__zw_get_image_size` snapshot-only），运行时插入臂
+        // settle 的键（part01 `_zwStartConnectedSvgImage` 写 available-images
+        // width>0）恒 miss → errDims 空、错误臂误判未载入。已 settle 的
+        // SVG image 视同已载入（跨过错误臂；G5 wire 臂 host 现场抓取承接）。
+        // 插入臂 error 终态（fetch 失败/空引用）无 avail 条目 → 本门不命中，
+        // svgimage.nonexistent 既有抛面零变化。
+        var siAvOk = false;
+        if (isSvgImg && errSrc) {
+          try {
+            var siAbs = errSrc;
+            try {
+              siAbs = new globalThis.URL(errSrc, (globalThis.document && globalThis.document.baseURI) ||
+                (globalThis.location && globalThis.location.href) || 'about:blank/').href;
+            } catch (_eSiAbs) {}
+            var siAv = (globalThis._zwAvailableImages || {})[siAbs];
+            siAvOk = !!(siAv && siAv.width > 0);
+          } catch (_eSiAv) { siAvOk = false; }
+        }
         // 静态 img 加载失败（broken.png 解码失败、no-such-image 不存在）→ InvalidStateError；
         // 动态创建未挂载的 img（加载中/未开始）→ 不抛（返回 null——2d.pattern.image.
         // nonexistent-but-loading）。
-        if (nw <= 0 && !errDims) {
+        if (nw <= 0 && !errDims && !siAvOk) {
           // src 空（未设置/被清空——incomplete.emptysrc/removedsrc）→ 未加载返 null。
           if (!errSrc) {
             return null;
@@ -10461,8 +10480,16 @@
       }
       // R34xx：G5 —— HTMLImageElement 源 → __zw_get_image_wire → host createPattern。
       // 双维须 > 0（zeroheight SVG：naturalWidth=100 但高 0 → null——2d.pattern.image.zeroheight）。
-      if (image && typeof image.getContext !== 'function' && image.naturalWidth > 0 && (image.naturalHeight === undefined || image.naturalHeight > 0) && typeof __zw_get_image_wire === 'function') {
-        var imgSrc2 = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
+      // s419：SVG `<image>` 源同臂——源读 href/xlink:href（无 src 属性，spec SVG2
+      // embedded image href 优先、xlink:href 回落，同上方 errSrc 读序）；wire 经
+      // 同一 host `__zw_get_image_wire`（快照 miss 现场抓取+解码，webview.rs
+      // R56h 面），清洁度 `_zwCanvasSrcCrossOrigin(imgSrc2)` 同 img 键消费
+      //（security.pattern.fillStyle.sub 的 cross-origin SVGImageElement 断言面）。
+      var imgSrc2 = (image && image.getAttribute ? String(image.getAttribute('src') || '') : '') || String((image && image.src) || '');
+      if (isSvgImg && !imgSrc2 && image && image.getAttribute) {
+        imgSrc2 = String(image.getAttribute('href') || '') || String(image.getAttribute('xlink:href') || '');
+      }
+      if (image && typeof image.getContext !== 'function' && (image.naturalWidth > 0 || (isSvgImg && imgSrc2)) && (image.naturalHeight === undefined || image.naturalHeight > 0) && typeof __zw_get_image_wire === 'function') {
         var iwire2 = String(__zw_get_image_wire(imgSrc2));
         if (iwire2) {
           var pid2 = String(__zw_canvas_op(h, 'createPattern', iwire2, String(repetition || '')));
