@@ -1146,6 +1146,15 @@
         // strong|b css-false 仅并入后 b；vendored isSimpleModifiable 同判
         // strong/b 致误并）。b 候选不受此门（:287/:300 录形并入 b）。
         if (command === 'bold' && nT === 'strong') return false;
+        // DC-2 P1（d15 批）：strike css-false 同 tag 名并拢门——Chrome 录形
+        // `fo[o<s>b]ar</s>baz` + strike = `fo<strike>o</strike><s>bar</s>baz`
+        // （data/strikethrough.js:635）：fresh strike 不并入相邻 <s>（tag 名
+        // 异，specified/effective 虽同 line-through）；bold/strong 前例同款
+        // 规则面。underline 对称行录形相反（underline.js:698 td decl span
+        // 就地并入，无 retag 无分离）——门限 strike。css-true span 门既有。
+        if (command === 'strikethrough' && !_zwVaCssFlag() && nT !== 'strike') {
+          return false;
+        }
         if (_zwVaCssFlag() && nT !== 'span' && nT !== 'sub' && nT !== 'sup') {
           return false;
         }
@@ -2998,6 +3007,75 @@
     // tests.js 归一范围 = wrapper 后代）直出规范形，got 与录制面无条件对齐。
     _zwVaCanonicalizeAncestorStyleAttrs(rng);
 
+    // DC-2 P5（d15 批）：strike css-false td decl span retag——Chrome 录形
+    // `fo[o<span style=text-decoration:line-through>b]ar</span>baz` +
+    // strike = `fo<strike>o</strike><s>bar</s>baz`（data/strikethrough.js
+    // :705）：部分覆盖的 td span 壳原位 retag <s>（specified 等值
+    // line-through 即换 tag 名，style attr 随迁），选区侧文本 fresh strike
+    // 分离外裹（sibCrit strike 门阻 fresh 并入 <s>）。全含形不走本臂
+    //（contained 元素 cv 溶解 + 吸收既有绿面）。underline 对称行相反
+    //（underline.js:698 无 swc css-false 默认录形 = td-u span 就地并入
+    // span，无 retag 无分离）——门限 strikethrough。
+    if (command === 'strikethrough' && newValue === 'line-through'
+        && !_zwVaCssFlag()) {
+      var contRt = _zwValGetAllEffectivelyContained(rng, function (nRt) {
+        return nRt.nodeType === 1;
+      });
+      var seenRt = [];
+      var edgesRt = [rng.startContainer, rng.endContainer];
+      // retag 为纯改名（span→s，子节点整体随迁、文本节点身份不变），端点
+      // 四元组快照后在重挂后原位写回——movePreservingRanges 补偿面在新壳
+      // 插入 + 旧壳摘除的组合下会把 start 端点折叠到随迁节点上（探针
+      // d15x P5RTAG 后 s=e=#b@1、CONTAINED 集空实证），apply 整段空转。
+      var snapScRt = rng.startContainer;
+      var snapSoRt = rng.startOffset;
+      var snapEcRt = rng.endContainer;
+      var snapEoRt = rng.endOffset;
+      // splitText 重绑后 range 内部位移槽与 (container,offset) 面值脱钩
+      //（face 序列上下文实证：孤立探针同码绿、multitest 上下文 move 补偿
+      // 把 start 折进随迁节点）。retag 前原位重写端点经公开 API 刷新槽
+      // 一致性；重挂后按快照回写兜底（两写均为同值写，零语义变更）。
+      rng.setStart(snapScRt, snapSoRt);
+      rng.setEnd(snapEcRt, snapEoRt);
+      var didRt = false;
+      for (var eRt = 0; eRt < edgesRt.length; eRt++) {
+        var nRt = edgesRt[eRt];
+        if (nRt && nRt.nodeType !== 1) nRt = nRt.parentNode;
+        var gRt = 0;
+        while (nRt && nRt.nodeType === 1 && gRt++ < 256) {
+          if (!_zwJusIsEditable(nRt)
+              || _zwJusIsEditingHost(nRt) || _zwJusIsBlockNode(nRt)) break;
+          if (_zwJusTag(nRt) === 'span' && seenRt.indexOf(nRt) === -1
+              && contRt.indexOf(nRt) === -1) {
+            seenRt.push(nRt);
+            var specRt = _zwVaSpecifiedValue(nRt, 'strikethrough');
+            if (typeof specRt === 'string'
+                && _zwVaLooselyEquivalent('strikethrough', specRt,
+                                          'line-through', true)) {
+              // Chrome 录形 retag 产裸 `<s>`（无 style attr）。不走
+              // _zwJusSetTagName：attrs 随迁 + 剥 attr 后解析壳 CSSOM
+              // pending 值残留会污染后续 specified 判定（探针二轮 P5 残
+              // 红 got `foo<s>bar</s>baz` 归因），照 :3010 REMOVE-face 臂
+              // 惯用法 createElement 干净壳迁移子节点。
+              var replRt = document.createElement('s');
+              var kidsRt = [].slice.call(nRt.childNodes);
+              for (var kRt = 0; kRt < kidsRt.length; kRt++) {
+                _zwJusMovePreservingRanges(kidsRt[kRt], replRt, -1);
+              }
+              nRt.parentNode.insertBefore(replRt, nRt);
+              nRt.parentNode.removeChild(nRt);
+              didRt = true;
+            }
+          }
+          nRt = nRt.parentNode;
+        }
+      }
+      if (didRt) {
+        rng.setStart(snapScRt, snapSoRt);
+        rng.setEnd(snapEcRt, snapEoRt);
+      }
+    }
+
     // DC-2 ①（2026-11-12）：span decl 壳切刻面——u/s 移除面部分选区、壳
     // decl 剥除命令 token 后仍有 canon 残值时，Chrome 录形不切分壳：壳 decl
     // 原位重写为残值、选区外首尾段在壳内以移除 token 形内裹（underline.js
@@ -3637,12 +3715,12 @@
       _zwVaSetSelectionValue('italic', state ? 'normal' : 'italic');
       return true;
     }
-    if (c === 'underline') {
-      _zwVaSetSelectionValue('underline', state ? null : 'underline');
+    if (c === 'strikethrough') {
+      _zwVaSetSelectionValue(c, state ? null : 'line-through');
       return true;
     }
-    if (c === 'strikethrough') {
-      _zwVaSetSelectionValue('strikethrough', state ? null : 'line-through');
+    if (c === 'underline') {
+      _zwVaSetSelectionValue('underline', state ? null : 'underline');
       return true;
     }
     // DC-2 ⑥（d14 批）：Chrome sub/sup 嵌套双 tag 壳 ADD 面残段保面规则

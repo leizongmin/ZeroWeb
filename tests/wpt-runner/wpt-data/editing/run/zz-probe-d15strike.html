@@ -1,0 +1,74 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>zz-probe-d15strike</title>
+<!-- DC-2 P1/P5（d15 批，2026-11-13 常驻）：strike css-false ADD 面
+     1) S2a（data/strikethrough.js:635）`fo[o<s>b]ar</s>baz` + strike =
+        `fo<strike>o</strike><s>bar</s>baz`——fresh strike 经 sibCrit 同
+        tag 名门不并入相邻 <s>（:635 语料直读，bold/strong 前例同款规则面）。
+     2) P5（:705）`fo[o<span style=text-decoration:line-through>b]ar</span>
+        baz` + strike = 同上录形——部分覆盖 td decl span 原位 retag 裸 <s>
+        （createElement 干净壳迁移子节点），选区侧 fresh strike 分离外裹。
+        retag 的 move 补偿在 multitest 序列上下文会把 range start 端点折叠
+        进随迁节点（孤立探针不可复现，face 对拍实证）——retag 前经公开 API
+        原位重写端点刷新位移槽 + 重挂后按快照回写兜底。本页两 case 常驻守
+        该组合面。运行：make testharness-editing-run-one FILTER=zz-probe-d15strike -->
+<link rel=stylesheet href=../include/reset.css>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function nextnode(node) {
+  if (node.firstChild) return node.firstChild;
+  while (node) {
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+  }
+}
+function mywalk(node, html) {
+  node.innerHTML = html;
+  var sn = null, so = 0, en = null, eo = 0;
+  var cur = node;
+  while (true) {
+    if (!cur || (cur != node && !(cur.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+    if (cur.nodeType != 3) { cur = nextnode(cur); continue; }
+    var dA = cur.data.replace(/\]/g, "");
+    var iA = dA.indexOf("[");
+    var dB = cur.data.replace(/\[/g, "");
+    var iB = dB.indexOf("]");
+    cur.data = cur.data.replace(/[\[\]]/g, "");
+    if (iA != -1) { sn = cur; so = iA; }
+    if (iB != -1) { en = cur; eo = iB; }
+    if (!cur.data.length) {
+      if (cur == sn || cur == en) throw "bracket in empty text";
+      var old = cur;
+      cur = nextnode(cur);
+      old.parentNode.removeChild(old);
+    } else {
+      cur = nextnode(cur);
+    }
+  }
+  return [sn, so, en, eo];
+}
+function strikeCase(input, expected, label) {
+  test(function() {
+    var tc = document.getElementById("test-container");
+    tc.innerHTML = "<div contenteditable></div><p>test";
+    var host = document.querySelector("div[contenteditable]");
+    var pts = mywalk(host, input);
+    var r = document.createRange();
+    r.setStart(pts[0], pts[1]); r.setEnd(pts[2], pts[3]);
+    if (r.collapsed) r.setEnd(pts[0], pts[1]);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    document.execCommand("strikethrough", false, "");
+    assert_equals(host.innerHTML, expected, "got=");
+  }, label);
+}
+strikeCase("fo[o<s>b]ar</s>baz",
+  "fo<strike>o</strike><s>bar</s>baz", "D15 S2a :635 fresh strike no s merge");
+strikeCase("fo[o<span style=text-decoration:line-through>b]ar</span>baz",
+  "fo<strike>o</strike><s>bar</s>baz", "D15 P5 :705 td span retag + split fresh strike");
+</script>
+</body>
+</html>
