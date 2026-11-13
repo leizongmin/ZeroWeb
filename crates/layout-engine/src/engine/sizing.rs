@@ -3132,7 +3132,7 @@ impl LayoutEngine {
         quirks_mode: bool,
         html_attr_intrinsic_ids: &HashSet<NodeId>,
     ) -> bool {
-        use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue, PositionValue};
+        use zero_css_parser::values::{BoxSizingValue, DisplayValue, FloatValue, LengthValue, PositionValue};
 
         #[allow(clippy::too_many_arguments)]
         fn walk(
@@ -3177,6 +3177,11 @@ impl LayoutEngine {
             html_attr_intrinsic_ids: &HashSet<NodeId>,
             // R4197：父 writing-mode（root = HorizontalTb 视口）——跳过键（见函数体首）。
             parent_writing_mode: WritingModeValue,
+            // R5514：CB 链是否穿过 inline 壳（display:inline 中间层）。true 时百分比
+            // 高在明确 CB 下的解析由本 walk 代写 px——taffy 原生 % 解析的基准是 taffy
+            // 直属父（= 壳，height:auto），不可达链上块容器（见 self_is_inline_cb_
+            // transparent 注）。
+            cb_through_inline: bool,
         ) -> bool {
             // 垂直书写模式块轴为 X，高度语义不同——保守跳过整棵子树。
             // R4197（css-sizing-3 §percentage-sizing，intrinsic-percent-replaced-029）：
@@ -3204,7 +3209,32 @@ impl LayoutEngine {
             // 默认沿用父级传入的明确性（无样式节点如匿名盒透传）。
             let mut my_definite: Option<f32> = cb_definite;
 
-            if let Some(s) = style {
+            // R5514（CSS2 §9.2.1.1 + §10.1）：display:inline 非替换盒不是块容器，
+            // 永远不是后代盒级百分比解析的包含块——CB 链对 inline 中间层透明，壳
+            // 不得 reset definite（对齐匿名盒透传口径）。驱动案 percent-height-
+            // replaced-in-percent-cell-004：table-cell(height:50px) > split inline
+            // 壳（span，height:auto）> block canvas height:200%——壳旧把 cb_definite
+            // reset None → canvas % compute-to-auto + attr 固有 1×1（绿面整缺）；
+            // chromium 对链上块容器（cell 50px）解析 100，1:1 ratio 推宽 100。
+            // plain 树同构（div > span > block canvas）R1044 形 span 无盒不经过本
+            // 臂（LayoutBox 无壳），行为零变化。float/abspos 语境块化（float 是块
+            // 容器、abspos 自成 CB），不入透明集。flex/grid **item** 语境同样排除
+            //（CSS Flexbox §4.1/Grid §3：item 块化，ZW computed 保留 inline 原值但
+            // 布局语义是 item——R2091 canvas item 的 grid_replaced_pct_indefinite
+            // 臂、R5346 item 链 % 解析都依赖 styled 块照常入账）。替换元素（canvas UA
+            // display 即 inline）不入透明集——无后代、透明无意义，且其**自身**高度
+            // 解析臂（R4129 quirks px 写/R2016 attr 回退）必须照常跑。kill-switch
+            // `ZW_INLINE_CB_TRANSPARENT=0`。
+            let self_is_inline_cb_transparent = style.is_some_and(|s| {
+                matches!(s.display, DisplayValue::Inline)
+                    && !b.is_replaced
+                    && matches!(s.float, FloatValue::None)
+                    && !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                    && !parent_is_flex_grid
+                    && std::env::var("ZW_INLINE_CB_TRANSPARENT").as_deref() != Ok("0")
+            });
+
+            if let Some(s) = style.filter(|_| !self_is_inline_cb_transparent) {
                 let is_abs = matches!(s.position, PositionValue::Absolute | PositionValue::Fixed);
                 // R2091：grid/flex item 中 **HTML-attr-only intrinsic 替换元素**（canvas/embed/
                 // object/applet，即 `gather_replaced_html_attr_intrinsic` 收集的；排除 img——img
@@ -3312,7 +3342,24 @@ impl LayoutEngine {
                         LengthValue::Percentage(p) if !is_abs => match cb_definite {
                             Some(cbh) => {
                                 // 明确 CB → 解析为百分比（明确），供子元素继续链。
-                                my_definite = Some(*p as f32 / 100.0 * cbh);
+                                let resolved = *p as f32 / 100.0 * cbh;
+                                my_definite = Some(resolved);
+                                // R5514：CB 链经 inline 壳——taffy 直属父是壳（height:auto，
+                                // 内容定高），原生 % 解析基准不可达链上块容器，walk 代写 px
+                                // 钉死（CSS2 §10.1 包含块判定；壳随后由内容撑起）。直连父
+                                // 场景 cb_through_inline=false 不写（taffy 原生解析同值，写
+                                // 反而抢在表拉伸等后续相位前定死基准——probe B 口径）。
+                                if cb_through_inline
+                                    && std::env::var("ZW_INLINE_CB_TRANSPARENT").as_deref() != Ok("0")
+                                    && let Some(id) = b.node_id
+                                    && let Some(&tid) = dom_to_taffy.get(&id)
+                                    && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                {
+                                    st.size.height = taffy::style::Dimension::length(resolved.max(0.0));
+                                    let _ = taffy_tree.set_style(tid, st);
+                                    let _ = taffy_tree.mark_dirty(tid);
+                                    changed = true;
+                                }
                             }
                             None => {
                                 // R2170 kill-switch：ZW_QUIRKS_PCT_FLEX_GATE=0 禁用 flex/grid gate
@@ -3576,6 +3623,8 @@ impl LayoutEngine {
             let own_wm = style
                 .map(|s| s.writing_mode.clone())
                 .unwrap_or(WritingModeValue::HorizontalTb);
+            // R5514：子代「CB 链经 inline 壳」= 本盒穿过 OR 本盒自身是透明壳。
+            let child_cb_through_inline = cb_through_inline || self_is_inline_cb_transparent;
             for child in &b.children {
                 changed |= walk(
                     child,
@@ -3594,6 +3643,7 @@ impl LayoutEngine {
                     img_intrinsic_sizes,
                     html_attr_intrinsic_ids,
                     own_wm.clone(),
+                    child_cb_through_inline,
                 );
             }
             changed
@@ -3618,6 +3668,7 @@ impl LayoutEngine {
             img_intrinsic_sizes,
             html_attr_intrinsic_ids,
             WritingModeValue::HorizontalTb,
+            false,
         )
     }
 

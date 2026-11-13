@@ -1088,3 +1088,8 @@ mod r5510_table_row_backfill_invariant_tests;
 /// margin 固有测量取 px 分量锚——row/column 容器 min-content 不因 % 分量无基准塌 0
 ///（calc-margins-flex），普通 px margin 口径不变。
 mod r5513_flex_calc_margin_intrinsic_tests;
+
+/// R5514（CSS2 §9.2.1.1 + §10.1）：inline 壳 CB 透明锚——R695 % 高 walk 不在
+/// display:inline 中间层 reset definite，链经壳时代写 px（004 案形 canvas 100×100）；
+/// plain 无壳形与 inline-block 块容器语义回归守卫。
+mod r5514_inline_cb_transparent_tests;
