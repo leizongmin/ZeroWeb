@@ -2,39 +2,55 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 428 收口（select listbox 形态 carve-out 施工轮，
-四面 +92/-1；账本 evidence/2026-11-14-m2s428-select-listbox-form-carve-out.md）
-——**归属修正**：s425 曾将 listbox carve-out 保守归渲染流；复核 s387
-（7a90cb732，本车道 style-system+layout-engine 三面同 kill-switch）确认面
-归属跟 driving corpus 走，carve-out 归位本车道并本轮施工：listbox 判据
-（HTML 渲染规范 §the-select-element-2：`multiple` 在场或 `size` 解析值 >1）
-+ gate `ZW_SELECT_LISTBOX_FORM`（default-on，`=0` 回退 s387 形态盲抑制）
-合入四面——tree.rs 抑制臂放行（谓词 gate 合入版 pub 复用）+
-collect_items Path A 谓词放行 + style-system UA 注入 option/optgroup
-display:block（style-system 不许反向依赖 layout-engine，谓词同判据本地
-副本）+ engine paint_select_value listbox 形态不绘单值标签；s387
-display:inherit hook 刻意不动（上游 gCS(option)=contents 语义本就
-form-agnostic，其 multiple-select 子测即现成回归面）。验证：check/fmt/
-clippy(-D)/release build 清；三 solo 如预判（display-inherit 3/3P 回归清
-／resize 1F ③④ 不可达维持／seltouch 1F 待引擎臂）；探针实锤 UA 注入 +
-option 几何非零（scroll overflow 记账系独立缺失面，零账面影响）；目录
-回归 stable=328 diff=0；product-smoke + legacy exit 0；全域 sweep ×2
-join 对 s427 双基线——**stable-P 8241=8241 零动**，唯一 delta = 簇 D
-flake 键 detailed.optional T→F 表示漂移（三证归因非本轮引入：裸 select
-无 multiple/size 谓词休眠 + s424 旧二进制已现同一 F 表示 + 病根 4 pending
-恒定），总病根口径不变；join 结论经两次独立 r2 全程跑逐字复核一致。
-**他流到货挂账**：sweep 运行窗口 main 落四笔（editing 车道 bdbe581a6
-strike REMOVE 判向 + d1d418daf insertParagraph 拆分边界壳三族；渲染车道
-ac2566689 font-weight 相对权重表；docs 3df4f287a wptfyi-css g32 归因），
-与本轮四面零文件交集、sweep 树为 pre-arrival（carve-out 孤立归因保住）
-——组合态复验按 s427 先例留下一轮。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137。下一步：**s429 四笔到货组合态整验轮**（零源码
-改动：runner 重建自 HEAD → 全域 sweep ×2 join 对 s428 双基线）→
-**s430 engine act:option 臂施工**（s425 已定设计：OPTION 停靠位 +
-act:option post-activation gate `_zwUaDispatch===true` 镜像 act:button +
-toggle 镜像 plan_option——双刀合龙 seltouch 应翻绿；solo + 目录回归 +
-全域 sweep ×2 join 对 s429 双基线）；dialog R-s31 簇/img density/embed
-sizing face 到货复验；门决策后 video P1+P2 或簇 D A2 分诊续。
+**状态**: Active——M2 切片 429 收口（五笔他流到货组合态整验轮，零源码
+改动；账本
+evidence/2026-11-14-m2s429-arrivals-combined-state-reverify.md）——
+s428 窗口累计 5 笔到货（渲染 ac2566689 font-weight 相对权重表 +
+3df4f287a docs；editing d1d418daf insertParagraph 壳三族 + bdbe581a6
+strike 判向 + 65b06cbba 壳尾重开 v3.1），与本域四面零文件交集，runner
+重建自 HEAD 21d097d93（guarded 1m33s）→ 全域 sweep ×2 → stable-set
+join 对 s428 双基线——**稳定三桶逐键零漂移**（stable-F 202=202 /
+stable-T 13=13；stable-P 8241→8239 的 −2 = 在册 flake 键
+checkable-active-onblur-with-click following-label 2 子测转沾染：同二
+进制双轮异态 r1 2P / r2 2F = 时序非代码，到货零输入/指针面交集，
+parent-label 2F 在册稳定红未动；失败形 :active 命中 null，ZeroWeb-3
+multitest 长跑重叠为环境放大因子）。口径：**稳定红 215（202F+13T）不
+变，沾染桶 0→2**。**基线移交**：s430 join 改用
+/tmp/s429/pairs-{1,2}.txt（沾染 2 单列，稳定复归以 NEW 可见）。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
+下一步：**s430 engine act:option 臂施工**（s425 定型设计：OPTION 停靠
+位 + act:option post-activation gate `_zwUaDispatch===true` 镜像
+act:button + toggle 镜像 plan_option——双刀合龙 seltouch 翻绿判据；
+solo + 目录回归 + 全域 sweep ×2 join 对 s429 双基线）；dialog R-s31
+簇/img density/embed sizing face 到货复验；门决策后 video P1+P2 或
+簇 D A2 分诊续。
+
+> **▶ 承前（2026-11-14 M2 切片 428 收口）——select listbox 形态
+> carve-out 施工轮（四面 +92/-1）**：commit 21d097d93；账本
+> evidence/2026-11-14-m2s428-select-listbox-form-carve-out.md。原 Active
+> 段留档——**归属修正**：s425 曾将 listbox carve-out 保守归渲染流；复核
+> s387（7a90cb732，本车道 style-system+layout-engine 三面同 kill-switch）
+> 确认面归属跟 driving corpus 走，carve-out 归位本车道并施工：listbox
+> 判据（HTML 渲染规范 §the-select-element-2：`multiple` 在场或 `size`
+> 解析值 >1）+ gate `ZW_SELECT_LISTBOX_FORM`（default-on，`=0` 回退 s387
+> 形态盲抑制）合入四面——tree.rs 抑制臂放行（谓词 gate 合入版 pub 复用）
+> + collect_items Path A 谓词放行 + style-system UA 注入 option/optgroup
+> display:block（谓词同判据本地副本，不反向依赖 layout-engine）+ engine
+> paint_select_value listbox 形态不绘单值标签；s387 display:inherit hook
+> 刻意不动（上游 gCS(option)=contents 语义本就 form-agnostic，其
+> multiple-select 子测即现成回归面）。验证：check/fmt/clippy(-D)/release
+> build 清；三 solo 如预判（display-inherit 3/3P 回归清／resize 1F ③④
+> 不可达维持／seltouch 1F 待引擎臂）；探针实锤 UA 注入 + option 几何非零
+> （scroll overflow 记账系独立缺失面，零账面影响）；目录回归 stable=328
+> diff=0；product-smoke + legacy exit 0；全域 sweep ×2 join 对 s427 双
+> 基线——**stable-P 8241=8241 零动**，唯一 delta = 簇 D flake 键
+> detailed.optional T→F 表示漂移（三证归因非本轮引入：裸 select 无
+> multiple/size 谓词休眠 + s424 旧二进制已现同一 F 表示 + 病根 4 pending
+> 恒定），总病根口径不变；join 结论经两次独立 r2 全程跑逐字复核一致。
+> 他流到货挂账：sweep 运行窗口 main 落四笔（bdbe581a6/d1d418daf/
+> ac2566689/3df4f287a，零文件交集、pre-arrival 树孤立归因保住），组合态
+> 复验移交 s429。挂用户门：GB-20261114-VIDEO + GB-20261031（簇 D）+
+> s137 维持。
 
 > **▶ 承前（2026-11-14 M2 切片 427 收口）——组合态全域复验轮（零源码改动）**：账本
 > evidence/2026-11-14-m2s427-combined-state-full-sweep.md。原 Active 段留档——
