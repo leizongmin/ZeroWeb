@@ -69,6 +69,7 @@ target=_blank aux 语义）；PE spec pointerId −1 = 非指针生成。
 | solo target_blank_implicit_noopener{,_base} + rel-attribute-clearing | exit 0 ×3（修复一刀后即绿） |
 | 全域 sweep ×2 终验（探针清空后）+ stable join vs s431 组合态双基线 | **stable-P 8274→8308（+34 零消失，全落 links 域 13+13+4+4）/ stable-T 8→2（−6）/ stable-F 200→204（+4 簇 D 翻轮）/ 沾染 2→1（C-NEW 0）** |
 | 归因 | +34 = implicit_noopener 13 + implicit_noopener_base 13 + rel-attribute-clearing 4 + useractivation 4（T 池 4 文件键全解挂）；T −6 = 4 目标文件键 + select-event/focus-dynamic 双轮翻绿（在册负载 flake 族 s292 判据，跨轮翻转不入账）；F +4 = customizable-select home-end 4 子测跨轮翻红（簇 D GB-20261031 在册，键盘时序面与 links 施工零交集）；C-GONE home-end.optional（同族翻轮） |
+| **组合态整验（他流两笔合入后终稿树重跑）** | pull --rebase 合入 editing ip M2 壳族三臂（0ee05d644，part01f.js +208 行）+ css system-color（349a891ed，css-parser/computed_style/style-system）后：25 part 拼装 OK（153,829 行）+ release 重建 exit 0 + solo ×6 全绿（4 目标 + label-inside-anchor/rel-form-target 双哨兵）+ 全域 sweep ×2 join 对 s431 双基线——**stable-P 8308 逐键零漂移（+34 集合与预合并轮恒等）/ T −6 恒等 / F +1**：home-end 4 子测键本轮翻回 P、detailed.optional 文件键翻 stable-F、home-end.optional 文件键翻 T——簇 D 家族成员跨轮轮换（在册），与两笔到货及本切片零账面位移；沾染 2→0 |
 | 探针残留 | 零（终验 sweep 无 zz 键，7 探针文件全删） |
 | Rust 面 | 零改动（clippy/fmt 不适用；runner 重建用既有 Rust） |
 

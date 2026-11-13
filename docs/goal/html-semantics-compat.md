@@ -29,7 +29,12 @@ flake 翻绿不入账）/ stable-F 200→204（+4 customizable-select home-end
 维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：s433
 红池分诊续（残余 stable-T 2 键 = 簇 D 家族；门决策后 video P1+P2 或
 簇 D A2）；window.open 真弹窗链评估轮（s431 defer 项）；dialog R-s31
-簇/img density/embed sizing face 到货复验。
+簇/img density/embed sizing face 到货复验。**组合态整验（他流两笔合入
+后重跑）**：editing ip M2 壳族三臂（0ee05d644，part01f.js）+ css
+system-color（349a891ed）合入交付树后全链重跑——拼装 OK（153,829 行）+
+release 重建 exit 0 + solo ×6 全绿 + sweep ×2 join **stable-P 8308 逐键
+零漂移（+34 集合恒等）**，F/T 差异全收敛在簇 D 家族成员跨轮轮换，到货
+零账面位移。
 
 > **▶ 承前（2026-11-14 M2 切片 431 收口）——form target=_blank aux
 > 上下文施工轮（6T 全解挂，稳定红面 214→207）**：账本
