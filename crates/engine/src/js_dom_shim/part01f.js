@@ -2263,16 +2263,18 @@
       var ipChainC = [];
       var ipRebuiltInnerC = null;
       var ipBrInRebuiltC = false;
-      // 重开判据（2026-11-14 v3.1 corpus 三方对照重定谳）：拆分位有后随内容
+      // 重开判据（2026-11-14 v3.2 corpus 真值表两维合取）：拆分位有后随内容
       // （本位余量或任一祖先层 nextSibling）时壳链全量重开含 a（`<a href>
-      // foo[]bar</a>` 双侧 a、`<b>foo&nbsp;[]<br></b><br></a>` 形实录）；纯壳尾
-      // （无后随）时 fmt/span 壳重开 br 入链内首（census M1b `<b><br></b>`、
-      // 带样式 span 重开簇、`<b><a>foo[]</a></b>` 重开外层 b 形）——唯 a 在链
-      // 且拆分位紧邻前字符为 \xa0（`<a><b>foo&nbsp;[]</b></a>` 簇实录 `<p><br>
-      // </p>`，同构 `foo[]` 纯文本尾却重开外层 b，判据落文本面非结构面）时不
-      // 重开。a 本体仅后随内容面重开（spec special element boundary 语义）。
-      // v3 首版存活判据单向跳过重建，回归 14 键 v2 绿面（带样式 span 壳尾 12
-      // + `<b><a>` 2），本版按表修正。
+      // foo[]bar</a>` 双侧 a 形实录）；纯壳尾（无后随）时结构∧文本双门——
+      // 结构门：仅 walk 已过 `a` 层（seenA，`<b><a>foo[]</a></b>` 外层 b 实录
+      // `<b><br></b>` data/insertparagraph.js:1082）或链内无 a 的 fmt/span 壳
+      // 重开；文本门：a 链内拆分位紧邻前字符非 \xa0（`<b><a>foo&nbsp;[]</a>
+      // </b>` nbsp 尾实录裸 br :1126，与 :1082 同结构仅文本差——v3.1 单文本
+      // 面 / v3.2 首版单结构面各对一半，合取全表对账 part113 m1r1-m1r4）。
+      // 未过 `a` 层的壳（`<a><b>foo[]</b></a>`、`<a><b>foo&nbsp;[]</b></a>`
+      // 两簇实录 `<p><br></p>` 裸 br，gate v3 P2F 2 键）与 a 本体不重开。
+      // 无 a 链维持全量重开（census M1b `<b><br></b>`、带样式 span 重开簇）。
+      // a 本体仅后随内容面重开（spec special element boundary 语义）。
       (function () {
         var ipWalkC = ipM1OrigNode;
         // 链含 a 预扫（壳尾不重开判据用，先于 walk 定全局）。
@@ -2288,12 +2290,13 @@
             n = n.parentNode;
           }
         })(ipM1OrigNode);
-        // 拆分位紧邻前字符 \xa0 判（a 链壳尾 caret 不重开，corpus
-        // `foo&nbsp;[]` vs `foo[]` 同构分叉实录）。
+        // 文本门：拆分位紧邻前字符 \xa0 判（a 链壳尾 nbsp 尾不重开，corpus
+        // :1126 vs :1082 同构分叉实录）。
         var ipNbspC = ipM1OrigNode.nodeType === 3 && ipM1OrigOff > 0
           && String(ipM1OrigNode.nodeValue || '').charCodeAt(ipM1OrigOff - 1) === 0xa0;
         var ipSurvC = ipM1OrigOff < _zwJusNodeLength(ipM1OrigNode)
           || !!ipM1OrigNode.nextSibling;
+        var ipSeenAC = false;
         var guardC = 0;
         while (ipWalkC && guardC++ < 64) {
           if (ipWalkC === container) break;
@@ -2305,9 +2308,11 @@
               ipPushC = ipSurvHereC;
             } else if (_zwIparaIsFmtShellTag(itnC)) {
               ipPushC = _zwIparaHasVisibleChild(ipWalkC)
-                && (ipSurvHereC || !ipHasAC || !ipNbspC);
+                && (ipSurvHereC
+                    || ((ipSeenAC || !ipHasAC) && (!ipHasAC || !ipNbspC)));
             }
             if (ipPushC) ipChainC.push(ipWalkC);
+            if (itnC === 'a') ipSeenAC = true;
             ipSurvC = ipSurvHereC;
           }
           ipWalkC = ipWalkC.parentNode;

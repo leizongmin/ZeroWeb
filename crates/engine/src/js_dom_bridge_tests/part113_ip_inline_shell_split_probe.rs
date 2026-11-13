@@ -461,7 +461,8 @@ document.execCommand("insertparagraph", false, "");
 }
 
 // ⑩ a 链壳尾 nbsp（重开禁断）：语料 `<p><b><a href=foo>foo&nbsp;[]</a></b></p>` dps=div
-// EXP `<p><b><a href="foo">foo&nbsp;</a></b></p><p><br></p>`（新块裸 br 不重开）。
+// EXP `<p><b><a href="foo">foo&nbsp;</a></b></p><p><br></p>`（新块裸 br 不重开——
+// v3.2 结构判：壳链 walk 未过 a 层，与文本面 nbsp 无关）。
 #[test]
 fn test_insertparagraph_ba_chain_nbsp_end_caret_bare_m1r2() {
     use std::sync::{Arc, Mutex};
@@ -502,7 +503,7 @@ document.execCommand("insertparagraph", false, "");
             .unwrap()
             .value,
         "<p><b><a href=\"foo\">foo&nbsp;</a></b></p><p><br></p>",
-        "⑩ a 链壳尾 nbsp：不重开壳链（corpus 实录，同构 foo[] 却重开外层 b）"
+        "⑩ a 链壳尾 nbsp：不重开壳链（corpus 实录，b 在 a 内层不重开）"
     );
 }
 
@@ -548,6 +549,53 @@ document.execCommand("insertparagraph", false, "");
             .unwrap()
             .value,
         "<p><b><a href=\"foo\">foo</a></b></p><p><b><br></b></p>",
-        "⑪ a 链壳尾纯文本：外层 fmt 壳重开减 a（corpus 实录，nbsp 尾则裸 br）"
+        "⑪ a 链壳尾纯文本：外层 fmt 壳重开减 a（corpus 实录，b 在 a 外层重开）"
+    );
+}
+
+// ⑫ a 外层壳尾（v3.2 gate P2F 对账钉测）：语料 `<p><a href=foo><b>foo[]</b></a></p>`
+// dps=div EXP `<p><a href="foo"><b>foo</b></a></p><p><br></p>`（新块裸 br 不重开——
+// b 在 a 内层；v3.1 \xa0 文本判漏此纯文本形，gate v3 P2F 2 键实录）。
+#[test]
+fn test_insertparagraph_ab_chain_plain_end_caret_bare_m1r4() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce12 contenteditable><p><a href=foo><b>foo</b></a></p></div>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var host12 = document.getElementById("ce12");
+var bt12 = host12.childNodes[0].firstChild.firstChild.firstChild;
+var r12 = document.createRange();
+r12.setStart(bt12, 3);
+r12.setEnd(bt12, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r12);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce12\").innerHTML")
+            .unwrap()
+            .value,
+        "<p><a href=\"foo\"><b>foo</b></a></p><p><br></p>",
+        "⑫ a 外层壳尾纯文本：裸 br 不重开（corpus 实录，b 在 a 内层）"
     );
 }
