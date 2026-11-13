@@ -43,6 +43,39 @@ fn assert_abs(box_positions: &[(f32, f32)], expect_x: f32, label: &str) {
     }
 }
 
+/// 单盒命中位（abs_x, abs_y）列表。
+type AbsHits = Vec<(f32, f32)>;
+
+/// 按 fragment_node_ids 分桶收集同 dom_id 的 R109 split 族盒：shell（None，ZW 内部
+/// 簿记）与 Inline 片段（Some，携 IFC 文本、chromium 可见面对应物）。
+fn find_abs_positions_split(root: &LayoutBox, node_id: zero_dom::NodeId) -> (AbsHits, AbsHits) {
+    let mut shells = Vec::new();
+    let mut frags = Vec::new();
+    fn walk(
+        b: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        node_id: zero_dom::NodeId,
+        shells: &mut Vec<(f32, f32)>,
+        frags: &mut Vec<(f32, f32)>,
+    ) {
+        let ax = abs_x + b.x;
+        let ay = abs_y + b.y;
+        if b.node_id == Some(node_id) {
+            if b.fragment_node_ids.is_some() {
+                frags.push((ax, ay));
+            } else {
+                shells.push((ax, ay));
+            }
+        }
+        for c in &b.children {
+            walk(c, ax, ay, node_id, shells, frags);
+        }
+    }
+    walk(root, 0.0, 0.0, node_id, &mut shells, &mut frags);
+    (shells, frags)
+}
+
 /// display:inline 相对定位 + 仅 OOF 块级子（abspos-inline-008 形态）：taffy 单次施加，
 /// 臂不重复——span 与 abspos 子（静态位随 CB）abs_x 均 = 100−100 = 0。
 #[test]
@@ -63,8 +96,13 @@ fn r5225_rel_inline_oof_child_single_offset() {
     assert_abs(&apos, 0.0, "div#abs（静态位随 CB）");
 }
 
-/// R109 split inline 相对定位守卫：taffy 单次施加 + 臂跳过的既有行为不变
-/// （block-in-inline-relpos-001 谱系），文本 + 块级子形态 wrapper abs_x = 0。
+/// R109 split inline 相对定位守卫（R5512 载体晶格）：span 的 relative inset 载体
+/// 从 shell 移到各 Inline 匿名块片段（tree.rs Inline 片段臂保留 inset、shell 清零，
+/// 防 taffy shell inset 与片段 inset 双载体双重施加）。chromium oracle（同 markup
+/// headless 探针）：span 行盒 bbox (0,0)——片段并集即 −100 单次施加；shell 为 ZW
+/// 内部簿记盒、chromium 无对应物，断言其位于容器内容原点 100（仅外层 +100 落壳，
+/// inset 不落壳）。in-flow block 子随动（chromium 同受 −100 位移）需 CSS2
+/// §9.2.1.1 容器级 anonymous block 编织（R4482 混排容器切片），本处不断言。
 #[test]
 fn r5225_rel_inline_split_offset_preserved() {
     let html = r#"<html><body style="margin:0">
@@ -76,8 +114,9 @@ fn r5225_rel_inline_split_offset_preserved() {
 </body></html>"#;
     let (doc, result) = layout(html);
     let s = doc.get_element_by_id("s").expect("span#s");
-    let spos = find_abs_positions(&result.root, s);
-    assert_abs(&spos, 0.0, "split inline span wrapper");
+    let (shells, frags) = find_abs_positions_split(&result.root, s);
+    assert_abs(&shells, 100.0, "split inline shell（inset 载体已移片段）");
+    assert_abs(&frags, 0.0, "split inline Inline 片段（−100 单次施加）");
 }
 
 /// block-level 相对定位守卫：taffy 单次施加路径不变，嵌套块 abs_x = 0。

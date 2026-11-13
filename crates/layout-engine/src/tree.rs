@@ -4470,6 +4470,21 @@ fn build_subtree(
             };
 
             if let Some(segments) = r109_segments {
+                // CSS2 §9.2.1.1：split inline 自身 position:relative 时，relative inset
+                // 作用于其片段内容——Inline 片段直接保留（下方清零例外臂），Block 段由
+                // 下方 wrapper 外套承载（块子自身 inset 不动）。仅 Relative（sticky 的
+                // taffy inset 是滚动宿主层消费语义，不保留）。block 段仍嵌于 shell 的
+                // IFC 标记位而非容器块流—— Weaver 放置残差属 R4482「混排容器 anonymous
+                // block 几何合成」切片，本轮只落位移轴。
+                // 仅 split-INLINE（is_inline_r109）：block-mixed 容器自身 inset 由 taffy
+                // 施加于容器盒一次，片段/wrapper 再承即双重（floats-placement-vertical
+                // -004-ref2 容器 left:100 + H/block 子实返：H/blue 全 200）。R5054/R5225
+                // 「inline 保留 taffy inset」契约的载体面是 display:inline 宿主。
+                let rel_parent_inset = if is_inline_r109 && matches!(computed.position, PositionValue::Relative) {
+                    Some(computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h).inset)
+                } else {
+                    None
+                };
                 // 收集本 split inline 的 Inline 片段 anon taffy ID（按片段顺序），
                 // 循环后标记首/末，供 fragment border 边选择。
                 let mut inline_anon_ids: Vec<taffy::NodeId> = Vec::new();
@@ -4602,13 +4617,25 @@ fn build_subtree(
                                     anon_style.padding.top = taffy::style::LengthPercentage::length(0.0_f32);
                                     anon_style.padding.bottom = taffy::style::LengthPercentage::length(0.0_f32);
                                 }
-                                // 清零 inset：匿名块片段不应继承 split inline 的 position 偏移
-                                anon_style.inset = taffy::geometry::Rect {
-                                    left: taffy::style::LengthPercentageAuto::AUTO,
-                                    right: taffy::style::LengthPercentageAuto::AUTO,
-                                    top: taffy::style::LengthPercentageAuto::AUTO,
-                                    bottom: taffy::style::LengthPercentageAuto::AUTO,
-                                };
+                                // 清零 inset：匿名块片段不应继承 split inline 的 position 偏移。
+                                // 例外（CSS2 §9.2.1.1「When such an inline box is affected by
+                                // relative positioning, the relative positioning also affects
+                                // the block-level box contained in the inline box」）：split
+                                // inline 自身 position:relative 时，relative inset 即匿名块
+                                // 片段的位移——R5054/R5225「split inline 族按 taffy 单次施加」
+                                // 契约经由本 inset 兑现（block-in-inline-relpos-002：relpos
+                                // inline 的文本/block/float 全体随 left 位移）。sticky 仍清零
+                                //（taffy inset 由滚动宿主层消费，非位移语义）。
+                                if let Some(inset) = &rel_parent_inset {
+                                    anon_style.inset = *inset;
+                                } else {
+                                    anon_style.inset = taffy::geometry::Rect {
+                                        left: taffy::style::LengthPercentageAuto::AUTO,
+                                        right: taffy::style::LengthPercentageAuto::AUTO,
+                                        top: taffy::style::LengthPercentageAuto::AUTO,
+                                        bottom: taffy::style::LengthPercentageAuto::AUTO,
+                                    };
+                                }
                                 anon_style
                             };
                             let anon_taffy = if atomic_children.is_empty() {
@@ -4640,7 +4667,27 @@ fn build_subtree(
                                 viewport_w,
                                 viewport_h,
                             );
-                            child_taffy_ids.push(child_taffy);
+                            // §9.2.1.1 relative 随动：block 段外套匿名块 wrapper 承载
+                            // rel_parent_inset，块子保自身 inset——chrome oracle 实证
+                            // 两层 inset 均施加（R1044 形 +100/−100 净 0；R5225 形
+                            // span 片段与 block 段同受 −100）。直接注入会覆写块子
+                            // 自身 inset（R1044 top:−100% 被冲实例），wrapper 不然。
+                            // sticky 无随动（rel_parent_inset 为 None 走原样 push）。
+                            match rel_parent_inset {
+                                Some(inset) => {
+                                    let wrapper_style = taffy::Style {
+                                        display: taffy::style::Display::Block,
+                                        inset,
+                                        ..taffy::Style::default()
+                                    };
+                                    let wrapper = ctx
+                                        .taffy
+                                        .new_with_children(wrapper_style, &[child_taffy])
+                                        .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+                                    child_taffy_ids.push(wrapper);
+                                }
+                                None => child_taffy_ids.push(child_taffy),
+                            }
                         }
                     }
                 }
@@ -5277,6 +5324,28 @@ fn build_subtree(
         taffy_style.border.bottom = taffy::style::LengthPercentage::length(0.0_f32);
         taffy_style.padding.top = taffy::style::LengthPercentage::length(0.0_f32);
         taffy_style.padding.bottom = taffy::style::LengthPercentage::length(0.0_f32);
+    }
+    // R5512（CSS2 §9.2.1.1 + css-position-3 §6.3）：split inline 自身 position:relative
+    // 时，relative inset 的载体从 shell 移到片段——Inline 匿名块片段臂保留 inset、
+    // Block 段由 wrapper 外套承载（上方两臂）——shell 与片段双载体会在无容器 IFC
+    // 重写路径双重施加（R5225 split 锚实证）。shell 清零后位移单次施加：片段内文本
+    // 随行，wrapper 内块段随行且自身 inset 独立叠加（chromium both-apply 语义）。
+    // 纯块子无片段形态（R1044：span 无 inline 内容）不触发清零，shell 仍承 inset
+    // 转递块子——与 chromium green 面 (0,0) 一致。sticky 不在此列（taffy inset 为
+    // 滚动宿主层消费语义，片段/wrapper 臂均未保留 sticky inset，shell 口径维持
+    // R5225 既有）。
+    if ctx.r109.split_parents.contains(&dom_id)
+        && child_taffy_ids
+            .iter()
+            .any(|&cid| ctx.r109.fragment_registry.contains_key(&cid))
+        && matches!(computed.position, PositionValue::Relative)
+    {
+        taffy_style.inset = taffy::geometry::Rect {
+            left: taffy::style::LengthPercentageAuto::AUTO,
+            right: taffy::style::LengthPercentageAuto::AUTO,
+            top: taffy::style::LengthPercentageAuto::AUTO,
+            bottom: taffy::style::LengthPercentageAuto::AUTO,
+        };
     }
     let taffy_id = if child_taffy_ids.is_empty() {
         ctx.taffy.new_leaf_with_context(taffy_style, dom_id).unwrap()
