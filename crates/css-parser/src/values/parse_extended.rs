@@ -1305,15 +1305,22 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                 UnaryMathOp::Abs => it,
                 // sign(X) 结果恒 <number>，实参任意型别（§10.5）。
                 UnaryMathOp::Sign => MTNumber,
-                // sqrt/exp/log + trig：实参仅 <number>（trig 角度实参 parse 期
-                // 已弧度 Number 化），结果 <number>。
-                UnaryMathOp::Sqrt
-                | UnaryMathOp::Exp
-                | UnaryMathOp::Log
-                | UnaryMathOp::Sin
-                | UnaryMathOp::Cos
-                | UnaryMathOp::Tan => {
+                // sqrt/exp/log：实参仅 <number>，结果 <number>。sin/cos/tan
+                //（css-values-4 §10.6 <https://drafts.csswg.org/css-values-4/#funcdef-sin>）
+                // 实参 <number> 或 <angle>：字面角度 parse 期已弧度 Number 化，
+                // atan2/asin 族与角度算术复合产出 <angle> 型子树（两形 eval 同为
+                // 弧度 f64，型别门此前误拒后者）——font-property-unit-cycles
+                // `calc(1px * tan(atan2(1em, 1px)))` 与 acos-asin-atan-atan2-computed
+                // `atan(tan(180deg * …))` 页面族驱动。
+                UnaryMathOp::Sqrt | UnaryMathOp::Exp | UnaryMathOp::Log => {
                     if it == MTNumber {
+                        MTNumber
+                    } else {
+                        MTInvalid
+                    }
+                }
+                UnaryMathOp::Sin | UnaryMathOp::Cos | UnaryMathOp::Tan => {
+                    if it == MTNumber || it == MTAngle {
                         MTNumber
                     } else {
                         MTInvalid
