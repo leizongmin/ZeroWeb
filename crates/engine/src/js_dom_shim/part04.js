@@ -1039,7 +1039,7 @@
             };
           }
           if (prop === 'toDataURL') {
-            return function (_type) {
+            return function (_type, _quality) {
               if (typeof __zw_canvas_op !== 'function') return 'data:,';
               var ctx = _zwCanvasCtx[key];
               // R34xx（layers 目录）：层打开期间 toDataURL 抛 InvalidStateError。
@@ -1051,6 +1051,11 @@
               if (ctx && ctx._zwUnclean) {
                 throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
               }
+              // s423：导出格式归一（essence 小写；image/png/image/jpeg 白名单，
+              // 其余/非法 → image/png PNG fallback——同 standalone part05 口径）。
+              var _fmt = String(_type == null ? '' : _type).split(';')[0]
+                .replace(/^\s+|\s+$/g, '').toLowerCase();
+              if (_fmt !== 'image/jpeg') _fmt = 'image/png';
               // s329：bitmap 无像素（宽/高 0）→ 恒 'data:,'（spec 步骤 2，origin-clean 门之后；
               // 按属性即时读——c.width=0 动态置零同臂）。toDataURL.zero{width,size,height} 三页断言
               //（缺位时 host 仍把 0 尺寸位图编码成真 PNG）。
@@ -1060,19 +1065,30 @@
                 return 'data:,';
               }
               if (!ctx || !ctx._handle) return 'data:,'; // 未 getContext → 无 bitmap
-              var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
+              var _q = (typeof _quality === 'number' && isFinite(_quality) &&
+                _quality >= 0 && _quality <= 1)
+                ? Math.min(100, Math.max(1, Math.round(_quality * 100))) : 92;
+              var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL',
+                _fmt === 'image/jpeg' ? 'jpeg' : 'png',
+                _fmt === 'image/jpeg' ? String(_q) : ''));
               if (!csv) return 'data:,';
               var nums = csv.split(',');
               var s = '';
               for (var i = 0; i < nums.length; i++) s += String.fromCharCode(+nums[i]);
-              return 'data:image/png;base64,' + btoa(s);
+              return 'data:' + _fmt + ';base64,' + btoa(s);
             };
           }
-          // toBlob（R3296）：异步 PNG Blob 导出（镜像 standalone part05.js 实现）。callback(blob|null)
-          // 在 microtask 异步派发；返 undefined。复用 toDataURL 的 PNG 编码 host op。无 ctx 惰性创建
-          //（与同路径 toDataURL 同语义——real browser 无 ctx canvas 仍产空白 PNG，仅编码失败/无 host → null）。
+          // toBlob（R3296）：异步 PNG/JPEG Blob 导出（镜像 standalone part05.js 实现）。callback(blob|null)
+          // 在 microtask 异步派发；返 undefined。复用 toDataURL 的编码 host op。s423：type/quality
+          // 接通（同 standalone 口径——image/png/image/jpeg 白名单，其余 PNG fallback）。
+          // 无 ctx 惰性创建（与同路径 toDataURL 同语义——real browser 无 ctx canvas 仍产空白图，
+          // 仅编码失败/无 host → null）。
           if (prop === 'toBlob') {
             return function (callback, _type, _quality) {
+              // s423：导出格式归一（essence 小写；非受支持 → image/png）。
+              var _fmt = String(_type == null ? '' : _type).split(';')[0]
+                .replace(/^\s+|\s+$/g, '').toLowerCase();
+              if (_fmt !== 'image/jpeg') _fmt = 'image/png';
               var p = Promise.resolve().then(function () {
                 if (typeof __zw_canvas_op !== 'function') return null;
                 // R34xx（layers 目录）：层打开期间 toBlob 抛 InvalidStateError。
@@ -1099,12 +1115,17 @@
                 }
                 var ctx = _zwCanvasCtx[key];
                 if (!ctx || !ctx._handle) return null; // 建失败 → 无 bitmap
-                var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
+                var _q = (typeof _quality === 'number' && isFinite(_quality) &&
+                  _quality >= 0 && _quality <= 1)
+                  ? Math.min(100, Math.max(1, Math.round(_quality * 100))) : 92;
+                var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL',
+                  _fmt === 'image/jpeg' ? 'jpeg' : 'png',
+                  _fmt === 'image/jpeg' ? String(_q) : ''));
                 if (!csv) return null;
                 var nums = csv.split(',');
                 var bytes = new Uint8Array(nums.length);
                 for (var i = 0; i < nums.length; i++) bytes[i] = +nums[i];
-                return new Blob([bytes], { type: 'image/png' });
+                return new Blob([bytes], { type: _fmt });
               });
               if (typeof callback === 'function') p.then(function (blob) { callback(blob); });
               return undefined;

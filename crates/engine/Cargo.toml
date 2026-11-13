@@ -63,6 +63,7 @@ ed25519-dalek = { workspace = true }
 x25519-dalek = { workspace = true }
 getrandom = { workspace = true }
 png = { workspace = true }
+jpeg-encoder = { workspace = true }
 flate2 = "1"
 unicode-bidi = { workspace = true }
 # encoding-compat M2：TextDecoder legacy 解码 + labels 标签表（encoding 标准 tables——

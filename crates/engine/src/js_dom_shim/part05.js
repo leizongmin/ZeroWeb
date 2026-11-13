@@ -8805,10 +8805,13 @@
       }
       return el._ctx;
     };
-    // toDataURL（R2797，canvas slice 3）：PNG 导出。host 编码 ctx.pixel_buffer → PNG（csv 字节）→
-    // shim 转 Latin-1 → btoa → `data:image/png;base64,...`（复用 btoa，无 base64 dep）。仅 'image/png'
-    //（type 参数忽略，jpeg/webp defer）；host 未注册 / 编码失败 → `data:,` 回落。无 ctx 时惰性创建。
-    el.toDataURL = function (_type) {
+    // toDataURL（R2797，canvas slice 3）：PNG/JPEG 导出。host 编码 ctx.pixel_buffer（csv 字节）→
+    // shim 转 Latin-1 → btoa → `data:<mime>;base64,...`（复用 btoa，无 base64 dep）。s423：type
+    // 参数接通（spec #dom-canvas-todataurl 步骤——parse as MIME type 按 essence 比较；本引擎
+    // 支持集 = image/png + image/jpeg，其余/非法回落 image/png，PNG fallback）。quality 仅
+    // jpeg 消费（0..1 映射 1..=100，NaN/越界 → 92）。host 未注册 / 编码失败 → `data:,` 回落。
+    // 无 ctx 时惰性创建。
+    el.toDataURL = function (_type, _quality) {
       if (typeof __zw_canvas_op !== 'function') return 'data:,';
       // R34xx（layers 目录）：层打开期间 toDataURL 抛 InvalidStateError
       //（2d.layer.malformed-operations）。
@@ -8820,6 +8823,10 @@
       if (el._ctx && el._ctx._zwUnclean) {
         throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
       }
+      // s423：导出格式归一（essence 小写；非受支持 → image/png）。
+      var _fmt = String(_type == null ? '' : _type).split(';')[0]
+        .replace(/^\s+|\s+$/g, '').toLowerCase();
+      if (_fmt !== 'image/jpeg') _fmt = 'image/png';
       // s329：bitmap 无像素（宽/高 0）→ 恒 'data:,'（spec 步骤 2，origin-clean 门之后、
       // 惰性建 ctx 之前；el.width/height getter 属性即时读——createElement 产物走本实例
       // 面而非 part04 trap，c.width=0 动态置零同臂）。toDataURL.zero 断言。
@@ -8827,17 +8834,23 @@
       if (el.width === 0 || el.height === 0) return 'data:,';
       if (!el._ctx) el.getContext('2d');
       if (!el._ctx) return 'data:,';
-      var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
+      var _q = (typeof _quality === 'number' && isFinite(_quality) &&
+        _quality >= 0 && _quality <= 1)
+        ? Math.min(100, Math.max(1, Math.round(_quality * 100))) : 92;
+      var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL',
+        _fmt === 'image/jpeg' ? 'jpeg' : 'png',
+        _fmt === 'image/jpeg' ? String(_q) : ''));
       if (!csv) return 'data:,';
       var nums = csv.split(',');
       var s = '';
       for (var i = 0; i < nums.length; i++) s += String.fromCharCode(+nums[i]);
-      return 'data:image/png;base64,' + btoa(s);
+      return 'data:' + _fmt + ';base64,' + btoa(s);
     };
-    // toBlob（R3296，HTMLCanvasElement）：异步 PNG Blob 导出。镜像 toDataURL 的 host 编码路径
-    //（`__zw_canvas_op(handle,'toDataURL')` → PNG CSV 字节），但产物为 `Blob`（type 'image/png'）经
-    // **回调**异步派发（spec：返 undefined，callback(blob|null) 在 microtask 触发，失败/无 ctx→callback(null)）。
-    // 复用 toDataURL 的 PNG 编码（仅 image/png；type/quality 参数 best-effort 与 toDataURL 同），无 ctx 惰性创建。
+    // toBlob（R3296，HTMLCanvasElement）：异步 PNG/JPEG Blob 导出。镜像 toDataURL 的 host 编码路径
+    //（`__zw_canvas_op(handle,'toDataURL',fmt,quality)` → CSV 字节），但产物为 `Blob`（type = 归一
+    // 格式）经**回调**异步派发（spec：返 undefined，callback(blob|null) 在 microtask 触发，失败/无
+    // ctx→callback(null)）。s423：type 参数接通（同 toDataURL 归一口径——image/png/image/jpeg
+    // 白名单，其余 PNG fallback；quality 仅 jpeg）。无 ctx 惰性创建。
     // 用途：canvas 导出库（html2canvas/fabric.js/Chart.js「Save as Image」）+ FormData 上传 + createObjectURL 预览。
     // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-canvas-toblob
     el.toBlob = function (callback, _type, _quality) {
@@ -8852,6 +8865,10 @@
       if (el._ctx && el._ctx._zwUnclean) {
         throw _zwDomException('toBlob on an origin-unclean canvas', 'SecurityError');
       }
+      // s423：导出格式归一（essence 小写；非受支持 → image/png）。
+      var _fmt = String(_type == null ? '' : _type).split(';')[0]
+        .replace(/^\s+|\s+$/g, '').toLowerCase();
+      if (_fmt !== 'image/jpeg') _fmt = 'image/png';
       // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
       var p = Promise.resolve().then(function () {
         if (typeof __zw_canvas_op !== 'function') return null;
@@ -8862,12 +8879,17 @@
         if (el.width === 0 || el.height === 0) return null;
         if (!el._ctx) el.getContext('2d');
         if (!el._ctx || !el._ctx._handle) return null; // 无 ctx → 无 bitmap
-        var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
+        var _q = (typeof _quality === 'number' && isFinite(_quality) &&
+          _quality >= 0 && _quality <= 1)
+          ? Math.min(100, Math.max(1, Math.round(_quality * 100))) : 92;
+        var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL',
+          _fmt === 'image/jpeg' ? 'jpeg' : 'png',
+          _fmt === 'image/jpeg' ? String(_q) : ''));
         if (!csv) return null;
         var nums = csv.split(',');
         var bytes = new Uint8Array(nums.length);
         for (var i = 0; i < nums.length; i++) bytes[i] = +nums[i];
-        return new Blob([bytes], { type: 'image/png' });
+        return new Blob([bytes], { type: _fmt });
       });
       if (typeof cb === 'function') p.then(function (blob) { cb(blob); });
       return undefined; // spec：toBlob 返 undefined（非 Promise）

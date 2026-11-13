@@ -182,3 +182,7 @@ include!("js_dom_bridge_tests/part112_ihtml_shell_sel_probe.rs");
 // 编辑命令兼容 ip 206 M1 主桶探针：insertParagraph 拆分边界 inline formatting
 // element 复制/丢弃语义三形钉测（b 壳/span 壳 caret 拆分 + 壳全含选区空壳丢弃）。
 include!("js_dom_bridge_tests/part113_ip_inline_shell_split_probe.rs");
+
+// s423 canvas 导出编码格式面：toBlob/toDataURL type 参数接通（toBlob.jpeg 1F
+// 根因——type 忽略恒产 png Blob；png+jpeg 白名单，其余 PNG fallback）。
+include!("js_dom_bridge_tests/part113_s423_canvas_export_format.rs");

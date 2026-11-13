@@ -2,36 +2,72 @@
 
 **版本**: v2.0
 **日期**: 2026-11-09（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 422 收口（constraint validation candidate 门落锤：
-**object/fieldset/output 非 candidate——checkValidity/reportValidity 恒 true
-不派 invalid，object-constraint-validation 1F 清账**；账本
-evidence/2026-11-13-m2s422-object-cv-candidacy-gate.md）——s421 挂账 A1
-drained 态与 s284 联合勘根先行定谳 **no-op 闭账**（机制考古：`_layoutRect`
-与 gBCR 同源直通宿主回调，s284 雷区结构性暴露；s421 红池 90 文件逐族核查
-**零 drained 裸 handle 几何断言面**；forward map 基建完备但无驱动面，按简洁
-优先不施工，s395 残差「forward map 空返」同期闭账）+ 红池分诊
-object-constraint-validation 1F 勘根：spec §4.10.5.2.2
-#candidate-for-constraint-validation 仅 input/select/textarea/form-associated
-custom elements，object/fieldset/output 是 form-associated 但非 candidate →
-#dom-cva-checkvalidity/#reportvalidity 步 1 恒 true 不派；shim willValidate
-臂已有 OBJECT→false 而 CV 通用臂无门，setCustomValidity 后 customError 落穿
-v.valid=false → 返 false 派 invalid。修复：part04 CV 臂 FORM 分支后插入
-三 tag candidacy 门（setCustomValidity/validity 被动状态零改动照常翻转，
-willValidate 同条款恒 false 原保持）；part112 单测四断言面（object 驱动案
-镜像双轮三断言 false/true/true + validity.customError=true/.valid=false
-被动翻转 + output/fieldset 同门钉 + input candidate 不越界 + FORM 级遍历臂
-保持）。验证：unit 1P + shim 25 part 规范序拼接 node --check OK + engine
-lib 全量 3913P/7F 在册慢性红腿逐名 IDENTICAL + solo 驱动 1F→1P +
-the-object-element 目录 46P/0F 邻域零扰动 + sweep ×2 对 s421 双基线
-stable=8454 两轮均恰 1 driving F→P、new 红 0（唯 sizes-auto 超时上报与簇 D
-optional 文件键 F→T 在册闪变）+ make test 154 腿 ok 唯 FAILED 腿 engine
-lib 慢性 IDENTICAL、fmt/clippy 门禁腿通过。在册红 204F+14T → **203F+14T**
-（归一闪变面后稳定 −1F；轮 2 raw 202F+15T 系簇 D optional 成行 + sizes-auto
-回摆）。下一步：红池分诊续——余件单红逐一分诊勘根（video 帧像素表面 FIXME
-跨域大件待立项，挂账池承 s416/s417/s420/s421：渲染流 6 面 + embed intrinsic
-sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询 GB-20261031
-用户门 / checkable parent-label 2F / form-nameditem override builtins
-fix#19c 冲突 s137 用户门维持）。
+**状态**: Active——M2 切片 423 收口（canvas 导出编码格式面落锤：**toBlob/
+toDataURL type 参数接通——png+jpeg 白名单、非受支持格式 PNG fallback，
+toBlob.jpeg 1F 清账**；账本
+evidence/2026-11-13-m2s423-canvas-export-format.md）——红池分诊三备选排除
+（select-required-attribute=style-system 渲染流 / video-loading-lazy=
+scrollIntoView+intrinsic 渲染流 / closed-details-layout-apis=渲染流）后
+勘根 toBlob.jpeg：shim 四导出位（part05 standalone toDataURL/toBlob + part04
+元素 proxy trap 同对）全部忽略 type，host `__zw_canvas_op('toDataURL')` 仅
+PNG（R2797 jpeg/webp defer）；spec #dom-canvas-toblob 步骤 type parse as
+MIME type、非受支持格式回落 image/png——诚实修复需真 JPEG 编码（谎标 type
+字节仍 PNG 非合规）。修复：①host toDataURL op 扩参（格式 png|jpeg + quality
+1..=100 缺省 92；jpeg 臂直 alpha **合成黑底** rgb×a/255 后
+jpeg-encoder ColorType::Rgba 编码，u16 上限守卫）②shim 四导出位格式归一
+（essence 小写 + 白名单 + PNG fallback）③quality 仅 `typeof === 'number'`
+且 isFinite 且 [0,1] 消费（'bogus'/{}/null/undefined/true/'0.01' → 缺省 92
+——notnumber 面六参数须与无 quality 逐字节一致，`+x` 强转会错消费）。
+新依赖 `jpeg-encoder = "0.6"`（纯 Rust 零依赖编码器；解码面 jpeg-decoder
+既有不变，控制文档/账本同提交记账）。验证：unit part113 六断言面 1P +
+shim 规范序 node --check OK + solo 驱动 1F→1P + the-canvas-element 目录
+**首 sweep 130P/2F 曝光两 collateral 面**（type 忽略期两案走「无 jpeg」捷径
+分支假绿，接通后真断言路径首启：toDataURL.jpeg.alpha 黑底合成面修复① +
+toDataURL.jpeg.quality.notnumber 面修复②）→ 复跑 **132P/0F 零红** +
+engine lib 全量 3914P/7F（+1P）慢性逐名 IDENTICAL + sweep ×2 对 s422 双
+基线 my2 **stable=8454 state-diff=1 new=0 gone=0** 唯 driving F→P、my1
+state-diff=2（+簇 D home-end.optional T→F 在册闪变）+ new=1 =
+textfieldselection/select-event 文件级一次性 Timeout（s419 在册 b1-flake
+同名文件，my2 复原全 Pass）+ make test 154 腿 ok 唯 FAILED 腿 engine lib
+慢性 IDENTICAL。在册红 203F+14T → raw **201F+15T**（归一闪变面后稳定
+−1F；轮 1 raw 203F+14T 含簇 D flap + select-event 一次性 Timeout）。
+下一步：红池分诊续——余件单红逐一分诊勘根（video 帧像素表面 FIXME 跨域
+大件待立项，挂账池承 s416/s417/s420/s421/s422：渲染流 6 面 + embed
+intrinsic sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询
+GB-20261031 用户门 / checkable parent-label 2F / form-nameditem override
+builtins fix#19c 冲突 s137 用户门维持）。
+
+> **▶ 承前（2026-11-13 M2 切片 422 收口）——constraint validation candidate 门（object-constraint-validation 1F 清账）+ A1 drained 态勘根定谳闭账**：commit 谱系 git log s422（3e1fd9d31），账本 evidence/2026-11-13-m2s422-object-cv-candidacy-gate.md。原 Active 段留档——
+> **状态**: Active——M2 切片 422 收口（constraint validation candidate 门落锤：
+> **object/fieldset/output 非 candidate——checkValidity/reportValidity 恒 true
+> 不派 invalid，object-constraint-validation 1F 清账**；账本
+> evidence/2026-11-13-m2s422-object-cv-candidacy-gate.md）——s421 挂账 A1
+> drained 态与 s284 联合勘根先行定谳 **no-op 闭账**（机制考古：`_layoutRect`
+> 与 gBCR 同源直通宿主回调，s284 雷区结构性暴露；s421 红池 90 文件逐族核查
+> **零 drained 裸 handle 几何断言面**；forward map 基建完备但无驱动面，按简洁
+> 优先不施工，s395 残差「forward map 空返」同期闭账）+ 红池分诊
+> object-constraint-validation 1F 勘根：spec §4.10.5.2.2
+> #candidate-for-constraint-validation 仅 input/select/textarea/form-associated
+> custom elements，object/fieldset/output 是 form-associated 但非 candidate →
+> #dom-cva-checkvalidity/#reportvalidity 步 1 恒 true 不派；shim willValidate
+> 臂已有 OBJECT→false 而 CV 通用臂无门，setCustomValidity 后 customError 落穿
+> v.valid=false → 返 false 派 invalid。修复：part04 CV 臂 FORM 分支后插入
+> 三 tag candidacy 门（setCustomValidity/validity 被动状态零改动照常翻转，
+> willValidate 同条款恒 false 原保持）；part112 单测四断言面（object 驱动案
+> 镜像双轮三断言 false/true/true + validity.customError=true/.valid=false
+> 被动翻转 + output/fieldset 同门钉 + input candidate 不越界 + FORM 级遍历臂
+> 保持）。验证：unit 1P + shim 25 part 规范序拼接 node --check OK + engine
+> lib 全量 3913P/7F 在册慢性红腿逐名 IDENTICAL + solo 驱动 1F→1P +
+> the-object-element 目录 46P/0F 邻域零扰动 + sweep ×2 对 s421 双基线
+> stable=8454 两轮均恰 1 driving F→P、new 红 0（唯 sizes-auto 超时上报与簇 D
+> optional 文件键 F→T 在册闪变）+ make test 154 腿 ok 唯 FAILED 腿 engine
+> lib 慢性 IDENTICAL、fmt/clippy 门禁腿通过。在册红 204F+14T → **203F+14T**
+> （归一闪变面后稳定 −1F；轮 2 raw 202F+15T 系簇 D optional 成行 + sizes-auto
+> 回摆）。下一步：红池分诊续——余件单红逐一分诊勘根（video 帧像素表面 FIXME
+> 跨域大件待立项，挂账池承 s416/s417/s420/s421：渲染流 6 面 + embed intrinsic
+> sizing 面 ×2 / sizes-auto F5 用户门 / 簇 D select 立项征询 GB-20261031
+> 用户门 / checkable parent-label 2F / form-nameditem override builtins
+> fix#19c 冲突 s137 用户门维持）。
 
 > **▶ 承前（2026-11-13 M2 切片 421 收口）——pending 视图 handle rect + embed/object 无内容态零 rect 门（embed-allowed-schemas 5F 清账）**：commit 谱系 git log s421（effc987e5），账本 evidence/2026-11-13-m2s421-pending-handle-rect.md。原 Active 段留档——
 > **状态**: Active——M2 切片 421 收口（pending 视图 handle rect 落锤：**裸 handle
