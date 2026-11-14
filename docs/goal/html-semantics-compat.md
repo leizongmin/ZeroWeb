@@ -2,35 +2,50 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 441 收口（红池 48 键伪红定谳清偿 + fetch_raw
-自愈化 + 基带重测；账本
-evidence/2026-11-15-m2s441-redpool-resource-phantom-clear.md，零源码
-改动，语料通道一笔）。
-s440 挂账红池分诊定谳：relevant-mutations.html 46F 大块红（+lazy 1 +
-adoption 1 = 48 键）= **green-2x2.png 资源缺失伪红**（s126 本地生成的
-gitignore 资源，本树丢失时窗 11-05 s293 绿 ~ 11-14 s440 sweep 红，丢失
-向量不可考；s440 轮末 00:23 已重生成）——solo 121P/0F/0T 与 s126 收口
-逐键同；全域双跑 join **8113P/206F/6T/1U** vs s440 8065P/254F/7T/1U 恰
-48 键 F→P 零其他位移，stable-T 7→6 唯一移除 = zzz-s433 探针键（s440
-轮末 00:21 已删，本轮复核销账）。**根修**：实测上游 pin 在档（jsdelivr
-2×2 16-bit RGB，断言面与本地 8-bit 版等值——relevant mutations 族只断
-load/error/currentSrc/naturalWidth）→ 25 脚本 ③k 加 `fetch_raw
-"images/green-2x2.png"`（与 green-1x1 等同通道），fresh checkout 与资源
-丢失由 make 前置 fetch 步自愈（删文件→fetch→cmp 恒等端到端验证），
-s126 资源分发门对本资源消解；本地文件换上游字节 solo 复验同绿。全桥套
-件绿窗轮末收口跑：**1596P/0F exit 0**（s438 基线 1579 +17 = 组合树新
-钉，零失败）。**红池重盘（206F）**：select 147（GB-20261031 门）+
-video 4（GB-20261114-VIDEO 门）+ dialog 16（abspos 居中/top-layer/inert
-——布局渲染域为主，goal 契约边界外）+ img 13（decoder/renderer 耦合挂
-账）+ combobox 12（tentative）+ tabular 4 + tails 10——in-domain 非门
-非跨域仅 ≈26 键小面。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137。下一步：小尾巴逐件勘根（combobox tentative
-12 / tabular 4 / tails 10）或候门决项（video P1+P2 / 簇 D A2）；dialog
-16 红块移交/协同归 rendering 流记账；全桥套件绿窗轮末收口跑常态化。
-push 前 rebase 入他流 fb81665dd（ip 壳携刀，engine 共享面）→ 组合树
-74c998e92 复跑双腿：stable-P/F 集合逐键恒等零位移，T 6→5 + mismatch 1
-= 可选 select 文件级键 Fail↔Timeout 单腿置换（s439 在册负载族，簇 D 门
-内），基带 8113P/206F/6T/1U 维持。
+**状态**: Active——M2 切片 442 收口（小尾巴分诊 + color.window.js 三段
+定谳；账本
+evidence/2026-11-15-m2s442-color-window-teardown-hang-attribution.md，
+零源码零语料净变更）。
+分诊收窄：col-span-limits 2F = offsetWidth 渲染域（clamp 三键已 Pass，
+引擎 colspan 钳制健全）、rowspan-0 ×2 = clientHeight 渲染域、onblur ×2
+= s209 在册族、details/embed/textarea/audio 余 = 渲染域或能力门；
+**主勘根 = color.window.js 三段定谳**：①"load support" 假 Fail =
+/css/support/color-testcommon.js 缺席（他 goal 部分拉取未覆盖，上游 pin
+在档 167 行 self-contained）；②资源就位后真面 **196/196 全 Pass**（色
+值矩阵 + limited-srgb/display-p3/alpha，四次独立 solo 逐键一致）——假
+Fail 背后无真红；③**默认 30s deadline → completion-teardown hang**（末
+子测后进程树静默僵死，execute_script 同步不返回阻死 Rust deadline 轮
+询；`ZW_CORPUS_CASE_TIMEOUT_SECS=15` 覆写 solo 干净 rc=0 全 196 Pass
+= runner deadline 先到期走 force-collect 臂可绕；机制假设：注入 harness
+页预算与 case deadline 同值 30s，二者同到 harness timeout handler 在
+shim 内同步死循环）。全量 sweep 同默认 30s → 该案 worker 挂死毒化
+join，**资源补齐在 hang 修复前不可落地**：③l fetch 行撤销 + 本地资源
+删除，假 Fail 键留账面。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137。下一步：**主攻 shim completion/timeout
+teardown hang 勘根修复**（15s/30s 对照 + do_wait 活体采样证据链已
+足），修复后重落 ③l 资源 → 预期 F−1/P+196 位移按语料变更归因；次序
+combobox tentative 12 续分诊；全桥套件绿窗轮末收口跑常态化；基带
+8113P/206F/6T/1U 维持（本轮零净变更）。
+
+> **▶ 承前（2026-11-15 M2 切片 441 收口）——红池 48 键伪红定谳清偿 +
+> fetch_raw 自愈化 + 基带重测（账本
+> evidence/2026-11-15-m2s441-redpool-resource-phantom-clear.md，零源码
+> 改动，语料通道一笔）**：
+> s440 挂账红池分诊定谳：relevant-mutations.html 46F 大块红（+lazy 1 +
+> adoption 1 = 48 键）= **green-2x2.png 资源缺失伪红**（s126 本地生成的
+> gitignore 资源，本树丢失时窗 11-05 s293 绿 ~ 11-14 s440 sweep 红；
+> s440 轮末 00:23 已重生成）——solo 121P/0F/0T 与 s126 收口逐键同；
+> 全域双跑 join **8113P/206F/6T/1U** vs s440 8065P/254F/7T/1U 恰 48 键
+> F→P 零其他位移，stable-T 7→6 唯一移除 = zzz-s433 探针键（销账）。
+> **根修**：上游 pin 在档 → 25 脚本 ③k 加 `fetch_raw
+> "images/green-2x2.png"`（删文件→fetch→cmp 恒等端到端验证自愈），
+> s126 资源分发门对本资源消解；本地文件换上游字节 solo 复验同绿。全桥
+> 套件绿窗收口跑 **1596P/0F exit 0**。红池重盘（206F）：select 147
+> （簇 D 门）+ video 4（VIDEO 门）+ dialog 16（渲染域）+ img 13
+> （decoder/renderer 挂账）+ combobox 12 + tabular 4 + tails 10。push
+> 前 rebase 入他流 fb81665dd（ip 壳携刀，engine 共享面）→ 组合树复跑双
+> 腿：stable-P/F 集合逐键恒等零位移，T 6→5 + mismatch 1 = 可选 select
+> 文件级键单腿置换（s439 在册负载族），基带维持。
 
 > **▶ 承前（2026-11-15 M2 切片 440 收口）——dialog 五窗红相归因定谳
 > + CE 域门修复（1 键 F→P 零位移；账本
