@@ -14,6 +14,11 @@
 
 ### 新增
 
+- **CSS Images 渐变与 image-set 值面（wptfyi-css DC-2 g40–g46，2026-11-13/15）**：渐变 invalid 写面拒收与 canonical 串化（三型调用方畸形整渐变拒收）；色标文法位约束 + style 内容属性写面逐声明拒收（color-stops-parsing 60F 全页清零）；image-set() 解析与串化（`-webkit-` 别名剥除、dpi/dpcm→dppx 折算、calc 三态折叠、canonical 恒 Some 投影，image-set 两页 150F 全页清零）+ calc 负分辨率存储形回读与 content `<image>` 域 ImageSet 臂；css-images 3,091P/124F、css-values 3,553→4,038P。
+- **canvas 导出与嵌入内容语义族（html-semantics s415–s423，2026-11-13/15）**：toBlob/toDataURL type 接通 + 真 JPEG 编码（纯 Rust `jpeg-encoder`）；createPattern video 源臂 + ImageBitmap 污染旗标传播；SVG `<image>` 载入链接通；constraint validation candidate 门；批插同锚倒转根因修复；video ended 挂死根因修复（settle duration 真值链 + headless EOS 派发）。
+- **insertParagraph 与 inserthtml 编辑语义族（editing-compat，2026-11-13/15）**：insertParagraph 拆分边界 inline 壳语义刀 + childNodes live semantics 三刀（PR #303，corpus 净 −5）；inserthtml 壳域选区臂五腿（行内壳溶解/rawtext 壳内拼接/pre 块解包，语料 F 119→106）；strike S1/S2a 同 tag 并拢门 + sub/sup va 冲突壳批。
+- **脚本模块扫描与加载修复（script-sandbox，2026-11-13/15）**：模块重写扫描器正则字面量感知（压缩单行伪注释吞噬修复）；import specifier 字面量内 `;` 截断修复（transform 面五守卫清除）。
+- **渲染修复族（R5510–R5565，2026-11-13/15）**：表内盒 content_height 补写收窄 r109 载体域；img 原子基线取 margin box 底边；flex item calc margin 固有测量 px 分量入账；split inline relative inset 载体晶格修复；inline 壳 CB 透明（R695 % 高 walk）；window.length 恢复 `[Replaceable]`；trig 型别门 sin/cos/tan 放行 `<angle>` 实参；counter-increment 文法门五件套、text-size-adjust % 槽收口；corpus 谱系真态维持 ~680F/16,594（R5566 定谳本树 A/B 基线切换 17,049 案环境双口径管理）。
 - **CSS Values 值面续扩（wptfyi-css DC-2 g14–g23，2026-11-12/13）**：min/max/clamp canonical 保持串化 + 写面 math 文法/槽族门 + clamp none 重写（invalid 语料 155F 清零，css-values 3,228→3,553）；random() 播种求值全链（sha256 doc/element 双 seed compute 期原位替换，+103）与 random-item() 写面文法门（+14）；attr() 值支持批（parse/替换/级联门/CSSOM cleanup null 臂）；viewport 单位 provenance 保形（sv*/lv*/dv*/vi/vb 20 形 parse 期保留变体）+ gap/padding 接受面补回 viewport 基类单位臂。
 - **inline format 嵌套簇与 bold/italic 值面（editing，2026-11-12/13）**：bold 数值权重边界 merge + 六命令 cef 门 rc=false 化（+60）、bold/italic 载体吸收与边界挖入五臂（+55）、italic toggle-off 值面两臂（peel 镜像 + 阻断载体资格两轴化，+12）；嵌套簇 B1/D2/E1+D1 根因刀收口（裸文本 ref 壳插发射、apply 时坐标平移、overlay 锚重定向等）——六 format 文件残余 161F→65F。
 - **声明式 CSS module 与 style @import（html-semantics s412/s413，2026-11-12/13）**：声明式 CSS module 双臂 CSP 门 + 元素站 error 面 + parse 期 map 注册 + import 免 fetch + kind 固定——tentative/ CSP 簇 6 文件解挂、11 文件全绿收口；style @import 动态臂勘根定谳引擎分歧不施工。
