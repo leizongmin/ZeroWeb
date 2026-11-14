@@ -2,42 +2,53 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 434 收口（桥套件 7 红全树 bisect 归因 + 全
-清偿轮，429 断点接手；**1561P/7F → 1568P/0F**；账本
-evidence/2026-11-14-m2s434-bridge-7red-bisect-attribution.md）——
-五轮串行 bisect（判据二值化脚本 bad iff 判据集 FAILED，test-guard 包裹，
-compile fail exit 125 skip；每轮 good = 上轮 first bad；锚 2e260d532
-整体 101 但判据 7 例全绿，二值化不受非判据旧红干扰）钉定引入链：ws×2 ←
-ba03fd7ff（net-api M3 ws interfaces）→ fetch_filtered ← f021e11fb（fetch
-M3 redirect）→ sw-iframe ← 4615680c0（xhr M3 auth）→ img×2 ← 015172475
-（SMIL 文档级时间线 M1）→ stream ← c6dcbce0a（http-cache M2 wire 第 12
-参）。**四案同型 = 引擎契约翻转系 upstream 语料定谳 spec 正解、桥测试
-前提过时**（仅动测试）：①part45 ws×2——err wire 只置 `_zwErrSeen，
-error 由 close 臂补派恰一次且 readyState 先 CLOSED
-（fail-the-websocket-connection），close 后 send 静默 abort（现行 spec
-send step 2，send/007/008 断言面）；②part23 sw-iframe mock 挑战流化——
-首跳 401+WWW-Authenticate → 同源透明重试携 Basic（4615680c0 延迟注入，
-恒 200 mock 下凭据永不上线）；③part10 fetch_filtered mock 302 补 ACAO
-——cors check 先于 manual→opaqueredirect 转换（f021e11fb 步序修正），
-期望串零变化；④part10 stream 网络错误腿改断 reject TypeError（c6dcbce0a
-error wire 硬 reject，不再 resolve status-0 伪响应）。**一案引擎真
-bug**：SMIL 事件泵 `_scheduleTick（part09b）setTimeout 轮询在无宿主
-定时器环境（裸 sandbox/桥测试）回落 `_defer microtask 自链不可终止
-——首个 checkpoint 烧尽 `_deferBudget(256) 且桥测试环境无
-`__zw_begin_script 重置点 → 同环境一切后续 deferred 回调（img/svg load
-`_defer` 派发面）永久丢弃；修 = part09b 单点双探针守卫
-（`__zw_test_setTimeout`/`__zw_setTimeout` 皆缺不排轮询——learnings #30
-禁 microtask 自链同判据；seek 一次性扫描单发自终结不守卫；生产
-webview/runner 双探针命中行为零变化；生产「泵 tick 链单 checkpoint 内
-×256 自链」同构饿死面在案留账）。验证：solo 7 案全绿 + 全桥套件
-**1568P/0F**（前 1561P/7F；push 前 rebase 入他流 css anchor/B1 两笔后
-终稿复跑 **1570P/0F**，+2 系他流新增桥测试零失败维持）+ 25 part 拼装
-node --check + fmt 全 crate 干净 + clippy lib+tests -D warnings 干净。
-**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：selectedcontent 翻绿
-机制归因；window.open 真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D
-A2 待门决）；dialog R-s31 簇/img density/embed sizing face 到货复验；
-全桥套件绿窗轮末收口跑常态化（s433 挂账兑现，本轮 1568 全绿为基线）。
+**状态**: Active——M2 切片 435 收口（selectedcontent-listbox 红利案翻绿
+机制归因轮，零源码改动；账本
+evidence/2026-11-14-m2s435-selectedcontent-flip-attribution.md）——
+**s433 红利案归属更正**：`selectedcontent-listbox :: <select size=4>
+should support <selectedcontent>.` F→P 翻绿 = 同窗他流 site-opt t68
+（PR #302）cd29066a3 的 innerHTML 融合 getter 空串折叠修复
+（`_zwFusedInnerHtmlSel` 尾 `!== '' → null` 折叠退役——宿主写异步 apply
+下同 turn 写 '' 后立即读，融合视图合法空串被折叠 null 回落 host 陈旧
+快照 'one'），**与 s433 FORM named-first 六刀零因果**（页面无 form、
+六刀 FORM-only）。s433「stable-P +2」净账不变：驱动案 nameditem 真
+s433 翻绿；红利案系时序相关、机制无关的他流贡献。证据链：criterion
+二值化 bisect（判据反转 bad iff 页面 PASS，good 锚 = 9f66f2bbe s432
+基线）6 腿钉 first bad = cd29066a3；父提交 d1545546b solo 补验 F 同签名
+（expected '' got 'one'，与 s432 sweep2/4/6 存证逐字同）；刀级 A/B——
+HEAD 仅回退折叠一行 solo 复红同签名、还原后 P（hunk 级因果钉死，
+cd29066a3 其余 573 行与本页零交集）。**方法论注记**：双流并行窗口内
+单案翻绿不可默认归属本流施工，翻绿案须 bisect 归因后记账（run-rules
+#10 归因纪律的翻绿面推广）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）。下一步：window.open 真弹窗链评估轮；红池分诊续
+（video P1+P2 或簇 D A2 待门决）；dialog R-s31 簇/img density/embed
+sizing face 到货复验；全桥套件绿窗轮末收口跑常态化（s433 挂账兑现，
+基线 1570P/0F）。
+
+> **▶ 承前（2026-11-14 M2 切片 434 收口）——桥套件 7 红全树 bisect
+> 归因 + 全清偿轮（429 断点接手；1561P/7F → 1568P/0F）**：账本
+> evidence/2026-11-14-m2s434-bridge-7red-bisect-attribution.md。五轮
+> 串行 bisect（判据二值化 bad iff 判据集 FAILED，每轮 good = 上轮
+> first bad；锚 2e260d532 判据全绿验证）钉定引入链：ws×2 ← ba03fd7ff
+> → fetch_filtered ← f021e11fb → sw-iframe ← 4615680c0 → img×2 ←
+> 015172475 → stream ← c6dcbce0a。**四案同型 = 引擎契约翻转系 upstream
+> 语料定谳 spec 正解、桥测试前提过时**（仅动测试）：①part45 ws×2——
+> err wire 只置标记、error 由 close 臂补派恰一次且 readyState 先
+> CLOSED（fail-the-websocket-connection）+ close 后 send 静默 abort
+> （现行 spec send step 2）；②part23 sw-iframe mock 挑战流化（401+
+> WWW-Authenticate → 重试携 Basic）；③part10 fetch_filtered mock 302
+> 补 ACAO（cors check 先于 opaqueredirect 转换）；④part10 stream 网络
+> 错误腿改断 reject TypeError（error wire 硬 reject）。**一案引擎真
+> bug**：SMIL 事件泵 `_scheduleTick（part09b）setTimeout 轮询在无宿主
+> 定时器环境回落 `_defer microtask 自链不可终止——首个 checkpoint 烧尽
+> `_deferBudget(256) 且无 `__zw_begin_script 重置点 → 同环境一切后续
+> deferred 回调（img/svg load 派发面）永久丢弃；修 = part09b 单点双探针
+> 守卫（guidelines 不变式 #30 禁 microtask 自链同判据；生产/runner
+> 双探针命中行为零变化；生产「泵 tick 链单 checkpoint ×256 自链」同构
+> 饿死面在案留账）。验证：solo 7 案全绿 + 全桥套件 1568P/0F（push 前
+> rebase 入他流两笔后终稿复跑 1570P/0F）+ 拼装 node --check + fmt +
+> clippy 干净。learning 沉淀 bugs/2026-11/
+> 2026-11-14-hostless-polling-microtask-starvation-defer-budget.md。
 
 > **▶ 承前（2026-11-14 M2 切片 433 收口）——FORM named-first
 > [OverrideBuiltins] 全 trap 面 + s137 排除清单退役轮（驱动案翻绿
