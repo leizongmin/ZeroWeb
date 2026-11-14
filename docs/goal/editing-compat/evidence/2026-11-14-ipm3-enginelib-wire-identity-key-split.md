@@ -98,3 +98,20 @@ Remove { selector: "#t68c > p:nth-child(1)" }  # engine wire 已携 fresh 章
   （[对方 evidence §241](../html-semantics-compat/evidence/2026-11-14-m2s433-form-named-first-override-builtins.md)）。
 - 后续：s433 改 shim part03/04/05 → corpus 四腿于组合态新锚 fresh 重射
   batch-ipm3-fix-gate-v2（每 corpus 腿前 load-wait 门防伪影复现）。
+
+## fix-gate-v2 竞态焚毁 ＋ 二次 ab 尾截（2026-11-14 17:04–17:09）
+
+- **同名脚本竞态（Rally 同 session 并发轮）**：`batch-ipm3-fix-gate-v2.sh` 文件名
+  被同 session 的并行轮先建（salvage 版，锚 94883fbbe/bin 808f——写于 s433 入站前，
+  锚已过期）；本流 Write 覆盖同名文件后 launch，bash 首读拿到**对方字节**
+  （log 首行 pid=545290 却打印 salvage 锚＝读偏移错位执行实证，v5 同款风险）。
+  处置：545290 TERM 止损，验尸无孤儿腿；文件名焚毁，重发射换名
+  `batch-ipm3-fixgate-comb-r1`，launch 命令内嵌 md5 原子校验防再撞。
+- **二次 ab 尾截 T=1（混合二进制残跑，数据仅作签名参考）**：545290 以 salvage
+  字节跑到 L2 ab，实际执行的 runner 已是组合态二进制 74321866（target/ 共享，
+  本流预构建产物）——`ab rc=2 P=10059 F=0 T=1 wall=305s`，与 v1（bin 808f，
+  P=10067/0F/303s）**两个二进制独立复现同一尾页 300s 预算截断签名**，
+  且两次均在 loadavg ≥3 并发租户窗口内（本次 load 7.78）→ 环境伪影归因强化；
+  该腿数据不作门禁证据。
+- 协调信道：`batch-ipm3-fix-gate-v2.log`（对方字节进度＋二次尾截计数）留档
+  不删，供后续轮判读碰撞时序。
