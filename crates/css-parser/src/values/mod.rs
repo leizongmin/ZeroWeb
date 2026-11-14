@@ -16,6 +16,7 @@ pub mod parse_layout;
 pub mod parse_misc;
 pub mod parse_transform;
 pub mod random;
+pub mod serialize_gradient;
 pub mod serialize_math;
 mod transform_helpers;
 pub mod types;
@@ -40,6 +41,7 @@ pub use random::{
     RandomEvalContext, RandomFamily, RandomSpec, canonicalize_random_keys, parse_random_args, random_family_allowed,
     random_item_args_valid, substitute_random_values,
 };
+pub use serialize_gradient::*;
 pub use serialize_math::*;
 pub use types::*;
 

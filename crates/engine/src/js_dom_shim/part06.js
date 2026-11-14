@@ -2141,6 +2141,18 @@
         && typeof globalThis.__zw_anchor_func_check === 'function') {
       if (globalThis.__zw_anchor_func_check(propName, raw) !== 'true') return null;
     }
+    // g41（css-images-4 §serializing-gradients）：background-image 渐变声明值
+    // canonical 串化整值委托（grid_cssom G1 单实现双通道同型——Rust 单点
+    // canonicalize_background_image_specified：配置前置 `in <method>` 后置、
+    // 缺省法冗余省略、xyz→xyz-d65 别名展开；非渐变/未识别面 Rust 侧原文
+    // passthrough 零回归，回调恒返串无拒写哨兵）。回调未注册（兜底链）不
+    // 校验零漂移。
+    // https://drafts.csswg.org/css-images-4/#serializing-gradients
+    if (propName === 'background-image'
+        && typeof globalThis.__zw_gradient_normalize_decl === 'function') {
+      var _grd = globalThis.__zw_gradient_normalize_decl(propName, raw);
+      if (typeof _grd === 'string') return _grd;
+    }
     // DC-2 light-dark image 批：image 四属性 light-dark() 顶层前缀浅校验
     //（part11-color.js __zwImageNormalizeDecl——undefined=不介入 passthrough、
     // null=拒、串=放行原串）。light-dark-image 语料 invalid 组锚（arity≠2/

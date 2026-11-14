@@ -376,6 +376,7 @@ fn test_gradient_with_position_and_size() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToRight,
             stops: vec![
                 GradientColorStop {

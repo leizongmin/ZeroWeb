@@ -297,6 +297,7 @@ mod tests {
     fn test_linear_gradient_to_primitive() {
         let grad = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::Rgba(255, 0, 0, 255),
@@ -319,6 +320,7 @@ mod tests {
     fn test_gradient_to_primitive_currentcolor_resolves_to_element_color() {
         let grad = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::CurrentColor,
@@ -340,6 +342,7 @@ mod tests {
     fn test_radial_gradient_to_primitive() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -366,6 +369,7 @@ mod tests {
     fn test_conic_gradient_to_primitive() {
         let grad = GradientValue::Conic(ConicGradient {
             interpolation: Default::default(),
+            specified: None,
             repeating: false,
             from_angle: 90.0,
             position_x: LengthValue::Percentage(50.0),
@@ -400,6 +404,7 @@ mod tests {
     fn test_radial_closest_side() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -429,6 +434,7 @@ mod tests {
     fn test_radial_farthest_side() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -452,6 +458,7 @@ mod tests {
     fn test_radial_length_size() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -530,6 +537,7 @@ mod tests {
     fn test_r5077_px_stops_normalize_to_gradient_line() {
         let grad = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -560,6 +568,7 @@ mod tests {
         // 百分比色标不参与归一（语义已相对线长）。
         let grad_pct = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::Rgba(255, 0, 0, 255),

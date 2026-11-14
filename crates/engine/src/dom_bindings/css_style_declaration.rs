@@ -286,6 +286,8 @@ fn native_style_named_setter(
         // `rotate(acos(1))` 存为 `rotate(calc(0deg))`（WPT css-values
         // serialize 桶：sin-cos-tan-serialize / acos-asin-atan-atan2-serialize
         // 以 specified 读回等价断言驱动；无折叠点返 None 走原值臂）。
+        // g41：background-image 渐变 canonical 串化在 fold_decl_specified
+        // 分派内单点接线（写面四站 + mutation replay 三站共享）。
         folded
     } else {
         zero_css_parser::values::canonicalize_anchor_functions(val.trim())

@@ -1,5 +1,6 @@
 // Auto-generated test file — split from values.rs
 use super::super::*;
+use crate::values::canonicalize_background_image_specified as canon;
 
 #[test]
 fn test_parse_timing_function_keywords() {
@@ -2431,4 +2432,153 @@ fn test_fold_background_image_set_resolution_serialize() {
         Some("image-set(url(\"图.png\") calc(NaN * 1dppx), url(\"b\") 2x)".to_string()),
         "multibyte url prefix safe"
     );
+}
+
+// ── g41 渐变声明值 canonical 串化（css-images-4 §serializing-gradients）──
+
+#[test]
+fn test_gradient_specified_canonical_reorder() {
+    // 配置前置、`in <method>` 后置（两种输入序归一同一 canonical）。
+    assert_eq!(
+        canon("linear-gradient(in lab 30deg, red, blue)").as_deref(),
+        Some("linear-gradient(30deg in lab, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(30deg in lab, red, blue)").as_deref(),
+        Some("linear-gradient(30deg in lab, red, blue)"),
+        "already-canonical stays (idempotent)"
+    );
+    assert_eq!(
+        canon("linear-gradient(in lab to right bottom, red, blue)").as_deref(),
+        Some("linear-gradient(to right bottom in lab, red, blue)"),
+        "corner word order preserved as-written"
+    );
+    // conic：from/at 配置前置，方法词贪心消费（含 hue 法）。
+    assert_eq!(
+        canon("conic-gradient(in hsl decreasing hue from 30deg, red, blue)").as_deref(),
+        Some("conic-gradient(from 30deg in hsl decreasing hue, red, blue)")
+    );
+    assert_eq!(
+        canon("conic-gradient(in hsl increasing hue at right center, red, blue)").as_deref(),
+        Some("conic-gradient(at right center in hsl increasing hue, red, blue)")
+    );
+    // radial：配置原文前置（FIXME: 4-token 位置 `at left 10px top 50em` 走
+    // parse_position_pair 仅 1-2 token 缺口，归 gradient-position 刀，不在本切片）。
+    assert_eq!(
+        canon("radial-gradient(in hwb at right center, red, blue)").as_deref(),
+        Some("radial-gradient(at right center in hwb, red, blue)")
+    );
+    assert_eq!(
+        canon("radial-gradient(in hwb 50px, red, blue)").as_deref(),
+        Some("radial-gradient(50px in hwb, red, blue)")
+    );
+}
+
+#[test]
+fn test_gradient_specified_method_redundancy_and_alias() {
+    // 冗余省略：站型隐含缺省法（legacy 站 → srgb；predefined 站 → oklab）。
+    assert_eq!(
+        canon("linear-gradient(in srgb, red, blue)").as_deref(),
+        Some("linear-gradient(red, blue)"),
+        "srgb + legacy stops omitted"
+    );
+    assert_eq!(
+        canon("linear-gradient(in oklab, color(srgb 1 0 0), blue)").as_deref(),
+        Some("linear-gradient(color(srgb 1 0 0), blue)"),
+        "oklab + predefined stops omitted"
+    );
+    assert_eq!(
+        canon("linear-gradient(in oklab, red, blue)").as_deref(),
+        Some("linear-gradient(in oklab, red, blue)"),
+        "oklab + legacy stops kept"
+    );
+    assert_eq!(
+        canon("linear-gradient(in srgb 30deg, color(srgb 1 0 0), blue)").as_deref(),
+        Some("linear-gradient(30deg in srgb, color(srgb 1 0 0), blue)"),
+        "srgb + predefined stops kept"
+    );
+    // shorter hue 缺省省略、非缺省 hue 法保留。
+    assert_eq!(
+        canon("linear-gradient(in hsl shorter hue, red, blue)").as_deref(),
+        Some("linear-gradient(in hsl, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(to right in lch longer hue, red, blue)").as_deref(),
+        Some("linear-gradient(to right in lch longer hue, red, blue)")
+    );
+    // xyz → xyz-d65 别名展开（css-color-4 §9.1）。
+    assert_eq!(
+        canon("linear-gradient(in xyz, red, blue)").as_deref(),
+        Some("linear-gradient(in xyz-d65, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(in display-p3, red, blue)").as_deref(),
+        Some("linear-gradient(in display-p3, red, blue)"),
+        "wide-gamut canonical text preserved"
+    );
+}
+
+#[test]
+fn test_gradient_specified_passthrough_faces() {
+    // 未识别空间 → None passthrough（渲染回退语义不变，R2288）。
+    assert_eq!(canon("linear-gradient(in bogus, red, blue)"), None);
+    // 非渐变面整值 passthrough（url/none/多层混合/文法 invalid）。
+    assert_eq!(canon("none"), None);
+    assert_eq!(canon("url(a.png)"), None);
+    assert_eq!(canon("linear-gradient(red, blue), url(a.png)"), None);
+    assert_eq!(
+        canon("linear-gradient(, red, blue)"),
+        None,
+        "invalid gradient passthrough (A-knife rejects later)"
+    );
+    assert_eq!(canon("light-dark(url(a), url(b))"), None);
+    // 多层全渐变逐层串化。
+    assert_eq!(
+        canon("linear-gradient(in srgb, red, blue), linear-gradient(red, blue)").as_deref(),
+        Some("linear-gradient(red, blue), linear-gradient(red, blue)")
+    );
+}
+
+#[test]
+fn test_gradient_specified_identity_and_whitespace() {
+    // 无方法既有 canonical 形恒等（当前 raw echo 通过面零回归前提）。
+    assert_eq!(
+        canon("linear-gradient(red, blue)").as_deref(),
+        Some("linear-gradient(red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(30deg, red, 50%, blue)").as_deref(),
+        Some("linear-gradient(30deg, red, 50%, blue)"),
+        "interpolation hint stop preserved"
+    );
+    assert_eq!(
+        canon("linear-gradient(to right, red, blue)").as_deref(),
+        Some("linear-gradient(to right, red, blue)")
+    );
+    // 空白归一：连续空白折叠单空格、顶层逗号归一 `, `。
+    assert_eq!(
+        canon("linear-gradient(  red ,  blue )").as_deref(),
+        Some("linear-gradient(red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(red,blue)").as_deref(),
+        Some("linear-gradient(red, blue)")
+    );
+}
+
+#[test]
+fn test_fold_background_image_gradient_canonical_dispatch() {
+    // g41 单点接线：fold_decl_specified background-image 分派 = 渐变 canonical
+    // 串化（写面四站 + mutation replay 三站共享消费）→ image-set calc 折叠回落。
+    assert_eq!(
+        fold_decl_specified("background-image", "linear-gradient(in lab 30deg, red, blue)").as_deref(),
+        Some("linear-gradient(30deg in lab, red, blue)")
+    );
+    // image-set 面回落 g40 折叠臂（canonicalize None → fold_image_set_specified）。
+    assert_eq!(
+        fold_decl_specified("background-image", "image-set(url(\"a\") calc(1dppx * NaN))").as_deref(),
+        Some("image-set(url(\"a\") calc(NaN * 1dppx))")
+    );
+    // 非渐变非 image-set 面 None 原文。
+    assert_eq!(fold_decl_specified("background-image", "url(a.png)"), None);
 }

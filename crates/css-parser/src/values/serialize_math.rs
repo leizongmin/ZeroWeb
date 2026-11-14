@@ -1223,7 +1223,12 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // 29 案驱动——`image-set(url("") calc(1x * NaN))` → `image-set(url("")
         // calc(NaN * 1dppx))`）；非 image-set 形 / 无 calc( 形 None 保留原文
         // 零漂移（gradient/url/none 等背景值不经本臂）。
-        "background-image" => fold_image_set_specified(v),
+        // g41：渐变声明值 canonical 串化前置（css-images-4
+        // [§serializing-gradients](https://drafts.csswg.org/css-images-4/#serializing-gradients)：
+        // 配置前置/`in <method>` 后置/缺省法冗余省略/xyz→xyz-d65 别名展开）——
+        // 渐变面 None 时回落 image-set calc 折叠臂（g40），两臂互斥补全。
+        "background-image" => super::serialize_gradient::canonicalize_background_image_specified(v)
+            .or_else(|| fold_image_set_specified(v)),
         _ => None,
     }
 }
