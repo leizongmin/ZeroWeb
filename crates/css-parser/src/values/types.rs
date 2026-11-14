@@ -1619,6 +1619,13 @@ impl<'a> CalcParser<'a> {
                     CalcOp::Subtract,
                     Box::new(expr),
                 ),
+                // Resolution 叶同 Length 保族重写 `0dppx - x`（css-values-4 §8
+                // 维度一元负号，如 image-set `calc(-1dppx)` 存储形回读）：纯
+                // Resolution 维度门认两侧 Resolution 叶，求值数值不变；字面
+                // `calc(0 - 1dppx)`（number−resolution 混型）不经本臂、门仍拒。
+                CalcExpr::Resolution(_) => {
+                    CalcExpr::BinaryOp(Box::new(CalcExpr::Resolution(0.0)), CalcOp::Subtract, Box::new(expr))
+                }
                 other => CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(other)),
             };
         }

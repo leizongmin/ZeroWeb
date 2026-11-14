@@ -560,6 +560,8 @@ fn content_value_to_computed(v: zero_css_parser::values::ContentValue) -> Conten
         ContentValue::Counters { name, separator, style } => ContentComputedValue::Counters { name, separator, style },
         ContentValue::Url(u) => ContentComputedValue::Url(u),
         ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
+        // g46：image-set 直通（`<image>` 域，filter() 内层递归同型）。
+        ContentValue::ImageSet(is) => ContentComputedValue::ImageSet(is),
         ContentValue::List(items) => ContentComputedValue::List(items),
         ContentValue::Filtered { image, filters } => ContentComputedValue::Filtered {
             image: Box::new(content_value_to_computed(*image)),
@@ -1004,6 +1006,9 @@ pub fn apply_advanced_property_value(
                     }
                     ContentValue::Url(u) => ContentComputedValue::Url(u),
                     ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
+                    // g46：image-set 直通（分辨率/选项模型恒等，css-content-3
+                    // content-list `<image>` 域）。
+                    ContentValue::ImageSet(is) => ContentComputedValue::ImageSet(is),
                     ContentValue::List(items) => ContentComputedValue::List(items),
                     // R5022：filter() 图像函数——内层递归映射（parser 已限 \<image\> 语法域）。
                     ContentValue::Filtered { image, filters } => ContentComputedValue::Filtered {

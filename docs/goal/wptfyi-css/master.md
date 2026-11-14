@@ -2,7 +2,22 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
-当前 css-images **3087P/128F**、css-values 4038P/1549F/6T（g45-b1）。
+当前 css-images **3091P/124F**、css-values 4038P/1549F/6T（g46-b1）。
+**g46 完成（11-15）**：calc 负分辨率存储形回读 + content×image-set 刀——
+探针定谳 `calc(-1 * 1x)` 得 "none" 根因在 canonical 存储形 `calc(-1dppx)`
+回读（calc 一元负号维度字面 neg 重写落 `0 - x` 通用臂 → 纯 Resolution 门
+拒裸 Number 叶）：共享解析器 neg 臂加 Resolution 保族重写
+`Resolution(0) - x`（镜像 Length `0px - x`，字面混型 `calc(0 - 1dppx)` 仍拒）
++ computed 负值钳 0（css-values-4 §6.4，oracle `0dppx`）+ content `<image>`
+域 ImageSet 臂（`parse_image_set_value` 单实现点，background 层臂同源）+
+style-system 直通 + engine content_to_css 复用 image_set_to_css。A/B
+（B0=results-g45-b1/B1=results-g46-b1）：css-images 3087→**3091P 净 +4**
+（image-set-computed F 4→0 全页清零，image-set 双页收口 0F+0F），css-values
+±0 零回归；单测 css-parser 3,227（+1 钉，账面更正 g45 3,227 实为 3,226）/
+style-system 2,538/engine 4,013 全绿，fmt/clippy 净。残面：position-invalid
+5F/conic-calc 3F 细形、attr-security 3F（css-values-5 污点传播刀）、content
+image-set 渲染面 FIXME。见 [evidence
+2026-11-15-g46-calc-negative-resolution-content-image-set](evidence/2026-11-15-g46-calc-negative-resolution-content-image-set.md)。
 **g45 完成（11-15）**：image-set 解析与串化刀——image-set() 整值可解析
 （css-images-4 §image-set-nota：`-webkit-` 别名剥除、负字面分辨率拒收、dpi/
 dpcm→dppx 折算、calc 三态折叠 `fold_resolution_typed` 含符号归一重试）+

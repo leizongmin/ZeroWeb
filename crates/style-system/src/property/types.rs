@@ -1523,6 +1523,10 @@ pub enum ContentComputedValue {
     /// 渐变函数（R4045，CSS Content 3：content 接受 \<image\>）。元素 content:\<gradient\>
     /// → element-becomes-replaced-with-gradient，paint 按内容盒绘制渐变。
     Gradient(values::GradientValue),
+    /// image-set() 响应式图像（g46，css-content-3 #content-property：content-list
+    /// 接受 `<image>`）。复用 css-parser [`values::ImageSetValue`] 直通（分辨率/
+    /// 选项文法同一模型）；渲染面 FIXME: 替换图像绘制挂账（computed 串化已通）。
+    ImageSet(values::ImageSetValue),
     /// 多 item 混合内容序列（`"Chapter " counter(c) ": "`）。复用 css-parser
     /// 的 ContentListItem（Str/Counter）；paint 期逐 item 解析拼文本。
     List(Vec<values::ContentListItem>),

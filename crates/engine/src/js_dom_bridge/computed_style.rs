@@ -3148,6 +3148,10 @@ fn image_set_option_to_css(
             }
         },
     };
+    // 负分辨率计算值钳 0（css-values-4 §6.4：`<resolution>` 无负值——WPT
+    // image-set-computed oracle `calc(-1 * 1x)` → `0dppx`；字面负值 parse 期
+    // 已拒，此处仅收 calc 折叠负值）。
+    let dppx = dppx.max(0.0);
     out.push(' ');
     out.push_str(&zero_css_parser::values::format_resolution_dppx(dppx));
     if let Some(mime) = &opt.mime {
@@ -3714,6 +3718,9 @@ fn content_to_css(c: &ContentComputedValue, element_color: &ColorValue, font_siz
         C::Gradient(GradientValue::Linear(g)) => linear_gradient_to_css(g, element_color, font_size_px),
         C::Gradient(GradientValue::Radial(g)) => radial_gradient_to_css(g, element_color, font_size_px),
         C::Gradient(GradientValue::Conic(g)) => conic_gradient_to_css(g, element_color, font_size_px),
+        // g46：image-set computed 串化复用 background-image 同一实现点（分辨率
+        // 归一 dppx、url 引号化、渐变 computed 形——css-content-3 `<image>` 域）。
+        C::ImageSet(is) => image_set_to_css(is, element_color, font_size_px),
         C::List(items) => items.iter().map(content_list_item_to_css).collect::<Vec<_>>().join(" "),
         // R5022：filter() 图像函数——`filter(<image>, <filter-list>?)`；列表空省略第二参。
         C::Filtered { image, filters } => {
@@ -4858,5 +4865,53 @@ mod g45_image_set_computed_serialize_tests {
             computed_image_set("-webkit-image-set(url(http://{{host}}/example.png) 1x)"),
             "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
         );
+    }
+
+    #[test]
+    fn negative_calc_resolution_clamps_to_zero() {
+        // g46：负分辨率计算值钳 0（css-values-4 §6.4 无负 <resolution>；WPT
+        // image-set-computed oracle `calc(-1 * 1x)` → `0dppx`）。
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) calc(-1 * 1x))"),
+            "image-set(url(\"http://{{host}}/example.png\") 0dppx)"
+        );
+        // canonical 存储形（`calc(-1dppx)`，g46 保族重写后回读可解析）同钳 0。
+        assert_eq!(
+            computed_image_set("image-set(url(\"http://{{host}}/example.png\") calc(-1dppx))"),
+            "image-set(url(\"http://{{host}}/example.png\") 0dppx)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod g46_content_image_set_tests {
+    //! content×image-set 支持门与 computed 串化（g46，driving: image-set-computed
+    //! content 2F）。oracle 取自 image-set-computed.sub.html:66。
+
+    use super::content_to_css;
+    use zero_css_parser::values::ColorValue;
+    use zero_css_parser::values::{parse_content, parse_extended_visual::parse_image_set_value};
+    use zero_style_system::property::types::ContentComputedValue;
+
+    #[test]
+    fn content_image_set_computed_serializes() {
+        let is = parse_image_set_value(
+            "image-set(url('http://{{host}}/example.png') 192dpi, linear-gradient(black, white) 1x)",
+        )
+        .expect("content image-set must parse");
+        let computed = content_to_css(
+            &ContentComputedValue::ImageSet(is),
+            &ColorValue::Rgba(0, 0, 0, 255),
+            16.0,
+        );
+        assert_eq!(
+            computed,
+            "image-set(url(\"http://{{host}}/example.png\") 2dppx, linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255)) 1dppx)"
+        );
+        // parse_content 与单实现点同源（支持门即此臂）。
+        assert!(matches!(
+            parse_content("image-set(url(a.png) 1x)"),
+            Some(zero_css_parser::values::ContentValue::ImageSet(_))
+        ));
     }
 }

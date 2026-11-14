@@ -865,22 +865,35 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
 
     // image-set() / -webkit-image-set()（css-images-4 §image-set-nota）：前缀别名
     // parse 期剥除（canonical 恒落标准形），选项文法见 [`parse_image_set_options`]。
-    if is_image_set_prefixed(value) {
-        let lower = value.to_ascii_lowercase();
-        let head = if lower.starts_with("-webkit-image-set(") {
-            "-webkit-image-set(".len()
-        } else {
-            "image-set(".len()
-        };
-        if !value.ends_with(')') {
-            return None;
-        }
-        let args = &value[head..value.len() - 1];
-        let options = parse_image_set_options(args)?;
-        return Some(BackgroundImageValue::ImageSet(ImageSetValue { options }));
+    if let Some(is) = parse_image_set_value(value) {
+        return Some(BackgroundImageValue::ImageSet(is));
     }
 
     None
+}
+
+/// 解析单 image-set() 调用为选项表（css-images-4 §image-set-nota）：标准形与
+/// `-webkit-` 别名（parse 期剥除，canonical 恒落标准形）。
+///
+/// background-image 层表与 content `<image>` 语法域共用单实现点
+///（css-content-3 #content-property：content-list 接受 `<image>`）。
+pub fn parse_image_set_value(value: &str) -> Option<ImageSetValue> {
+    let value = value.trim();
+    if !is_image_set_prefixed(value) {
+        return None;
+    }
+    let lower = value.to_ascii_lowercase();
+    let head = if lower.starts_with("-webkit-image-set(") {
+        "-webkit-image-set(".len()
+    } else {
+        "image-set(".len()
+    };
+    if !value.ends_with(')') {
+        return None;
+    }
+    let args = &value[head..value.len() - 1];
+    let options = parse_image_set_options(args)?;
+    Some(ImageSetValue { options })
 }
 
 /// 解析 image-set() 实参为选项表（css-images-4 §image-set-nota）。

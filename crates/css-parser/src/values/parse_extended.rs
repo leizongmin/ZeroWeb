@@ -640,6 +640,11 @@ pub enum ContentValue {
     /// 渐变是 image 的子类型）。元素 content:\<gradient\> → element-becomes-replaced-with-
     /// gradient，按 content 盒绘制渐变。
     Gradient(crate::values::parse_transform::GradientValue),
+    /// image-set() 响应式图像（css-content-3 #content-property：content-list
+    /// 接受 `<image>`，image-set 是 image 子型；g46 content×image-set 支持门刀）。
+    /// 内层复用 background-image 同一选项文法单实现点
+    ///（[`parse_extended_visual::parse_image_set_value`]）。
+    ImageSet(crate::values::ImageSetValue),
     /// filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1 #FilterCSSImageValue，
     /// R5022）——content 接受 \<image\>，filter() 是 image 的函数形态。内层限 url/gradient/
     /// filter（\<image\> 语法域）；滤镜列表空 = 无滤镜等价内层图像。
@@ -817,14 +822,25 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     {
         return Some(ContentValue::Gradient(g));
     }
+    // image-set() 响应式图像（g46，css-content-3 #content-property：content-list
+    // 接受 `<image>`）：复用 background-image 选项文法单实现点；`-webkit-` 别名
+    // parse 期剥除。置于渐变分支后（image-set 非渐变函数，parse_gradient 返 None
+    // 不冲突）。
+    if let Some(is) = super::parse_extended_visual::parse_image_set_value(input) {
+        return Some(ContentValue::ImageSet(is));
+    }
     None
 }
 
 /// 解析 content 的 \<image\> 语法域（filter() 图像函数内层递归用）：仅 url/gradient/
-/// filter 合法，其余 content 值（string/counter/attr/none/normal/list）非图像拒收。
+/// image-set/filter 合法，其余 content 值（string/counter/attr/none/normal/list）
+/// 非图像拒收。
 fn parse_content_image(input: &str) -> Option<ContentValue> {
     match parse_content(input)? {
-        v @ ContentValue::Url(_) | v @ ContentValue::Gradient(_) | v @ ContentValue::Filtered { .. } => Some(v),
+        v @ ContentValue::Url(_)
+        | v @ ContentValue::Gradient(_)
+        | v @ ContentValue::ImageSet(_)
+        | v @ ContentValue::Filtered { .. } => Some(v),
         _ => None,
     }
 }

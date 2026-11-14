@@ -3198,3 +3198,77 @@ fn test_g45_image_set_invalid_page_forms_rejected() {
         "image-set(url(\"example.png\") 1x)"
     ));
 }
+
+// g46：calc 负分辨率存储形回读刀（image-set-computed `calc(-1 * 1x)` → `0dppx`
+// 链修复）——calc 内一元负号维度字面保族重写 `0dppx - x` 后纯 Resolution 维度
+// 门可达，canonical 存储形 `calc(-1dppx)` 求值期再解析不再丢属性。
+#[test]
+fn test_g46_negative_calc_resolution_roundtrip() {
+    use crate::values::parse_extended_visual::parse_image_set_value;
+    // 折叠层：负维度字面与负乘积形同基折叠。
+    assert_eq!(
+        crate::values::serialize_math::fold_resolution_typed("-1dppx"),
+        Some(Some(-1.0))
+    );
+    assert_eq!(
+        crate::values::serialize_math::fold_resolution_typed("-1 * 1x"),
+        Some(Some(-1.0))
+    );
+    // 原始形 parse + 拒收判定通过（写面接受）。
+    assert!(parse_background_image("image-set(url('http://127.0.0.1:8000/example.png') calc(-1 * 1x))").is_some());
+    assert!(!background_image_decl_invalid(
+        "image-set(url('http://127.0.0.1:8000/example.png') calc(-1 * 1x))"
+    ));
+    // canonical 存储形（`calc(-1dppx)`）回读再解析——g45 前丢属性 "none" 的根因点。
+    assert!(parse_background_image("image-set(url(\"http://127.0.0.1:8000/example.png\") calc(-1dppx))").is_some());
+    // 指定值 canonical 投影保持（calc 折叠形发射）。
+    assert_eq!(
+        canonicalize_background_image_specified("image-set(url('http://127.0.0.1:8000/example.png') calc(-1 * 1x))"),
+        Some("image-set(url(\"http://127.0.0.1:8000/example.png\") calc(-1dppx))".to_string())
+    );
+    // 语义分界（css-values-4 §10.1）：字面 `calc(0 - 1dppx)` number−resolution
+    // 混型仍 invalid——保族重写只对一元负号臂生效，不放宽混型门。
+    assert_eq!(crate::values::serialize_math::fold_resolution_typed("0 - 1dppx"), None);
+    // content `<image>` 域（css-content-3 content-list）：image-set 单实现点复用，
+    // 192dpi Plain 保形 + dppx 2.0；渐变选项缺省分辨率 None。
+    let c = parse_content("image-set(url('http://{{host}}/example.png') 192dpi, linear-gradient(black, white) 1x)")
+        .expect("content image-set must parse");
+    match c {
+        ContentValue::ImageSet(is) => {
+            assert_eq!(is.options.len(), 2);
+            assert!(matches!(*is.options[0].image, BackgroundImageValue::Url(_)));
+            match &is.options[0].resolution {
+                Some(ImageSetResolution::Plain { text, dppx }) => {
+                    assert_eq!(text, "192dpi");
+                    assert_eq!(*dppx, 2.0);
+                }
+                other => panic!("expected plain 192dpi, got {other:?}"),
+            }
+            assert!(matches!(&is.options[0].mime, None));
+            assert!(matches!(&*is.options[1].image, BackgroundImageValue::Gradient(_)));
+            match &is.options[1].resolution {
+                Some(ImageSetResolution::Plain { text, dppx }) => {
+                    assert_eq!(text, "1x");
+                    assert_eq!(*dppx, 1.0);
+                }
+                other => panic!("expected plain 1x, got {other:?}"),
+            }
+        }
+        other => panic!("expected ImageSet, got {other:?}"),
+    }
+    // `-webkit-` 别名 content 同剥除。
+    assert!(matches!(
+        parse_content("-webkit-image-set(url(a.png) 1x)"),
+        Some(ContentValue::ImageSet(_))
+    ));
+    // content 负字面分辨率仍拒收（g45 文法位不变）。
+    assert_eq!(parse_content("image-set(url(a.png) -1x)"), None);
+    // filter() 图像函数内层接受 image-set（`<image>` 语法域）。
+    assert!(matches!(
+        parse_content("filter(image-set(url(a.png) 2x))"),
+        Some(ContentValue::Filtered { .. })
+    ));
+    // content 串化单实现点：parse_image_set_value 与 background-image 层臂同源。
+    assert!(parse_image_set_value("image-set(url(a.png) 1x)").is_some());
+    assert_eq!(parse_image_set_value("url(a.png)"), None);
+}
