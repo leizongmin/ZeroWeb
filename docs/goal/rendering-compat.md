@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5521 corpus flake 相位监测轮（R5520 下一步①②③落轮——0 net code：corpus 当前树 7bafd4902（覆盖对端 df85ed2a6 Selection API）16594 vs R5520 批 683F＝681F——NEW=2（insert-inline-middle-003 在册 insert 互翻族 R5374/R5516＋tao-128 R5376 记档）GONE=4（tao-145/148/149/154 表族互翻带），两新案 solo×3 6/6 全绿 ✓0.00% 定谳批相位，真态 FIXED=∅ REGRESSED=∅ 基线真态维持 ~680F；make reftest 725/725；③原料面空转维持——wpt-data v1.10 即最新、无清单外新案、⑥⑦⑧⑨无新授权）** **（2026-11-14）**
+>
+> - **结果**：R5520 下一步①②③落轮（监测轮，零代码变更）。① corpus A/B 见上——df85ed2a6 渲染侧零副作用收账；内测 725/725 同窗绿。②对端观察：pull --rebase 干净（零冲突），df85ed2a6（engine Selection collapse/extend/addRange 校验门）入本轮 corpus 窗口。③R5517① % min/max float used 域复核：无 corpus 驱动案（R5517 择案时 css-sizing 目录 triage 已排除余案），按 R5513①「无驱动案休眠」先例维持不动。
+> - **验证**：corpus 全量 A/B（16594）真态零回归（两新案 solo×3 全绿）；make reftest **725/725**；零 `.rs` 变更（fmt/clippy/lib/bench-gate 不触发）。
+> - **挂账**：**销账**：R5520 下一步①②③。**新增**：无。**维持**：全谱系（⑥⑦⑧⑨待决策、特性缺失带 ~105、深结构、动态、writing-mode、多角度 plateau 结论）；R5517 新增①（% min/max float used 域，无驱动案休眠）；R5516 新增①②；R5515①IFC 行进域；R5513①②；R5509②；R5508 挂账；对端 js_dom_bridge 7F；R4482 双锚；重腿静窗纪律。
+> - **下一步 R5522**：①corpus 基线在册族 flake 相位监测续（tao/insert/gradient 互翻族维持「solo×3 双二进制」收账口径）；②对端挂账观察（pull --rebase 干净性＋共享面核对）；③新开工点＝对端流/新 WPT 批导入带来的清单外新案（先 PNG 对照小差带）或待用户决策清单点名（⑥⑦⑧⑨/深结构授权）。
+>
 > **▶ R5520 corpus 当前树 A/B＋attr() bench-gate 补账收账轮（R5519 下一步①②落轮——0 net code：corpus 当前树 96fce2f98（覆盖 R5519 收尾后对端三笔 349a891ed UA 表单系统色/0ee05d644 ip M2/9f66f2bbe s432）16594 vs R5519 批 683F＝683F 表观持平——NEW=3（tao-145/149/154）GONE=3（border-collapse-dynamic-002＋tao-127＋intrinsic-percent-replaced-dynamic-005），六案全在 R5418/R5420/R5421/R5467/R5376 记档表族互翻带，solo×3 18/18 全绿 ✓0.00% 定谳批相位，真态 FIXED=∅ REGRESSED=∅ 基线真态维持 ~680F；attr() 轮 bench-gate 定向补账收账——上轮 busy-abort 排队本串行窗口补跑 GATE PASS 34 指标 NEW=0）** **（2026-11-14）**
 >
 > - **结果**：R5519 下一步①②落轮（监测＋补账收账轮，零代码变更）。① corpus A/B 当前树见上——对端三笔渲染侧 corpus 覆盖零副作用收账（上轮 A/B 取样树止于 1b84edd8c，三笔落地于其后，本树 96fce2f98 补齐覆盖）；②上轮排队面收口：静窗 watcher 主动停（ZeroWeb-3 流 wpt-runner 3h 时限长跑压制触发条件，串行化入本轮）、target-disk-guard 清空后 release runner 重建 2m26s（07:56:02 fresh）＋solo 冒烟 ✓、定向 bench-gate 静窗（load 4.55 无 wpt-runner）补跑收账。
