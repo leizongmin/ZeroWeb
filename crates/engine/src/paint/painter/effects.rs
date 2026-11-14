@@ -3037,6 +3037,14 @@ fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_s
                 zero_css_parser::values::BackgroundEdge::Right | zero_css_parser::values::BackgroundEdge::Bottom => {
                     (container_size - image_size) - off
                 }
+                // g47：逻辑缘（css-values-5 §4.2）防御臂——apply 期已按 htb/ltr
+                // 物化（XStart→Left 等），正常不达；映射语义同物理侧。
+                zero_css_parser::values::BackgroundEdge::XStart | zero_css_parser::values::BackgroundEdge::YStart => {
+                    off
+                }
+                zero_css_parser::values::BackgroundEdge::XEnd | zero_css_parser::values::BackgroundEdge::YEnd => {
+                    (container_size - image_size) - off
+                }
             }
         }
     }

@@ -3824,7 +3824,10 @@ fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
         // 单缘偏移对（单轴形）：折算同 axis 口径 + 缺省轴补 center（g47）。
         P::EdgeOffset(edge, offset) => {
             let axis = bg_position_axis_to_css(&P::EdgeOffset(*edge, offset.clone()));
-            if matches!(edge, BackgroundEdge::Left | BackgroundEdge::Right) {
+            if matches!(
+                edge,
+                BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd
+            ) {
                 format!("{} 50%", axis)
             } else {
                 format!("50% {}", axis)
@@ -3846,15 +3849,27 @@ fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
         P::Length(f) => format_num(*f as f64, "px"),
         P::Percent(f) => format_num(*f as f64, "%"),
         P::Calc(_) => String::new(),
-        // g47（object-position-computed 语料钉）：缘偏移对 computed 折算——
-        // left/top 缘 = 偏移本身（`left 5%`→`5%`）；right/bottom 缘按 100−x 折算，
-        // 百分比数值化（`right 30%`→`70%`），px 长度保 calc 形
-        //（`right 20px`→`calc(100% - 20px)`，`bottom 10px`→`calc(100% - 10px)`）。
+        // g47（object-position-computed / background-position-computed 语料双向钉，
+        // 两面共用同一 computed 折算模型）：缘偏移对折算——left/top 缘 = 偏移本身
+        //（`left 5%`→`5%`）；right/bottom 缘按 100−x 折算，百分比数值化
+        //（`right 30%`→`70%`、`bottom right 19%`→`81%`），px 长度保 calc 形，
+        // 负偏移翻转为加法形（`right -18px`→`calc(100% + 18px)`，css-backgrounds
+        // background-position-computed `top 17px right -18px` 案钉）。
         // Length 在 apply 期已 resolve 为 Px，此处必为 px。
         P::EdgeOffset(side, offset) => match side {
-            BackgroundEdge::Left | BackgroundEdge::Top => bg_position_axis_to_css(offset),
-            BackgroundEdge::Right | BackgroundEdge::Bottom => match offset.as_ref() {
+            BackgroundEdge::Left
+            | BackgroundEdge::Top
+            // g47：逻辑缘防御臂（apply 期已物化为物理缘，正常不达）
+            | BackgroundEdge::XStart
+            | BackgroundEdge::YStart => bg_position_axis_to_css(offset),
+            BackgroundEdge::Right
+            | BackgroundEdge::Bottom
+            | BackgroundEdge::XEnd
+            | BackgroundEdge::YEnd => match offset.as_ref() {
                 P::Percent(p) => format_num((100.0 - *p) as f64, "%"),
+                P::Length(px) if *px < 0.0 => {
+                    format!("calc(100% + {})", format_num(-*px as f64, "px"))
+                }
                 P::Length(px) => format!("calc(100% - {})", format_num(*px as f64, "px")),
                 // FIXME: calc 偏移的缘折算（calc(100% - <calc>) 嵌套）无语料钉，暂空
                 _ => String::new(),
@@ -4894,6 +4909,20 @@ mod g47_position_computed_fold_tests {
                 P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Length(10.0))),
             )),
             "calc(100% - 20px) calc(100% - 10px)"
+        );
+    }
+
+    #[test]
+    fn negative_offset_folds_to_addition_calc() {
+        // 负偏移翻转加法形：`top 17px right -18px` → `calc(100% + 18px) 17px`
+        //（css-backgrounds/parsing/background-position-computed 案钉，bg 面同
+        // 一折算模型）。
+        assert_eq!(
+            bg_position_layer_to_css(&two(
+                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(-18.0))),
+                P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(17.0))),
+            )),
+            "calc(100% + 18px) 17px"
         );
     }
 

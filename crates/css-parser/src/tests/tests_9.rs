@@ -1694,13 +1694,28 @@ fn test_background_position_calc_math_functions() {
 
 #[test]
 fn test_background_position_three_values_keyword_offset() {
-    use crate::values::{BackgroundPositionValue as Bp, parse_background_position};
-    // g47：缘偏移对全有全无（object-position-invalid 语料实钉 `right 3% center`
-    // Chrome 拒收，`left 50px center` 结构全同等拒）——3 值混搭形不再放行。
+    use crate::values::{
+        BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position, parse_position_strict,
+    };
+    // g47 分面回归（R2478 oracle 复原）：`left 50px center` 对 bg 面
+    //（<bg-position> 宽容文法，css-backgrounds-3）合法——pair + 裸 center 混搭；
+    // css-backgrounds/parsing/background-position-valid.html `left 10px center`
+    // 案与 R2478 reftest 同构实钉。全有全无拒收属严格 <position> 面。
+    let p = parse_background_position("left 50px center").expect("3 值应解析（bg 面宽容文法）");
+    let Bp::TwoValue(h, v) = p else {
+        panic!("应为 TwoValue，got {p:?}");
+    };
+    assert!(
+        matches!(*h, Bp::EdgeOffset { side: BackgroundEdge::Left, ref offset } if matches!(**offset, Bp::Length(_))),
+        "水平轴应为 EdgeOffset(Left, length)，got {h:?}"
+    );
+    assert!(matches!(*v, Bp::Center), "垂直轴应为 Center，got {v:?}");
+    // 严格 <position> 面（object-position / 渐变 at）同形拒收（css-values-5 §4.2
+    // 无 3 值形；object-position-invalid 语料钉）。
     assert_eq!(
-        parse_background_position("left 50px center"),
+        parse_position_strict("left 50px center"),
         None,
-        "pair + 裸 center 混搭应拒收"
+        "严格面 pair + 裸 center 混搭应拒收"
     );
     // 裸关键字两值形（`left center` → x=Left/y=Center）保持合法，保 R2478
     // 语义覆盖（偏移对正例由 four_values 两测试继续锚定）。

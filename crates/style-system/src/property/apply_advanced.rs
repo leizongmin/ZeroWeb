@@ -316,13 +316,22 @@ fn position_value_to_computed(
     v: zero_css_parser::values::BackgroundPositionValue,
     style: &ComputedStyle,
 ) -> Option<BackgroundPositionComputedValue> {
-    use zero_css_parser::values::BackgroundPositionValue as Bp;
+    use zero_css_parser::values::{BackgroundEdge, BackgroundPositionValue as Bp};
     Some(match v {
         Bp::Center => BackgroundPositionComputedValue::Center,
         Bp::Left => BackgroundPositionComputedValue::Left,
         Bp::Right => BackgroundPositionComputedValue::Right,
         Bp::Top => BackgroundPositionComputedValue::Top,
         Bp::Bottom => BackgroundPositionComputedValue::Bottom,
+        // g47：逻辑边缘按 htb/ltr 物理映射物化（css-values-5 §4.2：computed = 物理
+        // <length-percentage> 对）。FIXME(write-modes)：flow-relative 映射应随元素
+        // writing-mode/direction（engine 尚无 vertical-rl 等写入模式布局），暂恒
+        // htb/ltr——position-computed.tentative 的 test_writing_modes 32 子测中仅
+        // 与恒定映射一致的写组可过。
+        Bp::XStart => BackgroundPositionComputedValue::Left,
+        Bp::XEnd => BackgroundPositionComputedValue::Right,
+        Bp::YStart => BackgroundPositionComputedValue::Top,
+        Bp::YEnd => BackgroundPositionComputedValue::Bottom,
         Bp::Length(lv) => BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style)),
         Bp::Percent(pct) => BackgroundPositionComputedValue::Percent(pct),
         Bp::Calc(expr) => BackgroundPositionComputedValue::Calc(expr),
@@ -333,7 +342,15 @@ fn position_value_to_computed(
         }
         Bp::EdgeOffset { side, offset } => {
             // R2478：3/4 值「边缘+偏移」对 → computed EdgeOffset（offset 递归转换；
-            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。
+            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。g47：
+            // 逻辑缘物化（XStart→Left 等，同上 FIXME(write-modes)）。
+            let side = match side {
+                BackgroundEdge::XStart => BackgroundEdge::Left,
+                BackgroundEdge::XEnd => BackgroundEdge::Right,
+                BackgroundEdge::YStart => BackgroundEdge::Top,
+                BackgroundEdge::YEnd => BackgroundEdge::Bottom,
+                physical => physical,
+            };
             let oc = position_value_to_computed(*offset, style)?;
             BackgroundPositionComputedValue::EdgeOffset(side, Box::new(oc))
         }
@@ -2029,11 +2046,13 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法同
-        // background-position（<position>）。默认 50% 50%（Center）。R2303 补——旧 impl
-        // 完全缺该属性，object-fit 的 compute_object_fit_rect 恒居中。
+        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法为
+        // 严格 `<position>`（css-values-5 §4.2——3 值形禁、缘偏移对全有全无、逻辑
+        // 关键字；csswg#2140 后行为，object-position 语料三页钉）。默认 50% 50%
+        //（Center）。R2303 补——旧 impl 完全缺该属性，object-fit 的
+        // compute_object_fit_rect 恒居中。
         "object-position" => {
-            if let Some(v) = values::parse_background_position(value) {
+            if let Some(v) = values::parse_position_strict(value) {
                 if let Some(c) = position_value_to_computed(v, style) {
                     style.object_position = c;
                     return true;

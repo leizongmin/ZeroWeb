@@ -28,7 +28,9 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "line-clamp" | "-webkit-line-clamp" => values::parse_line_clamp(value).is_some(),
         // https://drafts.csswg.org/css-images-4/#the-object-fit
         "object-fit" => values::parse_object_fit(value).is_some(),
-        "object-position" => values::parse_background_position(value).is_some(),
+        // g47：object-position = 严格 <position>（css-values-5 §4.2），与 apply
+        // 同文法（3 值形禁、缘偏移对全有全无、逻辑关键字）
+        "object-position" => values::parse_position_strict(value).is_some(),
         // https://drafts.fxtf.org/css-masking-1/#the-mask-image
         "mask-image" => values::parse_mask_image_layers(value).is_some(),
         "mask-mode" => values::parse_mask_mode(value).is_some(),
