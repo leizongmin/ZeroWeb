@@ -7966,6 +7966,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "serial_test",
+ "tracing",
  "wat",
  "zero-browser",
  "zero-browser-shell",

@@ -318,3 +318,299 @@ fn t71_insert_before_ref_position_preserved_across_generation() {
          mutation lenient skip、z 永不落地），实测 {ordered:?}"
     );
 }
+
+/// 钉④（T71 返修 DF-1 根修）：死 handle 的 ledger 补注册不得回锚到已被其他
+/// 现役柄持久持有的节点。不变量：`persistent_handle_nodes` 注册表是节点所有权
+/// 唯一权威——同一节点不得被两个 handle 同时持久锚定；所有权冲突候选退
+/// lenient skip（宁漏勿错），死引用写保持不可见基线（同柄自 reclaim 不受影响，
+/// 钉①②已钉）。缺陷形（修复前）：现役认领守卫读 `selector_handle_map`，而
+/// drain 路径从不 merge 该表（守卫输入恒空恒放行），`rebind_handle_node` 只查
+/// selector 唯一性不查节点归属——死柄 `__t71g` 经 ledger 旧 selector 回锚到活柄
+/// `__t71l` 的节点，双柄同锚，后续经 `__t71g` 的写静默改写他人现役节点（DF
+/// 定向探针 PROBE1-OUT 实证：data-via="ghost" 落 successor 节点，
+/// review/t71-df-targeted/df1-probe-run3-nocapture.log）。规范语义：DOM §4.2.2
+/// concept-node-pre-insert——插入宿主子树后身份归属随子树唯一，
+/// https://dom.spec.whatwg.org/#concept-node-pre-insert。
+/// 红先证：bench/results/t71-repair/nail-red.log（本钉 FAIL——活柄写与死柄写
+/// 同时落同一节点）；修复后 nail-green.log 全绿。
+#[test]
+#[serial_test::serial]
+fn t71_dead_handle_ledger_never_reanchors_node_claimed_by_live_handle() {
+    let mut wv = wv();
+    wv.load_html(PAGE, None);
+
+    // 批1：建死柄子树（div.t71-ghost，当时唯一 → ledger 记 __t71g 的锚点）。
+    apply_batch(
+        &mut wv,
+        &[
+            DomMutation::CreateElement {
+                handle: "__t71g".into(),
+                tag: "div".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__t71g".into(),
+                name: "class".into(),
+                value: "t71-ghost".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#wrap".into(),
+                child_handle: "__t71g".into(),
+            },
+        ],
+    );
+
+    // 批2：指名移除（页面真实意图：该节点废弃；evict 双向清表 + 换代——
+    // ledger 残项保留，selector 从 doc 消失）。
+    apply_batch(
+        &mut wv,
+        &[DomMutation::RemoveHandle {
+            handle: "__t71g".into(),
+        }],
+    );
+
+    // 批3：新元素恰好占住同 selector（活柄 __t71l，data-owner 标记主人）。
+    apply_batch(
+        &mut wv,
+        &[
+            DomMutation::CreateElement {
+                handle: "__t71l".into(),
+                tag: "div".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__t71l".into(),
+                name: "class".into(),
+                value: "t71-ghost".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__t71l".into(),
+                name: "data-owner".into(),
+                value: "l".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#wrap".into(),
+                child_handle: "__t71l".into(),
+            },
+        ],
+    );
+
+    // 批4：分别经死柄 __t71g 与活柄 __t71l 写。
+    apply_batch(
+        &mut wv,
+        &[
+            DomMutation::SetAttrOnHandle {
+                handle: "__t71g".into(),
+                name: "data-ghost".into(),
+                value: "1".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__t71l".into(),
+                name: "data-live".into(),
+                value: "1".into(),
+            },
+        ],
+    );
+
+    let out = wv
+        .execute_script(
+            r#"
+            var card = document.querySelector('div.t71-ghost');
+            String(card ? card.outerHTML : 'MISSING')
+            "#,
+        )
+        .expect("钉④读回成功");
+    assert!(
+        out.contains("data-owner=\"l\"") && out.contains("data-live=\"1\"") && !out.contains("data-ghost"),
+        "死 handle 的 ledger 补注册不得回锚到现役柄持有的节点（注册表唯一所有权，\
+         双柄同锚禁止）：活柄 __t71l 写须落地（data-live=\"1\"），死柄 __t71g 写须保持 \
+         lenient skip 基线（节点上不得出现 data-ghost——修复前守卫在 drain 路径恒失效，\
+         死柄经 ledger 回锚活柄节点、写静默劫持他人现役节点），实测 {out:?}"
+    );
+}
+
+/// DF-2 钉测的 tracing 域内捕获订阅（`with_default` 线程局部作用域，无全局订阅
+/// 安装——进程级全局资源跨用例串行由 #[serial] 保证）。只收集事件 message 字段。
+#[derive(Default, Clone)]
+struct RolloverWarnCapture {
+    lines: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl RolloverWarnCapture {
+    fn snapshot(&self) -> Vec<String> {
+        self.lines.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+struct MessageOnlyVisitor(String);
+
+impl tracing::field::Visit for MessageOnlyVisitor {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "message" {
+            self.0 = value.to_string();
+        }
+    }
+}
+
+impl tracing::Subscriber for RolloverWarnCapture {
+    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _attrs: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut visitor = MessageOnlyVisitor(String::new());
+        event.record(&mut visitor);
+        if !visitor.0.is_empty() {
+            self.lines.lock().unwrap_or_else(|e| e.into_inner()).push(visitor.0);
+        }
+    }
+
+    fn enter(&self, _span: &tracing::span::Id) {}
+
+    fn exit(&self, _span: &tracing::span::Id) {}
+}
+
+/// 钉⑤（T71 返修 DF-2 计数语义）：换代掉项聚合 warn 只报真正无落点的掉项——
+/// 本批合法移除（RemoveHandle 指名移除等已知合法落点）计入豁免、不计入掉项。
+/// 缺陷形（修复前）：remove_child 只摘链不灭 slotmap 槽，apply 尾 retain 保留
+/// detached 条目 → pre_registry 含被合法移除的柄，换代后必掉项 → 任何移除过
+/// 注册柄的批必发一条 rollover dropped warn（T69 §6.3 换代掉项信号被正常 DOM
+/// 移除噪声化，活体 feed 每批移除卡片即恒响）。真掉项正控：本批 mutation 面
+/// 之外的失锚（SetInnerHtml 祖先内容拭除——柄节点被替换丢弃，不在裁决书列举的
+/// Remove 家族豁免面内）仍必须计入掉项——豁免不得钝化真实信号。豁免集取
+/// Remove/RemoveHandle 最小裁决列举面：attached 节点由 apply 尾 emission 以
+/// `unique_selector_for_node` 造位置化唯一 selector 自愈重锚（形 B 若用"重复
+/// selector 失唯一"形，柄会被自愈救援回锚原节点、dropped=0——GREEN 实跑
+/// nail-green-attempt1.log 证伪该形，故真掉项须取拭除形）。
+/// 红先证：bench/results/t71-repair/nail-red.log（形 A warn 必发——修复前合法
+/// 移除被计入掉项，即 DF-2 行为修正的先红；形 B 为既有信号保真正控，非行为
+/// 修正面，无独立先红要求）。
+#[test]
+#[serial_test::serial]
+fn t71_rollover_dropped_warn_excludes_legal_removal_counts() {
+    // 形 A：纯合法移除——零 warn（豁免语义；修复前必发 dropped 1 噪声）。
+    {
+        let mut wv = wv();
+        wv.load_html(PAGE, None);
+        apply_batch(
+            &mut wv,
+            &[
+                DomMutation::CreateElement {
+                    handle: "__t71a".into(),
+                    tag: "div".into(),
+                },
+                DomMutation::SetAttrOnHandle {
+                    handle: "__t71a".into(),
+                    name: "class".into(),
+                    value: "t71-legal".into(),
+                },
+                DomMutation::AppendChild {
+                    parent_selector: "#wrap".into(),
+                    child_handle: "__t71a".into(),
+                },
+            ],
+        );
+        let capture = RolloverWarnCapture::default();
+        let lines = tracing::subscriber::with_default(capture.clone(), || {
+            apply_batch(
+                &mut wv,
+                &[DomMutation::RemoveHandle {
+                    handle: "__t71a".into(),
+                }],
+            );
+            capture.snapshot()
+        });
+        assert!(
+            !lines.iter().any(|l| l.contains("rollover")),
+            "本批合法移除（RemoveHandle）不得计入换代掉项——修复前 pre_registry 经 \
+             apply 尾 retain 保留 detached 条目、换代后必发 rollover dropped 噪声 warn，\
+             捕获到 {lines:?}"
+        );
+    }
+
+    // 形 B：合法移除 + 真掉项混批——dropped 恰 1（真掉项）、exempt 恰 1（合法移除）。
+    {
+        let mut wv = wv();
+        wv.load_html(PAGE, None);
+        apply_batch(
+            &mut wv,
+            &[
+                // 合法移除柄（div#t71-legal-b）。
+                DomMutation::CreateElement {
+                    handle: "__t71b".into(),
+                    tag: "div".into(),
+                },
+                DomMutation::SetAttrOnHandle {
+                    handle: "__t71b".into(),
+                    name: "id".into(),
+                    value: "t71-legal-b".into(),
+                },
+                DomMutation::AppendChild {
+                    parent_selector: "#wrap".into(),
+                    child_handle: "__t71b".into(),
+                },
+                // 宿主容器（#t71-host，内含真掉项柄的节点）。
+                DomMutation::InsertAdjacentHtml {
+                    selector: "#wrap".into(),
+                    position: "beforeend".into(),
+                    html: "<div id=\"t71-host\"></div>".into(),
+                },
+                // 真掉项柄（div#t71-dup-c 挂 #t71-host——下批被 SetInnerHtml 拭除）。
+                DomMutation::CreateElement {
+                    handle: "__t71c".into(),
+                    tag: "div".into(),
+                },
+                DomMutation::SetAttrOnHandle {
+                    handle: "__t71c".into(),
+                    name: "id".into(),
+                    value: "t71-dup-c".into(),
+                },
+                DomMutation::AppendChild {
+                    parent_selector: "#t71-host".into(),
+                    child_handle: "__t71c".into(),
+                },
+            ],
+        );
+        let capture = RolloverWarnCapture::default();
+        let lines = tracing::subscriber::with_default(capture.clone(), || {
+            apply_batch(
+                &mut wv,
+                &[
+                    DomMutation::RemoveHandle {
+                        handle: "__t71b".into(),
+                    },
+                    // 祖先内容拭除：__t71c 节点随 #t71-host 子树替换被丢弃——
+                    // 非 Remove 家族豁免面，须计入真掉项。
+                    DomMutation::SetInnerHtml {
+                        selector: "#t71-host".into(),
+                        html: "<p>replaced</p>".into(),
+                    },
+                ],
+            );
+            capture.snapshot()
+        });
+        let line = lines.iter().find(|l| l.contains("rollover")).unwrap_or_else(|| {
+            panic!(
+                "真掉项（SetInnerHtml 祖先拭除，无豁免落点）必须计入换代掉项 warn——\
+                     豁免不得钝化真实信号，捕获 {lines:?}"
+            )
+        });
+        assert!(
+            line.contains("dropped 1 entries") && line.contains("legal-removal exempt 1"),
+            "计数语义恰集：合法移除 __t71b 豁免（exempt 1）、真掉项 __t71c 计入\
+            （dropped 1）——修复前两者都计入掉项（dropped 2 entries），实测 {line:?}"
+        );
+    }
+}
