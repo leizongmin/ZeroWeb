@@ -63,7 +63,8 @@ pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String
 
 /// 解析 html 并计算全文档样式，返回 `(Document, NodeId→ComputedStyle)`。供 getComputedStyle
 /// 回调的 per-snapshot 缓存：html 未变时复用此结果，避免每次属性查询重跑 parse+cascade
-/// （O(文档) + O(规则×节点)）。viewport 固定 1280×800（同 getComputedStyle 既有默认）。
+/// （O(文档) + O(规则×节点)）。viewport 取 pending 视图布局 viewport 真值
+///（g49：[`super::computed_style_cache::gcs_viewport_dims`]，未接线回落 1280×800）。
 pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, ComputedStyle>) {
     let doc = parse_html(html);
     // 纯快照路径：外部 CSS 恒空串（无 ambient 状态——WPT/测试语义不变；页面快照路径
@@ -72,7 +73,8 @@ pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, Compute
     (doc, styles)
 }
 
-/// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 1280×800）。
+/// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 取
+/// pending 视图布局 viewport 真值，g49 前恒 1280×800）。
 /// 供纯快照路径与 inline-style override 路径复用。`css` = 外部样式表文本（P9-9：与布局
 /// 管线同源注入；纯路径传空串）。返回 `(styles, sheets)`——sheets 随级联一并产出，供
 /// 代际槽缓存复用（全量兜底免二次 parse）。s161：handle 视图（动态元素 gCS 通道，
@@ -81,12 +83,14 @@ pub(super) fn compute_styles_for_doc(
     doc: &Document,
     css: &str,
 ) -> (HashMap<NodeId, ComputedStyle>, Vec<zero_css_parser::Stylesheet>) {
+    // 设 viewport（length/% 解析需要）。g49：pending 视图布局 viewport 真值——与渲染
+    // 管线/shim innerWidth 同源，未接线宿主回落 1280×800（gcs_viewport_dims）。
+    let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
     // 外部表经记忆化（R5107）：全量兜底路径每代重建，同 css 文本免重复 parse。
     let parsed = super::computed_style_cache::memoized_external_sheet(css);
-    let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref());
+    let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref(), (vw, vh));
     let mut sys = StyleSystem::new();
-    // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
-    sys.set_viewport(1280.0, 800.0);
+    sys.set_viewport(vw, vh);
     // s168（html-semantics M2）：shadow 作用域条目在场 → per-scope 全量级联（CSS
     // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
     // 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处融合全覆盖。
@@ -1519,11 +1523,6 @@ fn format_num(v: f64, suffix: &str) -> String {
     }
 }
 
-/// getComputedStyle 视口基准，与 compute_document_styles 一致（默认 1280×800）——
-/// length_to_css 与 calc_computed_to_css 共用。
-const GCS_VIEWPORT_W: f64 = 1280.0;
-const GCS_VIEWPORT_H: f64 = 800.0;
-
 /// 把已计算的 [`LengthValue`] 序列化为 CSS 字符串（getComputedStyle 长度族）。
 ///
 /// `compute_styles` 经 `resolve_computed_style` 已把主要字段的 em/rem/vw/vh/vmin/vmax/ch/非 % calc
@@ -1554,10 +1553,13 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         // geometric used 通道 % 需 layout 解析（模块头 in-master 限制），该桶挂账。
         LengthValue::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
         // em/rem/vw/vh/vmin/vmax/ch：兜底解析残余相对单位为 px。
-        other => format_num(
-            zero_style_system::resolve_length(other, font_size_px, Some(GCS_VIEWPORT_W), Some(GCS_VIEWPORT_H)),
-            "px",
-        ),
+        other => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            format_num(
+                zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)),
+                "px",
+            )
+        }
     }
 }
 
@@ -1575,11 +1577,12 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// sibling-index()/sibling-count() 叶随注入求值；None fail-closed（主通道
 /// [`length_to_css`] 探测/无 DOM 视图口径）。
 fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
+    let (gcs_vw, gcs_vh) = super::computed_style_cache::gcs_viewport_dims();
     let ctx = CalcContext {
         font_size: Some(font_size_px),
         root_font_size: Some(16.0),
-        viewport_width: Some(GCS_VIEWPORT_W),
-        viewport_height: Some(GCS_VIEWPORT_H),
+        viewport_width: Some(gcs_vw),
+        viewport_height: Some(gcs_vh),
         sibling_ordinal: sibling.map(|(o, _)| o),
         sibling_count: sibling.map(|(_, c)| c),
         ..Default::default()

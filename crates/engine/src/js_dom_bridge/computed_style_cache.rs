@@ -387,9 +387,10 @@ fn apply_runner_modal_state(
     with_descendants.sort_unstable();
     with_descendants.dedup();
     let mut sys = StyleSystem::new();
-    // 视口与全量/增量路径同源（compute_styles_for_doc / finish_generation_update 的
-    // 1280×800 默认）。
-    sys.set_viewport(1280.0, 800.0);
+    // 视口与全量/增量路径同源（g49：pending 视图布局 viewport 真值，未接线回落
+    // 1280×800——见 gcs_viewport_dims）。
+    let (vw, vh) = gcs_viewport_dims();
+    sys.set_viewport(vw, vh);
     if slot.10.is_empty() {
         sys.compute_styles_incremental(&slot.3, &slot.5, &with_descendants, &mut slot.4);
     } else {
@@ -727,7 +728,10 @@ fn finish_generation_update(
         sheets_dirty || slot.6 != css || slot.7 != adopted || slot.8 != entries || slot.9 != shadow_entries;
     if sheets_dirty {
         let parsed = memoized_external_sheet(&css);
-        slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref());
+        // g49：`<style media>` 门与 gCS length/% 解析同源——pending 视图布局 viewport
+        // 真值（未接线宿主回落 1280×800）。
+        let viewport = gcs_viewport_dims();
+        slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref(), viewport);
         slot.6 = css;
         slot.7 = adopted;
         slot.8 = entries;
@@ -745,8 +749,9 @@ fn finish_generation_update(
     // changed 集 → 注入后的重算覆盖目标元素。
     apply_runner_modal_state(slot, drain_gen, style_version);
     let mut sys = StyleSystem::new();
-    // 视口与全量路径同源（compute_styles_for_doc 的 1280×800 默认）。
-    sys.set_viewport(1280.0, 800.0);
+    // 视口与全量路径同源（g49：pending 视图布局 viewport 真值，未接线回落 1280×800）。
+    let (vw, vh) = gcs_viewport_dims();
+    sys.set_viewport(vw, vh);
     if slot.10.is_empty() {
         sys.compute_styles_incremental(&slot.3, &slot.5, &changed, &mut slot.4);
     } else {
@@ -1042,6 +1047,23 @@ thread_local! {
 /// cell，不经此）。
 pub fn set_pending_layout_viewport(width: u32, height: u32) {
     PENDING_VIEWPORT.with(|slot| *slot.borrow_mut() = (width, height));
+}
+
+/// g49：getComputedStyle 快照通道视口真值——进程内 webview 布局 viewport
+///（shim 安装期 [`set_pending_layout_viewport`] 同步 config 宽高，与渲染管线
+/// `RenderPipeline::new` 及 shim `innerWidth/innerHeight` 同源）。未同步
+///（测试线程/未接线宿主/多进程 renderer）回落 M3 约定 1280×800。gCS 级联与
+/// 串化通道据此与布局同视口——此前恒 1280×800 硬编码，runner 800×600 下
+/// vw/vh 族 computed 值系统性放大 1280/800 倍。注：本值 shim 安装后页内不变
+///（产品 resize 走 `__zw_user_resize` 不重置此槽），故 gCS 代际缓存键无需并入。
+pub(crate) fn gcs_viewport_dims() -> (f64, f64) {
+    PENDING_VIEWPORT.with(|slot| {
+        let (w, h) = *slot.borrow();
+        (
+            if w == 0 { 1280.0 } else { f64::from(w) },
+            if h == 0 { 800.0 } else { f64::from(h) },
+        )
+    })
 }
 
 /// s421：pending 视图 handle rect——`__zw_getBoundingClientRect` 对 `createElement`

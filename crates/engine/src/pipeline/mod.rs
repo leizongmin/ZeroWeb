@@ -1466,7 +1466,7 @@ impl RenderPipeline {
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets
-        let stylesheets = collect_stylesheets(&doc, css);
+        let stylesheets = collect_stylesheets(&doc, css, (self.viewport_width as f64, self.viewport_height as f64));
         // R2010/R2011/R2013：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（Screen 零影响）。
         let (page_w, page_h, m_top, m_right, m_bottom, m_left) =
             extract_print_page_geometry(&stylesheets, self.print_page_setup.as_ref());
@@ -1850,7 +1850,7 @@ impl RenderPipeline {
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）
-        let stylesheets = collect_stylesheets(&doc, css);
+        let stylesheets = collect_stylesheets(&doc, css, (self.viewport_width as f64, self.viewport_height as f64));
         // R2010/R2011/R2013：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（分页 + 页边界分隔线共用）。
         let (page_w, page_h, m_top, m_right, m_bottom, m_left) =
             extract_print_page_geometry(&stylesheets, self.print_page_setup.as_ref());
@@ -2231,7 +2231,7 @@ impl RenderPipeline {
         } else {
             self.cached_css_text = Some(css.to_string());
             let doc = doc_rc.borrow();
-            collect_stylesheets(&doc, css)
+            collect_stylesheets(&doc, css, (self.viewport_width as f64, self.viewport_height as f64))
         };
         // R2010/R2011/R2013 + T61：Print 页几何在增量路径同样重注入——worker 打印预览
         // 设置变更走 `render_incremental`，不经 render_html 的注入点；缺此则布局停留在
@@ -2439,7 +2439,8 @@ impl RenderPipeline {
             // `el.style.transition`+`el.style.opacity` 两 mutation 后泵恒 0 事件）。
             if r.is_some() {
                 let doc = doc_rc.borrow();
-                self.cached_stylesheets = collect_stylesheets(&doc, css);
+                self.cached_stylesheets =
+                    collect_stylesheets(&doc, css, (self.viewport_width as f64, self.viewport_height as f64));
             }
             r
         } else {
@@ -2698,7 +2699,7 @@ impl RenderPipeline {
         mutations: &[crate::js_dom_bridge::DomMutation],
         css: &str,
     ) -> Option<RenderResult> {
-        let stylesheets = collect_stylesheets(doc, css);
+        let stylesheets = collect_stylesheets(doc, css, (self.viewport_width as f64, self.viewport_height as f64));
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
         // 增量样式：只重算变更节点子树（base = cached_styles，全量路径已存）。
@@ -3990,18 +3991,20 @@ fn generic_font_ids_from_resolver(resolver: &HashMap<String, u32>) -> std::colle
         .collect()
 }
 
-pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
-    collect_stylesheets_with_parsed_external(doc, css, None)
+pub(crate) fn collect_stylesheets(doc: &Document, css: &str, viewport: (f64, f64)) -> Vec<Stylesheet> {
+    collect_stylesheets_with_parsed_external(doc, css, None, viewport)
 }
 
 /// 同 [`collect_stylesheets`]，但外部 `css` 表用调用方提供的已解析结果（`css` 非空
 /// 且 `parsed_css` 为 `Some` 时跳过重复 parse）。js_dom_bridge 全量兜底路径每代重建
 /// sheets（R5107）——按 css 文本记忆化解析后在注入，免每代 tokenize+parse 全量外部
-/// CSS；`None` 时与 [`collect_stylesheets`] 逐位一致。
+/// CSS；`None` 时与 [`collect_stylesheets`] 逐位一致。`viewport` = `<style media>`
+/// 门求值视口（g49：渲染管线传会话真视口；gCS 快照通道传 pending 视图布局视口）。
 pub(crate) fn collect_stylesheets_with_parsed_external(
     doc: &Document,
     css: &str,
     parsed_css: Option<&Stylesheet>,
+    viewport: (f64, f64),
 ) -> Vec<Stylesheet> {
     let mut stylesheets = Vec::new();
     // meta color-scheme 不在此合成根级声明（旧实现 R2285/R2286 注入最低优先级
@@ -4024,12 +4027,12 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
             }
         }
         for style_id in &style_ids {
-            if let Some(sheet) = style_sheet_if_eligible(doc, *style_id) {
+            if let Some(sheet) = style_sheet_if_eligible(doc, *style_id, viewport) {
                 stylesheets.push(sheet);
             }
         }
     } else {
-        stylesheets = collect_interleaved_external(doc, &entries, &style_ids);
+        stylesheets = collect_interleaved_external(doc, &entries, &style_ids, viewport);
     }
     // Constructable stylesheets（CSSOM）：`document.adoptedStyleSheets` /
     // `ShadowRoot.adoptedStyleSheets` 的汇总规则文本（进程级共享槽：js worker 经
@@ -4050,7 +4053,7 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
 ///（不匹配 → 不入级联）、③disabled 内容属性门；过门后取文本（CDATA 剥除 + XML
 /// #PCDATA 实体解码，R4022）产表。s167 从 [`collect_stylesheets_with_parsed_external`]
 /// 提取——blob 路径与交错路径（[`collect_interleaved_external`]）共用。
-fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Stylesheet> {
+fn style_sheet_if_eligible(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -> Option<Stylesheet> {
     // ⓪ s413（html-semantics M2）：声明式 CSS module parse 期身份标记——宿主载入期
     // 对 type=module style 元素插入（webview prepare_declarative_style_modules）。
     // tentative 提案：元素 kind 在 parse 期固定——后续移除 type/specifier、移除重插
@@ -4076,14 +4079,15 @@ fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Styleshee
     // 匹配 → sheet 已创建（仍入 document.styleSheets）但**不应用**（级联排除）。
     // cssom：sheet 注册与 media 匹配无关（style_non_matching_media「media=unknown
     // 长度 1」钉 shim 注册面不过滤），应用才查 media。
-    // FIXME: 求值视口取 compute_styles_for_doc 同款默认 1280×800——会话真 viewport
-    // 未传入本函数，宽度/高度条件媒体查询按默认视口求值。
+    // g49：求值视口由调用方传入（渲染管线 = 会话真视口；gCS 快照通道 = pending
+    // 视图布局视口，未接线回落 1280×800）——此前恒 1280×800 硬编码，runner
+    // 800×600 下宽度条件媒体查询系统性错判。
     // https://drafts.csswg.org/cssom/#dom-stylesheet-media
     // https://drafts.csswg.org/mediaqueries/#evaluating
     if let Some(m) = doc.get_attribute(style_id, "media") {
         let m = m.trim();
         if !m.is_empty() {
-            let ctx = zero_css_parser::media_query::MediaContext::new(1280.0, 800.0);
+            let ctx = zero_css_parser::media_query::MediaContext::new(viewport.0, viewport.1);
             let matches = zero_css_parser::media_query::parse_media_query(m).is_some_and(|qs| {
                 qs.iter()
                     .any(|q| zero_css_parser::media_query::evaluate_media_query(q, &ctx))
@@ -4141,7 +4145,12 @@ fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Styleshee
 ///
 /// 媒体门不在 link 条目侧重复：shim 下发文本已按 live media wrap（s161 overlay 门），
 /// 静态路径在 webview 取回期门（s161 加载期门）。
-fn collect_interleaved_external(doc: &Document, entries: &[(String, String)], style_ids: &[NodeId]) -> Vec<Stylesheet> {
+fn collect_interleaved_external(
+    doc: &Document,
+    entries: &[(String, String)],
+    style_ids: &[NodeId],
+    viewport: (f64, f64),
+) -> Vec<Stylesheet> {
     let mut entry_by_node: HashMap<NodeId, usize> = HashMap::new();
     for (idx, (sel, _)) in entries.iter().enumerate() {
         if let Some(nid) = crate::js_dom_bridge::find_by_selector(doc, sel) {
@@ -4164,7 +4173,7 @@ fn collect_interleaved_external(doc: &Document, entries: &[(String, String)], st
                     out.push(zero_css_parser::Parser::parse_stylesheet(text));
                 }
             }
-            if let Some(sheet) = style_sheet_if_eligible(doc, id) {
+            if let Some(sheet) = style_sheet_if_eligible(doc, id, viewport) {
                 out.push(sheet);
             }
         } else if link_set.contains(&id) {
@@ -4256,10 +4265,15 @@ pub(crate) fn collect_shadow_scoped_sheets(
 /// 本收集面（M1 语料为树内联 `<style>`；外部表经 gCS 通道 [`collect_shadow_scoped_sheets`]
 /// 已接，主管线待 M2 一并接入）。
 pub(crate) fn collect_inline_shadow_scopes(doc: &Document) -> Vec<zero_style_system::ShadowScopeStylesheets> {
+    // g49：`<style media>` 门视口取 pending 视图布局 viewport 真值（未接线宿主回落
+    // 1280×800）——签名免穿（compute_styles_for_doc 六调用点链路不扩散）；管线会话
+    // resize 后本值不随动，媒体门在 shadow 内联表上取 shim 安装期视口（可接受近似，
+    // 文档面链路为准绳）。
+    let viewport = crate::js_dom_bridge::gcs_viewport_dims();
     let mut out = Vec::new();
     for root in doc.shadow_root_ids() {
         let mut sheets = Vec::new();
-        collect_shadow_inline_sheets(doc, root, &mut sheets);
+        collect_shadow_inline_sheets(doc, root, &mut sheets, viewport);
         if !sheets.is_empty() {
             out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
         }
@@ -4269,11 +4283,11 @@ pub(crate) fn collect_inline_shadow_scopes(doc: &Document) -> Vec<zero_style_sys
 
 /// [`collect_inline_shadow_scopes`] 的树序走查：元素 `<style>` 过门收表；嵌套
 /// ShadowRoot 子树整体跳过（其 `<style>` 属该层作用域）；其余元素递归下降。
-fn collect_shadow_inline_sheets(doc: &Document, node: NodeId, sheets: &mut Vec<Stylesheet>) {
+fn collect_shadow_inline_sheets(doc: &Document, node: NodeId, sheets: &mut Vec<Stylesheet>, viewport: (f64, f64)) {
     for child in doc.child_nodes(node) {
         match doc.get(child).map(|n| &n.kind) {
             Some(NodeKind::Element(e)) if e.name.local.as_ref().eq_ignore_ascii_case("style") => {
-                if let Some(sheet) = style_sheet_if_eligible(doc, child) {
+                if let Some(sheet) = style_sheet_if_eligible(doc, child, viewport) {
                     sheets.push(sheet);
                 }
             }
@@ -4281,7 +4295,7 @@ fn collect_shadow_inline_sheets(doc: &Document, node: NodeId, sheets: &mut Vec<S
             // 只影响本树——嵌套树走其自身 ShadowRoot 的作用域条目）。
             Some(NodeKind::ShadowRoot(_)) => {}
             Some(NodeKind::Element(_)) => {
-                collect_shadow_inline_sheets(doc, child, sheets);
+                collect_shadow_inline_sheets(doc, child, sheets, viewport);
             }
             _ => {}
         }
@@ -5412,7 +5426,7 @@ mod pseudo_tests {
 }
 "#;
         let doc = zero_dom::parse_html(html);
-        let stylesheets = collect_stylesheets(&doc, css);
+        let stylesheets = collect_stylesheets(&doc, css, (800.0, 600.0));
         let mut sys = StyleSystem::new();
         let styles = sys.compute_styles(&doc, &stylesheets);
         let cell = doc.query_selector(doc.root(), ".cell").expect(".cell exists");
@@ -6426,7 +6440,8 @@ impl RenderPipeline {
     /// 手工改过的 cached_doc）。
     pub(crate) fn sync_stylesheets_for_test(&mut self, _html: &str, css: &str) {
         let doc = self.cached_doc.as_ref().expect("cached doc").borrow();
-        self.cached_stylesheets = collect_stylesheets(&doc, css);
+        self.cached_stylesheets =
+            collect_stylesheets(&doc, css, (self.viewport_width as f64, self.viewport_height as f64));
     }
 }
 
