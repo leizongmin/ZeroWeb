@@ -2,7 +2,19 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
-当前 css-images **3091P/124F**、css-values 4038P/1549F/6T（g46-b1）。
+当前 css-images **3091P/124F**、css-values 4041P/1546F/6T（g46-b2）。
+**g45b 完成（11-15）**：attr 污点经自定义项传播刀——css-values-4 §attr
+security 三页清偿。根因：预级联 attr 替换站把 `--s: attr(href)` 替换成
+属性文本后词痕即逝，4.75 重裁站失察（g45 image-set 文法位放行前被文法拒
+意外遮蔽）。修在预级联站：替换成功且 prop 为 `--` 项时登记污染名，替换
+完成后取 URL 属性声明精确引用 `var(--名`（ident 级比对）→ 整条声明丢弃
+（IACVT 回落初值 none）；跨元素继承链不在本站视野（FIXME 挂账）。单测
+style-system 2,539（+正钉/负钉）全绿、fmt/clippy 净；A/B（B0=results-g46-b1
+修前二进制 / B1=results-g46-b2 修后唯一内容差，touch 破 freshness 真重建）：
+css-values 4038→**4041P 净 +3**（attr-security-animation/transition/
+universal-selector 3 案 FIXED，全页 NEWFAIL=0），css-images 3091P 维持；
+对 g44-b1 基线 css-values 4041P/1546F 回零。见 [evidence
+2026-11-15-g45b-attr-taint-custom-prop](evidence/2026-11-15-g45b-attr-taint-custom-prop.md)。
 **g46 完成（11-15）**：calc 负分辨率存储形回读 + content×image-set 刀——
 探针定谳 `calc(-1 * 1x)` 得 "none" 根因在 canonical 存储形 `calc(-1dppx)`
 回读（calc 一元负号维度字面 neg 重写落 `0 - x` 通用臂 → 纯 Resolution 门
@@ -15,7 +27,7 @@ style-system 直通 + engine content_to_css 复用 image_set_to_css。A/B
 （image-set-computed F 4→0 全页清零，image-set 双页收口 0F+0F），css-values
 ±0 零回归；单测 css-parser 3,227（+1 钉，账面更正 g45 3,227 实为 3,226）/
 style-system 2,538/engine 4,013 全绿，fmt/clippy 净。残面：position-invalid
-5F/conic-calc 3F 细形、attr-security 3F（css-values-5 污点传播刀）、content
+5F/conic-calc 3F 细形、content
 image-set 渲染面 FIXME。见 [evidence
 2026-11-15-g46-calc-negative-resolution-content-image-set](evidence/2026-11-15-g46-calc-negative-resolution-content-image-set.md)。
 **g45 完成（11-15）**：image-set 解析与串化刀——image-set() 整值可解析
@@ -30,7 +42,7 @@ image-set-computed F 36→4），css-values −3（attr() 污点暴露——B0 �
 拒 var() 为 spec 错误方向，正修独立刀）；单测 css-parser 3,227（+4 钉）/
 style-system 2,538/engine 4,009 全绿，fmt/clippy 净。残面：computed 4F
 （content×image-set 支持门 2F + calc 负分辨率折叠/钳制 2F，均 B0 既有）、
-attr-security 3F（css-values-5 #attr-security 污点传播刀）、position-invalid
+position-invalid
 5F/conic-calc 3F 细形。见 [evidence
 2026-11-15-g45-image-set-parse-serialize](evidence/2026-11-15-g45-image-set-parse-serialize.md)。
 **g44 完成（11-15）**：色标文法位 + style-attr 写面拒收刀——color-stops-parsing
