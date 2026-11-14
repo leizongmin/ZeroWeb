@@ -61,8 +61,10 @@ build 05:42）。三语料 exit=0（07:36–07:44）。
   不动）。残 12F：border-spacing ×4 + vertical-align ×8（含 gCS 非零
   px 断言）——per-property computed 串化面（表格内距/基线相对属性），
   非视口解析错位，本轮范围外。
-- viewport-units-invalidation 24F 不动（B0=B1）——per-iframe 独立
-  viewport 模型缺口，另行挂账。
+- viewport-units-invalidation 24F 不动（B0=B1）——案级消息全为
+  `win.getComputedStyle is not a function`：iframe
+  `contentWindow.getComputedStyle` 未桥接（缺能力面，未走到视口求值），
+  另行挂账。
 - anchor 语料 B0=B1 逐案一致——刀对非视口面零位移。
 
 ## 5. 结论与下一步
@@ -71,4 +73,5 @@ build 05:42）。三语料 exit=0（07:36–07:44）。
 队列：calc-size 族（~250F）、signs-abs z-index/%-used-value（94F）、
 minmax 写门（~94F）、url-request-modifiers（76F）、random/if-cycle、
 css-images 属性族（object-fit/image-orientation 等 ~42F）、
-viewport-units 残 12F per-property 串化 + invalidation 24F per-iframe。
+viewport-units 残 12F per-property 串化 + invalidation 24F iframe
+contentWindow gCS 桥。

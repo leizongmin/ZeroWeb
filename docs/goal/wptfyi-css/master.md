@@ -16,7 +16,8 @@ results-g47-b2 + results-g49-b0 anchor / B1=results-g49-b1）：viewport-
 units-css2-001 84F→12F **fixed +72 零回归**（css-values 4113→4185P），
 css-images/anchor 全持平——刀面精确命中。残面：css2-001 残 12F 案级定谳 =
 border-spacing 4 + vertical-align 8（vw 族属性槽承接缺口，另刀）、
-viewport-units-invalidation 24F = per-iframe viewport 独立刀。见 [evidence
+viewport-units-invalidation 24F = iframe `contentWindow.getComputedStyle`
+未桥接（缺能力面，案级消息定谳）。见 [evidence
 2026-11-15-g49-gcs-viewport-truth-alignment](evidence/2026-11-15-g49-gcs-viewport-truth-alignment.md)。
 **g48 完成（11-15）**：gradient `at` 位置文法位 + canonical 序 + computed
 折算刀——csswg#2140 后 `<position>` 行为定谳（oracle: gradient-position
