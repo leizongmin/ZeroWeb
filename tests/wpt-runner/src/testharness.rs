@@ -252,10 +252,19 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
 /// 与 `fetch-editing-subset.sh`（editing/，M1 切片 3——beforeinput/
 /// input 事件面 + editing/other 删除/插入行为基线，M2 前置）into
 /// `wpt-data/`（gitignored）。
-pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/other"];
+pub const SELECTION_TEST_SUBDIRS: &[&str] = &[
+    "selection",
+    "editing",
+    "editing/other",
+    // wptfyi-editing DC-2（2026-11-15）：whitespaces/（含 chrome-compat/ 嵌套，
+    // 递归扫）+ plaintext-only/（flat）——11-14 对账快照两目录分母 3,362 子测试
+    // 全未覆盖，接入同口径执行链。
+    "editing/whitespaces",
+    "editing/plaintext-only",
+];
 
 /// [`SELECTION_TEST_SUBDIRS`] 中递归扫描的根目录（其余条目保持一期 flat 扫描）。
-const SELECTION_RECURSIVE_ROOT: &str = "selection";
+const SELECTION_RECURSIVE_ROOTS: &[&str] = &["selection", "editing/whitespaces"];
 
 /// selection 二期扩面语料跳过规则（非静默丢弃——记入 evidence 导入清单）：
 /// - `*-manual.html`：需真实拖拽/指针硬件交互（uievents/clipboard/fullscreen 先例）
@@ -1661,7 +1670,7 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 
     let mut cases = Vec::new();
     for subdir in SELECTION_TEST_SUBDIRS {
-        if *subdir == SELECTION_RECURSIVE_ROOT {
+        if SELECTION_RECURSIVE_ROOTS.contains(subdir) {
             collect_selection_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
         } else {
             collect_selection_flat_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
@@ -1689,6 +1698,12 @@ fn collect_selection_flat_dir_cases(
         }
         let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
         if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        // wptfyi-editing DC-2（2026-11-15）：plaintext-only/ 入域后 flat 扫描同受
+        // 跳过规则约束（-ref.html 参照页非 testharness 格式——recursive 收集器
+        // 已有同款，此前 flat 域无参照页文件未暴露）。
+        if selection_case_skipped(&relative) {
             continue;
         }
         let source = match read_corpus_to_string(&path) {
