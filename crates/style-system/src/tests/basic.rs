@@ -1445,3 +1445,58 @@ fn test_non_root_display_contents_stays_contents() {
     let div_style = styles.get(&div).expect("div 应该有样式");
     assert_eq!(div_style.display, DisplayValue::Contents);
 }
+
+/// css-values-4 §attr security：`--s: attr(href)` 替换产物经 var() 进入取
+/// URL 属性（background-image）→ 整条声明丢弃（IACVT 回落初值 none）。
+/// 驱动：WPT css-values attr-security-animation/transition/universal-selector
+/// 三页 `image-set(var(--s))` 链（g45 image-set 文法位放行后暴露）。
+/// <https://drafts.csswg.org/css-values-4/#attr-security>
+#[test]
+fn test_attr_taint_via_custom_property_drops_url_target() {
+    let (mut doc, _html, _body, div, _p) = make_test_dom();
+    doc.set_attribute(div, "href", "https://does-not-exist.test/404.png");
+    let mut sys = StyleSystem::new();
+
+    let decls = |property: &str, value: &str| Declaration {
+        property: property.to_string(),
+        value: value.to_string(),
+        important: false,
+    };
+    let rules = |declarations: Vec<Declaration>| Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations,
+        })],
+    };
+
+    let style = sys.compute_element_style(
+        &doc,
+        div,
+        &[rules(vec![
+            decls("--s", "attr(href)"),
+            decls("background-image", "image-set(var(--s))"),
+        ])],
+        None,
+    );
+    assert!(
+        style.background_image.is_empty(),
+        "attr() 污染经自定义项传播的 background-image 声明应整条丢弃，实际 {:?}",
+        style.background_image
+    );
+
+    // 负钉：未引用污染项的取 URL 属性不受牵连。
+    let style2 = sys.compute_element_style(
+        &doc,
+        div,
+        &[rules(vec![
+            decls("--s", "attr(href)"),
+            decls("background-image", "linear-gradient(red)"),
+        ])],
+        None,
+    );
+    assert!(
+        !style2.background_image.is_empty(),
+        "未引用污染项的 background-image 不应被丢弃，实际 {:?}",
+        style2.background_image
+    );
+}

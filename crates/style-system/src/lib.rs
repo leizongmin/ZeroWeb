@@ -2787,6 +2787,11 @@ impl StyleSystem {
             // 形态不取 URL，不在集合；FIXME: 集合随 ZW 取 URL 面扩展
             //（mask/filter src() 等）。
             let fetches_url = |prop: &str| zero_css_parser::values::attr_target_fetches_url(prop);
+            // 污染自定义项登记（css-values-4 §attr security）：`--x: attr(…)`
+            // 替换成功即记名——attr 产物文本已入值、词痕就此消失，本函数后续
+            // 各站无从重认。
+            // <https://drafts.csswg.org/css-values-4/#attr-security>
+            let mut tainted_customs: Vec<String> = Vec::new();
             let mut subst = |prop: &str, v: &mut String| -> bool {
                 if !zero_css_parser::values::has_attr_word(v) {
                     return true;
@@ -2820,6 +2825,9 @@ impl StyleSystem {
                         if tainted && fetches_url(prop) {
                             return false;
                         }
+                        if tainted && prop.starts_with("--") {
+                            tainted_customs.push(prop.to_string());
+                        }
                         *v = sub;
                         true
                     }
@@ -2832,6 +2840,40 @@ impl StyleSystem {
             host_matching.retain_mut(|(p, v, ..)| subst(p, v));
             slotted_matching.retain_mut(|(p, v, ..)| subst(p, v));
             inline_decls.retain_mut(|(p, v, _)| subst(p, v));
+            // 取 URL 属性经 var() 取污染自定义项 → 整条声明丢弃（IACVT，
+            // 回落初值——background-image 初值 none）。attr 产物只经文本替换
+            // 进入自定义项值，须在代入后的级联输入上按名追引用（词痕已消失，
+            // 4.75 重裁站失察此链）。驱动：attr-security-animation/transition/
+            // universal-selector 三页 `image-set(var(--s))` 链（g45 image-set
+            // 文法位放行前被文法拒意外遮蔽）。跨元素继承同名项不在本站视野
+            //（FIXME: 污染旗标随 custom map 传递后按消费站收口）。
+            // <https://drafts.csswg.org/css-values-4/#attr-security>
+            if !tainted_customs.is_empty() {
+                fn var_refs_custom(value: &str, name: &str) -> bool {
+                    let mut from = 0;
+                    while let Some(rel) = value[from..].find("var(") {
+                        let start = from + rel + 4;
+                        let rest = value[start..].trim_start();
+                        let ident_end = rest
+                            .find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
+                            .unwrap_or(rest.len());
+                        if &rest[..ident_end] == name {
+                            return true;
+                        }
+                        from = start;
+                    }
+                    false
+                }
+                let drops = |prop: &str, v: &str| {
+                    !prop.starts_with("--")
+                        && zero_css_parser::values::attr_target_fetches_url(prop)
+                        && tainted_customs.iter().any(|name| var_refs_custom(v, name))
+                };
+                matching.retain_mut(|(p, v, ..)| !drops(p, v));
+                host_matching.retain_mut(|(p, v, ..)| !drops(p, v));
+                slotted_matching.retain_mut(|(p, v, ..)| !drops(p, v));
+                inline_decls.retain_mut(|(p, v, _)| !drops(p, v));
+            }
         }
         let cache_key_ref = CascadeKeyRef {
             hints: &hints,
