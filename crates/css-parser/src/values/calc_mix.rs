@@ -96,6 +96,9 @@ pub(crate) fn expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
         }),
         // tree-counting 叶无百分比（权重表达式文法门 `%` 叶判定只看维度叶）。
         CalcExpr::TreeCounting(_) => false,
+        // anchor()/anchor-size() 叶产出锚几何 px（fallback % 在函数内消解，
+        // 不外泄）——% 折叠门 opaque 不参与。
+        CalcExpr::Anchor { .. } => false,
         // progress() 实参内 % 叶递归上报（权重表达式文法门 faithful 扫描）。
         CalcExpr::Progress { value, start, end, .. } => {
             expr_has_percentage_leaf(value) || expr_has_percentage_leaf(start) || expr_has_percentage_leaf(end)
@@ -125,6 +128,9 @@ pub(crate) fn expr_has_percentage_leaf_outside_progress(expr: &CalcExpr) -> bool
                 || matches!(&it.weight, Some(CalcMixWeight::Expr(w)) if expr_has_percentage_leaf_outside_progress(w))
         }),
         CalcExpr::TreeCounting(_) => false,
+        // anchor()/anchor-size() 叶 % 依赖函数内消解（fallback 槽轴基），
+        // 外泄维度折叠门 opaque。
+        CalcExpr::Anchor { .. } => false,
         // progress() 节点屏蔽（实参 % 函数内消解——递归不入）。
         CalcExpr::Progress { .. } => false,
     }
@@ -142,6 +148,8 @@ pub(crate) fn expr_contains_mix(expr: &CalcExpr) -> bool {
         CalcExpr::UnaryOp(_, inner) => expr_contains_mix(inner),
         // tree-counting 叶非 Mix 节点。
         CalcExpr::TreeCounting(_) => false,
+        // anchor()/anchor-size() 叶非 Mix 节点。
+        CalcExpr::Anchor { .. } => false,
         // progress() 实参内嵌 calc-mix 递归上报（嵌套和串折叠路由）。
         CalcExpr::Progress { value, start, end, .. } => {
             expr_contains_mix(value) || expr_contains_mix(start) || expr_contains_mix(end)

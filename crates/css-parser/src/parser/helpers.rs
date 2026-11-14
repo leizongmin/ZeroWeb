@@ -425,6 +425,9 @@ fn counter_calc_type(expr: &CalcExpr) -> Option<CounterCalcType> {
         // counter() 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
         // 之外本不可达，fail-closed 兜底）。
         CalcExpr::Time(_) => None,
+        // counter() 槽无 anchor()/anchor-size() 文法位（inset/size 族函数与
+        // 计数器求值域正交）——fail-closed 兜底。
+        CalcExpr::Anchor { .. } => None,
         // progress() 恒产出 <number>（css-values-5 §progress——静态可求值，
         // 与 tree-counting DOM 序号不同族）。
         CalcExpr::Progress { .. } => Some(CounterCalcType::Number),

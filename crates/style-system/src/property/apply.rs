@@ -31,8 +31,13 @@ pub(crate) fn parse_length_or_math(value: &str) -> Option<LengthValue> {
     if let Some(v) = values::parse_length(value) {
         return Some(v);
     }
-    // 尝试解析 calc/min/max/clamp 数学表达式
-    values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
+    // 尝试解析 calc/min/max/clamp 数学表达式；含 anchor()/anchor-size() 叶的
+    // 式在样式解析面判无效（css-anchor-1 §3.3/§4：锚几何依赖 computed-value
+    // time 不可求值 → invalid → 声明无效回落初始值；inset 槽 anchor() 原文
+    // 承载臂在本函数之前拦截不达——布局期 anchor_pos pass 独立求值）。
+    values::parse_math_function(value)
+        .filter(|expr| !values::calc_expr_has_anchor(expr))
+        .map(|expr| LengthValue::Calc(Box::new(expr)))
 }
 
 /// 尝试解析 CSS 长度值（quirks mode）。
@@ -42,8 +47,10 @@ pub(crate) fn parse_length_or_math_quirks(value: &str) -> Option<LengthValue> {
     if let Some(v) = values::parse_length_quirks(value) {
         return Some(v);
     }
-    // 尝试解析 calc/min/max/clamp 数学表达式
-    values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
+    // 同 [`parse_length_or_math`]：anchor 叶式样式解析面判无效。
+    values::parse_math_function(value)
+        .filter(|expr| !values::calc_expr_has_anchor(expr))
+        .map(|expr| LengthValue::Calc(Box::new(expr)))
 }
 
 /// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
@@ -1712,6 +1719,9 @@ fn font_stretch_percentage_tree_valid(expr: &values::CalcExpr, percent_ctx: bool
         CalcExpr::Number(_) => true,
         CalcExpr::Length(LengthValue::Percentage(_)) => true,
         CalcExpr::Length(LengthValue::Px(_)) => percent_ctx,
+        // anchor()/anchor-size() 非 %/px 叶——font-stretch 槽拒（inset/size
+        // 族函数与字宽文法位正交）。
+        CalcExpr::Anchor { .. } => false,
         CalcExpr::Length(_) => false,
         CalcExpr::BinaryOp(left, op, right) => {
             match op {

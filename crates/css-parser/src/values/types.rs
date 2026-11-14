@@ -914,6 +914,19 @@ pub enum CalcExpr {
     /// 解析/型别/权重门参与求值不可达（[`CalcContext`] 无 DOM 视图返 None）。
     /// <https://drafts.csswg.org/css-values-5/#tree-counting>
     TreeCounting(TreeCountingFn),
+    /// css-anchor-1 anchor()/anchor-size() 函数叶（<length-percentage> 族
+    /// opaque）：求值需布局锚几何（FIXME: used 值面桥接挂账），parse 期完成
+    /// 实参 canonical（锚元素 dashed-ident 前置 + fallback 无单位数字补 px，
+    /// §3/§4 canonical serialization——anchor-parse-valid 语料钉面），存
+    /// canonical 实参文本；文法粗门（段数 ≤2、空参仅 anchor-size 隐式形
+    /// 合法）在此，side/fallback 细拒面由写文法门保底。
+    /// <https://drafts.csswg.org/css-anchor-1/#anchor>
+    Anchor {
+        /// anchor-size()（尺寸查询侧）否则 anchor()（inset 侧）。
+        is_size: bool,
+        /// canonical 实参文本（不含括号；空串 = anchor-size() 隐式形）。
+        args: String,
+    },
     /// CSS Values 5 progress() 插值进度（§progress）——三实参 = progress
     /// value / start / end（同族型别，% 与维度可混），结果 `<number>`：
     /// `(V − S)/(E − S)`，默认 clamp [0,1]；S==E 简并时 clamped → 0、
@@ -1329,6 +1342,50 @@ impl<'a> CalcParser<'a> {
         Some(CalcExpr::TreeCounting(f))
     }
 
+    /// 尝试解析 css-anchor-1 anchor()/anchor-size() 函数叶（§3/§4）。
+    /// <https://drafts.csswg.org/css-anchor-1/#anchor>
+    ///
+    /// 文法 `anchor(<anchor-element>? <anchor-side>? <anchor-fallback>?)` /
+    /// `anchor-size(<anchor-element>? <anchor-size>? <anchor-size-fallback>?)`：
+    /// 实参平衡段整块消费（嵌套 calc()/anchor() 同面），canonical 归一委托
+    /// [`super::anchor::canonicalize_anchor_call_args`]（序换位 + fallback
+    /// 无单位数字补 px——anchor-parse-valid 语料 canonical 钉面）；归一失败
+    ///（段数 >2 / anchor() 空参 / 括号不平衡）返 None 不消费。side/fallback
+    /// 细拒面不在本层（写文法门 `__zw_anchor_func_check` 保底），合法形
+    /// canonical 后成叶。
+    fn try_parse_anchor_fn(&mut self) -> Option<CalcExpr> {
+        let is_size = if self.try_consume_function("anchor-size") {
+            true
+        } else if self.try_consume_function("anchor") {
+            false
+        } else {
+            return None;
+        };
+        if self.depth >= MAX_CALC_DEPTH {
+            return None;
+        }
+        // 平衡段扫描到闭括号（实参内嵌套函数已覆盖；CSS 字符串不在 anchor
+        // 实参文法内，不引入字符串感知）。
+        let bytes = self.input.as_bytes();
+        let mut depth = 1i32;
+        let mut j = self.pos;
+        while j < bytes.len() && depth > 0 {
+            match bytes[j] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        if depth != 0 {
+            return None;
+        }
+        let seg = self.input[self.pos..j - 1].to_string();
+        let args = super::anchor::canonicalize_anchor_call_args(&seg, is_size)?;
+        self.pos = j;
+        Some(CalcExpr::Anchor { is_size, args })
+    }
+
     /// 解析顶层表达式（处理 + - 运算符，优先级较低）。
     fn parse_expr(&mut self) -> Option<CalcExpr> {
         let mut left = self.parse_term()?;
@@ -1484,6 +1541,10 @@ impl<'a> CalcParser<'a> {
             // CSS Values 5 tree-counting 叶（sibling-index()/sibling-count()，
             // 无实参形）——parse 期 opaque，型别 <integer>。
             f
+        } else if let Some(a) = self.try_parse_anchor_fn() {
+            // css-anchor-1 anchor()/anchor-size() 叶（<length-percentage> 族
+            // opaque）——parse 期实参 canonical 归一（序换位 + fallback 补 px）。
+            a
         } else if let Some(b) = self.try_parse_binary_math() {
             // CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
             b
@@ -1983,6 +2044,8 @@ pub fn parse_time_calc(value: &str) -> Option<CalcExpr> {
 pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Time(_) => true,
+        // anchor()/anchor-size() 叶 <length-percentage> 族非 <time>。
+        CalcExpr::Anchor { .. } => false,
         CalcExpr::Number(_) | CalcExpr::Length(_) => false,
         CalcExpr::BinaryOp(left, op, right) => match op {
             CalcOp::Add | CalcOp::Subtract => calc_expr_is_pure_time(left) && calc_expr_is_pure_time(right),
@@ -2380,6 +2443,8 @@ pub fn eval_calc_with_default_font(expr: &CalcExpr) -> Option<f64> {
 /// 0（R3767 n=0 全裁 → 整页空白，driving：line-clamp-auto-030 `calc(4lh + 2*4px)`）。
 pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
     match expr {
+        // anchor()/anchor-size() 叶无 lh 叶不改写。
+        CalcExpr::Anchor { .. } => {}
         CalcExpr::Number(_) => {}
         CalcExpr::Length(lv) => {
             if let LengthValue::Lh(v) = lv {
@@ -2430,6 +2495,9 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
 /// （如无上下文的 lh/百分比）返回 None——消费方自行决定 fail 策略。
 pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64> {
     match expr {
+        // anchor()/anchor-size() 叶需布局锚几何（css-anchor-1 §3/§4）——
+        // 求值期不可静态解析（FIXME: used 值面桥接挂账）。
+        CalcExpr::Anchor { .. } => None,
         CalcExpr::Number(n) => Some(*n),
         CalcExpr::Length(lv) => resolve_length_to_px(lv, ctx),
         // Time 叶按秒出数值（消费方为 time 槽——parse_time 纯 Time 叶门后到达）。
@@ -2718,6 +2786,8 @@ fn eval_progress(
 fn progress_is_percent_family(exprs: [&CalcExpr; 3]) -> bool {
     fn walk(expr: &CalcExpr) -> bool {
         match expr {
+            // anchor()/anchor-size() 叶非 % 族符号解析（锚几何依赖）。
+            CalcExpr::Anchor { .. } => false,
             CalcExpr::Number(_) => true,
             // 长度叶仅 % 可符号解析（px 可解析但会与 % 基准空间混——
             // progress(50%, 0px, 100px) 混形须真实基准，不在此臂）。

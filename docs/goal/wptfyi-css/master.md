@@ -2,6 +2,11 @@
 
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g37 完成（11-14）**：anchor()/anchor-size() calc 嵌入叶 + serialize
+canonical 三修——anchor-parse-valid 4F/anchor-size-parse-valid 8F 全清 +
+invalid-fallback 4 伪红修正，anchor 语料 11,977→11,993 净 +12 零回归；
+comb3-x7 权威账 parse-valid 0F 经 HEAD 反证定谳伪账（详见 evidence）；
+见 [evidence 2026-11-14-g37-anchor-serialize-canonical](evidence/2026-11-14-g37-anchor-serialize-canonical.md)。
 **g36 完成（11-14）**：s423 门控收窄 + anchor_pos V 系坐标系统一——anchor
 语料 11,870→11,977 全量净 +107（真语料 +88 零真回归，position-area-basic
 +45/wm-dir +44），4 REG 定谳 last-successful 伪通过揭开挂账；见
@@ -1176,3 +1181,33 @@ valid +8 / anchor-parse-valid +4——anchor()/anchor-size() calc 嵌套与
 不可作账）；comb3-x7 唯一名 x7 系发射，659 案 transcript 完整 + 5 案
 真 diff + 97s（机器空闲 rayon 并行，非此前多流竞争态 14 分钟）为真账
 判据。anchor 真态定格 11,985P（真页口径 11,988−zz 探针页）。
+
+**g37 anchor()/anchor-size() calc 嵌入叶 + serialize canonical 三修（11-14 晚）**：
+anchor-parse-valid 4F/2359T + anchor-size-parse-valid 8F/4305T 三类签名
+（除法转乘/anchor 叶排序/fallback 补 px）全清——`CalcExpr::Anchor` 叶
+（parse 期实参 canonical + 25 处 exhaustive match 补臂、求值 None
+fail-closed）、Divide 臂除法转乘（product_term_from_factors 共用重构 +
+殿首乘积项括号剥除）、canonicalize_anchor_functions fallback 补 px；
+fold 白名单扩 top/max-width（12F 槽驱动，left 零漂移钉面保全）。
+invalid-fallback 4 NEWFAIL 定谳「parse 成功 vs parse 失败」computed fail
+策略分歧 → parse_length_or_math guard（anchor 叶式声明无效回落初始值，
+css-anchor-1 §3.3 computed-value time invalid 语义，与此前 parse 失败
+严格一致零布局回归）。基线仲裁：ab4c（选刀依据，签名与真态一致）/
+comb3-x7（伪账，HEAD 反证 2355P/4F 复现，见上更正块）均非真态基线。
+终账 g37-final：**265 页 11,993P/864F/4T，对 ab4c 净 +12 零 REGRESSED**
+（parse-valid 两页 12 子测全清、invalid-fallback 回基线 6F）；单测
+css-parser 3208 全过（新钉 15 形表 + fallback 7 断言）、style-system
+2534、layout-engine 2509、engine lib 3951P/7F（ip M3-A 欠账名单一致）。
+挂账：anchor-size used 值布局期求值刀 / anchor_size_domain 直值 vs calc
+嵌套两级域收窄 / invalid-fallback 残 6F。[证据](evidence/2026-11-14-g37-anchor-serialize-canonical.md)
+
+**（comb3-x7 伪账定谳更正，11-14 晚，g37 轮）**：上账 parse-valid 0F 与
+invalid-fallback 10F 经 HEAD 反证证伪——stash 本刀全改动 → HEAD 态
+release 重建 → anchor-parse-valid solo 复现 **2355P/4F**：comb3-x7 的
+二进制（build2 17:09 provenance）非 HEAD 代码态（含未入远端的 shim 实验
+码），「IMP 12 归因 4e3eea8f3 写面通道」撤销（4e3eea8f3 = FORM
+named-first nameditem 面，与 anchor canonical 零交集）。canonical 12F
+从未被远端代码拿到；comb3-x7 伪绿 12 由 g37 真清偿、伪红 4（invalid-
+fallback）由 g37 parse_length_or_math guard 修正。HEAD 真态按 ab4c 签名
+复现（parse-valid 4F/8F + invalid-fallback 6F 基线，全量未重跑）。[证据
+2026-11-14-g37-anchor-serialize-canonical](evidence/2026-11-14-g37-anchor-serialize-canonical.md)

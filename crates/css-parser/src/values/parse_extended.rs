@@ -1286,6 +1286,9 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
     match expr {
         CalcExpr::Number(_) => MTNumber,
         CalcExpr::Length(_) => MTLength,
+        // anchor()/anchor-size() 产出 <length-percentage>（css-anchor-1 §3/§4
+        // 型别表）——% 槽/长度槽同族可混。
+        CalcExpr::Anchor { .. } => MTLength,
         CalcExpr::Time(_) => MTTime,
         CalcExpr::BinaryOp(left, op, right) => {
             let lt = calc_expr_math_type(left);
@@ -1458,6 +1461,8 @@ pub fn calc_expr_is_number(expr: &CalcExpr) -> bool {
 pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Length(_) => true,
+        // anchor()/anchor-size() 产出 <length-percentage>（§3/§4 型别表）。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Time(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
@@ -1506,6 +1511,28 @@ pub fn calc_expr_has_angle_result(expr: &CalcExpr) -> bool {
     }
 }
 
+/// 判断 math 表达式是否含 anchor()/anchor-size() 叶（css-anchor-1 §3/§4）——
+/// Length 位纯 anchor 树 dimension_suffix 缺维度叶的放行门与 canonical 串化
+/// 臂的拦截谓词。
+pub fn calc_expr_has_anchor(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Anchor { .. } => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_has_anchor(left) || calc_expr_has_anchor(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_anchor),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_anchor(min) || calc_expr_has_anchor(val) || calc_expr_has_anchor(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_has_anchor(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => calc_expr_has_anchor(left) || calc_expr_has_anchor(right),
+        CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_has_anchor(&it.value)),
+        CalcExpr::Progress { value, start, end, .. } => {
+            calc_expr_has_anchor(value) || calc_expr_has_anchor(start) || calc_expr_has_anchor(end)
+        }
+        _ => false,
+    }
+}
+
 /// 判断 math 表达式是否含 tree-counting 叶（sibling-index()/sibling-count()）——
 /// 写面门分派与 canonical 串化臂的拦截谓词。
 pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
@@ -1524,6 +1551,8 @@ pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
         // calc-mix() 项/权重内 sibling 叶：serialize 通道走 fold_mix_dimension
         // 既有原文保留口径，不在本谓词拦截面（写面门对 mix 形放行挂账）。
         CalcExpr::Mix(_) => false,
+        // anchor()/anchor-size() 叶非 sibling。
+        CalcExpr::Anchor { .. } => false,
         // progress() 实参内 sibling 叶（`progress(sibling-index(), 1, 3)` 形）
         // ——递归上报。
         CalcExpr::Progress { value, start, end, .. } => {

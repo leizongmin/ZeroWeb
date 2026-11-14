@@ -7,8 +7,8 @@
 
 use super::calc_mix::{CalcMixItem, CalcMixWeight};
 use super::parse_extended::{
-    calc_expr_has_angle_result, calc_expr_has_length, calc_expr_has_tree_counting, calc_expr_is_number,
-    parse_counter_list_grammar,
+    calc_expr_has_anchor, calc_expr_has_angle_result, calc_expr_has_length, calc_expr_has_tree_counting,
+    calc_expr_is_number, parse_counter_list_grammar,
 };
 use super::types::{
     CalcExpr, CalcOp, LengthValue, TreeCountingFn, eval_calc, eval_calc_with_default_font, is_math_function_value,
@@ -70,8 +70,12 @@ pub fn fold_math_specified(value: &str, kind: MathFoldKind) -> Option<String> {
         // <number> 位非 number 式拒（scale 槽 `calc(10px)` 等）。
         MathFoldKind::Number if !calc_expr_is_number(&expr) => return None,
         // <length> 位须含长度叶（纯 number 式属 number 位，尺寸槽不折叠——
-        // `width: calc(5)` 的裁决留给写面文法门）。
-        MathFoldKind::Length if dimension_suffix(&expr).is_none() => return None,
+        // `width: calc(5)` 的裁决留给写面文法门）；anchor()/anchor-size() 叶
+        // <length-percentage> 族（css-anchor-1 §3/§4）放行——纯 anchor 树
+        //（`calc((anchor(…) + anchor(…)) / 2)`）无静态维度叶，canonical 串化。
+        MathFoldKind::Length if dimension_suffix(&expr).is_none() && !calc_expr_has_anchor(&expr) => {
+            return None;
+        }
         // <time> 位须含 time 叶（同上；`animation-duration: calc(3)` 不折叠）。
         MathFoldKind::Time if !expr_has_time_leaf(&expr) => return None,
         _ => {}
@@ -176,6 +180,9 @@ fn fold_static_masked(expr: &CalcExpr, kind: MathFoldKind, src: &str) -> Option<
 fn mask_tree_counting(expr: &mut CalcExpr, v: f64) {
     match expr {
         CalcExpr::TreeCounting(_) => *expr = CalcExpr::Number(v),
+        // anchor()/anchor-size() 叶无静态值不可掩码替换——保留原叶（求值期
+        // None 由调用方塌缩失败兜底）。
+        CalcExpr::Anchor { .. } => {}
         CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => {}
         CalcExpr::BinaryOp(l, _, r) => {
             mask_tree_counting(l, v);
@@ -591,6 +598,12 @@ pub(crate) fn canonical_math_specified(expr: &CalcExpr) -> Option<String> {
                 parts.join(", ")
             ))
         }
+        // anchor()/anchor-size() 顶层叶直发（<length-percentage> 函数值本身
+        // 是合法声明值，无需 calc 壳——`calc(anchor(…))` 单参解包，anchor-parse-
+        // valid 语料钉面）；叶文本 parse 期已 canonical。
+        CalcExpr::Anchor { is_size, args } => {
+            Some(format!("{}({})", if *is_size { "anchor-size" } else { "anchor" }, args))
+        }
         _ => Some(format!("calc({})", canonical_sum_terms(expr)?)),
     }
 }
@@ -602,6 +615,30 @@ fn canonical_math_arg(expr: &CalcExpr) -> Option<String> {
         CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. } => canonical_math_specified(expr),
         _ => canonical_sum_terms(expr),
     }
+}
+
+/// 剥一层配对的外括号（殿首唯一乘积项裸发射——`(0.5 * (A+B))` →
+/// `0.5 * (A+B)`）；非括号包裹 / 首括号闭于串中（`(a) + (b)` 多段形）原样。
+fn strip_outer_parens(node: &str) -> &str {
+    let t = node.trim();
+    if !(t.starts_with('(') && t.ends_with(')')) {
+        return t;
+    }
+    let bytes = t.as_bytes();
+    let mut depth = 0i32;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 && i != bytes.len() - 1 {
+                    return t;
+                }
+            }
+            _ => {}
+        }
+    }
+    &t[1..bytes.len() - 1]
 }
 
 /// 和差树 canonical 和串：项收集（[`collect_canonical_terms`]）→ 同单位
@@ -636,11 +673,13 @@ fn canonical_sum_terms(expr: &CalcExpr) -> Option<String> {
     }
     for (positive, node) in &nodes {
         if parts.is_empty() {
-            // 殿首节点：负号节点未钉面 → None 保留原文。
+            // 殿首节点：负号节点未钉面 → None 保留原文。乘积形外括号冗余
+            // 剥除（唯一项 `calc(0.5 * (A+B))` 裸发射——sum 语境括号化只在
+            // 项间；anchor-parse-valid 语料钉面）。`(a) + (b)` 多段形不剥。
             if !*positive {
                 return None;
             }
-            parts.push(node.clone());
+            parts.push(strip_outer_parens(node).to_string());
         } else {
             parts.push(format!("{} {}", if *positive { "+" } else { "-" }, node));
         }
@@ -677,8 +716,19 @@ fn collect_canonical_terms(
                 collect_canonical_terms(r, -sign, scalars, nodes)
             }
             CalcOp::Multiply => canonical_product_term(expr, sign, scalars, nodes),
-            // 除法节点无语料钉面——保留原文。
-            CalcOp::Divide => None,
+            CalcOp::Divide => {
+                // §10.6 canonical 除法：number 除数 → 乘系数形（`X/2` ≡
+                // `0.5 * X`——和差树因子保留括号、函数/anchor 节点因子乘积形、
+                // 维度叶系数并入标量；anchor-parse-valid 语料
+                // `calc((anchor(…) + anchor(…)) / 2)` 钉面）。零除/维度除数
+                //（比例）无语料钉面——保留原文。
+                if let CalcExpr::Number(n) = r.as_ref() {
+                    if *n != 0.0 {
+                        return product_term_from_factors(&[l.as_ref()], sign / *n, scalars, nodes);
+                    }
+                }
+                None
+            }
         },
         CalcExpr::Min(args) | CalcExpr::Max(args) => match args.as_slice() {
             // 单参 min/max ≡ calc(实参)（§10.5）——和内解包
@@ -709,6 +759,17 @@ fn collect_canonical_terms(
             nodes.push((sign > 0.0, canonical_math_specified(expr)?));
             Some(())
         }
+        // anchor()/anchor-size() 函数叶 → 节点项（<length-percentage> 族
+        // opaque 不可标量折叠；canonical 排序节点殿后——`calc(anchor(…) +
+        // 10%)` → `calc(10% + anchor(…))`，anchor-parse-valid 语料钉面）。
+        // 叶文本 parse 期已 canonical（[`super::anchor::canonicalize_anchor_call_args`]）。
+        CalcExpr::Anchor { is_size, args } => {
+            nodes.push((
+                sign > 0.0,
+                format!("{}({})", if *is_size { "anchor-size" } else { "anchor" }, args),
+            ));
+            Some(())
+        }
         CalcExpr::Number(n) => {
             scalars.push((sign * *n, None));
             Some(())
@@ -731,9 +792,7 @@ fn collect_canonical_terms(
 }
 
 /// 乘积链 canonical 项（§10.6：number 因子合并、系数前置）：因子全数值 →
-/// 标量；单一非数值因子 → 节点项——和差树因子 `c * (…)`、函数节点因子
-/// `c * node`（sum 语境括号化由调用方包法承担——本函数产出含外括号）、
-/// 单维度叶因子系数直读合并。多非数值因子返 None。
+/// 标量；单一非数值因子 → 节点项（[`product_term_from_factors`] 分派）。
 fn canonical_product_term(
     expr: &CalcExpr,
     sign: f64,
@@ -749,7 +808,21 @@ fn canonical_product_term(
             _ => non_number.push(f),
         }
     }
-    match non_number.as_slice() {
+    product_term_from_factors(&non_number, coeff, scalars, nodes)
+}
+
+/// 非数值因子集 canonical 项（§10.6 number-first 乘积形，系数 `coeff` 已
+/// 含全部 number 因子与符号）：单一和差树因子 `c * (…)`、函数/anchor 节点
+/// 因子 `c * node`（sum 语境括号化由调用方包法承担——本函数产出含外括号）、
+/// 单维度叶因子系数直读合并标量、纯数值因子集无量纲标量。多非数值因子返
+/// None（除法转乘复用——除数 number 已入 coeff，因子集 = 被除式单因子）。
+fn product_term_from_factors(
+    non_number: &[&CalcExpr],
+    coeff: f64,
+    scalars: &mut Vec<(f64, Option<&'static str>)>,
+    nodes: &mut Vec<(bool, String)>,
+) -> Option<()> {
+    match non_number {
         // 纯数值积 → 无量纲标量。
         [] => {
             scalars.push((coeff, None));
@@ -762,7 +835,7 @@ fn canonical_product_term(
             Some(())
         }
         // 单一函数节点因子 → `(c * node)`。
-        [CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. }] => {
+        [CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. } | CalcExpr::Anchor { .. }] => {
             let inner = canonical_math_specified(non_number[0])?;
             nodes.push((true, format!("({} * {})", format_number_6dp(coeff), inner)));
             Some(())
@@ -845,6 +918,8 @@ fn collect_sum_terms(expr: &CalcExpr, sign: f64, terms: &mut Vec<(f64, Option<&'
 /// 树内首个「任一实参 NaN 且实参 canonical 单位分歧」clamp 节点（左序深先）。
 fn find_divergent_nan_clamp(expr: &CalcExpr) -> Option<[&CalcExpr; 3]> {
     match expr {
+        // anchor()/anchor-size() 叶无子树不递归。
+        CalcExpr::Anchor { .. } => None,
         CalcExpr::Clamp { min, val, max } => {
             let args = [min.as_ref(), val.as_ref(), max.as_ref()];
             let any_nan = args.iter().any(|a| scalar_value(a).is_some_and(|v| v.is_nan()));
@@ -916,6 +991,9 @@ fn scalar_fold_inner(expr: &CalcExpr) -> Option<String> {
 /// 后缀即 canonical 形）。无维度叶 → None（number 位）。
 fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
     match expr {
+        // anchor()/anchor-size() 叶无静态维度 provenance（锚几何 px 求值期
+        // 才可决）。
+        CalcExpr::Anchor { .. } => None,
         CalcExpr::Number(_) => None,
         CalcExpr::Length(lv) => length_suffix(lv),
         CalcExpr::Time(_) => Some("s"),
@@ -997,6 +1075,8 @@ fn length_suffix(lv: &LengthValue) -> Option<&'static str> {
 fn expr_has_time_leaf(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Time(_) => true,
+        // anchor()/anchor-size() 叶非 <time>。
+        CalcExpr::Anchor { .. } => false,
         CalcExpr::Number(_) | CalcExpr::Length(_) => false,
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => expr_has_time_leaf(a) || expr_has_time_leaf(b),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(expr_has_time_leaf),
@@ -1056,6 +1136,15 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "width" | "text-indent" | "margin-top" | "margin-left" | "height" | "text-size-adjust" => {
             fold_math_specified(v, MathFoldKind::Length)
         }
+        // top 与 max-width：css-anchor-1 anchor() 声明值 canonical 串化
+        //（anchor-parse-valid 语料 top 槽 4F 钉面——`calc((anchor(…) +
+        // anchor(…)) / 2)` → `calc(0.5 * (…))`、anchor 叶节点排序、fallback
+        // 无单位数字补 px）；anchor-size-parse-valid 语料 max-width 槽 2F 同面。
+        // right/bottom/left 无语料驱动不接入（left 既有 store 原文零漂移钉面）。
+        // anchor() inset 声明布局期原文承载（apply 面 contains("anchor(") 臂）
+        // 不受串形变化影响——calc 包裹形布局期一直 Auto 保底（anchor_pos 第一刀
+        // bare 形）。非 math 函数值 parse 失败 None 保留原文零漂移。
+        "top" | "max-width" => fold_math_specified(v, MathFoldKind::Length),
         // css-fonts-4 §font-weight-numeric / §font-width-prop：font-* 数值槽
         // math 形 canonical 折叠（font-weight-valid `calc(100 + 100)` →
         // `calc(200)`、font-width-valid `calc(100% + 100%)` → `calc(200%)`
@@ -2041,5 +2130,65 @@ mod tests {
         );
         // 非 math 值 / 混族保留原文（既有面）。
         assert_eq!(fold_decl_specified("opacity", "0.5"), None);
+    }
+
+    #[test]
+    fn anchor_func_canonical_serialize_table() {
+        // css-anchor-1 anchor()/anchor-size() 声明值 canonical 串化
+        //（anchor-parse-valid / anchor-size-parse-valid 语料 12F 钉面）：
+        // ① number 除数转乘系数形（§10.6 number-first，和差树因子括号化）；
+        // ② anchor 叶节点项殿后排序（`anchor(…) + 10%` → `10% + anchor(…)`）；
+        // ③ fallback 无单位数字补 px + calc 单参解包（`calc(anchor(…))` →
+        // `anchor(…)`）。
+        let table: [(&str, &str, Option<&str>); 15] = [
+            (
+                "top",
+                "calc((anchor(--foo top) + anchor(--bar bottom)) / 2)",
+                Some("calc(0.5 * (anchor(--foo top) + anchor(--bar bottom)))"),
+            ),
+            (
+                "top",
+                "calc(anchor(--foo left, 1px) + 10%)",
+                Some("calc(10% + anchor(--foo left, 1px))"),
+            ),
+            // 裸 anchor 形不在 math 函数分派（parse None 保留原文）——fallback
+            // 补 px 由写链兜底 canonicalize_anchor_functions（anchor.rs 测试钉）。
+            ("top", "anchor(--foo left, 0)", None),
+            ("top", "calc(anchor(--foo left, 0))", Some("anchor(--foo left, 0px)")),
+            (
+                "max-width",
+                "calc((anchor-size(--foo width) + anchor-size(--bar height)) / 2)",
+                Some("calc(0.5 * (anchor-size(--foo width) + anchor-size(--bar height)))"),
+            ),
+            (
+                "margin-left",
+                "calc(anchor-size(--foo width, 1px) + 10%)",
+                Some("calc(10% + anchor-size(--foo width, 1px))"),
+            ),
+            ("width", "anchor-size(--foo width, 0)", None),
+            (
+                "width",
+                "calc(anchor-size(--foo width, 0))",
+                Some("anchor-size(--foo width, 0px)"),
+            ),
+            // 幂等（canonical 输出再折叠恒等——写链 fold → 序换位链式调用面）。
+            (
+                "top",
+                "calc(0.5 * (anchor(--foo top) + anchor(--bar bottom)))",
+                Some("calc(0.5 * (anchor(--foo top) + anchor(--bar bottom)))"),
+            ),
+            // 参数序换位经叶 parse 期 canonical（flip 形语料钉面）。
+            ("top", "anchor(50% --foo)", None),
+            // 既有普通 calc canonical 面零漂移（inset 槽新增白名单）。
+            ("top", "calc(1px + 50%)", Some("calc(50% + 1px)")),
+            ("top", "calc(50% + 1px)", Some("calc(50% + 1px)")),
+            // 非 math 值 / 非 calc 保留原文。
+            ("top", "10px", None),
+            ("top", "auto", None),
+            ("left", "anchor(bogus, 0)", None),
+        ];
+        for (prop, input, expected) in table {
+            assert_eq!(fold_decl_specified(prop, input).as_deref(), expected, "{prop}: {input}");
+        }
     }
 }

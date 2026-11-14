@@ -1032,6 +1032,9 @@ fn resolve_length_field(
 /// property 写面文法门复用（transform-origin-z `<length>` 位的 % 排除）。
 pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
     match expr {
+        // anchor()/anchor-size() 叶求值需布局锚几何——保留布局层（computed
+        // 期 fail-closed，与 converter 侧同口径）。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
         // Time 叶无百分比（time 槽专用原子，length 槽解析不可达）。

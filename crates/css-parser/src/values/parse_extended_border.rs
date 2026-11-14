@@ -635,6 +635,9 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
         // clip-path 槽无 tree-counting 文法位（DOM 兄弟序依赖、parse 期
         // opaque 无语料驱动案）——fail-closed 兜底。
         CalcExpr::TreeCounting(_) => None,
+        // clip-path 槽无 anchor()/anchor-size() 文法位（inset/size 族函数）
+        // ——fail-closed 兜底。
+        CalcExpr::Anchor { .. } => None,
         CalcExpr::Min(args) | CalcExpr::Max(args) => same_clip_path_calc_types(args),
         CalcExpr::Clamp { min, val, max } => {
             let ty = clip_path_calc_type(min)?;

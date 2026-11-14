@@ -1627,6 +1627,9 @@ fn extract_calc_definite_upper_bound(expr: &zero_css_parser::values::CalcExpr, v
 fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bool {
     use zero_css_parser::values::{CalcExpr, LengthValue};
     match expr {
+        // anchor()/anchor-size() 叶求值需布局锚几何（fallback % 槽轴基）——
+        // 保留布局期解析。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
         // Time 叶无百分比（time 槽专用原子，length 槽解析不可达）。
@@ -1657,6 +1660,8 @@ fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bo
 fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
     use zero_css_parser::values::{CalcExpr, LengthValue};
     match expr {
+        // anchor()/anchor-size() 产出 <length-percentage>（css-anchor-1 §3/§4）。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => !matches!(lv, LengthValue::Percentage(_)),
         // Time 叶非长度（time 槽专用原子，length 槽解析不可达）。
