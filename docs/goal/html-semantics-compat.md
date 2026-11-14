@@ -30,7 +30,10 @@ combobox tentative 12 续分诊；全桥套件绿窗轮末收口跑常态化；�
 f6a70ef86 ip 壳携精化，双腿复验键全集 8320 逐键恒等零 GONE/NEW，
 stable 面恰 1 键单腿 P↔F 置换（dialog-overlay computed overlay
 initially 'none'，在册负载族渲染邻接面，按族振荡记账），基带维持
-——与 s441 对 fb81665dd 复验结论同型（账本「组合树复验」节）。
+——与 s441 对 fb81665dd 复验结论同型（账本「组合树复验」节）。复验后
+push 窗口又入他流 g46 calc 负分辨率/content×image-set（b0c689f42，
+css-values 窄域）：本轮未再复验，下一轮全量 sweep（hang 修复验证本就要
+跑）时按语料变更一并归因，F−1/P+196 判定以其为基。
 
 > **▶ 承前（2026-11-15 M2 切片 441 收口）——红池 48 键伪红定谳清偿 +
 > fetch_raw 自愈化 + 基带重测（账本
