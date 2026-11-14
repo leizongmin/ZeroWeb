@@ -1138,9 +1138,11 @@ pub struct GradientColorStop {
 
 /// CSS Color 4 渐变颜色插值色彩空间（`gradient in <colorspace>`，R2289）。
 ///
-/// 与 `render-foundation::primitive::GradientColorSpace` 一一对应；engine 负责映射。
-/// wide-gamut（display-p3/xyz/rec2020/...）与未知空间在解析期归一为 Srgb（无色彩管理管线，
-/// 优雅回退）。
+/// 与 `render-foundation::primitive::GradientColorSpace` 对应；engine 负责映射。
+/// 渲染端 wide-gamut/hsl/hwb/xyz* 一律回退 Srgb（无色彩管理管线，R2288 口径不变）；
+/// g42 起解析模型保留 hsl/hwb/xyz-d50/xyz-d65 身份供 computed 序列化保真
+///（css-images gradient-interpolation-method-computed oracle），display-p3/a98-rgb/
+/// rec2020/prophoto-rgb 与未知空间仍解析期归一 Srgb。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ColorInterpolationSpace {
     /// gamma 编码 sRGB（默认）。
@@ -1156,6 +1158,14 @@ pub enum ColorInterpolationSpace {
     Lch,
     /// OKLCH（极坐标）。
     Oklch,
+    /// HSL（极坐标，css-color-4 §12.2 色相法合法）。渲染回退 Srgb（R2288）。
+    Hsl,
+    /// HWB（极坐标）。渲染回退 Srgb（R2288）。
+    Hwb,
+    /// XYZ D50（Bradford 适应）。渲染回退 Srgb（R2288）。
+    XyzD50,
+    /// XYZ D65（`in xyz`/`in xyz-d65`）。渲染回退 Srgb（R2288）。
+    XyzD65,
 }
 
 /// 极坐标色彩空间（LCH/OKLCH）的色相插值法（CSS Color 4 §13.5）。
@@ -1443,7 +1453,14 @@ fn parse_interpolation_method(rest: &str) -> (ColorInterpolationSpace, ColorHueM
         "oklab" => ColorInterpolationSpace::Oklab,
         "lch" => ColorInterpolationSpace::Lch,
         "oklch" => ColorInterpolationSpace::Oklch,
-        // wide-gamut/xyz*/hsl/hwb：渲染回退 Srgb（既有无色彩管理口径不变）。
+        // g42：hsl/hwb/xyz-d50/xyz-d65 模型身份保留（computed 序列化保真），
+        // 渲染端仍回退 Srgb（R2288 无色彩管理口径不变）。
+        "hsl" => ColorInterpolationSpace::Hsl,
+        "hwb" => ColorInterpolationSpace::Hwb,
+        "xyz-d50" => ColorInterpolationSpace::XyzD50,
+        "xyz-d65" => ColorInterpolationSpace::XyzD65,
+        // display-p3/a98-rgb/rec2020/prophoto-rgb 等余 wide-gamut：归一 Srgb
+        //（既有口径；computed 语料未驱动，身份保留 defer）。
         _ => ColorInterpolationSpace::Srgb,
     };
     let mut hue = ColorHueMethod::Shorter;
@@ -1589,13 +1606,23 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     let shape_src = hs.head.as_deref().unwrap_or("");
     let shape_lower = shape_src.to_ascii_lowercase();
 
+    // 首参为 shape/size/position 配置的派发：关键字形（circle/ellipse/size 词/
+    // `at` 位）或纯长度尺寸形（css-images-4 `<length-percentage>{1,2}` size-only，
+    // g42 driving: gradient-interpolation-method computed `radial-gradient(50px,…)`）。
+    // 颜色名/函数永不命中 parse_length → 色标首参不误入。
+    let first_tok_is_length = shape_src
+        .split_whitespace()
+        .next()
+        .map(|t| parse_length(t).is_some())
+        .unwrap_or(false);
     if !shape_src.is_empty()
         && (shape_lower.starts_with("circle")
             || shape_lower.starts_with("ellipse")
             || shape_lower.starts_with("closest")
             || shape_lower.starts_with("farthest")
             || shape_lower.starts_with("at ")
-            || shape_lower.contains(" at "))
+            || shape_lower.contains(" at ")
+            || first_tok_is_length)
     {
         // 解析 shape + size + at position
         let (s, sz, px, py) = parse_radial_shape_and_position(shape_src)?;
@@ -1604,11 +1631,11 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         pos_x = px;
         pos_y = py;
         stop_start = 1;
-        head_raw = Some(normalize_decl_ws(shape_src));
+        head_raw = Some(canonicalize_radial_head(normalize_decl_ws(shape_src)));
     } else if hs.present {
         // 首参仅为 `in <colorspace>` 提示（或纯长度尺寸形），跳过用默认 shape
         if let Some(h) = hs.head {
-            head_raw = Some(normalize_decl_ws(&h));
+            head_raw = Some(canonicalize_radial_head(normalize_decl_ws(&h)));
         }
         stop_start = 1;
     }
@@ -1667,6 +1694,32 @@ fn parse_radial_shape_and_position(s: &str) -> Option<(RadialShape, RadialSize, 
     Some((shape, size, pos_x, pos_y))
 }
 
+/// radial 配置原文 canonical：形状关键字由 size 隐含时省略（css-images-4
+/// [§serializing-gradients](https://drafts.csswg.org/css-images-4/#serializing-gradients)
+/// ）——`ellipse <length-percentage>{2}` 双长度形省略 `ellipse`（g42 driving:
+/// gradient-interpolation-method-valid `ellipse 50% 40em` → `50% 40em`）；
+/// `circle <length>` 单长度半径省略 `circle`（engine part04 computed oracle
+/// `circle 50px` → `50px`）。余下 token（含 `at` 位）原样保留。
+fn canonicalize_radial_head(head: Box<str>) -> Box<str> {
+    let mut toks = head.split_whitespace();
+    let first = match toks.next() {
+        Some(f) => f,
+        None => return head,
+    };
+    let rest: Vec<&str> = toks.collect();
+    let implied = if first.eq_ignore_ascii_case("ellipse") {
+        rest.len() >= 2 && parse_length(rest[0]).is_some() && parse_length(rest[1]).is_some()
+    } else if first.eq_ignore_ascii_case("circle") {
+        !rest.is_empty() && parse_length(rest[0]).is_some() && (rest.len() == 1 || rest[1].eq_ignore_ascii_case("at"))
+    } else {
+        false
+    };
+    if implied {
+        return rest.join(" ").into_boxed_str();
+    }
+    head
+}
+
 /// 解析 radial shape 和 size 关键字。
 fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSize) -> Option<()> {
     let lower = s.trim().to_ascii_lowercase();
@@ -1691,7 +1744,7 @@ fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSi
     Some(())
 }
 
-/// 解析位置对（如 "center center"、"50% 50%"、"left top"）。
+/// 解析位置对（如 "center center"、"50% 50%"、"left top"、"left 10px top 50em"）。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
     let s = s.trim();
     let parts: Vec<&str> = s.split_whitespace().collect();
@@ -1705,6 +1758,40 @@ fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
             let px = parse_position_keyword(parts[0])?;
             let py = parse_position_keyword(parts[1])?;
             Some((px, py))
+        }
+        // css-values-4 §position：`[<side> <length-percentage>?]{1,2}` 缘偏移对
+        //（`at left 10px top 50em` → x=10px（左缘）y=50em（上缘），对序任意）。
+        // FIXME: right/bottom 缘锚定模型丢失（单 LengthValue 轴模型无缘相对
+        // 偏移表达），渲染按左/上缘偏移近似；canonical 序列化经 as-written
+        // 头部透传保真（g42 driving: gradient-interpolation-method computed/
+        // valid 的 4-token 位形）。
+        3 | 4 => {
+            let mut x: Option<LengthValue> = None;
+            let mut y: Option<LengthValue> = None;
+            let mut i = 0usize;
+            while i < parts.len() {
+                let kw = parts[i].to_ascii_lowercase();
+                let (slot, bare) = match kw.as_str() {
+                    "left" => (&mut x, LengthValue::Percentage(0.0)),
+                    "right" => (&mut x, LengthValue::Percentage(100.0)),
+                    "top" => (&mut y, LengthValue::Percentage(0.0)),
+                    "bottom" => (&mut y, LengthValue::Percentage(100.0)),
+                    _ => return None,
+                };
+                i += 1;
+                if i < parts.len() {
+                    if let Some(lv) = parse_length(parts[i]) {
+                        *slot = Some(lv);
+                        i += 1;
+                        continue;
+                    }
+                }
+                *slot = Some(bare);
+            }
+            Some((
+                x.unwrap_or(LengthValue::Percentage(50.0)),
+                y.unwrap_or(LengthValue::Percentage(50.0)),
+            ))
         }
         _ => None,
     }

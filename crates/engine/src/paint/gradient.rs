@@ -140,6 +140,12 @@ fn map_interpolation(i: ColorInterpolation) -> GradientInterpolation {
         ColorInterpolationSpace::Oklab => GradientColorSpace::Oklab,
         ColorInterpolationSpace::Lch => GradientColorSpace::Lch,
         ColorInterpolationSpace::Oklch => GradientColorSpace::Oklch,
+        // hsl/hwb/xyz*：渲染回退 Srgb（R2288 无色彩管理口径不变；g42 仅保留
+        // css-parser 模型身份供 computed 序列化保真）。
+        ColorInterpolationSpace::Hsl
+        | ColorInterpolationSpace::Hwb
+        | ColorInterpolationSpace::XyzD50
+        | ColorInterpolationSpace::XyzD65 => GradientColorSpace::Srgb,
     };
     let hue = match i.hue {
         ColorHueMethod::Shorter => HueMethod::Shorter,
@@ -514,6 +520,28 @@ mod tests {
             assert!((x1 - 100.0).abs() < 0.01);
         } else {
             panic!("expected linear gradient");
+        }
+    }
+
+    /// g42：hsl/hwb/xyz 族 parse 保留模型身份（computed 序列化保真），渲染端
+    /// [`map_interpolation`] 仍回退 Srgb（R2288 无色彩管理口径不变）。
+    #[test]
+    fn test_g42_render_interpolation_fallback_srgb() {
+        for space in [
+            ColorInterpolationSpace::Hsl,
+            ColorInterpolationSpace::Hwb,
+            ColorInterpolationSpace::XyzD50,
+            ColorInterpolationSpace::XyzD65,
+        ] {
+            let mapped = map_interpolation(ColorInterpolation {
+                space,
+                hue: ColorHueMethod::Shorter,
+            });
+            assert_eq!(
+                mapped.space,
+                GradientColorSpace::Srgb,
+                "{space:?} must render via Srgb fallback"
+            );
         }
     }
 

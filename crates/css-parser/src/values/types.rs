@@ -157,6 +157,35 @@ pub enum ColorValue {
     /// ——实参可为 currentColor；结果恒为不透明白或黑，对比算法 UA-defined，本实现取
     /// WCAG 相对亮度对比比较高者）。driving: css-color contrast-color-001。
     ContrastColor(Box<ColorValue>),
+    /// CSS Color 4 `color(<space> <c0> <c1> <c2> [ / <alpha>])` —— **未解析**保留
+    /// 预定义色彩空间与分量（computed 序列化保真 `color(srgb 1 0 0)`，css-color-4
+    /// §9.1：computed 值不坍缩 legacy rgb）；paint 时经 [`ColorFunctionSpec::to_srgb_rgba`]
+    /// 回退。空间名 parse 期 canonical（xyz→xyz-d65 别名展开，css-color-4 §9.1）。
+    /// driving: css-images gradient-interpolation-method-computed（g42）。
+    ColorFunction(Box<ColorFunctionSpec>),
+}
+
+/// `color()` 预定义色彩空间函数规格（CSS Color 4 §9）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorFunctionSpec {
+    /// canonical 空间名：`srgb` / `srgb-linear` / `display-p3` / `a98-rgb` /
+    /// `prophoto-rgb` / `rec2020` / `xyz-d50` / `xyz-d65`（`xyz` 输入已展开）。
+    pub space: Box<str>,
+    /// 三分量（number 或 percent→/100 归一、`none`→0）。
+    pub comps: [f64; 3],
+    /// alpha（0-1，缺省 1）。
+    pub alpha: f64,
+}
+
+impl ColorFunctionSpec {
+    /// 回退转换 gamma-encoded sRGB u8（R2288 无色彩管理管线口径；未知空间不可达
+    /// ——parse 期白名单校验）。分量按各空间域 clamp 后交给既有转换器。
+    pub fn to_srgb_rgba(&self) -> Option<(u8, u8, u8, u8)> {
+        let (r, g, b) =
+            super::color_math::convert_predefined_to_srgb(&self.space, self.comps[0], self.comps[1], self.comps[2])?;
+        let a = (self.alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
+        Some((r, g, b, a))
+    }
 }
 
 /// `color-mix()` 规范（CSS Color 4）。

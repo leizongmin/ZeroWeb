@@ -2114,13 +2114,19 @@ fn test_parse_rebeccapurple() {
 /// R2270：CSS Color 4 线性光变体（display-p3-linear 等）——跳过 gamma decode。
 fn test_parse_linear_color_spaces() {
     use crate::values::ColorValue;
-    // display-p3-linear green（WPT 线性 display-p3 值）→ (0,128,0)
-    assert!(matches!(
-        super::super::parse_color("color(display-p3-linear 0.0383 0.2087 0.0156)"),
-        Some(ColorValue::Rgba(0, 128, 0, 255))
-    ));
+    // display-p3-linear green（WPT 线性 display-p3 值）→ (0,128,0)。g42 起 parse
+    // 保留 ColorFunction 模型（computed 序列化保真），渲染等价经 to_srgb_rgba 断言。
+    let spec = match super::super::parse_color("color(display-p3-linear 0.0383 0.2087 0.0156)") {
+        Some(ColorValue::ColorFunction(s)) => s,
+        other => panic!("expected ColorFunction, got {other:?}"),
+    };
+    assert_eq!(spec.space.as_ref(), "display-p3-linear");
+    assert_eq!(spec.to_srgb_rgba(), Some((0, 128, 0, 255)));
     // 常规 display-p3（gamma）仍工作（green 在 display-p3 略不同，但 a98-rgb green 已 R2255 验证）
-    assert!(super::super::parse_color("color(display-p3 0 0.5 0)").is_some());
+    assert!(matches!(
+        super::super::parse_color("color(display-p3 0 0.5 0)"),
+        Some(ColorValue::ColorFunction(_))
+    ));
 }
 
 #[test]
@@ -2581,4 +2587,110 @@ fn test_fold_background_image_gradient_canonical_dispatch() {
     );
     // 非渐变非 image-set 面 None 原文。
     assert_eq!(fold_decl_specified("background-image", "url(a.png)"), None);
+}
+
+#[test]
+fn test_g42_radial_head_canonical_and_size_only_parse() {
+    // css-images-4 §serializing-gradients：`ellipse <length-percentage>{2}` 双长度形
+    // 省略形状关键字（g42 driving: gradient-interpolation-method-valid）。
+    assert_eq!(
+        canon("radial-gradient(ellipse 50% 40em, red, blue)").as_deref(),
+        Some("radial-gradient(50% 40em, red, blue)")
+    );
+    // ellipse + 关键字 size（非双长度）不省略。
+    assert_eq!(
+        canon("radial-gradient(ellipse closest-side, red, blue)").as_deref(),
+        Some("radial-gradient(ellipse closest-side, red, blue)")
+    );
+    // ellipse + 双长度 + at 位置：仅省略 ellipse，余配置原样。
+    assert_eq!(
+        canon("radial-gradient(ellipse 50px 40px at 25% 30%, red, blue)").as_deref(),
+        Some("radial-gradient(50px 40px at 25% 30%, red, blue)")
+    );
+    // circle 单长度：ending shape 由单长度隐含，canonical 省略 `circle`
+    // （engine part04 computed oracle `circle 50px` → `50px`）。
+    assert_eq!(
+        canon("radial-gradient(circle 50px, red, blue)").as_deref(),
+        Some("radial-gradient(50px, red, blue)")
+    );
+    // circle + 单长度 + at 位：仅省略 circle，余配置原样。
+    assert_eq!(
+        canon("radial-gradient(circle 50px at 25% 30%, red, blue)").as_deref(),
+        Some("radial-gradient(50px at 25% 30%, red, blue)")
+    );
+    // circle + 关键字 size（非单长度半径）不省略。
+    assert_eq!(
+        canon("radial-gradient(circle closest-side, red, blue)").as_deref(),
+        Some("radial-gradient(circle closest-side, red, blue)")
+    );
+    // size-only 纯长度首参（无 shape 关键字）解析为 size 配置（computed 语料
+    // `radial-gradient(50px in lab, …)` oracle 面）。
+    let g = parse_gradient("radial-gradient(50px, red, blue)").expect("size-only radial must parse");
+    let GradientValue::Radial(r) = &g else {
+        panic!("expected radial, got {g:?}");
+    };
+    assert_eq!(r.size, RadialSize::Length(LengthValue::Px(50.0)));
+    assert_eq!(r.specified.as_ref().and_then(|s| s.head.as_deref()), Some("50px"));
+    // 双长度 size-only（无 ellipse 关键字）同样解析，head 原样（canonical 不加
+    // 关键字）。
+    let g2 = parse_gradient("radial-gradient(50% 40em, red, blue)").expect("two-length size-only must parse");
+    let GradientValue::Radial(r2) = &g2 else {
+        panic!("expected radial, got {g2:?}");
+    };
+    assert_eq!(r2.specified.as_ref().and_then(|s| s.head.as_deref()), Some("50% 40em"));
+}
+
+#[test]
+fn test_g42_position_edge_offset_pairs() {
+    // css-values-4 §position 缘偏移对（4-token）：`at left 10px top 50em`。
+    // computed/valid 语料 driving（conic/radial `at left Npx top Nem` 形）。
+    let g = parse_gradient("conic-gradient(at left 10px top 50em, red, blue)").expect("4-token position must parse");
+    let GradientValue::Conic(c) = &g else {
+        panic!("expected conic, got {g:?}");
+    };
+    assert_eq!(c.position_x, LengthValue::Px(10.0));
+    assert_eq!(c.position_y, LengthValue::Em(50.0));
+    assert_eq!(
+        canon("conic-gradient(at left 10px top 50em, red, blue)").as_deref(),
+        Some("conic-gradient(at left 10px top 50em, red, blue)"),
+        "as-written head passthrough"
+    );
+    // 3-token 缘偏移（对 + 裸关键字）。
+    let g3 = parse_gradient("radial-gradient(at left 10px top, red, blue)").expect("3-token position must parse");
+    let GradientValue::Radial(r3) = &g3 else {
+        panic!("expected radial, got {g3:?}");
+    };
+    assert_eq!(r3.position_y, LengthValue::Percentage(0.0));
+}
+
+#[test]
+fn test_g42_interpolation_space_model_identity() {
+    // g42：hsl/hwb/xyz-d50/xyz-d65 模型身份保留（computed 序列化保真）；渲染端
+    // 映射仍回退 Srgb（engine paint map_interpolation 臂，R2288 口径不变）。
+    let g = parse_gradient("linear-gradient(in hsl longer hue, red, blue)").unwrap();
+    let GradientValue::Linear(l) = &g else {
+        panic!("expected linear, got {g:?}");
+    };
+    assert_eq!(l.interpolation.space, ColorInterpolationSpace::Hsl);
+    assert_eq!(l.interpolation.hue, ColorHueMethod::Longer);
+    let g2 = parse_gradient("linear-gradient(in xyz-d50, red, blue)").unwrap();
+    let GradientValue::Linear(l2) = &g2 else {
+        panic!("expected linear, got {g2:?}");
+    };
+    assert_eq!(l2.interpolation.space, ColorInterpolationSpace::XyzD50);
+    // canonical 文本行为不变（xyz 别名展开、shorter 缺省省略）。
+    assert_eq!(
+        canon("linear-gradient(in xyz, red, blue)").as_deref(),
+        Some("linear-gradient(in xyz-d65, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(in hwb shorter hue, red, blue)").as_deref(),
+        Some("linear-gradient(in hwb, red, blue)")
+    );
+    // display-p3 等余 wide-gamut 仍归一 Srgb（身份保留 defer）。
+    let g3 = parse_gradient("linear-gradient(in display-p3, red, blue)").unwrap();
+    let GradientValue::Linear(l3) = &g3 else {
+        panic!("expected linear, got {g3:?}");
+    };
+    assert_eq!(l3.interpolation.space, ColorInterpolationSpace::Srgb);
 }
