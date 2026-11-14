@@ -627,6 +627,29 @@ pub enum DomMutation {
     },
 }
 
+impl DomMutation {
+    /// s423：该变更是否属 inline style 族（`el.style.prop = v` / `removeProperty` /
+    /// `style` 属性内容写入，sel 与 handle 两身份面）。rect 现算视图臂（
+    /// [`computed_style_cache`] pending view）以此作门控——纯 style 族 pending 下
+    /// 视图现算几何与渲染快照 drain 后真值一致（语料三形态探针实证：span-all/
+    /// none/top-left + wm 组合 anchor 几何逐值吻合）；类/textContent/结构性变更
+    /// 以下视图等值性无实证（真态缺口在册：writing-mode 组合 anchor 不变式、
+    /// position-try fallback 状态机），门关闭回落快照旧行为。
+    pub fn is_inline_style_family(&self) -> bool {
+        match self {
+            DomMutation::SetStyle { .. }
+            | DomMutation::RemoveStyle { .. }
+            | DomMutation::SetStyleOnHandle { .. }
+            | DomMutation::RemoveStyleOnHandle { .. } => true,
+            DomMutation::SetAttr { name, .. }
+            | DomMutation::RemoveAttr { name, .. }
+            | DomMutation::SetAttrOnHandle { name, .. }
+            | DomMutation::RemoveAttrOnHandle { name, .. } => name.eq_ignore_ascii_case("style"),
+            _ => false,
+        }
+    }
+}
+
 /// [`DomMutation::FocusChangedInShadow`] apply 臂铸造的 zwsh 地址在返回
 /// `handle → selector` 映射中的保留键。真实 handle 键为 shim 侧数字串形态，
 /// 本键不会被任何 handle 反查命中；消费方（reftest runner focus_selector 提取 /

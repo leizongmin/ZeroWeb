@@ -770,6 +770,42 @@ pub fn register_dom_callbacks(
                 }
                 return String::new();
             }
+            // s423：selector 身份 pending 臂——mutation pending 窗口（队列长 > applied
+            // 游标）内，基座既有元素的 rect 走有效视图现算布局（
+            // [`computed_style_cache::pending_view_selector_rect`]）。CSSOM View：rect
+            // 读须先 update the style and layout steps——旧 selector 路径只读渲染后
+            // 快照，testharness 单脚本 turn 内 `el.style.X = v` → 同 turn
+            // offsetWidth/offsetLeft/gBCR 全体读到写前几何（css-anchor-position
+            // position-area 族 ~190F 根因：write→read 同 turn，drain 只在 execute_script
+            // 尾）。miss 回落快照旧行为（零回归）。
+            // 门控收窄：pending 区间须全为 inline style 族变更（
+            // [`DomMutation::is_inline_style_family`]）——类/textContent/结构性变更
+            // 下现算视图等值性无实证（真态缺口在册：writing-mode 组合 anchor 不变式
+            // ~864F、position-try fallback 状态机 ~131F，探针 zz-g36probe-wm001-drain
+            // 证基线该群全为陈旧读伪通过），门关闭回落快照旧行为不扩大暴露面；
+            // position-area 语料写形（`style.positionArea = v`）为纯 style 族放行。
+            // len 直读免大队列 clone——仅 pending 窗口内才 clone 重放。
+            // https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+            let style_version = rs_mut.lock().map(|l| l.len()).unwrap_or(0);
+            let applied_cursor = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+            let style_family_only = style_version > applied_cursor
+                && rs_mut
+                    .lock()
+                    .map(|l| l[applied_cursor..].iter().all(DomMutation::is_inline_style_family))
+                    .unwrap_or(false);
+            if style_family_only
+                && let Some((x, y, w, h)) = super::computed_style_cache::pending_view_selector_rect(
+                    &rs_html.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                    MUT_DRAIN_GEN.load(Ordering::Relaxed),
+                    style_version,
+                    DOM_VIEW_GEN.load(Ordering::Relaxed),
+                    applied_cursor,
+                    sel,
+                    || rs_mut.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                )
+            {
+                return format!("{x},{y},{w},{h}");
+            }
             // selector → NodeId：live doc 优先（进程内 webview 常驻发布），
             // miss 回落查询快照 re-parse（与 __zw_query_match 同源逻辑）。
             let node_id = LIVE_QUERY_DOC.with(|slot| {

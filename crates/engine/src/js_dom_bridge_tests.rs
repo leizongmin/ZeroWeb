@@ -195,3 +195,9 @@ include!("js_dom_bridge_tests/part114_t68_selhandle_registry_sync.rs");
 // 编辑命令兼容 ip 残 99F M3-A 探针：可编辑根层非首行裸文本 caret insertParagraph
 // 拆分左段裸留语义五形钉测（行中尾位/词中切片/行首补 br/首行 wrap guard/dPS p）。
 include!("js_dom_bridge_tests/part114_ip_root_bare_text_split_probe.rs");
+
+// s423 pending 视图 selector rect：gBCR selector 身份在 mutation pending 窗口内
+// 走有效视图现算布局（CSSOM View update the style and layout steps）——testharness
+// 单脚本 turn 内 style 写 → offsetWidth/offsetLeft 同 turn 断言面（position-area
+// 族 ~190F 根因）双向钉测（写读同值 + drain 后快照旧行为）。
+include!("js_dom_bridge_tests/part115_s423_pending_selector_rect.rs");

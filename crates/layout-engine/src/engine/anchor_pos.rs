@@ -244,13 +244,15 @@ fn apply_inset_walk(
     styles: &HashMap<NodeId, ComputedStyle>,
     anchors: &AnchorMap,
 ) {
-    let vx = origin_x + b.x;
-    let vy = origin_y + b.y;
+    let vx = origin_x + b.border_left + b.x;
+    let vy = origin_y + b.border_top + b.y;
     // 子树滚动上下文（目标侧 = 盒树祖先链含本盒；锚侧注册口径一致）。
     let child_sc = within_scroller || b.node_id.and_then(|nid| styles.get(&nid)).is_some_and(is_scroller);
     let cb_is_positioned = b.is_abspos_cb;
-    let cb_x = vx + b.border_left + b.padding_left;
-    let cb_y = vy + b.border_top + b.padding_top;
+    // vx/vy 已是 V 系 border box 原点（rect 提取/渲染递归口径：V(child) =
+    // V(parent) + parent border + child.x）→ CB padding box 原点只加 padding。
+    let cb_x = vx + b.padding_left;
+    let cb_y = vy + b.padding_top;
     let cb_w = (b.width - b.border_left - b.border_right - b.padding_left - b.padding_right).max(0.0);
     let cb_h = (b.height - b.border_top - b.border_bottom - b.padding_top - b.padding_bottom).max(0.0);
     for child in &mut b.children {
@@ -284,9 +286,10 @@ fn apply_inset_walk(
             let mt = resolve_anchor_len(&s.margin_top, &s.font_size);
             let mb = resolve_anchor_len(&s.margin_bottom, &s.font_size);
             // inset→几何：inset 定 margin edge（CSS2 §10.3.7）；双侧非 auto
-            // 拉伸定尺寸，单侧定位（尺寸取 taffy shrink-to-fit 结果）。
+            // 拉伸定尺寸，单侧定位（尺寸取 taffy shrink-to-fit 结果）。lv 已是
+            // V 系 CB padding box 相对量 → child.x（rect 口径同基准）直写。
             if let Some(lv) = l {
-                child.x = cb_x + lv - vx + ml;
+                child.x = lv + ml;
                 if let Some(rv) = rr {
                     // 双侧非 auto：宽 = CB − 两 inset − 水平 margin（inset 各自
                     // 从对面 CB 边缘量起，CSS2 §10.3.7 约束式）。
@@ -297,10 +300,10 @@ fn apply_inset_walk(
                             .max(0.0);
                 }
             } else if let Some(rv) = rr {
-                child.x = cb_x + cb_w - rv - mr - child.width;
+                child.x = cb_w - rv - mr - child.width;
             }
             if let Some(tv) = t {
-                child.y = cb_y + tv - vy + mt;
+                child.y = tv + mt;
                 if let Some(bv) = bt {
                     let h = (cb_h - tv - bv - mt - mb).max(0.0);
                     child.height = h;
@@ -309,7 +312,7 @@ fn apply_inset_walk(
                             .max(0.0);
                 }
             } else if let Some(bv) = bt {
-                child.y = cb_y + cb_h - bv - mb - child.height;
+                child.y = cb_h - bv - mb - child.height;
             }
         }
         apply_inset_walk(child, vx, vy, child_sc, styles, anchors);
@@ -325,14 +328,16 @@ fn collect_anchors(
     out: &mut AnchorMap,
     found_insets: &mut bool,
 ) {
-    let vx = origin_x + b.x;
-    let vy = origin_y + b.y;
+    let vx = origin_x + b.border_left + b.x;
+    let vy = origin_y + b.border_top + b.y;
     if let Some(nid) = b.node_id
         && let Some(s) = styles.get(&nid)
     {
         if let Some(names) = s.anchor_name.as_deref() {
             // 全锚注册（pass2 区域定位几何不受介入门影响）；门标记随几何存档，
-            // pass3 lookup 处统一消费。inline_flow 按 computed display 精确切：
+            // pass3 lookup 处统一消费。V 系 border box 原点（rect 提取/渲染
+            // 递归口径，见 apply_inset_walk 注）——曾缺 border 累计致有边框
+            // CB 的 inset/格坐标少 border（g36 定谳）。inline_flow 按 computed display 精确切：
             // 纯 inline 流盒（静态形/片段化，几何不可靠——anchor-position-
             // inline-002 介入致 2P→0P 的语料回归门；css-anchor-position-1
             // §anchor-pos 锚定盒取首片段语义未建模）；inline-block 原子盒
@@ -503,10 +508,11 @@ struct AxisGeom {
 
 /// 单轴定位/尺寸应用（css-align margin-box 对齐口径；inset 属性不建模——
 /// 区域即对齐容器，见模块头挂账）。Fill + auto 尺寸 → 满填区域；显式尺寸
-/// 不覆写（区域只定位）。`to_parent` = cb 原点 → 父相对换算。
-fn apply_axis_align(child: &mut LayoutBox, horizontal: bool, align: AreaAlign, g: AxisGeom, to_parent: f32) {
+/// 不覆写（区域只定位）。区域几何 `g.lo/hi` 与写入 `child.x/y` 同为 V 系
+/// CB padding box 相对量（rect 提取/渲染递归口径），无需再换算。
+fn apply_axis_align(child: &mut LayoutBox, horizontal: bool, align: AreaAlign, g: AxisGeom) {
     let bw = if horizontal { child.width } else { child.height };
-    let mut pos = match align {
+    let pos = match align {
         AreaAlign::Fill => {
             if g.size_auto {
                 let full = (g.hi - g.lo - g.margin_start - g.margin_end).max(0.0);
@@ -531,7 +537,6 @@ fn apply_axis_align(child: &mut LayoutBox, horizontal: bool, align: AreaAlign, g
         // 溢出安全折让未建模 FIXME）。
         AreaAlign::AnchorCenter => g.anchor_center + g.margin_start - (bw + g.margin_start + g.margin_end) / 2.0,
     };
-    pos += to_parent;
     if horizontal {
         child.x = pos;
     } else {
@@ -549,14 +554,15 @@ fn apply_walk(
     use zero_css_parser::values::LengthValue;
     use zero_css_parser::values::anchor_area::{AreaWmDir, position_area_cells_wm};
 
-    let vx = origin_x + b.x;
-    let vy = origin_y + b.y;
+    let vx = origin_x + b.border_left + b.x;
+    let vy = origin_y + b.border_top + b.y;
     // CB 几何（padding box——abspos containing block 语义，CSS2 §10.1）。
     // 仅当本盒是 positioned CB（直挂场景）才解析区域定位；非 positioned 中间层
-    // 的 anchored 子（CB 在上层）第一刀不介入。
+    // 的 anchored 子（CB 在上层）第一刀不介入。vx/vy 已是 V 系 border box 原点
+    //（rect 提取/渲染递归口径，见 apply_inset_walk 注）→ 只加 padding。
     let cb_is_positioned = b.is_abspos_cb;
-    let cb_x = vx + b.border_left + b.padding_left;
-    let cb_y = vy + b.border_top + b.padding_top;
+    let cb_x = vx + b.padding_left;
+    let cb_y = vy + b.padding_top;
     let cb_w = (b.width - b.border_left - b.border_right - b.padding_left - b.padding_right).max(0.0);
     let cb_h = (b.height - b.border_top - b.border_bottom - b.padding_top - b.padding_bottom).max(0.0);
     // CB 写作模式/方向（plain logical 区域关键字参照系，§position-area §3.1.2；
@@ -640,7 +646,6 @@ fn apply_walk(
                         margin_end: mr,
                         size_auto: width_auto,
                     },
-                    cb_x - vx,
                 );
                 apply_axis_align(
                     child,
@@ -654,7 +659,6 @@ fn apply_walk(
                         margin_end: mb,
                         size_auto: height_auto,
                     },
-                    cb_y - vy,
                 );
             }
         }

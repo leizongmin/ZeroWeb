@@ -642,3 +642,112 @@ fn g1f_anchor_inset_same_scroll_context_resolved() {
         t.x
     );
 }
+
+/// 有边框 containing block 的区域/inset 定位原点口径钉测：child.x 基准 =
+/// CB padding box 原点（rect 提取与渲染递归按 parent border 偏移 child.x），
+/// anchor 两通路不得把 CB border 烘进 child.x——曾双计 border 导致语料
+/// offsetLeft 多 +2、满填区域宽/高各缩 2（g36 定谳，见 wptfyi-css master）。
+#[test]
+fn g1f_border_cb_child_origin() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let anchored = doc.create_element("div");
+    doc.append_child(container, anchored).unwrap();
+    let anchor = doc.create_element("div");
+    doc.append_child(container, anchor).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    // fixture 全员显式 Block（default Inline 触发 inline 流锚介入门与行盒塌陷）。
+    container_style.display = zero_style_system::DisplayValue::Block;
+    container_style.position = zero_style_system::PositionValue::Absolute;
+    container_style.width = LengthValue::Px(400.0);
+    container_style.height = LengthValue::Px(400.0);
+    container_style.border_top_width = LengthValue::Px(2.0);
+    container_style.border_left_width = LengthValue::Px(2.0);
+    container_style.border_right_width = LengthValue::Px(2.0);
+    container_style.border_bottom_width = LengthValue::Px(2.0);
+    container_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    container_style.border_left_style = zero_style_system::BorderStyleValue::Solid;
+    container_style.border_right_style = zero_style_system::BorderStyleValue::Solid;
+    container_style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+
+    let mut anchored_style = ComputedStyle::default();
+    anchored_style.display = zero_style_system::DisplayValue::Block;
+    anchored_style.position = zero_style_system::PositionValue::Absolute;
+    anchored_style.position_anchor = Some("--anchor".into());
+    anchored_style.position_area = Some("span-all".into());
+    anchored_style.align_self = zero_css_parser::values::AlignmentValue::Stretch;
+    anchored_style.justify_self = zero_style_system::JustifySelfValue::Stretch;
+
+    let mut anchor_style = ComputedStyle::default();
+    anchor_style.display = zero_style_system::DisplayValue::Block;
+    anchor_style.width = LengthValue::Px(150.0);
+    anchor_style.height = LengthValue::Px(75.0);
+    anchor_style.anchor_name = Some("--anchor".into());
+    anchor_style.margin_top = LengthValue::Px(150.0);
+    anchor_style.margin_left = LengthValue::Px(100.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(anchored, anchored_style.clone());
+    styles.insert(anchor, anchor_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let a = find(&result.root, anchored).expect("anchored box");
+    // 区域 = 全 padding box（style width 400 为 content 宽 → padding box
+    // 400×400）；child.x = padding 原点相对 0，不含 border。
+    assert!((a.x - 0.0).abs() < 0.5, "anchored x {} 应为 0（padding 原点相对）", a.x);
+    assert!((a.y - 0.0).abs() < 0.5, "anchored y {} 应为 0（padding 原点相对）", a.y);
+    assert!(
+        (a.width - 400.0).abs() < 0.5,
+        "anchored width {} 应为 padding box 宽 400",
+        a.width
+    );
+    assert!(
+        (a.height - 400.0).abs() < 0.5,
+        "anchored height {} 应为 padding box 高 400",
+        a.height
+    );
+
+    // plain abs 对照（无锚）：left:50/top:60 → padding 原点相对 50/60；
+    // 两通路同口径，防漂移。
+    let plain = doc.create_element("div");
+    doc.append_child(container, plain).unwrap();
+    let mut plain_style = ComputedStyle::default();
+    plain_style.display = zero_style_system::DisplayValue::Block;
+    plain_style.position = zero_style_system::PositionValue::Absolute;
+    plain_style.left = LengthValue::Px(50.0);
+    plain_style.top = LengthValue::Px(60.0);
+    let mut styles2 = styles.clone();
+    styles2.insert(plain, plain_style);
+    let mut engine2 = crate::LayoutEngine::new(800.0, 600.0);
+    let result2 = engine2.compute(&doc, &styles2);
+    let p = find(&result2.root, plain).expect("plain box");
+    assert!((p.x - 50.0).abs() < 0.5, "plain x {} 应为 50（padding 原点相对）", p.x);
+    assert!((p.y - 60.0).abs() < 0.5, "plain y {} 应为 60（padding 原点相对）", p.y);
+
+    // inset 通路（position-anchor + anchor() inset）同口径：锚 margin-left
+    // 100/margin-top 150 → 锚左/上缘 CB 相对 100/150，锚定 inset 后 viewport
+    // 应落在锚缘（padding 原点相对 100/150，不含 border）。
+    let mut anchored2_style = anchored_style.clone();
+    anchored2_style.position_area = None;
+    anchored2_style.anchor_inset_left = Some("anchor(--anchor left)".into());
+    anchored2_style.anchor_inset_top = Some("anchor(--anchor top)".into());
+    let mut styles3 = styles.clone();
+    styles3.insert(anchored, anchored2_style);
+    let mut engine3 = crate::LayoutEngine::new(800.0, 600.0);
+    let result3 = engine3.compute(&doc, &styles3);
+    let a3 = find(&result3.root, anchored).expect("anchored3 box");
+    assert!(
+        (a3.x - 100.0).abs() < 0.5,
+        "inset 通路 anchored x {} 应为 100（锚左缘，padding 原点相对，不含 border）",
+        a3.x
+    );
+    assert!(
+        (a3.y - 150.0).abs() < 0.5,
+        "inset 通路 anchored y {} 应为 150（锚上缘，padding 原点相对，不含 border）",
+        a3.y
+    );
+}

@@ -2,6 +2,10 @@
 
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g36 完成（11-14）**：s423 门控收窄 + anchor_pos V 系坐标系统一——anchor
+语料 11,870→11,977 全量净 +107（真语料 +88 零真回归，position-area-basic
++45/wm-dir +44），4 REG 定谳 last-successful 伪通过揭开挂账；见
+[evidence 2026-11-14-g36-border-coord-s423](evidence/2026-11-14-g36-border-coord-s423.md)。
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
 grid/anchor 各批，至组F 布局刀3→g35 wm/对齐刀 anchor 语料 11,863→11,870（g35 轮扩面基线 11,869 +1 净）；本流组E color
 face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
@@ -269,6 +273,12 @@ self-* 参照 anchored 自身）+ layout-engine anchor_pos 区域 pass 接线与
 缺口**（runner 未注册该属性，元素未被区域定位拦截，布局面无法翻绿，另
 刀），余 ~46F 分桶挂账（scrolling 23/getComputedStyle inset 使用值 4/
 @container anchored(fallback) 4/last-successful 3 等）。[证据](evidence/2026-11-14-g35-anchor-position-area.md)
+**（g36 证伪更正，11-14）**：上根因表述错误——写面早已通（shim _styleProxy
+链 position-area normalize+表外放行），真缺口 = s423 同 turn 读陈旧（写后
+同 turn offsetWidth/gBCR 断言读到写前几何快照）；writing-modes-001 基线
+1296P 全为陈旧读碰巧相等的**伪通过**（drain-split 探针实证），~190F 实为
+渲染器真实缺口+读陈旧混合；定谳与 border 坐标系修复见
+[evidence 2026-11-14-g36-border-coord-s423](evidence/2026-11-14-g36-border-coord-s423.md)。
 
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
@@ -327,10 +337,10 @@ trig）。random() 串化（g20 serialize 42F→3F，残 color 通道嵌套 D �
 分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族 supports 8F/shim gCS raw
 回显与 color 黑值 ~25F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21
 evidence §5）。
-**下一步**：g35 anchor 批已完成——后续刀 CSSOM `style.positionArea` 声明面
-支持（position-area 族 ~190F 先行缺口：basic/align-justify/wm-dir/anchor-
-outside 等页全经 `element.style.positionArea` 设置而 runner 未注册该属性，
-元素未被区域定位拦截——g35 已实证布局面对齐/网格改动无法翻绿，声明面另
+**下一步**：g35 anchor 批已完成——~~后续刀 CSSOM `style.positionArea` 声明面
+支持~~（**g36 证伪**：声明写面早已通，真缺口 = s423 同 turn 读陈旧 + border
+坐标系错位——s423 门控收窄 + anchor_pos V 系统一修复已落地，anchor 语料
+A/B 见 evidence g36；writing-modes-001 等伪通过桶揭开渲染器真缺口挂账另
 刀）；v14 收尾两项——typed-om `.any.js` 周跑通道**已修**（fetch-b
 Makefile 目标 GOAL_PULL_ANY_JS=1：lib.sh 默认排除 .any.js 致 CI 语料缺
 numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回补实证，
@@ -1104,3 +1114,25 @@ SyntaxError 整页崩（533→0）。归因+语义定谳+修复由本流完成�
 configurable:true（其余 pin 计数相位/bare-origin/error/移除面全保，桥测
 2 passed 实证）。对方流无需另行动作；engine/shim 共享面后续改动注意
 window.length descriptor 已回归 spec 口径。
+
+**g36 anchor border 坐标系定谳修复 + s423 真态收口（11-14）**：三刀一账。
+① s423（同 turn 读写陈旧）修复宽门 A/B 净 −1007 定谳为伪通过揭开（writing-
+modes-001 1296P 基线全为陈旧读碰巧相等——drain-split 探针实证），门控收窄
+纯 inline style 族（DomMutation::is_inline_style_family 八变体）保账本；
+g35「CSSOM 声明面缺失」根因表述证伪（写面 _styleProxy 链早已通，真缺口 =
+读陈旧）。② anchor_pos V 系统一：collect_anchors/apply_walk/apply_inset_walk
+origin 累计 D=0（不含 border）vs rect 提取/渲染递归 D=border 错位——
+borderless CB 两系重合（既有 14 g1f 全 borderless 故全绿），bordered CB
+inset 通路多 +border、区域通路偏移多 +border 满填缩 2；修复 = 三 walk
+origin 加 border、cb_x 去 border 项、inset 写入直用 padding 相对量、
+apply_axis_align 删 to_parent；新钉测 g1f_border_cb_child_origin，g1f
+15/15、layout-engine 2509、fmt/clippy 净。③ corpus A/B ab2→ab3
+11,870/966/4T→11,977/876/4T 净 +107（真语料 +88 零真回归）：
+position-area-basic +45/wm-dir +44/with-insets+align-justify+borders-002
+各 +1；4 REG（last-successful-* keep flip-block）定谳伪通过揭开——四页
+container 无 border 与 V 化无关，期望 200 恰为写前陈旧快照值、现算真值
+250 = flip-block 重算值，「last-successful 几何保持」缺口挂账（桶 3F→4F）。
+engine lib 12F（websocket/media/fetch/iframe 域）stash A/B 定谳 HEAD 同红
+既有欠账非本轮，挂账待归属。挂账：writing-modes-001 伪通过桶/last-
+successful 4F/'none' 高 18/position-area-value 文法缺口（span-top left/
+start center 形 +7）。[证据](evidence/2026-11-14-g36-border-coord-s423.md)
