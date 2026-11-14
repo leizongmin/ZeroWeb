@@ -2,33 +2,58 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 440 收口（dialog 五窗红相归因定谳 + CE 域门
-修复；账本
-evidence/2026-11-15-m2s440-dialog-focus-complex-ce-gate-fix.md，代码刀
-本轮 commit）。
-s439 挂账 dialog 复验在低负载窗（loadavg 1.8）solo 仍红 → 负载假设证伪
-重开归因面：**criterion bisect 三重（父 36de32a4d 绿 / 266b45602 红×3 /
-hunk 级 AB-KILL 回绿）定谳 first bad = 266b45602**（editing-compat M3-A
-insertParagraph 刀，13:25）——摘挂臂「位置章发射前重算」毒化普通页面
-DOM 摘挂：交叠批次下（td 命令穿插 drain + Complex promise_test await 窗
-内同步 test() 插入）章值重算与 host drain 交互失准 → Remove 错位/miss →
-**host 树孤儿双现**（v4 探针实证 children 枚举 3 子 / querySelector null /
-getElementsByTagName 2 现）→ 查询通道歧义 null → Complex(false)
-`input.focus()` 崩 unhandled rejection。14:29 绿窗 = build 未含毒刀最后窗
-口，phase-flip 表象实为到货时点恒红，负载系当时误归因。**修复 = CE 域
-门**（part04 R125 + `_mv` 两处重算块加 `nodeType===1 && __zw_is_ce_host`
-门：CE 内逐位恒等 M3-A 行为保 ip 37 键，CE 外回 36de32a4d = s433 基线行
-为）。验证：solo focus-after-close 7/7 全 Pass + dialog 目录净 −1 恰靶 +
-**全域双跑 join 8065P/254F/7T/1U vs 修复前同口径 8064P/255F/7T/1U 恰 1
-键 F→P 零其他位移** + make test 10798P/1F（唯一 F = image_batch_e2e
-s116 在册环境形态）+ fmt/clippy/拼装主序 node --check 绿。**键面基带切
-换**：历史记录带（8307-8309P/199-203F）与今晨同口径可复现面（s439 收口
-树四腿逐键一致 8064P/255F/7T/1U）不吻合（join 数学排除 8510 形态来自同
-口径 join），口径失真挂账待考，本轮起基带 = 8065P/254F/7T/1U。
-modulepreload strict-origin 双腿 Pass 回位 ✓。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：红池分诊续（relevant-
-mutations.html 46F 大块红 s126 曾全 Pass 待勘根 + zzz-s433 探针残留语料
-清理 + video P1+P2 或簇 D A2 待门决）；全桥套件绿窗轮末收口跑常态化。
+**状态**: Active——M2 切片 441 收口（红池 48 键伪红定谳清偿 + fetch_raw
+自愈化 + 基带重测；账本
+evidence/2026-11-15-m2s441-redpool-resource-phantom-clear.md，零源码
+改动，语料通道一笔）。
+s440 挂账红池分诊定谳：relevant-mutations.html 46F 大块红（+lazy 1 +
+adoption 1 = 48 键）= **green-2x2.png 资源缺失伪红**（s126 本地生成的
+gitignore 资源，本树丢失时窗 11-05 s293 绿 ~ 11-14 s440 sweep 红，丢失
+向量不可考；s440 轮末 00:23 已重生成）——solo 121P/0F/0T 与 s126 收口
+逐键同；全域双跑 join **8113P/206F/6T/1U** vs s440 8065P/254F/7T/1U 恰
+48 键 F→P 零其他位移，stable-T 7→6 唯一移除 = zzz-s433 探针键（s440
+轮末 00:21 已删，本轮复核销账）。**根修**：实测上游 pin 在档（jsdelivr
+2×2 16-bit RGB，断言面与本地 8-bit 版等值——relevant mutations 族只断
+load/error/currentSrc/naturalWidth）→ 25 脚本 ③k 加 `fetch_raw
+"images/green-2x2.png"`（与 green-1x1 等同通道），fresh checkout 与资源
+丢失由 make 前置 fetch 步自愈（删文件→fetch→cmp 恒等端到端验证），
+s126 资源分发门对本资源消解；本地文件换上游字节 solo 复验同绿。全桥套
+件绿窗轮末收口跑：**1596P/0F exit 0**（s438 基线 1579 +17 = 组合树新
+钉，零失败）。**红池重盘（206F）**：select 147（GB-20261031 门）+
+video 4（GB-20261114-VIDEO 门）+ dialog 16（abspos 居中/top-layer/inert
+——布局渲染域为主，goal 契约边界外）+ img 13（decoder/renderer 耦合挂
+账）+ combobox 12（tentative）+ tabular 4 + tails 10——in-domain 非门
+非跨域仅 ≈26 键小面。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137。下一步：小尾巴逐件勘根（combobox tentative
+12 / tabular 4 / tails 10）或候门决项（video P1+P2 / 簇 D A2）；dialog
+16 红块移交/协同归 rendering 流记账；全桥套件绿窗轮末收口跑常态化。
+
+> **▶ 承前（2026-11-15 M2 切片 440 收口）——dialog 五窗红相归因定谳
+> + CE 域门修复（1 键 F→P 零位移；账本
+> evidence/2026-11-15-m2s440-dialog-focus-complex-ce-gate-fix.md，代码
+> 刀当轮 commit ae91fbe94）**：
+> s439 挂账 dialog 复验在低负载窗（loadavg 1.8）solo 仍红 → 负载假设证伪
+> 重开归因面：**criterion bisect 三重（父 36de32a4d 绿 / 266b45602 红×3 /
+> hunk 级 AB-KILL 回绿）定谳 first bad = 266b45602**（editing-compat M3-A
+> insertParagraph 刀，13:25）——摘挂臂「位置章发射前重算」毒化普通页面
+> DOM 摘挂：交叠批次下（td 命令穿插 drain + Complex promise_test await 窗
+> 内同步 test() 插入）章值重算与 host drain 交互失准 → Remove 错位/miss →
+> **host 树孤儿双现**（v4 探针实证 children 枚举 3 子 / querySelector null /
+> getElementsByTagName 2 现）→ 查询通道歧义 null → Complex(false)
+> `input.focus()` 崩 unhandled rejection。14:29 绿窗 = build 未含毒刀最后窗
+> 口，phase-flip 表象实为到货时点恒红，负载系当时误归因。**修复 = CE 域
+> 门**（part04 R125 + `_mv` 两处重算块加 `nodeType===1 && __zw_is_ce_host`
+> 门：CE 内逐位恒等 M3-A 行为保 ip 37 键，CE 外回 36de32a4d = s433 基线行
+> 为）。验证：solo focus-after-close 7/7 全 Pass + dialog 目录净 −1 恰靶 +
+> **全域双跑 join 8065P/254F/7T/1U vs 修复前同口径 8064P/255F/7T/1U 恰 1
+> 键 F→P 零其他位移** + make test 10798P/1F（唯一 F = image_batch_e2e
+> s116 在册环境形态）+ fmt/clippy/拼装主序 node --check 绿。**键面基带切
+> 换**：历史记录带（8307-8309P/199-203F）与今晨同口径可复现面（s439 收口
+> 树四腿逐键一致 8064P/255F/7T/1U）不吻合（join 数学排除 8510 形态来自同
+> 口径 join），口径失真挂账待考，基带切至 8065P/254F/7T/1U（s441 又以资
+> 源复位重测为 8113P/206F/6T/1U）。modulepreload strict-origin 双腿 Pass
+> 回位 ✓。挂账三件（relevant-mutations 46F 勘根 / zzz 探针清理 / 基带重
+> 测）s441 全数收口见当前 Active。
 
 > **▶ 承前（2026-11-14 M2 切片 439 收口）——位移检查窗（g40 到货覆盖 +
 > dialog 第三窗复验，零源码改动；账本
