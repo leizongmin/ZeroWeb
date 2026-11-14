@@ -25808,6 +25808,13 @@
       // srcdoc_change_hash 经 contentDocument.body.innerText 断言。
       get innerText() { return this.textContent; },
       set innerText(v) { this.textContent = v; },
+      // R5520（editing d19）：detached/iframe 文档 body 视图的 focus()——DesignMode
+      // 编辑宿主（editor-test-utils.js setupEditingHost 的 `this.editingHost.focus()`
+      // 与 typing-around-link 的 `utils.document.body.focus()`）。合成树无布局
+      // 可聚焦性、视图对象未建 handle 域 activeElement/dispatchEvent 体系 →
+      // 轻量 no-op（消费面此前 TypeError）。
+      // https://html.spec.whatwg.org/#dom-focus
+      focus: function () {},
       querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
       querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode

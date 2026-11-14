@@ -12681,6 +12681,234 @@
       this._ranges = [n];
       this._zwSync(this._anchorNode, this._anchorOffset, node, o2);
     };
+    // spec modify(alter, direction, granularity)（https://w3c.github.io/selection-api/
+    // #dom-selection-modify，legacy WebKit/Gecko API 入 spec）——沿**文档字符边界格**
+    // 移动 focus。格模型：body（无 body 退化 documentElement；SCRIPT/STYLE/TEMPLATE
+    // 子树不可渲染不入格）文档序枚举单元（每个文本字符一个单元 + <br> 一个单元），
+    // 边界 = 相邻单元间的空隙，跨节点端点边界去重合一（(text,len) ≡ (nextText,0)
+    // 同界——比较器 sibling 序等值返回 false；「ab[]c」「abc[]」「<span>abc[]</span>
+    // def」同链）。character 一步跨一单元：forward/right 消费边界后单元，落点取
+    // 单元**尾界**规范形 (text, idx+1)（prevText:len 形——Chrome「abc[]」右移落
+    // (abc,3)、「abc[]<span>def」右移落 (def,1) 录音）；backward/left 消费边界前
+    // 单元，落点取其**前界**规范形 (text, idx)（nextText:0 形——Chrome
+// 「abc<span>d[]ef」左移落 (def,0) 录音；(abc,3) 同界异形非 Chrome 落点）。
+// alter=extend → focus 单侧移动（复用
+    // extend 的 anchor 保持语义）；alter=move → 整体塌缩（复用 collapse）。word 粒度
+    // = 先跳空白单元再取连续**同类词段**（四类：空白/拉丁数字/Hangul/其余符号——
+    // 语料录音「~>>>>>p+++」符号段整跳、「희진DJ」Hangul↔拉丁转置界；FIXME(uax29):
+    // 完整 UAX#29 词边界含 Kana/表意文字/mid-letter 附着/连字等细类，不在本简形）。
+    // lineboundary
+    // 粒度 = 最近块级祖先的文本首/尾界（FIXME(visual-modify): 真语义需行盒几何；
+    // 语料 lineboundary 用例均为单行块形态，块界近似覆盖）；line 粒度需跨行盒计数
+    // → no-op（同 FIXME）。direction left/right 为视觉方向（FIXME(visual-modify)/
+    // FIXME(uax9): 完整视觉移动需行盒几何 + 双向算法可视列序；headless 按 focus
+    // 前一字符双向类近似——RTL 码位侧 right/left 反转为 backward/forward，混合
+    // 双向段的整段可视跳转不在近似面，语料 mixed 行留红）。空白折叠/双重空白的
+    // 视觉合列（Chrome 两空格一格）同属行盒域，本实现按源字符逐一跨。
+    // 参数非法 / 空选区 / 无根 / 已在文档端界 → no-op（spec「abort these steps」
+    // 不抛）。
+    _selection.modify = function (alter, direction, granularity) {
+      if (alter !== 'move' && alter !== 'extend') return;
+      if (direction !== 'forward' && direction !== 'backward' &&
+          direction !== 'left' && direction !== 'right') return;
+      if (granularity !== 'character' && granularity !== 'word' &&
+          granularity !== 'line' && granularity !== 'lineboundary') return;
+      if (this._ranges.length === 0) return;
+      if (granularity === 'line') return; // FIXME(visual-modify): 需行盒几何
+      var doc6m = globalThis.document;
+      // 编辑宿主 scope：focus 沿祖先链找 contenteditable(''/true) 编辑根——命中则
+      // 单元枚举限制在宿主子树（caret 移动不越编辑根；宿主内 contenteditable=false
+      // 子树以单个「不可编辑单元」参与跳格）。无宿主 → body 全域（caret 自由移动）。
+      var fN6m = this._focusNode, fO6m = this._focusOffset;
+      var host6m = null;
+      var c6h = fN6m ? (fN6m.nodeType === 1 ? fN6m : fN6m.parentNode) : null;
+      var g6h = 0;
+      while (c6h && g6h++ < 256) {
+        if (c6h.nodeType === 1 && c6h.hasAttribute && c6h.hasAttribute('contenteditable')) {
+          var ce6h = String(c6h.getAttribute('contenteditable')).toLowerCase();
+          if (ce6h === '' || ce6h === 'true') { host6m = c6h; break; }
+        }
+        c6h = c6h.parentNode;
+      }
+      var root6m = host6m || (doc6m && (doc6m.body || doc6m.documentElement));
+      if (!root6m) return;
+      // 文档序枚举单元（文本字符 + <br>；深序遍历 proxy childNodes）。
+      var units6m = [];
+      (function walkUnits6m(n6m) {
+        var kids6m = n6m.childNodes;
+        if (!kids6m) return;
+        for (var i6m = 0; i6m < kids6m.length; i6m++) {
+          var k6m = kids6m[i6m];
+          if (!k6m) continue;
+          var nm6m = k6m.nodeName;
+          if (k6m.nodeType === 3) {
+            var v6m = k6m.nodeValue !== undefined && k6m.nodeValue !== null ? k6m.nodeValue : (k6m.data || '');
+            var s6m = String(v6m);
+            for (var c6m = 0; c6m < s6m.length; c6m++) {
+              units6m.push({ node: k6m, idx: c6m, kind: 'c', ch: s6m.charAt(c6m) });
+            }
+          } else if (k6m.nodeType === 1 && nm6m === 'BR') {
+            units6m.push({ node: k6m, idx: 0, kind: 'br' });
+          } else if (k6m.nodeType === 1 && nm6m !== 'SCRIPT' && nm6m !== 'STYLE' &&
+                     nm6m !== 'TEMPLATE') {
+            // 宿主模式：contenteditable=false 子树 = 单个不可编辑单元（跳格整体
+            // 跨越——「 []<span contenteditable=false>editable</span>editable」
+            // forward 萊 editable 首界，backward 萊前空白尾界）。
+            if (host6m && k6m.hasAttribute && k6m.hasAttribute('contenteditable') &&
+                String(k6m.getAttribute('contenteditable')).toLowerCase() === 'false') {
+              units6m.push({ node: k6m, idx: 0, kind: 'ne' });
+            } else {
+              walkUnits6m(k6m);
+            }
+          }
+        }
+      })(root6m);
+      if (units6m.length === 0) return;
+      // br 尾界：(父, 子索引+1)（比较器 ancestor 分支与 (nextText,0) 同界等值）。
+      var brEnd6m = function (u6b) {
+        var p6b = u6b.node.parentNode;
+        var ci6b = 0;
+        if (p6b && p6b.childNodes) {
+          for (var q6b = 0; q6b < p6b.childNodes.length; q6b++) {
+            if (p6b.childNodes[q6b] === u6b.node) { ci6b = q6b; break; }
+          }
+        }
+        return [p6b || u6b.node, ci6b + 1];
+      };
+      // 边界「单元 j 尾」规范形：字符 (node, idx+1)（(text,len) ≡ (nextText,0) 同
+      // 界，取 prevText:len 形与 Chrome 落点一致）；br → 下一字符单元首
+      // (nextText,0)（无则 br 尾界兜底）；j<0 → 根首界（文档体首）。
+      var canAfter6m = function (j6a) {
+        if (j6a < 0) return [root6m, 0];
+        var u6a = units6m[j6a];
+        if (u6a.kind === 'c') return [u6a.node, u6a.idx + 1];
+        if (j6a + 1 < units6m.length && units6m[j6a + 1].kind === 'c') {
+          return [units6m[j6a + 1].node, units6m[j6a + 1].idx];
+        }
+        return brEnd6m(u6a);
+      };
+      // 边界「单元 j 前」nextText 形：字符 (node, idx)（(text,0) ≡ (prevText,len)
+      // 同界，行首取 nextText:0 形——lineboundary 落点与块首文本对齐）；br →
+      // 前单元尾界兜底；j<0 → 根首界。
+      var canBefore6m = function (j6n) {
+        if (j6n < 0) return [root6m, 0];
+        var u6n = units6m[j6n];
+        if (u6n.kind === 'c') return [u6n.node, u6n.idx];
+        return j6n > 0 ? canAfter6m(j6n - 1) : [root6m, 0];
+      };
+      // focus 点 → 边界序号 fi（首个「不早于 focus」的单元）：单元**尾界**不严格
+      // 晚于 focus 即计入（≤ 判定；比较器对跨节点端点同界等值返回 false，边界随
+      // raw 比较自然去重——(abc,3)/(def,0) 同界时 'c' 计入、fi 落 'd'）。
+      // 元素容器点/越界点随序收敛到端界。
+      var fi6m = 0;
+      while (fi6m < units6m.length) {
+        var u6f = units6m[fi6m];
+        var e6f = u6f.kind === 'c' ? [u6f.node, u6f.idx + 1] : brEnd6m(u6f);
+        if (_zwRangeBpAfter(e6f[0], e6f[1], fN6m, fO6m)) break;
+        fi6m++;
+      }
+      // 词段类：ws=空白、lat=拉丁字母数字、hang=Hangul（U+1100-11FF Jamo /
+      // U+3130-318F 兼容 Jamo / U+A960-A97F、U+D7B0-D7FF 扩展 Jamo / U+AC00-D7A3
+      // 音节）、sym=其余字符段、br/ne=结构单元（终止词段）。
+      var wcls6m = function (u6w) {
+        if (u6w.kind !== 'c') return u6w.kind === 'br' ? 'br' : 'ne';
+        var ch6w = u6w.ch;
+        if (/\s/.test(ch6w)) return 'ws';
+        if (/[A-Za-z0-9]/.test(ch6w)) return 'lat';
+        if (/[\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uAC00-\uD7A3\uD7B0-\uD7FF]/.test(ch6w)) return 'hang';
+        return 'sym';
+      };
+      var land6m;
+      if (granularity === 'lineboundary') {
+        // 最近块级祖先（focus 元素/父元素向上；无块命中 → 根）。方向解析：基向
+        // 取块（或祖先）dir 属性——rtl 块内 left/right 视觉反转为行尾/行首。
+        var blocks6l = { DIV: 1, P: 1, PRE: 1, BLOCKQUOTE: 1, H1: 1, H2: 1, H3: 1,
+          H4: 1, H5: 1, H6: 1, LI: 1, DT: 1, DD: 1, UL: 1, OL: 1, TABLE: 1,
+          TD: 1, TH: 1, CAPTION: 1, SECTION: 1, ARTICLE: 1, ASIDE: 1, NAV: 1,
+          HEADER: 1, FOOTER: 1, MAIN: 1, ADDRESS: 1, FIELDSET: 1, FIGURE: 1,
+          FIGCAPTION: 1 };
+        var b6l = fN6m && fN6m.nodeType === 1 ? fN6m : (fN6m ? fN6m.parentNode : null);
+        var blk6l = null, rtl6l = false, g6l = 0;
+        while (b6l && g6l++ < 256) {
+          if (b6l.nodeType === 1) {
+            if (!rtl6l && b6l.hasAttribute && b6l.hasAttribute('dir')) {
+              rtl6l = String(b6l.getAttribute('dir')).toLowerCase() === 'rtl';
+            }
+            if (blocks6l[b6l.nodeName] || b6l === root6m) { blk6l = b6l; break; }
+          }
+          b6l = b6l.parentNode;
+        }
+        if (!blk6l) blk6l = root6m;
+        // 行界 scope：宿主模式 = 宿主全域；否则块模式 = 块内单元范围 [f6l..l6l]。
+        // 两者再以 BR 分隔行（行内 <br> 切行——「Edit<br>able」forward 停
+        // (Edit,len)、backward 停 (able,0)）。
+        var f6l, l6l;
+        if (host6m) {
+          f6l = 0; l6l = units6m.length - 1;
+        } else {
+          f6l = -1; l6l = -1;
+          for (var i6l = 0; i6l < units6m.length; i6l++) {
+            var inB6l = false;
+            var a6l = units6m[i6l].node, h6l = 0;
+            while (a6l && h6l++ < 256) {
+              if (a6l === blk6l) { inB6l = true; break; }
+              a6l = a6l.parentNode;
+            }
+            if (inB6l) { if (f6l < 0) f6l = i6l; l6l = i6l; }
+          }
+          if (f6l < 0) return;
+        }
+        var s6l = fi6m < f6l ? f6l : (fi6m > l6l + 1 ? l6l + 1 : fi6m);
+        while (s6l > f6l && units6m[s6l - 1].kind !== 'br') s6l--;
+        var e6l = fi6m < f6l ? f6l : (fi6m > l6l + 1 ? l6l + 1 : fi6m);
+        while (e6l <= l6l && units6m[e6l].kind !== 'br') e6l++;
+        var toStart6l = direction === 'backward' || direction === 'left' ? !rtl6l : rtl6l;
+        land6m = toStart6l ? canBefore6m(s6l) : canAfter6m(e6l - 1);
+      } else {
+        var dir6m = (direction === 'backward' || direction === 'left') ? -1 : 1;
+        if (direction === 'left' || direction === 'right') {
+          // 视觉方向双向类近似：focus 前一字符属 RTL 码位区 → 视觉轴反转。
+          var pc6m = fi6m > 0 ? units6m[fi6m - 1] : null;
+          if (pc6m && pc6m.kind === 'c' &&
+              /[\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(pc6m.ch)) {
+            dir6m = -dir6m;
+          }
+        }
+        if (granularity === 'word') {
+          if (dir6m < 0) {
+            var j6w = fi6m - 1;
+            while (j6w >= 0 && wcls6m(units6m[j6w]) === 'ws') j6w--;
+            if (j6w < 0) return;
+            var k6w = wcls6m(units6m[j6w]);
+            var t6w = fi6m;
+            while (j6w >= 0 && wcls6m(units6m[j6w]) === k6w) { t6w = j6w; j6w--; }
+            if (t6w === fi6m) return;
+            // 词左移落点取段首前界 nextText:0 形（「~>>>>>p+++」(t,6) 左移落
+            // (t,0) 录音；canAfter6m(t6w-1) 的 prevText 形在段首跨节点时退化根界）。
+            land6m = canBefore6m(t6w);
+          } else {
+            var j6w2 = fi6m;
+            while (j6w2 < units6m.length && wcls6m(units6m[j6w2]) === 'ws') j6w2++;
+            if (j6w2 >= units6m.length) return;
+            var k6w2 = wcls6m(units6m[j6w2]);
+            var j6w3 = j6w2;
+            while (j6w3 < units6m.length && wcls6m(units6m[j6w3]) === k6w2) j6w3++;
+            if (j6w3 === fi6m) return;
+            land6m = canAfter6m(j6w3 - 1);
+          }
+        } else {
+          if (dir6m > 0) {
+            if (fi6m >= units6m.length) return;
+            land6m = canAfter6m(fi6m);
+          } else {
+            if (fi6m - 1 < 0) return;
+            land6m = canBefore6m(fi6m - 1);
+          }
+        }
+      }
+      if (alter === 'move') this.collapse(land6m[0], land6m[1]);
+      else this.extend(land6m[0], land6m[1]);
+    };
     // spec selectAllChildren(node)：DocumentType 抛 InvalidNodeTypeError；node 不在
     // 文档中 → no-op（保留原 selection）；否则选 (node, 0)–(node, childNodes.length)。
     //（WPT selectAllChildren.html 主断言族——anchor/focus 落 node 两端；detached

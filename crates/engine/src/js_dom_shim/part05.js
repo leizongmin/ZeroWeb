@@ -2770,6 +2770,28 @@
       try { Object.setPrototypeOf(_r177syntheticHtml, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e177p) {}
       docEl = _r177syntheticHtml;
     }
+    // R5520（editing d19）：docEl 属性**写侧** + focus 面——两条 docEl 路径
+    //（mEl 提取 R292 只读 get/hasAttribute、R177 合成无属性面）此前均无
+    // setAttribute（insertparagraph/delete-in-child-of-head tentative 族
+    // `contentDocument.documentElement.setAttribute("contenteditable","")`
+    // TypeError → 整 promise_test unhandled rejection）。写侧入本地覆盖表，
+    // get/has 读侧先查覆盖再回落既有实现（R292 惰性缓存 / undefined）。
+    // focus()/blur()：合成文档无聚焦转移可观测 → no-op（主窗/子窗/body
+    // 视图同语义，R5520 批）。
+    // https://html.spec.whatwg.org/#dom-focus
+    (function () {
+      var _r5520Attrs = {};
+      var _r5520Get = docEl.getAttribute;
+      docEl.setAttribute = function (n, v) { _r5520Attrs[String(n).toLowerCase()] = v == null ? '' : String(v); };
+      docEl.getAttribute = function (n) {
+        var k = String(n == null ? '' : n).toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(_r5520Attrs, k)) return _r5520Attrs[k];
+        return typeof _r5520Get === 'function' ? _r5520Get.call(docEl, n) : null;
+      };
+      docEl.hasAttribute = function (n) { return docEl.getAttribute(n) !== null; };
+      docEl.focus = function () {};
+      docEl.blur = function () {};
+    })();
     // R255（js-dom M4）：docEl **own cloneNode(deep) 保真 head/body**——运行时
     // docEl.childNodes 是工厂空数组（body 内容在 doc.body 视图的 bodyHtml/_tree
     // 闭包），`documentElement.cloneNode(true)`（WPT restoreIframe 的
@@ -4845,6 +4867,13 @@
       // 子文档裸 `onpopstate =` 须落子窗才收局部遍历事件）。
       onmessage: null,
       onpopstate: null,
+      // R5520（editing d19）：子窗 focus()——typing-around-link DesignMode 变体
+      // `utils.window.focus()` / insertparagraph-in-child-of-head
+      // `iframeElement.contentWindow.focus()` 消费面（此前 TypeError → 整测试
+      // unhandled rejection）。headless 子窗无聚焦转移可观测 → no-op；主窗
+      // globalThis.focus（part01b R5520）同语义。
+      // https://html.spec.whatwg.org/multipage/interaction.html#dom-window-focus
+      focus: function () {},
       history: {
         // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
         // A same iframe element keeps its session history when a navigation creates a

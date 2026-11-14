@@ -947,6 +947,15 @@
   globalThis.print = globalThis.print || function print() {};
   globalThis.stop = globalThis.stop || function stop() {};
 
+  // window.focus()（R5520 editing d19）—— HTML §7.3.2 Window 接口 focusing steps
+  //（https://html.spec.whatwg.org/multipage/interaction.html#dom-window-focus）。
+  // spec 聚焦 browsing context（用户可见的窗口激活转移）——headless 单窗面无
+  // 可观测转移 → no-op；不抛。同 alert/confirm/prompt/open/print/stop 的
+  // headless dismiss/no-op 语义（guard `||` 幂等）。此前全缺——编辑语料
+  // include/editor-test-utils.js 消费面 `utils.window.focus()`（typing-around-link
+  // 等 setup 首步）抛 TypeError 致整 promise_test unhandled rejection。
+  globalThis.focus = globalThis.focus || function focus() {};
+
   // M2-S4U（navigation-compat）：window.close()——script-closeable browsing context 关闭面
   //（https://html.spec.whatwg.org/multipage/window-object.html#dom-window-close；spec close
   // 触发 unload document 算法——beforeunload 先于 unload）。headless 单文档 in-memory 近似：
