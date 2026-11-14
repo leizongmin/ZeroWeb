@@ -35,6 +35,16 @@ s423 selector rect 臂放行族拓宽到 classList/className（engine 三文件�
 cloneNode+append 结构性队列，`all()` 谓词否决门仍闭——清偿需 selector 臂
 结构性放行（s421 无门全重放语义 + 等值性实证），挂账。见
 [evidence 2026-11-14-s424a-class-gate-widening-experiment](evidence/2026-11-14-s424a-class-gate-widening-experiment.md)。
+**s424b 定谳回退（11-14，无代码落库）**：selector 臂结构性放行受控 A/B——
+撤 s423 family 谓词（callbacks.rs 恒真，对齐 s421 handle 臂语义），同基座
+对照：净 **−1065**（+4 同 s424a 增益面 / −1069 = 揭真池 865 + position-try/
+position-area 变异面新增暴露 204），**目标 anchor-name-mutation 15F→15F 零
+清偿**——失败形态质变为三轴恒 +1px（同 turn 活值读已通，重布局几何与期望
+恒差 1px，根因归 layout-engine 锚重布局，VRL in-flow 布局刀挂账域）；
+callbacks.rs 已回 HEAD 零残留，工件留 `.acceptance/`。**s423 谓词两轮实验
+（s424a class 拓宽 / s424b 结构放行）定谳收口：均证伪，门维持收窄态**；
+清偿路径唯一 = VRL in-flow 布局建模落地后重开。见
+[evidence 2026-11-14-s424b-structural-gate-release](evidence/2026-11-14-s424b-structural-gate-release.md)。
 **g37 完成（11-14）**：anchor()/anchor-size() calc 嵌入叶 + serialize
 canonical 三修——anchor-parse-valid 4F/anchor-size-parse-valid 8F 全清 +
 invalid-fallback 4 伪红修正，anchor 语料 11,977→11,993 净 +12 零回归；
