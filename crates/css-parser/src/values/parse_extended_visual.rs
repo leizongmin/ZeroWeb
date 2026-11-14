@@ -984,7 +984,8 @@ fn parse_image_set_option(opt: &str) -> Option<ImageSetOptionValue> {
 /// - 引号串：`'…'`/`"…"` → 字符串图像（`\X` 转义去壳）；
 /// - 渐变函数：前缀识别 + 括号配平，递归走 [`parse_background_image`]
 ///   （复用 g41-g44 渐变文法位与 canonical 捕获）。
-/// 嵌套 `image-set(` / `none` / 其他函数（`image()`、`filter()`……）不消费。
+///
+/// 嵌套 `image-set(` / `none` / 其他函数（`image()`、`filter()`……）不消费；
 /// 返回（图像, 余文）。
 fn consume_image_set_image(s: &str) -> Option<(BackgroundImageValue, &str)> {
     let s = s.trim_start();
