@@ -2,6 +2,18 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g44 完成（11-15）**：色标文法位 + style-attr 写面拒收刀——color-stops-parsing
+60F 双通道分修：parse 侧 hint 位约束（首位前/连续/尾悬挂拒收 + 空段拒收 +
+单色标表合法）与 radial 首参单百分比不再误派发 head；写面新增
+`_zwStyleAttrDeclFilter`（style 内容属性 setAttribute 通道逐声明 invalid 渐变
+拒收，g43 判定器 'null' 哨兵复用，幸存声明原文保形，handle 世界 part04 +
+物化世界 part03 双臂）。A/B（B0=results-g43-b1/B1=results-g44-b1）：css-images
+2881→**2941P 净 +60**（color-stops-parsing F 60→0 全页清零 162/162 Pass）零
+回归，css-values 4041P ±0；单测 css-parser 3,223（+1 钉）/engine 3,991 全绿，
+fmt/clippy 净。事故：首录刀口落物化世界净 ±0（活跃文档实为 handle 世界），
+补 part04 臂后兑现。残面：image-set 150F（C+D 刀）、position-invalid 5F/
+conic-calc 3F 细形。见 [evidence
+2026-11-15-g44-color-stops-style-attr-write-gate](evidence/2026-11-15-g44-color-stops-style-attr-write-gate.md)。
 **g43 完成（11-15）**：渐变 invalid 写面拒收刀——292 形二桶分修：parse 严格性
 （三型调用方 `in` 子句出现必带合法方法，畸形整渐变拒收，桶 B 10 形含极坐标缺
 hue 后缀/`in` 后倒置）+ 写面拒收判定器 `background_image_decl_invalid`
