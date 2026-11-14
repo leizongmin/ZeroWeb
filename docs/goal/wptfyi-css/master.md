@@ -2,6 +2,23 @@
 
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g41 完成（11-14）**：渐变声明值 canonical 串化刀——linear/radial/conic-gradient
+写面 canonical（css-images-4 §serializing-gradients：配置前置/`in <method>`
+后置/缺省法冗省（predefined color() 站→oklab、legacy 站→srgb、声明法==缺省
+且 hue 缺省省整子句）/xyz→xyz-d65 别名/色标 as-written）；核心
+GradientSpecifiedParts 文本承载 + `canonicalize_background_image_specified`
+（非渐变/未识别面整值 None passthrough 零回归），写面单点
+fold_decl_specified background-image 臂（g40 image-set 折叠回落）+ shim
+回调双通道（grid G1 同型）。B0（results-g40-b1 g40 提交态）/B1
+（results-g41-b2，探针页删除后同二进制干净重录）受控 A/B：css-images
+887→1439P 净 **+552**（valid +549/computed +3）、css-values 4041P ±0 零
+回归，UPS 552/DOWNS 空（初版 b1 卷入本地合成探针页 +4P/1F，跑后已删
+不入库）。单测 css-parser 3217（+5 钉）+ engine 3959 全绿；
+clippy/fmt 净。本轮双 spawn 竞态收敛（5 复苏位，写面采纳单点分派+双通道
+收敛形态）与陈旧二进制事故定谳（44s 构建复用旧 engine rlib，B0 恒等作废）
+见 evidence §3。残面：G2 computed 881F、invalid 拒写 292F、4-token 位置/
+size-only radial 解析缺口、color-stops 60F、image-set 114F+36F（6b 指派）。
+见 [evidence 2026-11-14-g41-gradient-canonical-serialize](evidence/2026-11-14-g41-gradient-canonical-serialize.md)。
 **g40 完成（11-14）**：serialize-resolution 刀（上一轮 rate-limit 中断孤儿
 认领完成）——`<resolution>` 维度（`CalcExpr::Resolution` dppx 基归一：
 x/dppx 恒等、dpi÷96、dpcm×2.54/96，dppx 后缀先于 x 判定）+ image-set()
