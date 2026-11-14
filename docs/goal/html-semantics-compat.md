@@ -2,31 +2,39 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 445 收口（基带巡查轮：**ip C1 + g47 三刀入
-树零位移清偿，P 集恒等 8305** + 全桥绿窗 1637P/0F；账本
-evidence/2026-11-15-m2s445-baseline-patrol-ipC1-g47-attribution.md）。
-**归因面**：s444 后入树三刀 = 607018f9a（editing-compat ip C1 容器尾
-拆分序反转刀）+ 616fb3b57/a3b89b387（渲染流 g47 object-position/
-<position> 分面刀，触 engine computed_style.rs + painter/effects.rs）。
-**上 session 429 断点遗产复用**：e519f75d1 树双腿（= s444 + ip C1）已
-跑毕未落账，本轮补齐 join——stable 8510（8304P/199F/6T/1U），vs s444
-仅 6 差集全数在册振荡族，**ip C1 零位移**。**本轮新双腿**（a3b89b387
-= prev 树 + g47 两刀，链上无其他源码刀，隔离归因成立）：stable 8511
-（**8305P/199F/6T/1U**），vs prev 仅 modulepreload strict-origin 回位
-（P+1 在册振荡回绿）→ **g47 两刀零波及**；vs s444 **P 集逐键恒等
-（8305=8305）**，F/T 差集 5 全数 select-home-end 族相位轮换（4 子测
-Fail 相位出 + 主文件文件级 T 入 + detailed 单键 T↔F），非真位移。
-**新基带 8305P/199F/6T/1U**（stable 口径）+ select-home-end 族 5 键
-振荡记账。红池 199F 全数归账（簇 D 155 + 渲染域/decoder 42 + onblur
-在册 2），无新增未归因红。**全桥绿窗收口跑 1637P/0F rc=0**（基线
-1625P，+12 = 组合树他流新钉 bridge 面，覆盖 g47 engine 触面）。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137——
-候门决项已提示用户（飞书）。hang 观察项静默哨维持（本轮双腿零 hang）。
-下一步：**守成巡查**（红池全数归门后无自由可施工面；后续轮次轻覆盖或
-他流入树归因轮）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2
-立项 / s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记
-账）。门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
-随批落。
+**状态**: Active——M2 切片 446 收口（守成巡查轮：**g49 GCS 视口真值
+刀零位移清偿，P/F 集恒等** + 全桥绿窗 1637P/0F；账本
+evidence/2026-11-15-m2s446-g49-viewport-attribution.md）。
+**归因面**：s445 push 后入树一刀 = bb3eff6cf（渲染流 g49 GCS 视口真值
+对齐，engine 五文件共享面；GCS/media 门由恒 1280×800 改真 800×600）。
+双腿（bb3eff6cf 树）stable 8510（**8305P/199F/5T/1U**），vs s445 恰
+1 差集 = select-home-end 主文件文件级 T 键相位出（在册负载族）；**P
+集 8305、F 集 199 逐键恒等**，候选位移面（media 门/render-blocking
+族）实测零键移动 → **g49 零位移定谳**。**基带 8305P/199F/5T/1U**
+（T −1 族相位，下轮可摆回 6T；P/F 恒等为主口径）。全桥绿窗 1637P/0F
+rc=0（基线 1637P，+0）。红池 199F 归账结构不变（簇 D 155 + 渲染域/
+decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（候门决项 s445 已提示，不重复通知）。hang
+观察项静默哨维持（本轮双腿零 hang）。下一步：**守成巡查**（他流入树
+归因轮或轻覆盖；红池全数归门后无自由可施工面）+ 候门决项等待用户拍
+板（video P1+P2 立项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16
+红块协同面（归 rendering 流记账）。门开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 445 收口）——基带巡查轮：ip C1 + g47
+> 三刀入树零位移清偿，P 集恒等 8305 + 全桥绿窗 1637P/0F（账本
+> evidence/2026-11-15-m2s445-baseline-patrol-ipC1-g47-attribution.md）**：
+> 归因三刀 = 607018f9a（editing ip C1 容器尾拆分序反转刀）+
+> 616fb3b57/a3b89b387（渲染流 g47 object-position/<position> 分面刀，
+> 触 engine computed_style.rs + painter/effects.rs）。**上 session 429
+> 断点遗产复用**：e519f75d1 树双腿已跑毕未落账，补齐 join——stable
+> 8510（8304P/199F/6T/1U），vs s444 仅 6 差集全数在册振荡族，ip C1
+> 零位移。本轮新双腿（a3b89b387 = prev 树 + g47 两刀，隔离归因）：
+> stable 8511（8305P/199F/6T/1U），vs prev 仅 modulepreload strict-
+> origin 回位（P+1 在册振荡）→ g47 两刀零波及；vs s444 P 集逐键恒等，
+> F/T 差集 5 全数 select-home-end 族相位轮换。红池 199F 全数归账。
+> 全桥绿窗 1637P/0F rc=0（基线 1625P，+12 组合树新钉）。挂用户门维持
+> + 候门决项提示用户（飞书）。
 
 > **▶ 承前（2026-11-15 M2 切片 444 收口）——label 2 键勘根定谳资产伪红
 > 第三例 + ③m 资源落地 F−2/P+2 双腿确证 + combobox 12 分诊定谳 + 全域
