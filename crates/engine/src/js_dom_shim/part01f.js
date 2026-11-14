@@ -2721,6 +2721,91 @@
           }
         }
       })();
+      // C2/F/I6 方向性壳携刀（2026-11-15）右臂：右空块前导壳链归一——extract
+      // 携带链面（piece-3 重建被 ipLeadSkipC guard 跳过的形，探针定谳 F/I6 族
+      // brCreated=0 携带实录）。方向性语义（census 16 键 got/exp 全解析，Chrome
+      // 录音三族收敛 + corpus FYI「链接样式不入新段落、空段落不裹壳」）：空块
+      // 垫底 br 壳链 = 样式壳携全链、`<a>` 弃携。仅零可见内容空块面；非空块
+      // a 携内容不扰（`<a href>foo[]bar</a>` 双侧 a 形照落）。
+      (function () {
+        if (_zwIparaHasVisibleChild(newContainer)) return;
+        var ipSpineR = [];
+        var ipScanR = newContainer;
+        var ipGR = 0;
+        while (ipScanR && ipGR++ < 32) {
+          var ipFcR = ipScanR.firstChild;
+          if (!ipFcR || ipFcR.nodeType !== 1) break;
+          var ipTR = _zwJusTag(ipFcR);
+          if (ipTR !== 'a' && !_zwIparaIsFmtShellTag(ipTR)) break;
+          ipSpineR.push(ipFcR);
+          ipScanR = ipFcR;
+        }
+        if (!ipSpineR.length) return;
+        // F 族（6 键，`foo&nbsp;[]<br>` a/b 链全弃）：携带 spine 含 a → spine
+        // 根整棵摘除（内裹 br 同弃），空块交下方垫底臂裸垫（exp 两备选右块均
+        // 裸 `<p><br></p>`；a-outer/b-outer 两方向同弃）。
+        var ipHasAR = false;
+        for (var ipSi = 0; ipSi < ipSpineR.length; ipSi++) {
+          if (_zwJusTag(ipSpineR[ipSi]) === 'a') { ipHasAR = true; break; }
+        }
+        if (ipHasAR) {
+          try { newContainer.removeChild(ipSpineR[0]); } catch (_eSr) {}
+          return;
+        }
+        // I6 族（2 键，styled span 半携）：纯样式携带链浅于拆分位祖先样式链
+        // （extract 尾克隆只携 caret 后层，caret 所在壳空置被 piece-2 摘）时
+        // 重建全链裹垫底 br（exp `<span color><span bg><br></span></span>`）。
+        // 链含 a 不扩（a 毒化无空块携链锚，保守不扰）；spine 非 want 前缀
+        //（tag+attrs 逐层等值）不扩。
+        var ipWantR = [];
+        (function () {
+          var ipWR = ipM1OrigNode;
+          var ipGR2 = 0;
+          while (ipWR && ipWR !== container && ipGR2++ < 32) {
+            if (ipWR.nodeType === 1) {
+              var ipTW = _zwJusTag(ipWR);
+              if (ipTW === 'a') { ipWantR = []; return; }
+              if (_zwIparaIsFmtShellTag(ipTW)) ipWantR.push(ipWR);
+            }
+            ipWR = ipWR.parentNode;
+          }
+        })();
+        if (!ipWantR.length || ipWantR.length <= ipSpineR.length) return;
+        var ipAttrEqR = function (x, y) {
+          var ax = x.attributes || [], ay = y.attributes || [];
+          if (ax.length !== ay.length) return false;
+          for (var ix = 0; ix < ax.length; ix++) {
+            var ipF = false;
+            for (var jx = 0; jx < ay.length; jx++) {
+              if (ax[ix].name === ay[jx].name && ax[ix].value === ay[jx].value) {
+                ipF = true;
+                break;
+              }
+            }
+            if (!ipF) return false;
+          }
+          return true;
+        };
+        for (var ipPi = 0; ipPi < ipSpineR.length; ipPi++) {
+          var ipWvR = ipWantR[ipWantR.length - 1 - ipPi];
+          if (_zwJusTag(ipSpineR[ipPi]) !== _zwJusTag(ipWvR)
+              || !ipAttrEqR(ipSpineR[ipPi], ipWvR)) {
+            return;
+          }
+        }
+        try { newContainer.removeChild(ipSpineR[0]); } catch (_eSr2) {}
+        var ipInnerR = document.createElement('br');
+        ipInnerR.__zwPlaceholderBr = true;
+        // 收集序内→外，正序包裹＝内层先包 br（保持输入链方向，带占位标记，
+        // typed 消费面同 M1b 重建链垫底惯例）。
+        for (var ipWi = 0; ipWi < ipWantR.length; ipWi++) {
+          var ipCloneR = ipWantR[ipWi].cloneNode(false);
+          try { ipCloneR.removeAttribute('id'); } catch (_eRsR) {}
+          ipCloneR.appendChild(ipInnerR);
+          ipInnerR = ipCloneR;
+        }
+        try { newContainer.appendChild(ipInnerR); } catch (_eAr) {}
+      })();
       // 双面禁段落子下钻 + 不可见面 br 垫底。
       while (_zwListIsProhibitedParagraphChild(container.lastChild)) {
         container = container.lastChild;
@@ -2729,7 +2814,43 @@
         newContainer = newContainer.lastChild;
       }
       if (!_zwIparaHasVisibleChild(container)) {
-        container.appendChild(document.createElement('br'));
+        // C2/F/I6 方向性壳携刀（2026-11-15）左臂：左空块垫底 br 携 caret 祖先
+        // 样式壳链（fmt+span 逐层 cloneNode(false) 保 attrs，`<a>` 链接壳弃携）。
+        // census C2 8 键（`<p><b>[]foo</b></p>` exp 左块 `<p><b><br></b></p>`、
+        // a-outer `<p><b><a href>[]foo</a></b></p>` exp b 携 a 弃；双壳 `<b><i>`
+        // 全链携）——左块携链不带 v3.2 重开门（offset-0 形壳左半恒空置仍携，
+        // 与右块重开判据分向）。探针定谳：本臂 br 新建（ipm3-b-v6-ip.log 16 键
+        // brCreated=1 栈行 2732 实录）。
+        var ipPadChainL = [];
+        (function () {
+          var ipWL = ipM1OrigNode;
+          var ipGL = 0;
+          while (ipWL && ipWL !== container && ipGL++ < 32) {
+            if (ipWL.nodeType === 1) {
+              var ipTL = _zwJusTag(ipWL);
+              if (ipTL !== 'a' && _zwIparaIsFmtShellTag(ipTL)) {
+                ipPadChainL.push(ipWL);
+              }
+            }
+            ipWL = ipWL.parentNode;
+          }
+        })();
+        var ipBrL = document.createElement('br');
+        if (ipPadChainL.length) {
+          // 收集序内→外，正序包裹＝内层先包 br 外层逐层套（保持输入链方向，
+          // `<b><i>` 重建 `<b><i><br></i></b>` 非 `<i><b>`）；attrs 原样，id
+          // 剥除同 piece-3 惯例。
+          var ipInnerL = ipBrL;
+          for (var ipLi = 0; ipLi < ipPadChainL.length; ipLi++) {
+            var ipCloneL = ipPadChainL[ipLi].cloneNode(false);
+            try { ipCloneL.removeAttribute('id'); } catch (_eRsL) {}
+            ipCloneL.appendChild(ipInnerL);
+            ipInnerL = ipCloneL;
+          }
+          container.appendChild(ipInnerL);
+        } else {
+          container.appendChild(ipBrL);
+        }
       }
       // 处方 b 壳链判定提前（A3 共用）：新块头 inline 壳链（fmt 壳表）。
       var _zwIpShell = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
