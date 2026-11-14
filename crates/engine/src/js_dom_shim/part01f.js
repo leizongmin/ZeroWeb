@@ -1613,6 +1613,15 @@
       var t = n ? n.nodeType : 0;
       return t === 3 || t === 4 || t === 7 || t === 8;
     };
+    // C3 刀（2026-11-15）：可切片 CharData 仅 Text/CDATA——Comment/PI 原子
+    // 节点走切片语义（cloneSlice+deleteData）会把原节点原地清空残 `<!---->`
+    // 空壳（corpus `<p>foo[]<!--bar-->` 2 键 got 实录），contained/sc===ec
+    // 子级面改走先摘后挂 move（spec contained 子 remove+append 同型）。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    var isSplittableCd = function (n) {
+      var t = n ? n.nodeType : 0;
+      return t === 3 || t === 4;
+    };
     var moveIn = function (kid, into) {
       if (!kid) return;
       var op = kid.parentNode;
@@ -1643,7 +1652,7 @@
             throw new (globalThis.DOMException || Error)(
               'The range includes a DocumentType node.', 'HierarchyRequestError');
           }
-          if (isCd(snap[i])) {
+          if (isSplittableCd(snap[i])) {
             var d = String(snap[i].nodeValue == null ? '' : snap[i].nodeValue);
             f.appendChild(cloneSlice(snap[i], 0, d.length));
             _zwIparaDeleteData(snap[i], 0, d.length);
@@ -1701,7 +1710,7 @@
         throw new (globalThis.DOMException || Error)(
           'The range includes a DocumentType node.', 'HierarchyRequestError');
       }
-      if (isCd(contained[k])) {
+      if (isSplittableCd(contained[k])) {
         var d2 = String(contained[k].nodeValue == null ? '' : contained[k].nodeValue);
         f.appendChild(cloneSlice(contained[k], 0, d2.length));
         _zwIparaDeleteData(contained[k], 0, d2.length);
@@ -2013,7 +2022,14 @@
           while (ipW && ipG++ < 32) {
             if (ipW === container) {
               var ipT = _zwJusTag(ipW);
-              if (ipT === 'a' || _zwIparaIsFmtShellTag(ipT)) {
+              // C6 刀（2026-11-15）：rawtext 壳 script 入表——宿主直子 script
+              // 链 caret（corpus `<script>foo[]bar</script>baz` 2 键）此前落
+              // wrap 面， nodeList 含宿主直子文本成员触发 _zwJusWrapViaHtml
+              // 整树重建，拆分位引用脱挂 → c1InDom 兜底退化空拆分（got 全文
+              // 留左块 + 空垫块）。gate 直构走先摘后挂切片 + wired 写，与 b/
+              // span 壳同径；script display:none 面由 `_zwJusIsVisible` 不可
+              // 见门垫左块 br（corpus exp `<script>foo</script><br>` 形）。
+              if (ipT === 'a' || _zwIparaIsFmtShellTag(ipT) || ipT === 'script') {
                 ipM1ChainC.push(ipW);
                 ipM1GateC = ipM1ChainC.length > 0;
               }
@@ -2042,6 +2058,20 @@
             ipLtC = ipDC.slice(0, offset);
             ipRtC = ipDC.slice(offset);
           }
+          // C6 刀（2026-11-15）：shim script 元素包装缺 cloneNode（探针实录
+          // `typeof s.cloneNode === 'undefined'`——基座 Element 接口未覆盖
+          // rawtext 壳；appendChild/removeChild/setAttribute/attr 迭代在
+          // wire 上齐备）。rawtext 壳克隆改 createElement('script') + 业务
+          // attr 平移等价 shallow clone；其余壳 cloneNode(false) 原径。
+          var ipCloneShellC = function (ipEl) {
+            if (_zwJusTag(ipEl) !== 'script') return ipEl.cloneNode(false);
+            var ipNs = document.createElement('script');
+            var ipAt = ipEl.attributes || [];
+            for (var ipAi = 0; ipAi < ipAt.length; ipAi++) {
+              try { ipNs.setAttribute(ipAt[ipAi].name, ipAt[ipAi].value); } catch (_eAcC) {}
+            }
+            return ipNs;
+          };
           for (var ipI = 0; ipI < ipM1ChainC.length; ipI++) {
             var ipE = ipM1ChainC[ipI];
             var ipTN = _zwJusTag(ipE);
@@ -2053,10 +2083,10 @@
             var ipPi = ipPathC === ipE ? offset
               : (ipPathC ? ipKids.indexOf(ipPathC) : -1);
             if (ipPi < 0) ipPi = ipKids.length;
-            var ipLE = ipE.cloneNode(false);
+            var ipLE = ipCloneShellC(ipE);
             // C 族根因修复（2026-11-14）：右壳重开剥 id（Chrome 实录右半壳仅
             // 存业务 attr，如 `<b class=y>bar</b>`，id 随左半）。
-            var ipRE = ipE.cloneNode(false);
+            var ipRE = ipCloneShellC(ipE);
             try { ipRE.removeAttribute('id'); } catch (_eRsC) {}
             var ipLK = [];
             var ipRK = [];
