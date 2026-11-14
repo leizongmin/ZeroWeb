@@ -2,6 +2,22 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+当前 css-images **3087P/128F**、css-values 4038P/1549F/6T（g45-b1）。
+**g45 完成（11-15）**：image-set 解析与串化刀——image-set() 整值可解析
+（css-images-4 §image-set-nota：`-webkit-` 别名剥除、负字面分辨率拒收、dpi/
+dpcm→dppx 折算、calc 三态折叠 `fold_resolution_typed` 含符号归一重试）+
+canonical 恒 Some 投影（url 引号化/缺省补 1x/calc §10.6/标准序）+ decl
+invalid 判定扩接双写面（IDL part06 content/border-image-source/cursor 臂 +
+setAttribute g44 通道）+ style-system 变体直通 + engine computed dppx 串化 +
+painter 防御臂。A/B（B0=results-g44-b1/B1=results-g45-b1）：css-images
+2941→**3087P 净 +146**（image-set-parsing F 114→0 全页清零 144/144 Pass、
+image-set-computed F 36→4），css-values −3（attr() 污点暴露——B0 碰巧过，
+拒 var() 为 spec 错误方向，正修独立刀）；单测 css-parser 3,227（+4 钉）/
+style-system 2,538/engine 4,009 全绿，fmt/clippy 净。残面：computed 4F
+（content×image-set 支持门 2F + calc 负分辨率折叠/钳制 2F，均 B0 既有）、
+attr-security 3F（css-values-5 #attr-security 污点传播刀）、position-invalid
+5F/conic-calc 3F 细形。见 [evidence
+2026-11-15-g45-image-set-parse-serialize](evidence/2026-11-15-g45-image-set-parse-serialize.md)。
 **g44 完成（11-15）**：色标文法位 + style-attr 写面拒收刀——color-stops-parsing
 60F 双通道分修：parse 侧 hint 位约束（首位前/连续/尾悬挂拒收 + 空段拒收 +
 单色标表合法）与 radial 首参单百分比不再误派发 head；写面新增
