@@ -1,23 +1,45 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 439 收口（位移检查窗：g40 到货覆盖 + dialog
-第三窗复验，零源码改动；账本
-evidence/2026-11-14-m2s439-displacement-check-g40-arrival.md）。
-s438 收口后渲染流 g40 serialize-resolution 刀（1382895dd）到货，s438 检查
-树未覆盖 → 本轮双跑：**键面 8307P/200F/3T vs s438 差集（P−1/F+1/T+1）
-全数归因在册振荡族，零真位移**——g40 对本语料零波及（resolution/image-set
-面不交叠）；modulepreload strict-origin 单窗沾染（leg1 F/leg2 P，
-echo-referrer.py server-state 族，三基线恒 P 待回位）；optional select 双
-文件文件级态置换（detailed 双腿 90s 页脚本超时 F、非 detailed leg2 文件
-级 T 负载族渐进退化）。**dialog 第三窗复验未翻回**：红相自 ~20:00 三窗
-连续（跨 ~2h，唯一绿窗 14:29 在 zeroseed 风暴前），非代码定性不变（父提
-交 solo×3 在案），负载相关假设维持——风暴平息（loadavg 持续 <5）后仍红
-则重开归因面。基线带推移至 s439 集合。**挂用户门维持**：GB-20261114-
-VIDEO + GB-20261031（簇 D）。下一步：dialog 复验（待风暴平息窗）+
-modulepreload 回位核验；红池分诊续（video P1+P2 或簇 D A2 待门决）；
-全桥套件绿窗轮末收口跑常态化（基线 1579P/0F）。
+**日期**: 2026-11-15（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 440 收口（dialog 五窗红相归因定谳 + CE 域门
+修复；账本
+evidence/2026-11-15-m2s440-dialog-focus-complex-ce-gate-fix.md，代码刀
+本轮 commit）。
+s439 挂账 dialog 复验在低负载窗（loadavg 1.8）solo 仍红 → 负载假设证伪
+重开归因面：**criterion bisect 三重（父 36de32a4d 绿 / 266b45602 红×3 /
+hunk 级 AB-KILL 回绿）定谳 first bad = 266b45602**（editing-compat M3-A
+insertParagraph 刀，13:25）——摘挂臂「位置章发射前重算」毒化普通页面
+DOM 摘挂：交叠批次下（td 命令穿插 drain + Complex promise_test await 窗
+内同步 test() 插入）章值重算与 host drain 交互失准 → Remove 错位/miss →
+**host 树孤儿双现**（v4 探针实证 children 枚举 3 子 / querySelector null /
+getElementsByTagName 2 现）→ 查询通道歧义 null → Complex(false)
+`input.focus()` 崩 unhandled rejection。14:29 绿窗 = build 未含毒刀最后窗
+口，phase-flip 表象实为到货时点恒红，负载系当时误归因。**修复 = CE 域
+门**（part04 R125 + `_mv` 两处重算块加 `nodeType===1 && __zw_is_ce_host`
+门：CE 内逐位恒等 M3-A 行为保 ip 37 键，CE 外回 36de32a4d = s433 基线行
+为）。验证：solo focus-after-close 7/7 全 Pass + dialog 目录净 −1 恰靶 +
+**全域双跑 join 8065P/254F/7T/1U vs 修复前同口径 8064P/255F/7T/1U 恰 1
+键 F→P 零其他位移** + make test 10798P/1F（唯一 F = image_batch_e2e
+s116 在册环境形态）+ fmt/clippy/拼装主序 node --check 绿。**键面基带切
+换**：历史记录带（8307-8309P/199-203F）与今晨同口径可复现面（s439 收口
+树四腿逐键一致 8064P/255F/7T/1U）不吻合（join 数学排除 8510 形态来自同
+口径 join），口径失真挂账待考，本轮起基带 = 8065P/254F/7T/1U。
+modulepreload strict-origin 双腿 Pass 回位 ✓。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：红池分诊续（relevant-
+mutations.html 46F 大块红 s126 曾全 Pass 待勘根 + zzz-s433 探针残留语料
+清理 + video P1+P2 或簇 D A2 待门决）；全桥套件绿窗轮末收口跑常态化。
+
+> **▶ 承前（2026-11-14 M2 切片 439 收口）——位移检查窗（g40 到货覆盖 +
+> dialog 第三窗复验，零源码改动；账本
+> evidence/2026-11-14-m2s439-displacement-check-g40-arrival.md）**：
+> s438 收口后渲染流 g40 serialize-resolution 刀（1382895dd）到货 → 双跑
+> 覆盖：键面 vs s438 差集（P−1/F+1/T+1）全数归因在册振荡族，g40 零波及；
+> modulepreload strict-origin 单窗沾染待回位（s440 已回 ✓）；optional
+> select 双文件文件级态置换（负载族渐进退化形态）。**dialog 第三窗复验
+> 未翻回**：红相三窗连续（唯一绿窗 14:29 在 zeroseed 风暴前），负载相关
+> 假设维持、风暴平息后仍红则重开归因面——**s440 重开后定谳代码回归
+> （266b45602）并修复，负载假设证伪，见当前 Active**。
 
 > **▶ 承前（2026-11-14 M2 切片 438 收口）——rebase 组合树例常位移检查
 > 轮，零源码改动（账本
