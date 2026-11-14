@@ -13037,11 +13037,26 @@
   // 换代），IIFE 内函数 host 侧不可达。
   globalThis._zwChildBaseInvalidateAll = function () {
     _zwChildBaseCache.clear();
-    // R140：live childNodes 承载数组同批失效（其 refresh 闭包捕获 sel/handle，跨换代
-    // 重查正确——但缓存 identity 跨换代保留会使同 turn 内旧数组被复用且 __zwTreeRef
-    // 等本地失效逻辑失真；统一清空最稳，WPT r55 重注册换代用例）。
-    if (globalThis._zwLiveNLCache) globalThis._zwLiveNLCache = {};
-    if (globalThis._zwLiveNLSync) globalThis._zwLiveNLSync = {};
+    // T70（t69 诊断 Gap B）：live childNodes 承载数组与 mutation 同步表**跨换代保留**
+    //（spec：Node.childNodes 返 live NodeList，https://dom.spec.whatwg.org/
+    // #dom-node-childnodes；同一 node 重复读返同一 collection 对象 = [SameObject]，
+    // 见 #interface-nodelist / #collections live 语义）。旧实现批量边界整表清空：
+    // ① 同节点换代后首读返新数组（identity 破，held 引用与 fresh 读分叉）；
+    // ② 持有引用失去 `_zwLiveNLSync` 钩子——树变更只刷新换代后的新数组，旧引用
+    // 冻结在旧视图（live 反射破，caseH v2/v4/v5 面）；③ mutation 入口的 sync 调用
+    // 全失联。保留后 refresh 闭包捕获 sel/handle 字符串，重查 `_childNodeList`
+    //（base cache 已在本函数清空 → 换代后首查回源 host，基底新鲜度不变——WPT r55
+    // 重注册换代用例只断言基底新鲜度，不受影响）；part03 `__zwDetDoc` detached-doc
+    // 条目自带 `__zwTreeRef === _tree` 守卫，跨树自愈。容量守卫镜像 `_zwChildBaseCache`
+    // 512 键软上限（超限两表同清，键位成对注册不会失配）。
+    // FIXME: 进程内路径 load_html 跨文档沿用同一保留（与 _proxyCache 持久化一致；
+    // handle 游标换代归零后 `@handle` 键跨页复用是既有暴露面）；renderer 路径每
+    // 文档重建 context，天然无跨文档残留。
+    if (globalThis._zwLiveNLCache
+        && Object.keys(globalThis._zwLiveNLCache).length > 512) {
+      globalThis._zwLiveNLCache = {};
+      globalThis._zwLiveNLSync = {};
+    }
   };
   function _childNodeList(sel, handle) {
     // R100 锚回（mm-regression 根修，2026-10-07）：handle-only proxy（`_zwQueryWrapIdentity`
