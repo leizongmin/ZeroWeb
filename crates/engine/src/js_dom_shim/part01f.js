@@ -1470,6 +1470,90 @@
     return '';
   }
 
+  // B 族刀（2026-11-14）：折叠空白串判 + 拆点块界归一 + white-space 显著判
+  //（part01.js `_zwCeIsCollapsibleWsOnly` / `_zwCeSplitBoundaryNormalize` /
+  // `_zwCeWsDeclared` / `_zwCeWsSignificant` 同构——该文件 IIFE 私有作用域
+  // 不可达，本地复制，同 `_zwIparaIsVoidTag` 惯例）。
+  function _zwIparaIsCollapsibleWsOnly(sv) {
+    var v = String(sv);
+    if (v === '') return false;
+    for (var i = 0; i < v.length; i++) {
+      var c = v.charAt(i);
+      if (c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r' && c !== '\f') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function _zwIparaSplitBoundaryNormalize(head, tail, headStructural) {
+    var H = String(head);
+    var T = String(tail);
+    // headStructural：头侧结构面有非空白内容（宿主级根层前导折叠空格形——
+    // 字串纯空白但侧内有元素，exp 保留该空格不退化；corpus CE-false 跨行键
+    // 实录）。缺省退化判据维持字串级。
+    var headDeg = _zwIparaIsCollapsibleWsOnly(H) && !headStructural;
+    var tailDeg = _zwIparaIsCollapsibleWsOnly(T);
+    if (headDeg) H = '';
+    if (tailDeg) T = '';
+    // 门=双侧非退化（退化侧翻转会造可见性伪影）；H 空但头侧结构有内容
+    //（caret 文本位 0 形）时 T 侧翻转仍需执行。
+    if (!headDeg && !tailDeg && (H !== '' || T !== '')) {
+      var tailWs = 0;
+      while (tailWs < H.length) {
+        var cH = H.charAt(H.length - 1 - tailWs);
+        if (cH !== ' ' && cH !== '\u00a0') break;
+        tailWs++;
+      }
+      if (tailWs > 0 && H.charAt(H.length - 1) === ' ') {
+        H = H.slice(0, H.length - 1) + '\u00a0';
+      }
+      var leadWs = 0;
+      while (leadWs < T.length) {
+        var cT = T.charAt(leadWs);
+        if (cT !== ' ' && cT !== '\u00a0') break;
+        leadWs++;
+      }
+      if (leadWs > 0) {
+        var lead = '\u00a0';
+        for (var ri = 1; ri < leadWs; ri++) {
+          lead += (T.charAt(ri) === '\u00a0') ? ' ' : T.charAt(ri);
+        }
+        T = lead + T.slice(leadWs);
+      }
+    }
+    return [H, T];
+  }
+
+  function _zwIparaWsDeclaredOf(el) {
+    try {
+      if (el.style && typeof el.style.whiteSpace === 'string'
+          && el.style.whiteSpace !== '') {
+        return String(el.style.whiteSpace);
+      }
+    } catch (_eWsD1) {}
+    try {
+      var stWs = el.getAttribute && el.getAttribute('style');
+      if (stWs) {
+        var mWs = String(stWs).match(/white-space\s*:\s*([a-z-]+)/i);
+        if (mWs) return mWs[1];
+      }
+    } catch (_eWsD2) {}
+    return null;
+  }
+
+  function _zwIparaWsSignificantOf(from, host) {
+    var n = (from && from.nodeType === 1) ? from : (from ? from.parentNode : null);
+    var g = 0;
+    while (n && g++ < 256) {
+      var ws = _zwIparaWsDeclaredOf(n);
+      if (ws != null) return ws === 'pre' || ws === 'pre-line' || ws === 'pre-wrap';
+      if (n === host) break;
+      n = n.parentNode;
+    }
+    return false;
+  }
+
   function _zwIparaIsSingleLineContainer(node) {
     // "A single-line container is either a non-list single-line container, or
     // an HTML element with local name li, dt, or dd."
@@ -2541,6 +2625,95 @@
         ipRebuiltInnerC = ipInnerPrevC;
         newContainer.appendChild(ipInnerPrevC);
       }
+      // B 族刀（2026-11-14）：拆点块界空白/nbsp 归一（corpus B 族 spec 移植面
+      // 14 键实录 ipm3-c4-v3-ip.log census——宿主级 CE-false 跨行 1 键同径）。
+      // Chrome 块界拆分归一折叠空白：行界折叠空格翻 `&nbsp;`（`a[] b`→
+      // `a`/`&nbsp;b`、`a []b`→`a&nbsp;`/`b`）、行首空白串首字翻 nbsp 余位
+      // nbsp→空格（` \u00a0b` 形→`\u00a0 b`）、单侧 whitespace-only 整段退化
+      // 摘除（`abc[] `→新块空走下方垫底 br、` [] abc`→原块空垫底且对侧不翻
+      // ——单侧退化跳过归一）、新块尾端折叠空白文本出块留原层（CE-false 跨行
+      // exp 尾 ` ` 在新块 `</div>` 后实录）。white-space 显著面（pre/pre-line/
+      // pre-wrap，I5 pre 换行族域）原样维持。位置在 M1 piece2/3 之后双面垫底
+      // 之前：退化摘除后既有 !hasVisibleChild 垫底面自然补位。
+      (function () {
+        var bHostC = _zwListEditingHostOf(container) || container;
+        if (_zwIparaWsSignificantOf(container, bHostC)) return;
+        var bTailTextC = null;
+        (function walk(n) {
+          var ks = n.childNodes || [];
+          for (var i = 0; i < ks.length; i++) {
+            if (ks[i].nodeType === 3 && !bTailTextC) { bTailTextC = ks[i]; }
+            walk(ks[i]);
+          }
+        })(newContainer);
+        var bHeadTextC = null;
+        (function walkH(n) {
+          var ks = n.childNodes || [];
+          for (var i = ks.length - 1; i >= 0; i--) {
+            if (ks[i].nodeType === 3 && !bHeadTextC) { bHeadTextC = ks[i]; }
+            walkH(ks[i]);
+          }
+        })(container);
+        // 侧整段 whitespace-only 判：无元素后代且文本后代全折叠空白（退化面）。
+        var bSideWsOnlyC = function (root) {
+          var hasEl = false;
+          var allWs = true;
+          (function walkW(n) {
+            var ksW = n.childNodes || [];
+            for (var iW = 0; iW < ksW.length; iW++) {
+              if (ksW[iW].nodeType === 1) { hasEl = true; }
+              else if (ksW[iW].nodeType === 3
+                  && !_zwIparaIsCollapsibleWsOnly(String(ksW[iW].nodeValue || ''))) {
+                allWs = false;
+              }
+              if (hasEl || !allWs) return;
+              walkW(ksW[iW]);
+            }
+          })(root);
+          return !hasEl && allWs;
+        };
+        var bHeadWsC = bHeadTextC ? bSideWsOnlyC(container) : false;
+        var bTailWsC = bTailTextC ? bSideWsOnlyC(newContainer) : false;
+        var bPairC = _zwIparaSplitBoundaryNormalize(
+          bHeadTextC ? String(bHeadTextC.nodeValue || '') : '',
+          bTailTextC ? String(bTailTextC.nodeValue || '') : '',
+          !bHeadWsC);
+        if (bHeadTextC) bHeadTextC.nodeValue = bPairC[0];
+        if (bTailTextC) bTailTextC.nodeValue = bPairC[1];
+        var bStripWsC = function (root) {
+          (function walkS(n) {
+            var ksS = (n.childNodes || []).slice();
+            for (var iS = 0; iS < ksS.length; iS++) {
+              var cS = ksS[iS];
+              if (cS.nodeType === 3
+                  && _zwIparaIsCollapsibleWsOnly(String(cS.nodeValue || ''))) {
+                try { n.removeChild(cS); } catch (_eBsw) {}
+              } else {
+                walkS(cS);
+              }
+            }
+          })(root);
+        };
+        if (bHeadWsC) bStripWsC(container);
+        if (bTailWsC) bStripWsC(newContainer);
+        // 新块尾端折叠空白文本出块留原层（退化整段面已在上方摘除，此处只接
+        // 尾端连续段）——保序插原后继位前。
+        var bTrailWsC = [];
+        while (newContainer.lastChild && newContainer.lastChild.nodeType === 3
+            && _zwIparaIsCollapsibleWsOnly(String(newContainer.lastChild.nodeValue || ''))) {
+          bTrailWsC.unshift(newContainer.lastChild);
+          newContainer.removeChild(newContainer.lastChild);
+        }
+        if (bTrailWsC.length) {
+          // 重挂新建 textNode（同 part01 wrap 臂：经 engine 块两跳摘挂的原节点
+          // 直插宿主静默半挂实录；bRefC 固定后继位 + 正序迭代保序）。
+          var bRefC = newContainer.nextSibling;
+          for (var btiC = 0; btiC < bTrailWsC.length; btiC++) {
+            newContainer.parentNode.insertBefore(
+              document.createTextNode(bTrailWsC[btiC].nodeValue || ''), bRefC);
+          }
+        }
+      })();
       // 双面禁段落子下钻 + 不可见面 br 垫底。
       while (_zwListIsProhibitedParagraphChild(container.lastChild)) {
         container = container.lastChild;

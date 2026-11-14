@@ -12010,6 +12010,70 @@
   }
   // white-space 显著性：自 caret 容器沿父链向宿主取**最近声明**（含 normal——声明
   // 即止继承链；全链无声明 → 初始 normal 不显著）。
+  // B 族刀（2026-11-14）：串级折叠空白判定（仅 collapsible ws 字符——nbsp 是
+  // 可见内容不入退化面；空串不算退化只算空）。
+  function _zwCeIsCollapsibleWsOnly(s) {
+    var v = String(s);
+    if (v === '') return false;
+    for (var i = 0; i < v.length; i++) {
+      var c = v.charAt(i);
+      if (c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r' && c !== '\f') {
+        return false;
+      }
+    }
+    return true;
+  }
+  // B 族刀拆点块界归一（2026-11-14）：insertParagraph 拆分把折叠空格顶到新旧行
+  // 界时 Chrome 以 nbsp 保全可见性（语料 B 族 15 键实录：`a[] b`→右段首字翻
+  // `&nbsp;`、`a []b`→左段尾字翻 `&nbsp;`、` &nbsp;` run→`&nbsp; ` swap），
+  // whitespace-only 段退化空块由调用方占位 br（`abc[] `→`<div><br></div>`）。
+  // 单侧退化时另一侧不归一（` [] abc` 右段 ` abc` 接受形无 nbsp 变体实录——
+  // 退化臂吃掉空格段后另一侧无新行界）。white-space 显著面由调用方 gate
+  //（pre/pre-line/pre-wrap 折叠语义不存在，归一失义）。
+  // https://w3c.github.io/editing/execCommand.html#canonicalize-whitespace
+  function _zwCeSplitBoundaryNormalize(head, tail, headStructural) {
+    var H = String(head);
+    var T = String(tail);
+    // headStructural：头侧结构面有非空白内容（宿主级根层前导折叠空格形——
+    // 字串纯空白但侧内有元素，exp 保留该空格不退化；corpus CE-false 跨行键
+    // 实录）。缺省退化判据维持字串级。
+    var headDeg = _zwCeIsCollapsibleWsOnly(H) && !headStructural;
+    var tailDeg = _zwCeIsCollapsibleWsOnly(T);
+    if (headDeg) H = '';
+    if (tailDeg) T = '';
+    // 门=双侧非退化（退化侧翻转会造可见性伪影）；H 空但头侧结构有内容
+    //（caret 文本位 0 形）时 T 侧翻转仍需执行。
+    if (!headDeg && !tailDeg && (H !== '' || T !== '')) {
+      // 行尾：左段尾部 [space|nbsp] run 末字翻 nbsp（`a `→`a&nbsp;` 实录严格形；
+      // `a&nbsp; `→`a&nbsp;&nbsp;` 接受形；`a &nbsp;` nbsp 尾原样接受）。
+      var tailWs = 0;
+      while (tailWs < H.length) {
+        var cH = H.charAt(H.length - 1 - tailWs);
+        if (cH !== ' ' && cH !== '\u00a0') break;
+        tailWs++;
+      }
+      if (tailWs > 0 && H.charAt(H.length - 1) === ' ') {
+        H = H.slice(0, H.length - 1) + '\u00a0';
+      }
+      // 行首：右段首部 [space|nbsp] run 首字翻 nbsp、run 内其余 nbsp 翻回空格
+      //（` b`→`&nbsp;b` 实录严格形；` &nbsp;`→`&nbsp; ` swap 实录；`&nbsp; `
+      // nbsp 首原样）。
+      var leadWs = 0;
+      while (leadWs < T.length) {
+        var cT = T.charAt(leadWs);
+        if (cT !== ' ' && cT !== '\u00a0') break;
+        leadWs++;
+      }
+      if (leadWs > 0) {
+        var lead = '\u00a0';
+        for (var ri = 1; ri < leadWs; ri++) {
+          lead += (T.charAt(ri) === '\u00a0') ? ' ' : T.charAt(ri);
+        }
+        T = lead + T.slice(leadWs);
+      }
+    }
+    return [H, T];
+  }
   function _zwCeWsSignificant(from, host) {
     var n = (from && from.nodeType === 1) ? from : (from ? from.parentNode : null);
     var g = 0;
@@ -12377,20 +12441,52 @@
           headParts1.push(mv1h);
           mv1h = mv1h.previousSibling;
         }
+        // B 族刀（2026-11-14）：宿主级 wrap 臂拆点块界归一（corpus CE-false 跨行
+        // 键实录——caret 规约进后随文本节点 offset 0 形）。规则同 part01f spec
+        // 移植面钩子：行界折叠空格翻 `&nbsp;`、单侧 whitespace-only 退化、
+        // 新块尾端折叠空白出块留宿主原层；white-space 显著面原样维持。
+        var bHeadWsOnly1w = _zwCeIsCollapsibleWsOnly(String(head1 || ''));
+        for (var bhw1 = 0; bhw1 < headParts1.length; bhw1++) {
+          var bhn1w = headParts1[bhw1];
+          if (!(bhn1w.nodeType === 3
+              && _zwCeIsCollapsibleWsOnly(String(bhn1w.nodeValue || '')))) {
+            bHeadWsOnly1w = false;
+            break;
+          }
+        }
+        // B 族刀：行首折叠空白留宿主根层不包块（CE-false 跨行 exp0 行首 ` `
+        // 在首块 `<div>` 前实录；整侧退化面不摘，保垫底 br 路径）。只从 wrap
+        // 集合排除——节点未摘挂，宿主原位即挂载后首块之前，不重挂。
+        if (!bHeadWsOnly1w) {
+          while (headParts1.length
+              && headParts1[headParts1.length - 1].nodeType === 3
+              && _zwCeIsCollapsibleWsOnly(
+                  String(headParts1[headParts1.length - 1].nodeValue || ''))) {
+            headParts1.pop();
+          }
+        }
+        var bNorm1w = _zwCeWsSignificant(boundaryText, host)
+          ? [head1, tail1]
+          : _zwCeSplitBoundaryNormalize(String(head1 || ''), String(tail1 || ''),
+              !bHeadWsOnly1w);
         for (var hi1 = headParts1.length - 1; hi1 >= 0; hi1--) {
           var hn1 = headParts1[hi1];
+          if (bHeadWsOnly1w) {
+            // 退化头侧：折叠空白留宿主原位不迁块（不可见内容不包块）。
+            continue;
+          }
           if (hn1.parentNode) {
             try { hn1.parentNode.removeChild(hn1); } catch (e1h) {}
           }
           headBlock1.appendChild(hn1);
         }
-        if (head1) headBlock1.appendChild(document.createTextNode(head1));
+        if (bNorm1w[0]) headBlock1.appendChild(document.createTextNode(bNorm1w[0]));
         if (!(headBlock1.childNodes || []).length) {
           var phbr1a = document.createElement('br');
           phbr1a.__zwPlaceholderBr = true;
           headBlock1.appendChild(phbr1a);
         }
-        if (tail1) sep1.appendChild(document.createTextNode(tail1));
+        if (bNorm1w[1]) sep1.appendChild(document.createTextNode(bNorm1w[1]));
         refAfter1 = boundaryText.nextSibling;
         host.removeChild(boundaryText);
         var mv1t = refAfter1;
@@ -12411,6 +12507,14 @@
           }
           sep1.appendChild(tn1);
         }
+        // B 族刀：新块尾端折叠空白文本出块留宿主原层（CE-false 跨行 exp 尾
+        // ` ` 在新块 `</div>` 后实录）——垫底判前摘出，垫底后原位重挂保序。
+        var bTrailWs1w = [];
+        while (sep1.lastChild && sep1.lastChild.nodeType === 3
+            && _zwCeIsCollapsibleWsOnly(String(sep1.lastChild.nodeValue || ''))) {
+          bTrailWs1w.unshift(sep1.lastChild);
+          sep1.removeChild(sep1.lastChild);
+        }
         if (!(sep1.childNodes || []).length) {
           var phbr1b = document.createElement('br');
           phbr1b.__zwPlaceholderBr = true;
@@ -12422,6 +12526,14 @@
         } else {
           host.appendChild(headBlock1);
           host.appendChild(sep1);
+        }
+        // 重挂一律新建 textNode（DC-4 Q6 s1 同款静默半挂实录：经 engine 块
+        // 两跳摘挂的原节点直插宿主父指针已设而 view/childNodes 不动；fresh
+        // 节点有物化先例）。反向迭代——insertBefore 头插，正序会倒序。
+        for (var btw1 = bTrailWs1w.length - 1; btw1 >= 0; btw1--) {
+          host.insertBefore(
+            document.createTextNode(bTrailWs1w[btw1].nodeValue || ''),
+            sep1.nextSibling);
         }
         }
       } else {

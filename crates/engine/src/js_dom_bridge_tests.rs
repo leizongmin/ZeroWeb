@@ -206,3 +206,8 @@ include!("js_dom_bridge_tests/part115_s423_pending_selector_rect.rs");
 // bare-br 行界双空块物化（表跨选区/bare-br 尾·首侧·尾随块级/行中窄门 guard/
 // 整块选删 host 级 caret，dPS div·p 双面）。
 include!("js_dom_bridge_tests/part116_c4_block_boundary_pins.rs");
+
+// 编辑命令兼容 ip 残 59F M3-B B 族刀钉测：拆点块界空白/nbsp 归一（② sep2 同型
+// 块拆臂行界折叠空格翻 `&nbsp;`/whitespace-only 段退化占位/单侧退化跳过对侧 +
+// ⑦ 宿主元素边界臂尾侧 whitespace-only 留宿主、首文本行界翻 `&nbsp;`）。
+include!("js_dom_bridge_tests/part117_b_split_boundary_ws_pins.rs");
