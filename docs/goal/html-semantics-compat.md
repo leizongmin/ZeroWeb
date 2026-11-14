@@ -23,7 +23,9 @@ styles.css ×47 = 簇 D 门开随批落；common.js ×19 / hyperlink-auditing
 Pass 两腿全一致，vs s443 **恰 label 2 键 F−2/P+2 零其他位移**；g47
 归因随本轮双腿清偿（legs 即跑在 g47 树上）；stable Fail 差额 201→203 =
 select-home-end 族 4 键同 Fail 相位入 stable + detailed 1 键 T↔F（在册
-负载族记账口径）。**全桥套件绿窗收口跑：1625P/0F rc=0**（基线 1596P，
+负载族记账口径）。push 窗口 rebase 又入他流 607018f9a（editing-compat
+ip C1 容器尾拆分序反转刀）+ f28e07366（其收口 docs）：入树晚于本轮
+双腿，未复验，下轮 sweep 一并归因。**全桥套件绿窗收口跑：1625P/0F rc=0**（基线 1596P，
 +29 = 组合树他流入树新钉面，零红）。**in-domain 自由面实质清零**：
 稳定红池 203F 全数归门（select 147 + combobox 12 = 簇 D；video 4 =
 VIDEO 门）、跨域（dialog 16 / img 13 / tabular 4 = 渲染域）、在册族
