@@ -1221,6 +1221,20 @@ pub(super) fn pending_view_selector_rect(
         // selector 在视图 doc 解析（基座既有元素——重放只叠加 pending 效果，不灭
         // 既有节点；结构性 pending 变更下选择器位次语义与 drain 后快照一致）。
         let nid = super::find_by_selector(doc, selector)?;
+        // s437：img 几何排除在现算视图之外——img 布局尺寸携带非 DOM 的资源态
+        // （解码固有尺寸，见 [`crate::pipeline::Pipeline::build_img_intrinsic_all`]，
+        // 由渲染泵按 image_sizes 注入），视图 re-parse 只有 DOM+CSS，`img` 无
+        // width/height 属性时退化成占位满填（语料实测 720×100 vs 快照 300/240，
+        // naturalWidth-naturalHeight-width-height 98 键伪红根因）。rect 快照在
+        // img 已加载后即渲染后真值（快照臂 = 父提交行为），img 面回落快照臂。
+        // FIXME(replaced-elements): object/embed 等其余替换元素的解码态几何同源
+        // 缺口未排除（s423 臂锚点查询面不含 img 之外替换元素，语料未见回归）。
+        if matches!(
+            doc.get(nid).map(|n| &n.kind),
+            Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "img"
+        ) {
+            return None;
+        }
         let key = crate::hit_test::node_id_to_u64(nid);
         // rect 表命中 → O(1) 查表。
         let cached = HANDLE_RECT_CACHE.with(|cell| {
