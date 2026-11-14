@@ -2,6 +2,16 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g43 完成（11-15）**：渐变 invalid 写面拒收刀——292 形二桶分修：parse 严格性
+（三型调用方 `in` 子句出现必带合法方法，畸形整渐变拒收，桶 B 10 形含极坐标缺
+hue 后缀/`in` 后倒置）+ 写面拒收判定器 `background_image_decl_invalid`
+（渐变前缀 + parse 失败 → invalid，回调 "null" 哨兵 + shim 拒收臂，桶 A 282 形
+裸方法词不再回显原文）。A/B（B0=results-g42-b1/B1=results-g43-b1）：css-images
+2584→**2881P 净 +297**（invalid 页 F 292→0 全清 + position/conic-calc 溢出
++5）零回归，css-values 4041P ±0；单测 css-parser 3,222（+2 钉）/engine 3,991
+全绿，fmt/clippy 净。残面：position-invalid 5F/conic-calc 3F 细形、color-stops
+60F、image-set 150F（6b 指派）。见 [evidence
+2026-11-15-g43-gradient-invalid-write-gate](evidence/2026-11-15-g43-gradient-invalid-write-gate.md)。
 **g42 完成（11-15 收口，11-14 深夜开工遇 429 rollover）**：渐变 computed 通道
 canonical 串化刀——`ColorInterpolationSpace` 模型身份保留（Hsl/Hwb/XyzD50/
 XyzD65 入枚举，渲染回退移交 paint map_interpolation）+ `ColorValue::ColorFunction`
