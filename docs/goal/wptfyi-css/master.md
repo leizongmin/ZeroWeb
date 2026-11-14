@@ -2,8 +2,22 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
-当前 css-images **3127P/88F**、css-values 4054P/1533F/6T（g48-b1，含并发流
-g47 未提交工作）。
+当前 css-images **3144P/71F**、css-values 4185P/1402F/6T（g49-b1）；
+css-anchor-position anchor 首覆盖 12061P/792F/4T（265 页/12857 案）。
+**g49 完成（11-15）**：GCS/媒体门视口真值对齐刀——GCS 快照通道四处与渲染
+`<style media>` 门恒 1280×800，而 runner/宿主实视口 800×600（shim 安装期
+`set_pending_layout_viewport`）→ viewport 单位（10vw→128px≠80px）与媒体门
+求值双面失真。修法：`computed_style_cache::gcs_viewport_dims()` 单源读
+pending 视图布局 viewport（未接线回落 1280×800）；GCS 四站去硬编码 + 渲染
+collect 链（collect_stylesheets/with_parsed_external/
+style_sheet_if_eligible/collect_interleaved_external）viewport 穿参至
+`MediaContext`（FIXME 清偿），shadow 内联链签名免穿全局读。A/B（B0=
+results-g47-b2 + results-g49-b0 anchor / B1=results-g49-b1）：viewport-
+units-css2-001 84F→12F **fixed +72 零回归**（css-values 4113→4185P），
+css-images/anchor 全持平——刀面精确命中。残面：css2-001 残 12F 案级定谳 =
+border-spacing 4 + vertical-align 8（vw 族属性槽承接缺口，另刀）、
+viewport-units-invalidation 24F = per-iframe viewport 独立刀。见 [evidence
+2026-11-15-g49-gcs-viewport-truth-alignment](evidence/2026-11-15-g49-gcs-viewport-truth-alignment.md)。
 **g48 完成（11-15）**：gradient `at` 位置文法位 + canonical 序 + computed
 折算刀——csswg#2140 后 `<position>` 行为定谳（oracle: gradient-position
 三页）：3 值混搭形全禁（旧 3|4 值宽松 walk 误收 `at left 4px top` 五形）、
