@@ -26320,6 +26320,23 @@
       _r130WireSiblings(headEl.childNodes);
       return c;
     };
+    // B1 切片 2（editing goal d22，2026-11-14）：headEl **属性面**——s408 三件套
+    // 之后 headEl 仍无 set/removeAttribute（delete/insertparagraph-in-child-of-*
+    // corpus 尾步 `childDoc.head.setAttribute("style","display:block")` /
+    // `childDoc.head.removeAttribute("style")` TypeError → 整 promise_test
+    // unhandled rejection）。本地属性表存取（body 视图 R132 同款语义，但不入
+    // _tree——headEl 是独立视图，属性自持）。
+    // https://dom.spec.whatwg.org/#dom-element-setattribute
+    (function () {
+      var _s2HeadAttrs = {};
+      headEl.setAttribute = function (n, v) { _s2HeadAttrs[String(n).toLowerCase()] = v == null ? '' : String(v); };
+      headEl.getAttribute = function (n) {
+        var k = String(n == null ? '' : n).toLowerCase();
+        return Object.prototype.hasOwnProperty.call(_s2HeadAttrs, k) ? _s2HeadAttrs[k] : null;
+      };
+      headEl.hasAttribute = function (n) { return headEl.getAttribute(n) !== null; };
+      headEl.removeAttribute = function (n) { delete _s2HeadAttrs[String(n == null ? '' : n).toLowerCase()]; };
+    })();
     // R130：body 同款接线（HTMLBodyElement）。
     try {
       if (globalThis.HTMLBodyElement && globalThis.HTMLBodyElement.prototype) {

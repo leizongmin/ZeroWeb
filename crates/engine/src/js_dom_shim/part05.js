@@ -2398,7 +2398,12 @@
   // namespaceURI HTMLNS。文档模型复用 `_makeDetachedDocument`（查询/mutation/Range 全可用），
   // docEl.textContent 供用例 load 断言。
   function _zwMakeIframeDoc(kind, markup, charsetLabel) {
-    var doc = _makeDetachedDocument('');
+    // B1 切片 2（editing goal d22）：传 undefined（非 ''）——R130 title 合成分支
+    // 的门是 `title !== undefined`，'' 会给每个 iframe 文档的 headEl 视图塞一个
+    // 空壳 `<title></title>`（真实浏览器里 srcdoc 的 title 是解析产物，在 body
+    // 树提升路径序列化——docEl innerHTML 双 title 即此根因）。doc.title 读面不
+    // 变（headEl 无 title 后全树走查同落空，getter 恒 ''）。
+    var doc = _makeDetachedDocument(undefined);
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
     doc._zwMarkup = String(markup || '');
     doc.__r115SetWin = function (w) { _r115WinRef = w; };
@@ -2800,6 +2805,140 @@
       docEl.hasAttribute = function (n) { return docEl.getAttribute(n) !== null; };
       docEl.focus = function () {};
       docEl.blur = function () {};
+      // B1 切片 2（editing goal d22，2026-11-14）：docEl **虚树读面**——子文档
+      // 运行时是双树（body 视图 _tree + headEl 独立视图，R220 教训：不把
+      // head/body 真实链入 docEl.childNodes——sim insertNode 路径 -158P 已试已
+      // 回退），而 delete/insertparagraph-in-child-of-{head,html} corpus 断言
+      // `childDoc.documentElement.innerHTML` 期望真浏览器形
+      // `<head>…</head><body>…</body>`（docEl 旧 innerHTML 读 undefined）。
+      // 此面**只读**：按 head 专属标签把 body 树顶层元素提升进 head 段（不移动
+      // 节点——Range 语料 body 视图偏移不变），headEl 子与 docEl 附加子按槽位
+      // 序列化。firstChild/childNodes 等 Node 路径保持原样（R220 纪律）。
+      // https://dom.spec.whatwg.org/#dom-element-innerhtml
+      var _b1HeadTags = { meta: 1, title: 1, style: 1, script: 1, link: 1, base: 1, template: 1 };
+      var _b1Void = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
+      function _b1Attrs(el) {
+        var out = '';
+        try {
+          var at = el.attributes;
+          if (at && typeof at.length === 'number') {
+            for (var i = 0; i < at.length; i++) {
+              if (!at[i]) continue;
+              out += ' ' + String(at[i].name) + '="' + String(at[i].value == null ? '' : at[i].value).replace(/"/g, '&quot;') + '"';
+            }
+            return out;
+          }
+          if (typeof el.getAttributeNames === 'function') {
+            var names = el.getAttributeNames();
+            for (var j = 0; j < names.length; j++) {
+              var v = el.getAttribute(names[j]);
+              out += ' ' + String(names[j]) + '="' + String(v == null ? '' : v).replace(/"/g, '&quot;') + '"';
+            }
+          }
+        } catch (_eB1at) {}
+        return out;
+      }
+      function _b1Ser(n) {
+        if (!n) return '';
+        var t = n.nodeType;
+        if (t === 3) return String(n.data == null ? '' : n.data);
+        if (t === 8) return '<!--' + String(n.data == null ? '' : n.data) + '-->';
+        if (t === 1) {
+          var tag = String(n.tagName || '').toLowerCase();
+          var kids = n.childNodes || [];
+          var inner = '';
+          for (var i = 0; i < kids.length; i++) inner += _b1Ser(kids[i]);
+          if (_b1Void[tag]) return '<' + tag + _b1Attrs(n) + '>';
+          return '<' + tag + _b1Attrs(n) + '>' + inner + '</' + tag + '>';
+        }
+        return '';
+      }
+      Object.defineProperty(docEl, 'innerHTML', {
+        configurable: true,
+        get: function () {
+          var promoted = '', bodyOut = '', headElOut = '', pre = '', post = '';
+          try {
+            var kids = doc.body ? (doc.body.childNodes || []) : [];
+            for (var i = 0; i < kids.length; i++) {
+              var k = kids[i];
+              if (k && k.nodeType === 1 && _b1HeadTags[String(k.tagName || '').toLowerCase()]) promoted += _b1Ser(k);
+              else bodyOut += _b1Ser(k);
+            }
+          } catch (_eB1ih1) {}
+          try {
+            if (doc.head) {
+              var hk = doc.head.childNodes || [];
+              for (var j = 0; j < hk.length; j++) headElOut += _b1Ser(hk[j]);
+            }
+          } catch (_eB1ih2) {}
+          try {
+            var extras = docEl.childNodes || [];
+            var between = '';
+            for (var x = 0; x < extras.length; x++) {
+              var ex = extras[x];
+              var slot = ex && ex.__zwB1Slot;
+              if (slot === 'before-head') pre += _b1Ser(ex);
+              else if (slot === 'before-body') between += _b1Ser(ex);
+              else post += _b1Ser(ex);
+            }
+          } catch (_eB1ih3) {}
+          return pre + '<head>' + promoted + headElOut + '</head>' + between + '<body>' + bodyOut + '</body>' + post;
+        },
+      });
+      // B1 切片 2：docEl insertBefore 接受 head/body 虚参照（delete-in-child-of-html
+      // `documentElement.insertBefore(div, childDoc.body/head)`——真浏览器 body/head
+      // 是 docEl 子；本仓双树形下 NotFoundError）。按槽位入 docEl.childNodes +
+      // __zwB1Slot 印记供 innerHTML 定位；Node 路径其余形态照旧（spec 步骤 2-3）。
+      function _b1SetParent(c, p) {
+        try { c.parentNode = p; return; } catch (_eB1pa) {}
+        try { Object.defineProperty(c, 'parentNode', { value: p, writable: true, configurable: true }); } catch (_eB1pb) {}
+      }
+      var _b1BaseAppend = docEl.appendChild;
+      docEl.appendChild = function (c) {
+        var r = _b1BaseAppend.call(docEl, c);
+        try { if (c && typeof c === 'object') c.__zwB1Slot = 'after'; } catch (_eB1sl) {}
+        return r;
+      };
+      docEl.insertBefore = function (c, ref) {
+        if (!c || typeof c.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node'.");
+        }
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eB1rm) {} }
+        var slot = 'after';
+        var idx = docEl.childNodes.length;
+        if (ref && ref.nodeType === 1 && (ref === doc.head || ref === doc.body)) {
+          slot = ref === doc.head ? 'before-head' : 'before-body';
+          idx = slot === 'before-head' ? 0 : docEl.childNodes.length;
+          // before-body 按插入序排在既有 before-body 之后
+          if (slot === 'before-body') {
+            idx = 0;
+            for (var i = 0; i < docEl.childNodes.length; i++) {
+              if (docEl.childNodes[i] && docEl.childNodes[i].__zwB1Slot === 'before-body') idx = i + 1;
+            }
+          }
+        } else if (ref == null) {
+          idx = docEl.childNodes.length;
+        } else {
+          var at = docEl.childNodes.indexOf(ref);
+          if (at < 0) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+              'NotFoundError');
+          }
+          slot = (ref && ref.__zwB1Slot) || 'after';
+          idx = at;
+        }
+        if (c.nodeType === 11) {
+          var fk = c.childNodes || [];
+          for (var fi = 0; fi < fk.length; fi++) docEl.insertBefore(fk[fi], ref);
+          return c;
+        }
+        _b1SetParent(c, docEl);
+        c.__zwB1Slot = slot;
+        docEl.childNodes.splice(idx, 0, c);
+        return c;
+      };
     })();
     // R255（js-dom M4）：docEl **own cloneNode(deep) 保真 head/body**——运行时
     // docEl.childNodes 是工厂空数组（body 内容在 doc.body 视图的 bodyHtml/_tree
@@ -2823,6 +2962,29 @@
       return c255;
     };
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
+    // B1 切片 2（editing goal d22，2026-11-14）：body 视图树根上行链接——解析树
+    // 顶层的 parentNode 链止于 body 树根（探针实证 title 爬升 BODY(parent:null)
+    // 即断），EditorTestUtils.sendKey 的 light-DOM 上行
+    // `e.getRootNode({composed:false}).host` 对 body 树内 editingHost（
+    // insertparagraph-in-child-of-head 的 title 等）得 undefined → 下一轮
+    // `e.getRootNode` TypeError（16 断言/变体文件）。把树根（parentNode 为空
+    // 的 body 形祖先）接回 body 视图（视图链经 part03 docEl 达 doc——切片 1
+    // 修复面），getRootNode(树内节点) 返回子文档。只加一条 parent 链，不移动
+    // 节点（Range 语料 body 视图偏移不变）。
+    // https://dom.spec.whatwg.org/#dom-node-getrootnode
+    try {
+      var _b1Tk = doc.body.childNodes || [];
+      if (_b1Tk.length && _b1Tk[0]) {
+        var _b1Root = _b1Tk[0].parentNode, _b1Guard = 0;
+        while (_b1Root && _b1Root.parentNode && _b1Guard++ < 32) _b1Root = _b1Root.parentNode;
+        if (_b1Root && !_b1Root.parentNode && _b1Root.nodeType === 1
+            && _b1Root !== doc.body && String(_b1Root.tagName || '').toUpperCase() === 'BODY') {
+          try { _b1Root.parentNode = doc.body; } catch (_eB1rp1) {
+            try { Object.defineProperty(_b1Root, 'parentNode', { value: doc.body, writable: true, configurable: true }); } catch (_eB1rp2) {}
+          }
+        }
+      }
+    } catch (_eB1rk) {}
     try {
       // R234（js-dom M4）：**动态 documentElement getter**——首个元素子优先，回落
       // 工厂 docEl。旧固定闭包返工厂 docEl：restoreIframe 清理循环摘除工厂 docEl
@@ -3003,9 +3165,11 @@
     // setup + createLink——typing-around-link DesignMode 变体
     // `utils.document.execCommand("createLink",…)`），per-doc 状态用工厂闭包槽
     //（主文档的 __zw* 全局态不共享——spec 每个 Document 独立编辑状态）。
-    // delete/forwarddelete 的非折叠臂走子选区 deleteContents；折叠臂 no-op true
-    //（真块合并语义由 runner send_keys 路径承载——FIXME(B1 切片 2)：子文档键
-    // 路由 + insertParagraph 分隔符消费）。spec
+    // delete/forwarddelete 非折叠臂走子选区 deleteContents；折叠臂经
+    // doc.__zwB1KeyFace hook 走键语义（B1 切片 2——test_driver IIFE 发布）。
+    // FIXME(B1 切片 3): execCommand insertParagraph 的 per-doc 分隔符消费仍缺
+    //（corpus 子文档 insertparagraph 走 ETU sendKey 键路径，已由 test_driver
+    // _b1Enter 承载；execCommand 直调臂未被语料消费）。spec
     // https://w3c.github.io/editing/execCommand.html（legacy，Chrome 语义）。
     var _zwCdDps = 'p'; // defaultParagraphSeparator per-doc 状态（spec 初始 'p'）
     var _zwCdSwc = false; // styleWithCSS/usecss per-doc 状态
@@ -3047,8 +3211,17 @@
           dRng.deleteContents();
           sel.removeAllRanges();
           sel.addRange(dRng); // deleteContents 后边界同点（折叠）
+          return true;
         }
-        // 折叠臂：no-op true（块合并语义属键路径——FIXME(B1 切片 2)）
+        // B1 切片 2（editing goal d22）：折叠臂 = 键语义（backspace/
+        // forwarddelete 键同路径——corpus ETU execCommand("delete") 变体与
+        // sendBackspaceKey 同期望表）。键面在 test_driver IIFE 闭包内，经
+        // win 槽 hook 到达（win 字面量构造时发布）。
+        var _b1Hook = doc.__zwB1KeyFace;
+        if (_b1Hook && typeof _b1Hook.del === 'function') {
+          _b1Hook.del(sel, cmd === 'forwarddelete');
+          return true;
+        }
         return true;
       }
       return false; // 未覆盖命令（spec：unsupported 返 false）
@@ -3411,6 +3584,25 @@
       removeAttribute: function (n) {
         n = String(n);
         for (var i = el.attributes.length - 1; i >= 0; i--) { if (el.attributes[i].name === n) el.attributes.splice(i, 1); }
+      },
+      // B1 切片 2（editing goal d22，2026-11-14）：focus()/blur() no-op + isConnected
+      // 本地上行——工厂元素此前无 focus（insertparagraph-in-child-of-head 的
+      // style/script/div createElement 产物作 editingHost，ETU setupEditingHost
+      // `this.editingHost.focus()` TypeError）；isConnected 走 part04 host 树快照
+      // 对工厂树恒 false（delete-in-child-of-head 尾步
+      // `div1.isConnected ^ div2.isConnected` 期望 1——存留/移除判定）。
+      // isConnected 按 spec 走 parentNode 链上行至 Document（工厂树 plain 链可达）。
+      // https://html.spec.whatwg.org/#dom-focus
+      // https://dom.spec.whatwg.org/#dom-node-isconnected
+      focus: function () {},
+      blur: function () {},
+      get isConnected() {
+        var cur = el.parentNode, guard = 0;
+        while (cur && guard++ < 64) {
+          if (cur.nodeType === 9) return true;
+          try { cur = cur.parentNode; } catch (_eIcB1) { return false; }
+        }
+        return false;
       },
       // R179（js-dom M4）：`attachShadow` 轻量实现（spec `dom-element-attachshadow`
       // ——工厂元素无 sel/handle 不能走 part04 的 `_attachShadow` handle 容器）。
@@ -5096,6 +5288,752 @@
         win.__zwSelection = sel;
         return sel;
       },
+      // B1 切片 2（editing goal d22，2026-11-14）：**子窗 test_driver 面**——
+      // EditorTestUtils.sendKey 在子文档 editingHost 经 `this.window.test_driver`
+      // 路由键（typing/delete/insertparagraph-in-child-of-* 的 DesignMode 变体
+      // 整簇此前 `Cannot read properties of undefined (reading 'send_keys')`
+      // unhandled rejection）。iframe 子文档不经 webview 键管线（选区/树均在
+      // shim 工厂域）→ 键语义 shim 侧直 applied（per-iframe Selection / B1
+      // 切片 1 execCommand 薄面同域近似）。键面按 corpus 消费集：send_keys
+      //（无修饰键路径）+ Actions（修饰键路径）+ set_test_context（ETU 构造器
+      // 消费，no-op）。修饰键（shift/ctrl/alt/meta）粘滞忽略——字符字面已含
+      // 大小写（sendKey("X", kShift) 的 'X'）。
+      test_driver: (function () {
+        var docEl = doc.documentElement; // R234 首元素子（join doc 级序列用）
+        function _b1Sel() {
+          try { return win.__zwSelection || null; } catch (_eTdSel) { return null; }
+        }
+        function _b1Caret(sel) {
+          if (!sel || !sel.rangeCount) return null;
+          var r = sel.getRangeAt(0);
+          return { r: r, c: r.startContainer, o: r.startOffset };
+        }
+        function _b1SetCaret(sel, c, o) {
+          try { var r = sel.getRangeAt(0); r.setStart(c, o); r.setEnd(c, o); } catch (_eTdSc) {}
+        }
+        function _b1DataOf(n) { return String((n && n.data) != null ? n.data : ''); }
+        function _b1StyleOf(el, prop) {
+          try {
+            var st = String((el && el.getAttribute && el.getAttribute('style')) || '');
+            var m = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i').exec(st);
+            return m ? String(m[1]).trim().toLowerCase() : '';
+          } catch (_eTdSty) { return ''; }
+        }
+        var _b1FamTags = { meta: 1, title: 1, style: 1, script: 1, link: 1, base: 1, template: 1 };
+        function _b1Tag(el) { return String((el && el.tagName) || '').toLowerCase(); }
+        // 不可见（join 可跨越）：head 专属标签且未显式 display:block（corpus
+        // visible script/title 用例 setAttribute("style","display:block") 形 →
+        // 可见 → join 门关）。
+        function _b1Invisible(el) {
+          if (!el || el.nodeType !== 1) return false;
+          if (!_b1FamTags[_b1Tag(el)]) return false;
+          return _b1StyleOf(el, 'display') !== 'block';
+        }
+        function _b1SetParent(c, p) {
+          try { c.parentNode = p; return; } catch (_eTdPa) {}
+          try { Object.defineProperty(c, 'parentNode', { value: p, writable: true, configurable: true }); } catch (_eTdPb) {}
+        }
+        function _b1CreateText(c, data) {
+          var tn = null;
+          try { tn = c.ownerDocument.createTextNode(String(data == null ? '' : data)); } catch (_eTdCt) {}
+          if (!tn) tn = { nodeType: 3, nodeName: '#text', data: String(data == null ? '' : data), parentNode: null, childNodes: [] };
+          return tn;
+        }
+        function _b1NearestLink(node) {
+          // 光标容器自身即链接（collapseToEnd 后 (a,1) 元素偏移落点）也算命中；
+          // 文本光标从父元素起爬。
+          var cur = node.nodeType === 3 ? node.parentNode : node;
+          var guard = 0;
+          while (cur && cur.nodeType === 1 && guard++ < 64) {
+            if (_b1Tag(cur) === 'a') return cur;
+            cur = cur.parentNode;
+          }
+          return null;
+        }
+        // el 子树最深首/末文本节点（文档序 DFS）
+        function _b1DeepestText(el, last) {
+          var cur = el;
+          var guard = 0;
+          while (cur && cur.nodeType === 1 && guard++ < 64) {
+            var kids = cur.childNodes || [];
+            var t = null;
+            var i;
+            if (last) { for (i = kids.length - 1; i >= 0; i--) { if (kids[i] && kids[i].nodeType === 3) { t = kids[i]; break; } } }
+            else { for (i = 0; i < kids.length; i++) { if (kids[i] && kids[i].nodeType === 3) { t = kids[i]; break; } } }
+            if (t) return t;
+            var e = null;
+            if (last) { for (i = kids.length - 1; i >= 0; i--) { if (kids[i] && kids[i].nodeType === 1) { e = kids[i]; break; } } }
+            else { for (i = 0; i < kids.length; i++) { if (kids[i] && kids[i].nodeType === 1) { e = kids[i]; break; } } }
+            if (!e) return null;
+            cur = e;
+          }
+          return null;
+        }
+        function _b1Unwrap(el) {
+          var p = el.parentNode;
+          if (!p) return;
+          var pk = p.childNodes || [];
+          var idx = pk.indexOf(el);
+          if (idx < 0) return;
+          var kids = (el.childNodes || []).slice();
+          for (var i = 0; i < kids.length; i++) _b1SetParent(kids[i], p);
+          pk.splice.apply(pk, [idx, 1].concat(kids));
+        }
+        // B1 切片 2（editing goal d22）：typing-around-link 边界面——光标在
+        // 链接文本端点（offset 0 首文本 / offset len 末文本）时键入**不扩进
+        // 链接**：文本落链接外侧；链接内层非链接行内链剥出后与新文本一并
+        // 重裹、置于链接原位（Chrome typing 行为，corpus
+        // typing-around-link-element-at-{collapsed,non-collapsed}-selection
+        // 期望形 `<a><b>[]abc</b></a>` → `<b>XY<a>abc</a></b>`）。
+        function _b1AroundLink(sel, linkEl, textNode, atStart, ch) {
+          // 原父槽先捕获、linkEl 先摘除——wrap 循环的 appendChild 会认领
+          // linkEl（parentNode 改链），后置捕获会错把克隆内槽当插入位（探针
+          // diag6 实证 `<p></p>` 全消失根因）。
+          var p0 = linkEl.parentNode;
+          if (!p0) return null;
+          var pk0 = p0.childNodes || [];
+          var idx0 = pk0.indexOf(linkEl);
+          if (idx0 < 0) return null;
+          var inner = [];
+          var cur = textNode.parentNode;
+          var guard = 0;
+          while (cur && cur !== linkEl && cur.nodeType === 1 && guard++ < 64) { inner.push(cur); cur = cur.parentNode; }
+          if (cur !== linkEl) inner = [];
+          var i;
+          for (i = 0; i < inner.length; i++) _b1Unwrap(inner[i]);
+          var newText = _b1CreateText(linkEl, ch);
+          var unit = atStart ? [newText, linkEl] : [linkEl, newText];
+          var j;
+          for (j = inner.length - 1; j >= 0; j--) {
+            var w = _b1CloneShallow(inner[j]);
+            for (var k2 = 0; k2 < unit.length; k2++) _b1AppendInto(w, unit[k2]);
+            unit = [w];
+          }
+          var at = pk0.indexOf(linkEl); // wrap 认领过则已不在（-1）；兜底手动路径仍在原位
+          if (at >= 0) pk0.splice(at, 1);
+          pk0.splice(idx0, 0, unit[0]);
+          if (unit.length > 1) pk0.splice.apply(pk0, [idx0 + 1, 0].concat(unit.slice(1)));
+          for (var m = 0; m < unit.length; m++) _b1SetParent(unit[m], p0);
+          _b1SetCaret(sel, newText, ch.length);
+          return { node: newText, off: ch.length };
+        }
+        // 光标点与链接端之间无内容（非空文本或元素）才算端点——中段光标
+        // （`z[]abc`）不触发边界面。
+        function _b1SideContent(node, dir, stopAt) {
+          var cur = node;
+          var guard = 0;
+          while (cur && cur !== stopAt && guard++ < 64) {
+            var sib = dir > 0 ? cur.nextSibling : cur.previousSibling;
+            while (sib) {
+              if (sib.nodeType === 3 && _b1DataOf(sib).length) return true;
+              if (sib.nodeType === 1) return true;
+              sib = dir > 0 ? sib.nextSibling : sib.previousSibling;
+            }
+            cur = cur.parentNode;
+          }
+          return false;
+        }
+        // 元素偏移光标的链接端点判定（createLink 重锚 (a,0)/(a,1) 与
+        // collapseToEnd 后落点同形）。返回沿内容侧的最深文本（inner 链
+        // 起点），空链接保守不触发（替换语义）。
+        function _b1LinkEdgeAt(linkEl, elem, off) {
+          var kids = elem.childNodes || [];
+          var i;
+          var k;
+          for (i = 0; i < off; i++) {
+            k = kids[i];
+            if (k && ((k.nodeType === 3 && _b1DataOf(k).length) || k.nodeType === 1)) break;
+          }
+          var headEmpty = i >= off;
+          for (i = off; i < kids.length; i++) {
+            k = kids[i];
+            if (k && ((k.nodeType === 3 && _b1DataOf(k).length) || k.nodeType === 1)) break;
+          }
+          var tailEmpty = i >= kids.length;
+          var atStart;
+          if (headEmpty && !tailEmpty) atStart = true;
+          else if (tailEmpty && !headEmpty) atStart = false;
+          else return null;
+          // 祖先侧（elem 至 linkEl 链上的兄弟方向）残留内容 = 非端点
+          if (_b1SideContent(elem, atStart ? -1 : 1, linkEl)) return null;
+          var t = atStart ? _b1DeepestText(linkEl, false) : _b1DeepestText(linkEl, true);
+          if (!t) return null;
+          return { atStart: atStart, text: t };
+        }
+        // 最近一次键入落点——同点续键（replace 后第二键 / 边界外移后续键）
+        // 不再触发边界面（Chrome typing 连续性；显式重定位光标后几何复位）。
+        var _b1TypedAt = null;
+        // —— 选区落点文本插入（工厂文本节点无 insertData，探针实证——data splice）——
+        function _b1InsertText(sel, ch) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          var wasReplace = false;
+          if (!cc.r.collapsed) {
+            try { cc.r.deleteContents(); } catch (_eTdDc) { return; }
+            cc.c = cc.r.startContainer; cc.o = cc.r.startOffset;
+            wasReplace = true; // 替换后首键落链接内（corpus "Replacing text" 期望形）
+          }
+          var cont = _b1TypedAt && _b1TypedAt.node === cc.c && _b1TypedAt.off === cc.o;
+          if (!wasReplace && !cont && cc.c.nodeType === 3) {
+            var d = _b1DataOf(cc.c);
+            var linkEl = d.length ? _b1NearestLink(cc.c) : null;
+            if (linkEl && (cc.o === 0 || cc.o === d.length)
+              && !_b1SideContent(cc.c, cc.o === 0 ? -1 : 1, linkEl)) {
+              var atStart = cc.o === 0;
+              var edgeText = atStart ? _b1DeepestText(linkEl, false) : _b1DeepestText(linkEl, true);
+              if (edgeText === cc.c) {
+                _b1TypedAt = _b1AroundLink(sel, linkEl, cc.c, atStart, ch);
+                return;
+              }
+            }
+          }
+          if (!wasReplace && !cont && cc.c.nodeType === 1) {
+            var elLink = _b1NearestLink(cc.c);
+            if (elLink) {
+              var edge = _b1LinkEdgeAt(elLink, cc.c, cc.o);
+              if (edge) {
+                _b1TypedAt = _b1AroundLink(sel, elLink, edge.text, edge.atStart, ch);
+                return;
+              }
+            }
+          }
+          if (cc.c.nodeType === 3) {
+            var d2 = _b1DataOf(cc.c);
+            cc.c.data = d2.slice(0, cc.o) + ch + d2.slice(cc.o);
+            _b1SetCaret(sel, cc.c, cc.o + 1);
+            _b1TypedAt = { node: cc.c, off: cc.o + 1 };
+          } else if (cc.c.nodeType === 1) {
+            var tn = _b1CreateText(cc.c, ch);
+            var kids = cc.c.childNodes || [];
+            _b1SetParent(tn, cc.c);
+            if (cc.o >= kids.length) kids.push(tn);
+            else kids.splice(cc.o, 0, tn);
+            _b1SetCaret(sel, tn, 1);
+            _b1TypedAt = { node: tn, off: 1 };
+          }
+        }
+        // —— 序列容器：headEl 视图 / body 视图 / docEl（虚树 doc 级）——
+        // 返回 caret 所属序列容器本身（headEl/body/docEl），成员 = 容器
+        // childNodes 直接子。
+        function _b1SeqRootOf(node) {
+          var cur = node;
+          var guard = 0;
+          while (cur && cur.parentNode && guard++ < 64) {
+            var p = cur.parentNode;
+            if (p === doc.head || p === doc.body || p === docEl || p === doc || p.nodeType === 9) return p;
+            cur = p;
+          }
+          // 树根镜像（BODY 标题、parentNode 空——body.innerHTML setter 每次
+          // 解析新建 _tree 根，parentNode 链不接视图）→ 视作 body 视图序列
+          if (cur && cur.nodeType === 1 && String(cur.tagName || '').toUpperCase() === 'BODY') return doc.body;
+          return cur;
+        }
+        // caret 上行到容器 childNodes 的直接成员。以 indexOf 命中为准——
+        // body 视图 childNodes 走 _tree 缓存树，解析节点 parentNode 链挂在
+        // 树根镜像（切片 2 Edit 4 接到 doc.body 视图），视图成员集合与
+        // parentNode 链不一一对应。
+        function _b1MemberOf(cont, root) {
+          var cur = cont;
+          var guard = 0;
+          while (cur && guard++ < 64) {
+            var kids = root.childNodes || [];
+            for (var i = 0; i < kids.length; i++) if (kids[i] === cur) return cur;
+            if (!cur.parentNode) return null;
+            cur = cur.parentNode;
+          }
+          return null;
+        }
+        function _b1BlockOf(cont) {
+          var root = _b1SeqRootOf(cont);
+          var seq = (root && root.childNodes) || [];
+          var block = root ? _b1MemberOf(cont, root) : null;
+          var idx = -1;
+          for (var i = 0; i < seq.length; i++) if (seq[i] === block) { idx = i; break; }
+          return { root: root, block: block, seq: seq, idx: idx };
+        }
+        // caret 是否在 member 内容的最前/最后沿（上行逐层首/末位 + caret
+        // 容器首层偏移；member 即 caret 容器时首层即命中，不穿树根镜像）。
+        function _b1AtEdgeInMember(cont, off, member, start) {
+          var cur = cont, o = off, guard = 0, first = true;
+          while (cur && guard++ < 64) {
+            if (cur === member) return true;
+            var p = cur.parentNode;
+            if (!p) return false;
+            var kids = p.childNodes || [];
+            var at = -1;
+            for (var i = 0; i < kids.length; i++) if (kids[i] === cur) { at = i; break; }
+            if (at < 0) return false;
+            if (start) {
+              if (at > 0) return false;
+              if (first && o > 0) return false;
+            } else {
+              if (at < kids.length - 1) return false;
+              if (first && (cur.nodeType === 3 ? o < _b1DataOf(cur).length
+                : o < (cur.childNodes || []).length)) return false;
+            }
+            first = false;
+            cur = p;
+          }
+          return false;
+        }
+        // doc 级组合序列（docEl 虚树）：before-head 附加子 + head（虚，不可见）+
+        // before-body 附加子 + body（虚，可并入）+ 其余附加子。条目 {kind, node}。
+        function _b1DocSeq() {
+          var out = [];
+          var extras = docEl.childNodes || [];
+          for (var i = 0; i < extras.length; i++) {
+            var e = extras[i];
+            var slot = e && e.__zwB1Slot;
+            if (slot === 'before-head') out.push({ kind: 'el', node: e });
+          }
+          out.push({ kind: 'head' });
+          for (var j = 0; j < extras.length; j++) {
+            var e2 = extras[j];
+            if (e2 && e2.__zwB1Slot === 'before-body') out.push({ kind: 'el', node: e2 });
+          }
+          out.push({ kind: 'body' });
+          for (var k = 0; k < extras.length; k++) {
+            var e3 = extras[k];
+            if (!e3 || !e3.__zwB1Slot || e3.__zwB1Slot === 'after') out.push({ kind: 'el', node: e3 });
+          }
+          return out;
+        }
+        function _b1RemoveChild(parent, c) {
+          try { parent.removeChild(c); return true; } catch (_eTdRm) { return false; }
+        }
+        function _b1AppendInto(parent, c) {
+          try { parent.appendChild(c); return; } catch (_eTdAp) {}
+          try {
+            if (c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eTdAp2) {} }
+            (parent.childNodes || []).push(c);
+            _b1SetParent(c, parent);
+          } catch (_eTdAp3) {}
+        }
+        function _b1InsertInto(parent, ref, c) {
+          try { parent.insertBefore(c, ref); return; } catch (_eTdIn) {}
+          try {
+            if (c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eTdIn2) {} }
+            var kids = parent.childNodes || [];
+            var at = ref ? kids.indexOf(ref) : -1;
+            if (at < 0) kids.push(c); else kids.splice(at, 0, c);
+            _b1SetParent(c, parent);
+          } catch (_eTdIn3) {}
+        }
+        // 子树文本字符总数（join 缝 caret 字符偏移计算）
+        function _b1TextChars(n) {
+          var tot = 0, stack = [n], guard = 0;
+          while (stack.length && guard++ < 256) {
+            var c = stack.pop();
+            if (!c) continue;
+            if (c.nodeType === 3) { tot += _b1DataOf(c).length; continue; }
+            var ks = c.childNodes || [];
+            for (var i = 0; i < ks.length; i++) stack.push(ks[i]);
+          }
+          return tot;
+        }
+        // 轻量序列化（doc 级附加元素 → HTML 片；body 吸收臂重写 body innerHTML
+        // 时拼接 src 内容用——工厂元素无 innerHTML getter，探针实证）
+        function _b1SerHtml(n) {
+          if (!n) return '';
+          if (n.nodeType === 3) {
+            return String(n.data == null ? '' : n.data)
+              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          if (n.nodeType !== 1) return '';
+          var tag = String(n.tagName || '').toLowerCase();
+          var ats = [];
+          try {
+            var list = n.attributes || [];
+            for (var i = 0; i < list.length; i++) {
+              if (!list[i]) continue;
+              ats.push(' ' + list[i].name + '="' + String(list[i].value == null ? '' : list[i].value)
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"');
+            }
+          } catch (_eSer) {}
+          var inner = '';
+          var ks2 = n.childNodes || [];
+          for (var j = 0; j < ks2.length; j++) inner += _b1SerHtml(ks2[j]);
+          return '<' + tag + ats.join('') + '>' + inner + '</' + tag + '>';
+        }
+        // 相邻文本节点合并（join 搬运后缝两侧同容器文本拼合——真实编辑器
+        // 语义，后续键以合并后的文本偏移继续）
+        function _b1CoalesceText(el) {
+          var kids = el.childNodes || [];
+          for (var i = 0; i < kids.length - 1; i++) {
+            var a = kids[i], b = kids[i + 1];
+            if (a && b && a.nodeType === 3 && b.nodeType === 3) {
+              a.data = _b1DataOf(a) + _b1DataOf(b);
+              kids.splice(i + 1, 1);
+              i = i - 1 < 0 ? -1 : i - 1;
+            }
+          }
+        }
+        // 块 children 搬运（保序）
+        function _b1MoveChildren(from, to, prepend) {
+          var kids = (from.childNodes || []).slice();
+          for (var i = 0; i < kids.length; i++) {
+            var c = kids[i];
+            if (prepend) _b1InsertInto(to, i === 0 ? (to.childNodes || [])[0] || null : null, c);
+            else _b1AppendInto(to, c);
+          }
+        }
+        // —— 块级 join（delete-in-child-of-{head,html} corpus）——
+        // backspace：与前一可见块并（靠前块存续、属性随靠前块）；forwarddelete：
+        // 与后一可见块并。join 缝上的不可见元素（族标签未显式 display:block）
+        // 移出合并块之后原序回插（corpus assert_in_array 前后两形皆收）。可见门：
+        // 相邻族标签显式 display:block → 不参与 join（visible script 用例 no-op）。
+        // caret 自身落在族标签元素内 → 整个 join no-op（title/style/script 删除
+        // 保持原状）。body 树恒存续（corpus 期望 `<body>abcdef</body>`——对侧
+        // children 并入 body 视图：对侧在 body 前 → prepend，在后 → append；
+        // 缝上不可见元素移到 body 之后）。
+        function _b1JoinMembers(sel, seq, idx, forward, caretIsBody) {
+          var caretNode = seq[idx].node;
+          if (caretNode && _b1FamTags[_b1Tag(caretNode)]) return;
+          var invis = [];
+          var target = null, tIsBody = false, tIdx = -1;
+          var step = forward ? 1 : -1;
+          for (var s = idx + step; s >= 0 && s < seq.length; s += step) {
+            var e = seq[s];
+            if (e.kind === 'head') { invis.push(e); continue; }
+            if (e.kind === 'body') { tIsBody = true; tIdx = s; break; }
+            if (_b1Invisible(e.node)) { invis.push(e); continue; }
+            if (_b1FamTags[_b1Tag(e.node)]) break;
+            target = e.node; tIdx = s; break;
+          }
+          if (!target && !tIsBody) return;
+          if (tIsBody || caretIsBody) {
+            var src = caretIsBody ? target : caretNode;
+            var prepend = caretIsBody ? !forward : idx < tIdx;
+            // R220 纪律：body 视图 childNodes 是 _tree 镜像，节点搬运不走
+            // childNodes 补丁路径——经 innerHTML setter 重写（解析入 _tree，
+            // 解析器自动合并相邻文本）。src 解壳取内容（body 吸收对侧块）。
+            var srcChars = _b1TextChars(src);
+            var bodyChars = _b1TextChars(doc.body);
+            var srcInner = '';
+            try {
+              var sks = src.childNodes || [];
+              for (var si = 0; si < sks.length; si++) srcInner += _b1SerHtml(sks[si]);
+            } catch (_eSi) {}
+            var bodyHtml = '';
+            try { bodyHtml = String(doc.body.innerHTML || ''); } catch (_eBh) {}
+            try {
+              doc.body.innerHTML = prepend ? (srcInner + bodyHtml) : (bodyHtml + srcInner);
+            } catch (_eBw) {}
+            for (var iv = 0; iv < invis.length; iv++) {
+              var vn = invis[iv].node;
+              if (!vn) continue;
+              try { if (vn.parentNode) vn.parentNode.removeChild(vn); } catch (_eTdVn) {}
+              try { vn.__zwB1Slot = 'after'; (docEl.childNodes || []).push(vn); _b1SetParent(vn, docEl); } catch (_eTdVn2) { _b1AppendInto(docEl, vn); }
+            }
+            try { if (src.parentNode) src.parentNode.removeChild(src); } catch (_eTdSr) {}
+            var bt = doc.body.firstChild;
+            if (bt && bt.nodeType === 3) _b1SetCaret(sel, bt, prepend ? srcChars : bodyChars);
+            else _b1SetCaret(sel, doc.body, 0);
+            return;
+          }
+          var keep = forward ? caretNode : target;
+          var gone = forward ? target : caretNode;
+          var jkChars = 0;
+          var kco = keep.childNodes || [];
+          for (var q = 0; q < kco.length; q++) if (kco[q] && kco[q].nodeType === 3) jkChars += _b1DataOf(kco[q]).length;
+          _b1MoveChildren(gone, keep, false);
+          _b1CoalesceText(keep);
+          for (var m = 0; m < invis.length; m++) {
+            var im = invis[m];
+            if (!im.node) continue;
+            try { if (im.node.parentNode) im.node.parentNode.removeChild(im.node); } catch (_eTdIm) {}
+            var refN = null;
+            try {
+              var kp = keep.parentNode;
+              refN = kp.childNodes[kp.childNodes.indexOf(keep) + 1] || null;
+            } catch (_eTdRf) {}
+            _b1InsertInto(keep.parentNode, refN, im.node);
+          }
+          try { if (gone.parentNode) gone.parentNode.removeChild(gone); } catch (_eTdGo) {}
+          var kt = keep.firstChild;
+          if (kt && kt.nodeType === 3 && jkChars <= _b1DataOf(kt).length) {
+            _b1SetCaret(sel, kt, jkChars);
+          } else {
+            _b1SetCaret(sel, keep, (keep.childNodes || []).length);
+          }
+        }
+        function _b1Join(sel, forward) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          var root = _b1SeqRootOf(cc.c);
+          var member = root ? _b1MemberOf(cc.c, root) : null;
+          if (!member) return;
+          if (root === docEl) {
+            var dseq2 = _b1DocSeq();
+            var didx = -1;
+            for (var j2 = 0; j2 < dseq2.length; j2++) if (dseq2[j2].node === member) { didx = j2; break; }
+            if (didx >= 0) { _b1JoinMembers(sel, dseq2, didx, forward, false); }
+            return;
+          }
+          var seq = root.childNodes || [];
+          var idx = -1;
+          for (var i = 0; i < seq.length; i++) if (seq[i] === member) { idx = i; break; }
+          if (idx < 0) return;
+          if (root === doc.body) {
+            // 体边界（首成员前沿 backspace / 末成员后沿 forwarddelete）→ doc 级
+            // join（caret 成员 = body 虚）；否则体内成员 join。
+            var atBoundary = _b1AtEdgeInMember(cc.c, cc.o, member, !forward)
+              && (forward ? idx === seq.length - 1 : idx === 0);
+            if (!atBoundary) {
+              _b1JoinMembers(sel, seq.map(function (n) { return { kind: 'el', node: n }; }), idx, forward, false);
+              return;
+            }
+            var dseq = _b1DocSeq();
+            var bidx = -1;
+            for (var j = 0; j < dseq.length; j++) if (dseq[j].kind === 'body') { bidx = j; break; }
+            if (bidx < 0) return;
+            _b1JoinMembers(sel, dseq, bidx, forward, true);
+            return;
+          }
+          _b1JoinMembers(sel, seq.map(function (n) { return { kind: 'el', node: n }; }), idx, forward, false);
+        }
+        function _b1Delete(sel, forward) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          if (!cc.r.collapsed) {
+            try { cc.r.deleteContents(); } catch (_eTdDc2) {}
+            return;
+          }
+          var cont = cc.c, off = cc.o;
+          if (cont.nodeType === 3) {
+            var d = _b1DataOf(cont);
+            if (forward ? off < d.length : off > 0) {
+              cont.data = forward ? d.slice(0, off) + d.slice(off + 1) : d.slice(0, off - 1) + d.slice(off);
+              _b1SetCaret(sel, cont, forward ? off : off - 1);
+              return;
+            }
+            // 文本边界：若同容器有相邻文本块 → 文本合并；否则块级 join
+            var p = cont.parentNode;
+            if (p) {
+              var sib = null, sibOff = 0;
+              var kids = p.childNodes || [];
+              var at = kids.indexOf(cont);
+              var nAt = forward ? at + 1 : at - 1;
+              if (nAt >= 0 && nAt < kids.length && kids[nAt] && kids[nAt].nodeType === 3) {
+                sib = kids[nAt];
+                if (forward) {
+                  cont.data = d + _b1DataOf(sib);
+                  _b1RemoveChild(p, sib);
+                  _b1SetCaret(sel, cont, off);
+                } else {
+                  sib.data = _b1DataOf(sib) + d;
+                  _b1RemoveChild(p, cont);
+                  _b1SetCaret(sel, sib, _b1DataOf(sib).length - d.length);
+                }
+                return;
+              }
+            }
+            _b1Join(sel, forward);
+            return;
+          }
+          if (cont.nodeType === 1) {
+            // 元素容器落点：offset 处有文本子 → 文本边界语义；否则直接块 join
+            var kids2 = cont.childNodes || [];
+            var cand = kids2[forward ? off : off - 1];
+            if (cand && cand.nodeType === 3) {
+              var dd = _b1DataOf(cand);
+              if ((forward && dd.length > 0) || (!forward && dd.length > 0)) {
+                cand.data = forward ? dd.slice(1) : dd.slice(0, dd.length - 1);
+                _b1SetCaret(sel, cont, off);
+                return;
+              }
+            }
+            _b1Join(sel, forward);
+          }
+        }
+        // —— insertParagraph（insertparagraph-in-child-of-{head,html} corpus）——
+        // title/style/script 容器：pre（white-space pre 系）→ 空容器插 '\n\n'、
+        // 有文本插 '\n'；非 pre → no-op（corpus 期望 noop 合法）。块容器（div）→
+        // 块拆分：caret 位置切 children，右半入同标签克隆（corpus 形
+        // div→div，defaultParagraphSeparator 不改宿主标签）；空侧填 <br>
+        function _b1Preformatted(el) {
+          var ws = _b1StyleOf(el, 'white-space');
+          return ws === 'pre' || ws === 'pre-line' || ws === 'pre-wrap';
+        }
+        function _b1HasText(el) {
+          var kids = (el && el.childNodes) || [];
+          for (var i = 0; i < kids.length; i++) {
+            if (kids[i] && kids[i].nodeType === 3 && _b1DataOf(kids[i]).length) return true;
+          }
+          return false;
+        }
+        function _b1CloneShallow(el) {
+          var c = null;
+          try { c = el.cloneNode(false); } catch (_eTdCl) {}
+          if (!c || typeof c.nodeType !== 'number') {
+            c = { nodeType: 1, tagName: el.tagName, nodeName: el.nodeName, localName: el.localName,
+              namespaceURI: el.namespaceURI, ownerDocument: el.ownerDocument, childNodes: [], attributes: [], parentNode: null };
+            try {
+              var ats = el.attributes || [];
+              for (var i = 0; i < ats.length; i++) if (ats[i]) c.setAttribute(ats[i].name, ats[i].value);
+            } catch (_eTdCl2) {}
+          }
+          return c;
+        }
+        function _b1MakeBr(host) {
+          var b = null;
+          try { b = host.ownerDocument.createElement('br'); } catch (_eTdBr) {}
+          if (!b) b = { nodeType: 1, tagName: 'BR', nodeName: 'BR', localName: 'br', childNodes: [], attributes: [], parentNode: null };
+          return b;
+        }
+        function _b1Enter(sel) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          var loc = _b1BlockOf(cc.c);
+          var host = loc.block;
+          if (!host || host.nodeType !== 1) return;
+          var tag = _b1Tag(host);
+          if (tag === 'title' || tag === 'style' || tag === 'script') {
+            if (!_b1Preformatted(host)) return; // 非 pre：noop（期望表合法形）
+            var ins = _b1HasText(host) ? '\n' : '\n\n';
+            _b1InsertText(sel, ins);
+            return;
+          }
+          // 块拆分（div 等）：caret 位置切 children（caret 落在文本节点内 →
+          // 节点二分），右半入克隆；空侧填 <br>
+          var cont = cc.c, off = cc.o;
+          var cutAt; // host.childNodes 中的切点
+          if (cont === host) cutAt = off;
+          else if (cont.nodeType === 3) {
+            var dd = _b1DataOf(cont);
+            var rightTxt = dd.slice(off);
+            cont.data = dd.slice(0, off);
+            if (rightTxt) {
+              var rn = _b1CreateText(host, rightTxt);
+              var hk = host.childNodes || [];
+              hk.splice(hk.indexOf(cont) + 1, 0, rn);
+              _b1SetParent(rn, host);
+            }
+            cutAt = (host.childNodes || []).indexOf(cont) + 1;
+          } else {
+            cutAt = (host.childNodes || []).indexOf(cont);
+            if (cutAt < 0) cutAt = (host.childNodes || []).length;
+            else cutAt += 1;
+          }
+          var kids = (host.childNodes || []).slice();
+          var right = kids.slice(cutAt);
+          for (var r = 0; r < right.length; r++) _b1RemoveChild(host, right[r]);
+          var clone = _b1CloneShallow(host);
+          for (var m = 0; m < right.length; m++) _b1AppendInto(clone, right[m]);
+          var pre = _b1Preformatted(host);
+          if (!(host.childNodes || []).length) {
+            if (pre) _b1AppendInto(host, _b1CreateText(host, '\n'));
+            else _b1AppendInto(host, _b1MakeBr(host));
+          }
+          if (!(clone.childNodes || []).length) {
+            if (pre) _b1AppendInto(clone, _b1CreateText(host, '\n'));
+            else _b1AppendInto(clone, _b1MakeBr(clone));
+          }
+          _b1InsertInto(host.parentNode, host.nextSibling || null, clone);
+          var ct = clone.firstChild;
+          if (ct && ct.nodeType === 3) _b1SetCaret(sel, ct, 0);
+          else _b1SetCaret(sel, clone, 0);
+        }
+        // PUA 键码映射与 runner send_keys 同形：\uE003→backward delete、
+        // \uE017→forward delete、\uE006/\uE007→enter、其余 PUA 拒绝（同
+        // runner unsupported 形）。吞掉：修饰键 \uE008/9/A、\uE03D（Actions
+        // 序字符面已含大小写，粘滞忽略）、cancel/help \uE001/2、escape
+        // \uE00C（子文档无 dialog）、tab \uE004（子文档无焦点导航）。
+        // B1 切片 2（editing goal d22）：方向/行端键光标移动（corpus
+        // sendArrowRightKey / sendEndKey / sendArrowLeftKey 消费面）。非折叠
+        // 选区一键先收拢（left/home→起点，right/end→终点，Chrome 视觉移动
+        // 语义）；折叠态字符步进（块宿主文本序 ±1），行端 = 块宿主内容端。
+        function _b1CaretMove(sel, key) {
+          var cc = _b1Caret(sel);
+          if (!cc || !cc.r) return;
+          var r = cc.r;
+          if (!r.collapsed) {
+            if (key === 'left' || key === 'home') _b1SetCaret(sel, r.startContainer, r.startOffset);
+            else _b1SetCaret(sel, r.endContainer, r.endOffset);
+            return;
+          }
+          var node = cc.c;
+          var host = _b1BlockOf(node).block || doc.body;
+          if (key === 'home' || key === 'end') {
+            var t = _b1DeepestText(host, key === 'end');
+            if (t) _b1SetCaret(sel, t, key === 'end' ? _b1DataOf(t).length : 0);
+            else _b1SetCaret(sel, host, key === 'end' ? (host.childNodes || []).length : 0);
+            return;
+          }
+          var texts = [];
+          (function dfs(n) {
+            var ks = (n.childNodes || []);
+            for (var i = 0; i < ks.length; i++) {
+              if (ks[i] && ks[i].nodeType === 3) texts.push(ks[i]);
+              else dfs(ks[i]);
+            }
+          })(host);
+          var idx = texts.indexOf(node);
+          if (idx < 0) return; // 元素偏移落点不步进（corpus 未消费）
+          var dl = _b1DataOf(node).length;
+          if (key === 'right') {
+            if (cc.o < dl) { _b1SetCaret(sel, node, cc.o + 1); return; }
+            if (idx + 1 < texts.length) _b1SetCaret(sel, texts[idx + 1], 1);
+          } else {
+            if (cc.o > 0) { _b1SetCaret(sel, node, cc.o - 1); return; }
+            if (idx > 0) _b1SetCaret(sel, texts[idx - 1], Math.max(_b1DataOf(texts[idx - 1]).length - 1, 0));
+          }
+        }
+        function applyKeys(keys) {
+          var s = String(keys == null ? '' : keys);
+          var sel = _b1Sel();
+          for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i);
+            var cu = s.charCodeAt(i);
+            if (cu === 0xE003) { _b1Delete(sel, false); continue; }
+            if (cu === 0xE017) { _b1Delete(sel, true); continue; }
+            if (cu === 0xE006 || cu === 0xE007) { _b1Enter(sel); continue; }
+            if (cu === 0xE012) { _b1CaretMove(sel, 'left'); continue; }
+            if (cu === 0xE014) { _b1CaretMove(sel, 'right'); continue; }
+            if (cu === 0xE010) { _b1CaretMove(sel, 'end'); continue; }
+            if (cu === 0xE011) { _b1CaretMove(sel, 'home'); continue; }
+            if (cu >= 0xE000 && cu <= 0xF8FF) {
+              if (cu === 0xE001 || cu === 0xE002 || cu === 0xE00C || cu === 0xE004
+                || cu === 0xE008 || cu === 0xE009 || cu === 0xE00A || cu === 0xE03D) continue;
+              // FIXME(B1 切片 3): 其余 PUA 键 corpus 未消费，同 runner 拒绝形
+              throw new Error('unsupported WebDriver key U+'
+                + ('000' + cu.toString(16).toUpperCase()).slice(-4));
+            }
+            _b1InsertText(sel, ch);
+          }
+        }
+        // doc.execCommand delete/forwarddelete 折叠臂消费面（键语义同源）
+        doc.__zwB1KeyFace = { del: _b1Delete };
+        return {
+          set_test_context: function () {},
+          send_keys: function (element, keys) {
+            try {
+              applyKeys(keys);
+              return Promise.resolve();
+            } catch (e) {
+              return Promise.reject(e);
+            }
+          },
+          Actions: function () {
+            var seq = [];
+            return {
+              keyDown: function (k) { seq.push(['down', k]); return this; },
+              keyUp: function (k) { seq.push(['up', k]); return this; },
+              click: function () { return this; },
+              send: function () {
+                try {
+                  for (var i = 0; i < seq.length; i++) {
+                    if (seq[i][0] === 'down') applyKeys(seq[i][1]);
+                  }
+                  return Promise.resolve();
+                } catch (e) {
+                  return Promise.reject(e);
+                }
+              },
+            };
+          },
+        };
+      })(),
       Element: globalThis.Element,
       // R3254-E2 切片 6：Selection 构造器转发（getSelection.html 的 iframe 内
       // 「window must have Selection property」sanity 前置）。
