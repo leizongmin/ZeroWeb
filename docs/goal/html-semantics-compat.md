@@ -2,29 +2,53 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 436 收口（window.open 真弹窗链评估轮，零源码
-改动；账本
-evidence/2026-11-14-m2s436-window-open-popup-chain-assessment.md）——
-**判决：立项挂账归并 runner 多文档能力域，不流内施工**。勘定三面：
-①stub 非零实现——part01b R2979 `globalThis.open` 恒返 null（headless
-popup-blocked dismiss 语义，alert/confirm/prompt 同族），契约有桥测试
-钉面（part10.rs window.open→null 断言），评估对象 = stub → 真 window
-opening steps 升级（WindowProxy 返回 + features 解析）；②语料依赖面
-零账面暴露——html/semantics 21 文件含 window.open 字面（14 断言页 +
-7 helper）全被 runner 内容级 skip（testharness_html_semantics
-`source.contains("window.open")`——runner 单文档无窗口管理）+ 
-the-iframe-element 目录排除（11/14 断言页先中此门）挡在可执行集外，
-基线逐文件核对零键；③施工依赖链——engine arm 可复用 s432 anchor 臂
-rel 矩阵，但 **WindowProxy 物化 = runner 架构级门**（aux 文档第二
-global 需多文档/多窗口管道，与 navigation M3 门控/moving-between-
-documents 挂案同门）。零直接翻绿收益 + 架构级前置 → 立项挂账（能力
-上限记账同 listbox-touch 先例，不新开用户门；若用户点名 runner 多窗口
-通道再按 runner 管道 → engine arm+物化 → skip 解除+端点仿真三面分期）。
-**全桥套件绿窗轮末收口跑兑现常态化挂账**：1570P/0F exit 0（基线维持，
-窗口树恒等）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）。
-下一步：dialog R-s31 簇/img density/embed sizing face 到货复验（待他流
-face 到货）；红池分诊续（video P1+P2 或簇 D A2 待门决）；全桥套件绿窗
-轮末收口跑常态化（本轮已兑现一次，基线 1570P/0F）。
+**状态**: Active——M2 切片 437 收口（strut 门到货位移检查揭 99 键 P→F
+稳定回归 → s423 视图臂 img 面勘根修复轮；账本
+evidence/2026-11-14-m2s437-strut-arrival-regression-attribution-fix.md）。
+s436 收口后例常位移检查（双跑 join vs s433 基线）揭 99 键稳定 P→F
+（98×naturalWidth + 1×dialog）。归因链：criterion 二值化 bisect 钉
+first bad = **783b22267**（渲染流 g36：s423 pending selector rect
+管线触 shared engine face），last good = 330ba2b40；strut 门
+997899265 排除（engine-half 反掏刀 0F 维持）；s423 selector 臂 kill
+刀（`if false &&`）solo 0F 钉死错值源；S437PROBE 证「门关闭回落」
+假设不可达（语料写形纯 inline style 族门恒开）。根因：`pending_view_
+selector_rect` 现算视图缺解码资源态——`apply_intrinsic_size_overrides`
+仅 canvas/video 无 img 分支（解码源 = Pipeline.image_sizes 桥接侧不可
+达），无属性 img 视图布局退化占位满填 720×100 置换快照渲染后真值
+300/240。**修复（14 行）**：`pending_view_selector_rect` selector 解析
+后 IMG 早退返 None → 回落快照臂（= 父提交 img 面行为，非 img 选择器
+零变化）；FIXME 注记 object/embed 同源缺口。**验证**：solo naturalWidth
+258P/0F/0T exit 0（修复前 98F）；双跑 join fix stable-P 8308/F 203/T 2
+vs s433 base 8309/202/3——naturalWidth 键 fix.sP ×258、F/T ×0，集合差
+仅三个已分类非代码面（dialog phase-flip 今日全红含父提交 solo×3、
+detailed.optional 在册振荡、149.html 提取工件）；fmt + guarded-clippy
+workspace 绿。**跨流记账**：他流 reftest corpus 与本流 testharness 键集
+零交叠（其 A/B 零真回归结论不受影响），本流伪红本刀清偿、无需他流返
+修。dialog 面分诊 phase-flip 非代码，待下轮位移检查复验翻回。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：
+dialog phase-flip 复验 + 例常位移检查；红池分诊续（video P1+P2 或簇 D
+A2 待门决）；全桥套件绿窗轮末收口跑常态化（基线 1570P/0F）。
+
+> **▶ 承前（2026-11-14 M2 切片 436 收口）——window.open 真弹窗链
+> 评估轮（零源码改动；账本
+> evidence/2026-11-14-m2s436-window-open-popup-chain-assessment.md）**：
+> **判决：立项挂账归并 runner 多文档能力域，不流内施工**。勘定三面：
+> ①stub 非零实现——part01b R2979 `globalThis.open` 恒返 null（headless
+> popup-blocked dismiss 语义，alert/confirm/prompt 同族），契约有桥测试
+> 钉面（part10.rs window.open→null 断言），评估对象 = stub → 真 window
+> opening steps 升级（WindowProxy 返回 + features 解析）；②语料依赖面
+> 零账面暴露——html/semantics 21 文件含 window.open 字面（14 断言页 +
+> 7 helper）全被 runner 内容级 skip（testharness_html_semantics
+> `source.contains("window.open")`——runner 单文档无窗口管理）+
+> the-iframe-element 目录排除（11/14 断言页先中此门）挡在可执行集外，
+> 基线逐文件核对零键；③施工依赖链——engine arm 可复用 s432 anchor 臂
+> rel 矩阵，但 **WindowProxy 物化 = runner 架构级门**（aux 文档第二
+> global 需多文档/多窗口管道，与 navigation M3 门控/moving-between-
+> documents 挂案同门）。零直接翻绿收益 + 架构级前置 → 立项挂账（能力
+> 上限记账同 listbox-touch 先例，不新开用户门；若用户点名 runner 多窗口
+> 通道再按 runner 管道 → engine arm+物化 → skip 解除+端点仿真三面分期）。
+> 全桥套件绿窗轮末收口跑兑现常态化挂账：1570P/0F exit 0（基线维持，
+> 窗口树恒等）。
 
 > **▶ 承前（2026-11-14 M2 切片 435 收口）——selectedcontent-listbox
 > 红利案翻绿机制归因轮（零源码改动；s433 归属更正）**：账本
