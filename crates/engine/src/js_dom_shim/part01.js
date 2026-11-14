@@ -12034,16 +12034,17 @@
   function _zwCeSplitBoundaryNormalize(head, tail, headStructural) {
     var H = String(head);
     var T = String(tail);
-    // headStructural：头侧结构面有非空白内容（宿主级根层前导折叠空格形——
-    // 字串纯空白但侧内有元素，exp 保留该空格不退化；corpus CE-false 跨行键
-    // 实录）。缺省退化判据维持字串级。
-    var headDeg = _zwCeIsCollapsibleWsOnly(H) && !headStructural;
+    // headDeg：头侧退化完全由调用方侧扫描裁定（headStructural=false = 侧内
+    // 无元素且文本全折叠空白/全空）——字串级判据不足：caret 块内容起点形
+    //（`[] abc`）H 空串非 ws-only，但 Chrome exp 不翻尾侧（` abc`/`  abc`
+    // 保留或吞空格，绝不 nbsp；ipm3-b-v4-ip.log P2F 实录）；头侧有结构内容
+    //（CE-false 跨行形）才放行 T 翻转。
+    var headDeg = !headStructural;
     var tailDeg = _zwCeIsCollapsibleWsOnly(T);
     if (headDeg) H = '';
     if (tailDeg) T = '';
-    // 门=双侧非退化（退化侧翻转会造可见性伪影）；H 空但头侧结构有内容
-    //（caret 文本位 0 形）时 T 侧翻转仍需执行。
-    if (!headDeg && !tailDeg && (H !== '' || T !== '')) {
+    // 门=双侧非退化。
+    if (!headDeg && !tailDeg) {
       // 行尾：左段尾部 [space|nbsp] run 末字翻 nbsp（`a `→`a&nbsp;` 实录严格形；
       // `a&nbsp; `→`a&nbsp;&nbsp;` 接受形；`a &nbsp;` nbsp 尾原样接受）。
       var tailWs = 0;
@@ -12445,7 +12446,11 @@
         // 键实录——caret 规约进后随文本节点 offset 0 形）。规则同 part01f spec
         // 移植面钩子：行界折叠空格翻 `&nbsp;`、单侧 whitespace-only 退化、
         // 新块尾端折叠空白出块留宿主原层；white-space 显著面原样维持。
-        var bHeadWsOnly1w = _zwCeIsCollapsibleWsOnly(String(head1 || ''));
+        // 头侧全空（head1 空串且无前随节点=caret 块内容起点形）也是退化——
+        // 字串级 wsOnly('')=false 会漏判致尾侧误翻（`[] abc` Chrome exp 保
+        // ` abc` 不翻 nbsp；ipm3-b-v4-ip.log P2F 实录）。
+        var bHeadWsOnly1w = head1 === ''
+          || _zwCeIsCollapsibleWsOnly(String(head1 || ''));
         for (var bhw1 = 0; bhw1 < headParts1.length; bhw1++) {
           var bhn1w = headParts1[bhw1];
           if (!(bhn1w.nodeType === 3

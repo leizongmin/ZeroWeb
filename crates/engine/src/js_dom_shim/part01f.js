@@ -1489,16 +1489,17 @@
   function _zwIparaSplitBoundaryNormalize(head, tail, headStructural) {
     var H = String(head);
     var T = String(tail);
-    // headStructural：头侧结构面有非空白内容（宿主级根层前导折叠空格形——
-    // 字串纯空白但侧内有元素，exp 保留该空格不退化；corpus CE-false 跨行键
-    // 实录）。缺省退化判据维持字串级。
-    var headDeg = _zwIparaIsCollapsibleWsOnly(H) && !headStructural;
+    // headDeg：头侧退化完全由调用方侧扫描裁定（headStructural=false = 侧内
+    // 无元素且文本全折叠空白/全空）——字串级判据不足：caret 块内容起点形
+    //（`[] abc`）H 空串非 ws-only，但 Chrome exp 不翻尾侧（` abc`/`  abc`
+    // 保留或吞空格，绝不 nbsp；ipm3-b-v4-ip.log P2F 实录）；头侧有结构内容
+    //（CE-false 跨行形）才放行 T 翻转。
+    var headDeg = !headStructural;
     var tailDeg = _zwIparaIsCollapsibleWsOnly(T);
     if (headDeg) H = '';
     if (tailDeg) T = '';
-    // 门=双侧非退化（退化侧翻转会造可见性伪影）；H 空但头侧结构有内容
-    //（caret 文本位 0 形）时 T 侧翻转仍需执行。
-    if (!headDeg && !tailDeg && (H !== '' || T !== '')) {
+    // 门=双侧非退化。
+    if (!headDeg && !tailDeg) {
       var tailWs = 0;
       while (tailWs < H.length) {
         var cH = H.charAt(H.length - 1 - tailWs);
@@ -2672,7 +2673,9 @@
           })(root);
           return !hasEl && allWs;
         };
-        var bHeadWsC = bHeadTextC ? bSideWsOnlyC(container) : false;
+        // 头侧退化判据含全空侧（无文本无元素空真）——caret 块内容起点形
+        //（`[] abc`）尾侧不翻（` abc` exp 接受形，ipm3-b-v4-ip.log P2F 实录）。
+        var bHeadWsC = bSideWsOnlyC(container);
         var bTailWsC = bTailTextC ? bSideWsOnlyC(newContainer) : false;
         var bPairC = _zwIparaSplitBoundaryNormalize(
           bHeadTextC ? String(bHeadTextC.nodeValue || '') : '',

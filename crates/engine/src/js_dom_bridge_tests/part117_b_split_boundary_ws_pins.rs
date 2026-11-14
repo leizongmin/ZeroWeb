@@ -665,3 +665,91 @@ document.execCommand("insertparagraph", false, "");
         "⑮ B 族 CE-false 跨行（wrap 臂，caret 规约进后随文本 offset 0 同 corpus）：新块首文本行界空格翻 nbsp + 尾侧 whitespace-only 出块留宿主原层（corpus assert_in_array exp0）"
     );
 }
+
+#[test]
+fn test_insertparagraph_b_ws_caret_block_start_one_space_m3b() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce22p contenteditable></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var h22p = document.getElementById("ce22p");
+h22p.innerHTML = " abc";
+var r22p = document.createRange();
+r22p.setStart(h22p.firstChild, 0);
+r22p.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r22p);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce22p\").innerHTML")
+            .unwrap()
+            .value,
+        "<div><br></div><div> abc</div>",
+        "⑯ B 族 caret 块内容起点（头侧全空退化）：尾侧前导空格不翻 nbsp 原样留新块（corpus assert_in_array exp1；ipm3-b-v4-ip.log P2F 实录）"
+    );
+}
+
+#[test]
+fn test_insertparagraph_b_ws_caret_block_start_two_spaces_m3b() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce22q contenteditable></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var h22q = document.getElementById("ce22q");
+h22q.innerHTML = "  abc";
+var r22q = document.createRange();
+r22q.setStart(h22q.firstChild, 0);
+r22q.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r22q);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce22q\").innerHTML")
+            .unwrap()
+            .value,
+        "<div><br></div><div>  abc</div>",
+        "⑰ B 族 caret 块内容起点双空格（头侧全空退化）：尾侧不翻不内部换面原样留新块（corpus assert_in_array exp1；ipm3-b-v4-ip.log P2F 实录）"
+    );
+}
