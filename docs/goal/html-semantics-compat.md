@@ -2,40 +2,53 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 444 收口（label 2 键勘根定谳资产伪红第三例
-+ ③m 资源落地 **F−2/P+2 双腿确证** + combobox 12 分诊定谳 + 全域资产
-盘点；账本
-evidence/2026-11-15-m2s444-label-asset-reland-combobox-triage.md）。
-**label 定谳**：solo 实况两键均 `ReferenceError: getEvent is not
-defined`——案外链 /pointerevents/pointerevent_support.js 缺席（上游 pin
-19111 字节 self-contained 实测）；资源就位后 **solo 2/2 全 Pass**，
-s442 双判据翻案（键 1 非 testdriver 能力门——runner 内建 stub 健在；
-键 2 非引擎事件面——label.click() untrusted 转发面健全）。施工：③m
-fetch_raw "pointerevents/pointerevent_support.js"。**combobox tentative
-12 分诊定谳**：三机制全为簇 D customizable select/combobox 规格基建
-组成件（datalist-popover 基建 7 + :active-option 选择器 3 + :filtered
-初始过滤 2），资源面完整非能力门——**并入 GB-20261031 门记账**，s441
-「疑能力门族留续分诊」关闭。**全域资产盘点（2636 案外链全解析）**：
-testdriver ×243 = runner 内建 stub 伪缺失排除；customizable-select-
-styles.css ×47 = 簇 D 门开随批落；common.js ×19 / hyperlink-auditing
-×18 = 无位移不落；伪红散账模式收口（资产地图落账本）。**全量双腿**
-（main = g47 组合树，③m 在场）：stable 8514 键（**8305P/203F/5T/1U**）
-Pass 两腿全一致，vs s443 **恰 label 2 键 F−2/P+2 零其他位移**；g47
-归因随本轮双腿清偿（legs 即跑在 g47 树上）；stable Fail 差额 201→203 =
-select-home-end 族 4 键同 Fail 相位入 stable + detailed 1 键 T↔F（在册
-负载族记账口径）。push 窗口 rebase 又入他流 607018f9a（editing-compat
-ip C1 容器尾拆分序反转刀）+ f28e07366（其收口 docs）：入树晚于本轮
-双腿，未复验，下轮 sweep 一并归因。**全桥套件绿窗收口跑：1625P/0F rc=0**（基线 1596P，
-+29 = 组合树他流入树新钉面，零红）。**in-domain 自由面实质清零**：
-稳定红池 203F 全数归门（select 147 + combobox 12 = 簇 D；video 4 =
-VIDEO 门）、跨域（dialog 16 / img 13 / tabular 4 = 渲染域）、在册族
-（select-home-end 5 / onblur 2）。**新基带 8305P/203F/5T/1U**（stable
-join 口径）+ select 族 5 键振荡记账。**挂用户门维持**：GB-20261114-
-VIDEO + GB-20261031（簇 D，combobox 12 并入 + styles.css ×47 defer）+
-s137。下一步：**基带巡查轮**（全量 sweep 或轻量覆盖，他流入树一并
-归因）+ 候门决项提示用户（video P1+P2 / 簇 D A2 / s137）；rendering
-流 dialog 16 红块协同面（归 rendering 流记账）；hang 观察项静默哨
-（不主动施工）。
+**状态**: Active——M2 切片 445 收口（基带巡查轮：**ip C1 + g47 三刀入
+树零位移清偿，P 集恒等 8305** + 全桥绿窗 1637P/0F；账本
+evidence/2026-11-15-m2s445-baseline-patrol-ipC1-g47-attribution.md）。
+**归因面**：s444 后入树三刀 = 607018f9a（editing-compat ip C1 容器尾
+拆分序反转刀）+ 616fb3b57/a3b89b387（渲染流 g47 object-position/
+<position> 分面刀，触 engine computed_style.rs + painter/effects.rs）。
+**上 session 429 断点遗产复用**：e519f75d1 树双腿（= s444 + ip C1）已
+跑毕未落账，本轮补齐 join——stable 8510（8304P/199F/6T/1U），vs s444
+仅 6 差集全数在册振荡族，**ip C1 零位移**。**本轮新双腿**（a3b89b387
+= prev 树 + g47 两刀，链上无其他源码刀，隔离归因成立）：stable 8511
+（**8305P/199F/6T/1U**），vs prev 仅 modulepreload strict-origin 回位
+（P+1 在册振荡回绿）→ **g47 两刀零波及**；vs s444 **P 集逐键恒等
+（8305=8305）**，F/T 差集 5 全数 select-home-end 族相位轮换（4 子测
+Fail 相位出 + 主文件文件级 T 入 + detailed 单键 T↔F），非真位移。
+**新基带 8305P/199F/6T/1U**（stable 口径）+ select-home-end 族 5 键
+振荡记账。红池 199F 全数归账（簇 D 155 + 渲染域/decoder 42 + onblur
+在册 2），无新增未归因红。**全桥绿窗收口跑 1637P/0F rc=0**（基线
+1625P，+12 = 组合树他流新钉 bridge 面，覆盖 g47 engine 触面）。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137——
+候门决项已提示用户（飞书）。hang 观察项静默哨维持（本轮双腿零 hang）。
+下一步：**守成巡查**（红池全数归门后无自由可施工面；后续轮次轻覆盖或
+他流入树归因轮）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2
+立项 / s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记
+账）。门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
+随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 444 收口）——label 2 键勘根定谳资产伪红
+> 第三例 + ③m 资源落地 F−2/P+2 双腿确证 + combobox 12 分诊定谳 + 全域
+> 资产盘点（账本
+> evidence/2026-11-15-m2s444-label-asset-reland-combobox-triage.md）**：
+> **label 定谳**：solo 两键均 `ReferenceError: getEvent is not defined`
+> ——案外链 /pointerevents/pointerevent_support.js 缺席（上游 pin 19111
+> 字节实测）；资源就位后 solo 2/2 全 Pass，s442 双判据翻案（键 1 非
+> testdriver 能力门——runner 内建 stub 健在；键 2 非引擎事件面——
+> label.click() untrusted 转发面健全）。施工：③m fetch_raw
+> "pointerevents/pointerevent_support.js"。**combobox tentative 12 分诊
+> 定谳**：三机制全为簇 D 规格基建组成件（datalist-popover 7 +
+> :active-option 3 + :filtered 初始过滤 2），资源面完整非能力门——并入
+> GB-20261031 门记账，s441「疑能力门族留续分诊」关闭。**全域资产盘点
+> （2636 案外链全解析）**：testdriver ×243 = runner 内建 stub 伪缺失；
+> customizable-select-styles.css ×47 = 簇 D 门开随批落；common.js ×19 /
+> hyperlink-auditing ×18 = 无位移不落；伪红散账模式收口。**全量双腿**
+> （g47 组合树，③m 在场）：stable 8514 键（8305P/203F/5T/1U）vs s443
+> 恰 label 2 键 F−2/P+2 零其他位移；stable Fail 差额 201→203 =
+> select-home-end 族相位轮换记账。**全桥绿窗 1625P/0F rc=0**（基线
+> 1596P +29 组合树新钉）。in-domain 自由面实质清零。push 窗口 rebase 入
+> 他流 607018f9a（ip C1）+ f28e07366：下轮 sweep 归因（→ s445 清偿）。
 
 > **▶ 承前（2026-11-15 M2 切片 443 收口）——s442 hang 0/7 复现降级观察
 > 项 + ③l color-testcommon.js 资源重落 +196P 双腿确证（账本
