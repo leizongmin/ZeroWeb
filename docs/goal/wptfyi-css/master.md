@@ -3,7 +3,7 @@
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
 已落库未入快照增量逐批见 DC-2 各批账与里程碑表（typed-om/color/values/
-grid/anchor 各批，至组F 布局刀3 anchor 语料 10,549→11,863；本流组E color
+grid/anchor 各批，至组F 布局刀3→g35 wm/对齐刀 anchor 语料 11,863→11,870（g35 轮扩面基线 11,869 +1 净）；本流组E color
 face css-color 10,905→10,972，至通用色通道 cq/sign 刀；values face
 css-values 2,426→2,893，至 serialize canonical 折叠刀2+round B=±∞ 策略表
 +calc-mix() 全链刀（g14b 权威账净 +100 零回归，六套件对账零漂移）
@@ -256,6 +256,19 @@ transform-with-sign-function 2→3，g33 rotate3d 四臂+分词器 depth-0 修�
 红利），transitions 200→**201**/animations 238→**239**（各 +1 真实增益：
 基线轮 Timeout 子测本轮完整枚举后真过，非伪影；F 总量差为在册超时截断
 伪影族口径）。[证据](evidence/2026-11-14-g34-final-accounting.md)
+**DC-2 g35 anchor 批完成（11-14）**：position-area wm/dir 映射 + §4.1 对齐
+面——css-parser `AreaWmDir` 双坐标系单实现（CB 写作模式参照 plain logical、
+self-* 参照 anchored 自身）+ layout-engine anchor_pos 区域 pass 接线与区域
+默认表/显式 align/justify-self 折算/span-all→anchor-center（margin-box 口
+径，显式尺寸只定位不覆写）；14 单测全绿。三轮 corpus 对账：triage 基线
+11,869P/967F → AB1（inset-IMCB 面）11,805P 净 −64（in-position-try 64P 等
+值页破：fallback 门跳过 #target 保持 left:200 而 #ref 介入对齐落点分叉，
+单独建模 inset 必破等值语义）→ 撤除后 AB2 **11,870P/966F/4T 净 +1、case
+级逐页 REGRESSED=0**（anchor-in-anchor-positioned +1 真实增益）。目标桶定
+谳：position-area 族 236F 中 **~190F 为 CSSOM `style.positionArea` 声明层
+缺口**（runner 未注册该属性，元素未被区域定位拦截，布局面无法翻绿，另
+刀），余 ~46F 分桶挂账（scrolling 23/getComputedStyle inset 使用值 4/
+@container anchored(fallback) 4/last-successful 3 等）。[证据](evidence/2026-11-14-g35-anchor-position-area.md)
 
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
@@ -314,11 +327,11 @@ trig）。random() 串化（g20 serialize 42F→3F，残 color 通道嵌套 D �
 分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族 supports 8F/shim gCS raw
 回显与 color 黑值 ~25F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21
 evidence §5）。
-**下一步**：g35 anchor 批启动——anchor 语料全量重录分桶 triage（case 列表
-253→~588 数据目录扩面后首跑，results-g35-anchor-triage），随后
-position-area wm/dir 映射刀（CB 写作模式/方向逻辑轴解析 + self 非 htb 面，
-anchor_area cells 单点 + layout anchor_pos 接线，bucket ~114F + align/justify
-面）；v14 收尾两项——typed-om `.any.js` 周跑通道**已修**（fetch-b
+**下一步**：g35 anchor 批已完成——后续刀 CSSOM `style.positionArea` 声明面
+支持（position-area 族 ~190F 先行缺口：basic/align-justify/wm-dir/anchor-
+outside 等页全经 `element.style.positionArea` 设置而 runner 未注册该属性，
+元素未被区域定位拦截——g35 已实证布局面对齐/网格改动无法翻绿，声明面另
+刀）；v14 收尾两项——typed-om `.any.js` 周跑通道**已修**（fetch-b
 Makefile 目标 GOAL_PULL_ANY_JS=1：lib.sh 默认排除 .any.js 致 CI 语料缺
 numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回补实证，
 下轮周跑验 9,872 显影，见 evidence §9）+ 四小回归余账（properties-values-api
