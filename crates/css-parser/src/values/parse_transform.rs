@@ -1627,6 +1627,12 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         .next()
         .map(|t| parse_length(t).is_some())
         .unwrap_or(false);
+    // g44：单 token 首参为纯百分比时不是合法 head 尺寸——circle 半径不接受 %、
+    // ellipse 尺寸需双值（css-images-4 §radial-gradients `<length [0,∞]> | <percentage>{2}`）
+    // ——落回色标段由 hint 位约束拒收。driving: color-stops-parsing
+    // `radial-gradient(0%, black, white)` invalid 面。
+    let single_pct_only = shape_src.split_whitespace().count() == 1
+        && matches!(parse_length(shape_src.trim()), Some(LengthValue::Percentage(_)));
     if !shape_src.is_empty()
         && (shape_lower.starts_with("circle")
             || shape_lower.starts_with("ellipse")
@@ -1634,7 +1640,7 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
             || shape_lower.starts_with("farthest")
             || shape_lower.starts_with("at ")
             || shape_lower.contains(" at ")
-            || first_tok_is_length)
+            || (first_tok_is_length && !single_pct_only))
     {
         // 解析 shape + size + at position
         let (s, sz, px, py) = parse_radial_shape_and_position(shape_src)?;
@@ -1994,10 +2000,15 @@ fn split_gradient_args(inner: &str) -> Option<Vec<&str>> {
 /// 解析色标列表。
 fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorStop>> {
     let mut stops = Vec::new();
+    // 上一段已消费 hint 且未被后续色标闭合（g44：hint 只允许夹在两色标之间）。
+    let mut pending_hint = false;
     for arg in args {
         let arg = arg.trim();
+        // 空段非法（css-images-4 §color-stop-syntax：<color-stop-list> 逗号分隔产生式
+        // 无空项）——`black, , white`、悬挂逗号 `,black, white`、整空 `linear-gradient()`。
+        // g44 前空段静默跳过 → 上述形伪接受（color-stops-parsing invalid 面）。
         if arg.is_empty() {
-            continue;
+            return None;
         }
         // CSS Images 4 §4.3.8：色标间的裸 <length-percentage> 是 color interpolation hint
         //（插值提示），指定相邻两色标的中点位置，本身不是色标。修复前裸 %/长度落
@@ -2005,10 +2016,25 @@ fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorS
         // 现正确识别并消费 hint（hint 必须有前导色标，首位裸长度/% 仍非法）。
         // 渲染侧暂用线性插值——hint 中点偏移为可选 follow-up（需 GradientColorStop 加
         // hint 字段 + 渲染器改动）；本切片仅 parse-compliance，与 R2204 CDO/CDC 同族。
-        if !stops.is_empty() && is_color_interpolation_hint(arg) {
+        if is_color_interpolation_hint(arg) {
+            // g44 hint 文法位约束（css-images-4 §color-stop-syntax：hint 仅允许出现在
+            // 两色标之间）——首位色标前（`0%, black, white`）、连续两 hint
+            //（`black, 25%, 50%, white`）均拒收；尾悬挂由循环后 pending_hint 判。
+            // driving: wpt css-images gradient/color-stops-parsing invalid 面。
+            if stops.is_empty() || pending_hint {
+                return None;
+            }
+            pending_hint = true;
             continue;
         }
         stops.extend(parse_color_stop(arg, is_conic)?);
+        pending_hint = false;
+    }
+    // 尾 hint 悬挂（`black, white, 75%`）拒收；空色标表（`linear-gradient()`）拒收。
+    // 单色标表（`linear-gradient(black)`）合法——页面 valid 面钉（css-images-4 已
+    // 放宽单色标，非 css-images-3 `{2,}` 口径）。
+    if pending_hint || stops.is_empty() {
+        return None;
     }
     Some(stops)
 }

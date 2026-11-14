@@ -4438,6 +4438,13 @@
                 }
               } catch (_eSsPv) {}
             }
+            // g44（css-style-attr §2）：style 内容属性写面逐声明 invalid 渐变拒收——
+            // handle 世界 setAttribute 通道此前原文落库，invalid 渐变经
+            // getPropertyValue/cssText（_styleProxy readRaw replay）回显伪成功
+            //（color-stops-parsing 60F 靶面）。过滤语义见 part06
+            // `_zwStyleAttrDeclFilter`（幸存声明原文保形，非重序列化）。物化世界
+            //（detached doc）同型臂在 part03 `_zwMElSetAttribute`。
+            if (n === 'style') v = _zwStyleAttrDeclFilter(v);
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
             // s433：name/id 内容属性写 bump FORM 具名集合 attr 纪元（`_zwFormAttrEpoch`，

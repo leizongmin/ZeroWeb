@@ -1930,6 +1930,38 @@
     return decls;
   }
 
+  // g44（css-style-attr §2 解析丢弃非法声明 https://drafts.csswg.org/css-style-attr/#parsing）：
+  // style **内容属性**写面（materialized `setAttribute('style', …)` / cssText setter
+  // → setAttribute）逐声明 invalid 渐变拒收——此前原文落库，invalid 渐变经
+  // getPropertyValue/cssText 回显伪成功（g30 同型回显面，color-stops-parsing 60F 靶面）。
+  // 分段复用 _zwSplitDeclSegs（引号/注释感知）；background-image 声明值经 g43 同源
+  // 判定器（__zw_gradient_normalize_decl 'null' 哨兵）拒收丢弃；幸存声明原文保留
+  //（非 Blink parse-reserialize——T52 mini-impl 边界既录口径不变，仅补 invalid 拒收）。
+  // !important 尾缀先剥离再判（优先级后缀非渐变文法，混入会误杀合法声明），幸存原文
+  // 含后缀保形。非 background-image 属性不介入（判定器值形域）；无 'gradient' 子串
+  // 快门（判定器拒收集全为渐变前缀层，无子串恒 false，热路径零开销）；回调未注册
+  //（兜底链）零漂移。
+  function _zwStyleAttrDeclFilter(raw) {
+    var s = String(raw == null ? '' : raw);
+    if (s.indexOf('gradient') < 0) return s;
+    if (typeof globalThis.__zw_gradient_normalize_decl !== 'function') return s;
+    var segs = _zwSplitDeclSegs(s);
+    var out = [];
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      var c = seg.indexOf(':');
+      if (c < 0) { out.push(seg.trim()); continue; }
+      var name = seg.slice(0, c).trim().toLowerCase();
+      var val = seg.slice(c + 1).trim();
+      if (name === 'background-image') {
+        var core = val.replace(/\s*!\s*important\s*$/i, '');
+        if (globalThis.__zw_gradient_normalize_decl('background-image', core) === 'null') continue;
+      }
+      out.push(seg.trim());
+    }
+    return out.join('; ');
+  }
+
   // CSS Color 4 §6.1 named colors 全表（148 键，ASCII lowercase，§6.1 "ASCII
   // case-insensitive"）——`|` 包边整串按 `|kw|` 整词 indexOf（无 keyword 前缀误命中）。
   var _zwNamedColorSet = '|aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|';

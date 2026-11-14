@@ -21050,6 +21050,11 @@
     var node = this;
     var attrs = this[_zwAttrsSlotKey];
     n = String(n); var sv = v == null ? '' : String(v);
+    // g44（css-style-attr §2）：style 内容属性写面逐声明 invalid 渐变拒收——
+    // materialized createElement 产物 setAttribute 通道此前原文落库，invalid 渐变
+    // 经 getPropertyValue/cssText 回显伪成功（color-stops-parsing 60F 靶面）。
+    // 过滤语义见 part06 `_zwStyleAttrDeclFilter`（幸存声明原文保形，非重序列化）。
+    if (n.toLowerCase() === 'style') sv = _zwStyleAttrDeclFilter(sv);
     _zwMElQIdxInvalidate(node);
     var _r4100Had = null;
     if (n.toLowerCase() === 'open' || n.toLowerCase() === 'name') {

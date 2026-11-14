@@ -2757,3 +2757,74 @@ fn test_g43_background_image_decl_invalid_judge() {
     // canonical 串化对 invalid 形保持 None（passthrough 语义不变，拒收在回调哨兵层）。
     assert_eq!(canon("linear-gradient(, red, blue)"), None);
 }
+
+// g44 色标文法位约束（css-images-4 §color-stop-syntax）：hint 只允许夹在两色标之间、
+// 空段非法、尾 hint 悬挂非法；单色标表合法（css-images-4 放宽，非 css-images-3 {2,}）。
+// driving: wpt css-images gradient/color-stops-parsing.html（33 形 × 6 渐变函数，
+// 页面 parse 期望逐形镜像）。
+#[test]
+fn test_g44_color_stops_parsing_page_forms() {
+    // 页面 invalid 10 形——六函数全拒收（repeating/conic 变体同文法）。
+    let invalid = [
+        "",
+        "black, 25%",
+        "black, invalid",
+        "black, , white",
+        "black, white, 75%",
+        "black, 25% 50%, white",
+        "black, 25%, 50%, white",
+        "black 10% 25% 50%, white",
+        ",black, white",
+        "0%, black, white",
+    ];
+    // 页面 valid 23 形中代表面——单色标、unitless 0 位置、hint 单插、连续 hint 交替
+    //（`15%`/`60%` 各夹两 stop 间）、双位置、kitchen sink calc。六函数全接受。
+    let valid = [
+        "black",
+        "black 0%",
+        "black, white",
+        "black 0, white",
+        "black 0%, white",
+        "black 0%, white 100%",
+        "black, green, white",
+        "black 0%, green 50%, white 100%",
+        "black 50%, green 10%, white 100%",
+        "black, 25%, white",
+        "black 0%, 25%, white 100%",
+        "black 0%, 15%, green 50%, 60%, white 100%",
+        "black 0% 50%, white",
+        "black 0% 50%, white 50% 100%",
+        "black 0% 50%, green 25% 75%, white 50% 100%",
+        "black 0% calc(100% / 5), 25%, green 30% 60%, calc(100% * 3 / 4), white calc(100% - 20%) 100%",
+    ];
+    for f in [
+        "linear-gradient",
+        "repeating-linear-gradient",
+        "radial-gradient",
+        "repeating-radial-gradient",
+        "conic-gradient",
+        "repeating-conic-gradient",
+    ] {
+        for s in invalid {
+            assert_eq!(canon(&format!("{f}({s})")), None, "{f}({s}) 应拒收（页面 parse:false）");
+        }
+        for s in valid {
+            assert!(
+                canon(&format!("{f}({s})")).is_some(),
+                "{f}({s}) 应接受（页面 parse:true）"
+            );
+        }
+    }
+    // 页面 lots-of-stops 形（500 段 stop/hint 交替单插）接受——hint 文法位约束
+    // 不误杀合法交替。
+    let mut long = String::from("linear-gradient(");
+    for x in 0..500 {
+        long.push_str(&format!(
+            "white {}%, {}%, ",
+            f64::from(x) / 500.0,
+            f64::from(2 * x + 1) / 1000.0
+        ));
+    }
+    long.push_str("black)");
+    assert!(canon(&long).is_some(), "500-stop 交替 hint 长表应接受");
+}
