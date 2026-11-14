@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5522 master.md 运行时控制面指针刷新轮（R5521 下一步落轮——0 net code：①corpus 复跑按 R5518 先例跳过——当前树 aa0bb8474 与 R5521 corpus 快照树 7bafd4902 代码恒等（git diff 仅 docs 7 行），重跑只重复采样零信息增量，真态基线 ~680F 口径不变；②对端观察 pull --rebase 干净零新提交；③原料面空转维持）＋运行时控制面文档债修复——master.md 顶部「当前裁决」块自 R5509 起陈旧 9 轮（R5510 起轮次惯例改记入口文档顶部后未刷新），与文档控制规则「当前执行方向以 master.md 顶部块为准」矛盾：改为当前态（R5521 真态基线 ~680F 穷尽态＋守成门禁全绿＋每轮机制）＋权威源指针（逐轮账本以入口文档顶部为准），历史概要栈保留，同一事实不再双处维护** **（2026-11-14）**
+>
+> - **结果**：R5521 下一步①②③落轮（文档治理轮，零代码变更）。master.md 顶部块刷新为 R5521 当前态＋权威源指针——消除「未来 session 按控制规则读 master.md 落到 R5509 九轮前状态」的指针漂移；R5427-R5509 历史概要堆栈原样保留（明细入口文档可溯），不双抄轮次细节。①跳过依据：tree identity（`git diff 7bafd4902..aa0bb8474 --stat`＝rendering-compat.md docs-only），corpus A/B 的回归检测目的在本树零代码变更下无对象。
+> - **验证**：零 `.rs` 变更（fmt/clippy/lib/bench-gate/corpus 均不触发）；master.md 顶部与入口文档顶部状态互证一致（真态基线、门禁数、轮次号三处对齐）。
+> - **挂账**：**销账**：R5521 下一步①②③；master.md 陈旧指针漂移（本轮修复，后续轮次若再以入口文档为唯一账本，需在结构变更时同步本指针块）。**新增**：无。**维持**：全谱系（⑥⑦⑧⑨待决策、特性缺失带 ~105、深结构、动态、writing-mode、多角度 plateau 结论）；R5517 新增①（无驱动案休眠）；R5516 新增①②；R5515①IFC 行进域；R5513①②；R5509②；R5508 挂账；对端 js_dom_bridge 7F；R4482 双锚；重腿静窗纪律。
+> - **下一步 R5523**：①corpus 基线在册族 flake 相位监测（有代码变更落地时全量 A/B＋solo×3 双二进制定谳；树恒等轮次按本轮先例跳过并记 tree identity 依据）②对端挂账观察③新开工点＝对端流/新 WPT 批导入带来的清单外新案（先 PNG 对照小差带）或待用户决策清单点名（⑥⑦⑧⑨/深结构授权）。
+>
 > **▶ R5521 corpus flake 相位监测轮（R5520 下一步①②③落轮——0 net code：corpus 当前树 7bafd4902（覆盖对端 df85ed2a6 Selection API）16594 vs R5520 批 683F＝681F——NEW=2（insert-inline-middle-003 在册 insert 互翻族 R5374/R5516＋tao-128 R5376 记档）GONE=4（tao-145/148/149/154 表族互翻带），两新案 solo×3 6/6 全绿 ✓0.00% 定谳批相位，真态 FIXED=∅ REGRESSED=∅ 基线真态维持 ~680F；make reftest 725/725；③原料面空转维持——wpt-data v1.10 即最新、无清单外新案、⑥⑦⑧⑨无新授权）** **（2026-11-14）**
 >
 > - **结果**：R5520 下一步①②③落轮（监测轮，零代码变更）。① corpus A/B 见上——df85ed2a6 渲染侧零副作用收账；内测 725/725 同窗绿。②对端观察：pull --rebase 干净（零冲突），df85ed2a6（engine Selection collapse/extend/addRange 校验门）入本轮 corpus 窗口。③R5517① % min/max float used 域复核：无 corpus 驱动案（R5517 择案时 css-sizing 目录 triage 已排除余案），按 R5513①「无驱动案休眠」先例维持不动。
