@@ -10006,23 +10006,29 @@
               var _r97Pos = (refNode && refNode.__zwHandle) ? _r97Kb.indexOf(refNode) : -1;
               // T68（2026-11-14）：迭代改正序——旧倒序循环在 refNode 无 handle/null
               //（push 臂）把 fragment 子序反转（appendChild 孪生分支 8090 正序 push
-              // 正确，带位变体不对称）；正序下同位 splice（_r97Pos>=0）与 push（尾
-              // 附）双双保序，与 spec pre-insert 的 fragment 参数逐子保序插入及本
-              // 分支下方 wire 循环的宿主正序一致。
+              // 正确，带位变体不对称）。保序语义分臂：push 臂尾附天然保序；splice
+              // 臂（_r97Pos>=0）固定下标迭代插入会把先插入的子右移（多子 fragment
+              // [c0,c1,c2] 落位 [c2,c1,c0]，DF-1 返修 2026-11-14）——splice 位按
+              // 插入计数 _r97Ins 右移（_r97Pos+_r97Ins，仅真实插入时递增，假子
+              // falsy/无 nodeType 不插入不计数），与 spec pre-insert 的 fragment
+              // 参数逐子保序插入及本分支下方 wire 循环的宿主正序一致。
+              var _r97Ins = 0;
               // https://dom.spec.whatwg.org/#concept-node-pre-insert
               for (var _r97k = 0; _r97k < _r97Fb.length; _r97k++) {
                 var _r97cc = _r97Fb[_r97k];
                 if (_r97cc && _r97cc.__zwHandle) {
-                  if (_r97Pos >= 0) _r97Kb.splice(_r97Pos, 0, _r97cc);
+                  if (_r97Pos >= 0) _r97Kb.splice(_r97Pos + _r97Ins, 0, _r97cc);
                   else _r97Kb.push(_r97cc);
+                  _r97Ins++;
                   try {
                     if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
                       _zwNodeParent[_r97cc.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
                     }
                   } catch (_e97h) {}
                 } else if (_r97cc && _r97cc.nodeType) {
-                  if (_r97Pos >= 0) _r97Kb.splice(_r97Pos, 0, _r97cc);
+                  if (_r97Pos >= 0) _r97Kb.splice(_r97Pos + _r97Ins, 0, _r97cc);
                   else _r97Kb.push(_r97cc);
+                  _r97Ins++;
                   // t8i：M 域解析子收编（adoption）——innerHTML= 的 _zwFragmentAdded 产物
                   //（_zwMEl：无 handle 无 sel，script 路径 fabric，见 part03）。三步：
                   // ① _zwForceParentLink 重挂 parentNode（R3018 兄弟 getter 经

@@ -570,3 +570,176 @@ fn t68_handle_miss_lenient_no_batch_poison() {
         "parent handle miss 后同批 sel 域插入必须落地；html={out2}"
     );
 }
+
+/// TV-1 钉（T68 DF-1 返修，2026-11-14）：R97 **splice 臂**保序——handle 容器
+/// `insertBefore(fragment 多子, handleRef)`（refNode 带 `__zwHandle` →
+/// `_r97Pos>=0` splice 臂，区别于既有七测的 refNode=null push 臂形态）断言
+/// childNodes 与 fragment 子序逐位一致。修复前固定下标 `splice(_r97Pos,…)`
+/// 把先插入的子右移：多子 [c0,c1,c2] 落位 [c2,c1,c0,ref]（DF-1 定谳的
+/// 视图/宿主顺序分裂形态——`_handleChildren` 直接作视图返回）。
+/// 规范锚：https://dom.spec.whatwg.org/#concept-node-pre-insert
+#[test]
+fn t68_r97_splice_arm_order_preserved_multichild() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/t68o".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var hc = document.createElement('ul');\
+             var ref = document.createElement('li');\
+             ref.className = 't68r97ref';\
+             hc.appendChild(ref);\
+             var range = document.createRange();\
+             range.selectNodeContents(document.body);\
+             var frag = range.createContextualFragment('<li class=\"t68s0\">s0</li><li class=\"t68s1\">s1</li><li class=\"t68s2\">s2</li>');\
+             globalThis.__s0 = frag.childNodes[0];\
+             globalThis.__s1 = frag.childNodes[1];\
+             globalThis.__s2 = frag.childNodes[2];\
+             globalThis.__hcOrd = hc; globalThis.__refOrd = ref;\
+             hc.insertBefore(frag, ref);",
+        )
+        .unwrap();
+
+    // 保序核心：[s0, s1, s2, ref]（修复前固定下标 splice 反转为 [s2, s1, s0, ref]）。
+    assert_eq!(
+        sandbox
+            .execute("String(__hcOrd.childNodes.length)")
+            .unwrap()
+            .value,
+        "4",
+        "handle 容器 registry 视图含 fragment 三子 + 原 ref"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcOrd.childNodes[0] === __s0)")
+            .unwrap()
+            .value,
+        "true",
+        "位 0 = fragment 首子（修复前此处是末子 s2——DF-1 反转形态）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcOrd.childNodes[1] === __s1)")
+            .unwrap()
+            .value,
+        "true",
+        "位 1 = fragment 次子"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcOrd.childNodes[2] === __s2)")
+            .unwrap()
+            .value,
+        "true",
+        "位 2 = fragment 末子"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcOrd.childNodes[3] === __refOrd)")
+            .unwrap()
+            .value,
+        "true",
+        "位 3 = 原 handleRef（插入点语义保持）"
+    );
+}
+
+/// TV-1 钉（假子混入形态）：fragment childNodes 中 falsy/无 nodeType 项不插入
+/// 不计数——真实子落位不受假子挤占（插入计数 `_r97Ins` 仅真实插入递增）。
+/// 注入后 fragment 子序 [m0, null, {无 nodeType}, m1, hk]，三个判别面一次
+/// 钉死：① 修复前固定下标 splice → 真子反转 [hk,m1,m0,ref]；② 朴素「逐迭代
+/// 计数」变体（假子也递增）→ 假子挤占 splice 位致 [m0,ref,m1,hk]（ref 被顶到
+/// 位 1）；③ 本修法 → [m0,m1,hk,ref] 逐位保序。真子跨两臂：解析子（nodeType
+/// 臂）+ handle 族子（`__zwHandle` 臂）。
+/// 规范锚：https://dom.spec.whatwg.org/#concept-node-pre-insert
+#[test]
+fn t68_r97_splice_arm_order_preserved_mixed_falsy() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/t68p".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var hc = document.createElement('ul');\
+             var ref = document.createElement('li');\
+             hc.appendChild(ref);\
+             var range = document.createRange();\
+             range.selectNodeContents(document.body);\
+             var frag = range.createContextualFragment('<li class=\"t68m0\">m0</li><li class=\"t68m1\">m1</li>');\
+             var hk = document.createElement('li');\
+             hk.className = 't68mhk';\
+             frag.appendChild(hk);\
+             frag.childNodes.splice(1, 0, null, { nodeName: '#t68fake' });\
+             globalThis.__m0 = frag.childNodes[0];\
+             globalThis.__m1 = frag.childNodes[3];\
+             globalThis.__hkMix = hk; globalThis.__hcMix = hc; globalThis.__refMix = ref;\
+             hc.insertBefore(frag, ref);",
+        )
+        .unwrap();
+
+    // childNodes 注入后形态：[m0, null, {无 nodeType}, m1, hk]——两假子夹三真子。
+    assert_eq!(
+        sandbox
+            .execute("String(__hcMix.childNodes.length)")
+            .unwrap()
+            .value,
+        "4",
+        "registry 只收真实插入（假子不占位）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcMix.childNodes[0] === __m0)")
+            .unwrap()
+            .value,
+        "true",
+        "位 0 = 首个真子 m0（修复前固定下标反转形态此处是 hk）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcMix.childNodes[1] === __m1)")
+            .unwrap()
+            .value,
+        "true",
+        "位 1 = 解析真子 m1（假子未挤占 splice 位——朴素逐迭代计数变体此处是 ref，失守）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcMix.childNodes[2] === __hkMix)")
+            .unwrap()
+            .value,
+        "true",
+        "位 2 = handle 族子（修复前固定下标反转形态此处是 m0）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__hcMix.childNodes[3] === __refMix)")
+            .unwrap()
+            .value,
+        "true",
+        "位 3 = 原 handleRef（插入点语义保持）"
+    );
+}
