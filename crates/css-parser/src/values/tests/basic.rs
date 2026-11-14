@@ -2658,12 +2658,87 @@ fn test_g42_position_edge_offset_pairs() {
         Some("conic-gradient(at left 10px top 50em, red, blue)"),
         "as-written head passthrough"
     );
-    // 3-token 缘偏移（对 + 裸关键字）。
-    let g3 = parse_gradient("radial-gradient(at left 10px top, red, blue)").expect("3-token position must parse");
-    let GradientValue::Radial(r3) = &g3 else {
-        panic!("expected radial, got {g3:?}");
+    // 3-token 缘偏移（对 + 裸关键字）：csswg#2140 后全禁（g48 driving:
+    // gradient-position-invalid `at left 4px top` 等 8 案 oracle，g42 旧钉
+    // 按旧容错模型记过，此处翻转为 None）。
+    assert!(
+        parse_gradient("radial-gradient(at left 10px top, red, blue)").is_none(),
+        "3-token 混搭形必须拒收（csswg#2140）"
+    );
+}
+
+// g48：gradient `at` 位置子句文法位 + canonical 序（css-values-4 §position，
+// csswg#2140 后行为；oracle 全取自 tests/wpt-runner/wpt-data/css/css-images/
+// parsing/gradient-position-{invalid,valid,computed}.html）。
+#[test]
+fn test_g48_gradient_position_grammar_and_canonical() {
+    // invalid 组（#2140 弃的混搭形）：V 前导 + 偏移、3 值对 + 裸关键字、
+    // 对 + center 混用。
+    for bad in [
+        "radial-gradient(at top 0px, red, blue)",
+        "radial-gradient(at left 4px top, red, blue)",
+        "radial-gradient(at right top 5px, red, blue)",
+        "radial-gradient(at bottom 7% left, red, blue)",
+        "radial-gradient(at bottom right 8%, red, blue)",
+        "radial-gradient(at center left 1px, red, blue)",
+        "radial-gradient(at right 3% center, red, blue)",
+    ] {
+        assert!(parse_background_image(bad).is_none(), "legacy 混搭形必须拒收：{bad}");
+    }
+    // canonical 指定值：双裸关键字/双偏移对 V 前导 → H V 重排。
+    assert_eq!(
+        canonicalize_background_image_specified("radial-gradient(at bottom 10% right 20%, red, blue)"),
+        Some("radial-gradient(at right 20% bottom 10%, red, blue)".to_string())
+    );
+    assert_eq!(
+        canonicalize_background_image_specified("radial-gradient(at bottom right, red, blue)"),
+        Some("radial-gradient(at right bottom, red, blue)".to_string())
+    );
+    assert_eq!(
+        canonicalize_background_image_specified("radial-gradient(at center left, red, blue)"),
+        Some("radial-gradient(at left center, red, blue)".to_string())
+    );
+    // 标准序 as-written 保形（css-images-4 serializing-gradients + soundness 集）。
+    for asis in [
+        "radial-gradient(at 10%, red, blue)",
+        "radial-gradient(at right 40%, red, blue)",
+        "radial-gradient(at 40px top, red, blue)",
+        "radial-gradient(at center 50px, red, blue)",
+        "radial-gradient(at right 30% top 60px, red, blue)",
+        "conic-gradient(at left top, red, blue)",
+    ] {
+        assert_eq!(
+            canonicalize_background_image_specified(asis),
+            Some(asis.to_string()),
+            "标准序 as-written：{asis}"
+        );
+    }
+    // conic V 前导双裸关键字同重排。
+    assert_eq!(
+        canonicalize_background_image_specified("conic-gradient(at top left, red, blue)"),
+        Some("conic-gradient(at left top, red, blue)".to_string())
+    );
+    // 4 值缘偏移对解析折叠：right/bottom 百分比偏移 100−x（指定值文本保形，
+    // 折算只发生在 resolve 侧 pair 模型）。
+    let g = parse_gradient("radial-gradient(at right 30% top 60px, red, blue)").expect("4 值对必须解析");
+    let GradientValue::Radial(r) = &g else {
+        panic!("expected radial, got {g:?}");
     };
-    assert_eq!(r3.position_y, LengthValue::Percentage(0.0));
+    assert_eq!(r.position_x, LengthValue::Percentage(70.0));
+    assert_eq!(r.position_y, LengthValue::Px(60.0));
+    // 1 值裸垂直关键字 → y=该值 x=center；1 值 lp → x=该值 y=center。
+    let g1 = parse_gradient("radial-gradient(at top, red, blue)").expect("1 值必须解析");
+    let GradientValue::Radial(r1) = &g1 else {
+        panic!("expected radial, got {g1:?}");
+    };
+    assert_eq!(r1.position_x, LengthValue::Percentage(50.0));
+    assert_eq!(r1.position_y, LengthValue::Percentage(0.0));
+    let g2 = parse_gradient("radial-gradient(at 10%, red, blue)").expect("1 值 lp 必须解析");
+    let GradientValue::Radial(r2) = &g2 else {
+        panic!("expected radial, got {g2:?}");
+    };
+    assert_eq!(r2.position_x, LengthValue::Percentage(10.0));
+    assert_eq!(r2.position_y, LengthValue::Percentage(50.0));
 }
 
 #[test]

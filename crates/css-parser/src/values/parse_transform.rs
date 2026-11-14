@@ -1649,7 +1649,8 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         pos_x = px;
         pos_y = py;
         stop_start = 1;
-        head_raw = Some(canonicalize_radial_head(normalize_decl_ws(shape_src)));
+        head_raw =
+            Some(canonicalize_at_clause(&canonicalize_radial_head(normalize_decl_ws(shape_src))).into_boxed_str());
     } else if hs.present {
         // 首参仅为 `in <colorspace>` 提示（或纯长度尺寸形），跳过用默认 shape
         if let Some(h) = hs.head {
@@ -1762,57 +1763,179 @@ fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSi
     Some(())
 }
 
-/// 解析位置对（如 "center center"、"50% 50%"、"left top"、"left 10px top 50em"）。
+/// 解析位置对（如 "center center"、"50% 50%"、"left top"、"right 30% top 60px"）。
+///
+/// 文法按 css-values-4
+/// [§position](https://drafts.csswg.org/css-values-4/#typedef-position) 与
+/// [csswg#2140](https://github.com/w3c/csswg-drafts/issues/2140) 后行为（WPT
+/// gradient-position-invalid/valid/computed oracle 定谳）：
+/// - 1 值：裸垂直关键字 → y=该值 x=center（`top` → `50% 0%`）；余 → x=该值
+///   y=center（`10%` → `10% 50%`）
+/// - 2 值：H 侧（left/right/center/`<lp>`）+ V 侧（top/bottom/center/`<lp>`）
+///   原序（`right 40%` → `100% 40%`）；双裸关键字退化为 && 形任意序可换轴
+///   重排（`top left` → `left top`、`center left` → `left center`）；V 缘关键字
+///   + lp（`top 0px`，#2140 弃）与同轴双关键字（`left right`）拒收
+/// - 3 值：全禁（#2140 弃的混搭形，gradient-position-invalid 8 案 oracle）
+/// - 4 值：`[left|right] <lp> [top|bottom] <lp>` 双缘偏移对、序任意；right/
+///   bottom 百分比偏移按 100−x 折算（`right 30%` → `70%`）；长度偏移保原值
+///   FIXME: 缘锚定模型单 LengthValue 轴丢失（无缘相对偏移表达），渲染按
+///   左/上缘偏移近似；指定值 canonical 由 [`canonicalize_at_clause`] 重排保真。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
-    let s = s.trim();
     let parts: Vec<&str> = s.split_whitespace().collect();
-
     match parts.len() {
         1 => {
-            let p = parse_position_keyword(parts[0])?;
-            Some((p.clone(), p))
-        }
-        2 => {
-            let px = parse_position_keyword(parts[0])?;
-            let py = parse_position_keyword(parts[1])?;
-            Some((px, py))
-        }
-        // css-values-4 §position：`[<side> <length-percentage>?]{1,2}` 缘偏移对
-        //（`at left 10px top 50em` → x=10px（左缘）y=50em（上缘），对序任意）。
-        // FIXME: right/bottom 缘锚定模型丢失（单 LengthValue 轴模型无缘相对
-        // 偏移表达），渲染按左/上缘偏移近似；canonical 序列化经 as-written
-        // 头部透传保真（g42 driving: gradient-interpolation-method computed/
-        // valid 的 4-token 位形）。
-        3 | 4 => {
-            let mut x: Option<LengthValue> = None;
-            let mut y: Option<LengthValue> = None;
-            let mut i = 0usize;
-            while i < parts.len() {
-                let kw = parts[i].to_ascii_lowercase();
-                let (slot, bare) = match kw.as_str() {
-                    "left" => (&mut x, LengthValue::Percentage(0.0)),
-                    "right" => (&mut x, LengthValue::Percentage(100.0)),
-                    "top" => (&mut y, LengthValue::Percentage(0.0)),
-                    "bottom" => (&mut y, LengthValue::Percentage(100.0)),
-                    _ => return None,
-                };
-                i += 1;
-                if i < parts.len() {
-                    if let Some(lv) = parse_length(parts[i]) {
-                        *slot = Some(lv);
-                        i += 1;
-                        continue;
-                    }
-                }
-                *slot = Some(bare);
+            let al = parts[0].to_ascii_lowercase();
+            if matches!(al.as_str(), "top" | "bottom") {
+                Some((LengthValue::Percentage(50.0), parse_position_keyword(&al)?))
+            } else {
+                Some((parse_position_keyword(parts[0])?, LengthValue::Percentage(50.0)))
             }
-            Some((
-                x.unwrap_or(LengthValue::Percentage(50.0)),
-                y.unwrap_or(LengthValue::Percentage(50.0)),
-            ))
         }
+        2 => parse_position_pair_two(parts[0], parts[1]),
+        // csswg#2140：3 值混搭形全禁（gradient-position-invalid oracle）
+        3 => None,
+        4 => parse_position_pair_four(&parts),
         _ => None,
     }
+}
+
+/// 2 值位形：H 侧 + V 侧原序，或双裸关键字退化 && 形换轴重排。
+fn parse_position_pair_two(a: &str, b: &str) -> Option<(LengthValue, LengthValue)> {
+    let al = a.to_ascii_lowercase();
+    let bl = b.to_ascii_lowercase();
+    let a_vert = matches!(al.as_str(), "top" | "bottom");
+    let b_horiz = matches!(bl.as_str(), "left" | "right");
+    // && 形退化（双裸关键字任意序）：V 缘关键字前导（`top left`）或 center +
+    // 缘关键字（`center left`）→ H V 重排；两臂均须裸关键字（lp 不可作缘偏移
+    // ——`top 0px` 不落此臂，落下方形二 V 前导拒收臂）。
+    if (al == "center" && b_horiz) || (a_vert && (b_horiz || bl == "center")) {
+        return Some((parse_position_keyword_only(&bl)?, parse_position_keyword_only(&al)?));
+    }
+    // 形二（H 侧 t1 + V 侧 t2）：t1 不得 top/bottom、t2 不得 left/right
+    //（`top 0px`、`left right` 拒）。
+    if a_vert || b_horiz {
+        return None;
+    }
+    Some((parse_position_keyword(a)?, parse_position_keyword(b)?))
+}
+
+/// 4 值位形：`[left|right] <lp> [top|bottom] <lp>` 双缘偏移对、序任意；偏移
+/// 必带且须为 `<lp>`（关键字/center 不可作偏移）；right/bottom 百分比偏移
+/// 按 100−x 折算，长度偏移保原值（FIXME 缘锚定模型丢失）。
+fn parse_position_pair_four(parts: &[&str]) -> Option<(LengthValue, LengthValue)> {
+    let mut x: Option<LengthValue> = None;
+    let mut y: Option<LengthValue> = None;
+    let mut i = 0usize;
+    while i < parts.len() {
+        let (slot, invert) = match parts[i].to_ascii_lowercase().as_str() {
+            "left" => (&mut x, false),
+            "right" => (&mut x, true),
+            "top" => (&mut y, false),
+            "bottom" => (&mut y, true),
+            _ => return None,
+        };
+        if slot.is_some() {
+            return None; // 同轴重复（`left 4px right 2px` 拒）
+        }
+        i += 1;
+        let offset = parse_length(parts.get(i)?)?;
+        let folded = match offset {
+            LengthValue::Percentage(p) if invert => LengthValue::Percentage(100.0 - p),
+            other => other,
+        };
+        *slot = Some(folded);
+        i += 1;
+    }
+    Some((x?, y?))
+}
+
+/// 仅关键字（不带 `<lp>` 回落）的位置分量。
+fn parse_position_keyword_only(s: &str) -> Option<LengthValue> {
+    match s.to_ascii_lowercase().as_str() {
+        "center" => Some(LengthValue::Percentage(50.0)),
+        "left" => Some(LengthValue::Percentage(0.0)),
+        "right" => Some(LengthValue::Percentage(100.0)),
+        "top" => Some(LengthValue::Percentage(0.0)),
+        "bottom" => Some(LengthValue::Percentage(100.0)),
+        _ => None,
+    }
+}
+
+/// at 位置子句 canonical（css-values-4
+/// [§position](https://drafts.csswg.org/css-values-4/#typedef-position) + WPT
+/// gradient-position-valid canonical/soundness 集）：
+/// - 2 值双裸关键字 V/center 前导 → H V 重排（`bottom right` → `right bottom`、
+///   `center left` → `left center`——as-written 形不在 soundness 集）
+/// - 4 值双缘偏移对 V 对前导 → H 对前置（`bottom 10% right 20%` →
+///   `right 20% bottom 10%`）
+/// - 其余（1 值、标准序 2 值、H 对前导 4 值）as-written（css-images-4
+///   serializing-gradients 保形 + soundness 集含原形；g42 4-token 透传口径）。
+///
+/// at 前缀段（shape/size 或 `from <angle>`）原样保留；含括号 token（calc 偏移）
+/// 不重排，透传保真。
+fn canonicalize_at_clause(head: &str) -> String {
+    fn tok_class(tok: &str) -> u8 {
+        // 位类：0=H 缘 / 1=V 缘 / 2=center / 3=`<lp>` / 4=其它（括号/未知）
+        match tok.to_ascii_lowercase().as_str() {
+            "left" | "right" => 0,
+            "top" | "bottom" => 1,
+            "center" => 2,
+            _ => {
+                if tok.contains('(') {
+                    4
+                } else {
+                    parse_length(tok).map(|_| 3u8).unwrap_or(4)
+                }
+            }
+        }
+    }
+    let lower = head.to_ascii_lowercase();
+    let at_idx = if lower.starts_with("at ") {
+        Some(0usize)
+    } else {
+        lower.find(" at ").map(|p| p + 1)
+    };
+    let Some(ai) = at_idx else {
+        return head.to_string();
+    };
+    let prefix = &head[..ai];
+    let at_text = head[ai + 2..].trim();
+    let toks: Vec<&str> = at_text.split_whitespace().collect();
+    let swapped = match toks.as_slice() {
+        [a, b] => {
+            let (ca, cb) = (tok_class(a), tok_class(b));
+            (ca == 2 && cb == 0) || (ca == 1 && (cb == 0 || cb == 2))
+        }
+        [a, _, _, _] => tok_class(a) == 1 && toks.iter().all(|t| tok_class(t) != 4),
+        _ => false,
+    };
+    if !swapped {
+        return head.to_string();
+    }
+    let mut out = prefix.to_string();
+    if !out.is_empty() {
+        out.push(' ');
+    }
+    out.push_str("at ");
+    match toks.as_slice() {
+        [a, b] => {
+            out.push_str(b);
+            out.push(' ');
+            out.push_str(a);
+        }
+        [v_e, v_o, h_e, h_o] => {
+            // [V 对, H 对] → H 对前 V 对后
+            out.push_str(h_e);
+            out.push(' ');
+            out.push_str(h_o);
+            out.push(' ');
+            out.push_str(v_e);
+            out.push(' ');
+            out.push_str(v_o);
+        }
+        _ => return head.to_string(),
+    }
+    out
 }
 
 /// 解析位置关键字为 LengthValue。
@@ -1861,7 +1984,7 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
         pos_x = px;
         pos_y = py;
         stop_start = 1;
-        head_raw = Some(normalize_decl_ws(config_src));
+        head_raw = Some(canonicalize_at_clause(&normalize_decl_ws(config_src)).into_boxed_str());
     } else if hs.present {
         // 首参仅为 `in <colorspace>` 提示（无 from/at），跳过用默认配置
         if let Some(h) = hs.head {

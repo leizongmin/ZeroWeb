@@ -2,7 +2,25 @@
 
 **2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
-当前 css-images **3091P/124F**、css-values 4041P/1546F/6T（g46-b2）。
+当前 css-images **3127P/88F**、css-values 4054P/1533F/6T（g48-b1，含并发流
+g47 未提交工作）。
+**g48 完成（11-15）**：gradient `at` 位置文法位 + canonical 序 + computed
+折算刀——csswg#2140 后 `<position>` 行为定谳（oracle: gradient-position
+三页）：3 值混搭形全禁（旧 3|4 值宽松 walk 误收 `at left 4px top` 五形）、
+1 值缺省轴补 center（旧实现 `x=y=该值`——computed 18F 主根因）、4 值双缘
+偏移对 right/bottom 百分比 100−x 折算（`right 30%`→`70%`）、canonical at
+子句重排（`bottom 10% right 20%`→`right 20% bottom 10%`，标准序保形）。
+`parse_position_pair` 重写 + `canonicalize_at_clause`（css-parser
+parse_transform.rs 单文件，radial/conic 两接线）；computed 面零改动（折算
+pair 流经既有 computed_head）。A/B（B0=results-g46-b2/B1=results-g48-b1
+合并树）：gradient-position invalid 5→0 / valid 4→0 / computed 18→4
+（**+23 零回归**）；合并树 grand 净 +49（css-images 3091→3127、css-values
+4041→4054），其中 +34/−8 归并发流 g47 object-position 写面判定刀（其
+position-valid.tentative 逻辑关键字 x-start/y-end −8 回归归 g47 轮收敛，
+R2478 pin `left 50px center` 冲突同）。残面：computed 4F 长度锚
+（`calc(100% - Npx)` 须缘锚定模型扩展）、object-position valid/computed
+族、conic-calc-angle 8F。见 [evidence
+2026-11-15-g48-gradient-position-grammar-canonical-computed](evidence/2026-11-15-g48-gradient-position-grammar-canonical-computed.md)。
 **g45b 完成（11-15）**：attr 污点经自定义项传播刀——css-values-4 §attr
 security 三页清偿。根因：预级联 attr 替换站把 `--s: attr(href)` 替换成
 属性文本后词痕即逝，4.75 重裁站失察（g45 image-set 文法位放行前被文法拒

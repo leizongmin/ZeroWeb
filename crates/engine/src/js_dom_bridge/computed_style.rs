@@ -4620,6 +4620,48 @@ mod g42_gradient_computed_serialize_tests {
     }
 
     #[test]
+    fn g48_position_computed_keyword_folding() {
+        // g48：`at` 位置 computed 折算（oracle:
+        // gradient-position-computed.html）——1 值缺省轴补 center（`10%` →
+        // `10% 50%`）、裸垂直关键字轴向归位（`top` → `50% 0%`）、4 值缘偏移对
+        // right/bottom 100−x 折算（`right 30% top 60px` → `70% 60px`）、缺省
+        // center-center 省略 at 段。
+        assert_eq!(
+            computed_gradient("radial-gradient(at 10%, red, blue)"),
+            "radial-gradient(at 10% 50%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at top, red, blue)"),
+            "radial-gradient(at 50% 0%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at 40px top, red, blue)"),
+            "radial-gradient(at 40px 0%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at right 30% top 60px, red, blue)"),
+            "radial-gradient(at 70% 60px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at bottom 10% right 20%, red, blue)"),
+            "radial-gradient(at 80% 90%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at center, red, blue)"),
+            "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // conic 同面：双裸关键字换轴重排后折算（`top left` → `0% 0%`）。
+        assert_eq!(
+            computed_gradient("conic-gradient(at top left, red, blue)"),
+            "conic-gradient(at 0% 0%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(at bottom, red, blue)"),
+            "conic-gradient(at 50% 100%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
     fn linear_head_passthrough_and_stops() {
         // specifiers oracle：角度与角词序 as-written；legacy 站 computed → rgb()。
         assert_eq!(
