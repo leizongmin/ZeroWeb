@@ -1163,3 +1163,16 @@ Rust 组合态二进制（build2 17:09 provenance）重跑 anchor 语料 comb2�
 计时校正：runner 真跑 ~0.3s/案（单页实验 1.8s 含启动），ab3 的 14 分钟为
 ZeroWeb-3 电池+构建 CPU 竞争异常慢，勿再以它为基线推算。账本维持
 783b22267，无新增提交面。
+
+**g36 组合态权威账（11-14 晚，comb3-x7）**：rebase 组合态（远端
+4e3eea8f3 shim part03/04/05 FORM named-first 施工 + 本流 s423 收窄/V 系
+修复，二进制 provenance = 17:09 build2）anchor 语料全量重跑 **11,985/
+868/4T，对 ab3 净 +8**（子测试 11,977/876）：IMP 12（anchor-size-parse-
+valid +8 / anchor-parse-valid +4——anchor()/anchor-size() calc 嵌套与
+降级形写面 parse 接受，**归因 4e3eea8f3 写面通道红利，它流域**）；REG 4
+（anchor-invalid-fallback 嵌套无效形放行缺口，同源归因，挂账它流）。
+进程教训入账：ab4 与 comb2 跑批被并行流同名脚本竞态焚毁/salvage（
+330ba2b40 记载同源），ab4c 为 salvage 恢复副本（与 ab3 字节级同 md5，
+不可作账）；comb3-x7 唯一名 x7 系发射，659 案 transcript 完整 + 5 案
+真 diff + 97s（机器空闲 rayon 并行，非此前多流竞争态 14 分钟）为真账
+判据。anchor 真态定格 11,985P（真页口径 11,988−zz 探针页）。
