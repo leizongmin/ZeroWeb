@@ -1139,3 +1139,12 @@ Rust 二进制）265 cases 11,977P/876F/4T 与 ab3 逐页逐位一致 REGRESSED=
 ——shim 改动与本轮 Rust 零交互扰动，g36 已 push（783b22267）。挂账：
 writing-modes-001 伪通过桶/last-successful 4F/'none' 高 18/position-
 area-value 文法缺口（span-top left/start center 形 +7）。[证据](evidence/2026-11-14-g36-border-coord-s423.md)
+**g36 组合态对账（11-14 晚）**：rebase 后组合态二进制（远端 FORM
+named-first shim part03/04/05 + 本轮 V 化 Rust，17:09 build2 provenance）
+anchor corpus 复账 results-g36-anchor-comb2：**11,977P/876F/4T 与 ab3 逐值
+一致零回归**——shim FORM 改动不触 anchor 面，组合态成立。跨流碰撞两笔：
+ab4（17:09）遭并行流同名脚本竞态焚毁（transcript/JSON_DIR 被删，对方
+editing-compat v1.108 提交信息认领）；ab4c（17:12 他会话发射）1 分钟产出
+与 ab3 字节级同 JSON——corpus 固有 659 页头/394 空体形态下 265 真值页，
+时钟上 1 分钟跑不完 265 案真账且无发射会话认领，按 salvage 疑似假账弃用，
+不进账本；comb2 为组合态权威账。
