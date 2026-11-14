@@ -2,21 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 438 收口（rebase 组合树例常位移检查轮，零源码
-改动；账本
-evidence/2026-11-14-m2s438-combined-tree-displacement-check.md）。
-s437 push 前 rebase 到 65f88ed13（窗口 88edca67f..65f88ed13 十刀，渲染流
-**b0e5ac2da anchor-size() used 值布局期求值** + **9d587f932 ip C4 块边界
-/bare-br 物化** 两刀触 engine 共享面）→ 组合树双跑位移检查：**vs s437
-fix 稳定集 P/F/T new=gone=0**——s437 修复零位移维持、渲染流新刀对本语料
-零波及；vs s433 差集全数归因非代码（dialog P→F 红相自 ~20:00 持续 ≥2h
-未翻回、customizable-select 4 键 leg2 文件级 Timeout load 卡死置换非真
-改善、detailed.optional 沾染、149.html 在册工件）。**全桥套件绿窗轮末收口
-跑兑现常态化挂账**：1579P/0F exit 0（基线 1570P +9 = 组合树 part116 新钉
-等；覆盖 s437 改动面 computed_style_cache.rs）。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：dialog phase-flip 复验
-（下轮位移检查窗）；红池分诊续（video P1+P2 或簇 D A2 待门决）；全桥套
-件绿窗轮末收口跑常态化（基线 1579P/0F）。
+**状态**: Active——M2 切片 439 收口（位移检查窗：g40 到货覆盖 + dialog
+第三窗复验，零源码改动；账本
+evidence/2026-11-14-m2s439-displacement-check-g40-arrival.md）。
+s438 收口后渲染流 g40 serialize-resolution 刀（1382895dd）到货，s438 检查
+树未覆盖 → 本轮双跑：**键面 8307P/200F/3T vs s438 差集（P−1/F+1/T+1）
+全数归因在册振荡族，零真位移**——g40 对本语料零波及（resolution/image-set
+面不交叠）；modulepreload strict-origin 单窗沾染（leg1 F/leg2 P，
+echo-referrer.py server-state 族，三基线恒 P 待回位）；optional select 双
+文件文件级态置换（detailed 双腿 90s 页脚本超时 F、非 detailed leg2 文件
+级 T 负载族渐进退化）。**dialog 第三窗复验未翻回**：红相自 ~20:00 三窗
+连续（跨 ~2h，唯一绿窗 14:29 在 zeroseed 风暴前），非代码定性不变（父提
+交 solo×3 在案），负载相关假设维持——风暴平息（loadavg 持续 <5）后仍红
+则重开归因面。基线带推移至 s439 集合。**挂用户门维持**：GB-20261114-
+VIDEO + GB-20261031（簇 D）。下一步：dialog 复验（待风暴平息窗）+
+modulepreload 回位核验；红池分诊续（video P1+P2 或簇 D A2 待门决）；
+全桥套件绿窗轮末收口跑常态化（基线 1579P/0F）。
+
+> **▶ 承前（2026-11-14 M2 切片 438 收口）——rebase 组合树例常位移检查
+> 轮，零源码改动（账本
+> evidence/2026-11-14-m2s438-combined-tree-displacement-check.md）**：
+> s437 push 前 rebase 到 65f88ed13（窗口 88edca67f..65f88ed13 十刀，渲染流
+> **b0e5ac2da anchor-size() used 值布局期求值** + **9d587f932 ip C4 块边界
+> /bare-br 物化** 两刀触 engine 共享面）→ 组合树双跑位移检查：**vs s437
+> fix 稳定集 P/F/T new=gone=0**——s437 修复零位移维持、渲染流新刀对本语料
+> 零波及；vs s433 差集全数归因非代码（dialog P→F、customizable-select 4 键
+> leg2 文件级 Timeout load 卡死置换非真改善、detailed.optional 沾染、
+> 149.html 在册工件）。**全桥套件绿窗轮末收口跑兑现常态化挂账**：1579P/0F
+> exit 0（基线 1570P +9 = 组合树 part116 新钉等；覆盖 s437 改动面
+> computed_style_cache.rs）。
 
 > **▶ 承前（2026-11-14 M2 切片 437 收口）——strut 门到货位移检查揭
 > 99 键 P→F 稳定回归 → s423 视图臂 img 面勘根修复轮（账本
