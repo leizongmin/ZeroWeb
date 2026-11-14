@@ -24,6 +24,17 @@ stdout 未存无法复源；本轮三 corpus 键集逐案同一全按工件计�
 有行内内容盒写行高近似（CSS2 §10.6.4），g36 'none' 形态挂账清偿；组合态
 账 265 页 12,061P/796F/4T（对 g37-final 真态净 +68），本刀面 +3 零回归；
 见 [evidence 2026-11-14-g39-abs-empty-strut-gate](evidence/2026-11-14-g39-abs-empty-strut-gate.md)。
+**s424a 定谳回退（11-14，无代码落库）**：class 属性族门拓宽受控 A/B——
+s423 selector rect 臂放行族拓宽到 classList/className（engine 三文件实验
+补丁，part115 单测全绿），同基座 ± 门对照：**+3 真增益**（dynamic-001/004
+单 classList 变异页 + fallback-invalidation 1 案）/ **−865 揭真**
+（writing-modes-001 864 案伪过池 + 金丝雀 1 同步翻转——真缺口 = writing-mode
+× anchor 组合未建模，归 VRL in-flow 布局刀挂账）→ 净 **−862** 违背指标
+方向定谳回退；engine 三文件已回 HEAD 零残留，补丁与 A/B 工件留
+`.acceptance/`。假设证伪面：anchor-name-mutation 15F 页变异经 template
+cloneNode+append 结构性队列，`all()` 谓词否决门仍闭——清偿需 selector 臂
+结构性放行（s421 无门全重放语义 + 等值性实证），挂账。见
+[evidence 2026-11-14-s424a-class-gate-widening-experiment](evidence/2026-11-14-s424a-class-gate-widening-experiment.md)。
 **g37 完成（11-14）**：anchor()/anchor-size() calc 嵌入叶 + serialize
 canonical 三修——anchor-parse-valid 4F/anchor-size-parse-valid 8F 全清 +
 invalid-fallback 4 伪红修正，anchor 语料 11,977→11,993 净 +12 零回归；
