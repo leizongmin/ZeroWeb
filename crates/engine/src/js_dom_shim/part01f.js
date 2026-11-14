@@ -2427,7 +2427,27 @@
       // 主拆分支：newLineRange 归一提边（0 位升父 / 尾位升父，遇禁段落子止）。
       var arMain = _zwVaGetActiveRange();
       var newLineRange = document.createRange();
-      newLineRange.setStart(arMain.startContainer, arMain.startOffset);
+      // C1 刀（2026-11-15）：caret 文本尾位入口归一（上方文本尾 lift + collapse
+      // 到祖先块界）之后 wrap 面把 container 重指新建包裹块——arMain 起点留在
+      // container 域外（祖先块界位）。域外起点使 extract 把 container 当
+      // lastPartial 整体克隆携内容入新块并 deleteData 清空原块（corpus C1 8 键
+      // got：空块居前 + Arm L 误垫左块 + 禁段落子下钻展平嵌套克隆；探针定谳
+      // COLLAPSE 序 + MUT 序 + 时序快照全闭环）。spec 该步起点恒在 container
+      // 域内（爬升先于 range 构造、无 wrap 改指）；本仓 wrap 面分叉处改用归一
+      // 前拆分位（ipM1OrigNode/ipM1OrigOff，piece-3 同源捕获）——wrap 后拆分位
+      // 节点随内容入包裹块，域内性恢复；下方归一两 while 恒能从原位重放出提升
+      // 位（prohibited 止步），SLC 无 wrap 面起点域内恒等不受扰。拆分位被摘
+      // （parentNode null）或域外（delete 落块界形）时收拢 (container, len)
+      // ——行尾面语义：左段原文保留、新块空垫底。
+      var c1InDom = false;
+      for (var c1N = ipM1OrigNode; c1N; c1N = c1N.parentNode) {
+        if (c1N === container) { c1InDom = true; break; }
+      }
+      if (ipM1OrigNode.parentNode && c1InDom) {
+        newLineRange.setStart(ipM1OrigNode, ipM1OrigOff);
+      } else {
+        newLineRange.setStart(container, _zwJusNodeLength(container));
+      }
       newLineRange.setEnd(container, _zwJusNodeLength(container));
       while (newLineRange.startOffset == 0
           && newLineRange.startContainer.parentNode

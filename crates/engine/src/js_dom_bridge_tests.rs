@@ -212,3 +212,4 @@ include!("js_dom_bridge_tests/part116_c4_block_boundary_pins.rs");
 // ⑦ 宿主元素边界臂尾侧 whitespace-only 留宿主、首文本行界翻 `&nbsp;`）。
 include!("js_dom_bridge_tests/part117_b_split_boundary_ws_pins.rs");
 include!("js_dom_bridge_tests/part118_shell_carry_pins.rs");
+include!("js_dom_bridge_tests/part119_c1_order_pins.rs");
