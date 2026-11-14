@@ -7776,6 +7776,10 @@
             try {
               if (child && child.nodeType === 1) _foB131 = _foKeyIns131(child.form);
             } catch (_e131fb) {}
+            // IP-M3 归因轮（2026-11-14 editing-compat）：move-in Remove 线章→append
+            // 线章传递槽（函数顶声明保证每次调用重置——`var` 初始化随调用执行，
+            // 置于分支外防跨调用残留串键）。取值见下方 move-in 臂。
+            var _mvWireSel = null;
             // R177（js-dom M4）：WebIDL Node 类型校验前置（spec WebIDL「nullable Node」
             // ——null / 非 Node 对象抛 TypeError，先于 pre-insert 一切步骤；WPT
             // Node-appendChild "WebIDL tests" / "Appending null to a *" 族——旧版
@@ -8304,7 +8308,14 @@
                       // （cssWG selectors-4 :nth-child；engine 元素序锚见
                       // js_dom_bridge structural_path / query_selector 通用臂）。
                       // https://drafts.csswg.org/selectors-4/#nth-child-pseudo
-                      var _mvSel = String(child.__zwSelector);
+                      // 线章/身份章分离（ipm3 归因轮定谳）：engine Remove/append wire
+                      // 用重算 fresh 章（同键配对 detached_stash NodeId 复用），
+                      // `child.__zwSelector`（查询原串——代理构造键/removed 标记键）
+                      // 不改写。首版写回 `__zwSelector` 对 parse 物化的 accessor 章
+                      // 赋值与 defineProperty 双静默 no-op（tmp 探针实证 post 与 pre
+                      // 恒等），且既有代理全部携旧章——写回即两侧判 removed/键配对
+                      // 全断（s40/r5250/media-m3b7·m3x14/t68-contains 五钉红根因）。
+                      var _mvWire = String(child.__zwSelector);
                       if (_mvOldSel && _mvKids && _mvIdx >= 0) {
                         var _mvTag = String(child.localName || '').toLowerCase();
                         var _mvEI = 0;
@@ -8312,21 +8323,11 @@
                           if (_mvKids[_mvk3] && _mvKids[_mvk3].nodeType === 1) _mvEI++;
                         }
                         if (_mvTag && _mvEI > 0) {
-                          _mvSel = _mvOldSel + ' > ' + _mvTag + ':nth-child(' + _mvEI + ')';
+                          _mvWire = _mvOldSel + ' > ' + _mvTag + ':nth-child(' + _mvEI + ')';
                         }
                       }
-                      try { child.__zwSelector = _mvSel; } catch (_eMvFs) {}
-                      // 章值若为 accessor-only（赋值静默 no-op）defineProperty 兜底
-                      //（R191 同款教训）——append 侧 AppendChildByHandleSel 复读
-                      // 缓章键，remove/append 两侧同键才可复用 stash NodeId。
-                      try {
-                        if (String(child.__zwSelector) !== _mvSel) {
-                          Object.defineProperty(child, '__zwSelector', {
-                            value: _mvSel, writable: true, configurable: true,
-                          });
-                        }
-                      } catch (_eMvFs2) {}
-                      try { __zw_remove(_mvSel); } catch (_eMvR) {}
+                      _mvWireSel = _mvWire;
+                      try { __zw_remove(_mvWire); } catch (_eMvR) {}
                     } else {
                       try { __zw_remove_child_at(_mvOldSel, String(_mvIdx)); } catch (_eMvW) {}
                     }
@@ -8392,7 +8393,7 @@
             //（既有臂）不经此块。
             if (handle && child && child.__zwSelector && !child.__zwHandle
                 && typeof __zw_append_child_handle_sel === 'function') {
-              try { __zw_append_child_handle_sel(handle, String(child.__zwSelector)); } catch (_eM3sel) {}
+              try { __zw_append_child_handle_sel(handle, _mvWireSel || String(child.__zwSelector)); } catch (_eM3sel) {}
             }
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
@@ -9584,24 +9585,29 @@
               // 移除标记/Remove mutation）。
               try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eR262s) {}
               _zwRemoveIframeWindowClientForNode(child);
-              // IP-M3 wire 修正（2026-11-14 editing-compat M3-A 刀）：位置章
-              // `… > tag:nth-child(k)` 的 k 是落位时点元素序；同批前序兄弟摘挂后
-              // k 漂移，engine drain 按记录序以 apply 时树态解析 miss → Remove
-              // 静默跳过、节点留源父，move-in AppendChildByHandleSel 无 stash 键
-              // 复用退序列化拷贝 → 源父残段与新父副本双现（A 族尾组
+              // IP-M3 wire 修正（2026-11-14 editing-compat M3-A 刀；ipm3 归因轮
+              // 线章/身份章分离定稿）：位置章 `… > tag:nth-child(k)` 的 k 是落位
+              // 时点元素序；同批前序兄弟摘挂后 k 漂移，engine drain 按记录序以
+              // apply 时树态解析 miss → Remove 静默跳过、节点留源父（A 族尾组
               // `bar[]<br><span>` 首现实证）。发射前以父 sel 锚 + 当前元素序重算
-              // 章值并回写：文本摘挂走 index 线不挪元素序，逐子重算与 engine
-              // apply 序逐位对齐（JS 侧摘挂即更新本地列表）。父无 sel 锚
-              // （handle 父）、child 不在 live 列表或章为 shadow 域形态
-              //（`zwsh…|`，fastpath 专属）时维持缓章原行为。重算后只标 fresh 章
-              // 为 removed——旧位置章可能已被前移兄弟占用，误标会毒化占位兄弟的
-              // 读门。索引语义与解析端一致：元素序 1-based，只数元素兄弟。
-              // https://drafts.csswg.org/selectors-4/#nth-child-pseudo
+              // **线章**（engine Remove wire 键）：文本摘挂走 index 线不挪元素序，
+              // 逐子重算与 engine apply 序逐位对齐。父无 sel 锚（handle 父）、
+              // child 不在 live 列表或章为 shadow 域形态（`zwsh…|`，fastpath 专属）
+              // 时线章维持缓章原行为。索引语义与解析端一致：元素序 1-based，只数
+              // 元素兄弟。https://drafts.csswg.org/selectors-4/#nth-child-pseudo
+              // **身份章（`child.__zwSelector`，查询原串复合形 `#id`/`.cls`/
+              // `tag.cls` 或物化位置章）不改写**：它是代理构造键与 removed 标记键
+              //（`_zwMarkRemoved`/`_zwIsRemovedNode`/parentNode 短路/showModal
+              // fully-active 门全消费此键）——首版写回对 parse 物化 accessor 章
+              // 赋值与 defineProperty 双静默 no-op（tmp 探针实证 post 恒等 pre），
+              // 标记落 fresh 键而既有代理仍持旧键 → s40/r5250/media-m3b7·m3x14/
+              // t68-contains 五钉全红。旧位置章同批占位毒化由 pa2 apply 代际清表
+              // 兜底（M3-A 前既有口径，语料长期绿）。
               var _r125Sel = String(child.__zwSelector);
-              var _r125Stamp = _r125Sel;
+              var _r125Wire = _r125Sel;
               if (sel && typeof _childNodeList === 'function'
-                  && _r125Stamp.indexOf('zwsh') !== 0
-                  && _r125Stamp.indexOf('|') < 0) {
+                  && _r125Sel.indexOf('zwsh') !== 0
+                  && _r125Sel.indexOf('|') < 0) {
                 var _r125Tag = String(child.localName || '').toLowerCase();
                 var _r125Kids = null, _r125Idx = -1, _r125EI = 0;
                 try {
@@ -9616,21 +9622,10 @@
                   }
                 } catch (_eR125k) {}
                 if (_r125Tag && _r125Idx >= 0 && _r125EI > 0) {
-                  _r125Sel = sel + ' > ' + _r125Tag + ':nth-child(' + _r125EI + ')';
+                  _r125Wire = sel + ' > ' + _r125Tag + ':nth-child(' + _r125EI + ')';
                 }
               }
-              try { child.__zwSelector = _r125Sel; } catch (_eR125fs) {}
-              // 章值若为 accessor-only（赋值静默 no-op）defineProperty 兜底
-              //（R191 同款教训）——move-in AppendChildByHandleSel 复读缓章键，
-              // remove/append 两侧同键才可复用 stash NodeId。
-              try {
-                if (String(child.__zwSelector) !== _r125Sel) {
-                  Object.defineProperty(child, '__zwSelector', {
-                    value: _r125Sel, writable: true, configurable: true,
-                  });
-                }
-              } catch (_eR125fs2) {}
-              try { if (typeof __zw_remove === 'function') __zw_remove(_r125Sel); } catch (_eR125r) {}
+              try { if (typeof __zw_remove === 'function') __zw_remove(_r125Wire); } catch (_eR125r) {}
               _zwMarkRemoved(_r125Sel);
               // R188（js-dom M4）：childList record 的 sibling 字段——移除前从 child proxy
               // 读 previousSibling/nextSibling（spec mutation record 语义；WPT
