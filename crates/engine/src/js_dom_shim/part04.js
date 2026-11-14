@@ -4440,6 +4440,11 @@
             }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // s433：name/id 内容属性写 bump FORM 具名集合 attr 纪元（`_zwFormAttrEpoch`，
+            // part03 声明处注记——setAttribute 通道与 IDL 反射通道同口径失效）。
+            if ((n === 'name' || n === 'id') && typeof _zwFormAttrEpoch === 'number') {
+              _zwFormAttrEpoch++;
+            }
             // s197（html-semantics focus 域）：fieldset disabled 属性置位（setAttribute
             // 通道，IDL setter 通道在 part05 布尔臂）→ 焦点内含检查 + unfocus——
             // active element 落被除 focusable area（首 legend 子树豁免，s193 读面同
@@ -4833,6 +4838,11 @@
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
+            // s433：name/id 移除同 bump FORM 具名集合 attr 纪元（past-names 案
+            // removeAttribute('id') 后 named 集合 live 失效面，同 setAttribute 臂）。
+            if ((n === 'name' || n === 'id') && typeof _zwFormAttrEpoch === 'number') {
+              _zwFormAttrEpoch++;
+            }
             // s158：LINK rel 移除触发 link processing 重跑（spec react to
             // mutations——rel 属性移除后 link 无关联类型，helper rel 读缺失走
             // 移除臂：清表 + 级联重算 + 印记清空；与 setAttribute s155 臂同点分流，
@@ -12957,7 +12967,12 @@
         //    （R38 空串非 supported property name）；
         // ③ has('length')/gOPD 索引描述符/ownKeys 索引表：assert_array_equals 依赖面
         //    （nameditem-02「length property should be own and enumerable」）。
-        if (prop === 'elements' && _realTag(sel, handle) === 'FORM') {
+        if ((prop === 'elements' || (typeof prop === 'symbol' && prop === Symbol.for('zw-form-elements')))
+            && _realTag(sel, handle) === 'FORM') {
+          // s433：`Symbol.for('zw-form-elements')` 通道供 script_gen 禁 JS UA 重置
+          // 脚本（script_reset_form_controls）绕过 named 遮蔽取控件集合——
+          // `<input name=elements>` 时 `f.elements` 属性读返回控件本身
+          //（[OverrideBuiltins]），UA 复位循环须仍达活集合。
           var _fcKind = (!sel && handle) ? 'h' : 's';
           var _fcCached = _zwFormCollCache.get(proxy);
           if (_fcCached && _fcCached.k === _fcKind) return _fcCached.c;
@@ -13044,92 +13059,6 @@
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
           return _formControls(sel, handle).length;
         }
-        // R3254-K3（keyboard goal，2026-09-07）：FORM **named access**（spec
-        // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem——HTMLFormElement
-        // 支持 via name/id 直取 listed 控件；`form.text` / `form.submitButton` 是 WPT 表单键
-        // 面惯用形态）。仅 FORM gate 且 prop 非保留名（length/elements/action 等已在前置
-        // 分支返回，落到这里的是无匹配成员的任意键）；控件名/id 首匹配，未命中 → undefined
-        //（回落 trap 后续通用路径）。驱动用例：WPT implicit-submission.optional.html。
-        // t2-pb1 fix#19（reset/requestSubmit/submit 豁免）+ F6 结论（首轮缺陷审查
-        // 2026-10-02 复核）：WebIDL named properties 对象位于接口原型之下
-        //（https://webidl.spec.whatwg.org/#idl-named-properties），命名控件不得遮蔽
-        // 接口成员。本 shim 的接口方法由 get trap **分支序**提供（原型空壳不挂方法），
-        // 豁免名单须恰好覆盖 named access gate **之后**仍有分支服务的成员：
-        // gate 前置分支（checkValidity/reportValidity/setCustomValidity/validity/
-        // validationMessage——CVA 段、length/elements/action、反射属性等）早已返回，
-        // 不受遮蔽影响（`<input name=checkValidity>` 时 form.checkValidity 仍是函数）；
-        // gate 之后仍服务的 **FORM 专属成员**仅 R3048 三方法（reset/requestSubmit/
-        // submit，本文件后段）——即本点名单。（gate 落空后其后的**通用元素分支**
-        // getBoundingClientRect/offset* 等，同名控件理论上可遮蔽——病态命名，超出
-        // 本点名单范围。）审查建议的「prop in HTMLFormElement.prototype」泛化不适用：空壳
-        // 原型不含 R3048 方法，`in` 判定为 false → `<button id=reset>` 重新遮蔽
-        // form.reset → 宿主 reset 脚本的 `typeof f.reset==='function'` guard 永假 →
-        // 表单重置整体静默 no-op（fix#19c 回归；form-interaction fixture 实测）。
-        if (_realTag(sel, handle) === 'FORM' && typeof prop === 'string'
-            && prop !== '' && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
-            && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
-          // s137（html-semantics M2）：FORM named properties 语义补全（form-nameditem
-          // 10F 面拆解）。spec 序（legacy platform object ordinary get）：
-          // non-configurable target own（invariant）→ own expando → named → past。
-          // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
-          // ① invariant 臂——proxy target 上 non-configurable data property
-          //（defineProperty(form, k, {configurable:false}) 经 default trap 落 target）
-          // get trap 必须返回同值，否则 V8 TypeError invariant violation（WPT
-          // non-configurable expando 案失败消息即此）。
-          try {
-            var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
-            // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
-            // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
-            if (_fnd0 && _fnd0.configurable === false) return _t[prop];
-          } catch (_efnd0) {}
-          // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
-          // own property；WPT expando added later 案）。
-          var _fex0 = _expando[key];
-          if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
-            return _fex0[prop];
-          }
-          // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态
-          // RadioNodeList（快照集合承载，item 越界 null/indexed/length/迭代 +
-          // `instanceof NodeList` 经 __zwNL 印记，_zwMakeCollection(false) 全提供）。
-          var _fnh = _zwFormNamedLookup(sel, handle, prop);
-          if (_fnh !== null) {
-            try {
-              var _fnpk = _elKey(sel, handle);
-              var _fnp = _zwFormPastNames[_fnpk] || (_zwFormPastNames[_fnpk] = {});
-              _fnp[prop] = _fnh;
-            } catch (_efnp) {}
-            return _fnh;
-          }
-          // ④ past names map 臂——曾命中过的名字在其元素**改名后**仍按 past 条目
-          // 返回，但元素**脱离 listed 集合后失效**（spec dom-form-nameditem past
-          // names map 步骤：条目值元素须仍是 listed 控件；WPT past names 案
-          // remove 后读 undefined、rename 后读原元素双面）。lazy 记账：named 命中
-          // 即写条目，miss 时回查 + listed 复核。改名/重组的条目清理不显式做
-          //（复核天然过滤；内存面：单 form 条目数 = 曾命中名数，可控）。
-          // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem
-          var _fnpk2 = _elKey(sel, handle);
-          var _fnp2 = _zwFormPastNames[_fnpk2];
-          if (_fnp2 && Object.prototype.hasOwnProperty.call(_fnp2, prop)) {
-            var _fpv = _fnp2[prop];
-            try {
-              var _fpl = _formControls(sel, handle);
-              for (var _fpi = 0; _fpi < _fpl.length; _fpi++) {
-                if (_fpl[_fpi] === _fpv) return _fpv;
-              }
-            } catch (_efpl) {}
-          }
-          // s119（html-semantics M2 切片 119）：canonical 数字索引臂——HTMLFormElement
-          // 支持属性名含「无 id/name 的 listed 控件按 form.elements 集合序号」（031
-          // execution-timing 语料面：`document.forms[0][0].focus()` 的 form[N] 形态；
-          // 命名匹配先行，索引兜底同 spec 名单序）。canonical 判据同 elements 集合
-          // get 臂（parseInt + String 归一等——拒前导零/符号形，`form['01']` miss 回
-          // 落 undefined）。越界/非控件索引不返回（undefined 落 trap 通用路径）。
-          // https://html.spec.whatwg.org/multipage/forms.html#the-form-element
-          var _fna = _formControls(sel, handle);
-          var _fni = parseInt(prop, 10);
-          if (!isNaN(_fni) && String(_fni) === prop) return _fna[_fni];
-        }
         // net-api M5-S8：image 按钮「selected coordinates」记录（spec image button
         // activation behavior——click 激活时从事件 clientX/clientY 相对按钮盒原点取值，
         // 负值钳 0；.click() 合成事件坐标 0 → 记 0）。键 = _elKey；FormData 构造器与
@@ -13193,7 +13122,9 @@
               // s134：reset 按钮激活行为 = form.reset()（spec §4.10.5.4）——
               // 经 R3048 reset 闭包（trusted reset 事件，preventDefault 可取消 +
               // s133 控件复位/清脏），不经 _zwRunFormSubmit 提交链。
-              try { frm.reset(); } catch (_eRst0) {}
+              // s433：经 Symbol 通道直调——named-first 后 `name=reset` 控件遮蔽
+              // form.reset（[OverrideBuiltins]），`frm.reset` 属性读不再可达闭包。
+              try { frm[Symbol.for('zw-form-reset')](); } catch (_eRst0) {}
             } else {
               _zwRunFormSubmit(_elKey(fs, fh), fs, fh, _makeProxy(sel, handle));
             }
@@ -13973,8 +13904,15 @@
         // defaultValue/defaultChecked/defaultSelected（经既有 setter，revert 表单状态）。requestSubmit：dispatch
         // submit SubmitEvent（cancelable，含 submitter）；submit：spec 不发事件直接走提交导航（R-baidu5
         // _zwFormSubmitNavigate，submit 派发窗口内短路防双导航）。仅 FORM gate；非 form 透传 undefined。
-        if (_realTag(sel, handle) === 'FORM' && (prop === 'reset' || prop === 'requestSubmit' || prop === 'submit')) {
-          if (prop === 'reset') {
+        // s433：`Symbol.for('zw-form-reset')` 内部直调通道——named-first 后
+        // `<input name=reset>` 遮蔽 form.reset（[OverrideBuiltins]，spec/Chrome 同
+        // 行为），宿主（script_gen R3050）与 shim 内部（s134 asReset 臂）复位入口
+        // 经 Symbol 取本闭包，不再依赖 `f.reset` 属性可达。Symbol 键不入 string
+        // named gate，页面无法伪造或遮蔽；typeof 检查短路保证 string prop 零
+        // 注册表开销。
+        if (_realTag(sel, handle) === 'FORM' && (prop === 'reset' || prop === 'requestSubmit' || prop === 'submit'
+            || (typeof prop === 'symbol' && prop === Symbol.for('zw-form-reset')))) {
+          if (prop === 'reset' || (typeof prop === 'symbol' && prop === Symbol.for('zw-form-reset'))) {
             return function () {
               // s129：reset 事件由 form.reset() UA 语义派发——isTrusted true（R312
               // __zwTrusted 通道；reset-event.html isTrusted 断言面）。

@@ -1572,15 +1572,20 @@ fn test_form_reset_submit_methods_r3048() {
 
 #[test]
 fn test_form_named_access_shadowing_t2pb1() {
-    // t2-pb1 T2（首轮测试有效性审查缺口 D，2026-10-02）：FORM named access 遮蔽语义钉
-    //——审查变异核验证明既有测试对 fix#19 豁免名单改动全绿（无判别力）。三条不变式：
-    // ① 已实现接口成员不被命名控件遮蔽——get trap 前置分支先于 named access 返回
-    //（checkValidity/reportValidity 等 CVA 段在 gate 之前服务）；
-    // ② R3048 三方法（reset/requestSubmit/submit）在 gate **之后**服务，须点名单豁免
-    //——`<button id=reset>` 时 form.reset 仍是函数（fix#19c；移除豁免即被本测试击杀）；
-    // ③ 普通命名控件仍经 named access 直取（豁免不得扩大到非接口成员名）。
-    // 原型泛化（`prop in HTMLFormElement.prototype`）不适用：shim 原型是空壳，方法由
-    // trap 提供——`in` 判定对 reset 为 false 会回归 fix#19c（见 part04 gate 注释）。
+    // t2-pb1 T2（2026-10-02 原钉 fix#19 豁免名单「内建方法不被 named 遮蔽」；
+    // s433 翻转钉 [OverrideBuiltins] named-first，2026-11-14）。spec
+    // https://html.spec.whatwg.org/multipage/forms.html#the-form-element
+    // HTMLFormElement 带 [OverrideBuiltins]，具名 listed 控件遮蔽接口原型成员
+    //（WPT form-nameditem「Named elements should override builtins」同面；
+    // Chrome 同行为）——原「reset 等不被遮蔽」判读漏读 OverrideBuiltins，
+    // fix#19c 点名单退役（part03 gate / part05 五 trap 同步）。三条新不变式：
+    // ① 具名控件遮蔽接口成员——checkValidity/reset/requestSubmit/submit 全
+    //    返控件非函数（named-first）；
+    // ② 内部 Symbol 通道不具名化、不可遮蔽：Symbol.for('zw-form-reset') 仍达
+    //    R3048 闭包、Symbol.for('zw-form-elements') 仍达控件集合——宿主
+    //    reset 脚本（script_gen R3050）与 s134 激活臂的「表单重置静默
+    //    no-op」回归面由通道消解，页面可见语义不受影响；
+    // ③ 普通命名控件仍经 named access 直取（f5.fooBar → 控件）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
@@ -1611,14 +1616,19 @@ fn test_form_named_access_shadowing_t2pb1() {
              globalThis.__rs = typeof f2.reset;\
              globalThis.__rqs = typeof f3.requestSubmit;\
              globalThis.__sb = typeof f4.submit;\
-             globalThis.__na = (f5.fooBar && f5.fooBar.tagName) || 'missing';",
+             globalThis.__na = (f5.fooBar && f5.fooBar.tagName) || 'missing';\
+             globalThis.__symReset = typeof f2[Symbol.for('zw-form-reset')];\
+             globalThis.__symEls = (function(){var e=f2[Symbol.for('zw-form-elements')];\
+               return e && e.length === 1 ? 'collection' : 'missing';})();",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__cv").unwrap().value, "function", "`<input name=checkValidity>` 不遮蔽 form.checkValidity（CVA 前置分支先于 named access 返回）");
-    assert_eq!(sandbox.execute("globalThis.__rs").unwrap().value, "function", "`<button id=reset>` 不遮蔽 form.reset（fix#19c 点名单豁免；移除豁免本断言即失败）");
-    assert_eq!(sandbox.execute("globalThis.__rqs").unwrap().value, "function", "`<input name=requestSubmit>` 不遮蔽 form.requestSubmit（fix#19 点名单豁免）");
-    assert_eq!(sandbox.execute("globalThis.__sb").unwrap().value, "function", "`<button id=submit>` 不遮蔽 form.submit（fix#19 点名单豁免）");
+    assert_eq!(sandbox.execute("globalThis.__cv").unwrap().value, "object", "`<input name=checkValidity>` 遮蔽 form.checkValidity（named-first [OverrideBuiltins]，返 INPUT 控件）");
+    assert_eq!(sandbox.execute("globalThis.__rs").unwrap().value, "object", "`<button id=reset>` 遮蔽 form.reset（named-first；s433 退役 fix#19c 点名单豁免）");
+    assert_eq!(sandbox.execute("globalThis.__rqs").unwrap().value, "object", "`<input name=requestSubmit>` 遮蔽 form.requestSubmit（named-first）");
+    assert_eq!(sandbox.execute("globalThis.__sb").unwrap().value, "object", "`<button id=submit>` 遮蔽 form.submit（named-first）");
     assert_eq!(sandbox.execute("globalThis.__na").unwrap().value, "INPUT", "普通命名控件仍经 named access 直取（f5.fooBar → 控件）");
+    assert_eq!(sandbox.execute("globalThis.__symReset").unwrap().value, "function", "Symbol.for('zw-form-reset') 内部通道不被具名遮蔽（f2.reset 被控件遮蔽后宿主/s134 复位流程仍可达 R3048 闭包）");
+    assert_eq!(sandbox.execute("globalThis.__symEls").unwrap().value, "collection", "Symbol.for('zw-form-elements') 内部通道不被具名遮蔽（UA 禁 JS 重置脚本控件集合通道保真）");
 }
 
 #[test]

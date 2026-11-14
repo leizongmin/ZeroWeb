@@ -2,39 +2,73 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 432 收口（links 域 a/area target=_blank aux
-臂施工轮，**T 池 4 键全解挂，stable-P +34 零消失**；账本
-evidence/2026-11-14-m2s432-anchor-target-blank-aux-context.md）——shim
-JS 三刀（零 Rust 改动）：①part03.js `_zwAnchorActivate` `_blank` 臂
-（target own-expando→attr→`<base>` 回落 + rel 语义矩阵 spec window
-opening steps + `_zwLoadIframeEntry('__zwAuxAnchor:<seq>')` 合成 + 瞬态
-激活消费；static/IDL 双 href 形）；②part01.js `_zwRunIframeScripts` aux
-形参注入（flags.aux 项形参表追加 `opener`/`close` 快照，非 aux 逐字节
-不变——R206 裸标识符只达形参表，links 端点裸 `opener` 落宿主 globalThis
-undefined → ReferenceError 死于 postMessage 前是 implicit_noopener 双文件
-26 子测挂的根因；form 端点 `window.opener` 限定名故 s431 不暴露）；③
-part06.js `__zw_dispatch_event` 指针 click 锚激活臂（派发尾 A/AREA 跑
-`_zwAnchorActivate`，门 = pointerType 在场 ∧ pointerId≠−1——键盘合成
-click（pointerId −1）与 webdriver 折叠 click（R108 pointerType null，
-激活归宿主 anchor_click_target 管线）均不越界；修复前 Actions 指针 click
-事件序全齐（po,mo,mo,ck,body-ck）而激活臂不跑 → useractivation mouse
-臂挂 + promise_test 串行阻塞后续 area 两子测）。验证：25 part 拼装 OK
-（153,625 行）；release 重建 exit 0；solo 恰集 ×5 全绿（implicit×2 +
-rel-clearing exit 0 ×3 + useractivation 4/4P + 探针双 P）；全域 sweep ×2
-终验（探针 7 文件全删后）stable join 对 s431 组合态双基线——**stable-P
-8274→8308（+34 零消失：implicit 13+13 + rel-clearing 4 + useractivation
-4）/ stable-T 8→2（−6：4 目标文件键 + select-event/focus-dynamic 在册
-flake 翻绿不入账）/ stable-F 200→204（+4 customizable-select home-end
-簇 D 跨轮翻红，与施工面零交集）/ 沾染 2→1（C-NEW 0）**。**挂用户门
-维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。下一步：s433
-红池分诊续（残余 stable-T 2 键 = 簇 D 家族；门决策后 video P1+P2 或
-簇 D A2）；window.open 真弹窗链评估轮（s431 defer 项）；dialog R-s31
-簇/img density/embed sizing face 到货复验。**组合态整验（他流两笔合入
-后重跑）**：editing ip M2 壳族三臂（0ee05d644，part01f.js）+ css
-system-color（349a891ed）合入交付树后全链重跑——拼装 OK（153,829 行）+
-release 重建 exit 0 + solo ×6 全绿 + sweep ×2 join **stable-P 8308 逐键
-零漂移（+34 集合恒等）**，F/T 差异全收敛在簇 D 家族成员跨轮轮换，到货
-零账面位移。
+**状态**: Active——M2 切片 433 收口（FORM named-first [OverrideBuiltins]
+全 trap 面 + s137 排除清单退役轮，**驱动案翻绿 stable-P +2 零消失；全域
+双跑拦下潜伏 P→F 回归一例**；账本
+evidence/2026-11-14-m2s433-form-named-first-override-builtins.md）——
+施工六处：①part03.js FORM get trap named-first 门整体前移（⓪具名集合
+缓存门，章 = apply 代际 + pending 三元 + `_zwFormAttrEpoch 纪元；重建
+collection 同置 `l 重入哨兵——嵌套收集假挂死根因 = ③写 past 条目后下轮
+重建经 `_zwLiveFormAncestor 读 form.localName 落 ④ 再开收集（R20 逐读
+探针 + L1/L2/L3 标记级联钉死）；③named/④past-names/⑤index 三臂同受
+哨兵）；②action/method/enctype/encoding/target IDL 臂后移至门后
+（named-first 胜 IDL 反射，R26 探针 `action === false 钉次序）；③
+part04/05 三漏斗（IDL 反射 setter/setAttribute/removeAttribute）name/id
+写翻 `_zwFormAttrEpoch——attr 改名不动 pending 长度的缓存失效盲区
+（R27/R28/R30 三轮探针钉面）；④part05 `_zwIsHTMLNamespace payload-first
+ns 读（`_zwSelNsCache，R6 document.forms=0——名 namespaceURI 的 radio
+投毒 proxy ns 读）；⑤script_gen.rs + part04 `Symbol.for('zw-form-reset'/
+'zw-form-elements') 内部通道（宿主复位/控件集合绕 named 命名面，未遮蔽页
+`typeof 回落）；⑥t2-pb1 fix#19c reset/requestSubmit/submit 豁免名单退役
+（前提消解：[OverrideBuiltins] 下 named 遮蔽全部接口成员系 spec 正解、
+Chrome 同遮蔽；回滚路径 = 恢复排除清单，s137 门决议落账）。**首轮全域
+sweep 拦雷**：`form-elements-sameobject P→F——前 session 加 Symbol 通道的
+Edit 把 `var _fcKind 声明行一并吞掉，`set({k:_fcKind}) 处 ReferenceError
+被空 catch 吞掉 → elements 集合缓存永不命中、每读新建（solo 17/17 照样
+带雷跑完——form-nameditem 只断言集合内容不验身份；全域 A/B 才拦下），
+补声明行 fix6。验证：solo form-nameditem 17/17 exit 0（前 16P/1F）+
+六 solo 套件 + 25 part 拼装 node --check + fmt/clippy；终稿全域双跑
+（守卫启动器每腿核源 sha + 二进制标记，防并发 session 漂移）join 对
+s432 移交基线——**stable-P 8307→8309（+2：驱动案 nameditem「Named
+elements should override builtins + 红利案 selectedcontent-listbox（机制
+未逐案归因，翻绿为真）/ P gone=0 / stable-F +1 = 簇 D home-end 4 子测
+可见化（跨批同态身份：s432 pairs-1..4 同键同 4F，非本轮回归）/ stable-T
+3→3（optional↔detailed 文件级对换，detailed solo 4F 实证负载边界 flake）/
+沾染 1=1（149.html 怪标题键切分伪影两侧对冲；基线批口径注见账本）**。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）。**收尾门禁
+（429 断点接手轮）全过**：fmt/clippy（终稿复跑）+ 桥测试套件 A/B
+（1556P/12F，12F 全 main 既有——pre-s433 engine 同 12 红，本轮零新增）
++ product-smoke-legacy exit 0（37-form-controls struct PASS）。**全域
+发现挂账（移交/待办）**：①桥套件 12 红——5 例系 PR #302（t68 registry
+sync）合入后新发（pre-#302 engine 7F 实证，含其自带契约钉自身红；同指
+移除/序列化单根，移交 site-opt 流）；7 例早于今日 08:07 已红（引入点
+全树 bisect 待下轮；签名共性=异步事件派发缺；全桥套件绿窗无账可考≥
+两周——轮末收口宜加一次全桥套件跑防静默红窗）；②legacy smoke 首例
+01-body-attrs struct FAIL（fixture 无 form/script 与本轮零关联，候选
+349a891ed UA 系统色关键词化 / g35，移交渲染流）。下一步：7 例全树
+bisect 归因（或等 site-opt/渲染流各自认领）；selectedcontent 翻绿机制
+归因；window.open 真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D A2
+待门决）；dialog R-s31 簇/img density/embed sizing face 到货复验。
+
+> **▶ 承前（2026-11-14 M2 切片 432 收口）——links 域 a/area target=_blank
+> aux 臂施工轮（T 池 4 键全解挂，stable-P +34 零消失）**：账本
+> evidence/2026-11-14-m2s432-anchor-target-blank-aux-context.md。shim
+> JS 三刀（零 Rust）：①part03.js `_zwAnchorActivate `_blank 臂（target
+> own-expando→attr→`<base> 回落 + rel 语义矩阵 spec window opening
+> steps + `_zwLoadIframeEntry('__zwAuxAnchor:<seq>') 合成 + 瞬态激活
+> 消费；static/IDL 双 href 形）；②part01.js `_zwRunIframeScripts aux
+> 形参注入（flags.aux 项形参表追加 `opener/`close 快照——R206 裸
+> 标识符只达形参表，links 端点裸 `opener 落宿主 undefined 死于
+> postMessage 前是 implicit_noopener 双文件 26 子测挂的根因；form 端点
+> `window.opener 限定名故 s431 不暴露）；③part06.js
+> `__zw_dispatch_event 指针 click 锚激活臂（门 = pointerType 在场 ∧
+> pointerId≠−1——键盘合成与 webdriver 折叠 click 均不越界无双激活）。
+> 验证：solo 恰集 ×5 全绿；全域 sweep ×2 join 对 s431 双基线 stable-P
+> 8274→8308（+34）/ stable-T 8→2 / F +4 簇 D 翻红零交集。**组合态整验
+> （他流两笔合入后重跑）**：editing ip M2 壳族三臂（0ee05d644）+ css
+> system-color（349a891ed）合入后全链重跑零账面位移。基线移交
+> /tmp/s432/pairs-{5,6}.txt（s433 采用）；组合态整验批未留成，口径注
+> 见 s433 账本。
 
 > **▶ 承前（2026-11-14 M2 切片 431 收口）——form target=_blank aux
 > 上下文施工轮（6T 全解挂，稳定红面 214→207）**：账本

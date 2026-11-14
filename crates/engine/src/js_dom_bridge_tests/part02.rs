@@ -1716,12 +1716,15 @@ fn test_anchor_click_target_hit_descendant_walk_s29() {
 
 #[test]
 fn test_script_call_form_reset_r3050() {
-    // R3050：script_call_form_reset 生成调 form.reset() 的 shim 脚本。
-    // 选择器安全嵌入（引号转义）；form 不存在/reset 非函数 → no-op guard。
+    // R3050：script_call_form_reset 生成调 R3048 reset 闭包的 shim 脚本。
+    // s433：主通道经 Symbol.for('zw-form-reset')（named-first 后 `name=reset` 控件
+    // 遮蔽 `f.reset` 属性——[OverrideBuiltins]）；typeof f.reset 仅作回落 guard。
+    // 选择器安全嵌入（引号转义）；form 不存在/两者均非函数 → no-op guard。
     let s = script_call_form_reset("#myform");
     assert!(s.contains("querySelector('#myform')"), "脚本含 querySelector('#myform')\n{s}");
-    assert!(s.contains("f.reset()"), "脚本调 f.reset()\n{s}");
-    assert!(s.contains("typeof f.reset==='function'"), "含 reset 函数 guard（防 throw）\n{s}");
+    assert!(s.contains("Symbol.for('zw-form-reset')"), "主通道 Symbol 内部直调\n{s}");
+    assert!(s.contains("typeof r==='function'"), "Symbol 通道函数 guard\n{s}");
+    assert!(s.contains("typeof f.reset==='function'"), "含回落 reset 函数 guard（防 throw）\n{s}");
     // 选择器转义：嵌入引号经 escape_js_string 转义（不破坏 JS 串）。
     let s2 = script_call_form_reset("#a'b");
     assert!(s2.contains("\\'#a\\'b'") || !s2.contains("'#a'b'"), "选择器引号转义（不裸含 '#a'b'）\n{s2}");

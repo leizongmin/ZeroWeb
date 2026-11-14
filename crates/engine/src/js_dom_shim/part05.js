@@ -1284,6 +1284,11 @@
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
+          // s433：name/id 反射写 bump FORM 具名集合 attr 纪元（`_zwFormAttrEpoch`，
+          // part03 声明处注记——改名后新名须立即可 named 命中，R27/R28 实证）。
+          if ((_refAttr === 'name' || _refAttr === 'id') && typeof _zwFormAttrEpoch === 'number') {
+            _zwFormAttrEpoch++;
+          }
           // s241：实例层同步（同 part04 value 族臂——reflected 直写臂不经
           // setAttribute，`_zwAttrInstSyncNoNs` 刷新实例层读侧种子记录）。
           _zwAttrInstSyncNoNs(key, _refAttr, _refVal);
@@ -1344,14 +1349,16 @@
         } else if (typeof prop === 'string' && prop !== ''
                    && _realTag(sel, handle) === 'FORM'
                    && prop !== 'item' && prop !== 'namedItem'
-                   && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
                    && _zwFormNamedLookup(sel, handle, prop) !== null) {
           // s137（html-semantics M2）：FORM named property 非 writable（legacy
           // named getter）——set 拒绝（严格上下文 TypeError / sloppy 静默，
           // trap 返 false 由引擎按赋值点严格性定）。WPT form-nameditem l1 案
           // `form["l1"] = 5`（sloppy 静默 + strict TypeError 断言面）。位于
-          // else-if 链末端：id/name/action 等反射 IDL 先行（fix#19c 偏离——
-          // 内建成员不被 named 遮蔽，写语义同侧）。
+          // else-if 链末端：id/name/action 等反射 IDL 先行——s433 退役 fix#19c
+          // 排除名单（reset/requestSubmit/submit 同为 supported property name
+          // 时具名属性 non-writable 拒写，spec/Chrome 同；已知近似：具名遮蔽的
+          // 反射名写面仍先落反射臂写内容属性——Chrome 拒写且零副作用，本 shim
+          // get 侧已 named-first 故读值一致，写侧副作用差异无语料面，记账）。
           // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
           return false;
         } else {
@@ -1586,14 +1593,15 @@
           if (_r184v !== undefined) return true;
         }
         // s137（html-semantics M2）：FORM named property `in` 可见性——named 是 own
-        // 属性（enumerable:false 仍命中 has）；排除名单与 get trap FORM gate 同款
-        //（`"namedItem" in form` 须 false——WPT namedItem 案）。invariant 末位：
+        // 属性（enumerable:false 仍命中 has）；item/namedItem 豁免保留（`"namedItem"
+        // in form` 须 false——WPT namedItem 案；shim 不提供该二方法）。s433 退役
+        // fix#19c 三名排除（reset/requestSubmit/submit 具名控件在场时 `in` 命中
+        // named——[OverrideBuiltins] named 为 own，spec/Chrome 同）。invariant 末位：
         // target own non-configurable 由 `prop in _t` 兜底（不可报 false）。
         // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
             && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           return true;
         }
@@ -1666,15 +1674,15 @@
         // 元素/RadioNodeList 集合、writable:false（仅 getter）、enumerable:false
         //（[LegacyUnenumerableNamedProperties]——ownKeys 不含、for-in 不可见）、
         // configurable:true（defineProperty 可覆写→需 false 臂配合，见下）。
-        // 排除名单与 get trap FORM gate 同款（fix#19c 偏离：内建方法名不被 named
-        // 遮蔽，gOPD 亦返 undefined——真实浏览器 gOPD(form,'reset') 是原型方法
-        // 非 own，own 描述符 undefined 同形）。WPT form-nameditem 三案描述符断言
-        //（value/writable/configurable/enumerable 逐字段）。
+        // s433 退役 fix#19c 三名排除：[OverrideBuiltins] 下具名属性为 own（named
+        // properties object 位于接口原型之上遮蔽内建——p08 断言面），具名控件在场时
+        // gOPD(form,'reset') 返 named 描述符（真实浏览器 gOPD(form,'reset') 无具名
+        // 控件时是原型方法 own 描述符 undefined 同形保留）。WPT form-nameditem 三案
+        // 描述符断言（value/writable/configurable/enumerable 逐字段）。
         // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
-            && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit') {
+            && prop !== 'item' && prop !== 'namedItem') {
           var _fnhD = _zwFormNamedLookup(sel, handle, prop);
           if (_fnhD !== null) {
             return { value: _fnhD, writable: false, enumerable: false, configurable: true };
@@ -1712,10 +1720,10 @@
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
             && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           // named 命中：non-writable validate 必败 → false（严格上下文 TypeError，
-          // WPT l1 案 Object.defineProperty(form,'l1',{value:5}) 断言面）。
+          // WPT l1 案 Object.defineProperty(form,'l1',{value:5}) 断言面）。s433
+          // 退役 fix#19c 三名排除（具名 reset/requestSubmit/submit 控件同 non-writable）。
           return false;
         }
         try { Object.defineProperty(_t, prop, desc); return true; } catch (_efdp) { return false; }
@@ -1745,11 +1753,12 @@
           var _fdelI = _formControls(sel, handle);
           if (Number(prop) < _fdelI.length) return false;
         }
-        // ③ FORM named 命中 → false（WPT l1 案 strict delete TypeError 面）。
+        // ③ FORM named 命中 → false（WPT l1 案 strict delete TypeError 面）。s433
+        // 退役 fix#19c 三名排除（具名 reset/requestSubmit/submit 控件同为 supported
+        // property name 不可删——[OverrideBuiltins] 序同 ②b indexed 先于 named）。
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
             && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           return false;
         }
@@ -12789,6 +12798,20 @@
       if (el && el.__zwHandle && typeof _nsHandles !== 'undefined' && _nsHandles[el.__zwHandle]) {
         return _nsHandles[el.__zwHandle].namespace === 'http://www.w3.org/1999/xhtml';
       }
+      // s433：payload 表优先 ns 读——FORM named-first（s433 gate）下 `el.namespaceURI`
+      // 代理读是毒化面（具名控件名命中接口成员时返回控件 proxy：form-nameditem 页
+      // `name=namespaceURI` 控件 → document.forms 的 HTML-ns 过滤把 form 判成非 HTML
+      // 整体丢弃，R6 探针实证）。_zwSelNsCache（''=HTML ns，_zwFilterByTagNameNS 同款
+      // 印章三元组）命中即权威；未命中（handle 型/未灌表）落回代理读保持原语义。
+      var _ihSel = null;
+      try { _ihSel = el && el.__zwSelector; } catch (_eIh) {}
+      if (_ihSel != null && _zwSelNsCache.map
+          && _zwSelNsCache.gen === (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
+          && _zwSelNsCache.added === _zwPendingAdded.length
+          && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+        var _ihNs = _zwSelNsCache.map.get(String(_ihSel));
+        if (_ihNs !== undefined) return _ihNs === '';
+      }
       var ns = el.namespaceURI;
       return ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml';
     } catch (_e) {
@@ -15697,7 +15720,10 @@
       var outStar = [];
       for (var _si = 0; _si < els.length; _si++) {
         var _se = els[_si];
-        if (_se && _se.nodeType === 1) outStar.push(_se);
+        // s433：身份判定同主循环（proxy 恒元素；wrapper own nodeType 直读安全）。
+        var _sIsEl = false;
+        try { _sIsEl = (_se && ((_se.__zwSelector != null) || (_se.__zwHandle != null))); } catch (_eSis) { _sIsEl = false; }
+        if (_se && (_sIsEl || _se.nodeType === 1)) outStar.push(_se);
       }
       return outStar;
     }
@@ -15706,9 +15732,48 @@
     var needNs = !(nsMode && nsWant === '*');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
-      if (!el || el.nodeType !== 1) continue;
+      // s433（html-semantics）：nodeType 过滤改**身份判定**——_makeProxy/_wrapHandle
+      // 产物构造上恒元素（proxy 只为元素建，spec Element），proxy 上直读 nodeType 会撞
+      // FORM named-first gate（s433 具名控件遮蔽接口成员——控件名恰为 nodeType 时返
+      // 回控件对象被误滤掉，实证：R12 频度探针 gETB('form') 整体丢 form）；plain
+      // wrapper（文本/注释，_wrapNodeEntry 产物）的 nodeType 是 own 属性不经 trap，
+      // 直读安全。`__zwSelector`/`__zwHandle` 走 R351 顶部短路（内部键，named-first
+      // 不涉），读取零臂成本。
+      var _fIsEl = false;
+      try { _fIsEl = (el.__zwSelector != null) || (el.__zwHandle != null); } catch (_eFie) { _fIsEl = false; }
+      if (!_fIsEl && el.nodeType !== 1) continue;
+      // s433：ns/localName/tagName 内部读走 **payload 表快道**（_zwTagCache sel→tag +
+      // _zwSelNsCache sel→ns，`__zw_query_all_tagged` 灌注、印章同源——R-baidu3/t7
+      // 现成机制）。FORM named-first 下 proxy 读 namespaceURI/localName 会返回具名
+      // 控件（R7 探针实证 form.namespaceURI=控件代理）→ isHtml 误判 → HTML 大小写
+      // 折叠被跳过 → 'FORM' ≠ 'form' 文档级 gETB/document.forms 丢 form → 枚举结果
+      // 不稳定 → 装载期 settle 无限重试（N7 hang，gdb StackOverflow）。HTML ns 元素
+      // 的 tag/localName 值 payload 表即权威（宿主同源视图）；非 HTML ns 元素不经
+      // FORM gate（FORM 恒 HTML ns），proxy 回落无毒化面。payload miss（同 turn
+      // pending 代理等）回落 proxy 读——现状行为，残余毒化窗口同 turn 级，挂账。
+      var _fSel = null;
+      try { _fSel = el.__zwSelector || null; } catch (_eFs) { _fSel = null; }
+      var _fTag = null;
+      var _fNs = null;
+      if (_fSel != null && _zwTagCache && _zwSelNsCache) {
+        var _fGen = (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0);
+        if (_zwTagCache.gen === _fGen && _zwTagCache.added === _zwPendingAdded.length
+            && _zwTagCache.removed === _zwPendingRemoved.length
+            && _zwSelNsCache.gen === _fGen && _zwSelNsCache.added === _zwPendingAdded.length
+            && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+          if (_zwTagCache.map.has(_fSel) && _zwSelNsCache.map.has(_fSel)) {
+            _fTag = _zwTagCache.map.get(_fSel);
+            _fNs = _zwSelNsCache.map.get(_fSel);
+          }
+        }
+      }
       var ns = null;
-      if (needNs) { try { ns = el.namespaceURI; } catch (_e) {} }
+      if (needNs) {
+        if (_fNs != null) ns = (_fNs === '' ? 'http://www.w3.org/1999/xhtml' : _fNs);
+        else { try { ns = el.namespaceURI; } catch (_e) {} }
+      }
+      // isHtml 折叠：payload ns（'' 归一 HTML ns）与探测读同约定（t7 注）。
+      var isHtml = htmlDoc && ns === 'http://www.w3.org/1999/xhtml';
       // R330：HTML-ness 折叠只看查询上下文文档（htmlDoc）；元素的 ns 参与匹配
       // 语义——非 HTML ns 元素（含 createElementNS('', …) 的 no namespace）恒
       // 精确比较（'a' 不被 'A' 命中）。HTML ns 元素在 HTML 文档上下文才折叠；
@@ -15726,7 +15791,12 @@
         // namespace」双向期望；'AÇ' 同例）。
         if (input !== '*') {
           var ln = null;
-          try { ln = el.localName; } catch (_e2) {}
+          // s433：HTML ns 元素 localName = payload 小写 tag（host 同源视图）；非 HTML ns
+          // 元素不经 FORM gate，proxy 读回落。原样精确比较语义不变——payload tag 对
+          // HTML ns 恒小写（spec HTML 文档 localName 全小写，createElementNS 大写面走
+          // 非 HTML ns 臂原样比较）。
+          if (_fTag != null && ns === 'http://www.w3.org/1999/xhtml') ln = _fTag;
+          else { try { ln = el.localName; } catch (_e2) {} }
           if (ln == null) ln = '';
           if (String(ln) !== String(input)) continue;
         }
@@ -15738,12 +15808,18 @@
           // WPT「uppercase tagName never matches」期望 ('I')/('i') 都不命中——规则：
           // HTML ns 元素的 localName 非纯 ASCII 小写 → 永不匹配。
           if (isHtml) {
-            var lnH = null;
-            try { lnH = el.localName; } catch (_eL) {}
+            // s433：HTML ns 元素 payload 小写 tag 即 localName（纯小写恒过折叠门）；
+            // payload miss 回落 proxy 读。
+            var lnH = _fTag;
+            if (lnH == null) { try { lnH = el.localName; } catch (_eL) {} }
             if (lnH != null && _zwAsciiLower(String(lnH)) !== String(lnH)) continue;
           }
           var qn = null;
-          try { qn = el.tagName; } catch (_e3) {}
+          // s433：HTML ns 元素 qualifiedName = payload tag 大写化（host 小写 tag 存表，
+          // _realTag 同款 _zwAsciiUpper 口径）；非 HTML ns 元素 proxy 读原值（R330
+          // 原值精确比较语义不变，且不经 FORM gate）。
+          if (_fTag != null && isHtml) qn = _zwAsciiUpper(String(_fTag));
+          else { try { qn = el.tagName; } catch (_e3) {} }
           if (qn == null) continue;
           // R330：createElementNS 产物（_nsHandles）的 qualifiedName 原值优先——
           // wrapper tagName 经 htmlUpper 烘焙（HTML 文档创建时大写），移入 XML 文档
@@ -15815,7 +15891,12 @@
     var out = [];
     var seen = new Map();
     var push = function (el) {
-      if (!el || el.nodeType !== 1) return;
+      // s433（html-semantics）：身份判定替代 proxy nodeType 直读（_zwFilterByTagNameNS
+      // 同款——FORM named-first 下控件名恰为 nodeType 时 proxy 读返回控件对象，快照
+      // 段条目被误滤）。proxy 产物构造上恒元素；wrapper own 属性直读安全。
+      var _pIsEl = false;
+      try { _pIsEl = (el.__zwSelector != null) || (el.__zwHandle != null); } catch (_ePie) { _pIsEl = false; }
+      if (!el || (!_pIsEl && el.nodeType !== 1)) return;
       var k = el.__zwSelector || el.__zwHandle;
       if (k && seen.has(k)) return;
       if (k) seen.set(k, true);

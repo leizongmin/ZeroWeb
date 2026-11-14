@@ -19444,6 +19444,24 @@
   // SVGAElement.target SameObject 缓存（消费点 get trap target 分支——svgstring-1
   // 面；key = 元素 key，口径同 _zwSvgClsCache）。
   var _zwSvgTargetCache = {};
+  // s433（html-semantics）：FORM named-first gate 的 FORM-ness 判定缓存（_elKey →
+  // {g: apply 代际, f: 是否 FORM}）。gate 前置于通用反射臂（title/lang/dir 等），
+  // 元素 proxy 每属性读都要判 FORM-ness；直调 _realTag 在 P39r2 stamp 失配窗口
+  // 会打宿主 get_tag 往返（性能主源），故缓存 + apply 代际章（元素 tag 恒定，
+  // rebind 仅发生在 apply 时——代际推进即重判，失真窗口消除）。
+  var _zwFormNamedTag = {};
+  // s433：named/index 臂具名集合门控缓存（_elKey → {g: 代际, a/r: pending 记账
+  // 长度, e: attr 写纪元, s: 具名集合（收集期间 null 哨兵）}）——见 gate ⓪ 臂注。
+  var _zwFormNamedSet = {};
+  // s433：attr 写纪元——name/id 内容属性写（IDL 反射 setter / setAttribute /
+  // removeAttribute 三 funnel）即 bump，入 ⓪ 印章。具名集合的 live 语义含
+  // **attr 面变更**（form-nameditem past-names 案 `i1.name = "twiddled-name1"`
+  // 改名后新名须立即可 named 命中；R27/R28/R30 事件轨迹实证：n=1 收集发生在
+  // appendChild 机器内、`input.name = "x"` 之前，attr 写不动 pending 印章 →
+  // g.x 读服务陈旧空集 → ③ 被跳过）。全局纪元保守覆盖任意控件的 name/id 写
+  //（写罕见，读侧仅失配一次重建）。解析期 attr 与 pending 面（append/remove）
+  // 走既有三元组，不经本纪元。
+  var _zwFormAttrEpoch = 0;
   // SVG ns 判定：createElementNS 产物（handle 型）经 _nsHandles（R18/R80 登记的 ns）；
   // sel-based 解析元素经 _zwSelNs（R5000 foreign content 探测）。
   // 已知限制（PR #80 缺陷审查记档）：sel 型元素 detach 后 host query miss → 归一 ''，
@@ -32475,57 +32493,6 @@ return e;
             return prop === 'protocol' ? ':' : '';
           }
         }
-        // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
-        // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；
-        // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
-        // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
-        // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
-        // R3202：sel 路径改走 latest-wins（`__zw_get_attr_lw`）反映同批 `form.method=`/`setAttribute`（旧纯快照
-        // `__zw_get_attr` → `f.method='POST'; f.method` 读 stale 快照返 default 'get'，同 R3190/R3195 stale 模式）。
-        if (_realTag(sel, handle) === 'FORM' &&
-            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'encoding' || prop === 'target')) {
-          var fv = handle
-            ? __zw_get_attr_handle(handle, prop === 'encoding' ? 'enctype' : prop)
-            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop === 'encoding' ? 'enctype' : prop) : __zw_get_attr(sel, prop === 'encoding' ? 'enctype' : prop));
-          fv = fv || '';
-          // R5009 片 d（M4 片 d）：encoding 与 enctype 同 attr（domAttrName 映射——
-          // MAP 直读曾返原串无归一，WPT reflection-forms 'form.encoding
-          // setAttribute("multipart/form-data\0")' 期望 invalid → urlencoded）。
-          if (prop === 'method') {
-            fv = fv.toLowerCase();
-            if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
-          } else if (prop === 'enctype' || prop === 'encoding') {
-            // R5009 片 d：encoding 归一同 enctype（ASCII 小写 + invalid → urlencoded）。
-            fv = _zwASCIILower(fv);
-            if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
-              fv = 'application/x-www-form-urlencoded';
-            }
-          } else if (prop === 'action') {
-            // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
-            // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
-            // 期望解析绝对 URL）。与 A/AREA href 同用 `__zw_parse_url`。
-            // net-api M5-S7：非空值解析基 = 文档基 URL（<base href> 优先——spec form
-            // action 对 document base URL 解析）。
-            // s207：missing/空串特例（HTML §4.10.3 #dom-fs-action 反射例外——content
-            // attribute 缺失或空串时返 **node document's URL**，非文档基 URL，
-            // `<base href>` 不影响；WPT form-action-reflection-with-base-url 空/
-            // 缺失两断言面）。旧实现空值落解析分支被基 URL 吸走（返 <base>
-            // 解析值）；R5009 片 d 的「missing/空 → 文档 URL」仅活在
-            // `__zw_parse_url` 不可用回退分支，M5-S7 后成死路。
-            var _fActBase = (typeof globalThis._zwDocBaseURL === 'function')
-              ? globalThis._zwDocBaseURL()
-              : (globalThis.location ? globalThis.location.href : '');
-            if (fv === '') {
-              fv = _zwCurrentHref();
-            } else if (typeof __zw_parse_url === 'function') {
-              try {
-                var _fActJson = __zw_parse_url(fv, _fActBase);
-                if (_fActJson) fv = JSON.parse(_fActJson).href || _fActBase || fv;
-              } catch (_eFAct) {}
-            }
-          }
-          return fv;
-        }
         // `label.htmlFor`（HTMLLabelElement，R2840）——反射 `for` 属性（label↔control 关联，表单库读）。
         if (prop === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
           return (handle ? __zw_get_attr_handle(handle, 'for') : __zw_get_attr(sel, 'for')) || '';
@@ -33202,6 +33169,210 @@ return e;
             ? __zw_get_attr_handle(handle, 'id')
             : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id'));
         }
+        // R3254-K3 + s433（html-semantics）：FORM **named-first** named access（gate）。
+        // HTMLFormElement 带 [OverrideBuiltins]（https://html.spec.whatwg.org/multipage/
+        // forms.html#the-form-element），具名 listed 控件优先于接口原型成员——含本位置
+        // 之后的 title/lang/dir 反射臂、part04 侧 nodeName/nodeType/ownerDocument
+        // （3497 区）/addEventListener 族（6412 区）/elements/length/action 等 FORM IDL
+        // （12xxx 区）/CVA checkValidity/R3048 reset/requestSubmit/submit——仅 own
+        // expando 更优先（spec 序：non-configurable target own（invariant）→ own
+        // expando → named → past，https://heycam.github.io/webidl/#LegacyPlatformObject-
+        // GetOwnProperty）。本块原在 part04 form.elements 前置区（R3254-K3 时代），
+        // s433 前移至此（part04 3497 nodeName / 6412 addEventListener 分支先于原位
+        // 返回内建——solo form-nameditem「Named elements should override builtins」
+        // addEventListener 首断言挂证）。t2-pb1 fix#19 的 reset/requestSubmit/submit
+        // 豁免名单退役（「named properties 位于接口原型之下」判读漏读 OverrideBuiltins，
+        // Chrome 同遮蔽）；宿主/shim 内部复位通道改走 `Symbol.for('zw-form-reset')`
+        // 直调（script_gen R3050 + s134 asReset 臂）。item/namedItem 豁免保留：本 shim
+        // 不提供该二方法（form-nameditem「Forms should not have an item method」断言
+        // 面）。驱动用例：WPT implicit-submission.optional.html / form-nameditem.html。
+        if (typeof prop === 'string' && prop !== '' && prop !== 'item' && prop !== 'namedItem'
+            && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
+          var _fnf0 = _zwFormNamedTag[key];
+          var _fnfGen = (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0);
+          if (_fnf0 === undefined || _fnf0.g !== _fnfGen) {
+            _fnf0 = { g: _fnfGen, f: _realTag(sel, handle) === 'FORM' };
+            _zwFormNamedTag[key] = _fnf0;
+          }
+          if (_fnf0.f) {
+            // ⓪ named/index 成本门（s433 前移配套）——gate 原在 part04 12xxx 区，仅
+            // 罕见 prop 流经；前移到通用反射臂前之后 FORM 常规读（tagName/childNodes/
+            // id 等）全部进入，③⑤ 臂的 _formControls（host 视图往返 + 全子树 walk，
+            // walk 内子读又经本 gate）会变成每读成本 + walk×gate 互递归放大。故以
+            // per-form **具名集合缓存**门控：prop ∉ 集合 → 跳过 ③（⑤ 由 parseInt
+            // canonical 快筛自守）。章 = apply 代际 + pending 记账长度（_realTag 同款
+            // 三元组）——同 turn 增删控件（t8f hydration 面）即失效重收，live 语义
+            // 保留；收集期间 s === null 哨兵让递归重入（walk 内子读）落穿 miss，
+            // 不再放大。
+            var _fnSet = _zwFormNamedSet[key];
+            if (_fnSet === undefined || _fnSet.g !== _fnfGen
+                || _fnSet.a !== _zwPendingAdded.length || _fnSet.r !== _zwPendingRemoved.length
+                || _fnSet.e !== _zwFormAttrEpoch) {
+              _fnSet = { g: _fnfGen, a: _zwPendingAdded.length, r: _zwPendingRemoved.length,
+                         e: _zwFormAttrEpoch, s: null, l: false };
+              _zwFormNamedSet[key] = _fnSet;
+              // s433：**重建 collection 同置重入哨兵**（`l`）——嵌套收集（_zwLiveFormAncestor
+              // 等经 ④ past-names / ⑤ index / ③ named 臂的 `form.<prop>` 回读）在
+              // l=true 下统一落穿接口臂。此前仅 ③ lookup 设哨兵：重建期 l=false，
+              // ④ 的 `_formControls` 复核在收集内再开收集（每层宿主 `__zw_form_controls`
+              // 往返）无界嵌套 → form-nameditem 装载 Execution timeout（R20 逐读探针
+              // 与 solo 7P→0P 对照实证）。s === null（③ 门）与 l（③④⑤ 门）双保险。
+              _fnSet.l = true;
+              try {
+                var _fncs = _formControls(sel, handle);
+                var _fns0 = {};
+                for (var _fnq = 0; _fnq < _fncs.length; _fnq++) {
+                  var _fnc = _fncs[_fnq];
+                  if (!_fnc) continue;
+                  try {
+                    var _fnid = _fnc.id;
+                    if (_fnid) _fns0[_fnid] = 1;
+                    var _fnnm = _fnc.getAttribute ? _fnc.getAttribute('name') : null;
+                    if (_fnnm) _fns0[_fnnm] = 1;
+                  } catch (_efnq) {}
+                }
+                _fnSet.s = _fns0;
+              } finally {
+                _fnSet.l = false;
+              }
+            }
+            // ① invariant 臂——proxy target 上 non-configurable data property
+            //（defineProperty(form, k, {configurable:false}) 经 default trap 落 target）
+            // get trap 必须返回同值，否则 V8 TypeError invariant violation（WPT
+            // non-configurable expando 案失败消息即此）。
+            try {
+              var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
+              // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
+              // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
+              if (_fnd0 && _fnd0.configurable === false) return _t[prop];
+            } catch (_efnd0) {}
+            // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
+            // own property；WPT expando added later 案）。
+            var _fex0 = _expando[key];
+            if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+              return _fex0[prop];
+            }
+            // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态
+            // RadioNodeList（快照集合承载，item 越界 null/indexed/length/迭代 +
+            // `instanceof NodeList` 经 __zwNL 印记，_zwMakeCollection(false) 全提供）。
+            // ⓪ 具名集合门控：prop ∉ 集合直接 miss（省 _formControls 往返）。
+            // s433：③ **重入哨兵**（in-flight 期落穿 miss）——lookup 内部 _formControls
+            // （宿主列表 s390b/s391 门 + walk）经 _zwLiveFormAncestor 等 helper 回读
+            // FORM 接口成员（localName/tagName），named-first 下该读重入 ③ 再触发
+            // lookup → 互递归栈溢出（装载 hang，R17 栈实证：get③ → lookup →
+            // _formControls → _zwLiveFormAncestor → 读 form.localName → get③…）。
+            // 重入读走接口臂返回原值，sentinel 语义同 ⓪ 收集期 s:null。
+            var _fnh = null;
+            if (_fnSet.s && _fnSet.s[prop] && !_fnSet.l) {
+              _fnSet.l = true;
+              try {
+                _fnh = _zwFormNamedLookup(sel, handle, prop);
+              } finally {
+                _fnSet.l = false;
+              }
+            }
+            if (_fnh !== null) {
+              try {
+                var _fnpk = _elKey(sel, handle);
+                var _fnp = _zwFormPastNames[_fnpk] || (_zwFormPastNames[_fnpk] = {});
+                _fnp[prop] = _fnh;
+              } catch (_efnp) {}
+              return _fnh;
+            }
+            // ④ past names map 臂——曾命中过的名字在其元素**改名后**仍按 past 条目
+            // 返回，但元素**脱离 listed 集合后失效**（spec dom-form-nameditem past
+            // names map 步骤：条目值元素须仍是 listed 控件；WPT past names 案
+            // remove 后读 undefined、rename 后读原元素双面）。lazy 记账：named 命中
+            // 即写条目，miss 时回查 + listed 复核。改名/重组的条目清理不显式做
+            //（复核天然过滤；内存面：单 form 条目数 = 曾命中名数，可控）。
+            // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem
+            // s433：④ 同受 `_fnSet.l` **重入哨兵**——③ 命中写过 past 条目后，下一次
+            // lookup 收集期间（_zwLiveFormAncestor 等 helper）的 `form.<prop>` 回读会
+            // 落进 ④，其 `_formControls` 复核在收集内再开一次收集（每层一次宿主
+            // `__zw_form_controls` 往返），嵌套无界 → 分钟级假 hang（R20 逐读探针
+            // 实证：首读过、次读挂；L2/L3 marker 级联 + past 条目状态差二分定位）。
+            // in-flight 期（③⑤ 查询进行中）落穿接口臂，语义同 ⓪ s:null / ③ l。
+            var _fnpk2 = _elKey(sel, handle);
+            var _fnp2 = _zwFormPastNames[_fnpk2];
+            if (!_fnSet.l && _fnp2 && Object.prototype.hasOwnProperty.call(_fnp2, prop)) {
+              var _fpv = _fnp2[prop];
+              try {
+                var _fpl = _formControls(sel, handle);
+                for (var _fpi = 0; _fpi < _fpl.length; _fpi++) {
+                  if (_fpl[_fpi] === _fpv) return _fpv;
+                }
+              } catch (_efpl) {}
+            }
+            // s119：canonical 数字索引臂——HTMLFormElement 支持属性名含「无 id/name
+            // 的 listed 控件按 form.elements 集合序号」（031 execution-timing 语料面
+            // `document.forms[0][0].focus()` 形态；命名匹配先行，索引兜底同 spec 名单
+            // 序）。canonical 判据 parseInt + String 归一等（拒前导零/符号形）——
+            // ⓪ 数字快筛前置，canonical 数字才付 _formControls 往返。
+            // s433：⑤ 同受 `_fnSet.l` 重入哨兵（④ 同理——in-flight 期 _formControls
+            // 复核禁止，落穿接口臂）。
+            var _fni = parseInt(prop, 10);
+            if (!_fnSet.l && !isNaN(_fni) && String(_fni) === prop) {
+              var _fna = _formControls(sel, handle);
+              return _fna[_fni];
+            }
+          }
+        }
+        // s433：本臂自 gate 前（原 A/AREA href 臂之后）整体后移到 FORM named-first
+        // gate 之后——[OverrideBuiltins] 具名控件遮蔽全部接口成员（含 action/method/
+        // enctype/encoding/target IDL 反射；R26 探针实证 arm 序在 gate 前 → form.action
+        // 恒返 URL 串，「Named elements should override builtins」首组断言挂）。
+        // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
+        // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；
+        // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
+        // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
+        // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
+        // R3202：sel 路径改走 latest-wins（`__zw_get_attr_lw`）反映同批 `form.method=`/`setAttribute`（旧纯快照
+        // `__zw_get_attr` → `f.method='POST'; f.method` 读 stale 快照返 default 'get'，同 R3190/R3195 stale 模式）。
+        if (_realTag(sel, handle) === 'FORM' &&
+            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'encoding' || prop === 'target')) {
+          var fv = handle
+            ? __zw_get_attr_handle(handle, prop === 'encoding' ? 'enctype' : prop)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop === 'encoding' ? 'enctype' : prop) : __zw_get_attr(sel, prop === 'encoding' ? 'enctype' : prop));
+          fv = fv || '';
+          // R5009 片 d（M4 片 d）：encoding 与 enctype 同 attr（domAttrName 映射——
+          // MAP 直读曾返原串无归一，WPT reflection-forms 'form.encoding
+          // setAttribute("multipart/form-data\0")' 期望 invalid → urlencoded）。
+          if (prop === 'method') {
+            fv = fv.toLowerCase();
+            if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
+          } else if (prop === 'enctype' || prop === 'encoding') {
+            // R5009 片 d：encoding 归一同 enctype（ASCII 小写 + invalid → urlencoded）。
+            fv = _zwASCIILower(fv);
+            if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
+              fv = 'application/x-www-form-urlencoded';
+            }
+          } else if (prop === 'action') {
+            // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
+            // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
+            // 期望解析绝对 URL）。与 A/AREA href 同用 `__zw_parse_url`。
+            // net-api M5-S7：非空值解析基 = 文档基 URL（<base href> 优先——spec form
+            // action 对 document base URL 解析）。
+            // s207：missing/空串特例（HTML §4.10.3 #dom-fs-action 反射例外——content
+            // attribute 缺失或空串时返 **node document's URL**，非文档基 URL，
+            // `<base href>` 不影响；WPT form-action-reflection-with-base-url 空/
+            // 缺失两断言面）。旧实现空值落解析分支被基 URL 吸走（返 <base>
+            // 解析值）；R5009 片 d 的「missing/空 → 文档 URL」仅活在
+            // `__zw_parse_url` 不可用回退分支，M5-S7 后成死路。
+            var _fActBase = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : (globalThis.location ? globalThis.location.href : '');
+            if (fv === '') {
+              fv = _zwCurrentHref();
+            } else if (typeof __zw_parse_url === 'function') {
+              try {
+                var _fActJson = __zw_parse_url(fv, _fActBase);
+                if (_fActJson) fv = JSON.parse(_fActJson).href || _fActBase || fv;
+              } catch (_eFAct) {}
+            }
+          }
+          return fv;
+        }
+
         // reflected 字符串属性（title/lang）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
         // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。
         if (prop === 'title' || prop === 'lang') {
