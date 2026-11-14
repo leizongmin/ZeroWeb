@@ -25,7 +25,12 @@ GB-20261031（簇 D）+ s137。下一步：**主攻 shim completion/timeout
 teardown hang 勘根修复**（15s/30s 对照 + do_wait 活体采样证据链已
 足），修复后重落 ③l 资源 → 预期 F−1/P+196 位移按语料变更归因；次序
 combobox tentative 12 续分诊；全桥套件绿窗轮末收口跑常态化；基带
-8113P/206F/6T/1U 维持（本轮零净变更）。
+8113P/206F/6T/1U 维持（本轮零净变更）。**组合树复验（push 后
+2026-11-15）**：rebase 入他流 g45 image-set 文法位（74c1159c3）+
+f6a70ef86 ip 壳携精化，双腿复验键全集 8320 逐键恒等零 GONE/NEW，
+stable 面恰 1 键单腿 P↔F 置换（dialog-overlay computed overlay
+initially 'none'，在册负载族渲染邻接面，按族振荡记账），基带维持
+——与 s441 对 fb81665dd 复验结论同型（账本「组合树复验」节）。
 
 > **▶ 承前（2026-11-15 M2 切片 441 收口）——红池 48 键伪红定谳清偿 +
 > fetch_raw 自愈化 + 基带重测（账本

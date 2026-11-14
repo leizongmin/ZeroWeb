@@ -78,3 +78,30 @@ s442 收口：小尾巴分诊收窄 in-domain 面（col-span/rowspan/onblur 等
 196 真面全 Pass + 默认 30s completion-teardown hang」三段定谳，资源回
 收保 sweep 完整性，hang 勘根为下一轮主攻。挂用户门维持：GB-20261114-
 VIDEO + GB-20261031（簇 D）+ s137。
+
+## 组合树复验（push 后他流入树双腿复验）
+
+s442 提交 push 时 rebase 入他流三笔：f6a70ef86（ip 左臂携集精化，
+part118 pins）、74c1159c3（g45 image-set 文法位，css-parser/engine
+shim part01f/part06 + computed_style）、78cb6723d（R5579 账本），
+组合树 HEAD 4d3c92fcd。按并行归因纪律双腿复验本语料基带（runner 随
+g45 重编译）：
+
+- 键集口径注记：s441 fixr 集与本次原始提取存在尾 tab/双空格归一化伪
+  影（149.html `for='  WINdow\t`、wrapping `exact  len`），原始日志字
+  节恒等；按统一规范化（strip 尾空白 + uniq）对照。
+- **键全集 8320 逐键恒等，零 GONE/NEW**；leg1 与 s441 stable 全集逐键
+  同状态恒等（8107P/206F/6T/1U）。
+- 双腿同状态 join **8319 键（8106P/206F/6T/1U，uniq 口径）**：恰 1 键
+  置换——`dialog-overlay.html :: dialog computed overlay initially
+  'none'` leg2 Fail 单腿振荡（同文件姊妹键 Opening-and-closing 全轮恒
+  Pass；该键为 computed overlay 初值断言，渲染邻接；单腿 = 负载 flake
+  签名，非代码位移签名——g45 类变更会双腿确定性翻转）。按 s441 在册
+  负载族振荡记账，**基带 8113P/206F/6T/1U 维持**。
+- 附注：全量 sweep `make 错误 1` + rc=2 为该 runner 正常收尾形态
+  （s441 leg1 同型），非异常。
+- 结论：g45 + f6a70ef86 对 html-semantics 语料零位移，与 s441 对
+  fb81665dd 复验结论同型；下一步（shim hang 勘根）基带归因面干净。
+
+工件：/tmp/s442/{leg1,leg2}.log、leg{1,2}.ks、{leg1,leg2,s441}.norm、
+gone.txt/new.txt（规范化前伪影样本）。
