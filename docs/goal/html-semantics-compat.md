@@ -11,10 +11,12 @@ s437 push 前 rebase 到 65f88ed13（窗口 88edca67f..65f88ed13 十刀，渲染
 fix 稳定集 P/F/T new=gone=0**——s437 修复零位移维持、渲染流新刀对本语料
 零波及；vs s433 差集全数归因非代码（dialog P→F 红相自 ~20:00 持续 ≥2h
 未翻回、customizable-select 4 键 leg2 文件级 Timeout load 卡死置换非真
-改善、detailed.optional 沾染、149.html 在册工件）。**挂用户门维持**：
+改善、detailed.optional 沾染、149.html 在册工件）。**全桥套件绿窗轮末收口
+跑兑现常态化挂账**：1579P/0F exit 0（基线 1570P +9 = 组合树 part116 新钉
+等；覆盖 s437 改动面 computed_style_cache.rs）。**挂用户门维持**：
 GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：dialog phase-flip 复验
 （下轮位移检查窗）；红池分诊续（video P1+P2 或簇 D A2 待门决）；全桥套
-件绿窗轮末收口跑常态化（基线 1570P/0F）。
+件绿窗轮末收口跑常态化（基线 1579P/0F）。
 
 > **▶ 承前（2026-11-14 M2 切片 437 收口）——strut 门到货位移检查揭
 > 99 键 P→F 稳定回归 → s423 视图臂 img 面勘根修复轮（账本

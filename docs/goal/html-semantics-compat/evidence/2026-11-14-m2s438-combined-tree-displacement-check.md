@@ -54,3 +54,13 @@ s438 收口（零代码变更轮）：组合树位移检查证 s437 修复与渲
 工件：/tmp/s438/{sweep-1,sweep-2}.log、sweep-{1,2}.rc（rc=2，键数
 8517/8514 与 8515 基线带同带）、join.sh、s438.{1,2}.ks、s438.s{P,F,T}、
 vs433/vs437 差集、s438.taint。
+
+## 补记：全桥套件绿窗轮末收口跑（s433 常态化挂账兑现）
+
+guard 包裹 `cargo test -p zero-engine --lib js_dom_bridge`（compile-first，
+time-limit 2400）：**1579P/0F** exit 0（test 阶段 22.91s；基线 1570P +9 =
+组合树新到 part116 c4 block boundary pins 等渲染流测试增量）。s437 直接
+改动 `js_dom_bridge/computed_style_cache.rs`，本轮绿窗 = 该改动面 +
+组合树（含 anchor-size/ip C4 + part116 新钉）的全桥套件级验证。工件
+/tmp/s438/bridge.log、bridge.rc（rc=0）。
+
