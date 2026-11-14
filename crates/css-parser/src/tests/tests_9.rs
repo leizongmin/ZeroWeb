@@ -1694,16 +1694,21 @@ fn test_background_position_calc_math_functions() {
 
 #[test]
 fn test_background_position_three_values_keyword_offset() {
-    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position};
-    // `left 50px center` → 水平 = EdgeOffset(Left, 50px)，垂直 = Center。
-    let p = parse_background_position("left 50px center").expect("3 值应解析");
+    use crate::values::{BackgroundPositionValue as Bp, parse_background_position};
+    // g47：缘偏移对全有全无（object-position-invalid 语料实钉 `right 3% center`
+    // Chrome 拒收，`left 50px center` 结构全同等拒）——3 值混搭形不再放行。
+    assert_eq!(
+        parse_background_position("left 50px center"),
+        None,
+        "pair + 裸 center 混搭应拒收"
+    );
+    // 裸关键字两值形（`left center` → x=Left/y=Center）保持合法，保 R2478
+    // 语义覆盖（偏移对正例由 four_values 两测试继续锚定）。
+    let p = parse_background_position("left center").expect("2 值应解析");
     let Bp::TwoValue(h, v) = p else {
         panic!("应为 TwoValue，got {p:?}");
     };
-    assert!(
-        matches!(*h, Bp::EdgeOffset { side: BackgroundEdge::Left, ref offset } if matches!(**offset, Bp::Length(_))),
-        "水平轴应为 EdgeOffset(Left, length)，got {h:?}"
-    );
+    assert!(matches!(*h, Bp::Left), "水平轴应为 Left，got {h:?}");
     assert!(matches!(*v, Bp::Center), "垂直轴应为 Center，got {v:?}");
 }
 

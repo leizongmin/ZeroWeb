@@ -1451,6 +1451,14 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
         if (first_horizontal && second_horizontal) || (first_vertical && second_vertical) {
             return None;
         }
+        // g47（语料钉 gradient-position-invalid `at top 0px` / object-position-invalid
+        // `bottom 10%`）：垂直关键字在前 + 偏移在后非法——<position> 两值文法第一槽
+        // 只收 `[left | center | right | <length-percentage>]`（css-values-4 #position），
+        // 偏移必须跟在水平关键字后（3/4 值「边缘+偏移」形）。水平关键字在前 + 偏移
+        //（`left 0px` = 距左偏移）与 `0px top`（偏移 + 垂直关键字）维持接受。
+        if first_vertical && is_offset_only(&second) {
+            return None;
+        }
         // CSS background-position 两值语法（CSS Backgrounds §3.6）：关键字顺序无关——
         // 水平专属（left/right）→ x，垂直专属（top/bottom）→ y，center 兼容两轴。
         // 故须交换当：第一值是垂直专属（top/bottom），或第二值是水平专属（left/right）。
@@ -1628,6 +1636,16 @@ fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue
         return None;
     }
 
+    // g47（css-values-4 #position `&&` 组合形 + 语料钉 gradient/object-position
+    // invalid 组）：偏移对 all-or-nothing——任一轴为 EdgeOffset 时另一轴也必须是
+    // EdgeOffset。裸边缘关键字或 center 与偏移对混用（`left 4px top`、
+    // `right top 5px`、`bottom 7% left`、`bottom right 8%`、`center left 1px`、
+    // `right 3% center`）→ None；双偏移对（`right 20% bottom 10%`）合法维持。
+    let has_offset_pair =
+        |slot: Option<&BackgroundPositionValue>| matches!(slot, Some(BackgroundPositionValue::EdgeOffset { .. }));
+    if has_offset_pair(h.as_ref()) != has_offset_pair(v.as_ref()) {
+        return None;
+    }
     let h = h.unwrap_or(BackgroundPositionValue::Center);
     let v = v.unwrap_or(BackgroundPositionValue::Center);
     Some(BackgroundPositionValue::TwoValue(Box::new(h), Box::new(v)))

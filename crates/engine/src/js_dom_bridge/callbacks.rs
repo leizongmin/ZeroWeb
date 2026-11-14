@@ -4306,6 +4306,28 @@ pub fn register_dom_callbacks(
                         value.to_string()
                     };
                 }
+                // g47：object-position 文法 = <position> 全谱（css-backgrounds-3
+                // #object-position / css-values-4 #position），写值语法失败拒收
+                //（shim 写面此前零校验，object-position-invalid 组 13 案全接受）。
+                // var() 声明期不校验（替换后语义）；CSS-wide 关键字放行（与
+                // background-image 臂同型透传）。reject-only：合法值原文保形——
+                // canonical 序列化不在本臂做，写面既有行为零回归。
+                if prop == "object-position" {
+                    let lower = value.trim().to_ascii_lowercase();
+                    if lower.contains("var(")
+                        || matches!(
+                            lower.as_str(),
+                            "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+                        )
+                    {
+                        return value.to_string();
+                    }
+                    return if zero_css_parser::values::parse_background_position(value).is_none() {
+                        "null".to_string()
+                    } else {
+                        value.to_string()
+                    };
+                }
                 if zero_css_parser::values::background_image_decl_invalid(value) {
                     return "null".to_string();
                 }

@@ -1105,9 +1105,16 @@ mod tests {
         let BackgroundImageComputedValue::Gradient(GradientValue::Conic(g)) = &layers[0] else {
             panic!("应为 conic 渐变");
         };
+        // g48（930541747）后 1 值位形按 CSS 语义 x=该值、缺省轴补 center
+        //（旧 x=y=该值 是 computed 18F 主根因），cq 解析断言随迁 x 轴。
         assert!(
-            matches!(g.position_y, LengthValue::Px(p) if (p - 30.0).abs() < 0.01),
-            "conic at 10cqh @300px 容器应解析 30px，got {:?}",
+            matches!(g.position_x, LengthValue::Px(p) if (p - 30.0).abs() < 0.01),
+            "conic at 10cqh @300px 容器 x 轴应解析 30px，got {:?}",
+            g.position_x
+        );
+        assert!(
+            matches!(g.position_y, LengthValue::Percentage(p) if (p - 50.0).abs() < 0.01),
+            "conic at 10cqh 缺省 y 轴应保 center 50%，got {:?}",
             g.position_y
         );
 

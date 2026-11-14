@@ -2183,9 +2183,13 @@
     // 语料）；content/border-image-source 图像值语法同 <image> 面（image-set
     // 子串门限流——纯字符串/attr() 形不入门）；cursor 文法无 <image>，值含
     // image-set 恒拒（css-ui-4 cursor = <url># , <ident>，Rust 回调 prop 臂）。
+    // g47 扩面：object-position = <position> 全谱文法（css-backgrounds-3
+    // #object-position），非法写值 Rust 回调返 'null' 拒、合法原文保形
+    //（reject-only，序列化面不动）。
     // 回调未注册（兜底链）不校验零漂移。
     // https://drafts.csswg.org/css-images-4/#serializing-gradients
     if ((propName === 'background-image'
+         || propName === 'object-position'
          || ((propName === 'content' || propName === 'border-image-source'
               || propName === 'cursor')
              && raw.indexOf('image-set(') >= 0))
