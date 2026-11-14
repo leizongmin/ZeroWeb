@@ -18,6 +18,8 @@ parallel_map 全量 join 返回之后，hang 日志有 196 行即收集已完成
 Pass 全一致，vs s441 恰 F−1/P+196 零其他位移**；分歧仅 select-home-end
 族 5 键 T↔F 单腿振荡（在册负载族记账）；g45/g46 组合树归因一并清偿
 （s442 挂账关闭）。**新基带 8303P/206F/6T/1U**（族振荡换算口径）。
+双腿后 push 窗口又入他流 g47（position 缘偏移 + object-position shim
+拒收，88dd6b3ef，css-多域窄面）：未再复验，下轮全量 sweep 一并归因。
 **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
 下一步：**combobox tentative 12 分诊**（popover/键盘指针合成面，逐键
 定能力门 vs 引擎面）+ **label forwarded-click 键 2 勘根**（s442 分诊
