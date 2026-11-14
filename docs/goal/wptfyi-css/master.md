@@ -1211,3 +1211,22 @@ named-first nameditem 面，与 anchor canonical 零交集）。canonical 12F
 fallback）由 g37 parse_length_or_math guard 修正。HEAD 真态按 ab4c 签名
 复现（parse-valid 4F/8F + invalid-fallback 6F 基线，全量未重跑）。[证据
 2026-11-14-g37-anchor-serialize-canonical](evidence/2026-11-14-g37-anchor-serialize-canonical.md)
+
+**（g36 复核轮：comb3-x7 执行真实性补证 + 归因伪账 firsthand 合账，11-14 深夜）**：
+本轮按「验证组合态真账」任务独立复核，两条正交结论定谳。其一**执行真实**——
+journal scope 记账 comb3-x7 = 111.5s CPU/97.5s wall（wrapper 17:45:01→
+17:46:38 同一致），实测真语料案 release 单案 0.18s CPU
+（anchor-animation-dynamic-default 273B 产出与 transcript 块一致），
+659×~0.17s≈112s 精确闭合，transcript 659 案活写、JSON 纯由 transcript 合成、
+fresh dir：真跑成立；comb2 块「~0.3s/案」同量级互证；「真跑应 ≥10 分钟」判据
+与「ab3 14 分钟」旧说均废（journal 权威 ab3 = 1m39.7s wall/1m54.0s CPU），
+comb3-x7 块「rayon 并行」表述更正为串行 release ~0.17s/案。其二**归因伪账
+维持**（firsthand 计数器复核）——comb3-x7 parse-valid 0F/size-parse-valid 0F/
+invalid-fallback 10F vs ab3 4F/8F/6F vs g37-final 0F/0F/6F：build2（17:09）
+系共享树在途构建扫入 g37 前身实验码（无 parse_length_or_math guard 故
+invalid-fallback 10F 恶化），IMP12/REG4 非组合态红利，上块撤销成立，
+g37-final 11,993P/864F/4T 为 HEAD 终账；654/659 transcript 块字节级同 ab3
+= runner 确定性复现非复制。教训入账：**共享树 cargo 构建会编译他流在途
+半成品**（build2 即例证），跑批发射前须 git status 干净或 provenance 可证；
+journal scope CPU/wall 记账为跑批真实性首选审计工具。ab4 焚毁、ab4c/comb2
+salvage 副本不可作账维持原判。
