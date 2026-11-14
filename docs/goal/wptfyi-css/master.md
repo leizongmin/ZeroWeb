@@ -1153,3 +1153,13 @@ editing-compat v1.108 提交信息认领）；ab4c（17:12 他会话发射）1 �
 salvage 假账弃用。两说并存记录在案——实质结论一致（组合态 11,977/876/4T
 零回归，与 ab3 逐值一致），ab4c 定性分歧不影响 g36 主账与组合态结论；
 后续轮次如需 ab4c 复用须先复跑定谳。
+**g36 组合态对账（11-14，rebase 7ebe9a44b→783b22267 后）**：远端 shim
+part03/04/05（FORM named-first/nameditem 面，4e3eea8f3+94883fbbe）与本轮
+Rust 组合态二进制（build2 17:09 provenance）重跑 anchor 语料 comb2：
+**11,977/876/4T 与 ab3 逐案持平**（JSON/transcript 字节级一致 = runner
+确定性输出复现，非复制）——组合态零交互回归。首射 ab4 遭并行流同名脚本
+竞态焚毁（330ba2b40 记载「salvage 字节读偏移」，transcript JSON 解析中断
+结果目录空）；ab4c（并行流）与 comb2（本流）85 秒级独立双跑字节级互证。
+计时校正：runner 真跑 ~0.3s/案（单页实验 1.8s 含启动），ab3 的 14 分钟为
+ZeroWeb-3 电池+构建 CPU 竞争异常慢，勿再以它为基线推算。账本维持
+783b22267，无新增提交面。
