@@ -3545,9 +3545,23 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         if crate::mem_reclaim::nav_trim_enabled() {
             crate::mem_reclaim::malloc_trim_now("nav_trim", gens);
         }
-        // S7：填充量探针（svg 重栅格条目/shape 缓存条目/canvas 上下文/HTTP 字节/PSS）。
+        // S7：填充量探针（svg 重栅格条目/shape 缓存条目/canvas 上下文/HTTP 字节/PSS；
+        // T37/G4 归因扩展：图片缓存条目与字节/SVG 重栅格字节/发布图元数；
+        // T38/G4 扩展：文档驻留四元组 + glibc malloc_info per-arena 落盘）。
         if crate::mem_reclaim::mem_probe_enabled() {
             let (svg_len, canvas_len) = self.webview.as_ref().map_or((0, 0), |wv| wv.mem_probe_cache_lens());
+            let (image_entries, image_bytes, svg_raster_bytes) =
+                self.webview.as_ref().map_or((0, 0, 0), |wv| wv.mem_probe_image_stats());
+            let (doc_nodes, styles_cached, layout_boxes, sheets) = self
+                .webview
+                .as_ref()
+                .map_or((0, 0, 0, 0), |wv| wv.mem_probe_doc_stats());
+            let primitives = self
+                .webview
+                .as_ref()
+                .and_then(|wv| wv.last_render())
+                .map(|r| r.primitives.len())
+                .unwrap_or(0);
             let shape_len = self.font_loader.shape_cache_len();
             let http_bytes = zero_net::shared_http_cache()
                 .lock()
@@ -3561,8 +3575,17 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 shape_len,
                 canvas_len,
                 http_bytes,
+                image_entries,
+                image_bytes,
+                svg_raster_bytes,
+                primitives,
+                doc_nodes,
+                styles_cached,
+                layout_boxes,
+                sheets,
                 "nav settle probe"
             );
+            crate::mem_reclaim::malloc_info_dump_if_enabled();
         }
         // worker 侧（S3 通知无条件维持首轮 OFF 面；S2 worker trim 随 NAV_TRIM 门）。
         if let Err(e) = self.js_worker.submit_deferred_reclaim(gens) {

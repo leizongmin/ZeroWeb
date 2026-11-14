@@ -2319,6 +2319,12 @@ form-visual-browser-gpu-smoke: target-disk-guard target/test-guard
 	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1
 
 product-smoke: target-disk-guard target/test-guard zero-wpt-runner-release
+	# T38 TV-6 接线钉：release renderer 启动日志必须含 mallopt 封顶日志且 applied=true
+	# （main.rs 在参数解析前调 apply_allocator_tuning，故意传非法 --type 让进程记完启动
+	# 日志即退出；退出码不判，仅 grep stderr 面，断言失败即本门禁失败）。
+	cargo build --release --bin zero-renderer
+	NO_COLOR=1 ./target/test-guard --time-limit 30 -- ./target/release/zero-renderer --type=__not_a_role__ >/dev/null 2>target/product-smoke-renderer-startup.log || true
+	grep -Eq 'allocator tuning: mmap threshold capped.*applied=true' target/product-smoke-renderer-startup.log || (echo "product-smoke wiring pin FAIL: renderer 启动日志缺 allocator tuning mmap threshold capped applied=true（main.rs 接线回归）" && exit 2)
 	# 表单流畅度门禁：固定尺寸 value-only 输入不得重新 parse/style/layout，且每次最多发布一帧。
 	./target/test-guard --time-limit 900 -- bash scripts/run-form-input-perf.sh
 	@test -f $(WELCOME_ORACLE) || (echo "Error: missing $(WELCOME_ORACLE); run 'make product-smoke-oracle' and commit the generated oracle."; exit 2)

@@ -1821,6 +1821,19 @@ impl V8Sandbox {
         Some(isolate.get_heap_statistics().used_heap_size())
     }
 
+    /// T38/G4 归因探针：isolate 已提交堆字节（V8 `total_heap_size`，含已提交的
+    /// 空闲页——与 `used_heap_size` 的差 = 堆内碎片/空闲页驻留面）。
+    /// `ZEROWEB_MEM_PROBE=1` 观测腿，不进判据样本。
+    pub fn heap_total_bytes(&mut self) -> Option<usize> {
+        let isolate = self.isolate.as_mut()?;
+        // SAFETY: 同 reset_context——栈式 enter/exit 配对。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        Some(isolate.get_heap_statistics().total_heap_size())
+    }
+
     /// P1b S2 escape-hatch：进入持久 V8 Context，在 raw scope + context 内执行 `f`。
     ///
     /// 供 [`Sandbox::install_native_bindings`] 安装原生 DOM 绑定（`ObjectTemplate`/
@@ -2046,6 +2059,9 @@ impl crate::Sandbox for V8Sandbox {
     fn heap_used_bytes(&mut self) -> Option<usize> {
         V8Sandbox::heap_used_bytes(self)
     }
+    fn heap_total_bytes(&mut self) -> Option<usize> {
+        V8Sandbox::heap_total_bytes(self)
+    }
     /// R-baidu2/P3 slice-2：取走未捕获异常报告（message listener + promise-reject
     /// 回调经 isolate slot 收集）。
     fn take_uncaught_reports(&mut self) -> Vec<(String, u32, u32)> {
@@ -2084,6 +2100,21 @@ impl std::fmt::Debug for V8Sandbox {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T38/G4 归因探针钉：heap_total_bytes 返回 V8 已提交堆（total_heap_size），
+    /// 执行脚本后必须 > 0 且 ≥ 存活堆（探针观测腿的数据有效性前提）。
+    #[test]
+    fn heap_total_bytes_reports_committed_heap() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig::default()).unwrap();
+        let _ = sandbox.execute("globalThis.__t38 = new Array(1024).fill(0);");
+        let total = V8Sandbox::heap_total_bytes(&mut sandbox).expect("V8 堆统计读取必须可用");
+        assert!(total > 0, "执行脚本后已提交堆必须 > 0，实际 {total}");
+        // 通过 trait 面同样可读（js_worker 探针走 trait 对象）。
+        let via_trait = <V8Sandbox as crate::Sandbox>::heap_total_bytes(&mut sandbox).expect("trait 面必须转发");
+        assert!(via_trait > 0, "trait 面读数必须有效，实际 {via_trait}");
+        let used = <V8Sandbox as crate::Sandbox>::heap_used_bytes(&mut sandbox).expect("used 堆读取必须可用");
+        assert!(total >= used, "total_heap_size 必须 ≥ used_heap_size：{total} < {used}");
+    }
 
     // ── 创建与初始化 ──
 
