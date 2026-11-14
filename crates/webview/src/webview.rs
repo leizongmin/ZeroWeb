@@ -3128,6 +3128,11 @@ impl WebView {
                 Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
                 Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
                 Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+                Self::register_evicted_reanchor_callback(
+                    &self.selector_handle_map,
+                    &self.handle_selector_forward,
+                    &mut **sandbox,
+                );
             }
             self.dom_bridge_host_armed = true;
         }
@@ -3855,6 +3860,11 @@ impl WebView {
             Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
             Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
             Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+            Self::register_evicted_reanchor_callback(
+                &self.selector_handle_map,
+                &self.handle_selector_forward,
+                &mut **sandbox,
+            );
         }
 
         self.poll_pending_dynamic_imports();
@@ -4048,6 +4058,11 @@ impl WebView {
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
         Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+        Self::register_evicted_reanchor_callback(
+            &self.selector_handle_map,
+            &self.handle_selector_forward,
+            &mut **sandbox,
+        );
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
 
@@ -6113,6 +6128,11 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
         Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+        Self::register_evicted_reanchor_callback(
+            &self.selector_handle_map,
+            &self.handle_selector_forward,
+            &mut **sandbox,
+        );
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
         // R3295：改用共享 `ensure_js_shim` helper（与 `execute_script` 同款幂等语义）。
@@ -6218,6 +6238,50 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     .get(handle)
                     .cloned()
                     .unwrap_or_default()
+            }),
+        );
+    }
+
+    /// T70-R1（返修 DF-1 写丢失根修）：evict 双向清表（[`Self::evict_removed_identities`]）
+    /// 后，part05 `_zwQueryWrapIdentity` T70 回收臂在重挂态返回原 handle proxy——
+    /// 其写 journal `SetAttrOnHandle{死 handle}` 在 apply 翻译臂（js_dom_bridge
+    /// `persistent_sel`）miss → lenient warn+skip，写静默丢失、getAttribute 读空；
+    /// base 同查询返 sel proxy 写可落地，行为分叉（钉测
+    /// t70_evict_remount_recycled_proxy_write_lands 红检实证）。回收即重锚：把
+    /// sel↔handle 双表回填（键已存在不覆盖——同批重注册的新绑定优先，与 evict 的
+    /// batch 守卫同向），下一 apply 起 `apply_pending_shared_mutations` 构建的
+    /// `persistent`（本表倒置视图）恢复 handle→sel 翻译，全部 `*OnHandle` 写经
+    /// selector 变体命中当前持有该 sel 的重挂节点；journal 形态不变（读
+    /// latest-wins replay 与落地恒一致）。规范语义：DOM §4.4 childNodes
+    /// [SameObject]（https://dom.spec.whatwg.org/#interface-nodelist）+ §4.2.2
+    /// live 反射（https://dom.spec.whatwg.org/#collections）——evict→同 sel 重挂
+    /// 后旧 proxy 等价新 live proxy，写不可丢读不漂移（R5010「锚回同 sel 可能读
+    /// 到同位新元素」先例同款取舍）。仅回收臂调用（查询返回点，sel 此刻活）；
+    /// 空串参数 no-op。后续再次移除走既有 RemoveHandle 翻译+evict 生命周期闭环。
+    fn register_evicted_reanchor_callback(
+        sel_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        fwd_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    ) {
+        let re_sel_map = std::sync::Arc::clone(sel_map);
+        let re_fwd_map = std::sync::Arc::clone(fwd_map);
+        sandbox.register_callback(
+            "__zw_reanchor_evicted_handle",
+            Box::new(move |args: &[String]| -> String {
+                let handle = args.first().map(String::as_str).unwrap_or("");
+                let sel = args.get(1).map(String::as_str).unwrap_or("");
+                if !handle.is_empty() && !sel.is_empty() {
+                    let mut fwd = re_fwd_map.lock().unwrap_or_else(|e| e.into_inner());
+                    if !fwd.contains_key(handle) {
+                        fwd.insert(handle.to_string(), sel.to_string());
+                    }
+                    drop(fwd);
+                    let mut smap = re_sel_map.lock().unwrap_or_else(|e| e.into_inner());
+                    if !smap.contains_key(sel) {
+                        smap.insert(sel.to_string(), handle.to_string());
+                    }
+                }
+                "ok".into()
             }),
         );
     }

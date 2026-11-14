@@ -2024,6 +2024,44 @@
         }
       } catch (_e100) {}
     }
+    // T70（v4 跨批再挂 identity 回收——t69 诊断 caseH v4 面，spec #dom-node-
+    // childnodes [SameObject]）：正向桥在跨批 evict 后缺失，但 removeChild 时
+    // 逆向桥仍活——`_zwEvictedIdentBySel` 记下 sel→handle（part04 handle-child
+    // 移除臂写入）。同 sel 跨批重挂（宿主重建节点仅带 sel，原 handle 不再注册）
+    // 时在此回收原 proxy——`_wrapHandle` 同 handle 返缓存同对象，视图 identity
+    // 与重挂前连续。**不消费**（读后保留）：identity 须跨后续换代稳定（diag
+    // v4→v4.5 两代实证一次性回收会在下一代丢失）；与既有 sel-aliasing 模型一致
+    // （`_proxyCache['s:'+sel]` 对同 sel 新节点同样持续复用旧 proxy）。桥命中
+    // 路径（同批重注册/未 evict）不经过本臂。
+    try {
+      var _t70eh = globalThis._zwEvictedIdentBySel
+        ? globalThis._zwEvictedIdentBySel[sel] : null;
+      if (_t70eh) {
+        // T70-R1（返修 DF-1 写丢失根修）：此刻该 handle 已被 evict 双向清表
+        //（webview `evict_removed_identities`），只回收 proxy 不够——其写 journal
+        // `SetAttrOnHandle{死 handle}` 在 apply 翻译臂 persistent_sel miss →
+        // lenient warn+skip，setAttribute/style/text/removeAttribute 写静默丢
+        // 失、getAttribute 读空（base 同查询返 sel proxy 写可落地，行为分叉；
+        // 钉测 t70_evict_remount_recycled_proxy_write_lands 红检实证
+        // landed=false/readSync=true 分叉）。回收即重锚：host 侧
+        // `__zw_reanchor_evicted_handle` 把 sel↔handle 双表回填（键已存在不覆
+        // 盖——同批重注册新绑定优先），下一 apply 起 `persistent`
+        // （selector_handle_map 倒置视图）恢复 handle→sel 翻译，全部 `*OnHandle`
+        // 写经 selector 变体落到当前持有该 sel 的重挂节点；journal 形态不变，
+        // 读 latest-wins replay 与落地恒一致。规范语义：DOM §4.4 childNodes
+        // [SameObject]（https://dom.spec.whatwg.org/#interface-nodelist）+
+        // §4.2.2 live 反射（https://dom.spec.whatwg.org/#collections）——
+        // evict→同 sel 重挂后旧 proxy 等价新 live proxy，写不可丢（set an
+        // attribute value 落 live 元素）读不漂移（R5010「锚回同 sel 可能读到
+        // 同位新元素」先例同款取舍）。回收臂仅在查询返回点触发（sel 此刻活）。
+        // 未注册回调（旧 host）→ 原行为，零回归。
+        if (typeof __zw_reanchor_evicted_handle === 'function') {
+          __zw_reanchor_evicted_handle(String(_t70eh), sel);
+        }
+        _r100Remember(_t70eh, sel);
+        return _wrapHandle(_t70eh);
+      }
+    } catch (_eT70r) {}
     return _wrapSelector(sel);
   }
 
@@ -13037,11 +13075,26 @@
   // 换代），IIFE 内函数 host 侧不可达。
   globalThis._zwChildBaseInvalidateAll = function () {
     _zwChildBaseCache.clear();
-    // R140：live childNodes 承载数组同批失效（其 refresh 闭包捕获 sel/handle，跨换代
-    // 重查正确——但缓存 identity 跨换代保留会使同 turn 内旧数组被复用且 __zwTreeRef
-    // 等本地失效逻辑失真；统一清空最稳，WPT r55 重注册换代用例）。
-    if (globalThis._zwLiveNLCache) globalThis._zwLiveNLCache = {};
-    if (globalThis._zwLiveNLSync) globalThis._zwLiveNLSync = {};
+    // T70（t69 诊断 Gap B）：live childNodes 承载数组与 mutation 同步表**跨换代保留**
+    //（spec：Node.childNodes 返 live NodeList，https://dom.spec.whatwg.org/
+    // #dom-node-childnodes；同一 node 重复读返同一 collection 对象 = [SameObject]，
+    // 见 #interface-nodelist / #collections live 语义）。旧实现批量边界整表清空：
+    // ① 同节点换代后首读返新数组（identity 破，held 引用与 fresh 读分叉）；
+    // ② 持有引用失去 `_zwLiveNLSync` 钩子——树变更只刷新换代后的新数组，旧引用
+    // 冻结在旧视图（live 反射破，caseH v2/v4/v5 面）；③ mutation 入口的 sync 调用
+    // 全失联。保留后 refresh 闭包捕获 sel/handle 字符串，重查 `_childNodeList`
+    //（base cache 已在本函数清空 → 换代后首查回源 host，基底新鲜度不变——WPT r55
+    // 重注册换代用例只断言基底新鲜度，不受影响）；part03 `__zwDetDoc` detached-doc
+    // 条目自带 `__zwTreeRef === _tree` 守卫，跨树自愈。容量守卫镜像 `_zwChildBaseCache`
+    // 512 键软上限（超限两表同清，键位成对注册不会失配）。
+    // FIXME: 进程内路径 load_html 跨文档沿用同一保留（与 _proxyCache 持久化一致；
+    // handle 游标换代归零后 `@handle` 键跨页复用是既有暴露面）；renderer 路径每
+    // 文档重建 context，天然无跨文档残留。
+    if (globalThis._zwLiveNLCache
+        && Object.keys(globalThis._zwLiveNLCache).length > 512) {
+      globalThis._zwLiveNLCache = {};
+      globalThis._zwLiveNLSync = {};
+    }
   };
   function _childNodeList(sel, handle) {
     // R100 锚回（mm-regression 根修，2026-10-07）：handle-only proxy（`_zwQueryWrapIdentity`

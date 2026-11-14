@@ -9380,6 +9380,28 @@
               // shim html 刷新主同步路径收敛——受限已知偏差）。
               var _r9mId = '';
               try { _r9mId = String(child.id || ''); } catch (_eR9mi) {}
+              // T70（v4 跨批再挂 identity 回收——t69 诊断 caseH v4 面）：evict 落在
+              // apply（批界），此刻逆向桥仍活——记下 sel→handle，同 sel 跨批重挂时
+              // `_zwQueryWrapIdentity` 在正向桥 miss 后回收原 proxy（[SameObject]
+              // 跨 remove/remount 周期；chrome 重挂同一节点对象同款）。512 键软上限
+              // 防高 churn 页无界增长（超限整表清后再写）；**读后保留不消费**——
+              // identity 须跨后续换代稳定（diag v4→v4.5 两代实证一次性回收会在
+              // 下一代丢失；part05 读臂同款语义）。边界（T70-R5 披露）：仅本
+              // removeChild handle-child 移除臂写入本表；element.remove()/
+              // outerHTML=/innerHTML=/replaceChildren 等其他 evict 路径不记本表，
+              // 同 sel 重挂在那些路径维持 base 分裂行为（非回归，披露级缺口）。
+              try {
+                if (typeof __zw_selector_for_handle === 'function' && child.__zwHandle) {
+                  var _t70rs = __zw_selector_for_handle(String(child.__zwHandle));
+                  if (_t70rs) {
+                    if (!globalThis._zwEvictedIdentBySel) globalThis._zwEvictedIdentBySel = {};
+                    if (Object.keys(globalThis._zwEvictedIdentBySel).length > 512) {
+                      globalThis._zwEvictedIdentBySel = {};
+                    }
+                    globalThis._zwEvictedIdentBySel[String(_t70rs)] = String(child.__zwHandle);
+                  }
+                }
+              } catch (_eT70w) {}
               if (_r9mId) {
                 __zw_remove('#' + _r9mId);
               } else {
