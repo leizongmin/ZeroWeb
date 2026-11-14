@@ -1,0 +1,33 @@
+{
+ "capturedAt": "2026-11-14",
+ "chromiumVersion": "Chrome/156.0.8078.73",
+ "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+ "viewport": {
+  "width": 800,
+  "height": 600
+ },
+ "tool": "tests/wpt-runner/scripts/capture-collapse-geometry.mjs",
+ "purpose": "border-collapse 域 CDP 几何捕获（R4031-N 2026-09-08 用户点名放行）",
+ "cases": [
+  {
+   "file": "css/CSS2/borders/border-conflict-style-107.html",
+   "ok": true,
+   "out": "tests/wpt-runner/geometry-shots/css_CSS2_borders_border-conflict-style-107.json"
+  },
+  {
+   "file": "css/reference/ref-filled-green-200px-square.html",
+   "ok": true,
+   "out": "tests/wpt-runner/geometry-shots/css_reference_ref-filled-green-200px-square.json"
+  },
+  {
+   "file": "css/css-backgrounds/box-shadow-table-border-collapse-001.html",
+   "ok": true,
+   "out": "tests/wpt-runner/geometry-shots/css_css-backgrounds_box-shadow-table-border-collapse-001.json"
+  },
+  {
+   "file": "css/css-backgrounds/reference/box-shadow-table-border-collapse-001-ref.html",
+   "ok": true,
+   "out": "tests/wpt-runner/geometry-shots/css_css-backgrounds_reference_box-shadow-table-border-collapse-001-ref.json"
+  }
+ ]
+}
