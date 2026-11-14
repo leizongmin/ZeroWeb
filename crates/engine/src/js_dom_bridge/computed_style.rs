@@ -3078,9 +3078,84 @@ fn image_layer_list_to_css(
                     format!("filter({inner}, {list})")
                 }
             }
+            // g45：image-set()——分辨率全归一 dppx（css-images-4 #image-set-unused
+            // computed oracle：`1x`→`1dppx`、`48dpi`→`0.5dppx`、`2400dpcm`→
+            // `63.5dppx`）、url 引号化、type() 重引号置后。
+            BackgroundImageComputedValue::ImageSet(is) => image_set_to_css(is, element_color, font_size_px),
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// image-set() computed 串化（css-images-4 §image-set-nota）：选项图像（url
+/// 引号化/渐变 computed 串化）+ 分辨率归一 dppx（明文 x/dppx 恒等、dpi ÷96、
+/// dpcm ×2.54/96——css-values-4 §6.4 仓库既定约定；缺省补 `1dppx`；calc 字面
+/// 树折叠值同基发射，非折叠形 FIXME: 保原文——语料未驱动静态不可折叠 calc 的
+/// computed 面）+ type() 重引号置后。
+fn image_set_to_css(
+    is: &zero_css_parser::values::ImageSetValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    let mut out = String::from("image-set(");
+    for (idx, opt) in is.options.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&image_set_option_to_css(opt, element_color, font_size_px));
+    }
+    out.push(')');
+    out
+}
+
+/// image-set() 单选项 computed 串化。
+fn image_set_option_to_css(
+    opt: &zero_css_parser::values::ImageSetOptionValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    use zero_css_parser::values::{BackgroundImageValue, GradientValue, ImageSetResolution};
+    let mut out = match &*opt.image {
+        BackgroundImageValue::Url(u) => format!("url(\"{u}\")"),
+        BackgroundImageValue::Gradient(GradientValue::Linear(g)) => {
+            linear_gradient_to_css(g, element_color, font_size_px)
+        }
+        BackgroundImageValue::Gradient(GradientValue::Radial(g)) => {
+            radial_gradient_to_css(g, element_color, font_size_px)
+        }
+        BackgroundImageValue::Gradient(GradientValue::Conic(g)) => {
+            conic_gradient_to_css(g, element_color, font_size_px)
+        }
+        // 选项图像文法 parse 期已限 url/字符串/渐变，防御臂保穷尽。
+        _ => "none".to_string(),
+    };
+    let dppx = match &opt.resolution {
+        None => 1.0,
+        Some(ImageSetResolution::Plain { dppx, .. }) => *dppx,
+        Some(ImageSetResolution::Calc { text, folded_dppx, .. }) => match folded_dppx {
+            Some(n) => *n,
+            None => {
+                // 静态不可折叠 calc：computed 期原文保形（FIXME: 容器上下文
+                // 求值归 computed-value 期刀）。
+                out.push(' ');
+                out.push_str(text);
+                if let Some(mime) = &opt.mime {
+                    out.push_str(" type(\"");
+                    out.push_str(mime);
+                    out.push_str("\")");
+                }
+                return out;
+            }
+        },
+    };
+    out.push(' ');
+    out.push_str(&zero_css_parser::values::format_resolution_dppx(dppx));
+    if let Some(mime) = &opt.mime {
+        out.push_str(" type(\"");
+        out.push_str(mime);
+        out.push_str("\")");
+    }
+    out
 }
 
 /// linear-gradient / repeating-linear-gradient：CSS Images 线性渐变 computed 序列化
@@ -4712,6 +4787,76 @@ mod g42_gradient_computed_serialize_tests {
         assert_eq!(
             computed_gradient("radial-gradient(circle 50px, red, blue)"),
             "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+}
+
+#[cfg(test)]
+mod g45_image_set_computed_serialize_tests {
+    //! image-set() computed 串化（g45，driving: image-set-computed 36F 面）。
+    //! oracle 全部取自 tests/wpt-runner/wpt-data/css/css-images/image-set/
+    //! image-set-computed.sub.html 期望表：分辨率全归一 dppx（`1x`→`1dppx`、
+    //! `48dpi`→`0.5dppx`、`2400dpcm`→`63.5dppx`——css-values-4 §6.4 ×2.54/96
+    //! 仓库既定约定）、url 引号化、字符串图像 url 化、渐变站 computed rgb()、
+    //! type() 重引号置后、`-webkit-` 别名 parse 期剥除。
+
+    use super::image_set_to_css;
+    use zero_css_parser::values::{BackgroundImageValue, ColorValue, parse_background_image};
+
+    fn computed_image_set(input: &str) -> String {
+        let ec = ColorValue::Rgba(0, 0, 0, 255);
+        match parse_background_image(input).expect("input must parse") {
+            BackgroundImageValue::ImageSet(is) => image_set_to_css(&is, &ec, 16.0),
+            _ => panic!("not image-set: {input}"),
+        }
+    }
+
+    #[test]
+    fn resolution_normalizes_to_dppx() {
+        // 1x/2x/3.5x → dppx 恒等值；dpi ÷96；dpcm ×2.54/96（语料 oracle 形）。
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) 1x)"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
+        );
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) 48dpi)"),
+            "image-set(url(\"http://{{host}}/example.png\") 0.5dppx)"
+        );
+        assert_eq!(
+            computed_image_set(
+                "image-set(url(http://{{host}}/example.png) 2400dpcm, 'http://{{host}}/example.png' 2x)"
+            ),
+            "image-set(url(\"http://{{host}}/example.png\") 63.5dppx, url(\"http://{{host}}/example.png\") 2dppx)"
+        );
+        assert_eq!(
+            computed_image_set(
+                "image-set('http://{{host}}/example.jpeg' 240dpi, url(http://{{host}}/example.png) 3.5x)"
+            ),
+            "image-set(url(\"http://{{host}}/example.jpeg\") 2.5dppx, url(\"http://{{host}}/example.png\") 3.5dppx)"
+        );
+        // 已 dppx 形恒等回放。
+        assert_eq!(
+            computed_image_set("image-set(url(\"http://{{host}}/example.png\") 1dppx)"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
+        );
+    }
+
+    #[test]
+    fn gradient_and_type_and_webkit_alias() {
+        // 渐变选项：computed 站 rgb() 展开（g42 computed 串化复用）。
+        assert_eq!(
+            computed_image_set("image-set(linear-gradient(black, white) 1x)"),
+            "image-set(linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255)) 1dppx)"
+        );
+        // type()：重引号双引号 + 置分辨率后。
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) 1x type('image/png'))"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx type(\"image/png\"))"
+        );
+        // `-webkit-` 别名：parse 期剥除，computed 恒标准形。
+        assert_eq!(
+            computed_image_set("-webkit-image-set(url(http://{{host}}/example.png) 1x)"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
         );
     }
 }

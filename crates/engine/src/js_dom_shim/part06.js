@@ -2179,9 +2179,16 @@
     // 缺省法冗余省略、xyz→xyz-d65 别名展开；非渐变/未识别面 Rust 侧原文
     // passthrough 零回归）。g43 补拒写哨兵：渐变前缀但文法 invalid 返 'null'
     // → 拒（赋值忽略保留原值，grid/anchor 同款）——invalid 不再回显原文。
+    // g45 扩面：image-set canonical/拒收同回调（image-set-parsing/computed
+    // 语料）；content/border-image-source 图像值语法同 <image> 面（image-set
+    // 子串门限流——纯字符串/attr() 形不入门）；cursor 文法无 <image>，值含
+    // image-set 恒拒（css-ui-4 cursor = <url># , <ident>，Rust 回调 prop 臂）。
     // 回调未注册（兜底链）不校验零漂移。
     // https://drafts.csswg.org/css-images-4/#serializing-gradients
-    if (propName === 'background-image'
+    if ((propName === 'background-image'
+         || ((propName === 'content' || propName === 'border-image-source'
+              || propName === 'cursor')
+             && raw.indexOf('image-set(') >= 0))
         && typeof globalThis.__zw_gradient_normalize_decl === 'function') {
       var _grd = globalThis.__zw_gradient_normalize_decl(propName, raw);
       if (_grd === 'null') return null;

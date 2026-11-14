@@ -30,6 +30,12 @@ pub enum BackgroundImageComputedValue {
     /// 序列化 `image(rgba(0, 0, 0, 0))`；与顶层 none（序列化 `none`）分野）。
     /// 选支展开在 cascade 期完成，故本变体只由 light-dark 支内语义产生。
     TransparentImage,
+    /// image-set() — CSS Images 4 图像集（https://drafts.csswg.org/css-images-4/#image-set-nota）。
+    /// g45：声明期暂存 options AST（url/渐变/分辨率/type()），computed 串化期
+    /// 分辨率归一 dppx（x/dppx 恒等、dpi ÷96、dpcm ×2.54/96——css-values-4
+    /// §6.4 仓库既定约定）、url 引号化、type() 重引号置后；`-webkit-` 别名
+    /// parse 期已剥除。
+    ImageSet(zero_css_parser::values::ImageSetValue),
 }
 
 impl BackgroundImageComputedValue {

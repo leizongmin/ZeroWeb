@@ -2406,10 +2406,11 @@ fn test_fold_background_image_set_resolution_serialize() {
     for (src, want) in cases {
         let got = fold_decl_specified("background-image", src).unwrap_or_else(|| panic!("{src} should fold"));
         assert_eq!(got, want, "{src}");
-        // 幂等：折叠产物二次折叠恒等（None）。
+        // 幂等：折叠产物二次折叠恒等（g45 起 canonicalize 接管 image-set 面
+        // ——投影语义恒 Some(canonical)，None passthrough 仅余非图像集面）。
         assert_eq!(
             fold_decl_specified("background-image", &got),
-            None,
+            Some(got.clone()),
             "folded form is canonical (idempotent)"
         );
     }
@@ -2424,10 +2425,12 @@ fn test_fold_background_image_set_resolution_serialize() {
         None,
         "mixed-type tree keeps original"
     );
+    // g45 起 canonicalize 接管 image-set 面：无 calc 形走投影串化恒等
+    //（Some(canonical)），None passthrough 仅余非图像集面。
     assert_eq!(
         fold_decl_specified("background-image", "image-set(url(\"a\") 2x)"),
-        None,
-        "no-calc untouched"
+        Some("image-set(url(\"a\") 2x)".to_string()),
+        "no-calc form projects canonically"
     );
     // 多字节 URL 前缀不越界（char boundary 安全）。
     assert_eq!(
@@ -2827,4 +2830,371 @@ fn test_g44_color_stops_parsing_page_forms() {
     }
     long.push_str("black)");
     assert!(canon(&long).is_some(), "500-stop 交替 hint 长表应接受");
+}
+
+// g45 image-set 指定值 canonical 串化 + 拒收（css-images-4 §image-set-nota）：
+// driving: wpt css-images image-set/image-set-parsing.html（66 canonical 形 +
+// 48 拒收形）与 image-set-computed.sub.html 支持面（36 形）——页面期望逐形镜像。
+#[test]
+fn test_g45_image_set_specified_page_forms() {
+    // ── canonical 串化（页面 serialization 应为 canonical 断言）──
+    // url 引号化 + -webkit- 前缀落标准形（css-images-4 #deprecated parse 期别名）。
+    assert_eq!(
+        canon("image-set(url(example.png) 1x)"),
+        Some("image-set(url(\"example.png\") 1x)".to_string())
+    );
+    assert_eq!(
+        canon("-webkit-image-set(url(example.png) 1x)"),
+        Some("image-set(url(\"example.png\") 1x)".to_string())
+    );
+    // 字符串图像 → url() 双引号。
+    assert_eq!(
+        canon("image-set('example.jpg' 1x)"),
+        Some("image-set(url(\"example.jpg\") 1x)".to_string())
+    );
+    // 多选项混合 + 字符串图像。
+    assert_eq!(
+        canon("image-set(url(example.png) 1x, 'example.png' 2x)"),
+        Some("image-set(url(\"example.png\") 1x, url(\"example.png\") 2x)".to_string())
+    );
+    // 明文分辨率原文保形（指定面不做单位归一）。
+    assert_eq!(
+        canon("image-set(url(example.png) 1dpcm, 'example.png' 2x)"),
+        Some("image-set(url(\"example.png\") 1dpcm, url(\"example.png\") 2x)".to_string())
+    );
+    // 缺省分辨率补 1x（页面 `image-set(url(foo))` 组）。
+    assert_eq!(
+        canon("image-set(url(foo))"),
+        Some("image-set(url(\"foo\") 1x)".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(foo), url(bar))"),
+        Some("image-set(url(\"foo\") 1x, url(\"bar\") 1x)".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(foo) 1x, url(bar), url(baz) 2x)"),
+        Some("image-set(url(\"foo\") 1x, url(\"bar\") 1x, url(\"baz\") 2x)".to_string())
+    );
+    // calc 字面折叠（dppx 基归一；dpcm ×2.54/96 语料 oracle 形）。
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(2x * 3))"),
+        Some("image-set(url(\"example.png\") calc(6dppx))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(96dpi * 2))"),
+        Some("image-set(url(\"example.png\") calc(2dppx))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(1dpcm * 96/2.54))"),
+        Some("image-set(url(\"example.png\") calc(1dppx))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(1 * 96dpi))"),
+        Some("image-set(url(\"example.png\") calc(1dppx))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(-1 * 1x))"),
+        Some("image-set(url(\"example.png\") calc(-1dppx))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(1x + -1x))"),
+        Some("image-set(url(\"example.png\") calc(0dppx))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(1dppx * sign(10px)))"),
+        Some("image-set(url(\"example.png\") calc(1dppx))".to_string())
+    );
+    // 非纯树 calc 原文保形（sibling-index()/长度 sign 不折叠）。
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(1dppx * sibling-index()))"),
+        Some("image-set(url(\"example.png\") calc(1dppx * sibling-index()))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") calc(1dppx * sign(1em - 10px)))"),
+        Some("image-set(url(\"example.png\") calc(1dppx * sign(1em - 10px)))".to_string())
+    );
+    // 零分辨率字面保形。
+    assert_eq!(
+        canon("image-set(url(\"example.png\") 0x)"),
+        Some("image-set(url(\"example.png\") 0x)".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") 0dpcm)"),
+        Some("image-set(url(\"example.png\") 0dpcm)".to_string())
+    );
+    // type()：重引号双引号 + canonical 序（resolution 前、type 后）。
+    assert_eq!(
+        canon("image-set(url(example.png) type('image/png'))"),
+        Some("image-set(url(\"example.png\") 1x type(\"image/png\"))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(example.png) type('image/png') 1x)"),
+        Some("image-set(url(\"example.png\") 1x type(\"image/png\"))".to_string())
+    );
+    assert_eq!(
+        canon("image-set(url(\"example.png\") 1x type('image/jpeg'))"),
+        Some("image-set(url(\"example.png\") 1x type(\"image/jpeg\"))".to_string())
+    );
+    // type() 转义 round-trip（`a\"` 原文保形）。
+    assert_eq!(
+        canon("image-set(url(\"x\") 1x type(\"a\\\"\"))"),
+        Some("image-set(url(\"x\") 1x type(\"a\\\"\"))".to_string())
+    );
+    // 渐变选项（g41-g44 canonical 复用）+ 前缀剥除。
+    assert_eq!(
+        canon("-webkit-image-set(linear-gradient(black, white) 1x)"),
+        Some("image-set(linear-gradient(black, white) 1x)".to_string())
+    );
+    assert_eq!(
+        canon("-webkit-image-set(linear-gradient(red) 1x)"),
+        Some("image-set(linear-gradient(red) 1x)".to_string())
+    );
+    // calc-infinity-nan 语料回归守卫（§10.6 NaN canonical，接管后行为恒等）。
+    assert_eq!(
+        canon("image-set(url(\"\") calc(1x * NaN))"),
+        Some("image-set(url(\"\") calc(NaN * 1dppx))".to_string())
+    );
+    // parse 面放行（CSS.supports → apply 链门）。
+    assert!(parse_background_image("image-set(url(example.png) 1x)").is_some());
+    assert!(parse_background_image("-webkit-image-set(url(\"example.png\") 1x)").is_some());
+    // dppx 折算（image-set-computed oracle：dpi ÷96、dpcm ×2.54/96）。
+    match parse_background_image("image-set(url(a.png) 48dpi)") {
+        Some(crate::values::BackgroundImageValue::ImageSet(is)) => match &is.options[0].resolution {
+            Some(crate::values::ImageSetResolution::Plain { dppx, .. }) => {
+                assert_eq!(*dppx, 0.5, "48dpi → 0.5dppx");
+            }
+            other => panic!("48dpi 应为 Plain 分辨率，得 {other:?}"),
+        },
+        other => panic!("48dpi image-set 应解析，得 {other:?}"),
+    }
+    match parse_background_image("image-set(url(a.png) 2400dpcm)") {
+        Some(crate::values::BackgroundImageValue::ImageSet(is)) => match &is.options[0].resolution {
+            Some(crate::values::ImageSetResolution::Plain { dppx, .. }) => {
+                assert_eq!(*dppx, 63.5, "2400dpcm → 63.5dppx（语料 oracle 因子）");
+            }
+            other => panic!("2400dpcm 应为 Plain 分辨率，得 {other:?}"),
+        },
+        other => panic!("2400dpcm image-set 应解析，得 {other:?}"),
+    }
+
+    // ── 拒收形（页面 should-not-set 24 形；standard/-webkit- 双前缀同拒）──
+    let invalid = [
+        "image-set(url(\"example.png\") -1x)",
+        "-webkit-image-set(url(\"example.png\") -20x)",
+        "image-set(url(\"example.png\") -3dppx)",
+        "image-set(url(\"example.png\") -96dpi)",
+        "-webkit-image-set(url(\"example.png\") -113dpcm)",
+        "image-set(none, url(example.png) 1x)",
+        "image-set()",
+        "image-set('example.jpeg' 92pid url(example.png) 1x)",
+        "image-set(url(example.png) 1x url(example.jpeg))",
+        "image-set(url(example.png) 1x 2x)",
+        "image-set(url(\"example.png\") 1invalidResUnit)",
+        "image-set(url(\"example.png\") calc(3 * 4))",
+        "image-set(url(\"example.png\") calc(2 - 1))",
+        "image-set(url(\"example.png\") calc(2x - 1))",
+        "image-set(url(\"example.png\") calc(1 + 4dpi))",
+        "image-set(url(example.png) type(image/png))",
+        "image-set(url(example.png) type('image/png') type('image/png'))",
+        "image-set(url(example.png) type('image/png' 'image/png'))",
+        "image-set(url(example.png) type(url('image/png')))",
+        "image-set(url(example.png) 1xtype('image/png'))",
+        "image-set(type('image/png') url(example.png) 1x)",
+        "image-set(image-set(url(example.png) 1x) 2x)",
+        "image-set(image(image-set(url(example.png) 1x)) 2x)",
+    ];
+    for v in &invalid {
+        assert_eq!(canon(v), None, "{v} 应拒收（页面 should-not-set）");
+        assert!(
+            crate::values::background_image_decl_invalid(v),
+            "{v} 应判 invalid（写面拒收哨兵）"
+        );
+    }
+    // 渐变拒收哨兵回归守卫（g43 面）：渐变前缀 + 文法 invalid。
+    assert!(crate::values::background_image_decl_invalid(
+        "linear-gradient(black, 25%)"
+    ));
+    assert!(!crate::values::background_image_decl_invalid("url(a.png)"));
+    assert!(!crate::values::background_image_decl_invalid("none"));
+}
+
+#[test]
+fn test_g45_image_set_specified_canonical_page_forms() {
+    // image-set-parsing.html 指定面 canonical oracle 逐形镜像（g45）：
+    // url 引号化、字符串图像 url 化、`-webkit-` 别名落标准形、缺省分辨率补
+    // `1x`、明文分辨率原文保形、calc 字面折叠 `calc(<n>dppx)`、type() 重引号
+    // 置后、渐变选项 g41 canonical 复用。
+    let cases = [
+        // url 引号化 + webkit 前缀剥除。
+        ("image-set(url(example.png) 1x)", "image-set(url(\"example.png\") 1x)"),
+        (
+            "-webkit-image-set(url(example.png) 1x)",
+            "image-set(url(\"example.png\") 1x)",
+        ),
+        // 字符串图像 → url()。
+        ("image-set('example.jpg' 1x)", "image-set(url(\"example.jpg\") 1x)"),
+        // 多选项混合形态。
+        (
+            "image-set(url(example.png) 1x, 'example.png' 2x)",
+            "image-set(url(\"example.png\") 1x, url(\"example.png\") 2x)",
+        ),
+        (
+            "image-set('example.jpeg' 222dpi, url(example.png) 3.5x)",
+            "image-set(url(\"example.jpeg\") 222dpi, url(\"example.png\") 3.5x)",
+        ),
+        // 缺省分辨率补 1x。
+        ("image-set(url(foo))", "image-set(url(\"foo\") 1x)"),
+        (
+            "image-set(url(foo), url(bar))",
+            "image-set(url(\"foo\") 1x, url(\"bar\") 1x)",
+        ),
+        (
+            "image-set(url(foo) 1x, url(bar), url(baz) 2x)",
+            "image-set(url(\"foo\") 1x, url(\"bar\") 1x, url(\"baz\") 2x)",
+        ),
+        // 明文分辨率原文保形（指定面不做单位归一）。
+        (
+            "-webkit-image-set(url(\"example.png\") 1dppx)",
+            "image-set(url(\"example.png\") 1dppx)",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") 1dpi)",
+            "image-set(url(\"example.png\") 1dpi)",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") 1dpcm)",
+            "image-set(url(\"example.png\") 1dpcm)",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") 0x)",
+            "image-set(url(\"example.png\") 0x)",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") 0dpcm)",
+            "image-set(url(\"example.png\") 0dpcm)",
+        ),
+        // calc 字面树折叠 dppx 基（语料 dpcm 折算因子 ×2.54/96 仓库约定）。
+        (
+            "-webkit-image-set(url(\"example.png\") calc(2x * 3))",
+            "image-set(url(\"example.png\") calc(6dppx))",
+        ),
+        (
+            "image-set(url(\"example.png\") calc(96dpi * 2))",
+            "image-set(url(\"example.png\") calc(2dppx))",
+        ),
+        (
+            "image-set(url(\"example.png\") calc(1dpcm * 96/2.54))",
+            "image-set(url(\"example.png\") calc(1dppx))",
+        ),
+        (
+            "image-set(url(\"example.png\") calc(1 * 96dpi))",
+            "image-set(url(\"example.png\") calc(1dppx))",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") calc(-1 * 1x))",
+            "image-set(url(\"example.png\") calc(-1dppx))",
+        ),
+        (
+            "image-set(url(\"example.png\") calc(1x + -1x))",
+            "image-set(url(\"example.png\") calc(0dppx))",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") calc(1dppx * sign(10px)))",
+            "image-set(url(\"example.png\") calc(1dppx))",
+        ),
+        // 静态不可折叠 calc 原文保形。
+        (
+            "-webkit-image-set(url(\"example.png\") calc(1dppx * sibling-index()))",
+            "image-set(url(\"example.png\") calc(1dppx * sibling-index()))",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") calc(1dppx * sign(1em - 10px)))",
+            "image-set(url(\"example.png\") calc(1dppx * sign(1em - 10px)))",
+        ),
+        // type()：引号归一双引号 + canonical 序（分辨率前置）。
+        (
+            "image-set(url(example.png) type('image/png'))",
+            "image-set(url(\"example.png\") 1x type(\"image/png\"))",
+        ),
+        (
+            "image-set(url(example.png) type('image/png') 1x)",
+            "image-set(url(\"example.png\") 1x type(\"image/png\"))",
+        ),
+        (
+            "image-set(url(example.png) 1x type('image/jpeg'))",
+            "image-set(url(\"example.png\") 1x type(\"image/jpeg\"))",
+        ),
+        // type() 串内转义原文保形回放。
+        (
+            "-webkit-image-set(url(\"x\") 1x type(\"a\\\"\"))",
+            "image-set(url(\"x\") 1x type(\"a\\\"\"))",
+        ),
+        // 渐变选项：webkit 前缀剥除 + g41 canonical 复用。
+        (
+            "-webkit-image-set(linear-gradient(black, white) 1x)",
+            "image-set(linear-gradient(black, white) 1x)",
+        ),
+        (
+            "-webkit-image-set(repeating-radial-gradient(red, blue 25%) 1x)",
+            "image-set(repeating-radial-gradient(red, blue 25%) 1x)",
+        ),
+        (
+            "-webkit-image-set(url(\"example.png\") 1x type(\"image/png\"))",
+            "image-set(url(\"example.png\") 1x type(\"image/png\"))",
+        ),
+    ];
+    for (input, expected) in &cases {
+        assert_eq!(
+            crate::values::canonicalize_background_image_specified(input).as_deref(),
+            Some(*expected),
+            "input: {input}"
+        );
+    }
+}
+
+#[test]
+fn test_g45_image_set_invalid_page_forms_rejected() {
+    // image-set-parsing.html invalid 24 形（standard + `-webkit-` 双前缀同拒，
+    // 镜像代表面）——`background_image_decl_invalid` 真（拒写哨兵）、
+    // canonicalize None（不接管 invalid 面）。
+    let invalid_values = [
+        "image-set(url(\"example.png\") -20x)",
+        "image-set(none, url(example.png) 1x)",
+        "image-set()",
+        "image-set('example.jpeg' 92pid url(example.png) 1x)",
+        "image-set(url(example.png) 1x url(example.jpeg))",
+        "image-set(url(example.png) 1x 2x)",
+        "image-set(url(\"example.png\") 1invalidResUnit)",
+        "image-set(url(\"example.png\") calc(3 * 4))",
+        "image-set(url(\"example.png\") calc(2 - 1))",
+        "image-set(url(\"example.png\") calc(2x - 1))",
+        "image-set(url(\"example.png\") calc(1 + 4dpi))",
+        "image-set(url(\"example.png\") -1x)",
+        "image-set(url(\"example.png\") -96dpi)",
+        "image-set(url(example.png) type(image/png))",
+        "image-set(url(example.png) type('image/png') type('image/png'))",
+        "image-set(url(example.png) type('image/png' 'image/png'))",
+        "image-set(url(example.png) type(url('image/png')))",
+        "image-set(url(example.png) 1xtype('image/png'))",
+        "image-set(type('image/png') url(example.png) 1x)",
+        "image-set(image-set(url(\"example.png\") 1x) 2x)",
+        "image(image-set(url(\"example.png\") 1x) 2x)",
+        // webkit 前缀别名同拒。
+        "-webkit-image-set(url(\"example.png\") -3dppx)",
+        "-webkit-image-set(url(example.png) type('image/png') 1x 2x)",
+        "-webkit-image-set()",
+    ];
+    for v in &invalid_values {
+        assert!(
+            crate::values::background_image_decl_invalid(v),
+            "decl_invalid must be true: {v}"
+        );
+    }
+    // 合法面不误拒：image-set 子串撞 url 文件名等。
+    assert!(!crate::values::background_image_decl_invalid(
+        "url(\"image-set(x).png\")"
+    ));
+    assert!(!crate::values::background_image_decl_invalid(
+        "image-set(url(\"example.png\") 1x)"
+    ));
 }

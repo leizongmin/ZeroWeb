@@ -1155,6 +1155,9 @@ impl super::Painter {
                 BackgroundImageComputedValue::None => {}
                 // light-dark() 支内 none 的透明图像展开——无背景绘制（同 none）。
                 BackgroundImageComputedValue::TransparentImage => {}
+                // g45：image-set() 绘制未实现（值此前被 apply 拒收，按 none
+                // 处理零视觉漂移；FIXME: image-set 选项选源绘制刀）。
+                BackgroundImageComputedValue::ImageSet(_) => {}
                 BackgroundImageComputedValue::Url(url) => {
                     let key = image_resource_key(url, self.document_url.as_deref());
 
@@ -2468,6 +2471,8 @@ impl super::Painter {
                 BackgroundImageComputedValue::None => {}
                 // light-dark() 支内 none 的透明图像展开——无蒙版（同 none）。
                 BackgroundImageComputedValue::TransparentImage => {}
+                // g45：image-set() 蒙版未实现（FIXME: 选源蒙版刀）。
+                BackgroundImageComputedValue::ImageSet(_) => {}
                 // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
                 BackgroundImageComputedValue::Filtered { .. } => {}
             }

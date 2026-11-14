@@ -4292,10 +4292,20 @@ pub fn register_dom_callbacks(
     sandbox.register_callback(
         "__zw_gradient_normalize_decl",
         Box::new(|args: &[String]| -> String {
-            let _prop = args.first().map(String::as_str).unwrap_or("");
+            let prop = args.first().map(String::as_str).unwrap_or("");
             let value = args.get(1).map(String::as_str).unwrap_or("");
             #[cfg(feature = "v8")]
             {
+                // g45：cursor 文法无 <image>（css-ui-4 #cursor：
+                // `[ <url> [ <x> <y> ]? , ]* [ auto | … ]`），值含 image-set
+                // 恒拒收（shim 门同款子串判定后传 prop，混列形同拒）。
+                if prop == "cursor" {
+                    return if value.to_ascii_lowercase().contains("image-set(") {
+                        "null".to_string()
+                    } else {
+                        value.to_string()
+                    };
+                }
                 if zero_css_parser::values::background_image_decl_invalid(value) {
                     return "null".to_string();
                 }
@@ -4304,6 +4314,7 @@ pub fn register_dom_callbacks(
             }
             #[cfg(not(feature = "v8"))]
             {
+                let _ = prop;
                 value.to_string()
             }
         }),

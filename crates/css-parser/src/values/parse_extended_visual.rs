@@ -731,6 +731,61 @@ pub enum BackgroundImageValue {
         /// dark 支图像（按 used scheme 为 dark 时选中）。
         dark: Box<BackgroundImageValue>,
     },
+    /// image-set() — CSS Images 4 图像集函数
+    ///（https://drafts.csswg.org/css-images-4/#image-set-nota）。`-webkit-image-set()`
+    /// 解析期别名归并（同 AST，css-images-4 #deprecated 前缀 parse 期剥除——canonical
+    /// 串化恒落标准形）。g45 语料驱动（image-set-parsing/computed）。
+    ImageSet(ImageSetValue),
+}
+
+/// image-set() 值：逗号分隔选项表（≥1）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageSetValue {
+    /// 选项表。
+    pub options: Vec<ImageSetOptionValue>,
+}
+
+/// image-set() 单选项（css-images-4 §image-set-nota
+/// `<image-set-option> = <image> [ <resolution> || <string(type())> ]?`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageSetOptionValue {
+    /// 选项图像（url()/字符串/渐变；嵌套 image-set 与 none 非法——语料钉面）。
+    pub image: Box<BackgroundImageValue>,
+    /// 分辨率（缺省 → 指定/计算两串化面各补 `1x`/`1dppx`）。
+    pub resolution: Option<ImageSetResolution>,
+    /// type(<mime-string>) MIME 提示（引号剥离后原串）。
+    pub mime: Option<String>,
+}
+
+/// image-set() 选项分辨率。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImageSetResolution {
+    /// 明文字面（`1x`/`2dppx`/`192dpi`/`1dpcm`……负字面非法——语料钉面）。
+    /// `text` 指定面原文保形；`dppx` 计算值（x/dppx 恒等、dpi ÷96、
+    /// dpcm ×2.54/96——css-values-4 §6.4 同款约定）。
+    Plain {
+        /// as-written 原文（`3.5x`/`192dpi`——指定面保形发射）。
+        text: String,
+        /// dppx 基计算值（x/dppx 恒等、dpi ÷96、dpcm ×2.54/96）。
+        dppx: f64,
+    },
+    /// calc(<resolution>)（css-images-4 §image-set-nota）：`text` 原文保形；
+    /// `folded_dppx` 字面树折叠到 dppx 基（折叠内件
+    /// `serialize_math::fold_resolution_to_dppx`——共享 resolution-calc 通道；
+    /// 非纯 resolution 树/含 sibling-index() 等不折叠 → None 保原文）。
+    Calc {
+        /// calc(...) 含首尾括号原文。
+        text: String,
+        /// 字面树 dppx 基折叠值（NaN/±∞ 保留——发射走 §10.6 canonical）。
+        folded_dppx: Option<f64>,
+    },
+}
+
+/// image-set() 头识别（大小写不敏感；含 `-webkit-` 别名前缀）。
+pub fn is_image_set_prefixed(value: &str) -> bool {
+    let v = value.trim_start();
+    let lower = v.to_ascii_lowercase();
+    lower.starts_with("image-set(") || lower.starts_with("-webkit-image-set(")
 }
 
 impl BackgroundImageValue {
@@ -808,6 +863,342 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
         });
     }
 
+    // image-set() / -webkit-image-set()（css-images-4 §image-set-nota）：前缀别名
+    // parse 期剥除（canonical 恒落标准形），选项文法见 [`parse_image_set_options`]。
+    if is_image_set_prefixed(value) {
+        let lower = value.to_ascii_lowercase();
+        let head = if lower.starts_with("-webkit-image-set(") {
+            "-webkit-image-set(".len()
+        } else {
+            "image-set(".len()
+        };
+        if !value.ends_with(')') {
+            return None;
+        }
+        let args = &value[head..value.len() - 1];
+        let options = parse_image_set_options(args)?;
+        return Some(BackgroundImageValue::ImageSet(ImageSetValue { options }));
+    }
+
+    None
+}
+
+/// 解析 image-set() 实参为选项表（css-images-4 §image-set-nota）。
+///
+/// 顶层逗号分隔 ≥1 选项；空参（`image-set()`）拒收。逐选项
+/// `<image> [ <resolution> || <type()> ]?`：image 为 url()/字符串/渐变
+///（嵌套 image-set、none、image() 自然拒）；resolution 明文字面负值非法、
+/// calc 走 [`super::parse_transform`]-侧 resolution 折叠通道（非纯树保原文）；
+/// type() 恰一引号串。多余片段（双 resolution/双 type/杂 token）拒收——语料
+/// `url(example.png) 1x url(example.jpeg)`/`1x 2x`/重复 type 钉面。
+pub fn parse_image_set_options(args: &str) -> Option<Vec<ImageSetOptionValue>> {
+    let mut options = Vec::new();
+    for part in split_top_commas_all(args) {
+        let opt = parse_image_set_option(part.trim())?;
+        options.push(opt);
+    }
+    if options.is_empty() {
+        return None;
+    }
+    Some(options)
+}
+
+/// 顶层逗号全拆分（括号配平、引号内逗号不计、引号内 `\` 转义跳过——
+/// [`split_top_level_comma`](self) 单拆分语义的多拆分版；字节态机口径同
+/// serialize_math `fold_image_set_specified`）。
+fn split_top_commas_all(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut last = 0usize;
+    let mut in_quote: Option<u8> = None;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = in_quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == q {
+                in_quote = None;
+            }
+        } else {
+            match b {
+                b'"' | b'\'' => in_quote = Some(b),
+                b'(' => depth += 1,
+                b')' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => {
+                    parts.push(&s[last..i]);
+                    last = i + 1;
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    parts.push(&s[last..]);
+    parts
+}
+
+/// 解析单选项 `<image> [ <resolution> || <type()> ]?`。
+fn parse_image_set_option(opt: &str) -> Option<ImageSetOptionValue> {
+    let (image, rest) = consume_image_set_image(opt)?;
+    let mut resolution: Option<ImageSetResolution> = None;
+    let mut mime: Option<String> = None;
+    let mut rest = rest.trim();
+    while !rest.is_empty() {
+        let lower = rest.to_ascii_lowercase();
+        if lower.starts_with("type(") {
+            if mime.is_some() {
+                return None; // 双 type 拒收（语料钉面）。
+            }
+            let (m, r) = consume_balanced_fn(rest)?;
+            mime = Some(parse_image_set_mime(m)?);
+            rest = r.trim();
+        } else {
+            if resolution.is_some() {
+                return None; // 双 resolution 拒收（`1x 2x` 语料钉面）。
+            }
+            // calc(...) 内含空白（`calc(2x * 3)`）——括号配平消费；明文
+            // dimension token 单词消费。
+            let (r_token, r) = if lower.starts_with("calc(") {
+                consume_balanced_fn(rest)?
+            } else {
+                consume_token(rest)
+            };
+            resolution = Some(parse_image_set_resolution(r_token)?);
+            rest = r.trim();
+        }
+    }
+    Some(ImageSetOptionValue {
+        image: Box::new(image),
+        resolution,
+        mime,
+    })
+}
+
+/// 消费选项图像前缀（css-images-4 `<image>`）：
+/// - `url(...)`：括号配平取 span；载荷引号串（可空串——`url("")` 合法，语料
+///   calc-infinity-nan 钉面）或非空裸 token；
+/// - 引号串：`'…'`/`"…"` → 字符串图像（`\X` 转义去壳）；
+/// - 渐变函数：前缀识别 + 括号配平，递归走 [`parse_background_image`]
+///   （复用 g41-g44 渐变文法位与 canonical 捕获）。
+/// 嵌套 `image-set(` / `none` / 其他函数（`image()`、`filter()`……）不消费。
+/// 返回（图像, 余文）。
+fn consume_image_set_image(s: &str) -> Option<(BackgroundImageValue, &str)> {
+    let s = s.trim_start();
+    let lower = s.to_ascii_lowercase();
+    if lower.starts_with("url(") {
+        let (span, rest) = consume_balanced_fn(s)?;
+        let inner = span.get(4..span.len() - 1)?.trim();
+        let url = parse_image_set_url_payload(inner)?;
+        return Some((BackgroundImageValue::Url(url), rest));
+    }
+    let first = s.as_bytes().first()?;
+    if *first == b'"' || *first == b'\'' {
+        let (content, rest) = consume_quoted_string(s)?;
+        return Some((BackgroundImageValue::Url(content), rest));
+    }
+    if super::serialize_gradient::is_gradient_prefixed(s) {
+        let (span, rest) = consume_balanced_fn(s)?;
+        let g = match parse_background_image(span.trim())? {
+            BackgroundImageValue::Gradient(g) => g,
+            _ => return None,
+        };
+        return Some((BackgroundImageValue::Gradient(g), rest));
+    }
+    None
+}
+
+/// image-set() 选项 url 载荷：引号串（可空——css-images-4 `<url>` 串形态；
+/// 裸 token 非空。转义闭包校验沿 [`parse_css_url_payload`] 口径但放宽空串）。
+fn parse_image_set_url_payload(inner: &str) -> Option<String> {
+    if let Some(q) = inner.as_bytes().first().filter(|q| **q == b'"' || **q == b'\'') {
+        let q = *q as char;
+        let body = inner.strip_prefix(q)?.strip_suffix(q)?;
+        return Some(unescape_css_string(body));
+    }
+    let url = inner.trim();
+    if url.is_empty() || url.contains('"') || url.contains('\'') {
+        return None;
+    }
+    Some(url.to_string())
+}
+
+/// 消费引号串前缀（`\X` 逐对跳过；未闭合拒）。返回（去壳转义后内容, 余文）。
+fn consume_quoted_string(s: &str) -> Option<(String, &str)> {
+    let q = *s.as_bytes().first()?;
+    let mut chars = s.char_indices();
+    chars.next()?;
+    let mut body = String::new();
+    while let Some((i, ch)) = chars.next() {
+        match ch {
+            '\\' => {
+                let (_, esc) = chars.next()?;
+                body.push(esc);
+            }
+            c if c as u8 == q => {
+                return Some((body, &s[i + 1..]));
+            }
+            c => body.push(c),
+        }
+    }
+    None
+}
+
+/// css 字符串转义还原（`\X` → X；孤反斜杠按字面——语料仅 `\"` 驱动）。
+fn unescape_css_string(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some(e) => out.push(e),
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// 括号配平消费 `fn(...)` 前缀（引号内括号/转义不计深；未闭合拒）。
+/// 返回（含首尾括号整 span, 余文）。
+fn consume_balanced_fn(s: &str) -> Option<(&str, &str)> {
+    let open = s.find('(')?;
+    let bytes = s.as_bytes();
+    let mut depth = 1usize;
+    let mut in_quote: Option<u8> = None;
+    let mut j = open + 1;
+    while j < bytes.len() {
+        let b = bytes[j];
+        if let Some(q) = in_quote {
+            if b == b'\\' {
+                j += 2;
+                continue;
+            }
+            if b == q {
+                in_quote = None;
+            }
+        } else if b == b'"' || b == b'\'' {
+            in_quote = Some(b);
+        } else if b == b'(' {
+            depth += 1;
+        } else if b == b')' {
+            depth -= 1;
+            if depth == 0 {
+                return Some((&s[..=j], &s[j + 1..]));
+            }
+        }
+        j += 1;
+    }
+    None
+}
+
+/// 消费一个空白界定的裸 token（引号/calc 等括号配平不可跨——调用方先按
+/// 前缀分流）。返回（token, 余文）。
+fn consume_token(s: &str) -> (&str, &str) {
+    let end = s
+        .char_indices()
+        .find(|(_, ch)| ch.is_whitespace())
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    (&s[..end], &s[end..])
+}
+
+/// 解析选项分辨率：明文字面 `<number> <unit>`（unit ∈ x/dppx/dpi/dpcm 大小写
+/// 不敏感；负字面拒收——语料 `-1x`/`-96dpi` 钉面，零合法；bogus unit/
+/// token 胶连 `1xtype(...)` 拒收）或 `calc(<resolution>)`（解析走共享
+/// resolution-calc 通道，纯树折叠 dppx 基、非纯树保原文）。
+fn parse_image_set_resolution(token: &str) -> Option<ImageSetResolution> {
+    let token = token.trim();
+    if token.to_ascii_lowercase().starts_with("calc(") {
+        if !token.ends_with(')') {
+            return None;
+        }
+        let inner = &token[5..token.len() - 1]; // `calc(` 5 字节剥壳。
+        // 三态：None = 文法/型别 invalid（number-only `calc(3 * 4)`/混型
+        // `calc(2x - 1)` 语料钉面）；Some(None) = 静态不可折叠合法树保形；
+        // Some(Some(n)) = dppx 基折叠值。
+        let folded = super::serialize_math::fold_resolution_typed(inner)?;
+        return Some(ImageSetResolution::Calc {
+            text: token.to_string(),
+            folded_dppx: folded,
+        });
+    }
+    let (num, unit) = split_number_unit(token)?;
+    if num.starts_with('-') {
+        return None; // 负字面 resolution 非法（css-values-4 §6.4；calc 可负——语料钉面）。
+    }
+    let value: f64 = num.parse().ok()?;
+    let dppx = match unit.to_ascii_lowercase().as_str() {
+        "x" | "dppx" => value,
+        "dpi" => value / 96.0,
+        "dpcm" => value * 2.54 / 96.0,
+        _ => return None,
+    };
+    Some(ImageSetResolution::Plain {
+        text: token.to_string(),
+        dppx,
+    })
+}
+
+/// 明文 dimension token 拆（数值位 + 单位位；单位非 ASCII 字母起即拒——
+/// `1invalidResUnit`/`92pid` 拒、`1x` 收）。
+fn split_number_unit(token: &str) -> Option<(&str, &str)> {
+    let bytes = token.as_bytes();
+    let mut i = 0usize;
+    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
+        i += 1;
+    }
+    let mut seen_digit = false;
+    let mut seen_dot = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_digit() {
+            seen_digit = true;
+            i += 1;
+        } else if b == b'.' && !seen_dot {
+            seen_dot = true;
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    if !seen_digit || i >= bytes.len() {
+        return None;
+    }
+    let unit = &token[i..];
+    if !unit.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return None;
+    }
+    Some((&token[..i], unit))
+}
+
+/// 解析 type() 实参：恰一引号串（裸 ident `type(image/png)`/双串/空参拒收
+/// ——语料钉面）。返回 MIME 引号内原文保形（转义序列不还原——发射面重引号
+/// 原样回放，`type("a\"")` round-trip 恒等）。
+fn parse_image_set_mime(span: &str) -> Option<String> {
+    let inner = span.get(5..span.len().saturating_sub(1))?.trim();
+    let q = *inner.as_bytes().first().filter(|q| **q == b'"' || **q == b'\'')?;
+    // 首个未转义闭引号（`\X` 跳过）须为末字符——其后杂料（双串）拒收。
+    let bytes = inner.as_bytes();
+    let mut i = 1usize;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == q {
+            if i != bytes.len() - 1 {
+                return None;
+            }
+            return Some(inner[1..i].to_string());
+        }
+        i += 1;
+    }
     None
 }
 

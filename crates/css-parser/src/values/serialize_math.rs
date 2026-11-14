@@ -981,6 +981,13 @@ pub(crate) fn format_dimension_inner(value: f64, suffix: Option<&str>) -> String
     }
 }
 
+/// \<resolution\> dppx canonical 串化（css-values-4 §6.4）：有限 → `<n>dppx`；
+/// NaN/±∞ → `NaN|±infinity * 1dppx`（§10.6 canonical）。g45 image-set
+/// computed 面消费（engine computed_style；跨 crate 薄包装单实现）。
+pub fn format_resolution_dppx(value: f64) -> String {
+    format_dimension_inner(value, Some("dppx"))
+}
+
 /// 标量折叠内文：求值（[`scalar_value`] 两级）+ 树首维度叶 canonical 单位。
 fn scalar_fold_inner(expr: &CalcExpr) -> Option<String> {
     Some(format_dimension_inner(scalar_value(expr)?, dimension_suffix(expr)))
@@ -1231,6 +1238,34 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
             .or_else(|| fold_image_set_specified(v)),
         _ => None,
     }
+}
+
+/// image-set() 选项 calc 分辨率折叠（css-images-4 §image-set-nota）：纯
+/// resolution 树 → dppx 基标量（css-values-4 §6.4 parse 期归一）；非纯树/
+/// 含 sibling-index() 等不可静态折叠函数 → None（调用方保原文）。g45
+/// image-set 刀与 [`fold_image_set_specified`] 共用同一折叠内件
+///（[`parse_resolution_calc`] + 纯度门 + [`scalar_value`]）——NaN/Infinity
+/// canonical 文本由调用方经 [`format_dimension_inner`] 发射，行为恒等。
+/// 返回 `None` = 文法/型别 invalid；`Some(None)` = 合法但静态不可折叠（保形）；
+/// `Some(Some(n))` = dppx 基折叠值。
+pub(crate) fn fold_resolution_typed(inner: &str) -> Option<Option<f64>> {
+    // 负字面维度跟二元算符（`calc(1x + -1x)`，image-set-parsing valid 钉）：
+    // 共享 CalcParser 将 `+ -` 序解析为带裸 Number 叶杂树（纯度门 false）——
+    // 仅本折叠层做符号归一重试（共享 parse 文法面不放宽，其他消费方零漂移）。
+    let signed = inner.contains("+ -") || inner.contains("- -");
+    let parsed = parse_resolution_calc(inner).filter(calc_expr_is_pure_resolution);
+    let expr = match parsed {
+        Some(e) => e,
+        None if signed => {
+            let norm = inner.replace("+ -", "- ").replace("- -", "+ ");
+            parse_resolution_calc(&norm).filter(calc_expr_is_pure_resolution)?
+        }
+        None => return None,
+    };
+    // 纯度门三态分流：false = 型别 invalid（number-only/混型——调用方判
+    // declaration invalid）；true 且 scalar None = 静态不可折叠合法树
+    //（sibling-index()/sign(1em-10px)——调用方保形）。
+    Some(scalar_value(&expr))
 }
 
 /// image-set() 声明值内数学形 canonical 折叠（css-images-4 §image-set-nota）。

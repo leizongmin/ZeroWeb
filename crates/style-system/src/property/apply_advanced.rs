@@ -525,6 +525,9 @@ fn bg_image_value_to_computed(
             light,
             dark: dark_branch,
         } => bg_image_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark),
+        // g45：image-set() 选项 AST 直通（computed 串化期归一——分辨率 dppx、
+        // url 引号化；选项图像文法 parse 期已限 url/字符串/渐变）。
+        zero_css_parser::values::BackgroundImageValue::ImageSet(is) => BackgroundImageComputedValue::ImageSet(is),
     }
 }
 
