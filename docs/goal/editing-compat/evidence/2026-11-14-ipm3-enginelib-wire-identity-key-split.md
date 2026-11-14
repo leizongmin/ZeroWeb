@@ -80,3 +80,21 @@ Remove { selector: "#t68c > p:nth-child(1)" }  # engine wire 已携 fresh 章
 - fmt --all 零 diff；
 - corpus 四腿（ip/ab/mt/enginelib）重跑 = 门禁批 batch-ipm3-fix-gate-v1（本 evidence 提交
   后锚新 head 发射，ip 腿须 fresh 重跑——shim 已变，v6 的 ip salvage 证据失效）。
+
+## 门禁批 fix-gate-v1 终态（2026-11-14 16:41–17:01，@94883fbbe bin 808f8ccba）
+
+- **L1 ip 腿 fresh 全绿——修复 corpus 面定谳**：rows 7195 恒一，F 99→77，
+  **F2P=22（br=22，other=0，恰 A 族）**，P2P/P2F=0、lost=0、newF=0，residF=77，
+  wall 875s 零 Timeout。
+- **L2 ab 腿 T=1 ABORT（伪影归因，非修复回归）**：尾页 case ~10068/10092 处
+  300s 页预算耗尽截断，前 **10067 案全 Pass 零 Fail**（wall 303s）。归因：兄弟流
+  ZeroWeb-2 wptfyi-css g36 anchor A/B 并发租户恰在窗口内落盘（16:58 mtime，
+  loadavg 5min 3.20），其 runner 二进制名不在本批 ensure_solo watch 名单
+  （zero-wpt-runner/test-guard/cargo/rustc）→ 隐形重租户 × 跨页累积慢化 = spin2
+  时代已定谳的页预算尾截签名；同二进制 ip 7195 行零 T + enginelib 全绿佐证。
+- **跨流独立确认（enginelib 面）**：入站 s433（FORM named-first trap 面，
+  4e3eea8f3）push 时 pull --rebase 带入本修复，对方组合态复跑 **1561P/7F，
+  M3-A 五新红（s40/r5250/t68-case_c/m3b7/m3x14）全数清偿**
+  （[对方 evidence §241](../html-semantics-compat/evidence/2026-11-14-m2s433-form-named-first-override-builtins.md)）。
+- 后续：s433 改 shim part03/04/05 → corpus 四腿于组合态新锚 fresh 重射
+  batch-ipm3-fix-gate-v2（每 corpus 腿前 load-wait 门防伪影复现）。
