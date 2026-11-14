@@ -51,6 +51,35 @@ selfull3 / inputfull，test-guard 包裹同机跑）。本批纯分析归类，�
 5. **B5 · 小簇**：cloning-attributes null 崩溃（17F）、editing-around-
    select 保形（100F）、join-pre（138F）等按批穿插。
 
+## B1 解剖细化（d20 轮复核，2026-11-14）
+
+四层断链（自顶向下，全部已在源码定位）：
+
+1. **setup 断点（333F 直接触发器）**：corpus 逐变体首步
+   `iframeElement.contentDocument.execCommand("defaultParagraphSeparator", false, "div")`
+   （delete/insertparagraph-in-child-of-{head,html} 各变体，如
+   delete-in-child-of-head.tentative.html:53）——child doc 无 execCommand
+   → TypeError → 整文件全测试 unhandled rejection。最小修 = child doc 挂
+   execCommand（至少 defaultParagraphSeparator + delete/forwarddelete/
+   insertparagraph/inserttext 编辑命令薄面，queryCommand* 随行）。
+2. **elementInLightDOM 断点（146F 触发器）**：EditorTestUtils.sendKey 的
+   light-DOM 上行 `e.getRootNode({composed:false})` 打在 undefined——
+   DesignMode 变体 editingHost = `iframe.contentDocument.body` 视图链
+   （ownerDocument/getRootNode/undefined 面）待核对补齐。
+3. **runner send_keys 子文档解析**：runner 把 Backspace/Delete 映射
+   HtmlUserAction::DeleteBackward/ForwardDelete（testharness.rs:12444 附近）
+   → `script_contenteditable_delete(selector)` → `__zw_ce_delete_backward`
+   走 **主 document.querySelector(selector) + 主选区**——子文档元素选择器
+   与选区完全不可达；须让编辑动作按 send_keys 目标所属文档解析编辑宿主
+   （designMode=on 文档 → 全文档宿主 + childDoc.getSelection() 选区）。
+4. **defaultParagraphSeparator 语义落点**：child doc 的 insertParagraph
+   分隔符状态按 doc 级存储（主 doc 现行全局 `__zw*` 状态需同款 per-doc 化
+   或 child 工厂内轻量状态）。
+
+工作量评估： Shim 侧（1/2/4）+ runner 侧（3）双端同批，配 before/after
+ledger（六变体文件受控 + editing/other 全量对拍）。B1 是修复队列中唯一
+跨 runner/桥两端的批，排首。
+
 ## 与既有账目的关系
 
 - bold notbold 1F bisect（master.md 既挂）与 mt 慢页补跑保持挂账；本机
