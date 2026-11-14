@@ -2,28 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 435 收口（selectedcontent-listbox 红利案翻绿
-机制归因轮，零源码改动；账本
-evidence/2026-11-14-m2s435-selectedcontent-flip-attribution.md）——
-**s433 红利案归属更正**：`selectedcontent-listbox :: <select size=4>
-should support <selectedcontent>.` F→P 翻绿 = 同窗他流 site-opt t68
-（PR #302）cd29066a3 的 innerHTML 融合 getter 空串折叠修复
-（`_zwFusedInnerHtmlSel` 尾 `!== '' → null` 折叠退役——宿主写异步 apply
-下同 turn 写 '' 后立即读，融合视图合法空串被折叠 null 回落 host 陈旧
-快照 'one'），**与 s433 FORM named-first 六刀零因果**（页面无 form、
-六刀 FORM-only）。s433「stable-P +2」净账不变：驱动案 nameditem 真
-s433 翻绿；红利案系时序相关、机制无关的他流贡献。证据链：criterion
-二值化 bisect（判据反转 bad iff 页面 PASS，good 锚 = 9f66f2bbe s432
-基线）6 腿钉 first bad = cd29066a3；父提交 d1545546b solo 补验 F 同签名
-（expected '' got 'one'，与 s432 sweep2/4/6 存证逐字同）；刀级 A/B——
-HEAD 仅回退折叠一行 solo 复红同签名、还原后 P（hunk 级因果钉死，
-cd29066a3 其余 573 行与本页零交集）。**方法论注记**：双流并行窗口内
-单案翻绿不可默认归属本流施工，翻绿案须 bisect 归因后记账（run-rules
-#10 归因纪律的翻绿面推广）。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）。下一步：window.open 真弹窗链评估轮；红池分诊续
-（video P1+P2 或簇 D A2 待门决）；dialog R-s31 簇/img density/embed
-sizing face 到货复验；全桥套件绿窗轮末收口跑常态化（s433 挂账兑现，
-基线 1570P/0F）。
+**状态**: Active——M2 切片 436 收口（window.open 真弹窗链评估轮，零源码
+改动；账本
+evidence/2026-11-14-m2s436-window-open-popup-chain-assessment.md）——
+**判决：立项挂账归并 runner 多文档能力域，不流内施工**。勘定三面：
+①stub 非零实现——part01b R2979 `globalThis.open` 恒返 null（headless
+popup-blocked dismiss 语义，alert/confirm/prompt 同族），契约有桥测试
+钉面（part10.rs window.open→null 断言），评估对象 = stub → 真 window
+opening steps 升级（WindowProxy 返回 + features 解析）；②语料依赖面
+零账面暴露——html/semantics 21 文件含 window.open 字面（14 断言页 +
+7 helper）全被 runner 内容级 skip（testharness_html_semantics
+`source.contains("window.open")`——runner 单文档无窗口管理）+ 
+the-iframe-element 目录排除（11/14 断言页先中此门）挡在可执行集外，
+基线逐文件核对零键；③施工依赖链——engine arm 可复用 s432 anchor 臂
+rel 矩阵，但 **WindowProxy 物化 = runner 架构级门**（aux 文档第二
+global 需多文档/多窗口管道，与 navigation M3 门控/moving-between-
+documents 挂案同门）。零直接翻绿收益 + 架构级前置 → 立项挂账（能力
+上限记账同 listbox-touch 先例，不新开用户门；若用户点名 runner 多窗口
+通道再按 runner 管道 → engine arm+物化 → skip 解除+端点仿真三面分期）。
+**全桥套件绿窗轮末收口跑兑现常态化挂账**：1570P/0F exit 0（基线维持，
+窗口树恒等）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）。
+下一步：dialog R-s31 簇/img density/embed sizing face 到货复验（待他流
+face 到货）；红池分诊续（video P1+P2 或簇 D A2 待门决）；全桥套件绿窗
+轮末收口跑常态化（本轮已兑现一次，基线 1570P/0F）。
+
+> **▶ 承前（2026-11-14 M2 切片 435 收口）——selectedcontent-listbox
+> 红利案翻绿机制归因轮（零源码改动；s433 归属更正）**：账本
+> evidence/2026-11-14-m2s435-selectedcontent-flip-attribution.md。
+> `selectedcontent-listbox :: <select size=4> …` F→P 翻绿 = 同窗他流
+> site-opt t68（PR #302）cd29066a3 的 innerHTML 融合 getter 空串折叠
+> 修复（`_zwFusedInnerHtmlSel` 尾 `!== '' → null` 折叠退役——宿主写异步
+> apply 下同 turn 写 '' 后立即读，融合视图合法空串被折叠 null 回落 host
+> 陈旧快照 'one'），**与 s433 FORM named-first 六刀零因果**（页面无
+> form、六刀 FORM-only）。s433「stable-P +2」净账不变：驱动案 nameditem
+> 真 s433 翻绿；红利案系时序相关、机制无关他流贡献。证据链：criterion
+> 二值化 bisect（判据反转 bad iff 页面 PASS）6 腿钉 first bad =
+> cd29066a3；父提交 d1545546b solo 补验 F 同签名（expected '' got
+> 'one'，与 s432 sweep 存证逐字同）；刀级 A/B——HEAD 仅回退折叠一行
+> solo 复红同签名、还原后 P（hunk 级因果钉死，其余 573 行零交集）。
+> 方法论：双流并行窗口内单案翻绿不可默认归属本流施工，翻绿案须 bisect
+> 归因后记账（run-rules #10 翻绿面推广）。
 
 > **▶ 承前（2026-11-14 M2 切片 434 收口）——桥套件 7 红全树 bisect
 > 归因 + 全清偿轮（429 断点接手；1561P/7F → 1568P/0F）**：账本
