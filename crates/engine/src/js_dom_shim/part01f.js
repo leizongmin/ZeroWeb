@@ -2656,6 +2656,9 @@
           }
         })(container);
         // 侧整段 whitespace-only 判：无元素后代且文本后代全折叠空白（退化面）。
+        // 空串文本节点（offset 0 拆分左半残根，探针 containerKids=1 k0=3:""
+        // 实录）不破退化判——isWsOnly('')=false 是字串级判据，此处节点级
+        // 全空等价空白（ipm3-b-v5-ip.log P2F=2 复翻实录）。
         var bSideWsOnlyC = function (root) {
           var hasEl = false;
           var allWs = true;
@@ -2664,6 +2667,7 @@
             for (var iW = 0; iW < ksW.length; iW++) {
               if (ksW[iW].nodeType === 1) { hasEl = true; }
               else if (ksW[iW].nodeType === 3
+                  && String(ksW[iW].nodeValue || '') !== ''
                   && !_zwIparaIsCollapsibleWsOnly(String(ksW[iW].nodeValue || ''))) {
                 allWs = false;
               }
