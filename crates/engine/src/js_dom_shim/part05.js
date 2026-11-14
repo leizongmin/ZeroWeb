@@ -2984,6 +2984,66 @@
         return w ? w.getSelection() : null;
       } catch (_e3kDgs) { return null; }
     };
+    // B1 切片 1（editing goal d21，2026-11-14）：**iframe 子文档 execCommand 薄面**——
+    // execCommand/queryCommand* 全族此前只挂主 document（part06 R3254-M2，耦合
+    // globalThis 主选区/主文档槽），子文档 factory 无该面 → corpus setup 首步
+    // `iframeElement.contentDocument.execCommand("defaultParagraphSeparator",…)`
+    // TypeError（delete/insertparagraph-in-child-of-{head,html} DesignMode
+    // 双变体整文件 unhandled rejection，selection editing/other 333F）。本薄面
+    // 只覆盖 corpus 实际调用集（六个子文档用例文件枚举：defaultParagraphSeparator
+    // setup + createLink——typing-around-link DesignMode 变体
+    // `utils.document.execCommand("createLink",…)`），per-doc 状态用工厂闭包槽
+    //（主文档的 __zw* 全局态不共享——spec 每个 Document 独立编辑状态）。
+    // delete/forwarddelete 的非折叠臂走子选区 deleteContents；折叠臂 no-op true
+    //（真块合并语义由 runner send_keys 路径承载——FIXME(B1 切片 2)：子文档键
+    // 路由 + insertParagraph 分隔符消费）。spec
+    // https://w3c.github.io/editing/execCommand.html（legacy，Chrome 语义）。
+    var _zwCdDps = 'p'; // defaultParagraphSeparator per-doc 状态（spec 初始 'p'）
+    var _zwCdSwc = false; // styleWithCSS/usecss per-doc 状态
+    doc.execCommand = function (commandId /*, showUI, value*/) {
+      var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      var sel = null;
+      try { sel = doc.getSelection(); } catch (_eCdSel) { sel = null; }
+      if (cmd === 'defaultparagraphseparator') {
+        var dpsV = String(arguments[2] == null ? '' : arguments[2]).toLowerCase();
+        if (dpsV === 'p' || dpsV === 'div') { _zwCdDps = dpsV; return true; }
+        return false; // FIXME(spec): 非法值应抛 TypeError（editing spec ExecCommand）
+      }
+      if (cmd === 'stylewithcss' || cmd === 'usecss') {
+        _zwCdSwc = String(arguments[2] == null ? '' : arguments[2]).toLowerCase() !== 'false';
+        return true;
+      }
+      if (cmd === 'createlink') {
+        if (!sel || sel.rangeCount === 0) return false;
+        var clRng = sel.getRangeAt(0);
+        if (clRng.collapsed) return false; // 折叠选区 createlink 无动作（Chromium 同）
+        var clA = doc.createElement('a');
+        clA.setAttribute('href', String(arguments[2] == null ? '' : arguments[2]));
+        try {
+          var clFrag = clRng.extractContents();
+          clA.appendChild(clFrag);
+          clRng.insertNode(clA);
+          // spec：link 化后选区选中 link 内容（后续 collapse/typing 消费面）。
+          sel.removeAllRanges();
+          var clNr = doc.createRange();
+          clNr.selectNodeContents(clA);
+          sel.addRange(clNr);
+        } catch (_eCl) { return false; }
+        return true;
+      }
+      if (cmd === 'delete' || cmd === 'forwarddelete') {
+        if (!sel || sel.rangeCount === 0) return true;
+        var dRng = sel.getRangeAt(0);
+        if (!dRng.collapsed) {
+          dRng.deleteContents();
+          sel.removeAllRanges();
+          sel.addRange(dRng); // deleteContents 后边界同点（折叠）
+        }
+        // 折叠臂：no-op true（块合并语义属键路径——FIXME(B1 切片 2)）
+        return true;
+      }
+      return false; // 未覆盖命令（spec：unsupported 返 false）
+    };
     // R3254-E2 切片 6（editing goal，2026-09-07）：iframe doc 的 **own createRange**——
     // common.js rangeFromEndpoints 经 ownerDocument(endpoints[0]).createRange() 建域；
     // 此前 detached/foreign 端点（iframe createElement 产物 ownerDocument=iframe doc）走
@@ -4964,8 +5024,22 @@
             return ranges[i];
           },
           collapse: function (node, offset) {
+            // spec selection-api #dom-selection-collapse：空 selection **不抛**——
+            // 「If this's range is null, set it to a new range with start/end =
+            // (node, offset)」（Chrome/Firefox 同形；collapseToStart/End 才有
+            // InvalidStateError 门）。B1 切片 1（editing goal d21，2026-11-14）：
+            // delete/insertparagraph-in-child-of-{head,html} setup 在 fresh
+            // 子选区直调 `childDoc.getSelection().collapse(div.firstChild, 0)`
+            // ——旧实现 rangeCount 0 抛 InvalidStateError，setup 链断在
+            // execCommand 修复后的下一层。
             if (ranges.length === 0) {
-              throw new (globalThis.DOMException || Error)('collapse: InvalidStateError', 'InvalidStateError');
+              var _rCollapseNr = _makeRange();
+              try {
+                if (globalThis.Range && globalThis.Range.prototype) {
+                  Object.setPrototypeOf(_rCollapseNr, globalThis.Range.prototype);
+                }
+              } catch (_eCollapseNrP) {}
+              ranges.push(_rCollapseNr);
             }
             var r = ranges[0];
             r.setEnd(node, offset);

@@ -27952,7 +27952,17 @@ return e;
     // 其父为 doc）。WPT common.js `foreignDoc.body.appendChild(foreignPara1)` 后
     // `foreignDoc.contains(foreignPara1)` 沿 parentNode 链上行须命中 foreignDoc。body.parentNode
     // 原 null（R3017 detached root 注释——DOMPurify walk 用 parentNode 向上只多一级，不影响）。
-    headEl.parentNode = docEl;
+    // B1（editing goal d21，2026-11-14）：headEl/docEl 的 parentNode 写入须走 own
+    // defineProperty——R130 已把两者 setPrototypeOf 到 HTML*Element.prototype，而
+    // R3019 在 Element.prototype 挂了 getter-only parentNode 访问器（读 own 缺省
+    // null），plain 赋值静默失效 → own 属性不存在 → 上行链在 docEl 断（探针实证
+    // body→docEl 即止：getRootNode(body) 返 docEl 非 doc）。EditorTestUtils.sendKey
+    // 的 light-DOM 上行（editing/include/editor-test-utils.js）沿
+    // `e.getRootNode({composed:false}).host` 取 host → undefined → 下一轮
+    // `e.getRootNode` TypeError——delete/insertparagraph-in-child-of-* DesignMode
+    // 变体整簇 setup 崩（selection editing/other 146F）。spec
+    // https://dom.spec.whatwg.org/#dom-node-parentnode。
+    Object.defineProperty(headEl, 'parentNode', { value: docEl, writable: true, configurable: true });
     // R81：body.parentNode 已由上方 getter 承载（docEl），此处不再赋值（赋值会覆盖 getter 报错或失效）。
     docEl.childNodes = [headEl, body];
     docEl.children = [headEl, body];
@@ -27976,7 +27986,9 @@ return e;
     docEl.hasChildNodes = function () { return true; };
     docEl.contains = function (other) { return _zwNodeContains(docEl, other); };
     docEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(docEl, other); };
-    docEl.parentNode = doc;
+    // B1（editing goal d21）：同 headEl——R3019 访问器使 plain 赋值 no-op，改 own
+    // defineProperty（R223 健壮写同款；11251 先例）。
+    Object.defineProperty(docEl, 'parentNode', { value: doc, writable: true, configurable: true });
     // js-dom M4 R112：docEl/body 事件面（view 形态 _zwEvLs + tag 注册表——与 _zwParseEl
     // path 派发共享 fire 语义；WPT Event-dispatch-bubbles targets = [doc, docEl, body, ...]
     // 逐一 addEventListener）。tag 键经全局 _zwEvTagRegistry（part02 定义）注册，使解析
