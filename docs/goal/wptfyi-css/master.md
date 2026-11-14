@@ -244,6 +244,19 @@ transforms 229 + motion 105/391 + typed-om 9,872 + cssom 1,968 六锚持平
 （均首轮二进制），终值以终跑 + 补套件电池为准；make test **3,935P/7F**（在册
 7F 零新增）/clippy 零告警/rustfmt clean（分词器修复后复验），见
 evidence 2026-11-14-progress-function-g33。
+**DC-2 g34 终账批完成（11-14，干净 HEAD 单二进制，仅文档）**：g33 验证账
+遗留「终值以终跑 + 补套件电池为准」兑现——前轮 g34 链 /tmp 日志随会话结束
+丢失，本链 systemd service 全量重录。values 全量 256 案 **3,935 → 4,009 净
++74 零回归**（python 逐页 diff REGRESSED=0，GAINED 恰五页与 g33 终跑账同构
+——serialize +41/computed +27/invalid +2/clamp +2/hypot +2，g33 终值 4,009P
+定谳为提交态真值）；电池六锚精确持平（color 10,999/typed-om 9,872/cssom
+1,968/motion 105/easing 51 字节级一致 + transitions Pass+Timeout 双锚定），
+transforms **229→231 +2 零回归**（scale-parsing-computed 23→24/
+transform-with-sign-function 2→3，g33 rotate3d 四臂+分词器 depth-0 修复
+红利），transitions 200→**201**/animations 238→**239**（各 +1 真实增益：
+基线轮 Timeout 子测本轮完整枚举后真过，非伪影；F 总量差为在册超时截断
+伪影族口径）。[证据](evidence/2026-11-14-g34-final-accounting.md)
+
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。
@@ -301,7 +314,11 @@ trig）。random() 串化（g20 serialize 42F→3F，残 color 通道嵌套 D �
 分账挂账（跨元素 seed 一致性 ~14F/SVG 属性族 supports 8F/shim gCS raw
 回显与 color 黑值 ~25F/@规则 通道 ~17F/unresolvable IACVT 5F，见 g21
 evidence §5）。
-**下一步**：v14 收尾两项——typed-om `.any.js` 周跑通道**已修**（fetch-b
+**下一步**：g35 anchor 批启动——anchor 语料全量重录分桶 triage（case 列表
+253→~588 数据目录扩面后首跑，results-g35-anchor-triage），随后
+position-area wm/dir 映射刀（CB 写作模式/方向逻辑轴解析 + self 非 htb 面，
+anchor_area cells 单点 + layout anchor_pos 接线，bucket ~114F + align/justify
+面）；v14 收尾两项——typed-om `.any.js` 周跑通道**已修**（fetch-b
 Makefile 目标 GOAL_PULL_ANY_JS=1：lib.sh 默认排除 .any.js 致 CI 语料缺
 numeric-objects 11 案；本地探针 9,872 精确对账 + 端到端 fetch 回补实证，
 下轮周跑验 9,872 显影，见 evidence §9）+ 四小回归余账（properties-values-api
