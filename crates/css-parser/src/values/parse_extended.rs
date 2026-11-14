@@ -1425,6 +1425,17 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                 }
             }
         }
+        // progress()：三实参同族（number/dimension/percentage——% 与维度同
+        // length-percentage 族可混），结果恒 <number>（css-values-5 §progress；
+        // parse 期已先裁不一致形，此处树内复核）。
+        CalcExpr::Progress { value, start, end, .. } => {
+            let vt = calc_expr_math_type(value);
+            if vt != MTInvalid && calc_expr_math_type(start) == vt && calc_expr_math_type(end) == vt {
+                MTNumber
+            } else {
+                MTInvalid
+            }
+        }
     }
 }
 
@@ -1462,6 +1473,13 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
         }),
         // tree-counting 叶是 DOM 序号产出（无维度单位，非 <length>）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 节点恒产出 <number>（css-values-5 §progress）——实参维度
+        // 在函数内比值消解不外泄单位，树级 length 性只看节点外叶子：
+        // `opacity: progress(100px, 0px, 100px)` 须过 Number 位折叠（语料
+        // progress-serialize 钉面）。实参型别一致性由 parse 期型别门裁决
+        //（try_parse_progress），混合实参树不可达此处。
+        // https://drafts.csswg.org/css-values-5/#progress
+        CalcExpr::Progress { .. } => false,
     }
 }
 
@@ -1506,6 +1524,11 @@ pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
         // calc-mix() 项/权重内 sibling 叶：serialize 通道走 fold_mix_dimension
         // 既有原文保留口径，不在本谓词拦截面（写面门对 mix 形放行挂账）。
         CalcExpr::Mix(_) => false,
+        // progress() 实参内 sibling 叶（`progress(sibling-index(), 1, 3)` 形）
+        // ——递归上报。
+        CalcExpr::Progress { value, start, end, .. } => {
+            calc_expr_has_tree_counting(value) || calc_expr_has_tree_counting(start) || calc_expr_has_tree_counting(end)
+        }
     }
 }
 

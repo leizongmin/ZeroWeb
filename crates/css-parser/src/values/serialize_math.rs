@@ -194,6 +194,13 @@ fn mask_tree_counting(expr: &mut CalcExpr, v: f64) {
             mask_tree_counting(l, v);
             mask_tree_counting(r, v);
         }
+        // progress() 实参内 sibling 叶递归掩码（`progress(sibling-index(), 1, 3)`
+        // 掩码后静态可求值——与 calc_expr_has_tree_counting 递归口径对称）。
+        CalcExpr::Progress { value, start, end, .. } => {
+            mask_tree_counting(value, v);
+            mask_tree_counting(start, v);
+            mask_tree_counting(end, v);
+        }
     }
 }
 
@@ -310,8 +317,9 @@ fn fold_dimension_calc(expr: &CalcExpr) -> Option<String> {
     // percent-serialize 语料行）；`calc(100% + 50%)` 保留原文同口径（§10.6
     // 两级求值③）。非有限毒化形不拦——`calc(1% * NaN)` → `calc(NaN * 1%)`
     // canonical 依赖 % 叶单位 provenance（calc-infinity-nan-serialize-length
-    // 语料桶）。
-    if super::calc_mix::expr_has_percentage_leaf(expr) {
+    // 语料桶）。progress 实参内 % 屏蔽（§progress 比值与基准无关——
+    // `progress(1%, 0%, 100%)` → `calc(0.01)` 语料钉面，g33）。
+    if super::calc_mix::expr_has_percentage_leaf_outside_progress(expr) {
         let v = scalar_value(expr)?;
         if !v.is_finite() {
             return Some(format!("calc({})", format_dimension_inner(v, dimension_suffix(expr))));
@@ -561,6 +569,27 @@ pub(crate) fn canonical_math_specified(expr: &CalcExpr) -> Option<String> {
                     Some(format!("{}({})", name, parts.join(", ")))
                 }
             }
+        }
+        // progress() 保形发射（css-values-5 §progress——实参静态不可求值时
+        // canonical 保持串化，progress-serialize 语料 `progress(10em, 0px,
+        // 10em)` / no-clamp 保形钉面）：实参逐个 canonical，`no-clamp` 关键字
+        // 前置保形。
+        // https://drafts.csswg.org/css-values-5/#progress
+        CalcExpr::Progress {
+            no_clamp,
+            value,
+            start,
+            end,
+        } => {
+            let parts = [value.as_ref(), start.as_ref(), end.as_ref()]
+                .into_iter()
+                .map(canonical_math_arg)
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!(
+                "progress({}{})",
+                if *no_clamp { "no-clamp " } else { "" },
+                parts.join(", ")
+            ))
         }
         _ => Some(format!("calc({})", canonical_sum_terms(expr)?)),
     }
@@ -843,6 +872,10 @@ fn find_divergent_nan_clamp(expr: &CalcExpr) -> Option<[&CalcExpr; 3]> {
             .next(),
         // tree-counting 叶非复合节点（无 clamp 实参位）。
         CalcExpr::TreeCounting(_) => None,
+        // progress() 实参内嵌 clamp 递归搜索（左序深先，同 Min/Max 口径）。
+        CalcExpr::Progress { value, start, end, .. } => [value.as_ref(), start.as_ref(), end.as_ref()]
+            .into_iter()
+            .find_map(find_divergent_nan_clamp),
     }
 }
 
@@ -900,6 +933,10 @@ fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
         // tree-counting 叶无维度单位（DOM 序号 <integer>）——or_else/find_map
         // 链继续向其余叶溯源（`1% * sibling-index()` 单位取 % 叶）。
         CalcExpr::TreeCounting(_) => None,
+        // progress() 恒产出 <number>（实参维度函数内消解不外泄）——单位
+        // provenance 只看节点外叶子（`progress(…) * 1px` 取 1px 叶；纯
+        // progress 树即 number 位，Length 位折叠门据此保原文）。
+        CalcExpr::Progress { .. } => None,
     }
 }
 
@@ -972,6 +1009,9 @@ fn expr_has_time_leaf(expr: &CalcExpr) -> bool {
         }),
         // tree-counting 叶产出 <integer>（非 <time>）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 恒产出 <number>（实参 time 族形 parse 入口 time-closed
+        // 不可达）——time 性只看节点外叶子（`progress(1, 0, 1) * 1s` 取 1s 叶）。
+        CalcExpr::Progress { .. } => false,
     }
 }
 
@@ -1366,7 +1406,11 @@ fn span_has_angle_unit(span: &str) -> bool {
 ///（`calc((45deg + 1))` 组内角度叶仍命中）。与 [`inverse_trig_arg_has_angle_unit`]
 /// 同构：函数名前平铺段先行判定，命中即返回。
 pub(crate) fn span_has_top_level_angle_unit(span: &str) -> bool {
-    const TRIG: [&str; 7] = ["sin(", "cos(", "tan(", "asin(", "acos(", "atan(", "atan2("];
+    // progress( 与三角同列屏蔽：产出恒 <number>（CSS Values 5 §progress），
+    // 实参族一致性（含角度族）由 parse 期逐实参门自裁——嵌套 progress 实参
+    //（progress-computed `progress(progress(1deg, 0deg, 1deg), ...)` 混族钉面）
+    // 与外层实参家族扫描互不外泄。
+    const TRIG: [&str; 8] = ["sin(", "cos(", "tan(", "asin(", "acos(", "atan(", "atan2(", "progress("];
     let lower = span.to_ascii_lowercase();
     let bytes = lower.as_bytes();
     let mut seg_start = 0usize;

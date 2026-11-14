@@ -617,6 +617,8 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
         // clip-path 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
         // 之外本不可达，fail-closed 兜底）。
         CalcExpr::Time(_) => None,
+        // progress() 恒产出 <number>（css-values-5 §progress——静态可求值）。
+        CalcExpr::Progress { .. } => Some(ClipPathCalcType::Number),
         CalcExpr::BinaryOp(left, CalcOp::Add | CalcOp::Subtract, right) => {
             same_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
         }

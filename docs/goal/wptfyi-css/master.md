@@ -207,6 +207,43 @@ PASS）；UA 关键词化可见像素漂移为有意 spec 对齐（button bg 239
 725 项 0 失败；探针页
 zz-probe-syscolor/zz-probe-forensic/zz-probe-none 已清出数据目录，见 evidence
 2026-11-14-system-color-ua-keyword。
++progress() 三实参数学函数全链批（g33：CSS Values 5 §progress parse/型别/
+求值/串化/写面门，13 文件 +501/-27；g32 HEAD 无 CalcExpr::Progress，progress
+全链为本批新增）——核心实现 CalcExpr::Progress 变体 + try_parse_progress
+（三实参顶层逗号 + no-clamp ident 边界 + 同族门 + 逐实参角度家族一致性门）
++ eval_progress 三段（全 eval → % 族 parent_length=100 符号基准重试 +
+**V 不可求值时 S==E 部分求值臂**：clamped 恒 0 不依赖 V/no-clamp 按 V 比较
+或 None，NaN 毒化部分臂同生效）+ specified 串化（可求值塌缩 calc(<number>)、
+不可求值 canonical 保形含 no-clamp/±∞）；写面/门禁五修：serialize_math.rs
+角度 provenance TRIG 表补 progress( + apply.rs strip_trig_argument_spans 同
+补 + part11-color.js calc 包裹形保形透传（_zwCJoinRaw id 粘连存文畸形交宿主
+fold 正规管道）+ apply.rs math_value_paren_unbalanced 字节级括号配平门入
+通用 math None 臂（未闭合形双豁免误放行封堵）；配套 rotate3d 四臂
+（parse_transform.rs：x/y/z 分量 f64::parse→parse_transform_number + 角度槽
+parse_angle→parse_angle_or_math + eval_calc→eval_calc_with_default_font +
+分词器 split_transform_value_args depth-0 修复（盲拆撕碎函数实参表，改括号
+深度感知、逗号段判空语义保旧），R5192 口径）+ % 折叠屏蔽
+expr_has_percentage_leaf_outside_progress +
+mask_tree_counting/expr_contains_mix/computed/converter Progress 递归臂 +
+part01.js gCS opacity 抢答门 regex；单测 progress_function_tests.rs 9 钉 +
+apply.rs 文法槽族门断言集更新。**values face 对 g32 提交基线净 +74、250 页
+逐页零回归**（python 逐页 diff REGRESSED 0）：progress-serialize 13→54P
+（+41）、progress-computed **0→27P**（+27）、progress-invalid 33→35P 全页
+清零（+2）、E 门 collateral clamp-integer-invalid +2/hypot-pow-sqrt-invalid
++2；探针 24 断言全绿（写面 7 + computed 3 + rotate3d 析因 8 + 复验 6，
+rotate3d 真因 = transform 文法位裸 f64::parse/纯 parse_angle/eval_calc 无
+字体基准/分词器撕参四洞，探针 12/12 全绿）；残桶挂账：
+serialize 13F = S1 scale→matrix computed 串化缺口、computed 9F = lh 字体
+度量族 6F + margin %·px converter 1F + cqw 宽 used 解析 1F + rotate3d
+案 1F（**定谳上游陈旧期望不追**：css-values-5 Issue 11825 后默认 clamp
+[0,1]，(21em−1rem)/(11em−1rem) 分子−分母 = 10e > 0 恒 ratio>1 → 规范值 1；
+语料期望 2 与同页 line 35 '1'/serialize 页 matrix(0.5) clamp 钉面自相矛盾，
+上游 master 逐字节一致非本地过期）；flaky 观察 1 案；对账首轮 values
+4,021（含探针 12P，早于精修/分词器二进制）+ color 10,999 +
+transforms 229 + motion 105/391 + typed-om 9,872 + cssom 1,968 六锚持平
+（均首轮二进制），终值以终跑 + 补套件电池为准；make test **3,935P/7F**（在册
+7F 零新增）/clippy 零告警/rustfmt clean（分词器修复后复验），见
+evidence 2026-11-14-progress-function-g33。
 **DC-1 完成**：四焦点目录本地重跑复现快照（typed-om 25 / color 1,293 逐位
 一致），缺口三分类入账——运行面断言失败 ~139.5k（Chrome 同面过 95%）、
 未接语料 ~8.1k+缺文件 ~10.5k、通道外形态余量。

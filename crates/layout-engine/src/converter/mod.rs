@@ -1646,6 +1646,9 @@ fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bo
         CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_contains_percentage(&it.value)),
         // tree-counting 叶是 DOM 序号产出（无百分比）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 恒产出 <number>——实参 % 函数内比值消解不外泄，不构成
+        // 布局期解析依赖（与 style-system computed 同口径）。
+        CalcExpr::Progress { .. } => false,
     }
 }
 
@@ -1669,6 +1672,9 @@ fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
         CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_has_length(&it.value)),
         // tree-counting 叶是 DOM 序号产出（非 <length>）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 恒产出 <number>（实参维度函数内消解不外泄）——树级
+        // 长度性只看节点外叶子（与 css-parser calc_expr_has_length 同口径）。
+        CalcExpr::Progress { .. } => false,
     }
 }
 

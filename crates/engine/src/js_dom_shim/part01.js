@@ -12915,7 +12915,7 @@
                   if (_rvOp) _irOp = String(_rvOp);
                 }
               } catch (_eIO1b) {}
-              if (_irOp && /^(calc|min|max|clamp)\(/i.test(_irOp.trim())) {
+              if (_irOp && /^(calc|min|max|clamp|progress)\(/i.test(_irOp.trim())) {
                 try {
                   var _pcOp = globalThis.__zwPlainComputed(elt, 'opacity');
                   if (_pcOp !== '') return _pcOp;
@@ -13016,7 +13016,7 @@
               if (_rvO) _irO = String(_rvO);
             }
           } catch (_eIO2b) {}
-          if (_irO && /^(calc|min|max|clamp)\(/i.test(_irO.trim())) {
+          if (_irO && /^(calc|min|max|clamp|progress)\(/i.test(_irO.trim())) {
             try {
               var _pcO = globalThis.__zwPlainComputed(elt, 'opacity');
               if (_pcO !== '') return _pcO;

@@ -1048,6 +1048,10 @@ pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
         CalcExpr::Mix(items) => items.iter().any(|it| calc_contains_percentage(&it.value)),
         // tree-counting 叶是 DOM 序号产出（无百分比；求值桥挂账期 eval 返
         // None 由消费方 fail 策略兜底）。
+        // progress() 恒产出 <number>（css-values-5 §progress）——实参 % 在
+        // 函数内比值消解不外泄，不构成 computed 期布局依赖（与 css-parser
+        // expr_has_percentage_leaf_outside_progress 同口径）。
+        CalcExpr::Progress { .. } => false,
         CalcExpr::TreeCounting(_) => false,
     }
 }

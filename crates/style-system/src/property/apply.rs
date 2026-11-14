@@ -1743,6 +1743,7 @@ fn font_stretch_percentage_tree_valid(expr: &values::CalcExpr, percent_ctx: bool
         | CalcExpr::Max(..)
         | CalcExpr::Clamp { .. }
         | CalcExpr::Mix(..)
+        | CalcExpr::Progress { .. }
         | CalcExpr::TreeCounting(_) => true,
         CalcExpr::Time(_) => false,
     }
@@ -2251,12 +2252,19 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 values::parse_math_function(v)
             };
             match parsed {
-                // 文法 invalid → 整拒；两豁免交 oracle 既有裁决（g22 零漂移）：
+                // 文法 invalid → 整拒；豁免三类交 oracle 既有裁决（g22 零漂移）：
                 // 非单函数平衡跨度（`calc(50%) calc(25%)` 双 calc 拐角语法——
                 // [`is_single_spanning_math_value`]，border-radius-002 钉面）、
                 // 未知函数实参（css-values-5 inherit() 类——
-                // [`has_unknown_function_token`]）。
+                // [`has_unknown_function_token`]）、数学形未配平残缺（
+                // `progress(5, 0%, sign(10px)`——外层 `(` 无配对 `)`，末尾 `)` 属
+                // 内层 sign；is_math_function_value 的 ends_with(')') 启发式只看
+                // 末字符，文法残缺非「复杂合法形」拒收——progress-invalid 语料
+                // 未闭合族钉面，配平豁免两形不受扰）。
                 None => {
+                    if math_value_paren_unbalanced(v) {
+                        return false;
+                    }
                     if is_single_spanning_math_value(v) && !has_unknown_function_token(v) {
                         return false;
                     }
@@ -2485,7 +2493,7 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
 /// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
 /// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
 /// 未实现面放行。
-const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 39] = [
+const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 40] = [
     "calc",
     "min",
     "max",
@@ -2510,6 +2518,10 @@ const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 39] = [
     // CSS Values 5 calc-mix()（tentative 实现面：parse/fold/eval 全链）——
     // 从 passthrough 集转入文法断言集（invalid 页空项/字面权重范围/跨型拒）。
     "calc-mix",
+    // CSS Values 5 progress()（tentative：parse 型别门/eval/canonical 保形
+    // 全链）——同 calc-mix 口径入文法断言集（progress-invalid 语料空参/错位
+    // no-clamp/混型拒）。
+    "progress",
     "matrix",
     "matrix3d",
     "translate",
@@ -2581,13 +2593,16 @@ fn extract_random_args(value: &str) -> Vec<String> {
 /// calc-size()/url()（引擎未接线，写面 oracle/通道既有兜底）。子串扫描：
 /// math 形值无字符串字面量误报面（content 等槽非 math 形不达本门）。
 fn value_has_substitution_function(value: &str) -> bool {
-    const NEEDLES: [&str; 9] = [
+    // progress() 不在豁免集（g33：css-parser parse/eval/canonical 全链已落——
+    // parse 树可达，progress-invalid 语料空参/错位 no-clamp/混型由通用 math 门
+    // 文法裁决拒收；含 var()/attr() 等替换函数的组合形仍由其余 needle 豁免走
+    // 延迟替换语义）。
+    const NEEDLES: [&str; 8] = [
         "var(",
         "env(",
         "attr(",
         "random(",
         "random-item(",
-        "progress(",
         "if(",
         "calc-size(",
         "url(",
@@ -2602,10 +2617,10 @@ fn value_has_substitution_function(value: &str) -> bool {
 /// 前先经本函数收紧：配平点非整值末字符即多函数/混排形（getComputedStyle-
 /// border-radius-002 语料钉面），交 oracle 既有裁决。
 fn is_single_spanning_math_value(value: &str) -> bool {
-    // 与 css-parser `is_math_function_value` 分派名单同步（22 数学函数）。
-    const NAMES: [&str; 22] = [
+    // 与 css-parser `is_math_function_value` 分派名单同步（23 数学函数）。
+    const NAMES: [&str; 23] = [
         "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign", "sqrt", "exp",
-        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix",
+        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix", "progress",
     ];
     let v = value.trim();
     let lower = v.to_ascii_lowercase();
@@ -2657,6 +2672,29 @@ fn has_unknown_function_token(value: &str) -> bool {
     false
 }
 
+/// math 形值括号配平扫描（写面未配平残缺拒）：净深度非 0 即残缺
+///（`progress(5, 0%, sign(10px)` 外层 `(` 无配对——末尾 `)` 属内层 sign）。
+/// 仅在通用 math 门 parse 失败臂调用——配平值走
+/// [`is_single_spanning_math_value`]/[`has_unknown_function_token`] 既有豁免，
+/// 不受本扫描影响。字符串字面 math 值不存在（math 形值法无 string token），
+/// 朴素计数安全。
+fn math_value_paren_unbalanced(value: &str) -> bool {
+    let mut depth = 0i32;
+    for b in value.bytes() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth != 0
+}
+
 /// number 槽文本级角度单位 token 扫描（§10.5 number 槽 angle-provenance
 /// 补面）：角度叶 parse 期弧度 Number 化（CalcParser 注——`0deg` 产出纯
 /// number 树），型别表失去角度 provenance，文本扫描补 `min(0deg)`/`round(1,
@@ -2670,10 +2708,13 @@ fn has_angle_unit_token(value: &str) -> bool {
 /// 剥离三角函数调用实参跨度（sin/cos/tan/asin/acos/atan/atan2 的括号平衡
 /// 段）——角度是其合法定义域（§trig-funcs：`sin(30deg)` 返回 <number>），
 /// [`has_angle_unit_token`] 扫描前先剥，避免误伤三角实参角
-/// （sin-cos-tan-serialize 语料 270P 面）；calc 族裸角度叶不受扰
-/// （`round(1, 0deg)` 仍拒）。非 ASCII 字节按原样保留（UTF-8 安全）。
+/// （sin-cos-tan-serialize 语料 270P 面）；progress( 同列——产出恒 <number>
+///（CSS Values 5 §progress），三实参族一致性（含角度族）由 parse 期
+/// 逐实参门自裁（progress-serialize `progress(2rad, 1rad, 1rad)` 语料钉面）；
+/// calc 族裸角度叶不受扰（`round(1, 0deg)` 仍拒）。非 ASCII 字节按原样保留
+///（UTF-8 安全）。
 fn strip_trig_argument_spans(value: &str) -> String {
-    const TRIG: [&str; 7] = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2"];
+    const TRIG: [&str; 8] = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "progress"];
     let lower = value.to_ascii_lowercase();
     let bytes = lower.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(value.len());
@@ -3819,10 +3860,12 @@ mod t54_validate_decl_value_tests {
         assert!(!validate_decl_value("scale", "round(1, 0.5turn)"));
         assert!(!validate_decl_value("transition-duration", "min(0px)"));
         // 豁免面：替换函数/未接线函数 parse 树不可达交既有门；custom property
-        // 值任意文法（CSS Parsing 3）。
+        // 值任意文法（CSS Parsing 3）。progress 自 g33 起入文法断言集——实参
+        // 残缺形（单参 `progress(50%)`，§progress 三实参文法）不再走未知函数
+        // 豁免，文法门直拒（progress-invalid 语料 `progress(1)` 同族）。
         assert!(validate_decl_value("width", "calc(var(--x) + 1px)"));
         assert!(validate_decl_value("opacity", "var(--o)"));
-        assert!(validate_decl_value("margin-left", "calc(progress(50%) * 1px)"));
+        assert!(!validate_decl_value("margin-left", "calc(progress(50%) * 1px)"));
         assert!(validate_decl_value("width", "random(1px, 2px)"));
         assert!(validate_decl_value("--x", "min(1px, )"));
         // plain 值/非 math 形零漂移（gate 不触发）。
@@ -3844,5 +3887,27 @@ mod r4086_stretch_tests {
         let mut style2 = ComputedStyle::default();
         assert!(apply_property_value(&mut style2, "height", "-webkit-fill-available"));
         assert_eq!(style2.height, LengthValue::Stretch);
+    }
+
+    #[test]
+    fn progress_write_face_family_gate() {
+        // CSS Values 5 §progress 写面门（g33）。rad 角度族 opacity 槽放行：
+        // 角度叶 parse 期 Number 化，槽族 provenance 扫描对 progress 实参
+        // span 屏蔽（产出恒 <number>，实参族一致性由 parse 期逐实参门自裁）。
+        assert!(validate_decl_value("opacity", "progress(100px, 0px, 100px)"));
+        assert!(validate_decl_value("opacity", "progress(50%, 0px, 100px)"));
+        assert!(validate_decl_value("opacity", "progress(1, 0, 1)"));
+        assert!(validate_decl_value("opacity", "progress(2rad, 1rad, 1rad)"));
+        // calc 包裹 no-clamp 形（shim 折叠口径粘连保形透传交宿主 fold）。
+        assert!(validate_decl_value(
+            "opacity",
+            "calc(0.5 * progress(no-clamp 100px, 0px, 100px))"
+        ));
+        // 混型（number×angle）parse 期拒收后不落未知函数豁免。
+        assert!(!validate_decl_value("opacity", "progress(5, 0deg, 8deg)"));
+        // 未闭合 sign 形拒收：is_math_function_value ends_with(')') 启发式
+        // 只看末字符，外层 ( 永不配平（末尾 ) 属 sign），不得落
+        // is_single_spanning + unknown-function 双豁免误放行。
+        assert!(!validate_decl_value("opacity", "progress(5, 0%, sign(10px)"));
     }
 }

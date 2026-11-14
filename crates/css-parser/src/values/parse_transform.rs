@@ -619,9 +619,14 @@ pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
             }
         }
         4 => {
-            let x: f64 = parts[0].parse().ok()?;
-            let y: f64 = parts[1].parse().ok()?;
-            let z: f64 = parts[2].parse().ok()?;
+            // R5192 口径对齐：分量文法位是纯 <number>，数学函数经
+            // [`parse_transform_number`]（= [`parse_finite_number_math`]）——
+            // 裸 `f64::parse` 使 `rotate3d(progress(21em, 1rem, 11em), …)`
+            // 整体无效（progress-computed 钉面；css-values-5 §progress
+            // progress() 恒产出 <number>，<number> 文法位合法）。
+            let x = parse_transform_number(parts[0])?;
+            let y = parse_transform_number(parts[1])?;
+            let z = parse_transform_number(parts[2])?;
             let angle = parse_angle_or_math(parts[3])?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
@@ -815,7 +820,11 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             let x = parse_transform_number(parts[0])?;
             let y = parse_transform_number(parts[1])?;
             let z = parse_transform_number(parts[2])?;
-            let angle = parse_angle(parts[3])?;
+            // CSS Values 4 §10.5：<angle> 文法位接受数学函数（与单参 rotate 臂同走
+            // [`parse_angle_or_math`] 求值口径）——`rotate3d(progress(…), …,
+            // calc(progress(…) * 2deg))` 第四参 calc 包裹 progress 被纯 parse_angle
+            // 拒收，整个 transform 按语法失效丢弃（progress-computed rotate3d 案）。
+            let angle = parse_angle_or_math(parts[3])?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         "perspective" => {
@@ -927,7 +936,12 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     if span_has_number_result_trig(s) && !calc_expr_has_angle_result(&expr) && !span_has_top_level_angle_unit(s) {
         return None;
     }
-    let value = eval_calc(&expr, None)?;
+    // 与 number 槽 [`parse_finite_number_math`] 同走 [`eval_calc_with_default_font`]
+    // 求值口径——`eval_calc(&expr, None)` 无 em/rem 基准，angle 槽 `calc(progress(11em,
+    // 1rem, 11em) * 2deg)` 型 length 叶求值 None → 整 transform 按语法失效丢弃
+    //（progress-computed rotate3d 案 X 探针钉面；calc_expr_has_length 已放行
+    // progress 节点，实参内 em 叶到 eval 才需要基准）。
+    let value = eval_calc_with_default_font(&expr)?;
     // 弧度 → 度的双 provenance（与 [`fold_math_specified`] Angle 臂同形）：
     // ①角度产出函数；②trig 实参外角度单位叶（parse_atom 把 `180deg` 平叶
     // Number 化为弧度，`calc(180deg)` 缺 ② 会折成 3.14159deg）。
@@ -942,18 +956,57 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。
+/// 分隔符只认**括号外**的逗号/空白——函数实参表内的逗号/空白不参与分词：
+/// `rotate: progress(21em, 1rem, 11em) …` 四元组数学分量位、`scale:
+/// calc(min(1, 2))` 型实参依赖完整 token（depth-0 盲拆把实参表撕成垃圾
+/// token，整体无效——individual rotate progress-computed 钉面）。
+/// 逗号段语义与旧实现一致：顶层逗号分隔的段 trim 后判空，空段（`1,,2`
+/// / `,1` / 尾逗号 / 纯空白段）拒收。
 fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
     let mut parts = Vec::new();
-    if args.contains(',') {
-        for item in args.split(',') {
-            let item = item.trim();
-            if item.is_empty() {
-                return None;
+    let mut depth = 0usize;
+    let mut start: Option<usize> = None;
+    let mut piece_has_token = false;
+    let mut saw_top_comma = false;
+    for (i, ch) in args.char_indices() {
+        match ch {
+            '(' => {
+                depth += 1;
+                start.get_or_insert(i);
             }
-            parts.extend(item.split_whitespace());
+            ')' => {
+                depth = depth.saturating_sub(1);
+                start.get_or_insert(i);
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                if let Some(s) = start.take() {
+                    parts.push(&args[s..i]);
+                    piece_has_token = true;
+                }
+            }
+            ',' if depth == 0 => {
+                // 空段判据：既无已推 token 也无待推 token（`,1` / `1,,2`）。
+                if start.is_none() && !piece_has_token {
+                    return None;
+                }
+                if let Some(s) = start.take() {
+                    parts.push(&args[s..i]);
+                }
+                piece_has_token = false;
+                saw_top_comma = true;
+            }
+            _ => {
+                start.get_or_insert(i);
+            }
         }
-    } else {
-        parts.extend(args.split_whitespace());
+    }
+    if let Some(s) = start {
+        parts.push(&args[s..]);
+        piece_has_token = true;
+    }
+    // 尾逗号空段拒收（`1,2,` → 末段空）。
+    if saw_top_comma && !piece_has_token {
+        return None;
     }
     if parts.is_empty() { None } else { Some(parts) }
 }

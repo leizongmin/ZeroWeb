@@ -1237,7 +1237,19 @@
     // _zwCComp c.t==='calc' 臂即 canonical 折叠口径——calc(25% * 2) →
     // calc(50%)、min(50%, 0%) → calc(0%)，旁路即丢折叠）。
     // https://drafts.csswg.org/css-values-4/#calc-notation
-    if (/^(round|mod|rem|hypot|pow|atan2|abs|sign|sqrt|exp|log|sin|cos|tan|asin|acos|atan|calc-mix)\(/i.test(low)
+    if (/^(round|mod|rem|hypot|pow|atan2|abs|sign|sqrt|exp|log|sin|cos|tan|asin|acos|atan|calc-mix|progress)\(/i.test(low)
+        && low.charAt(low.length - 1) === ')') {
+      return s;
+    }
+    // calc/min/max/clamp 包裹 progress 形透传（css-values-5 §progress 写面，
+    // progress-serialize 语料 `calc(0.5 * progress(no-clamp 100px, 0px, 100px))`
+    // 钉面）：下方 JS calc fold 的函数原子重组（_zwCJoinRaw）会把 no-clamp
+    // 关键字与后随量粘连（'no-clamp 100px' → 'no-clamp100px'）致宿主文法门
+    // 误拒——保形交宿主 fold_decl_specified canonical 折叠（bare progress
+    // 透传臂同口径：折叠后的 CSD 声明文本即读面 canonical 值）。无 progress
+    // 的 calc 形维持 JS fold canonical 折叠不变（css-color parsing/opacity
+    // `calc(25% * 2)` → `calc(50%)` 口径）。
+    if (/^(calc|min|max|clamp)\(/.test(low) && low.indexOf('progress(') >= 0
         && low.charAt(low.length - 1) === ')') {
       return s;
     }
