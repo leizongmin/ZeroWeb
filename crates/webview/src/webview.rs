@@ -61,6 +61,9 @@ static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 /// 可反传 body cancel 的在册 in-process fetch 事件上限（FIFO 淘汰）。
 const SERVICE_WORKER_FETCH_EVENT_REGISTRY_CAP: usize = 256;
+/// T71（G1 Gap A）：应用史 ledger（handle→最后已知 selector）软上限——溢出清空
+///（shim `_zwEvictedIdentBySel` 同款收缩约定；防超长会话无界增长）。
+const HANDLE_SELECTOR_LEDGER_CAP: usize = 512;
 
 enum ServiceWorkerEvaluationResult {
     Evaluated,
@@ -538,6 +541,14 @@ pub struct WebView {
     /// merge/清空与倒置表同步维护——`__zw_selector_for_handle` 回调（testdriver stub
     /// 对 handle-identity 元素解析稳定选择器）读取。
     handle_selector_forward: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// T71（G1 Gap A 根修）：应用史 ledger——历批 apply 产出的 handle→唯一 selector
+    ///（`end_script_batch` 逐批并入，latest-wins；512 键软上限，溢出清空——shim
+    /// `_zwEvictedIdentBySel` 同款收缩约定）。换代重锚的跨批记忆：批内 apply 的
+    /// ephemeral 预植让存活子树每批自愈重锚，但换代批里被摘除的 handle 族子树
+    ///（R346 游离节点不产出 selector）从此不在任何批清单——同 sel 重挂后旧 handle
+    /// 永久失锚（T69 caseG 根因）。本表保留其最后已知锚点，导航清零（随身份表
+    /// 同点）。
+    handle_selector_ledger: std::collections::HashMap<String, String>,
     /// js-dom M3 R100：**共享 append-only** mutations 队列（页面生命周期内单实例）。
     ///
     /// 所有 `register_dom_callbacks` 调用（run_page_scripts / execute_script_with_dom /
@@ -907,6 +918,7 @@ impl WebView {
             dom_bridge_host_armed: false,
             selector_handle_map: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            handle_selector_ledger: std::collections::HashMap::new(),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
             dom_html_bridge: None,
@@ -1306,6 +1318,9 @@ impl WebView {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+        // T71（G1 Gap A）：应用史 ledger 随身份表同批清零（旧页 handle 对新页无效
+        // ——换代重锚的跨批记忆不得跨文档存活）。
+        self.handle_selector_ledger.clear();
         {
             let mut guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard.clear();
@@ -1573,9 +1588,24 @@ impl WebView {
         }
         self.script_batch_dirty = false;
         let html = self.cached_html.clone();
+        // T71（G1 Gap A 根修）：换代前在册快照——`render_html` 全量重建（slotmap
+        // 换代，R100）清 `persistent_handle_nodes`，快照用于补注册后判定「换代导致
+        // 注册表掉项」的实际掉项集（T69 §6.3 可观测性判定基础）。
+        let pre_registry = self.pipeline.registered_handle_ids();
         let result = self
             .pipeline
             .render_after_deferred_batch(&html, &self.cached_css, &reanchor);
+        // T71（G1 Gap A 根修）：本批 pairs 并入应用史 ledger，再按子树整体补注册
+        // 跨批失锚 handle（细节见 [`Self::reregister_handle_subtrees`]）。
+        for (handle, selector) in &reanchor {
+            if self.handle_selector_ledger.len() >= HANDLE_SELECTOR_LEDGER_CAP
+                && !self.handle_selector_ledger.contains_key(handle)
+            {
+                self.handle_selector_ledger.clear();
+            }
+            self.handle_selector_ledger.insert(handle.clone(), selector.clone());
+        }
+        self.reregister_handle_subtrees(&reanchor, &pre_registry);
         if let Some(page_url) = self.current_url.clone() {
             let mut combined_css = self.cached_css.clone();
             combined_css.push('\n');
@@ -1593,6 +1623,49 @@ impl WebView {
         }
         self.last_render = Some(self.absorb_render_result(&result));
         Ok(true)
+    }
+
+    /// T71（G1 Gap A 根修）：换代后按应用史 ledger 补注册跨批失锚的 handle 子树
+    ///（DOM §4.2.2 concept-node-pre-insert adopted-children 语义——节点插入宿主
+    /// 子树后身份随子树存活，引擎换代（全量重解析）不得丢失其锚，
+    /// https://dom.spec.whatwg.org/#concept-node-pre-insert）。批内 apply 的
+    /// ephemeral 预植让存活子树每批自愈重锚；本补注册只处理「本批重锚后仍不在册」
+    /// 的失锚者——ledger 最后已知 selector 在新 doc 唯一命中才重绑
+    ///（rebind_handle_node 歧义跳过，不按猜测锚定），selector 已被其他 handle
+    /// 现役认领的候选跳过（防双柄锚同节点）。重锚后仍不在册的换代前在册 handle
+    /// 聚合为单条 warn（T69 §6.3：换代导致注册表掉项须可观测，不再状态推断）。
+    // OPTIMIZATION：长期被移除永不重挂的 ledger 残项每批各付一次 selector 查询
+    // 失配成本；如活体探针显示热点，可加连续失配计数淘汰（现取最小实现）。
+    fn reregister_handle_subtrees(&mut self, batch_reanchor: &[(String, String)], pre_registry: &[String]) {
+        let batch_set: std::collections::HashSet<&str> = batch_reanchor.iter().map(|(h, _)| h.as_str()).collect();
+        let current: std::collections::HashSet<String> = self.pipeline.registered_handle_ids().into_iter().collect();
+        let mut candidates: Vec<(String, String)> = Vec::new();
+        {
+            let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+            for (handle, selector) in &self.handle_selector_ledger {
+                if batch_set.contains(handle.as_str()) || current.contains(handle) {
+                    continue;
+                }
+                if sel_map.get(selector).is_some_and(|cur| cur != handle) {
+                    continue;
+                }
+                candidates.push((handle.clone(), selector.clone()));
+            }
+        }
+        for (handle, selector) in &candidates {
+            self.pipeline.rebind_handle_node(handle, selector);
+        }
+        let final_registry: std::collections::HashSet<String> =
+            self.pipeline.registered_handle_ids().into_iter().collect();
+        let dropped: Vec<&String> = pre_registry.iter().filter(|h| !final_registry.contains(*h)).collect();
+        if !dropped.is_empty() {
+            let sample = dropped.iter().take(5).map(|h| h.as_str()).collect::<Vec<_>>().join(",");
+            tracing::warn!(
+                "handle registry generation rollover dropped {} entries (selector missing or \
+                 non-unique after doc rebuild); sample: {sample}",
+                dropped.len()
+            );
+        }
     }
 
     /// 中止脚本批量渲染边界（导航让路，P-B1）：解除 defer、丢弃累积的 handle

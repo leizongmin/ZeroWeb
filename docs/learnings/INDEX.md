@@ -5,11 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（283）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（284）
 
 - 2026-11-14 [shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口六张脸，判读先分面再动手](bugs/2026-11/2026-11-14-selhandle-registry-sync-split-faces.md) — engine
 - 2026-11-14 [序列上下文 range 位移槽与面值脱钩——同值公开 API 重锚修复](bugs/2026-11/2026-11-14-range-slot-desync-reanchor.md) — engine
 - 2026-11-14 [账本 migration rev 的「intended 恰 N」断言必须查 prev 快照——连撞六撞后固化](bugs/2026-11/2026-11-14-ledger-migration-assert-prev-snapshot.md) — site_optimizer
+- 2026-11-14 [无宿主定时器环境下轮询自链饿死 _deferBudget：img load 红表象离 SMIL 泵根因极远](bugs/2026-11/2026-11-14-hostless-polling-microtask-starvation-defer-budget.md) — engine
 - 2026-11-14 [done 任务须携带 task.evidence 终态证据——T66 隐式传承 T68 重撞](bugs/2026-11/2026-11-14-done-task-evidence-contract.md) — site_optimizer
 - 2026-11-14 [debug 单测 SIGILL：先 cargo clean -p 排增量缓存毒化，再查逻辑](bugs/2026-11/2026-11-14-debug-test-sigill-incremental-cache.md) — css-parser
 - 2026-11-13 [wpt editing 语料红账判读：切片伪失败与期望形真值源](bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md) — engine,tests
@@ -291,9 +292,13 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（39）
+## Patterns — 可复用代码模式与最佳实践（43）
 
+- 2026-11-14 [roster/thd 漂移归因三板斧：逐名 diff → log -S 溯源 → is-ancestor 窗口归属](patterns/2026-11/2026-11-14-roster-drift-attribution.md) — testing, engineering
+- 2026-11-14 [审查角色报告链形制：recheck 锚定首轮六键，artifacts 只列当前链身份](patterns/2026-11/2026-11-14-review-report-chain-anchoring.md) — engineering, review
 - 2026-11-14 [切任务分支前先 fetch 定 tip——并行波次会翻动冲突面与门禁基线](patterns/2026-11/2026-11-14-parallel-wave-branch-baseline-recheck.md) — site_optimizer
+- 2026-11-14 [集成 judge 正则盲区误报时改编译判读产物为独立附记，不改编证据原件](patterns/2026-11/2026-11-14-judge-regex-defect-addendum.md) — engine, webview, testing
+- 2026-11-14 [done 链 evidence pin：task→done 同 rev 必带 {path,sha256}，漏项重建走存证+零漂移断言](patterns/2026-11/2026-11-14-done-chain-evidence-pin.md) — engineering, workflow
 - 2026-11-14 [before/after ledger 的二进制归属核验：include_str! 拼接串子串比对](patterns/2026-11/2026-11-14-before-after-ledger-binary-attribution.md) — wpt-runner, js-dom-shim
 - 2026-11-12 [rustfmt 规范形等价判定——「机械格式化零行为变化」归因的确定性判法](patterns/2026-11/2026-11-12-rustfmt-canonical-form-byte-equivalence-judgment.md) — crates/dom
 - 2026-11-12 [集成 roster 提取算法——取最后一个 `^failures:$` 块到 `test result:` 行收口](patterns/2026-11/2026-11-12-integration-roster-extraction-last-failures-block.md) — site-optimizer verify, cargo libtest
