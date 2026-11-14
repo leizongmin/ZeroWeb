@@ -28,6 +28,16 @@
    "file": "css/css-backgrounds/reference/box-shadow-table-border-collapse-001-ref.html",
    "ok": true,
    "out": "tests/wpt-runner/geometry-shots/css_css-backgrounds_reference_box-shadow-table-border-collapse-001-ref.json"
+  },
+  {
+   "file": "css/CSS2/borders/border-right-width-applies-to-006.xht",
+   "ok": true,
+   "out": "tests/wpt-runner/geometry-shots/css_CSS2_borders_border-right-width-applies-to-006.json"
+  },
+  {
+   "file": "css/CSS2/reference/ref-filled-black-96px-square.xht",
+   "ok": true,
+   "out": "tests/wpt-runner/geometry-shots/css_CSS2_reference_ref-filled-black-96px-square.json"
   }
  ]
 }

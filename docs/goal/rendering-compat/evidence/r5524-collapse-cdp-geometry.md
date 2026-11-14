@@ -64,3 +64,23 @@ ZW 侧当前差（box-shadow 案 2.34% 残差）对应带定位/盒边界与该�
   harness，跑出的差值会把字体归因和模型归因混在一起（estimate 字体 vs 窗口真值
   教训：半混淆数据比无数据更误导）。ZW-vs-chromium 逐盒差值表留给被点名的迁移轮
   以正规 harness 产出。
+
+## R5526 族内容级普查扩展（2026-11-14）
+
+- **普查方法与结果**：对当前真态 681F（R5521 基线）逐案 grep 源码 `border-collapse`——
+  4 案命中：已知 2 族案 + **border-right-width-applies-to-006**（新入族，账本归因
+  「table-column border collapse 绘制整特性缺失（96×96 全块）＋resolve cell>row/rowgroup
+  与 table-column border 臂输」，同属迁移切片 ②④+resolve 覆盖链域；R5524 按案名
+  grep 划族时漏计——案名不含 collapse/conflict 关键词）+ ruby-inlinize-blocks-002
+  （ruby 带在册案，collapse 系 incidental，**非族成员**）。族界定＝账本归因过滤后
+  **3 案**。
+- **工具盲区二修复**：006 为 CSS 表布局案（div+display:table-column/table-cell，无真
+  table 标签），tag 选择器首轮 0 盒——提取段扩为真标签 ∪ computed display∈table-*
+  族（保持文档序）。**扩展不扰动既有捕获**：原 4 案复跑仍与归档副本字节级一致。
+- **006 地面真值（Chrome/156.0.8078.73）**：chromium 给 `display:table-column` 生成
+  phantom 盒（div#test rect `(8,50,48×96)`，computed border-right 96px solid）；表盒
+  96×96 无自身边框、cell 网格双列各 48×48 **无边框内缩**——96px 列边框作为 collapse
+  赢家带绘制在列界 x=56 中心：带域 8..104 恰好覆盖全表盒（56±48）→ 全黑方块＝ref
+  （ref-filled-black-96px-square）期待。迁移切片 ②（列 sizing）④（paint 边框定位）
+  + resolve 覆盖链的目标几何自此含 table-column 臂实测。
+- 产物：+2 JSON（006 + 其 ref）+ manifest 刷新为 6 案全量；捕获命令同 R5525 复跑口径。

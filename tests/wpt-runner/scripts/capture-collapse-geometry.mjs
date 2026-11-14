@@ -69,13 +69,24 @@ function extractionSnippet() {
         display: cs.display,
       };
     };
-    const sel = 'table, caption, colgroup, col, tbody, thead, tfoot, tr, td, th';
+    // 真表格标签 ∪ computed display 属 table-* 族（R5526：CSS 表布局案用 div+display:
+    // table-column 等，tag 选择器抓不到——按 computed display 兜住，保持文档序）。
+    const tableDisplays = new Set([
+      'table', 'inline-table', 'table-row', 'table-row-group', 'table-header-group',
+      'table-footer-group', 'table-column', 'table-column-group', 'table-cell', 'table-caption',
+    ]);
+    const els = [];
+    for (const el of document.querySelectorAll('*')) {
+      const isTag = /^(table|caption|colgroup|col|tbody|thead|tfoot|tr|td|th)$/i.test(el.tagName);
+      const isTableDisplay = tableDisplays.has(getComputedStyle(el).display);
+      if (isTag || isTableDisplay) els.push(el);
+    }
     return {
       url: location.pathname,
       title: document.title,
       html: document.documentElement ? box(document.documentElement) : null,
       body: document.body ? box(document.body) : null,
-      boxes: Array.from(document.querySelectorAll(sel)).map(box),
+      boxes: els.map(box),
       doc: {
         clientW: document.documentElement.clientWidth,
         clientH: document.documentElement.clientHeight,
