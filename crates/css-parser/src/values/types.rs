@@ -885,6 +885,14 @@ pub enum CalcExpr {
     /// （parse_calc/parse_math_function 等）保持拒 time 原子，length/angle
     /// 消费方零行为漂移。
     Time(f64),
+    /// 分辨率值（dppx 基；css-values-4 §6.4 <resolution>：dppx/x 归一 dppx、
+    /// dpi ÷96、dpcm ×2.54/96）。仅 [`parse_resolution_calc`](Self) 的
+    /// allow_resolution 解析产出——共享 calc 入口保持拒 resolution 原子
+    ///（length/time 消费方零行为漂移）；现无属性收裸 <resolution>，消费方
+    /// 为 image-set() 声明值内 calc 折叠（css-images-4 §image-set-nota，
+    /// calc-infinity-nan-serialize-resolution 语料驱动）。
+    /// <https://drafts.csswg.org/css-values-4/#resolution>
+    Resolution(f64),
     /// 二元运算：left op right。
     BinaryOp(Box<CalcExpr>, CalcOp, Box<CalcExpr>),
     /// min() 函数：取所有参数中的最小值。
@@ -1260,6 +1268,11 @@ struct CalcParser<'a> {
     /// 仅 time 槽入口（[`parse_time_calc`]）置 true；共享 calc 入口恒 false，
     /// 避免 `calc(10s)` 经数值捷径在 length 槽变合法（spec 应 invalid）。
     allow_time: bool,
+    /// 允许 <resolution> 原子（dppx/dpi/dpcm/x → [`CalcExpr::Resolution`]，
+    /// css-values-4 §6.4）。仅 resolution 槽入口（[`parse_resolution_calc`]，
+    /// image-set() 声明折叠消费）置 true；共享 calc 入口恒 false（同
+    /// [`allow_time`] 口径——length 槽不得因数值捷径接受 `calc(1dppx)`）。
+    allow_resolution: bool,
 }
 
 /// 最大递归深度限制。
@@ -1979,6 +1992,33 @@ impl<'a> CalcParser<'a> {
             }
         }
 
+        // css-values-4 §6.4 <resolution> 原子（dppx/x 归一 dppx、dpi ÷96、
+        // dpcm ×2.54/96——1in = 96px = 2.54cm）——仅 allow_resolution 解析
+        //（parse_resolution_calc）接受；后缀判定 dppx 先于 x（`1dppx` 若先
+        // 剥 `x` 得 `1dpp` 恒败）。`1px`/`1ex` 剥 `x` 余部非数值 → 落 length
+        // 臂零漂移。非有限值拒（`infinity` 关键字走常量臂，无 `∞dppx` 形）。
+        // https://drafts.csswg.org/css-values-4/#resolution
+        if self.allow_resolution {
+            let lower = token.to_ascii_lowercase();
+            let dppx = if let Some(n) = lower.strip_suffix("dppx") {
+                n.trim().parse::<f64>().ok()
+            } else if let Some(n) = lower.strip_suffix("dpcm") {
+                n.trim().parse::<f64>().ok().map(|v| v * 2.54 / 96.0)
+            } else if let Some(n) = lower.strip_suffix("dpi") {
+                n.trim().parse::<f64>().ok().map(|v| v / 96.0)
+            } else if let Some(n) = lower.strip_suffix('x') {
+                n.trim().parse::<f64>().ok()
+            } else {
+                None
+            };
+            if let Some(v) = dppx {
+                if v.is_finite() {
+                    return Some(CalcExpr::Resolution(v));
+                }
+                return None;
+            }
+        }
+
         // 尝试解析为长度值
         if let Some(length) = parse_length(token) {
             return Some(CalcExpr::Length(length));
@@ -2004,6 +2044,7 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
 
     let expr = parser.parse_expr()?;
@@ -2029,6 +2070,7 @@ pub fn parse_time_calc(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: true,
+        allow_resolution: false,
     };
     let expr = parser.parse_expr()?;
     parser.skip_whitespace();
@@ -2046,7 +2088,7 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
         CalcExpr::Time(_) => true,
         // anchor()/anchor-size() 叶 <length-percentage> 族非 <time>。
         CalcExpr::Anchor { .. } => false,
-        CalcExpr::Number(_) | CalcExpr::Length(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, op, right) => match op {
             CalcOp::Add | CalcOp::Subtract => calc_expr_is_pure_time(left) && calc_expr_is_pure_time(right),
             // css-values-4 §10.1 型检查：标量乘除 `<time> * <number>` /
@@ -2078,6 +2120,62 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
         CalcExpr::TreeCounting(_) => false,
         // progress() 结果 <number>（§progress 非 <time> 产出）——纯 time 树
         // 判定按 false（同 tree-counting 口径；实参 time 族形无语料驱动）。
+        CalcExpr::Progress { .. } => false,
+    }
+}
+
+/// 解析 resolution 槽数学表达式（css-values-4 §10.5 over <resolution>）。
+///
+/// 与 [`parse_time_calc`] 同一解析器，但置 `allow_resolution` 旗标接受
+/// `dppx/dpi/dpcm/x` 原子（`calc(1x * NaN)`、`image-set(url("") calc(1dppx *
+/// infinity))` 等形）。产出须经 [`calc_expr_is_pure_resolution`] 类型门后
+/// 才能折叠消费——该门拒绝裸 Number 叶，`calc(1dppx + 1)` 等混型（spec
+/// invalid）不透。
+pub fn parse_resolution_calc(value: &str) -> Option<CalcExpr> {
+    let mut parser = CalcParser {
+        input: value.trim(),
+        pos: 0,
+        depth: 0,
+        allow_time: false,
+        allow_resolution: true,
+    };
+    let expr = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(expr)
+}
+
+/// 纯 Resolution 维度门（镜像 [`calc_expr_is_pure_time`] 口径）：仅
+/// [`CalcExpr::Resolution`] 叶与结构容器——裸 [`CalcExpr::Number`] 叶拒绝
+///（resolution±number 混型 spec invalid，css-values-4 §10.1 型检查），
+/// Length/Time 叶天然拒。标量乘除 `<resolution> * <number>` /
+/// `<resolution> / <number>`（乘法反向同）型别合法（§8.1 维度算术）。
+/// <https://drafts.csswg.org/css-values-4/#calc-type-checking>
+pub fn calc_expr_is_pure_resolution(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Resolution(_) => true,
+        CalcExpr::Anchor { .. } => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::BinaryOp(left, op, right) => match op {
+            CalcOp::Add | CalcOp::Subtract => calc_expr_is_pure_resolution(left) && calc_expr_is_pure_resolution(right),
+            CalcOp::Multiply => {
+                (calc_expr_is_pure_resolution(left) && calc_expr_is_number(right))
+                    || (calc_expr_is_number(left) && calc_expr_is_pure_resolution(right))
+            }
+            CalcOp::Divide => calc_expr_is_pure_resolution(left) && calc_expr_is_number(right),
+        },
+        CalcExpr::BinaryMathOp(_, a, b) => calc_expr_is_pure_resolution(a) && calc_expr_is_pure_resolution(b),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_pure_resolution),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_pure_resolution(min) && calc_expr_is_pure_resolution(val) && calc_expr_is_pure_resolution(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_is_pure_resolution(inner),
+        // calc-mix 项族同型门在 parse_mix_args 已裁决 resolution 族树不可达
+        //（现无属性收 <resolution>，% 槽不混）——保守拒。
+        CalcExpr::Mix(_) => false,
+        CalcExpr::TreeCounting(_) => false,
         CalcExpr::Progress { .. } => false,
     }
 }
@@ -2139,6 +2237,7 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
             pos: 0,
             depth: 0,
             allow_time: false,
+            allow_resolution: false,
         };
         let expr = parser.parse_expr()?;
         parser.skip_whitespace();
@@ -2155,6 +2254,7 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
             pos: 0,
             depth: 0,
             allow_time: false,
+            allow_resolution: false,
         };
         let expr = parser.parse_expr()?;
         parser.skip_whitespace();
@@ -2290,6 +2390,7 @@ pub fn parse_calc_mix(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let items = parser.parse_mix_args()?;
     Some(CalcExpr::Mix(items))
@@ -2338,6 +2439,7 @@ pub fn parse_min(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let args = parser.parse_comma_list()?;
     parser.skip_whitespace();
@@ -2360,6 +2462,7 @@ pub fn parse_max(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let args = parser.parse_comma_list()?;
     parser.skip_whitespace();
@@ -2382,6 +2485,7 @@ pub fn parse_clamp(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let min = parser.parse_expr()?;
     parser.skip_whitespace();
@@ -2452,6 +2556,8 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
             }
         }
         CalcExpr::Time(_) => {}
+        // Resolution 叶无 lh 单位不改写。
+        CalcExpr::Resolution(_) => {}
         CalcExpr::BinaryOp(left, _, right) => {
             rewrite_calc_lh(left, used_line_height);
             rewrite_calc_lh(right, used_line_height);
@@ -2502,6 +2608,9 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
         CalcExpr::Length(lv) => resolve_length_to_px(lv, ctx),
         // Time 叶按秒出数值（消费方为 time 槽——parse_time 纯 Time 叶门后到达）。
         CalcExpr::Time(v) => Some(*v),
+        // Resolution 叶按 dppx 出数值（消费方为 resolution 槽折叠——
+        // parse_resolution_calc 纯 Resolution 叶门后到达）。
+        CalcExpr::Resolution(v) => Some(*v),
         CalcExpr::BinaryOp(left, op, right) => {
             let lv = eval_calc_with_context(left, ctx)?;
             let rv = eval_calc_with_context(right, ctx)?;
@@ -2792,7 +2901,7 @@ fn progress_is_percent_family(exprs: [&CalcExpr; 3]) -> bool {
             // 长度叶仅 % 可符号解析（px 可解析但会与 % 基准空间混——
             // progress(50%, 0px, 100px) 混形须真实基准，不在此臂）。
             CalcExpr::Length(LengthValue::Percentage(_)) => true,
-            CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+            CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
             CalcExpr::BinaryOp(l, _, r) => walk(l) && walk(r),
             CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(walk),
             CalcExpr::Clamp { min, val, max } => walk(min) && walk(val) && walk(max),

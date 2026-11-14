@@ -1265,12 +1265,15 @@ pub enum CalcMathType {
     Angle,
     /// `<time>`（css-values-4 §6.3；CalcExpr::Time 叶秒值承载）。
     Time,
+    /// `<resolution>`（css-values-4 §6.4；CalcExpr::Resolution 叶 dppx 承载）。
+    Resolution,
     /// 型别不一致（混族/实参型别不符）——整式无效。
     Invalid,
 }
 
 use CalcMathType::{
-    Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber, Time as MTTime,
+    Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber,
+    Resolution as MTResolution, Time as MTTime,
 };
 
 /// CSS Values 4 §10.5 型别表：递归计算 math 式的结果文法族。
@@ -1290,6 +1293,7 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
         // 型别表）——% 槽/长度槽同族可混。
         CalcExpr::Anchor { .. } => MTLength,
         CalcExpr::Time(_) => MTTime,
+        CalcExpr::Resolution(_) => MTResolution,
         CalcExpr::BinaryOp(left, op, right) => {
             let lt = calc_expr_math_type(left);
             let rt = calc_expr_math_type(right);
@@ -1309,12 +1313,14 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                     (MTNumber, MTLength) | (MTLength, MTNumber) => MTLength,
                     (MTNumber, MTAngle) | (MTAngle, MTNumber) => MTAngle,
                     (MTNumber, MTTime) | (MTTime, MTNumber) => MTTime,
+                    (MTNumber, MTResolution) | (MTResolution, MTNumber) => MTResolution,
                     _ => MTInvalid, // length²/angle²/length·angle 无量纲型别，§8.1 无效
                 },
                 CalcOp::Divide => match (lt, rt) {
                     (MTNumber, MTNumber) => MTNumber,
                     (MTLength, MTNumber) | (MTAngle, MTNumber) => lt,
                     (MTTime, MTNumber) => MTTime,
+                    (MTResolution, MTNumber) => MTResolution,
                     // FIXME: 同族相除（length/length→number 比值）未支持，无驱动案。
                     _ => MTInvalid,
                 },
@@ -1464,7 +1470,7 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
         // anchor()/anchor-size() 产出 <length-percentage>（§3/§4 型别表）。
         CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
-        CalcExpr::Time(_) => false,
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
         CalcExpr::Clamp { min, val, max } => {
@@ -1517,7 +1523,7 @@ pub fn calc_expr_has_angle_result(expr: &CalcExpr) -> bool {
 pub fn calc_expr_has_anchor(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Anchor { .. } => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_anchor(left) || calc_expr_has_anchor(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_anchor),
         CalcExpr::Clamp { min, val, max } => {
@@ -1538,7 +1544,7 @@ pub fn calc_expr_has_anchor(expr: &CalcExpr) -> bool {
 pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::TreeCounting(_) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_tree_counting(left) || calc_expr_has_tree_counting(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_tree_counting),
         CalcExpr::Clamp { min, val, max } => {
@@ -1588,5 +1594,8 @@ pub fn tree_counting_slot_valid(prop: &str, expr: &CalcExpr) -> bool {
             "transition-delay" | "transition-duration" | "animation-delay" | "animation-duration"
         ),
         MTAngle => matches!(prop, "rotate"),
+        // tree-counting 槽无 <resolution> 文法位（css-values-5 §tree-counting
+        // 属性槽清单不含分辨率族）——fail-closed。
+        MTResolution => false,
     }
 }

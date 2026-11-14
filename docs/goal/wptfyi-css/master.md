@@ -2,6 +2,24 @@
 
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g40 完成（11-14）**：serialize-resolution 刀（上一轮 rate-limit 中断孤儿
+认领完成）——`<resolution>` 维度（`CalcExpr::Resolution` dppx 基归一：
+x/dppx 恒等、dpi÷96、dpcm×2.54/96，dppx 后缀先于 x 判定）+ image-set()
+声明值 calc canonical 折叠（`fold_image_set_specified` 引号态机扫描 +
+`parse_resolution_calc` 独立入口 allow_resolution 旗标同 allow_time 口径
+——共享 parse_calc 保持 resolution 闭 + `calc_expr_is_pure_resolution`
+纯门 + MTResolution 型别表行 + 全臂 exhaustive fail-closed 扫；读视图
+单点 js_dom_bridge.rs style_from_mutations_lw 既有 fold_decl_specified
+消费，零新增写站）。B0（19:36:15 刀前二进制）/B1（21:19:52 刀后）受控
+A/B：css-values 4012→4041 净 **+29**（calc-infinity-nan-serialize-
+resolution.html 29/29 全页清零，UPS 无第二页）+ css-images 881→887 净
+**+6**（image-set-parsing.html calc 形红利）——双 corpus REGRESSED=0。
+单测 css-parser 3212 全绿（+4 新钉：单位归一/NaN·±∞/纯门+型别表/fold
+端到端幂等 fail-closed 多字节）+ style-system 2538 + layout-engine
+2515+20；fmt/clippy 净。双 roll 并行写账竞态收敛合并定稿（工件逐案
+对账为准）。残挂账：% 叶 ±∞ 序列化 2F、image-set computed/supports
+通道 36F、serialize-number 嵌套 mix 3F。见
+[evidence 2026-11-14-g40-resolution-image-set-fold](evidence/2026-11-14-g40-resolution-image-set-fold.md)。
 **g38 完成（11-14）**：anchor-size() used 值布局期求值刀——六尺寸槽
 （`ComputedStyle::anchor_size_slots`）+ 四 inset 槽双形承载，布局期
 anchor_pos pass3 按锚几何回填 used 宽高（css-anchor-position-1 §4：
@@ -416,8 +434,9 @@ anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallbac
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
 transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g23 后）：∞ 桶
 （calc-infinity-nan-computed 残 ~31F：rotate 14 → matrix 化桶 + %-CB 形 +
-unbalanced 形）、serialize 散形残余（resolution 29 主体未动（image-set parse
-前置刀，deferred）+ length ~2/angle ~8/number ~3）、signs-abs computed
+unbalanced 形）、serialize 散形残余（~~resolution 29 主体未动（image-set
+parse 前置刀，deferred）~~ **已由 g40 闭账**——29/29 全清 + image-set-parsing
+红利 +6；残 length % 叶 ~2/angle ~8/number 嵌套 mix ~3）、signs-abs computed
 残 ~94F + invalid 残 ~9F（g23 invalid 门已收 43）——`abs()` 空参文法、
 font-weight 非白名单属性写面/serialize 4F、invalid 门表外槽族放行
 （FIXME 逐 parser 族扩面）、

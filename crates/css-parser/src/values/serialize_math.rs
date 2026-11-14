@@ -11,8 +11,8 @@ use super::parse_extended::{
     calc_expr_is_number, parse_counter_list_grammar,
 };
 use super::types::{
-    CalcExpr, CalcOp, LengthValue, TreeCountingFn, eval_calc, eval_calc_with_default_font, is_math_function_value,
-    parse_math_function, parse_time_calc,
+    CalcExpr, CalcOp, LengthValue, TreeCountingFn, calc_expr_is_pure_resolution, eval_calc,
+    eval_calc_with_default_font, is_math_function_value, parse_math_function, parse_resolution_calc, parse_time_calc,
 };
 
 /// 折叠结果的文法型别（决定 NaN/单位序列化形态）。
@@ -183,7 +183,7 @@ fn mask_tree_counting(expr: &mut CalcExpr, v: f64) {
         // anchor()/anchor-size() 叶无静态值不可掩码替换——保留原叶（求值期
         // None 由调用方塌缩失败兜底）。
         CalcExpr::Anchor { .. } => {}
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => {}
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => {}
         CalcExpr::BinaryOp(l, _, r) => {
             mask_tree_counting(l, v);
             mask_tree_counting(r, v);
@@ -930,7 +930,7 @@ fn find_divergent_nan_clamp(expr: &CalcExpr) -> Option<[&CalcExpr; 3]> {
             }
             args.into_iter().find_map(find_divergent_nan_clamp)
         }
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => None,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => None,
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => {
             find_divergent_nan_clamp(a).or_else(|| find_divergent_nan_clamp(b))
         }
@@ -997,6 +997,9 @@ fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
         CalcExpr::Number(_) => None,
         CalcExpr::Length(lv) => length_suffix(lv),
         CalcExpr::Time(_) => Some("s"),
+        // Resolution 叶 canonical 后缀恒 dppx（css-values-4 §6.4：x/dpi/dpcm
+        // parse 期已归一 dppx——`calc(NaN * 1dppx)` 语料形态）。
+        CalcExpr::Resolution(_) => Some("dppx"),
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => {
             dimension_suffix(a).or_else(|| dimension_suffix(b))
         }
@@ -1077,7 +1080,7 @@ fn expr_has_time_leaf(expr: &CalcExpr) -> bool {
         CalcExpr::Time(_) => true,
         // anchor()/anchor-size() 叶非 <time>。
         CalcExpr::Anchor { .. } => false,
-        CalcExpr::Number(_) | CalcExpr::Length(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => expr_has_time_leaf(a) || expr_has_time_leaf(b),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(expr_has_time_leaf),
         CalcExpr::Clamp { min, val, max } => {
@@ -1215,8 +1218,109 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // 驱动）；math 形整数位原文保留（`section calc(1)` 恒等）；非法形
         // None 保留原文（`a\ 8 9` 转义名超 top-level 分词文法面透传）。
         "counter-increment" => fold_counter_increment_specified(v),
+        // css-images-4 §image-set-nota：image-set() 声明值内 calc(<resolution>)
+        // 数学形 canonical 折叠（calc-infinity-nan-serialize-resolution 语料
+        // 29 案驱动——`image-set(url("") calc(1x * NaN))` → `image-set(url("")
+        // calc(NaN * 1dppx))`）；非 image-set 形 / 无 calc( 形 None 保留原文
+        // 零漂移（gradient/url/none 等背景值不经本臂）。
+        "background-image" => fold_image_set_specified(v),
         _ => None,
     }
+}
+
+/// image-set() 声明值内数学形 canonical 折叠（css-images-4 §image-set-nota）。
+///
+/// 仅 `image-set(` 头形且含 `calc(` 时扫描：引号态机（含 `\` 转义）外定位
+/// `calc(`（大小写不敏感），配平右括号取 span，经 [`parse_resolution_calc`] +
+/// [`calc_expr_is_pure_resolution`] 门（裸 number/混型树整值 None 保原文，
+/// fail-closed）+ [`scalar_value`] 求值 + [`dimension_suffix`] 树首维度叶
+/// canonical 单位（纯 resolution 树恒 `dppx`，css-values-4 §6.4 parse 期
+/// 归一）重拼 `calc(<折叠内文>)`。无变化返 None（原文保留）。嵌套内层
+/// `calc(` 随外层 span 整体消费不重扫。
+/// <https://drafts.csswg.org/css-images-4/#image-set-nota>
+fn fold_image_set_specified(v: &str) -> Option<String> {
+    let lower = v.to_ascii_lowercase();
+    if !lower.starts_with("image-set(") || !lower.contains("calc(") {
+        return None;
+    }
+    let bytes = v.as_bytes();
+    let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+    let mut in_quote: Option<u8> = None;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = in_quote {
+            if b == b'\\' {
+                i += 2; // 引号内转义：跳过下一字节。
+                continue;
+            }
+            if b == q {
+                in_quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            in_quote = Some(b);
+            i += 1;
+            continue;
+        }
+        if b < 0x80 && lower[i..].starts_with("calc(") {
+            // 配平右括号取 span（引号内括号不计深——url("") 空串形已证）。
+            let open = i + 4; // '(' 位置
+            let mut depth = 1usize;
+            let mut j = open + 1;
+            let mut span_quote: Option<u8> = None;
+            while j < bytes.len() && depth > 0 {
+                let bj = bytes[j];
+                if let Some(q) = span_quote {
+                    if bj == b'\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if bj == q {
+                        span_quote = None;
+                    }
+                } else if bj == b'"' || bj == b'\'' {
+                    span_quote = Some(bj);
+                } else if bj == b'(' {
+                    depth += 1;
+                } else if bj == b')' {
+                    depth -= 1;
+                }
+                j += 1;
+            }
+            if depth != 0 {
+                return None; // 括号未闭合：整值保原文。
+            }
+            let inner = &v[open + 1..j - 1];
+            let expr = parse_resolution_calc(inner)?;
+            if !calc_expr_is_pure_resolution(&expr) {
+                return None;
+            }
+            let suffix = dimension_suffix(&expr)?;
+            let folded = format_dimension_inner(scalar_value(&expr)?, Some(suffix));
+            replacements.push((i, j, format!("calc({folded})")));
+            i = j; // span 整体消费（内层 calc( 不重扫）。
+            continue;
+        }
+        i += 1;
+    }
+    if replacements.is_empty() {
+        return None;
+    }
+    let mut out = String::with_capacity(v.len());
+    let mut last = 0usize;
+    for (start, end, text) in replacements {
+        out.push_str(&v[last..start]);
+        out.push_str(&text);
+        last = end;
+    }
+    out.push_str(&v[last..]);
+    if out == v {
+        return None; // 恒等（已 canonical 形）：原文保留。
+    }
+    Some(out)
 }
 
 /// counter-increment 指定值 canonical 串化：文法前置（[`parse_counter_list_grammar`]，

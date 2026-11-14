@@ -2301,3 +2301,134 @@ fn test_parse_opacity_math_function_forms() {
     assert_eq!(parse_opacity("0.25"), Some(0.25));
     assert_eq!(parse_opacity("50%"), Some(0.5));
 }
+
+#[test]
+fn test_parse_resolution_units_normalize_to_dppx() {
+    // css-values-4 §6.4 <resolution> 维度归一：x/dppx 恒等、dpi÷96、
+    // dpcm×2.54/96（1in=96px=2.54cm）——calc-infinity-nan-serialize-resolution
+    // 语料桶前置刀。
+    let cases: [(&str, f64); 5] = [
+        ("calc(2x)", 2.0),
+        ("calc(3dppx)", 3.0),
+        ("calc(96dpi)", 1.0),
+        ("calc(192dpi)", 2.0),
+        ("calc(96dpcm)", 96.0 * 2.54 / 96.0),
+    ];
+    for (src, want) in cases {
+        let expr = parse_resolution_calc(src).unwrap_or_else(|| panic!("{src} should parse"));
+        assert!(calc_expr_is_pure_resolution(&expr), "{src} is pure-resolution");
+        let v = eval_calc(&expr, None).unwrap_or_else(|| panic!("{src} should eval"));
+        assert!((v - want).abs() < 1e-9, "{src} -> {want}dppx, got {v}");
+    }
+}
+
+#[test]
+fn test_parse_resolution_math_forms_and_nan_infinity() {
+    // §10.5/§10.6 数学形 over <resolution>：标量乘除、NaN/±∞ 求值毒保留
+    //（§10.6 canonical 发射面由 fold 臂消费——image-set 桶语料形态）。
+    let expr = parse_resolution_calc("calc(1x * NaN)").expect("parses");
+    assert!(eval_calc(&expr, None).is_some_and(|v| v.is_nan()), "NaN poison kept");
+    let expr = parse_resolution_calc("calc(1dppx * infinity)").expect("parses");
+    assert!(eval_calc(&expr, None).is_some_and(|v| v.is_infinite()), "∞ kept");
+    let expr = parse_resolution_calc("calc(1dppx * 1/infinity)").expect("parses");
+    assert_eq!(eval_calc(&expr, None), Some(0.0), "1/∞ = 0");
+    // clamp/min/max 混 NaN 毒（g12 f64 eval 毒化）。
+    let expr = parse_resolution_calc("calc(1dppx * clamp(-infinity, infinity, 10))").expect("parses");
+    assert_eq!(eval_calc(&expr, None), Some(10.0));
+    let expr = parse_resolution_calc("calc(1 * max(NaN * 3dppx, 0dppx))").expect("parses");
+    assert!(eval_calc(&expr, None).is_some_and(|v| v.is_nan()), "min/max NaN poison");
+}
+
+#[test]
+fn test_parse_resolution_purity_and_shared_entry_closed() {
+    // 型门：resolution±number 混型拒（§10.1）；共享 calc 入口零漂移；
+    // math type 表行（§10.5）：number·resolution=resolution、resolution/number。
+    assert!(!calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(1dppx + 1)").expect("parses structurally")
+    ));
+    assert!(
+        parse_calc("calc(1dppx)").is_none(),
+        "shared calc entry stays resolution-closed"
+    );
+    // 型别表行：`calc(2 * 1dppx)` 型别 resolution（纯门放行）。
+    assert!(calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(2 * 1dppx)").expect("parses")
+    ));
+    assert!(calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(1dppx / 2)").expect("parses")
+    ));
+    // 非法乘法形态（resolution² 无量纲型别）：纯门拒。
+    assert!(!calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(1dppx * 1dppx)").expect("parses structurally")
+    ));
+    // 大小写不敏感维度字面（INFinity 语料形同口径）。
+    assert!(parse_resolution_calc("calc(2X)").is_some(), "x case-insensitive");
+}
+
+#[test]
+fn test_fold_background_image_set_resolution_serialize() {
+    // 端到端 fold_decl_specified("background-image", …)：
+    // §10.6 canonical 发射（NaN/±∞ * 1<unit>）、单位归一恒 dppx、幂等、
+    // 非 image-set/无 calc 原文保留（fail-closed）。
+    let cases = [
+        (
+            "image-set(url(\"a\") calc(1x * NaN), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(NaN * 1dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1dppx * infinity), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(infinity * 1dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1dppx * 1/infinity), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(0dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1 * max(INFinity*3dppx, 0dppx)), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(infinity * 1dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1dppx * clamp(-inFinity, infinity, 10)), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(10dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(96dpi * NaN), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(NaN * 1dppx), url(\"b\") 2x)",
+        ),
+    ];
+    for (src, want) in cases {
+        let got = fold_decl_specified("background-image", src).unwrap_or_else(|| panic!("{src} should fold"));
+        assert_eq!(got, want, "{src}");
+        // 幂等：折叠产物二次折叠恒等（None）。
+        assert_eq!(
+            fold_decl_specified("background-image", &got),
+            None,
+            "folded form is canonical (idempotent)"
+        );
+    }
+    // fail-closed 面：非 image-set 原文、混型整值 None、括号未闭合 None。
+    assert_eq!(
+        fold_decl_specified("background-image", "url(\"a\") calc(1dppx * NaN)"),
+        None,
+        "non-image-set untouched"
+    );
+    assert_eq!(
+        fold_decl_specified("background-image", "image-set(url(\"a\") calc(1dppx + 1))"),
+        None,
+        "mixed-type tree keeps original"
+    );
+    assert_eq!(
+        fold_decl_specified("background-image", "image-set(url(\"a\") 2x)"),
+        None,
+        "no-calc untouched"
+    );
+    // 多字节 URL 前缀不越界（char boundary 安全）。
+    assert_eq!(
+        fold_decl_specified(
+            "background-image",
+            "image-set(url(\"图.png\") calc(1dppx * NaN), url(\"b\") 2x)"
+        ),
+        Some("image-set(url(\"图.png\") calc(NaN * 1dppx), url(\"b\") 2x)".to_string()),
+        "multibyte url prefix safe"
+    );
+}

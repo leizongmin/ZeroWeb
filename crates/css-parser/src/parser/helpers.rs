@@ -425,6 +425,10 @@ fn counter_calc_type(expr: &CalcExpr) -> Option<CounterCalcType> {
         // counter() 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
         // 之外本不可达，fail-closed 兜底）。
         CalcExpr::Time(_) => None,
+        // counter() 槽无 <resolution> 文法位（css-values-4 §6.4 维度族与
+        // 计数器求值域正交，parse_resolution_calc 门控之外本不可达，
+        // fail-closed 兜底）。
+        CalcExpr::Resolution(_) => None,
         // counter() 槽无 anchor()/anchor-size() 文法位（inset/size 族函数与
         // 计数器求值域正交）——fail-closed 兜底。
         CalcExpr::Anchor { .. } => None,
