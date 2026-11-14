@@ -40,10 +40,11 @@ sizing.rs `height_fix` 臂三分重构：
 - 终写改 `style != style_before` 判——无写入不再 set+dirty（旧径对
   塌 0 盒恒 `changed=true` 触发空转重布局）。
 
-同 crate 共享树并行流说明：本轮 style-system 有他流 anchor-size 槽
-切片在途（computed_style.rs `anchor_size_slots` + apply/default_impl
-），clippy 死代码告警（anchor_pos.rs 689-752 五函数未接线）实证其
-惰性——对布局结果零影响，本刀 A/B 归因干净。
+同 crate 共享树并行流说明：本轮 style-system/anchor_pos 有他流 g38
+anchor-size 槽切片同树在途，release 二进制（18:28 构建）按 provenance
+含其**接线态**（anchor-size 语页面 +73 实证非惰性，g37 轮「共享树构建
+编译他流在途半成品」教训复现）——§4 为组合态账，本刀面经内容机制逐案
+分解（见 §4），发射前工作树非干净以逐案归因补偿。
 
 ## 3. 验证
 
@@ -63,9 +64,11 @@ sizing.rs `height_fix` 臂三分重构：
 - position-area-basic 0F；last-successful-basic 维持 g36 揭真挂账形
   （expected 200 got 250 等，本刀无关）。
 
-全量重录（results-g39-strutgate，90 秒空闲机 rayon，transcript
-/tmp/zw-g39-strutgate.log）：**11,985P/872F → 12,061P/796F，净 +76**
-（up=16 same=248 down=1，265 页）。
+全量重录（results-g39-strutgate，90 秒空闲机串行 ~0.17s/案，transcript
+/tmp/zw-g39-strutgate.log）：**265 页 12,061P/796F/4T**。对 comb3-x7
+JSON 净 +76（up=16 same=248 down=1）；对 g37-final 真态基线（11,993P
+/864F/4T）净 **+68**——差 8 = comb3-x7 已定谳 skew（伪绿 12 − 伪红 4，
+见 g37 轮更正块），本二进制含 g37 已提交代码故 skew 两项互消。
 
 归因分解（组合态：本刀 + 他流 g38 anchor-size 回填同树在账）：
 
@@ -76,13 +79,16 @@ sizing.rs `height_fix` 臂三分重构：
   - anchor-position-multicol-001 `.target 4`（inset bottom
     `anchor(--a1 bottom)` 的高依赖式 y = cb_h − bv − h，strut 剔除后
     对齐 data-offset-y=110）。
-- **他流 g38 anchor-size 回填 +73/−1**：anchor-size-writing-modes-001
-  +24 / anchor-size-001 +17 / anchor-size-replaced-001 +8 /
-  anchor-size-minmax-001 +3 / anchor-name-001~004 +2~4 /
-  anchor-query-fallback +2 / anchor-invalid-fallback +4 /
-  anchor-position-dynamic-002 +2 / multicol-006 +1 / colspan-001 +1
-  （上述页均含 anchor-size 声明，grep 计数实证）；REG：anchor-ident-
-  function `Property width value 'anchor-size(--a1)'` P→F、
-  anchor-name-003 内部混合翻转（.target 10/3/17/32 P→F）——全
-  anchor-size 声明域，挂账归 g38 流处置。
+- **基线修复项 +4**：anchor-invalid-fallback 29→33——comb3-x7 伪红 4
+  （build2 缺 parse_length_or_math guard）在本二进制（含 g37 已提交
+  guard）复正，非新增增益。
+- **他流 g38 anchor-size 回填面（净 ~+65，含 −1 REG 与页内混翻）**：
+  anchor-size-writing-modes-001 +24 / anchor-size-001 +17 /
+  anchor-size-replaced-001 +8 / anchor-size-minmax-001 +3 /
+  anchor-name-001~004 +2~4（003 页内 8F→P/4P→F 混翻，anchor 选择序
+  问题）/ anchor-query-fallback +2 / anchor-position-dynamic-002 +2 /
+  multicol-006 +1 / colspan-001 +1（上述页均含 anchor-size 声明，
+  grep 计数实证）；REG：anchor-ident-function
+  `Property width value 'anchor-size(--a1)'` P→F——全 anchor-size
+  声明域，挂账归 g38 流处置。
 

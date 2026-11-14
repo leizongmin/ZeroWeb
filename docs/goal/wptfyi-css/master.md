@@ -2,6 +2,10 @@
 
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g39 完成（11-14）**：空绝位 auto 高 strut 门——abspos 塌 0 补测只对
+有行内内容盒写行高近似（CSS2 §10.6.4），g36 'none' 形态挂账清偿；组合态
+账 265 页 12,061P/796F/4T（对 g37-final 真态净 +68），本刀面 +3 零回归；
+见 [evidence 2026-11-14-g39-abs-empty-strut-gate](evidence/2026-11-14-g39-abs-empty-strut-gate.md)。
 **g37 完成（11-14）**：anchor()/anchor-size() calc 嵌入叶 + serialize
 canonical 三修——anchor-parse-valid 4F/anchor-size-parse-valid 8F 全清 +
 invalid-fallback 4 伪红修正，anchor 语料 11,977→11,993 净 +12 零回归；
@@ -1230,3 +1234,21 @@ g37-final 11,993P/864F/4T 为 HEAD 终账；654/659 transcript 块字节级同 a
 半成品**（build2 即例证），跑批发射前须 git status 干净或 provenance 可证；
 journal scope CPU/wall 记账为跑批真实性首选审计工具。ab4 焚毁、ab4c/comb2
 salvage 副本不可作账维持原判。
+
+**g39 空绝位 auto 高 strut 门（11-14 深夜）**：g36 挂账 'none'/空绝位
+盒 h=18 根因定谳——`apply_abspos_shrink_to_fit_width` height_fix 臂对全部
+塌 0 的 auto 高 abs 盒无条件写行高 strut（≈18），本意文本叶近似但未查
+行内内容（taffy 树 dump 0×0 → 提取层 0×18 定位写入点；CSS2 §10.6.4
+auto 高 = 内容高）。修复 = `has_inline_content` 门（strut 只对有行内
+内容塌 0 盒，文本叶近似合法域保持）+ `style != style_before` 终写判
+（塌 0 空盒不再触发空转重布局）；常驻钉测 `g1f_abs_empty_auto_height`
+（探针转正：空 Inline §9.7 块化/空 Block 0×0 + 含文本行盒高 + 两对照）。
+layout-engine lib 2510P/0F。组合态账（他流 g38 anchor-size 回填同树
+在账，二进制含其接线态）：265 页 **12,061P/796F/4T**，对 comb3-x7
+JSON +76 / 对 g37-final 真态 **+68**（skew 8 = 伪绿 12 − 伪红 4 互消）；
+归因本刀 +3 零回归（position-area-basic 'none'/'span-all top' 空盒
+路径 ×2 + multicol-001 inset bottom 高依赖式 ×1）、invalid-fallback
++4 = comb3-x7 伪红复正基线修复项、余 ~+65 归 g38（anchor-ident-function
+P→F REG + anchor-name-003 页内混翻挂账 g38 流）。探针链先验：none
+`0,0,0,0`（原 18）、span-all/top-left 两形态零扰动。
+[证据](evidence/2026-11-14-g39-abs-empty-strut-gate.md)
