@@ -36,6 +36,10 @@ fn anchor_fixture(area: &str) -> (crate::LayoutResult, NodeId, NodeId, NodeId) {
     anchored_style.position = zero_style_system::PositionValue::Absolute;
     anchored_style.position_anchor = Some("--anchor".into());
     anchored_style.position_area = Some(area.into());
+    // 显式 stretch（WPT basic oracle 同形）：g35 对齐面后 default 走 §4.1 区域
+    // 默认表（end/start/center/anchor-center + 收缩尺寸），满填需显式声明。
+    anchored_style.align_self = zero_css_parser::values::AlignmentValue::Stretch;
+    anchored_style.justify_self = zero_style_system::JustifySelfValue::Stretch;
 
     let mut spade_style = ComputedStyle::default();
     spade_style.height = LengthValue::Px(160.0);
@@ -158,6 +162,9 @@ fn g1f_position_area_rtl_self_start_mirror() {
     anchored_style.direction = zero_style_system::DirectionValue::Rtl;
     anchored_style.position_anchor = Some("--anchor".into());
     anchored_style.position_area = Some("self-start".into());
+    // 显式 stretch 同 anchor_fixture（g35 对齐面 default 表化）。
+    anchored_style.align_self = zero_css_parser::values::AlignmentValue::Stretch;
+    anchored_style.justify_self = zero_style_system::JustifySelfValue::Stretch;
 
     let mut spade_style = ComputedStyle::default();
     spade_style.height = LengthValue::Px(160.0);
@@ -189,6 +196,114 @@ fn g1f_position_area_rtl_self_start_mirror() {
         (a.height - 160.0).abs() < 0.5,
         "rtl self-start height {} 应为 160",
         a.height
+    );
+}
+
+/// g35 对齐面：无显式 align/justify-self → §4.1 区域默认表。`top left` 仅
+/// start 轨 → 双轴 END：10×10 元素 margin-box 右/底缘钉区域右/底缘
+///（x = 100-10 = 90、y = 160-10 = 150，css-anchor-position-1 §4.1）。
+#[test]
+fn g1f_position_area_default_table_end_pin() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let anchored = doc.create_element("div");
+    doc.append_child(container, anchored).unwrap();
+    let spade = doc.create_element("div");
+    doc.append_child(container, spade).unwrap();
+    let anchor = doc.create_element("div");
+    doc.append_child(container, anchor).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.position = zero_style_system::PositionValue::Absolute;
+    container_style.width = LengthValue::Px(400.0);
+    container_style.height = LengthValue::Px(400.0);
+
+    let mut anchored_style = ComputedStyle::default();
+    anchored_style.position = zero_style_system::PositionValue::Absolute;
+    anchored_style.position_anchor = Some("--anchor".into());
+    anchored_style.position_area = Some("top left".into());
+    anchored_style.width = LengthValue::Px(10.0);
+    anchored_style.height = LengthValue::Px(10.0);
+
+    let mut spade_style = ComputedStyle::default();
+    spade_style.height = LengthValue::Px(160.0);
+
+    let mut anchor_style = ComputedStyle::default();
+    anchor_style.width = LengthValue::Px(150.0);
+    anchor_style.height = LengthValue::Px(75.0);
+    anchor_style.margin_left = LengthValue::Px(100.0);
+    anchor_style.anchor_name = Some("--anchor".into());
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(anchored, anchored_style);
+    styles.insert(spade, spade_style);
+    styles.insert(anchor, anchor_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let a = find(&result.root, anchored).expect("anchored box");
+    // 仅 start 轨 → 默认 END：margin-box 右缘钉列右缘（锚左缘 100）、底缘钉
+    // 行底缘（锚顶缘 160）；尺寸保持显式 10×10 不满填。
+    assert!((a.x - 90.0).abs() < 0.5, "default table x {} 应为 100-10 = 90", a.x);
+    assert!((a.y - 150.0).abs() < 0.5, "default table y {} 应为 160-10 = 150", a.y);
+    assert!(
+        (a.width - 10.0).abs() < 0.5,
+        "显式尺寸不满填：width {} 应为 10",
+        a.width
+    );
+}
+
+/// g35 对齐面：span-all 三轨全选 → 默认 anchor-center（margin-box 中心对锚
+/// 中心）：锚 (100..250, 160..235) 中心 (175, 197.5)，10×10 → (170, 192.5)。
+#[test]
+fn g1f_position_area_span_all_anchor_center() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let anchored = doc.create_element("div");
+    doc.append_child(container, anchored).unwrap();
+    let spade = doc.create_element("div");
+    doc.append_child(container, spade).unwrap();
+    let anchor = doc.create_element("div");
+    doc.append_child(container, anchor).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.position = zero_style_system::PositionValue::Absolute;
+    container_style.width = LengthValue::Px(400.0);
+    container_style.height = LengthValue::Px(400.0);
+
+    let mut anchored_style = ComputedStyle::default();
+    anchored_style.position = zero_style_system::PositionValue::Absolute;
+    anchored_style.position_anchor = Some("--anchor".into());
+    anchored_style.position_area = Some("span-all".into());
+    anchored_style.width = LengthValue::Px(10.0);
+    anchored_style.height = LengthValue::Px(10.0);
+
+    let mut spade_style = ComputedStyle::default();
+    spade_style.height = LengthValue::Px(160.0);
+
+    let mut anchor_style = ComputedStyle::default();
+    anchor_style.width = LengthValue::Px(150.0);
+    anchor_style.height = LengthValue::Px(75.0);
+    anchor_style.margin_left = LengthValue::Px(100.0);
+    anchor_style.anchor_name = Some("--anchor".into());
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(anchored, anchored_style);
+    styles.insert(spade, spade_style);
+    styles.insert(anchor, anchor_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let a = find(&result.root, anchored).expect("anchored box");
+    assert!((a.x - 170.0).abs() < 0.5, "anchor-center x {} 应为 175-5 = 170", a.x);
+    assert!(
+        (a.y - 192.5).abs() < 0.5,
+        "anchor-center y {} 应为 197.5-5 = 192.5",
+        a.y
     );
 }
 
