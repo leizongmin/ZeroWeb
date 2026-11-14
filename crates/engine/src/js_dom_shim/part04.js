@@ -9380,6 +9380,23 @@
               // shim html 刷新主同步路径收敛——受限已知偏差）。
               var _r9mId = '';
               try { _r9mId = String(child.id || ''); } catch (_eR9mi) {}
+              // T70（v4 跨批再挂 identity 回收——t69 诊断 caseH v4 面）：evict 落在
+              // apply（批界），此刻逆向桥仍活——记下 sel→handle，同 sel 跨批重挂时
+              // `_zwQueryWrapIdentity` 在正向桥 miss 后回收原 proxy（[SameObject]
+              // 跨 remove/remount 周期；chrome 重挂同一节点对象同款）。512 键软上限
+              // 防高 churn 页无界增长；一次性消费（回收即删）。
+              try {
+                if (typeof __zw_selector_for_handle === 'function' && child.__zwHandle) {
+                  var _t70rs = __zw_selector_for_handle(String(child.__zwHandle));
+                  if (_t70rs) {
+                    if (!globalThis._zwEvictedIdentBySel) globalThis._zwEvictedIdentBySel = {};
+                    if (Object.keys(globalThis._zwEvictedIdentBySel).length > 512) {
+                      globalThis._zwEvictedIdentBySel = {};
+                    }
+                    globalThis._zwEvictedIdentBySel[String(_t70rs)] = String(child.__zwHandle);
+                  }
+                }
+              } catch (_eT70w) {}
               if (_r9mId) {
                 __zw_remove('#' + _r9mId);
               } else {

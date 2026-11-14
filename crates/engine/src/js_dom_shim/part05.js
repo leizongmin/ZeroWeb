@@ -2024,6 +2024,23 @@
         }
       } catch (_e100) {}
     }
+    // T70（v4 跨批再挂 identity 回收——t69 诊断 caseH v4 面，spec #dom-node-
+    // childnodes [SameObject]）：正向桥在跨批 evict 后缺失，但 removeChild 时
+    // 逆向桥仍活——`_zwEvictedIdentBySel` 记下 sel→handle（part04 handle-child
+    // 移除臂写入）。同 sel 跨批重挂（宿主重建节点仅带 sel，原 handle 不再注册）
+    // 时在此回收原 proxy——`_wrapHandle` 同 handle 返缓存同对象，视图 identity
+    // 与重挂前连续。**不消费**（读后保留）：identity 须跨后续换代稳定（diag
+    // v4→v4.5 两代实证一次性回收会在下一代丢失）；与既有 sel-aliasing 模型一致
+    // （`_proxyCache['s:'+sel]` 对同 sel 新节点同样持续复用旧 proxy）。桥命中
+    // 路径（同批重注册/未 evict）不经过本臂。
+    try {
+      var _t70eh = globalThis._zwEvictedIdentBySel
+        ? globalThis._zwEvictedIdentBySel[sel] : null;
+      if (_t70eh) {
+        _r100Remember(_t70eh, sel);
+        return _wrapHandle(_t70eh);
+      }
+    } catch (_eT70r) {}
     return _wrapSelector(sel);
   }
 
