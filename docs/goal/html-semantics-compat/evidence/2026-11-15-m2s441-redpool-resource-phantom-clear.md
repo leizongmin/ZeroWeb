@@ -79,6 +79,17 @@ dialog 16 属渲染域。红池分诊在现状门禁下实质收窄至小尾巴�
 leg{1,2}.ks、fixr.{pass,fail,timeout,unsupported,1.sw,2.sw}、
 upstream-green-2x2.png。
 
+## 组合树复验（push 前 rebase 入他流 fb81665dd 后双跑位移检查）
+
+基线双腿测于 ae91fbe94+docs 树；push 前 rebase 入他流
+**fb81665dd**（ip 空块垫底 br 方向性壳携，part01f.js +123，engine 共享
+面）→ 组合树（74c998e92）复跑双腿 join **8113P/206F/5T/1U + mismatch
+1**：stable-Fail / stable-Pass 集合与基线**逐键恒等**（diff 空），
+fb81665dd 对本语料零位移；T 6→5 + mismatch 1 = 可选 select
+select-home-end-pagedown-pageup-detailed.optional.html 文件级键
+Fail↔Timeout 单腿置换（s439 在册负载族渐进退化形态，簇 D 门内）。
+**基带 8113P/206F/6T/1U 维持**（T 面按该族 5↔6 振荡记账）。
+
 ## 结论
 
 s441 收口（零源码改动）：红池 48 键伪红定谳资源丢失并根修（fetch_raw

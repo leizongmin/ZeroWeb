@@ -27,6 +27,10 @@ video 4（GB-20261114-VIDEO 门）+ dialog 16（abspos 居中/top-layer/inert
 GB-20261031（簇 D）+ s137。下一步：小尾巴逐件勘根（combobox tentative
 12 / tabular 4 / tails 10）或候门决项（video P1+P2 / 簇 D A2）；dialog
 16 红块移交/协同归 rendering 流记账；全桥套件绿窗轮末收口跑常态化。
+push 前 rebase 入他流 fb81665dd（ip 壳携刀，engine 共享面）→ 组合树
+74c998e92 复跑双腿：stable-P/F 集合逐键恒等零位移，T 6→5 + mismatch 1
+= 可选 select 文件级键 Fail↔Timeout 单腿置换（s439 在册负载族，簇 D 门
+内），基带 8113P/206F/6T/1U 维持。
 
 > **▶ 承前（2026-11-15 M2 切片 440 收口）——dialog 五窗红相归因定谳
 > + CE 域门修复（1 键 F→P 零位移；账本
