@@ -2815,11 +2815,13 @@
       }
       if (!_zwIparaHasVisibleChild(container)) {
         // C2/F/I6 方向性壳携刀（2026-11-15）左臂：左空块垫底 br 携 caret 祖先
-        // 样式壳链（fmt+span 逐层 cloneNode(false) 保 attrs，`<a>` 链接壳弃携）。
-        // census C2 8 键（`<p><b>[]foo</b></p>` exp 左块 `<p><b><br></b></p>`、
-        // a-outer `<p><b><a href>[]foo</a></b></p>` exp b 携 a 弃；双壳 `<b><i>`
-        // 全链携）——左块携链不带 v3.2 重开门（offset-0 形壳左半恒空置仍携，
-        // 与右块重开判据分向）。探针定谳：本臂 br 新建（ipm3-b-v6-ip.log 16 键
+        // 样式壳链（fmt+span 逐层 cloneNode(false) 保 attrs）。语料精化定谳
+        // （v1 批 L1 judge P2F 双键 + insertparagraph.js 1072/1092 对照）：携集
+        // ＝祖先链最外层 `a` 之上的壳——`<b><a>[]foo</a></b>` 携 b（:1092 exp
+        // `<p><b><br></b></p>`）、`<a><b>[]foo</b></a>` 裸垫 `<p><br></p>`（:1072
+        // exp），a 及其内层全弃；无 a 携全链。左块携链不带 v3.2 重开门（offset-0
+        // 形壳左半恒空置仍携，与右块重开判据分向；右臂凡链含 a 即全裸，左右
+        // 不对称属实）。探针定谳：本臂 br 新建（ipm3-b-v6-ip.log 16 键
         // brCreated=1 栈行 2732 实录）。
         var ipPadChainL = [];
         (function () {
@@ -2835,6 +2837,20 @@
             ipWL = ipWL.parentNode;
           }
         })();
+        // 携集精化门：收集链最外层之上扫 `a`，命中即清链裸垫（a-outer 形
+        // `<a><b>[]foo</b></a>` 携集恒空；b-outer 形 `<b><a>[]</a></b>` 最外层
+        // b 之上无 a 不触发）。
+        if (ipPadChainL.length) {
+          var ipAL = ipPadChainL[ipPadChainL.length - 1].parentNode;
+          var ipGL2 = 0;
+          while (ipAL && ipAL !== container && ipGL2++ < 32) {
+            if (ipAL.nodeType === 1 && _zwJusTag(ipAL) === 'a') {
+              ipPadChainL.length = 0;
+              break;
+            }
+            ipAL = ipAL.parentNode;
+          }
+        }
         var ipBrL = document.createElement('br');
         if (ipPadChainL.length) {
           // 收集序内→外，正序包裹＝内层先包 br 外层逐层套（保持输入链方向，

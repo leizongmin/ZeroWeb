@@ -358,6 +358,94 @@ document.execCommand("insertparagraph", false, "");
 }
 
 #[test]
+fn test_insertparagraph_c2_left_aouter_p_bare_pad() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce118i contenteditable><p><a href=foo><b>foo</b></a></p></div>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var h118i = document.getElementById("ce118i");
+var t118i = h118i.firstChild.firstChild.firstChild.firstChild;
+var r118i = document.createRange();
+r118i.setStart(t118i, 0);
+r118i.setEnd(t118i, 0);
+getSelection().removeAllRanges();
+getSelection().addRange(r118i);
+document.execCommand("defaultparagraphseparator", false, "div");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce118i\").innerHTML")
+            .unwrap()
+            .value,
+        "<p><br></p><p><a href=\"foo\"><b>foo</b></a></p>",
+        "⑰ C2 a-outer `<p><a href><b>[]foo</b></a></p>`：最外层 a 之上无壳＝左块裸垫（corpus :1072 exp；v1 批 P2F 回归根因面）"
+    );
+}
+
+#[test]
+fn test_insertparagraph_c2_left_aouter_div_bare_pad() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce118j contenteditable><div><a href=foo><b>foo</b></a></div></div>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var h118j = document.getElementById("ce118j");
+var t118j = h118j.firstChild.firstChild.firstChild.firstChild;
+var r118j = document.createRange();
+r118j.setStart(t118j, 0);
+r118j.setEnd(t118j, 0);
+getSelection().removeAllRanges();
+getSelection().addRange(r118j);
+document.execCommand("defaultparagraphseparator", false, "p");
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById(\"ce118j\").innerHTML")
+            .unwrap()
+            .value,
+        "<div><br></div><div><a href=\"foo\"><b>foo</b></a></div>",
+        "⑱ C2 a-outer div 宿主镜像＝左块裸垫（corpus :1077 exp）"
+    );
+}
+
+#[test]
 fn test_insertparagraph_f_right_a_p_chain_drop() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
