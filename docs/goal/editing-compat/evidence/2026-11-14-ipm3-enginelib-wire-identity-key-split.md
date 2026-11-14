@@ -78,8 +78,40 @@ Remove { selector: "#t68c > p:nth-child(1)" }  # engine wire 已携 fresh 章
 - part114 M3-A 五形钉测 5/5 绿（corpus 增益面不回退）；
 - 全 lib `cargo test -p zero-engine --lib` **3949P/7F** 名册恰基线；
 - fmt --all 零 diff；
-- corpus 四腿（ip/ab/mt/enginelib）重跑 = 门禁批 batch-ipm3-fix-gate-v1（本 evidence 提交
-  后锚新 head 发射，ip 腿须 fresh 重跑——shim 已变，v6 的 ip salvage 证据失效）。
+- corpus 四腿（ip/ab/mt/enginelib）重跑 = 门禁批链 v1 → comb-r1（下节）。
+
+## 门禁批链终局（v1 → comb-r1，2026-11-14）
+
+### v1（@94883fbbe，bin 808f8ccba，16:41 发射）
+
+- L1 ip fresh **全绿**：rows 7195→7195，F 99→77，F2P=22（br=22，A 族恰值）、P2F=0、
+  lost=0、newF=0（wall 875s）——修复的 corpus 面定谳；
+- L2 ab **ABORT（T=1 环境伪影）**：P=10067/0F、wall 303s，丢失 25 行=基线序位
+  #10067-#10091 恰尾段（post 末行=序位 #10066）——300s 页预算耗尽尾截，非行为红
+  （10067 行全 Pass 零 Fail 零翻键）。同签名在两代二进制独立复现（本批 + v2 残跑
+  74321866 P=10059/T=1 wall 305s）+ 旧二进制 c4de0e4f 先例（挂账「丢行率账」累计
+  5 例）→ 环境归因（并发租户负载 × 页预算沿）定谳；
+- v2 脚本被同 session 并行轮竞写焚毁（bash 读偏移，v5 同款），换名 comb-r1 重射。
+
+### comb-r1（@330ba2b40 s433 组合态，bin 74321866，17:13 发射，18:18:59 ALL-DONE）
+
+| 腿 | 结果 |
+|---|---|
+| L0 | 构建 OK，修复特征串 8/8 |
+| L1 ip fresh | rows 7195→7195，F 99→77，**F2P=22（br=22）** P2F/lost/newF=0（wall 944s） |
+| L2 ab fresh | **10092/0/0 严格过**（wall 293s，load_wait 门防伪影生效） |
+| L3 mt fresh | rows 10092→10092，F 2→2，F2P=0/P2F=0/po_fail=0/lost=0，residF 恰 2（X37 除名维持）（wall 1713s） |
+| L4 enginelib | **3949P/7F 名册恰基线**（M3-A 五新红保持翻绿，新增/删除面均零） |
+
+组合态=inbound s433（4e3eea8f3 FORM named-first trap 面，改 part03/04/05，与本修复
+part04 臂区域不相交）落地后的真态。跨流独立确认双重：
+
+1. html-semantics s433 evidence 组合态 enginelib 复跑 1561P/7F——M3-A 五新红全数被
+   94883fbbe 清偿；
+2. 渲染流 R5533（3228154e9）组合态 corpus A/B 682F 持平、六翻动案 solo×3 全绿。
+
+**M3-A 刀正式收口。** 下一簇：M3-B/C 族选面（census 13 族档：C4 块边界垫缺 17 ＞
+B 拆点 nbsp 归一 15 ＞ C2/F 壳携 14 ＞ C1 序反转 8 ＞ 零散 15 ＞ qV 8）。
 
 ## 门禁批 fix-gate-v1 终态（2026-11-14 16:41–17:01，@94883fbbe bin 808f8ccba）
 
