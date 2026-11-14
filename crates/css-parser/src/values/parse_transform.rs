@@ -1522,6 +1522,14 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     // 检查第一个参数是否为方向（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
     let hs = strip_interpolation_hint(first);
+    // css-images-4 文法：`in` 子句一旦出现必须携带合法
+    // <color-interpolation-method>——未知空间/极坐标缺 `hue` 后缀/`in` 后倒置
+    // 等畸形均为 invalid，整渐变拒收（g43 driving:
+    // gradient-interpolation-method-invalid in-子句族；此前宽松降级为无方法
+    // 渐变接受，写面回显原文伪装成功）。
+    if hs.present && hs.method.is_none() {
+        return None;
+    }
     let interpolation = ColorInterpolation {
         space: hs.space,
         hue: hs.hue,
@@ -1599,6 +1607,10 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     // 第一个参数可能包含 shape/size/position（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
     let hs = strip_interpolation_hint(first);
+    // g43：`in` 子句畸形整渐变拒收（同 linear 分支注）。
+    if hs.present && hs.method.is_none() {
+        return None;
+    }
     let interpolation = ColorInterpolation {
         space: hs.space,
         hue: hs.hue,
@@ -1824,6 +1836,10 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
 
     let first = args[0].trim();
     let hs = strip_interpolation_hint(first);
+    // g43：`in` 子句畸形整渐变拒收（同 linear 分支注，conic `in from 90deg` 形）。
+    if hs.present && hs.method.is_none() {
+        return None;
+    }
     let interpolation = ColorInterpolation {
         space: hs.space,
         hue: hs.hue,

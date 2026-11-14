@@ -124,6 +124,36 @@ pub fn canonicalize_background_image_specified(value: &str) -> Option<String> {
     Some(out.join(", "))
 }
 
+/// g43 写面拒收判定（css-images-4 渐变文法）：任一顶层图层为渐变前缀
+///（linear/radial/conic-gradient 及 repeating 变体）但
+/// [`parse_background_image`] 解析失败 → 整声明 invalid（CSSOM setProperty
+/// no-op，调用方经回调 "null" 哨兵拒写；此前 parse 失败由 shim CSSOM store
+/// 回显原文伪装成功，g30 同型通道）。非渐变面（none/url/未识别函数）恒
+/// false passthrough。驱动：gradient-interpolation-method-invalid 292F。
+/// https://drafts.csswg.org/css-images-4/#gradients
+pub fn background_image_decl_invalid(value: &str) -> bool {
+    let layers = split_top_layers(value.trim());
+    !layers.is_empty()
+        && layers
+            .iter()
+            .any(|layer| is_gradient_prefixed(layer.trim()) && parse_background_image(layer.trim()).is_none())
+}
+
+/// 渐变函数前缀识别（大小写不敏感；含 repeating 变体）。
+fn is_gradient_prefixed(v: &str) -> bool {
+    let lower = v.to_ascii_lowercase();
+    [
+        "linear-gradient(",
+        "repeating-linear-gradient(",
+        "radial-gradient(",
+        "repeating-radial-gradient(",
+        "conic-gradient(",
+        "repeating-conic-gradient(",
+    ]
+    .iter()
+    .any(|p| lower.starts_with(p))
+}
+
 /// 括号感知顶层逗号分割（图层分割；url()/函数内逗号受深度保护）。
 fn split_top_layers(s: &str) -> Vec<&str> {
     let mut segs = Vec::new();

@@ -2694,3 +2694,66 @@ fn test_g42_interpolation_space_model_identity() {
     };
     assert_eq!(l3.interpolation.space, ColorInterpolationSpace::Srgb);
 }
+
+#[test]
+fn test_g43_malformed_in_clause_rejects_gradient() {
+    // g43（css-images-4 文法）：`in` 子句一旦出现必须携带合法
+    // <color-interpolation-method>——极坐标缺 `hue` 后缀 / `in` 后倒置配置 /
+    // 未知空间均整渐变拒收（此前宽松降级为无方法渐变接受）。
+    for css in [
+        "linear-gradient(in hsl longer, red, blue)",
+        "linear-gradient(in hsl shorter, red, blue)",
+        "linear-gradient(in hsl increasing, red, blue)",
+        "linear-gradient(to right in hsl decreasing, red, blue)",
+        "linear-gradient(in to right, red, blue)",
+        "linear-gradient(in 45deg, red, blue)",
+        "linear-gradient(in bogus, red, blue)",
+        "conic-gradient(in from 90deg, red, blue)",
+        "radial-gradient(in bogus, red, blue)",
+    ] {
+        assert!(parse_gradient(css).is_none(), "malformed in-clause must reject: {css}");
+    }
+    // 合法形零误伤：完整 hue 法 / 纯空间词仍 parse 成功。
+    assert!(parse_gradient("linear-gradient(in hsl longer hue, red, blue)").is_some());
+    assert!(parse_gradient("linear-gradient(in oklab, red, blue)").is_some());
+    assert!(parse_gradient("conic-gradient(from 90deg in oklab, red, blue)").is_some());
+}
+
+#[test]
+fn test_g43_background_image_decl_invalid_judge() {
+    // g43 写面拒收判定：渐变前缀 + parse 失败 → invalid；非渐变面/合法渐变恒 false。
+    let bad = [
+        "linear-gradient(lab lab, red, blue)",
+        "linear-gradient(hsl shorter, red, blue)",
+        "linear-gradient(red, blue, lab)",
+        "linear-gradient(, red, blue)",
+        "linear-gradient(45deg in, black, transparent)",
+        "conic-gradient(in from 90deg, black, transparent)",
+    ];
+    for css in bad {
+        assert!(
+            background_image_decl_invalid(css),
+            "gradient-prefixed parse-fail must judge invalid: {css}"
+        );
+    }
+    let ok = [
+        "linear-gradient(red, blue)",
+        "linear-gradient(in oklab, red, blue)",
+        "radial-gradient(50px in lab, red, blue)",
+        "none",
+        "url(a.png)",
+    ];
+    for css in ok {
+        assert!(
+            !background_image_decl_invalid(css),
+            "valid/non-gradient must not judge invalid: {css}"
+        );
+    }
+    // 多层：任一层渐变 invalid → 整值拒；全 valid / 渐变+url 混合 → false。
+    assert!(background_image_decl_invalid(
+        "url(a.png), linear-gradient(lab lab, red, blue)"
+    ));
+    assert!(!background_image_decl_invalid("linear-gradient(red, blue), url(a.png)"));
+    // canonical 串化对 invalid 形保持 None（passthrough 语义不变，拒收在回调哨兵层）。
+    assert_eq!(canon("linear-gradient(, red, blue)"), None);
+}

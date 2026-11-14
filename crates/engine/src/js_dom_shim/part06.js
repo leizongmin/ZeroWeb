@@ -2145,12 +2145,14 @@
     // canonical 串化整值委托（grid_cssom G1 单实现双通道同型——Rust 单点
     // canonicalize_background_image_specified：配置前置 `in <method>` 后置、
     // 缺省法冗余省略、xyz→xyz-d65 别名展开；非渐变/未识别面 Rust 侧原文
-    // passthrough 零回归，回调恒返串无拒写哨兵）。回调未注册（兜底链）不
-    // 校验零漂移。
+    // passthrough 零回归）。g43 补拒写哨兵：渐变前缀但文法 invalid 返 'null'
+    // → 拒（赋值忽略保留原值，grid/anchor 同款）——invalid 不再回显原文。
+    // 回调未注册（兜底链）不校验零漂移。
     // https://drafts.csswg.org/css-images-4/#serializing-gradients
     if (propName === 'background-image'
         && typeof globalThis.__zw_gradient_normalize_decl === 'function') {
       var _grd = globalThis.__zw_gradient_normalize_decl(propName, raw);
+      if (_grd === 'null') return null;
       if (typeof _grd === 'string') return _grd;
     }
     // DC-2 light-dark image 批：image 四属性 light-dark() 顶层前缀浅校验

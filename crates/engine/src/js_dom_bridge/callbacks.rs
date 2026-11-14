@@ -4284,8 +4284,10 @@ pub fn register_dom_callbacks(
     // canonical 串化整值委托（shim `_zwNormalizeDeclValue` 臂消费，grid_cssom
     // G1 单实现双通道同型）。实现
     // [`zero_css_parser::values::canonicalize_background_image_specified`]——
-    // 非渐变面（none/url/image-set/filter/light-dark/多层混合/未识别方法）Rust
-    // 侧原文 passthrough（返原文而非 "null"：本切片无拒写语义，A 刀另行收口）。
+    // 非渐变面（none/url/image-set/filter/light-dark/多层混合）Rust 侧原文
+    // passthrough。g43 补拒写语义：渐变前缀但文法 invalid（
+    // [`zero_css_parser::values::background_image_decl_invalid`]）返 "null"
+    // 哨兵，shim 臂丢弃赋值（grid/anchor 同款约定）——invalid 不再回显原文。
     // 纯函数，无 DOM 状态。
     sandbox.register_callback(
         "__zw_gradient_normalize_decl",
@@ -4294,6 +4296,9 @@ pub fn register_dom_callbacks(
             let value = args.get(1).map(String::as_str).unwrap_or("");
             #[cfg(feature = "v8")]
             {
+                if zero_css_parser::values::background_image_decl_invalid(value) {
+                    return "null".to_string();
+                }
                 zero_css_parser::values::canonicalize_background_image_specified(value)
                     .unwrap_or_else(|| value.to_string())
             }
