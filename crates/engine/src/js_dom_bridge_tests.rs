@@ -201,3 +201,8 @@ include!("js_dom_bridge_tests/part114_ip_root_bare_text_split_probe.rs");
 // 单脚本 turn 内 style 写 → offsetWidth/offsetLeft 同 turn 断言面（position-area
 // 族 ~190F 根因）双向钉测（写读同值 + drain 后快照旧行为）。
 include!("js_dom_bridge_tests/part115_s423_pending_selector_rect.rs");
+
+// 编辑命令兼容 ip 残 99F M3-C C4 刀钉测：块边界拆分块级后随兄弟止步不入新块 +
+// bare-br 行界双空块物化（表跨选区/bare-br 尾·首侧·尾随块级/行中窄门 guard/
+// 整块选删 host 级 caret，dPS div·p 双面）。
+include!("js_dom_bridge_tests/part116_c4_block_boundary_pins.rs");

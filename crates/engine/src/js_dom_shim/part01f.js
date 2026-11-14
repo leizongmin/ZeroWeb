@@ -2356,6 +2356,27 @@
         newLineRange.setStart(newLineRange.startContainer.parentNode,
           1 + _zwJusNodeIndex(newLineRange.startContainer));
       }
+      // C4 刀（2026-11-14）：host 级 caret 拆分右段块级兄弟止步——container
+      // 为编辑宿主且 newLineRange 相含集含块级元素时 extract 收窄到首块级
+      // 相含节点前（Chrome 新块只收行内连续段；corpus `{<h1>…}</p>` 整选删后
+      // caret (host,1) 面 got 卷 p 入新块成 `<div><p>baz</p></div>` 嵌套违规
+      // 形，exp `<div><br></div><p>baz</p>`——空新块 pad 由下方不可见面垫底
+      // 臂承担）。非宿主 container（p/li/dt 链）不收——[29]/[50]/[12] 语料
+      // 面归 list/容器链刀域不越界。
+      if (typeof _zwListEditingHostOf === 'function'
+          && _zwListEditingHostOf(arMain.startContainer) === container) {
+        var c4ContHost = _zwJusCollectContainedNodes(newLineRange, null, false);
+        for (var c4ci = 0; c4ci < c4ContHost.length; c4ci++) {
+          if (_zwCeBlockishForSplit(c4ContHost[c4ci])) {
+            var c4Cut = c4ContHost[c4ci];
+            var c4CutPar = c4Cut.parentNode;
+            if (c4CutPar) {
+              newLineRange.setEnd(c4CutPar, _zwJusNodeIndex(c4Cut));
+            }
+            break;
+          }
+        }
+      }
       var containedInNewLineRange = _zwJusCollectContainedNodes(newLineRange, null, false);
       // spec 的 endOfLine 以 splitText 后尾段成整 contained 节点为前提；本仓
       // 不 split，起点在文本中段即有尾随内容（spec 下尾段必为 contained，

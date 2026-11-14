@@ -11953,6 +11953,21 @@
   function _zwCeIsBlockTagName(t) {
     return ['div','p','h1','h2','h3','h4','h5','h6','li'].indexOf(t) >= 0;
   }
+  // C4 刀块级判读（2026-11-14）：insertParagraph 拆分边界「留宿主/不入新块」
+  // 判定——块标签表 + 非 inline display 声明双路。_zwCeIsBlockTagName 窄表
+  //（div/p/h1-6/li）不含 table/blockquote/ul/ol/dl/pre（列表嵌套语义归
+  // part01f list 臂），此处按 p 内容模型语义补全（p 只收短语内容，非短语
+  // 块级后随兄弟不入新块——execCommand spec canonical 分块口径）；span 等
+  // 壳带 display:block 声明走 display 路（corpus `{}<br><span display:block>`
+  // 接受形面）。
+  function _zwCeBlockishForSplit(n) {
+    if (!n || n.nodeType !== 1) return false;
+    var t = String(n.tagName || '').toLowerCase();
+    if (_zwCeIsBlockTagName(t)) return true;
+    if (['table','blockquote','ul','ol','dl','pre'].indexOf(t) >= 0) return true;
+    var d = _zwCeDisplayOf(n);
+    return d !== '' && d !== 'inline' && d !== 'inline-block';
+  }
   // void 元素表（spec HTML void elements 的编辑相关子集——insert-paragraph/text-in-
   // void 语料 voidElements 全集；area/base 等非内容元素不进编辑 caret 面）。
   function _zwCeIsVoidElementTag(el) {
@@ -12380,10 +12395,15 @@
         host.removeChild(boundaryText);
         var mv1t = refAfter1;
         var tailParts1 = [];
-        while (mv1t) {
+        // C4 刀（2026-11-14）：新块只收 caret 右侧**行内连续段**，块级后随
+        // 兄弟（table/h1/p…）留宿主原位不卷入（Chrome 拆分口径；corpus 表跨
+        // 面 exp `<div>fo</div><div><br></div><table>…`，got 卷 table 入新块
+        // `<div><table>…</table></div>` 形实录）。
+        while (mv1t && !_zwCeBlockishForSplit(mv1t)) {
           tailParts1.push(mv1t);
           mv1t = mv1t.nextSibling;
         }
+        var tailBlockRef1 = mv1t;
         for (var ti1 = 0; ti1 < tailParts1.length; ti1++) {
           var tn1 = tailParts1[ti1];
           if (tn1.parentNode) {
@@ -12396,8 +12416,13 @@
           phbr1b.__zwPlaceholderBr = true;
           sep1.appendChild(phbr1b);
         }
-        host.appendChild(headBlock1);
-        host.appendChild(sep1);
+        if (tailBlockRef1) {
+          host.insertBefore(headBlock1, tailBlockRef1);
+          host.insertBefore(sep1, tailBlockRef1);
+        } else {
+          host.appendChild(headBlock1);
+          host.appendChild(sep1);
+        }
         }
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
@@ -12406,12 +12431,48 @@
         // 壳本身（boundaryNode；so 是壳内偏移非宿主子位，恒 0）。
         refAfter1 = arm1EmptyShellEl ? boundaryNode
           : ((host.childNodes || [])[so] || null);
+        // C4 刀（2026-11-14）bare-br 行界物化：caret 落宿主块界且位首为裸
+        // br（行界）时 Chrome 产**双空块**——新块（空→pad）+ br 行成块
+        // （`</p>{}<br>` exp `<p></p>` 对 `<div><br></div><div><br></div>`；
+        // got 卷 br 入新块丢第二空块）。窄门=caret 前无行内内容（前兄弟链
+        // 仅块级/折叠 ws）——行中 br 面（`<b>foo[]</b><br>` 等）非语料诉求
+        // 维持现径。br 后兄弟（块级 h1/p 等）留宿主（同下止步规则）。
+        var c4BrLine1 = !arm1EmptyShellEl && refAfter1
+          && refAfter1.nodeType === 1
+          && String(refAfter1.tagName || '').toLowerCase() === 'br';
+        var c4HeadInline1 = false;
+        for (var c4hp1 = c4BrLine1 ? refAfter1.previousSibling : null; c4hp1;
+            c4hp1 = c4hp1.previousSibling) {
+          if (c4hp1.nodeType === 3
+              ? !_zwJusIsCollapsedWhitespaceNode(c4hp1)
+              : !_zwCeBlockishForSplit(c4hp1)) {
+            c4HeadInline1 = true;
+            break;
+          }
+        }
+        var c4BrLineApplied1 = false;
+        if (c4BrLine1 && !c4HeadInline1) {
+          var sepLine1 = document.createElement(sepTag);
+          var c4TailRef1 = refAfter1.nextSibling;
+          host.removeChild(refAfter1);
+          sepLine1.appendChild(refAfter1);
+          var phbr1c4 = document.createElement('br');
+          phbr1c4.__zwPlaceholderBr = true;
+          sep1.appendChild(phbr1c4);
+          host.insertBefore(sep1, c4TailRef1);
+          host.insertBefore(sepLine1, c4TailRef1);
+          c4BrLineApplied1 = true;
+        } else {
         var mv1 = refAfter1;
         var tailParts1e = [];
-        while (mv1) {
+        // C4 刀（2026-11-14）：块级兄弟止步（同 boundaryText 臂）——新块只
+        // 收行内连续段，位首即块级（`{<h1>…}</p>` 整选删后 caret 位首 p）时
+        // 新块空垫、块级兄弟留宿主。
+        while (mv1 && !_zwCeBlockishForSplit(mv1)) {
           tailParts1e.push(mv1);
           mv1 = mv1.nextSibling;
         }
+        var tailBlockRef1e = mv1;
         for (var ti1e = 0; ti1e < tailParts1e.length; ti1e++) {
           var tn1e = tailParts1e[ti1e];
           if (tn1e.parentNode) {
@@ -12424,14 +12485,20 @@
           phbr1c.__zwPlaceholderBr = true;
           sep1.appendChild(phbr1c);
         }
-        host.appendChild(sep1);
+        if (tailBlockRef1e) {
+          host.insertBefore(sep1, tailBlockRef1e);
+        } else {
+          host.appendChild(sep1);
+        }
+        }
         // ⑦ A2 头侧占位：caret 前侧宿主级空（A1 消解形 host=[b]）→ 占位
         // <br> 前置于新块（exp `<br><div><b>a</b></div>`）。带标同 ① phbr
         // 惯例——typing 占位消费扫描上行止于新块块界，宿主级带标 br 不入
         // 扫描链（caret 落新块内），485 typing 后 `<br>` 幸存。空判沿
         // sep1.previousSibling 反向（sep1 自身刚挂载，_zwJusIsVisible 对块
-        // 节点恒真不可用）：头侧子仅折叠 ws 算空。
-        var a2HeadEmpty = true;
+        // 节点恒真不可用）：头侧子仅折叠 ws 算空。C4 bare-br 形不补（双空
+        // 块已物化，根层裸 br 非语料形——`{}<br><p>` exp 首块即新块）。
+        var a2HeadEmpty = !c4BrLineApplied1;
         for (var a2hn = sep1.previousSibling; a2hn; a2hn = a2hn.previousSibling) {
           if (a2hn.nodeType === 1
               || (a2hn.nodeType === 3 && !_zwJusIsCollapsedWhitespaceNode(a2hn))) {
