@@ -48,3 +48,9 @@ R5529 定期刷新 bench-gate 再踩同签名，两个新教训：
 1. **判据 1 的补强**：run2 有四个指标连续两轮稳定超限 2.4-3.9× 且数值一致（15.83/15.6ns 等），几乎推翻「轮换=噪声」判据。实际同 commit 静窗复跑四项全部回到基线（4.68ns / 7.4µs / 61.7µs / 98.2µs）。「两轮数值一致」只证明两轮落在同一段负载水平内，是**伪稳定**；轮换要看跨轮失败集的全景（run1 19F → run2 5F → 复跑 5F 完全不同），不能因局部稳定而提前收敛结论。
 2. **顺序 A/B 的混淆**：旧基线二进制（718e0f0e6）恰好跑在静窗得快值、HEAD 恰好跑在负载窗得慢值，据此差点向对端流发出假回归碰头信号。尽管都发生在同一天，09-06 补充的「同日交错 A/B」要求依然必要——负载在小时尺度漂移。本轮被静态证据救回：窗口 `crates/` diffstat 中 zero-dom 仅 1/4 行布尔恒等式化、Cargo.lock 零版本变化、无 profile 改动，任何代码面都解释不了纯 DOM 查询 3.5×。判据 3 的具体工具就是这条：**测量差值量级与窗口代码 diffstat 明显不匹配时，先怀疑测量环境**。
 3. 门槛放行≠无争用：peer 单容器重腿把 loadavg 推到 4-8（阈值 12 以下），单线程 criterion 已膨胀 2-4×；运行中途 loadavg 4.2→10.2 跳变决定哪些指标恰好中弹。与 2026-10-18 亚秒突发穿透门槛同族：门槛是粗筛，criterion 对争用远比 loadavg 敏感。
+
+## 补充（2026-11-14，R5532）：D 态风暴把 loadavg 变成无意义信号——CPU 界微基准在 b 高 r≈0 时仍测真值
+
+R5532 静窗（loadavg 0.57）启动全量 bench-gate，测量中途宿主爆发 IO 风暴：zeroseed 18 个 D 态实例 @88-98MB/s 写、vmstat b≈200-230、wa 90-95%、loadavg 冲到 233（其中 5/4600 runnable）。perf-gate suspect 守卫按 loadavg 拒判 INCONCLUSIVE——但报告落盘的原始值显示四争议指标（get_element_by_id_indexed / get_elements_by_tag_name_1000 / compositing_layer_analysis_200 / paint_simple_page_100_elements）p50＝4.68ns / 7.96µs / 54.0µs / 91.0µs，与前一日静窗定向复跑值几乎逐位一致、全部预算内。
+
+结论：**loadavg 统计 runnable+D 态，D 态风暴下它不再是 CPU 争用代理**（CPU 界基准线程 r≈0 独占真核时测量不受 D 态邻居影响）；而守卫若只采样 loadavg，会在 CPU 实际空闲时误拒、也在 R5529 型构建风暴（r 高）时放行不及。判读守卫裁决时应看 vmstat b/r 与 PSI 区分两种「负载高」：b 高 r≈0＝IO 阻塞（CPU 界基准数值仍可信，裁决可人工复核原始值），r 高＝真争用（数值不可信）。suspect 标记应视为「需人工分型」而非「数值必废」。改进采样（PSI/vmstat 入守卫）属测量配置，⑦ user-gated。
