@@ -193,3 +193,122 @@ fn t70_childnodes_view_flip_queues_mutation_record() {
         "换代后 append 仍须入队 record 且身份对齐（视图翻转不得绕过 MO），实测 {after:?}"
     );
 }
+
+/// 钉④（T70 返修 R1/R2，caseH 同形）：evict→跨批同 sel 重挂 identity 回收后
+/// **写路径落地**。removeChild（handle 子移除臂）→ apply evict 双向清表
+///（`evict_removed_identities`）→ 宿主重挂（insertAdjacentHTML，仅 sel 无 handle
+/// 注册）→ 查询返回回收 proxy（[SameObject]，b77ab110c 收口面）。返修前缺陷
+///（DF-1 blocker）：回收 proxy 的写 journal `SetAttrOnHandle{死 handle}` 在 apply
+/// 翻译臂 persistent_sel miss → lenient warn+skip——setAttribute/style 写静默丢
+/// 失（innerHTML 宿主真相无痕迹）、getAttribute 读空；base 同查询返 sel proxy
+/// 写可落地，行为分叉。修复后回收即重锚（host `__zw_reanchor_evicted_handle`
+/// 回填 sel↔handle 双表），写经 selector 翻译落到当前持有该 sel 的重挂节点。
+/// 规范语义：DOM §4.4 childNodes [SameObject]
+///（https://dom.spec.whatwg.org/#interface-nodelist）+ §4.2.2 live 反射
+///（https://dom.spec.whatwg.org/#collections）——evict→同 sel 重挂后旧 proxy
+/// 等价新 live proxy，写不可丢（spec set an attribute value 落 live 元素）读不
+/// 漂移。收缩向（TV-⑤）：removeChild 后 held collection 即时收缩一并断言。
+#[test]
+#[serial_test::serial]
+fn t70_evict_remount_recycled_proxy_write_lands() {
+    let mut wv = wv();
+    wv.load_html(PAGE, None);
+
+    // 同 turn：持有 live collection 引用 + 建 handle 子（id=x）+ 属性写。
+    wv.execute_script(
+        r#"
+        var w = document.getElementById('wrap');
+        globalThis.__nlHold = w.childNodes;
+        var x = document.createElement('div');
+        x.id = 'x';
+        x.setAttribute('data-t70', 'v1');
+        w.appendChild(x);
+        "#,
+    )
+    .expect("建 handle 子成功");
+    wv.flush_pending_shared_mutations()
+        .expect("首换代（CreateElement apply + handle merge）成功");
+
+    // 持有 pre-evict proxy（querySelector 返回点 R100 正向桥命中 → handle proxy）。
+    let held = wv
+        .execute_script(
+            r#"
+            globalThis.__xHold = document.querySelector('#x');
+            globalThis.__isHandle = !!globalThis.__xHold.__zwHandle;
+            globalThis.__sameQuery = (document.querySelector('#x') === globalThis.__xHold);
+            String(globalThis.__isHandle) + ',' + String(globalThis.__sameQuery)
+            "#,
+        )
+        .expect("持有 pre-evict proxy 成功");
+    assert!(
+        held.contains("true,true"),
+        "querySelector 须返 handle proxy 且同查询同对象（回收前置），实测 {held:?}"
+    );
+
+    // removeChild（handle-child 移除臂→evict 记账）→ flush → evict 双向清表。
+    // 收缩向：held collection 即时收缩（TV-⑤）。
+    let contracted = wv
+        .execute_script(
+            r#"
+            var w = document.getElementById('wrap');
+            w.removeChild(globalThis.__xHold);
+            globalThis.__removedLen = globalThis.__nlHold.length;
+            globalThis.__removedHasX =
+              Array.prototype.indexOf.call(globalThis.__nlHold, globalThis.__xHold) >= 0;
+            String(globalThis.__removedLen) + ',' + String(globalThis.__removedHasX)
+            "#,
+        )
+        .expect("removeChild 成功");
+    assert!(
+        contracted.contains("1,false"),
+        "removeChild 后 held 须即时收缩（长度 1 且不含 x），实测 {contracted:?}"
+    );
+    wv.flush_pending_shared_mutations().expect("evict 换代成功");
+
+    // 跨批同 sel 重挂（宿主重建节点，仅 sel 无 handle 注册）→ flush。
+    wv.execute_script(
+        r#"
+        var w = document.getElementById('wrap');
+        w.insertAdjacentHTML('beforeend', '<div id="x">remounted</div>');
+        "#,
+    )
+    .expect("宿主重挂成功");
+    wv.flush_pending_shared_mutations().expect("重挂换代成功");
+
+    // 回收 proxy 写路径：setAttribute + style 赋值 → flush（修复前 journal 死
+    // handle miss 被静默 skip；修复后经翻译臂落重挂节点）。
+    wv.execute_script(
+        r#"
+        globalThis.__recycled = (document.querySelector('#x') === globalThis.__xHold);
+        globalThis.__xHold.setAttribute('data-a', 'b');
+        globalThis.__xHold.style.color = 'red';
+        globalThis.__attrRead = globalThis.__xHold.getAttribute('data-a');
+        "#,
+    )
+    .expect("回收 proxy 写成功");
+    wv.flush_pending_shared_mutations().expect("写落地换代成功");
+
+    // 落地断言（innerHTML = 宿主真相，非 journal replay）+ 读同步 + 跨二次 flush
+    // identity 恒一。
+    let landed = wv
+        .execute_script(
+            r#"
+            var w = document.getElementById('wrap');
+            var html = String(w.innerHTML);
+            globalThis.__landedAttr = html.indexOf('data-a="b"') >= 0;
+            globalThis.__landedStyle = html.replace(/\s+/g, '').indexOf('color:red') >= 0;
+            var q2 = document.querySelector('#x');
+            globalThis.__stillSame = (q2 === globalThis.__xHold);
+            globalThis.__readSync = (q2.getAttribute('data-a') === 'b');
+            String(globalThis.__recycled) + ',' + String(globalThis.__landedAttr) + ',' +
+              String(globalThis.__landedStyle) + ',' + String(globalThis.__stillSame) + ',' +
+              String(globalThis.__readSync) + ',' + String(globalThis.__attrRead)
+            "#,
+        )
+        .expect("落地读回成功");
+    assert!(
+        landed.contains("true,true,true,true,true,b"),
+        "回收 proxy 写须落地宿主（innerHTML 含 data-a 与 color:red）、getAttribute 同步（=b）、\
+         identity 跨二次 flush 恒一（[SameObject]），实测 {landed:?}"
+    );
+}

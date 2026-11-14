@@ -2037,6 +2037,27 @@
       var _t70eh = globalThis._zwEvictedIdentBySel
         ? globalThis._zwEvictedIdentBySel[sel] : null;
       if (_t70eh) {
+        // T70-R1（返修 DF-1 写丢失根修）：此刻该 handle 已被 evict 双向清表
+        //（webview `evict_removed_identities`），只回收 proxy 不够——其写 journal
+        // `SetAttrOnHandle{死 handle}` 在 apply 翻译臂 persistent_sel miss →
+        // lenient warn+skip，setAttribute/style/text/removeAttribute 写静默丢
+        // 失、getAttribute 读空（base 同查询返 sel proxy 写可落地，行为分叉；
+        // 钉测 t70_evict_remount_recycled_proxy_write_lands 红检实证
+        // landed=false/readSync=true 分叉）。回收即重锚：host 侧
+        // `__zw_reanchor_evicted_handle` 把 sel↔handle 双表回填（键已存在不覆
+        // 盖——同批重注册新绑定优先），下一 apply 起 `persistent`
+        // （selector_handle_map 倒置视图）恢复 handle→sel 翻译，全部 `*OnHandle`
+        // 写经 selector 变体落到当前持有该 sel 的重挂节点；journal 形态不变，
+        // 读 latest-wins replay 与落地恒一致。规范语义：DOM §4.4 childNodes
+        // [SameObject]（https://dom.spec.whatwg.org/#interface-nodelist）+
+        // §4.2.2 live 反射（https://dom.spec.whatwg.org/#collections）——
+        // evict→同 sel 重挂后旧 proxy 等价新 live proxy，写不可丢（set an
+        // attribute value 落 live 元素）读不漂移（R5010「锚回同 sel 可能读到
+        // 同位新元素」先例同款取舍）。回收臂仅在查询返回点触发（sel 此刻活）。
+        // 未注册回调（旧 host）→ 原行为，零回归。
+        if (typeof __zw_reanchor_evicted_handle === 'function') {
+          __zw_reanchor_evicted_handle(String(_t70eh), sel);
+        }
         _r100Remember(_t70eh, sel);
         return _wrapHandle(_t70eh);
       }
