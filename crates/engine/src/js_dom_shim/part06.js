@@ -12533,7 +12533,41 @@
       }
       this._ranges.splice(idx, 1);
     };
+    // selection-api「document associated with this 是 node 的 shadow-including inclusive
+    // ancestor」in-doc 判定（collapse/extend/addRange 的 no-op 分支共用）——沿 parentNode
+    // 上行，本文档自身经同一性命中（_zwNodeContains 语义，selectAllChildren R3254-E2 同款）。
+    var _zwSelNodeInDoc = function (node) {
+      if (!node) return false;
+      if (typeof _zwNodeContains === 'function') {
+        return _zwNodeContains(globalThis.document, node);
+      }
+      var curS8 = node;
+      var guardS8 = 0;
+      while (curS8 && guardS8++ < 4096) {
+        if (curS8 === globalThis.document) return true;
+        try { curS8 = curS8.parentNode; } catch (_eS8p) { return false; }
+      }
+      return false;
+    };
+    // spec addRange(range)：
+    // 步骤 0：非 Range 参数 → TypeError（WebIDL `Range range` 非空接口参数；
+    // removeRange 同款判据先例）。
+    // 步骤 1：range 边界点的 tree root 不是本文档 → 完全 no-op——detached/外文档
+    // 端点 range 拒收且不动原 selection（https://w3c.github.io/selection-api/
+    // #dom-selection-addrange；WPT addRange.js testAddRangeDoesNothing 断言族
+    // 「first/second addRange() must do nothing」——addRange-08/40/44/48/52/56
+    // 全红文件根因：foreignDoc/detachedPara1 端点 range 被误收，rangeCount 0→1
+    // 且选区被改写）。
+    // 步骤 2：rangeCount 非 0 → no-op（Chrome/Edge 行为入 spec——WPT addRange.js
+    // 第二段 addRange 对一切 range2 断言 selection 不变；旧版整体替换 `_ranges`
+    // 违反该面）。内部调用面（part01d 重绑 / part01f 契约恢复 / 语料 setup）均
+    // 先 removeAllRanges，行为不变。
     _selection.addRange = function (range) {
+      if (!range || typeof range.setStart !== 'function') {
+        throw new (globalThis.TypeError || TypeError)("Failed to execute 'addRange' on 'Selection': parameter 1 is not of type 'Range'.");
+      }
+      if (!_zwSelNodeInDoc(range.startContainer) || !_zwSelNodeInDoc(range.endContainer)) return;
+      if (this._ranges.length !== 0) return;
       this._ranges = [range]; /* 多 range（FF）简化为单 */
       // addRange 语义 anchor=start、focus=end（forward）。
       this._zwSync(range.startContainer, range.startOffset, range.endContainer, range.endOffset);
@@ -12541,6 +12575,14 @@
     _selection.collapse = function (node, off) {
       if (!node) { this._ranges = []; this._zwSync(null, 0, null, 0); return; }
       var r = _makeRange(); r.setStart(node, off | 0); r.collapse(true);
+      // spec collapse 步骤 4：document 不是 node 的 shadow-including inclusive
+      // ancestor → 完全 no-op（https://w3c.github.io/selection-api/
+      // #dom-selection-collapse——detached/外文档节点不改 selection。WPT
+      // collapse.js「The operation should not update anchorNode/focusNode」
+      // 7.6kF 簇根因：旧版整体替换 `_ranges` 改写选区。）步骤序与 spec 一致：
+      // 步骤 2/3（DocumentType → InvalidNodeTypeError、offset 越界 →
+      // IndexSizeError）由上方 setStart 在 `_ranges` 赋值前抛出，先于本分支。
+      if (!_zwSelNodeInDoc(node)) return;
       this._ranges = [r]; this._zwSync(node, off | 0, node, off | 0);
       // selection-compat M2（2026-11-04）：collapse 落编辑宿主即聚焦该宿主——
       // Chromium selection set 的 SetFocusedElementIfNeeded 切面（Selection
@@ -12604,6 +12646,13 @@
     // anchor 保持。方向按 (anchor, focus) 文档序判定（backward 时 range 正向化
     // 存储，anchor/focus getter 翻转读）。
     _selection.extend = function (node, off) {
+      // spec extend 步骤 1：document 不是 node 的 shadow-including inclusive
+      // ancestor → 完全 no-op——先于空 selection 的 InvalidStateError（
+      // https://w3c.github.io/selection-api/#dom-selection-extend；WPT extend.js
+      // 首分支「should not update anchorNode」断言族：detached/外文档节点在空
+      // 选区上也是 no-op 非抛错。）步骤 4 系（doctype/offset 抛错）由下方
+      // setStart/setEnd 承担，抛点在 `_ranges` 赋值前，选区不动。
+      if (!_zwSelNodeInDoc(node)) return;
       if (this._ranges.length === 0) _zwSelEmpty();
       var o2 = off | 0;
       var n = _makeRange();
