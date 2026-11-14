@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5520 corpus 当前树 A/B＋attr() bench-gate 补账收账轮（R5519 下一步①②落轮——0 net code：corpus 当前树 96fce2f98（覆盖 R5519 收尾后对端三笔 349a891ed UA 表单系统色/0ee05d644 ip M2/9f66f2bbe s432）16594 vs R5519 批 683F＝683F 表观持平——NEW=3（tao-145/149/154）GONE=3（border-collapse-dynamic-002＋tao-127＋intrinsic-percent-replaced-dynamic-005），六案全在 R5418/R5420/R5421/R5467/R5376 记档表族互翻带，solo×3 18/18 全绿 ✓0.00% 定谳批相位，真态 FIXED=∅ REGRESSED=∅ 基线真态维持 ~680F；attr() 轮 bench-gate 定向补账收账——上轮 busy-abort 排队本串行窗口补跑 GATE PASS 34 指标 NEW=0）** **（2026-11-14）**
+>
+> - **结果**：R5519 下一步①②落轮（监测＋补账收账轮，零代码变更）。① corpus A/B 当前树见上——对端三笔渲染侧 corpus 覆盖零副作用收账（上轮 A/B 取样树止于 1b84edd8c，三笔落地于其后，本树 96fce2f98 补齐覆盖）；②上轮排队面收口：静窗 watcher 主动停（ZeroWeb-3 流 wpt-runner 3h 时限长跑压制触发条件，串行化入本轮）、target-disk-guard 清空后 release runner 重建 2m26s（07:56:02 fresh）＋solo 冒烟 ✓、定向 bench-gate 静窗（load 4.55 无 wpt-runner）补跑收账。
+> - **验证**：corpus 全量 A/B（16594）真态零回归（六案 solo×3 全绿）；定向 bench-gate exit 0＝**GATE PASS 34 指标 NEW=0**（zero-css-parser＋zero-style-system，当前树含 attr() 及其后全部落地；/tmp/r5519/bench-gate2.log 在案）；零 `.rs` 变更（fmt/clippy/lib 不触发）。
+> - **挂账**：**销账**：R5519 下一步①②；R5519 新增①（attr() 轮 bench-gate 缺口定向补账——本轮 GATE PASS 收账）。**新增**：无。**维持**：全谱系（⑥⑦⑧⑨待决策、特性缺失带 ~105、深结构、动态、writing-mode、多角度 plateau 结论）；R5517 新增①（% min/max float used 域）；R5516 新增①②；R5515①IFC 行进域；R5513①②；R5509②；R5508 挂账；对端 js_dom_bridge 7F；R4482 双锚；重腿静窗纪律。
+> - **下一步 R5521**：①corpus 基线在册族 flake 相位监测续（tao/insert/gradient 互翻族维持「solo×3 双二进制」收账口径）；②对端挂账观察（pull --rebase 干净性＋共享面核对）；③新开工点＝对端流/新 WPT 批导入带来的清单外新案（先 PNG 对照小差带）或待用户决策清单点名（⑥⑦⑧⑨/深结构授权）。
+>
 > **▶ R5519 corpus A/B 相位监测＋跨流组合态守成复验轮（R5518 下一步①②③落轮——0 net code：fresh corpus 全量 16594 vs R5517 基线 680F＝683F 表观 +3 全定谳在册互翻族批相位（NEW=4：tao-127/148＋border-collapse-dynamic-table-002＋intrinsic-percent-replaced-dynamic-005——账本全命中 R5374/5376/5418-5421/5422/5509 互翻/负载抖动带；GONE=1：gradient-currentcolor-conic-repaint 在册噪声族），五案 solo×3 新二进制 15/15 全绿 ✓0.00%，真态 FIXED=∅ REGRESSED=∅ 基线真态维持 ~680F；上游 wpt-data tag v1.10 即最新＝零新批次可导，清单外新案面空；对端 s428-s430 后三笔 engine（lighter-bolder/ip-M1/s430）＋本流 attr() 共 4 笔组合态全门禁复验零新回归）** **（2026-11-14）**
 >
 > - **结果**：R5518 下一步①②③落轮（监测＋守成复验轮，零代码变更）。① fresh corpus A/B 见上——五案 solo×3 收账口径落定，基线真态不变；上游 zeroweb-wpt-data 远端 `git ls-remote --tags` 止于 v1.10＝新 WPT 批导入无原料，③新案面空转；②对端观察：本轮开工 pull --rebase 干净（零冲突），对端三笔 engine 落地均入本轮 corpus A/B 窗口且真态零回归＝共享面无碰头信号。R5513① grid calc margin 驱动案勘察：现清单 css-grid 9 案全在册深域（vertical-rl 半区/合成基线/print 分页/动态改排），无 calc-margin 形态，驱动案维持休眠。
