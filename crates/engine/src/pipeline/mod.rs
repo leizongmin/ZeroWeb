@@ -1670,6 +1670,13 @@ impl RenderPipeline {
         }
     }
 
+    /// T71（G1 Gap A 根修）：当前在册 handle 键集快照（`persistent_handle_nodes`）。
+    /// 宿主在批量边界换代前后各取一次，差集 = 换代导致注册表掉项的实际掉项集
+    ///（T69 §6.3「换代导致注册表掉项须可观测」的判定基础）。
+    pub fn registered_handle_ids(&self) -> Vec<String> {
+        self.persistent_handle_nodes.keys().cloned().collect()
+    }
+
     /// 取缓存 live Document 的共享句柄（`Rc<RefCell<Document>>` 克隆）。
     ///
     /// P1b L1a（R3106）：原生 DOM 绑定（engine::dom_bindings）经此取**同一** live Document，
