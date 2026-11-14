@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5536 三源空转维持轮（0 net code：①树恒等 corpus 跳过——51042ffa2..d719109a2 零 `.rs`/`.toml`/`.js`/`.kt`/`.mjs` 变更（窗口内仅本流 R5535 docs＋对端 6eb52857b g36 复核 docs-only 已验）；②WPT 批探针 45s 内成功，版本序全表止于 v1.10 仍最新；③对端观察：ZeroWeb-3 HEAD=6f7acb01d 恒等零新落地，但**工作区出现未提交施工面**（js_dom_bridge.rs＋script_gen.rs＋js_dom_shim/part01/part06＋testharness.rs 五文件 M 态，观察时点 2026-11-14 晚）＝editing M3-B/C 族切片在建——落地时按机制逐 commit `--stat`＋全量 corpus A/B；⑥⑦⑧⑨无新点名（窗口内 rendering-compat.md 无外来改动）；combo bench-gate 不跑——零代码变更树上重跑无信息增量（同树噪声轮转预期），rule 12「性能路径变更/代码量明显积累/周期性」触发条件均未满足，形式判定 R5534 已收口）** **（2026-11-14）**
+>
+> - **结果**：三源空转维持（R5536 下一步①②③落轮），自主轻量面穷尽态维持，无新可修对象；对端在建面观察入账供下轮核验（其对端自称 M3-A 收口后续 B/C 族选面，与本轮工作区 M 态吻合）。
+> - **验证**：树恒等 diff 实证空；ls-remote 版本序 v1.0..v1.10；ZeroWeb-3 `git status` 五文件 M 态在案、ps 无 rustc/cargo/wpt-runner 重腿；基线快照 /tmp/r5533/fails-r5535.txt（681F@51042ffa2）在位；零 `.rs`/`.toml` 变更（fmt/clippy/corpus/product-smoke/bench-gate 均不触发；make reftest/test 无新账户不复跑）。
+> - **挂账**：**销账**：无。**新增**：无。**维持**：全谱系（⑥⑦⑧⑨待决策、⑦基线刷新提案、特性缺失带 ~105、深结构、动态、writing-mode、多角度 plateau 结论）；table collapse 迁移本体（等点名）；对端 js_dom_bridge 7F＋s433 余 7 例 bisect；R5517①；R5516①②；R5515①IFC 行进域；R5513①②；R5509②；R5508 挂账；R4482 双锚；重腿静窗纪律。
+> - **下一步 R5537**：①对端 M3-B/C 落地时逐 commit `--stat`＋全量 corpus A/B（基线=/tmp/r5533/fails-r5535.txt 681F@51042ffa2；树恒等轮按先例跳过）。②三源核查续（WPT 批探针、待决策清单点名核验——⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案）。③新开工点＝对端流/新 WPT 批导入清单外新案（先 PNG 对照小差带）或用户点名优先。
+
 > **▶ R5535 三源空转核查＋master.md 指针刷新轮（R5534 下一步①②③落轮——0 net code：①树恒等 corpus 跳过——pull 窗口 51042ffa2..01a99931c 三笔全 docs（59da40ad2 本流 R5534 补验落账＋3b4747cd2 html-semantics s434 收口＋01a99931c 对端 editing-compat v1.109 M3-A 收口），`git diff 51042ffa2..01a99931c -- '*.rs' '*.toml' '*.js' '*.kt' '*.mjs'` 空＝Rust 树与 R5534 快照 51042ffa2 恒等、无回归检测对象；②对端再落地核验零对象（窗口内零对端代码落地，无 corpus A/B 必要）；③新 WPT 批探针网络正常，`git ls-remote --tags` 版本序全表止于 v1.10 仍最新＝无新批次可导；对端进程面静默（ZeroWeb-3 clone HEAD=6f7acb01d 已在 main、ps 无 rustc/cargo/wpt-runner 重腿）——对端自称 M3-A 刀收口（ip 残 99→77F）、下一步续 M3-B/C 族选面，其落地时按机制核共享面；⑥⑦⑧⑨无新点名）＋**实质产出＝master.md 运行时控制面指针刷新**——顶部「当前」块自 R5532 态陈旧 3 轮：「形式 guard 放行静窗跑待窗」已被 R5534 收口推翻（守卫放行全量首判 GATE FAIL 9/113 噪声定谳＋同树静窗定向 41/41 塌回基线，R5529 起七连悬置终结），刷新为 R5534 收口态＋⑦基线刷新提案在册＋连续轮次账 R5519-R5534（R5522 先例：结构状态变化时同步指针块）** **（2026-11-14）**
 >
 > - **结果**：R5534 下一步①②③落轮（三源核查轮，零代码变更）。三候选工作源（树增量／新 WPT 批／已批准程序残留——R5523 font-stack 余账核查已收口无复发）逐一实证为空并留证据；对端 M3-A 收口后当前静默（编辑面后续切片落地时才有共享面核验对象）。自主轻量面穷尽态维持，无新可修对象；master.md 指针块刷新消除「未来 session 按控制规则读 master.md 落到 R5532 待窗态」的漂移。
