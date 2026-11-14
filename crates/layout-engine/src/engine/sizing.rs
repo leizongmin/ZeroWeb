@@ -1506,6 +1506,7 @@ impl LayoutEngine {
                 continue;
             };
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
+                let style_before = style.clone();
                 let width_collapsed = b.width <= 0.5;
                 // s372：fixed 只入塌 0 臂（非塌 0 fixed 盒维持 taffy 解析，不入补测写侧）。
                 if width_fix && (width_collapsed || (!b.is_replaced && b.is_absolute)) {
@@ -1583,21 +1584,33 @@ impl LayoutEngine {
                     // 文本叶 line-height 近似不适用（svg 无行盒语义）。
                     // R5157：contained grid 高 = 行 track 几何 + frame（尺寸声明非内容；
                     // 无显式行定义 → 0，同 containment 塌 0 语义）。
-                    let h = if replaced_collapsed {
-                        crate::svg_default_size::svg_attr_intrinsic_height(b.node_id, doc, s)
-                            .unwrap_or(crate::svg_default_size::SVG_DEFAULT_H)
+                    if replaced_collapsed {
+                        let h = crate::svg_default_size::svg_attr_intrinsic_height(b.node_id, doc, s)
+                            .unwrap_or(crate::svg_default_size::SVG_DEFAULT_H);
+                        style.size.height = taffy::style::Dimension::length(h);
                     } else if grid_tracks_fix {
                         let frame_h = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
-                        crate::intrinsic_sizing::contained_grid_track_extent(b, styles, true).unwrap_or(0.0) + frame_h
-                    } else {
+                        let h = crate::intrinsic_sizing::contained_grid_track_extent(b, styles, true).unwrap_or(0.0)
+                            + frame_h;
+                        style.size.height = taffy::style::Dimension::length(h);
+                    } else if crate::inline_content::has_inline_content(doc, styles, id) {
+                        // R5534（CSS2 §10.6.4）：文本叶 line-height 近似只对**有行内内容**
+                        // 的塌 0 abs 盒成立（taffy 对该形态无 measure，strut 即行盒高近似）；
+                        // 空子树 / 纯 OOF 子塌 0 盒的 auto 高 = 内容高 = 0，写 strut 会凭空
+                        // 撑出 18px 行高（anchor-position 'none'/空绝位形态 h=18 应 0 实证，
+                        // g36 挂账桶）。无行内内容不写 height，维持 taffy 解析（塌 0）。
                         let (fs, lh) = crate::inline::resolve_font_metrics(Some(s));
-                        lh.max(fs).max(1.0)
-                    };
-                    style.size.height = taffy::style::Dimension::length(h);
+                        let h = lh.max(fs).max(1.0);
+                        style.size.height = taffy::style::Dimension::length(h);
+                    }
                 }
-                let _ = taffy_tree.set_style(taffy_id, style);
-                let _ = taffy_tree.mark_dirty(taffy_id);
-                changed = true;
+                // R5534：仅 style 实际变化才 set+dirty——无行内内容塌 0 盒不再触发
+                // 空转重布局（旧径恒 changed=true）。
+                if style != style_before {
+                    let _ = taffy_tree.set_style(taffy_id, style);
+                    let _ = taffy_tree.mark_dirty(taffy_id);
+                    changed = true;
+                }
             }
             propagate_resolved_cb_width(&mut stack, b, child_is_cb, resolved_child_cb);
         }

@@ -751,3 +751,92 @@ fn g1f_border_cb_child_origin() {
         a3.y
     );
 }
+
+/// 'none'/无区域空绝位盒 auto 高钉测：CSS2 §10.6.4 非替换 abs 盒 height auto
+/// = 内容高，空子树（无行内内容）= 0——abspos shrink-to-fit pass 的塌 0 补测
+/// 曾对所有塌 0 盒无条件写行高 strut（≈18），空盒凭空撑出 18px 行高
+///（anchor-position 'none' 形态 h=18 应 0，g36 挂账桶）。含文本盒维持行盒高
+///（strut 近似合法域）；显式高容器对照不受影响。
+#[test]
+fn g1f_abs_empty_auto_height() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let a_inline = doc.create_element("div");
+    doc.append_child(container, a_inline).unwrap();
+    let a_block = doc.create_element("div");
+    doc.append_child(container, a_block).unwrap();
+    let abs_with_text = doc.create_element("div");
+    doc.append_child(container, abs_with_text).unwrap();
+    let text_node = doc.create_text_node("x");
+    doc.append_child(abs_with_text, text_node).ok();
+    let flow_block = doc.create_element("div");
+    doc.append_child(container, flow_block).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    // fixture 全员显式 Block（default Inline 触发 inline 流锚介入门与行盒塌陷）。
+    container_style.display = zero_style_system::DisplayValue::Block;
+    container_style.position = zero_style_system::PositionValue::Absolute;
+    container_style.width = LengthValue::Px(400.0);
+    container_style.height = LengthValue::Px(400.0);
+
+    let mut inline_style = ComputedStyle::default();
+    // CSS2 §9.7：abs 化 inline 块化。
+    inline_style.display = zero_style_system::DisplayValue::Inline;
+    inline_style.position = zero_style_system::PositionValue::Absolute;
+
+    let mut block_style = ComputedStyle::default();
+    block_style.display = zero_style_system::DisplayValue::Block;
+    block_style.position = zero_style_system::PositionValue::Absolute;
+
+    let mut text_style = ComputedStyle::default();
+    text_style.display = zero_style_system::DisplayValue::Block;
+    text_style.position = zero_style_system::PositionValue::Absolute;
+
+    let flow_style = ComputedStyle {
+        display: zero_style_system::DisplayValue::Block,
+        ..ComputedStyle::default()
+    };
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(a_inline, inline_style);
+    styles.insert(a_block, block_style);
+    styles.insert(abs_with_text, text_style);
+    styles.insert(flow_block, flow_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let i = find(&result.root, a_inline).expect("inline box");
+    let b = find(&result.root, a_block).expect("block box");
+    let abt = find(&result.root, abs_with_text).expect("abs text block box");
+    let fb = find(&result.root, flow_block).expect("flow block box");
+    let cb = find(&result.root, container).expect("container box");
+    assert!(
+        i.height.abs() < 0.5 && i.width.abs() < 0.5,
+        "abs 空 Inline（§9.7 块化）盒应 0×0，得 {}×{}",
+        i.width,
+        i.height
+    );
+    assert!(
+        b.height.abs() < 0.5 && b.width.abs() < 0.5,
+        "abs 空 Block 盒应 0×0，得 {}×{}",
+        b.width,
+        b.height
+    );
+    assert!(
+        abt.height >= 1.0,
+        "abs 含文本盒应有行盒高（strut 近似合法域），得 {}",
+        abt.height
+    );
+    assert!(
+        fb.height.abs() < 0.5,
+        "普通流空 Block 盒高应 0（对照），得 {}",
+        fb.height
+    );
+    assert!(
+        (cb.height - 400.0).abs() < 0.5,
+        "显式高容器应维持 400（对照），得 {}",
+        cb.height
+    );
+}
