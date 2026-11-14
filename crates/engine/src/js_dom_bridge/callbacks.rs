@@ -4280,6 +4280,35 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // g41（css-images-4 §serializing-gradients）：background-image 渐变声明值
+    // canonical 串化整值委托（shim `_zwNormalizeDeclValue` 臂消费，grid_cssom
+    // G1 单实现双通道同型）。实现
+    // [`zero_css_parser::values::canonicalize_background_image_specified`]——
+    // 非渐变面（none/url/image-set/filter/light-dark/多层混合）Rust 侧原文
+    // passthrough。g43 补拒写语义：渐变前缀但文法 invalid（
+    // [`zero_css_parser::values::background_image_decl_invalid`]）返 "null"
+    // 哨兵，shim 臂丢弃赋值（grid/anchor 同款约定）——invalid 不再回显原文。
+    // 纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_gradient_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let _prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                if zero_css_parser::values::background_image_decl_invalid(value) {
+                    return "null".to_string();
+                }
+                zero_css_parser::values::canonicalize_background_image_specified(value)
+                    .unwrap_or_else(|| value.to_string())
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                value.to_string()
+            }
+        }),
+    );
+
     // 组 F 批：anchor 族 computed 值委托（shim part01 gCS plain 臂消费——declared
     // canonical 串恒等 echo，空声明返属性初始值：position-anchor normal /
     // position-visibility anchors-visible / position-try-order normal /

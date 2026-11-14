@@ -1037,8 +1037,9 @@ pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
         CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
-        // Time 叶无百分比（time 槽专用原子，length 槽解析不可达）。
-        CalcExpr::Time(_) => false,
+        // Time/Resolution 叶无百分比（time/resolution 槽专用原子，length 槽
+        // 解析不可达）。
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_contains_percentage(left) || calc_contains_percentage(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_contains_percentage),
         CalcExpr::Clamp { min, val, max } => {

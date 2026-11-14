@@ -1,7 +1,80 @@
 # CSS 子测试控制面
 
-**2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
+**2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g44 完成（11-15）**：色标文法位 + style-attr 写面拒收刀——color-stops-parsing
+60F 双通道分修：parse 侧 hint 位约束（首位前/连续/尾悬挂拒收 + 空段拒收 +
+单色标表合法）与 radial 首参单百分比不再误派发 head；写面新增
+`_zwStyleAttrDeclFilter`（style 内容属性 setAttribute 通道逐声明 invalid 渐变
+拒收，g43 判定器 'null' 哨兵复用，幸存声明原文保形，handle 世界 part04 +
+物化世界 part03 双臂）。A/B（B0=results-g43-b1/B1=results-g44-b1）：css-images
+2881→**2941P 净 +60**（color-stops-parsing F 60→0 全页清零 162/162 Pass）零
+回归，css-values 4041P ±0；单测 css-parser 3,223（+1 钉）/engine 3,991 全绿，
+fmt/clippy 净。事故：首录刀口落物化世界净 ±0（活跃文档实为 handle 世界），
+补 part04 臂后兑现。残面：image-set 150F（C+D 刀）、position-invalid 5F/
+conic-calc 3F 细形。见 [evidence
+2026-11-15-g44-color-stops-style-attr-write-gate](evidence/2026-11-15-g44-color-stops-style-attr-write-gate.md)。
+**g43 完成（11-15）**：渐变 invalid 写面拒收刀——292 形二桶分修：parse 严格性
+（三型调用方 `in` 子句出现必带合法方法，畸形整渐变拒收，桶 B 10 形含极坐标缺
+hue 后缀/`in` 后倒置）+ 写面拒收判定器 `background_image_decl_invalid`
+（渐变前缀 + parse 失败 → invalid，回调 "null" 哨兵 + shim 拒收臂，桶 A 282 形
+裸方法词不再回显原文）。A/B（B0=results-g42-b1/B1=results-g43-b1）：css-images
+2584→**2881P 净 +297**（invalid 页 F 292→0 全清 + position/conic-calc 溢出
++5）零回归，css-values 4041P ±0；单测 css-parser 3,222（+2 钉）/engine 3,991
+全绿，fmt/clippy 净。残面：position-invalid 5F/conic-calc 3F 细形、color-stops
+60F、image-set 150F（6b 指派）。见 [evidence
+2026-11-15-g43-gradient-invalid-write-gate](evidence/2026-11-15-g43-gradient-invalid-write-gate.md)。
+**g42 完成（11-15 收口，11-14 深夜开工遇 429 rollover）**：渐变 computed 通道
+canonical 串化刀——`ColorInterpolationSpace` 模型身份保留（Hsl/Hwb/XyzD50/
+XyzD65 入枚举，渲染回退移交 paint map_interpolation）+ `ColorValue::ColorFunction`
+未解析保留（color() 不再 parse 期坍缩 Rgba，canonical 空间名/分量域 0-1/
+xyz→xyz-d65 别名，paint 回退 to_srgb_rgba）+ engine computed 双路串化
+（specified 骨架 `gradient_specified_to_css`：配置头 canonical——linear 角词序
+保真/radial size 单位归一 `40em`→`640px`+位置模型化+缺省省略/conic from 角度
+归一；`in <method>` 冗省同 declared 则；`color()` 站保真 `color(srgb 1 0 0)`；
+程序化构造回退 R2750 口径不变）+ radial size-only 首参派发 + 4-token 缘偏移
+位对解析。A/B（B0=results-g41-b2/B1=results-g42-b1 quiescent 重录，首轮被
+僵尸 disk-guard 清库焚毁作废）：css-images 1439→**2584P 净 +1145**（computed
+F 881→0、valid F 264→0 两页全清、余页零漂移）零回归，css-values 4041P ±0；
+单测 css-parser 3,220（+3）+ engine lib 3,991/all-targets 47 target 全绿，
+fmt/clippy 净。残面：invalid 拒写 292F（A 刀文法门）、color-stops 60F、
+image-set 114F+36F（6b 指派）。事故与手术记见 [evidence
+2026-11-15-g42-gradient-computed-serialize](evidence/2026-11-15-g42-gradient-computed-serialize.md)。
+**g41 完成（11-14）**：渐变声明值 canonical 串化刀——linear/radial/conic-gradient
+写面 canonical（css-images-4 §serializing-gradients：配置前置/`in <method>`
+后置/缺省法冗省（predefined color() 站→oklab、legacy 站→srgb、声明法==缺省
+且 hue 缺省省整子句）/xyz→xyz-d65 别名/色标 as-written）；核心
+GradientSpecifiedParts 文本承载 + `canonicalize_background_image_specified`
+（非渐变/未识别面整值 None passthrough 零回归），写面单点
+fold_decl_specified background-image 臂（g40 image-set 折叠回落）+ shim
+回调双通道（grid G1 同型）。B0（results-g40-b1 g40 提交态）/B1
+（results-g41-b2，探针页删除后同二进制干净重录）受控 A/B：css-images
+887→1439P 净 **+552**（valid +549/computed +3）、css-values 4041P ±0 零
+回归，UPS 552/DOWNS 空（初版 b1 卷入本地合成探针页 +4P/1F，跑后已删
+不入库）。单测 css-parser 3217（+5 钉）+ engine 3959 全绿；
+clippy/fmt 净。本轮双 spawn 竞态收敛（5 复苏位，写面采纳单点分派+双通道
+收敛形态）与陈旧二进制事故定谳（44s 构建复用旧 engine rlib，B0 恒等作废）
+见 evidence §3。残面：G2 computed 881F、invalid 拒写 292F、4-token 位置/
+size-only radial 解析缺口、color-stops 60F、image-set 114F+36F（6b 指派）。
+见 [evidence 2026-11-14-g41-gradient-canonical-serialize](evidence/2026-11-14-g41-gradient-canonical-serialize.md)。
+**g40 完成（11-14）**：serialize-resolution 刀（上一轮 rate-limit 中断孤儿
+认领完成）——`<resolution>` 维度（`CalcExpr::Resolution` dppx 基归一：
+x/dppx 恒等、dpi÷96、dpcm×2.54/96，dppx 后缀先于 x 判定）+ image-set()
+声明值 calc canonical 折叠（`fold_image_set_specified` 引号态机扫描 +
+`parse_resolution_calc` 独立入口 allow_resolution 旗标同 allow_time 口径
+——共享 parse_calc 保持 resolution 闭 + `calc_expr_is_pure_resolution`
+纯门 + MTResolution 型别表行 + 全臂 exhaustive fail-closed 扫；读视图
+单点 js_dom_bridge.rs style_from_mutations_lw 既有 fold_decl_specified
+消费，零新增写站）。B0（19:36:15 刀前二进制）/B1（21:19:52 刀后）受控
+A/B：css-values 4012→4041 净 **+29**（calc-infinity-nan-serialize-
+resolution.html 29/29 全页清零，UPS 无第二页）+ css-images 881→887 净
+**+6**（image-set-parsing.html calc 形红利）——双 corpus REGRESSED=0。
+单测 css-parser 3212 全绿（+4 新钉：单位归一/NaN·±∞/纯门+型别表/fold
+端到端幂等 fail-closed 多字节）+ style-system 2538 + layout-engine
+2515+20；fmt/clippy 净。双 roll 并行写账竞态收敛合并定稿（工件逐案
+对账为准）。残挂账：% 叶 ±∞ 序列化 2F、image-set computed/supports
+通道 36F、serialize-number 嵌套 mix 3F。见
+[evidence 2026-11-14-g40-resolution-image-set-fold](evidence/2026-11-14-g40-resolution-image-set-fold.md)。
 **g38 完成（11-14）**：anchor-size() used 值布局期求值刀——六尺寸槽
 （`ComputedStyle::anchor_size_slots`）+ 四 inset 槽双形承载，布局期
 anchor_pos pass3 按锚几何回填 used 宽高（css-anchor-position-1 §4：
@@ -416,8 +489,9 @@ anchor-name-mutation）、anchor-size() ~50F、position-area-basic 47F、fallbac
 inline 首片段 10F + 滚移感知 ~16F（刀3 双门撤条件）、apply.rs 数学函数残余
 transform matrix 6 腿（并入 matrix 化桶）；values 残余桶（g23 后）：∞ 桶
 （calc-infinity-nan-computed 残 ~31F：rotate 14 → matrix 化桶 + %-CB 形 +
-unbalanced 形）、serialize 散形残余（resolution 29 主体未动（image-set parse
-前置刀，deferred）+ length ~2/angle ~8/number ~3）、signs-abs computed
+unbalanced 形）、serialize 散形残余（~~resolution 29 主体未动（image-set
+parse 前置刀，deferred）~~ **已由 g40 闭账**——29/29 全清 + image-set-parsing
+红利 +6；残 length % 叶 ~2/angle ~8/number 嵌套 mix ~3）、signs-abs computed
 残 ~94F + invalid 残 ~9F（g23 invalid 门已收 43）——`abs()` 空参文法、
 font-weight 非白名单属性写面/serialize 4F、invalid 门表外槽族放行
 （FIXME 逐 parser 族扩面）、

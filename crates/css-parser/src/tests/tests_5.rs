@@ -1545,10 +1545,11 @@ fn test_gradient_interpolation_hue_method_parsed() {
 
 #[test]
 fn test_gradient_interpolation_wide_gamut_fallback_srgb() {
-    // wide-gamut / xyz：无色彩管理 → 优雅回退 Srgb（不丢弃，保持 R2288 行为）。
+    // wide-gamut：无色彩管理 → 解析期归一 Srgb（不丢弃，R2288 行为）。
+    // g42 拆分：xyz 族改模型身份保留（computed 序列化保真），渲染回退移交
+    // engine paint map_interpolation（zero-engine paint::gradient tests 钉）。
     for css in [
         "linear-gradient(in display-p3, red, blue)",
-        "linear-gradient(in xyz, red, blue)",
         "linear-gradient(in rec2020, red, blue)",
     ] {
         let g = parse_gradient(css).expect("不应丢弃");
@@ -1560,6 +1561,16 @@ fn test_gradient_interpolation_wide_gamut_fallback_srgb() {
             ),
             other => panic!("Expected Linear for {css}, got {other:?}"),
         }
+    }
+    // xyz（含别名）：模型身份 XyzD65 保留（css-color-4 §9.1 别名展开）。
+    let g = parse_gradient("linear-gradient(in xyz, red, blue)").expect("不应丢弃");
+    match g {
+        GradientValue::Linear(lg) => assert_eq!(
+            lg.interpolation.space,
+            ColorInterpolationSpace::XyzD65,
+            "xyz identity preserved for computed serialization"
+        ),
+        other => panic!("Expected Linear for {other:?}"),
     }
 }
 

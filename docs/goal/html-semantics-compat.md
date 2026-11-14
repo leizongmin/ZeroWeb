@@ -1,33 +1,112 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 437 收口（strut 门到货位移检查揭 99 键 P→F
-稳定回归 → s423 视图臂 img 面勘根修复轮；账本
-evidence/2026-11-14-m2s437-strut-arrival-regression-attribution-fix.md）。
-s436 收口后例常位移检查（双跑 join vs s433 基线）揭 99 键稳定 P→F
-（98×naturalWidth + 1×dialog）。归因链：criterion 二值化 bisect 钉
-first bad = **783b22267**（渲染流 g36：s423 pending selector rect
-管线触 shared engine face），last good = 330ba2b40；strut 门
-997899265 排除（engine-half 反掏刀 0F 维持）；s423 selector 臂 kill
-刀（`if false &&`）solo 0F 钉死错值源；S437PROBE 证「门关闭回落」
-假设不可达（语料写形纯 inline style 族门恒开）。根因：`pending_view_
-selector_rect` 现算视图缺解码资源态——`apply_intrinsic_size_overrides`
-仅 canvas/video 无 img 分支（解码源 = Pipeline.image_sizes 桥接侧不可
-达），无属性 img 视图布局退化占位满填 720×100 置换快照渲染后真值
-300/240。**修复（14 行）**：`pending_view_selector_rect` selector 解析
-后 IMG 早退返 None → 回落快照臂（= 父提交 img 面行为，非 img 选择器
-零变化）；FIXME 注记 object/embed 同源缺口。**验证**：solo naturalWidth
-258P/0F/0T exit 0（修复前 98F）；双跑 join fix stable-P 8308/F 203/T 2
-vs s433 base 8309/202/3——naturalWidth 键 fix.sP ×258、F/T ×0，集合差
-仅三个已分类非代码面（dialog phase-flip 今日全红含父提交 solo×3、
-detailed.optional 在册振荡、149.html 提取工件）；fmt + guarded-clippy
-workspace 绿。**跨流记账**：他流 reftest corpus 与本流 testharness 键集
-零交叠（其 A/B 零真回归结论不受影响），本流伪红本刀清偿、无需他流返
-修。dialog 面分诊 phase-flip 非代码，待下轮位移检查复验翻回。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：
-dialog phase-flip 复验 + 例常位移检查；红池分诊续（video P1+P2 或簇 D
-A2 待门决）；全桥套件绿窗轮末收口跑常态化（基线 1570P/0F）。
+**日期**: 2026-11-15（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 441 收口（红池 48 键伪红定谳清偿 + fetch_raw
+自愈化 + 基带重测；账本
+evidence/2026-11-15-m2s441-redpool-resource-phantom-clear.md，零源码
+改动，语料通道一笔）。
+s440 挂账红池分诊定谳：relevant-mutations.html 46F 大块红（+lazy 1 +
+adoption 1 = 48 键）= **green-2x2.png 资源缺失伪红**（s126 本地生成的
+gitignore 资源，本树丢失时窗 11-05 s293 绿 ~ 11-14 s440 sweep 红，丢失
+向量不可考；s440 轮末 00:23 已重生成）——solo 121P/0F/0T 与 s126 收口
+逐键同；全域双跑 join **8113P/206F/6T/1U** vs s440 8065P/254F/7T/1U 恰
+48 键 F→P 零其他位移，stable-T 7→6 唯一移除 = zzz-s433 探针键（s440
+轮末 00:21 已删，本轮复核销账）。**根修**：实测上游 pin 在档（jsdelivr
+2×2 16-bit RGB，断言面与本地 8-bit 版等值——relevant mutations 族只断
+load/error/currentSrc/naturalWidth）→ 25 脚本 ③k 加 `fetch_raw
+"images/green-2x2.png"`（与 green-1x1 等同通道），fresh checkout 与资源
+丢失由 make 前置 fetch 步自愈（删文件→fetch→cmp 恒等端到端验证），
+s126 资源分发门对本资源消解；本地文件换上游字节 solo 复验同绿。全桥套
+件绿窗轮末收口跑：**1596P/0F exit 0**（s438 基线 1579 +17 = 组合树新
+钉，零失败）。**红池重盘（206F）**：select 147（GB-20261031 门）+
+video 4（GB-20261114-VIDEO 门）+ dialog 16（abspos 居中/top-layer/inert
+——布局渲染域为主，goal 契约边界外）+ img 13（decoder/renderer 耦合挂
+账）+ combobox 12（tentative）+ tabular 4 + tails 10——in-domain 非门
+非跨域仅 ≈26 键小面。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137。下一步：小尾巴逐件勘根（combobox tentative
+12 / tabular 4 / tails 10）或候门决项（video P1+P2 / 簇 D A2）；dialog
+16 红块移交/协同归 rendering 流记账；全桥套件绿窗轮末收口跑常态化。
+push 前 rebase 入他流 fb81665dd（ip 壳携刀，engine 共享面）→ 组合树
+74c998e92 复跑双腿：stable-P/F 集合逐键恒等零位移，T 6→5 + mismatch 1
+= 可选 select 文件级键 Fail↔Timeout 单腿置换（s439 在册负载族，簇 D 门
+内），基带 8113P/206F/6T/1U 维持。
+
+> **▶ 承前（2026-11-15 M2 切片 440 收口）——dialog 五窗红相归因定谳
+> + CE 域门修复（1 键 F→P 零位移；账本
+> evidence/2026-11-15-m2s440-dialog-focus-complex-ce-gate-fix.md，代码
+> 刀当轮 commit ae91fbe94）**：
+> s439 挂账 dialog 复验在低负载窗（loadavg 1.8）solo 仍红 → 负载假设证伪
+> 重开归因面：**criterion bisect 三重（父 36de32a4d 绿 / 266b45602 红×3 /
+> hunk 级 AB-KILL 回绿）定谳 first bad = 266b45602**（editing-compat M3-A
+> insertParagraph 刀，13:25）——摘挂臂「位置章发射前重算」毒化普通页面
+> DOM 摘挂：交叠批次下（td 命令穿插 drain + Complex promise_test await 窗
+> 内同步 test() 插入）章值重算与 host drain 交互失准 → Remove 错位/miss →
+> **host 树孤儿双现**（v4 探针实证 children 枚举 3 子 / querySelector null /
+> getElementsByTagName 2 现）→ 查询通道歧义 null → Complex(false)
+> `input.focus()` 崩 unhandled rejection。14:29 绿窗 = build 未含毒刀最后窗
+> 口，phase-flip 表象实为到货时点恒红，负载系当时误归因。**修复 = CE 域
+> 门**（part04 R125 + `_mv` 两处重算块加 `nodeType===1 && __zw_is_ce_host`
+> 门：CE 内逐位恒等 M3-A 行为保 ip 37 键，CE 外回 36de32a4d = s433 基线行
+> 为）。验证：solo focus-after-close 7/7 全 Pass + dialog 目录净 −1 恰靶 +
+> **全域双跑 join 8065P/254F/7T/1U vs 修复前同口径 8064P/255F/7T/1U 恰 1
+> 键 F→P 零其他位移** + make test 10798P/1F（唯一 F = image_batch_e2e
+> s116 在册环境形态）+ fmt/clippy/拼装主序 node --check 绿。**键面基带切
+> 换**：历史记录带（8307-8309P/199-203F）与今晨同口径可复现面（s439 收口
+> 树四腿逐键一致 8064P/255F/7T/1U）不吻合（join 数学排除 8510 形态来自同
+> 口径 join），口径失真挂账待考，基带切至 8065P/254F/7T/1U（s441 又以资
+> 源复位重测为 8113P/206F/6T/1U）。modulepreload strict-origin 双腿 Pass
+> 回位 ✓。挂账三件（relevant-mutations 46F 勘根 / zzz 探针清理 / 基带重
+> 测）s441 全数收口见当前 Active。
+
+> **▶ 承前（2026-11-14 M2 切片 439 收口）——位移检查窗（g40 到货覆盖 +
+> dialog 第三窗复验，零源码改动；账本
+> evidence/2026-11-14-m2s439-displacement-check-g40-arrival.md）**：
+> s438 收口后渲染流 g40 serialize-resolution 刀（1382895dd）到货 → 双跑
+> 覆盖：键面 vs s438 差集（P−1/F+1/T+1）全数归因在册振荡族，g40 零波及；
+> modulepreload strict-origin 单窗沾染待回位（s440 已回 ✓）；optional
+> select 双文件文件级态置换（负载族渐进退化形态）。**dialog 第三窗复验
+> 未翻回**：红相三窗连续（唯一绿窗 14:29 在 zeroseed 风暴前），负载相关
+> 假设维持、风暴平息后仍红则重开归因面——**s440 重开后定谳代码回归
+> （266b45602）并修复，负载假设证伪，见当前 Active**。
+
+> **▶ 承前（2026-11-14 M2 切片 438 收口）——rebase 组合树例常位移检查
+> 轮，零源码改动（账本
+> evidence/2026-11-14-m2s438-combined-tree-displacement-check.md）**：
+> s437 push 前 rebase 到 65f88ed13（窗口 88edca67f..65f88ed13 十刀，渲染流
+> **b0e5ac2da anchor-size() used 值布局期求值** + **9d587f932 ip C4 块边界
+> /bare-br 物化** 两刀触 engine 共享面）→ 组合树双跑位移检查：**vs s437
+> fix 稳定集 P/F/T new=gone=0**——s437 修复零位移维持、渲染流新刀对本语料
+> 零波及；vs s433 差集全数归因非代码（dialog P→F、customizable-select 4 键
+> leg2 文件级 Timeout load 卡死置换非真改善、detailed.optional 沾染、
+> 149.html 在册工件）。**全桥套件绿窗轮末收口跑兑现常态化挂账**：1579P/0F
+> exit 0（基线 1570P +9 = 组合树 part116 新钉等；覆盖 s437 改动面
+> computed_style_cache.rs）。
+
+> **▶ 承前（2026-11-14 M2 切片 437 收口）——strut 门到货位移检查揭
+> 99 键 P→F 稳定回归 → s423 视图臂 img 面勘根修复轮（账本
+> evidence/2026-11-14-m2s437-strut-arrival-regression-attribution-fix.md，
+> 代码刀 e2f9d53fa）**：s436 收口后例常位移检查（双跑 join vs s433 基线）
+> 揭 99 键稳定 P→F（98×naturalWidth + 1×dialog）。归因链：criterion
+> 二值化 bisect 钉 first bad = **783b22267**（渲染流 g36：s423 pending
+> selector rect 管线触 shared engine face），last good = 330ba2b40；
+> strut 门 997899265 排除（engine-half 反掏刀 0F 维持）；s423 selector
+> 臂 kill 刀（`if false &&`）solo 0F 钉死错值源；S437PROBE 证「门关闭
+> 回落」假设不可达（语料写形纯 inline style 族门恒开）。根因：
+> `pending_view_selector_rect` 现算视图缺解码资源态——
+> `apply_intrinsic_size_overrides` 仅 canvas/video 无 img 分支（解码源 =
+> Pipeline.image_sizes 桥接侧不可达），无属性 img 视图布局退化占位满填
+> 720×100 置换快照渲染后真值 300/240。**修复（14 行）**：
+> `pending_view_selector_rect` selector 解析后 IMG 早退返 None → 回落
+> 快照臂（= 父提交 img 面行为，非 img 选择器零变化）；FIXME 注记
+> object/embed 同源缺口。**验证**：solo naturalWidth 258P/0F/0T exit 0
+> （修复前 98F）；双跑 join fix stable-P 8308/F 203/T 2 vs s433 base
+> 8309/202/3——naturalWidth 键 fix.sP ×258、F/T ×0，集合差仅三个已分类
+> 非代码面；fmt + guarded-clippy workspace 绿；make test 160 腿
+> 10761P/1F（唯一 F = image_batch_e2e zero-browser bin 被 target-disk-guard
+> 清理，s116 在册环境形态非行为失败）。**跨流记账**：他流 reftest corpus
+> 与本流 testharness 键集零交叠（其 A/B 零真回归结论不受影响），本流伪红
+> 本刀清偿、无需他流返修；R5565 已预告其 R5566 对 s437 落地面核共享面。
 
 > **▶ 承前（2026-11-14 M2 切片 436 收口）——window.open 真弹窗链
 > 评估轮（零源码改动；账本

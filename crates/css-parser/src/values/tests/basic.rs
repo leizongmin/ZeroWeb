@@ -1,5 +1,6 @@
 // Auto-generated test file — split from values.rs
 use super::super::*;
+use crate::values::canonicalize_background_image_specified as canon;
 
 #[test]
 fn test_parse_timing_function_keywords() {
@@ -2113,13 +2114,19 @@ fn test_parse_rebeccapurple() {
 /// R2270：CSS Color 4 线性光变体（display-p3-linear 等）——跳过 gamma decode。
 fn test_parse_linear_color_spaces() {
     use crate::values::ColorValue;
-    // display-p3-linear green（WPT 线性 display-p3 值）→ (0,128,0)
-    assert!(matches!(
-        super::super::parse_color("color(display-p3-linear 0.0383 0.2087 0.0156)"),
-        Some(ColorValue::Rgba(0, 128, 0, 255))
-    ));
+    // display-p3-linear green（WPT 线性 display-p3 值）→ (0,128,0)。g42 起 parse
+    // 保留 ColorFunction 模型（computed 序列化保真），渲染等价经 to_srgb_rgba 断言。
+    let spec = match super::super::parse_color("color(display-p3-linear 0.0383 0.2087 0.0156)") {
+        Some(ColorValue::ColorFunction(s)) => s,
+        other => panic!("expected ColorFunction, got {other:?}"),
+    };
+    assert_eq!(spec.space.as_ref(), "display-p3-linear");
+    assert_eq!(spec.to_srgb_rgba(), Some((0, 128, 0, 255)));
     // 常规 display-p3（gamma）仍工作（green 在 display-p3 略不同，但 a98-rgb green 已 R2255 验证）
-    assert!(super::super::parse_color("color(display-p3 0 0.5 0)").is_some());
+    assert!(matches!(
+        super::super::parse_color("color(display-p3 0 0.5 0)"),
+        Some(ColorValue::ColorFunction(_))
+    ));
 }
 
 #[test]
@@ -2300,4 +2307,524 @@ fn test_parse_opacity_math_function_forms() {
     // 裸 number/% 既有路径零漂移。
     assert_eq!(parse_opacity("0.25"), Some(0.25));
     assert_eq!(parse_opacity("50%"), Some(0.5));
+}
+
+#[test]
+fn test_parse_resolution_units_normalize_to_dppx() {
+    // css-values-4 §6.4 <resolution> 维度归一：x/dppx 恒等、dpi÷96、
+    // dpcm×2.54/96（1in=96px=2.54cm）——calc-infinity-nan-serialize-resolution
+    // 语料桶前置刀。
+    let cases: [(&str, f64); 5] = [
+        ("calc(2x)", 2.0),
+        ("calc(3dppx)", 3.0),
+        ("calc(96dpi)", 1.0),
+        ("calc(192dpi)", 2.0),
+        ("calc(96dpcm)", 96.0 * 2.54 / 96.0),
+    ];
+    for (src, want) in cases {
+        let expr = parse_resolution_calc(src).unwrap_or_else(|| panic!("{src} should parse"));
+        assert!(calc_expr_is_pure_resolution(&expr), "{src} is pure-resolution");
+        let v = eval_calc(&expr, None).unwrap_or_else(|| panic!("{src} should eval"));
+        assert!((v - want).abs() < 1e-9, "{src} -> {want}dppx, got {v}");
+    }
+}
+
+#[test]
+fn test_parse_resolution_math_forms_and_nan_infinity() {
+    // §10.5/§10.6 数学形 over <resolution>：标量乘除、NaN/±∞ 求值毒保留
+    //（§10.6 canonical 发射面由 fold 臂消费——image-set 桶语料形态）。
+    let expr = parse_resolution_calc("calc(1x * NaN)").expect("parses");
+    assert!(eval_calc(&expr, None).is_some_and(|v| v.is_nan()), "NaN poison kept");
+    let expr = parse_resolution_calc("calc(1dppx * infinity)").expect("parses");
+    assert!(eval_calc(&expr, None).is_some_and(|v| v.is_infinite()), "∞ kept");
+    let expr = parse_resolution_calc("calc(1dppx * 1/infinity)").expect("parses");
+    assert_eq!(eval_calc(&expr, None), Some(0.0), "1/∞ = 0");
+    // clamp/min/max 混 NaN 毒（g12 f64 eval 毒化）。
+    let expr = parse_resolution_calc("calc(1dppx * clamp(-infinity, infinity, 10))").expect("parses");
+    assert_eq!(eval_calc(&expr, None), Some(10.0));
+    let expr = parse_resolution_calc("calc(1 * max(NaN * 3dppx, 0dppx))").expect("parses");
+    assert!(eval_calc(&expr, None).is_some_and(|v| v.is_nan()), "min/max NaN poison");
+}
+
+#[test]
+fn test_parse_resolution_purity_and_shared_entry_closed() {
+    // 型门：resolution±number 混型拒（§10.1）；共享 calc 入口零漂移；
+    // math type 表行（§10.5）：number·resolution=resolution、resolution/number。
+    assert!(!calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(1dppx + 1)").expect("parses structurally")
+    ));
+    assert!(
+        parse_calc("calc(1dppx)").is_none(),
+        "shared calc entry stays resolution-closed"
+    );
+    // 型别表行：`calc(2 * 1dppx)` 型别 resolution（纯门放行）。
+    assert!(calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(2 * 1dppx)").expect("parses")
+    ));
+    assert!(calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(1dppx / 2)").expect("parses")
+    ));
+    // 非法乘法形态（resolution² 无量纲型别）：纯门拒。
+    assert!(!calc_expr_is_pure_resolution(
+        &parse_resolution_calc("calc(1dppx * 1dppx)").expect("parses structurally")
+    ));
+    // 大小写不敏感维度字面（INFinity 语料形同口径）。
+    assert!(parse_resolution_calc("calc(2X)").is_some(), "x case-insensitive");
+}
+
+#[test]
+fn test_fold_background_image_set_resolution_serialize() {
+    // 端到端 fold_decl_specified("background-image", …)：
+    // §10.6 canonical 发射（NaN/±∞ * 1<unit>）、单位归一恒 dppx、幂等、
+    // 非 image-set/无 calc 原文保留（fail-closed）。
+    let cases = [
+        (
+            "image-set(url(\"a\") calc(1x * NaN), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(NaN * 1dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1dppx * infinity), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(infinity * 1dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1dppx * 1/infinity), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(0dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1 * max(INFinity*3dppx, 0dppx)), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(infinity * 1dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(1dppx * clamp(-inFinity, infinity, 10)), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(10dppx), url(\"b\") 2x)",
+        ),
+        (
+            "image-set(url(\"a\") calc(96dpi * NaN), url(\"b\") 2x)",
+            "image-set(url(\"a\") calc(NaN * 1dppx), url(\"b\") 2x)",
+        ),
+    ];
+    for (src, want) in cases {
+        let got = fold_decl_specified("background-image", src).unwrap_or_else(|| panic!("{src} should fold"));
+        assert_eq!(got, want, "{src}");
+        // 幂等：折叠产物二次折叠恒等（None）。
+        assert_eq!(
+            fold_decl_specified("background-image", &got),
+            None,
+            "folded form is canonical (idempotent)"
+        );
+    }
+    // fail-closed 面：非 image-set 原文、混型整值 None、括号未闭合 None。
+    assert_eq!(
+        fold_decl_specified("background-image", "url(\"a\") calc(1dppx * NaN)"),
+        None,
+        "non-image-set untouched"
+    );
+    assert_eq!(
+        fold_decl_specified("background-image", "image-set(url(\"a\") calc(1dppx + 1))"),
+        None,
+        "mixed-type tree keeps original"
+    );
+    assert_eq!(
+        fold_decl_specified("background-image", "image-set(url(\"a\") 2x)"),
+        None,
+        "no-calc untouched"
+    );
+    // 多字节 URL 前缀不越界（char boundary 安全）。
+    assert_eq!(
+        fold_decl_specified(
+            "background-image",
+            "image-set(url(\"图.png\") calc(1dppx * NaN), url(\"b\") 2x)"
+        ),
+        Some("image-set(url(\"图.png\") calc(NaN * 1dppx), url(\"b\") 2x)".to_string()),
+        "multibyte url prefix safe"
+    );
+}
+
+// ── g41 渐变声明值 canonical 串化（css-images-4 §serializing-gradients）──
+
+#[test]
+fn test_gradient_specified_canonical_reorder() {
+    // 配置前置、`in <method>` 后置（两种输入序归一同一 canonical）。
+    assert_eq!(
+        canon("linear-gradient(in lab 30deg, red, blue)").as_deref(),
+        Some("linear-gradient(30deg in lab, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(30deg in lab, red, blue)").as_deref(),
+        Some("linear-gradient(30deg in lab, red, blue)"),
+        "already-canonical stays (idempotent)"
+    );
+    assert_eq!(
+        canon("linear-gradient(in lab to right bottom, red, blue)").as_deref(),
+        Some("linear-gradient(to right bottom in lab, red, blue)"),
+        "corner word order preserved as-written"
+    );
+    // conic：from/at 配置前置，方法词贪心消费（含 hue 法）。
+    assert_eq!(
+        canon("conic-gradient(in hsl decreasing hue from 30deg, red, blue)").as_deref(),
+        Some("conic-gradient(from 30deg in hsl decreasing hue, red, blue)")
+    );
+    assert_eq!(
+        canon("conic-gradient(in hsl increasing hue at right center, red, blue)").as_deref(),
+        Some("conic-gradient(at right center in hsl increasing hue, red, blue)")
+    );
+    // radial：配置原文前置（FIXME: 4-token 位置 `at left 10px top 50em` 走
+    // parse_position_pair 仅 1-2 token 缺口，归 gradient-position 刀，不在本切片）。
+    assert_eq!(
+        canon("radial-gradient(in hwb at right center, red, blue)").as_deref(),
+        Some("radial-gradient(at right center in hwb, red, blue)")
+    );
+    assert_eq!(
+        canon("radial-gradient(in hwb 50px, red, blue)").as_deref(),
+        Some("radial-gradient(50px in hwb, red, blue)")
+    );
+}
+
+#[test]
+fn test_gradient_specified_method_redundancy_and_alias() {
+    // 冗余省略：站型隐含缺省法（legacy 站 → srgb；predefined 站 → oklab）。
+    assert_eq!(
+        canon("linear-gradient(in srgb, red, blue)").as_deref(),
+        Some("linear-gradient(red, blue)"),
+        "srgb + legacy stops omitted"
+    );
+    assert_eq!(
+        canon("linear-gradient(in oklab, color(srgb 1 0 0), blue)").as_deref(),
+        Some("linear-gradient(color(srgb 1 0 0), blue)"),
+        "oklab + predefined stops omitted"
+    );
+    assert_eq!(
+        canon("linear-gradient(in oklab, red, blue)").as_deref(),
+        Some("linear-gradient(in oklab, red, blue)"),
+        "oklab + legacy stops kept"
+    );
+    assert_eq!(
+        canon("linear-gradient(in srgb 30deg, color(srgb 1 0 0), blue)").as_deref(),
+        Some("linear-gradient(30deg in srgb, color(srgb 1 0 0), blue)"),
+        "srgb + predefined stops kept"
+    );
+    // shorter hue 缺省省略、非缺省 hue 法保留。
+    assert_eq!(
+        canon("linear-gradient(in hsl shorter hue, red, blue)").as_deref(),
+        Some("linear-gradient(in hsl, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(to right in lch longer hue, red, blue)").as_deref(),
+        Some("linear-gradient(to right in lch longer hue, red, blue)")
+    );
+    // xyz → xyz-d65 别名展开（css-color-4 §9.1）。
+    assert_eq!(
+        canon("linear-gradient(in xyz, red, blue)").as_deref(),
+        Some("linear-gradient(in xyz-d65, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(in display-p3, red, blue)").as_deref(),
+        Some("linear-gradient(in display-p3, red, blue)"),
+        "wide-gamut canonical text preserved"
+    );
+}
+
+#[test]
+fn test_gradient_specified_passthrough_faces() {
+    // 未识别空间 → None passthrough（渲染回退语义不变，R2288）。
+    assert_eq!(canon("linear-gradient(in bogus, red, blue)"), None);
+    // 非渐变面整值 passthrough（url/none/多层混合/文法 invalid）。
+    assert_eq!(canon("none"), None);
+    assert_eq!(canon("url(a.png)"), None);
+    assert_eq!(canon("linear-gradient(red, blue), url(a.png)"), None);
+    assert_eq!(
+        canon("linear-gradient(, red, blue)"),
+        None,
+        "invalid gradient passthrough (A-knife rejects later)"
+    );
+    assert_eq!(canon("light-dark(url(a), url(b))"), None);
+    // 多层全渐变逐层串化。
+    assert_eq!(
+        canon("linear-gradient(in srgb, red, blue), linear-gradient(red, blue)").as_deref(),
+        Some("linear-gradient(red, blue), linear-gradient(red, blue)")
+    );
+}
+
+#[test]
+fn test_gradient_specified_identity_and_whitespace() {
+    // 无方法既有 canonical 形恒等（当前 raw echo 通过面零回归前提）。
+    assert_eq!(
+        canon("linear-gradient(red, blue)").as_deref(),
+        Some("linear-gradient(red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(30deg, red, 50%, blue)").as_deref(),
+        Some("linear-gradient(30deg, red, 50%, blue)"),
+        "interpolation hint stop preserved"
+    );
+    assert_eq!(
+        canon("linear-gradient(to right, red, blue)").as_deref(),
+        Some("linear-gradient(to right, red, blue)")
+    );
+    // 空白归一：连续空白折叠单空格、顶层逗号归一 `, `。
+    assert_eq!(
+        canon("linear-gradient(  red ,  blue )").as_deref(),
+        Some("linear-gradient(red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(red,blue)").as_deref(),
+        Some("linear-gradient(red, blue)")
+    );
+}
+
+#[test]
+fn test_fold_background_image_gradient_canonical_dispatch() {
+    // g41 单点接线：fold_decl_specified background-image 分派 = 渐变 canonical
+    // 串化（写面四站 + mutation replay 三站共享消费）→ image-set calc 折叠回落。
+    assert_eq!(
+        fold_decl_specified("background-image", "linear-gradient(in lab 30deg, red, blue)").as_deref(),
+        Some("linear-gradient(30deg in lab, red, blue)")
+    );
+    // image-set 面回落 g40 折叠臂（canonicalize None → fold_image_set_specified）。
+    assert_eq!(
+        fold_decl_specified("background-image", "image-set(url(\"a\") calc(1dppx * NaN))").as_deref(),
+        Some("image-set(url(\"a\") calc(NaN * 1dppx))")
+    );
+    // 非渐变非 image-set 面 None 原文。
+    assert_eq!(fold_decl_specified("background-image", "url(a.png)"), None);
+}
+
+#[test]
+fn test_g42_radial_head_canonical_and_size_only_parse() {
+    // css-images-4 §serializing-gradients：`ellipse <length-percentage>{2}` 双长度形
+    // 省略形状关键字（g42 driving: gradient-interpolation-method-valid）。
+    assert_eq!(
+        canon("radial-gradient(ellipse 50% 40em, red, blue)").as_deref(),
+        Some("radial-gradient(50% 40em, red, blue)")
+    );
+    // ellipse + 关键字 size（非双长度）不省略。
+    assert_eq!(
+        canon("radial-gradient(ellipse closest-side, red, blue)").as_deref(),
+        Some("radial-gradient(ellipse closest-side, red, blue)")
+    );
+    // ellipse + 双长度 + at 位置：仅省略 ellipse，余配置原样。
+    assert_eq!(
+        canon("radial-gradient(ellipse 50px 40px at 25% 30%, red, blue)").as_deref(),
+        Some("radial-gradient(50px 40px at 25% 30%, red, blue)")
+    );
+    // circle 单长度：ending shape 由单长度隐含，canonical 省略 `circle`
+    // （engine part04 computed oracle `circle 50px` → `50px`）。
+    assert_eq!(
+        canon("radial-gradient(circle 50px, red, blue)").as_deref(),
+        Some("radial-gradient(50px, red, blue)")
+    );
+    // circle + 单长度 + at 位：仅省略 circle，余配置原样。
+    assert_eq!(
+        canon("radial-gradient(circle 50px at 25% 30%, red, blue)").as_deref(),
+        Some("radial-gradient(50px at 25% 30%, red, blue)")
+    );
+    // circle + 关键字 size（非单长度半径）不省略。
+    assert_eq!(
+        canon("radial-gradient(circle closest-side, red, blue)").as_deref(),
+        Some("radial-gradient(circle closest-side, red, blue)")
+    );
+    // size-only 纯长度首参（无 shape 关键字）解析为 size 配置（computed 语料
+    // `radial-gradient(50px in lab, …)` oracle 面）。
+    let g = parse_gradient("radial-gradient(50px, red, blue)").expect("size-only radial must parse");
+    let GradientValue::Radial(r) = &g else {
+        panic!("expected radial, got {g:?}");
+    };
+    assert_eq!(r.size, RadialSize::Length(LengthValue::Px(50.0)));
+    assert_eq!(r.specified.as_ref().and_then(|s| s.head.as_deref()), Some("50px"));
+    // 双长度 size-only（无 ellipse 关键字）同样解析，head 原样（canonical 不加
+    // 关键字）。
+    let g2 = parse_gradient("radial-gradient(50% 40em, red, blue)").expect("two-length size-only must parse");
+    let GradientValue::Radial(r2) = &g2 else {
+        panic!("expected radial, got {g2:?}");
+    };
+    assert_eq!(r2.specified.as_ref().and_then(|s| s.head.as_deref()), Some("50% 40em"));
+}
+
+#[test]
+fn test_g42_position_edge_offset_pairs() {
+    // css-values-4 §position 缘偏移对（4-token）：`at left 10px top 50em`。
+    // computed/valid 语料 driving（conic/radial `at left Npx top Nem` 形）。
+    let g = parse_gradient("conic-gradient(at left 10px top 50em, red, blue)").expect("4-token position must parse");
+    let GradientValue::Conic(c) = &g else {
+        panic!("expected conic, got {g:?}");
+    };
+    assert_eq!(c.position_x, LengthValue::Px(10.0));
+    assert_eq!(c.position_y, LengthValue::Em(50.0));
+    assert_eq!(
+        canon("conic-gradient(at left 10px top 50em, red, blue)").as_deref(),
+        Some("conic-gradient(at left 10px top 50em, red, blue)"),
+        "as-written head passthrough"
+    );
+    // 3-token 缘偏移（对 + 裸关键字）。
+    let g3 = parse_gradient("radial-gradient(at left 10px top, red, blue)").expect("3-token position must parse");
+    let GradientValue::Radial(r3) = &g3 else {
+        panic!("expected radial, got {g3:?}");
+    };
+    assert_eq!(r3.position_y, LengthValue::Percentage(0.0));
+}
+
+#[test]
+fn test_g42_interpolation_space_model_identity() {
+    // g42：hsl/hwb/xyz-d50/xyz-d65 模型身份保留（computed 序列化保真）；渲染端
+    // 映射仍回退 Srgb（engine paint map_interpolation 臂，R2288 口径不变）。
+    let g = parse_gradient("linear-gradient(in hsl longer hue, red, blue)").unwrap();
+    let GradientValue::Linear(l) = &g else {
+        panic!("expected linear, got {g:?}");
+    };
+    assert_eq!(l.interpolation.space, ColorInterpolationSpace::Hsl);
+    assert_eq!(l.interpolation.hue, ColorHueMethod::Longer);
+    let g2 = parse_gradient("linear-gradient(in xyz-d50, red, blue)").unwrap();
+    let GradientValue::Linear(l2) = &g2 else {
+        panic!("expected linear, got {g2:?}");
+    };
+    assert_eq!(l2.interpolation.space, ColorInterpolationSpace::XyzD50);
+    // canonical 文本行为不变（xyz 别名展开、shorter 缺省省略）。
+    assert_eq!(
+        canon("linear-gradient(in xyz, red, blue)").as_deref(),
+        Some("linear-gradient(in xyz-d65, red, blue)")
+    );
+    assert_eq!(
+        canon("linear-gradient(in hwb shorter hue, red, blue)").as_deref(),
+        Some("linear-gradient(in hwb, red, blue)")
+    );
+    // display-p3 等余 wide-gamut 仍归一 Srgb（身份保留 defer）。
+    let g3 = parse_gradient("linear-gradient(in display-p3, red, blue)").unwrap();
+    let GradientValue::Linear(l3) = &g3 else {
+        panic!("expected linear, got {g3:?}");
+    };
+    assert_eq!(l3.interpolation.space, ColorInterpolationSpace::Srgb);
+}
+
+#[test]
+fn test_g43_malformed_in_clause_rejects_gradient() {
+    // g43（css-images-4 文法）：`in` 子句一旦出现必须携带合法
+    // <color-interpolation-method>——极坐标缺 `hue` 后缀 / `in` 后倒置配置 /
+    // 未知空间均整渐变拒收（此前宽松降级为无方法渐变接受）。
+    for css in [
+        "linear-gradient(in hsl longer, red, blue)",
+        "linear-gradient(in hsl shorter, red, blue)",
+        "linear-gradient(in hsl increasing, red, blue)",
+        "linear-gradient(to right in hsl decreasing, red, blue)",
+        "linear-gradient(in to right, red, blue)",
+        "linear-gradient(in 45deg, red, blue)",
+        "linear-gradient(in bogus, red, blue)",
+        "conic-gradient(in from 90deg, red, blue)",
+        "radial-gradient(in bogus, red, blue)",
+    ] {
+        assert!(parse_gradient(css).is_none(), "malformed in-clause must reject: {css}");
+    }
+    // 合法形零误伤：完整 hue 法 / 纯空间词仍 parse 成功。
+    assert!(parse_gradient("linear-gradient(in hsl longer hue, red, blue)").is_some());
+    assert!(parse_gradient("linear-gradient(in oklab, red, blue)").is_some());
+    assert!(parse_gradient("conic-gradient(from 90deg in oklab, red, blue)").is_some());
+}
+
+#[test]
+fn test_g43_background_image_decl_invalid_judge() {
+    // g43 写面拒收判定：渐变前缀 + parse 失败 → invalid；非渐变面/合法渐变恒 false。
+    let bad = [
+        "linear-gradient(lab lab, red, blue)",
+        "linear-gradient(hsl shorter, red, blue)",
+        "linear-gradient(red, blue, lab)",
+        "linear-gradient(, red, blue)",
+        "linear-gradient(45deg in, black, transparent)",
+        "conic-gradient(in from 90deg, black, transparent)",
+    ];
+    for css in bad {
+        assert!(
+            background_image_decl_invalid(css),
+            "gradient-prefixed parse-fail must judge invalid: {css}"
+        );
+    }
+    let ok = [
+        "linear-gradient(red, blue)",
+        "linear-gradient(in oklab, red, blue)",
+        "radial-gradient(50px in lab, red, blue)",
+        "none",
+        "url(a.png)",
+    ];
+    for css in ok {
+        assert!(
+            !background_image_decl_invalid(css),
+            "valid/non-gradient must not judge invalid: {css}"
+        );
+    }
+    // 多层：任一层渐变 invalid → 整值拒；全 valid / 渐变+url 混合 → false。
+    assert!(background_image_decl_invalid(
+        "url(a.png), linear-gradient(lab lab, red, blue)"
+    ));
+    assert!(!background_image_decl_invalid("linear-gradient(red, blue), url(a.png)"));
+    // canonical 串化对 invalid 形保持 None（passthrough 语义不变，拒收在回调哨兵层）。
+    assert_eq!(canon("linear-gradient(, red, blue)"), None);
+}
+
+// g44 色标文法位约束（css-images-4 §color-stop-syntax）：hint 只允许夹在两色标之间、
+// 空段非法、尾 hint 悬挂非法；单色标表合法（css-images-4 放宽，非 css-images-3 {2,}）。
+// driving: wpt css-images gradient/color-stops-parsing.html（33 形 × 6 渐变函数，
+// 页面 parse 期望逐形镜像）。
+#[test]
+fn test_g44_color_stops_parsing_page_forms() {
+    // 页面 invalid 10 形——六函数全拒收（repeating/conic 变体同文法）。
+    let invalid = [
+        "",
+        "black, 25%",
+        "black, invalid",
+        "black, , white",
+        "black, white, 75%",
+        "black, 25% 50%, white",
+        "black, 25%, 50%, white",
+        "black 10% 25% 50%, white",
+        ",black, white",
+        "0%, black, white",
+    ];
+    // 页面 valid 23 形中代表面——单色标、unitless 0 位置、hint 单插、连续 hint 交替
+    //（`15%`/`60%` 各夹两 stop 间）、双位置、kitchen sink calc。六函数全接受。
+    let valid = [
+        "black",
+        "black 0%",
+        "black, white",
+        "black 0, white",
+        "black 0%, white",
+        "black 0%, white 100%",
+        "black, green, white",
+        "black 0%, green 50%, white 100%",
+        "black 50%, green 10%, white 100%",
+        "black, 25%, white",
+        "black 0%, 25%, white 100%",
+        "black 0%, 15%, green 50%, 60%, white 100%",
+        "black 0% 50%, white",
+        "black 0% 50%, white 50% 100%",
+        "black 0% 50%, green 25% 75%, white 50% 100%",
+        "black 0% calc(100% / 5), 25%, green 30% 60%, calc(100% * 3 / 4), white calc(100% - 20%) 100%",
+    ];
+    for f in [
+        "linear-gradient",
+        "repeating-linear-gradient",
+        "radial-gradient",
+        "repeating-radial-gradient",
+        "conic-gradient",
+        "repeating-conic-gradient",
+    ] {
+        for s in invalid {
+            assert_eq!(canon(&format!("{f}({s})")), None, "{f}({s}) 应拒收（页面 parse:false）");
+        }
+        for s in valid {
+            assert!(
+                canon(&format!("{f}({s})")).is_some(),
+                "{f}({s}) 应接受（页面 parse:true）"
+            );
+        }
+    }
+    // 页面 lots-of-stops 形（500 段 stop/hint 交替单插）接受——hint 文法位约束
+    // 不误杀合法交替。
+    let mut long = String::from("linear-gradient(");
+    for x in 0..500 {
+        long.push_str(&format!(
+            "white {}%, {}%, ",
+            f64::from(x) / 500.0,
+            f64::from(2 * x + 1) / 1000.0
+        ));
+    }
+    long.push_str("black)");
+    assert!(canon(&long).is_some(), "500-stop 交替 hint 长表应接受");
 }

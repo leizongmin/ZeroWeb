@@ -81,7 +81,7 @@ pub(crate) fn literal_percentage(s: &str) -> Option<(f64, usize)> {
 pub(crate) fn expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Length(LengthValue::Percentage(_)) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => {
             expr_has_percentage_leaf(a) || expr_has_percentage_leaf(b)
         }
@@ -112,7 +112,7 @@ pub(crate) fn expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
 pub(crate) fn expr_has_percentage_leaf_outside_progress(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Length(LengthValue::Percentage(_)) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => {
             expr_has_percentage_leaf_outside_progress(a) || expr_has_percentage_leaf_outside_progress(b)
         }
@@ -141,7 +141,7 @@ pub(crate) fn expr_has_percentage_leaf_outside_progress(expr: &CalcExpr) -> bool
 pub(crate) fn expr_contains_mix(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Mix(_) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(a, _, b) | CalcExpr::BinaryMathOp(_, a, b) => expr_contains_mix(a) || expr_contains_mix(b),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(expr_contains_mix),
         CalcExpr::Clamp { min, val, max } => expr_contains_mix(min) || expr_contains_mix(val) || expr_contains_mix(max),

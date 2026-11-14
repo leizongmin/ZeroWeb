@@ -9,11 +9,12 @@ use std::collections::HashMap;
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
     BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
-    ClipPathValue, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient,
-    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
-    GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
-    PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue,
-    TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
+    ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue,
+    ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
+    FontWeightValue, GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue,
+    OverflowValue, PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition,
+    TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
+    parse_length,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -3082,16 +3083,35 @@ fn image_layer_list_to_css(
         .join(", ")
 }
 
-/// linear-gradient / repeating-linear-gradient：CSS Images 线性渐变序列化（对齐 Chromium）。
-/// `<prefix>(<dir>, [in <space>], <stop>, ...)`：dir `ToBottom` 初值省略 / `Angle(a)`→`adeg` /
-/// 角关键字 `to right` 等；插值 `Srgb` 初值省略、余 `in <space>`（极坐标 Lch/Oklch 非默认 hue
-/// 附 ` <hue-method>`）；色标 `<color>[ <pos>]`（color 经 currentcolor 解析，pos 经 length_to_css）。
-/// **已知限制**：无双位置/色标提示存储（ZeroWeb 模型单 pos/无 hint）；radial/conic defer。
+/// linear-gradient / repeating-linear-gradient：CSS Images 线性渐变 computed 序列化
+/// （css-images-4
+/// [§serializing-gradients](https://drafts.csswg.org/css-images-4/#serializing-gradients)
+/// ，对齐 Chromium）。g42 起解析期带 as-written 配置（`specified`）的渐变走
+/// [`gradient_specified_prefix`] 骨架：配置头 canonical 原序（`to right bottom`
+/// 角词序保真）+ canonical `in <method>`（冗省/别名/hue 缺省）+ computed 色标；
+/// 程序化构造（specified None）回退模型枚举路径。
 fn linear_gradient_to_css(
     g: &zero_css_parser::values::LinearGradient,
     element_color: &ColorValue,
     font_size_px: f64,
 ) -> String {
+    let prefix = if g.repeating {
+        "repeating-linear-gradient"
+    } else {
+        "linear-gradient"
+    };
+    if let Some(parts) = &g.specified {
+        // computed 头部 as-written：角词序保真（WPT oracle `to right bottom` 不重排
+        // 为 `to bottom right`）、角度文本保真；linear 头部文法无长度分量，无单位解析。
+        return gradient_specified_to_css(
+            prefix,
+            parts.head.as_deref(),
+            parts.method.as_deref(),
+            &g.stops,
+            element_color,
+            font_size_px,
+        );
+    }
     let mut parts: Vec<String> = Vec::new();
     match g.direction {
         GradientDirection::ToBottom => {} // 初值，省略
@@ -3110,21 +3130,38 @@ fn linear_gradient_to_css(
     for s in &g.stops {
         parts.push(color_stop_to_css(s, element_color, font_size_px));
     }
-    let prefix = if g.repeating {
-        "repeating-linear-gradient"
-    } else {
-        "linear-gradient"
-    };
     format!("{}({})", prefix, parts.join(", "))
 }
 
-/// radial-gradient / repeating-radial-gradient：CSS Images 径向渐变序列化。
+/// radial-gradient / repeating-radial-gradient：CSS Images 径向渐变 computed 序列化。
+/// g42 起解析期带 as-written 配置（`specified`）的渐变走 [`gradient_specified_to_css`]
+/// 骨架（配置头经 [`radial_computed_head`]：size 单位归一、at 位置模型化）；程序化
+/// 构造回退下述模型枚举路径。
 /// 规则锚定 WPT `background-image-computed`/`gradient-position-computed` oracle：
 /// - 默认 `<ellipse> <farthest-corner> at center` 全省略 → `radial-gradient(stops)`
 /// - `circle`（默认 size）保留；非默认 size 关键字（closest-side 等）保留；`circle <kw>` 双保留
 /// - 显式半径 `Length(r)` → `r`（circle 关键字省略）；ellipse 双长度 ZeroWeb 仅存单 length（解析限制）
 /// - 非默认 position → `at <X> <Y>`（center/top/bottom/left/right 解析期已归一为 50%/0%/100%）
 fn radial_gradient_to_css(g: &RadialGradient, element_color: &ColorValue, font_size_px: f64) -> String {
+    let prefix = if g.repeating {
+        "repeating-radial-gradient"
+    } else {
+        "radial-gradient"
+    };
+    if let Some(parts) = &g.specified {
+        return gradient_specified_to_css(
+            prefix,
+            parts
+                .head
+                .as_deref()
+                .map(|h| radial_computed_head(h, &g.position_x, &g.position_y, font_size_px))
+                .as_deref(),
+            parts.method.as_deref(),
+            &g.stops,
+            element_color,
+            font_size_px,
+        );
+    }
     // config 组件：shape/size + position 空格连接（同 oracle「circle at 25% 40%」）。
     let mut config_inner: Vec<String> = Vec::new();
     match (&g.shape, &g.size) {
@@ -3153,11 +3190,6 @@ fn radial_gradient_to_css(g: &RadialGradient, element_color: &ColorValue, font_s
     for s in &g.stops {
         parts.push(color_stop_to_css(s, element_color, font_size_px));
     }
-    let prefix = if g.repeating {
-        "repeating-radial-gradient"
-    } else {
-        "radial-gradient"
-    };
     format!("{}({})", prefix, parts.join(", "))
 }
 
@@ -3175,10 +3207,32 @@ fn radial_size_str(size: &RadialSize, shape: &RadialShape) -> String {
     }
 }
 
-/// conic-gradient / repeating-conic-gradient：CSS Images 锥向渐变序列化（spec-aligned，无 WPT conic
-/// computed oracle，待 Chromium A/B 核实）。`<prefix>([from <angle>]? [at <pos>]?, stops)`：
-/// 默认 from 0deg + at center 全省略；非默认 from→`from <deg>deg`、position→`at <X> <Y>`。
+/// conic-gradient / repeating-conic-gradient：CSS Images 锥向渐变 computed 序列化。
+/// g42 起解析期带 as-written 配置（`specified`）的渐变走 [`gradient_specified_to_css`]
+/// 骨架（配置头经 [`conic_computed_head`]）；程序化构造回退下述模型枚举路径
+///（spec-aligned，无 WPT conic computed oracle，待 Chromium A/B 核实）。
+/// `<prefix>([from <angle>]? [at <pos>]?, stops)`：默认 from 0deg + at center 全省略；
+/// 非默认 from→`from <deg>deg`、position→`at <X> <Y>`。
 fn conic_gradient_to_css(g: &ConicGradient, element_color: &ColorValue, font_size_px: f64) -> String {
+    let prefix = if g.repeating {
+        "repeating-conic-gradient"
+    } else {
+        "conic-gradient"
+    };
+    if let Some(parts) = &g.specified {
+        return gradient_specified_to_css(
+            prefix,
+            parts
+                .head
+                .as_deref()
+                .map(|h| conic_computed_head(h, g.from_angle, &g.position_x, &g.position_y, font_size_px))
+                .as_deref(),
+            parts.method.as_deref(),
+            &g.stops,
+            element_color,
+            font_size_px,
+        );
+    }
     let mut config_inner: Vec<String> = Vec::new();
     if g.from_angle != 0.0 {
         config_inner.push(format!("from {}deg", format_num(g.from_angle, "")));
@@ -3201,11 +3255,6 @@ fn conic_gradient_to_css(g: &ConicGradient, element_color: &ColorValue, font_siz
     for s in &g.stops {
         parts.push(color_stop_to_css(s, element_color, font_size_px));
     }
-    let prefix = if g.repeating {
-        "repeating-conic-gradient"
-    } else {
-        "conic-gradient"
-    };
     format!("{}({})", prefix, parts.join(", "))
 }
 
@@ -3215,16 +3264,169 @@ fn is_center(x: &LengthValue, y: &LengthValue) -> bool {
 }
 
 /// 渐变色标：`<color>[ <position>]`（color 经 currentcolor 解析为 rgb/rgba；pos 经 length_to_css）。
+/// g42：`color()` 预定义空间站直接 canonical 串化（css-color-4 §9.1 computed 值
+/// 不坍缩 legacy rgb；分量是数字字面量与 currentColor 无关，无需解析上下文）。
 fn color_stop_to_css(s: &GradientColorStop, element_color: &ColorValue, font_size_px: f64) -> String {
-    let color = color_to_css(&crate::resolve_color_current(&s.color, element_color));
+    let color = match &s.color {
+        ColorValue::ColorFunction(f) => color_function_to_css(f),
+        _ => color_to_css(&crate::resolve_color_current(&s.color, element_color)),
+    };
     match &s.position {
         None => color,
         Some(pos) => format!("{} {}", color, length_to_css(pos, font_size_px)),
     }
 }
 
-/// 渐变颜色插值（CSS Color 4 `in <colorspace> [<hue-method>]`）。极坐标 Lch/Oklch 且 hue 非
-/// 默认 Shorter 时附 hue-method；否则仅 `in <space>`。
+/// `color()` canonical 串化（css-color-4 §9.1）：`color(<space> <c0> <c1> <c2>)`，
+/// alpha∈[0,1) 附 ` / <a>`；分量/alpha 按最短十进制（Chromium computed 口径：
+/// 1→`1`、0.5→`0.5`，同 [`format_num`]）。FIXME: `none` 分量保真 defer
+///（parse 期 none→0，css-color none-components 语料归 color 刀）。
+fn color_function_to_css(f: &ColorFunctionSpec) -> String {
+    let mut s = format!(
+        "color({} {} {} {})",
+        f.space,
+        format_num(f.comps[0], ""),
+        format_num(f.comps[1], ""),
+        format_num(f.comps[2], "")
+    );
+    if f.alpha < 1.0 {
+        s.push_str(&format!(" / {}", format_num(f.alpha, "")));
+    }
+    s
+}
+
+/// 渐变 computed 序列化公共骨架（css-images-4 §serializing-gradients）：canonical
+/// 配置头（调用方按渐变型别经 computed 头 helper 求得，非 as-written 盲拷）+
+/// canonical `in <method>`（冗省判定 [`gradient_method_redundant_default`]）+
+/// computed 色标段（legacy 色→rgb()、`color()` 站保真）。`<配置>[ <method>][, <stop>, ...]`。
+fn gradient_specified_to_css(
+    prefix: &str,
+    head: Option<&str>,
+    method: Option<&str>,
+    stops: &[GradientColorStop],
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    let mut out = String::from(prefix);
+    out.push('(');
+    let mut emitted = false;
+    // 空头（size/位置段全缺省省略后 radial_computed_head 返 ""）按无头处理，
+    // 防方法附着/分隔符吃进前导空格。
+    if let Some(h) = head.filter(|h| !h.is_empty()) {
+        out.push_str(h);
+        emitted = true;
+    }
+    if let Some(m) = method
+        && !gradient_method_redundant_default(m, stops)
+    {
+        if emitted {
+            out.push(' ');
+        }
+        out.push_str(m);
+        emitted = true;
+    }
+    let body = stops
+        .iter()
+        .map(|s| color_stop_to_css(s, element_color, font_size_px))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if emitted && !body.is_empty() {
+        out.push_str(", ");
+    }
+    out.push_str(&body);
+    out.push(')');
+    out
+}
+
+/// computed 通道方法冗省（css-images-4
+/// [#gradient-color-interpolation](https://drafts.csswg.org/css-images-4/#gradient-color-interpolation)
+/// ，与 declared 通道 serialize_gradient::method_is_redundant_default 同则）：
+/// 显式色相法恒非缺省；空间 ==（站含 predefined `color()` → oklab，否则 srgb）
+/// 时整子句省略。driving oracle：`50px in oklab` + `color(srgb…)` 站 → 省略。
+fn gradient_method_redundant_default(method: &str, stops: &[GradientColorStop]) -> bool {
+    let mut words = method.split_whitespace();
+    if words.next() != Some("in") {
+        return false;
+    }
+    let Some(space) = words.next() else {
+        return false;
+    };
+    if words.next().is_some() {
+        return false; // 显式 hue 法恒非缺省
+    }
+    let default = if stops.iter().any(|s| matches!(s.color, ColorValue::ColorFunction(_))) {
+        "oklab"
+    } else {
+        "srgb"
+    };
+    space == default
+}
+
+/// radial computed 配置头（css-images-4 §serializing-gradients computed 通道；
+/// WPT gradient-interpolation-method-computed specifiers oracle）：`ellipse` 双
+/// 长度形 parse 期已剥离；size 段 token 级解析（长度 → [`length_to_css`] 单位归一
+/// `40em`→`640px`、`50%` 保留，关键字 passthrough）+ `at` 位置段模型化
+/// （`at right center`→`at 100% 50%`、4-token 缘偏移对关键字剥离 →
+/// `at left 10px top 50em`→`at 10px 800px`）。缺省 center 位置省略（R2751
+/// 口径：显式 `at center` computed 同样缺省省略）。
+fn radial_computed_head(head: &str, pos_x: &LengthValue, pos_y: &LengthValue, font_size_px: f64) -> String {
+    let (size_text, at_text) = if let Some(rest) = head.strip_prefix("at ") {
+        ("", Some(rest))
+    } else if let Some((s, p)) = head.split_once(" at ") {
+        (s, Some(p))
+    } else {
+        (head, None)
+    };
+    let mut parts: Vec<String> = Vec::new();
+    let size = size_text
+        .split_whitespace()
+        .map(|t| match parse_length(t) {
+            Some(lv) => length_to_css(&lv, font_size_px),
+            None => t.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !size.is_empty() {
+        parts.push(size);
+    }
+    if at_text.is_some() && !is_center(pos_x, pos_y) {
+        parts.push(format!(
+            "at {} {}",
+            length_to_css(pos_x, font_size_px),
+            length_to_css(pos_y, font_size_px)
+        ));
+    }
+    parts.join(" ")
+}
+
+/// conic computed 配置头：`from <angle>` 段按模型角度（`0.5turn` 等归一 deg；
+/// 缺省 0deg 省略，R2751 口径）+ `at` 位置段同 [`radial_computed_head`]（head
+/// 无对应段或位置为缺省 center 时不发射）。
+fn conic_computed_head(
+    head: &str,
+    from_angle: f64,
+    pos_x: &LengthValue,
+    pos_y: &LengthValue,
+    font_size_px: f64,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if head.starts_with("from ") && from_angle != 0.0 {
+        parts.push(format!("from {}deg", format_num(from_angle, "")));
+    }
+    if (head.starts_with("at ") || head.contains(" at ")) && !is_center(pos_x, pos_y) {
+        parts.push(format!(
+            "at {} {}",
+            length_to_css(pos_x, font_size_px),
+            length_to_css(pos_y, font_size_px)
+        ));
+    }
+    parts.join(" ")
+}
+
+/// 渐变颜色插值（CSS Color 4 `in <colorspace> [<hue-method>]`）。极坐标
+///（Lch/Oklch/Hsl/Hwb，css-color-4 §12.2）且 hue 非默认 Shorter 时附 hue-method；
+/// 否则仅 `in <space>`。hsl/hwb/xyz-d50/xyz-d65 为 g42 模型身份（渲染仍回退
+/// Srgb，R2288），computed 序列化按 canonical 词形发射。
 fn color_interpolation_to_css(ci: &ColorInterpolation) -> String {
     let space = match ci.space {
         ColorInterpolationSpace::Srgb => "srgb",
@@ -3233,8 +3435,18 @@ fn color_interpolation_to_css(ci: &ColorInterpolation) -> String {
         ColorInterpolationSpace::Oklab => "oklab",
         ColorInterpolationSpace::Lch => "lch",
         ColorInterpolationSpace::Oklch => "oklch",
+        ColorInterpolationSpace::Hsl => "hsl",
+        ColorInterpolationSpace::Hwb => "hwb",
+        ColorInterpolationSpace::XyzD50 => "xyz-d50",
+        ColorInterpolationSpace::XyzD65 => "xyz-d65",
     };
-    let polar = matches!(ci.space, ColorInterpolationSpace::Lch | ColorInterpolationSpace::Oklch);
+    let polar = matches!(
+        ci.space,
+        ColorInterpolationSpace::Lch
+            | ColorInterpolationSpace::Oklch
+            | ColorInterpolationSpace::Hsl
+            | ColorInterpolationSpace::Hwb
+    );
     if polar && ci.hue != ColorHueMethod::Shorter {
         let hue = match ci.hue {
             ColorHueMethod::Shorter => "shorter hue",
@@ -4296,6 +4508,210 @@ mod computed_calc_serialize_tests {
                 None
             ),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod g42_gradient_computed_serialize_tests {
+    //! css-images-4 §serializing-gradients computed 通道串化（g42，driving:
+    //! gradient-interpolation-method-computed 881F 面）。oracle 全部取自
+    //! tests/wpt-runner/wpt-data/css/css-images/parsing/gradient-interpolation-
+    //! method-computed.html 期望表：linear 角词序保真（`to right bottom` 不重排）、
+    //! radial size 单位归一（`40em`→`640px`）、位置模型化（`at right center`→
+    //! `at 100% 50%`、`at left 10px top 50em`→`at 10px 800px`）、`color()` 站保真、
+    //! 方法冗省（legacy 站 srgb / 预定义站 oklab）、xyz→xyz-d65 别名、shorter hue
+    //! 缺省省略。
+
+    use super::{conic_gradient_to_css, linear_gradient_to_css, radial_gradient_to_css};
+    use zero_css_parser::values::{ColorValue, GradientValue, parse_gradient};
+
+    /// 语料 driver：parse → 型别派发 → computed 串化（font_size 16px 基准，
+    /// element_color 占位——语料站无 currentcolor/相对色，不经该路径）。
+    fn computed_gradient(input: &str) -> String {
+        let ec = ColorValue::Rgba(0, 0, 0, 255);
+        match parse_gradient(input).expect("input must parse") {
+            GradientValue::Linear(g) => linear_gradient_to_css(&g, &ec, 16.0),
+            GradientValue::Radial(g) => radial_gradient_to_css(&g, &ec, 16.0),
+            GradientValue::Conic(g) => conic_gradient_to_css(&g, &ec, 16.0),
+        }
+    }
+
+    #[test]
+    fn linear_head_passthrough_and_stops() {
+        // specifiers oracle：角度与角词序 as-written；legacy 站 computed → rgb()。
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg, red, blue)"),
+            "linear-gradient(30deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(to right bottom, red, blue)"),
+            "linear-gradient(to right bottom, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // `color()` 预定义站保真（css-color-4 §9.1 computed 不坍缩 legacy rgb）。
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg, color(srgb 1 0 0), blue)"),
+            "linear-gradient(30deg, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        // 角词序保真 + color() 站。
+        assert_eq!(
+            computed_gradient("linear-gradient(to right bottom, color(srgb 1 0 0), blue)"),
+            "linear-gradient(to right bottom, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn linear_method_attachment_and_redundancy() {
+        // 方法附着头后（`in` 后置空格附着）；lab 恒非缺省。
+        assert_eq!(
+            computed_gradient("linear-gradient(in lab, red, blue)"),
+            "linear-gradient(in lab, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg in oklab, red, blue)"),
+            "linear-gradient(30deg in oklab, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(to right bottom in srgb-linear, red, blue)"),
+            "linear-gradient(to right bottom in srgb-linear, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // 冗省：legacy 站 `in srgb` 省略 / 预定义站 `in oklab` 省略 / 预定义站
+        // `in srgb` 非缺省保留。
+        assert_eq!(
+            computed_gradient("linear-gradient(in srgb, red, blue)"),
+            "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg in srgb, red, blue)"),
+            "linear-gradient(30deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in oklab, color(srgb 1 0 0), blue)"),
+            "linear-gradient(color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in srgb, color(srgb 1 0 0), blue)"),
+            "linear-gradient(in srgb, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg in oklab, color(srgb 1 0 0), blue)"),
+            "linear-gradient(30deg, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn linear_method_canonical_forms() {
+        // xyz 别名展开；hsl 模型身份保留；shorter hue 缺省省略 / longer 保留。
+        assert_eq!(
+            computed_gradient("linear-gradient(in xyz, red, blue)"),
+            "linear-gradient(in xyz-d65, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hsl, red, blue)"),
+            "linear-gradient(in hsl, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hsl shorter hue, red, blue)"),
+            "linear-gradient(in hsl, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hsl longer hue, red, blue)"),
+            "linear-gradient(in hsl longer hue, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hwb increasing hue, red, blue)"),
+            "linear-gradient(in hwb increasing hue, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn radial_size_unit_resolution_and_position_model() {
+        // size-only 纯长度；ellipse 双长度省略形状 + em 归一（16px 基准 40em=640px）。
+        assert_eq!(
+            computed_gradient("radial-gradient(50px, red, blue)"),
+            "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(ellipse 50% 40em, red, blue)"),
+            "radial-gradient(50% 640px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // 位置模型化：关键字对 → %；4-token 缘偏移对关键字剥离 + em 归一。
+        assert_eq!(
+            computed_gradient("radial-gradient(at right center, color(srgb 1 0 0), blue)"),
+            "radial-gradient(at 100% 50%, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        // 方法附着与冗省（size-only 头 + method 组合）。
+        assert_eq!(
+            computed_gradient("radial-gradient(50px in lab, red, blue)"),
+            "radial-gradient(50px in lab, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(50px in srgb, red, blue)"),
+            "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(50px in oklab, color(srgb 1 0 0), blue)"),
+            "radial-gradient(50px, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(in oklab, color(srgb 1 0 0), blue)"),
+            "radial-gradient(color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn conic_from_angle_and_position_pairs() {
+        // from 角度保真；4-token 位对模型化（关键字剥离 + em 归一）。
+        assert_eq!(
+            computed_gradient("conic-gradient(from 30deg, red, blue)"),
+            "conic-gradient(from 30deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(at left 10px top 50em, red, blue)"),
+            "conic-gradient(at 10px 800px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(from 30deg in srgb-linear, red, blue)"),
+            "conic-gradient(from 30deg in srgb-linear, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(in oklab, color(srgb 1 0 0), blue)"),
+            "conic-gradient(color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        // 无配置纯站形不发射缺省 from/at。
+        assert_eq!(
+            computed_gradient("conic-gradient(red, blue)"),
+            "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // 缺省形省略（R2751 getComputedStyle 口径）：`from 0deg` / `at center`。
+        assert_eq!(
+            computed_gradient("conic-gradient(from 0deg, red, blue)"),
+            "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at center, red, blue)"),
+            "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn radial_legacy_config_forms_r2751_parity() {
+        // part04 getComputedStyle 既有 oracle 形（g42 computed 头 helper 与模型
+        // 路径同口径）：关键字 size 保形、circle 附非缺省位、circle 半径、
+        // farthest-side 关键字。
+        assert_eq!(
+            computed_gradient("radial-gradient(farthest-side, red, blue)"),
+            "radial-gradient(farthest-side, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(circle at 25% 40%, red, blue)"),
+            "radial-gradient(circle at 25% 40%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // circle + 显式半径 → 半径（ending shape 由单长度隐含，`circle` 缺省省略，
+        // 与 parse 期 canonicalize_radial_head / part04 computed oracle 同口径）。
+        assert_eq!(
+            computed_gradient("radial-gradient(circle 50px, red, blue)"),
+            "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
         );
     }
 }

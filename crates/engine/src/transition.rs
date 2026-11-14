@@ -363,6 +363,14 @@ fn color_value_to_string(color: &ColorValue) -> String {
         ColorValue::RelativeColor(_) => "rgb(from …)".to_string(),
         // contrast-color() 在 transition 串化中罕见，回退为占位（对比色求值 defer）。
         ColorValue::ContrastColor(_) => "contrast-color(…)".to_string(),
+        // color() 预定义空间：按 canonical 形串化（css-color-4 §9.1；alpha 1 省略）。
+        ColorValue::ColorFunction(f) => {
+            let mut s = format!("color({} {} {} {})", f.space, f.comps[0], f.comps[1], f.comps[2]);
+            if f.alpha < 1.0 {
+                s.push_str(&format!(" / {}", f.alpha));
+            }
+            s
+        }
     }
 }
 

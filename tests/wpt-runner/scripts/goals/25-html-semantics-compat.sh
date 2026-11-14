@@ -256,6 +256,16 @@ fetch_raw "html/semantics/embedded-content/the-img-element/image.png"
 # 动态 @import 事件臂，以本资产为 MIME 真形态基准。
 fetch_raw "html/semantics/document-metadata/the-style-element/support/css-red.txt"
 
+# ③k the-img-element relevant mutations 族助资产（s441）：relevant-mutations.html
+# 46 键 + relevant-mutations-lazy.html 1 键 + adoption.html 1 键引用
+# /images/green-2x2.png——上游 pin 在档（jsdelivr 301 落地 2×2 16-bit RGB 实测）。
+# s126 曾误判缺席而本地生成（gitignore 不入库），本树资源丢失后 48 键伪红潜伏
+# 10 天（11-05 s293 绿 → 11-14 s440 sweep 全红）才被全量 join 揭出。改走 fetch_raw
+# 常规通道后 fresh checkout / 资源丢失均由 make 前置 fetch 步自愈；断言面只看
+# load/error/currentSrc/naturalWidth，8-bit（旧本地版）与 16-bit（上游）字节差
+# 零波及（s441 solo 复验 121P/0F/0T）。
+fetch_raw "images/green-2x2.png"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

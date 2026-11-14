@@ -4438,6 +4438,13 @@
                 }
               } catch (_eSsPv) {}
             }
+            // g44（css-style-attr §2）：style 内容属性写面逐声明 invalid 渐变拒收——
+            // handle 世界 setAttribute 通道此前原文落库，invalid 渐变经
+            // getPropertyValue/cssText（_styleProxy readRaw replay）回显伪成功
+            //（color-stops-parsing 60F 靶面）。过滤语义见 part06
+            // `_zwStyleAttrDeclFilter`（幸存声明原文保形，非重序列化）。物化世界
+            //（detached doc）同型臂在 part03 `_zwMElSetAttribute`。
+            if (n === 'style') v = _zwStyleAttrDeclFilter(v);
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
             // s433：name/id 内容属性写 bump FORM 具名集合 attr 纪元（`_zwFormAttrEpoch`，
@@ -8326,7 +8333,13 @@
                       // 恒等），且既有代理全部携旧章——写回即两侧判 removed/键配对
                       // 全断（s40/r5250/media-m3b7·m3x14/t68-contains 五钉红根因）。
                       var _mvWire = String(child.__zwSelector);
-                      if (_mvOldSel && _mvKids && _mvIdx >= 0) {
+                      // s440 CE 域门：同 R125 摘挂臂——普通页面 move-in 摘挂的章值
+                      // 重算在交叠批次下与 host drain 交互失准（focus-after-close
+                      // 实证孤儿双现），CE 外回缓章原行为；CE 内维持 M3-A 对齐。
+                      if (_mvOldSel && _mvKids && _mvIdx >= 0
+                          && child.nodeType === 1
+                          && typeof globalThis.__zw_is_ce_host === 'function'
+                          && globalThis.__zw_is_ce_host(child)) {
                         var _mvTag = String(child.localName || '').toLowerCase();
                         var _mvEI = 0;
                         for (var _mvk3 = 0; _mvk3 <= _mvIdx; _mvk3++) {
@@ -9637,9 +9650,20 @@
               // 兜底（M3-A 前既有口径，语料长期绿）。
               var _r125Sel = String(child.__zwSelector);
               var _r125Wire = _r125Sel;
+              // s440 CE 域门：章值重算只在 contenteditable 宿主子树内的摘挂启用
+              //（__zw_is_ce_host 沿 parentNode 链判 inherit）。普通页面 DOM 摘挂
+              //（WPT focus-after-close「Complex dialog usage」实证）同批交叠下
+              // 重算模拟的「apply 时树态」与 host 实际 drain 交互（td 命令穿插）
+              // 失准 → Remove 错位/miss → 孤儿双现 → querySelector 通道歧义 null
+              //（file:81 input null + getElementsByTagName 2 现实证）。CE 外回缓章
+              // 原行为（M3-A 前口径，s433 基线长期绿）；CE 内摘挂维持 M3-A 对齐
+              // 修复（ip A/B 族 37 键依赖）。文本 child 无 localName 本就跳过重算。
               if (sel && typeof _childNodeList === 'function'
                   && _r125Sel.indexOf('zwsh') !== 0
-                  && _r125Sel.indexOf('|') < 0) {
+                  && _r125Sel.indexOf('|') < 0
+                  && child.nodeType === 1
+                  && typeof globalThis.__zw_is_ce_host === 'function'
+                  && globalThis.__zw_is_ce_host(child)) {
                 var _r125Tag = String(child.localName || '').toLowerCase();
                 var _r125Kids = null, _r125Idx = -1, _r125EI = 0;
                 try {

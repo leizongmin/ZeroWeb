@@ -1846,7 +1846,7 @@ fn font_stretch_percentage_tree_valid(expr: &values::CalcExpr, percent_ctx: bool
         | CalcExpr::Mix(..)
         | CalcExpr::Progress { .. }
         | CalcExpr::TreeCounting(_) => true,
-        CalcExpr::Time(_) => false,
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
     }
 }
 
@@ -1854,7 +1854,7 @@ fn has_percentage_leaf(expr: &values::CalcExpr) -> bool {
     use values::{CalcExpr, LengthValue};
     match expr {
         CalcExpr::Length(LengthValue::Percentage(_)) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(l, _, r) => has_percentage_leaf(l) || has_percentage_leaf(r),
         _ => false,
     }

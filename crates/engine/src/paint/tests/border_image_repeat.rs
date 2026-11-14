@@ -395,6 +395,7 @@ fn test_border_image_gradient_source_nine_slice() {
     let mut style = ComputedStyle::default();
     style.border_image_source = BorderImageSourceComputedValue::Gradient(GradientValue::Linear(LinearGradient {
         interpolation: Default::default(),
+        specified: None,
         direction: GradientDirection::ToBottom,
         stops: vec![
             GradientColorStop {
@@ -489,6 +490,7 @@ fn test_border_image_replaces_border_style_painting() {
     style.border_left_color = ColorValue::Rgba(255, 0, 0, 255);
     style.border_image_source = BorderImageSourceComputedValue::Gradient(GradientValue::Linear(LinearGradient {
         interpolation: Default::default(),
+        specified: None,
         direction: GradientDirection::ToBottom,
         stops: vec![
             GradientColorStop {
