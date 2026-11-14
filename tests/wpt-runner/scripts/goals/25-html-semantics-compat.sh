@@ -266,6 +266,16 @@ fetch_raw "html/semantics/document-metadata/the-style-element/support/css-red.tx
 # 零波及（s441 solo 复验 121P/0F/0T）。
 fetch_raw "images/green-2x2.png"
 
+# ③l the-input-element color.window.js 助资产（s443 重落，s442 首落即撤）：
+# color.window.js META script 引 /css/support/color-testcommon.js——上游 pin
+# 在档（167 行 self-contained，jsdelivr 实测）。s442 曾以「solo hang ×4 →
+# 全量 sweep 毒化」假设撤落；s443 以实测翻案：同资源在场全量双腿干净跑通
+# （solo ×7 含 5/15/30s 三档 deadline 均零 hang，s442 的 4/4 hang 未再复现，
+# 判定为其时他流 reftest 重腿机器态绑定的一次性竞态，观察项挂账）。重落后
+# 预期键面位移 F−1（load support 假红消）+ P+196（s442 四跑 + s443 全量腿
+# 实证 196/196 全 Pass）。
+fetch_raw "css/support/color-testcommon.js"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

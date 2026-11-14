@@ -2,38 +2,47 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 442 收口（小尾巴分诊 + color.window.js 三段
-定谳；账本
-evidence/2026-11-15-m2s442-color-window-teardown-hang-attribution.md，
-零源码零语料净变更）。
-分诊收窄：col-span-limits 2F = offsetWidth 渲染域（clamp 三键已 Pass，
-引擎 colspan 钳制健全）、rowspan-0 ×2 = clientHeight 渲染域、onblur ×2
-= s209 在册族、details/embed/textarea/audio 余 = 渲染域或能力门；
-**主勘根 = color.window.js 三段定谳**：①"load support" 假 Fail =
-/css/support/color-testcommon.js 缺席（他 goal 部分拉取未覆盖，上游 pin
-在档 167 行 self-contained）；②资源就位后真面 **196/196 全 Pass**（色
-值矩阵 + limited-srgb/display-p3/alpha，四次独立 solo 逐键一致）——假
-Fail 背后无真红；③**默认 30s deadline → completion-teardown hang**（末
-子测后进程树静默僵死，execute_script 同步不返回阻死 Rust deadline 轮
-询；`ZW_CORPUS_CASE_TIMEOUT_SECS=15` 覆写 solo 干净 rc=0 全 196 Pass
-= runner deadline 先到期走 force-collect 臂可绕；机制假设：注入 harness
-页预算与 case deadline 同值 30s，二者同到 harness timeout handler 在
-shim 内同步死循环）。全量 sweep 同默认 30s → 该案 worker 挂死毒化
-join，**资源补齐在 hang 修复前不可落地**：③l fetch 行撤销 + 本地资源
-删除，假 Fail 键留账面。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137。下一步：**主攻 shim completion/timeout
-teardown hang 勘根修复**（15s/30s 对照 + do_wait 活体采样证据链已
-足），修复后重落 ③l 资源 → 预期 F−1/P+196 位移按语料变更归因；次序
-combobox tentative 12 续分诊；全桥套件绿窗轮末收口跑常态化；基带
-8113P/206F/6T/1U 维持（本轮零净变更）。**组合树复验（push 后
-2026-11-15）**：rebase 入他流 g45 image-set 文法位（74c1159c3）+
-f6a70ef86 ip 壳携精化，双腿复验键全集 8320 逐键恒等零 GONE/NEW，
-stable 面恰 1 键单腿 P↔F 置换（dialog-overlay computed overlay
-initially 'none'，在册负载族渲染邻接面，按族振荡记账），基带维持
-——与 s441 对 fb81665dd 复验结论同型（账本「组合树复验」节）。复验后
-push 窗口又入他流 g46 calc 负分辨率/content×image-set（b0c689f42，
-css-values 窄域）：本轮未再复验，下一轮全量 sweep（hang 修复验证本就要
-跑）时按语料变更一并归因，F−1/P+196 判定以其为基。
+**状态**: Active——M2 切片 443 收口（s442 hang 未复现降级观察项 + ③l
+资源重落 **+196P 双腿落地**；账本
+evidence/2026-11-15-m2s443-color-resource-reland-hang-nonrepro.md）。
+**hang 定谳翻案**：s442 的 4/4 hang 本轮 0/7 复现（solo 30s/5s、s442
+二进制原地重编译重跑、loadavg 17 CPU 压载、全量 sweep 双腿均干净），
+判定 s442 时窗他流 reftest 重腿机器态绑定的一次性竞态，机制假设
+（deadline↔页预算同值竞态 shim 死循环）未证实——**降级观察项**，再现
+时按修正采样协议抓 runner 本体线程级现场（s442 采样对象疑为 make/guard
+壳，RSS 5.5MB + wchan do_wait 为壳特征）。打印结构勘明：solo 输出在
+parallel_map 全量 join 返回之后，hang 日志有 196 行即收集已完成，
+「worker 挂死毒化 join」句勘误。**资源重落**：③l fetch_raw
+"css/support/color-testcommon.js" 回加（上游 pin 5992 字节实测）；全量
+双腿（main = g45/g46 组合树）**stable 8512 键（8303P/201F/5T/1U）
+Pass 全一致，vs s441 恰 F−1/P+196 零其他位移**；分歧仅 select-home-end
+族 5 键 T↔F 单腿振荡（在册负载族记账）；g45/g46 组合树归因一并清偿
+（s442 挂账关闭）。**新基带 8303P/206F/6T/1U**（族振荡换算口径）。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
+下一步：**combobox tentative 12 分诊**（popover/键盘指针合成面，逐键
+定能力门 vs 引擎面）+ **label forwarded-click 键 2 勘根**（s442 分诊
+留勘：label.click() 不可信转发疑引擎事件面）；次序全桥套件绿窗轮末
+收口跑常态化；hang 观察项静默哨（不主动施工）。
+
+> **▶ 承前（2026-11-15 M2 切片 442 收口）——小尾巴分诊 + color.window.js
+> 三段定谳（账本
+> evidence/2026-11-15-m2s442-color-window-teardown-hang-attribution.md，
+> 零源码零语料净变更；hang 部分已被 s443 翻案，资源判据以 s443 为准）**：
+> 分诊收窄：col-span-limits 2F = offsetWidth 渲染域（clamp 三键已 Pass，
+> 引擎 colspan 钳制健全）、rowspan-0 ×2 = clientHeight 渲染域、onblur ×2
+> = s209 在册族、details/embed/textarea/audio 余 = 渲染域或能力门；
+> **主勘根 = color.window.js 三段定谳**：①"load support" 假 Fail =
+> /css/support/color-testcommon.js 缺席（他 goal 部分拉取未覆盖，上游 pin
+> 在档 167 行 self-contained）；②资源就位后真面 **196/196 全 Pass**（色
+> 值矩阵 + limited-srgb/display-p3/alpha，四次独立 solo 逐键一致）——假
+> Fail 背后无真红；③默认 30s deadline 下 solo 末子测后进程静默僵死
+> （③l 首落即撤 + 本地资源删除——s443 已实测翻案并重落，见上）。
+> **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
+> **组合树复验（push 后 2026-11-15）**：rebase 入他流 g45 image-set 文法
+> 位（74c1159c3）+ f6a70ef86 ip 壳携精化，双腿复验键全集 8320 逐键恒等
+> 零 GONE/NEW，stable 面恰 1 键单腿 P↔F 置换（dialog-overlay computed
+> overlay initially 'none'，在册负载族渲染邻接面，按族振荡记账），基带
+> 维持——与 s441 对 fb81665dd 复验结论同型（账本「组合树复验」节）。
 
 > **▶ 承前（2026-11-15 M2 切片 441 收口）——红池 48 键伪红定谳清偿 +
 > fetch_raw 自愈化 + 基带重测（账本
