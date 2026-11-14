@@ -12245,6 +12245,109 @@
         var v1 = String(boundaryText.nodeValue || '');
         var head1 = v1.slice(0, boundaryOff);
         var tail1 = v1.slice(eo);
+        // IP-M3 刀 A 族（2026-11-14）：非首行裸文本 caret 左段裸留。corpus A 族
+        // 22 键（insertparagraph.html）实录 Chrome 在 caret 前宿主直子存在 <br>
+        // （多行裸内容面）时左段不裹块：prev 兄弟与 head 段原地留宿主根层，tail
+        // 段与后随兄弟入新块（`foo<br>bar[]<br><span>baz</span>` → `foo<br>bar
+        // <div><br><span>baz</span></div>`；`ba[]r` 词中切片 → `foo<br>ba<div>r
+        // <br><span>baz</span></div>`）。首行面（caret 前无 br：mt rich 组 `foo[]
+        // bar` 23 案、`[]foo` F2 空块 pad 录音）维持下方案 wrap 径不变。行首形
+        // （offset 0 且前一兄弟即 br）根层补裸 <br> 行界（`foo<br>[]bar…` →
+        // `foo<br><br><div>bar…`，5 案实录）。仅 collapsed 开门（非折叠选区面无
+        // corpus 锚保守维持 wrap）。跨域移动纪律同下臂（先 plain removeChild
+        // detach 再 append，Q6 静默半挂/序列化拷贝双面）。
+        var m3aBr = false;
+        var m3aBare = true;
+        for (var m3ap = boundaryText.previousSibling; m3ap;
+            m3ap = m3ap.previousSibling) {
+          if (m3ap.nodeType === 1
+              && String(m3ap.tagName || '').toLowerCase() === 'br') {
+            m3aBr = true;
+          }
+          // 裸留重建面仅支持 text|br 左组（A 族 22 键形 `foo<br>` 前缀恒此）；
+          // 左组含 styled 壳等元素面维持 wrap 径（C2/F 族，选面普查定谳另刀）。
+          if (m3ap.nodeType !== 3
+              && !(m3ap.nodeType === 1
+                  && String(m3ap.tagName || '').toLowerCase() === 'br')) {
+            m3aBare = false;
+          }
+        }
+        if (rng.collapsed && m3aBr && m3aBare) {
+          // 前一兄弟 br 判定先于摘挂（removeChild 后 previousSibling 失效）。
+          var m3aPrevEl = boundaryText.previousSibling;
+          var m3aPrevBr = boundaryOff === 0 && m3aPrevEl
+            && m3aPrevEl.nodeType === 1
+            && String(m3aPrevEl.tagName || '').toLowerCase() === 'br';
+          // 左组摘挂走 wrap 臂同序（TEMP-TRACE 实证：跳过左组直接摘
+          // boundaryText 时本桥首突变 removeChild 静默失明——宿主 JS 列表
+          // 原封不动，输出=列表序列化残段；headParts 先动后摘挂序列 corpus
+          // wrap 面已实证干净）。摘挂时快照左组 specs（text 数据/br 形），
+          // 裸留回挂以 fresh 节点重建——宿主直子不留原 parse-el 节点（原
+          // 子留宿主时末序序列化重发右组残段；fresh 节点无桥记录，X5 探针
+          // 实证视图干净）。appendChild 序 = 左组 → head 段 → 行首 br → 新块。
+          var m3aLeftSpecs = [];
+          var mv1hM = boundaryText.previousSibling;
+          var headPartsM = [];
+          while (mv1hM) {
+            headPartsM.push(mv1hM);
+            mv1hM = mv1hM.previousSibling;
+          }
+          for (var hiM = headPartsM.length - 1; hiM >= 0; hiM--) {
+            var hnM = headPartsM[hiM];
+            m3aLeftSpecs.push(hnM.nodeType === 3
+              ? { t: 3, v: String(hnM.nodeValue || '') } : { t: 1 });
+            if (hnM.parentNode) {
+              try { hnM.parentNode.removeChild(hnM); } catch (_eM3ah) {}
+            }
+          }
+          refAfter1 = boundaryText.nextSibling;
+          host.removeChild(boundaryText);
+          var mv1tM = refAfter1;
+          var tailPartsM = [];
+          while (mv1tM) {
+            tailPartsM.push(mv1tM);
+            mv1tM = mv1tM.nextSibling;
+          }
+          // 尾组快照序列化 + 摘挂 + sep 内重建（2026-11-14 IP-M3）：章子跨父移动的
+          // engine 落位走 Remove/AppendChildByHandleSel 同键 stash 复用，缓章在批内
+          // 前序摘挂后漂移时复用失联退序列化拷贝（TEMP-TRACE 双现实证）。快照读
+          // JS 树（此时刻正确）→ 逐子摘挂（R125 fresh 章发射，源父侧真摘）→
+          // innerHTML= 重建（R5340 视子同域，fresh 解析节点落位，无 stash 依赖）。
+          // head 段文本一并入快照串（innerHTML= 整体重建会清先前子节点，tail1
+          // 节点预挂会被抹）。文本 escape（outerHTML 元素专属；注释直还原）。
+          var m3aTailHtml = tail1
+            ? String(tail1).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            : '';
+          for (var tiM = 0; tiM < tailPartsM.length; tiM++) {
+            var tnM = tailPartsM[tiM];
+            try {
+              m3aTailHtml += (tnM.nodeType === 3)
+                ? String(tnM.nodeValue || '')
+                  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                : (tnM.nodeType === 8
+                  ? '<!--' + String(tnM.nodeValue || '') + '-->'
+                  : String(tnM.outerHTML || ''));
+            } catch (_eM3th) {}
+            if (tnM.parentNode) {
+              try { tnM.parentNode.removeChild(tnM); } catch (_eM3am) {}
+            }
+          }
+          if (m3aTailHtml) sep1.innerHTML = m3aTailHtml;
+          if (!(sep1.childNodes || []).length) {
+            // 右半空（caret 宿主内容尾）：新块占位 <br>（同 phbr 惯例带标）。
+            var phbrM3a = document.createElement('br');
+            phbrM3a.__zwPlaceholderBr = true;
+            sep1.appendChild(phbrM3a);
+          }
+          for (var siM = 0; siM < m3aLeftSpecs.length; siM++) {
+            host.appendChild(m3aLeftSpecs[siM].t === 3
+              ? document.createTextNode(m3aLeftSpecs[siM].v)
+              : document.createElement('br'));
+          }
+          if (head1) host.appendChild(document.createTextNode(head1));
+          if (m3aPrevBr) host.appendChild(document.createElement('br'));
+          host.appendChild(sep1);
+        } else {
         var headBlock1 = document.createElement(sepTag);
         // DC-4（editing-compat 496/499 fallback 病形，2026-11-07 探针 Q1-Q7
         // 定谳）：宿主桥 plain 子跨域移动必须先 plain removeChild 再挂 engine
@@ -12295,6 +12398,7 @@
         }
         host.appendChild(headBlock1);
         host.appendChild(sep1);
+        }
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
         // 跨域移动纪律同 boundaryText 臂（先 detach 再 append，挂载延后）。

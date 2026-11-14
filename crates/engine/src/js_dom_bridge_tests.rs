@@ -191,3 +191,7 @@ include!("js_dom_bridge_tests/part113_s423_canvas_export_format.rs");
 //（class 形态 QSA 归并 / removeChild 序列化空串 / drain 后 identity 反查 /
 // fragment 视图 handle 族子宿主 wire 双臂）。
 include!("js_dom_bridge_tests/part114_t68_selhandle_registry_sync.rs");
+
+// 编辑命令兼容 ip 残 99F M3-A 探针：可编辑根层非首行裸文本 caret insertParagraph
+// 拆分左段裸留语义五形钉测（行中尾位/词中切片/行首补 br/首行 wrap guard/dPS p）。
+include!("js_dom_bridge_tests/part114_ip_root_bare_text_split_probe.rs");
