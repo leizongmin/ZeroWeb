@@ -1133,6 +1133,9 @@ position-area-basic +45/wm-dir +44/with-insets+align-justify+borders-002
 container 无 border 与 V 化无关，期望 200 恰为写前陈旧快照值、现算真值
 250 = flip-block 重算值，「last-successful 几何保持」缺口挂账（桶 3F→4F）。
 engine lib 12F（websocket/media/fetch/iframe 域）stash A/B 定谳 HEAD 同红
-既有欠账非本轮，挂账待归属。挂账：writing-modes-001 伪通过桶/last-
-successful 4F/'none' 高 18/position-area-value 文法缺口（span-top left/
-start center 形 +7）。[证据](evidence/2026-11-14-g36-border-coord-s423.md)
+既有欠账非本轮，挂账待归属（rebase 后 12F→7F 与远端 94883fbbe 清偿账
+精确对齐）。**组合态 ab4c**（远端 FORM named-first shim 面 + 本轮 V 化
+Rust 二进制）265 cases 11,977P/876F/4T 与 ab3 逐页逐位一致 REGRESSED=0
+——shim 改动与本轮 Rust 零交互扰动，g36 已 push（783b22267）。挂账：
+writing-modes-001 伪通过桶/last-successful 4F/'none' 高 18/position-
+area-value 文法缺口（span-top left/start center 形 +7）。[证据](evidence/2026-11-14-g36-border-coord-s423.md)
