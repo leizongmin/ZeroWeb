@@ -36,11 +36,14 @@ class）即可进视图重放翻绿。
 - **+4**：dynamic-001/004 + fallback-invalidation（class 面同回）+
   zz-g6probe-mut5 1；
 - **anchor-name-mutation 纹丝不动 15F（假设证伪）**：结构性放行后门开、
-  视图槽重放照跑，页面读取仍 0——瓶颈不在 gate，在视图重放/物化链上游
-  （shim template `.content.cloneNode(true)` + `append` 产出的变异形与
-  `apply_dom_mutations_full` 的 `CreateDocumentFragment`/
-  `AppendFragmentChildren(ByHandle)` 族支撑是否对上、handle/id 在视图 doc
-  的解析位，未再深挖——挂账）。
+  视图槽重放照跑。失败形态逐案对账（results JSON 双侧消息）：基座 15 案
+  全为 `got 0`（快照陈旧读）；实验组 15 案全数变值 `expected X got X+1`
+  （0→1 / 100→101 / 200→201 三轴恒 +1），且部分案断言链前移（基座
+  `expected 100 got 0` 的前置断言实验组已过、败在后段 mutation 断言）——
+  **变异重放已通到布局层、活值读已生效，残余缺口 = 重布局几何/读链恒
+  +1px**（舍入口径或参照盒基准，归 layout-engine/view 读链域；「视图重放
+  物化链上游未达」假设被同批 JSON 反证——读值若仍陈旧不应随门变值，
+  挂账更正）。
 
 ## 3. 回退决策
 
@@ -51,11 +54,22 @@ engine `git checkout` 回 HEAD；s423 收窄约定维持。
 
 ## 4. 挂账更新
 
-- anchor-name-mutation 15F 清偿前提更正：非「结构性放行」而系**视图重放/
-  物化链上游缺口**（template clone 变异形 ↔ applier 支撑面对账 + handle
-  视图 doc 解析位）——独立挂账；
+- anchor-name-mutation 15F 清偿前提更正：门与重放链已通（读值随门变值
+  实证），残账 = **重布局几何/读链恒 +1px**（三轴 15 案无一例外）——独立
+  挂账，probe 首选：同页无变异对照读数是否亦 +1（分离「布局几何漂移」与
+  「读链口径」）；
 - try-tactic/position-try 伪过池实测 203+（131+64+7+1）：清偿 =
   position-try fallback 状态机建模（master 在册挂账域）落地后同批转真；
 - 双门补丁形态存档：s424a `.acceptance/wptfyi-css/s424a-class-gate-
   widening.patch`；s424b 形（gate 单窗口判）见本 evidence §1 描述 +
   results-s424b-structural 工件。
+
+## 5. 双 session 写账竞态收敛
+
+本实验两路 session 各写一份 evidence（本文件先手 19:24 入库；并行件
+`…-gate-release.md` 补丁形态推断有误、后删）。逐案归因表（下 1069 案分页
+明细）与断言链前移证据取自并行件分析（diff-pages.py results-s424a-
+postrevert vs results-s424b-structural）：DOWN = writing-modes-001 864 +
+金丝雀 1 + try-tactic-position-area 131 + position-area-in-position-try 64
++ position-area-value 7 + position-try-tree-scoped 1 + zz-g6probe-mut6 1；
+UP = dynamic-001/004 + fallback-invalidation + zz-g6probe-mut5（§2 已并）。
