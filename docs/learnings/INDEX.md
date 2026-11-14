@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（280）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（281）
 
+- 2026-11-14 [shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口六张脸，判读先分面再动手](bugs/2026-11/2026-11-14-selhandle-registry-sync-split-faces.md) — engine
 - 2026-11-14 [序列上下文 range 位移槽与面值脱钩——同值公开 API 重锚修复](bugs/2026-11/2026-11-14-range-slot-desync-reanchor.md) — engine
 - 2026-11-14 [debug 单测 SIGILL：先 cargo clean -p 排增量缓存毒化，再查逻辑](bugs/2026-11/2026-11-14-debug-test-sigill-incremental-cache.md) — css-parser
 - 2026-11-13 [wpt editing 语料红账判读：切片伪失败与期望形真值源](bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md) — engine,tests

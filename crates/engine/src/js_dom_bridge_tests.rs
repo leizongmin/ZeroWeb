@@ -186,3 +186,8 @@ include!("js_dom_bridge_tests/part113_ip_inline_shell_split_probe.rs");
 // s423 canvas 导出编码格式面：toBlob/toDataURL type 参数接通（toBlob.jpeg 1F
 // 根因——type 忽略恒产 png Blob；png+jpeg 白名单，其余 PNG fallback）。
 include!("js_dom_bridge_tests/part113_s423_canvas_export_format.rs");
+
+// T68 sel/handle 双族注册表 sync 常驻钉：t67-minrepro 复现页核心四案例语义
+//（class 形态 QSA 归并 / removeChild 序列化空串 / drain 后 identity 反查 /
+// fragment 视图 handle 族子宿主 wire 双臂）。
+include!("js_dom_bridge_tests/part114_t68_selhandle_registry_sync.rs");

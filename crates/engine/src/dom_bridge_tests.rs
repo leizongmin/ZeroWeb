@@ -1695,27 +1695,43 @@ fn test_apply_selector_miss_does_not_abort_batch_p19() {
     );
 }
 
-/// siteopt t4（2026-10-01）P19 配套：新 lenient 位点内的悬垂 handle 契约——parent
-/// selector 命中但 child handle 悬垂时，InsertBefore 仍必须硬错（handle 表不一致是
-/// 引擎自身 bug，无浏览器语义可依，不得随 selector 失配 lenient 化被吞掉）。钉住
-/// SetAttr arm 注释与 P19 任务书宣称的「悬垂 handle 仍硬错」边界（testval 缺口① /
-/// defect N3）。
+/// siteopt t4（2026-10-01）P19 配套：新 lenient 位点内的悬垂 handle 契约。原契约
+/// （P19 时代）parent 命中但 child handle 悬垂时 InsertBefore 硬错——「handle 表
+/// 不一致是引擎自身 bug」。T68 第六面（site-compat juejin feed 归因轮，2026-11-14）
+/// 口径演进：跨批 refresh 重建使 handle 表换代清空是活体常态而非 bug，硬错毒批
+/// （整批 mutation 丢弃）的代价远大于吞掉失效条目——child handle miss 改 lenient
+/// warn+跳过（对齐同族 SetTextOnHandle R100 口径），本钉同步更新为：悬垂条目
+/// skip（树不变）且不中止整批（同批后续 mutation 照常落地）。
 #[test]
-fn test_apply_dangling_child_handle_stays_hard_error_p19() {
-    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full};
+fn test_apply_dangling_child_handle_lenient_skip_t68() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full, find_by_selector};
     let html = "<html><body><div id='score'></div><div id='panel'></div></body></html>";
-    let mutations = vec![DomMutation::InsertBefore {
-        // parent 命中（非失配路径）——确保 Err 只能来自悬垂 child handle。
-        parent_selector: "#score".to_string(),
-        child_handle: "__never_created".to_string(),
-        ref_selector: "#panel".to_string(),
-    }];
+    let mutations = vec![
+        DomMutation::InsertBefore {
+            // parent 命中（非失配路径）——旧行为 Err 只能来自悬垂 child handle。
+            parent_selector: "#score".to_string(),
+            child_handle: "__never_created".to_string(),
+            ref_selector: "#panel".to_string(),
+        },
+        // 同批后续有效 mutation 不被毒化（第六面核心断言）。
+        DomMutation::SetText {
+            selector: "#panel".to_string(),
+            text: "after".to_string(),
+        },
+    ];
     let mut doc = zero_dom::parse_html(html);
     let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None, None);
-    let err = result.expect_err("悬垂 child handle 必须硬错，不得被 P19 lenient 化吞掉");
-    assert!(
-        err.contains("unknown child handle"),
-        "硬错必须是 handle 表悬垂（unknown child handle），实际: {err}"
+    result.expect("悬垂 child handle 必须跳过该条而非中止整批（T68 第六面口径）");
+    // 悬垂条目不产出效果：#score 子树不变。
+    let score = find_by_selector(&doc, "#score").expect("#score 应存在");
+    assert!(doc.child_nodes(score).is_empty(), "悬垂条目 skip 后 #score 子树不变");
+    // 后续有效条目照常落地（不毒批）。
+    let panel = find_by_selector(&doc, "#panel").expect("#panel 应存在");
+    assert_eq!(
+        doc.inner_html(panel),
+        "after",
+        "同批后续 mutation 必须照常落地（不毒批）；html={}",
+        doc.inner_html(doc.root())
     );
 }
 
