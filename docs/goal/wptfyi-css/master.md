@@ -2,6 +2,24 @@
 
 **2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g38 完成（11-14）**：anchor-size() used 值布局期求值刀——六尺寸槽
+（`ComputedStyle::anchor_size_slots`）+ 四 inset 槽双形承载，布局期
+anchor_pos pass3 按锚几何回填 used 宽高（css-anchor-position-1 §4：
+物理/含块/自身三轴映射 + 隐式缺省关键字 + fallback + replaced 均匀
+缩放 + 普通值清槽防回灌）；anchor 语料对 HEAD 基线净 **+70**
+（+77/−7 全 Fail↔Pass：anchor-size 四页 +52、anchor-name 家族
++18/−6、ident-function −1）；HEAD+g38 = 265 页 11,199P/1,654F/4T。
+见 [evidence 2026-11-14-g38-anchor-size-used-value](evidence/2026-11-14-g38-anchor-size-used-value.md)。
+**g39 账目更正（11-14，g38 轮定谳）**：上段 g39 组合态账
+12,061P/796F（对 g37-final 真态净 +68、本刀 +3 零回归）撤销——系
+provenance 过期 A/B 二进制所测（18:27:55 编译先于 18:39 终版提交；
+留存日志实存 12,061P/792F 亦 Δ4F）。提交态逐案分解：账基线更正为
+g37-final 工件基 **11,989P**/864F（旧线 11,993P 与工件 Δ+4P，原始
+stdout 未存无法复源；本轮三 corpus 键集逐案同一全按工件计），g39
+直接效应 +5、伪通过摘除 −865（writing-modes-001 864 + 探针页 1）、
+净 **−860**——strut 门揭了先在 VRL in-flow 布局缺口（writing-modes-001
+1296P 系 sizing 空转重布局副作用撑出的伪通过桶，g36 挂账疑定谳），
+修复面另立 VRL in-flow 布局刀；g38 净 +70 独立计。同见 g38 evidence §4/§6。
 **g39 完成（11-14）**：空绝位 auto 高 strut 门——abspos 塌 0 补测只对
 有行内内容盒写行高近似（CSS2 §10.6.4），g36 'none' 形态挂账清偿；组合态
 账 265 页 12,061P/796F/4T（对 g37-final 真态净 +68），本刀面 +3 零回归；
@@ -1252,3 +1270,32 @@ JSON +76 / 对 g37-final 真态 **+68**（skew 8 = 伪绿 12 − 伪红 4 互消
 P→F REG + anchor-name-003 页内混翻挂账 g38 流）。探针链先验：none
 `0,0,0,0`（原 18）、span-all/top-left 两形态零扰动。
 [证据](evidence/2026-11-14-g39-abs-empty-strut-gate.md)
+
+**（g39 账目定谳更正 + g38 收口，11-14 深夜，g38 轮）**：g38
+anchor-size() used 值刀收口时三 corpus 对账揭两处账基偏差并定谳 g39
+伪通过揭穿。其一**账基线更正**——g37-final 在账 11,993P/864F/4T，
+results-g37-final JSON 工件实存 **11,989P**/864F/4T（Δ+4P，原始
+stdout 日志未存无法复源）；g39 组合态在账 12,061P/796F，留存日志
+zw-g37-strutgate.log 实存 12,061P/**792**F（Δ4F）且该跑二进制
+provenance 过期（18:27:55 起编先于 18:39 终版 gate 提交，sizing.rs
+提交态分歧 solo bisect 实证）。其二**g39 揭穿定谳**——HEAD 提交态
+（g38 stash）重录 corpus 11,129P/1,724F，对 g37-final 工件基逐案
+分解：直接效应 +5（position-area-basic ×2、multicol-001、
+dynamic-001、dynamic-004）、伪通过摘除 −865（anchor-position-
+writing-modes-001 **864** + zz-g36probe-wm001-drain 探针页 1）、净
+**−860**；writing-modes-001 1296P→432P/864F 机制 = g39
+`style != style_before` 终写判关掉了空绝位盒的空转重布局，而该重
+布局对 VRL 容器 in-flow 锚几何 load-bearing（1296P 系副作用撑出的
+伪通过，g36 挂账桶定谳）；先在 VRL in-flow 布局缺口另立修复刀。
+其三 **g38 净 +70**——六尺寸槽 + 四 inset 双形承载布局期回填 used
+宽高（§4 三轴映射/隐式缺省/fallback/replaced 均匀缩放/清槽防回灌），
+对 HEAD 基线 11,129P→**11,199P**/1,654F（+77/−7 全 Fail↔Pass：
+anchor-size 四页 +52 恰合预估、anchor-name 家族 +18/−6、misc +7/−0、
+ident-function −1）；−7 挂账两域：锚资格 §3.2 刀（含块链/tree-order
+「positioned after」排除，name-002 ×2 + name-003 ×4，与
+anchor-position-004 32F 同域）+ gCS resolved-value 刀（ident-function
+−1，内联双形声明被接受后 width 槽 Auto gCS 'auto'≠'15px'）。
+单测 style-system 4 + layout-engine 5 新钉全过（三 crate unit 全绿、
+fmt/clippy 净）。教训：跑批账必须锚工件 JSON 逐案计数（stdout 汇总
+与账本转抄可 ±4 漂移），二进制 provenance 先于数字采信。
+[证据](evidence/2026-11-14-g38-anchor-size-used-value.md)

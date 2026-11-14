@@ -343,6 +343,13 @@ pub struct ComputedStyle {
     /// `left: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
     /// 非继承。
     pub anchor_inset_left: Option<Box<str>>,
+    /// `anchor-size()` 尺寸槽声明原文按槽承载（css-anchor-position-1 §4；仅含
+    /// `anchor-size(` 平衡函数形的声明——布局期 anchor_pos pass 求值 used 值回填
+    /// 宽高，本槽置位时对应尺寸槽存初始 Auto。None = 页面无任何 anchor-size
+    /// 尺寸声明零成本）。margin 槽承载挂账（FIXME: gCS 读出静态路径
+    /// GENERATION_CACHE 级联无布局几何，used margin 回写需跨通道布线——
+    /// anchor-size-001 margin 段语料待专刀）。非继承。
+    pub anchor_size_slots: Option<Box<AnchorSizeSlots>>,
 
     // ── Overflow ──
     /// overflow-x 属性。
@@ -727,6 +734,24 @@ pub struct ComputedStyle {
     /// 每元素重算（seed 含元素标识，跨元素不同——sharing §9.4 语义）。
     /// <https://drafts.csswg.org/css-values-5/#random-evaluating>
     pub random_computed: std::collections::HashMap<String, String>,
+}
+
+/// `anchor-size()` 尺寸槽声明原文集（css-anchor-position-1 §4；见
+/// [`ComputedStyle::anchor_size_slots`]）。槽位名 = 物理尺寸属性名。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AnchorSizeSlots {
+    /// `width: anchor-size(...)` 声明原文（小写 trim）。
+    pub width: Option<Box<str>>,
+    /// `height: anchor-size(...)` 声明原文。
+    pub height: Option<Box<str>>,
+    /// `min-width: anchor-size(...)` 声明原文。
+    pub min_width: Option<Box<str>>,
+    /// `min-height: anchor-size(...)` 声明原文。
+    pub min_height: Option<Box<str>>,
+    /// `max-width: anchor-size(...)` 声明原文。
+    pub max_width: Option<Box<str>>,
+    /// `max-height: anchor-size(...)` 声明原文。
+    pub max_height: Option<Box<str>>,
 }
 
 /// 自定义属性共享表（不可变；父子链经 `Arc` 共享避免逐元素克隆）。

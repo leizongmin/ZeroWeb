@@ -13,7 +13,9 @@
 //!
 //! 第一刀边界（挂账）：
 //! - anchor() 逻辑边关键字（start/end/self-*，需锚元素写作模式映射）不介入
-//!   （回落 fallback/槽位既有行为）；anchor-size() 尺寸槽求值另刀；
+//!   （回落 fallback/槽位既有行为）；anchor-size() 尺寸槽/inset 槽求值已接
+//!   （§4 轴映射，见 `resolve_anchor_size_raw`；margin 槽承载挂账——gCS 双
+//!   通道布线另刀）；
 //! - 无名 anchor() 默认锚取 `position-anchor` 值；缺省（spec 树序 preceding
 //!   默认锚规则，§position-anchor）不介入；
 //! - `position-anchor` 缺失（无显式锚名）区域定位不介入（默认锚树序规则待
@@ -125,6 +127,16 @@ pub(super) fn apply_anchor_position_area(root: &mut LayoutBox, styles: &HashMap<
 /// 锚名 → 锚几何查找（含 position-anchor 默认锚兜底的调用侧闭包形态；行内/
 /// 滚上下文介入门在闭包内统一生效——显式名与默认锚同口径）。
 type AnchorLookup<'a> = dyn Fn(&str) -> Option<AnchorGeo> + 'a;
+
+/// anchor-size() 求值上下文（clippy too_many_arguments 收参）：默认锚几何、
+/// 轴映射写作模式基（inline/block 按 CB、self-* 按目标）与 fallback 长度
+/// 基字号。
+struct AnchorSizeCtx<'a> {
+    default_geo: Option<AnchorGeo>,
+    cb_vertical: bool,
+    self_vertical: bool,
+    font_size: &'a zero_css_parser::values::LengthValue,
+}
 
 /// anchor() 原文 → CB 坐标系 px 求值。`slot`：求值 inset 属性名（left/right/
 /// top/bottom）——物理轴与缺省边（bare `anchor(--a1)` 缺 side 时按槽属性取
@@ -271,8 +283,27 @@ fn apply_inset_walk(
                 .position_anchor
                 .as_deref()
                 .and_then(|n| gated_lookup(anchors, n, child_sc));
+            // anchor-size() 轴映射写作模式基：CB = 本盒（inset/尺寸槽
+            // inline/block 关键字），目标 = 子盒 style（self-* 关键字）。
+            let cb_vertical = b
+                .node_id
+                .and_then(|nid| styles.get(&nid))
+                .is_some_and(|cb| cb.writing_mode.is_vertical_block_flow());
+            let self_vertical = s.writing_mode.is_vertical_block_flow();
+            let size_ctx = AnchorSizeCtx {
+                default_geo,
+                cb_vertical,
+                self_vertical,
+                font_size: &s.font_size,
+            };
             let resolve = |raw: &str, slot: &str, cb_size: f32| {
-                resolve_anchor_inset(raw, slot, cb_size, &lookup, default_geo, (cb_x, cb_y), &s.font_size)
+                if raw.starts_with("anchor-size(") {
+                    // anchor-size() inset 槽：求值结果即 inset 量（无 anchor()
+                    // 坐标/对边换算语义——§4 求值产出 <length> 直接入槽）。
+                    resolve_anchor_size_raw(raw, slot, cb_size, &lookup, &size_ctx)
+                } else {
+                    resolve_anchor_inset(raw, slot, cb_size, &lookup, default_geo, (cb_x, cb_y), &s.font_size)
+                }
             };
             let l = s.anchor_inset_left.as_deref().and_then(|r| resolve(r, "left", cb_w));
             let rr = s.anchor_inset_right.as_deref().and_then(|r| resolve(r, "right", cb_w));
@@ -313,6 +344,106 @@ fn apply_inset_walk(
                 }
             } else if let Some(bv) = bt {
                 child.y = cb_h - bv - mb - child.height;
+            }
+            // ── anchor-size() 尺寸槽求值（css-anchor-position-1 §4 used 值面）──
+            // 解析面无锚几何 fail-closed（槽位存 Auto），此处按锚几何回填 used
+            // 宽高。显式尺寸与 inset 双侧拉伸并存时显式尺寸胜（后置覆盖）；
+            // replaced 元素按固有比/aspect-ratio 均匀缩放（css-anchor-1 §4
+            // "Specifying the width or the height should scale uniformly"——
+            // anchor-size-replaced-001 钉面）；min/max 先 min 后 max（CSS2
+            // §10.4 约束表次序）。margin 槽承载挂账（FIXME: gCS 读出静态路径
+            // GENERATION_CACHE 级联无布局几何，见 ComputedStyle::anchor_size_slots）。
+            if let Some(slots) = s.anchor_size_slots.as_ref() {
+                let resolve_size = |raw: &str, slot: &str, cb_size: f32| {
+                    resolve_anchor_size_raw(raw, slot, cb_size, &lookup, &size_ctx)
+                };
+                let spec_w = slots.width.as_deref().and_then(|r| resolve_size(r, "width", cb_w));
+                let spec_h = slots.height.as_deref().and_then(|r| resolve_size(r, "height", cb_h));
+                let spec_min_w = slots
+                    .min_width
+                    .as_deref()
+                    .and_then(|r| resolve_size(r, "min-width", cb_w));
+                let spec_min_h = slots
+                    .min_height
+                    .as_deref()
+                    .and_then(|r| resolve_size(r, "min-height", cb_h));
+                let spec_max_w = slots
+                    .max_width
+                    .as_deref()
+                    .and_then(|r| resolve_size(r, "max-width", cb_w));
+                let spec_max_h = slots
+                    .max_height
+                    .as_deref()
+                    .and_then(|r| resolve_size(r, "max-height", cb_h));
+                let set_w = |c: &mut LayoutBox, v: f32| {
+                    c.width = v;
+                    c.content_width = (v - c.border_left - c.border_right - c.padding_left - c.padding_right).max(0.0);
+                };
+                let set_h = |c: &mut LayoutBox, v: f32| {
+                    c.height = v;
+                    c.content_height = (v - c.border_top - c.border_bottom - c.padding_top - c.padding_bottom).max(0.0);
+                };
+                if spec_w.is_none()
+                    && spec_h.is_none()
+                    && spec_min_w.is_none()
+                    && spec_min_h.is_none()
+                    && spec_max_w.is_none()
+                    && spec_max_h.is_none()
+                {
+                    // 无任何槽解析成功（锚缺失全页/未介入形）→ 保持既有布局行为。
+                } else if child.is_replaced {
+                    let cur_w = child.width;
+                    let cur_h = child.height;
+                    // 有效比：aspect-ratio 属性优先（语料 t11/t12），否则当前
+                    // used 尺寸固有比（natural ratio——img 16×16 = 1）。
+                    let ratio = s
+                        .aspect_ratio
+                        .filter(|r| *r > 0.0)
+                        .unwrap_or_else(|| if cur_h > 0.0 { cur_w / cur_h } else { 1.0 });
+                    let mut w = spec_w.unwrap_or_else(|| spec_h.map(|h| h * ratio).unwrap_or(cur_w));
+                    let mut h = spec_h.unwrap_or_else(|| spec_w.map(|ww| ww / ratio).unwrap_or(cur_h));
+                    if let Some(m) = spec_min_w.filter(|m| *m > w) {
+                        let scale = m / w;
+                        w = m;
+                        h *= scale;
+                    }
+                    if let Some(m) = spec_min_h.filter(|m| *m > h) {
+                        let scale = m / h;
+                        h = m;
+                        w *= scale;
+                    }
+                    if let Some(m) = spec_max_w.filter(|m| *m < w) {
+                        let scale = m / w;
+                        w = m;
+                        h *= scale;
+                    }
+                    if let Some(m) = spec_max_h.filter(|m| *m < h) {
+                        let scale = m / h;
+                        h = m;
+                        w *= scale;
+                    }
+                    set_w(child, w);
+                    set_h(child, h);
+                } else {
+                    if let Some(v) = spec_w {
+                        set_w(child, v);
+                    }
+                    if let Some(v) = spec_h {
+                        set_h(child, v);
+                    }
+                    if let Some(m) = spec_min_w {
+                        set_w(child, child.width.max(m));
+                    }
+                    if let Some(m) = spec_min_h {
+                        set_h(child, child.height.max(m));
+                    }
+                    if let Some(m) = spec_max_w {
+                        set_w(child, child.width.min(m));
+                    }
+                    if let Some(m) = spec_max_h {
+                        set_h(child, child.height.min(m));
+                    }
+                }
             }
         }
         apply_inset_walk(child, vx, vy, child_sc, styles, anchors);
@@ -359,12 +490,14 @@ fn collect_anchors(
                 }
             }
         }
-        // anchor() inset 声明存在性（无锚页 fallback 求值仍需走 pass3）。
+        // anchor()/anchor-size() 函数声明存在性（无锚页 fallback 求值仍需走
+        // pass3——尺寸槽 fallback 形可无锚名）。
         if !*found_insets
             && (s.anchor_inset_top.is_some()
                 || s.anchor_inset_right.is_some()
                 || s.anchor_inset_bottom.is_some()
-                || s.anchor_inset_left.is_some())
+                || s.anchor_inset_left.is_some()
+                || s.anchor_size_slots.is_some())
         {
             *found_insets = true;
         }
@@ -675,4 +808,119 @@ fn resolve_anchor_len(
     font_size: &zero_css_parser::values::LengthValue,
 ) -> f32 {
     super::resolve_abspos_real_length(v, font_size, 0.0, 0.0).unwrap_or(0.0)
+}
+
+// ── anchor-size() 尺寸槽/inset 槽求值（css-anchor-position-1 §4）──────────
+
+/// [`zero_style_system::ComputedStyle::anchor_size_slots`] 槽位的隐式缺省
+/// <anchor-size> 关键字（§4 "defaults to the axis of the property"）：物理
+/// width 族槽 → self-inline（inline 轴经目标自身写作模式映射）、height 族
+/// 槽 → self-block；物理 inset 槽 left/right → width、top/bottom → height
+///（物理属性槽轴 = 物理维度）。语料钉面：anchor-size-001 implicit 段
+///（width/left → 5、height/top → 7，全 HTB 物理 = 逻辑两说同值）。
+/// FIXME: 逻辑尺寸槽（inline-size/block-size）承载未接（apply 臂未捕获）。
+fn anchor_size_default_keyword(slot: &str) -> &'static str {
+    match slot {
+        "width" | "min-width" | "max-width" => "self-inline",
+        "height" | "min-height" | "max-height" => "self-block",
+        "left" | "right" => "width",
+        _ => "height",
+    }
+}
+
+/// <anchor-size> 关键字 → 锚物理维度（css-anchor-position-1 §4 轴映射）：
+/// width/height 物理直取；inline/block 按包含块写作模式（锚自身写作模式
+/// 无关——anchor-size-writing-modes-001「Anchor's `writing-mode` should not
+/// matter」四行断言钉面）；self-inline/self-block 按目标元素自身写作模式
+///（同页「self-inline and self-block take target's writing-mode」钉面）。
+fn anchor_size_axis_px(kw: &str, g: &AnchorGeo, cb_vertical: bool, self_vertical: bool) -> Option<f32> {
+    Some(match kw {
+        "width" => g.w,
+        "height" => g.h,
+        "inline" => {
+            if cb_vertical {
+                g.h
+            } else {
+                g.w
+            }
+        }
+        "block" => {
+            if cb_vertical {
+                g.w
+            } else {
+                g.h
+            }
+        }
+        "self-inline" => {
+            if self_vertical {
+                g.h
+            } else {
+                g.w
+            }
+        }
+        "self-block" => {
+            if self_vertical {
+                g.w
+            } else {
+                g.h
+            }
+        }
+        _ => return None,
+    })
+}
+
+/// anchor-size() 声明原文 → px 求值（css-anchor-position-1 §4 used 值面）。
+/// `slot`：消费属性名（隐式形缺省关键字与 fallback % 轴向由此派生）；
+/// `cb_size`：槽轴向 CB padding box 尺寸（fallback 百分比基）。
+/// 显式名查无 + 默认锚 None → fallback `<length-percentage>` → 仍无 → None
+///（槽位保持既有行为 = 初始 Auto；spec invalid → fallback → IACVT 链）。
+/// 逻辑关键字写作模式映射：inline/block 按 CB（`cb_vertical`）、self-* 按
+/// 目标（`self_vertical`）。
+/// https://drafts.csswg.org/css-anchor-position-1/#anchor-size
+fn resolve_anchor_size_raw(
+    raw: &str,
+    slot: &str,
+    cb_size: f32,
+    lookup: &AnchorLookup,
+    ctx: &AnchorSizeCtx,
+) -> Option<f32> {
+    let inner = raw.strip_prefix("anchor-size(")?.strip_suffix(')')?;
+    let (head, fallback) = split_top_level_comma(inner);
+    let mut name: Option<&str> = None;
+    let mut kw: Option<&str> = None;
+    for tok in head.split_whitespace() {
+        if tok.starts_with("--") {
+            if name.is_some() {
+                return None;
+            }
+            name = Some(tok);
+        } else if kw.is_none()
+            && matches!(
+                tok,
+                "width" | "height" | "inline" | "block" | "self-inline" | "self-block"
+            )
+        {
+            kw = Some(tok);
+        } else {
+            // 表外 token（超量 token/嵌套 calc() 实参形）第一刀不介入。
+            return None;
+        }
+    }
+    let geo = match name {
+        Some(n) => lookup(n),
+        None => ctx.default_geo,
+    };
+    if let Some(g) = geo {
+        let kw = kw.unwrap_or_else(|| anchor_size_default_keyword(slot));
+        return anchor_size_axis_px(kw, &g, ctx.cb_vertical, ctx.self_vertical);
+    }
+    // fallback：<length> | <percentage>（% 按槽轴向 CB 基）。auto/表外 → None。
+    let fb = fallback?.trim();
+    if let Some(p) = fb.strip_suffix('%') {
+        return p.parse::<f32>().ok().map(|p| p / 100.0 * cb_size);
+    }
+    match zero_css_parser::values::parse_length(fb) {
+        Some(zero_css_parser::values::LengthValue::Auto) | None => None,
+        Some(v) => Some(resolve_anchor_len(&v, ctx.font_size)),
+    }
 }

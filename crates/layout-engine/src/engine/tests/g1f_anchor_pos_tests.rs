@@ -840,3 +840,295 @@ fn g1f_abs_empty_auto_height() {
         cb.height
     );
 }
+
+// ── anchor-size() 尺寸槽/inset 槽求值（css-anchor-position-1 §4，g38）────
+//
+// 语料钉面：anchor-size-001（物理/implicit/inset）、anchor-size-writing-modes-
+// 001（CB 轴 inline/block + 目标轴 self-*）、anchor-size-replaced-001（均匀
+// 缩放 + aspect-ratio）、anchor-invalid-fallback（fallback <length>/<percentage>
+// 与无 fallback 锚缺失保持初始）。
+
+/// 搭 anchor-size-001 场景：positioned CB 内 anchor（5×7、anchor-name --a1）
+/// + 单 target（abspos，`apply_target` 注入槽声明）。返回 (result, target_id)。
+fn anchor_size_fixture(apply_target: impl FnOnce(&mut ComputedStyle)) -> (crate::LayoutResult, NodeId) {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let anchor = doc.create_element("div");
+    doc.append_child(container, anchor).unwrap();
+    let target = doc.create_element("div");
+    doc.append_child(container, target).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.position = zero_style_system::PositionValue::Relative;
+    container_style.width = LengthValue::Px(200.0);
+    container_style.height = LengthValue::Px(10.0);
+
+    let mut anchor_style = ComputedStyle::default();
+    // display 显式 Block（default Inline 落 inline 流门 → 锚几何被 lookup
+    // 过滤；unit fixture 无 UA 级联，r4987 同形）。
+    anchor_style.display = zero_style_system::DisplayValue::Block;
+    anchor_style.width = LengthValue::Px(5.0);
+    anchor_style.height = LengthValue::Px(7.0);
+    anchor_style.anchor_name = Some("--a1".into());
+
+    let mut target_style = ComputedStyle::default();
+    target_style.display = zero_style_system::DisplayValue::Block;
+    target_style.position = zero_style_system::PositionValue::Absolute;
+    apply_target(&mut target_style);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(anchor, anchor_style);
+    styles.insert(target, target_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    (result, target)
+}
+
+/// 物理关键字 + implicit 形（槽轴缺省）：width 槽 --a1 width → 5、height 槽
+/// --a1 height → 7、跨轴 width 槽 height → 7、implicit width 槽 → self-inline
+///（HTB = 5）。
+#[test]
+fn g38_anchor_size_sizing_physical_and_implicit() {
+    let cases = [
+        ("anchor-size(--a1 width)", 5.0, true),
+        ("anchor-size(--a1 height)", 7.0, true),
+        ("anchor-size(--a1 height)", 7.0, false), // width 槽跨物理轴
+        ("anchor-size(--a1 width)", 5.0, false),  // height 槽跨物理轴
+        ("anchor-size(--a1)", 5.0, true),         // implicit = self-inline
+        ("anchor-size(--a1)", 7.0, false),        // implicit = self-block
+    ];
+    for (raw, expected, is_width) in cases {
+        let (result, target) = anchor_size_fixture(|s| {
+            let v = raw.to_string();
+            let _ = zero_style_system::apply_property_value(s, if is_width { "width" } else { "height" }, &v);
+        });
+        let t = find(&result.root, target).expect("target box");
+        let got = if is_width { t.width } else { t.height };
+        assert!(
+            (got - expected).abs() < 0.5,
+            "{raw} @ {} 槽：got {} 应为 {}",
+            if is_width { "width" } else { "height" },
+            got,
+            expected
+        );
+    }
+}
+
+/// CB 轴与目标轴分离（writing-modes-001 双容器钉面）：VRL CB inline → 7、
+/// block → 5；VRL CB + HTB target：inline → 7、self-inline → 5、self-block → 7。
+#[test]
+fn g38_anchor_size_writing_mode_axes() {
+    use zero_style_system::WritingModeValue;
+    // VRL CB 内 target HTB：inline/block 按 CB（7/5），self-* 按 target（5/7）。
+    let cases = [
+        ("inline", 7.0),
+        ("block", 5.0),
+        ("self-inline", 5.0),
+        ("self-block", 7.0),
+    ];
+    for (kw, expected) in cases {
+        let (mut doc, body) = make_doc_with_body();
+        // 锚放 CB 外（body 直子，HTB 物理盒 5×7）：VRL 容器内子盒会被引擎
+        // 逻辑换向（style width→盒物理 h，含正交 HTB 子——既有垂直域语义）
+        // 锚物理盒不可控；anchor 查找全局（collect_anchors 全树注册），CB 轴
+        // 映射钉测只需 VRL CB + 物理已知的锚。
+        let anchor = doc.create_element("div");
+        doc.append_child(body, anchor).unwrap();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let target = doc.create_element("div");
+        doc.append_child(container, target).unwrap();
+
+        let mut anchor_style = ComputedStyle::default();
+        anchor_style.display = zero_style_system::DisplayValue::Block;
+        anchor_style.width = LengthValue::Px(5.0);
+        anchor_style.height = LengthValue::Px(7.0);
+        anchor_style.anchor_name = Some("--a1".into());
+
+        let mut container_style = ComputedStyle::default();
+        container_style.position = zero_style_system::PositionValue::Relative;
+        container_style.width = LengthValue::Px(200.0);
+        container_style.height = LengthValue::Px(10.0);
+        container_style.writing_mode = WritingModeValue::VerticalRl;
+
+        let mut target_style = ComputedStyle::default();
+        target_style.display = zero_style_system::DisplayValue::Block;
+        target_style.position = zero_style_system::PositionValue::Absolute;
+        // target 显式 HTB：self-* 关键字按目标自身写作模式映射（继承 VRL 会
+        // 翻转 self-*/期望表——显式钉 HTB 保持期望表物理直觉）。
+        target_style.writing_mode = WritingModeValue::HorizontalTb;
+        let decl = format!("anchor-size(--a1 {kw})");
+        assert!(zero_style_system::apply_property_value(
+            &mut target_style,
+            "width",
+            &decl
+        ));
+
+        let mut styles = HashMap::new();
+        styles.insert(container, container_style);
+        styles.insert(anchor, anchor_style);
+        styles.insert(target, target_style);
+
+        let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let t = find(&result.root, target).expect("target box");
+        assert!(
+            (t.width - expected).abs() < 0.5,
+            "VRL CB width 槽 {kw}: got {} 应为 {}",
+            t.width,
+            expected
+        );
+    }
+}
+
+/// inset 槽：left: anchor-size(--a1 width) → x = 5（CB padding box 相对）；
+#[test]
+fn g38_anchor_size_inset_slot_offsets() {
+    let (result, target) = anchor_size_fixture(|s| {
+        assert!(zero_style_system::apply_property_value(
+            s,
+            "left",
+            "anchor-size(--a1 width)"
+        ));
+        assert!(zero_style_system::apply_property_value(s, "top", "anchor-size(--a1)"));
+    });
+    let t = find(&result.root, target).expect("target box");
+    assert!(
+        (t.x - 5.0).abs() < 0.5,
+        "left inset 5 + margin 0 → x=5（CB 原点 0）got {}",
+        t.x
+    );
+    assert!(
+        (t.y - 7.0).abs() < 0.5,
+        "top implicit inset 7 → y=7（CB 原点 0）got {}",
+        t.y
+    );
+}
+
+/// fallback：显式名查无 → <length>（42px）/ <percentage>（10% × CB 200 = 20）
+/// 兜底；无 fallback → 保持初始（宽 0 不覆写）。
+#[test]
+fn g38_anchor_size_fallback_and_missing_anchor() {
+    let (result, target) = anchor_size_fixture(|s| {
+        assert!(zero_style_system::apply_property_value(
+            s,
+            "width",
+            "anchor-size(--unknown width, 42px)"
+        ));
+    });
+    let t = find(&result.root, target).expect("target box");
+    assert!((t.width - 42.0).abs() < 0.5, "fallback 42px got {}", t.width);
+
+    let (result, target) = anchor_size_fixture(|s| {
+        assert!(zero_style_system::apply_property_value(
+            s,
+            "width",
+            "anchor-size(--unknown width, 10%)"
+        ));
+    });
+    let t = find(&result.root, target).expect("target box");
+    assert!((t.width - 20.0).abs() < 0.5, "fallback 10% × 200 got {}", t.width);
+
+    let (result, target) = anchor_size_fixture(|s| {
+        assert!(zero_style_system::apply_property_value(
+            s,
+            "width",
+            "anchor-size(--unknown width)"
+        ));
+    });
+    let t = find(&result.root, target).expect("target box");
+    assert!(t.width.abs() < 0.5, "无 fallback 锚缺失保持初始 shrink got {}", t.width);
+}
+
+/// replaced 均匀缩放（anchor-size-replaced-001 钉面）：声明 16×16 img 上
+/// min-width: anchor-size(--a1 height)=24 → 均匀放大 24×24；max-width 5 →
+/// 5×5；width 5 + aspect-ratio 0.5 → 5×10。
+#[test]
+fn g38_anchor_size_replaced_uniform_scale() {
+    let replaced_fixture = |decls: &[(&str, &str)], aspect: Option<f32>| -> (crate::LayoutResult, NodeId) {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let anchor = doc.create_element("div");
+        doc.append_child(container, anchor).unwrap();
+        let img = doc.create_element("img");
+        doc.append_child(container, img).unwrap();
+
+        let mut container_style = ComputedStyle::default();
+        container_style.position = zero_style_system::PositionValue::Relative;
+        container_style.width = LengthValue::Px(200.0);
+        container_style.height = LengthValue::Px(10.0);
+
+        let mut anchor_style = ComputedStyle::default();
+        anchor_style.display = zero_style_system::DisplayValue::Block;
+        anchor_style.width = LengthValue::Px(5.0);
+        anchor_style.height = LengthValue::Px(24.0);
+        anchor_style.anchor_name = Some("--a1".into());
+
+        let mut img_style = ComputedStyle::default();
+        img_style.display = zero_style_system::DisplayValue::Block;
+        img_style.position = zero_style_system::PositionValue::Absolute;
+        // 固有 16×16 载体：声明宽高替代 img intrinsic 管线（本刀只钉缩放逻辑）。
+        img_style.width = LengthValue::Px(16.0);
+        img_style.height = LengthValue::Px(16.0);
+        img_style.aspect_ratio = aspect;
+        for (prop, v) in decls {
+            assert!(
+                zero_style_system::apply_property_value(&mut img_style, prop, v),
+                "{prop}"
+            );
+        }
+
+        let mut styles = HashMap::new();
+        styles.insert(container, container_style);
+        styles.insert(anchor, anchor_style);
+        styles.insert(img, img_style);
+
+        let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        (result, img)
+    };
+
+    // min-width 24 > 16 → 均匀放大 24×24（replaced-001 t5/t6）。
+    let (result, img) = replaced_fixture(&[("min-width", "anchor-size(--a1 height)")], None);
+    let b = find(&result.root, img).expect("img box");
+    assert!(
+        (b.width - 24.0).abs() < 0.5 && (b.height - 24.0).abs() < 0.5,
+        "min 24 → 24×24 got {}×{}",
+        b.width,
+        b.height
+    );
+
+    // max-width 5 < 16 → 均匀缩小 5×5（t7/t8）。
+    let (result, img) = replaced_fixture(&[("max-width", "anchor-size(--a1 width)")], None);
+    let b = find(&result.root, img).expect("img box");
+    assert!(
+        (b.width - 5.0).abs() < 0.5 && (b.height - 5.0).abs() < 0.5,
+        "max 5 → 5×5 got {}×{}",
+        b.width,
+        b.height
+    );
+
+    // width 5 + aspect-ratio 0.5 → 5×10（t11）。
+    let (result, img) = replaced_fixture(&[("width", "anchor-size(--a1 width)")], Some(0.5));
+    let b = find(&result.root, img).expect("img box");
+    assert!(
+        (b.width - 5.0).abs() < 0.5 && (b.height - 10.0).abs() < 0.5,
+        "w5 r0.5 → 5×10 got {}×{}",
+        b.width,
+        b.height
+    );
+
+    // height 5 + aspect-ratio 2 → 10×5（t12）。
+    let (result, img) = replaced_fixture(&[("height", "anchor-size(--a1 width)")], Some(2.0));
+    let b = find(&result.root, img).expect("img box");
+    assert!(
+        (b.width - 10.0).abs() < 0.5 && (b.height - 5.0).abs() < 0.5,
+        "h5 r2 → 10×5 got {}×{}",
+        b.width,
+        b.height
+    );
+}

@@ -53,6 +53,35 @@ pub(crate) fn parse_length_or_math_quirks(value: &str) -> Option<LengthValue> {
         .map(|expr| LengthValue::Calc(Box::new(expr)))
 }
 
+/// anchor-size() 尺寸槽原文捕获判定（css-anchor-position-1 §4）：值含
+/// `anchor-size(` 且括号平衡 → 小写原文承载（布局期 anchor_pos pass 求值
+/// used 值回填，槽位暂存初始 Auto——与 inset 槽 anchor() 承载臂同模式）。
+/// 样式解析面无锚几何 fail-closed；参数域/文法细拒面由写文法门
+/// `anchor_funcs_valid`（engine shim 链）保底。未闭括号形（语料
+/// anchor-size-001 上游 typo `anchor-size(--a1 width"`）CSS parse 面即声明
+/// 无效 → 不承载（返回 None 落既有 parse 拒面）。函数名左边界不设防与
+/// inset 承载臂同口径（`--anchor-size(` custom property 形值由调用方
+/// custom-property 臂先消费不达本函数）。
+fn anchor_size_slot_capture(value: &str) -> Option<Box<str>> {
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    if !lower.contains("anchor-size(") {
+        return None;
+    }
+    let mut depth = 0i32;
+    for ch in lower.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    Some(lower.into_boxed_str())
+}
+
 /// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
 ///
 /// 返回 true 表示成功设置。
@@ -180,20 +209,37 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "width" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（布局期
+            // anchor_pos pass 求值 used 值，槽位暂存初始 Auto）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).width = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.width = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.width = None;
+                }
                 return true;
             }
         }
         "height" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).height = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.height = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.height = None;
+                }
                 return true;
             }
         }
@@ -299,26 +345,50 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "min-width" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).min_width = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.min_width = map_bare_fit_content_avail(value, v);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.min_width = None;
+                }
                 return true;
             }
         }
         "min-height" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).min_height = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.min_height = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.min_height = None;
+                }
                 return true;
             }
         }
         "max-width" => {
             if value.eq_ignore_ascii_case("none") {
                 style.max_width = LengthValue::Px(f64::INFINITY);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_width = None;
+                }
+                return true;
+            }
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).max_width = Some(raw);
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
@@ -326,12 +396,23 @@ pub fn apply_property_value_with_quirks(
                     return false;
                 }
                 style.max_width = map_bare_fit_content_avail(value, v);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_width = None;
+                }
                 return true;
             }
         }
         "max-height" => {
             if value.eq_ignore_ascii_case("none") {
                 style.max_height = LengthValue::Px(f64::INFINITY);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_height = None;
+                }
+                return true;
+            }
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).max_height = Some(raw);
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
@@ -339,6 +420,9 @@ pub fn apply_property_value_with_quirks(
                     return false;
                 }
                 style.max_height = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_height = None;
+                }
                 return true;
             }
         }
@@ -1102,11 +1186,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "top" => {
-            // CSS Anchor Positioning §anchor()：inset 槽 anchor() 形原文承载
-            //（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位基线）。
-            // "anchor-size(" 无 "anchor(" 子串不误捕（inset 属性本不接受
-            // anchor-size，非法形走既有 parse 拒面）。
-            if value.contains("anchor(") {
+            // CSS Anchor Positioning §anchor()/§anchor-size()：inset 槽函数形
+            // 原文承载（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位
+            // 基线）。"anchor-size(" 无 "anchor(" 子串（anchor 与 `(` 间有 `-`），
+            // 双形并查；普通长度路径清承载槽（后声明胜出——stale 槽防回灌）。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_top = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.top = LengthValue::Auto;
                 return true;
@@ -1114,12 +1198,14 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.top = v;
+                    style.anchor_inset_top = None;
                     return true;
                 }
             }
         }
         "right" => {
-            if value.contains("anchor(") {
+            // 同 top 臂：anchor()/anchor-size() 双形并查 + 普通长度路径清承载槽。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_right = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.right = LengthValue::Auto;
                 return true;
@@ -1127,12 +1213,14 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.right = v;
+                    style.anchor_inset_right = None;
                     return true;
                 }
             }
         }
         "bottom" => {
-            if value.contains("anchor(") {
+            // 同 top 臂：anchor()/anchor-size() 双形并查 + 普通长度路径清承载槽。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_bottom = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.bottom = LengthValue::Auto;
                 return true;
@@ -1140,12 +1228,14 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.bottom = v;
+                    style.anchor_inset_bottom = None;
                     return true;
                 }
             }
         }
         "left" => {
-            if value.contains("anchor(") {
+            // 同 top 臂：anchor()/anchor-size() 双形并查 + 普通长度路径清承载槽。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_left = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.left = LengthValue::Auto;
                 return true;
@@ -1153,6 +1243,7 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.left = v;
+                    style.anchor_inset_left = None;
                     return true;
                 }
             }
