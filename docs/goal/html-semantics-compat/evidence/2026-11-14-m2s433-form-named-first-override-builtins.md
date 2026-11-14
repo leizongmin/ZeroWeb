@@ -236,6 +236,16 @@ vlink/alink），无 form/script——与本轮零关联。候选归因：349a89
 系统色关键词化，今日 06:52，UA 默认色域相邻）或 g35（css-parser
 anchor_area 重写）。归属渲染流 legacy smoke 门禁（其规则：UA 样式变更须跑）。
 
+### 后记（push 后组合态复跑，17:5x）
+
+push 时 pull --rebase 带入他流 94883fbbe（editing 流「ip M3-A 门禁批
+enginelib 五新红归因——R125/move-in 线章与身份章分离」）。组合态复跑：
+**1561P/7F——上表 5 例（#302 相关移除/序列化单根）已被该修复清偿**，
+「单根可能性高」预判实证。归属注记修正：五例出现于 #302 合入态
+（pre-#302 engine 7F 实证不变），清偿经 editing 流门禁批落地（归因口径
+两流各异，以修复面 move-in 线章/身份章分离为准）。余 7 例异步事件派发
+面红仍在 main，全树 bisect 待下轮。
+
 ### 产物补充
 
 - 门禁日志：/tmp/s433/ut-bridge-final.log、ut-isolated12.log、

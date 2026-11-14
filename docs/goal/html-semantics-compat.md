@@ -40,15 +40,15 @@ elements should override builtins + 红利案 selectedcontent-listbox（机制
 （1556P/12F，12F 全 main 既有——pre-s433 engine 同 12 红，本轮零新增）
 + product-smoke-legacy exit 0（37-form-controls struct PASS）。**全域
 发现挂账（移交/待办）**：①桥套件 12 红——5 例系 PR #302（t68 registry
-sync）合入后新发（pre-#302 engine 7F 实证，含其自带契约钉自身红；同指
-移除/序列化单根，移交 site-opt 流）；7 例早于今日 08:07 已红（引入点
-全树 bisect 待下轮；签名共性=异步事件派发缺；全桥套件绿窗无账可考≥
-两周——轮末收口宜加一次全桥套件跑防静默红窗）；②legacy smoke 首例
-01-body-attrs struct FAIL（fixture 无 form/script 与本轮零关联，候选
-349a891ed UA 系统色关键词化 / g35，移交渲染流）。下一步：7 例全树
-bisect 归因（或等 site-opt/渲染流各自认领）；selectedcontent 翻绿机制
-归因；window.open 真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D A2
-待门决）；dialog R-s31 簇/img density/embed sizing face 到货复验。
+sync）合入后新发（pre-#302 engine 7F 实证），**push 后组合态已被他流
+94883fbbe（move-in 线章/身份章分离）清偿，复跑 1561P/7F**；余 7 例早于
+今日 08:07 已红（引入点全树 bisect 待下轮；签名共性=异步事件派发缺；
+全桥套件绿窗无账可考≥两周——轮末收口宜加一次全桥套件跑防静默红窗）；
+②legacy smoke 首例 01-body-attrs struct FAIL（fixture 无 form/script
+与本轮零关联，候选 349a891ed UA 系统色关键词化 / g35，移交渲染流）。
+下一步：7 例全树 bisect 归因；selectedcontent 翻绿机制归因；window.open
+真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D A2 待门决）；dialog
+R-s31 簇/img density/embed sizing face 到货复验。
 
 > **▶ 承前（2026-11-14 M2 切片 432 收口）——links 域 a/area target=_blank
 > aux 臂施工轮（T 池 4 键全解挂，stable-P +34 零消失）**：账本
