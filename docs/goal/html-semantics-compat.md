@@ -2,29 +2,55 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 443 收口（s442 hang 未复现降级观察项 + ③l
-资源重落 **+196P 双腿落地**；账本
-evidence/2026-11-15-m2s443-color-resource-reland-hang-nonrepro.md）。
-**hang 定谳翻案**：s442 的 4/4 hang 本轮 0/7 复现（solo 30s/5s、s442
-二进制原地重编译重跑、loadavg 17 CPU 压载、全量 sweep 双腿均干净），
-判定 s442 时窗他流 reftest 重腿机器态绑定的一次性竞态，机制假设
-（deadline↔页预算同值竞态 shim 死循环）未证实——**降级观察项**，再现
-时按修正采样协议抓 runner 本体线程级现场（s442 采样对象疑为 make/guard
-壳，RSS 5.5MB + wchan do_wait 为壳特征）。打印结构勘明：solo 输出在
-parallel_map 全量 join 返回之后，hang 日志有 196 行即收集已完成，
-「worker 挂死毒化 join」句勘误。**资源重落**：③l fetch_raw
-"css/support/color-testcommon.js" 回加（上游 pin 5992 字节实测）；全量
-双腿（main = g45/g46 组合树）**stable 8512 键（8303P/201F/5T/1U）
-Pass 全一致，vs s441 恰 F−1/P+196 零其他位移**；分歧仅 select-home-end
-族 5 键 T↔F 单腿振荡（在册负载族记账）；g45/g46 组合树归因一并清偿
-（s442 挂账关闭）。**新基带 8303P/206F/6T/1U**（族振荡换算口径）。
-双腿后 push 窗口又入他流 g47（position 缘偏移 + object-position shim
-拒收，88dd6b3ef，css-多域窄面）：未再复验，下轮全量 sweep 一并归因。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137。
-下一步：**combobox tentative 12 分诊**（popover/键盘指针合成面，逐键
-定能力门 vs 引擎面）+ **label forwarded-click 键 2 勘根**（s442 分诊
-留勘：label.click() 不可信转发疑引擎事件面）；次序全桥套件绿窗轮末
-收口跑常态化；hang 观察项静默哨（不主动施工）。
+**状态**: Active——M2 切片 444 收口（label 2 键勘根定谳资产伪红第三例
++ ③m 资源落地 **F−2/P+2 双腿确证** + combobox 12 分诊定谳 + 全域资产
+盘点；账本
+evidence/2026-11-15-m2s444-label-asset-reland-combobox-triage.md）。
+**label 定谳**：solo 实况两键均 `ReferenceError: getEvent is not
+defined`——案外链 /pointerevents/pointerevent_support.js 缺席（上游 pin
+19111 字节 self-contained 实测）；资源就位后 **solo 2/2 全 Pass**，
+s442 双判据翻案（键 1 非 testdriver 能力门——runner 内建 stub 健在；
+键 2 非引擎事件面——label.click() untrusted 转发面健全）。施工：③m
+fetch_raw "pointerevents/pointerevent_support.js"。**combobox tentative
+12 分诊定谳**：三机制全为簇 D customizable select/combobox 规格基建
+组成件（datalist-popover 基建 7 + :active-option 选择器 3 + :filtered
+初始过滤 2），资源面完整非能力门——**并入 GB-20261031 门记账**，s441
+「疑能力门族留续分诊」关闭。**全域资产盘点（2636 案外链全解析）**：
+testdriver ×243 = runner 内建 stub 伪缺失排除；customizable-select-
+styles.css ×47 = 簇 D 门开随批落；common.js ×19 / hyperlink-auditing
+×18 = 无位移不落；伪红散账模式收口（资产地图落账本）。**全量双腿**
+（main = g47 组合树，③m 在场）：stable 8514 键（**8305P/203F/5T/1U**）
+Pass 两腿全一致，vs s443 **恰 label 2 键 F−2/P+2 零其他位移**；g47
+归因随本轮双腿清偿（legs 即跑在 g47 树上）；stable Fail 差额 201→203 =
+select-home-end 族 4 键同 Fail 相位入 stable + detailed 1 键 T↔F（在册
+负载族记账口径）。**全桥套件绿窗收口跑：1625P/0F rc=0**（基线 1596P，
++29 = 组合树他流入树新钉面，零红）。**in-domain 自由面实质清零**：
+稳定红池 203F 全数归门（select 147 + combobox 12 = 簇 D；video 4 =
+VIDEO 门）、跨域（dialog 16 / img 13 / tabular 4 = 渲染域）、在册族
+（select-home-end 5 / onblur 2）。**新基带 8305P/203F/5T/1U**（stable
+join 口径）+ select 族 5 键振荡记账。**挂用户门维持**：GB-20261114-
+VIDEO + GB-20261031（簇 D，combobox 12 并入 + styles.css ×47 defer）+
+s137。下一步：**基带巡查轮**（全量 sweep 或轻量覆盖，他流入树一并
+归因）+ 候门决项提示用户（video P1+P2 / 簇 D A2 / s137）；rendering
+流 dialog 16 红块协同面（归 rendering 流记账）；hang 观察项静默哨
+（不主动施工）。
+
+> **▶ 承前（2026-11-15 M2 切片 443 收口）——s442 hang 0/7 复现降级观察
+> 项 + ③l color-testcommon.js 资源重落 +196P 双腿确证（账本
+> evidence/2026-11-15-m2s443-color-resource-reland-hang-nonrepro.md）**：
+> **hang 定谳翻案**：s442 的 4/4 hang 本轮 0/7 复现（solo 30s/5s、s442
+> 二进制原地重编译重跑、loadavg 17 CPU 压载、全量 sweep 双腿均干净），
+> 判定 s442 时窗他流 reftest 重腿机器态绑定的一次性竞态，机制假设
+> （deadline↔页预算同值竞态 shim 死循环）未证实——**降级观察项**，再现
+> 时按修正采样协议抓 runner 本体线程级现场（s442 采样对象疑为 make/guard
+> 壳，RSS 5.5MB + wchan do_wait 为壳特征）。打印结构勘明：solo 输出在
+> parallel_map 全量 join 返回之后，hang 日志有 196 行即收集已完成，
+> 「worker 挂死毒化 join」句勘误；s442「输出截断于行中」byte 级复核
+> 不成立。**资源重落**：③l fetch_raw "css/support/color-testcommon.js"
+> 回加（上游 pin 5992 字节实测）；全量双腿（main = g45/g46 组合树）
+> **stable 8512 键（8303P/201F/5T/1U）Pass 全一致，vs s441 恰 F−1/P+196
+> 零其他位移**；分歧仅 select-home-end 族 5 键 T↔F 单腿振荡；g45/g46
+> 组合树归因一并清偿（s442 挂账关闭）。
 
 > **▶ 承前（2026-11-15 M2 切片 442 收口）——小尾巴分诊 + color.window.js
 > 三段定谳（账本
