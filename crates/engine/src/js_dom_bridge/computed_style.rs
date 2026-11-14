@@ -3821,13 +3821,20 @@ fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
         // % calc 无容器尺寸不可解析（非 % calc 已 resolve）→ ''。
         P::Calc(_) => String::new(),
         P::TwoValue(h, v) => format!("{} {}", bg_position_axis_to_css(h), bg_position_axis_to_css(v)),
+        // 单缘偏移对（单轴形）：折算同 axis 口径 + 缺省轴补 center（g47）。
         P::EdgeOffset(edge, offset) => {
-            format!("{} {}", bg_edge_to_str(edge), bg_position_axis_to_css(offset))
+            let axis = bg_position_axis_to_css(&P::EdgeOffset(*edge, offset.clone()));
+            if matches!(edge, BackgroundEdge::Left | BackgroundEdge::Right) {
+                format!("{} 50%", axis)
+            } else {
+                format!("50% {}", axis)
+            }
         }
     }
 }
 
-/// 序列化 `<bg-position>` 单轴值（关键字→% / Length→px / Percent→%）。TwoValue/EdgeOffset 不应出现于轴位。
+/// 序列化 `<bg-position>` 单轴值（关键字→% / Length→px / Percent→% / 缘偏移对折算）。
+/// TwoValue 不应出现于轴位（防御空串）。
 fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
     use BackgroundPositionComputedValue as P;
     match v {
@@ -3839,18 +3846,22 @@ fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
         P::Length(f) => format_num(*f as f64, "px"),
         P::Percent(f) => format_num(*f as f64, "%"),
         P::Calc(_) => String::new(),
-        // 防御：轴位不应嵌套 TwoValue/EdgeOffset。
-        P::TwoValue(..) | P::EdgeOffset(..) => String::new(),
-    }
-}
-
-/// `<bg-position>` 边缘关键字（3/4 值 EdgeOffset 的 side）。
-fn bg_edge_to_str(e: &BackgroundEdge) -> &'static str {
-    match e {
-        BackgroundEdge::Left => "left",
-        BackgroundEdge::Right => "right",
-        BackgroundEdge::Top => "top",
-        BackgroundEdge::Bottom => "bottom",
+        // g47（object-position-computed 语料钉）：缘偏移对 computed 折算——
+        // left/top 缘 = 偏移本身（`left 5%`→`5%`）；right/bottom 缘按 100−x 折算，
+        // 百分比数值化（`right 30%`→`70%`），px 长度保 calc 形
+        //（`right 20px`→`calc(100% - 20px)`，`bottom 10px`→`calc(100% - 10px)`）。
+        // Length 在 apply 期已 resolve 为 Px，此处必为 px。
+        P::EdgeOffset(side, offset) => match side {
+            BackgroundEdge::Left | BackgroundEdge::Top => bg_position_axis_to_css(offset),
+            BackgroundEdge::Right | BackgroundEdge::Bottom => match offset.as_ref() {
+                P::Percent(p) => format_num((100.0 - *p) as f64, "%"),
+                P::Length(px) => format!("calc(100% - {})", format_num(*px as f64, "px")),
+                // FIXME: calc 偏移的缘折算（calc(100% - <calc>) 嵌套）无语料钉，暂空
+                _ => String::new(),
+            },
+        },
+        // 防御：轴位不应嵌套 TwoValue。
+        P::TwoValue(..) => String::new(),
     }
 }
 
@@ -4836,6 +4847,66 @@ mod g42_gradient_computed_serialize_tests {
         assert_eq!(
             computed_gradient("radial-gradient(circle 50px, red, blue)"),
             "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+}
+
+#[cfg(test)]
+mod g47_position_computed_fold_tests {
+    //! `<position>` 缘偏移对 computed 折算（g47，driving: object-position-computed
+    //! 3F 面）。oracle 取自 tests/wpt-runner/wpt-data/css/css-images/parsing/
+    //! object-position-computed.html：双缘偏移对 right/bottom 缘按 100−x 折算
+    //!（% 数值化、px 保 calc 形），left/top 缘偏移原样。
+
+    use super::bg_position_layer_to_css;
+    use zero_css_parser::values::BackgroundEdge;
+    use zero_style_system::BackgroundPositionComputedValue as P;
+
+    fn two(h: P, v: P) -> P {
+        P::TwoValue(Box::new(h), Box::new(v))
+    }
+
+    #[test]
+    fn right_bottom_percent_folds_numerically() {
+        // `right 30% top 60px` → `70% 60px`；`right 20% bottom 10%` → `80% 90%`。
+        assert_eq!(
+            bg_position_layer_to_css(&two(
+                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(30.0))),
+                P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(60.0))),
+            )),
+            "70% 60px"
+        );
+        assert_eq!(
+            bg_position_layer_to_css(&two(
+                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(20.0))),
+                P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Percent(10.0))),
+            )),
+            "80% 90%"
+        );
+    }
+
+    #[test]
+    fn right_bottom_px_folds_to_calc() {
+        // `right 20px bottom 10px` → `calc(100% - 20px) calc(100% - 10px)`。
+        assert_eq!(
+            bg_position_layer_to_css(&two(
+                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(20.0))),
+                P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Length(10.0))),
+            )),
+            "calc(100% - 20px) calc(100% - 10px)"
+        );
+    }
+
+    #[test]
+    fn left_top_edges_keep_offset() {
+        // left/top 缘 = 偏移本身；单 EdgeOffset 顶层（单轴对形）同折算口径。
+        assert_eq!(
+            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Left, Box::new(P::Length(5.0)))),
+            "5px 50%"
+        );
+        assert_eq!(
+            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Percent(25.0)))),
+            "50% 25%"
         );
     }
 }

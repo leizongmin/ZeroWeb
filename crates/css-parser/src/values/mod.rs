@@ -6,6 +6,7 @@ pub mod anchor;
 pub mod anchor_area;
 pub mod attr;
 pub mod calc_mix;
+pub mod calc_stop_gates;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;
@@ -18,6 +19,7 @@ pub mod parse_transform;
 pub mod random;
 pub mod serialize_gradient;
 pub mod serialize_math;
+pub mod serialize_position;
 mod transform_helpers;
 pub mod types;
 
@@ -43,6 +45,7 @@ pub use random::{
 };
 pub use serialize_gradient::*;
 pub use serialize_math::*;
+pub use serialize_position::canonicalize_position_decl;
 pub use types::*;
 
 #[cfg(test)]

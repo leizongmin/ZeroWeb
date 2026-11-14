@@ -2075,7 +2075,9 @@ pub(crate) fn normalize_decl_ws(s: &str) -> Box<str> {
 /// 色标段原文归一：逐参空白归一后以 `, ` 顶层连接（canonical 逗号间距）。
 pub(crate) fn normalize_stops_body(args: &[&str]) -> Box<str> {
     args.iter()
-        .map(|a| normalize_decl_ws(a))
+        // g47：色标内 calc canonical（顶层二元 + 百分比项在角度项前，
+        // conic-gradient-calc-angle-percentage-valid 语料钉）。
+        .map(|a| normalize_decl_ws(&super::calc_stop_gates::canonicalize_calc_stop_arg(a)))
         .collect::<Vec<_>>()
         .join(", ")
         .into_boxed_str()
@@ -2139,7 +2141,7 @@ fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorS
         // 现正确识别并消费 hint（hint 必须有前导色标，首位裸长度/% 仍非法）。
         // 渲染侧暂用线性插值——hint 中点偏移为可选 follow-up（需 GradientColorStop 加
         // hint 字段 + 渲染器改动）；本切片仅 parse-compliance，与 R2204 CDO/CDC 同族。
-        if is_color_interpolation_hint(arg) {
+        if is_color_interpolation_hint(arg, is_conic) {
             // g44 hint 文法位约束（css-images-4 §color-stop-syntax：hint 仅允许出现在
             // 两色标之间）——首位色标前（`0%, black, white`）、连续两 hint
             //（`black, 25%, 50%, white`）均拒收；尾悬挂由循环后 pending_hint 判。
@@ -2164,9 +2166,20 @@ fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorS
 
 /// 判断 arg 是否为 CSS Images 4 §4.3.8 color interpolation hint（色标间裸 <length-percentage>）：
 /// 能解析为色标位置（长度/%/calc/min/max/clamp）但不能解析为颜色（裸值，无 color 前缀）。
+/// g47：math 槽先过色标槽型别门（linear/radial 拒角度原子、conic 拒纯数字操作数），
+/// 槽型违规形不作 hint（落 parse_color_stop 拒整值）。
 /// driving: `linear-gradient(red, 30%, blue)` 中间的 `30%` / `20px` / `calc(25%)`。
-fn is_color_interpolation_hint(arg: &str) -> bool {
-    parse_stop_position(arg.trim()).is_some() && parse_color(arg.trim()).is_none()
+fn is_color_interpolation_hint(arg: &str, is_conic: bool) -> bool {
+    let t = arg.trim();
+    if super::calc_stop_gates::is_math_span(t) {
+        if !is_conic && span_has_top_level_angle_unit(&t.to_ascii_lowercase()) {
+            return false;
+        }
+        if is_conic && super::calc_stop_gates::span_has_top_level_number_operand(t) {
+            return false;
+        }
+    }
+    parse_stop_position(t).is_some() && parse_color(t).is_none()
 }
 
 /// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`、`red calc(1px / 0)`）。
@@ -2223,6 +2236,20 @@ fn parse_color_stop(s: &str, is_conic: bool) -> Option<Vec<GradientColorStop>> {
 
 /// 解析色标位置：先试长度/%/calc（[`parse_stop_position`]）；conic 额外接受裸 `<angle>`。
 fn parse_stop_position_maybe_angle(s: &str, is_conic: bool) -> Option<LengthValue> {
+    // g47（conic-gradient-calc-angle-percentage-invalid 语料钉，css-images-4
+    // §color-stop 位置槽型别）：math 函数槽 parse 前按族拒——linear/radial 色标
+    // <length-percentage> 不收角度原子（`calc(50% + 30deg)` 拒）；conic 色标
+    // <angle-percentage> 不收纯数字操作数（`calc(50% + 0)` 拒）。角度叶
+    // parse_atom 已 Number 化，CalcExpr 无法恢复型别，须按原文 provenance 判。
+    let t = s.trim();
+    if super::calc_stop_gates::is_math_span(t) {
+        if !is_conic && span_has_top_level_angle_unit(&t.to_ascii_lowercase()) {
+            return None;
+        }
+        if is_conic && super::calc_stop_gates::span_has_top_level_number_operand(t) {
+            return None;
+        }
+    }
     if let Some(lv) = parse_stop_position(s) {
         return Some(lv);
     }

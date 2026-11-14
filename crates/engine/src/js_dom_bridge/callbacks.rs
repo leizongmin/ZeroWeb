@@ -4308,10 +4308,11 @@ pub fn register_dom_callbacks(
                 }
                 // g47：object-position 文法 = <position> 全谱（css-backgrounds-3
                 // #object-position / css-values-4 #position），写值语法失败拒收
-                //（shim 写面此前零校验，object-position-invalid 组 13 案全接受）。
+                //（shim 写面此前零校验，object-position-invalid 组 13 案全接受），
+                // 合法值 canonical 序列化（水平先行、缺省轴补 center；sound 数组
+                // 语料钉 `bottom right`→`right bottom`、`10%`→`10% center`）。
                 // var() 声明期不校验（替换后语义）；CSS-wide 关键字放行（与
-                // background-image 臂同型透传）。reject-only：合法值原文保形——
-                // canonical 序列化不在本臂做，写面既有行为零回归。
+                // background-image 臂同型透传）。
                 if prop == "object-position" {
                     let lower = value.trim().to_ascii_lowercase();
                     if lower.contains("var(")
@@ -4322,10 +4323,9 @@ pub fn register_dom_callbacks(
                     {
                         return value.to_string();
                     }
-                    return if zero_css_parser::values::parse_background_position(value).is_none() {
-                        "null".to_string()
-                    } else {
-                        value.to_string()
+                    return match zero_css_parser::values::canonicalize_position_decl(value) {
+                        Some(s) => s,
+                        None => "null".to_string(),
                     };
                 }
                 if zero_css_parser::values::background_image_decl_invalid(value) {
