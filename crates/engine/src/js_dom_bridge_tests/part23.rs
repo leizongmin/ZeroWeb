@@ -948,6 +948,7 @@ fn test_iframe_content_window_post_message_transfers_ports() {
 
 #[test]
 fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 
@@ -1000,6 +1001,8 @@ fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
     );
     let xhr_fetches = Arc::new(Mutex::new(Vec::new()));
     let xhr_fetches_for_callback = xhr_fetches.clone();
+    let xhr_challenged: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let xhr_challenged_for_callback = xhr_challenged.clone();
     sandbox.register_callback(
         "__zw_fetch",
         Box::new(move |args| {
@@ -1014,7 +1017,15 @@ fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
                     args.get(6).cloned().unwrap_or_default(),
                     args.get(3).cloned().unwrap_or_default()
                 ));
-                "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
+                // M3 auth 延迟注入契约（4615680c0 起）：open()/URL userinfo 凭据首跳
+                // 不转 Authorization——恒 200 的旧 mock 下凭据永不上线（挑战流无 401
+                // 可应）。首跳回 401 Basic 挑战 → 同源透明重试携 Basic
+                //（_zwXhrAuthChallengeValue，401 不透传 JS）。
+                if !xhr_challenged_for_callback.swap(true, Ordering::SeqCst) {
+                    "__zwfr:401\x1fUnauthorized\x1fWWW-Authenticate\x1eBasic realm=\"secure\"\x1f".to_string()
+                } else {
+                    "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
+                }
             }
         }),
     );
@@ -1065,9 +1076,10 @@ fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
         "body",
         "iframe XMLHttpRequest should expose DONE and complete after a credentialed open()"
     );
-    // s180 根修语义（fetch §HTTP-network fetch 凭证提取臂）：open() 凭证入 URL
-    //（xhr.spec 步骤 14-15），send 网络层取走作 Basic 认证、以无凭证 URL 分派——
-    // M2-S3 fetch 构造校验（Request URL cannot include credentials）不受 XHR 影响。
+    // s180 根修语义（fetch §HTTP-network fetch 凭证提取臂）+ M3 auth 延迟注入
+    //（4615680c0 起）：open() 凭证入 URL（xhr.spec 步骤 14-15），首跳以无凭证 URL
+    // 分派且不携 Authorization（凭据暂存待 401 Basic 挑战同源透明重试）——M2-S3
+    // fetch 构造校验（Request URL cannot include credentials）不受 XHR 影响。
     assert!(
         xhr_fetches.lock().unwrap().iter().any(|r| r.starts_with(
             "https://wpt.test/service-workers/cache-storage/resources/file.txt|iframe:iframe|\
@@ -1082,8 +1094,8 @@ fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
             .unwrap()
             .iter()
             .any(|r| r.contains("authorization\x1eBasic YWE6YmI=")),
-        "URL userinfo should travel as Basic Authorization (base64('aa:bb') = 'YWE6YmI=', \
-         RFC 7617) with author-set Authorization taking precedence"
+        "URL userinfo should travel as Basic Authorization on the 401-challenge transparent \
+         retry leg (base64('aa:bb') = 'YWE6YmI=', RFC 7617; deferred injection per M3 auth)"
     );
     assert_eq!(
         posted.lock().unwrap().as_slice(),

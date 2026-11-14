@@ -360,20 +360,23 @@ fn test_t8k_websocket_event_flow_open_message_close() {
         sandbox.execute("String(globalThis.__events[2] || '')").unwrap().value,
         "close:true:1000:done:3"
     );
-    // close 后 send → InvalidStateError；close() 幂等（不重复发宿主命令）。
+    // close 后 send → 静默返回 undefined 且不发宿主帧（现行 spec send step 2：
+    // CLOSING/CLOSED abort these steps——send/007/008 断言面；旧版「非 OPEN 即抛
+    // InvalidStateError」已改，ba03fd7ff 起）；close() 幂等（不重复发宿主命令）。
+    // https://html.spec.whatwg.org/multipage/web-sockets.html#dom-websocket-send
+    let before = sandbox.execute("globalThis.__wsCalls.length").unwrap().value;
     assert_eq!(
         sandbox
             .execute(
-                "var invalidAfter = 'no';\
-                 try { globalThis.__ws.send('late'); } catch (e) {\
-                   invalidAfter = (e instanceof DOMException && e.name === 'InvalidStateError') ? 'yes' : ('wrong:' + e);\
-                 } invalidAfter"
+                "var sentAfter = 'no';\
+                 try { sentAfter = (globalThis.__ws.send('late') === undefined) ? 'yes' : 'ret'; }\
+                 catch (e) { sentAfter = 'threw:' + e; } sentAfter"
             )
             .unwrap()
             .value,
         "yes"
     );
-    let before = sandbox.execute("globalThis.__wsCalls.length").unwrap().value;
+    assert_eq!(sandbox.execute("globalThis.__wsCalls.length").unwrap().value, before);
     sandbox.execute("globalThis.__ws.close()").unwrap();
     assert_eq!(sandbox.execute("globalThis.__wsCalls.length").unwrap().value, before);
 }
@@ -518,7 +521,12 @@ fn test_t8k_websocket_binary_frames() {
     );
 }
 
-// err wire 非终结：onerror 派发、readyState 不变、泵继续（后续 msg 照常投递）。
+// err wire 非终结（net-api M3 契约，ba03fd7ff 起）：err 只置标记不派发——宿主保证
+// err 后必随终结 close wire，error 由 close 臂补派且恰一次（HTML spec fail the
+// WebSocket connection 语义，events/015 断言 onerror 时 readyState 已 CLOSED）；
+// err 后泵继续（后续 msg 照常投递）；close(1006, wasClean=false) wire → error
+//（已 CLOSED）先于 close 事件。
+// https://html.spec.whatwg.org/#fail-the-websocket-connection
 #[test]
 fn test_t8k_websocket_error_nonterminal() {
     let mut sandbox = ws45_sandbox!();
@@ -528,15 +536,26 @@ fn test_t8k_websocket_error_nonterminal() {
              var ws = new WebSocket('ws://example.com/err');\
              globalThis.__wse = ws;\
              ws.onerror = function() { globalThis.__ev3.push('error:' + ws.readyState); };\
-             ws.onmessage = function(e) { globalThis.__ev3.push('msg:' + e.data); };",
+             ws.onmessage = function(e) { globalThis.__ev3.push('msg:' + e.data); };\
+             ws.onclose = function(e) { globalThis.__ev3.push('close:' + e.wasClean + ':' + e.code); };",
         )
         .unwrap();
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1f')").unwrap();
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'err\\x1freset')").unwrap();
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'msg\\x1fafter-error')").unwrap();
+    // err 非终结：error 不派发（仅 msg 正常投递）、readyState 不变、泵继续。
     assert_eq!(
         sandbox.execute("globalThis.__ev3.join('|')").unwrap().value,
-        "error:1|msg:after-error"
+        "msg:after-error"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__wse.readyState)").unwrap().value, "1");
+    // 终结 close wire（fail 面 1006/wasClean=false）→ error（已 CLOSED）先于 close。
+    sandbox
+        .execute("globalThis.__wsEmit(globalThis.__lastWsId, 'close\\x1f1006\\x1f0\\x1f')")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev3.join('|')").unwrap().value,
+        "msg:after-error|error:3|close:false:1006"
     );
 }
 

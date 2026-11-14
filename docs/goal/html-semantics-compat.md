@@ -2,53 +2,70 @@
 
 **版本**: v2.0
 **日期**: 2026-11-14（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 433 收口（FORM named-first [OverrideBuiltins]
-全 trap 面 + s137 排除清单退役轮，**驱动案翻绿 stable-P +2 零消失；全域
-双跑拦下潜伏 P→F 回归一例**；账本
-evidence/2026-11-14-m2s433-form-named-first-override-builtins.md）——
-施工六处：①part03.js FORM get trap named-first 门整体前移（⓪具名集合
-缓存门，章 = apply 代际 + pending 三元 + `_zwFormAttrEpoch 纪元；重建
-collection 同置 `l 重入哨兵——嵌套收集假挂死根因 = ③写 past 条目后下轮
-重建经 `_zwLiveFormAncestor 读 form.localName 落 ④ 再开收集（R20 逐读
-探针 + L1/L2/L3 标记级联钉死）；③named/④past-names/⑤index 三臂同受
-哨兵）；②action/method/enctype/encoding/target IDL 臂后移至门后
-（named-first 胜 IDL 反射，R26 探针 `action === false 钉次序）；③
-part04/05 三漏斗（IDL 反射 setter/setAttribute/removeAttribute）name/id
-写翻 `_zwFormAttrEpoch——attr 改名不动 pending 长度的缓存失效盲区
-（R27/R28/R30 三轮探针钉面）；④part05 `_zwIsHTMLNamespace payload-first
-ns 读（`_zwSelNsCache，R6 document.forms=0——名 namespaceURI 的 radio
-投毒 proxy ns 读）；⑤script_gen.rs + part04 `Symbol.for('zw-form-reset'/
-'zw-form-elements') 内部通道（宿主复位/控件集合绕 named 命名面，未遮蔽页
-`typeof 回落）；⑥t2-pb1 fix#19c reset/requestSubmit/submit 豁免名单退役
-（前提消解：[OverrideBuiltins] 下 named 遮蔽全部接口成员系 spec 正解、
-Chrome 同遮蔽；回滚路径 = 恢复排除清单，s137 门决议落账）。**首轮全域
-sweep 拦雷**：`form-elements-sameobject P→F——前 session 加 Symbol 通道的
-Edit 把 `var _fcKind 声明行一并吞掉，`set({k:_fcKind}) 处 ReferenceError
-被空 catch 吞掉 → elements 集合缓存永不命中、每读新建（solo 17/17 照样
-带雷跑完——form-nameditem 只断言集合内容不验身份；全域 A/B 才拦下），
-补声明行 fix6。验证：solo form-nameditem 17/17 exit 0（前 16P/1F）+
-六 solo 套件 + 25 part 拼装 node --check + fmt/clippy；终稿全域双跑
-（守卫启动器每腿核源 sha + 二进制标记，防并发 session 漂移）join 对
-s432 移交基线——**stable-P 8307→8309（+2：驱动案 nameditem「Named
-elements should override builtins + 红利案 selectedcontent-listbox（机制
-未逐案归因，翻绿为真）/ P gone=0 / stable-F +1 = 簇 D home-end 4 子测
-可见化（跨批同态身份：s432 pairs-1..4 同键同 4F，非本轮回归）/ stable-T
-3→3（optional↔detailed 文件级对换，detailed solo 4F 实证负载边界 flake）/
-沾染 1=1（149.html 怪标题键切分伪影两侧对冲；基线批口径注见账本）**。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）。**收尾门禁
-（429 断点接手轮）全过**：fmt/clippy（终稿复跑）+ 桥测试套件 A/B
-（1556P/12F，12F 全 main 既有——pre-s433 engine 同 12 红，本轮零新增）
-+ product-smoke-legacy exit 0（37-form-controls struct PASS）。**全域
-发现挂账（移交/待办）**：①桥套件 12 红——5 例系 PR #302（t68 registry
-sync）合入后新发（pre-#302 engine 7F 实证），**push 后组合态已被他流
-94883fbbe（move-in 线章/身份章分离）清偿，复跑 1561P/7F**；余 7 例早于
-今日 08:07 已红（引入点全树 bisect 待下轮；签名共性=异步事件派发缺；
-全桥套件绿窗无账可考≥两周——轮末收口宜加一次全桥套件跑防静默红窗）；
-②legacy smoke 首例 01-body-attrs struct FAIL（fixture 无 form/script
-与本轮零关联，候选 349a891ed UA 系统色关键词化 / g35，移交渲染流）。
-下一步：7 例全树 bisect 归因；selectedcontent 翻绿机制归因；window.open
-真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D A2 待门决）；dialog
-R-s31 簇/img density/embed sizing face 到货复验。
+**状态**: Active——M2 切片 434 收口（桥套件 7 红全树 bisect 归因 + 全
+清偿轮，429 断点接手；**1561P/7F → 1568P/0F**；账本
+evidence/2026-11-14-m2s434-bridge-7red-bisect-attribution.md）——
+五轮串行 bisect（判据二值化脚本 bad iff 判据集 FAILED，test-guard 包裹，
+compile fail exit 125 skip；每轮 good = 上轮 first bad；锚 2e260d532
+整体 101 但判据 7 例全绿，二值化不受非判据旧红干扰）钉定引入链：ws×2 ←
+ba03fd7ff（net-api M3 ws interfaces）→ fetch_filtered ← f021e11fb（fetch
+M3 redirect）→ sw-iframe ← 4615680c0（xhr M3 auth）→ img×2 ← 015172475
+（SMIL 文档级时间线 M1）→ stream ← c6dcbce0a（http-cache M2 wire 第 12
+参）。**四案同型 = 引擎契约翻转系 upstream 语料定谳 spec 正解、桥测试
+前提过时**（仅动测试）：①part45 ws×2——err wire 只置 `_zwErrSeen，
+error 由 close 臂补派恰一次且 readyState 先 CLOSED
+（fail-the-websocket-connection），close 后 send 静默 abort（现行 spec
+send step 2，send/007/008 断言面）；②part23 sw-iframe mock 挑战流化——
+首跳 401+WWW-Authenticate → 同源透明重试携 Basic（4615680c0 延迟注入，
+恒 200 mock 下凭据永不上线）；③part10 fetch_filtered mock 302 补 ACAO
+——cors check 先于 manual→opaqueredirect 转换（f021e11fb 步序修正），
+期望串零变化；④part10 stream 网络错误腿改断 reject TypeError（c6dcbce0a
+error wire 硬 reject，不再 resolve status-0 伪响应）。**一案引擎真
+bug**：SMIL 事件泵 `_scheduleTick（part09b）setTimeout 轮询在无宿主
+定时器环境（裸 sandbox/桥测试）回落 `_defer microtask 自链不可终止
+——首个 checkpoint 烧尽 `_deferBudget(256) 且桥测试环境无
+`__zw_begin_script 重置点 → 同环境一切后续 deferred 回调（img/svg load
+`_defer` 派发面）永久丢弃；修 = part09b 单点双探针守卫
+（`__zw_test_setTimeout`/`__zw_setTimeout` 皆缺不排轮询——learnings #30
+禁 microtask 自链同判据；seek 一次性扫描单发自终结不守卫；生产
+webview/runner 双探针命中行为零变化；生产「泵 tick 链单 checkpoint 内
+×256 自链」同构饿死面在案留账）。验证：solo 7 案全绿 + 全桥套件
+**1568P/0F**（前 1561P/7F）+ 25 part 拼装 node --check + fmt 全 crate
+干净 + clippy lib+tests -D warnings 干净。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：selectedcontent 翻绿
+机制归因；window.open 真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D
+A2 待门决）；dialog R-s31 簇/img density/embed sizing face 到货复验；
+全桥套件绿窗轮末收口跑常态化（s433 挂账兑现，本轮 1568 全绿为基线）。
+
+> **▶ 承前（2026-11-14 M2 切片 433 收口）——FORM named-first
+> [OverrideBuiltins] 全 trap 面 + s137 排除清单退役轮（驱动案翻绿
+> stable-P +2 零消失；全域双跑拦下潜伏 P→F 回归一例）**：账本
+> evidence/2026-11-14-m2s433-form-named-first-override-builtins.md。
+> 施工六处：①part03.js FORM get trap named-first 门整体前移（⓪具名集合
+> 缓存门，章 = apply 代际 + pending 三元 + `_zwFormAttrEpoch 纪元；重建
+> collection 同置 `l 重入哨兵——嵌套收集假挂死根因 = ③写 past 条目后下轮
+> 重建经 `_zwLiveFormAncestor 读 form.localName 落 ④ 再开收集；③named/
+> ④past-names/⑤index 三臂同受哨兵）；②action/method/enctype/encoding/
+> target IDL 臂后移至门后（named-first 胜 IDL 反射）；③part04/05 三漏斗
+> （IDL 反射 setter/setAttribute/removeAttribute）name/id 写翻
+> `_zwFormAttrEpoch——缓存失效盲区；④part05 `_zwIsHTMLNamespace
+> payload-first ns 读；⑤script_gen.rs + part04 `Symbol.for 内部通道
+> （宿主复位/控件集合绕 named 命名面）；⑥t2-pb1 fix#19c
+> reset/requestSubmit/submit 豁免名单退役（[OverrideBuiltins] 下 named
+> 遮蔽全部接口成员系 spec 正解、Chrome 同遮蔽；回滚路径 = 恢复排除清单，
+> s137 门决议落账）。**首轮全域 sweep 拦雷**：form-elements-sameobject
+> P→F——前 session 加 Symbol 通道的 Edit 把 `var _fcKind 声明行一并吞掉，
+> ReferenceError 被空 catch 吞掉 → elements 集合缓存永不命中（solo 17/17
+> 照样带雷跑完——form-nameditem 只断言集合内容不验身份；全域 A/B 才拦
+> 下），补声明行 fix6。验证：solo form-nameditem 17/17 exit 0（前
+> 16P/1F）+ 终稿全域双跑 join 对 s432 基线——stable-P 8307→8309（+2 零
+> 消失）/ P gone=0 / stable-F +1 = 簇 D home-end 4 子测可见化（跨批同态
+> 身份，非回归）/ stable-T 3→3（负载边界 flake）/ 沾染 1=1。**收尾门禁
+> 全过**：桥套件 A/B 1556P/12F 全 main 既有 + product-smoke-legacy exit
+> 0。**全域发现挂账**：①桥套件 12 红——5 例他流 94883fbbe 清偿（复跑
+> 1561P/7F），余 7 例 s434 轮全树 bisect 归因清偿（见当前 Active）；
+> ②legacy smoke 首例 01-body-attrs struct FAIL（fixture 无 form/script
+> 零关联，候选 349a891ed UA 系统色关键词化 / g35，移交渲染流）。
 
 > **▶ 承前（2026-11-14 M2 切片 432 收口）——links 域 a/area target=_blank
 > aux 臂施工轮（T 池 4 键全解挂，stable-P +34 零消失）**：账本
