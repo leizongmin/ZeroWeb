@@ -1,7 +1,23 @@
 # CSS 子测试控制面
 
-**2026-11-14 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
+**2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
 快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
+**g42 完成（11-15 收口，11-14 深夜开工遇 429 rollover）**：渐变 computed 通道
+canonical 串化刀——`ColorInterpolationSpace` 模型身份保留（Hsl/Hwb/XyzD50/
+XyzD65 入枚举，渲染回退移交 paint map_interpolation）+ `ColorValue::ColorFunction`
+未解析保留（color() 不再 parse 期坍缩 Rgba，canonical 空间名/分量域 0-1/
+xyz→xyz-d65 别名，paint 回退 to_srgb_rgba）+ engine computed 双路串化
+（specified 骨架 `gradient_specified_to_css`：配置头 canonical——linear 角词序
+保真/radial size 单位归一 `40em`→`640px`+位置模型化+缺省省略/conic from 角度
+归一；`in <method>` 冗省同 declared 则；`color()` 站保真 `color(srgb 1 0 0)`；
+程序化构造回退 R2750 口径不变）+ radial size-only 首参派发 + 4-token 缘偏移
+位对解析。A/B（B0=results-g41-b2/B1=results-g42-b1 quiescent 重录，首轮被
+僵尸 disk-guard 清库焚毁作废）：css-images 1439→**2584P 净 +1145**（computed
+F 881→0、valid F 264→0 两页全清、余页零漂移）零回归，css-values 4041P ±0；
+单测 css-parser 3,220（+3）+ engine lib 3,991/all-targets 47 target 全绿，
+fmt/clippy 净。残面：invalid 拒写 292F（A 刀文法门）、color-stops 60F、
+image-set 114F+36F（6b 指派）。事故与手术记见 [evidence
+2026-11-15-g42-gradient-computed-serialize](evidence/2026-11-15-g42-gradient-computed-serialize.md)。
 **g41 完成（11-14）**：渐变声明值 canonical 串化刀——linear/radial/conic-gradient
 写面 canonical（css-images-4 §serializing-gradients：配置前置/`in <method>`
 后置/缺省法冗省（predefined color() 站→oklab、legacy 站→srgb、声明法==缺省
