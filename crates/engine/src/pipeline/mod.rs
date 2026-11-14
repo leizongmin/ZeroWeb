@@ -1642,7 +1642,27 @@ impl RenderPipeline {
     pub fn clear_sel_renames(&mut self) {
         self.sel_renames.clear();
     }
+}
 
+/// T71 返修（DF-1 根修）：[`RenderPipeline::rebind_handle_node`] 的结果分类——
+/// 绑定成功与三类 lenient skip 原因。宿主据此做原因分类计数（T71 TV-1
+/// 可观测性），跳过语义本身不变（宁漏勿错：冲突/缺失/歧义候选一律不锚定）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandleRebindOutcome {
+    /// 唯一命中且注册表无他柄冲突，已写入 `persistent_handle_nodes`（含同柄自
+    /// reclaim：节点本主回锚自己的节点）。
+    Bound,
+    /// selector 无命中（元素确被移除）或重建 doc 未就绪——lenient skip。
+    TargetMissing,
+    /// selector 在新 doc 命中多个节点（editing-compat 守卫）——lenient skip，
+    /// 留空走 unknown-handle 既有语义，好于按猜测锚定。
+    Ambiguous,
+    /// 唯一命中节点已被其他 handle 持久锚定（注册表唯一所有权不变量）——
+    /// lenient skip，死引用写保持不可见基线，双柄同锚禁止。
+    ClaimedByOtherHandle,
+}
+
+impl RenderPipeline {
     /// uievents-compat M3 尾簇 4：handle→NodeId 重绑——全量 `render_html` 重建会清
     /// `persistent_handle_nodes`（R100），此后 handle 型 mutation（页内
     /// createElement 产物的后续写）报 unknown handle。结构性刷新方持 shim 侧
@@ -1657,17 +1677,91 @@ impl RenderPipeline {
     /// `sel=br -> 20v1 parent=DIV` → `parent=SPAN` 两跳实证）。selector 在**新
     /// doc** 非唯一命中时跳过重绑——留空走 unknown-handle 既有 lenient 语义，好于
     /// 静默锚错。
-    pub fn rebind_handle_node(&mut self, handle: &str, selector: &str) {
-        if let Some(doc_rc) = &self.cached_doc {
-            let doc = doc_rc.borrow();
-            let sel = selector.trim();
-            if doc.query_selector_all(doc.root(), sel).len() != 1 {
-                return;
+    ///
+    /// T71 返修（DF-1 根修）：新增**注册表唯一所有权检查**——唯一命中节点已被
+    /// 其他 handle 持久锚定时跳过（返回
+    /// [`HandleRebindOutcome::ClaimedByOtherHandle`]）。`persistent_handle_nodes`
+    /// 是节点所有权唯一权威，任何路径不得把同一节点交给两个 handle 同时持久
+    /// 锚定；冲突候选 lenient skip（宁漏勿错），死引用写保持不可见基线。同柄自
+    /// reclaim（节点本主回锚自己的节点）保留。返回值供宿主做 lenient skip 的
+    /// 原因分类计数（T71 TV-1 可观测性），不改变任何跳过语义。
+    pub fn rebind_handle_node(&mut self, handle: &str, selector: &str) -> HandleRebindOutcome {
+        let Some(doc_rc) = &self.cached_doc else {
+            return HandleRebindOutcome::TargetMissing;
+        };
+        let doc = doc_rc.borrow();
+        let sel = selector.trim();
+        let matches = doc.query_selector_all(doc.root(), sel);
+        let id = match matches.as_slice() {
+            [] => return HandleRebindOutcome::TargetMissing,
+            [only] => *only,
+            _ => return HandleRebindOutcome::Ambiguous,
+        };
+        if self
+            .persistent_handle_nodes
+            .iter()
+            .any(|(h, owned)| *owned == id && h != handle)
+        {
+            return HandleRebindOutcome::ClaimedByOtherHandle;
+        }
+        self.persistent_handle_nodes.insert(handle.to_string(), id);
+        HandleRebindOutcome::Bound
+    }
+
+    /// T71 返修（DF-2）：handle 所锚节点（含子树）内持久锚定的全部 handle——
+    /// RemoveHandle 摘除命中整棵子树，后代在册柄同属本批合法移除（宿主换代
+    /// 掉项 warn 的豁免集输入）。handle 无锚（未注册/已移除）→ 空表。
+    pub fn handles_anchored_to_handle_subtree(&self, handle: &str) -> Vec<String> {
+        let Some(doc_rc) = &self.cached_doc else {
+            return Vec::new();
+        };
+        let doc = doc_rc.borrow();
+        let Some(&root) = self.persistent_handle_nodes.get(handle) else {
+            return Vec::new();
+        };
+        self.handles_anchored_within_subtree(&doc, root)
+    }
+
+    /// T71 返修（DF-2）：selector 首见命中节点（含子树）内持久锚定的全部
+    /// handle——`Remove { selector }` 的被移除节点在 apply 后失寻，宿主须在
+    /// apply 前调用预解析。游离/缺失 → 空表。
+    pub fn handles_anchored_to_selector_subtree(&self, selector: &str) -> Vec<String> {
+        let Some(doc_rc) = &self.cached_doc else {
+            return Vec::new();
+        };
+        let doc = doc_rc.borrow();
+        let Some(root) = doc.query_selector(doc.root(), selector.trim()) else {
+            return Vec::new();
+        };
+        self.handles_anchored_within_subtree(&doc, root)
+    }
+
+    /// T71 返修（DF-2）：以 `root` 为根的子树内持久锚定的全部 handle（含根自身）。
+    fn handles_anchored_within_subtree(&self, doc: &Document, root: NodeId) -> Vec<String> {
+        let mut subtree = std::collections::HashSet::new();
+        let mut queue = vec![root];
+        while let Some(id) = queue.pop() {
+            if !subtree.insert(id) {
+                continue;
             }
-            if let Some(id) = doc.query_selector(doc.root(), sel) {
-                self.persistent_handle_nodes.insert(handle.to_string(), id);
+            if let Some(node) = doc.get(id) {
+                for child in &node.children {
+                    queue.push(*child);
+                }
             }
         }
+        self.persistent_handle_nodes
+            .iter()
+            .filter(|(_, node)| subtree.contains(*node))
+            .map(|(h, _)| h.clone())
+            .collect()
+    }
+
+    /// T71（G1 Gap A 根修）：当前在册 handle 键集快照（`persistent_handle_nodes`）。
+    /// 宿主在批量边界换代前后各取一次，差集 = 换代导致注册表掉项的实际掉项集
+    ///（T69 §6.3「换代导致注册表掉项须可观测」的判定基础）。
+    pub fn registered_handle_ids(&self) -> Vec<String> {
+        self.persistent_handle_nodes.keys().cloned().collect()
     }
 
     /// 取缓存 live Document 的共享句柄（`Rc<RefCell<Document>>` 克隆）。
