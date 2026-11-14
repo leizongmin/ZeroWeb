@@ -30,8 +30,10 @@ bug**：SMIL 事件泵 `_scheduleTick（part09b）setTimeout 轮询在无宿主
 禁 microtask 自链同判据；seek 一次性扫描单发自终结不守卫；生产
 webview/runner 双探针命中行为零变化；生产「泵 tick 链单 checkpoint 内
 ×256 自链」同构饿死面在案留账）。验证：solo 7 案全绿 + 全桥套件
-**1568P/0F**（前 1561P/7F）+ 25 part 拼装 node --check + fmt 全 crate
-干净 + clippy lib+tests -D warnings 干净。**挂用户门维持**：
+**1568P/0F**（前 1561P/7F；push 前 rebase 入他流 css anchor/B1 两笔后
+终稿复跑 **1570P/0F**，+2 系他流新增桥测试零失败维持）+ 25 part 拼装
+node --check + fmt 全 crate 干净 + clippy lib+tests -D warnings 干净。
+**挂用户门维持**：
 GB-20261114-VIDEO + GB-20261031（簇 D）。下一步：selectedcontent 翻绿
 机制归因；window.open 真弹窗链评估轮；红池分诊续（video P1+P2 或簇 D
 A2 待门决）；dialog R-s31 簇/img density/embed sizing face 到货复验；

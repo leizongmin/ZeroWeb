@@ -109,7 +109,11 @@ microtask 链），无任务调度环境下本就不成立；seek 一次性扫�
   复跑）：ws×2 + img×2 + sw-iframe + fetch_filtered + stream 全绿
   3949 filtered out；
 - 全桥套件（终稿代码，/tmp/s434/verify-full.log）：**1568 passed /
-  0 failed**（前 1561P/7F，12 红中 5 例他流 94883fbbe 已偿）；
+  0 failed**（前 1561P/7F，12 红中 5 例他流 94883fbbe 已偿）。push 前
+  pull --rebase 入他流两笔（css anchor dbef933d3 + engine B1 子文档键
+  路由 6f7acb01d，桥面零交集），rebase 终稿复跑（
+  /tmp/s434/rebase-suite.log）：**1570P/0F**——+2 系他流新增桥测试，
+  零失败维持；
 - 25 part 拼装 node --check（/tmp/s434/assembled-s434.js，13 文件式拼装
   顺序同 js_dom_bridge.rs 装配序）：OK；
 - `cargo fmt -p zero-engine -- --check`：干净；
