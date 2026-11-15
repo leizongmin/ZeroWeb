@@ -2,26 +2,25 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 475 收口（双刀归因轮：编辑流
-04369d39a ip 容器链垫刀 + d1625c26a d34 headEl 持真 title 落树，
-html-semantics 面零位移清偿；账本
-evidence/2026-11-15-m2s475-two-knife-attribution.md）。
-双腿（码态 = 双刀组合态树 d1625c26a）8516/8513（8306P/204F/5T/
-1U 与 8306P/201F/5T/1U），distinct 各 8514/8511，leg-only 5 全
-在 select-home-end 族，disagree 0。stable 8512（8306P/200F/5T/
-1U，distinct 8510）。vs s474 stable 恰 5 GONE（族 4 子测 F + 族
-detailed T）+ 2 NEW（onblur following-label checkbox P 哨域键回
-位 + 族 detailed F），per-key 1 翻转 = detailed T→F（族相位回
-摆），非族非哨域键逐键零差。**P 集账本口径 8305 → 8306 回位兑
-现**。刀邻面抽查 document-metadata/title 243 键双腿恒等全 Pass。
-onblur 升级观察哨第 1 轮无再翻红（双键双腿 Pass 回入 stable，
-继续盯防）；dialog-overlay 哨第 5 轮 + modulepreload 哨第 7 轮
-（50/51 腿）零翻红。全桥绿窗 **1644P/0F rc=0**（**+1 =
-04369d39a 携入钉测 test_ip_c4_container_pad_pins**，d1625c26a
-零新钉）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
-onblur 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
-（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨维
-持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 476 收口（守成巡查轻覆盖轮：leg2 二
+页 sweep 相位整文件 Timeout 截断 77 键缺席，solo 全数回位定谳环
+境相位非树退化，leg1 全数基带；账本
+evidence/2026-11-15-m2s476-sweep-page-timeout-patrol.md）。
+码态 = 03dc27b83 同码树零入树。leg1 **8513（8306P/201F/5T/1U）
+全数基带**（vs s475 stable GONE 0 + NEW 1 = 族整文件键 Fail 形
+态回入，非族非哨域键逐键零差）；leg2 8438——首现 select-event
++ focus-dynamic-type-change-on-blur 二页整文件 Timeout 截断
+（50+27 键缺席），solo 逐文件 270+80 行 rc=0 零整文件 Timeout
+全数回位，判 **sweep 相位带环境超时**（host load ~10~13 + 他流
+runner/编译并跑挤占页级超时预算，单轮事件不升级）。**P 集账本
+口径 8306 持位**。onblur 升级观察哨第 2 轮无再现——**窗口期满
+解除**降回常规哨组（stable 10P + 红池 2F 在册）；dialog-overlay
+哨第 6 轮 + modulepreload 哨第 8 轮（52/53 腿）零翻红。全桥绿
+窗 **1644P/0F rc=0**（+0，测试清单与 s475 恒等）。红池归账结构
+不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门维
+持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提
+示，不重复通知）。hang 观察项静默哨维持（双腿零 runner hang，
+leg2 二页为页级 harness 超时非 runner hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -30,6 +29,20 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 475 收口）——双刀归因轮：编辑流
+> 04369d39a ip 容器链垫刀 + d1625c26a d34 headEl 持真 title 落树
+> html-semantics 面零位移清偿，P 集 8306 回位兑现（账本
+> evidence/2026-11-15-m2s475-two-knife-attribution.md）**：双腿
+> （d1625c26a 双刀组合态树）8516/8513（8306P/204F/5T/1U 与
+> 8306P/201F/5T/1U），distinct 各 8514/8511，disagree 0，leg-only
+> 5 全在族；stable 8512（8306P/200F/5T/1U，distinct 8510）vs
+> s474 恰 5 GONE + 2 NEW 全数族内 + 哨域键回位，flips = detailed
+> T→F 单翻转。刀邻面抽查 document-metadata/title 243 键双腿恒
+> 等。全桥绿窗 1644P/0F rc=0（+1 = 04369d39a pad 钉测
+> test_ip_c4_container_pad_pins，d1625c26a 零新钉）。onblur 升
+> 级哨第 1 轮 + dialog-overlay 哨第 5 轮 + modulepreload 哨第 7
+> 轮（50/51 腿）零翻红。
+>
 > **▶ 承前（2026-11-15 M2 切片 474 收口）——守成巡查轻覆盖轮 +
 > onblur 哨域键首现 sweep 单腿翻红 solo 对照定谳（solo ×3 全 F
 > 判 solo/sweep 双相位带键非瞬时 flake 同型，升级观察哨盯防；
