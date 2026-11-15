@@ -2,25 +2,21 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 476 收口（守成巡查轻覆盖轮：leg2 二
-页 sweep 相位整文件 Timeout 截断 77 键缺席，solo 全数回位定谳环
-境相位非树退化，leg1 全数基带；账本
-evidence/2026-11-15-m2s476-sweep-page-timeout-patrol.md）。
-码态 = 03dc27b83 同码树零入树。leg1 **8513（8306P/201F/5T/1U）
-全数基带**（vs s475 stable GONE 0 + NEW 1 = 族整文件键 Fail 形
-态回入，非族非哨域键逐键零差）；leg2 8438——首现 select-event
-+ focus-dynamic-type-change-on-blur 二页整文件 Timeout 截断
-（50+27 键缺席），solo 逐文件 270+80 行 rc=0 零整文件 Timeout
-全数回位，判 **sweep 相位带环境超时**（host load ~10~13 + 他流
-runner/编译并跑挤占页级超时预算，单轮事件不升级）。**P 集账本
-口径 8306 持位**。onblur 升级观察哨第 2 轮无再现——**窗口期满
-解除**降回常规哨组（stable 10P + 红池 2F 在册）；dialog-overlay
-哨第 6 轮 + modulepreload 哨第 8 轮（52/53 腿）零翻红。全桥绿
-窗 **1644P/0F rc=0**（+0，测试清单与 s475 恒等）。红池归账结构
-不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门维
-持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提
-示，不重复通知）。hang 观察项静默哨维持（双腿零 runner hang，
-leg2 二页为页级 harness 超时非 runner hang）。
+**状态**: Active——M2 切片 477 收口（守成巡查轻覆盖轮：零入树
+同码树基带复测，双腿完全一致 disagree 0 leg-only 0，与 s476
+leg1 逐键恒等；账本
+evidence/2026-11-15-m2s477-zeroinflow-patrol.md）。
+码态 = be3648136 同码树零入树。双腿均 **8513（双 8306P/201F/
+5T/1U，distinct 8511）**，stable 8511。vs s476 leg1 GONE 0 +
+NEW 0 逐键恒等；vs s475 stable 恰 NEW 1（族整文件键 Fail 形态
+连续第二轮持位）。**P 集账本口径 8306 持位**（第二轮连续），
+s476 二页 sweep 截断未复现。onblur 哨组 following-label 双键
+stable Pass（红池 parent-label 2F 照常）；dialog-overlay 哨第 7
+轮 + modulepreload 哨第 9 轮（54/55 腿）零翻红。全桥绿窗
+**1644P/0F rc=0**（+0，清单与 s476 恒等）。红池归账结构不变
+（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提示，
+不重复通知）。hang 观察项静默哨维持（双腿零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -29,6 +25,20 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 476 收口）——守成巡查轻覆盖轮：
+> leg2 二页 sweep 相位整文件 Timeout 截断 solo 全数回位定谳环境
+> 相位非树退化，leg1 全数基带（账本
+> evidence/2026-11-15-m2s476-sweep-page-timeout-patrol.md）**：
+> HEAD = 03dc27b83 同码树零入树。leg1 8513（8306P/201F/5T/1U）
+> 全数基带 vs s475 stable GONE 0 + NEW 1 全族内；leg2 8438 首现
+> select-event + focus-dynamic-type-change-on-blur 二页整文件
+> Timeout 截断（50+27 键缺席），solo 逐文件 270+80 行 rc=0 全数
+> 回位，判 sweep 相位带环境超时（host load ~10~13 + 他流并跑，
+> 单轮事件）。P 集 8306 持位。onblur 升级观察哨第 2 轮无再现
+> 窗口期满解除；dialog-overlay 哨第 6 轮 + modulepreload 哨第 8
+> 轮（52/53 腿）零翻红。全桥绿窗 1644P/0F rc=0（+0 清单恒等）。
+> FILTER 含 | 穿 Make 裸 shell 成管道的坑记档。
+>
 > **▶ 承前（2026-11-15 M2 切片 475 收口）——双刀归因轮：编辑流
 > 04369d39a ip 容器链垫刀 + d1625c26a d34 headEl 持真 title 落树
 > html-semantics 面零位移清偿，P 集 8306 回位兑现（账本
