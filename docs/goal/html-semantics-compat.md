@@ -2,26 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 447 收口（守成巡查轮：**ip C3/C6 原子拆
-分边界刀零位移清偿，P 集恒等 8305 四轮连续** + 全桥绿窗 1643P/0F
-+6 新钉；账本 evidence/2026-11-15-m2s447-ip-c3c6-rawtext-attribution.md）。
-**归因面**：s446 push 后入树一刀 = 6c21880ac（editing ip C3 注释原子
-先摘后挂 + C6 script rawtext M1 直构，触 engine
-`js_dom_shim/part01f.js` **corpus shim 本体** + js_dom_bridge_tests.rs）。
-双腿（6c21880ac 树）**stable 8515（8305P/203F/6T/1U）双腿逐键全一致
-（unstable = 0）**，vs s446 恰 5 差集 = select-home-end 族 Fail 相位
-整体回入 stable（s444 同型），族相位轮换记账口径不变 → **C3/C6 零位
-移定谳**（ip 系 C1/C3/C6 三刀全数清偿）。**基带 8305P/203F/6T/1U**
-（P 恒等为主口径，族 Fail 相位在 stable）。全桥绿窗 **1643P/0F rc=0**
-（基线 1637P，+6 = C3/C6 part120 新钉，与 commit 钉测数一致）。红池
-归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门
-维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提示，
-不重复通知）。hang 观察项静默哨维持（本轮双腿零 hang 且零不稳定键）。
+**状态**: Active——M2 切片 448 收口（守成巡查轻覆盖轮：**零入树刀
+（pull 无新刀，同码树基带复测），P 集恒等 8305 五轮连续** + 全桥绿
+窗 1643P/0F +0；账本 evidence/2026-11-15-m2s448-light-coverage-patrol.md）。
+双腿（af012f775 树，代码与 s447 的 6c21880ac 全同）leg1 8513
+（8306P/200F/6T/1U）/ leg2 8516（8306P/204F/5T/1U），unstable 5 键
+全在 select-home-end 族主文件相位（整文件 T ↔ 4 子测 F）；stable
+8512 vs s447 恰 6 差集全在族内（{主 4F + detailed T} → {detailed F
+双腿一致 + 主文件相位出 stable}），族相位轮换记账口径不变，零 GONE/
+零 NEW。基带口径维持 **8305P/203F/6T/1U**（P 恒等为主口径）。全桥
+绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
+decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项
+静默哨维持（本轮双腿零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自由
 可施工面）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
 s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 447 收口）——守成巡查：ip C3/C6 原子
+> 拆分边界刀零位移清偿，P 集恒等 8305 四轮连续 + 全桥绿窗 1643P/0F
+> +6 新钉（账本
+> evidence/2026-11-15-m2s447-ip-c3c6-rawtext-attribution.md）**：归因
+> 刀 = 6c21880ac（editing ip C3 注释原子先摘后挂 + C6 script rawtext
+> M1 直构，触 engine `js_dom_shim/part01f.js` corpus shim 本体 +
+> js_dom_bridge_tests.rs part120 新钉 6 测）。双腿 stable 8515
+> （8305P/203F/6T/1U）逐键全一致（unstable = 0），vs s446 恰 5 差集 =
+> select-home-end 族 Fail 相位整体回入 stable → C3/C6 零位移定谳
+> （ip 系 C1/C3/C6 三刀全数清偿）。全桥绿窗 1643P/0F rc=0（+6 新钉）。
 
 > **▶ 承前（2026-11-15 M2 切片 446 收口）——守成巡查：g49 GCS 视口
 > 真值刀零位移清偿，P/F 集恒等 + 全桥绿窗 1637P/0F（账本
