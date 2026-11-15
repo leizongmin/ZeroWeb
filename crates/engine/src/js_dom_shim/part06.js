@@ -3025,6 +3025,24 @@
      * editing-host input——WPT editing/event.html 该五命令 target=null 期望 0 事件
      * （状态/历史/选区命令不经编辑宿主事件序）。 */
   };
+  // wptfyi-editing DC-2 d35（2026-11-15）：plaintext-only 编辑宿主 styling 命令表
+  // ——contenteditable="plaintext-only" 宿主只允许纯文本插入类（insertText/
+  // insertParagraph/insertLineBreak/delete 族），styling 命令整族 disabled：
+  // queryCommandEnabled false、execCommand 返 false、零 DOM 变更零事件。
+  // WPT editing/plaintext-only/styling-commands.html 30 项断言面即该族全谱；
+  // foreColor 不在语料清单但与 backColor/hiliteColor 同族同判（Chromium 语义）。
+  // 判定走「selection 根可编辑宿主」（_zwExecCmdFindPlaintextRootEditable）——
+  // plaintext-only 嵌在 contenteditable=true 内不门（嵌套语料 expect style edit），
+  // designMode=on 不门（plaintext-only-in-designMode 语料）。
+  // https://html.spec.whatwg.org/multipage/interaction.html#contenteditable
+  var _zwExecCmdStylingCmds = {
+    backcolor: 1, bold: 1, createlink: 1, decreasefontsize: 1, fontname: 1,
+    fontsize: 1, forecolor: 1, formatblock: 1, heading: 1, hilitecolor: 1,
+    increasefontsize: 1, indent: 1, insertorderedlist: 1, insertunorderedlist: 1,
+    italic: 1, justifycenter: 1, justifyfull: 1, justifyleft: 1, justifyright: 1,
+    outdent: 1, removeformat: 1, strikethrough: 1, subscript: 1, superscript: 1,
+    underline: 1, unlink: 1
+  };
   // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/Enabled
   // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
   // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ selectAll（R5264 选区
@@ -3051,6 +3069,34 @@
     }
     return null;
   }
+  // wptfyi-editing DC-2 d35（2026-11-15）：选区根可编辑宿主是否 plaintext-only
+  // ——从 startContainer 爬升取**最高** contenteditable≠false 祖先（根可编辑宿主，
+  // Blink root editable element 语义），其 attr 字面为 plaintext-only 才门。
+  // contenteditable=false 截断爬升（其下子树自成编辑根——nested 语料
+  // true-in-po-in-false expect style edit 同判）；designMode=on 全文档富编辑
+  //（plaintext-only-in-designMode 语料「should not prevent the style edit」）不门。
+  // 嵌套分野实证：po-in-true → 根=外层 true 宿主不门（styling 生效）；true-in-po →
+  // 根=po 宿主门（styling disabled）。
+  function _zwExecCmdFindPlaintextRootEditable(range) {
+    if (!range) return null;
+    try {
+      if (globalThis.document && globalThis.document.designMode === 'on') return null;
+    } catch (_ePoDm) {}
+    var node = range.startContainer;
+    var root = null;
+    var guard = 0;
+    while (node && guard++ < 256) {
+      if (node.nodeType === 1 && node.getAttribute) {
+        var ce = node.getAttribute('contenteditable');
+        if (ce !== null) {
+          if (String(ce).toLowerCase() === 'false') break;
+          root = node;
+        }
+      }
+      node = node.parentNode;
+    }
+    return (root && String(root.getAttribute('contenteditable')).toLowerCase() === 'plaintext-only') ? root : null;
+  }
   function _zwQueryCommandState(cmd) {
     var c = String(cmd == null ? '' : cmd).toLowerCase();
     // copy/cut/paste：ClipboardEvent 路径真实接通 → supported。
@@ -3068,6 +3114,14 @@
         (rng.endContainer === host ||
          (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host, rng.endContainer))));
     } catch (_eQc) {}
+    // wptfyi-editing DC-2 d35（2026-11-15）：plaintext-only 宿主 styling 命令门
+    // ——enabled 强制 false（supported 面不变，Chromium qC 同型）。表与根宿主
+    // 判定见 _zwExecCmdStylingCmds / _zwExecCmdFindPlaintextRootEditable。
+    if (enabled && _zwExecCmdStylingCmds[c]) {
+      try {
+        if (_zwExecCmdFindPlaintextRootEditable(rng)) enabled = false;
+      } catch (_ePoQ) {}
+    }
     return { supported: true, enabled: enabled };
   }
 
@@ -5250,6 +5304,17 @@
       // （justifycenter 语料 250/250 行实测该模型：state_before 显式 stale 值，
       // state_after 显 justifycenter 执行时的模式）。
       globalThis.__zwStyleWithCSSQuery = !!globalThis.__zwStyleWithCSS;
+      // wptfyi-editing DC-2 d35（2026-11-15）：plaintext-only 宿主 styling 命令门
+      // ——前置所有应用臂：零事件零 DOM 变更返 false（Chromium Execute 门同型）。
+      // 表见 _zwExecCmdStylingCmds；根宿主判定见 _zwExecCmdFindPlaintextRootEditable
+      // （嵌套/designMode 分野实证在函数注）。WPT
+      // editing/plaintext-only/styling-commands.html 30 命令 × qCE/ret/DOM/input
+      // 四断言面。
+      if (_zwExecCmdStylingCmds[cmd]) {
+        var poSelE = (typeof _getSelection === 'function') ? _getSelection() : null;
+        var poRngE = poSelE && poSelE.rangeCount > 0 ? poSelE._ranges[0] : null;
+        if (_zwExecCmdFindPlaintextRootEditable(poRngE)) return false;
+      }
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
         try {
           // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：copy/cut 派发携带真 DataTransfer
