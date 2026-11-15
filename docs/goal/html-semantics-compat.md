@@ -2,36 +2,59 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 486 收口（他流刀归因轮：css 流
-easing 感知离散翻转采纳刀 492a0f2e0 落树（js_anim_registry
-flip_ok 形态门 eased 一致性采纳 +214 含内嵌七自测 + part03.js
-刀标记注释，corpus +21 零回归），html-semantics 面**零位移
-清偿**——「申报=实测」谱系第四例，动画面零位移（与 s478
-gCS 通道分野对号）；账本
-evidence/2026-11-15-m2s486-easing-flip-knife-attribution.md）。
-码态 = 492a0f2e0（HEAD e31ec6454 docs-only）。**双腿完全一
-致** 均 8513（双 8307P/199F/6T/1U，disagree 0 leg-only 0，
-第三次全同形态），族 s479 形（optional 整文件 T + detailed
-F）。stable 8511（8305P/199F/6T/1U）。**vs s485 stable：GONE
-0 + NEW 1（optional 整文件键）+ flips 1（detailed 整文件键
-T→F 相位谱在册）——非族键逐键零差**。**P 集账本口径 8307
-持位**（stable 机械口径 8305P 七轮同形）；picker 刀增益键
-stable Pass 第 9 轮保持，checkmark 恒 F 带形不变（waapi 哨
-零位移 = fallback 检测通道与 gCS 值通道半径分野旁证）。
+**状态**: Active——M2 切片 487 收口（守成巡查轻覆盖轮：零入
+树同码树——码态 492a0f2e0 恒等，pull 仅携入 rendering 流
+R5664 docs 一笔，ZeroWeb-3 三文件刀施工面增长未落树 per
+R5664；对端 R5665 easing corpus A/B 义务三跑在飞错峰让位后
+起腿；账本
+evidence/2026-11-15-m2s487-quiet-baseline-patrol.md）。
+码态 = 492a0f2e0（HEAD 7cf312963 docs-only）。双腿相位摆谱
+族带内：leg1 8513（8307P/198F/7T/1U 族双整文件 T 新相）+
+leg2 8516（8307P/202F/6T/1U 族混合形）双零截断，stable 8510
+（8305P/198F/6T/1U）disagree 0 + leg-only 1/4 全族键
+（optional 整文件 vs 子测发射形差伪影）。**vs s486 stable：
+GONE 1（optional 整文件键）+ NEW 0 + flips 1（detailed 整文
+件键 F→T 相位谱 s464 起在册）——非族键逐键零差**。**P 集账
+本口径 8307 持位**（stable 机械口径 8305P 八轮同形）；picker
+刀增益键 stable Pass 第 10 轮保持，checkmark 恒 F 带形不变。
 onblur 哨组 stable 10 键全在册 8P/2F；dialog-overlay 哨
-第 15 轮 + modulepreload 哨第 18 轮零翻红。全桥绿窗
-**1655P/0F rc=0**——清单 1648→1655 纯增长 +7 = 刀内嵌
-js_anim_registry::tests 七自测合法入桥，GONE 0 零破。
+第 16 轮 + modulepreload 哨第 19 轮零翻红。全桥绿窗
+**1655P/0F rc=0**——清单 vs s486 set 恒等 GONE 0（码态未变
+零增长预期兑现）。locale collation 坑（zh_CN 会话管线 comm
+拒判）已沉淀 learning；join.sh stable.canon 生成 bug 改
+awk 绕开。
 红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
 **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双
 腿零真 hang，零截断）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；ZeroWeb-3 三
-文件刀施工中，落树后按他流刀归因轮，join 实测为准）+ 候门
-决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
-rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
-门开随批落预案不变：簇 D 开 → customizable-select-styles.css
-×47 随批落。
+文件刀 part01.js 施工面增长中，落树后按他流刀归因轮，join
+实测为准；rendering 流 R5665 easing 义务三跑自账落 origin
+后按其对账复核本流旁证）+ 候门决项等待用户拍板（video
+P1+P2 立项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16
+红块协同面（归 rendering 流记账）。门开随批落预案不变：簇 D
+开 → customizable-select-styles.css ×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 486 收口）——他流刀归因轮：
+> css 流 easing 感知离散翻转采纳刀 492a0f2e0 落树（js_anim_
+> registry flip_ok 形态门 eased 一致性采纳 +214 含内嵌七自测
+> + part03.js 刀标记注释，corpus +21 零回归），html-semantics
+> 面**零位移清偿**——「申报=实测」谱系第四例，动画面零位移
+> （与 s478 gCS 通道分野对号）；账本
+> evidence/2026-11-15-m2s486-easing-flip-knife-attribution.md）。
+> 码态 = 492a0f2e0（HEAD e31ec6454 docs-only）。**双腿完全一
+> 致** 均 8513（双 8307P/199F/6T/1U，disagree 0 leg-only 0，
+> 第三次全同形态），族 s479 形（optional 整文件 T + detailed
+> F）。stable 8511（8305P/199F/6T/1U）。**vs s485 stable：GONE
+> 0 + NEW 1（optional 整文件键）+ flips 1（detailed 整文件键
+> T→F 相位谱在册）——非族键逐键零差**。**P 集账本口径 8307
+> 持位**（stable 机械口径 8305P 七轮同形）；picker 刀增益键
+> stable Pass 第 9 轮保持，checkmark 恒 F 带形不变（waapi 哨
+> 零位移 = fallback 检测通道与 gCS 值通道半径分野旁证）。
+> onblur 哨组 stable 10 键全在册 8P/2F；dialog-overlay 哨
+> 第 15 轮 + modulepreload 哨第 18 轮零翻红。全桥绿窗
+> **1655P/0F rc=0**——清单 1648→1655 纯增长 +7 = 刀内嵌
+> js_anim_registry::tests 七自测合法入桥，GONE 0 零破。
 
 > **▶ 承前（2026-11-15 M2 切片 485 收口）——他流刀归因轮：
 > site-opt 流 PR #305 iframe navigator 平面对象语义刀 T72/P42
