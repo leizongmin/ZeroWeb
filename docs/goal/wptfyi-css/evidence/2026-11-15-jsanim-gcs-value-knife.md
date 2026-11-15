@@ -111,16 +111,21 @@ scale got '1' / translate got '0px'——apply 成功故 canonicalize None 兜�
   - browser bin 741P/2F：tab_js_worker 同根镜像 + default_actions（均在册
     三红账）。
   - browser tests 740P/3F：前两者重跑镜像 +
-    bookmark_context_menu_open_in_new_tab_loads_url **新面孔红未定类**
-    ——`tests.rs:1682` 断言 left:1/right:2（期望 2 标签实得 1）；同测
+    bookmark_context_menu_open_in_new_tab_loads_url **回填定类=负载相位
+    flake**——`tests.rs:1682` 断言 left:1/right:2（期望 2 标签实得 1）；同测
     17:20:49（browser bin 腿）
-    过、17:23:45（本腿）挂跨腿翻转，落在 editing WIP 70cb4d2f5 共树在途
-    落地 17:23:27 后 18s，混码/负载双嫌疑；solo 复跑归因归发现流，回填前
-    不作账。
+    过、17:23:45（本腿）挂跨腿翻转，曾落 editing WIP 70cb4d2f5 共树在途
+    落地 17:23:27 后 18s；发现流 solo ×3 全绿回填（17:35，`-p zero-browser
+    --tests` 面 xvfb 前缀 filter 单测，EXIT=0×3=0.67s/0.06s/0.06s，
+    /tmp/zw-jsanim-solo-b2.log）——solo 二进制按 HEAD 3fdbc3c53 增量重编
+    （含 70cb4d2f5 刀码），混码嫌疑同证排除，多链负载窗并发唯一余因。
   - quickjs crates 775P/1F：`image_batch_e2e` 42 fetch/36 图 6 重复 fetch
     （image_batch_e2e.rs:317 "every image must be fetched exactly once"）
     = 在册伪红负载峰值形态第三现形（Makefile 补建 zero-browser 已根修
-    缺件形态，负载形态仍存）。
+    缺件形态，负载形态仍存）；发现流 solo ×3 全绿佐证（quickjs 面
+    filter 单测 EXIT=0×3，1.52s，/tmp/zw-jsanim-solo-s2c.log；方法论注记：
+    solo 须带 --compile-first，缺它 rustc 编译段四并行 job 11.3G 撞 8G 总门
+    EXIT=124 杀树，测试未跑即报红）。
   - quickjs renderer lib 369P/1F：worker-fetch quickjs 镜像，同 c6dcbce0a
     根。
   全账唯一真实代码红仍是 SW 具名导入 getter 一处（script-sandbox 面）。

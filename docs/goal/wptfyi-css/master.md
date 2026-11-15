@@ -83,9 +83,11 @@ image_batch_e2e 缺件伪红（清库必现形态）。
 红五腿全对号**零新增真实代码红**——renderer lib 1F=js_worker worker-fetch
 （c6dcbce0a reject 语义过时镜像在册）；browser bin 2F=tab_js_worker 同根
 镜像+default_actions（均在册三红账）；browser tests 3F=前两者重跑镜像+
-bookmark_context_menu_open_in_new_tab_loads_url **新面孔红未定类**（同测
-17:20:49 过/17:23:45 挂跨腿翻转，落在 editing WIP 70cb4d2f5 共树在途落地
-17:23:27 后 18s，混码/负载双嫌疑，solo 复跑归因归发现流，回填前不作账）；
+bookmark_context_menu_open_in_new_tab_loads_url **回填定类=负载相位 flake**
+（同测 17:20:49 过/17:23:45 挂跨腿翻转，曾落 editing WIP 70cb4d2f5 共树在途
+落地 17:23:27 后 18s；发现流 solo ×3 全绿定谳——`--tests` 面 xvfb 前缀
+EXIT=0×3（0.67s/0.06s/0.06s，/tmp/zw-jsanim-solo-b2.log），solo 二进制含
+70cb4d2f5（HEAD 3fdbc3c53 编译），混码嫌疑同证排除，负载窗并发唯一余因）；
 quickjs crates 1F=image_batch_e2e 42 fetch/36 图 6 重复 fetch=在册伪红
 负载峰值形态第三现形；quickjs renderer lib 1F=worker-fetch quickjs 镜像
 同 c6dcbce0a 根。全账唯一真实代码红仍是 SW 具名导入 getter 一处
