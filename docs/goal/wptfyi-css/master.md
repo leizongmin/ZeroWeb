@@ -6,6 +6,15 @@
 四天净增 **+10,408**（[DC-3 刷新证据](evidence/2026-11-15-dc3-snapshot-refresh.md)）；
 当前 css-images **3144P/71F**、css-values 4185P/1402F/6T（g49-b1）；
 css-anchor-position anchor 首覆盖 12061P/792F/4T（265 页/12857 案）。
+**`target` expando 刀候选定谳（11-15 三轮，同日）**：探针矩阵定谳 DC-3
+masking 崩溃根因 = shim 元素属性 set 陷阱对属性名 `target`（已知 HTML
+属性名）的对象值走 setAttribute 串化（`a.target=el` 回读 String；任意
+他名 expando 对象值全部正常）→ 共享插值 harness `:277` set/:373/:451
+读两条路径全炸。爆炸半径 **337 页 / 56,365 上游子测（占验收线余
+~119,496 的 ~47%）**：transforms 32 页 / backgrounds 30 / motion 22 /
+gaps 21 / masking 21 / values 18 / fonts 16 / grid 16 / sizing 16…
+转化率（子测转真实 pass/fail 后的通过率）须 A/B 实测。刀规格与探针页
+见 [evidence 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
 **DC-3 证据补强（11-15 二轮，同日）**：①语料面定谳——ci-shards.yml 已接线
 65 套件覆盖全部主要 css 组，剩余 ~119k 缺口 = 引擎能力面（未接线零散组仅
 ~1.1k，语料杠杆已耗尽，刀链是唯一主杠杆）；②快照树态 ∈ [g41, g42)（12 组

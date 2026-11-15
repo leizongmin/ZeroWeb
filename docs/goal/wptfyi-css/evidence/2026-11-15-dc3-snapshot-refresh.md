@@ -63,7 +63,9 @@ device-adapt/forced-color-adjust/fetching/style-attr/motion-path
 `target.style`/expando 读回类型，css-color 曾走 `zz-caprobe-real.html`
 同型探针），下轮刀取一 masking 页换 harness 即可定谳。该 crash 面
 为共享 harness，预计同样压制其他组的 animations/interpolation 页
-（transforms/motion/fill-strokes 待同法抽查）。
+（transforms/motion/fill-strokes 待同法抽查）。**根因已由探针定谳并
+升级为全域刀候选（337 页/56,365 子测）**，见
+[target-expando-interpolation-unlock](2026-11-15-target-expando-interpolation-unlock.md)。
 
 **C. 异常核查项**：css-navigation 与 css-parser-api 已在 css-v2-face-d
 接线但 coverage covered=0——11-14 轮 fetch 失败「套件面记 0」或上游
