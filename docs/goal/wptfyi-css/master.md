@@ -15,6 +15,10 @@ masking 崩溃根因 = shim 元素属性 set 陷阱对属性名 `target`（已�
 gaps 21 / masking 21 / values 18 / fonts 16 / grid 16 / sizing 16…
 转化率（子测转真实 pass/fail 后的通过率）须 A/B 实测。刀规格与探针页
 见 [evidence 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
+**站点已行级定位（11-15 四轮）**：set=part05.js R3042 守卫仅按名判
+（`_REFLECTED_STRING_FLAT` 含 target 无 tag 限定，`name` 臂有 tag 限定
+先例可镜像）；get=part04/part05 expando 回读多处须先查再落 reflected；
+最小切片 target 真反射 tag 集 {a,area,form,link,base}。
 **DC-3 证据补强（11-15 二轮，同日）**：①语料面定谳——ci-shards.yml 已接线
 65 套件覆盖全部主要 css 组，剩余 ~119k 缺口 = 引擎能力面（未接线零散组仅
 ~1.1k，语料杠杆已耗尽，刀链是唯一主杠杆）；②快照树态 ∈ [g41, g42)（12 组

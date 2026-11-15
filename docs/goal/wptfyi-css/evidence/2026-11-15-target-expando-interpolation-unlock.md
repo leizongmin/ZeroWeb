@@ -60,16 +60,41 @@ css-ui 11（余长尾）。对验收线余 ~119,496 占比 ~47%。
 →「真实结果通道」；每页子测转真实 pass/fail 后的通过率未测（插值断言
 依赖 engine 插值语义支持），转化率须 A/B 实测，此处不预记通过数。
 
-## 4. 刀规格（下轮执行）
+## 4. 刀规格（11-15 四轮行级定位更新，下轮执行）
 
-1. shim 属性 set 陷阱：属性名集合命中（`target` 等）时对象值改走
-   expando 存储，仅原始值串化走 setAttribute；get 对称。
-2. shim 为 include_str! 嵌入 → 改动必重建二进制；重建前核 git status
-   干净（g50 WIP 落地后），重建后 provenance（mtime>commit）留档；
-   在跑电池窗口冻结重建（shim include_str! 陈旧二进制毁 A/B 前科）。
-3. 回归验证：zz-mprobe-expando 的 `name-target` 应转 object；
-   masking 22 页 setup 应产出真实子测（不再 declared tests: 0）；
-   随后按 §3 分布逐组 A/B（B0=刀前 results 目录）。
-4. 附带发现（非本刀）：`Object.prototype.toString.call(div.style)`=
-   `[object ]`（缺 Symbol.toStringTag 品牌面）；`t.content` 返回
-   object 正常。
+**站点（已行级定位）**：
+
+- set 陷阱：`js_dom_shim/part05.js` R3042 expando 分支（~:1021）——非原始值
+  入 expando 的守卫条件 `_reflectedStringAttr(p) === null` 是**仅按名**判定；
+  `_REFLECTED_STRING_FLAT`（part01.js:2048）全局平铺名表含 `target`（a/area/
+  form/link/base 反射名）→ div 等非反射 tag 上对象值不走 expando 臂，落
+  generic fallthrough setAttribute 串化。同条件里 `name` 臂已是**tag 限定**
+  先例（`_reflectedNameAttr(_realTag(sel,handle), p)`）——镜像即可。
+- get 陷阱：expando 回读面在 part04（~:2651/:2688/:2904）与 part05
+  （~:1412-1416/:1640/:1653）多处；set 修后 get 必须在非反射 tag 上先查
+  `_expando[key][p]` 再落 reflected getter 分支，否则 `el.target` 读回 attr
+  空串——执行轮以 zz-mprobe-expando 双向验证（set→get round-trip typeof
+  'object'）。
+- SVG 分支不属本刀：`SVGAElement.target` 专臂（part03.js:33158，SVGAnimatedString
+  readonly）语义正确。
+
+**修法（最小切片）**：`_reflectedStringAttr` 增 tag 限定形态或加
+`_reflectedStringAttrOn(tag, p)` 小帮手——`target` 真反射 tag 集
+{a, area, form, link, base}；set 守卫与 get 分派在**非反射 tag** 上让位
+expando 存储（原始值 set 仍走 generic fallthrough 反射不变——real browser
+`div.target='x'` 也是 expando，但原始值面已在 R3069 另臂闭合，不动）。
+泛化路径记账不实施：同一名表类缺陷（`el.align={}` 等）无实测语料面。
+
+**回归清单**：①R5007 reflection-* 簇（真反射 tag 上对象值 ToPrimitive
+串化语义不变——守卫只对非反射 tag 让位）；②a/area/form/link/base 的
+`el.target='x'` 原始值反射路径不变；③zz-mprobe-expando `name-target`
+应转 object + masking 22 页 setup 产出真实子测；④wired js-dom reflection
+语料如有 div.target 断言按 real browser expando 语义对齐。
+
+**执行前置**：shim include_str! 嵌入（js_dom_bridge.rs:6219+）→ 必重建
+二进制；重建前核 git status 干净（g50 WIP 落地后），重建后 provenance
+（mtime>commit）留档；在跑电池窗口冻结重建（shim include_str! 陈旧
+二进制毁 A/B 前科）。验证序：zz-mprobe 双页 → masking 组 A/B
+（B0=results-g49-b1 口径）→ §3 分布逐组（transforms/backgrounds/motion
+大头优先）。附带发现（非本刀）：`Object.prototype.toString.call(div.style)`
+= `[object ]`（缺 Symbol.toStringTag 品牌面）；`t.content` 返回 object 正常。
