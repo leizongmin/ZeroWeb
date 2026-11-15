@@ -2,33 +2,56 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 480 收口（守成巡查轻覆盖轮：零入树
-同码树基带复测；leg1 他流 selection sweep 并跑窗族二页截断 solo
-全数回位定谳负载相位非树退化（s476 先例流程），leg2 静窗全数
-基带；账本
-evidence/2026-11-15-m2s480-peerload-truncation-patrol.md）。
-码态 = 70cb4d2f5 同 s479（HEAD f6fd2f750）。leg1 8516（8307P/
-201F/7T/1U 截断相位）+ leg2 8516（8307P/202F/6T/1U 零截断），
-stable 8513（8305P/201F/6T/1U）disagree 0 leg-only 1/1（皆
-leg1 截断伪影）。vs s479 stable flips 1 = 族 detailed 整文件
-T→F→T 相位谱，余族相位 + 截断伪影，**非族键逐键零差**。
-**P 集账本口径 8307 持位**；optional 页 solo ×2 页跑通 4 子测
-全 F（PageDown 在册）、detailed 页 solo ×2 页跑通 4 子测全
-F——sweep 只浮整文件键系页重负载相位。picker-icon 刀增益键
-stable Pass 第三轮保持；onblur following-label 双键 stable
-Pass 连续第二轮回位（红池 parent-label 2F 照常）；dialog-overlay
-哨第 9 轮 + modulepreload 哨第 12 轮零翻红。全桥绿窗 **1644P/
-0F rc=0**（filtered 2389 同值，清单 set 恒等）。红池归账结构
-不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门
-维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445
-已提示，不重复通知）。hang 观察项静默哨维持（双腿零真 hang
-——族二页整文件 T 系在册相位）。
-下一步：**守成巡查**（他流入树归因轮或轻覆盖；ZeroWeb-3
-part05.js 新刀 +77/−2 施工中落树后按他流刀归因轮，join 实测
-为准）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项
-/ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流
-记账）。门开随批落预案不变：簇 D 开 → customizable-select-
-styles.css ×47 随批落。
+**状态**: Active——M2 切片 481 收口（他流双刀归因轮：css 流
+composite-add 刀 e42482bfd（shim add/accumulate 端点预合成 +
+apply 十臂插值三臂）+ 编辑流 J2 跨 body 边界块并块刀
+688210311（part05.js _b1BlockTags + _b1JoinMembers J2 臂）
+双双落树，html-semantics 面**双零位移清偿**——s479「申报=
+实测」同类形（对照 s478 WAAPI 刀破预期）；账本
+evidence/2026-11-15-m2s481-composite-add-j2-knife-attribution.md）。
+码态 = 688210311（HEAD 94cf8a6e6 docs-only）。leg1 8514
+（8307P/199F/6T/1U）+ leg2 8516（8307P/199F/6T/1U）双零截断
+（ZeroSeed 他流 acceptance 并跑窗 load 峰 10.89 未触截断带），
+stable 8509 disagree 1 + leg-only 1/1 **全部限族**（disagree =
+detailed 整文件键 T↔F、l1only = optional 整文件键、l2only =
+4 子测键 s478 静窗形）。vs s480 stable **GONE 4（全族）+
+NEW 0 + flips 0，非族键逐键零差**。**P 集账本口径 8307 持
+位**（stable 机械口径 8305P 同形）；T 键集 5 非族恒等；picker
+刀增益键 stable Pass 第 4 轮保持，checkmark 恒 F 带形不变。
+管线伪差新录：stable.canon 须从去重源（l1u）生成——双发同
+形行（exact len / for=' WINdow，s479/s480 各腿同形长驻伪影）
+从未去重源生成即现 " Pass Pass" 伪 flips，去重后归零。
+onblur 哨组 stable 10 键全在册 8P/2F（following-label 回位
+持位第 3 轮）；dialog-overlay 哨第 10 轮 + modulepreload 哨
+第 13 轮零翻红。全桥绿窗 **1644P/0F rc=0**（filtered 2389
+同值，清单 set 恒等——一动画面一 editing 门，钉面零破零新
+增）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
+onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang
+观察项静默哨维持（双腿零真 hang）。
+下一步：**守成巡查**（他流入树归因轮或轻覆盖）+ 候门决项
+等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
+rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
+门开随批落预案不变：簇 D 开 → customizable-select-styles.css
+×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 480 收口）——守成巡查轻覆盖
+> 轮：零入树同码树基带复测；leg1 他流 selection sweep 并跑窗
+> 族二页截断 solo 全数回位定谳负载相位非树退化（s476 先例流
+> 程），leg2 静窗全数基带；账本
+> evidence/2026-11-15-m2s480-peerload-truncation-patrol.md）。
+> 码态 = 70cb4d2f5 同 s479（HEAD f6fd2f750）。leg1 8516（8307P/
+> 201F/7T/1U 截断相位）+ leg2 8516（8307P/202F/6T/1U 零截断），
+> stable 8513（8305P/201F/6T/1U）disagree 0 leg-only 1/1（皆
+> leg1 截断伪影）。vs s479 stable flips 1 = 族 detailed 整文件
+> T→F→T 相位谱，余族相位 + 截断伪影，**非族键逐键零差**。
+> **P 集账本口径 8307 持位**；optional 页 solo ×2 页跑通 4 子测
+> 全 F（PageDown 在册）、detailed 页 solo ×2 页跑通 4 子测全
+> F——sweep 只浮整文件键系页重负载相位。picker-icon 刀增益键
+> stable Pass 第三轮保持；onblur following-label 双键 stable
+> Pass 连续第二轮回位（红池 parent-label 2F 照常）；dialog-overlay
+> 哨第 9 轮 + modulepreload 哨第 12 轮零翻红。全桥绿窗 **1644P/
+> 0F rc=0**（filtered 2389 同值，清单 set 恒等）。
 
 > **▶ 承前（2026-11-15 M2 切片 479 收口）——他流刀归因轮：编辑
 > 流 d35 刀 70cb4d2f5 part06.js +65 plaintext-only 宿主 styling
