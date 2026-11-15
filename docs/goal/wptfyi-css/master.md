@@ -89,6 +89,30 @@ calc 代数插值 46（`left 480px`→`right -140%` 形）；composition add 56
 （KeyframeEffect composite 共享刀）、calc 形 supports 2、offset 简写 3、
 parsing-invalid 3（shim setProperty 拒收域）。见 [evidence
 2026-11-15-offset-position-knife](evidence/2026-11-15-offset-position-knife.md)。
+**ray()/基本形状 supports 门刀探查定谳（11-16 00:50，第三刀让位轮，零码改）**：
+offset-path 六全灭页（005 502F/006 510F/008 614F/009 36F/coord-box 144F/
+composition 84F，共 **1,890F**）死因定谳——全部死于 harness 前置门
+`assert_true('from'/'to' value should be supported)`（interpolation-testcommon.js:396）：
+`CSS.supports(prop, v)` 两参走 shim part06 → 宿主 `decl_supported`
+（js_dom_bridge.rs:6171）→ Rust `apply_property_value_with_quirks`，而
+offset-path 的 Rust parse 臂现只收 none|path() 首片，ray()/circle()/ellipse()/
+inset()/polygon()/xywh()/rect()/shape() 全拒 → supports=false 整组 6 检查点
+连坐（composition 页 underlying/add 值组同门实证）。**与 setProperty 通道
+分叉实证**：parsing-valid 已 46P——setProperty 走 shim JS 验证器宽收，
+circle(100px)/inset(100%)/ellipse()/polygon()/xywh()/rect()/url() 标准形全过；
+supports 门与 parse 面不同源即刀核心。刀界（下轮实施）：`parse_offset_path_fn`
+放宽全基本形状族首片接受 + gCS verbatim 臂 + WAAPI 离散翻转（现臂通用，无需
+新增）；理论增益估 ~400-500P（端点检查点 2/6 × 六页 1,890 × 非全灭通道
+~3/4，transition:all 通道组可能仍死；精确账以刀后 A/B 为准）。残面修正
+两笔：①parsing-valid 余 24F = shim JS 验证器边角（rad 单位、`ray(0deg at
+center center sides)` 乱序、无单位 0、`round 0px,` 逗号形、path `s` 命令、
+`path(  "…"  )` 空白归一）独立通道挂账；②parsing-invalid 24F 全账红（P=0）
+——setProperty 通道原样存 invalid 值读回非空所致（非本刀域）。001 页 179F
+复核：60F got "none"（transition:all 通道丢值）、12F 小写 `m` path 输出
+（疑 jsanim registry 侧另一插值臂，下轮探针）、余为 path 命令级插值期望
+（后置域）。**让位记**：peer backdrop-filter 刀在飞（zw-bdf-ab.service
+cssom 批 + editing-run 双链；registry.rs/es_module.rs/part02.rs WIP mtime
+00:15），在跑链禁发重型入口，本刀不开工，下轮开工前先核该刀落地态。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
