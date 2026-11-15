@@ -134,6 +134,23 @@ quickjs-clippy 101（peer es_module lint 在册）、gpu 双腿 0、其余腿见
 残面：composition-001 余 ~90F = shim composite-add 函数列表 all-or-nothing
 主矛盾面（十轮已挂账）、散页 ~690 在他 corpus 全量跑自然入账；同型 supports
 桶定谳 mask-border/shape-outside/calc-size/row-rule 均真实现缺口后置。
+**gap-rules 刀侦察+设计轮（11-16 十六轮，零码改——共享树编译破树风险让位）**：
+本实例（监控线）全程让位 peer 三刀（offset-position 4427b121e +108/0/0、
+backdrop 白名单 f80e4a8b8 +253/0/0、ray()/基本形状在飞 css-parser 四文件
++parse_basic_shape 新档），收口三笔：①knife-1 门禁归因收口（zw-offset-mkt3
+12 腿红项全对号在册零本刀域红 + style-system/engine 定向钉补腿 5/5+3/3）；
+②落地态核验三刀 commit pathspec 纪律（es_module 恒不入）+ A/B 复算互证
+（posp +108、bdf +253 护栏 0/0/0）；③**css-gaps 面基线入账 + 下一刀设计定谳**
+——results-gaps-b0（css-gaps P356/F3792 75 页 + css-multicol P237/F1376 91 页，
+bin-posp-b1 ≡ 4427b121e）；**勘误上条「row-rule 真实现缺口」定性**：缺口为
+css-gaps-1 把 rule 族 color/width **重定义为 repeat() 列表文法**（
+`repeat(4, blue)`/`red, repeat(3, blue)`——gap-decorations-color-valid 页
+实证，纯色=单段列表 multicol 兼容），非纯值 mirror 可达；两通道探查已完成
+（setProperty shim 宽收 ✓ / gCS camelCase 通用路由 ✓ / 死因=supports 门
+Rust parse 拒列表）。分刀 A color-list 模型（+600~900F）/ B width-list+简写
+（+400~600F）/ C `column-rule` 简写白名单一行（multicol 全实现只差门线，
+可独立先行）/ D inset-cap/junction 几何族（1.5k+ 最大残面，单长度插值
+页内实证）。全案 [evidence 2026-11-16-gap-rules-knife-design](evidence/2026-11-16-gap-rules-knife-design.md)。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
