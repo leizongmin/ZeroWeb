@@ -1,6 +1,16 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-15 · Active**。**d23–d29+d31 B1 切片 3 批**：①typing-around-link
+**2026-11-15 · Active**。**d33 子文档 join/enter html 形精化批**：
+part05 四修（doc 级拆半落位按 childNodes 位次 +1 同槽位插、body-caret
+直落臂含换向判据、visible head join 双臂（walk 边缘成员 + `root===doc.head`
+边界升级）、空体占位尾缀剥离）——`insertparagraph-in-child-of-html`
+24P/48F → **64P/8F 净 +40**、`delete-in-child-of-html` 14P/32F →
+**24P/22F 净 +10**，批净 **+50**；head 姐妹面与 b1s3/d31 哨兵零漂移，
+engine lib 4032P/0F。余 8F = 跨文档收养缺口（引擎级 adoptNode 挂账
+FIXME(d33)）；余 22F = 18F title 门控（head 段提升切片）+ 4F XOR 伪失败
+（d17 族出队，错误面自证 `expected true got 1`）。证据见
+[child-doc-join-enter](evidence/2026-11-15-dc2-child-doc-join-enter.md)。
+**d23–d29+d31 B1 切片 3 批**：①typing-around-link
 边界臂 + 读断逃逸（`_zwCeReresolveCaret`，caret 快照锚读短按"读已断"放行
 重映射）+ 输入通道门（execCommand insertText 让位、键盘径保边界外落）——
 selection 全语料交集 **F2P=18/P2F=0**（tal +4；join-pre ×6、editing-div ×5、
@@ -93,14 +103,16 @@ selection 扩面已生效：d18 三门为 deep 面首刀（全语料 +11,481）�
 差 15,939（前文"差 37,125"系 11-07 基线口径未刷新，勘误）；d22 后
 selection 全语料 47,716P（含探针页断言面；较 d21 后 47,326 净 +366 =
 F2P 367 − P2F 1）、input-events 211P 恒等；d23–d31 批净 +52（selection
-交集 +18、input-events +13、unlink.html +21），三目录预估 ~142.6k、差
-~3.6k（预估口径，正式落账待下周 DC-3 快照）。
+交集 +18、input-events +13、unlink.html +21），d33 批净 +50
+（delete/insertparagraph-in-child-of-html +10/+40），三目录预估 ~142.7k、
+差 ~3.5k（预估口径，正式落账待下周 DC-3 快照）。
 子文档域残余：typing-around-link **CE（主窗）变体** collapsed ~122F +
 non-collapsed ~77F + after-joining-paragraphs 48F（边界切片已入执行链，
 tal 内壳形 `child=b`/`parent=b&child=i` ×4 Timeout——收敛前置=单一补偿面
-+ caret 引擎同位快照（d24 切片））+ delete-in-child-of-html 32F /
-insertparagraph-in-child-of-html 24F（html 根直下宿主 join/enter 形待
-精化）+ **P2F=1 deleteFromDocument Range 18**（`[head,1]` 越界——headEl
++ caret 引擎同位快照（d24 切片））+ delete-in-child-of-html 22F（18F
+title 门控 + 4F XOR 伪失败出队）/ insertparagraph-in-child-of-html 8F
+（跨文档收养缺口，引擎级 adoptNode 挂账 FIXME(d33)）+ **P2F=1
+deleteFromDocument Range 18**（`[head,1]` 越界——headEl
 视图无 title，真修=headEl 持真解析 title：解析期 head 段提升 + detHtml
 head 段 + R164 查询 adapter identity，R220 矿区独立切片）+ unlink 余样式
 重裹 4F（FIXME(d24)）。
@@ -125,10 +137,11 @@ prefix 对拍定谳 HEAD 既有欠账非 d18 引入，溯源指向 02:12 前落�
 桥层支线三 bug（tc.querySelector innerHTML 重建后空包装、
 addRange 后 getRangeAt(0) 越界、B2 臂双落地）未动，主链经 R263 补偿
 后已与 B2 臂解耦。
-**下一步** ①**B1 切片 3 收尾**（边界臂/通道门/unlink 臂已落
-367→d31 批见顶格段）：tal 内壳形收敛（前置 d24 单一补偿面 + caret 引擎
-同位快照）+ html 宿主 join/enter 精化（delete/insertparagraph-in-child-of-html
-56F）+ headEl 持真 title（P2F=1 根修，全语料对拍护航）+ execCommand
+**下一步** ①**B1 切片 3 收尾**（边界臂/通道门/unlink 臂/html 宿主
+join/enter 精化已落，见 d33 顶格段）：headEl 持真 title（P2F=1 + del-html
+18F 同门根修，全语料对拍护航，R220 矿区独立切片）+ tal 内壳形收敛（前置
+d24 单一补偿面 + caret 引擎同位快照）+ 跨文档收养（引擎级 adoptNode，
+IP-html 余 8F，FIXME(d33)）+ execCommand
 insertParagraph per-doc 分隔符消费；②随后按修复队列开修 **B2
 input-events getTargetRanges**（前瞻 range 计算，871F）→ **B3
 text-control execCommand 期望矩阵**（~474F，修前逐命令核对语料期望表）
