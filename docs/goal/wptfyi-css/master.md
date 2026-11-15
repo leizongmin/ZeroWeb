@@ -6,6 +6,17 @@
 四天净增 **+10,408**（[DC-3 刷新证据](evidence/2026-11-15-dc3-snapshot-refresh.md)）；
 当前 css-images **3144P/71F**、css-values 4185P/1402F/6T（g49-b1）；
 css-anchor-position anchor 首覆盖 12061P/792F/4T（265 页/12857 案）。
+**DC-3 证据补强（11-15 二轮，同日）**：①语料面定谳——ci-shards.yml 已接线
+65 套件覆盖全部主要 css 组，剩余 ~119k 缺口 = 引擎能力面（未接线零散组仅
+~1.1k，语料杠杆已耗尽，刀链是唯一主杠杆）；②快照树态 ∈ [g41, g42)（12 组
+CI vs 本地对账 |Δ|≤33），当前 css 面真值 ≈ **64.8k**；③masking 6,281 缺口
+再分解：chrome 65 载子测文件共 6,398 子测，本地镜像 573 文件零缺，但 22 页
+setup 即崩（共享插值 harness `createTargetContainer` target `.style`
+undefined 单根因）堵 **5,859/6,398（92%）**——单根因刀优先级显著上调，
+探针件已备（`zz-interpolation-testcommon-probe.js` `ctc:` 日志点，换一
+masking 页即定谳）；该 crash 面预计同压 transforms/motion/fill-strokes 的
+interpolation 页（待同法抽查）。见 [DC-3 刷新证据 §3/§4/B′](evidence/2026-11-15-dc3-snapshot-refresh.md)。
+g50（calc-size 链 + 视口残 12F + box-shadow 视口真值）在途未计。
 **g49 完成（11-15）**：GCS/媒体门视口真值对齐刀——GCS 快照通道四处与渲染
 `<style media>` 门恒 1280×800，而 runner/宿主实视口 800×600（shim 安装期
 `set_pending_layout_viewport`）→ viewport 单位（10vw→128px≠80px）与媒体门
