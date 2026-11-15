@@ -391,6 +391,23 @@ pub enum DomMutation {
         /// 自锚起的 child-index 下行路径（全节点序，终点为待移除节点）。
         path: Vec<u32>,
     },
+    /// editing goal d23（B1 切片 3）：sel-path 定位的 insertAdjacentHTML——定位 =
+    /// 锚 selector + child-index 下行路径（同 [`Self::SetChildTextByPath`]），
+    /// position/html 语义同 [`Self::InsertAdjacentHtml`]。plain 域选区锚（无身份
+    /// 章包装家族——CE execCommand 选区容器域）的结构面变更宿主侧落地：该家族
+    /// 的 insertBefore 不发树 wire（zz-probe-b1s3 实证 createLink wrap 后宿主
+    /// 侧 `<a>` 永不入引擎树），文本写面有 [`Self::SetChildTextByPath`] 通道而
+    /// 结构面此前无对等原语。
+    InsertAdjacentHtmlByPath {
+        /// 锚元素唯一选择器（解析子树的挂载点）。
+        anchor_selector: String,
+        /// 自锚起的 child-index 下行路径（全节点序，终点为插入参照节点）。
+        path: Vec<u32>,
+        /// 相对参照节点的插入位（beforebegin/afterbegin/beforeend/afterend）。
+        position: String,
+        /// HTML 片段（解析语义同 [`Self::InsertAdjacentHtml`]）。
+        html: String,
+    },
     /// 对 create 句柄设置 innerHTML。
     SetInnerHtmlOnHandle {
         /// 节点句柄。
@@ -1439,6 +1456,10 @@ fn rewrite_pending_id_selectors(
             | DomMutation::RemoveChildAtPath {
                 anchor_selector: selector,
                 ..
+            }
+            | DomMutation::InsertAdjacentHtmlByPath {
+                anchor_selector: selector,
+                ..
             } => selector,
             _ => continue,
         };
@@ -1615,6 +1636,14 @@ pub fn apply_dom_mutations_full(
     // NodeId（不随树态漂移），apply 失配时查表兜底；target 已被批内摘除（无父）时维持
     // skip——语义对齐 JS（ref 已脱离，insertBefore 本应抛错）。
     let mut ins_targets: std::collections::HashMap<String, NodeId> = std::collections::HashMap::new();
+    // d23（editing goal，2026-11-14）：同批摘/回插移动语义的 **tag 兜底清单**。
+    // RemoveChildAt/RemoveChildAtPath 变体无 child 身份字段——摘除前以 unique 串记账
+    // 批内 NodeId stash 后，回插（InsertAdjacentSelElement）child 失配且 child_selector
+    // 为裸 tag 时按摘除序 FIFO 消费本表（zz-probe-b1s3 S2 实证：typing-around-link 的
+    // removeChild(a)+insertBefore(a) 序两 stash 全 miss → a 永久丢失宿主（`<p>X</p>`）；
+    // 根因之一 RemoveChildAt 原**摘后**算键，s175 detached 门返 None，片段记账从未发生）。
+    // 同 tag 多子同批反序移动（remove a1,a2 → insert a2,a1）FIFO 错位——保留 warn 观测面。
+    let mut detached_by_tag: std::collections::HashMap<String, Vec<NodeId>> = std::collections::HashMap::new();
     for mutation in mutations {
         let selector = match mutation {
             DomMutation::InsertAdjacentHtml { selector, .. }
@@ -1877,6 +1906,14 @@ pub fn apply_dom_mutations_full(
                 if let Some(node) = find_by_selector(doc, &selector)
                     && let Some(parent) = doc.get(node).and_then(|n| n.parent)
                 {
+                    // d23（editing goal，2026-11-14）：tag 兜底记账（摘前取 local_name）——
+                    // shim R125 移除发射线章（`父sel > tag:nth-child(k)`，IP-M3 刀）作批内
+                    // stash 键，回插（R334b）child_selector 传身份章原串（`a`）键必 miss，
+                    // 裸 tag FIFO 兜底消费（zz-probe-b1s3 S2 实证 a 丢失宿主）。
+                    let tag_before = match doc.get(node).map(|n| &n.kind) {
+                        Some(NodeKind::Element(e)) => Some(e.local_name().to_ascii_lowercase()),
+                        _ => None,
+                    };
                     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
                     // R361：detached-stash 记账（selector → NodeId，本批内 insert 类
                     // 变体 child 失配时复用——同批 detach→insert = 同一节点移动）。
@@ -1885,6 +1922,9 @@ pub fn apply_dom_mutations_full(
                     // runner shim html 刷新触发的 render_html 间隔面）。
                     if let Some(stash) = detached.as_mut() {
                         stash.insert(selector.clone(), doc.outer_html(node));
+                    }
+                    if let Some(tag) = tag_before {
+                        detached_by_tag.entry(tag).or_default().push(node);
                     }
                 }
             }
@@ -2250,15 +2290,31 @@ pub fn apply_dom_mutations_full(
                 };
                 match doc.child_nodes(parent).get(child_index).copied() {
                     Some(child) => {
+                        // d23（editing goal，2026-11-14）：记账键必须在**摘除前**算——
+                        // detach 后 parent 链不达 root，s175 门返 None（原摘后算键形态
+                        // 片段记账从未发生，zz-probe-b1s3 S2 根因之一）。键同时记批内
+                        // NodeId stash（本批 insert 类 child 失配复用——R361 移动语义
+                        // 原 Only `Remove` 变体记账，RemoveChildAt 缺席）+ 跨批片段
+                        // stash（尾簇 4）+ tag 兜底清单（shim 身份章 `a` 与 engine
+                        // unique 串形态不同、键必 miss 的最终兜底）。
+                        let uniq_before = unique_selector_for_node(doc, child);
+                        let tag_before = match doc.get(child).map(|n| &n.kind) {
+                            Some(NodeKind::Element(e)) => Some(e.local_name().to_ascii_lowercase()),
+                            _ => None,
+                        };
                         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
                         // 尾簇 4：跨批片段记账——sel 元素移除走本变体（非 Remove），后续
                         // 批 re-insert（InsertAdjacentSelElement）child 失配时按子 selector
                         // 重解析片段插回（R361 移动语义跨批面）。无唯一 selector 的子
                         //（纯文本等）无法被 sel insert 引用，不记账。
-                        if let Some(child_sel) = unique_selector_for_node(doc, child)
-                            && let Some(stash) = detached.as_mut()
-                        {
-                            stash.insert(child_sel, doc.outer_html(child));
+                        if let Some(child_sel) = uniq_before {
+                            detached_stash.insert(child_sel.clone(), child);
+                            if let Some(stash) = detached.as_mut() {
+                                stash.insert(child_sel, doc.outer_html(child));
+                            }
+                        }
+                        if let Some(tag) = tag_before {
+                            detached_by_tag.entry(tag).or_default().push(child);
                         }
                     }
                     None => {
@@ -2307,17 +2363,51 @@ pub fn apply_dom_mutations_full(
                 match walk_child_path(doc, anchor, &path) {
                     Some(child) => {
                         if let Some(parent) = doc.get(child).and_then(|n| n.parent) {
+                            // d23：记账口径同 RemoveChildAt——键摘前算（s175 detached 门）、
+                            // 批内 NodeId + 片段 + tag 兜底三记。
+                            let uniq_before = unique_selector_for_node(doc, child);
+                            let tag_before = match doc.get(child).map(|n| &n.kind) {
+                                Some(NodeKind::Element(e)) => Some(e.local_name().to_ascii_lowercase()),
+                                _ => None,
+                            };
                             doc.remove_child(parent, child).map_err(|e| e.to_string())?;
-                            if let Some(child_sel) = unique_selector_for_node(doc, child)
-                                && let Some(stash) = detached.as_mut()
-                            {
-                                stash.insert(child_sel, doc.outer_html(child));
+                            if let Some(child_sel) = uniq_before {
+                                detached_stash.insert(child_sel.clone(), child);
+                                if let Some(stash) = detached.as_mut() {
+                                    stash.insert(child_sel, doc.outer_html(child));
+                                }
+                            }
+                            if let Some(tag) = tag_before {
+                                detached_by_tag.entry(tag).or_default().push(child);
                             }
                         }
                     }
                     None => {
                         tracing::warn!(
                             "apply DOM mutations: remove_child_at_path path out of range, skipped: {anchor_selector}[{}]",
+                            path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+                        );
+                    }
+                }
+            }
+            // editing goal d23：sel-path 定位 insertAdjacentHTML（变体文档见枚举定义）。
+            DomMutation::InsertAdjacentHtmlByPath {
+                anchor_selector,
+                path,
+                position,
+                html,
+            } => {
+                let Some(anchor) = find_by_selector(doc, &anchor_selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_adjacent_html_path anchor no match, skipped: {anchor_selector}"
+                    );
+                    continue;
+                };
+                match walk_child_path(doc, anchor, &path) {
+                    Some(node) => insert_adjacent_html(doc, node, &position, &html)?,
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: insert_adjacent_html_path path out of range, skipped: {anchor_selector}[{}]",
                             path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
                         );
                     }
@@ -2513,30 +2603,52 @@ pub fn apply_dom_mutations_full(
                     // 管线已全量重建，NodeId 失效）→ 跨批片段 stash 重解析插回。
                     None => match detached_stash.remove(child_selector.as_str()) {
                         Some(id) => id,
+                        // d23（editing goal，2026-11-14）：裸 tag 兜底——shim R334b 发射的
+                        // child_selector 是身份章原串（zz-probe-b1s3 实证 `a`），与 engine
+                        // 摘除记账键（unique 结构串）形态必 miss；child_selector 为裸 tag
+                        // 时按摘除序 FIFO 消费同 tag 批内清单（同 tag 多子同批反序移动
+                        // 会错位——保留下方 miss warn 观测面）。
                         None => {
-                            let frag_html = detached.as_mut().and_then(|stash| stash.take(child_selector.as_str()));
-                            match frag_html {
-                                Some(html) => {
-                                    let (context_ns, context_local) = match doc.get(node).map(|n| &n.kind) {
-                                        Some(NodeKind::Element(e)) => {
-                                            (e.namespace().to_string(), e.local_name().to_string())
-                                        }
-                                        _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
-                                    };
-                                    let frag_doc =
-                                        zero_dom::parse_html_fragment(html.trim(), &context_ns, &context_local);
-                                    let mut copied = Vec::new();
-                                    for frag_child in fragment_top_level_children(&frag_doc) {
-                                        copied.push(copy_subtree_from(doc, &frag_doc, frag_child));
-                                    }
-                                    insert_nodes_at_position(doc, &copied, node, &position)?;
-                                    continue;
-                                }
+                            let tag_key = child_selector.trim().to_ascii_lowercase();
+                            let bare_tag = !tag_key.is_empty()
+                                && tag_key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                                && tag_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+                            let tag_fallback = if bare_tag {
+                                detached_by_tag
+                                    .get_mut(&tag_key)
+                                    .and_then(|queue| if queue.is_empty() { None } else { Some(queue.remove(0)) })
+                            } else {
+                                None
+                            };
+                            match tag_fallback {
+                                Some(id) => id,
                                 None => {
-                                    tracing::warn!(
-                                        "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
-                                    );
-                                    continue;
+                                    let frag_html =
+                                        detached.as_mut().and_then(|stash| stash.take(child_selector.as_str()));
+                                    match frag_html {
+                                        Some(html) => {
+                                            let (context_ns, context_local) = match doc.get(node).map(|n| &n.kind) {
+                                                Some(NodeKind::Element(e)) => {
+                                                    (e.namespace().to_string(), e.local_name().to_string())
+                                                }
+                                                _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+                                            };
+                                            let frag_doc =
+                                                zero_dom::parse_html_fragment(html.trim(), &context_ns, &context_local);
+                                            let mut copied = Vec::new();
+                                            for frag_child in fragment_top_level_children(&frag_doc) {
+                                                copied.push(copy_subtree_from(doc, &frag_doc, frag_child));
+                                            }
+                                            insert_nodes_at_position(doc, &copied, node, &position)?;
+                                            continue;
+                                        }
+                                        None => {
+                                            tracing::warn!(
+                                                "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
+                                            );
+                                            continue;
+                                        }
+                                    }
                                 }
                             }
                         }

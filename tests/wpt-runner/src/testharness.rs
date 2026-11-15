@@ -12423,7 +12423,22 @@ fn apply_testdriver_command(
                                 .map(|v| v.trim() == "true")
                                 .unwrap_or(false)
                         };
-                        if !select_consumed && !text_caret_consumed {
+                        // B1 切片 3（editing goal d23，2026-11-14）：CE 宿主 caret
+                        // 消费门——目标是 contenteditable 编辑宿主时 ArrowLeft/Right
+                        // 与 Home/End 走 Selection.modify caret 移动（shim
+                        // `__zw_ce_caret_move`，宿主 scope 内建）而非滚动。s209 文本
+                        // 控件门同构；此前 CE 宿主上四键零 caret 移动（WPT
+                        // typing-around-link making-link 系列 Home/End/Arrow 键位形
+                        // 根因之一）。
+                        let ce_caret_consumed = if select_consumed || text_caret_consumed {
+                            false
+                        } else {
+                            webview
+                                .execute_script(&zero_engine::script_ce_caret_move(key_name))
+                                .map(|v| v.trim() == "1")
+                                .unwrap_or(false)
+                        };
+                        if !select_consumed && !text_caret_consumed && !ce_caret_consumed {
                             let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
                             let _ = webview.execute_script(&scroll_script);
                         }

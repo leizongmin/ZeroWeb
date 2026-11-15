@@ -3900,6 +3900,27 @@ pub fn register_dom_callbacks(
                 "ok".into()
             }),
         );
+        // editing goal d23（B1 切片 3）：sel-path 定位 insertAdjacentHTML（plain 域
+        // 选区锚的结构面宿主落地——变体文档见 [`DomMutation::InsertAdjacentHtmlByPath`]）。
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_insert_adjacent_html_path",
+            Box::new(move |args| {
+                if args.len() >= 4
+                    && let Some(path) = parse_child_index_path(&args[1])
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::InsertAdjacentHtmlByPath {
+                            anchor_selector: args[0].clone(),
+                            path,
+                            position: args[2].clone(),
+                            html: args[3].clone(),
+                        });
+                }
+                "ok".into()
+            }),
+        );
     }
 
     let html = Arc::clone(dom_html);

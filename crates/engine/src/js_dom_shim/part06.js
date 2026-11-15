@@ -5499,21 +5499,29 @@
                 if (fbvOk === false) return false;
               } catch (_eFbV2) {}
             }
-            var before2 = new InputEvent('beforeinput', {
-              bubbles: true, cancelable: true, composed: true,
-              data: _zwExecCmdEventData(cmd, arguments[2]),
-              inputType: _zwExecCmdInputType[cmd], isComposing: false
-            });
-            // R312 UA 通道印记：execCommand 是 UA 合成编辑操作——beforeinput/input
-            // 皆 trusted（WPT editing/event.html 断言 isTrusted=true）。印记一次性，
-            // 页面脚本再 dispatch 同一对象翻 false（redispatch 语义，与
-            // __zw_dispatch_event 同款）。
-            try {
-              Object.defineProperty(before2, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
-              before2._zwUaDispatch = true;
-            } catch (_eTb) {}
-            var notCanceled = host2.dispatchEvent(before2) !== false;
-            try { before2._zwUaDispatch = false; } catch (_eTb2) {}
+            // B1 切片 3（editing goal d29，2026-11-15）：unlink 不派 beforeinput
+            //（input-events-exec-command 语料 "shouldn't fire beforeinput" 断言 +
+            // input inputType 期望 ''——Chromium legacy 径 unlink 只派 input，
+            // 与 format 族 beforeinput→input 序分野；event.html 无 inputType/
+            // beforeinput 断言面不受影响）。
+            var notCanceled = true;
+            if (cmd !== 'unlink') {
+              var before2 = new InputEvent('beforeinput', {
+                bubbles: true, cancelable: true, composed: true,
+                data: _zwExecCmdEventData(cmd, arguments[2]),
+                inputType: _zwExecCmdInputType[cmd], isComposing: false
+              });
+              // R312 UA 通道印记：execCommand 是 UA 合成编辑操作——beforeinput/input
+              // 皆 trusted（WPT editing/event.html 断言 isTrusted=true）。印记一次性，
+              // 页面脚本再 dispatch 同一对象翻 false（redispatch 语义，与
+              // __zw_dispatch_event 同款）。
+              try {
+                Object.defineProperty(before2, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+                before2._zwUaDispatch = true;
+              } catch (_eTb) {}
+              notCanceled = host2.dispatchEvent(before2) !== false;
+              try { before2._zwUaDispatch = false; } catch (_eTb2) {}
+            }
             // editing-compat apply 内容模型边界族（2026-11-09）：formatBlock
             // apply 拒绝返回值贯通——part01g 可编辑链/宿主内容模型两守卫返回
             // false（Chrome ret 录音 [false] 树不变，语料 :1864/:1871/:1876
@@ -5809,7 +5817,344 @@
               // insertparagraph 臂（beforeinput 已派、input 由既有事件序尾部
               // 派发，核零事件）。
               if (cmd === 'inserttext' && rng2 && host2 && typeof globalThis.__zw_ce_inserttext_mutate === 'function') {
-                try { globalThis.__zw_ce_inserttext_mutate(host2, String(arguments[2] == null ? '' : arguments[2])); } catch (_eIns) {}
+                // 第三参 viaExec=true：execCommand 通道，typing-around-link 边界
+                // 臂让位（link-boundaries-insertion 语料 execCommand 形期望入链
+                // 接，见 part01 变异核通道门注）。
+                try { globalThis.__zw_ce_inserttext_mutate(host2, String(arguments[2] == null ? '' : arguments[2]), true); } catch (_eIns) {}
+              }
+              // B1 切片 3（editing goal d23，2026-11-14）：createLink 非 collapsed
+              // 实应用臂——此前仅 collapsed 臂（:5540 pending link 槽），非 collapsed
+              // 选区事件照派、DOM 零变更（WPT typing-around-link making-link 系列
+              // setup 面 `<p>[abc]</p>` + createLink got `<p>XY</p>` = 无链接无 wrap
+              // 实证）。Chrome 语义：选区内容 wrap 进 `<a href=value>`，选区保持
+              // 选中链接内容（后续 collapseToEnd/collapseToStart 可行）。语料形 =
+              // 单一文本节点选区（kParentTag/kChildTag 包裹后仍单文本），跨节点
+              // 面 FIXME 后续（同形 vendored pushDown 语义）。
+              if (cmd === 'createlink' && rng2 && host2 && !rng2.collapsed) {
+                try {
+                  var clS = rng2.startContainer, clE = rng2.endContainer;
+                  if (clS === clE && clS && (clS.nodeType === 3 || clS.__zwIsText)
+                      && clS.parentNode) {
+                    var clV = String(clS.nodeValue || '');
+                    var clSo = rng2.startOffset | 0, clEo = rng2.endOffset | 0;
+                    if (clSo >= 0 && clEo > clSo && clEo <= clV.length) {
+                      var clA = document.createElement('a');
+                      clA.setAttribute('href', String(arguments[2] == null ? '' : arguments[2]));
+                      clA.appendChild(document.createTextNode(clV.slice(clSo, clEo)));
+                      var clP = clS.parentNode;
+                      var clRef = clS.nextSibling;
+                      clS.nodeValue = clV.slice(0, clSo);
+                      clP.insertBefore(clA, clRef);
+                      // B1 切片 3（editing goal d23，2026-11-14）：plain 域宿主（无身份
+                      // 章包装家族——CE 选区容器域）的结构面宿主落地。该家族的
+                      // insertBefore 只改 shim 视图不发树 wire（zz-probe-b1s3 实证
+                      // createLink wrap 后 shim 树 `<a href>abc</a>` 而引擎树 p 仅剩
+                      // 空壳前缀文本——pre/mid 读账分裂、后续键入全链失效的根因）。
+                      // 文本写面已有 SetChildTextByPath 通道（上方 nodeValue= 已发），
+                      // 结构面经 __zw_insert_adjacent_html_path 同锚落地：参照 T
+                      // afterend 插 `<a href>mid</a>`（+suffix 文本——fragment 多顶层
+                      // 节点序保持；T 已写为 prefix）。stamped/sel 域宿主 insertBefore
+                      // 自带 wire（R334b/AppendChild 形），直插会双份——按宿主身份章
+                      // 门禁。FIXME(B1 切片 3+)：_zwFragSelPathOf 锚 sel 为最近稳定
+                      // 祖先 tag 形（如 "p"），多同名兄弟宿主按文档序首中解析，多 p
+                      // 宿主形需锚升级（同 SetChildTextByPath 锚域口径）。
+                      if (!clP.__zwSelector && !clP.__zwHandle
+                          && typeof _zwFragSelPathOf === 'function'
+                          && typeof __zw_insert_adjacent_html_path === 'function') {
+                        var _clFp = _zwFragSelPathOf(clS);
+                        if (_clFp && _clFp.path && _clFp.path.length) {
+                          var _clMid = clV.slice(clSo, clEo), _clSuf = clV.slice(clEo);
+                          var _clEscTxt = function (s) {
+                            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                          };
+                          var _clAHtml = '<a href="'
+                            + String(arguments[2] == null ? '' : arguments[2]).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                            + '">' + _clEscTxt(_clMid) + '</a>';
+                          if (_clSuf) _clAHtml += _clEscTxt(_clSuf);
+                          __zw_insert_adjacent_html_path(_clFp.sel, _clFp.path.join(','), 'afterend', _clAHtml);
+                        }
+                      }
+                      var clRight = clV.slice(clEo);
+                      if (clRight) clP.insertBefore(document.createTextNode(clRight), clRef);
+                      // 选区保持选中链接内容（Chrome——「Inserting XY after making a
+                      // link (following Selection.collapseToEnd)」依赖 collapse 面）。
+                      var clMid = clA.firstChild;
+                      if (clMid && clMid.nodeType === 3) {
+                        var clNr = document.createRange();
+                        clNr.setStart(clMid, 0);
+                        clNr.setEnd(clMid, clEo - clSo);
+                        // B1 切片 3（editing goal d23）：挂跨代 stale 锚——clMid 是
+                        // 本轮视图产物，下一动作轮融合视图换代后可孤儿化（读 ""
+                        // ——collapsed CE 变体 [1]/[3]-[7]「typed XY 丢失」簇根因：
+                        // 键入 splice 打在空读对象上零落账）。fp 按 splice 后当下
+                        // 视图位计算（clA 已入 clP），重映射走 sel+path 下行直达
+                        // 引擎孪生（_zwCeMapStaleContainer cidx 纠偏免疫视图/引擎
+                        // 序漂移）。
+                        try {
+                          var _clFpNr = (typeof _zwFragSelPathOf === 'function') ? _zwFragSelPathOf(clMid) : null;
+                          if (_clFpNr) { clNr._zwStaleAnchor = { start: _clFpNr, end: _clFpNr }; }
+                        } catch (_eClNr) {}
+                        if (typeof _getSelection === 'function') { _getSelection()._ranges = [clNr]; }
+                      }
+                    }
+                  }
+                } catch (_eClk) {}
+              }
+              // B1 切片 3（editing goal d29，2026-11-15）：unlink 实应用臂——
+              // 此前仅 inputType 记名（事件照派、DOM 零变更），run 通道
+              // unlink.html 370P/25F 全 unwrap 形 + input-events-exec-command
+              // "should remove the link"（HEAD 空转假绿：createLink 无 wrap
+              // 时断言恒成立，wrap 臂落地后真形暴露）。spec 语义：active range
+              // 相交的 a 整摘（children 原位保序）；带样式 a 的余样式重裹面
+              // （`<a style=font-weight:bold>` → `<b>`/`<span style>`，spec
+              // setSelectionValue 机制）未接——FIXME(d24 unlink 余样式)。
+              // 事件序见上方 beforeinput/inputType 两处 unlink 特例。
+              if (cmd === 'unlink' && rng2 && host2) {
+                try {
+                  var ulLinks = [];
+                  // B1 切片 3（editing goal d31，2026-11-15）：子树遍历走
+                  // childNodes 数组——firstChild/nextSibling live-list 在
+                  // wire-only 包装家族上断链（createLink 臂 insertAfterPath 落地
+                  // 后宿主 live-list 滞留插入前形态而 childNodes 数组即时，
+                  // zz-probe-d31 T5 实证 t"A",A,t"c" 可见、live-walk 只见首文本），
+                  // 该断链下 unlink 臂 walk=0 整臂 no-op。
+                  (function _zwUlWalk(n) {
+                    var kids = n.childNodes || [];
+                    for (var i = 0; i < kids.length; i++) {
+                      var c = kids[i];
+                      if (!c) continue;
+                      if (c.nodeType === 1) {
+                        if (String(c.tagName || '').toLowerCase() === 'a') ulLinks.push(c);
+                        _zwUlWalk(c);
+                      }
+                    }
+                  })(host2);
+                  for (var uI = 0; uI < ulLinks.length; uI++) {
+                    var ulA = ulLinks[uI];
+                    var ulP = ulA.parentNode;
+                    if (!ulP) continue;
+                    // 相交判定：边界容器落 a 子树内 ∪ 同父窗口覆盖（语料 25
+                    // 失败形全此两类；跨祖先异容器形 FIXME 同上）。
+                    var ulHit = false;
+                    try {
+                      if (ulA.contains(rng2.startContainer)
+                          || ulA.contains(rng2.endContainer)) {
+                        ulHit = true;
+                      } else if (rng2.startContainer === rng2.endContainer
+                          && rng2.startContainer.contains
+                          && rng2.startContainer.contains(ulA)) {
+                        var ulKids = rng2.startContainer.childNodes;
+                        var ulIa = -1;
+                        for (var uK = 0; uK < ulKids.length; uK++) {
+                          if (ulKids[uK] === ulA) { ulIa = uK; break; }
+                        }
+                        if (ulIa >= 0) {
+                          ulHit = (rng2.startOffset | 0) <= ulIa
+                            && (rng2.endOffset | 0) >= ulIa + 1;
+                        }
+                      }
+                    } catch (_eUlHit) {}
+                    // 相交判定补全（d29 第二轮）：跨容器形（`foo[<a>bar</a>]baz`
+                    // 起点/终点均在 a 外）——边界点经 DOCUMENT_POSITION 与 a 比较
+                    //（R219 compareDocumentPosition 可用；文本容器直比，元素容器
+                    // 取 offset 处子代理，末端偏移按容器包含关系归约）。
+                    if (!ulHit) {
+                      try {
+                        var ulS = rng2.startContainer, ulE = rng2.endContainer;
+                        var ulDP4 = (globalThis.Node
+                          && globalThis.Node.DOCUMENT_POSITION_FOLLOWING) || 4;
+                        var ulDP16 = (globalThis.Node
+                          && globalThis.Node.DOCUMENT_POSITION_CONTAINED_BY) || 16;
+                        var ulBefore = false, ulAfter = false;
+                        if (ulA.contains(ulS)) {
+                          ulBefore = true;
+                        } else {
+                          var ulSRef = ulS.nodeType === 3 ? ulS
+                            : ulS.childNodes[rng2.startOffset | 0] || null;
+                          if (ulSRef) {
+                            var ulDpS = ulSRef.compareDocumentPosition(ulA);
+                            ulBefore = !!(ulDpS & ulDP4) || !!(ulDpS & ulDP16);
+                          } else {
+                            ulBefore = !!(ulS.contains && ulS.contains(ulA));
+                          }
+                        }
+                        if (ulA.contains(ulE)) {
+                          ulAfter = true;
+                        } else {
+                          var ulERef = ulE.nodeType === 3 ? ulE
+                            : ulE.childNodes[rng2.endOffset | 0] || null;
+                          if (ulERef) {
+                            var ulDpE = ulA.compareDocumentPosition(ulERef);
+                            ulAfter = ulERef === ulA || !!(ulDpE & ulDP4)
+                              || !!(ulDpE & ulDP16);
+                          } else {
+                            ulAfter = !(ulA.compareDocumentPosition(ulE) & ulDP4);
+                          }
+                        }
+                        ulHit = ulBefore && ulAfter;
+                      } catch (_eUlDp) {}
+                    }
+                    if (!ulHit) continue;
+                    // spec 三层分诊（data/unlink.js 录形定谳）：a 仅 href → 整摘
+                    //（children 原位）；a 带余属性（id/name/class/style…）→ 摘 href
+                    // 留壳（引擎落地 = IAH 原位重插去 href 克隆 + 路径摘原 a——
+                    // 属性面无 path 通道，结构面重插等价达成，FIXME(d24 unlink
+                    // 余样式)：style=font-weight/class=bold 的余样式重裹 `<b>`/
+                    // `<span style>` 形需 setSelectionValue 机制，本臂只保属性
+                    // 原样不重表达）；a 无 href → spec untouched（零操作）。
+                    var ulHasHref = false, ulOtherAttr = false;
+                    try {
+                      var ulAttrs = ulA.attributes;
+                      for (var uAt = 0; uAt < ulAttrs.length; uAt++) {
+                        var uAn = String(ulAttrs[uAt].name || '').toLowerCase();
+                        if (uAn === 'href') ulHasHref = true;
+                        // class/style 是命令值载体（class=bold 录形 spec 整摘
+                        // foobarbaz；style=font-weight 录形重表达）——按整摘层
+                        // 处理，不入余属性壳层。
+                        else if (uAn !== 'class' && uAn !== 'style') ulOtherAttr = true;
+                      }
+                    } catch (_eUlAt) { ulHasHref = true; }
+                    if (!ulHasHref) continue;
+                    // B1 切片 3（editing goal d29）：路径与序列化先于视图 splice
+                    //（克隆序列化——不摘真子节点，防 shim insertBefore 静默失败
+                    // 时 move-out 循环不终止；循环全程带上界，越界即弃臂保视图
+                    // 原样——unlink.html 首轮实证无界版页级 Timeout）。
+                    var ulFp = (typeof _zwFragSelPathOf === 'function')
+                      ? _zwFragSelPathOf(ulA) : null;
+                    var ulSer = document.createElement('div');
+                    var ulHost2 = ulSer;
+                    if (ulOtherAttr) {
+                      // tier B：余属性壳原样保（浅克隆含 href，摘 href），
+                      // children 克隆入壳——序列化形 `<a id=…>…</a>`。
+                      ulHost2 = ulA.cloneNode(false);
+                      try { ulHost2.removeAttribute('href'); } catch (_eUlHr) {}
+                      ulSer.appendChild(ulHost2);
+                    }
+                    var ulGuard = 0;
+                    for (var uS = ulA.firstChild; uS && ulGuard++ < 1000;) {
+                      ulHost2.appendChild(uS.cloneNode(true));
+                      uS = uS.nextSibling;
+                    }
+                    var ulRef = ulA.nextSibling;
+                    // B1 切片 3（editing goal d31，2026-11-15）：stamped 父
+                    //（wire-only 包装家族）的 insertBefore/removeChild 对跨父移动
+                    // 是**完全 no-op**——本地 childNodes 不动、树 wire 不发
+                    //（zz-probe-d31 T2 实证：tier A splice guard 1000 走满零变异
+                    // 零 wire；T1 实证 createLink 臂 insertAfterPath 落地后宿主
+                    // live-list 滞留插入前形态）——本地 splice 只对 plain 父执行，
+                    // stamped 父直接经路径原语落地（同 createLink 包裹臂 IAH 口径：
+                    // beforebegin 插 children + 路径摘 a，两端同形防双份）。
+                    var ulStampedP = !!(ulP.__zwSelector || ulP.__zwHandle);
+                    // B1 切片 3（editing goal d31，2026-11-15）：工厂重建器——
+                    // 该引擎家族 insertBefore 只收**工厂产物**（zz-probe-d31 T7
+                    // 实证：createTextNode 插入生效、parse 节点 cloneNode 产物
+                    // 整类拒收 clInTxt=false）且既有子移动零变异（T5/P3 实证
+                    // parentNode 不换）——克隆/移动两配方在此全灭，唯一可靠
+                    // 本地径是 createElement/createTextNode 重建直插（递归保
+                    // 属性与子树；逐节点带界防环）。
+                    var _zwUlBuild = function (src, dstParent, ref) {
+                      var g = 0;
+                      for (var s = src.firstChild; s && g++ < 500; s = s.nextSibling) {
+                        var nn = null;
+                        if (s.nodeType === 3) {
+                          nn = document.createTextNode(String(s.nodeValue || ''));
+                        } else if (s.nodeType === 1) {
+                          nn = document.createElement(String(s.tagName || 'span'));
+                          try {
+                            var na = s.attributes;
+                            for (var ni = 0; ni < na.length; ni++) {
+                              nn.setAttribute(String(na[ni].name || ''),
+                                String(na[ni].value || ''));
+                            }
+                          } catch (_eUlNa) {}
+                          _zwUlBuild(s, nn, null);
+                        } else {
+                          // 注释等罕见型：克隆兜底（可能被该家族拒收，FIXME(d31)）
+                          nn = s.cloneNode(true);
+                        }
+                        if (nn && ref) dstParent.insertBefore(nn, ref);
+                        else if (nn) dstParent.appendChild(nn);
+                      }
+                    };
+                    if (ulStampedP) {
+                      // stamped 父（wire-only 包装家族）：工厂重建直插 + 摘原 a
+                      //（引擎态由下方路径原语落地，本地操作不发树 wire——
+                      // createLink 臂同插后引擎无双份实证）。
+                      if (ulOtherAttr) {
+                        var ulShell = document.createElement(String(ulA.tagName || 'a'));
+                        try {
+                          var ua2 = ulA.attributes;
+                          for (var uA2 = 0; uA2 < ua2.length; uA2++) {
+                            var uN2 = String(ua2[uA2].name || '').toLowerCase();
+                            if (uN2 !== 'href') {
+                              ulShell.setAttribute(String(ua2[uA2].name || ''),
+                                String(ua2[uA2].value || ''));
+                            }
+                          }
+                        } catch (_eUlSa) {}
+                        _zwUlBuild(ulA, ulShell, null);
+                        ulP.insertBefore(ulShell, ulA);
+                      } else {
+                        _zwUlBuild(ulA, ulP, ulA);
+                      }
+                      ulP.removeChild(ulA);
+                    } else if (ulOtherAttr) {
+                      // tier B：children 留壳内（spec 只摘 href）——重建壳整体
+                      // 插原位、原 a 整摘（children 不让位，防双现）。
+                      var ulGuardB = 0;
+                      for (var uC2; ulSer.firstChild && ulGuardB++ < 100;) {
+                        ulP.insertBefore(ulSer.firstChild, ulRef);
+                      }
+                      if (ulGuardB >= 100) continue;
+                      ulP.removeChild(ulA);
+                    } else {
+                      // tier A：children 原位让位（保对象身份，选区引用不换）、
+                      // a 摘除。move-out 在 wire-only 家族是静默 no-op
+                      //（zz-probe-d31 P3/T5：零变异、子仍留 a 内，摘 a 连带丢子
+                      // →"ac"）——首轮落地校验：未让位即整组改**工厂重建**
+                      //（cloneNode 产物整类拒收，T7；工厂产物该家族收，P2/T6）。
+                      var ulGuard2 = 0;
+                      var ulProbe = ulA.firstChild;
+                      if (ulProbe) {
+                        ulP.insertBefore(ulProbe, ulA);
+                        if (ulProbe.parentNode !== ulP) {
+                          _zwUlBuild(ulA, ulP, ulA);
+                        } else {
+                          // 正常家族：首子已就位，其余逐个让位。
+                          while (ulA.firstChild && ulGuard2++ < 1000) {
+                            ulP.insertBefore(ulA.firstChild, ulA);
+                          }
+                          if (ulGuard2 >= 1000) continue; // 摘失败：保视图原样（同臂前状态）
+                        }
+                        ulP.removeChild(ulA);
+                      } else {
+                        ulP.removeChild(ulA);
+                      }
+                    }
+                    // plain 域宿主本地 splice 后补显式 wire；stamped 域仅此路径
+                    // 落地——IAH beforebegin 插 children 后原 a 后移，摘除路径
+                    // 按插入顶层子数移位（同批同点不移位摘除会命中新插 children
+                    // ——net-zero，zz-probe-d31 T4 实证；plain 域 innerHTML 读
+                    // 本地视图不受引擎此偏差影响，维持原摘除路径不动）。
+                    if (typeof __zw_insert_adjacent_html_path === 'function'
+                        && typeof __zw_remove_child_at_path === 'function'
+                        && ulFp && ulFp.path && ulFp.path.length) {
+                      __zw_insert_adjacent_html_path(
+                        ulFp.sel, ulFp.path.join(','), 'beforebegin',
+                        String(ulSer.innerHTML || ''));
+                      if (ulStampedP) {
+                        var ulRm = ulFp.path.slice();
+                        var ulShift = ulSer.childNodes.length;
+                        ulRm[ulRm.length - 1] = ulRm[ulRm.length - 1] + ulShift;
+                        __zw_remove_child_at_path(
+                          ulFp.sel, ulRm.join(','));
+                      } else {
+                        __zw_remove_child_at_path(
+                          ulFp.sel, ulFp.path.join(','));
+                      }
+                    }
+                  }
+                } catch (_eUl) {}
               }
               // editing-compat 四命令零应用族（2026-11-07）：formatBlock/
               // indent/inserthorizontalrule/insertimage 实应用——此前仅
@@ -5869,7 +6214,11 @@
               var input2 = new InputEvent('input', {
                 bubbles: true, cancelable: false, composed: true,
                 data: _zwExecCmdEventData(cmd, arguments[2]),
-                inputType: _zwExecCmdInputType[cmd], isComposing: false
+                // unlink 恒 ''（input-events-exec-command inputType 期望值；
+                // Chromium legacy 径无专用 inputType，event.html 无 inputType
+                // 断言面）。
+                inputType: cmd === 'unlink' ? '' : _zwExecCmdInputType[cmd],
+                isComposing: false
               });
               try {
                 Object.defineProperty(input2, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
@@ -9116,7 +9465,9 @@
           throw new globalThis.DOMException('The given node is invalid.', 'InvalidNodeTypeError');
         }
         var o = off | 0;
-        if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        if (o < 0) {
+          throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        }
         // R288（js-dom M4）：spec `range-set-start` 步骤 2——offset > node length 对
         // **元素容器同样抛 IndexSizeError**（旧版对 nodeType===1 整体放宽——WPT
         // Range-set "setStart()/setEnd() to a too-large offset must throw
@@ -9145,7 +9496,9 @@
           throw new globalThis.DOMException('The given node is invalid.', 'InvalidNodeTypeError');
         }
         var o = off | 0;
-        if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        if (o < 0) {
+          throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        }
         // R288：同 setStart——元素容器的超长 offset 同样抛（spec `range-set-end` 步骤 2）。
         if (o > this._nodeLength(node)) {
           throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
@@ -12965,6 +13318,28 @@
       }
       if (alter === 'move') this.collapse(land6m[0], land6m[1]);
       else this.extend(land6m[0], land6m[1]);
+    };
+    // B1 切片 3（editing goal d23，2026-11-14）：CE 宿主 caret 键移动消费门——
+    // 焦点元素是 contenteditable 编辑宿主时 ArrowLeft/Right（character 步）与
+    // Home/End（lineboundary 块界）消费为 Selection.modify 移动。此前 runner
+    // text_caret 门只接 input/textarea（s209），CE 宿主上方向/行端键只派事件
+    // 零 caret 移动（WPT typing-around-link making-link 系列的 Home/End/Arrow
+    // 键位形根因之一）。目标非 CE 宿主 / 非四键 / 空选区返 '0'（调用方回落
+    // 既有门），消费返 '1'。复用上方 modify 简形（宿主 scope 内建——移动不越
+    // 编辑根）。
+    globalThis.__zw_ce_caret_move = function (key) {
+      var ae6c = document.activeElement;
+      if (!ae6c || ae6c.nodeType !== 1
+          || !globalThis.__zw_is_ce_host || !globalThis.__zw_is_ce_host(ae6c)) return '0';
+      var s6c = (typeof _getSelection === 'function') ? _getSelection() : null;
+      if (!s6c || !(s6c.rangeCount > 0)) return '0';
+      var m6c = ({ ArrowLeft: ['backward', 'character'],
+        ArrowRight: ['forward', 'character'],
+        Home: ['backward', 'lineboundary'],
+        End: ['forward', 'lineboundary'] })[String(key == null ? '' : key)];
+      if (!m6c) return '0';
+      s6c.modify('move', m6c[0], m6c[1]);
+      return '1';
     };
     // spec selectAllChildren(node)：DocumentType 抛 InvalidNodeTypeError；node 不在
     // 文档中 → no-op（保留原 selection）；否则选 (node, 0)–(node, childNodes.length)。
