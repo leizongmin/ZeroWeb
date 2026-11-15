@@ -242,6 +242,17 @@ registry/inherit 补 column-rule 简写与 backdrop-filter initial_value 臂
 computed 折算、path() 段级 canonical（绝对化+空格归一）、shape() 命令级
 兼容插值、<position> 3 词混合形、ray() && 乱序 supports 形。全案
 [evidence 2026-11-16-basic-shape-grammar-knife](evidence/2026-11-16-basic-shape-grammar-knife.md)。
+**Transition 通道可见性刀设计+认领（11-16 05:4x，轮换续跑实例）**：§7 追加定谳
+（T 通道 corpus 级不可见）的直接后续——六套件 T 面 census **1,752P(echo 巧合池
+全保护红线)/7,846F**（masking 2,416/motion 1,736/gaps 1,218/shapes 1,190/
+filter 638/multicol 648）；F 键期望分类：expect-from t<0.5 **1,436** + expect-to
+t≥0.5 **2,080** ≈ **3,522 直取池（可见性+discrete flip 零新插值器，jsanim flip 臂
+先例）** + 真插值池 3,706（offset-path 405/clip-path 363/shape-outside 351/filter
+154/backdrop 123 头部全属十八轮+刀 A 已有插值器属性复用）。刀体三站镜像
+jsanim v3 已证模式（start_transitions before-change 真值捕获+TRANSITIONS
+注册表+gCS consult）+ Phase 2 seek 语义 + Phase 3 transition:all 展开；
+全案与开工条件（刀 A animation.rs/transition.rs/computed_style.rs 窗口收口后
+零码改解除）见 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md`。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
