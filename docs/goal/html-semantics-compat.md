@@ -2,19 +2,17 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 464 收口（守成巡查轻覆盖轮：远端零入树
-零刀，HEAD = 7bf978a84 同码树基带复测；族主文件整文件粒度挂起轮，
-4 子测出 stable + detailed T 键入，stable 回归 s459 同型 199F 形
-态；账本
-evidence/2026-11-15-m2s464-zeroinflow-patrol.md）。
-双腿（7bf978a84 树，代码与 s461-s463 双腿树全同）leg1 8513
-（8306P/199F/7T/1U，族整文件 + detailed 双 T）/ leg2 8516
-（8306P/203F/6T/1U，detailed T + 4 子测 F），disagree 0 + 单腿缺
-席 5 键全在族主文件；stable 8512（8306P/199F/6T/1U，distinct
-8510）。vs s463 stable 恰 4 GONE（主文件 4 子测键）+ 1 NEW
-（detailed T 键），全数族内；共享键零状态翻转，非族键逐键零差。
-**P 集账本口径 8306 十一轮连续恒等**；onblur 哨键组 10 键双腿一致
-Pass 在 stable（哨解除后第十轮）。全桥绿窗 **1643P/0F rc=0**
+**状态**: Active——M2 切片 465 收口（守成巡查轻覆盖轮：远端零源码
+入树仅渲染流 docs，HEAD = 5de13b648 同码树基带复测；双腿完全一致
+disagree=0，族 5 键全形态在册 4 子测 F + detailed T 双双入
+stable；账本
+evidence/2026-11-15-m2s465-zeroinflow-patrol.md）。
+双腿（5de13b648 树，代码与 s461-s464 双腿树全同）8516/8516（双
+8306P/203F/6T/1U）逐键全同；stable 8516（8306P/203F/6T/1U，
+distinct 8514，族键最全在册位形）。vs s464 stable 零 GONE、恰
+4 NEW（主文件 4 子测键），共享键零状态翻转，非族键逐键零差。**P
+集账本口径 8306 十二轮连续恒等**；onblur 哨键组 10 键双腿一致
+Pass 在 stable（哨解除后第十一轮）。全桥绿窗 **1643P/0F rc=0**
 （+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur
 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（本轮双腿
@@ -27,6 +25,17 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 464 收口）——守成巡查轻覆盖轮：零
+> 入树零刀同码树基带复测，族主文件整文件粒度挂起轮 4 子测出
+> stable + detailed T 键入，stable 回归 s459 同型 199F 形态，P 集
+> 口径 8306 十一轮连续（账本
+> evidence/2026-11-15-m2s464-zeroinflow-patrol.md）**：HEAD =
+> 7bf978a84 同码树。双腿 leg1 8513（8306P/199F/7T/1U，族整文件 +
+> detailed 双 T）/ leg2 8516（8306P/203F/6T/1U），disagree 0 +
+> 单腿缺席 5 键全在族主文件；stable 8512（8306P/199F/6T/1U，
+> distinct 8510）vs s463 恰 4 GONE（4 子测键）+ 1 NEW（detailed
+> T）。全桥绿窗 1643P/0F rc=0（+0）。
+>
 > **▶ 承前（2026-11-15 M2 切片 463 收口）——守成巡查轻覆盖轮：零
 > 入树零刀同码树基带复测，PageDown 子测回入 stable，P 集口径 8306
 > 十轮连续（账本
