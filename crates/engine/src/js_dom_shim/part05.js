@@ -1016,7 +1016,9 @@
           var _nc5 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           _nc5.nonce = String(value);
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
-            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))
+            && (typeof _reflectedStringAttrOn === 'function'
+                ? _reflectedStringAttrOn(_realTag(sel, handle), p) === null
+                : _reflectedStringAttr(p) === null) && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))
             && !(p === 'name' && typeof _reflectedNameAttr === 'function' && _reflectedNameAttr(_realTag(sel, handle), p) != null)) {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
@@ -1026,6 +1028,8 @@
           // R5007 M3 片 c（html-syntax-compat）豁免：**reflected DOMString 属性收非原始值仍须反射**（WebIDL
           // DOMString 转换 null→"null"、对象走 ToPrimitive toString/valueOf——WPT reflection-* 'IDL set to
           // null/object' 簇 getAttribute() 断言；旧 expando 拦截使属性未写 → getAttribute null）。
+          // target expando 刀：`target` 经 [`_reflectedStringAttrOn`] tag 门——真反射 tag（a/area/form/link/base）
+          // 维持 R5007 反射，非反射 tag（div 等）放行 expando（real browser `container.target = el` 普通 expando）。
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
         } else if (p === 'src' && _realTag(sel, handle) === 'SCRIPT') {

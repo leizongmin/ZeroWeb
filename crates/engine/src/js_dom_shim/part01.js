@@ -2172,6 +2172,24 @@
     if (prop !== 'name') return null;
     return _REFLECTED_NAME_TAGS.indexOf(' ' + String(tag || '').toLowerCase() + ' ') >= 0 ? 'name' : null;
   }
+  // target expando 刀（wptfyi-css DC-3 masking 再分解）：`target` 从 FLAT 全表反射
+  // 收窄为 tag 门——HTML spec 真反射 tag 集 {a, area, form, link, base}
+  //（HTMLAnchorElement.target 等；`div.target=`/对象值在 real browser 是普通
+  // expando，不串化）。插值 harness createTargetContainer 尾部
+  // `targetContainer.target = target`（interpolation-testcommon.js:277）对象值经
+  // generic fallthrough setAttribute 串化 → 回读 String → `.style` undefined
+  // → masking/transforms/motion 等 337 页插值 setup 即崩。其余 FLAT 名行为不变。
+  // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-target
+  var _REFLECTED_TARGET_TAGS = ' a area form link base ';
+  // tag 门形态的 [`_reflectedStringAttr`]——`target` 仅真反射 tag 返 'target'，
+  // 其余 tag 返 null（caller 回落 expando）；其他名与 [`_reflectedStringAttr`]
+  // 恒等（最小切片：同一名表类缺陷 `el.align={}` 等无实测语料面，泛化不实施）。
+  function _reflectedStringAttrOn(tag, prop) {
+    if (prop === 'target') {
+      return _REFLECTED_TARGET_TAGS.indexOf(' ' + String(tag || '').toLowerCase() + ' ') >= 0 ? 'target' : null;
+    }
+    return _reflectedStringAttr(prop);
+  }
   // R5009 片 e（M4 片 e）：ARIA **Element 反射**（ARIAMixin element 反射——WPT
   // aria-element-reflection/disconnected）。IDL 名 → 内容属性名 + 形态（single /
   // list）。注意：`ariaErrorMessageElement`（单数）spec **不存在**（WPT `'aria-

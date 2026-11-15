@@ -14632,6 +14632,17 @@
             ? null
             : _reflectedStringAttr(prop);
         if (_rsAttr) {
+          // target expando 刀（get 侧回读优先级）：非反射 tag 上先查 expando（set 侧
+          // R3042 臂存对象值，回读此处优先于属性串——插值 harness
+          // `container.target` 回读对象续 `.style` 链，串化即 setup 崩），miss 回落
+          // 属性读（R3069 原始值写面 round-trip 与 setAttribute 面不变）。真反射
+          // tag（a/area/form/link/base）不经此臂——[`_reflectedStringAttrOn`] 判
+          // 'target' 时与属性读恒等。
+          if (prop === 'target' && typeof _reflectedStringAttrOn === 'function'
+              && _reflectedStringAttrOn(_realTag(sel, handle), 'target') == null) {
+            var _exTgt = _expando[key];
+            if (_exTgt && Object.prototype.hasOwnProperty.call(_exTgt, 'target')) return _exTgt.target;
+          }
           if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
           return __zw_get_attr(sel, _rsAttr) || '';
