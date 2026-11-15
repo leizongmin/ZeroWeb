@@ -16433,6 +16433,8 @@
     //    fit-content/min-content/max-content/stretch/normal——引擎关键字端点走
     //    离散 fallback 裸串）。
     var _zwUnsafe = false;
+    // zw-easing-flip-adopt-2026-11-15 刀标记（A/B provenance：本刀逻辑在引擎
+    // js_anim_registry 侧 easing 感知离散翻转采纳，shim 面零行为变化）。
     // composite-add 刀（2026-11-15，wptfyi-css）：add/accumulate 语义 = 动画值与
     // underlying 逐属性相加（Web Animations §5.4.4 combining values；单动画单迭代
     // accumulate 与 add 同形）。harness 面先 inline 写 underlying 再 animate、

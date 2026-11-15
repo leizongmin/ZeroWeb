@@ -84,6 +84,60 @@ timing 面）现他流在途施工（E0382 中间态+`cargo test -p zero-engine 
 腿在跑），与本刀已提交 animation.rs 文件不重叠；九腿账采集窗 18:16-18:23 先于其
 落地，provenance 由腿日志时间戳锚定。残面候选（下一刀）：easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G、MULTI 值形
 （transform 列表/背景对）逐函数合成。
+**easing 感知离散翻转采纳刀已落地（11-15 十二轮）**：jsanim v2 fallback 检测器
+把「开区间 tick 输出 ≡ 端点原文」一概判引擎 echo 回落 B0，把 spec 离散/步进的
+合法恒端点输出全折（css-values-4 §8.5.6 不可插值对 transformed progress 0.5
+翻转、step-start/end eased 钳 0/1 同形；round-10 账离散面 ~50 真增益 v1 内含、
+v2/v3 清零）。放宽为 **eased 一致性采纳**：`flip_ok` 形态门（恰 2 帧、端点
+offset 0/1 选择器域判定——数组序不信任、direction Normal）下重算
+`eased = apply_timing_function(prog, entry.timing)`：输出 ≡to 且 eased≥0.5 /
+≡from 且 eased<0.5 / 恒值对（from≡to 任何进度）→ 采纳；侧别失配/NaN → 维持
+回落（零回归方向）。eased 同源：合成规则帧不携带 animation-timing-function
+（`_zwWaapiSpecKeyframes` 丢帧级 easing 键）→ 引擎段内恒用全局 timing；span 1
+归一化恒等使整体进度 ≡ 段进度，entry 级重算精确。A/B 双面（B0=bin-cadd-b1
+十一轮 B1 快照 / B1=bin-flip-b1，全程快照二进制；marker `zw-easing-flip-adopt`
+走 part03.js 注释入二进制——Rust const/static 不引用不落二进制三试教训）：
+新面八任务双腿 **0/0/0**（六组 corpus 无 WAAPI 动画面 flip 链 inert——目标
+选择事后剖析见 evidence）；五电池护栏 **+118/0/0 零回归**，经账目三桶拆分
+（采样位置 × 期望端点形态程序化分类）归属定谳：**flip 离散直接 +21**
+（transforms 007 matrix3d↔matrix 离散对 3 + values max-width/height
+none↔20px 离散对 4 + fonts metric 混排离散对 14——interior 端点期望，
+本刀设计目标面）、**cadd 臂迟达 +5**（font-size-adjust add 组合中点真插值
+期望 ∉ 端点=插值臂需求，bin-cadd-b1 构建早于臂落树实锤）、**外来钳制面
++92 挂待归因账不记本刀**（B0 tick 在 prog≤0/≥1 无发射瞬态：主候选
+animation.rs 17:43 构建瞬态提交前回退〔commit diff 不可见〕，次候选
+es_module s419〔nm 符号集 76 vs 460 内容差实锤、module 编译域无 classic
+路径〕；本刀三重排除＝shim verbatim blob 逐字节同 + 注册流纯增量 +
+eval 钳制位恒等）。按属性分组 REGRESSED 空表，离散属性白名单收紧预案未
+触发。**通道教训**：css-grid grid-template-rows-interpolation 失败面走
+CSS Transitions 通道（allow-discrete）不经 js_anim_registry，本刀对其无效
+（实测 0/0/0，归 transition 通道另刀）；「~88G」挂账实际落点 = transforms/
+values/fonts 三域离散翻转面，背景族 discrete-no-interpolation ~119 候选未兑现
+（引擎无该族 keyframe echo 输出，采纳链 inert）。单测 flip_eased_adopts 七钉 +
+engine anim 123/123 全绿；tick 副作用纪律零交互（flip_ok 门直读 keyframes AST，
+无新增 tick，与 AnimationClock.tick learning 无副作用路径约定同型）。见
+[evidence 2026-11-15-easing-flip-adopt-knife](evidence/2026-11-15-easing-flip-adopt-knife.md)。
+make test 门禁（zw-flip-mkt2 systemd unit + test-guard，19:29:38 发射 / 19:50:11
+收；首轮 zw-flip-mkt fmt 全局步被 peer WIP 四文件漂移阻断〔animation.rs/
+computed_style.rs=offset 刀、es_module.rs=s419、apply_advanced.rs=offset 刀〕，
+按 composite-add 先例拆腿、fmt 只核本刀文件 FMT-SCOPE ✓）：companion ✓ /
+GPU adapter+consistency ✓ / renderer bin ✓ / quickjs renderer bin ✓；红腿逐名
+对号（**零本刀域红**，engine anim/registry 面全绿）——clippy 1F=script-sandbox
+`too_many_arguments` 8/7（s419 WIP lint 连坐，peer 域）；workspace 测试
+1F=image_batch_e2e 41≠36 负载峰值形（在册）；renderer lib 1F=worker-fetch
+（在册 c6dcbce0a 镜像）；browser bin 3F=tab_js_worker 镜像+default_actions
+（在册）+ gpu_compositor_path_dispatches_input_events_to_form_controls
+（新面孔 IPC 帧头断裂形态，**solo 定谳 flake 不入账**——双会话合计 solo
+×11=8 绿 3 红〔红侧签名=compositor「通道关闭，退出」后 signal 11 断帧；
+flip 侧加密采样 3/8 红、门禁收后低载仍现，纯负载相位解释存疑〕，分类一致归
+compositor 域后续查）；
+browser tests 2F=tab_js_worker+default_actions（在册）；quickjs workspace
+1F=image_batch（同负载形 quickjs 面）；quickjs renderer lib 1F=worker-fetch
+quickjs 镜像（在册）。round-11 cdp_focus 新鲜度 tripwire 伪红本轮未现
+（companion build 刷新二进制 mtime 顺带核销）；round-11 script-sandbox
+quickjs 47F es_module 扩面本轮未现（s419 树态推进，peer 域）。
+残面候选（下一刀）：url 绝对化 ~9G、MULTI 值形（transform 列表/背景对）逐函数
+合成、CSS Transitions 通道离散翻转（grid-template 面）。
 **动画值进 gCS 刀已落地（11-15 十轮，jsanim v1→v3 三代 A/B 收口）**：shim
 `Animation` 经 `__zw_js_anim_register/seek/playpause/cancel` 把 keyframes/timing/
 播放态登记到引擎侧 `js_anim_registry`（thread_local ENTRIES + 独立
