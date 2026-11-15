@@ -2,33 +2,51 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 482 收口（守成巡查轻覆盖轮：零入
-树同码树同二进制基带复测——码态自 688210311 恒等，远端仅渲
-染流 R5650-R5654 docs 空转核查；账本
-evidence/2026-11-15-m2s482-quiet-baseline-patrol.md）。
-码态 = 688210311（HEAD 0b8a74455 docs-only）。leg1 8516
-（8307P/202F/6T/1U 族子测相位）+ leg2 8513（8307P/199F/6T/
-1U 族整文件相位）双零截断（leg2 窗 load 7.02 并跑未触带），
-stable 8509（8305P/198F/5T/1U）disagree 1 + leg-only 4/1
-**全部族键、族相位谱两端镜像**（detailed 整文件 T↔F +
-optional 4 子测 ↔ 整文件键轮换）。**vs s481 stable：GONE 0 +
-NEW 0 + flips 0——8509 键逐键恒等，stable 集跨轮零漂移最强
-基带形态**。**P 集账本口径 8307 持位**（stable 机械口径
-8305P 同形）；T 键集 5 非族恒等；双发发射伪影 2 键照旧在册
-（sort -u 去重吸收）。picker 刀增益键 stable Pass 第 5 轮
-保持，checkmark 恒 F 带形不变。onblur 哨组 stable 10 键全
-在册 8P/2F（following-label 回位持位）；dialog-overlay 哨
-第 11 轮 + modulepreload 哨第 14 轮零翻红。全桥绿窗 **1644P/
+**状态**: Active——M2 切片 483 收口（守成巡查轻覆盖轮连续第
+二轮：零入树同码树同二进制——码态 688210311 恒等，ZeroWeb-3
+part05/part01 新刀施工中未落树（R5655/R5656 对账）；账本
+evidence/2026-11-15-m2s483-quiet-baseline-patrol.md）。
+码态 = 688210311（HEAD d16d7a810 docs-only）。leg1 8516
+（8307P/202F/6T/1U 族子测相位）+ leg2 8513（8307P/200F/5T/
+1U 族混合相位：optional 整文件键 T→F 摆谱内在册）双零截断
+（leg1 窗 load 峰 11.24 未触截断实效应），stable 8509
+（8305P/198F/5T/1U）disagree 1 + leg-only 4/1 六位移键全部
+族键。**vs s482 stable：GONE 0 + NEW 0 + flips 0——8509 键
+逐键恒等连续第二轮**。**P 集账本口径 8307 持位**（stable
+机械口径 8305P 四轮同形）；T 键集 5 非族三轮恒等。picker
+刀增益键 stable Pass 第 6 轮保持，checkmark 恒 F 带形不变。
+onblur 哨组 stable 10 键全在册 8P/2F；dialog-overlay 哨
+第 12 轮 + modulepreload 哨第 15 轮零翻红。全桥绿窗 **1644P/
 0F rc=0**（filtered 2389 同值，清单 set 恒等）。红池归账
 结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂
 用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持
 （双腿零真 hang，零截断）。
-下一步：**守成巡查**（他流入树归因轮或轻覆盖）+ 候门决项
-等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
-rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
-门开随批落预案不变：簇 D 开 → customizable-select-styles.css
-×47 随批落。
+下一步：**守成巡查**（他流入树归因轮或轻覆盖；ZeroWeb-3
+part05.js 新刀 + part01.js 扩面施工中，落树后按他流刀归因
+轮，join 实测为准）+ 候门决项等待用户拍板（video P1+P2 立
+项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16 红块协
+同面（归 rendering 流记账）。门开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 482 收口）——守成巡查轻覆盖
+> 轮：零入树同码树同二进制基带复测——码态自 688210311 恒等，
+> 远端仅渲染流 R5650-R5654 docs 空转核查；账本
+> evidence/2026-11-15-m2s482-quiet-baseline-patrol.md）。
+> 码态 = 688210311（HEAD 0b8a74455 docs-only）。leg1 8516
+> （8307P/202F/6T/1U 族子测相位）+ leg2 8513（8307P/199F/6T/
+> 1U 族整文件相位）双零截断（leg2 窗 load 7.02 并跑未触带），
+> stable 8509（8305P/198F/5T/1U）disagree 1 + leg-only 4/1
+> **全部族键、族相位谱两端镜像**（detailed 整文件 T↔F +
+> optional 4 子测 ↔ 整文件键轮换）。**vs s481 stable：GONE 0 +
+> NEW 0 + flips 0——8509 键逐键恒等，stable 集跨轮零漂移最强
+> 基带形态**。**P 集账本口径 8307 持位**（stable 机械口径
+> 8305P 同形）；T 键集 5 非族恒等；双发发射伪影 2 键照旧在册
+> （sort -u 去重吸收）。picker 刀增益键 stable Pass 第 5 轮
+> 保持，checkmark 恒 F 带形不变。onblur 哨组 stable 10 键全
+> 在册 8P/2F（following-label 回位持位）；dialog-overlay 哨
+> 第 11 轮 + modulepreload 哨第 14 轮零翻红。全桥绿窗 **1644P/
+> 0F rc=0**（filtered 2389 同值，清单 set 恒等）。
 
 > **▶ 承前（2026-11-15 M2 切片 481 收口）——他流双刀归因
 > 轮：css 流 composite-add 刀 e42482bfd（shim add/accumulate
