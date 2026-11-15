@@ -232,8 +232,13 @@ registry/inherit 补 column-rule 简写与 backdrop-filter initial_value 臂
 371P/1F + qjs-renderer-lib 369P/1F worker-fetch 三形、browser bin/tests
 各 2F tab_js_worker+default_actions、qjs-workspace 825P/1F image_batch
 形），**刀域零新红**。残面（下刀
-队列）：shape-outside 白名单族 ~2,184（registry 三串门线 + 存储槽 +
-apply + gCS + WAAPI 五站）、007 页 neutral 页构造活体插桩、rect/xywh
+队列）：shape-outside 全谱实测 **5,105F**/104 页（supports 门 1,955 +
+串化 canonical 3,117——`circle(at 50cm)` 期望补 center/edge 序/calc 折算
++ assert_true 前置 33；设计稿
+`.acceptance/wptfyi-css/next-knife-shape-outside-design.md`，registry 三串
+门线 + 存储槽 + apply + gCS + WAAPI 五站，旧估 ~2,184 只数了门桶偏小）、
+007 页 neutral 页构造活体插桩（**并发实例已在飞认领**，ZW_ANIM_DEBUG
+插桩层 05:19）、rect/xywh
 computed 折算、path() 段级 canonical（绝对化+空格归一）、shape() 命令级
 兼容插值、<position> 3 词混合形、ray() && 乱序 supports 形。全案
 [evidence 2026-11-16-basic-shape-grammar-knife](evidence/2026-11-16-basic-shape-grammar-knife.md)。
