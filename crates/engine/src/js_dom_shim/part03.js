@@ -25523,6 +25523,12 @@
       // body 视图零变化）。
       var hh179 = '';
       try { hh179 = String(_r179HeadHtml || ''); } catch (_e179h) {}
+      // T 切片（editing goal d34）：iframe 子文档 head 段（doc 槽 `_r159HeadHtml`
+      // ——part05 解析前剥离的原始整段，含 `<head>` 包裹）并入包装层——head
+      // 内容迁入 headEl 后 body 树序列化不再含 head 子，缺省补发保 R164
+      // detHtml 轮转查询视图（title/meta/script 查询命中）；普通 detached doc
+      // 无槽零变化。
+      try { if (!hh179 && doc._r159HeadHtml) hh179 = String(doc._r159HeadHtml); } catch (_e159hs) {}
       // R159：html/body 属性恢复到包装层（`<html id="html"><body id="body">`——
       // 查询树保真；普通 detached doc 无槽零变化）。
       if (ha || ba || hh179) {
@@ -25702,6 +25708,22 @@
       try {
         ensureTree();
         var realNode167 = _zwMFindRealNode(_tree, key);
+        if (!realNode167) {
+          // T 切片（editing goal d34）：headEl 视图真节点搜——iframe 子文档 head
+          // 段解析期迁入 headEl（part05 解析前剥离）后，R167 桥的 `_tree` 搜不再
+          // 覆盖 head 内容，JSON 往返命中 head 子时落 `_zwParseEl` wrapper 域
+          //（无 .remove——corpus removeResourceScriptElements TypeError 46F 实证）。
+          // 非元素伪根走 R307 fragment 同款（跳过自身登记只递归子）；host 已按
+          // 作用域裁决命中后才到此，body 作用域误命中不存在。真节点自登记同
+          // R166 方向（real 即桥对象）。
+          try {
+            var _hd167k = doc.head && doc.head.childNodes;
+            if (_hd167k && _hd167k.length) {
+              var _hd167 = _zwMFindRealNode({ childNodes: _hd167k }, key);
+              if (_hd167) { _zwBridgeSet(_hd167, _hd167); realNode167 = _hd167; }
+            }
+          } catch (_e167hd) {}
+        }
         if (realNode167) {
           var bridged167 = _zwBridgeGet(realNode167);
           if (bridged167) {

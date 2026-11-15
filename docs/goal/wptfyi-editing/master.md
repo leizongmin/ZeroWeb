@@ -1,6 +1,19 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-15 · Active**。**d33 子文档 join/enter html 形精化批**：
+**2026-11-15 · Active**。**d34 headEl 持真 title 切片**：part05 R159 分支
+head 段解析前剥离（存 `doc._r159HeadHtml` 槽）+ headEl 独立解析入链（s408
+trio + R173 盖章，快照迭代避 reparent splice 活数组陷阱）+ part03 detHtml
+doc 槽补发 + R167 桥 headEl 真节点搜（qSA("script") 产物 `.remove` 断链
+修复）——`delete-in-child-of-html` **24P/22F → 34P/12F 净 +10**，d33 挂账
+18F title 门控清账；`doc.title` getter head 快道免修自愈（d22 记档缺口
+闭合）。全语料护航零 P2F（本切片）：engine lib 4032P/0F、input-events
+223P 恒、unlink 391P/4F 恒、head 姐妹面/b1s3/d31 哨兵恒、selection 全量
+对拍 vs d30 账 F2P=65（del-html +20 含 d33 批 +10、IP-html +40 d33 批、
+editing-div-outside-body +5 d33 窗口）；P2F=2 归 d31 unlink 臂既有欠账
+（stash 基线二进制定谳，非本切片）。余 12F = 8F J2 跨 body 边界块合并
+缺口 + 4F S8 XOR 伪失败（d17 族）。证据见
+[headel-title-relocation](evidence/2026-11-15-dc2-headel-title-relocation.md)。
+**d33 子文档 join/enter html 形精化批**：
 part05 四修（doc 级拆半落位按 childNodes 位次 +1 同槽位插、body-caret
 直落臂含换向判据、visible head join 双臂（walk 边缘成员 + `root===doc.head`
 边界升级）、空体占位尾缀剥离）——`insertparagraph-in-child-of-html`
@@ -105,17 +118,20 @@ selection 全语料 47,716P（含探针页断言面；较 d21 后 47,326 净 +36
 F2P 367 − P2F 1）、input-events 211P 恒等；d23–d31 批净 +52（selection
 交集 +18、input-events +13、unlink.html +21），d33 批净 +50
 （delete/insertparagraph-in-child-of-html +10/+40），三目录预估 ~142.7k、
-差 ~3.5k（预估口径，正式落账待下周 DC-3 快照）。
-子文档域残余：typing-around-link **CE（主窗）变体** collapsed ~122F +
-non-collapsed ~77F + after-joining-paragraphs 48F（边界切片已入执行链，
-tal 内壳形 `child=b`/`parent=b&child=i` ×4 Timeout——收敛前置=单一补偿面
-+ caret 引擎同位快照（d24 切片））+ delete-in-child-of-html 22F（18F
-title 门控 + 4F XOR 伪失败出队）/ insertparagraph-in-child-of-html 8F
-（跨文档收养缺口，引擎级 adoptNode 挂账 FIXME(d33)）+ **P2F=1
-deleteFromDocument Range 18**（`[head,1]` 越界——headEl
-视图无 title，真修=headEl 持真解析 title：解析期 head 段提升 + detHtml
-head 段 + R164 查询 adapter identity，R220 矿区独立切片）+ unlink 余样式
-重裹 4F（FIXME(d24)）。
+差 ~3.5k（预估口径，正式落账待下周 DC-3 快照；d34 切片 +10 后
+~142.75k）。子文档域残余：typing-around-link **CE（主窗）变体**
+collapsed ~122F + non-collapsed ~77F + after-joining-paragraphs 48F（边界
+切片已入执行链，tal 内壳形 `child=b`/`parent=b&child=i` ×4 Timeout——收敛
+前置=单一补偿面 + caret 引擎同位快照（d24 切片））+
+delete-in-child-of-html 12F（8F J2 跨 body 边界块合并缺口——吸收臂展平
+单侧、无跨界块合并，独立后续切片 + 4F XOR 伪失败出队）/
+insertparagraph-in-child-of-html 8F（跨文档收养缺口，引擎级 adoptNode
+挂账 FIXME(d33)）+ **P2F=2 styling-commands unlink**（plaintext-only 宿主
+unlink 应剥 `<a>` 实 no-op——d34 全量对拍披露，stash 基线实证属 d31/d33
+已提交窗口欠账，d31 unlink 臂补 plaintext-only 面）+ d22 记档
+deleteFromDocument `[head,1]` 越界 P2F=1 当前账面无对应红项（d34 headEl
+持真后 deleteFromDocument 族全 Pass，账面清）+ unlink 余样式重裹 4F
+（FIXME(d24)）。
 modify 残余 ~57F（定向 probe 口径）= 鼠标驱动 modify（2/7×2+3/7，事件
 集成面）、line-flex/grid 0/2×3（FIXME(visual-modify) 行盒几何）、
 inline-boundary 18/36、bidi character 22/28×2（RTL 视觉轴近似）、word
@@ -137,9 +153,11 @@ prefix 对拍定谳 HEAD 既有欠账非 d18 引入，溯源指向 02:12 前落�
 桥层支线三 bug（tc.querySelector innerHTML 重建后空包装、
 addRange 后 getRangeAt(0) 越界、B2 臂双落地）未动，主链经 R263 补偿
 后已与 B2 臂解耦。
-**下一步** ①**B1 切片 3 收尾**（边界臂/通道门/unlink 臂/html 宿主
-join/enter 精化已落，见 d33 顶格段）：headEl 持真 title（P2F=1 + del-html
-18F 同门根修，全语料对拍护航，R220 矿区独立切片）+ tal 内壳形收敛（前置
+**下一步** ①**B1 切片 3 收尾**（headEl 持真 title 已落 d34 切片——
+del-html +10、title 门控清账；边界臂/通道门/unlink 臂/html 宿主
+join/enter 精化已落，见 d33 顶格段）：**d31 unlink 臂 plaintext-only
+P2F=2 补修**（styling-commands 两变体，d34 披露欠账）+ J2 跨 body 边界
+块合并切片（del-html 余 8F，doc 级 walk 块合并臂）+ tal 内壳形收敛（前置
 d24 单一补偿面 + caret 引擎同位快照）+ 跨文档收养（引擎级 adoptNode，
 IP-html 余 8F，FIXME(d33)）+ execCommand
 insertParagraph per-doc 分隔符消费；②随后按修复队列开修 **B2

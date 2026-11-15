@@ -2743,6 +2743,23 @@
           var _r159Bm = /<body\b([^>]*)>/i.exec(String(mEl[3] || ''));
           doc._r159BodyAttrs = _r159Bm ? String(_r159Bm[1] || '').trim() || null : null;
         } catch (_eA4) {}
+        // T 切片（editing goal d34，2026-11-15）：head 段**解析前剥离**——旧径
+        // head 段留在 bodyInner，body 上下文解析把 title/script 等元素提为 body
+        // 树顶层子（探针 D4 实证 body.innerHTML getter 返回
+        // `<title>iframe</title><br>`）；语料 setup `body.innerHTML = ''` 走
+        // setter 重置（_tree=null、bodyHtml=''）即毁 head 段——
+        // delete-in-child-of-html 18F title 门控根因。剥出整段存 doc 槽
+        //（detHtml 包装层补发保 R164 轮转查询视图 + docEl getter headElOut
+        // 接管），bodyInner 只留 body 段，body 视图与真浏览器同形。
+        // https://html.spec.whatwg.org/multipage/syntax.html#the-head-element
+        try {
+          var _r159Hh = /<head\b[^>]*>[\s\S]*?<\/head\s*>/i.exec(String(bodyInner || ''));
+          if (_r159Hh) {
+            doc._r159HeadHtml = _r159Hh[0];
+            bodyInner = bodyInner.slice(0, _r159Hh.index)
+              + bodyInner.slice(_r159Hh.index + _r159Hh[0].length);
+          }
+        } catch (_eT0) {}
       }
       } else {
         // R255（js-dom M4）：无显式 `<html>…</html>` 对的 HTML 子文档——
@@ -3019,6 +3036,34 @@
       return c255;
     };
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
+    // T 切片（editing goal d34）：head 段独立解析入 headEl（s408 trio 持真
+    // title）——`_zwMBuildBodyTree` body 上下文解析剥出的 head 内串，逐子
+    // appendChild（reparent + 兄弟接线），子树 R173 owner 溯源盖（ensureTree
+    // 同款——ownerDocument accessor 与 :lang 祖先沿槽读源 doc）。语料 setup
+    // `body.innerHTML =` 重置只触 body 树，head 段自此常驻。doc.title getter
+    // head 快道（part03 `_zwFindTitleElement` 先走 headEl）随之命中。
+    // https://html.spec.whatwg.org/multipage/dom.html#the-head-element
+    try {
+      var _t159hh = String(doc._r159HeadHtml || '');
+      var _t159hi = /<head\b[^>]*>([\s\S]*?)<\/head\s*>/i.exec(_t159hh);
+      if (_t159hi && _t159hi[1]) {
+        var _t159ht = _zwMBuildBodyTree(_t159hi[1], '', false);
+        // 快照迭代——appendChild reparent 会从源父 childNodes splice（活数组
+        // 正序迭代隔一跳一：探针实证 TITLE/META 落、STYLE/SCRIPT 跳）。
+        var _t159hk = ((_t159ht && _t159ht.childNodes) || []).slice();
+        for (var _t159i = 0; _t159i < _t159hk.length; _t159i++) {
+          var _t159c = _t159hk[_t159i];
+          if (!_t159c) continue;
+          try { doc.head.appendChild(_t159c); } catch (_eT2) {}
+          (function _t159Stamp(n) {
+            if (!n || n.nodeType !== 1) return;
+            try { n._zwOwnerTree = doc; } catch (_eT3) {}
+            var cs = n.childNodes || [];
+            for (var i = 0; i < cs.length; i++) _t159Stamp(cs[i]);
+          })(_t159c);
+        }
+      }
+    } catch (_eT1) {}
     // B1 切片 2（editing goal d22，2026-11-14）：body 视图树根上行链接——解析树
     // 顶层的 parentNode 链止于 body 树根（探针实证 title 爬升 BODY(parent:null)
     // 即断），EditorTestUtils.sendKey 的 light-DOM 上行
