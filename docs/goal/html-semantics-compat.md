@@ -2,31 +2,55 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 484 收口（守成巡查轻覆盖轮连续第
-三轮：零入树同码树同二进制——码态 688210311 恒等，ZeroWeb-3
-三文件刀 numstat 连续五轮恒等未落树（R5657-R5661 对账）；
-账本 evidence/2026-11-15-m2s484-quiet-baseline-patrol.md）。
-码态 = 688210311（HEAD 7ce42f6e6 docs-only）。**双腿完全一
-致** 均 8516（双 8307P/202F/6T/1U，disagree 0 leg-only 0，
-s479 以来第二次全同形态）——族子测相位同形，族 6 键全数入
-stable 8514（8305P/202F/6T/1U）。**vs s483 stable：GONE 0 +
-NEW 5（全族键：optional 4 子测 + detailed 整文件）+ flips
-0——非族 8509 键逐键恒等连续第三轮**。**P 集账本口径 8307
-持位**（stable 机械口径 8305P 五轮同形）；T 键集 5 非族恒
-等。picker 刀增益键 stable Pass 第 7 轮保持，checkmark 恒 F
-带形不变。onblur 哨组 stable 10 键全在册 8P/2F；dialog-
-overlay 哨第 13 轮 + modulepreload 哨第 16 轮零翻红。全桥
-绿窗 **1644P/0F rc=0**（filtered 2389 同值，清单 set 恒等）。
+**状态**: Active——M2 切片 485 收口（他流刀归因轮：site-opt
+流 PR #305 iframe navigator 平面对象语义刀 T72/P42 落树
+（a520bc2f9，bb194436b 主刀 + ff81a8d92 加卫降级返修；shim
+part05.js +26/−1 `_zwMakeIframeWin` + part119 钉 +219 +
+bridge_tests +4），html-semantics 面**零位移清偿**——「申报
+=实测」谱系第三例；账本
+evidence/2026-11-15-m2s485-iframe-navigator-knife-attribution.md）。
+码态 = a520bc2f9（HEAD 7c7037536 docs-only）。leg1 8516
+（8307P/202F/6T/1U 族子测相位）+ leg2 8513（8307P/198F/7T/
+1U 族混合相位）双零截断，stable 8510（8305P/198F/6T/1U）
+disagree 0 + leg-only 4/1 全部族键（detailed 双腿同 T 入
+stable）。**vs s484 stable：GONE 4（全族子测键，双腿相位差
+伪影）+ NEW 0 + flips 0——非族 8509 键逐键零差**。**P 集账
+本口径 8307 持位**（stable 机械口径 8305P 六轮同形）；T 键
+集 5 非族恒等 + detailed T。picker 刀增益键 stable Pass 第
+8 轮保持，checkmark 恒 F 带形不变。onblur 哨组 stable 10 键
+全在册 8P/2F（本刀 shim 同在 part05.js，label 域零翻红为刀
+半径旁证）；dialog-overlay 哨第 14 轮 + modulepreload 哨第
+17 轮零翻红。全桥绿窗 **1648P/0F rc=0**——清单 1644→1648
+纯增长 +4 = T72 钉测试合法入桥（plane_object/proto_absorb/
+proto_degrade/service_worker_slot 四钉对号），GONE 0 零破。
 红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
 **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双
-腿零真 hang，零截断；leg2 nohup cd 坑重踩即时恢复在册）。
+腿零真 hang，零截断）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；ZeroWeb-3 三
 文件刀施工中，落树后按他流刀归因轮，join 实测为准）+ 候门
 决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
 rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css
 ×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 484 收口）——守成巡查轻覆盖
+> 轮连续第三轮：零入树同码树同二进制——码态 688210311 恒等，
+> ZeroWeb-3 三文件刀 numstat 连续五轮恒等未落树（R5657-R5661
+> 对账）；账本
+> evidence/2026-11-15-m2s484-quiet-baseline-patrol.md）。
+> 码态 = 688210311（HEAD 7ce42f6e6 docs-only）。**双腿完全一
+> 致** 均 8516（双 8307P/202F/6T/1U，disagree 0 leg-only 0，
+> s479 以来第二次全同形态）——族子测相位同形，族 6 键全数入
+> stable 8514（8305P/202F/6T/1U）。**vs s483 stable：GONE 0 +
+> NEW 5（全族键：optional 4 子测 + detailed 整文件）+ flips
+> 0——非族 8509 键逐键恒等连续第三轮**。**P 集账本口径 8307
+> 持位**（stable 机械口径 8305P 五轮同形）；T 键集 5 非族恒
+> 等。picker 刀增益键 stable Pass 第 7 轮保持，checkmark 恒 F
+> 带形不变。onblur 哨组 stable 10 键全在册 8P/2F；dialog-
+> overlay 哨第 13 轮 + modulepreload 哨第 16 轮零翻红。全桥
+> 绿窗 **1644P/0F rc=0**（filtered 2389 同值，清单 set 恒等）。
+> leg2 nohup cd 坑重踩即时恢复在册。
 
 > **▶ 承前（2026-11-15 M2 切片 483 收口）——守成巡查轻覆盖
 > 轮连续第二轮：零入树同码树同二进制——码态 688210311 恒等，
