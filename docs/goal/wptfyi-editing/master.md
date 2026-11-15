@@ -27,9 +27,13 @@ Chrome [SameObject] 下恒 false 从不重挂；ZeroWeb querySelector 代理身�
 bi=2（4 次换代 × 遗留窗口 ≈ 15 案吻合）。**修复刀 = querySelector 同 sel
 代理身份稳定性**（页面家族路径缓存断链定位→修；落成即同时解锁双派集群与
 join 首触发事件丢失刀重新落树；改动面 querySelector 缓存语义，全语料 +
-html-semantics/selection 哨兵必跑）。下轮刀序：①querySelector 代理身份稳定刀（**矛盾点入口**：`_makeProxy` sel 键
-cache 恒命中 vs 实测换 5 身份——审计 part04 qS 全部返回点绕过 cache 路径 +
-sel 键 delete 点，候选=R52 purge/qS 分支直返/双 shim 装载）
+html-semantics/selection 哨兵必跑）。下轮刀序：①**sel 方言归一刀**（d41 B3R 轨迹破案：`__zwSelector` 在短形 `div`
+与路径形 `html:nth-child(1) > body:nth-child(2) > div:nth-child(1)` 间摇摆——
+双视图 sel 命名分歧致 cache 双键双 proxy、身份检查误判换代；归一点已定位到桥层：`__zw_query_match` = `with_query_view_doc` +
+`query_match_selector_doc_cached`（callbacks.rs:866），hit sel 命名来自 live
+doc/快照 re-parse 双视图树节点——下轮先确认两视图节点 sel 字段生成再选归一点
+（桥侧改输出 or shim 侧新 `__zw_query_canonical_sel` 回调）；改动面涉全部
+查询消费面，三哨兵必跑；备选最小刀 = qS 返回点同底层元素已存 proxy 反查）
 ②元素锚 range 选区删除语义（820F 主簇）③空 range beforeinput 静默臂。
 证据见 [b3-gtr-event-loss-diagnosis](evidence/2026-11-16-b3-gtr-event-loss-diagnosis.md)。
 

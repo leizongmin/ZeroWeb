@@ -102,6 +102,43 @@ wrap / plain wrapper 直返）③页面域与 execute 域分 cache（两家族�
 `_proxyCache` 是 part01 闭包单例，除非桥两侧各装一份 shim）。下轮先审计 part04
 querySelector 全部返回点 + 搜 sel 键 delete 点。
 
+## d41 补测：B3R handle/sel 轨迹——矛盾点破案
+
+`zz-probe-b3r.html`（逐案记 `gEditor.__zwHandle`/`__zwSelector` 签名，基线二进制）：
+
+```
+changes=5 transitions:
+  ERR|ERR → null|div
+  null|div → null|html:nth-child(1) > body:nth-child(2) > div:nth-child(1)
+  null|html…>div:nth-child(1) → null|div
+  null|div → null|html…>div:nth-child(1)
+  null|html…>div:nth-child(1) → null|div
+```
+
+**破案**：`__zwHandle` 恒 null（sel 形恒定）、**`__zwSelector` 在短形 `div` 与
+完整路径形 `html:nth-child(1) > body:nth-child(2) > div:nth-child(1)` 之间摇摆**
+——同元素两个 sel 方言（短形 = 简化快照视图命中、路径形 = host 静态元素方言，
+part05:14604 注释自证路径形是 shim sel 方言）→ **两个 cache 键**（`s:div` vs
+`s:html…`）→ **两个 proxy** → harness 身份检查误判换代。cache/purge/绕行三候选
+全排除，**根因 = 双视图 sel 命名分歧**。
+
+**修复方向（下轮，规范化刀）**：`__zw_query_match` hit 的 sel 命名双视图归一——
+返回点（`_zwQueryWrapIdentity` 前）或 hit 生成点把同元素两方言归一到单一规范形。
+**改动面警示**：sel 键牵动 listener 表键、写 journal 键、R54xx/pend 桶键等全部
+查询消费面——**必须全语料 + html-semantics + selection 三哨兵同二进制对拍**；
+若归一成本超限，备选最小刀 = harness 兼容面（qS 返回点对**同底层元素**的已存
+proxy 反查——`__zw_contains`/元素指纹比对，O(查一次) 成本换身份连续）。
+
+**桥侧定位（d41）**：`__zw_query_match` = `with_query_view_doc(&html, &m, |doc,
+served_stale| query_match_selector_doc_cached(doc, ctx, &sel))`
+（callbacks.rs:866-873）——hit sel 命名来自**查询视图树节点**：live doc（进程内
+常驻）/ 查询快照 re-parse 双视图（`find_by_selector` 同款双源，callbacks.rs:815-827
+注释「miss 回落查询快照 re-parse」）——两视图节点 sel 命名分歧即根因所在层。
+下轮步骤：①读 `query_match_selector_doc_cached`/视图树构建，确认两视图节点
+sel 字段生成（快照 re-parse 为何产短形 `div`、live 为何产路径形或反之）
+②选归一点（桥侧 hit 输出规范形 = 改 Rust；shim 侧 `__zw_query_canonical_sel`
+新桥回调 = 加回调 + `_zwQueryWrapIdentity` 归一）③三哨兵验证链。
+
 ## 回滚确认（d40-II 追记）
 
 shim 本轮零改动（B3P/B3Q 均纯 HTML 探针），回滚段指 d39 修复实验；d40 两轮
