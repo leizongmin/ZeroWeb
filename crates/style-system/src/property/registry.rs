@@ -206,6 +206,12 @@ impl PropertyRegistry {
             //（individual_* 字段置 None）。known_properties 白名单接入随
             // CSS.supports 门修复（js_dom_bridge decl_supported 前置）。
             "rotate" | "translate" | "scale" => Some(Transform(zero_css_parser::values::TransformValue::None)),
+            // CSS Motion Path offset 簇（css-motion-1，非继承；wptfyi-css offset-* 刀）：
+            // 借 Transform(None) 表义同 individual 先例，真实重置在 apply_initial_value
+            //（offset_path/distance/rotate/anchor 字段落 spec 初始 none/0/auto/auto）。
+            "offset-path" | "offset-distance" | "offset-rotate" | "offset-anchor" => {
+                Some(Transform(zero_css_parser::values::TransformValue::None))
+            }
             "transform-origin" => Some(Length(LengthValue::Percentage(50.0))),
             "perspective" => Some(Length(LengthValue::Px(0.0))),
             "perspective-origin" => Some(Length(LengthValue::Percentage(50.0))),
@@ -603,6 +609,10 @@ impl PropertyRegistry {
             "rotate",
             "translate",
             "scale",
+            "offset-path",
+            "offset-distance",
+            "offset-rotate",
+            "offset-anchor",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",

@@ -513,6 +513,21 @@ pub enum TransformBoxValue {
     ViewBox,
 }
 
+/// `offset-rotate` 属性值（CSS Motion Path L1 §offset-rotate，非继承；初始 auto）。
+/// 角度分量存 deg（正 = 顺时针，与 transform rotate 同向）。
+/// https://drafts.fxtf.org/motion-1/#OffsetRotateValue
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OffsetRotateValue {
+    /// auto — 渲染时取路径切线方向（计算值串 "auto"）。
+    Auto,
+    /// reverse — 切线方向 + 180°（计算值串 "reverse"）。
+    Reverse,
+    /// 固定角度（`<angle>`，deg）。
+    Angle(f64),
+    /// `auto <angle>` — 切线方向再加偏移角（deg）。
+    AutoAngle(f64),
+}
+
 /// CSS word-break 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordBreakValue {

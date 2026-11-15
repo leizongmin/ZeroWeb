@@ -394,6 +394,20 @@ pub struct ComputedStyle {
     pub individual_rotate: Option<zero_css_parser::values::TransformFunction>,
     /// `scale` 属性（`none | <number> [<number> <number>?]?`）。
     pub individual_scale: Option<zero_css_parser::values::TransformFunction>,
+    // ── CSS Motion Path（css-motion-1 offset 簇，非继承；wptfyi-css offset-* 刀）──
+    /// `offset-path` 属性（`none | <offset-path-value>`；首片 none|path()，path 原文
+    /// 存储——ray()/基本形状文法 bail 解析失败回落 supports 假，后置刀）。
+    /// None = 未声明/none。
+    pub offset_path: Option<String>,
+    /// `offset-distance` 属性（`<length-percentage>`；计算值期 font 相对长度绝对化、
+    /// % 保留到渲染期）。None = 未声明（初始 0px）。
+    pub offset_distance: Option<LengthValue>,
+    /// `offset-rotate` 属性（`auto | reverse | <angle> | auto <angle>`）。None =
+    /// 未声明（初始 auto）。
+    pub offset_rotate: Option<OffsetRotateValue>,
+    /// `offset-anchor` 属性（`auto | <position>`；<position> 文法与 transform-origin
+    /// 同构，(x, y) 各一 LengthValue，% 保留）。None = 未声明/auto。
+    pub offset_anchor: Option<(LengthValue, LengthValue)>,
     /// transform-box 值（CSS Transforms 1，非继承；默认 view-box）。
     pub transform_box: TransformBoxValue,
     /// stroke-width 值（SVG2 presentation，非继承；LengthValue，百分比/number 由消费侧按

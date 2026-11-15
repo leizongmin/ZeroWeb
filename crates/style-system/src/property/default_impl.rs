@@ -221,6 +221,12 @@ impl Default for ComputedStyle {
             individual_translate: None,
             individual_rotate: None,
             individual_scale: None,
+            // CSS Motion Path §offset 簇初始值（css-motion-1，非继承）：path none、
+            // distance 0、rotate auto、anchor auto——apply_initial_value 落实际初始。
+            offset_path: None,
+            offset_distance: None,
+            offset_rotate: None,
+            offset_anchor: None,
             // CSS Transforms 1 §transform-box：初始值 view-box（SVG 元素参考最近 viewport；
             // CSS 盒上 view-box 别名 border-box——由消费侧解释，存储保原值）。
             transform_box: TransformBoxValue::ViewBox,

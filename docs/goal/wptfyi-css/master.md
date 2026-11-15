@@ -30,6 +30,34 @@ results-texp-b1-{p1,p2}/B1=results-waapi-b1-{p1,p2}）**净 +184P 零回归**，
 WAAPI 门子测 4071→**0**，2 页 25% 分母差应归一。提交前去冗余（part03
 不可达残片块 + part05 同链重复条件），清理后探针复验一致。见 [evidence
 2026-11-15-waapi-gate-knife](evidence/2026-11-15-waapi-gate-knife.md)。
+**offset 簇刀已落地（11-15 十三轮，rate-limit 中断轮 WIP 认领收口）**：CSS
+Motion Path offset-path/distance/rotate/anchor 四属性五站全链——style-system
+类型/注册（OffsetRotateValue 四形 + known_properties 白名单 + spec 初始
+none/0px/auto/auto）+ apply 文法（path() 首片、length-percentage 字号绝对化、
+auto|reverse|<angle>|auto <angle> 归 deg、anchor 复用 parse_origin_xy）+
+gCS 计算值四臂（缺臂即读缺省先例教训）+ WAAPI 插值链（underlying 四臂 +
+插值四臂：同单位线性/混合单位离散 ≥0.5 翻转 css-values-4 §8.5.6 + apply
+写回往返）。单测 4+3 钉全绿；**干净双二进制 A/B（B0c=HEAD stash 重建 /
+B1c=WIP 重建，md5 异哈希 provenance）七 corpus（motion/transforms/values/
+backgrounds/fonts + 白名单触面护栏 typed-om/cssom）净 +364 / 0 lost /
+0 regressed / 17 页**——motion +363（interpolation 族 311 + parsing/
+computed 25 + inheritance 4 + supports-calc 1）+ values random-computed
+offset-distance % 槽红利 +1，四护栏 corpus 逐字节零差。**前轮 stale-B0
+错账修正**：中断轮曾以 results-jsanim-b3（三轮前产物）为基线得「+47
+transforms」——实为 composite-add/easing-flip 两刀已提交增益；对真基线
+results-flip-b1 复比对 transforms/values/fonts/backgrounds 全零差，真增益
+全在 motion 面。教训入册
+[docs/learnings/bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md](../../../docs/learnings/bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md)。
+残面（motion 45 页余 4,487F）：ray()/基本形状文法族 ~1,830（parse 首片
+bail 后置）、offset-position 属性缺面 ~386（同型五站刀）、已解锁页内
+插值中点/混合形残余 ~1,891（auto+angle 混合端点 458、path() 命令级兼容
+插值 687、anchor/distance 混合单位等）、coord-box 144、composition
+add/accumulate 140、math 函数角度 96。**门禁**（make test 拆腿，
+zw-offset-mkt3.service）：12 腿全账红项全对号在册（peer s419 es_module 6 WIP
++ clippy 连坐、worker-fetch 三形态、tab 对 + default_actions、image_batch
+负载形伪红），本刀域零红——engine 3 钉 workspace 腿日志绿 + style-system
+4 钉定向腿 RC=0（fail-fast 截停补腿）。见 [evidence
+2026-11-15-offset-motion-path-knife](evidence/2026-11-15-offset-motion-path-knife.md)。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +

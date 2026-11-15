@@ -1175,6 +1175,24 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.individual_scale = None;
             true
         }
+        // CSS Motion Path offset 簇（css-motion-1，非继承）spec 初始：
+        // path none / distance 0 / rotate auto / anchor auto。
+        "offset-path" => {
+            style.offset_path = None;
+            true
+        }
+        "offset-distance" => {
+            style.offset_distance = Some(LengthValue::Px(0.0));
+            true
+        }
+        "offset-rotate" => {
+            style.offset_rotate = Some(OffsetRotateValue::Auto);
+            true
+        }
+        "offset-anchor" => {
+            style.offset_anchor = None;
+            true
+        }
         "perspective" => {
             style.perspective = default_style.perspective;
             true

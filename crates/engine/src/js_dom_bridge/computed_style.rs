@@ -34,9 +34,9 @@ use zero_style_system::{
     FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
     ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
     ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
+    ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue,
+    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
     TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
     UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
@@ -654,6 +654,19 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "rotate" => individual_opt_to_css(style.individual_rotate.as_ref()),
         "translate" => individual_opt_to_css(style.individual_translate.as_ref()),
         "scale" => individual_opt_to_css(style.individual_scale.as_ref()),
+        // ── CSS Motion Path offset 簇（css-motion-1；wptfyi-css offset-* 刀）──
+        // 计算值发射（缺臂即 gCS 读缺省——individual 先例同教训）；distance font
+        // 相对长度已在 apply 期绝对化，此处直接序列化；path 原文存储透传。
+        "offset-path" => style.offset_path.clone().unwrap_or_else(|| "none".to_string()),
+        "offset-distance" => match style.offset_distance.as_ref() {
+            Some(lv) => length_to_css(lv, font_size_px),
+            None => "0px".to_string(),
+        },
+        "offset-rotate" => offset_rotate_to_css(style.offset_rotate),
+        "offset-anchor" => match &style.offset_anchor {
+            Some((x, y)) => format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px)),
+            None => "auto".to_string(),
+        },
         // ── transform-origin（R2716）── 2 LengthValue 经 length_to_css，空格连接。
         "transform-origin" => {
             transform_origin_to_css(&style.transform_origin_x, &style.transform_origin_y, font_size_px)
@@ -1537,6 +1550,17 @@ fn letter_spacing_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         "normal".to_string()
     } else {
         length_to_css(lv, font_size_px)
+    }
+}
+
+/// offset-rotate 计算值串（css-motion-1 §offset-rotate：auto | reverse |
+/// <angle> | auto <angle>；角度 deg 整数化输出——apply 期归 deg 存 f64）。
+fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
+    match v {
+        None | Some(OffsetRotateValue::Auto) => "auto".to_string(),
+        Some(OffsetRotateValue::Reverse) => "reverse".to_string(),
+        Some(OffsetRotateValue::Angle(deg)) => format_num(deg, "deg"),
+        Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {}", format_num(deg, "deg")),
     }
 }
 
