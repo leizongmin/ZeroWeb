@@ -2,17 +2,19 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 468 收口（守成巡查轻覆盖轮 + modulepreload 非族键单次翻红 solo 定谳：36/37 腿 Pass + solo ×3 全 Pass = 瞬时 flake 非刀致，立观察哨；账本
-evidence/2026-11-15-m2s468-modulepreload-flicker-patrol.md）。
-双腿（码态 = 编辑流双刀已清偿组合态）8516/8516（8305P/204F/6T/1U
-与 8306P/203F/6T/1U），腿键集完全一致；**非族键分歧首现** =
-modulepreload same-origin 子测（leg1 F ↔ leg2 P），select-home-end
-族本轮反而全体一致（5 键全形态在册）；stable 8515（8305P/203F/
-6T/1U，distinct 8513）。vs s467 stable 恰 1 GONE（modulepreload
-键，非族）+ 1 NEW（detailed T 入，族）。**P 集账本口径 8306 →
-8305 单轮破位**（定谳瞬时 flake，预期下轮回位；该键后续再翻红则
-升级调查）。onblur 哨键组 10 键双腿一致 Pass 在 stable（哨解除后
-第十四轮）。全桥绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变
+**状态**: Active——M2 切片 469 收口（守成巡查轻覆盖轮：远端零入树
+零刀，HEAD = 2578e04b9 同码树基带复测；modulepreload P 键预期回位
+兑现，观察哨第 1 轮复核无再翻红；账本
+evidence/2026-11-15-m2s469-zeroinflow-patrol.md）。
+双腿（码态 = 编辑流双刀已清偿组合态）8515/8516（8306P/201F/7T/
+1U 与 8306P/203F/6T/1U），共享 distinct 8512，**disagree = 0**；
+单腿缺席 3 键全在 select-home-end 族主文件（整文件键 leg1-only
+T 形态，PageDown/PageUp leg2-only 出）；stable 8514（8306P/201F/
+6T/1U，distinct 8512）。vs s468 stable 恰 1 NEW（modulepreload
+键，非族哨键回位）+ 2 GONE（族 PageDown/PageUp），共享键零翻
+转。**P 集账本口径 8306 回位**（s468 单轮破位后按预期回位；哨继
+续盯防）。onblur 哨键组 10 键双腿一致 Pass 在 stable（哨解除后
+第十五轮）。全桥绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变
 （簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门维持**：
 GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提示，不重
 复通知）。hang 观察项静默哨维持（本轮双腿零 hang）。
@@ -24,6 +26,17 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 468 收口）——守成巡查轻覆盖轮 +
+> modulepreload 非族键单次翻红 solo 定谳：36/37 腿 Pass + solo ×3
+> 全 Pass = 瞬时 flake 非刀致，立观察哨，P 集 8305 单轮破位（账本
+> evidence/2026-11-15-m2s468-modulepreload-flicker-patrol.md）**：
+> HEAD = d49921587 前身树（同码态）。双腿 8516/8516（8305P/204F/
+> 6T/1U 与 8306P/203F/6T/1U）腿键集完全一致；非族键分歧首现 =
+> modulepreload same-origin 子测（leg1 F ↔ leg2 P），族 5 键反而
+> 全形态一致；stable 8515（8305P/203F/6T/1U，distinct 8513）vs
+> s467 恰 1 GONE（modulepreload）+ 1 NEW（detailed T）。全桥绿窗
+> 1643P/0F rc=0（+0）。
+>
 > **▶ 承前（2026-11-15 M2 切片 467 收口）——守成巡查轻覆盖轮：
 > 零入树零刀同码树基带复测，detailed T 键振荡出 stable + 4 子测
 > 回入，P 集口径 8306 十四轮连续（账本
