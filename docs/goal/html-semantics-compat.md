@@ -2,24 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 446 收口（守成巡查轮：**g49 GCS 视口真值
-刀零位移清偿，P/F 集恒等** + 全桥绿窗 1637P/0F；账本
-evidence/2026-11-15-m2s446-g49-viewport-attribution.md）。
-**归因面**：s445 push 后入树一刀 = bb3eff6cf（渲染流 g49 GCS 视口真值
-对齐，engine 五文件共享面；GCS/media 门由恒 1280×800 改真 800×600）。
-双腿（bb3eff6cf 树）stable 8510（**8305P/199F/5T/1U**），vs s445 恰
-1 差集 = select-home-end 主文件文件级 T 键相位出（在册负载族）；**P
-集 8305、F 集 199 逐键恒等**，候选位移面（media 门/render-blocking
-族）实测零键移动 → **g49 零位移定谳**。**基带 8305P/199F/5T/1U**
-（T −1 族相位，下轮可摆回 6T；P/F 恒等为主口径）。全桥绿窗 1637P/0F
-rc=0（基线 1637P，+0）。红池 199F 归账结构不变（簇 D 155 + 渲染域/
-decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（候门决项 s445 已提示，不重复通知）。hang
-观察项静默哨维持（本轮双腿零 hang）。下一步：**守成巡查**（他流入树
-归因轮或轻覆盖；红池全数归门后无自由可施工面）+ 候门决项等待用户拍
-板（video P1+P2 立项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16
-红块协同面（归 rendering 流记账）。门开随批落预案不变：簇 D 开 →
-customizable-select-styles.css ×47 随批落。
+**状态**: Active——M2 切片 447 收口（守成巡查轮：**ip C3/C6 原子拆
+分边界刀零位移清偿，P 集恒等 8305 四轮连续** + 全桥绿窗 1643P/0F
++6 新钉；账本 evidence/2026-11-15-m2s447-ip-c3c6-rawtext-attribution.md）。
+**归因面**：s446 push 后入树一刀 = 6c21880ac（editing ip C3 注释原子
+先摘后挂 + C6 script rawtext M1 直构，触 engine
+`js_dom_shim/part01f.js` **corpus shim 本体** + js_dom_bridge_tests.rs）。
+双腿（6c21880ac 树）**stable 8515（8305P/203F/6T/1U）双腿逐键全一致
+（unstable = 0）**，vs s446 恰 5 差集 = select-home-end 族 Fail 相位
+整体回入 stable（s444 同型），族相位轮换记账口径不变 → **C3/C6 零位
+移定谳**（ip 系 C1/C3/C6 三刀全数清偿）。**基带 8305P/203F/6T/1U**
+（P 恒等为主口径，族 Fail 相位在 stable）。全桥绿窗 **1643P/0F rc=0**
+（基线 1637P，+6 = C3/C6 part120 新钉，与 commit 钉测数一致）。红池
+归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门
+维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提示，
+不重复通知）。hang 观察项静默哨维持（本轮双腿零 hang 且零不稳定键）。
+下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自由
+可施工面）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
+s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
+门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
+随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 446 收口）——守成巡查：g49 GCS 视口
+> 真值刀零位移清偿，P/F 集恒等 + 全桥绿窗 1637P/0F（账本
+> evidence/2026-11-15-m2s446-g49-viewport-attribution.md）**：归因刀 =
+> bb3eff6cf（渲染流 g49 GCS 视口真值对齐，engine 五文件共享面；GCS/
+> media 门恒 1280×800 → 真 800×600）。双腿 stable 8510（8305P/199F/
+> 5T/1U），vs s445 恰 1 差集 = select-home-end 主文件文件级 T 相位出；
+> P/F 集逐键恒等，候选位移面（media 门/render-blocking 族）零键移动。
+> 全桥绿窗 1637P/0F rc=0（基线 1637P，+0）。
 
 > **▶ 承前（2026-11-15 M2 切片 445 收口）——基带巡查轮：ip C1 + g47
 > 三刀入树零位移清偿，P 集恒等 8305 + 全桥绿窗 1637P/0F（账本
