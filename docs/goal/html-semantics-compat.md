@@ -2,21 +2,22 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 465 收口（守成巡查轻覆盖轮：远端零源码
-入树仅渲染流 docs，HEAD = 5de13b648 同码树基带复测；双腿完全一致
-disagree=0，族 5 键全形态在册 4 子测 F + detailed T 双双入
-stable；账本
-evidence/2026-11-15-m2s465-zeroinflow-patrol.md）。
-双腿（5de13b648 树，代码与 s461-s464 双腿树全同）8516/8516（双
-8306P/203F/6T/1U）逐键全同；stable 8516（8306P/203F/6T/1U，
-distinct 8514，族键最全在册位形）。vs s464 stable 零 GONE、恰
-4 NEW（主文件 4 子测键），共享键零状态翻转，非族键逐键零差。**P
-集账本口径 8306 十二轮连续恒等**；onblur 哨键组 10 键双腿一致
-Pass 在 stable（哨解除后第十一轮）。全桥绿窗 **1643P/0F rc=0**
-（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur
-2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
-s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（本轮双腿
-零 hang）。
+**状态**: Active——M2 切片 466 收口（他流双刀归因轮：ZeroWeb-3 编
+辑流 069c6aed6 fix(engine) B1 切片 3 shim part01/part06+bridge +
+ef429d0e9 编辑语料接入，html-semantics 面**零位移清偿**；账本
+evidence/2026-11-15-m2s466-two-knife-attribution.md）。
+双腿（0dd607f21 双刀组合态树）leg1 8513（8306P/200F/6T/1U）/ leg2
+8516（8306P/203F/6T/1U），disagree 0 + 单腿缺席 5 键全在族主文件
+（整文件键 leg1-only 首现 Fail 形态 + 4 子测 leg2-only，detailed
+T 双腿一致共享）；stable 8512（8306P/199F/6T/1U，distinct 8510）。
+vs s465 stable（刀前树）恰 4 GONE（4 子测键）、零 NEW，差集全数族
+内，共享键零状态翻转，非族键逐键零差。**P 集账本口径 8306 十三轮
+连续恒等**（刀前刀后同值，编辑语料未向 sweep 键集增长）。全桥绿
+窗 **1643P/0F rc=0**（+0，filtered 同值——刀直改 bridge/shim 本
+体钉面零破旁证）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42
++ onblur 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
+（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨维持
+（本轮双腿零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -25,6 +26,16 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 465 收口）——守成巡查轻覆盖轮：零
+> 源码入树仅渲染流 docs，双腿完全一致 disagree=0，族 5 键全形态
+> 在册 4 子测 F + detailed T 双双入 stable，P 集口径 8306 十二轮
+> 连续（账本
+> evidence/2026-11-15-m2s465-zeroinflow-patrol.md）**：HEAD =
+> 5de13b648 同码树。双腿 8516/8516（双 8306P/203F/6T/1U）逐键全
+> 同；stable 8516（8306P/203F/6T/1U，distinct 8514，族键最全在册
+> 位形）vs s464 零 GONE、恰 4 NEW（4 子测键）。全桥绿窗 1643P/0F
+> rc=0（+0）。
+>
 > **▶ 承前（2026-11-15 M2 切片 464 收口）——守成巡查轻覆盖轮：零
 > 入树零刀同码树基带复测，族主文件整文件粒度挂起轮 4 子测出
 > stable + detailed T 键入，stable 回归 s459 同型 199F 形态，P 集
