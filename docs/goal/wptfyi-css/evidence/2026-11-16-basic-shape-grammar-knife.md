@@ -252,3 +252,36 @@ cargo 构建锁，与已编译 runner 进程无冲突）
 - **伪影假说证伪闭环**：v2 批 12 DOWNS 的 mtime 法证归因被 B1v3 实测
   推翻（§4 motion 段），真实残面定谳挂 §3 残面 5——收口行红分类
   转抄前独立核机制条款的直接兑现。
+
+## 7. 追加定谳（05:27–05:50 后续轮）：T 通道不可见性 corpus 级，非 offset-path 专属
+
+轮换指令预期「transition get 臂补齐后 007 neutral Transitions 12 键全
+Pass」。实测否证：b1v4 等价态（当前 release 构建 + ZW_ANIM_DEBUG 插桩，
+源码复归后与提交态仅差 eprintln）复跑 007，neutral T 组仅 t≥0.5 六键
+Pass，t≤0.4 六键仍 F（得静态 to 值 none）。三层证据定谳：
+
+1. **批账分解**：b1v3 masking 批账 clip-path T t<0.5 共 69 Pass 全部
+   逐键核对——期望值全为静态 to 值（expectFlip 类，如
+   `at (-0.3) should be [polygon(nonzero, 25px 25px, …)]` = to 本身），
+   **零个键证明过渡插值真落地**。此前「clip-path T 机制正常」的推断
+   被推翻，corpus 内不存在反例。
+2. **007 插桩**：apply_to_computed_style 单点插桩（Animations/Transitions
+   共用汇入点）42 行全为 anim 侧，零 transition 侧 tick apply 行——
+   过渡从未进入时钟（delay 期 tick 也会推 from prop，未观测到）。
+3. **受控探针页**（复刻 testcommon T 组序列，delay=0s、duration=100s，
+   +300ms 时 progress≈0.003 离散翻转应显 from）：offset-path 与
+   clip-path **双双显静态 to 值**，行为恒等——跨属性族同缺口。
+
+结论：**T 通道覆盖值经 gCS 不可见 = corpus 级架构缺口**（启动检测/
+before-change 基线捕获与叠加值可见性双环节，细分留过渡通道刀），
+非 offset-path 专属、非本刀回归；补臂只改机制归因（from 捕获正确化），
+不改键集（overlay 不可见性主导）。12 DOWNS 维持「真实残面」分类，
+机制归因深化：T 半边=T 通道不可见性；Animations/WAAPI 半边=无 seek
+语义（`anim.currentTime` 写入不驱动引擎时钟，框架 seek 后同步读 gCS
+时动画处于 wall-time delay 期 → 显 underlying；插桩证明插值→apply
+链本身全通）。另两附赠发现：① `getComputedStyle(el).offsetPath`
+camelCase getter 缺臂返 none（`getPropertyValue('offset-path')` 正常
+返回 inset(20px)）——下刀候选小缺口；② `transition: all` 在
+start_transitions 按字面量属性名处理不展开（T:all 组永不启动，引擎级
+已知形，007 T:all 十二键同因）。探针页已删未入库；单页探针页路径
+教训（wpt-data 相对 vs repo 相对静默空真）已沉淀 memory。
