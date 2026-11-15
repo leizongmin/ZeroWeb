@@ -99,10 +99,30 @@ scale got '1' / translate got '0px'——apply 成功故 canonicalize None 兜�
   （f9cb4db3a s345 引入 getter 安装）打开：老钉 08-20 入树后在 make test 面
   从未执行过——test-guard compile-first 对首败 artifact 截断循环 + 缺件
   伪红遮蔽 page-runtime 套件（近轮 /tmp 全量日志 grep 无 zero_page_runtime
-  Running 行），17:03 mkt6 首暴露。workspace 腿
-  之后剩余腿（renderer bin/lib、browser bin/tests、GPU 探测）按账本模式
-  逐腿补跑（zw-jsanim-legs 单元，companion 构建前置防 disk-guard 部分清库
-  缺件伪红——jsanim5 腿已实证 disk-guard rm 与并发 cargo 竞争「Directory
-  not empty」即 make Error 1）。
+  Running 行），17:03 mkt6 首暴露。
+- 剩余腿九腿补跑（zw-jsanim-legs 单元，脚本逐字镜像 Makefile test 目标
+  L262-296，companion 构建前置防 disk-guard 部分清库缺件伪红——jsanim5 腿
+  已实证 disk-guard rm 与并发 cargo 竞争「Directory not empty」即 make
+  Error 1；LEGS-DONE 17:31:44）：绿四腿 renderer bin / GPU renderer /
+  GPU consistency（GPU-PROBE=available）/ quickjs renderer bin；红五腿逐名
+  对号**零新增真实代码红**：
+  - renderer lib 371P/1F：`js_worker_fetch_without_handler_resolves_error`
+    ——c6dcbce0a reject 语义过时镜像在册。
+  - browser bin 741P/2F：tab_js_worker 同根镜像 + default_actions（均在册
+    三红账）。
+  - browser tests 740P/3F：前两者重跑镜像 +
+    bookmark_context_menu_open_in_new_tab_loads_url **新面孔红未定类**
+    ——`tests.rs:1682` 断言 left:1/right:2（期望 2 标签实得 1）；同测
+    17:20:49（browser bin 腿）
+    过、17:23:45（本腿）挂跨腿翻转，落在 editing WIP 70cb4d2f5 共树在途
+    落地 17:23:27 后 18s，混码/负载双嫌疑；solo 复跑归因归发现流，回填前
+    不作账。
+  - quickjs crates 775P/1F：`image_batch_e2e` 42 fetch/36 图 6 重复 fetch
+    （image_batch_e2e.rs:317 "every image must be fetched exactly once"）
+    = 在册伪红负载峰值形态第三现形（Makefile 补建 zero-browser 已根修
+    缺件形态，负载形态仍存）。
+  - quickjs renderer lib 369P/1F：worker-fetch quickjs 镜像，同 c6dcbce0a
+    根。
+  全账唯一真实代码红仍是 SW 具名导入 getter 一处（script-sandbox 面）。
 - spec 链接：https://drafts.csswg.org/web-animations-1/ （§3.6 KeyframeEffect /
   §5.4.15 computed keyframes / §5.5 Element.animate）。

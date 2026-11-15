@@ -77,8 +77,19 @@ motion/values/fonts 0/0/0，合计 +198/0/0 零回归**。教训三则：corpus 
 面，与本刀零代码路径，修复归 script-sandbox 流；红窗 11-08 s345 打开，老钉
 08-20 入树后因首败截断+缺件遮蔽在 make test 面从未执行过、17:03 首暴露）；
 Makefile 补建 zero-browser 防
-image_batch_e2e 缺件伪红（清库必现形态）；renderer/browser/GPU 剩余腿
-companion 构建补跑进行中，细目见 evidence jsanim 刀文档验证节。
+image_batch_e2e 缺件伪红（清库必现形态）。
+**剩余腿九腿补跑账（11-15，zw-jsanim-legs 单元 17:31 收官）**：绿四腿
+（renderer bin / GPU renderer / GPU consistency / quickjs renderer bin）；
+红五腿全对号**零新增真实代码红**——renderer lib 1F=js_worker worker-fetch
+（c6dcbce0a reject 语义过时镜像在册）；browser bin 2F=tab_js_worker 同根
+镜像+default_actions（均在册三红账）；browser tests 3F=前两者重跑镜像+
+bookmark_context_menu_open_in_new_tab_loads_url **新面孔红未定类**（同测
+17:20:49 过/17:23:45 挂跨腿翻转，落在 editing WIP 70cb4d2f5 共树在途落地
+17:23:27 后 18s，混码/负载双嫌疑，solo 复跑归因归发现流，回填前不作账）；
+quickjs crates 1F=image_batch_e2e 42 fetch/36 图 6 重复 fetch=在册伪红
+负载峰值形态第三现形；quickjs renderer lib 1F=worker-fetch quickjs 镜像
+同 c6dcbce0a 根。全账唯一真实代码红仍是 SW 具名导入 getter 一处
+（script-sandbox 面）。细目见 evidence jsanim 刀文档验证节。
 **g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口
 thread_local 单源 + vertical-align `<length-percentage>` 三层
 （parse/computed/inline 布局 %×line-height），css-values
