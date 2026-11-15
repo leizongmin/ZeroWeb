@@ -2,14 +2,14 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 450 收口（守成巡查轻覆盖轮：**零入树刀
-（pull 无新刀，同码树基带复测），P 集恒等 8305 七轮连续** + 全桥绿
-窗 1643P/0F +0；账本 evidence/2026-11-15-m2s450-zeroinflow-patrol.md）。
-双腿（1879d53a5 树，代码与 s449 的 919cbf953 全同）leg1 8516
-（8306P/203F/6T/1U）/ leg2 8513（8306P/199F/7T/1U），unstable 5 键
-全在 select-home-end 族（leg1 主 4 子测 F + detailed 文件级 T vs
-leg2 主文件整 T + detailed 文件级 T）；stable 8510 vs s449 恰 1 差集
-（detailed 文件级 T 相位本轮入 stable），非族键逐键零差，零 GONE/
+**状态**: Active——M2 切片 451 收口（守成巡查轻覆盖轮：**零入树刀
+（pull 无新刀，target expando 刀未落树），P 集恒等 8305 八轮连续，
+双腿全一致 unstable=0，stable 形态回归基带** + 全桥绿窗 1643P/0F
++0；账本 evidence/2026-11-15-m2s451-zeroinflow-patrol.md）。
+双腿（6a49b5648 树，代码与 s450 全同）leg1 8516 / leg2 8516（双
+8306P/203F/6T/1U，逐键全一致），族相位双腿一致（主 4 子测 F +
+detailed 文件级 T）；stable 8516 vs s450 恰 4 差集全在 select-home-
+end 族（主 4F 相位本轮一致入 stable），非族键逐键零差，零 GONE/
 零 NEW。基带口径维持 **8305P/203F/6T/1U**（P 恒等为主口径）。全桥
 绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
 decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
@@ -18,23 +18,23 @@ GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自由
 可施工面）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
 s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
-**他流在途对账**：wptfyi-css target expando 刀（cee144a8d，engine
-shim 属性 set 陷阱对象值串化，彼流 §4 下轮执行）落树后按他流刀归因
-轮全量双腿对账——337 页半径全在 css 组，html-semantics 面预期零位移
-（join 实测为准）。
+**他流在途对账**：wptfyi-css target expando 刀（cee144a8d 定谳 +
+da9456f7c 行级规格，engine shim 属性 set 陷阱对象值串化，彼流施工）
+落树后按他流刀归因轮全量双腿对账——337 页半径全在 css 组，
+html-semantics 面预期零位移（join 实测为准）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
-> **▶ 承前（2026-11-15 M2 切片 449 收口）——守成巡查：他流入树仅
-> docs（rendering 流 DC-3 证据补强 fb28e80d8）零刀基带复测，P 集恒等
-> 8305 六轮连续 + 全桥绿窗 1643P/0F（账本
-> evidence/2026-11-15-m2s449-docs-inflow-zeroknife-patrol.md）**：零
-> 源码零语料净变更轮。双腿（919cbf953 树，代码与 s448 全同）leg1
-> 8513（8306P/199F/7T/1U）/ leg2 8516（8306P/204F/5T/1U），unstable
-> 7 键全在 select-home-end 族（本轮双腿间整文件相位对撞：leg1 双文件
-> 级 T vs leg2 主 4F + detailed 文件级 F）；stable 8511 vs s448 恰 1
-> 差集（detailed 文件级 F 出 stable），零 GONE/零 NEW。全桥绿窗
-> 1643P/0F rc=0（+0）。
+> **▶ 承前（2026-11-15 M2 切片 450 收口）——守成巡查：零入树刀同码
+> 树基带复测，P 集恒等 8305 七轮连续 + 全桥绿窗 1643P/0F（账本
+> evidence/2026-11-15-m2s450-zeroinflow-patrol.md）**：零源码零语料
+> 净变更轮。双腿（1879d53a5 树，代码与 s449 全同）leg1 8516
+> （8306P/203F/6T/1U）/ leg2 8513（8306P/199F/7T/1U），unstable 5 键
+> 全在 select-home-end 族（leg1 主 4F + detailed 文件级 T vs leg2 主
+> 文件整 T + detailed 文件级 T）；stable 8510 vs s449 恰 1 差集
+> （detailed 文件级 T 入 stable），非族键逐键零差。全桥绿窗 1643P/
+> 0F rc=0（+0）。首次记载 target expando 刀对账预告（cee144a8d，
+> 彼流 §4 下轮执行）。
 
 > **▶ 承前（2026-11-15 M2 切片 448 收口）——守成巡查：零入树刀同码
 > 树基带复测，P 集恒等 8305 五轮连续 + 全桥绿窗 1643P/0F（账本
