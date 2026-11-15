@@ -127,10 +127,19 @@ part02 假漂移 = 裸 rustfmt 配置解析差异，cargo fmt 权威门作准）
 crate 净（唯一 warning = peer es_module too_many_arguments 在册连坐）。
 make test 拆腿门（zw-bdf-mkt.service）全腿归账在册红：workspace 10097P/1F
 （same_origin_image_burst 负载 flake，R5288/R5292/R5385 同族 ≥4 先例，
-peer editing-run 电池并发窗）、renderer-lib 371P/1F（worker-fetch
-renderer 形）、browser bin/tests 各 2F（tab 镜像 + default_actions 形）、
+peer editing-run 电池并发窗；**discharge 定谳** zw-bdf-discharge 00:50 solo
+1P/0.61s，journalctl 证）、renderer-lib 371P/1F（worker-fetch renderer
+形）、browser bin/tests 各 2F（tab 镜像 + default_actions 形）、
 quickjs-clippy 101（peer es_module lint 在册）、gpu 双腿 0、其余腿见
 [evidence 2026-11-16-backdrop-filter-whitelist-knife](evidence/2026-11-16-backdrop-filter-whitelist-knife.md)。
+**同文件碰撞法证澄清（crule 提交时更正）**：01:14 crule 刀流
+（zw-crule-ab.service 在飞）同两文件在途改写（registry 入 column-rule
+行；**grep 法证：registry.rs:690 backdrop-filter 行在**——f80e4a8b8 已入
+HEAD、crule diff +1 仅 661 行、插入点远离 689 区，part02 backdrop 断言
+原样，「行被抹」系 stash 瞬态误读，复录可免；gap-rules 十六轮 45b4209b5
+已账本侧互证本刀 A/B +253/0/0 + discharge 代跑）——按停己采彼/认领件
+让位协议不动文件；crule 提交含本刀行/钉原样（HEAD 内容），本刀无需
+独立复录 commit，按认领件核对后并入账。
 残面：composition-001 余 ~90F = shim composite-add 函数列表 all-or-nothing
 主矛盾面（十轮已挂账）、散页 ~690 在他 corpus 全量跑自然入账；同型 supports
 桶定谳 mask-border/shape-outside/calc-size/row-rule 均真实现缺口后置。
@@ -151,6 +160,35 @@ Rust parse 拒列表）。分刀 A color-list 模型（+600~900F）/ B width-lis
 （+400~600F）/ C `column-rule` 简写白名单一行（multicol 全实现只差门线，
 可独立先行）/ D inset-cap/junction 几何族（1.5k+ 最大残面，单长度插值
 页内实证）。全案 [evidence 2026-11-16-gap-rules-knife-design](evidence/2026-11-16-gap-rules-knife-design.md)。
+**column-rule 简写门线刀已落地（11-16 十七轮，刀 C 独立先行认领收口）**：
+交接稿实况修正——「只差白名单一行 + 钉」不完整，白名单行中间态
+（B1' 0e3d7ab6）对 b0 零 delta 实证，真缺口 = **apply 链无简写展开臂**
+（展开在 cascade 层，apply.rs:2192 注记；`decl_supported` = 白名单 +
+apply oracle 两 conjunct，简写后者恒假）。刀体 3 文件 +42/−0：registry
+白名单 `"column-rule"`（column-rule-style 后）+ apply_advanced 新简写臂
+（复用 cascade 同一展开器 shorthand::expand_shorthands→expand_column_rule，
+`||` 文法/重复组件裁决单点——@supports 样式表路径 matcher/supports.rs
+同判据；longhand 逐条递归 apply 全过才落 true，展开空即 false 非法值仍
+拒）+ part02 R2785 钉扩 column-rule 五向断言（合法三形真/bogus/重复
+color 假）。定向钉 1 passed；fmt/clippy 两 crate 净。A/B（B0=bin-crule-b0
+c481ca1b ≡ HEAD 45b4209b5 / B1=bin-crule-b1 23ee88d5）：css-multicol
+**+6/0/0**（column-rule-computed.html 6 子测翻转）+ css-gaps **+3/0/0**
+（gap-decorations-rule-shorthand-computed.html column-rule 3 翻转，row-rule
+页同步解锁——纯色单段列表兼容预判兑现）+ css-typed-om 护栏 0/0/0，
+same_pass 与设计轮基线逐数吻合（237P/91 页、356P/75 页）。残面分解
+（multicol 命名 F 347 全非本刀域）：插值三页 320F 语义桶、shorthand.html
+12F = shim 声明对象 longhand 投影面、invalid 10F = shim 宽收漏拒、
+valid 2F = canonical 序列化、width-computed 2F = calc() 门。**同文件
+碰撞法证澄清**：bdf 账本「registry 本刀行被抹」不成立——registry.rs:690
+backdrop-filter 行在（f80e4a8b8 已入 HEAD，本刀 +1 仅 661 行 column-rule）、
+part02 backdrop 断言原样，「被抹」疑 stash 瞬态误读；复录可免，其「若
+crule 提交已含本刀行/钉则并入账」分支适用。peer basic-shape/es_module
+WIP 本轮持于 stash（crule-peer-window2）至门禁收口。门禁 zw-crule-mkt3
+拆腿（01:34–01:51）刀域零新增红：companion/clippy 0、gpu 双绿，红项 9
+全对号在册（workspace 14150P/1F=SW module_update、renderer-lib 371P/1F、
+browser bin/tests 各 741P/2F、qjs-workspace 775P/1F=image_batch、
+qjs-renderer-lib 369P/1F=worker-fetch 三形），全案
+[evidence 2026-11-16-column-rule-shorthand-knife](evidence/2026-11-16-column-rule-shorthand-knife.md)。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +

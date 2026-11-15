@@ -658,6 +658,7 @@ impl PropertyRegistry {
             "break-after",
             "column-rule-width",
             "column-rule-style",
+            "column-rule",
             "overscroll-behavior-x",
             "overscroll-behavior-y",
             "touch-action",

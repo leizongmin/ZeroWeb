@@ -1316,6 +1316,30 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // ── Column-rule 简写属性 ──
+        // column-rule: <line-width> || <line-style> || <line-color>
+        //（css-multicol-1 §cr——`||` 组合文法各组件至多一次、任意序、缺省槽补
+        // 初始值）。apply 链此前无展开臂——decl_supported（CSS.supports 前置门）
+        // 的 apply oracle 对简写恒假，css-multicol parsing 列 rule 页整组连坐。
+        // 展开复用 cascade 层同一展开器（shorthand::expand_shorthands →
+        // expand_column_rule，`||` 文法与重复组件裁决单点——@supports 样式表路径
+        // matcher/supports.rs shorthand_supported 同判据），产出 longhand 逐条
+        // 递归 apply 全过才落值（与 cascade 展开→apply 同构；递归只落 longhand
+        // 臂无环）。
+        "column-rule" => {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 1))];
+            let decls = crate::shorthand::expand_shorthands(&decl);
+            if !decls.is_empty()
+                && decls
+                    .iter()
+                    .all(|(p, v, _, _)| super::apply_advanced::apply_advanced_property_value(style, p, v, sibling))
+            {
+                return true;
+            }
+        }
         // ── Column Rule 属性 ──
         "column-rule-width" => {
             if let Some(v) = values::parse_column_rule_width(value) {
