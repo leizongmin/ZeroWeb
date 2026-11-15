@@ -2,27 +2,26 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 485 收口（他流刀归因轮：site-opt
-流 PR #305 iframe navigator 平面对象语义刀 T72/P42 落树
-（a520bc2f9，bb194436b 主刀 + ff81a8d92 加卫降级返修；shim
-part05.js +26/−1 `_zwMakeIframeWin` + part119 钉 +219 +
-bridge_tests +4），html-semantics 面**零位移清偿**——「申报
-=实测」谱系第三例；账本
-evidence/2026-11-15-m2s485-iframe-navigator-knife-attribution.md）。
-码态 = a520bc2f9（HEAD 7c7037536 docs-only）。leg1 8516
-（8307P/202F/6T/1U 族子测相位）+ leg2 8513（8307P/198F/7T/
-1U 族混合相位）双零截断，stable 8510（8305P/198F/6T/1U）
-disagree 0 + leg-only 4/1 全部族键（detailed 双腿同 T 入
-stable）。**vs s484 stable：GONE 4（全族子测键，双腿相位差
-伪影）+ NEW 0 + flips 0——非族 8509 键逐键零差**。**P 集账
-本口径 8307 持位**（stable 机械口径 8305P 六轮同形）；T 键
-集 5 非族恒等 + detailed T。picker 刀增益键 stable Pass 第
-8 轮保持，checkmark 恒 F 带形不变。onblur 哨组 stable 10 键
-全在册 8P/2F（本刀 shim 同在 part05.js，label 域零翻红为刀
-半径旁证）；dialog-overlay 哨第 14 轮 + modulepreload 哨第
-17 轮零翻红。全桥绿窗 **1648P/0F rc=0**——清单 1644→1648
-纯增长 +4 = T72 钉测试合法入桥（plane_object/proto_absorb/
-proto_degrade/service_worker_slot 四钉对号），GONE 0 零破。
+**状态**: Active——M2 切片 486 收口（他流刀归因轮：css 流
+easing 感知离散翻转采纳刀 492a0f2e0 落树（js_anim_registry
+flip_ok 形态门 eased 一致性采纳 +214 含内嵌七自测 + part03.js
+刀标记注释，corpus +21 零回归），html-semantics 面**零位移
+清偿**——「申报=实测」谱系第四例，动画面零位移（与 s478
+gCS 通道分野对号）；账本
+evidence/2026-11-15-m2s486-easing-flip-knife-attribution.md）。
+码态 = 492a0f2e0（HEAD e31ec6454 docs-only）。**双腿完全一
+致** 均 8513（双 8307P/199F/6T/1U，disagree 0 leg-only 0，
+第三次全同形态），族 s479 形（optional 整文件 T + detailed
+F）。stable 8511（8305P/199F/6T/1U）。**vs s485 stable：GONE
+0 + NEW 1（optional 整文件键）+ flips 1（detailed 整文件键
+T→F 相位谱在册）——非族键逐键零差**。**P 集账本口径 8307
+持位**（stable 机械口径 8305P 七轮同形）；picker 刀增益键
+stable Pass 第 9 轮保持，checkmark 恒 F 带形不变（waapi 哨
+零位移 = fallback 检测通道与 gCS 值通道半径分野旁证）。
+onblur 哨组 stable 10 键全在册 8P/2F；dialog-overlay 哨
+第 15 轮 + modulepreload 哨第 18 轮零翻红。全桥绿窗
+**1655P/0F rc=0**——清单 1648→1655 纯增长 +7 = 刀内嵌
+js_anim_registry::tests 七自测合法入桥，GONE 0 零破。
 红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
 **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双
@@ -33,6 +32,27 @@ s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双
 rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css
 ×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 485 收口）——他流刀归因轮：
+> site-opt 流 PR #305 iframe navigator 平面对象语义刀 T72/P42
+> 落树（a520bc2f9，bb194436b 主刀 + ff81a8d92 加卫降级返修；
+> shim part05.js +26/−1 `_zwMakeIframeWin` + part119 钉 +219 +
+> bridge_tests +4），html-semantics 面**零位移清偿**——「申报
+> =实测」谱系第三例；账本
+> evidence/2026-11-15-m2s485-iframe-navigator-knife-attribution.md）。
+> 码态 = a520bc2f9（HEAD 7c7037536 docs-only）。leg1 8516
+> （8307P/202F/6T/1U 族子测相位）+ leg2 8513（8307P/198F/7T/
+> 1U 族混合相位）双零截断，stable 8510（8305P/198F/6T/1U）
+> disagree 0 + leg-only 4/1 全部族键（detailed 双腿同 T 入
+> stable）。**vs s484 stable：GONE 4（全族子测键，双腿相位差
+> 伪影）+ NEW 0 + flips 0——非族 8509 键逐键零差**。**P 集账
+> 本口径 8307 持位**（stable 机械口径 8305P 六轮同形）。
+> picker 刀增益键 stable Pass 第 8 轮保持，checkmark 恒 F 带
+> 形不变。onblur 哨组 stable 10 键全在册 8P/2F（本刀 shim 同
+> 在 part05.js，label 域零翻红为刀半径旁证）；dialog-overlay
+> 哨第 14 轮 + modulepreload 哨第 17 轮零翻红。全桥绿窗
+> **1648P/0F rc=0**——清单 1644→1648 纯增长 +4 = T72 钉测
+> 试合法入桥（四钉对号），GONE 0 零破。
 
 > **▶ 承前（2026-11-15 M2 切片 484 收口）——守成巡查轻覆盖
 > 轮连续第三轮：零入树同码树同二进制——码态 688210311 恒等，
