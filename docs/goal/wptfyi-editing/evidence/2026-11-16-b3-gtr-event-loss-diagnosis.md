@@ -64,7 +64,48 @@ firstBi2 = abc<br> []def / div>abc<p>[]def<br>ghi / div><b>abc</b><p><b>[]def</b
    层（换代重绑轨迹）。下轮探针：跨案 dump `_listenerStore` 键序列 + corpus
    gEditor 的 handle 轨迹，分辨「同 handle 双 listener」vs「双 handle 双表」。
 
-## 回滚确认
+## d40 补测 II：B3Q 换代轨迹 + 双派根因链定谳
+
+`zz-probe-b3q.html`（addEventListener 挂载计数 + 逐案 gEditor 引用身份轨迹，
+基线二进制）：`addCalls=0 gEdChanges=4 cases=86 bi2plus=15`。
+
+**双派根因链**（harness initializeTest 逐行核对）：
+
+1. harness `initializeTest` 34 行每案 `gEditor !== document.querySelector(
+   "div[contenteditable]")` 身份检查——**上游 Chrome 真实 DOM [SameObject] 恒等
+   恒 false**，从不走 remove/add 分支，单 listener 恒挂。
+2. ZeroWeb querySelector **代理身份不稳定**（86 案间 gEditor 换 5 个对象，B3Q
+   gEdChanges=4）→ 检查误判换代 → 走 remove/add。
+3. **remove 不中**：`onBeforeinput` 是 initializeTest **内层函数（每案新闭包）**
+   ——`removeEventListener(旧gEditor, fnN)` 传的是新闭包，旧 gEditor 上挂的是
+   fnN-1 → 移除失败，**旧代理 listener 遗留**。
+4. 派发把新旧两个代理的 listener 都触发（同底层节点双表联动）→ fnN-1 + fnN
+   各 push 一次 → **bi=2**；4 次换代 × 遗留窗口 ≈ 15 案双派量级吻合。
+5. gBeforeinput/gInput 每案 initializeTest 双重重置（43-44/52-53）——累计
+   假设排除；addEventListener 原型 hook 拦不到 shim proxy 方法（addCalls=0
+   无效数据，方法学注记）。
+
+**修复刀（下轮）**：querySelector 同 sel **代理身份稳定性**——`div[contenteditable]`
+恒同 sel 应恒同 proxy（`_proxyCache['s:'+sel]` 模型在 query 家族成立、页面家族
+路径身份断链——先定位页面域 querySelector 走的缓存路径再修）。改动面 =
+querySelector 缓存语义，风险高：全语料 + html-semantics 哨兵同二进制对拍 +
+selection 全语料对拍必跑。**此刀落成 = 双派集群（got=2 342F 嫌疑）+ join 首触发
+事件丢失集群同时解锁**——listener 表单挂后派发单收，事件丢失修复实验（d39
+`__zwCeOrigEvHost` 刀）可重新落树。
+
+**矛盾点（下轮入口）**：`_makeProxy`（part03.js:31440）键 = `_elKey(sel, handle)`，
+querySelector 产物无 handle → 键 `'s:'+sel` 恒定 → 31442 cache 命中恒返同 proxy，
+且 R4005 WeakRef 复活（corpus `gEditor` 变量强持 proxy → deref 恒活）——**模型上
+身份应恒定，实测 gEdChanges=4**。候选解释：①某换代点 `delete _proxyCache['s:…']`
+（R52 purge 面）②part04 qS（R322）某返回分支绕过 `_wrapSelector`/cache（handle
+wrap / plain wrapper 直返）③页面域与 execute 域分 cache（两家族各自 `_proxyCache`？——
+`_proxyCache` 是 part01 闭包单例，除非桥两侧各装一份 shim）。下轮先审计 part04
+querySelector 全部返回点 + 搜 sel 键 delete 点。
+
+## 回滚确认（d40-II 追记）
+
+shim 本轮零改动（B3P/B3Q 均纯 HTML 探针），回滚段指 d39 修复实验；d40 两轮
+探针数据完整落本档。
 
 shim `git checkout` 后重建基线二进制：N1 bi=[] input=0（基线丢失态）、N2 bi=1——回滚干净，工作树零净码变。探针文件（zz-probe-b3bi/b3k/b3l/b3m/b3n/b3o，gitignored）留本地备查。
 

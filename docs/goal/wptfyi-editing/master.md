@@ -19,11 +19,18 @@ hookCalls=72 ≤ cases=86（impl 无双调实锤、webview 重试假设排除）
 join/br 空白形与 got=0 同簇（同簇案跨环境呈现 got=0/got=2，非两个独立 bug）、
 注入敏感性定谳（hook 跨包装使家族判定漂移——计数探针有效、行为探针失真）、
 listener 表= `_listenerStore['@'+handle]` 键存储 + `_zwQueryWrapIdentity`
-身份桥定位。下轮刀序：①双派根因（**先修双派再落事件丢失刀**，否则正确性
-修复会把 got=0 成批变 got=2）——跨案 dump `_listenerStore` 键序列 + gEditor
-handle 轨迹，分辨同 handle 双 listener vs 双 handle 双表 ②元素锚 range
-选区删除语义（820F 主簇）③空 range beforeinput 静默臂（语义已定谳
-`checkGetTargetRangesOfInputOnDoNothing`，小刀独立可落）。
+身份桥定位。**d40-II 双派根因链定谳**（B3Q 换代轨迹 + harness 逐行核对）：
+harness 每案 `gEditor !== querySelector("div[contenteditable]")` 身份检查在上游
+Chrome [SameObject] 下恒 false 从不重挂；ZeroWeb querySelector 代理身份不稳定
+（86 案换 5 对象，gEdChanges=4）→ 误判换代 → `removeEventListener(旧, 新闭包)`
+**移除不中**（onBeforeinput 每案新闭包）→ 旧代理 listener 遗留 → 派发双触发
+bi=2（4 次换代 × 遗留窗口 ≈ 15 案吻合）。**修复刀 = querySelector 同 sel
+代理身份稳定性**（页面家族路径缓存断链定位→修；落成即同时解锁双派集群与
+join 首触发事件丢失刀重新落树；改动面 querySelector 缓存语义，全语料 +
+html-semantics/selection 哨兵必跑）。下轮刀序：①querySelector 代理身份稳定刀（**矛盾点入口**：`_makeProxy` sel 键
+cache 恒命中 vs 实测换 5 身份——审计 part04 qS 全部返回点绕过 cache 路径 +
+sel 键 delete 点，候选=R52 purge/qS 分支直返/双 shim 装载）
+②元素锚 range 选区删除语义（820F 主簇）③空 range beforeinput 静默臂。
 证据见 [b3-gtr-event-loss-diagnosis](evidence/2026-11-16-b3-gtr-event-loss-diagnosis.md)。
 
 **d38 gtr 家族双根因刀（查询链形 overlay 匹配 + runner 变体展开）**：
