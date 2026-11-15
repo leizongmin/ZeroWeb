@@ -31,16 +31,20 @@ onblur 哨组 leg1 8P/2F / leg2 7P/3F；dialog-overlay 哨
 账结构照常。**挂用户门维持**：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。
 hang 观察项静默哨维持（双腿零真 hang，零截断）。
-下一步：**守成巡查**（对账基线换 s503 stable 8513——族
-键入位形 + flaky 键出位形；**flaky 键 3 例窗口已满——
-后续新例即第 4 例按频率升级判定**，摇摆形态届时定性；族
-键相位谱 1 轮周期往返摆观察维持——下轮预期出位形；他流
-入树归因轮或轻覆盖；对端 ihtml 轴一拆分插入刀信号 + 对
-端 ZW-3 querySelector 施工刀信号持续，落树后按他流刀归
-因轮，join 实测为准）+ 候门决项等待用户拍板（video
-P1+P2 立项 / 簇 D A2 立项 / s137）；rendering 流 dialog
-16 红块协同面（归 rendering 流记账）。门开随批落预案不
-变：簇 D 开 → customizable-select-styles.css ×47 随批落。
+下一步：**他流刀归因轮**（刀时序注记 2026-11-16：s503
+收口 push rebase 携入对端 editing 流 ihtml 轴一块级拆分
+插入刀 4f3469026 落树——js_dom_shim part06.js +497 +
+part124 ihtml block pins 新文件 +211 + bridge_tests.rs
++1，桥面 1659 将增；对端申报 enginelib 待入账核对；对账
+基线 s503 stable 8513——族键入位形 + flaky 键出位形，
+join 实测归因零语义位移清偿「申报=实测」谱系）+ 守成巡
+查面项随轮（**flaky 键 3 例窗口已满——后续新例即第 4 例
+按频率升级判定**，摇摆形态届时定性；族键相位谱 1 轮周期
+往返摆观察维持——s503 入位后下轮预期出位形）+ 候门决项
+等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
+rendering 流 dialog 16 红块协同面（归 rendering 流记
+账）。门开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47 随批落。
 
 > **▶ 承前（2026-11-16 M2 切片 502 收口）——守成巡查轻
 > 覆盖轮第十轮：零入树同码态同二进制——码态 cfd1a06af
