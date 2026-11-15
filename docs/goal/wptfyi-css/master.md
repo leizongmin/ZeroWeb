@@ -11,11 +11,20 @@ css-anchor-position anchor 首覆盖 12061P/792F/4T（265 页/12857 案）。
 part05 set 守卫 / part04 get expando 回读优先（原始值 R3069 面不动）。
 A/B（B0=results-texp-b0/B1=results-texp-b1 探针页剔除）：css-masking
 126P→**615P 净 +489、0 页回归**（61/61 保序），21 崩页转真实子测、分母
-与 chrome 逐页精确对齐（5,818 上游子测解锁）；跨组抽验 transforms/
-motion/backgrounds 三页同转真实子测（12P/288、0P/144、7P/196——转化率
-= 插值引擎能力残差）。**下一步：按 §3 分布 337 页逐组实测转化率**
-（masking 已全量），残差按失败签名分桶（WAAPI 支持门/插值语义）开刀。
-见 [evidence 2026-11-15-target-expando-shim-knife](evidence/2026-11-15-target-expando-shim-knife.md)。
+与 chrome 逐页精确对齐（5,818 上游子测解锁）。见 [evidence
+2026-11-15-target-expando-shim-knife](evidence/2026-11-15-target-expando-shim-knife.md)。
+**逐组转化率实测完成（11-15 七轮）**：337 页 harness 面全量实测
+（42 组、71 corpus invocation、同二进制零重建）——**335/337 解锁、
+still-declared-0 清零**，解锁面 **6,691P / chrome 分母 55,861（12.0%）**，
+相对刀前全崩净增 **+6,691P**（grid 33.9%/sizing 29.6%/anchor-position
+57.4% 最高；motion/shapes/gaps/box 等 0% 组全卡 supports 门）。残差分桶
+（50,731 fail）：**supports 覆盖门 49.5%**（shape() 5.5k / calc-size 1.9k /
+mask-border 1.7k / offset-* 3.3k / backdrop-filter 943 / gaps 装饰 1.4k）、
+**WAAPI 门 21.7%**（`'animate' in Element.prototype` 缺 Element.prototype
+定义 + has 白名单臂，R2965 实现本身跑通已实证）、**插值语义 28.6%**。
+**下一步：WAAPI 门刀**（两面最小改，规格见 evidence §3），随后 supports
+覆盖刀族按属性族逐个 A/B。见 [evidence
+2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)。
 规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
 **g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口
