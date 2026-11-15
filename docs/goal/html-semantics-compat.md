@@ -2,22 +2,21 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 462 收口（守成巡查轻覆盖轮：远端零入树
-零刀，HEAD = 0018b7a1c 同码树基带复测；族相位再翻转 PageDown 子测
-出 stable；账本
-evidence/2026-11-15-m2s462-zeroinflow-patrol.md）。
-双腿（0018b7a1c 树，代码与 s461 的 d37cb3a99 树全同）8516/8516
-（双 8306P/203F/6T/1U）；单腿缺席 2 键全在族主文件（整文件 T 键
-leg1-only 回归 + PageDown 子测 leg2-only），disagree 1 = detailed
-文件级键（leg1 F ↔ leg2 T，与 s461 相位相反）；stable 8514
-（8306P/202F/5T/1U，distinct 8512）。vs s461 stable 恰 1 GONE
-（PageDown 子测出）、零 NEW，共享键零状态翻转，非族键逐键零差。
-**P 集账本口径 8306 九轮连续恒等**；onblur 哨键组 10 键双腿一致
-Pass 在 stable（哨解除后第八轮）。全桥绿窗 **1643P/0F rc=0**
-（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur
-2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
-s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（本轮双腿
-零 hang）。
+**状态**: Active——M2 切片 463 收口（守成巡查轻覆盖轮：远端零入树
+零刀，HEAD = 5d10fbf49 同码树基带复测；PageDown 子测回入 stable；
+账本
+evidence/2026-11-15-m2s463-zeroinflow-patrol.md）。
+双腿（5d10fbf49 树，代码与 s461/s462 双腿树全同）leg1 8516
+（8306P/203F/6T/1U）/ leg2 8516（8306P/204F/5T/1U），腿键集完全
+一致，disagree 1 = detailed 文件级键（leg1 T ↔ leg2 F，与 s461
+同相位）；stable 8515（8306P/203F/5T/1U，distinct 8513）。vs s462
+stable 零 GONE、恰 1 NEW（PageDown 子测回入），共享键零状态翻转，
+非族键逐键零差。**P 集账本口径 8306 十轮连续恒等**；onblur 哨键
+组 10 键双腿一致 Pass 在 stable（哨解除后第九轮）。全桥绿窗
+**1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
+decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察
+项静默哨维持（本轮双腿零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -26,6 +25,16 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 462 收口）——守成巡查轻覆盖轮：零
+> 入树零刀同码树基带复测，族相位再翻转 PageDown 子测出 stable，P
+> 集口径 8306 九轮连续（账本
+> evidence/2026-11-15-m2s462-zeroinflow-patrol.md）**：HEAD =
+> 0018b7a1c 同码树。双腿 8516/8516（双 8306P/203F/6T/1U）；单腿缺
+> 席 2 键全在族主文件（整文件 T 键 leg1-only 回归 + PageDown 子测
+> leg2-only），disagree 1 = detailed 键（leg1 F ↔ leg2 T）；stable
+> 8514（8306P/202F/5T/1U，distinct 8512）vs s461 恰 1 GONE（
+> PageDown 出）零 NEW，共享键零翻转。全桥绿窗 1643P/0F rc=0（+0）。
+>
 > **▶ 承前（2026-11-15 M2 切片 461 收口）——守成巡查轻覆盖轮：零
 > 入树零刀同码树基带复测，主文件 4 子测 F 双腿一致入 stable，
 > detailed 文件级腿间 T↔F 振荡出 stable，P 集口径 8306 八轮连续
