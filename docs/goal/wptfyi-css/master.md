@@ -189,6 +189,54 @@ WIP 本轮持于 stash（crule-peer-window2）至门禁收口。门禁 zw-crule-
 browser bin/tests 各 741P/2F、qjs-workspace 775P/1F=image_batch、
 qjs-renderer-lib 369P/1F=worker-fetch 三形），全案
 [evidence 2026-11-16-column-rule-shorthand-knife](evidence/2026-11-16-column-rule-shorthand-knife.md)。
+**基本形状文法族刀已落地（11-16 十八轮，rate-limit 双 spawn 对称收敛收口）**：
+shape()/path()/rect()/xywh() 共享文法五站全链——①css-parser
+`parse_basic_shape.rs` 新档（shape 命令式 move/line/hline/vline/curve/smooth/
+arc/close，to|by 双向，`with` 控制点，`of` 修饰序不敏感 + arc canonical
+cw→large→rotate 缺省省略 + 裸数字补 px + 1 词位置补 2 分量；path 双引号
+SVG data；rect 空白 4 值 + round；xywh slash 圆角；types.rs ClipPathValue
+四变体 Box 载荷）+ parse_clip_path 四臂派发 + `serialize_math.rs`
+fold_decl_specified clip-path canonical 臂（**物理单位守卫**
+has_physical_length_unit：pt/pc/cm/mm/in/q 命中回落原文通道——types.rs
+pt→px 折算使声明级 canonical 无法保原单位形，b0 verbatim 假过 1 例经守卫
+复原）；②style-system offset-path apply 文法门放宽（ray() 全形 canonical
+序 + 基本形状全族经 parse_clip_path 裁决 + coord-box 五后缀剥离 +
+`none` 显式拒收）；③engine gCS（clip-path 四臂：shape 走 computed 级
+`shape_to_css_computed`——关键字折 %、rotate 归 deg；path/rect/xywh 声明级
+verbatim）；④engine transition get 臂（clip-path canonical 比较 +
+offset-path none 回落）+ WAAPI `clip_interp.rs` 新档（clip-path 同构逐
+分量插值 + offset-path ray/shape/path 逐命令插值 + 异构离散 ≥0.5 翻转）；
+⑤paint border_shape 四变体 FIXME 空顶点。**resume-swarm 对称收敛**：本
+clone 双实例（rate-limit 多重 spawn 在册形态）对 computed_style Shape 臂
+同向接线，按磁盘终态采认合并；A/B 权威批由 twin 发射（b1v3），本实例
+挂看门采认不重跑——一账两用。**A/B 权威账（B0=bin-shape-b0 6f551c72
+HEAD 88b6ab519 / B1v3=bin-shape-b1v3 9c06ccb6 HEAD+全 WIP 终态，
+zw-shape-b1v3-ab.service 04:51:41–04:58:15 四腿 EXIT=0 journal scope
+记账 CPU 6m28s，transcripts 在盘）**：css-shapes **+54/0/0**（145 页，
+computed +35/valid +17/rect +2）、css-masking **+327/0/0**（61 页，
+clip-path 插值三页 +320）、motion **+558 净/UPS 570/DOWNS 12**（45 页
+576→1,134，006 +203/008 +173/005 +104/coord-box +34/007 +25）、
+css-typed-om 护栏 **0/0/0**——**合计净 +939/UPS 951/DOWNS 12/GONE 0/
+NEW 0**。**12 DOWNS 定谳（伪影假说证伪）**：v2 批曾按 mtime 法证归因
+「旧二进制伪影」（04:11:37 构建早于 04:17 修复）预期 v3 消除，实测 v3
+含全部修复 DOWNS 恒 12（007 neutral↔none 端点对）——**真实残面**：
+插值函数级探针 ✓ 但 shim/engine 对 neutral keyframe 页构造
+（transitions:all 声明注入、动画值应用点）未建模，活体插桩挂下轮；
+收口行红分类转抄前独立核机制条款直接兑现。**存量红三修顺带清偿**：
+registry/inherit 补 column-rule 简写与 backdrop-filter initial_value 臂
+（HEAD 白名单已解锁而 initial_value 表无臂的验收债两条，style-system
+2544→2546 全绿）。门禁：css-parser 3,259P/0F（25 钉）、style-system
+2,546P/0F、engine 4,057P/0F（插值钉 5）、clippy 三 crate 净、fmt 带配置
+十五文件净；make test 拆腿（zw-shape-mkt.service 04:53–05:11 GATE-DONE）
+红项六腿全对号预存（workspace 10923P/2F image_batch 双形、renderer-lib
+371P/1F + qjs-renderer-lib 369P/1F worker-fetch 三形、browser bin/tests
+各 2F tab_js_worker+default_actions、qjs-workspace 825P/1F image_batch
+形），**刀域零新红**。残面（下刀
+队列）：shape-outside 白名单族 ~2,184（registry 三串门线 + 存储槽 +
+apply + gCS + WAAPI 五站）、007 页 neutral 页构造活体插桩、rect/xywh
+computed 折算、path() 段级 canonical（绝对化+空格归一）、shape() 命令级
+兼容插值、<position> 3 词混合形、ray() && 乱序 supports 形。全案
+[evidence 2026-11-16-basic-shape-grammar-knife](evidence/2026-11-16-basic-shape-grammar-knife.md)。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
