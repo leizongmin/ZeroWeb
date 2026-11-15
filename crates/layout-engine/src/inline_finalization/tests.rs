@@ -1666,19 +1666,18 @@ fn slice16_va_baseline_arm_pins_line_baseline_anchor_unchanged() {
     );
 }
 
-/// slice16 挂账钉（轴邻接，不修）：vertical-align 长度/百分比值在 CSS 解析层未实现
-///（`parse_vertical_align` 无 Length/Percentage 臂 → None），声明经**真实解析路径**
-///（css-parser 样式表 → style-system 层叠/computed → inline_finalization 消费）后
-/// ComputedStyle 保持默认 Baseline，上报与 baseline 臂同值。
-/// 判别性（S1 收尾，slice16 评审）：改写前钉手工构造 `ComputedStyle::default()`、
-/// 声明从未过解析器——解析层加 Length 臂本钉仍绿，不判别。改写后：
-/// ① 解析/应用层任一层实现 Length/Percentage → computed 变体断言翻红 +
-///   两案 reported 偏离基线锚且互相分叉翻红（届时本钉应改写为语义钉：两臂差
-///   3px / 50%×line-height）；
-/// ② 回落失效（computed 默认被写坏/应用层误写）→ computed 变体断言翻红。
+/// g50 语义钉（slice16 挂账钉按其注释预言的改写方向翻钉）：vertical-align
+/// `<length-percentage>` 已实现——解析层 `parse_vertical_align` Length 臂 +
+/// 布局层 run.y Length 抬升臂。声明经**真实解析路径**（css-parser 样式表 →
+/// style-system 层叠/computed → inline_finalization 消费）后钉语义：
+/// ① computed 保持原形：3px → Length(Px(3.0))、50% → Length(Percentage(50.0))
+///   （CSS 2.1 computed 口径；px 化发生在 gCS 序列化层）；
+/// ② 布局抬升（差分式，同 sub/super 钉口径）：3px 案上报顶相对 baseline 对照
+///   平移 −3.0；50% 案平移 −11.5（50% × 本元素 line-height 23px）。
+/// 任一层回退（解析臂移除/computed 默认写坏/抬升臂失效回 baseline）均翻红。
 /// https://www.w3.org/TR/CSS22/visudet.html#propdef-vertical-align
 #[test]
-fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
+fn slice16_va_length_percentage_resolved_and_lifted() {
     use zero_css_parser::Parser;
     use zero_style_system::StyleSystem;
 
@@ -1710,27 +1709,38 @@ fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
         "用例前提：va-len 锚应为 inline，实际 {:?}",
         len_style.display
     );
-    // 判别断言①（回落钉本体）：3px / 50% 均未解析 → computed 保持 Baseline。
-    // 解析层/应用层未来实现 Length/Percentage 臂，或默认回落被破坏，此处翻红。
+    // 判别断言①（存储钉本体）：computed 保持原形——3px 绝对长度、50% 百分比
+    // （CSS 2.1 computed 口径；px 化在 gCS 序列化层）。解析臂/应用链任一回退翻红。
     assert!(
-        matches!(len_style.vertical_align, VerticalAlignValue::Baseline),
-        "vertical-align:3px 应回落 Baseline（解析层无 Length 臂），实际 {:?}",
+        matches!(
+            len_style.vertical_align,
+            VerticalAlignValue::Length(LengthValue::Px(v)) if (v - 3.0).abs() < 1e-6
+        ),
+        "vertical-align:3px 应存 Length(Px(3.0))，实际 {:?}",
         len_style.vertical_align
     );
     assert!(
-        matches!(pct_style.vertical_align, VerticalAlignValue::Baseline),
-        "vertical-align:50% 应回落 Baseline（解析层无 Percentage 臂），实际 {:?}",
+        matches!(
+            pct_style.vertical_align,
+            VerticalAlignValue::Length(LengthValue::Percentage(p)) if (p - 50.0).abs() < 1e-6
+        ),
+        "vertical-align:50% 应存 Length(Percentage(50.0))，实际 {:?}",
         pct_style.vertical_align
     );
 
-    // 消费面：回落 Baseline ⇒ 几何与显式 baseline 臂逐字节同式（行主基线 − A），
-    // 且两案互相无分叉（实现 Length/Percentage 后两案应偏离基线锚且彼此不同）。
-    let mut anchor_ys = Vec::new();
-    for i in 0..2 {
+    // 消费面（差分式，同 slice16 sub/super 钉口径）：同一文档两建对照——对照表
+    // 去掉 va 声明（回落 Baseline），实际表含 va 声明。行盒扩展（R822 Length
+    // 围合臂）对行主基线簿记的影响随差分相消，可观测平移 = −d：3px 案抬 3.0；
+    // 50% 案抬 50%×line-height = 11.5（percentage 相对本元素 line-height 23px）。
+    let ctrl_sheet = Parser::parse_stylesheet(".case { line-height: 23px; } .case a { font-size: 13px; }");
+    let ctrl_styles = style_system.compute_styles(&doc, &[ctrl_sheet]);
+    for (i, d) in [(0usize, 3.0f32), (1usize, 11.5f32)] {
         let (anchor, container) = (anchors[i], containers[i]);
         let mut context = InlineFormattingContext::new(200.0);
         context.layout(&doc, container, &styles);
         assert_eq!(context.lines.len(), 1, "用例前提：单行");
+        let mut ctrl_context = InlineFormattingContext::new(200.0);
+        ctrl_context.layout(&doc, container, &ctrl_styles);
         let mut root = LayoutBox {
             node_id: Some(container),
             children: vec![LayoutBox {
@@ -1747,22 +1757,36 @@ fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
         let reported = root.children[0]
             .inline_reported_rect
             .expect("单行 inline 应记录上报矩形");
-        let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
-        anchor_ys.push(reported.0 - (line_y + baseline_y));
+        let mut ctrl_root = LayoutBox {
+            node_id: Some(container),
+            children: vec![LayoutBox {
+                node_id: Some(anchor),
+                x: 0.0,
+                y: 0.0,
+                width: 26.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        };
+        sync_inline_child_boxes_from_ifc_with_ancestors(&mut ctrl_root, &ctrl_context, &ctrl_styles, &HashMap::new());
+        let baseline_reported = ctrl_root.children[0]
+            .inline_reported_rect
+            .expect("单行 inline 应记录上报矩形");
         assert!(
-            (reported.0 - (line_y + baseline_y - 13.0 * 0.928)).abs() < 0.5,
-            "长度/百分比 va 回落 baseline 臂：上报顶 = 行主基线 − A，实际 {}",
-            reported.0
+            (reported.0 - baseline_reported.0 + d).abs() < 0.5,
+            "Length 臂抬升：上报顶相对 baseline 对照应平移 −{}px，实际 {} − {}",
+            d,
+            reported.0,
+            baseline_reported.0
+        );
+        assert!(
+            (reported.1 - baseline_reported.1).abs() < 0.01,
+            "上报高与 baseline 对照同（content area 不随 va 变），实际 {} vs {}",
+            reported.1,
+            baseline_reported.1
         );
     }
-    // 判别断言②：两案回落同路径 → 相对行主基线的偏移逐字节相同；
-    // 实现 <length>/<percentage> 后 3px 与 50%×line-height 位移不同，此处翻红。
-    assert!(
-        (anchor_ys[0] - anchor_ys[1]).abs() < 0.001,
-        "3px 与 50% 均回落 baseline：两案偏移应同值，实际 {} vs {}",
-        anchor_ys[0],
-        anchor_ys[1]
-    );
 }
 
 /// R5232：`build_inline_owner_ancestor_map` 链序与覆盖——文本节点与元素（R5177

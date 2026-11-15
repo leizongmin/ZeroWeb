@@ -581,6 +581,9 @@ pub fn register_dom_callbacks(
     // 一律不复用；覆盖 webview 文档换代就地 clear 不 bump MUT_DRAIN_GEN 的例外与
     // 同线程先后多沙箱隔离，见 computed_style_cache 模块注释）。
     crate::js_dom_bridge::clear_generation_cache();
+    // WAAPI JS 动画注册表随代际槽同生命周期（导航/新 WebView 装新快照，旧页
+    // 动画不跨文档泄漏；同页多次注册不清——动画跨 execute/timer 存活语义）。
+    crate::js_dom_bridge::js_anim_registry::clear_all();
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
     // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
@@ -2473,6 +2476,13 @@ pub fn register_dom_callbacks(
             // 同 selector 命中 → 直接 serialize（O(1)）——g19：带 populate 时缓存的
             // sibling 位（同元素多次查询逐次带 ctx，tree-counting 叶不 fail-soft）。
             if let Some((style, sibling)) = map.get(sel) {
+                // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）
+                // ——命中返回插值覆盖值（缓存基样式零污染）；表空 O(1) None 落
+                // 既有级联序列化零干扰。位置同 M2-S2a query_style_override 镜像：
+                // 动画值整体替代该属性，不与底层级联混合。
+                if let Some(v) = super::js_anim_registry::query_override_for_sel(sel, prop, style, *sibling) {
+                    return v;
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2502,8 +2512,78 @@ pub fn register_dom_callbacks(
             let Some((value, entry)) = hit else {
                 return String::new();
             };
+            // WAAPI JS 动画注册表咨询（同 cache-hit 臂）——以新算基样式查覆盖值，
+            // 条目照常入缓存（基样式缓存零污染）。
+            let anim_override = super::js_anim_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
             map.insert((*sel).clone(), entry);
+            if let Some(v) = anim_override {
+                return v;
+            }
             value
+        }),
+    );
+
+    // WAAPI JS 动画注册表回调（wptfyi-css 动画值进 gCS 刀，2026-11-15）——shim
+    // `Animation` 播放态引擎侧登记（part03 _makeAnimation/currentTime/pause/play/
+    // cancel 通知），gCS 两通道咨询见上方 `__zw_get_computed_style` 序列化点与
+    // computed_style_cache handle 通道。表空时全部 O(1) 零干扰。
+    // spec：Web Animations §5.5 Element.animate / §5.1 Animation。
+    // https://drafts.csswg.org/web-animations-1/
+    sandbox.register_callback(
+        "__zw_js_anim_register",
+        Box::new(move |args| {
+            if args.len() < 3 {
+                return String::new();
+            }
+            let id = super::js_anim_registry::register(
+                if args[0].is_empty() {
+                    None
+                } else {
+                    Some(args[0].as_str())
+                },
+                if args[1].is_empty() {
+                    None
+                } else {
+                    Some(args[1].as_str())
+                },
+                &args[2],
+            );
+            id.to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_js_anim_seek",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return String::new();
+            }
+            let Ok(id) = args[0].parse::<u64>() else {
+                return String::new();
+            };
+            super::js_anim_registry::seek(id, &args[1]);
+            String::new()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_js_anim_playpause",
+        Box::new(move |args| {
+            if args.len() < 3 {
+                return String::new();
+            }
+            let Ok(id) = args[0].parse::<u64>() else {
+                return String::new();
+            };
+            super::js_anim_registry::play_pause(id, &args[1], &args[2]);
+            String::new()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_js_anim_cancel",
+        Box::new(move |args| {
+            if let Some(id) = args.first().and_then(|s| s.parse::<u64>().ok()) {
+                super::js_anim_registry::cancel(id);
+            }
+            String::new()
         }),
     );
 
@@ -3900,6 +3980,27 @@ pub fn register_dom_callbacks(
                 "ok".into()
             }),
         );
+        // editing goal d23（B1 切片 3）：sel-path 定位 insertAdjacentHTML（plain 域
+        // 选区锚的结构面宿主落地——变体文档见 [`DomMutation::InsertAdjacentHtmlByPath`]）。
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_insert_adjacent_html_path",
+            Box::new(move |args| {
+                if args.len() >= 4
+                    && let Some(path) = parse_child_index_path(&args[1])
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::InsertAdjacentHtmlByPath {
+                            anchor_selector: args[0].clone(),
+                            path,
+                            position: args[2].clone(),
+                            html: args[3].clone(),
+                        });
+                }
+                "ok".into()
+            }),
+        );
     }
 
     let html = Arc::clone(dom_html);
@@ -4308,10 +4409,11 @@ pub fn register_dom_callbacks(
                 }
                 // g47：object-position 文法 = <position> 全谱（css-backgrounds-3
                 // #object-position / css-values-4 #position），写值语法失败拒收
-                //（shim 写面此前零校验，object-position-invalid 组 13 案全接受）。
+                //（shim 写面此前零校验，object-position-invalid 组 13 案全接受），
+                // 合法值 canonical 序列化（水平先行、缺省轴补 center；sound 数组
+                // 语料钉 `bottom right`→`right bottom`、`10%`→`10% center`）。
                 // var() 声明期不校验（替换后语义）；CSS-wide 关键字放行（与
-                // background-image 臂同型透传）。reject-only：合法值原文保形——
-                // canonical 序列化不在本臂做，写面既有行为零回归。
+                // background-image 臂同型透传）。
                 if prop == "object-position" {
                     let lower = value.trim().to_ascii_lowercase();
                     if lower.contains("var(")
@@ -4322,10 +4424,9 @@ pub fn register_dom_callbacks(
                     {
                         return value.to_string();
                     }
-                    return if zero_css_parser::values::parse_background_position(value).is_none() {
-                        "null".to_string()
-                    } else {
-                        value.to_string()
+                    return match zero_css_parser::values::canonicalize_position_decl(value) {
+                        Some(s) => s,
+                        None => "null".to_string(),
                     };
                 }
                 if zero_css_parser::values::background_image_decl_invalid(value) {

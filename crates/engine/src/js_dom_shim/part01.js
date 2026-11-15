@@ -2172,6 +2172,24 @@
     if (prop !== 'name') return null;
     return _REFLECTED_NAME_TAGS.indexOf(' ' + String(tag || '').toLowerCase() + ' ') >= 0 ? 'name' : null;
   }
+  // target expando 刀（wptfyi-css DC-3 masking 再分解）：`target` 从 FLAT 全表反射
+  // 收窄为 tag 门——HTML spec 真反射 tag 集 {a, area, form, link, base}
+  //（HTMLAnchorElement.target 等；`div.target=`/对象值在 real browser 是普通
+  // expando，不串化）。插值 harness createTargetContainer 尾部
+  // `targetContainer.target = target`（interpolation-testcommon.js:277）对象值经
+  // generic fallthrough setAttribute 串化 → 回读 String → `.style` undefined
+  // → masking/transforms/motion 等 337 页插值 setup 即崩。其余 FLAT 名行为不变。
+  // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-target
+  var _REFLECTED_TARGET_TAGS = ' a area form link base ';
+  // tag 门形态的 [`_reflectedStringAttr`]——`target` 仅真反射 tag 返 'target'，
+  // 其余 tag 返 null（caller 回落 expando）；其他名与 [`_reflectedStringAttr`]
+  // 恒等（最小切片：同一名表类缺陷 `el.align={}` 等无实测语料面，泛化不实施）。
+  function _reflectedStringAttrOn(tag, prop) {
+    if (prop === 'target') {
+      return _REFLECTED_TARGET_TAGS.indexOf(' ' + String(tag || '').toLowerCase() + ' ') >= 0 ? 'target' : null;
+    }
+    return _reflectedStringAttr(prop);
+  }
   // R5009 片 e（M4 片 e）：ARIA **Element 反射**（ARIAMixin element 反射——WPT
   // aria-element-reflection/disconnected）。IDL 名 → 内容属性名 + 形态（single /
   // list）。注意：`ariaErrorMessageElement`（单数）spec **不存在**（WPT `'aria-
@@ -10241,7 +10259,20 @@
     try {
       // plain（补偿域）或 stamped-陈旧（锚落点非原对象）才重解析；live stamped
       // 保留原 range（同轮语义——重解析对 live 节点是同位对象 churn，无收益）。
-      if (!r0 || (!_zwCeCaretIsPlain(r0.startContainer) && !_zwCeCaretAnchorStale(r0.startContainer))) return null;
+      // B1 切片 3（editing goal d23，2026-11-15）：空读/短读锚第三门——边界臂
+      // splice 产物跨 execute 排水后被挖空（shim 侧 data=""、page 侧包装仍读
+      // 旧文，zz-probe-b1s3-solo S2 dbg 实证 r0=""@1 elC=true docC=true sn=Y
+      // → keep=false 正确交②，但谓词两臂都拒：overlay 章非 plain、fp 上行
+      // 断链非 stale——重映射拒载 → 变异核按空读 splice（隐形变异，第二键
+      // 「XY 丢一」根因）。offset 超可读长 = 同位损坏的确定性读数（健康锚
+      // clamp 恒等，零影响），且快照在手（sn 打点本就为 fp 断链场景预留）
+      // → 直接放行快照消费。
+      var _rrBroken = false;
+      try {
+        _rrBroken = !!(r0 && r0.startContainer && r0.startContainer.nodeType === 3
+          && (r0.startOffset | 0) > String(r0.startContainer.data != null ? r0.startContainer.data : '').length);
+      } catch (_eBr) {}
+      if (!r0 || (!_rrBroken && !_zwCeCaretIsPlain(r0.startContainer) && !_zwCeCaretAnchorStale(r0.startContainer))) return null;
       var sn = r0._zwStaleAnchor || null;
       var sm = _zwCeMapStaleContainer(r0.startContainer, sn && sn.start);
       if (!sm) return null;
@@ -10376,7 +10407,36 @@
       try {
         _rrKeep = _rrKeep || !!(el && typeof el.contains === 'function'
           && r0.startContainer && el.contains(r0.startContainer));
+        // B1 切片 3（editing goal d23，2026-11-14）：keep 门加锚可读性校验，且
+        // 不限 keep 命中——两类读数失效锚一并强制交②重映射：
+        // ① 夹取位与原位不等（读数短于 offset）——跨 execute 的选区锚（上一动作
+        // 世界 overlay 产物——边界臂 createTextNode 插入项等）在本轮融合视图里按
+        // 位置呈现（el.innerHTML 有其内容）而对象读数通道失联：nodeValue 读 ""、
+        // startOffset 超可读长。contains 结构命中是伪命中，keep 放行后变异核按
+        // 空读 splice（宿主内容被改写破坏）+ 尾部 caret 重锚 setStart(so+ins)
+        // 越界抛 IndexSizeError（zz-probe-b1s3-solo S2-e2 实证：r0=al-X@1 读 ""，
+        // "X" 被改写为 "Y"，off=2 len=1 抛）。读数健康的锚夹取恒等零影响（活锚
+        // 让位门原案不变）。
+        // ② 宿主与文档双 contains 失效（完全脱离）且挂 stale 锚的**可读**孤儿
+        // （shim 补偿域 detach 不清 data——zz-probe-b1s3-solo S7 #10 实证
+        // cont=false 读 ""）写视图零落账（after-joining 第二键「XY 丢一」形态：
+        // 边界臂键入后视图换代孤儿化，谓词门 plain/stale 两臂都不认 → 重映射被
+        // 拦下，变异核按空读 splice + 尾部 caret 安装越界抛 IndexSizeError——
+        // collapsed CE 变体 18 键 unhandled rejection 簇根因）。锚存在性门前不含
+        // sn 的既有锚面零变化；contains=true 的在树锚不走此臂。
+        if (r0.startContainer) {
+          var _rrSo = r0.startOffset | 0;
+          if (_zwCeClampOffset(r0.startContainer, _rrSo) !== _rrSo
+              || (!!(r0._zwStaleAnchor)
+                  && !(el && typeof el.contains === 'function' && el.contains(r0.startContainer))
+                  && !(document.contains && document.contains(r0.startContainer)))) {
+            _rrKeep = false;
+          }
+        }
       } catch (_eKc) {}
+      // 可读性失效锚交②重映射时仍走 plain/stale 谓词门（孤儿 overlay 锚属
+      // plain 域谓词可达）；谓词不认（无锚/不可解析）原样保留 r0，行为与改前
+      // 一致。
       var rr = _rrKeep ? null : _zwCeReresolveCaret(r0);
       if (rr) { try { s._ranges[0] = rr; } catch (_eD3w) {} }
       return rr || r0;
@@ -10781,7 +10841,146 @@
   // 值 override 快照挂核头：世界同步与选区移动都会令 stored range 失配清空
   // override（读侧 reset），vendored recordCurrentOverrides 同在变异前记录
   //（:4351）；重放挂核尾（vendored restoreStatesAndValues :4458）。
-  globalThis.__zw_ce_inserttext_mutate = function(el, ins) {
+  // B1 切片 3 辅助（editing goal d23，2026-11-14）：主窗 typing-around-link
+  // 边界面四件（子窗同规则面见 part05 _b1AroundLink 族/d22）——挂
+  // __zw_ce_inserttext_mutate 入口（armed link 让位，见臂注）。
+  function _zwCeTypingNearestLink(node) {
+    var cur = node.nodeType === 3 ? node.parentNode : node;
+    var guard = 0;
+    while (cur && cur.nodeType === 1 && guard++ < 64) {
+      if (String(cur.tagName || '').toLowerCase() === 'a') return cur;
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+  function _zwCeTypingIsInside(node, anc) {
+    var cur = node;
+    var guard = 0;
+    while (cur && guard++ < 64) {
+      if (cur === anc) return true;
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+  // caret 点与链接端之间无内容（非空文本或元素）才算端点——中段光标
+  //（`z[]abc`）不触发边界面。
+  function _zwCeTypingSideContent(node, dir, stopAt) {
+    var cur = node;
+    var guard = 0;
+    while (cur && cur !== stopAt && guard++ < 64) {
+      var sib = dir > 0 ? cur.nextSibling : cur.previousSibling;
+      while (sib) {
+        if (sib.nodeType === 3 && String(sib.nodeValue || '').length) return true;
+        if (sib.nodeType === 1) return true;
+        sib = dir > 0 ? sib.nextSibling : sib.previousSibling;
+      }
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+  // el 子树最深首/末文本节点（文档序 DFS）
+  function _zwCeTypingDeepestText(elm, last) {
+    var cur = elm;
+    var guard = 0;
+    while (cur && cur.nodeType === 1 && guard++ < 64) {
+      var kids = cur.childNodes;
+      var t = null, i;
+      if (last) { for (i = kids.length - 1; i >= 0; i--) { if (kids[i] && kids[i].nodeType === 3) { t = kids[i]; break; } } }
+      else { for (i = 0; i < kids.length; i++) { if (kids[i] && kids[i].nodeType === 3) { t = kids[i]; break; } } }
+      if (t) return t;
+      var e = null;
+      if (last) { for (i = kids.length - 1; i >= 0; i--) { if (kids[i] && kids[i].nodeType === 1) { e = kids[i]; break; } } }
+      else { for (i = 0; i < kids.length; i++) { if (kids[i] && kids[i].nodeType === 1) { e = kids[i]; break; } } }
+      if (!e) return null;
+      cur = e;
+    }
+    return null;
+  }
+  // 链接端点判定（文本容器 + 元素偏移两形——collapseToEnd 落点 (a,1) 与
+  // collapse(firstChild,0/len) 同门）。
+  function _zwCeTypingLinkEdge(linkEl, sc, so) {
+    if (sc.nodeType === 3) {
+      var d = String(sc.nodeValue || '');
+      if (!d.length) return null;
+      if (so !== 0 && so !== d.length) return null;
+      var atStart = so === 0;
+      if (_zwCeTypingSideContent(sc, atStart ? -1 : 1, linkEl)) return null;
+      var t = atStart ? _zwCeTypingDeepestText(linkEl, false) : _zwCeTypingDeepestText(linkEl, true);
+      return (t === sc) ? { atStart: atStart, text: sc } : null;
+    }
+    if (sc.nodeType === 1 && _zwCeTypingIsInside(sc, linkEl)) {
+      var kids = sc.childNodes;
+      var i, k;
+      for (i = 0; i < so; i++) {
+        k = kids[i];
+        if (k && ((k.nodeType === 3 && String(k.nodeValue || '').length) || k.nodeType === 1)) break;
+      }
+      var headEmpty = i >= so;
+      for (i = so; i < kids.length; i++) {
+        k = kids[i];
+        if (k && ((k.nodeType === 3 && String(k.nodeValue || '').length) || k.nodeType === 1)) break;
+      }
+      var tailEmpty = i >= kids.length;
+      var atStart2;
+      if (headEmpty && !tailEmpty) atStart2 = true;
+      else if (tailEmpty && !headEmpty) atStart2 = false;
+      else return null;
+      if (_zwCeTypingSideContent(sc, atStart2 ? -1 : 1, linkEl)) return null;
+      var t2 = atStart2 ? _zwCeTypingDeepestText(linkEl, false) : _zwCeTypingDeepestText(linkEl, true);
+      return t2 ? { atStart: atStart2, text: t2 } : null;
+    }
+    return null;
+  }
+  // 外落：文本落链接外侧；链接内层非链接行内链剥出后与新文本重裹、置于
+  // 链接原位（corpus `<a><b>[]abc</b></a>` → `<b>XY<a>abc</a></b>` 形）。
+  // 逐节点显式摘/插（shim DocumentFragment 无移动语义——zz-probe-d4x X4 教训）。
+  // 返回 typed 文本节点（caret 由调用臂锚定）。
+  function _zwCeTypingAroundLink(linkEl, textNode, atStart, ch) {
+    var p0 = linkEl.parentNode;
+    if (!p0) return null;
+    var idx0 = Array.prototype.indexOf.call(p0.childNodes, linkEl);
+    if (idx0 < 0) return null;
+    var inner = [];
+    var cur = textNode.parentNode;
+    var guard = 0;
+    while (cur && cur !== linkEl && cur.nodeType === 1 && guard++ < 64) { inner.push(cur); cur = cur.parentNode; }
+    if (cur !== linkEl) inner = [];
+    var i;
+    for (i = 0; i < inner.length; i++) {
+      var w = inner[i];
+      var wp = w.parentNode;
+      if (!wp) continue;
+      while (w.firstChild) wp.insertBefore(w.firstChild, w);
+      wp.removeChild(w);
+    }
+    var newText = document.createTextNode(ch);
+    var seq = atStart ? [newText, linkEl] : [linkEl, newText];
+    for (i = inner.length - 1; i >= 0; i--) {
+      var shell = inner[i].cloneNode(false);
+      for (var k = 0; k < seq.length; k++) shell.appendChild(seq[k]);
+      seq = [shell];
+    }
+    // B1 切片 3（editing goal d23，2026-11-15）：视图 splice 保留（insertBefore/
+    // removeChild），引擎侧经原生 wire + R51 pending 桶补偿链落地。**已知残余**
+    // （zz-probe-b1s3-eng E1 实证）：槽补偿与原生 wire 在本 harness 流双计——视图
+    // [X, A, X] 三子对引擎 [A, X]（overlay 槽子滞留 + mirror 同位，序列化取
+    // mirror 掩盖），同动作第二键起 caret 索引寻址错位（「XY 丢一」）。
+    // FIXME(d24 边界切片)：槽抑制消费面（`_zwSelPendingParent` 记账端按臂让位）
+    // 未接——直发 wire 径（`__zw_insert_adjacent_html_path` + splice 跳过）两版
+    // 均因 caret 锚视图位缺失回退；`__zwSelPathRef` 元素登记未达 mirror 家族
+    // linkEl。收敛前置：单一补偿面 + caret 引擎同位快照。
+    var at = Array.prototype.indexOf.call(p0.childNodes, linkEl);
+    if (at >= 0) p0.removeChild(linkEl);
+    var ref = p0.childNodes[idx0] || null;
+    for (var m = 0; m < seq.length; m++) p0.insertBefore(seq[m], ref);
+    return newText;
+  }
+  // viaExec：execCommand('insertText') 通道（part06 exec 分流传 true）。通道
+  // 门——typing-around-link 边界臂只属键盘键入通道：link-boundaries-insertion
+  // 语料 execCommand 形两端点均期望入链接（Linka/aLink），tal 键入形期望端点
+  // 外落，同位点期望相反，以输入通道为准（Chrome TypingCommand/InsertTextCommand
+  // 分野同构）。
+  globalThis.__zw_ce_inserttext_mutate = function(el, ins, viaExec) {
     if (ins === '') return { ok: false, text: null };
     var insOvSnap = (typeof globalThis.__zw_ce_value_override_snapshot === 'function')
       ? globalThis.__zw_ce_value_override_snapshot() : null;
@@ -10805,6 +11004,47 @@
     // F2 link 上下文（armed pending / carry 消费资格）——变异核单点解析，
     // 四臂共用（_zwCeTypingInsert 第三参）。
     var f2 = _zwCeF2LinkContext(sc, el);
+    // B1 切片 3（editing goal d23，2026-11-14）：typing-around-link 边界面
+    //（主窗移植，子窗同规则面见 part05 _b1AroundLink 族）——collapsed caret
+    // 在链接文本端点（offset 0 首文本 / offset len 末文本 / 元素偏移端点）时
+    // 键入不扩进链接：文本落链接外侧，内层行内链剥出重裹置链接原位（Chrome
+    // typing 行为，WPT typing-around-link-element-at-{collapsed,non-collapsed}
+    // -selection 期望形 `<a><b>[]abc</b></a>` → `<b>XY<a>abc</a></b>`；
+    // after-joining 缝位形同门）。armed link（createlink pending——f2.href）不
+    // 触发——typed 段走 link 化消费面；值 override 快照面不入（语料无此形，
+    // 保守让位既有臂）。外落 caret 锚 typed 段尾后短路径返回（不走下方三臂
+    // /占位 br/F6b 面——端点键入场景无空壳占位，armed script tag 已被 f2.href
+    // 门前置）。
+    if (range.collapsed && !f2.href && !insOvSnap && !viaExec) {
+      var alLink = _zwCeTypingNearestLink(sc);
+      if (alLink) {
+        var alEdge = _zwCeTypingLinkEdge(alLink, sc, so);
+        if (alEdge) {
+          var alNode = _zwCeTypingAroundLink(alLink, alEdge.text, alEdge.atStart, ins);
+          if (alNode) {
+            var alNr = document.createRange();
+            alNr.setStart(alNode, ins.length);
+            alNr.collapse(true);
+            // B1 切片 3（editing goal d23，2026-11-14）：边界臂 caret 快照打点
+            //（_zwSync 选区方法打点同款）。alNode 为本轮 splice 产物、已在视图
+            // 位（下一动作轮融合视图换代后可孤儿化——fp 上行 walk 落到幽灵位，
+            // 读 ""，zz-probe-b1s3-solo S2-e2 实证 al-X 化空壳居 p[1]）。安装
+            // range 前把当下 {sel,path}（host apply 落地后同位）挂
+            // `_zwStaleAnchor`，`_zwCeReresolveCaret` 快照臂消费直落换代后同位
+            // 节点（keep 门可读性校验放行，见上方 d23 注）。
+            try {
+              // B1 切片 3（editing goal d23，2026-11-15）：wire 径优先消费引擎同位
+              // 锚（`_zwBndEngineAnchor`——splice 跳过后 alNode 无视图位，
+              // `_zwFragSelPathOf` 断链返 null）；local splice 回落径仍走 fp。
+              var _alFp = alNode._zwBndEngineAnchor || _zwFragSelPathOf(alNode);
+              if (_alFp) { alNr._zwStaleAnchor = { start: _alFp, end: _alFp }; }
+            } catch (_eAlFp) {}
+            if (typeof _getSelection === 'function') { _getSelection()._ranges = [alNr]; }
+            return { ok: true, text: alNode };
+          }
+        }
+      }
+    }
     // F6b A 通道桶（armed script tag 异桶判定后携带——_zwCeF6bArmedBucket
     // 内含等桶溶解门；前树形返 null 走 post-insert 外层臂）。
     var f6bBucket = _zwCeF6bArmedBucket(sc);
@@ -11177,7 +11417,21 @@
     }
     // caret → 插入文本尾（新 collapsed range 取代——selection 单例直换）。
     var nr = document.createRange();
-    nr.setStart(node, caretOff);
+    // B1 切片 3（editing goal d23）：孤儿/空读锚兜底夹取——重映射失败残留的空读
+    // 节点（读 "" 实长 0）上 caretOff 可超长，setStart 抛 IndexSizeError 并以
+    // unhandled rejection 连坐同文件后续测试链（collapsed CE 变体 [21]-[36] 崩溃
+    // 簇形态）；夹到可读长度内（有效范围位），其余行为面不变。
+    var _coGuard = caretOff;
+    try { _coGuard = _zwCeClampOffset(node, caretOff); } catch (_eCoG) {}
+    nr.setStart(node, _coGuard);
+    // B1 切片 3（editing goal d23）：安装点**不**挂跨代 stale 锚（曾挂 `_nrFp`
+    // fp——zz-probe-b1s3 S2/S3 实证回退：安装时 `_zwFragSelPathOf` 对 splice 产物
+    // 常解析为断链锚（S4 dump t0fp=[BREAK(no-idx)]——overlay 计入的视图索引跨
+    // execute 换代后错位），key-2 重映射消费断链快照（`_zwCeMapStaleContainer`
+    // 快照优先于新鲜 walk）落容器尾/空位，第二键「XY 丢一/落错位」。新鲜 fp
+    // walk（无快照回落）以孤儿 parentNode 链当下视图位重解析——S2/S3 mid sel
+    // 健康（3@1:"X"）时 key-2 落位正确）。after-joining 残余面由 keep 门夹取+
+    // 重映射兜底（对该簇对拍零回退后收敛）。
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     // F6b N 通道（2026-11-08 oracle 定谳档）：前树幸存 script 壳外层臂——

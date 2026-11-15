@@ -1383,6 +1383,16 @@ pub enum BackgroundPositionValue {
     Top,
     /// bottom。
     Bottom,
+    // css-values-5 §4.2 逻辑边缘关键字（g47：仅严格 `<position>` 面收——object-position /
+    // 渐变 `at`；`<bg-position>` 文法不含，parse_background_position 出口拒）。
+    /// x-start（flow-relative，htb/ltr 写入模式 ≡ left）。
+    XStart,
+    /// x-end（htb/ltr ≡ right）。
+    XEnd,
+    /// y-start（htb/ltr ≡ top）。
+    YStart,
+    /// y-end（htb/ltr ≡ bottom）。
+    YEnd,
     /// 长度值（任意单位，px/em/rem/ex/vh/vw 等；em/rem 等相对单位在 style-system apply
     /// 时按元素 font-size/viewport 解析为 px）。R1417：此前仅 px（Length(f32)），致
     /// `background-position: <em/rem/ex>` 解析失败（parse_length 返回 Em/Rem 而非 Px，
@@ -1411,7 +1421,9 @@ pub enum BackgroundPositionValue {
 /// R2478：background-position / object-position 3/4 值语法的参考边缘（CSS Backgrounds §3.6）。
 ///
 /// left/right = 水平轴；top/bottom = 垂直轴。带偏移时（`right 25px`），偏移从该边缘度量；
-/// resolve 期 right/bottom 翻转（位置 = (container-image) - offset）。
+/// resolve 期 right/bottom 翻转（位置 = (container-image) - offset）。g47 增逻辑边缘
+/// XStart/XEnd/YStart/YEnd（css-values-5 §4.2，仅严格 `<position>` 面产出；htb/ltr
+/// 写入模式下物理映射 x-start→left / x-end→right / y-start→top / y-end→bottom）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackgroundEdge {
     /// 左边缘（偏移从左度量 = offset 本身）。
@@ -1422,12 +1434,52 @@ pub enum BackgroundEdge {
     Top,
     /// 下边缘（偏移从下度量 = (container-image) - offset）。
     Bottom,
+    /// 逻辑 x-start（≡ Left @ htb/ltr）。
+    XStart,
+    /// 逻辑 x-end（≡ Right @ htb/ltr）。
+    XEnd,
+    /// 逻辑 y-start（≡ Top @ htb/ltr）。
+    YStart,
+    /// 逻辑 y-end（≡ Bottom @ htb/ltr）。
+    YEnd,
 }
 
-/// 解析 CSS background-position 属性值。
+/// 解析 CSS background-position 属性值（css-backgrounds-3 `<bg-position>` 宽容文法）。
 ///
-/// 支持单个关键字、长度/百分比，以及两个值的组合（水平 垂直）。
+/// 支持单个关键字、长度/百分比，以及两个值的组合（水平 垂直）；3/4 值「边缘+偏移」
+/// 对允许与裸关键字/center 混搭（`left 50px center`、`right top 14%`——R2478 reftest
+/// 与 css-backgrounds parsing 语料双向实钉）。逻辑关键字（x-start 等）属
+/// `<position>`（css-values-5 §4.2），本面拒收——需用 [`parse_position_strict`]。
 pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue> {
+    parse_position_impl(value).filter(|v| !position_has_logical(v))
+}
+
+/// 解析严格 `<position>`（css-values-5 §4.2：object-position / 渐变 `at` 面）。
+///
+/// 与 [`parse_background_position`] 的文法差异（csswg#2140 后行为，三面语料钉）：
+/// 3 值形禁（spec 注记：3 值形仅 background-position 例外保留，通用 `<position>`
+/// 因文法歧义移除）；缘偏移对全有全无（pair 与裸关键字/center 混搭禁，如
+/// `right 3% center`）；逻辑关键字 x-start/x-end/y-start/y-end 收录。
+pub fn parse_position_strict(value: &str) -> Option<BackgroundPositionValue> {
+    let parts = split_top_level_whitespace(value.trim().to_ascii_lowercase().as_str());
+    // <position> 无 3 值形（css-values-5 §4.2 注记）
+    if parts.len() == 3 {
+        return None;
+    }
+    parse_position_impl(value).and_then(|v| {
+        // 缘偏移对 all-or-nothing：任一轴为 EdgeOffset 时另一轴必须同为 EdgeOffset
+        if let BackgroundPositionValue::TwoValue(h, v2) = &v {
+            let pair = |s: &BackgroundPositionValue| matches!(s, BackgroundPositionValue::EdgeOffset { .. });
+            if pair(h) != pair(v2) {
+                return None;
+            }
+        }
+        Some(v)
+    })
+}
+
+/// 两面共享的位置文法实现（不做面专属裁决）。
+fn parse_position_impl(value: &str) -> Option<BackgroundPositionValue> {
     let value = value.trim();
     let lower = value.to_ascii_lowercase();
 
@@ -1436,18 +1488,20 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
     let parts = split_top_level_whitespace(&lower);
     // R2478：3/4 值语法（CSS Backgrounds §3.6）= 一个或两个「边缘+偏移」对（`left 50px center`、
     // `right 25px top 75%`）。改前 parts.len()∈{3,4} 落单值分支 → None → 声明丢。
-    // R2478：3/4 值语法（CSS Backgrounds §3.6）= 一个或两个「边缘+偏移」对（`left 50px center`、
-    // `right 25px top 75%`）。改前 parts.len()∈{3,4} 落单值分支 → None → 声明丢。
     if parts.len() == 3 || parts.len() == 4 {
         return parse_position_three_four(&parts);
     }
     if parts.len() == 2 {
         let first = parse_position_component(&parts[0])?;
         let second = parse_position_component(&parts[1])?;
-        let first_horizontal = matches!(first, BackgroundPositionValue::Left | BackgroundPositionValue::Right);
-        let first_vertical = matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom);
-        let second_horizontal = matches!(second, BackgroundPositionValue::Left | BackgroundPositionValue::Right);
-        let second_vertical = matches!(second, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom);
+        let first_horizontal = matches!(first, BackgroundPositionValue::Left | BackgroundPositionValue::Right)
+            || is_logical_horizontal(&first);
+        let first_vertical = matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom)
+            || is_logical_vertical(&first);
+        let second_horizontal = matches!(second, BackgroundPositionValue::Left | BackgroundPositionValue::Right)
+            || is_logical_horizontal(&second);
+        let second_vertical = matches!(second, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom)
+            || is_logical_vertical(&second);
         if (first_horizontal && second_horizontal) || (first_vertical && second_vertical) {
             return None;
         }
@@ -1460,8 +1514,9 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
             return None;
         }
         // CSS background-position 两值语法（CSS Backgrounds §3.6）：关键字顺序无关——
-        // 水平专属（left/right）→ x，垂直专属（top/bottom）→ y，center 兼容两轴。
-        // 故须交换当：第一值是垂直专属（top/bottom），或第二值是水平专属（left/right）。
+        // 水平专属（left/right/x-start/x-end）→ x，垂直专属（top/bottom/y-start/y-end）
+        // → y，center 兼容两轴。
+        // 故须交换当：第一值是垂直专属，或第二值是水平专属。
         // R508 仅覆盖前者；R2048 补后者——"center left" 应为 x=left/y=center，否则
         // resolve 把 Left 当 y 解析致 background-position-145/146 图像错位。
         let (x, y) = if first_vertical || second_horizontal {
@@ -1479,6 +1534,10 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
         "right" => return Some(BackgroundPositionValue::Right),
         "top" => return Some(BackgroundPositionValue::Top),
         "bottom" => return Some(BackgroundPositionValue::Bottom),
+        "x-start" => return Some(BackgroundPositionValue::XStart),
+        "x-end" => return Some(BackgroundPositionValue::XEnd),
+        "y-start" => return Some(BackgroundPositionValue::YStart),
+        "y-end" => return Some(BackgroundPositionValue::YEnd),
         _ => {}
     }
 
@@ -1543,6 +1602,12 @@ fn parse_position_component(s: &str) -> Option<BackgroundPositionValue> {
         "right" => Some(BackgroundPositionValue::Right),
         "top" => Some(BackgroundPositionValue::Top),
         "bottom" => Some(BackgroundPositionValue::Bottom),
+        // g47：逻辑边缘关键字（css-values-5 §4.2；严格面收录，bg 面由
+        // parse_background_position 出口 has_logical 滤除）。
+        "x-start" => Some(BackgroundPositionValue::XStart),
+        "x-end" => Some(BackgroundPositionValue::XEnd),
+        "y-start" => Some(BackgroundPositionValue::YStart),
+        "y-end" => Some(BackgroundPositionValue::YEnd),
         _ => {
             // R2313：calc/min/max/clamp 单分量数学函数 → Calc。
             let t = s.trim();
@@ -1600,22 +1665,35 @@ fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue
                     offset: Box::new(offset),
                 };
                 match side {
-                    BackgroundEdge::Left | BackgroundEdge::Right => assign(&mut h, edge)?,
-                    BackgroundEdge::Top | BackgroundEdge::Bottom => assign(&mut v, edge)?,
+                    BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd => {
+                        assign(&mut h, edge)?
+                    }
+                    BackgroundEdge::Top | BackgroundEdge::Bottom | BackgroundEdge::YStart | BackgroundEdge::YEnd => {
+                        assign(&mut v, edge)?
+                    }
                 }
                 i += 2;
                 continue;
             }
-            // 裸边缘关键字（无偏移）= 该轴的 0%/100%（left/top=0、right/bottom=100%）
+            // 裸边缘关键字（无偏移）= 该轴的 0%/100%（left/top=0、right/bottom=100%；
+            // 逻辑边缘按 htb/ltr 映射同物理侧，specified 序列化保形逻辑关键字）
             let kw = match side {
                 BackgroundEdge::Left => BackgroundPositionValue::Left,
                 BackgroundEdge::Right => BackgroundPositionValue::Right,
                 BackgroundEdge::Top => BackgroundPositionValue::Top,
                 BackgroundEdge::Bottom => BackgroundPositionValue::Bottom,
+                BackgroundEdge::XStart => BackgroundPositionValue::XStart,
+                BackgroundEdge::XEnd => BackgroundPositionValue::XEnd,
+                BackgroundEdge::YStart => BackgroundPositionValue::YStart,
+                BackgroundEdge::YEnd => BackgroundPositionValue::YEnd,
             };
             match side {
-                BackgroundEdge::Left | BackgroundEdge::Right => assign(&mut h, kw)?,
-                BackgroundEdge::Top | BackgroundEdge::Bottom => assign(&mut v, kw)?,
+                BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd => {
+                    assign(&mut h, kw)?
+                }
+                BackgroundEdge::Top | BackgroundEdge::Bottom | BackgroundEdge::YStart | BackgroundEdge::YEnd => {
+                    assign(&mut v, kw)?
+                }
             }
             i += 1;
             continue;
@@ -1636,16 +1714,9 @@ fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue
         return None;
     }
 
-    // g47（css-values-4 #position `&&` 组合形 + 语料钉 gradient/object-position
-    // invalid 组）：偏移对 all-or-nothing——任一轴为 EdgeOffset 时另一轴也必须是
-    // EdgeOffset。裸边缘关键字或 center 与偏移对混用（`left 4px top`、
-    // `right top 5px`、`bottom 7% left`、`bottom right 8%`、`center left 1px`、
-    // `right 3% center`）→ None；双偏移对（`right 20% bottom 10%`）合法维持。
-    let has_offset_pair =
-        |slot: Option<&BackgroundPositionValue>| matches!(slot, Some(BackgroundPositionValue::EdgeOffset { .. }));
-    if has_offset_pair(h.as_ref()) != has_offset_pair(v.as_ref()) {
-        return None;
-    }
+    // g47 分面：all-or-nothing 裁决移入 parse_position_strict（css-values-5
+    // `<position>` 面专属；bg 面 `<bg-position>` 宽容文法允许 pair+裸关键字混搭，
+    // css-backgrounds parsing 语料与 R2478 reftest 双向实钉）。
     let h = h.unwrap_or(BackgroundPositionValue::Center);
     let v = v.unwrap_or(BackgroundPositionValue::Center);
     Some(BackgroundPositionValue::TwoValue(Box::new(h), Box::new(v)))
@@ -1660,9 +1731,15 @@ pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<B
     match parts.as_slice() {
         [single] => {
             let v = parse_position_component(single)?;
+            // g47：逻辑关键字属 <position>（css-values-5 §4.2），css-backgrounds-4
+            // 单轴 longhand 文法为物理边缘，拒收。
             let axis_ok = match v {
                 BackgroundPositionValue::Left | BackgroundPositionValue::Right => horizontal,
                 BackgroundPositionValue::Top | BackgroundPositionValue::Bottom => !horizontal,
+                BackgroundPositionValue::XStart
+                | BackgroundPositionValue::XEnd
+                | BackgroundPositionValue::YStart
+                | BackgroundPositionValue::YEnd => false,
                 _ => true,
             };
             axis_ok.then_some(v)
@@ -1672,6 +1749,7 @@ pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<B
             let axis_ok = match side {
                 BackgroundEdge::Left | BackgroundEdge::Right => horizontal,
                 BackgroundEdge::Top | BackgroundEdge::Bottom => !horizontal,
+                BackgroundEdge::XStart | BackgroundEdge::XEnd | BackgroundEdge::YStart | BackgroundEdge::YEnd => false,
             };
             if !axis_ok {
                 return None;
@@ -1689,15 +1767,48 @@ pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<B
     }
 }
 
-/// 解析 background-position 边缘关键字为 BackgroundEdge（left/right/top/bottom）。
-/// center 不算边缘（不可带偏移）。
+/// 解析 background-position 边缘关键字为 BackgroundEdge（left/right/top/bottom
+/// + 逻辑 x-start/x-end/y-start/y-end）。center 不算边缘（不可带偏移）。
 fn parse_background_edge(s: &str) -> Option<BackgroundEdge> {
     match s {
         "left" => Some(BackgroundEdge::Left),
         "right" => Some(BackgroundEdge::Right),
         "top" => Some(BackgroundEdge::Top),
         "bottom" => Some(BackgroundEdge::Bottom),
+        "x-start" => Some(BackgroundEdge::XStart),
+        "x-end" => Some(BackgroundEdge::XEnd),
+        "y-start" => Some(BackgroundEdge::YStart),
+        "y-end" => Some(BackgroundEdge::YEnd),
         _ => None,
+    }
+}
+
+/// g47：逻辑边缘（css-values-5 §4.2）水平轴判定。
+fn is_logical_horizontal(v: &BackgroundPositionValue) -> bool {
+    matches!(v, BackgroundPositionValue::XStart | BackgroundPositionValue::XEnd)
+}
+
+/// g47：逻辑边缘垂直轴判定。
+fn is_logical_vertical(v: &BackgroundPositionValue) -> bool {
+    matches!(v, BackgroundPositionValue::YStart | BackgroundPositionValue::YEnd)
+}
+
+/// g47：树中含逻辑关键字（`<bg-position>` 文法不含，bg 面据此拒收）。
+fn position_has_logical(v: &BackgroundPositionValue) -> bool {
+    match v {
+        BackgroundPositionValue::XStart
+        | BackgroundPositionValue::XEnd
+        | BackgroundPositionValue::YStart
+        | BackgroundPositionValue::YEnd => true,
+        BackgroundPositionValue::EdgeOffset { side, offset } => {
+            // 逻辑缘（`y-start 20%`）同样属 <position> 面：side 与 offset 都要查
+            matches!(
+                side,
+                BackgroundEdge::XStart | BackgroundEdge::XEnd | BackgroundEdge::YStart | BackgroundEdge::YEnd
+            ) || position_has_logical(offset)
+        }
+        BackgroundPositionValue::TwoValue(h, v2) => position_has_logical(h) || position_has_logical(v2),
+        _ => false,
     }
 }
 

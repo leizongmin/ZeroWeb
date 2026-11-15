@@ -138,6 +138,11 @@ pub enum VerticalAlignValue {
     Sub,
     /// super — 元素基线上移至适合上标的位置。
     Super,
+    /// `<length-percentage>`（CSS 2.1 vertical-align 文法
+    /// <https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align>：元素基线
+    /// 相对父元素基线抬升该长度/百分比）。`Percentage` 经 [`LengthValue::Percentage`]
+    /// 承载（computed 百分比保持原形，对齐 Chromium oracle `50%`）。
+    Length(LengthValue),
 }
 
 /// CSS cursor 值。
@@ -283,7 +288,18 @@ pub fn parse_vertical_align(value: &str) -> Option<VerticalAlignValue> {
         "text-bottom" => Some(VerticalAlignValue::TextBottom),
         "sub" => Some(VerticalAlignValue::Sub),
         "super" => Some(VerticalAlignValue::Super),
-        _ => None,
+        _ => {
+            let t = value.trim();
+            // `<length-percentage>` 臂：数字开头前置门——vertical-align 文法无
+            // auto/thin/medium/stretch/min-content 等关键字，防 parse_length 的
+            // 关键字臂误收（如 `vertical-align: medium` 非法，thin/medium/thick
+            // 会经关键字臂折成 px）。
+            let first = t.as_bytes().first()?;
+            if !(first.is_ascii_digit() || *first == b'-' || *first == b'+' || *first == b'.') {
+                return None;
+            }
+            parse_length(t).map(VerticalAlignValue::Length)
+        }
     }
 }
 

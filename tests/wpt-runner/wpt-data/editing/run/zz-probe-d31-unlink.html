@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>d31 probe: unlink 臂 stamped 家族变异原语与端到端形</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/resources/testdriver.js"></script>
+<script src="/resources/testdriver-vendor.js"></script>
+<script src="/resources/testdriver-actions.js"></script>
+<script src="../include/editor-test-utils.js"></script>
+</head>
+<body>
+<div contenteditable id="txt"></div>
+<script>
+"use strict";
+const txt = document.getElementById("txt");
+const sel = getSelection();
+
+// ---- 变异原语语义（d31 定谳，守护 unlink 臂配方的前提）----
+
+// P1: removeChild 标准 DOM 语义——摘 a 连带子树（"bar" 随 a 消失）。
+test(function() {
+  txt.innerHTML = 'foo<a href="x">bar</a>baz';
+  const a1 = txt.childNodes[1];
+  txt.removeChild(a1);
+  assert_equals(txt.innerHTML, "foobaz", "P1 removeChild subtree semantics");
+}, "P1 removeChild 摘 a 连带子树");
+
+// P2: 工厂产物 fresh 插入 + removeChild = 可靠 unwrap 配方。
+test(function() {
+  txt.innerHTML = 'foo<a href="x">bar</a>baz';
+  const a2 = txt.childNodes[1];
+  txt.insertBefore(document.createTextNode("bar"), a2);
+  txt.removeChild(a2);
+  assert_equals(txt.innerHTML, "foobarbaz", "P2 factory insert + removeChild");
+}, "P2 工厂插入 + 摘 a unwrap");
+
+// P3: 既有子移动在该家族是静默 no-op（unlink 臂首轮落地校验的依据）。
+test(function() {
+  txt.innerHTML = 'foo<a href="x">bar</a>baz';
+  const a3 = txt.childNodes[1];
+  const b3 = a3.firstChild;
+  txt.insertBefore(b3, a3);
+  const stillInA = Array.prototype.indexOf.call(a3.childNodes, b3) >= 0;
+  txt.removeChild(a3);
+  // 移动 no-op → b 随 a 消失；断言锁定该家族语义（若某日移动生效，
+  // 此断言红即提示 unlink 臂 move-out 路径可回归保身份配方）。
+  assert_equals(txt.innerHTML, "foobaz", "P3 move no-op family; stillInA=" + stillInA);
+  assert_true(stillInA, "P3 move-out is silent no-op");
+}, "P3 既有子移动静默 no-op");
+
+// P4: parse 节点 cloneNode 产物整类拒收（unlink 臂工厂重建的依据）。
+test(function() {
+  txt.innerHTML = 'a<a href="x">b</a>c';
+  const a4 = txt.childNodes[1];
+  const cl = a4.firstChild.cloneNode(true);
+  txt.insertBefore(cl, a4);
+  const clIn = Array.prototype.indexOf.call(txt.childNodes, cl) >= 0;
+  const fresh = document.createTextNode("F");
+  txt.insertBefore(fresh, a4);
+  const freshIn = txt.textContent.indexOf("F") >= 0;
+  assert_false(clIn, "P4 clone product refused");
+  assert_true(freshIn, "P4 factory product accepted");
+}, "P4 cloneNode 产物拒收、工厂产物收");
+
+// ---- unlink 端到端（P2F 回归面：input-events-exec-command should remove the link 同形）----
+
+// T1: createLink → unlink 立即。
+test(function() {
+  txt.innerHTML = "abc";
+  sel.collapse(txt.firstChild, 1);
+  sel.extend(txt.firstChild, 2);
+  document.execCommand("createLink", false, "https://example.com/");
+  assert_equals(txt.innerHTML, 'a<a href="https://example.com/">b</a>c', "T1 wrap");
+  document.execCommand("unlink", false, null);
+  assert_equals(txt.innerHTML, "abc", "T1 unwrap");
+}, "T1 createLink 后立即 unlink");
+
+// T2: 手工搭 a（parse 建）+ 选区内落锚——工厂重建径。
+test(function() {
+  txt.innerHTML = 'a<a href="https://example.com/">b</a>c';
+  const b = txt.firstChild.nextSibling.firstChild;
+  sel.collapse(b, 0);
+  sel.extend(b, 1);
+  document.execCommand("unlink", false, null);
+  assert_equals(txt.innerHTML, "abc", "T2 unwrap");
+}, "T2 parse 建 a、选区内落锚");
+
+// T3: 手工搭 a + 宿主级选区（unlink.html 同形）。
+test(function() {
+  txt.innerHTML = 'a<a href="https://example.com/">b</a>c';
+  sel.collapse(txt.firstChild, 0);
+  sel.extend(txt.lastChild, 1);
+  document.execCommand("unlink", false, null);
+  assert_equals(txt.innerHTML, "abc", "T3 unwrap");
+}, "T3 parse 建 a、宿主级选区");
+
+// T4: createLink → 读 innerHTML → 读选区 → unlink（复刻 P2F 原测全序）。
+test(function() {
+  txt.innerHTML = "abc";
+  sel.collapse(txt.firstChild, 1);
+  sel.extend(txt.firstChild, 2);
+  document.execCommand("createLink", false, "https://example.com/");
+  assert_equals(txt.innerHTML, 'a<a href="https://example.com/">b</a>c', "T4 wrap");
+  const r0 = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+  assert_true(r0 && document.contains(r0.startContainer), "T4 live selection");
+  document.execCommand("unlink", false, null);
+  assert_equals(txt.innerHTML, "abc", "T4 unwrap");
+}, "T4 createLink 读后 unlink（P2F 全序）");
+</script>
+</body>
+</html>

@@ -88,6 +88,28 @@ pub(crate) fn adjusted_font_relative_metrics(
     })
 }
 
+// apply 期视口真值 thread_local 单源（g50）。
+//
+// [`StyleSystem::set_viewport`](crate::StyleSystem::set_viewport) 每次落地时镜像；
+// apply 路径的自由函数（如 apply_advanced 的 border-spacing/box-shadow 急切 px 化臂）
+// 无 viewport 上下文参数，经 [`active_viewport`] 读取。未 set 过（纯单测/独立
+// resolve_length 调用方）保持 `None` → resolve_length 既有回落（1440×900）不变。
+// 每线程独立：Rust 测试并行各线程互不污染；生产单线程计算路径以最后一次
+// set_viewport 为准（与 s421 PENDING_VIEWPORT / g49 gcs_viewport_dims 同型）。
+thread_local! {
+    static ACTIVE_VIEWPORT: std::cell::RefCell<Option<(f64, f64)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 读当前线程的 apply 期视口真值。
+pub(crate) fn active_viewport() -> (Option<f64>, Option<f64>) {
+    ACTIVE_VIEWPORT.with(|cell| cell.borrow().map(|(w, h)| (Some(w), Some(h))).unwrap_or((None, None)))
+}
+
+/// 落地当前线程的 apply 期视口真值（由 [`crate::StyleSystem::set_viewport`] 调用）。
+pub(crate) fn set_active_viewport(width: f64, height: f64) {
+    ACTIVE_VIEWPORT.with(|cell| *cell.borrow_mut() = Some((width, height)));
+}
+
 /// 将相对长度转换为绝对像素值。
 ///
 /// 支持 em、rem、vh、vw 等相对单位的转换。

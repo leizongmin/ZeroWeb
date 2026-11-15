@@ -216,3 +216,9 @@ include!("js_dom_bridge_tests/part118_shell_carry_pins.rs");
 //（part05 _zwMakeIframeWin 工厂面——原型链/品牌/Illegal constructor 双臂/
 // serviceWorker 槽恒一/走链吸收五断言面；T66 主窗面钉在 part95.rs）。
 include!("js_dom_bridge_tests/part119_t72_iframe_navigator_pins.rs");
+include!("js_dom_bridge_tests/part119_c1_order_pins.rs");
+include!("js_dom_bridge_tests/part120_ip_atomic_rawtext_pins.rs");
+
+// ip C4 容器链垫/劈裂刀钉测（2026-11-15）：垫底 br 持行豁免——空 dt 拆分垫
+// `<dt><br></dt>` 保全 + blockquote/ul 容器链尾新块物化 + 控制键恒一。
+include!("js_dom_bridge_tests/part121_ip_c4_container_pad_pins.rs");

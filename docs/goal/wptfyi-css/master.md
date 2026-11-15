@@ -1,9 +1,104 @@
 # CSS 子测试控制面
 
-**2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-10 发布
-快照 52,488 / 196,597（26.70%，run 42801058132），对验收线尚余 ~129,904；
-当前 css-images **3127P/88F**、css-values 4054P/1533F/6T（g48-b1，含并发流
-g47 未提交工作）。
+**2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-14 发布
+快照 **62,896 / 197,163（31.90%）**（coverage-2026-11-14，weekly cron
+4214a625d），对验收线尚余 ~119,496——较 11-10 快照（52,488 / 26.70%）
+四天净增 **+10,408**（[DC-3 刷新证据](evidence/2026-11-15-dc3-snapshot-refresh.md)）；
+当前 css-images **3144P/71F**、css-values 4185P/1402F/6T（g49-b1）；
+css-anchor-position anchor 首覆盖 12061P/792F/4T（265 页/12857 案）。
+**`target` expando 刀已落地（11-15 六轮，提交 8ee02114e）**：part01
+`_reflectedStringAttrOn` tag 门（真反射集 {a,area,form,link,base}）+
+part05 set 守卫 / part04 get expando 回读优先（原始值 R3069 面不动）。
+A/B（B0=results-texp-b0/B1=results-texp-b1 探针页剔除）：css-masking
+126P→**615P 净 +489、0 页回归**（61/61 保序），21 崩页转真实子测、分母
+与 chrome 逐页精确对齐（5,818 上游子测解锁）。见 [evidence
+2026-11-15-target-expando-shim-knife](evidence/2026-11-15-target-expando-shim-knife.md)。
+**逐组转化率实测完成（11-15 七轮）**：337 页 harness 面全量实测
+（42 组、71 corpus invocation、同二进制零重建）——**335/337 解锁、
+still-declared-0 清零**，解锁面 **6,691P / chrome 分母 55,861（12.0%）**，
+相对刀前全崩净增 **+6,691P**（grid 33.9%/sizing 29.6%/anchor-position
+57.4% 最高；motion/shapes/gaps/box 等 0% 组全卡 supports 门）。残差分桶
+（50,731 fail）：**supports 覆盖门 49.5%**（shape() 5.5k / calc-size 1.9k /
+mask-border 1.7k / offset-* 3.3k / backdrop-filter 943 / gaps 装饰 1.4k）、
+**WAAPI 门 21.7%**（`'animate' in Element.prototype` 缺 Element.prototype
+定义 + has 白名单臂，R2965 实现本身跑通已实证）、**插值语义 28.6%**。
+**WAAPI 门刀已落地（11-15 八轮，提交 107bcd935）**：part03
+`Element.prototype` 挂 animate/getAnimations（R351 `__zwSelector/__zwHandle`
+反解 identity 委托 `_makeAnimation`）+ part05 has 白名单两名。探针门翻转
+实证（proto-has/inst-has 双 true）；五组 A/B（B0=
+results-texp-b1-{p1,p2}/B1=results-waapi-b1-{p1,p2}）**净 +184P 零回归**，
+WAAPI 门子测 4071→**0**，2 页 25% 分母差应归一。提交前去冗余（part03
+不可达残片块 + part05 同链重复条件），清理后探针复验一致。见 [evidence
+2026-11-15-waapi-gate-knife](evidence/2026-11-15-waapi-gate-knife.md)。
+**地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
+apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
+更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
+`from{height:100px}→200px` 普通值）六个变体全 `auto`，waapi 探针
+`animate([{opacity:0},{opacity:1}])` currentTime=500 读 opacity=**1** 非
+0.5——Animation 对象链路通（playState/currentTime）、**值未进同步
+computed 通道**。②插值 corpus 现有通过面走 CSS Transitions 离散路径
+（grid-template-rows-interpolation 574P 实证多为 allow-discrete flip），
+min-height-composition 0P/60F 证 additive composition 值同样不反映。
+③真主矛盾 = **动画值进 gCS 同步读链**（WAAPI KeyframeEffect→引擎动画
+时钟→computed 通道未接），锁死 WAAPI 面值域 + 语义桶 14.5k + 全局关键字
+端点解析面——上限远超 supports 桶。CSS.supports 覆盖门仅在页级前置调用
+（harness 本体只门 WAAPI isSupported 与 custom-props，`supportsValue` 对
+css 方法恒 true）。engine 共享面共存记：ZeroWeb-3 流在 part05.js 施工
+（M3-B/C 刀 staged 未提交，peer 提交 f82e60416 账面），本轮 engine 提交
+已 rebase 干净、无文本冲突。
+**动画值进 gCS 刀已落地（11-15 十轮，jsanim v1→v3 三代 A/B 收口）**：shim
+`Animation` 经 `__zw_js_anim_register/seek/playpause/cancel` 把 keyframes/timing/
+播放态登记到引擎侧 `js_anim_registry`（thread_local ENTRIES + 独立
+AnimationClock 实例，渲染管线零触及），gCS selector/handle 两通道序列化前咨询
+（apply 后过同一规范化序列化器）。三代形态：v1 裸奔 +586G 但 245 REG
+（composite/calc-size/url/neutral 缺端点等离散 fallback 全翻红）；v2 +形状守卫
+（composite≠replace、calc-size(/random(、裸关键字端点不登记）+fallback 检测器
+（开区间 tick 恒等端点原文=未真插值→回落 B0 通道）+canonicalize None（序列化
+恒等→回落 gCS 通道）→ 183G/0L/**9R**；v3 +端点合成（neutral 单帧臂 JS 侧注册前
+读 underlying 补 0%/100% 帧，Web Animations §5.4.15）+混合单位端点门（px↔%/
+px↔em 跨单位插值退化面不登记；无单位侧合法插值不误门——首版 none→X 陪葬
+−21 事故已修）→ 五组 A/B（B0=results-jsanim-b0/B1=results-jsanim-b3，全程
+快照二进制防混源）：**css-transforms +185/0/0、css-backgrounds +13/0/0、
+motion/values/fonts 0/0/0，合计 +198/0/0 零回归**。教训三则：corpus A/B 前
+必核双腿 page 集合相等（peer 施工目录瞬态缺席曾伪增 183 REG，补腿法
+`CSS_CORPUS_ONLY_SUBSTR` 定向重跑）；`cases=` 汇总是 merge 侧 entry-页计数
+非尝试数（库存核对以 transcript `==== ` 行为准）；B0 伪通过池（echo 恒等/
+期望本身垃圾串）以守卫保位不追真值。残面增益候选（下一刀）：composite-add
+建模 ~146G、easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G。见 [evidence
+2026-11-15-jsanim-gcs-value-knife](evidence/2026-11-15-jsanim-gcs-value-knife.md)；
+背景与分桶见 [evidence
+2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)；
+规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
+2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
+**g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口
+thread_local 单源 + vertical-align `<length-percentage>` 三层
+（parse/computed/inline 布局 %×line-height），css-values
+viewport-units-css2-001 残 12F（border-spacing 4 + vertical-align 8）
+目标面；calc-size 链 WIP（8 文件）在 stash@{0} 隔离待 A/B 后还原另刀。
+**DC-3 证据补强（11-15 二轮，同日）**：①语料面定谳——ci-shards.yml 已接线
+65 套件覆盖全部主要 css 组，剩余 ~119k 缺口 = 引擎能力面（未接线零散组仅
+~1.1k，语料杠杆已耗尽，刀链是唯一主杠杆）；②快照树态 ∈ [g41, g42)（12 组
+CI vs 本地对账 |Δ|≤33），当前 css 面真值 ≈ **64.8k**；③masking 6,281 缺口
+再分解：chrome 65 载子测文件共 6,398 子测，本地镜像 573 文件零缺，但 22 页
+setup 即崩（共享插值 harness `createTargetContainer` target `.style`
+undefined 单根因）堵 **5,859/6,398（92%）**——单根因刀优先级显著上调。
+该 crash 面已由 target expando 刀解除（见上）。见 [DC-3 刷新证据
+§3/§4/B′](evidence/2026-11-15-dc3-snapshot-refresh.md)。
+**g49 完成（11-15）**：GCS/媒体门视口真值对齐刀——GCS 快照通道四处与渲染
+`<style media>` 门恒 1280×800，而 runner/宿主实视口 800×600（shim 安装期
+`set_pending_layout_viewport`）→ viewport 单位（10vw→128px≠80px）与媒体门
+求值双面失真。修法：`computed_style_cache::gcs_viewport_dims()` 单源读
+pending 视图布局 viewport（未接线回落 1280×800）；GCS 四站去硬编码 + 渲染
+collect 链（collect_stylesheets/with_parsed_external/
+style_sheet_if_eligible/collect_interleaved_external）viewport 穿参至
+`MediaContext`（FIXME 清偿），shadow 内联链签名免穿全局读。A/B（B0=
+results-g47-b2 + results-g49-b0 anchor / B1=results-g49-b1）：viewport-
+units-css2-001 84F→12F **fixed +72 零回归**（css-values 4113→4185P），
+css-images/anchor 全持平——刀面精确命中。残面：css2-001 残 12F 案级定谳 =
+border-spacing 4 + vertical-align 8（vw 族属性槽承接缺口，另刀）、
+viewport-units-invalidation 24F = iframe `contentWindow.getComputedStyle`
+未桥接（缺能力面，案级消息定谳）。见 [evidence
+2026-11-15-g49-gcs-viewport-truth-alignment](evidence/2026-11-15-g49-gcs-viewport-truth-alignment.md)。
 **g48 完成（11-15）**：gradient `at` 位置文法位 + canonical 序 + computed
 折算刀——csswg#2140 后 `<position>` 行为定谳（oracle: gradient-position
 三页）：3 值混搭形全禁（旧 3|4 值宽松 walk 误收 `at left 4px top` 五形）、

@@ -16283,6 +16283,10 @@
     if (self.currentTime == null || self._playState === 'finished') self.currentTime = 0;
     if (self._playState !== 'running') self._playState = 'running';
     self._resolveReady(self);
+    // 动画值进 gCS 刀：play 重锚引擎注册表墙钟（running 求值 = now − anchor）。
+    if (self._zwRegId != null && typeof __zw_js_anim_playpause === 'function') {
+      try { __zw_js_anim_playpause(self._zwRegId, '0', String(Date.now())); } catch (_eJsPlay) {}
+    }
     // headless 瞬间完成：microtask 后 finished + onfinish + 末态持久化。
     _defer(function () {
       if (!self._cancelled && self._playState === 'running') self._finishNow();
@@ -16290,11 +16294,21 @@
   };
   Animation.prototype.pause = function () {
     this._playState = 'paused';
+    // 动画值进 gCS 刀：pause 冻结引擎注册表求值点（fresh pause 冻结于当前相位，
+    // seek 后 hold 优先——harness「先 pause 后 seek」形态值域主通道）。
+    if (this._zwRegId != null && typeof __zw_js_anim_playpause === 'function') {
+      try { __zw_js_anim_playpause(this._zwRegId, '1', String(Date.now())); } catch (_eJsPz) {}
+    }
   };
   Animation.prototype.cancel = function () {
     this._cancelled = true;
     this._playState = 'idle';
     this.currentTime = null;
+    // 动画值进 gCS 刀：cancel 移除引擎注册表条目（gCS 咨询即回落 underlying）。
+    if (this._zwRegId != null && typeof __zw_js_anim_cancel === 'function') {
+      try { __zw_js_anim_cancel(this._zwRegId); } catch (_eJsCxl) {}
+    }
+    this._zwRegId = null;
     if (typeof this.oncancel === 'function') {
       try { this.oncancel({ type: 'cancel', target: this }); } catch (_e) {}
     }
@@ -16329,6 +16343,20 @@
     this._committed = true;
   };
   Animation.prototype.persist = function () {};
+  // 动画值进 gCS 刀：currentTime 改原型访问器——set 通知引擎注册表 seek（hold
+  // 冻结点，ms；Web Animations §5.1 currentTime）；get 返回 held 值（含 null）。
+  // 构造器/_finishNow/cancel 的 `this.currentTime = ...` 赋值经此路由，读面零漂移
+  //（enumerable:true 同原 own enumerable 属性 for...in 可见性）。
+  Object.defineProperty(Animation.prototype, 'currentTime', {
+    get: function () { return this._currentTime; },
+    set: function (v) {
+      this._currentTime = v == null ? null : Number(v);
+      if (this._zwRegId != null && this._currentTime != null && typeof __zw_js_anim_seek === 'function') {
+        try { __zw_js_anim_seek(this._zwRegId, String(this._currentTime)); } catch (_eSeekCt) {}
+      }
+    },
+    enumerable: true, configurable: true,
+  });
   Animation.prototype.getEffect = function () { return this._effect; };
   Object.defineProperty(Animation.prototype, 'effect', {
     get: function () { return this._effect; },
@@ -16389,7 +16417,188 @@
     anim.play();
     var _akey = _elKey(sel, handle);
     (_elementAnimations[_akey] || (_elementAnimations[_akey] = [])).push(anim);
+    // wptfyi-css 动画值进 gCS 刀（2026-11-15）：JS 动画引擎侧登记——harness
+    // Web Animations 方法 `animate(...)→pause()→currentTime=t` 后同步 gCS 读值
+    //（interpolation-testcommon 三方法值域主通道）。finished+fill forwards 终态
+    // 另有 _applyEndState inline 写通道（既有），本登记补 paused/seek 面值域。
+    // identity 双缺（裸元素无 sel 无 handle）跳过——gCS 无键可咨询，行为与刀前一致。
+    // FIXME(property-indexed)：属性索引形 keyframes（{opacity:[0,1]}）不登记（数组
+    // 值逐帧展开待补）；corpus 面为 keyframe 数组形不受影响。
+    // 形状守卫（2026-11-15 A/B 定谳）：引擎 interpolate_property_value 不支持的
+    // 形态不登记——读值回落级联/B0 通道，避免把既有通过面换成离散 fallback 裸串。
+    // ① composite add/accumulate（合成插值未实现，border-*-width/transform 合成
+    //    页 A/B -80/-21）；② calc-size()/random() 值（peer calc-size 域，A/B -66/-1）；
+    // ③ 尺寸/离散关键字端点（auto/fit-content/min-content/max-content/stretch/
+    //    normal——引擎关键字端点走离散 fallback 裸串）。
+    var _zwUnsafe = effectOptions && effectOptions.composite &&
+      effectOptions.composite !== 'replace' && effectOptions.composite !== 'auto';
+    if (!_zwUnsafe && Array.isArray(keyframes)) {
+      for (var _zgi = 0; _zgi < keyframes.length; _zgi++) {
+        var _zgf = keyframes[_zgi] || {};
+        if (_zgf.composite && _zgf.composite !== 'replace' && _zgf.composite !== 'auto') { _zwUnsafe = true; break; }
+        for (var _zgk in _zgf) {
+          if (_zgk === 'offset' || _zgk === 'composite' || _zgk === 'easing') continue;
+          var _zgv = _zgf[_zgk];
+          if (typeof _zgv !== 'string') continue;
+          var _zgvT = _zgv.replace(/^\s+|\s+$/g, '');
+          if (_zgvT.indexOf('calc-size(') >= 0 || _zgvT.indexOf('random(') >= 0 ||
+              /^(auto|fit-content|min-content|max-content|stretch|normal|neutral)$/.test(_zgvT)) {
+            _zwUnsafe = true; break;
+          }
+        }
+        if (_zwUnsafe) break;
+      }
+      // ④ 混合单位端点对（v3，2026-11-15 merged transforms A/B 定谳）：translate
+      //    px↔% 对（got '960px 800px' 形）、transform px↔em 对（got
+      //    'translateX(-23px)' 形）——引擎跨单位长度插值退化为 px 数值插值，输出
+      //    值形与端点原文不符（fallback 回声检测不触发）且与 harness probe 期望
+      //    （calc 代数串/none）恒异 → REGRESSED 6 例。端点单位序列不一致的属性
+      //    不登记，回落 B0 通道（级联/终态 inline 写）。单位集一致（含无单位色值/
+      //    关键词对）零触及；calc() 混合单位两端点同集不误伤（v1 left/text-indent
+      //    calc 臂 GAIN 保持）。
+      if (!_zwUnsafe) {
+        var _zwPv = {};
+        for (var _zui = 0; _zui < keyframes.length; _zui++) {
+          var _zuf = keyframes[_zui] || {};
+          for (var _zuk in _zuf) {
+            if (_zuk === 'offset' || _zuk === 'composite' || _zuk === 'easing') continue;
+            var _zuv = _zuf[_zuk];
+            if (typeof _zuv !== 'string') continue;
+            var _zupn = _zwWaapiPropKebab(_zuk);
+            (_zwPv[_zupn] || (_zwPv[_zupn] = [])).push(_zuv);
+          }
+        }
+        for (var _zup in _zwPv) {
+          var _zwUs = null;
+          for (var _zuj = 0; _zuj < _zwPv[_zup].length; _zuj++) {
+            var _zwUm = String(_zwPv[_zup][_zuj]).match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || [];
+            if (_zwUm.length === 0) continue; // 无单位侧（none/无单位数值/色值）与任意单位插值合法——首版误门 none→X 臂实证 b3 transforms −21
+            var _zwUk = _zwUm.join(',');
+            if (_zwUs === null) { _zwUs = _zwUk; }
+            else if (_zwUs !== _zwUk) { _zwUnsafe = true; break; }
+          }
+          if (_zwUnsafe) break;
+        }
+      }
+    }
+    // spec：Web Animations §5.5 Element.animate / §3.6 KeyframeEffect。
+    // https://drafts.csswg.org/web-animations-1/
+    if ((sel || handle) && !_zwUnsafe && typeof __zw_js_anim_register === 'function') {
+      try {
+        var _zwSpec = {
+          kf: _zwWaapiSpecKeyframes(keyframes),
+          dur: (effectOptions && typeof effectOptions.duration === 'number') ? effectOptions.duration : 0,
+          delay: (effectOptions && effectOptions.delay != null) ? Number(effectOptions.delay) || 0 : 0,
+          easing: (effectOptions && effectOptions.easing) || 'linear',
+          fill: (effectOptions && effectOptions.fill && effectOptions.fill !== 'auto') ? String(effectOptions.fill) : 'none',
+          iter: (effectOptions && effectOptions.iterations != null) ? effectOptions.iterations : 1,
+          dir: (effectOptions && effectOptions.direction) || 'normal',
+        };
+        // 端点合成（v3，2026-11-15 A/B 定谳）：neutral 单帧臂——interpolation
+        // harness（isNeutralKeyframe）跳过中性端点，spec kf 只剩 o=1 帧；时钟
+        // missing-endpoint 填 initial 值而非 underlying，at(0)/at(-0.3) 臂返回
+        // initial 串（v1 REGRESSED ≈28 例伪源：neutral→X 页 got '' / got
+        // 'rgba(0,0,0,1)' 形），css-values neutral→X 面整面 constant-end 塌陷。
+        // spec：Web Animations §5.4.15 缺失端点帧用 underlying computed value
+        // 合成。读 underlying 走 __zw_get_computed_style(sel, prop)——注册前本
+        // 动画不在表内无自递归；同元素更早注册动画按合成序计入（spec 近似一致）。
+        // handle-only 走 __zw_get_computed_style_by_handle 同形。
+        // https://drafts.csswg.org/web-animations-1/#keyframe-effect-computed-keyframes
+        try {
+          var _zwMs = { 0: true, 1: true };
+          var _zmi;
+          for (_zmi = 0; _zmi < _zwSpec.kf.length; _zmi++) {
+            if (_zwSpec.kf[_zmi].o === 0) _zwMs[0] = false;
+            if (_zwSpec.kf[_zmi].o === 1) _zwMs[1] = false;
+          }
+          if (_zwMs[0] || _zwMs[1]) {
+            var _zwPs = {};
+            for (_zmi = 0; _zmi < _zwSpec.kf.length; _zmi++) {
+              for (var _zmp in _zwSpec.kf[_zmi].p) _zwPs[_zmp] = true;
+            }
+            for (_zmi = 0; _zmi < 2; _zmi++) {
+              var _zmSide = _zmi === 0 ? 0 : 1;
+              if (!_zwMs[_zmSide]) continue;
+              var _zmFrame = { o: _zmSide, p: {} };
+              var _zmVal = '';
+              for (var _zmProp in _zwPs) {
+                try {
+                  _zmVal = (sel ? __zw_get_computed_style(String(sel), _zmProp)
+                    : (typeof __zw_get_computed_style_by_handle === 'function'
+                      ? __zw_get_computed_style_by_handle(String(handle), _zmProp) : '')) || '';
+                } catch (_zmE) { _zmVal = ''; }
+                if (_zmVal) _zmFrame.p[_zmProp] = _zmVal;
+              }
+              var _zmHas = false;
+              for (var _zmK in _zmFrame.p) { _zmHas = true; break; }
+              if (_zmHas) _zwSpec.kf.push(_zmFrame);
+            }
+          }
+        } catch (_zwSynE) { /* 合成失败按缺端点原样登记（v2 行为） */ }
+        anim._zwRegId = Number(__zw_js_anim_register(String(sel || ''), String(handle || ''), JSON.stringify(_zwSpec)) || 0) || null;
+      } catch (_eJsReg) { anim._zwRegId = null; }
+    }
     return anim;
+  }
+
+  // 动画值进 gCS 刀：keyframes 数组形规范为注册 spec（camelCase → kebab-case，
+  // -- 自定义属性保形；cssOffset/cssFloat 特名还原；offset 缺省均匀分布）。
+  function _zwWaapiPropKebab(name) {
+    var s = String(name);
+    if (s.slice(0, 2) === '--') return s;
+    if (s === 'cssOffset') return 'offset';
+    if (s === 'cssFloat') return 'float';
+    return s.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
+  }
+  function _zwWaapiSpecKeyframes(keyframes) {
+    var arr = Array.isArray(keyframes) ? keyframes : ((keyframes && typeof keyframes === 'object') ? [keyframes] : []);
+    var n = arr.length;
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var src = arr[i] || {};
+      var frame = { o: (src.offset != null ? Number(src.offset) : (n > 1 ? i / (n - 1) : 0)), p: {} };
+      for (var k in src) {
+        if (k === 'offset' || k === 'composite' || k === 'easing') continue;
+        if (Array.isArray(src[k]) || typeof src[k] === 'function') continue; // 属性索引形跳过该属性
+        frame.p[_zwWaapiPropKebab(k)] = String(src[k]);
+      }
+      out.push(frame);
+    }
+    return out;
+  }
+
+  // WAAPI 门刀（2026-11-15，wptfyi-css 插值 harness 337 页面）：harness 门在
+  // `'animate' in Element.prototype`（css/support/interpolation-testcommon.js
+  // webAnimationsInterpolation.isSupported）——R2965 animate/getAnimations 此前只在
+  // 实例 proxy get trap 面（part04），原型面 `'animate' in Element.prototype` 恒
+  // false，WAAPI 型插值子测整面不注册（B1 实测 11,020 门 fail）。原型方法
+  // this=元素 proxy，经内部身份槽解析 sel/handle（handle-only proxy 反查
+  // `__zw_selector_for_handle`，part04 R407 同形）后委托既有 `_makeAnimation`/
+  // 注册表——R2965/R3067 语义零改动。enumerable:false 同 HTMLElement.prototype
+  // .style 先例（proto 面 for...in 零进，R3046）。
+  // spec：Web Animations §5.5/§5.6 Element.animate/getAnimations。
+  // https://drafts.csswg.org/web-animations-1/#dom-element-animate
+  if (globalThis.Element && globalThis.Element.prototype) {
+    Object.defineProperty(globalThis.Element.prototype, 'animate', {
+      value: function (keyframes, options) {
+        var _sel = (this && this.__zwSelector) || null;
+        var _hnd = (this && this.__zwHandle) || null;
+        if (!_sel && _hnd && typeof __zw_selector_for_handle === 'function') {
+          try { _sel = String(__zw_selector_for_handle(_hnd) || '') || null; } catch (_ePAnim) { _sel = null; }
+        }
+        return _makeAnimation(keyframes, options, _sel, _hnd);
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(globalThis.Element.prototype, 'getAnimations', {
+      value: function () {
+        var _sel = (this && this.__zwSelector) || null;
+        var _hnd = (this && this.__zwHandle) || null;
+        var _anims = _elementAnimations[_elKey(_sel, _hnd)] || [];
+        return _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
   }
 
   // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
@@ -25489,6 +25698,12 @@
       // body 视图零变化）。
       var hh179 = '';
       try { hh179 = String(_r179HeadHtml || ''); } catch (_e179h) {}
+      // T 切片（editing goal d34）：iframe 子文档 head 段（doc 槽 `_r159HeadHtml`
+      // ——part05 解析前剥离的原始整段，含 `<head>` 包裹）并入包装层——head
+      // 内容迁入 headEl 后 body 树序列化不再含 head 子，缺省补发保 R164
+      // detHtml 轮转查询视图（title/meta/script 查询命中）；普通 detached doc
+      // 无槽零变化。
+      try { if (!hh179 && doc._r159HeadHtml) hh179 = String(doc._r159HeadHtml); } catch (_e159hs) {}
       // R159：html/body 属性恢复到包装层（`<html id="html"><body id="body">`——
       // 查询树保真；普通 detached doc 无槽零变化）。
       if (ha || ba || hh179) {
@@ -25668,6 +25883,22 @@
       try {
         ensureTree();
         var realNode167 = _zwMFindRealNode(_tree, key);
+        if (!realNode167) {
+          // T 切片（editing goal d34）：headEl 视图真节点搜——iframe 子文档 head
+          // 段解析期迁入 headEl（part05 解析前剥离）后，R167 桥的 `_tree` 搜不再
+          // 覆盖 head 内容，JSON 往返命中 head 子时落 `_zwParseEl` wrapper 域
+          //（无 .remove——corpus removeResourceScriptElements TypeError 46F 实证）。
+          // 非元素伪根走 R307 fragment 同款（跳过自身登记只递归子）；host 已按
+          // 作用域裁决命中后才到此，body 作用域误命中不存在。真节点自登记同
+          // R166 方向（real 即桥对象）。
+          try {
+            var _hd167k = doc.head && doc.head.childNodes;
+            if (_hd167k && _hd167k.length) {
+              var _hd167 = _zwMFindRealNode({ childNodes: _hd167k }, key);
+              if (_hd167) { _zwBridgeSet(_hd167, _hd167); realNode167 = _hd167; }
+            }
+          } catch (_e167hd) {}
+        }
         if (realNode167) {
           var bridged167 = _zwBridgeGet(realNode167);
           if (bridged167) {

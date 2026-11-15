@@ -464,6 +464,9 @@ impl StyleSystem {
         }
         self.viewport_width = Some(width);
         self.viewport_height = Some(height);
+        // g50：镜像 apply 期 thread_local 单源（apply_advanced 急切 px 化臂的
+        // vw/vh 真值——border-spacing 等无 viewport 参数的自由函数消费）。
+        computed::set_active_viewport(width, height);
         self.context_version = self.context_version.wrapping_add(1);
     }
 

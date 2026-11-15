@@ -276,6 +276,15 @@ fetch_raw "images/green-2x2.png"
 # 实证 196/196 全 Pass）。
 fetch_raw "css/support/color-testcommon.js"
 
+# ③m the-label-element label-forwarded-click-pointer-properties 助资产（s444）：
+# 该案外链 /pointerevents/pointerevent_support.js（getEvent 等事件助手）——资产缺
+# 席时两键 ReferenceError: getEvent is not defined 伪红（s227/s442/s443 同型第三
+# 例）。s442 曾把键 1 判「testdriver 真输入管道能力门」、键 2 判「疑引擎事件面」
+# ——均为资产遮蔽伪判据：资源就位后 solo 2/2 全 Pass（testdriver stub 健在、
+# isTrusted=false 转发面健全）。上游 pin 在档 19111 字节 self-contained，语料内
+# 唯一消费者即本案。
+fetch_raw "pointerevents/pointerevent_support.js"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

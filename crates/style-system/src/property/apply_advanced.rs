@@ -291,14 +291,16 @@ fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 /// Counter、Content、Break、Column、Appearance 等高级属性。
 /// 返回 true 表示成功设置。
 /// R1417：把 background-position 的长度值（任意单位）解析为 px。
-/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 viewport（apply 无 viewport
-/// 上下文，传 None 用 resolve_length 默认，vh/vw 在 bg-position 极罕见）。
+/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 apply 期视口真值
+/// （g50 thread_local 单源，[`crate::computed::active_viewport`]；未 set 时
+/// 保持 resolve_length 既有回落）。
 fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
     let fs = match &style.font_size {
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
     };
-    crate::computed::resolve_length(&lv, fs, None, None) as f32
+    let (vw, vh) = crate::computed::active_viewport();
+    crate::computed::resolve_length(&lv, fs, vw, vh) as f32
 }
 
 fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
@@ -306,7 +308,8 @@ fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &Comp
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
     };
-    crate::computed::resolve_length(lv, fs, None, None) as f32
+    let (vw, vh) = crate::computed::active_viewport();
+    crate::computed::resolve_length(lv, fs, vw, vh) as f32
 }
 
 /// 将解析后的 `<position>` 值（`background-position` / `object-position` 共用同一语法）
@@ -316,13 +319,22 @@ fn position_value_to_computed(
     v: zero_css_parser::values::BackgroundPositionValue,
     style: &ComputedStyle,
 ) -> Option<BackgroundPositionComputedValue> {
-    use zero_css_parser::values::BackgroundPositionValue as Bp;
+    use zero_css_parser::values::{BackgroundEdge, BackgroundPositionValue as Bp};
     Some(match v {
         Bp::Center => BackgroundPositionComputedValue::Center,
         Bp::Left => BackgroundPositionComputedValue::Left,
         Bp::Right => BackgroundPositionComputedValue::Right,
         Bp::Top => BackgroundPositionComputedValue::Top,
         Bp::Bottom => BackgroundPositionComputedValue::Bottom,
+        // g47：逻辑边缘按 htb/ltr 物理映射物化（css-values-5 §4.2：computed = 物理
+        // <length-percentage> 对）。FIXME(write-modes)：flow-relative 映射应随元素
+        // writing-mode/direction（engine 尚无 vertical-rl 等写入模式布局），暂恒
+        // htb/ltr——position-computed.tentative 的 test_writing_modes 32 子测中仅
+        // 与恒定映射一致的写组可过。
+        Bp::XStart => BackgroundPositionComputedValue::Left,
+        Bp::XEnd => BackgroundPositionComputedValue::Right,
+        Bp::YStart => BackgroundPositionComputedValue::Top,
+        Bp::YEnd => BackgroundPositionComputedValue::Bottom,
         Bp::Length(lv) => BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style)),
         Bp::Percent(pct) => BackgroundPositionComputedValue::Percent(pct),
         Bp::Calc(expr) => BackgroundPositionComputedValue::Calc(expr),
@@ -333,7 +345,15 @@ fn position_value_to_computed(
         }
         Bp::EdgeOffset { side, offset } => {
             // R2478：3/4 值「边缘+偏移」对 → computed EdgeOffset（offset 递归转换；
-            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。
+            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。g47：
+            // 逻辑缘物化（XStart→Left 等，同上 FIXME(write-modes)）。
+            let side = match side {
+                BackgroundEdge::XStart => BackgroundEdge::Left,
+                BackgroundEdge::XEnd => BackgroundEdge::Right,
+                BackgroundEdge::YStart => BackgroundEdge::Top,
+                BackgroundEdge::YEnd => BackgroundEdge::Bottom,
+                physical => physical,
+            };
             let oc = position_value_to_computed(*offset, style)?;
             BackgroundPositionComputedValue::EdgeOffset(side, Box::new(oc))
         }
@@ -2029,11 +2049,13 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法同
-        // background-position（<position>）。默认 50% 50%（Center）。R2303 补——旧 impl
-        // 完全缺该属性，object-fit 的 compute_object_fit_rect 恒居中。
+        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法为
+        // 严格 `<position>`（css-values-5 §4.2——3 值形禁、缘偏移对全有全无、逻辑
+        // 关键字；csswg#2140 后行为，object-position 语料三页钉）。默认 50% 50%
+        //（Center）。R2303 补——旧 impl 完全缺该属性，object-fit 的
+        // compute_object_fit_rect 恒居中。
         "object-position" => {
-            if let Some(v) = values::parse_background_position(value) {
+            if let Some(v) = values::parse_position_strict(value) {
                 if let Some(c) = position_value_to_computed(v, style) {
                     style.object_position = c;
                     return true;
@@ -2777,5 +2799,70 @@ mod r4534_border_shape_tests {
             style.border_shape,
             zero_css_parser::values::BorderShapeValue::Fill { .. }
         ));
+    }
+}
+
+#[cfg(test)]
+mod g50_viewport_slot_tests {
+    use super::*;
+
+    /// g50：急切 px 化臂视口真值——set_viewport 后 border-spacing `10vw`/`10vh`
+    /// 折 800×600 真值（driving: viewport-units-css2-001 border-spacing 4 腿，
+    /// 旧实现走 None 回落 1440×900 折 144/90）。
+    #[test]
+    fn border_spacing_resolves_viewport_truth() {
+        let mut sys = crate::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut style = ComputedStyle::default();
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vw",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 80.0);
+        assert_eq!(style.border_spacing.vertical, 80.0);
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vh",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 60.0);
+        // vmin/vmax 按 min/max 轴
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vmin 10vmax",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 60.0);
+        assert_eq!(style.border_spacing.vertical, 80.0);
+        // px 直通不受影响
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "5px 10px",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 5.0);
+        assert_eq!(style.border_spacing.vertical, 10.0);
+    }
+
+    /// g50：box-shadow 偏移同走 resolve_effect_length——vw 真值生效。
+    #[test]
+    fn box_shadow_offset_resolves_viewport_truth() {
+        let mut sys = crate::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut style = ComputedStyle::default();
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "box-shadow",
+            "10vw 10vh 0 0 red",
+            None
+        ));
+        assert_eq!(style.box_shadow.len(), 1);
+        assert_eq!(style.box_shadow[0].offset_x, 80.0);
+        assert_eq!(style.box_shadow[0].offset_y, 60.0);
     }
 }

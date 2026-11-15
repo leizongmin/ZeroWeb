@@ -2357,7 +2357,7 @@ fn probe_r342_time_parse() {
     let doc = p.cached_doc_shared().unwrap();
     let doc = doc.borrow();
     let node = doc.query_selector(doc.root(), "input").unwrap();
-    let sheets = crate::pipeline::collect_stylesheets(&doc, "");
+    let sheets = crate::pipeline::collect_stylesheets(&doc, "", (800.0, 600.0));
     let mut ss = zero_style_system::StyleSystem::new();
     let styles = ss.compute_styles(&doc, &sheets);
     let st = styles.get(&node).unwrap();

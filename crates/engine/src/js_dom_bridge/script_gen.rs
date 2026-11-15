@@ -509,6 +509,18 @@ pub fn script_text_caret_move(selector: &str, key: &str) -> String {
     format!("__zw_text_caret_move && __zw_text_caret_move('{esc_sel}', '{esc_key}')")
 }
 
+/// 构造「方向/行端键移动 CE 宿主 caret」的 shim 脚本（B1 切片 3，editing goal
+/// d23）。
+///
+/// 键盘默认动作：contenteditable 编辑宿主焦点时 ArrowLeft/Right（character
+/// 步）与 Home/End（lineboundary 块界）移动 caret 而非滚动。shim
+/// `__zw_ce_caret_move(key)` 判定 activeElement 是 CE 宿主后经 Selection.modify
+/// 移动，消费返回 '1'（宿主跳过滚动默认动作）；非 CE 宿主返 '0' 落既有门。
+pub fn script_ce_caret_move(key: &str) -> String {
+    let esc_key = escape_js_string(key);
+    format!("__zw_ce_caret_move && __zw_ce_caret_move('{esc_key}')")
+}
+
 /// 构造不派发 `input` listener 的 UA 文本插入脚本。
 ///
 /// 仅用于页面 JavaScript 禁用路径；IDL value/selection 状态仍由用户代理更新。

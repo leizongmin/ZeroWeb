@@ -27,11 +27,20 @@ DIRS=(
   "editing/other"
   "editing/include"
   "editing/data"
+  # wptfyi-editing DC-2（2026-11-15）：whitespaces/（含 chrome-compat/ 嵌套——
+  # 对账 11-14 快照分母 1,655 子测试全未覆盖，delete/forwarddelete/inserttext
+  # chrome-compat 三文件三家浏览器满通过）+ plaintext-only/（分母 1,707 全未
+  # 覆盖，styling-commands/insertLineBreak/insertText 等 ceiling 满通过为主）。
+  "editing/whitespaces"
+  "editing/plaintext-only"
 )
 # 注：run/createlink-with-selecting-img.html 引用的 /img/lion.svg 在 pin 快照
 # 上游就不存在（根树无 img/ 目录，404）——不补拉，该案相关子测试按缺资源
 # 计失败，基线分类记账。
 
 goals_fetch_all
+# editing/ 根单文件用例（分母 180 子测试，ceiling 173）——目录清单拉不到根散
+# 文件，fetch_raw 单点补拉。
+fetch_raw "editing/event.html" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 goals_inventory
 goals_next_steps "${GOAL}"
