@@ -688,6 +688,11 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
                 )
             })
             .collect(),
+        // FIXME: shape()/path()/rect()/xywh() 几何提取未实现（css-shapes-2
+        // 四兄弟；border-shape 渲染面无语料消费方，暂回空顶点）。
+        ClipPathValue::Shape(_) | ClipPathValue::Path(_) | ClipPathValue::Rect(_) | ClipPathValue::Xywh(_) => {
+            Vec::new()
+        }
     }
 }
 

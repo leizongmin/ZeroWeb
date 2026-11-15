@@ -262,6 +262,9 @@ impl PropertyRegistry {
             "break-after" => Some(BreakAfter(BreakValue::Auto)),
 
             // Column Rule
+            // 简写初始值 = medium none currentcolor（CSS Multicol §6.2）；无聚合
+            // PropertyValue 变体，返回首子属性初始形（gap 简写臂同款先例）。
+            "column-rule" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
             "column-rule-width" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
             "column-rule-style" => Some(ColumnRuleStyle(ColumnRuleStyleComputedValue::None)),
 
@@ -310,6 +313,9 @@ impl PropertyRegistry {
             // object-position 默认 50% 50%（Center），CSS Images §3。
             "object-position" => Some(ObjectPosition(BackgroundPositionComputedValue::Center)),
             "filter" => Some(Filter(Vec::new())),
+            // backdrop-filter 初始 = none（空表，Filter Effects-2）；与
+            // ComputedStyle::default()（backdrop_filter = Vec::new()）一致。
+            "backdrop-filter" => Some(Filter(Vec::new())),
 
             // Column Rule Color — CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
             "column-rule-color" => Some(ColumnRuleColor(ColorValue::CurrentColor)),

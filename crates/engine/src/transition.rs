@@ -344,6 +344,19 @@ fn get_property_value(style: &ComputedStyle, property: &str) -> String {
         "padding-right" => length_value_to_string(&style.padding_right),
         "padding-bottom" => length_value_to_string(&style.padding_bottom),
         "padding-left" => length_value_to_string(&style.padding_left),
+        // wptfyi-css 基本形状族刀：clip-path 旧/新值 canonical 串化比较
+        //（差异才启动过渡——无臂时两侧同空串恒不启动，transitions 通道死）。
+        "clip-path" => {
+            let font = match style.font_size {
+                LengthValue::Px(v) => v,
+                _ => 16.0,
+            };
+            crate::js_dom_bridge::computed_style::clip_path_to_css(&style.clip_path, font)
+        }
+        // wptfyi-css 基本形状族刀：offset-path 旧/新值 verbatim 比较（差异才
+        // 启动过渡——无臂时两侧同空串恒不启动；gCS offset-path 臂同 verbatim
+        // 口径，neutral 端点组 007 页 transitions 通道 t<0.5 行依赖 from 保持）。
+        "offset-path" => style.offset_path.clone().unwrap_or_else(|| "none".to_string()),
         "all" => String::new(), // "all" 不参与单个属性比较
         _ => String::new(),
     }

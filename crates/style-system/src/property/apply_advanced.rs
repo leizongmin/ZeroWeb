@@ -379,18 +379,83 @@ fn normalize_font_relative_length(v: LengthValue, font_size_px: f64) -> LengthVa
     }
 }
 
-/// offset-path 首片文法门：`path("...")` 形校验并返回存储原文（css-motion-1
-/// §offset-path；ray()/url()/基本形状 bail None → 支持性假、级联丢弃，后置刀）。
+/// offset-path 首片文法门：`path("...")` / `ray(<angle> [<ray-size>]
+/// [at <position>])` / 基本形状全族（css-shapes-2，复用 parse_clip_path
+/// 文法真收——invalid 形拒收）+ coord-box 后缀 / 纯 coord-box 关键词
+///（css-motion-1 §offset-path）。命中返回存储原文（verbatim）。
+/// https://drafts.fxtf.org/motion-1/#offset-path-property
 fn parse_offset_path_fn(v: &str) -> Option<String> {
     let lower = v.to_ascii_lowercase();
-    if !lower.starts_with("path(") || !v.ends_with(')') {
+    // `none` 由 apply 臂先行置 None（非首片文法域）。
+    if lower == "none" {
         return None;
     }
-    let inner = v[5..v.len() - 1].trim();
     // path() 实参必须为引号包裹字符串（单双引号皆可），且非空。
-    let ok = (inner.starts_with('"') && inner.ends_with('"') && inner.len() >= 2)
-        || (inner.starts_with('\'') && inner.ends_with('\'') && inner.len() >= 2);
-    ok.then(|| v.to_string())
+    if lower.starts_with("path(") {
+        if !v.ends_with(')') {
+            return None;
+        }
+        let inner = v[5..v.len() - 1].trim();
+        let ok = (inner.starts_with('"') && inner.ends_with('"') && inner.len() >= 2)
+            || (inner.starts_with('\'') && inner.ends_with('\'') && inner.len() >= 2);
+        return ok.then(|| v.to_string());
+    }
+    // ray()：`<angle> && <ray-size>? && at <position>?`（canonical 序先行；
+    // 乱序形 supports 通道残面挂账——parsing-valid shim JS 校验域同族）。
+    if lower.starts_with("ray(") {
+        return parse_ray_decl(v).then(|| v.to_string());
+    }
+    // 基本形状族 + coord-box 后缀（`<basic-shape> || <coord-box>`）：
+    // 文法裁决单点 parse_clip_path——形状核心非法整值拒收（invalid 形）。
+    let (core, suffix_box) = split_coord_box_suffix(v);
+    if suffix_box.is_some() && core.is_empty() {
+        // 纯 coord-box 关键词形（css-motion-1 offset-path 单 coord-box）。
+        return Some(v.to_string());
+    }
+    let _ = zero_css_parser::values::parse_clip_path(core)?;
+    // 形状核心带 coord-box 后缀时该后缀已核（split 已验），核心合法即收。
+    Some(v.to_string())
+}
+
+/// 尾部 coord-box 后缀分离（css-box-4 §coord-box：content/padding/border/
+/// margin/view-box）；返回 (核心, Some(后缀词))。非后缀形返回 (原文, None)。
+fn split_coord_box_suffix(v: &str) -> (&str, Option<&'static str>) {
+    const COORD_BOXES: [&str; 5] = ["content-box", "padding-box", "border-box", "margin-box", "view-box"];
+    for b in COORD_BOXES {
+        if let Some(core) = v.strip_suffix(b) {
+            return (core.trim_end(), Some(b));
+        }
+    }
+    (v, None)
+}
+
+/// ray() 声明形校验（canonical 序：`<angle> [<ray-size>]`，可选尾 `at
+/// <position>` 子句存在性核——位置文法细节 supports 通道 shim JS 校验域）。
+fn parse_ray_decl(v: &str) -> bool {
+    let Some(inner) = v.strip_prefix("ray(").and_then(|r| r.strip_suffix(')')) else {
+        return false;
+    };
+    let inner = inner.trim();
+    let head = match inner.find(" at ") {
+        Some(i) => &inner[..i],
+        None => inner,
+    };
+    let mut toks = head.split_whitespace();
+    let Some(angle) = toks.next() else {
+        return false;
+    };
+    if parse_angle_in_deg(angle).is_none() {
+        return false;
+    }
+    match toks.next() {
+        None => true,
+        Some(size) => {
+            matches!(
+                size.to_ascii_lowercase().as_str(),
+                "closest-side" | "closest-corner" | "farthest-side" | "farthest-corner" | "sides"
+            ) && toks.next().is_none()
+        }
+    }
 }
 
 /// offset-rotate 值解析：`auto | reverse | <angle> | auto <angle>`（角度经
@@ -3064,18 +3129,22 @@ mod offset_props_tests {
         assert!(style.offset_path.is_none());
         let s = applied("offset-path", r#"path("M 0 0 L 100 100")"#);
         assert_eq!(s.offset_path.as_deref(), Some(r#"path("M 0 0 L 100 100")"#));
-        // ray()/基本形状首片 bail → apply 假（supports 门回落，后置刀）。
+        // ray()/基本形状首片真收（基本形状文法族刀；invalid 形仍拒收）。
+        let s = applied("offset-path", "ray(45deg)");
+        assert_eq!(s.offset_path.as_deref(), Some("ray(45deg)"));
+        let s = applied("offset-path", "circle(50%)");
+        assert_eq!(s.offset_path.as_deref(), Some("circle(50%)"));
         let mut style2 = ComputedStyle::default();
         assert!(!apply_advanced_property_value(
             &mut style2,
             "offset-path",
-            "ray(45deg)",
+            "circle(bogus)",
             None
         ));
         assert!(!apply_advanced_property_value(
             &mut style2,
             "offset-path",
-            "circle(50%)",
+            "url(#clip)",
             None
         ));
     }
@@ -3118,6 +3187,29 @@ mod offset_props_tests {
         assert!(parse_offset_path_fn("path(M 0 0)").is_none());
         assert!(parse_offset_path_fn("none").is_none());
         assert!(parse_offset_path_fn("path()").is_none());
+        // ray()：canonical 序 `<angle> [<ray-size>] [at <position>]`。
+        assert!(parse_offset_path_fn("ray(45deg)").is_some());
+        assert!(parse_offset_path_fn("ray(45deg closest-side)").is_some());
+        assert!(
+            parse_offset_path_fn("ray(-90deg farthest-corner at 10px 20px)").is_some(),
+            "ray at 子句存在性核"
+        );
+        assert!(parse_offset_path_fn("ray(foo)").is_none(), "非法角拒收");
+        assert!(parse_offset_path_fn("ray(45deg bogus-size)").is_none());
+        assert!(parse_offset_path_fn("ray()").is_none());
+        // 基本形状全族经 parse_clip_path 文法真收。
+        assert!(parse_offset_path_fn("circle(50%)").is_some());
+        assert!(parse_offset_path_fn("inset(10px 20px)").is_some());
+        assert!(parse_offset_path_fn("shape(from 0px 0px, line to 10px 10px, close)").is_some());
+        assert!(parse_offset_path_fn("shape(from center)").is_none(), "无命令拒收");
+        assert!(parse_offset_path_fn("xywh(0px 0px 10px 20px)").is_some());
+        assert!(parse_offset_path_fn("rect(0px auto 10px 20px)").is_some());
+        assert!(parse_offset_path_fn("circle(bogus)").is_none());
+        // coord-box：纯关键词与形状 + 后缀形；非法核心拒收。
+        assert!(parse_offset_path_fn("border-box").is_some());
+        assert!(parse_offset_path_fn("view-box").is_some());
+        assert!(parse_offset_path_fn("circle(10px) border-box").is_some());
+        assert!(parse_offset_path_fn("circle(bogus) border-box").is_none());
     }
 
     #[test]

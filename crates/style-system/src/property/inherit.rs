@@ -1390,6 +1390,13 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         // Column Rule
+        // 简写 `initial`/`unset`：三子属性槽一起回落（CSS Multicol §6.2）。
+        "column-rule" => {
+            style.column_rule_width = default_style.column_rule_width;
+            style.column_rule_style = default_style.column_rule_style;
+            style.column_rule_color = default_style.column_rule_color;
+            true
+        }
         "column-rule-width" => {
             style.column_rule_width = default_style.column_rule_width;
             true

@@ -10,6 +10,7 @@ pub mod calc_stop_gates;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;
+pub mod parse_basic_shape;
 pub mod parse_extended;
 pub mod parse_extended_border;
 pub mod parse_extended_visual;

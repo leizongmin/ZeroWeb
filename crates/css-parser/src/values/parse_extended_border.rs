@@ -784,6 +784,18 @@ pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     if let Some(rest) = strip_basic_shape_prefix(v, "polygon") {
         return parse_clip_polygon(rest);
     }
+    if let Some(rest) = strip_basic_shape_prefix(v, "shape") {
+        return super::parse_basic_shape::parse_shape_function(rest);
+    }
+    if let Some(rest) = strip_basic_shape_prefix(v, "path") {
+        return super::parse_basic_shape::parse_path_function(rest);
+    }
+    if let Some(rest) = strip_basic_shape_prefix(v, "rect") {
+        return super::parse_basic_shape::parse_rect_function(rest);
+    }
+    if let Some(rest) = strip_basic_shape_prefix(v, "xywh") {
+        return super::parse_basic_shape::parse_xywh_function(rest);
+    }
     None
 }
 

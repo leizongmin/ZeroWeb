@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
     BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
@@ -2631,7 +2632,7 @@ fn will_change_to_css(list: &[WillChangeValue]) -> String {
 /// `None`→`none`；`inset()` 四内缩按 box 简写折叠（1/2/3/4 值，同 margin 语法）+ 可选 `round`；
 /// `circle()`/`ellipse()` 半径 + 可选 ` at <pos>`；`polygon()` 填充规则（仅 evenodd 输出）+ 逗号分隔顶点。
 /// 长度经 [`length_to_css`]；半径关键字 closest-side/farthest-side 原样。
-fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
+pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
     use ClipPathValue as C;
     match c {
         C::None => "none".to_string(),
@@ -2685,6 +2686,14 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
                 PolygonFillRule::EvenOdd => format!("polygon(evenodd, {pts})"),
             }
         }
+        // shape()/path()/rect()/xywh()：css-shapes-2 四兄弟走 css-parser
+        // canonical 串化。shape() 走 computed 级（位置关键字折 %、rotate 归
+        // deg——chrome computed 串形语料钉面）；path()/rect()/xywh() 声明级
+        // verbatim（path data 无单位、rect/xywh computed 折算后置挂账）。
+        C::Shape(s) => shape_to_css_computed(s),
+        C::Path(p) => path_to_css(p),
+        C::Rect(r) => rect_to_css(r),
+        C::Xywh(x) => xywh_to_css(x),
     }
 }
 
