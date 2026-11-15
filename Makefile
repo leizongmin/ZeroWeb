@@ -217,7 +217,9 @@ test: target-disk-guard target/test-guard
 	cargo fmt --all -- --check
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
 	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
-	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-media-host
+	# zero-browser 一并补建：workspace 腿 image_batch_e2e 运行时 spawn
+	# target/debug/zero-browser，缺件即 panic 伪红（清库后必现，2026-11-15 两轮实证）。
+	cargo build -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-media-host
 	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
 	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
 	#   实测 zero-wpt-runner 45s / zero-browser 30s；cargo test 每二进制 1 进程

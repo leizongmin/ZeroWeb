@@ -87,5 +87,18 @@ scale got '1' / translate got '0px'——apply 成功故 canonicalize None 兜�
   转移已证无孤儿页污染）。values/fonts 页集 256/163 双边相等、motion 207=207、
   backgrounds transcript 1251→1254（同为树增长）；B0 values/fonts transcript
   尝试数偏大系旧批重试协议差，库存以页级 JSON 为准。
+- 提交门禁 make test（mkt3 全量，16:47）：fmt/clippy 绿；workspace 腿
+  135P+**1F**——`service_worker_manager::module_update_compares_static_dependency_bytes`
+  在册伪红第四例：es_module 重写器把具名导入绑定为 **globalThis getter**
+  （es_module.rs:1732 设计注释「具名/默认导入绑定安装 globalThis getter」），
+  84a48833d（8-20）老钉主脚本 `globalThis.value = value` 赋值撞 getter-only
+  抛 TypeError（脚本 :23）→ ScriptFailed(Runtime) → 永不 Activated 超时。
+  SW 沙箱独立 prelude 不装 DOM shim，与 engine 动画刀零代码路径；归
+  script-sandbox 模块波（s345/s418/module-import-meta 面），修复归
+  script-sandbox 流（导入绑定应模块局部作用域化，非全局面）。workspace 腿
+  之后剩余腿（renderer bin/lib、browser bin/tests、GPU 探测）按账本模式
+  逐腿补跑（zw-jsanim-legs 单元，companion 构建前置防 disk-guard 部分清库
+  缺件伪红——jsanim5 腿已实证 disk-guard rm 与并发 cargo 竞争「Directory
+  not empty」即 make Error 1）。
 - spec 链接：https://drafts.csswg.org/web-animations-1/ （§3.6 KeyframeEffect /
   §5.4.15 computed keyframes / §5.5 Element.animate）。
