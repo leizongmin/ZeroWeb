@@ -408,6 +408,9 @@ pub struct ComputedStyle {
     /// `offset-anchor` 属性（`auto | <position>`；<position> 文法与 transform-origin
     /// 同构，(x, y) 各一 LengthValue，% 保留）。None = 未声明/auto。
     pub offset_anchor: Option<(LengthValue, LengthValue)>,
+    /// `offset-position` 属性（`normal | auto | <position>`，css-motion-1；初始
+    /// normal）。None = 未声明（初始 normal）。
+    pub offset_position: Option<OffsetPositionValue>,
     /// transform-box 值（CSS Transforms 1，非继承；默认 view-box）。
     pub transform_box: TransformBoxValue,
     /// stroke-width 值（SVG2 presentation，非继承；LengthValue，百分比/number 由消费侧按

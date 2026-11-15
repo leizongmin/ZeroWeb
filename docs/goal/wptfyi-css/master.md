@@ -68,6 +68,27 @@ animation/gCS offset 面，未提交），本实例零编辑让位（「停己�
 面，仍需先核对方在飞状态）；未提交且 mtime 活跃→继续让位勿重开刀；
 mtime 静默 >30 分钟且无提交→查孤儿（journalctl + ps 祖先树）后按磁盘
 终态仲裁。共享树纪律：两实例禁同时跑重型门禁（双 cargo 门禁缓存在册）。
+**（11-16 00:15 更新）offset-position 刀已由实例 2614542 收口**（A/B
++108/0/0、门禁 12 腿零本刀域红，见下条目与当轮提交），避让记任务完成，
+后续轮次按控制面推进残面刀。
+**offset-position 刀已落地（11-15 十四轮，同日第二刀）**：`normal | auto |
+<position>` 三形五站（OffsetPositionValue 枚举 + 白名单第五串 + spec 初始
+normal + parse_offset_position_value 复用 parse_origin_xy + gCS 序列化臂 +
+WAAPI underlying/插值/写回三臂）+ **parse_origin_xy 4 值 edge-offset 共享
+扩展**（css-shapes-3 §position：`<edge> <offset>` 对，right/bottom →
+Calc(100%−o)，transform-origin/offset-anchor 全消费方连带）。单测 5+7 钉
+全绿。A/B（B0=62ae854f HEAD 重建 / B1=e2fe2a8d）motion+typed-om+cssom：
+**净 +108 / 0 lost / 0 regressed / 5 页**——offset-position-interpolation
++68（312→244）、computed +13（15→2）、anchor-interpolation +24（4 词共享
+连带）、anchor-computed +2、inheritance +1。首轮 B1 白名单漏串事故（initial
+表已改、known_properties() 数组漏第五串，offset-position 四页零动）法证
+补串重跑销账。残面（interpolation 余 244）：initial/unset/inherit 端点
+组 108 = harness 全局关键字缺口（十三轮定谳跨 corpus 形）、CSS Animations/
+Web Animations/transition:all 通道组 ~90 = 动画值进 gCS 链主矛盾面、
+calc 代数插值 46（`left 480px`→`right -140%` 形）；composition add 56
+（KeyframeEffect composite 共享刀）、calc 形 supports 2、offset 简写 3、
+parsing-invalid 3（shim setProperty 拒收域）。见 [evidence
+2026-11-15-offset-position-knife](evidence/2026-11-15-offset-position-knife.md)。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +

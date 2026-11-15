@@ -208,8 +208,9 @@ impl PropertyRegistry {
             "rotate" | "translate" | "scale" => Some(Transform(zero_css_parser::values::TransformValue::None)),
             // CSS Motion Path offset 簇（css-motion-1，非继承；wptfyi-css offset-* 刀）：
             // 借 Transform(None) 表义同 individual 先例，真实重置在 apply_initial_value
-            //（offset_path/distance/rotate/anchor 字段落 spec 初始 none/0/auto/auto）。
-            "offset-path" | "offset-distance" | "offset-rotate" | "offset-anchor" => {
+            //（offset_path/distance/rotate/anchor/position 字段落 spec 初始
+            // none/0/auto/auto/normal）。
+            "offset-path" | "offset-distance" | "offset-rotate" | "offset-anchor" | "offset-position" => {
                 Some(Transform(zero_css_parser::values::TransformValue::None))
             }
             "transform-origin" => Some(Length(LengthValue::Percentage(50.0))),
@@ -613,6 +614,7 @@ impl PropertyRegistry {
             "offset-distance",
             "offset-rotate",
             "offset-anchor",
+            "offset-position",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",

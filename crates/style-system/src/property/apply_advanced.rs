@@ -428,13 +428,65 @@ fn parse_offset_rotate_value(value: &str) -> Option<OffsetRotateValue> {
     parse_angle_in_deg(first).map(OffsetRotateValue::Angle)
 }
 
+/// offset-position 值解析：`normal | auto | <position>`（css-motion-1
+/// §offset-position；<position> 与 transform-origin 同构复用 parse_origin_xy，
+/// none/角度/三词形自然拒收——parsing-invalid 语料形）。
+fn parse_offset_position_value(value: &str) -> Option<OffsetPositionValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("normal") {
+        return Some(OffsetPositionValue::Normal);
+    }
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(OffsetPositionValue::Auto);
+    }
+    parse_origin_xy(v).map(|(x, y)| OffsetPositionValue::Position(x, y))
+}
+
 fn parse_origin_xy(value: &str) -> Option<(LengthValue, LengthValue)> {
     let parts = split_top_level_whitespace(value)?;
     match parts.as_slice() {
         [single] => parse_origin_single(single),
         [first, second] => parse_origin_pair(first, second),
+        // css-shapes-3 §position 4 值 edge-offset 形 `<edge> <offset> <edge> <offset>`
+        //（offset-position supports/interpolation 语料主形态）。
+        [k1, o1, k2, o2] => parse_origin_edge_offsets(k1, o1, k2, o2),
         _ => None,
     }
+}
+
+/// 4 值 edge-offset：首词定轴序，offset 必为 length-percentage；`right/bottom o`
+/// 语义 100% − o，以 Calc 形存储（css-shapes-3 §position）。
+fn parse_origin_edge_offsets(k1: &str, o1: &str, k2: &str, o2: &str) -> Option<(LengthValue, LengthValue)> {
+    let edge = |kw: &str| match origin_keyword(kw)? {
+        OriginKeyword::Horizontal(v) => Some((false, v)),
+        OriginKeyword::Vertical(v) => Some((true, v)),
+        OriginKeyword::Center => None,
+    };
+    let (axis1, edge1) = edge(k1)?;
+    let (axis2, edge2) = edge(k2)?;
+    if axis1 == axis2 {
+        return None;
+    }
+    let off1 = parse_origin_length_percentage(o1)?;
+    let off2 = parse_origin_length_percentage(o2)?;
+    let resolve = |edge_pct: f64, off: LengthValue| {
+        if edge_pct == 0.0 {
+            off
+        } else {
+            LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::BinaryOp(
+                Box::new(zero_css_parser::values::CalcExpr::Length(LengthValue::Percentage(
+                    edge_pct,
+                ))),
+                zero_css_parser::values::CalcOp::Subtract,
+                Box::new(zero_css_parser::values::CalcExpr::Length(off)),
+            )))
+        }
+    };
+    Some(if axis1 {
+        (resolve(edge2, off2), resolve(edge1, off1))
+    } else {
+        (resolve(edge1, off1), resolve(edge2, off2))
+    })
 }
 
 fn parse_origin_single(value: &str) -> Option<(LengthValue, LengthValue)> {
@@ -754,6 +806,14 @@ pub fn apply_advanced_property_value(
             }
             if let Some((x, y)) = parse_origin_xy(value) {
                 style.offset_anchor = Some((x, y));
+                return true;
+            }
+        }
+        // `offset-position: normal | auto | <position>`（css-motion-1 §offset-position，
+        // 初始 normal；<position> 复用 parse_origin_xy 含 edge-offset/calc 形）。
+        "offset-position" => {
+            if let Some(v) = parse_offset_position_value(value) {
+                style.offset_position = Some(v);
                 return true;
             }
         }
@@ -3034,5 +3094,53 @@ mod offset_props_tests {
         assert!(parse_offset_path_fn("path(M 0 0)").is_none());
         assert!(parse_offset_path_fn("none").is_none());
         assert!(parse_offset_path_fn("path()").is_none());
+    }
+
+    #[test]
+    fn offset_position_forms() {
+        use super::OffsetPositionValue;
+        let s = applied("offset-position", "normal");
+        assert_eq!(s.offset_position, Some(OffsetPositionValue::Normal));
+        let s = applied("offset-position", "auto");
+        assert_eq!(s.offset_position, Some(OffsetPositionValue::Auto));
+        let s = applied("offset-position", "220px 240px");
+        assert_eq!(
+            s.offset_position,
+            Some(OffsetPositionValue::Position(
+                LengthValue::Px(220.0),
+                LengthValue::Px(240.0)
+            ))
+        );
+        let s = applied("offset-position", "10px 20%");
+        assert_eq!(
+            s.offset_position,
+            Some(OffsetPositionValue::Position(
+                LengthValue::Px(10.0),
+                LengthValue::Percentage(20.0)
+            ))
+        );
+        // 4 值 edge-offset：left/top 原样，right/bottom → calc(100% - o)。
+        let s = applied("offset-position", "right 10px top 20%");
+        match s.offset_position {
+            Some(OffsetPositionValue::Position(LengthValue::Calc(_), LengthValue::Percentage(20.0))) => {}
+            other => panic!("right 10px top 20% 应落 (Calc, 20%)，得 {other:?}"),
+        }
+        // calc 形。
+        let s = applied("offset-position", "calc(5em + 20%) center");
+        assert!(matches!(
+            s.offset_position,
+            Some(OffsetPositionValue::Position(
+                LengthValue::Calc(_),
+                LengthValue::Percentage(50.0)
+            ))
+        ));
+        // invalid 形拒收（parsing-invalid 语料）。
+        for bad in ["none", "30deg", "left 10% top"] {
+            let mut style = ComputedStyle::default();
+            assert!(
+                !apply_advanced_property_value(&mut style, "offset-position", bad, None),
+                "offset-position: {bad} 应拒收"
+            );
+        }
     }
 }

@@ -1193,6 +1193,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.offset_anchor = None;
             true
         }
+        "offset-position" => {
+            style.offset_position = Some(OffsetPositionValue::Normal);
+            true
+        }
         "perspective" => {
             style.perspective = default_style.perspective;
             true

@@ -34,13 +34,13 @@ use zero_style_system::{
     FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
     ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
     ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
-    ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue,
-    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
-    TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
-    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
-    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
-    WritingModeValue, ZIndexValue,
+    OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
+    QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue,
+    TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue,
+    TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
+    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
+    WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -666,6 +666,16 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "offset-anchor" => match &style.offset_anchor {
             Some((x, y)) => format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px)),
             None => "auto".to_string(),
+        },
+        // `offset-position`（css-motion-1 §offset-position，初始 normal）：关键字形
+        // 直串；<position> 对经 length_to_css（calc 形 canonical 化同通道）。
+        "offset-position" => match style.offset_position.as_ref() {
+            Some(OffsetPositionValue::Normal) => "normal".to_string(),
+            Some(OffsetPositionValue::Auto) => "auto".to_string(),
+            Some(OffsetPositionValue::Position(x, y)) => {
+                format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
+            }
+            None => "normal".to_string(),
         },
         // ── transform-origin（R2716）── 2 LengthValue 经 length_to_css，空格连接。
         "transform-origin" => {

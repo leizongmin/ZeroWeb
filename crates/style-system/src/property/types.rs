@@ -528,6 +528,19 @@ pub enum OffsetRotateValue {
     AutoAngle(f64),
 }
 
+/// `offset-position` 属性值（CSS Motion Path L1 §offset-position，非继承；初始
+/// normal）。<position> 分量与 transform-origin 同构（% 保留渲染期）。
+/// https://drafts.fxtf.org/motion-1/#OffsetPositionValue
+#[derive(Debug, Clone, PartialEq)]
+pub enum OffsetPositionValue {
+    /// normal — 默认定位行为（spec 初始，计算值串 "normal"）。
+    Normal,
+    /// auto — 静态位置由 offset-anchor 决定（计算值串 "auto"）。
+    Auto,
+    /// `<position>` 对（css-shapes-3 §position，含 edge-offset/calc 形）。
+    Position(LengthValue, LengthValue),
+}
+
 /// CSS word-break 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordBreakValue {

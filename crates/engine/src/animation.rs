@@ -24,7 +24,7 @@ use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
     AnimationDirectionValue, AnimationFillModeValue, LengthValue, TimingFunctionValue, TransformFunction,
 };
-use zero_style_system::{ComputedStyle, FilterComputedValue, OffsetRotateValue};
+use zero_style_system::{ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue};
 
 /// 关键帧点 — 某个时间进度处的属性快照。
 #[derive(Debug, Clone)]
@@ -297,6 +297,16 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
                 None => "auto".to_string(),
             });
         }
+        "offset-position" => {
+            return Some(match style.offset_position.as_ref() {
+                Some(OffsetPositionValue::Normal) => "normal".to_string(),
+                Some(OffsetPositionValue::Auto) => "auto".to_string(),
+                Some(OffsetPositionValue::Position(x, y)) => {
+                    format!("{} {}", offset_len_str(x), offset_len_str(y))
+                }
+                None => "normal".to_string(),
+            });
+        }
         _ => {}
     }
     let declared = match name {
@@ -496,6 +506,16 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ => from.to_string(),
         },
         "offset-anchor" => match (parse_len_pair_pct(from), parse_len_pair_pct(to)) {
+            (Some((fx, fy)), Some((tx, ty))) if fx.1 == tx.1 && fy.1 == ty.1 => {
+                format!("{:.2}{} {:.2}{}", lerp(fx.0, tx.0, t), fx.1, lerp(fy.0, ty.0, t), fy.1)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        // offset-position = normal | auto | <position>：position 对同单位线性
+        //（px/% 各自保单位），normal/auto 端点或跨形离散（css-values-4 §8.5.6
+        // ≥0.5 → to；关键字/全局关键字端点组 WPT 期望离散翻转实测一致）。
+        "offset-position" => match (parse_len_pair_pct(from), parse_len_pair_pct(to)) {
             (Some((fx, fy)), Some((tx, ty))) if fx.1 == tx.1 && fy.1 == ty.1 => {
                 format!("{:.2}{} {:.2}{}", lerp(fx.0, tx.0, t), fx.1, lerp(fy.0, ty.0, t), fy.1)
             }
@@ -1676,6 +1696,17 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 None
             } else {
                 parse_len_pair_pct(value).map(|((x, xu), (y, yu))| (offset_len_from(x, &xu), offset_len_from(y, &yu)))
+            };
+        }
+        "offset-position" => {
+            style.offset_position = if value.trim().eq_ignore_ascii_case("normal") {
+                Some(OffsetPositionValue::Normal)
+            } else if value.trim().eq_ignore_ascii_case("auto") {
+                Some(OffsetPositionValue::Auto)
+            } else {
+                parse_len_pair_pct(value).map(|((x, xu), (y, yu))| {
+                    OffsetPositionValue::Position(offset_len_from(x, &xu), offset_len_from(y, &yu))
+                })
             };
         }
         // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段
@@ -3356,6 +3387,57 @@ mod tests {
         assert_eq!(
             underlying_individual_value(&style, "offset-rotate"),
             Some("auto 45deg".to_string())
+        );
+    }
+
+    /// offset-position position 对同单位线性；auto/normal 端点离散（css-values-4
+    /// §8.5.6 ≥0.5 → to，WPT offset-position-interpolation 关键字端点组语义）。
+    #[test]
+    fn test_offset_position_interp_and_discrete() {
+        assert_eq!(
+            interpolate_property_value("offset-position", "220px 240px", "300px 400px", 0.5),
+            "260.00px 320.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-position", "0% 50%", "100% 150%", 0.3),
+            "30.00% 80.00%"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-position", "auto", "20px 20px", 0.4),
+            "auto"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-position", "auto", "20px 20px", 0.5),
+            "20px 20px"
+        );
+    }
+
+    /// offset-position apply 写回 + underlying 序列化往返；写回 unsupported 形
+    /// 保持现值（apply_single_property 语义）。
+    #[test]
+    fn test_offset_position_apply_roundtrip_underlying() {
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-position".to_string(),
+                value: "30px 40px".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-position"),
+            Some("30px 40px".to_string())
+        );
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-position".to_string(),
+                value: "normal".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-position"),
+            Some("normal".to_string())
         );
     }
 }
