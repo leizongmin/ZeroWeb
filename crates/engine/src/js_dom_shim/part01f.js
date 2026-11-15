@@ -2289,8 +2289,20 @@
         try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl3) {}
         var nxt = _zwJusNextNode(br);
         if (!nxt || !_zwJusIsAncestorOf(container, nxt)) {
-          _zwIparaInsertNode(_zwVaGetActiveRange(), document.createElement('br'));
-          try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl4) {}
+          // I5 pre 换行归一（2026-11-16）：pre 格式化容器左块尾字面 \n 已持
+          // 行——语料 insertparagraph.js :367 `<pre>foo&#10;[]</pre>` 尾 \n 隐
+          // 行（语料注释 "trailing linefeed is invisible"），单 br 足垫新空
+          // 行，双 br 产三行形。address 等折叠 white-space 面 \n 不持行，
+          // 双 br 维持。
+          var wsI5 = _zwJusWhiteSpaceOf(container);
+          var prevI5 = br.previousSibling;
+          var heldI5 = (wsI5 === 'pre' || wsI5 === 'pre-wrap' || wsI5 === 'pre-line')
+            && !!prevI5 && prevI5.nodeType === 3
+            && /\n$/.test(String(prevI5.nodeValue || ''));
+          if (!heldI5) {
+            _zwIparaInsertNode(_zwVaGetActiveRange(), document.createElement('br'));
+            try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl4) {}
+          }
         }
         return true;
       }

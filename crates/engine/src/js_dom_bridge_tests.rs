@@ -227,3 +227,8 @@ include!("js_dom_bridge_tests/part121_ip_c4_container_pad_pins.rs");
 // div 解包（`<div>[abc]</div>` exp `<br><div><br></div>`）+ 标签 p/宿主多块
 // 双控制键现役绿形恒一。
 include!("js_dom_bridge_tests/part122_ip_c5_root_bare_br_pins.rs");
+
+// ip I5 pre 换行归一刀钉测（2026-11-16）：pre 劈裂空右块垫 br 臂认左块尾字面
+// \n 持行已足（免视守卫 white-space 感知）→ 单 br 垫新空行免三行形 + 裸尾
+// 双 br/nxt 存在四控制键现役绿形恒一。
+include!("js_dom_bridge_tests/part123_ip_i5_pre_lf_pins.rs");
