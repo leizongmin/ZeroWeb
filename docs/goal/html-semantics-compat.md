@@ -2,28 +2,43 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 477 收口（守成巡查轻覆盖轮：零入树
-同码树基带复测，双腿完全一致 disagree 0 leg-only 0，与 s476
-leg1 逐键恒等；账本
-evidence/2026-11-15-m2s477-zeroinflow-patrol.md）。
-码态 = be3648136 同码树零入树。双腿均 **8513（双 8306P/201F/
-5T/1U，distinct 8511）**，stable 8511。vs s476 leg1 GONE 0 +
-NEW 0 逐键恒等；vs s475 stable 恰 NEW 1（族整文件键 Fail 形态
-连续第二轮持位）。**P 集账本口径 8306 持位**（第二轮连续），
-s476 二页 sweep 截断未复现。onblur 哨组 following-label 双键
-stable Pass（红池 parent-label 2F 照常）；dialog-overlay 哨第 7
-轮 + modulepreload 哨第 9 轮（54/55 腿）零翻红。全桥绿窗
-**1644P/0F rc=0**（+0，清单与 s476 恒等）。红池归账结构不变
-（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提示，
-不重复通知）。hang 观察项静默哨维持（双腿零 hang）。
-下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
-由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
-轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
-准）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
-s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
-门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
+**状态**: Active——M2 切片 478 收口（他流刀归因轮：css 流 WAAPI
+gCS 值刀 a47d03b62+5e2a00a63 落树清偿，html-semantics 面
+**首现真位移 = picker-icon 键 Fail→Pass 刀增益**（solo ×3 +
+双腿 + 前 session 残腿三重证实），**P 集账本口径 8306→8307**；
+账本 evidence/2026-11-15-m2s478-waapi-gcs-knife-attribution.md）。
+码态 = 5e2a00a63（HEAD b8ce976a8 docs-only）。双腿均 8516
+（8307P/202F/6T/1U 与 8305P/204F/6T/1U，distinct 各 8514），
+leg-only 0，disagree 2 = onblur following-label 双键（leg1 P ↔
+leg2 F，**哨窗第 3 次翻红**，solo Unstable 定谳非刀致）。stable
+8512（8303P/202F/6T/1U）。vs s477 stable GONE 3（onblur 双键出
+stable + 族整文件键）+ NEW 4（族 4 子测）+ flips 2（picker
+F→P 刀面 + detailed F→T 族相位谱），余键逐键恒等。checkmark
+姊妹键 sweep 恒 F + solo ×3 全 Pass = 双相位带键，非刀缺口。
+全桥绿窗 **1644P/0F rc=0**（filtered 2389 同值，清单 set 恒等
+——刀直改 bridge/callbacks/computed_style_cache 零钉面位移）。
+红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
+s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双腿
+零 hang）。
+下一步：**守成巡查**（他流入树归因轮或轻覆盖；ZeroWeb-3 编辑流
+part06.js 施工刀落树后按他流刀归因轮，join 实测为准）+ 候门决
+项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
+rendering 流 dialog 16 红块协同面（归 rendering 流记账）。门开
+随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 477 收口）——守成巡查轻覆盖轮：
+> 零入树同码树基带复测，双腿完全一致 disagree 0 leg-only 0，
+> 与 s476 leg1 逐键恒等，P 集 8306 第二轮连续（账本
+> evidence/2026-11-15-m2s477-zeroinflow-patrol.md）**：HEAD =
+> be3648136 同码树零入树。双腿均 8513（双 8306P/201F/5T/1U，
+> distinct 8511），stable 8511。vs s476 leg1 GONE 0 + NEW 0 逐
+> 键恒等；vs s475 stable 恰 NEW 1（族整文件键 Fail 形态连续第
+> 二轮持位）。onblur 哨组 following-label 双键 stable Pass（红
+> 池 parent-label 2F 照常）；dialog-overlay 哨第 7 轮 +
+> modulepreload 哨第 9 轮（54/55 腿）零翻红。全桥绿窗 1644P/
+> 0F rc=0（+0，清单与 s476 恒等）。
 
 > **▶ 承前（2026-11-15 M2 切片 476 收口）——守成巡查轻覆盖轮：
 > leg2 二页 sweep 相位整文件 Timeout 截断 solo 全数回位定谳环境
