@@ -2,33 +2,48 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 453 收口（双刀入树全量归因轮：**target
-expando 8ee02114e + 渲染流 g50 7bc31687d 在 html-semantics 面零位移
-清偿**；onblur following-label 键 solo A/B 定谳 pre-existing 上下文
-敏感新观察族 + 全桥绿窗 1643P/0F +0；账本
-evidence/2026-11-15-m2s453-two-knife-attribution.md）。
-双腿（ecaffa184 树）leg1 8513（8306P/201F/5T/1U）/ leg2 8516
-（8305P/204F/6T/1U）；stable 8509（8305P/199F/5T/1U）vs s452 恰 4 键
-差集零 GONE/NEW：select-home-end 族 3 键（End/Home/PageUp 相位轮换出
-stable）+ onblur following-label checkbox 1 键（Pass→腿间振荡出
-stable，P 集 norm 口径 8306→8305 首次破缺）。**onblur 定谳**：solo
-A/B（post/pre-knife 树各 ×3，pre 侧 zero-engine 重编译 provenance 在
-案）双树同型 4F/3P 恒定 → following label 对 solo 冷启动恒 Fail 为
-pre-existing 上下文依赖，双刀零因果（刀面仅 target 名/g50 面无交
-集）；sweep 暖上下文边界振荡为**观察哨**。基带口径 **8305P/203F/6T/
-1U** 结构不变。全桥绿窗 **1643P/0F rc=0**（+0，刀直改 shim
-include_str! 本体零回归旁证）。红池归账结构不变（簇 D 155 + 渲染域/
+**状态**: Active——M2 切片 454 收口（守成巡查轻覆盖轮：他流入树仅
+wptfyi-css 流 docs（cf644d842，账本 evidence + master.md 两文件），
+零源码零语料，代码树与 s453 双腿树（ecaffa184）全同 → 空转核查纯
+基带复测；账本
+evidence/2026-11-15-m2s454-docs-inflow-patrol.md）。
+**上 session 429 断点遗产复用**：leg1（1943457c5 树，reflog
+provenance 在案，代码与 ecaffa184 全同）+ leg2 新跑。双腿
+leg1 8516（8306P/203F/6T/1U）/ leg2 8513（8306P/200F/6T/1U），
+**共享键状态分歧 disagree = 0**（双腿全一致形态），3 键 leg1-only
+全在 select-home-end 族主文件（End/Home/PageUp 子测，leg2 整文件 T
+相位）；stable 8513（8306P/200F/6T/1U，distinct 8511）。vs s453
+stable 零 GONE、恰 3 NEW 全数在册：**onblur following-label 键双腿
+一致 Pass 回入 stable（s453 观察哨解除回合确认；solo 冷启动恒 Fail
+的 pre-existing 上下文敏感定谳不变）** + select-home-end 族主文件
+文件级 T + detailed 文件级 F 两键相位入 stable。**P 集账本口径
+8306 回归**（s453 破缺 8305 一轮后回合）。基带结构不变。全桥绿窗
+**1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
 decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项
 静默哨维持（本轮双腿零 hang）。
-下一步：**守成巡查**（双刀归因清偿后回归；他流入树归因轮或轻覆盖；
-红池全数归门后无自由可施工面）+ onblur following-label 键观察哨
-（跟踪回入 stable 与否）+ 候门决项等待用户拍板（video P1+P2 立项 /
-簇 D A2 立项 / s137）；rendering 流 dialog 16 红块协同面（归
-rendering 流记账）。他流对账预告已清偿（target expando 刀落树并本
-轮归因零位移）。
+下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
+由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
+轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
+准）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
+s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 453 收口）——双刀入树全量归因轮：
+> target expando（8ee02114e）+ 渲染流 g50（7bc31687d）html-semantics
+> 面零位移清偿；onblur following-label 键 solo A/B 定谳 pre-existing
+> 上下文敏感观察族（账本
+> evidence/2026-11-15-m2s453-two-knife-attribution.md）**：双腿
+> （ecaffa184 树）leg1 8513（8306P/201F/5T/1U）/ leg2 8516（8305P/
+> 204F/6T/1U）；stable（8305P/199F/5T/1U）vs s452 恰 4 键差集零
+> GONE/NEW：select-home-end 族 3 键相位出 stable + onblur 键腿间振
+> 荡出 stable（P 集 8306→8305 首次破缺）。solo A/B（post/pre-knife
+> 树各 ×3，pre 侧 zero-engine 重编译 provenance 在案）双树同型
+> 4F/3P 恒定 → following label 对 solo 冷启动恒 Fail 为 pre-existing
+> 上下文依赖，双刀零因果（刀面仅 target 名/g50 面无交集）；暖上下
+> 文边界振荡列为观察哨（s454 回入 stable 解除）。全桥绿窗 1643P/
+> 0F rc=0（+0，刀直改 shim include_str! 本体零回归旁证）。
 
 > **▶ 承前（2026-11-15 M2 切片 452 收口）——守成巡查：他流入树仅
 > docs（R5601 空转核查）零刀基带复测，P 集恒等 8305 九轮连续 + 全桥
