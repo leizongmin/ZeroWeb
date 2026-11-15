@@ -74,7 +74,10 @@ word-spacing 各 12（css-text）、text-indent 0→5（css-text）。
 - rustfmt --check 绿；`cargo clippy -p zero-engine --all-targets -- -D warnings` 绿。
 - `cargo test -p zero-engine animation::` 97/97 绿（test-guard --compile-first 包裹）。
 - corpus A/B 五电池 + 16 组定向全零回归（上节）。
-- make test 门禁（zw-cadd-mkt2 systemd unit，test-guard 包裹）：见控制面本轮记录。
+- make test 门禁（zw-cadd-mkt2 workspace 腿 + zw-cadd-legs 剩余九腿单元，均
+  test-guard/systemd 包裹）：workspace 本刀域全绿；剩余腿绿四红五全对号在册红账，
+  browser tests 6F 为 mtime tripwire 伪红、quickjs crates 47F 为 s419 WIP quickjs
+  形扩面（均不入本刀账）——细目见控制面本轮剩余腿账。
 - spec 链接：https://drafts.csswg.org/web-animations-1/ （§5.4.4 combining values /
   §5.4.15 computed keyframes）、https://drafts.csswg.org/css-fonts-4/#font-weight-prop、
   https://drafts.csswg.org/css-values-4/ §8.5.6。

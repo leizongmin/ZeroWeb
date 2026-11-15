@@ -66,7 +66,23 @@ composition 定向双腿 **+197/0/0**（margin/padding 8 页、width/height/min-
 make test 门禁（zw-cadd-mkt2 systemd unit + test-guard，177 腿 18:06 收）：本刀域
 全绿（animation 171 ok、engine 面零红）；唯一红腿 es_module s337/s345 两测经机制核
 （WIP diff 明文替换 s345 旧 globalThis getter 形并同步改断言）归 script-sandbox 流
-在途 s419 WIP 树态红，不入本刀账。残面候选（下一刀）：easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G、MULTI 值形
+在途 s419 WIP 树态红，不入本刀账。
+**剩余腿九腿账（zw-cadd-legs 单元 18:23 收，绿四红五，零新增本刀真实代码红）**：
+绿四腿=renderer bin / GPU renderer / GPU consistency / quickjs renderer bin；红五腿
+逐名对号——renderer lib 1F=worker-fetch（在册 c6dcbce0a reject 语义过时镜像）；
+browser bin 2F=tab_js_worker 同根镜像+default_actions（在册三红账）；browser tests
+6F=cdp_focus_governance 整套 0.00s panic，**新形伪红**：该套件 277 行新鲜度 tripwire
+断言 zero-renderer 二进制 mtime 晚于 js_dom_shim 最新源 mtime——18:16 rebase re-pick
+（内容恒等）刷源 mtime 而二进制未重建，六测未执行即 panic，机制由 panic 文本自证，
+`build -p zero-renderer` 重建即翻绿（树被在途施工占用暂缓，下轮门禁顺带核销）；
+quickjs crates 腿 zero-script-sandbox quickjs lib 280P/**47F es_module**——s419 WIP
+在 quickjs 组合下扩面（v8 形仅 s337/s345 两红；失败集含 WIP 新增 s419 具名测，
+stdout 见 `with (__zwImpH$)` 包装形），归 script-sandbox 流在途树态红不入本刀账；
+quickjs renderer lib 1F=worker-fetch quickjs 镜像同 c6dcbce0a 根。全账真实代码红仍
+SW 具名导入 getter 一处。碰头记：18:32:21 起 js_anim_registry.rs（AnimationClock
+timing 面）现他流在途施工（E0382 中间态+`cargo test -p zero-engine --lib anim`
+腿在跑），与本刀已提交 animation.rs 文件不重叠；九腿账采集窗 18:16-18:23 先于其
+落地，provenance 由腿日志时间戳锚定。残面候选（下一刀）：easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G、MULTI 值形
 （transform 列表/背景对）逐函数合成。
 **动画值进 gCS 刀已落地（11-15 十轮，jsanim v1→v3 三代 A/B 收口）**：shim
 `Animation` 经 `__zw_js_anim_register/seek/playpause/cancel` 把 keyframes/timing/
