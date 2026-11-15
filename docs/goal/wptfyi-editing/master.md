@@ -1,6 +1,27 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-16 · Active**。**d38 gtr 家族双根因刀（查询链形 overlay 匹配 + runner 变体展开）**：
+**2026-11-16 · Active**。**d39 B3 诊断轮（零净码变）**：beforeinput 计数 908F
+重分类定谳——**主簇 = 元素锚 range 选区 silent return**（list-items 592 +
+dl-join 152 + non-collapsed 76 ≈ 820F，`__zw_ce_delete_impl` 12026/12155
+sc 非 text 直接 return、树零变，select-delete 语义缺失），**事件丢失集群占比
+极小**（此前 round-3 日志的主簇判断是误诊）。真事件丢失根因链全探针定谳
+（b3bi→b3k→b3l→b3m→b3n 六页）：join 形同页**首触发**必走 caret_range 世界
+同步回灌+回植 → impl 世界内 querySelector/锚链上溯全落 query 家族代理、
+页面家族 listener 挂点不可达（N1 `sameNode=false`、docCap=1 而 bi=0、壳段
+跨家族抛异常丢 input）→ 二触起家族合流全通（N2 same=true）。修复实验
+4 刀递进（re-query 无效 → 换锚链宿主 → `__zwCeOrigEvHost` 回植前捕获
+[isolated N1 bi=1 input=1 全兑现] → isSameNode 条件化）：**isolated 全好、
+语料面 P 473→471 净 -2**——每案 initializeTest 使未合流态恒存，打通派发后
+多案上下文暴露 **got=2 双派**（div-p 案 0→2、O1 isolated 单收 corpus 双收），
+**与既有 got=2 342F 集群机制同源嫌疑高**。shim 改动已 `git checkout` 回滚
+（基线二进制 N1 复现丢失态确认零净码变）。下轮刀序：①双派根因
+（got=2 342F 同源嫌疑，回灌计数探针分辨 listener 叠挂 vs 双代理双表——
+**先修双派再落事件丢失刀**，否则正确性修复会把 got=0 成批变 got=2）
+②元素锚 range 选区删除语义（820F 主簇）③空 range beforeinput 静默臂
+（语义已定谳 `checkGetTargetRangesOfInputOnDoNothing`，小刀独立可落）。
+证据见 [b3-gtr-event-loss-diagnosis](evidence/2026-11-16-b3-gtr-event-loss-diagnosis.md)。
+
+**d38 gtr 家族双根因刀（查询链形 overlay 匹配 + runner 变体展开）**：
 gtr 家族 743F 拆解定谳两独立根因，共享路径双刀落树：
 
 ① **shim 链形 overlay 匹配**（part05 `_zwOverlayChainAll` 四组合器链求值 helper +
@@ -253,7 +274,9 @@ IndexSizeError 校验（4F）、typing DELETE join-walk 分离 sc 崩点守卫
 （**d38 双根因刀已落**：crash 家族 321F→1F + Unhandled variant 488→0，
 新账 = innerHTML-mismatch 1480 + beforeinput 计数 908 +
 targetRanges-assert 409——join/merge 语义细化与 getTargetRanges 值面，
-见顶格 d38 段）→ **B3 text-control execCommand 期望矩阵**（~474F，修前逐命令核对语料期望表）
+见顶格 d38 段；**d39 诊断轮**：908F 主簇重分类 = 元素锚 range 选区
+silent return ≈820F + join 首触发事件丢失根因链定谳（修复实验语料面
+净 -2 已回滚）+ got=2 双派同源嫌疑——刀序见顶格 d39 段）→ **B3 text-control execCommand 期望矩阵**（~474F，修前逐命令核对语料期望表）
 → B4 shadow-dom getComposedRanges（62F）→ B5 小簇（cloning-attributes
 null 崩溃 17F 等）；③mt 慢页 systemd-run 长预算（d13 口径，MemoryMax
 封顶）补跑 strike/u/bold/italic 链对拍 + multipara/跨块族（M2/B1-B4
