@@ -34,8 +34,10 @@ detailed 整文件键带内出 stable）归账结构照常。**挂用户
 下一步：**守成巡查**（对账基线换 s499 stable 8509——族
 disagree 双整文件键不入 stable，下轮族键入位视相位谱；他
 流入树归因轮或轻覆盖；onblur flaky 键 3 例窗口观察维持；
-族键整文件形第二连轮观察维持不升级；对端后续刀信号持续，
-落树后按他流刀归因轮，join 实测为准）+ 候门决项等待用户
+族键整文件形第二连轮观察维持不升级；对端 editing 流 ip I5
+pre 换行归一刀 cfd1a06af 已于本轮收口 pull 携入（碰
+js_dom_shim part01f + 桥测 pins 新文件 part123，桥面 1658
+将增），s500 起手即按他流刀归因轮，join 实测为准）+ 候门决项等待用户
 拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；rendering
 流 dialog 16 红块协同面（归 rendering 流记账）。门开随批
 落预案不变：簇 D 开 → customizable-select-styles.css ×47

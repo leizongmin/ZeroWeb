@@ -108,6 +108,20 @@ disagree 双整文件键不入 stable 形，下轮族键入位预期视相位
 （归 rendering 流记账）。门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47 随批落。
 
+刀时序注记（收口 push 窗口，s497 先例同款）：本轮收口
+`git pull --rebase` 携入对端 2 笔（origin 88b6ab519 →
+eb83a35a8），其中 **1 笔码刀落 origin**——`cfd1a06af`
+fix(engine) ip I5 pre 换行归一刀（js_dom_shim part01f +16 +
+js_dom_bridge_tests.rs +5 + part123_ip_i5_pre_lf_pins.rs
++143 新文件，editing-compat I5 门禁批 i5p1 收口申报）——
+碰 js_dom_shim part01f 与桥面清单（**桥面 1658 将增**，
+html-semantics 邻接面待归因）+ 1 笔 docs（eb83a35a8
+editing-compat 收口）。本轮「码态 = 88b6ab519」记录以本轮
+窗口为准准确（起跑 pull 零携入，双腿/桥面均在 88b6ab519
+二进制上实测）；**s500 起手 pull 即见该刀 → 按他流刀归因
+轮（双腿 join + 刀半径归因 + runner 换代预期真重建 + 桥面
+清单增长预期）**。
+
 工件：/tmp/s499/{s499-leg1,s499-leg2}.log、s499-{l1,l2}.norm、
 l{1,2}.canon、flips.txt（零行）、gone.txt（1 族键）、new.txt
 （273 = 258+15）、s499.{l1u,l2u,s1,s2,k1,k2,both.keys,
