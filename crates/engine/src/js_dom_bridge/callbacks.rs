@@ -2580,10 +2580,8 @@ pub fn register_dom_callbacks(
     sandbox.register_callback(
         "__zw_js_anim_cancel",
         Box::new(move |args| {
-            if let Some(args0) = args.first() {
-                if let Ok(id) = args0.parse::<u64>() {
-                    super::js_anim_registry::cancel(id);
-                }
+            if let Some(id) = args.first().and_then(|s| s.parse::<u64>().ok()) {
+                super::js_anim_registry::cancel(id);
             }
             String::new()
         }),
