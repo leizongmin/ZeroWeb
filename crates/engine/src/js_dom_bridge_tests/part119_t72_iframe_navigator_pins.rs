@@ -8,9 +8,10 @@
 // 第二产点。修复：[[Prototype]] 挂 globalThis.Navigator.prototype（同 realm 单例），
 // own 键面（serviceWorker 单键）恒等，仅原型换位；serviceWorker wrapper 实体与
 // 创建期 controller-on-load 时序（iframeServiceWorkerCreationControllerId）不变。
-// 钉五断言面：原型链 / 品牌 / Illegal constructor 双臂（①） / serviceWorker 槽恒一
-//（②） / 走链吸收（③）。WPT 上游无单点用例（原型/品牌面拆散于各接口 own-keys
-// 测试），以等价本地沙箱钉常驻（part95 t42_sandbox 同款形制）。
+// 钉断言面：原型链 / 品牌 / Illegal constructor 双臂（①） / serviceWorker 槽恒一
+//（②） / 走链吸收（③） / 全局 Navigator 破坏降级（④，R1 返修 DF-1）。WPT 上游无
+// 单点用例（原型/品牌面拆散于各接口 own-keys 测试），以等价本地沙箱钉常驻
+//（part95 t42_sandbox 同款形制）。
 // https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
 // https://webidl.spec.whatwg.org/#interface-object
 // https://webidl.spec.whatwg.org/#interface-prototype-object
@@ -164,4 +165,55 @@ fn iframe_navigator_proto_absorb_t72() {
     assert_eq!(parts[3], "true", "receiver 普通 [[Set]] 落 iframe navigator own（正常 JS 语义）");
     assert_eq!(parts[4], "false", "[[Set]] 不污染 Navigator.prototype");
     assert_eq!(parts[5], "false", "[[Set]] 不污染 Object.prototype");
+}
+
+// ④降级形态钉（T72/R1 返修 DF-1）：globalThis.Navigator 被页面破坏（delete / 置
+// undefined / 覆写为无 prototype 普通对象）后，新建 iframe 的 _zwMakeIframeWin
+// 工厂装配读取必须降级而非抛 TypeError——navigator 可用、[[Prototype]] 降级
+// Object.prototype、serviceWorker 槽在；恢复 globalThis.Navigator 后新建 iframe
+// 回到平面对象语义（①同款：原型链/品牌恒一）。修复前工厂裸读
+// globalThis.Navigator.prototype → TypeError 经 contentWindow 惰性取臂传播到页面
+// 调用位（threw 非空）→ 本钉红（EXIT=101 先红实证）。修复形制对齐同函数既有
+// 三元卫惯例（ServiceWorkerContainer / ServiceWorker / ServiceWorkerRegistration）。
+// 两臂用未命名静态无 src iframe：__zwRegisterNamedIframes 仅物化 named 帧、
+// __zwStartParserIframes 仅补启带 src/srcdoc 帧——未命名帧 win 留待首次
+// contentWindow 读惰性物化，工厂调用时序由本钉自控（破坏→臂 1，恢复→臂 2）。
+#[test]
+fn iframe_navigator_proto_degrade_t72() {
+    let mut sandbox = t72_sandbox!("<html><body><iframe></iframe><iframe></iframe></body></html>");
+    sandbox
+        .execute(
+            "var savedNav72 = globalThis.Navigator;
+             var threwD72 = '', navTypeD72 = '', protoD72 = '', swTypeD72 = '';
+             delete globalThis.Navigator;
+             try {
+               var cwD72 = document.getElementsByTagName('iframe')[0].contentWindow;
+               navTypeD72 = typeof cwD72.navigator;
+               protoD72 = String(Object.getPrototypeOf(cwD72.navigator) === Object.prototype);
+               swTypeD72 = typeof cwD72.navigator.serviceWorker;
+             } catch (e72) { threwD72 = e72.constructor.name + ':' + e72.message; }
+             globalThis.Navigator = savedNav72;
+             var threwR72 = '', protoR72 = '', brandR72 = '', swTypeR72 = '';
+             try {
+               var cwR72 = document.getElementsByTagName('iframe')[1].contentWindow;
+               protoR72 = String(Object.getPrototypeOf(cwR72.navigator) === globalThis.Navigator.prototype);
+               brandR72 = Object.prototype.toString.call(cwR72.navigator);
+               swTypeR72 = typeof cwR72.navigator.serviceWorker;
+             } catch (e72r) { threwR72 = e72r.constructor.name + ':' + e72r.message; }
+             globalThis.__r72dg = [
+               threwD72, navTypeD72, protoD72, swTypeD72,
+               threwR72, protoR72, brandR72, swTypeR72,
+             ].join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r72dg").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts[0], "", "全局 Navigator 被破坏后新建 iframe 构造不抛（工厂装配读取加卫——修复前 TypeError 经 contentWindow 取臂传播，先红臂）");
+    assert_eq!(parts[1], "object", "降级态 iframe navigator 可用（typeof object，非构造失败残面）");
+    assert_eq!(parts[2], "true", "降级态 [[Prototype]] === Object.prototype（原型链降级面）");
+    assert_eq!(parts[3], "object", "降级态 serviceWorker 槽在（功能面保留）");
+    assert_eq!(parts[4], "", "恢复 Navigator 后新建 iframe 构造不抛");
+    assert_eq!(parts[5], "true", "恢复后新 iframe 回到平面对象语义（[[Prototype]] === Navigator.prototype）");
+    assert_eq!(parts[6], "[object Navigator]", "恢复后品牌恒一（①同款 toString 面）");
+    assert_eq!(parts[7], "object", "恢复后 serviceWorker 槽在");
 }

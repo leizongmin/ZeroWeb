@@ -5244,8 +5244,17 @@
       // https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
       // https://webidl.spec.whatwg.org/#interface-object
       // https://webidl.spec.whatwg.org/#interface-prototype-object
+      // T72/R1 返修 DF-1：装配读取加卫（同函数 ServiceWorkerContainer/ServiceWorker/
+      // ServiceWorkerRegistration 三元卫惯例）——页面 delete/置 undefined/覆写
+      // globalThis.Navigator 为无 prototype 普通对象后，裸读 .prototype 抛 TypeError。
+      // 降级语义：全局 Navigator 被破坏时 iframe navigator 原型链降级
+      // Object.prototype、构造不抛、功能面（serviceWorker 槽）保留（part119 钉④）。
       navigator: Object.assign(
-        Object.create(globalThis.Navigator.prototype),
+        Object.create(
+          globalThis.Navigator && globalThis.Navigator.prototype
+            ? globalThis.Navigator.prototype
+            : Object.prototype
+        ),
         { serviceWorker: serviceWorker }
       ),
       // R3254-E2 切片 6（editing goal，2026-09-07）：**per-iframe Selection 面**——
