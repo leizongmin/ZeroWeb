@@ -214,3 +214,7 @@ include!("js_dom_bridge_tests/part117_b_split_boundary_ws_pins.rs");
 include!("js_dom_bridge_tests/part118_shell_carry_pins.rs");
 include!("js_dom_bridge_tests/part119_c1_order_pins.rs");
 include!("js_dom_bridge_tests/part120_ip_atomic_rawtext_pins.rs");
+
+// ip C4 容器链垫/劈裂刀钉测（2026-11-15）：垫底 br 持行豁免——空 dt 拆分垫
+// `<dt><br></dt>` 保全 + blockquote/ul 容器链尾新块物化 + 控制键恒一。
+include!("js_dom_bridge_tests/part121_ip_c4_container_pad_pins.rs");

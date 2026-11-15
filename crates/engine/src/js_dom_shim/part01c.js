@@ -283,6 +283,17 @@
     if (!_zwJusIsHtmlElement(br, 'br')) return false;
     if (_zwJusIsHtmlElement(br.parentNode, 'li')
         && br.parentNode.childNodes && br.parentNode.childNodes.length === 1) return false;
+    // 垫底 br 持行豁免（2026-11-15 C4 刀）：块级父仅含本 br 时 br 持行，摘除
+    // 即塌行。port 的免布局近似（precedesLineBreak）在此形过判：br 独撑块行
+    // 时 precedes 回走撞父块边界报 true，而 vendored :840 用 height 测量
+    // （隐 br 后块塌高）判非冗余——探针 dt-pad 实证 splitParent 尾清理
+    // `_zwJusRemoveExtraneousLineBreaksBefore` 误摘 `<dt><br></dt>` 垫。
+    // li 单子臂（:845 vendored 显式豁免，li 靠 marker 持行）同族先例推广到
+    // 无 marker 块（dt/dd/p/div…）。仅限直父唯一子；inline 壳与多子面沿
+    // precedesLineBreak 原径不变。
+    // https://w3c.github.io/editing/execCommand.html#extraneous-line-breaks
+    if (_zwJusIsBlockNode(br.parentNode)
+        && br.parentNode.childNodes && br.parentNode.childNodes.length === 1) return false;
     // 重入断环（qCV 走查 forecolor 跨元素 peel 形实证）：extraneous 判定链
     // precedes → 爬升 → blockStartPoint(parent, brIdx+1) → isVisible(同 br)
     // → 本函数 无界互递归（RangeError）。in-flight 印记 + boundary 探测跳过
