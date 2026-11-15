@@ -2,19 +2,20 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 451 收口（守成巡查轻覆盖轮：**零入树刀
-（pull 无新刀，target expando 刀未落树），P 集恒等 8305 八轮连续，
-双腿全一致 unstable=0，stable 形态回归基带** + 全桥绿窗 1643P/0F
-+0；账本 evidence/2026-11-15-m2s451-zeroinflow-patrol.md）。
-双腿（6a49b5648 树，代码与 s450 全同）leg1 8516 / leg2 8516（双
-8306P/203F/6T/1U，逐键全一致），族相位双腿一致（主 4 子测 F +
-detailed 文件级 T）；stable 8516 vs s450 恰 4 差集全在 select-home-
-end 族（主 4F 相位本轮一致入 stable），非族键逐键零差，零 GONE/
-零 NEW。基带口径维持 **8305P/203F/6T/1U**（P 恒等为主口径）。全桥
-绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
-decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项
-静默哨维持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 452 收口（守成巡查轻覆盖轮：**他流入树仅
+docs（rendering 流 R5601 空转核查 a2d86c22e，零源码零语料），P 集恒
+等 8305 九轮连续** + 全桥绿窗 1643P/0F +0；账本
+evidence/2026-11-15-m2s452-docs-inflow-patrol.md）。
+双腿（a2d86c22e 树，代码与 s451 的 b7d5b14b9 全同）leg1 8516 / leg2
+8516（双 8306P/203F/6T/1U，总量一致但族相位腿间振荡：disagree 4 键
+= 2F + 2T 对冲）；stable 8514（8306P/202F/5T/1U）vs s451 恰 2 差集
+全在 select-home-end 族（PageDown 子测 F + detailed 文件级 T 出
+stable），非族键逐键零差，零 GONE/零 NEW。基带口径维持
+**8305P/203F/6T/1U**（P 恒等为主口径）。全桥绿窗 **1643P/0F rc=0**
+（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137
+（s445 已提示，不重复通知）。hang 观察项静默哨维持（本轮双腿零
+hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自由
 可施工面）+ 候门决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
 s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
@@ -25,16 +26,15 @@ html-semantics 面预期零位移（join 实测为准）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
-> **▶ 承前（2026-11-15 M2 切片 450 收口）——守成巡查：零入树刀同码
-> 树基带复测，P 集恒等 8305 七轮连续 + 全桥绿窗 1643P/0F（账本
-> evidence/2026-11-15-m2s450-zeroinflow-patrol.md）**：零源码零语料
-> 净变更轮。双腿（1879d53a5 树，代码与 s449 全同）leg1 8516
-> （8306P/203F/6T/1U）/ leg2 8513（8306P/199F/7T/1U），unstable 5 键
-> 全在 select-home-end 族（leg1 主 4F + detailed 文件级 T vs leg2 主
-> 文件整 T + detailed 文件级 T）；stable 8510 vs s449 恰 1 差集
-> （detailed 文件级 T 入 stable），非族键逐键零差。全桥绿窗 1643P/
-> 0F rc=0（+0）。首次记载 target expando 刀对账预告（cee144a8d，
-> 彼流 §4 下轮执行）。
+> **▶ 承前（2026-11-15 M2 切片 451 收口）——守成巡查：零入树刀同码
+> 树基带复测，P 集恒等 8305 八轮连续，双腿全一致 unstable=0，stable
+> 回归基带形态 + 全桥绿窗 1643P/0F（账本
+> evidence/2026-11-15-m2s451-zeroinflow-patrol.md）**：零源码零语料
+> 净变更轮，target expando 刀未落树。双腿（6a49b5648 树，代码与 s450
+> 全同）leg1 8516 / leg2 8516（双 8306P/203F/6T/1U，逐键全一致），
+> 族相位双腿一致（主 4F + detailed 文件级 T）；stable 8516 vs s450
+> 恰 4 差集全在族内（主 4F 相位一致入 stable），非族键逐键零差。全
+> 桥绿窗 1643P/0F rc=0（+0）。
 
 > **▶ 承前（2026-11-15 M2 切片 448 收口）——守成巡查：零入树刀同码
 > 树基带复测，P 集恒等 8305 五轮连续 + 全桥绿窗 1643P/0F（账本
