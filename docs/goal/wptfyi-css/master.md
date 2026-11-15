@@ -262,6 +262,17 @@ twin 在飞写面未触碰）——**T 键 10,898/T-P 2,928/T-F 7,970**（backgr
 （transform 848/width 570/grid-template 652 等直取大头换位 backgrounds+
 transforms）。逐套件明细与修正三点见
 `.acceptance/wptfyi-css/notes-transition-census-extension.md`。
+**T 通道根因细化+harness 语义解码（11-16 06:1x，同实例）**：只读侦察定谳
+§7「零 transition tick」真根因=**同步读窗口**——机械全在（TransitionClock
+生命周期/pipeline tick_animation_styles 4b+5b 接线/webview R342 before-change
+两步基线），但 corpus T 测试同一脚本轮次内 setProperty→gCS 读断言，无泵帧
+介入，基线 seed 后 start 要等下一帧 tick，断言读恒先发生。harness 语义：
+transitionDelay=-50s/duration=100s 钉死 progress=0.5，at 编码进 timing
+（createEasing：0→steps(1,end)/1→steps(1,start)/0.5→linear/其余
+cubic-bezier(0,(8y−1)/6,1,·) 对称点 y(0.5)=at 精确）；engine
+apply_timing_function 四形态全支持且对称 bezier 首采样即命中，at∉[0,1]
+外推天然支持——**零新 timing 工作量，Phase 1=同步启动+gCS consult 两站**
+（详图 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md` §5）。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
