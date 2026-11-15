@@ -22,18 +22,34 @@ still-declared-0 清零**，解锁面 **6,691P / chrome 分母 55,861（12.0%）
 mask-border 1.7k / offset-* 3.3k / backdrop-filter 943 / gaps 装饰 1.4k）、
 **WAAPI 门 21.7%**（`'animate' in Element.prototype` 缺 Element.prototype
 定义 + has 白名单臂，R2965 实现本身跑通已实证）、**插值语义 28.6%**。
-**WAAPI 门刀已落地（11-15 八轮）**：part03 `Element.prototype` 挂
-animate/getAnimations（R351 `__zwSelector/__zwHandle` 反解 identity 委托
-`_makeAnimation`）+ part05 has 白名单两名。探针门翻转实证
-（proto-has/inst-has 双 true、动画链路不损）；五组 A/B（B0=
+**WAAPI 门刀已落地（11-15 八轮，提交 107bcd935）**：part03
+`Element.prototype` 挂 animate/getAnimations（R351 `__zwSelector/__zwHandle`
+反解 identity 委托 `_makeAnimation`）+ part05 has 白名单两名。探针门翻转
+实证（proto-has/inst-has 双 true）；五组 A/B（B0=
 results-texp-b1-{p1,p2}/B1=results-waapi-b1-{p1,p2}）**净 +184P 零回归**，
-WAAPI 门子测 4071→**0**（门面归零，残差移交 supports 门 +2271 / 语义
-+1616），2 页 25% 分母差应归一。见 [evidence
+WAAPI 门子测 4071→**0**，2 页 25% 分母差应归一。提交前去冗余（part03
+不可达残片块 + part05 同链重复条件），清理后探针复验一致。见 [evidence
 2026-11-15-waapi-gate-knife](evidence/2026-11-15-waapi-gate-knife.md)。
-**下一步：supports 覆盖刀族**——全局关键字切片先行（cascade 全通实证，
-`decl_supported` + @keyframes apply 两拒点，≈11.1k 面），再 shape()/
-calc-size（peer stash WIP 复用）/mask-border/backdrop-filter/offset-*
-逐族 A/B。背景与分桶见 [evidence
+**地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
+apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
+更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
+`from{height:100px}→200px` 普通值）六个变体全 `auto`，waapi 探针
+`animate([{opacity:0},{opacity:1}])` currentTime=500 读 opacity=**1** 非
+0.5——Animation 对象链路通（playState/currentTime）、**值未进同步
+computed 通道**。②插值 corpus 现有通过面走 CSS Transitions 离散路径
+（grid-template-rows-interpolation 574P 实证多为 allow-discrete flip），
+min-height-composition 0P/60F 证 additive composition 值同样不反映。
+③真主矛盾 = **动画值进 gCS 同步读链**（WAAPI KeyframeEffect→引擎动画
+时钟→computed 通道未接），锁死 WAAPI 面值域 + 语义桶 14.5k + 全局关键字
+端点解析面——上限远超 supports 桶。CSS.supports 覆盖门仅在页级前置调用
+（harness 本体只门 WAAPI isSupported 与 custom-props，`supportsValue` 对
+css 方法恒 true）。engine 共享面共存记：ZeroWeb-3 流在 part05.js 施工
+（M3-B/C 刀 staged 未提交，peer 提交 f82e60416 账面），本轮 engine 提交
+已 rebase 干净、无文本冲突。
+**下一步：动画值进 gCS 刀**——先探针定位 WAAPI `_makeAnimation` 注册到
+引擎动画时钟的断点（对象/时钟/computed 三段切面），再接 computed 通道；
+supports 全局关键字臂（`decl_supported` 已知属性 + 全局关键字判真，spec
+正确方向）可作搭车小刀同轮 A/B。背景与分桶见 [evidence
 2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)。
 规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。

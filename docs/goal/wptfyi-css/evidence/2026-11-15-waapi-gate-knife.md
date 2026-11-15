@@ -78,6 +78,31 @@ MemoryMax=12G，显式注入 cargo PATH——systemd service 无 login PATH，
 （gitignored），comparator `.acceptance/wptfyi-css/waapi-ab-compare.py`
 （本机产物不入库）。
 
+## 5. 地图校正（11-15 九轮收口，改下一步方向）
+
+收口轮校准探针（B0 态二进制 14:04:46）定谳两条前轮误读：
+
+1. **§2「动画链路不损」过读**：anim-run 探针 `animate([{opacity:0},
+   {opacity:1}])` currentTime=500（t=0.5）读 opacity=**1**——若值已应用应为
+   0.5。Animation 对象链路通（playState/currentTime 正确），**动画值未进
+   同步 gCS**。
+2. **texp evidence §3「keyframe-inherit-anim 证 from 帧被丢」是探针伪账**：
+   kw2 定谳探针（对照组分解）六个变体全 `auto`——JS 建 `<style>` +
+   `from{height:100px}→200px` 普通值与 static `<style>` 普通值**同样不
+   应用**，非全局关键字特有；同步 gCS 读根本不反映 @keyframes 动画值。
+3. corpus 现有插值通过面走 **CSS Transitions 离散路径**（grid-template-
+   rows-interpolation 单页 574P，Pass 签名集中 allow-discrete flip）；
+   min-height-composition 0P/60F 证 additive composition 同样不反映。
+4. harness 门面核查：interpolation-testcommon 仅门 WAAPI `isSupported`
+   （本轮已修）与 custom-props；`supportsValue` 对 css 方法恒 true——
+   texp §3 的「CSS.supports 覆盖门 25,135」来自**页级前置调用**而非
+   harness。
+
+结论：残差主矛盾从「supports 刀族」上移为**动画值进 gCS 同步读链**
+（WAAPI KeyframeEffect→引擎动画时钟→computed 通道断点待定位）。校准
+探针页 zz-mprobe-kw2 留 wpt-data（gitignored）；A/B 比对器与各探针
+transcript 在 `.acceptance/wptfyi-css/`（本机产物不入库）。
+
 ## 4. 后续
 
 1. **supports 覆盖刀族**（[转化率 evidence](2026-11-15-texp-groups-conversion.md)
