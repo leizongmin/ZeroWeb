@@ -3606,6 +3606,494 @@
     return { html: parts.join(''), want: ws };
   }
 
+  // —— ihtml 轴一块级拆分插入刀（2026-11-16）——
+  // 语料（editing/data/inserthtml.js，ihf1 fresh 腿 106F 中 54 键块级族）
+  // Chrome 语义：载荷含块级/列表/表格/hr 标签（或同名行内 a/nobr 拆段形）时，
+  // 在插入点按上下文拆分当前容器插入载荷段——参考 implementation.js 无此命令
+  // 的块级 fragment 处理（Chrome 录制 delta，语料期望为准），与 insertParagraph
+  // 刀的拆分原语同域不同路径（本刀走 host.innerHTML 字符串手术，与既有
+  // _zwExecCmdApplyInsertHtml 内联拼接同构，不经 live DOM 变异序）。
+  // 顶层子跨度扫描：depth-1 元素子 [start,end)（含开合标签）。注释/DOCTYPE/
+  // void 自闭跳过；自闭合判据排除未引号属性值尾 `/`（`<a href=/>` 系 href=“/”
+  // 非自闭合——语料载荷实录形）。属性值内 '>' 与未闭合尾 span 为不合形（mirror
+  // 序列化属性引号包卷，语料面不含），FIXME 后续如需再扩。
+  function _zwIhtmlTopSpans(html) {
+    var VOID = { hr: 1, br: 1, img: 1, input: 1, meta: 1, link: 1, area: 1,
+      base: 1, col: 1, embed: 1, source: 1, track: 1, wbr: 1 };
+    var spans = [];
+    var depth = 0;
+    var i = 0;
+    var n = html.length;
+    while (i < n) {
+      if (html.charAt(i) !== '<') { i++; continue; }
+      if (html.slice(i, i + 4) === '<!--') {
+        var ceI = html.indexOf('-->', i + 4);
+        i = ceI < 0 ? n : ceI + 3;
+        continue;
+      }
+      if (html.charAt(i + 1) === '!' || html.charAt(i + 1) === '?') {
+        var deI = html.indexOf('>', i);
+        i = deI < 0 ? n : deI + 1;
+        continue;
+      }
+      var gt = html.indexOf('>', i);
+      if (gt < 0) break;
+      var isClose = html.charAt(i + 1) === '/';
+      var nm = isClose ? /^<\/([a-zA-Z][a-zA-Z0-9]*)/ : /^<([a-zA-Z][a-zA-Z0-9]*)/;
+      var nameM = nm.exec(html.slice(i, gt + 1));
+      var tn = nameM ? nameM[1].toLowerCase() : '';
+      if (isClose) {
+        if (depth === 1 && spans.length) {
+          spans[spans.length - 1].end = gt + 1;
+          spans[spans.length - 1].innerEnd = i;
+        }
+        if (depth > 0) depth--;
+      } else {
+        // 未引号属性值尾 `/`（href=/>）非自闭合：`=` 紧邻排除。
+        var selfClose = html.charAt(gt - 1) === '/' && html.charAt(gt - 2) !== '=';
+        var isVoid = !!VOID[tn];
+        if (depth === 0) {
+          spans.push({ tag: tn, start: i, openEnd: gt + 1, innerStart: gt + 1,
+            innerEnd: gt + 1, end: gt + 1 });
+        }
+        if (!isVoid && !selfClose) depth++;
+        else if (depth === 0) spans[spans.length - 1].end = spans[spans.length - 1].innerEnd = gt + 1;
+      }
+      i = gt + 1;
+    }
+    if (depth > 0 && spans.length) {
+      spans[spans.length - 1].end = spans[spans.length - 1].innerEnd = n;
+    }
+    return spans;
+  }
+
+  // 载荷开标签补全（`<p>abc`/`<li>abc` 语料未闭合实录形——mirror parser 语义
+  // 同构：首标签无对应闭合即在串尾补）；void 元素不补。
+  function _zwIhtmlCompleteFrag(frag) {
+    var m = /^<([a-zA-Z][a-zA-Z0-9]*)/.exec(frag);
+    if (!m) return frag;
+    var tn = m[1].toLowerCase();
+    if (tn === 'hr' || tn === 'br' || tn === 'img' || tn === 'input' || tn === 'area'
+        || tn === 'col' || tn === 'embed' || tn === 'source' || tn === 'track'
+        || tn === 'wbr' || tn === 'meta' || tn === 'link' || tn === 'base') return frag;
+    var closeRe = new RegExp('</' + tn + '\\s*>$', 'i');
+    if (!closeRe.test(frag)) return frag + '</' + tn + '>';
+    return frag;
+  }
+
+  // 文本空间 → innerHTML 串偏移·起点版（want = 选区首字符前：返回第 want
+  // 个文本字面的串位；want=0 落首文本字面而非串首标签前）。标签串零文本贡
+  // 献跳过、实体记 1（既有 textToHtmlOffset 实体口径同款；该版逐字符计数把
+  // 标签串计成文本，仅对 T 前无标签面成立，故独立实现）。超界/无文本位返 -1。
+  function _zwIhtmlTextPosToHtml(htmlStr, want) {
+    var seen = 0;
+    var j = 0;
+    var n = htmlStr.length;
+    while (j < n) {
+      var ch = htmlStr.charAt(j);
+      if (ch === '<') {
+        var gt2 = htmlStr.indexOf('>', j);
+        if (gt2 < 0) return -1;
+        j = gt2 + 1;
+        continue;
+      }
+      if (seen === want) return j;
+      if (ch === '&') {
+        var semi2 = htmlStr.indexOf(';', j);
+        if (semi2 > j && semi2 - j <= 10) { seen++; j = semi2 + 1; continue; }
+      }
+      seen++;
+      j++;
+    }
+    return -1;
+  }
+
+  // 文本空间 → innerHTML 串偏移·终点版（want = 选区尾字符后：返回第 want
+  // 个文本字面**之后**的串位——恰为其收尾界，区间不含尾侧界标签；起点版取
+  // 「下一文本字面」会吞中间界标签， nest 形实证）。超界返 -1。
+  function _zwIhtmlTextPosToHtmlEnd(htmlStr, want) {
+    var seen = 0;
+    var j = 0;
+    var n = htmlStr.length;
+    while (j < n) {
+      var ch = htmlStr.charAt(j);
+      if (ch === '<') {
+        var gt3 = htmlStr.indexOf('>', j);
+        if (gt3 < 0) return -1;
+        j = gt3 + 1;
+        continue;
+      }
+      if (ch === '&') {
+        var semi3 = htmlStr.indexOf(';', j);
+        if (semi3 > j && semi3 - j <= 10) {
+          seen++;
+          j = semi3 + 1;
+          if (seen === want) return j;
+          continue;
+        }
+      }
+      seen++;
+      j++;
+      if (seen === want) return j;
+    }
+    return -1;
+  }
+
+  // 元素文本长度递归和（同既有 kTextLen——textContent 全子树串拼接在 4G 守卫
+  // 线上是 GC 债，OPTIMIZATION 复制不换）。
+  function _zwIhtmlTextLen(n) {
+    if (n.nodeType === 3 || n.__zwIsText) return String(n.nodeValue || '').length;
+    var t = 0;
+    var c = n.childNodes || [];
+    for (var i = 0; i < c.length; i++) t += _zwIhtmlTextLen(c[i]);
+    return t;
+  }
+
+  // 边界 (node, offset) → 宿主文本空间位置。node 为宿主直子（文本子直达加
+  // off；元素子取首 off 个子的文本和）或 T 内一层内嵌（dl/td 族 sc 落 dt/dd/
+  // td 内——parent 链上浮逐层加「前驱兄弟文本和」）。找不到归属返 -1（不合
+  // 形旁路）。注：内嵌元素叶（非覆盖形）offset 按子序数计入仅产垃圾值——
+  // 路由门先旁路，值不达变异点。
+  function _zwIhtmlBoundaryText(kids, node, off) {
+    var acc = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k === node) {
+        if (k.nodeType === 3 || k.__zwIsText) return acc + off;
+        var c = k.childNodes || [];
+        var s = 0;
+        for (var j = 0; j < off && j < c.length; j++) s += _zwIhtmlTextLen(c[j]);
+        return acc + s;
+      }
+      var anc = node;
+      while (anc && anc !== k) anc = anc.parentNode;
+      if (anc === k) {
+        var cur = node, curOff = off;
+        while (cur.parentNode && cur.parentNode !== k) {
+          var p = cur.parentNode;
+          var pc = p.childNodes || [];
+          var before = 0;
+          for (var q = 0; q < pc.length; q++) {
+            if (pc[q] === cur) break;
+            before += _zwIhtmlTextLen(pc[q]);
+          }
+          curOff = before + curOff;
+          cur = p;
+        }
+        var kc = k.childNodes || [];
+        var before2 = 0;
+        for (var q2 = 0; q2 < kc.length; q2++) {
+          if (kc[q2] === cur) break;
+          before2 += _zwIhtmlTextLen(kc[q2]);
+        }
+        return acc + before2 + curOff;
+      }
+      acc += _zwIhtmlTextLen(k);
+    }
+    return -1;
+  }
+
+  // caret 重锚（既有 _zwExecCmdApplyInsertHtml 尾部 remap 同构复制：文本空间
+  // wantCaret → 新 kids 扫描，文本子直达/元素子边界 (host,ci+1)/位落其内单层
+  // 下钻——语料块级族 compare 不锁 caret（runner 剥 marker），落位取 Chrome
+  // 同形「插入段之后」）。
+  function _zwIhtmlRelocateCaret(host, wantCaret) {
+    try {
+      var nr = document.createRange();
+      var kids2 = host.childNodes || [];
+      var acc = 0;
+      var placed = false;
+      for (var ci = 0; ci < kids2.length; ci++) {
+        var kc = kids2[ci];
+        var kIsText = (kc.nodeType === 3 || kc.__zwIsText);
+        var kLen = _zwIhtmlTextLen(kc);
+        if (kIsText) {
+          if (wantCaret <= acc + kLen) { nr.setStart(kc, wantCaret - acc); placed = true; break; }
+        } else if (wantCaret < acc + kLen) {
+          var target = wantCaret - acc;
+          var gk = kc.childNodes || [];
+          var gacc = 0;
+          var gDone = false;
+          for (var gi = 0; gi < gk.length; gi++) {
+            var g = gk[gi];
+            var gLen = _zwIhtmlTextLen(g);
+            if (target <= gacc + gLen) { nr.setStart(g, target - gacc); gDone = true; break; }
+            gacc += gLen;
+          }
+          if (!gDone) nr.setStart(kc, gk.length);
+          placed = true;
+          break;
+        } else if (wantCaret === acc + kLen) {
+          nr.setStart(host, ci + 1);
+          placed = true;
+          break;
+        }
+        acc += kLen;
+      }
+      if (!placed) nr.setStart(host, kids2.length);
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    } catch (_eIhRC) {}
+  }
+
+  // 块级拆分插入主臂。handled = true 表已变异（跳过既有内联臂）；false 表不合
+  // 形旁路（既有径零改动）。case 表逐形见刀注。
+  globalThis._zwExecCmdApplyInsertHtmlBlock = function (host, range, fragHtml) {
+    var frag = (fragHtml == null) ? '' : String(fragHtml);
+    if (!frag || frag.indexOf('<') < 0) return false;
+    var html = String(host.innerHTML || '');
+    // 载荷分类：块级根（或同名行内拆段形）才进本刀；未闭合首标签补全后须
+    // 单元素根全覆盖（多根/文本根不合形）。
+    var fragC = _zwIhtmlCompleteFrag(frag);
+    var fSpans = _zwIhtmlTopSpans(fragC);
+    var rootSpan = null;
+    for (var fi = 0; fi < fSpans.length; fi++) {
+      if (fSpans[fi].tag) {
+        if (rootSpan) return false;
+        rootSpan = fSpans[fi];
+      } else if (fragC.slice(fSpans[fi].start, fSpans[fi].end).trim() !== '') {
+        return false;
+      }
+    }
+    // 文本前缀/后缀须纯空白（单根覆盖门）。
+    var preTxt = fragC.slice(0, rootSpan.start);
+    var postTxt = fragC.slice(rootSpan.end);
+    if ((preTxt && /\S/.test(preTxt)) || (postTxt && /\S/.test(postTxt))) return false;
+    var rootTag = rootSpan.tag;
+    var BLOCK_T = { p: 1, div: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1,
+      blockquote: 1, pre: 1, li: 1, dt: 1, dd: 1, ol: 1, ul: 1, dir: 1, hr: 1,
+      table: 1, td: 1, th: 1, dl: 1 };
+    var SPLIT_T = { a: 1, nobr: 1 };
+    if (!BLOCK_T[rootTag] && !SPLIT_T[rootTag]) return false;
+    var fragInner = fragC.slice(rootSpan.innerStart, rootSpan.innerEnd);
+    // 选区端点：文本锚 or 元素锚（整子选区，list 边界族）。
+    var sc = range.startContainer, so = range.startOffset | 0;
+    var ec = range.endContainer, eo = range.endOffset | 0;
+    if (!sc) return false;
+    var scIsText = (sc.nodeType === 3 || sc.__zwIsText);
+    var scIsElem = sc.nodeType === 1;
+    if (!scIsText && !scIsElem) return false;
+    // 上溯链（不含 host）+ CE=false 边界旁路（pre CE-false 族不合形）。
+    var chain = [];
+    var walk = scIsElem ? sc : sc.parentNode;
+    while (walk && walk !== host && walk.nodeType === 1) {
+      chain.push(walk);
+      walk = walk.parentNode;
+    }
+    if (walk !== host || !chain.length) {
+      if (walk !== host) return false;
+    }
+    for (var ci0 = 0; ci0 < chain.length; ci0++) {
+      if (chain[ci0].getAttribute
+          && String(chain[ci0].getAttribute('contenteditable') || '').toLowerCase() === 'false') {
+        return false;
+      }
+    }
+    // 宿主级文本偏移：sc/ec 边界统一经 _zwIhtmlBoundaryText（宿主直子直达与
+    // T 内一层内嵌两形），再映射 innerHTML 串偏移。
+    var kids = host.childNodes || [];
+    var hostTextStart = _zwIhtmlBoundaryText(kids, sc, so);
+    if (hostTextStart < 0) return false;
+    var hostTextEnd = range.collapsed ? hostTextStart
+      : (ec ? _zwIhtmlBoundaryText(kids, ec, eo) : -1);
+    if (hostTextEnd < 0 || hostTextEnd < hostTextStart) return false;
+    // 顶层 T 跨度定位（结构式：含锚点的宿主直子——元素锚空 li 形无文本位，
+    // 串映射定位不适用）。文本锚面 hStart/hEnd 另经串映射（区间用）。
+    var tSpans = _zwIhtmlTopSpans(html);
+    var tIdx = -1;
+    for (var kq = 0; kq < kids.length; kq++) {
+      if (kids[kq].nodeType !== 1) continue; // 文本子非 T（宿主直子文本归 bare）
+      if (kids[kq] === sc) { tIdx = kq; break; }
+      var ancK = sc;
+      while (ancK && ancK !== kids[kq]) ancK = ancK.parentNode;
+      if (ancK === kids[kq]) { tIdx = kq; break; }
+    }
+    if (tIdx >= tSpans.length) return false;
+    var hStart = 0, hEnd = 0;
+    if (scIsText) {
+      hStart = _zwIhtmlTextPosToHtml(html, hostTextStart);
+      if (hStart < 0) return false;
+      hEnd = hStart;
+      if (hostTextEnd > hostTextStart) {
+        hEnd = _zwIhtmlTextPosToHtmlEnd(html, hostTextEnd);
+        if (hEnd < 0) return false;
+      }
+      // 串位自证：hStart 须落 tIdx 跨度内（结构定位与串映射一致性门）。
+      if (tIdx >= 0 && !(hStart >= tSpans[tIdx].start && hStart < tSpans[tIdx].end)) {
+        return false;
+      }
+    }
+    var regionStart = hStart, regionEnd = hEnd;
+    var repl = null;
+    if (tIdx < 0) {
+      // bare：宿主直子文本（无 T）。li 降级/dt·dd 包裹/td·th 溶解三形（语料
+      // 实录：`f[o]o` + `<li>abc</li>` → `f<div>abc</div>o`（dPS）；+ dt/dd →
+      // dl 包裹；+ `<td>abc</td>` → `fabco` 溶解）。
+      if (!scIsText || sc.parentNode !== host) return false;
+      if (rootTag === 'li') {
+        var sepB = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+        repl = '<' + sepB + '>' + fragInner + '</' + sepB + '>';
+      } else if (rootTag === 'dt' || rootTag === 'dd') {
+        repl = '<dl>' + fragC + '</dl>';
+      } else if (rootTag === 'td' || rootTag === 'th') {
+        repl = fragInner;
+      } else {
+        return false;
+      }
+    } else {
+      var tLive = kids[tIdx];
+      if (!tLive || tLive.nodeType !== 1) return false;
+      var tTag = String(tLive.tagName || '').toLowerCase();
+      var tSpan = tSpans[tIdx];
+      if (tSpan.tag !== tTag) return false;
+      if (chain[chain.length - 1] !== tLive) return false;
+      var tOpen = html.slice(tSpan.start, tSpan.openEnd);
+      var tClose = html.slice(tSpan.innerEnd, tSpan.end);
+      // 上下文归类（链扫描）。
+      var listLive = null, liLive = null, dlLive = null, ddTag = null, tdLive = null;
+      for (var cc = 0; cc < chain.length; cc++) {
+        var tg = String(chain[cc].tagName || '').toLowerCase();
+        if (tg === 'ol' || tg === 'ul' || tg === 'dir') listLive = chain[cc];
+        else if (tg === 'li') liLive = chain[cc];
+        else if (tg === 'dl') dlLive = chain[cc];
+        else if (tg === 'dt' || tg === 'dd') ddTag = tg;
+        else if (tg === 'td' || tg === 'th') tdLive = chain[cc];
+      }
+      if (listLive && listLive === tLive) {
+        // list 上下文：li 内文本锚族 + 空 li 整体换载族 + 元素锚整子族（语料
+        // 实录形）。
+        if (scIsText) {
+          if (!liLive) return false;
+          if (rootTag === 'li') {
+            repl = '</li>' + fragC + '<li>';
+          } else if (rootTag === 'ol' || rootTag === 'ul' || rootTag === 'dir') {
+            repl = fragC;
+          } else if (rootTag === 'dt' || rootTag === 'dd') {
+            repl = '<dl>' + fragC + '</dl>';
+          } else if (BLOCK_T[rootTag]) {
+            repl = fragC;
+          } else {
+            return false;
+          }
+        } else if (scIsElem && sc === liLive && range.collapsed
+                   && liLive.parentNode === tLive) {
+          // 空 li 整体换载（id 形：`<ol id=old><li id=li0>{}<br></ol>` + 列表
+          // 载荷 → li0 整体换载荷子项，旧 list 壳与 id 保留）。空门：so=0 且
+          // li 文本长度 0（br-only 同空）。
+          if (so !== 0 || _zwIhtmlTextLen(liLive) !== 0) return false;
+          if (rootTag !== 'ol' && rootTag !== 'ul' && rootTag !== 'dir') return false;
+          var innerHtmlL = html.slice(tSpan.innerStart, tSpan.innerEnd);
+          var innerSpansL = _zwIhtmlTopSpans(innerHtmlL);
+          var ckL = tLive.childNodes || [];
+          if (innerSpansL.length !== ckL.length) return false;
+          var liIdx = -1;
+          for (var liq = 0; liq < ckL.length; liq++) {
+            if (ckL[liq] === liLive) { liIdx = liq; break; }
+          }
+          if (liIdx < 0) return false;
+          var spL = innerSpansL[liIdx];
+          if (spL.tag !== 'li'
+              || String(liLive.tagName || '').toLowerCase() !== 'li') return false;
+          regionStart = tSpan.innerStart + spL.start;
+          regionEnd = tSpan.innerStart + spL.end;
+          // 载荷 list 根解包取内层 li 序（旧 list 壳保留——corpus 实录期望
+          // `<ol id=old><li id=li1>…</ol>`，非整体 ol 嵌套）。
+          repl = fragInner;
+        } else if (scIsElem && sc === tLive && ec === tLive) {
+          // 元素锚：整子选区边界族。子跨度扫描 + so/eo 对位（文本子混入不合形）。
+          var innerHtmlT = html.slice(tSpan.innerStart, tSpan.innerEnd);
+          var innerSpans = _zwIhtmlTopSpans(innerHtmlT);
+          var ckT = tLive.childNodes || [];
+          if (innerSpans.length !== ckT.length) return false;
+          var soI = so, eoI = eo;
+          if (soI < 0 || eoI > innerSpans.length || eoI <= soI) return false;
+          var absS = tSpan.innerStart + innerSpans[soI].start;
+          var absE = tSpan.innerStart + innerSpans[eoI - 1].end;
+          if (soI === 0 && eoI === innerSpans.length) {
+            regionStart = tSpan.start; regionEnd = tSpan.end; repl = fragC;
+          } else if (soI === 0) {
+            regionStart = tSpan.start; regionEnd = absE; repl = fragC + tOpen;
+          } else if (eoI === innerSpans.length) {
+            regionStart = absS; regionEnd = tSpan.end; repl = tClose + fragC + tOpen;
+          } else {
+            regionStart = absS; regionEnd = absE; repl = tClose + fragC + tOpen;
+          }
+        } else {
+          return false;
+        }
+      } else if (dlLive && dlLive === tLive && scIsText) {
+        // dl 上下文：dt/dd 载荷拆段（ddTag = sc 所在 dt/dd）。
+        if (!ddTag) return false;
+        if (rootTag === 'dt' || rootTag === 'dd') {
+          repl = '</' + ddTag + '>' + fragC + '<' + ddTag + '>';
+        } else {
+          return false;
+        }
+      } else if (tdLive && scIsText) {
+        // td 上下文：td/th 载荷溶解取内联（td 嵌 td 解析修复语义，语料实录
+        // `<td>abc</td>` 进 td → fabco）。
+        if (rootTag !== 'td' && rootTag !== 'th') return false;
+        repl = fragInner;
+      } else if (chain.length === 1 && scIsText) {
+        // T 级拆分段族：block C 与行内壳 C（语料 p/h1/b/a/nobr/font/span 实录形）。
+        var isBlockC = !!({ p: 1, div: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1,
+          h6: 1, blockquote: 1 })[tTag];
+        var isShellC = !!({ a: 1, nobr: 1, b: 1, i: 1, em: 1, strong: 1, span: 1,
+          font: 1, u: 1, s: 1, strike: 1, big: 1, small: 1, tt: 1, code: 1 })[tTag];
+        if (!isBlockC && !isShellC) return false;
+        if (SPLIT_T[rootTag]) {
+          // 同名行内拆段：仅同名（a→a / nobr→nobr）。
+          if (rootTag !== tTag) return false;
+          repl = tClose + fragC + tOpen;
+        } else if (BLOCK_T[rootTag]) {
+          // carry 型样式壳 × 素净载荷 → 旁路（font color / span color 家族
+          // swcss=false 变体需 override carry，后续刀；payload 自带 style 或
+          // 壳仅 font-variant 类非 carry 样式则放行）。
+          if ((tTag === 'font' || tTag === 'span')
+              && !/style\s*=|color\s*=|face\s*=|size\s*=/.test(fragInner)
+              && (/\s(color|face|size)\s*=/.test(tOpen)
+                  || (/\sstyle\s*=["']/.test(tOpen)
+                      && /(^|[^-])(color|font-family|font-size|font)\s*:/.test(tOpen)))) {
+            return false;
+          }
+          var effFragB = fragC;
+          if (rootTag === 'li') {
+            var sepB2 = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+            effFragB = '<' + sepB2 + '>' + fragInner + '</' + sepB2 + '>';
+          } else if ((rootTag === 'dt' || rootTag === 'dd')
+                     && !dlLive && !listLive && !tdLive) {
+            effFragB = '<dl>' + fragC + '</dl>';
+          }
+          repl = tClose + effFragB + tOpen;
+        } else {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+    if (repl == null) return false;
+    var newHtml = html.slice(0, regionStart) + repl + html.slice(regionEnd);
+    host.innerHTML = newHtml;
+    // caret 落插入段之后（文本空间 = 原起点 + 插入段解码文本长度；拆分界标签
+    // 零文本贡献同口径）。
+    var insTextLen = 0;
+    for (var fi2 = 0; fi2 < repl.length; fi2++) {
+      var fc = repl.charAt(fi2);
+      if (fc === '<') {
+        var fgt = repl.indexOf('>', fi2);
+        if (fgt > fi2) { fi2 = fgt; continue; }
+      }
+      if (fc === '&') {
+        var fsemi = repl.indexOf(';', fi2);
+        if (fsemi > fi2 && fsemi - fi2 <= 10) { insTextLen++; fi2 = fsemi; continue; }
+      }
+      insTextLen++;
+    }
+    _zwIhtmlRelocateCaret(host, hostTextStart + insTextLen);
+    return true;
+  };
+
   // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作——
   // dialog cancel/close（spec「dialog cancelation」）。宿主在 keydown Esc 默认动作阶段
   // 调 `__zw_esc_dialog_cancel()`。R4300（M2 切片 23，2026-10-22）改造：①closedby
@@ -5868,7 +6356,14 @@
               // 映射）。fragment 原样插入（上游 execCommand「不消毒」语义——信任
               // boundary 在页面脚本自身）。caret 落插入内容之后（宿主直子扫描）。
               if (cmd === 'inserthtml' && rng2 && host2) {
-                try { _zwExecCmdApplyInsertHtml(host2, rng2, arguments[2]); } catch (_eIh) {}
+                // ihtml 轴一块级拆分刀（2026-11-16）：块级/拆段载荷优先走
+                // _zwExecCmdApplyInsertHtmlBlock（host 级串手术），不合形返回
+                // false 落回既有内联拼接臂（零改动）；异常同旁路。
+                var handledIhB = false;
+                try { handledIhB = _zwExecCmdApplyInsertHtmlBlock(host2, rng2, arguments[2]); } catch (_eIhB) { handledIhB = false; }
+                if (!handledIhB) {
+                  try { _zwExecCmdApplyInsertHtml(host2, rng2, arguments[2]); } catch (_eIh) {}
+                }
               }
               // editing-compat inserttext 簇（2026-11-01）：branch3 此前缺
               // inserttext 实应用臂——事件照派、DOM 零变异（zz-probe-typing
