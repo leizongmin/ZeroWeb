@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5600 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=eaa777a3b 本流 R5599 账），码态 6c21880ac 恒等 corpus 按先例跳过，wpt-data 零写入；②WPT 批探针一次成功无瞬断，版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：ZeroWeb-2 HEAD=1879d53a5 恒等 clean；ZeroWeb-3 HEAD=b8a57c694 恒等但 M3-B/C M 态六→七回摆——part03.js 复出 M 列（恰集复位 R5594 七态：js_dom_bridge.rs/callbacks.rs/script_gen.rs/part01.js/part03.js/part06.js/testharness.rs），六态稳态打破、编辑-编译循环 churn 持续未落地；cronjob 恒等（M webview.rs＋两碎片未变）；本树巡查静默＋本树零重进程；无外来 /tmp/r5600 工件＝无同树双写）** **（2026-11-15）**
+>
+> - **结果**：R5599 下一步①②③落轮（空转核查轮，零代码变更）。实质观察一条＝ZeroWeb-3 M3-B/C 六→七回摆（part03.js 复出，恰集复位七态）——六态稳态仅为两轮驻留非终态，churn 持续、落地义务不变。target expando 刀维持未落地（B0 基线档在案）。
+> - **验证**：窗口空（对账 eaa777a3b）＋码恒等 diff 实证空（6c21880ac..HEAD 五扩展名清点）；探针一次成功（rc=0 无瞬断）11 tags 完整、latest=v1.10；三 clone 状态在案；基线快照 /tmp/r5595/fails-r5595.txt（999F@af012f775，码态=6c21880ac）在位；零源码变更（fmt/clippy/product-smoke/bench-gate 不触发，corpus 按树恒等先例跳过）。
+> - **挂账**：**销账**：R5599 下一步①②③（本轮落轮）。**新增**：无。**维持**：全谱系同 R5599 条（M3-B/C 恰集注记更新为七态回摆（六态稳态破），余同：target expando 刀落地窗口观察、共享面叠加核验义务现含 g49 viewport 穿线＋6c21880ac part01f.js 占用）。
+> - **下一步 R5601**：①对端再落地时逐 commit `--stat`＋全量 corpus A/B（基线=/tmp/r5595/fails-r5595.txt 999F@af012f775（码态=6c21880ac ip C3/C6 刀树，tao-145/147/150/154＋bc-dynamic-002 相位带案已注明）本树环境口径，树恒等轮按先例跳过；A/B 前核环境一致性三项：零源码变更、wpt-data 未被对端写入、runner 二进制来源核验；M3-B/C 落地时核共享面叠加（part01f.js 已被 6c21880ac 占用＋g49 viewport 穿线）；target expando 刀落地时同核（B0 基线 2f638c474＋行级定谳 da9456f7c 已备，最小切片 tag 集 {a,area,form,link,base}）；cronjob anchor 语料落共享批时同核；对端 wptfyi-css 面 A/B 零移动属预期不误报）。②三源核查续（WPT 批探针、⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案点名核验）。③对端观察（target expando 刀落地窗口、M3-B/C 编辑-编译循环落地窗口与恰集巡查、html-semantics 脚本 M 态、wptfyi-css position 细形续刀与分面语义一致性、cronjob 组F 续刀与 untracked 碎片、树碰撞复发巡查——巡查须过滤自匹配）。
+
 > **▶ R5599 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=6f3088ff2 本流 R5598 账），码态 6c21880ac 恒等 corpus 按先例跳过，wpt-data 零写入；②WPT 批探针一次成功无瞬断，版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：ZeroWeb-2 HEAD 前进至 1879d53a5（＝s449 收口 docs 已推送，与 origin/main 我持内容恒等，clean）；ZeroWeb-3 HEAD=b8a57c694 恒等＋M3-B/C 六态恒等（稳态第三确认）；cronjob 恒等（M webview.rs＋两碎片未变）；对端 testharness-html-semantics 验证腿施工中（ps 在案）＝验证非落地；本树巡查静默；无外来 /tmp/r5599 工件＝无同树双写）** **（2026-11-15）**
 >
 > - **结果**：R5598 下一步①②③落轮（空转核查轮，零代码变更）。本轮零实质变化：三 clone 与 R5598 观察恒等（唯一位置注记＝ZeroWeb-2 clone 内 26c2b8d18 已以 1879d53a5 落 origin/main＝我持），target expando 刀维持未落地（规格档在案）。
