@@ -2,21 +2,22 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 459 收口（守成巡查轻覆盖轮：远端零入树
-零刀，HEAD = a7722cf21 同码树基带复测；族 5 键相位振荡出 stable，
-stable 回归 s456 同型形态；账本
-evidence/2026-11-15-m2s459-zeroinflow-patrol.md）。
-双腿（a7722cf21 树）leg1 8513（8306P/199F/7T/1U）/ leg2 8516
-（8306P/204F/5T/1U）——族相位交错（leg1 双文件整文件粒度 T=7 /
-leg2 detailed F + 主文件子测粒度 F=204），disagree 1 + 单腿缺席
-5 键全在族内；stable 8511（8306P/199F/5T/1U，distinct 8509，族内
-零键，与 s456 同型）。vs s458 stable 恰 5 GONE（族 5 键振荡出
-stable）、零 NEW，非族键逐键零差。**P 集账本口径 8306 六轮连续恒
-等**；onblur 哨键双腿一致 Pass 在 stable（哨解除后第五轮）。全桥
-绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染
-域/decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察
-项静默哨维持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 460 收口（守成巡查轻覆盖轮：远端零入树
+零刀，HEAD = 6babd9aac 同码树基带复测；detailed 文件级 F 双腿一致
+回入 stable；账本
+evidence/2026-11-15-m2s460-zeroinflow-patrol.md）。
+双腿（6babd9aac 树）leg1 8513（8306P/200F/6T/1U）/ leg2 8516
+（8306P/204F/5T/1U），disagree 0 + 单腿缺席 5 键全在
+select-home-end 族主文件（整文件 Timeout 键 leg1-only + 4 子测
+Fail 键 leg2-only，粒度相位腿间振荡延续）；stable 8512
+（8306P/200F/5T/1U，distinct 8510）。vs s459 stable 零 GONE、恰
+1 NEW（detailed 文件级 Fail 键双腿一致回入 stable），非族键逐键
+零差。**P 集账本口径 8306 七轮连续恒等**；onblur 哨键双腿一致
+Pass 在 stable（哨解除后第六轮）。全桥绿窗 **1643P/0F rc=0**
+（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur
+2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
+s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（本轮双腿
+零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -25,6 +26,16 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 459 收口）——守成巡查轻覆盖轮：零
+> 入树零刀同码树基带复测，族 5 键相位振荡出 stable 回归 s456 同型
+> 形态，P 集口径 8306 六轮连续（账本
+> evidence/2026-11-15-m2s459-zeroinflow-patrol.md）**：HEAD =
+> a7722cf21 同码树。双腿 leg1 8513（8306P/199F/7T/1U）/ leg2 8516
+> （8306P/204F/5T/1U），disagree 1 + 单腿缺席 5 键全在族内；
+> stable 8511（8306P/199F/5T/1U，distinct 8509）vs s458 恰 5 GONE
+> （族 5 键振荡出 stable）、零 NEW，非族键逐键零差。全桥绿窗
+> 1643P/0F rc=0（+0）。
+>
 > **▶ 承前（2026-11-15 M2 切片 458 收口）——守成巡查轻覆盖轮：零
 > 入树零刀同码树基带复测，双腿完全一致 + stable 与 s457 逐键全同，
 > P 集口径 8306 五轮连续（账本
