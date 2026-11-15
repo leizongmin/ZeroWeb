@@ -87,6 +87,22 @@ GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提
 b2-wip runner html-semantics 探查信号持续 + ZW-3 后续刀信
 号持续，落树后按他流刀归因轮）。
 
+刀时序注记（收口 push 窗口，s494 先例同款）：本轮收口
+`git pull --rebase` 携入对端 7 笔（origin e795899a6 →
+45b4209b5），其中 **3 笔码刀落 origin**——`3eddbadbb`
+fix(js-dom) gtr 家族双根因刀（js_dom_shim part01f/01h/04/
+05 + js_dom_bridge_tests part01/part02/part122 新文件 + 
+property registry 一行，申报 input-events 289P→473P——
+**即 s490-s496 连续观察的 ZW-3 五文件刀**，且碰
+js_dom_shim part05 与桥面清单：桥面 1655 将增、html-
+semantics 邻接面待归因）+ `f80e4a8b8` feat(style-system)
+backdrop-filter 白名单刀（corpus +253 零回归）+
+`7802cc494` fix(engine) ip C5 根层裸 br 选区删净解包刀。
+本轮「零入树」记录以本轮窗口为准准确（起跑 pull 零携入，
+双腿/桥面均在 4427b121e 二进制上实测）；**s498 起手 pull
+即见三刀并载 → 按他流刀归因轮（双腿 join + 三刀半径归因
++ runner 换代预期真重建 + 桥面清单增长预期）**。
+
 工件：/tmp/s497/{s497-leg1,s497-leg2}.log、s497-{l1,l2}.norm、
 l{1,2}.canon、s497.{l1u,l2u,s1,s2,k1,k2,both.keys,
 leg1only.keys,leg2only.keys,disagree.keys,stable.keys,

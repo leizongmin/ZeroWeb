@@ -28,13 +28,15 @@ modulepreload 哨第 29 轮零翻红。全桥绿窗 **1655P/0F rc=0**
 GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提
 示，不重复通知）。hang 观察项静默哨维持（双腿零真 hang，
 零截断）。
-下一步：**守成巡查**（对账基线换 s497 stable 8514；他流入
-树归因轮或轻覆盖；onblur flaky 键 3 例窗口观察维持；对端
-b2-wip runner html-semantics 探查信号 + ZW-3 后续刀信号
-持续，落树后按他流刀归因轮，join 实测为准）+ 候门决项等
-待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
-rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
-门开随批落预案不变：簇 D 开 →
+下一步：**他流刀归因轮**（收口 push 窗口对端三刀并载落
+origin：3eddbadbb ZW-3 五文件 gtr 双根因刀——碰
+js_dom_shim part05 + 桥面清单将增，html-semantics 邻接面
+重点归因 + f80e4a8b8 backdrop-filter 白名单刀 +
+7802cc494 ip C5 选区刀；双腿 join + 三刀半径归因，runner
+换代真重建预期，join 实测为准；onblur flaky 键 3 例窗口
+观察维持）+ 候门决项等待用户拍板（video P1+P2 立项 /
+簇 D A2 立项 / s137）；rendering 流 dialog 16 红块协同面
+（归 rendering 流记账）。门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47 随批落。
 
 > **▶ 承前（2026-11-16 M2 切片 496 收口）——他流刀归因
