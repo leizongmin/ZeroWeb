@@ -2,25 +2,21 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 456 收口（他流刀归因轮：渲染流 **b7ecf7864
-fix(layout) flex item 块化盒 vertical-align 泄漏修复刀**（g50 泄漏
-面修复，仅触 layout-engine/inline/collect_items.rs +70/−3）
-**html-semantics 面零位移清偿**；账本
-evidence/2026-11-15-m2s456-flexva-knife-attribution.md）。
-归因窗口源码变更仅此一刀（另 fa909476e/8dbd093d1/10abba9ac 三
-docs）。双腿（a8eeeae09 树）leg1 8516（8306P/203F/6T/1U）/ leg2
-8513（8306P/200F/6T/1U）；disagree 1（detailed 文件级 T↔F 对冲出
-stable）+ 单腿缺席 5 键全在 select-home-end 族主文件（4 子测 leg1
-粒度 / 文件级 T leg2 粒度相位切换）；stable 8511（8306P/199F/5T/
-1U，distinct 8509）。vs s455 stable 恰 4 GONE（族主文件 4 子测 F
-粒度相位出 stable）、**零 NEW**，非族键逐键零差 → **b7ecf7864 零位
-移**（与 g47/g49/g50 渲染流刀零位移结论同型；刀面 flex 内联收集路
-径与 DOM 语义 shim 无交集）。onblur 哨键双腿 9/9 在，following
-label 对双腿 Pass 在 stable（哨解除后第二轮回位确认）。**P 集账本
-口径 8306 三轮连续**。全桥绿窗 **1643P/0F rc=0**（+0）。红池归账
-结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂用户门
-维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提
-示，不重复通知）。hang 观察项静默哨维持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 457 收口（守成巡查轻覆盖轮：远端零入树
+零刀，HEAD = 3e987ea65 同码树基带复测；**双腿完全一致形态**
+disagree = 0 缺席 = 0；账本
+evidence/2026-11-15-m2s457-zeroinflow-patrol.md）。
+双腿（3e987ea65 树）8516/8516（双 8306P/203F/6T/1U，键集与状态逐
+行全同，s454 谱系最干净腿对）；stable 8516（8306P/203F/6T/1U，
+distinct 8514）。vs s456 stable 零 GONE、恰 5 NEW 全数
+select-home-end 族相位回入 stable（detailed 文件级 T + 主文件 4 子
+测 F 本轮双腿一致；s456 该 5 键因腿间相位不一致出 stable），非族键
+逐键零差。**P 集账本口径 8306 四轮连续恒等**；onblur 哨键双腿一致
+Pass 在 stable（哨解除后第三轮回位确认）。全桥绿窗 **1643P/0F
+rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
+onblur 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
+（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨维持
+（本轮双腿零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -28,6 +24,17 @@ label 对双腿 Pass 在 stable（哨解除后第二轮回位确认）。**P 集
 s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 456 收口）——他流刀归因轮：渲染流
+> b7ecf7864 fix(layout) flex item 块化盒 vertical-align 泄漏修复刀
+> （g50 泄漏面修复，仅触 layout-engine/inline/collect_items.rs
+> +70/−3）html-semantics 面零位移清偿（账本
+> evidence/2026-11-15-m2s456-flexva-knife-attribution.md）**：归因
+> 窗口源码变更仅此一刀。双腿（a8eeeae09 树）8516/8513；disagree 1
+> + 单腿缺席 5 键全在族主文件粒度相位切换；stable 8511（8306P/199F/
+> 5T/1U）vs s455 恰 4 GONE 全在族主文件 4 子测相位、零 NEW，非族键
+> 零差 → 零位移定谳（与 g47/g49/g50 渲染流刀结论同型）。onblur 哨
+> 键双腿 9/9 在。全桥绿窗 1643P/0F rc=0（+0）。
 
 > **▶ 承前（2026-11-15 M2 切片 455 收口）——守成巡查轻覆盖轮：零
 > 入树零刀同码树基带复测，键集恒等单腿缺席 = 0，族主文件 4 子测 F
