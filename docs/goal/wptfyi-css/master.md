@@ -253,6 +253,15 @@ jsanim v3 已证模式（start_transitions before-change 真值捕获+TRANSITION
 注册表+gCS consult）+ Phase 2 seek 语义 + Phase 3 transition:all 展开；
 全案与开工条件（刀 A animation.rs/transition.rs/computed_style.rs 窗口收口后
 零码改解除）见 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md`。
+**T 面 census 扩展（11-16 06:0x，同实例，刀 A 窗口等待期只读账本）**：flip-b1
+快照十三套件补账（cadd-b1-comp 九套件实测零 T 键=composition 面，shapeout-b1
+twin 在飞写面未触碰）——**T 键 10,898/T-P 2,928/T-F 7,970**（backgrounds
+1,752F/transforms 1,660F/grid 652F/values 1,215F/fonts 912F 头部）；全谱合并
+口径：**echo 红线 4,680P、T-F 15,816、Phase 1 直取池 ≈6,516**（直取 5,635+
+钳制臂 881）、真插值池 8,396、CSS Animations seek 臂面 4,276F 首获定量
+（transform 848/width 570/grid-template 652 等直取大头换位 backgrounds+
+transforms）。逐套件明细与修正三点见
+`.acceptance/wptfyi-css/notes-transition-census-extension.md`。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
