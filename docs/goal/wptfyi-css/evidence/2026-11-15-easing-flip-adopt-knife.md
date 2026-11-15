@@ -168,4 +168,6 @@ font-size-adjust 67 / transform 42 / max-{width,height} 6 / font-weight 3。
   四文件漂移以本刀文件单核替代——js_anim_registry.rs rustfmt --check 单独绿）。
   19:50:11 收全 11 步：fmt 本刀文件 ✓ / companion ✓ / GPU adapter+consistency ✓ /
   renderer bin ✓ / quickjs renderer bin ✓；红腿 8 处全对号在册/peer 账（本刀域零红），
-  唯一新面孔 gpu_compositor_path 环境形定谳（IPC 帧头断裂负载相位，solo ×3 全绿）。
+  唯一新面孔 gpu_compositor_path 双会话合计 solo ×11=8 绿 3 红（红侧=compositor
+  通道关闭后 signal 11 断帧，门禁收后低载仍现）——纯负载相位解释存疑，分类归
+  compositor 域后续查，不入本刀账（详见 master.md 门禁段）。
