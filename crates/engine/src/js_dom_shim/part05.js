@@ -18230,6 +18230,22 @@
     ['data', 'data', null], ['isComposing', 'isComposing', false],
     ['inputType', 'inputType', ''], ['dataTransfer', 'dataTransfer', null],
   ]);
+  // B2（editing goal，2026-11-15）：getTargetRanges——beforeinput 携带的「将受
+  // 影响」StaticRange 数组（引擎 CE 删除路径 dispatch 前挂实例 `_zwTargetRanges`
+  // 槽，见 part01 `__zwCePendingTargetRanges` 注记）。槽缺省返空数组——input
+  // 事件规范恒空。数组存实例不重算、不清除：dispatch 后传播、listener 改选区
+  // 后再读同值（input-events-get-target-ranges-during-and-after-dispatch 语料
+  // 三子测断言同值面）。
+  // https://w3c.github.io/input-events/#dom-inputevent-gettargetranges
+  try {
+    Object.defineProperty(InputEvent.prototype, 'getTargetRanges', {
+      value: function () {
+        var rs = this._zwTargetRanges;
+        return Array.isArray(rs) ? rs : [];
+      },
+      writable: true, configurable: true,
+    });
+  } catch (_eGtrDefine) {}
   // CompositionEvent（UI Events）：IME compositionstart/update/end 的 data。
   _defineEventSubclass('CompositionEvent', 'UIEvent', [
     ['data', 'data', ''], ['locale', 'locale', ''],

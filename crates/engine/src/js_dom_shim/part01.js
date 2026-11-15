@@ -11741,10 +11741,14 @@
   // join 应用核：beforeinput(inputType) → 首行提取 + span 保留壳入 dst →
   // caret 落壳前 → input。返回 true=已应用（调用方结束），false=取消/无内容。
   function _zwCeJoinApply(el, dst, srcParent, startNode, inputType) {
+    // B2：调用方置位的 target range 快照消费即清（取消/无内容也不残留）。
+    var pendingRanges = __zwCePendingTargetRanges;
+    __zwCePendingTargetRanges = null;
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null,
       inputType: inputType, isComposing: false
     });
+    if (pendingRanges) { before._zwTargetRanges = pendingRanges; }
     if (el.dispatchEvent(before) === false) return false;
     // 块间分隔空白消费（2026-10-31）：startNode 前紧邻的纯空白文本（`</div>\n<div>`
     // 源码换行）在块界 join 几何下是块分隔符——Chrome join 不留分隔空白（语料 C 族
@@ -11919,6 +11923,100 @@
   // 否则 setup innerHTML 物化的 pending 壳对象从视图摘除 → 锚重解析失配 → 整动作
   // no-op（join 语料 lrlp 2,343P→48P 实证）。动作结束（含异常）即清位，序列化读
   // 面不受影响。impl 换名 + wrapper 保持调用点零改动。
+  // input-events B2（editing goal，2026-11-15）：beforeinput.getTargetRanges 面。
+  // 变更前快照的 StaticRange 数组挂 `__zwCePendingTargetRanges` 槽，join 核/
+  // 文内删除臂构造 beforeinput 时消费并清槽；位置语义按 Blink 语料录音
+  //（input-events-get-target-ranges-backspace/forwarddelete 期望表）：
+  // - join 起界=前内容可见文本端（normal 域折叠尾空白不占界、保留域全占；
+  //   前块尾 br 不入界——界落 br 前父偏移，`<p>abc<br></p><p>[]def</p>` (p,1) 形）；
+  // - join 终界=后内容可见文本首（normal 域跳折叠首空白；保留域 0）；
+  // - caret 侧界=沿方向跳过折叠空白至可见字符界（pre-line 只跳空格/制表——
+  //   \n 是硬换行占位；保留域不动）。
+  // 语料断言比对 LIVE 节点引用（getRangeDescription 取变更前 nodeName/offset）
+  // ——快照必须引用变更前同节点，故全部在变更前置位。
+  // https://w3c.github.io/input-events/#dom-inputevent-gettargetranges
+  var __zwCePendingTargetRanges = null;
+  function _zwCeTargetRange(sn, so, en, eo) {
+    if (typeof StaticRange === 'function') {
+      try {
+        return new StaticRange({ startContainer: sn, startOffset: so, endContainer: en, endOffset: eo });
+      } catch (_eSrNew) {}
+    }
+    return { startContainer: sn, startOffset: so, endContainer: en, endOffset: eo };
+  }
+  // 有效 white-space 域：保留族（折叠空白全占位）与 pre-line（\n 硬换行）。
+  function _zwCeWsCtx(el) {
+    var w = '';
+    try { w = String(_zwCeWsOf(el) || '').toLowerCase(); } catch (_eGtrWs) {}
+    return {
+      preserve: w === 'pre' || w === 'pre-wrap' || w === 'break-spaces',
+      preLine: w === 'pre-line',
+    };
+  }
+  // 块内容最深叶（last=true 末叶/false 首叶）；空元素块返 null。
+  function _zwCeDeepLeaf(node, last) {
+    var n = node, guard = 0;
+    while (n && n.nodeType === 1 && guard++ < 64) {
+      var kids = n.childNodes || [];
+      if (!kids.length) return null;
+      n = last ? kids[kids.length - 1] : kids[0];
+    }
+    return (n && n !== node && (n.nodeType === 3 || n.__zwIsText || n.nodeType === 1)) ? n : null;
+  }
+  function _zwCeNodeIndexOf(node) {
+    var p = node.parentNode, i = 0, n = p ? p.firstChild : null;
+    while (n && n !== node) { i++; n = n.nextSibling; }
+    return n === node ? i : 0;
+  }
+  // join 起界（backspace 侧）：前内容末叶——文本→可见端；原子单元叶→其前父
+  // 偏移；空块→块首。
+  function _zwCeJoinStartOf(prevNode) {
+    var leaf = _zwCeDeepLeaf(prevNode, true);
+    if (leaf && (leaf.nodeType === 3 || leaf.__zwIsText)) {
+      var lv = String(leaf.nodeValue || '');
+      var lo = lv.length;
+      if (!_zwCeWsCtx(leaf.parentNode).preserve) {
+        while (lo > 0 && /[ \t\n\r\f]/.test(lv.charAt(lo - 1))) lo--;
+      }
+      return { node: leaf, offset: lo };
+    }
+    if (leaf && leaf.nodeType === 1) {
+      return { node: leaf.parentNode, offset: _zwCeNodeIndexOf(leaf) };
+    }
+    return { node: prevNode, offset: 0 };
+  }
+  // join 终界（forwarddelete 侧）：后内容首叶——文本→可见首（normal 域跳折叠
+  // 首空白；保留域 0）；原子叶→其父偏移；空块→块首。
+  function _zwCeJoinEndOf(nextNode) {
+    var leaf = _zwCeDeepLeaf(nextNode, false);
+    if (leaf && (leaf.nodeType === 3 || leaf.__zwIsText)) {
+      var lv = String(leaf.nodeValue || '');
+      var lo = 0;
+      if (!_zwCeWsCtx(leaf.parentNode).preserve) {
+        while (lo < lv.length && /[ \t\n\r\f]/.test(lv.charAt(lo))) lo++;
+      }
+      return { node: leaf, offset: lo };
+    }
+    if (leaf && leaf.nodeType === 1) {
+      return { node: leaf.parentNode, offset: _zwCeNodeIndexOf(leaf) };
+    }
+    return { node: nextNode, offset: 0 };
+  }
+  // caret 侧界规范化：沿方向跳折叠空白至可见字符界；pre-line 只跳空格/制表；
+  // 保留域不动。
+  function _zwCeCaretCanonical(textNode, off, forward) {
+    var ctx = _zwCeWsCtx(textNode.parentNode);
+    if (ctx.preserve) return off;
+    var v = String(textNode.nodeValue || '');
+    var o = off;
+    var wsRe = ctx.preLine ? /[ \t]/ : /[ \t\n\r\f]/;
+    if (forward) {
+      while (o < v.length && wsRe.test(v.charAt(o))) o++;
+    } else {
+      while (o > 0 && wsRe.test(v.charAt(o - 1))) o--;
+    }
+    return o;
+  }
   var __zw_ce_delete_impl = function(sel) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
@@ -11940,6 +12038,11 @@
       if (bn === sc && !_zwCeIsBlockEl(bp)) return; // run 中段 caret（inline 前邻）
       var bdst = _zwCeIsBlockEl(bp) ? bp : bc;
       if (bdst === bc && bn.nextSibling) return; // src 非容器末子，保守不并
+      // B2：join target range（变更前快照）——起=前内容可见端，终=caret 下游
+      // 规范化（normal 域跳折叠空白；`<p>abc</p><p>[]   def</p>` 界 (def,3) 形）。
+      var _gtrS = _zwCeJoinStartOf(bp);
+      __zwCePendingTargetRanges = [_zwCeTargetRange(_gtrS.node, _gtrS.offset,
+        sc, _zwCeCaretCanonical(sc, so, true))];
       _zwCeJoinApply(el, bdst, bc, bn, 'deleteContentBackward');
       return;
     }
@@ -11964,6 +12067,11 @@
       if (sn1 === sc && !_zwCeIsBlockEl(snx1)) return; // run 中段
       var sdst1 = (sn1 === sc) ? sc1 : sn1;
       if (sdst1 === sc1 && snx1.nextSibling) return; // src 非容器末子，保守不并
+      // B2：界选区 target range——起=caret 侧可见端（上游规范化），终=后内容
+      // 可见首（sc 恒文本、ec 空界起点；与 join 同界规则）。
+      var _gtrEnd1 = _zwCeJoinEndOf(snx1);
+      __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _zwCeCaretCanonical(sc, so, false),
+        _gtrEnd1.node, _gtrEnd1.offset)];
       _zwCeJoinApply(el, sdst1, sc1, snx1, 'deleteContentBackward');
       return;
     }
@@ -11979,10 +12087,43 @@
       }
     }
     if (start === end) return; // 空区间（起点无字符）
+    // B2：target range（变更前快照）。非 collapsed 选区界规范化（normal 域折叠
+    // 空白不占界——可见范围收缩到文本边；collapsed 单元删除界即删除区间）。
+    // pre-line 域删 \n 连带前方空格/制表（`abc \n[]def` 语料界 (3)-(5) 形：
+    // \n 消失后前方空白转可见需同删，区间与变更同扩）。
+    var _gtrS = start, _gtrE = end;
+    if (!range.collapsed) {
+      var _cS = _zwCeCaretCanonical(sc, _gtrS, true);
+      var _cE = _zwCeCaretCanonical(sc, _gtrE, false);
+      if (_cS < _cE) { _gtrS = _cS; _gtrE = _cE; } // 全折叠空白选区保原界（不空转）
+    }
+    if (v.charAt(_gtrS) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+      while (_gtrS > 0 && /[ \t]/.test(v.charAt(_gtrS - 1))) _gtrS--;
+    }
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
+    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE)];
     if (el.dispatchEvent(before) === false) return;
+    // 传播后重读选区（input-events-during-and-after-dispatch 语料）：listener 可在
+    // beforeinput 传播中改选区——target ranges 保持派发前快照，**默认动作按改后
+    // 选区应用**（Blink 语义，getTargetRanges 快照 ≠ 删除定位）。重读同宿主 caret，
+    // 文本节点内才用新位（跨块/元素界改动超出本臂几何 → 保持原位，不放大）。
+    var fr = globalThis.__zw_ce_caret_range(el);
+    if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
+      && (fr.startOffset | 0) > 0) {
+      sc = fr.startContainer;
+      v = String(sc.nodeValue || '');
+      so = fr.startOffset | 0;
+      start = so - 1;
+      end = so;
+      // pre-line 域删 \n 连带前方空格/制表（与派发前 target range 同扩，见上方注记）。
+      if (v.charAt(start) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+        while (start > 0 && /[ \t]/.test(v.charAt(start - 1))) start--;
+      }
+    } else {
+      start = _gtrS; end = _gtrE;
+    }
     sc.nodeValue = v.slice(0, start) + v.slice(end);
     var nr = document.createRange();
     nr.setStart(sc, start);
@@ -12029,6 +12170,11 @@
       if (cn === sc && !_zwCeIsBlockEl(cnx)) return; // run 中段
       var cdst = (cn === sc) ? cc : cn;
       if (cdst === cc && cnx.nextSibling) return; // src 非容器末子，保守不并
+      // B2：界选区 target range——起=caret 侧可见端（上游规范化），终=后内容
+      // 可见首（与 backspace 界选区臂同界规则，镜像向）。
+      var _gtrEndF1 = _zwCeJoinEndOf(cnx);
+      __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _zwCeCaretCanonical(sc, so, false),
+        _gtrEndF1.node, _gtrEndF1.offset)];
       _zwCeJoinApply(el, cdst, cc, cnx, 'deleteContentForward');
       return;
     }
@@ -12045,6 +12191,11 @@
       if (fn === sc && !_zwCeIsBlockEl(fnx)) return; // run 中段 caret（inline 后邻）
       var fdst = (fn === sc) ? fc : fn;
       if (fdst === fc && fnx.nextSibling) return; // src 非容器末子，保守不并
+      // B2：join target range——起=caret 上游规范化（`<p>abc   []</p>` 界
+      // (abc,3) 形：折叠尾空白不占界），终=后内容可见首。
+      var _gtrEndF = _zwCeJoinEndOf(fnx);
+      __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _zwCeCaretCanonical(sc, so, false),
+        _gtrEndF.node, _gtrEndF.offset)];
       _zwCeJoinApply(el, fdst, fc, fnx, 'deleteContentForward');
       return;
     }
@@ -12059,10 +12210,44 @@
       }
     }
     if (start === end) return;
+    // B2：target range（backspace 文内臂镜像）。pre-line 域删 \n 连带后方
+    // 空格/制表（`abc[]\n def` 语料界 (3)-(5) 形：区间与变更同扩）。
+    var _gtrS = start, _gtrE = end;
+    if (!range.collapsed) {
+      var _cS = _zwCeCaretCanonical(sc, _gtrS, true);
+      var _cE = _zwCeCaretCanonical(sc, _gtrE, false);
+      if (_cS < _cE) { _gtrS = _cS; _gtrE = _cE; } // 全折叠空白选区保原界（不空转）
+    }
+    if (v.charAt(_gtrE - 1) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+      while (_gtrE < v.length && /[ \t]/.test(v.charAt(_gtrE))) _gtrE++;
+    }
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     });
+    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE)];
     if (el.dispatchEvent(before) === false) return;
+    // 传播后重读选区（同 __zw_ce_delete 文内臂注记：ranges 快照固定、默认动作按
+    // 改后选区应用——ForwardDelete 删新位**后**一单元，代理对安全同上）。
+    var fr = globalThis.__zw_ce_caret_range(el);
+    if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
+      && (fr.startOffset | 0) < String(fr.startContainer.nodeValue || '').length) {
+      sc = fr.startContainer;
+      v = String(sc.nodeValue || '');
+      so = fr.startOffset | 0;
+      start = so;
+      end = so + 1;
+      var fLast = v.charCodeAt(start);
+      if (fLast >= 0xD800 && fLast <= 0xDBFF) {
+        var fNext = v.charCodeAt(start + 1);
+        if (fNext >= 0xDC00 && fNext <= 0xDFFF) end++;
+      }
+      // pre-line 域删 \n 连带后方空格/制表（镜像 backspace 臂同扩）。
+      if (v.charAt(end - 1) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+        while (end < v.length && /[ \t]/.test(v.charAt(end))) end++;
+      }
+    } else {
+      start = _gtrS; end = _gtrE;
+    }
     sc.nodeValue = v.slice(0, start) + v.slice(end);
     var nr = document.createRange();
     nr.setStart(sc, start);
