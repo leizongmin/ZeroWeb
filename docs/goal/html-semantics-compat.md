@@ -2,39 +2,61 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 493 收口（守成巡查轻覆盖轮第六
-轮：零入树同码态同二进制——码态 6b84507fe 恒等，offset-
-position 刀实施中 + ZW-3 三文件刀五文件 staged 收口临近信
-号均未落树；账本
-evidence/2026-11-15-m2s493-quiet-baseline-patrol.md）。
-码态 = 6b84507fe（HEAD 5584cf5db docs-only；runner
-126960144 恒同二进制）。leg1 8516（8307P/202F/6T/1U）+
-leg2 8516（8306P/203F/6T/1U，双零截断），stable 8513
-（8304P/202F/6T/1U）disagree 1。**vs s492 stable（8514）：
-GONE 1 + NEW 0 + flips 0 + T 集恒等——非族键逐键恒等零稳
-定回归**。GONE = onblur checkbox following-label 键 leg2
-单腿瞬态 F——**换腿第二例（s489 leg1 F→三轮 stable P→本
-轮 leg2 F）且本轮干净窗（对端零进程 load 0.53）负载归因
-不成立，升级在册 flaky 观察项**：瞬态源在册为 :active 清
-除时序抖动非仅负载，后续哨组按 3 例窗口观察；stable 摇摆
-非单向迁移不升级 bug 排查。**P 集账本口径 leg1 8307P 持位
-第 15 轮**（stable 机械口径 8304P）；picker 刀增益键
-stable Pass 第 16 轮保持，checkmark 恒 F 带形不变。
-dialog-overlay 哨第 22 轮 + modulepreload 哨第 25 轮零翻
-红。全桥绿窗 **1655P/0F rc=0**——清单 vs s492 set 恒等
-GONE 0（码态未变零增长预期兑现）。
+**状态**: Active——M2 切片 494 收口（**他流刀归因轮**：
+zero-web 流 input-events 刀 ecc820912 落树——getTargetRanges
+快照面 + Actions 编辑键分流（js_dom_shim part01 +185/
+part05 +16/testharness.rs +50，申报 223P→289P 净 +66 零回
+归），html-semantics 面**零稳定位移清偿**——「申报=实测」
+谱系第六例；账本
+evidence/2026-11-16-m2s494-input-events-knife-attribution.md）。
+**码态换新 = ecc820912**（HEAD 16f6d57a4 docs-only；runner
+换代 126960144 → 126976568 +16424）。刀时序注记：刀
+23:48:35 对端本地提交，s493 双腿窗口内 origin 未有——s493
+记录准确，s493 收口 pull 携入。vs s493 stable（8513）：
+**GONE 5 + NEW 1 + flips 0——非族键逐键恒等零稳定位移**。
+GONE 5 全族键（pagedown-pageup optional/detailed 双整文件
+键 leg1 T/leg2 F 相位摆 + optional 4 子测未发射——族发射
+形转整文件形，s464 谱带内）；**NEW 1 = onblur flaky 键双
+腿 Pass 回归 stable——第 2 例复核收案**（两例均单轮单腿
+stable 摇摆 P↔退↔P，带内 flaky 确认，3 例窗口观察维持）。
+stable 8509（8305P/198F/5T/1U）disagree 2 全族键。**P 集
+账本口径双腿双 8307P 持位第 16 轮**；picker 刀增益键 stable
+Pass 第 17 轮保持，checkmark 恒 F 带形不变。onblur 哨组
+10 键全回 stable 8P/2F（flaky 键回位闭环）；dialog-overlay
+哨第 23 轮 + modulepreload 哨第 26 轮零翻红。全桥绿窗
+**1655P/0F rc=0**——清单 vs s493 set 恒等 GONE 0（刀碰
+js_dom_shim 但桥面单测零增零破，+66 测试在 harness 面）。
 红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
 **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双
 腿零真 hang，零截断）。
-下一步：**守成巡查**（对账基线换 s493 stable 8513；他流入
-树归因轮或轻覆盖；onblur following-label 键按升级后 flaky
-观察项 3 例窗口观察；css 流 offset-position 刀实施中 + ZW-3
-三文件刀五文件 staged 收口临近信号持续，落树后按他流刀归
-因轮，join 实测为准）+ 候门决项等待用户拍板（video P1+P2
-立项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16 红块
-协同面（归 rendering 流记账）。门开随批落预案不变：簇 D 开
-→ customizable-select-styles.css ×47 随批落。
+下一步：**守成巡查**（对账基线换 s494 stable 8509；他流入
+树归因轮或轻覆盖；onblur flaky 键 3 例窗口观察维持；css 流
+offset-position 刀实施中 + ZW-3 三文件刀 origin 落地触发器
+预挂信号持续，落树后按他流刀归因轮，join 实测为准）+ 候门
+决项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
+rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
+门开随批落预案不变：簇 D 开 → customizable-select-styles.css
+×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 493 收口）——守成巡查轻覆
+> 盖轮第六轮：零入树同码态同二进制——码态 6b84507fe 恒等，
+> offset-position 刀实施中 + ZW-3 三文件刀五文件 staged 收
+> 口临近信号均未落树；账本
+> evidence/2026-11-15-m2s493-quiet-baseline-patrol.md）。
+> 码态 = 6b84507fe（HEAD 5584cf5db docs-only；runner
+> 126960144 恒同二进制）。leg1 8516（8307P/202F/6T/1U）+
+> leg2 8516（8306P/203F/6T/1U，双零截断），stable 8513
+> （8304P/202F/6T/1U）disagree 1。**vs s492 stable（8514）：
+> GONE 1 + NEW 0 + flips 0 + T 集恒等——非族键逐键恒等零
+> 稳定回归**。GONE = onblur checkbox following-label 键
+> leg2 单腿瞬态 F——**换腿第二例且本轮干净窗（对端零进程
+> load 0.53）负载归因不成立，升级在册 flaky 观察项**（:active
+> 清除时序抖动在册，3 例窗口观察；stable 摇摆非单向迁移不
+> 升级 bug 排查）。**P 集账本口径 leg1 8307P 持位第 15
+> 轮**；picker 刀增益键 stable Pass 第 16 轮保持。dialog-
+> overlay 哨第 22 轮 + modulepreload 哨第 25 轮零翻红。全
+> 桥绿窗 **1655P/0F rc=0**——清单 vs s492 set 恒等 GONE 0。
 
 > **▶ 承前（2026-11-15 M2 切片 492 收口）——守成巡查轻覆
 > 盖轮第五轮：零入树同码态同二进制——码态 6b84507fe 恒等，
