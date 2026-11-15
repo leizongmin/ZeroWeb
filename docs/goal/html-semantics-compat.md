@@ -2,26 +2,23 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 454 收口（守成巡查轻覆盖轮：他流入树仅
-wptfyi-css 流 docs（cf644d842，账本 evidence + master.md 两文件），
-零源码零语料，代码树与 s453 双腿树（ecaffa184）全同 → 空转核查纯
-基带复测；账本
-evidence/2026-11-15-m2s454-docs-inflow-patrol.md）。
-**上 session 429 断点遗产复用**：leg1（1943457c5 树，reflog
-provenance 在案，代码与 ecaffa184 全同）+ leg2 新跑。双腿
-leg1 8516（8306P/203F/6T/1U）/ leg2 8513（8306P/200F/6T/1U），
-**共享键状态分歧 disagree = 0**（双腿全一致形态），3 键 leg1-only
-全在 select-home-end 族主文件（End/Home/PageUp 子测，leg2 整文件 T
-相位）；stable 8513（8306P/200F/6T/1U，distinct 8511）。vs s453
-stable 零 GONE、恰 3 NEW 全数在册：**onblur following-label 键双腿
-一致 Pass 回入 stable（s453 观察哨解除回合确认；solo 冷启动恒 Fail
-的 pre-existing 上下文敏感定谳不变）** + select-home-end 族主文件
-文件级 T + detailed 文件级 F 两键相位入 stable。**P 集账本口径
-8306 回归**（s453 破缺 8305 一轮后回合）。基带结构不变。全桥绿窗
-**1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
-decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项
-静默哨维持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 455 收口（守成巡查轻覆盖轮：远端零入树
+零刀，HEAD = cc8499531 同码树基带复测——自 s453 双腿树四提交全
+docs-only，crates/tests/Makefile/scripts 零触碰；账本
+evidence/2026-11-15-m2s455-zeroinflow-patrol.md）。
+双腿（cc8499531 树）leg1 8516（8306P/204F/5T/1U）/ leg2 8516
+（8306P/203F/6T/1U），**键集恒等（单腿缺席 = 0）**，共享键分歧
+disagree = 1（detailed 文件级 F↔T 对冲出 stable）；stable 8515
+（8306P/203F/5T/1U，distinct 8513）。vs s454 stable 恰 2 GONE +
+4 NEW 全数 select-home-end 族：主文件文件级 T 两腿未发出 stable →
+主文件 4 子测 Fail（End/Home/PageDown/PageUp）双腿一致入 stable；
+detailed 文件级 F 腿间对冲出 stable。族相位轮换记账口径不变，非族
+键逐键零差。**P 集账本口径 8306 两轮连续恒等**；onblur 哨键双腿
+一致 Pass 在 stable（哨解除后首轮回位确认）。全桥绿窗 **1643P/
+0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
+onblur 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
+（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨维持
+（本轮双腿零 hang，grep 命中均为测试名假阳性）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -29,6 +26,17 @@ GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察
 s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 454 收口）——守成巡查轻覆盖轮：他
+> 流入树仅 wptfyi-css 流 docs 零刀基带复测，共享键零分歧
+> disagree = 0，onblur 观察哨解除回入 stable，P 集口径 8306 回归
+> （账本 evidence/2026-11-15-m2s454-docs-inflow-patrol.md）**：
+> 零源码零语料净变更轮（cf644d842 仅 docs）。上 session 429 断点
+> 遗产 leg1 复用（1943457c5 树，reflog provenance 在案）+ leg2 新
+> 跑：leg1 8516 / leg2 8513，共享键 disagree = 0，3 键 leg1-only
+> 全在族主文件子测；stable 8513（8306P/200F/6T/1U）vs s453 零
+> GONE、恰 3 NEW 全数在册（onblur 键 Pass 回入 stable + 族两文件
+> 级键相位入）。全桥绿窗 1643P/0F rc=0（+0）。
 
 > **▶ 承前（2026-11-15 M2 切片 453 收口）——双刀入树全量归因轮：
 > target expando（8ee02114e）+ 渲染流 g50（7bc31687d）html-semantics
