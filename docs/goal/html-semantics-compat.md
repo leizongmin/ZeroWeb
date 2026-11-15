@@ -2,31 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 478 收口（他流刀归因轮：css 流 WAAPI
-gCS 值刀 a47d03b62+5e2a00a63 落树清偿，html-semantics 面
-**首现真位移 = picker-icon 键 Fail→Pass 刀增益**（solo ×3 +
-双腿 + 前 session 残腿三重证实），**P 集账本口径 8306→8307**；
-账本 evidence/2026-11-15-m2s478-waapi-gcs-knife-attribution.md）。
-码态 = 5e2a00a63（HEAD b8ce976a8 docs-only）。双腿均 8516
-（8307P/202F/6T/1U 与 8305P/204F/6T/1U，distinct 各 8514），
-leg-only 0，disagree 2 = onblur following-label 双键（leg1 P ↔
-leg2 F，**哨窗第 3 次翻红**，solo Unstable 定谳非刀致）。stable
-8512（8303P/202F/6T/1U）。vs s477 stable GONE 3（onblur 双键出
-stable + 族整文件键）+ NEW 4（族 4 子测）+ flips 2（picker
-F→P 刀面 + detailed F→T 族相位谱），余键逐键恒等。checkmark
-姊妹键 sweep 恒 F + solo ×3 全 Pass = 双相位带键，非刀缺口。
-全桥绿窗 **1644P/0F rc=0**（filtered 2389 同值，清单 set 恒等
-——刀直改 bridge/callbacks/computed_style_cache 零钉面位移）。
-红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
-s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双腿
-零 hang）。
-下一步：**守成巡查**（他流入树归因轮或轻覆盖；ZeroWeb-3 编辑流
-part06.js 施工刀落树后按他流刀归因轮，join 实测为准）+ 候门决
-项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
-rendering 流 dialog 16 红块协同面（归 rendering 流记账）。门开
-随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
-随批落。
+**状态**: Active——M2 切片 479 收口（他流刀归因轮：编辑流 d35
+刀 70cb4d2f5 part06.js +65 plaintext-only 宿主 styling 命令门
+落树，html-semantics 面**零位移清偿**——预期兑现；账本
+evidence/2026-11-15-m2s479-part06-styling-gate-knife-attribution.md）。
+码态 = 70cb4d2f5（HEAD 0787def9c docs-only）。**双腿完全一致**
+均 8513（双 8307P/199F/6T/1U，distinct 8511，disagree 0 leg-only
+0，s477 以来首次全同形态），stable 8511（8305P/199F/6T/1U）。
+vs s478 stable GONE 4（族 4 子测）+ NEW 3（**onblur following-
+label 双键回位 stable Pass**，s478 第 3 次翻红后下轮回位兑现 +
+族整文件键）+ flips 1（族 detailed 整文件 T→F 相位谱），非族
+键逐键零差。**P 集账本口径 8307 持位**；picker-icon 刀增益键
+stable Pass 保持，checkmark 恒 F 相位带形不变。dialog-overlay
+哨第 8 轮 + modulepreload 哨第 11 轮零翻红。全桥绿窗 **1644P/
+0F rc=0**（filtered 2389 同值，清单 set 恒等——刀直改 shim
+part06 零钉面位移）。红池归账结构不变（簇 D 155 + 渲染域/
+decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观
+察项静默哨维持（双腿零 hang）。
+下一步：**守成巡查**（他流入树归因轮或轻覆盖；各流下刀落树后
+按他流刀归因轮，join 实测为准——半径申报与实测可破可兑，s478
+增益/s479 兑现两例在册）+ 候门决项等待用户拍板（video P1+P2
+立项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16 红块协同面
+（归 rendering 流记账）。门开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 478 收口）——他流刀归因轮：css
+> 流 WAAPI gCS 值刀 a47d03b62+5e2a00a63 落树清偿，html-semantics
+> 面**首现真位移 = picker-icon 键 Fail→Pass 刀增益**（solo ×3 +
+> 双腿 + 前 session 残腿三重证实），**P 集账本口径 8306→8307**；
+> 账本 evidence/2026-11-15-m2s478-waapi-gcs-knife-attribution.md）。
+> 码态 = 5e2a00a63（HEAD b8ce976a8 docs-only）。双腿均 8516
+> （8307P/202F/6T/1U 与 8305P/204F/6T/1U，distinct 各 8514），
+> leg-only 0，disagree 2 = onblur following-label 双键（leg1 P ↔
+> leg2 F，**哨窗第 3 次翻红**，solo Unstable 定谳非刀致）。stable
+> 8512（8303P/202F/6T/1U）。vs s477 stable GONE 3（onblur 双键出
+> stable + 族整文件键）+ NEW 4（族 4 子测）+ flips 2（picker
+> F→P 刀面 + detailed F→T 族相位谱），余键逐键恒等。checkmark
+> 姊妹键 sweep 恒 F + solo ×3 全 Pass = 双相位带键，非刀缺口。
+> 全桥绿窗 **1644P/0F rc=0**（filtered 2389 同值，清单 set 恒等
+> ——刀直改 bridge/callbacks/computed_style_cache 零钉面位移）。
 
 > **▶ 承前（2026-11-15 M2 切片 477 收口）——守成巡查轻覆盖轮：
 > 零入树同码树基带复测，双腿完全一致 disagree 0 leg-only 0，
