@@ -2,25 +2,24 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 472 收口（守成巡查轻覆盖轮：远端零入
-树零刀，HEAD = 0818d416a 同码树基带复测；双腿完全一致
-disagree=0，P 集 8306 回位兑现，dialog-overlay 哨第 2 轮无再翻
-红；账本
-evidence/2026-11-15-m2s472-zeroinflow-patrol.md）。
-双腿（码态 = WAAPI 门刀已清偿组合态）8516/8516（双 8306P/203F/
-6T/1U，distinct 各 8514），leg-only 0，**disagree = 0**；族 5 键
-回全形态在册（4 子测 F + detailed T 双腿一致，整文件键双腿缺
-席）；stable 8516（8306P/203F/6T/1U，distinct 8514）。vs s471
-stable 恰 1 GONE（族整文件 T）+ 5 NEW（detailed T + 4 子测 F 回
-入全族内 + dialog-overlay P 哨键回位），共享键零翻转，非族键逐
-键零差。**P 集账本口径 8306 回位兑现**（刀后两轮 P 集无真位
-移）。**dialog-overlay 哨第 2 轮无再翻红**（单次翻红判定维持）+
-**modulepreload 哨第 4 轮无再翻红**（44/45 腿）。onblur 哨键组
-10 键双腿一致 Pass 在 stable（哨解除后第十八轮）。全桥绿窗
-**1643P/0F rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/
-decoder 42 + onblur 2）。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察
-项静默哨维持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 473 收口（守成巡查轻覆盖轮：远端零入
+树零刀，HEAD = 46551ee73 同码树基带复测；双腿完全一致
+disagree=0，P 集 8306 第二轮持位，detailed 族键 stable 首现 Fail
+形态入册——族全变动限相位谱，双观察哨零翻红；账本
+evidence/2026-11-15-m2s473-zeroinflow-patrol.md）。
+双腿（码态 = WAAPI 门刀已清偿组合态）8513/8513（双 8306P/200F/
+6T/1U，distinct 各 8511），leg-only 0，**disagree = 0**；族形态 =
+4 子测双腿缺席 + detailed 双腿一致 Fail（stable 首现 F 位形）+
+整文件键双腿 Timeout；stable 8513（8306P/200F/6T/1U，distinct
+8511）。vs s472 stable 恰 4 GONE + 2 NEW 全数族内，per-key 1 翻
+转 = detailed T→F（族键形态翻转），非族键逐键零差。**P 集账本
+口径 8306 第二轮连续**（刀后三轮无真位移）。**dialog-overlay 哨
+第 3 轮无再翻红** + **modulepreload 哨第 5 轮无再翻红**（46/47
+腿）。onblur 哨键组 10 键双腿一致 Pass 在 stable（哨解除后第十
+九轮）。全桥绿窗 **1643P/0F rc=0**（+0）。红池归账结构不变（簇 D
+155 + 渲染域/decoder 42 + onblur 2）。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提示，不重
+复通知）。hang 观察项静默哨维持（本轮双腿零 hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -29,6 +28,17 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 472 收口）——守成巡查轻覆盖轮：
+> 零入树零刀同码树基带复测，双腿完全一致 disagree=0，P 集 8306
+> 回位兑现，dialog-overlay 哨第 2 轮无再翻红（账本
+> evidence/2026-11-15-m2s472-zeroinflow-patrol.md）**：HEAD =
+> 0818d416a 同码树。双腿 8516/8516（双 8306P/203F/6T/1U，distinct
+> 各 8514）leg-only 0，族 5 键回全形态在册；stable 8516（distinct
+> 8514）vs s471 恰 1 GONE（族整文件 T）+ 5 NEW（族 detailed T + 4
+> 子测 F + dialog-overlay P 哨键回位），flips=0。全桥绿窗
+> 1643P/0F rc=0（+0）。modulepreload 哨第 4 轮无再翻红（44/45
+> 腿）；onblur 哨第十八轮逐行全同。
+>
 > **▶ 承前（2026-11-15 M2 切片 471 收口）——他流刀归因轮：css
 > 流 WAAPI 门刀 107bcd935 落树 html-semantics 面零位移清偿，P 集
 > 刀前刀后恒等 8306（账本
