@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5597 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=481f319cf 本流 R5596 账），码态 6c21880ac 恒等 corpus 按先例跳过，wpt-data 零写入；②WPT 批探针一次成功无瞬断，版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：ZeroWeb-2 HEAD=919cbf953 恒等（仅缺自身 2fb8e10c6 docs 一位，merge-base 复证已持）；ZeroWeb-3 HEAD=b8a57c694 恒等＋M3-B/C 六态恒等（part03.js 维持清退＝稳态确认）；cronjob HEAD=2e972ffc9 恒等（M webview.rs＋两碎片未变）；本树巡查静默；并发核查＝自匹配过滤（本 turn 进程＋瞬态退出对），无外来 /tmp/r5597 工件＝无同树双写）** **（2026-11-15）**
+>
+> - **结果**：R5596 下一步①②③落轮（空转核查轮，零代码变更，三候选工作源全空转）。本轮零实质变化：三 clone 与 R5596 观察恒等，唯一注记＝ZeroWeb-3 M3-B/C 六态稳态确认（七→六后未再震荡）＋ZeroWeb-2 落后自身 docs 一位（已持）。
+> - **验证**：窗口空（对账 481f319cf）＋码恒等 diff 实证空（6c21880ac..HEAD 五扩展名清点）；探针一次成功（rc=0 无瞬断）11 tags 完整、latest=v1.10；三 clone 状态在案；基线快照 /tmp/r5595/fails-r5595.txt（999F@af012f775，码态=6c21880ac）在位；零源码变更（fmt/clippy/product-smoke/bench-gate 不触发，corpus 按树恒等先例跳过）。
+> - **挂账**：**销账**：R5596 下一步①②③（本轮落轮）。**新增**：无。**维持**：全谱系同 R5596 条（含 M3-B/C 六态稳态注记、共享面叠加核验义务现含 g49 viewport 穿线＋6c21880ac part01f.js 占用）。
+> - **下一步 R5598**：①对端再落地时逐 commit `--stat`＋全量 corpus A/B（基线=/tmp/r5595/fails-r5595.txt 999F@af012f775（码态=6c21880ac ip C3/C6 刀树，tao-145/147/150/154＋bc-dynamic-002 相位带案已注明）本树环境口径，树恒等轮按先例跳过；A/B 前核环境一致性三项：零源码变更、wpt-data 未被对端写入、runner 二进制来源核验；M3-B/C 落地时核共享面叠加（part01f.js 已被 6c21880ac 占用＋g49 viewport 穿线）；cronjob anchor 语料落共享批时同核；对端 wptfyi-css 面 A/B 零移动属预期不误报）。②三源核查续（WPT 批探针、⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案点名核验）。③对端观察（M3-B/C 编辑-编译循环落地窗口与恰集巡查、html-semantics 脚本 M 态、wptfyi-css position 细形续刀与分面语义一致性、cronjob 组F 续刀与 untracked 碎片、树碰撞复发巡查——巡查须过滤自匹配）。
+
 > **▶ R5596 三源空转核查轮（0 net code：①fetch 窗口 6398b363f..2fb8e10c6 四笔全 docs（75a5f4451 s448 收口＋fb28e80d8/2fb8e10c6 wptfyi-css DC-3 补强与控制面同步）＋919cbf953 merge 气泡（对端 wptfyi-css 流 pull 未 rebase 合入 s448 线，全 docs；rendering-compat.md 在新 tip 字节恒等＝零外来写入）＝渲染面零对象，码态与 r5595 基线恒等（6c21880ac）corpus 按先例跳过；②WPT 批探针 90s 超时（rc=143）＋空返回 rc=0 瞬断＋三试成功＝R5524 系形态，版本序止于 v1.10＝无新批次、零新点名；③对端观察：ZeroWeb-2 前进至 919cbf953/2fb8e10c6（merge 拉合 s448 线，working tree 净）；ZeroWeb-3 HEAD 恒等但 M3-B/C M 态七→六——part03.js 退出 M 列（churn 持续未落地）；cronjob 恒等（M webview.rs＋两碎片未变）；本树巡查静默；并发核查＝本 turn --resume 进程自匹配＋两瞬态 pid 已退出、无外来 /tmp/r5596 工件＝无同树双写）** **（2026-11-15）**
 >
 > - **结果**：R5595 下一步①②③落轮（空转核查轮，零代码变更）。实质观察两条＝ZeroWeb-3 M3-B/C 七→六（part03.js 清退出 M 列，恰集余 js_dom_bridge.rs/callbacks.rs/script_gen.rs/part01.js/part06.js/testharness.rs）＋对端 merge 式 pull 气泡（919cbf953，docs-only 无渲染面，wptfyi-css 流 git 卫生注记不入账义务）。
