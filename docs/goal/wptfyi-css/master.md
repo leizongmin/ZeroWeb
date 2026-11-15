@@ -6,30 +6,32 @@
 四天净增 **+10,408**（[DC-3 刷新证据](evidence/2026-11-15-dc3-snapshot-refresh.md)）；
 当前 css-images **3144P/71F**、css-values 4185P/1402F/6T（g49-b1）；
 css-anchor-position anchor 首覆盖 12061P/792F/4T（265 页/12857 案）。
-**`target` expando 刀候选定谳（11-15 三轮，同日）**：探针矩阵定谳 DC-3
-masking 崩溃根因 = shim 元素属性 set 陷阱对属性名 `target`（已知 HTML
-属性名）的对象值走 setAttribute 串化（`a.target=el` 回读 String；任意
-他名 expando 对象值全部正常）→ 共享插值 harness `:277` set/:373/:451
-读两条路径全炸。爆炸半径 **337 页 / 56,365 上游子测（占验收线余
-~119,496 的 ~47%）**：transforms 32 页 / backgrounds 30 / motion 22 /
-gaps 21 / masking 21 / values 18 / fonts 16 / grid 16 / sizing 16…
-转化率（子测转真实 pass/fail 后的通过率）须 A/B 实测。刀规格与探针页
-见 [evidence 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
-**站点已行级定位（11-15 四轮）**：set=part05.js R3042 守卫仅按名判
-（`_REFLECTED_STRING_FLAT` 含 target 无 tag 限定，`name` 臂有 tag 限定
-先例可镜像）；get=part04/part05 expando 回读多处须先查再落 reflected；
-最小切片 target 真反射 tag 集 {a,area,form,link,base}。
+**`target` expando 刀已落地（11-15 六轮，提交 8ee02114e）**：part01
+`_reflectedStringAttrOn` tag 门（真反射集 {a,area,form,link,base}）+
+part05 set 守卫 / part04 get expando 回读优先（原始值 R3069 面不动）。
+A/B（B0=results-texp-b0/B1=results-texp-b1 探针页剔除）：css-masking
+126P→**615P 净 +489、0 页回归**（61/61 保序），21 崩页转真实子测、分母
+与 chrome 逐页精确对齐（5,818 上游子测解锁）；跨组抽验 transforms/
+motion/backgrounds 三页同转真实子测（12P/288、0P/144、7P/196——转化率
+= 插值引擎能力残差）。**下一步：按 §3 分布 337 页逐组实测转化率**
+（masking 已全量），残差按失败签名分桶（WAAPI 支持门/插值语义）开刀。
+见 [evidence 2026-11-15-target-expando-shim-knife](evidence/2026-11-15-target-expando-shim-knife.md)。
+规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
+2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
+**g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口
+thread_local 单源 + vertical-align `<length-percentage>` 三层
+（parse/computed/inline 布局 %×line-height），css-values
+viewport-units-css2-001 残 12F（border-spacing 4 + vertical-align 8）
+目标面；calc-size 链 WIP（8 文件）在 stash@{0} 隔离待 A/B 后还原另刀。
 **DC-3 证据补强（11-15 二轮，同日）**：①语料面定谳——ci-shards.yml 已接线
 65 套件覆盖全部主要 css 组，剩余 ~119k 缺口 = 引擎能力面（未接线零散组仅
 ~1.1k，语料杠杆已耗尽，刀链是唯一主杠杆）；②快照树态 ∈ [g41, g42)（12 组
 CI vs 本地对账 |Δ|≤33），当前 css 面真值 ≈ **64.8k**；③masking 6,281 缺口
 再分解：chrome 65 载子测文件共 6,398 子测，本地镜像 573 文件零缺，但 22 页
 setup 即崩（共享插值 harness `createTargetContainer` target `.style`
-undefined 单根因）堵 **5,859/6,398（92%）**——单根因刀优先级显著上调，
-探针件已备（`zz-interpolation-testcommon-probe.js` `ctc:` 日志点，换一
-masking 页即定谳）；该 crash 面预计同压 transforms/motion/fill-strokes 的
-interpolation 页（待同法抽查）。见 [DC-3 刷新证据 §3/§4/B′](evidence/2026-11-15-dc3-snapshot-refresh.md)。
-g50（calc-size 链 + 视口残 12F + box-shadow 视口真值）在途未计。
+undefined 单根因）堵 **5,859/6,398（92%）**——单根因刀优先级显著上调。
+该 crash 面已由 target expando 刀解除（见上）。见 [DC-3 刷新证据
+§3/§4/B′](evidence/2026-11-15-dc3-snapshot-refresh.md)。
 **g49 完成（11-15）**：GCS/媒体门视口真值对齐刀——GCS 快照通道四处与渲染
 `<style media>` 门恒 1280×800，而 runner/宿主实视口 800×600（shim 安装期
 `set_pending_layout_viewport`）→ viewport 单位（10vw→128px≠80px）与媒体门
