@@ -72,9 +72,11 @@ motion/values/fonts 0/0/0，合计 +198/0/0 零回归**。教训三则：corpus 
 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
 **提交门禁 make test（11-15，mkt3/mkt6 双跑一致）**：fmt/clippy 绿；workspace
 腿 135P+1F——`service_worker_manager::module_update_compares_static_dependency_bytes`
-在册伪红第四例（es_module 具名导入装 globalThis getter 撞 84a48833d 老钉
-`globalThis.value` 赋值抛 TypeError，script-sandbox 导入绑定面，与本刀零代码
-路径，修复归 script-sandbox 流）；Makefile 补建 zero-browser 防
+真实代码红非伪红（11-15 纠类；es_module 具名导入装 globalThis getter 撞
+84a48833d 老钉 `globalThis.value` 赋值抛 TypeError，script-sandbox 导入绑定
+面，与本刀零代码路径，修复归 script-sandbox 流；红窗 11-08 s345 打开，老钉
+08-20 入树后因首败截断+缺件遮蔽在 make test 面从未执行过、17:03 首暴露）；
+Makefile 补建 zero-browser 防
 image_batch_e2e 缺件伪红（清库必现形态）；renderer/browser/GPU 剩余腿
 companion 构建补跑进行中，细目见 evidence jsanim 刀文档验证节。
 **g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口

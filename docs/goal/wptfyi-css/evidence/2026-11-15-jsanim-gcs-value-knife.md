@@ -87,15 +87,19 @@ scale got '1' / translate got '0px'——apply 成功故 canonicalize None 兜�
   转移已证无孤儿页污染）。values/fonts 页集 256/163 双边相等、motion 207=207、
   backgrounds transcript 1251→1254（同为树增长）；B0 values/fonts transcript
   尝试数偏大系旧批重试协议差，库存以页级 JSON 为准。
-- 提交门禁 make test（mkt3 全量，16:47）：fmt/clippy 绿；workspace 腿
+- 提交门禁 make test（mkt3 16:47 / mkt6 16:57 双跑一致）：fmt/clippy 绿；workspace 腿
   135P+**1F**——`service_worker_manager::module_update_compares_static_dependency_bytes`
-  在册伪红第四例：es_module 重写器把具名导入绑定为 **globalThis getter**
+  真实代码红（11-15 纠类，非本刀引入非回归）：es_module 重写器把具名导入绑定为 **globalThis getter**
   （es_module.rs:1732 设计注释「具名/默认导入绑定安装 globalThis getter」），
   84a48833d（8-20）老钉主脚本 `globalThis.value = value` 赋值撞 getter-only
   抛 TypeError（脚本 :23）→ ScriptFailed(Runtime) → 永不 Activated 超时。
   SW 沙箱独立 prelude 不装 DOM shim，与 engine 动画刀零代码路径；归
   script-sandbox 模块波（s345/s418/module-import-meta 面），修复归
-  script-sandbox 流（导入绑定应模块局部作用域化，非全局面）。workspace 腿
+  script-sandbox 流（导入绑定应模块局部作用域化，非全局面）。红窗 11-08
+  （f9cb4db3a s345 引入 getter 安装）打开：老钉 08-20 入树后在 make test 面
+  从未执行过——test-guard compile-first 对首败 artifact 截断循环 + 缺件
+  伪红遮蔽 page-runtime 套件（近轮 /tmp 全量日志 grep 无 zero_page_runtime
+  Running 行），17:03 mkt6 首暴露。workspace 腿
   之后剩余腿（renderer bin/lib、browser bin/tests、GPU 探测）按账本模式
   逐腿补跑（zw-jsanim-legs 单元，companion 构建前置防 disk-guard 部分清库
   缺件伪红——jsanim5 腿已实证 disk-guard rm 与并发 cargo 竞争「Directory
