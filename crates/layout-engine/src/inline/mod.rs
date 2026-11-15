@@ -2799,6 +2799,18 @@ impl InlineFormattingContext {
         matched == sizes.len()
     }
 
+    /// g50：`<length-percentage>` 抬升量解析（CSS 2.1 visudet propdef
+    /// <https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align>）——
+    /// percentage 相对本元素 line-height；其余交 `resolve_length`（em/ch 按本
+    /// run font-size；vw/vh 与本文件 line-height 既有 None-None 口径一致，
+    /// FIXME(viewport)：inline 布局无视口上下文）。
+    fn va_length_shift(lv: &LengthValue, font_size: f32, line_height: f32) -> f32 {
+        match lv {
+            LengthValue::Percentage(p) => (p / 100.0) as f32 * line_height,
+            _ => zero_style_system::computed::resolve_length(lv, font_size as f64, None, None) as f32,
+        }
+    }
+
     /// 根据每个片段的 vertical-align 值，计算其在行盒内的 y 偏移量。
     ///
     /// 对齐规则（基于行盒高度 line_height 和片段高度 fragment_height）：
@@ -3101,7 +3113,7 @@ impl InlineFormattingContext {
             }
 
             for run in &mut line.runs {
-                run.y = match run.vertical_align {
+                run.y = match &run.vertical_align {
                     VerticalAlignValue::Baseline => {
                         if run.font_size > 0.0 {
                             // 文本运行：保持原有计算方式（片段底部对齐到基线）
@@ -3152,6 +3164,16 @@ impl InlineFormattingContext {
                         // 上标：基线上移 font_size × 0.3
                         let offset = run.font_size * 0.3;
                         baseline_y - run.height - offset
+                    }
+                    // g50：`<length-percentage>` 抬升臂（CSS 2.1 visudet propdef
+                    // <https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align>：
+                    // 盒基线相对父基线上移该距离，解析见 [`Self::va_length_shift`]）。
+                    // 原子盒（font_size==0 哨兵）anchor 取 baseline 字段，与 Baseline
+                    // 臂对齐。
+                    VerticalAlignValue::Length(lv) => {
+                        let d = Self::va_length_shift(lv, run.font_size, line_height);
+                        let anchor = if run.font_size > 0.0 { run.height } else { run.baseline };
+                        baseline_y - anchor - d
                     }
                 };
                 // R1720：inline-block 垂直 margin 不下移 border box（chromium 行为：margin 扩
@@ -3252,6 +3274,12 @@ impl InlineFormattingContext {
                     }
                     VerticalAlignValue::Super => (0.3 * run.font_size, 0.0),
                     VerticalAlignValue::Sub => (0.0, 0.3 * run.font_size),
+                    // g50：Length 抬升的行盒围合——正 d 向上扩、负 d 向下扩，与
+                    // Super/Sub 同加性近似口径（CSS 2.1 §10.8.1 行盒须容纳偏移盒）。
+                    VerticalAlignValue::Length(ref lv) => {
+                        let d = Self::va_length_shift(lv, run.font_size, line_height);
+                        if d > 0.0 { (d, 0.0) } else { (0.0, -d) }
+                    }
                     _ => (0.0, 0.0),
                 };
                 if up > top_extend {

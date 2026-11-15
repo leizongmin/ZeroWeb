@@ -291,14 +291,16 @@ fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 /// Counter、Content、Break、Column、Appearance 等高级属性。
 /// 返回 true 表示成功设置。
 /// R1417：把 background-position 的长度值（任意单位）解析为 px。
-/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 viewport（apply 无 viewport
-/// 上下文，传 None 用 resolve_length 默认，vh/vw 在 bg-position 极罕见）。
+/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 apply 期视口真值
+/// （g50 thread_local 单源，[`crate::computed::active_viewport`]；未 set 时
+/// 保持 resolve_length 既有回落）。
 fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
     let fs = match &style.font_size {
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
     };
-    crate::computed::resolve_length(&lv, fs, None, None) as f32
+    let (vw, vh) = crate::computed::active_viewport();
+    crate::computed::resolve_length(&lv, fs, vw, vh) as f32
 }
 
 fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
@@ -306,7 +308,8 @@ fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &Comp
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
     };
-    crate::computed::resolve_length(lv, fs, None, None) as f32
+    let (vw, vh) = crate::computed::active_viewport();
+    crate::computed::resolve_length(lv, fs, vw, vh) as f32
 }
 
 /// 将解析后的 `<position>` 值（`background-position` / `object-position` 共用同一语法）
@@ -2796,5 +2799,70 @@ mod r4534_border_shape_tests {
             style.border_shape,
             zero_css_parser::values::BorderShapeValue::Fill { .. }
         ));
+    }
+}
+
+#[cfg(test)]
+mod g50_viewport_slot_tests {
+    use super::*;
+
+    /// g50：急切 px 化臂视口真值——set_viewport 后 border-spacing `10vw`/`10vh`
+    /// 折 800×600 真值（driving: viewport-units-css2-001 border-spacing 4 腿，
+    /// 旧实现走 None 回落 1440×900 折 144/90）。
+    #[test]
+    fn border_spacing_resolves_viewport_truth() {
+        let mut sys = crate::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut style = ComputedStyle::default();
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vw",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 80.0);
+        assert_eq!(style.border_spacing.vertical, 80.0);
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vh",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 60.0);
+        // vmin/vmax 按 min/max 轴
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vmin 10vmax",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 60.0);
+        assert_eq!(style.border_spacing.vertical, 80.0);
+        // px 直通不受影响
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "5px 10px",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 5.0);
+        assert_eq!(style.border_spacing.vertical, 10.0);
+    }
+
+    /// g50：box-shadow 偏移同走 resolve_effect_length——vw 真值生效。
+    #[test]
+    fn box_shadow_offset_resolves_viewport_truth() {
+        let mut sys = crate::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut style = ComputedStyle::default();
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "box-shadow",
+            "10vw 10vh 0 0 red",
+            None
+        ));
+        assert_eq!(style.box_shadow.len(), 1);
+        assert_eq!(style.box_shadow[0].offset_x, 80.0);
+        assert_eq!(style.box_shadow[0].offset_y, 60.0);
     }
 }

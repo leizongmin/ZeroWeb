@@ -715,7 +715,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "hyphens" => hyphens_to_css(&style.hyphens),
         "line-break" => line_break_to_css(&style.line_break),
         // ── vertical-align / unicode-bidi / empty-cells（R2729）── 单值关键字枚举。
-        "vertical-align" => vertical_align_to_css(&style.vertical_align),
+        "vertical-align" => vertical_align_to_css(&style.vertical_align, font_size_px),
         "unicode-bidi" => unicode_bidi_to_css(&style.unicode_bidi),
         "empty-cells" => empty_cells_to_css(&style.empty_cells),
         // ── caret-color / accent-color（R2730）── CSS UI 颜色（auto | <color>，复用 R2705 颜色解析）。
@@ -4177,9 +4177,12 @@ fn line_break_to_css(l: &LineBreakValue) -> String {
 }
 
 /// vertical-align：CSS 行内/表格单元格垂直对齐单值序列化。初值 baseline。
-/// ZeroWeb enum 仅关键字（无 `<length>`/`<percentage>` 变体）——diverge：CSS 规范允许，Chromium 对
-/// `5px`/`50%` 返 used 值，ZeroWeb 无 length 变体存储故无法表达（解析层丢弃，本序列化如实反映枚举）。
-fn vertical_align_to_css(v: &VerticalAlignValue) -> String {
+/// g50 清偿既有 diverge（曾注「enum 仅关键字、length 形解析层丢弃」）：CSS 2.1
+/// propdef 允许 `<length-percentage>`（css2 visudet
+/// <https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align>），computed
+/// 按 [`length_to_css`] 口径——长度绝对化为 px（viewport 取 gcs_viewport_dims
+/// 真值）、百分比保持原形（对齐 Chromium oracle `50%`）。
+fn vertical_align_to_css(v: &VerticalAlignValue, font_size_px: f64) -> String {
     match v {
         VerticalAlignValue::Baseline => "baseline",
         VerticalAlignValue::Top => "top",
@@ -4189,6 +4192,7 @@ fn vertical_align_to_css(v: &VerticalAlignValue) -> String {
         VerticalAlignValue::TextBottom => "text-bottom",
         VerticalAlignValue::Sub => "sub",
         VerticalAlignValue::Super => "super",
+        VerticalAlignValue::Length(lv) => return length_to_css(lv, font_size_px),
     }
     .to_string()
 }
