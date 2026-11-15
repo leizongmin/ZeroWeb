@@ -14,11 +14,16 @@ sc 非 text 直接 return、树零变，select-delete 语义缺失），**事件
 语料面 P 473→471 净 -2**——每案 initializeTest 使未合流态恒存，打通派发后
 多案上下文暴露 **got=2 双派**（div-p 案 0→2、O1 isolated 单收 corpus 双收），
 **与既有 got=2 342F 集群机制同源嫌疑高**。shim 改动已 `git checkout` 回滚
-（基线二进制 N1 复现丢失态确认零净码变）。下轮刀序：①双派根因
-（got=2 342F 同源嫌疑，回灌计数探针分辨 listener 叠挂 vs 双代理双表——
-**先修双派再落事件丢失刀**，否则正确性修复会把 got=0 成批变 got=2）
-②元素锚 range 选区删除语义（820F 主簇）③空 range beforeinput 静默臂
-（语义已定谳 `checkGetTargetRangesOfInputOnDoNothing`，小刀独立可落）。
+（基线二进制 N1 复现丢失态确认零净码变）。**d40 B3P 注入语料探针补测**：
+hookCalls=72 ≤ cases=86（impl 无双调实锤、webview 重试假设排除）、双派案簇 =
+join/br 空白形与 got=0 同簇（同簇案跨环境呈现 got=0/got=2，非两个独立 bug）、
+注入敏感性定谳（hook 跨包装使家族判定漂移——计数探针有效、行为探针失真）、
+listener 表= `_listenerStore['@'+handle]` 键存储 + `_zwQueryWrapIdentity`
+身份桥定位。下轮刀序：①双派根因（**先修双派再落事件丢失刀**，否则正确性
+修复会把 got=0 成批变 got=2）——跨案 dump `_listenerStore` 键序列 + gEditor
+handle 轨迹，分辨同 handle 双 listener vs 双 handle 双表 ②元素锚 range
+选区删除语义（820F 主簇）③空 range beforeinput 静默臂（语义已定谳
+`checkGetTargetRangesOfInputOnDoNothing`，小刀独立可落）。
 证据见 [b3-gtr-event-loss-diagnosis](evidence/2026-11-16-b3-gtr-event-loss-diagnosis.md)。
 
 **d38 gtr 家族双根因刀（查询链形 overlay 匹配 + runner 变体展开）**：

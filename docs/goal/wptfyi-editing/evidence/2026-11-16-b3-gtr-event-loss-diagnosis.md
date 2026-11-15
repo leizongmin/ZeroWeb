@@ -37,6 +37,33 @@ N2 二触发:    same=true sameNode=true（合流）→ bi=1 input=1
 
 **语料面双派机制**（未定谳，下轮续）：每案 initializeTest 写 innerHTML → query 家族视图滞后 → **每案都回灌**（非仅首案）→ 未合流态恒存；修复打通派发后多案上下文暴露双收（div-p 案 0→2）。与既有 got=2 342F 集群（isolated 单收、corpus 双收）**机制同源嫌疑高**——打通正确性修复会把更多 got=0 案变成 got=2，**先修双派再落事件丢失刀**。
 
+## d40 补测：B3P 注入语料探针（双派分辨）
+
+`zz-probe-b3p.html`（backspace.tentative 完整副本 + `__zw_ce_delete` hook 计数 +
+每案事件账 + 末尾汇总 dump，基线二进制跑）：
+
+```
+hookCalls=72 cases=86 bi0=47 bi1=24 bi2plus=15
+firstBi2 = abc<br> []def / div>abc<p>[]def<br>ghi / div><b>abc</b><p><b>[]def</b>
+         / <div><p>abc</p>[]def</div> / <div><p>abc   </p>   []def</div>
+```
+
+结论四条：
+
+1. **impl 无双调实锤**：hookCalls=72 ≤ cases=86（每案至多一次 shim 调用、14 案
+   连 wrapper 都未进 = probe 判 '' 走 TextActionState）——webview 重试假设排除，
+   双派在派发/listener 层。
+2. **双派案簇 = join/br 空白形**，与 got=0 集群同形——同簇案在不同环境分别呈现
+   got=0（基线+未注入）/ got=2（修复二进制或注入后），**不是两个独立 bug**。
+3. **注入敏感性（方法学约束）**：hook 包装 `orig.call(this, sel)` 跨包装调用使
+   家族判定漂移——基线二进制下注入即出 bi=2（未注入基线同案 got=0）。**计数类
+   探针数据有效、行为类探针失真**：后续探针设计必须分离计数与行为。
+4. **listener 表机制定位**：listener 按 `_listenerStore['@'+handle]` 键存储
+   （part01.js:58），sel↔handle 身份桥 = `_zwQueryWrapIdentity`
+   （part05.js:2027，handle 桥 + evict 回收臂）——双派/零派机制必在 handle 键
+   层（换代重绑轨迹）。下轮探针：跨案 dump `_listenerStore` 键序列 + corpus
+   gEditor 的 handle 轨迹，分辨「同 handle 双 listener」vs「双 handle 双表」。
+
 ## 回滚确认
 
 shim `git checkout` 后重建基线二进制：N1 bi=[] input=0（基线丢失态）、N2 bi=1——回滚干净，工作树零净码变。探针文件（zz-probe-b3bi/b3k/b3l/b3m/b3n/b3o，gitignored）留本地备查。
