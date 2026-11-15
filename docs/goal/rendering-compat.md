@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5617 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=445815123 本流 R5616 账），码态 b7ecf7864 恒等 corpus 按先例跳过，wpt-data 零写入（基线批后 find -newermt 零命中实证）；②WPT 批探针一次成功无瞬断（tail-1 判定式），版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：三 clone 与 R5616 逐项恒等（ZeroWeb-2=d37cb3a99 origin tip 已持 clean；ZeroWeb-3=b8a57c694 六态 M 恰集恒等稳态第十确认轮未落地＋dc2-b1-slice3 evidence untracked 维持；cronjob=2e972ffc9 M webview.rs＋两碎片未变）；本树巡查静默；无外来 /tmp/r5617 工件＝无同树双写）** **（2026-11-15）**
+>
+> - **结果**：R5616 下一步①②③落轮（空转核查轮，零代码变更）。本轮零实质变化：三 clone 与 R5616 观察逐项恒等（稳态第四连续轮，M3-B/C 六态第十确认）。
+> - **验证**：窗口空（对账 445815123）＋码恒等 diff 实证空（b7ecf7864..HEAD 五扩展名清点仅 54ad2862c website 周报两文件在案账）；探针一次成功（rc=0 无瞬断，tail-1 非空判定式）11 tags 完整、latest=v1.10；三 clone 状态在案；wpt-data 基线批后零写入（find -newermt 零命中）；基线快照 /tmp/r5603/fails-r5603.txt（995F，码态=b7ecf7864，tao-128/130＋tao-145/147/150/153/154＋bc-002 相位带案已注明）在位；零源码变更（fmt/clippy/product-smoke/bench-gate 不触发，corpus 按树恒等先例跳过）。
+> - **挂账**：**销账**：R5616 下一步①②③（本轮落轮）。**新增**：无。**维持**：全谱系同 R5616 条（M3-B/C 六态稳态第十确认、落地义务不变；flex-va 刀跨流零位移旁证维持）。
+> - **下一步 R5618**：①对端再落地时逐 commit `--stat`＋全量 corpus A/B（基线=/tmp/r5603/fails-r5603.txt 995F（码态=b7ecf7864＝26272fa25 双刀树＋flex-item va guard，tao-128/130＋tao-145/147/150/153/154＋bc-dynamic-002 相位带案已注明）本树环境口径，树恒等轮按先例跳过；A/B 前核环境一致性三项：零源码变更、wpt-data 未被对端写入、runner 二进制来源核验；M3-B/C 六态落地时核共享面叠加（part01f.js 6c21880ac＋g49 viewport 穿线＋8ee02114e part01 三重占用）；cronjob anchor 语料落共享批时同核；对端 wptfyi-css 面 A/B 零移动属预期不误报）。②三源核查续（WPT 批探针 tail-1 非空判定式、⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案点名核验）。③对端观察（M3-B/C 编辑-编译循环落地窗口与恰集巡查、html-semantics s460 后续与脚本 M 态、wptfyi-css WAAPI 门刀与 §3 转化率续报、cronjob 组F 续刀与 untracked 碎片静态观察、树碰撞复发巡查——巡查须过滤自匹配）。
+
 > **▶ R5616 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=0ac2078b5 本流 R5615 账），码态 b7ecf7864 恒等 corpus 按先例跳过，wpt-data 零写入（基线批后 find -newermt 零命中实证）；②WPT 批探针一次成功无瞬断（tail-1 判定式），版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：三 clone 与 R5615 逐项恒等（ZeroWeb-2=d37cb3a99 origin tip 已持 clean；ZeroWeb-3=b8a57c694 六态 M 恰集恒等稳态第九确认轮未落地＋dc2-b1-slice3 evidence untracked 维持；cronjob=2e972ffc9 M webview.rs＋两碎片未变）；本树巡查静默；无外来 /tmp/r5616 工件＝无同树双写）** **（2026-11-15）**
 >
 > - **结果**：R5615 下一步①②③落轮（空转核查轮，零代码变更）。本轮零实质变化：三 clone 与 R5615 观察逐项恒等（稳态第三连续轮，M3-B/C 六态第九确认）。
