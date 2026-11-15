@@ -1445,6 +1445,13 @@
             || prop === 'children' || prop === 'firstElementChild' || prop === 'lastElementChild'
             || prop === 'childElementCount' || prop === 'previousElementSibling'
             || prop === 'nextElementSibling'
+            // WAAPI 门（插值 harness 解锁轮）：`'animate' in el` 实例面——R2965
+            // animate/R3067 getAnimations 函数在 get trap 面，has 白名单缺列使
+            // `in` 恒 false（interpolation-testcommon.js:179 以
+            // `'animate' in Element.prototype` 判 Web Animations face；原型面
+            // 定义在 part03 `_makeAnimation` 后置块）。R317/R152 同款先例形态。
+            // https://drafts.csswg.org/web-animations-1/#dom-animation-animate
+            || prop === 'animate' || prop === 'getAnimations'
             // media-elements M1 切片 3：HTMLMediaElement/HTMLTrackElement IDL 属性 `in` 可见性
             //（WPT crossOrigin.html 首断言 `'crossOrigin' in video`——has 白名单缺列使恒 false）。
             || prop === 'crossOrigin' || prop === 'defaultMuted' || prop === 'muted'

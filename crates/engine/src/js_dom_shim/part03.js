@@ -16392,6 +16392,40 @@
     return anim;
   }
 
+  // WAAPI 门刀（2026-11-15，wptfyi-css 插值 harness 337 页面）：harness 门在
+  // `'animate' in Element.prototype`（css/support/interpolation-testcommon.js
+  // webAnimationsInterpolation.isSupported）——R2965 animate/getAnimations 此前只在
+  // 实例 proxy get trap 面（part04），原型面 `'animate' in Element.prototype` 恒
+  // false，WAAPI 型插值子测整面不注册（B1 实测 11,020 门 fail）。原型方法
+  // this=元素 proxy，经内部身份槽解析 sel/handle（handle-only proxy 反查
+  // `__zw_selector_for_handle`，part04 R407 同形）后委托既有 `_makeAnimation`/
+  // 注册表——R2965/R3067 语义零改动。enumerable:false 同 HTMLElement.prototype
+  // .style 先例（proto 面 for...in 零进，R3046）。
+  // spec：Web Animations §5.5/§5.6 Element.animate/getAnimations。
+  // https://drafts.csswg.org/web-animations-1/#dom-element-animate
+  if (globalThis.Element && globalThis.Element.prototype) {
+    Object.defineProperty(globalThis.Element.prototype, 'animate', {
+      value: function (keyframes, options) {
+        var _sel = (this && this.__zwSelector) || null;
+        var _hnd = (this && this.__zwHandle) || null;
+        if (!_sel && _hnd && typeof __zw_selector_for_handle === 'function') {
+          try { _sel = String(__zw_selector_for_handle(_hnd) || '') || null; } catch (_ePAnim) { _sel = null; }
+        }
+        return _makeAnimation(keyframes, options, _sel, _hnd);
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(globalThis.Element.prototype, 'getAnimations', {
+      value: function () {
+        var _sel = (this && this.__zwSelector) || null;
+        var _hnd = (this && this.__zwHandle) || null;
+        var _anims = _elementAnimations[_elKey(_sel, _hnd)] || [];
+        return _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+  }
+
   // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
   // 使同脚本内连续 class 操作看到累积状态而非各自读 stale snapshot。
   // js-dom M4 R124：HTML class 属性分词——分隔符仅 **ASCII whitespace 5 字符**

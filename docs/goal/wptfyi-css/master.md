@@ -22,8 +22,18 @@ still-declared-0 清零**，解锁面 **6,691P / chrome 分母 55,861（12.0%）
 mask-border 1.7k / offset-* 3.3k / backdrop-filter 943 / gaps 装饰 1.4k）、
 **WAAPI 门 21.7%**（`'animate' in Element.prototype` 缺 Element.prototype
 定义 + has 白名单臂，R2965 实现本身跑通已实证）、**插值语义 28.6%**。
-**下一步：WAAPI 门刀**（两面最小改，规格见 evidence §3），随后 supports
-覆盖刀族按属性族逐个 A/B。见 [evidence
+**WAAPI 门刀已落地（11-15 八轮）**：part03 `Element.prototype` 挂
+animate/getAnimations（R351 `__zwSelector/__zwHandle` 反解 identity 委托
+`_makeAnimation`）+ part05 has 白名单两名。探针门翻转实证
+（proto-has/inst-has 双 true、动画链路不损）；五组 A/B（B0=
+results-texp-b1-{p1,p2}/B1=results-waapi-b1-{p1,p2}）**净 +184P 零回归**，
+WAAPI 门子测 4071→**0**（门面归零，残差移交 supports 门 +2271 / 语义
++1616），2 页 25% 分母差应归一。见 [evidence
+2026-11-15-waapi-gate-knife](evidence/2026-11-15-waapi-gate-knife.md)。
+**下一步：supports 覆盖刀族**——全局关键字切片先行（cascade 全通实证，
+`decl_supported` + @keyframes apply 两拒点，≈11.1k 面），再 shape()/
+calc-size（peer stash WIP 复用）/mask-border/backdrop-filter/offset-*
+逐族 A/B。背景与分桶见 [evidence
 2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)。
 规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
