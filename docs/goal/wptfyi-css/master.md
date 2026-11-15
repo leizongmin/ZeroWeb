@@ -231,7 +231,7 @@ registry/inherit 补 column-rule 简写与 backdrop-filter initial_value 臂
 红项六腿全对号预存（workspace 10923P/2F image_batch 双形、renderer-lib
 371P/1F + qjs-renderer-lib 369P/1F worker-fetch 三形、browser bin/tests
 各 2F tab_js_worker+default_actions、qjs-workspace 825P/1F image_batch
-形），**刀域零新红**。残面（下刀
+形），**刀域零新红**；bench-gate 定向全绿（zw-shape-bench2/3：css_bench 1/1→三 crate 3/3 微基准 + 绝对预算 PASS，硬件基线不匹配相对门禁 WARN 在册，报告两份入 tests/benchmarks/results/）。残面（下刀
 队列）：shape-outside 全谱实测 **5,105F**/104 页（supports 门 1,955 +
 串化 canonical 3,117——`circle(at 50cm)` 期望补 center/edge 序/calc 折算
 + assert_true 前置 33；设计稿

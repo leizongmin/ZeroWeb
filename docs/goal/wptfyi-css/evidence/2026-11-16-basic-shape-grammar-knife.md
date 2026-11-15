@@ -171,9 +171,27 @@ s419 WIP 随行零贡献两方在案；committed animation.rs 04:59 mtime 晚于
 | quickjs-workspace（17 bins） | 825P/**1F** | image_batch 形（quickjs 面现形，预存） |
 | quickjs-renderer-bin | EXIT=0 | — |
 | quickjs-renderer-lib | 369P/**1F** | js_worker fetch_without_handler——worker-fetch 三形预存红（05:11 收尾腿） |
+| quickjs-clippy（14 crate `-D warnings`） | EXIT=**101** | `es_module.rs:2217 too_many_arguments (8/7)`——script-sandbox 流 s419 WIP 在途态（该文件 04:57 仍活跃编辑；非本刀面，提交排除，peer 收口自清） |
 
 全部 FAIL 对号预存红总账（worker-fetch 三形 + default_actions +
-image_batch 两形态；bookmark 本轮未现形），**零刀致新红**。
+image_batch 两形态；bookmark 本轮未现形），**零刀致新红**；与十七轮
+mkt3 账逐腿同形（741P/2F ×2、775P/1F、369P/1F 逐数吻合）。
+
+### bench-gate（定向，target 被磁盘守卫清空后冷建）
+
+- **过程**：首发 zw-shape-bench（05:11:37）撞 target-disk-guard——173GB
+  超阈值触发分级清理，删 debug/incremental 32GB 后 rm 撞并发写者中止
+  （target 残 4.1MB，磁盘回 872G 空闲；mkt 门禁 05:11:19 先收口无碍，
+  A/B 二进制在 .acceptance/ 未受损）。二发 zw-shape-bench2（05:12:58
+  冷建 ~3min）EXIT=0。
+- **判定**：css_bench 微基准 **1/1 passed**；form-input-perf-gate
+  **PASS**（绝对预算）；perf-gate WARN = 报告硬件（AMD 9700X）与基线
+  （i5-13500H）不匹配，相对门禁不启用——绝对预算通过在案
+  （benchmark_20261116_051259.json）。三 crate 扩展腿
+  （zw-shape-bench3：css-parser+engine+style-system，05:27:20–05:32:04
+  暖建 4.7min）**EXIT=0，微基准 3/3 passed**，form-input-perf-gate
+  PASS（绝对预算），perf-gate WARN 同上（硬件基线不匹配相对门禁不启用，
+  benchmark_20261116_052720.json）——**定向 bench 门禁全绿**。
 
 ### 单元测试 solo 腿（test-guard 包裹，04:3x 批链在跑期发射——轻量不占
 cargo 构建锁，与已编译 runner 进程无冲突）
