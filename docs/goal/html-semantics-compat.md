@@ -2,24 +2,23 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 474 收口（守成巡查轻覆盖轮 + onblur
-哨域键首现 sweep 单腿翻红 solo 对照定谳：solo ×3 全 F 判 solo/
-sweep 双相位带键非瞬时 flake 同型，升级观察哨盯防；树零刀四轮非
-刀致；账本
-evidence/2026-11-15-m2s474-onblur-follower-flicker-patrol.md）。
-双腿（码态 = WAAPI 门刀已清偿组合态）8516/8516（8305P/204F/6T/
-1U 与 8306P/203F/6T/1U），distinct 各 8514，leg-only 0，disagree
-1 = onblur following-label checkbox 键 sweep 单腿翻红（哨解除后
-第 20 轮首现）；族回 s472 形态双腿一致（4 子测 F + detailed T，
-s473 的 detailed F 位形单轮未固化），整文件键双腿缺席。stable
-8515（8305P/203F/6T/1U，distinct 8513）。vs s473 stable 恰 3
-GONE（哨域键 + 族 detailed F + 族整文件 T）+ 5 NEW（族 detailed
-T + 4 子测 F），非族非哨域键逐键零差。**P 集账本口径 8306 →
-8305 单轮破位**（哨域键出 stable 致，非刀致，预期回位）。
-**升级观察哨：onblur following-label 双键**——sweep 翻红 2 轮内
-再现或转双腿一致 F 则升级真回归排查。dialog-overlay 哨第 4 轮 +
-modulepreload 哨第 6 轮（48/49 腿）零翻红。全桥绿窗 **1643P/0F
-rc=0**（+0）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
+**状态**: Active——M2 切片 475 收口（双刀归因轮：编辑流
+04369d39a ip 容器链垫刀 + d1625c26a d34 headEl 持真 title 落树，
+html-semantics 面零位移清偿；账本
+evidence/2026-11-15-m2s475-two-knife-attribution.md）。
+双腿（码态 = 双刀组合态树 d1625c26a）8516/8513（8306P/204F/5T/
+1U 与 8306P/201F/5T/1U），distinct 各 8514/8511，leg-only 5 全
+在 select-home-end 族，disagree 0。stable 8512（8306P/200F/5T/
+1U，distinct 8510）。vs s474 stable 恰 5 GONE（族 4 子测 F + 族
+detailed T）+ 2 NEW（onblur following-label checkbox P 哨域键回
+位 + 族 detailed F），per-key 1 翻转 = detailed T→F（族相位回
+摆），非族非哨域键逐键零差。**P 集账本口径 8305 → 8306 回位兑
+现**。刀邻面抽查 document-metadata/title 243 键双腿恒等全 Pass。
+onblur 升级观察哨第 1 轮无再翻红（双键双腿 Pass 回入 stable，
+继续盯防）；dialog-overlay 哨第 5 轮 + modulepreload 哨第 7 轮
+（50/51 腿）零翻红。全桥绿窗 **1644P/0F rc=0**（**+1 =
+04369d39a 携入钉测 test_ip_c4_container_pad_pins**，d1625c26a
+零新钉）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
 onblur 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
 （簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨维
 持（本轮双腿零 hang）。
@@ -31,6 +30,20 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 474 收口）——守成巡查轻覆盖轮 +
+> onblur 哨域键首现 sweep 单腿翻红 solo 对照定谳（solo ×3 全 F
+> 判 solo/sweep 双相位带键非瞬时 flake 同型，升级观察哨盯防；
+> 树零刀四轮非刀致，P 集 8305 单轮破位；账本
+> evidence/2026-11-15-m2s474-onblur-follower-flicker-patrol.md）
+> **：HEAD = f61c4a582 同码树。双腿 8516/8516（8305P/204F/6T/1U
+> 与 8306P/203F/6T/1U），distinct 各 8514，disagree 1 = onblur
+> following-label checkbox 键 sweep 单腿翻红（哨解除后第 20 轮
+> 首现）；族回 s472 形态双腿一致（4 子测 F + detailed T），族整
+> 文件键双腿缺席；stable 8515（8305P/203F/6T/1U，distinct 8513）
+> vs s473 恰 3 GONE + 5 NEW 全族内 + 哨域键。全桥绿窗 1643P/0F
+> rc=0（+0）。dialog-overlay 哨第 4 轮 + modulepreload 哨第 6 轮
+> （48/49 腿）零翻红。
+>
 > **▶ 承前（2026-11-15 M2 切片 473 收口）——守成巡查轻覆盖轮：
 > 零入树零刀同码树基带复测，双腿完全一致 disagree=0，P 集 8306
 > 第二轮持位，detailed 族键 stable 首现 Fail 位形入册（账本
