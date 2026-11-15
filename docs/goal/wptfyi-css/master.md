@@ -58,6 +58,16 @@ zw-offset-mkt3.service）：12 腿全账红项全对号在册（peer s419 es_mod
 负载形伪红），本刀域零红——engine 3 钉 workspace 腿日志绿 + style-system
 4 钉定向腿 RC=0（fail-fast 截停补腿）。见 [evidence
 2026-11-15-offset-motion-path-knife](evidence/2026-11-15-offset-motion-path-knife.md)。
+**并行实例避让记（11-15 23:36 定谳，rate-limit 双 spawn 在册形态）**：本
+clone 并存两 agent 实例（2614542 = 22:12 无 resume spawn；本实例 = 23:04
+resume spawn）。offset 簇刀收口由本实例完成（6b84507fe）；offset-position
+刀 23:31 起由实例 2614542 在树实施（style-system property 五站 + engine
+animation/gCS offset 面，未提交），本实例零编辑让位（「停己采彼」）。
+后续轮次开工前先 `git log --oneline -3` + `git status` 核该刀落地态：
+已提交→按控制面推进下一残面刀（ray()/基本形状文法族 ~1,830 等属同文件
+面，仍需先核对方在飞状态）；未提交且 mtime 活跃→继续让位勿重开刀；
+mtime 静默 >30 分钟且无提交→查孤儿（journalctl + ps 祖先树）后按磁盘
+终态仲裁。共享树纪律：两实例禁同时跑重型门禁（双 cargo 门禁缓存在册）。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
