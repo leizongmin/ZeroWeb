@@ -2,49 +2,64 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 503 收口（**守成巡查轻覆盖轮
-第十一轮**：零入树同码态同二进制——码态 cfd1a06af 恒等
-（ihtml 轴一拆分插入刀与对端 ZW-3 querySelector 施工面
-均未落树，双克隆静默）；账本
-evidence/2026-11-16-m2s503-quiet-baseline-patrol.md）。
-码态 = cfd1a06af（HEAD 25bc5b01b docs-only；runner
-126999128 恒同二进制；起腿前对端 d42 input-events 探查 +
-mykernel 租户构建双清场后干净窗起腿）。**flaky 键第三例
-入窗窗口满**：onblur checkbox following-label 键 leg1
-Pass / leg2 瞬态 F——换腿序列 s489 leg1 → s493 leg2 →
-s503 leg2，干净窗负载归因不成立，摇摆 P↔F 非单向维持观
-察不升级（升级后政策 3 例窗口观察频率；**后续新例即第 4
-例，频率升级判定点临近**）。族键双腿同相位回位（s501 形
-恢复，上轮预期兑现）。leg1 8517 raw（8308P/202F/6T/1U）/
-leg2 8517 raw（8307P/203F/6T/1U），stable 8513
-（8304P/202F/6T/1U）disagree 1 leg-only 双零。**vs s502
-stable（8509）：GONE 1（flaky 键）+ NEW 5（全族键）+
-flips 0——非族非哨键逐键恒等**；stable 8513 与 s501
-stable（8514）恰 1 行差 = 该 flaky 键。**P 集账本口径
-leg1 8307P 持位第 25 轮 / leg2 8306P 瞬态 -1 单键**
-（s493 同款形；双发伪影 2 键照旧在册）；picker 刀增益键
-stable Pass 第 26 轮保持，checkmark 恒 F 带形不变。
-onblur 哨组 leg1 8P/2F / leg2 7P/3F；dialog-overlay 哨
-第 32 轮 + modulepreload 哨第 35 轮零翻红。全桥绿窗
-**1659P/0F rc=0**——清单 vs s502 set 恒等 1659 GONE 0
-（filtered 2394 恒）。本轮管线全 LC_ALL=C 固化。红池归
-账结构照常。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。
-hang 观察项静默哨维持（双腿零真 hang，零截断）。
-下一步：**他流刀归因轮**（刀时序注记 2026-11-16：s503
-收口 push rebase 携入对端 editing 流 ihtml 轴一块级拆分
-插入刀 4f3469026 落树——js_dom_shim part06.js +497 +
-part124 ihtml block pins 新文件 +211 + bridge_tests.rs
-+1，桥面 1659 将增；对端申报 enginelib 待入账核对；对账
-基线 s503 stable 8513——族键入位形 + flaky 键出位形，
-join 实测归因零语义位移清偿「申报=实测」谱系）+ 守成巡
-查面项随轮（**flaky 键 3 例窗口已满——后续新例即第 4 例
-按频率升级判定**，摇摆形态届时定性；族键相位谱 1 轮周期
-往返摆观察维持——s503 入位后下轮预期出位形）+ 候门决项
-等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
-rendering 流 dialog 16 红块协同面（归 rendering 流记
-账）。门开随批落预案不变：簇 D 开 →
-customizable-select-styles.css ×47 随批落。
+**状态**: Active——M2 切片 504 收口（**他流刀归因轮**：
+对端 editing 流 ihtml 轴一块级拆分插入刀 4f3469026 落
+树（part06.js +497 + part124 pins 新文件 +211 +
+bridge_tests.rs +1）——html-semantics 面**零语义位移清
+偿，「申报=实测」谱系第十一例（单刀）**；账本
+evidence/2026-11-16-m2s504-ihtml-block-knife-attribution.md）。
+**码态换新 = 4f3469026**（刀码即 HEAD 域内零附加；HEAD
+108817951 docs-only 注记版；runner 换代 126999128 →
+**127019640** +204,512，leg1 真重建 Compiling ×6/leg2 零
+Compiling）。vs s503 stable（8513）：**GONE 5（全族键出
+位，leg1 整文件形 / leg2 子测形 = s500 两形发射形差重
+放）+ NEW 1（flaky 键双腿 Pass 回位）+ flips 0**，
+stable 8509（8305P/198F/5T/1U）**与 s500/s502 stable 键
+集+状态双恒等**——全部位移落在在册带内谱（族相位谱 1 轮
+周期往返摆 s503 入 → s504 出 + flaky 摇摆非单向第 4 轮
+回位）零刀致位移。**P 集账本口径双腿双 8307P 持位第 26
+轮**；picker 刀增益键 stable Pass 第 27 轮保持，checkmark
+恒 F 带形不变。onblur 哨组 10 键双腿双 8P/2F——flaky 键
+**3 例窗口满后零新例第一轮**（窗口持位 3 例，后续新例即
+第 4 例按频率升级判定）；dialog-overlay 哨第 33 轮 +
+modulepreload 哨第 36 轮零翻红。全桥绿窗 **1660P/0F
+rc=0**——清单 1659→1660 +1 = test_ihtml_block_pins
+（part124 pins，GONE 0，s503 注记增长预期兑现；filtered
+2394 恒）。本轮管线全 LC_ALL=C 固化。红池归账结构照常。
+**挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇
+D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨
+维持（双腿零真 hang，零截断）。
+下一步：**守成巡查**（对账基线换 s504 stable 8509——族
+键出位形 + flaky 键回位形、s500/s502 构成同款；族相位谱
+1 轮周期往返摆观察维持——下轮预期回位入位形；flaky 窗口
+满后新例观察维持——新例即第 4 例按频率升级判定；他流入
+树归因轮或轻覆盖；对端 ihtml 刀申报账落定信号 + 对端
+ZW-3 querySelector 施工刀信号持续，落树后按他流刀归因
+轮，join 实测为准）+ 候门决项等待用户拍板（video P1+P2
+立项 / 簇 D A2 立项 / s137）；rendering 流 dialog 16 红
+块协同面（归 rendering 流记账）。门开随批落预案不变：簇
+D 开 → customizable-select-styles.css ×47 随批落。
+
+> **▶ 承前（2026-11-16 M2 切片 503 收口）——守成巡查轻
+> 覆盖轮第十一轮：零入树同码态同二进制——码态 cfd1a06af
+> 恒等（ihtml 刀与 ZW-3 querySelector 施工面未落树，双
+> 克隆静默；对端 d42 探查 + mykernel 构建双清场后干净窗
+> 起腿）；账本
+> evidence/2026-11-16-m2s503-quiet-baseline-patrol.md）。
+> 码态 = cfd1a06af（HEAD 25bc5b01b docs-only；runner
+> 126999128 恒同二进制）。**flaky 键第三例入窗窗口满**：
+> onblur checkbox following-label 键 leg1 Pass / leg2 瞬
+> 态 F（s489 leg1 → s493 leg2 → s503 leg2 换腿序列），干
+> 净窗负载归因不成立，摇摆 P↔F 非单向维持观察不升级。
+> 族键双腿同相位回位（s501 形恢复，预期兑现）。leg1 8517
+> raw / leg2 8517 raw（8307P/203F/6T/1U），stable 8513
+> （8304P/202F/6T/1U）disagree 1 leg-only 双零。vs s502
+> stable：GONE 1（flaky 键）+ NEW 5（全族键）+ flips 0；
+> stable 8513 与 s501 stable 恰 1 行差 = 该 flaky 键。
+> P 集 leg1 8307P 持位第 25 轮 / leg2 8306P 瞬态 -1 单
+> 键；四哨零新翻红；全桥绿窗 1659P/0F 清单恒等 GONE 0。
+> 下一步：他流刀归因轮（s503 收口 push 携入 ihtml 块级拆
+> 分插入刀 4f3469026——s504 兑现）。
 
 > **▶ 承前（2026-11-16 M2 切片 502 收口）——守成巡查轻
 > 覆盖轮第十轮：零入树同码态同二进制——码态 cfd1a06af
