@@ -212,6 +212,10 @@ include!("js_dom_bridge_tests/part116_c4_block_boundary_pins.rs");
 // ⑦ 宿主元素边界臂尾侧 whitespace-only 留宿主、首文本行界翻 `&nbsp;`）。
 include!("js_dom_bridge_tests/part117_b_split_boundary_ws_pins.rs");
 include!("js_dom_bridge_tests/part118_shell_carry_pins.rs");
+// T72（site-optimizer perf-mem T72/P42）：iframe win.navigator 平面对象语义常驻钉
+//（part05 _zwMakeIframeWin 工厂面——原型链/品牌/Illegal constructor 双臂/
+// serviceWorker 槽恒一/走链吸收五断言面；T66 主窗面钉在 part95.rs）。
+include!("js_dom_bridge_tests/part119_t72_iframe_navigator_pins.rs");
 include!("js_dom_bridge_tests/part119_c1_order_pins.rs");
 include!("js_dom_bridge_tests/part120_ip_atomic_rawtext_pins.rs");
 

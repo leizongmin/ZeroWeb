@@ -5296,7 +5296,31 @@
         back: function() { this.go(-1); },
         forward: function() { this.go(1); }
       },
-      navigator: { serviceWorker: serviceWorker },
+      // T72（site-optimizer perf-mem T72/P42）：iframe win.navigator 平面对象语义——
+      // [[Prototype]] 挂 globalThis.Navigator.prototype（同 realm 单例，part02.js T66
+      // 建面），品牌 '[object Navigator]'；own 键面（serviceWorker）键序/可枚举性/值
+      // 与原字面量恒等，仅 [[Prototype]] 换位——站点风控 SDK 的原型定向写（T65 判据③
+      // 定谳：从根沿原型走 s 步再存储）落 Navigator.prototype 吸收，不再直透
+      // Object.prototype 共享可枚举面（主窗面 T66 已修，本处 iframe 面同缺陷 P42）。
+      // serviceWorker wrapper 实体与创建期 controller-on-load 时序
+      //（iframeServiceWorkerCreationControllerId）不变；userAgent/platform 等标准成员
+      // own 键面缺位是既有面，本切片不扩。规范锚注记同 part02.js T66 块。
+      // https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
+      // https://webidl.spec.whatwg.org/#interface-object
+      // https://webidl.spec.whatwg.org/#interface-prototype-object
+      // T72/R1 返修 DF-1：装配读取加卫（同函数 ServiceWorkerContainer/ServiceWorker/
+      // ServiceWorkerRegistration 三元卫惯例）——页面 delete/置 undefined/覆写
+      // globalThis.Navigator 为无 prototype 普通对象后，裸读 .prototype 抛 TypeError。
+      // 降级语义：全局 Navigator 被破坏时 iframe navigator 原型链降级
+      // Object.prototype、构造不抛、功能面（serviceWorker 槽）保留（part119 钉④）。
+      navigator: Object.assign(
+        Object.create(
+          globalThis.Navigator && globalThis.Navigator.prototype
+            ? globalThis.Navigator.prototype
+            : Object.prototype
+        ),
+        { serviceWorker: serviceWorker }
+      ),
       // R3254-E2 切片 6（editing goal，2026-09-07）：**per-iframe Selection 面**——
       // iframe win 此前无 getSelection（deleteFromDocument.html 经
       // `contentWindow.getSelection().addRange/removeAllRanges/deleteFromDocument`
