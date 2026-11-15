@@ -46,6 +46,28 @@ min-height-composition 0P/60F 证 additive composition 值同样不反映。
 css 方法恒 true）。engine 共享面共存记：ZeroWeb-3 流在 part05.js 施工
 （M3-B/C 刀 staged 未提交，peer 提交 f82e60416 账面），本轮 engine 提交
 已 rebase 干净、无文本冲突。
+**composite-add 刀已落地（11-15 十一轮）**：shim `_makeAnimation` 对 add/accumulate
+动画注册前预合成端点（endpoint' = underlying ⊕ endpoint 后按 replace 登记——U 恒定下
+lerp(U⊕F,U⊕T,p)≡U⊕lerp(F,T,p) 数学恒等；可加域 `<number>`/px/`<angle>`/同 metric 对，
+% 与混合单位/calc/关键字/函数列表 all-or-nothing 拒；KeyframeEffect 持原始 keyframes，
+getKeyframes() JS 对象面零变化）+ 引擎 apply 十臂（font-size/font-weight/font-size-adjust/
+letter-spacing/word-spacing/text-indent/min/max-sizing 严格解析，失败不动样式回落 B0
+零回归方向）+ 插值三臂（font-weight 钳 [1,1000] css-fonts-4、font-size-adjust 同 metric
+lerp、text-indent/min-max-sizing px 严格关键字离散）。A/B 双面（B0=bin-jsanim-b3 v3
+快照 / B1=bin-cadd-b1，全程快照二进制）：五电池 **+75/0/0**（font-size-adjust-composition
++31 全纯 add 面、font-weight-composition 0→5、rotate-composition 4→9；values 与 B0
+逐字节持平——border-*-width 伪通过池经空 underlying 天然过滤保位）+ 16 组
+composition 定向双腿 **+197/0/0**（margin/padding 8 页、width/height/min-max 6 页各
+0→12、letter/word-spacing 12/12、text-indent 5）——**合计 +272/0/0 零回归**，超前估
+~146G（定向 16 组 box/sizing/text 面超原估口径）。过程事故：批脚本循环变量名
+`GROUPS` 撞 bash 特殊只读数组（用户组 ID 列表）赋值被静默忽略 → `$GROUPS` 展开
+"1000" 单组 corpus usage exit 2，改名 `_zwGroups` 重跑 32 腿全绿。见 [evidence
+2026-11-15-composite-add-knife](evidence/2026-11-15-composite-add-knife.md)。
+make test 门禁（zw-cadd-mkt2 systemd unit + test-guard，177 腿 18:06 收）：本刀域
+全绿（animation 171 ok、engine 面零红）；唯一红腿 es_module s337/s345 两测经机制核
+（WIP diff 明文替换 s345 旧 globalThis getter 形并同步改断言）归 script-sandbox 流
+在途 s419 WIP 树态红，不入本刀账。残面候选（下一刀）：easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G、MULTI 值形
+（transform 列表/背景对）逐函数合成。
 **动画值进 gCS 刀已落地（11-15 十轮，jsanim v1→v3 三代 A/B 收口）**：shim
 `Animation` 经 `__zw_js_anim_register/seek/playpause/cancel` 把 keyframes/timing/
 播放态登记到引擎侧 `js_anim_registry`（thread_local ENTRIES + 独立

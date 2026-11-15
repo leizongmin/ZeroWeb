@@ -16426,15 +16426,51 @@
     // 值逐帧展开待补）；corpus 面为 keyframe 数组形不受影响。
     // 形状守卫（2026-11-15 A/B 定谳）：引擎 interpolate_property_value 不支持的
     // 形态不登记——读值回落级联/B0 通道，避免把既有通过面换成离散 fallback 裸串。
-    // ① composite add/accumulate（合成插值未实现，border-*-width/transform 合成
-    //    页 A/B -80/-21）；② calc-size()/random() 值（peer calc-size 域，A/B -66/-1）；
-    // ③ 尺寸/离散关键字端点（auto/fit-content/min-content/max-content/stretch/
-    //    normal——引擎关键字端点走离散 fallback 裸串）。
-    var _zwUnsafe = effectOptions && effectOptions.composite &&
-      effectOptions.composite !== 'replace' && effectOptions.composite !== 'auto';
-    if (!_zwUnsafe && Array.isArray(keyframes)) {
-      for (var _zgi = 0; _zgi < keyframes.length; _zgi++) {
-        var _zgf = keyframes[_zgi] || {};
+    // ① composite add/accumulate → 预合成改写（composite-add 刀 2026-11-15：v1
+    //    整体不登记折损合成插值面 A/B -80/-21，现按 underlying ⊕ 端点预合成后
+    //    replace 登记；不可加/无身份维持不登记）；② calc-size()/random() 值
+    //    （peer calc-size 域，A/B -66/-1）；③ 尺寸/离散关键字端点（auto/
+    //    fit-content/min-content/max-content/stretch/normal——引擎关键字端点走
+    //    离散 fallback 裸串）。
+    var _zwUnsafe = false;
+    // composite-add 刀（2026-11-15，wptfyi-css）：add/accumulate 语义 = 动画值与
+    // underlying 逐属性相加（Web Animations §5.4.4 combining values；单动画单迭代
+    // accumulate 与 add 同形）。harness 面先 inline 写 underlying 再 animate、
+    // paused+seek 下 underlying 恒定——注册前把 add 帧端点预合成
+    //（endpoint' = underlying ⊕ endpoint）后按 replace 语义登记：线性插值下
+    // lerp(U⊕F, U⊕T, p) ≡ U ⊕ lerp(F,T,p)（U 恒定时恒等）。仅改写注册 spec——
+    // KeyframeEffect 仍持原始 keyframes，getKeyframes()/effect JS 对象面零变化。
+    // 可加值域：<number> / px / <angle> 同单位对与 font-size-adjust
+    // `<metric> <number>` 同 metric 对（% 端点拒——引擎无 % 插值臂，登记会以
+    // 0px 垃圾值换 B0 fail；混合单位/calc/关键字/函数列表同拒）。underlying 经
+    // gCS 读取——引擎未覆盖序列化的属性读到空串解析失败天然不登记：
+    // border-*-width 族 B0 伪通过池（双侧空串恒等）由此保位。逐动画
+    // all-or-nothing：任一 add 帧任一属性不可预合成 → 整动画维持不登记（B0 回落）。
+    var _zwOptComp = (effectOptions && effectOptions.composite != null) ? String(effectOptions.composite) : '';
+    var _zwKfArr = Array.isArray(keyframes) ? keyframes
+      : ((keyframes && typeof keyframes === 'object') ? [keyframes] : null);
+    var _zwHasAdd = false;
+    if (_zwKfArr) {
+      for (var _aci = 0; _aci < _zwKfArr.length; _aci++) {
+        var _acf = _zwKfArr[_aci] || {};
+        var _acc = (_acf.composite != null) ? String(_acf.composite) : _zwOptComp;
+        if (_acc === 'add' || _acc === 'accumulate') { _zwHasAdd = true; break; }
+      }
+    }
+    var _zwKf = keyframes;
+    if (_zwHasAdd && (sel || handle) && _zwKfArr) {
+      var _zwComposed = null;
+      try { _zwComposed = _zwComposeAddKeyframes(_zwKfArr, _zwOptComp, sel, handle); } catch (_eCA) { _zwComposed = null; }
+      if (_zwComposed) { _zwKf = _zwComposed; }
+      else { _zwUnsafe = true; }
+    } else if (_zwOptComp !== '' && _zwOptComp !== 'replace' && _zwOptComp !== 'auto' &&
+               _zwOptComp !== 'add' && _zwOptComp !== 'accumulate') {
+      // options 级非可识别 composite（非法串）维持不登记（与 v1 blanket 守卫同形）。
+      _zwUnsafe = true;
+    }
+    if (!_zwUnsafe && Array.isArray(_zwKf)) {
+      for (var _zgi = 0; _zgi < _zwKf.length; _zgi++) {
+        var _zgf = _zwKf[_zgi] || {};
         if (_zgf.composite && _zgf.composite !== 'replace' && _zgf.composite !== 'auto') { _zwUnsafe = true; break; }
         for (var _zgk in _zgf) {
           if (_zgk === 'offset' || _zgk === 'composite' || _zgk === 'easing') continue;
@@ -16458,8 +16494,8 @@
       //    calc 臂 GAIN 保持）。
       if (!_zwUnsafe) {
         var _zwPv = {};
-        for (var _zui = 0; _zui < keyframes.length; _zui++) {
-          var _zuf = keyframes[_zui] || {};
+        for (var _zui = 0; _zui < _zwKf.length; _zui++) {
+          var _zuf = _zwKf[_zui] || {};
           for (var _zuk in _zuf) {
             if (_zuk === 'offset' || _zuk === 'composite' || _zuk === 'easing') continue;
             var _zuv = _zuf[_zuk];
@@ -16486,7 +16522,7 @@
     if ((sel || handle) && !_zwUnsafe && typeof __zw_js_anim_register === 'function') {
       try {
         var _zwSpec = {
-          kf: _zwWaapiSpecKeyframes(keyframes),
+          kf: _zwWaapiSpecKeyframes(_zwKf),
           dur: (effectOptions && typeof effectOptions.duration === 'number') ? effectOptions.duration : 0,
           delay: (effectOptions && effectOptions.delay != null) ? Number(effectOptions.delay) || 0 : 0,
           easing: (effectOptions && effectOptions.easing) || 'linear',
@@ -16563,6 +16599,84 @@
         frame.p[_zwWaapiPropKebab(k)] = String(src[k]);
       }
       out.push(frame);
+    }
+    return out;
+  }
+
+  // ── composite-add 刀（2026-11-15，wptfyi-css）：add/accumulate 端点预合成 ──
+  // 可加端点严格解析：<number> / Npx / <angle>(deg/grad/rad/turn) 单 token 与
+  // font-size-adjust `<metric> <number>`；% / em 等其他单位（引擎无对应插值臂）、
+  // calc / 关键字 / 函数列表（transform 等 MULTI 形）拒 → null。
+  function _zwAnimParseAddVal(s) {
+    var t = String(s).replace(/^\s+|\s+$/g, '');
+    var m = t.match(/^(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)(px|deg|grad|rad|turn)?$/);
+    if (m) return { n: parseFloat(m[1]), u: m[2] || '', mt: null };
+    m = t.match(/^(ex-height|cap-height|ch-width|ic-width|ic-height) (-?(?:\d+(?:\.\d+)?|\.\d+))$/);
+    if (m) return { n: parseFloat(m[2]), u: '', mt: m[1] };
+    return null;
+  }
+  // 合成数值串化（3 位小数去尾零，整数无小数点——与引擎 gCS format_num 同形；
+  // canonicalize 重序列化再规范化）。
+  function _zwAnimFmtAddNum(n) {
+    if (!isFinite(n)) return null;
+    var r = Math.round(n * 1000) / 1000;
+    if (r === Math.trunc(r)) return String(Math.trunc(r));
+    return String(r);
+  }
+  // underlying ⊕ endpoint：同单位相加；无单位 0 并入任意单位侧（css-values-4
+  // `<length> 0` 等价）；metric 形恒等回 `metric + ' ' + num`（同名 metric 对，
+  // 失配已在前置 mt 比较拒）；单位失配（px+deg 等）拒。
+  function _zwAnimAddValues(u, v) {
+    var a = _zwAnimParseAddVal(u), b = _zwAnimParseAddVal(v);
+    if (!a || !b || a.mt !== b.mt) return null;
+    if (a.mt !== null) {
+      var ms = _zwAnimFmtAddNum(a.n + b.n);
+      return ms === null ? null : a.mt + ' ' + ms;
+    }
+    if (a.u !== b.u) {
+      if (a.u === '' && a.n === 0) { a.u = b.u; }
+      else if (!(b.u === '' && b.n === 0)) { return null; }
+    }
+    var s = _zwAnimFmtAddNum(a.n + b.n);
+    return s === null ? null : s + a.u;
+  }
+  // add/accumulate 帧端点预合成（逐帧 effective composite = 帧 composite 覆盖
+  // options composite）：add/accumulate 帧逐属性读 underlying（gCS——注册前本动画
+  // 不在表内无自递归，帧间同值 memo）相加；replace/auto 帧原样透传；其余 composite
+  // 值（非法串）→ null 维持现状。任一 add 属性不可预合成（underlying 读空/值形
+  // 不可加/属性索引数组值）→ null（整动画 all-or-nothing 不登记）。变换帧删
+  // composite 键（replace 语义登记）。offset/easing 键保形（_zwWaapiSpecKeyframes
+  // 同消费）。
+  function _zwComposeAddKeyframes(frames, optComp, sel, handle) {
+    var out = [];
+    var _zwUc = {};
+    for (var i = 0; i < frames.length; i++) {
+      var src = frames[i] || {};
+      var comp = (src.composite != null) ? String(src.composite) : (optComp || 'replace');
+      var isAdd = comp === 'add' || comp === 'accumulate';
+      if (comp !== 'replace' && comp !== 'auto' && !isAdd) return null;
+      var dst = {};
+      for (var k in src) {
+        if (k === 'composite') continue;
+        if (isAdd && k !== 'offset' && k !== 'easing') {
+          var v = src[k];
+          if (Array.isArray(v) || typeof v !== 'string') return null;
+          var pk = _zwWaapiPropKebab(k);
+          if (typeof _zwUc[pk] !== 'string') {
+            try {
+              _zwUc[pk] = (sel ? __zw_get_computed_style(String(sel), pk)
+                : (typeof __zw_get_computed_style_by_handle === 'function'
+                  ? __zw_get_computed_style_by_handle(String(handle), pk) : '')) || '';
+            } catch (_eUc) { _zwUc[pk] = ''; }
+          }
+          var c = _zwAnimAddValues(_zwUc[pk], v);
+          if (c === null) return null;
+          dst[k] = c;
+        } else {
+          dst[k] = src[k];
+        }
+      }
+      out.push(dst);
     }
     return out;
   }

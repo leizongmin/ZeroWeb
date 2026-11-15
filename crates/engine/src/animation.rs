@@ -475,6 +475,42 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             None if t >= 0.5 => to.to_string(),
             None => from.to_string(),
         },
+        // wptfyi-css composite-add 刀（2026-11-15，css-fonts-4 #font-weight-prop 动画
+        // 区间）：数值字重线性插值，钳 [1,1000]；关键字端点（bold/bolder/lighter）
+        // 解析失败回落离散切换（与默认臂同语义零回归）。
+        "font-weight" => match (parse_f64(from), parse_f64(to)) {
+            (Some(fa), Some(ta)) => format!("{}", lerp(fa, ta, t).round().clamp(1.0, 1000.0) as i64),
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        // wptfyi-css composite-add 刀（2026-11-15，css-fonts-4 #font-size-adjust-prop
+        // 动画区间）：同 metric（含双侧省略）数值线性插值，metric 保持；none /
+        // from-font / metric 失配离散切换。
+        "font-size-adjust" => {
+            match (
+                parse_font_size_adjust_endpoint(from),
+                parse_font_size_adjust_endpoint(to),
+            ) {
+                (Some((mf, fv)), Some((mt, tv))) if mf == mt => format!(
+                    "{}{}",
+                    mf.map_or_else(String::new, |m| format!("{m} ")),
+                    format_interp_num(lerp(fv, tv, t)),
+                ),
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
+        // wptfyi-css composite-add 刀（2026-11-15）：text-indent 与 min/max-sizing
+        // px 端点严格解析插值——既有 px 列表臂为宽松解析（关键字端点取 0 数值化），
+        // 此处关键字端点（auto/min-content 等）须保离散语义故独立成臂；解析失败
+        // 回落离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
+        "text-indent" | "min-width" | "max-width" | "min-height" | "max-height" => {
+            match (parse_px_strict(from), parse_px_strict(to)) {
+                (Some(fv), Some(tv)) => format!("{:.2}px", lerp(fv, tv, t)),
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
         _ => {
             // 不支持插值的属性：离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
             if t >= 0.5 { to.to_string() } else { from.to_string() }
@@ -650,6 +686,42 @@ fn parse_f64(s: &str) -> Option<f64> {
 fn parse_px(s: &str) -> f64 {
     let s = s.trim();
     s.strip_suffix("px").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0)
+}
+
+/// composite-add 刀：严格解析 px 值（仅 `Npx` 形；宽松版 [`parse_px`] 失败取 0
+/// 数值化——关键字端点 auto/min-content 等须走离散语义，不得 0 化）。
+fn parse_px_strict(s: &str) -> Option<f64> {
+    let s = s.trim();
+    s.strip_suffix("px").and_then(|v| v.trim().parse().ok())
+}
+
+/// composite-add 刀：font-size-adjust 插值端点解析（css-fonts-4
+/// #font-size-adjust-prop）——`<metric> <number>` 返 `(Some(metric), n)`、
+/// 裸 `<number>` 返 `(None, n)`；none / from-font / 畸形返 `None`（离散回落）。
+fn parse_font_size_adjust_endpoint(s: &str) -> Option<(Option<&'static str>, f64)> {
+    let s = s.trim();
+    let mut parts = s.splitn(2, char::is_whitespace);
+    let metric = match parts.next() {
+        Some("ex-height") => Some("ex-height"),
+        Some("cap-height") => Some("cap-height"),
+        Some("ch-width") => Some("ch-width"),
+        Some("ic-width") => Some("ic-width"),
+        Some("ic-height") => Some("ic-height"),
+        _ => None,
+    };
+    let num_text = if metric.is_some() { parts.next()?.trim() } else { s };
+    num_text.parse::<f64>().ok().map(|n| (metric, n))
+}
+
+/// composite-add 刀：插值数值串化（3 位小数去尾零、整数无小数点，与 gCS
+/// `format_num` 同形——canonicalize 会重序列化再规范化，此处形态服务 raw 面）。
+fn format_interp_num(v: f64) -> String {
+    let r = (v * 1000.0).round() / 1000.0;
+    if r == r.trunc() {
+        format!("{}", r as i64)
+    } else {
+        format!("{r}")
+    }
 }
 
 /// R4202：解析 `translate` 值为 (x, y) px 数值对（% 分量按 0 近似——keyframes 的
@@ -1481,6 +1553,68 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 } else {
                     style.backdrop_filter = mapped;
                 }
+            }
+        }
+        // ── wptfyi-css composite-add 刀（2026-11-15）apply 臂 ──
+        // 注册动画插值串施加到基样式后经 gCS 序列化器 canonicalize（js_anim_registry），
+        // CSS 动画/过渡渲染 tick 同路径（AnimationClock::apply_to_computed_style）。
+        // 严格解析（失败不动样式 → canonicalize 序列化恒等返 None → 回落 B0 通道，
+        // 零回归方向）；不并入既有宽松 parse_px 臂——关键字端点（auto/none/
+        // normal/min-content）不得 0 化为错误值。
+        "font-size" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.font_size = LengthValue::Px(px);
+            }
+        }
+        // css-fonts-4 #font-weight-prop：数值字重钳 [1,1000] 存储（区间外与
+        // 关键字形不动样式）。
+        "font-weight" => match value.trim().parse::<u16>() {
+            Ok(n) if (1..=1000).contains(&n) => {
+                style.font_weight = zero_css_parser::values::FontWeightValue::Absolute(n);
+            }
+            _ => {}
+        },
+        // css-fonts-4 #font-size-adjust-prop：复用属性解析器（none/metric/number/
+        // math 全形），串化经 font_size_adjust_to_css 与期望元素同通道。
+        "font-size-adjust" => {
+            if let Some(v) = zero_style_system::property::parse::parse_font_size_adjust(value) {
+                style.font_size_adjust = v;
+            }
+        }
+        "letter-spacing" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.letter_spacing = LengthValue::Px(px);
+                style.letter_spacing_normal = false;
+            }
+        }
+        "word-spacing" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.word_spacing = LengthValue::Px(px);
+            }
+        }
+        "text-indent" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.text_indent = LengthValue::Px(px);
+            }
+        }
+        "min-width" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.min_width = LengthValue::Px(px);
+            }
+        }
+        "max-width" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.max_width = LengthValue::Px(px);
+            }
+        }
+        "min-height" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.min_height = LengthValue::Px(px);
+            }
+        }
+        "max-height" => {
+            if let Some(px) = parse_px_strict(value) {
+                style.max_height = LengthValue::Px(px);
             }
         }
         _ => {
