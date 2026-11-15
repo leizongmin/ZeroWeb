@@ -285,3 +285,35 @@ camelCase getter 缺臂返 none（`getPropertyValue('offset-path')` 正常
 start_transitions 按字面量属性名处理不展开（T:all 组永不启动，引擎级
 已知形，007 T:all 十二键同因）。探针页已删未入库；单页探针页路径
 教训（wpt-data 相对 vs repo 相对静默空真）已沉淀 memory。
+
+## 8. 独立复核附录（05:45 本实例静态分析 + 受控探针数据点，与 §7 互补）
+
+css-anim 探针形态因 corpus harness 时序依赖无法复刻（纯 opacity 对照
+组也死，双二进制同形）已弃用；WAAPI 探针受控形态（单 target、
+pause+currentTime=50000+fill:forwards、delay=0/duration=100s）双二进制
+对照产出三个 §7 未载数据点：
+
+1. **显式双端点 WAAPI 在 b1 PASS**（0%/100% 帧顺序正确显式声明，
+   t=0.5 期望 none，实测 none）——若 currentTime 写入完全不驱动引擎
+   时钟（§7 Animations/WAAPI 归因），wall-time≈0 → progress≈0 → 应显
+   from=circle → 应败。实过说明 registry 路径 pause/currentTime 持位
+   至少在该形态生效（或经端点钳制采纳路径落地，ms/s 单位不一致假说
+   未排除）——§7「无 seek 语义」在 WAAPI registry 半边需此精化。
+2. **单帧（合成端点）形态同页 FAIL**（got circle）——与数据点 1 的
+   唯一差异是 shim `_makeAnimation` 端点合成把合成 0% 帧 `push` 到
+   kf 数组**末尾**（`[{o:1}, 合成{o:0}]`），`build_keyframes_rule`
+   按数组序渲染 @keyframes 文本不过排序 → 解析出 keyframes[0]=100% 块
+   → `query_core` flip_ok 检查（`kf_offset(&rule.keyframes[0]) ==
+   Some(0.0)`）恒 false → flip 采纳永不触发 → 回落级联恒 base。
+   候选机制（静态分析，未插桩定谳——multitest 链占用
+   ./target/release 禁重建共享 runner）；对端插桩汇入点
+   apply_to_computed_style 看不见 registry canonicalize 的 tmp 克隆
+   apply，两证据面不冲突。
+3. **b0 探针单帧 PASS 为退化通过**：b0 类规则首读未应用 → 合成读得
+   none → 规则 none→none 恒值 → 恒值臂无条件采纳 = 假通过，非能力
+   证据；corpus 晚 recalc 自洽（t<0.4 组显 circle 可证 base 热后生效）。
+
+corpus 记账独立复核：12 DOWNS 全部为 to-[none] 键（T 六键 + Anim/
+WAAPI 六键），from-[none] 81 UPS 全过——失效/丢弃端点 ≡ underlying
+none 隐形的不对称与 §7 权威账吻合。合成帧乱序修复列为候选小刀
+（预期只动 WAAPI 单帧形态键集，需插桩 A/B 定谳后落码）。
