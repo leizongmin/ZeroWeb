@@ -530,11 +530,23 @@ impl InlineFormattingContext {
                             //（vertical-align-sub/super-001：abspos span va=super 泄入根
                             // run，行盒被 0.3·fs 撑高 111→140，红绿覆盖层错位）。嵌套
                             // inline 祖先的 va（父≠容器）照常适用（§10.8.1 行内对齐）。
-                            let vertical_align = if parent_id == Some(container)
-                                && styles
+                            // flex item 同理（CSS Flexbox §4
+                            // https://drafts.csswg.org/css-flexbox/#flex-items：inline-level
+                            // 子盒块化为 flex item；va applies-to inline-level 盒）——
+                            // flex-item-vertical-align：g50 `<length-percentage>` 抬升臂使
+                            // item 根 run 泄容器 va（10px/30px）整体平移翻红，按父 display
+                            // flex/inline-flex 判定块化 neutralize。
+                            let container_va_no_semantics = parent_id == Some(container)
+                                && (styles
                                     .get(&container)
                                     .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
-                            {
+                                    || doc
+                                        .parent_node(container)
+                                        .and_then(|pid| styles.get(&pid))
+                                        .is_some_and(|s| {
+                                            matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                                        }));
+                            let vertical_align = if container_va_no_semantics {
                                 VerticalAlignValue::Baseline
                             } else {
                                 style
@@ -3219,5 +3231,60 @@ mod r5295_inline_pct_padding_tests {
         assert!((px - 40.0).abs() < 0.01, "px 直通，got {px}");
         let em = InlineFormattingContext::resolve_inline_padding_pct(&LengthValue::Em(1.0), &style, 196.0);
         assert!((em - 16.0).abs() < 0.5, "1em ≈ 16px（默认字号），got {em}");
+    }
+}
+
+#[cfg(test)]
+mod g50_flex_item_va_leak_tests {
+    use super::*;
+
+    /// g50 回归钉（flex-item-vertical-align）：flex item 块化盒自身
+    /// vertical-align `<length-percentage>` 不泄入其内部根级文本 run——
+    /// CSS Flexbox §4（https://drafts.csswg.org/css-flexbox/#flex-items）
+    /// inline-level 子盒块化为 flex item，va applies-to inline-level 盒，
+    /// 对内部根行无对齐语义（R5223 abspos 同型，父 display flex/inline-flex
+    /// 判定）。修复前根 run 泄容器 va Length(30px) → g50 抬升臂使内容整体
+    /// 平移（solo 3/3 翻红 4.90%）。
+    #[test]
+    fn flex_item_container_va_neutralized_in_root_run() {
+        let doc = zero_dom::parse_html(r#"<html><body><div><span>item</span></div></body></html>"#);
+        let flexbox = doc.get_elements_by_tag_name("div")[0];
+        let item = doc.get_elements_by_tag_name("span")[0];
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        styles.insert(flexbox, container_style);
+        let mut item_style = ComputedStyle::default();
+        item_style.vertical_align = VerticalAlignValue::Length(LengthValue::Px(30.0));
+        styles.insert(item, item_style);
+        let ctx = InlineFormattingContext::new(800.0);
+        let items = ctx.collect_inline_items(&doc, item, &styles);
+        let InlineItem::Text(tr) = &items[0] else {
+            panic!("预期文本 run，got {:?}", items[0]);
+        };
+        assert_eq!(tr.vertical_align, VerticalAlignValue::Baseline, "flex item 容器 va 不泄入根 run");
+    }
+
+    /// 非 flex item 容器（普通块）读数口径不动——本修只收窄 flex-item 面，
+    /// 既有 container-va 读数（R5223 abspos 臂以外的普通块泄漏面）不在本修
+    /// 范围（语料无覆盖，spec 偏差已另行挂账观察）。blast-radius 钉。
+    #[test]
+    fn non_flex_container_va_read_unchanged() {
+        let doc = zero_dom::parse_html(r#"<html><body><div><span>plain</span></div></body></html>"#);
+        let item = doc.get_elements_by_tag_name("span")[0];
+        let mut styles = HashMap::new();
+        let mut item_style = ComputedStyle::default();
+        item_style.vertical_align = VerticalAlignValue::Length(LengthValue::Px(30.0));
+        styles.insert(item, item_style);
+        let ctx = InlineFormattingContext::new(800.0);
+        let items = ctx.collect_inline_items(&doc, item, &styles);
+        let InlineItem::Text(tr) = &items[0] else {
+            panic!("预期文本 run，got {:?}", items[0]);
+        };
+        assert_eq!(
+            tr.vertical_align,
+            VerticalAlignValue::Length(LengthValue::Px(30.0)),
+            "非 flex 容器读数口径不动"
+        );
     }
 }
