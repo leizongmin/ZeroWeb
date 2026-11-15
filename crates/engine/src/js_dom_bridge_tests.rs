@@ -222,3 +222,8 @@ include!("js_dom_bridge_tests/part120_ip_atomic_rawtext_pins.rs");
 // ip C4 容器链垫/劈裂刀钉测（2026-11-15）：垫底 br 持行豁免——空 dt 拆分垫
 // `<dt><br></dt>` 保全 + blockquote/ul 容器链尾新块物化 + 控制键恒一。
 include!("js_dom_bridge_tests/part121_ip_c4_container_pad_pins.rs");
+
+// ip C5 根层裸 br break-out 刀钉测（2026-11-15）：宿主唯一子 div 选区删净面
+// div 解包（`<div>[abc]</div>` exp `<br><div><br></div>`）+ 标签 p/宿主多块
+// 双控制键现役绿形恒一。
+include!("js_dom_bridge_tests/part122_ip_c5_root_bare_br_pins.rs");

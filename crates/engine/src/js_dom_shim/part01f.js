@@ -1392,6 +1392,11 @@
     var shellCap = (ar.collapsed && typeof globalThis.__zw_ce_capture_shell_carry === 'function')
       ? globalThis.__zw_ce_capture_shell_carry(ar, forward) : null;
     if (!ar.collapsed) {
+      // C5 刀（2026-11-15）：delete 前双 CharData 边界捕获——deleteContents
+      // 重锚活区后原文本引用已失，尾消解壳爬升必败（全删净面无幸存壳接锚）；
+      // 部分覆盖面由消解 kids 可见幸存/宿主级 sibs 守卫挡。
+      var arTxt = ar.startContainer.nodeType === 3
+        && ar.endContainer.nodeType === 3;
       _zwDelDeleteSelection();
     } else if (forward) {
       _zwDelForwardDeleteAction();
@@ -1424,7 +1429,7 @@
     // （collapsed delete/fd 无消解语义诉求）；482 blockquote 反例由 helper
     // tag 收窄挡。消解保节点身份，上方 override 重锚不失效。
     if (!ar.collapsed && typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function') {
-      try { globalThis.__zw_ce_dissolve_emptied_div_tail(ar); } catch (_eA1Tail) {}
+      try { globalThis.__zw_ce_dissolve_emptied_div_tail(ar, arTxt); } catch (_eA1Tail) {}
     }
     return true;
   };
@@ -1922,6 +1927,12 @@
       }
       if (!_zwIpCol) {
         var _zwIpAr0 = _zwVaGetActiveRange();
+        // C5 刀（2026-11-15）：delete 前双 CharData 边界捕获——deleteContents
+        // 重锚活区后原文本引用已失，尾消解壳爬升必败（全删净面无幸存壳接锚）；
+        // 部分覆盖面由消解 kids 可见幸存/宿主级 sibs 守卫挡。
+        var _zwIpAr0Txt = _zwIpAr0
+          && _zwIpAr0.startContainer.nodeType === 3
+          && _zwIpAr0.endContainer.nodeType === 3;
         _zwDelDeleteSelection();
         // ⑦ A1（2026-11-09 host-div-wrap 姊妹面，mt 487）：前导 delete 全删
         // 空宿主唯一元素子 div 时 Chrome 消解壳提宿主（caret 提壳链首）——
@@ -1930,7 +1941,31 @@
         // paragraph_split_at` ① 宿主级臂（同 ipara_wants=false 让位路径）。
         // fireEvents=false——beforeinput/input 已由 part06 ip 臂事件序派发。
         if (typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function'
-            && globalThis.__zw_ce_dissolve_emptied_div_tail(_zwIpAr0)) {
+            && globalThis.__zw_ce_dissolve_emptied_div_tail(_zwIpAr0, _zwIpAr0Txt)) {
+          // C5 刀尾随归一（2026-11-15）：消解提宿主后宿主唯一子恰为垫 br 时
+          // 移除并落 (host,0)——① 宿主级臂把 br 视行内容包块产双 div 形（探
+          // 针 dLog d(true)=true 后 htmlFinal 双 div 实证），空宿主 caret 才
+          // 走 A2 裸 br 垫＋sepTag 新块（语料 :2102/:2107 `<br><div><br></div>`
+          // /`<br><p><br></p>` Chrome 录制形，垫 br 身份换 ① 臂重垫标记 br，
+          // 语料仅核 innerHTML 无观察面）。delete 调用点不经此（宿主留 `<br>`
+          // 即 Chrome 全删空形）；消解提壳面（mt 483/485/487 hoist `<b></b>`）
+          // 唯一子非 br 不入此臂。
+          try {
+            var _zwC5Host = _zwListEditingHostOf(
+              _zwVaGetActiveRange().startContainer);
+            if (_zwC5Host && _zwC5Host.childNodes
+                && _zwC5Host.childNodes.length === 1
+                && _zwJusTag(_zwC5Host.firstChild) === 'br') {
+              _zwC5Host.removeChild(_zwC5Host.firstChild);
+              var _zwC5Nr = document.createRange();
+              _zwC5Nr.setStart(_zwC5Host, 0);
+              _zwC5Nr.collapse(true);
+              if (typeof _getSelection === 'function') {
+                _getSelection()._ranges = [_zwC5Nr];
+              }
+              try { globalThis.getSelection().collapse(_zwC5Host, 0); } catch (_eC5Cl) {}
+            }
+          } catch (_eC5Norm) {}
           var _zwIpHostA1 = null;
           try {
             _zwIpHostA1 = _zwListEditingHostOf(_zwVaGetActiveRange().startContainer);
