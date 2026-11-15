@@ -70,6 +70,13 @@ motion/values/fonts 0/0/0，合计 +198/0/0 零回归**。教训三则：corpus 
 2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)；
 规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
+**提交门禁 make test（11-15，mkt3/mkt6 双跑一致）**：fmt/clippy 绿；workspace
+腿 135P+1F——`service_worker_manager::module_update_compares_static_dependency_bytes`
+在册伪红第四例（es_module 具名导入装 globalThis getter 撞 84a48833d 老钉
+`globalThis.value` 赋值抛 TypeError，script-sandbox 导入绑定面，与本刀零代码
+路径，修复归 script-sandbox 流）；Makefile 补建 zero-browser 防
+image_batch_e2e 缺件伪红（清库必现形态）；renderer/browser/GPU 剩余腿
+companion 构建补跑进行中，细目见 evidence jsanim 刀文档验证节。
 **g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口
 thread_local 单源 + vertical-align `<length-percentage>` 三层
 （parse/computed/inline 布局 %×line-height），css-values
