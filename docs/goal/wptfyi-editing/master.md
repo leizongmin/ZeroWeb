@@ -1,6 +1,38 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-15 · Active**。**d37 input-events getTargetRanges 切片 1**：
+**2026-11-16 · Active**。**d38 gtr 家族双根因刀（查询链形 overlay 匹配 + runner 变体展开）**：
+gtr 家族 743F 拆解定谳两独立根因，共享路径双刀落树：
+
+① **shim 链形 overlay 匹配**（part05 `_zwOverlayChainAll` 四组合器链求值 helper +
+part04 qSA R309 臂/qS R322 臂各补 complex 链分支 + `_readCompoundToken` break 条件补
+`+`/`>`/`~` 组合器字符）——根因 A（P12 探针定谳）：同 turn innerHTML 后 mutation 经
+host 异步 apply，快照查询对刚写入子树恒 miss（同 turn 链查询 null → 60ms 后自愈命中
+= 宿主视图滞后），简单形有 R309/R161 pending 归并臂可看 overlay、链形无归并臂 →
+`querySelector("dl + dl > dt")`/`querySelector("P + p > b")` null → 语料
+`.firstChild` 崩；根因 B（P14 四象限定谳）：`_readCompoundToken` 不含组合器字符，
+无空格链 `p+p>b` 被单 token 吞成伪 tag `'P+P>B'` 的 supported compound → compound
+臂恒 miss（空格版 unsupported 正确落链臂，hit/null 四象限恒定）。引擎侧全链
+exonerated（parse/match/大小写折叠/子树作用域 fresh-parse 单测 3 件入树：
+dom `diag_chain_sibling_match` + engine `diag_bridge_query_all_chain_sibling`/
+`diag_parse_html_json_chain_sibling`）。
+
+② **runner 变体展开**（`run_corpus_subdirs_ext` R329 同款：`case_variants` 逐
+query 跑 + case 名带 query 与上游 dashboard 对齐；基础 URL 上游 harness 不注册 =
+空转）——4 文件 `<meta name=variant>` 矩阵（joining-dl ×2、deleting-in-list-items
+×4、joining-dl-and-another-list ×2、non-collapsed ×3）`location.search` 分派，
+query 缺席 → "Unhandled variant" 恒崩。**口径变化记档**：input-events case 分母
+25→32（1164→3350 子测）。
+
+数字：input-events **289P/875F/3T（1164 子测）→ 473P/2877F（3350 子测）**，
+P +184、crash 家族 **321F→1F**、Unhandled variant **488→0**；新账结构 =
+innerHTML-mismatch 1480 + beforeinput 事件计数 908 + targetRanges-assert 409
+（真实编辑语义面 = B2 剩余/B3）。哨兵：html-semantics 新旧二进制对拍
+**P 恒等 5378**、F 461 vs 464（3 差异全落 select-home-end-pagedown 键盘发射带内
+flaky，s491 形差带同族；本地 wpt-data 部分拉取态基线 5378P 与 s492 满额 8307P
+口径差异系语料不全、非代码回归——记档防误读）；桥测试 **1657P/0F**（含新 diag 2）；
+探针 P1-P7/P13/P14 全绿（P8 doc 级链、P9 matches 为范围外已知项）。证据见
+[gtr-chain-query-root-cause](evidence/2026-11-16-dc2-gtr-chain-query-root-cause.md)。
+**d37 input-events getTargetRanges 切片 1**：
 三件套（part01 CE 删除路径 beforeinput 前置 StaticRange 快照
 `__zwCePendingTargetRanges` + 传播后重读选区、part05
 `InputEvent.prototype.getTargetRanges` getter、runner Actions 键盘链
@@ -164,7 +196,9 @@ F2P 367 − P2F 1）、input-events 211P 恒等；d23–d31 批净 +52（selecti
 （delete/insertparagraph-in-child-of-html +10/+40），三目录预估 ~142.7k、
 差 ~3.5k（预估口径，正式落账待下周 DC-3 快照；d34 切片 +10 后
 ~142.75k；d35 批 +216 后 ~142.97k；d36 批 +8 后 ~142.98k；d37 批
-+66 后 ~143.0k、差 ~3.1k）。子文档域残余：
++66 后 ~143.0k；d38 批 P +184（变体展开口径同批扩大，P 增量含展开
+分母新增案，跨口径不直加——正式落账以 DC-3 快照统一口径为准））。
+子文档域残余：
 typing-around-link **CE（主窗）变体**
 collapsed ~122F + non-collapsed ~77F + after-joining-paragraphs 48F（边界
 切片已入执行链，tal 内壳形 `child=b`/`parent=b&child=i` ×4 Timeout——收敛
@@ -215,9 +249,11 @@ P2F=0）→ B2 切片 2 残余刀：修饰组合词删语义
 （deleteWordBackward/Forward，delete-selection 2 Ctrl 面）、
 range-exceptions InputEvent 构造器 targetRanges dict + StaticRange
 IndexSizeError 校验（4F）、typing DELETE join-walk 分离 sc 崩点守卫
-（4 笔 unhandled rejection）、gtr 家族余 743F join 面细化
-（list-items/dl-joins/across-boundaries）与 gtr.html 主文件 Timeout 案
-→ **B3 text-control execCommand 期望矩阵**（~474F，修前逐命令核对语料期望表）
+（4 笔 unhandled rejection）、gtr 家族 join 面真实语义刀
+（**d38 双根因刀已落**：crash 家族 321F→1F + Unhandled variant 488→0，
+新账 = innerHTML-mismatch 1480 + beforeinput 计数 908 +
+targetRanges-assert 409——join/merge 语义细化与 getTargetRanges 值面，
+见顶格 d38 段）→ **B3 text-control execCommand 期望矩阵**（~474F，修前逐命令核对语料期望表）
 → B4 shadow-dom getComposedRanges（62F）→ B5 小簇（cloning-attributes
 null 崩溃 17F 等）；③mt 慢页 systemd-run 长预算（d13 口径，MemoryMax
 封顶）补跑 strike/u/bold/italic 链对拍 + multipara/跨块族（M2/B1-B4

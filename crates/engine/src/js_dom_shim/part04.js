@@ -12610,6 +12610,36 @@
                       }
                     }
                   }
+                } else {
+                  // editing B2 切片 2：链形（complex）同 turn innerHTML 替换域 overlay
+                  // 链匹配首命中（qSA R309 链臂同源，`_zwOverlayChainAll`）——
+                  // compound-only 门把链形挡到 host 快照（同 turn mutation 异步 apply
+                  // 滞后恒 miss）穿落 return null。域判定与 R309 `_r309ih` 同口径
+                  //（解析顶层 `_zwSelPendingParent.parentSel === sel`；普通 append 域
+                  // host 快照有效不接——identity 双源风险）。命中 plain 代理返回
+                  //（R54xx 下钻同款：不物化——消费面 = plain 树操作）。伪类等真
+                  // unsupported（`_parseComplexOf` 也 null）维持回落 host。
+                  var _r322chainQ = null;
+                  if (typeof _parseComplexOf === 'function') {
+                    try { _r322chainQ = _parseComplexOf(String(q)); } catch (_e322cq) { _r322chainQ = null; }
+                  }
+                  if (_r322chainQ) {
+                    var _r322bqC = _zwPendingByParent.get(sel);
+                    if (_r322bqC && _r322bqC.added.length) {
+                      var _r322ihQ = false;
+                      for (var _r322ci = 0; _r322ci < _r322bqC.added.length; _r322ci++) {
+                        var _r322cn = _r322bqC.added[_r322ci];
+                        if (_r322cn && !_r322cn.__zwHandle && !_r322cn.__zwSelector
+                            && _r322cn._zwSelPendingParent && _r322cn._zwSelPendingParent.parentSel === sel) {
+                          _r322ihQ = true; break;
+                        }
+                      }
+                      if (_r322ihQ) {
+                        var _r322chits = _zwOverlayChainAll(_childNodeList(sel, null), _r322chainQ);
+                        if (_r322chits.length) return _r322chits[0];
+                      }
+                    }
+                  }
                 }
               } catch (_e) {}
               // s81 pull-in 臂：R125 表现持目标 id 的元素拉回（单 compound；子树
@@ -12709,6 +12739,18 @@
                         }
                       })({ childNodes: _r309kids });
                       _r309fused = _r309out;
+                    } else {
+                      // editing B2 切片 2：组合器选择器（complex）同 turn innerHTML
+                      // 替换域的 overlay 链匹配——compound-only 门把链形挡到 host
+                      // 快照（滞后恒 miss），qSA('dl + dl > dt') 空集。伪类等真
+                      // unsupported（`_parseComplexOf` 也 null）维持回落 host。
+                      var _r309chain = null;
+                      if (typeof _parseComplexOf === 'function') {
+                        try { _r309chain = _parseComplexOf(String(q)); } catch (_e309cp) { _r309chain = null; }
+                      }
+                      if (_r309chain) {
+                        _r309fused = _zwOverlayChainAll(_childNodeList(sel, null), _r309chain);
+                      }
                     }
                   }
                 }

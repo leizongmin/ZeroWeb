@@ -3749,8 +3749,21 @@ fn run_corpus_subdirs_ext(
             if case_skipped(&relative, &source) {
                 continue;
             }
-            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
-            cases.push((relative, results));
+            // variant 用例逐 query 跑（R329 同款；基础 URL 上游 harness 不注册 = 空转）。
+            // editing B2：input-events getTargetRanges 语料 4 文件 `<meta name=variant>`
+            // 矩阵（?Backspace/?Delete/…），页面 `location.search` 分派——query 缺席
+            // → "Unhandled variant" 恒崩假账；case 名带 query 与上游 dashboard 对齐。
+            let variants = case_variants(&source);
+            if variants.is_empty() {
+                let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
+                cases.push((relative, results));
+                continue;
+            }
+            for variant in variants {
+                let case_name = format!("{relative}{variant}");
+                let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, corpus_case_timeout());
+                cases.push((case_name, results));
+            }
         }
     }
     cases

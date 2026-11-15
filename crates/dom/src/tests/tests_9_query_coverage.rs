@@ -437,3 +437,35 @@ fn test_invalid_selector_form_fieldset_ancestors_r153() {
     assert!(!doc.matches(fieldset, ":valid"), "fieldset 不匹配 :valid（无祖先形态）");
     assert!(!doc.matches(form, ":valid"), "form 不匹配 :valid（无祖先形态）");
 }
+
+// 诊断（B2 切片 2）：`dl + dl > dt` 链在文档级 qSA 的匹配行为——WPT
+// input-events getTargetRanges 语料页面 `querySelector("P + p > b")`/
+// `querySelector("dl + dl > dt")` 崩 firstChild-null 的引擎侧复现。
+#[test]
+fn diag_chain_sibling_match() {
+    let doc = parse_html("<html><body><dl><dt>a</dt></dl><dl><dt>b</dt></dl></body></html>");
+    let root = doc.root();
+    let hits = doc.query_selector_all(root, "dl + dl > dt");
+    println!("dl + dl > dt hits: {}", hits.len());
+    assert_eq!(hits.len(), 1, "dl + dl > dt 应命中第二个 dl 的 dt");
+
+    let doc2 = parse_html("<html><body><p><b>x</b></p><p><b>y</b></p></body></html>");
+    let root2 = doc2.root();
+    assert_eq!(doc2.query_selector_all(root2, "p + p").len(), 1, "p + p 应命中第二个 p");
+    assert_eq!(doc2.query_selector_all(root2, "p + p > b").len(), 1, "p + p > b 应命中");
+    // 大写类型选择器（HTML 文档 ASCII 大小写不敏感，selectors-4 §6.1）。
+    assert_eq!(doc2.query_selector_all(root2, "P").len(), 2, "大写 P 应匹配两个 p");
+    assert_eq!(doc2.query_selector_all(root2, "P + p > b").len(), 1, "大写 P + p > b 应命中");
+
+    // 子树根作用域（find_by_selector('div') → 编辑宿主 div 为根的元素级查询——
+    // WPT 语料 gEditor.querySelector 的宿主消费面）。
+    let doc3 = parse_html(
+        "<html><body><div contenteditable><dl><dt>a</dt></dl><dl><dt>b</dt></dl></div></body></html>",
+    );
+    let root3 = doc3.root();
+    let div_root = doc3.query_selector(root3, "body > div").expect("编辑宿主 div 应可定位");
+    assert_eq!(doc3.query_selector_all(div_root, "dt").len(), 2, "子树根 dt 简单形应命中 2");
+    assert_eq!(doc3.query_selector_all(div_root, "dl + dl > dt").len(), 1, "子树根链形应命中 1");
+    let p_root = doc2.query_selector(root2, "body > p").expect("p 应可定位");
+    assert_eq!(doc2.query_selector_all(p_root, "b").len(), 1, "子树根 b 应命中");
+}
