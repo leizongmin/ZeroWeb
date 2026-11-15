@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5634 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=f2a6f3843 本流 R5633 账），码态 069c6aed6 恒等 corpus 按先例跳过，wpt-data 零写入（find -newermt 零命中实证）；②WPT 批探针一次成功无瞬断（tail-1 判定式 rc=0），版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：ZeroWeb-3 part05.js 刀施工续推进——unstaged diff +98/−3→+101/−3（编辑-编译循环活跃），仍未 staged 未落 origin（origin=HEAD=069c6aed6 恒等）＝预挂义务维持武装不触发；ZeroWeb-2 s467 收口开工——本地 staged 两文件（html-semantics-compat.md M 43 行改＋evidence m2s467-zeroinflow-patrol.md A 46 行，stat 实证两文件全 .md 零五扩展名＝零渲染面零 corpus 义务，s459/s461/s464/s465/s466 同形态第六例）；cronjob=2e972ffc9 恒等（M webview.rs＋两碎片未变）；本树巡查静默（自匹配过滤）；无外来 /tmp/r5634 工件＝无同树双写）** **（2026-11-15）**
+>
+> - **结果**：R5633 下一步①②③落轮（空转核查轮，零代码变更）。本轮唯一实质注记＝ZeroWeb-2 s467 收口开工（staged docs 两文件全 .md，patrol 同形态）；ZeroWeb-3 part05.js 刀施工继续推进（+3 行净增 unstaged）仍未落地。其余与 R5633 观察恒等；相位带九案带内噪声口径维持，本轮无 corpus 跑。
+> - **验证**：窗口空（pull --rebase「已经是最新的」对账 f2a6f3843）＋码恒等（069c6aed6..HEAD 零新提交）；探针一次成功（rc=0 无瞬断，tail-1 非空判定式）11 tags 完整、latest=v1.10；三 clone 状态在案（ZeroWeb-3 diff --stat +101/−3；ZeroWeb-2 staged stat 两文件 +73/−16 全 .md；cronjob status 恒等）；wpt-data 零写入（find -newermt 零命中）；基线快照 /tmp/r5603/fails-r5603.txt（995F）＋R5631 两次全量日志在位；零源码变更（fmt/clippy/product-smoke/bench-gate 不触发，corpus 按树恒等先例跳过）。
+> - **挂账**：**销账**：R5633 下一步①②③（本轮落轮）。**新增**：无（ZeroWeb-2 s467 暂存态＝位置观察非义务）。**维持**：ZeroWeb-3 part05.js 落 origin 时预挂义务武装（R5632 新增条全文）；相位带九案带内噪声跨跑观察（同二进制多跑稳定 F 才升级回归）；flex-va 刀跨流零位移旁证维持。
+> - **下一步 R5635**：①三源核查续（fetch 窗口对账 f2a6f3843 后新窗口、WPT 批探针 tail-1 非空判定式、⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案点名核验）。②对端观察（ZeroWeb-3 part05.js 刀落地窗口与恰集巡查——落地触发预挂 corpus A/B＋共享面叠加、html-semantics s467 收口落账窗口与后续、wptfyi-css WAAPI 门刀与 §3 转化率续报、cronjob 组F 续刀与 untracked 碎片静态观察、树碰撞复发巡查——巡查须过滤自匹配）。③相位带维持观察——九案带内噪声口径跨跑继续观察，不入回归台账（除非同二进制多跑稳定 F 才升级回归）。
+
 > **▶ R5633 三源空转核查轮（0 net code：①fetch 零新提交（origin/main=53e400209 本流 R5632 账），码态 069c6aed6 恒等 corpus 按先例跳过，wpt-data 零写入（find -newermt 零命中实证）；②WPT 批探针一次成功无瞬断（tail-1 判定式 rc=0），版本序 v1.0..v1.10 止于 v1.10＝无新批次，⑥⑦⑧⑨/table collapse 四切片/⑦基线刷新提案零新点名（窗口零）；③对端观察：ZeroWeb-3 part05.js 刀施工推进——unstaged diff +91/−3→+98/−3（编辑-编译循环活跃），仍未 staged 未落 origin（origin=HEAD=069c6aed6 恒等）＝预挂义务维持武装不触发；ZeroWeb-3 stash 全谱系 6 笔带日期核对均历史（10-23/11-01×2/11-08×2/11-14，R5632 所记笔数系 head 截断观察工件非新事件，本轮更正）；ZeroWeb-2=10f81b307 origin tip 已持 clean 恒等（s466 闭环后无后续开工，零 stash）；cronjob=2e972ffc9 恒等（M webview.rs＋两碎片未变）；本树巡查静默（自匹配过滤）；无外来 /tmp/r5633 工件＝无同树双写）** **（2026-11-15）**
 >
 > - **结果**：R5632 下一步①②③落轮（空转核查轮，零代码变更）。本轮唯一实质注记＝ZeroWeb-3 part05.js 刀施工活跃推进（+7 行净增 unstaged），落地窗口临近但未触发——预挂义务（逐 commit `--stat`＋新码态全量 corpus A/B＋共享面叠加）维持武装。其余三 clone 与 R5632 观察恒等；相位带九案带内噪声口径维持，本轮无 corpus 跑。
