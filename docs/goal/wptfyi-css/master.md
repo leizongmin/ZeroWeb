@@ -113,6 +113,27 @@ center center sides)` 乱序、无单位 0、`round 0px,` 逗号形、path `s` �
 （后置域）。**让位记**：peer backdrop-filter 刀在飞（zw-bdf-ab.service
 cssom 批 + editing-run 双链；registry.rs/es_module.rs/part02.rs WIP mtime
 00:15），在跑链禁发重型入口，本刀不开工，下轮开工前先核该刀落地态。
+**backdrop-filter 白名单刀已落地（11-16 十五轮，本流收口 peer 让位面）**：
+一行门线刀——style-system `known_properties()` 白名单 `"filter"` 后补
+`"backdrop-filter"`（2 文件 +12/−0：registry.rs 一行 + engine part02 R2785
+supports 钉扩双向断言），机制 = supports 前置门 `decl_supported` 缺串短路假
+（apply/gCS/WAAPI 插值/写回/初始五站 R2762 起全在，唯一缺口门线）。A/B
+（B0=bin-bdf-b0 e2fe2a8d=posp-b1 快照 ≡ 落地 HEAD / B1=bin-bdf-b1 37eb8df2
+WIP 重建）三 corpus：filter-effects **+253/0/0/6 页**（interpolation-001..004
++218、parsing/computed +25、composition-001 +10），css-typed-om/cssom
+护栏 0/0/0 白名单纯增量零外溢。定向钉 1 passed（test-guard 包裹）；
+`cargo fmt -p zero-style-system -p zero-engine -- --check` 净（27 处
+part02 假漂移 = 裸 rustfmt 配置解析差异，cargo fmt 权威门作准）；clippy 两
+crate 净（唯一 warning = peer es_module too_many_arguments 在册连坐）。
+make test 拆腿门（zw-bdf-mkt.service）全腿归账在册红：workspace 10097P/1F
+（same_origin_image_burst 负载 flake，R5288/R5292/R5385 同族 ≥4 先例，
+peer editing-run 电池并发窗）、renderer-lib 371P/1F（worker-fetch
+renderer 形）、browser bin/tests 各 2F（tab 镜像 + default_actions 形）、
+quickjs-clippy 101（peer es_module lint 在册）、gpu 双腿 0、其余腿见
+[evidence 2026-11-16-backdrop-filter-whitelist-knife](evidence/2026-11-16-backdrop-filter-whitelist-knife.md)。
+残面：composition-001 余 ~90F = shim composite-add 函数列表 all-or-nothing
+主矛盾面（十轮已挂账）、散页 ~690 在他 corpus 全量跑自然入账；同型 supports
+桶定谳 mask-border/shape-outside/calc-size/row-rule 均真实现缺口后置。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +

@@ -686,6 +686,7 @@ impl PropertyRegistry {
             "object-fit",
             "object-position",
             "filter",
+            "backdrop-filter",
             "column-rule-color",
             "contain",
             "contain-intrinsic-size",

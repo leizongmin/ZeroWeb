@@ -765,6 +765,16 @@ fn test_css_escape_supports_r2785() {
             .value,
         "true|true|true|true"
     );
+    // backdrop-filter 五站全在（apply/gCS/插值/写回/初始，R2762/R4272）但
+    // known_properties 白名单缺串即 supports 短路假——filter-effects 语料
+    // 以 `CSS.supports('backdrop-filter', …)` 前置门，整页翻红。
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('backdrop-filter','blur(2px)') + '|' + CSS.supports('backdrop-filter','bogusxyz')")
+            .unwrap()
+            .value,
+        "true|false"
+    );
     // CSS.supports 单参：括号条件 / 声明 / not。
     assert_eq!(
         sandbox
