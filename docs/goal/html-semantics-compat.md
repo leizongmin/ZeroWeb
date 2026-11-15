@@ -2,39 +2,59 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 491 收口（**他流刀归因轮**：css
-流 offset 簇刀 6b84507fe 落树——CSS Motion Path 四属性五站
-全链，corpus +364 零回归；html-semantics 面**零位移清偿**
-——「申报=实测」谱系第五例；账本
-evidence/2026-11-15-m2s491-offset-knife-attribution.md）。
-**码态换新 = 6b84507fe**（HEAD 即刀 commit；runner 二进制
-换代 126909176 → 126960144 +50968，leg1 真重建 Compiling
-×8）。vs s490 stable（8514）：**GONE 4 + NEW 0 + flips 0 +
-T 键集恒等 6/6**——GONE 4 全族键发射形差
-（select-home-end-pagedown-pageup.optional 4 子测键 Fail ↔
-leg2 整文件键 Timeout，s464 相位谱族带内摆动、s487 整文件 T
-形先例同款），非族键逐键恒等；Motion Path 与 select 键盘行
-为零语义交叠，**刀半径零 HTML 语义面影响**。stable 8510
-（8305P/198F/6T/1U）disagree 0。**P 集账本口径 8307 持位第
-13 轮**（stable 机械口径 8305P）；picker 刀增益键 stable
-Pass 第 14 轮保持，checkmark 恒 F 带形不变。onblur 哨组
-10 键全回 stable 8P/2F（瞬态收案后连续第二轮全带形）；
-dialog-overlay 哨第 20 轮 + modulepreload 哨第 23 轮零翻红。
-全桥绿窗 **1655P/0F rc=0**——清单 vs s490 set 恒等 GONE 0
-（filtered 2389→2392 +3 为刀 WAAPI 插值臂 engine 域非
-bridge 单测被滤，桥面零增预期兑现）。
+**状态**: Active——M2 切片 492 收口（守成巡查轻覆盖轮第五
+轮：零入树同码态同二进制——码态 6b84507fe 恒等，offset-
+position 刀（实例 2614542 实施中信号）与 ZeroWeb-3 三文件
+刀均未落树；账本
+evidence/2026-11-15-m2s492-quiet-baseline-patrol.md）。
+码态 = 6b84507fe（HEAD 97179e7a8 docs-only；runner
+126960144 恒同二进制）。**双腿完全一致**第六次：双 8516
+（双 8307P/202F/6T/1U，disagree 0 leg-only 0），族键全数入
+stable，stable 8514（8305P/202F/6T/1U）。**vs s491 stable
+（8510）：GONE 0 + NEW 4（s491 GONE 同 4 族键 Fail 回归
+stable——s491 族带内发射形差经一轮往返收案，s488/s490 形
+恢复，族相位谱维持观察不升级）+ flips 0——非族键逐键恒
+等 + T 集恒等 6/6**。**P 集账本口径 8307 持位第 14 轮**
+（stable 机械口径 8305P）；picker 刀增益键 stable Pass 第
+15 轮保持，checkmark 恒 F 带形不变。onblur 哨组 10 键
+stable 8P/2F（瞬态收案后第三轮全带形）；dialog-overlay 哨
+第 21 轮 + modulepreload 哨第 24 轮零翻红。全桥绿窗
+**1655P/0F rc=0**——清单 vs s491 set 恒等 GONE 0（码态未
+变零增长预期兑现）。
 红池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。
 **挂用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+
 s137（s445 已提示，不重复通知）。hang 观察项静默哨维持（双
 腿零真 hang，零截断）。
-下一步：**守成巡查**（对账基线换 s491 stable 8510；他流入
-树归因轮或轻覆盖；ZeroWeb-3 三文件刀 testharness.rs +50 落
-地窗口临近信号持续，落树后按他流刀归因轮，join 实测为准；
-ZW-3 b2 工作面落 origin 后按其自账核对）+ 候门决项等待用户
-拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；rendering
-流 dialog 16 红块协同面（归 rendering 流记账）。门开随批落
-预案不变：簇 D 开 → customizable-select-styles.css ×47 随
-批落。
+下一步：**守成巡查**（对账基线换 s492 stable 8514；他流入
+树归因轮或轻覆盖；css 流 offset-position 刀实例 2614542
+实施中 + ZeroWeb-3 三文件刀 testharness.rs +50 落地窗口临
+近信号持续，落树后按他流刀归因轮，join 实测为准）+ 候门决
+项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
+rendering 流 dialog 16 红块协同面（归 rendering 流记账）。
+门开随批落预案不变：簇 D 开 → customizable-select-styles.css
+×47 随批落。
+
+> **▶ 承前（2026-11-15 M2 切片 491 收口）——他流刀归因
+> 轮：css 流 offset 簇刀 6b84507fe 落树（CSS Motion Path
+> 四属性五站全链，corpus +364 零回归），html-semantics 面
+> **零位移清偿**——「申报=实测」谱系第五例；账本
+> evidence/2026-11-15-m2s491-offset-knife-attribution.md）。
+> **码态换新 = 6b84507fe**（HEAD 即刀 commit；runner 二进
+> 制换代 126909176 → 126960144 +50968，leg1 真重建
+> Compiling ×8）。vs s490 stable（8514）：**GONE 4 + NEW 0
+> + flips 0 + T 键集恒等 6/6**——GONE 4 全族键发射形差
+> （select-home-end-pagedown-pageup.optional 4 子测键 Fail
+> ↔ leg2 整文件键 Timeout，s464 相位谱族带内摆动、s487 整
+> 文件 T 形先例同款），非族键逐键恒等；Motion Path 与
+> select 键盘行为零语义交叠，**刀半径零 HTML 语义面影
+> 响**。stable 8510（8305P/198F/6T/1U）disagree 0。**P 集
+> 账本口径 8307 持位第 13 轮**；picker 刀增益键 stable
+> Pass 第 14 轮保持，checkmark 恒 F 带形不变。onblur 哨组
+> 10 键全回 stable 8P/2F；dialog-overlay 哨第 20 轮 +
+> modulepreload 哨第 23 轮零翻红。全桥绿窗 **1655P/0F
+> rc=0**——清单 vs s490 set 恒等 GONE 0（filtered
+> 2389→2392 +3 为刀 WAAPI 插值臂 engine 域非 bridge 单测
+> 被滤，桥面零增预期兑现）。
 
 > **▶ 承前（2026-11-15 M2 切片 490 收口）——守成巡查轻覆
 > 盖轮第四轮：零入树同码树同二进制——码态 492a0f2e0 恒等，
