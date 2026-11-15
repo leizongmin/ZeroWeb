@@ -55,6 +55,16 @@ interpolation-test.js 引用页为 0，无混杂）。两组路径（插值/comp
 css-gaps 21 / css-masking 21 / css-values 18 / css-fonts 16 /
 css-grid 16 / css-sizing 16 / css-text 12 / filter-effects 12 /
 css-ui 11（余长尾）。对验收线余 ~119,496 占比 ~47%。
+**跨组实证（11-15 五轮）**：抽 transforms
+`transform-interpolation-004` 与 motion `offset-path-coord-box-interpolation`
+各一页实跑——同签名 crash（`undefined.setProperty` @ :73 setup ← :378
+插值臂 expando 回读，与 masking :451 composition 臂同根因不同臂）
+→ §3「预计同压」升级为**三组已实证**。
+**B0 基线已捕获（11-15 五轮）**：`.acceptance/wptfyi-css/results-texp-b0/
+css-masking.json`——现有二进制（mtime 07:47，provenance：g49 落地后
+重建、疑含 g50 WIP 片，根因面与其无交集）全 masking 语料 63 案
+126P/419F/1T（含 2 zz- 探针页各 1 失败案，A/B 对账时按页剔除）。
+刀后 B1 同窗重建（git status 干净前提）后 compare-corpus.py 逐页对账。
 
 **口径诚实**：56,365 是这些页的上游子测分母——刀修的是「0 结果崩溃」
 →「真实结果通道」；每页子测转真实 pass/fail 后的通过率未测（插值断言
