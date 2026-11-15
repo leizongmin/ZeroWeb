@@ -2,23 +2,27 @@
 
 **版本**: v2.0
 **日期**: 2026-11-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 470 收口（他流刀归因轮：ZeroWeb-3 编
-辑流 part05 刀 423c920ba 落树（R5636 staged 前夜兑现），html-
-semantics 面零位移清偿——P 集口径 8306 刀前刀后恒等；账本
-evidence/2026-11-15-m2s470-part05-knife-attribution.md）。
-刀后双腿（07312f8fd 树）8516/8515（8306P/203F/6T/1U 与 8306P/
-202F/6T/1U），共享 distinct 8512，disagree 1 = detailed 族整文
-件键 T↔F 腿间对冲；stable 8513（8306P/201F/5T/1U，distinct
-8511）。vs s469 stable（刀前树）恰 1 GONE（detailed T，族相位）
-+ 零 NEW，共享键零状态翻转，非族键逐键零差。**归因定谳零位移清
-偿**（与渲染流 g47/g49/g50/b7ecf7864 及编辑流 s453/s466 同型）。
-modulepreload 观察哨第 2 轮复核无再翻红（累计 40/41 腿 Pass，哨
-继续盯防）。onblur 哨键组 10 键双腿一致 Pass 在 stable（哨解除后
-第十六轮）。全桥绿窗 **1643P/0F rc=0**（+0，刀只触 shim part05
-未触桥面）。红池归账结构不变（簇 D 155 + 渲染域/decoder 42 +
-onblur 2）。**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
-（簇 D）+ s137（s445 已提示，不重复通知）。hang 观察项静默哨维
-持（本轮双腿零 hang）。
+**状态**: Active——M2 切片 471 收口（他流刀归因轮：css 流 WAAPI
+门刀 107bcd935 落树，html-semantics 面零位移清偿——P 集刀前刀后
+恒等 8306；唯一非族变动 dialog-overlay 键 solo 定谳瞬时 flake 立
+观察哨；账本
+evidence/2026-11-15-m2s471-waapi-knife-attribution.md）。
+刀后双腿（bc009e7a3 树）8513/8513（8305P/200F/7T/1U 与 8306P/
+200F/6T/1U），共享 distinct 8511，腿键集一致，disagree 2 =
+detailed 族键 T↔F + dialog-overlay 键 leg1 F↔leg2 P（非族）。
+stable 8511（8305P/199F/6T/1U，distinct 8509）。vs s470 stable
+（刀前树）恰 3 GONE（族 End/Home 2 子测双腿缺席 + dialog-
+overlay）+ 1 NEW（族整文件 T），共享键零翻转。**dialog-overlay
+键 solo ×3 全 Pass 定谳瞬时 flake 立观察哨**（第二个非族哨），
+**P 集 8306→8305 单轮破位**预期下轮回位。**WAAPI 归因定谳零位移
+清偿**（animate/getAnimations 面 2 键恒等 + animation 键恒 F +
+族变动全族相位）。modulepreload 哨第 3 轮无再翻红（42/43 腿）。
+onblur 哨键组 10 键双腿一致 Pass（哨解除后第十七轮）。全桥绿窗
+**1643P/0F rc=0**（+0，刀只触 shim part03/part05 未触桥面）。红
+池归账结构不变（簇 D 155 + 渲染域/decoder 42 + onblur 2）。**挂
+用户门维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137
+（s445 已提示，不重复通知）。hang 观察项静默哨维持（本轮双腿零
+hang）。
 下一步：**守成巡查**（他流入树归因轮或轻覆盖；红池全数归门后无自
 由可施工面。wptfyi-css 流下刀预告 WAAPI 门刀，落树后按他流刀归因
 轮——半径全在 css 组，html-semantics 面预期零位移，join 实测为
@@ -27,6 +31,17 @@ s137）；rendering 流 dialog 16 红块协同面（归 rendering 流记账）�
 门开随批落预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
 
+> **▶ 承前（2026-11-15 M2 切片 470 收口）——他流刀归因轮：
+> ZeroWeb-3 编辑流 part05 刀 423c920ba 落树（R5636 staged 前夜兑
+> 现）html-semantics 面零位移清偿，P 集口径 8306 刀前刀后恒等（
+> 账本 evidence/2026-11-15-m2s470-part05-knife-attribution.md）**：
+> 刀后双腿（07312f8fd 树）8516/8515（8306P/203F/6T/1U 与 8306P/
+> 202F/6T/1U），共享 distinct 8512，disagree 1 = detailed 族键
+> T↔F；stable 8513（8306P/201F/5T/1U，distinct 8511）vs s469
+> （刀前树）恰 1 GONE（detailed T）+ 零 NEW，flips=0。全桥绿窗
+> 1643P/0F rc=0（刀只触 shim part05）。modulepreload 哨第 2 轮
+> 无再翻红（40/41 腿）。
+>
 > **▶ 承前（2026-11-15 M2 切片 469 收口）——守成巡查轻覆盖轮：
 > 零入树零刀同码树基带复测，modulepreload P 键预期回位兑现 P 集
 > 8306 恢复，观察哨第 1 轮复核无再翻红（账本
