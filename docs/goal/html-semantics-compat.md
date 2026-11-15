@@ -2,40 +2,64 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 501 收口（**守成巡查轻覆盖轮
-第九轮**：零入树同码态同二进制——码态 cfd1a06af 恒等
-（ihtml 轴一拆分插入刀对端申报「下一步入账」未落树，双克
-隆静默）；账本
-evidence/2026-11-16-m2s501-quiet-baseline-patrol.md）。
-码态 = cfd1a06af（HEAD bb5cfc9f7 docs-only；runner
-126999128 恒同二进制；leg1 同内容重链 ×6/leg2 零
-Compiling）。**双腿完全一致**第九次：双 8517（双
-8308P/202F/6T/1U raw，disagree 0 leg-only 0——族键首次入
-一致形），族键全数入 stable，stable 8514
-（8305P/202F/6T/1U）。**vs s500 stable（8509）：GONE 0 +
-NEW 5（全族键：optional 4 子测 Fail + detailed 整文件
-Timeout——s497 形恢复，s500 两形发射形差经一轮往返收案）
-+ flips 0——非族键逐键恒等**（族相位谱 s464 起维持观察：
-1 轮周期往返摆 s500 出 → s501 入，不升级）。**P 集账本
-口径双腿双 8307P 持位第 23 轮**；picker 刀增益键 stable
-Pass 第 24 轮保持，checkmark 恒 F 带形不变。onblur 哨组
-10 键双腿双 8P/2F——**flaky 键 3 例窗口零新例连续第七
-轮**（当前 2 例）；dialog-overlay 哨第 30 轮 + modulepreload
-哨第 33 轮零翻红。全桥绿窗 **1659P/0F rc=0**——清单 vs
-s500 set 恒等 1659 GONE 0（filtered 2394 恒）。本轮管线全
-LC_ALL=C 固化。红池归账结构照常。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445 已提
-示，不重复通知）。hang 观察项静默哨维持（双腿零真 hang，
-零截断）。
-下一步：**守成巡查**（对账基线换 s501 stable 8514——族键
-入位形；他流入树归因轮或轻覆盖；onblur flaky 键 3 例窗口
-观察维持；族键相位谱 1 轮周期往返摆观察维持不升级；对端
-ihtml 轴一拆分插入刀信号持续 + 后续刀信号持续，落树后按
-他流刀归因轮，join 实测为准）+ 候门决项等待用户拍板
+**状态**: Active——M2 切片 502 收口（**守成巡查轻覆盖轮
+第十轮**：零入树同码态同二进制——码态 cfd1a06af 恒等
+（ihtml 轴一拆分插入刀对端申报「下一步入账」未落树，对
+端 ZW-3 querySelector 施工面未落树，双克隆静默）；账本
+evidence/2026-11-16-m2s502-quiet-baseline-patrol.md）。
+码态 = cfd1a06af（HEAD 232b636a5 docs-only；runner
+126999128 恒同二进制；leg1 残档复用——上一 session 429
+中断前已完成，三条件核验：日志完整/码态同/语料 pin 同；
+leg2 等对端探查干净窗现跑）。**族键两形异相位出位**：
+leg1 8517 raw（8308P/202F/6T/1U，与 s501 leg1 逐键恒
+等）/ leg2 8514 raw（8308P/199F/6T/1U，仅族键 5 键发射
+形差），stable 8509（8305P/198F/5T/1U）+ disagree 1 +
+leg-only 5+1 全族键。**vs s501 stable（8514）：GONE 5
+（全族键：optional 4 子测键 + detailed 整文件键，leg1 子
+测形 / leg2 整文件形 s487/s498 形）+ NEW 0 + flips 0——
+非族键逐键恒等**；**stable 8509 与 s500 stable 键集+状态
+双恒等**（族相位谱 s464 起维持观察：1 轮周期往返摆 s500
+出 → s501 入 → s502 出，不升级）。**P 集账本口径双腿双
+8307P 持位第 24 轮**（双发伪影 2 键 dedup 照旧在册）；
+picker 刀增益键 stable Pass 第 25 轮保持，checkmark 恒 F
+带形不变。onblur 哨组 10 键双腿双 8P/2F——**flaky 键 3
+例窗口零新例连续第八轮**（当前 2 例）；dialog-overlay 哨
+第 31 轮 + modulepreload 哨第 34 轮零翻红。全桥绿窗
+**1659P/0F rc=0**——清单 vs s501 set 恒等 1659 GONE 0
+（filtered 2394 恒）。本轮管线全 LC_ALL=C 固化。红池归
+账结构照常。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，不重复通知）。
+hang 观察项静默哨维持（双腿零真 hang，零截断）。
+下一步：**守成巡查**（对账基线换 s502 stable 8509——族键
+出位形、s500 构成同款；族键相位谱 1 轮周期往返摆观察维
+持——下轮预期回位入位形；他流入树归因轮或轻覆盖；onblur
+flaky 键 3 例窗口观察维持；对端 ihtml 轴一拆分插入刀信
+号持续 + 对端 ZW-3 querySelector 施工刀信号持续，落树后
+按他流刀归因轮，join 实测为准）+ 候门决项等待用户拍板
 （video P1+P2 立项 / 簇 D A2 立项 / s137）；rendering 流
 dialog 16 红块协同面（归 rendering 流记账）。门开随批落
 预案不变：簇 D 开 → customizable-select-styles.css ×47
 随批落。
+
+> **▶ 承前（2026-11-16 M2 切片 501 收口）——守成巡查轻
+> 覆盖轮第九轮：零入树同码态同二进制——码态 cfd1a06af
+> 恒等（ihtml 轴一拆分插入刀对端申报「下一步入账」未落
+> 树，双克隆静默）；账本
+> evidence/2026-11-16-m2s501-quiet-baseline-patrol.md）。
+> 码态 = cfd1a06af（HEAD bb5cfc9f7 docs-only；runner
+> 126999128 恒同二进制）。**双腿完全一致**第九次：双 8517
+> raw（双 8308P/202F/6T/1U，disagree 0 leg-only 0——族键
+> 首次入一致形），族键全数入 stable，stable 8514
+> （8305P/202F/6T/1U）。vs s500 stable（8509）：GONE 0 +
+> NEW 5（全族键：optional 4 子测 Fail + detailed 整文件
+> Timeout——s497 形恢复）+ flips 0——非族键逐键恒等（族
+> 相位谱 1 轮周期往返摆 s500 出 → s501 入）。P 集账本口
+> 径双腿双 8307P 持位第 23 轮；flaky 键 3 例窗口零新例连
+> 续第七轮；dialog-overlay 哨第 30 轮 + modulepreload 哨
+> 第 33 轮零翻红；picker 增益键第 24 轮保持。全桥绿窗
+> 1659P/0F rc=0——清单 vs s500 set 恒等 1659 GONE 0。
+> 下一步：守成巡查（对账基线换 s501 stable 8514——
+> s502 兑现）。
 
 > **▶ 承前（2026-11-16 M2 切片 500 收口）——他流刀归因
 > 轮：editing 流 ip I5 pre 换行归一刀 cfd1a06af 落树
