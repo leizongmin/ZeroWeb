@@ -460,20 +460,24 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // drop-shadow）回落离散切换。
         "filter" | "backdrop-filter" => match interpolate_filter_list(from, to, t) {
             Some(v) => v,
-            None if t > 0.5 => to.to_string(),
+            // 离散边界同 css-values-4 §8.5.6（≥ 0.5 → to，wptfyi-css 动画值进 gCS 刀校准）。
+            None if t >= 0.5 => to.to_string(),
             None => from.to_string(),
         },
         // R5191（css-transforms-1 §13.2 / css-transforms-2 §14）：transform 函数列表
         // 插值——同构列表逐函数插值、matrix↔matrix 走规范 2D unmatrix 分解、none 侧
         // 恒等展开；异构/3D/无效回落离散切换（既有默认臂同语义，零回归）。
+        // 离散边界 css-values-4 §8.5.6：progress < 0.5 → from，**≥ 0.5 → to**
+        //（wptfyi-css 动画值进 gCS 刀校准——expectFlip(f,t,0.5) 在 at=0.5 期望 to，
+        // 旧实现严格 > 恒差半帧）。
         "transform" => match transform_interp::interpolate_transform_value(from, to, t) {
             Some(v) => v,
-            None if t > 0.5 => to.to_string(),
+            None if t >= 0.5 => to.to_string(),
             None => from.to_string(),
         },
         _ => {
-            // 不支持插值的属性，在进度 > 0.5 时切换到目标值
-            if t > 0.5 { to.to_string() } else { from.to_string() }
+            // 不支持插值的属性：离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
+            if t >= 0.5 { to.to_string() } else { from.to_string() }
         }
     }
 }
@@ -934,6 +938,27 @@ impl AnimationClock {
             }
         }
         updated
+    }
+
+    /// WAAPI JS 动画注册表（js_dom_bridge::js_anim_registry）seek 通道：直接设定
+    /// 冻结求值点（时钟域秒，local time 含 delay）——`currentTime = t` 后的同步
+    /// gCS 读值经 paused_at 求值（M2-S3b 同语义）。`None` = 解除冻结（running）。
+    pub fn set_hold(&mut self, element_id: u64, hold: Option<f64>) {
+        if let Some(animations) = self.active_animations.get_mut(&element_id) {
+            for anim in animations.iter_mut() {
+                anim.paused_at = hold;
+            }
+        }
+    }
+
+    /// WAAPI JS 动画注册表 play 重锚通道：设定 start_time（时钟域秒）——
+    /// running 求值 elapsed = now − start_time（宿主墙钟时基）。
+    pub fn set_start_time(&mut self, element_id: u64, start: f64) {
+        if let Some(animations) = self.active_animations.get_mut(&element_id) {
+            for anim in animations.iter_mut() {
+                anim.start_time = start;
+            }
+        }
     }
 
     /// 从 ComputedStyle 的 animation 属性自动创建动画。

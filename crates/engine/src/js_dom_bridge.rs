@@ -33,6 +33,11 @@ pub use computed_style::*;
 mod computed_style_cache;
 pub use computed_style_cache::*;
 
+// WAAPI JS 动画注册表（wptfyi-css 动画值进 gCS 刀，2026-11-15）——Element.animate
+// 产物的引擎侧求值通道，gCS 两通道序列化前咨询。pub(crate)：callbacks 注册点与
+// computed_style_cache handle 通道消费。
+pub(crate) mod js_anim_registry;
+
 // WebCrypto host 实现（R2973 从本文件拆出，控制主文件行数）。纯字节级 crypto，无 DOM/CSS 依赖。
 mod crypto;
 pub use crypto::*;

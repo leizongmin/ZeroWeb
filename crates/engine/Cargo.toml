@@ -23,6 +23,9 @@ zero-canvas = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-script-sandbox = { workspace = true, optional = true }
+# wptfyi-css 动画值进 gCS 刀（js_anim_registry）：WAAPI 注册 spec JSON 解析。
+# 原 dev-dependencies 条目保留（测试面独立引用）。
+serde_json = { workspace = true }
 simplecss = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }

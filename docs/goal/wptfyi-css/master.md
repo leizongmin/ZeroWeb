@@ -46,11 +46,28 @@ min-height-composition 0P/60F 证 additive composition 值同样不反映。
 css 方法恒 true）。engine 共享面共存记：ZeroWeb-3 流在 part05.js 施工
 （M3-B/C 刀 staged 未提交，peer 提交 f82e60416 账面），本轮 engine 提交
 已 rebase 干净、无文本冲突。
-**下一步：动画值进 gCS 刀**——先探针定位 WAAPI `_makeAnimation` 注册到
-引擎动画时钟的断点（对象/时钟/computed 三段切面），再接 computed 通道；
-supports 全局关键字臂（`decl_supported` 已知属性 + 全局关键字判真，spec
-正确方向）可作搭车小刀同轮 A/B。背景与分桶见 [evidence
-2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)。
+**动画值进 gCS 刀已落地（11-15 十轮，jsanim v1→v3 三代 A/B 收口）**：shim
+`Animation` 经 `__zw_js_anim_register/seek/playpause/cancel` 把 keyframes/timing/
+播放态登记到引擎侧 `js_anim_registry`（thread_local ENTRIES + 独立
+AnimationClock 实例，渲染管线零触及），gCS selector/handle 两通道序列化前咨询
+（apply 后过同一规范化序列化器）。三代形态：v1 裸奔 +586G 但 245 REG
+（composite/calc-size/url/neutral 缺端点等离散 fallback 全翻红）；v2 +形状守卫
+（composite≠replace、calc-size(/random(、裸关键字端点不登记）+fallback 检测器
+（开区间 tick 恒等端点原文=未真插值→回落 B0 通道）+canonicalize None（序列化
+恒等→回落 gCS 通道）→ 183G/0L/**9R**；v3 +端点合成（neutral 单帧臂 JS 侧注册前
+读 underlying 补 0%/100% 帧，Web Animations §5.4.15）+混合单位端点门（px↔%/
+px↔em 跨单位插值退化面不登记；无单位侧合法插值不误门——首版 none→X 陪葬
+−21 事故已修）→ 五组 A/B（B0=results-jsanim-b0/B1=results-jsanim-b3，全程
+快照二进制防混源）：**css-transforms +185/0/0、css-backgrounds +13/0/0、
+motion/values/fonts 0/0/0，合计 +198/0/0 零回归**。教训三则：corpus A/B 前
+必核双腿 page 集合相等（peer 施工目录瞬态缺席曾伪增 183 REG，补腿法
+`CSS_CORPUS_ONLY_SUBSTR` 定向重跑）；`cases=` 汇总是 merge 侧 entry-页计数
+非尝试数（库存核对以 transcript `==== ` 行为准）；B0 伪通过池（echo 恒等/
+期望本身垃圾串）以守卫保位不追真值。残面增益候选（下一刀）：composite-add
+建模 ~146G、easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G。见 [evidence
+2026-11-15-jsanim-gcs-value-knife](evidence/2026-11-15-jsanim-gcs-value-knife.md)；
+背景与分桶见 [evidence
+2026-11-15-texp-groups-conversion](evidence/2026-11-15-texp-groups-conversion.md)；
 规格溯源（候选定谳/站点行级定位/探针矩阵）见 [evidence
 2026-11-15-target-expando-interpolation-unlock](evidence/2026-11-15-target-expando-interpolation-unlock.md)。
 **g50′ 完成（11-15，提交 7bc31687d，同树并发流落地）**：apply 期视口

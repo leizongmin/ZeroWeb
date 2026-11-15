@@ -894,10 +894,14 @@ pub(super) fn computed_style_by_handle(
         };
         styles
             .get(&nid)
-            // g19：sibling ctx 注入（CSS Values 5 §tree-counting）——inset 槽
-            // sibling 叶 Calc 树求值（作用域有 doc+nid）。
             .map(|s| {
-                serialize_computed_property_with_sibling(s, prop, Some(zero_style_system::sibling_position(doc, nid)))
+                let sibling = Some(zero_style_system::sibling_position(doc, nid));
+                // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）——
+                // 动态元素（handle 身份，createElement 产物）gCS 通道同覆盖；未命中
+                // 回落级联序列化零漂移。rect 桥复用本通道（prop="width"）咨询恒
+                // None除非该 handle 真有动画——几何面零干扰。
+                super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
+                    .unwrap_or_else(|| serialize_computed_property_with_sibling(s, prop, sibling))
             })
             .unwrap_or_default()
     })
