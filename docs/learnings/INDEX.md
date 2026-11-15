@@ -5,10 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（290）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（291）
 
 - 2026-11-15 [共享树多条 make test 链互踩尽灭——disk-guard rm 并发竞争与指纹撞写](bugs/2026-11/2026-11-15-shared-tree-multi-chain-maketest-mutual-kill.md) — make test, target-disk-guard, rally 无人值守执行流程
 - 2026-11-15 [在飞批脚本冻结纪律与裸腿日志独立判读：脚本文件被并发改写后 bash 按偏移错位执行，批内判读行不可作终态依据](bugs/2026-11/2026-11-15-inflight-script-freeze-and-raw-log-rejudge.md) — .acceptance/dps,tests/wpt-runner
+- 2026-11-15 [corpus A/B 基线目录陈旧：跨刀复用旧 results 目录把已落库增益错记进本刀](bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md) — wpt-runner, testing
 - 2026-11-15 [comm 对比 sweep 产物必须显式 LC_ALL=C，否则 collation 差产出成百伪 GONE/NEW](bugs/2026-11/2026-11-15-comm-collation-false-diff.md) — zero-wpt-runner
 - 2026-11-15 [批级 census 的稳定残红可能是窗切伪影：无窗单页复放配方定谳](bugs/2026-11/2026-11-15-census-window-artifact-windowless-replay.md) — engine,testing
 - 2026-11-15 [AnimationClock.tick 会烧死 fill-forwards 状态——端点捕获必须走无副作用路径](bugs/2026-11/2026-11-15-animation-clock-tick-burns-state.md) — engine/animation, wpt-runner
@@ -398,8 +399,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（55）
+## Platform — 平台与环境相关经验（56）
 
+- 2026-11-15 [巡查 join 管线必须全链 LC_ALL=C](platform/2026-11/2026-11-15-patrol-join-lc-all-c-collation.md) — wpt-runner,engineering-practice
 - 2026-11-15 [长批唯一可靠载体是 systemd --user service；setsid 与后台 Bash 都会被拆树或到点杀](platform/2026-11/2026-11-15-long-batch-detachment-systemd-user-service.md) — .acceptance/dps,tests/wpt-runner
 - 2026-11-12 [review 类 intent 的 expectedStage 约束——implementing 态直派必被拒](platform/2026-11/2026-11-12-verify-review-intent-expected-stage-constraint.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-11-12 [verifyPresentation 的 visible 归一化包含校验与历史报告行渲染规则](platform/2026-11/2026-11-12-verify-presentation-visible-includes-and-history-rows.md) — .agents/skills/zeroweb-site-optimizer
