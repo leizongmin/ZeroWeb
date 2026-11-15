@@ -5423,6 +5423,13 @@
         }
         var _b1FamTags = { meta: 1, title: 1, style: 1, script: 1, link: 1, base: 1, template: 1 };
         function _b1Tag(el) { return String((el && el.tagName) || '').toLowerCase(); }
+        // 块级标签面（join 并块门）：子文档域 computed display 未接
+        // _zwJusIsBlockNode 的解析值判定会误收 inline，故按标签面直判。
+        var _b1BlockTags = { address: 1, article: 1, aside: 1, blockquote: 1, center: 1,
+          dd: 1, details: 1, dir: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1,
+          figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1,
+          header: 1, li: 1, main: 1, menu: 1, ol: 1, p: 1, pre: 1, section: 1,
+          table: 1, td: 1, th: 1, tr: 1, ul: 1, xmp: 1 };
         // 不可见（join 可跨越）：head 专属标签且未显式 display:block（corpus
         // visible script/title 用例 setAttribute("style","display:block") 形 →
         // 可见 → join 门关）。
@@ -5877,8 +5884,65 @@
             else if (bodyHtml.length > 4 && bodyHtml.slice(-4) === '<br>') {
               bodyHtml = bodyHtml.slice(0, -4);
             }
+            // J2 跨 body 边界块合并（wptfyi-editing d36，2026-11-15）：body 可见
+            // 内容恰为单块元素 B（其余仅空白文本/不可见/占位 br）且 src 亦为可见
+            // 块级元素 → 块并块（靠前块存续、属性随靠前块，同下方展平臂的
+            // innerHTML 重写路径——R220 纪律），替代展平拼接：div↔div 跨界形
+            // corpus 期望 `<body><div>abcdef</div></body>`，展平产
+            // `<div>abc</div>def` 形失账。delete 跨块边界并块语义
+            // https://w3c.github.io/editing/execCommand.html#deleting-text
+            var j2Html = null, j2Seam = 0, j2B = null;
+            if (src.nodeType === 1 && !_b1Invisible(src) && !_b1FamTags[_b1Tag(src)]
+              && _b1BlockTags[_b1Tag(src)]) {
+              var j2Bad = false;
+              var bks = doc.body.childNodes || [];
+              for (var bi = 0; bi < bks.length; bi++) {
+                var bn = bks[bi];
+                if (!bn) continue;
+                if (bn.nodeType === 3) {
+                  if (_b1DataOf(bn).replace(/\s+/g, '').length) { j2Bad = true; break; }
+                  continue;
+                }
+                if (bn.nodeType !== 1) { j2Bad = true; break; }
+                if (_b1Tag(bn) === 'br') continue; // 占位/垫 br 不作并块对象
+                try { if (_b1Invisible(bn)) continue; } catch (_eJ2i1) {}
+                if (_b1FamTags[_b1Tag(bn)] || j2B || !_b1BlockTags[_b1Tag(bn)]) { j2Bad = true; break; }
+                j2B = bn;
+              }
+              if (j2B && !j2Bad) {
+                // 靠前块存续：src 在 body 前 → src 壳为载体并入 B 位；src 在后 →
+                // B 壳吸收 src 内容原位存续。
+                var j2Early = prepend ? src : j2B;
+                var j2Late = prepend ? j2B : src;
+                var j2Tag = _b1Tag(j2Early);
+                var j2Attrs = '';
+                try {
+                  var jal = j2Early.attributes || [];
+                  for (var ja = 0; ja < jal.length; ja++) if (jal[ja])
+                    j2Attrs += ' ' + jal[ja].name + '="' + String(jal[ja].value == null ? '' : jal[ja].value)
+                      .replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+                } catch (_eJ2a) {}
+                var j2In = '';
+                try {
+                  var jek = j2Early.childNodes || [];
+                  for (var je = 0; je < jek.length; je++) j2In += _b1SerHtml(jek[je]);
+                  var jlk = j2Late.childNodes || [];
+                  for (var jl = 0; jl < jlk.length; jl++) j2In += _b1SerHtml(jlk[jl]);
+                } catch (_eJ2s) {}
+                j2Html = '<' + j2Tag + j2Attrs + '>' + j2In + '</' + j2Tag + '>';
+                j2Seam = prepend ? srcChars : _b1TextChars(j2B);
+              }
+            }
             try {
-              doc.body.innerHTML = prepend ? (srcInner + bodyHtml) : (bodyHtml + srcInner);
+              if (j2Html != null) {
+                var j2Out = '';
+                var jok = doc.body.childNodes || [];
+                for (var jo = 0; jo < jok.length; jo++)
+                  j2Out += (jok[jo] === j2B ? j2Html : _b1SerHtml(jok[jo]));
+                doc.body.innerHTML = j2Out;
+              } else {
+                doc.body.innerHTML = prepend ? (srcInner + bodyHtml) : (bodyHtml + srcInner);
+              }
             } catch (_eBw) {}
             for (var iv = 0; iv < invis.length; iv++) {
               var vn = invis[iv].node;
@@ -5888,7 +5952,18 @@
             }
             try { if (src.parentNode) src.parentNode.removeChild(src); } catch (_eTdSr) {}
             var bt = doc.body.firstChild;
-            if (bt && bt.nodeType === 3) _b1SetCaret(sel, bt, prepend ? srcChars : bodyChars);
+            if (j2Html != null) {
+              // 缝 caret：并块内靠前块文本末端（解析器并合相邻文本后即缝位，
+              // 与展平臂 jkChars 口径同）；首文本缺失/越界落块首。
+              var j2T = null;
+              if (bt && bt.nodeType === 1) {
+                var jmk = bt.childNodes || [];
+                for (var jm = 0; jm < jmk.length; jm++)
+                  if (jmk[jm] && jmk[jm].nodeType === 3) { j2T = jmk[jm]; break; }
+              }
+              if (j2T && j2Seam <= _b1DataOf(j2T).length) _b1SetCaret(sel, j2T, j2Seam);
+              else _b1SetCaret(sel, doc.body, 0);
+            } else if (bt && bt.nodeType === 3) _b1SetCaret(sel, bt, prepend ? srcChars : bodyChars);
             else _b1SetCaret(sel, doc.body, 0);
             return;
           }

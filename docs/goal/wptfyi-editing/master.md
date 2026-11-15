@@ -1,6 +1,18 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-15 · Active**。**d35 plaintext-only 宿主 styling 命令门批**：
+**2026-11-15 · Active**。**d36 J2 跨 body 边界块合并切片**：
+part05 两处（`_b1BlockTags` 36 标签块面表 + `_b1JoinMembers` body 吸收臂
+J2 分支：body 可见内容恰单块且 src 可见块 → 靠前块存续 innerHTML 重写并块 +
+缝 caret 落靠前块文本末端，零 Rust 变更；上一 session 429 中断遗留 WIP，
+本 session 完成验证与落账）——`delete-in-child-of-html` **34P/12F → 42P/4F
+净 +8**（8 个 div↔div 跨界并块形 F2P=8/P2F=0，HEAD 基线双二进制定谳
+base 34P/12F；余 4F = d17 XOR 伪失败族，出队不动）。tal 三文件 base vs WIP
+status+name 级逐行恒等（DM 125P+84P、内壳形 child=b/parent=b&child=i ×4
+Timeout 恒）；守护 del-head 64P/4F、IP-html/IP-head 64P/8F 恒、b1s3 四姊妹
++ d31-unlink 探针恒、engine lib 4033P/0F、clippy/fmt 干净。通道勘误记档：
+child-doc 语料归 selection 通道（editing-other 通道 `<iframe` 整文件跳过）。
+证据见 [j2-cross-body-block-merge](evidence/2026-11-15-dc2-j2-cross-body-block-merge.md)。
+**d35 plaintext-only 宿主 styling 命令门批**：
 part06.js 四处（`_zwExecCmdStylingCmds` 26 命令表 + `_zwExecCmdFindPlaintextRootEditable`
 根可编辑宿主爬升判定 + execCommand 入口门 + queryCommandEnabled 面，零 Rust
 变更）——`styling-commands.html` 双 variant **42P/108F ×2 → 150P/0F ×2**，
