@@ -2,46 +2,50 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 532 收口（**守成巡查轻覆
-盖轮第二十二轮**：pull 零携入零码变零换代，码态持
-位 2c8742499，runner 127567632 恒——leg1 Compiling
-×6 = 桥跑侧 churn 同形产物同码（s526/s527 先例同形
-），leg2 零重编）——join **stable 8509（8305P/198F/
-5T/1U）disagree 1 + l1only 1 + l2only 4**；vs s531
-stable **NEW 1 + GONE 2 + flips 0 位移全落带内**：
-NEW 1 = mpreload 哨 unsafe-url 键双腿同相回归入
-stable（s531 单腿瞬态安全收敛，回归记账非 Pass 形首
-现）+ GONE 2 = 族双整文件键出位（s531 双整文件 T 形
-解体）——**族键摆动谱 s527 异相镜像互换形第 2 次再
-现**（leg1 = detailed F + 整文件 T + 零子测发射恰
-s527-leg1/s520-leg2 形；leg2 = detailed T + 4 子测 F
-+ 整文件不发射恰 s519-s530 稳态形），带内异相记账不
-升级，**非族非哨键零 NEW 零 GONE 零 flips 逐键恒等
-**；账本 evidence/2026-11-16-m2s532-light-patrol.md
-。**P 集账本口径双腿双 8307P 回归**（s531 哨键瞬态
-破轮 1 轮后第 1 轮恢复）；picker 刀增益键第 55 轮保
-持，checkmark 恒 F 带形不变。flaky 键双腿双 Pass——
-零新例第 21 轮（s512 时钟顺延）。onblur 哨组双腿双
-8P/2F（红池照常）；dialog-overlay 哨第 61 轮零翻红
-；**modulepreload 哨 15 键双腿全 Pass 恢复——
-unsafe-url 键新 <4 轮窗 1/4 安全通过，时钟重顺延**
-（零翻红重新起算第 1 轮，窗内再现即升级判定）。全桥
-绿窗 **1671P/0F rc=0 清单 set 恒等**（NEW 0/GONE 0
-）。**focus-dynamic 收窗后第 14 轮零再现**（121 键
-stable 全 Pass 双腿）。起腿前窗净判定（22:12 load
-2.00 回落态对端零重腿零等窗直接起腿，仅余 rally
-query 守护 CI 轮询），窗内双腿背靠背零交叠零截断。
-**挂用户门维持**：GB-20261114-VIDEO + GB-20261031
-（簇 D）+ s137（s445 已提示，不重复通知）。hang 观
-察项静默哨维持。下一步：**守成巡查**（对账基线换
-s532 stable 8509——族键摆动观察维持：出位/回归/混
-合形按形谱记账、Pass 形首现按 NEW 记账；全桥清单基
-线 b532.k 1671 持位；flaky 键零新例时钟顺延——再现
-方触发新 <4 轮升级判定；**mpreload 哨 <4 轮窗第 2/4
-轮观察**——再现即升级判定、安全收敛则时钟顺延；他
-流入树归因轮或轻覆盖；对端刀信号持续：editing 流
-B4-S2 残面刀（dwuf 八变体端点规范化未接臂/
-during-and-after-dispatch 与克隆门互斥 1F）+
+**状态**: Active——M2 切片 533 收口（**他流刀归因轮
+（单刀·零语义伴修）**：对端 clippy 自修复刀 7e2c25ff9
+（fix(engine): shape_margin_to_css 死绑定谓词改
+is_some——CI clippy unused variable 修复，单文件
++2/−2 构造性零语义改写，s532 收口 push 前置 pull 携
+入）落树归因——html-semantics 面**实测零位移清偿，
+「申报=实测」谱系第二十九例（申报 = 构造性零语义主
+张，实测 = 双腿零位移确证）**）——码态换新 7e2c25ff9
+，runner 换代 127567632 → 127567616（**−16 字节缩
+量**与零语义改写方向一致，leg1 真重建 Compiling ×6
+engine 链，leg2 零重编）——join **stable 8510（8305P
+/198F/6T/1U）disagree 1 + l1only 0 + l2only 0**；vs
+s532 stable **NEW 1 + GONE 0 + flips 0 位移全落带内
+**：NEW 1 = 族 non-detailed 整文件键 T/T 同相回归入
+stable（s531 形回归带内）+ disagree 1 = 族 detailed
+键 F/T 异相混合形（leg1 = detailed F + 整文件 T + 零
+子测发射恰 s527-leg1 形；leg2 = detailed T + 双整文
+件 T 恰 s531 形），摆动带内续记，**非族非哨键零 NEW
+零 GONE 零 flips 逐键恒等**；账本 evidence/2026-11-16
+-m2s533-clippy-shapemargin-knife-attribution.md。**P
+集账本口径双腿双 8307P 持位第 2 轮**；picker 刀增益
+键第 56 轮保持，checkmark 恒 F 带形不变。flaky 键双
+腿双 Pass——零新例第 22 轮（s512 时钟顺延）。onblur
+哨组双腿双 8P/2F（红池照常）；dialog-overlay 哨第 62
+轮零翻红；**modulepreload 哨 15 键双腿全 Pass——
+unsafe-url 键 <4 轮窗 2/4 安全通过**（过 3/4 即时钟
+重顺延）。全桥绿窗 **1671P/0F rc=0 清单 set 恒等**
+（NEW 0/GONE 0——刀体所在 shape_margin_to_css 直属
+js_dom_bridge 模块，全桥断言含 shape_margin 三站钉全
+绿 = 构造性零语义直证）。**focus-dynamic 收窗后第 15
+轮零再现**（121 键 stable 全 Pass 双腿）。起腿前窗净
+判定（22:34 load 1.04 干净态零等窗直接起腿，仅余
+rally query 守护 CI 轮询），窗内双腿背靠背零交叠零
+截断。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，不重复通
+知）。hang 观察项静默哨维持。下一步：**守成巡查**
+（对账基线换 s533 stable 8510——族键摆动观察维持：
+出位/回归/混合形按形谱记账、Pass 形首现按 NEW 记账
+；全桥清单基线 b533.k 1671 持位；flaky 键零新例时钟
+顺延——再现方触发新 <4 轮升级判定；**mpreload 哨
+<4 轮窗第 3/4 轮观察**——再现即升级判定、过窗则时
+钟重顺延；他流入树归因轮或轻覆盖；对端刀信号持续：
+editing 流 B4-S2 残面刀（dwuf 八变体端点规范化未接
+臂/during-and-after-dispatch 与克隆门互斥 1F）+
 rendering dialog 16 红块协同面 + css 文法刀后续刀
 （shapepos 残面队列：位置串化规范刀 ~498F/round 列
 表完整建模/inline inherit/path() 命令级插值/calc 代
