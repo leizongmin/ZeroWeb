@@ -3325,7 +3325,12 @@
     if (frag === '') return;
     var sc = range.startContainer, so = range.startOffset | 0;
     var eo = range.collapsed ? so : (range.endOffset | 0);
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
+    // 元素端点放行（2026-11-16 轴二壳界选区刀）：语料 {} marker 落壳边界
+    // （elStartIdx==0 形 startNode=parentNode，include/tests.js setupDiv 同款）
+    // 产生元素端点 range——sc 为元素时交壳域解析归一宿主子文本空间；其余
+    // （非元素非文本）维持 return 旁路。归一失败在 ShellResolve 内 return null
+    // → 本臂 return，既有 no-op 行为不变。
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText || sc.nodeType === 1))) return;
     var kids = host.childNodes || [];
     // 元素文本长度经 nodeValue 递归求和（OPTIMIZATION：不用 textContent——
     // 其 getter 全子树串拼接，O(子树) 中间串分配在 4G 守卫线上是 GC 债）。
@@ -3357,7 +3362,7 @@
       ecInShell = !!(ecRaw && (ecRaw.nodeType === 3 || ecRaw.__zwIsText) && ecRaw.parentNode
         && ecRaw.parentNode !== host && ecRaw.parentNode.parentNode === host);
     }
-    if (sc.parentNode !== host || ecInShell) {
+    if (sc.parentNode !== host || ecInShell || sc.nodeType === 1) {
       var sr = _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag);
       if (!sr) return;
       shellMode = true; shellHtml = sr.html; shellWant = sr.want;
@@ -3484,35 +3489,77 @@
     }
     // sc 端点两形：一层壳内（基 = 壳 span.s，壳内前置文本计入）或宿主直子文本
     // （基 = 自身 span.s）。
+    // 元素端点归一（2026-11-16 轴二壳界选区刀）：sc 为元素时端点语义 = 子节点
+    // 索引——sc===host 归一原点 0、so 前子文本累积；sc 为一层壳归一壳基 +
+    // 壳内 so 前子文本累积；更深旁路。归一后 ws/we 与文本端点同构，走既有
+    // 拼接/溶解臂零改动。
     var shell = null;
     var ck = [];
     var scBase = -1;
     var scBefore = 0;
     var scShell = sc.parentNode;
-    if (scShell && scShell !== host && scShell.parentNode === host) {
-      shell = scShell;
-      ck = shell.childNodes || [];
-      for (var j = 0; j < ck.length; j++) { if (ck[j] === sc) break; scBefore += kTextLen(ck[j]); }
-    }
-    var run0 = 0;
-    for (var i2 = 0; i2 < spans.length; i2++) {
-      if (spans[i2].k === (shell || sc)) { scBase = run0; break; }
-      run0 += spans[i2].e - spans[i2].s;
+    if (sc.nodeType === 1) {
+      if (sc === host) {
+        for (var jh = 0; jh < so && jh < kids.length; jh++) scBefore += kTextLen(kids[jh]);
+        scBase = 0;
+      } else if (scShell && scShell === host) {
+        shell = sc;
+        ck = shell.childNodes || [];
+        for (var jse = 0; jse < so && jse < ck.length; jse++) scBefore += kTextLen(ck[jse]);
+        var run0s = 0;
+        for (var i2s = 0; i2s < spans.length; i2s++) {
+          if (spans[i2s].k === shell) { scBase = run0s; break; }
+          run0s += spans[i2s].e - spans[i2s].s;
+        }
+      } else return null;
+    } else {
+      if (scShell && scShell !== host && scShell.parentNode === host) {
+        shell = scShell;
+        ck = shell.childNodes || [];
+        for (var j = 0; j < ck.length; j++) { if (ck[j] === sc) break; scBefore += kTextLen(ck[j]); }
+      }
+      var run0 = 0;
+      for (var i2 = 0; i2 < spans.length; i2++) {
+        if (spans[i2].k === (shell || sc)) { scBase = run0; break; }
+        run0 += spans[i2].e - spans[i2].s;
+      }
     }
     if (scBase < 0) return null;
     var shellTag = shell ? String(shell.tagName || '').toLowerCase() : '';
     if (shell && !shellTag) return null;
     // ws = sc 基 + 壳内前置文本 + so；we 按 endContainer 五形归一（同文本子/同壳
     // 内文本/host 直子文本/另一层壳内文本/host 子边界）。
-    var ws = scBase + scBefore + so;
+    var ws = sc.nodeType === 1 ? (scBase + scBefore) : (scBase + scBefore + so);
     var we;
     if (range.collapsed) {
       we = ws;
     } else {
       var ec = range.endContainer;
       var eoEnd = range.endOffset | 0;
-      if (ec === sc) {
+      if (ec === sc && sc.nodeType === 1) {
+        // 元素端点同节点（形① sc=ec=壳：{bar}）——eoEnd 前子文本累积。
+        var accEl = 0;
+        var ckEl = (shell && ec === shell) ? ck : (ec === host ? kids : null);
+        if (!ckEl) return null;
+        for (var je = 0; je < eoEnd && je < ckEl.length; je++) accEl += kTextLen(ckEl[je]);
+        we = scBase + accEl;
+      } else if (ec === sc) {
         we = scBase + scBefore + eoEnd;
+      } else if (ec && ec.nodeType === 1 && ec !== host && ec !== shell
+          && ec.parentNode === host) {
+        // 元素端点另一壳（形③ sc=host 文本空间、ec=壳：{foo<span>bar}）——
+        // 基 = 壳 span.s + eoEnd 前壳内子文本累积。
+        var ecB3 = -1;
+        var run3 = 0;
+        for (var q4 = 0; q4 < spans.length; q4++) {
+          if (spans[q4].k === ec) { ecB3 = run3; break; }
+          run3 += spans[q4].e - spans[q4].s;
+        }
+        if (ecB3 < 0) return null;
+        var cke = ec.childNodes || [];
+        var acc3 = 0;
+        for (var j4 = 0; j4 < eoEnd && j4 < cke.length; j4++) acc3 += kTextLen(cke[j4]);
+        we = ecB3 + acc3;
       } else if (ec && (ec.nodeType === 3 || ec.__zwIsText)) {
         var ecShell = ec.parentNode;
         if (shell && ecShell === shell) {

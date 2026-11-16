@@ -197,6 +197,27 @@ pin124("ihb-carry-span-true", "<span style=color:blue>foo[]bar</span>",
 pin124("ihb-bypass-ce-pre", "<pre contenteditable=\"false\"><span contenteditable>[1234]</span></pre>",
   [], "<pre>abc</pre>",
   "<pre contenteditable=\"false\"><span contenteditable=\"\"><pre>abc</pre></span></pre>");
+// ㉑ 轴二元素端点臂（2026-11-16 轴二壳界选区刀——corpus inserthtml 8 键实录：
+// `{}` marker 落壳边界产生元素端点 range（elStartIdx==0 → startNode=parentNode），
+// 既有内联臂 sc.nodeType===3 入口门整臂旁路 no-op）。元素端点归一宿主子文本
+// 空间后走溶解臂：全含选区壳溶解、载荷落 ws——期望值不含色壳（选区删除把
+// 壳一并溶解，与色 carry 无关）。swcss 双态期望同形。
+pin124("ihb-elm-in-span", "foo<span style=color:#aBcDeF>{bar}</span>baz",
+  [["stylewithcss", "true"]], "ab<b>c</b>d", "fooab<b>c</b>dbaz");
+pin124("ihb-elm-around-span", "foo{<span style=color:#aBcDeF>bar</span>}baz",
+  [["stylewithcss", "true"]], "ab<b>c</b>d", "fooab<b>c</b>dbaz");
+pin124("ihb-elm-cross-left", "{foo<span style=color:#aBcDeF>bar}</span>baz",
+  [["stylewithcss", "true"]], "ab<b>c</b>d", "ab<b>c</b>dbaz");
+pin124("ihb-elm-cross-right", "foo<span style=color:#aBcDeF>{bar</span>baz}",
+  [["stylewithcss", "true"]], "ab<b>c</b>d", "fooab<b>c</b>d");
+pin124("ihb-elm-in-span-false", "foo<span style=color:#aBcDeF>{bar}</span>baz",
+  [["stylewithcss", "false"]], "ab<b>c</b>d", "fooab<b>c</b>dbaz");
+pin124("ihb-elm-around-span-false", "foo{<span style=color:#aBcDeF>bar</span>}baz",
+  [["stylewithcss", "false"]], "ab<b>c</b>d", "fooab<b>c</b>dbaz");
+pin124("ihb-elm-cross-left-false", "{foo<span style=color:#aBcDeF>bar}</span>baz",
+  [["stylewithcss", "false"]], "ab<b>c</b>d", "ab<b>c</b>dbaz");
+pin124("ihb-elm-cross-right-false", "foo<span style=color:#aBcDeF>{bar</span>baz}",
+  [["stylewithcss", "false"]], "ab<b>c</b>d", "fooab<b>c</b>d");
 // ⑳ 控制三形现役绿路径恒一（块臂返 false 落既有臂）
 pin124("ihb-ctrl-text", "foo[bar]baz", [], "abc", "fooabcbaz");
 pin124("ihb-ctrl-inline-b", "foo[bar]baz", [], "<b>abc</b>", "foo<b>abc</b>baz");
