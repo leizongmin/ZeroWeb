@@ -13146,15 +13146,82 @@
     }
     return false;
   }
+  // ILB-WSCANON-V1 头侧结构回扫（H+J 归一域刀，2026-11-17 ilb 普查 ③族）：
+  // 自行断文本位向块界回溯（兄弟链耗尽沿父链上爬，host 为界不越树）——探到
+  // 元素（含 CE-false 壳，J 形判定面）或含非折叠空白字文本（nbsp 算可见内容）
+  // 即结构头；注释等其它节点型跳过续走。ip _zwCeSplitBoundaryNormalize
+  // headStructural 判据（:13009 注）的 ilb 落地：结构头放行右段 nbsp 翻
+  //（J exp 唯一变体 `<br>&nbsp;;`），退化全 ws 头不放行（`[] abc` 形落接受
+  // 变体保形、绝不 nbsp——ipm3 P2F 同型实录；普查现役绿键 `<div>[] abc</div>`
+  // 头侧退化恒一）。
+  function _zwCeIlbHeadStructural(startNode, host) {
+    var n = startNode;
+    var g = 0;
+    while (n && g++ < 256) {
+      if (n === host) return false;
+      var pv = n.previousSibling;
+      while (pv && g++ < 256) {
+        if (pv.nodeType === 1) return true;
+        if (pv.nodeType === 3) {
+          var d = String(pv.nodeValue || '');
+          for (var ci = 0; ci < d.length; ci++) {
+            var cc = d.charAt(ci);
+            if (cc !== ' ' && cc !== '\t' && cc !== '\n' && cc !== '\r'
+                && cc !== '\f') {
+              return true;
+            }
+          }
+        }
+        pv = pv.previousSibling;
+      }
+      n = n.parentNode;
+    }
+    return false;
+  }
   function _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host, forceLf) {
     var wsSig = !!forceLf || _zwCeWsSignificant(boundaryText || boundaryNode || boundaryParent, host);
     var brk3 = wsSig ? document.createTextNode('\n') : document.createElement('br');
     if (boundaryText) {
       // 头段留在原节点（尾段成独立节点随断点后移——不可回拼进头段，否则尾重复）。
       var v3 = String(boundaryText.nodeValue || '');
-      boundaryText.nodeValue = v3.slice(0, boundaryOff);
+      // ILB-WSCANON-V1（H+J 归一域刀，2026-11-17 ilb 普查 ③族 5 键）：br 型
+      //（normal-ws 域）行断面空白归一，仅普通可折叠空白面（wsSig \n 型域保形
+      // 不入——pre 键 v1.1 P2F 教训；nbsp 为可见内容不属普通空白）：
+      // (a) 左段尾随普通空格 run 删——spec canonicalizeWhitespace :5407-5418
+      //     行尾空格 deleteData 形（H1 `abc [] `→`abc<br><br>` Chrome 严格形，
+      //     期望唯一变体）；退化全 ws 头随之清空（H3/H4 落 `<div><br> abc`/
+      //     `<div><br>abc` 接受变体）。
+      // (b) 右段全折叠空白整删（H1/H2 右段 ws-only 行；删后 pad v2 扫描判
+      //     坍缩补第二 br——`abc<br><br>` 严格形）。
+      // (c) 右段首部 [空格|nbsp] run 首字翻 nbsp、run 内其余 nbsp 翻回空格
+      //     （ip _zwCeSplitBoundaryNormalize 行首同形，nbsp 首 run 恒等）——
+      //     仅头侧结构内容放行（_zwCeIlbHeadStructural：J CE-false 壳邻接
+      //     exp 唯一变体 `<br>&nbsp;;`；`[] abc` 退化头形保形绝不 nbsp）。
+      var so3 = boundaryOff;
+      if (!wsSig) {
+        while (so3 > 0 && v3.charAt(so3 - 1) === ' ') so3--;
+      }
+      boundaryText.nodeValue = v3.slice(0, so3);
       boundaryParent.insertBefore(brk3, boundaryText.nextSibling || null);
       var tail3 = v3.slice(eo);
+      if (!wsSig && tail3) {
+        if (_zwCeIsCollapsibleWsOnly(tail3)) {
+          tail3 = '';
+        } else {
+          var lw3 = 0;
+          while (lw3 < tail3.length
+              && (tail3.charAt(lw3) === ' ' || tail3.charAt(lw3) === '\u00a0')) {
+            lw3++;
+          }
+          if (lw3 > 0 && _zwCeIlbHeadStructural(boundaryText, host)) {
+            var lead3 = '\u00a0';
+            for (var ri3 = 1; ri3 < lw3; ri3++) {
+              lead3 += (tail3.charAt(ri3) === '\u00a0') ? ' ' : tail3.charAt(ri3);
+            }
+            tail3 = lead3 + tail3.slice(lw3);
+          }
+        }
+      }
       if (tail3) {
         boundaryParent.insertBefore(document.createTextNode(tail3), brk3.nextSibling || null);
       }

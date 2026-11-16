@@ -240,3 +240,6 @@ include!("js_dom_bridge_tests/part126_ilb_dt_dd_pre_pins.rs");
 // ilb A 壳尾计数族刀钉测（2026-11-17）：壳尾可见性补断 v2 落位＋现役绿形
 // 控制键。
 include!("js_dom_bridge_tests/part127_ilb_shell_tail_vispad_pins.rs");
+// ilb H+J 归一域刀钉测（2026-11-17）：行断面空白归一三则落位＋退化头/
+// nbsp-first 控制键。
+include!("js_dom_bridge_tests/part128_ilb_wscanon_pins.rs");
