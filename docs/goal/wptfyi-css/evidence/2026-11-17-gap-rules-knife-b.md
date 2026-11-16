@@ -137,10 +137,68 @@ B2 = B1 树态 + 结构门修复 + animation 插值站（认领板 01:24，
 animation 页级接线 B3 复核、color 真插值池 ~412F、刀 D inset-cap/junction
 ~1.7k、残面⑤ calc 代数插值全闭环。
 
+## animation + inline 站收口（session 972a02c4，twin 提交）
+
+认领板 01:15/01:24 两站全量落地（B2 收口后续作，color 站 + apply 接线
+修复为 B2 后新增，未入 B2 账）：
+
+- **animation 插值站**（width 516F + color 412F 池）：
+  - `interpolate_rule_width_value`：有限 repeat 展开/单值广播（`repeat(2,
+    20px)`→`30px` 以 2 位输出）/双 auto 循环体 LCM 对齐+保形/leading-trailing
+    段数各等门/单侧 auto 离散/负外推钳 0；项插值 px lerp。
+  - `interpolate_rule_color_value`：结构语义同 width（展开/广播/LCM/段数门）；
+    项插值走 `lerp_color` 预乘 alpha 空间（css-color-4 §15.1，引擎既有通道），
+    端点经 css-parser 全名色表 + `resolve_color_current`，a≈1→`rgb(r, g, b)`
+    否则 `rgba(…, a.2)`。
+  - lenient 臂（离散翻转回落 t≥0.5→to）+ strict 臂（失配 None 不启动过渡，
+    css-transitions §starting-of-transitions）双通道接 `column/row-rule-{width,
+    color}`；`underlying_individual_value` 补 width 臂（neutral keyframe 底层
+    列表，`rule_width_list_to_gcs` pub(crate) 单源复用）。
+  - **apply 接线修复（B2 后根因定位）**：B2 账 anim/waapi 中点形全 F，got=
+    `.target` 级联值——`apply_single_property` 无 rule-width/color 臂，插值
+    串计算后被丢弃（tick 输出不落 style）。补双属性组列表臂（插值串经
+    css-parser 列表文法回 `Vec<RuleWidthSegment>`/`Vec<RuleColorSegment>`
+    typed 字段，gCS 串化单源规范化 "23.00px"→"23px"）。此臂为 CSS
+    Animations/WAAPI 页级增益的前置（B3 预期主要增益池）。
+- **inline 简写展开站**（css_style_declaration.rs）：写面 `expand_shorthands`
+  展开落 longhand（简写名不落盘，Chromium cssText 同形态）+ 读面 longhand
+  重组（2 列全等/triple 逐位/rule 双轴全等）+ 初始分量省略（width medium
+  锚）+ 段结构对齐门（失配→''，csswg#12201 同款）+ 非法值拒收。
+- 验证：engine lib **4,098/0F**（B2 收口 4,096 + color 6 钉 + apply 1 钉；
+  width 7 钉 B2 前已入账）；fmt/clippy 净（clippy 唯一 exempt = es_module
+  peer WIP too-many-arguments 8/7 参在册连坐，调用级 `-A` 放行核本域零告警）。
+- 端点关键字子测结构性放弃维持判：插值页 neutral 端点期望 'black' 关键字
+  原文 vs gCS rgb() 归一（color-computed 页已赢面）不可兼得，保 gCS 归一。
+
+## B2 插值页 F 池分解（B3 对账基线）
+
+刀 B 插值页（excl. inset 刀域外 1,344F、excl. at(1) 端点 echo 恒真形）
+F 池 750 分解：
+
+| 形态 | 机制 | F | 归属 |
+|---|---|---|---|
+| explicit | anim/waapi | 274 | apply 臂缺位（**已修**，B3 入账池） |
+| neutral | anim/waapi | 110 | 同上（underlying 补臂已在 B2） |
+| explicit | trans-prop | 120 | 部分失配离散真预期 + 部分可插值形待 B3 验 |
+| neutral | trans-prop | 63 | **共享缺口**（下条） |
+| explicit | trans-all | 120 | transition-all 展开 FIXME（`property == "all"` continue，预存在册） |
+| neutral | trans-all | 63 | 同上 + 共享缺口叠加 |
+
+**共享缺口登记（刀域外，预存在册）**：neutral CSS-Transitions 中点形全灭
+（5 corpus 175F，column-count 成熟臂同形 0P/10F 三轮持位 B0/B1/B2 实证）。
+gCS 登记点 `take_last_style` None 分支整跳（computed_style_cache.rs:905）——
+harness flush 读后单 mutation 写形下 per-identity 快照链断点待探针定谳
+（sel/handle 双通道 store 点覆盖差异嫌疑）。属 transition 通道共享路径，
+非刀 B 域，另立站收口。
+
 ## 残面队列（更新）
 
-- color 真插值池 ~412F（列表插值器缺位）；width/style 真插值
-  （rule-width-interpolation-repeaters 252F + row-rule-width 168F + 多值
-  96F，需列表插值器同基建）。
+- color 真插值池 ~412F：**插值器已落**（本 twin 提交），B3 页级收账。
+- width/style 真插值池（repeaters 252F + row-rule-width 168F + 多值 96F）：
+  **插值器 + apply 臂已落**，B3 页级收账（anim/waapi 384F 为主要预期增益）。
+- inline 站余量：rule-shorthand.html 240F 池 + 4 对齐形（写读面已落，
+  B3 复核）。
+- 共享缺口两笔（刀域外新登记）：neutral CSS-Transitions 快照链（上表）、
+  transition-all longhand 展开（FIXME 在册）。
 - 刀 D：inset-cap/junction 几何族 ~1.7k 最大残面。
 - 残面⑤：calc 代数插值全闭环（承重拒收边界重撤硬前置）。

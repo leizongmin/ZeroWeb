@@ -164,6 +164,155 @@ fn camel_to_kebab(name: &str) -> String {
     out
 }
 
+// ── css-gaps 刀 B：gap-rule 简写族 inline 通道（css-gaps-1 §rule-shorthand-properties）──
+// 写面：简写展开落 longhand（style-system `expand_shorthands` 单源，简写名本身
+// 不落盘——Chromium cssText 同形态）；读面：无本名声明时从名单 longhand 重组
+// specified 串（段结构对齐 + 初始分量省略）。gCS computed 重组在 js_dom_bridge
+// computed_style.rs（used px/rgb 解析域），本块为 specified 原文域。
+
+/// 简写 → 覆盖的 longhand 名单（`rule` 双维度全 6）。
+fn gap_rule_shorthand_longhands(prop: &str) -> Option<&'static [&'static str]> {
+    match prop {
+        "column-rule" => Some(&["column-rule-width", "column-rule-style", "column-rule-color"]),
+        "row-rule" => Some(&["row-rule-width", "row-rule-style", "row-rule-color"]),
+        "rule-width" => Some(&["column-rule-width", "row-rule-width"]),
+        "rule-style" => Some(&["column-rule-style", "row-rule-style"]),
+        "rule-color" => Some(&["column-rule-color", "row-rule-color"]),
+        "rule" => Some(&[
+            "column-rule-width",
+            "column-rule-style",
+            "column-rule-color",
+            "row-rule-width",
+            "row-rule-style",
+            "row-rule-color",
+        ]),
+        _ => None,
+    }
+}
+
+/// 简写展开为 inline longhand 声明（非法值 → None——调用方声明忽略；非简写名
+/// → None 透传）。
+fn gap_rule_expand_decls(prop: &str, val: &str, important: bool) -> Option<Vec<StyleDecl>> {
+    gap_rule_shorthand_longhands(prop)?;
+    let expanded = zero_style_system::expand_shorthands(&[(prop.to_string(), val.to_string(), important, (0, 0, 0))]);
+    if expanded.is_empty() {
+        return None;
+    }
+    Some(
+        expanded
+            .into_iter()
+            .map(|(p, v, imp, _)| StyleDecl {
+                prop: p,
+                value: v,
+                important: imp,
+            })
+            .collect(),
+    )
+}
+
+/// 简写读重组：从名单 longhand 声明重组 specified 串。缺任一 longhand / 三维
+/// 段结构失配 → None（调用方落空串——Chrome shorthand serialization 同口径）。
+fn gap_rule_reconstruct(props: &[StyleDecl], prop: &str) -> Option<String> {
+    let get = |name: &str| -> Option<String> { props.iter().find(|d| d.prop == name).map(|d| d.value.clone()) };
+    let longhands = gap_rule_shorthand_longhands(prop)?;
+    // 维度简写（rule-width/rule-style/rule-color）：双列全等 → 该值。
+    if longhands.len() == 2 {
+        let (a, b) = (get(longhands[0])?, get(longhands[1])?);
+        return if a == b { Some(a) } else { None };
+    }
+    // 三元组（column-rule/row-rule）或 `rule`（双三元组全等）。
+    let triple = |base: &str| -> Option<String> {
+        let (w, s, c) = (
+            get(&format!("{base}-width"))?,
+            get(&format!("{base}-style"))?,
+            get(&format!("{base}-color"))?,
+        );
+        gap_rule_triple_reconstruct(&w, &s, &c)
+    };
+    if prop == "rule" {
+        let r = triple("row-rule")?;
+        let c = triple("column-rule")?;
+        return if r == c { Some(r) } else { None };
+    }
+    triple(prop)
+}
+
+/// 三维段联合重组：逐维 top-level 逗号拆段、段数全等才联合；段结构（Plain /
+/// repeat head+循环长）逐段一致；单段形初始分量省略（style none / color
+/// currentcolor / width medium——其余全省时保 width 锚，语料 valid 页钉）。
+fn gap_rule_triple_reconstruct(w: &str, s: &str, c: &str) -> Option<String> {
+    let ws = zero_css_parser::values::split_top_level_commas(w)?;
+    let ss = zero_css_parser::values::split_top_level_commas(s)?;
+    let cs = zero_css_parser::values::split_top_level_commas(c)?;
+    if ws.len() != ss.len() || ws.len() != cs.len() {
+        return None;
+    }
+    // 文法校验（style attribute 长手声明未过写面校验门——垃圾联合拒收）。
+    if zero_css_parser::values::parse_rule_width_list(w).is_none()
+        || zero_css_parser::values::parse_rule_style_list(s).is_none()
+        || zero_css_parser::values::parse_rule_color_list(c).is_none()
+    {
+        return None;
+    }
+    let items: Option<Vec<String>> = (0..ws.len())
+        .map(|i| gap_rule_joint_item(ws[i], ss[i], cs[i]))
+        .collect();
+    Some(items?.join(", "))
+}
+
+/// repeat 段拆解（head 小写 + 循环体 top-level 逗号列表）；非 repeat 形 → None。
+fn gap_rule_repeat_parts(t: &str) -> Option<(String, Vec<&str>)> {
+    let lower = t.to_ascii_lowercase();
+    if !(lower.starts_with("repeat(") && lower.ends_with(')')) {
+        return None;
+    }
+    let inner = &t[7..t.len() - 1];
+    let (head, body) = inner.split_once(',')?;
+    Some((
+        head.trim().to_ascii_lowercase(),
+        zero_css_parser::values::split_top_level_commas(body)?,
+    ))
+}
+
+/// 段联合：repeat 段三维 head/循环长一致才逐位联合；Plain 段单点联合。
+fn gap_rule_joint_item(w: &str, s: &str, c: &str) -> Option<String> {
+    if gap_rule_repeat_parts(w).is_some() || gap_rule_repeat_parts(s).is_some() || gap_rule_repeat_parts(c).is_some() {
+        let (wh, wb) = gap_rule_repeat_parts(w)?;
+        let (sh, sb) = gap_rule_repeat_parts(s)?;
+        let (ch, cb) = gap_rule_repeat_parts(c)?;
+        if wh != sh || wh != ch || wb.len() != sb.len() || wb.len() != cb.len() {
+            return None;
+        }
+        let items: Option<Vec<String>> = (0..wb.len())
+            .map(|k| gap_rule_joint_tokens(wb[k], sb[k], cb[k]))
+            .collect();
+        return Some(format!("repeat({}, {})", wh, items?.join(", ")));
+    }
+    gap_rule_joint_tokens(w.trim(), s.trim(), c.trim())
+}
+
+/// 单点联合（初始分量省略；全省保 width 锚——`currentcolor none medium`→
+/// `medium`，语料 valid 页钉）。
+fn gap_rule_joint_tokens(w: &str, s: &str, c: &str) -> Option<String> {
+    let style_initial = s.eq_ignore_ascii_case("none");
+    let color_initial = c.eq_ignore_ascii_case("currentcolor");
+    let width_initial = w.eq_ignore_ascii_case("medium");
+    let mut tokens: Vec<&str> = Vec::with_capacity(3);
+    if !width_initial || (style_initial && color_initial) {
+        tokens.push(w);
+    }
+    if !style_initial {
+        tokens.push(s);
+    }
+    if !color_initial {
+        tokens.push(c);
+    }
+    if tokens.is_empty() {
+        return None;
+    }
+    Some(tokens.join(" "))
+}
+
 // ── `style` getter：返 owner 元素的 CSSStyleDeclaration（缓存保身份）──
 
 /// `style` getter（spec `dom-element-style`）：返 owner 元素的 CSSStyleDeclaration（缓存保身份）。
@@ -219,10 +368,12 @@ fn native_style_named_getter(
     }
     let prop = camel_to_kebab(&name);
     let val = with_dom(|d| {
-        current_props(d, owner)
-            .into_iter()
-            .find(|d| d.prop == prop)
-            .map(|d| d.value)
+        let props = current_props(d, owner);
+        if let Some(found) = props.iter().find(|d| d.prop == prop) {
+            return Some(found.value.clone());
+        }
+        // css-gaps 刀 B：简写名无本名声明时从名单 longhand 重组 specified 串。
+        gap_rule_shorthand_longhands(&prop).and_then(|_| gap_rule_reconstruct(&props, &prop))
     })
     .flatten()
     .unwrap_or_default();
@@ -268,6 +419,22 @@ fn native_style_named_setter(
         // acos-asin-atan-atan2-invalid 63 子测试以 `rotate(asin())` 形态驱动（wptfyi-css
         // DC-2 values trig 桶）。
         return v8::Intercepted::kYes;
+    } else if gap_rule_shorthand_longhands(&prop).is_some() {
+        // css-gaps 刀 B：简写展开落 longhand（非法值已被 validate 臂拒；简写名
+        // 本身与名单旧声明一并让位——upsert 语义，Chromium cssText 同形态）。
+        let Some(expanded) = gap_rule_expand_decls(&prop, val.trim(), false) else {
+            return v8::Intercepted::kYes;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
+                props.retain(|d| !longhands.contains(&d.prop.as_str()));
+            }
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return v8::Intercepted::kYes;
     } else if super::grid_cssom::is_grid_family_prop(&prop) {
         match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
             Some(v) => v,
@@ -296,6 +463,11 @@ fn native_style_named_setter(
         let mut props = current_props(d, owner);
         if val.trim().is_empty() {
             props.retain(|d| d.prop != prop);
+            // css-gaps 刀 B：简写空值 = 名单 longhand 一并复位（spec 简写 removeProperty
+            // 覆盖其所控 longhand）。
+            if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
+                props.retain(|d| !longhands.contains(&d.prop.as_str()));
+            }
         } else if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
             // upsert（已存在→更新值）；named setter 等价 setProperty(prop, value) 无 priority → 重置 important。
             decl.value = val.clone();
@@ -456,10 +628,12 @@ fn native_style_get_property_value_invoke(
     };
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
     let val = with_dom(|d| {
-        current_props(d, owner)
-            .into_iter()
-            .find(|d| d.prop == prop)
-            .map(|d| d.value)
+        let props = current_props(d, owner);
+        if let Some(found) = props.iter().find(|d| d.prop == prop) {
+            return Some(found.value.clone());
+        }
+        // css-gaps 刀 B：简写名无本名声明时从名单 longhand 重组 specified 串。
+        gap_rule_shorthand_longhands(&prop).and_then(|_| gap_rule_reconstruct(&props, &prop))
     })
     .flatten()
     .unwrap_or_default();
@@ -524,6 +698,11 @@ fn native_style_set_property_invoke(
         with_dom_mut(|d| {
             let mut props = current_props(d, owner);
             props.retain(|d| d.prop != prop);
+            // css-gaps 刀 B：简写空值 = 名单 longhand 一并复位（spec 简写
+            // removeProperty 覆盖其所控 longhand）。
+            if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
+                props.retain(|d| !longhands.contains(&d.prop.as_str()));
+            }
             write_props(d, owner, &props);
         });
         return;
@@ -536,6 +715,22 @@ fn native_style_set_property_invoke(
     } else if !zero_style_system::validate_decl_value(&prop, val.trim()) {
         // T54：白名单属性非法值整体拒绝（同 [`native_style_named_setter`] T54 臂——
         // setProperty 与 IDL setter 同语义）。
+        return;
+    } else if gap_rule_shorthand_longhands(&prop).is_some() {
+        // css-gaps 刀 B：简写展开落 longhand（同 [`native_style_named_setter`] 展开臂，
+        // priority 经展开声明透传）。
+        let Some(expanded) = gap_rule_expand_decls(&prop, val.trim(), important) else {
+            return;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
+                props.retain(|d| !longhands.contains(&d.prop.as_str()));
+            }
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
         return;
     } else if super::grid_cssom::is_grid_family_prop(&prop) {
         match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
@@ -648,4 +843,110 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
             .deleter(native_style_named_deleter),
     );
     set_style_template(scope, csd);
+}
+
+#[cfg(test)]
+mod gap_rule_cssom_tests {
+    use super::*;
+
+    /// 单点联合初始分量省略（语料 valid 页钉：`currentcolor hidden medium`→
+    /// `hidden`、`currentcolor none medium`→`medium` 保 width 锚）。
+    #[test]
+    fn test_joint_tokens_initial_omission() {
+        assert_eq!(
+            gap_rule_joint_tokens("medium", "hidden", "currentcolor"),
+            Some("hidden".into())
+        );
+        assert_eq!(
+            gap_rule_joint_tokens("medium", "none", "currentcolor"),
+            Some("medium".into())
+        );
+        assert_eq!(gap_rule_joint_tokens("6px", "none", "blue"), Some("6px blue".into()));
+        assert_eq!(
+            gap_rule_joint_tokens("5px", "solid", "red"),
+            Some("5px solid red".into())
+        );
+        assert_eq!(
+            gap_rule_joint_tokens("medium", "double", "currentcolor"),
+            Some("double".into())
+        );
+    }
+
+    /// 三维段联合：单段 + repeat 段逐位（语料 valid/computed 页混合列表形）。
+    #[test]
+    fn test_triple_reconstruct_mixed_segments() {
+        let r = gap_rule_triple_reconstruct(
+            "5px, repeat(4, 5px)",
+            "double, repeat(4, ridge)",
+            "rgb(58, 58, 16), repeat(4, rgb(18, 18, 18))",
+        );
+        assert_eq!(
+            r.as_deref(),
+            Some("5px double rgb(58, 58, 16), repeat(4, 5px ridge rgb(18, 18, 18))")
+        );
+        // 多位循环体逐位（valid 页 `repeat(3, 16px, thin dashed purple, 10px dotted)` 形）。
+        let r = gap_rule_triple_reconstruct(
+            "repeat(3, 16px, thin, 10px)",
+            "repeat(3, none, dashed, dotted)",
+            "repeat(3, currentcolor, purple, currentcolor)",
+        );
+        assert_eq!(r.as_deref(), Some("repeat(3, 16px, thin dashed purple, 10px dotted)"));
+    }
+
+    /// 段数失配 → None（语料 from-longhands 页 misaligned 钉）。
+    #[test]
+    fn test_triple_reconstruct_misaligned_none() {
+        assert!(gap_rule_triple_reconstruct("15px, 25px, 35px", "solid, dotted", "green").is_none());
+        assert!(gap_rule_triple_reconstruct("repeat(auto, 5px)", "solid, double", "repeat(7, red)").is_none());
+        // 同计数同循环长但 auto 多位循环体失配形（from-longhands 页钉）。
+        assert!(gap_rule_triple_reconstruct("repeat(auto, 5px)", "repeat(auto, solid)", "repeat(auto, red)").is_some());
+    }
+
+    /// 写面展开 → 读面重组全链 roundtrip（语料 valid 页 canonical 序 + 简写页
+    /// 展开值）。`solid 10px rgb(0, 0, 255)` → `10px solid rgb(0, 0, 255)`。
+    #[test]
+    fn test_expand_then_reconstruct_roundtrip() {
+        for (input, expected) in [
+            ("solid 10px rgb(0, 0, 255)", "10px solid rgb(0, 0, 255)"),
+            ("5px solid red", "5px solid red"),
+            ("double", "double"),
+            ("blue 6px", "6px blue"),
+            ("currentcolor hidden medium", "hidden"),
+            ("currentcolor none medium", "medium"),
+            ("repeat(4, 15px dotted pink)", "repeat(4, 15px dotted pink)"),
+            ("thick, dashed, hotpink", "thick, dashed, hotpink"),
+        ] {
+            let decls = gap_rule_expand_decls("column-rule", input, false)
+                .unwrap_or_else(|| panic!("valid form rejected: {input}"));
+            assert_eq!(decls.len(), 3, "expansion count for {input}");
+            assert_eq!(
+                gap_rule_reconstruct(&decls, "column-rule").as_deref(),
+                Some(expected),
+                "{input}"
+            );
+        }
+    }
+
+    /// 非法值展开拒收（语料 invalid 页钉——validate 门已拒，展开层防御性 None）。
+    #[test]
+    fn test_expand_invalid_rejected() {
+        assert!(gap_rule_expand_decls("column-rule", "red 5px solid red", false).is_none());
+        assert!(gap_rule_expand_decls("column-rule", "repeat(0, 5px red)", false).is_none());
+        assert!(gap_rule_expand_decls("column-rule", "auto", false).is_none());
+    }
+
+    /// `rule` 双维度全等重组 / 失配空串（gCS rule-color 简写臂同口径）。
+    #[test]
+    fn test_rule_shorthand_pair_equality() {
+        let mut decls = gap_rule_expand_decls("rule", "5px solid red", false).unwrap();
+        assert_eq!(decls.len(), 6);
+        assert_eq!(gap_rule_reconstruct(&decls, "rule").as_deref(), Some("5px solid red"));
+        // column 侧改值 → 失配 None。
+        for d in decls.iter_mut() {
+            if d.prop == "column-rule-color" {
+                d.value = "blue".into();
+            }
+        }
+        assert_eq!(gap_rule_reconstruct(&decls, "rule"), None);
+    }
 }

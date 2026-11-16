@@ -311,6 +311,23 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
             font,
         ));
     }
+    // wptfyi-css css-gaps 刀 B：rule-width 列表 underlying（隐式边界帧补键，
+    // neutral keyframe = 底层计算列表——css-animations-1 §keyframes）。gCS
+    // 列表串化单源（关键字→used px、repeat/auto/calc 结构保形）。
+    if name == "column-rule-width" || name == "row-rule-width" {
+        let font = match style.font_size {
+            LengthValue::Px(v) => v,
+            _ => 16.0,
+        };
+        let segments = if name == "column-rule-width" {
+            &style.column_rule_width
+        } else {
+            &style.row_rule_width
+        };
+        return Some(crate::js_dom_bridge::computed_style::rule_width_list_to_gcs(
+            segments, font,
+        ));
+    }
     // CSS Motion Path offset 簇 underlying（css-motion-1；wptfyi-css offset-* 刀）：
     // 声明值序列化，声明缺席落 spec 初始（0px / auto / auto / none）。
     match name {
@@ -517,6 +534,15 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             let ta = parse_f64(to).unwrap_or(0.0);
             format!("{:.4}", lerp(fa, ta, t).clamp(0.0, 1.0))
         }
+        // wptfyi-css css-gaps 刀 B：rule-width 列表插值——展开/LCM/广播语义见
+        // [`interpolate_rule_width_value`]；结构失配对落离散翻转（已启动过渡的
+        // 段内语义，同 offset-distance 臂形）。
+        "column-rule-width" | "row-rule-width" => interpolate_rule_width_value(from, to, t)
+            .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
+        // rule-color 列表插值——结构语义同 width 臂，项插值走预乘颜色空间
+        // （[`interpolate_rule_color_value`]）；失配离散翻转同上。
+        "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t)
+            .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
         // R4202：individual transform 属性插值——`translate` 逐分量 px/%（% 保真原样
         // 从目标侧取值，progress 中点跃迁近似可接受）；`rotate` 角度线性（deg）；
         // `scale` 数值线性（单值等比保持单值形态）。
@@ -943,7 +969,229 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             let tv = parse_px_strict(to)?;
             Some(format!("{:.2}px", lerp(fv, tv, t)))
         }
+        // wptfyi-css css-gaps 刀 B：rule-width 列表插值（展开/LCM/广播语义见
+        // [`interpolate_rule_width_value`]）；结构失配对 None（非 animatable
+        // 值对不启动过渡，css-transitions §starting-of-transitions）。
+        "column-rule-width" | "row-rule-width" => interpolate_rule_width_value(from, to, t),
+        // rule-color 列表插值（结构语义同 width strict 臂；失配对 None 不启动过渡）。
+        "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t),
         // 无臂属性：非 animatable 对（transition 不启动——咨询回落级联终值 echo）。
+        _ => None,
+    }
+}
+
+// ── css-gaps 刀 B：rule-width 列表插值 ─────────────────────────────────────
+
+/// rule-width 列表插值（css-gaps-1 §column-row-rule-width，wptfyi-css 刀 B）。
+/// 端点为 computed 串化形（gCS 同源：平列表 / `repeat(N, …)` / `repeat(auto, …)`，
+/// calc 计数已在 gCS 折叠整数，故端点再解析不含 Calc 头）。
+///
+/// 语义（语料 rule-width-interpolation-{repeaters,multiple-values} 页钉）：
+/// - 无 auto：双侧有限 repeat 展开为平列表——等长逐位 lerp；单值侧广播对齐
+///   （`repeat(2, 20px)`→`30px` 以 2 位输出 `23px, 23px`）；双侧多值异长 →
+///   None（离散）。
+/// - 有 auto：仅双侧同含（单侧 auto → None）；leading/trailing 平段数各等才
+///   插值，auto 循环体取 LCM 平铺逐位 lerp，`repeat(auto, …)` 结构保形输出。
+/// - 项可插域：仅 px 项（gCS 串化后恒 px）；其余 → None。
+/// - 负外推钳 0（<length [0,∞]> computed 域，与 computed resolve 钳一致）。
+fn interpolate_rule_width_value(from: &str, to: &str, t: f64) -> Option<String> {
+    use zero_css_parser::values::{ColumnRuleWidthValue, RuleRepeatCount, RuleWidthSegment, parse_rule_width_list};
+
+    let px = |v: &ColumnRuleWidthValue| -> Option<f64> {
+        match v {
+            ColumnRuleWidthValue::Length(LengthValue::Px(p)) => Some(*p),
+            _ => None,
+        }
+    };
+    let lerp_flat = |f: &[ColumnRuleWidthValue], s: &[ColumnRuleWidthValue]| -> Option<Vec<String>> {
+        f.iter()
+            .zip(s.iter())
+            .map(|(fv, tv)| {
+                let (fv, tv) = (px(fv)?, px(tv)?);
+                Some(format!("{:.2}px", lerp(fv, tv, t).max(0.0)))
+            })
+            .collect()
+    };
+
+    // 段拆解：有限 repeat 展开；auto 循环体单独提出（≤1 处，parse 保证）。
+    let split = |segments: &[RuleWidthSegment]| -> Option<(
+        Vec<ColumnRuleWidthValue>,
+        Option<Vec<ColumnRuleWidthValue>>,
+        Vec<ColumnRuleWidthValue>,
+    )> {
+        let mut leading = Vec::new();
+        let mut auto = None;
+        let mut trailing = Vec::new();
+        let mut dest = &mut leading;
+        for seg in segments {
+            match seg {
+                RuleWidthSegment::Plain(w) => dest.push(w.clone()),
+                RuleWidthSegment::Repeat { count, widths } => match count {
+                    RuleRepeatCount::Auto => {
+                        if auto.is_some() {
+                            return None;
+                        }
+                        auto = Some(widths.clone());
+                        dest = &mut trailing;
+                    }
+                    RuleRepeatCount::N(n) => {
+                        for _ in 0..*n {
+                            dest.extend(widths.iter().cloned());
+                        }
+                    }
+                    // computed 串化端点无 calc 头（gCS 已折叠整数）。
+                    RuleRepeatCount::Calc(_) => return None,
+                },
+            }
+        }
+        Some((leading, auto, trailing))
+    };
+
+    let (fl, fa, ft) = split(&parse_rule_width_list(from)?)?;
+    let (tl, ta, tt) = split(&parse_rule_width_list(to)?)?;
+    match (fa, ta) {
+        // 无 auto：等长逐位 / 单值广播 / 异长离散。
+        (None, None) => {
+            if fl.len() == tl.len() {
+                lerp_flat(&fl, &tl).map(|v| v.join(", "))
+            } else if fl.len() == 1 {
+                lerp_flat(&vec![fl[0].clone(); tl.len()], &tl).map(|v| v.join(", "))
+            } else if tl.len() == 1 {
+                lerp_flat(&fl, &vec![tl[0].clone(); fl.len()]).map(|v| v.join(", "))
+            } else {
+                None
+            }
+        }
+        // 双 auto：leading/trailing 段数各等 + 循环体 LCM 对齐。
+        (Some(fc), Some(tc)) => {
+            if fl.len() != tl.len() || ft.len() != tt.len() {
+                return None;
+            }
+            let lcm = {
+                let (a, b) = (fc.len(), tc.len());
+                let gcd = |mut x: usize, mut y: usize| -> usize {
+                    while y != 0 {
+                        (x, y) = (y, x % y);
+                    }
+                    x
+                };
+                a * b / gcd(a, b)
+            };
+            let tile = |c: &[ColumnRuleWidthValue]| -> Vec<ColumnRuleWidthValue> {
+                c.iter().cycle().take(lcm).cloned().collect()
+            };
+            let mid = lerp_flat(&tile(&fc), &tile(&tc))?;
+            let mut parts = lerp_flat(&fl, &tl)?;
+            parts.push(format!("repeat(auto, {})", mid.join(", ")));
+            parts.extend(lerp_flat(&ft, &tt)?);
+            Some(parts.join(", "))
+        }
+        // 单侧 auto：结构异构离散。
+        _ => None,
+    }
+}
+
+/// rule-color 列表插值（css-gaps-1 §column-row-rule-color，wptfyi-css 刀 B）。
+/// 结构语义同 [`interpolate_rule_width_value`]（有限 repeat 展开/单值广播/auto
+/// LCM/leading-trailing 段数门）；项插值 = [`lerp_color`] 预乘空间（css-color-4
+/// §15.1）。端点项经 css-parser 全名色表解析（gCS 串化 rgb() 与 keyframe 指定
+/// 关键字双侧覆盖）；currentcolor 落黑底（动画端点无元素色视图——gCS 串化端点
+/// 已解析元素色，仅 keyframe 指定形落此）。
+fn interpolate_rule_color_value(from: &str, to: &str, t: f64) -> Option<String> {
+    use zero_css_parser::values::{ColorValue, RuleColorSegment, RuleRepeatCount, parse_rule_color_list};
+
+    let cv_rgba = |c: &ColorValue| -> Rgba {
+        let resolved = crate::resolve_color_current(c, &ColorValue::CurrentColor);
+        (
+            resolved.r as f64,
+            resolved.g as f64,
+            resolved.b as f64,
+            resolved.a as f64 / 255.0,
+        )
+    };
+    let fmt_item = |c: &Rgba| -> String {
+        let (r, g, b, a) = (c.0.round() as u8, c.1.round() as u8, c.2.round() as u8, c.3);
+        if (a - 1.0).abs() < 1e-6 {
+            format!("rgb({r}, {g}, {b})")
+        } else {
+            format!("rgba({r}, {g}, {b}, {a:.2})")
+        }
+    };
+    let lerp_flat = |f: &[ColorValue], s: &[ColorValue]| -> Option<Vec<String>> {
+        f.iter()
+            .zip(s.iter())
+            .map(|(fv, tv)| Some(fmt_item(&lerp_color(cv_rgba(fv), cv_rgba(tv), t))))
+            .collect()
+    };
+
+    // 段拆解：有限 repeat 展开；auto 循环体单独提出（≤1 处，parse 保证）。
+    let split = |segments: &[RuleColorSegment]| -> Option<(Vec<ColorValue>, Option<Vec<ColorValue>>, Vec<ColorValue>)> {
+        let mut leading = Vec::new();
+        let mut auto = None;
+        let mut trailing = Vec::new();
+        let mut dest = &mut leading;
+        for seg in segments {
+            match seg {
+                RuleColorSegment::Plain(c) => dest.push(c.clone()),
+                RuleColorSegment::Repeat { count, colors } => match count {
+                    RuleRepeatCount::Auto => {
+                        if auto.is_some() {
+                            return None;
+                        }
+                        auto = Some(colors.clone());
+                        dest = &mut trailing;
+                    }
+                    RuleRepeatCount::N(n) => {
+                        for _ in 0..*n {
+                            dest.extend(colors.iter().cloned());
+                        }
+                    }
+                    // computed 串化端点无 calc 头（gCS 已折叠整数）。
+                    RuleRepeatCount::Calc(_) => return None,
+                },
+            }
+        }
+        Some((leading, auto, trailing))
+    };
+
+    let (fl, fa, ft) = split(&parse_rule_color_list(from)?)?;
+    let (tl, ta, tt) = split(&parse_rule_color_list(to)?)?;
+    match (fa, ta) {
+        // 无 auto：等长逐位 / 单值广播 / 异长离散。
+        (None, None) => {
+            if fl.len() == tl.len() {
+                lerp_flat(&fl, &tl).map(|v| v.join(", "))
+            } else if fl.len() == 1 {
+                lerp_flat(&vec![fl[0].clone(); tl.len()], &tl).map(|v| v.join(", "))
+            } else if tl.len() == 1 {
+                lerp_flat(&fl, &vec![tl[0].clone(); fl.len()]).map(|v| v.join(", "))
+            } else {
+                None
+            }
+        }
+        // 双 auto：leading/trailing 段数各等 + 循环体 LCM 对齐。
+        (Some(fc), Some(tc)) => {
+            if fl.len() != tl.len() || ft.len() != tt.len() {
+                return None;
+            }
+            let lcm = {
+                let (a, b) = (fc.len(), tc.len());
+                let gcd = |mut x: usize, mut y: usize| -> usize {
+                    while y != 0 {
+                        (x, y) = (y, x % y);
+                    }
+                    x
+                };
+                a * b / gcd(a, b)
+            };
+            let tile = |c: &[ColorValue]| -> Vec<ColorValue> { c.iter().cycle().take(lcm).cloned().collect() };
+            let mid = lerp_flat(&tile(&fc), &tile(&tc))?;
+            let mut parts = lerp_flat(&fl, &tl)?;
+            parts.push(format!("repeat(auto, {})", mid.join(", ")));
+            parts.extend(lerp_flat(&ft, &tt)?);
+            Some(parts.join(", "))
+        }
+        // 单侧 auto：结构异构离散。
         _ => None,
     }
 }
@@ -2238,6 +2486,27 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.max_height = LengthValue::Px(px);
             }
         }
+        // css-gaps 刀 B：rule-width/rule-color 列表动画值回写（CSS Animations/WAAPI
+        // apply 通道）——插值输出串经 css-parser 列表文法回 typed 字段，gCS 串化
+        // 单源规范化（"23.00px"→"23px"、repeat(auto,…) 保形）；解析失败保级联值。
+        "column-rule-width" | "row-rule-width" => {
+            if let Some(segments) = zero_css_parser::values::parse_rule_width_list(value) {
+                if name == "column-rule-width" {
+                    style.column_rule_width = segments;
+                } else {
+                    style.row_rule_width = segments;
+                }
+            }
+        }
+        "column-rule-color" | "row-rule-color" => {
+            if let Some(segments) = zero_css_parser::values::parse_rule_color_list(value) {
+                if name == "column-rule-color" {
+                    style.column_rule_color = segments;
+                } else {
+                    style.row_rule_color = segments;
+                }
+            }
+        }
         _ => {
             // 其他属性暂不支持动画覆盖
         }
@@ -2391,6 +2660,192 @@ mod tests {
     fn test_interpolate_opacity_end() {
         let result = interpolate_property_value("opacity", "0.0", "1.0", 1.0);
         assert!((result.parse::<f64>().unwrap() - 1.0).abs() < 0.01);
+    }
+
+    // ── css-gaps 刀 B：rule-width 列表插值（css-gaps-1 §column-row-rule-width）──
+
+    /// 平列表等长逐位（语料 multiple-values-001 column 形：10/15/20 → 40 三位）。
+    #[test]
+    fn test_rule_width_interp_flat() {
+        let result = interpolate_property_value("column-rule-width", "10px, 15px, 20px", "40px, 40px, 40px", 0.3);
+        assert_eq!(result, "19.00px, 22.50px, 26.00px");
+    }
+
+    /// 有限 repeat 展开（语料 repeaters neutral→to：1+4+1 位逐位）。
+    #[test]
+    fn test_rule_width_interp_repeat_expand() {
+        let result = interpolate_property_value(
+            "column-rule-width",
+            "10px, repeat(2, 20px, 20px), 20px",
+            "20px, repeat(2, 30px, 30px), 30px",
+            0.3,
+        );
+        assert_eq!(result, "13.00px, 23.00px, 23.00px, 23.00px, 23.00px, 23.00px");
+    }
+
+    /// 单值广播（语料 repeaters：repeat(2, 20px)→30px 以 2 位输出）。
+    #[test]
+    fn test_rule_width_interp_single_broadcast() {
+        let result = interpolate_property_value("column-rule-width", "repeat(2, 20px)", "30px", 0.3);
+        assert_eq!(result, "23.00px, 23.00px");
+    }
+
+    /// auto 循环体 LCM 对齐（语料 repeaters：cycle 1 vs 2 → LCM 2）。
+    #[test]
+    fn test_rule_width_interp_auto_lcm() {
+        let result = interpolate_property_value(
+            "column-rule-width",
+            "repeat(auto, 20px)",
+            "repeat(auto, 30px, 30px)",
+            0.3,
+        );
+        assert_eq!(result, "repeat(auto, 23.00px, 23.00px)");
+    }
+
+    /// leading/trailing 段数失配（语料 no-interpolation 钉）→ 离散翻转。
+    #[test]
+    fn test_rule_width_interp_leading_mismatch_discrete() {
+        let result = interpolate_property_value(
+            "column-rule-width",
+            "20px, repeat(auto, 20px)",
+            "30px, 30px, repeat(auto, 30px)",
+            0.3,
+        );
+        assert_eq!(result, "20px, repeat(auto, 20px)", "t<0.5 落 from");
+        let result = interpolate_property_value(
+            "column-rule-width",
+            "20px, repeat(auto, 20px)",
+            "30px, 30px, repeat(auto, 30px)",
+            0.6,
+        );
+        assert_eq!(result, "30px, 30px, repeat(auto, 30px)", "t≥0.5 落 to");
+    }
+
+    /// 双 auto 同位插值：leading/trailing 等段 + 循环体 lerp（语料 leading/trailing 钉）。
+    #[test]
+    fn test_rule_width_interp_auto_lead_trail() {
+        let result = interpolate_property_value(
+            "column-rule-width",
+            "repeat(2, 20px), repeat(auto, 20px), 20px",
+            "30px, 30px, repeat(auto, 30px), 30px",
+            0.3,
+        );
+        assert_eq!(result, "23.00px, 23.00px, repeat(auto, 23.00px), 23.00px");
+    }
+
+    /// 结构失配对 Transition 通道不启动（strict None——css-transitions
+    /// §starting-of-transitions）。
+    #[test]
+    fn test_rule_width_interp_strict_none_on_mismatch() {
+        assert!(
+            interpolate_property_value_strict("column-rule-width", "10px, 20px, 30px", "40px, 50px", 0.5).is_none()
+        );
+        assert!(interpolate_property_value_strict("column-rule-width", "repeat(auto, 20px)", "30px", 0.5).is_none());
+        // 等长平列表真插值。
+        assert_eq!(
+            interpolate_property_value_strict("row-rule-width", "10px", "40px", 0.3).as_deref(),
+            Some("19.00px")
+        );
+    }
+
+    // ── css-gaps 刀 B：rule-color 列表插值（css-gaps-1 §column-row-rule-color）──
+
+    /// 平列表等长逐位预乘插值（语料 repeaters red→lime 形）。
+    #[test]
+    fn test_rule_color_interp_flat() {
+        // red→lime @0.3 = (178.5, 76.5, 0)；green→blue @0.3 = (0, 89.6, 76.5)。
+        let result = interpolate_property_value("column-rule-color", "red, green", "lime, blue", 0.3);
+        assert_eq!(result, "rgb(179, 77, 0), rgb(0, 90, 77)");
+    }
+
+    /// 有限 repeat 展开 + 单值广播（语料 repeaters repeat(2, c)→c 形）。
+    #[test]
+    fn test_rule_color_interp_repeat_broadcast() {
+        let result = interpolate_property_value("column-rule-color", "repeat(2, red)", "lime", 0.3);
+        assert_eq!(result, "rgb(179, 77, 0), rgb(179, 77, 0)");
+    }
+
+    /// auto 循环体 LCM 对齐（cycle 1 vs 2 → LCM 2，保形 repeat(auto, …)）。
+    #[test]
+    fn test_rule_color_interp_auto_lcm() {
+        let result = interpolate_property_value("row-rule-color", "repeat(auto, red)", "repeat(auto, lime, blue)", 0.3);
+        assert_eq!(result, "repeat(auto, rgb(179, 77, 0), rgb(179, 0, 77))");
+    }
+
+    /// leading/trailing 段数失配 → 离散翻转（lenient 端语义）。
+    #[test]
+    fn test_rule_color_interp_mismatch_discrete() {
+        let result = interpolate_property_value(
+            "column-rule-color",
+            "red, repeat(auto, red)",
+            "lime, lime, repeat(auto, lime)",
+            0.3,
+        );
+        assert_eq!(result, "red, repeat(auto, red)", "t<0.5 落 from");
+        let result = interpolate_property_value(
+            "column-rule-color",
+            "red, repeat(auto, red)",
+            "lime, lime, repeat(auto, lime)",
+            0.6,
+        );
+        assert_eq!(result, "lime, lime, repeat(auto, lime)", "t≥0.5 落 to");
+    }
+
+    /// 端点关键字经 css-parser 全名色表解析 + rgba 项 alpha 串化。
+    #[test]
+    fn test_rule_color_interp_keyword_and_alpha() {
+        // purple→blue @0.5 = (64, 0, 191.5)。
+        let result = interpolate_property_value("row-rule-color", "purple", "blue", 0.5);
+        assert_eq!(result, "rgb(64, 0, 192)");
+        // 预乘：a=lerp(1,0.5,.5)=0.75；r=lerp(255,0,.5)/0.75=170；b=lerp(0,127.5,.5)/0.75=85。
+        let result = interpolate_property_value("row-rule-color", "rgba(255, 0, 0, 1)", "rgba(0, 0, 255, 0.5)", 0.5);
+        assert_eq!(result, "rgba(170, 0, 85, 0.75)");
+    }
+
+    /// 结构失配对 Transition 通道不启动（strict None）+ 等长真插值。
+    #[test]
+    fn test_rule_color_interp_strict() {
+        assert!(
+            interpolate_property_value_strict("column-rule-color", "red, green, blue", "lime, lime", 0.5).is_none()
+        );
+        assert_eq!(
+            interpolate_property_value_strict("row-rule-color", "red", "lime", 0.3).as_deref(),
+            Some("rgb(179, 77, 0)")
+        );
+    }
+
+    /// 动画值回写通道（apply_single_property 列表臂）：插值串经列表文法回
+    /// typed 字段，gCS 串化单源规范化小数（"23.00px"→"23px"）与 repeat 保形。
+    #[test]
+    fn test_rule_width_apply_to_computed_style() {
+        let mut style = ComputedStyle::default();
+        let props = vec![
+            InterpolatedProperty {
+                name: "column-rule-width".to_string(),
+                value: "23.00px, 23.00px".to_string(),
+            },
+            InterpolatedProperty {
+                name: "row-rule-width".to_string(),
+                value: "repeat(auto, 23.00px, 23.00px)".to_string(),
+            },
+            InterpolatedProperty {
+                name: "column-rule-color".to_string(),
+                value: "rgb(179, 77, 0)".to_string(),
+            },
+        ];
+        AnimationClock::apply_to_computed_style(&props, &mut style);
+        assert_eq!(style.column_rule_width.len(), 2);
+        assert_eq!(style.row_rule_width.len(), 1);
+        assert_eq!(style.column_rule_color.len(), 1);
+        // gCS 串化规范化：列表小数 → 整数 px；auto 保形。
+        assert_eq!(
+            crate::js_dom_bridge::computed_style::rule_width_list_to_gcs(&style.column_rule_width, 16.0),
+            "23px, 23px"
+        );
+        assert_eq!(
+            crate::js_dom_bridge::computed_style::rule_width_list_to_gcs(&style.row_rule_width, 16.0),
+            "repeat(auto, 23px, 23px)"
+        );
     }
 
     // ── R4272 filter 函数列表插值（filter-effects-1 #animation）──
