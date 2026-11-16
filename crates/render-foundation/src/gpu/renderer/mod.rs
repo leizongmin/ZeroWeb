@@ -25,6 +25,40 @@ use crate::primitive::{DrawOp, FillPrimitive, FilterKind, GradientKind, RenderPr
 
 mod filters;
 
+/// T77/G2 诊断：GPU 上下文创建分段仪拍门（`ZW_RASTER_STAGE_TRACE=1` 启用）。
+/// 与 compositor 侧同名门同 env、同 LazyLock 惯例——本 crate 不依赖上层，故
+/// 独立定义静态；进程内两处快照同 env 读取，语义一致。开启后在
+/// `new_headless` 的 instance/adapter/device 与 `from_device` 的 device_objects
+/// （BGL/sampler/11 条管线/图集资源）各透出一行 `RASTER_STAGE_TRACE stage=
+/// gpu_create:*`，供首帧 once-cost 在 wgpu 枚举/设备/管线编译间的细分归因。
+static GPU_CREATE_STAGE_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_RASTER_STAGE_TRACE") {
+        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => false,
+    });
+
+/// 透出 GPU 上下文创建分段耗时（门关直通返回，零系统调用）。
+fn gpu_create_stage_trace(stage: &str, since: std::time::Instant) {
+    if *GPU_CREATE_STAGE_TRACE {
+        tracing::info!(
+            "RASTER_STAGE_TRACE stage=gpu_create:{stage} stage_ms={} mode=context",
+            since.elapsed().as_millis()
+        );
+    }
+}
+
+/// 透出 [`GpuRenderer::render_full_scene_gpu`] 内部分段耗时（同 ZW_RASTER_STAGE_TRACE
+/// 门；门关直通）。T77 首帧 once-cost 二层归因：collect/glyph_page/images/submit
+/// 各占多少（CPU glyph 首光栅化 / 纹理上传 / lavapipe 管线首绘 JIT 候选）。
+fn gpu_scene_stage_trace(stage: &str, since: std::time::Instant) {
+    if *GPU_CREATE_STAGE_TRACE {
+        tracing::info!(
+            "RASTER_STAGE_TRACE stage=gpu_scene:{stage} stage_ms={} mode=gpu_scene",
+            since.elapsed().as_millis()
+        );
+    }
+}
+
 /// ZW_ATLAS_TRACE=1 诊断计数器（T2 丢字形排查，2026-10-13）。
 ///
 /// 进程级 env 快照（不在热路径逐帧读 env）；开启时各 glyph 收集点仅原子自增，
@@ -338,6 +372,7 @@ impl GpuRenderer {
     /// 创建无头模式的 GPU 渲染器（用于测试和 CPU 回读）
     pub fn new_headless(width: u32, height: u32) -> Result<Self, String> {
         let _guard = GPU_CREATE_MUTEX.lock().unwrap();
+        let create_t0 = std::time::Instant::now();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::empty(),
@@ -345,11 +380,13 @@ impl GpuRenderer {
             backend_options: Default::default(),
             display: None,
         });
+        gpu_create_stage_trace("instance", create_t0);
 
         // 优先请求软件 fallback adapter（Linux lavapipe/LLVMpipe，输出确定性利于测试）；
         // 无软件 fallback 的平台（macOS 无 software Metal、部分 Windows CI）回退到真实 GPU adapter。
         // 历史：单用 force_fallback_adapter:true 在 macOS CI（2026-06-15 迁移 macOS 26 后）返回 None，
         // 致 54 个 gpu::renderer::tests panic、main CI 红逾月（2026-05-30 后全 failure）。
+        let adapter_t = std::time::Instant::now();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             force_fallback_adapter: true,
@@ -367,7 +404,9 @@ impl GpuRenderer {
             .ok()
         })
         .ok_or("无法获取 wgpu 适配器（软件 fallback 与真实 GPU 均不可用）")?;
+        gpu_create_stage_trace("adapter", adapter_t);
 
+        let device_t = std::time::Instant::now();
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("ZeroWeb GPU Device (headless)"),
             required_features: wgpu::Features::empty(),
@@ -377,6 +416,7 @@ impl GpuRenderer {
             trace: Default::default(),
         }))
         .map_err(|e| format!("设备请求失败: {e}"))?;
+        gpu_create_stage_trace("device", device_t);
 
         let device = Arc::new(device);
         let queue = Arc::new(queue);
@@ -457,6 +497,7 @@ impl GpuRenderer {
                 flag.store(true, std::sync::atomic::Ordering::Relaxed);
             });
         }
+        let objects_t0 = std::time::Instant::now();
         let uniform_bgl = create_uniform_bind_group_layout(&device);
         let atlas_bgl = create_atlas_bind_group_layout(&device);
         let gradient_bgl = create_texture_bind_group_layout(&device, "Gradient BGL");
@@ -496,6 +537,7 @@ impl GpuRenderer {
         // R3291：阴影 box blur（复用 blur 的 uniform/纹理 bgl）
         let box_blur_pipeline = create_box_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
         let blend_pipeline = create_blend_pipeline(&device, format, &uniform_bgl, &blend_bgl);
+        gpu_create_stage_trace("device_objects", objects_t0);
 
         let atlas = GlyphAtlas::new();
         let (atlas_texture, _atlas_view, _atlas_sampler, atlas_bind_group) =
@@ -1043,6 +1085,7 @@ impl GpuRenderer {
         }
 
         // ── Phase 1: 收集所有顶点数据（不持有 GPU 资源借用） ──
+        let scene_t0 = std::time::Instant::now();
 
         // 1. Shadows
         let shadow_verts = self.collect_shadow_vertices(&primitives.shadows, scale);
@@ -1053,13 +1096,17 @@ impl GpuRenderer {
         // 4. Gradients（预创建纹理和绑定组）
         let grad_resources = self.prepare_gradient_resources(&primitives.gradients, scale);
         // 5. Images（预创建纹理和绑定组）
+        let images_t = std::time::Instant::now();
         let img_resources = self.prepare_image_resources(&primitives.images, image_cache, scale);
+        gpu_scene_stage_trace("images", images_t);
         // 6-8. Strokes + PathFills + PathStrokes
         let stroke_verts = self.collect_stroke_vertices(&primitives.strokes, scale);
         let path_fill_verts = self.collect_path_fill_vertices(&primitives.path_fills, scale);
         let path_stroke_verts = self.collect_path_stroke_vertices(&primitives.path_strokes, scale);
-        // 9. Glyphs
+        // 9. Glyphs（首帧含 CPU 光栅化 miss + atlas 上传——once-cost 主候选）
+        let glyphs_t = std::time::Instant::now();
         let glyph_verts = self.collect_glyph_vertices_from_primitives(primitives, font_loader, glyph_cache, scale);
+        gpu_scene_stage_trace("glyph_page", glyphs_t);
         // 10. Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
         let ui_glyph_verts = self.collect_overlay_glyphs_data(ui_glyphs, font_loader, glyph_cache, scale);
         // 11. Overlay fills
@@ -1069,6 +1116,8 @@ impl GpuRenderer {
         // 12. Overlay glyphs
         let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
         atlas_trace::report_frame(&self.atlas);
+        gpu_scene_stage_trace("collect", scene_t0);
+        let submit_t0 = std::time::Instant::now();
 
         // ── Phase 2: 提交 GPU 命令 ──
         // Uniform buffer/bind group persist across frames; only dimensions are updated.
@@ -1105,6 +1154,7 @@ impl GpuRenderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Full Scene Encoder"),
         });
+        gpu_scene_stage_trace("prep", submit_t0);
 
         // R3287：主 pass 前 clear 主帧（白）+ blur 阴影合成（alpha 混合到白底）。
         // 主 pass 随后 load 绘制——背景覆盖阴影（CSS：box-shadow 在背景之下）。
@@ -1540,7 +1590,9 @@ impl GpuRenderer {
             }
         }
 
+        gpu_scene_stage_trace("record", submit_t0);
         queue.submit(std::iter::once(encoder.finish()));
+        gpu_scene_stage_trace("submit", submit_t0);
 
         // DC-9 filter/transform 后处理（D/R3279：窗口模式不再跳过——用离屏纹理做
         // ping-pong 后处理再 blit 回 surface；headless 直接处理主帧纹理）。
@@ -1603,6 +1655,7 @@ impl GpuRenderer {
         }
 
         target.present(&device, &queue);
+        gpu_scene_stage_trace("total", scene_t0);
         true
     }
 

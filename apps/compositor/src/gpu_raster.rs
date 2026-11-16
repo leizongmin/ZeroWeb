@@ -3,6 +3,7 @@
 //! 页面 GPU 上下文仅允许在 `zero-compositor` 内创建；renderer 不持有 wgpu 设备。
 //! 初始化失败或 readback 失败时由调用方回退 CPU 路径。
 
+use crate::FrameStageTrace;
 use crate::recovery;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::geometry::Rect;
@@ -23,6 +24,7 @@ pub fn try_rasterize_fills_into_back(
     image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
     scale_factor: f32,
+    trace: &mut FrameStageTrace,
 ) -> bool {
     rasterize_gpu(
         gpu_renderer,
@@ -35,6 +37,7 @@ pub fn try_rasterize_fills_into_back(
         back,
         None,
         scale_factor,
+        trace,
     )
 }
 
@@ -51,6 +54,7 @@ pub fn try_rasterize_partial_into_back(
     back: &mut FrameBuffer,
     dirty_rects: &[(f32, f32, f32, f32)],
     scale_factor: f32,
+    trace: &mut FrameStageTrace,
 ) -> bool {
     if dirty_rects.is_empty() {
         return false;
@@ -81,6 +85,7 @@ pub fn try_rasterize_partial_into_back(
             back,
             Some(clip_logical),
             scale_factor,
+            trace,
         ) {
             return false;
         }
@@ -101,6 +106,7 @@ fn rasterize_gpu(
     back: &mut FrameBuffer,
     clip: Option<Rect>,
     scale_factor: f32,
+    trace: &mut FrameStageTrace,
 ) -> bool {
     if recovery::take_simulated_device_lost(gpu_renderer) {
         return false;
@@ -110,14 +116,20 @@ fn rasterize_gpu(
         return false;
     }
     if gpu_renderer.is_none() {
+        let t = std::time::Instant::now();
         *gpu_renderer = GpuRenderer::new_headless(width, height).ok();
+        // 帧内惰性创建（预热未完成/失败/设备丢失重建）——once 级事件，mark_at
+        // 记录创建自身耗时（T77 双审查 DF2 语义对齐）。
+        trace.mark_at("gpu_lazy_create", t);
     }
     let Some(gpu) = gpu_renderer.as_mut() else {
         return false;
     };
     gpu.configure_surface(width, height);
+    trace.mark("gpu_configure");
     if let Some(clip_logical) = clip {
         gpu.render_page_scene_with_clip_scaled(primitives, font_loader, glyph_cache, clip_logical, scale_factor);
+        trace.mark("gpu_render_clip");
     } else {
         // P0-1：GPU 生产路径未实现的特性（clips/blend/半透明/带模糊阴影）时
         // render_full_scene_gpu 返回 false → 本函数返回 false → 调用方回退 CPU 栅格化。
@@ -134,10 +146,12 @@ fn rasterize_gpu(
         ) {
             return false;
         }
+        trace.mark("gpu_render");
     }
     let Some(pixels) = gpu.read_pixels() else {
         return false;
     };
+    trace.mark("gpu_readback");
     if let Some(clip_logical) = clip {
         // 调用方传入的 scale_factor 已按 rasterize::device_scale_factor 归一化。
         let region = Rect::new(
@@ -249,6 +263,7 @@ mod tests {
             &mut image_cache,
             &mut gpu_back,
             1.0,
+            &mut FrameStageTrace::start(0),
         ) {
             return;
         }
@@ -283,6 +298,7 @@ mod tests {
             &mut back,
             &[(0.0, 0.0, 16.0, 16.0)],
             1.0,
+            &mut FrameStageTrace::start(0),
         ) {
             return;
         }
@@ -317,6 +333,7 @@ mod tests {
                 &mut image_cache,
                 &mut back,
                 1.0,
+                &mut FrameStageTrace::start(0),
             ) {
                 return;
             }
@@ -340,6 +357,7 @@ mod tests {
                 &mut back,
                 &[(0.0, 0.0, 40.0, 40.0)],
                 1.0,
+                &mut FrameStageTrace::start(0),
             ),
             "fills+glyphs 场景脏区 GPU 光栅化必须成功"
         );
@@ -383,6 +401,7 @@ mod tests {
                 // 右边 28.6、底边 24.4 均为小数：blit 区域 [8,29)×[8,25)。
                 &[(8.0, 8.0, 20.6, 16.4)],
                 1.0,
+                &mut FrameStageTrace::start(0),
             ),
             "纯 fill 场景脏区 GPU 光栅化必须成功"
         );
@@ -421,6 +440,7 @@ mod tests {
                 &mut image_cache,
                 &mut back,
                 1.0,
+                &mut FrameStageTrace::start(0),
             ) {
                 return;
             }
@@ -444,6 +464,7 @@ mod tests {
             &mut gpu_back,
             &dirty,
             1.0,
+            &mut FrameStageTrace::start(0),
         ));
 
         // CPU 区域光栅（compositor rasterize_into_back 非线程分支同款调用）。
@@ -501,6 +522,7 @@ mod tests {
                 &mut image_cache,
                 &mut back,
                 1.0,
+                &mut FrameStageTrace::start(0),
             ) {
                 return;
             }
@@ -544,6 +566,7 @@ mod tests {
                 &mut back,
                 &[(0.0, 0.0, 16.0, 16.0)],
                 1.0,
+                &mut FrameStageTrace::start(0),
             ),
             "含渐变的帧脏区 GPU 路径必须拒绝（回退 CPU），不得静默丢内容"
         );
