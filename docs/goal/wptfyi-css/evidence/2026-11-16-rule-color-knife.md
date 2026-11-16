@@ -91,6 +91,19 @@ amend 内，合计 +146 与 final 账一致）。
   （page-runtime:3782），test-guard solo 复跑（纯 HEAD 净树，WIP 已 stash）
   复现 = 在册账 script-sandbox 流真实红，非本刀（mkt3/mkt4 死因 = fmt 门吃
   es_module 漂移，5 秒即止零测试产出——拆腿须净树前置）。
+- make test 全腿收口（zw-rulecolor-mkt7，make -f 片段逐腿 LEGRC 记账
+  no-fail-fast，00:33–00:49，es_module WIP 在树态）：workspace 腿 css-parser
+  **3,280/0F**、style-system **2,517/0F**、engine lib **4,077/0F**（刀域零红）；
+  es_module 二进制 441/**6F** = peer WIP 连坐（同一 WIP 使在册 module_update 转
+  绿——与 mkt5 净树面互补实证两面互换）；qjs-clippy 101 = WIP 连坐
+  too_many_arguments；红项全对号在册账：renderer-lib 101（worker-fetch）、
+  browser-bin 101（tab 镜像）、browser-tests 101（default_actions ×6）、
+  qjs-w 101（image_batch_e2e 环境形 775P/1F/59I）、qjs-rlib 101
+  （worker-fetch）；GPU 双腿 0/0（wgpu adapter 可用）、qjs renderer bin 0。
+  过程注：00:27–00:29 三电池并发碰撞（zw-rc-mkt5-legs / zw-rulecolor-mkt6 /
+  mkt5b）按 notes 仲裁收束为 mkt7 单写者 canonical；zw-rc-mkt5-legs 死于
+  rustc SIGSEGV（同 target 多 cargo 门禁并发 = 增量缓存损坏先例再证），
+  途中账与 mkt5b 互证后废弃。
 
 ## 残面队列
 

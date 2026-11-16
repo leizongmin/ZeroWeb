@@ -14,9 +14,13 @@ shapes 混合净 −4，合计 −78，b1v6/b1v7 回落链断裂先例第三次�
 91=91 +2、typed-om/shapes/masking 三护栏 SET-IDENTICAL。单测 css-parser 钉 4、
 style-system 2,547/0F、engine lib 4,076/0F 全绿，fmt/clippy 三 crate 净；bench-gate 定向
 （bench2，三 crate）microbench **3/3 PASS** + perf-gate **rc=0**（绝对预算过门，基线
-硬件错配 WARN 在册）；make test 拆腿收口（mkt5，es_module stash 净树）：刀面三
-crate 全绿（3,280/2,517/4,076 全 0F），唯一红 SW module_update（page-runtime:3782）
-= 在册账 script-sandbox 流真实红（纯 HEAD solo 复现定谳，止腿处）。
+硬件错配 WARN 在册）；make test 全腿收口：mkt5（净树 stash 窗）止腿于在册 SW
+module_update（page-runtime:3782，纯 HEAD solo 复现定谳），mkt7（make -f 片段
+全腿 no-fail-fast）workspace 腿净树互补面实证——WIP 在树则 module_update 绿而
+es_module 6 钉红（连坐互换两面）；全腿红项全对号在册（es_module 6=WIP 连坐、
+worker-fetch 双面×3 腿、tab 镜像、default_actions 6、image_batch 环境形、
+qjs-clippy 101=WIP 连坐），刀面三 crate 3,280/2,517/4,077 全 0F 零红，GPU 双腿
+0/0（wgpu adapter 可用），详账见 evidence 门禁节。
 残面：刀 B width-list ~684F、color 真
 插值池 ~412F、刀 D inset-cap/junction ~1.7k、残面⑤ calc 代数插值（承重边界重撤硬前置），
 见
