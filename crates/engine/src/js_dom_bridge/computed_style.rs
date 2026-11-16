@@ -803,12 +803,12 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "quotes" => quotes_to_css(&style.quotes),
         // ── CSS Multi-column 簇（R2737）── column-gap 已覆（R2707 length 族）；补 rule/count/width/fill/span。
         // css-gaps-1 列表模型：width/style 走列表串化（单段平值保 multicol 串化零漂移）。
-        "column-rule-width" => rule_width_list_to_gcs(&style.column_rule_width, font_size_px),
+        "column-rule-width" => rule_width_list_to_gcs_computed(&style.column_rule_width, font_size_px, false),
         "column-rule-style" => rule_style_list_to_gcs(&style.column_rule_style),
-        "column-rule-color" => rule_color_list_to_gcs(&style.column_rule_color, element_color),
+        "column-rule-color" => rule_color_list_to_gcs_computed(&style.column_rule_color, element_color),
         // css-gaps-1 §column-row-rule-{color,width,style}：row 三属性同文法列表串化。
-        "row-rule-color" => rule_color_list_to_gcs(&style.row_rule_color, element_color),
-        "row-rule-width" => rule_width_list_to_gcs(&style.row_rule_width, font_size_px),
+        "row-rule-color" => rule_color_list_to_gcs_computed(&style.row_rule_color, element_color),
+        "row-rule-width" => rule_width_list_to_gcs_computed(&style.row_rule_width, font_size_px, true),
         "row-rule-style" => rule_style_list_to_gcs(&style.row_rule_style),
         "column-count" => column_count_to_css(&style.column_count),
         "column-width" => column_width_to_css(&style.column_width, font_size_px),
@@ -828,14 +828,14 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // 计算串化全等 → 该值（简写经 inline 写入时双 longhand 同值）；否则简写
         // 串化省略空串（Chrome shorthand serialization 同口径）。
         "rule-color" => {
-            let r = rule_color_list_to_gcs(&style.row_rule_color, element_color);
-            let c = rule_color_list_to_gcs(&style.column_rule_color, element_color);
+            let r = rule_color_list_to_gcs_computed(&style.row_rule_color, element_color);
+            let c = rule_color_list_to_gcs_computed(&style.column_rule_color, element_color);
             if r == c { r } else { String::new() }
         }
         // rule-width / rule-style 简写 gCS：row/column 串化全等 → 该值（rule-color 臂同口径）。
         "rule-width" => {
-            let r = rule_width_list_to_gcs(&style.row_rule_width, font_size_px);
-            let c = rule_width_list_to_gcs(&style.column_rule_width, font_size_px);
+            let r = rule_width_list_to_gcs_computed(&style.row_rule_width, font_size_px, true);
+            let c = rule_width_list_to_gcs_computed(&style.column_rule_width, font_size_px, false);
             if r == c { r } else { String::new() }
         }
         "rule-style" => {
@@ -1409,6 +1409,47 @@ pub(crate) fn rule_width_list_to_gcs(
     }
     zero_css_parser::values::rule_width_list_to_css(segments, &|w| column_rule_width_to_css(w, font_size_px))
         .unwrap_or_default()
+}
+
+/// rule-width 列表 computed 串化（gCS 读面专用，css-gaps-1 §column-row-rule-width）：
+/// **静态 computed 值 repeat 结构保形**（gap-decorations-{width,color}-computed
+/// 解析页钉；"Repeaters should expand" 仅属过渡/动画插值输出臂——端点插值器
+/// split 展开有限 repeat，registry eased==1 rule 族回落臂输出展开形）。
+/// 本变体=列表项与 row 单值 px 取整（corpus 字面量钉：列表项 `22.5px`→`22px`、
+/// row 单值 `58.5px`→`58px`——column 单值小数保形，css-multicol
+/// column-rule-width-interpolation 页 `8.1px` 铁锚）。
+/// 指定值面（inline CSSOM 简写重组等）沿用 [`rule_width_list_to_gcs`] 原样。
+// https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+fn rule_width_list_to_gcs_computed(
+    segments: &[zero_css_parser::values::RuleWidthSegment],
+    font_size_px: f64,
+    is_row: bool,
+) -> String {
+    if let Some(w) = zero_css_parser::values::rule_width_list_single_width(segments) {
+        if is_row && let zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(p)) = w {
+            return format!("{}px", p.trunc());
+        }
+        return column_rule_width_to_css(w, font_size_px);
+    }
+    zero_css_parser::values::rule_width_list_to_css(segments, &|w| {
+        if let zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(p)) = w {
+            format!("{}px", p.trunc())
+        } else {
+            column_rule_width_to_css(w, font_size_px)
+        }
+    })
+    .unwrap_or_default()
+}
+
+/// rule-color 列表 computed 串化（gCS 读面专用）：静态 computed 值 repeat 结构
+/// 保形（同 [`rule_width_list_to_gcs_computed`] 头注口径——展开仅属插值输出）；
+/// 色值串化走 [`rule_color_list_to_gcs`]（rgba 舍入既有）。当前与本函数同构
+/// （色值无 px 取整面），独立成点保 computed 指定两面分叉位。
+fn rule_color_list_to_gcs_computed(
+    segments: &[zero_css_parser::values::RuleColorSegment],
+    element_color: &ColorValue,
+) -> String {
+    rule_color_list_to_gcs(segments, element_color)
 }
 
 /// rule-style 列表 computed 串化（css-gaps-1 §column-row-rule-style）：单段
@@ -5380,5 +5421,67 @@ mod g46_content_image_set_tests {
             parse_content("image-set(url(a.png) 1x)"),
             Some(zero_css_parser::values::ContentValue::ImageSet(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod rule_list_computed_tests {
+    //! css-gaps-1 computed 值域钉（wptfyi-css 刀 C）：静态 computed repeat 结构
+    //! 保形 + 列表项/row 单值 px 取整、column 单值小数保形。driving:
+    //! gap-decorations-{width,color}-computed 解析页（保形）+
+    //! rule-{width,color}-interpolation-{repeaters,multiple-values} 页字面量（取整）。
+
+    use super::{rule_color_list_to_gcs_computed, rule_width_list_to_gcs_computed};
+    use zero_css_parser::values::{ColorValue, parse_rule_color_list, parse_rule_width_list};
+
+    #[test]
+    fn repeat_preserves_structure_in_computed() {
+        let segs = parse_rule_width_list("10px, repeat(2, 20px, 20px), 20px").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, true),
+            "10px, repeat(2, 20px, 20px), 20px",
+            "有限 repeat 静态 computed 保形（解析页钉）"
+        );
+        let auto = parse_rule_width_list("repeat(auto, 20px, 20px)").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&auto, 16.0, false),
+            "repeat(auto, 20px, 20px)",
+            "auto 保形不展开"
+        );
+    }
+
+    #[test]
+    fn list_items_truncate_px() {
+        let segs = parse_rule_width_list("7.5px, 22.5px, 30px").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, false),
+            "7px, 22px, 30px",
+            "列表项 px 取整"
+        );
+    }
+
+    #[test]
+    fn single_value_row_truncates_column_preserves() {
+        let segs = parse_rule_width_list("22.5px").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, true),
+            "22px",
+            "row 单值取整"
+        );
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, false),
+            "22.5px",
+            "column 单值小数保形（multicol 铁锚）"
+        );
+    }
+
+    #[test]
+    fn color_repeat_preserves_structure() {
+        let segs = parse_rule_color_list("red, repeat(2, black, black), blue").expect("parse");
+        assert_eq!(
+            rule_color_list_to_gcs_computed(&segs, &ColorValue::Rgba(0, 0, 0, 255)),
+            "rgb(255, 0, 0), repeat(2, rgb(0, 0, 0), rgb(0, 0, 0)), rgb(0, 0, 255)",
+            "静态 computed repeat 保形（解析页钉）"
+        );
     }
 }

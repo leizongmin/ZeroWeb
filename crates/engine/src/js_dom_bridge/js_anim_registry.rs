@@ -406,6 +406,10 @@ pub(super) fn canonicalize(prop: &str, raw: &str, base: &ComputedStyle, sibling:
 /// 比三位小数去尾零）。帧集空 / 解析无 keyframes → None。
 fn build_keyframes_rule(name: &str, kf: Option<&Json>) -> Option<zero_css_parser::ast::KeyframesRule> {
     let frames = kf?.as_array()?;
+    let dbg = std::env::var("ZW_ANIM_VALIDATION_DEBUG").is_ok();
+    if dbg {
+        eprintln!("ZW-ANIM-BUILD-ENTRY name={name} frames={}", frames.len());
+    }
     let mut css = format!("@keyframes {name}{{");
     for frame in frames {
         let offset = frame.get("o").and_then(json_f64).unwrap_or(0.0);
@@ -421,6 +425,22 @@ fn build_keyframes_rule(name: &str, kf: Option<&Json>) -> Option<zero_css_parser
             // 声明值内 `}` 破坏文本结构——保守跳过该帧（解析失败面，宁缺勿错）。
             if value.contains('}') || value.contains('{') {
                 continue;
+            }
+            // WAAPI keyframes 值校验（2026-11-17 B3 回归修复）：非法值**丢弃该属性**
+            // （键塌缩 → 端点回落 underlying——Web Animations §5.3.11 keyframe
+            // 转换对 invalid property value 的丢弃语义，Chrome parity）。合成文本
+            // 通道此前零校验，声明文法宽松受理残缺形（括号未闭合照收）→ 端点值
+            // 落盘放大为 B2→B3 真回归（repeaters-001 WAAPI at(1.5)）。与 CSSOM
+            // setProperty 同一校验器（`validate_decl_value`），合法值零变化。
+            // https://drafts.csswg.org/web-animations-1/#processing-a-keyframes-argument
+            if !zero_style_system::validate_decl_value(k, &value) {
+                if dbg {
+                    eprintln!("ZW-ANIM-VALIDATION-DROP prop={k} value={value}");
+                }
+                continue;
+            }
+            if dbg && k.contains("rule") {
+                eprintln!("ZW-ANIM-VALIDATION-PASS prop={k} value={value}");
             }
             css.push_str(&format!("{k}:{value};"));
         }
@@ -475,7 +495,9 @@ fn parse_fill(s: Option<&str>) -> AnimationFillModeValue {
 #[cfg(test)]
 mod tests {
     use super::FLIP_EASED_ADOPT_MARKER;
+    use super::build_keyframes_rule;
     use super::flip_eased_adopts;
+    use serde_json::Value as Json;
     use zero_css_parser::values::TimingFunctionValue;
 
     #[test]
@@ -586,5 +608,41 @@ mod tests {
     fn test_foreign_value_rejects() {
         assert!(!flip_eased_adopts("a", "b", "c", 0.25, &TimingFunctionValue::Linear));
         assert!(!flip_eased_adopts("a", "b", "c", 0.75, &TimingFunctionValue::Linear));
+    }
+
+    /// WAAPI keyframes 值校验（B3 回归修复钉）：非法值丢属性——键塌缩后端点
+    /// 回落 underlying（Web Animations §processing-a-keyframes-argument，
+    /// Chrome parity）。合法值零变化（valid 帧保形入合成文本）。
+    /// 语料形：repeaters-001 WAAPI `to` 值缺右括号（页 L69 上游 typo）。
+    #[test]
+    fn test_build_keyframes_rejects_invalid_value() {
+        // 残缺 to 值（缺右括号）：属性被丢弃 → 该帧 properties 不含 column-rule-color。
+        let kf: Json = serde_json::from_str(
+            r#"[{"o":0,"p":{"column-rule-color":"black"}},{"o":1,"p":{"column-rule-color":"repeat(auto, rgb(0, 0, 255), rgb(255, 0, 0)"}}]"#,
+        )
+        .unwrap();
+        let rule = build_keyframes_rule("zwtest", Some(&kf)).expect("合法帧在 → 规则应构建");
+        let to_decls = &rule.keyframes.last().expect("to 帧在").declarations;
+        assert!(
+            !to_decls.iter().any(|d| d.property == "column-rule-color"),
+            "残缺 to 值应被丢弃，实存 {to_decls:?}"
+        );
+        let from_decls = &rule.keyframes.first().expect("from 帧在").declarations;
+        assert!(
+            from_decls.iter().any(|d| d.property == "column-rule-color"),
+            "合法 from 值应保形，实存 {from_decls:?}"
+        );
+
+        // 全合法值：双帧保形（零变化面）。
+        let kf: Json = serde_json::from_str(
+            r#"[{"o":0,"p":{"column-rule-color":"black"}},{"o":1,"p":{"column-rule-color":"repeat(auto, rgb(0, 0, 255), rgb(255, 0, 0))"}}]"#,
+        )
+        .unwrap();
+        let rule = build_keyframes_rule("zwtest2", Some(&kf)).expect("合法帧在 → 规则应构建");
+        let to_decls = &rule.keyframes.last().expect("to 帧在").declarations;
+        assert!(
+            to_decls.iter().any(|d| d.property == "column-rule-color"),
+            "合法 to 值应保形，实存 {to_decls:?}"
+        );
     }
 }

@@ -111,7 +111,8 @@ pub(crate) fn store_last_style(world: World, identity: &str, style: &ComputedSty
 
 /// 换代边界登记（gCS 读路径刷新调用）：比较前值/新值 computed，对
 /// `transition-property` 声明且值变化的属性登记过渡条目。非插值对 / duration≤0 /
-/// `none`|`all` 属性 / 端点序列化同值或空值一律跳过（= 刀前行为，echo 池零扰动）。
+/// `none` 属性 / 端点序列化同值或空值一律跳过（= 刀前行为，echo 池零扰动）；
+/// `all` 按可插值清单通配展开（css-transitions §2）。
 pub(crate) fn register_from_style_change(
     world: World,
     identity: &str,
@@ -125,51 +126,145 @@ pub(crate) fn register_from_style_change(
     }
     let sibling = Some(zero_style_system::sibling_position(doc, nid));
     for (i, property) in new.transition_property.iter().enumerate() {
-        // FIXME(transition-all)：`all` 逐 longhand 展开（css-transitions §2）Phase 3。
-        if property == "none" || property.is_empty() || property == "all" {
+        if property == "none" || property.is_empty() {
             continue;
         }
-        let Some(&duration) = new.transition_duration.get(i) else {
-            continue;
-        };
-        if duration <= 0.0 {
-            continue;
-        }
-        // 列表长度不齐按位取（与渲染管线 `start_transitions` 同口径）。
-        let delay = new.transition_delay.get(i).copied().unwrap_or(0.0);
-        let timing = new
-            .transition_timing_function
-            .get(i)
-            .cloned()
-            .unwrap_or(TimingFunctionValue::Ease);
-        // 端点取 gCS 序列化形（与断言读同序列化器——格式一致由构造保证）。
-        let from = serialize_computed_property_with_sibling(prev, property, sibling);
-        let to = serialize_computed_property_with_sibling(new, property, sibling);
-        if from.is_empty() || to.is_empty() || from == to {
-            continue;
-        }
-        // 仅登记严格可插值对（css-transitions §starting-of-transitions：非
-        // animatable 对不启动过渡；t=0.5 仅作端点解析探针，进度无关）。
-        if interpolate_property_value_strict(property, &from, &to, 0.5).is_none() {
+        // `all` 通配（css-transitions §2：`all` 匹配一切可过渡 longhand）——按
+        // 可插值属性清单逐项探测端点变化并各自登记（duration/delay/timing 取
+        // `all` 项自身位）。非插值对/端点同值在逐项门过滤，echo 池零扰动。
+        if property == "all" {
+            for prop in TRANSITIONABLE_PROPERTIES {
+                register_property_if_changed(
+                    world,
+                    identity,
+                    prop,
+                    prev,
+                    new,
+                    sibling,
+                    new.transition_duration.get(i).copied().unwrap_or(0.0),
+                    new.transition_delay.get(i).copied().unwrap_or(0.0),
+                    new.transition_timing_function
+                        .get(i)
+                        .cloned()
+                        .unwrap_or(TimingFunctionValue::Ease),
+                );
+            }
             continue;
         }
-        let entry = TransitionEntry {
+        register_property_if_changed(
             world,
-            identity: identity.to_string(),
-            property: property.clone(),
-            from,
-            to,
-            duration_s: duration,
-            delay_s: delay,
-            timing,
-            start_s: MONOTONIC_START.elapsed().as_secs_f64(),
-        };
-        ENTRIES.with(|cell| {
-            let mut entries = cell.borrow_mut();
-            entries.retain(|e| e.world != entry.world || e.identity != entry.identity || e.property != entry.property);
-            entries.push(entry);
-        });
+            identity,
+            property,
+            prev,
+            new,
+            sibling,
+            new.transition_duration.get(i).copied().unwrap_or(0.0),
+            new.transition_delay.get(i).copied().unwrap_or(0.0),
+            new.transition_timing_function
+                .get(i)
+                .cloned()
+                .unwrap_or(TimingFunctionValue::Ease),
+        );
     }
+}
+
+/// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
+/// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
+/// §starting-of-transitions），与显式声明同口径。
+const TRANSITIONABLE_PROPERTIES: [&str; 48] = [
+    "backdrop-filter",
+    "background",
+    "background-color",
+    "border-color",
+    "bottom",
+    "clip-path",
+    "color",
+    "column-rule-color",
+    "column-rule-width",
+    "filter",
+    "font-size",
+    "font-size-adjust",
+    "font-weight",
+    "height",
+    "left",
+    "letter-spacing",
+    "margin-bottom",
+    "margin-left",
+    "margin-right",
+    "margin-top",
+    "max-height",
+    "max-width",
+    "min-height",
+    "min-width",
+    "offset-anchor",
+    "offset-distance",
+    "offset-path",
+    "offset-position",
+    "offset-rotate",
+    "opacity",
+    "padding-bottom",
+    "padding-left",
+    "padding-right",
+    "padding-top",
+    "right",
+    "rotate",
+    "row-rule-color",
+    "row-rule-width",
+    "scale",
+    "shape-image-threshold",
+    "shape-margin",
+    "shape-outside",
+    "text-indent",
+    "top",
+    "transform",
+    "translate",
+    "width",
+    "word-spacing",
+];
+
+/// 单属性登记（显式声明与 `all` 通配展开共用）：duration≤0 / 端点空串同值 /
+/// 严格门不可插值对跳过；同 (world, identity, property) 条目替换。
+fn register_property_if_changed(
+    world: World,
+    identity: &str,
+    property: &str,
+    prev: &ComputedStyle,
+    new: &ComputedStyle,
+    sibling: Option<(u64, u64)>,
+    duration: f64,
+    delay: f64,
+    timing: TimingFunctionValue,
+) {
+    if duration <= 0.0 {
+        return;
+    }
+    // 端点取 gCS 序列化形（与断言读同序列化器——格式一致由构造保证）。
+    let from = serialize_computed_property_with_sibling(prev, property, sibling);
+    let to = serialize_computed_property_with_sibling(new, property, sibling);
+    if from.is_empty() || to.is_empty() || from == to {
+        return;
+    }
+    // 仅登记严格可插值对（css-transitions §starting-of-transitions：非
+    // animatable 对不启动过渡；t=0.5 仅作端点解析探针，进度无关）。
+    if interpolate_property_value_strict(property, &from, &to, 0.5).is_none() {
+        return;
+    }
+    let entry = TransitionEntry {
+        world,
+        identity: identity.to_string(),
+        property: property.to_string(),
+        from,
+        to,
+        duration_s: duration,
+        delay_s: delay,
+        timing,
+        start_s: MONOTONIC_START.elapsed().as_secs_f64(),
+    };
+    ENTRIES.with(|cell| {
+        let mut entries = cell.borrow_mut();
+        entries.retain(|e| e.world != entry.world || e.identity != entry.identity || e.property != entry.property);
+        entries.push(entry);
+    });
 }
 
 /// gCS selector 通道咨询（`__zw_get_computed_style` 序列化点，jsanim consult 位旁）。
@@ -296,7 +391,15 @@ fn query_core(
         // grad→deg、cm→mm 归一形不一致 hue-rotate 2 REG + offset-path 端点
         // 8 DOWNS 全此类）。严格 `==`（steps 越点精确 1.0；bezier 外推 eased>1
         // 走插值+钳制臂，不落此门——63 例无界族外推真增益保持）。
-        if eased == 1.0 {
+        // rule-\* 四属性例外：插值器端点含广播/有限 repeat 展开语义（to 单值
+        // 对 from 多值位输出 `to, to`；computed 串化已展开有限 repeat）——echo
+        // 原样形欠广播/展开位，回落插值臂（css-gaps-1 §column-row-rule-width）。
+        if eased == 1.0
+            && !matches!(
+                prop,
+                "column-rule-width" | "row-rule-width" | "column-rule-color" | "row-rule-color"
+            )
+        {
             return None;
         }
         let mut raw = interpolate_property_value(&e.property, &e.from, &e.to, eased);
@@ -472,5 +575,57 @@ mod tests {
     #[test]
     fn test_marker_present() {
         assert!(!TRANSITION_SYNC_READ_MARKER.is_empty());
+    }
+
+    /// `all` 通配展开（css-transitions §2）：`transition-property: all` 下值变化
+    /// 的 longhand 各自登记——width 10→40 linear 中点 25px；未变化属性无条目
+    /// （echo 池零扰动）。
+    #[test]
+    fn test_all_wildcard_registers_changed_longhand() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let mut prev = ComputedStyle::default();
+        let mut new = ComputedStyle::default();
+        prev.width = LengthValue::Px(10.0);
+        new.width = LengthValue::Px(40.0);
+        new.transition_property = vec!["all".to_string()];
+        new.transition_duration = vec![100.0];
+        new.transition_delay = vec![-50.0];
+        new.transition_timing_function = vec![TimingFunctionValue::Linear];
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "width", &base, None).expect("all 通配登记 width");
+        assert_eq!(v, "25px", "all 通配 linear 中点，got {v}");
+        assert!(
+            query_override_for_sel("#t", "opacity", &base, None).is_none(),
+            "端点同值属性无条目"
+        );
+        clear_all();
+    }
+
+    /// eased==1.0 rule-\* 族例外（css-gaps-1 列表端点广播/展开语义）：to 单值对
+    /// from 多值位输出广播形（`repeat(2, 20px)`→`30px` at(1) = `30px, 30px`），
+    /// 不落 echo 短路（语料 rule-width-interpolation-repeaters 页钉）。
+    #[test]
+    fn test_eased_one_rule_broadcast() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let mut prev = ComputedStyle::default();
+        let mut new = ComputedStyle::default();
+        prev.column_rule_width = zero_css_parser::values::parse_rule_width_list("repeat(2, 20px)").expect("from");
+        new.column_rule_width = zero_css_parser::values::parse_rule_width_list("30px").expect("to");
+        new.transition_property = vec!["column-rule-width".to_string()];
+        new.transition_duration = vec![100.0];
+        new.transition_delay = vec![-50.0];
+        new.transition_timing_function = vec![TimingFunctionValue::Steps(1, Some(StepPosition::Start))];
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "column-rule-width", &base, None).expect("广播覆盖");
+        assert_eq!(v, "30px, 30px", "at(1) 广播位输出，got {v}");
+        clear_all();
     }
 }
