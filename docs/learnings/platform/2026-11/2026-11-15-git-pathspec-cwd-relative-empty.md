@@ -30,3 +30,12 @@ pathspec 参数按**当前工作目录**相对解析，不是按仓库根。cwd 
   证据，先验证 pathspec 是否命中（`--name-only` 与 blob 比对互证）。
 - 结论改变归因时（如「合并树==候选树」），必须有一条无 pathspec 的原始
   diff 作底账，防止伪空链式传播到判据复检决策。
+
+## 复发记录
+
+2026-11-16 T76 修复轮复发（在案次日）：merge 集成核验又在运行目录里以
+pathspec 跑 diff，伪空直接产出「merge 段零码变」的不实 commit message 与
+manifest 陈述，携入他流 3 个 engine 产品码 commit 进 PR 分支；直到包级
+clippy 撞上他流文件才暴露，靠 `git revert -m 1` 处置。教训：该坑靠记忆
+不设防——核验步骤必须把「cd 仓库根 / 无 pathspec」写成脚本内的机械动作
+（或用 `git -C <repo-root>`），不能依赖执行者记得。

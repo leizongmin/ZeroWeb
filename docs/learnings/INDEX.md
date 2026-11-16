@@ -302,8 +302,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（46）
+## Patterns — 可复用代码模式与最佳实践（47）
 
+- 2026-11-16 [跨进程仪拍锚提取：时间线归属法与 stderr 前缀伪影](patterns/2026-11/2026-11-16-trace-anchor-timeline-attribution.md) — apps/renderer,apps/compositor,bench
 - 2026-11-16 [CSS.supports 与 setProperty 双通道文法分叉](patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md) — engine,style-system
 - 2026-11-15 [shim 写面刀须双世界同落：handle 世界才是 corpus 活跃写面](patterns/2026-11/2026-11-15-shim-write-face-knife-dual-world.md) — engine, css-parser
 - 2026-11-15 [corpus 快照二进制 A/B 的内容差法证与增益三桶归因](patterns/2026-11/2026-11-15-corpus-ab-binary-provenance-ledger-split.md) — wpt-runner, engine, testing
