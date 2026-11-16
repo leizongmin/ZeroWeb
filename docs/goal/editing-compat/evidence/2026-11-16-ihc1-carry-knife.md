@@ -1,7 +1,7 @@
 # ihtml 携带族 override carry 刀门禁批收口（ihc1）
 
 **日期**: 2026-11-16
-**刀体**: b48956330（发射锚 8fb4e955d，pull --rebase 重放，crates/engine＋tests 域 diff 恒空，字节恒等传递闭合）
+**刀体**: 8d08b7f86（8fb4e955d 发射锚在飞窗内四次 pull --rebase 重放 b48956330→6c37909ea→7894ff141→8d08b7f86，crates/engine＋tests 域 diff 恒空，字节恒等传递闭合；订正自写定时点中间 hash b48956330，COORD 09:45 备忘条目）
 **批**: ihc1 单批 ALL-DONE（08:31:44 发射，09:37:29 终判）
 **census**: inserthtml 1508P/57F → **1516P/49F**（F2P=8 恰携带族，零新增红）
 
@@ -17,7 +17,7 @@
 - **L1/L2 iht A/B 双腿**（1565 行，乘数 2，wall 11s/63s）：**1516P/49F/0T，F2P=8 恰携带族＋零新增红**。F2P 集合独立复核（comm 对 ihb3 基线）：交集 49、新增红 0、消失恰 8 键——font color 壳 ×4＋span color 壳 ×4，全 `<p>abc` 载荷 × compare innerHTML 行，swcss true/false × dPS div/p 四象限。
 - **L3 mt**（wall 1864s）：**10090P/2F/0T**，残红恰 subscript+formatblock X37 双键，零暴露（multitest inserthtml 仅行内载荷，块臂/携带臂全旁路）。
 - **L4 enginelib strict**：**4059P/0F**（16.49s）。
-- 锚定纪律：发射前现树复验（pins 绿＋enginelib 4059P/0F＋iht 单腿 1516P/49F F2P=8 comm 双证）；L2 起跑前 ensure_solo 等 ZW-2 渲染流租户（shapeout-b1v4 批）清空；chk_dom 对 rebase 重放（8fb4e955d→b48956330，engine/Makefile 域 diff 恒空）未误触熔断。
+- 锚定纪律：发射前现树复验（pins 绿＋enginelib 4059P/0F＋iht 单腿 1516P/49F F2P=8 comm 双证）；L2 起跑前 ensure_solo 等 ZW-2 渲染流租户（shapeout-b1v4 批）清空；chk_dom 对 rebase 重放（8fb4e955d→8d08b7f86 四次，engine/Makefile 域 diff 恒空）未误触熔断。
 
 ## writer 死亡与尾链代跑
 
