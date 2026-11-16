@@ -560,6 +560,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.column_rule_color = parent.column_rule_color.clone();
             true
         }
+        "row-rule-color" => {
+            child.row_rule_color = parent.row_rule_color.clone();
+            true
+        }
         "column-rule-style" => {
             child.column_rule_style = parent.column_rule_style.clone();
             true
@@ -1394,7 +1398,24 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "column-rule" => {
             style.column_rule_width = default_style.column_rule_width;
             style.column_rule_style = default_style.column_rule_style;
-            style.column_rule_color = default_style.column_rule_color;
+            style.column_rule_color = default_style.column_rule_color.clone();
+            true
+        }
+        // rule-color 简写 `initial`/`unset`：row/column 双 rule-color 一起回落
+        //（css-gaps-1 §rule-shorthand-properties，column-rule 臂同款）。
+        "rule-color" => {
+            style.row_rule_color = default_style.row_rule_color.clone();
+            style.column_rule_color = default_style.column_rule_color.clone();
+            true
+        }
+        // shape-margin / shape-image-threshold（css-shapes-1）：白名单串复位
+        // 臂补齐（二十三轮刀白名单接入时遗漏，initial_value 完整性测试钉面）。
+        "shape-margin" => {
+            style.shape_margin = default_style.shape_margin.clone();
+            true
+        }
+        "shape-image-threshold" => {
+            style.shape_image_threshold = default_style.shape_image_threshold;
             true
         }
         "column-rule-width" => {
@@ -1539,7 +1560,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         // Column Rule Color
         "column-rule-color" => {
-            style.column_rule_color = default_style.column_rule_color;
+            style.column_rule_color = default_style.column_rule_color.clone();
+            true
+        }
+        // Row Rule Color（css-gaps-1，与 column 同族非继承回落）
+        "row-rule-color" => {
+            style.row_rule_color = default_style.row_rule_color.clone();
             true
         }
         // Contain

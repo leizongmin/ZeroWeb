@@ -318,7 +318,18 @@ impl PropertyRegistry {
             "backdrop-filter" => Some(Filter(Vec::new())),
 
             // Column Rule Color — CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
-            "column-rule-color" => Some(ColumnRuleColor(ColorValue::CurrentColor)),
+            // css-gaps-1 列表模型：纯色 = 单段列表；row-rule-color 同族同初值。
+            "column-rule-color" => Some(ColumnRuleColor(vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )])),
+            "row-rule-color" => Some(RowRuleColor(vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )])),
+            // 简写初始值 = 双子属性初值（无聚合变体，返回首子属性初始形，
+            // column-rule 简写臂同款先例）。
+            "rule-color" => Some(RowRuleColor(vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )])),
 
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
@@ -703,6 +714,8 @@ impl PropertyRegistry {
             "filter",
             "backdrop-filter",
             "column-rule-color",
+            "row-rule-color",
+            "rule-color",
             "contain",
             "contain-intrinsic-size",
             "contain-intrinsic-width",

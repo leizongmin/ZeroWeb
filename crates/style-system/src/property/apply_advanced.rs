@@ -1405,6 +1405,26 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // rule-color 简写 apply 臂（css-gaps-1 §rule-shorthand-properties）：
+        // decl_supported = 白名单 + apply oracle 两 conjunct，简写无独立 apply
+        // 臂则后者恒假（十七轮 column-rule 刀同型缺口——supports 前置门整组
+        // 连坐）。复用 cascade 同一展开器 expand_rule_color，row/column 双
+        // longhand 逐条递归 apply 全过才落 true。
+        // https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+        "rule-color" => {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 1))];
+            let decls = crate::shorthand::expand_shorthands(&decl);
+            if !decls.is_empty()
+                && decls
+                    .iter()
+                    .all(|(p, v, _, _)| super::apply_advanced::apply_advanced_property_value(style, p, v, sibling))
+            {
+                return true;
+            }
+        }
         // ── Column Rule 属性 ──
         "column-rule-width" => {
             if let Some(v) = values::parse_column_rule_width(value) {
@@ -1928,12 +1948,21 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // ── Column Rule Color 属性 ──
+        // ── Column/Row Rule Color 属性（css-gaps-1 §column-row-rule-color）──
+        // 列表文法 `<line-color-list> | <auto-line-color-list>`（repeat 循环 +
+        // auto 段），纯色 = 单段列表（multicol 纯色声明串化/paint 保形）。
+        // dark 传播：system color 关键字按 used scheme 取面板（与 color 臂
+        // parse_color_fn 同口径——system-color-compute 页 Menu 差分驱动）。
+        // driving: css-gaps 语料 gap-decorations-color-{valid,computed,invalid}。
         "column-rule-color" => {
-            // dark 传播：system color 关键字按 used scheme 取面板（与 color 臂
-            // parse_color_fn 同口径——system-color-compute 页 Menu 差分驱动）。
-            if let Some(v) = values::parse_color_with_scheme(value, style.color_scheme_dark) {
+            if let Some(v) = values::parse_rule_color_list_with_scheme(value, style.color_scheme_dark) {
                 style.column_rule_color = v;
+                return true;
+            }
+        }
+        "row-rule-color" => {
+            if let Some(v) = values::parse_rule_color_list_with_scheme(value, style.color_scheme_dark) {
+                style.row_rule_color = v;
                 return true;
             }
         }

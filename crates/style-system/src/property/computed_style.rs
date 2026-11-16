@@ -535,8 +535,11 @@ pub struct ComputedStyle {
     pub column_rule_width: ColumnRuleWidthComputedValue,
     /// column-rule-style 属性。
     pub column_rule_style: ColumnRuleStyleComputedValue,
-    /// column-rule-color 属性。
-    pub column_rule_color: ColorValue,
+    /// column-rule-color 属性（css-gaps-1 重定义为 `<line-color-list>`；纯色 =
+    /// 单段列表，multicol 串化/paint 取单段平色保形）。
+    pub column_rule_color: Vec<zero_css_parser::values::RuleColorSegment>,
+    /// row-rule-color 属性（css-gaps-1 §column-row-rule-color，与 column 同文法）。
+    pub row_rule_color: Vec<zero_css_parser::values::RuleColorSegment>,
 
     // ── Contain ──
     /// contain 属性。

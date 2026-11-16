@@ -211,7 +211,12 @@ impl super::super::Painter {
 
         // CSS Multi-column §4.3：column-rule-color 初始 = currentColor，须按元素自身 color 解析
         //（color_value_to_render 无元素上下文会把 currentColor 回落黑色）。与 background-color 同模式。
-        let rule_color = resolve_color_current(&style.column_rule_color, &style.color);
+        // css-gaps-1 列表模型：paint 取首段首色（列表装饰色渲染后置，FIXME 挂账）。
+        let rule_color = resolve_color_current(
+            zero_css_parser::values::rule_color_list_first_color(&style.column_rule_color)
+                .unwrap_or(&zero_css_parser::values::ColorValue::CurrentColor),
+            &style.color,
+        );
         let col_w = (content_w - (count as f32 - 1.0) * gap) / count as f32;
         if col_w <= 0.0 {
             return;

@@ -806,7 +806,9 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             column_rule_width_to_css(&style.column_rule_width, &style.column_rule_style, font_size_px)
         }
         "column-rule-style" => column_rule_style_str(&style.column_rule_style),
-        "column-rule-color" => color_to_css(&crate::resolve_color_current(&style.column_rule_color, element_color)),
+        "column-rule-color" => rule_color_list_to_gcs(&style.column_rule_color, element_color),
+        // css-gaps-1 §column-row-rule-color：row-rule-color 同文法列表串化。
+        "row-rule-color" => rule_color_list_to_gcs(&style.row_rule_color, element_color),
         "column-count" => column_count_to_css(&style.column_count),
         "column-width" => column_width_to_css(&style.column_width, font_size_px),
         "column-fill" => column_fill_str(&style.column_fill),
@@ -821,6 +823,14 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             element_color,
             font_size_px,
         ),
+        // rule-color 简写 gCS（css-gaps-1 §rule-shorthand-properties）：row/column
+        // 计算串化全等 → 该值（简写经 inline 写入时双 longhand 同值）；否则简写
+        // 串化省略空串（Chrome shorthand serialization 同口径）。
+        "rule-color" => {
+            let r = rule_color_list_to_gcs(&style.row_rule_color, element_color);
+            let c = rule_color_list_to_gcs(&style.column_rule_color, element_color);
+            if r == c { r } else { String::new() }
+        }
         // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
         "font-variant-numeric" => font_variant_numeric_str(&style.font_variant_numeric),
         "image-rendering" => image_rendering_str(&style.image_rendering),
@@ -1436,7 +1446,7 @@ fn columns_shorthand_to_css(
 fn column_rule_shorthand_to_css(
     width: &ColumnRuleWidthComputedValue,
     style_val: &ColumnRuleStyleComputedValue,
-    color: &ColorValue,
+    color: &[zero_css_parser::values::RuleColorSegment],
     element_color: &ColorValue,
     font_size_px: f64,
 ) -> String {
@@ -1444,8 +1454,25 @@ fn column_rule_shorthand_to_css(
     if !matches!(style_val, ColumnRuleStyleComputedValue::None) {
         parts.push(column_rule_style_str(style_val));
     }
-    parts.push(color_to_css(&crate::resolve_color_current(color, element_color)));
+    parts.push(rule_color_list_to_gcs(color, element_color));
     parts.join(" ")
+}
+
+/// rule-color 列表 computed 串化（css-gaps-1 §column-row-rule-color）：单段平色
+/// 走既有 color_to_css 解析路径（multicol 纯色声明串化零漂移）；列表/重复形
+/// 结构串化（逐段 resolve，repeat/auto/calc 计数保形折叠，css-parser 单点）。
+/// https://drafts.csswg.org/css-gaps-1/#column-row-rule-color
+fn rule_color_list_to_gcs(
+    segments: &[zero_css_parser::values::RuleColorSegment],
+    element_color: &ColorValue,
+) -> String {
+    if let Some(c) = zero_css_parser::values::rule_color_list_single_color(segments) {
+        return color_to_css(&crate::resolve_color_current(c, element_color));
+    }
+    zero_css_parser::values::rule_color_list_to_css(segments, &|c: &ColorValue| {
+        color_to_css(&crate::resolve_color_current(c, element_color))
+    })
+    .unwrap_or_default()
 }
 
 /// `list-style` 简写：`position || image || type`（CSS Lists）。CSSOM 序列化恒 3 段 `"position image type"`。

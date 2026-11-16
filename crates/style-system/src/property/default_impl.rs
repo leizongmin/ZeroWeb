@@ -307,8 +307,15 @@ impl Default for ComputedStyle {
             column_rule_width: ColumnRuleWidthComputedValue::Medium,
             column_rule_style: ColumnRuleStyleComputedValue::None,
             // CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
-            // paint 层（text_multicol）经 resolve_color_current(color, &style.color) 解析为元素自身 color。
-            column_rule_color: ColorValue::CurrentColor,
+            // css-gaps-1 列表模型下纯色 = 单段列表。paint 层（text_multicol）经
+            // resolve_color_current 解析为元素自身 color。
+            column_rule_color: vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )],
+            // css-gaps-1 §column-row-rule-color：row-rule-color 初始值 = currentcolor 同 column。
+            row_rule_color: vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )],
 
             // Contain
             contain: ContainComputedValue::None,

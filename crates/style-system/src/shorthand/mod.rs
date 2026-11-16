@@ -916,6 +916,11 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // 与 outline 类似，各部分顺序无关
         "column-rule" => expand_column_rule(value, important, specificity),
 
+        // ── rule-color 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 同值写入 row-rule-color + column-rule-color（列表文法合法性由
+        // parse_rule_color_list 裁决）；css-wide 关键字透传双子属性。
+        "rule-color" => expand_rule_color(value, important, specificity),
+
         // ── border-image 简写 ──
         "border-image" => expand_border_image(value, important, specificity),
 
@@ -2543,6 +2548,25 @@ fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)
         mk("column-rule-style", &style),
         mk("column-rule-color", &color),
     ]
+}
+
+/// rule-color 简写展开（css-gaps-1 §rule-shorthand-properties）：同值写入
+/// row/column 双 rule-color。列表文法裁决单点 parse_rule_color_list
+///（css-wide 关键字先判透传，column-rule 臂同款）。非法值空 Vec = 展开拒。
+/// driving: css-gaps 语料 gap-decorations-color-{valid,invalid} rule-color 槽。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn expand_rule_color(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(value, &["row-rule-color", "column-rule-color"], important, specificity);
+    }
+
+    if zero_css_parser::values::parse_rule_color_list(value).is_none() {
+        return vec![];
+    }
+    vec![mk("row-rule-color", value), mk("column-rule-color", value)]
 }
 
 /// @supports 求值用：`font` 简写值是否合法可解析（CSS Conditional §7：声明 supported

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{ColorValue, LengthValue, TransformFunction, TransformValue};
+use zero_css_parser::values::{ColorValue, LengthValue, RuleColorSegment, TransformFunction, TransformValue};
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
@@ -546,7 +546,7 @@ fn test_column_rules_solid() {
     style.column_gap = LengthValue::Px(20.0);
     style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
     style.column_rule_width = ColumnRuleWidthComputedValue::Thin;
-    style.column_rule_color = ColorValue::Rgba(128, 128, 128, 255);
+    style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(128, 128, 128, 255))];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -583,7 +583,7 @@ fn test_column_rule_width_keywords_match_border_width() {
         style.column_gap = LengthValue::Px(20.0);
         style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
         style.column_rule_width = kw;
-        style.column_rule_color = ColorValue::Rgba(128, 128, 128, 255);
+        style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(128, 128, 128, 255))];
         let mut styles = HashMap::new();
         styles.insert(nid, style);
         let mut painter = Painter::new();
@@ -616,7 +616,7 @@ fn test_column_rule_width_relative_length_resolves_in_paint() {
     style.column_gap = LengthValue::Px(20.0);
     style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
     style.column_rule_width = ColumnRuleWidthComputedValue::Length(LengthValue::Em(0.5));
-    style.column_rule_color = ColorValue::Rgba(128, 128, 128, 255);
+    style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(128, 128, 128, 255))];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -859,7 +859,7 @@ fn test_column_rules_dashed() {
     style.column_gap = LengthValue::Px(10.0);
     style.column_rule_style = ColumnRuleStyleComputedValue::Dashed;
     style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
-    style.column_rule_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(0, 0, 0, 255))];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();

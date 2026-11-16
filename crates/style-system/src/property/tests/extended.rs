@@ -991,29 +991,83 @@ fn test_contain_initial_value() {
 
 #[test]
 /// CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
+/// css-gaps-1 列表模型：纯色 = 单段列表。
 fn test_column_rule_color_default() {
     let style = ComputedStyle::default();
-    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+    assert_eq!(
+        style.column_rule_color,
+        vec![zero_css_parser::values::RuleColorSegment::Plain(
+            ColorValue::CurrentColor
+        )]
+    );
 }
 
 #[test]
-/// column-rule-color 应用颜色值
+/// column-rule-color 应用颜色值（css-gaps-1 列表模型：纯色 = 单段平色列表）
 fn test_apply_column_rule_color() {
+    use zero_css_parser::values::RuleColorSegment;
     let mut style = ComputedStyle::default();
 
     assert!(apply_property_value(&mut style, "column-rule-color", "red"));
-    assert_eq!(style.column_rule_color, ColorValue::Rgba(255, 0, 0, 255));
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::Rgba(255, 0, 0, 255))]
+    );
 
     assert!(apply_property_value(&mut style, "column-rule-color", "#00ff00"));
-    assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 255, 0, 255));
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::Rgba(0, 255, 0, 255))]
+    );
 
     assert!(apply_property_value(&mut style, "column-rule-color", "transparent"));
-    assert_eq!(style.column_rule_color, ColorValue::Transparent);
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::Transparent)]
+    );
 
     assert!(apply_property_value(&mut style, "column-rule-color", "currentColor"));
-    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::CurrentColor)]
+    );
+
+    // css-gaps-1 列表形（repeat 循环 + 逗号列表）
+    assert!(apply_property_value(&mut style, "column-rule-color", "repeat(4, blue)"));
+    assert_eq!(style.column_rule_color.len(), 1);
+    assert!(apply_property_value(&mut style, "column-rule-color", "red, blue"));
+    assert_eq!(style.column_rule_color.len(), 2);
 
     assert!(!apply_property_value(&mut style, "column-rule-color", "not-a-color"));
+    // invalid 页形：空格分隔 / repeat(0) / 双 auto
+    assert!(!apply_property_value(&mut style, "column-rule-color", "red blue"));
+    assert!(!apply_property_value(&mut style, "column-rule-color", "repeat(0, red)"));
+    assert!(!apply_property_value(
+        &mut style,
+        "column-rule-color",
+        "repeat(auto, red), repeat(auto, blue)"
+    ));
+}
+
+#[test]
+/// rule-color 简写 apply 臂（css-gaps-1 §rule-shorthand-properties）：同值写入
+/// row/column 双 rule-color（十七轮 column-rule 简写 apply 臂同型）；非法值
+/// 展开空拒收。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn test_apply_rule_color_shorthand() {
+    let mut style = ComputedStyle::default();
+
+    assert!(apply_property_value(&mut style, "rule-color", "repeat(2, red)"));
+    assert_eq!(style.row_rule_color.len(), 1);
+    assert_eq!(style.column_rule_color.len(), 1);
+
+    assert!(apply_property_value(&mut style, "rule-color", "red, green, blue"));
+    assert_eq!(style.row_rule_color.len(), 3);
+    assert_eq!(style.column_rule_color.len(), 3);
+
+    // invalid 形：展开空拒收。
+    assert!(!apply_property_value(&mut style, "rule-color", "red blue"));
+    assert!(!apply_property_value(&mut style, "rule-color", "repeat(0, red)"));
 }
 
 #[test]
@@ -1033,11 +1087,19 @@ fn test_column_rule_color_in_known_properties() {
 /// column-rule-color 有 initial_value
 fn test_column_rule_color_initial_value() {
     assert!(PropertyRegistry::initial_value("column-rule-color").is_some());
+    assert!(PropertyRegistry::initial_value("row-rule-color").is_some());
     let mut style = ComputedStyle::default();
-    style.column_rule_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.column_rule_color = vec![zero_css_parser::values::RuleColorSegment::Plain(ColorValue::Rgba(
+        255, 0, 0, 255,
+    ))];
     assert!(apply_initial_value(&mut style, "column-rule-color"));
-    // CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
-    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+    // CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）；列表模型单段。
+    assert_eq!(
+        style.column_rule_color,
+        vec![zero_css_parser::values::RuleColorSegment::Plain(
+            ColorValue::CurrentColor
+        )]
+    );
 }
 
 // ── appearance 属性测试 ──

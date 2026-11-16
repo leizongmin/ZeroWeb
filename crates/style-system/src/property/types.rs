@@ -1907,8 +1907,10 @@ pub enum PropertyValue {
     Filter(Vec<FilterComputedValue>),
     /// contain 值。
     Contain(ContainComputedValue),
-    /// column-rule-color 值。
-    ColumnRuleColor(ColorValue),
+    /// column-rule-color 值（css-gaps-1 `<line-color-list>`；纯色 = 单段列表）。
+    ColumnRuleColor(Vec<zero_css_parser::values::RuleColorSegment>),
+    /// row-rule-color 值（css-gaps-1 §column-row-rule-color，与 column 同文法）。
+    RowRuleColor(Vec<zero_css_parser::values::RuleColorSegment>),
     /// appearance 值。
     Appearance(AppearanceComputedValue),
     /// accent-color 值。

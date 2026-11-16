@@ -16,6 +16,7 @@ pub mod parse_extended_border;
 pub mod parse_extended_visual;
 pub mod parse_layout;
 pub mod parse_misc;
+pub mod parse_rule_color;
 pub mod parse_transform;
 pub mod random;
 pub mod serialize_gradient;
@@ -39,6 +40,7 @@ pub use parse_extended_border::*;
 pub use parse_extended_visual::*;
 pub use parse_layout::*;
 pub use parse_misc::*;
+pub use parse_rule_color::*;
 pub use parse_transform::*;
 pub use random::{
     RandomEvalContext, RandomFamily, RandomSpec, canonicalize_random_keys, parse_random_args, random_family_allowed,

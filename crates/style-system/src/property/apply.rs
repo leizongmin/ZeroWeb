@@ -2230,7 +2230,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 22] = [
+    const VALIDATED_PROPERTIES: [&str; 25] = [
         "transform",
         "rotate",
         "scale",
@@ -2308,6 +2308,18 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // https://drafts.csswg.org/css-shapes/#shape-margin-property
         "shape-margin",
         "shape-image-threshold",
+        // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
+        // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
+        // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
+        // 接入即启用 inline 写面 invalid 形拒收（driving: css-gaps 语料
+        // gap-decorations-color-invalid `auto`/空格分隔/repeat(0)/repeat(-1)/
+        // 双 auto 段此前白名单外放行 store 原文回显即 Fail；column-rule-color
+        // 既有宽收臂同刀收紧）。rule-color 简写裁决走 shorthand 展开（同
+        // column-rule 先例）。
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-color
+        "column-rule-color",
+        "row-rule-color",
+        "rule-color",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2618,6 +2630,21 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_opacity(v).is_some();
+    }
+    // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color）——置于
+    // 未实现函数放行臂之前（repeat()/color-mix() 形状函数名不在
+    // IMPLEMENTED_VALUE_FUNCTIONS 名单，放行臂会先行误放 invalid 形；
+    // shape-outside 臂同序先例）。三属性共享同一文法裁决单点
+    // parse_rule_color_list（纯色单段 + repeat 循环 + auto ≤1）；替换函数形
+    // 放行 store 原文（oracle 对替换前文本恒拒，computed 期级联替换后重裁，
+    // shape-outside 臂同口径）。（driving: css-gaps 语料 gap-decorations-
+    // color-invalid 6 形此前原文透传 store 回显即 Fail。）
+    // https://drafts.csswg.org/css-gaps-1/#column-row-rule-color
+    if matches!(prop.as_str(), "column-rule-color" | "row-rule-color" | "rule-color") {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_rule_color_list(v).is_some();
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
