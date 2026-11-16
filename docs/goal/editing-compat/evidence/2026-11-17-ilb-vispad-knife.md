@@ -62,3 +62,35 @@ P2F 两键 Fail 行全文在 v1.1 commit message 与本节归因段在档。
 ilb 残 22F＝census 刀序 ③H+J 归一域 5（ws 坍缩 4＋nbsp 1）→ ④I flex/grid
 4 → ⑤B+G+E 选区删除域 8 → ⑥D rawtext 2（+3 E1 等待归域）。批工件
 `.acceptance/dps/i7c0-*` / `i7d0-*`。
+
+## 刀③根因探针（v1.125 后同轮补录，i7d0-ilb-a.log 22F 实录）
+
+spec implementation.js insertlinebreak（:7383-7469）**无 canonicalizeWhitespace
+调用**（全文件调用点 :4565/:4568/:4687/:4773/:4777/:6204/:6826/:7899/:7955/
+:7959 均在 7383-7469 之外）——H/J 期望是 Chrome 实录行为（语料 ：1000 注：
+"expectations are based on Chrome's behavior"），刀锚语料期望＋
+canonicalizeWhitespace（:5265）作形态参考，非规范步骤移植。
+
+- H1 `<div>abc [] </div>`：got `<div>abc <br><br> </div>` / exp
+  `<div>abc<br><br></div>`——双垫 v2 判定已对，差量＝caret 左段尾随折叠 ws
+  未删＋右段 ws-only 未删。H2 `<div>abc[]  </div>`：got
+  `<div>abc<br><br>  </div>` 同构（仅右段 ws-only）。
+- H3 `<div> [] abc</div>`：got `<div> <br> abc</div>` / exp 数组接受
+  `<div><br>abc</div>` 与 `<div><br> abc</div>`——**仅删左段尾随 ws 即落
+  变体 2 绿**；H4 `<div>  []abc</div>` 同构（删左即落变体 1）。右段带后继
+  内容时保形即可，无须动右段。
+- H1/H2 右段 ws-only 必删、H3/H4 右段保形、J 右段首空格须 nbsp 化——
+  三者共存判据未收敛：J ` <span contenteditable=false>A</span>[] ; …`
+  exp 唯一变体 `<br>&nbsp;;`（caret 在非可编辑元素邻接文本节点 offset 0，
+  右段首空格后跟 `;` 可见内容），而 H3 接受数组**不含** `<br>&nbsp;abc`
+  形——nbsp 化若无条件套用会打翻 H3。候选判据（下轮收敛）：caret 是否
+  文本节点 offset 0＋非可编辑前邻（J 形）vs 同节点中部 caret 且左邻折叠
+  ws（H3 形）；或左段 br 前邻是否折叠 ws 文本。J 键 got 行实录待下轮从
+  i7d0-ilb-a.log 按键全文提取（键串含转义引号，grep 定界难，建议
+  python 逐行解析 `^Fail` 块）。
+- ④I flex/grid 4 键 got 确认：`<div style=display:flex;white-space:pre>
+  <span>abc[]</span></div>` got `<span>abc\n\n</span>` / exp
+  `<span>abc\n<br></span>`——wsSig（\n 型）臂插 `\n` 后缺 br（vs 保形垫
+  `\n` 旧规则在 flex 容器语境失配）。
+- 刀③最小配方草案：左段尾随折叠 ws 删（H1-H4 全需）＋右段 collapsible
+  ws-only 整删（H1/H2 需，H3/H4 不触发）＋J 项独立判据先行收敛再动。
