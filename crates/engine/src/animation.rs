@@ -665,8 +665,11 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
 ///   `inherit`：`initial`/`unset` 的 underlying 恒 `none`，对端形状对 Chrome
 ///   即离散翻转语义（期望=端点原形，b1v7 过宽臂压掉 16 真增益定谳反例），
 ///   不进门；
-/// - path() 双端：段数/命令失配离散步（clip_interp 已 None），翻转写回暴露
-///   jsanim flip 时序面（shared Steps(Start) 位）残面，保位。
+/// - path() 双端**不进门**（v5 定谳回滚 v3 臂）：段数/命令失配对 Chrome
+///   期望即离散端点形（t<0.5 → from、≥0.5 → to），离散翻转逐位命中——
+///   v6 中间账的 path 门臂以 echo 替换翻转，同页 9 例命中翻转被 echo 破坏
+///   （+61→+53）；彼处唯一伪盈 at(1) 的真根因是共享 Steps(Start) 臂 eased
+///   误落 0（本刀已修），门臂随修回滚。
 ///
 /// 其余 None 形（none↔形状、形状类型异构等真离散对，期望串可解析）仍走
 /// 离散翻转——clip-path-interpolation-discrete 页 +8 真增益保留。
@@ -688,11 +691,8 @@ fn clip_pair_echo_preserve(from: &str, to: &str) -> bool {
     }
     match pair {
         (Some(a), Some(b)) => {
-            if rect_family(&a) && rect_family(&b) && std::mem::discriminant(&a) != std::mem::discriminant(&b) {
-                // 同族但变体不同（inset↔rect / rect↔xywh / inset↔xywh）。
-                return true;
-            }
-            matches!((&a, &b), (C::Path(_), C::Path(_)))
+            // 同族但变体不同（inset↔rect / rect↔xywh / inset↔xywh）。
+            rect_family(&a) && rect_family(&b) && std::mem::discriminant(&a) != std::mem::discriminant(&b)
         }
         // 单端不可解析：仅收 `inherit` 端点 ∧ 对端 rect 族（initial/unset
         // underlying=none 走真离散翻转；其余单端坏值形不进门）。
@@ -2274,6 +2274,51 @@ mod tests {
         assert_eq!(apply_timing_function(0.5, &TimingFunctionValue::StepStart), 1.0);
     }
 
+    /// 二十一轮共享臂修复钉：解析串形 `steps(n, <step-position>)` 逐形态
+    /// （css-easing-1 §step-easing-functions）——此前恒 floor 弃 position，
+    /// steps(1,start) 误同 jump-end（at(1) 编码 y(0.5)=1 误落 0 → from）。
+    #[test]
+    fn test_timing_function_steps_position() {
+        // start：越点取步进上包络（ceil）；t=0 恒 0。
+        assert_eq!(
+            apply_timing_function(0.5, &TimingFunctionValue::Steps(1, Some(StepPosition::Start))),
+            1.0
+        );
+        assert_eq!(
+            apply_timing_function(0.3, &TimingFunctionValue::Steps(2, Some(StepPosition::Start))),
+            0.5
+        );
+        assert_eq!(
+            apply_timing_function(0.0, &TimingFunctionValue::Steps(1, Some(StepPosition::Start))),
+            0.0
+        );
+        assert_eq!(
+            apply_timing_function(1.0, &TimingFunctionValue::Steps(1, Some(StepPosition::Start))),
+            1.0
+        );
+        // jump-both：两端钳 0/1，中段 ceil（n=2：t=0.25→0.5、t=0.5→0.5）。
+        assert_eq!(
+            apply_timing_function(0.25, &TimingFunctionValue::Steps(2, Some(StepPosition::Both))),
+            0.5
+        );
+        assert_eq!(
+            apply_timing_function(0.5, &TimingFunctionValue::Steps(2, Some(StepPosition::Both))),
+            0.5
+        );
+        // jump-none：内缩 round（n=3 → m=2：t=0.25→0.5）。
+        assert_eq!(
+            apply_timing_function(0.25, &TimingFunctionValue::Steps(3, Some(StepPosition::None))),
+            0.5
+        );
+        // 缺省（End / None position）保持 jump-end floor 既有语义。
+        assert_eq!(
+            apply_timing_function(0.5, &TimingFunctionValue::Steps(1, Some(StepPosition::End))),
+            0.0
+        );
+        assert_eq!(apply_timing_function(0.5, &TimingFunctionValue::Steps(2, None)), 0.5);
+        assert_eq!(apply_timing_function(1.0, &TimingFunctionValue::Steps(2, None)), 1.0);
+    }
+
     #[test]
     fn test_timing_function_step_end() {
         assert_eq!(apply_timing_function(0.0, &TimingFunctionValue::StepEnd), 0.0);
@@ -2547,8 +2592,8 @@ mod tests {
                 "path(\"M 10 10 L 20 20 Z\")",
                 1.0
             ),
-            "",
-            "path 段数失配对保 echo"
+            "path(\"M 10 10 L 20 20 Z\")",
+            "path 段数失配对离散翻转取 to（Chrome 期望即端点形）"
         );
     }
 
