@@ -59,9 +59,13 @@ s540 摆动谱 A/B 两形交替续记，异相/出位按形谱
 记账、Pass 形首现按 NEW 记账；全桥清单基线
 b540.k 1674 持位；flaky 键零新例时钟顺延；
 **mpreload 哨常规连轮计数第 3 轮**；他流入树
-归因轮或轻覆盖；对端刀信号持续：ZW-3 d47/d48
-刀体（querySelector generation-aware 重设计刀
-）落树后按他流刀归因轮 + editing 流 B4-S2 残
+归因轮或轻覆盖；**下轮首号＝d48 join 壳吸收深
+化刀 70b18f81e 落树归因**（04:25 editing 流落
+树，申报 input-events 1114P→1364P 净 +223，
+s540 六刀窗未含——本轮 pull 末尾携入）；对端
+刀信号持续：ZW-3 d47 刀体（querySelector
+generation-aware 重设计刀）落树后按他流刀归因
+轮 + editing 流 B4-S2 残
 面刀（dwuf 八变体端点规范化未接臂
 /during-and-after-dispatch 与克隆门互斥 1F）+
 rendering dialog 16 红块协同面 + css 文法刀后
