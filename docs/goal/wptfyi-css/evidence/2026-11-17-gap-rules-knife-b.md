@@ -231,6 +231,33 @@ column-rule-color-interpolation +45、column-rule-width-interpolation +46。
   `repeat(auto, rgb(0, 0, 255), rgb(255, 0, 0))`，揭穿假绿。同 case 的
   at(1) 形（正常 expected）B3 为 Fail→Pass 计入 +89。Transitions/
   Transitions-all 两 variant 该形 B2/B3 均 Fail（页 bug 持位，刀域外）。
+- **−1 归因补强（session 972a02c4 探针复核，修正上文机理细节）**：残缺串
+  在我引擎 `setProperty` 即拒收——单页探针（corpus 过滤通道，/tmp
+  zw-probe-malformed，探针页已删不入库）实证：合法串
+  `repeat(auto, rgb(0, 0, 255), rgb(255, 0, 0))` gCS 往返全等；缺尾括号串
+  拒收后元素无声明、落初值 `rgb(0, 0, 0)`（非残缺串 parse→serialize 产物）。
+  故 expected 元素读数 `repeat(2, rgb(0, 0, 0), rgb(255, 0, 0))` 实为拒收后
+  回落页 `<style>` `.target` 基础级联值 `column-rule-color: repeat(2,
+  black, red)`（页原文在册）；B2 期 WAAPI actual 未被动画、同读该基础值，
+  两侧恒等成假绿。CSSA 通道同 case 六 t 全读基础值（B3 消息
+  `expected "repeat ( auto , …" but got "repeat ( 2 , …" 五 Fail +
+  1.5 假绿持位）实证 CSSA keyframes 通道独立残面。分类不变：上游 typo ×
+  我方动画值转正确，非语义回归非 flake。
+- **−1 外证闭环（2026-11-17 02:2x-02:40，harness 源码 + wpt.fyi + b3d 实测）**：
+  ① harness `interpolation-testcommon.js` L210-224：WAAPI variant 的
+  animate() keyframes **只用 case 级 from/to**（页 L61-62，双带右括号合法），
+  残缺 L69 串只进 expected 元素 `setProperty`（measure() L385），从不进
+  keyframes 通道——「keyframes 非法值丢弃 → to 键失效」修复方向对本子测
+  无输入可丢（b3d 实测证：02:30 发射批 vs B3 五 corpus 页/子测集合全等、
+  status 翻转 0，本实例独立复验非转抄；源 mtime 02:27:22 < 构建 02:29:57，
+  二进制含终态校验仍零翻转）。② 外证：wpt.fyi API 直取 chrome-160.0.8157.0
+  （2026-11-16，rev 3d8756fa）该文件整体 O 276/276 全过，而上游 master
+  （同日取证）L69 typo 原样——Chrome 全过的唯一自洽形 = `repeat(auto,…)`
+  在 setProperty 与 keyframes 双通道均拒收（L68 合法串 expected 也必落基
+  级联）→ 双 vacuous pass；此为 Chrome parser 缺口（css-gaps-1 文法允许
+  auto），非语义 pass 非 parity 目标——勿为 parity 扩成拒收 repeat(auto)
+  （会翻转我方 at(1) 真 Pass，净 −2 真回归）。分类终态：上游 typo ×
+  我方超集动画，账面 +395 持位。
 - **s419 中性双证**：b3wip vs b3c 五 corpus 全 SET-IDENTICAL（逐子测
   0/0/0、页集合全等）——二进制 md5 异（`e3a46906` vs `58ec871f`）而结果
   逐项全等，script-sandbox es_module peer WIP 对五 CSS corpus 零位移；
@@ -240,6 +267,17 @@ column-rule-color-interpolation +45、column-rule-width-interpolation +46。
 - **inline 站余量复核**：from-longhands 页 4 对齐形 B3 零位移（12P/16
   持位，column/row-rule plain/repeat 双形仍 Fail）——写读面已落但 gCS
   简写重组在该形未翻绿，残面留队；rule-shorthand.html 240F 池零位移。
+- **预期性归因修正（B2 F 池表 → B3 实测）**：B2 表把 anim/waapi 记为同一
+  「apply 臂缺位池」，B3 实测只兑现 WAAPI 半；CSS Animations 通道 45F 全形
+  got 恒底层值（row-rule-color 页 45 Fail got 签名 100% = `rgb(255,255,0)`，
+  4 Pass 全为负 t/t=0 免插值 vacuous 形）——机理：WAAPI 有 js_anim_registry
+  旁路时钟咨询 gCS（本刀 apply 臂生效面），声明式 CSS Animations 走渲染管线
+  `apply_animation_overrides`（pipeline/mod.rs:4494，插值只落渲染层 styles
+  副本），gCS 级联回调零动画钟参与（js_anim_registry.rs 文件头断点注释原话）
+  ——CSS Animations harness 形态为纯声明式（共享 style 追加 @keyframes +
+  target 设 `animationName/Duration:100s/Delay:-50s/TimingFunction=easing(at)`
+  后直读 gCS，无 pause/seek）。独立刀面：声明式动画 gCS 咨询通道（镜像
+  js_anim_registry 架构）。
 - 单测/门禁：twin 提交时 engine lib 4,098/0F 已证（见上节），本轮纯收账
   零码变。
 
