@@ -11779,9 +11779,59 @@
   // caret 落壳前 → input。返回 true=已应用（调用方结束），false=取消/无内容。
   // d43 拆分：_zwCeJoinApply = Dispatch + Mutate（既有调用方行为不变）；
   // select-delete 主臂自派 beforeinput 后直呼 Mutate（无第二派发）。
+  // d48（wptfyi-editing join 壳吸收深化 2026-11-17）：dst 壳下降——块界 join
+  // 接收容器解析到**列表容器**（bp=前邻块即 ul/ol/dl，跨 dl/ul 形）或**行块
+  // 层**（li 直接收）时首行落壳外（语料 `<dl><dt>list-item1</dt>list-item2
+  // </dl>` / `<li><p>list-item1</p>list-item2</li>` 期望并入左 dt/p 实证，
+  // dil ~1100F + joining-dl ~400F）。两级下降：①dst 为列表容器 → 降其末行块
+  // （li/dt/dd，倒序跳纯空白）；②行块可见内容被唯一内层壳元素包裹 → 降入壳。
+  // 守卫（d46 直取门同思路）：纯空白文本不算内容；壳判定 = 恰一可见子且为
+  // p/h1-6/div 且壳内有非空活内容——空壳/多子/纯文本行/列表嵌套不降（jdwsp
+  // 左块恒裸文本 div，反证面 4,312P 不受影响）。只改接收容器解析，不动
+  // _zwCeIsBlockTagName 窄表（ip 拆分边界语义，3312189d7 同教训）。
+  function _zwCeJoinDstDescend(dst) {
+    try {
+      var cur = dst;
+      if (!cur || cur.nodeType !== 1) return cur;
+      var _dT = String(cur.tagName || '').toUpperCase();
+      if (_dT === 'UL' || _dT === 'OL' || _dT === 'DL') {
+        var _dk = cur.childNodes || [];
+        var _line = null;
+        for (var _di = _dk.length - 1; _di >= 0; _di--) {
+          var _dn = _dk[_di];
+          if (_dn.nodeType === 3 && /^\s*$/.test(String(_dn.nodeValue || ''))) continue;
+          _line = _dn; break;
+        }
+        if (_line && _line.nodeType === 1
+          && ['LI', 'DT', 'DD'].indexOf(String(_line.tagName || '').toUpperCase()) >= 0) {
+          cur = _line;
+        }
+      }
+      var _sk = cur.childNodes || [];
+      var _vis = null, _visN = 0;
+      for (var _si = 0; _si < _sk.length; _si++) {
+        var _sn = _sk[_si];
+        if (_sn.nodeType === 3 && /^\s*$/.test(String(_sn.nodeValue || ''))) continue;
+        _visN++; _vis = _sn;
+        if (_visN > 1) break;
+      }
+      if (_visN === 1 && _vis && _vis.nodeType === 1
+        && ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'DIV']
+          .indexOf(String(_vis.tagName || '').toUpperCase()) >= 0) {
+        var _hk = _vis.childNodes || [];
+        for (var _hi = 0; _hi < _hk.length; _hi++) {
+          var _hn = _hk[_hi];
+          if (_hn.nodeType === 3 && /^\s*$/.test(String(_hn.nodeValue || ''))) continue;
+          cur = _vis; // 壳内有非空活内容（元素或非空文本）→ 降入壳
+          break;
+        }
+      }
+      return cur;
+    } catch (_eD48) { return dst; }
+  }
   function _zwCeJoinApply(el, dst, srcParent, startNode, inputType) {
     if (_zwCeJoinDispatch(el, inputType) === false) return false;
-    return _zwCeJoinMutate(el, dst, srcParent, startNode, inputType);
+    return _zwCeJoinMutate(el, _zwCeJoinDstDescend(dst), srcParent, startNode, inputType);
   }
   // d45 第 6 参 silent（键入替换面）：真时尾部 caret 写回 + input 派发让位给
   // select-delete 键入尾（摘除+join+插入单 beforeinput 承载）——返回 join 落点
@@ -12338,10 +12388,40 @@
         else if (typingData && joined.node) _sdFinish(joined.node, joined.offset);
         return true;
       }
-      // 左侧无残余：摘空左块移除（dt→dd 全选形），右侧残余原位保留
-      if (leftBlock !== el && leftBlock.parentNode
-        && !(leftBlock.childNodes && leftBlock.childNodes.length)) {
-        try { leftBlock.parentNode.removeChild(leftBlock); } catch (_eLb) {}
+      // 左侧无残余：摘空左块移除（dt→dd 全选形），右侧残余原位保留。
+      // d48 B2（左空摘除按可见内容判空 2026-11-17）：摘除核对文本端点只截
+      // nodeValue 不移除节点——截空后壳留空文本子，childNodes.length 门不中
+      //（`<dl><dt>[list-item1</dt></dl><dl><dt>}list-item2</dt></dl>` 期望左
+      // dl+dt 整体剪除，基线空壳残留 F 实证）。判空改「无可见内容」（空/纯
+      // 空白文本子不计），命中先摘空文本子再摘壳，随后左向上剪枝（同核右剪
+      // 枝循环镜像，剪至 lca/el 为止）。
+      if (leftBlock !== el && leftBlock.parentNode) {
+        var _lbEmpty = true, _lbk = leftBlock.childNodes || [];
+        for (var _lbi = 0; _lbi < _lbk.length; _lbi++) {
+          var _lbn = _lbk[_lbi];
+          if (_lbn.nodeType === 3 && /^\s*$/.test(String(_lbn.nodeValue || ''))) continue;
+          _lbEmpty = false; break;
+        }
+        if (_lbEmpty) {
+          for (var _lbj = _lbk.length - 1; _lbj >= 0; _lbj--) {
+            if (_lbk[_lbj].parentNode === leftBlock) {
+              try { leftBlock.removeChild(_lbk[_lbj]); } catch (_eLbT) {}
+            }
+          }
+          try { leftBlock.parentNode.removeChild(leftBlock); } catch (_eLb) {}
+          var _lpr = leftBlock.parentNode, _lpg = 0;
+          while (_lpr && _lpr !== el && _lpr !== lca && _lpg++ < 16) {
+            var _lup = _lpr.parentNode;
+            var _lprE = true, _lpk = _lpr.childNodes || [];
+            for (var _lpi = 0; _lpi < _lpk.length; _lpi++) {
+              var _lpn = _lpk[_lpi];
+              if (_lpn.nodeType === 3 && /^\s*$/.test(String(_lpn.nodeValue || ''))) continue;
+              _lprE = false; break;
+            }
+            if (_lprE && _lup) { try { _lup.removeChild(_lpr); } catch (_eLPr) {} }
+            _lpr = _lup;
+          }
+        }
       }
       _sdFinish(ec, 0);
       return true;
@@ -12716,6 +12796,51 @@
         if (fc === el) return; // 宿主终点，无后内容
         fn = fc; fc = fc.parentNode;
         if (!fc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      // d48 B1（wptfyi-editing 行尾 br 挡界 2026-11-17）：caret 尾紧邻 br 且
+      // br 为所在块可见末子（后随仅 br/空白）时，br 是上游 deleteContentForward
+      // 的行界删除点——消费该枚 br（恰好一枚：`<li>a[]<br><br></li><li>b</li>`
+      // accept `a<br>b` 实证，余 br 留缝）后按块界 join 并入次行块
+      //（`<li>list-item1[]<br></li><li>list-item2</li>` 期望
+      // `<li>list-item1list-item2</li>`，基线 no-op bi=0 F 实证，dil Delete
+      // 变体族）。br 后有非 br 可见内容 = 行中 br（行合并域）保守不动。
+      if (fn === sc && fnx && fnx.nodeType === 1
+        && String(fnx.nodeName || '').toLowerCase() === 'br'
+        && fnx.parentNode === fc) {
+        var _trVis = false, _tk = fc.childNodes || [];
+        for (var _ti = _tk.length - 1; _ti >= 0; _ti--) {
+          var _tn = _tk[_ti];
+          if (_tn === fnx) break;
+          if (_tn.nodeType === 3 && /^\s*$/.test(String(_tn.nodeValue || ''))) continue;
+          if (_tn.nodeType === 1
+            && String(_tn.nodeName || '').toLowerCase() === 'br') continue;
+          _trVis = true; break;
+        }
+        if (!_trVis) {
+          // 先探后删（读游标镜像 re-resolve）：仅当消费后链上确有可并后邻才
+          // 消费——末块行尾 br（`<p>abc[]<br></p>` 无后块，期望保持 `<br>`
+          // 占位，基线 no-op Pass）消费即净改 P2F，不消费走原臂 no-op。
+          var _pjn = fc, _pjf = fc.parentNode, _pjok = false;
+          while (_pjf) {
+            if (_zwCeSkipWs(_pjn.nextSibling)) { _pjok = true; break; }
+            if (_pjf === el) break;
+            _pjn = _pjf; _pjf = _pjf.parentNode;
+          }
+          if (_pjok) {
+            try { fc.removeChild(fnx); } catch (_eTrBr) { /* 已断链 → 走原臂 */ }
+            if (fnx.parentNode !== fc) {
+              fn = fc; fc = fc.parentNode;
+              if (!fc) return;
+              while (true) {
+                fnx = _zwCeSkipWs(fn.nextSibling);
+                if (fnx) break;
+                if (fc === el) return;
+                fn = fc; fc = fc.parentNode;
+                if (!fc) return;
+              }
+            }
+          }
+        }
       }
       if (fn === sc && !_zwCeIsBlockEl(fnx)) return; // run 中段 caret（inline 后邻）
       var fdst = (fn === sc) ? fc : fn;

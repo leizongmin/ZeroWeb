@@ -1,6 +1,33 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-17 · Active**。**d47 查询返回点身份别名刀判不落（selection 哨兵
+**2026-11-17 · Active**。**d48 join 壳吸收深化 A+B1+B2 落树（B3 判不落，
+input-events 净 +223）**：part01.js +130/−5——①A `_zwCeJoinDstDescend`
+（11782 区）块界 join 接收容器两级下降（dst 为列表容器降末行块 li/dt/dd +
+行块唯一 p/h1-6/div 内层壳且壳内非空活内容再降；`_zwCeJoinApply` 4 调用点
+统一过降；纯空白文本不算内容守卫，jdwsp 反证面不受影响）②B1 FD 块界臂行尾
+br 透明消费 + **先探后删**（消费前只读探针镜像 re-resolve 确认链上有可并后
+邻，末块行尾 br 不消费——A/B 首轮 P2F=1 `Delete at "<p>abc[]<br></p>"` 期望
+保持 br 占位、got `<p>abc</p>` 即此形，补丁后 fd 探针 P2F=0）③B2
+select-delete 左空摘除判空改「无可见内容」+ 摘空文本子 + 左向上剪枝
+（lca/el 止，g<16）。input-events 全语料 1114P/2176F/4T → **1364P/1964F/3T，
+F2P=223/P2F=0**：joining-dl-elements Backspace +66/Delete +36 与
+joining-dl-and-another-list +20/+20 = A；dil Backspace ol/ul +31/+31 = B2；
+dil Delete ol/ul +8/+8 = B1；forwarddelete +2/backspace +1 外溢。P 差
++250 = 翻面 223 + ?Backspace 案基线 case 级超时截断消失的尾段新入账 27（T 4→3，
+尾段键不属翻面不计对账）。哨兵：html-semantics **P 恒等 5378**（F2P=0/
+P2F=0，键差 0，1 键 T→F 瞬态）；selection **49,006P/4,298F/9T 逐键恒等零翻
+面**（F2P=0/P2F=0 双链同窗口；基线侧较 d47 账 48,942P/4,312F 漂 +64P/−14F
+系语料/runner 换代窗口，非本刀）。**B3 同块全选
+splice 占位 br 判不落**：+8F/−2P 净 +6 但 pair 页 `{}`-form innerHTML 两面
+翻红（隔离页干净、页侧 pre-run 选区/DOM 断言全过 → 变异在 shim 内段），
+切片二分定谳 B3 元凶；replaceChild 与 removeChild+appendChild 两浅修变体
+均证伪。机理 = innerHTML 重置 ghost 投影（part01.js:12298 遗留）：同页序贯
+[]-form 遗留 detached 节点投影中 `[br]` 元素毒化 `{}`-form splice 占位
+（遗留 `[text('')]` 不毒化），解域并入 master ③ generation-aware（与 d47
+别名族同域），遗留 8 键 `[list-item1]` 全选形待该刀。证据见
+[d48 join-absorption-ab](evidence/2026-11-17-d48-join-absorption-ab-slices.md)。
+
+**d47 查询返回点身份别名刀判不落（selection 哨兵
 否决）**：上 session 429 中断遗留的 selection 腿补测定谳——querySelector
 返回点方言归并别名（宿主 `__zw_same_node_sel` 同视图 NodeId 同节点门 +
 part05 别名表 512 上限 + part04 qSA 容器作用域门/part06 qS 返回点门，4 文件
@@ -47,20 +74,15 @@ insertHTML ws 四域 +4；P2F=4 = Backspace/Delete/execCommand 两阶段变体
 [d46 typing-replace-arm](evidence/2026-11-16-d46-typing-replace-arm.md)。
 
 **卡点** 无阻塞。口径持位：11-12 快照三目录合计 130,245、距 146,184 差
-15,939；d46 后预估 ~143.7k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
+15,939；d48 后预估 ~143.9k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
 环境记档：main 有一处 fmt 既有漂移（`crates/dom/src/tests/
 tests_9_query_coverage.rs`，并行流 3eddbadbb 带入，非本流写面，未触碰）；
 runner console 通道仅 `ZW_SHAPED_ADVANCE_TRACE=1` 下可见（tracing subscriber
 条件 init，console.log→stdout，d46 记档）。
 
-**下一步** ①**B4-S2 第三刀候选（残余 2193F 簇结构，见 d46 证据遗留节）**：
-(a) join **壳吸收深化** ~1500F 大头（deleting-in-list-items ~1100F：`<li><p>`
-内层壳 join 期望并壳内、同块摘空 `<br>` 落壳；joining-dl ~400F：跨 dl 期望右
-dt 并入左 dt 壳——现落壳外；**d48 前置诊断已定谳四修位**：A 接收容器缺壳
-下降（块界臂 `bdst/fdst` 解析：列表容器降末行块 + 行块唯一内容壳再降，12546/
-12721/12700/12575 四调用点）+ B1 行尾 br 挡界 no-op + B2 左空摘除空文本计作
-内容 + B3 同块 splice 缺占位 br，切分与守卫见
-[d48 诊断](evidence/2026-11-17-d48-join-shell-absorption-diagnosis.md)）；
+**下一步** ①**B4-S2 第三刀候选（d48 后残余簇，见 d48/d46 证据遗留节）**：
+(a) ~~join 壳吸收深化~~ **已由 d48 收**（A+B1+B2 落树净 +223；残留 = B1 两
+p 形 `Delete at "<p>abc[]<br></p><p>def</p>"` F→F 未解 + B3 判不落移③）；
 (b) backspace/fd 主文件 243F：跨元素边界 caret
 join（`<p>a<span>b</span>[]c</p>` bi=0）+ 文首空删 beforeinput 形；(c) TypingA
 残余 43F 中可独立修面：`{<hr>}` 纯元素选区核拒收（bi=0，核放行臂缺口）——
@@ -69,7 +91,8 @@ join/deleteCommand 七变体）跨
 child-block gtr 端点规范化持位——Typing 变体 24F 已由 d46 清偿；
 ③generation-aware 归一刀重设计（d42 A/B 与 d47 查询返回点别名两处入口级
 判负后挂起：端点报告语义与身份稳定成对修、查询视图代际分桶是仅存解域；
-d46 非空锚守卫是键入面局部免疫）④B3 text-control execCommand 期望
+d46 非空锚守卫是键入面局部免疫；**d48 B3 同块占位 br +8/−2 与 8 键
+`[list-item1]` 全选形并入此域**）④B3 text-control execCommand 期望
 矩阵（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同口径
 对账（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
 
