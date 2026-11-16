@@ -13058,6 +13058,72 @@
   }
   // ③ 行断退化（② 非 blockish 后代与兜底共用）。forceLf → 一律 '\n'（② inline
   // div 语料形），否则按 white-space 声明链裁决。
+  // A 壳尾计数族刀（2026-11-17 ILB-VISPAD-V2）可见性辅件。spec
+  // isCollapsedLineBreak（implementation.js :795——br 后插 zwsp 看最近非
+  // inline 祖先高度是否变化）在 shim 无渲染域不可布局测量，以文档序前向
+  // 扫描结构近似：br 后至最近块界无可见内容 ⇔ zwsp 不改变块高（br 为
+  // collapsed line break）。可见性分类：非折叠空白文本可见（nbsp 不折叠
+  // 即可见，_zwCeIsCollapsibleWsOnly 同判据）；注释/其它节点型不可见；
+  // 元素含可见后代可见，空子树仅替换型元素可见（img/br/hr 等占据行盒）。
+  function _zwCeIlbNodeVisible(n, d) {
+    if (!n || d > 16) return false;
+    if (n.nodeType === 3) {
+      return !_zwCeIsCollapsibleWsOnly(String(n.nodeValue || ''));
+    }
+    if (n.nodeType !== 1) return false;
+    var kids = n.childNodes || [];
+    if (!kids.length) {
+      var vt = String(n.tagName || '').toLowerCase();
+      return vt === 'img' || vt === 'br' || vt === 'hr' || vt === 'input'
+        || vt === 'textarea' || vt === 'select' || vt === 'iframe'
+        || vt === 'video' || vt === 'audio' || vt === 'canvas'
+        || vt === 'object' || vt === 'embed' || vt === 'svg';
+    }
+    for (var iv = 0; iv < kids.length; iv++) {
+      if (_zwCeIlbNodeVisible(kids[iv], d + 1)) return true;
+    }
+    return false;
+  }
+  // 上爬续扫判 inline：显式非 inline display、窄表块标签（_zwCeIsBlockTagName
+  // ＋dt/dd/pre，与 ILB-DTP-REMAP 块界口径一致）或宿主即块界；显式 inline 或
+  // 无声明 UA-inline 标签白名单续爬（spec getComputedStyle display=="inline"
+  // 爬链的 shim 侧等价）。
+  function _zwCeIlbInlineClimb(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var d = _zwCeDisplayOf(el);
+    if (d !== '' && d !== 'inline') return false;
+    var t = String(el.tagName || '').toLowerCase();
+    if (_zwCeIsBlockTagName(t) || t === 'dt' || t === 'dd' || t === 'pre') {
+      return false;
+    }
+    return t === 'span' || t === 'b' || t === 'i' || t === 'u' || t === 's'
+      || t === 'em' || t === 'strong' || t === 'small' || t === 'sub'
+      || t === 'sup' || t === 'a' || t === 'code' || t === 'font'
+      || t === 'mark' || t === 'ins' || t === 'del' || t === 'strike'
+      || t === 'tt' || t === 'big' || t === 'abbr' || t === 'cite'
+      || t === 'q' || t === 'kbd' || t === 'samp' || t === 'var'
+      || t === 'bdo' || t === 'bdi' || t === 'dfn' || t === 'time'
+      || t === 'label' || t === 'output';
+  }
+  // br 后前向扫描：沿兄弟链逐节点判可见，链尾沿 inline 父链上爬续扫兄弟；
+  // 达块界（宿主/块标签/显式非 inline）内容耗尽仍不可见 = 不可见。
+  function _zwCeBrVisibleAfter(brk, host) {
+    var n = brk;
+    var g = 0;
+    while (n && g++ < 256) {
+      var c = n.nextSibling;
+      while (c) {
+        if (_zwCeIlbNodeVisible(c, 0)) return true;
+        c = c.nextSibling;
+      }
+      var p = n.parentNode;
+      if (!p || p === host || p.nodeType !== 1 || !_zwCeIlbInlineClimb(p)) {
+        return false;
+      }
+      n = p;
+    }
+    return false;
+  }
   function _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host, forceLf) {
     var wsSig = !!forceLf || _zwCeWsSignificant(boundaryText || boundaryNode || boundaryParent, host);
     var brk3 = wsSig ? document.createTextNode('\n') : document.createElement('br');
@@ -13074,8 +13140,14 @@
       boundaryParent.insertBefore(brk3, boundaryNode
         || ((boundaryParent.childNodes || [])[boundaryOff] || null));
     }
-    // 可见性补断：断点后同父无后续节点 → 新行不可见，补第二条（同型）。
-    if (!brk3.nextSibling) {
+    // 可见性补断 v2（A 壳尾计数族刀，2026-11-17 ILB-VISPAD-V2）：br 型
+    //（normal-ws 域）按 _zwCeBrVisibleAfter 文档序块界扫描定补断——旧规则
+    // `!brk3.nextSibling` 只看同父直接兄弟，双向失真：inline 壳尾
+    //（`<b>foo[]</b>bar` 形）块内可见后续被误补（A 族 4 键双垫），注释邻接
+    //（`<p>foo[]<!--bar-->` 形）有兄弟（注释不可见）漏补（反形少垫）。
+    // wsSig（\n 型，pre 域 ws 全可见）维持旧同父兄弟规则（H+J 归一域另案）。
+    var padVis3 = wsSig ? !brk3.nextSibling : !_zwCeBrVisibleAfter(brk3, host);
+    if (padVis3) {
       var brk3b = wsSig ? document.createTextNode('\n') : document.createElement('br');
       boundaryParent.insertBefore(brk3b, brk3.nextSibling || null);
     }

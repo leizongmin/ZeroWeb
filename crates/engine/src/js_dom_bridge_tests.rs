@@ -237,3 +237,6 @@ include!("js_dom_bridge_tests/part125_ihtml_residual_pins.rs");
 // ilb C+F 外迁族刀钉测（2026-11-17）：dt/dd/pre 元素 caret 行断 br 落容器
 // 内不外迁＋li 现役绿形控制键。
 include!("js_dom_bridge_tests/part126_ilb_dt_dd_pre_pins.rs");
+// ilb A 壳尾计数族刀钉测（2026-11-17）：壳尾可见性补断 v2 落位＋现役绿形
+// 控制键。
+include!("js_dom_bridge_tests/part127_ilb_shell_tail_vispad_pins.rs");
