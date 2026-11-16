@@ -191,14 +191,71 @@ harness flush 读后单 mutation 写形下 per-identity 快照链断点待探针
 （sel/handle 双通道 store 点覆盖差异嫌疑）。属 transition 通道共享路径，
 非刀 B 域，另立站收口。
 
-## 残面队列（更新）
+## B3 页级收账（净 +395 / 0 lost / 0 regressed）
 
-- color 真插值池 ~412F：**插值器已落**（本 twin 提交），B3 页级收账。
-- width/style 真插值池（repeaters 252F + row-rule-width 168F + 多值 96F）：
-  **插值器 + apply 臂已落**，B3 页级收账（anim/waapi 384F 为主要预期增益）。
-- inline 站余量：rule-shorthand.html 240F 池 + 4 对齐形（写读面已落，
-  B3 复核）。
-- 共享缺口两笔（刀域外新登记）：neutral CSS-Transitions 快照链（上表）、
-  transition-all longhand 展开（FIXME 在册）。
+twin 提交 `71b07c7d8`（animation 插值器 + inline 简写展开 + apply 接线修复）
+五 corpus 对 B2（results-gaprules-b2）收账。**双链 provenance 法证**：
+zw-gaprules-b3（01:59:04 发射）构建窗 es_module peer WIP 在树（launch 日志
+git status 在册 `M crates/script-sandbox/src/es_module.rs`）→ 二进制
+`e3a46906…` WIP 扫入形（与 stash 窗干净构建 `58ec871f…` md5 异证；56s 快建 =
+复用 WIP 态 script-sandbox 缓存，59s 干净建含 script-sandbox 重编），留作
+b3wip 参照账。权威链 zw-gaprules-b3c（02:06:53 发射，unit 单写者独占窗）钉定
+干净二进制 `58ec871f3041a8d12ce1510b795e2f1b`（无构建步，WIP 已回树但不进
+二进制）。
+
+权威账（b3c vs B2，02:12:27 GATE-DONE 全腿 rc=0）：
+
+| corpus | gain | lost | flips | NEW/GONE | pages |
+|---|---|---|---|---|---|
+| css-gaps | +305 | −1 | 0 | 0/0 | 75→75 |
+| css-multicol | +91 | 0 | 0 | 0/0 | 91→91 |
+| css-typed-om | 0 | 0 | 0 | 0/0 | 359→359 |
+| css-shapes | 0 | 0 | 0 | 0/0 | 145→145 |
+| css-masking | 0 | 0 | 0 | 0/0 | 61→61 |
+| **合计** | **+396** | **−1** | 0 | 0/0 | — |
+
+净 **+395 / 0 页 lost / 0 regressed**。增益全落 B2 预期池（apply 臂缺位
+池兑现）：gaps 7 页全在 animation/——row-rule-color 插值 +66、
+row-rule-width 插值 +47、rule-color-repeaters-001 +89（含 −1 见下）、
+rule-width-repeaters +59、rule-color-multiple-values-001 +15、
+rule-width-multiple-values-001/002 +14/+14；multicol 2 页——
+column-rule-color-interpolation +45、column-rule-width-interpolation +46。
+
+- **−1 机理定谳（非语义回归，页 bug 侧）**：repeaters-001 WAAPI
+  `column-rule-color from [repeat(auto, black, black)] to [repeat(auto,
+  blue, red)] at (1.5)`——WPT 页 expected 串括号残缺笔误
+  （`[repeat(auto, rgb(0, 0, 255), rgb(255, 0, 0)]` 缺右括号）。B2 的 Pass
+  为 vacuous 假绿：apply 臂缺位时 got 与残缺 expected 同走我引擎
+  parse→serialize 路径恒等（两侧 FAIL 消息反证：expected 侧序列化为
+  `repeat(2, rgb(0,0,0), …)` 残缺形）；B3 apply 臂落地后 got 变真值
+  `repeat(auto, rgb(0, 0, 255), rgb(255, 0, 0))`，揭穿假绿。同 case 的
+  at(1) 形（正常 expected）B3 为 Fail→Pass 计入 +89。Transitions/
+  Transitions-all 两 variant 该形 B2/B3 均 Fail（页 bug 持位，刀域外）。
+- **s419 中性双证**：b3wip vs b3c 五 corpus 全 SET-IDENTICAL（逐子测
+  0/0/0、页集合全等）——二进制 md5 异（`e3a46906` vs `58ec871f`）而结果
+  逐项全等，script-sandbox es_module peer WIP 对五 CSS corpus 零位移；
+  b3wip 参照账与 b3c 权威账互证升级。
+- runner 层注：b3/b3c shapes/masking 腿 log `timeout=1`（case 墙钟边沿），
+  JSON 终态 TIMEOUT 子测 0=0（B2 同 0），对账零账面影响。
+- **inline 站余量复核**：from-longhands 页 4 对齐形 B3 零位移（12P/16
+  持位，column/row-rule plain/repeat 双形仍 Fail）——写读面已落但 gCS
+  简写重组在该形未翻绿，残面留队；rule-shorthand.html 240F 池零位移。
+- 单测/门禁：twin 提交时 engine lib 4,098/0F 已证（见上节），本轮纯收账
+  零码变。
+
+## 残面队列（B3 后更新）
+
+- ~~color 真插值池 ~412F~~：**B3 已收账**（apply 臂兑现入 +395 账）。
+- ~~width/style 真插值池 anim/waapi 384F~~：**B3 已收账**（WAAPI 通道
+  主增益；CSS Animations 通道部分入账）。
+- **9 增益页残余 ~715F census**（B3C 通道分解，下刀对账基线）：
+  CSS Animations ~302（@keyframes 路径中点形——apply 臂只修 anim/waapi
+  tick 落盘，keyframes 通道独立残面）、CSS Transitions with transition
+  (all/shorthand) ~241（transition-all 展开 FIXME + neutral 快照链叠加）、
+  Web Animations ~118、纯 CSS Transitions ~30、transition-behavior/
+  -property 变体 ~24。
+- inline 站余量：from-longhands 4 对齐形（B3 复核零位移，gCS 简写重组
+  该形未翻绿待探针）+ rule-shorthand.html 240F 池。
+- 共享缺口：neutral CSS-Transitions 快照链（B2 F 池分解表在册）。
 - 刀 D：inset-cap/junction 几何族 ~1.7k 最大残面。
 - 残面⑤：calc 代数插值全闭环（承重拒收边界重撤硬前置）。
