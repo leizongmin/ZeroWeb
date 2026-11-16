@@ -7,7 +7,7 @@ Plain/Repeat 段 + auto≤1 + calc 计数折叠；style-system column/row_rule_c
 Vec<RuleColorSegment> + 白名单 +2 + VALIDATED 22→25 裁决臂序位 + expand_rule_color 简写；
 twin amend 增补 rule-color 简写 apply 臂 +7；engine gCS 单段平色零漂移串化 + row/rule 读臂
 + paint 首段首色保形；验收债 shape-margin/threshold 复位臂两臂）——WIP 携入的 inset/position
-paren-aware 切分按残面⑤未闭环定谳撤回（`2de00fcad`：masking clip-path-interpolation −74、
+paren-aware 切分按残面⑤未闭环定谳撤回（`970e19289`：masking clip-path-interpolation −74、
 shapes 混合净 −4，合计 −78，b1v6/b1v7 回落链断裂先例第三次复现；拒收边界态恢复，clip_path
 50 钉 rejection 全绿）。权威账链（final 单写者独占窗，b1v3 双写者污染目录废弃）：五套件
 **净 +148 / 0 lost / 0 regressed，页集合全等**——gaps 75=75 +146（359→505）、multicol

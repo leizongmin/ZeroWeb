@@ -1,8 +1,11 @@
 # rule-color 列表文法刀（二十四轮，刀 A）
 
-日期：2026-11-16 深夜～11-17。提交：`ed3091d45`（刀体+twin 简写 apply 臂）→
-`2de00fcad`（撤回 WIP 携入的承重边界撤除）。终态码态 = `2de00fcad`。
+日期：2026-11-16 深夜～11-17。提交：`8c3d4d5f7`（刀体+twin 简写 apply 臂）→
+`970e19289`（撤回 WIP 携入的承重边界撤除）。终态码态 = `970e19289`。
 对应设计稿：[gap-rules-knife-design](2026-11-16-gap-rules-knife-design.md) 刀 A。
+（hash 注记：docs 收口 rebase 重写刀码哈希 ed3091d45→8c3d4d5f7、2de00fcad→
+970e19289，本档活引用已换新哈希；A/B 节 B1 的 6f97346e2/0c15c48b 为 amend
+前史+二进制 md5 配对 provenance，保留不换。）
 
 ## 刀体五站（css-gaps-1 §column-row-rule-color `<line-color-list>`）
 
@@ -27,7 +30,7 @@
 - **验收债**：apply_initial_value 补 shape-margin/shape-image-threshold
   复位臂（二十三轮验收）。
 
-## −78 守卫定谳与撤回（`2de00fcad`）
+## −78 守卫定谳与撤回（`970e19289`）
 
 WIP 携入的 paren-aware 切分按「残面⑤已闭合」假设撤除了 b1v8 钉化的
 拒收边界，但 calc 代数插值面并未全闭环。逐案对账实测（reconcile，B1 vs B0）：
@@ -46,13 +49,13 @@ b1v3（`e2bb5d29`）shapes/masking 对 B0 复测 SET-IDENTICAL（145=145/61=61�
 
 - B0 = `dc1bab12`（cf2d10ac9 detach 重建，刀父）；B1 = `0c15c48b`
   （6f97346e2，六腿：gaps +139、multicol +2、typed-om 护栏 0/0/0）；
-  twin amend `ed3091d45`（简写 apply 臂 +7）。
+  twin amend `8c3d4d5f7`（简写 apply 臂 +7）。
 - **双写者污染事故**：`results-rulecolor-b1v3` 目录被 unit+inline 多写者
   并发合并污染（gaps transcript 788 重复条目、并发加载窗内 4 页空产出丢失
   形 141→145 复并），目录废弃不作账；同目录毒化还含 b1v3g 链 unit cwd 毒化
   全案秒败产物（pass=0 形，已删 json×3/transcript×3）。
 - **final 权威链**（`zw-rulecolor-final`，单写者独占窗，b1v3 保全二进制
-  `e2bb5d29` = 2de00fcad 码态，五套件直测 B0，PAGE-ONLY 零容忍）：
+  `e2bb5d29` = 970e19289 码态，五套件直测 B0，PAGE-ONLY 零容忍）：
 
 | corpus | 页集合 | net | lost/regressed | 判定 |
 |---|---|---|---|---|
@@ -64,7 +67,7 @@ b1v3（`e2bb5d29`）shapes/masking 对 B0 复测 SET-IDENTICAL（145=145/61=61�
 
 **净 +148 / 0 lost / 0 regressed，五 corpus 页集合全等（PAGE-ONLY 零容忍满足）**。
 工件：`.acceptance/wptfyi-css/results-rulecolor-final/`（b1v3 污染目录废弃）。
-ed3091d45 提交正文记 +141 = B1 态 gaps +139 + multicol +2（简写臂 +7 在
+8c3d4d5f7 提交正文记 +141 = B1 态 gaps +139 + multicol +2（简写臂 +7 在
 amend 内，合计 +146 与 final 账一致）。
 
 ## 单测与门禁
@@ -72,7 +75,7 @@ amend 内，合计 +146 与 final 账一致）。
 - css-parser 钉 4、style-system 2,547/0F、engine lib 4,076/0F 全绿；
   fmt/clippy 三 crate 净（唯一 warning = peer es_module WIP 在册连坐）。
 - bench-gate 定向（zw-rulecolor-bench2，`ZERO_WEB_BENCH_CRATES=
-  zero-css-parser,zero-style-system,zero-engine`，HEAD=2de00fcad）：microbench
+  zero-css-parser,zero-style-system,zero-engine`，HEAD=970e19289）：microbench
   **3/3 PASS**（css_bench/engine_bench/style_bench），页面场景 welcome p95
   7.97ms / medium 281ms / morning 49ms、resource 峰值 RSS 171MB / startup
   39.7ms、form-input p95=0.014ms jank=0；`perf-gate` **rc=0 PASS**（form-input
@@ -106,5 +109,5 @@ amend 内，合计 +146 与 final 账一致）。
    首行 cd）——runner wpt-data 相对解析基于 unit cwd，发射实例 shell cwd
    非 repo 根时全案秒败 pass=0（b1v3g VOID 先例，788 案 17.3M 峰值真空转）；
    判腿先核 corpus(json) 页数与 P>0 再采认。
-4. 提交正文引用的证据文档路径必须与提交同轮落地（ed3091d45 引用本档，
+4. 提交正文引用的证据文档路径必须与提交同轮落地（8c3d4d5f7 引用本档，
    本档为补账轮补齐）。
