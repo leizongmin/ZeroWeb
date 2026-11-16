@@ -2747,11 +2747,11 @@ pub(crate) fn shape_margin_to_css(v: &LengthValue, font_size_px: f64) -> String 
             let s = length_to_css(v, font_size_px);
             // Calc 静态求值出纯 px 串时负值钳 0px；含 % 项串保留（% 项 used
             // 值依赖 layout，负号钳制语义挂账，语料未及）。
-            if let Some(n) = s
-                .strip_suffix("px")
+            if s.strip_suffix("px")
                 .and_then(|num| num.parse::<f64>().ok())
                 .filter(|n| n.is_finite())
                 .filter(|n| *n < 0.0)
+                .is_some()
             {
                 return "0px".to_string();
             }
