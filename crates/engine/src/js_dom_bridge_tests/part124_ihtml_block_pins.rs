@@ -222,6 +222,110 @@ pin124("ihb-elm-cross-right-false", "foo<span style=color:#aBcDeF>{bar</span>baz
 pin124("ihb-ctrl-text", "foo[bar]baz", [], "abc", "fooabcbaz");
 pin124("ihb-ctrl-inline-b", "foo[bar]baz", [], "<b>abc</b>", "foo<b>abc</b>baz");
 pin124("ihb-ctrl-xmp", "<xmp>f[o]o</xmp>", [], "abc", "<xmp>fabco</xmp>");
+// ㉒ G 族 ws-pre 壳臂（2026-11-16 G 族刀 gfamily-wspre-arm——corpus
+// inserthtml :618-676 十键实录形：harness 宿主为空 contenteditable 包装
+//（tests.js :5556），fixture 根 styled div 成 host 直子壳，caret 文本在壳内
+// → 壳域解析臂路由（sc.parentNode!==host），div ∉ SPLICE 落溶解臂，全含门
+// 对 collapsed 恒 false → 整命令 no-op。臂三规则落位：全隐形前缀整段替换 /
+// pre-line 前置 [ \t] 回退 run 起点 / pre 原位拼接。控制两形锁旁路域：
+// markup 载荷（'<' 门，块载荷语义归块臂域）与非 ws-pre 壳维持既有 no-op。
+pin124("ihb-g-pre-abc", "<div style=white-space:pre>abc[]\n</div>", [],
+  "X", "<div style=\"white-space:pre\">abcX\n</div>");
+pin124("ihb-g-preline-abc", "<div style=white-space:pre-line>abc[]\n</div>", [],
+  "X", "<div style=\"white-space:pre-line\">abcX\n</div>");
+pin124("ihb-g-pre-abc-sp", "<div style=white-space:pre>abc []\n</div>", [],
+  "X", "<div style=\"white-space:pre\">abc X\n</div>");
+pin124("ihb-g-preline-abc-sp", "<div style=white-space:pre-line>abc []\n</div>", [],
+  "X", "<div style=\"white-space:pre-line\">abcX \n</div>");
+pin124("ihb-g-pre-empty", "<div style=white-space:pre>[]\n</div>", [],
+  "X", "<div style=\"white-space:pre\">X</div>");
+pin124("ihb-g-preline-empty", "<div style=white-space:pre-line>[]\n</div>", [],
+  "X", "<div style=\"white-space:pre-line\">X</div>");
+pin124("ihb-g-ctrl-markup", "<div style=white-space:pre>abc[]\n</div>", [],
+  "<b>c</b>", "<div style=\"white-space:pre\">abc\n</div>");
+pin124("ihb-g-ctrl-nonws", "<div style=color:blue>ab[]cd</div>", [],
+  "X", "<div style=\"color:blue\">abcd</div>");
+
+// ㉓ D 族占位 br 消费臂（2026-11-16 D 族刀 placeholder-br-arm——corpus
+// inserthtml :483-560 十二键实录形 + :595 空根搭车键：零文本块壳 × 元素端点
+// 坍缩选区 × 占位 br/注释壳。既有溶解臂全含门把零文本元素 span [0,0] 判为
+// 坍缩选区 [0,0] 全含 → 整壳替换载荷（实录 got=`abc`/`<!--abc-->`/`""`）。
+// 臂语义＝可见内容插于不可见 br 前且 br 随之冗余删除；注释不使 br 冗余
+//（语料 :512/:526 注释实录）。期望值=语料 expected/in_array 选中形剥
+// marker 原样。swcss 与本族无关（壳不带样式载荷）——单态钉。
+pin124("ihb-d-br-txt", "<p>{}<br></p>", [], "abc", "<p>abc</p>");
+pin124("ihb-d-br-cmt", "<p>{}<br></p>", [], "<!--abc-->",
+  "<p><!--abc--><br></p>");
+pin124("ihb-d-cspan-txt", "<p><!--foo-->{}<span><br></span><!--bar--></p>",
+  [], "abc", "<p><!--foo-->abc<!--bar--></p>");
+pin124("ihb-d-cspan-cmt", "<p><!--foo-->{}<span><br></span><!--bar--></p>",
+  [], "<!--abc-->", "<p><!--foo--><!--abc--><!--bar--><br></p>");
+pin124("ihb-d-sspan-txt", "<p>{}<span><!--foo--><br><!--bar--></span></p>",
+  [], "abc", "<p>abc</p>");
+pin124("ihb-d-sspan-cmt", "<p>{}<span><!--foo--><br><!--bar--></span></p>",
+  [], "<!--abc-->", "<p><!--abc--><br></p>");
+pin124("ihb-d-brafter-txt", "<p><br>{}</p>", [], "abc", "<p>abc</p>");
+pin124("ihb-d-brafter-cmt", "<p><br>{}</p>", [], "<!--abc-->",
+  "<p><br><!--abc--></p>");
+pin124("ihb-d-cspanafter-txt", "<p><!--foo--><span><br></span>{}<!--bar--></p>",
+  [], "abc", "<p><!--foo--><span>abc</span><!--bar--></p>");
+pin124("ihb-d-cspanafter-cmt", "<p><!--foo--><span><br></span>{}<!--bar--></p>",
+  [], "<!--abc-->", "<p><!--foo--><span><!--abc--><br></span><!--bar--></p>");
+pin124("ihb-d-sspanafter-txt", "<p><span><!--foo--><br><!--bar--></span>{}</p>",
+  [], "abc", "<p><span><!--foo-->abc<!--bar--></span></p>");
+pin124("ihb-d-sspanafter-cmt", "<p><span><!--foo--><br><!--bar--></span>{}</p>",
+  [], "<!--abc-->", "<p><span><!--foo--><!--abc--><br><!--bar--></span></p>");
+pin124("ihb-d-empty-root", "{}", [],
+  "<div class=\"d1\"></div><div class=\"d2\"><span class=\"s1\">some text</span><a href=\"foo.html\"></a></div>",
+  "<div class=\"d1\"></div><div class=\"d2\"><span class=\"s1\">some text</span><a href=\"foo.html\"></a></div>");
+
+// ㉔ C 族占位块壳保留臂（2026-11-16 C 族刀 blockshell-keep-arm——corpus
+// inserthtml :463-481 四键实录形：块壳 p × 全段选区 [foo] × 隐形载荷。既有
+// 溶解臂全含门把壳 span 判为全含 → 整壳替换载荷（实录 got=` `/`<!--abc-->`/
+// `<span style="display:none"></span>`）。臂语义＝块壳保留、载荷落壳内；
+// 空白文本/注释载荷尾垫占位 br（结果壳内无元素子＝不可见空块），单空元素
+// 载荷不垫（元素子已在＝非空——corpus display:none span 双 swcss 态实录
+// 均无 br）。期望值=语料 expected 剥 marker 原样；属性引号经 innerHTML 写
+// 入边界 parse+serialize 归一（style=display:none → style="display:none"）。
+pin124("ihb-c-space", "<p>[foo]</p>", [], " ", "<p> <br></p>");
+pin124("ihb-c-sspan-t", "<p>[foo]</p>", [["stylewithcss", "true"]],
+  "<span style=display:none></span>",
+  "<p><span style=\"display:none\"></span></p>");
+pin124("ihb-c-sspan-f", "<p>[foo]</p>", [["stylewithcss", "false"]],
+  "<span style=display:none></span>",
+  "<p><span style=\"display:none\"></span></p>");
+pin124("ihb-c-cmt", "<p>[foo]</p>", [], "<!--abc-->", "<p><!--abc--><br></p>");
+
+// ㉕ A 族断载荷/未闭合壳臂（2026-11-16 A 族刀 unclosed-completion-arm——
+// corpus inserthtml :103/:118/:123/:128/:133 五键实录形：foo[bar]baz ×
+// 空载荷/未闭合 b 壳。①空载荷 got=`foobarbaz`＝整命令 no-op 未删选区，
+// exp 删除后 `foobaz`；②未闭合壳 got=`foo<b>baz</b>`/`foo<b>abcbaz</b>`
+// ＝壳开放到宿主尾吞并后文，exp 闭壳 `foo<b></b>baz`/`foo<b>abc</b>baz`。
+// 臂语义＝空载荷走主路径 splice('') 完成删除；未闭合首标签补尾闭标签
+// 再拼接。期望值=语料 expected 剥 marker 原样；swcss 双态同 exp（载荷
+// 纯 b 标签无 style 差异——corpus 双键实录同值）。
+pin124("ihb-a-empty", "foo[bar]baz", [], "", "foobaz");
+pin124("ihb-a-b-open-t", "foo[bar]baz", [["stylewithcss", "true"]], "<b>", "foo<b></b>baz");
+pin124("ihb-a-b-open-f", "foo[bar]baz", [["stylewithcss", "false"]], "<b>", "foo<b></b>baz");
+pin124("ihb-a-b-txt-t", "foo[bar]baz", [["stylewithcss", "true"]], "<b>abc", "foo<b>abc</b>baz");
+pin124("ihb-a-b-txt-f", "foo[bar]baz", [["stylewithcss", "false"]], "<b>abc", "foo<b>abc</b>baz");
+
+// ㉖ rawtext 壳节点手术臂（2026-11-16 ihe5 rawtext 刀——corpus inserthtml
+// :188-215 四键实录形：xmp/script 壳 × <b>abc</b> 载荷 × swcss 双态。既有
+// 拼接臂字面拼接把载荷标记经 setter rawtext 解析吃成文本、getter 转义回读
+//（got <xmp>f&lt;b&gt;abc&lt;/b&gt;o</xmp>）；手术臂 div 上下文解析载荷后
+// 节点级入壳（editing spec inserthtml＝fragment body 上下文解析经 DOM 插
+// 入，元素可入 rawtext 容器；serialization 对 script 子文本按字面）。期望
+// 值=语料 exp 剥 caret marker 原样（compare 不锁 caret，`{}` 落载荷尾）；
+// 纯文本载荷控制键 ihb-ctrl-xmp 既有拼接臂恒一（零外溢）。
+pin124("ihb-r-xmp-t", "<xmp>f[o]o</xmp>", [["stylewithcss", "true"]], "<b>abc</b>",
+  "<xmp>f<b>abc</b>o</xmp>");
+pin124("ihb-r-xmp-f", "<xmp>f[o]o</xmp>", [["stylewithcss", "false"]], "<b>abc</b>",
+  "<xmp>f<b>abc</b>o</xmp>");
+pin124("ihb-r-script-t", "<script>f[o]o</script>bar", [["stylewithcss", "true"]], "<b>abc</b>",
+  "<script>f<b>abc</b>o</script>bar");
+pin124("ihb-r-script-f", "<script>f[o]o</script>bar", [["stylewithcss", "false"]], "<b>abc</b>",
+  "<script>f<b>abc</b>o</script>bar");
 
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。

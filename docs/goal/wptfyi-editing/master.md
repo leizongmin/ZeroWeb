@@ -1,44 +1,41 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-16 · Active**。**d42 sel 方言归一刀 A/B 判决（不落）+ 重映射序守卫
-落树**：d41 破案的归一刀（query 命中 sel 双方言 `div` ↔ 路径形 → cache 双键
-双 proxy → harness 身份检查误判换代 → removeEventListener 移除不中 →
-listener 遗留 → got=2 双派）实装后 input-events 全语料 A/B 判决**净 -27
-（461P→434P），回滚不落**——P2F 分解：joining-dl 8 案 targetRanges 期望
-编码了 BASE 的 identity-churn null 端点伪影（knife 稳定端点反不匹配上游
-期望——这些期望是 Chrome 真值、BASE 靠伪影巧合命中，端点报告语义需与身份
-稳定成对修）+ 4 案 bi=0 join 塌缩形（b3s TRACE 实证：归一方言后
-`_zwCeReanchorRange` down-walk 两端点收敛同节点，backward select
-(text,10)-(text,0) → (X,10)/(X,0) 触发 nr.setEnd 的 R203 镜像把 start 重写
-为 end → select 塌缩 (0,0)）；non-collapsed ×2 +3×2 = 身份修复真实解锁面
-（方向正确，generation-aware 重设计后分层重放）。**唯一落树变更 =
-part01.js `_zwCeReanchorRange` 重映射序守卫**（+10 行）：非塌缩 r0 的重映射
-若 start 落在 end 之后（`_zwRangeBpAfter` 树序比较）= 端点身份失真 → 弃本
-轮重映射返 null 交活锚让位门保 r0；塌缩 caret 重映射（marker 语料管线主
-消费面）不受影响——BASE+守卫全语料逐字节恒等 = 纯加固，仅在身份损伤时承载
-载荷（归一刀重落树时的既有回归面即被兜住）。哨兵（本 session 429 中断后
-补全复核）：input-events 全语料（zz-probe 排除口径）461P/2867F/3T vs BASE
-**恒等 F2P=0/P2F=0**；html-semantics **P 恒等 5378**（唯一漂移 =
-select-home-end-pagedown 已知 flaky 带 1 例 Fail→Timeout）；selection 全
-语料 **F2P=4/P2F=1**（P2F = delete-chars 已知间歇自翻面；F2P=4 = d38 无
-空格链解析修复在 tal 的窗口增益；stringifier 页 4 例 Fail→NotRun 窗口形、
-前后均非 Pass 无损失）。证据见
-[d42 sel-dialect-knife AB and remap order guard](evidence/2026-11-16-d42-sel-dialect-knife-ab-and-remap-order-guard.md)。
+**2026-11-16 · Active**。**d44/d45 B4-S2 第一刀：join 缝尾随 br 消费 + gtr
+端点克隆/持活分流**（上一 session 429 中断遗留 WIP 已含完整 d45b 对拍产物，
+本 session 复核补哨兵落账）：part01.js +65/−4——①`_zwCeJoinApply` 壳落位段
+尾随 br 消费（跨块 join 后原行尾 br 删一个、双 br 留一个；同容器 join 不动）
++ ②`_zwCeJoinStartOf` 尾随 br 边界（界落首个尾随 br 前父偏移，纯 br 块落块首）
++ ③`_zwCeTargetRange` 端点克隆/持活分流（替换承载族克隆冻结 pre-value；原位
+截断族持 live——判据 = 切片不含 `\n` 且非整节点全覆盖，d44 全克隆 P2F=8 与
+d45 live-all −44P 双向对拍定谳两族并存不可一刀切）。input-events 全语料
+（zz-probe 排除）715P/2613F/3T → **1099P/2229F/3T 净 +384，F2P=384/P2F=0**：
+joining-dl-elements ×2 +136/+136、dl-and-another ×2 +36/+36、
+deleting-in-list-items ×4 +10×2/+6×2、non-collapsed ×2 +2×2、backspace/fd 主
+文件 +2/+2；零名换零消失。哨兵：html-semantics **P 恒等 5378**（仅
+select-home-end flaky 带互翻 2）、selection **P/F 集双重恒等 48,979P/4,352F**
+（F2P=0/P2F=0，仅 stringifier Timeout 边界 +4 NotRun）。**dwuf +22 名义红未
+清偿**（八变体两侧全红恒等——本刀只改端点快照语义，跨 child-block 端点规范化
+未接 caret join/deleteCommand 臂）。during-and-after-dispatch 接受 1F（传播中
+listener 改选区形与克隆门互斥）。证据见
+[d44 join-br-gtr-endpoint](evidence/2026-11-16-d44-b4-s2-join-br-gtr-endpoint.md)。
 
 **卡点** 无阻塞。口径持位：11-12 快照三目录合计 130,245、距 146,184 差
-15,939；d37 后预估 ~143.0k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
+15,939；d44 后预估 ~143.7k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
+环境记档：main 有一处 fmt 既有漂移（`crates/dom/src/tests/
+tests_9_query_coverage.rs`，并行流 3eddbadbb 带入，非本流写面，未触碰）。
 
-**下一步** ①**B4-S1 元素锚/跨容器 range select-delete 臂**（d39 定谳 820F
-主簇落码：`__zw_ce_delete_impl` sc 非 text silent return + 跨容器非塌缩误删
-sc 单节点内区间——`list[-item1</li><li>list]-item2` Backspace 期望
-`<li>list-item2</li>`、got `<li>lis-item1</li>` 单字符误删；形状 = 摘除选区
-内容 + 边界块 join，gtr 报原始选区端点（语料期望逐案核对）；与身份刀解耦先
-走 innerHTML 语义面，forwarddelete 镜像同步）②generation-aware 归一刀重
-设计（d42 A/B 判决后挂起：端点报告语义与身份稳定成对修——joining-dl 8 案
-artifact 期望逐条对齐 Blink target range 生成点，4 案塌缩面由守卫兜底后
-重放 +3 WIN 面）③空 range beforeinput 静默臂；④B3 text-control execCommand
-期望矩阵（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同
-口径对账（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
+**下一步** ①**B4-S2 第二刀候选（残余 2229F 簇结构已定谳，见 d44 证据遗留节）**：
+(a) join **壳吸收深化** ~1500F 大头（deleting-in-list-items 1114F：`<li><p>`
+内层壳 join 期望并壳内、同块摘空 `<br>` 落壳；joining-dl 404F：跨 dl 期望右 dt
+并入左 dt 壳——现落壳外）；(b) **TypingA 替换臂** 69F（insertText 非塌缩选区
+先删后插，`<p>{abc}</p>`+'a' 期望 `<p>a</p>` got `<p>aabc</p>`，变异核
+`__zw_ce_inserttext_mutate` 无非塌缩删除臂）；(c) backspace/fd 主文件 243F：
+跨元素边界 caret join（`<p>a<span>b</span>[]c</p>` bi=0）+ 文首空删 beforeinput
+形（master.md 原③空 range 静默臂逆形）②dwuf 八变体跨 child-block gtr 端点
+规范化（B4-S2 直接标的持位）；③generation-aware 归一刀重设计（d42 A/B 判决后
+挂起：端点报告语义与身份稳定成对修）④B3 text-control execCommand 期望矩阵
+（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同口径对账
+（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
 
 **残余账本（持位）**：子文档域——tal CE（主窗）变体 collapsed ~122F +
 non-collapsed ~77F + after-joining-paragraphs 48F（内壳形 `child=b`/
@@ -48,7 +45,9 @@ child-of-html 8F（跨文档收养，引擎级 adoptNode FIXME(d33)）+ unlink �
 重裹 4F（FIXME(d24)）；modify 残余 ~57F（定向 probe 口径）= 鼠标驱动
 modify、line-flex/grid（FIXME(visual-modify) 行盒几何）、inline-boundary
 18/36、bidi character 22/28×2（RTL 视觉轴近似）、word 细分——按簇评估；
-input-events 桶 = B4-S1 select-delete（820F）+ 修饰组合词删
+input-events 桶 = B4-S1 select-delete 残余形（d43 主臂落树后名义账 2613F
+→ 剩左块尾随 `<br>` 消费/嵌套深锚/dwuf gtr 期望 +22 等，见 d43 证据遗留节）
++ 修饰组合词删
 （deleteWordBackward/Forward）+ range-exceptions 构造器 targetRanges dict +
 IndexSizeError（4F）+ typing DELETE join-walk 分离 sc 崩点守卫（4 笔
 unhandled rejection）+ shadow-dom getComposedRanges 62F——修复队列 B1–B5
@@ -273,7 +272,7 @@ selection 扩面已生效：d18 三门为 deep 面首刀（全语料 +11,481）�
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 完成（11/11 片；快照 109,059/154,595） | [dc1-run-shards](evidence/2026-11-11-dc1-run-shards.md) + [dc2-selection-wiring](evidence/2026-11-11-dc2-selection-wiring.md) |
-| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线；d19 focus 族 + modify 简形（+168）；d21 B1 切片 1 子文档编辑面（setup 三层断链解除，零 P2F，+7 新键 P）；d22 B1 切片 2 子文档键路由（子窗 test_driver 面，selection 全语料 F2P=367/P2F=1，净 +366） | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10–d12：宇宙面定谳 + 桥层修复落地，bold 12F→8F 零回归）+ [dc2-sub-sup-va-shell](evidence/2026-11-13-dc2-sub-sup-va-shell.md)（d13：sub/sup va 冲突壳 + 语料红账重分类，F2P=20 零回归，六文件 57F→37F）+ [dc2-va-peel-interior-strike-shell](evidence/2026-11-13-dc2-va-peel-interior-strike-shell.md)（d14：strike S1 内部界 peel + sub/sup 残段保面 + s 壳收编槽，F2P=15 零回归，六文件 37F→22F）+ [dc2-strike-s2a-p5-retag](evidence/2026-11-13-dc2-strike-s2a-p5-retag.md)（d15：strike S2a 同 tag 名门 + P5 td span retag 端点重锚，F2P=2 零回归，六文件 22F→20F）+ [dc2-strike-direction-m1-absorb](evidence/2026-11-14-dc2-strike-direction-m1-absorb.md)（d16：strike REMOVE 方向规则 + u/s css-true 裸 span 吸收，F2P=2 零回归，六文件 20F→18F）+ [dc2-window-math-reclassification](evidence/2026-11-14-dc2-window-math-reclassification.md)（d17：窗口数学重分类，零引擎改动，伪失败 13F 定谳出队、真失败收敛 5F，d16 账目勘误 20F→18F）+ [dc2-selection-validation-gates](evidence/2026-11-14-dc2-selection-validation-gates.md)（d18：Selection collapse/extend/addRange 三规范门，受控六文件 F2P=6,146、全语料对拍 F2P=11,481、vanished 1,740，零回归）+ [dc2-focus-noop-selection-modify](evidence/2026-11-14-dc2-focus-noop-selection-modify.md)（d19：focus no-op 族 + Selection.modify 简形，全语料 F2P=168、P2F=0、真 new-fail=0，face/哨兵/input 零回归） | + [dc2-b1-slice1-child-doc-editing-surface](evidence/2026-11-14-dc2-b1-slice1-child-doc-editing-surface.md)（d21：detached doc parentNode 链 + child execCommand 薄面 + child collapse 空选区臂，selection/input 全语料零 P2F，face/哨兵/钉测恒等）+ [dc2-b1-slice2-child-doc-key-routing](evidence/2026-11-14-dc2-b1-slice2-child-doc-key-routing.md)（d22：子窗 test_driver 面 + 键语义 shim 直应用，selection 全语料 F2P=367/P2F=1 净 +366，input/face/哨兵/钉测恒等，P2F 根修挂账 headEl 持真 title）+ [dc2-b1-slice3-typing-around-link](evidence/2026-11-15-dc2-b1-slice3-typing-around-link.md)（d23–d29+d31：tal 边界臂 + 读断逃逸 + 输入通道门，selection 交集 F2P=18/P2F=0；unlink 实应用臂 370P/25F→391P/4F；createLink 包裹臂落地暴露 HEAD 空转假绿 P2F=1 并以 stamped 家族工厂重建配方修复，input-events 全量 223P 净 +1）+ [dc2-plaintext-only-styling-gate](evidence/2026-11-15-dc2-plaintext-only-styling-gate.md)（d35：plaintext-only 宿主 styling 命令门，styling-commands 双 variant 42P/108F→150P/0F，d34 披露 unlink P2F=2 清账，全语料 F2P=290/P2F=0 含 delete.html +9 窗口补账）+ [dc2-j2-cross-body-block-merge](evidence/2026-11-15-dc2-j2-cross-body-block-merge.md)（d36：J2 跨 body 边界块合并，del-html 34P/12F→42P/4F 净 +8 零回归）+ [dc2-input-events-get-target-ranges](evidence/2026-11-15-dc2-input-events-get-target-ranges.md)（d37：B2 切片 1，Actions 编辑键分流 + beforeinput StaticRange 快照面，input-events 223P/941F→289P/875F 净 +66、F2P=66/P2F=0，修饰组合 no-op 定谳失步幻影，selection 对拍零漂移除已知间歇 1 面） |
+| DC-2 按簇收敛 | P1 读面 +114；P2 apply 引擎（多面 +1,647 断言级零新增失败）；P3 作者载体臂 + strike/⑤/①/② 各批 + ③ 载体吸收（+55）+ ⑥ italic toggle-off（+12）+ ⑥ ADD 壳内嵌套 + collapsed qS 记账（+5）；均零回归；selection 扩面已接线；d19 focus 族 + modify 简形（+168）；d21 B1 切片 1 子文档编辑面（setup 三层断链解除，零 P2F，+7 新键 P）；d22 B1 切片 2 子文档键路由（子窗 test_driver 面，selection 全语料 F2P=367/P2F=1，净 +366） | [triage](evidence/2026-11-11-dc2-fail-cluster-triage.md) + [dc2-p2-format-apply](evidence/2026-11-11-dc2-p2-format-apply.md) + [dc2-us-carrier-author-arm](evidence/2026-11-12-dc2-us-carrier-author-arm.md) + [dc2-strike-wrap-tag](evidence/2026-11-12-dc2-strike-wrap-tag.md) + [dc2-element-carrier-fold](evidence/2026-11-12-dc2-element-carrier-fold.md) + [dc2-decl-shell-partial-order](evidence/2026-11-12-dc2-decl-shell-partial-order.md) + [dc2-bold-value-face](evidence/2026-11-12-dc2-bold-value-face.md) + [dc2-bold-italic-carrier-merge](evidence/2026-11-13-dc2-bold-italic-carrier-merge.md) + [dc2-italic-toggleoff-face](evidence/2026-11-13-dc2-italic-toggleoff-face.md) + [dc2-italic-add-shell-collapsed-qs](evidence/2026-11-13-dc2-italic-add-shell-collapsed-qs.md) + [dc2-bold-toggleoff-universe-diag](evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md)（d10–d12：宇宙面定谳 + 桥层修复落地，bold 12F→8F 零回归）+ [dc2-sub-sup-va-shell](evidence/2026-11-13-dc2-sub-sup-va-shell.md)（d13：sub/sup va 冲突壳 + 语料红账重分类，F2P=20 零回归，六文件 57F→37F）+ [dc2-va-peel-interior-strike-shell](evidence/2026-11-13-dc2-va-peel-interior-strike-shell.md)（d14：strike S1 内部界 peel + sub/sup 残段保面 + s 壳收编槽，F2P=15 零回归，六文件 37F→22F）+ [dc2-strike-s2a-p5-retag](evidence/2026-11-13-dc2-strike-s2a-p5-retag.md)（d15：strike S2a 同 tag 名门 + P5 td span retag 端点重锚，F2P=2 零回归，六文件 22F→20F）+ [dc2-strike-direction-m1-absorb](evidence/2026-11-14-dc2-strike-direction-m1-absorb.md)（d16：strike REMOVE 方向规则 + u/s css-true 裸 span 吸收，F2P=2 零回归，六文件 20F→18F）+ [dc2-window-math-reclassification](evidence/2026-11-14-dc2-window-math-reclassification.md)（d17：窗口数学重分类，零引擎改动，伪失败 13F 定谳出队、真失败收敛 5F，d16 账目勘误 20F→18F）+ [dc2-selection-validation-gates](evidence/2026-11-14-dc2-selection-validation-gates.md)（d18：Selection collapse/extend/addRange 三规范门，受控六文件 F2P=6,146、全语料对拍 F2P=11,481、vanished 1,740，零回归）+ [dc2-focus-noop-selection-modify](evidence/2026-11-14-dc2-focus-noop-selection-modify.md)（d19：focus no-op 族 + Selection.modify 简形，全语料 F2P=168、P2F=0、真 new-fail=0，face/哨兵/input 零回归） | + [dc2-b1-slice1-child-doc-editing-surface](evidence/2026-11-14-dc2-b1-slice1-child-doc-editing-surface.md)（d21：detached doc parentNode 链 + child execCommand 薄面 + child collapse 空选区臂，selection/input 全语料零 P2F，face/哨兵/钉测恒等）+ [dc2-b1-slice2-child-doc-key-routing](evidence/2026-11-14-dc2-b1-slice2-child-doc-key-routing.md)（d22：子窗 test_driver 面 + 键语义 shim 直应用，selection 全语料 F2P=367/P2F=1 净 +366，input/face/哨兵/钉测恒等，P2F 根修挂账 headEl 持真 title）+ [dc2-b1-slice3-typing-around-link](evidence/2026-11-15-dc2-b1-slice3-typing-around-link.md)（d23–d29+d31：tal 边界臂 + 读断逃逸 + 输入通道门，selection 交集 F2P=18/P2F=0；unlink 实应用臂 370P/25F→391P/4F；createLink 包裹臂落地暴露 HEAD 空转假绿 P2F=1 并以 stamped 家族工厂重建配方修复，input-events 全量 223P 净 +1）+ [dc2-plaintext-only-styling-gate](evidence/2026-11-15-dc2-plaintext-only-styling-gate.md)（d35：plaintext-only 宿主 styling 命令门，styling-commands 双 variant 42P/108F→150P/0F，d34 披露 unlink P2F=2 清账，全语料 F2P=290/P2F=0 含 delete.html +9 窗口补账）+ [dc2-j2-cross-body-block-merge](evidence/2026-11-15-dc2-j2-cross-body-block-merge.md)（d36：J2 跨 body 边界块合并，del-html 34P/12F→42P/4F 净 +8 零回归）+ [dc2-input-events-get-target-ranges](evidence/2026-11-15-dc2-input-events-get-target-ranges.md)（d37：B2 切片 1，Actions 编辑键分流 + beforeinput StaticRange 快照面，input-events 223P/941F→289P/875F 净 +66、F2P=66/P2F=0，修饰组合 no-op 定谳失步幻影，selection 对拍零漂移除已知间歇 1 面）+ [dc2-gtr-chain-query-root-cause](evidence/2026-11-16-dc2-gtr-chain-query-root-cause.md)（d38：shim 链形 overlay 匹配补 + runner 变体展开，input-events 473P、crash 321F→1F、分母 25→32 案记档）+ [d42 sel-dialect-knife AB and remap order guard](evidence/2026-11-16-d42-sel-dialect-knife-ab-and-remap-order-guard.md)（d42：sel 方言归一刀 A/B 净 -27 不落 + `_zwCeReanchorRange` 重映射序守卫落树，BASE 恒等纯加固）+ [d43 B4-S1 select-delete](evidence/2026-11-16-d43-b4-s1-select-delete.md)（d43：元素锚/跨容器 range select-delete 主臂，input-events 461P→715P 净 +254 F2P=254/P2F=0，html-semantics P 恒等 5378、selection F2P=+10/真 P2F=0、engine lib 4059P/0F）+ [d44 join-br-gtr-endpoint](evidence/2026-11-16-d44-b4-s2-join-br-gtr-endpoint.md)（d44/d45：join 缝尾随 br 消费 + gtr 端点克隆/持活分流，input-events 715P→1099P 净 +384 F2P=384/P2F=0，html-semantics P 恒等、selection P/F 集双重恒等，dwuf 未清偿持位） |
 | DC-3 全量对账 | 对账口径就绪（11-12 快照三目录 130,245、距线 15,939；d31 后预估差 ~3.6k，正式落账待下周快照） | coverage-2026-11-11 快照 + 验收线 146,184 + [d22 selection 全语料对拍](evidence/2026-11-14-dc2-b1-slice2-child-doc-key-routing.md) |
 
 碰撞记录：本批 pin 钉测与并行流 D1 的 workspace 全量 test+clippy 共

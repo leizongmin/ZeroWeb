@@ -3322,7 +3322,10 @@
   // wantStart+frag 文本长度映射新 childNodes，F3 重映射）。
   function _zwExecCmdApplyInsertHtml(host, range, fragHtml) {
     var frag = (fragHtml == null) ? '' : String(fragHtml);
-    if (frag === '') return;
+    // A 族空载荷臂（2026-11-16 A 族刀 unclosed-completion-arm）：空载荷不再
+    // 整命令 no-op——语料 inserthtml :103 `""` × foo[bar]baz 实录 exp
+    // `foo[]baz`＝选区删除仍须执行。壳域解析跳过（空载荷无壳语义），走宿主
+    // 直子主路径 splice('') 自然完成删除，caret 落插入点。
     var sc = range.startContainer, so = range.startOffset | 0;
     var eo = range.collapsed ? so : (range.endOffset | 0);
     // 元素端点放行（2026-11-16 轴二壳界选区刀）：语料 {} marker 落壳边界
@@ -3362,7 +3365,7 @@
       ecInShell = !!(ecRaw && (ecRaw.nodeType === 3 || ecRaw.__zwIsText) && ecRaw.parentNode
         && ecRaw.parentNode !== host && ecRaw.parentNode.parentNode === host);
     }
-    if (sc.parentNode !== host || ecInShell || sc.nodeType === 1) {
+    if (frag !== '' && (sc.parentNode !== host || ecInShell || sc.nodeType === 1)) {
       var sr = _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag);
       if (!sr) return;
       shellMode = true; shellHtml = sr.html; shellWant = sr.want;
@@ -3398,9 +3401,15 @@
         hEnd = textToHtmlOffset(html, wantStart + (eo - so), hStart, wantStart);
         if (hEnd < 0) hEnd = hStart;
       }
-      html = html.slice(0, hStart) + frag + html.slice(hEnd);
+      // A 族补全（同臂）：未闭合首标签先补尾闭标签再拼接——原串拼接让壳
+      // 开放到宿主尾吞并后文（corpus inserthtml :118/:128 实录
+      // got=`foo<b>baz</b>`/`foo<b>abcbaz</b>`，exp 闭壳 `foo<b></b>baz`/
+      // `foo<b>abc</b>baz`）。补全仅补尾闭标签零文本贡献，caret 解码长度
+      // 不变；闭合载荷/文本首载荷原样返回零外溢；块载荷经块臂已补全
+      //（li/p 语料全绿证），不触达本路径。
+      html = html.slice(0, hStart) + _zwIhtmlCompleteFrag(frag) + html.slice(hEnd);
     }
-    host.innerHTML = html;
+    if (html !== null) host.innerHTML = html; // rawtext 手术臂 html=null——节点已 wired 入树
     // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → wantStart + frag
     // 解码纯文本长度（tag 序列跳过、实体记 1——与解析产物文本贡献同口径；首版
     // 漏跳 tag 把标记字符计入文本长度，wantCaret 越界落 host 末端，r2 批
@@ -3478,6 +3487,13 @@
   // 须等于现串（壳带属性/非文本兄弟/空白实体序列化不合形即旁路）。不合形
   // return null（主路径旁路维持既有行为）。
   function _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag) {
+    // 空根搭车臂（2026-11-16 D 族刀 placeholder-br-arm）：sc===host 元素端点
+    // 坍缩、宿主无子（corpus inserthtml :595 `"{}"` 空体根实录）——下方溶解臂
+    // spans 空集 fragPlaced 恒 false → null → 整命令 no-op（got=""）。语义＝
+    // 载荷原样落空根（corpus exp=载荷 verbatim），caret 锚 0。
+    if (sc === host && range.collapsed && (!kids || !kids.length) && frag) {
+      return { html: frag, want: 0 };
+    }
     // 宿主子文本空间：逐子 [s,e) 占位（文本子按长度；元素子按其全文长度）。
     var spans = [];
     var acc = 0;
@@ -3617,6 +3633,40 @@
       if (String(host.innerHTML || '') !== rebuilt) return null;
       var wsIn = ws - scBase;
       var weIn = we - scBase;
+      // rawtext 壳节点手术臂（2026-11-16 ihe5 rawtext 刀）：xmp/script ×
+      // markup 载荷（含 '<'）——innerHTML setter 按 rawtext 解析把载荷标记
+      // 吃成文本节点（https://html.spec.whatwg.org/multipage/syntax.html#
+      // the-raw-text-elements-parsing-algorithm），getter 再转义回读，字符
+      // 串模型无串能表达「元素入 rawtext 容器」态（重建串 round-trip 必失
+      // 真）；editing spec inserthtml＝fragment body 上下文解析后经 DOM 插
+      // 入节点，元素可入 rawtext 容器（https://html.spec.whatwg.org/
+      // multipage/parsing.html#serialising-html-fragments script 子文本按
+      // 字面序列化；corpus 实录 exp <xmp>f<b>abc</b>o</xmp>，got 转义文本
+      // 形 4 键红——既有拼接臂字面拼接「两侧 parser 字面保真」对 markup
+      // 载荷不成立）。门全合取：壳单文本子（rawtext 解析形，round-trip 门
+      // 已过）。手术：div 上下文解析载荷→壳文本子按 wsIn/weIn 切分→
+      // createTextNode/appendChild 依序重建（桥 DomMutation::InsertBefore/
+      // AppendChild 家族 wire 齐备；C6 刀 script 壳节点级手术 corpus 先例
+      // part01f _zwJusWrapViaHtml 直构径）→ html=null 让 caller 跳过
+      // innerHTML 赋值；want 同拼接臂形（载荷起点文本坐标）交 caret remap
+      // 游走。style/textarea/plaintext/listing 维持拼接臂零外溢（语料无该
+      // 壳 markup 键实录，未证行为不动）。
+      if ((shellTag === 'xmp' || shellTag === 'script') && frag.indexOf('<') !== -1) {
+        var sk = shell.childNodes || [];
+        if (sk.length === 1 && sk[0].nodeType === 3) {
+          var tRaw = sk[0];
+          var tVal = String(tRaw.nodeValue || '');
+          var tmp = document.createElement('div');
+          tmp.innerHTML = frag;
+          var payNodes = [];
+          for (var pi = 0; pi < tmp.childNodes.length; pi++) payNodes.push(tmp.childNodes[pi]);
+          shell.removeChild(tRaw);
+          shell.appendChild(document.createTextNode(tVal.slice(0, wsIn)));
+          for (var pj = 0; pj < payNodes.length; pj++) shell.appendChild(payNodes[pj]);
+          if (weIn < tVal.length) shell.appendChild(document.createTextNode(tVal.slice(weIn)));
+          return { html: null, want: preText.length + wsIn };
+        }
+      }
       // pre 内块载荷单块解包（editing spec insertHTML fixup——插入点已在块内时
       // 单块 fragment 拆壳取子：<pre>1[23]4</pre> + <pre>abc</pre> → 1abc4）。
       var effFrag = frag;
@@ -3626,6 +3676,236 @@
       }
       var newContent = content.slice(0, wsIn) + effFrag + content.slice(weIn);
       return { html: preText + '<' + shellTag + '>' + newContent + '</' + shellTag + '>' + postText, want: preText.length + wsIn };
+    }
+    // ws-pre 壳臂（2026-11-16 G 族刀 gfamily-wspre-arm）：styled div 壳 ×
+    // white-space:pre/pre-line × 坍缩文本 caret——下方溶解臂全含门对 collapsed
+    // 恒 false → null → 整命令 no-op（corpus inserthtml 十键实录根因，普查档
+    // 2026-11-16-ihc1-residual-49f-census；设计档
+    // 2026-11-16-gfamily-wspre-shell-rootcause-knife-design）。harness 宿主为
+    // 空 contenteditable 包装（include/tests.js runConformanceTest），fixture
+    // 根 styled div 成 host 直子壳 → sc.parentNode !== host 全量路由进本函数。
+    // 门全合取保守贴语料形：壳系 host 唯一子、壳恰一文本子（即 sc）、素净载荷
+    //（无 '<'——块载荷语义归块臂域）。落位三规则：①caret 前缀无可见字符 →
+    // 整段替换（`[]\n`→`X`，块尾隐形空白被插入消费）；②pre-line 下 caret 前
+    // 紧邻 [ \t] run 且至行尾无可见 → 回退 run 起点（`abc []\n`→`abcX \n`，
+    // corpus in_array 接受形）；③pre 保持原位拼接（`abc[]\n`→`abcX\n`、
+    // `abc []\n`→`abc X\n`）。重建走 _zwIhtmlTopSpans 原标签字节（绕裸标签
+    // 重建 round-trip 失真），round-trip 门＝壳内层序列化字节恒等 + sc 文本值
+    // 恒等（so 位移映射保真）。其余形维持下方溶解臂既有域零外溢。
+    if (shell && shellTag === 'div' && range.collapsed && kids.length === 1
+        && kids[0] === shell && frag.indexOf('<') < 0 && ck.length === 1
+        && ck[0] === sc && (ck[0].nodeType === 3 || ck[0].__zwIsText)) {
+      var gwsAttrs = String((shell.getAttribute && shell.getAttribute('style')) || '');
+      var gwsM = /(?:^|;)\s*white-space\s*:\s*([a-zA-Z-]+)/.exec(gwsAttrs);
+      var gwsStyle = gwsM ? gwsM[1].toLowerCase() : '';
+      if (gwsStyle === 'pre' || gwsStyle === 'pre-line') {
+        var gwsHtml0 = String(host.innerHTML || '');
+        var gwsSpans = _zwIhtmlTopSpans(gwsHtml0);
+        if (gwsSpans.length === 1) {
+          var gwsContent = gwsHtml0.slice(gwsSpans[0].innerStart, gwsSpans[0].innerEnd);
+          if (gwsContent === String(shell.innerHTML || '')
+              && gwsContent === String(sc.nodeValue || '')) {
+            var gwsNew, gwsWant;
+            var gwsPrefix = gwsContent.slice(0, so);
+            if (!/\S/.test(gwsPrefix)) {
+              gwsNew = frag; gwsWant = 0; // ① 全隐形前缀 → 整段替换
+            } else {
+              var gwsPlace = so;
+              if (gwsStyle === 'pre-line') {
+                var gwsRun = /[ \t]+$/.exec(gwsPrefix);
+                if (gwsRun) {
+                  var gwsRunStart = so - gwsRun[0].length;
+                  var gwsRest = gwsContent.slice(so);
+                  var gwsNl = gwsRest.indexOf('\n');
+                  var gwsTail = gwsNl >= 0 ? gwsRest.slice(0, gwsNl) : gwsRest;
+                  if (!/\S/.test(gwsTail)) gwsPlace = gwsRunStart; // ② pre-line 回退
+                }
+              }
+              gwsNew = gwsContent.slice(0, gwsPlace) + frag + gwsContent.slice(gwsPlace);
+              gwsWant = gwsPlace; // ③ 原位拼接（host 唯一子=壳 → host 文本空间坐标）
+            }
+            return { html: gwsHtml0.slice(0, gwsSpans[0].innerStart) + gwsNew
+              + gwsHtml0.slice(gwsSpans[0].innerEnd), want: gwsWant };
+          }
+        }
+      }
+    }
+    // D 族占位 br 消费臂（2026-11-16 D 族刀 placeholder-br-arm）：零文本块壳
+    //（corpus 全 p）× 元素端点坍缩选区（sc===壳）× 占位 br（裸 br 或无属性
+    // span 壳包 br+注释）× 素文本/单注释载荷——下方溶解臂全含门把零文本元素
+    // span [0,0] 判为坍缩选区 [0,0] 全含 → 整壳替换载荷（corpus inserthtml
+    // :483-560 十二键实录 got=`abc`/`<!--abc-->`，普查档 ihc1-residual-49f-
+    // census D 族）。语料语义（inserthtml.js :512/:526 注释实录）：可见内容
+    // 插在不可见 br 前且 br 随之冗余删除；注释不使 br 冗余。分域规则：
+    // 文本载荷——caret 在 br 容器位或之前 → 容器（span 壳连同壳内注释）整删、
+    //   载荷落其位（D1/D3/D5）；caret 在容器后 → 载荷落 br 位：裸 br 壳位
+    //   （D7）、span 壳保留落壳内 br 位（D9/D11——corpus in_array 首形）。
+    // 注释载荷——裸 br：注释落 caret 位、br 不动（D2/D8——in_array 首形）；
+    //   span 壳 caret 在壳位或之前：注释落 caret 位、壳解包（壳内注释丢弃）、
+    //   裸 br 移壳尾（D4/D6）；span 壳 caret 在壳后：注释落壳内 br 前（D10/
+    //   D12——in_array 次形）。结构门全合取保守贴语料形：host 唯一子＝壳、壳
+    //   零文本、子序列恰为 comments* ×（裸 br | span[comments* br comments*]）?
+    //   × comments* 且全树恰一枚无属性 br。序列化逐子镜像拼串 + round-trip
+    //   门（重建=壳内串字节恒等，属性壳/异形旁路）。其余形维持 null（溶解臂
+    //   既有域零外溢）。
+    if (shell && shellTag === 'p' && range.collapsed && sc === shell
+        && kids.length === 1 && kids[0] === shell && frag && so >= 0
+        && so <= ck.length && kTextLen(shell) === 0) {
+      var dIsText = frag.indexOf('<') < 0;
+      var dCmt = dIsText ? null : /^<!--([\s\S]*)-->$/.exec(frag);
+      if ((dIsText && frag.length > 0)
+          || (dCmt && dCmt[1].indexOf('-->') < 0 && dCmt[1].indexOf('<!--') < 0)) {
+        var dKids = [];
+        var dBr = -1, dBrSpan = -1, dBrInner = -1, dBad = false;
+        for (var di = 0; di < ck.length && !dBad; di++) {
+          var dn = ck[di];
+          var dTag = dn.nodeType === 1 ? String(dn.tagName || '').toLowerCase() : '';
+          if (dn.nodeType === 8) { dKids.push({ t: 0, v: String(dn.nodeValue || '') }); continue; }
+          if (dTag === 'br' && dBr < 0) {
+            if (dn.attributes && dn.attributes.length) { dBad = true; break; }
+            dBr = dKids.length;
+            dKids.push({ t: 1 });
+            continue;
+          }
+          if (dTag === 'span' && dBr < 0
+              && (!dn.attributes || !dn.attributes.length)) {
+            var dsn = dn.childNodes || [];
+            var dInner = [];
+            for (var dj = 0; dj < dsn.length; dj++) {
+              var dsk = dsn[dj];
+              var dsTag = dsk.nodeType === 1 ? String(dsk.tagName || '').toLowerCase() : '';
+              if (dsk.nodeType === 8) { dInner.push({ t: 0, v: String(dsk.nodeValue || '') }); continue; }
+              if (dsTag === 'br' && dBr < 0 && (!dsk.attributes || !dsk.attributes.length)) {
+                dBr = dKids.length; dBrSpan = dKids.length; dBrInner = dInner.length;
+                dInner.push({ t: 1 });
+                continue;
+              }
+              dBad = true; break;
+            }
+            if (dBad || dBrSpan < 0 || dBr !== dKids.length) { dBad = true; break; }
+            dKids.push({ t: 2, inner: dInner });
+            continue;
+          }
+          dBad = true; break;
+        }
+        if (!dBad && dBr >= 0) {
+          var dSerList = function (list) {
+            var s = '';
+            for (var i = 0; i < list.length; i++) {
+              var k = list[i];
+              if (k.t === 2) s += '<span>' + dSerList(k.inner) + '</span>';
+              else if (k.t === 1) s += '<br>';
+              else if (k.t === 3) s += k.v;
+              else s += '<!--' + k.v + '-->';
+            }
+            return s;
+          };
+          var dHtml0 = String(host.innerHTML || '');
+          var dSpans = _zwIhtmlTopSpans(dHtml0);
+          if (dSpans.length === 1 && dSpans[0].tag === 'p'
+              && dSerList(dKids) === dHtml0.slice(dSpans[0].innerStart, dSpans[0].innerEnd)) {
+            var dOut;
+            if (dIsText) {
+              if (so <= dBr) {
+                // caret 在容器位或之前：容器整删（span 壳连同壳内注释）、载荷落其位。
+                dOut = [];
+                for (var dt = 0; dt < dKids.length; dt++) {
+                  dOut.push(dt === dBr ? { t: 3, v: frag } : dKids[dt]);
+                }
+              } else if (dBrSpan >= 0) {
+                // caret 在壳后：壳保留、载荷落壳内 br 位。
+                dOut = [];
+                for (var du = 0; du < dKids.length; du++) {
+                  if (du !== dBrSpan) { dOut.push(dKids[du]); continue; }
+                  var dNewInner = [];
+                  for (var dv = 0; dv < dKids[du].inner.length; dv++) {
+                    dNewInner.push(dv === dBrInner ? { t: 3, v: frag } : dKids[du].inner[dv]);
+                  }
+                  dOut.push({ t: 2, inner: dNewInner });
+                }
+              } else {
+                // 裸 br 壳位替换（corpus 语料注释：br 后插可见内容使 br 冗余）。
+                dOut = [];
+                for (var dw = 0; dw < dKids.length; dw++) {
+                  dOut.push(dw === dBr ? { t: 3, v: frag } : dKids[dw]);
+                }
+              }
+            } else if (dBrSpan < 0) {
+              // 裸 br：注释落 caret 位、br 不动。
+              dOut = [];
+              for (var dx = 0; dx < dKids.length; dx++) {
+                if (dx === so) dOut.push({ t: 0, v: dCmt[1] });
+                dOut.push(dKids[dx]);
+              }
+              if (so === dKids.length) dOut.push({ t: 0, v: dCmt[1] });
+            } else if (so <= dBrSpan) {
+              // caret 在壳位或之前：注释落 caret 位、壳解包（壳内注释丢弃）、
+              // 裸 br 移壳尾（corpus D4/D6 实录形）。
+              dOut = [];
+              for (var dy = 0; dy < dKids.length; dy++) {
+                if (dy === so) dOut.push({ t: 0, v: dCmt[1] });
+                if (dy !== dBrSpan) dOut.push(dKids[dy]);
+              }
+              dOut.push({ t: 1 });
+            } else {
+              // caret 在壳后：注释落壳内 br 前、壳保留（D10/D12 in_array 次形）。
+              dOut = [];
+              for (var dz = 0; dz < dKids.length; dz++) {
+                if (dz !== dBrSpan) { dOut.push(dKids[dz]); continue; }
+                var dNI2 = [];
+                for (var d2 = 0; d2 < dKids[dz].inner.length; d2++) {
+                  if (d2 === dBrInner) dNI2.push({ t: 0, v: dCmt[1] });
+                  dNI2.push(dKids[dz].inner[d2]);
+                }
+                dOut.push({ t: 2, inner: dNI2 });
+              }
+            }
+            var dNew = dHtml0.slice(0, dSpans[0].innerStart) + dSerList(dOut)
+              + dHtml0.slice(dSpans[0].innerEnd);
+            return { html: dNew, want: 0 };
+          }
+        }
+      }
+    }
+    // C 族占位块壳保留臂（2026-11-16 C 族刀 blockshell-keep-arm）：块壳 p ×
+    // 全段选区（壳文本空间全含于 [ws,we)）× 隐形载荷（纯空白文本/单注释/
+    // 单空元素）——下方溶解臂全含门把壳 span 判为全含 → 整壳替换载荷
+    //（corpus inserthtml :463-481 四键实录 got=` `/`<!--abc-->`/
+    // `<span style="display:none"></span>`，普查档 ihc1-residual-49f-census
+    // C 族）。语料语义（inserthtml.js :463-481 实录）：块壳保留、载荷落壳
+    // 内；空白文本/注释载荷尾垫占位 br（结果壳内无元素子＝不可见空块），
+    // 单空元素载荷不垫（元素子已在＝非空——corpus display:none span 双
+    // swcss 态实录均无 br）。门全合取保守贴语料形：host 唯一子＝壳、壳文本
+    // 非零、选区全含壳文本空间、载荷三隐形形之一（元素形＝顶层扫描恒一且
+    // 内区空串）。重建走 _zwIhtmlTopSpans 原标签字节（裸 p 标签不重建——
+    // 属性壳字节保真），载荷经 host.innerHTML 写入边界 parse+serialize 归一
+    // 属性引号（corpus expected style="display:none" 同款）。其余形维持
+    // null（溶解臂既有域零外溢）。
+    if (shell && shellTag === 'p' && !range.collapsed
+        && kids.length === 1 && kids[0] === shell
+        && kTextLen(shell) > 0 && ws <= scBase
+        && we >= scBase + kTextLen(shell)) {
+      var cIsText = frag.indexOf('<') < 0;
+      var cWs = cIsText && /^\s+$/.test(frag);
+      var cCmt = cIsText ? null : /^<!--([\s\S]*)-->$/.exec(frag);
+      var cOkCmt = !!(cCmt && cCmt[1].indexOf('-->') < 0
+        && cCmt[1].indexOf('<!--') < 0);
+      var cEl = false;
+      if (!cIsText && !cOkCmt) {
+        var cFs = _zwIhtmlTopSpans(frag);
+        cEl = cFs.length === 1 && cFs[0].start === 0 && cFs[0].end === frag.length
+          && frag.slice(cFs[0].innerStart, cFs[0].innerEnd) === '';
+      }
+      if (cWs || cOkCmt || cEl) {
+        var cHtml0 = String(host.innerHTML || '');
+        var cSpans0 = _zwIhtmlTopSpans(cHtml0);
+        if (cSpans0.length === 1 && cSpans0[0].tag === 'p') {
+          var cInner = cEl ? frag : frag + '<br>';
+          var cNew = cHtml0.slice(0, cSpans0[0].innerStart) + cInner
+            + cHtml0.slice(cSpans0[0].innerEnd);
+          return { html: cNew, want: 0 };
+        }
+      }
     }
     // 其余壳（styled 行内壳）溶解臂：凡壳内容全含于选区 [ws,we) 即整壳溶解、
     // 载荷落 ws——覆盖 sc/ec 在壳内、宿主直子文本、跨壳/双壳各端点组合；部分

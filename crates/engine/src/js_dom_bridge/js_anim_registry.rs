@@ -388,7 +388,7 @@ pub(crate) static FLIP_EASED_ADOPT_MARKER: &str = "zw-easing-flip-adopt-2026-11-
 ///    font-variant-ligatures 期望 "" 对 raw 透传裸串 = REGRESSED 伪源）；
 /// ② 施加后序列化恒等（动画值 ≡ 基值，回落同一序列化结果语义不变）。
 /// A/B 定谳 2026-11-15：raw 透传臂在端点钳制形态（p≥1）撞空串期望。
-fn canonicalize(prop: &str, raw: &str, base: &ComputedStyle, sibling: Option<(u64, u64)>) -> Option<String> {
+pub(super) fn canonicalize(prop: &str, raw: &str, base: &ComputedStyle, sibling: Option<(u64, u64)>) -> Option<String> {
     let mut tmp = base.clone();
     let ser0 = serialize_computed_property_with_sibling(&tmp, prop, sibling);
     AnimationClock::apply_to_computed_style(
