@@ -402,10 +402,25 @@ fn query_core(
         // rule-\* 四属性例外：插值器端点含广播/有限 repeat 展开语义（to 单值
         // 对 from 多值位输出 `to, to`；computed 串化已展开有限 repeat）——echo
         // 原样形欠广播/展开位，回落插值臂（css-gaps-1 §column-row-rule-width）。
+        // rule-inset 八槽例外（刀 E v4）：跨单位端点 at(1) 须出 calc 混合终形
+        // （css-values-4 §8.5.6 calc-mix——`-100%`→`1px` at(1) 期望
+        // `calc(0% + 1px)`，echo 级联形 `1px` 欠混合形；同单位/关键字端点经
+        // 插值臂 t=1 与 echo 数值恒等，canonicalize 归一零截尾后同形）。
         if eased == 1.0
             && !matches!(
                 prop,
-                "column-rule-width" | "row-rule-width" | "column-rule-color" | "row-rule-color"
+                "column-rule-width"
+                    | "row-rule-width"
+                    | "column-rule-color"
+                    | "row-rule-color"
+                    | "column-rule-inset-cap-start"
+                    | "column-rule-inset-cap-end"
+                    | "column-rule-inset-junction-start"
+                    | "column-rule-inset-junction-end"
+                    | "row-rule-inset-cap-start"
+                    | "row-rule-inset-cap-end"
+                    | "row-rule-inset-junction-start"
+                    | "row-rule-inset-junction-end"
             )
         {
             return None;
@@ -634,6 +649,32 @@ mod tests {
         let base = new.clone();
         let v = query_override_for_sel("#t", "column-rule-width", &base, None).expect("广播覆盖");
         assert_eq!(v, "30px, 30px", "at(1) 广播位输出，got {v}");
+        clear_all();
+    }
+
+    /// eased==1.0 rule-inset 槽例外（刀 E v4）：跨单位端点 at(1) 须出 calc 混合
+    /// 终形（css-values-4 §8.5.6 calc-mix）——`-100%`→`1px` at(1) =
+    /// `calc(0% + 1px)`，不落 echo 短路（语料 rule-inset-interpolation 页钉：
+    /// echo 级联形 `1px` 欠混合形）。
+    #[test]
+    fn test_eased_one_rule_inset_calc_mix() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let mut prev = ComputedStyle::default();
+        let mut new = ComputedStyle::default();
+        prev.column_rule_inset_cap_start =
+            zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Percentage(-100.0));
+        new.column_rule_inset_cap_start = zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(1.0));
+        new.transition_property = vec!["column-rule-inset-cap-start".to_string()];
+        new.transition_duration = vec![100.0];
+        new.transition_delay = vec![-50.0];
+        new.transition_timing_function = vec![TimingFunctionValue::Steps(1, Some(StepPosition::Start))];
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "column-rule-inset-cap-start", &base, None).expect("calc 混合覆盖");
+        assert_eq!(v, "calc(0% + 1px)", "at(1) 跨单位混合终形，got {v}");
         clear_all();
     }
 }

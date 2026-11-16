@@ -921,6 +921,9 @@ pub(super) fn computed_style_by_handle(
                 // None除非该 handle 真有动画——几何面零干扰。
                 super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
                     .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
+                    // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
+                    // handle 通道同镜像；无动画 O(1) None。
+                    .or_else(|| super::cssa_registry::query_override_for_handle(handle, prop, s))
                     .unwrap_or_else(|| serialize_computed_property_with_sibling(s, prop, sibling))
             })
             .unwrap_or_default()
@@ -1016,8 +1019,12 @@ fn ensure_handle_view_slot(
                 let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
             }
             // s168：compute_styles_for_doc 为三通道共汇点——shadow 条目融合在其内部。
-            let (mut styles, _) = compute_styles_for_doc(&doc, &css);
+            let (mut styles, sheets) = compute_styles_for_doc(&doc, &css);
             apply_intrinsic_size_overrides(&doc, &mut styles);
+            // CSSA 声明式 keyframes 喂入（wptfyi-css 刀 E，2026-11-17）——视图槽
+            // 重建与代际槽同口径（handle 通道 createElement 动态元素 gCS 走本槽，
+            // interpolation corpus CSSA 元素即此形态——漏喂则 cssa 时钟空转全回落）。
+            super::cssa_registry::note_stylesheets(&sheets);
             *slot = Some((
                 html.to_string(),
                 drain_gen,
@@ -1449,6 +1456,10 @@ pub fn with_cached_document_styles<T>(
                         // s168：compute_styles_for_doc 汇点内融合 shadow 条目（scope 感知）。
                         let (doc, styles, sheets) =
                             compute_document_styles_with_inline_overrides_css(html, mutations, &css);
+                        // CSSA 声明式 keyframes 喂入（wptfyi-css 刀 E，2026-11-17）——
+                        // 重建产物即当前代际权威 stylesheet 集，@keyframes 规则在此
+                        // 注册进 gCS 咨询时钟（insert-or-replace 幂等）。
+                        super::cssa_registry::note_stylesheets(&sheets);
                         // scopes 与槽键同步重建（派生缓存非键）：占位空表会让后续同代
                         // finish_generation_update 的 `slot.10.is_empty()` 分支谓词失真
                         //（shadow 页误入增量通道，shadow 树内变更退化走文档表级联）。
@@ -1496,6 +1507,8 @@ pub fn with_cached_document_styles<T>(
                     // compute_styles_for_doc 汇点内融合 shadow 条目）。
                     let (doc, styles, sheets) =
                         compute_document_styles_with_inline_overrides_css(html, mutations, &css);
+                    // CSSA 声明式 keyframes 喂入（刀 E，同 tree_dirty 分支）。
+                    super::cssa_registry::note_stylesheets(&sheets);
                     let shadow_scopes = crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
                     *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries, shadow_entries, shadow_scopes));
                 }

@@ -1571,4 +1571,53 @@ mod tests {
             assert_eq!(resolve(base, FontWeightValue::Lighter), expect, "lighter for {base}");
         }
     }
+
+    /// wptfyi-css 刀 E 钉（css-cascade-4 §7.3）：rule-inset 8 longhand 非继承属性
+    /// 的**显式 inherit** = 复制父 computed（inheritance-ness 无关）——TRANS 通道
+    /// inherit→10px 块 from=20px 期望实证（interpolation-testcommon gCS 读父元素）。
+    #[test]
+    fn test_rule_inset_longhand_explicit_inherit() {
+        use zero_css_parser::values::RuleInsetComponent;
+        let mut parent = ComputedStyle::default();
+        parent.column_rule_inset_cap_start = RuleInsetComponent::Length(LengthValue::Px(20.0));
+        parent.row_rule_inset_junction_end = RuleInsetComponent::Length(LengthValue::Percentage(35.0));
+
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "column-rule-inset-cap-start"));
+        assert_eq!(
+            child.column_rule_inset_cap_start,
+            RuleInsetComponent::Length(LengthValue::Px(20.0))
+        );
+        assert!(inherit_property(&parent, &mut child, "row-rule-inset-junction-end"));
+        assert_eq!(
+            child.row_rule_inset_junction_end,
+            RuleInsetComponent::Length(LengthValue::Percentage(35.0))
+        );
+
+        // 未设槽保持自身值不串位（其余 6 槽不随单槽继承污染）。
+        assert_eq!(
+            child.column_rule_inset_junction_start,
+            ComputedStyle::default().column_rule_inset_junction_start
+        );
+    }
+
+    /// wptfyi-css 刀 E 钉：「rule-inset」简写全值复位臂（apply_initial_value 内）
+    /// per-slot 默认——junction 槽复位 0%（不是 cap 默认 0px 污染），cap 槽复位 0px。
+    #[test]
+    fn test_rule_inset_shorthand_reset_per_slot_defaults() {
+        use zero_css_parser::values::RuleInsetComponent;
+        let mut style = ComputedStyle::default();
+        style.column_rule_inset_cap_start = RuleInsetComponent::Length(LengthValue::Px(9.0));
+        style.column_rule_inset_junction_start = RuleInsetComponent::Length(LengthValue::Percentage(12.0));
+        assert!(apply_initial_value(&mut style, "rule-inset"));
+        assert_eq!(
+            style.column_rule_inset_cap_start,
+            RuleInsetComponent::Length(LengthValue::Px(0.0))
+        );
+        assert_eq!(
+            style.column_rule_inset_junction_start,
+            RuleInsetComponent::Length(LengthValue::Percentage(0.0)),
+            "junction 复位取自身默认 0%（WPT junction oracle）"
+        );
+    }
 }

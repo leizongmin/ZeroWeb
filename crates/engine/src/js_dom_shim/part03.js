@@ -16507,13 +16507,18 @@
           }
         }
         for (var _zup in _zwPv) {
+          // rule-inset 8 longhand 跨单位（px↔%）例外：引擎插值器对 LP 槽产 calc
+          // 混合（css-values-4 §8.5.6 interpolation-calc，css-gaps interpolation
+          // 页 oracle），单位集失配不再判 unsafe（其余属性维持原门——离散 echo
+          // 回落噪声防线）。
+          var _zwMixable = _zwIsRuleInsetLonghand(_zup);
           var _zwUs = null;
           for (var _zuj = 0; _zuj < _zwPv[_zup].length; _zuj++) {
             var _zwUm = String(_zwPv[_zup][_zuj]).match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || [];
             if (_zwUm.length === 0) continue; // 无单位侧（none/无单位数值/色值）与任意单位插值合法——首版误门 none→X 臂实证 b3 transforms −21
             var _zwUk = _zwUm.join(',');
             if (_zwUs === null) { _zwUs = _zwUk; }
-            else if (_zwUs !== _zwUk) { _zwUnsafe = true; break; }
+            else if (_zwUs !== _zwUk && !_zwMixable) { _zwUnsafe = true; break; }
           }
           if (_zwUnsafe) break;
         }
@@ -16587,6 +16592,15 @@
     if (s === 'cssOffset') return 'offset';
     if (s === 'cssFloat') return 'float';
     return s.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
+  }
+  // rule-inset 8 longhand 判别（kebab 原文或 camelCase 均收——WAAPI keyframes
+  // camelCase 入口先转 kebab 再判）。引擎对这 8 槽支持 px↔% calc 混合插值
+  //（css-gaps-1 §inset，css-values-4 §8.5.6），WAAPI 注册单位闸例外依据。
+  // A/B 快照二进制 provenance 指纹（zw-ruleinset-unitmix-2026-11-17）：刀 E shim
+  // 单位闸例外轮的源侧标记——strings 抽验新 shim 装载（include_str 全量入二进制）。
+  function _zwIsRuleInsetLonghand(name) {
+    var s = String(name).toLowerCase();
+    return /^(column|row)-rule-inset-(cap|junction)-(start|end)$/.test(s) || /^rule-inset-(cap|junction)-(start|end)$/.test(s);
   }
   function _zwWaapiSpecKeyframes(keyframes) {
     var arr = Array.isArray(keyframes) ? keyframes : ((keyframes && typeof keyframes === 'object') ? [keyframes] : []);

@@ -586,7 +586,9 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
         // wptfyi-css css-gaps 刀 D：rule-inset 槽插值（css-gaps-1 §inset）——
         // computed 端点同单位（px/%）线性 lerp（parse_len_pct_val 同单位门），
-        // 跨单位/含 overlap-join 端点离散切换（css-values-4 §8.5.6 ≥0.5 → to）。
+        // 跨单位 calc 混合（刀 E：css-values-4 §8.5.6 calc-mix——interpolation
+        // 页 10px→-10% 期望 `calc(-3% + 7px)` 线性混合形）；overlap-join 端点
+        // 离散切换（css-values-4 §8.5.6 ≥0.5 → to）。
         "column-rule-inset-cap-start"
         | "column-rule-inset-cap-end"
         | "column-rule-inset-junction-start"
@@ -598,6 +600,8 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             (Some((fv, fu)), Some((tv, tu))) if fu == tu => {
                 format!("{:.2}{}", lerp(fv, tv, t), fu)
             }
+            (Some((fv, fu)), Some((tv, tu))) => blend_rule_inset_lp(&fv, &fu, &tv, &tu, t)
+                .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
             _ if t >= 0.5 => to.to_string(),
             _ => from.to_string(),
         },
@@ -1034,8 +1038,10 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // rule-color 列表插值（结构语义同 width strict 臂；失配对 None 不启动过渡）。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t),
         // wptfyi-css css-gaps 刀 D：rule-inset 槽严格插值（css-gaps-1 §inset）——
-        // 同单位（px/%）computed 端点 lerp；跨单位/overlap-join 端点对 None
-        //（非 animatable 对不启动过渡，css-transitions §starting-of-transitions）。
+        // 同单位（px/%）computed 端点 lerp；跨单位 calc 混合（刀 E，css-values-4
+        // §8.5.6——过渡登记门放行，interpolation 页 px↔% 对 168F 根因）；overlap-join
+        // 端点对 None（非 animatable 对不启动过渡，css-transitions §starting-of-
+        // transitions）。
         "column-rule-inset-cap-start"
         | "column-rule-inset-cap-end"
         | "column-rule-inset-junction-start"
@@ -1046,7 +1052,11 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         | "row-rule-inset-junction-end" => {
             let (fv, fu) = parse_len_pct_val(from)?;
             let (tv, tu) = parse_len_pct_val(to)?;
-            (fu == tu).then(|| format!("{:.2}{}", lerp(fv, tv, t), fu))
+            if fu == tu {
+                Some(format!("{:.2}{}", lerp(fv, tv, t), fu))
+            } else {
+                blend_rule_inset_lp(&fv, &fu, &tv, &tu, t)
+            }
         }
         // 无臂属性：非 animatable 对（transition 不启动——咨询回落级联终值 echo）。
         _ => None,
@@ -1542,6 +1552,31 @@ fn parse_len_pct_val(s: &str) -> Option<(f64, String)> {
         .map(|n| (n, "px".to_string()))
 }
 
+/// rule-inset 槽跨单位（px↔%）calc 混合插值（css-values-4 §8.5.6 interpolation
+/// of length-percentage）：两端点逐单位系数线性组合——`[(1-t)·from + t·to]` 产
+/// `calc(P% ± Xpx)` canonical 文本。px 系数为 0 → 纯 `P%`（端点简化——语料
+/// interpolation 页 10px→-10% at(1) 期望 `-10%`）；% 系数为 0 保 calc 形（at(0)
+/// 期望 `calc(0% + 10px)`）。同单位对/防御性 None（调用方 lerp/离散回落承担）。
+/// 两侧期望/实际都过同一 parse+gCS 串化器（interpolation-testcommon expected
+/// 元素 setProperty 同通道），结构/系数一致性由构造保证。
+/// https://drafts.csswg.org/css-values-4/#interpolation-calc
+fn blend_rule_inset_lp(fv: &f64, fu: &str, tv: &f64, tu: &str, t: f64) -> Option<String> {
+    if (fu == "%" && tu == "%") || (fu == "px" && tu == "px") {
+        return None;
+    }
+    // 统一形式：pct 系数 = (1-t)·from_pct + t·to_pct；px 系数同理（对侧单位分量恒 0）。
+    let pct = (1.0 - t) * if fu == "%" { *fv } else { 0.0 } + t * if tu == "%" { *tv } else { 0.0 };
+    let px = (1.0 - t) * if fu == "px" { *fv } else { 0.0 } + t * if tu == "px" { *tv } else { 0.0 };
+    if px.abs() < 1e-9 {
+        return Some(format!("{:.2}%", pct));
+    }
+    if px < 0.0 {
+        Some(format!("calc({:.2}% - {:.2}px)", pct, -px))
+    } else {
+        Some(format!("calc({:.2}% + {:.2}px)", pct, px))
+    }
+}
+
 /// offset-anchor `X Y` 对解析。
 fn parse_len_pair_pct(s: &str) -> Option<((f64, String), (f64, String))> {
     let parts: Vec<&str> = s.split_whitespace().collect();
@@ -1788,6 +1823,29 @@ impl AnimationClock {
         let Some(mut keyframes) = self.keyframes_registry.get(&config.name).cloned() else {
             return false;
         };
+        // E5（wptfyi-css 刀 E，2026-11-17）css-animations-1 §keyframes /
+        // css-cascade-4 §default：关键帧 'initial'/'unset' 关键字解析为属性初始值
+        // （interpolation corpus neutral→15px、initial→10px 等块的 keyword 端点）。
+        // 无元素依赖（ComputedStyle::default() + gCS 序列化器同通道），start 时
+        // 一次性解析，WAAPI（start_animation 委托，underlying=None）与 CSSA
+        //（underlying=Some）两端共享。'inherit' 需父 computed，此处不解析
+        //（FIXME(kf-inherit)），原值维持走既有插值回退。串化为空（applier 未覆盖
+        // 属性）保持原值——避免空串端点污染插值。
+        for point in &mut keyframes {
+            for (name, value) in point.properties.iter_mut() {
+                let v = value.trim();
+                if v.eq_ignore_ascii_case("initial") || v.eq_ignore_ascii_case("unset") {
+                    let init = crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(
+                        &ComputedStyle::default(),
+                        name,
+                        None,
+                    );
+                    if !init.is_empty() {
+                        *value = init;
+                    }
+                }
+            }
+        }
         if let Some(style) = underlying {
             resolve_implicit_boundaries(&mut keyframes, style);
             // R5189：keyframe 值 `revert-layer` 在插值前解析为 underlying（动画未叠加时）
@@ -2242,12 +2300,16 @@ fn interpolate_keyframes(
             .collect();
     }
 
-    // 找到包含 progress 的区间 [i, i+1]
+    // 找到包含 progress 的区间 [i, i+1]。progress 落在末帧（如 t=1 / fill 终态）
+    // 时**不选末帧自身**（span=0 会退化为 to 帧声明原样）而停在末段 [last-1, last]
+    //——normalized=1.0 走端点 blend，产出经 canonicalize/apply 过 gCS 串化器与
+    // WPT 期望（at(1) 混合公式形，如 rule-inset 跨单位对 `calc(0% + 1px)`）对齐；
+    // apply 解析两形同值，渲染面零漂移（wptfyi-css 刀 E，2026-11-17）。
     let mut from_idx = 0;
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.offset <= progress {
+        if kf.offset <= progress && i + 1 < keyframes.len() {
             from_idx = i;
-        } else {
+        } else if kf.offset > progress {
             break;
         }
     }
@@ -4592,13 +4654,15 @@ mod tests {
         if let Some(p) = props.iter().find(|p| p.name == "transform") {
             assert!(p.value.contains("translate"), "离散回退应取 from 值，got {p:?}");
         }
-        // p=1.0 → to 侧 = underlying 序列化（默认 ComputedStyle → "none"），
-        // 不再是 revert-layer 关键字（R5191：transform 纳入 underlying 面后的规范语义）。
+        // p=1.0 → 端点落在末段 [from, to] 跑 at(1) 混合串化（刀 E 端点语义），
+        // to 侧 transform 串化为 translate 形。revert-layer 关键字解析发生在
+        // keyframes 注册层（to 帧已存 underlying "none"，混合起点即已解析值），
+        // 端点输出不再逐字回放帧声明；若解析失败混合将不可用而非产出 to 形。
         let props_end = clock.tick(1, 2.0);
         let to_val = props_end.iter().find(|p| p.name == "transform").expect("to 侧输出");
         assert_eq!(
-            to_val.value, "none",
-            "revert-layer 应解析为 underlying 序列化，got {to_val:?}"
+            to_val.value, "translateY(0px)",
+            "revert-layer 应解析为 underlying 并经端点混合串化为 to 形，got {to_val:?}"
         );
     }
 
@@ -4792,18 +4856,25 @@ mod tests {
             Some("6.00px")
         );
         // 跨单位 / overlap-join 端点对 None（非 animatable 对不启动过渡）。
-        assert!(interpolate_property_value_strict("column-rule-inset-cap-start", "10px", "20%", 0.5).is_none());
+        // 刀 E：跨单位对 strict 门放行（css-values-4 §8.5.6 calc 混合——TRANS 通道
+        // px↔% 对 168F 根因，10px→20% @0.5 = calc(10.00% + 5.00px)）。
+        assert_eq!(
+            interpolate_property_value_strict("column-rule-inset-cap-start", "10px", "20%", 0.5).as_deref(),
+            Some("calc(10.00% + 5.00px)")
+        );
+        // overlap-join 端点对仍 None（不可解析端点不启动过渡）。
         assert!(
             interpolate_property_value_strict("column-rule-inset-cap-start", "overlap-join", "10px", 0.5).is_none()
         );
-        // 非同单位非严格门离散切换（t>=0.5 → to）。
+        // 刀 E：宽松通道跨单位线性混合（WPT per-at 期望即线性形；旧 t<0.5 离散
+        // 翻转已被 blend 取代——interpolation 页 168F 根因）。
         assert_eq!(
             interpolate_property_value("column-rule-inset-cap-start", "10px", "20%", 0.3),
-            "10px"
+            "calc(6.00% + 7.00px)"
         );
         assert_eq!(
             interpolate_property_value("column-rule-inset-cap-start", "10px", "20%", 0.7),
-            "20%"
+            "calc(14.00% + 3.00px)"
         );
     }
 
@@ -4847,5 +4918,137 @@ mod tests {
             underlying_individual_value(&style, "row-rule-inset-cap-start"),
             Some("overlap-join".to_string())
         );
+    }
+
+    /// 刀 E 钉：跨单位 calc 混合代数（css-values-4 §8.5.6 interpolation-calc）——
+    /// px↔% 端点对逐单位系数线性，px 系数零 → 纯 % 简化（无 calc 形），% 系数零
+    /// 保 calc 形（WPT 期望 `calc(0% + 10px)` 结构）。
+    #[test]
+    fn test_rule_inset_blend_cross_unit() {
+        // 10px→-10% @ 0.5：pct=-5、px=5 → calc(-5.00% + 5.00px)。
+        assert_eq!(
+            blend_rule_inset_lp(&10.0, "px", &-10.0, "%", 0.5),
+            Some("calc(-5.00% + 5.00px)".into())
+        );
+        // -100%→1px @ 0.5：pct=-50、px=0.5 → calc(-50.00% + 0.50px)。
+        assert_eq!(
+            blend_rule_inset_lp(&-100.0, "%", &1.0, "px", 0.5),
+            Some("calc(-50.00% + 0.50px)".into())
+        );
+        // t=1：px 系数零 → 纯 %（to 端简化）。
+        assert_eq!(
+            blend_rule_inset_lp(&10.0, "px", &-10.0, "%", 1.0),
+            Some("-10.00%".into())
+        );
+        // 0%→10px @ 0.5：% 系数非零 → calc(0.00% + 5.00px)。
+        assert_eq!(
+            blend_rule_inset_lp(&0.0, "%", &10.0, "px", 0.5),
+            Some("calc(0.00% + 5.00px)".into())
+        );
+        // 负 px 分量折叠 ' - '：0%→-10px @ 0.5 → calc(0.00% - 5.00px)。
+        assert_eq!(
+            blend_rule_inset_lp(&0.0, "%", &-10.0, "px", 0.5),
+            Some("calc(0.00% - 5.00px)".into())
+        );
+        // 同单位对不处理（同单位走 lerp 臂）。
+        assert_eq!(blend_rule_inset_lp(&10.0, "px", &20.0, "px", 0.5), None);
+        assert_eq!(blend_rule_inset_lp(&10.0, "%", &20.0, "%", 0.5), None);
+    }
+
+    /// 刀 E 钉：宽松插值 rule-inset 跨单位入口（tick 通道）——junction 初值
+    /// Percentage(0.0)（WPT oracle junction initial→-40% 期望 % 线性自 0%）。
+    #[test]
+    fn test_rule_inset_interp_cross_unit_loose() {
+        assert_eq!(
+            interpolate_property_value("column-rule-inset-junction-start", "10px", "-10%", 0.5),
+            "calc(-5.00% + 5.00px)"
+        );
+        assert_eq!(
+            interpolate_property_value("row-rule-inset-cap-end", "0%", "10px", 0.5),
+            "calc(0.00% + 5.00px)"
+        );
+        // 同单位维持既有 lerp 形（零回归方向）。
+        assert_eq!(
+            interpolate_property_value("row-rule-inset-cap-end", "0px", "10px", 0.5),
+            "5.00px"
+        );
+    }
+
+    /// 刀 E 钉：junction 初值 0% / cap 初值 0px（default_impl 同笔改动的 oracle
+    /// 断言——junction initial→-40% 块期望 % 线性、cap initial→10px 块期望 px 线性）。
+    #[test]
+    fn test_rule_inset_default_initial_values() {
+        use zero_css_parser::values::RuleInsetComponent;
+        let st = ComputedStyle::default();
+        assert!(matches!(
+            st.column_rule_inset_junction_start,
+            RuleInsetComponent::Length(zero_style_system::LengthValue::Percentage(v)) if v == 0.0
+        ));
+        assert!(matches!(
+            st.row_rule_inset_junction_end,
+            RuleInsetComponent::Length(zero_style_system::LengthValue::Percentage(v)) if v == 0.0
+        ));
+        assert!(matches!(
+            st.column_rule_inset_cap_start,
+            RuleInsetComponent::Length(zero_style_system::LengthValue::Px(v)) if v == 0.0
+        ));
+        assert!(matches!(
+            st.row_rule_inset_cap_start,
+            RuleInsetComponent::Length(zero_style_system::LengthValue::Px(v)) if v == 0.0
+        ));
+    }
+
+    /// 刀 E 钉（E5）：关键帧 'initial'/'unset' 关键字 start 时解析为属性初始值——
+    /// clock 注册 initial→10px 帧，t=0.5 期望 lerp(0px, 10px, 0.5) = 5.00px
+    ///（css-animations-1 §keyframes + css-cascade-4 §default）。'inherit' 不解析
+    ///（需父 computed）→ 既有离散回退（t≥0.5 → to）。
+    #[test]
+    fn test_keyframe_initial_keyword_resolution() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "kw",
+            vec![
+                (0.0, vec![("column-rule-inset-cap-start", "initial")]),
+                (100.0, vec![("column-rule-inset-cap-start", "10px")]),
+            ],
+        ));
+        let config = AnimationConfig {
+            name: "kw".into(),
+            duration: 1.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation(1, &config));
+        let props = clock.tick(1, 0.5);
+        let got = props
+            .iter()
+            .find(|p| p.name == "column-rule-inset-cap-start")
+            .expect("cap-start update");
+        assert_eq!(got.value, "5.00px", "initial 解析为 0px 后 lerp");
+
+        // unset（rule-inset 非继承 ≡ initial）同解析。
+        let mut clock2 = AnimationClock::new();
+        clock2.register_keyframes(&make_keyframes(
+            "kw2",
+            vec![
+                (0.0, vec![("column-rule-inset-cap-start", "unset")]),
+                (100.0, vec![("column-rule-inset-cap-start", "10px")]),
+            ],
+        ));
+        let config2 = AnimationConfig {
+            name: "kw2".into(),
+            ..config
+        };
+        assert!(clock2.start_animation(1, &config2));
+        let props2 = clock2.tick(1, 0.5);
+        let got2 = props2
+            .iter()
+            .find(|p| p.name == "column-rule-inset-cap-start")
+            .expect("cap-start update");
+        assert_eq!(got2.value, "5.00px");
     }
 }

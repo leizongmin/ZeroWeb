@@ -43,6 +43,13 @@ pub(crate) mod js_anim_registry;
 // pub(crate)：callbacks 换代边界登记点与 computed_style_cache handle 通道消费。
 pub(crate) mod transition_registry;
 
+// CSS Animations 声明式 @keyframes 同步读注册表（wptfyi-css 刀 E，2026-11-17）——
+// animation-* + @keyframes 的 gCS 同步读求值通道（transition_registry 同型镜像：
+// 渲染管线 AnimationClock 只进渲染层副本，corpus CSSA 测试同一脚本轮次写→读，
+// 泵帧不介入）。keyframes 经 computed_style_cache 代际重建喂入，per-identity
+// 动画状态首咨询锚 start。pub(crate)：消费点同 transition_registry。
+pub(crate) mod cssa_registry;
+
 // WebCrypto host 实现（R2973 从本文件拆出，控制主文件行数）。纯字节级 crypto，无 DOM/CSS 依赖。
 mod crypto;
 pub use crypto::*;

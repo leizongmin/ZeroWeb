@@ -587,6 +587,9 @@ pub fn register_dom_callbacks(
     // CSS Transition 同步读注册表同生命周期（wptfyi-css Transition 通道刀，2026-11-16）
     // ——导航/新 WebView 装新快照清表，旧页过渡不跨文档泄漏。
     crate::js_dom_bridge::transition_registry::clear_all();
+    // CSS Animations 声明式同步读注册表同生命周期（刀 E）——同清表约束；注意
+    // keyframes registry 在 CLOCK 内，同点清零（新页 stylesheet 重建重喂）。
+    crate::js_dom_bridge::cssa_registry::clear_all();
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
     // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
@@ -2491,6 +2494,12 @@ pub fn register_dom_callbacks(
                 if let Some(v) = super::transition_registry::query_override_for_sel(sel, prop, style, *sibling) {
                     return v;
                 }
+                // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
+                // @keyframes + animation-* 的同步读通道（cssa_registry 模块注释）；
+                // 无 animation-name 元素 O(1) None 零干扰。
+                if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style) {
+                    return v;
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2548,11 +2557,16 @@ pub fn register_dom_callbacks(
             let anim_override = super::js_anim_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
             // CSS Transition 咨询（同 cache-hit 臂镜像）——以新算基样式查覆盖值。
             let trans_override = super::transition_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
+            // CSS Animations 声明式咨询（同 cache-hit 臂镜像，刀 E）。
+            let cssa_override = super::cssa_registry::query_override_for_sel(sel, prop, &entry.0);
             map.insert((*sel).clone(), entry);
             if let Some(v) = anim_override {
                 return v;
             }
             if let Some(v) = trans_override {
+                return v;
+            }
+            if let Some(v) = cssa_override {
                 return v;
             }
             value

@@ -330,31 +330,27 @@ impl Default for ComputedStyle {
                 ColorValue::CurrentColor,
             )],
 
-            // Rule Inset（css-gaps-1 §inset）：8 longhand 槽初值 0px 非继承。
-            column_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
-            ),
-            column_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
-            ),
+            // Rule Inset（css-gaps-1 §inset）：8 longhand 槽初值非继承。cap 槽初值
+            // 0px；junction 槽初值 0%（语料 interpolation 页 junction initial→-40%
+            // 期望 % 线性 lerp 自 0%、cap initial→10px 期望 px 线性自 0px——
+            // Chromium oracle，css-gaps-1 §inset initial 表以活体语料为准）。
+            // https://drafts.csswg.org/css-gaps-1/#inset
+            column_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            column_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
             column_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
+                LengthValue::Percentage(0.0),
             ),
             column_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
+                LengthValue::Percentage(0.0),
             ),
-            row_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
-            ),
-            row_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
-            ),
+            row_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            row_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
             row_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
+                LengthValue::Percentage(0.0),
             ),
-            row_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(
-                LengthValue::Px(0.0),
-            ),
+            row_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Percentage(
+                0.0,
+            )),
 
             // Contain
             contain: ContainComputedValue::None,

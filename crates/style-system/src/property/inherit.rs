@@ -576,6 +576,43 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.column_rule_style = parent.column_rule_style.clone();
             true
         }
+        // rule-inset 8 longhand `inherit` 关键字臂（css-gaps-1 §inset）：非继承属性
+        // 的显式 `inherit` = 复制父 computed 槽值（css-cascade-4 §7.3 关键字解析
+        // 与 inherited-ness 无关——语料 interpolation 页 trans inherit→10px
+        // from=20px 期望 px lerp 实证）。
+        // https://drafts.csswg.org/css-cascade-4/#defaulting-keywords
+        "column-rule-inset-cap-start" => {
+            child.column_rule_inset_cap_start = parent.column_rule_inset_cap_start.clone();
+            true
+        }
+        "column-rule-inset-cap-end" => {
+            child.column_rule_inset_cap_end = parent.column_rule_inset_cap_end.clone();
+            true
+        }
+        "column-rule-inset-junction-start" => {
+            child.column_rule_inset_junction_start = parent.column_rule_inset_junction_start.clone();
+            true
+        }
+        "column-rule-inset-junction-end" => {
+            child.column_rule_inset_junction_end = parent.column_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-cap-start" => {
+            child.row_rule_inset_cap_start = parent.row_rule_inset_cap_start.clone();
+            true
+        }
+        "row-rule-inset-cap-end" => {
+            child.row_rule_inset_cap_end = parent.row_rule_inset_cap_end.clone();
+            true
+        }
+        "row-rule-inset-junction-start" => {
+            child.row_rule_inset_junction_start = parent.row_rule_inset_junction_start.clone();
+            true
+        }
+        "row-rule-inset-junction-end" => {
+            child.row_rule_inset_junction_end = parent.row_rule_inset_junction_end.clone();
+            true
+        }
         "column-fill" => {
             child.column_fill = parent.column_fill.clone();
             true
@@ -1443,22 +1480,19 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.column_rule_style = default_style.column_rule_style.clone();
             true
         }
-        // rule-inset 简写族复位（css-gaps-1 §inset，15 简写）：目标槽按简写
-        // 投影精准回落初值 0px（rule-width/rule-style 臂同模板）。
+        // rule-inset 简写族复位（css-gaps-1 §inset，15 简写）：目标槽按简写投影
+        // 精准回落各槽初值（cap 0px / junction 0%——default_impl 口径；
+        // rule-width/rule-style 臂同模板）。
         // https://drafts.csswg.org/css-gaps-1/#inset
         "rule-inset" => {
-            for f in [
-                &mut style.column_rule_inset_cap_start,
-                &mut style.column_rule_inset_cap_end,
-                &mut style.column_rule_inset_junction_start,
-                &mut style.column_rule_inset_junction_end,
-                &mut style.row_rule_inset_cap_start,
-                &mut style.row_rule_inset_cap_end,
-                &mut style.row_rule_inset_junction_start,
-                &mut style.row_rule_inset_junction_end,
-            ] {
-                *f = default_style.column_rule_inset_cap_start.clone();
-            }
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
             true
         }
         "rule-inset-cap" => {
