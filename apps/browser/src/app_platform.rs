@@ -1269,6 +1269,12 @@ impl BrowserApp {
         if width == 0 || height == 0 {
             return;
         }
+        // T77 双审查 DF1：设备丢失后丢弃缓存渲染器，走下方重建分支自愈
+        // （复用前不检测则死设备永久驻留；窗口主路径同款先例 R3281 #3）。
+        if self.capture_gpu_renderer.as_ref().is_some_and(GpuRenderer::is_device_lost) {
+            tracing::warn!("browser: capture GPU 设备丢失，丢弃离屏渲染器待重建");
+            self.capture_gpu_renderer = None;
+        }
         if self.capture_gpu_renderer.is_some() && self.capture_gpu_size == (width, height) {
             return;
         }
@@ -1303,6 +1309,12 @@ impl BrowserApp {
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
         scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
+        // T77 双审查 DF1：设备丢失后丢弃缓存渲染器并按尺寸重建（此前丢失后
+        // readback 永久 Err；窗口主路径同款恢复先例 R3281 #3）。
+        if self.capture_gpu_renderer.as_ref().is_some_and(GpuRenderer::is_device_lost) {
+            tracing::warn!("browser: capture GPU 设备丢失，丢弃离屏渲染器待重建");
+            self.capture_gpu_renderer = None;
+        }
         if self.capture_gpu_renderer.is_none() || self.capture_gpu_size != (width, height) {
             let renderer = GpuRenderer::new_headless(width, height)
                 .map_err(|error| format!("GPU capture init failed: {error}"))?;

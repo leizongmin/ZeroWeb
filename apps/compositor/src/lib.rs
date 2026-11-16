@@ -64,8 +64,9 @@ static RASTER_STAGE_TRACE: std::sync::LazyLock<bool> =
 
 /// T77 细分仪拍：单帧阶段计时状态。门关时 `mark*` 直通返回（计时点
 /// `Instant::now()` 仅 start 一次，热路径可忽略）；门开时每个阶段透出一行
-/// `RASTER_STAGE_TRACE`，`stage_ms` 为距上一阶段耗时、`since_queue_ms` 为距
-/// queue_recv 累计耗时——时间基准随帧局部，不与进程级 `PIPELINE_T0` 混用。
+/// `RASTER_STAGE_TRACE`。`mark` 的 `stage_ms` 为距上一阶段耗时；`mark_at` 的
+/// `stage_ms` 为显式传入起点到当下的阶段自身耗时；两者 `since_queue_ms` 均为
+/// 距 queue_recv 累计耗时——时间基准随帧局部，不与进程级 `PIPELINE_T0` 混用。
 pub(crate) struct FrameStageTrace {
     enabled: bool,
     frame_id: u64,
@@ -94,13 +95,23 @@ impl FrameStageTrace {
         self.emit(stage, now);
     }
 
-    /// 标记一个不常发生的阶段（如 GPU 上下文惰性创建）：仅显式传入起点时刻时
-    /// 才计时透出，常零阶段（每帧 stage_ms≈0）不产生日志噪声。
+    /// 标记一个不常发生的阶段（如 GPU 上下文惰性创建）：`since` 为该阶段起点，
+    /// `stage_ms`=阶段自身耗时（since→now，与 render-foundation `since.elapsed()`
+    /// 同语义），`since_queue_ms` 仍为距 queue_recv 累计；emit 后把 t_last 推进到
+    /// now，阶段耗时不被后续 `mark` 的间隙重复计入（T77 双审查 DF2：此前误用
+    /// emit 把 stage_ms 算成上一阶段→阶段起点的空档，创建耗时从账本消失）。
     pub(crate) fn mark_at(&mut self, stage: &str, since: std::time::Instant) {
         if !self.enabled {
             return;
         }
-        self.emit(stage, since);
+        let now = std::time::Instant::now();
+        let stage_ms = now.duration_since(since).as_millis();
+        let since_queue_ms = now.duration_since(self.t_queue).as_millis();
+        tracing::info!(
+            "RASTER_STAGE_TRACE frame_id={} stage={stage} stage_ms={stage_ms} since_queue_ms={since_queue_ms} mode=compositor",
+            self.frame_id
+        );
+        self.t_last = now;
     }
 
     fn emit(&mut self, stage: &str, at: std::time::Instant) {

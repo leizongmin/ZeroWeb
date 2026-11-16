@@ -118,8 +118,8 @@ fn rasterize_gpu(
     if gpu_renderer.is_none() {
         let t = std::time::Instant::now();
         *gpu_renderer = GpuRenderer::new_headless(width, height).ok();
-        // 帧内惰性创建（预热未完成/失败/设备丢失重建）——once 级事件，常零阶段
-        // 不透出（见 FrameStageTrace::mark_at）。
+        // 帧内惰性创建（预热未完成/失败/设备丢失重建）——once 级事件，mark_at
+        // 记录创建自身耗时（T77 双审查 DF2 语义对齐）。
         trace.mark_at("gpu_lazy_create", t);
     }
     let Some(gpu) = gpu_renderer.as_mut() else {
