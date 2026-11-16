@@ -13143,8 +13143,20 @@
     // 是 void 语料形，对块 caret 则把 br 推出宿主直子块（got `<br>de<div>…`
     // 逃逸形）。仅 lineBreakOnly 臂重映射（⓪/①/② ip 臂 boundary 语义不动
     // ——⓪ gate 读 boundaryNode、① gate 读 boundaryParent === host）。
+    var lbTag = String(sc.tagName || '').toLowerCase();
+    // ILB-DTP-REMAP C+F 外迁族刀（2026-11-17 ilb 普查 ①族 6 键，census
+    // evidence 2026-11-16）：dt/dd/pre 元素 caret（`<dl><dt>{}<br></dt>` /
+    // `<pre>foo<br>{}<br></pre>` 形）原走 (父, sc) 臂把 br 推出容器外
+    //（got `<dl><br><dt><br></dt>` 外迁形）——spec implementation.js :7383
+    // commands.insertlinebreak：br 插 active range start 所在元素内
+    //（https://w3c.github.io/editing/execCommand.html#the-insertlinebreak-command
+    // 步骤 "insert <br>"），dt/dd/pre 同 div/p 为 br 合法子容器，落位在
+    // childNodes[so] 前不外迁。不扩共享窄表 _zwCeIsBlockTagName（ip 拆分
+    // 边界语义不动，C4 刀注）；语料 dt/dd/pre 元素 caret 案恰此 6 键，
+    // 文本 caret 案走 isText 臂不受影响（零 P2F 面）。
     if (lineBreakOnly && !isText && sc !== host
-        && _zwCeIsBlockTagName(String(sc.tagName || '').toLowerCase())) {
+        && (_zwCeIsBlockTagName(lbTag) || lbTag === 'dt' || lbTag === 'dd'
+            || lbTag === 'pre')) {
       boundaryParent = sc;
       boundaryNode = (sc.childNodes || [])[so] || null;
       boundaryOff = so;

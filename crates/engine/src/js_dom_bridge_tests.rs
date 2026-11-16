@@ -234,3 +234,6 @@ include!("js_dom_bridge_tests/part122_ip_c5_root_bare_br_pins.rs");
 include!("js_dom_bridge_tests/part123_ip_i5_pre_lf_pins.rs");
 include!("js_dom_bridge_tests/part124_ihtml_block_pins.rs");
 include!("js_dom_bridge_tests/part125_ihtml_residual_pins.rs");
+// ilb C+F 外迁族刀钉测（2026-11-17）：dt/dd/pre 元素 caret 行断 br 落容器
+// 内不外迁＋li 现役绿形控制键。
+include!("js_dom_bridge_tests/part126_ilb_dt_dd_pre_pins.rs");
