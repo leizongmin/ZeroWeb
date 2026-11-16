@@ -617,6 +617,158 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
     }
 }
 
+/// wptfyi-css Transition 通道刀（2026-11-16）：严格插值——**端点按臂解析成功且
+/// 插值器真插值**（非离散回落）才返回插值串；任一端点解析失败 / 异构离散步 /
+/// 无臂属性 → `None`。
+///
+/// 与 [`interpolate_property_value`] 的区别：后者对不可插值对回落 css-values-4
+/// §8.5.6 离散翻转（≥0.5 → to）——那是**已启动过渡**的段内语义；css-transitions
+/// §starting-of-transitions 规定**非 animatable 值对根本不启动过渡**（值立即跳
+/// 终值）。Transition gCS 咨询据此以 `None` 判「不启动」：回落既有级联通道（= 终
+/// 值 echo，刀前行为），端点 echo 池结构零扰动。端点严格性同时排除关键字端点
+/// 0 数值化伪插值（`width: auto→100px` 经宽松 parse_px 会产出垃圾中值）。
+pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: &str, t: f64) -> Option<String> {
+    match property {
+        "opacity" => {
+            let fa = parse_f64(from)?;
+            let ta = parse_f64(to)?;
+            Some(format!("{:.4}", lerp(fa, ta, t)))
+        }
+        "background-color" | "background" | "color" | "border-color" => {
+            let from_c = parse_color_strict(from)?;
+            let to_c = parse_color_strict(to)?;
+            let (r, g, b, a) = lerp_color(from_c, to_c, t);
+            Some(format!(
+                "rgba({}, {}, {}, {:.2})",
+                r.round() as u8,
+                g.round() as u8,
+                b.round() as u8,
+                a
+            ))
+        }
+        "width" | "height" | "top" | "left" | "right" | "bottom" | "margin-top" | "margin-right" | "margin-bottom"
+        | "margin-left" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left" | "font-size"
+        | "letter-spacing" | "word-spacing" => {
+            let fa = parse_px_strict(from)?;
+            let ta = parse_px_strict(to)?;
+            Some(format!("{:.2}px", lerp(fa, ta, t)))
+        }
+        "translate" => {
+            // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
+            let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
+                let (fv, fu) = parse_len_pct_val(f)?;
+                let (tv, tu) = parse_len_pct_val(s)?;
+                (fu == tu).then_some((lerp(fv, tv, t), fu))
+            };
+            let fp: Vec<&str> = from.split_whitespace().collect();
+            let tp: Vec<&str> = to.split_whitespace().collect();
+            if fp.is_empty() || fp.len() != tp.len() || fp.len() > 2 {
+                return None;
+            }
+            let mut out = Vec::with_capacity(fp.len());
+            for (f_tok, t_tok) in fp.iter().zip(tp.iter()) {
+                let (v, u) = interp_pair(f_tok, t_tok)?;
+                out.push(format!("{v:.2}{u}"));
+            }
+            Some(out.join(" "))
+        }
+        "rotate" => {
+            let fa = parse_angle_deg_strict(from)?;
+            let ta = parse_angle_deg_strict(to)?;
+            Some(format!("{:.2}deg", lerp(fa, ta, t)))
+        }
+        "scale" => {
+            let interp_scale = |s: &str| -> Option<f64> { s.trim().parse::<f64>().ok() };
+            let fp: Vec<&str> = from.split_whitespace().collect();
+            let tp: Vec<&str> = to.split_whitespace().collect();
+            if fp.is_empty() || fp.len() > 2 || fp.len() != tp.len() {
+                return None;
+            }
+            let sx = lerp(interp_scale(fp[0])?, interp_scale(tp[0])?, t);
+            let sy = if fp.len() == 2 {
+                lerp(interp_scale(fp[1])?, interp_scale(tp[1])?, t)
+            } else {
+                sx
+            };
+            if (sx - sy).abs() < 1e-6 {
+                Some(format!("{sx:.4}"))
+            } else {
+                Some(format!("{sx:.4} {sy:.4}"))
+            }
+        }
+        "offset-distance" => {
+            let (fv, fu) = parse_len_pct_val(from)?;
+            let (tv, tu) = parse_len_pct_val(to)?;
+            (fu == tu).then(|| format!("{:.2}{}", lerp(fv, tv, t), fu))
+        }
+        "offset-rotate" => {
+            let fa = parse_offset_rotate_deg(from)?;
+            let ta = parse_offset_rotate_deg(to)?;
+            Some(format!("{:.2}deg", lerp(fa, ta, t)))
+        }
+        "offset-anchor" | "offset-position" => {
+            let (fx, fy) = parse_len_pair_pct(from)?;
+            let (tx, ty) = parse_len_pair_pct(to)?;
+            (fx.1 == tx.1 && fy.1 == ty.1)
+                .then(|| format!("{:.2}{} {:.2}{}", lerp(fx.0, tx.0, t), fx.1, lerp(fy.0, ty.0, t), fy.1))
+        }
+        "offset-path" => clip_interp::interpolate_offset_path(from, to, t),
+        "filter" | "backdrop-filter" => interpolate_filter_list(from, to, t),
+        "transform" => transform_interp::interpolate_transform_value(from, to, t),
+        "clip-path" => clip_interp::interpolate_clip_path(from, to, t),
+        "font-weight" => {
+            let fa = parse_f64(from)?;
+            let ta = parse_f64(to)?;
+            Some(format!("{}", lerp(fa, ta, t).round().clamp(1.0, 1000.0) as i64))
+        }
+        "font-size-adjust" => {
+            let (mf, fv) = parse_font_size_adjust_endpoint(from)?;
+            let (mt, tv) = parse_font_size_adjust_endpoint(to)?;
+            (mf == mt).then(|| {
+                format!(
+                    "{}{}",
+                    mf.map_or_else(String::new, |m| format!("{m} ")),
+                    format_interp_num(lerp(fv, tv, t))
+                )
+            })
+        }
+        "text-indent" | "min-width" | "max-width" | "min-height" | "max-height" => {
+            let fv = parse_px_strict(from)?;
+            let tv = parse_px_strict(to)?;
+            Some(format!("{:.2}px", lerp(fv, tv, t)))
+        }
+        // 无臂属性：非 animatable 对（transition 不启动——咨询回落级联终值 echo）。
+        _ => None,
+    }
+}
+
+/// 严格角度解析（仅 `Ndeg` 形；无单位裸数字/其他单位拒——Transition 端点来自
+/// gCS 序列化恒带单位，裸数字即非插值形）。
+fn parse_angle_deg_strict(s: &str) -> Option<f64> {
+    s.trim().strip_suffix("deg").and_then(|v| v.trim().parse::<f64>().ok())
+}
+
+/// 严格颜色解析（`rgb(r, g, b)` / `rgba(r, g, b, a)` 逗号形——gCS 颜色序列化
+/// 形同源；命名色/新语法形拒收回落离散面）。组件任一非数值 → None。
+fn parse_color_strict(s: &str) -> Option<Rgba> {
+    let s = s.trim().to_lowercase();
+    let (body, n) = if let Some(rest) = s.strip_prefix("rgba(").and_then(|r| r.strip_suffix(')')) {
+        (rest, 4)
+    } else {
+        let rest = s.strip_prefix("rgb(").and_then(|r| r.strip_suffix(')'))?;
+        (rest, 3)
+    };
+    let parts: Vec<&str> = body.split(',').map(|p| p.trim()).collect();
+    if parts.len() != n {
+        return None;
+    }
+    let r = parts[0].parse::<f64>().ok()?;
+    let g = parts[1].parse::<f64>().ok()?;
+    let b = parts[2].parse::<f64>().ok()?;
+    let a = if n == 4 { parts[3].parse::<f64>().ok()? } else { 1.0 };
+    Some((r, g, b, a))
+}
+
 /// filter 函数列表插值（filter-effects-1 #animation）。
 ///
 /// 同长同序的同名函数逐参数线性插值（drop-shadow 含 x/y/blur + 颜色分量）；`none`

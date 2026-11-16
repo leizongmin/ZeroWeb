@@ -38,6 +38,11 @@ pub use computed_style_cache::*;
 // computed_style_cache handle 通道消费。
 pub(crate) mod js_anim_registry;
 
+// CSS Transition 同步读注册表（wptfyi-css Transition 通道可见性刀，2026-11-16）——
+// transition-* 触发的属性过渡在 gCS 同步读窗口的求值通道，两通道序列化前咨询。
+// pub(crate)：callbacks 换代边界登记点与 computed_style_cache handle 通道消费。
+pub(crate) mod transition_registry;
+
 // WebCrypto host 实现（R2973 从本文件拆出，控制主文件行数）。纯字节级 crypto，无 DOM/CSS 依赖。
 mod crypto;
 pub use crypto::*;
