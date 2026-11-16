@@ -308,9 +308,10 @@ quickjs-renderer-bin 全 EXIT=0；红七腿全对号在册**零本刀域红**—
 15,651P/6F 全 es_module（s360/s361/s337/s269/reexport 族，peer s419 WIP
 树态红）+ quickjs-clippy 101 es_module.rs:2217 too_many_arguments（同 WIP
 lint 连坐）、renderer-lib 371P/1F + quickjs-renderer-lib 369P/1F =
-worker-fetch（c6dcbce0a 在册镜像）、browser bin/tests 各 741P/2F =
-tab_js_worker fetch 镜像 + default_actions（在册对）、quickjs-workspace
-775P/1F = image_batch 负载形（在册）；cdp_focus 新鲜度 tripwire 本轮未现
+worker-fetch（c6dcbce0a 在册镜像）、browser-bin 741P/2F + browser-tests
+772P/2F = tab_js_worker fetch 镜像 + default_actions（在册对）、
+quickjs-workspace 825P/1F = image_batch 负载形（在册；两腿数均含小目标
+合计，非仅主二进制行）；cdp_focus 新鲜度 tripwire 本轮未现
 （companion build 刷新二进制 mtime 顺带核销先例）。残面（下刀队列）：shape 族真插值池（shape-outside-interpolation
 660F/780、shape-interpolation 366F/546、path-interpolation 340F/478——门开插值可跑后的
 中点期望残面，归 Transition 通道刀真插值池）、circle/ellipse-004 串化深形各 533F +

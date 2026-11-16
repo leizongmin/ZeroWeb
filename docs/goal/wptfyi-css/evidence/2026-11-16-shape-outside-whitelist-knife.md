@@ -93,6 +93,15 @@ zz-probe-so-computed/zzz-zw-probe-offsetpath 两页 +11P 假增益，页集合
 - clippy：css-parser+style-system `-D warnings` 净；engine 腿唯一 error =
   peer es_module.rs:2217 `too_many_arguments(8/7)` s419 WIP 在册连坐
   （release 二进制编译不受影响，b1v4 构建即证）。
+- make test 拆腿（zw-so2-mkt.service 08:45:15–09:03:08 GATE-DONE，12 腿）
+  **刀域零红**：绿五腿 companion-build/renderer-bin/gpu 双腿/
+  quickjs-renderer-bin 全 EXIT=0；红七腿全对号在册——workspace
+  15,651P/6F 全 es_module::tests 六测（s360/s361/s337/s269/reexport 族，
+  peer s419 WIP 树态红）、quickjs-clippy es_module.rs:2217 同 WIP lint
+  连坐、renderer-lib 371P/1F + quickjs-renderer-lib 369P/1F worker-fetch
+  在册镜像、browser-bin 741P/2F + browser-tests 772P/2F tab_js_worker
+  fetch 镜像 + default_actions 在册对、quickjs-workspace 825P/1F
+  image_batch 环境形（腿数为小目标合计）。
 - make test 拆腿门禁（zw-so2-mkt systemd unit，08:45:15–09:03:08
   GATE-DONE，12 腿）：绿五腿 companion-build / renderer-bin / gpu-adapter /
   gpu-consistency / quickjs-renderer-bin 全 EXIT=0。红七腿逐名对号全在册
