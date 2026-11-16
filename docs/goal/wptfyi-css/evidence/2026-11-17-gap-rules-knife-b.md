@@ -258,6 +258,13 @@ column-rule-color-interpolation +45、column-rule-width-interpolation +46。
   auto），非语义 pass 非 parity 目标——勿为 parity 扩成拒收 repeat(auto)
   （会翻转我方 at(1) 真 Pass，净 −2 真回归）。分类终态：上游 typo ×
   我方超集动画，账面 +395 持位。
+- **仲裁外证双 run 收口（02:5x，verify-and-exit 实例）**：独立复取第二个
+  chrome-160 master run（0.8164.0，rev e7ad2fa35d，非上述 0.8157/3d8756fa）
+  summary_v2 逐项读值 `c:[276,276]`（整体 s=O）——与 ① run 双外证同判，
+  02:50 板载「Chrome 同态 Fail 推定」条款据此**撤回**（该推定缺 Chrome 对
+  repeat(auto) 双通道拒收一环）；裁定其余条款（fix 惰性、非语义回归、
+  +395 持位、fix=独立 hardening 非 −1 resolution）与 652a04f66/baeeac3d9
+  及 verify 02:52 采认全收敛，仲裁闭合。
 - **s419 中性双证**：b3wip vs b3c 五 corpus 全 SET-IDENTICAL（逐子测
   0/0/0、页集合全等）——二进制 md5 异（`e3a46906` vs `58ec871f`）而结果
   逐项全等，script-sandbox es_module peer WIP 对五 CSS corpus 零位移；
