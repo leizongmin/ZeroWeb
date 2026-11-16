@@ -10,8 +10,12 @@ path 失配）与残面三队列见下方二十一轮段与
 [evidence 2026-11-16-basic-shape-applier-knife](evidence/2026-11-16-basic-shape-applier-knife.md)。
 **Steps 臂修复验证收口（11-16 补测轮 b1v9，零码改）**：二十一轮被吸收入提交的共享 Steps
 位置语义修复补测 **+222/0/2**（2 伪红=上游 2 页 at(1) 数据缺右括号定谳不回滚），残面②
-关闭；工作树 animation.rs path 门撤除 WIP（twin 在飞）未触碰待其自证，见
-[evidence 2026-11-16-steps-position-knife](evidence/2026-11-16-steps-position-knife.md)。
+关闭，见 [evidence 2026-11-16-steps-position-knife](evidence/2026-11-16-steps-position-knife.md)。
+**path() 门臂回滚自证收口（11-16 二十一轮续，b1v10，提交 6615e43b9）**：steps-position-knife
+挂账的 path 门撤除 WIP 认领自证——engine lib 4,074P/0F（+Steps 十钉）、corpus **vs b1v9
+SET-IDENTICAL**（门臂语料中性，v6 中间账 ±8 按实测覆盖修正）、vs b1v4 基线 +741/0/2 两代
+二进制复现零 flake，见
+[evidence 2026-11-16-path-gate-removal-knife](evidence/2026-11-16-path-gate-removal-knife.md)。
 **Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：七套件
 corpus 净 **+322 零回归**（filter-effects 八页 +17~+40、motion 七页 +4~+25，DOWNS
 红线零触碰、echo 池全保护）——T 通道全死根因（同脚本轮次断言读恒先于泵首帧挂载）以
@@ -334,6 +338,23 @@ engine lib 4,073P/0F、runner md5 447334b9、七套件 corpus **vs b1v8 净 +222
 归 inline-style 全局关键字解析刀）；工作树 animation.rs path 门撤除 WIP（twin 在飞认领面）
 本轮未触碰待其自证 A/B。全案
 [evidence 2026-11-16-steps-position-knife](evidence/2026-11-16-steps-position-knife.md)。
+**path() 门臂回滚自证收口（11-16 二十一轮续轮，b1v10，提交 6615e43b9）**：上段挂账的
+path 门撤除 WIP（twin 流 14:18 写入）由本流认领验证：clip_pair_echo_preserve 撤
+Path/Path 门臂回归离散翻转 + test_timing_function_steps_position 十钉（css-easing-1
+§step-easing-functions 逐形态）+ gate 测试期望翻转；门禁三绿（fmt rc=0；默认特性 clippy
+animation.rs 零命中——全图唯一错=peer s419 es_module WIP too_many_arguments 归因挂账，
+落地后补全量；engine lib **4,074P/0F**）。b1v10 链（twin 流 14:39:56 发射，本流采认等待
+停己链；runner md5 3ab4488a）七腿 rc=0 ×7：**vs b1v9 SET-IDENTICAL**（逐子测恒等——
+path 门臂在七套件语料零二进制级影响，v6 中间账 ±8 未在控制变量双二进制对账复现，按实测
+覆盖修正；撤除以语义理据保留——该族 corpus 不可见的机制：门的 echo 与旧
+Steps bug 的 from 侧回落对该族产出同形 FAIL，37 path 对增益真根因是 Steps
+修复解锁的 at(1) 翻转，非门臂；vs b1v8 双刀合计 +222（187 Steps 非 path +
+37 path 对 + 2 伪红恒定））、**vs b1v4 基线 +741/0/2 第二次独立复现**（447334b9 与
+3ab4488a 两代二进制同账，零 flake；2 REG 伪红定谳沿用；b1v9 纯度复核维持，
+md5 差异=门臂在场 vs 缺席非混态）。残面队列不变（calc 代数插值共享面整刀
+候选居首 + inline inherit 解析刀沿 steps-position-knife §5.1 + path() 命令级
+兼容插值③沿队列）。全案
+[evidence 2026-11-16-path-gate-removal-knife](evidence/2026-11-16-path-gate-removal-knife.md)。
 **Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：十八轮 §7 定谳
 的 T 通道全死根因清偿（corpus interpolation-testcommon T 测试同一脚本轮次
 setProperty(from)→gCS flush→写 transition-*+setProperty(to)→gCS 断言读，无泵帧介入
