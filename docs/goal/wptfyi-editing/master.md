@@ -56,7 +56,12 @@ runner console 通道仅 `ZW_SHAPED_ADVANCE_TRACE=1` 下可见（tracing subscri
 **下一步** ①**B4-S2 第三刀候选（残余 2193F 簇结构，见 d46 证据遗留节）**：
 (a) join **壳吸收深化** ~1500F 大头（deleting-in-list-items ~1100F：`<li><p>`
 内层壳 join 期望并壳内、同块摘空 `<br>` 落壳；joining-dl ~400F：跨 dl 期望右
-dt 并入左 dt 壳——现落壳外）；(b) backspace/fd 主文件 243F：跨元素边界 caret
+dt 并入左 dt 壳——现落壳外；**d48 前置诊断已定谳四修位**：A 接收容器缺壳
+下降（块界臂 `bdst/fdst` 解析：列表容器降末行块 + 行块唯一内容壳再降，12546/
+12721/12700/12575 四调用点）+ B1 行尾 br 挡界 no-op + B2 左空摘除空文本计作
+内容 + B3 同块 splice 缺占位 br，切分与守卫见
+[d48 诊断](evidence/2026-11-17-d48-join-shell-absorption-diagnosis.md)）；
+(b) backspace/fd 主文件 243F：跨元素边界 caret
 join（`<p>a<span>b</span>[]c</p>` bi=0）+ 文首空删 beforeinput 形；(c) TypingA
 残余 43F 中可独立修面：`{<hr>}` 纯元素选区核拒收（bi=0，核放行臂缺口）——
 bi=2 双派族挂③不动（d47 别名刀判负后无入口级现成臂）；②dwuf 余臂（caret
