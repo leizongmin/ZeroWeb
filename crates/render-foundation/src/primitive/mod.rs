@@ -906,6 +906,16 @@ impl RenderPrimitives {
         for p in &self.path_strokes {
             total += (p.vertices.capacity().saturating_mul(4)) as u64;
         }
+        // gradient/filter 嵌套 Vec 堆 payload（stops/filters/clip_polygon 列表容量）
+        for g in &self.gradients {
+            total += vec_cap(&g.stops);
+        }
+        for f in &self.filters {
+            total += vec_cap(&f.filters);
+            if let Some(poly) = &f.clip_polygon {
+                total += vec_cap(poly);
+            }
+        }
         // glyph 源文本 Arc 堆面（fragment 共享：唯一指针计一次）
         let mut seen_text: std::collections::HashSet<usize> = std::collections::HashSet::new();
         for g in &self.glyphs {

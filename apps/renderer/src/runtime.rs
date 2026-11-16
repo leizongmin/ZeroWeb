@@ -1564,6 +1564,34 @@ impl RendererRuntime {
         ) = {
             let wv = self.webview.as_ref().expect("webview");
             let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+            // T78 域账面（读数式）：发布点录数——最新帧的分域保留字节，alloc-trace
+            // dump 的 `ledger` 段消费（与 PSS/alloc 采样互校定位常驻构成）。在快照
+            // 块内直读活缓存——快照 duplicate_for_snapshot 丢动画帧且不拷 svg 表，
+            // 经快照读 animation/svg 两域结构性恒零（返修 df-F1：未测≠测得零）；
+            // armed 门与 alloc_trace 同源；产品构建（无 feature）整块零代码。
+            #[cfg(feature = "alloc-trace")]
+            if crate::alloc_trace::armed() {
+                let canvas_bytes = wv
+                    .pending_canvas_images()
+                    .iter()
+                    .map(|(_, _, _, rgba, _)| rgba.len() as u64)
+                    .sum::<u64>();
+                let cache = wv.image_cache_ref();
+                crate::mem_ledger::record(&[
+                    ("render_primitives_bytes", render.primitives.estimated_resident_bytes()),
+                    ("image_cache_bytes", cache.total_bytes() as u64),
+                    ("image_cache_entries", cache.len() as u64),
+                    ("svg_rasterized_entries", cache.svg_rasterized_len() as u64),
+                    ("animation_frames_bytes", cache.animation_frames_bytes() as u64),
+                    ("canvas_images_bytes", canvas_bytes),
+                    (
+                        "runtime_cached_text_bytes",
+                        (self.cached_html.len() + self.cached_css.len()) as u64,
+                    ),
+                    ("webview_cached_text_bytes", wv.cached_text_bytes()),
+                    ("font_data_bytes", self.font_loader.font_data_bytes() as u64),
+                ]);
+            }
             (
                 self.viewport.0,
                 self.viewport.1,
@@ -1577,37 +1605,6 @@ impl RendererRuntime {
                 render.animation_scopes.clone(),
             )
         };
-        // T78 域账面（读数式）：发布点录数——最新帧的分域保留字节，alloc-trace
-        // dump 的 `ledger` 段消费（与 PSS/alloc 采样互校定位常驻构成）。armed 门
-        // 与 alloc_trace 同源；产品构建（无 feature）整块零代码。
-        #[cfg(feature = "alloc-trace")]
-        if crate::alloc_trace::armed() {
-            let canvas_bytes = self
-                .webview
-                .as_ref()
-                .map(|wv| {
-                    wv.pending_canvas_images()
-                        .iter()
-                        .map(|(_, _, _, rgba, _)| rgba.len() as u64)
-                        .sum::<u64>()
-                })
-                .unwrap_or(0);
-            let webview_text = self.webview.as_ref().map(|wv| wv.cached_text_bytes()).unwrap_or(0);
-            crate::mem_ledger::record(&[
-                ("render_primitives_bytes", primitives.estimated_resident_bytes()),
-                ("image_cache_bytes", image_cache.total_bytes() as u64),
-                ("image_cache_entries", image_cache.len() as u64),
-                ("svg_rasterized_entries", image_cache.svg_rasterized_len() as u64),
-                ("animation_frames_bytes", image_cache.animation_frames_bytes() as u64),
-                ("canvas_images_bytes", canvas_bytes),
-                (
-                    "runtime_cached_text_bytes",
-                    (self.cached_html.len() + self.cached_css.len()) as u64,
-                ),
-                ("webview_cached_text_bytes", webview_text),
-                ("font_data_bytes", self.font_loader.font_data_bytes() as u64),
-            ]);
-        }
         // P1a gBCR：render 后用最新 layout 填 rect snapshot——js_worker 的 RectBridge handler
         // 经 identity(selector)→NodeId 查此 snapshot 返真实 DOMRect（未填/未命中→零 rect，零回归）。
         if let Some(cache) = hit_test.as_ref() {
