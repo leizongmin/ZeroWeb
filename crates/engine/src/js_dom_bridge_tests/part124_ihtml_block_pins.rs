@@ -246,6 +246,39 @@ pin124("ihb-g-ctrl-markup", "<div style=white-space:pre>abc[]\n</div>", [],
 pin124("ihb-g-ctrl-nonws", "<div style=color:blue>ab[]cd</div>", [],
   "X", "<div style=\"color:blue\">abcd</div>");
 
+// ㉓ D 族占位 br 消费臂（2026-11-16 D 族刀 placeholder-br-arm——corpus
+// inserthtml :483-560 十二键实录形 + :595 空根搭车键：零文本块壳 × 元素端点
+// 坍缩选区 × 占位 br/注释壳。既有溶解臂全含门把零文本元素 span [0,0] 判为
+// 坍缩选区 [0,0] 全含 → 整壳替换载荷（实录 got=`abc`/`<!--abc-->`/`""`）。
+// 臂语义＝可见内容插于不可见 br 前且 br 随之冗余删除；注释不使 br 冗余
+//（语料 :512/:526 注释实录）。期望值=语料 expected/in_array 选中形剥
+// marker 原样。swcss 与本族无关（壳不带样式载荷）——单态钉。
+pin124("ihb-d-br-txt", "<p>{}<br></p>", [], "abc", "<p>abc</p>");
+pin124("ihb-d-br-cmt", "<p>{}<br></p>", [], "<!--abc-->",
+  "<p><!--abc--><br></p>");
+pin124("ihb-d-cspan-txt", "<p><!--foo-->{}<span><br></span><!--bar--></p>",
+  [], "abc", "<p><!--foo-->abc<!--bar--></p>");
+pin124("ihb-d-cspan-cmt", "<p><!--foo-->{}<span><br></span><!--bar--></p>",
+  [], "<!--abc-->", "<p><!--foo--><!--abc--><!--bar--><br></p>");
+pin124("ihb-d-sspan-txt", "<p>{}<span><!--foo--><br><!--bar--></span></p>",
+  [], "abc", "<p>abc</p>");
+pin124("ihb-d-sspan-cmt", "<p>{}<span><!--foo--><br><!--bar--></span></p>",
+  [], "<!--abc-->", "<p><!--abc--><br></p>");
+pin124("ihb-d-brafter-txt", "<p><br>{}</p>", [], "abc", "<p>abc</p>");
+pin124("ihb-d-brafter-cmt", "<p><br>{}</p>", [], "<!--abc-->",
+  "<p><br><!--abc--></p>");
+pin124("ihb-d-cspanafter-txt", "<p><!--foo--><span><br></span>{}<!--bar--></p>",
+  [], "abc", "<p><!--foo--><span>abc</span><!--bar--></p>");
+pin124("ihb-d-cspanafter-cmt", "<p><!--foo--><span><br></span>{}<!--bar--></p>",
+  [], "<!--abc-->", "<p><!--foo--><span><!--abc--><br></span><!--bar--></p>");
+pin124("ihb-d-sspanafter-txt", "<p><span><!--foo--><br><!--bar--></span>{}</p>",
+  [], "abc", "<p><span><!--foo-->abc<!--bar--></span></p>");
+pin124("ihb-d-sspanafter-cmt", "<p><span><!--foo--><br><!--bar--></span>{}</p>",
+  [], "<!--abc-->", "<p><span><!--foo--><!--abc--><br><!--bar--></span></p>");
+pin124("ihb-d-empty-root", "{}", [],
+  "<div class=\"d1\"></div><div class=\"d2\"><span class=\"s1\">some text</span><a href=\"foo.html\"></a></div>",
+  "<div class=\"d1\"></div><div class=\"d2\"><span class=\"s1\">some text</span><a href=\"foo.html\"></a></div>");
+
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。
 var bad124 = [];

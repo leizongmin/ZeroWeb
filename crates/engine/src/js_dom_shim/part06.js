@@ -3478,6 +3478,13 @@
   // 须等于现串（壳带属性/非文本兄弟/空白实体序列化不合形即旁路）。不合形
   // return null（主路径旁路维持既有行为）。
   function _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag) {
+    // 空根搭车臂（2026-11-16 D 族刀 placeholder-br-arm）：sc===host 元素端点
+    // 坍缩、宿主无子（corpus inserthtml :595 `"{}"` 空体根实录）——下方溶解臂
+    // spans 空集 fragPlaced 恒 false → null → 整命令 no-op（got=""）。语义＝
+    // 载荷原样落空根（corpus exp=载荷 verbatim），caret 锚 0。
+    if (sc === host && range.collapsed && (!kids || !kids.length) && frag) {
+      return { html: frag, want: 0 };
+    }
     // 宿主子文本空间：逐子 [s,e) 占位（文本子按长度；元素子按其全文长度）。
     var spans = [];
     var acc = 0;
@@ -3676,6 +3683,143 @@
             }
             return { html: gwsHtml0.slice(0, gwsSpans[0].innerStart) + gwsNew
               + gwsHtml0.slice(gwsSpans[0].innerEnd), want: gwsWant };
+          }
+        }
+      }
+    }
+    // D 族占位 br 消费臂（2026-11-16 D 族刀 placeholder-br-arm）：零文本块壳
+    //（corpus 全 p）× 元素端点坍缩选区（sc===壳）× 占位 br（裸 br 或无属性
+    // span 壳包 br+注释）× 素文本/单注释载荷——下方溶解臂全含门把零文本元素
+    // span [0,0] 判为坍缩选区 [0,0] 全含 → 整壳替换载荷（corpus inserthtml
+    // :483-560 十二键实录 got=`abc`/`<!--abc-->`，普查档 ihc1-residual-49f-
+    // census D 族）。语料语义（inserthtml.js :512/:526 注释实录）：可见内容
+    // 插在不可见 br 前且 br 随之冗余删除；注释不使 br 冗余。分域规则：
+    // 文本载荷——caret 在 br 容器位或之前 → 容器（span 壳连同壳内注释）整删、
+    //   载荷落其位（D1/D3/D5）；caret 在容器后 → 载荷落 br 位：裸 br 壳位
+    //   （D7）、span 壳保留落壳内 br 位（D9/D11——corpus in_array 首形）。
+    // 注释载荷——裸 br：注释落 caret 位、br 不动（D2/D8——in_array 首形）；
+    //   span 壳 caret 在壳位或之前：注释落 caret 位、壳解包（壳内注释丢弃）、
+    //   裸 br 移壳尾（D4/D6）；span 壳 caret 在壳后：注释落壳内 br 前（D10/
+    //   D12——in_array 次形）。结构门全合取保守贴语料形：host 唯一子＝壳、壳
+    //   零文本、子序列恰为 comments* ×（裸 br | span[comments* br comments*]）?
+    //   × comments* 且全树恰一枚无属性 br。序列化逐子镜像拼串 + round-trip
+    //   门（重建=壳内串字节恒等，属性壳/异形旁路）。其余形维持 null（溶解臂
+    //   既有域零外溢）。
+    if (shell && shellTag === 'p' && range.collapsed && sc === shell
+        && kids.length === 1 && kids[0] === shell && frag && so >= 0
+        && so <= ck.length && kTextLen(shell) === 0) {
+      var dIsText = frag.indexOf('<') < 0;
+      var dCmt = dIsText ? null : /^<!--([\s\S]*)-->$/.exec(frag);
+      if ((dIsText && frag.length > 0)
+          || (dCmt && dCmt[1].indexOf('-->') < 0 && dCmt[1].indexOf('<!--') < 0)) {
+        var dKids = [];
+        var dBr = -1, dBrSpan = -1, dBrInner = -1, dBad = false;
+        for (var di = 0; di < ck.length && !dBad; di++) {
+          var dn = ck[di];
+          var dTag = dn.nodeType === 1 ? String(dn.tagName || '').toLowerCase() : '';
+          if (dn.nodeType === 8) { dKids.push({ t: 0, v: String(dn.nodeValue || '') }); continue; }
+          if (dTag === 'br' && dBr < 0) {
+            if (dn.attributes && dn.attributes.length) { dBad = true; break; }
+            dBr = dKids.length;
+            dKids.push({ t: 1 });
+            continue;
+          }
+          if (dTag === 'span' && dBr < 0
+              && (!dn.attributes || !dn.attributes.length)) {
+            var dsn = dn.childNodes || [];
+            var dInner = [];
+            for (var dj = 0; dj < dsn.length; dj++) {
+              var dsk = dsn[dj];
+              var dsTag = dsk.nodeType === 1 ? String(dsk.tagName || '').toLowerCase() : '';
+              if (dsk.nodeType === 8) { dInner.push({ t: 0, v: String(dsk.nodeValue || '') }); continue; }
+              if (dsTag === 'br' && dBr < 0 && (!dsk.attributes || !dsk.attributes.length)) {
+                dBr = dKids.length; dBrSpan = dKids.length; dBrInner = dInner.length;
+                dInner.push({ t: 1 });
+                continue;
+              }
+              dBad = true; break;
+            }
+            if (dBad || dBrSpan < 0 || dBr !== dKids.length) { dBad = true; break; }
+            dKids.push({ t: 2, inner: dInner });
+            continue;
+          }
+          dBad = true; break;
+        }
+        if (!dBad && dBr >= 0) {
+          var dSerList = function (list) {
+            var s = '';
+            for (var i = 0; i < list.length; i++) {
+              var k = list[i];
+              if (k.t === 2) s += '<span>' + dSerList(k.inner) + '</span>';
+              else if (k.t === 1) s += '<br>';
+              else if (k.t === 3) s += k.v;
+              else s += '<!--' + k.v + '-->';
+            }
+            return s;
+          };
+          var dHtml0 = String(host.innerHTML || '');
+          var dSpans = _zwIhtmlTopSpans(dHtml0);
+          if (dSpans.length === 1 && dSpans[0].tag === 'p'
+              && dSerList(dKids) === dHtml0.slice(dSpans[0].innerStart, dSpans[0].innerEnd)) {
+            var dOut;
+            if (dIsText) {
+              if (so <= dBr) {
+                // caret 在容器位或之前：容器整删（span 壳连同壳内注释）、载荷落其位。
+                dOut = [];
+                for (var dt = 0; dt < dKids.length; dt++) {
+                  dOut.push(dt === dBr ? { t: 3, v: frag } : dKids[dt]);
+                }
+              } else if (dBrSpan >= 0) {
+                // caret 在壳后：壳保留、载荷落壳内 br 位。
+                dOut = [];
+                for (var du = 0; du < dKids.length; du++) {
+                  if (du !== dBrSpan) { dOut.push(dKids[du]); continue; }
+                  var dNewInner = [];
+                  for (var dv = 0; dv < dKids[du].inner.length; dv++) {
+                    dNewInner.push(dv === dBrInner ? { t: 3, v: frag } : dKids[du].inner[dv]);
+                  }
+                  dOut.push({ t: 2, inner: dNewInner });
+                }
+              } else {
+                // 裸 br 壳位替换（corpus 语料注释：br 后插可见内容使 br 冗余）。
+                dOut = [];
+                for (var dw = 0; dw < dKids.length; dw++) {
+                  dOut.push(dw === dBr ? { t: 3, v: frag } : dKids[dw]);
+                }
+              }
+            } else if (dBrSpan < 0) {
+              // 裸 br：注释落 caret 位、br 不动。
+              dOut = [];
+              for (var dx = 0; dx < dKids.length; dx++) {
+                if (dx === so) dOut.push({ t: 0, v: dCmt[1] });
+                dOut.push(dKids[dx]);
+              }
+              if (so === dKids.length) dOut.push({ t: 0, v: dCmt[1] });
+            } else if (so <= dBrSpan) {
+              // caret 在壳位或之前：注释落 caret 位、壳解包（壳内注释丢弃）、
+              // 裸 br 移壳尾（corpus D4/D6 实录形）。
+              dOut = [];
+              for (var dy = 0; dy < dKids.length; dy++) {
+                if (dy === so) dOut.push({ t: 0, v: dCmt[1] });
+                if (dy !== dBrSpan) dOut.push(dKids[dy]);
+              }
+              dOut.push({ t: 1 });
+            } else {
+              // caret 在壳后：注释落壳内 br 前、壳保留（D10/D12 in_array 次形）。
+              dOut = [];
+              for (var dz = 0; dz < dKids.length; dz++) {
+                if (dz !== dBrSpan) { dOut.push(dKids[dz]); continue; }
+                var dNI2 = [];
+                for (var d2 = 0; d2 < dKids[dz].inner.length; d2++) {
+                  if (d2 === dBrInner) dNI2.push({ t: 0, v: dCmt[1] });
+                  dNI2.push(dKids[dz].inner[d2]);
+                }
+                dOut.push({ t: 2, inner: dNI2 });
+              }
+            }
+            var dNew = dHtml0.slice(0, dSpans[0].innerStart) + dSerList(dOut)
+              + dHtml0.slice(dSpans[0].innerEnd);
+            return { html: dNew, want: 0 };
           }
         }
       }
