@@ -2,82 +2,73 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 540 收口（**他流刀归
-因轮六刀窗——上一 session 429 中断 stale 腿作废
-+ v3.1 浸泡门判净重跑：族摆镜像回归＝s538 形逐
-键恒等轮**：上一 session 02:04 pull 携四刀后
-429 中断，其守候器 03:31 四刀树腿作废归档
-stale-4knife/；本 session 04:13 pull 携入
-WSCANON 双刀（4e091e6f7/7356bf2aa）+ 他流 docs
-六笔补齐六刀在树——码态 55c78a219→7356bf2aa
-（HEAD 46c3df57a docs-only），runner
-127651344→127719928 换代 +68,584，leg1
-Compiling ×6 全链、leg2 零重编）——join
-**stable 8514（norm 双腿同相 8307P/202F/6T/1U）
-disagree 0 + l1only 0 + l2only 0**；vs s539
-stable **NEW 5 + GONE 1 + flips 0——位移全落族
-键摆动带（s539 形镜像回归，A/B 两形交替在案）
-**：NEW 5 = 族 non-detailed 4 子测键
-（Home/End/PageUp/PageDown）F/F 双腿同相发射 +
-族 detailed 整文件键 T/T 双腿同相发射 + GONE 1
-= 族 non-detailed 整文件键被吞，**s540 stable
-与 s538 stable 逐键恒等（keyset 零差 + canon
-diff IDENTICAL 双实证）**，零新 Pass 形零新
-Fail 形非族非哨键零位移逐键恒等；账本
-evidence/2026-11-17-m2s540-six-knife
--attribution.md。**「申报=实测」谱系第三十一例
-（六刀窗）**：ilb VISPAD-V2+A壳尾 v1.1 /
-gap-rules B+css-gaps B engine / WSCANON V1+
-v1.1 三族六刀零位移清偿，全桥清单 +2 全归 ilb
-刀伴钉。**P 集账本口径双腿双 8307P 持位第 9
-轮**；picker 刀增益键第 63 轮保持，checkmark
-恒 F 带形不变。flaky 键双腿双 Pass——零新例第
-29 轮（s512 时钟顺延）。onblur 哨组双腿双
-8P/2F（红池照常）；dialog-overlay 哨第 69 轮
-零翻红；**modulepreload 哨 15 键双腿全
-Pass——转常规连轮计数第 2 轮零翻红**。全桥绿
-窗 **1674P/0F result 行 ok 清单 NEW 2 =
-part127 test_ilb_shell_tail_vispad_pins +
-part128 test_ilb_wscanon_pins + GONE 0**（
-b539.k→b540.k 1672→1674，test 阶段 35.20s）。
-**focus-dynamic 收窗后第 22 轮零再现**（121 键
-stable 全 Pass 双腿）。窗净判定（对端 r5745
-corpus×3 期 04:17–04:26）：**waiter v3.1 首用
-**（v3 基础上进程门扩 reftest-upstream/他流
-wait-and-run 计入 + deadline 7200s + judge 钉
-HEAD + runner size/md5 provenance）判净
-04:27:06 起腿，双腿常态 3:04/2:27 零塌陷零单
-腿出位；**对端活跃复燃期（04:37+ ZW-3
-zeroseed 测试腿再起）起腿一律 v3.1 浸泡门**。
-**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重
-复通知）。hang 观察项静默哨维持。下一步：
-**守成巡查**（对账基线换 s540 stable 8514——族
-键基线形＝A 形回归「non-detailed 4 子测 F 形 +
-detailed 整文件 T 形」（s538 同型）：s527→
-s540 摆动谱 A/B 两形交替续记，异相/出位按形谱
-记账、Pass 形首现按 NEW 记账；全桥清单基线
-b540.k 1674 持位；flaky 键零新例时钟顺延；
-**mpreload 哨常规连轮计数第 3 轮**；他流入树
-归因轮或轻覆盖；**下轮首号＝d48 join 壳吸收深
-化刀 70b18f81e 落树归因**（04:25 editing 流落
-树，申报 input-events 1114P→1364P 净 +223，
-s540 六刀窗未含——本轮 pull 末尾携入）；对端
-刀信号持续：ZW-3 d47 刀体（querySelector
-generation-aware 重设计刀）落树后按他流刀归因
-轮 + editing 流 B4-S2 残
+**状态**: Active——M2 切片 541 收口（**他流刀归
+因轮四刀窗**：pull 携入 d48 join 壳深化
+70b18f81e + ILB-FLEXBR 5dc363b35/b6e2ddc05 +
+trans-all/WAAPI hardening f4ca3f641 全数落树
+——码态 7356bf2aa→f4ca3f641（legs 时 HEAD
+1ec39ee46 docs-only），runner 127719928→
+127779560 换代 +59,632，leg1 Compiling ×6、
+leg2 零重编）——join **stable 8510（norm 双腿
+同相 8307P/202F/6T/1U）disagree 0 + l1only 4 +
+l2only 1**；vs s540 stable **NEW 0 + GONE 4 +
+flips 0——位移全落族键摆动带（单腿异相发射/被
+吞新变体，s527→s541 摆动谱续记）**：GONE 4 =
+族 non-detailed 4 子测键（l1only 4＝leg1 发射
+leg2 未发）+ l2only 1 = 族 non-detailed 整文
+件键（leg2 发射 leg1 未发），族 detailed 整文
+件键 T/T 双腿同相持位，零新 Pass 形零新 Fail
+形**非族非哨键零位移逐键恒等**；账本
+evidence/2026-11-17-m2s541-four-knife
+-attribution.md。**「申报=实测」谱系第三十二例
+（四刀窗）**：d48（input-events F2P=223/P2F=0
+，其对端哨 html-semantics T→F 瞬态本轮双腿零
+复现判环境窗瞬态）+ FLEXBR 双刀（corpus ④族 4
+键 F→P）+ trans-all（五 corpus 净 +474）零位
+移清偿，全桥清单 +8 全对号四刀伴钉。**P 集账
+本口径双腿双 8307P 持位第 10 轮**；picker 刀增
+益键第 64 轮保持，checkmark 恒 F 带形不变。
+flaky 键双腿双 Pass——零新例第 30 轮（s512 时
+钟顺延）。onblur 哨组双腿双 8P/2F（红池照常）
+；dialog-overlay 哨第 70 轮零翻红；**
+modulepreload 哨 15 键双腿全 Pass——转常规连
+轮计数第 3 轮零翻红**。全桥绿窗 **1682P/0F
+guard rc=0 清单 NEW 8 = 7× trans-all 伴钉
+（rule_list_computed ×4 + transition_registry
+×2 + js_anim 校验 ×1）+ 1× part129
+test_ilb_flexbr_pins + GONE 0**（b540.k→
+b541.k 1674→1682，test 阶段 17.60s）。**
+focus-dynamic 收窗后第 23 轮零再现**（121 键
+stable 全 Pass 双腿）。窗净判定（对端 r5747
+corpus×3 期 04:43–04:52）：v3.1 守候器（
+deadline 9000s）在其收线后判净 04:52:31 起腿
+，双腿常态 3:08/2:43 零塌陷零交叠。**挂用户门
+维持**：GB-20261114-VIDEO + GB-20261031（簇 D
+）+ s137（s445 已提示，不重复通知）。hang 观
+察项静默哨维持。下一步：**守成巡查**（对账基
+线换 s541 stable 8510——族键基线形换「
+detailed 整文件 T 形持位 + non-detailed 整文
+件/4 子测出位观察形（单腿异相发射，s541 新变
+体）」：异相/出位按形谱记账、Pass 形首现按
+NEW 记账；全桥清单基线 b541.k 1682 持位；
+flaky 键零新例时钟顺延；**mpreload 哨常规连轮
+计数第 4 轮**；他流入树归因轮或轻覆盖；**起腿
+一律 v3.1 浸泡门**；对端刀信号持续：ZW-3 d47
+刀体（querySelector generation-aware 重设计刀
+）落树后按他流刀归因轮 + editing 流 B4-S2 残
 面刀（dwuf 八变体端点规范化未接臂
 /during-and-after-dispatch 与克隆门互斥 1F）+
 rendering dialog 16 红块协同面 + css 文法刀后
 续刀（shapepos 残面队列余项：位置串化规范刀
 ~498F/round 列表完整建模/inline inherit/
 path() 命令级插值/calc 代数插值）+ wptfyi-css
-残面（jsanim flip Steps(Start) 等），join 实测
-为准）+ 候门决项等待用户拍板（video P1+P2 立项
-/ 簇 D A2 立项 / s137）；rendering 流 dialog 16
-红块协同面（归 rendering 流记账）。门开随批落
-预案不变：簇 D 开 → customizable-select-styles
-.css ×47 随批落。
+残面（B3 残面 348F 余项、jsanim flip
+Steps(Start) 等），join 实测为准）+ 候门决项
+等待用户拍板（video P1+P2 立项 / 簇 D A2 立项
+/ s137）；rendering 流 dialog 16 红块协同面（
+归 rendering 流记账）。门开随批落预案不变：
+簇 D 开 → customizable-select-styles.css ×47
+随批落。
 
 > **▶ 承前（2026-11-16 M2 切片 531 收口）——他流刀归
 > 因轮（双刀窗）：editing 流 d46 键入替换臂主刀
