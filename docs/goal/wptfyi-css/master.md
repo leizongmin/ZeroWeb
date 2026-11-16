@@ -312,7 +312,12 @@ worker-fetch（c6dcbce0a 在册镜像）、browser-bin 741P/2F + browser-tests
 772P/2F = tab_js_worker fetch 镜像 + default_actions（在册对）、
 quickjs-workspace 825P/1F = image_batch 负载形（在册；两腿数均含小目标
 合计，非仅主二进制行）；cdp_focus 新鲜度 tripwire 本轮未现
-（companion build 刷新二进制 mtime 顺带核销先例）。残面（下刀队列）：shape 族真插值池（shape-outside-interpolation
+（companion build 刷新二进制 mtime 顺带核销先例）。**bench-gate 全绿**
+（zw-so2-bench 09:08:27–09:14:53 EXIT=0：微基准 3/3 css_bench/engine_bench/
+style_bench + 页场景绝对预算 PASS——welcome p95 8.6ms/medium 307ms/morning
+51ms、resource peak_rss 169MB、retained form input p95 0.018ms，报告
+benchmark_20261116_090833.{txt,json}；dirty=true 系 es_module peer WIP
+同载，A/B 零贡献同例）。残面（下刀队列）：shape 族真插值池（shape-outside-interpolation
 660F/780、shape-interpolation 366F/546、path-interpolation 340F/478——门开插值可跑后的
 中点期望残面，归 Transition 通道刀真插值池）、circle/ellipse-004 串化深形各 533F +
 inset-003 302F + circle/ellipse-003 各 125F（declared 级 canonical：缺分量补 center/edge
