@@ -13068,7 +13068,12 @@
   function _zwCeIlbNodeVisible(n, d) {
     if (!n || d > 16) return false;
     if (n.nodeType === 3) {
-      return !_zwCeIsCollapsibleWsOnly(String(n.nodeValue || ''));
+      var vTxt = String(n.nodeValue || '');
+      if (!_zwCeIsCollapsibleWsOnly(vTxt)) return true;
+      // ws-only 文本：pre 域空白保形可见——LF 即硬断行、空格占行盒（语料
+      // `<pre>foo[]&#10;</pre>` 形：折叠判据误补断 P2F 两键实录，i7d0 v1
+      // ABORT 归因）。UA 默认 pre 系标签＋声明 pre 系 white-space 双路。
+      return _zwCeIlbWsPreserved(n);
     }
     if (n.nodeType !== 1) return false;
     var kids = n.childNodes || [];
@@ -13081,6 +13086,23 @@
     }
     for (var iv = 0; iv < kids.length; iv++) {
       if (_zwCeIlbNodeVisible(kids[iv], d + 1)) return true;
+    }
+    return false;
+  }
+  // ws-only 文本节点 ws 保形域判定：祖先链（≤64 层）任一 UA 默认 pre 系
+  // 标签或声明 pre/pre-line/pre-wrap/break-spaces 即保形（normal 域折叠
+  // 不可见语义不变——A5 注释邻接判据不回退）。
+  function _zwCeIlbWsPreserved(n) {
+    var a = n.parentNode;
+    var g = 0;
+    while (a && a.nodeType === 1 && g++ < 64) {
+      var t = String(a.tagName || '').toLowerCase();
+      if (t === 'pre' || t === 'listing' || t === 'plaintext' || t === 'textarea') {
+        return true;
+      }
+      var w = _zwCeWsDeclared(a);
+      if (w && (/^pre/.test(w) || w === 'break-spaces')) return true;
+      a = a.parentNode;
     }
     return false;
   }

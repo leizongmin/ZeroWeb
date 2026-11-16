@@ -124,6 +124,12 @@ pin127("ilb-vispad-block-tail-pad", "<p>foo[]</p>",
 // br 后可见文本 → 单 br 不补。
 pin127("ilb-vispad-comment-before-caret", "<p><!--foo-->[]bar",
   "<p><!--foo--><br>bar</p>");
+// P2F 回归钉（i7d0 v1 ABORT 两键，corpus idx 253/258 现役绿形）——pre 域
+// ws-only 尾随 LF 保形可见 → 单 br 不补（折叠判据 v1 误补断实录）。
+pin127("ilb-vispad-pre-lf-tail", "<pre>foo[]&#10;</pre>",
+  "<pre>foo<br>\n</pre>");
+pin127("ilb-vispad-pre-lf-mid", "<pre>foo&#10;[]&#10;</pre>",
+  "<pre>foo\n<br>\n</pre>");
 
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。
