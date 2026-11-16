@@ -6820,10 +6820,22 @@
                   // 下钻至 text 容器或宿主界；host 级元素容器（`{<h1>…</h1>}`／
                   // `{<table>…}</table>}` G/E4 形）不下钻——containment 整元素
                   // 摘除（探针实录 afterDel caret 落 host 位＋占位 br 对齐）。
+                  // ILB-SELTBL 刀⑥表格单元域（E3，2026-11-17）：表结构容器
+                  //（thead/tbody/tfoot/tr/td/th 同节点元素端点）也不下钻——spec
+                  // implementation.js :4689-4693 deleteSelection contained-nodes
+                  // 排除表（thead/tbody/tfoot/tr/th/td 永不入删除节点表），元素
+                  // 端点选区由删除机制自产面处理：内层文本逐个摘除＋空 cell
+                  // 占位 br＋startBlock 非块（tbody span 非合法子）collapseToStart
+                  // 保持 (tbody,0)（探针实录 afterDel=`<tr><td><br></td>…` caret
+                  // tbody@0 恒等 spec 形）；下钻反而改写端点（(td0,0)-(td1,1)），
+                  // caret 落 td 内 mutate 插 br 于 tr 层（探针 P2F 实录）。
                   if (!rng2.collapsed
                       && rng2.startContainer === rng2.endContainer
                       && rng2.startContainer.nodeType === 1
-                      && rng2.startContainer !== host2) {
+                      && rng2.startContainer !== host2
+                      && ['thead', 'tbody', 'tfoot', 'tr', 'td', 'th']
+                        .indexOf(String(rng2.startContainer.tagName || '')
+                          .toLowerCase()) < 0) {
                     var gD = 0;
                     while (rng2.startContainer === rng2.endContainer
                         && rng2.startContainer.nodeType === 1

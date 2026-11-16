@@ -13445,9 +13445,22 @@
     // collapsed 面选区已由前导删除，此处只挡插入面。
     if (lineBreakOnly) {
       var rtG = isText ? sc.parentNode : sc;
-      if (rtG && rtG.nodeType === 1
-          && _zwCeIsRawtextTag(String(rtG.tagName || '').toLowerCase())) {
-        return true;
+      if (rtG && rtG.nodeType === 1) {
+        var rtT = String(rtG.tagName || '').toLowerCase();
+        if (_zwCeIsRawtextTag(rtT)) {
+          return true;
+        }
+        // ILB-TBLSCT 守卫 ②（刀⑥表格单元域 E3，2026-11-17）：表结构容器
+        // caret（delete 后 collapseToStart 落 (tbody,0) 形）行断 no-op——spec
+        // implementation.js :7396-7401「start 节点为 Element 且 br 非合法子
+        // → return true」：thead/tbody/tfoot/tr/table 内容模型不收 br（tr
+        // 只收 td/th 等，tbody 只收 tr）。语料 E3 exp `<tbody>{}<tr><td><br>
+        // </td>…`（tbody 零 br、caret 原位）；探针实录未守卫时 br 外迁 table
+        // 层（`<table><br><br><tbody>` P2F 形）。td/th 不入表（br 合法子，
+        // E2 走 DTP-REMAP 入壳臂）。
+        if (['table', 'thead', 'tbody', 'tfoot', 'tr'].indexOf(rtT) >= 0) {
+          return true;
+        }
       }
     }
     // caret 所在宿主直子块：直子文本/宿主自身元素 caret → 宿主本身；否则父链上溯
@@ -13493,6 +13506,15 @@
     if (lineBreakOnly && !isText && sc !== host
         && (_zwCeIsBlockTagName(lbTag) || lbTag === 'dt' || lbTag === 'dd'
             || lbTag === 'pre'
+            // ILB-SELTBL 刀⑥表格单元域（E2，2026-11-17 ilb 普查）：td/th
+            // 元素 caret（前导删完空 cell 占位 br 落位后 caret (td,0) 形，
+            // 探针实录 afterDel caret=td@0）原走 (父,sc) 臂把 br 推出 tr 层
+            //（got `<tr><br><br><td>…` 外迁形）——br 为 td/th 合法子（HTML
+            // 内容模型 phrasing），spec implementation.js :7383 insertlinebreak
+            // "insert br" 落 active range start 元素内 childNodes[so]：E2 exp
+            // `<td><br>{}<br></td>`＝新 br 插 (td,0) 占位 br 前＋caret 塌
+            // (td,1) 两 br 之间。
+            || lbTag === 'td' || lbTag === 'th'
             // ILB-SELDEL 刀⑤（B 族后删元素 caret）：前导删完 caret 塌进 inline
             // 壳 (span,0) 形（探针实录 afterDel caret=span@0）——br 插壳内
             // childNodes[so]，非 (父,sc) 外迁（corpus `<span><br>{}</span>` 形
