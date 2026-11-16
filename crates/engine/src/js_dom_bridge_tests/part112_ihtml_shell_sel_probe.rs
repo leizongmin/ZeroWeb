@@ -231,10 +231,13 @@ document.execCommand("inserthtml", false, "<pre>abc</pre>");
 #[test]
 fn test_inserthtml_xmp_markup_payload_r3254_m3() {
     // markup 载荷进 rawtext 壳（f[o]o + <b>abc</b> → <xmp>f<b>abc</b>o</xmp>，
-    // Chrome 为 DOM 节点插入产物——壳内容序列化含真元素）。本实现走
-    // host.innerHTML 重建串，能否复现取决于 parser 对 xmp 内容的 rawtext
-    // 处理（Rust 镜像 parser 与 shim 融合视图两侧须同为 markup 保留）。
-    // 红定谳后按两侧 parser 事实落地或 #[ignore] 挂账。
+    // Chrome 为 DOM 节点插入产物——壳内容序列化含真元素）。2026-11-16 ihe5
+    // rawtext 刀改拼接臂字面重建为节点级手术（part06 rawtext 手术臂）：宿主
+    // SetInnerHtml 串回写会把载荷标记经 rawtext 解析吃成文本、读链转义回读
+    //（corpus 4 键红实录 got `<xmp>f&lt;b&gt;abc&lt;/b&gt;o</xmp>`），改
+    // div 上下文解析载荷后节点级入壳（元素可入 rawtext 容器）——本钉改断
+    // ①宿主无 SetInnerHtml 串回写（手术语义）②镜像含字面 markup
+    // ③shim getter 读回字面 markup。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -262,25 +265,27 @@ r6.setEnd(xt6, 2);
 getSelection().removeAllRanges();
 getSelection().addRange(r6);
 document.execCommand("inserthtml", false, "<b>abc</b>");
+var got6 = document.getElementById("ce6").innerHTML;
+if (got6 !== "<xmp>f<b>abc</b>o</xmp>") {
+  throw "R3254M3 GOT=" + got6;
+}
 "##,
         )
         .unwrap();
     {
         let m = mutations.lock().unwrap();
-        let found = m
+        let leaked = m
             .iter()
-            .rev()
-            .find(|mm| matches!(mm, DomMutation::SetInnerHtml { selector, .. } if selector.contains("ce6")))
-            .cloned();
+            .any(|mm| matches!(mm, DomMutation::SetInnerHtml { selector, .. } if selector.contains("ce6")));
         let out = apply_mutations_to_html(
             "<html><body><div id=ce6 contenteditable><xmp>foo</xmp></div></body></html>",
             &m,
         )
         .unwrap();
         assert!(
-            matches!(&found, Some(DomMutation::SetInnerHtml { html, .. }) if html == "<xmp>f<b>abc</b>o</xmp>")
-                && out.contains("<xmp>f<b>abc</b>o</xmp>"),
-            "markup 载荷进 xmp 须壳内元素保留（<xmp>f<b>abc</b>o</xmp>），实际: {found:?} 镜像: {out}"
+            !leaked && out.contains("<xmp>f<b>abc</b>o</xmp>"),
+            "rawtext 手术臂须节点级入壳无宿主 SetInnerHtml 串回写（<xmp>f<b>abc</b>o</xmp>），\
+             leaked={leaked} 镜像: {out} mutations: {m:?}"
         );
     }
 }
