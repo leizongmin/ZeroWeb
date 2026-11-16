@@ -104,6 +104,20 @@ static NAV_DISPATCH_TRACE: std::sync::LazyLock<bool> =
         Err(_) => false,
     });
 
+/// T73/G2 诊断：帧发布仪拍总门（`ZW_FRAME_PUBLISH_TRACE=1` 启用）。
+/// 进程级惰性快照——发布热路径零 env 读取（同 [`NAV_DISPATCH_TRACE`] 惯例）。
+/// 开启后在 `publish_render_with_layout` 帧发送前透出一行 INFO（frame_id/
+/// surface/epoch/进程相对时刻/发布模式），与 compositor 侧 `帧 #{frame_id}`
+/// 日志对号即可判定帧提交→光栅的归属（H1/H2 分辨，claimtrace-result §5 E1）。
+static FRAME_PUBLISH_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_FRAME_PUBLISH_TRACE") {
+        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => false,
+    });
+
+/// 帧发布仪拍的进程相对时刻基准（门开才读取，门关无系统调用）。
+static FRAME_PUBLISH_T0: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
+
 /// T36/H3 仪拍辅助：门开取当前时刻，门关恒 `None`（热路径零系统调用）。
 #[inline]
 fn nav_trace_t0() -> Option<std::time::Instant> {
@@ -4847,6 +4861,18 @@ fn publish_render_with_layout(
     paint.font_payloads = font_payloads;
     let frame_id = publish_state.next_frame_id;
     publish_state.next_frame_id += 1;
+    if *FRAME_PUBLISH_TRACE {
+        let mode = match publish_state.mode {
+            FramePublishMode::Legacy => "legacy",
+            FramePublishMode::Compositor => "compositor",
+        };
+        tracing::info!(
+            "FRAME_PUBLISH_TRACE frame_id={frame_id} surface={} epoch={} elapsed_ms={} mode={mode}",
+            publish_state.surface_id,
+            paint.navigation_epoch,
+            (Instant::now() - *FRAME_PUBLISH_T0).as_millis()
+        );
+    }
     if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
         let (mode, event) = match publish_state.mode {
             FramePublishMode::Legacy => ("legacy", "ViewPainted"),
