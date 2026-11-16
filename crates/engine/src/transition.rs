@@ -353,6 +353,16 @@ fn get_property_value(style: &ComputedStyle, property: &str) -> String {
             };
             crate::js_dom_bridge::computed_style::clip_path_to_css(&style.clip_path, font)
         }
+        // wptfyi-css shape-outside 刀：同 clip-path canonical 串化比较
+        //（css-shapes-1 §shape-outside 同 basic-shape 族 + 裸 <shape-box>，
+        // 差异才启动过渡）。
+        "shape-outside" => {
+            let font = match style.font_size {
+                LengthValue::Px(v) => v,
+                _ => 16.0,
+            };
+            crate::js_dom_bridge::computed_style::shape_outside_to_css(&style.shape_outside, font)
+        }
         // wptfyi-css 基本形状族刀：offset-path 旧/新值 verbatim 比较（差异才
         // 启动过渡——无臂时两侧同空串恒不启动；gCS offset-path 臂同 verbatim
         // 口径，neutral 端点组 007 页 transitions 通道 t<0.5 行依赖 from 保持）。

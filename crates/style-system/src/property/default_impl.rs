@@ -423,6 +423,7 @@ impl Default for ComputedStyle {
             text_shadow: Vec::new(),
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
+            shape_outside: ShapeOutsideComputedValue::None,
             clip: ClipRectComputedValue::Auto,
             mask_image: vec![],
             mask_mode: MaskModeComputedValue::MatchSource,

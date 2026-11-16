@@ -397,6 +397,9 @@ impl PropertyRegistry {
             // Clip Path
             "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),
 
+            // Shape Outside（css-shapes-1 §3，与 clip-path 同 basic-shape 族）
+            "shape-outside" => Some(ShapeOutside(ShapeOutsideComputedValue::None)),
+
             // Border Shape（css-borders-4 §7，R4534）
             "border-shape" => Some(BorderShape(zero_css_parser::values::BorderShapeValue::None)),
 
@@ -728,6 +731,7 @@ impl PropertyRegistry {
             "text-shadow",
             "box-shadow",
             "clip-path",
+            "shape-outside",
             "clip",
             "border-shape",
         ]

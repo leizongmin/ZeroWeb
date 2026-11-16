@@ -694,6 +694,8 @@ pub struct ComputedStyle {
     pub box_shadow: Vec<BoxShadowComputedValue>,
     /// clip-path 属性。
     pub clip_path: ClipPathComputedValue,
+    /// shape-outside 属性（css-shapes-1 §3：浮动周边环绕形状）。
+    pub shape_outside: ShapeOutsideComputedValue,
     /// clip 属性（已弃用的 CSS2 裁剪属性，仅对绝对定位元素生效）。
     pub clip: ClipRectComputedValue,
     /// mask-image 属性（支持多图层，格式与 background-image 相同）。

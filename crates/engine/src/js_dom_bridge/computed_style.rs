@@ -37,11 +37,11 @@ use zero_style_system::{
     ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
     OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
     QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
-    StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue,
-    TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue,
-    TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
-    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
-    WordBreakValue, WritingModeValue, ZIndexValue,
+    ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
+    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue,
+    TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
+    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -703,6 +703,8 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "will-change" => will_change_to_css(&style.will_change),
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
+        // css-shapes-1 §shape-outside：同 basic-shape 族串化器 + 裸 <shape-box>。
+        "shape-outside" => shape_outside_to_css(&style.shape_outside, font_size_px),
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
         "content" => content_to_css(&style.content, element_color, font_size_px),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
@@ -2694,6 +2696,16 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
         C::Path(p) => path_to_css(p),
         C::Rect(r) => rect_to_css(r),
         C::Xywh(x) => xywh_to_css(x),
+    }
+}
+
+/// shape-outside 计算值串化（css-shapes-1 §shape-outside）：`<basic-shape>`
+/// 复用 [`clip_path_to_css`]；裸 `<shape-box>` 即关键字原文；none → `none`。
+pub(crate) fn shape_outside_to_css(v: &ShapeOutsideComputedValue, font_size_px: f64) -> String {
+    match v {
+        ShapeOutsideComputedValue::None => "none".to_string(),
+        ShapeOutsideComputedValue::Shape(c) => clip_path_to_css(c, font_size_px),
+        ShapeOutsideComputedValue::Box(k) => k.as_css_str().to_string(),
     }
 }
 

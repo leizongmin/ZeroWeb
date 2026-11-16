@@ -1517,6 +1517,62 @@ fn test_get_computed_style_clip_path() {
 }
 
 #[test]
+fn test_get_computed_style_shape_outside() {
+    // css-shapes-1 §shape-outside：与 clip-path 同 basic-shape 族共享文法
+    // （wptfyi-css shape-outside 门线刀：白名单+apply+gCS 三站断言）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"shape-outside: none;\"></div>\
+        <div id=\"inset1\" style=\"shape-outside: inset(10%);\"></div>\
+        <div id=\"circle\" style=\"shape-outside: circle(50px at 25% 75%);\"></div>\
+        <div id=\"circle-def\" style=\"shape-outside: circle();\"></div>\
+        <div id=\"ellipse\" style=\"shape-outside: ellipse(20px 30px);\"></div>\
+        <div id=\"polygon\" style=\"shape-outside: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
+        <div id=\"margin-box\" style=\"shape-outside: margin-box;\"></div>\
+        <div id=\"content-box\" style=\"shape-outside: CONTENT-BOX;\"></div>\
+        <div id=\"bad-box\" style=\"shape-outside: half-border-box;\"></div>\
+        <div id=\"invalid\" style=\"shape-outside: bogus(10px);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none / 缺省。
+    assert_eq!(computed_style_property(html, "#none", "shape-outside"), "none");
+    assert_eq!(computed_style_property(html, "#def", "shape-outside"), "none");
+    // inset 单值折叠。
+    assert_eq!(computed_style_property(html, "#inset1", "shape-outside"), "inset(10%)");
+    // circle 半径 + at 位置 / 空参默认。
+    assert_eq!(
+        computed_style_property(html, "#circle", "shape-outside"),
+        "circle(50px at 25% 75%)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#circle-def", "shape-outside"),
+        "circle(closest-side)"
+    );
+    // ellipse 双半径。
+    assert_eq!(
+        computed_style_property(html, "#ellipse", "shape-outside"),
+        "ellipse(20px 30px)"
+    );
+    // polygon。
+    assert_eq!(
+        computed_style_property(html, "#polygon", "shape-outside"),
+        "polygon(0% 0%, 100% 0%, 50% 100%)"
+    );
+    // 非法函数：apply oracle 拒收，回落 none。
+    assert_eq!(computed_style_property(html, "#invalid", "shape-outside"), "none");
+    // 裸 <shape-box>（css-shapes-1 §shape-box-value）：四关键字大小写不敏感
+    // canonical 小写往返；clip-path 扩展 half-border-box 非 <shape-box>，拒收。
+    assert_eq!(
+        computed_style_property(html, "#margin-box", "shape-outside"),
+        "margin-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#content-box", "shape-outside"),
+        "content-box"
+    );
+    assert_eq!(computed_style_property(html, "#bad-box", "shape-outside"), "none");
+}
+
+#[test]
 fn test_get_computed_style_content() {
     // R2722：getComputedStyle content 序列化（CSS Generated Content，::before/::after 生成内容）。
     let html = "<html><body>\

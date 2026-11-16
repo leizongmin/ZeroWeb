@@ -730,3 +730,50 @@ fn shape_computed_serialization_resolves_keywords() {
         "shape(from center center, hline to left)"
     );
 }
+
+// ── circle/ellipse at <position> 4 值 edge-offset（shape-outside 门线刀刀 B） ──
+
+#[test]
+fn circle_at_position_four_value_edge_offsets() {
+    // css-values-4 §position 4 值 edge-offset 形（css-shapes-1 circle/ellipse
+    // at <position> 语料主形态）：top/left 偏移直读、right/bottom 偏移按
+    // 100%−o Calc 折算存储、同轴双对拒收。语料钉面 shape-outside/circle-004。
+    // <https://drafts.csswg.org/css-values-4/#typedef-position>
+    let circle_at = |v: &str| match super::super::parse_extended_border::parse_clip_path(v) {
+        Some(ClipPathValue::Circle { position, .. }) => position,
+        _ => None,
+    };
+    // top/left 直读：x=left 偏移 30px、y=top 偏移 10px。
+    assert_eq!(
+        circle_at("circle(50px at top 10px left 30px)"),
+        Some((LengthValue::Px(30.0), LengthValue::Px(10.0)))
+    );
+    // right/bottom → Calc(100% − o)。
+    let assert_edge_calc = |v: &str, off_px: f64, label: &str| {
+        let got = circle_at(v).unwrap().0;
+        let ok = matches!(
+            &got,
+            LengthValue::Calc(c)
+                if matches!(
+                    &**c,
+                    CalcExpr::BinaryOp(l, CalcOp::Subtract, r)
+                        if matches!(&**l, CalcExpr::Length(LengthValue::Percentage(100.0)))
+                            && matches!(&**r, CalcExpr::Length(LengthValue::Px(p)) if *p == off_px)
+                )
+        );
+        assert!(ok, "{label}: expected calc(100% - {off_px}px), got {got:?}");
+    };
+    assert_edge_calc("circle(50px at right 30px bottom 20px)", 30.0, "x");
+    // y 分量同臂（bottom 20px → calc(100% - 20px)）。
+    let (_, y) = circle_at("circle(50px at right 30px bottom 20px)").unwrap();
+    assert!(matches!(
+        y,
+        LengthValue::Calc(ref c)
+            if matches!(**c, CalcExpr::BinaryOp(_, CalcOp::Subtract,
+                ref r) if matches!(**r, CalcExpr::Length(LengthValue::Px(p)) if p == 20.0))
+    ));
+    // 同轴双对拒收（css-values-4 <position> 文法：每轴至多一对）。
+    assert_eq!(circle_at("circle(50px at left 10px right 20px)"), None);
+    // FIXME: `<offset> <edge>` 乱序形（css-values-4 文法合法）现臂拒收，
+    // 语料现值均为 edge 首词形，后置。
+}

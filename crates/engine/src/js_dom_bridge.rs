@@ -6169,6 +6169,20 @@ pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
 /// 声明是否被 ZW 支持（已知属性 + 值可 apply）。
 #[cfg(feature = "script-runtime")]
 fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val: &str) -> bool {
+    // CSS Cascade 5 §css-wide-keywords：`CSS.supports(prop, <css-wide keyword>)`
+    // 对任意已知属性恒真（inheritance/compute 通道解析，值文法无关——
+    // interpolation-testcommon `from [initial]`/`to [inherit]` 前置门驱动）。
+    // 置顶于各属性文法早退之前（counter-increment 等文法门对关键字值恒拒）。
+    // FIXME: position-area/anchor 族不在 known_properties()（注册表外裁决），
+    // 关键字值此处回落 false——canonicalize_decl 文法对关键字同拒，行为
+    // 与臂前置等价，待族属性入注册表时一并修。
+    // <https://drafts.csswg.org/css-cascade-5/#default-keyword>
+    if matches!(
+        val.trim().to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return zero_style_system::PropertyRegistry::known_properties().contains(&prop);
+    }
     // 组 F 批（css-anchor-position-1）：`position-area` 文法面由
     // [`dom_bindings::position_area`] 裁决（style-system 注册表不含该属性——
     // computed-testcommon 每 test 以 `CSS.supports('position-area', v)` 前置门）。

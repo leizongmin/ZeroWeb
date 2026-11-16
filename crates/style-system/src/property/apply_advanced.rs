@@ -2609,6 +2609,31 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        "shape-outside" => {
+            // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
+            // ——<basic-shape> 复用 parse_clip_path 裁决单点（basic-shape 族
+            // 共享解析器）；裸 <shape-box> 关键字独立受理（clip-path 无此
+            // 形态）。FIXME: <basic-shape> <shape-box> 后缀组合形未建模。
+            if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
+                style.shape_outside = match v {
+                    zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
+                    v => ShapeOutsideComputedValue::Shape(v),
+                };
+                return true;
+            }
+            let lower = value.trim().to_ascii_lowercase();
+            let box_kind = match lower.as_str() {
+                "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
+                "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
+                "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
+                "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
+                _ => None,
+            };
+            if let Some(k) = box_kind {
+                style.shape_outside = ShapeOutsideComputedValue::Box(k);
+                return true;
+            }
+        }
         "clip" => {
             if let Some(v) = zero_css_parser::values::parse_clip(value) {
                 style.clip = v;

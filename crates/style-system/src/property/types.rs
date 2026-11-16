@@ -1964,6 +1964,9 @@ pub enum PropertyValue {
     BoxShadow(Vec<BoxShadowComputedValue>),
     /// clip-path 值。
     ClipPath(ClipPathComputedValue),
+    /// shape-outside 值（css-shapes-1 §3：`none | <basic-shape>`，与 clip-path
+    /// 同 basic-shape 族共享文法）。
+    ShapeOutside(ShapeOutsideComputedValue),
     /// border-shape 值（css-borders-4 §7，R4534）。
     BorderShape(BorderShapeComputedValue),
     /// clip 属性值（已弃用的 CSS2 裁剪属性）。
@@ -2125,6 +2128,49 @@ pub enum FilterComputedValue {
 /// 直接复用 css-parser 的 ClipPathValue 类型，
 /// 因为计算阶段不需要额外转换。
 pub type ClipPathComputedValue = zero_css_parser::values::ClipPathValue;
+
+/// shape-outside 计算值（css-shapes-1 §shape-outside：
+/// `none | [ <basic-shape> || <shape-box> ]`）。
+///
+/// 独立 wrapper 而非 [`ClipPathComputedValue`] 别名：文法比 clip-path 多出
+/// 裸 `<shape-box>` 形态（margin-box 等），共享枚举不加变体以免波及
+/// clip-path paint/interp 面；`<basic-shape>` 分支复用 parse_clip_path
+/// 裁决单点。FIXME: `<basic-shape> <shape-box>` 后缀组合形未建模（corpus 现值均为裸形态）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShapeOutsideComputedValue {
+    /// none — 浮动元素无避让形状（默认值）。
+    None,
+    /// `<basic-shape>`（inset/circle/ellipse/polygon/shape/path/rect/xywh）。
+    Shape(zero_css_parser::values::ClipPathValue),
+    /// 裸 `<shape-box>` 关键字——避让形状即引用盒本身。
+    Box(ShapeOutsideBoxKind),
+}
+
+/// shape-outside `<shape-box>` 关键字（css-shapes-1 §shape-box-value；
+/// 不含 clip-path geometry-box 的 bound-border-box 等扩展）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeOutsideBoxKind {
+    /// content-box。
+    ContentBox,
+    /// padding-box。
+    PaddingBox,
+    /// border-box。
+    BorderBox,
+    /// margin-box。
+    MarginBox,
+}
+
+impl ShapeOutsideBoxKind {
+    /// CSS 关键字原文（计算值串化即此形）。
+    pub fn as_css_str(self) -> &'static str {
+        match self {
+            ShapeOutsideBoxKind::ContentBox => "content-box",
+            ShapeOutsideBoxKind::PaddingBox => "padding-box",
+            ShapeOutsideBoxKind::BorderBox => "border-box",
+            ShapeOutsideBoxKind::MarginBox => "margin-box",
+        }
+    }
+}
 
 /// R4248（CSS Borders 4 §corner-shaping）：corner-shape 计算值。
 pub type CornerShapeComputedValue = zero_css_parser::values::CornerShapeValue;

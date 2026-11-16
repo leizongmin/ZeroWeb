@@ -1152,6 +1152,45 @@ fn parse_shape_position(inner: &str) -> Option<(&str, Option<(LengthValue, Lengt
 /// 解析位置对 "x y" 或 "center" 等。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
     let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() == 4 {
+        // css-values-4 §position 4 值 edge-offset 形 `<edge> <offset> <edge>
+        // <offset>`（css-shapes-1 at <position> circle/ellipse 语料主形态，
+        // inset-001/circle-004 页）。首词定轴序，同轴双对拒收；
+        // `right/bottom o` 语义 100% − o 以 Calc 形存储（style-system
+        // parse_origin_edge_offsets 同构，shape() 通道
+        // shape_axis_comp_resolved Edge 臂同型）。
+        // <https://drafts.csswg.org/css-values-4/#typedef-position>
+        let kw = |t: &str| match t.to_ascii_lowercase().as_str() {
+            "left" => Some((0u8, 0.0f64)),
+            "right" => Some((0, 100.0)),
+            "top" => Some((1, 0.0)),
+            "bottom" => Some((1, 100.0)),
+            _ => None,
+        };
+        let (axis1, edge1) = kw(parts[0])?;
+        let (axis2, edge2) = kw(parts[2])?;
+        if axis1 == axis2 {
+            return None;
+        }
+        let off1 = parse_clip_length(parts[1], true)?;
+        let off2 = parse_clip_length(parts[3], true)?;
+        let resolve = |edge_pct: f64, off: LengthValue| {
+            if edge_pct == 0.0 {
+                off
+            } else {
+                LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+                    Box::new(CalcExpr::Length(LengthValue::Percentage(edge_pct))),
+                    CalcOp::Subtract,
+                    Box::new(CalcExpr::Length(off)),
+                )))
+            }
+        };
+        return Some(if axis1 == 1 {
+            (resolve(edge2, off2), resolve(edge1, off1))
+        } else {
+            (resolve(edge1, off1), resolve(edge2, off2))
+        });
+    }
     if parts.is_empty() || parts.len() > 2 {
         return None;
     }
