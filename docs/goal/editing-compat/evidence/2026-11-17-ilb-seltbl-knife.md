@@ -1,8 +1,10 @@
 # ilb E2/E3 表格单元域刀收口（ILB-SELTBL，2026-11-17）＝ilb 普查十族全清收官
 
-刀体 a549fe075（`fix(editing): ilb E2/E3 表格单元域刀——下钻排除表结构容器
-＋td/th 入壳臂＋表节 caret br 非合法子守卫（ILB-SELTBL）`）＋门禁批 i7h1
-ALL-DONE（head=a549fe075，bin 8ba4aa283105edc0062754698be0b3a3，
+刀体 f7184d774（`fix(editing): ilb E2/E3 表格单元域刀——下钻排除表结构容器
+＋td/th 入壳臂＋表节 caret br 非合法子守卫（ILB-SELTBL）`；docs push 前
+rebase 改写自批运行树 a549fe075，crates/ 域 diff 恒等、bin 8ba4aa28 字节锚
+为准）＋门禁批 i7h1
+ALL-DONE（head=a549fe075 批时，bin 8ba4aa283105edc0062754698be0b3a3，
 2026-11-17 07:19 完走）。F2P 恰 2 零新增红，**ilb 语料全清 1691P/0F/0T**
 ——insertlinebreak 普查十族（A-J）全部划除收官。
 
