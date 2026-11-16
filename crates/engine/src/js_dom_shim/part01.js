@@ -13374,11 +13374,14 @@
       // Chrome 实录 `abc\n<br>`（语料 :925-932 flex／:987-996 grid，注记
       // "based on Chrome 142"），br 忽略容器仍须插 br 元素非文本换行；坍缩
       // 补断概念与 spec isCollapsedLineBreak（:795 zwsp 布局探针／:7459 补
-      // 第二条）同源。forceLf（inline div 无声明，cannot-have-div 语料域）
-      // 无垫形语料锚，维持 \n 垫不变。
-      var brk3b = (wsSig && !forceLf)
-        ? document.createElement('br')
-        : document.createTextNode('\n');
+      // 第二条）同源。v1.1（i7f0 v1 ABORT 归因修复：ilb-a 1635P/56F——v1
+      // 三元把 wsSig=false br 型臂翻成 \n 垫，`<div>foo[]</div>` got
+      // `<div>foo<br>\n</div>` P2F 39 键实录）：垫节点三分——wsSig∧forceLf
+      // （inline div 无声明，cannot-have-div 语料域，无垫形语料锚）维持
+      // \n 垫，其余（br 型＋声明 pre 系）一律 <br> 垫。
+      var brk3b = (wsSig && forceLf)
+        ? document.createTextNode('\n')
+        : document.createElement('br');
       boundaryParent.insertBefore(brk3b, brk3.nextSibling || null);
     }
     var kids3 = boundaryParent.childNodes || [];
