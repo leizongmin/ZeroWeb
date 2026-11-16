@@ -182,8 +182,10 @@ pin124("ihb-empty-li-replace", "<ol id=\"old\"><li id=\"li0\">{}<br></ol>", [],
   "<ol id=\"old\"><li id=\"li1\">abc</li><li id=\"li2\">def</li></ol>");
 // ⑲ 携带族 override carry（2026-11-16 携带族刀——corpus inserthtml 8 键实录
 // 形：swcss true → span style rgb 形、false → font color hex 形，载荷包壳在
-// 块元素内）；CE=false pre 块臂旁路（tTag pre 非劈裂域）落既有轴二 pre 壳臂
-// 现役 got——语料该键仍红，钉测锁现役行为防漂移。
+// 块元素内）；CE=false pre 块臂旁路（tTag pre 非劈裂域）——ihe6 E/F/CEF 残刀
+// 后 bare 臂 pre 上下文块载荷单块解包接通（嵌套 editing host 面链扫描不可达
+// pre[CEF]，语料 :576 键已修），钉测由锁现役红形改锁语料 exp 形防漂移
+//（part112 r3254_m3「红定谳后按两侧 parser 事实落地」同款改钉先例）。
 pin124("ihb-carry-font-false", "<font color=blue>foo[]bar</font>", [DV], "<p>abc",
   "<font color=\"blue\">foo</font><p><font color=\"#0000ff\">abc</font></p><font color=\"blue\">bar</font>");
 pin124("ihb-carry-span-false", "<span style=color:blue>foo[]bar</span>", [DP], "<p>abc",
@@ -196,7 +198,7 @@ pin124("ihb-carry-span-true", "<span style=color:blue>foo[]bar</span>",
   "<span style=\"color:blue\">foo</span><p><span style=\"color:rgb(0, 0, 255)\">abc</span></p><span style=\"color:blue\">bar</span>");
 pin124("ihb-bypass-ce-pre", "<pre contenteditable=\"false\"><span contenteditable>[1234]</span></pre>",
   [], "<pre>abc</pre>",
-  "<pre contenteditable=\"false\"><span contenteditable=\"\"><pre>abc</pre></span></pre>");
+  "<pre contenteditable=\"false\"><span contenteditable=\"\">abc</span></pre>");
 // ㉑ 轴二元素端点臂（2026-11-16 轴二壳界选区刀——corpus inserthtml 8 键实录：
 // `{}` marker 落壳边界产生元素端点 range（elStartIdx==0 → startNode=parentNode），
 // 既有内联臂 sc.nodeType===3 入口门整臂旁路 no-op）。元素端点归一宿主子文本

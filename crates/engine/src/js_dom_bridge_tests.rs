@@ -233,3 +233,4 @@ include!("js_dom_bridge_tests/part122_ip_c5_root_bare_br_pins.rs");
 // 双 br/nxt 存在四控制键现役绿形恒一。
 include!("js_dom_bridge_tests/part123_ip_i5_pre_lf_pins.rs");
 include!("js_dom_bridge_tests/part124_ihtml_block_pins.rs");
+include!("js_dom_bridge_tests/part125_ihtml_residual_pins.rs");
