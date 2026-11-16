@@ -171,7 +171,7 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 48] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 56] = [
     "backdrop-filter",
     "background",
     "background-color",
@@ -180,6 +180,10 @@ const TRANSITIONABLE_PROPERTIES: [&str; 48] = [
     "clip-path",
     "color",
     "column-rule-color",
+    "column-rule-inset-cap-end",
+    "column-rule-inset-cap-start",
+    "column-rule-inset-junction-end",
+    "column-rule-inset-junction-start",
     "column-rule-width",
     "filter",
     "font-size",
@@ -209,6 +213,10 @@ const TRANSITIONABLE_PROPERTIES: [&str; 48] = [
     "right",
     "rotate",
     "row-rule-color",
+    "row-rule-inset-cap-end",
+    "row-rule-inset-cap-start",
+    "row-rule-inset-junction-end",
+    "row-rule-inset-junction-start",
     "row-rule-width",
     "scale",
     "shape-image-threshold",

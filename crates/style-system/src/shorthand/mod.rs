@@ -946,6 +946,26 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         "rule-width" => expand_rule_dimension(value, important, specificity, "rule-width"),
         "rule-style" => expand_rule_dimension(value, important, specificity, "rule-style"),
 
+        // ── rule-inset 简写族（css-gaps-1 §inset，15 简写）──
+        // 四槽解析单点 parse_rule_inset_quad + 槽位投影展开（expand_rule_inset，
+        // 目标表 rule_inset_targets 按简写名查）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "rule-inset"
+        | "column-rule-inset"
+        | "row-rule-inset"
+        | "rule-inset-cap"
+        | "column-rule-inset-cap"
+        | "row-rule-inset-cap"
+        | "rule-inset-junction"
+        | "column-rule-inset-junction"
+        | "row-rule-inset-junction"
+        | "rule-inset-start"
+        | "column-rule-inset-start"
+        | "row-rule-inset-start"
+        | "rule-inset-end"
+        | "column-rule-inset-end"
+        | "row-rule-inset-end" => expand_rule_inset(value, important, specificity, property),
+
         // ── border-image 简写 ──
         "border-image" => expand_border_image(value, important, specificity),
 
@@ -2550,6 +2570,142 @@ fn expand_rule_dimension(value: &str, important: bool, specificity: (u32, u32, u
         return vec![];
     }
     vec![mk(&row_prop, value), mk(&col_prop, value)]
+}
+
+// ── css-gaps-1 §inset：rule-inset 简写族展开 ──────────────────────────────
+
+/// rule-inset 四槽位（quad 投影键）。
+#[derive(Clone, Copy, PartialEq)]
+enum RuleInsetSlot {
+    /// cap 侧 start 槽。
+    CapStart,
+    /// cap 侧 end 槽。
+    CapEnd,
+    /// junction 侧 start 槽。
+    JunctionStart,
+    /// junction 侧 end 槽。
+    JunctionEnd,
+}
+
+/// 简写名 → 覆盖 (longhand, 槽位) 目标表（css-gaps-1 §inset 15 简写；
+/// shorthand-testcommon rule_properties 映射同源）。
+fn rule_inset_targets(prop: &str) -> Option<&'static [(&'static str, RuleInsetSlot)]> {
+    use RuleInsetSlot::*;
+    match prop {
+        "rule-inset" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "column-rule-inset" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "row-rule-inset" => Some(&[
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "rule-inset-cap" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+        ]),
+        "column-rule-inset-cap" => Some(&[("column-rule-inset-cap-start", CapStart), ("column-rule-inset-cap-end", CapEnd)]),
+        "row-rule-inset-cap" => Some(&[("row-rule-inset-cap-start", CapStart), ("row-rule-inset-cap-end", CapEnd)]),
+        "rule-inset-junction" => Some(&[
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "column-rule-inset-junction" => Some(&[
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "row-rule-inset-junction" => Some(&[
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "rule-inset-start" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-junction-start", JunctionStart),
+        ]),
+        "column-rule-inset-start" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-junction-start", JunctionStart),
+        ]),
+        "row-rule-inset-start" => Some(&[
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-junction-start", JunctionStart),
+        ]),
+        "rule-inset-end" => Some(&[
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-end", JunctionEnd),
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "column-rule-inset-end" => Some(&[
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "row-rule-inset-end" => Some(&[
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        _ => None,
+    }
+}
+
+/// rule-inset 简写族展开（css-gaps-1 §inset）：全值解析单点
+/// `parse_rule_inset_quad`（双侧 `/` 结构与 {1,2} 复制语义单点），目标表槽位
+/// 投影落 canonical 槽文本（`rule_inset_component_to_css`——裸零折 `0px`、
+/// 单位保形）。非法值空 Vec = 展开拒。css-wide 关键字透传目标 longhand。
+/// driving: css-gaps 语料 rule-inset-{valid,invalid,shorthand,…} 20 页。
+/// https://drafts.csswg.org/css-gaps-1/#inset
+fn expand_rule_inset(value: &str, important: bool, specificity: (u32, u32, u32), prop: &str) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let Some(targets) = rule_inset_targets(prop) else {
+        return vec![];
+    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        let names: Vec<&str> = targets.iter().map(|(name, _)| *name).collect();
+        return wide_keyword_to_longhands(value, &names, important, specificity);
+    }
+
+    let Some(quad) = zero_css_parser::values::parse_rule_inset_quad(value) else {
+        return vec![];
+    };
+    let slot_value = |slot: RuleInsetSlot| -> Option<String> {
+        let c = match slot {
+            RuleInsetSlot::CapStart => &quad.cap_start,
+            RuleInsetSlot::CapEnd => &quad.cap_end,
+            RuleInsetSlot::JunctionStart => &quad.junction_start,
+            RuleInsetSlot::JunctionEnd => &quad.junction_end,
+        };
+        zero_css_parser::values::rule_inset_component_to_css(c)
+    };
+    let Some(decls) = targets
+        .iter()
+        .map(|(name, slot)| slot_value(*slot).map(|v| mk(name, &v)))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return vec![];
+    };
+    decls
 }
 
 /// gap-rule 联合简写展开目标（column-rule / row-rule / rule 三简写共享）。

@@ -23280,7 +23280,16 @@
     };
     var readProp = function (name) {
       var v = readDeclValue(name);
-      return v == null ? '' : _styleValueAndPriority(v).value;
+      if (v != null) return _styleValueAndPriority(v).value;
+      // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 简写读重组（T50 面同
+      // 回调同语义——直接声明 miss 时从名单 longhand 重组 specified 串；非家族名
+      // / 缺任一 longhand / 不可重组空串回落，回调未注册零漂移）。
+      if (typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        var gRec = String(globalThis.__zw_style_shorthand_reconstruct(
+          readRaw(), _styleDeclName(name)));
+        if (gRec) return gRec;
+      }
+      return '';
     };
     var propNames = function () {
       return readRaw().split(';').map(function (s) {
@@ -23334,16 +23343,68 @@
         // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
         if (core !== '' && typeof __zw_validate_decl_value === 'function'
             && __zw_validate_decl_value(want, core) === 'false') return;
+        // wptfyi-css css-gaps 刀 D inline 站（kd-inline-station M）：gap-rule/inset
+        // 简写家族展开落名单 longhand（与 T50 面同回调单源——cssom-1 简写语义 +
+        // test_shorthand_value style.length 记账，简写键不占声明位，Chromium cssText
+        // 同形态）。本面存储域 = style attribute 原文——直接字符串手术重排声明段
+        //（既有本名 + 家族 longhand 段滤除后回拼）。priority 逐名透传；非家族名 /
+        // 展开失败空串 → 回落通用写路径零漂移。
+        // https://drafts.csswg.org/cssom-1/#dom-cssstyledeclaration-setproperty
+        if (typeof globalThis.__zw_style_shorthand_expand === 'function') {
+          var gJson = String(globalThis.__zw_style_shorthand_expand(want, core));
+          if (gJson) {
+            var gDecls = null;
+            try { gDecls = JSON.parse(gJson); } catch (gErr) { gDecls = null; }
+            if (gDecls && gDecls.length) {
+              var gDrop = {};
+              for (var gi = 0; gi < gDecls.length; gi++) gDrop[gDecls[gi][0]] = true;
+              gDrop[want.toLowerCase()] = true;
+              var gParts = readRaw().split(';');
+              var gOut = [];
+              for (var gp = 0; gp < gParts.length; gp++) {
+                var gSeg = gParts[gp];
+                var gColon = gSeg.indexOf(':');
+                if (gColon < 0) { if (gSeg.trim()) gOut.push(gSeg.trim()); continue; }
+                var gName = gSeg.slice(0, gColon).trim().toLowerCase();
+                if (gName && (gName in gDrop)) continue;
+                gOut.push(gSeg.trim());
+              }
+              for (var gi2 = 0; gi2 < gDecls.length; gi2++) {
+                var gv = gDecls[gi2][1];
+                if (gv !== '') gOut.push(gDecls[gi2][0] + ': ' + (pri.priority ? gv + ' !important' : gv));
+              }
+              node.setAttribute('style', gOut.join('; '));
+              return true;
+            }
+          }
+        }
         v = pri.priority ? core + ' !important' : core;
       }
       var parts = readRaw().split(';');
       var out = [];
+      // 刀 D inline 站：gap-rule/inset 家族简写空值 = 名单 longhand 一并移除
+      //（cssom-1 简写 remove 语义；本面 removeProperty 委托空值写——T50 面空值臂
+      // 同形；宿主 expand 回调空值返 (名,"") 名单，未注册/非家族名零漂移）。
+      var gFamDrop = null;
+      if (v === '' && !custom && typeof globalThis.__zw_style_shorthand_expand === 'function') {
+        var geJson = String(globalThis.__zw_style_shorthand_expand(want, ''));
+        if (geJson) {
+          try { gFamDrop = JSON.parse(geJson); } catch (geErr) { gFamDrop = null; }
+          if (!(gFamDrop && gFamDrop.length)) gFamDrop = null;
+        }
+      }
       for (var i = 0; i < parts.length; i++) {
         var decl = parts[i];
         var colon = decl.indexOf(':');
         if (colon < 0) { if (decl.trim()) out.push(decl.trim()); continue; }
         var dname = decl.slice(0, colon).trim();
         var keep = custom ? dname !== want : dname.toLowerCase() !== want.toLowerCase();
+        if (keep && gFamDrop) {
+          var gDl = dname.toLowerCase();
+          for (var gfi = 0; gfi < gFamDrop.length; gfi++) {
+            if (gFamDrop[gfi][0] === gDl) { keep = false; break; }
+          }
+        }
         if (keep) out.push(decl.trim());
       }
       // T52：值参 trim 后回拼（IDL set trap 此前原文透传落库两侧空白，与 setProperty
@@ -30994,7 +31055,19 @@ return e;
           _styleValueAndPriority(tF || 'none').value
         );
       }
-      return readLonghand(name);
+      var lv = readLonghand(name);
+      if (lv) return lv;
+      // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 简写读重组——直接声明
+      // miss 时宿主回调从名单 longhand 重组 specified 串（canonical `10px 20px /
+      // 10px 20px` 全形 / 全等塌缩单值 / 双轴等值模型，bidirectional-shorthands
+      // 页 oracle 同源）。非家族简写名 / 缺任一 longhand / 不可重组返空串 → 回落
+      // 空值语义（回调未注册零漂移，position-try 合成读同约定）。
+      if (typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        var gRec = String(globalThis.__zw_style_shorthand_reconstruct(
+          readRaw(), _styleDeclName(name)));
+        if (gRec) return gRec;
+      }
+      return lv;
     };
     var setProp = function(name, value) {
       // T50：写面名参接 `_styleDeclName`（与规则样式/声明文本面同函数，DF-1 同根收口）——
@@ -31088,6 +31161,35 @@ return e;
         // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
         if (core !== '' && typeof __zw_validate_decl_value === 'function'
             && __zw_validate_decl_value(prop, core) === 'false') return;
+        // wptfyi-css css-gaps 刀 D inline 站（kd-inline-station T50）：gap-rule/
+        // inset 简写家族展开落名单 longhand（cssom-1 简写语义 + test_shorthand_value
+        // style.length 记账——简写键不占声明位，Chromium cssText 同形态）。宿主回调
+        // 返 JSON (名,值) 列表（canonical 文本：裸零折 0px / 单侧复制 / `/` 全形；
+        // css-wide 逐 longhand 透传）；空值返 (名,"") 列表 = 名单逐名清声明（R3211
+        // 简写 remove 语义，native 面空值臂同形）；非家族简写名 / 展开失败返空串
+        // → 回落通用写路径零漂移（position-try split 臂同约定）。priority 逐名
+        // 透传（native 面 gap_rule_expand_decls 同语义）。实现单源
+        // dom_bindings::css_style_declaration（grid/position-area G1 同型）。
+        // https://drafts.csswg.org/cssom-1/#dom-cssstyledeclaration-setproperty
+        if (typeof globalThis.__zw_style_shorthand_expand === 'function') {
+          var gJson = String(globalThis.__zw_style_shorthand_expand(prop, core));
+          if (gJson) {
+            var gDecls = null;
+            try { gDecls = JSON.parse(gJson); } catch (gErr) { gDecls = null; }
+            if (gDecls && gDecls.length) {
+              if (handle) __zw_set_style_handle(handle, prop, '');
+              else __zw_set_style(sel, prop, '');
+              for (var gi = 0; gi < gDecls.length; gi++) {
+                var gv = gDecls[gi][1];
+                if (pri.priority && gv !== '') gv = gv + ' !important';
+                if (handle) __zw_set_style_handle(handle, gDecls[gi][0], gv);
+                else __zw_set_style(sel, gDecls[gi][0], gv);
+              }
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+              return;
+            }
+          }
+        }
         v = pri.priority ? core + ' !important' : core;
         // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
         // none → 存原值。core 保 none 形（hsl/hwb % 剥除后仍含 none 字面）同样
@@ -31174,6 +31276,26 @@ return e;
               }
               _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
               return prev;
+            }
+            // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 家族简写 removeProperty
+            // = 名单 longhand 一并清除（cssom-1 简写 remove 语义——native 面 R3211
+            // 空值臂同形；写面展开臂的逆）。宿主 expand 回调空值返 (名,"") 名单；
+            // 未注册 / 非家族名 → 通用单名清除零漂移。
+            if (typeof globalThis.__zw_style_shorthand_expand === 'function') {
+              var gFamJson = String(globalThis.__zw_style_shorthand_expand(prop, ''));
+              if (gFamJson) {
+                var gFam = null;
+                try { gFam = JSON.parse(gFamJson); } catch (gErr2) { gFam = null; }
+                if (gFam && gFam.length) {
+                  for (var gf = 0; gf < gFam.length; gf++) {
+                    if (handle && typeof __zw_remove_style_handle === 'function') {
+                      __zw_remove_style_handle(handle, gFam[gf][0]);
+                    } else if (!handle && typeof __zw_remove_style === 'function') {
+                      __zw_remove_style(sel, gFam[gf][0]);
+                    }
+                  }
+                }
+              }
             }
             if (shadow) delete shadow[prop];
             if (handle && typeof __zw_remove_style_handle === 'function') {

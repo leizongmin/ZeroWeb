@@ -2230,7 +2230,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 33] = [
+    const VALIDATED_PROPERTIES: [&str; 56] = [
         "transform",
         "rotate",
         "scale",
@@ -2338,6 +2338,37 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "rule-style",
         "row-rule",
         "rule",
+        // rule-inset 族写面文法门（css-gaps-1 §inset：`overlap-join |
+        // <length-percentage>` 槽 × {1,2} × `/` 双侧，8 longhand + 15 简写）：
+        // apply 链既有臂裁决（parse_rule_inset_component / parse_rule_inset_quad），
+        // 白名单接入即启用 inline 写面 invalid 形拒收（driving: css-gaps 语料
+        // rule-inset-invalid `auto`/`none`/无单位 `10`/3 槽/双 `/`/前导 `/`
+        // 此前白名单外放行 store 原文回显即 Fail）。简写裁决走 shorthand 展开
+        //（同 rule-color 先例，apply 臂 expand_shorthands 全过才落值）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "column-rule-inset-cap-start",
+        "column-rule-inset-cap-end",
+        "column-rule-inset-junction-start",
+        "column-rule-inset-junction-end",
+        "row-rule-inset-cap-start",
+        "row-rule-inset-cap-end",
+        "row-rule-inset-junction-start",
+        "row-rule-inset-junction-end",
+        "rule-inset",
+        "column-rule-inset",
+        "row-rule-inset",
+        "rule-inset-cap",
+        "column-rule-inset-cap",
+        "row-rule-inset-cap",
+        "rule-inset-junction",
+        "column-rule-inset-junction",
+        "row-rule-inset-junction",
+        "rule-inset-start",
+        "column-rule-inset-start",
+        "row-rule-inset-start",
+        "rule-inset-end",
+        "column-rule-inset-end",
+        "row-rule-inset-end",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，

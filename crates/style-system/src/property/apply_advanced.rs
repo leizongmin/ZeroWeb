@@ -1426,6 +1426,89 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // rule-inset 简写族 apply 臂（css-gaps-1 §inset）：15 简写经 cascade
+        // 同一展开器 expand_rule_inset 投影落槽 canonical 文本，逐条递归 apply
+        // 全过才落 true（rule-color 臂同模板）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "rule-inset"
+        | "column-rule-inset"
+        | "row-rule-inset"
+        | "rule-inset-cap"
+        | "column-rule-inset-cap"
+        | "row-rule-inset-cap"
+        | "rule-inset-junction"
+        | "column-rule-inset-junction"
+        | "row-rule-inset-junction"
+        | "rule-inset-start"
+        | "column-rule-inset-start"
+        | "row-rule-inset-start"
+        | "rule-inset-end"
+        | "column-rule-inset-end"
+        | "row-rule-inset-end" => {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 1))];
+            let decls = crate::shorthand::expand_shorthands(&decl);
+            if !decls.is_empty()
+                && decls
+                    .iter()
+                    .all(|(p, v, _, _)| super::apply_advanced::apply_advanced_property_value(style, p, v, sibling))
+            {
+                return true;
+            }
+        }
+        // rule-inset 8 longhand 槽 apply 臂（css-gaps-1 §inset）：单槽文法裁决
+        // 单点 parse_rule_inset_component（`overlap-join | <length-percentage>`）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "column-rule-inset-cap-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_cap_start = c;
+                return true;
+            }
+        }
+        "column-rule-inset-cap-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_cap_end = c;
+                return true;
+            }
+        }
+        "column-rule-inset-junction-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_junction_start = c;
+                return true;
+            }
+        }
+        "column-rule-inset-junction-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_junction_end = c;
+                return true;
+            }
+        }
+        "row-rule-inset-cap-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_cap_start = c;
+                return true;
+            }
+        }
+        "row-rule-inset-cap-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_cap_end = c;
+                return true;
+            }
+        }
+        "row-rule-inset-junction-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_junction_start = c;
+                return true;
+            }
+        }
+        "row-rule-inset-junction-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_junction_end = c;
+                return true;
+            }
+        }
         // ── Column Rule 属性（css-gaps-1 列表文法：width/style 重定义为段列表，
         // 纯值 = 单段列表 multicol 保形；row-rule-* 同文法新臂）──
         // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width

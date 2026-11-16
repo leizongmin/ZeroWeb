@@ -1915,6 +1915,24 @@ pub enum PropertyValue {
     ColumnRuleColor(Vec<zero_css_parser::values::RuleColorSegment>),
     /// row-rule-color 值（css-gaps-1 §column-row-rule-color，与 column 同文法）。
     RowRuleColor(Vec<zero_css_parser::values::RuleColorSegment>),
+    // css-gaps-1 §inset：8 longhand 槽值（`overlap-join | <length-percentage>`，
+    // 初值 0px 非继承）。
+    /// column-rule-inset-cap-start 值。
+    ColumnRuleInsetCapStart(zero_css_parser::values::RuleInsetComponent),
+    /// column-rule-inset-cap-end 值。
+    ColumnRuleInsetCapEnd(zero_css_parser::values::RuleInsetComponent),
+    /// column-rule-inset-junction-start 值。
+    ColumnRuleInsetJunctionStart(zero_css_parser::values::RuleInsetComponent),
+    /// column-rule-inset-junction-end 值。
+    ColumnRuleInsetJunctionEnd(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-cap-start 值。
+    RowRuleInsetCapStart(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-cap-end 值。
+    RowRuleInsetCapEnd(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-junction-start 值。
+    RowRuleInsetJunctionStart(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-junction-end 值。
+    RowRuleInsetJunctionEnd(zero_css_parser::values::RuleInsetComponent),
     /// appearance 值。
     Appearance(AppearanceComputedValue),
     /// accent-color 值。

@@ -869,6 +869,162 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             );
             if r == c { r } else { String::new() }
         }
+        // ── rule-inset 8 longhand（css-gaps-1 §inset）── 槽值 computed 串化
+        //（overlap-join 保关键字；LP em/vmin→px、纯 px calc 求值、% /含 % calc
+        // 保形——engine length_to_css 单源）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "column-rule-inset-cap-start" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_cap_start, font_size_px)
+        }
+        "column-rule-inset-cap-end" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_cap_end, font_size_px)
+        }
+        "column-rule-inset-junction-start" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_junction_start, font_size_px)
+        }
+        "column-rule-inset-junction-end" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_junction_end, font_size_px)
+        }
+        "row-rule-inset-cap-start" => {
+            rule_inset_component_to_gcs_computed(&style.row_rule_inset_cap_start, font_size_px)
+        }
+        "row-rule-inset-cap-end" => rule_inset_component_to_gcs_computed(&style.row_rule_inset_cap_end, font_size_px),
+        "row-rule-inset-junction-start" => {
+            rule_inset_component_to_gcs_computed(&style.row_rule_inset_junction_start, font_size_px)
+        }
+        "row-rule-inset-junction-end" => {
+            rule_inset_component_to_gcs_computed(&style.row_rule_inset_junction_end, font_size_px)
+        }
+        // rule-inset 简写族 gCS（css-gaps-1 §inset canonical 形）：四槽全等 →
+        // 单值；否则恒 "cap-start cap-end / junction-start junction-end"（侧内
+        // 等值不折叠——语料 valid/computed 页钉）。双侧简写轴重组：轴内对重组
+        // （等值塌缩）后双轴全等 → 该值，否则空串（rule-color 简写臂同口径）。
+        "rule-inset" => {
+            // 全值简写（8 longhand）跨轴等值模型（bidirectional-shorthands 页钉）：
+            // column/row 各轴四槽重组后双轴全等 → 该值，否则空串（rule-inset-cap
+            // 臂同口径——target2 col≠row gCS 期望 ''）。
+            let c = rule_inset_quad_recomb_to_gcs(
+                &style.column_rule_inset_cap_start,
+                &style.column_rule_inset_cap_end,
+                &style.column_rule_inset_junction_start,
+                &style.column_rule_inset_junction_end,
+                font_size_px,
+            );
+            let r = rule_inset_quad_recomb_to_gcs(
+                &style.row_rule_inset_cap_start,
+                &style.row_rule_inset_cap_end,
+                &style.row_rule_inset_junction_start,
+                &style.row_rule_inset_junction_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset" => rule_inset_quad_recomb_to_gcs(
+            &style.column_rule_inset_cap_start,
+            &style.column_rule_inset_cap_end,
+            &style.column_rule_inset_junction_start,
+            &style.column_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "row-rule-inset" => rule_inset_quad_recomb_to_gcs(
+            &style.row_rule_inset_cap_start,
+            &style.row_rule_inset_cap_end,
+            &style.row_rule_inset_junction_start,
+            &style.row_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "rule-inset-cap" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_cap_start,
+                &style.column_rule_inset_cap_end,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_cap_start,
+                &style.row_rule_inset_cap_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-cap" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_cap_start,
+            &style.column_rule_inset_cap_end,
+            font_size_px,
+        ),
+        "row-rule-inset-cap" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_cap_start,
+            &style.row_rule_inset_cap_end,
+            font_size_px,
+        ),
+        "rule-inset-junction" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_junction_start,
+                &style.column_rule_inset_junction_end,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_junction_start,
+                &style.row_rule_inset_junction_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-junction" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_junction_start,
+            &style.column_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "row-rule-inset-junction" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_junction_start,
+            &style.row_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "rule-inset-start" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_cap_start,
+                &style.column_rule_inset_junction_start,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_cap_start,
+                &style.row_rule_inset_junction_start,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-start" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_cap_start,
+            &style.column_rule_inset_junction_start,
+            font_size_px,
+        ),
+        "row-rule-inset-start" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_cap_start,
+            &style.row_rule_inset_junction_start,
+            font_size_px,
+        ),
+        "rule-inset-end" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_cap_end,
+                &style.column_rule_inset_junction_end,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_cap_end,
+                &style.row_rule_inset_junction_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-end" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_cap_end,
+            &style.column_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "row-rule-inset-end" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_cap_end,
+            &style.row_rule_inset_junction_end,
+            font_size_px,
+        ),
         // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
         "font-variant-numeric" => font_variant_numeric_str(&style.font_variant_numeric),
         "image-rendering" => image_rendering_str(&style.image_rendering),
@@ -1452,6 +1608,52 @@ fn rule_color_list_to_gcs_computed(
     rule_color_list_to_gcs(segments, element_color)
 }
 
+// ── css-gaps-1 §inset：rule-inset 槽 gCS computed 串化 ────────────────────
+
+/// 单槽 computed 串化：overlap-join 保关键字；LP 经 [`length_to_css`] 单源
+///（em/vmin 等相对单位按字号/视口解析 px、纯 px calc 静态求值、% /含 % calc
+/// 保形——语料 computed 页 font 40px `0.5em`→`20px`、`calc(10px + 0.5em)`→
+/// `30px`、`calc(25% + 10px)` 保形钉）。
+/// https://drafts.csswg.org/css-gaps-1/#inset
+fn rule_inset_component_to_gcs_computed(c: &zero_css_parser::values::RuleInsetComponent, font_size_px: f64) -> String {
+    match c {
+        zero_css_parser::values::RuleInsetComponent::OverlapJoin => "overlap-join".to_string(),
+        zero_css_parser::values::RuleInsetComponent::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// 四槽 computed 重组（canonical 形）：四槽串化全等 → 单值；否则恒
+/// `cap-start cap-end / junction-start junction-end`（侧内等值不折叠，
+/// 语料 `10px / 20px` → `10px 10px / 20px 20px` 钉）。
+fn rule_inset_quad_recomb_to_gcs(
+    cap_start: &zero_css_parser::values::RuleInsetComponent,
+    cap_end: &zero_css_parser::values::RuleInsetComponent,
+    junction_start: &zero_css_parser::values::RuleInsetComponent,
+    junction_end: &zero_css_parser::values::RuleInsetComponent,
+    font_size_px: f64,
+) -> String {
+    let cs = rule_inset_component_to_gcs_computed(cap_start, font_size_px);
+    let ce = rule_inset_component_to_gcs_computed(cap_end, font_size_px);
+    let js = rule_inset_component_to_gcs_computed(junction_start, font_size_px);
+    let je = rule_inset_component_to_gcs_computed(junction_end, font_size_px);
+    if cs == ce && ce == js && js == je {
+        return cs;
+    }
+    format!("{cs} {ce} / {js} {je}")
+}
+
+/// 槽对 computed 重组（cap/junction/start/end 简写轴内）：等值 → 单值；
+/// 否则 `start end`。
+fn rule_inset_pair_recomb_to_gcs(
+    a: &zero_css_parser::values::RuleInsetComponent,
+    b: &zero_css_parser::values::RuleInsetComponent,
+    font_size_px: f64,
+) -> String {
+    let sa = rule_inset_component_to_gcs_computed(a, font_size_px);
+    let sb = rule_inset_component_to_gcs_computed(b, font_size_px);
+    if sa == sb { sa } else { format!("{sa} {sb}") }
+}
+
 /// rule-style 列表 computed 串化（css-gaps-1 §column-row-rule-style）：单段
 /// 平样式走既有关键字路径；列表/重复形结构串化。
 fn rule_style_list_to_gcs(segments: &[zero_css_parser::values::RuleStyleSegment]) -> String {
@@ -1838,7 +2040,9 @@ fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
     }
 }
 
-fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
+/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
+pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),
         LengthValue::Percentage(v) => format_num(*v, "%"),
@@ -5483,5 +5687,107 @@ mod rule_list_computed_tests {
             "rgb(255, 0, 0), repeat(2, rgb(0, 0, 0), rgb(0, 0, 0)), rgb(0, 0, 255)",
             "静态 computed repeat 保形（解析页钉）"
         );
+    }
+}
+
+#[cfg(test)]
+mod rule_inset_gcs_serialization_tests {
+    //! wptfyi-css css-gaps 刀 D（css-gaps-1 §inset）：rule-inset 槽 gCS computed
+    //! 串化与简写重组钉面（语料 rule-inset-computed / valid 页 oracle 形）。
+
+    use super::{rule_inset_component_to_gcs_computed, rule_inset_pair_recomb_to_gcs, rule_inset_quad_recomb_to_gcs};
+    use zero_css_parser::values::{LengthValue, RuleInsetComponent};
+
+    #[test]
+    fn component_computed_resolves_relative_units() {
+        // computed 页钉（font 40px）：em 解析 px、% 保形、calc 纯 px 求值、
+        // overlap-join 保关键字。
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::Length(LengthValue::Em(0.5)), 40.0),
+            "20px"
+        );
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::Length(LengthValue::Percentage(5.0)), 16.0),
+            "5%"
+        );
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::Length(LengthValue::Px(10.0)), 16.0),
+            "10px"
+        );
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::OverlapJoin, 16.0),
+            "overlap-join"
+        );
+    }
+
+    #[test]
+    fn quad_recomb_collapses_all_equal_and_keeps_full_form() {
+        let px = |v: f64| RuleInsetComponent::Length(LengthValue::Px(v));
+        // 全等塌缩（valid 页 `-20px` → `-20px`、全 keyword → `overlap-join`）。
+        let oj = RuleInsetComponent::OverlapJoin;
+        assert_eq!(
+            rule_inset_quad_recomb_to_gcs(&px(-20.0), &px(-20.0), &px(-20.0), &px(-20.0), 16.0),
+            "-20px"
+        );
+        assert_eq!(rule_inset_quad_recomb_to_gcs(&oj, &oj, &oj, &oj, 16.0), "overlap-join");
+        // 侧内等值不折叠（valid 页 `10px / 20px` → `10px 10px / 20px 20px`）。
+        assert_eq!(
+            rule_inset_quad_recomb_to_gcs(&px(10.0), &px(10.0), &px(20.0), &px(20.0), 16.0),
+            "10px 10px / 20px 20px"
+        );
+        // 全形（`10px 20px` → `10px 20px / 10px 20px`）。
+        assert_eq!(
+            rule_inset_quad_recomb_to_gcs(&px(10.0), &px(20.0), &px(10.0), &px(20.0), 16.0),
+            "10px 20px / 10px 20px"
+        );
+    }
+
+    #[test]
+    fn pair_recomb_collapses_equal_pair() {
+        let px = |v: f64| RuleInsetComponent::Length(LengthValue::Px(v));
+        assert_eq!(rule_inset_pair_recomb_to_gcs(&px(10.0), &px(10.0), 16.0), "10px");
+        assert_eq!(rule_inset_pair_recomb_to_gcs(&px(10.0), &px(20.0), 16.0), "10px 20px");
+    }
+
+    #[test]
+    fn rule_inset_full_shorthand_cross_axis_equality() {
+        // bidirectional-shorthands 页钉（target1/target2）：全值简写 `rule-inset`
+        // gCS 跨轴等值模型——column/row 四槽重组全等 → 该值（全等塌缩保形），
+        // col≠row → 空串（不能从 longhand 重组）。
+        use super::serialize_computed_property;
+        use zero_style_system::property::ComputedStyle;
+        let px = |v: f64| RuleInsetComponent::Length(LengthValue::Px(v));
+        let mut st = ComputedStyle::default();
+        // target1：col = row = (10,5,10,5) → `10px 5px / 10px 5px`。
+        st.column_rule_inset_cap_start = px(10.0);
+        st.column_rule_inset_cap_end = px(5.0);
+        st.column_rule_inset_junction_start = px(10.0);
+        st.column_rule_inset_junction_end = px(5.0);
+        st.row_rule_inset_cap_start = px(10.0);
+        st.row_rule_inset_cap_end = px(5.0);
+        st.row_rule_inset_junction_start = px(10.0);
+        st.row_rule_inset_junction_end = px(5.0);
+        assert_eq!(serialize_computed_property(&st, "rule-inset"), "10px 5px / 10px 5px");
+        // target2：col=(5,15,25,35) ≠ row=(10,20,30,40) → `''`。
+        st.column_rule_inset_cap_start = px(5.0);
+        st.column_rule_inset_cap_end = px(15.0);
+        st.column_rule_inset_junction_start = px(25.0);
+        st.column_rule_inset_junction_end = px(35.0);
+        st.row_rule_inset_cap_start = px(10.0);
+        st.row_rule_inset_cap_end = px(20.0);
+        st.row_rule_inset_junction_start = px(30.0);
+        st.row_rule_inset_junction_end = px(40.0);
+        assert_eq!(serialize_computed_property(&st, "rule-inset"), "");
+        // 全 8 槽等值 → 单值塌缩。
+        let mut st = ComputedStyle::default();
+        st.column_rule_inset_cap_start = px(10.0);
+        st.column_rule_inset_cap_end = px(10.0);
+        st.column_rule_inset_junction_start = px(10.0);
+        st.column_rule_inset_junction_end = px(10.0);
+        st.row_rule_inset_cap_start = px(10.0);
+        st.row_rule_inset_cap_end = px(10.0);
+        st.row_rule_inset_junction_start = px(10.0);
+        st.row_rule_inset_junction_end = px(10.0);
+        assert_eq!(serialize_computed_property(&st, "rule-inset"), "10px");
     }
 }

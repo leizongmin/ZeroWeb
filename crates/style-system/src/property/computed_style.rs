@@ -547,6 +547,26 @@ pub struct ComputedStyle {
     /// row-rule-color 属性（css-gaps-1 §column-row-rule-color，与 column 同文法）。
     pub row_rule_color: Vec<zero_css_parser::values::RuleColorSegment>,
 
+    // ── Rule Inset（css-gaps-1 §inset）── 8 longhand 槽（初值 0px 非继承），
+    // 槽值 `overlap-join | <length-percentage>`（单位保形指定值，computed 期
+    // engine gCS 串化解析 px）。
+    /// column-rule-inset-cap-start 属性。
+    pub column_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent,
+    /// column-rule-inset-cap-end 属性。
+    pub column_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent,
+    /// column-rule-inset-junction-start 属性。
+    pub column_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent,
+    /// column-rule-inset-junction-end 属性。
+    pub column_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-cap-start 属性。
+    pub row_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-cap-end 属性。
+    pub row_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-junction-start 属性。
+    pub row_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-junction-end 属性。
+    pub row_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent,
+
     // ── Contain ──
     /// contain 属性。
     pub contain: ContainComputedValue,

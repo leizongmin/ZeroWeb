@@ -330,6 +330,32 @@ impl Default for ComputedStyle {
                 ColorValue::CurrentColor,
             )],
 
+            // Rule Inset（css-gaps-1 §inset）：8 longhand 槽初值 0px 非继承。
+            column_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            column_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            column_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            column_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            row_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            row_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            row_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+            row_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Px(0.0),
+            ),
+
             // Contain
             contain: ContainComputedValue::None,
             contain_intrinsic_width: None,

@@ -1529,7 +1529,8 @@ fn push_radius_group(vals: &[LengthValue; 4]) -> String {
 }
 
 /// 长度声明级串化（单位保形；6dp；Calc 单层 BinaryOp canonical）。
-fn len_to_css(lv: &LengthValue) -> String {
+/// rule-inset 档共享（css-gaps-1 §inset 槽指定值 canonical 串化）。
+pub fn len_to_css(lv: &LengthValue) -> String {
     match lv {
         LengthValue::Px(v) => format!("{}px", format_number_6dp(*v)),
         LengthValue::Percentage(v) => format!("{}%", format_number_6dp(*v)),

@@ -17,7 +17,7 @@
 //（`__zw_anchor_normalize_decl`/`__zw_anchor_computed`/`__zw_anchor_func_check`）
 // 与 `CSS.supports` decl_supported 臂同源复用——crate 内可见即可。
 pub(crate) mod anchor_props;
-mod css_style_declaration;
+pub(crate) mod css_style_declaration;
 mod custom_elements;
 mod dataset;
 mod document;

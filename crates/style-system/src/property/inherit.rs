@@ -1443,6 +1443,139 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.column_rule_style = default_style.column_rule_style.clone();
             true
         }
+        // rule-inset 简写族复位（css-gaps-1 §inset，15 简写）：目标槽按简写
+        // 投影精准回落初值 0px（rule-width/rule-style 臂同模板）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "rule-inset" => {
+            for f in [
+                &mut style.column_rule_inset_cap_start,
+                &mut style.column_rule_inset_cap_end,
+                &mut style.column_rule_inset_junction_start,
+                &mut style.column_rule_inset_junction_end,
+                &mut style.row_rule_inset_cap_start,
+                &mut style.row_rule_inset_cap_end,
+                &mut style.row_rule_inset_junction_start,
+                &mut style.row_rule_inset_junction_end,
+            ] {
+                *f = default_style.column_rule_inset_cap_start.clone();
+            }
+            true
+        }
+        "rule-inset-cap" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            true
+        }
+        "rule-inset-junction" => {
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "rule-inset-start" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            true
+        }
+        "rule-inset-end" => {
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "column-rule-inset" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "column-rule-inset-cap" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            true
+        }
+        "column-rule-inset-junction" => {
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "column-rule-inset-start" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            true
+        }
+        "column-rule-inset-end" => {
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-cap" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            true
+        }
+        "row-rule-inset-junction" => {
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-start" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            true
+        }
+        "row-rule-inset-end" => {
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        // rule-inset 8 longhand 槽复位（初值 0px 非继承，逐名精准回落）。
+        "column-rule-inset-cap-start" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            true
+        }
+        "column-rule-inset-cap-end" => {
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            true
+        }
+        "column-rule-inset-junction-start" => {
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            true
+        }
+        "column-rule-inset-junction-end" => {
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-cap-start" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            true
+        }
+        "row-rule-inset-cap-end" => {
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            true
+        }
+        "row-rule-inset-junction-start" => {
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            true
+        }
+        "row-rule-inset-junction-end" => {
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
         // shape-margin / shape-image-threshold（css-shapes-1）：白名单串复位
         // 臂补齐（二十三轮刀白名单接入时遗漏，initial_value 完整性测试钉面）。
         "shape-margin" => {

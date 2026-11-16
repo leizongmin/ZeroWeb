@@ -362,6 +362,59 @@ impl PropertyRegistry {
                 ColorValue::CurrentColor,
             )])),
 
+            // Rule Inset（css-gaps-1 §inset）：8 longhand 槽初值 0px（非继承）。
+            // https://drafts.csswg.org/css-gaps-1/#inset
+            "column-rule-inset-cap-start" => {
+                Some(PropertyValue::ColumnRuleInsetCapStart(zero_css_parser::values::RuleInsetComponent::Length(
+                    LengthValue::Px(0.0),
+                )))
+            }
+            "column-rule-inset-cap-end" => {
+                Some(PropertyValue::ColumnRuleInsetCapEnd(zero_css_parser::values::RuleInsetComponent::Length(
+                    LengthValue::Px(0.0),
+                )))
+            }
+            "column-rule-inset-junction-start" => {
+                Some(PropertyValue::ColumnRuleInsetJunctionStart(
+                    zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+                ))
+            }
+            "column-rule-inset-junction-end" => {
+                Some(PropertyValue::ColumnRuleInsetJunctionEnd(
+                    zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+                ))
+            }
+            "row-rule-inset-cap-start" => {
+                Some(PropertyValue::RowRuleInsetCapStart(zero_css_parser::values::RuleInsetComponent::Length(
+                    LengthValue::Px(0.0),
+                )))
+            }
+            "row-rule-inset-cap-end" => {
+                Some(PropertyValue::RowRuleInsetCapEnd(zero_css_parser::values::RuleInsetComponent::Length(
+                    LengthValue::Px(0.0),
+                )))
+            }
+            "row-rule-inset-junction-start" => {
+                Some(PropertyValue::RowRuleInsetJunctionStart(
+                    zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+                ))
+            }
+            "row-rule-inset-junction-end" => {
+                Some(PropertyValue::RowRuleInsetJunctionEnd(
+                    zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+                ))
+            }
+            // 简写 initial_value 臂：返回首子属性初始形（rule-color 臂同款先例）。
+            "rule-inset" | "column-rule-inset" | "row-rule-inset" | "rule-inset-cap"
+            | "column-rule-inset-cap" | "row-rule-inset-cap" | "rule-inset-junction"
+            | "column-rule-inset-junction" | "row-rule-inset-junction" | "rule-inset-start"
+            | "column-rule-inset-start" | "row-rule-inset-start" | "rule-inset-end"
+            | "column-rule-inset-end" | "row-rule-inset-end" => {
+                Some(PropertyValue::ColumnRuleInsetCapStart(
+                    zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+                ))
+            }
+
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
             "contain-intrinsic-size"
@@ -755,6 +808,30 @@ impl PropertyRegistry {
             "rule-style",
             "row-rule",
             "rule",
+            // Rule Inset 族（css-gaps-1 §inset）：8 longhand + 15 简写。
+            "column-rule-inset-cap-start",
+            "column-rule-inset-cap-end",
+            "column-rule-inset-junction-start",
+            "column-rule-inset-junction-end",
+            "row-rule-inset-cap-start",
+            "row-rule-inset-cap-end",
+            "row-rule-inset-junction-start",
+            "row-rule-inset-junction-end",
+            "rule-inset",
+            "column-rule-inset",
+            "row-rule-inset",
+            "rule-inset-cap",
+            "column-rule-inset-cap",
+            "row-rule-inset-cap",
+            "rule-inset-junction",
+            "column-rule-inset-junction",
+            "row-rule-inset-junction",
+            "rule-inset-start",
+            "column-rule-inset-start",
+            "row-rule-inset-start",
+            "rule-inset-end",
+            "column-rule-inset-end",
+            "row-rule-inset-end",
             "contain",
             "contain-intrinsic-size",
             "contain-intrinsic-width",

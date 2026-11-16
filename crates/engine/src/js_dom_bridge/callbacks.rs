@@ -4293,6 +4293,37 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
+    // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
+    // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`
+    // 列表（canonical 文本：裸零折 0px / 单侧复制 / `/` 全形；css-wide 逐 longhand
+    // 透传）；空值返 `(名, "")` remove 列表；非家族简写名 / 展开失败返空串（shim
+    // 判空回落通用写路径零漂移，position-try split 臂同约定）。实现委托
+    // [`dom_bindings::css_style_declaration::gap_rule_shorthand_expand_json`]
+    // （与 native 绑定 setter 单实现双通道）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_style_shorthand_expand",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            crate::dom_bindings::css_style_declaration::gap_rule_shorthand_expand_json(prop, value)
+        }),
+    );
+
+    // 刀 D inline 站读重组（[`gap_rule_shorthand_expand_json`] 对偶面）：从 style
+    // 声明串（`n: v; ...` attribute 原文域）重组 gap-rule/inset 家族简写 specified
+    // 串（`10px 20px / 10px 20px` 全形 / 全等塌缩单值 / 双轴等值模型）。缺任一
+    // longhand / 不可重组 / 非家族名返空串（shim 判空回落空值语义）。委托
+    // [`gap_rule_shorthand_reconstruct_from_style`]。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_style_shorthand_reconstruct",
+        Box::new(|args: &[String]| -> String {
+            let raw = args.first().map(String::as_str).unwrap_or("");
+            let prop = args.get(1).map(String::as_str).unwrap_or("");
+            crate::dom_bindings::css_style_declaration::gap_rule_shorthand_reconstruct_from_style(raw, prop)
+        }),
+    );
+
     // S194（html-semantics M2）：`input type=email` 值清洗的域部 IDN 转换臂
     //（HTML §4.10.5.5 E-mail state；WPT forms/the-input-element/email-value-idn.html
     // 钉态）。入参为 email 值最后一个 '@' 之后的域部原串；合成 http:// 前缀

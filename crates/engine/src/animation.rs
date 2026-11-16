@@ -286,6 +286,36 @@ fn resolve_implicit_boundaries(points: &mut [KeyframePoint], style: &ComputedSty
     }
 }
 
+/// rule-inset 槽字段访问（underlying 补键与回写共用）：8 longhand 名 →
+/// 字段引用。None = 非 rule-inset 槽名。
+fn rule_inset_underlying_component<'a>(
+    style: &'a ComputedStyle,
+    name: &str,
+) -> Option<&'a zero_css_parser::values::RuleInsetComponent> {
+    match name {
+        "column-rule-inset-cap-start" => Some(&style.column_rule_inset_cap_start),
+        "column-rule-inset-cap-end" => Some(&style.column_rule_inset_cap_end),
+        "column-rule-inset-junction-start" => Some(&style.column_rule_inset_junction_start),
+        "column-rule-inset-junction-end" => Some(&style.column_rule_inset_junction_end),
+        "row-rule-inset-cap-start" => Some(&style.row_rule_inset_cap_start),
+        "row-rule-inset-cap-end" => Some(&style.row_rule_inset_cap_end),
+        "row-rule-inset-junction-start" => Some(&style.row_rule_inset_junction_start),
+        "row-rule-inset-junction-end" => Some(&style.row_rule_inset_junction_end),
+        _ => None,
+    }
+}
+
+/// rule-inset 槽动画面串化（underlying 补键）：overlap-join 保关键字；LP 经
+/// gCS 同源解析（em/vmin→px、calc 求值、% 保形）。
+fn rule_inset_component_to_anim_css(c: &zero_css_parser::values::RuleInsetComponent, font_size_px: f64) -> String {
+    match c {
+        zero_css_parser::values::RuleInsetComponent::OverlapJoin => "overlap-join".to_string(),
+        zero_css_parser::values::RuleInsetComponent::Length(lv) => {
+            crate::js_dom_bridge::computed_style::length_to_css(lv, font_size_px)
+        }
+    }
+}
+
 /// 元素 individual transform 属性的 underlying 值序列化（css-transforms-2
 /// §individual-transforms）。声明在场：纯 px Translate / RotateZ / Scale 序列化
 ///（与插值臂的解析语境一致；% 形态（Mixed）与非 Z 轴旋转近似回初值）。声明缺席：
@@ -327,6 +357,17 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
         return Some(crate::js_dom_bridge::computed_style::rule_width_list_to_gcs(
             segments, font,
         ));
+    }
+    // wptfyi-css css-gaps 刀 D：rule-inset 槽 underlying（隐式边界帧补键，
+    // neutral keyframe = 底层计算值——css-animations-1 §keyframes；语料
+    // gap-decorations-inset-neutral-keyframe-{001,002} 钉：声明 '1px' →
+    // 边界帧 '1px'）。gCS 槽串化单源（em/vmin→px、calc 求值、% 保形）。
+    if let Some(c) = rule_inset_underlying_component(style, name) {
+        let font = match style.font_size {
+            LengthValue::Px(v) => v,
+            _ => 16.0,
+        };
+        return Some(rule_inset_component_to_anim_css(c, font));
     }
     // CSS Motion Path offset 簇 underlying（css-motion-1；wptfyi-css offset-* 刀）：
     // 声明值序列化，声明缺席落 spec 初始（0px / auto / auto / none）。
@@ -543,6 +584,23 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // （[`interpolate_rule_color_value`]）；失配离散翻转同上。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t)
             .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
+        // wptfyi-css css-gaps 刀 D：rule-inset 槽插值（css-gaps-1 §inset）——
+        // computed 端点同单位（px/%）线性 lerp（parse_len_pct_val 同单位门），
+        // 跨单位/含 overlap-join 端点离散切换（css-values-4 §8.5.6 ≥0.5 → to）。
+        "column-rule-inset-cap-start"
+        | "column-rule-inset-cap-end"
+        | "column-rule-inset-junction-start"
+        | "column-rule-inset-junction-end"
+        | "row-rule-inset-cap-start"
+        | "row-rule-inset-cap-end"
+        | "row-rule-inset-junction-start"
+        | "row-rule-inset-junction-end" => match (parse_len_pct_val(from), parse_len_pct_val(to)) {
+            (Some((fv, fu)), Some((tv, tu))) if fu == tu => {
+                format!("{:.2}{}", lerp(fv, tv, t), fu)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // R4202：individual transform 属性插值——`translate` 逐分量 px/%（% 保真原样
         // 从目标侧取值，progress 中点跃迁近似可接受）；`rotate` 角度线性（deg）；
         // `scale` 数值线性（单值等比保持单值形态）。
@@ -975,6 +1033,21 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         "column-rule-width" | "row-rule-width" => interpolate_rule_width_value(from, to, t),
         // rule-color 列表插值（结构语义同 width strict 臂；失配对 None 不启动过渡）。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t),
+        // wptfyi-css css-gaps 刀 D：rule-inset 槽严格插值（css-gaps-1 §inset）——
+        // 同单位（px/%）computed 端点 lerp；跨单位/overlap-join 端点对 None
+        //（非 animatable 对不启动过渡，css-transitions §starting-of-transitions）。
+        "column-rule-inset-cap-start"
+        | "column-rule-inset-cap-end"
+        | "column-rule-inset-junction-start"
+        | "column-rule-inset-junction-end"
+        | "row-rule-inset-cap-start"
+        | "row-rule-inset-cap-end"
+        | "row-rule-inset-junction-start"
+        | "row-rule-inset-junction-end" => {
+            let (fv, fu) = parse_len_pct_val(from)?;
+            let (tv, tu) = parse_len_pct_val(to)?;
+            (fu == tu).then(|| format!("{:.2}{}", lerp(fv, tv, t), fu))
+        }
         // 无臂属性：非 animatable 对（transition 不启动——咨询回落级联终值 echo）。
         _ => None,
     }
@@ -2505,6 +2578,49 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 } else {
                     style.row_rule_color = segments;
                 }
+            }
+        }
+        // css-gaps 刀 D：rule-inset 槽动画值回写（CSS Animations/WAAPI apply
+        // 通道）——插值输出串经单槽文法回 typed 字段（"6.00px"→Px(6) 解析）；
+        // 解析失败保级联值。
+        "column-rule-inset-cap-start" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.column_rule_inset_cap_start = c;
+            }
+        }
+        "column-rule-inset-cap-end" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.column_rule_inset_cap_end = c;
+            }
+        }
+        "column-rule-inset-junction-start" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.column_rule_inset_junction_start = c;
+            }
+        }
+        "column-rule-inset-junction-end" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.column_rule_inset_junction_end = c;
+            }
+        }
+        "row-rule-inset-cap-start" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.row_rule_inset_cap_start = c;
+            }
+        }
+        "row-rule-inset-cap-end" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.row_rule_inset_cap_end = c;
+            }
+        }
+        "row-rule-inset-junction-start" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.row_rule_inset_junction_start = c;
+            }
+        }
+        "row-rule-inset-junction-end" => {
+            if let Some(c) = zero_css_parser::values::parse_rule_inset_component(value) {
+                style.row_rule_inset_junction_end = c;
             }
         }
         _ => {
@@ -4628,6 +4744,8 @@ mod tests {
 
     /// offset-position apply 写回 + underlying 序列化往返；写回 unsupported 形
     /// 保持现值（apply_single_property 语义）。
+    /// offset-position apply 写回 + underlying 序列化往返；写回 unsupported 形
+    /// 保持现值（apply_single_property 语义）。
     #[test]
     fn test_offset_position_apply_roundtrip_underlying() {
         let mut style = ComputedStyle::default();
@@ -4652,6 +4770,82 @@ mod tests {
         assert_eq!(
             underlying_individual_value(&style, "offset-position"),
             Some("normal".to_string())
+        );
+    }
+
+    /// wptfyi-css css-gaps 刀 D（css-gaps-1 §inset）：rule-inset 槽插值/底层补键/
+    /// apply 写回钉面（语料 inset-interpolation 28 例 + neutral-keyframe 双页形）。
+    #[test]
+    fn test_rule_inset_longhand_interpolation_lerp_same_unit() {
+        // px 域中点（neutral 页钉 1px→11px @0.5 = 6px）；% 域负值中点。
+        assert_eq!(
+            interpolate_property_value("column-rule-inset-cap-start", "1px", "11px", 0.5),
+            "6.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("row-rule-inset-junction-end", "-100%", "-10%", 0.5),
+            "-55.00%"
+        );
+        // 严格门同形通过（transitions/WAAPI 登记前置）。
+        assert_eq!(
+            interpolate_property_value_strict("column-rule-inset-cap-start", "1px", "11px", 0.5).as_deref(),
+            Some("6.00px")
+        );
+        // 跨单位 / overlap-join 端点对 None（非 animatable 对不启动过渡）。
+        assert!(interpolate_property_value_strict("column-rule-inset-cap-start", "10px", "20%", 0.5).is_none());
+        assert!(
+            interpolate_property_value_strict("column-rule-inset-cap-start", "overlap-join", "10px", 0.5).is_none()
+        );
+        // 非同单位非严格门离散切换（t>=0.5 → to）。
+        assert_eq!(
+            interpolate_property_value("column-rule-inset-cap-start", "10px", "20%", 0.3),
+            "10px"
+        );
+        assert_eq!(
+            interpolate_property_value("column-rule-inset-cap-start", "10px", "20%", 0.7),
+            "20%"
+        );
+    }
+
+    #[test]
+    fn test_rule_inset_underlying_fill_and_apply_roundtrip() {
+        // neutral keyframe 底层补键：声明 '1px' → 边界帧 '1px'（gap-decorations-
+        // inset-neutral-keyframe-001 钉）；插值中点 6px 写回后 underlying 读 '6px'
+        //（"6.00px" 经 apply 解析回 typed 字段 → gCS 形规范化）。
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "row-rule-inset-cap-start".to_string(),
+                value: "1px".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "row-rule-inset-cap-start"),
+            Some("1px".to_string())
+        );
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "row-rule-inset-cap-start".to_string(),
+                value: "6.00px".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "row-rule-inset-cap-start"),
+            Some("6px".to_string())
+        );
+        // overlap-join 写回保关键字。
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "row-rule-inset-cap-start".to_string(),
+                value: "overlap-join".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "row-rule-inset-cap-start"),
+            Some("overlap-join".to_string())
         );
     }
 }
