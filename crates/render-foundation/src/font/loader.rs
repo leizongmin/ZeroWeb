@@ -132,6 +132,17 @@ impl FontLoader {
         self.shape_cache.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
+    /// 字体域常驻字节估算（T78 域账面仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：`font_data` 原始字节缓冲（`Arc` 共享——`duplicate()` 产物与原
+    /// loader 共享同一批缓冲，调用方只对主 loader 读数一次即可避免重复计数）
+    /// + 预注册位图 glyph 像素。shaping/hmtx 等有界缓存不入本读数（另域）。
+    pub fn font_data_bytes(&self) -> usize {
+        let data: usize = self.font_data.values().map(|arc| arc.len()).sum();
+        let bitmaps: usize = self.bitmap_glyphs.values().map(|b| b.data.len()).sum();
+        data + bitmaps
+    }
+
     /// 设置回退字体链（按优先级排序）
     pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
         self.fallback_chain = ids;

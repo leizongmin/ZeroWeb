@@ -2435,6 +2435,13 @@ impl WebView {
         self.image_cache.duplicate_for_snapshot()
     }
 
+    /// WebView 侧缓存文本常驻字节（T78 域账面仪拍：`cached_html` + `cached_css`
+    /// 全页副本——renderer runtime 另持同名副本，两处独立保留面分列读数）。
+    /// env 门测量读数，非行为路径。
+    pub fn cached_text_bytes(&self) -> u64 {
+        (self.cached_html.len() + self.cached_css.len()) as u64
+    }
+
     /// 加载 URL（同步 HTTP GET）。
     ///
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。

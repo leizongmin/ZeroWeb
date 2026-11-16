@@ -41,6 +41,11 @@ pub use runtime::run_android_role;
 #[cfg(feature = "alloc-trace")]
 pub mod alloc_trace;
 
+// T78 域账面（读数式）：发布点录数 + dump 点快照，随 alloc-trace dump 落盘。
+// 同 feature 门（ armed 与 alloc_trace 同源），产品构建零代码。
+#[cfg(feature = "alloc-trace")]
+mod mem_ledger;
+
 #[cfg(test)]
 #[path = "gpu_isolation_tests.rs"]
 mod gpu_isolation_tests;
