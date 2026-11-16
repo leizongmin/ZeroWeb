@@ -49,6 +49,71 @@ static PIPELINE_TRACE: std::sync::LazyLock<bool> =
 /// 帧管线分段仪拍的进程相对时刻基准（门开才读取，门关无系统调用）。
 static PIPELINE_T0: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
 
+/// T77/G2 诊断：光栅段内部构成细分仪拍门（`ZW_RASTER_STAGE_TRACE=1` 启用）。
+/// 同 `PIPELINE_TRACE` 惯例的进程级惰性快照——帧处理热路径零 env 读取，缺省关
+/// 零开销。开启后对每个 `CompositorFrame` 在 queue_recv→raster_done 之间的内部
+/// 阶段（surface 惰性创建/字体/图片注入/转换/GPU configure/render/readback/
+/// CPU 光栅/swap+gc）透出 `RASTER_STAGE_TRACE` INFO 行，供首帧 once-cost 与
+/// 稳态帧成本的构成归因；GPU 上下文创建的分段（instance/adapter/device/
+/// device_objects）由 render-foundation 同名门透出（stage 前缀 gpu_create:）。
+static RASTER_STAGE_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_RASTER_STAGE_TRACE") {
+        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => false,
+    });
+
+/// T77 细分仪拍：单帧阶段计时状态。门关时 `mark*` 直通返回（计时点
+/// `Instant::now()` 仅 start 一次，热路径可忽略）；门开时每个阶段透出一行
+/// `RASTER_STAGE_TRACE`，`stage_ms` 为距上一阶段耗时、`since_queue_ms` 为距
+/// queue_recv 累计耗时——时间基准随帧局部，不与进程级 `PIPELINE_T0` 混用。
+pub(crate) struct FrameStageTrace {
+    enabled: bool,
+    frame_id: u64,
+    t_queue: std::time::Instant,
+    t_last: std::time::Instant,
+}
+
+impl FrameStageTrace {
+    fn start(frame_id: u64) -> Self {
+        let enabled = *RASTER_STAGE_TRACE;
+        let now = std::time::Instant::now();
+        Self {
+            enabled,
+            frame_id,
+            t_queue: now,
+            t_last: now,
+        }
+    }
+
+    /// 标记一个阶段的结束时刻并透出该阶段耗时。
+    pub(crate) fn mark(&mut self, stage: &str) {
+        if !self.enabled {
+            return;
+        }
+        let now = std::time::Instant::now();
+        self.emit(stage, now);
+    }
+
+    /// 标记一个不常发生的阶段（如 GPU 上下文惰性创建）：仅显式传入起点时刻时
+    /// 才计时透出，常零阶段（每帧 stage_ms≈0）不产生日志噪声。
+    pub(crate) fn mark_at(&mut self, stage: &str, since: std::time::Instant) {
+        if !self.enabled {
+            return;
+        }
+        self.emit(stage, since);
+    }
+
+    fn emit(&mut self, stage: &str, at: std::time::Instant) {
+        let stage_ms = at.duration_since(self.t_last).as_millis();
+        let since_queue_ms = at.duration_since(self.t_queue).as_millis();
+        tracing::info!(
+            "RASTER_STAGE_TRACE frame_id={} stage={stage} stage_ms={stage_ms} since_queue_ms={since_queue_ms} mode=compositor",
+            self.frame_id
+        );
+        self.t_last = std::time::Instant::now();
+    }
+}
+
 /// dma-buf 帧交付元组（RFC 4.3-S5）；非 Linux 上恒为 None。
 type DmaFrameTuple = (
     u64,
@@ -447,8 +512,22 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
         if gpu_warmup.as_ref().is_some_and(std::thread::JoinHandle::is_finished) {
             let handle = gpu_warmup.take().expect("warmup handle checked above");
             match handle.join() {
-                Ok(Ok(renderer)) => gpu_renderer = Some(renderer),
+                Ok(Ok(renderer)) => {
+                    if *RASTER_STAGE_TRACE {
+                        tracing::info!(
+                            "RASTER_STAGE_TRACE stage=warmup_ready status=ok elapsed_ms={} mode=context",
+                            PIPELINE_T0.elapsed().as_millis()
+                        );
+                    }
+                    gpu_renderer = Some(renderer);
+                }
                 Ok(Err(error)) => {
+                    if *RASTER_STAGE_TRACE {
+                        tracing::info!(
+                            "RASTER_STAGE_TRACE stage=warmup_ready status=failed elapsed_ms={} mode=context",
+                            PIPELINE_T0.elapsed().as_millis()
+                        );
+                    }
                     tracing::warn!("compositor: GPU 上下文预热失败，回落帧内惰性初始化: {error}");
                 }
                 Err(_) => tracing::warn!("compositor: GPU 预热线程异常退出，回落帧内惰性初始化"),
@@ -471,6 +550,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                         PIPELINE_T0.elapsed().as_millis()
                     );
                 }
+                let mut frame_trace = FrameStageTrace::start(frame_id);
                 if let Some(surface) = surfaces.get(&surface_id)
                     && !surface.accepts(navigation_epoch, frame_id)
                 {
@@ -528,6 +608,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     animations_active: false,
                     patches_dirty: false,
                 });
+                frame_trace.mark("surface_create");
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
                     surface.fonts = zero_paint_convert::fonts::PaintFonts::new(base_fonts.clone());
@@ -564,12 +645,15 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     &mut gpu_renderer,
                     &mut render_thread,
                 );
+                frame_trace.mark("fonts");
                 insert_image_payloads(surface, &paint.image_payloads);
                 // P100 返修（F1）：注入先于帧到达的拆批像素；epoch 不匹配的批
                 // 随帧失效丢弃（与浏览器侧同规则），其余注入后清空。挂起队列
                 // 独立于 surface（surface 由帧惰性创建，批可能先到）。
                 drain_pending_image_batches(&mut pending_image_batches, surface, surface_id, navigation_epoch);
+                frame_trace.mark("images");
                 surface.backing.resize(w, h);
+                frame_trace.mark("resize");
                 let mut raster_paint = if zero_protocol::compositor_scroll_transform_enabled() {
                     let scale = rasterize::device_scale_factor(&paint);
                     scroll_transform::paint_for_viewport(&paint, surface.scroll_x / scale, surface.scroll_y / scale)
@@ -581,10 +665,12 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 let is_partial = !zero_protocol::compositor_scroll_transform_enabled()
                     && !DisplayList::new(primitives.clone(), dirty_rects.clone())
                         .is_full_viewport(paint.viewport_width.max(1) as f32, paint.viewport_height.max(1) as f32);
+                frame_trace.mark("convert");
 
                 if is_partial {
                     surface.backing.copy_front_to_back();
                 }
+                frame_trace.mark("copy_front");
 
                 // 最新帧是否由 GPU 光栅化成功；失败或 CPU 回退保持 false，
                 // 供 Get 路径 dma-buf 导出门控使用（见 SurfaceState::frame_gpu_rasterized）。
@@ -602,6 +688,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                             surface.backing.back_mut(),
                             &dirty_rects,
                             rasterize::device_scale_factor(&paint),
+                            &mut frame_trace,
                         )
                     } else {
                         gpu_raster::try_rasterize_fills_into_back(
@@ -614,9 +701,11 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                             &mut surface.image_cache,
                             surface.backing.back_mut(),
                             rasterize::device_scale_factor(&paint),
+                            &mut frame_trace,
                         )
                     };
                     gpu_rasterized = gpu_ok;
+                    frame_trace.mark("gpu_arm");
                     if !gpu_ok {
                         rasterize::rasterize_into_back(
                             &raster_paint,
@@ -628,6 +717,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                             surface.backing.back_mut(),
                             is_partial,
                         );
+                        frame_trace.mark("cpu_arm_fallback");
                     }
                 } else {
                     rasterize::rasterize_into_back(
@@ -640,12 +730,14 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                         surface.backing.back_mut(),
                         is_partial,
                     );
+                    frame_trace.mark("cpu_arm");
                 }
 
                 surface.backing.swap();
                 // R3254-M5：GPU/CPU 光栅化路径统一回收零引用图片（此前 GPU 路径从不 gc，
                 // 2048 条目 / 256MB 上限形同虚设，长滚动懒加载页会无限累积解码位图）。
                 surface.image_cache.gc();
+                frame_trace.mark("swap_gc");
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;
                 surface.frame_gpu_rasterized = gpu_rasterized;
