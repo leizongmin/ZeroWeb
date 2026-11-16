@@ -3824,6 +3824,46 @@
         }
       }
     }
+    // C 族占位块壳保留臂（2026-11-16 C 族刀 blockshell-keep-arm）：块壳 p ×
+    // 全段选区（壳文本空间全含于 [ws,we)）× 隐形载荷（纯空白文本/单注释/
+    // 单空元素）——下方溶解臂全含门把壳 span 判为全含 → 整壳替换载荷
+    //（corpus inserthtml :463-481 四键实录 got=` `/`<!--abc-->`/
+    // `<span style="display:none"></span>`，普查档 ihc1-residual-49f-census
+    // C 族）。语料语义（inserthtml.js :463-481 实录）：块壳保留、载荷落壳
+    // 内；空白文本/注释载荷尾垫占位 br（结果壳内无元素子＝不可见空块），
+    // 单空元素载荷不垫（元素子已在＝非空——corpus display:none span 双
+    // swcss 态实录均无 br）。门全合取保守贴语料形：host 唯一子＝壳、壳文本
+    // 非零、选区全含壳文本空间、载荷三隐形形之一（元素形＝顶层扫描恒一且
+    // 内区空串）。重建走 _zwIhtmlTopSpans 原标签字节（裸 p 标签不重建——
+    // 属性壳字节保真），载荷经 host.innerHTML 写入边界 parse+serialize 归一
+    // 属性引号（corpus expected style="display:none" 同款）。其余形维持
+    // null（溶解臂既有域零外溢）。
+    if (shell && shellTag === 'p' && !range.collapsed
+        && kids.length === 1 && kids[0] === shell
+        && kTextLen(shell) > 0 && ws <= scBase
+        && we >= scBase + kTextLen(shell)) {
+      var cIsText = frag.indexOf('<') < 0;
+      var cWs = cIsText && /^\s+$/.test(frag);
+      var cCmt = cIsText ? null : /^<!--([\s\S]*)-->$/.exec(frag);
+      var cOkCmt = !!(cCmt && cCmt[1].indexOf('-->') < 0
+        && cCmt[1].indexOf('<!--') < 0);
+      var cEl = false;
+      if (!cIsText && !cOkCmt) {
+        var cFs = _zwIhtmlTopSpans(frag);
+        cEl = cFs.length === 1 && cFs[0].start === 0 && cFs[0].end === frag.length
+          && frag.slice(cFs[0].innerStart, cFs[0].innerEnd) === '';
+      }
+      if (cWs || cOkCmt || cEl) {
+        var cHtml0 = String(host.innerHTML || '');
+        var cSpans0 = _zwIhtmlTopSpans(cHtml0);
+        if (cSpans0.length === 1 && cSpans0[0].tag === 'p') {
+          var cInner = cEl ? frag : frag + '<br>';
+          var cNew = cHtml0.slice(0, cSpans0[0].innerStart) + cInner
+            + cHtml0.slice(cSpans0[0].innerEnd);
+          return { html: cNew, want: 0 };
+        }
+      }
+    }
     // 其余壳（styled 行内壳）溶解臂：凡壳内容全含于选区 [ws,we) 即整壳溶解、
     // 载荷落 ws——覆盖 sc/ec 在壳内、宿主直子文本、跨壳/双壳各端点组合；部分
     // 选区元素子/非文本兄弟不合形 → null。

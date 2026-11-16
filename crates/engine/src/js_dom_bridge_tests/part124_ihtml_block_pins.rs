@@ -279,6 +279,23 @@ pin124("ihb-d-empty-root", "{}", [],
   "<div class=\"d1\"></div><div class=\"d2\"><span class=\"s1\">some text</span><a href=\"foo.html\"></a></div>",
   "<div class=\"d1\"></div><div class=\"d2\"><span class=\"s1\">some text</span><a href=\"foo.html\"></a></div>");
 
+// ㉔ C 族占位块壳保留臂（2026-11-16 C 族刀 blockshell-keep-arm——corpus
+// inserthtml :463-481 四键实录形：块壳 p × 全段选区 [foo] × 隐形载荷。既有
+// 溶解臂全含门把壳 span 判为全含 → 整壳替换载荷（实录 got=` `/`<!--abc-->`/
+// `<span style="display:none"></span>`）。臂语义＝块壳保留、载荷落壳内；
+// 空白文本/注释载荷尾垫占位 br（结果壳内无元素子＝不可见空块），单空元素
+// 载荷不垫（元素子已在＝非空——corpus display:none span 双 swcss 态实录
+// 均无 br）。期望值=语料 expected 剥 marker 原样；属性引号经 innerHTML 写
+// 入边界 parse+serialize 归一（style=display:none → style="display:none"）。
+pin124("ihb-c-space", "<p>[foo]</p>", [], " ", "<p> <br></p>");
+pin124("ihb-c-sspan-t", "<p>[foo]</p>", [["stylewithcss", "true"]],
+  "<span style=display:none></span>",
+  "<p><span style=\"display:none\"></span></p>");
+pin124("ihb-c-sspan-f", "<p>[foo]</p>", [["stylewithcss", "false"]],
+  "<span style=display:none></span>",
+  "<p><span style=\"display:none\"></span></p>");
+pin124("ihb-c-cmt", "<p>[foo]</p>", [], "<!--abc-->", "<p><!--abc--><br></p>");
+
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。
 var bad124 = [];
