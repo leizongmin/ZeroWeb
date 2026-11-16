@@ -407,9 +407,10 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
         "translate" => style.individual_translate.as_ref(),
         "rotate" => style.individual_rotate.as_ref(),
         "scale" => style.individual_scale.as_ref(),
-        _ => return None,
+        _ => return generic_underlying_value(style, name),
     };
-    match (name, declared) {
+    // 声明缺席或 % / 非单轴形态 → 属性初值近似（none 的 used value）。
+    let individual = match (name, declared) {
         ("translate", Some(TransformFunction::Translate(x, y))) => {
             if *y == 0.0 {
                 Some(format!("{x}px"))
@@ -426,12 +427,25 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
                 Some(format!("{sx} {sy}"))
             }
         }
-        // 声明缺席或 % / 非单轴形态 → 属性初值近似（none 的 used value）。
         ("translate", _) => Some("0px".to_string()),
         ("rotate", _) => Some("0deg".to_string()),
         ("scale", _) => Some("1".to_string()),
         _ => None,
+    };
+    if individual.is_some() {
+        return individual;
     }
+    generic_underlying_value(style, name)
+}
+
+/// 通用臂（R5018 通用化刀）：逐属性臂未覆盖的属性走 gCS 同源串化兜底——
+/// serialize_computed_property_with_sibling 对任意已实现属性给出 underlying
+/// 计算值（css-animations-1 §keyframes：缺失端点帧 = neutral key，即
+/// underlying value；与 E5 keyword 解析同一串化通道，声明形/计算形一致）。
+/// 空串（未实现属性）返 None 保持既有回退（parse 失败 = 属性初值近似）。
+fn generic_underlying_value(style: &ComputedStyle, name: &str) -> Option<String> {
+    let generic = crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(style, name, None);
+    if generic.is_empty() { None } else { Some(generic) }
 }
 
 /// R5189：keyframe 值 `revert-layer` 的 underlying 解析（css-cascade-5 §revert-layer——
@@ -4803,6 +4817,60 @@ mod tests {
         assert_eq!(
             interpolate_property_value("offset-position", "auto", "20px 20px", 0.5),
             "20px 20px"
+        );
+    }
+
+    /// R5018 通用化刀（css-animations-1 §keyframes neutral key = underlying
+    /// value）：shape-margin 走通用 gCS 串化臂——from-only（100% 显式）边界帧
+    /// 0% 补 underlying '10px'，at(0.5) blend = '30px'。刀 F 驱动：css-shapes
+    /// neutral 揭穿面（shape-margin-interpolation from-neutral at(0) got 0px）。
+    #[test]
+    fn test_neutral_boundary_generic_shape_margin() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes("gm-neutral", vec![(100.0, vec![("shape-margin", "50px")])]);
+        clock.register_keyframes(&rule);
+        let mut style = ComputedStyle::default();
+        style.shape_margin = LengthValue::Px(10.0);
+        let config = AnimationConfig {
+            name: "gm-neutral".to_string(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, Some(&style)));
+        let props = clock.tick(1, 1.0);
+        let v = props
+            .iter()
+            .find(|p| p.name == "shape-margin")
+            .expect("shape-margin 输出");
+        assert_eq!(
+            v.value, "30.00px",
+            "at(0.5) = blend(underlying 10px, to 50px)，got {v:?}"
+        );
+    }
+
+    /// 通用臂 number 形与回退语义：shape-image-threshold underlying '0.6'
+    /// 直出（gCS number 同通道）；默认样式 '0px' 非空回填；未实现属性空串
+    /// → None 保持既有回退（parse 失败 = 属性初值近似）。
+    #[test]
+    fn test_underlying_generic_number_and_fallback() {
+        let mut style = ComputedStyle::default();
+        style.shape_image_threshold = 0.6;
+        assert_eq!(
+            underlying_individual_value(&style, "shape-image-threshold"),
+            Some("0.6".to_string())
+        );
+        assert_eq!(
+            generic_underlying_value(&ComputedStyle::default(), "shape-margin"),
+            Some("0px".to_string())
+        );
+        assert_eq!(
+            generic_underlying_value(&ComputedStyle::default(), "zw-unimplemented-prop"),
+            None
         );
     }
 
