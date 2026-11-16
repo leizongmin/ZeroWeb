@@ -2,60 +2,56 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 533 收口（**他流刀归因轮
-（单刀·零语义伴修）**：对端 clippy 自修复刀 7e2c25ff9
-（fix(engine): shape_margin_to_css 死绑定谓词改
-is_some——CI clippy unused variable 修复，单文件
-+2/−2 构造性零语义改写，s532 收口 push 前置 pull 携
-入）落树归因——html-semantics 面**实测零位移清偿，
-「申报=实测」谱系第二十九例（申报 = 构造性零语义主
-张，实测 = 双腿零位移确证）**）——码态换新 7e2c25ff9
-，runner 换代 127567632 → 127567616（**−16 字节缩
-量**与零语义改写方向一致，leg1 真重建 Compiling ×6
-engine 链，leg2 零重编）——join **stable 8510（8305P
-/198F/6T/1U）disagree 1 + l1only 0 + l2only 0**；vs
-s532 stable **NEW 1 + GONE 0 + flips 0 位移全落带内
-**：NEW 1 = 族 non-detailed 整文件键 T/T 同相回归入
-stable（s531 形回归带内）+ disagree 1 = 族 detailed
-键 F/T 异相混合形（leg1 = detailed F + 整文件 T + 零
-子测发射恰 s527-leg1 形；leg2 = detailed T + 双整文
-件 T 恰 s531 形），摆动带内续记，**非族非哨键零 NEW
-零 GONE 零 flips 逐键恒等**；账本 evidence/2026-11-16
--m2s533-clippy-shapemargin-knife-attribution.md。**P
-集账本口径双腿双 8307P 持位第 2 轮**；picker 刀增益
-键第 56 轮保持，checkmark 恒 F 带形不变。flaky 键双
-腿双 Pass——零新例第 22 轮（s512 时钟顺延）。onblur
-哨组双腿双 8P/2F（红池照常）；dialog-overlay 哨第 62
-轮零翻红；**modulepreload 哨 15 键双腿全 Pass——
-unsafe-url 键 <4 轮窗 2/4 安全通过**（过 3/4 即时钟
-重顺延）。全桥绿窗 **1671P/0F rc=0 清单 set 恒等**
-（NEW 0/GONE 0——刀体所在 shape_margin_to_css 直属
-js_dom_bridge 模块，全桥断言含 shape_margin 三站钉全
-绿 = 构造性零语义直证）。**focus-dynamic 收窗后第 15
-轮零再现**（121 键 stable 全 Pass 双腿）。起腿前窗净
-判定（22:34 load 1.04 干净态零等窗直接起腿，仅余
-rally query 守护 CI 轮询），窗内双腿背靠背零交叠零
-截断。**挂用户门维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137（s445 已提示，不重复通
-知）。hang 观察项静默哨维持。下一步：**守成巡查**
-（对账基线换 s533 stable 8510——族键摆动观察维持：
-出位/回归/混合形按形谱记账、Pass 形首现按 NEW 记账
-；全桥清单基线 b533.k 1671 持位；flaky 键零新例时钟
-顺延——再现方触发新 <4 轮升级判定；**mpreload 哨
-<4 轮窗第 3/4 轮观察**——再现即升级判定、过窗则时
-钟重顺延；他流入树归因轮或轻覆盖；对端刀信号持续：
-editing 流 B4-S2 残面刀（dwuf 八变体端点规范化未接
-臂/during-and-after-dispatch 与克隆门互斥 1F）+
-rendering dialog 16 红块协同面 + css 文法刀后续刀
-（shapepos 残面队列：位置串化规范刀 ~498F/round 列
-表完整建模/inline inherit/path() 命令级插值/calc 代
-数插值）+ wptfyi-css 残面（jsanim flip Steps(Start)
-等）+ ZW-3 querySelector 施工刀，落树后按他流刀归因
-轮，join 实测为准）+ 候门决项等待用户拍板（video
-P1+P2 立项 / 簇 D A2 立项 / s137）；rendering 流
-dialog 16 红块协同面（归 rendering 流记账）。门开随
-批落预案不变：簇 D 开 → customizable-select-styles
-.css ×47 随批落。
+**状态**: Active——M2 切片 534 收口（**守成巡查轻覆
+盖轮第二十三轮**：pull 携入 909f4a8dc rendering-
+compat R5737 对账 docs-only 7 行零码刀零码变零换代
+，码态持位 7e2c25ff9，runner 127567616 恒——leg1
+Compiling ×6 = engine 链 churn 同形产物同码（s532
+/s533 先例同形），leg2 零重编）——join **stable
+8510（8305P/198F/6T/1U）disagree 0 + l1only 1 +
+l2only 4**；vs s533 stable **NEW 1 + GONE 1 + flips
+0 位移全落族内**：NEW 1 = 族 detailed 整文件键 T/T
+双腿同相入 stable（s533 disagree F/T 异相位收敛，
+Timeout 形零新 Pass 形带内记账不升级）+ GONE 1 = 族
+non-detailed 整文件键出位（s533 NEW 键摆出）——
+**族键 stable 位互换形第 3 次**（s527→s532→s534；
+leg1 = 双整文件 T 形 = s531/s533-leg2 形，leg2 =
+detailed T + 4 子测 F 发射、整文件键不发射 = s519
+-s530 稳态形），同一二进制双腿异相 = 环境调度带内
+摆动，**非族非哨键零 NEW 零 GONE 零 flips 逐键恒等
+**；账本 evidence/2026-11-16-m2s534-quiet-swing-
+patrol.md。**P 集账本口径双腿双 8307P 持位第 3 轮**
+；picker 刀增益键第 57 轮保持，checkmark 恒 F 带形
+不变。flaky 键双腿双 Pass——零新例第 23 轮（s512
+时钟顺延）。onblur 哨组双腿双 8P/2F（红池照常）；
+dialog-overlay 哨第 63 轮零翻红；**modulepreload 哨
+15 键双腿全 Pass——unsafe-url 键 <4 轮窗 3/4 安全
+通过过窗时钟重顺延**（零翻红重新起算，窗内再现即
+升级判定）。全桥绿窗 **1671P/0F rc=0 清单 set 恒等
+**（NEW 0/GONE 0）。**focus-dynamic 收窗后第 16 轮
+零再现**（121 键 stable 全 Pass 双腿）。起腿前窗净
+判定（23:16 load 1.18 零重腿零等窗直接起腿），窗内
+双腿背靠背零交叠零截断。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（
+s445 已提示，不重复通知）。hang 观察项静默哨维持。
+下一步：**守成巡查**（对账基线换 s534 stable 8510
+——族键摆动观察维持：出位/回归/混合形按形谱记账、
+Pass 形首现按 NEW 记账；全桥清单基线 b534.k 1671
+持位；flaky 键零新例时钟顺延——再现方触发新 <4 轮
+升级判定；**mpreload 哨时钟重顺延后第 1 轮观察**
+——窗内再现即升级判定；他流入树归因轮或轻覆盖；
+对端刀信号持续：editing 流 B4-S2 残面刀（dwuf 八
+变体端点规范化未接臂/during-and-after-dispatch 与
+克隆门互斥 1F）+ rendering dialog 16 红块协同面 +
+css 文法刀后续刀（shapepos 残面队列：位置串化规范
+刀 ~498F/round 列表完整建模/inline inherit/path()
+命令级插值/calc 代数插值）+ wptfyi-css 残面（jsanim
+flip Steps(Start) 等）+ ZW-3 querySelector 施工刀
+，落树后按他流刀归因轮，join 实测为准）+ 候门决项
+等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
+s137）；rendering 流 dialog 16 红块协同面（归
+rendering 流记账）。门开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47 随批落。
 
 > **▶ 承前（2026-11-16 M2 切片 531 收口）——他流刀归
 > 因轮（双刀窗）：editing 流 d46 键入替换臂主刀
