@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5718 守成巡查轮：窗口空零燃点＋探针首试恢复二连＋ZW-2 s514 双腿毕工件预读 GONE 12（family 级出集）＋与 contention 疑点并载** **（2026-11-16）**
+>
+> - **结果**：轮初 pull「已经是最新的」origin=f1e693d7a 本流末笔恒等＝**零新码刀、触发器基线 996@8ed0e22bd 维持、无燃点零 corpus 跑**；对端——ZW-2 s514 patrol 双腿毕（leg1.end 11:12:26／leg2.end 11:16:21）但**收口笔未落树**（HEAD 恒等 46f6f530a），工件预读（/tmp/s514）：**GONE 12＝focus-dynamic-type-change-on-blur.html 整文件 12 子测全组出集**（text/time/url/week ↔ 双向 × false/true）、NEW 0、flips 0、stable 8497（=s513 8509−12 自洽）；ZW-3 d43 持位（c6b73888a＋dirty 1 不变）；cronjob 2e972ffc9 dirty 3 恒等。
+> - **验证**：WPT 批探针首试 rc=0、11 tags 与 R5678 快照逐字节恒等（/tmp/r5718-probe.txt）＝零新批次（R5717 恢复例后再证）；**s514 GONE 12 疑点归因双证并载**——①同码态 s513 零此象（s513/s514 树差仅 46f6f530a docs-only＝码态恒等，同码跨跑 family 级漂移）②s514 leg2 时窗（11:12:26-11:16:21）与本流 corpus1/2（11:12:51-11:19:09）**全重叠**、load 峰值 16.86＝blur/focus 时序敏感族并发争用疑点（正式归因待其收口笔对账）；巡查口径更新在案——**本流 R5717 补记二启动读数 leg1.end＋zw2-buildrun=0＋load 5.99 恰为 back-to-back 腿间 lull 非流空闲**（leg2 随 leg1 即启无间隙，判空闲须双腿毕＋进程清零）；树碰撞巡查零碰撞（无归属不明 cargo/runner 进程）；wpt-data 零写入。
+> - **挂账**：**s514 收口笔落 origin 后正式对账**（核对其 GONE 12 归因读数 vs 本流 contention 疑点双证——若其归因 band/争用则带内出集、若归因码变则升级核验其刀面与在本流的独立复现面）；其余维持不变（**d43 持位＋querySelector generation-aware 重设计刀＋wptfyi-css supports 门刀＋Transition 通道可见性刀＋editing ihtml 后续刀（ihd1 残余/ihe1）＋site-opt T73/G2 后续刀落 origin 即燃（基线 996@8ed0e22bd）＋border_shape.rs 修复刀=GONE 3 验证点＋border-shape-shadow 族 3 键**）；incremental-scroll 第 6 相入基线出集观察；roster 频率续盯。
+> - **下一步 R5719**：①三源核查续（fetch 窗口对账、触发器基线 996@8ed0e22bd）②**ZW-2 s514 收口笔落地即正式对账**（GONE 12 归因核对）③roster 判定点续（下 corpus 跑判 border-collapse-dynamic-table-002/tao-147 2/3 交集点）④对端 patrol 空闲判定一律「双腿毕＋进程清零」口径（腿间 lull 不再误判，巡查教训在案）。
+>
 > **▶ R5717 补记二：二度 push 窗口事件——editing ihtml G 族 ws-pre 壳刀 8ed0e22bd 落 origin 燃点＋预挂 corpus A/B 当轮执行零确定性 ΔF（三跑 998F/997F/998F rc=2 ×3，stable 996 vs 995@960c1da2c NEW 0/GONE 1＝incremental-scroll 在册带内键 3/3 F 回位入集第 6 相），基点换基 996@8ed0e22bd，s513 收口 46f6f530a 正式对账两侧同判，runner 重编可溯** **（2026-11-16）**
 >
 > - **结果**：R5717 补记账笔 push 窗口事件落账：push range 46f6f530a..a0c993e2d 的 pull --rebase 携入 f99acf7dd..46f6f530a 窗口两笔——**8ed0e22bd editing ihtml G 族 ws-pre 壳刀唯一码笔**（ihd1 后续刀、普查残 39F 七族最大独立族 G ×10：harness 空 contenteditable 包装内 styled div（white-space:pre/pre-line）成 host 直子壳→内联臂 sc.parentNode!==host 全量路由壳域解析＋div ∉ SPLICE 落溶解臂＋全含门对 collapsed 恒 false→null→整命令 no-op 载荷整丢＝十键实录根因；part06.js +53＋part124_ihtml_block_pins.rs +23＝+76）＋46f6f530a ZW-2 s513 收口 docs 笔＝新刀未预挂按 R5696 先例升级预挂落 origin 即燃、当轮执行（启动前按 load-30.66 在册教训等待 ZW-2 s514 runner 重编清窗 zw2-buildrun=0＋s514 leg1 落地 11:12:26＋load 回落 6.0 再起跑＝互踩窗口规避）。
