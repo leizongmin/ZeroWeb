@@ -1,41 +1,84 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-16 · Active**。**d39 B3 诊断轮（零净码变）**：beforeinput 计数 908F
-重分类定谳——**主簇 = 元素锚 range 选区 silent return**（list-items 592 +
-dl-join 152 + non-collapsed 76 ≈ 820F，`__zw_ce_delete_impl` 12026/12155
-sc 非 text 直接 return、树零变，select-delete 语义缺失），**事件丢失集群占比
-极小**（此前 round-3 日志的主簇判断是误诊）。真事件丢失根因链全探针定谳
-（b3bi→b3k→b3l→b3m→b3n 六页）：join 形同页**首触发**必走 caret_range 世界
-同步回灌+回植 → impl 世界内 querySelector/锚链上溯全落 query 家族代理、
-页面家族 listener 挂点不可达（N1 `sameNode=false`、docCap=1 而 bi=0、壳段
-跨家族抛异常丢 input）→ 二触起家族合流全通（N2 same=true）。修复实验
-4 刀递进（re-query 无效 → 换锚链宿主 → `__zwCeOrigEvHost` 回植前捕获
-[isolated N1 bi=1 input=1 全兑现] → isSameNode 条件化）：**isolated 全好、
-语料面 P 473→471 净 -2**——每案 initializeTest 使未合流态恒存，打通派发后
-多案上下文暴露 **got=2 双派**（div-p 案 0→2、O1 isolated 单收 corpus 双收），
-**与既有 got=2 342F 集群机制同源嫌疑高**。shim 改动已 `git checkout` 回滚
-（基线二进制 N1 复现丢失态确认零净码变）。**d40 B3P 注入语料探针补测**：
-hookCalls=72 ≤ cases=86（impl 无双调实锤、webview 重试假设排除）、双派案簇 =
-join/br 空白形与 got=0 同簇（同簇案跨环境呈现 got=0/got=2，非两个独立 bug）、
-注入敏感性定谳（hook 跨包装使家族判定漂移——计数探针有效、行为探针失真）、
-listener 表= `_listenerStore['@'+handle]` 键存储 + `_zwQueryWrapIdentity`
-身份桥定位。**d40-II 双派根因链定谳**（B3Q 换代轨迹 + harness 逐行核对）：
-harness 每案 `gEditor !== querySelector("div[contenteditable]")` 身份检查在上游
-Chrome [SameObject] 下恒 false 从不重挂；ZeroWeb querySelector 代理身份不稳定
-（86 案换 5 对象，gEdChanges=4）→ 误判换代 → `removeEventListener(旧, 新闭包)`
-**移除不中**（onBeforeinput 每案新闭包）→ 旧代理 listener 遗留 → 派发双触发
-bi=2（4 次换代 × 遗留窗口 ≈ 15 案吻合）。**修复刀 = querySelector 同 sel
-代理身份稳定性**（页面家族路径缓存断链定位→修；落成即同时解锁双派集群与
-join 首触发事件丢失刀重新落树；改动面 querySelector 缓存语义，全语料 +
-html-semantics/selection 哨兵必跑）。下轮刀序：①**sel 方言归一刀**（d41 B3R 轨迹破案：`__zwSelector` 在短形 `div`
-与路径形 `html:nth-child(1) > body:nth-child(2) > div:nth-child(1)` 间摇摆——
-双视图 sel 命名分歧致 cache 双键双 proxy、身份检查误判换代；归一点已定位到桥层：`__zw_query_match` = `with_query_view_doc` +
-`query_match_selector_doc_cached`（callbacks.rs:866），hit sel 命名来自 live
-doc/快照 re-parse 双视图树节点——下轮先确认两视图节点 sel 字段生成再选归一点
-（桥侧改输出 or shim 侧新 `__zw_query_canonical_sel` 回调）；改动面涉全部
-查询消费面，三哨兵必跑；备选最小刀 = qS 返回点同底层元素已存 proxy 反查）
-②元素锚 range 选区删除语义（820F 主簇）③空 range beforeinput 静默臂。
-证据见 [b3-gtr-event-loss-diagnosis](evidence/2026-11-16-b3-gtr-event-loss-diagnosis.md)。
+**2026-11-16 · Active**。**d42 sel 方言归一刀 A/B 判决（不落）+ 重映射序守卫
+落树**：d41 破案的归一刀（query 命中 sel 双方言 `div` ↔ 路径形 → cache 双键
+双 proxy → harness 身份检查误判换代 → removeEventListener 移除不中 →
+listener 遗留 → got=2 双派）实装后 input-events 全语料 A/B 判决**净 -27
+（461P→434P），回滚不落**——P2F 分解：joining-dl 8 案 targetRanges 期望
+编码了 BASE 的 identity-churn null 端点伪影（knife 稳定端点反不匹配上游
+期望——这些期望是 Chrome 真值、BASE 靠伪影巧合命中，端点报告语义需与身份
+稳定成对修）+ 4 案 bi=0 join 塌缩形（b3s TRACE 实证：归一方言后
+`_zwCeReanchorRange` down-walk 两端点收敛同节点，backward select
+(text,10)-(text,0) → (X,10)/(X,0) 触发 nr.setEnd 的 R203 镜像把 start 重写
+为 end → select 塌缩 (0,0)）；non-collapsed ×2 +3×2 = 身份修复真实解锁面
+（方向正确，generation-aware 重设计后分层重放）。**唯一落树变更 =
+part01.js `_zwCeReanchorRange` 重映射序守卫**（+10 行）：非塌缩 r0 的重映射
+若 start 落在 end 之后（`_zwRangeBpAfter` 树序比较）= 端点身份失真 → 弃本
+轮重映射返 null 交活锚让位门保 r0；塌缩 caret 重映射（marker 语料管线主
+消费面）不受影响——BASE+守卫全语料逐字节恒等 = 纯加固，仅在身份损伤时承载
+载荷（归一刀重落树时的既有回归面即被兜住）。哨兵（本 session 429 中断后
+补全复核）：input-events 全语料（zz-probe 排除口径）461P/2867F/3T vs BASE
+**恒等 F2P=0/P2F=0**；html-semantics **P 恒等 5378**（唯一漂移 =
+select-home-end-pagedown 已知 flaky 带 1 例 Fail→Timeout）；selection 全
+语料 **F2P=4/P2F=1**（P2F = delete-chars 已知间歇自翻面；F2P=4 = d38 无
+空格链解析修复在 tal 的窗口增益；stringifier 页 4 例 Fail→NotRun 窗口形、
+前后均非 Pass 无损失）。证据见
+[d42 sel-dialect-knife AB and remap order guard](evidence/2026-11-16-d42-sel-dialect-knife-ab-and-remap-order-guard.md)。
+
+**卡点** 无阻塞。口径持位：11-12 快照三目录合计 130,245、距 146,184 差
+15,939；d37 后预估 ~143.0k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
+
+**下一步** ①**B4-S1 元素锚/跨容器 range select-delete 臂**（d39 定谳 820F
+主簇落码：`__zw_ce_delete_impl` sc 非 text silent return + 跨容器非塌缩误删
+sc 单节点内区间——`list[-item1</li><li>list]-item2` Backspace 期望
+`<li>list-item2</li>`、got `<li>lis-item1</li>` 单字符误删；形状 = 摘除选区
+内容 + 边界块 join，gtr 报原始选区端点（语料期望逐案核对）；与身份刀解耦先
+走 innerHTML 语义面，forwarddelete 镜像同步）②generation-aware 归一刀重
+设计（d42 A/B 判决后挂起：端点报告语义与身份稳定成对修——joining-dl 8 案
+artifact 期望逐条对齐 Blink target range 生成点，4 案塌缩面由守卫兜底后
+重放 +3 WIN 面）③空 range beforeinput 静默臂；④B3 text-control execCommand
+期望矩阵（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同
+口径对账（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
+
+**残余账本（持位）**：子文档域——tal CE（主窗）变体 collapsed ~122F +
+non-collapsed ~77F + after-joining-paragraphs 48F（内壳形 `child=b`/
+`parent=b&child=i` ×4 Timeout，前置=单一补偿面 + caret 引擎同位快照）+
+delete-in-child-of-html 4F（d17 XOR 伪失败族出队）/insertparagraph-in-
+child-of-html 8F（跨文档收养，引擎级 adoptNode FIXME(d33)）+ unlink 余样式
+重裹 4F（FIXME(d24)）；modify 残余 ~57F（定向 probe 口径）= 鼠标驱动
+modify、line-flex/grid（FIXME(visual-modify) 行盒几何）、inline-boundary
+18/36、bidi character 22/28×2（RTL 视觉轴近似）、word 细分——按簇评估；
+input-events 桶 = B4-S1 select-delete（820F）+ 修饰组合词删
+（deleteWordBackward/Forward）+ range-exceptions 构造器 targetRanges dict +
+IndexSizeError（4F）+ typing DELETE join-walk 分离 sc 崩点守卫（4 笔
+unhandled rejection）+ shadow-dom getComposedRanges 62F——修复队列 B1–B5
+见 [dc2-residual-bucket-triage](evidence/2026-11-14-dc2-residual-bucket-triage.md)；
+六 format 文件真失败 6F（strike S2e qS-after 1F Chrome-quirk 挂账 + bold
+b-in-i / italic i-in-b 块边界 2+2F + bold notbold 1F 待 bisect
+20521a2ba/8add42713 一带）+ 伪失败 13F 出队；哨兵 fncorpus 两窗页级
+Timeout（d15 已有）、f6bwin 发射深度=共享超时预算非门面（d22 bisect
+定谳）；桥层支线三 bug 未动（主链经 R263 补偿与 B2 臂解耦）。
+
+**d39 B3 诊断轮（零净码变）**：beforeinput 计数 908F 重分类定谳——**主簇 =
+元素锚 range 选区 silent return**（list-items 592 + dl-join 152 +
+non-collapsed 76 ≈ 820F，`__zw_ce_delete_impl` sc 非 text 直接 return、树零
+变，select-delete 语义缺失），**事件丢失集群占比极小**（此前 round-3 日志的
+主簇判断是误诊）。真事件丢失根因链全探针定谳（b3bi→b3k→b3l→b3m→b3n 六页）：
+join 形同页**首触发**必走 caret_range 世界同步回灌+回植 → impl 世界内
+querySelector/锚链上溯全落 query 家族代理、页面家族 listener 挂点不可达
+（N1 `sameNode=false`、docCap=1 而 bi=0、壳段跨家族抛异常丢 input）→ 二触
+起家族合流全通（N2 same=true）。修复实验 4 刀递进（re-query 无效 → 换锚链
+宿主 → `__zwCeOrigEvHost` 回植前捕获 [isolated N1 bi=1 input=1 全兑现] →
+isSameNode 条件化）：**isolated 全好、语料面 P 473→471 净 -2**——每案
+initializeTest 使未合流态恒存，打通派发后多案上下文暴露 **got=2 双派**，
+与既有 got=2 342F 集群机制同源（d40-II 定谳：harness 每案
+`gEditor !== querySelector(...)` 身份检查上游 [SameObject] 下恒 false 从不
+重挂；ZeroWeb querySelector 代理身份不稳定 → 误判换代 → remove 不中 →
+listener 遗留 → 双触发；修复刀 = querySelector 同 sel 代理身份稳定性，d42
+A/B 判决后转 generation-aware 挂起）。shim 改动已回滚（基线二进制 N1 复现
+丢失态确认零净码变）；d40 补测 hookCalls=72 ≤ cases=86（impl 无双调实锤）、
+listener 表= `_listenerStore['@'+handle]` 键存储。证据见
+[b3-gtr-event-loss-diagnosis](evidence/2026-11-16-b3-gtr-event-loss-diagnosis.md)。
 
 **d38 gtr 家族双根因刀（查询链形 overlay 匹配 + runner 变体展开）**：
 gtr 家族 743F 拆解定谳两独立根因，共享路径双刀落树：
@@ -225,87 +268,6 @@ selection 扩面已生效：d18 三门为 deep 面首刀（全语料 +11,481）�
 快照已含 deep 接线（184 案 fetch 切 deep、独立 selection-face 片）——
 本地 census 51,695/35,631（
 [census](evidence/2026-11-11-dc2-selection-face-census.json)）。
-**卡点** 无阻塞。11-12 快照口径：目标三目录合计 130,245、距 146,184
-差 15,939（前文"差 37,125"系 11-07 基线口径未刷新，勘误）；d22 后
-selection 全语料 47,716P（含探针页断言面；较 d21 后 47,326 净 +366 =
-F2P 367 − P2F 1）、input-events 211P 恒等；d23–d31 批净 +52（selection
-交集 +18、input-events +13、unlink.html +21），d33 批净 +50
-（delete/insertparagraph-in-child-of-html +10/+40），三目录预估 ~142.7k、
-差 ~3.5k（预估口径，正式落账待下周 DC-3 快照；d34 切片 +10 后
-~142.75k；d35 批 +216 后 ~142.97k；d36 批 +8 后 ~142.98k；d37 批
-+66 后 ~143.0k；d38 批 P +184（变体展开口径同批扩大，P 增量含展开
-分母新增案，跨口径不直加——正式落账以 DC-3 快照统一口径为准））。
-子文档域残余：
-typing-around-link **CE（主窗）变体**
-collapsed ~122F + non-collapsed ~77F + after-joining-paragraphs 48F（边界
-切片已入执行链，tal 内壳形 `child=b`/`parent=b&child=i` ×4 Timeout——收敛
-前置=单一补偿面 + caret 引擎同位快照（d24 切片））+
-delete-in-child-of-html 12F（8F J2 跨 body 边界块合并缺口——吸收臂展平
-单侧、无跨界块合并，独立后续切片 + 4F XOR 伪失败出队）/
-insertparagraph-in-child-of-html 8F（跨文档收养缺口，引擎级 adoptNode
-挂账 FIXME(d33)）+ d22 记档
-deleteFromDocument `[head,1]` 越界 P2F=1 当前账面无对应红项（d34 headEl
-持真后 deleteFromDocument 族全 Pass，账面清）+ unlink 余样式重裹 4F
-（FIXME(d24)）。
-modify 残余 ~57F（定向 probe 口径）= 鼠标驱动 modify（2/7×2+3/7，事件
-集成面）、line-flex/grid 0/2×3（FIXME(visual-modify) 行盒几何）、
-inline-boundary 18/36、bidi character 22/28×2（RTL 视觉轴近似）、word
-细分（korean 2/4、symbol 2/6、generated-content 1/2）——近似面已标
-FIXME，按簇评估是否进精化批。其余桶：text-control 期望矩阵 ~474F（B3）+
-input-events getTargetRanges（B2，切片 1 已落 d37 +66：gtr 家族 9 文件
-余 743F/1T = list-items/dl-join/across-boundaries join 面细化 + 主文件
-gtr.html Timeout 案；修饰组合词删语义 deleteWordBackward/Forward、
-range-exceptions InputEvent 构造器 targetRanges dict + StaticRange
-IndexSizeError 校验、typing DELETE join-walk 分离 sc 崩点守卫挂 B2
-后续刀）+ shadow-dom getComposedRanges
-62F（B4）——修复队列 B1–B5 见
-[dc2-residual-bucket-triage](evidence/2026-11-14-dc2-residual-bucket-triage.md)。六 format 文件残余
-19F（HEAD 基线口径，d17 账 18F 勘误 +1）：bold 9F、italic 3F、
-strike 4F、underline 3F、sub/sup 0F。重分类终账：伪失败 13F（切片
-割裂 harness 固有，不进修复队列）= strike/underline 条目 65/133/134 +
-bold 条目 75/139/204 + italic 条目 131；真失败 6F：strike S2e qS-after
-1F（挂账 Chrome-quirk 家族）+ bold b-in-i / italic i-in-b 块边界
-innerHTML 2+2F + bold notbold 条目 1F（sw=true innerHTML 内层裸 span，
-prefix 对拍定谳 HEAD 既有欠账非 d18 引入，溯源指向 02:12 前落地批
-20521a2ba/8add42713 一带，待 bisect）。哨兵 fncorpus 两窗页级 Timeout
-（d15 已有，fontname 域待查小桶）；f6bwin 两窗发射深度=共享超时预算非
-门面（d22 bisect 定谳：HEAD/d22 二进制同病灶，重叠 240 断言 0 错配）。
-桥层支线三 bug（tc.querySelector innerHTML 重建后空包装、
-addRange 后 getRangeAt(0) 越界、B2 臂双落地）未动，主链经 R263 补偿
-后已与 B2 臂解耦。
-**下一步** ①**B1 切片 3 收尾**（headEl 持真 title 已落 d34 切片——
-del-html +10、title 门控清账；边界臂/通道门/unlink 臂/html 宿主
-join/enter 精化已落，见 d33 顶格段；plaintext-only P2F=2 已落 d35 批
-清账；J2 跨 body 边界块合并已落 d36 批——del-html 42P/4F，余 4F =
-d17 XOR 伪失败族出队）：tal 内壳形收敛（前置
-d24 单一补偿面 + caret 引擎同位快照）+ 跨文档收养（引擎级 adoptNode，
-IP-html 余 8F，FIXME(d33)）+ execCommand
-insertParagraph per-doc 分隔符消费；②**B2 切片 1 已落 d37 批**
-（Actions 编辑键分流 + getTargetRanges 快照面，input-events 净 +66、
-P2F=0）→ B2 切片 2 残余刀：修饰组合词删语义
-（deleteWordBackward/Forward，delete-selection 2 Ctrl 面）、
-range-exceptions InputEvent 构造器 targetRanges dict + StaticRange
-IndexSizeError 校验（4F）、typing DELETE join-walk 分离 sc 崩点守卫
-（4 笔 unhandled rejection）、gtr 家族 join 面真实语义刀
-（**d38 双根因刀已落**：crash 家族 321F→1F + Unhandled variant 488→0，
-新账 = innerHTML-mismatch 1480 + beforeinput 计数 908 +
-targetRanges-assert 409——join/merge 语义细化与 getTargetRanges 值面，
-见顶格 d38 段；**d39 诊断轮**：908F 主簇重分类 = 元素锚 range 选区
-silent return ≈820F + join 首触发事件丢失根因链定谳（修复实验语料面
-净 -2 已回滚）+ got=2 双派同源嫌疑——刀序见顶格 d39 段）→ **B3 text-control execCommand 期望矩阵**（~474F，修前逐命令核对语料期望表）
-→ B4 shadow-dom getComposedRanges（62F）→ B5 小簇（cloning-attributes
-null 崩溃 17F 等）；③mt 慢页 systemd-run 长预算（d13 口径，MemoryMax
-封顶）补跑 strike/u/bold/italic 链对拍 + multipara/跨块族（M2/B1-B4
-per-p 拆壳，真失败 b-in-i/i-in-b 块边界 innerHTML 4F 同域）评估开修，
-bold notbold 1F bisect 溯源（20521a2ba/8add42713 一带），selection
-editing/other ~47 慢页补全；④下周快照落做 DC-3 同口径对账（净增
-≥130,000 + 邻域回退核对，P2/P3 语料全量增量随周跑入账；face 哨兵探针：
-d5decl/d5diag/d6cef/d7diag/d10diag/d11tree/d13vashell 全绿、d6diag
-22/25（两轮恒等，旧记 24/25 笔误已勘）、d8diag 11/11、d9diag 10 case
-全绿、d15strike 2/2、d16strike 2/2、d18sel 3/3、d19focus 5/5、d19word 3
-探针、d22b1s2 24/24；组成漂移后哨兵判读改 ledger 集合判读
-P2F/new-fail）。
-
 [执行契约](../wptfyi-editing.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |

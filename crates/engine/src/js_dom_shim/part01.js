@@ -10170,6 +10170,16 @@
       if (!ms) return null;
       var me = r0.collapsed ? ms : _zwCeRemapEndpoint(ec, eo, el);
       if (!me) return null;
+      // 重映射序守卫（wptfyi-editing d42，zz-probe-b3s TRACE 实证）：非塌缩 r0 的
+      // 重映射若 start 落在 end 之后 = 端点身份失真——sel 方言归一后 down-walk 两
+      // 端点收敛同节点（backward select (10,0) → (X,10)/(X,0)），nr.setEnd 的 R203
+      // 镜像随即把 start 重写为 end → select 塌缩 (0,0)（dl-join 语料 select 案
+      // bi=0 真回归根因）。弃本轮重映射（返 null 交活锚让位门保 r0）；塌缩 caret
+      // 重映射（marker 语料管线主消费面）不受此守卫影响。
+      if (!r0.collapsed && typeof _zwRangeBpAfter === 'function'
+          && _zwRangeBpAfter(ms.node, ms.offset | 0, me.node, me.offset | 0)) {
+        return null;
+      }
       var nr = document.createRange();
       nr.setStart(ms.node, ms.offset);
       nr.setEnd(me.node, me.offset);
