@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5716 补记：主账笔 push 窗口事件——ZW-2 s512 收口 6b48826a5 落 origin＝正式对账两侧同判交叉收口（0 本流 net code：push 前 pull --rebase 携入 1 笔全 docs（6b48826a5 ZW-2 s512 收口，即其树 c48ec7c24 重放笔），码面空 diff 零新码刀＝触发器基线 996@c19712be9 维持无燃点；**账笔读数 vs 我侧 /tmp/s512 工件逐项同判**：GONE 0/NEW 1/flips 0——**NEW 1＝族 detailed 键 F/F 同相回位入 stable**（发射形谱带内 s510 安定→s511 出位→s512 回位第三转）、stable 8510（8511−2+1 算术自洽）、bridge 1661P/0F rc=0、P 集双腿双 8307P、legs 双毕——其对账基线换 s512 stable 8510；其账笔载 c19712be9 归因（ShellResolve 元素端点归一臂＋8 钉不入桥清单、runner 换代 127482680→127486704 leg1 真重建）＝与本流 R5712 补记二 corpus A/B 零确定性 ΔF 双面互证「申报=实测」；其账笔另载对端 ihd1 构建风暴 load 10.66 等待回落再起腿＝ZW-3 侧施工强度注记；d43 写面读数主账笔后复测收缩持续（单文件 +360/-5 持位））** **（2026-11-16）**
+>
+> - **结果**：R5716 主账笔轮末窗口事件落账：ZW-2 s512 正式对账当轮交叉收口（两侧同判在案）＋窗口零码刀确认。
+> - **验证**：窗口（push 前 pull 携 1 笔全 docs＋码面空 diff）；s512 对账读数逐项在案（6b48826a5 账笔 vs /tmp/s512 工件）；c19712be9 双面互证在案（其流归因轮零语义位移×本流 corpus A/B 零 ΔF）；零本流源码变更。
+> - **挂账**：**销账**：ZW-2 s512 正式对账（当轮交叉收口两侧同判）＋R5716 主账笔「s512 落 origin 待落」观察（6b48826a5 落树收口）。**基线注记**：ZW-2 对账基线换 s512 stable 8510（其流记账，非本流 corpus 基线——本流触发器基线 996@c19712be9 不变）。**维持**：同 R5716 主账笔维持全数（border-shape-shadow 族 3 键待修＋d43/querySelector/supports/Transition/ihtml 后续刀预挂武装＋roster 带内续盯＋探针梯走尽挂轮顺延）。
+> - **下一步 R5717**：同 R5716 主账笔下一步①②③（fetch 窗口对账 809c59968 后新窗口；探针恢复判定优先——上轮梯走尽；s512 对账已闭，②改为 ZW-2 s513 patrol 窗观察＋ZW-3 d43 刀落盘读数振荡向＋三哨＋cronjob＋树碰撞巡查；触发器盯 d43 落 origin 即燃＋ihd1/ihe1 出刀落 origin 即燃）。
+>
 > **▶ R5716 空转核查轮＋探针分型 a 梯走尽挂轮＋ZW-2 s512 收口落树预对账读数在案＋d43 写面收缩回单文件（0 net code：①fetch 窗口空双证——轮初 pull「已经是最新的」对账 origin/main=0e629a14e 本流 R5715 账笔恒等无新笔＝**零新码刀、触发器基线 996@c19712be9 维持、无燃点零 corpus 跑**；②WPT 批探针**分型 a 梯走尽挂轮**（首试 rc=124＋45s 二试 rc=124＋120s 三试 rc=124＋180s 四试 rc=128 Failed to connect，baidu 全程 200/0.05s 对照＝网络级 GitHub 专属持续瞬断——按口径梯走尽不换法，latest=v1.10 维持 R5678 快照口径、本轮无批次判定，下轮重试（R5681/R5705 跨轮顺延先例），工件 /tmp/r5716-probe{,2,3,4}.txt）；③对端观察——**ZW-2 s512 收口账笔落树 c48ec7c24**（origin 待落＝正式对账待窗口；/tmp/s512 工件预读：**GONE 0/NEW 1/flips 0、bridge rc=0、legs 双毕 leg2.end 10:46:24、s512.stable.canon 产出——NEW 1 键＝customizable-select detailed.optional 族键带内回位**（s511 GONE 2 出→s512 NEW 1 回＝发射形谱漂移第三转）＝s512 stable 8510 预对账读数在案）；ZW-3 d43 写面**收缩回单文件**（+369/-5 三文件→**part01.js +360/-5 单文件**，user_actions.rs/testharness.rs 退出写面，c6b73888a 持位未落树触发器未燃）；runner 巡查 ZW-3 ×1＋ZW-2 ×3 各归其树零越树；cronjob 2e972ffc9 恒等；base-wt=c1482756a/ab-base=f4db50f0df 恒等；树碰撞巡查零碰撞；wpt-data 零写入（FETCH_HEAD find -newer 计 0）；③相位带维持——零触发不跑 corpus，roster 判定点续顺延）** **（2026-11-16）**
 >
 > - **结果**：R5715 下一步①②③落轮（空转核查轮续——窗口空、探针梯走尽挂轮（判定跨轮顺延）、s512 收口落树预对账观察、d43 写面收缩观察、带内维持，零触发零 corpus 跑，无新增工作面）。
