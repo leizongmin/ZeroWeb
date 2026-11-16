@@ -6811,11 +6811,42 @@
               // 核心（不拆块），事件口径同上 insertparagraph 臂（fireEvents 已派）。
               if (cmd === 'insertlinebreak' && rng2 && host2) {
                 try {
-                  // 同节点非 collapsed 面（单文本 `foo[bar]baz` 形）让位原径：
-                  // line_break_at boundaryText 头尾切片（eo 截尾）对该面本就
-                  // 忠实（knife9 语料 1641P 基），delete 前导的 whitespace
-                  // canonicalize 无谓引入字节漂移风险；跨节点面才走前导。
-                  if (rng2.collapsed || rng2.startContainer === rng2.endContainer
+                  // ILB-SELDRILL（刀⑤ B+G+E 选区删除域，2026-11-17 ilb 普查）：
+                  // 同节点元素容器非 collapsed 选区（`{bar}`→(span,0)-(span,1)、
+                  // `{<span>bar</span>}`→(p,1)-(p,2) 形）下钻到内容子切片——
+                  // Chrome 元素端点选区按壳内内容语义删（壳留内容删，corpus
+                  // `<span><br>{}</span>` 形），文本切片路径吃 text 容器，元素
+                  // 容器不下钻会走 mutate 元素 caret 臂（br 落壳外零删除）。逐层
+                  // 下钻至 text 容器或宿主界；host 级元素容器（`{<h1>…</h1>}`／
+                  // `{<table>…}</table>}` G/E4 形）不下钻——containment 整元素
+                  // 摘除（探针实录 afterDel caret 落 host 位＋占位 br 对齐）。
+                  if (!rng2.collapsed
+                      && rng2.startContainer === rng2.endContainer
+                      && rng2.startContainer.nodeType === 1
+                      && rng2.startContainer !== host2) {
+                    var gD = 0;
+                    while (rng2.startContainer === rng2.endContainer
+                        && rng2.startContainer.nodeType === 1
+                        && rng2.startContainer !== host2 && gD++ < 16) {
+                      var kcD = rng2.startContainer.childNodes || [];
+                      var soD = rng2.startOffset | 0;
+                      var eoD = rng2.endOffset | 0;
+                      if (soD >= eoD || !kcD[soD] || eoD - 1 >= kcD.length) break;
+                      var neD = kcD[eoD - 1];
+                      var neLen = (neD.nodeType === 3)
+                        ? String(neD.nodeValue || '').length
+                        : (neD.childNodes || []).length;
+                      rng2.setStart(kcD[soD], 0);
+                      rng2.setEnd(neD, neLen);
+                    }
+                  }
+                  // 同节点非 collapsed 面（单文本 `foo[bar]baz` 形＋下钻产物
+                  // text 容器）让位原径：line_break_at boundaryText 头尾切片
+                  //（eo 截尾）对该面本就忠实（knife9 语料 1641P 基），delete
+                  // 前导的 whitespace canonicalize 无谓引入字节漂移风险；跨节点
+                  // 面与宿主级元素容器同节点面走前导。
+                  if (rng2.collapsed || (rng2.startContainer === rng2.endContainer
+                      && rng2.startContainer.nodeType !== 1)
                       || typeof globalThis.__zw_ce_delete_apply !== 'function') {
                     globalThis.__zw_ce_line_break_mutate(host2, rng2);
                   } else {

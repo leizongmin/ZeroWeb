@@ -13252,14 +13252,33 @@
       || t === 'bdo' || t === 'bdi' || t === 'dfn' || t === 'time'
       || t === 'label' || t === 'output';
   }
+  // rawtext/text-only 容器表（ILB-RAWTEXT 守卫，刀⑥）：内容模型仅文本、
+  // br 非合法子（spec allowedChildren 面——isAllowedChild("br", el) shim 侧
+  // 窄表近似，语料诉求面 xmp/script 2 键）。
+  function _zwCeIsRawtextTag(t) {
+    return t === 'script' || t === 'style' || t === 'textarea' || t === 'title'
+      || t === 'xmp' || t === 'iframe' || t === 'noembed' || t === 'noframes'
+      || t === 'plaintext' || t === 'noscript';
+  }
   // br 后前向扫描：沿兄弟链逐节点判可见，链尾沿 inline 父链上爬续扫兄弟；
   // 达块界（宿主/块标签/显式非 inline）内容耗尽仍不可见 = 不可见。
+  // ILB-BLKPAD 刀⑤细化（2026-11-17 ilb 普查 E1/G 键）：后随**块界元素**
+  // （非 inline-climbable 元素：table/p/h1-6/显式非 inline display）不填 br
+  // 行盒——Chrome 实录补断（exp `fo<br>{}<br><table>`／`<p>foo</p><br><br>
+  // <p>baz</p>`）——旧行为把块元素当可见内容判不坍缩漏垫。替换型元素
+  //（img/br/hr 等空元素白名单）占行盒非块界：br 后随既有 br 不垫维持
+  //（`{}<br><h1>` 现役绿 3 键恒一实录）。
   function _zwCeBrVisibleAfter(brk, host) {
     var n = brk;
     var g = 0;
     while (n && g++ < 256) {
       var c = n.nextSibling;
       while (c) {
+        if (c.nodeType === 1 && !_zwCeIlbInlineClimb(c)) {
+          var kcV = c.childNodes || [];
+          if (!kcV.length && _zwCeIlbNodeVisible(c, 0)) return true;
+          return false;
+        }
         if (_zwCeIlbNodeVisible(c, 0)) return true;
         c = c.nextSibling;
       }
@@ -13419,6 +13438,18 @@
     var sc = rng.startContainer, so = rng.startOffset | 0;
     var eo = rng.collapsed ? so : (rng.endOffset | 0);
     var isText = !!(sc && (sc.nodeType === 3 || sc.__zwIsText));
+    // ILB-RAWTEXT 守卫（刀⑥ D 族，2026-11-17 ilb 普查）：rawtext/text-only
+    // 容器内行断整体 no-op——spec implementation.js :7396-7409 守卫「start
+    // 节点（或其父）非 br 合法父容器 → return true」，xmp/script 语料 2 键
+    // exp `<xmp>foobar</xmp>`（选区原样、零 br）。collapsed 纯 no-op；非
+    // collapsed 面选区已由前导删除，此处只挡插入面。
+    if (lineBreakOnly) {
+      var rtG = isText ? sc.parentNode : sc;
+      if (rtG && rtG.nodeType === 1
+          && _zwCeIsRawtextTag(String(rtG.tagName || '').toLowerCase())) {
+        return true;
+      }
+    }
     // caret 所在宿主直子块：直子文本/宿主自身元素 caret → 宿主本身；否则父链上溯
     // 到宿主直子（不在宿主子树内 → 不应用）。
     var block = null;
@@ -13461,7 +13492,12 @@
     // 文本 caret 案走 isText 臂不受影响（零 P2F 面）。
     if (lineBreakOnly && !isText && sc !== host
         && (_zwCeIsBlockTagName(lbTag) || lbTag === 'dt' || lbTag === 'dd'
-            || lbTag === 'pre')) {
+            || lbTag === 'pre'
+            // ILB-SELDEL 刀⑤（B 族后删元素 caret）：前导删完 caret 塌进 inline
+            // 壳 (span,0) 形（探针实录 afterDel caret=span@0）——br 插壳内
+            // childNodes[so]，非 (父,sc) 外迁（corpus `<span><br>{}</span>` 形
+            // 实录）；void/replacement 不入 inline 白名单维持外迁臂。
+            || _zwCeIlbInlineClimb(sc))) {
       boundaryParent = sc;
       boundaryNode = (sc.childNodes || [])[so] || null;
       boundaryOff = so;

@@ -246,3 +246,6 @@ include!("js_dom_bridge_tests/part128_ilb_wscanon_pins.rs");
 // ilb I flex/grid br 元素面刀钉测（2026-11-17）：声明 pre 系坍缩行断 <br>
 // 占位落位＋非坍缩行断控制键。
 include!("js_dom_bridge_tests/part129_ilb_flexbr_pins.rs");
+// ilb B+G+E 选区删除域刀钉测（2026-11-17）：同节点元素容器下钻＋后删元素
+// caret 入壳＋块界补断细化＋rawtext no-op 守卫＋现役绿形控制键。
+include!("js_dom_bridge_tests/part130_ilb_seldel_pins.rs");
