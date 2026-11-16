@@ -1,6 +1,18 @@
 # CSS 子测试控制面
 
 **2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。
+**shape-outside/circle-ellipse 位置文法刀已落地（11-16 二十二轮，rate-limit 中断轮 twin
+孤儿 WIP 认领收口）**：css-values-4 position 轴别严格文法（PosComp 四类 + y 首词对换 +
+4 值缘偏移百分比补数）+ engine 缺省分量串化（circle closest-side 省略/ellipse 双缺省
+省略/空 inner 前导分隔符修/物理单位折 px）+ shape-outside inline 写面门接入（白名单第六
+串 + 显式分派臂置于 unimplemented 放行臂之前——v1 b1v3 SET-IDENTICAL 定谳「白名单接入
+≠兜底可达」序陷阱）+ round 参量文法四轮迭代（inset round 列表全形/polygon 前+尾缀臂/
+fill-rule 相邻受理/polygon round 百分比契约拒收/inset calc 偏移拒收边界钉化——b1v6/b1v7
+两轮实证括号感知破伪通过池后撤）。css-shapes corpus 净 **+1223 零新回归**（对 b0
++1224/−1：circle/ellipse-004 +327×2、circle/ellipse-003 +125×2、invalid 域八页 +65、
+动画前缀真插值 +28、polygon-round-valid 清偿 +3、唯一残 −1 = inset calc 案挂残面⑤），
+六代二进制 A/B 逐案对账全链、双 spawn 对称收敛法证与残面队列见
+[evidence 2026-11-16-shapepos-position-grammar-knife](evidence/2026-11-16-shapepos-position-grammar-knife.md)。
 **基本形状插值 applier 臂刀已落地（11-16 二十一轮，twin 孤儿 WIP 认领收口）**：clip-path/
 shape-outside 全 <basic-shape> 文法族经共享插值器进动画写回（clip_interp + AnimationClock
 槽位臂 + echo 保留门伪通过池保位），七套件 corpus 净 **+519 零回归**（masking 六页
@@ -322,6 +334,39 @@ env -u 仍挂）零新增 + clippy/fmt 净。残面三队列：①calc 代数插
 calc-inset 写面，整刀候选届时逐一拆保位钉）②jsanim flip Steps(Start) 共享位（独立刀
 验证）③path() 命令级兼容插值。全案
 [evidence 2026-11-16-basic-shape-applier-knife](evidence/2026-11-16-basic-shape-applier-knife.md)。
+**shape-outside/circle-ellipse 位置文法刀（11-16 二十二轮，shapepos-knife）**：中断轮
+（rate-limit 429 15:28 静默）孤儿 WIP 磁盘终态认领（mtime 取证 15:10-15:25 六文件）+
+rate-limit 多重 spawn 对称收敛（同 session 5×resume，本流白名单条目 + 收敛实例显式裁决
+臂互补合树，链账采 zw-shapepos-final.service 磁盘终态）。四站：①css-parser
+`parse_position_pair` 严格文法（PosComp 枚举逐 token 分类，`[lp|x-edge] [lp|y-edge|center]`
++y 首词对换+center 补位；`50% left`/`top 50%`/`left right` 混轴同轴双关键字拒；现代
+css-values-4 缘偏移形属语料 invalidPositions 域不收，FIXME(规格演进) 挂账）+ 4 值缘偏移
+百分比补数（`bottom 70% right 80%`→`20% 30%` 代数折算，长度偏移保 Calc）；②engine
+clip_path_to_css 缺省分量串化（circle closest-side 省略/ellipse 双缺省整体省略/空 inner
+`circle( at …)` 前导分隔符修/circle-004 computed 533F 族单一根因；`50cm`→`1889.764px`
+物理单位折 px）；③style-system shape-outside 写面门（白名单 19→20 + 显式分派臂置于
+`value_has_unimplemented_function` 放行臂**之前**——v1 白名单条目末尾兜底臂被提前放行
+结构性绕过，b1v3 SET-IDENTICAL 定谳「白名单接入≠兜底可达」，探针三段定位法证：裁决
+`circle(at 50% left)` 返 true ✗）；④round 参量文法四轮：parse_clip_round_list（inset
+round 列表全形 `<r>{1,4}[/ <r>{1,4}]?`）/polygon 尾缀+前缀臂（`find_top_level_comma`
+calc 逗号安全+fill-rule 无逗号相邻受理）/polygon round 百分比契约拒收（Chrome round-
+invalid 域 `polygon(round 1%,…)`，inset 仍依 border-radius 文法收）/inset calc 化偏移
+拒收边界钉化。**A/B 六代二进制账**（b0 md5 d364bc8d→b1v8 md5 84815f65，全腿
+LEG-EXIT=0）：B0→b1v2 位置文法刀 +856/−856 零 flip（circle/ellipse-004 +327×2 串化主
+红利）；b1v2→b1v4 显式臂 +324/−232（round 文法缺口暴露：inset round 列表/polygon 尾缀
+被拒 → b0 裸回显巧合通过的真 valid 页翻红）；b1v5 A-lite 一轮 → 残 −4（+1195/−4 对
+b0）；b1v6 A-lite 二轮 → 净 +29 但揭两面回归（无条件括号感知 + 前缀臂同批）；b1v7
+三轮条件切分试探 4537P 但动画 t=1 残 −2（条件边界把无 round 的 calc 化期望串划进接受
+面，与 +4 inset 增益 parse 层同构不可分）；**b1v8 终态（朴素切分+前缀臂+% 拒收）
+4535P，对 b0 逐案 +1224/−1 净 +1223**，与发射前预估逐位吻合，动画页 +28P/−0F 伪通过
+池全保护（二十一轮「期望串含 calc 形不追真值保位」纪律两轮实证后回归）。门禁：MKT 拆腿
+MKT-RC=0（fmt 六文件 5/6 rc=0 part03.rs 假漂移 edition-flag、workspace/quickjs-clippy
+101 全对号在册 peer s419+worker-fetch 族零刀域新增）+ 终态钉测 css-parser 50/50（位置九
+钉+round 四钉+invalid 十钉+calc 边界钉）/style-system 1/1/engine 2/2/fmt/clippy 净。
+残面：round 列表完整建模（串化丢零半径/丢 fill-rule 形+插值回落）+ inset calc 边界四案
+解锁队列（残面⑤ calc 代数插值刀联动）+ 位置串化规范刀（~498F：x-then-y 序/缺轴 center
+补位/符号归一）。全案
+[evidence 2026-11-16-shapepos-position-grammar-knife](evidence/2026-11-16-shapepos-position-grammar-knife.md)。
 **Steps 位置语义共享臂修复验证收口（11-16 二十一轮补测轮，b1v9，零码改）**：58b3721ad 内
 被吸收的共享 Steps 臂修复（提交时未实测——b1v8 二进制 14:01:50 构建早于修复 14:06:39
 写入）补测收口：provenance 纯 HEAD 码态（CHAIN-START 14:13:56 仅 peer es_module WIP 在

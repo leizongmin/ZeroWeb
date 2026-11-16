@@ -697,8 +697,8 @@ fn clip_pair_echo_preserve(from: &str, to: &str) -> bool {
         // 单端不可解析：仅收 `inherit` 端点 ∧ 对端 rect 族（initial/unset
         // underlying=none 走真离散翻转；其余单端坏值形不进门）。
         _ => {
-            (from == "inherit" && pair.1.as_ref().is_some_and(|v| rect_family(v)))
-                || (to == "inherit" && pair.0.as_ref().is_some_and(|v| rect_family(v)))
+            (from == "inherit" && pair.1.as_ref().is_some_and(rect_family))
+                || (to == "inherit" && pair.0.as_ref().is_some_and(rect_family))
         }
     }
 }

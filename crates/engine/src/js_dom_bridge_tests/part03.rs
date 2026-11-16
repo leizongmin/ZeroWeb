@@ -1478,6 +1478,7 @@ fn test_get_computed_style_clip_path() {
         <div id=\"inset-round\" style=\"clip-path: inset(5px round 10px);\"></div>\
         <div id=\"circle\" style=\"clip-path: circle(50px at 25% 75%);\"></div>\
         <div id=\"circle-def\" style=\"clip-path: circle();\"></div>\
+        <div id=\"circle-pos\" style=\"clip-path: circle(at 50cm);\"></div>\
         <div id=\"polygon\" style=\"clip-path: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
         <div id=\"polygon-ee\" style=\"clip-path: polygon(evenodd, 0% 0%, 100% 0%, 50% 100%);\"></div>\
         <div id=\"def\"></div>\
@@ -1499,10 +1500,14 @@ fn test_get_computed_style_clip_path() {
         computed_style_property(html, "#circle", "clip-path"),
         "circle(50px at 25% 75%)"
     );
-    // circle() 空（默认 closest-side，无位置）。
+    // circle() 空（缺省分量 closest-side/center computed 全省略，
+    // css-shapes-1 串化；corpus oracle shape-outside-circle-000）。
+    assert_eq!(computed_style_property(html, "#circle-def", "clip-path"), "circle()");
+    // 缺省半径 + at 位置：省半径后直接 `at` 起头（`circle( at …)` 前导
+    // 空格回归钉——wptfyi-css circle-004 computed 语料单一根因形）。
     assert_eq!(
-        computed_style_property(html, "#circle-def", "clip-path"),
-        "circle(closest-side)"
+        computed_style_property(html, "#circle-pos", "clip-path"),
+        "circle(at 1889.764px 50%)"
     );
     // polygon 默认 nonzero 省略填充规则，顶点逗号分隔。
     assert_eq!(
@@ -1525,6 +1530,8 @@ fn test_get_computed_style_shape_outside() {
         <div id=\"inset1\" style=\"shape-outside: inset(10%);\"></div>\
         <div id=\"circle\" style=\"shape-outside: circle(50px at 25% 75%);\"></div>\
         <div id=\"circle-def\" style=\"shape-outside: circle();\"></div>\
+        <div id=\"circle-pos\" style=\"shape-outside: circle(at 50cm);\"></div>\
+        <div id=\"circle-edge\" style=\"shape-outside: circle(at bottom 70% right 30%);\"></div>\
         <div id=\"ellipse\" style=\"shape-outside: ellipse(20px 30px);\"></div>\
         <div id=\"polygon\" style=\"shape-outside: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
         <div id=\"margin-box\" style=\"shape-outside: margin-box;\"></div>\
@@ -1545,7 +1552,21 @@ fn test_get_computed_style_shape_outside() {
     );
     assert_eq!(
         computed_style_property(html, "#circle-def", "shape-outside"),
-        "circle(closest-side)"
+        "circle()"
+    );
+    // 缺省半径 + at 位置（circle-004 computed 390F 单一根因回归钉：省半径
+    // 后 `at` 直接起头，无前导空格）+ 4 值缘偏移百分比补数（corpus oracle
+    // validPositions `right o%` → `100−o`%，`bottom o%` → `100−o`%——
+    // `bottom 70% right 30%` → `70% 30%` 同构；2 词 `[y-edge] [<lp>]` 形属
+    // invalidPositions 拒收域——css-shapes-1 语料 Chrome 契约，见
+    // circle-003/008 invalid 页）。
+    assert_eq!(
+        computed_style_property(html, "#circle-pos", "shape-outside"),
+        "circle(at 1889.764px 50%)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#circle-edge", "shape-outside"),
+        "circle(at 70% 30%)"
     );
     // ellipse 双半径。
     assert_eq!(

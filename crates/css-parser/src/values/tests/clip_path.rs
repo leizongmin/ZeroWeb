@@ -469,3 +469,197 @@ fn test_clip_path_polygon_many_points() {
         _ => panic!("Expected Polygon variant"),
     }
 }
+
+// ===== at <position> 轴别严格文法（css-values-4 §position；wptfyi-css
+// circle/ellipse-003 invalid 125 形 oracle + valid y 首词对换钉面）=====
+
+#[test]
+fn test_clip_path_position_mixed_axis_rejected() {
+    // [lp][x-edge] / [y-edge][lp] 混轴 2 词形拒收（invalid-position 语料）。
+    assert!(parse_clip_path("circle(at 50% left)").is_none());
+    assert!(parse_clip_path("circle(at 50px left)").is_none());
+    assert!(parse_clip_path("circle(at 80% right)").is_none());
+    assert!(parse_clip_path("circle(at top 50%)").is_none());
+    assert!(parse_clip_path("circle(at bottom 70px)").is_none());
+}
+
+#[test]
+fn test_clip_path_position_same_axis_keyword_pair_rejected() {
+    assert!(parse_clip_path("circle(at left right)").is_none());
+    assert!(parse_clip_path("circle(at left left)").is_none());
+    assert!(parse_clip_path("circle(at top bottom)").is_none());
+    assert!(parse_clip_path("circle(at bottom bottom)").is_none());
+}
+
+#[test]
+fn test_clip_path_position_three_token_mixed_rejected() {
+    // 3 词混搭形全禁（`center center 60%` / `left center 60%` /
+    // `center 60% top` 语料族）。
+    assert!(parse_clip_path("circle(at center center 60%)").is_none());
+    assert!(parse_clip_path("circle(at left center 60px)").is_none());
+    assert!(parse_clip_path("circle(at center 60% top)").is_none());
+    assert!(parse_clip_path("circle(at top 50% bottom)").is_none());
+}
+
+#[test]
+fn test_clip_path_position_four_token_invalid_pairs_rejected() {
+    // 4 词形：center 不带偏移 / 同轴双对拒收。
+    assert!(parse_clip_path("circle(at center 60% top 50%)").is_none());
+    assert!(parse_clip_path("circle(at left 50% right 80%)").is_none());
+    assert!(parse_clip_path("circle(at top 50% bottom 70%)").is_none());
+}
+
+#[test]
+fn test_clip_path_position_y_first_keyword_pair_reorder() {
+    // validPositions y 首词对换 x-first（`top left`/`top center`/
+    // `center left` → (x,y) 对换存储）。
+    match parse_clip_path("circle(at top left)").unwrap() {
+        ClipPathValue::Circle { position, .. } => {
+            let (x, y) = position.unwrap();
+            assert!(matches!(x, LengthValue::Percentage(p) if p == 0.0));
+            assert!(matches!(y, LengthValue::Percentage(p) if p == 0.0));
+        }
+        _ => panic!("Expected Circle variant"),
+    }
+    match parse_clip_path("circle(at top center)").unwrap() {
+        ClipPathValue::Circle { position, .. } => {
+            let (x, y) = position.unwrap();
+            assert!(matches!(x, LengthValue::Percentage(p) if p == 50.0));
+            assert!(matches!(y, LengthValue::Percentage(p) if p == 0.0));
+        }
+        _ => panic!("Expected Circle variant"),
+    }
+}
+
+#[test]
+fn test_clip_path_position_single_y_keyword() {
+    // 1 值 y-edge 关键字（`top` → x 缺省 center）。
+    match parse_clip_path("circle(at top)").unwrap() {
+        ClipPathValue::Circle { position, .. } => {
+            let (x, y) = position.unwrap();
+            assert!(matches!(x, LengthValue::Percentage(p) if p == 50.0));
+            assert!(matches!(y, LengthValue::Percentage(p) if p == 0.0));
+        }
+        _ => panic!("Expected Circle variant"),
+    }
+}
+
+#[test]
+fn test_clip_path_position_two_token_axis_resolution() {
+    // 2 词形关键字按轴折 %（`left 50%` → (0%, 50%)，chrome computed
+    // oracle validPositions `0% 50%`）。
+    match parse_clip_path("circle(at left 50%)").unwrap() {
+        ClipPathValue::Circle { position, .. } => {
+            let (x, y) = position.unwrap();
+            assert!(matches!(x, LengthValue::Percentage(p) if p == 0.0));
+            assert!(matches!(y, LengthValue::Percentage(p) if p == 50.0));
+        }
+        _ => panic!("Expected Circle variant"),
+    }
+}
+
+#[test]
+fn test_clip_path_position_edge_offset_percentage_complement() {
+    // 4 值 edge-offset 百分比补数折算存储（`right 30%` → 70%、
+    // `bottom 70%` → 30%；chrome computed `30% 70%` 形）。
+    match parse_clip_path("circle(at bottom 70% right 30%)").unwrap() {
+        ClipPathValue::Circle { position, .. } => {
+            let (x, y) = position.unwrap();
+            assert!(matches!(x, LengthValue::Percentage(p) if p == 70.0));
+            assert!(matches!(y, LengthValue::Percentage(p) if p == 30.0));
+        }
+        _ => panic!("Expected Circle variant"),
+    }
+}
+
+#[test]
+fn test_clip_path_position_edge_offset_length_keeps_calc() {
+    // 长度缘偏移保 Calc(100%−L)（computed `calc(100% - 70px)` 不可声明期
+    // 折算——corpus `circle(at 50% calc(100% - 1120px))` 形）。
+    match parse_clip_path("circle(at bottom 70px right 30%)").unwrap() {
+        ClipPathValue::Circle { position, .. } => {
+            let (x, y) = position.unwrap();
+            assert!(matches!(x, LengthValue::Percentage(p) if p == 70.0));
+            assert!(matches!(
+                y,
+                LengthValue::Calc(boxed)
+                    if matches!(*boxed, CalcExpr::BinaryOp(_, CalcOp::Subtract, _))
+            ));
+        }
+        _ => panic!("Expected Circle variant"),
+    }
+}
+
+#[test]
+fn test_clip_path_inset_round_radius_lists() {
+    // css-shapes-1 §funcdef-inset round 参量全形：`<radius>{1,4}
+    // [/ <radius>{1,4}]?`——写面门 parse 判定域（corpus inset-002/003 valid
+    // 页 round 形原文回显钉面；invalid 空 round 参量/5+ 半径拒收）。
+    for v in [
+        "inset(10px round 10px)",
+        "inset(10cm round 10cm 20cm)",
+        "inset(10cm round 10cm 20cm 30cm 40cm)",
+        "inset(10cm round 10cm / 10cm)",
+        "inset(10cm round 10cm / 10cm 20cm 30cm 40cm)",
+        "inset(10px round closest-side)",
+    ] {
+        assert!(parse_clip_path(v).is_some(), "should parse: {}", v);
+    }
+    for v in [
+        "inset(10px round)",
+        "inset(10px round 10px 20px 30px 40px 50px)",
+        "inset(10px round 10px / 10px 20px 30px 40px 50px)",
+        "inset(10px round -10px)",
+    ] {
+        assert!(parse_clip_path(v).is_none(), "should reject: {}", v);
+    }
+}
+
+#[test]
+fn test_clip_path_polygon_round_tail() {
+    // css-shapes-1 §funcdef-basic-shape-polygon 尾缀 round 参量：radius 组
+    // 同 border-radius 简写文法；负半径拒（corpus polygon-round-invalid 域）。
+    assert!(parse_clip_path("polygon(0% 0%, 100% 0%, 50% 100% round 10px)").is_some());
+    assert!(parse_clip_path("polygon(evenodd, 0% 0%, 100% 0%, 50% 100% round 10px 20px / 30px)").is_some());
+    assert!(parse_clip_path("polygon(0% 0%, 100% 0%, 50% 100% round)").is_none());
+    assert!(parse_clip_path("polygon(0% 0%, 100% 0%, 50% 100% round -10px)").is_none());
+}
+
+#[test]
+fn test_clip_path_polygon_round_prefix() {
+    // css-shapes-1 §funcdef-basic-shape-polygon 前缀 round 参量：radius 组
+    // 在坐标列表前（fill-rule 同槽无逗号直接相邻亦受理）。前四案为写面门
+    // 接入后 b1v5 vs b0 −4 回归复现钉（corpus polygon-function-round-valid
+    // 页；裸回显时代 Pass，门 consult parse 后拒收翻 Fail，前缀臂修复）。
+    assert!(parse_clip_path("polygon(round 1px, 1% 2%)").is_some());
+    assert!(parse_clip_path("polygon(nonzero round 1px, 1px 2px, 3em 4em)").is_some());
+    assert!(parse_clip_path("polygon(evenodd round 1px, 1px 2px, 3em 4em, 5pt 6%)").is_some());
+    assert!(parse_clip_path("polygon(round calc(1em + 2px), 1px 2px, 3px 4px)").is_some());
+    // corpus polygon-function-round-invalid 域九案全拒。
+    assert!(parse_clip_path("polygon(round, 1px 2px)").is_none());
+    assert!(parse_clip_path("polygon(round 1, 1px 2px)").is_none());
+    assert!(parse_clip_path("polygon(round -1px, 1px 2px)").is_none());
+    assert!(parse_clip_path("polygon(round 45deg, 1px 2px)").is_none());
+    assert!(parse_clip_path("polygon(round 1px 1px 2px)").is_none());
+    assert!(parse_clip_path("polygon(1px 2px, round 1px)").is_none());
+    assert!(parse_clip_path("polygon(round 1px round 2px, 1px 2px)").is_none());
+    assert!(parse_clip_path("polygon(round 1px nonzero, 1px 2px)").is_none());
+    // Chrome 语料契约：polygon round 半径拒 <percentage>（round-invalid 域
+    // `polygon(round 1%, …)`；inset round 依 border-radius 文法仍收）。
+    assert!(parse_clip_path("polygon(round 1%, 1px 2px)").is_none());
+}
+
+#[test]
+fn test_clip_path_inset_calc_offset_rejection_boundary() {
+    // inset calc 化偏移拒收边界（伪通过池保位纪律的接受面，非文法终态）：
+    // 朴素切分把 calc 内空格切断 → 整拒。二十一轮定谳「期望串含 calc 时本机
+    // setProperty 拒收 → expected 落回静态值」的回落方向依赖该拒收面；b1v6/
+    // b1v7 两轮实证（括号感知使该形可解析后动画通道端点回落链断裂，t=1 对
+    // −2、无条件切分时 −6）。残面⑤ calc 代数插值刀落地后撤此边界并括号
+    // 感知切分（解锁语料 inset-function-valid/008/computed 四案）。
+    assert!(parse_clip_path("inset(0px calc(100% - 20px) 2% 3em)").is_none());
+    assert!(parse_clip_path("inset(calc(50% - 10px) 0px)").is_none());
+    assert!(parse_clip_path("inset(10% calc(100% - 100px) 50% 0px round 20px)").is_none());
+    // round 参量槽不在偏移切分域，无偏移 calc 形不受理 round 仍解析。
+    assert!(parse_clip_path("inset(0px round calc(1em + 2px))").is_some());
+}

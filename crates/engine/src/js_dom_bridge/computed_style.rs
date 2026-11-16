@@ -2652,10 +2652,20 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
             format!("inset({inner})")
         }
         C::Circle { radius, position } => {
-            let mut inner = clip_path_radius_to_css(radius, font_size_px);
+            // css-shapes-1 computed 串形省缺省分量：缺省半径 closest-side
+            // 省略（chrome computed 语料 oracle：`circle(at 800px 50%)`
+            // 形；显式半径与非缺省关键字保留）。
+            let mut inner = match radius {
+                ClipPathRadius::ClosestSide => String::new(),
+                other => clip_path_radius_to_css(other, font_size_px),
+            };
             if let Some((x, y)) = position {
+                // 缺省半径省略后 inner 为空——分隔符不能是 ` at` 的前导空格
+                //（否则产出 `circle( at …)` 非法串形，circle-004 computed
+                // 语料 390F 单一根因）。
+                let sep = if inner.is_empty() { "" } else { " " };
                 inner.push_str(&format!(
-                    " at {} {}",
+                    "{sep}at {} {}",
                     length_to_css(x, font_size_px),
                     length_to_css(y, font_size_px)
                 ));
@@ -2663,14 +2673,23 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
             format!("circle({inner})")
         }
         C::Ellipse { rx, ry, position } => {
-            let mut inner = format!(
-                "{} {}",
-                clip_path_radius_to_css(rx, font_size_px),
-                clip_path_radius_to_css(ry, font_size_px)
-            );
+            // 双轴同缺省（closest-side closest-side）整体省略；单侧非缺省
+            // 形保双半径（省一值破坏 rx ry 位置文法）。
+            let both_default = matches!(rx, ClipPathRadius::ClosestSide) && matches!(ry, ClipPathRadius::ClosestSide);
+            let mut inner = if both_default {
+                String::new()
+            } else {
+                format!(
+                    "{} {}",
+                    clip_path_radius_to_css(rx, font_size_px),
+                    clip_path_radius_to_css(ry, font_size_px)
+                )
+            };
             if let Some((x, y)) = position {
+                // 同 circle 臂：空 inner 前导分隔符禁带空格。
+                let sep = if inner.is_empty() { "" } else { " " };
                 inner.push_str(&format!(
-                    " at {} {}",
+                    "{sep}at {} {}",
                     length_to_css(x, font_size_px),
                     length_to_css(y, font_size_px)
                 ));
