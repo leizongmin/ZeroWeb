@@ -11861,6 +11861,18 @@
       shell = shells.length ? shells[shells.length - 1] : null;
     }
     if (!shells.length) return false;
+    // d44 join 缝尾随 br 消费：块界 join 后原行尾 br 沦为行中换行——Blink 删
+    // 一个多余 br（`<li>list-item1<br></li>`+join 期望 `<li>list-item1list-item2`
+    // 精确形；双 br `<li>list-item1<br><br></li>` accept 数组保留一个）。仅跨块
+    // 尾 append 路径触发（dst=左块、行壳落 dst 尾；同容器行间 join 不动）。
+    if (!_shellRef && _zwCeIsBlockEl(_shellDst) && srcParent !== _shellDst) {
+      var _dkids = _shellDst.childNodes || [];
+      var _dlast = _dkids[_dkids.length - 1];
+      if (_dlast && _dlast.nodeType === 1
+        && String(_dlast.nodeName || '').toLowerCase() === 'br') {
+        try { _shellDst.removeChild(_dlast); } catch (_eBrEat) {}
+      }
+    }
     // shell 落位（2026-10-30 左线 inline 语料）：**行源位插入**——dst 尾 append
     // 在 dst=宿主级行容器时把壳排到捐线块之后（`ghi</div><span>def</span>` 错序
     // 实证）。源位 = srcParent 为 dst 子（右块整体捐线）→ srcParent 位；
@@ -12262,7 +12274,31 @@
   // ——快照必须引用变更前同节点，故全部在变更前置位。
   // https://w3c.github.io/input-events/#dom-inputevent-gettargetranges
   var __zwCePendingTargetRanges = null;
-  function _zwCeTargetRange(sn, so, en, eo) {
+  function _zwCeTargetRange(sn, so, en, eo, liveEndpoints) {
+    // d44 端点克隆快照（input-events 语料 getRangeDescription 断言在变更应用后
+    // 读取 node.data，harness 在传播期把 getTargetRanges() 冻结进 cachedRanges
+    // 再断言——报告值 = 构建期所引节点在**断言期**的 data）。语料期望两侧同读
+    // 测试捕获节点的断言期 data，按编辑臂承载风格分流（d44 全克隆 +385/−8 对拍
+    // 实证两族并存，一刀切不可行）：
+    // - 替换承载族（join 块界/界选区臂、select-delete 摘除核）：变更机制把树内
+    //   节点替换/摘离，测试捕获的变更前节点值不变——克隆冻结同一 pre-value 给出
+    //   等值观测（`list-item1` 全量、`"   def"` 原值 407 案实证）。
+    // - 原位截断族（backspace/forwarddelete 文内**部分**纯字符切片，liveEndpoints
+    //   置位）：编辑臂对 sc 原位截断（`"abc"→"ac"`），测试捕获节点即被截节点、
+    //   断言期读 post-value——端点必须持 live 引用（克隆冻结 pre-value 反泄
+    //   `abc`，8 案 P2F 实证；d43 live 同域全绿）。
+    //   d45 收窄（对拍定谳）：范围含 \n（pre-line 硬换行/块分隔删除，4 案期望读
+    //   原节点 pre-value）与整节点删除（`[list-item1]` 全选，4 案期望读全量
+    //   pre-value）属**替换承载族**——Chrome 摘除/替换节点而非原位截断，保持克隆。
+    // 元素端点不受影响（描述只读 nodeName）。
+    if (!liveEndpoints && sn && (sn.nodeType === 3 || sn.__zwIsText)) {
+      var _sameOrigin = en === sn;
+      try { sn = document.createTextNode(String(sn.nodeValue || '')); } catch (_eTrSn) {}
+      if (_sameOrigin) en = sn;
+    }
+    if (!liveEndpoints && en && (en.nodeType === 3 || en.__zwIsText) && en !== sn) {
+      try { en = document.createTextNode(String(en.nodeValue || '')); } catch (_eTrEn) {}
+    }
     if (typeof StaticRange === 'function') {
       try {
         return new StaticRange({ startContainer: sn, startOffset: so, endContainer: en, endOffset: eo });
@@ -12295,8 +12331,26 @@
     return n === node ? i : 0;
   }
   // join 起界（backspace 侧）：前内容末叶——文本→可见端；原子单元叶→其前父
-  // 偏移；空块→块首。
+  // 偏移；空块→块首。d44 尾随 br 边界：前块尾 br 不入界——界落**首个尾随 br**
+  // 前的父偏移（`<li>list-item1<br></li><li>[]…` (li,1)、`<p>abc<br></p>` (p,1)
+  // 语料形；双 br 同落首 br 位），纯 br 块无可见内容 → 块首（br 即占位，(块,0)）；
+  // 无尾随 br 保持旧口径（`<dt>list-item1</dt>` (text,10) 文本端形）。
   function _zwCeJoinStartOf(prevNode) {
+    var _tbKids = prevNode.childNodes || [];
+    var _tbTop = null, _tbBr = null;
+    for (var _ti = _tbKids.length - 1; _ti >= 0; _ti--) {
+      var _tc = _tbKids[_ti];
+      if (_tc.nodeType === 1 && String(_tc.nodeName || '').toLowerCase() === 'br'
+        && !(_tc.childNodes || []).length) continue; // 尾随 br 跳过
+      if (_tc.nodeType === 3 && /^\s*$/.test(String(_tc.nodeValue || ''))) continue; // 尾随折叠空白跳过
+      _tbTop = _tc;
+      for (var _tj = _ti + 1; _tj < _tbKids.length; _tj++) {
+        var _tn = _tbKids[_tj];
+        if (_tn.nodeType === 1 && String(_tn.nodeName || '').toLowerCase() === 'br') { _tbBr = _tn; break; }
+      }
+      break;
+    }
+    if (_tbBr) return { node: prevNode, offset: _zwCeNodeIndexOf(_tbBr) };
     var leaf = _zwCeDeepLeaf(prevNode, true);
     if (leaf && (leaf.nodeType === 3 || leaf.__zwIsText)) {
       var lv = String(leaf.nodeValue || '');
@@ -12450,12 +12504,17 @@
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE)];
+    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE,
+      !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
     if (el.dispatchEvent(before) === false) return;
     // 传播后重读选区（input-events-during-and-after-dispatch 语料）：listener 可在
     // beforeinput 传播中改选区——target ranges 保持派发前快照，**默认动作按改后
     // 选区应用**（Blink 语义，getTargetRanges 快照 ≠ 删除定位）。重读同宿主 caret，
     // 文本节点内才用新位（跨块/元素界改动超出本臂几何 → 保持原位，不放大）。
+    // 本臂端点持 live（见 _zwCeTargetRange 分流注记）：传播中选区未改时 sc 即
+    // 被截节点，报告随原位截断读 post-value；传播中改选区触发替换承载时快照
+    // 引用随机制被分离的节点——d43 观测该形 1F（期望读分离原节点 pre-value），
+    // 接受（与克隆门互斥，不可能两全）。
     var fr = globalThis.__zw_ce_caret_range(el);
     if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
       && (fr.startOffset | 0) > 0) {
@@ -12588,10 +12647,12 @@
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE)];
+    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE,
+      !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
     if (el.dispatchEvent(before) === false) return;
     // 传播后重读选区（同 __zw_ce_delete 文内臂注记：ranges 快照固定、默认动作按
     // 改后选区应用——ForwardDelete 删新位**后**一单元，代理对安全同上）。
+    // 端点 live 分流同 backspace 文内臂（_zwCeTargetRange 注记）。
     var fr = globalThis.__zw_ce_caret_range(el);
     if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
       && (fr.startOffset | 0) < String(fr.startContainer.nodeValue || '').length) {
