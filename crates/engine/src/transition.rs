@@ -363,6 +363,16 @@ fn get_property_value(style: &ComputedStyle, property: &str) -> String {
             };
             crate::js_dom_bridge::computed_style::shape_outside_to_css(&style.shape_outside, font)
         }
+        // wptfyi-css shape-margin/threshold 刀：canonical 串化比较（差异才启动
+        // 过渡——无臂时两侧同空串恒不启动；gCS 臂同口径）。
+        "shape-margin" => {
+            let font = match style.font_size {
+                LengthValue::Px(v) => v,
+                _ => 16.0,
+            };
+            crate::js_dom_bridge::computed_style::shape_margin_to_css(&style.shape_margin, font)
+        }
+        "shape-image-threshold" => style.shape_image_threshold.to_string(),
         // wptfyi-css 基本形状族刀：offset-path 旧/新值 verbatim 比较（差异才
         // 启动过渡——无臂时两侧同空串恒不启动；gCS offset-path 臂同 verbatim
         // 口径，neutral 端点组 007 页 transitions 通道 t<0.5 行依赖 from 保持）。

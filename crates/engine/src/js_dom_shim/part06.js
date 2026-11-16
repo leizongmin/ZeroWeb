@@ -3540,6 +3540,98 @@
         run0 += spans[i2].e - spans[i2].s;
       }
     }
+    // F 族 CE=false 邻接提升臂（2026-11-16 ihe6 E/F/CEF 残刀）：sc 在两层行内
+    // 壳内（宿主唯一子 p 壳 → b 壳 → sc 文本 × 同壳 CE=false 元素邻接）× 选区
+    // 全选 sc 文本 × markup 载荷——壳解析仅支持一层壳，下方 scBase<0 return
+    // null → 整命令 no-op（corpus inserthtml :602/:607 实录 got 选区文本残留、
+    // 载荷零插入，普查档 ihc1-residual-49f-census F 族）。语料语义
+    //（inserthtml.js :601 注释「Do not delete non-editable when clearing the
+    // original style」域）：选区文本删除、载荷提升出 b 壳落 p 壳内选区侧
+    //（文本前位 → 壳前；文本后位 → 壳后）、CE=false 元素与壳原样保留。门全
+    // 合取保守贴语料形：p 系宿主唯一子、b 系行内壳恰两子（sc 文本 ×
+    // CE=false 元素）、选区两端同落 sc 文本且全覆盖、载荷含 '<'（纯文本形
+    // 未录维持 no-op）。重建走 p 层 _zwIhtmlTopSpans 原标签字节（b 开合标签
+    // 字节保真 + 元素 span 序/元素子序对齐门），CE=false 元素序列化字节经
+    // host.innerHTML 写入边界 parse+serialize 归一（corpus
+    // contenteditable="false" 引号同款）。其余形维持既有 return null（零外
+    // 溢）。钉测 part125_ihtml_residual_pins.rs F 族双键。
+    if (!range.collapsed && frag && frag.indexOf('<') !== -1 && scShell
+        && sc.nodeType === 3) {
+      var fP = scShell.parentNode;
+      if (fP && fP !== host && fP.parentNode === host && kids.length === 1
+          && kids[0] === fP
+          && String(fP.tagName || '').toLowerCase() === 'p'
+          && String(scShell.tagName || '').toLowerCase() === 'b') {
+        var fBKids = scShell.childNodes || [];
+        var fTxt = null, fCef = null;
+        for (var fbk = 0; fbk < fBKids.length; fbk++) {
+          var fk = fBKids[fbk];
+          if ((fk.nodeType === 3 || fk.__zwIsText) && !fTxt) fTxt = fk;
+          else if (fk.nodeType === 1 && !fCef
+              && String(fk.getAttribute('contenteditable') || '')
+                .toLowerCase() === 'false') fCef = fk;
+        }
+        var fSo = range.startOffset | 0, fEo = range.endOffset | 0;
+        var fTv = String(sc.nodeValue || '');
+        if (fTxt === sc && fCef && fTv.length > 0
+            && range.endContainer === sc && fSo === 0 && fEo === fTv.length) {
+          var fPHtml = String(host.innerHTML || '');
+          var fPSpans = _zwIhtmlTopSpans(fPHtml);
+          if (fPSpans.length === 1 && fPSpans[0].tag === 'p') {
+            var fPInner = fPHtml.slice(fPSpans[0].innerStart, fPSpans[0].innerEnd);
+            var fPSp = _zwIhtmlTopSpans(fPInner);
+            var fElIdx = -1, fElRun = 0, fElCount = 0, fC3;
+            for (fC3 = 0; fC3 < fP.childNodes.length; fC3++) {
+              if (fP.childNodes[fC3] === scShell) { fElIdx = fElRun; }
+              if (fP.childNodes[fC3].nodeType === 1) {
+                fElRun++;
+                fElCount++;
+              }
+            }
+            var fSpElCount = 0, fBSpan = null, fTagRun = -1;
+            for (fC3 = 0; fC3 < fPSp.length; fC3++) {
+              if (fPSp[fC3].tag) {
+                fSpElCount++;
+                if (fTagRun < 0 && fSpElCount - 1 === fElIdx) {
+                  fTagRun = fSpElCount - 1;
+                  fBSpan = fPSp[fC3];
+                }
+              }
+            }
+            if (fElIdx >= 0 && fElCount === fSpElCount && fBSpan
+                && fBSpan.tag === 'b') {
+              var fBInner = fPInner.slice(fBSpan.innerStart, fBSpan.innerEnd);
+              var fBOpen = fPInner.slice(fBSpan.start, fBSpan.openEnd);
+              var fBClose = fPInner.slice(fBSpan.innerEnd, fBSpan.end);
+              var textFirst = fBInner.indexOf(fTv) === 0;
+              var textLast = fTv.length > 0
+                && fBInner.slice(fBInner.length - fTv.length) === fTv;
+              if (textFirst !== textLast) {
+                var fCefSer = textFirst
+                  ? fBInner.slice(fTv.length)
+                  : fBInner.slice(0, fBInner.length - fTv.length);
+                if (fCefSer) {
+                  var fPre = fPInner.slice(0, fBSpan.start);
+                  var fPost = fPInner.slice(fBSpan.end);
+                  var fPNew = fPre + (textFirst
+                    ? frag + fBOpen + fCefSer + fBClose
+                    : fBOpen + fCefSer + fBClose + frag) + fPost;
+                  var fNew = fPHtml.slice(0, fPSpans[0].innerStart) + fPNew
+                    + fPHtml.slice(fPSpans[0].innerEnd);
+                  var fWant = 0;
+                  for (var fw1 = 0; fw1 < fP.childNodes.length; fw1++) {
+                    if (fP.childNodes[fw1] === scShell) break;
+                    fWant += kTextLen(fP.childNodes[fw1]);
+                  }
+                  if (!textFirst) fWant += kTextLen(scShell) - fTv.length;
+                  return { html: fNew, want: fWant };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
     if (scBase < 0) return null;
     var shellTag = shell ? String(shell.tagName || '').toLowerCase() : '';
     if (shell && !shellTag) return null;
@@ -3904,6 +3996,41 @@
           var cNew = cHtml0.slice(0, cSpans0[0].innerStart) + cInner
             + cHtml0.slice(cSpans0[0].innerEnd);
           return { html: cNew, want: 0 };
+        }
+      }
+    }
+    // E 族空行内载荷壳内拼接臂（2026-11-16 ihe6 E/F/CEF 残刀）：host 直子块壳
+    // div × 坍缩 caret × 壳单文本子（即 sc）× markup 载荷——下方溶解臂全含门
+    // 对元素子 collapsed 恒 false → return null → 整命令 no-op（corpus
+    // inserthtml :584/:589 实录 got=`<div>ab</div>`/`<div>ac</div>`，普查档
+    // ihc1-residual-49f-census E 族）。语料语义（inserthtml.js :583 注释
+    // 「Empty inline elements shouldn't be deleted if they are inserted
+    // intentionally」域）：壳保留、载荷壳内 caret 位原样拼接。门全合取保守贴
+    // 语料形：壳系 host 唯一子、壳恰一文本子即 sc、载荷含 '<'（纯文本走下方
+    // 溶解臂既有域）。重建走 _zwIhtmlTopSpans 原标签字节（属性壳字节保真）；
+    // 载荷经 host.innerHTML 写入边界 parse+serialize 归一属性引号（corpus
+    // class="s1" 同款）；round-trip 门＝壳内层序列化字节恒等 + sc 文本值恒
+    // 等。white-space:pre/pre-line 壳属 G 族臂域（上方 G 臂 '<' 门把 markup
+    // 载荷让位块臂域，ihb-g-ctrl-markup 控制键恒 no-op）本臂排除。其余形维
+    // 持 null（溶解臂既有域零外溢）。钉测 part125_ihtml_residual_pins.rs
+    // E 族双键。
+    if (shell && shellTag === 'div' && range.collapsed && kids.length === 1
+        && kids[0] === shell && frag.indexOf('<') !== -1 && ck.length === 1
+        && ck[0] === sc && (ck[0].nodeType === 3 || ck[0].__zwIsText)) {
+      var eAttrs = String((shell.getAttribute && shell.getAttribute('style')) || '');
+      var eWsM = /(?:^|;)\s*white-space\s*:\s*([a-zA-Z-]+)/.exec(eAttrs);
+      var eWs = eWsM ? eWsM[1].toLowerCase() : '';
+      if (eWs !== 'pre' && eWs !== 'pre-line') {
+        var eHtml0 = String(host.innerHTML || '');
+        var eSpans = _zwIhtmlTopSpans(eHtml0);
+        if (eSpans.length === 1 && eSpans[0].tag === 'div') {
+          var eInner = eHtml0.slice(eSpans[0].innerStart, eSpans[0].innerEnd);
+          if (eInner === String(shell.innerHTML || '')
+              && eInner === String(sc.nodeValue || '')) {
+            var eIns = eSpans[0].innerStart + so;
+            return { html: eHtml0.slice(0, eIns) + frag + eHtml0.slice(eIns),
+              want: so };
+          }
         }
       }
     }
@@ -4297,6 +4424,26 @@
         repl = '<dl>' + fragC + '</dl>';
       } else if (rootTag === 'td' || rootTag === 'th') {
         repl = fragInner;
+      } else if (/^(p|div|pre|blockquote|ol|ul|h1|h2|h3|h4|h5|h6)$/.test(rootTag)) {
+        // pre 上下文块载荷单块解包（editing spec insertHTML fixup——插入点已在
+        // 块内的单块载荷拆壳取内联，拼接臂 pre 解包形同款名单）：嵌套 editing
+        // host 面 host2 = 内层可编辑元素（R3187 存在即判），载荷块根相对 host2
+        // 为 bare（host 直子无元素 T——tIdx<0），pre[CEF] 在 host2 之上（chain
+        // 仅宿主内不可达）→ 旧形 return false 落内联主路径按 host2 串整段拼接，
+        // 载荷 pre 原样嵌套进 pre 内 span（corpus inserthtml :576 got 红根）。
+        // 上下文判定：sc 祖先链含 pre（越宿主边界不限——插入点块上下文语义）；
+        // repl=fragInner 经通用 region 替换落 host2 内。非 pre 上下文维持
+        // return false（宿主级裸拼接既有域零外溢）。
+        var preCtx = false;
+        for (var pw = sc.parentNode, pg = 0; pw && pg < 64; pg++,
+             pw = pw.parentNode) {
+          if (pw.nodeType === 1
+              && String(pw.tagName || '').toLowerCase() === 'pre') {
+            preCtx = true;
+            break;
+          }
+        }
+        if (preCtx) repl = fragInner; else return false;
       } else {
         return false;
       }

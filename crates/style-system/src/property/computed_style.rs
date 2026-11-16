@@ -696,6 +696,12 @@ pub struct ComputedStyle {
     pub clip_path: ClipPathComputedValue,
     /// shape-outside 属性（css-shapes-1 §3：浮动周边环绕形状）。
     pub shape_outside: ShapeOutsideComputedValue,
+    /// shape-margin 属性（css-shapes-1 §shape-margin-property：浮动元素形状
+    /// 外边距，非负 `<length-percentage>`，em 按字号绝对化、% 保留）。
+    pub shape_margin: LengthValue,
+    /// shape-image-threshold 属性（css-shapes-1 §shape-image-threshold-property：
+    /// 形状图阈值，`<number> | <percentage>`，computed 钳 [0,1]、pct 折算 /100）。
+    pub shape_image_threshold: f64,
     /// clip 属性（已弃用的 CSS2 裁剪属性，仅对绝对定位元素生效）。
     pub clip: ClipRectComputedValue,
     /// mask-image 属性（支持多图层，格式与 background-image 相同）。

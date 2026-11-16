@@ -1478,6 +1478,7 @@ fn test_get_computed_style_clip_path() {
         <div id=\"inset-round\" style=\"clip-path: inset(5px round 10px);\"></div>\
         <div id=\"circle\" style=\"clip-path: circle(50px at 25% 75%);\"></div>\
         <div id=\"circle-def\" style=\"clip-path: circle();\"></div>\
+        <div id=\"circle-pos\" style=\"clip-path: circle(at 50cm);\"></div>\
         <div id=\"polygon\" style=\"clip-path: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
         <div id=\"polygon-ee\" style=\"clip-path: polygon(evenodd, 0% 0%, 100% 0%, 50% 100%);\"></div>\
         <div id=\"def\"></div>\
@@ -1499,10 +1500,14 @@ fn test_get_computed_style_clip_path() {
         computed_style_property(html, "#circle", "clip-path"),
         "circle(50px at 25% 75%)"
     );
-    // circle() 空（默认 closest-side，无位置）。
+    // circle() 空（缺省分量 closest-side/center computed 全省略，
+    // css-shapes-1 串化；corpus oracle shape-outside-circle-000）。
+    assert_eq!(computed_style_property(html, "#circle-def", "clip-path"), "circle()");
+    // 缺省半径 + at 位置：省半径后直接 `at` 起头（`circle( at …)` 前导
+    // 空格回归钉——wptfyi-css circle-004 computed 语料单一根因形）。
     assert_eq!(
-        computed_style_property(html, "#circle-def", "clip-path"),
-        "circle(closest-side)"
+        computed_style_property(html, "#circle-pos", "clip-path"),
+        "circle(at 1889.764px 50%)"
     );
     // polygon 默认 nonzero 省略填充规则，顶点逗号分隔。
     assert_eq!(
@@ -1525,6 +1530,8 @@ fn test_get_computed_style_shape_outside() {
         <div id=\"inset1\" style=\"shape-outside: inset(10%);\"></div>\
         <div id=\"circle\" style=\"shape-outside: circle(50px at 25% 75%);\"></div>\
         <div id=\"circle-def\" style=\"shape-outside: circle();\"></div>\
+        <div id=\"circle-pos\" style=\"shape-outside: circle(at 50cm);\"></div>\
+        <div id=\"circle-edge\" style=\"shape-outside: circle(at bottom 70% right 30%);\"></div>\
         <div id=\"ellipse\" style=\"shape-outside: ellipse(20px 30px);\"></div>\
         <div id=\"polygon\" style=\"shape-outside: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
         <div id=\"margin-box\" style=\"shape-outside: margin-box;\"></div>\
@@ -1545,7 +1552,21 @@ fn test_get_computed_style_shape_outside() {
     );
     assert_eq!(
         computed_style_property(html, "#circle-def", "shape-outside"),
-        "circle(closest-side)"
+        "circle()"
+    );
+    // 缺省半径 + at 位置（circle-004 computed 390F 单一根因回归钉：省半径
+    // 后 `at` 直接起头，无前导空格）+ 4 值缘偏移百分比补数（corpus oracle
+    // validPositions `right o%` → `100−o`%，`bottom o%` → `100−o`%——
+    // `bottom 70% right 30%` → `70% 30%` 同构；2 词 `[y-edge] [<lp>]` 形属
+    // invalidPositions 拒收域——css-shapes-1 语料 Chrome 契约，见
+    // circle-003/008 invalid 页）。
+    assert_eq!(
+        computed_style_property(html, "#circle-pos", "shape-outside"),
+        "circle(at 1889.764px 50%)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#circle-edge", "shape-outside"),
+        "circle(at 70% 30%)"
     );
     // ellipse 双半径。
     assert_eq!(
@@ -1570,6 +1591,69 @@ fn test_get_computed_style_shape_outside() {
         "content-box"
     );
     assert_eq!(computed_style_property(html, "#bad-box", "shape-outside"), "none");
+}
+
+#[test]
+fn test_get_computed_style_shape_margin_threshold() {
+    // css-shapes-1 §shape-margin-property / §shape-image-threshold-property
+    // （wptfyi-css shape-margin/threshold 刀：白名单+apply+gCS 三站断言）。
+    // shape-margin 非负 `<length-percentage>`（负值钳 0、em 按字号绝对化、%
+    // 保留）；shape-image-threshold computed 级 `[0,1]` number（% 折 /100、
+    // 超域钳——css-shapes-1 computed value 定义）。
+    let html = "<html><body>\
+        <div id=\"def\"></div>\
+        <div id=\"m-px\" style=\"shape-margin: 30px;\"></div>\
+        <div id=\"m-pct\" style=\"shape-margin: 50%;\"></div>\
+        <div id=\"m-em\" style=\"shape-margin: 2em;\"></div>\
+        <div id=\"m-neg\" style=\"shape-margin: -20px;\"></div>\
+        <div id=\"m-auto\" style=\"shape-margin: auto;\"></div>\
+        <div id=\"m-zero\" style=\"shape-margin: 0;\"></div>\
+        <div id=\"t-num\" style=\"shape-image-threshold: 0.5;\"></div>\
+        <div id=\"t-pct\" style=\"shape-image-threshold: 80%;\"></div>\
+        <div id=\"t-neg\" style=\"shape-image-threshold: -7;\"></div>\
+        <div id=\"t-over\" style=\"shape-image-threshold: 12.5;\"></div>\
+        <div id=\"t-bad\" style=\"shape-image-threshold: auto;\"></div>\
+        </body></html>";
+    // shape-margin：缺省 0px。
+    assert_eq!(computed_style_property(html, "#def", "shape-margin"), "0px");
+    // px / % 直存；0 无单位按 0 折 px。
+    assert_eq!(computed_style_property(html, "#m-px", "shape-margin"), "30px");
+    assert_eq!(computed_style_property(html, "#m-pct", "shape-margin"), "50%");
+    assert_eq!(computed_style_property(html, "#m-zero", "shape-margin"), "0px");
+    // em 按默认字号 16px 绝对化。
+    assert_eq!(computed_style_property(html, "#m-em", "shape-margin"), "32px");
+    // 负值 apply 期钳 0（css-shapes-1 非负域）。
+    assert_eq!(computed_style_property(html, "#m-neg", "shape-margin"), "0px");
+    // auto/thin 等关键字非 length-percentage，拒收回落缺省。
+    assert_eq!(computed_style_property(html, "#m-auto", "shape-margin"), "0px");
+    // shape-image-threshold：缺省 0。
+    assert_eq!(
+        computed_style_property(html, "#def", "shape-image-threshold"),
+        "0"
+    );
+    assert_eq!(
+        computed_style_property(html, "#t-num", "shape-image-threshold"),
+        "0.5"
+    );
+    // % computed 折 number（80% → 0.8）。
+    assert_eq!(
+        computed_style_property(html, "#t-pct", "shape-image-threshold"),
+        "0.8"
+    );
+    // 超域双端钳（负 → 0、>1 → 1）。
+    assert_eq!(
+        computed_style_property(html, "#t-neg", "shape-image-threshold"),
+        "0"
+    );
+    assert_eq!(
+        computed_style_property(html, "#t-over", "shape-image-threshold"),
+        "1"
+    );
+    // 非法关键字拒收回落缺省 0。
+    assert_eq!(
+        computed_style_property(html, "#t-bad", "shape-image-threshold"),
+        "0"
+    );
 }
 
 #[test]

@@ -400,6 +400,11 @@ impl PropertyRegistry {
             // Shape Outside（css-shapes-1 §3，与 clip-path 同 basic-shape 族）
             "shape-outside" => Some(ShapeOutside(ShapeOutsideComputedValue::None)),
 
+            // Shape Margin / Shape Image Threshold（css-shapes-1 §shape-margin-property
+            // 初始 0px / §shape-image-threshold-property 初始 0，computed 钳 [0,1]）
+            "shape-margin" => Some(ShapeMargin(LengthValue::Px(0.0))),
+            "shape-image-threshold" => Some(Number(0.0)),
+
             // Border Shape（css-borders-4 §7，R4534）
             "border-shape" => Some(BorderShape(zero_css_parser::values::BorderShapeValue::None)),
 
@@ -732,6 +737,8 @@ impl PropertyRegistry {
             "box-shadow",
             "clip-path",
             "shape-outside",
+            "shape-margin",
+            "shape-image-threshold",
             "clip",
             "border-shape",
         ]

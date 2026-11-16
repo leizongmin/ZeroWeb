@@ -705,6 +705,15 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
         // css-shapes-1 §shape-outside：同 basic-shape 族串化器 + 裸 <shape-box>。
         "shape-outside" => shape_outside_to_css(&style.shape_outside, font_size_px),
+        // css-shapes-1 §shape-margin-property：非负 length-percentage computed
+        // 串化（em/物理单位 apply 期折 px、% 保形、Calc 静态项按字号求值 +
+        // 负钳 0——语料 computed 页 `calc(10px + 0.5em)` → `30px`、
+        // `calc(10px - 0.5em)` → `0px`）。
+        "shape-margin" => shape_margin_to_css(&style.shape_margin, font_size_px),
+        // css-shapes-1 §shape-image-threshold-property：number 直出（apply 期
+        // 已钳 [0,1] 且 pct 折算 /100；f64 Display 最短形整数省尾——语料期望
+        // `0`/`0.5`/`1`）。
+        "shape-image-threshold" => style.shape_image_threshold.to_string(),
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
         "content" => content_to_css(&style.content, element_color, font_size_px),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
@@ -2652,10 +2661,20 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
             format!("inset({inner})")
         }
         C::Circle { radius, position } => {
-            let mut inner = clip_path_radius_to_css(radius, font_size_px);
+            // css-shapes-1 computed 串形省缺省分量：缺省半径 closest-side
+            // 省略（chrome computed 语料 oracle：`circle(at 800px 50%)`
+            // 形；显式半径与非缺省关键字保留）。
+            let mut inner = match radius {
+                ClipPathRadius::ClosestSide => String::new(),
+                other => clip_path_radius_to_css(other, font_size_px),
+            };
             if let Some((x, y)) = position {
+                // 缺省半径省略后 inner 为空——分隔符不能是 ` at` 的前导空格
+                //（否则产出 `circle( at …)` 非法串形，circle-004 computed
+                // 语料 390F 单一根因）。
+                let sep = if inner.is_empty() { "" } else { " " };
                 inner.push_str(&format!(
-                    " at {} {}",
+                    "{sep}at {} {}",
                     length_to_css(x, font_size_px),
                     length_to_css(y, font_size_px)
                 ));
@@ -2663,14 +2682,23 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
             format!("circle({inner})")
         }
         C::Ellipse { rx, ry, position } => {
-            let mut inner = format!(
-                "{} {}",
-                clip_path_radius_to_css(rx, font_size_px),
-                clip_path_radius_to_css(ry, font_size_px)
-            );
+            // 双轴同缺省（closest-side closest-side）整体省略；单侧非缺省
+            // 形保双半径（省一值破坏 rx ry 位置文法）。
+            let both_default = matches!(rx, ClipPathRadius::ClosestSide) && matches!(ry, ClipPathRadius::ClosestSide);
+            let mut inner = if both_default {
+                String::new()
+            } else {
+                format!(
+                    "{} {}",
+                    clip_path_radius_to_css(rx, font_size_px),
+                    clip_path_radius_to_css(ry, font_size_px)
+                )
+            };
             if let Some((x, y)) = position {
+                // 同 circle 臂：空 inner 前导分隔符禁带空格。
+                let sep = if inner.is_empty() { "" } else { " " };
                 inner.push_str(&format!(
-                    " at {} {}",
+                    "{sep}at {} {}",
                     length_to_css(x, font_size_px),
                     length_to_css(y, font_size_px)
                 ));
@@ -2706,6 +2734,30 @@ pub(crate) fn shape_outside_to_css(v: &ShapeOutsideComputedValue, font_size_px: 
         ShapeOutsideComputedValue::None => "none".to_string(),
         ShapeOutsideComputedValue::Shape(c) => clip_path_to_css(c, font_size_px),
         ShapeOutsideComputedValue::Box(k) => k.as_css_str().to_string(),
+    }
+}
+
+/// shape-margin 计算值串化（css-shapes-1 §shape-margin-property）：通用
+/// [`length_to_css`]（Calc 静态项按字号求值、% 保形）+ 非负钳（spec「clamped
+/// to be non-negative」；apply 站已钳字面负值，此处钳 Calc 求值负结果与
+/// 兜底形——语料 computed 页 `calc(10px - 0.5em)` → `0px`）。
+pub(crate) fn shape_margin_to_css(v: &LengthValue, font_size_px: f64) -> String {
+    match v {
+        LengthValue::Calc(_) => {
+            let s = length_to_css(v, font_size_px);
+            // Calc 静态求值出纯 px 串时负值钳 0px；含 % 项串保留（% 项 used
+            // 值依赖 layout，负号钳制语义挂账，语料未及）。
+            if s.strip_suffix("px")
+                .and_then(|num| num.parse::<f64>().ok())
+                .filter(|n| n.is_finite())
+                .filter(|n| *n < 0.0)
+                .is_some()
+            {
+                return "0px".to_string();
+            }
+            s
+        }
+        other => length_to_css(other, font_size_px),
     }
 }
 

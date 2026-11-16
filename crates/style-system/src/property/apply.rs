@@ -2147,6 +2147,44 @@ pub(crate) fn margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     positioned_offset_length_is_valid(raw, value)
 }
 
+/// shape-margin 长度域裁决（css-shapes-1 §shape-margin-property）：仅收
+/// `<length-percentage>`（px/em/ex/rem/物理单位/视口单位/%/calc）——margin 同族
+/// 关键字（`auto`/`thin`/`min-content`/`stretch` 等解析器副产形）全拒。
+pub(crate) fn shape_margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin"
+            | "medium"
+            | "thick"
+            | "min-content"
+            | "max-content"
+            | "fit-content"
+            | "auto"
+            | "stretch"
+            | "-webkit-fill-available"
+    ) {
+        return false;
+    }
+    !matches!(
+        value,
+        LengthValue::Auto
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_)
+            | LengthValue::Stretch
+    )
+}
+
+/// 非负长度钳（css-shapes-1 §shape-margin-property）：负 px/负 % 钳 0；Calc 形
+/// 保留（负钳在 gCS 求值层 [`shape_margin_to_css`]）。
+pub(crate) fn clamp_non_negative_length(value: LengthValue) -> LengthValue {
+    match value {
+        LengthValue::Px(n) if n < 0.0 => LengthValue::Px(0.0),
+        LengthValue::Percentage(n) if n < 0.0 => LengthValue::Percentage(0.0),
+        other => other,
+    }
+}
+
 /// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。
 ///
 /// used color-scheme 由属性声明的 scheme 列表与用户偏好（`prefers-color-scheme`）合成：
@@ -2192,7 +2230,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 19] = [
+    const VALIDATED_PROPERTIES: [&str; 22] = [
         "transform",
         "rotate",
         "scale",
@@ -2250,6 +2288,26 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // Fail。math 整值形前置放行（通用 math 门裁语法）、metric + math
         // basis 形逐 token 文法裁决，eval 留 apply 链带 font ctx。
         "font-size-adjust",
+        // shape-outside 写面文法门（css-shapes-1 §shape-outside-property）：
+        // apply 链既有臂裁决（parse_clip_path `<basic-shape>` + 裸 `<shape-box>`
+        // 关键字，apply_advanced），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-shapes 语料 shape-outside-circle/ellipse-003 各 125F——
+        // invalid 位置形（`circle(at bottom 70% right 20%)` 轴混搭、3 词缘偏移
+        // 等语料 invalidPositions 域）此前白名单外放行 store 原文回显即 Fail）。
+        // 语料 url() `<image>` 形全在样式表声明路径（不经本 inline 门），不受
+        // apply 臂未建模 `<image>` 影响。
+        // https://drafts.csswg.org/css-shapes/#shape-outside-property
+        "shape-outside",
+        // shape-margin / shape-image-threshold 写面文法门（css-shapes-1
+        // §shape-margin-property 非负 <length-percentage> + §shape-image-threshold-
+        // property <number>|<percentage>）：apply 链既有臂裁决（parse_length_or_math
+        // + 域裁决 / parse_opacity），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-shapes 语料 shape-margin-invalid `none`/无单位 `10`、
+        // shape-image-threshold-invalid `auto`/`10px` 此前白名单外放行 store
+        // 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-shapes/#shape-margin-property
+        "shape-margin",
+        "shape-image-threshold",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2513,6 +2571,53 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         return lv.split_once(char::is_whitespace).is_some_and(|(m, rest)| {
             matches!(m, "ex-height" | "cap-height" | "ch-width" | "ic-width" | "ic-height") && basis_ok(rest.trim())
         });
+    }
+    // shape-outside 写面文法门（css-shapes-1 §shape-outside-property：
+    // `none | [ <basic-shape> || <shape-box> ]`）——置于未实现函数放行臂之前
+    //（circle()/ellipse()/inset() 等形状函数不在 IMPLEMENTED_VALUE_FUNCTIONS
+    // 名单，放行臂会先行误放 invalid 位置形；counter-increment 臂同序先例）。
+    // 裁决单点复用 apply 臂同一解析器 parse_clip_path（strict 位置文法共享）；
+    // 裸 <shape-box> 关键字独立受理；替换函数形（var()/attr()）放行 store
+    // 原文——oracle 对替换前文本恒拒（computed 期级联替换后重裁，counter
+    // 臂同口径）。（driving: css-shapes 语料 shape-outside-circle/ellipse-003
+    // 各 125F invalid 形此前原文透传 store 回显即 Fail。）
+    // FIXME: <basic-shape> <shape-box> 后缀组合形与 url() <image> 形未建模，
+    // 本门同拒（语料现值该两形均走样式表声明路径或已属 unsupported 域）。
+    // https://drafts.csswg.org/css-shapes/#shape-outside-property
+    if prop == "shape-outside" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        if matches!(lv.as_str(), "content-box" | "padding-box" | "border-box" | "margin-box") {
+            return true;
+        }
+        return values::parse_clip_path(v).is_some();
+    }
+    // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
+    // `<length-percentage>`）——裁决单点复用 apply 臂同一解析器
+    // parse_length_or_math + 域裁决（margin 同族关键字 auto/thin/stretch 等
+    // 拒、无单位非零 parse 拒）；替换函数形放行 store 原文（shape-outside 臂
+    // 同口径）。（driving: css-shapes 语料 shape-margin-invalid `none`/`10`、
+    // shape-margin-computed calc 形此前白名单外放行 store 原文回显即 Fail。）
+    // https://drafts.csswg.org/css-shapes/#shape-margin-property
+    if prop == "shape-margin" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return parse_length_or_math(v).is_some_and(|lv| shape_margin_length_is_valid(v, &lv));
+    }
+    // shape-image-threshold 写面文法门（css-shapes-1 §shape-image-threshold-
+    // property：`<number> | <percentage>`，computed 钳 [0,1]）——裁决单点复用
+    // parse_opacity（number/pct → /100 → 钳，invalid 形 `auto`/`10px` parse 拒）；
+    // 替换函数形放行 store 原文（同上）。spec「as specified」级不钳（valid 页
+    // `-7`/`-100%` 原样 canonical），钳制只在 computed 站。
+    // https://drafts.csswg.org/css-shapes/#shape-image-threshold-property
+    if prop == "shape-image-threshold" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_opacity(v).is_some();
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -3048,6 +3153,26 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transform", "rotate(acos(2))"));
         assert!(!validate_decl_value("transform", "rotate(atan(45deg))"));
         assert!(!validate_decl_value("transform", "rotate(asin(90px))"));
+    }
+
+    #[test]
+    fn shape_outside_write_gate_verdicts() {
+        // shape-outside 写面门（css-shapes-1 §shape-outside-property，apply
+        // 既有臂 oracle 裁决）：合法 basic-shape/shape-box/css-wide 形放行；
+        // 语料 invalidPositions 域（2 词缘偏移 `bottom 70%`、轴混搭 `50% left`、
+        // 3 词混轴 `top left 3px`）拒收——css-shapes circle/ellipse-003 语料
+        // inline setProperty invalid 形驱动。
+        assert!(validate_decl_value("shape-outside", "none"));
+        assert!(validate_decl_value("shape-outside", "circle(50px at 25% 75%)"));
+        assert!(validate_decl_value("shape-outside", "circle()"));
+        assert!(validate_decl_value("shape-outside", "inset(10%)"));
+        assert!(validate_decl_value("shape-outside", "circle(at bottom 70% right 30%)"));
+        assert!(validate_decl_value("shape-outside", "border-box"));
+        assert!(validate_decl_value("shape-outside", "inherit"));
+        assert!(!validate_decl_value("shape-outside", "circle(at bottom 70%)"));
+        assert!(!validate_decl_value("shape-outside", "circle(at top 50%)"));
+        assert!(!validate_decl_value("shape-outside", "circle(at 50% left)"));
+        assert!(!validate_decl_value("shape-outside", "circle(at top left 3px)"));
     }
 
     #[test]

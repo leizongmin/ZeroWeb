@@ -3,8 +3,8 @@
 //! 将 ComputedStyle 的高级属性匹配从 apply.rs 拆分出来，保持文件在 2000 行以内。
 
 use super::apply::{
-    border_width_length_is_valid, margin_length_is_valid, padding_length_is_valid, parse_length_or_math,
-    positioned_offset_length_is_valid,
+    border_width_length_is_valid, clamp_non_negative_length, margin_length_is_valid, padding_length_is_valid,
+    parse_length_or_math, positioned_offset_length_is_valid, shape_margin_length_is_valid,
 };
 use super::computed_style::ComputedStyle;
 use super::parse::*;
@@ -2631,6 +2631,30 @@ pub fn apply_advanced_property_value(
             };
             if let Some(k) = box_kind {
                 style.shape_outside = ShapeOutsideComputedValue::Box(k);
+                return true;
+            }
+        }
+        // css-shapes-1 §shape-margin-property：非负 `<length-percentage>`——em 按
+        // 所属元素字号绝对化（offset-distance 同款），% 保留到 gCS；负值钳 0
+        //（spec「Values on this property are clamped to be non-negative」，语料
+        // computed 页 `calc(10px - 0.5em)` → `0px`；Calc 形负钳在 gCS 求值层）。
+        // https://drafts.csswg.org/css-shapes/#shape-margin-property
+        "shape-margin" => {
+            if let Some(v) = parse_length_or_math(value) {
+                if shape_margin_length_is_valid(value, &v) {
+                    let v = normalize_font_relative_length(v, own_font_size_px(style));
+                    style.shape_margin = clamp_non_negative_length(v);
+                    return true;
+                }
+            }
+        }
+        // css-shapes-1 §shape-image-threshold-property：`<number> | <percentage>`，
+        // computed 钳 [0,1] 且 percentage 折算 /100——parse_opacity 语义恰同
+        //（number/pct → /100 → 钳 [0,1]；invalid 形 `auto`/`10px` parse 拒）。
+        // https://drafts.csswg.org/css-shapes/#shape-image-threshold-property
+        "shape-image-threshold" => {
+            if let Some(v) = values::parse_opacity(value) {
+                style.shape_image_threshold = v;
                 return true;
             }
         }
