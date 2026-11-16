@@ -97,6 +97,13 @@ pub struct BrowserApp {
     tabs: TabManager,
     /// GPU 渲染器
     gpu_renderer: Option<GpuRenderer>,
+    /// 离屏 GPU 捕获渲染器（[Self::render_full_scene_gpu_capture] 按尺寸复用）。
+    /// 每次新建 wgpu instance/adapter/device + 管线编译实测 103-210ms（T77 仪拍），
+    /// 且首个 shot 位于 ui_driver claim 冻结窗内——ui_driver 模式下窗口 Resized 时
+    /// 预创建（[Self::prewarm_capture_renderer]），shot 路径按尺寸命中复用。
+    capture_gpu_renderer: Option<GpuRenderer>,
+    /// 离屏捕获渲染器的创建尺寸（尺寸变更时重建 headless 纹理）。
+    capture_gpu_size: (u32, u32),
     /// 上次渲染时活跃标签页（R3254-M4：标签切换时清 GPU 图片纹理缓存，防跨标签滞留）。
     last_rendered_tab: Option<TabId>,
     /// 已真实呈现的帧计数（GPU/CPU present 路径各计一次；ui_driver 滚动帧率基准用）。
@@ -393,6 +400,8 @@ impl BrowserApp {
             shell,
             tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
+            capture_gpu_renderer: None,
+            capture_gpu_size: (0, 0),
             last_rendered_tab: None,
             presented_frames: 0,
             render_mode,

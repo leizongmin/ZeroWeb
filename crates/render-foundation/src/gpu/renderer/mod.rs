@@ -47,6 +47,18 @@ fn gpu_create_stage_trace(stage: &str, since: std::time::Instant) {
     }
 }
 
+/// 透出 [`GpuRenderer::render_full_scene_gpu`] 内部分段耗时（同 ZW_RASTER_STAGE_TRACE
+/// 门；门关直通）。T77 首帧 once-cost 二层归因：collect/glyph_page/images/submit
+/// 各占多少（CPU glyph 首光栅化 / 纹理上传 / lavapipe 管线首绘 JIT 候选）。
+fn gpu_scene_stage_trace(stage: &str, since: std::time::Instant) {
+    if *GPU_CREATE_STAGE_TRACE {
+        tracing::info!(
+            "RASTER_STAGE_TRACE stage=gpu_scene:{stage} stage_ms={} mode=gpu_scene",
+            since.elapsed().as_millis()
+        );
+    }
+}
+
 /// ZW_ATLAS_TRACE=1 诊断计数器（T2 丢字形排查，2026-10-13）。
 ///
 /// 进程级 env 快照（不在热路径逐帧读 env）；开启时各 glyph 收集点仅原子自增，
@@ -1073,6 +1085,7 @@ impl GpuRenderer {
         }
 
         // ── Phase 1: 收集所有顶点数据（不持有 GPU 资源借用） ──
+        let scene_t0 = std::time::Instant::now();
 
         // 1. Shadows
         let shadow_verts = self.collect_shadow_vertices(&primitives.shadows, scale);
@@ -1083,13 +1096,17 @@ impl GpuRenderer {
         // 4. Gradients（预创建纹理和绑定组）
         let grad_resources = self.prepare_gradient_resources(&primitives.gradients, scale);
         // 5. Images（预创建纹理和绑定组）
+        let images_t = std::time::Instant::now();
         let img_resources = self.prepare_image_resources(&primitives.images, image_cache, scale);
+        gpu_scene_stage_trace("images", images_t);
         // 6-8. Strokes + PathFills + PathStrokes
         let stroke_verts = self.collect_stroke_vertices(&primitives.strokes, scale);
         let path_fill_verts = self.collect_path_fill_vertices(&primitives.path_fills, scale);
         let path_stroke_verts = self.collect_path_stroke_vertices(&primitives.path_strokes, scale);
-        // 9. Glyphs
+        // 9. Glyphs（首帧含 CPU 光栅化 miss + atlas 上传——once-cost 主候选）
+        let glyphs_t = std::time::Instant::now();
         let glyph_verts = self.collect_glyph_vertices_from_primitives(primitives, font_loader, glyph_cache, scale);
+        gpu_scene_stage_trace("glyph_page", glyphs_t);
         // 10. Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
         let ui_glyph_verts = self.collect_overlay_glyphs_data(ui_glyphs, font_loader, glyph_cache, scale);
         // 11. Overlay fills
@@ -1099,6 +1116,8 @@ impl GpuRenderer {
         // 12. Overlay glyphs
         let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
         atlas_trace::report_frame(&self.atlas);
+        gpu_scene_stage_trace("collect", scene_t0);
+        let submit_t0 = std::time::Instant::now();
 
         // ── Phase 2: 提交 GPU 命令 ──
         // Uniform buffer/bind group persist across frames; only dimensions are updated.
@@ -1135,6 +1154,7 @@ impl GpuRenderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Full Scene Encoder"),
         });
+        gpu_scene_stage_trace("prep", submit_t0);
 
         // R3287：主 pass 前 clear 主帧（白）+ blur 阴影合成（alpha 混合到白底）。
         // 主 pass 随后 load 绘制——背景覆盖阴影（CSS：box-shadow 在背景之下）。
@@ -1570,7 +1590,9 @@ impl GpuRenderer {
             }
         }
 
+        gpu_scene_stage_trace("record", submit_t0);
         queue.submit(std::iter::once(encoder.finish()));
+        gpu_scene_stage_trace("submit", submit_t0);
 
         // DC-9 filter/transform 后处理（D/R3279：窗口模式不再跳过——用离屏纹理做
         // ping-pong 后处理再 blit 回 surface；headless 直接处理主帧纹理）。
@@ -1633,6 +1655,7 @@ impl GpuRenderer {
         }
 
         target.present(&device, &queue);
+        gpu_scene_stage_trace("total", scene_t0);
         true
     }
 
