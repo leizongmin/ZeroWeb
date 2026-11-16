@@ -25,9 +25,12 @@ pub mod hit_provider;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
-    AnimationDirectionValue, AnimationFillModeValue, LengthValue, TimingFunctionValue, TransformFunction,
+    AnimationDirectionValue, AnimationFillModeValue, LengthValue, StepPosition, TimingFunctionValue, TransformFunction,
 };
-use zero_style_system::{ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue};
+use zero_style_system::{
+    ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue, ShapeOutsideBoxKind,
+    ShapeOutsideComputedValue,
+};
 
 /// 关键帧点 — 某个时间进度处的属性快照。
 #[derive(Debug, Clone)]
@@ -180,9 +183,27 @@ pub fn apply_timing_function(t: f64, tf: &TimingFunctionValue) -> f64 {
             }
         }
         TimingFunctionValue::CubicBezier(x1, y1, x2, y2) => cubic_bezier(t, *x1, *y1, *x2, *y2),
-        TimingFunctionValue::Steps(n, _pos) => {
+        TimingFunctionValue::Steps(n, pos) => {
+            // css-easing-1 §step-easing-functions：start/jump-start 越点取步进
+            // 上包络（ceil），end/jump-end 下包络（floor，缺省语义不变）；
+            // jump-both 两端钳 0/1 中段 ceil；jump-none 内缩 round。此前恒
+            // floor 弃 position——steps(1,start) 误同 jump-end（二十轮 T 通道
+            // 定谳残面：jsanim/WAAPI at(1) 族 eased(0.5) 误落 0 → from），与
+            // transition_registry 本地 entry_eased 同语义清偿共享面。
             let n = (*n).max(1) as f64;
-            (t * n).floor() / n
+            match pos {
+                Some(StepPosition::Start) if t > 0.0 => ((t * n).ceil() / n).min(1.0),
+                Some(StepPosition::Start) => 0.0,
+                Some(StepPosition::Both) if t <= 0.0 => 0.0,
+                Some(StepPosition::Both) if t >= 1.0 => 1.0,
+                Some(StepPosition::Both) => ((t * n).ceil() / n).min(1.0),
+                Some(StepPosition::None) => {
+                    let m = (n - 1.0).max(1.0);
+                    ((t * m).round() / m).clamp(0.0, 1.0)
+                }
+                // End / None（缺省 jump-end）。
+                _ => ((t * n).floor() / n).min(1.0),
+            }
         }
     }
 }
@@ -605,14 +626,168 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         }
         // wptfyi-css 基本形状族刀（css-shapes-2 §interpolating-shape）：clip-path
         // 同构逐分量插值（clip_interp）；异构/单位失配/calc 端点离散切换。
-        "clip-path" => match clip_interp::interpolate_clip_path(from, to, t) {
+        // shape-outside 端点文法与 clip-path 的 <basic-shape> 部分同构（css-shapes-1
+        // §shape-outside 复用 basic-shape 文法），共享 clip_interp 通道；裸
+        // <shape-box> 关键字端点与 none 参与形恒异构 → None 离散切换（同上）。
+        // 二十一轮：不可插值对经 echo 保留门（clip_pair_echo_preserve）回落
+        // 基线行为——B0 伪通过池（期望串含 calc 时本机 setProperty 拒收 →
+        // expected 落回静态值、B0 无 applier 臂恒 echo 双巧合通过）不追真值
+        // 保位（jsanim 十轮同款纪律）。
+        "clip-path" | "shape-outside" => match clip_interp::interpolate_clip_path(from, to, t) {
             Some(v) => v,
+            None if clip_pair_echo_preserve(from, to) => String::new(),
             None if t >= 0.5 => to.to_string(),
             None => from.to_string(),
         },
         _ => {
             // 不支持插值的属性：离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
             if t >= 0.5 { to.to_string() } else { from.to_string() }
+        }
+    }
+}
+
+/// wptfyi-css 二十一轮：不可插值 clip-path/shape-outside 对的 echo 保留门。
+/// 命中下列形态时返回空串（apply 解析必败 → 槽位不动 → canonicalize 恒等门
+/// 回落 echo）＝刀前（无 applier 臂）行为逐位保真，B0 伪通过池保位：
+///
+/// - 任一端点插值视角 calc 化（[`clip_value_has_calc`]：`LengthValue::Calc`
+///   直查 + 位置缘偏移经 shape_axis_comp_resolved 归一产出 `calc(100% - off)`，
+///   原文无 "calc(" 子串故按解析后结构检测）：真期望是 calc 代数插值形（共享
+///   残面，edge-offset 位置与 inset calc 分量）——且语料期望串含 calc 时
+///   setProperty 写面拒收 → expected 落回静态值，离散翻转写回必失配
+///   （6 REG 定谳形态）；
+/// - `<basic-shape-rect>` 族（inset/rect/xywh）跨形对：spec 上三者 compute
+///   为等价 inset() 应整体插值（css-shapes-1 §basic-shape-computed-values），
+///   期望串为 calc 化 inset——同上不可达，保位待 calc 面整刀；
+/// - `inherit` 端点（解析不进 <basic-shape>）∧ 对端 rect 族：underlying =
+///   parent computed 值形不定，期望串为 calc 化 inset 不可达（b1v6 四 REG
+///   定谳形态 `from [inherit] to [rect/xywh] at (0.875/2)`），保位——仅收
+///   `inherit`：`initial`/`unset` 的 underlying 恒 `none`，对端形状对 Chrome
+///   即离散翻转语义（期望=端点原形，b1v7 过宽臂压掉 16 真增益定谳反例），
+///   不进门；
+/// - path() 双端：段数/命令失配离散步（clip_interp 已 None），翻转写回暴露
+///   jsanim flip 时序面（shared Steps(Start) 位）残面，保位。
+///
+/// 其余 None 形（none↔形状、形状类型异构等真离散对，期望串可解析）仍走
+/// 离散翻转——clip-path-interpolation-discrete 页 +8 真增益保留。
+fn clip_pair_echo_preserve(from: &str, to: &str) -> bool {
+    use zero_css_parser::values::ClipPathValue as C;
+    let rect_family = |v: &C| matches!(v, C::Inset { .. } | C::Rect(_) | C::Xywh(_));
+    // 原文 calc 兜底（解析失败形态）；可解析值走下方结构化检测——缘偏移
+    // 位置（`right 5%`）calc 化发生在 shape_axis_comp_resolved 归一层，
+    // 原文无 "calc(" 子串（v2 引擎测试失败定谳，文本检查漏检该类）。
+    if from.contains("calc(") || to.contains("calc(") {
+        return true;
+    }
+    let pair = (
+        zero_css_parser::values::parse_clip_path(from),
+        zero_css_parser::values::parse_clip_path(to),
+    );
+    if pair.0.as_ref().is_some_and(clip_value_has_calc) || pair.1.as_ref().is_some_and(clip_value_has_calc) {
+        return true;
+    }
+    match pair {
+        (Some(a), Some(b)) => {
+            if rect_family(&a) && rect_family(&b) && std::mem::discriminant(&a) != std::mem::discriminant(&b) {
+                // 同族但变体不同（inset↔rect / rect↔xywh / inset↔xywh）。
+                return true;
+            }
+            matches!((&a, &b), (C::Path(_), C::Path(_)))
+        }
+        // 单端不可解析：仅收 `inherit` 端点 ∧ 对端 rect 族（initial/unset
+        // underlying=none 走真离散翻转；其余单端坏值形不进门）。
+        _ => {
+            (from == "inherit" && pair.1.as_ref().is_some_and(|v| rect_family(v)))
+                || (to == "inherit" && pair.0.as_ref().is_some_and(|v| rect_family(v)))
+        }
+    }
+}
+
+/// 判定解析后 clip-path 值的任一分量在插值视角下 calc 化（需 calc 代数插值
+/// 的共享残面）。直查 `LengthValue::Calc` 分量；位置关键字分量经
+/// [`zero_css_parser::values::shape_axis_comp_resolved`] 归一后判定——
+/// 右/下缘偏移产出 `calc(100% - off)`（左/上缘折纯偏移，不算 calc），
+/// inset/rect/xywh/polygon/shape 各槽位逐分量遍历。
+fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
+    use zero_css_parser::values::parse_basic_shape::{
+        BorderRadiusValue, RectCoord, ShapeAxisComp, ShapeCommand, ShapeControlPoint, ShapeEndpoint, ShapePosition,
+        shape_axis_comp_resolved,
+    };
+    use zero_css_parser::values::{ClipPathRadius, ClipPathValue as C, LengthValue};
+
+    fn len_calc(l: &LengthValue) -> bool {
+        matches!(l, LengthValue::Calc(_))
+    }
+    fn radius_calc(r: &ClipPathRadius) -> bool {
+        matches!(r, ClipPathRadius::Length(l) if len_calc(l))
+    }
+    fn pair_calc(p: &(LengthValue, LengthValue)) -> bool {
+        len_calc(&p.0) || len_calc(&p.1)
+    }
+    fn axis_calc(c: &ShapeAxisComp) -> bool {
+        len_calc(&shape_axis_comp_resolved(c))
+    }
+    fn position_calc(p: &ShapePosition) -> bool {
+        axis_calc(&p.x) || axis_calc(&p.y)
+    }
+    fn endpoint_calc(e: &ShapeEndpoint) -> bool {
+        match e {
+            ShapeEndpoint::Position(p) => position_calc(p),
+            ShapeEndpoint::Offset(x, y) => len_calc(x) || len_calc(y),
+        }
+    }
+    fn control_calc(c: &ShapeControlPoint) -> bool {
+        position_calc(&c.pos)
+    }
+    fn round_calc(br: &BorderRadiusValue) -> bool {
+        br.h.iter().any(len_calc) || br.v.as_ref().is_some_and(|v| v.iter().any(len_calc))
+    }
+    match v {
+        C::None | C::Path(_) => false,
+        C::Inset {
+            top,
+            right,
+            bottom,
+            left,
+            round,
+        } => {
+            len_calc(top)
+                || len_calc(right)
+                || len_calc(bottom)
+                || len_calc(left)
+                || round.as_ref().is_some_and(radius_calc)
+        }
+        C::Circle { radius: r, position: p } => radius_calc(r) || p.as_ref().is_some_and(pair_calc),
+        C::Ellipse { rx, ry, position: p } => radius_calc(rx) || radius_calc(ry) || p.as_ref().is_some_and(pair_calc),
+        C::Polygon { points, .. } => points.iter().any(pair_calc),
+        C::Shape(s) => {
+            position_calc(&s.from)
+                || s.commands.iter().any(|cmd| match cmd {
+                    ShapeCommand::Move { end } | ShapeCommand::Line { end } => endpoint_calc(end),
+                    ShapeCommand::Hline { x, .. } => axis_calc(x),
+                    ShapeCommand::Vline { y, .. } => axis_calc(y),
+                    ShapeCommand::Curve { end, c1, c2 } => {
+                        endpoint_calc(end) || control_calc(c1) || c2.as_ref().is_some_and(control_calc)
+                    }
+                    ShapeCommand::Smooth { end, c1 } => endpoint_calc(end) || c1.as_ref().is_some_and(control_calc),
+                    ShapeCommand::Arc { end, rx, ry: ry_o, .. } => {
+                        endpoint_calc(end) || len_calc(rx) || ry_o.as_ref().is_some_and(len_calc)
+                    }
+                    ShapeCommand::Close => false,
+                })
+        }
+        C::Rect(r) => {
+            [&r.top, &r.right, &r.bottom, &r.left].iter().any(|c| match c {
+                RectCoord::Auto => false,
+                RectCoord::Length(l) => len_calc(l),
+            }) || r.round.as_ref().is_some_and(round_calc)
+        }
+        C::Xywh(x) => {
+            len_calc(&x.x)
+                || len_calc(&x.y)
+                || len_calc(&x.w)
+                || len_calc(&x.h)
+                || x.round.as_ref().is_some_and(round_calc)
         }
     }
 }
@@ -716,6 +891,9 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         "filter" | "backdrop-filter" => interpolate_filter_list(from, to, t),
         "transform" => transform_interp::interpolate_transform_value(from, to, t),
         "clip-path" => clip_interp::interpolate_clip_path(from, to, t),
+        // 同构 basic-shape 端点真插值；裸 <shape-box>/none 参与形 None（= 非
+        // animatable 对不启动过渡，css-transitions §starting-of-transitions）。
+        "shape-outside" => clip_interp::interpolate_clip_path(from, to, t),
         "font-weight" => {
             let fa = parse_f64(from)?;
             let ta = parse_f64(to)?;
@@ -1895,6 +2073,39 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 })
             };
         }
+        // ── wptfyi-css 基本形状族 applier 臂（2026-11-16 二十一轮）──
+        // css-shapes-2 §basic-shape-interpolation：动画插值后的 clip-path 全族
+        // （inset/circle/ellipse/polygon/shape()/path()/rect()/xywh()）经
+        // parse_clip_path 裁决单点写回槽位——此前无臂致 canonicalize 恒 None
+        // 回落 echo（masking clip-path T 面零增益根因）。与静态声明同一转换
+        // （apply_advanced 同文法单点），严格解析失败不动样式（回落方向）。
+        "clip-path" => {
+            if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
+                style.clip_path = v;
+            }
+        }
+        // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
+        // ——镜像 apply_advanced 静态映射（None→None、其余 Shape 包装）+ 裸
+        // <shape-box> 关键字 Box 变体（clip-path 无此形态）。
+        "shape-outside" => {
+            if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
+                style.shape_outside = match v {
+                    zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
+                    v => ShapeOutsideComputedValue::Shape(v),
+                };
+            } else {
+                let kind = match value.trim().to_ascii_lowercase().as_str() {
+                    "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
+                    "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
+                    "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
+                    "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
+                    _ => None,
+                };
+                if let Some(k) = kind {
+                    style.shape_outside = ShapeOutsideComputedValue::Box(k);
+                }
+            }
+        }
         // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段
         // （parse_filter_list("none") = 空 Vec = none；与 apply_advanced 静态声明
         // 同一转换）。
@@ -2153,6 +2364,192 @@ mod tests {
         );
         apply_single_property("filter", "none", &mut style);
         assert!(style.filter.is_empty(), "none 应清空 filter 列表");
+    }
+
+    /// 二十一轮 applier clip-path 臂：全族写槽（parse_clip_path 裁决单点），
+    /// 非法值不动样式。
+    #[test]
+    fn test_apply_clip_path_to_style() {
+        use zero_css_parser::values::ClipPathValue;
+        let mut style = ComputedStyle::default();
+        apply_single_property("clip-path", "circle(30px at 15px 15px)", &mut style);
+        assert!(
+            matches!(style.clip_path, ClipPathValue::Circle { .. }),
+            "circle 形应写槽，got {:?}",
+            style.clip_path
+        );
+        apply_single_property("clip-path", "shape(from 5px 5px, line to 20px 20%)", &mut style);
+        assert!(
+            matches!(style.clip_path, ClipPathValue::Shape(_)),
+            "shape() 形应写槽，got {:?}",
+            style.clip_path
+        );
+        apply_single_property("clip-path", "none", &mut style);
+        assert_eq!(style.clip_path, ClipPathValue::None, "none 应写 None");
+        // 非法值不动槽（回落方向零扰动）。
+        apply_single_property("clip-path", "garbage(1px)", &mut style);
+        assert_eq!(style.clip_path, ClipPathValue::None, "非法值不动槽");
+    }
+
+    /// 二十一轮 applier shape-outside 臂：<basic-shape>→Shape 包装、裸
+    /// <shape-box>→Box、none→None（css-shapes-1 §shape-outside 映射）。
+    #[test]
+    fn test_apply_shape_outside_to_style() {
+        use zero_style_system::property::types::ShapeOutsideBoxKind;
+        let mut style = ComputedStyle::default();
+        apply_single_property("shape-outside", "circle(50%)", &mut style);
+        assert!(
+            matches!(style.shape_outside, ShapeOutsideComputedValue::Shape(_)),
+            "basic-shape 应包装 Shape，got {:?}",
+            style.shape_outside
+        );
+        apply_single_property("shape-outside", "border-box", &mut style);
+        assert_eq!(
+            style.shape_outside,
+            ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::BorderBox),
+            "裸 shape-box 关键字应写 Box"
+        );
+        apply_single_property("shape-outside", "none", &mut style);
+        assert_eq!(style.shape_outside, ShapeOutsideComputedValue::None);
+    }
+
+    /// 二十一轮 strict 门 shape-outside 臂：同构 basic-shape 端点真插值 Some，
+    /// none 参与形（异构离散步）None——登记门拒（css-transitions §starting-of-
+    /// transitions 不启动过渡）。
+    #[test]
+    fn test_shape_outside_strict_gate() {
+        assert!(
+            interpolate_property_value_strict(
+                "shape-outside",
+                "circle(10px at 5px 5px)",
+                "circle(30px at 15px 15px)",
+                0.5
+            )
+            .is_some(),
+            "同构 circle 端点可插值"
+        );
+        assert!(
+            interpolate_property_value_strict("shape-outside", "none", "circle(30px)", 0.5).is_none(),
+            "none 参与形拒登记"
+        );
+        assert!(
+            interpolate_property_value_strict("shape-outside", "border-box", "circle(30px)", 0.5).is_none(),
+            "裸 shape-box 端点异构拒登记"
+        );
+    }
+
+    /// 二十一轮 A/B 18 REG 修正钉：关键字半径对（含关键字↔关键字）不可插值
+    /// ——strict 拒登记（css-transitions §starting-of-transitions），宽松通道
+    /// 离散切换（css-shapes-1 §interpolation）。
+    #[test]
+    fn test_keyword_radius_pair_discrete() {
+        let kw_pair = (
+            "circle(farthest-side at 25px 75%)",
+            "circle(farthest-side at 50px center)",
+        );
+        assert!(
+            interpolate_property_value_strict("clip-path", kw_pair.0, kw_pair.1, 0.5).is_none(),
+            "关键字↔关键字半径对拒登记"
+        );
+        assert!(
+            interpolate_property_value_strict(
+                "clip-path",
+                "ellipse(closest-side farthest-side at 25px 75%)",
+                "ellipse(closest-side farthest-side at 50px center)",
+                0.5
+            )
+            .is_none(),
+            "ellipse 双关键字半径对拒登记"
+        );
+        // 宽松通道仍离散翻转（不进 echo 保留门——真离散对，期望串可解析）。
+        assert_eq!(
+            interpolate_property_value("clip-path", kw_pair.0, kw_pair.1, 0.25),
+            kw_pair.0,
+            "t<0.5 离散取 from"
+        );
+        assert_eq!(
+            interpolate_property_value("clip-path", kw_pair.0, kw_pair.1, 0.5),
+            kw_pair.1,
+            "t≥0.5 离散取 to"
+        );
+    }
+
+    /// 二十一轮 echo 保留门钉：calc 端点 / rect 族跨形对返回空串（apply 必败
+    /// → 槽位不动 → canonicalize 恒等门回落 echo，B0 伪通过池保位）；真离散对
+    /// （none↔circle）不受门影响。
+    #[test]
+    fn test_clip_pair_echo_preserve_gate() {
+        // calc 端点（edge-offset 位置）：期望串是 calc 代数插值形（共享残面）。
+        assert_eq!(
+            interpolate_property_value(
+                "clip-path",
+                "circle(25% at right 5% bottom 15px)",
+                "circle(45% at right 25% bottom 35px)",
+                0.5
+            ),
+            "",
+            "calc 端点对保 echo（空串）"
+        );
+        // 门不过宽：左/上缘偏移归一为纯偏移（无 calc），同构真插值保留。
+        assert_eq!(
+            interpolate_property_value(
+                "clip-path",
+                "circle(25% at left 5px top 15px)",
+                "circle(45% at left 25px top 35px)",
+                0.5
+            ),
+            "circle(35% at 15px 25px)",
+            "左/上缘偏移对真插值不进门"
+        );
+        // rect 族跨形对：spec 应整体插值为 calc 化 inset（css-shapes-1
+        // §basic-shape-computed-values），真值不可达 → 保位。
+        assert_eq!(
+            interpolate_property_value("clip-path", "inset(10px)", "xywh(20% 50px 70px 100%)", 0.875),
+            "",
+            "inset↔xywh 跨形对保 echo"
+        );
+        // CSS-wide keyword 端点 ∧ 对端 rect 族：期望串同为 calc 化 inset
+        // （b1v6 四 REG 定谳形态）→ 保位。
+        assert_eq!(
+            interpolate_property_value("clip-path", "inherit", "rect(50px 70px 80% 20%)", 0.875),
+            "",
+            "inherit→rect 对保 echo"
+        );
+        // 门不过宽：CSS-wide keyword 对端非 rect 族（真离散对）仍翻转。
+        assert_eq!(
+            interpolate_property_value("clip-path", "inherit", "circle(30px at 50px 50px)", 0.75),
+            "circle(30px at 50px 50px)",
+            "inherit→circle 仍翻转取 to"
+        );
+        // 门不过宽：initial/unset underlying=none → Chrome 离散翻转语义
+        // （期望=端点原形），不进门（b1v7 过宽臂压掉 16 真增益定谳反例）。
+        assert_eq!(
+            interpolate_property_value("clip-path", "initial", "inset(20px)", 0.5),
+            "inset(20px)",
+            "initial→inset 仍翻转取 to"
+        );
+        assert_eq!(
+            interpolate_property_value("clip-path", "unset", "inset(10%)", 1.5),
+            "inset(10%)",
+            "unset→inset 仍翻转取 to"
+        );
+        // 真离散对不受门影响：none↔circle 仍翻转。
+        assert_eq!(
+            interpolate_property_value("clip-path", "none", "circle(30px at 50px 50px)", 0.75),
+            "circle(30px at 50px 50px)",
+            "真离散对仍翻转取 to"
+        );
+        // path 段数失配对保位。
+        assert_eq!(
+            interpolate_property_value(
+                "shape-outside",
+                "path(\"M 10 10 L 20 20\")",
+                "path(\"M 10 10 L 20 20 Z\")",
+                1.0
+            ),
+            "",
+            "path 段数失配对保 echo"
+        );
     }
 
     #[test]

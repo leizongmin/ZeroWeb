@@ -1,6 +1,13 @@
 # CSS 子测试控制面
 
 **2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。
+**基本形状插值 applier 臂刀已落地（11-16 二十一轮，twin 孤儿 WIP 认领收口）**：clip-path/
+shape-outside 全 <basic-shape> 文法族经共享插值器进动画写回（clip_interp + AnimationClock
+槽位臂 + echo 保留门伪通过池保位），七套件 corpus 净 **+519 零回归**（masking 六页
++8~+88、shapes 三页 +53~+71、motion 一页 +4，DOWNS 零触碰）——四轮迭代定谳链（v1
++503/0/29 四类定谳：keyword 半径 Fix 1 / edge-offset calc 归一层漏检 / inherit 伪通过池 /
+path 失配）与残面三队列见下方二十一轮段与
+[evidence 2026-11-16-basic-shape-applier-knife](evidence/2026-11-16-basic-shape-applier-knife.md)。
 **Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：七套件
 corpus 净 **+322 零回归**（filter-effects 八页 +17~+40、motion 七页 +4~+25，DOWNS
 红线零触碰、echo 池全保护）——T 通道全死根因（同脚本轮次断言读恒先于泵首帧挂载）以
@@ -279,6 +286,34 @@ cubic-bezier(0,(8y−1)/6,1,·) 对称点 y(0.5)=at 精确）；engine
 apply_timing_function 四形态全支持且对称 bezier 首采样即命中，at∉[0,1]
 外推天然支持——**零新 timing 工作量，Phase 1=同步启动+gCS consult 两站**
 （详图 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md` §5）。
+**基本形状插值 applier 臂刀已落地（11-16 二十一轮，rate-limit 中断轮续跑 + twin 孤儿 WIP
+磁盘终态仲裁认领收口）**：clip_interp 共享插值器（none 恒等/Inset 四边+round/Circle/
+Ellipse/Polygon 逐点/Shape 命令级/rect()/xywh() 分量/Path 段数门）+ apply_single_property
+clip-path（parse_clip_path→style.clip_path 槽）与 shape-outside（None/Shape/裸 shape-box
+Box 三形）两臂 + 宽松/strict 双通道同对臂。**四轮迭代定谳链**：v1 +503/0/29 四类——①18
+keyword 半径对（002 页 T 通道族，同关键字误判恒等可插值）→ lerp_radius 任一端关键字整对
+None Fix 1（css-shapes-1 §interpolation 关键字半径不参与插值）；②6 edge-offset 缘偏移对
+（001×3+shapeout×3）——calc 化在 shape_axis_comp_resolved 归一层产出 `calc(100% - off)`、
+原文无 "calc(" 子串（v2 引擎测试 1F 定谳文本检查结构性漏检）→ 结构化 clip_value_has_calc
+逐槽位遍历；③4 inherit→rect/xywh 期望 calc 化 inset 不可达（setProperty 写面拒收→
+expected 落静态值==刀前 echo，B0 伪通过双巧合）；④1 path 段数失配 at(1)（jsanim flip
+时序面 shared Steps(Start) 位）→ **echo 保留门** `clip_pair_echo_preserve` 四臂（calc/
+rect 族跨形/inherit∧rect/path 双端）命中返空串 apply 必败逐位还原刀前行为（伪通过池
+保位不追真值，jsanim 十轮同款纪律）——v3 宽 css_wide 臂 b1v7 +499/0/0 过宽压 20 真离散
+增益（initial/unset underlying 恒 none、期望端点裸形，逐子测差集 20 案全 initial/unset
+定谳）→ v4 收窄仅 inherit，**b1v8 权威账 gained=519 lost=0 regressed=0 pages_gain=10
+pages_loss=0**（B0=bin-trans-b1v4 md5 639f7bd1 码态采认/B1=bin-trans-b1v8 md5 afd7f247，
+md5 链 b1v5→b1v6 7692f85a 带 bug→b1v7 319523b2 宽臂→b1v8 权威全可溯）：masking 001
++67/002 +83/shape-control-points +57/shape +88/xywh-rect +32/discrete +8，shapes
+shapeout-interp +71/path +53/shape-shape +56，motion offset-path-009 +4，七套件其余页
+零差（typed-om/gaps/multicol/filter-effects 护栏面零差）。门禁：engine lib 4,073P/0F ×2
+（v3/v4 链独立复跑，4071+2 新测试含三保位形+三不进门反例钉）+ webview lib 852P/2F 双 F
+逐名对号在册环境形红（invalid_host 代理形 env -u 五变量清空复绿实证 + csp_gate s348
+env -u 仍挂）零新增 + clippy/fmt 净。残面三队列：①calc 代数插值共享面（edge-offset
+位置/inset calc 分量 lerp_len Calc↔Calc + rect 族跨形→inset 归一整体插值 + setProperty
+calc-inset 写面，整刀候选届时逐一拆保位钉）②jsanim flip Steps(Start) 共享位（独立刀
+验证）③path() 命令级兼容插值。全案
+[evidence 2026-11-16-basic-shape-applier-knife](evidence/2026-11-16-basic-shape-applier-knife.md)。
 **Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：十八轮 §7 定谳
 的 T 通道全死根因清偿（corpus interpolation-testcommon T 测试同一脚本轮次
 setProperty(from)→gCS flush→写 transition-*+setProperty(to)→gCS 断言读，无泵帧介入
