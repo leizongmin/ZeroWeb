@@ -27,6 +27,20 @@ pub fn compositor_publish_threading_enabled() -> bool {
     true
 }
 
+/// T76/G2+G3 诊断：帧管线分段仪拍门（`ZW_FRAME_PIPELINE_TRACE=1` 启用）。
+/// 进程级惰性快照——写出热路径零 env 读取（同 `FRAME_PUBLISH_TRACE` 惯例）。
+/// 开启后在 `CompositorFrame` 实际写出成功后透出一行 INFO（stage=relay_write，
+/// send 内含序列化+pipe 写入），与发布点 `FRAME_PUBLISH_TRACE` 及 compositor
+/// 进程 `PIPELINE_TRACE stage=queue_recv/raster_done` 按 frame_id 对号。
+static PIPELINE_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_FRAME_PIPELINE_TRACE") {
+        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => false,
+    });
+
+/// 帧管线分段仪拍的进程相对时刻基准（门开才读取，门关无系统调用）。
+static PIPELINE_T0: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
+
 /// 共享 stdout/pipe writer（主线程与发布线程各持一个 `PipeTransport`）。
 pub struct SharedWriter {
     inner: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -216,11 +230,26 @@ impl CompositorPublishThread {
                 let mut transport = PipeTransport::new(io::empty(), SharedWriter::from_arc(Arc::clone(&writer)));
                 while let Some(msg) = worker_mailbox.receive() {
                     let keys = frame_image_keys(&msg);
+                    // T76：relay 段锚点取 frame_id（仅 CompositorFrame 携带；legacy
+                    // ViewPainted 无帧号不打点）。
+                    let traced_frame_id = if let IpcMessageKind::CompositorFrame { frame_id, .. } = &msg.kind {
+                        Some(*frame_id)
+                    } else {
+                        None
+                    };
                     if transport.send(msg).is_err() {
                         // R3254-M6：写失败（peer 断开）——close mailbox 让主线程入队失败，
                         // 回退同步发送（否则帧被无限静默吞掉且无信号）。
                         worker_mailbox.close();
                         break;
+                    }
+                    if let Some(frame_id) = traced_frame_id
+                        && *PIPELINE_TRACE
+                    {
+                        tracing::info!(
+                            "PIPELINE_TRACE frame_id={frame_id} stage=relay_write elapsed_ms={} mode=compositor",
+                            PIPELINE_T0.elapsed().as_millis()
+                        );
                     }
                     // R3254-M1：实际写出成功后才回传图片 key——被 latest-wins 替换的帧
                     // 从未发送、不产生回传，其像素下帧重传（保守，正确）。
