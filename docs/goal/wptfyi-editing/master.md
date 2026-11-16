@@ -1,41 +1,53 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-16 · Active**。**d44/d45 B4-S2 第一刀：join 缝尾随 br 消费 + gtr
-端点克隆/持活分流**（上一 session 429 中断遗留 WIP 已含完整 d45b 对拍产物，
-本 session 复核补哨兵落账）：part01.js +65/−4——①`_zwCeJoinApply` 壳落位段
-尾随 br 消费（跨块 join 后原行尾 br 删一个、双 br 留一个；同容器 join 不动）
-+ ②`_zwCeJoinStartOf` 尾随 br 边界（界落首个尾随 br 前父偏移，纯 br 块落块首）
-+ ③`_zwCeTargetRange` 端点克隆/持活分流（替换承载族克隆冻结 pre-value；原位
-截断族持 live——判据 = 切片不含 `\n` 且非整节点全覆盖，d44 全克隆 P2F=8 与
-d45 live-all −44P 双向对拍定谳两族并存不可一刀切）。input-events 全语料
-（zz-probe 排除）715P/2613F/3T → **1099P/2229F/3T 净 +384，F2P=384/P2F=0**：
-joining-dl-elements ×2 +136/+136、dl-and-another ×2 +36/+36、
-deleting-in-list-items ×4 +10×2/+6×2、non-collapsed ×2 +2×2、backspace/fd 主
-文件 +2/+2；零名换零消失。哨兵：html-semantics **P 恒等 5378**（仅
-select-home-end flaky 带互翻 2）、selection **P/F 集双重恒等 48,979P/4,352F**
-（F2P=0/P2F=0，仅 stringifier Timeout 边界 +4 NotRun）。**dwuf +22 名义红未
-清偿**（八变体两侧全红恒等——本刀只改端点快照语义，跨 child-block 端点规范化
-未接 caret join/deleteCommand 臂）。during-and-after-dispatch 接受 1F（传播中
-listener 改选区形与克隆门互斥）。证据见
-[d44 join-br-gtr-endpoint](evidence/2026-11-16-d44-b4-s2-join-br-gtr-endpoint.md)。
+**2026-11-16 · Active**。**d46 B4 键入替换臂：非塌缩选区键入先删后插 + gtr
+端点直取空白门**：part01.js +115/−9——①`__zw_ce_insert` 替换拦截（非塌缩 +
+非 `\n` 键入改道 d43 `_zwCeSelectDelete` 摘除核新增 typingData 第 4 参，
+摘除+join+插入单 beforeinput 承载）+ ②`_sdFinish` 键入尾（删除点插 data +
+caret 落插入段尾 + input 收束；元素锚两侧**非空活文本**拼接——空文本 ghost
+锚定谳：initializeTest innerHTML 重置留 shim/engine 分裂投影，parentNode 检查
+不滤，拼接 wire drain 静默丢弃，probe console 通道 trace 实证；join 臂
+`silent` 参让位 caret/input，返回 `{node, offset}` join 点）+ ③`_zwCeCanonGtrStart/
+End` 直取臂（元素锚 child 非空白文本 → (text,0)/(text,len)）+ **纯空白文本子
+除外**（`div{  <ol>…  }` 装饰空白保持元素锚）。input-events 全语料
+（zz-probe 排除）1099P/2229F/3T → **1135P/2193F/3T 净 +36，F2P=36/P2F=0**：
+non-collapsed?TypingA 69F→43F（+26，`{abc}` 系/跨 p join/caret host/img/
+`{<img>}<br>`/`{ abc }`/li 系 gtr+content 双面）、non-collapsed?Backspace/
+Delete +3/+3、deleting-in-list-items ×4 +1×4（`<li>{list-item1}</li>` gtr 直
+取）。A/B 判据定谳：直取门=子文本纯空白 `/^\s*$/` 而非选区形状（v5
+singleChild 限制 1098P P2F=37 joining-dl 回红弃——跨元素直取需求实证，与 d44
+克隆/持活两族并存同构）；v4 全语料 1131P P2F=4 空白装饰形回红同证。
+哨兵：html-semantics **P 恒等 5378**（F2P=0/P2F=0）；selection **48,914P →
+48,942P 净 +27，F2P=32/P2F=4**（dwuf Typing 面 +24 首次成批翻绿——master 原
+「dwuf +22 名义红」清偿 Typing 变体；typing-around-link Direct typing +4、
+insertHTML ws 四域 +4；P2F=4 = Backspace/Delete/execCommand 两阶段变体
+键入 XY 丢失——phase-1/2 代码与 d45 逐字节同、Direct typing 改核后同文档
+残留态分岔，initializeTest 分裂投影 chaos 族与 img 三案同根，d42 A/B 前例
+接受记档不追）。**dwuf caret/deleteCommand 臂 +22 名义红未清偿**（Typing
+变体已翻绿，其余七臂两侧全红持位）。TypingA 残余
+43F = bi=2 身份双派族（sameObj=true，d41/d42 已记档前置病非本刀引入）+
+`{<hr>}` 纯元素选区核拒收 + table 跨 cell bi=3。证据见
+[d46 typing-replace-arm](evidence/2026-11-16-d46-typing-replace-arm.md)。
 
 **卡点** 无阻塞。口径持位：11-12 快照三目录合计 130,245、距 146,184 差
-15,939；d44 后预估 ~143.7k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
+15,939；d46 后预估 ~143.7k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
 环境记档：main 有一处 fmt 既有漂移（`crates/dom/src/tests/
-tests_9_query_coverage.rs`，并行流 3eddbadbb 带入，非本流写面，未触碰）。
+tests_9_query_coverage.rs`，并行流 3eddbadbb 带入，非本流写面，未触碰）；
+runner console 通道仅 `ZW_SHAPED_ADVANCE_TRACE=1` 下可见（tracing subscriber
+条件 init，console.log→stdout，d46 记档）。
 
-**下一步** ①**B4-S2 第二刀候选（残余 2229F 簇结构已定谳，见 d44 证据遗留节）**：
-(a) join **壳吸收深化** ~1500F 大头（deleting-in-list-items 1114F：`<li><p>`
-内层壳 join 期望并壳内、同块摘空 `<br>` 落壳；joining-dl 404F：跨 dl 期望右 dt
-并入左 dt 壳——现落壳外）；(b) **TypingA 替换臂** 69F（insertText 非塌缩选区
-先删后插，`<p>{abc}</p>`+'a' 期望 `<p>a</p>` got `<p>aabc</p>`，变异核
-`__zw_ce_inserttext_mutate` 无非塌缩删除臂）；(c) backspace/fd 主文件 243F：
-跨元素边界 caret join（`<p>a<span>b</span>[]c</p>` bi=0）+ 文首空删 beforeinput
-形（master.md 原③空 range 静默臂逆形）②dwuf 八变体跨 child-block gtr 端点
-规范化（B4-S2 直接标的持位）；③generation-aware 归一刀重设计（d42 A/B 判决后
-挂起：端点报告语义与身份稳定成对修）④B3 text-control execCommand 期望矩阵
-（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同口径对账
-（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
+**下一步** ①**B4-S2 第三刀候选（残余 2193F 簇结构，见 d46 证据遗留节）**：
+(a) join **壳吸收深化** ~1500F 大头（deleting-in-list-items ~1100F：`<li><p>`
+内层壳 join 期望并壳内、同块摘空 `<br>` 落壳；joining-dl ~400F：跨 dl 期望右
+dt 并入左 dt 壳——现落壳外）；(b) backspace/fd 主文件 243F：跨元素边界 caret
+join（`<p>a<span>b</span>[]c</p>` bi=0）+ 文首空删 beforeinput 形；(c) TypingA
+残余 43F 中可独立修面：`{<hr>}` 纯元素选区核拒收（bi=0，核放行臂缺口）——
+bi=2 双派族挂②不动；②dwuf 余臂（caret join/deleteCommand 七变体）跨
+child-block gtr 端点规范化持位——Typing 变体 24F 已由 d46 清偿；
+③generation-aware 归一刀重设计（d42 A/B 判决后挂起：端点报告语义与身份稳定
+成对修；d46 非空锚守卫是键入面局部免疫）④B3 text-control execCommand 期望
+矩阵（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同口径
+对账（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
 
 **残余账本（持位）**：子文档域——tal CE（主窗）变体 collapsed ~122F +
 non-collapsed ~77F + after-joining-paragraphs 48F（内壳形 `child=b`/
