@@ -13368,7 +13368,17 @@
     // wsSig（\n 型，pre 域 ws 全可见）维持旧同父兄弟规则（H+J 归一域另案）。
     var padVis3 = wsSig ? !brk3.nextSibling : !_zwCeBrVisibleAfter(brk3, host);
     if (padVis3) {
-      var brk3b = wsSig ? document.createTextNode('\n') : document.createElement('br');
+      // ILB-FLEXBR 刀（I flex/grid br 元素面，2026-11-17 ilb 普查 ④族 4 键）：
+      // 声明 pre 系（_zwCeWsSignificant 命中，非 forceLf）坍缩行断补 <br>
+      // 元素占位——`<div style=display:flex;white-space:pre><span>abc[]</span>`
+      // Chrome 实录 `abc\n<br>`（语料 :925-932 flex／:987-996 grid，注记
+      // "based on Chrome 142"），br 忽略容器仍须插 br 元素非文本换行；坍缩
+      // 补断概念与 spec isCollapsedLineBreak（:795 zwsp 布局探针／:7459 补
+      // 第二条）同源。forceLf（inline div 无声明，cannot-have-div 语料域）
+      // 无垫形语料锚，维持 \n 垫不变。
+      var brk3b = (wsSig && !forceLf)
+        ? document.createElement('br')
+        : document.createTextNode('\n');
       boundaryParent.insertBefore(brk3b, brk3.nextSibling || null);
     }
     var kids3 = boundaryParent.childNodes || [];

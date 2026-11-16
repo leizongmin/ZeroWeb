@@ -243,3 +243,6 @@ include!("js_dom_bridge_tests/part127_ilb_shell_tail_vispad_pins.rs");
 // ilb H+J 归一域刀钉测（2026-11-17）：行断面空白归一三则落位＋退化头/
 // nbsp-first 控制键。
 include!("js_dom_bridge_tests/part128_ilb_wscanon_pins.rs");
+// ilb I flex/grid br 元素面刀钉测（2026-11-17）：声明 pre 系坍缩行断 <br>
+// 占位落位＋非坍缩行断控制键。
+include!("js_dom_bridge_tests/part129_ilb_flexbr_pins.rs");
