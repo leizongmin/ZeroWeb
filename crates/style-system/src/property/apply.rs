@@ -2147,6 +2147,44 @@ pub(crate) fn margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     positioned_offset_length_is_valid(raw, value)
 }
 
+/// shape-margin 长度域裁决（css-shapes-1 §shape-margin-property）：仅收
+/// `<length-percentage>`（px/em/ex/rem/物理单位/视口单位/%/calc）——margin 同族
+/// 关键字（`auto`/`thin`/`min-content`/`stretch` 等解析器副产形）全拒。
+pub(crate) fn shape_margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin"
+            | "medium"
+            | "thick"
+            | "min-content"
+            | "max-content"
+            | "fit-content"
+            | "auto"
+            | "stretch"
+            | "-webkit-fill-available"
+    ) {
+        return false;
+    }
+    !matches!(
+        value,
+        LengthValue::Auto
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_)
+            | LengthValue::Stretch
+    )
+}
+
+/// 非负长度钳（css-shapes-1 §shape-margin-property）：负 px/负 % 钳 0；Calc 形
+/// 保留（负钳在 gCS 求值层 [`shape_margin_to_css`]）。
+pub(crate) fn clamp_non_negative_length(value: LengthValue) -> LengthValue {
+    match value {
+        LengthValue::Px(n) if n < 0.0 => LengthValue::Px(0.0),
+        LengthValue::Percentage(n) if n < 0.0 => LengthValue::Percentage(0.0),
+        other => other,
+    }
+}
+
 /// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。
 ///
 /// used color-scheme 由属性声明的 scheme 列表与用户偏好（`prefers-color-scheme`）合成：
@@ -2192,7 +2230,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 20] = [
+    const VALIDATED_PROPERTIES: [&str; 22] = [
         "transform",
         "rotate",
         "scale",
@@ -2260,6 +2298,16 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // apply 臂未建模 `<image>` 影响。
         // https://drafts.csswg.org/css-shapes/#shape-outside-property
         "shape-outside",
+        // shape-margin / shape-image-threshold 写面文法门（css-shapes-1
+        // §shape-margin-property 非负 <length-percentage> + §shape-image-threshold-
+        // property <number>|<percentage>）：apply 链既有臂裁决（parse_length_or_math
+        // + 域裁决 / parse_opacity），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-shapes 语料 shape-margin-invalid `none`/无单位 `10`、
+        // shape-image-threshold-invalid `auto`/`10px` 此前白名单外放行 store
+        // 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-shapes/#shape-margin-property
+        "shape-margin",
+        "shape-image-threshold",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2545,6 +2593,31 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_clip_path(v).is_some();
+    }
+    // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
+    // `<length-percentage>`）——裁决单点复用 apply 臂同一解析器
+    // parse_length_or_math + 域裁决（margin 同族关键字 auto/thin/stretch 等
+    // 拒、无单位非零 parse 拒）；替换函数形放行 store 原文（shape-outside 臂
+    // 同口径）。（driving: css-shapes 语料 shape-margin-invalid `none`/`10`、
+    // shape-margin-computed calc 形此前白名单外放行 store 原文回显即 Fail。）
+    // https://drafts.csswg.org/css-shapes/#shape-margin-property
+    if prop == "shape-margin" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return parse_length_or_math(v).is_some_and(|lv| shape_margin_length_is_valid(v, &lv));
+    }
+    // shape-image-threshold 写面文法门（css-shapes-1 §shape-image-threshold-
+    // property：`<number> | <percentage>`，computed 钳 [0,1]）——裁决单点复用
+    // parse_opacity（number/pct → /100 → 钳，invalid 形 `auto`/`10px` parse 拒）；
+    // 替换函数形放行 store 原文（同上）。spec「as specified」级不钳（valid 页
+    // `-7`/`-100%` 原样 canonical），钳制只在 computed 站。
+    // https://drafts.csswg.org/css-shapes/#shape-image-threshold-property
+    if prop == "shape-image-threshold" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_opacity(v).is_some();
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形

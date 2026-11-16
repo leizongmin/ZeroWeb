@@ -501,6 +501,22 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             let to_px = parse_px(to);
             format!("{:.2}px", lerp(from_px, to_px, t))
         }
+        // wptfyi-css shape-margin 刀：非负 length-percentage 插值——px 域 lerp
+        // 后钳 0（css-shapes-1 §shape-margin-property「clamped to be
+        // non-negative」，语料 at:-0.3 → '0px'）；harness roundNumbers 双侧归一
+        // 使 {:.2}px 与期望 '6px' 恒等。
+        "shape-margin" => {
+            let from_px = parse_px(from);
+            let to_px = parse_px(to);
+            format!("{:.2}px", lerp(from_px, to_px, t).max(0.0))
+        }
+        // wptfyi-css shape-image-threshold 刀：number 线性插值（opacity 臂模板；
+        // computed 域 [0,1]——语料端点 0/0.5/0.8/1 全在域内，外推钳域）。
+        "shape-image-threshold" => {
+            let fa = parse_f64(from).unwrap_or(0.0);
+            let ta = parse_f64(to).unwrap_or(0.0);
+            format!("{:.4}", lerp(fa, ta, t).clamp(0.0, 1.0))
+        }
         // R4202：individual transform 属性插值——`translate` 逐分量 px/%（% 保真原样
         // 从目标侧取值，progress 中点跃迁近似可接受）；`rotate` 角度线性（deg）；
         // `scale` 数值线性（单值等比保持单值形态）。
@@ -894,6 +910,18 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // 同构 basic-shape 端点真插值；裸 <shape-box>/none 参与形 None（= 非
         // animatable 对不启动过渡，css-transitions §starting-of-transitions）。
         "shape-outside" => clip_interp::interpolate_clip_path(from, to, t),
+        // wptfyi-css shape-margin 刀：px 端点严格插值，负外推钳 0（非负域）。
+        "shape-margin" => {
+            let fa = parse_px_strict(from)?;
+            let ta = parse_px_strict(to)?;
+            Some(format!("{:.2}px", lerp(fa, ta, t).max(0.0)))
+        }
+        // shape-image-threshold：number 严格插值，外推钳 [0,1]（computed 域）。
+        "shape-image-threshold" => {
+            let fa = parse_f64(from)?;
+            let ta = parse_f64(to)?;
+            Some(format!("{:.4}", lerp(fa, ta, t).clamp(0.0, 1.0)))
+        }
         "font-weight" => {
             let fa = parse_f64(from)?;
             let ta = parse_f64(to)?;
@@ -2104,6 +2132,18 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 if let Some(k) = kind {
                     style.shape_outside = ShapeOutsideComputedValue::Box(k);
                 }
+            }
+        }
+        // wptfyi-css shape-margin / shape-image-threshold 写回（css-shapes-1；
+        // 插值发射值恒 px/number 形，同一非负/[0,1] 域钳与 apply_advanced 静态
+        // 声明一致；解析失败不动样式回落方向）。
+        "shape-margin" => {
+            let px = parse_px(value);
+            style.shape_margin = LengthValue::Px(px.max(0.0));
+        }
+        "shape-image-threshold" => {
+            if let Some(v) = parse_f64(value) {
+                style.shape_image_threshold = v.clamp(0.0, 1.0);
             }
         }
         // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段

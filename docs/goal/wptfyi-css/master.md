@@ -13,6 +13,15 @@ fill-rule 相邻受理/polygon round 百分比契约拒收/inset calc 偏移拒�
 动画前缀真插值 +28、polygon-round-valid 清偿 +3、唯一残 −1 = inset calc 案挂残面⑤），
 六代二进制 A/B 逐案对账全链、双 spawn 对称收敛法证与残面队列见
 [evidence 2026-11-16-shapepos-position-grammar-knife](evidence/2026-11-16-shapepos-position-grammar-knife.md)。
+**shape-margin/shape-image-threshold 五站小刀已落地（11-16 二十三轮）**：css-shapes-1
+两属性全接线（ShapeMargin 类型站 + 非负 `<length-percentage>` apply 臂 + threshold
+parse_opacity 语义复用 computed 钳 + 写面门白名单第七/八串 + decl canonical pct→number +
+gCS/transition/animation 三插值器臂）+ supports/gCS 双向钉。corpus 净 **+188 零回归**
+（css-shapes +187/0/0 十九页全 GAIN——interpolation +118、composition +15、parsing +16、
+values +33、inheritance +2；masking SET-IDENTICAL、typed-om +1 stylepropertymap 转
+真）——composition add 累加组（25F）与混单位端点对（margin 64F/threshold 58F）入残面
+队列，见
+[evidence 2026-11-16-shape-margin-threshold-knife](evidence/2026-11-16-shape-margin-threshold-knife.md)。
 **基本形状插值 applier 臂刀已落地（11-16 二十一轮，twin 孤儿 WIP 认领收口）**：clip-path/
 shape-outside 全 <basic-shape> 文法族经共享插值器进动画写回（clip_interp + AnimationClock
 槽位臂 + echo 保留门伪通过池保位），七套件 corpus 净 **+519 零回归**（masking 六页

@@ -1967,6 +1967,9 @@ pub enum PropertyValue {
     /// shape-outside 值（css-shapes-1 §3：`none | <basic-shape>`，与 clip-path
     /// 同 basic-shape 族共享文法）。
     ShapeOutside(ShapeOutsideComputedValue),
+    /// shape-margin 值（css-shapes-1 §shape-margin-property：非负
+    /// `<length-percentage>`，em/物理单位 apply 期折 px、% 保留）。
+    ShapeMargin(LengthValue),
     /// border-shape 值（css-borders-4 §7，R4534）。
     BorderShape(BorderShapeComputedValue),
     /// clip 属性值（已弃用的 CSS2 裁剪属性）。

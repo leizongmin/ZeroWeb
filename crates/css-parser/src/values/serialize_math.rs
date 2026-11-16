@@ -1248,6 +1248,22 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
             super::parse_extended_border::parse_clip_path(v)
                 .and_then(|c| super::parse_basic_shape::clip_path_value_to_css(&c))
         }
+        // css-shapes-1 §shape-margin-property：无单位 0 canonical 补 px（语料
+        // shape-margin-valid `0`→`0px` 驱动）；其余形（px/em/%）Chrome specified
+        // 级原样保（20em/37.5% 语料零期望差），不接 math 折叠（无语料驱动面）。
+        // https://drafts.csswg.org/css-shapes/#shape-margin-property
+        "shape-margin" if v == "0" => Some("0px".to_string()),
+        // css-shapes-1 §shape-image-threshold-property：`<percentage>` specified
+        // canonical 折算 /100（语料 shape-image-threshold-valid 驱动：
+        // `-100%`→`-1`、`50%`→`0.5`、`300%`→`3`）——spec「as specified」级不钳
+        //（负数 `-7` 原样，钳制只发生在 computed 站）；number 形原样保（None
+        // 透传）。f64 Display 最短形恰合语料整数期望（`-1`/`0.5`/`3`）。
+        // https://drafts.csswg.org/css-shapes/#shape-image-threshold-property
+        "shape-image-threshold" => v
+            .strip_suffix('%')
+            .and_then(|p| p.trim().parse::<f64>().ok())
+            .filter(|n| n.is_finite())
+            .map(|n| format!("{}", n / 100.0)),
         _ => None,
     }
 }

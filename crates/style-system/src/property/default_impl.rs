@@ -424,6 +424,8 @@ impl Default for ComputedStyle {
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
             shape_outside: ShapeOutsideComputedValue::None,
+            shape_margin: LengthValue::Px(0.0),
+            shape_image_threshold: 0.0,
             clip: ClipRectComputedValue::Auto,
             mask_image: vec![],
             mask_mode: MaskModeComputedValue::MatchSource,

@@ -792,6 +792,23 @@ fn test_css_escape_supports_r2785() {
             .value,
         "true|true|true|false|false"
     );
+    // shape-margin / shape-image-threshold（css-shapes-1 刀）：同 backdrop 形
+    // ——五站在而白名单缺串即 supports 短路假，shape-* 语料 `assert_true:
+    // 'from'/'to' value should be supported` 前置门整页翻红。shape-margin 拒
+    // auto 关键字（非 <length-percentage>）；threshold 非法值假。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('shape-margin','10px') + '|' + \
+                 CSS.supports('shape-margin','auto') + '|' + \
+                 CSS.supports('shape-image-threshold','0.5') + '|' + \
+                 CSS.supports('shape-image-threshold','80%') + '|' + \
+                 CSS.supports('shape-image-threshold','bogusxyz')"
+            )
+            .unwrap()
+            .value,
+        "true|false|true|true|false"
+    );
     // CSS.supports 单参：括号条件 / 声明 / not。
     assert_eq!(
         sandbox

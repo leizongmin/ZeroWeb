@@ -1594,6 +1594,69 @@ fn test_get_computed_style_shape_outside() {
 }
 
 #[test]
+fn test_get_computed_style_shape_margin_threshold() {
+    // css-shapes-1 §shape-margin-property / §shape-image-threshold-property
+    // （wptfyi-css shape-margin/threshold 刀：白名单+apply+gCS 三站断言）。
+    // shape-margin 非负 `<length-percentage>`（负值钳 0、em 按字号绝对化、%
+    // 保留）；shape-image-threshold computed 级 `[0,1]` number（% 折 /100、
+    // 超域钳——css-shapes-1 computed value 定义）。
+    let html = "<html><body>\
+        <div id=\"def\"></div>\
+        <div id=\"m-px\" style=\"shape-margin: 30px;\"></div>\
+        <div id=\"m-pct\" style=\"shape-margin: 50%;\"></div>\
+        <div id=\"m-em\" style=\"shape-margin: 2em;\"></div>\
+        <div id=\"m-neg\" style=\"shape-margin: -20px;\"></div>\
+        <div id=\"m-auto\" style=\"shape-margin: auto;\"></div>\
+        <div id=\"m-zero\" style=\"shape-margin: 0;\"></div>\
+        <div id=\"t-num\" style=\"shape-image-threshold: 0.5;\"></div>\
+        <div id=\"t-pct\" style=\"shape-image-threshold: 80%;\"></div>\
+        <div id=\"t-neg\" style=\"shape-image-threshold: -7;\"></div>\
+        <div id=\"t-over\" style=\"shape-image-threshold: 12.5;\"></div>\
+        <div id=\"t-bad\" style=\"shape-image-threshold: auto;\"></div>\
+        </body></html>";
+    // shape-margin：缺省 0px。
+    assert_eq!(computed_style_property(html, "#def", "shape-margin"), "0px");
+    // px / % 直存；0 无单位按 0 折 px。
+    assert_eq!(computed_style_property(html, "#m-px", "shape-margin"), "30px");
+    assert_eq!(computed_style_property(html, "#m-pct", "shape-margin"), "50%");
+    assert_eq!(computed_style_property(html, "#m-zero", "shape-margin"), "0px");
+    // em 按默认字号 16px 绝对化。
+    assert_eq!(computed_style_property(html, "#m-em", "shape-margin"), "32px");
+    // 负值 apply 期钳 0（css-shapes-1 非负域）。
+    assert_eq!(computed_style_property(html, "#m-neg", "shape-margin"), "0px");
+    // auto/thin 等关键字非 length-percentage，拒收回落缺省。
+    assert_eq!(computed_style_property(html, "#m-auto", "shape-margin"), "0px");
+    // shape-image-threshold：缺省 0。
+    assert_eq!(
+        computed_style_property(html, "#def", "shape-image-threshold"),
+        "0"
+    );
+    assert_eq!(
+        computed_style_property(html, "#t-num", "shape-image-threshold"),
+        "0.5"
+    );
+    // % computed 折 number（80% → 0.8）。
+    assert_eq!(
+        computed_style_property(html, "#t-pct", "shape-image-threshold"),
+        "0.8"
+    );
+    // 超域双端钳（负 → 0、>1 → 1）。
+    assert_eq!(
+        computed_style_property(html, "#t-neg", "shape-image-threshold"),
+        "0"
+    );
+    assert_eq!(
+        computed_style_property(html, "#t-over", "shape-image-threshold"),
+        "1"
+    );
+    // 非法关键字拒收回落缺省 0。
+    assert_eq!(
+        computed_style_property(html, "#t-bad", "shape-image-threshold"),
+        "0"
+    );
+}
+
+#[test]
 fn test_get_computed_style_content() {
     // R2722：getComputedStyle content 序列化（CSS Generated Content，::before/::after 生成内容）。
     let html = "<html><body>\
