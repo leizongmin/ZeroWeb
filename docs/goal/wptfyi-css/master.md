@@ -8,6 +8,10 @@ shape-outside 全 <basic-shape> 文法族经共享插值器进动画写回（cli
 +503/0/29 四类定谳：keyword 半径 Fix 1 / edge-offset calc 归一层漏检 / inherit 伪通过池 /
 path 失配）与残面三队列见下方二十一轮段与
 [evidence 2026-11-16-basic-shape-applier-knife](evidence/2026-11-16-basic-shape-applier-knife.md)。
+**Steps 臂修复验证收口（11-16 补测轮 b1v9，零码改）**：二十一轮被吸收入提交的共享 Steps
+位置语义修复补测 **+222/0/2**（2 伪红=上游 2 页 at(1) 数据缺右括号定谳不回滚），残面②
+关闭；工作树 animation.rs path 门撤除 WIP（twin 在飞）未触碰待其自证，见
+[evidence 2026-11-16-steps-position-knife](evidence/2026-11-16-steps-position-knife.md)。
 **Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：七套件
 corpus 净 **+322 零回归**（filter-effects 八页 +17~+40、motion 七页 +4~+25，DOWNS
 红线零触碰、echo 池全保护）——T 通道全死根因（同脚本轮次断言读恒先于泵首帧挂载）以
@@ -314,6 +318,22 @@ env -u 仍挂）零新增 + clippy/fmt 净。残面三队列：①calc 代数插
 calc-inset 写面，整刀候选届时逐一拆保位钉）②jsanim flip Steps(Start) 共享位（独立刀
 验证）③path() 命令级兼容插值。全案
 [evidence 2026-11-16-basic-shape-applier-knife](evidence/2026-11-16-basic-shape-applier-knife.md)。
+**Steps 位置语义共享臂修复验证收口（11-16 二十一轮补测轮，b1v9，零码改）**：58b3721ad 内
+被吸收的共享 Steps 臂修复（提交时未实测——b1v8 二进制 14:01:50 构建早于修复 14:06:39
+写入）补测收口：provenance 纯 HEAD 码态（CHAIN-START 14:13:56 仅 peer es_module WIP 在
+册，工作树 animation.rs path 门撤除 WIP mtime 14:18:00 晚于 CHAIN-DONE 未进二进制），
+engine lib 4,073P/0F、runner md5 447334b9、七套件 corpus **vs b1v8 净 +222/0/2、vs b1v4
+基线 +741/0/2**（29 页 at(1) 编码族 echo 失败转通过，残面② jsanim flip Steps(Start)
+共享位关闭）。2 REG 逐层定谳**改进暴露型伪红不回滚**：上游 WPT 数据 at(1) expect 缺右
+括号恰 2 页（clip-path-interpolation-shape.html:64 / offset-path-interpolation-008.html:54）
+→ setProperty 拒收 → expected 回落 `.target` 类规则值（interpolation-testcommon.js:385-387
+往返 + createTargetContainer 模板克隆）；b1v8 伪通过=旧 floor eased 0 的 from 侧回落值恰同
+污染 expected 双巧合，b1v9 got=to 端点（与测试名声明期望逐字吻合）反暴露假期望——合规引擎
+同型恒红。新挂账：inline `clip-path: inherit` 疑未走继承链（from 侧输出=.target 类规则值
+非 .parent 继承值，b1v8/b1v9 transcript 同证；修通后 inherit→shape 对 4/5 子测可真插值，
+归 inline-style 全局关键字解析刀）；工作树 animation.rs path 门撤除 WIP（twin 在飞认领面）
+本轮未触碰待其自证 A/B。全案
+[evidence 2026-11-16-steps-position-knife](evidence/2026-11-16-steps-position-knife.md)。
 **Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：十八轮 §7 定谳
 的 T 通道全死根因清偿（corpus interpolation-testcommon T 测试同一脚本轮次
 setProperty(from)→gCS flush→写 transition-*+setProperty(to)→gCS 断言读，无泵帧介入
