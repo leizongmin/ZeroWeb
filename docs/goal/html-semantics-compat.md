@@ -2,50 +2,71 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 526 收口（**守成巡查轻覆
-盖轮第二十轮**：pull 零携入零码变零换代，码态持位
+**状态**: Active——M2 切片 527 收口（**守成巡查轻覆
+盖轮第二十一轮**：pull 零携入零码变零换代，码态持位
 7668cf495，runner 127530232 恒——leg1 Compiling ×6 =
 桥跑侧 churn 同形产物同码，leg2 零重编）——join
-**stable 8510（8305P/198F/6T/1U）disagree 0 + l1only 4
-+ l2only 1 全族键非族零分歧形**；vs s525 stable
-**NEW 0 + GONE 2 + flips 0 非族逐键恒等**：GONE 2 =
-族 select-home-end-pagedown-pageup Home/End 两子测键
-双腿异相出位（leg1 = detailed T + 4 子测全发射 F 恰
-s519/s522/s524/s525-leg1 形；leg2 = detailed T +
-non-detailed 整文件 T + **零子测发射**——文件级超时
-吞全部子测发射，s525-leg2 双 T 形的极端形，带内无新
-Pass 形，同码态双腿异相为摆动特征非确定性刀效应，键
-从未 Pass 带内记账不升级；族键摆动谱 s525 异相后第 1
-轮持续异相，stable T 形 6→6 持位、F 形 200→198）；
-账本 evidence/2026-11-16-m2s526-quiet-baseline-patrol
-.md。**P 集账本口径双腿双 8307P 持位第 48 轮**；
-picker 刀增益键第 49 轮保持，checkmark 恒 F 带形不
-变。flaky 键双腿双 Pass——零新例第 15 轮（s512 时钟
-顺延）。onblur 哨组双腿双 8P/2F（parent-label 双键
-红池照常）；dialog-overlay 哨第 55 轮 + modulepreload
-哨第 58 轮零翻红。全桥绿窗 **1669P/0F rc=0**（filtered
-2405 持位）——清单 vs s525 **set 恒等 1669，NEW 0 /
-GONE 0**。**focus-dynamic 收窗后第 8 轮零再现**（121
-键 stable 全 Pass 双腿）。起腿前窗净判定（load 3.69
-对端/外部零进程级交叠），窗内双腿零截断。**挂用户门
-维持**：GB-20261114-VIDEO + GB-20261031（簇 D）+ s137
-（s445 已提示，不重复通知）。hang 观察项静默哨维持。
-下一步：**守成巡查**（对账基线换 s526 stable 8510——
-族键摆动观察维持：出位/回归/混合形按形谱记账、Pass
-形首现按 NEW 记账；flaky 键零新例时钟顺延——再现方
-触发新 <4 轮升级判定；他流入树归因轮或轻覆盖；对端
-刀信号持续：editing 流 B4-S2 残面刀（dwuf 八变体端
-点规范化未接臂/during-and-after-dispatch 与克隆门互
-斥 1F/残 9F 面余族刀——ihe5 rawtext 4 键刀已落
-7668cf495）+ rendering dialog 16 红块协同面 + css 文
-法刀后续刀 + wptfyi-css 残面（calc 代数插值共享面/
-jsanim flip Steps(Start)/path 命令级插值）+ ZW-3
-querySelector 施工刀，落树后按他流刀归因轮，join 实
-测为准）+ 候门决项等待用户拍板（video P1+P2 立项 /
-簇 D A2 立项 / s137）；rendering 流 dialog 16 红块协
-同面（归 rendering 流记账）。门开随批落预案不变：簇 D
-开 → customizable-select-styles.css ×47 随批落。
+**stable 8510（8305P/199F/5T/1U）disagree 0 + l1only 1
++ l2only 4 全族键非族零分歧形**；vs s526 stable
+**NEW 0 + GONE 0 + flips 1 集合逐键恒等**：flips 1 =
+族 select-home-end-pagedown-pageup **detailed 整文件
+键 Timeout→Fail**（s519–s526 八轮 T 槽持位后首次双
+腿同相 F，Fail/Timeout 带内键从未 Pass 带内记账不升
+级，stable T 形 6→5、F 形 198→199）——族键形本轮：
+leg1 = detailed F + non-detailed 整文件 T + 零子测发
+射（恰 s520-leg2 形）/ leg2 = detailed F + 4 子测 F
+（s519 形 detailed 槽 T→F 变体）——族键摆动谱
+s525/s526 异相后第 2 轮持续异相（双腿形镜像互换），
+同码态双腿异相为摆动特征非确定性刀效应；账本
+evidence/2026-11-16-m2s527-quiet-baseline-patrol.md。
+**P 集账本口径双腿双 8307P 持位第 49 轮**；picker 刀
+增益键第 50 轮保持，checkmark 恒 F 带形不变。flaky 键
+双腿双 Pass——零新例第 16 轮（s512 时钟顺延）。onblur
+哨组双腿双 8P/2F（parent-label 双键红池照常）；
+dialog-overlay 哨第 56 轮 + modulepreload 哨第 59 轮
+零翻红。全桥绿窗 **1669P/0F rc=0**（filtered 2405 持
+位）——清单 vs s526 **set 恒等 1669，NEW 0 / GONE 0**。
+**focus-dynamic 收窗后第 9 轮零再现**（121 键 stable
+全 Pass 双腿）。起腿前窗净判定（对端/外部零进程级交
+叠），窗内双腿零截断。**挂用户门维持**：
+GB-20261114-VIDEO + GB-20261031（簇 D）+ s137（s445
+已提示，不重复通知）。hang 观察项静默哨维持。下一步：
+**守成巡查**（对账基线换 s527 stable 8510——族键摆
+动观察维持：出位/回归/混合形按形谱记账、Pass 形首现
+按 NEW 记账；flaky 键零新例时钟顺延——再现方触发新
+<4 轮升级判定；他流入树归因轮或轻覆盖；对端刀信号
+持续：editing 流 B4-S2 残面刀（dwuf 八变体端点规范
+化未接臂/during-and-after-dispatch 与克隆门互斥 1F/
+残 9F 面余族刀——ihe5 rawtext 4 键刀已落 7668cf495）
++ rendering dialog 16 红块协同面 + css 文法刀后续刀 +
+wptfyi-css 残面（calc 代数插值共享面/jsanim flip
+Steps(Start)/path 命令级插值）+ ZW-3 querySelector 施
+工刀，落树后按他流刀归因轮，join 实测为准）+ 候门决
+项等待用户拍板（video P1+P2 立项 / 簇 D A2 立项 /
+s137）；rendering 流 dialog 16 红块协同面（归
+rendering 流记账）。门开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47 随批落。
 
+> **▶ 承前（2026-11-16 M2 切片 526 收口）——守成巡查
+> 轻覆盖轮第二十轮：pull 零携入零码变零换代，码态持
+> 位 7668cf495，runner 127530232 恒（leg1 Compiling
+> ×6 = 桥跑侧 churn 同形产物同码，leg2 零重编）。
+> stable 8510（8305P/198F/6T/1U）disagree 0 + l1only 4
+> + l2only 1 全族键非族零分歧形。vs s525 stable
+> （8512）：NEW 0 + GONE 2 + flips 0 非族逐键恒等
+> ——GONE 2 = 族 Home/End 两子测键双腿异相出位
+> （leg1 = detailed T + 4 子测全发射 F 恰
+> s519/s522/s524/s525-leg1 形；leg2 = detailed T +
+> non-detailed 整文件 T + 零子测发射——文件级超时吞
+> 全部子测发射，s525-leg2 双 T 形的极端形，带内无新
+> Pass 形，stable T 形 6→6 持位、F 形 200→198）。P 集
+> 双腿双 8307P 持位第 48 轮。flaky 零新例第 15 轮；
+> 四哨零翻红；全桥 1669P/0F 清单 set 恒等。focus-
+> dynamic 收窗后第 8 轮零再现。起腿前窗净判定 load
+> 3.69 零对端外部交叠。挂用户门维持三项。下一步：守
+> 成巡查（对账基线换 s526 stable 8510——s527 兑现：
+> 零携入按轻覆盖轮，族键异相持续镜像互换 detailed 槽
+> 首次双腿 F flips 1 带内，stable 8510 集合恒等）。
 > **▶ 承前（2026-11-16 M2 切片 525 收口）——他流刀归
 > 因轮（单刀）：editing 流 ihe5 rawtext 壳手术臂刀
 > 7668cf495（part06.js +36/−1 + part112 钉改形 +
@@ -277,32 +298,6 @@ querySelector 施工刀，落树后按他流刀归因轮，join 实
 > 下一步：守成巡查（对账基线换 s515 stable 8511——
 > s516 兑现：pull/rebase 携入 editing 流 br 占位消
 > 费刀按归因轮）。
-
-> **▶ 承前（2026-11-16 M2 切片 514 收口）——他流刀归
-> 因轮（单刀）：editing 流 ihtml G 族 ws-pre 壳臂刀
-> 8ed0e22bd 落树（engine part06.js +53 gfamily-wspre-
-> arm 三规则落位 + part124 G 形钉 8 枚，2 文件 +76；
-> b632a0661 定谳+设计预告刀兑现）——html-semantics 面
-> **零语义位移清偿，「申报=实测」谱系第十七例**；账本
-> evidence/2026-11-16-m2s514-gfamily-wspre-knife-attribution.md）。
-> **码态换新 = 8ed0e22bd**（HEAD 46f6f530a docs-only；
-> runner 127490632 换代 +3,928，leg1 真重建 Compiling
-> ×6，leg2 同二进制零重编）。stable 8497（8293P/198F/
-> 5T/1U）disagree 1 + l1only 16 + l2only 2——族
-> detailed 键异相摆动 + base optional 整文件/子测形互
-> 换两形异相 + **focus-dynamic 截断形首例**（leg2 文
-> 件级 Timeout 截断 68——完成子测双腿全 Pass）。vs
-> s513 stable（8509）：GONE 12（focus-dynamic 12 子测
-> 键出位——新观察项带内记账观察窗 s515–s518）+ NEW 0
-> + flips 0 非族逐键恒等——刀致语义位移零。P 集账本
-> 口径 leg1 8307P 持位第 36 轮/leg2 8295P 瞬态 -12。
-> flaky 零新例第三轮；onblur 双腿双 8P/2F；dialog-
-> overlay 哨第 43 轮 + modulepreload 哨第 46 轮零翻
-> 红；全桥绿窗 1661P/0F rc=0 清单 vs s513 set 恒等
-> NEW 0/GONE 0。挂用户门维持三项。下一步：守成巡查
-> （对账基线换 s514 stable 8497——s515 兑现：pull 已
-> 携入 wptfyi-css transition 刀按归因轮，focus-dynamic
-> 截断形 GONE 12 观察窗开记）。
 
 > **▶ 承前（2026-11-16 M2 切片 505 收口）——他流刀归因
 > 轮（单刀）：渲染流 shape()/path()/rect()/xywh() 基本
