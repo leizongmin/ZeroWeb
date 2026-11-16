@@ -18,7 +18,9 @@ style-system 2,547/0F、engine lib 4,076/0F 全绿，fmt/clippy 三 crate 净；
 module_update（page-runtime:3782，纯 HEAD solo 复现定谳），mkt7（make -f 片段
 全腿 no-fail-fast）workspace 腿净树互补面实证——WIP 在树则 module_update 绿而
 es_module 6 钉红（连坐互换两面）；全腿红项全对号在册（es_module 6=WIP 连坐、
-worker-fetch 双面×3 腿、tab 镜像、default_actions 6、image_batch 环境形、
+worker-fetch 双面×3 腿、tab 镜像+default_actions（browser-bin 741P/2F）、
+focus-governance 六钉 stale-binary 环境形（browser-tests 0P/6F，零语义红）、
+image_batch 环境形、
 qjs-clippy 101=WIP 连坐），刀面三 crate 3,280/2,517/4,077 全 0F 零红，GPU 双腿
 0/0（wgpu adapter 可用），详账见 evidence 门禁节。
 残面：刀 B width-list ~684F、color 真

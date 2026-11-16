@@ -97,9 +97,15 @@ amend 内，合计 +146 与 final 账一致）。
   es_module 二进制 441/**6F** = peer WIP 连坐（同一 WIP 使在册 module_update 转
   绿——与 mkt5 净树面互补实证两面互换）；qjs-clippy 101 = WIP 连坐
   too_many_arguments；红项全对号在册账：renderer-lib 101（worker-fetch）、
-  browser-bin 101（tab 镜像）、browser-tests 101（default_actions ×6）、
+  browser-bin 101（**tab 镜像 + default_actions**，741P/2F，panic
+  apps/browser/src/tests.rs:2945 实证）、browser-tests 101（**focus-governance
+  六钉 stale-binary 环境形伪红** 0P/6F——panic 文本 "renderer binary is
+  stale … rebuild zero-renderer"，overlay 无 cargo build -p zero-renderer
+  前置+stash pop 抬源 mtime 触发，零语义红，全量 make test 自带前置不现形）、
   qjs-w 101（image_batch_e2e 环境形 775P/1F/59I）、qjs-rlib 101
   （worker-fetch）；GPU 双腿 0/0（wgpu adapter 可用）、qjs renderer bin 0。
+  全 battery FAILED 17 行 census 与 6 个 FAILED 二进制逐一互证（journal
+  逐行对账，红项零缺零多）。
   过程注：00:27–00:29 三电池并发碰撞（zw-rc-mkt5-legs / zw-rulecolor-mkt6 /
   mkt5b）按 notes 仲裁收束为 mkt7 单写者 canonical；zw-rc-mkt5-legs 死于
   rustc SIGSEGV（同 target 多 cargo 门禁并发 = 增量缓存损坏先例再证），
