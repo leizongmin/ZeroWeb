@@ -34,6 +34,21 @@ mod rasterize_tests;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// T76/G2+G3 诊断：帧管线分段仪拍门（`ZW_FRAME_PIPELINE_TRACE=1` 启用）。
+/// 进程级惰性快照——帧处理热路径零 env 读取（同 renderer `FRAME_PUBLISH_TRACE`
+/// 惯例）。开启后在 `CompositorFrame` 收到时（stage=queue_recv）与光栅化合成
+/// 完成时（stage=raster_done）各透出一行 INFO，与 renderer 进程 relay 锚
+/// （`PIPELINE_TRACE stage=relay_write`）按 frame_id 对号；跨进程段时长
+/// （transport=relay_write→queue_recv）用日志墙钟差分。
+static PIPELINE_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_FRAME_PIPELINE_TRACE") {
+        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => false,
+    });
+
+/// 帧管线分段仪拍的进程相对时刻基准（门开才读取，门关无系统调用）。
+static PIPELINE_T0: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
+
 /// dma-buf 帧交付元组（RFC 4.3-S5）；非 Linux 上恒为 None。
 type DmaFrameTuple = (
     u64,
@@ -450,6 +465,12 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 frame_id,
                 paint,
             } => {
+                if *PIPELINE_TRACE {
+                    tracing::info!(
+                        "PIPELINE_TRACE frame_id={frame_id} stage=queue_recv elapsed_ms={} mode=compositor",
+                        PIPELINE_T0.elapsed().as_millis()
+                    );
+                }
                 if let Some(surface) = surfaces.get(&surface_id)
                     && !surface.accepts(navigation_epoch, frame_id)
                 {
@@ -646,6 +667,12 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                      （epoch={navigation_epoch}，{w}x{h}，fills={}）",
                     primitives.fills.len()
                 );
+                if *PIPELINE_TRACE {
+                    tracing::info!(
+                        "PIPELINE_TRACE frame_id={frame_id} stage=raster_done elapsed_ms={} mode=compositor",
+                        PIPELINE_T0.elapsed().as_millis()
+                    );
+                }
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
                         "SMOKE_EVENT component=zero-compositor event=frame_committed surface={surface_id} epoch={navigation_epoch} frame={frame_id} width={w} height={h}"
