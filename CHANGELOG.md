@@ -14,6 +14,11 @@
 
 ### 新增
 
+- **CSS shapes/gaps 动画插值面（wptfyi-css，2026-11-16/17）**：shape-outside/circle-ellipse 位置文法刀（css-shapes +1,223 零新回归）；基本形状插值 applier 臂（clip-path/shape-outside 进动画写回，+519）；shape-margin/shape-image-threshold 五站小刀（+188）；transition 通道 gCS 同步读可见性（LAST_STYLE 前值捕获 + 两世界注册表，+322）；css-gaps rule-color/width/style 列表文法 + rule 简写家族刀 A/B/B3（净 +808，multicol-rule-percent-001 渲染确定性修复）；inset/position calc 切分受理边界撤回守卫定谳（masking/shapes −90 回撤）。
+- **inserthtml/ihtml 轴族收口（editing-compat v1.114–v1.121，2026-11-16/17）**：轴一块级拆分插入刀；携带族 override carry（font/span color 壳劈裂载荷包壳）；C 族占位块壳保留、D 族占位 br 消费六规则、G 族 ws-pre 壳臂；A 族断载荷/未闭合壳臂；E/F/CEF 残族三臂；ihe5 rawtext 壳手术臂（markup 载荷节点级入壳 xmp/script）。
+- **input-events 编辑面三连刀（wptfyi-editing d43–d46，2026-11-16/17）**：select-delete 主臂（461P→715P +254）；join 缝尾随 br 消费 + gtr 端点克隆/持活分流（715P→1,099P）；键入替换臂（非塌缩选区先删后插 + gtr 端点直取空白门）。
+- **ilb 行断空白族刀（editing-compat v1.122–v1.125，2026-11-16/17）**：C+F 外迁族（dt/dd/pre caret 行断 br 落容器内不外迁）；A 壳尾计数族（行断可见性补断 v2 文档序块界扫描 + pre 域 ws-only 文本保形 v1.1）；H+J 归一域（WSCANON UA 空白保形上下文不入归一臂）。
+- **帧发布/管线仪拍与 CI 修复（site-opt T73/T76，2026-11-16/17）**：`ZW_FRAME_PIPELINE_TRACE` 三锚（发送→光栅 gap 构成分解）与 `ZW_FRAME_PUBLISH_TRACE`（均缺省关零开销，PR #306/#307）；shape_margin_to_css 死绑定谓词修复（CI clippy 全腿红根修）。
 - **CSS Motion Path 与插值 harness 大批（wptfyi-css DC-3，2026-11-15/16）**：target expando 刀（reflected 反射 tag 门限化，css-masking 126P→615P，~5,818 上游子测解锁）；WAAPI 门刀（`Element.prototype` animate/getAnimations，门子测 4,071→0）；offset 簇刀（CSS Motion Path offset-path/distance/rotate/anchor 四属性五站全链，+364 零回归）；backdrop-filter 白名单（+253）；column-rule 简写门；composite-add 端点预合成与插值（+272）；easing 感知离散翻转（+21）；g47 `<position>` 缘偏移分面、g48 gradient at 位置文法、g49 GCS 视口真值对齐；11-14 周跑快照 62,896/197,163 = 31.90%（四天净增 +10,408）。
 - **insertParagraph 全族与 plaintext-only 编辑刀（editing-compat，2026-11-15/16）**：plaintext-only 宿主 styling 命令门（styling-commands 双 variant +216）；ip B/C1/C2/C5/C6/F/I5/I6 拆分边界与壳携族刀（ip A/B 双腿 7,183P/12F）；J2 跨 body 边界块并块（+8）；getTargetRanges 快照面 + Actions 编辑键分流（+66）；B1 键入绕链接边界臂与 unlink 实应用（selection 交集 F2P=18）；子文档 join/enter html 形精化（IP-html +40）。
 - **js-dom gtr 家族双根因刀与 iframe navigator（2026-11-15/16）**：链形查询 overlay 匹配 + runner 变体展开——input-events 289P→473P；iframe navigator 工厂读取加卫降级（PR #305 T72 返修 DF-1）与平面对象语义；handle 族子树跨批换代批量边界补注册所有权唯一化（PR #304 T71 返修）。
