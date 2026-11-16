@@ -13197,14 +13197,20 @@
       //     （ip _zwCeSplitBoundaryNormalize 行首同形，nbsp 首 run 恒等）——
       //     仅头侧结构内容放行（_zwCeIlbHeadStructural：J CE-false 壳邻接
       //     exp 唯一变体 `<br>&nbsp;;`；`[] abc` 退化头形保形绝不 nbsp）。
+      // v1.1 保形门（i7e0 v1 ABORT 归因修复）：bare-pre 键（`<pre>foo[]&#10;</pre>`
+      // idx 253/258）无 pre 声明 → wsSig=false 走 br 型，(b) 的折叠空白判据把
+      // 保形 \n 尾误删 P2F——UA 空白保形上下文（pre/listing/plaintext/
+      // textarea 标签链或声明 pre 系，v1.1 _zwCeIlbWsPreserved 同款）整体
+      // 不入归一臂，三则同门。
+      var wsp3 = wsSig || _zwCeIlbWsPreserved(boundaryText);
       var so3 = boundaryOff;
-      if (!wsSig) {
+      if (!wsp3) {
         while (so3 > 0 && v3.charAt(so3 - 1) === ' ') so3--;
       }
       boundaryText.nodeValue = v3.slice(0, so3);
       boundaryParent.insertBefore(brk3, boundaryText.nextSibling || null);
       var tail3 = v3.slice(eo);
-      if (!wsSig && tail3) {
+      if (!wsp3 && tail3) {
         if (_zwCeIsCollapsibleWsOnly(tail3)) {
           tail3 = '';
         } else {
