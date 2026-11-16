@@ -145,3 +145,27 @@ interpolate_keyframes，两通道不同插值入口——零位移的机理闭�
   （单腿 B）；**cwd 毒化复发一例**：systemd `-p WorkingDirectory=${ACC}`
   发射 → wpt-data 相对路径全断 788 页全 `No such file or directory`
   （knife-D 同款形），毒 JSON rm 重发、WorkingDirectory=$ROOT 根修。
+
+## 刀后队列补充：mask-border 家族支持门定谳（11-17 数据定向，刀 F 靶面）
+
+五 corpus 残余 10,081F 排行定谳：css-masking mask-border-\* 四插值页
+（width 558 + slice 434 + source 294 + outset 168）+ composition 页 112 =
+**1,791F 同一前置门**——`interpolation-testcommon.js:396`
+`assert_true(CSS.supports(property, from), "'from' value should be supported")`
+整页翻转，**非插值面**。门链：shim `CSS.supports`（part06.js）→ 宿主
+`__zw_css_supports` → `decl_supported`（js_dom_bridge.rs:6183）→ css-wide
+关键字门走 `PropertyRegistry::known_properties()` + 属性文法走
+`apply_property_value_with_quirks`——**mask-border-{width,slice,outset,source,
+mode,repeat} 全链缺席**（style-system 无字段/无注册、css-parser 无文法、
+shim 无名单，border-image 同构先例仅 part10 Typed OM 两处）。
+
+刀 F 两面批次（刀 D 级跨站）：
+1. **支持门面**：css-parser 文法（width `<length-percentage>{1,4}`、slice
+   `[<number>|<percentage>]{1,4} && fill?`、outset `[<length>|<number>]{1,4}`、
+   source `<image>`、mode/repeat 离散关键字）+ style-system 注册/apply +
+   decl_supported 走通——先解锁四页断言体真跑。
+2. **插值面**：interpolate_property_value 三臂（width LP 列表同单位 lerp/
+   跨单位 calc-mix 复用 blend_rule_inset_lp；slice number/% 分量同型 lerp +
+   fill 双侧保持否则离散；outset len/num 同型 lerp 混型离散；source/mode/
+   repeat 离散翻转）+ transition 注册关键字端点解析（E5 通道 analog：
+   from/to 'inherit'/'initial'/'unset' 对 prev/new style 串化）。
