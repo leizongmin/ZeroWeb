@@ -1409,9 +1409,10 @@ pub fn apply_advanced_property_value(
         // decl_supported = 白名单 + apply oracle 两 conjunct，简写无独立 apply
         // 臂则后者恒假（十七轮 column-rule 刀同型缺口——supports 前置门整组
         // 连坐）。复用 cascade 同一展开器 expand_rule_color，row/column 双
-        // longhand 逐条递归 apply 全过才落 true。
+        // longhand 逐条递归 apply 全过才落 true。rule-width/rule-style/rule/
+        // row-rule 同族展开器（expand_gap_rule 家族）同模板。
         // https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
-        "rule-color" => {
+        "rule-color" | "rule-width" | "rule-style" | "rule" | "row-rule" => {
             if value.trim().is_empty() {
                 return false;
             }
@@ -1425,32 +1426,27 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // ── Column Rule 属性 ──
-        "column-rule-width" => {
-            if let Some(v) = values::parse_column_rule_width(value) {
-                style.column_rule_width = match v {
-                    zero_css_parser::values::ColumnRuleWidthValue::Medium => ColumnRuleWidthComputedValue::Medium,
-                    zero_css_parser::values::ColumnRuleWidthValue::Thin => ColumnRuleWidthComputedValue::Thin,
-                    zero_css_parser::values::ColumnRuleWidthValue::Thick => ColumnRuleWidthComputedValue::Thick,
-                    zero_css_parser::values::ColumnRuleWidthValue::Length(l) => ColumnRuleWidthComputedValue::Length(l),
-                };
+        // ── Column Rule 属性（css-gaps-1 列表文法：width/style 重定义为段列表，
+        // 纯值 = 单段列表 multicol 保形；row-rule-* 同文法新臂）──
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+        "column-rule-width" | "row-rule-width" => {
+            if let Some(segs) = values::parse_rule_width_list(value) {
+                if property == "column-rule-width" {
+                    style.column_rule_width = segs;
+                } else {
+                    style.row_rule_width = segs;
+                }
                 return true;
             }
         }
-        "column-rule-style" => {
-            if let Some(v) = values::parse_column_rule_style(value) {
-                style.column_rule_style = match v {
-                    zero_css_parser::values::ColumnRuleStyleValue::None => ColumnRuleStyleComputedValue::None,
-                    zero_css_parser::values::ColumnRuleStyleValue::Hidden => ColumnRuleStyleComputedValue::Hidden,
-                    zero_css_parser::values::ColumnRuleStyleValue::Dotted => ColumnRuleStyleComputedValue::Dotted,
-                    zero_css_parser::values::ColumnRuleStyleValue::Dashed => ColumnRuleStyleComputedValue::Dashed,
-                    zero_css_parser::values::ColumnRuleStyleValue::Solid => ColumnRuleStyleComputedValue::Solid,
-                    zero_css_parser::values::ColumnRuleStyleValue::Double => ColumnRuleStyleComputedValue::Double,
-                    zero_css_parser::values::ColumnRuleStyleValue::Groove => ColumnRuleStyleComputedValue::Groove,
-                    zero_css_parser::values::ColumnRuleStyleValue::Ridge => ColumnRuleStyleComputedValue::Ridge,
-                    zero_css_parser::values::ColumnRuleStyleValue::Inset => ColumnRuleStyleComputedValue::Inset,
-                    zero_css_parser::values::ColumnRuleStyleValue::Outset => ColumnRuleStyleComputedValue::Outset,
-                };
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-style
+        "column-rule-style" | "row-rule-style" => {
+            if let Some(segs) = values::parse_rule_style_list(value) {
+                if property == "column-rule-style" {
+                    style.column_rule_style = segs;
+                } else {
+                    style.row_rule_style = segs;
+                }
                 return true;
             }
         }

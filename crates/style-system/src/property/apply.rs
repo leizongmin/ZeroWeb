@@ -2230,7 +2230,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 25] = [
+    const VALIDATED_PROPERTIES: [&str; 33] = [
         "transform",
         "rotate",
         "scale",
@@ -2320,6 +2320,24 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "column-rule-color",
         "row-rule-color",
         "rule-color",
+        // rule-width / rule-style 族写面文法门（css-gaps-1 §column-row-rule-width
+        // / §column-row-rule-style：`<line-width-list>`/`<line-style-list>`，段模型
+        // 同 color 族）：apply 链既有臂裁决（parse_rule_width_list /
+        // parse_rule_style_list），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-gaps 语料 gap-decorations-width-invalid `auto`/`30%`/
+        // 无单位数/负长/双 auto、gap-decorations-style-invalid `auto`/空格分隔/
+        // 双 auto 此前白名单外放行 store 原文回显即 Fail）。简写（rule-width/
+        // rule-style/rule/row-rule/column-rule）裁决走 shorthand 展开（同
+        // rule-color 先例，apply 臂 expand_shorthands 全过才落值）。
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+        "column-rule-width",
+        "row-rule-width",
+        "rule-width",
+        "column-rule-style",
+        "row-rule-style",
+        "rule-style",
+        "row-rule",
+        "rule",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2645,6 +2663,34 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_rule_color_list(v).is_some();
+    }
+    // rule-width / rule-style 族写面文法门（css-gaps-1 §column-row-rule-width /
+    // §column-row-rule-style）——rule-color 臂同序同口径（替换函数形放行 store，
+    // 段列表裁决单点 parse_rule_width_list / parse_rule_style_list）。简写
+    // （rule-width/rule-style/rule/row-rule/column-rule）走 expand_shorthands
+    // 裁决（展开空 = 不支持，font_shorthand_supported 同判据）。
+    // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+    if matches!(
+        prop.as_str(),
+        "column-rule-width" | "row-rule-width" | "column-rule-style" | "row-rule-style"
+    ) {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if prop.ends_with("-width") {
+            return values::parse_rule_width_list(v).is_some();
+        }
+        return values::parse_rule_style_list(v).is_some();
+    }
+    if matches!(
+        prop.as_str(),
+        "rule-width" | "rule-style" | "rule" | "row-rule" | "column-rule"
+    ) {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let decl = vec![(prop.clone(), v.to_string(), false, (0, 0, 1))];
+        return !crate::shorthand::expand_shorthands(&decl).is_empty();
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形

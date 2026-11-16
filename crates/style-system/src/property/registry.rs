@@ -264,9 +264,40 @@ impl PropertyRegistry {
             // Column Rule
             // 简写初始值 = medium none currentcolor（CSS Multicol §6.2）；无聚合
             // PropertyValue 变体，返回首子属性初始形（gap 简写臂同款先例）。
-            "column-rule" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
-            "column-rule-width" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
-            "column-rule-style" => Some(ColumnRuleStyle(ColumnRuleStyleComputedValue::None)),
+            // css-gaps-1 列表模型：纯值 = 单段列表（width `<line-width-list>`、
+            // style `<line-style-list>`）。
+            "column-rule" => Some(ColumnRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            "column-rule-width" => Some(ColumnRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            // css-gaps-1 §column-row-rule-width：row-rule-width 初值 medium 同 column。
+            "row-rule-width" => Some(RowRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            // css-gaps-1 简写族：rule-width 同值双写 row/column（展开臂同款先例）。
+            "rule-width" => Some(RowRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            "column-rule-style" => Some(ColumnRuleStyle(vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )])),
+            // css-gaps-1 §column-row-rule-style：row-rule-style 初值 none 同 column。
+            "row-rule-style" => Some(RowRuleStyle(vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )])),
+            // css-gaps-1 简写族：rule-style 同值双写 row/column。
+            "rule-style" => Some(RowRuleStyle(vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )])),
+            // 简写 initial_value 臂：返回首子属性初始形（column-rule 臂同款先例）。
+            "row-rule" => Some(RowRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            "rule" => Some(ColumnRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
 
             // Interaction / Performance Hint
             "overscroll-behavior-x" | "overscroll-behavior-y" => {
@@ -716,6 +747,14 @@ impl PropertyRegistry {
             "column-rule-color",
             "row-rule-color",
             "rule-color",
+            "column-rule-width",
+            "row-rule-width",
+            "rule-width",
+            "column-rule-style",
+            "row-rule-style",
+            "rule-style",
+            "row-rule",
+            "rule",
             "contain",
             "contain-intrinsic-size",
             "contain-intrinsic-width",

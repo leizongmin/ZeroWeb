@@ -564,6 +564,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.row_rule_color = parent.row_rule_color.clone();
             true
         }
+        "row-rule-width" => {
+            child.row_rule_width = parent.row_rule_width.clone();
+            true
+        }
+        "row-rule-style" => {
+            child.row_rule_style = parent.row_rule_style.clone();
+            true
+        }
         "column-rule-style" => {
             child.column_rule_style = parent.column_rule_style.clone();
             true
@@ -1408,6 +1416,33 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.column_rule_color = default_style.column_rule_color.clone();
             true
         }
+        // rule / row-rule 简写 `initial`/`unset`：全部子属性槽一起回落
+        //（css-gaps-1 §rule-shorthand-properties，rule-color 臂同款）。
+        "rule" => {
+            style.column_rule_width = default_style.column_rule_width.clone();
+            style.column_rule_style = default_style.column_rule_style.clone();
+            style.column_rule_color = default_style.column_rule_color.clone();
+            style.row_rule_width = default_style.row_rule_width.clone();
+            style.row_rule_style = default_style.row_rule_style.clone();
+            style.row_rule_color = default_style.row_rule_color.clone();
+            true
+        }
+        "row-rule" => {
+            style.row_rule_width = default_style.row_rule_width.clone();
+            style.row_rule_style = default_style.row_rule_style.clone();
+            style.row_rule_color = default_style.row_rule_color.clone();
+            true
+        }
+        "rule-width" => {
+            style.row_rule_width = default_style.row_rule_width.clone();
+            style.column_rule_width = default_style.column_rule_width.clone();
+            true
+        }
+        "rule-style" => {
+            style.row_rule_style = default_style.row_rule_style.clone();
+            style.column_rule_style = default_style.column_rule_style.clone();
+            true
+        }
         // shape-margin / shape-image-threshold（css-shapes-1）：白名单串复位
         // 臂补齐（二十三轮刀白名单接入时遗漏，initial_value 完整性测试钉面）。
         "shape-margin" => {
@@ -1424,6 +1459,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "column-rule-style" => {
             style.column_rule_style = default_style.column_rule_style;
+            true
+        }
+        "row-rule-width" => {
+            style.row_rule_width = default_style.row_rule_width;
+            true
+        }
+        "row-rule-style" => {
+            style.row_rule_style = default_style.row_rule_style;
             true
         }
         "overscroll-behavior-x" => {

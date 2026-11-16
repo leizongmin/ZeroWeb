@@ -188,6 +188,17 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
         "outline" => &["outline-width", "outline-style", "outline-color"],
         "columns" => &["column-count", "column-width"],
         "column-rule" => &["column-rule-width", "column-rule-style", "column-rule-color"],
+        "row-rule" => &["row-rule-width", "row-rule-style", "row-rule-color"],
+        "rule" => &[
+            "column-rule-width",
+            "row-rule-width",
+            "column-rule-style",
+            "row-rule-style",
+            "column-rule-color",
+            "row-rule-color",
+        ],
+        "rule-width" => &["column-rule-width", "row-rule-width"],
+        "rule-style" => &["column-rule-style", "row-rule-style"],
         "border-image" => &[
             "border-image-source",
             "border-image-slice",
@@ -914,12 +925,26 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── column-rule 简写 ──
         // column-rule: [width] [style] [color]
         // 与 outline 类似，各部分顺序无关
-        "column-rule" => expand_column_rule(value, important, specificity),
+        // css-gaps-1：升级为 <gap-rule-list> 联合列表展开（expand_gap_rule）。
+        "column-rule" => expand_gap_rule(value, important, specificity, GapRuleTarget::Column),
+
+        // ── row-rule 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 与 column-rule 同 <gap-rule-list> 文法，写 row-rule-* 三 longhand。
+        "row-rule" => expand_gap_rule(value, important, specificity, GapRuleTarget::Row),
+
+        // ── rule 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 同值写 row/column 六 longhand（shorthand.html rule_properties.rule 钉）。
+        "rule" => expand_gap_rule(value, important, specificity, GapRuleTarget::Both),
 
         // ── rule-color 简写（css-gaps-1 §rule-shorthand-properties）──
         // 同值写入 row-rule-color + column-rule-color（列表文法合法性由
         // parse_rule_color_list 裁决）；css-wide 关键字透传双子属性。
         "rule-color" => expand_rule_color(value, important, specificity),
+
+        // ── rule-width / rule-style 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 同值双写 row/column 对应 longhand（expand_rule_color 同模板）。
+        "rule-width" => expand_rule_dimension(value, important, specificity, "rule-width"),
+        "rule-style" => expand_rule_dimension(value, important, specificity, "rule-style"),
 
         // ── border-image 简写 ──
         "border-image" => expand_border_image(value, important, specificity),
@@ -2484,72 +2509,6 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     }
 }
 
-/// 展开 column-rule 简写。
-///
-/// CSS `column-rule` 简写格式为：
-/// `column-rule: [width] [style] [color]`
-///
-/// 各部分顺序无关，未指定的部分使用初始值。
-fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
-    let value = value.trim();
-    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
-
-    if matches_css_wide_keyword(value) {
-        return wide_keyword_to_longhands(
-            value,
-            &["column-rule-width", "column-rule-style", "column-rule-color"],
-            important,
-            specificity,
-        );
-    }
-
-    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
-    let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
-    let mut width = "medium".to_string();
-    let mut style = "none".to_string();
-    let mut color = "currentcolor".to_string();
-    let mut seen_width = false;
-    let mut seen_style = false;
-    let mut seen_color = false;
-
-    for part in parts {
-        if is_border_style_keyword(part) {
-            if seen_style {
-                return vec![];
-            }
-            seen_style = true;
-            style = part.to_string();
-        } else if looks_like_length(part) {
-            // R5090：同 border——<line-width> 非负（css-ui-3 §outline-width）。
-            // OPTIMIZATION: 负号先行短路——env 读取仅在罕见负 token 路径。
-            if part.trim_start().starts_with('-')
-                && std::env::var("ZW_SHORTHAND_NEG_WIDTH_INVALID").as_deref() != Ok("0")
-            {
-                return vec![];
-            }
-            if seen_width {
-                return vec![];
-            }
-            seen_width = true;
-            width = part.to_string();
-        } else if looks_like_color(part) {
-            if seen_color {
-                return vec![];
-            }
-            seen_color = true;
-            color = part.to_string();
-        } else {
-            return vec![];
-        }
-    }
-
-    vec![
-        mk("column-rule-width", &width),
-        mk("column-rule-style", &style),
-        mk("column-rule-color", &color),
-    ]
-}
-
 /// rule-color 简写展开（css-gaps-1 §rule-shorthand-properties）：同值写入
 /// row/column 双 rule-color。列表文法裁决单点 parse_rule_color_list
 ///（css-wide 关键字先判透传，column-rule 臂同款）。非法值空 Vec = 展开拒。
@@ -2567,6 +2526,104 @@ fn expand_rule_color(value: &str, important: bool, specificity: (u32, u32, u32))
         return vec![];
     }
     vec![mk("row-rule-color", value), mk("column-rule-color", value)]
+}
+
+/// rule-width / rule-style 简写展开（css-gaps-1 §rule-shorthand-properties）：
+/// 同值双写 row/column 对应 longhand（expand_rule_color 同模板）。列表文法
+/// 裁决单点（width `parse_rule_width_list` / style `parse_rule_style_list`）。
+/// css-wide 关键字透传双子属性。
+/// driving: css-gaps 语料 gap-decorations-{width,style}-{valid,computed} 槽。
+fn expand_rule_dimension(value: &str, important: bool, specificity: (u32, u32, u32), dim: &str) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let (row_prop, col_prop) = (format!("row-{dim}"), format!("column-{dim}"));
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(value, &[&row_prop, &col_prop], important, specificity);
+    }
+
+    let ok = match dim {
+        "rule-width" => zero_css_parser::values::parse_rule_width_list(value).is_some(),
+        _ => zero_css_parser::values::parse_rule_style_list(value).is_some(),
+    };
+    if !ok {
+        return vec![];
+    }
+    vec![mk(&row_prop, value), mk(&col_prop, value)]
+}
+
+/// gap-rule 联合简写展开目标（column-rule / row-rule / rule 三简写共享）。
+#[derive(Clone, Copy, PartialEq)]
+enum GapRuleTarget {
+    /// 写 column-rule-{width,style,color}。
+    Column,
+    /// 写 row-rule-{width,style,color}。
+    Row,
+    /// 同值写 row/column 六 longhand。
+    Both,
+}
+
+/// gap-rule 联合简写展开（css-gaps-1 §rule-shorthand-properties `<gap-rule-list>`）：
+/// `column-rule` / `row-rule` / `rule` 共享。段模型三维度顺序无关（`||`），缺省
+/// 分量展开期补初值（width→medium、style→none、color→currentcolor——shorthand.html
+/// 页 `dashed` → width 'medium' 钉）；repeat 结构保形逐维对齐。联合文法裁决单点
+/// `parse_gap_rule_list` + 投影 `project_{widths,styles,colors}`（specified 原文）。
+/// css-wide 关键字透传全部目标 longhand。
+/// driving: css-gaps 语料 gap-decorations-rule-shorthand{,-valid,-invalid,-computed}。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn expand_gap_rule(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+    target: GapRuleTarget,
+) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let parts: [&str; 6] = match target {
+        GapRuleTarget::Column => [
+            "column-rule-width",
+            "column-rule-style",
+            "column-rule-color",
+            "",
+            "",
+            "",
+        ],
+        GapRuleTarget::Row => ["row-rule-width", "row-rule-style", "row-rule-color", "", "", ""],
+        GapRuleTarget::Both => [
+            "column-rule-width",
+            "column-rule-style",
+            "column-rule-color",
+            "row-rule-width",
+            "row-rule-style",
+            "row-rule-color",
+        ],
+    };
+    let n = if target == GapRuleTarget::Both { 6 } else { 3 };
+
+    if matches_css_wide_keyword(value) {
+        let names: Vec<&str> = parts[..n].to_vec();
+        return wide_keyword_to_longhands(value, &names, important, specificity);
+    }
+
+    let Some(gap_parts) = zero_css_parser::values::parse_gap_rule_list(value) else {
+        return vec![];
+    };
+    let Some(w) = zero_css_parser::values::project_widths(&gap_parts) else {
+        return vec![];
+    };
+    let Some(s) = zero_css_parser::values::project_styles(&gap_parts) else {
+        return vec![];
+    };
+    let Some(c) = zero_css_parser::values::project_colors(&gap_parts) else {
+        return vec![];
+    };
+    let triples = [w, s, c];
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        out.push(mk(parts[i], triples[i % 3].as_str()));
+    }
+    out
 }
 
 /// @supports 求值用：`font` 简写值是否合法可解析（CSS Conditional §7：声明 supported

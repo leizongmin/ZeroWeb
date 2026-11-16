@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{ColorValue, LengthValue, RuleColorSegment, TransformFunction, TransformValue};
+use zero_css_parser::values::{
+    ColorValue, ColumnRuleStyleValue, ColumnRuleWidthValue, LengthValue, RuleColorSegment, RuleStyleSegment,
+    RuleWidthSegment, TransformFunction, TransformValue,
+};
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
@@ -535,7 +538,7 @@ fn test_border_image_no_border() {
 /// 测试 column-rule: solid 在 3 列之间绘制 2 条分隔线。
 #[test]
 fn test_column_rules_solid() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -544,8 +547,8 @@ fn test_column_rules_solid() {
     let mut style = ComputedStyle::default();
     style.column_count = ColumnCountComputedValue::Number(3);
     style.column_gap = LengthValue::Px(20.0);
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Thin;
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Thin)];
     style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(128, 128, 128, 255))];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
@@ -571,9 +574,9 @@ fn test_column_rules_solid() {
 /// width=rule_w 的 fill 图元，故直接断言 fill 宽度。
 #[test]
 fn test_column_rule_width_keywords_match_border_width() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
-    let assert_rule_width = |kw: ColumnRuleWidthComputedValue, expected: f32| {
+    let assert_rule_width = |kw: ColumnRuleWidthValue, expected: f32| {
         let mut doc = zero_dom::Document::new();
         let nid = doc.create_element("div");
         let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
@@ -581,8 +584,8 @@ fn test_column_rule_width_keywords_match_border_width() {
         let mut style = ComputedStyle::default();
         style.column_count = ColumnCountComputedValue::Number(2);
         style.column_gap = LengthValue::Px(20.0);
-        style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-        style.column_rule_width = kw;
+        style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+        style.column_rule_width = vec![RuleWidthSegment::Plain(kw)];
         style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(128, 128, 128, 255))];
         let mut styles = HashMap::new();
         styles.insert(nid, style);
@@ -597,14 +600,14 @@ fn test_column_rule_width_keywords_match_border_width() {
         assert!(has_rule, "column-rule solid 应产出一个宽度≈{expected}px 的 fill 图元");
     };
 
-    assert_rule_width(ColumnRuleWidthComputedValue::Thin, 1.0);
-    assert_rule_width(ColumnRuleWidthComputedValue::Medium, 3.0);
-    assert_rule_width(ColumnRuleWidthComputedValue::Thick, 5.0);
+    assert_rule_width(ColumnRuleWidthValue::Thin, 1.0);
+    assert_rule_width(ColumnRuleWidthValue::Medium, 3.0);
+    assert_rule_width(ColumnRuleWidthValue::Thick, 5.0);
 }
 
 #[test]
 fn test_column_rule_width_relative_length_resolves_in_paint() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -614,8 +617,10 @@ fn test_column_rule_width_relative_length_resolves_in_paint() {
     style.font_size = LengthValue::Px(20.0);
     style.column_count = ColumnCountComputedValue::Number(2);
     style.column_gap = LengthValue::Px(20.0);
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Length(LengthValue::Em(0.5));
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Length(LengthValue::Em(
+        0.5,
+    )))];
     style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(128, 128, 128, 255))];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
@@ -634,7 +639,7 @@ fn test_column_rule_width_relative_length_resolves_in_paint() {
 /// 元素 color:red + column-rule solid（无显式 column-rule-color）→ 分隔线应为红色（非黑）。
 #[test]
 fn test_column_rule_color_currentcolor_resolves_to_element_color() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -644,8 +649,8 @@ fn test_column_rule_color_currentcolor_resolves_to_element_color() {
     style.color = ColorValue::Rgba(255, 0, 0, 255); // red
     style.column_count = ColumnCountComputedValue::Number(2);
     style.column_gap = LengthValue::Px(20.0);
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Medium)];
     // column_rule_color 留默认 currentColor（不显式设）
     let mut styles = HashMap::new();
     styles.insert(nid, style);
@@ -670,7 +675,7 @@ fn test_column_rule_color_currentcolor_resolves_to_element_color() {
 /// col_w=(600-32)/3≈189.33，rule@i=1 x≈195.83、@i=2 x≈401.17（修复前 gap=0 → 198.5/398.5）。
 #[test]
 fn test_column_rule_default_gap_matches_layout_3cols() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -679,8 +684,8 @@ fn test_column_rule_default_gap_matches_layout_3cols() {
     let mut style = ComputedStyle::default();
     // column_gap 留默认 Auto（normal→1em=16px，须与 layout 一致）
     style.column_count = ColumnCountComputedValue::Number(3);
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Medium; // 3px
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Medium)]; // 3px
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -710,7 +715,7 @@ fn test_column_rule_default_gap_matches_layout_3cols() {
 /// col_w=(600-64)/3≈178.67，rule@i=1 x≈193.17、@i=2 x≈403.83（修复前 em→0 → 198.5/398.5）。
 #[test]
 fn test_column_rule_em_gap_matches_layout_3cols() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -719,8 +724,8 @@ fn test_column_rule_em_gap_matches_layout_3cols() {
     let mut style = ComputedStyle::default();
     style.column_count = ColumnCountComputedValue::Number(3);
     style.column_gap = LengthValue::Em(2.0); // 2em → 32px（font-size 16）
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Medium; // 3px
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Medium)]; // 3px
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -749,7 +754,7 @@ fn test_column_rule_em_gap_matches_layout_3cols() {
 ///（ch≈8px），否则 paint column-rule X 坐标与 layout 列位置分叉。
 #[test]
 fn test_column_rule_ch_gap_matches_layout_3cols() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -758,8 +763,8 @@ fn test_column_rule_ch_gap_matches_layout_3cols() {
     let mut style = ComputedStyle::default();
     style.column_count = ColumnCountComputedValue::Number(3);
     style.column_gap = LengthValue::Ch(4.0); // 4ch → 32px（layout multicol resolver）
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Medium)];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -786,9 +791,7 @@ fn test_column_rule_ch_gap_matches_layout_3cols() {
 /// 不画任何 rule（red）。
 #[test]
 fn test_column_rule_em_column_width_draws_rules() {
-    use zero_style_system::{
-        ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    };
+    use zero_style_system::{ColumnCountComputedValue, ColumnWidthComputedValue};
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -797,8 +800,8 @@ fn test_column_rule_em_column_width_draws_rules() {
     let mut style = ComputedStyle::default();
     style.column_count = ColumnCountComputedValue::Auto;
     style.column_width = ColumnWidthComputedValue::Length(LengthValue::Em(10.0)); // 10em → 160px
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Medium; // 3px
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Medium)]; // 3px
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -848,7 +851,7 @@ fn test_column_rules_none() {
 #[test]
 fn test_column_rules_dashed() {
     use zero_render_foundation::primitive::LineStyle;
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -857,8 +860,8 @@ fn test_column_rules_dashed() {
     let mut style = ComputedStyle::default();
     style.column_count = ColumnCountComputedValue::Number(2);
     style.column_gap = LengthValue::Px(10.0);
-    style.column_rule_style = ColumnRuleStyleComputedValue::Dashed;
-    style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Dashed)];
+    style.column_rule_width = vec![RuleWidthSegment::Plain(ColumnRuleWidthValue::Medium)];
     style.column_rule_color = vec![RuleColorSegment::Plain(ColorValue::Rgba(0, 0, 0, 255))];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
@@ -877,7 +880,7 @@ fn test_column_rules_dashed() {
 /// 测试 column-count:1（只有 1 列）不绘制 rule。
 #[test]
 fn test_column_rules_single_column() {
-    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue};
+    use zero_style_system::ColumnCountComputedValue;
 
     let mut doc = zero_dom::Document::new();
     let nid = doc.create_element("div");
@@ -885,7 +888,7 @@ fn test_column_rules_single_column() {
 
     let mut style = ComputedStyle::default();
     style.column_count = ColumnCountComputedValue::Number(1);
-    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_style = vec![RuleStyleSegment::Plain(ColumnRuleStyleValue::Solid)];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();

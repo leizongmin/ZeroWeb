@@ -8,7 +8,7 @@ use zero_css_parser::values::{CalcExpr, LengthValue};
 use zero_css_parser::{Token, Tokenizer};
 
 use crate::property::ComputedStyle;
-use crate::property::types::{ColumnRuleWidthComputedValue, FlexBasisValue, LineHeightValue};
+use crate::property::types::{FlexBasisValue, LineHeightValue};
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -872,10 +872,25 @@ pub fn resolve_computed_style_with_container(
     // 不在上方 resolve_length_field 列表内。其 Length 内部值（如 1em）须解析为 Px，
     // 否则 paint（painter/text.rs::paint_column_rules rule_w match）仅匹配 Length(Px)，
     // em 案落入 `_ => 1.0` → column-rule-width:1em 渲染为 1px（应按 element font-size）。
-    if let ColumnRuleWidthComputedValue::Length(lv) = &resolved.column_rule_width.clone() {
-        let mut lv = lv.clone();
-        resolve_field(&mut lv);
-        resolved.column_rule_width = ColumnRuleWidthComputedValue::Length(lv);
+    // css-gaps-1 列表模型：逐段 Length 臂就地解析（R907 同模式，row 同文法）；
+    // <length [0,∞]> 槽负计算值 clamp 0（`calc(10px - 0.5em)` → `0px`，width
+    // computed 页钉）。
+    for seg in resolved
+        .column_rule_width
+        .iter_mut()
+        .chain(resolved.row_rule_width.iter_mut())
+    {
+        if let zero_css_parser::values::RuleWidthSegment::Plain(
+            zero_css_parser::values::ColumnRuleWidthValue::Length(lv),
+        ) = seg
+        {
+            resolve_field(lv);
+            if let LengthValue::Px(v) = lv {
+                if *v < 0.0 {
+                    *v = 0.0;
+                }
+            }
+        }
     }
     resolve_field(&mut resolved.letter_spacing);
     resolve_field(&mut resolved.word_spacing);
@@ -1771,21 +1786,33 @@ mod tests {
         // R907：column-rule-width 的 em 应按 element font-size 解析为 px。
         // 旧实现 Length(Em) 不 resolve → paint paint_column_rules rule_w 仅匹配 Length(Px)，
         // em 落入 `_ => 1.0` → column-rule-width:1em 渲染为 1px（应 20px @ font-size 20）。
+        // css-gaps-1 列表模型：单段 Plain(Length) 逐段解析（R907 同模式）。
         let mut style = ComputedStyle::default();
         style.font_size = LengthValue::Px(20.0);
-        style.column_rule_width = ColumnRuleWidthComputedValue::Length(LengthValue::Em(1.0));
+        style.column_rule_width = vec![zero_css_parser::values::RuleWidthSegment::Plain(
+            zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Em(1.0)),
+        )];
 
         let custom = HashMap::new();
         let resolved = resolve_computed_style(&style, &custom, None, None, Some(20.0));
         assert_eq!(
             resolved.column_rule_width,
-            ColumnRuleWidthComputedValue::Length(LengthValue::Px(20.0))
+            vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(20.0))
+            )]
         );
         // 关键字 Medium 不受影响。
         let mut style_kw = ComputedStyle::default();
-        style_kw.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+        style_kw.column_rule_width = vec![zero_css_parser::values::RuleWidthSegment::Plain(
+            zero_css_parser::values::ColumnRuleWidthValue::Medium,
+        )];
         let resolved_kw = resolve_computed_style(&style_kw, &HashMap::new(), None, None, None);
-        assert_eq!(resolved_kw.column_rule_width, ColumnRuleWidthComputedValue::Medium);
+        assert_eq!(
+            resolved_kw.column_rule_width,
+            vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium
+            )]
+        );
     }
 
     #[test]

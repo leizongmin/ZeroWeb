@@ -28,20 +28,20 @@ use zero_style_system::{
     BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
     BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
     CaretColorComputedValue, CaretShapeComputedValue, ColumnCountComputedValue, ColumnFillComputedValue,
-    ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue,
-    CounterActionValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
-    FontKerningValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
-    FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
-    ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
-    ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
-    QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
-    ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue,
-    TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
-    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
+    ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
+    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontKerningValue, FontSizeAdjustBasis,
+    FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantNumericValue,
+    FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue,
+    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue,
+    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
+    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
+    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
+    WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -802,13 +802,14 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
         "quotes" => quotes_to_css(&style.quotes),
         // ── CSS Multi-column 簇（R2737）── column-gap 已覆（R2707 length 族）；补 rule/count/width/fill/span。
-        "column-rule-width" => {
-            column_rule_width_to_css(&style.column_rule_width, &style.column_rule_style, font_size_px)
-        }
-        "column-rule-style" => column_rule_style_str(&style.column_rule_style),
+        // css-gaps-1 列表模型：width/style 走列表串化（单段平值保 multicol 串化零漂移）。
+        "column-rule-width" => rule_width_list_to_gcs(&style.column_rule_width, font_size_px),
+        "column-rule-style" => rule_style_list_to_gcs(&style.column_rule_style),
         "column-rule-color" => rule_color_list_to_gcs(&style.column_rule_color, element_color),
-        // css-gaps-1 §column-row-rule-color：row-rule-color 同文法列表串化。
+        // css-gaps-1 §column-row-rule-{color,width,style}：row 三属性同文法列表串化。
         "row-rule-color" => rule_color_list_to_gcs(&style.row_rule_color, element_color),
+        "row-rule-width" => rule_width_list_to_gcs(&style.row_rule_width, font_size_px),
+        "row-rule-style" => rule_style_list_to_gcs(&style.row_rule_style),
         "column-count" => column_count_to_css(&style.column_count),
         "column-width" => column_width_to_css(&style.column_width, font_size_px),
         "column-fill" => column_fill_str(&style.column_fill),
@@ -829,6 +830,43 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "rule-color" => {
             let r = rule_color_list_to_gcs(&style.row_rule_color, element_color);
             let c = rule_color_list_to_gcs(&style.column_rule_color, element_color);
+            if r == c { r } else { String::new() }
+        }
+        // rule-width / rule-style 简写 gCS：row/column 串化全等 → 该值（rule-color 臂同口径）。
+        "rule-width" => {
+            let r = rule_width_list_to_gcs(&style.row_rule_width, font_size_px);
+            let c = rule_width_list_to_gcs(&style.column_rule_width, font_size_px);
+            if r == c { r } else { String::new() }
+        }
+        "rule-style" => {
+            let r = rule_style_list_to_gcs(&style.row_rule_style);
+            let c = rule_style_list_to_gcs(&style.column_rule_style);
+            if r == c { r } else { String::new() }
+        }
+        // row-rule / rule 简写 gCS：row-rule 重组 row 轴三 longhand；rule 先核
+        // row/column 两轴重组全等再取值（rule-color 臂同口径）。
+        "row-rule" => gap_rule_recomb_to_css(
+            &style.row_rule_width,
+            &style.row_rule_style,
+            &style.row_rule_color,
+            element_color,
+            font_size_px,
+        ),
+        "rule" => {
+            let r = gap_rule_recomb_to_css(
+                &style.row_rule_width,
+                &style.row_rule_style,
+                &style.row_rule_color,
+                element_color,
+                font_size_px,
+            );
+            let c = gap_rule_recomb_to_css(
+                &style.column_rule_width,
+                &style.column_rule_style,
+                &style.column_rule_color,
+                element_color,
+                font_size_px,
+            );
             if r == c { r } else { String::new() }
         }
         // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
@@ -1344,38 +1382,175 @@ fn quotes_to_css(q: &QuotesComputedValue) -> String {
 // ── CSS Multi-column 簇（R2737）──────────────────────────────────────────
 // column-gap 已由 length 族（R2707）覆盖；此处补 rule-width/style/color + count/width/fill/span。
 
-/// column-rule-width：CSS Multi-column 分隔线宽度。Medium/Thin/Thick→对齐 Chromium used px
+/// column-rule-width 标量串化：CSS Multi-column 分隔线宽度。Medium/Thin/Thick→对齐 Chromium used px
 ///（3px/1px/5px，CSS Border 的常规 UA 初始值）；Length→px（经 length_to_css）。**column-rule-width 的
 /// computed 值独立于 column-rule-style**——Chromium 对 style=none/hidden 仍返 medium→3px（R2755 oracle
 /// 核实），与 border-width 的 none/hidden→used 0px 语义**不同**（R2737 曾误套 border-width 规则致 diverge）。
-fn column_rule_width_to_css(
-    w: &ColumnRuleWidthComputedValue,
-    _style: &ColumnRuleStyleComputedValue,
-    font_size_px: f64,
-) -> String {
+fn column_rule_width_to_css(w: &zero_css_parser::values::ColumnRuleWidthValue, font_size_px: f64) -> String {
     match w {
-        ColumnRuleWidthComputedValue::Medium => "3px".to_string(),
-        ColumnRuleWidthComputedValue::Thin => "1px".to_string(),
-        ColumnRuleWidthComputedValue::Thick => "5px".to_string(),
-        ColumnRuleWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
+        zero_css_parser::values::ColumnRuleWidthValue::Medium => "3px".to_string(),
+        zero_css_parser::values::ColumnRuleWidthValue::Thin => "1px".to_string(),
+        zero_css_parser::values::ColumnRuleWidthValue::Thick => "5px".to_string(),
+        zero_css_parser::values::ColumnRuleWidthValue::Length(l) => length_to_css(l, font_size_px),
     }
 }
 
-/// column-rule-style：CSS Multi-column 分隔线样式（10 关键字，同 border-style 语义但独立枚举）。
-fn column_rule_style_str(s: &ColumnRuleStyleComputedValue) -> String {
-    match s {
-        ColumnRuleStyleComputedValue::None => "none",
-        ColumnRuleStyleComputedValue::Hidden => "hidden",
-        ColumnRuleStyleComputedValue::Dotted => "dotted",
-        ColumnRuleStyleComputedValue::Dashed => "dashed",
-        ColumnRuleStyleComputedValue::Solid => "solid",
-        ColumnRuleStyleComputedValue::Double => "double",
-        ColumnRuleStyleComputedValue::Groove => "groove",
-        ColumnRuleStyleComputedValue::Ridge => "ridge",
-        ColumnRuleStyleComputedValue::Inset => "inset",
-        ColumnRuleStyleComputedValue::Outset => "outset",
+/// rule-width 列表 computed 串化（css-gaps-1 §column-row-rule-width）：单段
+/// 平宽走既有标量路径（multicol 纯宽声明串化零漂移）；列表/重复形结构串化
+///（逐段 resolve，repeat/auto/calc 计数保形折叠，css-parser 单点）。
+/// pub(crate)：animation 隐式边界帧 underlying 补键同源复用。
+/// https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+pub(crate) fn rule_width_list_to_gcs(
+    segments: &[zero_css_parser::values::RuleWidthSegment],
+    font_size_px: f64,
+) -> String {
+    if let Some(w) = zero_css_parser::values::rule_width_list_single_width(segments) {
+        return column_rule_width_to_css(w, font_size_px);
     }
-    .to_string()
+    zero_css_parser::values::rule_width_list_to_css(segments, &|w| column_rule_width_to_css(w, font_size_px))
+        .unwrap_or_default()
+}
+
+/// rule-style 列表 computed 串化（css-gaps-1 §column-row-rule-style）：单段
+/// 平样式走既有关键字路径；列表/重复形结构串化。
+fn rule_style_list_to_gcs(segments: &[zero_css_parser::values::RuleStyleSegment]) -> String {
+    if let Some(s) = zero_css_parser::values::rule_style_list_single_style(segments) {
+        return column_rule_style_str(s);
+    }
+    zero_css_parser::values::rule_style_list_to_css(segments).unwrap_or_default()
+}
+
+/// 三维度列表结构对齐判定（css-gaps-1 简写重组前置门，csswg-drafts#12201）：
+/// 段数相等；逐段三维度同为 Plain，或同为 Repeat 且计数（折叠口径，
+/// `repeat(calc(5 + 3),…)` ≡ `repeat(8,…)`）与循环体长度全等。
+/// pub(crate)：inline CSSOM（css_style_declaration 读面重组）同规则复用。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+pub(crate) fn gap_rule_lists_aligned(
+    width: &[zero_css_parser::values::RuleWidthSegment],
+    style_val: &[zero_css_parser::values::RuleStyleSegment],
+    color: &[zero_css_parser::values::RuleColorSegment],
+) -> bool {
+    if width.len() != style_val.len() || width.len() != color.len() {
+        return false;
+    }
+    for i in 0..width.len() {
+        match (&width[i], &style_val[i], &color[i]) {
+            (
+                zero_css_parser::values::RuleWidthSegment::Plain(..),
+                zero_css_parser::values::RuleStyleSegment::Plain(..),
+                zero_css_parser::values::RuleColorSegment::Plain(..),
+            ) => {}
+            (
+                zero_css_parser::values::RuleWidthSegment::Repeat { count, widths },
+                zero_css_parser::values::RuleStyleSegment::Repeat { count: sc, styles },
+                zero_css_parser::values::RuleColorSegment::Repeat { count: cc, colors },
+            ) => {
+                let head = |c: &zero_css_parser::values::RuleRepeatCount| c.to_css_head().unwrap_or_default();
+                if head(count) != head(sc)
+                    || head(count) != head(cc)
+                    || widths.len() != styles.len()
+                    || widths.len() != colors.len()
+                {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// row-rule/rule 简写重组（css-gaps-1 §rule-shorthand-properties computed
+/// 形）：width/style/color 三维度列表逐段 zip，段内 `width style(!none)
+/// color` 空格拼接；repeat 结构保形（段循环体逐项拼接，WPT computed 页
+/// `repeat(auto, 5px solid rgb(0, 0, 255))` 恒等钉）。三 longhand 结构
+/// 不齐（longhand 各自覆写后）→ 简写空串（csswg#12201，非平铺）。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn gap_rule_recomb_to_css(
+    width: &[zero_css_parser::values::RuleWidthSegment],
+    style_val: &[zero_css_parser::values::RuleStyleSegment],
+    color: &[zero_css_parser::values::RuleColorSegment],
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    if !gap_rule_lists_aligned(width, style_val, color) {
+        // 结构失配：三 longhand 无法恒等重组 → 简写空串（csswg#12201；
+        // WPT from-longhands 页 row 侧 6 钉——Plain/Repeat 混段、计数不齐、
+        // 循环体长度不齐均空串）。
+        return String::new();
+    }
+    let style_item = |s: &zero_css_parser::values::RuleStyleSegment| -> Option<String> {
+        let single = zero_css_parser::values::rule_style_list_single_style(std::slice::from_ref(s));
+        let first = single.or_else(|| zero_css_parser::values::rule_style_list_first_style(std::slice::from_ref(s)));
+        match first {
+            Some(zero_css_parser::values::ColumnRuleStyleValue::None) | None => None,
+            Some(_) => Some(rule_style_list_to_gcs(std::slice::from_ref(s))),
+        }
+    };
+    let color_item = |c: &zero_css_parser::values::RuleColorSegment| -> String {
+        rule_color_list_to_gcs(std::slice::from_ref(c), element_color)
+    };
+    let width_item = |w: &zero_css_parser::values::RuleWidthSegment| -> String {
+        rule_width_list_to_gcs(std::slice::from_ref(w), font_size_px)
+    };
+    let mut parts = Vec::with_capacity(width.len());
+    for (w, (s, c)) in width.iter().zip(style_val.iter().zip(color.iter())) {
+        match (w, s, c) {
+            (
+                zero_css_parser::values::RuleWidthSegment::Repeat { count, widths },
+                zero_css_parser::values::RuleStyleSegment::Repeat { count: sc, styles },
+                zero_css_parser::values::RuleColorSegment::Repeat { count: cc, colors },
+            ) if {
+                // 计数折叠口径（前置门已保证三维度可对齐；此处防 Calc/N
+                // 结构异形混段误入平值臂）。
+                let head = |c: &zero_css_parser::values::RuleRepeatCount| c.to_css_head().unwrap_or_default();
+                head(sc) == head(cc) && head(count) == head(sc)
+            } =>
+            {
+                // repeat 体逐项 `w s c` 拼接（体长取宽度维，style/color 截断对齐）。
+                let items: Vec<String> = widths
+                    .iter()
+                    .enumerate()
+                    .map(|(i, wi)| {
+                        let mut item = column_rule_width_to_css(wi, font_size_px);
+                        if let Some(sv) = styles
+                            .get(i)
+                            .filter(|sv| !matches!(sv, zero_css_parser::values::ColumnRuleStyleValue::None))
+                        {
+                            item.push(' ');
+                            item.push_str(&column_rule_style_str(sv));
+                        }
+                        if let Some(cv) = colors.get(i) {
+                            item.push(' ');
+                            item.push_str(&color_to_css(&crate::resolve_color_current(cv, element_color)));
+                        }
+                        item
+                    })
+                    .collect();
+                match count.to_css_head() {
+                    Some(head) => parts.push(format!("repeat({}, {})", head, items.join(", "))),
+                    None => return String::new(),
+                }
+            }
+            _ => {
+                let mut item = width_item(w);
+                if let Some(sv) = style_item(s) {
+                    item.push(' ');
+                    item.push_str(&sv);
+                }
+                item.push(' ');
+                item.push_str(&color_item(c));
+                parts.push(item);
+            }
+        }
+    }
+    parts.join(", ")
+}
+
+/// column-rule-style：CSS Multi-column 分隔线样式（10 关键字，同 border-style 语义；css-gaps-1
+/// 列表模型下计算字段直接携带 css-parser [`ColumnRuleStyleValue`]）。
+fn column_rule_style_str(s: &zero_css_parser::values::ColumnRuleStyleValue) -> String {
+    zero_css_parser::values::line_style_str(s).to_string()
 }
 
 /// column-count：CSS Multi-column 列数。Auto→auto；Number(n)→无单位正整数（对齐 Chromium）。
@@ -1444,15 +1619,24 @@ fn columns_shorthand_to_css(
 /// width 恒显（独立于 style，见 [`column_rule_width_to_css`]），color 恒显。Chromium oracle：
 /// `column-rule:thick double red`→`"5px double rgb(255, 0, 0)"`、默认→`"3px rgb(0, 0,0)"`（style none 省）。
 fn column_rule_shorthand_to_css(
-    width: &ColumnRuleWidthComputedValue,
-    style_val: &ColumnRuleStyleComputedValue,
+    width: &[zero_css_parser::values::RuleWidthSegment],
+    style_val: &[zero_css_parser::values::RuleStyleSegment],
     color: &[zero_css_parser::values::RuleColorSegment],
     element_color: &ColorValue,
     font_size_px: f64,
 ) -> String {
-    let mut parts = vec![column_rule_width_to_css(width, style_val, font_size_px)];
-    if !matches!(style_val, ColumnRuleStyleComputedValue::None) {
-        parts.push(column_rule_style_str(style_val));
+    if !gap_rule_lists_aligned(width, style_val, color) {
+        // css-gaps-1 列表模型：三 longhand 结构不齐 → 简写空串（csswg#12201，
+        // WPT from-longhands 页 column 侧 6 钉；单段 multicol 形恒对齐，
+        // R2755 oracle 串化不受影响）。
+        return String::new();
+    }
+    let mut parts = vec![rule_width_list_to_gcs(width, font_size_px)];
+    if !matches!(
+        zero_css_parser::values::rule_style_list_first_style(style_val),
+        Some(zero_css_parser::values::ColumnRuleStyleValue::None) | None
+    ) {
+        parts.push(rule_style_list_to_gcs(style_val));
     }
     parts.push(rule_color_list_to_gcs(color, element_color));
     parts.join(" ")

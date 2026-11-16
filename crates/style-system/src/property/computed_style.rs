@@ -531,10 +531,16 @@ pub struct ComputedStyle {
     pub break_after: BreakValue,
 
     // ── Column Rule ──
-    /// column-rule-width 属性。
-    pub column_rule_width: ColumnRuleWidthComputedValue,
-    /// column-rule-style 属性。
-    pub column_rule_style: ColumnRuleStyleComputedValue,
+    /// column-rule-width 属性（css-gaps-1 重定义为 `<line-width-list>`；纯值 =
+    /// 单段列表，multicol 串化/paint 取单段平宽保形）。
+    pub column_rule_width: Vec<zero_css_parser::values::RuleWidthSegment>,
+    /// row-rule-width 属性（css-gaps-1 §column-row-rule-width，与 column 同文法）。
+    pub row_rule_width: Vec<zero_css_parser::values::RuleWidthSegment>,
+    /// column-rule-style 属性（css-gaps-1 重定义为 `<line-style-list>`；纯关键字 =
+    /// 单段列表，multicol 串化/paint 取单段平样式保形）。
+    pub column_rule_style: Vec<zero_css_parser::values::RuleStyleSegment>,
+    /// row-rule-style 属性（css-gaps-1 §column-row-rule-style，与 column 同文法）。
+    pub row_rule_style: Vec<zero_css_parser::values::RuleStyleSegment>,
     /// column-rule-color 属性（css-gaps-1 重定义为 `<line-color-list>`；纯色 =
     /// 单段列表，multicol 串化/paint 取单段平色保形）。
     pub column_rule_color: Vec<zero_css_parser::values::RuleColorSegment>,

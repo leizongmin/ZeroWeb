@@ -1,6 +1,8 @@
 # CSS 子测试控制面
 
 **2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。
+**gap-rules 刀 B 已落地（11-17 二十五轮，width/style 列表文法 + rule 简写家族 + csswg#12201 结构门）**：css-gaps-1 §column-row-rule-width/style `<line-width-list>`/`<line-style-list>` 三档同构段模型（Plain/Repeat{auto≤1,calc 计数折叠}，条目复用 multicol ColumnRuleWidth/StyleValue 保形）+ §rule-shorthand-properties `<gap-rule>` 联合简写文法（段内三维度 `||` 至多各一 + `*_raw` specified 原文保形——`hotpink` 不归一 rgb()）+ rule/row-rule/rule-width/rule-style 简写族全接线（style-system types/registry/shorthand `expand_gap_rule` 三 target 投影 + engine gCS 列表串化单段零漂移 + row 读臂 + `gap_rule_recomb_to_css` 三维 zip + paint 首段 + `<length [0,∞]>` 负 calc clamp 0）——rate-limit 多实例并发（四实例 resume 同 session）按认领板对称收敛：css-parser 两实例互补合流、engine 站停滞窗接手收口、animation 插值站 `interpolate_rule_width_value`（展开/广播/auto LCM/段数门 7 钉）同窗落地。两轮 A/B 权威账（PAGE-ONLY 零容忍，五 corpus 页集合全等）：B1 +259/−6 捕获六误配形回归——gCS 重组缺 csswg#12201「longhand 不对齐简写空串」结构门（B0 期 row-rule 未实现 vacuous 过、落地后平铺串泄出），修复 `gap_rule_lists_aligned`（段数/Plain-Repeat 同型/计数折叠口径/循环体长度全等）+ recomb 与 column_rule_shorthand_to_css 双臂失配空串 → B2 **净 +265/0 lost/0 flips/NEW-GONE 全零**（gaps +258、multicol +7、typed-om/shapes/masking SET-IDENTICAL；from-longhands 页 12 误配形全过、4 对齐形留 inline 站；B2−B1 delta +12 纯门修复归因无漂移）；单测 css-parser 3,293/0F、style-system 2,548/0F、engine lib 4,096/0F（含 animation/inline 双站在树新钉）、fmt/clippy 三 crate 净（唯一 warning=es_module peer WIP 在册连坐），归因细节与残面移交见
+[evidence 2026-11-17-gap-rules-knife-b](evidence/2026-11-17-gap-rules-knife-b.md)。
 **rule-color 列表文法刀已落地（11-16 二十四轮，刀 A，gap-rules 设计稿首刀）**：css-gaps-1
 §column-row-rule-color `<line-color-list>` 模型五站接线（css-parser parse_rule_color 新档
 Plain/Repeat 段 + auto≤1 + calc 计数折叠；style-system column/row_rule_color 双

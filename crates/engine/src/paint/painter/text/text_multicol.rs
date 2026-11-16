@@ -7,10 +7,7 @@ use zero_css_parser::values::LengthValue;
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{LineCap, StrokePrimitive};
-use zero_style_system::{
-    ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle,
-};
+use zero_style_system::{ColumnCountComputedValue, ColumnWidthComputedValue, ComputedStyle};
 
 use crate::paint::color::resolve_color_current;
 
@@ -171,9 +168,11 @@ impl super::super::Painter {
             return;
         }
 
+        // css-gaps-1 列表模型：paint 取首段首样式（列表虚线渲染后置，FIXME 挂账）。
         if matches!(
-            style.column_rule_style,
-            ColumnRuleStyleComputedValue::None | ColumnRuleStyleComputedValue::Hidden
+            zero_css_parser::values::rule_style_list_first_style(&style.column_rule_style),
+            Some(zero_css_parser::values::ColumnRuleStyleValue::None)
+                | Some(zero_css_parser::values::ColumnRuleStyleValue::Hidden)
         ) {
             return;
         }
@@ -191,11 +190,12 @@ impl super::super::Painter {
 
         // column-rule-width 关键字与 border-width 同值（CSS Multi-column：thin=1/medium=3/thick=5px，
         // 与 parse_basic.rs border-width 关键字 + Chromium 一致）。修复前 Medium=2/Thick=3 偏离。
-        let rule_w: f32 = match &style.column_rule_width {
-            ColumnRuleWidthComputedValue::Medium => 3.0,
-            ColumnRuleWidthComputedValue::Thin => 1.0,
-            ColumnRuleWidthComputedValue::Thick => 5.0,
-            ColumnRuleWidthComputedValue::Length(length) => {
+        // css-gaps-1 列表模型：paint 取首段首宽（列表分段宽度渲染后置，FIXME 挂账）。
+        let rule_w: f32 = match zero_css_parser::values::rule_width_list_first_width(&style.column_rule_width) {
+            Some(zero_css_parser::values::ColumnRuleWidthValue::Medium) => 3.0,
+            Some(zero_css_parser::values::ColumnRuleWidthValue::Thin) => 1.0,
+            Some(zero_css_parser::values::ColumnRuleWidthValue::Thick) => 5.0,
+            Some(zero_css_parser::values::ColumnRuleWidthValue::Length(length)) => {
                 let font_size_px = match style.font_size {
                     LengthValue::Px(s) => s as f32,
                     _ => 16.0,
@@ -207,6 +207,7 @@ impl super::super::Painter {
                     Some(content_h as f64),
                 ) as f32
             }
+            None => 3.0,
         };
 
         // CSS Multi-column §4.3：column-rule-color 初始 = currentColor，须按元素自身 color 解析
@@ -321,12 +322,14 @@ impl super::super::Painter {
                     continue;
                 }
                 let seg_y = content_y + seg_start;
-                match style.column_rule_style {
-                    ColumnRuleStyleComputedValue::Solid => {
+                // css-gaps-1 列表模型：首段首样式分派（列表逐段样式渲染后置，
+                // FIXME 挂账）。
+                match zero_css_parser::values::rule_style_list_first_style(&style.column_rule_style) {
+                    Some(zero_css_parser::values::ColumnRuleStyleValue::Solid) => {
                         self.primitives
                             .add_fill(Rect::new(rule_x, seg_y, rule_w, seg_h), rule_color);
                     }
-                    ColumnRuleStyleComputedValue::Dotted => {
+                    Some(zero_css_parser::values::ColumnRuleStyleValue::Dotted) => {
                         self.primitives.add_stroke(StrokePrimitive {
                             x1: rule_x + rule_w / 2.0,
                             y1: seg_y,
@@ -338,7 +341,7 @@ impl super::super::Painter {
                             cap: LineCap::Round,
                         });
                     }
-                    ColumnRuleStyleComputedValue::Dashed => {
+                    Some(zero_css_parser::values::ColumnRuleStyleValue::Dashed) => {
                         self.primitives.add_stroke(StrokePrimitive {
                             x1: rule_x + rule_w / 2.0,
                             y1: seg_y,

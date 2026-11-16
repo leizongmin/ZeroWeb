@@ -1843,10 +1843,14 @@ pub enum PropertyValue {
     BreakBefore(BreakValue),
     /// break-after 值。
     BreakAfter(BreakValue),
-    /// column-rule-width 值。
-    ColumnRuleWidth(ColumnRuleWidthComputedValue),
-    /// column-rule-style 值。
-    ColumnRuleStyle(ColumnRuleStyleComputedValue),
+    /// column-rule-width 值（css-gaps-1 `<line-width-list>`；纯值 = 单段列表）。
+    ColumnRuleWidth(Vec<zero_css_parser::values::RuleWidthSegment>),
+    /// row-rule-width 值（css-gaps-1 §column-row-rule-width，与 column 同文法）。
+    RowRuleWidth(Vec<zero_css_parser::values::RuleWidthSegment>),
+    /// column-rule-style 值（css-gaps-1 `<line-style-list>`；纯关键字 = 单段列表）。
+    ColumnRuleStyle(Vec<zero_css_parser::values::RuleStyleSegment>),
+    /// row-rule-style 值（css-gaps-1 §column-row-rule-style，与 column 同文法）。
+    RowRuleStyle(Vec<zero_css_parser::values::RuleStyleSegment>),
     /// overscroll-behavior 值。
     OverscrollBehavior(OverscrollBehaviorValue),
     /// touch-action 值。

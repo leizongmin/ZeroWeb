@@ -19,9 +19,10 @@
 use super::color::{parse_color, parse_color_with_scheme};
 use super::types::ColorValue;
 
-/// repeat() 计数：`repeat([<integer [1,∞]>] | auto, <color>#)`。calc 整数形
+/// repeat() 计数：`repeat([<integer [1,∞]>] | auto, <item>#)`。calc 整数形
 ///（`repeat(calc(5 + 3), salmon)`，computed 页钉）保留表达式，computed 串化
-/// 期折叠（[`rule_color_list_to_css`]）。
+/// 期折叠（[`rule_color_list_to_css`]）。rule-color/rule-width/rule-style
+/// 三列表档共享（css-gaps-1 计数文法同型）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RuleRepeatCount {
     /// auto —— 逐槽自动重复（插值期结构配对）。
@@ -30,6 +31,43 @@ pub enum RuleRepeatCount {
     N(u32),
     /// calc 整数形（原始实参文本，computed 期 eval 折叠整数）。
     Calc(String),
+}
+
+impl RuleRepeatCount {
+    /// computed 串化头部：auto 保 `auto`、整数直接串化、calc eval 折叠整数
+    ///（`repeat(calc(5 + 3),…)` → `repeat(8, …)`，computed 页钉）。折叠失败
+    /// 返 None（调用方回落原文）。
+    pub fn to_css_head(&self) -> Option<String> {
+        match self {
+            RuleRepeatCount::Auto => Some("auto".to_string()),
+            RuleRepeatCount::N(n) => Some(n.to_string()),
+            RuleRepeatCount::Calc(expr) => {
+                // calc 整数折叠：parse_calc → 无 ctx eval（纯 number 树）→
+                // 四舍五入整（`repeat(calc(5 + 3),…)` → 8）。
+                let v = super::types::parse_calc(expr)?;
+                Some(format!("{}", super::types::eval_calc(&v, None)?.round() as i64))
+            }
+        }
+    }
+}
+
+/// 解析 repeat() 头部计数（`auto` | `<integer [1,∞]>` | `calc(…)`）。
+/// 0/负/非整数拒（invalid 页 `repeat(0,…)`/`repeat(-1,…)` 钉）。
+pub fn parse_rule_repeat_count(head: &str) -> Option<RuleRepeatCount> {
+    let head = head.trim();
+    if head.eq_ignore_ascii_case("auto") {
+        return Some(RuleRepeatCount::Auto);
+    }
+    if head.to_ascii_lowercase().starts_with("calc(") {
+        return Some(RuleRepeatCount::Calc(head.to_string()));
+    }
+    // <integer [1,∞]>：可选 + 号整数。
+    let t = head.trim_start_matches('+');
+    let n: i64 = t.parse().ok()?;
+    if n < 1 {
+        return None;
+    }
+    Some(RuleRepeatCount::N(n as u32))
 }
 
 /// 单段：<color> 或 repeat() 块。
@@ -47,7 +85,8 @@ pub enum RuleColorSegment {
 }
 
 /// 括号感知 top-level 逗号切分（parse_extended_border 同款；深度负数/失衡拒）。
-fn split_top_level_commas(s: &str) -> Option<Vec<&str>> {
+/// rule-color/rule-width/rule-style 三列表档共享（values:: 导出）。
+pub fn split_top_level_commas(s: &str) -> Option<Vec<&str>> {
     let mut parts = Vec::new();
     let mut depth = 0i32;
     let mut start = 0;
@@ -82,28 +121,15 @@ fn parse_color_ctx(v: &str, dark: Option<bool>) -> Option<ColorValue> {
 }
 
 /// 解析单段（`<color> | repeat(<count>, <color>#)`）。repeat 内颜色为逗号
-/// 列表（空格分隔 `red blue green` 拒——invalid 页钉）；计数整数 ≥1。
+/// 列表（空格分隔 `red blue green` 拒——invalid 页钉）；计数解析走
+/// [`RuleRepeatCount::parse_head`]（整数 ≥1、auto、calc 形）。
 fn parse_rule_color_segment(seg: &str, dark: Option<bool>) -> Option<RuleColorSegment> {
     let seg = seg.trim();
     let lower = seg.to_ascii_lowercase();
     if lower.starts_with("repeat(") && lower.ends_with(')') {
         let inner = &seg[7..seg.len() - 1];
         let (head, colors_text) = inner.split_once(',')?;
-        let head = head.trim();
-        let count = if head.eq_ignore_ascii_case("auto") {
-            RuleRepeatCount::Auto
-        } else if head.to_ascii_lowercase().starts_with("calc(") {
-            RuleRepeatCount::Calc(head.to_string())
-        } else {
-            // <integer [1,∞]>：可选 + 号整数，0/负/非整数拒（invalid 页
-            // repeat(0,…)/repeat(-1,…) 钉）。
-            let t = head.trim_start_matches('+');
-            let n: i64 = t.parse().ok()?;
-            if n < 1 {
-                return None;
-            }
-            RuleRepeatCount::N(n as u32)
-        };
+        let count = parse_rule_repeat_count(head)?;
         let mut colors = Vec::new();
         for c in split_top_level_commas(colors_text)? {
             colors.push(parse_color_ctx(c, dark)?);
@@ -185,16 +211,7 @@ pub fn rule_color_list_to_css(
         match seg {
             RuleColorSegment::Plain(c) => parts.push(resolve(c)),
             RuleColorSegment::Repeat { count, colors } => {
-                let head = match count {
-                    RuleRepeatCount::Auto => "auto".to_string(),
-                    RuleRepeatCount::N(n) => n.to_string(),
-                    RuleRepeatCount::Calc(expr) => {
-                        // calc 整数折叠：parse_calc → 无 ctx eval（纯 number
-                        // 树）→ 四舍五入 u32（`repeat(calc(5 + 3),…)` → 8）。
-                        let v = super::types::parse_calc(expr)?;
-                        format!("{}", super::types::eval_calc(&v, None)?.round() as i64)
-                    }
-                };
+                let head = count.to_css_head()?;
                 let cs: Vec<String> = colors.iter().map(resolve).collect();
                 parts.push(format!("repeat({}, {})", head, cs.join(", ")));
             }

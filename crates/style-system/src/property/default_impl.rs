@@ -304,8 +304,21 @@ impl Default for ComputedStyle {
             break_after: BreakValue::Auto,
 
             // Column Rule
-            column_rule_width: ColumnRuleWidthComputedValue::Medium,
-            column_rule_style: ColumnRuleStyleComputedValue::None,
+            // css-gaps-1 列表模型：纯值 = 单段列表（width 初值 medium、style none）。
+            column_rule_width: vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )],
+            // css-gaps-1 §column-row-rule-width：row-rule-width 初值 medium 同 column。
+            row_rule_width: vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )],
+            column_rule_style: vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )],
+            // css-gaps-1 §column-row-rule-style：row-rule-style 初值 none 同 column。
+            row_rule_style: vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )],
             // CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
             // css-gaps-1 列表模型下纯色 = 单段列表。paint 层（text_multicol）经
             // resolve_color_current 解析为元素自身 color。
