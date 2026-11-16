@@ -2,54 +2,49 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 528 收口（**他流刀归因轮
-（单刀）**：rendering 流 shapepos shape-outside/
-circle-ellipse 位置文法刀 2f4fb299a（css-parser
-parse_extended_border.rs +194 + clip_path 钉 +194 +
-engine animation.rs +4 + computed_style.rs +35 +
-part03 钉 +29 + style-system apply.rs +54，s527 收口
-push 时 pull 携入）落树归因——html-semantics 面**零
-语义位移清偿，「申报=实测」谱系第二十五例（单刀，
-首个触碰 engine Rust 面 computed_style/animation 的
-对端刀）**）——码态换新 2f4fb299a，runner 换代
-127530232 → 127535432（+5,200 刀载荷，leg1 Compiling
-×4 补 engine 链，leg2 零重编）——join **stable 8514
-（8305P/202F/6T/1U）disagree 0 + l1only 0 + l2only 0
-全键双腿零分歧形回归**；vs s527 stable **NEW 4 +
-GONE 0 + flips 1 非族逐键恒等**：NEW 4 = 族
-select-home-end-pagedown-pageup 4 子测键双腿同相回
-归入 stable（**完全复位 s519/s522/s524 形**）+ flips
-1 = 族 detailed 整文件键 Fail→Timeout 回位（s527 首
-次双腿 F 后回 T/T 持位形）——**stable 8514 与 s524
-stable 逐键恒等（diff 全等验证）**，族键摆动谱
-s527 异相后第 1 轮同相回归带内不升级；账本
-evidence/2026-11-16-m2s528-shapepos-knife-attribution
-.md。**P 集账本口径双腿双 8307P 持位第 50 轮**；
-picker 刀增益键第 51 轮保持，checkmark 恒 F 带形不
-变。flaky 键双腿双 Pass——零新例第 17 轮（s512 时钟
+**状态**: Active——M2 切片 529 收口（**他流刀归因轮
+（单刀）**：editing 流 ihe6 inserthtml E/F/CEF 残族三
+臂刀 96fa8a10a（part06.js +147 三新臂 + part125 新钉
+文件 +149 + js_dom_bridge_tests.rs mod 注册 +1 +
+part124 钉改形 +8/−3，s528 收口 push 竞态后二次 pull
+携入，对端申报 corpus inserthtml 5→0F 收口）落树归
+因——html-semantics 面**零语义位移清偿，「申报=实
+测」谱系第二十六例（单刀）**）——码态换新 96fa8a10a，
+runner 换代 127535432 → 127543320（+7,888 刀载荷，
+leg1 真重建 Compiling ×6，leg2 零重编）——join
+**stable 8514（8305P/202F/6T/1U）disagree 0 + l1only 0
++ l2only 0 全键双腿零分歧形持位**；vs s528 stable
+**NEW 0 + GONE 0 + flips 0**——**stable 逐键恒等
+（diff 全等验证 IDENTICAL）**，族键 s528 同相回归形
+（detailed T/T + 4 子测 F/F）持位，摆动带内稳态形；
+账本 evidence/2026-11-16-m2s529-ihe6-knife-attribution
+.md。**P 集账本口径双腿双 8307P 持位第 51 轮**；
+picker 刀增益键第 52 轮保持，checkmark 恒 F 带形不
+变。flaky 键双腿双 Pass——零新例第 18 轮（s512 时钟
 顺延）。onblur 哨组双腿双 8P/2F（parent-label 双键
-红池照常）；dialog-overlay 哨第 57 轮 + modulepreload
-哨第 60 轮零翻红。全桥绿窗 **1669P/0F rc=0**（filtered
-2405 持位）——清单 vs s527 **set 恒等 1669，NEW 0 /
-GONE 0**（part03 钉未入 js_dom_bridge 口径实测）。
-**focus-dynamic 收窗后第 10 轮零再现**（121 键 stable
-全 Pass 双腿）。起腿窗事件：首次起腿撞对端 rendering
-流 R5732 燃点轮 corpus A/B ×3（785% CPU load 峰
-16.26）+ d46 selection 腿——按 s523 先例 kill 等待退
-出，20:54:45 窗净判定（load 1.75）重起，形谱归因基
-线干净。**挂用户门维持**：GB-20261114-VIDEO +
+红池照常）；dialog-overlay 哨第 58 轮 + modulepreload
+哨第 61 轮零翻红。全桥绿窗 **1670P/0F rc=0**（1669→
+**1670**，清单 NEW 1 = part125 test_ihtml_residual_
+pins 经 mod 注册入 js_dom_bridge 口径——**首次对端
+刀带桥清单 NEW**，此前四刀零入桥先例不同形，新钉
+PASS 绿窗零破）。**focus-dynamic 收窗后第 11 轮零再
+现**（121 键 stable 全 Pass 双腿）。起腿前窗净判定
+（load 1.28 对端零重腿，仅余 d46 selection 轻腿
+~112% 先例同构交叠 + rally query 守护 CI 轮询），窗
+内双腿零截断。**挂用户门维持**：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137（s445 已提示，不重复通
 知）。hang 观察项静默哨维持。下一步：**守成巡查**
-（对账基线换 s528 stable 8514——族键摆动观察维持：
-出位/回归/混合形按形谱记账、Pass 形首现按 NEW 记
-账；flaky 键零新例时钟顺延——再现方触发新 <4 轮升
-级判定；他流入树归因轮或轻覆盖；对端刀信号持续：
-editing 流 B4-S2 残面刀（dwuf 八变体端点规范化未接
-臂/during-and-after-dispatch 与克隆门互斥 1F/残 9F
-面余族刀）+ rendering dialog 16 红块协同面 + css 文
-法刀后续刀（shapepos 残面队列：位置串化规范刀
-~498F/round 列表完整建模/inline inherit/path() 命令
-级插值/calc 代数插值）+ wptfyi-css 残面（jsanim flip
+（对账基线换 s529 stable 8514 + 全桥清单基线换
+b529.k 1670——族键摆动观察维持：出位/回归/混合形按
+形谱记账、Pass 形首现按 NEW 记账；flaky 键零新例时
+钟顺延——再现方触发新 <4 轮升级判定；他流入树归因
+轮或轻覆盖；对端刀信号持续：editing 流 B4-S2 残面刀
+（dwuf 八变体端点规范化未接臂/during-and-after-
+dispatch 与克隆门互斥 1F——ihe6 三臂刀已落残族收
+口）+ rendering dialog 16 红块协同面 + css 文法刀后
+续刀（shapepos 残面队列：位置串化规范刀 ~498F/
+round 列表完整建模/inline inherit/path() 命令级插
+值/calc 代数插值）+ wptfyi-css 残面（jsanim flip
 Steps(Start) 等）+ ZW-3 querySelector 施工刀，落树后
 按他流刀归因轮，join 实测为准）+ 候门决项等待用户拍
 板（video P1+P2 立项 / 簇 D A2 立项 / s137）；
@@ -57,6 +52,32 @@ rendering 流 dialog 16 红块协同面（归 rendering 流记
 账）。门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47 随批落。
 
+> **▶ 承前（2026-11-16 M2 切片 528 收口）——他流刀归
+> 因轮（单刀）：rendering 流 shapepos shape-outside/
+> circle-ellipse 位置文法刀 2f4fb299a（css-parser
+> +194+clip_path 钉 +194+engine animation.rs +4+
+> computed_style.rs +35+part03 钉 +29+style-system
+> apply.rs +54）落树归因——html-semantics 面**零语义
+> 位移清偿，「申报=实测」谱系第二十五例（单刀，首个
+> 触碰 engine Rust 面 computed_style/animation 的对
+> 端刀）**；码态换新 2f4fb299a（runner 换代
+> 127530232→127535432 +5,200，leg1 Compiling ×4 补
+> engine 链，leg2 零重编）。stable 8514
+> （8305P/202F/6T/1U）全键双腿零分歧形回归；vs s527
+> stable NEW 4 + GONE 0 + flips 1 非族逐键恒等——
+> NEW 4 = 族 4 子测键同相回归入 stable（完全复位
+> s519/s522/s524 形）+ flips 1 = 族 detailed 键
+> Fail→Timeout 回位；stable 8514 与 s524 stable 逐键
+> 恒等（diff 全等验证）。P 集双腿双 8307P 持位第 50
+> 轮。flaky 零新例第 17 轮；四哨零翻红；全桥 1669P/
+> 0F 清单 set 恒等（part03 钉未入桥口径实测）。
+> focus-dynamic 收窗后第 10 轮零再现。首次起腿撞对端
+> R5732 corpus ×3（785% CPU load 峰 16.26）按 s523
+> 先例 kill 等待退出后窗净重起。挂用户门维持三项。
+> 下一步：守成巡查（对账基线换 s528 stable 8514——
+> s529 兑现：收口 push 竞态二次 pull 携入 ihe6 三臂
+> 刀按单刀归因轮，stable 8514 逐键恒等持位，全桥
+> 1670 首次刀带清单 NEW 绿窗零破）。
 > **▶ 承前（2026-11-16 M2 切片 527 收口）——守成巡查
 > 轻覆盖轮第二十一轮：pull 零携入零码变零换代，码态
 > 持位 7668cf495，runner 127530232 恒（leg1 Compiling
@@ -282,30 +303,6 @@ customizable-select-styles.css ×47 随批落。
 > s518 兑现：收口 pull 携入 d43 刀腿后落基+本轮再携
 > 两刀按三刀归因轮，上 session 429 中断 orphan 双腿
 > 在案，fresh 双腿重测全三刀）。
-
-> **▶ 承前（2026-11-16 M2 切片 516 收口）——他流刀归
-> 因轮（单刀）：editing 流 ihtml D 族占位 br 消费臂刀
-> 36f3731b0 落树归因（part06.js +144 六规则+空根臂 +
-> part124 +33 含 13 钉先红后绿，2 文件 +177）——
-> html-semantics 面**零语义位移清偿，「申报=实测」谱
-> 系第十九例**；账本
-> evidence/2026-11-16-m2s516-br-placeholder-knife-attribution.md）。
-> **码态换新 = 36f3731b0**（runner 127522952 换代
-> +8,280，leg1 真重建 Compiling ×6，leg2 同二进制零
-> 重编）。双腿 raw 8517/8517（norm 8516/8516），
-> stable 8514（8305P/203F/5T/1U）disagree 0 + l1only
-> 0 + l2only 0——全键双腿零分歧形首现完对齐形。vs
-> s515 stable（8511）：NEW 3（全族键双腿同相收敛入
-> stable：detailed 整文件键 Fail/Fail 摆动谱首轮同相
-> + base optional 子测 PageDown/PageUp 双 Fail 双入）
-> + GONE 0 + flips 0 非族逐键恒等——刀致语义位移零。
-> P 集双腿双 8307P 持位第 38 轮。flaky 零新例第 5
-> 轮；四哨零翻红；全桥 1669P/0F 清单 set 恒等（13 钉
-> 不入桥清单）。focus-dynamic 截断形观察窗第 2 轮零
-> 再现。挂用户门维持三项。下一步：守成巡查（对账基
-> 线换 s516 stable 8514——s517 兑现：pull 零携入按
-> 轻覆盖轮，join 全零分歧形连续第二轮 + detailed 键
-> 同相换位 F/F→T/T）。
 
 > **▶ 承前（2026-11-16 M2 切片 505 收口）——他流刀归因
 > 轮（单刀）：渲染流 shape()/path()/rect()/xywh() 基本
