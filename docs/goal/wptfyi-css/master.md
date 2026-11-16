@@ -7,7 +7,11 @@
 animation 插值器 + inline 简写展开 + apply 接线修复兑现——**净 +395 / 0 lost /
 0 regressed**（gaps +305/−1、multicol +91、typed-om/shapes/masking
 SET-IDENTICAL、五 corpus 页集合全等）；−1 定谳 WPT 页 expected 括号残缺
-vacuous-pass 清算形（B2 假绿揭穿，非语义回归）；双链 provenance 法证（b3 链
+vacuous-pass 清算形（B2 假绿揭穿，非语义回归）——外证闭环（11-17，`652a04f66`）：
+残缺串不进 animate() keyframes 通道（harness L210-224 只用 case 级 from/to），
+chrome-160 276/276 全过而上游 typo 仍在 = Chrome 对 repeat(auto,…) 双通道
+拒收双 vacuous（parser 缺口非 parity 目标），b3d 含终态 keyframes 校验仍
+五 corpus 零翻转（修复惰性，−1 持位非语义回归）；双链 provenance 法证（b3 链
 二进制 es_module WIP 扫入形 `e3a46906` 留参照、b3c 链钉定干净 `58ec871f` 单
 写者权威，b3wip vs b3c 五 corpus SET-IDENTICAL = es_module peer WIP 对 CSS
 corpus 零位移双证）；9 增益页残余 ~715F census 入残面队列（CSS Animations
