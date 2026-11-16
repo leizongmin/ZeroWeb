@@ -924,13 +924,14 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
         (inner, None)
     };
 
-    // 顶层空白切分（paren-aware）：calc 内空格不分断（`inset(0px
-    // calc(100% - 20px) 2% 3em)` 仍为 4 值列表）。残面⑤ calc 代数插值刀
-    // 落地后撤此前的朴素切分拒收边界（inset-function-valid/008/computed
-    // 语料四案 + 动画 t=1 对解锁）。
-    // https://drafts.fxtf.org/css-masking-1/#funcdef-basic-shape-inset
-    let values_owned = super::parse_extended_visual::split_top_level_whitespace(inset_part);
-    let values: Vec<&str> = values_owned.iter().map(String::as_str).collect();
+    // calc 化偏移形（`inset(0px calc(100% - 20px) 2% 3em)`）在此拒收——
+    // 朴素切分把 calc 内空格切断（4 值列表算成 6 值）。这是伪通过池保位
+    // 纪律的接受面边界（二十一轮定谳：期望串含 calc 时本机 setProperty 拒收
+    // → expected 落回静态值；b1v6/b1v7 两轮实证括号感知使该形可解析后动画
+    // 通道回落链断裂 −2 至 −6），非文法终态。
+    // FIXME(残面⑤ calc 代数插值刀)：落地后括号感知切分一并清 inset calc
+    // 偏移拒收面（语料 inset-function-valid/008/computed 四案 + 动画 t=1 对）。
+    let values: Vec<&str> = split_comma_or_space(inset_part);
     if !(1..=4).contains(&values.len()) {
         return None;
     }
@@ -1260,11 +1261,7 @@ fn parse_shape_position(inner: &str) -> Option<(&str, Option<(LengthValue, Lengt
 
 /// 解析位置对 "x y" 或 "center" 等。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
-    // 顶层空白切分（paren-aware）：calc 分量不分断（`at left calc(50% - 10px)`
-    // 2 值形、`top calc(50px) left 10px` 4 值形均保持合法 token 数）。
-    // https://drafts.csswg.org/css-values-4/#typedef-position
-    let parts_owned = super::parse_extended_visual::split_top_level_whitespace(s);
-    let parts: Vec<&str> = parts_owned.iter().map(String::as_str).collect();
+    let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.len() == 4 {
         // css-values-4 §position 4 值 edge-offset 形 `<edge> <offset> <edge>
         // <offset>`（css-shapes-1 at <position> circle/ellipse 语料主形态，

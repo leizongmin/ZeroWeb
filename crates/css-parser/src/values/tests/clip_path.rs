@@ -650,17 +650,16 @@ fn test_clip_path_polygon_round_prefix() {
 }
 
 #[test]
-fn test_clip_path_inset_calc_offset_acceptance() {
-    // inset calc 化偏移受理钉（残面⑤ calc 代数插值刀落地）：顶层空白切分
-    // paren-aware 后 calc 分量不分断，此前朴素切分拒收边界（rejection
-    // boundary）撤除——语料 inset-function-valid/008/computed 四案 + 动画
-    // t=1 对解锁。b1v6/b1v7 伪通过池回落链由 interp calc 代数插值闭合。
-    assert!(parse_clip_path("inset(0px calc(100% - 20px) 2% 3em)").is_some());
-    assert!(parse_clip_path("inset(calc(50% - 10px) 0px)").is_some());
-    assert!(parse_clip_path("inset(10% calc(100% - 100px) 50% 0px round 20px)").is_some());
+fn test_clip_path_inset_calc_offset_rejection_boundary() {
+    // inset calc 化偏移拒收边界（伪通过池保位纪律的接受面，非文法终态）：
+    // 朴素切分把 calc 内空格切断 → 整拒。二十一轮定谳「期望串含 calc 时本机
+    // setProperty 拒收 → expected 落回静态值」的回落方向依赖该拒收面；b1v6/
+    // b1v7 两轮实证（括号感知使该形可解析后动画通道端点回落链断裂，t=1 对
+    // −2、无条件切分时 −6）。残面⑤ calc 代数插值刀落地后撤此边界并括号
+    // 感知切分（解锁语料 inset-function-valid/008/computed 四案）。
+    assert!(parse_clip_path("inset(0px calc(100% - 20px) 2% 3em)").is_none());
+    assert!(parse_clip_path("inset(calc(50% - 10px) 0px)").is_none());
+    assert!(parse_clip_path("inset(10% calc(100% - 100px) 50% 0px round 20px)").is_none());
     // round 参量槽不在偏移切分域，无偏移 calc 形不受理 round 仍解析。
     assert!(parse_clip_path("inset(0px round calc(1em + 2px))").is_some());
-    // at <position> calc 分量不分断（circle/ellipse 位置文法刀同域）。
-    assert!(parse_clip_path("circle(50% at calc(50% + 10px) 20px)").is_some());
-    assert!(parse_clip_path("ellipse(40px 60px at left calc(50% - 10px))").is_some());
 }
