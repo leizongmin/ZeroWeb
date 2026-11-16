@@ -222,6 +222,29 @@ pin124("ihb-elm-cross-right-false", "foo<span style=color:#aBcDeF>{bar</span>baz
 pin124("ihb-ctrl-text", "foo[bar]baz", [], "abc", "fooabcbaz");
 pin124("ihb-ctrl-inline-b", "foo[bar]baz", [], "<b>abc</b>", "foo<b>abc</b>baz");
 pin124("ihb-ctrl-xmp", "<xmp>f[o]o</xmp>", [], "abc", "<xmp>fabco</xmp>");
+// ㉒ G 族 ws-pre 壳臂（2026-11-16 G 族刀 gfamily-wspre-arm——corpus
+// inserthtml :618-676 十键实录形：harness 宿主为空 contenteditable 包装
+//（tests.js :5556），fixture 根 styled div 成 host 直子壳，caret 文本在壳内
+// → 壳域解析臂路由（sc.parentNode!==host），div ∉ SPLICE 落溶解臂，全含门
+// 对 collapsed 恒 false → 整命令 no-op。臂三规则落位：全隐形前缀整段替换 /
+// pre-line 前置 [ \t] 回退 run 起点 / pre 原位拼接。控制两形锁旁路域：
+// markup 载荷（'<' 门，块载荷语义归块臂域）与非 ws-pre 壳维持既有 no-op。
+pin124("ihb-g-pre-abc", "<div style=white-space:pre>abc[]\n</div>", [],
+  "X", "<div style=\"white-space:pre\">abcX\n</div>");
+pin124("ihb-g-preline-abc", "<div style=white-space:pre-line>abc[]\n</div>", [],
+  "X", "<div style=\"white-space:pre-line\">abcX\n</div>");
+pin124("ihb-g-pre-abc-sp", "<div style=white-space:pre>abc []\n</div>", [],
+  "X", "<div style=\"white-space:pre\">abc X\n</div>");
+pin124("ihb-g-preline-abc-sp", "<div style=white-space:pre-line>abc []\n</div>", [],
+  "X", "<div style=\"white-space:pre-line\">abcX \n</div>");
+pin124("ihb-g-pre-empty", "<div style=white-space:pre>[]\n</div>", [],
+  "X", "<div style=\"white-space:pre\">X</div>");
+pin124("ihb-g-preline-empty", "<div style=white-space:pre-line>[]\n</div>", [],
+  "X", "<div style=\"white-space:pre-line\">X</div>");
+pin124("ihb-g-ctrl-markup", "<div style=white-space:pre>abc[]\n</div>", [],
+  "<b>c</b>", "<div style=\"white-space:pre\">abc\n</div>");
+pin124("ihb-g-ctrl-nonws", "<div style=color:blue>ab[]cd</div>", [],
+  "X", "<div style=\"color:blue\">abcd</div>");
 
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。

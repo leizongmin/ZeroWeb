@@ -3627,6 +3627,59 @@
       var newContent = content.slice(0, wsIn) + effFrag + content.slice(weIn);
       return { html: preText + '<' + shellTag + '>' + newContent + '</' + shellTag + '>' + postText, want: preText.length + wsIn };
     }
+    // ws-pre 壳臂（2026-11-16 G 族刀 gfamily-wspre-arm）：styled div 壳 ×
+    // white-space:pre/pre-line × 坍缩文本 caret——下方溶解臂全含门对 collapsed
+    // 恒 false → null → 整命令 no-op（corpus inserthtml 十键实录根因，普查档
+    // 2026-11-16-ihc1-residual-49f-census；设计档
+    // 2026-11-16-gfamily-wspre-shell-rootcause-knife-design）。harness 宿主为
+    // 空 contenteditable 包装（include/tests.js runConformanceTest），fixture
+    // 根 styled div 成 host 直子壳 → sc.parentNode !== host 全量路由进本函数。
+    // 门全合取保守贴语料形：壳系 host 唯一子、壳恰一文本子（即 sc）、素净载荷
+    //（无 '<'——块载荷语义归块臂域）。落位三规则：①caret 前缀无可见字符 →
+    // 整段替换（`[]\n`→`X`，块尾隐形空白被插入消费）；②pre-line 下 caret 前
+    // 紧邻 [ \t] run 且至行尾无可见 → 回退 run 起点（`abc []\n`→`abcX \n`，
+    // corpus in_array 接受形）；③pre 保持原位拼接（`abc[]\n`→`abcX\n`、
+    // `abc []\n`→`abc X\n`）。重建走 _zwIhtmlTopSpans 原标签字节（绕裸标签
+    // 重建 round-trip 失真），round-trip 门＝壳内层序列化字节恒等 + sc 文本值
+    // 恒等（so 位移映射保真）。其余形维持下方溶解臂既有域零外溢。
+    if (shell && shellTag === 'div' && range.collapsed && kids.length === 1
+        && kids[0] === shell && frag.indexOf('<') < 0 && ck.length === 1
+        && ck[0] === sc && (ck[0].nodeType === 3 || ck[0].__zwIsText)) {
+      var gwsAttrs = String((shell.getAttribute && shell.getAttribute('style')) || '');
+      var gwsM = /(?:^|;)\s*white-space\s*:\s*([a-zA-Z-]+)/.exec(gwsAttrs);
+      var gwsStyle = gwsM ? gwsM[1].toLowerCase() : '';
+      if (gwsStyle === 'pre' || gwsStyle === 'pre-line') {
+        var gwsHtml0 = String(host.innerHTML || '');
+        var gwsSpans = _zwIhtmlTopSpans(gwsHtml0);
+        if (gwsSpans.length === 1) {
+          var gwsContent = gwsHtml0.slice(gwsSpans[0].innerStart, gwsSpans[0].innerEnd);
+          if (gwsContent === String(shell.innerHTML || '')
+              && gwsContent === String(sc.nodeValue || '')) {
+            var gwsNew, gwsWant;
+            var gwsPrefix = gwsContent.slice(0, so);
+            if (!/\S/.test(gwsPrefix)) {
+              gwsNew = frag; gwsWant = 0; // ① 全隐形前缀 → 整段替换
+            } else {
+              var gwsPlace = so;
+              if (gwsStyle === 'pre-line') {
+                var gwsRun = /[ \t]+$/.exec(gwsPrefix);
+                if (gwsRun) {
+                  var gwsRunStart = so - gwsRun[0].length;
+                  var gwsRest = gwsContent.slice(so);
+                  var gwsNl = gwsRest.indexOf('\n');
+                  var gwsTail = gwsNl >= 0 ? gwsRest.slice(0, gwsNl) : gwsRest;
+                  if (!/\S/.test(gwsTail)) gwsPlace = gwsRunStart; // ② pre-line 回退
+                }
+              }
+              gwsNew = gwsContent.slice(0, gwsPlace) + frag + gwsContent.slice(gwsPlace);
+              gwsWant = gwsPlace; // ③ 原位拼接（host 唯一子=壳 → host 文本空间坐标）
+            }
+            return { html: gwsHtml0.slice(0, gwsSpans[0].innerStart) + gwsNew
+              + gwsHtml0.slice(gwsSpans[0].innerEnd), want: gwsWant };
+          }
+        }
+      }
+    }
     // 其余壳（styled 行内壳）溶解臂：凡壳内容全含于选区 [ws,we) 即整壳溶解、
     // 载荷落 ws——覆盖 sc/ec 在壳内、宿主直子文本、跨壳/双壳各端点组合；部分
     // 选区元素子/非文本兄弟不合形 → null。
