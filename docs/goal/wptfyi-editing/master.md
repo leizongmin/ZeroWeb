@@ -1,6 +1,30 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-17 · Active**。**d48 join 壳吸收深化 A+B1+B2 落树（B3 判不落，
+**2026-11-17 · Active**。**d49 可见单元删除核落树（BS/FD 塌缩界单元臂 + 缝规范化，input-events 双腿净 +75）**：part01.js +763/−39——①BS/FD walk 臂可见单元臂（img/hr 原子消费、行中 br
+消费+次行前导折叠空白吸收、行尾 br 先探后并、inline 壳端点叶消费+空壳剪枝、
+宿主缘 N 派发）+ 元素锚臂（img 后退消费、可视空块整摘、表格单元/caption 缘
+no-op、FD 可视块行尾 br 消费+块界 join）②walk 臂 ws 头/尾进入门（`   []def`/
+`abc[]   ` 形 normal 域）③E 族 pre-line \n 组（BS 末组摘除 + 派发后重读镜像）
+④B 族壳内整节点 gtr 升界+空壳剪枝 ⑤C 族 join 缝规范化（C-strip：跨容器块
+join 双侧 normal 域摘 dst 深末叶尾随/源行首前导折叠空白，FD/BS 共用，jdwsp
+4,312P 反证面 preserve/preLine 守卫挡）。**双腿专项 A/B：backspace 44→78P
+（+34）、forwarddelete 55→96P（+41），F2P=75/P2F=0**；joining-dl 共键零翻面
+（套件级 1398→1518P 含 zz-probe 探针自增与并行截断噪声不作账——ledger 级
+A/B 定为专项单文件双腿口径）。**同会话三轮闭环修复**：J 族块元素前邻
+catch-all 吞块 join（块形归块 join 臂，zz-probe-d49s 隔离实证 base 吸收/
+修前全静/修后恒等）、ce=false 子树守卫 `_zwCeInCeFalseSubtree`（BS/FD 单元
+臂不得吃不可编辑壳，FD 语料 span 形 P2F 实证）、尾随 br picker 回退取首枚
+（**语料 p/li gtr 起点契约分歧** (p1,2)/(li1,1) 单 picker 不可两全，last-br
+改动净亏损回退）。**哨兵全绿**：enginelib 4099P/0F；html-semantics 共键
+F2P=0/P2F=0；selection-CE 过滤腿 214P 恒等（全 selection 套件 >520s 守卫截，
+CE 键改动不过 Selection API 不追）。**停车场**：①文件内跨测引擎池 rebake 毒
+（zz-probe-d49r：FD elem-join 后 BS ws-seam gtr 混陈旧锚 + post 树复现旧池
+p#2 + 宿主属性全 null → _stampWs 假设证伪，毒在引擎侧 innerHTML 换代 rebake；
+语料 BS 文件无 FD key 零命中，归 master ③ generation-aware 归一刀）②pre 双
+br p 形 (p1,2) 契约未达（base 同红）③N3/I1/C5 既有红维持。证据见
+[evidence/2026-11-17-d49-visible-unit-knife.md](evidence/2026-11-17-d49-visible-unit-knife.md)。
+
+**d48 join 壳吸收深化 A+B1+B2 落树（B3 判不落，
 input-events 净 +223）**：part01.js +130/−5——①A `_zwCeJoinDstDescend`
 （11782 区）块界 join 接收容器两级下降（dst 为列表容器降末行块 li/dt/dd +
 行块唯一 p/h1-6/div 内层壳且壳内非空活内容再降；`_zwCeJoinApply` 4 调用点

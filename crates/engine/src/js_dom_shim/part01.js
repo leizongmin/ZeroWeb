@@ -11888,6 +11888,37 @@
     // 恒异 → 恒壳不受影响，accept 数组 `style="${rightWhiteSpace}"` 参数化实证）。
     var _dstWsVal = _zwCeWsOf(_shellDst);
     var _wsNeedsShell = String(_wsVal).toLowerCase() !== String(_dstWsVal).toLowerCase();
+    // d49 C 族缝规范化（wptfyi-editing ①(b) 2026-11-17）：跨块界 join 的缝两侧
+    // 折叠空白不可见（`<p>abc   </p><p>   def</p>` FD/BS 期望 content `abcdef`，
+    // gtr 界 (abc,3)/(def,3) 形——界计算在调用方先于本 strip，不受影响）。守卫：
+    // 跨容器（srcParent ≠ 落位块）、落位块为块元素、源行与落位域均 normal
+    //（preserve/pre-line 域空白可见不摘——jdwsp 左块 4,312P 反证面）；左线深
+    // 末叶尾随折叠空白 + 右线首文本节点前导折叠空白成对摘除（单侧无线尾空白
+    // 形 `abc   `+`def` / `abc`+`   def` 同式受益）。右线首节点为元素壳时不动
+    //（壳内容语料 accept 形态 d48 已调）。
+    if (srcParent !== _shellDst && _zwCeIsBlockEl(_shellDst)
+      && String(_wsVal).toLowerCase() === 'normal'
+      && String(_dstWsVal).toLowerCase() === 'normal') {
+      var _cLeaf = _zwCeDeepLeaf(_shellDst, true);
+      if (_cLeaf && (_cLeaf.nodeType === 3 || _cLeaf.__zwIsText)) {
+        var _cCtx = _zwCeWsCtx(_cLeaf.parentNode);
+        var _cLV = String(_cLeaf.nodeValue || '');
+        var _cCut = (_cCtx.preserve || _cCtx.preLine) ? 0
+          : _zwCeWsRunLen(_cLV, _cLV.length, false, false);
+        if (_cCut > 0) {
+          try { _cLeaf.nodeValue = _cLV.slice(0, _cLV.length - _cCut); } catch (_eCStrip) {}
+        }
+      }
+      var _cHead = r.nodes.length ? r.nodes[0] : null;
+      if (_cHead && (_cHead.nodeType === 3 || _cHead.__zwIsText)
+        && String(_wsVal).toLowerCase() === 'normal') {
+        var _cHV = String(_cHead.nodeValue || '');
+        var _cHCut = _zwCeWsRunLen(_cHV, 0, true, false);
+        if (_cHCut > 0) {
+          try { _cHead.nodeValue = _cHV.slice(_cHCut); } catch (_eCHStrip) {}
+        }
+      }
+    }
     var _stampWs = function (_swEl) {
       if (!_wsNeedsShell) return;
       var _swStyle = '';
@@ -12583,6 +12614,175 @@
     }
     return o;
   }
+  // —— d49 可见单元删除核共用件（wptfyi-editing ①(b) 2026-11-17）——
+  // input-events-get-target-ranges 语料契约：塌缩 caret 的可见单元枚举
+  //（行中 br/img/hr/inline 壳/空块/宿主缘）与缝空白规范化。FD/BS 双向镜像共用。
+  // ws 尾/头进入谓词：[off..len) / [0..off) 全为可折叠空白且 normal 域
+  //（preserve/pre-line 域空白可见或为行界占位，不入 walk——语料 pre 形保持文内臂）。
+  function _zwCeWsTailRun(textNode, off) {
+    var ctx = _zwCeWsCtx(textNode.parentNode);
+    if (ctx.preserve || ctx.preLine) return false;
+    var v = String(textNode.nodeValue || '');
+    if (off <= 0 || off >= v.length) return false;
+    return /^\s*$/.test(v.slice(off));
+  }
+  function _zwCeWsHeadRun(textNode, off) {
+    var ctx = _zwCeWsCtx(textNode.parentNode);
+    if (ctx.preserve || ctx.preLine) return false;
+    var v = String(textNode.nodeValue || '');
+    if (off <= 0 || off >= v.length) return false;
+    return /^\s*$/.test(v.slice(0, off));
+  }
+  // ws run 长度（pre-line 域只计空格/制表，\n 是行界占位不入 run）。
+  function _zwCeWsRunLen(v, idx, forward, preLine) {
+    var re = preLine ? /[ \t]/ : /[ \t\n\r\f]/;
+    var i = idx;
+    if (forward) { while (i < v.length && re.test(v.charAt(i))) i++; }
+    else { while (i > 0 && re.test(v.charAt(i - 1))) i--; }
+    return forward ? i - idx : idx - i;
+  }
+  // E 族 pre-line \n 组解析（FD 主臂/复读镜像共用，d49 2026-11-17）：
+  // [start..eol) 全空格/制表/\r/\f 且 v[eol]==='\n' 时返回组端——mutEnd=\n 后
+  // 空格/制表端（变异域，`abc[] \n def` 语料变异 (3)-(6) content `abcdef`）；
+  // gtrEnd=紧随第二 '\n'+空格/制表时续展（`abc[] \n \n def` gtr (3)-(8)、变异
+  // 仍 (3)-(6) content `abc\n def`），否则同 mutEnd。null=组形不成立（调用方
+  // 走原臂规则）。
+  function _zwCeFdPreLineGroup(textNode, v, start) {
+    if (!_zwCeWsCtx(textNode.parentNode).preLine) return null;
+    var eol = start;
+    while (eol < v.length && /[ \t\r\f]/.test(v.charAt(eol))) eol++;
+    if (eol >= v.length || v.charAt(eol) !== '\n') return null;
+    var mutEnd = eol + 1;
+    while (mutEnd < v.length && /[ \t]/.test(v.charAt(mutEnd))) mutEnd++;
+    var gtrEnd = mutEnd;
+    if (v.charAt(mutEnd) === '\n') {
+      gtrEnd = mutEnd + 1;
+      while (gtrEnd < v.length && /[ \t]/.test(v.charAt(gtrEnd))) gtrEnd++;
+    }
+    return { mutEnd: mutEnd, gtrEnd: gtrEnd };
+  }
+  // br 后同块首可见节点（ws 文本/br 跳过）——null=行尾 br（挡界域），
+  // hr=同缝折叠形，其余=行中 br（行合并域）。
+  function _zwCeBrFirstVisibleAfter(br) {
+    var n = br.nextSibling, guard = 0;
+    while (n && guard++ < 64) {
+      if (n.nodeType === 3 && /^\s*$/.test(String(n.nodeValue || ''))) { n = n.nextSibling; continue; }
+      if (n.nodeType === 1 && String(n.nodeName || '').toLowerCase() === 'br') { n = n.nextSibling; continue; }
+      return n;
+    }
+    return null;
+  }
+  // inline 壳判定（B 族端点）：非块、非 br 的元素子——壳端点单元消费的壳定位。
+  function _zwCeIsInlineShellEl(n) {
+    return !!(n && n.nodeType === 1
+      && String(n.nodeName || '').toLowerCase() !== 'br'
+      && !_zwCeIsBlockEl(n));
+  }
+  // ce=false 子树判定（d49 修复 2026-11-17）：单元消费臂不得吃不可编辑内容
+  //（语料 `abc[]<span contenteditable="false">def</span>ghi` FD/BS 镜像形——
+  // 基线引擎 no-op，新 inline 壳臂曾摘首单元 P2F 实证）。stopAt=宿主为界。
+  function _zwCeInCeFalseSubtree(n, stopAt) {
+    var cur = n, guard = 0;
+    while (cur && guard++ < 32) {
+      if (cur.nodeType === 1
+        && String(cur.getAttribute && cur.getAttribute('contenteditable') || '').toLowerCase() === 'false') return true;
+      if (cur === stopAt) return false;
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+  // 空 inline 壳向上剪枝（B 族叶尽后）：cur 起逐层摘「无元素子且无可见文本子」
+  // 的壳，止于 stopAt（宿主/块）；返回 caret 落点 {node, offset}（被摘壳原位）
+  // 或 null（无壳可摘）。
+  function _zwCePruneEmptyShells(cur, stopAt) {
+    var hit = null, guard = 0;
+    while (cur && cur !== stopAt && guard++ < 16) {
+      var p = cur.parentNode;
+      if (!p || p === stopAt || !_zwCeIsInlineShellEl(cur)) break;
+      var kids = cur.childNodes || [], empty = true;
+      for (var k = 0; k < kids.length; k++) {
+        var c = kids[k];
+        if (c.nodeType === 1) { empty = false; break; }
+        if ((c.nodeType === 3 || c.__zwIsText) && !/^\s*$/.test(String(c.nodeValue || ''))) { empty = false; break; }
+      }
+      if (!empty) break;
+      var idx = _zwCeNodeIndexOf(cur);
+      try { p.removeChild(cur); } catch (_ePrune) { break; }
+      hit = { node: p, offset: idx };
+      cur = p;
+      if (_zwCeIsBlockEl(p)) break;
+    }
+    return hit;
+  }
+  // N 族 no-op 派发（宿主缘/单元不可删域）：beforeinput 派发 + 塌缩 gtr
+  //（锚位已规范化）+ 零变异零 input——checkGetTargetRangesOfInputOnDoNothing
+  // 契约（bi=1、input=0、DOM 不变）。
+  function _zwCeNopDispatch(el, inputType, sn, soff) {
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, composed: true, data: null,
+      inputType: inputType, isComposing: false
+    });
+    before._zwTargetRanges = [_zwCeTargetRange(sn, soff, sn, soff, false)];
+    el.dispatchEvent(before);
+  }
+  // 可见单元消费通用执行序：pending gtr 快照（调用方置位）→ beforeinput
+  //（消费快照）→ 变异 → input。listener 取消（preventDefault）→ 零变异零 input。
+  function _zwCeUnitApply(el, inputType, mutate) {
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, composed: true, data: null,
+      inputType: inputType, isComposing: false
+    });
+    before._zwTargetRanges = __zwCePendingTargetRanges;
+    __zwCePendingTargetRanges = null;
+    if (el.dispatchEvent(before) === false) return false;
+    mutate();
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, composed: true, data: null,
+      inputType: inputType, isComposing: false
+    }));
+    return true;
+  }
+  // 可视空块判定（K 族）：子仅折叠空白文本/br/空 inline 壳（递归）——非零
+  // 可见内容（img 等原子/非空壳）即非空（`<p><img><br></p>` 走 join 形不走
+  // 空块摘除——语料 `Delete at "<p><img>{}<br></p><p>def</p>"` 契约）。
+  function _zwCeBlockVisuallyEmpty(block) {
+    var kids = block.childNodes || [], guard = 0;
+    var stack = [];
+    for (var k = 0; k < kids.length; k++) stack.push(kids[k]);
+    while (stack.length && guard++ < 256) {
+      var n = stack.pop();
+      if (n.nodeType === 3 || n.__zwIsText) {
+        if (!/^\s*$/.test(String(n.nodeValue || ''))) return false;
+        continue;
+      }
+      if (n.nodeType !== 1) continue;
+      var tag = String(n.nodeName || '').toLowerCase();
+      if (tag === 'br') continue;
+      if (_zwCeIsBlockEl(n)) return false;
+      var sub = n.childNodes || [];
+      for (var k2 = 0; k2 < sub.length; k2++) stack.push(sub[k2]);
+    }
+    return true;
+  }
+  // 原子块判定（K/N 族）：table/caption/td/th/tr 系——空块 BS/FD 前后邻为原子
+  // 块时单元不可跨删（2-way accept 面取 N no-op 形）。
+  function _zwCeIsAtomicBlock(n) {
+    if (!n || n.nodeType !== 1) return false;
+    var tag = String(n.nodeName || '').toLowerCase();
+    return tag === 'table' || tag === 'caption' || tag === 'td'
+      || tag === 'th' || tag === 'tr' || tag === 'thead' || tag === 'tbody'
+      || tag === 'tfoot' || tag === 'colgroup' || tag === 'col';
+  }
+  // caret 写回（单元消费后）：容器 idx 位塌缩（越界收敛到子数）。
+  function _zwCeSetCaretAt(container, idx) {
+    try {
+      var nr = document.createRange();
+      var cnt = (container.childNodes || []).length;
+      nr.setStart(container, idx > cnt ? cnt : idx);
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    } catch (_eCaret) {}
+  }
   var __zw_ce_delete_impl = function(sel) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
@@ -12610,17 +12810,197 @@
       if (!_sdFour && _zwCeSelectDelete(el, range, 'deleteContentBackward')) return;
       if (!_sdScText) return; // 元素锚核拒收 → 章程 silent return（d39 主簇面）
     }
+    // d49 元素锚臂（wptfyi-editing ①(b) 2026-11-17，K/N/H 族）：塌缩 caret 落
+    // 元素边界——img 后退消费、可视空块整块摘除、表格单元/caption 缘 no-op。
+    if (range.collapsed && !_sdScText && sc && sc !== el) {
+      var _bsEaOff = so | 0;
+      var _bsEaKid = _bsEaOff > 0 ? (sc.childNodes || [])[_bsEaOff - 1] : null;
+      // img 后退消费（H 族 `abc<img>{}<img>def` 界 (p,1)-(p,2) 形）：恰好一枚，
+      // gtr 父界，两侧可见空白不沾。
+      if (_bsEaKid && _bsEaKid.nodeType === 1
+        && String(_bsEaKid.nodeName || '').toLowerCase() === 'img') {
+        var _bsBiIdx = _zwCeNodeIndexOf(_bsEaKid);
+        __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _bsBiIdx, sc, _bsEaOff, false)];
+        _zwCeUnitApply(el, 'deleteContentBackward', function() {
+          try { sc.removeChild(_bsEaKid); } catch (_eBsBi) {}
+          _zwCeSetCaretAt(sc, _bsBiIdx);
+        });
+        return;
+      }
+      if (_bsEaOff === 0 && _zwCeIsBlockEl(sc)) {
+        // 表格单元/caption 域（N 族 `<td>{}<br></td>` / caption 界塌缩 (sc,0)
+        // 形）：单元界不可跨删 → N 派发。
+        var _bsCellHit = false, _bsAnc = sc;
+        while (_bsAnc && _bsAnc !== el) {
+          var _bsAncTag = String(_bsAnc.nodeName || '').toLowerCase();
+          if (_bsAncTag === 'td' || _bsAncTag === 'th' || _bsAncTag === 'caption') { _bsCellHit = true; break; }
+          _bsAnc = _bsAnc.parentNode;
+        }
+        if (_bsCellHit) { _zwCeNopDispatch(el, 'deleteContentBackward', sc, _bsEaOff); return; }
+        // 可视空块 BS（K 族 `<p>abc</p><p>{}<br></p>` 内容 `<p>abc</p>` 界
+        // (abc,3)-(p2,1) 形）：整块摘除（br 占位随块亡）。前邻为原子块
+        //（table/caption 系）或无前内容 → N 派发（2-way accept 面取 no-op 形）。
+        if (_zwCeBlockVisuallyEmpty(sc)) {
+          var _bsKPrev = _zwCeSkipWs(sc.previousSibling, true);
+          if (_bsKPrev && _bsKPrev.nodeType === 1 && !_zwCeIsAtomicBlock(_bsKPrev)) {
+            var _bsKLeaf = _zwCeDeepLeaf(_bsKPrev, true);
+            var _bsKSn, _bsKSo;
+            if (_bsKLeaf && (_bsKLeaf.nodeType === 3 || _bsKLeaf.__zwIsText)) {
+              _bsKSn = _bsKLeaf; _bsKSo = String(_bsKLeaf.nodeValue || '').length;
+            } else if (_bsKLeaf && _bsKLeaf.nodeType === 1) {
+              _bsKSn = _bsKLeaf.parentNode; _bsKSo = _zwCeNodeIndexOf(_bsKLeaf) + 1;
+            } else { _bsKSn = _bsKPrev; _bsKSo = (_bsKPrev.childNodes || []).length; }
+            __zwCePendingTargetRanges = [_zwCeTargetRange(_bsKSn, _bsKSo, sc, (sc.childNodes || []).length, false)];
+            _zwCeUnitApply(el, 'deleteContentBackward', function() {
+              var _bsKP = sc.parentNode, _bsKIdx = _zwCeNodeIndexOf(sc);
+              try { _bsKP.removeChild(sc); } catch (_eBsK) {}
+              _zwCeSetCaretAt(_bsKP, _bsKIdx);
+            });
+            return;
+          }
+          _zwCeNopDispatch(el, 'deleteContentBackward', sc, _bsEaOff);
+          return;
+        }
+      }
+      return; // 其余元素锚形（语料无）→ 章程 silent return
+    }
     if (!_sdScText) return; // 元素边界 caret 不回退
-    if (range.collapsed && so === 0) {
-      // ③ 块界 join 臂：链上找前邻（同上几何）。dst=host 级容器时要求 src 是
-      // 末子（防错序——语料形态恒满足）。
+    if (range.collapsed && (so === 0 || _zwCeWsHeadRun(sc, so))) {
+      // ③ 块界 join 臂 + 可见单元臂（d49）：链上找前邻——img/hr 原子、inline
+      // 壳端点、块界 join、宿主缘 no-op。ws 头进入（`   []def` 形 [0..so) 全折叠
+      // 空白、normal 域限定）：join 缝规范化摘 caret 侧前导空白（JoinMutate C 族），
+      // 单元消费形随变异摘除；gtr 终界=caret 下游规范化（折叠空白占界——语料
+      // `[]   def` 界 (def,3) / `  [] def` 界 (def,3) 形）。
+      var _bsHead = so > 0;
       var bn = sc, bc = sc.parentNode, bp = null;
       while (true) {
         bp = _zwCeSkipWs(bn.previousSibling, true);
         if (bp) break;
-        if (bc === el) return; // 宿主起点，无前内容
+        if (bc === el) {
+          // N 族（宿主起点 `<p>[]abc</p>` bi=1 + 塌缩界 (abc,0) + input=0）。
+          _zwCeNopDispatch(el, 'deleteContentBackward', sc, _zwCeCaretCanonical(sc, so, true));
+          return;
+        }
         bn = bc; bc = bc.parentNode;
         if (!bc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      var _bsHeadCut = _bsHead ? function() {
+        try { sc.nodeValue = String(sc.nodeValue || '').slice(so); } catch (_eBsc) {}
+      } : null;
+      // 块元素前邻不入单元臂（d49 修复 2026-11-17：`<div><p>abc</p>[]def</div>`
+      // 形 bp=p 块——单元臂 catch-all N 派发吞没 12993 块 join，语料 J 族 3 测
+      // P2F 实证 zz-probe-d49s；块形归 12992-13000 块 join 臂，与 FD 镜像一致）。
+      if (bn === sc && bp.nodeType === 1 && !_zwCeIsBlockEl(bp)
+        && bp.parentNode === bc && !_zwCeInCeFalseSubtree(bp, el)) {
+        var _bpTag = String(bp.nodeName || '').toLowerCase();
+        // img 原子（H 族）：摘 bp 一枚；gtr 父界 (bc,idx)-(bc,idx+1)；两侧空白
+        // 不沾（可见空白——input-events issue #112 反面）。
+        if (_bpTag === 'img') {
+          var _bsIIdx = _zwCeNodeIndexOf(bp);
+          __zwCePendingTargetRanges = [_zwCeTargetRange(bc, _bsIIdx, bc, _bsIIdx + 1, false)];
+          _zwCeUnitApply(el, 'deleteContentBackward', function() {
+            try { bc.removeChild(bp); } catch (_eBsi) {}
+            // img 两侧空白可见不摘（`abc<img>[] def` content `abc def` 语料形——
+            // caret 侧折叠空白保留，与 hr 块缝不可见空白反面）。
+            _zwCeSetCaretAt(bc, _bsIIdx);
+          });
+          return;
+        }
+        // hr 缝原子（I 族）：摘 hr（+紧邻前置 br 同缝双消费——`abc<br><hr>[]def`
+        // 界 (div,1)-(div,3) 形）；hr 前邻文本尾随折叠空白 + caret 侧前导空白同摘
+        //（块缝空白不可见——issue #112：`abc <hr>[]def` 界 (abc,3)-(div,2)、
+        // `abc<hr> []def` 界 (div,1)-(def,1) 形）。
+        if (_bpTag === 'hr') {
+          var _bsHIdx = _zwCeNodeIndexOf(bp);
+          var _bsHBr = bp.previousSibling;
+          var _bsHFold = !!(_bsHBr && _bsHBr.nodeType === 1
+            && String(_bsHBr.nodeName || '').toLowerCase() === 'br');
+          var _bsHBrIdx = _bsHFold ? _zwCeNodeIndexOf(_bsHBr) : 0;
+          var _bsHPrev = _bsHFold ? _bsHBr.previousSibling : bp.previousSibling;
+          var _bsHPrevWs = 0, _bsHPv = '';
+          if (_bsHPrev && (_bsHPrev.nodeType === 3 || _bsHPrev.__zwIsText)
+            && !_zwCeWsCtx(bc).preserve && !_zwCeWsCtx(bc).preLine) {
+            _bsHPv = String(_bsHPrev.nodeValue || '');
+            _bsHPrevWs = _zwCeWsRunLen(_bsHPv, _bsHPv.length, false, false);
+          }
+          __zwCePendingTargetRanges = [_zwCeTargetRange(
+            _bsHFold ? bc : (_bsHPrevWs > 0 ? _bsHPrev : bc),
+            _bsHFold ? _bsHBrIdx : (_bsHPrevWs > 0 ? _bsHPv.length - _bsHPrevWs : _bsHIdx),
+            _bsHead ? sc : bc,
+            _bsHead ? so : _bsHIdx + 1,
+            false)];
+          _zwCeUnitApply(el, 'deleteContentBackward', function() {
+            try { bc.removeChild(bp); } catch (_eBsh) {}
+            if (_bsHFold) { try { bc.removeChild(_bsHBr); } catch (_eBshb) {} }
+            if (_bsHPrevWs > 0) {
+              try { _bsHPrev.nodeValue = _bsHPv.slice(0, _bsHPv.length - _bsHPrevWs); } catch (_eBshp) {}
+            }
+            if (_bsHeadCut) _bsHeadCut();
+            _zwCeSetCaretAt(bc, _bsHFold ? _bsHBrIdx : _bsHIdx);
+          });
+          return;
+        }
+        // inline 壳端点（B 族）：摘壳内末文本叶末单元（代理对安全）；叶尽壳空
+        // → 向上剪枝空壳链。gtr：壳侧父锚 (bc,idx)，caret 侧保文本锚 (sc,so)
+        //（`a<span>b[]</span>c` 界 (p,1)-(c,0) 形）。
+        if (_zwCeIsInlineShellEl(bp)) {
+          var _bsLIdx = _zwCeNodeIndexOf(bp);
+          var _bsLeaf = _zwCeDeepLeaf(bp, true);
+          if (_bsLeaf && (_bsLeaf.nodeType === 3 || _bsLeaf.__zwIsText)) {
+            var _bsLV = String(_bsLeaf.nodeValue || '');
+            var _bsLCut = 0;
+            if (_bsLV.length) {
+              _bsLCut = 1;
+              var _bsLCp = _bsLV.charCodeAt(_bsLV.length - 1);
+              if (_bsLCp >= 0xDC00 && _bsLCp <= 0xDFFF && _bsLV.length > 1
+                && _bsLV.charCodeAt(_bsLV.length - 2) >= 0xD800
+                && _bsLV.charCodeAt(_bsLV.length - 2) <= 0xDBFF) _bsLCut = 2;
+            }
+            __zwCePendingTargetRanges = [_zwCeTargetRange(bc, _bsLIdx, sc, so, false)];
+            _zwCeUnitApply(el, 'deleteContentBackward', function() {
+              try { _bsLeaf.nodeValue = _bsLV.slice(0, _bsLV.length - _bsLCut); } catch (_eBsl) {}
+              _zwCePruneEmptyShells(bp, el);
+              if (_bsHeadCut) _bsHeadCut();
+              _zwCeSetCaretAt(bc, _bsLIdx);
+            });
+            return;
+          }
+          // 空壳：整壳消费（元素界 gtr）。
+          __zwCePendingTargetRanges = [_zwCeTargetRange(bc, _bsLIdx, bc, _bsLIdx + 1, false)];
+          _zwCeUnitApply(el, 'deleteContentBackward', function() {
+            try { bc.removeChild(bp); } catch (_bseB) {}
+            if (_bsHeadCut) _bsHeadCut();
+            _zwCeSetCaretAt(bc, _bsLIdx);
+          });
+          return;
+        }
+        // br 行界（G 族，d49 2026-11-17）：同块 bp=br——消费 br；caret 侧折叠头
+        // 空白同摘（ws 头进入 `abc<br> []def` 界 (p,1)-(def,1)、次行前导空白吸收
+        // `abc<br>[] def` 界 (p,1)-(def,1)——normal 域，content `abcdef` 形）；
+        // 无空白形界 (p,1)-(p,2)（content `abcdef`）；前侧空白可见保留
+        //（`abc <br>[]def` content `abc def` 形——行中折叠空白不占界）。
+        if (_bpTag === 'br') {
+          var _bsBrCtx = _zwCeWsCtx(sc.parentNode);
+          var _bsBrWs = _bsHead ? so
+            : ((_bsBrCtx.preserve || _bsBrCtx.preLine) ? 0
+              : _zwCeWsRunLen(String(sc.nodeValue || ''), 0, true, false));
+          var _bsBrTouch = _bsHead || _bsBrWs > 0;
+          var _bsBrIdx = _zwCeNodeIndexOf(bp);
+          __zwCePendingTargetRanges = [_zwCeTargetRange(bc, _bsBrIdx,
+            _bsBrTouch ? sc : bc, _bsBrTouch ? _bsBrWs : _bsBrIdx + 1, false)];
+          _zwCeUnitApply(el, 'deleteContentBackward', function() {
+            try { bc.removeChild(bp); } catch (_eBsb) {}
+            if (_bsHeadCut) _bsHeadCut();
+            else if (_bsBrWs > 0) {
+              try { sc.nodeValue = String(sc.nodeValue || '').slice(_bsBrWs); } catch (_eBsbw) {}
+            }
+            _zwCeSetCaretAt(bc, _bsBrIdx);
+          });
+          return;
+        }
+        // 其余元素前邻（ce=false/未知）→ N 派发（Blink 判单元不可退——塌缩界）。
+        _zwCeNopDispatch(el, 'deleteContentBackward', sc, _zwCeCaretCanonical(sc, so, true));
+        return;
       }
       if (bn === sc && !_zwCeIsBlockEl(bp)) return; // run 中段 caret（inline 前邻）
       var bdst = _zwCeIsBlockEl(bp) ? bp : bc;
@@ -12684,14 +13064,37 @@
       var _cE = _zwCeCaretCanonical(sc, _gtrE, false);
       if (_cS < _cE) { _gtrS = _cS; _gtrE = _cE; } // 全折叠空白选区保原界（不空转）
     }
-    if (v.charAt(_gtrS) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+    // d49 pre-line 域塌缩删 \n 组（E 族 BS，wptfyi-editing ①(b) 2026-11-17）：
+    // BS 摘 **末组** [组首..so)——caret 前最后一个 \n 连同其前空格/制表与组内余
+    // 空白（`abc\n []def` 界 (3,5)、`abc \n []def` 界 (3,6)、双 \n `abc \n \n
+    // []def` 界 (5,8) 摘末组 content `abc \ndef` 语料形）。守卫：组跨非空白
+    // 字符不扩（退普通单字删除——`abc\nx\ndef` 中段 x 非空白）。
+    if (range.collapsed && start === so - 1 && end === so
+      && _zwCeWsCtx(sc.parentNode).preLine) {
+      var _bsBol = v.lastIndexOf('\n', start);
+      if (_bsBol >= 0 && /^\s*$/.test(v.slice(_bsBol, so))) {
+        var _bsBolWs = _bsBol;
+        while (_bsBolWs > 0 && /[ \t]/.test(v.charAt(_bsBolWs - 1))) _bsBolWs--;
+        start = _bsBolWs; end = so;
+        _gtrS = start; _gtrE = end;
+      }
+    }
+    if (!range.collapsed && v.charAt(_gtrS) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
       while (_gtrS > 0 && /[ \t]/.test(v.charAt(_gtrS - 1))) _gtrS--;
     }
+    // d49 壳内整节点删除重锚（B 族）：collapsed 且整文本节点在 inline 壳内
+    //（`a<span>b[]</span>c` BS 界 (p,1)-(p,2) 形）——gtr 双端升壳父界。
+    var _bsWholeShell = range.collapsed && start === 0 && end === v.length
+      && _zwCeIsInlineShellEl(sc.parentNode) && sc.parentNode !== el;
+    var _bsShellP = _bsWholeShell ? sc.parentNode : null;
+    var _bsShellIdx = _bsWholeShell ? _zwCeNodeIndexOf(_bsShellP) : 0;
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE,
-      !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
+    before._zwTargetRanges = [_bsWholeShell
+      ? _zwCeTargetRange(_bsShellP.parentNode, _bsShellIdx, _bsShellP.parentNode, _bsShellIdx + 1, false)
+      : _zwCeTargetRange(sc, _gtrS, sc, _gtrE,
+        !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
     if (el.dispatchEvent(before) === false) return;
     // 传播后重读选区（input-events-during-and-after-dispatch 语料）：listener 可在
     // beforeinput 传播中改选区——target ranges 保持派发前快照，**默认动作按改后
@@ -12709,18 +13112,39 @@
       so = fr.startOffset | 0;
       start = so - 1;
       end = so;
-      // pre-line 域删 \n 连带前方空格/制表（与派发前 target range 同扩，见上方注记）。
-      if (v.charAt(start) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
-        while (start > 0 && /[ \t]/.test(v.charAt(start - 1))) start--;
+      // pre-line 域 \n 组复读镜像（d49 E 族 BS 2026-11-17——重读覆盖派发前
+      // 组端实证 zz-probe-d49e E3/E4：默认动作按改后选区应用时组形退单字符）：
+      // 重读窗 [start..so) 全折叠空白 → 组首前伸 [ \t]（与派发前组臂同端）；
+      // 非组形保留 \n 连带前方 [ \t] 旧则。
+      if (_zwCeWsCtx(sc.parentNode).preLine) {
+        var _bsReBol = v.lastIndexOf('\n', start);
+        if (_bsReBol >= 0 && /^\s*$/.test(v.slice(_bsReBol, so))) {
+          var _bsReWs = _bsReBol;
+          while (_bsReWs > 0 && /[ \t]/.test(v.charAt(_bsReWs - 1))) _bsReWs--;
+          start = _bsReWs;
+        } else if (v.charAt(start) === '\n') {
+          while (start > 0 && /[ \t]/.test(v.charAt(start - 1))) start--;
+        }
       }
     } else {
       start = _gtrS; end = _gtrE;
     }
     sc.nodeValue = v.slice(0, start) + v.slice(end);
-    var nr = document.createRange();
-    nr.setStart(sc, start);
-    nr.collapse(true);
-    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    if (_bsWholeShell) {
+      // 空壳剪枝 + caret 落被摘壳原位（B 族 BS：`a<span>b[]</span>c` → `ac`
+      // caret (p,1) 壳父位）。
+      var _bsPrune = _zwCePruneEmptyShells(_bsShellP, el);
+      var _bsPr = _bsPrune || { node: _bsShellP.parentNode, offset: _bsShellIdx };
+      var _bsNr = document.createRange();
+      _bsNr.setStart(_bsPr.node, Math.min(_bsPr.offset, (_bsPr.node.childNodes || []).length));
+      _bsNr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [_bsNr]; }
+    } else {
+      var nr = document.createRange();
+      nr.setStart(sc, start);
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    }
     el.dispatchEvent(new InputEvent('input', {
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     }));
@@ -12762,6 +13186,133 @@
       if (!_sdFourF && _zwCeSelectDelete(el, range, 'deleteContentForward')) return;
       if (!_sdScText) return; // 元素锚核拒收 → 章程 silent return
     }
+    // d49 元素锚臂（wptfyi-editing ①(b) 2026-11-17，K/N/H 族，BS 镜像）：塌缩
+    // caret 落元素边界——img 前进消费、可视空块整块摘除、可视块行尾 br 消费+
+    // join、表格单元/caption 缘 no-op。
+    if (range.collapsed && !_sdScText && sc && sc !== el) {
+      var _fdEaOff = so | 0;
+      var _fdEaKid = (sc.childNodes || [])[_fdEaOff] || null;
+      // 表格单元/caption 域（N 族 `<td>{}<br></td><td>cell2</td>` 塌缩 (cell,0)
+      // 形）：单元界不可跨删 → N 派发（bi=1 + input=0 + DOM 不变）。
+      var _fdCellHit = false, _fdAnc = sc;
+      while (_fdAnc && _fdAnc !== el) {
+        var _fdAncTag = String(_fdAnc.nodeName || '').toLowerCase();
+        if (_fdAncTag === 'td' || _fdAncTag === 'th' || _fdAncTag === 'caption') { _fdCellHit = true; break; }
+        _fdAnc = _fdAnc.parentNode;
+      }
+      if (_fdCellHit) { _zwCeNopDispatch(el, 'deleteContentForward', sc, _fdEaOff); return; }
+      // img 前进消费（H 族 `abc<img>{}<img>def` 界 (p,2)-(p,3) 形）：恰好一枚，
+      // gtr 父界，两侧可见空白不沾。
+      if (_fdEaKid && _fdEaKid.nodeType === 1
+        && String(_fdEaKid.nodeName || '').toLowerCase() === 'img') {
+        var _fdBiIdx = _zwCeNodeIndexOf(_fdEaKid);
+        __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _fdBiIdx, sc, _fdBiIdx + 1, false)];
+        _zwCeUnitApply(el, 'deleteContentForward', function() {
+          try { sc.removeChild(_fdEaKid); } catch (_eFdBi) {}
+          _zwCeSetCaretAt(sc, _fdBiIdx);
+        });
+        return;
+      }
+      if (_fdEaOff === 0 && _zwCeIsBlockEl(sc)) {
+        // 可视空块 FD（K 族 `<p>{}<br></p><p>abc</p>` 内容 `<p>abc</p>` 界
+        // (p1,0)-(abc,0) 形）：整块摘除（不并入——空块消亡后块消失）。
+        // 后邻为原子块（table/caption 系）→ N 派发（2-way accept 面取 no-op 形
+        // + 塌缩界 (sc,0)）。
+        if (_zwCeBlockVisuallyEmpty(sc)) {
+          var _fdKNext = _zwCeSkipWs(sc.nextSibling);
+          if (_fdKNext && _fdKNext.nodeType === 1 && _zwCeIsBlockEl(_fdKNext)
+            && !_zwCeIsAtomicBlock(_fdKNext)) {
+            var _fdKLeaf = _zwCeDeepLeaf(_fdKNext, false);
+            var _fdKEn = (_fdKLeaf && (_fdKLeaf.nodeType === 3 || _fdKLeaf.__zwIsText))
+              ? _fdKLeaf : _fdKNext;
+            __zwCePendingTargetRanges = [_zwCeTargetRange(sc, 0, _fdKEn, 0, false)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              var _fdKP = sc.parentNode, _fdKIdx = _zwCeNodeIndexOf(sc);
+              try { _fdKP.removeChild(sc); } catch (_eFdK) {}
+              _zwCeSetCaretAt(_fdKP, _fdKIdx);
+            });
+            return;
+          }
+          _zwCeNopDispatch(el, 'deleteContentForward', sc, _fdEaOff);
+          return;
+        }
+        // 可视块行尾 br（B1-elem/G-elem/I-elem join 形，d48 B1 元素锚镜像）：
+        // unit=br——行中 br（br 后有可见内容）→ 消费+次行前导折叠空白吸收
+        //（`<div>abc<br>{}<br>def</div>` 无语料形，G 镜像守恒）；hr 紧随同缝
+        // 双消费（`<div><img>{}<br><hr>def</div>` 界 (div,1)-(div,3) 形）；行尾
+        // br → 探后邻可并则消费+块界 join（`<p><img>{}<br></p><p>def</p>` 界
+        // (p1,1)-(def,0)、`<div><p><img>{}<br></p>def</div>` 界 (p,1)-(def,0)
+        // 形），无后邻 → N 派发（`<p><img>[]<br></p>` bi=1 塌缩 (p,1)、br 保持）。
+        var _fdBr = _fdEaKid;
+        if (_fdBr && _fdBr.nodeType === 1
+          && String(_fdBr.nodeName || '').toLowerCase() === 'br'
+          && _fdBr.parentNode === sc) {
+          var _fdBrIdx = _zwCeNodeIndexOf(_fdBr);
+          var _fdFv = _zwCeBrFirstVisibleAfter(_fdBr);
+          var _fdCtx = _zwCeWsCtx(sc);
+          if (_fdFv && _fdFv.nodeType === 1
+            && String(_fdFv.nodeName || '').toLowerCase() === 'hr'
+            && _fdFv.parentNode === sc) {
+            // I-elem 同缝折叠：br+hr 双消费（界 (sc,brIdx)-(sc,hrIdx+1)）。
+            var _fdHrIdx = _zwCeNodeIndexOf(_fdFv);
+            __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _fdBrIdx, sc, _fdHrIdx + 1, false)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              try { sc.removeChild(_fdBr); } catch (_eFdhb) {}
+              try { sc.removeChild(_fdFv); } catch (_eFdh) {}
+              _zwCeSetCaretAt(sc, _fdBrIdx);
+            });
+            return;
+          }
+          if (_fdFv) {
+            // G-elem 行中 br：消费 br + 次行前导折叠空白吸收（normal 域）。
+            var _fdGws = 0;
+            if (_fdFv.nodeType === 3 && !_fdCtx.preserve && !_fdCtx.preLine) {
+              _fdGws = _zwCeWsRunLen(String(_fdFv.nodeValue || ''), 0, true, false);
+            }
+            __zwCePendingTargetRanges = [_fdGws > 0
+              ? _zwCeTargetRange(sc, _fdBrIdx, _fdFv, _fdGws, false)
+              : _zwCeTargetRange(sc, _fdBrIdx, sc, _fdBrIdx + 1, false)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              try { sc.removeChild(_fdBr); } catch (_eFdg) {}
+              if (_fdGws > 0) {
+                try { _fdFv.nodeValue = String(_fdFv.nodeValue || '').slice(_fdGws); } catch (_eFdgw) {}
+              }
+            });
+            return;
+          }
+          // 行尾 br：探后邻可并（d48 先探后删镜像，elem 锚形）。
+          var _fdPjn = sc, _fdPjf = sc.parentNode, _fdPjok = false;
+          while (_fdPjf) {
+            if (_zwCeSkipWs(_fdPjn.nextSibling)) { _fdPjok = true; break; }
+            if (_fdPjf === el) break;
+            _fdPjn = _fdPjf; _fdPjf = _fdPjf.parentNode;
+          }
+          if (_fdPjok) {
+            var _fdJn = sc, _fdJc = sc.parentNode, _fdJx = null;
+            while (true) {
+              _fdJx = _zwCeSkipWs(_fdJn.nextSibling);
+              if (_fdJx) break;
+              if (_fdJc === el) break;
+              _fdJn = _fdJc; _fdJc = _fdJc.parentNode;
+              if (!_fdJc) break;
+            }
+            if (_fdJx) {
+              var _fdGtrEnd = _zwCeJoinEndOf(_fdJx);
+              __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _fdBrIdx,
+                _fdGtrEnd.node, _fdGtrEnd.offset, false)];
+              var _fdDst = (_fdJn === sc) ? _fdJc : _fdJn;
+              if (_zwCeJoinDispatch(el, 'deleteContentForward') === false) return;
+              try { sc.removeChild(_fdBr); } catch (_eFdb) {}
+              _zwCeJoinMutate(el, _fdDst, _fdJc, _fdJx, 'deleteContentForward', false);
+              return;
+            }
+          }
+          _zwCeNopDispatch(el, 'deleteContentForward', sc, _fdBrIdx);
+          return;
+        }
+      }
+      return; // 其余元素锚形（语料无）→ 章程 silent return
+    }
     if (!_sdScText) return;
     var v = String(sc.nodeValue || '');
     if (ec && (ec.nodeType === 3 || ec.__zwIsText) && ec !== sc) {
@@ -12787,15 +13338,145 @@
       _zwCeJoinApply(el, cdst, cc, cnx, 'deleteContentForward');
       return;
     }
-    if (range.collapsed && so >= v.length) {
-      // 块界 join 臂：链上找后邻。
+    if (range.collapsed && (so >= v.length || _zwCeWsTailRun(sc, so))) {
+      // 块界/可见单元臂（d49，wptfyi-editing ①(b) 2026-11-17）：链上找后邻——
+      // 行中 br（行合并+次行前导折叠空白吸收）、img/hr 原子（缝规范化）、inline
+      // 壳端点（叶消费+空壳剪枝）、块界 join、宿主缘 no-op。ws 尾进入（
+      // `abc[]   ` 形 [so..len) 全折叠空白、normal 域限定）：join 缝由 JoinMutate
+      // 双侧规范化；单元消费形随变异摘 caret 侧尾随空白（hr/壳——块缝空白不可
+      // 见；img/br 侧空白可见不沾）。
+      var _fdTail = so < v.length; // ws 尾进入（有尾随折叠空白随变异摘除）
+      var _fdTv = String(sc.nodeValue || '');
       var fn = sc, fc = sc.parentNode, fnx = null;
       while (true) {
         fnx = _zwCeSkipWs(fn.nextSibling);
         if (fnx) break;
-        if (fc === el) return; // 宿主终点，无后内容
+        if (fc === el) {
+          // N 族（宿主终点 `<p>abc[]</p>` bi=1 + 塌缩界 (abc,3) + input=0，
+          // checkGetTargetRangesOfInputOnDoNothing 契约）。
+          _zwCeNopDispatch(el, 'deleteContentForward', sc, _zwCeCaretCanonical(sc, so, false));
+          return;
+        }
         fn = fc; fc = fc.parentNode;
         if (!fc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      var _fdTailCut = _fdTail ? function() {
+        try { sc.nodeValue = _fdTv.slice(0, so); } catch (_eFtc) {}
+      } : null;
+      if (fn === sc && fnx.nodeType === 1 && fnx.parentNode === fc
+        && !_zwCeInCeFalseSubtree(fnx, el)) {
+        var _fnxTag = String(fnx.nodeName || '').toLowerCase();
+        // img 原子（H 族 `abc[]<img>def` 界 (p,1)-(p,2) 形）：摘一枚；两侧空白
+        // 不沾（可见空白——`abc []<img>def` content `abc def` 形）。
+        if (_fnxTag === 'img') {
+          var _fdIIdx = _zwCeNodeIndexOf(fnx);
+          __zwCePendingTargetRanges = [_zwCeTargetRange(fc, _fdIIdx, fc, _fdIIdx + 1, false)];
+          _zwCeUnitApply(el, 'deleteContentForward', function() {
+            try { fc.removeChild(fnx); } catch (_eFdi) {}
+            if (_fdTailCut) _fdTailCut();
+            _zwCeSetCaretAt(fc, _fdIIdx);
+          });
+          return;
+        }
+        // hr 缝原子（I 族）：摘 hr（+紧邻前置 br 同缝双消费——`abc[]<br><hr>def`
+        // 界 (div,1)-(div,3) 形）；后邻文本前导折叠空白同摘（`abc[]<hr> def`
+        // content `abcdef` 形——块缝空白不可见 issue #112）+ caret 侧尾随空白。
+        if (_fnxTag === 'hr') {
+          var _fdHIdx = _zwCeNodeIndexOf(fnx);
+          var _fdHBr = fnx.previousSibling;
+          var _fdHFold = !!(_fdHBr && _fdHBr.nodeType === 1
+            && String(_fdHBr.nodeName || '').toLowerCase() === 'br');
+          var _fdHBrIdx = _fdHFold ? _zwCeNodeIndexOf(_fdHBr) : _fdHIdx;
+          var _fdHAft = fnx.nextSibling, _fdHWs = 0;
+          if (_fdHAft && (_fdHAft.nodeType === 3 || _fdHAft.__zwIsText)
+            && !_zwCeWsCtx(fc).preserve && !_zwCeWsCtx(fc).preLine) {
+            _fdHWs = _zwCeWsRunLen(String(_fdHAft.nodeValue || ''), 0, true, false);
+          }
+          __zwCePendingTargetRanges = [_zwCeTargetRange(fc, _fdHBrIdx, fc, _fdHIdx + 1, false)];
+          _zwCeUnitApply(el, 'deleteContentForward', function() {
+            try { fc.removeChild(fnx); } catch (_eFdh) {}
+            if (_fdHFold) { try { fc.removeChild(_fdHBr); } catch (_eFdhb) {} }
+            if (_fdHWs > 0) {
+              try { _fdHAft.nodeValue = String(_fdHAft.nodeValue || '').slice(_fdHWs); } catch (_eFdhw) {}
+            }
+            if (_fdTailCut) _fdTailCut();
+            _zwCeSetCaretAt(fc, _fdHBrIdx);
+          });
+          return;
+        }
+        // 行中 br（G 族）+ 同缝 hr 折叠：br 后有可见内容 = 行中——hr 紧随同缝
+        // 双消费（I 族 `abc[]<br><hr>def` 形）；否则消费 br 并吸收次行前导折叠
+        // 空白（normal 域；`abc[]<br> def` 界 (p,1)-(def,1) content `abcdef`、
+        // `abc []<br>def` 界 (p,1)-(p,2) content `abc def`——caret 侧空白可见
+        // 不摘、不占界）。行尾 br 落下方 d48 B1 块（探后邻可并则消费+join）。
+        if (_fnxTag === 'br') {
+          var _fdGBrIdx = _zwCeNodeIndexOf(fnx);
+          var _fdGFv = _zwCeBrFirstVisibleAfter(fnx);
+          if (_fdGFv && _fdGFv.nodeType === 1
+            && String(_fdGFv.nodeName || '').toLowerCase() === 'hr'
+            && _fdGFv.parentNode === fc) {
+            var _fdGHrIdx = _zwCeNodeIndexOf(_fdGFv);
+            __zwCePendingTargetRanges = [_zwCeTargetRange(fc, _fdGBrIdx, fc, _fdGHrIdx + 1, false)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              try { fc.removeChild(fnx); } catch (_eFdghb) {}
+              try { fc.removeChild(_fdGFv); } catch (_eFdgh) {}
+              if (_fdTailCut) _fdTailCut();
+              _zwCeSetCaretAt(fc, _fdGBrIdx);
+            });
+            return;
+          }
+          if (_fdGFv) {
+            var _fdGWs = 0;
+            if (_fdGFv.nodeType === 3 && !_zwCeWsCtx(fc).preserve && !_zwCeWsCtx(fc).preLine) {
+              _fdGWs = _zwCeWsRunLen(String(_fdGFv.nodeValue || ''), 0, true, false);
+            }
+            __zwCePendingTargetRanges = [_fdGWs > 0
+              ? _zwCeTargetRange(fc, _fdGBrIdx, _fdGFv, _fdGWs, false)
+              : _zwCeTargetRange(fc, _fdGBrIdx, fc, _fdGBrIdx + 1, false)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              try { fc.removeChild(fnx); } catch (_eFdg) {}
+              if (_fdGWs > 0) {
+                try { _fdGFv.nodeValue = String(_fdGFv.nodeValue || '').slice(_fdGWs); } catch (_eFdgw) {}
+              }
+            });
+            return;
+          }
+          // 行尾 br → d48 B1（下块）。
+        }
+        // inline 壳端点（B 族）：摘壳内首文本叶首单元（代理对安全）；叶尽壳空
+        // → 向上剪枝空壳链。gtr：caret 侧保文本锚 (sc,so)，壳侧父锚 (fc,idx+1)
+        //（`a[]<span>b</span>c` 界 (a,1)-(p,2) 形）。
+        if (_zwCeIsInlineShellEl(fnx)) {
+          var _fdSIdx = _zwCeNodeIndexOf(fnx);
+          var _fdLeaf = _zwCeDeepLeaf(fnx, false);
+          if (_fdLeaf && (_fdLeaf.nodeType === 3 || _fdLeaf.__zwIsText)) {
+            var _fdLV = String(_fdLeaf.nodeValue || '');
+            var _fdLCut = 0;
+            if (_fdLV.length) {
+              _fdLCut = 1;
+              var _fdLCp = _fdLV.charCodeAt(0);
+              if (_fdLCp >= 0xD800 && _fdLCp <= 0xDBFF && _fdLV.length > 1
+                && _fdLV.charCodeAt(1) >= 0xDC00
+                && _fdLV.charCodeAt(1) <= 0xDFFF) _fdLCut = 2;
+            }
+            __zwCePendingTargetRanges = [_zwCeTargetRange(sc, so, fc, _fdSIdx + 1, false)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              try { _fdLeaf.nodeValue = _fdLV.slice(_fdLCut); } catch (_eFdl) {}
+              _zwCePruneEmptyShells(fnx, el);
+              if (_fdTailCut) _fdTailCut();
+              _zwCeSetCaretAt(fc, _fdSIdx);
+            });
+            return;
+          }
+          // 空壳：整壳消费（元素界 gtr）。
+          __zwCePendingTargetRanges = [_zwCeTargetRange(fc, _fdSIdx, fc, _fdSIdx + 1, false)];
+          _zwCeUnitApply(el, 'deleteContentForward', function() {
+            try { fc.removeChild(fnx); } catch (_fdseF) {}
+            if (_fdTailCut) _fdTailCut();
+            _zwCeSetCaretAt(fc, _fdSIdx);
+          });
+          return;
+        }
       }
       // d48 B1（wptfyi-editing 行尾 br 挡界 2026-11-17）：caret 尾紧邻 br 且
       // br 为所在块可见末子（后随仅 br/空白）时，br 是上游 deleteContentForward
@@ -12803,8 +13484,8 @@
       // accept `a<br>b` 实证，余 br 留缝）后按块界 join 并入次行块
       //（`<li>list-item1[]<br></li><li>list-item2</li>` 期望
       // `<li>list-item1list-item2</li>`，基线 no-op bi=0 F 实证，dil Delete
-      // 变体族）。br 后有非 br 可见内容 = 行中 br（行合并域）保守不动。
-      if (fn === sc && fnx && fnx.nodeType === 1
+      // 变体族）。br 后有非 br 可见内容 = 行中 br（上块已消费）。
+      if (fn === sc && fnx.nodeType === 1
         && String(fnx.nodeName || '').toLowerCase() === 'br'
         && fnx.parentNode === fc) {
         var _trVis = false, _tk = fc.childNodes || [];
@@ -12819,7 +13500,8 @@
         if (!_trVis) {
           // 先探后删（读游标镜像 re-resolve）：仅当消费后链上确有可并后邻才
           // 消费——末块行尾 br（`<p>abc[]<br></p>` 无后块，期望保持 `<br>`
-          // 占位，基线 no-op Pass）消费即净改 P2F，不消费走原臂 no-op。
+          // 占位 + bi=1 塌缩界 (abc,3) 语料形）→ N 派发（d49：基线 silent
+          // no-op 升 N 契约面），不消费不 join。
           var _pjn = fc, _pjf = fc.parentNode, _pjok = false;
           while (_pjf) {
             if (_zwCeSkipWs(_pjn.nextSibling)) { _pjok = true; break; }
@@ -12834,11 +13516,17 @@
               while (true) {
                 fnx = _zwCeSkipWs(fn.nextSibling);
                 if (fnx) break;
-                if (fc === el) return;
+                if (fc === el) {
+                  _zwCeNopDispatch(el, 'deleteContentForward', sc, _zwCeCaretCanonical(sc, so, false));
+                  return;
+                }
                 fn = fc; fc = fc.parentNode;
                 if (!fc) return;
               }
             }
+          } else {
+            _zwCeNopDispatch(el, 'deleteContentForward', sc, _zwCeCaretCanonical(sc, so, false));
+            return;
           }
         }
       }
@@ -12864,22 +13552,42 @@
       }
     }
     if (start === end) return;
-    // B2：target range（backspace 文内臂镜像）。pre-line 域删 \n 连带后方
-    // 空格/制表（`abc[]\n def` 语料界 (3)-(5) 形：区间与变更同扩）。
+    // B 族整叶壳（d49 镜像 BS _bsWholeShell 2026-11-17）：壳内唯一文本叶整节点
+    // 删除 → 元素界 gtr（壳父界 (p,idx)-(p,idx+1) 形）+ 叶摘除后空壳剪枝、
+    // caret 落剪枝点。
+    var _fdWholeShell = range.collapsed && start === 0 && end === v.length
+      && _zwCeIsInlineShellEl(sc.parentNode) && sc.parentNode !== el;
+    var _fdShellP = _fdWholeShell ? sc.parentNode : null;
+    var _fdShellIdx = _fdWholeShell ? _zwCeNodeIndexOf(_fdShellP) : 0;
+    // B2：target range（backspace 文内臂镜像）。E 族 pre-line \n 组（d49
+    // 2026-11-17）：[start..\n) 全折叠空白时整组删——变异端=\n 后空格/制表端
+    //（`abc[] \n def` 变异 (3)-(6) content `abcdef`、`abc[] \n \n def` 变异
+    // (3)-(6) content `abc\n def` 语料形）；gtr 双组续展至第二组端
+    //（`abc[] \n \n def` 界 (3)-(8)），起点不前推（缝空白属删除域）。非组形
+    // pre-line 域删 \n 连带后方空格/制表（原规则：区间与变更同扩）。
     var _gtrS = start, _gtrE = end;
-    if (!range.collapsed) {
-      var _cS = _zwCeCaretCanonical(sc, _gtrS, true);
-      var _cE = _zwCeCaretCanonical(sc, _gtrE, false);
-      if (_cS < _cE) { _gtrS = _cS; _gtrE = _cE; } // 全折叠空白选区保原界（不空转）
-    }
-    if (v.charAt(_gtrE - 1) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
-      while (_gtrE < v.length && /[ \t]/.test(v.charAt(_gtrE))) _gtrE++;
+    var _fdGrp = range.collapsed ? _zwCeFdPreLineGroup(sc, v, start) : null;
+    if (_fdGrp) {
+      end = _fdGrp.mutEnd;
+      _gtrS = start;
+      _gtrE = _fdGrp.gtrEnd;
+    } else if (!_fdWholeShell) {
+      if (!range.collapsed) {
+        var _cS = _zwCeCaretCanonical(sc, _gtrS, true);
+        var _cE = _zwCeCaretCanonical(sc, _gtrE, false);
+        if (_cS < _cE) { _gtrS = _cS; _gtrE = _cE; } // 全折叠空白选区保原界（不空转）
+      }
+      if (v.charAt(_gtrE - 1) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+        while (_gtrE < v.length && /[ \t]/.test(v.charAt(_gtrE))) _gtrE++;
+      }
     }
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE,
-      !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
+    before._zwTargetRanges = [_fdWholeShell
+      ? _zwCeTargetRange(_fdShellP.parentNode, _fdShellIdx, _fdShellP.parentNode, _fdShellIdx + 1, false)
+      : _zwCeTargetRange(sc, _gtrS, sc, _gtrE,
+        !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
     if (el.dispatchEvent(before) === false) return;
     // 传播后重读选区（同 __zw_ce_delete 文内臂注记：ranges 快照固定、默认动作按
     // 改后选区应用——ForwardDelete 删新位**后**一单元，代理对安全同上）。
@@ -12897,18 +13605,34 @@
         var fNext = v.charCodeAt(start + 1);
         if (fNext >= 0xDC00 && fNext <= 0xDFFF) end++;
       }
-      // pre-line 域删 \n 连带后方空格/制表（镜像 backspace 臂同扩）。
-      if (v.charAt(end - 1) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
+      // pre-line 域 \n 组（d49 组删复读镜像——重读覆盖派发前组端：[start..\n)
+      // 全折叠空白 → 变异至组端）；否则删 \n 连带后方空格/制表（原规则）。
+      var _fdReGrp = _zwCeFdPreLineGroup(sc, v, start);
+      if (_fdReGrp) {
+        end = _fdReGrp.mutEnd;
+      } else if (v.charAt(end - 1) === '\n' && _zwCeWsCtx(sc.parentNode).preLine) {
         while (end < v.length && /[ \t]/.test(v.charAt(end))) end++;
       }
     } else {
-      start = _gtrS; end = _gtrE;
+      start = _gtrS;
+      end = _fdGrp ? _fdGrp.mutEnd : _gtrE; // 组形变异端 ≠ gtr 端（双组续展形）
     }
     sc.nodeValue = v.slice(0, start) + v.slice(end);
-    var nr = document.createRange();
-    nr.setStart(sc, start);
-    nr.collapse(true);
-    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    if (_fdWholeShell) {
+      // 空壳剪枝 + caret 落被摘壳原位（B 族 FD 镜像 BS：`a<span>b[]</span>c`
+      // → `ac` caret (p,1) 壳父位）。
+      var _fdPrune = _zwCePruneEmptyShells(_fdShellP, el);
+      var _fdPr = _fdPrune || { node: _fdShellP.parentNode, offset: _fdShellIdx };
+      var _fdNr = document.createRange();
+      _fdNr.setStart(_fdPr.node, Math.min(_fdPr.offset, (_fdPr.node.childNodes || []).length));
+      _fdNr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [_fdNr]; }
+    } else {
+      var nr = document.createRange();
+      nr.setStart(sc, start);
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    }
     el.dispatchEvent(new InputEvent('input', {
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     }));
