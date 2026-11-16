@@ -33,7 +33,9 @@
 shapes +20 落 shape-margin 等通用臂新覆盖属性的 neutral 面——即刀 E 揭穿的
 neutral implicit boundary 缺口（GONE 定谳第 2 条 + 18 dn 揭穿面）的兑现。
 typedom 持位符合预期（Typed OM 不走隐式边界帧）；masking 持位（clip-path
-underlying 已在逐属性臂，剩余面非隐式边界帧形态）。
+underlying 已在逐属性臂）——其中 **neutral-key 案 177F 持位实测**（from neutral
+端点已补但 clip-path none↔shape 走 clip_interp 异构离散无插值语义），属
+clip_interp 刀残面（与跨单位 calc blend 同刀），非端点缺失形。
 2 timeout（shape-outside-018 / mask-shorthand-subproperties-reset）= A 侧同形
 持位 flake，非本刀新增。
 
