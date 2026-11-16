@@ -1,6 +1,12 @@
 # CSS 子测试控制面
 
-**2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。11-14 发布
+**2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。
+**Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：七套件
+corpus 净 **+322 零回归**（filter-effects 八页 +17~+40、motion 七页 +4~+25，DOWNS
+红线零触碰、echo 池全保护）——T 通道全死根因（同脚本轮次断言读恒先于泵首帧挂载）以
+consult-only 两世界注册表清偿，三轮迭代定谳链与残面队列见下方二十轮段与
+[evidence 2026-11-16-transition-channel-knife](evidence/2026-11-16-transition-channel-knife.md)。
+11-14 发布
 快照 **62,896 / 197,163（31.90%）**（coverage-2026-11-14，weekly cron
 4214a625d），对验收线尚余 ~119,496——较 11-10 快照（52,488 / 26.70%）
 四天净增 **+10,408**（[DC-3 刷新证据](evidence/2026-11-15-dc3-snapshot-refresh.md)）；
@@ -273,6 +279,40 @@ cubic-bezier(0,(8y−1)/6,1,·) 对称点 y(0.5)=at 精确）；engine
 apply_timing_function 四形态全支持且对称 bezier 首采样即命中，at∉[0,1]
 外推天然支持——**零新 timing 工作量，Phase 1=同步启动+gCS consult 两站**
 （详图 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md` §5）。
+**Transition 通道 gCS 同步读可见性刀已落地（11-16 二十轮，提交 3fbaaf26d）**：十八轮 §7 定谳
+的 T 通道全死根因清偿（corpus interpolation-testcommon T 测试同一脚本轮次
+setProperty(from)→gCS flush→写 transition-*+setProperty(to)→gCS 断言读，无泵帧介入
+→start_transitions 挂泵首帧→断言读恒先发生→gCS 恒落 cascaded 终值 echo）——Phase 1
+consult-only 两世界注册表（零 webview/pipeline 改动，jsanim 十轮刀已证模式镜像）：engine
+新增 transition_registry.rs（World::{Gen,View} 条目表 + per-identity LAST_STYLE
+before-change style 快照 + 登记五门含严格插值对探针 + query_core 咨询）+ callbacks.rs
+Gen 三站（前值捕获/登记/cache-hit 与 miss 双 consult 位）+ computed_style_cache.rs
+View 三站（corpus T 元素 querySelector('.target')||动态容器→handle→View 世界主战场探针
+实证）+ js_anim_registry canonicalize pub(super) 提级复用 + animation.rs
+interpolate_property_value_strict（~180 行，非插值对登记期即拒——echo 池结构性零扰动）。
+**三轮迭代定谳链**：v1 零差根因=文档级槽 diff 被 harness 两阶段结构（全部 target 先写后
+读）穿插写毁前值→per-identity LAST_STYLE 修（v2）；v2 at(1) REG 根因=共享
+apply_timing_function Steps 臂未吃 StepPosition（steps(1,start)@t=0.5 误落 0）→注册表
+本地 entry_eased（css-easing-1 §step-easing-functions，共享函数不动独立刀验证）；v3 残留
+26 REG+8 DOWNS 两类定谳=at(1) 端点序列化形差（eased==1.0 恒等 to 回落 echo）+at(1.5)
+[0,1] 四族量钳制（css-filters-1 §filter-functions：grayscale/sepia/invert/opacity 钳，
+brightness/contrast/saturate/blur/hue-rotate/drop-shadow 无界不钳）——**整体 eased≥1→None
+方案经全账扫描否决（63 例无界族 at>1 外推真增益全翻回）**。**v4 权威账 gained=322
+lost=0 regressed=0，pages_gain=15 pages_loss=0**（B0=bin-shapeout-b1v4 md5 70f90c73
+码态采认/B1v4=bin-trans-b1v4 md5 639f7bd1 七腿全量重跑 LEG-EXIT=0 ×7）：filter-effects
+八页 +17~+40（backdrop-filter-001 70→110、filter-003 107→143）、motion 七页 +4~+25
+（offset-distance 32→57），DOWNS 红线零触碰、echo 池 1,752P 全保护、offset-path 三页
+v3 8 lost 全回收。门禁：registry 单测 8/8（6 基线+eased==1 回落钉+量钳制钉）+ engine
+lib 4,068P/0F + webview lib 852P/2F 逐名对号在册环境形红（image_decoder spawn 缺件补件
+复绿 + csp_gate s348 在册）零新增 + clippy/fmt 净；全量 make test 未跑挂账=HEAD 既有
+fmt 漂移两文件（dom tests_9:455,462 / testharness:3755,3762 工作树干净反证在 HEAD）+
+peer s419 WIP es_module:2040,2164 挡门（非本刀面，按质量门禁实际影响以定向腿覆盖）。
+残面（下刀队列）：①clip-path shape() applier 臂（raw 插值全对 canon=None 恒回落——
+masking clip-path-interpolation-shape 30 登记/30 None 实证）；②transition:all 逐
+longhand 展开（FIXME(all) Phase 3）；③transition 离散翻转语义；④css-transitions corpus
+帧驱动异步面（真 TransitionClock 管线，非本刀同步读机制覆盖）；⑤overshoot 长度外推的
+共享插值器量域化精化（本刀注册表本地钳制的 Phase 2）。全案
+[evidence 2026-11-16-transition-channel-knife](evidence/2026-11-16-transition-channel-knife.md)。
 **shape-outside 门线刀已落地（11-16 十九轮，rate-limit 双 spawn 对称收敛第三例——twin 孤儿
 WIP 认领收口）**：06:06 twin 实例 5 小时限额中断，WIP 静默 >2h 无提交，按磁盘终态仲裁认领
 （孤儿核查无进程/无在飞 unit → WIP 完整性审读 11 文件连贯五站 → b1v2 二进制早于 06:03 追加
