@@ -9,8 +9,9 @@
 // li 内嵌 p、li 拆段、列表载荷嵌套、dir 族、dt/dd dl 劈裂、bare li 降级/
 // dt·dd dl 包裹/td 溶解、td 上下文溶解、hr 入 p/b、h2 劈 h1、a/nobr 同名拆段
 //（含 `<a href=/>` 未引号属性值尾 `/` 非自闭合判据）、smallcaps 非携带壳劈
-// 裂、空 li 整体换载（id 形）、旁路锁定三形（font color / span color 携带族
-// 需 override 携带后续刀——NOOP 维持；CE=false pre 链门旁路）。控制三形现役
+// 裂、空 li 整体换载（id 形）、携带族 override carry 四形（font/span color 壳
+// × swcss true/false——2026-11-16 携带族刀，swcss true → span style rgb 形、
+// false → font color hex 形）、CE=false pre 链门旁路。控制三形现役
 // 绿路径恒一（纯文本/行内 b 载荷走既有内联臂、xmp rawtext 壳走轴二壳臂）。
 // 注：td 表格形语料期望含 tbody——bridge parser 已合成（该键可达语料真值）。
 // marker 剥离/caret 语义照抄语料 include/tests.js setupDiv（part122/part123
@@ -179,13 +180,20 @@ pin124("ihb-smallcaps-split", "<span style=font-variant:small-caps>foo[]bar</spa
 pin124("ihb-empty-li-replace", "<ol id=\"old\"><li id=\"li0\">{}<br></ol>", [],
   "<ol id=\"new\"><li id=\"li1\">abc</li><li id=\"li2\">def</li></ol>",
   "<ol id=\"old\"><li id=\"li1\">abc</li><li id=\"li2\">def</li></ol>");
-// ⑲ 旁路锁定：携带族 NOOP（需 override 携带，后续刀）；CE=false pre 块臂
-// 旁路（tTag pre 非劈裂域）落既有轴二 pre 壳臂现役 got——语料该键仍红，
-// 钉测锁现役行为防漂移。
-pin124("ihb-bypass-font-carry", "<font color=blue>foo[]bar</font>", [DV], "<p>abc",
-  "<font color=\"blue\">foobar</font>");
-pin124("ihb-bypass-span-carry", "<span style=color:blue>foo[]bar</span>", [DP], "<p>abc",
-  "<span style=\"color:blue\">foobar</span>");
+// ⑲ 携带族 override carry（2026-11-16 携带族刀——corpus inserthtml 8 键实录
+// 形：swcss true → span style rgb 形、false → font color hex 形，载荷包壳在
+// 块元素内）；CE=false pre 块臂旁路（tTag pre 非劈裂域）落既有轴二 pre 壳臂
+// 现役 got——语料该键仍红，钉测锁现役行为防漂移。
+pin124("ihb-carry-font-false", "<font color=blue>foo[]bar</font>", [DV], "<p>abc",
+  "<font color=\"blue\">foo</font><p><font color=\"#0000ff\">abc</font></p><font color=\"blue\">bar</font>");
+pin124("ihb-carry-span-false", "<span style=color:blue>foo[]bar</span>", [DP], "<p>abc",
+  "<span style=\"color:blue\">foo</span><p><font color=\"#0000ff\">abc</font></p><span style=\"color:blue\">bar</span>");
+pin124("ihb-carry-font-true", "<font color=blue>foo[]bar</font>",
+  [["stylewithcss", "true"], DV], "<p>abc",
+  "<font color=\"blue\">foo</font><p><span style=\"color:rgb(0, 0, 255)\">abc</span></p><font color=\"blue\">bar</font>");
+pin124("ihb-carry-span-true", "<span style=color:blue>foo[]bar</span>",
+  [["stylewithcss", "true"], DP], "<p>abc",
+  "<span style=\"color:blue\">foo</span><p><span style=\"color:rgb(0, 0, 255)\">abc</span></p><span style=\"color:blue\">bar</span>");
 pin124("ihb-bypass-ce-pre", "<pre contenteditable=\"false\"><span contenteditable>[1234]</span></pre>",
   [], "<pre>abc</pre>",
   "<pre contenteditable=\"false\"><span contenteditable=\"\"><pre>abc</pre></span></pre>");

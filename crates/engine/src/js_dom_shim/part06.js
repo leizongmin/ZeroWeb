@@ -3681,6 +3681,39 @@
     return frag;
   }
 
+  // 携带族 override 色值提取（2026-11-16 ihtml 携带族刀）：劈裂壳 font color
+  // attr / span·font style color 声明 → 载荷 override 携带包壳（swcss true →
+  // span style rgb 形、false → font color hex 形——语料 inserthtml 8 键实录形，
+  // _zwVaNormalizeCssColor/_zwVaParseSimpleColor 同 forecolor 序列化口径）。
+  // 色值不可解析、face/size attr 或 font-family/font-size style 声明同壳 →
+  // null（维持旁路——face/size 携带域与混合壳语义未实证，后续刀）。font-variant
+  // 类非携带样式不影响取色（劈裂面放行形，见 smallcaps 控制钉）。
+  function _zwIhtmlCarryOverrideOpen(tOpen) {
+    var colorVal = null, styleVal = null;
+    var mC = /\scolor\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/.exec(tOpen);
+    if (mC) {
+      colorVal = String(mC[1] != null ? mC[1] : (mC[2] != null ? mC[2] : mC[3])).trim();
+    } else {
+      var mS = /\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(tOpen);
+      styleVal = mS ? String(mS[1] != null ? mS[1] : mS[2]) : null;
+      if (styleVal) {
+        var mD = /(?:^|;)\s*color\s*:\s*([^;]+)/.exec(styleVal);
+        colorVal = mD ? mD[1].trim() : null;
+      }
+    }
+    if (!colorVal) return null;
+    if (/\s(face|size)\s*=/i.test(tOpen)) return null;
+    if (styleVal && /(?:^|;)\s*(?:font-family|font-size|font)\s*:/i.test(styleVal)) return null;
+    if (_zwVaCssFlag()) {
+      var rgb = _zwVaNormalizeCssColor(colorVal);
+      if (!rgb) return null;
+      return { open: '<span style="color:' + rgb + '">', close: '</span>' };
+    }
+    var hex = _zwVaParseSimpleColor(colorVal);
+    if (!hex) return null;
+    return { open: '<font color="' + hex + '">', close: '</font>' };
+  }
+
   // 文本空间 → innerHTML 串偏移·起点版（want = 选区首字符前：返回第 want
   // 个文本字面的串位；want=0 落首文本字面而非串首标签前）。标签串零文本贡
   // 献跳过、实体记 1（既有 textToHtmlOffset 实体口径同款；该版逐字符计数把
@@ -4046,18 +4079,31 @@
           if (rootTag !== tTag) return false;
           repl = tClose + fragC + tOpen;
         } else if (BLOCK_T[rootTag]) {
-          // carry 型样式壳 × 素净载荷 → 旁路（font color / span color 家族
-          // swcss=false 变体需 override carry，后续刀；payload 自带 style 或
-          // 壳仅 font-variant 类非 carry 样式则放行）。
-          if ((tTag === 'font' || tTag === 'span')
-              && !/style\s*=|color\s*=|face\s*=|size\s*=/.test(fragInner)
+          // carry 型样式壳 × 素净载荷：color carry 接管（font color / span
+          // color 家族 override 携带，`_zwIhtmlCarryOverrideOpen` 按 swcss 旗
+          // 定包壳形，包壳在载荷块根内部包住内联内容——语料 inserthtml 8 键
+          // 实录形 `<p><span style=color…>abc</span></p>`）。carry 域限内容模
+          // 型为行内的块根（p/div/h1-h6/blockquote）；li/dt/dd/list/table/hr
+          // 载荷域、face/size 混合壳、色值不可解析维持旁路；payload 自带
+          // style 或壳仅 font-variant 类非 carry 样式则放行走通用劈裂
+          //（smallcaps 形）。
+          var plainFragB = !/style\s*=|color\s*=|face\s*=|size\s*=/.test(fragInner);
+          var carryCo = (plainFragB
+              && !!({ p: 1, div: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1,
+                h6: 1, blockquote: 1 })[rootTag]
+              && (tTag === 'font' || tTag === 'span'))
+            ? _zwIhtmlCarryOverrideOpen(tOpen) : null;
+          if (plainFragB && !carryCo
               && (/\s(color|face|size)\s*=/.test(tOpen)
                   || (/\sstyle\s*=["']/.test(tOpen)
                       && /(^|[^-])(color|font-family|font-size|font)\s*:/.test(tOpen)))) {
             return false;
           }
           var effFragB = fragC;
-          if (rootTag === 'li') {
+          if (carryCo) {
+            effFragB = fragC.slice(0, rootSpan.openEnd) + carryCo.open + fragInner
+              + carryCo.close + fragC.slice(rootSpan.innerEnd);
+          } else if (rootTag === 'li') {
             var sepB2 = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
             effFragB = '<' + sepB2 + '>' + fragInner + '</' + sepB2 + '>';
           } else if ((rootTag === 'dt' || rootTag === 'dd')
