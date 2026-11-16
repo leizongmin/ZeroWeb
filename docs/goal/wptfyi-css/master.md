@@ -1,6 +1,26 @@
 # CSS 子测试控制面
 
 **2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。
+**rule-color 列表文法刀已落地（11-16 二十四轮，刀 A，gap-rules 设计稿首刀）**：css-gaps-1
+§column-row-rule-color `<line-color-list>` 模型五站接线（css-parser parse_rule_color 新档
+Plain/Repeat 段 + auto≤1 + calc 计数折叠；style-system column/row_rule_color 双
+Vec<RuleColorSegment> + 白名单 +2 + VALIDATED 22→25 裁决臂序位 + expand_rule_color 简写；
+twin amend 增补 rule-color 简写 apply 臂 +7；engine gCS 单段平色零漂移串化 + row/rule 读臂
++ paint 首段首色保形；验收债 shape-margin/threshold 复位臂两臂）——WIP 携入的 inset/position
+paren-aware 切分按残面⑤未闭环定谳撤回（`2de00fcad`：masking clip-path-interpolation −74、
+shapes 混合净 −4，合计 −78，b1v6/b1v7 回落链断裂先例第三次复现；拒收边界态恢复，clip_path
+50 钉 rejection 全绿）。权威账链（final 单写者独占窗，b1v3 双写者污染目录废弃）：五套件
+**净 +148 / 0 lost / 0 regressed，页集合全等**——gaps 75=75 +146（359→505）、multicol
+91=91 +2、typed-om/shapes/masking 三护栏 SET-IDENTICAL。单测 css-parser 钉 4、
+style-system 2,547/0F、engine lib 4,076/0F 全绿，fmt/clippy 三 crate 净；bench-gate 定向
+（bench2，三 crate）microbench **3/3 PASS** + perf-gate **rc=0**（绝对预算过门，基线
+硬件错配 WARN 在册）；make test 拆腿收口（mkt5，es_module stash 净树）：刀面三
+crate 全绿（3,280/2,517/4,076 全 0F），唯一红 SW module_update（page-runtime:3782）
+= 在册账 script-sandbox 流真实红（纯 HEAD solo 复现定谳，止腿处）。
+残面：刀 B width-list ~684F、color 真
+插值池 ~412F、刀 D inset-cap/junction ~1.7k、残面⑤ calc 代数插值（承重边界重撤硬前置），
+见
+[evidence 2026-11-16-rule-color-knife](evidence/2026-11-16-rule-color-knife.md)。
 **shape-outside/circle-ellipse 位置文法刀已落地（11-16 二十二轮，rate-limit 中断轮 twin
 孤儿 WIP 认领收口）**：css-values-4 position 轴别严格文法（PosComp 四类 + y 首词对换 +
 4 值缘偏移百分比补数）+ engine 缺省分量串化（circle closest-side 省略/ellipse 双缺省
