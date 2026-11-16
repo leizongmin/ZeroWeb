@@ -1236,6 +1236,18 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // 渐变面 None 时回落 image-set calc 折叠臂（g40），两臂互斥补全。
         "background-image" => super::serialize_gradient::canonicalize_background_image_specified(v)
             .or_else(|| fold_image_set_specified(v)),
+        // css-shapes-2 基本形状四兄弟（shape()/path()/rect()/xywh()）声明值
+        // canonical 串化（shape-function-valid `from 0 0` → `0px 0px`、尾空白
+        // 剥除、arc 修饰 canonical 序语料钉面）：parse 失败 None 保留原文
+        //（invalid 形仍拒）；inset/circle/ellipse/polygon 返 None 走既有
+        // 原文通道零漂移。含物理绝对单位（pt/pc/cm/mm/in/Q）的值跳过
+        // canonical——共享解析器 parse 期折 px（types.rs:3224 同族），声明级
+        // canonical 无法保原单位形，回落原文通道（CSSOM specified 保形）。
+        // https://drafts.csswg.org/css-shapes-2/#serializing-basic-shape
+        "clip-path" if !super::parse_basic_shape::has_physical_length_unit(v) => {
+            super::parse_extended_border::parse_clip_path(v)
+                .and_then(|c| super::parse_basic_shape::clip_path_value_to_css(&c))
+        }
         _ => None,
     }
 }

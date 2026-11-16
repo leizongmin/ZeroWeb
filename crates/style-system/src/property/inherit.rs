@@ -1175,6 +1175,28 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.individual_scale = None;
             true
         }
+        // CSS Motion Path offset 簇（css-motion-1，非继承）spec 初始：
+        // path none / distance 0 / rotate auto / anchor auto。
+        "offset-path" => {
+            style.offset_path = None;
+            true
+        }
+        "offset-distance" => {
+            style.offset_distance = Some(LengthValue::Px(0.0));
+            true
+        }
+        "offset-rotate" => {
+            style.offset_rotate = Some(OffsetRotateValue::Auto);
+            true
+        }
+        "offset-anchor" => {
+            style.offset_anchor = None;
+            true
+        }
+        "offset-position" => {
+            style.offset_position = Some(OffsetPositionValue::Normal);
+            true
+        }
         "perspective" => {
             style.perspective = default_style.perspective;
             true
@@ -1368,6 +1390,13 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         // Column Rule
+        // 简写 `initial`/`unset`：三子属性槽一起回落（CSS Multicol §6.2）。
+        "column-rule" => {
+            style.column_rule_width = default_style.column_rule_width;
+            style.column_rule_style = default_style.column_rule_style;
+            style.column_rule_color = default_style.column_rule_color;
+            true
+        }
         "column-rule-width" => {
             style.column_rule_width = default_style.column_rule_width;
             true
@@ -1645,6 +1674,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "clip-path" => {
             style.clip_path = default_style.clip_path;
+            true
+        }
+        "shape-outside" => {
+            style.shape_outside = default_style.shape_outside.clone();
             true
         }
         "border-shape" => {

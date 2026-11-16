@@ -15,6 +15,9 @@ use std::collections::HashMap;
 
 // R5191：transform 函数列表插值（css-transforms-1 §13.2 unmatrix + 2D 函数逐参数）。
 mod transform_interp;
+// wptfyi-css 基本形状族刀（css-shapes-2 §interpolating-shape）：clip-path 同构
+// 逐分量插值（inset/circle/ellipse/polygon/shape/path/rect/xywh）。
+mod clip_interp;
 // M2-S1b：可合成动画声明导出（compositor-animation-continuity，renderer → compositor 采样域）。
 pub mod compositor_export;
 // M2-S3c：动画 transform 命中修正提供者槽（renderer 注册全仿射，hit_test 逆映射点测）。
@@ -24,7 +27,7 @@ use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
     AnimationDirectionValue, AnimationFillModeValue, LengthValue, TimingFunctionValue, TransformFunction,
 };
-use zero_style_system::{ComputedStyle, FilterComputedValue};
+use zero_style_system::{ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue};
 
 /// 关键帧点 — 某个时间进度处的属性快照。
 #[derive(Debug, Clone)]
@@ -275,6 +278,52 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
     if name == "transform" {
         return Some(crate::js_dom_bridge::computed_style::transform_to_css(&style.transform));
     }
+    // wptfyi-css 基本形状族刀：clip-path underlying（隐式边界帧补键与
+    // neutral 单帧语义同源——css-animations-1 §keyframes）。
+    if name == "clip-path" {
+        let font = match style.font_size {
+            LengthValue::Px(v) => v,
+            _ => 16.0,
+        };
+        return Some(crate::js_dom_bridge::computed_style::clip_path_to_css(
+            &style.clip_path,
+            font,
+        ));
+    }
+    // CSS Motion Path offset 簇 underlying（css-motion-1；wptfyi-css offset-* 刀）：
+    // 声明值序列化，声明缺席落 spec 初始（0px / auto / auto / none）。
+    match name {
+        "offset-path" => {
+            return Some(style.offset_path.clone().unwrap_or_else(|| "none".to_string()));
+        }
+        "offset-distance" => {
+            return Some(match style.offset_distance.as_ref() {
+                Some(LengthValue::Percentage(p)) => format!("{p}%"),
+                Some(LengthValue::Px(v)) => format!("{v}px"),
+                _ => "0px".to_string(),
+            });
+        }
+        "offset-rotate" => {
+            return Some(offset_rotate_str(style.offset_rotate));
+        }
+        "offset-anchor" => {
+            return Some(match &style.offset_anchor {
+                Some((x, y)) => format!("{} {}", offset_len_str(x), offset_len_str(y)),
+                None => "auto".to_string(),
+            });
+        }
+        "offset-position" => {
+            return Some(match style.offset_position.as_ref() {
+                Some(OffsetPositionValue::Normal) => "normal".to_string(),
+                Some(OffsetPositionValue::Auto) => "auto".to_string(),
+                Some(OffsetPositionValue::Position(x, y)) => {
+                    format!("{} {}", offset_len_str(x), offset_len_str(y))
+                }
+                None => "normal".to_string(),
+            });
+        }
+        _ => {}
+    }
     let declared = match name {
         "translate" => style.individual_translate.as_ref(),
         "rotate" => style.individual_rotate.as_ref(),
@@ -455,6 +504,49 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 format!("{:.4} {:.4}", sx, sy)
             }
         }
+        // CSS Motion Path offset 簇插值（css-motion-1；wptfyi-css offset-* 刀）：
+        // distance = length-percentage 同单位线性（混合单位离散切换）；rotate = 纯
+        // 角度形线性、auto/reverse 关键字侧离散；anchor = position 对同单位线性；
+        // path 离散。离散边界 css-values-4 §8.5.6（≥ 0.5 → to）。
+        "offset-distance" => match (parse_len_pct_val(from), parse_len_pct_val(to)) {
+            (Some((fv, fu)), Some((tv, tu))) if fu == tu => {
+                format!("{:.2}{}", lerp(fv, tv, t), fu)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        "offset-rotate" => match (parse_offset_rotate_deg(from), parse_offset_rotate_deg(to)) {
+            (Some(fa), Some(ta)) => format!("{:.2}deg", lerp(fa, ta, t)),
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        "offset-anchor" => match (parse_len_pair_pct(from), parse_len_pair_pct(to)) {
+            (Some((fx, fy)), Some((tx, ty))) if fx.1 == tx.1 && fy.1 == ty.1 => {
+                format!("{:.2}{} {:.2}{}", lerp(fx.0, tx.0, t), fx.1, lerp(fy.0, ty.0, t), fy.1)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        // offset-position = normal | auto | <position>：position 对同单位线性
+        //（px/% 各自保单位），normal/auto 端点或跨形离散（css-values-4 §8.5.6
+        // ≥0.5 → to；关键字/全局关键字端点组 WPT 期望离散翻转实测一致）。
+        "offset-position" => match (parse_len_pair_pct(from), parse_len_pair_pct(to)) {
+            (Some((fx, fy)), Some((tx, ty))) if fx.1 == tx.1 && fy.1 == ty.1 => {
+                format!("{:.2}{} {:.2}{}", lerp(fx.0, tx.0, t), fx.1, lerp(fy.0, ty.0, t), fy.1)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        // offset-path：ray↔ray 同 ray-size 角度线性、shape↔shape（coord-box
+        // 后缀一致）逐命令插值、path↔path 逐段插值（clip_interp 共享文法通道
+        // ——css-motion-1 §offset-path + css-shapes-2 §shape）；异构/异后缀
+        // 离散切换。发射走 chrome-canonical fmt（gCS offset-path 臂 verbatim
+        // 无 reparse 归一，见 computed_style.rs）。
+        "offset-path" => match clip_interp::interpolate_offset_path(from, to, t) {
+            Some(v) => v,
+            None if t >= 0.5 => to.to_string(),
+            None => from.to_string(),
+        },
         // R4272（filter-effects-1 #animation）：filter 函数列表插值——同构列表逐函数
         // 数值插值；一侧为 none 时按另一侧函数序列展开为初始值列表；异构（含
         // drop-shadow）回落离散切换。
@@ -511,6 +603,13 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 _ => from.to_string(),
             }
         }
+        // wptfyi-css 基本形状族刀（css-shapes-2 §interpolating-shape）：clip-path
+        // 同构逐分量插值（clip_interp）；异构/单位失配/calc 端点离散切换。
+        "clip-path" => match clip_interp::interpolate_clip_path(from, to, t) {
+            Some(v) => v,
+            None if t >= 0.5 => to.to_string(),
+            None => from.to_string(),
+        },
         _ => {
             // 不支持插值的属性：离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
             if t >= 0.5 { to.to_string() } else { from.to_string() }
@@ -748,6 +847,85 @@ fn parse_scale_pair(s: &str) -> (f64, f64) {
     let x: f64 = parts.first().and_then(|p| p.parse().ok()).unwrap_or(1.0);
     let y: f64 = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(x);
     (x, y)
+}
+
+// ── CSS Motion Path offset 簇（css-motion-1；wptfyi-css offset-* 刀）辅助 ──
+
+/// offset-distance/anchor 值解析：(数值, 单位)——仅收 px/%（em 形 apply 期已绝对化
+/// 为 px；其余单位/数学形离散回落，corpus 端点以 px/% 为主）。
+fn parse_len_pct_val(s: &str) -> Option<(f64, String)> {
+    let s = s.trim();
+    if let Some(v) = s.strip_suffix('%') {
+        return v.trim().parse::<f64>().ok().map(|n| (n, "%".to_string()));
+    }
+    s.strip_suffix("px")
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .map(|n| (n, "px".to_string()))
+}
+
+/// offset-anchor `X Y` 对解析。
+fn parse_len_pair_pct(s: &str) -> Option<((f64, String), (f64, String))> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    Some((parse_len_pct_val(parts[0])?, parse_len_pct_val(parts[1])?))
+}
+
+/// offset-rotate 纯角度形（`<angle>` deg）严格解析——auto/reverse 关键字返 None
+/// （插值期离散切换判定用）。
+fn parse_offset_rotate_deg(s: &str) -> Option<f64> {
+    s.trim().strip_suffix("deg").and_then(|v| v.trim().parse::<f64>().ok())
+}
+
+/// offset-rotate 值串化（underlying/端点发射；auto/reverse 关键字系离散面）。
+fn offset_rotate_str(v: Option<OffsetRotateValue>) -> String {
+    match v {
+        None | Some(OffsetRotateValue::Auto) => "auto".to_string(),
+        Some(OffsetRotateValue::Reverse) => "reverse".to_string(),
+        Some(OffsetRotateValue::Angle(deg)) => format!("{deg}deg"),
+        Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {deg}deg"),
+    }
+}
+
+/// offset-anchor 长度分量串化（underlying 发射；残余相对单位按 0px 近似在册）。
+fn offset_len_str(v: &LengthValue) -> String {
+    match v {
+        LengthValue::Percentage(p) => format!("{p}%"),
+        LengthValue::Px(n) => format!("{n}px"),
+        LengthValue::Em(n) => format!("{n}em"),
+        _ => "0px".to_string(),
+    }
+}
+
+/// (数值, 单位) → LengthValue（apply 写回）。
+fn offset_len_from(n: f64, unit: &str) -> LengthValue {
+    if unit == "%" {
+        LengthValue::Percentage(n)
+    } else {
+        LengthValue::Px(n)
+    }
+}
+
+/// offset-rotate 计算值形解析（apply 写回）：auto | reverse | <angle> |
+/// auto <angle>；非法原文 → Auto 近似（fail-soft，与 scale 无单位回落同风格）。
+fn parse_offset_rotate_computed(value: &str) -> Option<OffsetRotateValue> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(OffsetRotateValue::Auto);
+    }
+    if v.eq_ignore_ascii_case("reverse") {
+        return Some(OffsetRotateValue::Reverse);
+    }
+    let mut parts = v.split_whitespace();
+    let first = parts.next()?;
+    if first.eq_ignore_ascii_case("auto") {
+        return parse_offset_rotate_deg(parts.next()?).map(OffsetRotateValue::AutoAngle);
+    }
+    parse_offset_rotate_deg(first).map(OffsetRotateValue::Angle)
 }
 
 /// RGBA 颜色（0-255 范围）。
@@ -1525,6 +1703,46 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.individual_scale = Some(f);
             }
         }
+        // CSS Motion Path offset 簇写回（css-motion-1；wptfyi-css offset-* 刀）——
+        // 与 apply_advanced 静态声明同一语义（distance px/% 直存，path path() 原文）。
+        // 基本形状族刀：插值发射值与静态 apply 同文法裁决单点（parse_clip_path
+        // ——ray/基本形状全族/coord-box 后缀，css-shapes-2），verbatim 存。
+        "offset-path" => {
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("none") {
+                style.offset_path = None;
+            } else if (v.to_ascii_lowercase().starts_with("path(") && v.ends_with(')'))
+                || zero_css_parser::values::parse_clip_path(v).is_some()
+            {
+                style.offset_path = Some(v.to_string());
+            }
+        }
+        "offset-distance" => {
+            if let Some((n, u)) = parse_len_pct_val(value) {
+                style.offset_distance = Some(offset_len_from(n, &u));
+            }
+        }
+        "offset-rotate" => {
+            style.offset_rotate = parse_offset_rotate_computed(value);
+        }
+        "offset-anchor" => {
+            style.offset_anchor = if value.trim().eq_ignore_ascii_case("auto") {
+                None
+            } else {
+                parse_len_pair_pct(value).map(|((x, xu), (y, yu))| (offset_len_from(x, &xu), offset_len_from(y, &yu)))
+            };
+        }
+        "offset-position" => {
+            style.offset_position = if value.trim().eq_ignore_ascii_case("normal") {
+                Some(OffsetPositionValue::Normal)
+            } else if value.trim().eq_ignore_ascii_case("auto") {
+                Some(OffsetPositionValue::Auto)
+            } else {
+                parse_len_pair_pct(value).map(|((x, xu), (y, yu))| {
+                    OffsetPositionValue::Position(offset_len_from(x, &xu), offset_len_from(y, &yu))
+                })
+            };
+        }
         // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段
         // （parse_filter_list("none") = 空 Vec = none；与 apply_advanced 静态声明
         // 同一转换）。
@@ -1820,6 +2038,97 @@ mod tests {
         // t=0.6 → 使用 to 值
         let result = interpolate_property_value("display", "block", "none", 0.6);
         assert_eq!(result, "none");
+    }
+
+    // ── clip-path / offset-path 基本形状族插值钉（css-shapes-2
+    // §interpolating-shape + css-motion-1；wptfyi-css 基本形状族刀） ──
+
+    #[test]
+    fn test_interpolate_clip_path_circle_inset() {
+        // circle 同构逐分量线性。
+        let r = interpolate_property_value("clip-path", "circle(10px at 5px 5px)", "circle(30px at 15px 15px)", 0.5);
+        assert_eq!(r, "circle(20px at 10px 10px)");
+        // inset + round 槽（round 为单值半径槽——clip-path inset 文法，
+        // gCS reparse 后两侧同 canonical）。
+        let r = interpolate_property_value("clip-path", "inset(0px round 10px)", "inset(20px round 30px)", 0.5);
+        assert_eq!(r, "inset(10px 10px 10px 10px round 20px)");
+    }
+
+    #[test]
+    fn test_interpolate_clip_path_polygon_and_hetero() {
+        // polygon 同数逐点。
+        let r = interpolate_property_value(
+            "clip-path",
+            "polygon(0px 0px, 10px 10px)",
+            "polygon(10px 20px, 30px 40px)",
+            0.5,
+        );
+        assert_eq!(r, "polygon(5px 10px, 20px 25px)");
+        // 点数失配 → 离散切换（css-values-4 §8.5.6 ≥0.5 → to）。
+        let r = interpolate_property_value("clip-path", "polygon(0px 0px)", "polygon(0px 0px, 10px 10px)", 0.3);
+        assert_eq!(r, "polygon(0px 0px)");
+        let r = interpolate_property_value("clip-path", "polygon(0px 0px)", "polygon(0px 0px, 10px 10px)", 0.7);
+        assert_eq!(r, "polygon(0px 0px, 10px 10px)");
+    }
+
+    #[test]
+    fn test_interpolate_clip_path_shape_path() {
+        // shape() 同构逐命令（to 端点经 resolved 数值插值）。
+        let r = interpolate_property_value(
+            "clip-path",
+            "shape(from 0px 0px, line to 10px 10px)",
+            "shape(from 10px 20px, line to 30px 40px)",
+            0.5,
+        );
+        assert_eq!(r, "shape(from 5px 10px, line to 20px 25px)");
+        // path() 同段数同命令字母逐实参。
+        let r = interpolate_property_value("clip-path", "path(\"M 0 0 L 10 10\")", "path(\"M 10 20 L 30 40\")", 0.5);
+        assert_eq!(r, "path(\"M 5 10 L 20 25\")");
+    }
+
+    #[test]
+    fn test_interpolate_offset_path_ray_and_hetero() {
+        // ray↔ray 同 ray-size 角度线性（负 t 外推实测 chrome 口径）。
+        let r = interpolate_property_value(
+            "offset-path",
+            "ray(10deg closest-side)",
+            "ray(20deg closest-side)",
+            -0.3,
+        );
+        assert_eq!(r, "ray(7deg closest-side)");
+        // ray-size 失配 / 异构（ray↔circle）→ 离散切换。
+        let r = interpolate_property_value(
+            "offset-path",
+            "ray(10deg closest-side)",
+            "ray(20deg farthest-side)",
+            0.3,
+        );
+        assert_eq!(r, "ray(10deg closest-side)");
+        let r = interpolate_property_value("offset-path", "ray(10deg)", "circle(50%)", 0.75);
+        assert_eq!(r, "circle(50%)");
+    }
+
+    #[test]
+    fn test_interpolate_offset_path_shape_coord_box() {
+        // shape↔shape + coord-box 后缀一致：形状插值 + 后缀保持。
+        let r = interpolate_property_value(
+            "offset-path",
+            "shape(from 0px 0px, line to 10px 10px) border-box",
+            "shape(from 10px 20px, line to 30px 40px) border-box",
+            0.5,
+        );
+        assert_eq!(r, "shape(from 5px 10px, line to 20px 25px) border-box");
+        // 后缀失配 → 离散（t<0.5 → from，边界 0.5 → to）。
+        let r = interpolate_property_value(
+            "offset-path",
+            "circle(10px) border-box",
+            "circle(30px) content-box",
+            0.4,
+        );
+        assert_eq!(r, "circle(10px) border-box");
+        // 纯 coord-box 恒值对。
+        let r = interpolate_property_value("offset-path", "border-box", "border-box", 0.5);
+        assert_eq!(r, "border-box");
     }
 
     // ── 关键帧插值测试 ──
@@ -3128,6 +3437,132 @@ mod tests {
         assert!(
             tp.value.contains("matrix3d(2"),
             "t≈0 离散应取 from 的 matrix3d，got {tp:?}"
+        );
+    }
+
+    // ── CSS Motion Path offset 簇（css-motion-1；wptfyi-css offset-* 刀）──
+
+    /// offset-distance 同单位线性插值；混合单位离散切换（css-values-4 §8.5.6）。
+    #[test]
+    fn test_offset_distance_interpolates() {
+        assert_eq!(
+            interpolate_property_value("offset-distance", "0px", "100px", 0.5),
+            "50.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-distance", "10%", "100px", 0.4),
+            "10%"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-distance", "10%", "100px", 0.5),
+            "100px"
+        );
+    }
+
+    /// offset-rotate 纯角度形线性；auto 关键字侧离散。
+    #[test]
+    fn test_offset_rotate_interp_and_discrete() {
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "0deg", "90deg", 0.5),
+            "45.00deg"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto", "90deg", 0.4),
+            "auto"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto", "90deg", 0.5),
+            "90deg"
+        );
+    }
+
+    /// apply 写回 + underlying 序列化往返（harness 隐式边界帧依赖 underlying 面）。
+    #[test]
+    fn test_offset_apply_roundtrip_underlying() {
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-distance".to_string(),
+                value: "40px".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-distance"),
+            Some("40px".to_string())
+        );
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-anchor".to_string(),
+                value: "10px 20%".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-anchor"),
+            Some("10px 20%".to_string())
+        );
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-rotate".to_string(),
+                value: "auto 45deg".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-rotate"),
+            Some("auto 45deg".to_string())
+        );
+    }
+
+    /// offset-position position 对同单位线性；auto/normal 端点离散（css-values-4
+    /// §8.5.6 ≥0.5 → to，WPT offset-position-interpolation 关键字端点组语义）。
+    #[test]
+    fn test_offset_position_interp_and_discrete() {
+        assert_eq!(
+            interpolate_property_value("offset-position", "220px 240px", "300px 400px", 0.5),
+            "260.00px 320.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-position", "0% 50%", "100% 150%", 0.3),
+            "30.00% 80.00%"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-position", "auto", "20px 20px", 0.4),
+            "auto"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-position", "auto", "20px 20px", 0.5),
+            "20px 20px"
+        );
+    }
+
+    /// offset-position apply 写回 + underlying 序列化往返；写回 unsupported 形
+    /// 保持现值（apply_single_property 语义）。
+    #[test]
+    fn test_offset_position_apply_roundtrip_underlying() {
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-position".to_string(),
+                value: "30px 40px".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-position"),
+            Some("30px 40px".to_string())
+        );
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "offset-position".to_string(),
+                value: "normal".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            underlying_individual_value(&style, "offset-position"),
+            Some("normal".to_string())
         );
     }
 }

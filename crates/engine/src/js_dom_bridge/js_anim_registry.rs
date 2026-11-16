@@ -29,7 +29,7 @@ use zero_css_parser::values::{AnimationDirectionValue, AnimationFillModeValue, T
 use zero_style_system::ComputedStyle;
 
 use super::computed_style::serialize_computed_property_with_sibling;
-use crate::animation::{AnimationClock, AnimationConfig, InterpolatedProperty};
+use crate::animation::{AnimationClock, AnimationConfig, InterpolatedProperty, apply_timing_function};
 
 /// 进程起点（单调墙钟锚——running 动画的求值时基；corpus 的 WAAPI 面全为
 /// paused+seek 形态，running 精度仅服务真实页面近似）。
@@ -59,6 +59,15 @@ struct JsAnimEntry {
     /// 时钟域 duration/delay（秒）——开区间进度计算。
     dur_s: f64,
     delay_s: f64,
+    /// 全局 easing（合成规则帧不携带 animation-timing-function——`_zwWaapiSpecKeyframes`
+    /// 丢帧级 easing 键，引擎段内恒用全局 timing， eased 重算同源）。
+    timing: TimingFunctionValue,
+    /// 离散翻转采纳形态门：恰 2 帧、端点 offset 0/1（选择器域）、direction
+    /// normal——eased 一致性重算仅在整体进度 ≡ 段归一化进度（span 1）且方向
+    /// 不反演时精确。
+    flip_ok: bool,
+    /// 离散翻转端点对（prop → (from, to)，按帧选择器 0%/100% 归侧而非数组序）。
+    flip_pairs: std::collections::HashMap<String, (String, String)>,
 }
 
 thread_local! {
@@ -102,6 +111,8 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
     let easing = spec.get("easing").and_then(Json::as_str).unwrap_or("linear");
     let timing_function =
         zero_css_parser::values::parse_transform::parse_timing_function(easing).unwrap_or(TimingFunctionValue::Linear);
+    // 条目侧留存（AnimationConfig 构造 move 走原值——登记闭包借用序先 clone）。
+    let entry_timing = timing_function.clone();
     // iterations：null（JS Infinity）/<=0 → None（infinite）；其余 Some(n)。
     let iteration_count = spec
         .get("iter")
@@ -111,6 +122,43 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
     let fill_mode = parse_fill(spec.get("fill").and_then(Json::as_str));
 
     let clock_id = id;
+    // easing 感知离散翻转采纳（css-values-4 §8.5.6 / Web Animations §5.6.2）：
+    // 恰 2 帧 [0,1] 单向动画的整体进度即段归一化进度，eased 位置可精确重算；
+    // 多帧（段选址扭曲整体进度）与 reverse 族（方向反演）形态不进门。
+    let kf_offset = |b: &zero_css_parser::ast::KeyframeBlock| -> Option<f64> {
+        match b.selectors.first() {
+            Some(zero_css_parser::ast::KeyframeSelector::Percentage(p)) => Some(*p / 100.0),
+            Some(zero_css_parser::ast::KeyframeSelector::From) => Some(0.0),
+            Some(zero_css_parser::ast::KeyframeSelector::To) => Some(1.0),
+            _ => None,
+        }
+    };
+    let mut flip_ok = rule.keyframes.len() == 2 && direction == AnimationDirectionValue::Normal;
+    let mut flip_pairs: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    if flip_ok {
+        flip_ok = kf_offset(&rule.keyframes[0]) == Some(0.0) && kf_offset(&rule.keyframes[1]) == Some(1.0);
+    }
+    if flip_ok {
+        // 端点对按选择器归侧（数组序不信任）：首帧 0% → from、次帧 100% → to，
+        // 同帧重复声明首值胜（与 endpoints 去重首值胜一致）。
+        let mut fside: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut tside: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for d in &rule.keyframes[0].declarations {
+            if !d.property.eq_ignore_ascii_case("animation-timing-function") {
+                fside.entry(d.property.clone()).or_insert_with(|| d.value.clone());
+            }
+        }
+        for d in &rule.keyframes[1].declarations {
+            if !d.property.eq_ignore_ascii_case("animation-timing-function") {
+                tside.entry(d.property.clone()).or_insert_with(|| d.value.clone());
+            }
+        }
+        for (k, fv) in fside {
+            if let Some(tv) = tside.get(&k) {
+                flip_pairs.insert(k, (fv, tv.clone()));
+            }
+        }
+    }
     let started = CLOCK.with(|cell| {
         cell.borrow_mut().start_animation(
             clock_id,
@@ -156,6 +204,9 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
             endpoints,
             dur_s: duration_s,
             delay_s,
+            timing: entry_timing,
+            flip_ok,
+            flip_pairs,
         })
     });
     id
@@ -278,10 +329,25 @@ fn query_core(
                     if p.name != prop {
                         continue;
                     }
-                    let fallback = open_interval
-                        && e.endpoints
+                    let endpoint_hit = e
+                        .endpoints
+                        .get(&p.name)
+                        .is_some_and(|vals| vals.iter().any(|v| v == &p.value));
+                    // easing 感知离散翻转采纳（wptfyi-css easing 刀 2026-11-15）：
+                    // 2 端点 [0,1] 单向动画的开区间端点恒等输出是 spec 离散/步进
+                    // 行为（css-values-4 §8.5.6：eased < 0.5 → from，≥ 0.5 → to；
+                    // step-start/end eased 钳 0/1 同形），eased 位置与端点侧一致
+                    // 则采纳——v2 全折检测器把该面 ~50 真增益一并回落（十轮账）。
+                    // eased 与引擎段内映射同源（全局 timing、span 1 归一化恒等），
+                    // 不一致（spec 可插值而引擎退化为 flip 的 echo，如 calc/track
+                    // 列表）维持回落。NaN eased 双臂皆 false → 保持回落零回归方向。
+                    let flip_adopted = endpoint_hit
+                        && open_interval
+                        && e.flip_ok
+                        && e.flip_pairs
                             .get(&p.name)
-                            .is_some_and(|vals| vals.iter().any(|v| v == &p.value));
+                            .is_some_and(|(f, tv)| flip_eased_adopts(f, tv, &p.value, prog, &e.timing));
+                    let fallback = endpoint_hit && open_interval && !flip_adopted;
                     if !fallback {
                         latest = Some(p.value);
                     }
@@ -291,6 +357,29 @@ fn query_core(
     });
     latest.and_then(|raw| canonicalize(prop, &raw, base, sibling))
 }
+
+/// 离散翻转 eased 一致性判定：`flip_ok` 条目的开区间端点恒等输出在 eased 位置
+/// 与端点侧一致时采纳（`< 0.5` 归 from，`≥ 0.5` 归 to——css-values-4 §8.5.6）。
+/// from ≡ to 恒值动画两侧一致恒采纳。非 from 非 to 的值拒（防御：端点对与
+/// 命中值失配的形态保持回落）。NaN eased（退化 bezier 参数）双臂皆 false →
+/// 拒（保持回落零回归方向）。
+fn flip_eased_adopts(from: &str, to: &str, value: &str, prog: f64, timing: &TimingFunctionValue) -> bool {
+    if value == to {
+        if to == from {
+            // 恒值动画：任何进度期望值恒同（spec 常值），无条件采纳。
+            return true;
+        }
+        let eased = apply_timing_function(prog, timing);
+        return eased >= 0.5;
+    }
+    let eased = apply_timing_function(prog, timing);
+    value == from && eased < 0.5
+}
+
+/// A/B 快照二进制 provenance 标记（strings 抽验 B0/B1 装载面——shim JS 未动轮
+/// 的源侧指纹，shim-include_str 陈旧二进制事故防线；测试引用保存活零运行时成本）。
+#[allow(dead_code)]
+pub(crate) static FLIP_EASED_ADOPT_MARKER: &str = "zw-easing-flip-adopt-2026-11-15";
 
 /// 插值串规范化：施加到基样式 clone 后过 gCS 序列化器——与期望元素（测试侧
 /// inline 设值读 gCS）同通道，格式一致由构造保证（"0.5000" → "0.5"）。序列化
@@ -380,5 +469,122 @@ fn parse_fill(s: Option<&str>) -> AnimationFillModeValue {
         "backwards" => AnimationFillModeValue::Backwards,
         "both" => AnimationFillModeValue::Both,
         _ => AnimationFillModeValue::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FLIP_EASED_ADOPT_MARKER;
+    use super::flip_eased_adopts;
+    use zero_css_parser::values::TimingFunctionValue;
+
+    #[test]
+    fn test_marker_present() {
+        assert!(!FLIP_EASED_ADOPT_MARKER.is_empty());
+    }
+
+    /// linear：翻转点 eased = prog——前半 from 侧采纳 / 后半 to 侧采纳，异侧拒。
+    #[test]
+    fn test_linear_flip_sides() {
+        assert!(flip_eased_adopts(
+            "solid",
+            "dashed",
+            "solid",
+            0.25,
+            &TimingFunctionValue::Linear
+        ));
+        assert!(!flip_eased_adopts(
+            "solid",
+            "dashed",
+            "dashed",
+            0.25,
+            &TimingFunctionValue::Linear
+        ));
+        assert!(flip_eased_adopts(
+            "solid",
+            "dashed",
+            "dashed",
+            0.75,
+            &TimingFunctionValue::Linear
+        ));
+        assert!(!flip_eased_adopts(
+            "solid",
+            "dashed",
+            "solid",
+            0.75,
+            &TimingFunctionValue::Linear
+        ));
+    }
+
+    /// 翻转边界 eased = 0.5 归 to 侧（引擎 `t >= 0.5` 臂与 css-values-4 §8.5.6 同界）。
+    #[test]
+    fn test_boundary_half_to_side() {
+        assert!(!flip_eased_adopts("a", "b", "a", 0.5, &TimingFunctionValue::Linear));
+        assert!(flip_eased_adopts("a", "b", "b", 0.5, &TimingFunctionValue::Linear));
+    }
+
+    /// step-end：开区间 eased 钳 0 → 只认 from；step-start 钳 1 → 只认 to。
+    #[test]
+    fn test_steps_clamp() {
+        assert!(flip_eased_adopts(
+            "0px",
+            "10px",
+            "0px",
+            0.4,
+            &TimingFunctionValue::StepEnd
+        ));
+        assert!(!flip_eased_adopts(
+            "0px",
+            "10px",
+            "10px",
+            0.4,
+            &TimingFunctionValue::StepEnd
+        ));
+        assert!(flip_eased_adopts(
+            "0px",
+            "10px",
+            "10px",
+            0.4,
+            &TimingFunctionValue::StepStart
+        ));
+        assert!(!flip_eased_adopts(
+            "0px",
+            "10px",
+            "0px",
+            0.4,
+            &TimingFunctionValue::StepStart
+        ));
+    }
+
+    /// ease-in（bezier(0.42,0,1,1)）前半段 eased < 0.5——0.4 处 from 侧仍成立。
+    #[test]
+    fn test_ease_in_midpoint() {
+        assert!(flip_eased_adopts("x", "y", "x", 0.4, &TimingFunctionValue::EaseIn));
+    }
+
+    /// 恒值动画（from ≡ to）：任何进度期望恒同，无条件采纳。
+    #[test]
+    fn test_constant_pair_always_adopts() {
+        assert!(flip_eased_adopts(
+            "5px",
+            "5px",
+            "5px",
+            0.1,
+            &TimingFunctionValue::Linear
+        ));
+        assert!(flip_eased_adopts(
+            "5px",
+            "5px",
+            "5px",
+            0.9,
+            &TimingFunctionValue::StepEnd
+        ));
+    }
+
+    /// 非 from 非 to 的命中值拒（防御：端点对失配形态保持回落）。
+    #[test]
+    fn test_foreign_value_rejects() {
+        assert!(!flip_eased_adopts("a", "b", "c", 0.25, &TimingFunctionValue::Linear));
+        assert!(!flip_eased_adopts("a", "b", "c", 0.75, &TimingFunctionValue::Linear));
     }
 }

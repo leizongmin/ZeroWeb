@@ -1,6 +1,6 @@
 # CSS 子测试控制面
 
-**2026-11-15 · Active**。目标净增 153,000 项（绝对线 182,392）。11-14 发布
+**2026-11-16 · Active**。目标净增 153,000 项（绝对线 182,392）。11-14 发布
 快照 **62,896 / 197,163（31.90%）**（coverage-2026-11-14，weekly cron
 4214a625d），对验收线尚余 ~119,496——较 11-10 快照（52,488 / 26.70%）
 四天净增 **+10,408**（[DC-3 刷新证据](evidence/2026-11-15-dc3-snapshot-refresh.md)）；
@@ -30,6 +30,301 @@ results-texp-b1-{p1,p2}/B1=results-waapi-b1-{p1,p2}）**净 +184P 零回归**，
 WAAPI 门子测 4071→**0**，2 页 25% 分母差应归一。提交前去冗余（part03
 不可达残片块 + part05 同链重复条件），清理后探针复验一致。见 [evidence
 2026-11-15-waapi-gate-knife](evidence/2026-11-15-waapi-gate-knife.md)。
+**offset 簇刀已落地（11-15 十三轮，rate-limit 中断轮 WIP 认领收口）**：CSS
+Motion Path offset-path/distance/rotate/anchor 四属性五站全链——style-system
+类型/注册（OffsetRotateValue 四形 + known_properties 白名单 + spec 初始
+none/0px/auto/auto）+ apply 文法（path() 首片、length-percentage 字号绝对化、
+auto|reverse|<angle>|auto <angle> 归 deg、anchor 复用 parse_origin_xy）+
+gCS 计算值四臂（缺臂即读缺省先例教训）+ WAAPI 插值链（underlying 四臂 +
+插值四臂：同单位线性/混合单位离散 ≥0.5 翻转 css-values-4 §8.5.6 + apply
+写回往返）。单测 4+3 钉全绿；**干净双二进制 A/B（B0c=HEAD stash 重建 /
+B1c=WIP 重建，md5 异哈希 provenance）七 corpus（motion/transforms/values/
+backgrounds/fonts + 白名单触面护栏 typed-om/cssom）净 +364 / 0 lost /
+0 regressed / 17 页**——motion +363（interpolation 族 311 + parsing/
+computed 25 + inheritance 4 + supports-calc 1）+ values random-computed
+offset-distance % 槽红利 +1，四护栏 corpus 逐字节零差。**前轮 stale-B0
+错账修正**：中断轮曾以 results-jsanim-b3（三轮前产物）为基线得「+47
+transforms」——实为 composite-add/easing-flip 两刀已提交增益；对真基线
+results-flip-b1 复比对 transforms/values/fonts/backgrounds 全零差，真增益
+全在 motion 面。教训入册
+[docs/learnings/bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md](../../../docs/learnings/bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md)。
+残面（motion 45 页余 4,487F）：ray()/基本形状文法族 ~1,830（parse 首片
+bail 后置）、offset-position 属性缺面 ~386（同型五站刀）、已解锁页内
+插值中点/混合形残余 ~1,891（auto+angle 混合端点 458、path() 命令级兼容
+插值 687、anchor/distance 混合单位等）、coord-box 144、composition
+add/accumulate 140、math 函数角度 96。**门禁**（make test 拆腿，
+zw-offset-mkt3.service）：12 腿全账红项全对号在册（peer s419 es_module 6 WIP
++ clippy 连坐、worker-fetch 三形态、tab 对 + default_actions、image_batch
+负载形伪红），本刀域零红——engine 3 钉 workspace 腿日志绿 + style-system
+4 钉定向腿 RC=0（fail-fast 截停补腿）。见 [evidence
+2026-11-15-offset-motion-path-knife](evidence/2026-11-15-offset-motion-path-knife.md)。
+**并行实例避让记（11-15 23:36 定谳，rate-limit 双 spawn 在册形态）**：本
+clone 并存两 agent 实例（2614542 = 22:12 无 resume spawn；本实例 = 23:04
+resume spawn）。offset 簇刀收口由本实例完成（6b84507fe）；offset-position
+刀 23:31 起由实例 2614542 在树实施（style-system property 五站 + engine
+animation/gCS offset 面，未提交），本实例零编辑让位（「停己采彼」）。
+后续轮次开工前先 `git log --oneline -3` + `git status` 核该刀落地态：
+已提交→按控制面推进下一残面刀（ray()/基本形状文法族 ~1,830 等属同文件
+面，仍需先核对方在飞状态）；未提交且 mtime 活跃→继续让位勿重开刀；
+mtime 静默 >30 分钟且无提交→查孤儿（journalctl + ps 祖先树）后按磁盘
+终态仲裁。共享树纪律：两实例禁同时跑重型门禁（双 cargo 门禁缓存在册）。
+**（11-16 00:15 更新）offset-position 刀已由实例 2614542 收口**（A/B
++108/0/0、门禁 12 腿零本刀域红，见下条目与当轮提交），避让记任务完成，
+后续轮次按控制面推进残面刀。
+**offset-position 刀已落地（11-15 十四轮，同日第二刀）**：`normal | auto |
+<position>` 三形五站（OffsetPositionValue 枚举 + 白名单第五串 + spec 初始
+normal + parse_offset_position_value 复用 parse_origin_xy + gCS 序列化臂 +
+WAAPI underlying/插值/写回三臂）+ **parse_origin_xy 4 值 edge-offset 共享
+扩展**（css-shapes-3 §position：`<edge> <offset>` 对，right/bottom →
+Calc(100%−o)，transform-origin/offset-anchor 全消费方连带）。单测 5+7 钉
+全绿。A/B（B0=62ae854f HEAD 重建 / B1=e2fe2a8d）motion+typed-om+cssom：
+**净 +108 / 0 lost / 0 regressed / 5 页**——offset-position-interpolation
++68（312→244）、computed +13（15→2）、anchor-interpolation +24（4 词共享
+连带）、anchor-computed +2、inheritance +1。首轮 B1 白名单漏串事故（initial
+表已改、known_properties() 数组漏第五串，offset-position 四页零动）法证
+补串重跑销账。残面（interpolation 余 244）：initial/unset/inherit 端点
+组 108 = harness 全局关键字缺口（十三轮定谳跨 corpus 形）、CSS Animations/
+Web Animations/transition:all 通道组 ~90 = 动画值进 gCS 链主矛盾面、
+calc 代数插值 46（`left 480px`→`right -140%` 形）；composition add 56
+（KeyframeEffect composite 共享刀）、calc 形 supports 2、offset 简写 3、
+parsing-invalid 3（shim setProperty 拒收域）。见 [evidence
+2026-11-15-offset-position-knife](evidence/2026-11-15-offset-position-knife.md)。
+**ray()/基本形状 supports 门刀探查定谳（11-16 00:50，第三刀让位轮，零码改）**：
+offset-path 六全灭页（005 502F/006 510F/008 614F/009 36F/coord-box 144F/
+composition 84F，共 **1,890F**）死因定谳——全部死于 harness 前置门
+`assert_true('from'/'to' value should be supported)`（interpolation-testcommon.js:396）：
+`CSS.supports(prop, v)` 两参走 shim part06 → 宿主 `decl_supported`
+（js_dom_bridge.rs:6171）→ Rust `apply_property_value_with_quirks`，而
+offset-path 的 Rust parse 臂现只收 none|path() 首片，ray()/circle()/ellipse()/
+inset()/polygon()/xywh()/rect()/shape() 全拒 → supports=false 整组 6 检查点
+连坐（composition 页 underlying/add 值组同门实证）。**与 setProperty 通道
+分叉实证**：parsing-valid 已 46P——setProperty 走 shim JS 验证器宽收，
+circle(100px)/inset(100%)/ellipse()/polygon()/xywh()/rect()/url() 标准形全过；
+supports 门与 parse 面不同源即刀核心。刀界（下轮实施）：`parse_offset_path_fn`
+放宽全基本形状族首片接受 + gCS verbatim 臂 + WAAPI 离散翻转（现臂通用，无需
+新增）；理论增益估 ~400-500P（端点检查点 2/6 × 六页 1,890 × 非全灭通道
+~3/4，transition:all 通道组可能仍死；精确账以刀后 A/B 为准）。残面修正
+两笔：①parsing-valid 余 24F = shim JS 验证器边角（rad 单位、`ray(0deg at
+center center sides)` 乱序、无单位 0、`round 0px,` 逗号形、path `s` 命令、
+`path(  "…"  )` 空白归一）独立通道挂账；②parsing-invalid 24F 全账红（P=0）
+——setProperty 通道原样存 invalid 值读回非空所致（非本刀域）。001 页 179F
+复核：60F got "none"（transition:all 通道丢值）、12F 小写 `m` path 输出
+（疑 jsanim registry 侧另一插值臂，下轮探针）、余为 path 命令级插值期望
+（后置域）。**让位记**：peer backdrop-filter 刀在飞（zw-bdf-ab.service
+cssom 批 + editing-run 双链；registry.rs/es_module.rs/part02.rs WIP mtime
+00:15），在跑链禁发重型入口，本刀不开工，下轮开工前先核该刀落地态。
+**backdrop-filter 白名单刀已落地（11-16 十五轮，本流收口 peer 让位面）**：
+一行门线刀——style-system `known_properties()` 白名单 `"filter"` 后补
+`"backdrop-filter"`（2 文件 +12/−0：registry.rs 一行 + engine part02 R2785
+supports 钉扩双向断言），机制 = supports 前置门 `decl_supported` 缺串短路假
+（apply/gCS/WAAPI 插值/写回/初始五站 R2762 起全在，唯一缺口门线）。A/B
+（B0=bin-bdf-b0 e2fe2a8d=posp-b1 快照 ≡ 落地 HEAD / B1=bin-bdf-b1 37eb8df2
+WIP 重建）三 corpus：filter-effects **+253/0/0/6 页**（interpolation-001..004
++218、parsing/computed +25、composition-001 +10），css-typed-om/cssom
+护栏 0/0/0 白名单纯增量零外溢。定向钉 1 passed（test-guard 包裹）；
+`cargo fmt -p zero-style-system -p zero-engine -- --check` 净（27 处
+part02 假漂移 = 裸 rustfmt 配置解析差异，cargo fmt 权威门作准）；clippy 两
+crate 净（唯一 warning = peer es_module too_many_arguments 在册连坐）。
+make test 拆腿门（zw-bdf-mkt.service）全腿归账在册红：workspace 10097P/1F
+（same_origin_image_burst 负载 flake，R5288/R5292/R5385 同族 ≥4 先例，
+peer editing-run 电池并发窗；**discharge 定谳** zw-bdf-discharge 00:50 solo
+1P/0.61s，journalctl 证）、renderer-lib 371P/1F（worker-fetch renderer
+形）、browser bin/tests 各 2F（tab 镜像 + default_actions 形）、
+quickjs-clippy 101（peer es_module lint 在册）、gpu 双腿 0、其余腿见
+[evidence 2026-11-16-backdrop-filter-whitelist-knife](evidence/2026-11-16-backdrop-filter-whitelist-knife.md)。
+**同文件碰撞法证澄清（crule 提交时更正）**：01:14 crule 刀流
+（zw-crule-ab.service 在飞）同两文件在途改写（registry 入 column-rule
+行；**grep 法证：registry.rs:690 backdrop-filter 行在**——f80e4a8b8 已入
+HEAD、crule diff +1 仅 661 行、插入点远离 689 区，part02 backdrop 断言
+原样，「行被抹」系 stash 瞬态误读，复录可免；gap-rules 十六轮 45b4209b5
+已账本侧互证本刀 A/B +253/0/0 + discharge 代跑）——按停己采彼/认领件
+让位协议不动文件；crule 提交含本刀行/钉原样（HEAD 内容），本刀无需
+独立复录 commit，按认领件核对后并入账。
+残面：composition-001 余 ~90F = shim composite-add 函数列表 all-or-nothing
+主矛盾面（十轮已挂账）、散页 ~690 在他 corpus 全量跑自然入账；同型 supports
+桶定谳 mask-border/shape-outside/calc-size/row-rule 均真实现缺口后置。
+**gap-rules 刀侦察+设计轮（11-16 十六轮，零码改——共享树编译破树风险让位）**：
+本实例（监控线）全程让位 peer 三刀（offset-position 4427b121e +108/0/0、
+backdrop 白名单 f80e4a8b8 +253/0/0、ray()/基本形状在飞 css-parser 四文件
++parse_basic_shape 新档），收口三笔：①knife-1 门禁归因收口（zw-offset-mkt3
+12 腿红项全对号在册零本刀域红 + style-system/engine 定向钉补腿 5/5+3/3）；
+②落地态核验三刀 commit pathspec 纪律（es_module 恒不入）+ A/B 复算互证
+（posp +108、bdf +253 护栏 0/0/0）；③**css-gaps 面基线入账 + 下一刀设计定谳**
+——results-gaps-b0（css-gaps P356/F3792 75 页 + css-multicol P237/F1376 91 页，
+bin-posp-b1 ≡ 4427b121e）；**勘误上条「row-rule 真实现缺口」定性**：缺口为
+css-gaps-1 把 rule 族 color/width **重定义为 repeat() 列表文法**（
+`repeat(4, blue)`/`red, repeat(3, blue)`——gap-decorations-color-valid 页
+实证，纯色=单段列表 multicol 兼容），非纯值 mirror 可达；两通道探查已完成
+（setProperty shim 宽收 ✓ / gCS camelCase 通用路由 ✓ / 死因=supports 门
+Rust parse 拒列表）。分刀 A color-list 模型（+600~900F）/ B width-list+简写
+（+400~600F）/ C `column-rule` 简写白名单一行（multicol 全实现只差门线，
+可独立先行）/ D inset-cap/junction 几何族（1.5k+ 最大残面，单长度插值
+页内实证）。全案 [evidence 2026-11-16-gap-rules-knife-design](evidence/2026-11-16-gap-rules-knife-design.md)。
+**column-rule 简写门线刀已落地（11-16 十七轮，刀 C 独立先行认领收口）**：
+交接稿实况修正——「只差白名单一行 + 钉」不完整，白名单行中间态
+（B1' 0e3d7ab6）对 b0 零 delta 实证，真缺口 = **apply 链无简写展开臂**
+（展开在 cascade 层，apply.rs:2192 注记；`decl_supported` = 白名单 +
+apply oracle 两 conjunct，简写后者恒假）。刀体 3 文件 +42/−0：registry
+白名单 `"column-rule"`（column-rule-style 后）+ apply_advanced 新简写臂
+（复用 cascade 同一展开器 shorthand::expand_shorthands→expand_column_rule，
+`||` 文法/重复组件裁决单点——@supports 样式表路径 matcher/supports.rs
+同判据；longhand 逐条递归 apply 全过才落 true，展开空即 false 非法值仍
+拒）+ part02 R2785 钉扩 column-rule 五向断言（合法三形真/bogus/重复
+color 假）。定向钉 1 passed；fmt/clippy 两 crate 净。A/B（B0=bin-crule-b0
+c481ca1b ≡ HEAD 45b4209b5 / B1=bin-crule-b1 23ee88d5）：css-multicol
+**+6/0/0**（column-rule-computed.html 6 子测翻转）+ css-gaps **+3/0/0**
+（gap-decorations-rule-shorthand-computed.html column-rule 3 翻转，row-rule
+页同步解锁——纯色单段列表兼容预判兑现）+ css-typed-om 护栏 0/0/0，
+same_pass 与设计轮基线逐数吻合（237P/91 页、356P/75 页）。残面分解
+（multicol 命名 F 347 全非本刀域）：插值三页 320F 语义桶、shorthand.html
+12F = shim 声明对象 longhand 投影面、invalid 10F = shim 宽收漏拒、
+valid 2F = canonical 序列化、width-computed 2F = calc() 门。**同文件
+碰撞法证澄清**：bdf 账本「registry 本刀行被抹」不成立——registry.rs:690
+backdrop-filter 行在（f80e4a8b8 已入 HEAD，本刀 +1 仅 661 行 column-rule）、
+part02 backdrop 断言原样，「被抹」疑 stash 瞬态误读；复录可免，其「若
+crule 提交已含本刀行/钉则并入账」分支适用。peer basic-shape/es_module
+WIP 本轮持于 stash（crule-peer-window2）至门禁收口。门禁 zw-crule-mkt3
+拆腿（01:34–01:51）刀域零新增红：companion/clippy 0、gpu 双绿，红项 9
+全对号在册（workspace 14150P/1F=SW module_update、renderer-lib 371P/1F、
+browser bin/tests 各 741P/2F、qjs-workspace 775P/1F=image_batch、
+qjs-renderer-lib 369P/1F=worker-fetch 三形），全案
+[evidence 2026-11-16-column-rule-shorthand-knife](evidence/2026-11-16-column-rule-shorthand-knife.md)。
+**基本形状文法族刀已落地（11-16 十八轮，rate-limit 双 spawn 对称收敛收口）**：
+shape()/path()/rect()/xywh() 共享文法五站全链——①css-parser
+`parse_basic_shape.rs` 新档（shape 命令式 move/line/hline/vline/curve/smooth/
+arc/close，to|by 双向，`with` 控制点，`of` 修饰序不敏感 + arc canonical
+cw→large→rotate 缺省省略 + 裸数字补 px + 1 词位置补 2 分量；path 双引号
+SVG data；rect 空白 4 值 + round；xywh slash 圆角；types.rs ClipPathValue
+四变体 Box 载荷）+ parse_clip_path 四臂派发 + `serialize_math.rs`
+fold_decl_specified clip-path canonical 臂（**物理单位守卫**
+has_physical_length_unit：pt/pc/cm/mm/in/q 命中回落原文通道——types.rs
+pt→px 折算使声明级 canonical 无法保原单位形，b0 verbatim 假过 1 例经守卫
+复原）；②style-system offset-path apply 文法门放宽（ray() 全形 canonical
+序 + 基本形状全族经 parse_clip_path 裁决 + coord-box 五后缀剥离 +
+`none` 显式拒收）；③engine gCS（clip-path 四臂：shape 走 computed 级
+`shape_to_css_computed`——关键字折 %、rotate 归 deg；path/rect/xywh 声明级
+verbatim）；④engine transition get 臂（clip-path canonical 比较 +
+offset-path none 回落）+ WAAPI `clip_interp.rs` 新档（clip-path 同构逐
+分量插值 + offset-path ray/shape/path 逐命令插值 + 异构离散 ≥0.5 翻转）；
+⑤paint border_shape 四变体 FIXME 空顶点。**resume-swarm 对称收敛**：本
+clone 双实例（rate-limit 多重 spawn 在册形态）对 computed_style Shape 臂
+同向接线，按磁盘终态采认合并；A/B 权威批由 twin 发射（b1v3），本实例
+挂看门采认不重跑——一账两用。**A/B 权威账（B0=bin-shape-b0 6f551c72
+HEAD 88b6ab519 / B1v3=bin-shape-b1v3 9c06ccb6 HEAD+全 WIP 终态，
+zw-shape-b1v3-ab.service 04:51:41–04:58:15 四腿 EXIT=0 journal scope
+记账 CPU 6m28s，transcripts 在盘）**：css-shapes **+54/0/0**（145 页，
+computed +35/valid +17/rect +2）、css-masking **+327/0/0**（61 页，
+clip-path 插值三页 +320）、motion **+558 净/UPS 570/DOWNS 12**（45 页
+576→1,134，006 +203/008 +173/005 +104/coord-box +34/007 +25）、
+css-typed-om 护栏 **0/0/0**——**合计净 +939/UPS 951/DOWNS 12/GONE 0/
+NEW 0**。**12 DOWNS 定谳（伪影假说证伪）**：v2 批曾按 mtime 法证归因
+「旧二进制伪影」（04:11:37 构建早于 04:17 修复）预期 v3 消除，实测 v3
+含全部修复 DOWNS 恒 12（007 neutral↔none 端点对）——**真实残面**：
+插值函数级探针 ✓ 但 shim/engine 对 neutral keyframe 页构造
+（transitions:all 声明注入、动画值应用点）未建模，活体插桩挂下轮；
+收口行红分类转抄前独立核机制条款直接兑现。**存量红三修顺带清偿**：
+registry/inherit 补 column-rule 简写与 backdrop-filter initial_value 臂
+（HEAD 白名单已解锁而 initial_value 表无臂的验收债两条，style-system
+2544→2546 全绿）。门禁：css-parser 3,259P/0F（25 钉）、style-system
+2,546P/0F、engine 4,057P/0F（插值钉 5）、clippy 三 crate 净、fmt 带配置
+十五文件净；make test 拆腿（zw-shape-mkt.service 04:53–05:11 GATE-DONE）
+红项六腿全对号预存（workspace 10923P/2F image_batch 双形、renderer-lib
+371P/1F + qjs-renderer-lib 369P/1F worker-fetch 三形、browser bin/tests
+各 2F tab_js_worker+default_actions、qjs-workspace 825P/1F image_batch
+形），**刀域零新红**；bench-gate 定向全绿（zw-shape-bench2/3：css_bench 1/1→三 crate 3/3 微基准 + 绝对预算 PASS，硬件基线不匹配相对门禁 WARN 在册，报告两份入 tests/benchmarks/results/）。残面（下刀
+队列）：shape-outside 全谱实测 **5,105F**/104 页（supports 门 1,955 +
+串化 canonical 3,117——`circle(at 50cm)` 期望补 center/edge 序/calc 折算
++ assert_true 前置 33；设计稿
+`.acceptance/wptfyi-css/next-knife-shape-outside-design.md`，registry 三串
+门线 + 存储槽 + apply + gCS + WAAPI 五站，旧估 ~2,184 只数了门桶偏小）、
+007 页 neutral 页构造活体插桩（**并发实例已在飞认领**，ZW_ANIM_DEBUG
+插桩层 05:19）、rect/xywh
+computed 折算、path() 段级 canonical（绝对化+空格归一）、shape() 命令级
+兼容插值、<position> 3 词混合形、ray() && 乱序 supports 形。全案
+[evidence 2026-11-16-basic-shape-grammar-knife](evidence/2026-11-16-basic-shape-grammar-knife.md)。
+**Transition 通道可见性刀设计+认领（11-16 05:4x，轮换续跑实例）**：§7 追加定谳
+（T 通道 corpus 级不可见）的直接后续——六套件 T 面 census **1,752P(echo 巧合池
+全保护红线)/7,846F**（masking 2,416/motion 1,736/gaps 1,218/shapes 1,190/
+filter 638/multicol 648）；F 键期望分类：expect-from t<0.5 **1,436** + expect-to
+t≥0.5 **2,080** ≈ **3,522 直取池（可见性+discrete flip 零新插值器，jsanim flip 臂
+先例）** + 真插值池 3,706（offset-path 405/clip-path 363/shape-outside 351/filter
+154/backdrop 123 头部全属十八轮+刀 A 已有插值器属性复用）。刀体三站镜像
+jsanim v3 已证模式（start_transitions before-change 真值捕获+TRANSITIONS
+注册表+gCS consult）+ Phase 2 seek 语义 + Phase 3 transition:all 展开；
+全案与开工条件（刀 A animation.rs/transition.rs/computed_style.rs 窗口收口后
+零码改解除）见 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md`。
+**T 面 census 扩展（11-16 06:0x，同实例，刀 A 窗口等待期只读账本）**：flip-b1
+快照十三套件补账（cadd-b1-comp 九套件实测零 T 键=composition 面，shapeout-b1
+twin 在飞写面未触碰）——**T 键 10,898/T-P 2,928/T-F 7,970**（backgrounds
+1,752F/transforms 1,660F/grid 652F/values 1,215F/fonts 912F 头部）；全谱合并
+口径：**echo 红线 4,680P、T-F 15,816、Phase 1 直取池 ≈6,516**（直取 5,635+
+钳制臂 881）、真插值池 8,396、CSS Animations seek 臂面 4,276F 首获定量
+（transform 848/width 570/grid-template 652 等直取大头换位 backgrounds+
+transforms）。逐套件明细与修正三点见
+`.acceptance/wptfyi-css/notes-transition-census-extension.md`。
+**T 通道根因细化+harness 语义解码（11-16 06:1x，同实例）**：只读侦察定谳
+§7「零 transition tick」真根因=**同步读窗口**——机械全在（TransitionClock
+生命周期/pipeline tick_animation_styles 4b+5b 接线/webview R342 before-change
+两步基线），但 corpus T 测试同一脚本轮次内 setProperty→gCS 读断言，无泵帧
+介入，基线 seed 后 start 要等下一帧 tick，断言读恒先发生。harness 语义：
+transitionDelay=-50s/duration=100s 钉死 progress=0.5，at 编码进 timing
+（createEasing：0→steps(1,end)/1→steps(1,start)/0.5→linear/其余
+cubic-bezier(0,(8y−1)/6,1,·) 对称点 y(0.5)=at 精确）；engine
+apply_timing_function 四形态全支持且对称 bezier 首采样即命中，at∉[0,1]
+外推天然支持——**零新 timing 工作量，Phase 1=同步启动+gCS consult 两站**
+（详图 `.acceptance/wptfyi-css/next-knife-transition-channel-design.md` §5）。
+**shape-outside 门线刀已落地（11-16 十九轮，rate-limit 双 spawn 对称收敛第三例——twin 孤儿
+WIP 认领收口）**：06:06 twin 实例 5 小时限额中断，WIP 静默 >2h 无提交，按磁盘终态仲裁认领
+（孤儿核查无进程/无在飞 unit → WIP 完整性审读 11 文件连贯五站 → b1v2 二进制早于 06:03 追加
+两臂 → 终态重建重跑权威账）。刀体三段：①**白名单五站**——style-system
+`ShapeOutsideComputedValue` 三变体（None/Shape/Box）独立 wrapper（文法含裸 `<shape-box>` 形，
+不用 ClipPathValue 别名不波及 clip-path 面）+ registry 白名单/initial_value 两处 +
+存储槽/缺省/inherit + apply 文法门（`<basic-shape>` 复用 parse_clip_path 裁决单点 + 裸
+shape-box 四关键字大小写不敏感；FIXME `<basic-shape> <shape-box>` 后缀组合形，corpus 现值
+均裸形态）+ engine gCS `shape_outside_to_css` 三臂 + transition get 臂（clip-path canonical
+同型）+ part03 钉（四关键字/非法拒收/缺省 none）；②**4 值 edge-offset 共享扩展**——css-parser
+`parse_position_pair`（css-values-4 §position `<edge> <offset>` 对：首词定轴序、同轴双对
+拒收、right/bottom → Calc(100%−o)，style-system parse_origin_edge_offsets 同构）+ circle at
+三钉（直读/折算/同轴拒收；`<offset> <edge>` 乱序形 FIXME 后置，语料现值均 edge 首词形）；
+③**附带臂 decl_supported 全局关键字**——`initial|inherit|unset|revert|revert-layer` 对
+known_properties 恒真、**置顶于各属性文法早退之前**（CSS Cascade 5 §css-wide-keywords；
+首建版被 counter-increment 文法门截胡恒假，置顶系行为修正故重跑权威批，已测五腿逐腿全同
+证中性）——interpolation-testcommon `from [initial]`/`to [inherit]` 前置门整组连坐跨
+corpus 形一次清偿（offset-position 刀残面「initial/unset/inherit 端点组 108」定谳）。
+**A/B 权威账（B0=results-shape-b1v3 ≡ HEAD ff29d95be 采认不重跑 / B1=bin-shapeout-b1v4
+md5 70f90c73 终态树重建；合成探针页 2 页批前出清 g41 先例——twin b1v2 曾卷入 +11P 假增益；
+es_module s419 两侧同载零贡献）五腿净 +2,086 / 0 DOWNS / 页集合全等**：shapes **+1195**
+（1894→3089/145 页，inset-001 +296/ellipse-005 +178 串化桶 + shape-interpolation 三页 +180
+supports 前置门桶）、masking **+384**（995→1379/61 页，clip-interpolation keyword 端点组）、
+motion **+354**（1134→1488/45 页，offset-*/position/anchor/rotate 端点组）、values **+153**
+（4813→4966/256 页，B0=results-flip-b1 注：其后 values 面唯一已知增益 offset 刀 +1 echo
+在案归因闭环——calc-size interpolate-size 152 + echo 1）、typed-om 护栏 **0/0/0**（359 页）。
+两臂分解：五站刀体 ≈+1046 + 4 值 edge-offset +139 + 关键字臂 ≈+877；echo 红线（texp 转化率
+轮巧合池）零触碰。门禁：engine 4060/0（part03 钉）+ style-system 2546/0 + css-parser 新钉
+（E0425 作用域笔误修后重跑）；fmt 三 crate 净；clippy css-parser+style-system `-D warnings`
+净、engine 唯一红 = peer es_module s419 在册连坐；make test 拆腿（zw-so2-mkt 08:45:15–09:03:08
+GATE-DONE，12 腿）：绿五腿 companion-build/renderer-bin/gpu 双腿/
+quickjs-renderer-bin 全 EXIT=0；红七腿全对号在册**零本刀域红**——workspace
+15,651P/6F 全 es_module（s360/s361/s337/s269/reexport 族，peer s419 WIP
+树态红）+ quickjs-clippy 101 es_module.rs:2217 too_many_arguments（同 WIP
+lint 连坐）、renderer-lib 371P/1F + quickjs-renderer-lib 369P/1F =
+worker-fetch（c6dcbce0a 在册镜像）、browser-bin 741P/2F + browser-tests
+772P/2F = tab_js_worker fetch 镜像 + default_actions（在册对）、
+quickjs-workspace 825P/1F = image_batch 负载形（在册；两腿数均含小目标
+合计，非仅主二进制行）；cdp_focus 新鲜度 tripwire 本轮未现
+（companion build 刷新二进制 mtime 顺带核销先例）。**bench-gate 全绿**
+（zw-so2-bench 09:08:27–09:14:53 EXIT=0：微基准 3/3 css_bench/engine_bench/
+style_bench + 页场景绝对预算 PASS——welcome p95 8.6ms/medium 307ms/morning
+51ms、resource peak_rss 169MB、retained form input p95 0.018ms，报告
+benchmark_20261116_090833.{txt,json}；dirty=true 系 es_module peer WIP
+同载，A/B 零贡献同例）。残面（下刀队列）：shape 族真插值池（shape-outside-interpolation
+660F/780、shape-interpolation 366F/546、path-interpolation 340F/478——门开插值可跑后的
+中点期望残面，归 Transition 通道刀真插值池）、circle/ellipse-004 串化深形各 533F +
+inset-003 302F + circle/ellipse-003 各 125F（declared 级 canonical：缺分量补 center/edge
+序/calc 折算展开）、shape-margin/shape-image-threshold 两属性未入白名单各 120F 全灭页
+（backdrop-filter 同型门线刀候选：shape-image-threshold `<number>` [0,1]、shape-margin
+`<length-percentage>`）、composition 138F 在账。全案
+[evidence 2026-11-16-shape-outside-whitelist-knife](evidence/2026-11-16-shape-outside-whitelist-knife.md)。
 **地图校正（11-15 九轮收口探针定谳，改下一步方向）**：①前轮「@keyframes
 apply 拒收全局关键字、keyframe-inherit-anim 证 from 帧被丢」为**探针伪账
 更正**——同步 gCS 读不反映动画值：kw2 对照组（JS 建/static `<style>` +
@@ -66,8 +361,78 @@ composition 定向双腿 **+197/0/0**（margin/padding 8 页、width/height/min-
 make test 门禁（zw-cadd-mkt2 systemd unit + test-guard，177 腿 18:06 收）：本刀域
 全绿（animation 171 ok、engine 面零红）；唯一红腿 es_module s337/s345 两测经机制核
 （WIP diff 明文替换 s345 旧 globalThis getter 形并同步改断言）归 script-sandbox 流
-在途 s419 WIP 树态红，不入本刀账。残面候选（下一刀）：easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G、MULTI 值形
+在途 s419 WIP 树态红，不入本刀账。
+**剩余腿九腿账（zw-cadd-legs 单元 18:23 收，绿四红五，零新增本刀真实代码红）**：
+绿四腿=renderer bin / GPU renderer / GPU consistency / quickjs renderer bin；红五腿
+逐名对号——renderer lib 1F=worker-fetch（在册 c6dcbce0a reject 语义过时镜像）；
+browser bin 2F=tab_js_worker 同根镜像+default_actions（在册三红账）；browser tests
+6F=cdp_focus_governance 整套 0.00s panic，**新形伪红**：该套件 277 行新鲜度 tripwire
+断言 zero-renderer 二进制 mtime 晚于 js_dom_shim 最新源 mtime——18:16 rebase re-pick
+（内容恒等）刷源 mtime 而二进制未重建，六测未执行即 panic，机制由 panic 文本自证，
+`build -p zero-renderer` 重建即翻绿（树被在途施工占用暂缓，下轮门禁顺带核销）；
+quickjs crates 腿 zero-script-sandbox quickjs lib 280P/**47F es_module**——s419 WIP
+在 quickjs 组合下扩面（v8 形仅 s337/s345 两红；失败集含 WIP 新增 s419 具名测，
+stdout 见 `with (__zwImpH$)` 包装形），归 script-sandbox 流在途树态红不入本刀账；
+quickjs renderer lib 1F=worker-fetch quickjs 镜像同 c6dcbce0a 根。全账真实代码红仍
+SW 具名导入 getter 一处。碰头记：18:32:21 起 js_anim_registry.rs（AnimationClock
+timing 面）现他流在途施工（E0382 中间态+`cargo test -p zero-engine --lib anim`
+腿在跑），与本刀已提交 animation.rs 文件不重叠；九腿账采集窗 18:16-18:23 先于其
+落地，provenance 由腿日志时间戳锚定。残面候选（下一刀）：easing 感知离散翻转采纳 ~88G、url 绝对化 ~9G、MULTI 值形
 （transform 列表/背景对）逐函数合成。
+**easing 感知离散翻转采纳刀已落地（11-15 十二轮）**：jsanim v2 fallback 检测器
+把「开区间 tick 输出 ≡ 端点原文」一概判引擎 echo 回落 B0，把 spec 离散/步进的
+合法恒端点输出全折（css-values-4 §8.5.6 不可插值对 transformed progress 0.5
+翻转、step-start/end eased 钳 0/1 同形；round-10 账离散面 ~50 真增益 v1 内含、
+v2/v3 清零）。放宽为 **eased 一致性采纳**：`flip_ok` 形态门（恰 2 帧、端点
+offset 0/1 选择器域判定——数组序不信任、direction Normal）下重算
+`eased = apply_timing_function(prog, entry.timing)`：输出 ≡to 且 eased≥0.5 /
+≡from 且 eased<0.5 / 恒值对（from≡to 任何进度）→ 采纳；侧别失配/NaN → 维持
+回落（零回归方向）。eased 同源：合成规则帧不携带 animation-timing-function
+（`_zwWaapiSpecKeyframes` 丢帧级 easing 键）→ 引擎段内恒用全局 timing；span 1
+归一化恒等使整体进度 ≡ 段进度，entry 级重算精确。A/B 双面（B0=bin-cadd-b1
+十一轮 B1 快照 / B1=bin-flip-b1，全程快照二进制；marker `zw-easing-flip-adopt`
+走 part03.js 注释入二进制——Rust const/static 不引用不落二进制三试教训）：
+新面八任务双腿 **0/0/0**（六组 corpus 无 WAAPI 动画面 flip 链 inert——目标
+选择事后剖析见 evidence）；五电池护栏 **+118/0/0 零回归**，经账目三桶拆分
+（采样位置 × 期望端点形态程序化分类）归属定谳：**flip 离散直接 +21**
+（transforms 007 matrix3d↔matrix 离散对 3 + values max-width/height
+none↔20px 离散对 4 + fonts metric 混排离散对 14——interior 端点期望，
+本刀设计目标面）、**cadd 臂迟达 +5**（font-size-adjust add 组合中点真插值
+期望 ∉ 端点=插值臂需求，bin-cadd-b1 构建早于臂落树实锤）、**外来钳制面
++92 挂待归因账不记本刀**（B0 tick 在 prog≤0/≥1 无发射瞬态：主候选
+animation.rs 17:43 构建瞬态提交前回退〔commit diff 不可见〕，次候选
+es_module s419〔nm 符号集 76 vs 460 内容差实锤、module 编译域无 classic
+路径〕；本刀三重排除＝shim verbatim blob 逐字节同 + 注册流纯增量 +
+eval 钳制位恒等）。按属性分组 REGRESSED 空表，离散属性白名单收紧预案未
+触发。**通道教训**：css-grid grid-template-rows-interpolation 失败面走
+CSS Transitions 通道（allow-discrete）不经 js_anim_registry，本刀对其无效
+（实测 0/0/0，归 transition 通道另刀）；「~88G」挂账实际落点 = transforms/
+values/fonts 三域离散翻转面，背景族 discrete-no-interpolation ~119 候选未兑现
+（引擎无该族 keyframe echo 输出，采纳链 inert）。单测 flip_eased_adopts 七钉 +
+engine anim 123/123 全绿；tick 副作用纪律零交互（flip_ok 门直读 keyframes AST，
+无新增 tick，与 AnimationClock.tick learning 无副作用路径约定同型）。见
+[evidence 2026-11-15-easing-flip-adopt-knife](evidence/2026-11-15-easing-flip-adopt-knife.md)。
+make test 门禁（zw-flip-mkt2 systemd unit + test-guard，19:29:38 发射 / 19:50:11
+收；首轮 zw-flip-mkt fmt 全局步被 peer WIP 四文件漂移阻断〔animation.rs/
+computed_style.rs=offset 刀、es_module.rs=s419、apply_advanced.rs=offset 刀〕，
+按 composite-add 先例拆腿、fmt 只核本刀文件 FMT-SCOPE ✓）：companion ✓ /
+GPU adapter+consistency ✓ / renderer bin ✓ / quickjs renderer bin ✓；红腿逐名
+对号（**零本刀域红**，engine anim/registry 面全绿）——clippy 1F=script-sandbox
+`too_many_arguments` 8/7（s419 WIP lint 连坐，peer 域）；workspace 测试
+1F=image_batch_e2e 41≠36 负载峰值形（在册）；renderer lib 1F=worker-fetch
+（在册 c6dcbce0a 镜像）；browser bin 3F=tab_js_worker 镜像+default_actions
+（在册）+ gpu_compositor_path_dispatches_input_events_to_form_controls
+（新面孔 IPC 帧头断裂形态，**solo 定谳 flake 不入账**——双会话合计 solo
+×11=8 绿 3 红〔红侧签名=compositor「通道关闭，退出」后 signal 11 断帧；
+flip 侧加密采样 3/8 红、门禁收后低载仍现，纯负载相位解释存疑〕，分类一致归
+compositor 域后续查）；
+browser tests 2F=tab_js_worker+default_actions（在册）；quickjs workspace
+1F=image_batch（同负载形 quickjs 面）；quickjs renderer lib 1F=worker-fetch
+quickjs 镜像（在册）。round-11 cdp_focus 新鲜度 tripwire 伪红本轮未现
+（companion build 刷新二进制 mtime 顺带核销）；round-11 script-sandbox
+quickjs 47F es_module 扩面本轮未现（s419 树态推进，peer 域）。
+残面候选（下一刀）：url 绝对化 ~9G、MULTI 值形（transform 列表/背景对）逐函数
+合成、CSS Transitions 通道离散翻转（grid-template 面）。
 **动画值进 gCS 刀已落地（11-15 十轮，jsanim v1→v3 三代 A/B 收口）**：shim
 `Animation` 经 `__zw_js_anim_register/seek/playpause/cancel` 把 keyframes/timing/
 播放态登记到引擎侧 `js_anim_registry`（thread_local ENTRIES + 独立

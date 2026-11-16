@@ -206,6 +206,13 @@ impl PropertyRegistry {
             //（individual_* 字段置 None）。known_properties 白名单接入随
             // CSS.supports 门修复（js_dom_bridge decl_supported 前置）。
             "rotate" | "translate" | "scale" => Some(Transform(zero_css_parser::values::TransformValue::None)),
+            // CSS Motion Path offset 簇（css-motion-1，非继承；wptfyi-css offset-* 刀）：
+            // 借 Transform(None) 表义同 individual 先例，真实重置在 apply_initial_value
+            //（offset_path/distance/rotate/anchor/position 字段落 spec 初始
+            // none/0/auto/auto/normal）。
+            "offset-path" | "offset-distance" | "offset-rotate" | "offset-anchor" | "offset-position" => {
+                Some(Transform(zero_css_parser::values::TransformValue::None))
+            }
             "transform-origin" => Some(Length(LengthValue::Percentage(50.0))),
             "perspective" => Some(Length(LengthValue::Px(0.0))),
             "perspective-origin" => Some(Length(LengthValue::Percentage(50.0))),
@@ -255,6 +262,9 @@ impl PropertyRegistry {
             "break-after" => Some(BreakAfter(BreakValue::Auto)),
 
             // Column Rule
+            // 简写初始值 = medium none currentcolor（CSS Multicol §6.2）；无聚合
+            // PropertyValue 变体，返回首子属性初始形（gap 简写臂同款先例）。
+            "column-rule" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
             "column-rule-width" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
             "column-rule-style" => Some(ColumnRuleStyle(ColumnRuleStyleComputedValue::None)),
 
@@ -303,6 +313,9 @@ impl PropertyRegistry {
             // object-position 默认 50% 50%（Center），CSS Images §3。
             "object-position" => Some(ObjectPosition(BackgroundPositionComputedValue::Center)),
             "filter" => Some(Filter(Vec::new())),
+            // backdrop-filter 初始 = none（空表，Filter Effects-2）；与
+            // ComputedStyle::default()（backdrop_filter = Vec::new()）一致。
+            "backdrop-filter" => Some(Filter(Vec::new())),
 
             // Column Rule Color — CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
             "column-rule-color" => Some(ColumnRuleColor(ColorValue::CurrentColor)),
@@ -383,6 +396,9 @@ impl PropertyRegistry {
 
             // Clip Path
             "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),
+
+            // Shape Outside（css-shapes-1 §3，与 clip-path 同 basic-shape 族）
+            "shape-outside" => Some(ShapeOutside(ShapeOutsideComputedValue::None)),
 
             // Border Shape（css-borders-4 §7，R4534）
             "border-shape" => Some(BorderShape(zero_css_parser::values::BorderShapeValue::None)),
@@ -603,6 +619,11 @@ impl PropertyRegistry {
             "rotate",
             "translate",
             "scale",
+            "offset-path",
+            "offset-distance",
+            "offset-rotate",
+            "offset-anchor",
+            "offset-position",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",
@@ -646,6 +667,7 @@ impl PropertyRegistry {
             "break-after",
             "column-rule-width",
             "column-rule-style",
+            "column-rule",
             "overscroll-behavior-x",
             "overscroll-behavior-y",
             "touch-action",
@@ -674,6 +696,7 @@ impl PropertyRegistry {
             "object-fit",
             "object-position",
             "filter",
+            "backdrop-filter",
             "column-rule-color",
             "contain",
             "contain-intrinsic-size",
@@ -708,6 +731,7 @@ impl PropertyRegistry {
             "text-shadow",
             "box-shadow",
             "clip-path",
+            "shape-outside",
             "clip",
             "border-shape",
         ]

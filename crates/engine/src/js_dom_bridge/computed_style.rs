@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
     BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
@@ -34,13 +35,13 @@ use zero_style_system::{
     FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
     ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
     ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
-    TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
-    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
-    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
-    WritingModeValue, ZIndexValue,
+    OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
+    QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
+    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue,
+    TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
+    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -654,6 +655,29 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "rotate" => individual_opt_to_css(style.individual_rotate.as_ref()),
         "translate" => individual_opt_to_css(style.individual_translate.as_ref()),
         "scale" => individual_opt_to_css(style.individual_scale.as_ref()),
+        // ── CSS Motion Path offset 簇（css-motion-1；wptfyi-css offset-* 刀）──
+        // 计算值发射（缺臂即 gCS 读缺省——individual 先例同教训）；distance font
+        // 相对长度已在 apply 期绝对化，此处直接序列化；path 原文存储透传。
+        "offset-path" => style.offset_path.clone().unwrap_or_else(|| "none".to_string()),
+        "offset-distance" => match style.offset_distance.as_ref() {
+            Some(lv) => length_to_css(lv, font_size_px),
+            None => "0px".to_string(),
+        },
+        "offset-rotate" => offset_rotate_to_css(style.offset_rotate),
+        "offset-anchor" => match &style.offset_anchor {
+            Some((x, y)) => format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px)),
+            None => "auto".to_string(),
+        },
+        // `offset-position`（css-motion-1 §offset-position，初始 normal）：关键字形
+        // 直串；<position> 对经 length_to_css（calc 形 canonical 化同通道）。
+        "offset-position" => match style.offset_position.as_ref() {
+            Some(OffsetPositionValue::Normal) => "normal".to_string(),
+            Some(OffsetPositionValue::Auto) => "auto".to_string(),
+            Some(OffsetPositionValue::Position(x, y)) => {
+                format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
+            }
+            None => "normal".to_string(),
+        },
         // ── transform-origin（R2716）── 2 LengthValue 经 length_to_css，空格连接。
         "transform-origin" => {
             transform_origin_to_css(&style.transform_origin_x, &style.transform_origin_y, font_size_px)
@@ -679,6 +703,8 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "will-change" => will_change_to_css(&style.will_change),
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
+        // css-shapes-1 §shape-outside：同 basic-shape 族串化器 + 裸 <shape-box>。
+        "shape-outside" => shape_outside_to_css(&style.shape_outside, font_size_px),
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
         "content" => content_to_css(&style.content, element_color, font_size_px),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
@@ -1537,6 +1563,17 @@ fn letter_spacing_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         "normal".to_string()
     } else {
         length_to_css(lv, font_size_px)
+    }
+}
+
+/// offset-rotate 计算值串（css-motion-1 §offset-rotate：auto | reverse |
+/// <angle> | auto <angle>；角度 deg 整数化输出——apply 期归 deg 存 f64）。
+fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
+    match v {
+        None | Some(OffsetRotateValue::Auto) => "auto".to_string(),
+        Some(OffsetRotateValue::Reverse) => "reverse".to_string(),
+        Some(OffsetRotateValue::Angle(deg)) => format_num(deg, "deg"),
+        Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {}", format_num(deg, "deg")),
     }
 }
 
@@ -2597,7 +2634,7 @@ fn will_change_to_css(list: &[WillChangeValue]) -> String {
 /// `None`→`none`；`inset()` 四内缩按 box 简写折叠（1/2/3/4 值，同 margin 语法）+ 可选 `round`；
 /// `circle()`/`ellipse()` 半径 + 可选 ` at <pos>`；`polygon()` 填充规则（仅 evenodd 输出）+ 逗号分隔顶点。
 /// 长度经 [`length_to_css`]；半径关键字 closest-side/farthest-side 原样。
-fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
+pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
     use ClipPathValue as C;
     match c {
         C::None => "none".to_string(),
@@ -2651,6 +2688,24 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
                 PolygonFillRule::EvenOdd => format!("polygon(evenodd, {pts})"),
             }
         }
+        // shape()/path()/rect()/xywh()：css-shapes-2 四兄弟走 css-parser
+        // canonical 串化。shape() 走 computed 级（位置关键字折 %、rotate 归
+        // deg——chrome computed 串形语料钉面）；path()/rect()/xywh() 声明级
+        // verbatim（path data 无单位、rect/xywh computed 折算后置挂账）。
+        C::Shape(s) => shape_to_css_computed(s),
+        C::Path(p) => path_to_css(p),
+        C::Rect(r) => rect_to_css(r),
+        C::Xywh(x) => xywh_to_css(x),
+    }
+}
+
+/// shape-outside 计算值串化（css-shapes-1 §shape-outside）：`<basic-shape>`
+/// 复用 [`clip_path_to_css`]；裸 `<shape-box>` 即关键字原文；none → `none`。
+pub(crate) fn shape_outside_to_css(v: &ShapeOutsideComputedValue, font_size_px: f64) -> String {
+    match v {
+        ShapeOutsideComputedValue::None => "none".to_string(),
+        ShapeOutsideComputedValue::Shape(c) => clip_path_to_css(c, font_size_px),
+        ShapeOutsideComputedValue::Box(k) => k.as_css_str().to_string(),
     }
 }
 

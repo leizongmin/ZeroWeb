@@ -2743,3 +2743,40 @@ fn test_background_timer_clamp_hidden_page_dc1() {
         "恢复可见后 interval re-arm 回原周期"
     );
 }
+
+// 诊断（B2 切片 2）：桥级 `query_all_selector_list` 对 `dl + dl > dt` 链（WPT
+// input-events getTargetRanges 语料 `querySelector("dl + dl > dt")` 崩
+// firstChild-null 的桥侧复现——含片段输入与大写类型段两形态）。
+#[test]
+fn diag_bridge_query_all_chain_sibling() {
+    let html = "<html><body><dl><dt>a</dt></dl><dl><dt>b</dt></dl></body></html>";
+    let list = query_all_selector_list(html, "dl + dl > dt");
+    assert_eq!(list.split('|').filter(|s| !s.is_empty()).count(), 1, "整文档输入应命中 1");
+
+    let frag = "<dl><dt>a</dt></dl><dl><dt>b</dt></dl>";
+    let list_frag = query_all_selector_list(frag, "dl + dl > dt");
+    println!("frag hits: {list_frag:?}");
+    assert_eq!(list_frag.split('|').filter(|s| !s.is_empty()).count(), 1, "片段输入应命中 1");
+
+    let html2 = "<html><body><p><b>x</b></p><p><b>y</b></p></body></html>";
+    assert_eq!(query_all_selector_list(html2, "P + p > b").split('|').filter(|s| !s.is_empty()).count(), 1, "大写 P 链应命中 1");
+    assert_eq!(query_all_selector_list(html2, "p + p > b").split('|').filter(|s| !s.is_empty()).count(), 1, "小写链应命中 1");
+}
+
+// 诊断（B2 切片 2）：元素级序列化查询路径 `parse_html_element_json_full`
+//（shim `_zwMQueryAll` → `__zw_parse_html_query` 消费面）对链选择器行为。
+#[test]
+fn diag_parse_html_json_chain_sibling() {
+    let frag = "<dl><dt>a</dt></dl><dl><dt>b</dt></dl>";
+    let all = parse_html_element_json_full(frag, "dl + dl > dt", true, None, true);
+    println!("json hits: {all:?}");
+    assert!(!all.is_empty(), "filter_synthetic=1 全量应命中");
+
+    let frag2 = "<p><b>x</b></p><p><b>y</b></p>";
+    let all2 = parse_html_element_json_full(frag2, "p + p > b", true, None, true);
+    println!("json2 hits: {all2:?}");
+    assert!(!all2.is_empty(), "p + p > b 应命中");
+    let all2u = parse_html_element_json_full(frag2, "P + p > b", true, None, true);
+    println!("json2 upper hits: {all2u:?}");
+    assert!(!all2u.is_empty(), "大写 P 链应命中");
+}

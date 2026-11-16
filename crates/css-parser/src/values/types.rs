@@ -1155,6 +1155,16 @@ pub enum ClipPathValue {
         /// 顶点坐标列表。
         points: Vec<(LengthValue, LengthValue)>,
     },
+    /// shape() — 命令式基本形状（css-shapes-2 §shape-function；模型见
+    /// [`crate::values::parse_basic_shape::ShapeFunctionValue`]）。
+    /// 载荷 Box 化控制枚举尺寸（BorderShapeValue 内嵌三份 ClipPathValue）。
+    Shape(Box<crate::values::parse_basic_shape::ShapeFunctionValue>),
+    /// path() — SVG path data（css-shapes-2 §path-function）。
+    Path(Box<crate::values::parse_basic_shape::PathFunctionValue>),
+    /// rect() — css-shapes-2 §basic-shape-rect-notation。
+    Rect(Box<crate::values::parse_basic_shape::RectFunctionValue>),
+    /// xywh() — css-shapes-2 §basic-shape-rect-notation。
+    Xywh(Box<crate::values::parse_basic_shape::XywhFunctionValue>),
 }
 
 /// clip-path 半径值。

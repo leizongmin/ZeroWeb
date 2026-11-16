@@ -3749,8 +3749,21 @@ fn run_corpus_subdirs_ext(
             if case_skipped(&relative, &source) {
                 continue;
             }
-            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
-            cases.push((relative, results));
+            // variant 用例逐 query 跑（R329 同款；基础 URL 上游 harness 不注册 = 空转）。
+            // editing B2：input-events getTargetRanges 语料 4 文件 `<meta name=variant>`
+            // 矩阵（?Backspace/?Delete/…），页面 `location.search` 分派——query 缺席
+            // → "Unhandled variant" 恒崩假账；case 名带 query 与上游 dashboard 对齐。
+            let variants = case_variants(&source);
+            if variants.is_empty() {
+                let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
+                cases.push((relative, results));
+                continue;
+            }
+            for variant in variants {
+                let case_name = format!("{relative}{variant}");
+                let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, corpus_case_timeout());
+                cases.push((case_name, results));
+            }
         }
     }
     cases
@@ -9897,6 +9910,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // keyup 清零）——后续可打印字符键识别为快捷键组合（copy/cut/paste/selectAll
     // 默认动作路由），不再落 InsertText。生命周期同 shift_sticky。
     let mut td_accel_sticky = false;
+    // B2（editing goal，2026-11-15）：Alt 粘滞位（同 accel 生命周期）——修饰组合
+    //（Alt + Backspace/Delete）在编辑键分流臂识别为修饰链 = 完全 no-op（语料
+    // get-target-ranges 修饰族期望 NOOP；词删/前删语义 FIXME 挂账 B2 后续刀）。
+    let mut td_alt_sticky = false;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -10046,6 +10063,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 &mut td_drag_mouse_suppressed,
                 &mut td_shift_sticky,
                 &mut td_accel_sticky,
+                &mut td_alt_sticky,
             );
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
@@ -11789,6 +11807,7 @@ fn apply_testdriver_command(
     drag_mouse_suppressed: &mut bool,
     shift_sticky: &mut bool,
     accel_sticky: &mut bool,
+    alt_sticky: &mut bool,
 ) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
@@ -12123,9 +12142,18 @@ fn apply_testdriver_command(
                 "\u{E016}" => Some("Insert"),
                 _ => None,
             };
+            // editing-compat B2（input-events getTargetRanges 面，2026-11-15）：编辑键
+            // 键名映射（Backspace/Delete）——事件 key 用 UI Events 键名（同
+            // nav_key_name 先例），默认动作路由见下方编辑键臂。
+            let edit_key_name = match key.as_str() {
+                "\u{E003}" => Some("Backspace"),
+                "\u{E017}" => Some("Delete"),
+                _ => None,
+            };
             let event_key = modifier_name
                 .map(String::from)
                 .or_else(|| nav_key_name.map(String::from))
+                .or_else(|| edit_key_name.map(String::from))
                 .unwrap_or_else(|| key.clone());
             // M2-S195：Shift 粘滞位——修饰键 keydown 置位/keyup 清零（页级状态，
             // 同链跨命令持续；Tab 步按位取方向 + 后续键事件 shiftKey 继承）。
@@ -12136,6 +12164,11 @@ fn apply_testdriver_command(
             // 生命周期）——后续可打印键识别为快捷键组合（下方 accel 路由）。
             if matches!(key.as_str(), "\u{E009}" | "\u{E03D}") {
                 *accel_sticky = event_type == "keydown";
+            }
+            // B2：Alt 粘滞位（同 shift_sticky 生命周期；Alt 无 accel 消费面，仅供
+            // 编辑键分流臂识别修饰链）。
+            if key == "\u{E00A}" {
+                *alt_sticky = event_type == "keydown";
             }
             let script = zero_engine::script_dispatch_dom_event(
                 &selector,
@@ -12260,6 +12293,36 @@ fn apply_testdriver_command(
                     }),
                 );
                 let _ = webview.execute_script(&keypress_ce);
+                return None;
+            }
+            // editing-compat B2（input-events getTargetRanges 面，2026-11-15）：Actions 链
+            // Backspace/Delete（\u{E003}/\u{E017}）默认动作 = 删除编辑——此前落
+            // InsertText（PUA 字面插入 + keypress，无删除效果），get-target-ranges 语料
+            // sendBackspaceKey/sendDeleteKey（Actions 路径）整面 F 的根因。分流到
+            // DeleteBackward/ForwardDelete（user_actions 侧 CE/文本控件与 send_keys
+            // 编辑键同汇）。编辑键不产字符、不派 keypress（UI Events：非字符键）。
+            // 事件本体（key=Backspace/Delete）已在上方派发，preventDefault 即无默认动作。
+            // 裸编辑键 keydown = 删除默认动作（keyup 步已在上方提前返回，恒无默认
+            // 动作）；修饰组合（Shift/Ctrl/Meta + 编辑键）= 完全 no-op——语料动态面
+            //（get-target-ranges-backspace/forwarddelete 修饰族）期望 NOOP：无删除、
+            // 无 InsertText 兜底（修饰组合跌落 InsertText 会插 PUA 字面 + 派
+            // beforeinput，动态面 "expected 0 but got N" 实证；探针 zz-probe-b2mod
+            // 定谳 HEAD 同位绿色本身是失步幻影 PUA——无事件、无可见变更）。
+            // FIXME: 编辑键修饰组合词删/前删语义（deleteWordBackward/
+            // deleteWordForward inputType 面，delete-selection.html 期望）挂账 B2
+            // 后续刀。
+            if matches!(key.as_str(), "\u{E003}" | "\u{E017}") {
+                if *shift_sticky || *accel_sticky || *alt_sticky {
+                    return None;
+                }
+                let action = if key.as_str() == "\u{E003}" {
+                    HtmlUserAction::DeleteBackward
+                } else {
+                    HtmlUserAction::ForwardDelete
+                };
+                if let Some(error) = dispatch_action(webview, target, action) {
+                    return Some(error);
+                }
                 return None;
             }
             // selection-compat M2（2026-11-04）：accel（Ctrl/Meta）粘滞位下的可打印

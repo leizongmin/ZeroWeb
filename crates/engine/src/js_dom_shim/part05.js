@@ -8733,7 +8733,15 @@
       // `#a,.b` 解析出 id 'a,'，s81 `_zwSelIdConstraint` 据此误剔 host 全部命中
       // → 逗号列表查询恒空；`\,` 转义仍走下方 escape 臂属 ident）。
       // https://drafts.csswg.org/selectors/#selector-list
-      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || ch === ',' || /[ \t\n\f\r]/.test(ch)) break;
+      // editing B2 切片 2：组合器字符 `+`/`>`/`~` 亦非 ident 字符（CSS Syntax
+      // <ident-token> 不含三者；`\+` 等转义经上方 escape 臂先行）——旧版缺此
+      // break，无空格链 `p+p>b` 被单 token 吞成伪 tag 'P+P>B' 的 supported
+      // compound → R322/R309 compound 臂恒 miss → qS/qSA null（P14 探针：空格
+      // 版 hit、无空格版 null 四象限恒定）。token 止于组合器 → 第二裸 token
+      // unsupported → complex 链臂（`_zwOverlayChainAll`）接管。
+      // https://drafts.csswg.org/css-syntax/#ident-token
+      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || ch === ','
+          || ch === '+' || ch === '>' || ch === '~' || /[ \t\n\f\r]/.test(ch)) break;
       if (ch === '\\') {
         var nc = text[i + 1];
         if (nc === undefined) { out += '\uFFFD'; i++; continue; } // EOF 反斜杠 → U+FFFD（spec 4.3.4）
@@ -9017,6 +9025,87 @@
       out.push(c);
     }
     return out.length ? { compounds: out, combinators: parts.combinators } : null;
+  }
+  // overlay 子树链匹配（editing goal B2 切片 2）：同 turn innerHTML 替换后 host
+  // 快照滞后（mutation 异步 apply），compound-only 归并臂（R309/R322）覆盖不了的
+  // 组合器选择器（`dl + dl > dt` / `P + p > b`）在 pending 域恒 miss → qS null →
+  // 语料 `.firstChild` 崩（input-events getTargetRanges joining-dl/forwarddelete
+  // 家族主因；P12 探针对照：同 turn null → 60ms 后 host apply 自愈命中）。
+  // 在 overlay 树上直接求值 complex 链（R309 同域：innerHTML 替换已置空基底，
+  // overlay 即全部新子；普通 append 域不接——host 快照有效，identity 双源风险）。
+  // chain = `_parseComplexOf` 产物 { compounds, combinators }，组合器四变体与
+  // DOM crate query.rs::Combinator 对齐（R3286）。返树序命中数组（空数组 = 0 命中，
+  // 合法结果非失败——调用方据返回是否为 array 判分支接住）。
+  // https://dom.spec.whatwg.org/#concept-scoped-root ; https://drafts.csswg.org/selectors/#complex
+  function _zwOverlayChainAll(kids, chain) {
+    var out = [];
+    if (!chain || !chain.compounds || !chain.compounds.length) return out;
+    // overlay 对象无 parentNode 引用——DFS 建父/前元素兄弟上下文表（解析代理
+    // 引用恒定可作 Map key）。
+    var parentOf = new Map(), prevElemOf = new Map();
+    (function _zwOcCtx(n) {
+      if (!n || !n.childNodes) return;
+      var prev = null;
+      var cs = n.childNodes;
+      for (var i = 0; i < cs.length; i++) {
+        var c = cs[i];
+        if (!c || c.nodeType !== 1) continue;
+        parentOf.set(c, n);
+        prevElemOf.set(c, prev);
+        prev = c;
+        _zwOcCtx(c);
+      }
+    })({ childNodes: kids });
+    var all = [];
+    (function _zwOcFlat(n) {
+      if (!n || !n.childNodes) return;
+      var cs = n.childNodes;
+      for (var i = 0; i < cs.length; i++) {
+        var c = cs[i];
+        if (!c || c.nodeType !== 1) continue;
+        all.push(c);
+        _zwOcFlat(c);
+      }
+    })({ childNodes: kids });
+    // hits[i]：全子树匹配 compounds[i] 的元素（树序）；valid[i]：匹配前缀链
+    // compounds[0..i] 的元素（段间按组合器锚定传递收窄——右到左验证的等价
+    // 左到右形态，免逐候选回溯）。
+    var valid = [];
+    for (var s = 0; s < chain.compounds.length; s++) {
+      var seg = [];
+      for (var h = 0; h < all.length; h++) {
+        try { if (_matchCompoundOf(all[h], chain.compounds[s])) seg.push(all[h]); } catch (_eOcM) {}
+      }
+      if (s === 0) { valid = seg; continue; }
+      var comb = chain.combinators[s - 1];
+      var next = [];
+      for (var v = 0; v < seg.length; v++) {
+        var el = seg[v];
+        var ok = false;
+        for (var a = 0; a < valid.length; a++) {
+          var an = valid[a];
+          if (comb === '>') { if (parentOf.get(el) === an) { ok = true; break; } }
+          else if (comb === '+') { if (prevElemOf.get(el) === an) { ok = true; break; } }
+          else if (comb === ' ') {
+            var p = parentOf.get(el);
+            while (p) { if (p === an) { ok = true; break; } p = parentOf.get(p); }
+            if (ok) break;
+          } else { // '~'
+            var ps = prevElemOf.get(el);
+            while (ps) { if (ps === an) { ok = true; break; } ps = prevElemOf.get(ps); }
+            if (ok) break;
+          }
+        }
+        if (ok) next.push(el);
+      }
+      valid = next;
+      if (!valid.length) break;
+    }
+    if (valid.length) {
+      var vs = new Set(valid);
+      for (var o = 0; o < all.length; o++) { if (vs.has(all[o])) out.push(all[o]); }
+    }
+    return out;
   }
   // 逗号列表拆分（跳过 `[...]` / `(...)` / 引号内逗号 / **CSS 转义**——js-dom M4 R118：
   // `\,` 是字面逗号 ident 字符不是组边界，WPT ParentNode-querySelector-escapes
@@ -18230,6 +18319,22 @@
     ['data', 'data', null], ['isComposing', 'isComposing', false],
     ['inputType', 'inputType', ''], ['dataTransfer', 'dataTransfer', null],
   ]);
+  // B2（editing goal，2026-11-15）：getTargetRanges——beforeinput 携带的「将受
+  // 影响」StaticRange 数组（引擎 CE 删除路径 dispatch 前挂实例 `_zwTargetRanges`
+  // 槽，见 part01 `__zwCePendingTargetRanges` 注记）。槽缺省返空数组——input
+  // 事件规范恒空。数组存实例不重算、不清除：dispatch 后传播、listener 改选区
+  // 后再读同值（input-events-get-target-ranges-during-and-after-dispatch 语料
+  // 三子测断言同值面）。
+  // https://w3c.github.io/input-events/#dom-inputevent-gettargetranges
+  try {
+    Object.defineProperty(InputEvent.prototype, 'getTargetRanges', {
+      value: function () {
+        var rs = this._zwTargetRanges;
+        return Array.isArray(rs) ? rs : [];
+      },
+      writable: true, configurable: true,
+    });
+  } catch (_eGtrDefine) {}
   // CompositionEvent（UI Events）：IME compositionstart/update/end 的 data。
   _defineEventSubclass('CompositionEvent', 'UIEvent', [
     ['data', 'data', ''], ['locale', 'locale', ''],

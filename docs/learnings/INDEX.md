@@ -5,14 +5,16 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（292）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（294）
 
 - 2026-11-15 [workflow validator 必须随 rev 持续跑——潜伏缺陷跨 rev 复制放大，delivery 回执引用与信封契约三缺陷连爆](bugs/2026-11/2026-11-15-workflow-validator-per-rev-latent-defect.md) — site_optimizer
 - 2026-11-15 [共享树多条 make test 链互踩尽灭——disk-guard rm 并发竞争与指纹撞写](bugs/2026-11/2026-11-15-shared-tree-multi-chain-maketest-mutual-kill.md) — make test, target-disk-guard, rally 无人值守执行流程
 - 2026-11-15 [运行账本单副本灭失与变异面失控——v3 整树重建后的灾备与写纪律](bugs/2026-11/2026-11-15-ledger-single-copy-and-mutation-discipline.md) — site_optimizer
 - 2026-11-15 [在飞批脚本冻结纪律与裸腿日志独立判读：脚本文件被并发改写后 bash 按偏移错位执行，批内判读行不可作终态依据](bugs/2026-11/2026-11-15-inflight-script-freeze-and-raw-log-rejudge.md) — .acceptance/dps,tests/wpt-runner
 - 2026-11-15 [换 CP 候选必须同步重绑 gate 报告——verify-run 的 Gate report subject 硬校验](bugs/2026-11/2026-11-15-gate-report-subject-rebind-contract.md) — site_optimizer
+- 2026-11-15 [corpus A/B 基线目录陈旧：跨刀复用旧 results 目录把已落库增益错记进本刀](bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md) — wpt-runner, testing
 - 2026-11-15 [comm 对比 sweep 产物必须显式 LC_ALL=C，否则 collation 差产出成百伪 GONE/NEW](bugs/2026-11/2026-11-15-comm-collation-false-diff.md) — zero-wpt-runner
+- 2026-11-15 [批级 census 的稳定残红可能是窗切伪影：无窗单页复放配方定谳](bugs/2026-11/2026-11-15-census-window-artifact-windowless-replay.md) — engine,testing
 - 2026-11-15 [AnimationClock.tick 会烧死 fill-forwards 状态——端点捕获必须走无副作用路径](bugs/2026-11/2026-11-15-animation-clock-tick-burns-state.md) — engine/animation, wpt-runner
 - 2026-11-14 [shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口六张脸，判读先分面再动手](bugs/2026-11/2026-11-14-selhandle-registry-sync-split-faces.md) — engine
 - 2026-11-14 [序列上下文 range 位移槽与面值脱钩——同值公开 API 重锚修复](bugs/2026-11/2026-11-14-range-slot-desync-reanchor.md) — engine
@@ -300,9 +302,11 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（44）
+## Patterns — 可复用代码模式与最佳实践（46）
 
+- 2026-11-16 [CSS.supports 与 setProperty 双通道文法分叉](patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md) — engine,style-system
 - 2026-11-15 [shim 写面刀须双世界同落：handle 世界才是 corpus 活跃写面](patterns/2026-11/2026-11-15-shim-write-face-knife-dual-world.md) — engine, css-parser
+- 2026-11-15 [corpus 快照二进制 A/B 的内容差法证与增益三桶归因](patterns/2026-11/2026-11-15-corpus-ab-binary-provenance-ledger-split.md) — wpt-runner, engine, testing
 - 2026-11-14 [roster/thd 漂移归因三板斧：逐名 diff → log -S 溯源 → is-ancestor 窗口归属](patterns/2026-11/2026-11-14-roster-drift-attribution.md) — testing, engineering
 - 2026-11-14 [审查角色报告链形制：recheck 锚定首轮六键，artifacts 只列当前链身份](patterns/2026-11/2026-11-14-review-report-chain-anchoring.md) — engineering, review
 - 2026-11-14 [切任务分支前先 fetch 定 tip——并行波次会翻动冲突面与门禁基线](patterns/2026-11/2026-11-14-parallel-wave-branch-baseline-recheck.md) — site_optimizer
@@ -399,9 +403,10 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（57）
+## Platform — 平台与环境相关经验（58）
 
 - 2026-11-15 [systemd-run --scope 不支持 -p TimeoutSec——Unknown assignment 立即失败，超时兜底须放脚本内](platform/2026-11/2026-11-15-systemd-run-scope-no-timeoutsec.md) — tooling
+- 2026-11-15 [巡查 join 管线必须全链 LC_ALL=C](platform/2026-11/2026-11-15-patrol-join-lc-all-c-collation.md) — wpt-runner,engineering-practice
 - 2026-11-15 [长批唯一可靠载体是 systemd --user service；setsid 与后台 Bash 都会被拆树或到点杀](platform/2026-11/2026-11-15-long-batch-detachment-systemd-user-service.md) — .acceptance/dps,tests/wpt-runner
 - 2026-11-15 [git diff pathspec 按 cwd 相对解析——子目录里跑仓库根路径 pathspec 静默伪空](platform/2026-11/2026-11-15-git-pathspec-cwd-relative-empty.md) — tooling
 - 2026-11-12 [review 类 intent 的 expectedStage 约束——implementing 态直派必被拒](platform/2026-11/2026-11-12-verify-review-intent-expected-stage-constraint.md) — .agents/skills/zeroweb-site-optimizer

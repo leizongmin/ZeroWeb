@@ -14,6 +14,11 @@
 
 ### 新增
 
+- **CSS Motion Path 与插值 harness 大批（wptfyi-css DC-3，2026-11-15/16）**：target expando 刀（reflected 反射 tag 门限化，css-masking 126P→615P，~5,818 上游子测解锁）；WAAPI 门刀（`Element.prototype` animate/getAnimations，门子测 4,071→0）；offset 簇刀（CSS Motion Path offset-path/distance/rotate/anchor 四属性五站全链，+364 零回归）；backdrop-filter 白名单（+253）；column-rule 简写门；composite-add 端点预合成与插值（+272）；easing 感知离散翻转（+21）；g47 `<position>` 缘偏移分面、g48 gradient at 位置文法、g49 GCS 视口真值对齐；11-14 周跑快照 62,896/197,163 = 31.90%（四天净增 +10,408）。
+- **insertParagraph 全族与 plaintext-only 编辑刀（editing-compat，2026-11-15/16）**：plaintext-only 宿主 styling 命令门（styling-commands 双 variant +216）；ip B/C1/C2/C5/C6/F/I5/I6 拆分边界与壳携族刀（ip A/B 双腿 7,183P/12F）；J2 跨 body 边界块并块（+8）；getTargetRanges 快照面 + Actions 编辑键分流（+66）；B1 键入绕链接边界臂与 unlink 实应用（selection 交集 F2P=18）；子文档 join/enter html 形精化（IP-html +40）。
+- **js-dom gtr 家族双根因刀与 iframe navigator（2026-11-15/16）**：链形查询 overlay 匹配 + runner 变体展开——input-events 289P→473P；iframe navigator 工厂读取加卫降级（PR #305 T72 返修 DF-1）与平面对象语义；handle 族子树跨批换代批量边界补注册所有权唯一化（PR #304 T71 返修）。
+- **渲染修复（R5603，2026-11-15）**：flex item 块化盒 vertical-align 不再泄入内部根级文本 run——对端 g50 刀真回归当轮 bisect 定位修复（FIXED=1），本树 corpus 基线重建 995F；谱系真态维持 ~680F/16,594。
+- **构建修正（2026-11-15）**：`make test` 目标补建 `zero-browser`——workspace 腿 image_batch_e2e spawn 缺件伪红根修。
 - **CSS Images 渐变与 image-set 值面（wptfyi-css DC-2 g40–g46，2026-11-13/15）**：渐变 invalid 写面拒收与 canonical 串化（三型调用方畸形整渐变拒收）；色标文法位约束 + style 内容属性写面逐声明拒收（color-stops-parsing 60F 全页清零）；image-set() 解析与串化（`-webkit-` 别名剥除、dpi/dpcm→dppx 折算、calc 三态折叠、canonical 恒 Some 投影，image-set 两页 150F 全页清零）+ calc 负分辨率存储形回读与 content `<image>` 域 ImageSet 臂；css-images 3,091P/124F、css-values 3,553→4,038P。
 - **canvas 导出与嵌入内容语义族（html-semantics s415–s423，2026-11-13/15）**：toBlob/toDataURL type 接通 + 真 JPEG 编码（纯 Rust `jpeg-encoder`）；createPattern video 源臂 + ImageBitmap 污染旗标传播；SVG `<image>` 载入链接通；constraint validation candidate 门；批插同锚倒转根因修复；video ended 挂死根因修复（settle duration 真值链 + headless EOS 派发）。
 - **insertParagraph 与 inserthtml 编辑语义族（editing-compat，2026-11-13/15）**：insertParagraph 拆分边界 inline 壳语义刀 + childNodes live semantics 三刀（PR #303，corpus 净 −5）；inserthtml 壳域选区臂五腿（行内壳溶解/rawtext 壳内拼接/pre 块解包，语料 F 119→106）；strike S1/S2a 同 tag 并拢门 + sub/sup va 冲突壳批。

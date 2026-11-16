@@ -19,7 +19,9 @@ fn test_clip_path_none_case_insensitive() {
 #[test]
 fn test_clip_path_invalid() {
     assert!(parse_clip_path("invalid").is_none());
-    assert!(parse_clip_path("rect(0 0 0 0)").is_none());
+    // rect() 文法刀（css-shapes-2 空白分隔 4 值）后原「rect(0 0 0 0) 拒收」
+    // 旧钉失效；3 值残形仍拒收
+    assert!(parse_clip_path("rect(0 0 0)").is_none());
 }
 
 #[test]
