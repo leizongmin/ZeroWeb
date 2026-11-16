@@ -895,32 +895,12 @@ pub(super) fn computed_style_by_handle(
         styles
             .get(&nid)
             .map(|s| {
-                // CSS Transition 登记（wptfyi-css Transition 通道刀，2026-11-16）：
-                // 前值取 per-identity 最近 gCS 观测（css-transitions §2 before-change
-                // style；文档级槽 diff 会被 harness 两阶段穿插写重建到终态——
-                // per-identity 快照只在本元素读点更新，穿插写零干扰）。登记先于本读
-                // consult（同一脚本轮次 setProperty(to)→读：登记与咨询同读完成）。
-                // 登记期严格门过滤非插值对，echo 池零扰动。
-                if let Some(prev) =
-                    super::transition_registry::take_last_style(super::transition_registry::World::View, handle)
-                {
-                    super::transition_registry::register_from_style_change(
-                        super::transition_registry::World::View,
-                        handle,
-                        &prev,
-                        s,
-                        doc,
-                        nid,
-                    );
-                }
-                super::transition_registry::store_last_style(super::transition_registry::World::View, handle, s);
                 let sibling = Some(zero_style_system::sibling_position(doc, nid));
                 // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）——
                 // 动态元素（handle 身份，createElement 产物）gCS 通道同覆盖；未命中
                 // 回落级联序列化零漂移。rect 桥复用本通道（prop="width"）咨询恒
                 // None除非该 handle 真有动画——几何面零干扰。
                 super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
-                    .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
                     .unwrap_or_else(|| serialize_computed_property_with_sibling(s, prop, sibling))
             })
             .unwrap_or_default()

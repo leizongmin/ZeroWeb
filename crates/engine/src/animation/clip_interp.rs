@@ -179,13 +179,12 @@ fn lerp_pos_opt(
     }
 }
 
-/// 半径插值：Length 同单位线性；任一端为关键字（closest-side/farthest-side 等）
-/// 即整对不可插值（css-shapes-1 §interpolation：关键字半径不参与插值，含
-/// 关键字↔关键字对——Chrome/WPT 对该组期望恒为离散端点形，二十一轮 A/B
-/// 18 REG 定谳修正，此前同关键字误判恒等可插值）。
+/// 半径插值：同关键字保持；Length 同单位线性；关键字↔长度离散
+///（closest-side↔50% 端点组 css-masking 插值语料离散钉面）。
 fn lerp_radius(f: &ClipPathRadius, v: &ClipPathRadius, t: f64) -> Option<String> {
     match (f, v) {
         (ClipPathRadius::Length(fl), ClipPathRadius::Length(tl)) => lerp_len(fl, tl, t),
+        _ if f == v => Some(radius_kw_str(f).to_string()),
         _ => None,
     }
 }
@@ -233,6 +232,16 @@ fn lerp_rect_coord(f: &RectCoord, v: &RectCoord, t: f64) -> Option<String> {
         (RectCoord::Auto, RectCoord::Auto) => Some("auto".to_string()),
         (RectCoord::Length(fl), RectCoord::Length(tl)) => lerp_len(fl, tl, t),
         _ => None,
+    }
+}
+
+fn radius_kw_str(r: &ClipPathRadius) -> &'static str {
+    match r {
+        ClipPathRadius::ClosestSide => "closest-side",
+        ClipPathRadius::FarthestSide => "farthest-side",
+        ClipPathRadius::ClosestCorner => "closest-corner",
+        ClipPathRadius::FarthestCorner => "farthest-corner",
+        ClipPathRadius::Length(_) => "",
     }
 }
 

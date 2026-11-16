@@ -584,9 +584,6 @@ pub fn register_dom_callbacks(
     // WAAPI JS 动画注册表随代际槽同生命周期（导航/新 WebView 装新快照，旧页
     // 动画不跨文档泄漏；同页多次注册不清——动画跨 execute/timer 存活语义）。
     crate::js_dom_bridge::js_anim_registry::clear_all();
-    // CSS Transition 同步读注册表同生命周期（wptfyi-css Transition 通道刀，2026-11-16）
-    // ——导航/新 WebView 装新快照清表，旧页过渡不跨文档泄漏。
-    crate::js_dom_bridge::transition_registry::clear_all();
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
     // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
@@ -2486,11 +2483,6 @@ pub fn register_dom_callbacks(
                 if let Some(v) = super::js_anim_registry::query_override_for_sel(sel, prop, style, *sibling) {
                     return v;
                 }
-                // CSS Transition 咨询（wptfyi-css Transition 通道刀，2026-11-16）——同
-                // jsanim consult 位镜像：活跃过渡条目按墙钟插值覆盖，表空 O(1) None。
-                if let Some(v) = super::transition_registry::query_override_for_sel(sel, prop, style, *sibling) {
-                    return v;
-                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2509,29 +2501,6 @@ pub fn register_dom_callbacks(
                     find_by_selector(doc, sel).and_then(|node| {
                         styles.get(&node).map(|style| {
                             let sibling = Some(zero_style_system::sibling_position(doc, node));
-                            // CSS Transition 登记（wptfyi-css Transition 通道刀，
-                            // 2026-11-16）：前值取 per-identity 最近 gCS 观测
-                            //（css-transitions §2 before-change style；per-selector
-                            // map 换代即清，会被 harness 两阶段穿插读清掉前值——
-                            // per-identity 快照只在本元素读点更新，穿插写零干扰）。
-                            // 登记期严格门过滤非插值对，echo 池零扰动。
-                            if let Some(prev) =
-                                super::transition_registry::take_last_style(super::transition_registry::World::Gen, sel)
-                            {
-                                super::transition_registry::register_from_style_change(
-                                    super::transition_registry::World::Gen,
-                                    sel,
-                                    &prev,
-                                    style,
-                                    doc,
-                                    node,
-                                );
-                            }
-                            super::transition_registry::store_last_style(
-                                super::transition_registry::World::Gen,
-                                sel,
-                                style,
-                            );
                             (
                                 serialize_computed_property_with_sibling(style, prop, sibling),
                                 (style.clone(), sibling),
@@ -2546,13 +2515,8 @@ pub fn register_dom_callbacks(
             // WAAPI JS 动画注册表咨询（同 cache-hit 臂）——以新算基样式查覆盖值，
             // 条目照常入缓存（基样式缓存零污染）。
             let anim_override = super::js_anim_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
-            // CSS Transition 咨询（同 cache-hit 臂镜像）——以新算基样式查覆盖值。
-            let trans_override = super::transition_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
             map.insert((*sel).clone(), entry);
             if let Some(v) = anim_override {
-                return v;
-            }
-            if let Some(v) = trans_override {
                 return v;
             }
             value

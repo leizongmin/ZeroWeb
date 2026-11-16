@@ -11748,10 +11748,9 @@
     // 行界继续提取余行（ghi 误并入 join 行、右块清空——语料 156 案 + 旧账 D 族实证）。
     return { nodes: out, ws: srcEl, wsVal: srcWs, ended: ended };
   }
-  // beforeinput 派发段（d43 从 _zwCeJoinApply 拆出）：B2 pending 快照消费 +
-  // beforeinput 派发。select-delete 主臂在同一 beforeinput 内承载「选区摘除 +
-  // 边界块 join」——摘除与 join 不得双派事件（语料 bi=1 断言面）。
-  function _zwCeJoinDispatch(el, inputType) {
+  // join 应用核：beforeinput(inputType) → 首行提取 + span 保留壳入 dst →
+  // caret 落壳前 → input。返回 true=已应用（调用方结束），false=取消/无内容。
+  function _zwCeJoinApply(el, dst, srcParent, startNode, inputType) {
     // B2：调用方置位的 target range 快照消费即清（取消/无内容也不残留）。
     var pendingRanges = __zwCePendingTargetRanges;
     __zwCePendingTargetRanges = null;
@@ -11761,17 +11760,6 @@
     });
     if (pendingRanges) { before._zwTargetRanges = pendingRanges; }
     if (el.dispatchEvent(before) === false) return false;
-    return true;
-  }
-  // join 应用核：beforeinput(inputType) → 首行提取 + span 保留壳入 dst →
-  // caret 落壳前 → input。返回 true=已应用（调用方结束），false=取消/无内容。
-  // d43 拆分：_zwCeJoinApply = Dispatch + Mutate（既有调用方行为不变）；
-  // select-delete 主臂自派 beforeinput 后直呼 Mutate（无第二派发）。
-  function _zwCeJoinApply(el, dst, srcParent, startNode, inputType) {
-    if (_zwCeJoinDispatch(el, inputType) === false) return false;
-    return _zwCeJoinMutate(el, dst, srcParent, startNode, inputType);
-  }
-  function _zwCeJoinMutate(el, dst, srcParent, startNode, inputType) {
     // 块间分隔空白消费（2026-10-31）：startNode 前紧邻的纯空白文本（`</div>\n<div>`
     // 源码换行）在块界 join 几何下是块分隔符——Chrome join 不留分隔空白（语料 C 族
     // 1,027 案 `\n` 残留实证）。判定：startNode 本身为块，或跳过的空白串的前邻是块
@@ -11861,18 +11849,6 @@
       shell = shells.length ? shells[shells.length - 1] : null;
     }
     if (!shells.length) return false;
-    // d44 join 缝尾随 br 消费：块界 join 后原行尾 br 沦为行中换行——Blink 删
-    // 一个多余 br（`<li>list-item1<br></li>`+join 期望 `<li>list-item1list-item2`
-    // 精确形；双 br `<li>list-item1<br><br></li>` accept 数组保留一个）。仅跨块
-    // 尾 append 路径触发（dst=左块、行壳落 dst 尾；同容器行间 join 不动）。
-    if (!_shellRef && _zwCeIsBlockEl(_shellDst) && srcParent !== _shellDst) {
-      var _dkids = _shellDst.childNodes || [];
-      var _dlast = _dkids[_dkids.length - 1];
-      if (_dlast && _dlast.nodeType === 1
-        && String(_dlast.nodeName || '').toLowerCase() === 'br') {
-        try { _shellDst.removeChild(_dlast); } catch (_eBrEat) {}
-      }
-    }
     // shell 落位（2026-10-30 左线 inline 语料）：**行源位插入**——dst 尾 append
     // 在 dst=宿主级行容器时把壳排到捐线块之后（`ghi</div><span>def</span>` 错序
     // 实证）。源位 = srcParent 为 dst 子（右块整体捐线）→ srcParent 位；
@@ -11945,310 +11921,6 @@
     }));
     return true;
   }
-  // —— ⑤ select-delete 主臂（B4-S1，wptfyi-editing d43 2026-11-16）——
-  // 非塌缩跨容器 / 元素锚 range 的 Backspace/Delete 语义。摘除按
-  // Range.deleteContents（https://dom.spec.whatwg.org/#dom-range-deletecontents）：
-  // 文本端点部分覆盖截断、元素容器全覆盖子整摘、分支爬升 + lca 层中段摘除。
-  // 合并与占位按 Blink 行为（deleting-in-list-items/joining-dl/non-collapsed
-  // 语料定谳）：
-  //   · getTargetRanges = 边界规范化端点：起点向后走入 child[so] 首文本、终点
-  //     向前走入 child[eo-1] 末文本，无文本可走保持元素锚（`{list-item1}` 期望
-  //     (t,0)-(t,len)、`list-[item1</li><li>}list-item2` 期望 (t1,5)-(li2,0)、
-  //     `list-item1{</li>` 期望 (li,1) 实证）；
-  //   · 跨块且左侧有残余 → 右块首行并入左块（join 壳机制复用）+ 摘空右侧祖先
-  //     块剪枝（跨 dl join 期望单 `<dl>` 实证）；
-  //   · 跨块且左侧无残余 → 摘空左块移除、右侧残余原位保留（`[list-item1</dt>
-  //     <dt>}list-item2` 期望 `<dl><dd>…</dd></dl>` 实证）；
-  //   · 同块摘除（含 sc===ec 元素容器 splice）摘空块容器 → 占位 `<br>` 落最深
-  //     摘空块壳（`{list-item1}` 期望 `<li><br></li>`、`{<li>…</li>}` 三击选形
-  //     期望 `<ul><li><br></li></ul>`——不删列表与末列表项元素实证）。
-  // FIXME: 左块尾随 `<br>` 消费（join 后 `list-item1<br>-item2` vs 期望无 br，
-  // 与 caret join 臂同域）与嵌套列表/多行右块摘除未实现，语料残余挂 B4 后续刀。
-  function _zwCeCanonGtrStart(n, off) {
-    if (!n || n.nodeType === 3 || n.__zwIsText) return { node: n, offset: off | 0 };
-    var c = (n.childNodes || [])[off | 0];
-    if (!c) return { node: n, offset: off | 0 };
-    var leaf = _zwCeDeepLeaf(c, false);
-    if (leaf && (leaf.nodeType === 3 || leaf.__zwIsText)) return { node: leaf, offset: 0 };
-    return { node: n, offset: off | 0 };
-  }
-  function _zwCeCanonGtrEnd(n, off) {
-    if (!n || n.nodeType === 3 || n.__zwIsText) return { node: n, offset: off | 0 };
-    var o = off | 0;
-    if (o <= 0) return { node: n, offset: o };
-    var c = (n.childNodes || [])[o - 1];
-    if (!c) return { node: n, offset: o };
-    var leaf = _zwCeDeepLeaf(c, true);
-    if (leaf && (leaf.nodeType === 3 || leaf.__zwIsText)) {
-      return { node: leaf, offset: String(leaf.nodeValue || '').length };
-    }
-    return { node: n, offset: o };
-  }
-  // 宿主内最近块祖先（宿主自身兜底）。
-  function _zwCeNearestBlock(n, host) {
-    var cur = n, guard = 0;
-    while (cur && guard++ < 64) {
-      if (cur === host || _zwCeIsBlockEl(cur)) return cur;
-      cur = cur.parentNode;
-    }
-    return host;
-  }
-  // 左侧残余判定（bn→block 链上前向内容；纯空白文本不计，带子元素计——
-  // `<li><br></li>` 残壳是保留面，语料 accept 数组实证）。
-  function _zwCeLeftRemnant(bn, block) {
-    if (!bn) return false;
-    var guard = 0, cur = bn;
-    if (cur.nodeType === 3 || cur.__zwIsText) {
-      if (!/^\s*$/.test(String(cur.nodeValue || ''))) return true;
-    } else if (cur.firstChild) return true;
-    while (cur && guard++ < 64) {
-      var s = cur.previousSibling;
-      while (s) {
-        if (s.nodeType === 3 || s.__zwIsText) {
-          if (!/^\s*$/.test(String(s.nodeValue || ''))) return true;
-        } else if (s.nodeType === 1 && s.firstChild) return true;
-        s = s.previousSibling;
-      }
-      if (cur === block) return false;
-      cur = cur.parentNode;
-    }
-    return false;
-  }
-  // 摘空块容器占位 br（深入唯一摘空块子链到底——br 落最深空块壳）。
-  function _zwCePlaceholderBr(cont) {
-    if (!cont || cont.nodeType !== 1) return;
-    var guard = 0, cur = cont;
-    while (guard++ < 8) {
-      var kids = cur.childNodes || [];
-      var vis = 0, sole = null;
-      for (var i = 0; i < kids.length; i++) {
-        var k = kids[i];
-        if (k.nodeType === 3 && /^\s*$/.test(String(k.nodeValue || ''))) continue;
-        vis++; sole = k;
-      }
-      if (vis !== 1 || !sole || sole.nodeType !== 1 || !_zwCeIsBlockEl(sole)
-        || sole.firstChild) break;
-      cur = sole;
-    }
-    var kk = cur.childNodes || [];
-    for (var j = 0; j < kk.length; j++) {
-      var n2 = kk[j];
-      if (n2.nodeType === 3 && /^\s*$/.test(String(n2.nodeValue || ''))) continue;
-      return; // 尚有可见内容（非摘空）→ 不占位
-    }
-    try { cur.appendChild(document.createElement('br')); } catch (_ePbr) {}
-  }
-  var _zwCeSelectDelete = function (el, range, inputType) {
-    var sc = range.startContainer, ec = range.endContainer;
-    if (!sc || !ec) return false;
-    var so = range.startOffset | 0, eo = range.endOffset | 0;
-    // LCA 预检（宿主域外/断链 → 拒收，调用方落章程路径；不派事件）
-    var chain = [], n0 = sc, g0 = 0;
-    while (n0 && n0 !== el && g0++ < 128) { chain.push(n0); n0 = n0.parentNode; }
-    if (n0 !== el) return false;
-    var lca = null;
-    n0 = ec; g0 = 0;
-    while (n0 && g0++ < 128) {
-      if (chain.indexOf(n0) >= 0) { lca = n0; break; }
-      if (n0 === el) { lca = el; break; }
-      n0 = n0.parentNode;
-    }
-    if (!lca) return false;
-    // 块锚（摘除前取定；节点引用摘除后仍活）
-    var leftBlock = _zwCeNearestBlock(sc, el);
-    var rightBlock = _zwCeNearestBlock(ec, el);
-    var crossBlock = rightBlock !== leftBlock;
-    // 嵌套包含形（右块含左块）：ec 锚在右块自身（语料 `<div><p>abc[</p>]def</div>`
-    // 形，d43）→ 核内含式 join（右块 end 界后尾行并入左块）；更深锚仍保守拒收——
-    // join 几何未定义域，FIXME(nested-list-deep)。
-    var _sdContained = !!(crossBlock && rightBlock.contains && rightBlock.contains(leftBlock));
-    // 右块文本边界锚（d43 2026-11-16）：`]` 锚在右块**首文本节点** offset 0——
-    // `<div><p>abc[</p>]def</div>` 语料 `def = querySelector('p').nextSibling`
-    // 实证（p 与 def 同父 = 包裹 div，右块即该 div）。此形删除覆盖「sc→右块
-    // 开界」，语义与 ec 锚右块自身同构（尾行并入左块），放行非深层锚。
-    var _sdRbTextEdge = !!(ec && eo === 0 && rightBlock
-      && (ec.nodeType === 3 || ec.__zwIsText) && ec.parentNode === rightBlock);
-    // 嵌套包含拒收只辖深层锚（FIXME(nested-list-deep)）：ec 锚右块自身或右块
-    // 文本边界（_sdRbTextEdge）时包含形放行交 join 臂（d43 2026-11-16）。
-    if (_sdContained && ec !== rightBlock && !_sdRbTextEdge) return false;
-    // B2：边界规范化端点快照 + beforeinput（变更前，摘除/join 单派）
-    var cs = _zwCeCanonGtrStart(sc, so), ce = _zwCeCanonGtrEnd(ec, eo);
-    var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, composed: true, data: null,
-      inputType: inputType, isComposing: false
-    });
-    before._zwTargetRanges = [_zwCeTargetRange(cs.node, cs.offset, ce.node, ce.offset)];
-    if (el.dispatchEvent(before) === false) return true;
-    // —— 摘除（spec deleteContents 爬升形）——
-    // ① 文本端点部分覆盖截断
-    if (sc.nodeType === 3 || sc.__zwIsText) {
-      var v = String(sc.nodeValue || '');
-      var soC = Math.min(so, v.length);
-      if (soC < v.length) sc.nodeValue = v.slice(0, soC);
-    }
-    if (ec !== sc && (ec.nodeType === 3 || ec.__zwIsText)) {
-      var ve = String(ec.nodeValue || '');
-      var eoC = Math.min(eo, ve.length);
-      if (eoC > 0) ec.nodeValue = ve.slice(eoC);
-    }
-    // ② 同容器元素 splice（元素锚全选形；块子摘内容保壳——三击选形期望
-    // `<ul><li><br></li></ul>` 实证）
-    if (sc === ec && sc.nodeType === 1) {
-      var ksS = Array.prototype.slice.call(sc.childNodes);
-      var cf = Math.min(so, ksS.length), ct = Math.min(eo, ksS.length);
-      for (var is = cf; is < ct; is++) {
-        var kS = ksS[is];
-        if (!kS || kS.parentNode !== sc) continue;
-        if (kS.nodeType === 1 && _zwCeIsBlockEl(kS)) {
-          var ksk = Array.prototype.slice.call(kS.childNodes);
-          for (var ik = 0; ik < ksk.length; ik++) {
-            if (ksk[ik].parentNode === kS) kS.removeChild(ksk[ik]);
-          }
-        } else {
-          sc.removeChild(kS);
-        }
-      }
-    } else if (sc !== ec) {
-      // ③ 元素端点容器全覆盖子整摘（sc!==lca 时 child[so..] 全覆盖）
-      if (sc.nodeType === 1 && sc !== lca) {
-        var ksA = Array.prototype.slice.call(sc.childNodes);
-        for (var ia = Math.min(so, ksA.length); ia < ksA.length; ia++) {
-          if (ksA[ia].parentNode === sc) sc.removeChild(ksA[ia]);
-        }
-      }
-      if (ec.nodeType === 1 && ec !== lca) {
-        var ksB = Array.prototype.slice.call(ec.childNodes);
-        var eCut = Math.min(eo, ksB.length);
-        for (var ib = 0; ib < eCut; ib++) {
-          if (ksB[ib].parentNode === ec) ec.removeChild(ksB[ib]);
-        }
-      }
-      // ④ 分支爬升（lca 层除外）：start 侧摘后续兄弟、end 侧摘前序兄弟。
-      // 兄弟先快照成数组再逐个摘（removeChild 线静默失配——pending/plain 壳
-      // 寻址 miss 不脱链——时 nextSibling/previousSibling 不前进，活链 while
-      // 恒真 = 悬挂死点；快照序有界，d43 删除语料 deleting-in-list-items
-      // 90s 执行超时实证）。
-      var startTop = null, endTop = null, nA = sc, nB = ec, gA = 0, gB = 0;
-      while (nA && gA++ < 64) {
-        var pA = nA.parentNode;
-        if (!pA) break;
-        if (pA === lca) { startTop = nA; break; }
-        var sibA = [], tA = nA.nextSibling, gAx = 0;
-        while (tA && gAx++ < 128) { sibA.push(tA); tA = tA.nextSibling; }
-        for (var ia2 = 0; ia2 < sibA.length; ia2++) {
-          if (sibA[ia2].parentNode === pA) pA.removeChild(sibA[ia2]);
-        }
-        nA = pA;
-      }
-      while (nB && gB++ < 64) {
-        var pB = nB.parentNode;
-        if (!pB) break;
-        if (pB === lca) { endTop = nB; break; }
-        var sibB = [], tB = nB.previousSibling, gBx = 0;
-        while (tB && gBx++ < 128) { sibB.push(tB); tB = tB.previousSibling; }
-        for (var ib2 = 0; ib2 < sibB.length; ib2++) {
-          if (sibB[ib2].parentNode === pB) pB.removeChild(sibB[ib2]);
-        }
-        nB = pB;
-      }
-      // ⑤ lca 层：同侧容器摘余枝 / 双侧之间中段摘除
-      if (sc === lca) {
-        var ksL = Array.prototype.slice.call(sc.childNodes);
-        for (var il = Math.min(so + 1, ksL.length); il < ksL.length; il++) {
-          if (ksL[il].parentNode === sc) sc.removeChild(ksL[il]);
-        }
-      } else if (ec === lca) {
-        var ksM = Array.prototype.slice.call(ec.childNodes);
-        var mCut = Math.max(0, Math.min(eo, ksM.length) - 1);
-        for (var im = 0; im < mCut; im++) {
-          if (ksM[im].parentNode === ec) ec.removeChild(ksM[im]);
-        }
-      } else if (startTop && endTop && startTop !== endTop) {
-        var midS = [], cur2 = startTop.nextSibling, gM = 0;
-        while (cur2 && cur2 !== endTop && gM++ < 128) {
-          midS.push(cur2);
-          cur2 = cur2.nextSibling;
-        }
-        for (var im2 = 0; im2 < midS.length; im2++) {
-          if (midS[im2].parentNode === lca) lca.removeChild(midS[im2]);
-        }
-      }
-    }
-    // —— 合并 / 占位 / 收尾 ——
-    var _sdFinish = function (cn, co) {
-      var nrr = document.createRange();
-      try { nrr.setStart(cn, co); } catch (_eSdC) {
-        try { nrr.setStart(cn, 0); } catch (_eSdC2) { return; }
-      }
-      nrr.collapse(true);
-      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nrr]; }
-      el.dispatchEvent(new InputEvent('input', {
-        bubbles: true, cancelable: false, composed: true, data: null,
-        inputType: inputType, isComposing: false
-      }));
-    };
-    if (crossBlock && (ec !== sc)) {
-      if (_zwCeLeftRemnant(sc, leftBlock)) {
-        // 左块吸收右块首行（Mutate 无派发——beforeinput 已派；右块摘空由
-        // take-line 块壳移除臂消费）。右块含 dst 的嵌套形已预检拒收。
-        // 包含形（`<div><p>abc[</p>]def</div>` 语料，d43）：ec 锚在右块自身，
-        // 尾行 = rightBlock 内 end 界后的首内容节点（childNodes[eo] = `def`），
-        // 从 rightBlock take-line 并入左块 p1（期望 `<div><p>abcdef</p></div>`
-        // ——包裹块保留，实证）。
-        // 宿主级右内容形（`]` 直落宿主层）：rightBlock 解析为 el 自身，无父可
-        // take——startNode 取 end 位后宿主首内容节点（ec===el 时 childNodes[eo]）。
-        var joined = false;
-        if (_sdContained && ec === rightBlock) {
-          var _snC = (rightBlock.childNodes || [])[eo] || null;
-          if (_snC) joined = _zwCeJoinMutate(el, leftBlock, rightBlock, _snC, inputType);
-        } else if (_sdContained && _sdRbTextEdge) {
-          // 包含形文本边界锚（`<div><p>abc[</p>]def</div>` 语料 2026-11-16）：尾行
-          // 自右块 take-line 并入左块 p1；右块余 p 壳保留 → 期望
-          // `<div><p>abcdef</p></div>` 实证形。
-          joined = _zwCeJoinMutate(el, leftBlock, rightBlock, ec, inputType);
-        } else if (ec === el && rightBlock === el) {
-          var _snH = (el.childNodes || [])[eo] || null;
-          if (_snH) joined = _zwCeJoinMutate(el, leftBlock, el, _snH, inputType);
-        } else if (rightBlock === el && ec.parentNode === el
-          && (ec.nodeType === 3 || ec.__zwIsText) && eo === 0) {
-          // 宿主级文本锚变体（`<div><p>abc[</p>]def</div>` 语料 2026-11-16）：`]`
-          // 锚在宿主级首文本节点（p.nextSibling）而非 el 元素自身——语料
-          // `def = querySelector('p').nextSibling` 实证锚即文本节点；take-line
-          // startNode 取该节点（eo=0 无截断损耗），尾行并入左块保包裹块。
-          joined = _zwCeJoinMutate(el, leftBlock, el, ec, inputType);
-        } else if (rightBlock.parentNode && rightBlock !== leftBlock) {
-          joined = _zwCeJoinMutate(el, leftBlock, rightBlock.parentNode, rightBlock, inputType);
-        }
-        // 摘空右侧祖先块剪枝（跨 dl join 期望单列表实证）——至 lca/el 为止
-        var prune = rightBlock.parentNode, gP = 0;
-        while (prune && prune !== el && prune !== lca && gP++ < 16) {
-          var up = prune.parentNode;
-          var empty = true, pk = prune.childNodes || [];
-          for (var ip = 0; ip < pk.length; ip++) {
-            if (pk[ip].nodeType === 3 && /^\s*$/.test(String(pk[ip].nodeValue || ''))) continue;
-            empty = false; break;
-          }
-          if (empty && up) { try { up.removeChild(prune); } catch (_ePrune) {} }
-          prune = up;
-        }
-        if (!joined) _sdFinish(leftBlock, (leftBlock.childNodes || []).length);
-        return true;
-      }
-      // 左侧无残余：摘空左块移除（dt→dd 全选形），右侧残余原位保留
-      if (leftBlock !== el && leftBlock.parentNode
-        && !(leftBlock.childNodes && leftBlock.childNodes.length)) {
-        try { leftBlock.parentNode.removeChild(leftBlock); } catch (_eLb) {}
-      }
-      _sdFinish(ec, 0);
-      return true;
-    }
-    // 同块（含 sc===ec 元素容器 splice）：摘空块容器占位 br + caret 落删除点
-    _zwCePlaceholderBr(leftBlock);
-    var cOff = so;
-    if (sc.nodeType === 1) cOff = Math.min(so, (sc.childNodes || []).length);
-    _sdFinish(sc, cOff);
-    return true;
-  };
   // CE Backspace：beforeinput(deleteContentBackward) → 变更 → input。变更路径：
   // ① 选区非空且同文本节点 → 区间 splice；② collapsed 在文本节点内 → caret 前退
   // 一个 UTF-16 单元（代理对安全）splice；③ collapsed 文本起点 → 块界 join
@@ -12274,31 +11946,7 @@
   // ——快照必须引用变更前同节点，故全部在变更前置位。
   // https://w3c.github.io/input-events/#dom-inputevent-gettargetranges
   var __zwCePendingTargetRanges = null;
-  function _zwCeTargetRange(sn, so, en, eo, liveEndpoints) {
-    // d44 端点克隆快照（input-events 语料 getRangeDescription 断言在变更应用后
-    // 读取 node.data，harness 在传播期把 getTargetRanges() 冻结进 cachedRanges
-    // 再断言——报告值 = 构建期所引节点在**断言期**的 data）。语料期望两侧同读
-    // 测试捕获节点的断言期 data，按编辑臂承载风格分流（d44 全克隆 +385/−8 对拍
-    // 实证两族并存，一刀切不可行）：
-    // - 替换承载族（join 块界/界选区臂、select-delete 摘除核）：变更机制把树内
-    //   节点替换/摘离，测试捕获的变更前节点值不变——克隆冻结同一 pre-value 给出
-    //   等值观测（`list-item1` 全量、`"   def"` 原值 407 案实证）。
-    // - 原位截断族（backspace/forwarddelete 文内**部分**纯字符切片，liveEndpoints
-    //   置位）：编辑臂对 sc 原位截断（`"abc"→"ac"`），测试捕获节点即被截节点、
-    //   断言期读 post-value——端点必须持 live 引用（克隆冻结 pre-value 反泄
-    //   `abc`，8 案 P2F 实证；d43 live 同域全绿）。
-    //   d45 收窄（对拍定谳）：范围含 \n（pre-line 硬换行/块分隔删除，4 案期望读
-    //   原节点 pre-value）与整节点删除（`[list-item1]` 全选，4 案期望读全量
-    //   pre-value）属**替换承载族**——Chrome 摘除/替换节点而非原位截断，保持克隆。
-    // 元素端点不受影响（描述只读 nodeName）。
-    if (!liveEndpoints && sn && (sn.nodeType === 3 || sn.__zwIsText)) {
-      var _sameOrigin = en === sn;
-      try { sn = document.createTextNode(String(sn.nodeValue || '')); } catch (_eTrSn) {}
-      if (_sameOrigin) en = sn;
-    }
-    if (!liveEndpoints && en && (en.nodeType === 3 || en.__zwIsText) && en !== sn) {
-      try { en = document.createTextNode(String(en.nodeValue || '')); } catch (_eTrEn) {}
-    }
+  function _zwCeTargetRange(sn, so, en, eo) {
     if (typeof StaticRange === 'function') {
       try {
         return new StaticRange({ startContainer: sn, startOffset: so, endContainer: en, endOffset: eo });
@@ -12331,26 +11979,8 @@
     return n === node ? i : 0;
   }
   // join 起界（backspace 侧）：前内容末叶——文本→可见端；原子单元叶→其前父
-  // 偏移；空块→块首。d44 尾随 br 边界：前块尾 br 不入界——界落**首个尾随 br**
-  // 前的父偏移（`<li>list-item1<br></li><li>[]…` (li,1)、`<p>abc<br></p>` (p,1)
-  // 语料形；双 br 同落首 br 位），纯 br 块无可见内容 → 块首（br 即占位，(块,0)）；
-  // 无尾随 br 保持旧口径（`<dt>list-item1</dt>` (text,10) 文本端形）。
+  // 偏移；空块→块首。
   function _zwCeJoinStartOf(prevNode) {
-    var _tbKids = prevNode.childNodes || [];
-    var _tbTop = null, _tbBr = null;
-    for (var _ti = _tbKids.length - 1; _ti >= 0; _ti--) {
-      var _tc = _tbKids[_ti];
-      if (_tc.nodeType === 1 && String(_tc.nodeName || '').toLowerCase() === 'br'
-        && !(_tc.childNodes || []).length) continue; // 尾随 br 跳过
-      if (_tc.nodeType === 3 && /^\s*$/.test(String(_tc.nodeValue || ''))) continue; // 尾随折叠空白跳过
-      _tbTop = _tc;
-      for (var _tj = _ti + 1; _tj < _tbKids.length; _tj++) {
-        var _tn = _tbKids[_tj];
-        if (_tn.nodeType === 1 && String(_tn.nodeName || '').toLowerCase() === 'br') { _tbBr = _tn; break; }
-      }
-      break;
-    }
-    if (_tbBr) return { node: prevNode, offset: _zwCeNodeIndexOf(_tbBr) };
     var leaf = _zwCeDeepLeaf(prevNode, true);
     if (leaf && (leaf.nodeType === 3 || leaf.__zwIsText)) {
       var lv = String(leaf.nodeValue || '');
@@ -12403,28 +12033,7 @@
     var range = globalThis.__zw_ce_caret_range(el);
     if (!range) return; // 空选区 → 无编辑（caret_range M2 语义）
     var sc = range.startContainer, so = range.startOffset | 0;
-    var _sdScText = !!(sc && (sc.nodeType === 3 || sc.__zwIsText));
-    var _sdEc = range.endContainer;
-    // ⑤ select-delete 主臂（d43）：非塌缩跨容器 / 元素锚 range——④ 空界形
-    //（sc 文本尾 + ec 偏移 0）保持上游 join 臂口径（ws 壳语料已绿），其余
-    // 非塌缩形状走摘除+合并核；核拒收（宿主域外/断链/嵌套包含）回落章程
-    // silent return。
-    if (!range.collapsed && (!_sdScText || (_sdEc && _sdEc !== sc))) {
-      var _sdFour = _sdScText && (range.endOffset | 0) === 0
-        && so >= String(sc.nodeValue || '').length;
-      // 镜像形排除（d43 P2F 修复 2026-11-16）：sc 容器嵌于 ec 容器内（如
-      // `<div><p>abc[</p>]def</div>`——sc 在块内、ec 在宿主级）时上游 join 臂
-      // 无此方向口径（几何早退 → bi=0 无编辑，基线 bi=2 假绿对照）；交 ⑤ 核
-      // 摘除+合并（分离探针实证 bi=1 + `<p>abcdef</p>` 归一）。
-      if (_sdFour && _sdEc && _sdEc.parentNode && sc.parentNode
-          && _sdEc.parentNode !== sc.parentNode
-          && _sdEc.parentNode.contains && _sdEc.parentNode.contains(sc.parentNode)) {
-        _sdFour = false;
-      }
-      if (!_sdFour && _zwCeSelectDelete(el, range, 'deleteContentBackward')) return;
-      if (!_sdScText) return; // 元素锚核拒收 → 章程 silent return（d39 主簇面）
-    }
-    if (!_sdScText) return; // 元素边界 caret 不回退
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return; // 元素边界 caret 不回退
     if (range.collapsed && so === 0) {
       // ③ 块界 join 臂：链上找前邻（同上几何）。dst=host 级容器时要求 src 是
       // 末子（防错序——语料形态恒满足）。
@@ -12504,17 +12113,12 @@
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE,
-      !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
+    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE)];
     if (el.dispatchEvent(before) === false) return;
     // 传播后重读选区（input-events-during-and-after-dispatch 语料）：listener 可在
     // beforeinput 传播中改选区——target ranges 保持派发前快照，**默认动作按改后
     // 选区应用**（Blink 语义，getTargetRanges 快照 ≠ 删除定位）。重读同宿主 caret，
     // 文本节点内才用新位（跨块/元素界改动超出本臂几何 → 保持原位，不放大）。
-    // 本臂端点持 live（见 _zwCeTargetRange 分流注记）：传播中选区未改时 sc 即
-    // 被截节点，报告随原位截断读 post-value；传播中改选区触发替换承载时快照
-    // 引用随机制被分离的节点——d43 观测该形 1F（期望读分离原节点 pre-value），
-    // 接受（与克隆门互斥，不可能两全）。
     var fr = globalThis.__zw_ce_caret_range(el);
     if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
       && (fr.startOffset | 0) > 0) {
@@ -12558,25 +12162,8 @@
     var range = globalThis.__zw_ce_caret_range(el);
     if (!range) return; // 空选区 → 无编辑（caret_range M2 语义）
     var sc = range.startContainer, so = range.startOffset | 0;
-    var _sdScText = !!(sc && (sc.nodeType === 3 || sc.__zwIsText));
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
     var ec = range.endContainer;
-    // ⑤ select-delete 主臂（d43，backspace 同核镜像）：非塌缩跨容器/元素锚
-    // range；FD 空界形（sc 文本尾 + ec 文本偏移 0）保持上游 join 臂口径。
-    if (!range.collapsed && (!_sdScText || (ec && ec !== sc))) {
-      var _sdFourF = _sdScText && ec && (ec.nodeType === 3 || ec.__zwIsText)
-        && (range.endOffset | 0) === 0
-        && so >= String(sc.nodeValue || '').length;
-      // 镜像形排除（d43 P2F 修复，backspace 同核镜像）：sc 容器嵌于 ec 容器内
-      // 时上游 join 臂无此方向口径，交 ⑤ 核。
-      if (_sdFourF && ec.parentNode && sc.parentNode
-          && ec.parentNode !== sc.parentNode
-          && ec.parentNode.contains && ec.parentNode.contains(sc.parentNode)) {
-        _sdFourF = false;
-      }
-      if (!_sdFourF && _zwCeSelectDelete(el, range, 'deleteContentForward')) return;
-      if (!_sdScText) return; // 元素锚核拒收 → 章程 silent return
-    }
-    if (!_sdScText) return;
     var v = String(sc.nodeValue || '');
     if (ec && (ec.nodeType === 3 || ec.__zwIsText) && ec !== sc) {
       // 跨容器选区 join 臂（select-boundary）：sc 侧 run 所在块/容器接收后邻首行。
@@ -12647,12 +12234,10 @@
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE,
-      !/\n/.test(v.slice(_gtrS, _gtrE)) && !(_gtrS === 0 && _gtrE === v.length))];
+    before._zwTargetRanges = [_zwCeTargetRange(sc, _gtrS, sc, _gtrE)];
     if (el.dispatchEvent(before) === false) return;
     // 传播后重读选区（同 __zw_ce_delete 文内臂注记：ranges 快照固定、默认动作按
     // 改后选区应用——ForwardDelete 删新位**后**一单元，代理对安全同上）。
-    // 端点 live 分流同 backspace 文内臂（_zwCeTargetRange 注记）。
     var fr = globalThis.__zw_ce_caret_range(el);
     if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
       && (fr.startOffset | 0) < String(fr.startContainer.nodeValue || '').length) {
