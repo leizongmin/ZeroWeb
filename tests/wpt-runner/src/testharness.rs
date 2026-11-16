@@ -3755,13 +3755,15 @@ fn run_corpus_subdirs_ext(
             // → "Unhandled variant" 恒崩假账；case 名带 query 与上游 dashboard 对齐。
             let variants = case_variants(&source);
             if variants.is_empty() {
-                let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
+                let results =
+                    run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
                 cases.push((relative, results));
                 continue;
             }
             for variant in variants {
                 let case_name = format!("{relative}{variant}");
-                let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, corpus_case_timeout());
+                let results =
+                    run_testharness_html(wpt_root, &case_name, &source, &harness_source, corpus_case_timeout());
                 cases.push((case_name, results));
             }
         }
