@@ -3322,7 +3322,10 @@
   // wantStart+frag 文本长度映射新 childNodes，F3 重映射）。
   function _zwExecCmdApplyInsertHtml(host, range, fragHtml) {
     var frag = (fragHtml == null) ? '' : String(fragHtml);
-    if (frag === '') return;
+    // A 族空载荷臂（2026-11-16 A 族刀 unclosed-completion-arm）：空载荷不再
+    // 整命令 no-op——语料 inserthtml :103 `""` × foo[bar]baz 实录 exp
+    // `foo[]baz`＝选区删除仍须执行。壳域解析跳过（空载荷无壳语义），走宿主
+    // 直子主路径 splice('') 自然完成删除，caret 落插入点。
     var sc = range.startContainer, so = range.startOffset | 0;
     var eo = range.collapsed ? so : (range.endOffset | 0);
     // 元素端点放行（2026-11-16 轴二壳界选区刀）：语料 {} marker 落壳边界
@@ -3362,7 +3365,7 @@
       ecInShell = !!(ecRaw && (ecRaw.nodeType === 3 || ecRaw.__zwIsText) && ecRaw.parentNode
         && ecRaw.parentNode !== host && ecRaw.parentNode.parentNode === host);
     }
-    if (sc.parentNode !== host || ecInShell || sc.nodeType === 1) {
+    if (frag !== '' && (sc.parentNode !== host || ecInShell || sc.nodeType === 1)) {
       var sr = _zwInsertHtmlShellResolve(host, range, sc, so, kids, kTextLen, frag);
       if (!sr) return;
       shellMode = true; shellHtml = sr.html; shellWant = sr.want;
@@ -3398,7 +3401,13 @@
         hEnd = textToHtmlOffset(html, wantStart + (eo - so), hStart, wantStart);
         if (hEnd < 0) hEnd = hStart;
       }
-      html = html.slice(0, hStart) + frag + html.slice(hEnd);
+      // A 族补全（同臂）：未闭合首标签先补尾闭标签再拼接——原串拼接让壳
+      // 开放到宿主尾吞并后文（corpus inserthtml :118/:128 实录
+      // got=`foo<b>baz</b>`/`foo<b>abcbaz</b>`，exp 闭壳 `foo<b></b>baz`/
+      // `foo<b>abc</b>baz`）。补全仅补尾闭标签零文本贡献，caret 解码长度
+      // 不变；闭合载荷/文本首载荷原样返回零外溢；块载荷经块臂已补全
+      //（li/p 语料全绿证），不触达本路径。
+      html = html.slice(0, hStart) + _zwIhtmlCompleteFrag(frag) + html.slice(hEnd);
     }
     host.innerHTML = html;
     // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → wantStart + frag

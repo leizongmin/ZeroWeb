@@ -296,6 +296,20 @@ pin124("ihb-c-sspan-f", "<p>[foo]</p>", [["stylewithcss", "false"]],
   "<p><span style=\"display:none\"></span></p>");
 pin124("ihb-c-cmt", "<p>[foo]</p>", [], "<!--abc-->", "<p><!--abc--><br></p>");
 
+// ㉕ A 族断载荷/未闭合壳臂（2026-11-16 A 族刀 unclosed-completion-arm——
+// corpus inserthtml :103/:118/:123/:128/:133 五键实录形：foo[bar]baz ×
+// 空载荷/未闭合 b 壳。①空载荷 got=`foobarbaz`＝整命令 no-op 未删选区，
+// exp 删除后 `foobaz`；②未闭合壳 got=`foo<b>baz</b>`/`foo<b>abcbaz</b>`
+// ＝壳开放到宿主尾吞并后文，exp 闭壳 `foo<b></b>baz`/`foo<b>abc</b>baz`。
+// 臂语义＝空载荷走主路径 splice('') 完成删除；未闭合首标签补尾闭标签
+// 再拼接。期望值=语料 expected 剥 marker 原样；swcss 双态同 exp（载荷
+// 纯 b 标签无 style 差异——corpus 双键实录同值）。
+pin124("ihb-a-empty", "foo[bar]baz", [], "", "foobaz");
+pin124("ihb-a-b-open-t", "foo[bar]baz", [["stylewithcss", "true"]], "<b>", "foo<b></b>baz");
+pin124("ihb-a-b-open-f", "foo[bar]baz", [["stylewithcss", "false"]], "<b>", "foo<b></b>baz");
+pin124("ihb-a-b-txt-t", "foo[bar]baz", [["stylewithcss", "true"]], "<b>abc", "foo<b>abc</b>baz");
+pin124("ihb-a-b-txt-f", "foo[bar]baz", [["stylewithcss", "false"]], "<b>abc", "foo<b>abc</b>baz");
+
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。
 var bad124 = [];
