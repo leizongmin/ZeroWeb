@@ -310,6 +310,23 @@ pin124("ihb-a-b-open-f", "foo[bar]baz", [["stylewithcss", "false"]], "<b>", "foo
 pin124("ihb-a-b-txt-t", "foo[bar]baz", [["stylewithcss", "true"]], "<b>abc", "foo<b>abc</b>baz");
 pin124("ihb-a-b-txt-f", "foo[bar]baz", [["stylewithcss", "false"]], "<b>abc", "foo<b>abc</b>baz");
 
+// ㉖ rawtext 壳节点手术臂（2026-11-16 ihe5 rawtext 刀——corpus inserthtml
+// :188-215 四键实录形：xmp/script 壳 × <b>abc</b> 载荷 × swcss 双态。既有
+// 拼接臂字面拼接把载荷标记经 setter rawtext 解析吃成文本、getter 转义回读
+//（got <xmp>f&lt;b&gt;abc&lt;/b&gt;o</xmp>）；手术臂 div 上下文解析载荷后
+// 节点级入壳（editing spec inserthtml＝fragment body 上下文解析经 DOM 插
+// 入，元素可入 rawtext 容器；serialization 对 script 子文本按字面）。期望
+// 值=语料 exp 剥 caret marker 原样（compare 不锁 caret，`{}` 落载荷尾）；
+// 纯文本载荷控制键 ihb-ctrl-xmp 既有拼接臂恒一（零外溢）。
+pin124("ihb-r-xmp-t", "<xmp>f[o]o</xmp>", [["stylewithcss", "true"]], "<b>abc</b>",
+  "<xmp>f<b>abc</b>o</xmp>");
+pin124("ihb-r-xmp-f", "<xmp>f[o]o</xmp>", [["stylewithcss", "false"]], "<b>abc</b>",
+  "<xmp>f<b>abc</b>o</xmp>");
+pin124("ihb-r-script-t", "<script>f[o]o</script>bar", [["stylewithcss", "true"]], "<b>abc</b>",
+  "<script>f<b>abc</b>o</script>bar");
+pin124("ihb-r-script-f", "<script>f[o]o</script>bar", [["stylewithcss", "false"]], "<b>abc</b>",
+  "<script>f<b>abc</b>o</script>bar");
+
 // 断言回路：err / ok / out 失配即 throw（execute 层 Err → Rust panic 带
 // got/exp 清单）。
 var bad124 = [];

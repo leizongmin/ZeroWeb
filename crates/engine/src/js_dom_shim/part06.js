@@ -3409,7 +3409,7 @@
       //（li/p 语料全绿证），不触达本路径。
       html = html.slice(0, hStart) + _zwIhtmlCompleteFrag(frag) + html.slice(hEnd);
     }
-    host.innerHTML = html;
+    if (html !== null) host.innerHTML = html; // rawtext 手术臂 html=null——节点已 wired 入树
     // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → wantStart + frag
     // 解码纯文本长度（tag 序列跳过、实体记 1——与解析产物文本贡献同口径；首版
     // 漏跳 tag 把标记字符计入文本长度，wantCaret 越界落 host 末端，r2 批
@@ -3633,6 +3633,40 @@
       if (String(host.innerHTML || '') !== rebuilt) return null;
       var wsIn = ws - scBase;
       var weIn = we - scBase;
+      // rawtext 壳节点手术臂（2026-11-16 ihe5 rawtext 刀）：xmp/script ×
+      // markup 载荷（含 '<'）——innerHTML setter 按 rawtext 解析把载荷标记
+      // 吃成文本节点（https://html.spec.whatwg.org/multipage/syntax.html#
+      // the-raw-text-elements-parsing-algorithm），getter 再转义回读，字符
+      // 串模型无串能表达「元素入 rawtext 容器」态（重建串 round-trip 必失
+      // 真）；editing spec inserthtml＝fragment body 上下文解析后经 DOM 插
+      // 入节点，元素可入 rawtext 容器（https://html.spec.whatwg.org/
+      // multipage/parsing.html#serialising-html-fragments script 子文本按
+      // 字面序列化；corpus 实录 exp <xmp>f<b>abc</b>o</xmp>，got 转义文本
+      // 形 4 键红——既有拼接臂字面拼接「两侧 parser 字面保真」对 markup
+      // 载荷不成立）。门全合取：壳单文本子（rawtext 解析形，round-trip 门
+      // 已过）。手术：div 上下文解析载荷→壳文本子按 wsIn/weIn 切分→
+      // createTextNode/appendChild 依序重建（桥 DomMutation::InsertBefore/
+      // AppendChild 家族 wire 齐备；C6 刀 script 壳节点级手术 corpus 先例
+      // part01f _zwJusWrapViaHtml 直构径）→ html=null 让 caller 跳过
+      // innerHTML 赋值；want 同拼接臂形（载荷起点文本坐标）交 caret remap
+      // 游走。style/textarea/plaintext/listing 维持拼接臂零外溢（语料无该
+      // 壳 markup 键实录，未证行为不动）。
+      if ((shellTag === 'xmp' || shellTag === 'script') && frag.indexOf('<') !== -1) {
+        var sk = shell.childNodes || [];
+        if (sk.length === 1 && sk[0].nodeType === 3) {
+          var tRaw = sk[0];
+          var tVal = String(tRaw.nodeValue || '');
+          var tmp = document.createElement('div');
+          tmp.innerHTML = frag;
+          var payNodes = [];
+          for (var pi = 0; pi < tmp.childNodes.length; pi++) payNodes.push(tmp.childNodes[pi]);
+          shell.removeChild(tRaw);
+          shell.appendChild(document.createTextNode(tVal.slice(0, wsIn)));
+          for (var pj = 0; pj < payNodes.length; pj++) shell.appendChild(payNodes[pj]);
+          if (weIn < tVal.length) shell.appendChild(document.createTextNode(tVal.slice(weIn)));
+          return { html: null, want: preText.length + wsIn };
+        }
+      }
       // pre 内块载荷单块解包（editing spec insertHTML fixup——插入点已在块内时
       // 单块 fragment 拆壳取子：<pre>1[23]4</pre> + <pre>abc</pre> → 1abc4）。
       var effFrag = frag;
