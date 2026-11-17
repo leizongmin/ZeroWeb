@@ -31,9 +31,10 @@ use zero_style_system::{
     ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
     ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontKerningValue, FontSizeAdjustBasis,
-    FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantNumericValue,
-    FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantCapsValue,
+    FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
+    ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
+    ListStyleImageComputedValue, MaskClipComputedValue, MaskCompositeComputedValue, MaskGeometryBoxComputedValue,
     MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue,
     OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
     ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue,
@@ -559,6 +560,20 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // 是多 helper 子工程 defer，避免混合层产生错列表）；空列表→none（初值）。
         "background-image" => image_layer_list_to_css(&style.background_image, element_color, font_size_px),
         "mask-image" => image_layer_list_to_css(&style.mask_image, element_color, font_size_px),
+        // mask 简写（css-masking-1 §3.10）：单层 image 形直通 mask-image 层串化
+        //（chrome 单层仅 image 非初值时输出短形）；组合形/多层串化
+        // FIXME(mask-shorthand-serialize)。
+        "mask" => image_layer_list_to_css(&style.mask_image, element_color, font_size_px),
+        // css-masking-1 §5.3–5.6 六长手：position/size/repeat 与 background 同构
+        //（同 computed 类型，复用其串化）；clip/origin/composite 为 masking 侧
+        // 枚举（fill/stroke/view-box/no-clip/compositing-operator）。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-position" => background_position_to_css(&style.mask_position),
+        "mask-size" => background_size_to_css(&style.mask_size),
+        "mask-repeat" => background_repeat_to_css(&style.mask_repeat),
+        "mask-clip" => mask_clip_to_css(&style.mask_clip),
+        "mask-origin" => mask_origin_to_css(&style.mask_origin),
+        "mask-composite" => mask_composite_to_css(&style.mask_composite),
         "text-align" => text_align_str(&style.text_align),
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
@@ -2739,12 +2754,19 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     if fs != "normal" {
         parts.push(fs);
     }
+    // 刀 N：font-variant 位（css-fonts-4 §font-prop 简写语法 <font-variant-css21>；
+    // small-caps 形计算串化保留——font-computed.html canonical 驱动）。
+    if style.font_variant_caps != FontVariantCapsValue::Normal {
+        parts.push(font_variant_caps_str(&style.font_variant_caps));
+    }
     let fw = font_weight_str(&style.font_weight);
     if fw != "400" {
         parts.push(fw);
     }
+    // 刀 N：stretch 关键字 canonical 形（css-fonts-4 §font-width-prop 关键字
+    // ↔百分比映射反查——`parse_font_stretch` 同表单源；表外百分比保 % 形）。
     if (style.font_stretch - 100.0).abs() > f32::EPSILON {
-        parts.push(format_num(style.font_stretch as f64, "%"));
+        parts.push(font_stretch_keyword_str(style.font_stretch));
     }
     // size 恒显；line-height 非 normal 显作 "size / lh"。
     let size = length_to_css(&style.font_size, font_size_px);
@@ -2754,8 +2776,54 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     } else {
         parts.push(size);
     }
-    parts.push(font_family_to_css(&style.font_family));
+    // 刀 N：简写 family 位多 ident 序列免引号（css-fonts-4 <family-name> =
+    // <custom-ident>+；font-computed.html canonical 以原文 verbatim 驱动）。
+    // 单 ident/需引号名维持既有 quote_font_family 判别。
+    let family = style
+        .font_family
+        .iter()
+        .map(|f| {
+            let bare = f.trim_matches('"').trim_matches('\'');
+            if bare.split_ascii_whitespace().all(is_css_ident) && !bare.is_empty() {
+                bare.to_string()
+            } else {
+                quote_font_family(bare)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    parts.push(family);
     parts.join(" ")
+}
+
+/// 刀 N：font-variant-caps 计算值串化（css-fonts-4 §font-variant-caps-prop；
+/// 简写位仅 <font-variant-css21>，全值域串化供 gCS 长手/未来扩展共用）。
+fn font_variant_caps_str(v: &FontVariantCapsValue) -> String {
+    match v {
+        FontVariantCapsValue::Normal => "normal".to_string(),
+        FontVariantCapsValue::SmallCaps => "small-caps".to_string(),
+        FontVariantCapsValue::AllSmallCaps => "all-small-caps".to_string(),
+        FontVariantCapsValue::PetiteCaps => "petite-caps".to_string(),
+        FontVariantCapsValue::AllPetiteCaps => "all-petite-caps".to_string(),
+        FontVariantCapsValue::Unicase => "unicase".to_string(),
+        FontVariantCapsValue::TitlingCaps => "titling-caps".to_string(),
+    }
+}
+
+/// 刀 N：font-stretch 百分比 → 关键字 canonical（css-fonts-4 §font-width-prop
+/// 映射反查，[`zero_css_parser::values::parse_font_stretch`] 同表；表外值保 %）。
+fn font_stretch_keyword_str(pct: f32) -> String {
+    match pct {
+        p if (p - 50.0).abs() < 0.01 => "ultra-condensed".to_string(),
+        p if (p - 62.5).abs() < 0.01 => "extra-condensed".to_string(),
+        p if (p - 75.0).abs() < 0.01 => "condensed".to_string(),
+        p if (p - 87.5).abs() < 0.01 => "semi-condensed".to_string(),
+        p if (p - 112.5).abs() < 0.01 => "semi-expanded".to_string(),
+        p if (p - 125.0).abs() < 0.01 => "expanded".to_string(),
+        p if (p - 150.0).abs() < 0.01 => "extra-expanded".to_string(),
+        p if (p - 200.0).abs() < 0.01 => "ultra-expanded".to_string(),
+        p => format_num(p as f64, "%"),
+    }
 }
 
 /// 族名是合法 CSS 标识符（非空、首字符非数字/`-数字`、仅 ident 字符）→ 不引号；否则双引号
@@ -4622,6 +4690,64 @@ fn background_origin_to_css(o: &BackgroundOriginComputedValue) -> String {
         BackgroundOriginComputedValue::ContentBox => "content-box",
     }
     .to_string()
+}
+
+/// mask-clip 层列表串化（css-masking-1 §5.4）：`<geometry-box> | no-clip`
+/// 逗号 join；空列表 → ''。
+fn mask_clip_to_css(layers: &[MaskClipComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|l| match l {
+            MaskClipComputedValue::Box(b) => mask_geometry_box_to_css(b).to_string(),
+            MaskClipComputedValue::NoClip => "no-clip".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// mask-origin 层列表串化（css-masking-1 §5.5）。
+fn mask_origin_to_css(layers: &[MaskGeometryBoxComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|b| mask_geometry_box_to_css(b).to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// masking 侧 `<geometry-box>` 串化（含 SVG 几何盒三形——CSS Shapes 版无）。
+fn mask_geometry_box_to_css(v: &MaskGeometryBoxComputedValue) -> &'static str {
+    match v {
+        MaskGeometryBoxComputedValue::BorderBox => "border-box",
+        MaskGeometryBoxComputedValue::PaddingBox => "padding-box",
+        MaskGeometryBoxComputedValue::ContentBox => "content-box",
+        MaskGeometryBoxComputedValue::MarginBox => "margin-box",
+        MaskGeometryBoxComputedValue::FillBox => "fill-box",
+        MaskGeometryBoxComputedValue::StrokeBox => "stroke-box",
+        MaskGeometryBoxComputedValue::ViewBox => "view-box",
+    }
+}
+
+/// mask-composite 层列表串化（css-masking-1 §5.6 `<compositing-operator>`）。
+fn mask_composite_to_css(layers: &[MaskCompositeComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|v| match v {
+            MaskCompositeComputedValue::Add => "add",
+            MaskCompositeComputedValue::Subtract => "subtract",
+            MaskCompositeComputedValue::Intersect => "intersect",
+            MaskCompositeComputedValue::Exclude => "exclude",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// align-content：CSS Box Alignment `<content-distribution>` 单值序列化。

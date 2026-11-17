@@ -578,21 +578,14 @@ fn test_background_url_only() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-/// font 仅 size
+/// font 仅 size：css-fonts-4 §font-prop 语法要求 <'font-family'> 必填
+///（`font = [ <'font-style'> || <font-variant-css21>? || <'font-weight'> ||
+/// <font-width-css3>? ]? <'font-size'> [ / <'line-height'> ]? <'font-family'>`），
+/// 缺 family 整条无效（chrome `font: 16px` 拒收；WPT font-invalid.html 面驱动，
+/// 旧半展开形已随刀 N 文法严格化撤除）。
 fn test_font_size_only() {
     let result = expand_one("font", "16px", false, (0, 0, 1));
-    assert_eq!(result.len(), 13);
-    assert_eq!(result[0].0, "font-style");
-    assert_eq!(result[0].1, "normal");
-    assert_eq!(result[1].0, "font-weight");
-    assert_eq!(result[1].1, "normal");
-    assert_eq!(result[2].0, "font-size");
-    assert_eq!(result[2].1, "16px");
-    assert_eq!(result[3].0, "line-height");
-    assert_eq!(result[3].1, "normal");
-    assert_eq!(result[4].0, "font-family");
-    assert_eq!(result[4].1, "");
-    assert!(result.iter().any(|item| item.0 == "font-kerning" && item.1 == "auto"));
+    assert!(result.is_empty(), "缺 font-family 的 font 简写应整条拒收");
 }
 
 #[test]
@@ -656,12 +649,17 @@ fn test_font_rejects_unknown_presize_token_and_bare_nonzero_size() {
 }
 
 #[test]
-/// font size/line-height 分隔符带空格
+/// font size/line-height 分隔符带空格：`<'font-family'>` 必填（css-fonts-4
+/// §font-prop），缺 family 整条无效——`16px / 1.5` 无论分隔符空格形均拒收。
 fn test_font_size_line_spacing_with_spaces() {
     let result = expand_one("font", "16px / 1.5", false, (0, 0, 1));
-    // 验证至少展开了 font-size
-    let has_size = result.iter().any(|(p, _, _, _)| p == "font-size");
-    assert!(has_size, "应包含 font-size");
+    assert!(result.is_empty(), "缺 font-family 的 font 简写应整条拒收");
+    // 带 family 的同形（空格分隔符）仍合法展开（css-fonts-4 `/` 前后空格可选）。
+    let with_family = expand_one("font", "16px / 1.5 serif", false, (0, 0, 1));
+    assert!(
+        with_family.iter().any(|(p, _, _, _)| p == "font-size"),
+        "带 family 的空格分隔形应包含 font-size"
+    );
 }
 
 #[test]

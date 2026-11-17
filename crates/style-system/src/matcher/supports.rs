@@ -34,6 +34,16 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.fxtf.org/css-masking-1/#the-mask-image
         "mask-image" => values::parse_mask_image_layers(value).is_some(),
         "mask-mode" => values::parse_mask_mode(value).is_some(),
+        // css-masking-1 §5.3–5.6 六长手：position/size/repeat 文法同 background
+        // 同构属性（复用其 list parser）；clip/origin/composite 为 masking 侧
+        // 枚举（fill/stroke/view-box/no-clip/compositing-operator）。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-position" => values::parse_background_position_list(value).is_some(),
+        "mask-size" => values::parse_background_size_list(value).is_some(),
+        "mask-repeat" => values::parse_background_repeat_list(value).is_some(),
+        "mask-clip" => values::parse_mask_clip_layers(value).is_some(),
+        "mask-origin" => values::parse_mask_origin_layers(value).is_some(),
+        "mask-composite" => values::parse_mask_composite_layers(value).is_some(),
         // https://drafts.fxtf.org/filter-effects-1/
         "filter" | "backdrop-filter" => values::parse_filter_list(value).is_some(),
         // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers

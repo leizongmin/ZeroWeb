@@ -3030,6 +3030,15 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // R3890：font 简写的 font-variant 位（CSS2.1 语法仅 normal | small-caps；
     // Fonts 4 将其扩展为 <'font-variant-caps'> 值域）。
     let mut variant_caps: Option<String> = None;
+    // 刀 N（css-fonts-4 §font-prop 语法）：font-stretch 位（<font-stretch-css3>
+    // = normal | 九关键字；% 形仅 longhand 文法，简写位不收）。
+    let mut stretch: Option<String> = None;
+    // 刀 N：非 normal 值逐位至多一次（css-fonts-4 `||` 组合器语义；normal 是
+    // 四位各自合法值、可多次出现作占位——font-computed.html 排列空间驱动）。
+    let mut style_seen = false;
+    let mut variant_seen = false;
+    let mut weight_seen = false;
+    let mut stretch_seen = false;
     let mut size = "medium".to_string();
     let mut line_height = "normal".to_string();
     let mut family = String::new();
@@ -3073,7 +3082,23 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         )
     };
 
-    let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "normal" | "italic" | "oblique");
+    let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "italic" | "oblique");
+    // 刀 N：font-stretch 位文法（<font-stretch-css3> = normal | 九关键字）——
+    // 复用 [`zero_css_parser::values::parse_font_stretch`] 关键字表（同一映射
+    // 单源；% 形简写位拒收，longhand 才收 css-fonts-4 §font-width-prop）。
+    let is_stretch = |s: &str| {
+        matches!(
+            s.to_ascii_lowercase().as_str(),
+            "ultra-condensed"
+                | "extra-condensed"
+                | "condensed"
+                | "semi-condensed"
+                | "semi-expanded"
+                | "expanded"
+                | "extra-expanded"
+                | "ultra-expanded"
+        )
+    };
     // R3890：font 简写 font-variant 位可接受的 token——CSS2.1 为 normal | small-caps；
     // Fonts 4 扩展为 <'font-variant-caps'> 全值域（与 expand_font_variant 的 caps 臂同表）。
     let is_variant_caps_token = |s: &str| {
@@ -3151,6 +3176,12 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             } else {
                 family_parts.push(part);
             }
+        } else if part.eq_ignore_ascii_case("normal") {
+            // 刀 N：`normal` 是 style/variant/weight/stretch 四位各自合法值，
+            // 可多次出现作占位（css-fonts-4 `||` 组合器；font-computed.html
+            // 排列空间 'normal normal normal italic 10px/normal Menu' 驱动）
+            // ——不占槽位直接略过，缺省值已为 normal。
+            continue;
         } else if part.contains('/') {
             // attached size/line-height 格式
             let sub: Vec<&str> = part.splitn(2, '/').collect();
@@ -3165,15 +3196,21 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         } else if !size_found && is_font_size(part) {
             size = part.to_string();
             size_found = true;
-        } else if !size_found && is_weight(part) {
+        } else if !size_found && is_weight(part) && !weight_seen {
             weight = part.to_string();
-        } else if !size_found && is_style(part) {
+            weight_seen = true;
+        } else if !size_found && is_style(part) && !style_seen {
             style = part.to_string();
-        } else if variant_caps.is_none() && is_variant_caps_token(part) {
+            style_seen = true;
+        } else if variant_caps.is_none() && is_variant_caps_token(part) && !variant_seen {
             // R3890：font 简写的 font-variant 位（CSS2.1 §15.8 语法位 [normal | small-caps]）。
             // 旧实现未知 token 直接丢弃整条声明——font-011..015 族
             // （`font: italic small-caps bold 1in Ahem`）整简写失效。
             variant_caps = Some(part.to_string());
+            variant_seen = true;
+        } else if !size_found && is_stretch(part) && !stretch_seen {
+            stretch = Some(part.to_string());
+            stretch_seen = true;
         } else {
             return vec![];
         }
@@ -3187,6 +3224,20 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // 如果没有找到 size 部分，声明无效（除非是系统字体关键字）
     if !size_found {
         // 无效的 font 简写声明
+        return vec![];
+    }
+    // 刀 N：font-family 亦为必填位（css-fonts-4 §font-prop：<'font-size'>
+    // 与 <'font-family'> 不可省；`font: 16px` 形此前落入空 family 声明
+    // 半展开——font-invalid 拒面）。
+    if family_parts.is_empty() {
+        return vec![];
+    }
+    // 刀 N：family 文法校验委托 longhand 单源（[`parse_font_family`]——ident
+    // 字符集/引号形同一裁决，css-fonts-4 §family-name-value）。简写 family 位
+    // 是 `<family-name>#` 逗号列表（css-fonts-4 §font-prop——`font: 14px Arial,
+    // sans-serif` 合法，test_font_shorthand_supported_valid/字体栈语料锚定）；
+    // 解析空 Vec（含非法字符如 `font: 16px 0simple`）整条拒收。
+    if crate::property::parse::parse_font_family(&family).is_empty() {
         return vec![];
     }
 
@@ -3211,7 +3262,8 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         mk("font-variant-east-asian", "normal"),
         mk("font-variant-position", "normal"),
         mk("font-variant-alternates", "normal"),
-        mk("font-stretch", "normal"),
+        // 刀 N：font-stretch 位存在时以其关键字值覆盖 reset（否则 reset 到 normal）。
+        mk("font-stretch", stretch.as_deref().unwrap_or("normal")),
         mk("font-kerning", "auto"),
     ]
 }

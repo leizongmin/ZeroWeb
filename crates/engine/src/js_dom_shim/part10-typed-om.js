@@ -1240,6 +1240,13 @@
       v._zwOmText = String(text).trim();
       v.toString = function () { return this._zwOmText; };
     }
+    // opaque 实例携来源属性（css-typed-om-1 §set/§append 值裁决关联属性
+    // 错配门——get/parse 产物不得跨属性并置；chrome oracle append 恒
+    // TypeError 'Invalid type for property'，inline append 语料
+    // 'a CSSVariableReferenceValue property' 面依赖此门）。
+    if (v && v instanceof CSSStyleValue && v._zwOmKind() === 'opaque' && v._zwOmAssociatedProp === undefined) {
+      v._zwOmAssociatedProp = prop;
+    }
     return v;
   };
 

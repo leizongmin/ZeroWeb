@@ -836,6 +836,25 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 from.to_string()
             }
         }
+        // position（§5.3，文法同 bg-position）：逐层 (pct,px) 系数 lerp + LCM 循环
+        //（mix_mask_position）；端点解析失败离散翻转回落。
+        "mask-position" => match mix_mask_position(from, to, t) {
+            Some(v) => v,
+            None => {
+                if t >= 0.5 {
+                    to.to_string()
+                } else {
+                    from.to_string()
+                }
+            }
+        },
+        // mask 长手离散组（css-masking-1 §5.3–5.6）+ mask-image/mode（§3.1/§3.3
+        // 图像型逐对不插值）+ mask 简写（§3.10；no-interp 页 none↔url 驱动）：
+        // 语料全块 test_no_interpolation——t≥0.5 翻转，多层逗号串 verbatim 天然
+        // 兼容（image-interp 页 image↔gradient/multi↔multi/mismatched 全离散）。
+        "mask-image" | "mask-mode" | "mask-repeat" | "mask-clip" | "mask-origin" | "mask-composite" | "mask" => {
+            if t >= 0.5 { to.to_string() } else { from.to_string() }
+        }
         // wptfyi-css shape-image-threshold 刀：number 线性插值（opacity 臂模板；
         // computed 域 [0,1]——语料端点 0/0.5/0.8/1 全在域内，外推钳域）。
         "shape-image-threshold" => {
@@ -1205,6 +1224,11 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // ——刀 K1 cssa/gCS 父链同契约）。输出串经 gCS 同款格式器与期望恒等。
         "mask-border-slice" | "mask-border-width" | "mask-border-outset" | "mask-border-repeat"
         | "mask-border-source" => Some(interpolate_property_value(property, from, to, t)),
+        // wptfyi-css mask-interp 刀（css-masking-1 §5.3–5.6 + §3.10 简写）：同契约
+        // 委托宽松臂——position 逐层系数 lerp、离散组/简写翻转（端点多层串
+        // verbatim 天然兼容）。
+        "mask-position" | "mask-image" | "mask-mode" | "mask-repeat" | "mask-clip" | "mask-origin"
+        | "mask-composite" | "mask" => Some(interpolate_property_value(property, from, to, t)),
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
             let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
@@ -1996,6 +2020,91 @@ fn parse_len_pair_pct(s: &str) -> Option<((f64, String), (f64, String))> {
         return None;
     }
     Some((parse_len_pct_val(parts[0])?, parse_len_pct_val(parts[1])?))
+}
+
+// ── mask-position 插值（css-masking-1 §5.3，wptfyi-css 刀 MI）──────────────
+// 轴分量归一为 `(pct 系数, px 系数)` 对：left/top→(0,0)、center→(50,0)、
+// right/bottom→(100,0)、Percent(p)→(p,0)、Px(v)→(0,v)、EdgeOffset 左/上基
+// offset 本身、右/下基 (100,−off)（resolve 翻转同语义）；Calc 端点不插值。
+// 逐层列表 LCM 循环展开（语料 mismatched-cases 判例 2 层 vs 3 层→6 层），
+// 系数线性 lerp 后串化：px 系数 0 → 纯 `P%`（端点简化），否则 `calc(P% ± Xpx)`
+//（css-values-4 §8.5.6；两侧经 shim roundNumbers 归一同通道比对）。任一层
+// 解析失败 → None（调用方离散翻转回落）。
+
+/// 轴分量→(pct, px) 系数对。
+type MaskPosComp = (f64, f64);
+
+fn mask_pos_comp(v: &zero_css_parser::values::BackgroundPositionValue) -> Option<MaskPosComp> {
+    use zero_css_parser::values::{BackgroundEdge, BackgroundPositionValue as Bpv};
+    match v {
+        Bpv::Center => Some((50.0, 0.0)),
+        Bpv::Left | Bpv::Top | Bpv::XStart | Bpv::YStart => Some((0.0, 0.0)),
+        Bpv::Right | Bpv::Bottom | Bpv::XEnd | Bpv::YEnd => Some((100.0, 0.0)),
+        Bpv::Percent(p) => Some((*p as f64, 0.0)),
+        Bpv::Length(LengthValue::Px(p)) => Some((0.0, *p as f64)),
+        Bpv::EdgeOffset { side, offset } => {
+            let (bp, bx) = match side {
+                BackgroundEdge::Left | BackgroundEdge::XStart | BackgroundEdge::Top | BackgroundEdge::YStart => {
+                    (0.0, 0.0)
+                }
+                BackgroundEdge::Right | BackgroundEdge::XEnd | BackgroundEdge::Bottom | BackgroundEdge::YEnd => {
+                    (100.0, 0.0)
+                }
+            };
+            let (op, ox) = mask_pos_comp(offset)?;
+            Some((bp + op, bx + ox))
+        }
+        _ => None,
+    }
+}
+
+/// 层 → (x, y) 分量对（单值层垂直轴缺省 center——bg 同语义）。
+fn mask_pos_layer(v: &zero_css_parser::values::BackgroundPositionValue) -> Option<(MaskPosComp, MaskPosComp)> {
+    use zero_css_parser::values::BackgroundPositionValue as Bpv;
+    match v {
+        Bpv::TwoValue(h, vert) => Some((mask_pos_comp(h)?, mask_pos_comp(vert)?)),
+        Bpv::Calc(_) => None,
+        single => {
+            let x = mask_pos_comp(single)?;
+            Some((x, (50.0, 0.0)))
+        }
+    }
+}
+
+/// (pct, px) lerp 后串化（px 系数 0 → 纯 P%；否则 calc(P% ± Xpx)）。
+fn mask_pos_fmt((fp, fx): MaskPosComp, (tp, tx): MaskPosComp, t: f64) -> String {
+    let pct = (1.0 - t) * fp + t * tp;
+    let px = (1.0 - t) * fx + t * tx;
+    if px.abs() < 1e-9 {
+        format!("{:.2}%", pct)
+    } else if px < 0.0 {
+        format!("calc({:.2}% - {:.2}px)", pct, -px)
+    } else {
+        format!("calc({:.2}% + {:.2}px)", pct, px)
+    }
+}
+
+/// mask-position 端点列表插值：LCM 循环展开逐层 lerp，", " 连接。
+fn mix_mask_position(from: &str, to: &str, t: f64) -> Option<String> {
+    use zero_css_parser::values::parse_background_position_list;
+    let fl = parse_background_position_list(from)?;
+    let tl = parse_background_position_list(to)?;
+    let fm: Option<Vec<(MaskPosComp, MaskPosComp)>> = fl.iter().map(mask_pos_layer).collect();
+    let tm: Option<Vec<(MaskPosComp, MaskPosComp)>> = tl.iter().map(mask_pos_layer).collect();
+    let (fm, tm) = (fm?, tm?);
+    let lcm = |a: usize, b: usize| a / gcd(a, b) * b;
+    let n = lcm(fm.len(), tm.len());
+    let out: Vec<String> = (0..n)
+        .map(|i| {
+            let (f, tt) = (&fm[i % fm.len()], &tm[i % tm.len()]);
+            format!("{} {}", mask_pos_fmt(f.0, tt.0, t), mask_pos_fmt(f.1, tt.1, t))
+        })
+        .collect();
+    Some(out.join(", "))
+}
+
+fn gcd(a: usize, b: usize) -> usize {
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 /// offset-rotate 纯角度形（`<angle>` deg）严格解析——auto/reverse 关键字返 None

@@ -1370,6 +1370,108 @@ pub fn parse_mask_image_layers(value: &str) -> Option<Vec<BackgroundImageValue>>
     parse_background_image_layers(value)
 }
 
+/// CSS mask-clip / mask-origin 的 `<geometry-box>` 值（css-masking-1 §5.4/§5.5；
+/// 与 CSS Shapes 的 `<shape-box>` 互补——masking 侧含 SVG 几何盒三形）。
+/// https://drafts.fxtf.org/css-masking-1/#valdef-mask-clip-geometry-box
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskGeometryBoxValue {
+    /// border-box。
+    BorderBox,
+    /// padding-box。
+    PaddingBox,
+    /// content-box。
+    ContentBox,
+    /// margin-box。
+    MarginBox,
+    /// fill-box。
+    FillBox,
+    /// stroke-box。
+    StrokeBox,
+    /// view-box。
+    ViewBox,
+}
+
+/// CSS mask-clip 值（css-masking-1 §5.4）：`<geometry-box> | no-clip`。
+/// https://drafts.fxtf.org/css-masking-1/#valdef-mask-clip-no-clip
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskClipValue {
+    /// `<geometry-box>`。
+    Box(MaskGeometryBoxValue),
+    /// no-clip——不裁剪。
+    NoClip,
+}
+
+/// CSS mask-composite 值（css-masking-1 §5.6 `<compositing-operator>`）。
+/// https://drafts.fxtf.org/css-masking-1/#valdef-mask-composite-add
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MaskCompositeValue {
+    /// add。
+    Add,
+    /// subtract。
+    Subtract,
+    /// intersect。
+    Intersect,
+    /// exclude。
+    Exclude,
+}
+
+/// 单层 `<geometry-box>` 解析（css-masking-1 §5.4/§5.5）。
+pub fn parse_mask_geometry_box(value: &str) -> Option<MaskGeometryBoxValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "border-box" => Some(MaskGeometryBoxValue::BorderBox),
+        "padding-box" => Some(MaskGeometryBoxValue::PaddingBox),
+        "content-box" => Some(MaskGeometryBoxValue::ContentBox),
+        "margin-box" => Some(MaskGeometryBoxValue::MarginBox),
+        // css-masking-1 §5.4：SVG 几何盒三形（CSS Shapes `<shape-box>` 无此三形）。
+        "fill-box" => Some(MaskGeometryBoxValue::FillBox),
+        "stroke-box" => Some(MaskGeometryBoxValue::StrokeBox),
+        "view-box" => Some(MaskGeometryBoxValue::ViewBox),
+        _ => None,
+    }
+}
+
+/// 解析 mask-clip 多图层值（顶层逗号分隔，css-masking-1 §5.4——单层
+/// `<geometry-box> | no-clip`）。任一层失败 → None；空输入 → None。
+pub fn parse_mask_clip_layers(value: &str) -> Option<Vec<MaskClipValue>> {
+    let mut list = Vec::new();
+    for part in split_background_layers(value)? {
+        let lower = part.trim().to_ascii_lowercase();
+        if lower == "no-clip" {
+            list.push(MaskClipValue::NoClip);
+            continue;
+        }
+        list.push(MaskClipValue::Box(parse_mask_geometry_box(part)?));
+    }
+    (!list.is_empty()).then_some(list)
+}
+
+/// 解析 mask-origin 多图层值（顶层逗号分隔，css-masking-1 §5.5——单层
+/// `<geometry-box>`，无 no-clip）。任一层失败 → None；空输入 → None。
+pub fn parse_mask_origin_layers(value: &str) -> Option<Vec<MaskGeometryBoxValue>> {
+    let mut list = Vec::new();
+    for part in split_background_layers(value)? {
+        list.push(parse_mask_geometry_box(part)?);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
+/// 解析 mask-composite 多图层值（顶层逗号分隔，css-masking-1 §5.6——单层
+/// `<compositing-operator>`）。任一层失败 → None；空输入 → None。
+pub fn parse_mask_composite_layers(value: &str) -> Option<Vec<MaskCompositeValue>> {
+    let mut list = Vec::new();
+    for part in split_background_layers(value)? {
+        let v = match part.trim().to_ascii_lowercase().as_str() {
+            "add" => MaskCompositeValue::Add,
+            "subtract" => MaskCompositeValue::Subtract,
+            "intersect" => MaskCompositeValue::Intersect,
+            "exclude" => MaskCompositeValue::Exclude,
+            _ => return None,
+        };
+        list.push(v);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
 /// CSS background-position 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundPositionValue {

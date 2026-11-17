@@ -683,6 +683,33 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.mask_border_outset = parent.mask_border_outset.clone();
             true
         }
+        // css-masking-1 §5.3–5.6 六长手全部非继承（Inherited: no），显式
+        // `inherit` 关键字仍强制拷父计算值（css-cascade-4 §inherit；
+        // mask-border-* 五长手臂同口径先例）。
+        "mask-position" => {
+            child.mask_position = parent.mask_position.clone();
+            true
+        }
+        "mask-size" => {
+            child.mask_size = parent.mask_size.clone();
+            true
+        }
+        "mask-repeat" => {
+            child.mask_repeat = parent.mask_repeat.clone();
+            true
+        }
+        "mask-clip" => {
+            child.mask_clip = parent.mask_clip.clone();
+            true
+        }
+        "mask-origin" => {
+            child.mask_origin = parent.mask_origin.clone();
+            true
+        }
+        "mask-composite" => {
+            child.mask_composite = parent.mask_composite.clone();
+            true
+        }
         "transform-origin" => {
             child.transform_origin_x = parent.transform_origin_x.clone();
             child.transform_origin_y = parent.transform_origin_y.clone();

@@ -517,9 +517,7 @@ impl PropertyRegistry {
             "mask-clip" => Some(MaskClip(vec![MaskClipComputedValue::Box(
                 MaskGeometryBoxComputedValue::BorderBox,
             )])),
-            "mask-origin" => {
-                Some(MaskOrigin(vec![MaskGeometryBoxComputedValue::BorderBox]))
-            }
+            "mask-origin" => Some(MaskOrigin(vec![MaskGeometryBoxComputedValue::BorderBox])),
             "mask-composite" => Some(MaskComposite(vec![MaskCompositeComputedValue::Add])),
             "text-shadow" => Some(TextShadow(Vec::new())),
             "box-shadow" => Some(BoxShadow(Vec::new())),

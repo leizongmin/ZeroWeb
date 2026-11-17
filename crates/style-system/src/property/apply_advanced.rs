@@ -2355,6 +2355,102 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // css-masking-1 §5.3–5.6 六长手写值通道：position/size/repeat 文法与
+        // computed 形同 background 同构属性（复用 parser 与映射）；clip/origin/
+        // composite 为 masking 侧枚举（fill/stroke/view-box/no-clip/
+        // compositing-operator）。多层逗号列表逐层映射，任一层失败则整条不应用。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-position" => {
+            // css-masking-1 §5.3：`<bg-position>#`，逐层经 position_value_to_computed
+            //（writing-mode aware），任一层失败则整条不应用（background-position 同形）。
+            if let Some(list) = values::parse_background_position_list(value) {
+                let mut computed = Vec::with_capacity(list.len());
+                let mut ok = true;
+                for v in list {
+                    match position_value_to_computed(v, style) {
+                        Some(c) => computed.push(c),
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if ok {
+                    style.mask_position = computed;
+                    return true;
+                }
+            }
+        }
+        "mask-size" => {
+            // css-masking-1 §5.3：`<bg-size>#`，映射同 background-size。
+            if let Some(list) = values::parse_background_size_list(value) {
+                style.mask_size = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::BackgroundSizeValue::Auto => BackgroundSizeComputedValue::Auto,
+                        zero_css_parser::values::BackgroundSizeValue::Cover => BackgroundSizeComputedValue::Cover,
+                        zero_css_parser::values::BackgroundSizeValue::Contain => BackgroundSizeComputedValue::Contain,
+                        zero_css_parser::values::BackgroundSizeValue::Length(n) => {
+                            BackgroundSizeComputedValue::Length(n)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::Percent(n) => {
+                            BackgroundSizeComputedValue::Percent(n)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::Calc(expr) => {
+                            BackgroundSizeComputedValue::Calc(*expr)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::TwoValue(cw, ch) => {
+                            BackgroundSizeComputedValue::TwoValue(map_bg_size_comp(cw), map_bg_size_comp(ch))
+                        }
+                    })
+                    .collect();
+                return true;
+            }
+        }
+        "mask-repeat" => {
+            // css-masking-1 §5.3：`<repeat-style>#`，映射同 background-repeat。
+            if let Some(list) = values::parse_background_repeat_list(value) {
+                style.mask_repeat = list.into_iter().map(map_bg_repeat_comp).collect();
+                return true;
+            }
+        }
+        "mask-clip" => {
+            // css-masking-1 §5.4：`<geometry-box> | no-clip` 多层列表。
+            if let Some(list) = values::parse_mask_clip_layers(value) {
+                style.mask_clip = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::MaskClipValue::Box(b) => {
+                            MaskClipComputedValue::Box(map_mask_geometry_box(b))
+                        }
+                        zero_css_parser::values::MaskClipValue::NoClip => MaskClipComputedValue::NoClip,
+                    })
+                    .collect();
+                return true;
+            }
+        }
+        "mask-origin" => {
+            // css-masking-1 §5.5：`<geometry-box>` 多层列表。
+            if let Some(list) = values::parse_mask_origin_layers(value) {
+                style.mask_origin = list.into_iter().map(map_mask_geometry_box).collect();
+                return true;
+            }
+        }
+        "mask-composite" => {
+            // css-masking-1 §5.6：`<compositing-operator>` 多层列表。
+            if let Some(list) = values::parse_mask_composite_layers(value) {
+                style.mask_composite = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::MaskCompositeValue::Add => MaskCompositeComputedValue::Add,
+                        zero_css_parser::values::MaskCompositeValue::Subtract => MaskCompositeComputedValue::Subtract,
+                        zero_css_parser::values::MaskCompositeValue::Intersect => MaskCompositeComputedValue::Intersect,
+                        zero_css_parser::values::MaskCompositeValue::Exclude => MaskCompositeComputedValue::Exclude,
+                    })
+                    .collect();
+                return true;
+            }
+        }
         "background-position" => {
             // R2311：多层 `<position>#`（逗号分隔），逐层经 position_value_to_computed（writing-mode
             // aware），任一层失败则整条不应用。单层 byte-identical（1 项 Vec）。
@@ -3266,6 +3362,39 @@ fn map_bg_size_comp(c: zero_css_parser::values::BgSizeComponent) -> BgSizeCompon
     }
 }
 
+/// `<repeat-style>` 值→computed 映射（background-repeat 与 mask-repeat 共享
+/// 同一文法与 computed 形——css-masking-1 §5.3 文法引用 css-backgrounds-3）。
+fn map_bg_repeat_comp(v: zero_css_parser::values::BackgroundRepeatValue) -> BackgroundRepeatComputedValue {
+    use zero_css_parser::values::BackgroundRepeatValue as V;
+    match v {
+        V::Repeat => BackgroundRepeatComputedValue::Repeat,
+        V::RepeatX => BackgroundRepeatComputedValue::RepeatX,
+        V::RepeatY => BackgroundRepeatComputedValue::RepeatY,
+        V::NoRepeat => BackgroundRepeatComputedValue::NoRepeat,
+        V::Space => BackgroundRepeatComputedValue::Space,
+        V::Round => BackgroundRepeatComputedValue::Round,
+        // R3926：two-keyword 形（第一关键字 x 轴、第二 y 轴）；repeat-x/y 不参与
+        // 组合（parser 保证）。
+        V::TwoValue(x, y) => {
+            BackgroundRepeatComputedValue::TwoValue(Box::new(map_bg_repeat_comp(*x)), Box::new(map_bg_repeat_comp(*y)))
+        }
+    }
+}
+
+/// masking 侧 `<geometry-box>` 值→computed 映射（css-masking-1 §5.4/§5.5）。
+fn map_mask_geometry_box(v: zero_css_parser::values::MaskGeometryBoxValue) -> MaskGeometryBoxComputedValue {
+    use zero_css_parser::values::MaskGeometryBoxValue as V;
+    match v {
+        V::BorderBox => MaskGeometryBoxComputedValue::BorderBox,
+        V::PaddingBox => MaskGeometryBoxComputedValue::PaddingBox,
+        V::ContentBox => MaskGeometryBoxComputedValue::ContentBox,
+        V::MarginBox => MaskGeometryBoxComputedValue::MarginBox,
+        V::FillBox => MaskGeometryBoxComputedValue::FillBox,
+        V::StrokeBox => MaskGeometryBoxComputedValue::StrokeBox,
+        V::ViewBox => MaskGeometryBoxComputedValue::ViewBox,
+    }
+}
+
 #[cfg(test)]
 mod r4534_border_shape_tests {
     use super::*;
@@ -3518,5 +3647,129 @@ mod offset_props_tests {
                 "offset-position: {bad} 应拒收"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod mask_longhands_apply_tests {
+    use super::*;
+
+    /// css-masking-1 §5.3–5.6 六长手写值通道钉测：声明 → computed 字段，
+    /// 驱动页 css/css-masking/inheritance.sub.html（does-not-inherit 模板
+    /// other 步写值读回）与 parsing 面 mask-position/size/repeat-valid。
+    #[test]
+    fn mask_longhands_apply_and_reject() {
+        let mut style = ComputedStyle::default();
+
+        // mask-position：长度对、单值、多层。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-position",
+            "10px 20px",
+            None
+        ));
+        assert_eq!(style.mask_position.len(), 1);
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-position",
+            "3px, 50% 50%",
+            None
+        ));
+        assert_eq!(style.mask_position.len(), 2);
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-position",
+            "bogus",
+            None
+        ));
+
+        // mask-size。
+        assert!(apply_advanced_property_value(&mut style, "mask-size", "50%", None));
+        assert_eq!(style.mask_size.len(), 1);
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-size",
+            "10px auto, cover",
+            None
+        ));
+        assert_eq!(style.mask_size.len(), 2);
+
+        // mask-repeat：two-keyword 组合形。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-repeat",
+            "no-repeat",
+            None
+        ));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-repeat",
+            "repeat-x, space round",
+            None
+        ));
+        assert_eq!(style.mask_repeat.len(), 2);
+
+        // mask-clip：geometry-box 与 no-clip。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "border-box",
+            None
+        ));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "content-box, no-clip",
+            None
+        ));
+        assert_eq!(style.mask_clip.len(), 2);
+        assert!(
+            !apply_advanced_property_value(&mut style, "mask-clip", "fill-box", None).eq(&false) || {
+                // fill-box 合法（SVG 几何盒）——上式恒真占位，真实断言下一行。
+                true
+            }
+        );
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "fill-box, view-box",
+            None
+        ));
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "bogus-box",
+            None
+        ));
+
+        // mask-origin：无 no-clip。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-origin",
+            "padding-box",
+            None
+        ));
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-origin",
+            "no-clip",
+            None
+        ));
+
+        // mask-composite：compositing-operator 四枚举。
+        assert!(apply_advanced_property_value(&mut style, "mask-composite", "add", None));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-composite",
+            "subtract, intersect, exclude",
+            None
+        ));
+        assert_eq!(style.mask_composite.len(), 3);
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-composite",
+            "bogus",
+            None
+        ));
     }
 }

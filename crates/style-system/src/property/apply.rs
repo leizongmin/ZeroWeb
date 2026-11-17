@@ -690,6 +690,17 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // 刀 N（css-conditional-3 §supported）：`font` 简写 supports oracle——
+        // 声明 supported 充要条件 = 值可按 css-fonts-4 §font-prop 文法解析
+        // （[`crate::shorthand::expand_font`] 严格校验单源）。实际应用通道
+        // 在 cascade 前经 expand_shorthands 展开，长手应用不走本臂——本臂
+        // 纯 oracle 语义（columns 臂同型）。driving: font-computed.html
+        // `CSS.supports('font', …)` 前置门（排列空间 309F）。
+        "font" => {
+            if crate::shorthand::font_shorthand_supported(value) {
+                return true;
+            }
+        }
         "font-family" => {
             let families = parse_font_family(value);
             if !families.is_empty() {
