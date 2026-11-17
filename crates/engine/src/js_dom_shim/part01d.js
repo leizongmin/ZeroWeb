@@ -3388,7 +3388,18 @@
           if (!(startVw && endVw)) digsVa = false;
         }
         if (!digsVa) {
-          _zwVaForceValue(node, command, newValue);
+          // fs A 族刀（2026-11-17）：fontsize 载体臂不包占位 br——Chrome-160
+          // 录形 `<p>[foo<p><br><p>bar]` 双变体中段恒裸 `<p><br></p>`（data/
+          // fontsize.js:38/:43），同选区 forecolor/hilitecolor/fontname/
+          // strikethrough/underline/bold/italic/sub/sup/createlink 十命令录形
+          // 均裹 br ＝命令特有 delta 非通用 br 豁免，故仅 fontsize 摘分发。
+          // qI-after=true 期望面（录形 indeterm-after=true）依赖 br 裸形：
+          // br 继承缺省 "3" vs 载体 "4" → indeterminate（读侧刀④
+          // _zwValIsFormattableQI 已按未包裹 br 计值）。
+          // 证据 docs/goal/editing-compat/evidence/2026-11-17-fs-census.md
+          if (!(command === 'fontsize' && _zwJusIsHtmlElement(node, 'br'))) {
+            _zwVaForceValue(node, command, newValue);
+          }
         }
       }
     }

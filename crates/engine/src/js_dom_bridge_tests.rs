@@ -254,3 +254,4 @@ include!("js_dom_bridge_tests/part132_img_breakout_pins.rs");
 include!("js_dom_bridge_tests/part133_evt_reject_pins.rs");
 include!("js_dom_bridge_tests/part134_r13_cefalse_wrap_pins.rs");
 include!("js_dom_bridge_tests/part129_kd_rule_inset_inline_pins.rs");
+include!("js_dom_bridge_tests/part135_fs_br_pins.rs");
