@@ -1,8 +1,8 @@
 //! 绘制辅助 — corner-shape / border-shape 形状几何家族（自 helpers.rs 按职责拆分，T59；纯移动零行为变化）。
 
 use zero_css_parser::values::parse_basic_shape::{
-    BorderRadiusValue, PathFunctionValue, RectCoord, ShapeAngleUnit, ShapeAxisComp, ShapeCommand,
-    ShapeControlPoint, ShapeCoordRef, ShapeEndpoint, ShapeFunctionValue, ShapePosition, shape_axis_comp_resolved,
+    BorderRadiusValue, PathFunctionValue, RectCoord, ShapeAngleUnit, ShapeAxisComp, ShapeCommand, ShapeControlPoint,
+    ShapeCoordRef, ShapeEndpoint, ShapeFunctionValue, ShapePosition, shape_axis_comp_resolved,
 };
 // PathSeg 仅测试构造用——lib 面收敛后共享 use 会在 lib check 误报 unused。
 #[cfg(test)]

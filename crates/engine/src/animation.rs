@@ -35,8 +35,8 @@ use zero_style_system::{
     property::types::{
         BorderImageOutsetComputedComponent, BorderImageOutsetComputedValue, BorderImageRepeatComputedMode,
         BorderImageRepeatComputedValue, BorderImageSliceComputedComponent, BorderImageSliceComputedValue,
-        BorderImageWidthComputedComponent, BorderImageWidthComputedValue,
-        ColumnCountComputedValue, ColumnHeightComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
+        BorderImageWidthComputedComponent, BorderImageWidthComputedValue, ColumnCountComputedValue,
+        ColumnHeightComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
     },
 };
 
@@ -691,9 +691,7 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 use crate::animation::clip_interp::lerp_len;
                 let cmp = |fc: &BorderImageWidthComponent, tc: &BorderImageWidthComponent| -> Option<String> {
                     match (fc, tc) {
-                        (BorderImageWidthComponent::Auto, BorderImageWidthComponent::Auto) => {
-                            Some("auto".to_string())
-                        }
+                        (BorderImageWidthComponent::Auto, BorderImageWidthComponent::Auto) => Some("auto".to_string()),
                         (BorderImageWidthComponent::Number(a), BorderImageWidthComponent::Number(b)) => {
                             Some(crate::js_dom_bridge::computed_style::format_num(
                                 lerp(*a as f64, *b as f64, t).max(0.0),
@@ -705,30 +703,29 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                             // 注释 0px→20px at:-0.3 期望 '0px'）；px↔px 同构数值域
                             // 钳制直通，其余单位组合走 calc 混合通道。
                             match (a, b) {
-                                (LengthValue::Px(x), LengthValue::Px(y)) => {
-                                    Some(crate::js_dom_bridge::computed_style::format_num(
-                                        lerp(*x as f64, *y as f64, t).max(0.0),
-                                        "px",
-                                    ))
-                                }
+                                (LengthValue::Px(x), LengthValue::Px(y)) => Some(
+                                    crate::js_dom_bridge::computed_style::format_num(lerp(*x, *y, t).max(0.0), "px"),
+                                ),
                                 _ => lerp_len(a, b, t),
                             }
                         }
                         // 裸无单位 0 双态歧义（css-values-4 §5.2：parser parse_length
                         // 先收 Px(0)，对侧裸数收 Number）：数值恒 0 视作对侧 Number
                         // 同型参与 lerp（语料 '0'→'20' at:0.3 期望 '6'，非离散）。
-                        (BorderImageWidthComponent::Length(LengthValue::Px(x)), BorderImageWidthComponent::Number(b)) if *x == 0.0 => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(0.0, *b as f64, t).max(0.0),
-                                "",
-                            ))
-                        }
-                        (BorderImageWidthComponent::Number(a), BorderImageWidthComponent::Length(LengthValue::Px(y))) if *y == 0.0 => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, 0.0, t).max(0.0),
-                                "",
-                            ))
-                        }
+                        (
+                            BorderImageWidthComponent::Length(LengthValue::Px(x)),
+                            BorderImageWidthComponent::Number(b),
+                        ) if *x == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                            lerp(0.0, *b as f64, t).max(0.0),
+                            "",
+                        )),
+                        (
+                            BorderImageWidthComponent::Number(a),
+                            BorderImageWidthComponent::Length(LengthValue::Px(y)),
+                        ) if *y == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                            lerp(*a as f64, 0.0, t).max(0.0),
+                            "",
+                        )),
                         (BorderImageWidthComponent::Percent(a), BorderImageWidthComponent::Percent(b)) => {
                             // % 同构臂同值域非负钳（0%→20% at:-0.3 期望 '0%'）。
                             Some(crate::js_dom_bridge::computed_style::format_num(
@@ -773,29 +770,28 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                         // 文法无 %，实际仅 px 对出现）。
                         (BorderImageOutsetComponent::Length(a), BorderImageOutsetComponent::Length(b)) => {
                             match (a, b) {
-                                (LengthValue::Px(x), LengthValue::Px(y)) => {
-                                    Some(crate::js_dom_bridge::computed_style::format_num(
-                                        lerp(*x as f64, *y as f64, t).max(0.0),
-                                        "px",
-                                    ))
-                                }
+                                (LengthValue::Px(x), LengthValue::Px(y)) => Some(
+                                    crate::js_dom_bridge::computed_style::format_num(lerp(*x, *y, t).max(0.0), "px"),
+                                ),
                                 _ => lerp_len(a, b, t),
                             }
                         }
                         // 裸无单位 0 双态歧义同 width 臂（'0'→'1' at:0.3 期望
                         // '0.3' 裸数，非离散）。
-                        (BorderImageOutsetComponent::Length(LengthValue::Px(x)), BorderImageOutsetComponent::Number(b)) if *x == 0.0 => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(0.0, *b as f64, t).max(0.0),
-                                "",
-                            ))
-                        }
-                        (BorderImageOutsetComponent::Number(a), BorderImageOutsetComponent::Length(LengthValue::Px(y))) if *y == 0.0 => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, 0.0, t).max(0.0),
-                                "",
-                            ))
-                        }
+                        (
+                            BorderImageOutsetComponent::Length(LengthValue::Px(x)),
+                            BorderImageOutsetComponent::Number(b),
+                        ) if *x == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                            lerp(0.0, *b as f64, t).max(0.0),
+                            "",
+                        )),
+                        (
+                            BorderImageOutsetComponent::Number(a),
+                            BorderImageOutsetComponent::Length(LengthValue::Px(y)),
+                        ) if *y == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                            lerp(*a as f64, 0.0, t).max(0.0),
+                            "",
+                        )),
                         _ => None,
                     }
                 };
@@ -820,7 +816,11 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // repeat（§3.8）/source（§3.4）离散属性：t≥0.5 翻转到 to（css-values-4 §8.5.6；
         // transition-behavior:allow-discrete 过渡通道语义另行开刀 FIXME(mask-border-discrete)）。
         "mask-border-repeat" | "mask-border-source" => {
-            if t >= 0.5 { to.to_string() } else { from.to_string() }
+            if t >= 0.5 {
+                to.to_string()
+            } else {
+                from.to_string()
+            }
         }
         // wptfyi-css shape-image-threshold 刀：number 线性插值（opacity 臂模板；
         // computed 域 [0,1]——语料端点 0/0.5/0.8/1 全在域内，外推钳域）。
@@ -3036,7 +3036,8 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "mask-border-source" => {
             if let Some(v) = zero_css_parser::values::parse_border_image_source(value) {
                 let dark = style.color_scheme_dark;
-                style.mask_border_source = zero_style_system::property::apply_advanced::border_image_source_to_computed(v, dark);
+                style.mask_border_source =
+                    zero_style_system::property::apply_advanced::border_image_source_to_computed(v, dark);
             }
         }
         "mask-border-slice" => {
@@ -3059,11 +3060,9 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 let comp = |c: &BorderImageWidthComponent| match c {
                     BorderImageWidthComponent::Auto => BorderImageWidthComputedComponent::Auto,
                     BorderImageWidthComponent::Number(n) => BorderImageWidthComputedComponent::Number(*n),
-                    BorderImageWidthComponent::Length(lv) => {
-                        BorderImageWidthComputedComponent::Length(
-                            zero_style_system::property::apply_advanced::resolve_effect_length(lv, style),
-                        )
-                    }
+                    BorderImageWidthComponent::Length(lv) => BorderImageWidthComputedComponent::Length(
+                        zero_style_system::property::apply_advanced::resolve_effect_length(lv, style),
+                    ),
                     BorderImageWidthComponent::Percent(n) => BorderImageWidthComputedComponent::Percent(*n),
                 };
                 style.mask_border_width = BorderImageWidthComputedValue {
@@ -6093,14 +6092,8 @@ mod tests {
     #[test]
     /// slice 同构槽 lerp + 非负钳 0（语料 0%→50% at:-0.3 期望 '0%'）。
     fn test_mask_border_slice_lerp_and_clamp() {
-        assert_eq!(
-            interpolate_property_value("mask-border-slice", "0%", "50%", -0.3),
-            "0%"
-        );
-        assert_eq!(
-            interpolate_property_value("mask-border-slice", "0%", "50%", 0.3),
-            "15%"
-        );
+        assert_eq!(interpolate_property_value("mask-border-slice", "0%", "50%", -0.3), "0%");
+        assert_eq!(interpolate_property_value("mask-border-slice", "0%", "50%", 0.3), "15%");
         assert_eq!(
             interpolate_property_value("mask-border-slice", "0% 10% 20% 30%", "40% 50% 60% 70%", 0.3),
             "12% 22% 32% 42%"
@@ -6160,16 +6153,10 @@ mod tests {
             interpolate_property_value("mask-border-width", "0px", "20px", -0.3),
             "0px"
         );
-        assert_eq!(
-            interpolate_property_value("mask-border-width", "0", "20", -0.3),
-            "0"
-        );
+        assert_eq!(interpolate_property_value("mask-border-width", "0", "20", -0.3), "0");
         // 裸 0 端点归一 Number 域插值（'0'→'20' at:0.3 期望 '6'——解析双态歧义
         // 防回归钉）。
-        assert_eq!(
-            interpolate_property_value("mask-border-width", "0", "20", 0.3),
-            "6"
-        );
+        assert_eq!(interpolate_property_value("mask-border-width", "0", "20", 0.3), "6");
         assert_eq!(
             interpolate_property_value("mask-border-width", "10px 20% 30 40px", "80px 70% 60 50px", 0.3),
             "31px 35% 39 43px"
@@ -6191,14 +6178,8 @@ mod tests {
             interpolate_property_value("mask-border-width", "10px auto auto 20", "110px auto 120 auto", 0.6),
             "110px auto 120 auto"
         );
-        assert_eq!(
-            interpolate_property_value("mask-border-width", "10px", "20", 0.6),
-            "20"
-        );
-        assert_eq!(
-            interpolate_property_value("mask-border-width", "10%", "20", 0.3),
-            "10%"
-        );
+        assert_eq!(interpolate_property_value("mask-border-width", "10px", "20", 0.6), "20");
+        assert_eq!(interpolate_property_value("mask-border-width", "10%", "20", 0.3), "10%");
     }
 
     #[test]
@@ -6210,10 +6191,7 @@ mod tests {
             interpolate_property_value("mask-border-outset", "0px", "5px", -0.3),
             "0px"
         );
-        assert_eq!(
-            interpolate_property_value("mask-border-outset", "0", "1", 0.3),
-            "0.3"
-        );
+        assert_eq!(interpolate_property_value("mask-border-outset", "0", "1", 0.3), "0.3");
         assert_eq!(
             interpolate_property_value("mask-border-outset", "1 2 3px 4px", "101 102 103px 104px", -0.3),
             "0 0 0px 0px"
