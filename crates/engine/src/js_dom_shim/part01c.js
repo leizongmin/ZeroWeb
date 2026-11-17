@@ -986,16 +986,57 @@
       var pClose = pHtml.lastIndexOf('</' + _zwJusTag(prevSib) + '>');
       if (pClose < 0) return null;
       wrapper = prevSib; reusePrev = true;
-      html = prefix + pHtml.slice(0, pClose) + (anyBr ? '' : '<br>') + memberHtml
-        + pHtml.slice(pClose) + suffix;
+      // 邻居复用臂 content-merge 去重刀（2026-11-18，A 族复本缺陷）：上方
+      // prefix/suffix 按原始 kids 全量累计，被复用邻居恰在 firstIdx-1 /
+      // lastIdx+1 位——展开形嵌入后再拼原 outerHTML＝壳内容复本两次
+      // （indent.html A 族三键 got 双 bar/foo 实证：`[foo]<blockquote>bar
+      // </blockquote>` + indent 录音 `<blockquote>foo<br>bar</blockquote>`
+      // 单块，got 曾双块复本）。此臂 prefix 排除邻居位；next 臂 suffix
+      // 排除邻居位（下方 suf）。
+      var pre = '';
+      for (k = 0; k < firstIdx - 1; k++) pre += _zwJusKidHtml(kids[k]);
+      // 次邻 composition 级并入（DOM 臂 post-move 次邻合并的串化镜像，
+      // https://w3c.github.io/editing/execCommand.html#the-indent-command
+      // merge 步两侧同块：`<blockquote>foo</blockquote>[bar]<blockquote>
+      // baz</blockquote>` + indent 录音 `<blockquote>foo<br>bar<br>baz</blockquote>`
+      // 单块三段）。不走 rebuild 后 DOM move：fresh 重建孪生裸 blockquote
+      // 无 handle 且 chapter 失唯一，wire 面静默漂移。br 垫界条件与 DOM 臂
+      // 同款（前邻尾内联＋次邻首内联＋尾非 br）。
+      var mgNextHtml = '';
+      if (nextSib && nextSib.nodeType === 1 && _zwJusIsEditable(nextSib)
+          && siblingCriteria(nextSib)) {
+        var nHtml2 = String(nextSib.outerHTML || '');
+        var nOpen2 = nHtml2.indexOf('>') + 1;
+        var nClose2 = nHtml2.lastIndexOf('</' + _zwJusTag(nextSib) + '>');
+        if (nOpen2 > 0 && nClose2 >= nOpen2) {
+          var mgBr = '';
+          if (!_zwJusIsInlineNode(prevSib)
+              && _zwJusIsInlineNode(prevSib.lastChild)
+              && _zwJusIsInlineNode(nextSib.firstChild)
+              && !_zwJusIsHtmlElement(prevSib.lastChild, 'br')) {
+            mgBr = '<br>';
+          }
+          mgNextHtml = mgBr + nHtml2.slice(nOpen2, nClose2);
+          var sufMg = '';
+          for (k = lastIdx + 2; k < kids.length; k++) sufMg += _zwJusKidHtml(kids[k]);
+          html = pre + pHtml.slice(0, pClose) + (anyBr ? '' : '<br>') + memberHtml
+            + mgNextHtml + pHtml.slice(pClose) + sufMg;
+        }
+      }
+      if (mgNextHtml === '') {
+        html = pre + pHtml.slice(0, pClose) + (anyBr ? '' : '<br>') + memberHtml
+          + pHtml.slice(pClose) + suffix;
+      }
     } else if (nextSib && nextSib.nodeType === 1 && _zwJusIsEditable(nextSib)
         && siblingCriteria(nextSib)) {
       var nHtml = String(nextSib.outerHTML || '');
       var nOpen = nHtml.indexOf('>') + 1;
       if (nOpen <= 0) return null;
       wrapper = nextSib;
+      var suf = '';
+      for (k = lastIdx + 2; k < kids.length; k++) suf += _zwJusKidHtml(kids[k]);
       html = prefix + nHtml.slice(0, nOpen) + memberHtml + (anyBr ? '' : '<br>')
-        + nHtml.slice(nOpen) + suffix;
+        + nHtml.slice(nOpen) + suf;
     } else {
       var np = newParentInstructions();
       if (!np) return null;
@@ -1014,12 +1055,13 @@
       if (rng && wrapper) {
         if (wEl.parentNode !== host) {
           var wantOpen = _zwJusSerializeOpenTag(wrapper);
-          // 孪生定位位优先：wrapper 恰占重建子列 firstIdx 位（prefix 前缀 =
-          // 成员首索引，html 拼装序即 DOM 序）；位不可靠（解析回流/结构怪形）
-          // 再按 open tag 串扫描兜底。串扫描首命中在同 open-tag 前缀面取错
-          // 孪生（div 边界 :775 刀双 li 形：liEl 指向 liFooTwin，主循环
-          // sublist 重锚后重复引用同节点、真包装 liBarTwin 永远 bare 实证）。
-          var posW = host.childNodes[firstIdx];
+          // 孪生定位位优先：wrapper 恰占重建子列既定位（fresh np/next 复用臂
+          // ＝firstIdx 位；prev 复用臂去重刀后 prefix 排除邻居位，展开形包落
+          // firstIdx-1 位）。位不可靠（解析回流/结构怪形）再按 open tag 串
+          // 扫描兜底。串扫描首命中在同 open-tag 前缀面取错孪生（div 边界
+          // :775 刀双 li 形：liEl 指向 liFooTwin，主循环 sublist 重锚后重复
+          // 引用同节点、真包装 liBarTwin 永远 bare 实证）。
+          var posW = host.childNodes[reusePrev ? firstIdx - 1 : firstIdx];
           if (posW && posW.nodeType === 1
           && _zwJusSerializeOpenTag(posW) === wantOpen) {
             wEl = posW;

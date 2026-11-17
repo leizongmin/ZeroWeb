@@ -258,3 +258,6 @@ include!("js_dom_bridge_tests/part135_fs_br_pins.rs");
 // indent br 边界刀钉测（2026-11-17）：块边界相邻唯一行界 br 消费（尾侧摘除
 // 删／首侧直形·行内壳尾链删，run=1 判据）＋run4/caret 前 br 三守卫现绿恒一。
 include!("js_dom_bridge_tests/part136_indent_br_pins.rs");
+// indent 邻居合并去重刀钉测（2026-11-18 A 族刀）：ViaHtml 邻居复用臂
+// prefix/suffix 复本缺陷修复＋post-rebuild 次邻合并臂（三形）。
+include!("js_dom_bridge_tests/part137_indent_merge_dedup_pins.rs");
