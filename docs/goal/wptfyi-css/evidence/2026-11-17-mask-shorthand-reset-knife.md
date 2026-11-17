@@ -37,11 +37,12 @@ parse 层保形 → tokenizer 保形 → expand 13 声明顺序正确 → apply 
 [css-multicol]  b0=943   b1=943   delta=+0    | F2P=0 P2F=0 | pages 91=91
 [css-typed-om]  b0=9947  b1=9947  delta=+0    | F2P=0 P2F=0 | pages 359=359
 [css-shapes]    b0=5125  b1=5125  delta=+0    | F2P=0 P2F=0 | pages 145=145
-[css-masking]   b0=3687  b1=4011  delta=+324  | F2P=325 P2F=0 | NEW P2 | pages 61=61
-[TOTAL]         b0=22221 b1=23864 delta=+324
+[css-masking]   b0=3687  b1=4011  delta=+324  | F2P=325 P2F=3 | NEW P2 | pages 61=61
+[TOTAL]         b0=23540 b1=23864 delta=+324
 ```
 
-- 判据达成：css-masking F2P=325 / **P2F=0**（json status 值域 Pass/Fail 逐条比对复核），余四 corpus SET-IDENTICAL 全零位移，page-only 零容忍满足。
+- 判据达成：css-masking F2P=325 / P2F=3（三例全归既有挂账面，见下），余四 corpus SET-IDENTICAL 全零位移，page-only 零容忍满足（NEW P=2 在 reset 页）。
+- **P2F=3 归因**（mask-border-source-interpolation.html，Web Animations 通道 from [inherit] at -0.3/0/0.3 三例）：b0 双侧 inherit 均无臂同落 none 互证＝**假绿**；b1 期望侧经本刀 inherit_property 五臂正确解析父链 `url(green.png)`，实际侧 WAAPI/js_anim 通道父链不可达传 None 仍落 none——即 K1 刀已注记的 **FIXME(kf-inherit-waapi)** 面（CLAIM-knife-kf-inherit-waapi 已认领）。假绿揭真红挂账，非本刀行为回归；JSON 逐条核对 b0=Pass/b1=Fail 带 message 实证。
 - `inheritance.sub.html` 8P/28F → **13P/23F**（+5P：mask-border-* 五长手 does-not-inherit inherit 步）。
 - `mask-shorthand-subproperties-reset.html` 全 Pass（runner 归并 7 断言 / debug 形态 13 断言，两形态均 0F；mask-border 刀 A 腿整页 Timeout 死态→页活跑完）。
 - 复证：本树 release bin（23:01）css-masking Fail=2336 与 mm-b1 Fail=2336 同账。
