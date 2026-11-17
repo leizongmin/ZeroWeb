@@ -808,6 +808,52 @@
             || _zwJusIsAllowedChild(node, 'ol'));
     });
 
+    // B 族容器整体升级（Chrome delta，2026-11-18）：blockExtend do-while 两侧
+    // 同断于块容器 C 内侧边界（首尾子皆可见块 → (C,0) 为 block end point、
+    // (C,len) 为 block start point）时 newRange=(C,0)-(C,len)，contained 收
+    // C 的子代——indent 新壳嵌 C 内（语料 indent B 族 4 键＋E 族 div 键 got
+    // 实证：styled bq / webkit-indent-blockquote / div[dir] 三形）。Chrome
+    // 录形＝C 全部子代入选时容器整体入含域（新壳包 C 外，spec 注记
+    // "puts them at the outermost possible location"）；部分覆盖形（styled
+    // bq 内只选 p1 余 p2 残留，indent.html 现绿键）仍嵌内＝子代不全在
+    // nodeList 时不升级。spec 原文该面由 blockExtend 无条件尾爬升产生，但
+    // 那会越过宿主把宿主祖先链收进含域（宿主 div 入列→外包裹宿主，录音
+    // 不符）——Chrome 实为宿主天花板＋全覆盖判据，故收口在 node list 构建面。
+    // 列表域（ol/ul/li，li 臂两侧端点恒落 (ol,i)/(ol,i+1) 同容器形）与表格
+    // 结构（table 家族，E 族逐 td 录形）不升级。
+    // https://w3c.github.io/editing/execCommand.html#the-indent-command
+    if (nodeList.length) {
+      var hostChk = null;
+      var hnUp = nodeList[0];
+      while (hnUp) {
+        if (_zwJusIsEditingHost(hnUp)) { hostChk = hnUp; break; }
+        hnUp = hnUp.parentNode;
+      }
+      for (var up = 0; up < nodeList.length; up++) {
+        var cUp = nodeList[up].parentNode;
+        if (!cUp || cUp.nodeType !== 1 || !_zwJusIsEditable(cUp)
+            || cUp === hostChk
+            || _zwJusIsHtmlElement(cUp,
+                ['ol', 'ul', 'li', 'table', 'tbody', 'thead', 'tfoot',
+                 'tr', 'td', 'th'])
+            || !cUp.childNodes || !cUp.childNodes.length) {
+          continue;
+        }
+        var fullCov = true;
+        for (var kUp = 0; kUp < cUp.childNodes.length; kUp++) {
+          if (nodeList.indexOf(cUp.childNodes[kUp]) < 0) {
+            fullCov = false;
+            break;
+          }
+        }
+        if (!fullCov) continue;
+        // 升级：树序位上以 C 替换其子代连续段（子代全在列＝段连续）。
+        var runUp = nodeList.indexOf(cUp.childNodes[0]);
+        nodeList.splice(runUp, cUp.childNodes.length, cUp);
+        up = runUp;
+      }
+    }
+
     // "If the first visible member of node list is an li whose parent is an
     // ol or ul: ... If sibling is an li, normalize sublists of sibling."
     var vis = nodeList.filter(function (x) { return _zwJusIsVisible(x); });

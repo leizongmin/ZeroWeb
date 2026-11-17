@@ -261,3 +261,4 @@ include!("js_dom_bridge_tests/part136_indent_br_pins.rs");
 // indent 邻居合并去重刀钉测（2026-11-18 A 族刀）：ViaHtml 邻居复用臂
 // prefix/suffix 复本缺陷修复＋post-rebuild 次邻合并臂（三形）。
 include!("js_dom_bridge_tests/part137_indent_merge_dedup_pins.rs");
+include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
