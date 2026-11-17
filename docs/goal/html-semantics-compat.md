@@ -88,6 +88,21 @@ s137）；rendering 流 dialog 16 红块协同面
 （归 rendering 流记账）。门开随批落预案
 不变：簇 D 开 → customizable-select-
 styles.css ×47 随批落。
+> **◆ 更正二（2026-11-17 s549 push 阶段）——pull
+> --rebase 捕获刀 H 落窗（ad487ea89
+> fix(engine) 刀 H typed-om shim 认领落地：
+> part10-typed-om.js +215/−24 StylePropertyMap
+> 校验面+var() 引用 get 归一，wptfyi-css 流
+> 申报 typedom 净 +74（F2P=74/P2F=0）+ 五
+> corpus SET-IDENTICAL ×4；伴笔 e5b97f8ca
+> docs-only）：s549 窗（d08f8ef17→
+> 7e994a6b0）不含此刀、s550 窗首次纳入
+> ——s550 起腿前 provenance 预判：runner 必
+> 换代归因刀 H（part10-typed-om.js 经
+> zero-engine 依赖链入 runner 链接），hs 面
+> testharness 键无 StylePropertyMap 语义路
+> 径、对账以 join 实测为准。
+
 > **◆ 更正一（2026-11-17 s548 push 阶段）——pull
 > --rebase 捕获 d51 刀落窗（61ebaf369
 > fix(editing)：part01.js +134 列表溶解
