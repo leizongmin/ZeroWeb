@@ -438,7 +438,9 @@ fn test_get_computed_style_font_shorthand_r2761() {
     // 经 longhand 设置（family Arial + size 14px，style/weight/line-height 全初值省）→"14px Arial"。
     assert_eq!(computed_style_property(html, "#f5", "font"), "14px Arial");
     assert_eq!(computed_style_property(html, "#f6", "font-stretch"), "75%");
-    assert_eq!(computed_style_property(html, "#f6", "font"), "75% 14px Arial");
+    // font 简写 stretch 位用关键字形（Chromium 156 oracle 复测：longhand 恒 %、
+    // 简写关键字 "condensed 14px Arial"；刀 N 一期 2d3e71d19 对齐）。
+    assert_eq!(computed_style_property(html, "#f6", "font"), "condensed 14px Arial");
     assert_eq!(
         computed_style_property(html, "#f7", "font-variant-alternates"),
         "historical-forms"
