@@ -28,8 +28,8 @@ use zero_style_system::{
     BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
     BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
     CaretColorComputedValue, CaretShapeComputedValue, ColumnCountComputedValue, ColumnFillComputedValue,
-    ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
-    ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
+    ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
+    ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontKerningValue, FontSizeAdjustBasis,
     FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantNumericValue,
     FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
@@ -812,11 +812,18 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "row-rule-style" => rule_style_list_to_gcs(&style.row_rule_style),
         "column-count" => column_count_to_css(&style.column_count),
         "column-width" => column_width_to_css(&style.column_width, font_size_px),
+        // css-multicol-2 §4.2 column-height 串化（auto | 绝对长度 px）。
+        "column-height" => column_height_to_css(&style.column_height, font_size_px),
         "column-fill" => column_fill_str(&style.column_fill),
         "column-span" => column_span_str(&style.column_span),
         // ── columns / column-rule 简写（R2755）── longhand 早覆（上方）；简写 CSSOM 重组
         // （columns 省 auto / column-rule 省 none style），Chromium 150 oracle 锚定。
-        "columns" => columns_shorthand_to_css(&style.column_width, &style.column_count, font_size_px),
+        "columns" => columns_shorthand_to_css(
+            &style.column_width,
+            &style.column_count,
+            &style.column_height,
+            font_size_px,
+        ),
         "column-rule" => column_rule_shorthand_to_css(
             &style.column_rule_width,
             &style.column_rule_style,
@@ -1812,6 +1819,14 @@ fn column_width_to_css(w: &ColumnWidthComputedValue, font_size_px: f64) -> Strin
     }
 }
 
+/// column-height：css-multicol-2 §4.2 列块向高。Auto→auto；Length→px（同 width 通道）。
+fn column_height_to_css(h: &ColumnHeightComputedValue, font_size_px: f64) -> String {
+    match h {
+        ColumnHeightComputedValue::Auto => "auto".to_string(),
+        ColumnHeightComputedValue::Length(l) => length_to_css(l, font_size_px),
+    }
+}
+
 /// column-fill：CSS Multi-column 列填充。Balance（初值）/Auto（对齐 Chromium）。
 fn column_fill_str(f: &ColumnFillComputedValue) -> String {
     match f {
@@ -1834,17 +1849,24 @@ fn column_span_str(s: &ColumnSpanComputedValue) -> String {
 // 复用上方 longhand helper 做 CSSOM 重组；oracle 锚定本地 Chromium 150（见
 // docs/learnings/patterns/2026-08/2026-08-05-local-chromium-getcomputedstyle-oracle.md）。
 
-/// `columns` 简写：`column-width || column-count`（CSS Multicol）。CSSOM 序列化省略 auto 值；
-/// 全 auto→`"auto"`。Chromium oracle：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、
+/// `columns` 简写：`[ <'column-width'> || <'column-count'> ] [ / <'column-height'> ]?`
+/// （CSS Multicol + css-multicol-2 §4.5）。CSSOM 序列化：width/count auto 各自省略，
+/// 全 auto→`"auto"`；column-height 非 auto 时 slash 段恒显（`"W / H"`/`"W N / H"`/
+/// `"N / H"`/`"auto / H"`），height auto 时整体省略。WPT columns-computed 语料锚定
+/// （font-size 40px）：`auto / 2.5em`→`"auto / 100px"`、`0.25em 2 / 2.5em`→
+/// `"10px 2 / 100px"`、`2 / 2.5em`→`"2 / 100px"`、`auto / auto`→`"auto"`。
+/// Chromium oracle（R2755）：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、
 /// `columns:12em`→`"192px"`（width 解析，count auto 省）、默认→`"auto"`。
 fn columns_shorthand_to_css(
     width: &ColumnWidthComputedValue,
     count: &ColumnCountComputedValue,
+    height: &ColumnHeightComputedValue,
     font_size_px: f64,
 ) -> String {
     let w_auto = matches!(width, ColumnWidthComputedValue::Auto);
     let c_auto = matches!(count, ColumnCountComputedValue::Auto);
-    match (w_auto, c_auto) {
+    let h = column_height_to_css(height, font_size_px);
+    let width_count = match (w_auto, c_auto) {
         (false, false) => {
             format!(
                 "{} {}",
@@ -1855,6 +1877,11 @@ fn columns_shorthand_to_css(
         (false, true) => column_width_to_css(width, font_size_px),
         (true, false) => column_count_to_css(count),
         (true, true) => "auto".to_string(),
+    };
+    if matches!(height, ColumnHeightComputedValue::Auto) {
+        width_count
+    } else {
+        format!("{} / {}", width_count, h)
     }
 }
 

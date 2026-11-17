@@ -30,6 +30,9 @@ use zero_css_parser::values::{
 use zero_style_system::{
     ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue, ShapeOutsideBoxKind,
     ShapeOutsideComputedValue,
+    property::types::{
+        ColumnCountComputedValue, ColumnHeightComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
+    },
 };
 
 /// 关键帧点 — 某个时间进度处的属性快照。
@@ -582,6 +585,46 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             let to_px = parse_px(to);
             format!("{:.2}px", lerp(from_px, to_px, t).max(0.0))
         }
+        // wptfyi-css multicol columns 刀（css-multicol §cw/§cc + css-multicol-2
+        // §4.2）：column-width/column-height = px 域 lerp 后钳 0（<length [0,∞]>
+        // 域外负外推落 0px——语料 neutral→20px at(-1) 期望 '1em'=font-size 0 下
+        // 0px）；column-count = 数值 lerp 后钳 1 取整（<integer [1,∞]>——语料
+        // 200px 10→100px 20 at(-1) 期望 count '1'）。canonicalize 走 apply+gCS
+        // 串化往返（apply 臂同文法），格式与期望元素 gCS 同通道恒等。
+        "column-width" | "column-height" => {
+            let from_px = parse_px(from);
+            let to_px = parse_px(to);
+            format!("{:.2}px", lerp(from_px, to_px, t).max(0.0))
+        }
+        "column-count" => {
+            let from_n = parse_f64(from).unwrap_or(0.0);
+            let to_n = parse_f64(to).unwrap_or(0.0);
+            format!("{}", lerp(from_n, to_n, t).max(1.0).round() as i64)
+        }
+        // columns 简写插值（css-multicol-2 §4.5 by computed value type）：组件
+        // 存在集一致的端点对逐槽 lerp（width/height 钳 0、count 钳 1），存在集
+        // 失配（auto 槽 vs 值槽形变）落 css-values-4 §8.5.6 离散翻转。序列化
+        // canonical 形与 gCS [`columns_shorthand_to_css`] 同构（auto 省略、height
+        // 非 auto 时 slash 恒显），canonicalize 往返由 apply 臂保证。
+        "columns" => match (parse_columns_endpoint(from), parse_columns_endpoint(to)) {
+            (Some(f), Some(s)) if f.compatible(&s) => {
+                let w = match (f.width, s.width) {
+                    (Some(fw), Some(tw)) => Some(lerp(fw, tw, t).max(0.0)),
+                    _ => None,
+                };
+                let c = match (f.count, s.count) {
+                    (Some(fc), Some(tc)) => Some(lerp(fc, tc, t).max(1.0).round()),
+                    _ => None,
+                };
+                let h = match (f.height, s.height) {
+                    (Some(fh), Some(th)) => Some(lerp(fh, th, t).max(0.0)),
+                    _ => None,
+                };
+                serialize_columns_components(w, c, h)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // wptfyi-css shape-image-threshold 刀：number 线性插值（opacity 臂模板；
         // computed 域 [0,1]——语料端点 0/0.5/0.8/1 全在域内，外推钳域）。
         "shape-image-threshold" => {
@@ -1017,6 +1060,41 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             let fa = parse_px_strict(from)?;
             let ta = parse_px_strict(to)?;
             Some(format!("{:.2}px", lerp(fa, ta, t).max(0.0)))
+        }
+        // wptfyi-css multicol columns 刀：column-width/height = px 端点严格插值
+        // （非长度端点 = 非 animatable 对不启动）；column-count = 数值严格；columns
+        // = 组件存在集恒等才 Some（槽形变 = 非 animatable，css-transitions
+        // §starting-of-transitions——allow-discrete 翻转面属 transition-behavior 刀面
+        // 另账）。
+        "column-width" | "column-height" => {
+            let fa = parse_px_strict(from)?;
+            let ta = parse_px_strict(to)?;
+            Some(format!("{:.2}px", lerp(fa, ta, t).max(0.0)))
+        }
+        "column-count" => {
+            let fa = parse_f64(from)?;
+            let ta = parse_f64(to)?;
+            Some(format!("{}", lerp(fa, ta, t).max(1.0).round() as i64))
+        }
+        "columns" => {
+            let f = parse_columns_endpoint(from)?;
+            let s = parse_columns_endpoint(to)?;
+            if !f.compatible(&s) {
+                return None;
+            }
+            let w = match (f.width, s.width) {
+                (Some(fw), Some(tw)) => Some(lerp(fw, tw, t).max(0.0)),
+                _ => None,
+            };
+            let c = match (f.count, s.count) {
+                (Some(fc), Some(tc)) => Some(lerp(fc, tc, t).max(1.0)),
+                _ => None,
+            };
+            let h = match (f.height, s.height) {
+                (Some(fh), Some(th)) => Some(lerp(fh, th, t).max(0.0)),
+                _ => None,
+            };
+            Some(serialize_columns_components(w, c, h))
         }
         // shape-image-threshold：number 严格插值，外推钳 [0,1]（computed 域）。
         "shape-image-threshold" => {
@@ -1477,6 +1555,110 @@ fn filter_function_initial(f: &zero_css_parser::values::FilterValue) -> zero_css
 // R5191：pub(crate)——transform 函数列表插值（animation/transform_interp.rs）复用。
 pub(crate) fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
+}
+
+/// columns 简写端点组件（css-multicol-2 §4.5 声明形）：width/count/height 三槽，
+/// None = auto 槽（声明中未出现或显式 auto）。`slots()` = 三槽显式存在集——
+/// 插值配对要求两端存在集恒等（组件形变 = 非可插值对，css-values-4 §8.5.6）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ColumnsEndpoint {
+    width: Option<f64>,
+    count: Option<f64>,
+    height: Option<f64>,
+    /// 显式槽存在集（'auto' 关键字占位仍计存在——`'10 100px / auto'` 与
+    /// `'20 200px / auto'` 存在集恒等故可插值；裸 `auto` 全零）。
+    slots: (bool, bool, bool),
+}
+
+impl ColumnsEndpoint {
+    fn slots(&self) -> (bool, bool, bool) {
+        self.slots
+    }
+
+    /// 可插值配对：存在集恒等且各槽值存在性恒等（auto↔值槽形变 = 离散，
+    /// css-values-4 §8.5.6——组件 computed value type 变更不可 lerp）。
+    fn compatible(&self, other: &ColumnsEndpoint) -> bool {
+        self.slots() == other.slots()
+            && self.width.is_some() == other.width.is_some()
+            && self.count.is_some() == other.count.is_some()
+            && self.height.is_some() == other.height.is_some()
+    }
+}
+
+/// 解析 columns 声明形端点（`'200px 10'`/`'100px / 200px'`/`'10 100px / auto'`/
+/// `'auto'`）。width||count 顺序无关（整数→count、长度→width、auto 填余槽）；
+/// 斜杠段 = column-height。非文法形（css-wide 关键字、残缺段）返 None → 离散。
+fn parse_columns_endpoint(v: &str) -> Option<ColumnsEndpoint> {
+    let tokens: Vec<&str> = v.split_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    let slash = tokens.iter().position(|t| *t == "/");
+    let (pre, post) = match slash {
+        Some(pos) => (&tokens[..pos], &tokens[pos + 1..]),
+        None => (&tokens[..], &tokens[0..0]),
+    };
+    if pre.len() > 2 || post.len() > 1 {
+        return None;
+    }
+    let mut ep = ColumnsEndpoint {
+        width: None,
+        count: None,
+        height: None,
+        slots: (false, false, false),
+    };
+    match (pre.len(), slash.is_some()) {
+        // 裸 'auto'（全初值，无槽）；仅当无斜杠段时成立
+        (1, false) if pre[0].eq_ignore_ascii_case("auto") => {}
+        (0, false) => return None, // 空端点非文法形
+        (0, true) => return None,  // 斜杠前组文法必选
+        _ => {
+            for tok in pre {
+                if tok.eq_ignore_ascii_case("auto") {
+                    continue;
+                }
+                if tok.parse::<u32>().is_ok_and(|n| n >= 1) && ep.count.is_none() {
+                    ep.count = Some(tok.parse::<f64>().unwrap_or(0.0));
+                    ep.slots.1 = true;
+                } else if ep.width.is_none() {
+                    // 严格解析：css-wide 关键字/畸形 token 不得 0 化（端点非法 →
+                    // None → 离散回落）
+                    ep.width = Some(parse_px_strict(tok)?);
+                    ep.slots.0 = true;
+                } else {
+                    return None;
+                }
+            }
+            // 'auto' 占位槽记存在（无值语义——slots 参与存在集配对）
+            if pre.iter().any(|t| t.eq_ignore_ascii_case("auto")) {
+                ep.slots.0 |= ep.width.is_none();
+                ep.slots.1 |= ep.count.is_none();
+            }
+        }
+    }
+    if let Some(h) = post.first() {
+        ep.slots.2 = true;
+        if !h.eq_ignore_ascii_case("auto") {
+            ep.height = Some(parse_px_strict(h)?);
+        }
+    }
+    Some(ep)
+}
+
+/// columns 组件序列化（css-multicol-2 §4.5 canonical）：width/count auto 省略，
+/// 全 auto → "auto"；height 非 auto 时 slash 恒显——与 gCS
+/// [`crate::js_dom_bridge::computed_style`] columns_shorthand_to_css 同构。
+fn serialize_columns_components(w: Option<f64>, c: Option<f64>, h: Option<f64>) -> String {
+    let width_count = match (w, c) {
+        (Some(wv), Some(cv)) => format!("{:.2}px {}", wv, cv.round() as i64),
+        (Some(wv), None) => format!("{:.2}px", wv),
+        (None, Some(cv)) => format!("{}", cv.round() as i64),
+        (None, None) => "auto".to_string(),
+    };
+    match h {
+        Some(hv) => format!("{} / {:.2}px", width_count, hv),
+        None => width_count,
+    }
 }
 
 /// 解析 f64 值。
@@ -2581,6 +2763,50 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.shape_image_threshold = v.clamp(0.0, 1.0);
             }
         }
+        // ── wptfyi-css multicol columns 刀 apply 臂 ── css-multicol §cw/§cc +
+        // css-multicol-2 §4.2/§4.5：动画插值串写回 column-width/count/height 槽
+        // （插值发射值恒 px/正整数形；'auto' 落初值槽——离散翻转端点回声经
+        // canonicalize 往返）。columns 简写按 [`parse_columns_endpoint`] 组件写
+        // 存在槽（未出现槽落 auto = 简写展开初值语义），并复位 column-wrap
+        // （css-multicol-2 §4.5 reset 条款）。解析失败不动样式回落方向。
+        "column-width" => {
+            if value.trim().eq_ignore_ascii_case("auto") {
+                style.column_width = ColumnWidthComputedValue::Auto;
+            } else {
+                style.column_width = ColumnWidthComputedValue::Length(LengthValue::Px(parse_px(value)));
+            }
+        }
+        "column-count" => {
+            if value.trim().eq_ignore_ascii_case("auto") {
+                style.column_count = ColumnCountComputedValue::Auto;
+            } else if let Some(n) = parse_f64(value) {
+                style.column_count = ColumnCountComputedValue::Number(n.max(1.0).round() as u32);
+            }
+        }
+        "column-height" => {
+            if value.trim().eq_ignore_ascii_case("auto") {
+                style.column_height = ColumnHeightComputedValue::Auto;
+            } else {
+                style.column_height = ColumnHeightComputedValue::Length(LengthValue::Px(parse_px(value)));
+            }
+        }
+        "columns" => {
+            if let Some(ep) = parse_columns_endpoint(value) {
+                style.column_width = ep
+                    .width
+                    .map(|w| ColumnWidthComputedValue::Length(LengthValue::Px(w)))
+                    .unwrap_or(ColumnWidthComputedValue::Auto);
+                style.column_count = ep
+                    .count
+                    .map(|c| ColumnCountComputedValue::Number(c.max(1.0).round() as u32))
+                    .unwrap_or(ColumnCountComputedValue::Auto);
+                style.column_height = ep
+                    .height
+                    .map(|h| ColumnHeightComputedValue::Length(LengthValue::Px(h)))
+                    .unwrap_or(ColumnHeightComputedValue::Auto);
+                style.column_wrap = ColumnWrapComputedValue::Auto;
+            }
+        }
         // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段
         // （parse_filter_list("none") = 空 Vec = none；与 apply_advanced 静态声明
         // 同一转换）。
@@ -2747,6 +2973,153 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
 mod tests {
     use super::*;
     use zero_css_parser::ast::{Declaration, KeyframeBlock, KeyframesRule};
+
+    // ── wptfyi-css multicol columns 刀钉测 ──────────────────────────────
+    // 期望表取 B 账 columns-interpolation 子测名（CSS Animations 通道权威行）。
+
+    #[test]
+    /// column-width/height 负外推钳 0（<length [0,∞]>——语料 neutral→20px at(-1)
+    /// 期望 '1em' = font-size 0 下 0px）。
+    fn test_column_width_height_negative_clamp() {
+        assert_eq!(
+            interpolate_property_value("column-width", "10px", "20px", -1.0),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("column-width", "10px", "20px", -0.3),
+            "7.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("column-width", "10px", "20px", 1.5),
+            "25.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("column-height", "100px", "200px", -1.0),
+            "0.00px"
+        );
+    }
+
+    #[test]
+    /// column-count 数值 lerp 钳 1 取整（<integer [1,∞]>——语料 200px 10→100px 20
+    /// at(-1) count 期望 '1'；10→1 at(0.7) 期望 '4'）。
+    fn test_column_count_clamp_and_round() {
+        assert_eq!(interpolate_property_value("column-count", "10", "20", -1.0), "1");
+        assert_eq!(interpolate_property_value("column-count", "10", "20", 0.5), "15");
+        assert_eq!(interpolate_property_value("column-count", "10", "1", 0.7), "4");
+        assert_eq!(interpolate_property_value("column-count", "10", "1", 1.5), "1");
+    }
+
+    #[test]
+    /// columns 简写逐槽 lerp：canonical 'W N' 形 count 钳 1（语料 200px 10→
+    /// 100px 20 at(-1) → '300px 1'）；slash 形 height 钳 0（neutral→'100px /
+    /// 200px' at(-1) → '300px / 0px'）；count/height 形 at(-0.5) → '5 / 50px'。
+    fn test_columns_component_interpolation() {
+        assert_eq!(
+            interpolate_property_value("columns", "200px 10", "100px 20", -1.0),
+            "300.00px 1"
+        );
+        assert_eq!(
+            interpolate_property_value("columns", "200px / 100px", "100px / 200px", -1.0),
+            "300.00px / 0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("columns", "10 / 100px", "20 / 200px", -0.5),
+            "5 / 50.00px"
+        );
+        // 源序形「整数在前」：整数=count、长度=width（css-multicol-2 §3.4 顺序
+        // 无关消歧，expand_columns 同款）——width 100px→200px lerp 0.5 = 150px、
+        // count 10→20 = 15，canonical 'W N' 序列化。
+        assert_eq!(
+            interpolate_property_value("columns", "10 100px / auto", "20 200px / auto", 0.5),
+            "150.00px 15"
+        );
+    }
+
+    #[test]
+    /// columns 组件存在集失配（auto 槽 vs 值槽形变）落离散翻转 ≥0.5 → to
+    /// （css-values-4 §8.5.6——语料 auto→'100px / 200px' 期望行）。
+    fn test_columns_discrete_flip_on_slot_mismatch() {
+        assert_eq!(
+            interpolate_property_value("columns", "auto", "100px / 200px", 0.3),
+            "auto"
+        );
+        assert_eq!(
+            interpolate_property_value("columns", "auto", "100px / 200px", 0.5),
+            "100px / 200px"
+        );
+        assert_eq!(
+            interpolate_property_value("columns", "100px / 200px", "auto", 1.5),
+            "auto"
+        );
+    }
+
+    #[test]
+    /// strict 门：auto/非长度端点 None（css-transitions §starting-of-transitions
+    /// 非 animatable 对不启动过渡）；组件存在集恒等对 Some。
+    fn test_columns_strict_gate() {
+        assert!(interpolate_property_value_strict("column-width", "10px", "20px", 0.5).is_some());
+        assert!(interpolate_property_value_strict("column-width", "auto", "20px", 0.5).is_none());
+        assert!(interpolate_property_value_strict("column-height", "10px", "20px", 0.5).is_some());
+        assert!(interpolate_property_value_strict("column-count", "10", "20", 0.5).is_some());
+        assert!(interpolate_property_value_strict("columns", "10 / 100px", "20 / 200px", 0.5).is_some());
+        assert!(interpolate_property_value_strict("columns", "auto", "100px / 200px", 0.5).is_none());
+    }
+
+    #[test]
+    /// parse_columns_endpoint 文法形：顺序无关 width||count、斜杠 height、
+    /// auto 槽存在集、裸 auto 全零存在集。
+    fn test_parse_columns_endpoint_forms() {
+        let ep = parse_columns_endpoint("200px 10").unwrap();
+        assert_eq!(ep.width, Some(200.0));
+        assert_eq!(ep.count, Some(10.0));
+        assert_eq!(ep.height, None);
+        assert_eq!(ep.slots(), (true, true, false));
+
+        let ep = parse_columns_endpoint("10 100px / auto").unwrap();
+        assert_eq!(ep.width, Some(100.0));
+        assert_eq!(ep.count, Some(10.0));
+        assert_eq!(ep.height, None);
+        assert_eq!(ep.slots(), (true, true, true));
+
+        let ep = parse_columns_endpoint("auto / 100px").unwrap();
+        assert_eq!(ep.width, None);
+        assert_eq!(ep.count, None);
+        assert_eq!(ep.height, Some(100.0));
+        assert_eq!(ep.slots(), (true, true, true));
+
+        let ep = parse_columns_endpoint("auto").unwrap();
+        assert_eq!(ep.slots(), (false, false, false));
+
+        assert!(parse_columns_endpoint("inherit").is_none());
+        assert!(parse_columns_endpoint("/ 100px").is_none());
+    }
+
+    #[test]
+    /// apply 臂 + gCS 往返：columns '100px / 200px' 落三槽后 gCS canonical
+    /// 恒等（canonicalize 通道同构保证）。
+    fn test_apply_columns_roundtrip_gcs() {
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "columns".to_string(),
+                value: "100px / 200px".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            style.column_width,
+            ColumnWidthComputedValue::Length(zero_css_parser::values::LengthValue::Px(100.0))
+        );
+        assert_eq!(style.column_count, ColumnCountComputedValue::Auto);
+        assert_eq!(
+            style.column_height,
+            ColumnHeightComputedValue::Length(zero_css_parser::values::LengthValue::Px(200.0))
+        );
+        assert_eq!(style.column_wrap, ColumnWrapComputedValue::Auto);
+        let ser =
+            crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(&style, "columns", None);
+        assert_eq!(ser, "100px / 200px");
+    }
 
     /// 辅助：创建简单的关键帧规则。
     fn make_keyframes(name: &str, blocks: Vec<(f64, Vec<(&str, &str)>)>) -> KeyframesRule {

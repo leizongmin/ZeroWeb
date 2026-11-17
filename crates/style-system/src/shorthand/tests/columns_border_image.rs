@@ -4,33 +4,47 @@ use super::super::*;
 /// columns 双值展开：3 200px → column-count=3, column-width=200px
 fn test_columns_both_values() {
     let result = expand_one("columns", "3 200px", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    // css-multicol-2 §4.5：columns 展开 = 文法内省略段落初值（column-height
+    // auto）+ column-wrap 复位——四 longhand 全落盘。
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "3");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "200px");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// columns 单个整数展开：3 → column-count=3, column-width=auto
 fn test_columns_count_only() {
     let result = expand_one("columns", "3", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "3");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// columns 单个长度值展开：200px → column-count=auto, column-width=200px
 fn test_columns_width_only() {
     let result = expand_one("columns", "200px", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "200px");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 // ── R1425：columns 双值 auto/integer 消歧（CSS Multicol §3.4）──
@@ -41,44 +55,60 @@ fn test_columns_width_only() {
 /// 致 multicol-columns-007 列数变 auto 退回 column-width 驱动，paint multicol 路径不命中。
 fn r1425_columns_auto_then_integer() {
     let result = expand_one("columns", "auto 6", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "6", "auto 6: 整数 6 应为 column-count");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto", "auto 6: auto 应为 column-width");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// R1425：`6 auto` → column-count=6, column-width=auto（顺序无关，整数总为 count）。
 fn r1425_columns_integer_then_auto() {
     let result = expand_one("columns", "6 auto", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "6");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// R1425：`100px auto` → column-count=auto, column-width=100px（长度=width, auto=count）。
 fn r1425_columns_length_then_auto() {
     let result = expand_one("columns", "100px auto", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto", "100px auto: auto 应为 column-count");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "100px", "100px auto: 100px 应为 column-width");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// R1425：`auto 100px` → column-count=auto, column-width=100px（与上一测试互逆，顺序无关）。
 fn r1425_columns_auto_then_length() {
     let result = expand_one("columns", "auto 100px", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "100px");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
@@ -88,9 +118,13 @@ fn test_columns_rejects_duplicate_or_invalid_width_components() {
     assert!(expand_one("columns", "thin 3", false, (0, 0, 1)).is_empty());
 
     let result = expand_one("columns", "0", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].1, "0");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 // ── R3749：columns spaced math 组件（CSS Multicol §3.4）──
@@ -100,33 +134,45 @@ fn test_columns_rejects_duplicate_or_invalid_width_components() {
 /// 不是组件边界；css-ruby break-within-bases driving 形态）。
 fn r3749_columns_count_then_spaced_math_width() {
     let result = expand_one("columns", "2 calc(6em + 5px)", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "2");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "calc(6em + 5px)");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// R3749：`columns: calc(100px + 2em) 3` → count=3, width=calc(...)（顺序无关，整数总为 count）。
 fn r3749_columns_spaced_math_width_then_count() {
     let result = expand_one("columns", "calc(100px + 2em) 3", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "3");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "calc(100px + 2em)");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// R3749：`columns: min(200px, 50%)` 单值 → width=math, count=auto。
 fn r3749_columns_single_spaced_math_width() {
     let result = expand_one("columns", "min(200px, 50%)", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "min(200px, 50%)");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]

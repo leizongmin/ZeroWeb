@@ -186,7 +186,7 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
         "text-emphasis" => &["text-emphasis-style", "text-emphasis-color"],
         "list-style" => &["list-style-image", "list-style-position", "list-style-type"],
         "outline" => &["outline-width", "outline-style", "outline-color"],
-        "columns" => &["column-count", "column-width"],
+        "columns" => &["column-count", "column-width", "column-height"],
         "column-rule" => &["column-rule-width", "column-rule-style", "column-rule-color"],
         "row-rule" => &["row-rule-width", "row-rule-style", "row-rule-color"],
         "rule" => &[
@@ -2425,8 +2425,15 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
+    // css-multicol-2 §4.5：columns 声明同时复位 column-wrap（ED 2026-02）。
+    // css-wide 关键字经 wide 通道落全部四 longhand。
     if matches_css_wide_keyword(value) {
-        return wide_keyword_to_longhands(value, &["column-width", "column-count"], important, specificity);
+        return wide_keyword_to_longhands(
+            value,
+            &["column-width", "column-count", "column-height", "column-wrap"],
+            important,
+            specificity,
+        );
     }
 
     /// 检查值是否为有效的 column-count 值（正整数或 auto）。
@@ -2481,21 +2488,83 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     }
 
     // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
+    // css-multicol-2 §4.5：文法扩为 `[ <'column-width'> || <'column-count'> ]
+    // [ / <'column-height'> ]?`——斜杠段（若在）为 column-height 单值。先按
+    // 括号外空白切分（calc 内 '/' 不碎），再对含 '/' 的括号外段补拆（CSS
+    // tokenization 中 '/' 自成 token、空白可选：'10/100px' ≡ '10 / 100px'）。
     let Some(parts) = split_top_level_whitespace(value) else {
         return vec![];
     };
-    match parts.len() {
+    let mut tokens: Vec<&str> = Vec::new();
+    let mut slash_count = 0usize;
+    for part in parts {
+        if part.contains('(') {
+            // 函数形整体保留（calc 内斜杠是运算符不是分隔符）
+            tokens.push(part);
+        } else if part.contains('/') {
+            // CSS tokenization：'/' 自成 token、与相邻 token 空白可选——'10/100px'
+            // （粘连）、'12em/ 14em'（左粘）、'/14em'（右粘）、'12em / 14em'
+            //（'/' 单独成段）四形同构。split 的段首/段尾空 segment 是粘连边界
+            // 产物（跳过），中段空（'a//b'）残缺拒收。
+            let segs: Vec<&str> = part.split('/').collect();
+            let n = segs.len();
+            if n > 2 && segs[1..n - 1].iter().any(|s| s.is_empty()) {
+                return vec![]; // 'a//b' 连续斜杠残缺
+            }
+            let mut first = true;
+            for (i, seg) in segs.iter().enumerate() {
+                if !first {
+                    tokens.push("/");
+                    slash_count += 1;
+                }
+                first = false;
+                if seg.is_empty() {
+                    if i == 0 || i == n - 1 {
+                        continue; // 粘连边界空段
+                    }
+                    return vec![];
+                }
+                tokens.push(seg);
+            }
+        } else {
+            tokens.push(part);
+        }
+    }
+    if slash_count > 1 {
+        return vec![]; // 文法仅容一个斜杠段
+    }
+    let slash_pos = tokens.iter().position(|t| *t == "/");
+    let (pre, height_seg) = match slash_pos {
+        Some(pos) => {
+            let height_seg = &tokens[pos + 1..];
+            if height_seg.len() != 1 {
+                return vec![]; // 斜杠后须恰一个 column-height 值
+            }
+            (&tokens[..pos], Some(height_seg[0]))
+        }
+        None => (&tokens[..], None),
+    };
+    // column-height 文法 = auto | <length [0,∞]>（css-multicol-2 §4.2）——与
+    // column-width 同形，共用 [`is_valid_column_width`] 文法门。
+    if let Some(h) = height_seg {
+        if !is_valid_column_width(h) {
+            return vec![];
+        }
+    }
+    let mut longhands = match pre.len() {
+        // 斜杠前 width||count 组为文法必选（无 `?`）——空 pre（如 `columns: / 20px`）无效。
+        0 => return vec![],
         1 => {
             // 单值：判断是正整数（column-count）还是长度（column-width）。
             // 0 非正整数 → 归 column-width（CSS Multicol §3.2：column-count 须 ≥1）。
-            let is_positive_int = parts[0].parse::<u32>().is_ok_and(|n| n >= 1);
-            if is_positive_int || parts[0] == "auto" {
-                vec![mk("column-count", parts[0]), mk("column-width", "auto")]
-            } else if is_valid_column_width(parts[0]) {
-                vec![mk("column-count", "auto"), mk("column-width", parts[0])]
+            let is_positive_int = pre[0].parse::<u32>().is_ok_and(|n| n >= 1);
+            if is_positive_int || pre[0] == "auto" {
+                vec![mk("column-count", pre[0]), mk("column-width", "auto")]
+            } else if is_valid_column_width(pre[0]) {
+                vec![mk("column-count", "auto"), mk("column-width", pre[0])]
             } else {
                 // 无效值 — 整个声明无效
-                vec![]
+                return vec![];
             }
         }
         2 => {
@@ -2504,29 +2573,36 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             // R1425 修复：旧逻辑 `parts[0]=="auto"` 把 auto 当 count 指示，致 `auto 6` 误解析为
             // column-count:auto + column-width:6（应 column-count:6 + column-width:auto），使
             // `columns: auto N` 案（如 multicol-columns-007）列数变 auto → 退回 column-width 驱动。
-            let p0_int = parts[0].parse::<u32>().is_ok_and(|n| n >= 1);
-            let p1_int = parts[1].parse::<u32>().is_ok_and(|n| n >= 1);
+            let p0_int = pre[0].parse::<u32>().is_ok_and(|n| n >= 1);
+            let p1_int = pre[1].parse::<u32>().is_ok_and(|n| n >= 1);
             let (count_val, width_val) = if p0_int {
-                (parts[0], parts[1])
+                (pre[0], pre[1])
             } else if p1_int {
-                (parts[1], parts[0])
-            } else if is_valid_column_width(parts[0]) && !parts[0].eq_ignore_ascii_case("auto") {
-                // parts[0] 是长度 → width，parts[1]（auto 或长度）→ count
-                (parts[1], parts[0])
+                (pre[1], pre[0])
+            } else if is_valid_column_width(pre[0]) && !pre[0].eq_ignore_ascii_case("auto") {
+                // pre[0] 是长度 → width，pre[1]（auto 或长度）→ count
+                (pre[1], pre[0])
             } else {
-                // parts[0] 非 int/length（即 auto）→ count，parts[1] → width
-                (parts[0], parts[1])
+                // pre[0] 非 int/length（即 auto）→ count，pre[1] → width
+                (pre[0], pre[1])
             };
             // 验证两个值都有效：count 必须是整数/auto，width 必须是长度/auto
             if is_valid_column_count(count_val) && is_valid_column_width(width_val) {
                 vec![mk("column-count", count_val), mk("column-width", width_val)]
             } else {
                 // 无效值（如 "8 normal"）— 整个声明无效，不覆盖先前值
-                vec![]
+                return vec![];
             }
         }
-        _ => vec![],
-    }
+        _ => return vec![],
+    };
+    // column-height 是 columns 文法内 longhand（css-multicol-2 §4.5）——省略段
+    // 按简写语义落初值 auto（css-cascade 简写规则：文法内省略组件 = initial）。
+    longhands.push(mk("column-height", height_seg.unwrap_or("auto")));
+    // 有效 columns 声明复位 column-wrap 初值（css-multicol-2 §4.5 明文；
+    // column-wrap 不在文法内，同节明文规定复位）。
+    longhands.push(mk("column-wrap", "auto"));
+    longhands
 }
 
 /// rule-color 简写展开（css-gaps-1 §rule-shorthand-properties）：同值写入
@@ -2620,8 +2696,14 @@ fn rule_inset_targets(prop: &str) -> Option<&'static [(&'static str, RuleInsetSl
             ("row-rule-inset-cap-start", CapStart),
             ("row-rule-inset-cap-end", CapEnd),
         ]),
-        "column-rule-inset-cap" => Some(&[("column-rule-inset-cap-start", CapStart), ("column-rule-inset-cap-end", CapEnd)]),
-        "row-rule-inset-cap" => Some(&[("row-rule-inset-cap-start", CapStart), ("row-rule-inset-cap-end", CapEnd)]),
+        "column-rule-inset-cap" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+        ]),
+        "row-rule-inset-cap" => Some(&[
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+        ]),
         "rule-inset-junction" => Some(&[
             ("column-rule-inset-junction-start", JunctionStart),
             ("column-rule-inset-junction-end", JunctionEnd),

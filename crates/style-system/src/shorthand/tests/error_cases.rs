@@ -346,33 +346,45 @@ fn test_text_decoration_blink() {
 /// columns auto 值
 fn test_columns_auto() {
     let result = expand_one("columns", "auto", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// columns 单个长度值带单位
 fn test_columns_length_units() {
     let result = expand_one("columns", "2em", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "2em");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// columns 双值第二个是 auto
 fn test_columns_second_auto() {
     let result = expand_one("columns", "3 auto", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "3");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]

@@ -8,7 +8,7 @@ use zero_css_parser::values::{CalcExpr, LengthValue};
 use zero_css_parser::{Token, Tokenizer};
 
 use crate::property::ComputedStyle;
-use crate::property::types::{FlexBasisValue, LineHeightValue};
+use crate::property::types::{ColumnHeightComputedValue, ColumnWidthComputedValue, FlexBasisValue, LineHeightValue};
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -889,6 +889,27 @@ pub fn resolve_computed_style_with_container(
                 if *v < 0.0 {
                     *v = 0.0;
                 }
+            }
+        }
+    }
+    // column-width/column-height 是枚举包裹的 <length [0,∞]>（css-multicol-2
+    // §3.1/§4.2），不在 resolve_length_field 列表内——em 族就地解析为 Px（R907
+    // 同模式：paint/动画/gCS 消费端仅匹配 Length(Px)，em 不解析则静默丢失）。
+    // 负计算值 clamp 0（值域 [0,∞]，上方 rule-width 臂同款）。
+    // https://drafts.csswg.org/css-multicol-2/#cw / #ch
+    if let ColumnWidthComputedValue::Length(lv) = &mut resolved.column_width {
+        resolve_field(lv);
+        if let LengthValue::Px(v) = lv {
+            if *v < 0.0 {
+                *v = 0.0;
+            }
+        }
+    }
+    if let ColumnHeightComputedValue::Length(lv) = &mut resolved.column_height {
+        resolve_field(lv);
+        if let LengthValue::Px(v) = lv {
+            if *v < 0.0 {
+                *v = 0.0;
             }
         }
     }
