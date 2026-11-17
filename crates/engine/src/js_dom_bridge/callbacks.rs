@@ -2496,8 +2496,11 @@ pub fn register_dom_callbacks(
                 }
                 // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
                 // @keyframes + animation-* 的同步读通道（cssa_registry 模块注释）；
-                // 无 animation-name 元素 O(1) None 零干扰。
-                if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style) {
+                // 无 animation-name 元素 O(1) None 零干扰。parent=None（刀 K1）：
+                // animation-name 写入 bump style_version 清 per-selector map，start
+                // 锚定恒落下方 miss 路径（doc+styles 在场传父 computed）；本命中
+                // 臂 ENTRIES 已锚 start 不再消费 parent。
+                if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style, None) {
                     return v;
                 }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
@@ -2544,12 +2547,16 @@ pub fn register_dom_callbacks(
                             (
                                 serialize_computed_property_with_sibling(style, prop, sibling),
                                 (style.clone(), sibling),
+                                // 刀 K1：父元素 computed 快照（animation-name 写入
+                                // bump style_version 清 map → start 锚定恒落本
+                                // miss 路径，此处 doc+styles 在场可解析）。
+                                doc.parent_node(node).and_then(|pid| styles.get(&pid)).cloned(),
                             )
                         })
                     })
                 },
             );
-            let Some((value, entry)) = hit else {
+            let Some((value, entry, parent_style)) = hit else {
                 return String::new();
             };
             // WAAPI JS 动画注册表咨询（同 cache-hit 臂）——以新算基样式查覆盖值，
@@ -2557,8 +2564,10 @@ pub fn register_dom_callbacks(
             let anim_override = super::js_anim_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
             // CSS Transition 咨询（同 cache-hit 臂镜像）——以新算基样式查覆盖值。
             let trans_override = super::transition_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
-            // CSS Animations 声明式咨询（同 cache-hit 臂镜像，刀 E）。
-            let cssa_override = super::cssa_registry::query_override_for_sel(sel, prop, &entry.0);
+            // CSS Animations 声明式咨询（同 cache-hit 臂镜像，刀 E）；刀 K1 传父
+            // computed（'inherit' 端点解析源）。
+            let cssa_override =
+                super::cssa_registry::query_override_for_sel(sel, prop, &entry.0, parent_style.as_ref());
             map.insert((*sel).clone(), entry);
             if let Some(v) = anim_override {
                 return v;

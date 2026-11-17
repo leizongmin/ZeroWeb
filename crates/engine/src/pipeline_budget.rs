@@ -258,6 +258,7 @@ impl RenderPipeline {
                             &mut session.styles,
                             0.0,
                             session.export_set.as_ref(),
+                            session.doc.as_ref(),
                         ) {
                             let _ = (nid, kind);
                         }

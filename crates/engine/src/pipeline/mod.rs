@@ -1320,7 +1320,7 @@ impl RenderPipeline {
 
         // 5. 启动动画并应用插值覆盖（事件 → pending 缓冲，宿主取用派发）。
         for (nid, kind, name, elapsed) in
-            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time, None)
+            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time, None, Some(doc))
         {
             if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, nid) {
                 self.pending_animation_events.push(AnimationEvent {
@@ -1893,7 +1893,7 @@ impl RenderPipeline {
             }
             let mut static_clock = self.animation_clock.clone();
             for (nid, kind, _name, _elapsed) in
-                apply_animation_overrides(&mut static_clock, &mut styles, 0.0, export_set.as_ref())
+                apply_animation_overrides(&mut static_clock, &mut styles, 0.0, export_set.as_ref(), Some(&doc))
             {
                 // 事件丢弃（t=0 求值是渲染近似，非真实时间轴事件）；
                 // 只保留插值对 styles 的叠加。
@@ -4498,6 +4498,8 @@ pub(crate) fn apply_animation_overrides(
     // M2-S1b：已导出合成通道集——命中的插值属性不写样式（compositor 在干净基线上
     // 采样）；None = 非导出路径（动画泵真时间轴），行为不变。
     compositor_export: Option<&ExportedAnimationSet>,
+    // 刀 K1：关键帧 'inherit' 端点的父 computed 源（css-cascade-4 §inheritance）。
+    doc: Option<&zero_dom::Document>,
 ) -> Vec<(NodeId, AnimationEventKind, String, f64)> {
     // 收集有动画名称的元素 ID
     let animated_ids: Vec<(u64, NodeId)> = styles
@@ -4517,8 +4519,12 @@ pub(crate) fn apply_animation_overrides(
             continue;
         };
 
-        // 为元素启动动画（如果尚未启动）
-        clock.start_from_computed_style(elem_key, style, current_time);
+        // 为元素启动动画（如果尚未启动）。父 computed 供关键帧 'inherit' 端点
+        // 解析（刀 K1）；父不在样式集（根元素）回 None 维持原值回退。
+        let parent_style = doc
+            .and_then(|d| d.parent_node(node_id))
+            .and_then(|pid| styles.get(&pid));
+        clock.start_from_computed_style(elem_key, style, current_time, parent_style);
 
         // R342：animation-delay 变更的 seek 语义——运行中的动画按当前 computed delay
         // 更新（WPT 在 animationstart 回调里改 delay 负值 seek 迭代边界）。

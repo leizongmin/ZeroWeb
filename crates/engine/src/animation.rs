@@ -572,9 +572,17 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         "width" | "height" | "top" | "left" | "right" | "bottom" | "margin-top" | "margin-right" | "margin-bottom"
         | "margin-left" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left" | "font-size"
         | "letter-spacing" | "word-spacing" => {
-            let from_px = parse_px(from);
-            let to_px = parse_px(to);
-            format!("{:.2}px", lerp(from_px, to_px, t))
+            // 刀 K1：端点严格解析（parse_px_strict，composite-add 同法）——非
+            // <length> 端点（auto/min-content/全局关键字）不可插值 → 离散切换
+            //（css-values-4 §8.5.6 ≥0.5 → to）；原 0 化线性回退把关键字端点拉向
+            // 0px 假插值（inherit 无父端点实证 0→40px@0.5=20px 假值）。裸 0 是
+            // 合法 <length>（css-values-4 §5.2），计 0px 参与线性。
+            let ep = |s: &str| parse_px_strict(s).or_else(|| (s.trim() == "0").then_some(0.0));
+            match (ep(from), ep(to)) {
+                (Some(fv), Some(tv)) => format!("{:.2}px", lerp(fv, tv, t)),
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
         }
         // wptfyi-css shape-margin 刀：非负 length-percentage 插值——px 域 lerp
         // 后钳 0（css-shapes-1 §shape-margin-property「clamped to be
@@ -2001,7 +2009,7 @@ impl AnimationClock {
     ///
     /// 使用 `AnimationConfig` 结构体配置动画参数。
     pub fn start_animation(&mut self, element_id: u64, config: &AnimationConfig) -> bool {
-        self.start_animation_with_underlying(element_id, config, None)
+        self.start_animation_with_underlying(element_id, config, None, None)
     }
 
     /// R5018（css-animations §keyframes，implicit keyframes）：带 underlying value 的
@@ -2015,6 +2023,7 @@ impl AnimationClock {
         element_id: u64,
         config: &AnimationConfig,
         underlying: Option<&ComputedStyle>,
+        parent: Option<&ComputedStyle>,
     ) -> bool {
         let Some(mut keyframes) = self.keyframes_registry.get(&config.name).cloned() else {
             return false;
@@ -2024,9 +2033,14 @@ impl AnimationClock {
         // （interpolation corpus neutral→15px、initial→10px 等块的 keyword 端点）。
         // 无元素依赖（ComputedStyle::default() + gCS 序列化器同通道），start 时
         // 一次性解析，WAAPI（start_animation 委托，underlying=None）与 CSSA
-        //（underlying=Some）两端共享。'inherit' 需父 computed，此处不解析
-        //（FIXME(kf-inherit)），原值维持走既有插值回退。串化为空（applier 未覆盖
-        // 属性）保持原值——避免空串端点污染插值。
+        //（underlying=Some）两端共享。串化为空（applier 未覆盖属性）保持原值
+        // ——避免空串端点污染插值。
+        // 刀 K1（wptfyi-css，2026-11-17）css-cascade-4 §inheritance：关键帧
+        // 'inherit' = 父元素该属性 computed value（继承强制，含非继承属性）——
+        // 管线通道经 apply_animation_overrides 传入父 computed 解析；无父（根
+        // 元素；WAAPI/js_anim 通道父链不可达传 None，回落 'initial' 同式解析
+        //（FIXME(kf-inherit-waapi)——真父链接入另行开刀），替代原「原值保留→
+        // 长度臂 0 化假插值」。
         for point in &mut keyframes {
             for (name, value) in point.properties.iter_mut() {
                 let v = value.trim();
@@ -2038,6 +2052,14 @@ impl AnimationClock {
                     );
                     if !init.is_empty() {
                         *value = init;
+                    }
+                } else if v.eq_ignore_ascii_case("inherit") {
+                    let fallback = ComputedStyle::default();
+                    let src = parent.unwrap_or(&fallback);
+                    let inh =
+                        crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(src, name, None);
+                    if !inh.is_empty() {
+                        *value = inh;
                     }
                 }
             }
@@ -2148,7 +2170,13 @@ impl AnimationClock {
     ///
     /// 检查元素的 animation-name 列表，为每个名称创建动画。
     /// 如果同名动画已存在且未完成，不重复创建。
-    pub fn start_from_computed_style(&mut self, element_id: u64, style: &ComputedStyle, current_time: f64) {
+    pub fn start_from_computed_style(
+        &mut self,
+        element_id: u64,
+        style: &ComputedStyle,
+        current_time: f64,
+        parent: Option<&ComputedStyle>,
+    ) {
         for (i, name) in style.animation_name.iter().enumerate() {
             if name.is_empty() || name == "none" {
                 continue;
@@ -2193,6 +2221,7 @@ impl AnimationClock {
                     current_time,
                 },
                 Some(style),
+                parent,
             );
         }
     }
@@ -5081,7 +5110,7 @@ mod tests {
         style.animation_direction = vec![AnimationDirectionValue::Normal];
         style.animation_fill_mode = vec![AnimationFillModeValue::None];
 
-        clock.start_from_computed_style(42, &style, 0.0);
+        clock.start_from_computed_style(42, &style, 0.0, None);
 
         let props = clock.tick(42, 0.5);
         assert!(!props.is_empty());
@@ -5101,9 +5130,9 @@ mod tests {
         style.animation_duration = vec![1.0];
 
         // 第一次启动
-        clock.start_from_computed_style(1, &style, 0.0);
+        clock.start_from_computed_style(1, &style, 0.0, None);
         // 第二次调用不应创建重复
-        clock.start_from_computed_style(1, &style, 0.0);
+        clock.start_from_computed_style(1, &style, 0.0, None);
 
         let animations = clock.active_animations.get(&1).unwrap();
         assert_eq!(animations.len(), 1);
@@ -5115,7 +5144,7 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.animation_name = vec!["none".to_string(), "".to_string()];
 
-        clock.start_from_computed_style(1, &style, 0.0);
+        clock.start_from_computed_style(1, &style, 0.0, None);
         assert!(clock.active_animations.is_empty());
     }
 
@@ -5229,6 +5258,7 @@ mod tests {
                 current_time: 0.0,
             },
             Some(&style),
+            None,
         ));
 
         let props = clock.tick(1, 1.0);
@@ -5268,6 +5298,7 @@ mod tests {
                 current_time: 0.0,
             },
             Some(&style),
+            None,
         ));
 
         let props = clock.tick(1, 1.0);
@@ -5315,6 +5346,7 @@ mod tests {
                 current_time: 0.0,
             },
             Some(&style),
+            None,
         ));
 
         // p≈0（100s 线性起点）：离散切换取 from 值——matrix3d 原样透传（apply 侧
@@ -5448,7 +5480,7 @@ mod tests {
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
         };
-        assert!(clock.start_animation_with_underlying(1, &config, Some(&style)));
+        assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
         let props = clock.tick(1, 1.0);
         let v = props
             .iter()
@@ -5725,5 +5757,60 @@ mod tests {
             .find(|p| p.name == "column-rule-inset-cap-start")
             .expect("cap-start update");
         assert_eq!(got2.value, "5.00px");
+    }
+
+    /// 刀 K1 钉：关键帧 'inherit' 端点 start 时解析为父元素 computed value
+    ///（css-cascade-4 §inheritance：继承强制，含非继承属性）——parent width
+    /// 90px、`from {width:inherit} to {width:40px}`，p=0.5 期望 lerp(90,40,.5)
+    /// = 65px（interpolation corpus from-[inherit] 面同构）。
+    #[test]
+    fn test_keyframe_inherit_keyword_resolves_parent() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "inh",
+            vec![(0.0, vec![("width", "inherit")]), (100.0, vec![("width", "40px")])],
+        ));
+        let mut parent = ComputedStyle::default();
+        parent.width = LengthValue::Px(90.0);
+        let config = AnimationConfig {
+            name: "inh".into(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, None, Some(&parent)));
+        let props = clock.tick(1, 1.0);
+        let got = props.iter().find(|p| p.name == "width").expect("width update");
+        assert_eq!(got.value, "65.00px", "inherit 解析为父 90px 后 lerp");
+    }
+
+    /// 刀 K1 钉：父面不可达（WAAPI/cssa 通道传 None）时 'inherit' 端点维持原值
+    /// 走既有离散回退（t≥0.5 → to）——回退语义保持，不产出空串污染。
+    #[test]
+    fn test_keyframe_inherit_without_parent_keeps_fallback() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "inh0",
+            vec![(0.0, vec![("width", "inherit")]), (100.0, vec![("width", "40px")])],
+        ));
+        let config = AnimationConfig {
+            name: "inh0".into(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, None, None));
+        let props = clock.tick(1, 1.0);
+        let got = props.iter().find(|p| p.name == "width").expect("width update");
+        // 离散切换臂 verbatim 返 to 端点原文（offset-rotate 等既有离散臂同形）。
+        assert_eq!(got.value, "40px", "无父时离散回退取 to");
     }
 }

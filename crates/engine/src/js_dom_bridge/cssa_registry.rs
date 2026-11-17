@@ -86,20 +86,38 @@ pub fn note_stylesheets(stylesheets: &[zero_css_parser::Stylesheet]) {
 }
 
 /// selector 通道咨询（callbacks.rs gCS per-selector 命中/重算两路径）。
-pub(crate) fn query_override_for_sel(sel: &str, prop: &str, style: &ComputedStyle) -> Option<String> {
-    query_core(World::Gen, sel, prop, style)
+/// `parent`：父元素 computed（刀 K1——关键帧 'inherit' 端点解析源，
+/// css-cascade-4 §inheritance；None 回落 initial 同式解析）。
+pub(crate) fn query_override_for_sel(
+    sel: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    parent: Option<&ComputedStyle>,
+) -> Option<String> {
+    query_core(World::Gen, sel, prop, style, parent)
 }
 
 /// handle 通道咨询（computed_style_cache.rs 动态元素 gCS 路径）。
-pub(crate) fn query_override_for_handle(handle: &str, prop: &str, style: &ComputedStyle) -> Option<String> {
-    query_core(World::View, handle, prop, style)
+pub(crate) fn query_override_for_handle(
+    handle: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    parent: Option<&ComputedStyle>,
+) -> Option<String> {
+    query_core(World::View, handle, prop, style, parent)
 }
 
 /// 咨询核：元素有 animation-name 时逐名保证动画已锚（首咨询 start、elapsed 自
 /// 锚点推进），tick 产出匹配属性 → canonicalize（apply + gCS 串化往返，applier
 /// 未覆盖/恒等 None 回落）。keyframes 未注册（`start_animation_with_underlying`
 /// 返 false）→ 无条目无产出。
-fn query_core(world: World, identity: &str, prop: &str, style: &ComputedStyle) -> Option<String> {
+fn query_core(
+    world: World,
+    identity: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    parent: Option<&ComputedStyle>,
+) -> Option<String> {
     if style.animation_name.is_empty() {
         return None;
     }
@@ -153,7 +171,10 @@ fn query_core(world: World, identity: &str, prop: &str, style: &ComputedStyle) -
                         .unwrap_or(AnimationFillModeValue::None),
                     current_time: now,
                 };
-                if !clock.start_animation_with_underlying(clock_id, &config, Some(style)) {
+                // 刀 K1：parent 沿 gCS 读点（doc+styles 在场）传入——'inherit'
+                // 端点解析为父 computed（interpolation corpus CSS Animations
+                // 半面 50F 主靶）；None 回落 initial（E5 同式）。
+                if !clock.start_animation_with_underlying(clock_id, &config, Some(style), parent) {
                     return None; // keyframes 未注册（喂入面无该名）
                 }
                 entries.insert(

@@ -922,8 +922,17 @@ pub(super) fn computed_style_by_handle(
                 super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
                     .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
                     // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
-                    // handle 通道同镜像；无动画 O(1) None。
-                    .or_else(|| super::cssa_registry::query_override_for_handle(handle, prop, s))
+                    // handle 通道同镜像；无动画 O(1) None。刀 K1：doc+styles 在场
+                    // 传父 computed（'inherit' 端点解析源；根元素父为 Document 无
+                    // 样式 → None 回落 initial 同式）。
+                    .or_else(|| {
+                        super::cssa_registry::query_override_for_handle(
+                            handle,
+                            prop,
+                            s,
+                            doc.parent_node(nid).and_then(|pid| styles.get(&pid)),
+                        )
+                    })
                     .unwrap_or_else(|| serialize_computed_property_with_sibling(s, prop, sibling))
             })
             .unwrap_or_default()
