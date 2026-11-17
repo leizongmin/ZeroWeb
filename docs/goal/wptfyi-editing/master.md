@@ -1,6 +1,9 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-17 · Active**。**d49 可见单元删除核落树（BS/FD 塌缩界单元臂 + 缝规范化，input-events 双腿净 +75）**：part01.js +763/−39——①BS/FD walk 臂可见单元臂（img/hr 原子消费、行中 br
+**2026-11-17 · Active**。**d50 select-boundary 中段原子/空白带刀落树（non-collapsed 双变体净 +10）**：part01.js +82/−2——④ 空界选区臂「run 中段」保守 bail（BS 13034/FD 镜像 13330）替换为带消费：sc/ec 同容器文本、带内限非块元素+折叠空白文本（normal 域）、摘带+缝规范化（gtr 起跳尾随/终跳前导折叠空白，`(abc,3)-(def,1)` 契约形）+双端原位截断 live 端点。**A/B：non-collapsed Backspace 29→34P、Delete 29→34P（F2P=10/P2F=0，共键 207 全同）；backspace/fd 主文件与 joining-dl 共键逐键恒等零翻面**。F2P=img 形全键 ×2 变体 + hr 三形 content 子测 ×2；**hr 形主键残余 bi=0 = 派发鬼（content 变异正确、事件不达页监听）——探针定谳 hr 形重锚产物陈旧代际（`(t"",3)` 鬼锚）、img 形引擎视图全活，同臂同路径差异仅在宿主代际解析，归 ③**；元素锚 `(div,1)-(div,2)` 形 sc-out-of-host 维持停场；TypingA 变体走 insertText 路径不入 delete 臂恒等。哨兵：enginelib 4125P/0F；selection 全套件（跑完）CE 过滤共键 414 恒等 F2P=0/P2F=0；input-events 全套件共键 5442 P2F=0；hs 可达性论证（语料 6 文件含 CE 无键删路径）+ CE 切片腿跑通无 crash。证据见
+[evidence/2026-11-17-d50-select-boundary-midrun-band-knife.md](evidence/2026-11-17-d50-select-boundary-midrun-band-knife.md)。
+
+**d49 可见单元删除核落树（BS/FD 塌缩界单元臂 + 缝规范化，input-events 双腿净 +75）**：part01.js +763/−39——①BS/FD walk 臂可见单元臂（img/hr 原子消费、行中 br
 消费+次行前导折叠空白吸收、行尾 br 先探后并、inline 壳端点叶消费+空壳剪枝、
 宿主缘 N 派发）+ 元素锚臂（img 后退消费、可视空块整摘、表格单元/caption 缘
 no-op、FD 可视块行尾 br 消费+块界 join）②walk 臂 ws 头/尾进入门（`   []def`/
@@ -116,7 +119,8 @@ child-block gtr 端点规范化持位——Typing 变体 24F 已由 d46 清偿�
 ③generation-aware 归一刀重设计（d42 A/B 与 d47 查询返回点别名两处入口级
 判负后挂起：端点报告语义与身份稳定成对修、查询视图代际分桶是仅存解域；
 d46 非空锚守卫是键入面局部免疫；**d48 B3 同块占位 br +8/−2 与 8 键
-`[list-item1]` 全选形并入此域**）④B3 text-control execCommand 期望
+`[list-item1]` 全选形并入此域；d50 ④ 臂 hr 形派发鬼（content 正确 bi=0、
+重锚 `(t"",3)` 陈旧代际）并入此域**）④B3 text-control execCommand 期望
 矩阵（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同口径
 对账（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
 
@@ -129,7 +133,9 @@ child-of-html 8F（跨文档收养，引擎级 adoptNode FIXME(d33)）+ unlink �
 modify、line-flex/grid（FIXME(visual-modify) 行盒几何）、inline-boundary
 18/36、bidi character 22/28×2（RTL 视觉轴近似）、word 细分——按簇评估；
 input-events 桶 = B4-S1 select-delete 残余形（d43 主臂落树后名义账 2613F
-→ 剩左块尾随 `<br>` 消费/嵌套深锚/dwuf gtr 期望 +22 等，见 d43 证据遗留节）
+→ 剩左块尾随 `<br>` 消费/嵌套深锚/dwuf gtr 期望 +22 等，见 d43 证据遗留节；
+d50 后 non-collapsed 三 hr 形主键 bi=0 派发鬼挂 ③ + TypingA 带形归 insert
+路径另开面，见 d50 证据）
 + 修饰组合词删
 （deleteWordBackward/Forward）+ range-exceptions 构造器 targetRanges dict +
 IndexSizeError（4F）+ typing DELETE join-walk 分离 sc 崩点守卫（4 笔

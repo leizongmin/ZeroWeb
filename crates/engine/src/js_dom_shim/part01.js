@@ -13031,7 +13031,49 @@
         sn1 = sc1; sc1 = sc1.parentNode;
         if (!sc1) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
       }
-      if (sn1 === sc && !_zwCeIsBlockEl(snx1)) return; // run 中段
+      if (sn1 === sc && !_zwCeIsBlockEl(snx1)) {
+        // 中段原子/空白带消费（wptfyi-editing ①(c) 2026-11-17）：sc 与 ec 同容
+        // 器（`<p>abc[<img>]def</p>` 界 (abc,3)-(def,0) 形）时摘 [sc 后邻, ec)
+        // 带——带内限非块元素与折叠空白文本（normal 域行缘空白不渲染，摘除不
+        // 可见——issue #112 块缝空白镜像；块/可见文本混入 = 真跨内容选区，保
+        // 守 bail 保持原章程）。缝规范化镜像块界 join：gtr 起点跳 sc 尾随折叠
+        // 空白、终点跳 ec 前导折叠空白（`abc [<hr>] def` 界 (abc,3)-(def,1)
+        // 契约形）；双端原位截断 → live 引用（d45 原位截断族口径）。
+        if (ecD1.nodeType === 3 && ecD1.parentNode === sc1
+          && !_zwCeWsCtx(sc1).preserve && !_zwCeWsCtx(sc1).preLine) {
+          var _bmrBand = [], _bmrCur = sc.nextSibling, _bmrOk = true, _bmrG = 0;
+          while (_bmrCur && _bmrCur !== ecD1 && _bmrG++ < 64) {
+            if (_bmrCur.nodeType === 1 && !_zwCeIsBlockEl(_bmrCur)) _bmrBand.push(_bmrCur);
+            else if ((_bmrCur.nodeType === 3 || _bmrCur.__zwIsText)
+              && /^\s*$/.test(String(_bmrCur.nodeValue || ''))) _bmrBand.push(_bmrCur);
+            else { _bmrOk = false; break; }
+            _bmrCur = _bmrCur.nextSibling;
+          }
+          if (_bmrOk && _bmrCur === ecD1) {
+            var _bmrSo = _zwCeCaretCanonical(sc, so, false);
+            var _bmrEo = _zwCeCaretCanonical(ecD1, 0, true);
+            __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _bmrSo, ecD1, _bmrEo, true)];
+            _zwCeUnitApply(el, 'deleteContentBackward', function() {
+              for (var _bmrI = 0; _bmrI < _bmrBand.length; _bmrI++) {
+                try { if (_bmrBand[_bmrI].parentNode === sc1) sc1.removeChild(_bmrBand[_bmrI]); } catch (_eBmrB) {}
+              }
+              var _bmrSv = String(sc.nodeValue || '');
+              var _bmrSc = _zwCeCaretCanonical(sc, _bmrSv.length, false);
+              if (_bmrSc < _bmrSv.length) {
+                try { sc.nodeValue = _bmrSv.slice(0, _bmrSc); } catch (_eBmrS) {}
+              }
+              var _bmrEv = String(ecD1.nodeValue || '');
+              var _bmrEc = _zwCeWsRunLen(_bmrEv, 0, true, false);
+              if (_bmrEc > 0) {
+                try { ecD1.nodeValue = _bmrEv.slice(_bmrEc); } catch (_eBmrE) {}
+              }
+              _zwCeSetCaretAt(sc1, _zwCeNodeIndexOf(ecD1));
+            });
+            return;
+          }
+        }
+        return; // run 中段
+      }
       var sdst1 = (sn1 === sc) ? sc1 : sn1;
       if (sdst1 === sc1 && snx1.nextSibling) return; // src 非容器末子，保守不并
       // B2：界选区 target range——起=caret 侧可见端（上游规范化），终=后内容
@@ -13327,7 +13369,45 @@
         cn = cc; cc = cc.parentNode;
         if (!cc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
       }
-      if (cn === sc && !_zwCeIsBlockEl(cnx)) return; // run 中段
+      if (cn === sc && !_zwCeIsBlockEl(cnx)) {
+        // 中段原子/空白带消费（FD 镜像，wptfyi-editing ①(c) 2026-11-17）：
+        // 与 backspace 界选区臂同带规则——sc/ec 同容器、带内非块元素与折叠
+        // 空白文本（normal 域），摘带 + 缝规范化 + 原位截断 live 端点。
+        if (ec.nodeType === 3 && ec.parentNode === cc
+          && !_zwCeWsCtx(cc).preserve && !_zwCeWsCtx(cc).preLine) {
+          var _bmfBand = [], _bmfCur = sc.nextSibling, _bmfOk = true, _bmfG = 0;
+          while (_bmfCur && _bmfCur !== ec && _bmfG++ < 64) {
+            if (_bmfCur.nodeType === 1 && !_zwCeIsBlockEl(_bmfCur)) _bmfBand.push(_bmfCur);
+            else if ((_bmfCur.nodeType === 3 || _bmfCur.__zwIsText)
+              && /^\s*$/.test(String(_bmfCur.nodeValue || ''))) _bmfBand.push(_bmfCur);
+            else { _bmfOk = false; break; }
+            _bmfCur = _bmfCur.nextSibling;
+          }
+          if (_bmfOk && _bmfCur === ec) {
+            var _bmfSo = _zwCeCaretCanonical(sc, so, false);
+            var _bmfEo = _zwCeCaretCanonical(ec, 0, true);
+            __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _bmfSo, ec, _bmfEo, true)];
+            _zwCeUnitApply(el, 'deleteContentForward', function() {
+              for (var _bmfI = 0; _bmfI < _bmfBand.length; _bmfI++) {
+                try { if (_bmfBand[_bmfI].parentNode === cc) cc.removeChild(_bmfBand[_bmfI]); } catch (_eBmfB) {}
+              }
+              var _bmfSv = String(sc.nodeValue || '');
+              var _bmfSc = _zwCeCaretCanonical(sc, _bmfSv.length, false);
+              if (_bmfSc < _bmfSv.length) {
+                try { sc.nodeValue = _bmfSv.slice(0, _bmfSc); } catch (_eBmfS) {}
+              }
+              var _bmfEv = String(ec.nodeValue || '');
+              var _bmfEc = _zwCeWsRunLen(_bmfEv, 0, true, false);
+              if (_bmfEc > 0) {
+                try { ec.nodeValue = _bmfEv.slice(_bmfEc); } catch (_eBmfE) {}
+              }
+              _zwCeSetCaretAt(cc, _zwCeNodeIndexOf(ec));
+            });
+            return;
+          }
+        }
+        return; // run 中段
+      }
       var cdst = (cn === sc) ? cc : cn;
       if (cdst === cc && cnx.nextSibling) return; // src 非容器末子，保守不并
       // B2：界选区 target range——起=caret 侧可见端（上游规范化），终=后内容
