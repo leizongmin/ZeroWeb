@@ -502,6 +502,17 @@ impl Default for ComputedStyle {
             clip: ClipRectComputedValue::Auto,
             mask_image: vec![],
             mask_mode: MaskModeComputedValue::MatchSource,
+            // css-masking-1 §5.3–5.6：position 0% 0%、size auto、repeat repeat、
+            // clip/origin border-box、composite add。
+            mask_position: vec![BackgroundPositionComputedValue::TwoValue(
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+            )],
+            mask_size: vec![BackgroundSizeComputedValue::Auto],
+            mask_repeat: vec![BackgroundRepeatComputedValue::Repeat],
+            mask_clip: vec![MaskClipComputedValue::Box(MaskGeometryBoxComputedValue::BorderBox)],
+            mask_origin: vec![MaskGeometryBoxComputedValue::BorderBox],
+            mask_composite: vec![MaskCompositeComputedValue::Add],
             before_pseudo: None,
             after_pseudo: None,
             marker_pseudo: None,

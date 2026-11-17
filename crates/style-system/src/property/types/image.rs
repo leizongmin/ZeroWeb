@@ -322,3 +322,46 @@ pub enum ListStyleImageComputedValue {
     ///（css-color-5 #valdef-light-dark-none，同 BackgroundImageComputedValue::TransparentImage）。
     TransparentImage,
 }
+
+/// CSS mask-clip / mask-origin 的 `<geometry-box>` 计算值（css-masking-1 §5.4/§5.5；
+/// mask-clip 额外收 `no-clip`）。与 background-clip/origin 的 box 枚举独立——
+/// masking 侧含 SVG 几何盒（fill/stroke/view-box）且 no-clip 仅 mask-clip 有。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskGeometryBoxComputedValue {
+    /// border-box（默认）。
+    BorderBox,
+    /// padding-box。
+    PaddingBox,
+    /// content-box。
+    ContentBox,
+    /// margin-box。
+    MarginBox,
+    /// fill-box。
+    FillBox,
+    /// stroke-box。
+    StrokeBox,
+    /// view-box。
+    ViewBox,
+}
+
+/// CSS mask-clip 计算值（css-masking-1 §5.4）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskClipComputedValue {
+    /// `<geometry-box>`。
+    Box(MaskGeometryBoxComputedValue),
+    /// no-clip——不裁剪（无对应背景值）。
+    NoClip,
+}
+
+/// CSS mask-composite 计算值（css-masking-1 §5.6 合成算子）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskCompositeComputedValue {
+    /// add（默认）——源上层。
+    Add,
+    /// subtract——源减去下层。
+    Subtract,
+    /// intersect——交集。
+    Intersect,
+    /// exclude——非重叠部分。
+    Exclude,
+}

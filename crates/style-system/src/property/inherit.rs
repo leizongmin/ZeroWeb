@@ -657,6 +657,32 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.transform = parent.transform.clone();
             true
         }
+        // mask-border-* 五长手（css-masking-1 §3.4–3.9，Inherited: no）遇显式
+        // `inherit` 关键字复制父元素计算值（css-cascade-4 §inherit：inherit 对任何
+        // 属性强制继承；transform 臂同口径先例）。此前无臂 → fallback false（无
+        // 操作）→ 子保持旧值，inheritance.sub 页 does-not-inherit 的 target
+        // inherit 步读回旧值即 Fail。
+        // https://drafts.fxtf.org/css-masking/#the-mask-border
+        "mask-border-source" => {
+            child.mask_border_source = parent.mask_border_source.clone();
+            true
+        }
+        "mask-border-slice" => {
+            child.mask_border_slice = parent.mask_border_slice.clone();
+            true
+        }
+        "mask-border-width" => {
+            child.mask_border_width = parent.mask_border_width.clone();
+            true
+        }
+        "mask-border-repeat" => {
+            child.mask_border_repeat = parent.mask_border_repeat.clone();
+            true
+        }
+        "mask-border-outset" => {
+            child.mask_border_outset = parent.mask_border_outset.clone();
+            true
+        }
         "transform-origin" => {
             child.transform_origin_x = parent.transform_origin_x.clone();
             child.transform_origin_y = parent.transform_origin_y.clone();
@@ -1900,6 +1926,9 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.border_image_outset = default_style.border_image_outset;
             true
         }
+        // mask-border-* 五长手（css-masking-1 §3.4–3.9，Inherited: no）：初值臂
+        // 同 border-image-* 口径（default_style 置初值——apply_initial_value 到达
+        // 路径 = 未声明非继承填充 / initial / unset / revert 关键字，置初值正确）。
         "mask-border-source" => {
             style.mask_border_source = default_style.mask_border_source;
             true
@@ -1950,6 +1979,31 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "mask-mode" => {
             style.mask_mode = default_style.mask_mode;
+            true
+        }
+        // css-masking-1 §5.3–5.6 六长手全部非继承，reset 初值。
+        "mask-position" => {
+            style.mask_position = default_style.mask_position;
+            true
+        }
+        "mask-size" => {
+            style.mask_size = default_style.mask_size;
+            true
+        }
+        "mask-repeat" => {
+            style.mask_repeat = default_style.mask_repeat;
+            true
+        }
+        "mask-clip" => {
+            style.mask_clip = default_style.mask_clip;
+            true
+        }
+        "mask-origin" => {
+            style.mask_origin = default_style.mask_origin;
+            true
+        }
+        "mask-composite" => {
+            style.mask_composite = default_style.mask_composite;
             true
         }
         "justify-items" => {

@@ -2002,6 +2002,18 @@ pub enum PropertyValue {
     MaskImage(Vec<BackgroundImageComputedValue>),
     /// mask-mode 值。
     MaskMode(MaskModeComputedValue),
+    /// mask-position 值（css-masking-1 §5.3，复用 background-position 形）。
+    MaskPosition(Vec<BackgroundPositionComputedValue>),
+    /// mask-size 值（css-masking-1 §5.3，复用 background-size 形）。
+    MaskSize(Vec<BackgroundSizeComputedValue>),
+    /// mask-repeat 值（css-masking-1 §5.3，复用 background-repeat 形）。
+    MaskRepeat(Vec<BackgroundRepeatComputedValue>),
+    /// mask-clip 值（css-masking-1 §5.4）。
+    MaskClip(Vec<MaskClipComputedValue>),
+    /// mask-origin 值（css-masking-1 §5.5）。
+    MaskOrigin(Vec<MaskGeometryBoxComputedValue>),
+    /// mask-composite 值（css-masking-1 §5.6）。
+    MaskComposite(Vec<MaskCompositeComputedValue>),
     /// justify-items 值。
     JustifyItems(JustifyItemsValue),
     /// justify-self 值。

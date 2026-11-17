@@ -750,6 +750,19 @@ pub struct ComputedStyle {
     pub mask_image: Vec<BackgroundImageComputedValue>,
     /// mask-mode 属性（alpha/luminance/match-source）。
     pub mask_mode: MaskModeComputedValue,
+    /// mask-position 属性（css-masking-1 §5.3——文法同 background-position，
+    /// 复用其计算值类型与串化）。
+    pub mask_position: Vec<BackgroundPositionComputedValue>,
+    /// mask-size 属性（css-masking-1 §5.3——文法同 background-size）。
+    pub mask_size: Vec<BackgroundSizeComputedValue>,
+    /// mask-repeat 属性（css-masking-1 §5.3——文法同 background-repeat）。
+    pub mask_repeat: Vec<BackgroundRepeatComputedValue>,
+    /// mask-clip 属性（css-masking-1 §5.4——geometry-box | no-clip）。
+    pub mask_clip: Vec<MaskClipComputedValue>,
+    /// mask-origin 属性（css-masking-1 §5.5——geometry-box）。
+    pub mask_origin: Vec<MaskGeometryBoxComputedValue>,
+    /// mask-composite 属性（css-masking-1 §5.6 合成算子）。
+    pub mask_composite: Vec<MaskCompositeComputedValue>,
     /// `::before` 伪元素的计算样式（无匹配规则时为 None；由 style-system 计算，
     /// layout 据此在元素内容前合成生成盒）。伪元素不参与继承传播（继承构造全新 default）。
     pub before_pseudo: Option<Box<ComputedStyle>>,

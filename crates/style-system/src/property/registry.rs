@@ -505,6 +505,22 @@ impl PropertyRegistry {
                 bottom: BorderImageOutsetComputedComponent::Number(0.0),
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             })),
+            // css-masking-1 §5.3–5.6 mask 长手族初值（复用 background 变体形）。
+            "mask-image" => Some(MaskImage(Vec::new())),
+            "mask-mode" => Some(MaskMode(MaskModeComputedValue::MatchSource)),
+            "mask-position" => Some(MaskPosition(vec![BackgroundPositionComputedValue::TwoValue(
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+            )])),
+            "mask-size" => Some(MaskSize(vec![BackgroundSizeComputedValue::Auto])),
+            "mask-repeat" => Some(MaskRepeat(vec![BackgroundRepeatComputedValue::Repeat])),
+            "mask-clip" => Some(MaskClip(vec![MaskClipComputedValue::Box(
+                MaskGeometryBoxComputedValue::BorderBox,
+            )])),
+            "mask-origin" => {
+                Some(MaskOrigin(vec![MaskGeometryBoxComputedValue::BorderBox]))
+            }
+            "mask-composite" => Some(MaskComposite(vec![MaskCompositeComputedValue::Add])),
             "text-shadow" => Some(TextShadow(Vec::new())),
             "box-shadow" => Some(BoxShadow(Vec::new())),
 
@@ -886,6 +902,14 @@ impl PropertyRegistry {
             "mask-border-width",
             "mask-border-repeat",
             "mask-border-outset",
+            "mask-image",
+            "mask-mode",
+            "mask-position",
+            "mask-size",
+            "mask-repeat",
+            "mask-clip",
+            "mask-origin",
+            "mask-composite",
             "text-shadow",
             "box-shadow",
             "clip-path",

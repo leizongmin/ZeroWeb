@@ -365,6 +365,17 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
             if !border_image_length_is_valid(token, &len) {
                 return None;
             }
+            // css-values-4 §5.2 双文法（<length>|<number>）裸 0 消歧：unitless 0 收
+            // <number> 槽（computed 串化 "0"）——css-backgrounds border-image-outset-
+            // computed 页 oracle 期望 "0 30px 3 0px"（裸 0=number、calc 零=length）钉面；
+            // 与 mask-border-outset 初值站 Number(0) 同形（css-masking
+            // mask-shorthand-subproperties-reset 页 initialValue 与 reset 读回自比较
+            // 恒等驱动，"0px" 形会判 Fail）。带单位 "0px" 与 calc 零叶仍 Length。
+            // https://drafts.csswg.org/css-values-4/#unitless-zero
+            if matches!(len, LengthValue::Px(x) if x == 0.0) && token.parse::<f32>() == Ok(0.0) {
+                components.push(BorderImageOutsetComponent::Number(0.0));
+                continue;
+            }
             components.push(BorderImageOutsetComponent::Length(len));
         } else {
             let n: f32 = lower.parse().ok()?;
