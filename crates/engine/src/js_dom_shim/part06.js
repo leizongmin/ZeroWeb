@@ -156,6 +156,46 @@
   globalThis.CSS = globalThis.CSS || {};
   globalThis.CSS.escape = globalThis.CSS.escape || _zwCssNamespace.escape;
   globalThis.CSS.supports = globalThis.CSS.supports || _zwCssNamespace.supports;
+  // `CSS.registerProperty(desc)`（css-properties-values-api-1 刀，2026-11-17）——
+  // 运行时属性注册。WebIDL 字典转换面在本侧（非对象/缺 name/缺 inherits 成员
+  // → TypeError），文法/配对/重名校验委托 host `__zw_register_property`
+  //（注册表 + gCS/插值消费见 js_dom_bridge::registered_properties）；Err 串
+  // `kind|message` 映射 DOMException（SyntaxError/InvalidModificationError）。
+  // https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-method
+  globalThis.CSS.registerProperty = globalThis.CSS.registerProperty || function (desc) {
+    if (desc === null || typeof desc !== 'object') {
+      throw new TypeError("Failed to execute 'registerProperty' on 'CSS': parameter 1 is not of type 'PropertyDefinition'.");
+    }
+    if (!('name' in desc) || desc.name === undefined) {
+      throw new TypeError("Failed to execute 'registerProperty' on 'CSS': required member name is undefined.");
+    }
+    var hasSyntax = desc.syntax !== undefined && desc.syntax !== null;
+    var syntax = hasSyntax ? String(desc.syntax) : '';
+    var hasInherits = 'inherits' in desc && desc.inherits !== undefined;
+    // typed/universal 形须显式 inherits（--inherit-test-3 TypeError 锚定）；
+    // host 侧同判据双保险（此处先行使 TypeError 不落 Rust 字符串协议）。
+    if (!hasInherits && hasSyntax && syntax !== '' && syntax.trim() !== 'normal') {
+      throw new TypeError("Failed to execute 'registerProperty' on 'CSS': The inherits dictionary member is required for this syntax.");
+    }
+    var initial = desc.initialValue === undefined || desc.initialValue === null ? '' : String(desc.initialValue);
+    var err;
+    try {
+      err = __zw_register_property(
+        String(desc.name), syntax,
+        hasInherits ? '1' : '0',
+        hasInherits && desc.inherits ? '1' : '0',
+        'initialValue' in desc && desc.initialValue !== undefined && desc.initialValue !== null ? '1' : '0',
+        initial
+      );
+    } catch (_eRp) { err = 'TypeError|registration failed'; }
+    if (err) {
+      var sep = err.indexOf('|');
+      var kind = sep >= 0 ? err.slice(0, sep) : 'TypeError';
+      var msg = sep >= 0 ? err.slice(sep + 1) : err;
+      if (kind === 'TypeError') throw new TypeError(msg);
+      throw new (globalThis.DOMException || Error)(msg, kind);
+    }
+  };
 
   // document.cookie 的 in-JS cookie jar（cookies-compat M2，2026-10-12）——RFC 6265bis
   // §5.1/§5.5/§5.6 的 window 面语义（读写/属性/可见性）。数组序 = cookie 创建序（bis

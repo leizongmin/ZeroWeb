@@ -590,6 +590,10 @@ pub fn register_dom_callbacks(
     // CSS Animations 声明式同步读注册表同生命周期（刀 E）——同清表约束；注意
     // keyframes registry 在 CLOCK 内，同点清零（新页 stylesheet 重建重喂）。
     crate::js_dom_bridge::cssa_registry::clear_all();
+    // CSS.registerProperty 运行时注册表同生命周期（css-properties-values-api-1 刀，
+    // 2026-11-17）——文档作用域注册（spec §register-a-custom-property），旧页注册
+    // 不跨导航泄漏。
+    crate::js_dom_bridge::registered_properties::clear_all();
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
     // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
@@ -2643,6 +2647,48 @@ pub fn register_dom_callbacks(
                 super::js_anim_registry::cancel(id);
             }
             String::new()
+        }),
+    );
+
+    // `CSS.registerProperty(desc)`——css-properties-values-api-1 刀（2026-11-17）。
+    // shim 完成字典转换（TypeError 面）后传六参：name / syntax（缺省空串→"normal"）/
+    // inherits_present / inherits / initial_present / initial。Rust 侧 spec 校验+
+    // 存储；Ok 返空串，Err 返 `kind|message`（shim 映射 DOMException/TypeError）。
+    // 消费面：gCS `--` 分支串化 + 动画插值 `--` 臂（registered_properties 模块文档）。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-method
+    sandbox.register_callback(
+        "__zw_register_property",
+        Box::new(|args: &[String]| -> String {
+            if args.len() < 6 {
+                return "TypeError|not enough arguments".into();
+            }
+            let syntax = if args[1].is_empty() {
+                None
+            } else {
+                Some(args[1].as_str())
+            };
+            let ip = args[2] == "1";
+            let inh = args[3] == "1";
+            let pp = args[4] == "1";
+            let initial = if args[5].is_empty() {
+                None
+            } else {
+                Some(args[5].as_str())
+            };
+            match super::registered_properties::register(&args[0], syntax, ip, inh, pp, initial) {
+                Ok(()) => String::new(),
+                Err((kind, msg)) => format!(
+                    "{}|{}",
+                    match kind {
+                        super::registered_properties::RegErrorKind::Type => "TypeError",
+                        super::registered_properties::RegErrorKind::Syntax => "SyntaxError",
+                        super::registered_properties::RegErrorKind::InvalidModification => {
+                            "InvalidModificationError"
+                        }
+                    },
+                    msg
+                ),
+            }
         }),
     );
 

@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 // R5191：transform 函数列表插值（css-transforms-1 §13.2 unmatrix + 2D 函数逐参数）。
-mod transform_interp;
+pub(crate) mod transform_interp;
 // wptfyi-css 基本形状族刀（css-shapes-2 §interpolating-shape）：clip-path 同构
 // 逐分量插值（inset/circle/ellipse/polygon/shape/path/rect/xywh）。
 mod clip_interp;
@@ -553,6 +553,20 @@ pub fn interpolate_between_with_timing(
 
 /// 插值单个属性值。
 pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) -> String {
+    // wptfyi-css css-properties-values-api-1 刀（2026-11-17）：注册自定义属性按
+    // CSS.registerProperty syntax 分型插值（§animation：`<angle>` 100deg→200deg at
+    // .5 = '150deg'；列表 +/# 逐分量；px↔% calc 混合）。未注册 / 不可插值对回落
+    // css-values-4 §8.5.6 离散翻转（≥0.5 → to）——与默认臂同语义零回归。
+    // <https://drafts.css-houdini.org/css-properties-values-api-1/#animation-of-custom-properties>
+    if property.starts_with("--") {
+        // FIXME(regprop-fs): em/rem 端点按根字号 16 近似——插值通道无元素样式上下文，
+        // 语料端点全绝对单位（px/deg/%/s…），em 面待插值签名带样式后再接。
+        return match crate::js_dom_bridge::registered_properties::interpolate(property, from, to, t, 16.0) {
+            Some(v) => v,
+            None if t >= 0.5 => to.to_string(),
+            None => from.to_string(),
+        };
+    }
     match property {
         "opacity" => {
             let from_f = parse_f64(from).unwrap_or(1.0);

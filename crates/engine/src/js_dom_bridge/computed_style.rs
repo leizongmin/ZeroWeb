@@ -344,6 +344,23 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
     // 元素自身 custom_properties；环检测 resolve_var 既有）。未声明返 ''（同标准属性）。
     let raw_name = prop.trim();
     if raw_name.starts_with("--") {
+        // wptfyi-css css-properties-values-api-1 刀（2026-11-17）：CSS.registerProperty
+        // 注册属性按 syntax 分型串化（'green'+<color> → 'rgb(0, 128, 0)'）+ 未声明
+        // initial 兜底（§3 computation/computed-value-time）。var() 替换先行
+        // （css-variables-1 使用点解析），解析结果再入分型串化。未注册名落既有路径。
+        // <https://drafts.css-houdini.org/css-properties-values-api-1/#compute-the-value>
+        if super::registered_properties::registration_known(raw_name) {
+            let resolved = style
+                .custom_properties
+                .get(raw_name)
+                .map(|v| zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default());
+            let font_size_px = match &style.font_size {
+                LengthValue::Px(v) => *v,
+                _ => 16.0,
+            };
+            return super::registered_properties::computed_value(raw_name, resolved.as_deref(), font_size_px)
+                .unwrap_or_default();
+        }
         // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
         // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
         // 维持 resolve_var 现状（invalid → 初始/继承值）。
