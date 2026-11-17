@@ -113,6 +113,25 @@ A1/A1b 动画＋刀 N 二期三期＋刀 O font＋mask
 
 
 
+> **◆ 更正六（2026-11-18 s559 push 阶段）——pull
+> --rebase 捕获 d53 刀落窗（1d5044761
+> fix(editing)：d53 列表项选删归一＋占位 br
+> 换代幽灵滤除，对端申报 dil 四 variant 净
+> +72 零 P2F；伴笔 4f6a2b44b rendering
+> R5772/R5773 docs-only ×1）：s559 窗（
+> a58a53964 恒）不含此刀、s560 窗首次纳
+> 入——s560 起腿前 provenance 预判：runner
+> 必换代归因 d53＋s560 窗码刀十枚（全经
+> zero-engine 依赖链入 runner 链接）；hs
+> 面 indent 列表项语义与 testharness 键
+> 关联以 join 实测为准（d51 同面先例
+> s548 实测零语义位移、indent 系刀 R17
+> /R18/merge-dedup s559 桥面伴钉在册）。
+> 另：s559 收口 docs commit 曾引用本流
+> fix hash 4ad96823c，push 阶段 rebase 后
+> fix 实码为 74679728d（docs hash
+> 5c3ff03e0），账面以本注记为准。
+
 > **◆ 更正五（2026-11-17 s555 push 阶段）——pull
 > --rebase 捕获 editing 流 fs A 族刀落窗（
 > 6ea357800 fix(engine)：part01d
