@@ -1,4 +1,4 @@
-# 刀 N 二期：font-family 文法写面收口（2026-11-18 02:0x–0x）
+# 刀 N 二期：font-family 文法写面收口（2026-11-18 凌晨；A/B 窗 01:42:04–01:48:43）
 
 ## 靶面
 
@@ -73,8 +73,8 @@ bytes 5..8 内，两次探针实证）。修复：byte 切片比较
 
 ## A/B 终账（01:42:04–01:48:43 六腿全 rc 腿内 Fail 惯例，reconcile 01:48:43）
 
-b0 = results-conv-b1v2（bin-conv-b1v2 md5 `4ff1057d`，v2 终账在册产物
-直接作基线侧——同 bin 同码同机 2h 窗内零环境漂移）；b1 = bin-knifen2
+b0 = results-conv-b1v2（bin-conv-b1v2 md5 `4ff1057d`，v2 终账六腿在册产物
+直接作基线侧——六腿和 27841=4074+3914+3838+943+9947+5125——同 bin 同码同机 2h 窗内零环境漂移）；b1 = bin-knifen2
 md5 `8833233e`（刀 N 二期 44.8s 增量构建 + panic 修复 44.1s 二次）。
 逐子测 reconcile（`.acceptance/wptfyi-css/results-knifen2-b1/`）：
 
@@ -87,7 +87,7 @@ md5 `8833233e`（刀 N 二期 44.8s 增量构建 + panic 修复 44.1s 二次）�
 | css-typed-om | 9947 | 9947 | SET-IDENTICAL |
 | css-shapes | 5125 | 5125 | SET-IDENTICAL |
 
-**TOTAL 27779 → 28403 净 +624**；`gained=624 lost=0 regressed=0
+**TOTAL 27841 → 28465 净 +624**；`gained=624 lost=0 regressed=0
 pages_gain=3 pages_loss=0`（ab-compare.py 逐子测）——P2F=0 零容忍
 满足、页集合位移全正向（pages_loss=0）、五对照 SET-IDENTICAL 满足。
 F2P 全落 css-fonts 靶面（3 页）＝刀 N 二期界内。
