@@ -85,6 +85,10 @@
   function _zwOmOpaque() { var v = {}; v.__proto__ = CSSStyleValue.prototype; return v; }
   // 类型判别（StylePropertyMap 归一消费）。
   CSSStyleValue.prototype._zwOmKind = function () { return 'opaque'; };
+  // 刀 P：assert_class_string 按 Object.prototype.toString tag 判类（spec
+  // WebIDL interface 对象 toStringTag）——缺 tag 类断言 face 全灭（b0
+  // unsupported 337 面 + em/cm/calc 族）。子类 tag 覆写基类。
+  try { CSSStyleValue.prototype[Symbol.toStringTag] = 'CSSStyleValue'; } catch (_eT) {}
   Object.defineProperty(CSSStyleValue, 'parse', {
     value: function (property, cssText) {
       if (typeof property !== 'string' || property === '') throw new TypeError("Invalid property name");
@@ -169,6 +173,7 @@
   });
   CSSKeywordValue.prototype._zwOmKind = function () { return 'keyword'; };
   CSSKeywordValue.prototype.toString = function () { return this._zwOmValue; };
+  try { CSSKeywordValue.prototype[Symbol.toStringTag] = 'CSSKeywordValue'; } catch (_eT) {}
   globalThis.CSSKeywordValue = CSSKeywordValue;
 
   // ===== CSSNumericValue（abstract；Unit/Math 基接口 + 算术面）=====
@@ -413,6 +418,7 @@
   // type()：数值类型记录（assert_numeric_type_equals 消费形状：length/angle/
   // time/frequency/resolution/flex/percent 0|1 + percentHint）。
   CSSUnitValue.prototype.type = function () { return _zwOmUnitType(this._zwOmUnit); };
+  try { CSSUnitValue.prototype[Symbol.toStringTag] = 'CSSUnitValue'; } catch (_eT) {}
   globalThis.CSSUnitValue = CSSUnitValue;
 
   // ===== 4. CSSMathValue 族 =====
@@ -452,7 +458,8 @@
     Ctor.prototype.toString = function () { return _zwOmMathStr(this); };
     Ctor.prototype._zwOmKind = function () { return 'math'; };
     globalThis[name] = Ctor;
-    return Ctor;
+      try { Ctor.prototype[Symbol.toStringTag] = name; } catch (_eT) {}
+return Ctor;
   }
   var CSSMathSum = _zwOmMathCtor('CSSMathSum', 'sum');
   var CSSMathProduct = _zwOmMathCtor('CSSMathProduct', 'product');
@@ -543,6 +550,7 @@
   // 原型链挂 CSSStyleValue（spec CSSUnparsedValue : CSSStyleValue；实例本体
   // 仍是 Array exotic 对象——length/index/isArray 天然成立），迭代器手动补。
   CSSUnparsedValue.prototype = Object.create(CSSStyleValue.prototype);
+  try { CSSUnparsedValue.prototype[Symbol.toStringTag] = 'CSSUnparsedValue'; } catch (_eT) {}
   CSSUnparsedValue.prototype.constructor = CSSUnparsedValue;
   CSSUnparsedValue.prototype._zwOmKind = function () { return 'unparsed'; };
   CSSUnparsedValue.prototype.toString = function () {
@@ -744,6 +752,7 @@
     return arr;
   }
   CSSTransformValue.prototype = Object.create(CSSStyleValue.prototype);
+  try { CSSTransformValue.prototype[Symbol.toStringTag] = 'CSSTransformValue'; } catch (_eT) {}
   CSSTransformValue.prototype.constructor = CSSTransformValue;
   CSSTransformValue.prototype._zwOmKind = function () { return 'transform'; };
   Object.defineProperty(CSSTransformValue.prototype, 'is2D', {
@@ -780,6 +789,7 @@
   CSSImageValue.prototype = Object.create(CSSStyleValue.prototype);
   CSSImageValue.prototype.constructor = CSSImageValue;
   CSSImageValue.prototype._zwOmKind = function () { return 'image'; };
+  try { CSSImageValue.prototype[Symbol.toStringTag] = 'CSSImageValue'; } catch (_eT) {}
   CSSImageValue.prototype.toString = function () { return this._zwOmText; };
   globalThis.CSSImageValue = CSSImageValue;
 
@@ -1586,7 +1596,104 @@
     'writing-mode':['horizontal-tb','vertical-rl','vertical-lr','sideways-rl','sideways-lr'],
     'x':['<percentage>','<length>'],
     'y':['<percentage>','<length>'],
-    'z-index':['auto','<number>']
+    'z-index':['auto','<number>'],
+    // 刀 P（css-typed-om-1 §set 属性面扩维）：物理长手 + 逻辑属性
+    //（css-logical-1 §logical-prop）+ scroll 长手（css-scroll-snap-3
+    // §scroll-padding）——logical.html 46 属性与 margin/padding/border-*/
+    // scroll-* 简写页长手 runPropertyTests 全形此前落 SET known 门
+    //（"Unsupported property"）；语法族逐页 testCases 精确镜像（页未测
+    // 文法不入表——invalid-rejection 子测靠拒收保持）。
+    'margin-top':['auto','<percentage>','<length>'],
+    'margin-right':['auto','<percentage>','<length>'],
+    'margin-bottom':['auto','<percentage>','<length>'],
+    'margin-left':['auto','<percentage>','<length>'],
+    'margin-block-start':['<percentage>','<length>'],
+    'margin-block-end':['<percentage>','<length>'],
+    'margin-inline-start':['<percentage>','<length>'],
+    'margin-inline-end':['<percentage>','<length>'],
+    'margin-block':['<percentage>','<length>'],
+    'margin-inline':['<percentage>','<length>'],
+    'padding-top':['<percentage>','<length>'],
+    'padding-right':['<percentage>','<length>'],
+    'padding-bottom':['<percentage>','<length>'],
+    'padding-left':['<percentage>','<length>'],
+    'padding-block-start':['<percentage>','<length>'],
+    'padding-block-end':['<percentage>','<length>'],
+    'padding-inline-start':['<percentage>','<length>'],
+    'padding-inline-end':['<percentage>','<length>'],
+    'padding-block':['<percentage>','<length>'],
+    'padding-inline':['<percentage>','<length>'],
+    'inset-block-start':['<percentage>','<length>'],
+    'inset-block-end':['<percentage>','<length>'],
+    'inset-inline-start':['<percentage>','<length>'],
+    'inset-inline-end':['<percentage>','<length>'],
+    'inset-block':['<percentage>','<length>'],
+    'inset-inline':['<percentage>','<length>'],
+    'border-top-width':['thin','medium','thick','<length>'],
+    'border-right-width':['thin','medium','thick','<length>'],
+    'border-bottom-width':['thin','medium','thick','<length>'],
+    'border-left-width':['thin','medium','thick','<length>'],
+    'border-block-start-width':['thin','medium','thick','<length>'],
+    'border-block-end-width':['thin','medium','thick','<length>'],
+    'border-inline-start-width':['thin','medium','thick','<length>'],
+    'border-inline-end-width':['thin','medium','thick','<length>'],
+    'border-block-width':['thin','medium','thick','<length>'],
+    'border-inline-width':['thin','medium','thick','<length>'],
+    'border-top-color':['currentcolor'],
+    'border-right-color':['currentcolor'],
+    'border-bottom-color':['currentcolor'],
+    'border-left-color':['currentcolor'],
+    'border-block-start-color':['currentcolor'],
+    'border-block-end-color':['currentcolor'],
+    'border-inline-start-color':['currentcolor'],
+    'border-inline-end-color':['currentcolor'],
+    'border-block-color':['currentcolor'],
+    'border-inline-color':['currentcolor'],
+    'border-top-style':['none','solid'],
+    'border-right-style':['none','solid'],
+    'border-bottom-style':['none','solid'],
+    'border-left-style':['none','solid'],
+    'border-block-start-style':['none','solid'],
+    'border-block-end-style':['none','solid'],
+    'border-inline-start-style':['none','solid'],
+    'border-inline-end-style':['none','solid'],
+    'border-block-style':['none','solid'],
+    'border-inline-style':['none','solid'],
+    // border-radius 简写：空表 opaque 往返（border-radius.html
+    // runUnsupportedPropertyTests——set 收基类实例、get 基类 CSSStyleValue、
+    // 文本逐字往返；'25% 10%'/'10% / 50%' 双值对非 Typed OM L1 形态，
+    // css-typed-om-1 §get 回落形态）。
+    'border-radius':[],
+    'border-top-left-radius':['<percentage>','<length>'],
+    'border-top-right-radius':['<percentage>','<length>'],
+    'border-bottom-left-radius':['<percentage>','<length>'],
+    'border-bottom-right-radius':['<percentage>','<length>'],
+    'border-start-start-radius':['<percentage>','<length>'],
+    'border-start-end-radius':['<percentage>','<length>'],
+    'border-end-start-radius':['<percentage>','<length>'],
+    'border-end-end-radius':['<percentage>','<length>'],
+    'border-block-start':['none'],
+    'border-block-end':['none'],
+    'border-inline-start':['none'],
+    'border-inline-end':['none'],
+    'border-block':['none'],
+    'border-inline':['none'],
+    'scroll-margin-top':['<length>'],
+    'scroll-margin-right':['<length>'],
+    'scroll-margin-bottom':['<length>'],
+    'scroll-margin-left':['<length>'],
+    'scroll-margin-inline-start':['<length>'],
+    'scroll-margin-block-start':['<length>'],
+    'scroll-margin-inline-end':['<length>'],
+    'scroll-margin-block-end':['<length>'],
+    'scroll-padding-top':['<percentage>','<length>'],
+    'scroll-padding-right':['<percentage>','<length>'],
+    'scroll-padding-bottom':['<percentage>','<length>'],
+    'scroll-padding-left':['<percentage>','<length>'],
+    'scroll-padding-inline-start':['<percentage>','<length>'],
+    'scroll-padding-block-start':['<percentage>','<length>'],
+    'scroll-padding-inline-end':['<percentage>','<length>'],
+    'scroll-padding-block-end':['<percentage>','<length>']
   };
   // 已知属性扩面（opaque roundtrip set 面；语料 225 之外常见属性）。
   var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'grid-template-columns': 1, 'grid-template-rows': 1, transition: 1, animation: 1 };
@@ -1689,10 +1796,15 @@
     'border-top-width': 1, 'border-width': 1, 'column-gap': 1, 'column-height': 1,
     'column-rule-width': 1, 'column-width': 1, 'flex-basis': 1, 'flex-grow': 1,
     'flex-shrink': 1, 'font-size': 1, 'font-size-adjust': 1, 'font-stretch': 1,
+    // 刀 P：轴简写宽度与逻辑 corner radius 入集（logical.html/border-width.html
+    // range-handling 期望负值包 Sum）；inset-*/scroll-padding-* 长手剔除——
+    // 负值合法（css-logical-1 inset / css-scroll-snap-3 允负形不存在但语料
+    // 页 default-equal 期望原文），包 Sum 反断该两页负值面。
+    'border-block-width': 1, 'border-inline-width': 1,
+    'border-start-start-radius': 1, 'border-start-end-radius': 1,
+    'border-end-start-radius': 1, 'border-end-end-radius': 1,
     gap: 1, 'grid-auto-columns': 1, 'grid-auto-rows': 1, 'grid-template-columns': 1,
-    'grid-template-rows': 1, height: 1, 'inline-size': 1, 'inset-block': 1,
-    'inset-block-end': 1, 'inset-block-start': 1, 'inset-inline': 1,
-    'inset-inline-end': 1, 'inset-inline-start': 1, 'line-height': 1,
+    'grid-template-rows': 1, height: 1, 'inline-size': 1, 'line-height': 1,
     'max-block-size': 1, 'max-height': 1, 'max-inline-size': 1, 'max-width': 1,
     'min-block-size': 1, 'min-height': 1, 'min-inline-size': 1, 'min-width': 1,
     'outline-width': 1, 'overflow-clip-margin': 1, padding: 1, 'padding-block': 1,
@@ -1794,6 +1906,18 @@
         sv.toString = function () { return this._zwOmText; };
         sv._zwOmAssociatedProp = p;
         return [sv];
+      }
+      // computed 面不支持属性：基类 opaque 回落（computedStyleMap 闭包携
+      // __zwOmComputedFace 置位；declared 面不受影响照常解析——border-radius
+      // 页四角 computed assert_is_unsupported 期望）。
+      var computedFace = false;
+      try { computedFace = !!getStyleObj().__zwOmComputedFace; } catch (_eCF) {}
+      if (computedFace && _zwOmComputedUnsupportedProps[p] && text !== '' && !_zwOmCssWide[text.toLowerCase()]) {
+        var cv = _zwOmOpaque();
+        cv._zwOmText = text;
+        cv.toString = function () { return this._zwOmText; };
+        cv._zwOmAssociatedProp = p;
+        return [cv];
       }
       // list-valued 属性：顶层逗号逐段解析（§get 取首值/§getAll 全量——
       // 语料 get/getAll 面 'transition-duration: 1s, 2s' 语义）。
@@ -1973,21 +2097,77 @@
     }
     return fnL + '(from currentcolor' + (channels ? ' ' + channels : '') + ')';
   }
+  // 逻辑属性 → 物理槽位翻译（css-logical-1 §logical-to-physical；假设
+  // horizontal-tb + ltr——语料页无 writing-mode 声明，FIXME: 纵排/rtl
+  // 需按元素 writing-mode/direction 重映射）。轴简写（margin-block 等）
+  // 与 border 简写不入表——host 无展开的形（R5 探针）物理槽位无值，
+  // 保持 declared 回落。
+  var _zwOmLogicalPhysical = {
+    'margin-block-start': 'margin-top', 'margin-block-end': 'margin-bottom',
+    'margin-inline-start': 'margin-left', 'margin-inline-end': 'margin-right',
+    'padding-block-start': 'padding-top', 'padding-block-end': 'padding-bottom',
+    'padding-inline-start': 'padding-left', 'padding-inline-end': 'padding-right',
+    'inset-block-start': 'top', 'inset-block-end': 'bottom',
+    'inset-inline-start': 'left', 'inset-inline-end': 'right',
+    'border-block-start-width': 'border-top-width', 'border-block-end-width': 'border-bottom-width',
+    'border-inline-start-width': 'border-left-width', 'border-inline-end-width': 'border-right-width',
+    'border-block-start-color': 'border-top-color', 'border-block-end-color': 'border-bottom-color',
+    'border-inline-start-color': 'border-left-color', 'border-inline-end-color': 'border-right-color',
+    'border-block-start-style': 'border-top-style', 'border-block-end-style': 'border-bottom-style',
+    'border-inline-start-style': 'border-left-style', 'border-inline-end-style': 'border-right-style',
+    'border-start-start-radius': 'border-top-left-radius', 'border-start-end-radius': 'border-top-right-radius',
+    'border-end-start-radius': 'border-bottom-left-radius', 'border-end-end-radius': 'border-bottom-right-radius'
+  };
+  // 刀 P：computed 值 Typed OM L1 不支持面（css-backgrounds-3 §border-*-radius：
+  // computed 为双值对，testsuite assert_is_unsupported 期望基类 opaque——
+  // declared 面仍逐语法解析 equal；仅物理四角，logical.html 逻辑角 computed
+  // 走默认 equal 期望，不在此列）。
+  var _zwOmComputedUnsupportedProps = {
+    'border-top-left-radius': 1, 'border-top-right-radius': 1,
+    'border-bottom-left-radius': 1, 'border-bottom-right-radius': 1
+  };
   function _zwOmComputedProp(el, prop) {
     // 复用 part01 getComputedStyle 代理回调链（注册元素 sel/handle 路由由
     // 既有面完成），零新 Rust 回调。颜色属性的相对色骨架面（上）先于宿主
     // resolved 读数。
     var text = '';
+    var decl = '';
     try {
-      var decl = (el && el.style && String(el.style.getPropertyValue(prop) || '')) || '';
+      decl = (el && el.style && String(el.style.getPropertyValue(prop) || '')) || '';
       if (decl && (prop === 'color' || /-color$/.test(prop) || prop === 'fill' || prop === 'stroke')
         && typeof globalThis.__zwCssRelativeOrigin === 'function') {
         text = _zwOmRelativeSkeletonText(decl, el);
       }
-    } catch (_eRS) { text = ''; }
+    } catch (_eRS) { text = ''; decl = ''; }
     if (text !== '') return text;
+    // 刀 P computed 面三臂（宿主 gCS 读数不达标形，按 declared 原文先行）：
+    // ① 宽度关键字（css-backgrounds-3 §border-width：thin/medium/thick 计算值
+    //    1/3/5px 与 border-style 无关——testsuite assert_is_keyword_width 期望，
+    //    宿主 style:none 形返 0px 不合）；
+    // ② padding 负 % 钳零保单位（css-box-3 computed 钳形，testsuite
+    //    assert_is_equal_with_clamping_percentage 期望 0%，宿主给 0px）；
+    // ③ currentcolor 关键字保形（css-color-4：typed-om computed 关键字面
+    //    CSSKeywordValue 期望，宿主 resolved rgb 不合）。
+    var declL = decl.toLowerCase();
+    if (decl) {
+      // ① 族门正例（css-backgrounds-3/css-ui-4/css-multicol 绝对 px 计算值）：
+      //    仅 border-*-width / outline-width / column-rule-width——scrollbar-width
+      //    等 -width 尾缀属性 computed 为 as-specified 关键字（css-scrollbars-1），
+      //    不得劫持（b0 通过面，刀 P 首跑 P2F 定谳后收窄）。
+      if (prop === 'outline-width' || prop === 'column-rule-width'
+        || (prop.slice(0, 7) === 'border-' && prop.slice(-6) === '-width')) {
+        if (declL === 'thin') return '1px';
+        if (declL === 'medium') return '3px';
+        if (declL === 'thick') return '5px';
+      }
+      if (prop.slice(0, 8) === 'padding-' && /^-\S*%$/.test(decl)) return '0%';
+      if (/-color$/.test(prop) && declL === 'currentcolor') return 'currentcolor';
+    }
     if (globalThis.getComputedStyle) {
-      try { text = String(globalThis.getComputedStyle(el).getPropertyValue(prop) || ''); } catch (_eG) { text = ''; }
+      // 逻辑名翻译物理槽位咨询（declared 无值或非关键字形——宿主 canonical
+      // 链 em/cm→px、% 保形、calc→px 由物理面提供）。
+      var q = _zwOmLogicalPhysical[prop] || prop;
+      try { text = String(globalThis.getComputedStyle(el).getPropertyValue(q) || ''); } catch (_eG) { text = ''; }
     }
     return text;
   }
@@ -2035,6 +2215,7 @@
           // computed 面：host 计算串为主；host 未接属性（计算串空）回落 declared
           // 文本解析，保证 get 非 null 的 keyword/unit 面。
           return {
+            __zwOmComputedFace: true,
             getPropertyValue: function (p) {
               var c = _zwOmComputedProp(self, p);
               if (c !== '') return c;
