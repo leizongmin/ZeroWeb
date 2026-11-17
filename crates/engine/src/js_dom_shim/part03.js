@@ -16512,10 +16512,40 @@
           // 页 oracle），单位集失配不再判 unsafe（其余属性维持原门——离散 echo
           // 回落噪声防线）。
           var _zwMixable = _zwIsRuleInsetLonghand(_zup);
+          // 刀 A1b（css-masking/animations R3，2026-11-18）：position 族逗号列表
+          //（mask/background/object-position，css-masking-1 §5.3 文法同 bg-position）
+          // 帧间**层数失配**（2 层→1/3 层）被 ④ 整串单位 multiset 误杀——
+          // '0px 0px, 10px 10px'（px,px,px,px）≠ '20px 20px'（px,px）→ 动画不登记
+          //（WAAPI mismatched-layers 全 at 无覆盖；CSSA 同形正常实证 Rust apply
+          // 链无恙，唯 shim 门独病）。引擎 mix_mask_position 按列表重复规则 LCM
+          // 展开逐层插值（wptfyi-css 刀 A1 ③ 同通道），该族改比**逐层单位种类
+          // 集合**（顶层逗号分割、忽略层数）：各帧出现过的层单位种类一致（全纯
+          // px 等）放行；真单位种类失配（px↔% 层）维持 ④ 原判。无单位值
+          //（none/纯关键字值）仍不参判（原 continue 语义保形）。
+          var _zwPosList = _zup === 'mask-position' || _zup === 'background-position' || _zup === 'object-position';
           var _zwUs = null;
+          var _zwLayerKinds = null;
           for (var _zuj = 0; _zuj < _zwPv[_zup].length; _zuj++) {
-            var _zwUm = String(_zwPv[_zup][_zuj]).match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || [];
+            var _zwUv = String(_zwPv[_zup][_zuj]);
+            var _zwUm = _zwUv.match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || [];
             if (_zwUm.length === 0) continue; // 无单位侧（none/无单位数值/色值）与任意单位插值合法——首版误门 none→X 臂实证 b3 transforms −21
+            if (_zwPosList) {
+              var _zwKinds = {};
+              var _zwDepth = 0, _zwCur = '', _zwLi;
+              for (_zwLi = 0; _zwLi <= _zwUv.length; _zwLi++) {
+                var _zwCh = _zwLi < _zwUv.length ? _zwUv.charAt(_zwLi) : ',';
+                if (_zwCh === '(') _zwDepth++;
+                if (_zwCh === ')' && _zwDepth > 0) _zwDepth--;
+                if (_zwCh === ',' && _zwDepth === 0) {
+                  _zwKinds[(String(_zwCur).match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || []).sort().join(' ')] = true;
+                  _zwCur = '';
+                } else { _zwCur += _zwCh; }
+              }
+              var _zwKindKey = Object.keys(_zwKinds).sort().join('|');
+              if (_zwLayerKinds === null) { _zwLayerKinds = _zwKindKey; }
+              else if (_zwLayerKinds !== _zwKindKey && !_zwMixable) { _zwUnsafe = true; break; }
+              continue;
+            }
             var _zwUk = _zwUm.join(',');
             if (_zwUs === null) { _zwUs = _zwUk; }
             else if (_zwUs !== _zwUk && !_zwMixable) { _zwUnsafe = true; break; }
@@ -16537,6 +16567,70 @@
           iter: (effectOptions && effectOptions.iterations != null) ? effectOptions.iterations : 1,
           dir: (effectOptions && effectOptions.direction) || 'normal',
         };
+        // 帧端点 'inherit' 解析（刀 A1b R2，2026-11-18）：css-cascade-4 §inheritance /
+        // web-animations-1 §5.4.15 computed keyframes——关键帧 'inherit' = 父元素该
+        // 属性 computed value。Rust 侧 start_animation_with_underlying 的父链不可达
+        //（FIXME(kf-inherit-waapi)：js_anim 通道回落 'initial' 同式解析）→ from
+        // [inherit] 全 at 值域错（mask-position 页 7F）。shim 侧纯 sel 链解析：sel
+        //（handle-only 经 __zw_selector_for_handle 反查同源）→ `__zw_parent` 宿主
+        // 父选择器（parent_selector_for_doc，与 find_by_selector 同漏斗可解析——
+        // 元素 wrapper 的 __zwSelector 槽对模板克隆/类寻址元素为空不可用，探针
+        // R2C 实证）→ __zw_get_computed_style 读父 computed（与下方缺失端点合成
+        // 同通道）。父不可达/读值空保持 'inherit' 原文——Rust initial 回落兜底，
+        // 零回归方向。
+        // https://drafts.csswg.org/css-cascade-4/#defaulting
+        try {
+          var _zwHasInh = false;
+          var _zwRi, _zwRp0;
+          for (_zwRi = 0; _zwRi < _zwSpec.kf.length && !_zwHasInh; _zwRi++) {
+            _zwRp0 = _zwSpec.kf[_zwRi] && _zwSpec.kf[_zwRi].p;
+            for (var _zwRp0k in (_zwRp0 || {})) {
+              if (String(_zwRp0[_zwRp0k] || '').replace(/^\s+|\s+$/g, '').toLowerCase() === 'inherit') { _zwHasInh = true; break; }
+            }
+          }
+          if (_zwHasInh) {
+            // 父 identity 双形态：sel 面走 __zw_parent 父选择器 + sel 通道 gCS；
+            // handle-only（模板克隆/createElement 面——`__zw_selector_for_handle`
+            // 反解空、wrapper __zwSelector 槽空，探针 R2C 实证）走 _zwNodeParent
+            // 父 handle 反链（R5181，part01 同款上行链）+ handle 通道 gCS。
+            var _zwPsel = '';
+            if (sel && typeof __zw_parent === 'function') {
+              try { _zwPsel = String(__zw_parent(String(sel)) || ''); } catch (_zwPE) { _zwPsel = ''; }
+            }
+            // _zwNodeParent 反链（R5181）：值为 {parentSel, parentHandle, ...} 对象
+            //（MutationObserver childList added 批逐子镜像）——按字段提取，整对象
+            // 串化 "[object Object]" 垫空（首版命中性失效根因）。sel 面反解失败
+            //（corpus handle-only 面）也走反链，不限 !sel。
+            var _zwPhnd = '';
+            if (!_zwPsel && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && handle) {
+              var _zwLink = null;
+              try { _zwLink = _zwNodeParent[String(handle)] || null; } catch (_zwPHE) { _zwLink = null; }
+              if (_zwLink && typeof _zwLink === 'object') {
+                _zwPhnd = String(_zwLink.parentHandle || '');
+                if (!_zwPhnd) _zwPsel = String(_zwLink.parentSel || '');
+              }
+            }
+            if (_zwPsel || _zwPhnd) {
+              for (_zwRi = 0; _zwRi < _zwSpec.kf.length; _zwRi++) {
+                var _zwRp = _zwSpec.kf[_zwRi] && _zwSpec.kf[_zwRi].p;
+                if (!_zwRp) continue;
+                for (var _zwRprop in _zwRp) {
+                  if (String(_zwRp[_zwRprop] || '').replace(/^\s+|\s+$/g, '').toLowerCase() === 'inherit') {
+                    var _zwPv = '';
+                    try {
+                      _zwPv = _zwPsel
+                        ? String(__zw_get_computed_style(_zwPsel, _zwRprop) || '')
+                        : (typeof __zw_get_computed_style_by_handle === 'function'
+                          ? String(__zw_get_computed_style_by_handle(_zwPhnd, _zwRprop) || '')
+                          : '');
+                    } catch (_zwRE) { _zwPv = ''; }
+                    if (_zwPv) _zwRp[_zwRprop] = _zwPv;
+                  }
+                }
+              }
+            }
+          }
+        } catch (_zwROuterE) { /* 父链不可达保持 'inherit' 原文（Rust initial 回落兜底） */ }
         // 端点合成（v3，2026-11-15 A/B 定谳）：neutral 单帧臂——interpolation
         // harness（isNeutralKeyframe）跳过中性端点，spec kf 只剩 o=1 帧；时钟
         // missing-endpoint 填 initial 值而非 underlying，at(0)/at(-0.3) 臂返回

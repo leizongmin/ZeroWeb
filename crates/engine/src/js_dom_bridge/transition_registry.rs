@@ -441,6 +441,11 @@ fn query_core(
         // （css-values-4 §8.5.6 calc-mix——`-100%`→`1px` at(1) 期望
         // `calc(0% + 1px)`，echo 级联形 `1px` 欠混合形；同单位/关键字端点经
         // 插值臂 t=1 与 echo 数值恒等，canonicalize 归一零截尾后同形）。
+        // mask-position 例外（刀 A1b R1，css-masking-1 §5.3 文法同 bg-position）：
+        // at(1) 期望 mix 形——initial/unset 端点（'0% 0%'→'20px 20px'）期望
+        // `calc(0% + 20px)` 系数形、mismatched 层数对期望 LCM 展开形，echo 级联
+        // 形欠混合/展开位（WAAPI 同形 at(1) 已走插值臂实证同通道正确）；纯 px
+        // 对插值臂 t=1 与 echo 恒等零扰动。
         if eased == 1.0
             && !matches!(
                 prop,
@@ -448,6 +453,7 @@ fn query_core(
                     | "row-rule-width"
                     | "column-rule-color"
                     | "row-rule-color"
+                    | "mask-position"
                     | "column-rule-inset-cap-start"
                     | "column-rule-inset-cap-end"
                     | "column-rule-inset-junction-start"
