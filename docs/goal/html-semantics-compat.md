@@ -2,108 +2,109 @@
 
 **版本**: v2.0
 **日期**: 2026-11-17（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 552 收口（**双刀
-窗归因轮 + 族带新极形轮**：窗内码面刀 ×2
-——insertimage 出壳刀（e5ccc1151，part01g.js
-折叠插入点提离 inline 壳链+跨块载体 swcss
-保真+part132 pins，editing 流申报 img 962/0
-+fs 2415/7+event 176/4+ie 1461/1867/3
-SET-IDENTICAL+fbc3 批七腿全绿）+ evt-reject
-刀（59d286cb6，part06.js 值拒绝按形补派 1
-input+part133 pins，event.html 173P/7F→
-176P/4F）；s551 更正三仅捕获 evt-reject、
-轮内实查补 insertimage 刀数勘误）——码态
-ad487ea89→59d286cb6，runner 七代
-9a13023968c1/128,075,392→八代 5d81df5207
-/128,083,488 换代（+8,096，leg1 Compiling
-×6 重编 1m29s 双 shim 入链，更正三预判兑
-现、归因双刀联合）——v3.1 浸泡门判净
-14:59:28 HEAD=d582d2ee9 钉扎起腿，双腿常
-态全绿（leg1 4:42 含重编/leg2 3:14 Fresh
-0.28s 同二进制 vs s551 leg2 +22% 变慢，rc=2
-惯例 0 爆栈）——join **stable 8500（stable
-canon 8294P/200F/5T/1U）disagree 0 +
-l1only 1 + l2only 11**（raw l1 8503＝
-8296P/200F/6T/1U、l2 8513＝8307P/200F/
-5T/1U）；vs s551 stable **NEW 1 + GONE 14 +
-flips 1，位移两组全落带内**：①select-event
-password 11 键 GONE＝l1 单腿文件级超时吞
-（"completion callback was not called"
-pending:11；l2 P 形与 s551 stable 形逐键恒
-＝纯腿间时序，l1only 1＝select-event 整文
-件键 T）②customizable-select home-end 族
-带新极形＝双变体双腿同步 page-script 90s
-超时（"declared tests: 0"）→ detailed/non-det
-双整文件键 F/F 同相入 stable（NEW 1+flip
-T→F）+4 子测键零发射（GONE 3+PageDown
-两腿零发射）；**归因：90s page-script 超
-时模式刀前在册先例（s549 leg2 同文件同消
-息、树无两刀），「declared tests: 0」子模
-式每轮 1 基线文件常驻（s548 起），族带摆
-动 s530 起在册，两刀语义面（insertImage
-壳链/execCommand 值拒绝）与 base-select 键
-盘 testdriver 页无路径关联（页面零
-execCommand/insertImage 调用），对端 fbc3
-批七腿全绿互证，leg2 +22% 变慢佐证机器边
-际变慢窗——判族带时序谱内强化新极形，
-非双刀码面**，非带非哨键零码面位移。账本
-evidence/2026-11-17-m2s552-dual-knife
--attribution-band-extreme.md。stable counts
-：P 8305→8294（打破四轮恒等，−11 全＝
-password 时序吞非码面）；F 201→200（−3
-子测键+2 整文件键 F 入账）；T 6→5（detailed
-出 T 带，惰载 5 键持位）；U 恒 1。flaky
-键双腿双 Pass——零新例第 41 轮（s512 时
-钟顺延）。onblur 哨组双腿 join 零 flip（
-8P/2F parent-label 红池照常，F 集与 s551
-逐键 IDENT diff 实证）；dialog-overlay 哨
-第 81 轮双键双腿双 P 常规持位；**modulepreload
-哨 15 键双腿全 P/P——常规连轮计数第 14
-轮零翻红**（s551 排程兑现）；waapi 哨
-picker-icon 双腿双 P（s478 刀增益第 75 轮
-）/ checkmark F/F 恒 F 带形不变；focus-dynamic
-121 键双腿全 Pass——收窗后第 34 轮零再现
-；双发发射伪影 2 键照旧在册。全桥绿窗
-**1692P/0F guard rc=0 清单 NEW 2 + GONE 0**
-——NEW 2＝test_img_breakout_pins（part132）
-+test_evt_reject_pins（part133）**每刀 1 聚
-合钉测 fn**（对端申报「9 形」为 fn 内断言
-形数——更正三「NEW 9」方向兑现、计数口
-径修正），两新钉测 PASS＝双刀桥面钉全绿
-，基线 b551.k→b552.k（1692）。**挂用户门
-维持**：GB-20261114-VIDEO + GB-20261031（
-簇 D）+ s137（s445 已提示，不重复通知）。
-hang 观察项静默哨维持。下一步：**守成巡
-查**（**对账基线换 s552 stable 8500——族带
-新极形复现观察为首要观察项**：s553 若复
-现双整文件键 F/F 0-declared 形→升级单页
-探针（runner 单文件过滤）+对端 pre-knife
-runner 反事实 A/B 前置申请再定归因；若回
-归摆动谱旧形→按族带时序谱常态记账；
-password 11 键回归 stable 观察（l1 时序吞
-形应自然回归）；全桥清单基线 b552.k 1692
-持位；flaky 键零新例时钟顺延第 42 轮；
-**mpreload 哨常规连轮计数第 15 轮**；
-dialog 哨常规持位（第 82 轮）；他流入树归
-因轮或轻覆盖——对端刀信号持续：editing
-流 R13 cE=false wrap 刀（刀序 2，fb ×1+
-indent ×2 同族候选已普查归域）+ css 文法
-刀后续刀（shapepos 残面队列余项）+
-wptfyi-css 刀 K（关键帧关键字面，与本流
-animation 面相关，在飞监视）+ wptfyi-css
-残面（mask-border 家族支持门定谳、B3 残
-面 348F 余项、jsanim flip Steps(Start)）+
-editing 流 B4-S2 残面刀 + rendering dialog
-16 红块协同面，起腿前 runner provenance 异
-常即查码面 diff（刀 G 工法），join 实测为
-准；起腿一律 v3.1 浸泡门（waiter 绝对路
-径）；慢腿/劣化腿按 s544 甄别规程处置、
-fatal abort 形按 s545 一票作废处置）+ 候门
-决项等待用户拍板（video P1+P2 立项 / 簇 D
-A2 立项 / s137）；rendering 流 dialog 16 红
-块协同面（归 rendering 流记账）。门开随批
-落预案不变：簇 D 开 → customizable-select-
-styles.css ×47 随批落。
+**状态**: Active——M2 切片 553 收口（**R13
+单刀窗归因轮 + 族带旧形回归轮**：窗内码面
+刀 ×1——R13 cE=false wrap 刀（b65398b99，
+part01g.js wrap 命令整面纳入：fb 362 no-op
+转 wrap＋indent 三连形双键＋容器形分叉+
+part134 pins，s552 收口时在飞候选兑现落窗
+，伴 2 docs-only 非触发器）——码态
+d582d2ee9→e4fb2c42e，runner 八代
+5d81df5207/128,083,488→九代 96f2c0a8df
+/128,087,248 换代（+3,760，leg1 Compiling
+×6 重编 R13 经 zero-engine 入链，provenance
+零异常）——v3.1 浸泡门判净 15:51:11
+HEAD=e4fb2c42e 钉扎起腿，双腿常态全绿（
+leg1 3:31 含重编/leg2 2:43 Fresh 同二进制
+，rc=2 惯例 0 爆栈，429 断点续轮：上轮
+15:26 备腿 15:57 双腿跑毕、19:13 限额重置
+后续做分析，腿工件 provenance 完整）——
+join **stable 8511（stable canon 8305P/
+199F/6T/1U）disagree 0 + l1only 0 +
+l2only 2**（raw l1 8513 行＝8511 键、l2
+8515 行＝8513 键，双腿各含双发伪影 2 行重
+复发射）；vs s552 stable **NEW 11 + GONE 0
++ flips 1，位移两组全落带内**：①password
+11 键 NEW＝s552 l1 单腿文件级超时吞形自然
+回归兑现（select-event 两腿 45 password
+键全 Pass 无吞形）②族带旧形回归＝home-end
+non-det 整文件键 flip F→T（回 s549–s551
+Timeout 带形）＋Home/End 2 子测键 l2only
+F 部分发射（PageDown/PageUp 两腿零发射）
+；detailed 变体双腿仍 90s page-script
+0-declared F/F 与 s552 stable 恒＝非新位
+移、**该形持位第 2 轮续观察**；**归因：族
+带摆动 s530 起在册、90s 0-declared 模式刀
+前在册（s549 leg2 先例）、R13 语义面
+（cE=false wrap 命令族）与 base-select 键
+盘页无路径关联（页面零 execCommand 调用）
+——判摆动谱旧形回归非 R13 码面，s552 新极
+形位移（双整文件键 F/F NEW/flip 入账形）
+未复现→按 s552 既定判据常态记账、升级路
+径（单页探针+对端 pre-knife runner 反事实
+A/B 前置申请）未触发**，非带非哨键零码面
+位移＝R13 零位移清偿，「申报=实测」谱系第
+四十例（单刀窗）。账本 evidence/
+2026-11-17-m2s553-r13-single-knife
+-attribution-band-oldform.md。stable
+counts：P 8294→8305（恢复 s548–s551 四轮
+恒等位，+11 全＝password 时序回归）；F
+200→199（non-det 出 F 带翻 T）；T 5→6
+（non-det 回 T 带＋惰载 5 键持位：style
+-error-01/audio-loading-lazy-source
+-deferred/sizes-auto/update-media/video
+-loading-lazy-source-poster-deferred 恒）
+；U 恒 1。flaky 键双腿双 Pass——零新例第
+42 轮（onblur F 集与 s552 逐键 IDENT diff
+实证）；onblur 哨组 8P/2F parent-label 红
+池照常；dialog-overlay 哨第 82 轮双键双腿
+双 P 常规持位；**modulepreload 哨 15 键双
+腿全 P/P——常规连轮计数第 15 轮零翻红**（
+s552 排程兑现）；waapi 哨 picker-icon 双
+腿双 P（s478 刀增益第 76 轮）/ checkmark
+F/F 恒 F 带形不变；focus-dynamic 121 键双
+腿全 Pass——收窗后第 35 轮零再现；双发发
+射伪影 2 键照旧在册（wrapping-transformation
+.window.js exact len＋execution-timing/149
+.html for=' WINdow 双腿恒）。全桥绿窗
+**1693P/0F guard rc=0 清单 NEW 1 + GONE 0
+**——NEW 1＝test_r13_cefalse_wrap_pins（
+part134）每刀 1 聚合钉测 fn 模式持位（第
+3 刀连续：part132/133/134 同型）＝R13 桥
+面钉全绿，基线 b552.k→b553.k（1693）。
+**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（不重复通知）。
+hang 观察项静默哨维持。下一步：**守成巡查
+**（**对账基线换 s553 stable 8511——
+detailed F/F 0-declared 形持位续观察为首
+要观察项**：s554 若再现 NEW/GONE 位移形→
+升级单页探针（runner 单文件过滤）+对端
+pre-knife runner 反事实 A/B 前置申请再定
+归因；持位恒→续常态记账；home-end non-det
+T 带形回摆+PageDown/PageUp 子测键发射谱
+观察；password 11 键 stable 持位确认（第
+2 轮）；全桥清单基线 b553.k 1693 持位；
+flaky 键零新例时钟顺延第 43 轮；**mpreload
+哨常规连轮计数第 16 轮**；dialog 哨常规持
+位（第 83 轮）；他流入树归因轮或轻覆盖——
+对端刀信号持续：css 文法刀后续（shapepos
+残面队列余项）+ wptfyi-css 刀 K（关键帧关
+键字面，与本流 animation 面相关，在飞监视
+）+ wptfyi-css 残面（mask-border 家族支持
+门定谳、B3 残面 348F 余项、jsanim flip
+Steps(Start)）+ editing 流 B4-S2 残面刀 +
+rendering dialog 16 红块协同面，起腿前
+runner provenance 异常即查码面 diff（刀 G
+工法），join 实测为准；起腿一律 v3.1 浸泡
+门（waiter 绝对路径）；慢腿/劣化腿按 s544
+甄别规程处置、fatal abort 形按 s545 一票
+作废处置）+ 候门决项等待用户拍板（video
+P1+P2 立项 / 簇 D A2 立项 / s137）；
+rendering 流 dialog 16 红块协同面（归
+rendering 流记账）。门开随批落预案不变：
+簇 D 开 → customizable-select-styles.css
+×47 随批落。
+
 > **◆ 更正三（2026-11-17 s551 push 阶段）——pull
 > --rebase 捕获 evt-reject 刀落窗（59d286cb6
 > fix(editing)：part06.js _zwExecCmdRejectFire
@@ -151,6 +152,53 @@ styles.css ×47 随批落。
 > zero-engine 依赖链入 runner 链接，同 d50
 > 先例 s547 实测零语义位移），hs 面无编辑
 > 路径直达语义键、对账以 join 实测为准。
+
+> **▶ 承前（2026-11-17 M2 切片 552 收口）——双刀
+> 窗归因轮 + 族带新极形轮：窗内码面刀 ×2＝
+> insertimage 出壳刀（e5ccc1151，part01g.js
+> 折叠插入点提离 inline 壳链＋跨块载体
+> swcss 保真＋part132 pins，editing 流申报
+> img/fs/event/ie SET-IDENTICAL＋fbc3 批七
+> 腿全绿）＋ evt-reject 刀（59d286cb6，
+> part06.js 值拒绝按形补派 1 input＋
+> part133 pins，event.html 173P/7F→176P/
+> 4F）——码态 ad487ea89→59d286cb6，runner
+> 七代 9a13023968c1→八代 5d81df5207 换代
+> （+8,096，leg1 重编 1m29s 双 shim 入链，
+> 更正三预判兑现、归因双刀联合）——浸泡门
+> 双腿常态全绿（leg1 4:42 含重编/leg2 3:14
+> vs s551 +22% 变慢）——join stable 8500
+> （8294P/200F/5T/1U）disagree 0 + l1only
+> 1 + l2only 11；vs s551 NEW 1 + GONE 14 +
+> flips 1 位移两组全落带内：①select-event
+> password 11 键 GONE＝l1 单腿文件级超时吞
+> （completion callback pending:11；l2 P
+> 形与 s551 逐键恒＝纯腿间时序）②
+> customizable-select home-end 族带新极形
+> ＝双变体双腿同步 90s page-script 超时
+> （declared tests: 0）→detailed/non-det
+> 双整文件键 F/F 同相入 stable（NEW 1+
+> flip T→F）＋4 子测键零发射——归因判族
+> 带时序谱内强化新极形非双刀码面（90s 模
+> 式刀前在册＋「declared tests: 0」子模式
+> s548 起常驻＋无语义路径＋对端自家面全绿
+> 互证＋leg2 变慢佐证机器边际变慢窗）；P
+> 集 8294 打破四轮恒等（−11 全 password 吞
+> ）；flaky 零新例第 41 轮（onblur F 集逐
+> 键 IDENT）；dialogov 第 81 轮；mpreload
+> 常规连轮第 14 轮零翻红；waapi picker 第
+> 75 轮；fd121 第 34 轮；全桥 1692P/0F
+> NEW 2（test_img_breakout_pins+
+> test_evt_reject_pins 每刀 1 聚合钉测 fn
+> ，b551.k→b552.k）。挂用户门维持三项。
+> ——s553 兑现：R13 单刀窗归因轮，runner 九
+> 代换代兑现（+3,760），password 11 键吞形
+> 自然回归（NEW 11）＋族带旧形回归（non-det
+> F→T＋2 子测键 l2only）判摆动谱常态记账
+> 、新极形位移未复现升级路径未触发，detailed
+> F/F 0-declared 持位第 2 轮续观察，非带非
+> 哨键零位移清偿第四十例，全桥 b553.k set
+> NEW 1（part134）绿窗零破。
 
 > **▶ 承前（2026-11-17 M2 切片 551 收口）——零码
 > 变守成轻覆盖轮 + 族带摆动谱新形轮：窗内零码
