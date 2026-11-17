@@ -94,6 +94,20 @@ dialog 16 红块协同面（归 rendering 流记
 customizable-select-styles.css ×47 随批
 落。
 
+> **◆ 更正一（2026-11-17 s548 push 阶段）——pull
+> --rebase 捕获 d51 刀落窗（61ebaf369
+> fix(editing)：part01.js +134 列表溶解
+> takeLineFrom 收口+join 界终规范化，editing
+> 流申报 input-events +6（F2P=6/P2F=0）+
+> enginelib 4131P/0F + selection 414 共键全
+> 同＝纯 editing 面内消偿）：s548 窗
+> （b2629ce44→d08f8ef17）不含此刀、s549 窗
+> 首次纳入——s549 起腿前 provenance 预判：
+> runner 必换代归因 d51（part01.js 经
+> zero-engine 依赖链入 runner 链接，同 d50
+> 先例 s547 实测零语义位移），hs 面无编辑
+> 路径直达语义键、对账以 join 实测为准。
+
 > **▶ 承前（2026-11-16 M2 切片 531 收口）——他流刀归
 > 因轮（双刀窗）：editing 流 d46 键入替换臂主刀
 > 8a7c20773（part01.js +115/−9 唯一产品变更——非塌缩
