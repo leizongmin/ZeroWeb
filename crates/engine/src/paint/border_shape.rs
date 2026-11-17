@@ -1,6 +1,12 @@
 //! 绘制辅助 — corner-shape / border-shape 形状几何家族（自 helpers.rs 按职责拆分，T59；纯移动零行为变化）。
 
-use zero_css_parser::values::parse_basic_shape::{BorderRadiusValue, RectCoord};
+use zero_css_parser::values::parse_basic_shape::{
+    BorderRadiusValue, PathFunctionValue, RectCoord, ShapeAngleUnit, ShapeAxisComp, ShapeCommand,
+    ShapeControlPoint, ShapeCoordRef, ShapeEndpoint, ShapeFunctionValue, ShapePosition, shape_axis_comp_resolved,
+};
+// PathSeg 仅测试构造用——lib 面收敛后共享 use 会在 lib check 误报 unused。
+#[cfg(test)]
+use zero_css_parser::values::parse_basic_shape::PathSeg;
 use zero_css_parser::values::{BorderShapeGeometryBox, BorderShapeValue, ClipPathRadius, ClipPathValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
@@ -11,6 +17,7 @@ use crate::paint::helpers::BorderRadiusSpec;
 use super::clip::{circle_to_polygon, ellipse_to_polygon};
 use super::color::resolve_color_current;
 use super::helpers::resolve_inset_length;
+use super::helpers::resolve_radius_length;
 
 /// R5184 kill-switch（`ZW_BORDER_SHAPE=0` 整体禁用 border-shape 路径）。
 // OPTIMIZATION：进程内只读一次——下方三个消费端均在 painter 逐元素热路径，
@@ -718,10 +725,446 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
             let y1 = by + coord(&v.bottom, bh, true);
             rect_shape_vertices(x0, y0, x1, y1, v.round.as_ref(), font_size)
         }
-        // FIXME: shape()/path() 命令串接几何未实现（css-shapes-2 §shape-function /
-        // §path-function；border-shape 渲染面无语料消费方，暂回空顶点）。
-        ClipPathValue::Shape(_) | ClipPathValue::Path(_) => Vec::new(),
+        // css-shapes-2 §shape-function：命令串接几何（from 起点 + to/by 相对
+        // 语义 + 曲线/圆弧折顶点），百分比相对参考盒宽/高。
+        ClipPathValue::Shape(v) => flatten_shape_value(v, bx, by, bw, bh, font_size),
+        // css-shapes-2 §path-function：SVG path data px 直映射（原点 = 参考盒
+        // 左上）。
+        ClipPathValue::Path(v) => flatten_path_value(v, bx, by),
     }
+}
+
+// ── shape()/path() 命令串接几何（css-shapes-2 §shape-function /
+// §path-function）────────────────────────────────────────────────────────
+// 顶点输出与 Inset 臂同口径 = 闭合环（add_path_stroke closed），`close`
+// 不复制起点（环闭合由消费端隐式完成）。FIXME: 多子路径（move/close 重开
+// 新轮廓）以单环串接近似——独立轮廓 stroke/fill 保真未实现；fill-rule
+// 顶点面未消费（与 polygon 臂同口径）。
+
+/// 曲线（Bezier）每段采样数。
+const SHAPE_CURVE_SEGMENTS: usize = 24;
+/// 椭圆弧整圆等效采样数（与 circle/ellipse 64 段近似同口径）。
+const SHAPE_ARC_SEGMENTS: f64 = 64.0;
+
+/// shape() 长度槽解析（% 相对 `dim`；calc 含 % 同基准；其余单位走 font 通道）。
+fn shape_len_px(v: &zero_css_parser::values::LengthValue, dim: f32, font_size: f32) -> f32 {
+    resolve_radius_length(v, dim, font_size as f64)
+}
+
+/// shape() 轴分量解析：关键字/edge 形先折叠（css-shapes-2 坐标系原点 = 参考
+/// 盒左上，left/top=0、center=50%、right/bottom=100%，edge 右/下缘折算
+/// 100%−o）再走长度通道。
+fn shape_axis_px(c: &ShapeAxisComp, dim: f32, font_size: f32) -> f32 {
+    shape_len_px(&shape_axis_comp_resolved(c), dim, font_size)
+}
+
+/// shape() `<position>` 解析为参考盒局部坐标。
+fn shape_position_px(p: &ShapePosition, bw: f32, bh: f32, font_size: f32) -> (f32, f32) {
+    (shape_axis_px(&p.x, bw, font_size), shape_axis_px(&p.y, bh, font_size))
+}
+
+/// shape() 端点解析：`to <position>` 绝对 / `by <len-pct>{2}` 相对当前点。
+fn shape_endpoint_px(e: &ShapeEndpoint, cur: (f32, f32), bw: f32, bh: f32, font_size: f32) -> (f32, f32) {
+    match e {
+        ShapeEndpoint::Position(p) => shape_position_px(p, bw, bh, font_size),
+        ShapeEndpoint::Offset(dx, dy) => (
+            cur.0 + shape_len_px(dx, bw, font_size),
+            cur.1 + shape_len_px(dy, bh, font_size),
+        ),
+    }
+}
+
+/// shape() 控制点解析：位置相对参考点（start = 段起点 / end = 段端点 /
+/// origin = shape from 起点；缺省 to 形 origin、by 形 start——css-shapes-2
+/// 控制点参考系缺省与解析器串化口径一致）。
+#[allow(clippy::too_many_arguments)]
+fn shape_control_px(
+    cp: &ShapeControlPoint,
+    start: (f32, f32),
+    end: (f32, f32),
+    origin: (f32, f32),
+    default_ref: ShapeCoordRef,
+    bw: f32,
+    bh: f32,
+    font_size: f32,
+) -> (f32, f32) {
+    let base = match cp.from_ref.unwrap_or(default_ref) {
+        ShapeCoordRef::Start => start,
+        ShapeCoordRef::End => end,
+        ShapeCoordRef::Origin => origin,
+    };
+    let (px, py) = shape_position_px(&cp.pos, bw, bh, font_size);
+    (base.0 + px, base.1 + py)
+}
+
+/// 三次 Bezier 均匀采样（不含 p0；t=1 精确含 p1）。
+fn push_cubic(pts: &mut Vec<(f32, f32)>, p0: (f32, f32), c1: (f32, f32), c2: (f32, f32), p1: (f32, f32)) {
+    let n = SHAPE_CURVE_SEGMENTS;
+    for i in 1..=n {
+        let t = i as f32 / n as f32;
+        let mt = 1.0 - t;
+        let (b0, b1, b2, b3) = (mt * mt * mt, 3.0 * mt * mt * t, 3.0 * mt * t * t, t * t * t);
+        pts.push((
+            b0 * p0.0 + b1 * c1.0 + b2 * c2.0 + b3 * p1.0,
+            b0 * p0.1 + b1 * c1.1 + b2 * c2.1 + b3 * p1.1,
+        ));
+    }
+}
+
+/// 二次 Bezier 均匀采样（shape() 单控制点 curve 与 path() Q/T）。
+fn push_quad(pts: &mut Vec<(f32, f32)>, p0: (f32, f32), c: (f32, f32), p1: (f32, f32)) {
+    let n = SHAPE_CURVE_SEGMENTS;
+    for i in 1..=n {
+        let t = i as f32 / n as f32;
+        let mt = 1.0 - t;
+        pts.push((
+            mt * mt * p0.0 + 2.0 * mt * t * c.0 + t * t * p1.0,
+            mt * mt * p0.1 + 2.0 * mt * t * c.1 + t * t * p1.1,
+        ));
+    }
+}
+
+/// 椭圆弧端点参数化 → 中心参数化折顶点（SVG 1.1 App. F.6.5；不含 p0、
+/// t=1 精确含 p1；半径过小按 F.6.6 等比放大；零长弧段省略）。
+#[allow(clippy::too_many_arguments)]
+fn push_arc(
+    pts: &mut Vec<(f32, f32)>,
+    p0: (f32, f32),
+    p1: (f32, f32),
+    rx_in: f32,
+    ry_in: f32,
+    phi: f32,
+    large: bool,
+    sweep: bool,
+) {
+    let (x1, y1) = (p0.0 as f64, p0.1 as f64);
+    let (x2, y2) = (p1.0 as f64, p1.1 as f64);
+    if (x1 - x2).abs() < 1e-9 && (y1 - y2).abs() < 1e-9 {
+        return; // 零长弧段省略（SVG F.6.5.1）
+    }
+    let (mut rx, mut ry) = (rx_in.abs().max(1e-6) as f64, ry_in.abs().max(1e-6) as f64);
+    let phi = phi as f64;
+    let (sp, cp) = phi.sin_cos();
+    // F.6.5.1 变换到无旋转坐标系
+    let (dx2, dy2) = ((x1 - x2) / 2.0, (y1 - y2) / 2.0);
+    let x1p = cp * dx2 + sp * dy2;
+    let y1p = -sp * dx2 + cp * dy2;
+    // F.6.6 半径过小等比放大
+    let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+    if lambda > 1.0 {
+        let s = lambda.sqrt();
+        rx *= s;
+        ry *= s;
+    }
+    // F.6.5.2 圆心（符号由 large/sweep 组合选择）
+    let (rx2, ry2) = (rx * rx, ry * ry);
+    let num = rx2 * ry2 - rx2 * y1p * y1p - ry2 * x1p * x1p;
+    let den = rx2 * y1p * y1p + ry2 * x1p * x1p;
+    let co = if den.abs() < 1e-12 {
+        0.0
+    } else {
+        (num / den).max(0.0).sqrt()
+    };
+    let sign: f64 = if large != sweep { 1.0 } else { -1.0 };
+    let cxp = sign * co * rx * y1p / ry;
+    let cyp = -sign * co * ry * x1p / rx;
+    let cx = cp * cxp - sp * cyp + (x1 + x2) / 2.0;
+    let cy = sp * cxp + cp * cyp + (y1 + y2) / 2.0;
+    // F.6.5.4 角域（cross 积符号定向）
+    let ang = |ux: f64, uy: f64, vx: f64, vy: f64| -> f64 {
+        let dot = ux * vx + uy * vy;
+        let len = (ux * ux + uy * uy).sqrt() * (vx * vx + vy * vy).sqrt();
+        let mut a = (dot / len).clamp(-1.0, 1.0).acos();
+        if ux * vy - uy * vx < 0.0 {
+            a = -a;
+        }
+        a
+    };
+    let (u1, v1) = ((x1p - cxp) / rx, (y1p - cyp) / ry);
+    let (u2, v2) = ((-x1p - cxp) / rx, (-y1p - cyp) / ry);
+    let theta1 = ang(1.0, 0.0, u1, v1);
+    let mut delta = ang(u1, v1, u2, v2);
+    if !sweep && delta > 0.0 {
+        delta -= std::f64::consts::TAU;
+    } else if sweep && delta < 0.0 {
+        delta += std::f64::consts::TAU;
+    }
+    // 折顶点：整圆 64 段等效密度（与 circle/ellipse 同口径），不含 p0。
+    let n = ((delta.abs() / std::f64::consts::TAU) * SHAPE_ARC_SEGMENTS)
+        .ceil()
+        .max(2.0) as usize;
+    for i in 1..=n {
+        let theta = theta1 + delta * (i as f64 / n as f64);
+        // f64::sin_cos 返回 (sin, cos)——先 sn 后 cs。
+        let (sn, cs) = theta.sin_cos();
+        pts.push((
+            (rx * cs * cp - ry * sn * sp + cx) as f32,
+            (rx * cs * sp + ry * sn * cp + cy) as f32,
+        ));
+    }
+}
+
+/// shape() 命令串接 → 闭合环顶点（css-shapes-2 §shape-function 语义：
+/// smooth 首控制点 = 前段末控制点对当前点反射、无前段曲线时取当前点；
+/// 无第二控制点 smooth 形控制点与端点重合；close 回子路径起点）。
+fn flatten_shape_value(v: &ShapeFunctionValue, bx: f32, by: f32, bw: f32, bh: f32, font_size: f32) -> Vec<(f32, f32)> {
+    let origin = shape_position_px(&v.from, bw, bh, font_size);
+    let mut cur = origin;
+    let mut subpath_start = origin;
+    let mut pts: Vec<(f32, f32)> = vec![cur];
+    let mut last_ctrl: Option<(f32, f32)> = None;
+    for cmd in &v.commands {
+        match cmd {
+            ShapeCommand::Move { end } => {
+                cur = shape_endpoint_px(end, cur, bw, bh, font_size);
+                subpath_start = cur;
+                pts.push(cur); // FIXME 多子路径单环串接近似（见模块头）
+                last_ctrl = None;
+            }
+            ShapeCommand::Line { end } => {
+                cur = shape_endpoint_px(end, cur, bw, bh, font_size);
+                pts.push(cur);
+                last_ctrl = None;
+            }
+            ShapeCommand::Hline { by, x } => {
+                let nx = if *by {
+                    cur.0 + shape_axis_px(x, bw, font_size)
+                } else {
+                    shape_axis_px(x, bw, font_size)
+                };
+                cur = (nx, cur.1);
+                pts.push(cur);
+                last_ctrl = None;
+            }
+            ShapeCommand::Vline { by, y } => {
+                let ny = if *by {
+                    cur.1 + shape_axis_px(y, bh, font_size)
+                } else {
+                    shape_axis_px(y, bh, font_size)
+                };
+                cur = (cur.0, ny);
+                pts.push(cur);
+                last_ctrl = None;
+            }
+            ShapeCommand::Curve { end, c1, c2 } => {
+                let end_pt = shape_endpoint_px(end, cur, bw, bh, font_size);
+                let def = if end.is_by() {
+                    ShapeCoordRef::Start
+                } else {
+                    ShapeCoordRef::Origin
+                };
+                let p1 = shape_control_px(c1, cur, end_pt, origin, def, bw, bh, font_size);
+                match c2 {
+                    Some(c2cp) => {
+                        let p2 = shape_control_px(c2cp, cur, end_pt, origin, def, bw, bh, font_size);
+                        push_cubic(&mut pts, cur, p1, p2, end_pt);
+                        last_ctrl = Some(p2);
+                    }
+                    None => {
+                        push_quad(&mut pts, cur, p1, end_pt);
+                        last_ctrl = Some(p1);
+                    }
+                }
+                cur = end_pt;
+            }
+            ShapeCommand::Smooth { end, c1 } => {
+                let end_pt = shape_endpoint_px(end, cur, bw, bh, font_size);
+                let def = if end.is_by() {
+                    ShapeCoordRef::Start
+                } else {
+                    ShapeCoordRef::Origin
+                };
+                let p1 = match last_ctrl {
+                    Some(prev) => (2.0 * cur.0 - prev.0, 2.0 * cur.1 - prev.1),
+                    None => cur,
+                };
+                match c1 {
+                    Some(c2cp) => {
+                        let p2 = shape_control_px(c2cp, cur, end_pt, origin, def, bw, bh, font_size);
+                        push_cubic(&mut pts, cur, p1, p2, end_pt);
+                        last_ctrl = Some(p2);
+                    }
+                    None => {
+                        push_cubic(&mut pts, cur, p1, end_pt, end_pt);
+                        last_ctrl = Some(end_pt);
+                    }
+                }
+                cur = end_pt;
+            }
+            ShapeCommand::Arc {
+                end,
+                rx,
+                ry,
+                cw,
+                large,
+                rotate,
+            } => {
+                let end_pt = shape_endpoint_px(end, cur, bw, bh, font_size);
+                let r_x = shape_len_px(rx, bw, font_size);
+                let r_y = shape_len_px(ry.as_ref().unwrap_or(rx), bh, font_size);
+                let phi = rotate
+                    .map(|(a, u)| match u {
+                        ShapeAngleUnit::Deg => (a * std::f64::consts::PI / 180.0) as f32,
+                        ShapeAngleUnit::Rad => a as f32,
+                        ShapeAngleUnit::Grad => (a * std::f64::consts::PI / 200.0) as f32,
+                        ShapeAngleUnit::Turn => (a * std::f64::consts::TAU) as f32,
+                    })
+                    .unwrap_or(0.0);
+                push_arc(&mut pts, cur, end_pt, r_x, r_y, phi, *large, *cw);
+                last_ctrl = None;
+                cur = end_pt;
+            }
+            ShapeCommand::Close => {
+                cur = subpath_start;
+                last_ctrl = None;
+            }
+        }
+    }
+    pts.into_iter().map(|(x, y)| (bx + x, by + y)).collect()
+}
+
+/// path() 命令实参数（SVG 文法；镜像 parser `arity_in`）。
+fn path_seg_arity(c: char) -> usize {
+    match c {
+        'M' | 'm' | 'L' | 'l' | 'T' | 't' => 2,
+        'H' | 'h' | 'V' | 'v' => 1,
+        'S' | 's' | 'Q' | 'q' => 4,
+        'C' | 'c' => 6,
+        'A' | 'a' => 7,
+        _ => 0,
+    }
+}
+
+/// path() 坐标点解析：绝对形加参考盒原点偏移 / 相对形加当前点。
+fn path_point(x: f64, y: f64, rel: bool, prev: (f32, f32), bx: f32, by: f32) -> (f32, f32) {
+    if rel {
+        (prev.0 + x as f32, prev.1 + y as f32)
+    } else {
+        (bx + x as f32, by + y as f32)
+    }
+}
+
+/// path() SVG path data → 闭合环顶点（css-shapes-2 §path-function：path
+/// data px 直映射，无百分比文法）。段级多实参组 = SVG 隐式重复（parser
+/// 按 arity 整除收组）；M 首组外的组为隐式 L/l（SVG 2.3.9）；S/T 首控制
+/// 点反射同 smooth 语义。
+fn flatten_path_value(v: &PathFunctionValue, bx: f32, by: f32) -> Vec<(f32, f32)> {
+    let mut pts: Vec<(f32, f32)> = Vec::new();
+    let mut cur = (bx, by);
+    let mut subpath_start = cur;
+    let mut last_ctrl: Option<(f32, f32)> = None;
+    let mut last_quad_ctrl: Option<(f32, f32)> = None;
+    for seg in &v.segs {
+        let c = seg.cmd;
+        if matches!(c, 'Z' | 'z') {
+            cur = subpath_start;
+            last_ctrl = None;
+            last_quad_ctrl = None;
+            continue;
+        }
+        let arity = path_seg_arity(c);
+        let rel = c.is_ascii_lowercase();
+        let lower = c.to_ascii_lowercase();
+        let mut first_group = true;
+        for g in seg.args.chunks(arity) {
+            let p = |x: f64, y: f64| path_point(x, y, rel, cur, bx, by);
+            match lower {
+                'm' => {
+                    let pt = p(g[0], g[1]);
+                    if first_group {
+                        // 显式 move：新子路径起点（环串接近似，见模块头 FIXME）
+                        subpath_start = pt;
+                    }
+                    // M 后续组 = 隐式 lineto（SVG 2.3.9）；两组均重置
+                    // S/T 反射态（线段与 move 同不清邻居控制点）。
+                    last_ctrl = None;
+                    last_quad_ctrl = None;
+                    pts.push(pt);
+                    cur = pt;
+                }
+                'l' => {
+                    let pt = p(g[0], g[1]);
+                    pts.push(pt);
+                    cur = pt;
+                    last_ctrl = None;
+                    last_quad_ctrl = None;
+                }
+                'h' => {
+                    let x = if rel { cur.0 + g[0] as f32 } else { bx + g[0] as f32 };
+                    cur = (x, cur.1);
+                    pts.push(cur);
+                    last_ctrl = None;
+                    last_quad_ctrl = None;
+                }
+                'v' => {
+                    let y = if rel { cur.1 + g[0] as f32 } else { by + g[0] as f32 };
+                    cur = (cur.0, y);
+                    pts.push(cur);
+                    last_ctrl = None;
+                    last_quad_ctrl = None;
+                }
+                'c' => {
+                    let c1 = p(g[0], g[1]);
+                    let c2 = p(g[2], g[3]);
+                    let p1 = p(g[4], g[5]);
+                    push_cubic(&mut pts, cur, c1, c2, p1);
+                    last_ctrl = Some(c2);
+                    last_quad_ctrl = None;
+                    cur = p1;
+                }
+                's' => {
+                    let c1 = match last_ctrl {
+                        Some(prev) => (2.0 * cur.0 - prev.0, 2.0 * cur.1 - prev.1),
+                        None => cur,
+                    };
+                    let c2 = p(g[0], g[1]);
+                    let p1 = p(g[2], g[3]);
+                    push_cubic(&mut pts, cur, c1, c2, p1);
+                    last_ctrl = Some(c2);
+                    last_quad_ctrl = None;
+                    cur = p1;
+                }
+                'q' => {
+                    let c = p(g[0], g[1]);
+                    let p1 = p(g[2], g[3]);
+                    push_quad(&mut pts, cur, c, p1);
+                    last_quad_ctrl = Some(c);
+                    last_ctrl = None;
+                    cur = p1;
+                }
+                't' => {
+                    let c = match last_quad_ctrl {
+                        Some(prev) => (2.0 * cur.0 - prev.0, 2.0 * cur.1 - prev.1),
+                        None => cur,
+                    };
+                    let p1 = p(g[0], g[1]);
+                    push_quad(&mut pts, cur, c, p1);
+                    last_quad_ctrl = Some(c);
+                    last_ctrl = None;
+                    cur = p1;
+                }
+                'a' => {
+                    let p1 = p(g[5], g[6]);
+                    push_arc(
+                        &mut pts,
+                        cur,
+                        p1,
+                        g[0] as f32,
+                        g[1] as f32,
+                        (g[2] * std::f64::consts::PI / 180.0) as f32,
+                        g[3] != 0.0,
+                        g[4] != 0.0,
+                    );
+                    last_ctrl = None;
+                    last_quad_ctrl = None;
+                    cur = p1;
+                }
+                _ => {}
+            }
+            first_group = false;
+        }
+    }
+    pts
 }
 
 /// rect()/xywh() 矩形顶点发射（css-shapes-2 §basic-shape-rect-notation）：
@@ -1227,5 +1670,170 @@ mod tests {
         assert_eq!(verts[1], (150.0, 0.0));
         assert_eq!(verts[2], (150.0, 100.0));
         assert_eq!(verts[3], (20.0, 100.0));
+    }
+
+    // ── css-shapes-2 §shape-function / §path-function 命令串接几何 ───────
+
+    /// shape(from 0% 0%, line to 100% 0%, line to 50% 100%, close) 于
+    /// (0,0,190,190) → 三角形 3 顶点；close 不复制起点（环闭合由消费端
+    /// add_path_stroke closed 隐式完成）。border-shape-absolute-coords-shape.
+    /// tentative.html 消费面。
+    #[test]
+    fn test_shape_function_triangle_vertices() {
+        let lp = |v: f64| ShapeAxisComp::Len(LengthValue::Percentage(v));
+        let shape = ClipPathValue::Shape(Box::new(ShapeFunctionValue {
+            fill_rule: None,
+            from: ShapePosition { x: lp(0.0), y: lp(0.0) },
+            commands: vec![
+                ShapeCommand::Line {
+                    end: ShapeEndpoint::Position(ShapePosition {
+                        x: lp(100.0),
+                        y: lp(0.0),
+                    }),
+                },
+                ShapeCommand::Line {
+                    end: ShapeEndpoint::Position(ShapePosition {
+                        x: lp(50.0),
+                        y: lp(100.0),
+                    }),
+                },
+                ShapeCommand::Close,
+            ],
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 190.0, 190.0, 16.0);
+        assert_eq!(verts.len(), 3, "{verts:?}");
+        assert_eq!(verts[0], (0.0, 0.0));
+        assert_eq!(verts[1], (190.0, 0.0));
+        assert_eq!(verts[2], (95.0, 190.0));
+    }
+
+    /// path() px 直映射：M 0 0 L 106 190 L 106 0 Z → 3 顶点（Z 环闭合
+    /// 不复制起点）。
+    #[test]
+    fn test_path_function_mlz_vertices() {
+        let shape = ClipPathValue::Path(Box::new(PathFunctionValue {
+            fill_rule: None,
+            segs: vec![
+                PathSeg {
+                    cmd: 'M',
+                    args: vec![0.0, 0.0],
+                },
+                PathSeg {
+                    cmd: 'L',
+                    args: vec![106.0, 190.0],
+                },
+                PathSeg {
+                    cmd: 'L',
+                    args: vec![106.0, 0.0],
+                },
+                PathSeg { cmd: 'Z', args: vec![] },
+            ],
+            raw: String::from("M 0 0 L 106 190 L 106 0 Z"),
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 106.0, 190.0, 16.0);
+        assert_eq!(verts.len(), 3, "{verts:?}");
+        assert_eq!(verts[0], (0.0, 0.0));
+        assert_eq!(verts[1], (106.0, 190.0));
+        assert_eq!(verts[2], (106.0, 0.0));
+    }
+
+    /// cubic curve 24 段采样：shape(from 0px 0px, curve to 100px 0px with
+    /// 0px 100px / 100px 100px) → 1+24 顶点、首=(0,0)、末=(100,0)、
+    /// t=0.5 Bernstein 采样点 (50,75) 在列。
+    #[test]
+    fn test_shape_function_curve_cubic_sampling() {
+        let px = |v: f64| ShapeAxisComp::Len(LengthValue::Px(v));
+        let cp = |x: f64, y: f64| ShapeControlPoint {
+            pos: ShapePosition { x: px(x), y: px(y) },
+            from_ref: None,
+        };
+        let shape = ClipPathValue::Shape(Box::new(ShapeFunctionValue {
+            fill_rule: None,
+            from: ShapePosition { x: px(0.0), y: px(0.0) },
+            commands: vec![ShapeCommand::Curve {
+                end: ShapeEndpoint::Position(ShapePosition {
+                    x: px(100.0),
+                    y: px(0.0),
+                }),
+                c1: cp(0.0, 100.0),
+                c2: Some(cp(100.0, 100.0)),
+            }],
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 100.0, 100.0, 16.0);
+        assert_eq!(verts.len(), 1 + SHAPE_CURVE_SEGMENTS, "{verts:?}");
+        assert_eq!(verts[0], (0.0, 0.0));
+        assert_eq!(*verts.last().expect("non-empty"), (100.0, 0.0));
+        // Bernstein t=0.5：0.125·P0 + 0.375·C1 + 0.375·C2 + 0.125·P1 = (50,75)
+        assert!(
+            verts
+                .iter()
+                .any(|(x, y)| (x - 50.0).abs() < 0.01 && (y - 75.0).abs() < 0.01),
+            "t=0.5 采样点 (50,75) 应在列：{verts:?}"
+        );
+    }
+
+    /// arc cw 半圆：shape(from 0px 50px, arc to 100px 50px of 50px cw) 于
+    /// (0,0,100,100) → cw（= SVG sweep=1，y-down 系正角向）走上半弧：
+    /// 全部顶点 y≤50、r=50 圆心 (50,50)、端点 (100,50) 精确在列。
+    #[test]
+    fn test_shape_function_arc_cw_upper_semicircle() {
+        let px = |v: f64| ShapeAxisComp::Len(LengthValue::Px(v));
+        let shape = ClipPathValue::Shape(Box::new(ShapeFunctionValue {
+            fill_rule: None,
+            from: ShapePosition {
+                x: px(0.0),
+                y: px(50.0),
+            },
+            commands: vec![ShapeCommand::Arc {
+                end: ShapeEndpoint::Position(ShapePosition {
+                    x: px(100.0),
+                    y: px(50.0),
+                }),
+                rx: LengthValue::Px(50.0),
+                ry: None,
+                cw: true,
+                large: false,
+                rotate: None,
+            }],
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 100.0, 100.0, 16.0);
+        assert!(verts.len() >= 3, "{verts:?}");
+        assert!(
+            verts
+                .iter()
+                .any(|(x, y)| (x - 100.0).abs() < 0.01 && (y - 50.0).abs() < 0.01),
+            "端点 (100,50) 应为顶点：{verts:?}"
+        );
+        for (x, y) in &verts {
+            assert!(*y <= 50.0 + 0.01, "cw 半圆应走上半弧（y≤50）：({x},{y})");
+            let d = ((x - 50.0) * (x - 50.0) + (y - 50.0) * (y - 50.0)).sqrt();
+            assert!((d - 50.0).abs() < 0.1, "顶点应在 r=50 圆上：({x},{y}) d={d}");
+        }
+    }
+
+    /// hline/vline：shape(from 10px 10px, hline to 60px, vline by 30px) →
+    /// (10,10)→(60,10)→(60,40)（to 绝对坐标 / by 相对当前点）。
+    #[test]
+    fn test_shape_function_hline_vline() {
+        let px = |v: f64| ShapeAxisComp::Len(LengthValue::Px(v));
+        let shape = ClipPathValue::Shape(Box::new(ShapeFunctionValue {
+            fill_rule: None,
+            from: ShapePosition {
+                x: px(10.0),
+                y: px(10.0),
+            },
+            commands: vec![
+                ShapeCommand::Hline {
+                    by: false,
+                    x: ShapeAxisComp::Len(LengthValue::Px(60.0)),
+                },
+                ShapeCommand::Vline {
+                    by: true,
+                    y: ShapeAxisComp::Len(LengthValue::Px(30.0)),
+                },
+            ],
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 100.0, 100.0, 16.0);
+        assert_eq!(verts, vec![(10.0, 10.0), (60.0, 10.0), (60.0, 40.0)]);
     }
 }
