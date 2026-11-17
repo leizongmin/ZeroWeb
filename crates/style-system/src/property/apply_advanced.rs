@@ -169,6 +169,27 @@ fn is_transition_property_ident(token: &str) -> bool {
     token.eq_ignore_ascii_case("all") || token.eq_ignore_ascii_case("none") || is_css_ident(token)
 }
 
+// https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+// 文法 `normal | allow-discrete`，逗号分隔列表与 transition-property 逐位对齐；
+// 空 token / 未知关键字整条拒收。
+fn parse_transition_behavior_list(value: &str) -> Option<Vec<String>> {
+    split_top_level_commas(value)?
+        .into_iter()
+        .map(|tok| {
+            if tok.is_empty() {
+                return None;
+            }
+            if tok.eq_ignore_ascii_case("normal") {
+                Some("normal".to_string())
+            } else if tok.eq_ignore_ascii_case("allow-discrete") {
+                Some("allow-discrete".to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn is_css_ident(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -981,6 +1002,13 @@ pub fn apply_advanced_property_value(
                 return false;
             };
             style.transition_delay = delays;
+            return true;
+        }
+        "transition-behavior" => {
+            let Some(behaviors) = parse_transition_behavior_list(value) else {
+                return false;
+            };
+            style.transition_behavior = behaviors;
             return true;
         }
 

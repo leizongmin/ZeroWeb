@@ -58,6 +58,30 @@ fn test_transition_shorthand_with_cubic_bezier() {
 }
 
 #[test]
+/// 刀 A1c ①：transition 简写带 allow-discrete 槽——5 longhand 展开，behavior
+/// 位（normal|allow-discrete）在 property 位之前识别；省略槽默认 normal。
+/// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
+fn test_transition_shorthand_allow_discrete() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("transition", "margin 2s allow-discrete")]);
+    assert_eq!(s.transition_property, vec!["margin".to_string()]);
+    assert_eq!(s.transition_behavior, vec!["allow-discrete".to_string()]);
+    // 省略 behavior 槽 → normal
+    let s = compute_style(&doc, div, &[("transition", "opacity 1s")]);
+    assert_eq!(s.transition_behavior, vec!["normal".to_string()]);
+    // 多条目：behavior 逐条对齐（逗号列表逐位）
+    let s = compute_style(&doc, div, &[("transition", "margin 2s allow-discrete, opacity 1s")]);
+    assert_eq!(s.transition_property, vec!["margin".to_string(), "opacity".to_string()]);
+    assert_eq!(
+        s.transition_behavior,
+        vec!["allow-discrete".to_string(), "normal".to_string()]
+    );
+    // 未知 behavior 关键字 → 整条丢弃（既非 behavior 也非已知 property 位识别失败）
+    let s = compute_style(&doc, div, &[("transition", "margin 2s instant")]);
+    assert!(s.transition_property.is_empty());
+}
+
+#[test]
 /// animation 简写使用名称和持续时间
 fn test_animation_shorthand_with_name_and_duration() {
     let (doc, _html, _body, div, _p) = make_test_dom();

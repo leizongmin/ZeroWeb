@@ -707,6 +707,42 @@ fn test_apply_transition_property_invalid_list_keeps_old_values() {
     assert_eq!(style.transition_property, vec!["opacity".to_string()]);
 }
 
+#[test]
+/// 刀 A1c ①：transition-behavior 臂——`normal | allow-discrete` 逗号列表逐位
+/// 对齐 transition-property；空 token/未知关键字整条拒收并保旧值。
+/// <https://drafts.csswg.org/css-transitions-2/#transition-behavior-property>
+fn test_apply_transition_behavior() {
+    let (ok, s) = apply("transition-behavior", "allow-discrete");
+    assert!(ok);
+    assert_eq!(s.transition_behavior, vec!["allow-discrete".to_string()]);
+
+    let (ok, s) = apply("transition-behavior", "normal, allow-discrete");
+    assert!(ok);
+    assert_eq!(
+        s.transition_behavior,
+        vec!["normal".to_string(), "allow-discrete".to_string()]
+    );
+
+    // 大小写不敏感（CSS 关键字规范形）
+    let (ok, s) = apply("transition-behavior", "ALLOW-DISCRETE");
+    assert!(ok);
+    assert_eq!(s.transition_behavior, vec!["allow-discrete".to_string()]);
+
+    // 未知关键字 → 拒收
+    let (ok, _) = apply("transition-behavior", "instant");
+    assert!(!ok);
+
+    // 尾逗号（空 token）→ 拒收
+    let (ok, _) = apply("transition-behavior", "allow-discrete,");
+    assert!(!ok);
+
+    // 拒收保旧值
+    let mut style = ComputedStyle::default();
+    style.transition_behavior = vec!["allow-discrete".to_string()];
+    assert!(!apply_property_value(&mut style, "transition-behavior", "bogus"));
+    assert_eq!(style.transition_behavior, vec!["allow-discrete".to_string()]);
+}
+
 // === 逻辑属性 ===
 
 #[test]

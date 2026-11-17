@@ -252,6 +252,7 @@ impl Default for ComputedStyle {
             transition_duration: vec![],
             transition_timing_function: vec![],
             transition_delay: vec![],
+            transition_behavior: vec![],
 
             // Animations
             animation_name: vec![],

@@ -12,11 +12,12 @@ use super::{MatchingDecl, matches_css_wide_keyword, split_outside_parens, wide_k
 /// 展开 transition 简写。
 ///
 /// CSS `transition` 简写格式为：
-/// `transition: [property] [duration] [timing-function] [delay]`
+/// `transition: [property] [duration] [timing-function] [delay] [behavior]`
 ///
 /// 简化实现：解析空格分隔的标记，识别类型：
 /// - 时间值（带 s/ms 后缀）→ duration 或 delay
 /// - timing-function 关键字 → timing-function
+/// - behavior 关键字（normal|allow-discrete）→ transition-behavior
 /// - 其他 → property
 pub(super) fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
@@ -30,6 +31,7 @@ pub(super) fn expand_transition(value: &str, important: bool, specificity: (u32,
                 "transition-duration",
                 "transition-timing-function",
                 "transition-delay",
+                "transition-behavior",
             ],
             important,
             specificity,
@@ -42,6 +44,7 @@ pub(super) fn expand_transition(value: &str, important: bool, specificity: (u32,
             mk("transition-duration", "0s"),
             mk("transition-timing-function", "ease"),
             mk("transition-delay", "0s"),
+            mk("transition-behavior", "normal"),
         ];
     }
 
@@ -56,31 +59,35 @@ pub(super) fn expand_transition(value: &str, important: bool, specificity: (u32,
     let mut durations = Vec::with_capacity(entries.len());
     let mut timings = Vec::with_capacity(entries.len());
     let mut delays = Vec::with_capacity(entries.len());
+    let mut behaviors = Vec::with_capacity(entries.len());
     for entry in &entries {
-        let Some((p, d, ti, de)) = parse_single_transition(entry) else {
+        let Some((p, d, ti, de, be)) = parse_single_transition(entry) else {
             return vec![];
         };
         properties.push(p);
         durations.push(d);
         timings.push(ti);
         delays.push(de);
+        behaviors.push(be);
     }
 
     let properties_str = properties.join(", ");
     let durations_str = durations.join(", ");
     let timings_str = timings.join(", ");
     let delays_str = delays.join(", ");
+    let behaviors_str = behaviors.join(", ");
     vec![
         mk("transition-property", &properties_str),
         mk("transition-duration", &durations_str),
         mk("transition-timing-function", &timings_str),
         mk("transition-delay", &delays_str),
+        mk("transition-behavior", &behaviors_str),
     ]
 }
 
-/// 解析单个 transition 条目（不含顶层逗号）→ (property, duration, timing, delay)。
+/// 解析单个 transition 条目（不含顶层逗号）→ (property, duration, timing, delay, behavior)。
 /// 空白条目或重复组件返回 `None`，由上层丢弃整条 shorthand。
-fn parse_single_transition(entry: &str) -> Option<(String, String, String, String)> {
+fn parse_single_transition(entry: &str) -> Option<(String, String, String, String, String)> {
     let tokens = split_outside_parens(entry);
     if tokens.is_empty() {
         return None;
@@ -89,9 +96,11 @@ fn parse_single_transition(entry: &str) -> Option<(String, String, String, Strin
     let mut duration = "0s".to_string();
     let mut timing = "ease".to_string();
     let mut delay = "0s".to_string();
+    let mut behavior = "normal".to_string();
     let mut found_time_count = 0u32;
     let mut found_timing = false;
     let mut found_property = false;
+    let mut found_behavior = false;
 
     for token in &tokens {
         let t = token.trim();
@@ -119,6 +128,14 @@ fn parse_single_transition(entry: &str) -> Option<(String, String, String, Strin
             }
             timing = t.to_string();
             found_timing = true;
+        } else if is_transition_behavior_keyword(t) {
+            // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+            // `normal | allow-discrete`——均为合法 ident，须在 property 分支之前识别。
+            if found_behavior {
+                return None;
+            }
+            behavior = t.to_string();
+            found_behavior = true;
         } else {
             if found_property || !is_transition_property_ident(t) {
                 return None;
@@ -127,7 +144,13 @@ fn parse_single_transition(entry: &str) -> Option<(String, String, String, Strin
             found_property = true;
         }
     }
-    Some((property, duration, timing, delay))
+    Some((property, duration, timing, delay, behavior))
+}
+
+/// 检查字符串是否为 transition-behavior 关键字（`normal | allow-discrete`）。
+fn is_transition_behavior_keyword(s: &str) -> bool {
+    let t = s.trim();
+    t.eq_ignore_ascii_case("normal") || t.eq_ignore_ascii_case("allow-discrete")
 }
 
 /// 顶层逗号分割（paren-aware：括号内逗号不分割，保留 cubic-bezier()/steps() 一体）。

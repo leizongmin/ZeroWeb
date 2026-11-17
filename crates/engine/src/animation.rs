@@ -828,7 +828,8 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ => from.to_string(),
         },
         // repeat（§3.8）/source（§3.4）离散属性：t≥0.5 翻转到 to（css-values-4 §8.5.6；
-        // transition-behavior:allow-discrete 过渡通道语义另行开刀 FIXME(mask-border-discrete)）。
+        // allow-discrete 启动门已随刀 A1c 接入 transition_registry.rs——本位声明
+        // transition-behavior:allow-discrete 时离散对启动过渡，求值端翻转语义不变）。
         "mask-border-repeat" | "mask-border-source" => {
             if t >= 0.5 {
                 to.to_string()
@@ -839,6 +840,20 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // position（§5.3，文法同 bg-position）：逐层 (pct,px) 系数 lerp + LCM 循环
         //（mix_mask_position）；端点解析失败离散翻转回落。
         "mask-position" => match mix_mask_position(from, to, t) {
+            Some(v) => v,
+            None => {
+                if t >= 0.5 {
+                    to.to_string()
+                } else {
+                    from.to_string()
+                }
+            }
+        },
+        // wptfyi-css 刀 A1c ②：background-position（css-backgrounds-3 §background-position）
+        // 与 object-position（css-images-3 §object-position）与 mask-position 文法同构
+        //（<position>#，逐层双分量）——mix_mask_position（parse_background_position_list
+        // 基座）逐字复用；端点解析失败离散翻转回落（同上臂形）。
+        "background-position" | "object-position" => match mix_mask_position(from, to, t) {
             Some(v) => v,
             None => {
                 if t >= 0.5 {
@@ -1226,9 +1241,18 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         | "mask-border-source" => Some(interpolate_property_value(property, from, to, t)),
         // wptfyi-css mask-interp 刀（css-masking-1 §5.3–5.6 + §3.10 简写）：同契约
         // 委托宽松臂——position 逐层系数 lerp、离散组/简写翻转（端点多层串
-        // verbatim 天然兼容）。
-        "mask-position" | "mask-image" | "mask-mode" | "mask-repeat" | "mask-clip" | "mask-origin"
-        | "mask-composite" | "mask" => Some(interpolate_property_value(property, from, to, t)),
+        // verbatim 天然兼容）。background-position/object-position（刀 A1c ②）
+        // 同构委托——<position># 文法同 mask-position，mix_mask_position 复用。
+        "mask-position"
+        | "mask-image"
+        | "mask-mode"
+        | "mask-repeat"
+        | "mask-clip"
+        | "mask-origin"
+        | "mask-composite"
+        | "mask"
+        | "background-position"
+        | "object-position" => Some(interpolate_property_value(property, from, to, t)),
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
             let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
@@ -1304,8 +1328,8 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // wptfyi-css multicol columns 刀：column-width/height = px 端点严格插值
         // （非长度端点 = 非 animatable 对不启动）；column-count = 数值严格；columns
         // = 组件存在集恒等才 Some（槽形变 = 非 animatable，css-transitions
-        // §starting-of-transitions——allow-discrete 翻转面属 transition-behavior 刀面
-        // 另账）。
+        // §starting-of-transitions——allow-discrete 启动门已随刀 A1c 接入
+        // transition_registry.rs，本位声明时 None 对亦启动、求值端离散翻转）。
         "column-width" | "column-height" => {
             let fa = parse_px_strict(from)?;
             let ta = parse_px_strict(to)?;
@@ -3798,6 +3822,29 @@ mod tests {
             interpolate_property_value_strict("row-rule-width", "10px", "40px", 0.3).as_deref(),
             Some("19.00px")
         );
+    }
+
+    // ── 刀 A1c ②：background-position/object-position <position># 插值 ──
+
+    /// mix_mask_position 复用臂：pct 对 / px 对 / 多层 LCM 循环；strict 委托
+    /// Some 恒真（mask 族同契约）。
+    #[test]
+    fn test_bg_object_position_interp() {
+        assert_eq!(
+            interpolate_property_value("background-position", "0% 0%", "100% 100%", 0.5),
+            "50.00% 50.00%"
+        );
+        assert_eq!(
+            interpolate_property_value("object-position", "10px 20px", "30px 40px", 0.5),
+            "20.00px 30.00px"
+        );
+        // 2 层 vs 1 层 → LCM 2，to 层循环广播。
+        assert_eq!(
+            interpolate_property_value("background-position", "0% 0%, 100% 100%", "50% 50%", 0.25),
+            "12.50% 12.50%, 87.50% 87.50%"
+        );
+        assert!(interpolate_property_value_strict("background-position", "0% 0%", "100% 100%", 0.3).is_some());
+        assert!(interpolate_property_value_strict("object-position", "10px", "30px", 0.3).is_some());
     }
 
     // ── css-gaps 刀 B：rule-color 列表插值（css-gaps-1 §column-row-rule-color）──

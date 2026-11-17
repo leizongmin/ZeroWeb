@@ -3,7 +3,7 @@ use super::super::*;
 #[test]
 fn test_transition_shorthand_none() {
     let result = expand_one("transition", "none", false, (0, 0, 1));
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].0, "transition-property");
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].0, "transition-duration");
@@ -12,12 +12,14 @@ fn test_transition_shorthand_none() {
     assert_eq!(result[2].1, "ease");
     assert_eq!(result[3].0, "transition-delay");
     assert_eq!(result[3].1, "0s");
+    assert_eq!(result[4].0, "transition-behavior");
+    assert_eq!(result[4].1, "normal");
 }
 
 #[test]
 fn test_transition_shorthand_property_duration() {
     let result = expand_one("transition", "opacity 0.3s", false, (0, 0, 1));
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].0, "transition-property");
     assert_eq!(result[0].1, "opacity");
     assert_eq!(result[1].0, "transition-duration");
@@ -27,11 +29,12 @@ fn test_transition_shorthand_property_duration() {
 #[test]
 fn test_transition_shorthand_full() {
     let result = expand_one("transition", "opacity 0.3s ease-in 0.1s", false, (0, 0, 1));
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].1, "opacity");
     assert_eq!(result[1].1, "0.3s");
     assert_eq!(result[2].1, "ease-in");
     assert_eq!(result[3].1, "0.1s");
+    assert_eq!(result[4].1, "normal");
 }
 
 #[test]
@@ -42,7 +45,7 @@ fn test_transition_shorthand_with_cubic_bezier() {
         false,
         (0, 0, 1),
     );
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].1, "transform");
     assert_eq!(result[1].1, "0.5s");
     assert_eq!(result[2].1, "cubic-bezier(0.25, 0.1, 0.25, 1.0)");
@@ -51,7 +54,7 @@ fn test_transition_shorthand_with_cubic_bezier() {
 #[test]
 fn test_transition_shorthand_duration_only() {
     let result = expand_one("transition", "0.5s", false, (0, 0, 1));
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].1, "all"); // default property
     assert_eq!(result[1].1, "0.5s");
 }
@@ -67,12 +70,13 @@ fn test_transition_shorthand_multiple_comma() {
         false,
         (0, 0, 1),
     );
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].0, "transition-property");
     assert_eq!(result[0].1, "width, height");
     assert_eq!(result[1].1, "0.3s, 0.5s");
     assert_eq!(result[2].1, "ease, linear");
     assert_eq!(result[3].1, "0s, 0.1s");
+    assert_eq!(result[4].1, "normal, normal");
 }
 
 #[test]
@@ -84,7 +88,7 @@ fn test_transition_shorthand_multiple_with_cubic_bezier() {
         false,
         (0, 0, 1),
     );
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].1, "transform, opacity");
     assert_eq!(result[1].1, "0.5s, 0.2s");
     assert_eq!(
@@ -117,7 +121,7 @@ fn test_transition_rejects_invalid_property_ident_tokens() {
     assert!(expand_one("transition", "\"opacity\" 1s", false, (0, 0, 1)).is_empty());
 
     let result = expand_one("transition", "--custom-prop 1s", false, (0, 0, 1));
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].1, "--custom-prop");
 }
 
@@ -398,7 +402,7 @@ fn test_transition_wide_keyword_inherit() {
     assert!(!result.is_empty());
     assert!(
         result.iter().all(|(_, v, _, _)| v == "inherit"),
-        "transition: inherit must pass through to all 4 longhands"
+        "transition: inherit must pass through to all 5 longhands"
     );
 }
 

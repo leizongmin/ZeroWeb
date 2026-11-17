@@ -184,6 +184,9 @@ impl PropertyRegistry {
             "transition-property" => Some(StringList(vec![])),
             "transition-duration" | "transition-delay" => Some(Number(0.0)),
             "transition-timing-function" => Some(TimingFunctionList(vec![])),
+            // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+            // 初始值 normal，列表与 transition-property 逐位对齐
+            "transition-behavior" => Some(StringList(vec![])),
 
             // Animations
             "animation-name" => Some(StringList(vec![])),
@@ -740,6 +743,7 @@ impl PropertyRegistry {
             "transition-duration",
             "transition-timing-function",
             "transition-delay",
+            "transition-behavior",
             "animation-name",
             "animation-duration",
             "animation-timing-function",

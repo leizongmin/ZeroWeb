@@ -1164,6 +1164,8 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "transition-property" => string_list_to_css(&style.transition_property, "all"),
         "transition-duration" => time_list_to_css(&style.transition_duration, "0s", true),
         "transition-delay" => time_list_to_css(&style.transition_delay, "0s", false),
+        // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+        "transition-behavior" => string_list_to_css(&style.transition_behavior, "normal"),
         "animation-name" => string_list_to_css(&style.animation_name, "none"),
         "animation-duration" => time_list_to_css(&style.animation_duration, "0s", true),
         "animation-delay" => time_list_to_css(&style.animation_delay, "0s", false),
@@ -3586,10 +3588,11 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
 }
 
 /// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：
-/// 每条目 = property / duration / timing-function / delay，各 longhand 省初值；property=all 仅在
-/// 其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
-/// 默认（空列表）→`"all"`；`transition:none`→`"none"`。4 longhand 列表等长（`expand_transition`
-/// 保证），逐索引 zip 后逗号连接。
+/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值；property=all
+/// 仅在其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
+/// 默认（空列表）→`"all"`；`transition:none`→`"none"`。5 longhand 列表等长（`expand_transition`
+/// 保证），逐索引 zip 后逗号连接；behavior 非初值（`allow-discrete`）按文法序尾附。
+/// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
 fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
     let n = style.transition_property.len();
     if n == 0 {
@@ -3605,7 +3608,8 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
                 .map(timing_function_to_css)
                 .unwrap_or_else(|| "ease".to_string());
             let delay = format_num(style.transition_delay.get(i).copied().unwrap_or(0.0), "s");
-            let all_rest_initial = dur == "0s" && tf == "ease" && delay == "0s";
+            let behavior = style.transition_behavior.get(i).map(String::as_str).unwrap_or("normal");
+            let all_rest_initial = dur == "0s" && tf == "ease" && delay == "0s" && behavior == "normal";
             let mut parts = Vec::new();
             if prop != "all" || all_rest_initial {
                 parts.push(prop.to_string());
@@ -3618,6 +3622,9 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
             }
             if delay != "0s" {
                 parts.push(delay);
+            }
+            if behavior != "normal" {
+                parts.push(behavior.to_string());
             }
             parts.join(" ")
         })

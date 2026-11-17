@@ -442,6 +442,9 @@ pub struct ComputedStyle {
     pub transition_timing_function: Vec<zero_css_parser::values::TimingFunctionValue>,
     /// transition-delay 属性（逗号分隔的秒数列表）。
     pub transition_delay: Vec<f64>,
+    /// transition-behavior 属性（与 transition-property 逐位对齐的关键字列表）。
+    /// https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+    pub transition_behavior: Vec<String>,
 
     // ── Animations ──
     /// animation-name 属性（逗号分隔的动画名列表）。

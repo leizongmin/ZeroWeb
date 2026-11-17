@@ -290,14 +290,16 @@ fn test_grid_area_shorthand_3_values() {
 }
 
 #[test]
-/// transition 简写含 ease-in-out
+/// transition 简写含 ease-in-out（刀 A1c：第 5 槽 transition-behavior，
+/// 省略时归一 normal）
 fn test_transition_shorthand_ease_in_out() {
     let result = expand_one("transition", "all 0.5s ease-in-out 0.2s", false, (0, 0, 1));
-    assert_eq!(result.len(), 4);
+    assert_eq!(result.len(), 5);
     assert_eq!(result[0].1, "all");
     assert_eq!(result[1].1, "0.5s");
     assert_eq!(result[2].1, "ease-in-out");
     assert_eq!(result[3].1, "0.2s");
+    assert_eq!(result[4].1, "normal");
 }
 
 #[test]

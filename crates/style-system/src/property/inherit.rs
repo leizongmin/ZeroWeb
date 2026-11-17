@@ -1383,6 +1383,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.transition_delay = default_style.transition_delay;
             true
         }
+        "transition-behavior" => {
+            style.transition_behavior = default_style.transition_behavior;
+            true
+        }
         // Animations
         "animation-name" => {
             style.animation_name = default_style.animation_name;

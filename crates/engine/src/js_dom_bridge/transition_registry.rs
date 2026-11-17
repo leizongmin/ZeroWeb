@@ -74,6 +74,12 @@ struct TransitionEntry {
     timing: TimingFunctionValue,
     /// 登记时刻（[`MONOTONIC_START`] 域秒）。
     start_s: f64,
+    /// 离散旗标：登记期 strict 探针 None（allow-discrete 豁免登记的离散对）。
+    /// 求值端走纯 eased≥0.5 翻转——lenient 数值化臂会把关键字端点 0 数值化产
+    /// 伪中值（b1 窗 multicol P2F 36 定谳：column-count auto→20 at(0.5) 期望
+    /// 翻转 "20"，lenient lerp 产 "10"）。
+    /// <https://drafts.csswg.org/css-transitions-2/#transition-behavior-property>
+    discrete: bool,
 }
 
 thread_local! {
@@ -129,9 +135,17 @@ pub(crate) fn register_from_style_change(
         if property == "none" || property.is_empty() {
             continue;
         }
+        // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+        // behavior 与 transition-property 逐位对齐：本位 `allow-discrete` 时离散对
+        // （strict 探针 None 的结构失配/离散型对）也启动过渡，求值端 eased≥0.5 翻转。
+        let allow_discrete = new
+            .transition_behavior
+            .get(i)
+            .is_some_and(|b| b.eq_ignore_ascii_case("allow-discrete"));
         // `all` 通配（css-transitions §2：`all` 匹配一切可过渡 longhand）——按
         // 可插值属性清单逐项探测端点变化并各自登记（duration/delay/timing 取
         // `all` 项自身位）。非插值对/端点同值在逐项门过滤，echo 池零扰动。
+        // 本位 allow-discrete 时探针集扩入离散型属性（[`DISCRETE_TRANSITIONABLE`]）。
         if property == "all" {
             for prop in TRANSITIONABLE_PROPERTIES {
                 register_property_if_changed(
@@ -147,7 +161,27 @@ pub(crate) fn register_from_style_change(
                         .get(i)
                         .cloned()
                         .unwrap_or(TimingFunctionValue::Ease),
+                    allow_discrete,
                 );
+            }
+            if allow_discrete {
+                for prop in DISCRETE_TRANSITIONABLE {
+                    register_property_if_changed(
+                        world,
+                        identity,
+                        prop,
+                        prev,
+                        new,
+                        sibling,
+                        new.transition_duration.get(i).copied().unwrap_or(0.0),
+                        new.transition_delay.get(i).copied().unwrap_or(0.0),
+                        new.transition_timing_function
+                            .get(i)
+                            .cloned()
+                            .unwrap_or(TimingFunctionValue::Ease),
+                        true,
+                    );
+                }
             }
             continue;
         }
@@ -155,11 +189,11 @@ pub(crate) fn register_from_style_change(
         // 清单外不登记过渡。A/B 定谳 2026-11-18（刀 A1）：mask-image 显式声明
         // 无门登记 = P2F 30 形——其 WAAPI/CSSA applier 臂激活后端点快照环境
         // 扰动（neutral→url 取前块值/inherit 取 none），离散翻转 at<0.5 全灭；
-        // 清单外静态跳终值 = B0 通过正形。transition-behavior:allow-discrete
-        // 离散对面（style-system 未建模 behavior 字段）挂账 A1b 与字段一起
-        // 接入，不在此处半开半闭。
+        // 清单外静态跳终值 = B0 通过正形。本位 allow-discrete 例外（css-transitions-2
+        // §transition-behavior-property：离散型属性也启动过渡）——列表门放开，
+        // 逐项门 [`register_property_if_changed`] 内 strict 探针同步豁免。
         // https://drafts.csswg.org/css-transitions/#starting-of-transitions
-        if !TRANSITIONABLE_PROPERTIES.contains(&property.as_str()) {
+        if !TRANSITIONABLE_PROPERTIES.contains(&property.as_str()) && !allow_discrete {
             continue;
         }
         register_property_if_changed(
@@ -175,6 +209,7 @@ pub(crate) fn register_from_style_change(
                 .get(i)
                 .cloned()
                 .unwrap_or(TimingFunctionValue::Ease),
+            allow_discrete,
         );
     }
 }
@@ -182,10 +217,13 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 72] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 74] = [
     "backdrop-filter",
     "background",
     "background-color",
+    // 刀 A1c ②：<position># 逐层系数 lerp（mix_mask_position 复用臂），与
+    // mask-position 同文法同通道。
+    "background-position",
     "border-color",
     "bottom",
     "clip-path",
@@ -240,6 +278,7 @@ const TRANSITIONABLE_PROPERTIES: [&str; 72] = [
     "offset-path",
     "offset-position",
     "offset-rotate",
+    "object-position",
     "opacity",
     "padding-bottom",
     "padding-left",
@@ -265,8 +304,27 @@ const TRANSITIONABLE_PROPERTIES: [&str; 72] = [
     "word-spacing",
 ];
 
+/// 离散型可过渡属性补充面——仅在本位 `transition-behavior: allow-discrete` 时并入
+/// `all` 通配探测集（[`TRANSITIONABLE_PROPERTIES`] 之外的离散型 longhand；
+/// css-transitions-2 §transition-behavior-property：allow-discrete 使离散型属性
+/// 启动过渡，eased≥0.5 翻转）。未建模属性端点序列化空串，逐项门自然滤除。
+/// mask-image 此前 A/B 定谳不入 [`TRANSITIONABLE_PROPERTIES`]（plain 面端点跨块
+/// 陈旧），allow-discrete 面按本表显式接入——plain 面清单不变。
+/// <https://drafts.fxtf.org/css-masking-1/#the-mask-image>
+const DISCRETE_TRANSITIONABLE: [&str; 8] = [
+    "mask",
+    "mask-image",
+    "font-size-adjust",
+    "font-variation-settings",
+    "column-fill",
+    "column-rule-style",
+    "column-span",
+    "column-wrap",
+];
+
 /// 单属性登记（显式声明与 `all` 通配展开共用）：duration≤0 / 端点空串同值 /
-/// 严格门不可插值对跳过；同 (world, identity, property) 条目替换。
+/// 严格门不可插值对跳过（`allow_discrete` 豁免——离散对启动过渡，求值端
+/// eased≥0.5 翻转）；同 (world, identity, property) 条目替换。
 fn register_property_if_changed(
     world: World,
     identity: &str,
@@ -277,6 +335,7 @@ fn register_property_if_changed(
     duration: f64,
     delay: f64,
     timing: TimingFunctionValue,
+    allow_discrete: bool,
 ) {
     if duration <= 0.0 {
         return;
@@ -289,7 +348,10 @@ fn register_property_if_changed(
     }
     // 仅登记严格可插值对（css-transitions §starting-of-transitions：非
     // animatable 对不启动过渡；t=0.5 仅作端点解析探针，进度无关）。
-    if interpolate_property_value_strict(property, &from, &to, 0.5).is_none() {
+    // allow-discrete 例外（css-transitions-2 §transition-behavior-property）：
+    // 离散对启动过渡，求值端按 [`TransitionEntry::discrete`] 纯翻转终值。
+    let strict_ok = interpolate_property_value_strict(property, &from, &to, 0.5).is_some();
+    if !allow_discrete && !strict_ok {
         return;
     }
     let entry = TransitionEntry {
@@ -302,6 +364,7 @@ fn register_property_if_changed(
         delay_s: delay,
         timing,
         start_s: MONOTONIC_START.elapsed().as_secs_f64(),
+        discrete: !strict_ok,
     };
     ENTRIES.with(|cell| {
         let mut entries = cell.borrow_mut();
@@ -466,7 +529,16 @@ fn query_core(
         {
             return None;
         }
-        let mut raw = interpolate_property_value(&e.property, &e.from, &e.to, eased);
+        // 离散对（登记期 strict 探针 None，allow-discrete 豁免登记）求值端纯
+        // 翻转：lenient 数值化臂对关键字端点 0 数值化会产伪中值（css-values-4
+        // §8.5.6 离散语义 eased≥0.5 → to）。strict 探针 Some 对仍走 lenient
+        // 真插值（allow-discrete 不改变可插值对语义——探针证 30px/25px 中点）。
+        // <https://drafts.csswg.org/css-transitions-2/#transition-behavior-property>
+        let mut raw = if e.discrete {
+            if eased >= 0.5 { e.to.clone() } else { e.from.clone() }
+        } else {
+            interpolate_property_value(&e.property, &e.from, &e.to, eased)
+        };
         if e.property == "filter" || e.property == "backdrop-filter" {
             raw = clamp_filter_unit_interval_amounts(&raw);
         }
@@ -716,6 +788,98 @@ mod tests {
         let base = new.clone();
         let v = query_override_for_sel("#t", "column-rule-inset-cap-start", &base, None).expect("calc 混合覆盖");
         assert_eq!(v, "calc(0% + 1px)", "at(1) 跨单位混合终形，got {v}");
+        clear_all();
+    }
+
+    /// 刀 A1c ①：allow-discrete 离散对启动门（css-transitions-2
+    /// §transition-behavior-property）。display 清单外 + 端点离散对：
+    /// plain 位不登记（列表门）；本位 allow-discrete 登记，eased≥0.5 翻转——
+    /// progress=0.25 落 from、0.75 落 to。
+    #[test]
+    fn test_allow_discrete_registers_discrete_pair() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let mk = |delay: f64, behavior: &str| -> (ComputedStyle, ComputedStyle) {
+            let mut prev = ComputedStyle::default();
+            let mut new = ComputedStyle::default();
+            prev.display = zero_css_parser::values::DisplayValue::Block;
+            new.display = zero_css_parser::values::DisplayValue::None;
+            new.transition_property = vec!["display".to_string()];
+            new.transition_duration = vec![100.0];
+            new.transition_delay = vec![delay];
+            new.transition_timing_function = vec![TimingFunctionValue::Linear];
+            if !behavior.is_empty() {
+                new.transition_behavior = vec![behavior.to_string()];
+            }
+            (prev, new)
+        };
+        // plain 位（无 behavior）：列表门挡下，无条目。
+        {
+            let (prev, new) = mk(-25.0, "");
+            register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+            let base = new.clone();
+            assert!(
+                query_override_for_sel("#t", "display", &base, None).is_none(),
+                "plain 位离散对不启动过渡"
+            );
+        }
+        // allow-discrete 位：登记生效，eased<0.5 落 from。
+        {
+            let (prev, new) = mk(-25.0, "allow-discrete");
+            register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+            let base = new.clone();
+            let v = query_override_for_sel("#t", "display", &base, None).expect("allow-discrete 登记");
+            assert_eq!(v, "block", "progress=0.25 离散对落 from，got {v}");
+        }
+        // eased≥0.5 翻转到 to。
+        {
+            let (prev, new) = mk(-75.0, "allow-discrete");
+            register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+            let base = new.clone();
+            let v = query_override_for_sel("#t", "display", &base, None).expect("翻转条目");
+            assert_eq!(v, "none", "progress=0.75 离散对翻转到 to，got {v}");
+        }
+        clear_all();
+    }
+
+    /// 刀 A1c v2：discrete 旗标求值臂（v1 窗 multicol P2F 36 定谳形）——存在
+    /// lenient 数值化臂的关键字端点对（column-count auto→20）在 allow-discrete
+    /// 豁免登记后必须纯翻转，不得落 lenient 关键字 0 数值化 lerp（伪中值
+    /// "10"）。progress 0.25 → from "auto"、0.75 → to "20"。
+    #[test]
+    fn test_allow_discrete_keyword_endpoints_flip() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let mk = |delay: f64| -> (ComputedStyle, ComputedStyle) {
+            let mut prev = ComputedStyle::default();
+            let mut new = ComputedStyle::default();
+            prev.column_count = zero_style_system::property::types::ColumnCountComputedValue::Auto;
+            new.column_count = zero_style_system::property::types::ColumnCountComputedValue::Number(20);
+            new.transition_property = vec!["column-count".to_string()];
+            new.transition_duration = vec![100.0];
+            new.transition_delay = vec![delay];
+            new.transition_timing_function = vec![TimingFunctionValue::Linear];
+            new.transition_behavior = vec!["allow-discrete".to_string()];
+            (prev, new)
+        };
+        {
+            let (prev, new) = mk(-25.0);
+            register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+            let base = new.clone();
+            let v = query_override_for_sel("#t", "column-count", &base, None).expect("登记");
+            assert_eq!(v, "auto", "progress=0.25 关键字端点对落 from，got {v}");
+        }
+        {
+            let (prev, new) = mk(-75.0);
+            register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+            let base = new.clone();
+            let v = query_override_for_sel("#t", "column-count", &base, None).expect("翻转条目");
+            assert_eq!(v, "20", "progress=0.75 翻转 to（不得落 lenient lerp 伪中值），got {v}");
+        }
         clear_all();
     }
 }
