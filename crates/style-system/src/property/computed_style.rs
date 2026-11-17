@@ -717,6 +717,19 @@ pub struct ComputedStyle {
     pub border_image_repeat: BorderImageRepeatComputedValue,
     /// border-image-outset 属性。
     pub border_image_outset: BorderImageOutsetComputedValue,
+    /// mask-border-source 属性（css-masking-1 §3.4：`none | <image>`，非继承；
+    /// 文法与 border-image-source 同构，复用同一 computed 类型）。
+    pub mask_border_source: BorderImageSourceComputedValue,
+    /// mask-border-slice 属性（css-masking-1 §3.5：`[<length-percentage>|<number>]{1,4} && fill?`，
+    /// 非继承；初值 0，与 border-image-slice（100%）不同）。
+    pub mask_border_slice: BorderImageSliceComputedValue,
+    /// mask-border-width 属性（css-masking-1 §3.6：`[<length-percentage>|<number>|auto]{1,4}`，
+    /// 非继承；初值 auto，与 border-image-width（1）不同）。
+    pub mask_border_width: BorderImageWidthComputedValue,
+    /// mask-border-repeat 属性（css-masking-1 §3.8：`[stretch|repeat|round|space]{1,2}`，非继承）。
+    pub mask_border_repeat: BorderImageRepeatComputedValue,
+    /// mask-border-outset 属性（css-masking-1 §3.7：`[<length>|<number>]{1,4}`，非继承）。
+    pub mask_border_outset: BorderImageOutsetComputedValue,
     /// text-shadow 属性（CSS Text Decoration §3：`none | <shadow>#`，多阴影列表；空 Vec = none）。
     pub text_shadow: Vec<TextShadowComputedValue>,
     /// box-shadow 属性（CSS Backgrounds §7.2：<shadow>#，多阴影列表；空 Vec = none）。

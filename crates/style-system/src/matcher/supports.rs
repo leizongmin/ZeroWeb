@@ -148,6 +148,14 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "border-image-width" => values::parse_border_image_width(value).is_some(),
         "border-image-repeat" => values::parse_border_image_repeat(value).is_some(),
         "border-image-outset" => values::parse_border_image_outset(value).is_some(),
+        // https://drafts.fxtf.org/css-masking-1/#masking-with-border-image （css-masking-1
+        // §3.4–3.9：文法与 border-image 同构，复用解析器；简写走共享内核 supported）
+        "mask-border" => crate::shorthand::mask_border_shorthand_supported(value),
+        "mask-border-source" => values::parse_border_image_source(value).is_some(),
+        "mask-border-slice" => values::parse_border_image_slice(value).is_some(),
+        "mask-border-width" => values::parse_border_image_width(value).is_some(),
+        "mask-border-repeat" => values::parse_border_image_repeat(value).is_some(),
+        "mask-border-outset" => values::parse_border_image_outset(value).is_some(),
         // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
         "transform-origin" | "perspective-origin" => origin_pair_supported(value),
         "perspective" => perspective_supported(value),

@@ -465,6 +465,34 @@ impl Default for ComputedStyle {
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             },
 
+            // Mask Border（css-masking-1 §3.4–3.9 五长手；文法与 border-image 同构
+            // 复用同一 computed 类型，初值差异：slice `0`（§3.5，border-image 为 100%）、
+            // width `auto`（§3.6，border-image 为 1）。
+            mask_border_source: BorderImageSourceComputedValue::None,
+            mask_border_slice: BorderImageSliceComputedValue {
+                top: BorderImageSliceComputedComponent::Number(0.0),
+                right: BorderImageSliceComputedComponent::Number(0.0),
+                bottom: BorderImageSliceComputedComponent::Number(0.0),
+                left: BorderImageSliceComputedComponent::Number(0.0),
+                fill: false,
+            },
+            mask_border_width: BorderImageWidthComputedValue {
+                top: BorderImageWidthComputedComponent::Auto,
+                right: BorderImageWidthComputedComponent::Auto,
+                bottom: BorderImageWidthComputedComponent::Auto,
+                left: BorderImageWidthComputedComponent::Auto,
+            },
+            mask_border_repeat: BorderImageRepeatComputedValue {
+                horizontal: BorderImageRepeatComputedMode::Stretch,
+                vertical: BorderImageRepeatComputedMode::Stretch,
+            },
+            mask_border_outset: BorderImageOutsetComputedValue {
+                top: BorderImageOutsetComputedComponent::Number(0.0),
+                right: BorderImageOutsetComputedComponent::Number(0.0),
+                bottom: BorderImageOutsetComputedComponent::Number(0.0),
+                left: BorderImageOutsetComputedComponent::Number(0.0),
+            },
+
             text_shadow: Vec::new(),
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,

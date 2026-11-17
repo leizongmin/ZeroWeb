@@ -25,12 +25,17 @@ pub mod hit_provider;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
-    AnimationDirectionValue, AnimationFillModeValue, LengthValue, StepPosition, TimingFunctionValue, TransformFunction,
+    AnimationDirectionValue, AnimationFillModeValue, BorderImageOutsetComponent, BorderImageSliceComponent,
+    BorderImageWidthComponent, LengthValue, StepPosition, TimingFunctionValue, TransformFunction,
+    parse_border_image_outset, parse_border_image_slice, parse_border_image_width,
 };
 use zero_style_system::{
     ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue, ShapeOutsideBoxKind,
     ShapeOutsideComputedValue,
     property::types::{
+        BorderImageOutsetComputedComponent, BorderImageOutsetComputedValue, BorderImageRepeatComputedMode,
+        BorderImageRepeatComputedValue, BorderImageSliceComputedComponent, BorderImageSliceComputedValue,
+        BorderImageWidthComputedComponent, BorderImageWidthComputedValue,
         ColumnCountComputedValue, ColumnHeightComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
     },
 };
@@ -633,6 +638,190 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ if t >= 0.5 => to.to_string(),
             _ => from.to_string(),
         },
+        // wptfyi-css mask-border 刀（css-masking-1 §3.5–3.9 + css-values-4 §8.5.6 by
+        // computed value type）：四槽 TRBL 逐槽插值，输出走 gCS 同款格式器
+        //（[`crate::js_dom_bridge::computed_style::format_num`] + box4 最小化折叠）保证
+        // 与期望 gCS 串恒等。槽 type 对应一致（%↔%、number↔number）才插值；任一槽
+        // 失配（auto↔值、number↔length-percentage、slice %↔number）或 slice fill
+        // 不对称 → 整条离散翻转（语料 no-interp 三条全为此形）；slice/width/outset
+        // 值域非负钳 0（语料 Non-negative 注释 at:-0.3→'0'）；repeat/source 纯离散。
+        "mask-border-slice" => match (parse_border_image_slice(from), parse_border_image_slice(to)) {
+            (Some(f), Some(s)) if f.fill == s.fill => {
+                let cmp = |fc: &BorderImageSliceComponent, tc: &BorderImageSliceComponent| -> Option<String> {
+                    match (fc, tc) {
+                        (BorderImageSliceComponent::Number(a), BorderImageSliceComponent::Number(b)) => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, *b as f64, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        (BorderImageSliceComponent::Percent(a), BorderImageSliceComponent::Percent(b)) => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, *b as f64, t).max(0.0),
+                                "%",
+                            ))
+                        }
+                        _ => None,
+                    }
+                };
+                let slots = [
+                    cmp(&f.top, &s.top),
+                    cmp(&f.right, &s.right),
+                    cmp(&f.bottom, &s.bottom),
+                    cmp(&f.left, &s.left),
+                ];
+                if slots.iter().all(|s| s.is_some()) {
+                    let ss: Vec<String> = slots.into_iter().flatten().collect();
+                    let mut out = crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3]);
+                    if f.fill {
+                        out.push_str(" fill");
+                    }
+                    out
+                } else if t >= 0.5 {
+                    to.to_string()
+                } else {
+                    from.to_string()
+                }
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        "mask-border-width" => match (parse_border_image_width(from), parse_border_image_width(to)) {
+            (Some(f), Some(s)) => {
+                use crate::animation::clip_interp::lerp_len;
+                let cmp = |fc: &BorderImageWidthComponent, tc: &BorderImageWidthComponent| -> Option<String> {
+                    match (fc, tc) {
+                        (BorderImageWidthComponent::Auto, BorderImageWidthComponent::Auto) => {
+                            Some("auto".to_string())
+                        }
+                        (BorderImageWidthComponent::Number(a), BorderImageWidthComponent::Number(b)) => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, *b as f64, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        (BorderImageWidthComponent::Length(a), BorderImageWidthComponent::Length(b)) => {
+                            // 值域非负钳 0（css-masking-1 §3.6——语料 Non-negative
+                            // 注释 0px→20px at:-0.3 期望 '0px'）；px↔px 同构数值域
+                            // 钳制直通，其余单位组合走 calc 混合通道。
+                            match (a, b) {
+                                (LengthValue::Px(x), LengthValue::Px(y)) => {
+                                    Some(crate::js_dom_bridge::computed_style::format_num(
+                                        lerp(*x as f64, *y as f64, t).max(0.0),
+                                        "px",
+                                    ))
+                                }
+                                _ => lerp_len(a, b, t),
+                            }
+                        }
+                        // 裸无单位 0 双态歧义（css-values-4 §5.2：parser parse_length
+                        // 先收 Px(0)，对侧裸数收 Number）：数值恒 0 视作对侧 Number
+                        // 同型参与 lerp（语料 '0'→'20' at:0.3 期望 '6'，非离散）。
+                        (BorderImageWidthComponent::Length(LengthValue::Px(x)), BorderImageWidthComponent::Number(b)) if *x == 0.0 => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(0.0, *b as f64, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        (BorderImageWidthComponent::Number(a), BorderImageWidthComponent::Length(LengthValue::Px(y))) if *y == 0.0 => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, 0.0, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        (BorderImageWidthComponent::Percent(a), BorderImageWidthComponent::Percent(b)) => {
+                            // % 同构臂同值域非负钳（0%→20% at:-0.3 期望 '0%'）。
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, *b as f64, t).max(0.0),
+                                "%",
+                            ))
+                        }
+                        _ => None,
+                    }
+                };
+                let slots = [
+                    cmp(&f.top, &s.top),
+                    cmp(&f.right, &s.right),
+                    cmp(&f.bottom, &s.bottom),
+                    cmp(&f.left, &s.left),
+                ];
+                if slots.iter().all(|s| s.is_some()) {
+                    let ss: Vec<String> = slots.into_iter().flatten().collect();
+                    crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
+                } else if t >= 0.5 {
+                    to.to_string()
+                } else {
+                    from.to_string()
+                }
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        "mask-border-outset" => match (parse_border_image_outset(from), parse_border_image_outset(to)) {
+            (Some(f), Some(s)) => {
+                use crate::animation::clip_interp::lerp_len;
+                let cmp = |fc: &BorderImageOutsetComponent, tc: &BorderImageOutsetComponent| -> Option<String> {
+                    match (fc, tc) {
+                        (BorderImageOutsetComponent::Number(a), BorderImageOutsetComponent::Number(b)) => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, *b as f64, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        // <length> 值域非负钳 0（语料 Non-negative at:-0.3→'0'）：
+                        // px↔px 数值域钳制直通；其余单位组合走 calc 混合通道（outset
+                        // 文法无 %，实际仅 px 对出现）。
+                        (BorderImageOutsetComponent::Length(a), BorderImageOutsetComponent::Length(b)) => {
+                            match (a, b) {
+                                (LengthValue::Px(x), LengthValue::Px(y)) => {
+                                    Some(crate::js_dom_bridge::computed_style::format_num(
+                                        lerp(*x as f64, *y as f64, t).max(0.0),
+                                        "px",
+                                    ))
+                                }
+                                _ => lerp_len(a, b, t),
+                            }
+                        }
+                        // 裸无单位 0 双态歧义同 width 臂（'0'→'1' at:0.3 期望
+                        // '0.3' 裸数，非离散）。
+                        (BorderImageOutsetComponent::Length(LengthValue::Px(x)), BorderImageOutsetComponent::Number(b)) if *x == 0.0 => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(0.0, *b as f64, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        (BorderImageOutsetComponent::Number(a), BorderImageOutsetComponent::Length(LengthValue::Px(y))) if *y == 0.0 => {
+                            Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, 0.0, t).max(0.0),
+                                "",
+                            ))
+                        }
+                        _ => None,
+                    }
+                };
+                let slots = [
+                    cmp(&f.top, &s.top),
+                    cmp(&f.right, &s.right),
+                    cmp(&f.bottom, &s.bottom),
+                    cmp(&f.left, &s.left),
+                ];
+                if slots.iter().all(|s| s.is_some()) {
+                    let ss: Vec<String> = slots.into_iter().flatten().collect();
+                    crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
+                } else if t >= 0.5 {
+                    to.to_string()
+                } else {
+                    from.to_string()
+                }
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        // repeat（§3.8）/source（§3.4）离散属性：t≥0.5 翻转到 to（css-values-4 §8.5.6；
+        // transition-behavior:allow-discrete 过渡通道语义另行开刀 FIXME(mask-border-discrete)）。
+        "mask-border-repeat" | "mask-border-source" => {
+            if t >= 0.5 { to.to_string() } else { from.to_string() }
+        }
         // wptfyi-css shape-image-threshold 刀：number 线性插值（opacity 臂模板；
         // computed 域 [0,1]——语料端点 0/0.5/0.8/1 全在域内，外推钳域）。
         "shape-image-threshold" => {
@@ -997,6 +1186,11 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             let ta = parse_px_strict(to)?;
             Some(format!("{:.2}px", lerp(fa, ta, t)))
         }
+        // wptfyi-css mask-border 刀：严格通道委托宽松臂（端点解析失败已在其内落
+        // 离散翻转=保守基线；全局关键字端点的父链/initial 解析在通道进臂前完成
+        // ——刀 K1 cssa/gCS 父链同契约）。输出串经 gCS 同款格式器与期望恒等。
+        "mask-border-slice" | "mask-border-width" | "mask-border-outset" | "mask-border-repeat"
+        | "mask-border-source" => Some(interpolate_property_value(property, from, to, t)),
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
             let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
@@ -2834,6 +3028,84 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                     .map(|h| ColumnHeightComputedValue::Length(LengthValue::Px(h)))
                     .unwrap_or(ColumnHeightComputedValue::Auto);
                 style.column_wrap = ColumnWrapComputedValue::Auto;
+            }
+        }
+        // wptfyi-css mask-border 刀：动画插值串写回五槽（css-masking-1 §3.4–3.9）。
+        // 复用静态声明同款解析器/转换（与 apply_advanced 臂同语义）；解析失败不动
+        // 样式回落方向。
+        "mask-border-source" => {
+            if let Some(v) = zero_css_parser::values::parse_border_image_source(value) {
+                let dark = style.color_scheme_dark;
+                style.mask_border_source = zero_style_system::property::apply_advanced::border_image_source_to_computed(v, dark);
+            }
+        }
+        "mask-border-slice" => {
+            if let Some(v) = parse_border_image_slice(value) {
+                let comp = |c: &BorderImageSliceComponent| match c {
+                    BorderImageSliceComponent::Number(n) => BorderImageSliceComputedComponent::Number(*n),
+                    BorderImageSliceComponent::Percent(n) => BorderImageSliceComputedComponent::Percent(*n),
+                };
+                style.mask_border_slice = BorderImageSliceComputedValue {
+                    top: comp(&v.top),
+                    right: comp(&v.right),
+                    bottom: comp(&v.bottom),
+                    left: comp(&v.left),
+                    fill: v.fill,
+                };
+            }
+        }
+        "mask-border-width" => {
+            if let Some(v) = parse_border_image_width(value) {
+                let comp = |c: &BorderImageWidthComponent| match c {
+                    BorderImageWidthComponent::Auto => BorderImageWidthComputedComponent::Auto,
+                    BorderImageWidthComponent::Number(n) => BorderImageWidthComputedComponent::Number(*n),
+                    BorderImageWidthComponent::Length(lv) => {
+                        BorderImageWidthComputedComponent::Length(
+                            zero_style_system::property::apply_advanced::resolve_effect_length(lv, style),
+                        )
+                    }
+                    BorderImageWidthComponent::Percent(n) => BorderImageWidthComputedComponent::Percent(*n),
+                };
+                style.mask_border_width = BorderImageWidthComputedValue {
+                    top: comp(&v.top),
+                    right: comp(&v.right),
+                    bottom: comp(&v.bottom),
+                    left: comp(&v.left),
+                };
+            }
+        }
+        "mask-border-repeat" => {
+            if let Some(v) = zero_css_parser::values::parse_border_image_repeat(value) {
+                let mode = |m: &zero_css_parser::values::BorderImageRepeatMode| match m {
+                    zero_css_parser::values::BorderImageRepeatMode::Stretch => BorderImageRepeatComputedMode::Stretch,
+                    zero_css_parser::values::BorderImageRepeatMode::Repeat => BorderImageRepeatComputedMode::Repeat,
+                    zero_css_parser::values::BorderImageRepeatMode::Round => BorderImageRepeatComputedMode::Round,
+                    zero_css_parser::values::BorderImageRepeatMode::Space => BorderImageRepeatComputedMode::Space,
+                };
+                style.mask_border_repeat = BorderImageRepeatComputedValue {
+                    horizontal: mode(&v.horizontal),
+                    vertical: mode(&v.vertical),
+                };
+            }
+        }
+        "mask-border-outset" => {
+            if let Some(v) = parse_border_image_outset(value) {
+                let comp = |c: &zero_css_parser::values::BorderImageOutsetComponent| match c {
+                    zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
+                        BorderImageOutsetComputedComponent::Number(*n)
+                    }
+                    zero_css_parser::values::BorderImageOutsetComponent::Length(lv) => {
+                        BorderImageOutsetComputedComponent::Length(
+                            zero_style_system::property::apply_advanced::resolve_effect_length(lv, style),
+                        )
+                    }
+                };
+                style.mask_border_outset = BorderImageOutsetComputedValue {
+                    top: comp(&v.top),
+                    right: comp(&v.right),
+                    bottom: comp(&v.bottom),
+                    left: comp(&v.left),
+                };
             }
         }
         // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段
@@ -5812,5 +6084,156 @@ mod tests {
         let got = props.iter().find(|p| p.name == "width").expect("width update");
         // 离散切换臂 verbatim 返 to 端点原文（offset-rotate 等既有离散臂同形）。
         assert_eq!(got.value, "40px", "无父时离散回退取 to");
+    }
+
+    // ── wptfyi-css mask-border 刀钉测（css-masking-1 §3.5–3.9）────────────
+    // 期望表取 tests/wpt-runner/wpt-data/css/css-masking/animations/
+    // mask-border-*-interpolation.html 语料断言行（CSS Animations 通道权威）。
+
+    #[test]
+    /// slice 同构槽 lerp + 非负钳 0（语料 0%→50% at:-0.3 期望 '0%'）。
+    fn test_mask_border_slice_lerp_and_clamp() {
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0%", "50%", -0.3),
+            "0%"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0%", "50%", 0.3),
+            "15%"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0% 10% 20% 30%", "40% 50% 60% 70%", 0.3),
+            "12% 22% 32% 42%"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0 10 20 30 fill", "40 50 60 70 fill", -0.5),
+            "0 0 0 10 fill"
+        );
+    }
+
+    #[test]
+    /// slice 混合槽逐槽同构插值（% 槽保 %、number 槽裸数——语料 '0% 10 20% 30
+    /// fill'→'40% 50 60% 70 fill' at 0.3 期望 '12% 22 32% 42 fill'）。
+    fn test_mask_border_slice_mixed_slots() {
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0% 10 20% 30 fill", "40% 50 60% 70 fill", 0.3),
+            "12% 22 32% 42 fill"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0% 10 20% 30 fill", "40% 50 60% 70 fill", 0.0),
+            "0% 10 20% 30 fill"
+        );
+    }
+
+    #[test]
+    /// slice 槽 type 失配（%↔number）与 fill 不对称 → 整条离散翻转
+    ///（语料 no-interp 三条；expectFlip at<0.5→from、≥0.5→to）。
+    fn test_mask_border_slice_discrete_on_mismatch() {
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "50%", "100", 0.3),
+            "50%"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "50%", "100", 0.6),
+            "100"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0% fill", "50%", 0.3),
+            "0% fill"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "0% fill", "50%", 0.6),
+            "50%"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-slice", "50% fill", "100 fill", 0.6),
+            "100 fill"
+        );
+    }
+
+    #[test]
+    /// width 三域同构 lerp + 非负钳（0px→20px at:-0.3→'0px'、0→20 at:-0.3→'0'；
+    /// 四槽混合 '10px 20% 30 40px'→'80px 70% 60 50px' at 0.3 期望 '31px 35% 39 43px'；
+    /// auto↔auto 恒 'auto'）。
+    fn test_mask_border_width_lerp_and_clamp() {
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "0px", "20px", -0.3),
+            "0px"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "0", "20", -0.3),
+            "0"
+        );
+        // 裸 0 端点归一 Number 域插值（'0'→'20' at:0.3 期望 '6'——解析双态歧义
+        // 防回归钉）。
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "0", "20", 0.3),
+            "6"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "10px 20% 30 40px", "80px 70% 60 50px", 0.3),
+            "31px 35% 39 43px"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "10px auto auto 20", "110px auto auto 120", 0.3),
+            "40px auto auto 50"
+        );
+    }
+
+    #[test]
+    /// width 槽失配（auto↔值、px↔number）整条离散（语料 no-interp 四条）。
+    fn test_mask_border_width_discrete_on_mismatch() {
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "10px auto auto 20", "110px auto 120 auto", 0.3),
+            "10px auto auto 20"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "10px auto auto 20", "110px auto 120 auto", 0.6),
+            "110px auto 120 auto"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "10px", "20", 0.6),
+            "20"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-width", "10%", "20", 0.3),
+            "10%"
+        );
+    }
+
+    #[test]
+    /// outset 非负钳与逐槽混合（语料 '1 2 3px 4px'→'101 102 103px 104px'
+    /// at:-0.3 期望 '0 0 0px 0px'、at:0.6 期望 '61 62 63px 64px'；inherit 端点
+    /// 外推 10px→2px at:1.5 钳 '0px'）。
+    fn test_mask_border_outset_lerp_and_clamp() {
+        assert_eq!(
+            interpolate_property_value("mask-border-outset", "0px", "5px", -0.3),
+            "0px"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-outset", "0", "1", 0.3),
+            "0.3"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-outset", "1 2 3px 4px", "101 102 103px 104px", -0.3),
+            "0 0 0px 0px"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-outset", "1 2 3px 4px", "101 102 103px 104px", 0.6),
+            "61 62 63px 64px"
+        );
+    }
+
+    #[test]
+    /// repeat 纯离散翻转（t≥0.5 取 to）。
+    fn test_mask_border_repeat_discrete() {
+        assert_eq!(
+            interpolate_property_value("mask-border-repeat", "repeat", "round", 0.3),
+            "repeat"
+        );
+        assert_eq!(
+            interpolate_property_value("mask-border-repeat", "repeat", "round", 0.6),
+            "round"
+        );
     }
 }

@@ -1900,6 +1900,26 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.border_image_outset = default_style.border_image_outset;
             true
         }
+        "mask-border-source" => {
+            style.mask_border_source = default_style.mask_border_source;
+            true
+        }
+        "mask-border-slice" => {
+            style.mask_border_slice = default_style.mask_border_slice;
+            true
+        }
+        "mask-border-width" => {
+            style.mask_border_width = default_style.mask_border_width;
+            true
+        }
+        "mask-border-repeat" => {
+            style.mask_border_repeat = default_style.mask_border_repeat;
+            true
+        }
+        "mask-border-outset" => {
+            style.mask_border_outset = default_style.mask_border_outset;
+            true
+        }
         "text-shadow" => {
             style.text_shadow = default_style.text_shadow.clone();
             true

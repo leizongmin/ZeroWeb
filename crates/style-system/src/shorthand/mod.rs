@@ -206,6 +206,13 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
             "border-image-outset",
             "border-image-repeat",
         ],
+        "mask-border" => &[
+            "mask-border-source",
+            "mask-border-slice",
+            "mask-border-width",
+            "mask-border-outset",
+            "mask-border-repeat",
+        ],
         "animation" => &[
             "animation-name",
             "animation-duration",
@@ -969,6 +976,9 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── border-image 简写 ──
         "border-image" => expand_border_image(value, important, specificity),
 
+        // ── mask-border 简写（css-masking-1 §3.4）──
+        "mask-border" => expand_mask_border(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -1000,19 +1010,63 @@ fn is_gradient_source_token(t: &str) -> bool {
 /// - 若值含 url(...) 或渐变函数 → 提取为 source（R3909：渐变同为 <image>）
 /// - 解析 slice、width（/ 后第一组）、outset（/ 后第二组）、repeat 关键字
 fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    expand_image_border_shorthand_core(value, important, specificity, &BORDER_IMAGE_SHORTHAND)
+}
+
+/// border-image / mask-border 简写共享规格（css-backgrounds-3 §5.1 与
+/// css-masking-1 §3.4 文法同构：`source || slice [ / width? [ / outset? ]? ]? || repeat`，
+/// 差异仅在五属性名与 slice/width 初值——css-masking-1 §3.5 slice 初值 `0`
+/// （border-image 为 `100%`）、§3.6 width 初值 `auto`（border-image 为 `1`））。
+struct ImageBorderShorthandSpec {
+    source: &'static str,
+    slice: &'static str,
+    width: &'static str,
+    outset: &'static str,
+    repeat: &'static str,
+    initial_slice: &'static str,
+    initial_width: &'static str,
+    initial_outset: &'static str,
+    initial_repeat: &'static str,
+}
+
+const BORDER_IMAGE_SHORTHAND: ImageBorderShorthandSpec = ImageBorderShorthandSpec {
+    source: "border-image-source",
+    slice: "border-image-slice",
+    width: "border-image-width",
+    outset: "border-image-outset",
+    repeat: "border-image-repeat",
+    initial_slice: "100%",
+    initial_width: "1",
+    initial_outset: "0",
+    initial_repeat: "stretch",
+};
+
+/// mask-border 简写规格（css-masking-1 §3.4）。
+const MASK_BORDER_SHORTHAND: ImageBorderShorthandSpec = ImageBorderShorthandSpec {
+    source: "mask-border-source",
+    slice: "mask-border-slice",
+    width: "mask-border-width",
+    outset: "mask-border-outset",
+    repeat: "mask-border-repeat",
+    initial_slice: "0",
+    initial_width: "auto",
+    initial_outset: "0",
+    initial_repeat: "stretch",
+};
+
+fn expand_image_border_shorthand_core(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+    spec: &ImageBorderShorthandSpec,
+) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     if matches_css_wide_keyword(value) {
         return wide_keyword_to_longhands(
             value,
-            &[
-                "border-image-source",
-                "border-image-slice",
-                "border-image-width",
-                "border-image-outset",
-                "border-image-repeat",
-            ],
+            &[spec.source, spec.slice, spec.width, spec.outset, spec.repeat],
             important,
             specificity,
         );
@@ -1132,32 +1186,44 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
     // css-cascade-4 §6.4：简写声明的省略分量 = 重置为初值，前置 longhand 不得穿越简写
     // 继续生效（driving: border-image-shorthand-003 —— `border-image-width: 3` 后接
     // `border-image: … / / 2 stretch`，width 未被重置 → 3×border-width 角厚渲染）。
-    // 初值出处：slice `100%`（css-backgrounds-3 §5.2）/ width `1`（§7.3）/ outset `0`
-    //（§8.2）/ repeat `stretch`（§6）。
+    // 初值出处：border-image slice `100%`（css-backgrounds-3 §5.2）/ width `1`（§7.3）/
+    // outset `0`（§8.2）/ repeat `stretch`（§6）；mask-border slice `0`（css-masking-1
+    // §3.5）/ width `auto`（§3.6）/ outset `0`（§3.7）/ repeat `stretch`（§3.8）。
     if slice_val.is_empty() {
-        slice_val = "100%".to_string();
+        slice_val = spec.initial_slice.to_string();
     }
     if width_val.is_empty() {
-        width_val = "1".to_string();
+        width_val = spec.initial_width.to_string();
     }
     if outset_val.is_empty() {
-        outset_val = "0".to_string();
+        outset_val = spec.initial_outset.to_string();
     }
     if repeat_val.is_empty() {
-        repeat_val = "stretch".to_string();
+        repeat_val = spec.initial_repeat.to_string();
     }
 
     vec![
-        mk("border-image-source", &source_val),
-        mk("border-image-slice", &slice_val),
-        mk("border-image-width", &width_val),
-        mk("border-image-outset", &outset_val),
-        mk("border-image-repeat", &repeat_val),
+        mk(spec.source, &source_val),
+        mk(spec.slice, &slice_val),
+        mk(spec.width, &width_val),
+        mk(spec.outset, &outset_val),
+        mk(spec.repeat, &repeat_val),
     ]
+}
+
+/// 展开 mask-border 简写（css-masking-1 §3.4：文法与 border-image 同构，
+/// 共享内核 [`expand_image_border_shorthand_core`]）。
+fn expand_mask_border(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    expand_image_border_shorthand_core(value, important, specificity, &MASK_BORDER_SHORTHAND)
 }
 
 pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
     !expand_border_image(value, false, (0, 0, 0)).is_empty()
+}
+
+/// mask-border 简写支持面（css-masking-1 §3.4，共享内核同款 supported 门）。
+pub(crate) fn mask_border_shorthand_supported(value: &str) -> bool {
+    !expand_mask_border(value, false, (0, 0, 0)).is_empty()
 }
 
 /// 解析 4 边简写的值部分。

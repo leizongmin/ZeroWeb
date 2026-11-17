@@ -155,7 +155,7 @@ pub(crate) fn interpolate_clip_path(from: &str, to: &str, t: f64) -> Option<Stri
 /// 刀 G：逐单位系数线性 `calc(P% ± Xpx)`、px 系数零折叠纯 %，复用刀 E
 /// blend_rule_inset_lp 模型——css-shapes-1 §basic-shape-interpolation 坐标/
 /// 半径槽同文法，刀 E GONE 定谳第 4 条 clip-path-interpolation-002 靶面）。
-fn lerp_len(f: &LengthValue, v: &LengthValue, t: f64) -> Option<String> {
+pub(super) fn lerp_len(f: &LengthValue, v: &LengthValue, t: f64) -> Option<String> {
     match (f, v) {
         (LengthValue::Px(a), LengthValue::Px(b)) => Some(format!("{}px", fmt_num(lerp(*a, *b, t)))),
         (LengthValue::Percentage(a), LengthValue::Percentage(b)) => Some(format!("{}%", fmt_num(lerp(*a, *b, t)))),

@@ -171,7 +171,7 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 60] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 65] = [
     "backdrop-filter",
     "background",
     "background-color",
@@ -202,6 +202,12 @@ const TRANSITIONABLE_PROPERTIES: [&str; 60] = [
     "margin-top",
     "max-height",
     "max-width",
+    // mask-border 族（css-masking-1 §3.4–3.9，transition:all 通配展开探测面）
+    "mask-border-outset",
+    "mask-border-repeat",
+    "mask-border-slice",
+    "mask-border-source",
+    "mask-border-width",
     "min-height",
     "min-width",
     "offset-anchor",

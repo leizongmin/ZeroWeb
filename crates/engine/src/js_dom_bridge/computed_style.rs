@@ -797,6 +797,14 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "border-image-width" => border_image_width_to_css(&style.border_image_width),
         "border-image-outset" => border_image_outset_to_css(&style.border_image_outset),
         "border-image-repeat" => border_image_repeat_to_css(&style.border_image_repeat),
+        // ── mask-border 族（css-masking-1 §3.4–3.9）── 类型与 border-image 同构，
+        // 复用同一串化函数（box4 最小化折叠 R2764 Chromium oracle 同款）。
+        "mask-border-source" => border_image_source_to_css(&style.mask_border_source, element_color, font_size_px),
+        "mask-border-slice" => border_image_slice_to_css(&style.mask_border_slice),
+        "mask-border-width" => border_image_width_to_css(&style.mask_border_width),
+        "mask-border-outset" => border_image_outset_to_css(&style.mask_border_outset),
+        "mask-border-repeat" => border_image_repeat_to_css(&style.mask_border_repeat),
+        "mask-border" => mask_border_shorthand_to_css(style, element_color, font_size_px),
         // object-position：单 <position>，复用 R2724 background-position 的逐层序列化（默认 Center→50% 50%）。
         "object-position" => bg_position_layer_to_css(&style.object_position),
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
@@ -1445,7 +1453,7 @@ fn border_image_source_to_css(
 
 /// 4 值 CSSOM 最小化（字符串版，供 border-image slice/width/outset 复用）：
 /// 全等→1 / top==bottom&&right==left→2 / right==left→3 / 否则 4。
-fn box4_str_min(top: &str, right: &str, bottom: &str, left: &str) -> String {
+pub(crate) fn box4_str_min(top: &str, right: &str, bottom: &str, left: &str) -> String {
     if top == right && right == bottom && bottom == left {
         top.to_string()
     } else if top == bottom && right == left {
@@ -1524,6 +1532,22 @@ fn border_image_shorthand_to_css(style: &ComputedStyle, element_color: &ColorVal
         border_image_width_to_css(&style.border_image_width),
         border_image_outset_to_css(&style.border_image_outset),
         border_image_repeat_to_css(&style.border_image_repeat),
+    )
+}
+
+/// `mask-border` 简写：css-masking-1 §3.4 重组，同构复用 border-image 简写口径
+/// （source==none → 整值 "none"；否则全量 `"source slice / width / outset repeat"`）。
+fn mask_border_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue, font_size_px: f64) -> String {
+    if matches!(style.mask_border_source, BorderImageSourceComputedValue::None) {
+        return "none".to_string();
+    }
+    format!(
+        "{} {} / {} / {} {}",
+        border_image_source_to_css(&style.mask_border_source, element_color, font_size_px),
+        border_image_slice_to_css(&style.mask_border_slice),
+        border_image_width_to_css(&style.mask_border_width),
+        border_image_outset_to_css(&style.mask_border_outset),
+        border_image_repeat_to_css(&style.mask_border_repeat),
     )
 }
 
@@ -2030,7 +2054,7 @@ fn image_rendering_str(r: &ImageRenderingValue) -> String {
 /// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。
 /// 整数无小数点（`16px`/`50%`/`0px`），小数去尾零（`19.2px`）。四舍五入到 1e-3 抑制
 /// f64 累积噪声（如 em 解析 `1.2 * 16 = 19.200000000000003` → `19.2px`）。
-fn format_num(v: f64, suffix: &str) -> String {
+pub(crate) fn format_num(v: f64, suffix: &str) -> String {
     let r = (v * 1000.0).round() / 1000.0;
     if r == r.trunc() {
         format!("{}{}", r as i64, suffix)

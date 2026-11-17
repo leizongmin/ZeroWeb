@@ -478,6 +478,33 @@ impl PropertyRegistry {
                 bottom: BorderImageOutsetComputedComponent::Number(0.0),
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             })),
+
+            // Mask Border（css-masking-1 §3.4–3.9；文法与 border-image 同构复用同一
+            // PropertyValue 臂，初值差异 slice `0` §3.5 / width `auto` §3.6）
+            "mask-border-source" => Some(BorderImageSource(BorderImageSourceComputedValue::None)),
+            "mask-border-slice" => Some(BorderImageSlice(BorderImageSliceComputedValue {
+                top: BorderImageSliceComputedComponent::Number(0.0),
+                right: BorderImageSliceComputedComponent::Number(0.0),
+                bottom: BorderImageSliceComputedComponent::Number(0.0),
+                left: BorderImageSliceComputedComponent::Number(0.0),
+                fill: false,
+            })),
+            "mask-border-width" => Some(BorderImageWidth(BorderImageWidthComputedValue {
+                top: BorderImageWidthComputedComponent::Auto,
+                right: BorderImageWidthComputedComponent::Auto,
+                bottom: BorderImageWidthComputedComponent::Auto,
+                left: BorderImageWidthComputedComponent::Auto,
+            })),
+            "mask-border-repeat" => Some(BorderImageRepeat(BorderImageRepeatComputedValue {
+                horizontal: BorderImageRepeatComputedMode::Stretch,
+                vertical: BorderImageRepeatComputedMode::Stretch,
+            })),
+            "mask-border-outset" => Some(BorderImageOutset(BorderImageOutsetComputedValue {
+                top: BorderImageOutsetComputedComponent::Number(0.0),
+                right: BorderImageOutsetComputedComponent::Number(0.0),
+                bottom: BorderImageOutsetComputedComponent::Number(0.0),
+                left: BorderImageOutsetComputedComponent::Number(0.0),
+            })),
             "text-shadow" => Some(TextShadow(Vec::new())),
             "box-shadow" => Some(BoxShadow(Vec::new())),
 
@@ -854,6 +881,11 @@ impl PropertyRegistry {
             "border-image-width",
             "border-image-repeat",
             "border-image-outset",
+            "mask-border-source",
+            "mask-border-slice",
+            "mask-border-width",
+            "mask-border-repeat",
+            "mask-border-outset",
             "text-shadow",
             "box-shadow",
             "clip-path",

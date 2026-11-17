@@ -303,7 +303,10 @@ fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &Compu
     crate::computed::resolve_length(&lv, fs, vw, vh) as f32
 }
 
-fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
+/// 解析值 <length> → 计算值 px 数值（font-size/viewport 基准折算）；
+/// border-image / mask-border 的 width/outset Length 臂与 engine 动画 apply
+/// 通道（animation.rs mask-border 臂）同语义复用。
+pub fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
     let fs = match &style.font_size {
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
@@ -652,7 +655,10 @@ fn parse_origin_length_percentage(value: &str) -> Option<LengthValue> {
 /// css-parser border-image-source 值 → 计算值（R5024：filter() 图像函数内层递归剥壳；
 /// light-dark() 图像上下文按 used color-scheme dark flag 选支展开——css-color-5
 /// §funcdef-light-dark，computed 期一次定案，`inherit` 继承的自然是选中支）。
-fn border_image_source_to_computed(
+/// border-image-source / mask-border-source 共享转换（css-masking-1 §3.4 与
+/// css-backgrounds-3 §5.1 文法同构复用同一 computed 类型）；engine 动画 apply
+/// 通道（animation.rs mask-border 臂）同语义复用。
+pub fn border_image_source_to_computed(
     v: zero_css_parser::values::BorderImageSourceValue,
     dark: bool,
 ) -> BorderImageSourceComputedValue {
@@ -775,6 +781,8 @@ fn filter_value_to_computed(v: zero_css_parser::values::FilterValue) -> FilterCo
     }
 }
 
+/// 高级属性（transform/filter/counter 等）声明值 → computed 槽的分发 apply；
+/// 返回该属性是否被本模块消费。供样式应用主通道与 engine 动画 apply 通道共用。
 pub fn apply_advanced_property_value(
     style: &mut ComputedStyle,
     property: &str,
@@ -2672,6 +2680,101 @@ pub fn apply_advanced_property_value(
                     }
                 };
                 style.border_image_outset = BorderImageOutsetComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                };
+                return true;
+            }
+        }
+        // mask-border 五长手（css-masking-1 §3.4–3.9）：文法与 border-image 同构，
+        // 复用 parse_border_image_* 解析器与 computed 类型（TRBL 展开/负值拒绝/初值
+        // 差异只影响初值表与串化，不影响解析）。
+        "mask-border-source" => {
+            if let Some(v) = values::parse_border_image_source(value) {
+                let dark = style.color_scheme_dark;
+                style.mask_border_source = border_image_source_to_computed(v, dark);
+                return true;
+            }
+        }
+        "mask-border-slice" => {
+            if let Some(v) = values::parse_border_image_slice(value) {
+                fn convert_comp(
+                    c: &zero_css_parser::values::BorderImageSliceComponent,
+                ) -> BorderImageSliceComputedComponent {
+                    match c {
+                        zero_css_parser::values::BorderImageSliceComponent::Number(n) => {
+                            BorderImageSliceComputedComponent::Number(*n)
+                        }
+                        zero_css_parser::values::BorderImageSliceComponent::Percent(p) => {
+                            BorderImageSliceComputedComponent::Percent(*p)
+                        }
+                    }
+                }
+                style.mask_border_slice = BorderImageSliceComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                    fill: v.fill,
+                };
+                return true;
+            }
+        }
+        "mask-border-width" => {
+            if let Some(v) = values::parse_border_image_width(value) {
+                let convert_comp = |c: &zero_css_parser::values::BorderImageWidthComponent| match c {
+                    zero_css_parser::values::BorderImageWidthComponent::Auto => BorderImageWidthComputedComponent::Auto,
+                    zero_css_parser::values::BorderImageWidthComponent::Number(n) => {
+                        BorderImageWidthComputedComponent::Number(*n)
+                    }
+                    zero_css_parser::values::BorderImageWidthComponent::Length(lv) => {
+                        BorderImageWidthComputedComponent::Length(resolve_effect_length(lv, style))
+                    }
+                    zero_css_parser::values::BorderImageWidthComponent::Percent(p) => {
+                        BorderImageWidthComputedComponent::Percent(*p)
+                    }
+                };
+                style.mask_border_width = BorderImageWidthComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                };
+                return true;
+            }
+        }
+        "mask-border-repeat" => {
+            if let Some(v) = values::parse_border_image_repeat(value) {
+                fn convert_mode(m: &zero_css_parser::values::BorderImageRepeatMode) -> BorderImageRepeatComputedMode {
+                    match m {
+                        zero_css_parser::values::BorderImageRepeatMode::Stretch => {
+                            BorderImageRepeatComputedMode::Stretch
+                        }
+                        zero_css_parser::values::BorderImageRepeatMode::Repeat => BorderImageRepeatComputedMode::Repeat,
+                        zero_css_parser::values::BorderImageRepeatMode::Round => BorderImageRepeatComputedMode::Round,
+                        zero_css_parser::values::BorderImageRepeatMode::Space => BorderImageRepeatComputedMode::Space,
+                    }
+                }
+                style.mask_border_repeat = BorderImageRepeatComputedValue {
+                    horizontal: convert_mode(&v.horizontal),
+                    vertical: convert_mode(&v.vertical),
+                };
+                return true;
+            }
+        }
+        "mask-border-outset" => {
+            if let Some(v) = values::parse_border_image_outset(value) {
+                let convert_comp = |c: &zero_css_parser::values::BorderImageOutsetComponent| match c {
+                    zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
+                        BorderImageOutsetComputedComponent::Number(*n)
+                    }
+                    zero_css_parser::values::BorderImageOutsetComponent::Length(lv) => {
+                        BorderImageOutsetComputedComponent::Length(resolve_effect_length(lv, style))
+                    }
+                };
+                style.mask_border_outset = BorderImageOutsetComputedValue {
                     top: convert_comp(&v.top),
                     right: convert_comp(&v.right),
                     bottom: convert_comp(&v.bottom),
