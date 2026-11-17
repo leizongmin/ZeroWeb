@@ -103,6 +103,21 @@ rendering 流记账）。门开随批落预案不变：
 
 
 
+> **◆ 更正五（2026-11-17 s555 push 阶段）——pull
+> --rebase 捕获 editing 流 fs A 族刀落窗（
+> 6ea357800 fix(engine)：part01d
+> _zwVaSetSelectionValue wrap 分发点
+> fontsize 载体臂摘 br 分发，对端申报 fs
+> 2419/3 残 7F 收口；伴笔 docs-only）：
+> s555 窗（842c3fc95 恒）不含此刀、s556
+> 窗首次纳入——s556 起腿前 provenance 预
+> 判：runner 必换代归因 fs A 族刀（
+> part01d 经 zero-engine 依赖链入 runner
+> 链接）；hs 面 execCommand fontsize 值路
+> 径与 testharness 键关联以 join 实测为准
+> （R13 evt-reject 刀同面先例 s552 零位
+> 移、R13 wrap 刀 s553 零位移）。
+
 > **◆ 更正四（2026-11-17 s554 push 阶段）——pull
 > --rebase 捕获 wptfyi-css 刀 K1 落窗（
 > 531e795e7 fix(engine)：关键帧 'inherit'
