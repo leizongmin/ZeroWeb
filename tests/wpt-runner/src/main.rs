@@ -4593,6 +4593,11 @@ where
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(jobs)
+        // 与 main 的 256MB 大栈执行道同规格（见 main 注释）：worker 默认 2MiB
+        // 栈，深树 style 递归（compute_styles_recursive）同类爆栈——2026-11-17
+        // css 刀 D rule-inset（ef6f2cf5a）加深 gCS/style 帧后 html-semantics
+        // 全语料确定性爆栈，RUST_MIN_STACK=256MB 实证全语料恢复，此处固化。
+        .stack_size(256 * 1024 * 1024)
         .build()
         .expect("failed to build WPT runner thread pool");
 
