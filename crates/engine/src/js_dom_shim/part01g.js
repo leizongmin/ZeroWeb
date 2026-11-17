@@ -677,7 +677,7 @@
   // FIXME（Chrome delta）：CSS-mode margin-div 臂未移植（spec
   // isSimpleIndentationElement 合并面分叉；swcss=true margin-div 族 ×2
   // `<p>[abc]</p>` p-margin 形非本刀域）。
-  function _zwFbqIndentNodes(nodeList, zwWebkitWrap) {
+  function _zwFbqIndentNodes(nodeList, zwWebkitWrap, zwConsumeBoundaryBr) {
     // "If node list is empty, do nothing and abort these steps."
     if (!nodeList.length) return;
     var firstNode = nodeList[0];
@@ -688,6 +688,60 @@
         function (node) { return _zwJusIsHtmlElement(node, tag); },
         function () { return firstNode.ownerDocument.createElement(tag); });
       return;
+    }
+    // Chrome delta（br 边界刀，2026-11-17）：indent 新建块边界相邻 br 消费。
+    // spec blockExtend 把界 br 纳入 contained 集（isBlockStartPoint 计前邻
+    // br 而 isBlockEndPoint 不计后邻 br 的不对称），尾随 br 随包裹进块；
+    // Chrome 录形摘出后删除，且仅当该 br 是该边界的唯一行界（连续 br
+    // run=1：`foobar<br>[ba]z` idx30 单枚删除 vs `foobar<br><br><br><br>
+    // [ba]z` idx31 四枚全留）。录形四则：
+    // 尾侧 2——sublist 尾单 br 摘除并删（`foo[bar]<br>baz` idx28、
+    // `foo[bar]<br><br><br><br>baz` idx29）；首侧 2——包裹前单 br 删，
+    // 直形或行内壳尾链（idx30、`<span>foo<br>{}</span>bar` idx18）。
+    // 语料 145 条形（indent.html 全集）触发位仅 4 刀面键（idx18/28/29/30
+    // 现红恰刀面）；现绿 br＋blockquote 同现
+    // 9 条均非触发位（#15/#17 caret 前 br 形 sublist=[p]/[span]、#32/#45
+    // br 居 sublist 中段、#48/#50/#52 br 由合并臂插入）＝现绿面结构性
+    // 安全。仅 indent 臂启用（outdent 复用不传旗标恒 inert），list 臂
+    // 早退不受影响。可编辑门双查（尾成员＋首侧 leaf）＝非可编辑邻域
+    // 不消费（mods 键保护）。证据
+    // docs/goal/editing-compat/evidence/2026-11-17-indent-census.md
+    // 尾侧 pop 后须压制 _zwJusWrap 占位 br 拉入臂（尾成员非 br 且
+    // nextSibling 是 br 再拉一枚）——否则摘一枚又拉一枚（idx29 四 br 形
+    // pin 实证：bq 内 br 恒在、外侧少一枚）。仅 pop 发生时压制，其余
+    // 调用方拉臂默认开启零漂移。
+    var brPopped = false;
+    if (zwConsumeBoundaryBr) {
+      var lastNode = nodeList[nodeList.length - 1];
+      if (nodeList.length > 1
+          && _zwJusIsHtmlElement(lastNode, 'br')
+          && !_zwJusIsHtmlElement(nodeList[nodeList.length - 2], 'br')
+          && _zwJusIsEditable(lastNode)) {
+        nodeList.pop();
+        lastNode.parentNode.removeChild(lastNode);
+        brPopped = true;
+      }
+      var sib = firstNode.previousSibling;
+      var edgeBr = null;
+      var run = 0;
+      var gBr = 0;
+      while (sib && gBr++ < 16) {
+        var leaf = sib;
+        var gLeaf = 0;
+        while (_zwJusIsHtmlElement(leaf)
+            && !_zwJusIsHtmlElement(leaf, 'br')
+            && !_zwJusIsBlockNode(leaf)
+            && leaf.lastChild && gLeaf++ < 16) {
+          leaf = leaf.lastChild;
+        }
+        if (!_zwJusIsHtmlElement(leaf, 'br')) break;
+        run++;
+        edgeBr = leaf;
+        sib = sib.previousSibling;
+      }
+      if (run === 1 && edgeBr && _zwJusIsEditable(edgeBr)) {
+        edgeBr.parentNode.removeChild(edgeBr);
+      }
     }
     // "Wrap node list, with sibling criteria returning true for a simple
     // indentation element ... new parent ... createElement("blockquote")..."
@@ -702,7 +756,8 @@
           }
         : function () {
             return firstNode.ownerDocument.createElement('blockquote');
-          });
+          },
+      false, brPopped);
     // "Fix disallowed ancestors of new parent."
     _zwListFixDisallowedAncestors(newParent);
   }
@@ -777,7 +832,7 @@
           && nodeList[0] === sublist[sublist.length - 1].nextSibling) {
         sublist.push(nodeList.shift());
       }
-      _zwFbqIndentNodes(sublist, !!globalThis.__zwStyleWithCSS);
+      _zwFbqIndentNodes(sublist, !!globalThis.__zwStyleWithCSS, true);
     }
     return true;
   };

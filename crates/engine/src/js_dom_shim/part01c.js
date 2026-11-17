@@ -1061,7 +1061,7 @@
   // ViaHtml 的序列化重写会使未处理成员游离复制倒序（语料 :1410 三重 p 录音铁证；
   // formatBlock 的 skip 环已在 nodeList 预剔同 tag 成员，plain wrap 到位即净零变更）。
   function _zwJusWrap(nodeList, siblingCriteria, newParentInstructions,
-      plainSkipViaHtml) {
+      plainSkipViaHtml, zwNoBrPull) {
     var i;
     var anyBr = false;
     for (i = 0; i < nodeList.length; i++) {
@@ -1075,7 +1075,10 @@
       if (allInvisible) return null;
     }
     if (!nodeList[0].parentNode) return null;
-    if (_zwJusIsInlineNode(nodeList[nodeList.length - 1])
+    // 尾邻占位 br 拉入（indent br 边界刀起 zwNoBrPull 压制：刀已摘包裹尾
+    // br，拉臂再拉入外侧下一枚＝录形偏差，part01g brPopped 实证）。
+    if (!zwNoBrPull
+        && _zwJusIsInlineNode(nodeList[nodeList.length - 1])
         && !_zwJusIsHtmlElement(nodeList[nodeList.length - 1], 'br')
         && _zwJusIsHtmlElement(nodeList[nodeList.length - 1].nextSibling, 'br')) {
       nodeList.push(nodeList[nodeList.length - 1].nextSibling);
