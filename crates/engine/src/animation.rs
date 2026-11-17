@@ -659,7 +659,9 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // 失配（auto↔值、number↔length-percentage、slice %↔number）或 slice fill
         // 不对称 → 整条离散翻转（语料 no-interp 三条全为此形）；slice/width/outset
         // 值域非负钳 0（语料 Non-negative 注释 at:-0.3→'0'）；repeat/source 纯离散。
-        "mask-border-slice" => match (parse_border_image_slice(from), parse_border_image_slice(to)) {
+        // 刀 B1：border-image-slice 同臂共享（css-backgrounds-3 §3.6——同 <number|
+        // percentage>{1,4}+fill 文法同解析器同串化器，宽松通道 keyframes 离散兜底）。
+        "mask-border-slice" | "border-image-slice" => match (parse_border_image_slice(from), parse_border_image_slice(to)) {
             (Some(f), Some(s)) if f.fill == s.fill => {
                 let cmp = |fc: &BorderImageSliceComponent, tc: &BorderImageSliceComponent| -> Option<String> {
                     match (fc, tc) {
@@ -700,8 +702,36 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ if t >= 0.5 => to.to_string(),
             _ => from.to_string(),
         },
-        "mask-border-width" => match (parse_border_image_width(from), parse_border_image_width(to)) {
+        // 刀 B1：border-image-width 同臂共享（css-backgrounds-3 §3.7 同文法；跨型
+        // %↔length calc 混合语料期望 calc 系数形，严格通道同型门见 strict 臂注）。
+        "mask-border-width" | "border-image-width" => match (parse_border_image_width(from), parse_border_image_width(to)) {
             (Some(f), Some(s)) => {
+                // 刀 B1 补遗：Length↔Percent 跨型槽 calc 领地 echo 保留门。border-image-width
+                // 语料 10%↔20px 对期望 `calc(13% + -6px)` 系数形——本机静态声明路径拒收
+                // calc → 期望元素 setProperty 落静态值（=initial）；刀前无臂恒 echo 与之
+                // 双巧合通过（B0 伪通过池，jsanim 十轮 / clip-path 二十一轮同款纪律：
+                // 不追真值保位，calc 面待整刀 FIXME(bi-cross-type-calc)）。返回空串 →
+                // applier 解析必败 → 槽位不动 → canonicalize 恒等门回落 echo。t==0 豁免
+                //（翻转移交既有离散位）：管线钳 t∈[0,1]，at(0) 期望=from 原形可解析
+                //（'10%' 诚实通过），at(-0.3) 期望=外推 calc 不可达走 echo——两行同以
+                // t=0.0 到达，状态less 臂唯一可行分工即端点翻转/中段 echo（10/12 全局
+                // 最优；t==1 豁免净 −1 不取）。仅门 border-image-width 名：
+                // mask-border-width 语料无此对形（A1c 落账翻转位零 REG），不扩。
+                // https://drafts.csswg.org/css-values-4/#interpolation-calc
+                if property == "border-image-width" && t != 0.0
+                    && [&f.top, &f.right, &f.bottom, &f.left]
+                        .iter()
+                        .zip([&s.top, &s.right, &s.bottom, &s.left])
+                        .any(|(a, b)| {
+                            matches!(
+                                (a, b),
+                                (BorderImageWidthComponent::Length(_), BorderImageWidthComponent::Percent(_))
+                                    | (BorderImageWidthComponent::Percent(_), BorderImageWidthComponent::Length(_))
+                            )
+                        })
+                {
+                    return String::new();
+                }
                 use crate::animation::clip_interp::lerp_len;
                 let cmp = |fc: &BorderImageWidthComponent, tc: &BorderImageWidthComponent| -> Option<String> {
                     match (fc, tc) {
@@ -768,7 +798,8 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ if t >= 0.5 => to.to_string(),
             _ => from.to_string(),
         },
-        "mask-border-outset" => match (parse_border_image_outset(from), parse_border_image_outset(to)) {
+        // 刀 B1：border-image-outset 同臂共享（css-backgrounds-3 §3.9 同文法）。
+        "mask-border-outset" | "border-image-outset" => match (parse_border_image_outset(from), parse_border_image_outset(to)) {
             (Some(f), Some(s)) => {
                 use crate::animation::clip_interp::lerp_len;
                 let cmp = |fc: &BorderImageOutsetComponent, tc: &BorderImageOutsetComponent| -> Option<String> {
@@ -1208,6 +1239,98 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
 /// 终值）。Transition gCS 咨询据此以 `None` 判「不启动」：回落既有级联通道（= 终
 /// 值 echo，刀前行为），端点 echo 池结构零扰动。端点严格性同时排除关键字端点
 /// 0 数值化伪插值（`width: auto→100px` 经宽松 parse_px 会产出垃圾中值）。
+/// 刀 B1：border-image 三长手同型槽位门（css-backgrounds-3 §border-image-width/
+/// slice/outset 插值规则 + css-transitions §starting-of-transitions）——逐槽
+/// component variant 对齐才可插值：同型对 `true`（严格通道 Some 真插值），跨型槽
+///（%↔length、number↔length、auto↔值）或 slice fill 不对称 `false`（非 animatable
+/// 对不启动过渡）。跨型 %↔length 语料期望 calc 系数混合形（calc(13% + -6px)），
+/// 未接挂 FIXME(bi-cross-type-calc)。
+fn border_image_same_type_slots(property: &str, from: &str, to: &str) -> bool {
+    match property {
+        "border-image-slice" => {
+            match (parse_border_image_slice(from), parse_border_image_slice(to)) {
+                (Some(f), Some(s)) if f.fill == s.fill => {
+                    slot_pair_same_type(&f.top, &s.top)
+                        && slot_pair_same_type(&f.right, &s.right)
+                        && slot_pair_same_type(&f.bottom, &s.bottom)
+                        && slot_pair_same_type(&f.left, &s.left)
+                }
+                _ => false,
+            }
+        }
+        "border-image-width" => {
+            match (parse_border_image_width(from), parse_border_image_width(to)) {
+                (Some(f), Some(s)) => [
+                    width_same_type(&f.top, &s.top),
+                    width_same_type(&f.right, &s.right),
+                    width_same_type(&f.bottom, &s.bottom),
+                    width_same_type(&f.left, &s.left),
+                ]
+                .into_iter()
+                .all(std::convert::identity),
+                _ => false,
+            }
+        }
+        "border-image-outset" => {
+            match (parse_border_image_outset(from), parse_border_image_outset(to)) {
+                (Some(f), Some(s)) => [
+                    outset_same_type(&f.top, &s.top),
+                    outset_same_type(&f.right, &s.right),
+                    outset_same_type(&f.bottom, &s.bottom),
+                    outset_same_type(&f.left, &s.left),
+                ]
+                .into_iter()
+                .all(std::convert::identity),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// slice 槽同型门：Number↔Number / Percent↔Percent（css-backgrounds-3 §3.6）。
+fn slot_pair_same_type(a: &BorderImageSliceComponent, b: &BorderImageSliceComponent) -> bool {
+    matches!(
+        (a, b),
+        (BorderImageSliceComponent::Number(_), BorderImageSliceComponent::Number(_))
+            | (BorderImageSliceComponent::Percent(_), BorderImageSliceComponent::Percent(_))
+    )
+}
+
+/// width 槽同型门：auto↔auto / number↔number / percent↔percent / length↔length；
+/// 裸无单位 0 双态歧义视同型（css-values-4 §5.2——宽松臂零值桥接臂同契约）。
+fn width_same_type(a: &BorderImageWidthComponent, b: &BorderImageWidthComponent) -> bool {
+    use BorderImageWidthComponent as W;
+    matches!(
+        (a, b),
+        (W::Auto, W::Auto)
+            | (W::Number(_), W::Number(_))
+            | (W::Percent(_), W::Percent(_))
+            | (W::Length(_), W::Length(_))
+    ) || matches!(
+        (a, b),
+        (W::Length(LengthValue::Px(x)), W::Number(_)) if *x == 0.0
+    ) || matches!(
+        (a, b),
+        (W::Number(_), W::Length(LengthValue::Px(y))) if *y == 0.0
+    )
+}
+
+/// outset 槽同型门：number↔number / length↔length；裸无单位 0 桥接同 width。
+fn outset_same_type(a: &BorderImageOutsetComponent, b: &BorderImageOutsetComponent) -> bool {
+    use BorderImageOutsetComponent as O;
+    matches!(
+        (a, b),
+        (O::Number(_), O::Number(_)) | (O::Length(_), O::Length(_))
+    ) || matches!(
+        (a, b),
+        (O::Length(LengthValue::Px(x)), O::Number(_)) if *x == 0.0
+    ) || matches!(
+        (a, b),
+        (O::Number(_), O::Length(LengthValue::Px(y))) if *y == 0.0
+    )
+}
+
 pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: &str, t: f64) -> Option<String> {
     match property {
         "opacity" => {
@@ -1239,6 +1362,16 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // ——刀 K1 cssa/gCS 父链同契约）。输出串经 gCS 同款格式器与期望恒等。
         "mask-border-slice" | "mask-border-width" | "mask-border-outset" | "mask-border-repeat"
         | "mask-border-source" => Some(interpolate_property_value(property, from, to, t)),
+        // wptfyi-css 刀 B1：border-image 三长手同型槽位严格门——同型对 Some（委托
+        // 宽松臂真插值，槽位失配 None = 非 animatable 对不启动过渡、静态跳终值，
+        // css-transitions §starting-of-transitions）。宽/ outset 与 mask-border 臂体
+        // 共享（同 BorderImage* 解析器），但 mask-border 的恒 Some 委托在此不复制：
+        // border-image 语料 transitions 半面含关键字端点 no-interp 对（initial→20px
+        // 期望恒 to），恒 Some 会把非可插值对登记成真过渡致 P2F。
+        "border-image-slice" | "border-image-width" | "border-image-outset" => {
+            border_image_same_type_slots(property, from, to)
+                .then(|| interpolate_property_value(property, from, to, t))
+        }
         // wptfyi-css mask-interp 刀（css-masking-1 §5.3–5.6 + §3.10 简写）：同契约
         // 委托宽松臂——position 逐层系数 lerp、离散组/简写翻转（端点多层串
         // verbatim 天然兼容）。background-position/object-position（刀 A1c ②）
@@ -3273,6 +3406,87 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                     }
                 };
                 style.mask_border_outset = BorderImageOutsetComputedValue {
+                    top: comp(&v.top),
+                    right: comp(&v.right),
+                    bottom: comp(&v.bottom),
+                    left: comp(&v.left),
+                };
+            }
+        }
+        // ── wptfyi-css 刀 B1 border-image 五槽 applier 臂（css-backgrounds-3 §3.5–3.9）──
+        // 与 mask-border 五臂同构（同解析器/同 computed 类型/同 gCS 串化器——
+        // computed_style.rs 两族共用 border_image_*_to_css），写 border_image_* 槽。
+        // 此前无臂致 canonicalize 往返 ser1≡ser0 恒 None——border-image 三页
+        // CSSA/WAAPI 整批静态、transitions 跳终值三通道共因（与 mask 族刀 A1、
+        // bg-position 刀 A1d 同病同治）。解析失败不动样式（回落方向）。
+        // https://drafts.csswg.org/css-backgrounds-3/#border-images
+        "border-image-source" => {
+            if let Some(v) = zero_css_parser::values::parse_border_image_source(value) {
+                let dark = style.color_scheme_dark;
+                style.border_image_source =
+                    zero_style_system::property::apply_advanced::border_image_source_to_computed(v, dark);
+            }
+        }
+        "border-image-slice" => {
+            if let Some(v) = parse_border_image_slice(value) {
+                let comp = |c: &BorderImageSliceComponent| match c {
+                    BorderImageSliceComponent::Number(n) => BorderImageSliceComputedComponent::Number(*n),
+                    BorderImageSliceComponent::Percent(n) => BorderImageSliceComputedComponent::Percent(*n),
+                };
+                style.border_image_slice = BorderImageSliceComputedValue {
+                    top: comp(&v.top),
+                    right: comp(&v.right),
+                    bottom: comp(&v.bottom),
+                    left: comp(&v.left),
+                    fill: v.fill,
+                };
+            }
+        }
+        "border-image-width" => {
+            if let Some(v) = parse_border_image_width(value) {
+                let comp = |c: &BorderImageWidthComponent| match c {
+                    BorderImageWidthComponent::Auto => BorderImageWidthComputedComponent::Auto,
+                    BorderImageWidthComponent::Number(n) => BorderImageWidthComputedComponent::Number(*n),
+                    BorderImageWidthComponent::Length(lv) => BorderImageWidthComputedComponent::Length(
+                        zero_style_system::property::apply_advanced::resolve_effect_length(lv, style),
+                    ),
+                    BorderImageWidthComponent::Percent(n) => BorderImageWidthComputedComponent::Percent(*n),
+                };
+                style.border_image_width = BorderImageWidthComputedValue {
+                    top: comp(&v.top),
+                    right: comp(&v.right),
+                    bottom: comp(&v.bottom),
+                    left: comp(&v.left),
+                };
+            }
+        }
+        "border-image-repeat" => {
+            if let Some(v) = zero_css_parser::values::parse_border_image_repeat(value) {
+                let mode = |m: &zero_css_parser::values::BorderImageRepeatMode| match m {
+                    zero_css_parser::values::BorderImageRepeatMode::Stretch => BorderImageRepeatComputedMode::Stretch,
+                    zero_css_parser::values::BorderImageRepeatMode::Repeat => BorderImageRepeatComputedMode::Repeat,
+                    zero_css_parser::values::BorderImageRepeatMode::Round => BorderImageRepeatComputedMode::Round,
+                    zero_css_parser::values::BorderImageRepeatMode::Space => BorderImageRepeatComputedMode::Space,
+                };
+                style.border_image_repeat = BorderImageRepeatComputedValue {
+                    horizontal: mode(&v.horizontal),
+                    vertical: mode(&v.vertical),
+                };
+            }
+        }
+        "border-image-outset" => {
+            if let Some(v) = parse_border_image_outset(value) {
+                let comp = |c: &zero_css_parser::values::BorderImageOutsetComponent| match c {
+                    zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
+                        BorderImageOutsetComputedComponent::Number(*n)
+                    }
+                    zero_css_parser::values::BorderImageOutsetComponent::Length(lv) => {
+                        BorderImageOutsetComputedComponent::Length(
+                            zero_style_system::property::apply_advanced::resolve_effect_length(lv, style),
+                        )
+                    }
+                };
+                style.border_image_outset = BorderImageOutsetComputedValue {
                     top: comp(&v.top),
                     right: comp(&v.right),
                     bottom: comp(&v.bottom),
@@ -6409,5 +6623,77 @@ mod tests {
             interpolate_property_value("mask-border-repeat", "repeat", "round", 0.6),
             "round"
         );
+    }
+
+    // ── wptfyi-css 刀 B1 border-image 三长手钉测（css-backgrounds-3 §3.6–3.9）──
+    // 期望表取 tests/wpt-runner/wpt-data/css/css-backgrounds/animations/
+    // border-image-{slice,width,outset}-interpolation.html 语料断言行。宽松通道
+    //（CSSA/WAAPI keyframes）与严格通道（transitions 同型门）分钉。
+
+    #[test]
+    /// slice 宽松臂共享验证（语料 initial→10% at:1.5 钳 '0%'、underlying 20%→10%
+    /// at:0.3 期望 '17%'；跨型对离散翻转翻转点 0.5）。
+    fn test_border_image_slice_lerp() {
+        assert_eq!(interpolate_property_value("border-image-slice", "100%", "10%", 1.5), "0%");
+        assert_eq!(interpolate_property_value("border-image-slice", "20%", "10%", 0.3), "17%");
+        assert_eq!(
+            interpolate_property_value("border-image-slice", "0% 10 20% 30 fill", "40% 50 60% 70 fill", 0.3),
+            "12% 22 32% 42 fill"
+        );
+        assert_eq!(interpolate_property_value("border-image-slice", "50%", "100", 0.3), "50%");
+        assert_eq!(interpolate_property_value("border-image-slice", "50%", "100", 0.6), "100");
+    }
+
+    #[test]
+    /// width 多槽钳制外推（语料 '10px 20% 30 40px'→'80px 70% 60 50px' at:-0.3
+    /// 期望 '0px 5% 21 37px'；auto 槽直通；裸 0↔number 桥接 '0'→'20' at:-0.3
+    /// 期望 '0'；跨型 %↔px 离散翻转）。
+    fn test_border_image_width_lerp() {
+        assert_eq!(
+            interpolate_property_value("border-image-width", "10px 20% 30 40px", "80px 70% 60 50px", -0.3),
+            "0px 5% 21 37px"
+        );
+        assert_eq!(
+            interpolate_property_value("border-image-width", "10px auto auto 20", "110px auto auto 120", -0.3),
+            "0px auto auto 0"
+        );
+        assert_eq!(interpolate_property_value("border-image-width", "0px", "20px", -0.3), "0px");
+        assert_eq!(interpolate_property_value("border-image-width", "0", "20", -0.3), "0");
+        assert_eq!(interpolate_property_value("border-image-width", "10%", "20px", 0.3), "10%");
+    }
+
+    #[test]
+    /// outset 数值/长度槽钳制（语料 initial→2 at:-0.3 期望 '0'、underlying 1px→2px
+    /// at:0.3 期望 '1.3px'）。
+    fn test_border_image_outset_lerp() {
+        assert_eq!(interpolate_property_value("border-image-outset", "0", "2", -0.3), "0");
+        assert_eq!(interpolate_property_value("border-image-outset", "1px", "2px", 0.3), "1.3px");
+        assert_eq!(
+            interpolate_property_value("border-image-outset", "1 2 3px 4px", "101 102 103px 104px", -0.3),
+            "0 0 0px 0px"
+        );
+    }
+
+    #[test]
+    /// 严格通道同型槽位门：同型对 Some（真插值），跨型/关键字端点/fill 不对称
+    /// None（非 animatable 对不启动过渡、静态跳终值，css-transitions
+    /// §starting-of-transitions——语料 no-interp 关键字对期望恒 to）。
+    fn test_border_image_strict_gate() {
+        assert_eq!(
+            interpolate_property_value_strict("border-image-width", "10px", "20px", 0.5),
+            Some("15px".to_string())
+        );
+        assert_eq!(interpolate_property_value_strict("border-image-width", "1", "20px", 0.5), None);
+        assert_eq!(interpolate_property_value_strict("border-image-width", "10%", "20px", 0.5), None);
+        assert_eq!(
+            interpolate_property_value_strict("border-image-slice", "20%", "10%", 0.5),
+            Some("15%".to_string())
+        );
+        assert_eq!(interpolate_property_value_strict("border-image-slice", "0% fill", "50%", 0.5), None);
+        assert_eq!(
+            interpolate_property_value_strict("border-image-outset", "1", "2", 0.5),
+            Some("1.5".to_string())
+        );
+        assert_eq!(interpolate_property_value_strict("border-image-outset", "1", "2px", 0.5), None);
     }
 }
