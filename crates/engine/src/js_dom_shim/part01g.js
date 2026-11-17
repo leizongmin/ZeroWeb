@@ -146,23 +146,38 @@
     var range = _zwVaGetActiveRange();
     if (!range) return true;
     // Chrome delta（可编辑链守卫）：起点叶子到编辑宿主链上遇不可编辑元素 →
-    // 拦（不应用，零树变更）但 **返 true**——该形 Chrome ret 录音 [true]（语料
-    // 条目 362 `{ <span cE=false>A/B/C }` 真意 wrap 不可编辑节点、本引擎不
-    // 具备该 wrap 能力只拦不报 false）；part06 :5187 返回值贯通（2026-11-09
-    // apply 内容模型边界刀）后返 false 会误翻 entry 362 ret 行（P2F）。
-    // `contenteditable=false` 宿主 + 内层 contenteditable 元素形（:1864/:1871/
-    // :1876）不走此守卫——链在内层 editing host 即截停，由下方宿主内容模型
-    // 守卫拒（ret=false 对齐 Chrome）。`<div><div contenteditable=false><div
-    // contenteditable>[foo]` 形链内层 div 可编辑不拦照 wrap（ret=true）。
-    // display:block span 岛形（条目 360）链全程可编辑不拦。
+    // 拦（不应用，零树变更）但 **返 true**——Chrome ret 录音 [true]；part06
+    // :5187 返回值贯通（2026-11-09 apply 内容模型边界刀）后返 false 会误翻
+    // ret 行（P2F）。R13 cE=false wrap 刀（2026-11-17）起守卫收窄：链上非可
+    // 编辑节点若被 active range 含界（含端等界）→ 不拦照走 wrap 臂（语料
+    // 条目 362 `{ <span cE=false>A/B/C }` compare 三形真 wrap， census 归域档
+    // docs/goal/editing-compat/evidence/2026-11-17-r13-cefalse-wrap-census.md；
+    // 下游 nodeList 收集臂经扩展过滤器纳入）；部分含/界外维持拦截（零树变更
+    // 返 true，既有保护面不变）。`contenteditable=false` 宿主 + 内层
+    // contenteditable 元素形（:1864/:1871/:1876）不走此守卫——链在内层
+    // editing host 即截停，由下方宿主内容模型守卫拒（ret=false 对齐 Chrome）。
+    // `<div><div contenteditable=false><div contenteditable>[foo]` 形链内层
+    // div 可编辑不拦照 wrap（ret=true）。display:block span 岛形（条目 360）
+    // 链全程可编辑不拦。
     var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset, false);
     if (!sl) return false;
+    // 守卫含界预判输入提升循环外（shim 循环不变量，zeroweb-guidelines #26）。
+    var fbqRsc = range.startContainer;
+    var fbqRec = range.endContainer;
+    var fbqRso = range.startOffset;
+    var fbqReo = range.endOffset;
+    var fbqRRoot = _zwJusGetRoot(fbqRsc);
     var cur = sl;
     var fbqHost = null;
     var g0 = 0;
     while (cur && g0++ < 256) {
       if (_zwJusIsEditingHost(cur)) { fbqHost = cur; break; }
-      if (!_zwJusIsEditable(cur)) return true;
+      if (!_zwJusIsEditable(cur)
+          && (_zwJusGetRoot(cur) !== fbqRRoot
+              || _zwJusBpCompare(cur, 0, fbqRsc, fbqRso) < 0
+              || _zwJusBpCompare(cur, _zwJusNodeLength(cur), fbqRec, fbqReo) > 0)) {
+        return true;
+      }
       cur = cur.parentNode;
     }
     // Chrome delta（宿主内容模型守卫）：新块物化在选区 editing host 内，host
@@ -195,8 +210,12 @@
     // if it is editable, ... node is either a non-list single-line container
     // or an allowed child of "p" or a dd or dt, and node is not the ancestor
     // of a prohibited paragraph child."
+    // （https://w3c.github.io/editing/execCommand.html#the-formatblock-command）
+    // Chrome delta（R13 cE=false wrap 刀，2026-11-17）：spec 「if it is
+    // editable」排除面收窄——fully-contained 非可编辑元素照纳入（Chrome 录音
+    // 语料条目 362 三 cE=false span 整体入新块；span ∈ p 允许子过第二谓词）。
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
-      return _zwJusIsEditable(node)
+      return (_zwJusIsEditable(node) || node.nodeType === 1)
         && (_zwFbqIsNonListSingleLineContainer(node)
             || _zwFbqIsWrapOnlyBlock(node)
             || _zwJusIsAllowedChild(node, 'p')
@@ -648,10 +667,17 @@
 
   // indentNodes（vendored implementation.js :5482-5517）。ol/ul 父臂同型
   // tag-wrap ∨ blockquote 包裹（simple indentation element 判据合并既有壳）。
-  // CSS-mode（styleWithCSS=true → margin div 臂）spec 仅在 isSimpleIndentation
-  // Element 合并面上有分叉，wrap 新建臂恒 blockquote；Chrome 录音（indent 语料
-  // qV after=''、blockquote 形）与 spec 臂一致，margin-div 臂未移植（FIXME）。
-  function _zwFbqIndentNodes(nodeList) {
+  // R13 cE=false wrap 刀（2026-11-17）：wrap 新建臂按 zwWebkitWrap 分叉容器
+  // 形——swcss=true 产 webkit-indent-blockquote 形（indent.html swcss=true
+  // 三行 accepted 皆收该形；p-margin/div-margin 形未被三行全收，见 census
+  // 档对账）；swcss=false 恒 plain blockquote（indent 语料 swcss=false 行
+  // accepted）。outdent 复用臂（:888/:890）不传旗标恒 plain——outdent.js
+  // swcss T/F 对行 accepted 恒同形 plain，Chrome 重缩进与 CSS 模式无关
+  // （idx 4/5 实证）。
+  // FIXME（Chrome delta）：CSS-mode margin-div 臂未移植（spec
+  // isSimpleIndentationElement 合并面分叉；swcss=true margin-div 族 ×2
+  // `<p>[abc]</p>` p-margin 形非本刀域）。
+  function _zwFbqIndentNodes(nodeList, zwWebkitWrap) {
     // "If node list is empty, do nothing and abort these steps."
     if (!nodeList.length) return;
     var firstNode = nodeList[0];
@@ -667,7 +693,16 @@
     // indentation element ... new parent ... createElement("blockquote")..."
     var newParent = _zwJusWrap(nodeList,
       function (node) { return _zwListIsSimpleIndentationElement(node); },
-      function () { return firstNode.ownerDocument.createElement('blockquote'); });
+      zwWebkitWrap
+        ? function () {
+            var bq = firstNode.ownerDocument.createElement('blockquote');
+            bq.setAttribute('style',
+              'margin: 0 0 0 40px; border: none; padding: 0px;');
+            return bq;
+          }
+        : function () {
+            return firstNode.ownerDocument.createElement('blockquote');
+          });
     // "Fix disallowed ancestors of new parent."
     _zwListFixDisallowedAncestors(newParent);
   }
@@ -707,8 +742,13 @@
     var newRange = _zwJusBlockExtend(range, false);
     // "For each node node contained in new range, if node is editable and is
     // an allowed child of "div" or "ol" ..., append node to node list."
+    // （https://w3c.github.io/editing/execCommand.html#the-indent-command）
+    // Chrome delta（R13 cE=false wrap 刀，2026-11-17）：spec 「if node is
+    // editable」排除面收窄——fully-contained 非可编辑元素照纳入（Chrome 录音
+    // indent.html 三连形 `{ <span cE=false>A/B/C }` 整体单容器 wrap；刀前
+    // 只剩 ws 文本子被逐个包壳—— census 档 got 实证）。
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
-      return _zwJusIsEditable(node)
+      return (_zwJusIsEditable(node) || node.nodeType === 1)
         && (_zwJusIsAllowedChild(node, 'div')
             || _zwJusIsAllowedChild(node, 'ol'));
     });
@@ -737,7 +777,7 @@
           && nodeList[0] === sublist[sublist.length - 1].nextSibling) {
         sublist.push(nodeList.shift());
       }
-      _zwFbqIndentNodes(sublist);
+      _zwFbqIndentNodes(sublist, !!globalThis.__zwStyleWithCSS);
     }
     return true;
   };
