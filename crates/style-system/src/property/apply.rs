@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 56] = [
+    const VALIDATED_PROPERTIES: [&str; 58] = [
         "transform",
         "rotate",
         "scale",
@@ -2380,6 +2380,17 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "rule-inset-end",
         "column-rule-inset-end",
         "row-rule-inset-end",
+        // 刀 N 二期写面文法门（css-fonts-4 §family-name-value + §font-prop）：
+        // font-family 值文法（custom-ident 序列/quoted 名/CSS-wide keyword 列表
+        // 位拒）与 font 简写整体文法（expand_font 单源校验）。分派臂见
+        // [`validate_decl_value`] 中段（counter-increment 臂前——`simple()` 形
+        // function token 会被未实现函数放行臂先行误放）。driving:
+        // test_font_family_parsing 608F（rule 形 + setter 形双通道，inline 写面
+        // 此前白名单外放行 store 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-fonts-4/#family-name-value
+        // https://drafts.csswg.org/css-fonts-4/#font-prop
+        "font-family",
+        "font",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2542,6 +2553,31 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         if had_random {
             return random_valid;
         }
+    }
+    // 刀 N 二期 font 族写面文法门（css-fonts-4 §family-name-value + §font-prop）
+    // ——置于 value_has_unimplemented_function 放行臂之前（`simple()` 形非法
+    // function token 不在该函数名单，放行臂会先行误放；counter-increment 臂
+    // `reversed(` 同序先例）。escape 词法（`\s imple`/`\1f4a9` 转义 ident——
+    // 该组全为 valid 语料）[`parse_font_family`] 的 is_css_ident 不支持转义，
+    // 放行保形零误拒（FIXME: font-family 转义序列词法挂账，挂上后收窄此臂）；
+    // 替换函数形（var()/attr()）放行 store 原文（counter 臂同口径——有效性
+    // computed 期替换重裁）。整条 CSS-wide keyword（`font: inherit`）在白名单
+    // 通用臂先行放行，不入本臂。
+    // driving: test_font_family_parsing 608F（rule 形 insertRule/规则样式 setter
+    // 经 shim `_zwNormalizeDeclValue` font 臂桥入本函数，inline setter 直入）。
+    // https://drafts.csswg.org/css-fonts-4/#family-name-value
+    // https://drafts.csswg.org/css-fonts-4/#font-prop
+    if prop == "font-family" {
+        if value_has_substitution_function(v) || v.contains('\\') {
+            return true;
+        }
+        return !parse_font_family(v).is_empty();
+    }
+    if prop == "font" {
+        if value_has_substitution_function(v) || v.contains('\\') {
+            return true;
+        }
+        return crate::shorthand::font_shorthand_supported(v);
     }
     // counter-increment 写面文法门（css-lists-3 §counter-increment：`none` 单置、
     // 名 = <custom-ident>（css-wide/none 排除）、整数位 = <integer> 字面或
@@ -2870,7 +2906,11 @@ fn extract_random_args(value: &str) -> Vec<String> {
     let bytes = lower.as_bytes();
     let mut i = 0;
     while i + 7 <= bytes.len() {
-        if &lower[i..i + 7] != "random(" {
+        // byte 切片比较（`random(` 是 ASCII 序列；`&lower[i..i+7]` str 切片要求
+        // char boundary，窗口**终点**会落进多字节字符中间——font-family 白名单
+        // 接入后 valid 语料 `16px 納豆嫌い` 触发 byte-slice panic，2026-11-18
+        // 刀 N 二期 A/B 探针实证。`[u8]` 切片无边界约束，逐字节比较语义等价）。
+        if &bytes[i..i + 7] != b"random(" {
             i += 1;
             continue;
         }

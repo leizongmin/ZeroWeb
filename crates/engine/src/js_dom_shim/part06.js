@@ -2162,6 +2162,26 @@
   // 落点——该面由白名单门自然收窄后，剩余边界在此声明）。
   function _zwNormalizeDeclValue(value, propName) {
     var raw = String(value == null ? '' : value);
+    // 刀 N 二期（css-fonts-4 §family-name-value + §font-prop）：font-family/
+    // font 声明值文法校验整值委托宿主 [`zero_style_system::validate_decl_value`]
+    //（`__zw_validate_decl_value`——parse_font_family/expand_font 单源；白名单
+    // 通用臂先放整条 CSS-wide keyword）。'false' → null 拒（声明丢弃/赋值忽略
+    // 保留原值，T47 DF-3 同语义；inline 写面独立 validate 臂（part03 setProp）
+    // 同回调幂等——本臂补齐 rule 声明（_parseDeclarations）与规则样式 setter
+    // 两通道此前原文回显缺口，test_font_family_parsing rule 形 608F 靶面）。
+    // 尾部 `!important` 先剥再校验（part03 `_styleValueAndPriority` 同款正则，
+    // 拼接 bundle 顶层共享——`font-family: simple !important` 的 important
+    // 尾巴非 family token，混入会误拒）。合法保形返回原文零重写（reject-only，
+    // anchor 臂先例）。回调未注册（兜底链）不校验零漂移。
+    // https://drafts.csswg.org/css-fonts-4/#family-name-value
+    if ((propName === 'font-family' || propName === 'font')
+        && typeof globalThis.__zw_validate_decl_value === 'function') {
+      var _fvCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (_fvCore !== '' && globalThis.__zw_validate_decl_value(propName, _fvCore) === 'false') {
+        return null;
+      }
+      return raw;
+    }
     // grid 家族整值归一（wptfyi-css DC-2 grid 批次 G1）：宿主 grid_cssom canonical
     // 化——非法整值返字符串 'null' → 拒（T47 DF-3 同语义：赋值忽略保留原值）；
     // CSS-wide keyword 宿主侧放行 echo 小写。宿主回调返 JS 字符串（shim 通用

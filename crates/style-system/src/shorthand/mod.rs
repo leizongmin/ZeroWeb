@@ -3237,7 +3237,15 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // 是 `<family-name>#` 逗号列表（css-fonts-4 §font-prop——`font: 14px Arial,
     // sans-serif` 合法，test_font_shorthand_supported_valid/字体栈语料锚定）；
     // 解析空 Vec（含非法字符如 `font: 16px 0simple`）整条拒收。
-    if crate::property::parse::parse_font_family(&family).is_empty() {
+    // 刀 N 二期：family 位出现 CSS-wide keyword 段（`font: 16px inherit`）拒收
+    // ——简写带 size 位必非整条 CSS-wide keyword 声明，keyword 出现在
+    // `<family-name>#` 槽位恒非法（css-values-4 §custom-idents 排除集；不问段
+    // 数——单段 `inherit` 同拒，与 longhand 本体「仅列表多段拒」门不同）。
+    // driving: test_font_family_parsing `16px inherit`/`16px inherit, simple`
+    // 简写组 556F。
+    if crate::property::parse::font_family_list_has_css_wide_keyword(&family)
+        || crate::property::parse::parse_font_family(&family).is_empty()
+    {
         return vec![];
     }
 
