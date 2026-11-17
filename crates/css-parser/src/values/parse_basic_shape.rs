@@ -1437,6 +1437,390 @@ fn canonicalize_inset_inner(inner: &str) -> Option<String> {
     ))
 }
 
+/// clip-path 声明值 specified canonical（wptfyi-css 刀 S：css-masking
+/// parsing/clip-path-valid 语料 14F 靶面）。规则（页源逐行钉面）：
+/// - `<geometry-box>` 前缀/后缀全剥除（语料 `border-box circle(...)` /
+///   `circle(...) border-box` → `circle(...)`；裸 box 关键字恒等）；
+/// - 裸 `0` 长度补 px（inset 参数/半径、xywh/rect 参数与 round 半径、
+///   polygon 坐标；`auto`/`%`/calc 形保形）；
+/// - circle 单 `closest-side` 半径省略（缺省值）→ `circle()`；ellipse
+///   半径全 `closest-side` 省略；混合半径（`1px closest-side`）保形；
+/// - polygon `nonzero`（缺省 fill-rule）省略、`evenodd` 保形；全零 round
+///   半径组省略、非全零组保形（组内 `0` 补 px）；
+/// - path() `nonzero` 省略（`evenodd` 保形）+ 路径数据 token 规范：
+///   逗号→空白、命令字母间单空格连接、小写 `z` → `Z`（其余字母大小写
+///   保形）、数值 token 原文保形；
+/// - xywh/rect 全零 round 组省略（`round 0`）；非全零组保形补 px；
+/// - at 位置段重排复用 [`canonicalize_at_position`]；
+/// - url()/ray()/shape()、identity 形与不可识别形 None passthrough（回落
+///   既有 AST 串化通道零漂移）。
+///
+/// https://drafts.fxtf.org/css-masking-1/#the-clip-path
+/// https://drafts.csswg.org/css-shapes-2/#serializing-basic-shape
+pub fn canonicalize_clip_path_specified(value: &str) -> Option<String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let core = canonicalize_strip_box_keywords(v)?;
+    let open = core.find('(')?;
+    let name = core[..open].trim().to_ascii_lowercase();
+    let close = core.rfind(')')?;
+    if close < open {
+        return None;
+    }
+    let inner = core.get(open + 1..close)?;
+    let suffix = core.get(close + 1..)?.trim();
+    // 后缀仅允许 geometry-box（已剥除语义）——其余尾随 token 非法 passthrough。
+    if !suffix.is_empty() && !is_shape_box_keyword(suffix) {
+        return None;
+    }
+    let body = match name.as_str() {
+        "circle" => canonicalize_clip_circle_ellipse("circle", inner, true),
+        "ellipse" => canonicalize_clip_circle_ellipse("ellipse", inner, true),
+        "inset" => canonicalize_clip_inset(inner),
+        "polygon" => canonicalize_clip_polygon(inner),
+        "path" => canonicalize_clip_path_fn(inner),
+        "xywh" | "rect" => canonicalize_clip_xywh_rect(&name, inner),
+        _ => None,
+    }?;
+    if body == v {
+        return None;
+    }
+    Some(body)
+}
+
+/// 裸 box 关键字判定（大小写不敏感）。
+fn is_shape_box_keyword(tok: &str) -> bool {
+    matches!(
+        tok.to_ascii_lowercase().as_str(),
+        "content-box" | "padding-box" | "border-box" | "margin-box" | "fill-box" | "stroke-box" | "view-box"
+    )
+}
+
+/// 剥除前后缀 geometry-box（clip-path 语料 oracle 两序全剥）。裸 box 值或
+/// 双 box（前+后缀）None passthrough（前者 identity、后者非法）。
+fn canonicalize_strip_box_keywords(v: &str) -> Option<&str> {
+    let mut core = v;
+    for kw in [
+        "content-box",
+        "padding-box",
+        "border-box",
+        "margin-box",
+        "fill-box",
+        "stroke-box",
+        "view-box",
+    ] {
+        if let Some(rest) = core.strip_prefix(kw) {
+            if rest.trim().is_empty() {
+                return None; // 裸 box 关键字：identity passthrough
+            }
+            core = rest.trim_start();
+            break;
+        }
+    }
+    // 后缀 box 剥除由调用方经 suffix 检查处理（返回 core 含后缀，函数体
+    // 重建时不含）；此处仅裁形前缀单次命中。
+    Some(core)
+}
+
+/// 裸 `0` 数值 token → `0px`（其余 token 保形引回）。裸非零数值不动
+///（非法长度形由 invalid 门管，canonical 层 passthrough）。
+fn norm_zero_tok(tok: &str) -> String {
+    if tok.parse::<f64>().map(|n| n == 0.0).unwrap_or(false) {
+        "0px".to_string()
+    } else {
+        tok.to_string()
+    }
+}
+
+/// clip-path circle()/ellipse() 段 canonical：缺省半径省略 + at 位置重排。
+fn canonicalize_clip_circle_ellipse(name: &str, inner: &str, _drop_default: bool) -> Option<String> {
+    let inner = inner.trim();
+    let toks = split_top_ws_depth(inner);
+    let at_idx = toks.iter().position(|t| t.eq_ignore_ascii_case("at"));
+    let (radius_toks, pos_toks) = match at_idx {
+        Some(i) => (&toks[..i], Some(&toks[i + 1..])),
+        None => (&toks[..], None),
+    };
+    // 缺省半径：全部 token 均为 closest-side（1-2 个）→ 省略。
+    let drop = !radius_toks.is_empty()
+        && radius_toks.len() <= 2
+        && radius_toks.iter().all(|t| t.eq_ignore_ascii_case("closest-side"));
+    let radius = if drop { String::new() } else { radius_toks.join(" ") };
+    let position = match pos_toks {
+        Some(p) if !p.is_empty() => {
+            let canonical = canonicalize_at_position(p);
+            Some(match canonical {
+                Some(c) => c,
+                None => p.join(" "),
+            })
+        }
+        _ => None,
+    };
+    let mut out = String::from(name);
+    out.push('(');
+    if !radius.is_empty() {
+        out.push_str(&radius);
+        if position.is_some() {
+            out.push(' ');
+        }
+    }
+    if let Some(pos) = position {
+        out.push_str("at ");
+        out.push_str(&pos);
+    }
+    out.push(')');
+    Some(out)
+}
+
+/// clip-path inset() 段 canonical：参数与 round 半径裸 `0` 补 px（含 slash
+/// 组；非零组保形）。
+fn canonicalize_clip_inset(inner: &str) -> Option<String> {
+    let inner = inner.trim();
+    let round_idx = find_keyword_pos(inner, "round");
+    let (args, radii) = match round_idx {
+        Some(i) => (&inner[..i], Some(inner[i + "round".len()..].trim())),
+        None => (inner, None),
+    };
+    let args_toks = split_top_ws_depth(args);
+    if args_toks.is_empty() || args_toks.len() > 4 {
+        return None;
+    }
+    let mut out = String::from("inset(");
+    out.push_str(&args_toks.iter().map(|t| norm_zero_tok(t)).collect::<Vec<_>>().join(" "));
+    if let Some(r) = radii {
+        if !r.is_empty() {
+            let r_toks = split_tokens_with_slash(r);
+            out.push_str(" round ");
+            out.push_str(
+                &r_toks
+                    .iter()
+                    .map(|t| if *t == "/" { "/".to_string() } else { norm_zero_tok(t) })
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
+    }
+    out.push(')');
+    Some(out)
+}
+
+/// clip-path polygon() 段 canonical：nonzero 省略、全零 round 组省略、
+/// 坐标裸 `0` 补 px。段数 ≥1（首段可携 fill-rule/round + 坐标；后续段
+/// 逐段 2 token 坐标裁形——非 2 token 形 None passthrough）。
+fn canonicalize_clip_polygon(inner: &str) -> Option<String> {
+    let segs = split_top_level_commas_always(inner.trim());
+    let mut out_segs: Vec<String> = Vec::with_capacity(segs.len());
+    for (idx, seg) in segs.iter().enumerate() {
+        let toks = split_top_ws_depth(seg.trim());
+        if toks.is_empty() {
+            return None;
+        }
+        if idx == 0 {
+            let mut fill_kw: Option<&str> = None;
+            let mut rest = &toks[..];
+            let f = rest[0].to_ascii_lowercase();
+            if f == "nonzero" || f == "evenodd" {
+                fill_kw = if f == "evenodd" { Some(rest[0]) } else { None };
+                rest = &rest[1..];
+            }
+            if rest.is_empty() {
+                // 段仅 fill-rule：evenodd 保留独立段，nonzero 省略（整值仅
+                // nonzero 无坐标形非法 passthrough）。
+                if let Some(fk) = fill_kw {
+                    out_segs.push(fk.to_string());
+                } else if segs.len() == 1 {
+                    return None;
+                }
+                continue;
+            }
+            // round 组：关键字 + 1-4 半径 token（calc 形由 token 化保整段）。
+            if rest[0].eq_ignore_ascii_case("round") {
+                let radii = &rest[1..];
+                if radii.is_empty() || radii.len() > 4 {
+                    return None;
+                }
+                let norm: Vec<String> = radii.iter().map(|t| norm_zero_tok(t)).collect();
+                if norm.iter().all(|t| t == "0px") {
+                    // 全零 round 组省略；段内仅 round（±fill）按 fill 处置。
+                    if let Some(fk) = fill_kw {
+                        out_segs.push(fk.to_string());
+                    } else if segs.len() == 1 {
+                        return None;
+                    }
+                    continue;
+                }
+                let mut seg_out = String::new();
+                if let Some(fk) = fill_kw {
+                    seg_out.push_str(fk);
+                    seg_out.push(' ');
+                }
+                seg_out.push_str("round ");
+                seg_out.push_str(&norm.join(" "));
+                out_segs.push(seg_out);
+                continue;
+            }
+            // fill + 坐标同段形。
+            if rest.len() != 2 {
+                return None;
+            }
+            let mut seg_out = String::new();
+            if let Some(fk) = fill_kw {
+                seg_out.push_str(fk);
+                seg_out.push(' ');
+            }
+            seg_out.push_str(&norm_zero_tok(rest[0]));
+            seg_out.push(' ');
+            seg_out.push_str(&norm_zero_tok(rest[1]));
+            out_segs.push(seg_out);
+            continue;
+        }
+        // 后续段：2 token 坐标（裸 0 补 px）。
+        if toks.len() != 2 {
+            return None;
+        }
+        out_segs.push(format!("{} {}", norm_zero_tok(toks[0]), norm_zero_tok(toks[1])));
+    }
+    if out_segs.iter().any(|s| s.is_empty()) {
+        return None;
+    }
+    Some(format!("polygon({})", out_segs.join(", ")))
+}
+
+/// clip-path path() 段 canonical：nonzero 省略（evenodd 保形）+ 路径数据
+/// token 规范（见 [`canonicalize_path_data`]）。
+fn canonicalize_clip_path_fn(inner: &str) -> Option<String> {
+    // 不能用逗号切分——路径数据串内含逗号；以引号前缀判定单段/双段，
+    // 双段在首个逗号处分割（fill 段在 data 前，首逗号即分隔符）。
+    let trimmed = inner.trim();
+    let first = trimmed.chars().next()?;
+    let (fill_seg, data_seg) = if first == '"' || first == '\'' {
+        (None, trimmed)
+    } else {
+        let i = trimmed.find(',')?;
+        (Some(trimmed[..i].trim()), trimmed[i + 1..].trim())
+    };
+    let (fill, data_seg) = match fill_seg {
+        None => (None, data_seg),
+        Some(f) => {
+            let fl = f.to_ascii_lowercase();
+            if fl != "nonzero" && fl != "evenodd" {
+                return None;
+            }
+            let fill = if fl == "evenodd" { Some(f) } else { None };
+            (fill, data_seg)
+        }
+    };
+    let q = data_seg;
+    let quote = q.chars().next()?;
+    if (quote != '"' && quote != '\'') || q.len() < 2 || !q.ends_with(quote) {
+        return None;
+    }
+    let data = canonicalize_path_data(&q[1..q.len() - 1])?;
+    let mut out = String::from("path(");
+    if let Some(f) = fill {
+        out.push_str(f);
+        out.push_str(", ");
+    }
+    out.push(quote);
+    out.push_str(&data);
+    out.push(quote);
+    out.push(')');
+    Some(out)
+}
+
+/// SVG 路径数据 token 规范：命令字母（大小写保形，`z`→`Z`）+ 数值 token
+///（原文保形）单空格连接；逗号作分隔符吞除；其余字符（引号/未知）None。
+fn canonicalize_path_data(data: &str) -> Option<String> {
+    let b = data.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i] as char;
+        if c.is_ascii_alphabetic() {
+            out.push((if c == 'z' { 'Z' } else { c }).to_string());
+            i += 1;
+        } else if c.is_ascii_digit() || c == '.' || c == '-' || c == '+' {
+            let start = i;
+            if c == '-' || c == '+' {
+                i += 1;
+            }
+            let mut saw_digit = false;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+                saw_digit = true;
+            }
+            if i < b.len() && b[i] == b'.' {
+                i += 1;
+                while i < b.len() && b[i].is_ascii_digit() {
+                    i += 1;
+                    saw_digit = true;
+                }
+            }
+            if !saw_digit {
+                return None;
+            }
+            // 指数段（e/E + 可选符号 + 数字）并入同一数值 token。
+            if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+                let mut j = i + 1;
+                if j < b.len() && (b[j] == b'+' || b[j] == b'-') {
+                    j += 1;
+                }
+                let e0 = j;
+                while j < b.len() && b[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j > e0 {
+                    i = j;
+                }
+            }
+            out.push(data[start..i].to_string());
+        } else if c.is_whitespace() || c == ',' {
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some(out.join(" "))
+}
+
+/// clip-path xywh()/rect() 段 canonical：参数裸 `0` 补 px（rect `auto`
+/// 保形）；round 半径全零省略、非全零保形补 px。
+fn canonicalize_clip_xywh_rect(name: &str, inner: &str) -> Option<String> {
+    let inner = inner.trim();
+    let round_idx = find_keyword_pos(inner, "round");
+    let (args, radii) = match round_idx {
+        Some(i) => (&inner[..i], Some(inner[i + "round".len()..].trim())),
+        None => (inner, None),
+    };
+    let args_toks = split_top_ws_depth(args);
+    if args_toks.is_empty() || args_toks.len() > 4 {
+        return None;
+    }
+    let mut out = format!("{name}(");
+    out.push_str(&args_toks.iter().map(|t| norm_zero_tok(t)).collect::<Vec<_>>().join(" "));
+    if let Some(r) = radii {
+        if !r.is_empty() {
+            let r_toks = split_top_ws_depth(r);
+            if r_toks.is_empty() || r_toks.len() > 4 {
+                return None;
+            }
+            let norm: Vec<String> = r_toks.iter().map(|t| norm_zero_tok(t)).collect();
+            let all_zero = norm.iter().all(|t| t == "0px");
+            if !all_zero {
+                out.push_str(" round ");
+                out.push_str(&norm.join(" "));
+            }
+        }
+    }
+    out.push(')');
+    Some(out)
+}
+
 /// ClipPathValue 声明级 canonical 串化分派（含本模块四兄弟）。
 pub fn clip_path_value_to_css(v: &ClipPathValue) -> Option<String> {
     match v {

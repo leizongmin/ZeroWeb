@@ -1244,9 +1244,21 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // canonical——共享解析器 parse 期折 px（types.rs:3224 同族），声明级
         // canonical 无法保原单位形，回落原文通道（CSSOM specified 保形）。
         // https://drafts.csswg.org/css-shapes-2/#serializing-basic-shape
-        "clip-path" if !super::parse_basic_shape::has_physical_length_unit(v) => {
-            super::parse_extended_border::parse_clip_path(v)
-                .and_then(|c| super::parse_basic_shape::clip_path_value_to_css(&c))
+        // 刀 S 文本级 clip-path canonical 优先（geometry-box 剥除/裸 0 补 px/
+        // 缺省半径省略/nonzero 省略/path 数据规范——css-masking parsing
+        // clip-path-valid 语料钉面；文本层保原单位形无物理单位 skip 需求）；
+        // identity/不可识别形 None 回落既有 AST 串化通道（含物理单位 guard
+        // 保留——AST 往返折 px 面同前）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+        "clip-path" => {
+            if let Some(c) = super::parse_basic_shape::canonicalize_clip_path_specified(v) {
+                return Some(c);
+            }
+            if !super::parse_basic_shape::has_physical_length_unit(v) {
+                return super::parse_extended_border::parse_clip_path(v)
+                    .and_then(|c| super::parse_basic_shape::clip_path_value_to_css(&c));
+            }
+            None
         }
         // css-shapes-1 §shape-outside-property 声明值 canonical 串化（wptfyi-css
         // 刀 Q：circle/ellipse-002 位置补全 29F×2、-004 位置组 inline 143F×2、

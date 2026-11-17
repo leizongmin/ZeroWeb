@@ -783,3 +783,107 @@ fn test_shape_outside_specified_passthrough_guards() {
     );
     assert_eq!(canon(""), None);
 }
+
+#[test]
+fn test_clip_path_specified_geometry_box_strip() {
+    // 刀 S：geometry-box 前缀/后缀全剥除（clip-path-valid 语料 L91/L94）；
+    // 裸 box 关键字 identity passthrough。
+    use parse_basic_shape::canonicalize_clip_path_specified as canon;
+    assert_eq!(
+        canon("border-box circle(7% at 8% 9%)").as_deref(),
+        Some("circle(7% at 8% 9%)")
+    );
+    assert_eq!(
+        canon("circle(7% at 8% 9%) border-box").as_deref(),
+        Some("circle(7% at 8% 9%)")
+    );
+    assert_eq!(canon("border-box"), None);
+    assert_eq!(canon("view-box"), None);
+}
+
+#[test]
+fn test_clip_path_specified_zero_px_and_default_radius() {
+    // 裸 0 补 px（inset/xywh/rect 参数与 round 半径）+ circle/ellipse 缺省
+    // 半径省略（closest-side）；非全零 round 组保形补 px（L70/L77）。
+    use parse_basic_shape::canonicalize_clip_path_specified as canon;
+    assert_eq!(canon("inset(0 1px)").as_deref(), Some("inset(0px 1px)"));
+    assert_eq!(
+        canon("inset(0px round 0 1px)").as_deref(),
+        Some("inset(0px round 0px 1px)")
+    );
+    assert_eq!(canon("inset(10px round 20% / 0px 1px 2% 3em)"), None);
+    assert_eq!(canon("circle(closest-side)").as_deref(), Some("circle()"));
+    assert_eq!(canon("circle()"), None);
+    assert_eq!(canon("circle(1px)"), None);
+    assert_eq!(canon("circle(farthest-side at center top)"), None);
+    assert_eq!(
+        canon("ellipse(closest-side closest-side at 10% 20%)").as_deref(),
+        Some("ellipse(at 10% 20%)")
+    );
+    assert_eq!(canon("ellipse(1px closest-side)"), None);
+    assert_eq!(canon("xywh(0 1% 2px 3em)").as_deref(), Some("xywh(0px 1% 2px 3em)"));
+    assert_eq!(
+        canon("xywh(0px 1% 2px 3em round 0)").as_deref(),
+        Some("xywh(0px 1% 2px 3em)")
+    );
+    assert_eq!(
+        canon("xywh(0px 1% 2px 3em round 0 1px)").as_deref(),
+        Some("xywh(0px 1% 2px 3em round 0px 1px)")
+    );
+    assert_eq!(
+        canon("rect(0 100% 200px 4em)").as_deref(),
+        Some("rect(0px 100% 200px 4em)")
+    );
+    assert_eq!(canon("rect(auto auto auto auto)"), None);
+    assert_eq!(
+        canon("rect(0px 100% auto 4em round 0)").as_deref(),
+        Some("rect(0px 100% auto 4em)")
+    );
+}
+
+#[test]
+fn test_clip_path_specified_position_reorder() {
+    // at 位置段重排复用（circle-004 同族规则）。
+    use parse_basic_shape::canonicalize_clip_path_specified as canon;
+    assert_eq!(
+        canon("circle(4% at top right)").as_deref(),
+        Some("circle(4% at right top)")
+    );
+    assert_eq!(
+        canon("ellipse(farthest-side 4% at bottom left)").as_deref(),
+        Some("ellipse(farthest-side 4% at left bottom)")
+    );
+    assert_eq!(canon("circle(at 10% 20%)"), None);
+}
+
+#[test]
+fn test_clip_path_specified_polygon_and_path() {
+    // polygon nonzero/全零 round 省略、evenodd 保形；path nonzero 省略 +
+    // 数据 token 规范（逗号→空白、z→Z、单空格连接）。
+    use parse_basic_shape::canonicalize_clip_path_specified as canon;
+    assert_eq!(
+        canon("polygon(nonzero, 1px 2px, 3em 4em)").as_deref(),
+        Some("polygon(1px 2px, 3em 4em)")
+    );
+    assert_eq!(canon("polygon(evenodd, 1px 2px)"), None);
+    assert_eq!(
+        canon("polygon(round 0px, 1px 2px, 3px 4px)").as_deref(),
+        Some("polygon(1px 2px, 3px 4px)")
+    );
+    assert_eq!(
+        canon("polygon(nonzero round 1px, 1px 2px, 3em 4em)").as_deref(),
+        Some("polygon(round 1px, 1px 2px, 3em 4em)")
+    );
+    assert_eq!(canon("polygon(round 1px, 1% 2%)"), None);
+    assert_eq!(canon("polygon(round calc(1em + 2px), 1px 2px, 3px 4px)"), None);
+    assert_eq!(
+        canon(r#"path(nonzero, "M20,20h60 v60 h-60z M30,30 h40 v40 h-40z")"#).as_deref(),
+        Some(r#"path("M 20 20 h 60 v 60 h -60 Z M 30 30 h 40 v 40 h -40 Z")"#)
+    );
+    assert_eq!(canon(r#"path("m 20 0 h -100")"#), None);
+    assert_eq!(canon(r#"path(evenodd, "M 20 20 h 60 v 60 h -60 Z")"#), None);
+    // url()/非法形 passthrough。
+    assert_eq!(canon("url(https://example.com/)"), None);
+    assert_eq!(canon("ray(0deg)"), None);
+    assert_eq!(canon("inset()"), None);
+}
