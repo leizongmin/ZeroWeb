@@ -3336,6 +3336,33 @@ mod tests {
     }
 
     #[test]
+    fn test_interpolate_clip_path_cross_unit_calc() {
+        // 刀 G：px↔% 跨单位 calc 混合（css-values-4 §8.5.6 interpolation-calc；
+        // 复用 blend_rule_inset_lp 模型——css-shapes-1 §basic-shape-interpolation
+        // 坐标/半径同文法槽，刀 E GONE 定谳 clip-path-interpolation-002 靶面）。
+        // inset 四边逐位 mix 形（emit 两位小数，canonicalize 通道 gCS 再串化归 shortest）。
+        let r = interpolate_property_value("clip-path", "inset(10px)", "inset(40%)", 0.5);
+        assert_eq!(
+            r,
+            "inset(calc(20.00% + 5.00px) calc(20.00% + 5.00px) calc(20.00% + 5.00px) calc(20.00% + 5.00px))"
+        );
+        // 半径/位置槽同模型；px 系数零折叠纯 %。
+        let r = interpolate_property_value("clip-path", "circle(10px at 5px 5px)", "circle(50% at 25% 25%)", 0.5);
+        assert_eq!(
+            r,
+            "circle(calc(25.00% + 5.00px) at calc(12.50% + 2.50px) calc(12.50% + 2.50px))"
+        );
+        let r = interpolate_property_value("clip-path", "inset(0px)", "inset(40%)", 0.5);
+        assert_eq!(r, "inset(20.00% 20.00% 20.00% 20.00%)");
+        // 关键词半径↔长度仍离散（t<0.5 → from）。
+        let r = interpolate_property_value("clip-path", "circle(closest-side)", "circle(50%)", 0.3);
+        assert_eq!(r, "circle(closest-side)");
+        // offset-path 同文法通道同步生效（css-motion-1 offset-path basic-shape）。
+        let r = interpolate_property_value("offset-path", "circle(10px)", "circle(50%)", 0.5);
+        assert_eq!(r, "circle(calc(25.00% + 5.00px))");
+    }
+
+    #[test]
     fn test_interpolate_clip_path_polygon_and_hetero() {
         // polygon 同数逐点。
         let r = interpolate_property_value(

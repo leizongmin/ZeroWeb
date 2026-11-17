@@ -149,13 +149,18 @@ pub(crate) fn interpolate_clip_path(from: &str, to: &str, t: f64) -> Option<Stri
     }
 }
 
-/// 长度/百分比同单位线性插值，发射 chrome-canonical 数字（CSSOM shortest
-/// 形——offset-path 通道 gCS verbatim 无再 parse，发射即终文；px/% 以外
-/// 单位、calc 端点离散）。
+/// 长度/百分比插值：同单位线性发射 chrome-canonical 数字（CSSOM shortest
+/// 形——offset-path 通道 gCS verbatim 无再 parse，发射即终文）；px/% 以外
+/// 单位离散。跨单位（px↔%）calc 混合（css-values-4 §8.5.6 interpolation-calc，
+/// 刀 G：逐单位系数线性 `calc(P% ± Xpx)`、px 系数零折叠纯 %，复用刀 E
+/// blend_rule_inset_lp 模型——css-shapes-1 §basic-shape-interpolation 坐标/
+/// 半径槽同文法，刀 E GONE 定谳第 4 条 clip-path-interpolation-002 靶面）。
 fn lerp_len(f: &LengthValue, v: &LengthValue, t: f64) -> Option<String> {
     match (f, v) {
         (LengthValue::Px(a), LengthValue::Px(b)) => Some(format!("{}px", fmt_num(lerp(*a, *b, t)))),
         (LengthValue::Percentage(a), LengthValue::Percentage(b)) => Some(format!("{}%", fmt_num(lerp(*a, *b, t)))),
+        (LengthValue::Px(a), LengthValue::Percentage(b)) => super::blend_rule_inset_lp(a, "px", b, "%", t),
+        (LengthValue::Percentage(a), LengthValue::Px(b)) => super::blend_rule_inset_lp(a, "%", b, "px", t),
         _ => None,
     }
 }
