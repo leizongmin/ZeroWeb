@@ -663,3 +663,123 @@ fn test_clip_path_inset_calc_offset_rejection_boundary() {
     // round 参量槽不在偏移切分域，无偏移 calc 形不受理 round 仍解析。
     assert!(parse_clip_path("inset(0px round calc(1em + 2px))").is_some());
 }
+
+#[test]
+fn test_shape_outside_specified_position_completion() {
+    // css-shapes-1 §shape-outside-property specified canonical 位置补全
+    //（wptfyi-css 刀 Q：shape-outside-circle-002 语料钉面全形）——单 token
+    // 位置按轴补 center：len/pct 与水平缘后补、垂直缘前补、center 双补。
+    use parse_basic_shape::canonicalize_shape_outside_specified as canon;
+    assert_eq!(canon("circle(at 50%)").as_deref(), Some("circle(at 50% center)"));
+    assert_eq!(canon("circle(at 50cm)").as_deref(), Some("circle(at 50cm center)"));
+    assert_eq!(canon("circle(at left)").as_deref(), Some("circle(at left center)"));
+    assert_eq!(canon("circle(at right)").as_deref(), Some("circle(at right center)"));
+    assert_eq!(canon("circle(at top)").as_deref(), Some("circle(at center top)"));
+    assert_eq!(canon("circle(at bottom)").as_deref(), Some("circle(at center bottom)"));
+    assert_eq!(canon("circle(at center)").as_deref(), Some("circle(at center center)"));
+    assert_eq!(canon("ellipse(at 50px)").as_deref(), Some("ellipse(at 50px center)"));
+    // 半径段保形 + 位置段照常补全。
+    assert_eq!(
+        canon("circle(50px at 50%)").as_deref(),
+        Some("circle(50px at 50% center)")
+    );
+    assert_eq!(
+        canon("ellipse(20px 30px at top)").as_deref(),
+        Some("ellipse(20px 30px at center top)")
+    );
+    // shape-box 前缀保形。
+    assert_eq!(
+        canon("border-box circle(at 50%)").as_deref(),
+        Some("border-box circle(at 50% center)")
+    );
+}
+
+#[test]
+fn test_shape_outside_specified_keyword_reorder() {
+    // 双关键字垂直序翻转 + 4 token edge-offset 对水平先行（circle-002/004
+    // 语料钉面：`top left` → `left top`、`top 50% left 50cm` →
+    // `left 50cm top 50%`）。
+    use parse_basic_shape::canonicalize_shape_outside_specified as canon;
+    assert_eq!(canon("circle(at top left)").as_deref(), Some("circle(at left top)"));
+    assert_eq!(canon("circle(at top right)").as_deref(), Some("circle(at right top)"));
+    assert_eq!(
+        canon("circle(at bottom left)").as_deref(),
+        Some("circle(at left bottom)")
+    );
+    assert_eq!(
+        canon("circle(at bottom right)").as_deref(),
+        Some("circle(at right bottom)")
+    );
+    assert_eq!(
+        canon("circle(at top 50% left 50cm)").as_deref(),
+        Some("circle(at left 50cm top 50%)")
+    );
+    assert_eq!(
+        canon("ellipse(at bottom 70% right 80cm)").as_deref(),
+        Some("ellipse(at right 80cm bottom 70%)")
+    );
+    // center 混合 2-token 形（探针余 4F 钉面）：center 归缺失轴、x 先行
+    // ——`top center` → `center top`、`center left` → `left center`；
+    // `center top`/`left center` 已 canonical → passthrough。
+    assert_eq!(canon("circle(at top center)").as_deref(), Some("circle(at center top)"));
+    assert_eq!(
+        canon("circle(at bottom center)").as_deref(),
+        Some("circle(at center bottom)")
+    );
+    assert_eq!(
+        canon("circle(at center left)").as_deref(),
+        Some("circle(at left center)")
+    );
+    assert_eq!(
+        canon("circle(at center right)").as_deref(),
+        Some("circle(at right center)")
+    );
+    assert_eq!(canon("circle(at center top)"), None);
+    assert_eq!(canon("circle(at left center)"), None);
+    assert_eq!(canon("circle(at center center)"), None);
+    // 水平先行 4 token 形已 canonical → None passthrough（回显等值）。
+    assert_eq!(canon("circle(at left 50% top 50%)"), None);
+    // 长度混合双 token 形 oracle 未钉 → passthrough。
+    assert_eq!(canon("circle(at top 50%)"), None);
+    assert_eq!(canon("circle(at 50px top)"), None);
+    // 3 token 短 offset 形不接入（FIXME：`left 50% top` → `left 50% top 0%`）。
+    assert_eq!(canon("circle(at left 50% top)"), None);
+}
+
+#[test]
+fn test_shape_outside_specified_inset_round_collapse() {
+    // inset round 组镜像折叠（inset-003 语料钉面：垂直组逐角等值水平组 →
+    // 省略 `/ <vertical>`；非等值组保形）。
+    use parse_basic_shape::canonicalize_shape_outside_specified as canon;
+    assert_eq!(
+        canon("inset(10cm round 10cm / 10cm)").as_deref(),
+        Some("inset(10cm round 10cm)")
+    );
+    assert_eq!(
+        canon("inset(10cm round 10cm 20cm / 10cm 20cm)").as_deref(),
+        Some("inset(10cm round 10cm 20cm)")
+    );
+    // 非等值垂直组 passthrough（`/ 10cm 20cm` 展开 ≠ 水平镜像）。
+    assert_eq!(canon("inset(10cm round 10cm / 10cm 20cm)"), None);
+    // 无 round 组 passthrough。
+    assert_eq!(canon("inset(10px 20px)"), None);
+    // 负半径形由共享 border-radius 解析器拒 → None。
+    assert_eq!(canon("inset(10px round 10px / -10px)"), None);
+}
+
+#[test]
+fn test_shape_outside_specified_passthrough_guards() {
+    // 替换函数 / CSS-wide 关键字 / 非 shape 函数值 passthrough（读出视图
+    // 保形；写面 gate 同语义放行面）。
+    use parse_basic_shape::canonicalize_shape_outside_specified as canon;
+    assert_eq!(canon("var(--shape)"), None);
+    assert_eq!(canon("circle(at var(--pos))"), None);
+    assert_eq!(canon("inherit"), None);
+    assert_eq!(canon("none"), None);
+    assert_eq!(canon("border-box"), None);
+    assert_eq!(
+        canon("margin-box circle(at 50%)").as_deref(),
+        Some("margin-box circle(at 50% center)")
+    );
+    assert_eq!(canon(""), None);
+}

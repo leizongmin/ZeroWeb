@@ -1248,6 +1248,14 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
             super::parse_extended_border::parse_clip_path(v)
                 .and_then(|c| super::parse_basic_shape::clip_path_value_to_css(&c))
         }
+        // css-shapes-1 §shape-outside-property 声明值 canonical 串化（wptfyi-css
+        // 刀 Q：circle/ellipse-002 位置补全 29F×2、-004 位置组 inline 143F×2、
+        // inset-003 slash 折叠 52F 靶面）——文本级单源
+        // canonicalize_shape_outside_specified（oracle specified 保原单位形，
+        // 与 clip-path 臂的物理单位回落不同）；无法识别的合法形 None 保留
+        // 原文零漂移，invalid 形由写面 gate 拒收。
+        // https://drafts.csswg.org/css-shapes/#shape-outside-property
+        "shape-outside" => super::parse_basic_shape::canonicalize_shape_outside_specified(v),
         // css-shapes-1 §shape-margin-property：无单位 0 canonical 补 px（语料
         // shape-margin-valid `0`→`0px` 驱动）；其余形（px/em/%）Chrome specified
         // 级原样保（20em/37.5% 语料零期望差），不接 math 折叠（无语料驱动面）。

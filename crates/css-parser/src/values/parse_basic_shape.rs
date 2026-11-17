@@ -1268,6 +1268,175 @@ pub fn has_physical_length_unit(v: &str) -> bool {
     false
 }
 
+// ── shape-outside 声明值 specified canonical 串化（wptfyi-css 刀 Q）──────
+
+/// shape-outside 声明值 specified canonical 串化（css-shapes-1
+/// §shape-outside-property 串形 + cssom-1 §serializing CSS values 位置
+/// 规则；wptfyi-css 刀 Q：shape-outside-circle/ellipse-002 位置补全
+/// 29F×2、-004 位置组 inline 143F×2、inset-003 slash 折叠 52F 靶面）。
+///
+/// 纯文本级 token 重排/补全，不落 AST——共享解析器 parse 期折 px
+///（[`super::types::parse_length`] 物理单位臂），AST 往返无法保原单位形
+///（oracle specified 级保形 `circle(at 50cm)` → `circle(at 50cm center)`），
+/// 与 clip-path canonical 臂的物理单位回落原文不同（该属性 oracle
+/// specified 不保单位，本属性保）。写面 gate（apply 臂 parse_clip_path）
+/// 已裁 invalid，本串化只见合法形；无法识别的合法形返 None 保留原文
+/// 零漂移（3 token 短 offset 形、长度先行序等无语料驱动不接入）。
+///
+/// chrome 语料钉面规则（circle-002/004 全形清单）：
+/// - 单 token 位置补全：len/pct → `V center`、水平缘 → `V center`、
+///   垂直缘 → `center V`、center → `center center`；
+/// - 双关键字垂直序（`top left`）→ 水平先行（`left top`）；
+/// - 4 token edge-offset 对（`top 50% left 50cm`）→ 水平对先行
+///   （`left 50cm top 50%`）；
+/// - inset round 组：垂直组按 css-backgrounds-3 §border-radius 展开规则
+///   逐角等值于水平组 → 省略 `/ <vertical>`（`round 10cm / 10cm` →
+///   `round 10cm`；非等值组保形）。
+///
+/// 前置 shape-box 关键字（`border-box circle(at 50%)`）保形；替换函数
+///（var()/attr()）与 CSS-wide 关键字 None passthrough（写面放行语义同型）。
+/// https://drafts.csswg.org/css-shapes/#shape-outside-property
+/// https://drafts.csswg.org/cssom-1/#serializing-css-values
+pub fn canonicalize_shape_outside_specified(value: &str) -> Option<String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let lower = v.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+    ) {
+        return None;
+    }
+    if lower.contains("var(") || lower.contains("attr(") {
+        return None;
+    }
+    // 前置 shape-box 关键字剥离（`margin-box circle(at 50%)` 形；keyword
+    // 保形回拼，语料 oracle 前缀保形）。
+    let mut prefix = "";
+    let mut core = lower.as_str();
+    for box_kw in ["content-box", "padding-box", "border-box", "margin-box"] {
+        if let Some(rest) = core.strip_prefix(box_kw) {
+            let trimmed = rest.trim_start();
+            if trimmed.is_empty() {
+                return None;
+            }
+            prefix = box_kw;
+            core = trimmed;
+            break;
+        }
+    }
+    // 单函数形裁形：`name(inner)`（inner 至串尾闭括号——trim 后值尾即函数
+    // 闭括号；calc 嵌套括号由 token 化处理）。
+    let open = core.find('(')?;
+    let name = &core[..open];
+    let inner = core.get(open + 1..)?.strip_suffix(')')?;
+    let body = match name {
+        "circle" | "ellipse" => canonicalize_circle_ellipse_inner(name, inner)?,
+        "inset" => canonicalize_inset_inner(inner)?,
+        _ => return None,
+    };
+    Some(if prefix.is_empty() {
+        body
+    } else {
+        format!("{prefix} {body}")
+    })
+}
+
+/// circle()/ellipse() 位置子句 canonical：radius 段保形 + `at` 位置段
+/// token 重排（半径段无语料驱动面不重排；无 `at` 子句 passthrough——
+/// `circle(50px)` 位置省略形 oracle 串形未钉，不接入）。
+fn canonicalize_circle_ellipse_inner(name: &str, inner: &str) -> Option<String> {
+    let toks = split_top_ws_depth(inner);
+    let at_idx = toks.iter().position(|t| t.eq_ignore_ascii_case("at"))?;
+    let radius = toks[..at_idx].join(" ");
+    let position = canonicalize_at_position(&toks[at_idx + 1..])?;
+    let head = if radius.is_empty() {
+        String::new()
+    } else {
+        format!("{radius} ")
+    };
+    Some(format!("{name}({head}at {position})"))
+}
+
+/// at 位置段 canonical（见 [`canonicalize_shape_outside_specified`] 规则）：
+/// 单 token 补全 / 双关键字垂直序翻转 / 4 token 水平对先行；其余形 None。
+fn canonicalize_at_position(toks: &[&str]) -> Option<String> {
+    let kw = |t: &str| t.to_ascii_lowercase();
+    match toks.len() {
+        1 => {
+            let t = kw(toks[0]);
+            match t.as_str() {
+                "left" | "right" => Some(format!("{t} center")),
+                "top" | "bottom" => Some(format!("center {t}")),
+                "center" => Some("center center".to_string()),
+                _ if parse_shape_len(toks[0]).is_some() => Some(format!("{} center", toks[0])),
+                _ => None,
+            }
+        }
+        2 => {
+            // 仅垂直-水平关键字序翻转（`top left` → `left top`）；长度
+            // 混合形（`top 50%`/`50px top`）oracle 未钉 passthrough。
+            let a = kw(toks[0]);
+            let b = kw(toks[1]);
+            let is_h = |s: &str| matches!(s, "left" | "right");
+            let is_v = |s: &str| matches!(s, "top" | "bottom");
+            // center 混合形（探针余 4F）：center 归属缺失轴、canonical x 先行
+            // ——`top center` → `center top`、`center left` → `left center`
+            // （css-values-3 <position> 2-keyword 序）。
+            let swap = (is_v(&a) && (is_h(&b) || b == "center")) || (a == "center" && is_h(&b));
+            if swap { Some(format!("{b} {a}")) } else { None }
+        }
+        4 => {
+            // edge-offset 对序：首对垂直 → 水平对先行。token 文法裁形
+            //（缘关键字 + len 交替；len 用共享解析器裁——非长度形弃）。
+            let e0 = kw(toks[0]);
+            let e2 = kw(toks[2]);
+            let is_h = |s: &str| matches!(s, "left" | "right");
+            let is_v = |s: &str| matches!(s, "top" | "bottom");
+            if is_v(&e0) && is_h(&e2) && parse_shape_len(toks[1]).is_some() && parse_shape_len(toks[3]).is_some() {
+                Some(format!("{} {} {} {}", toks[2], toks[3], toks[0], toks[1]))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// inset() round 组 canonical：垂直组展开逐角等值于水平组（css-backgrounds-3
+/// §border-radius 1-4 值展开镜像规则）→ 省略 `/ <vertical>`；无 round 组或
+/// 非等值形 passthrough。insets 段保形（物理单位 oracle specified 保形）。
+/// 等值判定经共享解析器 parse 比对（`10px / 1em` 文本异而解析同值形亦折——
+/// 单位折算单点 parse_shape_len）。
+fn canonicalize_inset_inner(inner: &str) -> Option<String> {
+    let round_idx = find_keyword_pos(inner, "round")?;
+    let round = inner[round_idx + "round".len()..].trim();
+    if round.is_empty() {
+        return None;
+    }
+    let slash_toks = split_tokens_with_slash(round);
+    let slash_pos = slash_toks.iter().position(|t| *t == "/")?;
+    let h_toks = &slash_toks[..slash_pos];
+    let v_toks = &slash_toks[slash_pos + 1..];
+    if h_toks.is_empty() || v_toks.is_empty() || h_toks.len() > 4 || v_toks.len() > 4 {
+        return None;
+    }
+    // 文法裁形（共享 border-radius 解析器单点；负半径已在其内拒）——解析
+    // 结果仅作等值判定，回拼保原 token 文本（单位保形）。
+    let h_parsed = parse_radius_values(h_toks)?;
+    let v_parsed = parse_radius_values(v_toks)?;
+    if expand_radius(h_parsed) != expand_radius(v_parsed) {
+        return None;
+    }
+    Some(format!(
+        "inset({} round {})",
+        inner[..round_idx].trim_end(),
+        h_toks.join(" ")
+    ))
+}
+
 /// ClipPathValue 声明级 canonical 串化分派（含本模块四兄弟）。
 pub fn clip_path_value_to_css(v: &ClipPathValue) -> Option<String> {
     match v {
