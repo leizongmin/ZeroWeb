@@ -8163,6 +8163,9 @@ dependencies = [
 [[package]]
 name = "zero-runtime-config"
 version = "0.1.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "zero-script-sandbox"

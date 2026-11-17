@@ -1413,6 +1413,12 @@ fn main() {
         }
     }
 
+    // T79 S9：分配器滞留收敛（arena/mmap/trim 阈值，劈分证据见
+    // zero-runtime-config tune 文档）——进程最早时机单次调用（arena 生成前
+    // 语义最完整），置于 profile 解析后以尊重 profile 注入的环境变量；
+    // `ZEROWEB_MALLOC_TUNE=0` 关。
+    mem_trace::tune_malloc_retention_policy();
+
     // FR-4：browser 进程 panic 时写本地白名单崩溃报告（必须在一切初始化前
     // 安装，覆盖启动期 panic）；写报告失败不阻断退出，原钩子行为保持。
     zero_browser_shell::install_browser_panic_hook(

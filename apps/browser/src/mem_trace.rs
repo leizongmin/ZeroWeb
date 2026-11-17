@@ -7,6 +7,10 @@
 //! 因 crate 边界（browser 不依赖 renderer）本地复制，非 linux-gnu glibc 恒 n/a。
 //! 纯观测：默认关闭时每轮仅一次 Instant 比较；值 `1`/`true` → tracing INFO；
 //! 其余非空值 → 追加写文件。
+//!
+//! 另含 T79 S9 分配器滞留收敛接线（[`tune_malloc_retention_policy`]）：
+//! browser 进程此前未接 tune（renderer 已接），free 池 65-122MB 为 C1 增量
+//! 主桶之一——实现+开关在 zero-runtime-config，两 bin 同刀。
 
 /// 一次分配器快照（字节；`hblkhd` 为 mmap 大块持有面，不含在 arena）。
 #[derive(Debug, Clone, Copy, Default)]
@@ -140,4 +144,20 @@ fn epoch_ms() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0)
+}
+
+/// T79 S9：browser 进程分配器滞留收敛（启动单次调用，零热路径）。
+/// gate+mallopt 实现在 zero-runtime-config（两 bin 同刀，renderer 侧 bin 记录
+/// 见 apps/renderer/src/mem_reclaim.rs）；此处保留 bin 侧 tracing 记录，关闭
+/// 与非 glibc 目标静默不调。
+pub(crate) fn tune_malloc_retention_policy() {
+    if let Some((arena, mmap, trim)) = zero_runtime_config::tune_malloc_retention_policy() {
+        tracing::info!(
+            target: "browser_mem_trace",
+            arena_max_ok = arena,
+            mmap_threshold_ok = mmap,
+            trim_threshold_ok = trim,
+            "malloc retention policy tuned"
+        );
+    }
 }
