@@ -1,5 +1,6 @@
 //! 绘制辅助 — corner-shape / border-shape 形状几何家族（自 helpers.rs 按职责拆分，T59；纯移动零行为变化）。
 
+use zero_css_parser::values::parse_basic_shape::{BorderRadiusValue, RectCoord};
 use zero_css_parser::values::{BorderShapeGeometryBox, BorderShapeValue, ClipPathRadius, ClipPathValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
@@ -688,12 +689,79 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
                 )
             })
             .collect(),
-        // FIXME: shape()/path()/rect()/xywh() 几何提取未实现（css-shapes-2
-        // 四兄弟；border-shape 渲染面无语料消费方，暂回空顶点）。
-        ClipPathValue::Shape(_) | ClipPathValue::Path(_) | ClipPathValue::Rect(_) | ClipPathValue::Xywh(_) => {
-            Vec::new()
+        // css-shapes-2 §basic-shape-rect-notation：xywh() 解析 x,y 起点与 w,h
+        // 尺寸（百分比相对参考盒宽/高）成对角点。
+        ClipPathValue::Xywh(v) => {
+            let x0 = bx + resolve_inset_length(&v.x, bw, font_size);
+            let y0 = by + resolve_inset_length(&v.y, bh, font_size);
+            let x1 = x0 + resolve_inset_length(&v.w, bw, font_size);
+            let y1 = y0 + resolve_inset_length(&v.h, bh, font_size);
+            rect_shape_vertices(x0, y0, x1, y1, v.round.as_ref(), font_size)
+        }
+        // css-shapes-2 §basic-shape-rect-notation：rect() 四值 = 自参考盒左上
+        // 角起算的 top/right/bottom/left 缘位置（非 inset 距离）；top/left
+        // auto → 0，right/bottom auto → 参考盒右/下缘。
+        ClipPathValue::Rect(v) => {
+            let coord = |c: &RectCoord, dim: f32, auto_full: bool| match c {
+                RectCoord::Auto => {
+                    if auto_full {
+                        dim
+                    } else {
+                        0.0
+                    }
+                }
+                RectCoord::Length(len) => resolve_inset_length(len, dim, font_size),
+            };
+            let x0 = bx + coord(&v.left, bw, false);
+            let y0 = by + coord(&v.top, bh, false);
+            let x1 = bx + coord(&v.right, bw, true);
+            let y1 = by + coord(&v.bottom, bh, true);
+            rect_shape_vertices(x0, y0, x1, y1, v.round.as_ref(), font_size)
+        }
+        // FIXME: shape()/path() 命令串接几何未实现（css-shapes-2 §shape-function /
+        // §path-function；border-shape 渲染面无语料消费方，暂回空顶点）。
+        ClipPathValue::Shape(_) | ClipPathValue::Path(_) => Vec::new(),
+    }
+}
+
+/// rect()/xywh() 矩形顶点发射（css-shapes-2 §basic-shape-rect-notation）：
+/// 对角点顺时针四顶点；`round` 槽水平半径相对内矩形宽、垂直相对内矩形高解析
+/// （css-backgrounds-3 §border-radius 百分比基准），单角钳制 min(iw,ih)/2 后
+/// 复用圆角多边形 helper。FIXME: css-backgrounds-3 §5.5 相邻半径重叠等比缩放
+/// 未实现（与 inset() round 同款单角钳制近似）。
+fn rect_shape_vertices(
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    round: Option<&BorderRadiusValue>,
+    font_size: f32,
+) -> Vec<(f32, f32)> {
+    let (iw, ih) = (x1 - x0, y1 - y0);
+    if let Some(br) = round
+        && iw > 0.0
+        && ih > 0.0
+    {
+        let half = iw.min(ih) / 2.0;
+        let rh: Vec<f32> =
+            br.h.iter()
+                .map(|r| resolve_inset_length(r, iw, font_size).clamp(0.0, half))
+                .collect();
+        let rv: Vec<f32> =
+            br.v.as_ref()
+                .unwrap_or(&br.h)
+                .iter()
+                .map(|r| resolve_inset_length(r, ih, font_size).clamp(0.0, half))
+                .collect();
+        if rh.iter().any(|r| *r > 0.0) {
+            let mut rh4 = [0.0f32; 4];
+            let mut rv4 = [0.0f32; 4];
+            rh4.copy_from_slice(&rh);
+            rv4.copy_from_slice(&rv);
+            return super::helpers::rounded_corner_polygon_in_box(x0, y0, iw, ih, rh4, rv4);
         }
     }
+    vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 }
 
 /// circle() 半径解析（css-shapes-1：% 相对 sqrt(w²+h²)/√2；closest/farthest-side
@@ -807,6 +875,7 @@ mod tests {
     use super::*;
     use crate::paint::helpers::BorderRadiusSpec;
     use zero_css_parser::values::LengthValue;
+    use zero_css_parser::values::parse_basic_shape::{RectFunctionValue, XywhFunctionValue};
     use zero_style_system::ComputedStyle;
 
     // ── BorderRadiusSpec ────────────────────────────────────────────────
@@ -1079,5 +1148,84 @@ mod tests {
                 "弧顶 {apex:?} 应为顶点：{verts:?}"
             );
         }
+    }
+
+    // ── css-shapes-2 rect()/xywh() 几何提取 ─────────────────────────────
+
+    /// xywh(0% 0% 100% 100%) 于 half-border-box (5,5,210,210) → 恰为盒角四顶点
+    ///（border-shape-shadow 族 3 页消费面：全盒 xywh + stroke mode 描边带，
+    /// 回归前空顶点 → 背景/描边全失）。
+    #[test]
+    fn test_rect_notation_xywh_full_box_vertices() {
+        let shape = ClipPathValue::Xywh(Box::new(XywhFunctionValue {
+            x: LengthValue::Percentage(0.0),
+            y: LengthValue::Percentage(0.0),
+            w: LengthValue::Percentage(100.0),
+            h: LengthValue::Percentage(100.0),
+            round: None,
+        }));
+        let verts = border_shape_vertices(&shape, 5.0, 5.0, 210.0, 210.0, 16.0);
+        assert_eq!(verts.len(), 4, "{verts:?}");
+        assert_eq!(verts[0], (5.0, 5.0));
+        assert_eq!(verts[1], (215.0, 5.0));
+        assert_eq!(verts[2], (215.0, 215.0));
+        assert_eq!(verts[3], (5.0, 215.0));
+    }
+
+    /// xywh 偏移 + round 槽：10px 半径弧顶 (60,20) 为顶点、方角 (10,20) 无顶点。
+    #[test]
+    fn test_rect_notation_xywh_offset_round() {
+        let shape = ClipPathValue::Xywh(Box::new(XywhFunctionValue {
+            x: LengthValue::Px(10.0),
+            y: LengthValue::Px(20.0),
+            w: LengthValue::Px(100.0),
+            h: LengthValue::Px(50.0),
+            round: Some(BorderRadiusValue {
+                h: [
+                    LengthValue::Px(10.0),
+                    LengthValue::Px(10.0),
+                    LengthValue::Px(10.0),
+                    LengthValue::Px(10.0),
+                ],
+                v: None,
+            }),
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 200.0, 100.0, 16.0);
+        assert!(verts.len() >= 16, "圆角矩形应远多于 4 顶点：{}", verts.len());
+        // r=10 < iw/2：弧顶 = 两角弧最高点 (x0+r, y0)/(x1-r, y0)，非边中点。
+        for apex in [(20.0_f32, 20.0_f32), (100.0, 20.0)] {
+            assert!(
+                verts
+                    .iter()
+                    .any(|(x, y)| (x - apex.0).abs() < 0.01 && (y - apex.1).abs() < 0.01),
+                "顶缘弧顶 {apex:?} 应为顶点：{verts:?}"
+            );
+        }
+        assert!(
+            !verts
+                .iter()
+                .any(|(x, y)| (x - 10.0).abs() < 0.5 && (y - 20.0).abs() < 0.5),
+            "方角 (10,20) 不应有顶点：{verts:?}"
+        );
+    }
+
+    /// rect() 缘位置语义：rect(auto 150px auto 20px) on (0,0,200,100) →
+    /// x0=20, y0=0（auto top/left = 0）, x1=150, y1=100（auto right/bottom =
+    /// 参考盒右/下缘）。
+    #[test]
+    fn test_rect_notation_rect_coords_auto() {
+        let shape = ClipPathValue::Rect(Box::new(RectFunctionValue {
+            top: RectCoord::Auto,
+            right: RectCoord::Length(LengthValue::Px(150.0)),
+            bottom: RectCoord::Auto,
+            left: RectCoord::Length(LengthValue::Px(20.0)),
+            round: None,
+        }));
+        let verts = border_shape_vertices(&shape, 0.0, 0.0, 200.0, 100.0, 16.0);
+        assert_eq!(verts.len(), 4, "{verts:?}");
+        assert_eq!(verts[0], (20.0, 0.0));
+        assert_eq!(verts[1], (150.0, 0.0));
+        assert_eq!(verts[2], (150.0, 100.0));
+        assert_eq!(verts[3], (20.0, 100.0));
     }
 }
