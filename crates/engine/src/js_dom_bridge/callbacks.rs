@@ -4329,7 +4329,18 @@ pub fn register_dom_callbacks(
         Box::new(|args: &[String]| -> String {
             let prop = args.first().map(String::as_str).unwrap_or("");
             let value = args.get(1).map(String::as_str).unwrap_or("");
-            crate::dom_bindings::css_style_declaration::gap_rule_shorthand_expand_json(prop, value)
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落空串（shim 判空
+            // 回落通用写路径，本回调自身契约），与 grid `__zw_grid_normalize_decl`
+            // 「双引擎缺席回落同口径」先例一致（R5334）。
+            #[cfg(feature = "v8")]
+            {
+                crate::dom_bindings::css_style_declaration::gap_rule_shorthand_expand_json(prop, value)
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                String::new()
+            }
         }),
     );
 
@@ -4343,7 +4354,18 @@ pub fn register_dom_callbacks(
         Box::new(|args: &[String]| -> String {
             let raw = args.first().map(String::as_str).unwrap_or("");
             let prop = args.get(1).map(String::as_str).unwrap_or("");
-            crate::dom_bindings::css_style_declaration::gap_rule_shorthand_reconstruct_from_style(raw, prop)
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落空串（shim 判空
+            // 回落空值语义），与 grid `__zw_grid_normalize_decl`「双引擎缺席回落
+            // 同口径」先例一致（R5334）。
+            #[cfg(feature = "v8")]
+            {
+                crate::dom_bindings::css_style_declaration::gap_rule_shorthand_reconstruct_from_style(raw, prop)
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (raw, prop);
+                String::new()
+            }
         }),
     );
 
