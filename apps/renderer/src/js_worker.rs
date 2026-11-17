@@ -1337,6 +1337,133 @@ fn take_snapshot_barrier(
     (prefix, post)
 }
 
+/// T79 内存归因仪拍（`ZW_RENDERER_MEM_TRACE` 启用）：worker 循环每 ≥5s 窗一行——
+/// glibc mallinfo2（arena/hblkhd/in_use/free）+ JS 引擎堆用量（used/malloc），把
+/// C1 renderer 增量劈分到「JS 堆 vs 分配器持有面 vs 其余」。纯观测：默认关闭时
+/// 每轮仅一次 Instant 比较；值 `1`/`true` → tracing INFO；其余非空值 → 追加写
+/// 文件（诊断侧信道，与 [`WorkerCensus`] 同形制）。
+struct WorkerMemTrace {
+    enabled: bool,
+    sink: Option<std::path::PathBuf>,
+    window_start: std::time::Instant,
+    /// T79 诊断：周期 trim 窗（`ZW_RENDERER_MEM_TRIM_S` 非零秒数启用；诊断侧信
+    /// 道，非产品路径——量化 trim 后残量，产品刀仍走 T13 nav_trim 生命周期）。
+    trim_period: Option<std::time::Duration>,
+    last_trim: std::time::Instant,
+}
+
+impl WorkerMemTrace {
+    fn new() -> Self {
+        let value = zero_runtime_config::optional_string("ZW_RENDERER_MEM_TRACE");
+        let truthy = value
+            .as_deref()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        // 同 WorkerCensus：falsy 值与 truthy 值都不当作 sink 路径（`MEM_TRACE=0`
+        // 不落文件、`MEM_TRACE=1` 不在 cwd 留名为 `1` 的垃圾文件）。
+        let sink = value
+            .filter(|v| !truthy && !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")))
+            .map(std::path::PathBuf::from);
+        let trim_secs = zero_runtime_config::optional_string("ZW_RENDERER_MEM_TRIM_S")
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|s| *s > 0);
+        Self {
+            enabled: truthy || sink.is_some(),
+            sink,
+            window_start: std::time::Instant::now(),
+            trim_period: trim_secs.map(std::time::Duration::from_secs),
+            last_trim: std::time::Instant::now(),
+        }
+    }
+
+    fn write_sink(&self, line: &str) {
+        if let Some(path) = &self.sink
+            && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+        {
+            use std::io::Write as _;
+            if let Err(e) = writeln!(f, "{line}") {
+                // 诊断侧信道写失败可见化：静默吞错会掩盖 sink 病因（T79 trim
+                // 构建下 0 字节文件的归因线索）。
+                tracing::warn!(target: "js_worker_mem_trace", "sink write failed: {e}");
+            }
+        }
+    }
+
+    /// worker 循环每轮调用：窗口 ≥5s 落一行快照（mallinfo2 + JS 堆用量）。
+    /// t=epoch ms（与 ZW_AUTOMATION_TRACE 的 t= 同源，可跨文件对齐时间线）。
+    fn maybe_flush(&mut self, sandbox: &mut dyn zero_script_sandbox::Sandbox) {
+        if !self.enabled {
+            return;
+        }
+        self.maybe_trim();
+        if self.window_start.elapsed() < std::time::Duration::from_secs(5) {
+            return;
+        }
+        self.window_start = std::time::Instant::now();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let ms = crate::malloc_stats::mallinfo2_snapshot();
+        let js = sandbox.js_heap_usage();
+        let line = format!(
+            "worker-mem t={ts} mallinfo2={} js={}",
+            match &ms {
+                Some(s) => format!(
+                    "arena={}B hblkhd={}B in_use={}B free={}B",
+                    s.arena_bytes, s.hblkhd_bytes, s.in_use_bytes, s.free_bytes
+                ),
+                None => "n/a".to_string(),
+            },
+            match &js {
+                Some(u) => format!("used={}B malloc={}B", u.memory_used_size, u.malloc_size),
+                None => "n/a".to_string(),
+            },
+        );
+        if self.sink.is_some() {
+            self.write_sink(&line);
+        } else {
+            tracing::info!(target: "js_worker_mem_trace", "{line}");
+        }
+    }
+
+    /// 到点 `malloc_trim(0)`：trim 前后各落一行 mallinfo2（差 = 净让量；诊断
+    /// 量化用——trim 后残量即「部分空闲页段」收不回的部分，读数直读）。
+    fn maybe_trim(&mut self) {
+        let Some(period) = self.trim_period else { return };
+        if self.last_trim.elapsed() < period {
+            return;
+        }
+        self.last_trim = std::time::Instant::now();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let fmt = |s: Option<crate::malloc_stats::MallocSnapshot>| match s {
+            Some(s) => format!(
+                "arena={}B hblkhd={}B in_use={}B free={}B",
+                s.arena_bytes, s.hblkhd_bytes, s.in_use_bytes, s.free_bytes
+            ),
+            None => "n/a".to_string(),
+        };
+        let before = crate::malloc_stats::mallinfo2_snapshot();
+        // SAFETY: `malloc_trim(0)` 只对 malloc 空闲页 madvise 归还，无指针语义、
+        // 不触碰活对象；多线程下 glibc 自带 arena 锁。
+        let released = unsafe { libc::malloc_trim(0) };
+        let after = crate::malloc_stats::mallinfo2_snapshot();
+        let line = format!(
+            "worker-trim t={ts} released={} before=[{}] after=[{}]",
+            released == 1,
+            fmt(before),
+            fmt(after),
+        );
+        if self.sink.is_some() {
+            self.write_sink(&line);
+        } else {
+            tracing::info!(target: "js_worker_mem_trace", "{line}");
+        }
+    }
+}
+
 /// t7 诊断基座：js worker 命令成本普查（`ZW_JS_WORKER_CENSUS` 启用）。
 /// 按命令类型累计「执行次数 / 累计耗时 / 单次最大耗时」，窗口 ≥5s 输出一行，
 /// 用于把稳态满核分解为可排序的成本桶。纯观测：默认关闭，关闭时每命令仅一次
@@ -1803,7 +1930,9 @@ fn js_worker_main(
     // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
     let mut retained_after_reset: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut census = WorkerCensus::new();
+    let mut mem_trace = WorkerMemTrace::new();
     loop {
+        mem_trace.maybe_flush(sandbox.as_mut());
         let next_cmd = 'dispatch: loop {
             // F1：复位臂存活的滞留命令按原序先于一切新到命令续派。
             if let Some(cmd) = retained_after_reset.pop_front() {

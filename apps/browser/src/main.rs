@@ -38,6 +38,7 @@ mod headless;
 mod image_save_fetch;
 mod input_keys;
 mod layout;
+mod mem_trace;
 mod menu_zoom_smoke;
 mod page_find;
 mod page_scroll;
