@@ -217,13 +217,17 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 77] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 79] = [
     "backdrop-filter",
     "background",
     "background-color",
     // 刀 A1c ②：<position># 逐层系数 lerp（mix_mask_position 复用臂），与
     // mask-position 同文法同通道。
     "background-position",
+    // 刀 A1d：单轴列表 `<position-x>#` / `<position-y>#`（css-backgrounds-4 §2.4；
+    // mix_bg_position_axis 逐层轴分量 lerp），applier 委托臂同批。
+    "background-position-x",
+    "background-position-y",
     // 刀 B1：border-image 三长手（css-backgrounds-3 §3.6–3.9 插值规则；严格通道
     // 同型槽位门——跨型/关键字端点对 strict None 不登记，静态跳终值）。
     "border-image-outset",

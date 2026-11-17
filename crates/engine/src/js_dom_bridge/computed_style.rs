@@ -569,7 +569,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         //（同 computed 类型，复用其串化）；clip/origin/composite 为 masking 侧
         // 枚举（fill/stroke/view-box/no-clip/compositing-operator）。
         // https://drafts.fxtf.org/css-masking-1/#masking
-        "mask-position" => background_position_to_css(&style.mask_position),
+        "mask-position" => background_position_to_css(&style.mask_position, font_size_px),
         "mask-size" => background_size_to_css(&style.mask_size),
         "mask-repeat" => background_repeat_to_css(&style.mask_repeat),
         "mask-clip" => mask_clip_to_css(&style.mask_clip),
@@ -750,7 +750,47 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
         "content" => content_to_css(&style.content, element_color, font_size_px),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
-        "background-position" => background_position_to_css(&style.background_position),
+        "background-position" => background_position_to_css(&style.background_position, font_size_px),
+        // ── background-position-x / -y（刀 A1d，css-backgrounds-4 §2.4）──单轴
+        // longhand 计算值 = 各层轴分量投影（层列表与 background_position 同源
+        // ——R5185/A1d patch 模型；空层表 = 未建模态回 ''）。
+        "background-position-x" | "background-position-y" => {
+            use BackgroundPositionComputedValue as P;
+            let horizontal = p == "background-position-x";
+            if style.background_position.is_empty() {
+                String::new()
+            } else {
+                style
+                    .background_position
+                    .iter()
+                    .map(|layer| {
+                        let (x, y): (&P, &P) = match layer {
+                            P::TwoValue(h, v) => (h, v),
+                            P::Center => (&P::Center, &P::Center),
+                            P::Left | P::Right => (layer, &P::Center),
+                            P::Top | P::Bottom => (&P::Center, layer),
+                            P::Length(_) | P::Percent(_) => (layer, &P::Center),
+                            P::Calc(_) => (layer, &P::Center),
+                            P::EdgeOffset(edge, _) => {
+                                if matches!(
+                                    edge,
+                                    BackgroundEdge::Left
+                                        | BackgroundEdge::Right
+                                        | BackgroundEdge::XStart
+                                        | BackgroundEdge::XEnd
+                                ) {
+                                    (layer, &P::Center)
+                                } else {
+                                    (&P::Center, layer)
+                                }
+                            }
+                        };
+                        bg_position_axis_to_css(if horizontal { x } else { y }, font_size_px)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        }
         // ── background-size / background-repeat（R2725）── CSS Backgrounds 多层（逗号分隔）。
         "background-size" => background_size_to_css(&style.background_size),
         "background-repeat" => background_repeat_to_css(&style.background_repeat),
@@ -839,7 +879,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "mask-border-repeat" => border_image_repeat_to_css(&style.mask_border_repeat),
         "mask-border" => mask_border_shorthand_to_css(style, element_color, font_size_px),
         // object-position：单 <position>，复用 R2724 background-position 的逐层序列化（默认 Center→50% 50%）。
-        "object-position" => bg_position_layer_to_css(&style.object_position),
+        "object-position" => bg_position_layer_to_css(&style.object_position, font_size_px),
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
         "quotes" => quotes_to_css(&style.quotes),
         // ── CSS Multi-column 簇（R2737）── column-gap 已覆（R2707 length 族）；补 rule/count/width/fill/span。
@@ -3575,7 +3615,7 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
     };
     let attachment = background_attachment_to_css(&style.background_attachment);
     let position = {
-        let s = background_position_to_css(&style.background_position);
+        let s = background_position_to_css(&style.background_position, 16.0);
         if s.is_empty() { "0% 0%".to_string() } else { s }
     };
     let size = {
@@ -4542,19 +4582,19 @@ fn css_string_to_css(s: &str) -> String {
 ///
 /// 关键字解析为百分比（center 50% / left 0% / right 100% / top 0% / bottom 100%），对齐 Chromium
 /// getComputedStyle（WPT background-computed.html）；单关键字/单长度按轴展开（缺省轴 = center 50%）。
-fn background_position_to_css(layers: &[BackgroundPositionComputedValue]) -> String {
+fn background_position_to_css(layers: &[BackgroundPositionComputedValue], font_size_px: f64) -> String {
     if layers.is_empty() {
         return String::new();
     }
     layers
         .iter()
-        .map(bg_position_layer_to_css)
+        .map(|l| bg_position_layer_to_css(l, font_size_px))
         .collect::<Vec<_>>()
         .join(", ")
 }
 
 /// 序列化单层 `<bg-position>`。单值按轴展开（缺省轴 center 50%）；TwoValue 两轴；EdgeOffset 边缘+偏移。
-fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
+fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue, font_size_px: f64) -> String {
     use BackgroundPositionComputedValue as P;
     match p {
         // 单关键字：按轴展开（水平关键字→垂直 center 50%；垂直关键字→水平 center 50%）。
@@ -4566,12 +4606,18 @@ fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
         // 单长度/百分比：水平 = 值，垂直缺省 center 50%。
         P::Length(f) => format!("{} 50%", format_num(*f as f64, "px")),
         P::Percent(f) => format!("{} 50%", format_num(*f as f64, "%")),
-        // % calc 无容器尺寸不可解析（非 % calc 已 resolve）→ ''。
-        P::Calc(_) => String::new(),
-        P::TwoValue(h, v) => format!("{} {}", bg_position_axis_to_css(h), bg_position_axis_to_css(v)),
+        // % calc：canonical 串化（css-values-4 §10.11——% 项保留、零 px 项丢弃；
+        // 刀 A1d：query 通道 canonicalize 往返靠此臂出混合形，''回退仅余
+        // 不可 canonical 化树）。
+        P::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
+        P::TwoValue(h, v) => format!(
+            "{} {}",
+            bg_position_axis_to_css(h, font_size_px),
+            bg_position_axis_to_css(v, font_size_px)
+        ),
         // 单缘偏移对（单轴形）：折算同 axis 口径 + 缺省轴补 center（g47）。
         P::EdgeOffset(edge, offset) => {
-            let axis = bg_position_axis_to_css(&P::EdgeOffset(*edge, offset.clone()));
+            let axis = bg_position_axis_to_css(&P::EdgeOffset(*edge, offset.clone()), font_size_px);
             if matches!(
                 edge,
                 BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd
@@ -4586,7 +4632,7 @@ fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
 
 /// 序列化 `<bg-position>` 单轴值（关键字→% / Length→px / Percent→% / 缘偏移对折算）。
 /// TwoValue 不应出现于轴位（防御空串）。
-fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
+fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue, font_size_px: f64) -> String {
     use BackgroundPositionComputedValue as P;
     match v {
         P::Center => "50%".to_string(),
@@ -4596,7 +4642,9 @@ fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
         P::Bottom => "100%".to_string(),
         P::Length(f) => format_num(*f as f64, "px"),
         P::Percent(f) => format_num(*f as f64, "%"),
-        P::Calc(_) => String::new(),
+        // 刀 A1d：% calc canonical 串化（同 layer 臂口径——query 通道
+        // canonicalize 往返出混合形依赖此臂）。
+        P::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
         // g47（object-position-computed / background-position-computed 语料双向钉，
         // 两面共用同一 computed 折算模型）：缘偏移对折算——left/top 缘 = 偏移本身
         //（`left 5%`→`5%`）；right/bottom 缘按 100−x 折算，百分比数值化
@@ -4609,7 +4657,7 @@ fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
             | BackgroundEdge::Top
             // g47：逻辑缘防御臂（apply 期已物化为物理缘，正常不达）
             | BackgroundEdge::XStart
-            | BackgroundEdge::YStart => bg_position_axis_to_css(offset),
+            | BackgroundEdge::YStart => bg_position_axis_to_css(offset, font_size_px),
             BackgroundEdge::Right
             | BackgroundEdge::Bottom
             | BackgroundEdge::XEnd
@@ -5695,17 +5743,23 @@ mod g47_position_computed_fold_tests {
     fn right_bottom_percent_folds_numerically() {
         // `right 30% top 60px` → `70% 60px`；`right 20% bottom 10%` → `80% 90%`。
         assert_eq!(
-            bg_position_layer_to_css(&two(
-                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(30.0))),
-                P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(60.0))),
-            )),
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(30.0))),
+                    P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(60.0))),
+                ),
+                16.0
+            ),
             "70% 60px"
         );
         assert_eq!(
-            bg_position_layer_to_css(&two(
-                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(20.0))),
-                P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Percent(10.0))),
-            )),
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(20.0))),
+                    P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Percent(10.0))),
+                ),
+                16.0
+            ),
             "80% 90%"
         );
     }
@@ -5714,10 +5768,13 @@ mod g47_position_computed_fold_tests {
     fn right_bottom_px_folds_to_calc() {
         // `right 20px bottom 10px` → `calc(100% - 20px) calc(100% - 10px)`。
         assert_eq!(
-            bg_position_layer_to_css(&two(
-                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(20.0))),
-                P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Length(10.0))),
-            )),
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(20.0))),
+                    P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Length(10.0))),
+                ),
+                16.0
+            ),
             "calc(100% - 20px) calc(100% - 10px)"
         );
     }
@@ -5728,10 +5785,13 @@ mod g47_position_computed_fold_tests {
         //（css-backgrounds/parsing/background-position-computed 案钉，bg 面同
         // 一折算模型）。
         assert_eq!(
-            bg_position_layer_to_css(&two(
-                P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(-18.0))),
-                P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(17.0))),
-            )),
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(-18.0))),
+                    P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(17.0))),
+                ),
+                16.0
+            ),
             "calc(100% + 18px) 17px"
         );
     }
@@ -5740,11 +5800,11 @@ mod g47_position_computed_fold_tests {
     fn left_top_edges_keep_offset() {
         // left/top 缘 = 偏移本身；单 EdgeOffset 顶层（单轴对形）同折算口径。
         assert_eq!(
-            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Left, Box::new(P::Length(5.0)))),
+            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Left, Box::new(P::Length(5.0))), 16.0),
             "5px 50%"
         );
         assert_eq!(
-            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Percent(25.0)))),
+            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Percent(25.0))), 16.0),
             "50% 25%"
         );
     }

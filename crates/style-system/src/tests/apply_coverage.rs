@@ -1622,3 +1622,66 @@ fn test_apply_viewport_unit_gates() {
         assert!(!apply_property_value(&mut neg2, "gap", &format!("-10{}", u)));
     }
 }
+
+// === background-position-x/-y 单轴多层列表（wptfyi-css 刀 A1d）===
+//
+// css-backgrounds-4 §2.4：`<position-x>#` / `<position-y>#` 逗号列表
+// （css-backgrounds transitions 插值语料用 `300px, 400px` 形）。
+// 层重复语义 css-backgrounds-3 §3：列表短于既有层数时 cyclic 取模补层。
+#[test]
+fn test_apply_background_position_axis_layer_lists() {
+    use crate::property::types::BackgroundPositionComputedValue as Bp;
+
+    // 多层列表：1 层基 → 扩至列表层数 2，x 换轴分量、y 保持基值 Percent(0)
+    let (ok, s) = apply("background-position-x", "300px, 400px");
+    assert!(ok, "x 轴多层列表应接受");
+    assert_eq!(s.background_position.len(), 2, "层数扩至列表长度");
+    for (i, want) in [300.0_f32, 400.0].iter().enumerate() {
+        match &s.background_position[i] {
+            Bp::TwoValue(x, y) => {
+                assert!(matches!(**x, Bp::Length(v) if v == *want), "layer{i}.x");
+                assert!(matches!(**y, Bp::Percent(0.0)), "layer{i}.y 保持基值");
+            }
+            other => panic!("layer{i} 应为 TwoValue，got {:?}", other),
+        }
+    }
+
+    // y 轴列表：center 关键字 + 百分比混合；x 分量不动
+    let (ok, s) = apply("background-position-y", "center, 20%");
+    assert!(ok);
+    assert_eq!(s.background_position.len(), 2);
+    match &s.background_position[0] {
+        Bp::TwoValue(x, y) => {
+            assert!(matches!(**x, Bp::Percent(0.0)), "y 轴列表不改 x 分量");
+            assert!(matches!(**y, Bp::Center), "layer0.y = center");
+        }
+        other => panic!("layer0 应为 TwoValue，got {:?}", other),
+    }
+    match &s.background_position[1] {
+        Bp::TwoValue(_, y) => assert!(matches!(**y, Bp::Percent(20.0)), "layer1.y = 20%"),
+        other => panic!("layer1 应为 TwoValue，got {:?}", other),
+    }
+
+    // 未知 token：整条拒收，旧值保持（all-or-nothing）
+    let (_, mut s) = apply("background-position-x", "10px");
+    let before = s.background_position.clone();
+    assert!(!apply_property_value(&mut s, "background-position-x", "300foo, 400px"));
+    assert_eq!(s.background_position, before, "拒收时旧值不动");
+
+    // 3 值列表对 1 层基 → cyclic 扩 3 层（css-backgrounds-3 §3）
+    let (ok, s) = apply("background-position-x", "10px, 20%, 30px");
+    assert!(ok);
+    assert_eq!(s.background_position.len(), 3);
+    for (i, want) in [10.0_f32, 20.0, 30.0].iter().enumerate() {
+        match &s.background_position[i] {
+            Bp::TwoValue(x, _) => {
+                if i == 1 {
+                    assert!(matches!(**x, Bp::Percent(v) if v == *want), "layer{i}.x=%");
+                } else {
+                    assert!(matches!(**x, Bp::Length(v) if v == *want), "layer{i}.x");
+                }
+            }
+            other => panic!("layer{i} 应为 TwoValue，got {:?}", other),
+        }
+    }
+}

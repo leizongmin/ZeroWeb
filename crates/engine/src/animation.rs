@@ -894,6 +894,23 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 }
             }
         },
+        // wptfyi-css 刀 A1d：background-position-x/y 单轴列表插值（css-backgrounds-4
+        // §2.4 `<position-x>#`）——逐层轴分量 LCM 循环 lerp（mask_pos 机制复用，
+        // mask_pos_comp 认 EdgeOffset/关键字/长度/%；层 i 取 f[i % fl]/t[i % tl]）；
+        // 端点解析失败离散翻转回落（同上臂形）。
+        "background-position-x" | "background-position-y" => {
+            let horizontal = property == "background-position-x";
+            match mix_bg_position_axis(from, to, t, horizontal) {
+                Some(v) => v,
+                None => {
+                    if t >= 0.5 {
+                        to.to_string()
+                    } else {
+                        from.to_string()
+                    }
+                }
+            }
+        }
         // mask 长手离散组（css-masking-1 §5.3–5.6）+ mask-image/mode（§3.1/§3.3
         // 图像型逐对不插值）+ mask 简写（§3.10；no-interp 页 none↔url 驱动）：
         // 语料全块 test_no_interpolation——t≥0.5 翻转，多层逗号串 verbatim 天然
@@ -1385,6 +1402,8 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         | "mask-composite"
         | "mask"
         | "background-position"
+        | "background-position-x"
+        | "background-position-y"
         | "object-position" => Some(interpolate_property_value(property, from, to, t)),
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
@@ -2196,6 +2215,27 @@ fn parse_len_pair_pct(s: &str) -> Option<((f64, String), (f64, String))> {
 /// 轴分量→(pct 系数, px 系数, 是否含 % 项)。
 type MaskPosComp = (f64, f64, bool);
 
+/// % / px 加减脊 calc → comp（刀 A1d）：Add/Subtract 展平（Subtract 右臂取负）、
+/// Percentage/Px 叶累积；其余树（乘除/Min/Max/Mix/树计数）None → 调用方离散回落。
+fn mask_pos_comp_calc(expr: &zero_css_parser::values::CalcExpr) -> Option<MaskPosComp> {
+    use zero_css_parser::values::{CalcExpr as CE, CalcOp, LengthValue};
+    match expr {
+        CE::BinaryOp(l, CalcOp::Add, r) => {
+            let (lp, lx, lc) = mask_pos_comp_calc(l)?;
+            let (rp, rx, rc) = mask_pos_comp_calc(r)?;
+            Some((lp + rp, lx + rx, lc || rc))
+        }
+        CE::BinaryOp(l, CalcOp::Subtract, r) => {
+            let (lp, lx, lc) = mask_pos_comp_calc(l)?;
+            let (rp, rx, rc) = mask_pos_comp_calc(r)?;
+            Some((lp - rp, lx - rx, lc || rc))
+        }
+        CE::Length(LengthValue::Percentage(p)) => Some((*p as f64, 0.0, true)),
+        CE::Length(LengthValue::Px(v)) => Some((0.0, *v as f64, false)),
+        _ => None,
+    }
+}
+
 fn mask_pos_comp(v: &zero_css_parser::values::BackgroundPositionValue) -> Option<MaskPosComp> {
     use zero_css_parser::values::{BackgroundEdge, BackgroundPositionValue as Bpv};
     match v {
@@ -2204,6 +2244,10 @@ fn mask_pos_comp(v: &zero_css_parser::values::BackgroundPositionValue) -> Option
         Bpv::Right | Bpv::Bottom | Bpv::XEnd | Bpv::YEnd => Some((100.0, 0.0, true)),
         Bpv::Percent(p) => Some((*p as f64, 0.0, true)),
         Bpv::Length(LengthValue::Px(p)) => Some((0.0, (*p), false)),
+        // 刀 A1d：% / px 加减脊 calc 折 comp（`calc(100% - 20px)` → (100, -20,
+        // true)）——transitions 端点串化走 canonical calc 形，插值通道须能吃回
+        //（css-values-4 §10.11 混合形往返；乘除/未知树 None → 离散回落）。
+        Bpv::Calc(expr) => mask_pos_comp_calc(expr),
         Bpv::EdgeOffset { side, offset } => {
             let (bp, bx) = match side {
                 BackgroundEdge::Left | BackgroundEdge::XStart | BackgroundEdge::Top | BackgroundEdge::YStart => {
@@ -2218,7 +2262,15 @@ fn mask_pos_comp(v: &zero_css_parser::values::BackgroundPositionValue) -> Option
                 BackgroundEdge::Right | BackgroundEdge::XEnd | BackgroundEdge::Bottom | BackgroundEdge::YEnd
             );
             let (op, ox, opct) = mask_pos_comp(offset)?;
-            Some((bp + op, bx + ox, edge_pct || opct))
+            // 刀 A1d 符号口径（css-backgrounds-3 §3.6）：right/bottom 缘语义 =
+            // `100% − 偏移`（`right 20px` → calc(100% - 20px)）——偏移项取负
+            //（origin-interpolation 语料 `calc(62.5% - 5px)` 期望形钉；mask 语料
+            // 无 right/bottom EdgeOffset 对，A1 账面零扰动）。
+            if edge_pct {
+                Some((bp - op, -ox, true))
+            } else {
+                Some((bp + op, bx + ox, opct))
+            }
         }
         _ => None,
     }
@@ -2270,6 +2322,29 @@ fn mix_mask_position(from: &str, to: &str, t: f64) -> Option<String> {
             let (f, tt) = (&fm[i % fm.len()], &tm[i % tm.len()]);
             format!("{} {}", mask_pos_fmt(f.0, tt.0, t), mask_pos_fmt(f.1, tt.1, t))
         })
+        .collect();
+    Some(out.join(", "))
+}
+
+/// 刀 A1d：background-position-x/y 单轴端点列表插值——逐层
+/// [`parse_background_position_axis`]（单轴文法 `<position-x>`，css-backgrounds-4
+/// §2.4）→ [`mask_pos_comp`] 系数归一 → LCM 循环 lerp（[`mask_pos_fmt`] 串化：
+/// 纯 length 对出纯 px、含 % 项出 %/calc 系数形），", " 连接。任一层解析失败
+/// → None（调用方离散翻转回落）。
+fn mix_bg_position_axis(from: &str, to: &str, t: f64, horizontal: bool) -> Option<String> {
+    use zero_css_parser::values::parse_background_position_axis;
+    use zero_css_parser::values::split_top_level_commas;
+    let axis_layers = |s: &str| -> Option<Vec<MaskPosComp>> {
+        split_top_level_commas(s)?
+            .iter()
+            .map(|lv| parse_background_position_axis(lv, horizontal).and_then(|v| mask_pos_comp(&v)))
+            .collect()
+    };
+    let f = axis_layers(from)?;
+    let tl = axis_layers(to)?;
+    let n = f.len() / gcd(f.len(), tl.len()) * tl.len();
+    let out: Vec<String> = (0..n)
+        .map(|i| mask_pos_fmt(f[i % f.len()], tl[i % tl.len()], t))
         .collect();
     Some(out.join(", "))
 }
@@ -3244,6 +3319,16 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         // https://drafts.fxtf.org/css-masking-1/#masking
         "mask-image" | "mask-mode" | "mask-position" | "mask-size" | "mask-repeat" | "mask-clip" | "mask-origin"
         | "mask-composite" => {
+            let _ =
+                zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
+        }
+        // ── wptfyi-css 刀 A1d applier 臂 ── css-backgrounds-3/4 §background-position
+        // (± x/y) + css-images-3 §object-position：动画插值回写委托 style-system
+        // apply_advanced 同文法单点。此前无臂致 canonicalize 往返 ser1≡ser0 恒
+        // None 回落基值——css-backgrounds position 三页 transitions 通道全静态
+        // to 根因（刀 A1c ②补了清单/插值臂、漏本臂；与 mask 族刀 A1 同病同治）。
+        // 解析失败不动样式（回落方向）。
+        "background-position" | "background-position-x" | "background-position-y" | "object-position" => {
             let _ =
                 zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
         }

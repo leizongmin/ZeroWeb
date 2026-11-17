@@ -2500,33 +2500,57 @@ pub fn apply_advanced_property_value(
                 }
             }
         }
-        // R5185（css-backgrounds-4 §2.4）：background-position-x / -y 单轴 longhand——
-        // 单值应用到全部层（cyclic 1 项；多层逗号列表 FIXME 挂账）。层位置归一
-        // TwoValue 后补丁目标轴：单值层按 resolve_background_position 同语义拆轴
-        //（垂直关键字 → (center, v)，其余 → (v, center)）。
+        // R5185（css-backgrounds-4 §2.4）：background-position-x / -y 单轴 longhand。
+        // 刀 A1d：单轴多层逗号列表（`<position-x>#`）——逐层解析，层 i 取
+        // list[i mod n]（cyclic；css-backgrounds-3 §3 层重复语义），层数扩到
+        // max(既有层, 列表长)——既有层位循环拷贝补齐（新层继承同 index 旧层 y 轴）。
+        // 任一层解析失败整条拒收保旧值（supports 门 CSS.supports 同通道）。
+        // 单值应用到全部层（cyclic 1 项）。层位置归一 TwoValue 后补丁目标轴：
+        // 单值层按 resolve_background_position 同语义拆轴（垂直关键字 →
+        // (center, v)，其余 → (v, center)）。
         // clip-border-area-border-shape-background-position 判例 `background-position-x:
         // right 100px` / `-y: bottom 100px`（边关键字+偏移）。
         "background-position-x" | "background-position-y" => {
             let horizontal = property == "background-position-x";
-            if let Some(comp) = values::parse_background_position_axis(value, horizontal)
-                .and_then(|v| position_value_to_computed(v, style))
-            {
-                use BackgroundPositionComputedValue as Bpc;
-                let patch = |layer: &Bpc| -> Bpc {
-                    let (x, y) = match layer {
-                        Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
-                        Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
-                        single => (single.clone(), Bpc::Center),
-                    };
-                    if horizontal {
-                        Bpc::TwoValue(Box::new(comp.clone()), Box::new(y))
-                    } else {
-                        Bpc::TwoValue(Box::new(x), Box::new(comp.clone()))
-                    }
-                };
-                style.background_position = style.background_position.iter().map(patch).collect();
-                return true;
+            let Some(parts) = split_top_level_commas(value) else {
+                return false;
+            };
+            let comps: Option<Vec<BackgroundPositionComputedValue>> = parts
+                .into_iter()
+                .map(|lv| {
+                    values::parse_background_position_axis(lv, horizontal)
+                        .and_then(|v| position_value_to_computed(v, style))
+                })
+                .collect();
+            let Some(comps) = comps else { return false };
+            if comps.is_empty() {
+                return false;
             }
+            use BackgroundPositionComputedValue as Bpc;
+            let patch = |layer: &Bpc, comp: &Bpc| -> Bpc {
+                let (x, y) = match layer {
+                    Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
+                    Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
+                    single => (single.clone(), Bpc::Center),
+                };
+                if horizontal {
+                    Bpc::TwoValue(Box::new(comp.clone()), Box::new(y))
+                } else {
+                    Bpc::TwoValue(Box::new(x), Box::new(comp.clone()))
+                }
+            };
+            let old = std::mem::take(&mut style.background_position);
+            let base = if old.is_empty() {
+                vec![Bpc::TwoValue(Box::new(Bpc::Percent(0.0)), Box::new(Bpc::Percent(0.0)))]
+            } else {
+                old
+            };
+            let n = comps.len();
+            let count = base.len().max(n);
+            style.background_position = (0..count)
+                .map(|i| patch(&base[i % base.len()], &comps[i % n]))
+                .collect();
+            return true;
         }
         // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法为
         // 严格 `<position>`（css-values-5 §4.2——3 值形禁、缘偏移对全有全无、逻辑

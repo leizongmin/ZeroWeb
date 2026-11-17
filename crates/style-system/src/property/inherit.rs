@@ -320,6 +320,42 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.background_position = parent.background_position.clone();
             true
         }
+        // wptfyi-css 刀 A1d（css-backgrounds-4 §2.4）：单轴 longhand 独立继承——
+        // 只补丁目标轴（child 另一轴保己值），父轴列表循环取模（层重复语义
+        // css-backgrounds-3 §3，与 apply_advanced x/y 列表臂同模型）。
+        "background-position-x" | "background-position-y" => {
+            use BackgroundPositionComputedValue as Bpc;
+            let horizontal = property == "background-position-x";
+            if parent.background_position.is_empty() {
+                return false;
+            }
+            let old = std::mem::take(&mut child.background_position);
+            let child_base = if old.is_empty() {
+                vec![Bpc::TwoValue(Box::new(Bpc::Percent(0.0)), Box::new(Bpc::Percent(0.0)))]
+            } else {
+                old
+            };
+            let other_axis = |layer: &Bpc| -> (Bpc, Bpc) {
+                match layer {
+                    Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
+                    Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
+                    single => (single.clone(), Bpc::Center),
+                }
+            };
+            let count = child_base.len().max(parent.background_position.len());
+            child.background_position = (0..count)
+                .map(|i| {
+                    let (x, y) = other_axis(&child_base[i % child_base.len()]);
+                    let (px, py) = other_axis(&parent.background_position[i % parent.background_position.len()]);
+                    if horizontal {
+                        Bpc::TwoValue(Box::new(px), Box::new(y))
+                    } else {
+                        Bpc::TwoValue(Box::new(x), Box::new(py))
+                    }
+                })
+                .collect();
+            true
+        }
         "background-repeat" => {
             child.background_repeat = parent.background_repeat.clone();
             true
