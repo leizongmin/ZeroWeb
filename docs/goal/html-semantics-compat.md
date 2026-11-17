@@ -96,6 +96,19 @@ diff（刀 G 工法），join 实测为准；起腿一
 styles.css ×47 随批落。
 
 
+> **◆ 更正四（2026-11-17 s554 push 阶段）——pull
+> --rebase 捕获 wptfyi-css 刀 K1 落窗（
+> 531e795e7 fix(engine)：关键帧 'inherit'
+> 端点父链接入 cssa/gCS 通道＋interpolate
+> 长度臂 parse_px_strict 严格解析替换 0 化
+> 假插值；伴笔 be7873489/0c0ac8a01 docs
+> -only 收口）：s554 窗（ecd18df01 恒）不
+> 含此刀、s555 窗首次纳入——s555 起腿前
+> provenance 预判：runner 必换代归因 刀 K1
+> （engine Rust 面经 zero-engine 依赖链入
+> runner 链接）；hs 面 testharness 键无 CSS
+> 动画语义路径直达、对账以 join 实测为准。
+
 > **◆ 更正三（2026-11-17 s551 push 阶段）——pull
 > --rebase 捕获 evt-reject 刀落窗（59d286cb6
 > fix(editing)：part06.js _zwExecCmdRejectFire
