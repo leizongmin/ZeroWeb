@@ -203,8 +203,13 @@
     return false;
   }
 
-  // collapsed whitespace node（参考实现 912-1001 结构化重写）：whitespace 节点且
-  // 前向无可见文字/图片（前一路径遇块或 br 即折行 → 折叠）。
+  // collapsed whitespace node（参考实现 912-1001 双向走查，2026-11-18 D 族刀
+  // 补全前向臂）：whitespace 节点，回退遇块/br＝行首边界 → 折叠；遇非 ws
+  // 文本/img 断（同线非行首）后转前向走查——遇块/br＝行尾边界 → 折叠，遇
+  // 同线后随内容 → 不折叠。缺前向臂时块界夹缝 ws（`</blockquote> <p>` 形）
+  // 误判可见→wrap invisible 拉环不收→indent 新壳不并邻壳（indent.html D 族
+  // 三键 got 独立双壳实证；spec wrap 注记 invisible 介入时须跨过复用邻壳）。
+  // https://w3c.github.io/editing/execCommand.html#collapsed-whitespace-node
   function _zwJusIsCollapsedWhitespaceNode(node) {
     if (!_zwJusIsWhitespaceNode(node)) return false;
     if (String(node.nodeValue || '') === '') return true;
@@ -218,6 +223,15 @@
     while (reference && reference !== ancestor && guard++ < 4096) {
       reference = _zwJusPreviousNode(reference);
       if (!reference) return true;
+      if (_zwJusIsBlockNode(reference) || _zwJusIsHtmlElement(reference, 'br')) return true;
+      if ((reference.nodeType === 3 && !_zwJusIsWhitespaceNode(reference))
+          || _zwJusIsHtmlElement(reference, 'img')) break;
+    }
+    reference = node;
+    guard = 0;
+    while (reference && reference !== ancestor && guard++ < 4096) {
+      reference = _zwJusNextNode(reference);
+      if (!reference) break;
       if (_zwJusIsBlockNode(reference) || _zwJusIsHtmlElement(reference, 'br')) return true;
       if ((reference.nodeType === 3 && !_zwJusIsWhitespaceNode(reference))
           || _zwJusIsHtmlElement(reference, 'img')) break;
@@ -986,6 +1000,14 @@
       var pClose = pHtml.lastIndexOf('</' + _zwJusTag(prevSib) + '>');
       if (pClose < 0) return null;
       wrapper = prevSib; reusePrev = true;
+      // 成员并界 br 垫换 inline 判据（2026-11-18 D 族刀）：blanket
+      // `(anyBr?'':'<br>')` 对块级成员首（ws 拉入后形 `[ws, p]`）误垫行界
+      // ——Chrome 录形 `<p>foo</p> <p>bar</p>` 无 br（块自身为界）。换 DOM 臂
+      // 同款判据（前邻尾内联＋成员首内联＋尾非 br）；A 族文本成员 `foo<br>
+      // bar` 形两条件恒真＝垫界保持。
+      var joinBr = (anyBr || !_zwJusIsInlineNode(prevSib.lastChild)
+          || _zwJusIsHtmlElement(prevSib.lastChild, 'br')
+          || !_zwJusIsInlineNode(kids[firstIdx])) ? '' : '<br>';
       // 邻居复用臂 content-merge 去重刀（2026-11-18，A 族复本缺陷）：上方
       // prefix/suffix 按原始 kids 全量累计，被复用邻居恰在 firstIdx-1 /
       // lastIdx+1 位——展开形嵌入后再拼原 outerHTML＝壳内容复本两次
@@ -1019,12 +1041,12 @@
           mgNextHtml = mgBr + nHtml2.slice(nOpen2, nClose2);
           var sufMg = '';
           for (k = lastIdx + 2; k < kids.length; k++) sufMg += _zwJusKidHtml(kids[k]);
-          html = pre + pHtml.slice(0, pClose) + (anyBr ? '' : '<br>') + memberHtml
+          html = pre + pHtml.slice(0, pClose) + joinBr + memberHtml
             + mgNextHtml + pHtml.slice(pClose) + sufMg;
         }
       }
       if (mgNextHtml === '') {
-        html = pre + pHtml.slice(0, pClose) + (anyBr ? '' : '<br>') + memberHtml
+        html = pre + pHtml.slice(0, pClose) + joinBr + memberHtml
           + pHtml.slice(pClose) + suffix;
       }
     } else if (nextSib && nextSib.nodeType === 1 && _zwJusIsEditable(nextSib)
@@ -1033,9 +1055,14 @@
       var nOpen = nHtml.indexOf('>') + 1;
       if (nOpen <= 0) return null;
       wrapper = nextSib;
+      // 对称 inline 垫界（D 族刀）：成员尾内联＋邻壳首子内联且成员尾非 br
+      // 才垫（D2 形成员尾 ws 文本内联但邻壳首子为块级 p → 不垫）。
+      var joinBrN = (anyBr || !_zwJusIsInlineNode(kids[lastIdx])
+          || _zwJusIsHtmlElement(kids[lastIdx], 'br')
+          || !_zwJusIsInlineNode(nextSib.firstChild)) ? '' : '<br>';
       var suf = '';
       for (k = lastIdx + 2; k < kids.length; k++) suf += _zwJusKidHtml(kids[k]);
-      html = prefix + nHtml.slice(0, nOpen) + memberHtml + (anyBr ? '' : '<br>')
+      html = prefix + nHtml.slice(0, nOpen) + memberHtml + joinBrN
         + nHtml.slice(nOpen) + suf;
     } else {
       var np = newParentInstructions();

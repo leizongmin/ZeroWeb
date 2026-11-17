@@ -262,3 +262,4 @@ include!("js_dom_bridge_tests/part136_indent_br_pins.rs");
 // prefix/suffix 复本缺陷修复＋post-rebuild 次邻合并臂（三形）。
 include!("js_dom_bridge_tests/part137_indent_merge_dedup_pins.rs");
 include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
+include!("js_dom_bridge_tests/part139_indent_ws_merge_pins.rs");
