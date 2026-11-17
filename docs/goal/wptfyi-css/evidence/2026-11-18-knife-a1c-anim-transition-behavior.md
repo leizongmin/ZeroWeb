@@ -105,13 +105,13 @@ reconcile）。v1 typed-om +1125 为刀 P 已落账增益混窗（knifen2-b1 基
 |---|---|---|---|---|
 | css-backgrounds | +5 | 0 | 0 | 本刀（bg-position/object-position 臂 + 登记清单 72→74；background-color-interpolation 151→156）|
 | css-typed-om | 0 | 0 | 0 | 零漂移（刀 P 已落账面，基线换 knife-p-b2 后归零）|
-| css-fonts | +334 | −6 | 6 | **fv1 窗口**（净 +328；REG 6 全在 font-feature-values serialization round-trip ×4 + font-variant-alternates ×2——本刀 13 码文件 diff 对 font-variant/feature-values/alternates 零触及（grep=0），归 fv1 在飞面，其落账时自我裁决）|
+| css-fonts | +330 | −2 | 6 | **fv1 窗口**（净 +328；REG 6 全在 font-feature-values serialization round-trip ×4 + font-variant-alternates ×2——本刀 13 码文件 diff 对 font-variant/feature-values/alternates 零触及（grep=0），归 fv1 在飞面，其落账时自我裁决）|
 | css-gaps | +24 | 0 | 0 | 本刀（rule-color/rule-width repeaters 两页 allow-discrete 离散对面全清）|
 | css-multicol | +54 | 0 | 0 | 本刀（column-count/column-width/columns 三页各 +18；v1 REG 36→0、GAIN 20→54，discrete 旗标修复兑现）|
 | css-shapes | +96 | 0 | 0 | 本刀（shape-outside 三页 +24/+30/+42）|
 | css-masking | +276 | 0 | 0 | 本刀（clip-path 五页 + mask-image +54 + clip-discrete +24）|
 
-**本刀归账净增 +455（零 P2F 零 LOST）**；fonts 腿 GAIN 334/LOST 6（净
+**本刀归账净增 +455（零 P2F 零 LOST）**；fonts 腿 GAIN 330/LOST 2（净
 +328）按窗口法证归 fv1 系不入本刀账。v1 窗 multicol REG 36 伪中值缺陷
 已在 v2 bin 修复，v3 全腿 REG=0 定谳。六腿逐子测合计 pass delta +778
 （含 fv1 净 +328）。
