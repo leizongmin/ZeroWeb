@@ -13003,6 +13003,65 @@
         return;
       }
       if (bn === sc && !_zwCeIsBlockEl(bp)) return; // run 中段 caret（inline 前邻）
+      // 列表壳溶解 join 臂（wptfyi-editing ①(b) 2026-11-17）：caret 行嵌列表项
+      // （sc 直属 li、li 直属 ul/ol）且外层前邻为文本（`abc<ul><li>[]def</li>
+      // </ul>ghi` 界 (abc,3)-(def,0) 语料形）——上游把 li 首行溶入外层流：li 摘
+      // 除、ul 空则同摘、ul 后继内容保留（`<li>[]def</li><li>ghi</li>` 形第二
+      // li 不动）。缝规范化镜像块 join：前文本尾随、li 行前导/尾随折叠空白同摘
+      // （normal 域块缝不可见——issue #112）；ul 摘除时后继文本前导折叠空白同
+      // 摘。li 含非纯单文本行 / bp 非文本 → 保守 bail 保持原章程。live 端点
+      // （li 行原位截断后移正，断言期读 post-value——语料 gtr 起终锚同一活节
+      // 点，克隆冻结 pre-value 反泄）。
+      var _ldLi = (bn !== sc && bp.nodeType === 3
+        && (String(bn.tagName || '') === 'UL' || String(bn.tagName || '') === 'OL')
+        && sc.parentNode && sc.parentNode.parentNode === bn
+        && String(sc.parentNode.tagName || '') === 'LI'
+        && sc.parentNode.childNodes && sc.parentNode.childNodes.length === 1) ? sc.parentNode : null;
+      if (_ldLi && !_zwCeWsCtx(bc).preserve && !_zwCeWsCtx(bc).preLine) {
+        var _ldPv = String(bp.nodeValue || '');
+        var _ldPc = _zwCeCaretCanonical(bp, _ldPv.length, false);
+        var _ldSv = String(sc.nodeValue || '');
+        var _ldSc = _zwCeCaretCanonical(sc, so, true);
+        var _ldEc = _zwCeCaretCanonical(sc, _ldSv.length, false);
+        __zwCePendingTargetRanges = [_zwCeTargetRange(bp, _ldPc, sc, _ldSc, true)];
+        _zwCeUnitApply(el, 'deleteContentBackward', function() {
+          var _ldTail = _ldSv.slice(_ldSc, _ldEc);
+          if (_ldPc < _ldPv.length) {
+            try { bp.nodeValue = _ldPv.slice(0, _ldPc); } catch (_eLdP) {}
+          }
+          if (_ldTail.length) {
+            try { sc.nodeValue = _ldTail; } catch (_eLdT) {}
+          }
+          // 行提取走引擎 takeLine 准入路径（直挂 insertBefore 跨容器移动 shim
+          // 内抛 HierarchyRequest——T7/T8 探针实证 li 连行带走的根因）。
+          var _ldTk = null;
+          try { _ldTk = _zwCeTakeLineFrom(_ldLi, sc); } catch (_eLdK) {}
+          var _ldMoved = null;
+          if (_ldTk && _ldTk.nodes && _ldTk.nodes.length) {
+            for (var _ldI = _ldTk.nodes.length - 1; _ldI >= 0; _ldI--) {
+              try {
+                bc.insertBefore(_ldTk.nodes[_ldI], bn);
+                _ldMoved = _ldMoved || _ldTk.nodes[_ldI];
+              } catch (_eLdM) {}
+            }
+          }
+          var _ldFw = null;
+          try { if (_ldLi.parentNode === bn) bn.removeChild(_ldLi); } catch (_eLdL) {}
+          if (!(bn.childNodes || []).length) {
+            _ldFw = bn.nextSibling;
+            try { if (bn.parentNode === bc) bc.removeChild(bn); } catch (_eLdU) {}
+          }
+          if (_ldFw && _ldFw.nodeType === 3) {
+            var _ldFv = String(_ldFw.nodeValue || '');
+            var _ldFc = _zwCeCaretCanonical(_ldFw, 0, true);
+            if (_ldFc > 0) {
+              try { _ldFw.nodeValue = _ldFv.slice(_ldFc); } catch (_eLdF) {}
+            }
+          }
+          _zwCeSetCaretAt(bc, _ldMoved ? _zwCeNodeIndexOf(_ldMoved) : _zwCeNodeIndexOf(bp) + 1);
+        });
+        return;
+      }
       var bdst = _zwCeIsBlockEl(bp) ? bp : bc;
       if (bdst === bc && bn.nextSibling) return; // src 非容器末子，保守不并
       // B2：join target range（变更前快照）——起=前内容可见端，终=caret 下游
@@ -13408,13 +13467,79 @@
         }
         return; // run 中段
       }
+      // 列表壳溶解 join 臂（FD 镜像，wptfyi-editing ①(b) 2026-11-17）：caret
+      // 行外层后邻为列表容器且 li 首子为纯单文本行（`abc[]<ul><li>def</li></
+      // ul>ghi` 界 (abc,3)-(def,0) 语料形）——li 首行溶入外层流：li/空 ul 摘除、
+      // ul 后继保留（`<li>def</li><li>ghi</li>` 形第二 li 不动）；sc 尾随、
+      // li 行前导/尾随、后继文本前导折叠空白同摘（normal 域，镜像 BS 臂规则）。
+      var _lfLi = (cn === sc && cnx && cnx.nodeType === 1
+        && (String(cnx.tagName || '') === 'UL' || String(cnx.tagName || '') === 'OL')
+        && cnx.firstChild && cnx.firstChild.nodeType === 1
+        && String(cnx.firstChild.tagName || '') === 'LI'
+        && cnx.firstChild.childNodes && cnx.firstChild.childNodes.length === 1
+        && (cnx.firstChild.firstChild.nodeType === 3 || cnx.firstChild.firstChild.__zwIsText)
+      ) ? cnx.firstChild : null;
+      if (_lfLi && !_zwCeWsCtx(cc).preserve && !_zwCeWsCtx(cc).preLine) {
+        var _lfTx = _lfLi.firstChild;
+        var _lfLv = String(_lfTx.nodeValue || '');
+        var _lfLc = _zwCeCaretCanonical(_lfTx, 0, true);
+        var _lfEc = _zwCeCaretCanonical(_lfTx, _lfLv.length, false);
+        var _lfSv = String(sc.nodeValue || '');
+        var _lfScEnd = _zwCeCaretCanonical(sc, so, false);
+        __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _zwCeCaretCanonical(sc, so, false),
+          _lfTx, _lfLc, true)];
+        _zwCeUnitApply(el, 'deleteContentForward', function() {
+          if (_lfScEnd < _lfSv.length) {
+            try { sc.nodeValue = _lfSv.slice(0, _lfScEnd); } catch (_eLgS) {}
+          }
+          var _lfTail = _lfLv.slice(_lfLc, _lfEc);
+          if (_lfTail.length) {
+            try { _lfTx.nodeValue = _lfTail; } catch (_eLgT) {}
+          }
+          // 行提取走引擎 takeLine 准入路径（直挂 cc.insertBefore 跨容器移动
+          // shim 内抛 HierarchyRequest——BS 臂 T7/T8 探针实证 li 连行带走的
+          // 根因，FD 镜像同修）。
+          var _lfTk = null;
+          try { _lfTk = _zwCeTakeLineFrom(_lfLi, _lfTx); } catch (_eLgK) {}
+          var _lfMoved = null;
+          if (_lfTk && _lfTk.nodes && _lfTk.nodes.length) {
+            for (var _lfI = _lfTk.nodes.length - 1; _lfI >= 0; _lfI--) {
+              try {
+                cc.insertBefore(_lfTk.nodes[_lfI], cnx);
+                _lfMoved = _lfMoved || _lfTk.nodes[_lfI];
+              } catch (_eLgM) {}
+            }
+          }
+          var _lfFw = null;
+          try { if (_lfLi.parentNode === cnx) cnx.removeChild(_lfLi); } catch (_eLgL) {}
+          if (!(cnx.childNodes || []).length) {
+            _lfFw = cnx.nextSibling;
+            try { cc.removeChild(cnx); } catch (_eLgU) {}
+          }
+          if (_lfFw && _lfFw.nodeType === 3) {
+            var _lfFv = String(_lfFw.nodeValue || '');
+            var _lfFc = _zwCeCaretCanonical(_lfFw, 0, true);
+            if (_lfFc > 0) {
+              try { _lfFw.nodeValue = _lfFv.slice(_lfFc); } catch (_eLgF) {}
+            }
+          }
+          _zwCeSetCaretAt(cc, _lfMoved ? _zwCeNodeIndexOf(_lfMoved) : _zwCeNodeIndexOf(sc) + 1);
+        });
+        return;
+      }
       var cdst = (cn === sc) ? cc : cn;
       if (cdst === cc && cnx.nextSibling) return; // src 非容器末子，保守不并
       // B2：界选区 target range——起=caret 侧可见端（上游规范化），终=后内容
       // 可见首（与 backspace 界选区臂同界规则，镜像向）。
       var _gtrEndF1 = _zwCeJoinEndOf(cnx);
+      // 终点文本锚前向规范化（`<li>  def[]  </li>` + `  ghi` 形界 (def,5)-
+      // (ghi,1) 契约：JoinEndOf 裸 (leaf,0) 对后邻前导折叠空白欠账；
+      // preserve/preLine 域 canonical 自守恒 no-op，元素锚不变）。
       __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _zwCeCaretCanonical(sc, so, false),
-        _gtrEndF1.node, _gtrEndF1.offset)];
+        _gtrEndF1.node,
+        (_gtrEndF1.node.nodeType === 3 || _gtrEndF1.node.__zwIsText)
+          ? _zwCeCaretCanonical(_gtrEndF1.node, _gtrEndF1.offset, true)
+          : _gtrEndF1.offset)];
       _zwCeJoinApply(el, cdst, cc, cnx, 'deleteContentForward');
       return;
     }
@@ -13616,8 +13741,13 @@
       // B2：join target range——起=caret 上游规范化（`<p>abc   []</p>` 界
       // (abc,3) 形：折叠尾空白不占界），终=后内容可见首。
       var _gtrEndF = _zwCeJoinEndOf(fnx);
+      // 终点文本锚前向规范化（同 B2 _gtrEndF1：`abc[]<p> def</p>` 形后邻
+      // 前导折叠空白不入界；元素锚不变）。
       __zwCePendingTargetRanges = [_zwCeTargetRange(sc, _zwCeCaretCanonical(sc, so, false),
-        _gtrEndF.node, _gtrEndF.offset)];
+        _gtrEndF.node,
+        (_gtrEndF.node.nodeType === 3 || _gtrEndF.node.__zwIsText)
+          ? _zwCeCaretCanonical(_gtrEndF.node, _gtrEndF.offset, true)
+          : _gtrEndF.offset)];
       _zwCeJoinApply(el, fdst, fc, fnx, 'deleteContentForward');
       return;
     }
