@@ -1065,7 +1065,21 @@
     if (v === '') return false;
 
     // "Delete the selection, with strip wrappers false."
-    _zwDelDeleteSelection({ stripWrappers: false });
+    // IMG-SWCSS-GUARD（2026-11-17 insertimage 壳形刀）：本仓 deleteSelection
+    // 内部归一 collapse/extend 途经 _zwSync → F1'-B「选区变更清 swcss」，致
+    // restoreValues 跨块值载体选形（_zwVaCssFlag）读到已清值——语料
+    // stylewithcss(true) 跨块变体 exp 携 `<span style=color>` 载体、got 恒
+    // font（insertimage.html 2F）实证 Chrome 命令内部不清模式。守卫仅包本
+    // 调用（delete/hr/fb/typing 各自路径零扰动）；multitest 每案隔离的清点位
+    // ＝案 setup 的选区 API（dispatch 外），守卫不覆盖。FIXME: 语料出现
+    // [swcss(true)+结构命令+typing] 链形时改 presSw 快照回写（part06 F1'-B
+    // 注记同款预案），并把守卫提升为命令域通用面。
+    globalThis.__zwImgDelSelInternal = true;
+    try {
+      _zwDelDeleteSelection({ stripWrappers: false });
+    } finally {
+      globalThis.__zwImgDelSelInternal = false;
+    }
     var range = _zwVaGetActiveRange();
     if (!range) return true;
 
@@ -1085,11 +1099,111 @@
       range.startContainer.removeChild(range.startContainer.firstChild);
     }
 
+    // IMG-BREAKOUT（2026-11-17 insertimage 壳形刀）：Chrome 对象插入出壳——
+    // 折叠插入点先提离 inline 壳链（文本点提父级；逐层 inline 祖先在边界提
+    // 界、在腰点右半壳分裂），落块层等价边界后再插 img。vendored spec 无此
+    // 步（implementation.js :7316-7367 直插 range 起点，stripWrappers:false
+    // 留壳致 img 落壳内），形据＝insertimage.html 21 壳形 exp：foo<b>[bar]
+    // </b>baz→foo<img>baz、<div><b>A[]B</b></div>→<div><b>A</b><img><b>B</b>
+    // </div>、<span>foo[</span><span>]bar</span>→壳间落位、跨块 font 载体
+    // exp→img 落载体壳前块层。块层插入点恒等不受扰动（现役绿形
+    // <span>foo</span>{}<span>bar</span>、<div>{}<br></div> 等）。hr 同对象
+    // 插入现靠 stripWrappers:true 空壳摘除殊途同归（语料绿），FIXME: 出现
+    // 翻红再统一为共享出壳机具。
+    var zscI = range.startContainer;
+    var zsoI = range.startOffset;
+    if (zscI.nodeType === 3) {
+      var zpI = zscI.parentNode;
+      if (zsoI === 0) {
+        zsoI = _zwJusNodeIndex(zscI);
+      } else if (zsoI === _zwJusNodeLength(zscI)) {
+        zsoI = 1 + _zwJusNodeIndex(zscI);
+      } else {
+        // 中点拆分：优先节点自带 splitText（M 家族全同步 getter 视图——数据
+        // 截断+尾插入均发 mutation，宿主侧后续按索引的 mutation 才不失配；
+        // pin mid-shell 双 B 实证）；无该法的族（root-text 直子，zz-probe-fs4
+        // 实证）回落 _zwVaSplitText（JS 树拆分，靠后续宿主直子级插入的
+        // 子树重序列化承载）。
+        var ztailI = (typeof zscI.splitText === 'function')
+          ? zscI.splitText(zsoI)
+          : _zwVaSplitText(zscI, zsoI);
+        zsoI = _zwJusNodeIndex(ztailI);
+      }
+      zscI = zpI;
+      range.setStart(zscI, zsoI);
+    }
+    var zgI = 0;
+    // 提离目标＝inline 壳链顶（宿主/块级父层是落点非止步条件，v1 误作守卫
+    // 致空壳形/块内形零提升——pin 首轮 12/13 红根因）；同宿主门防跨宿主越界。
+    while (zscI.nodeType === 1 && _zwJusIsInlineNode(zscI)
+        && zscI.parentNode && _zwListInSameEditingHost(zscI, zscI.parentNode)
+        && zgI++ < 256) {
+      var zppI = zscI.parentNode;
+      if (zsoI === 0) {
+        zsoI = _zwJusNodeIndex(zscI);
+      } else if (zsoI === zscI.childNodes.length) {
+        zsoI = 1 + _zwJusNodeIndex(zscI);
+      } else {
+        // 腰点：右半壳分裂（工厂重建壳保属性形，cloneNode 产物在 stamped
+        // 家族有拒收先例——part06 d31 B1 切片 3），子逐个让位后插原壳后。
+        var zshellI = document.createElement(String(zscI.tagName || 'span'));
+        try {
+          var zaI = zscI.attributes;
+          for (var ziI = 0; ziI < zaI.length; ziI++) {
+            zshellI.setAttribute(String(zaI[ziI].name || ''),
+              String(zaI[ziI].value || ''));
+          }
+        } catch (_eZiI) {}
+        var zkI = zscI.childNodes[zsoI];
+        var zmovedI = [];
+        while (zkI) {
+          var zknI = zkI.nextSibling;
+          zshellI.appendChild(zkI);
+          zmovedI.push(zkI);
+          zkI = zknI;
+        }
+        // plain 家族对 createElement 产物壳的 appendChild 是序列化拷贝（副本
+        // 入壳、原节点滞留源 childNodes 且 parentNode 已指壳——mid-shell 双 B
+        // 实证）；镜像元素目标则真移动。按 indexOf 位置判定摘原：拷贝态在位
+        // 即摘（镜像 removeChild 按 indexOf 定位不受 parentNode 已切壳影响），
+        // 真移动态缺席自然跳过。
+        for (var zmI = 0; zmI < zmovedI.length; zmI++) {
+          var zkidsI = zscI.childNodes;
+          for (var znI2 = 0; znI2 < zkidsI.length; znI2++) {
+            if (zkidsI[znI2] === zmovedI[zmI]) {
+              zscI.removeChild(zmovedI[zmI]);
+              break;
+            }
+          }
+        }
+        zppI.insertBefore(zshellI, zscI.nextSibling);
+        zsoI = 1 + _zwJusNodeIndex(zscI);
+      }
+      zscI = zppI;
+      range.setStart(zscI, zsoI);
+    }
+
     // "Let img be ... createElement("img") ... setAttribute("src", value) ...
     // Run insertNode(img) on the range."
     var img = document.createElement('img');
     img.setAttribute('src', v);
     _zwFbqInsertAtRangeStart(img);
+
+    // IMG-BREAKOUT 收尾（同刀）：插入点后邻接空 inline 壳链全摘——
+    // stripWrappers:false 保留的空包裹（删除致空或 restoreValues 重发空壳）
+    // Chrome 不保留（foo{<b>bar</b>}baz→foo<img>baz、foo{<span style>…</span>}
+    // baz→foo<img>baz、双空样式壳链→foo<img>quz 等 exp 实证；<b><br></b> 非
+    // 空壳保留形 <div><img><b><br></b></div> 同族 exp 实证）。仅前向扫：本批
+    // 语料无 img 前向邻接空壳形，FIXME: 出现该形再补后向对称臂。
+    var zg2I = 0;
+    while (img.nextSibling && zg2I++ < 256) {
+      var znI = img.nextSibling;
+      if (znI.nodeType !== 1 || !_zwJusIsInlineNode(znI)
+          || znI.childNodes.length !== 0) {
+        break;
+      }
+      znI.parentNode.removeChild(znI);
+    }
 
     // "Run collapse() on the Selection, with first argument equal to the
     // parent of img and the second argument equal to one plus the index of

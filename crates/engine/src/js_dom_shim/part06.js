@@ -14014,7 +14014,16 @@
       // qS(stylewithcss) 读数面（record {}），滞后快照读数不受影响。结构命令
       // presTt 同款保全未接（语料无 [swcss(true)+结构命令+typing] 链形，
       // FIXME: 出现该链形时需 presSw 快照回写）。
-      globalThis.__zwStyleWithCSS = false;
+      // IMG-SWCSS-GUARD（2026-11-17 insertimage 壳形刀）：命令内部选区折叠
+      // 不清——img apply 的 deleteSelection 归一 collapse 途经本点，其内
+      // restoreValues 跨块值载体选形（forecolor → _zwVaCssFlag 读 font/span
+      // 分野）须读置位值（insertimage.html stylewithcss(true) 跨块 2F 实证
+      // got font/exp span）。守卫仅 img 调用域（part01g __zwImgDelSelInternal
+      // try/finally），页面程序化选区变更（multitest 每案 setup、dispatch 外）
+      // 照清不覆盖。
+      if (globalThis.__zwImgDelSelInternal !== true) {
+        globalThis.__zwStyleWithCSS = false;
+      }
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）
