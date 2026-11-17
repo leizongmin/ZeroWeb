@@ -699,6 +699,55 @@ fn test_font_shorthand_supported_invalid() {
 }
 
 #[test]
+/// 刀 O（css-fonts-4 §font-prop）：`font` 简写注册面——`known_properties` 含
+/// `font`，decl_supported 尾门 `contains && apply_property_value_with_quirks`
+/// 经 apply oracle `font` 臂可达（oracle 臂无 style 副作用，纯文法裁决）。
+/// driving: system-fonts 588F from/to 门、font-computed 309F 排列空间前置门。
+/// <https://drafts.csswg.org/css-fonts-4/#font-prop>
+fn test_font_shorthand_registered_for_supports_gate() {
+    assert!(
+        crate::PropertyRegistry::known_properties().contains(&"font"),
+        "font 简写应在 known_properties（CSS.supports 尾门第一道）"
+    );
+    let mut style = crate::ComputedStyle::default();
+    // system-fonts.html from 值全形（style+weight+variant+stretch+size/line-height+family）。
+    assert!(crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "italic 100 small-caps ultra-expanded 100px / 100px Ahem",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+    // 六 system font keyword 独立形（system-fonts to 值门）。
+    assert!(crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "message-box",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+    // 非法形仍拒：缺 family / family 位 CSS-wide keyword（二期文法门同链可达）。
+    assert!(!crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "16px",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+    assert!(!crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "16px inherit",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+}
+
+#[test]
 fn test_font_shorthand_resets_font_kerning() {
     let result = expand_one("font", "16px serif", false, (0, 0, 1));
     assert!(

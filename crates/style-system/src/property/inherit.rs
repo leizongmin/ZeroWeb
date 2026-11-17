@@ -67,6 +67,32 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_kerning = parent.font_kerning;
             true
         }
+        // 刀 O（css-fonts-4 §font-prop）：`font` 简写关键字通道（`font: inherit`/
+        // `all: inherit` 级联）——按 expand_font 展开清单拷父 13 长手槽位（style/
+        // weight/size/line-height/family/variant 五面/stretch/kerning），委托各
+        // longhand 臂保单源。`font` 本身非继承属性（is_inherited 不含），本臂仅
+        // 显式关键字声明可达。
+        // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+        "font" => {
+            for p in [
+                "font-style",
+                "font-weight",
+                "font-size",
+                "line-height",
+                "font-family",
+                "font-variant-ligatures",
+                "font-variant-caps",
+                "font-variant-numeric",
+                "font-variant-east-asian",
+                "font-variant-position",
+                "font-variant-alternates",
+                "font-stretch",
+                "font-kerning",
+            ] {
+                inherit_property(parent, child, p);
+            }
+            true
+        }
         "font-synthesis" => {
             child.font_synthesis = parent.font_synthesis;
             true
@@ -974,6 +1000,30 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-kerning" => {
             style.font_kerning = default_style.font_kerning;
+            true
+        }
+        // 刀 O（css-fonts-4 §font-prop）：`font` 简写关键字通道（`font: initial`/
+        // `all: initial` 级联）——按 expand_font 展开清单重置 13 长手槽位（同
+        // inherit 臂委托各 longhand 臂保单源）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+        "font" => {
+            for p in [
+                "font-style",
+                "font-weight",
+                "font-size",
+                "line-height",
+                "font-family",
+                "font-variant-ligatures",
+                "font-variant-caps",
+                "font-variant-numeric",
+                "font-variant-east-asian",
+                "font-variant-position",
+                "font-variant-alternates",
+                "font-stretch",
+                "font-kerning",
+            ] {
+                apply_initial_value(style, p);
+            }
             true
         }
         "font-synthesis" => {

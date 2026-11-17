@@ -71,6 +71,11 @@ impl PropertyRegistry {
             "content-visibility" => Some(ContentVisibility(ContentVisibilityValue::Visible)),
 
             // 字体
+            // 刀 O：`font` 简写注册对应项——初值无独立标量（值空间 = 长手组合，
+            // 重置/拷贝语义在 apply_initial_value/inherit_property 的 `font` 委托
+            // 臂，展开清单 13 槽），占位 OptionalString(None) 仅满足注册表完整性
+            // 钉测（css-fonts-4 §font-prop）。
+            "font" => Some(OptionalString(None)),
             "font-family" => Some(StringList(vec![])),
             "font-size" => Some(Length(LengthValue::Px(16.0))),
             "font-weight" => Some(FontWeight(FontWeightValue::Normal)),
@@ -659,6 +664,16 @@ impl PropertyRegistry {
             "opacity",
             "visibility",
             "content-visibility",
+            // 刀 O（css-fonts-4 §font-prop）：`font` 简写支持面注册——decl_supported
+            // 尾门 `known_properties().contains(&prop) && apply_property_value_with_quirks`
+            // 走 apply oracle `font` 臂（expand_font 严格校验单源，oracle 臂无 style
+            // 副作用）。此前简写不在册 → `CSS.supports('font', …)` 恒 false，
+            // oracle 臂被 contains 短路永不可达（system-fonts 588F from/to 门、
+            // font-computed 309F 排列空间前置门驱动）。`all` 展开按本表逐属性
+            // 级联：`font` 条目经 wide-keyword 前置臂展开/直返 true 无副作用，
+            // 长手各自身在册语义不变。
+            // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+            "font",
             "font-family",
             "font-size",
             "font-weight",
