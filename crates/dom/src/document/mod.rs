@@ -269,6 +269,116 @@ impl Document {
         self.nodes.len()
     }
 
+    /// 文档常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：节点表 slotmap 槽位容量（capacity × `size_of::<NodeData>()`）+
+    /// O(nodes) 堆面走查（children 向量容量、属性向量容量与属性值串、id/class
+    /// 缓存串、text/comment/doctype/PI 内容串）+ 侧表槽位（id_map、事件监听器
+    /// 及其回调槽、shadow/template/form/slot 四映射）+ 查询索引与两 selector
+    /// 解析缓存（键串字节；`SelectorChain`/`SimpleSelector` AST 堆面不计——
+    /// 有 `SELECTOR_CACHE_CAP` 上界的纯缓存域）。markup5ever `QualName` 原子
+    /// 串为全局共享 intern，不计入节点私有面。估算服务域级归因（MB 量级排序），
+    /// 非 allocator 级精确核算。
+    pub fn estimated_resident_bytes(&self) -> u64 {
+        fn vec_cap<T>(v: &Vec<T>) -> u64 {
+            (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+        }
+        fn map_cap<K, V>(m: &HashMap<K, V>) -> u64 {
+            (std::mem::size_of::<K>()
+                .saturating_add(std::mem::size_of::<V>())
+                .saturating_mul(m.capacity())) as u64
+        }
+        let mut total: u64 =
+            (std::mem::size_of::<NodeData>().saturating_mul(self.nodes.capacity())) as u64;
+        total = total
+            .saturating_add(map_cap(&self.id_map))
+            .saturating_add(self.id_map.keys().map(|k| k.len() as u64).sum::<u64>());
+        for node in self.nodes.values() {
+            total = total.saturating_add(vec_cap(&node.children));
+            match &node.kind {
+                NodeKind::Element(el) => {
+                    total = total.saturating_add(vec_cap(&el.attributes));
+                    for attr in &el.attributes {
+                        total = total.saturating_add(attr.value.len() as u64);
+                    }
+                    total = total.saturating_add(el.id.as_ref().map_or(0, |s| s.len() as u64));
+                    total = total.saturating_add(vec_cap(&el.class_list));
+                    for class in &el.class_list {
+                        total = total.saturating_add(class.len() as u64);
+                    }
+                }
+                NodeKind::Text(t) => {
+                    total = total.saturating_add(t.content.len() as u64);
+                }
+                NodeKind::Comment(c) => {
+                    total = total.saturating_add(c.content.len() as u64);
+                }
+                NodeKind::DocumentType(dt) => {
+                    total = total.saturating_add(dt.name.len() as u64);
+                    total = total.saturating_add(dt.public_id.as_ref().map_or(0, |s| s.len() as u64));
+                    total = total.saturating_add(dt.system_id.as_ref().map_or(0, |s| s.len() as u64));
+                }
+                NodeKind::ProcessingInstruction(pi) => {
+                    total = total
+                        .saturating_add(pi.target.len() as u64)
+                        .saturating_add(pi.data.len() as u64);
+                }
+                _ => {}
+            }
+        }
+        // 事件监听器：键槽 + 类型串 + 回调列表容量（含回调槽位）。
+        total = total.saturating_add(map_cap(&self.event_listeners));
+        for (key, listeners) in &self.event_listeners {
+            total = total.saturating_add(key.1.len() as u64 + vec_cap(listeners));
+        }
+        // Shadow/template/form/slot 侧表与 slot 分配列表。
+        total = total
+            .saturating_add(map_cap(&self.shadow_roots))
+            .saturating_add(map_cap(&self.template_contents_map))
+            .saturating_add(map_cap(&self.form_owner_map))
+            .saturating_add(map_cap(&self.slot_assignments))
+            .saturating_add(map_cap(&self.manual_slot_assignments));
+        for v in self.slot_assignments.values() {
+            total = total.saturating_add(vec_cap(v));
+        }
+        for v in self.manual_slot_assignments.values() {
+            total = total.saturating_add(vec_cap(v));
+        }
+        // 杂项文档级持有：URL/referrer/编码标签、observer/mutation/交互态列表。
+        total = total
+            .saturating_add(self.url.as_ref().map_or(0, |s| s.len() as u64))
+            .saturating_add(self.referrer.as_ref().map_or(0, |s| s.len() as u64))
+            .saturating_add(self.encoding_label.as_ref().map_or(0, |s| s.len() as u64))
+            .saturating_add(vec_cap(&self.observers))
+            .saturating_add(vec_cap(&self.pending_mutations))
+            .saturating_add(vec_cap(&self.modal_dialogs))
+            .saturating_add(vec_cap(&self.filtered_options));
+        // 查询位置索引（外层键槽 + 内层 per-element 位置表槽位）+ selector 解析
+        // 缓存（键串字节；AST 堆面见 doc 注记）。
+        {
+            let qpi = self.query_pos_index.borrow();
+            total = total.saturating_add(map_cap(&*qpi));
+            for inner in qpi.values() {
+                total = total.saturating_add(map_cap(inner));
+            }
+        }
+        {
+            let cache = self.selector_chain_cache.borrow();
+            total = total.saturating_add(map_cap(&*cache));
+            for key in cache.keys() {
+                total = total.saturating_add(key.len() as u64);
+            }
+        }
+        {
+            let cache = self.simple_selector_cache.borrow();
+            total = total.saturating_add(map_cap(&*cache));
+            for key in cache.keys() {
+                total = total.saturating_add(key.len() as u64);
+            }
+        }
+        total
+    }
+
     // ── 节点查找 ────────────────────────────────────────────────
 
     /// 根据 NodeId 获取节点数据的不可变引用。
@@ -2879,4 +2989,28 @@ pub enum DomError {
     /// 试图对已有 ShadowRoot 的元素重复附加。
     #[error("该元素已有 ShadowRoot")]
     AlreadyHasShadowRoot,
+}
+
+#[cfg(test)]
+mod t79_resident_bytes_tests {
+    use super::*;
+    use crate::parse_html;
+
+    /// 文档树字节读数为正；追加文本节点后增长（堆面走查覆盖 text 内容串）。
+    #[test]
+    fn resident_bytes_positive_and_grows_with_content() {
+        let empty = Document::new();
+        let empty_bytes = empty.estimated_resident_bytes();
+        assert!(empty_bytes > 0, "empty doc slotmap root should count");
+        let doc = parse_html("<html><body><p id=a class=x>hello</p></body></html>");
+        let bytes = doc.estimated_resident_bytes();
+        assert!(bytes > empty_bytes, "parsed doc should exceed empty: {bytes} vs {empty_bytes}");
+        let mut grown = parse_html("<html><body><p id=a class=x>hello</p></body></html>");
+        let text = grown.create_text_node(&"0123456789".repeat(64));
+        let _ = grown.append_child(grown.root(), text);
+        assert!(
+            grown.estimated_resident_bytes() > bytes,
+            "text payload should increase reading"
+        );
+    }
 }

@@ -2442,6 +2442,14 @@ impl WebView {
         (self.cached_html.len() + self.cached_css.len()) as u64
     }
 
+    /// 管线账外域读数（T79 账外域仪拍：T78 九域之外——DOM 树/计算样式/布局树/
+    /// taffy 状态/帧指纹缓存/样式表缓存，字节口径见
+    /// [`zero_engine::OffLedgerReadings`] 字段文档）。env 门测量读数，非行为
+    /// 路径；主线程发布点直读（engine 与 WebView 同进程，无 IPC 面）。
+    pub fn offledger_readings(&self) -> zero_engine::OffLedgerReadings {
+        self.pipeline.offledger_readings()
+    }
+
     /// 加载 URL（同步 HTTP GET）。
     ///
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。

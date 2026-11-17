@@ -170,6 +170,12 @@ enum JsWorkerCommand {
     DeferredReclaim {
         gens: u32,
     },
+    /// T79 账外域仪拍：isolate 线程自报 V8 已用堆——worker 命令边界调
+    /// `heap_used_bytes()` 写入共享槽（V8 cage 不经 System 分配器，dump 线程
+    /// 不触沙箱；主线程发布点读最近读数）。
+    ProbeHeap {
+        slot: Arc<AtomicU64>,
+    },
     Shutdown,
 }
 
@@ -213,6 +219,10 @@ pub struct RendererJsWorker {
     /// 三点），renderer 主循环节拍泵据此决定是否派发 `__zw_raf_tick`（镜像媒体泵门控；
     /// 无注册 rAF 时恒 0，泵零开销）。
     raf_interest: Arc<AtomicU64>,
+    /// T79 账外域仪拍：V8 isolate 线程自报槽——worker 线程在命令边界响应
+    /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
+    /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
+    heap_probe_slot: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -373,6 +383,9 @@ impl RendererJsWorker {
         // （`Page.loadEventFired` 族重发事件源）。
         let doc_write_settled: Arc<std::sync::Mutex<Vec<()>>> = Arc::default();
         let doc_write_settled_for_worker = Arc::clone(&doc_write_settled);
+        // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
+        // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
+        let heap_probe_slot = Arc::new(AtomicU64::new(0));
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -525,6 +538,7 @@ impl RendererJsWorker {
             fetch_observed,
             page_fetch_inflight,
             raf_interest,
+            heap_probe_slot,
             mutations,
             history_inbox,
             rect_snapshot,
@@ -638,6 +652,24 @@ impl RendererJsWorker {
         self.cmd_tx
             .send(JsWorkerCommand::DeferredReclaim { gens })
             .map_err(|e| e.to_string())
+    }
+
+    /// T79 账外域仪拍：请求 V8 已用堆自报（fire-and-forget——worker 命令边界
+    /// 执行 `heap_used_bytes()` 写共享槽；主线程随后读
+    /// [`Self::latest_v8_heap_bytes`]，读数至多滞后一个命令队列深度）。
+    pub fn request_v8_heap_probe(&self) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::ProbeHeap {
+                slot: Arc::clone(&self.heap_probe_slot),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// 最近一次 V8 已用堆读数（字节；`None` = 尚无读数——ProbeHeap 未达
+    /// isolate 线程或沙箱无堆统计）。
+    pub fn latest_v8_heap_bytes(&self) -> Option<u64> {
+        let v = self.heap_probe_slot.load(std::sync::atomic::Ordering::Relaxed);
+        (v != 0).then_some(v)
     }
 
     /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
@@ -1373,6 +1405,7 @@ impl WorkerCensus {
             JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
             JsWorkerCommand::WakePrio => "WakePrio",
             JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
+            JsWorkerCommand::ProbeHeap { .. } => "ProbeHeap",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -2430,6 +2463,13 @@ fn js_worker_main(
                 // T13 S2：归还 glibc arena free 页（`ZEROWEB_NAV_TRIM=0` 关，token 全零）。
                 if crate::mem_reclaim::nav_trim_enabled() {
                     crate::mem_reclaim::malloc_trim_now("worker_trim", gens);
+                }
+            }
+            JsWorkerCommand::ProbeHeap { slot } => {
+                // T79 账外域仪拍：isolate 线程自报 V8 已用堆（heap_used_bytes 内部
+                // enter/exit 配对；quickjs 沙箱 trait 默认 None → 槽保持 0 = 无读数）。
+                if let Some(heap_bytes) = sandbox.heap_used_bytes() {
+                    slot.store(heap_bytes as u64, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             JsWorkerCommand::Shutdown => {

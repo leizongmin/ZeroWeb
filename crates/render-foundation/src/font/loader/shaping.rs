@@ -252,6 +252,35 @@ impl FontLoader {
             self.shape_cache.lock().expect("shape cache poisoned").clear();
         }
     }
+
+    /// shaping 缓存常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：键 = face 描述符向量槽位 + 嵌套三 Vec 堆面 + 两文本串字节；值 =
+    /// glyph 向量容量 × [`crate::font::ShapedGlyph`] 单元大小。键内 String 文本
+    /// 是主导项（每缓存条目持整段源文本）。缓存无容量上限（只有失效 clear），
+    /// 字节读数服务域级归因（MB 量级排序），非 allocator 级精确核算。
+    pub fn shape_cache_bytes(&self) -> u64 {
+        fn vec_cap<T>(v: &Vec<T>) -> u64 {
+            (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+        }
+        let cache = self.shape_cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache
+            .iter()
+            .map(|(key, glyphs)| {
+                let mut total = vec_cap(&key.0);
+                for (_, _, _, pairs, features, variations) in &key.0 {
+                    total = total
+                        .saturating_add(vec_cap(pairs))
+                        .saturating_add(vec_cap(features))
+                        .saturating_add(vec_cap(variations));
+                }
+                total = total
+                    .saturating_add(key.4.as_ref().map_or(0, |s| s.len() as u64))
+                    .saturating_add(key.5.len() as u64);
+                total.saturating_add(vec_cap(glyphs))
+            })
+            .sum()
+    }
 }
 
 #[cfg(test)]
@@ -398,5 +427,25 @@ mod tests {
             expanded_width > condensed_width,
             "wdth axis must affect shaping advance: condensed={condensed_width}, expanded={expanded_width}"
         );
+    }
+}
+
+#[cfg(test)]
+mod t79_cache_readings_tests {
+    use super::super::FontLoader;
+    use crate::font::TextShaper;
+
+    const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+
+    /// shaping 缓存字节读数：缓存写入后为正，键文本串计入（字节随文本增长）。
+    #[test]
+    fn shape_cache_bytes_positive_after_shaping() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
+        assert_eq!(loader.shape_cache_bytes(), 0);
+        let shaper = TextShaper::new(&loader, Some(crate::primitive::FontId(font_id)));
+        shaper.shape_single_line("hello world", 16.0);
+        let bytes = loader.shape_cache_bytes();
+        assert!(bytes > 0, "cached shaping should report bytes, got {bytes}");
     }
 }

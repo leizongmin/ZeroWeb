@@ -1569,6 +1569,9 @@ impl RendererRuntime {
             // 块内直读活缓存——快照 duplicate_for_snapshot 丢动画帧且不拷 svg 表，
             // 经快照读 animation/svg 两域结构性恒零（返修 df-F1：未测≠测得零）；
             // armed 门与 alloc_trace 同源；产品构建（无 feature）整块零代码。
+            // T79 账外域仪拍：追加九域之外的管线保留面（DOM 树/样式/布局/taffy/
+            // 指纹缓存/样式表/三字体缓存）与 V8 已用堆自报（isolate 在 js worker
+            // 线程——ProbeHeap 命令边界采样，读数至多滞后一个队列深度）。
             #[cfg(feature = "alloc-trace")]
             if crate::alloc_trace::armed() {
                 let canvas_bytes = wv
@@ -1577,6 +1580,8 @@ impl RendererRuntime {
                     .map(|(_, _, _, rgba, _)| rgba.len() as u64)
                     .sum::<u64>();
                 let cache = wv.image_cache_ref();
+                let off = wv.offledger_readings();
+                let _ = self.js_worker.request_v8_heap_probe();
                 crate::mem_ledger::record(&[
                     ("render_primitives_bytes", render.primitives.estimated_resident_bytes()),
                     ("image_cache_bytes", cache.total_bytes() as u64),
@@ -1590,6 +1595,33 @@ impl RendererRuntime {
                     ),
                     ("webview_cached_text_bytes", wv.cached_text_bytes()),
                     ("font_data_bytes", self.font_loader.font_data_bytes() as u64),
+                    // T79 账外域（归因 ~87% PSS 的细分面）
+                    ("dom_tree_bytes", off.dom_tree_bytes),
+                    ("style_map_bytes", off.style_map_bytes),
+                    ("layout_result_bytes", off.layout_result_bytes),
+                    ("taffy_state_bytes", off.taffy_state_bytes),
+                    ("fingerprint_cache_bytes", off.fingerprint_cache_bytes),
+                    (
+                        "fingerprint_cache_entries",
+                        off.fingerprint_cache_entries,
+                    ),
+                    ("stylesheets_bytes", off.stylesheets_bytes),
+                    (
+                        "shape_cache_bytes",
+                        self.font_loader.shape_cache_bytes(),
+                    ),
+                    (
+                        "hmtx_cache_bytes",
+                        self.font_loader.hmtx_cache_bytes(),
+                    ),
+                    (
+                        "fallback_metrics_cache_bytes",
+                        self.font_loader.fallback_metrics_cache_bytes(),
+                    ),
+                    (
+                        "v8_heap_bytes",
+                        self.js_worker.latest_v8_heap_bytes().unwrap_or(0),
+                    ),
                 ]);
             }
             (

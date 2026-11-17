@@ -600,3 +600,104 @@ pub struct PositionTryRule {
     /// 描述符声明列表（原文序）。
     pub declarations: Vec<Declaration>,
 }
+
+/// T79 账外域仪拍：样式表 AST 常驻字节估算（env 门测量读数，非行为路径）。
+impl Stylesheet {
+    /// 常驻字节估算：规则向量槽位（`capacity × size_of::<Rule>()`，枚举
+    /// inline payload 含于槽位）+ 主导变体堆面走查（Style/At/Keyframes/Layer/
+    /// Import/FontFace/Supports 的声明串、嵌套规则递归）。Selector/条件 AST
+    /// 内嵌串与低频变体（FontFeatureValues/Page/Property/CounterStyle/
+    /// PositionTry）内嵌堆面不计——估算服务域级归因（MB 量级排序），非
+    /// allocator 级精确核算。
+    pub fn estimated_resident_bytes(&self) -> u64 {
+        rule_vec_bytes(&self.rules)
+    }
+}
+
+/// 规则向量堆面估算（[`Stylesheet::estimated_resident_bytes`] 内部走查）。
+fn rule_vec_bytes(rules: &Vec<Rule>) -> u64 {
+    fn vec_cap<T>(v: &Vec<T>) -> u64 {
+        (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+    }
+    fn decl_bytes(decls: &Vec<Declaration>) -> u64 {
+        vec_cap(decls)
+            .saturating_add(
+                decls
+                    .iter()
+                    .map(|d| d.property.len() as u64 + d.value.len() as u64)
+                    .sum::<u64>(),
+            )
+    }
+    let mut total: u64 = vec_cap(rules);
+    for rule in rules {
+        match rule {
+            Rule::Style(r) => {
+                total = total
+                    .saturating_add(vec_cap(&r.selectors))
+                    .saturating_add(decl_bytes(&r.declarations));
+            }
+            Rule::At(r) => {
+                total = total
+                    .saturating_add(r.name.len() as u64)
+                    .saturating_add(r.prelude.len() as u64);
+                if let AtRuleBody::Block(nested) = &r.body {
+                    total = total.saturating_add(rule_vec_bytes(nested));
+                }
+            }
+            Rule::Keyframes(r) => {
+                total = total.saturating_add(r.name.len() as u64 + vec_cap(&r.keyframes));
+                for block in &r.keyframes {
+                    total = total
+                        .saturating_add(vec_cap(&block.selectors))
+                        .saturating_add(decl_bytes(&block.declarations));
+                }
+            }
+            Rule::Layer(r) => {
+                total = total
+                    .saturating_add(r.name.len() as u64)
+                    .saturating_add(rule_vec_bytes(&r.rules));
+            }
+            Rule::Import(r) => {
+                total = total.saturating_add(r.url.len() as u64 + vec_cap(&r.media_queries));
+                for q in &r.media_queries {
+                    total = total.saturating_add(q.len() as u64);
+                }
+            }
+            Rule::FontFace(r) => {
+                total = total
+                    .saturating_add(r.family.len() as u64)
+                    .saturating_add(vec_cap(&r.sources))
+                    .saturating_add(vec_cap(&r.unicode_ranges));
+                for s in &r.sources {
+                    total = total.saturating_add(s.len() as u64);
+                }
+            }
+            Rule::Supports(r) => {
+                total = total.saturating_add(rule_vec_bytes(&r.rules));
+            }
+            Rule::Container(r) => {
+                total = total.saturating_add(r.name.as_ref().map_or(0, |s| s.len() as u64));
+            }
+            // FontFeatureValues/Page/Property/CounterStyle/PositionTry：inline
+            // payload 已含于向量槽位，内嵌堆面不计（见 impl 注记）。
+            _ => {}
+        }
+    }
+    total
+}
+
+#[cfg(test)]
+mod t79_stylesheet_readings_tests {
+    use super::*;
+
+    /// 解析后的 AST 字节读数为正，且含声明串与嵌套 @media 递归面。
+    #[test]
+    fn parsed_stylesheet_resident_bytes_positive() {
+        let css = "p { color: red; margin: 0 } @media screen { div { color: blue } }";
+        let sheet = crate::Parser::parse_stylesheet(css);
+        let bytes = sheet.estimated_resident_bytes();
+        assert!(bytes > 0, "parsed stylesheet should report resident bytes");
+        // 空表零读数。
+        assert_eq!(crate::Stylesheet { rules: Vec::new() }.estimated_resident_bytes(), 0);
+    }
+}

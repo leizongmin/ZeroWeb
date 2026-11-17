@@ -104,6 +104,37 @@ impl FontLoader {
     pub(super) fn clear_hmtx_cache(&self) {
         self.hmtx_cache.lock().expect("hmtx cache poisoned").clear();
     }
+
+    /// hmtx 测量缓存常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：flat/grouped 两表 hashbrown 槽位容量（槽位数 × 单键值对
+    /// size_of）与键内 face 链 `Arc<[u32]>` 目标缓冲之和（按指针地址去重
+    /// ——同字号各链独立分配、克隆共享）。thread_local face 缓存（每线程
+    /// ≤16 face）不入本读数——dump 线程读不到线程本地存储。估算服务域级
+    /// 归因（MB 量级排序），非 allocator 级精确核算。
+    pub fn hmtx_cache_bytes(&self) -> u64 {
+        fn slot_bytes<K, V>(m: &HashMap<K, V>) -> u64 {
+            (std::mem::size_of::<K>()
+                .saturating_add(std::mem::size_of::<V>())
+                .saturating_mul(m.capacity())) as u64
+        }
+        let cache = self.hmtx_cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut total = slot_bytes(&cache.flat);
+        for inner in cache.grouped.values() {
+            total = total.saturating_add(slot_bytes(inner));
+        }
+        total = total.saturating_add(slot_bytes(&cache.grouped));
+        // 键内 face 链 Arc 目标缓冲（len × 4B + 头部）：跨 flat/grouped 去重。
+        let mut chains: Vec<*const [u32]> = Vec::new();
+        for key in cache.flat.keys().map(|k| &k.0).chain(cache.grouped.keys().map(|k| &k.0)) {
+            let ptr = Arc::as_ptr(key);
+            if chains.iter().all(|seen| !std::ptr::eq(*seen, ptr)) {
+                chains.push(ptr);
+                total = total.saturating_add(key.len() as u64 * 4);
+            }
+        }
+        total
+    }
 }
 
 /// hmtx 测量用的 face 缓存：ttf_parser::Face 借用 `bytes`，条目内 Arc 保活字节。
@@ -276,5 +307,25 @@ mod tests {
                 "measure({measured:.3}) differs from shaping hmtx({unshaped:.3}), tolerance {tolerance:.3}: {text:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod t79_cache_readings_tests {
+    use super::*;
+
+    const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+
+    /// hmtx 缓存字节读数：测量后为正且与既有条目数读数同向。
+    #[test]
+    fn hmtx_cache_bytes_positive_after_measure() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
+        assert_eq!(loader.hmtx_cache_bytes(), 0);
+        loader.measure_text_hmtx(&[font_id], "AB", 16.0);
+        let bytes = loader.hmtx_cache_bytes();
+        assert!(bytes > 0, "cached widths should report bytes, got {bytes}");
+        loader.set_fallback_chain(vec![font_id]);
+        assert_eq!(loader.hmtx_cache_bytes(), 0, "clear resets reading");
     }
 }
