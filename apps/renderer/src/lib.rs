@@ -10,6 +10,7 @@ mod ipc_service_worker;
 pub mod js_worker;
 #[cfg(target_os = "macos")]
 mod macos_app;
+mod malloc_stats;
 mod mem_reclaim;
 mod page_scripts;
 mod paint_export;

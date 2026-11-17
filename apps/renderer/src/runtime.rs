@@ -1582,6 +1582,7 @@ impl RendererRuntime {
                 let cache = wv.image_cache_ref();
                 let off = wv.offledger_readings();
                 let _ = self.js_worker.request_v8_heap_probe();
+                let ms = crate::malloc_stats::mallinfo2_snapshot().unwrap_or_default();
                 crate::mem_ledger::record(&[
                     ("render_primitives_bytes", render.primitives.estimated_resident_bytes()),
                     ("image_cache_bytes", cache.total_bytes() as u64),
@@ -1622,6 +1623,11 @@ impl RendererRuntime {
                         "v8_heap_bytes",
                         self.js_worker.latest_v8_heap_bytes().unwrap_or(0),
                     ),
+                    // T79 残留劈分（glibc 分配器簿记，与域读数共面——聚合侧不相加）
+                    ("malloc_arena_bytes", ms.arena_bytes),
+                    ("malloc_hblkhd_bytes", ms.hblkhd_bytes),
+                    ("malloc_in_use_bytes", ms.in_use_bytes),
+                    ("malloc_free_bytes", ms.free_bytes),
                 ]);
             }
             (
