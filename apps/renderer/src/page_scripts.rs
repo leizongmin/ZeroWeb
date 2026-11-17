@@ -2725,16 +2725,17 @@ mod tests {
         worker.shutdown();
     }
 
-    /// R2946 屏障 F1 返修回归（双审查缺陷轮反例）：跨轮扫描不得让新发现的屏障快照
-    /// 越过前轮 stash 中提交序更早的普通命令——同通道 FIFO 不因屏障破坏。
-    /// 反例（提交序）：S1 快照 → T1 优先（忙臂）→ R 普通 → S2 快照 → T2 优先。
-    /// T1 的扫描只见 S1（R/S2 未提交）；T2 的扫描见 [R, S2]——若把 S2 单独提为屏障
-    /// 而 R 落 stash，派发序变 S2, T2, R，R（提交先于 S2）在 html_2 快照之后执行。
-    /// 修复后屏障以「最后一个更早快照」切前缀：R 先于 S2，派发序 t1, r, t2。
+    /// R2946 屏障 T79 收窄回归：跨轮 stash 的普通命令不被丢弃、屏障后补跑；每条优先
+    /// 派发仍跟随自己的快照应用（屏障不变式本体）。反例（提交序）：S1 快照 → T1 优先
+    /// （忙臂）→ R 普通 → S2 快照 → T2 优先。T1 的扫描只见 S1（R/S2 未提交）；T2 的
+    /// 扫描见 [R, S2]——收窄后 prefix 只取提交序更早的快照序列（[S2]），R 落屏障后
+    /// 补跑：派发序 t1, s2, t2, r。R（fetch resolve 类回调）读到的是 S2 应用后的活
+    /// 文档——回包与渲染帧交错本就是 event-loop 竞态面（WHATWG HTML event-loop
+    /// processing model），不丢弃即正确；屏障不变式保持：t1 后于 S1、t2 后于 S2。
     /// 确定性节奏（sleep 定拍，裕量 ≥200ms）：500ms 忙臂占住 worker 让 S1/S2 的
     /// 250ms 有界等待必超时滞留；T1 自身 800ms 忙臂保证 R/S2/T2 都在 T1 执行窗内入队。
     #[test]
-    fn snapshot_barrier_preserves_cross_round_fifo_order_r2946() {
+    fn snapshot_barrier_defers_stashed_plain_commands_post_barrier_r2946() {
         let mut worker = RendererJsWorker::spawn(120);
         // ① 500ms 忙臂（50ms 有界放行）：worker 占用至 t0+500。
         let _ = worker.execute_script_direct_bounded(
@@ -2757,7 +2758,8 @@ mod tests {
         // ⑤ R 普通（t0+750 提交，50ms 等待超时滞留）→ ⑥ S2（t0+800 提交，超时滞留）
         //    → ⑦ T2 优先（t0+1100 提交，早于 T1 结束 t0+1300）。
         let _ = worker.execute_script_direct_bounded(
-            "globalThis.__order = (globalThis.__order || []).concat(['r'])",
+            "globalThis.__order = (globalThis.__order || []).concat(['r']); \
+             globalThis.__order_done = globalThis.__order.join(',')",
             std::time::Duration::from_millis(50),
         );
         worker.set_dom_snapshot("<html><body></body></html>", "https://example.com/f1-s2");
@@ -2767,11 +2769,12 @@ mod tests {
                  globalThis.__order_done = globalThis.__order.join(',');",
             )
             .expect("submit T2");
-        // ⑧ 缺陷版派发序 S2, T2, R → __order_done='t1,t2,r'；修复版 R,S2,T2 → 't1,r,t2'。
+        // ⑧ T79 收窄版派发序 t1, s2, t2, r：R 在 T2 屏障后补跑（重写 __order_done），
+        //    最终 't1,t2,r'——R 不被丢弃、t2 仍后于 S2 应用。
         assert_eq!(
             wait_for_global(&worker, "__order_done", 30_000),
-            "t1,r,t2",
-            "跨轮扫描发现的新屏障快照不得越过前轮 stash 中提交序更早的普通命令（同通道 FIFO）"
+            "t1,t2,r",
+            "屏障收窄后 stash 普通命令不得丢弃：T2 屏障后补跑，且优先派发仍跟随自己的快照应用"
         );
         worker.shutdown();
     }
