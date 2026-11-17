@@ -855,6 +855,9 @@
     for (var ti = 0; ti < toks.length; ti++) {
       var tk = toks[ti];
       if (_zwOmCssWide[tk.toLowerCase()]) continue;
+      // 折叠占位段（calc()/var()/url() 跨段）恒语法合法（css-typed-om-1
+      // §set 值解析步：var() 引用值归 CSSUnparsedValue，不作文法校验）。
+      if (tk === '@') continue;
       var um = /^[-+]?(?:\d+\.?\d*|\.\d+)([a-zA-Z%]+)$/.exec(tk);
       if (um) {
         var u2 = um[1].toLowerCase();
@@ -919,13 +922,22 @@
   function _zwOmPropName(name) {
     var n = String(name).trim();
     if (n.slice(0, 2) === '--') return n;
-    // IDL camelCase（paddingTop → padding-top）：仅小写开头的驼峰形 dasherize；
-    // 其余（'WiDtH'/'WIDTH'）直接 ASCII lowercase——CSS 属性名解析面大小写
-    // 不敏感（css-properties-values-api parse 语料 not-case-sensitive 面）。
-    if (/^[a-z]/.test(n) && /[A-Z]/.test(n)) {
-      n = n.replace(/([A-Z])/g, function (_m, c, off) { return (off === 0 ? '' : '-') + c.toLowerCase(); });
+    var lower = n.toLowerCase();
+    if (lower === n) return n;
+    // IDL camelCase（paddingTop → padding-top）dasherize 归一；交替大小写形
+    //（'tRaNsItIoN-dUrAtIoN'/'wIdTh'）dasherize 产物非法——CSS 属性名解析面
+    // 大小写不敏感（css-properties-values-api parse 语料 not-case-sensitive
+    // 面；StylePropertyMap set/append/get 语料 case-insensitive 面），已知
+    // 语法表（_zwOmPropSyntax/_zwOmKnownExtra）按 plain-lowercase 收敛。
+    var dashed = /^[a-z]/.test(n) && /[A-Z]/.test(n)
+      ? n.replace(/([A-Z])/g, function (_m, c, off) { return (off === 0 ? '' : '-') + c.toLowerCase(); }).toLowerCase()
+      : lower;
+    var dashedKnown = Object.prototype.hasOwnProperty.call(_zwOmPropSyntax, dashed) || _zwOmKnownExtra[dashed] === 1;
+    if (!dashedKnown
+      && (Object.prototype.hasOwnProperty.call(_zwOmPropSyntax, lower) || _zwOmKnownExtra[lower] === 1)) {
+      return lower;
     }
-    return n.toLowerCase();
+    return dashed;
   }
   function _zwOmNumStr(n) {
     return String(n);
@@ -1573,6 +1585,9 @@
   var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'grid-template-columns': 1, 'grid-template-rows': 1, transition: 1, animation: 1 };
 
   // ===== 12. StylePropertyMap =====
+  // A/B 快照二进制 provenance 指纹（zw-typedom-listvalued-2026-11-17-r2）：刀 H
+  // Typed OM 校验面轮 r2（var() 引用 get 归一 + 折叠占位接受）的源侧标记
+  // ——strings 抽验新 shim 装载（include_str 全量入二进制）。
   function _zwOmValueToText(v) {
     if (typeof v === 'string') return v.trim();
     if (v instanceof CSSStyleValue) return v.toString();
@@ -1581,6 +1596,12 @@
     throw new TypeError("Invalid value");
   }
   function _zwOmValidateSet(prop, value) {
+    // 值裁决步关联属性错配门（css-typed-om-1 §set：携关联属性的基类实例
+    // 不得跨属性并置——语料 'Setting a property with a CSSStyleValue whose
+    // associated property does not match' 面）。
+    if (value instanceof CSSStyleValue && value._zwOmAssociatedProp !== undefined && value._zwOmAssociatedProp !== prop) {
+      throw new TypeError("Cannot set a CSSStyleValue with a different associated property");
+    }
     var kind = (value instanceof CSSStyleValue) ? value._zwOmKind() : (typeof value === 'string' ? 'text' : 'other');
     if (kind === 'other' && value && typeof value.toString === 'function' && value.toString !== Object.prototype.toString) {
       // 外部鸭子形态（part05 CSSRGB/CSSHSL 等）：有自有 ToString 按 opaque 放行。
@@ -1596,7 +1617,20 @@
       _zwOmCheckShorthandTokens(value);
       return;
     }
-    if (kind === 'text' || kind === 'opaque' || kind === 'foreign' || kind === 'unparsed' || kind === 'varref' || kind === 'color') return;
+    if (kind === 'text') {
+      // list-valued string 门（§set 值解析步：非 list-valued 属性值不得含
+      // 顶层逗号——语料 'Setting a non list-valued property with list-valued
+      // string' 面）+ 单 token 数值形客观族裁决（'10s'@width 面）。
+      var segsV = _zwOmTopSplit(String(value).trim(), ',');
+      if (segsV.length > 1 && !_zwOmIsListValued(prop)) throw new TypeError("Cannot set a list of values on a non list-valued property");
+      for (var vi = 0; vi < segsV.length; vi++) {
+        var segT = segsV[vi].trim();
+        if (segT === '') throw new TypeError("Invalid value");
+        if (/^[^\s(,]+$/.test(segT)) _zwOmValidateNumericText(prop, segT);
+      }
+      return;
+    }
+    if (kind === 'opaque' || kind === 'foreign' || kind === 'unparsed' || kind === 'varref' || kind === 'color') return;
     if (prop.slice(0, 2) === '--') return;
     if (!table) return; // 已知但无表：opaque/keyword 面放行（css-wide 面已过）
     var t = value;
@@ -1628,10 +1662,12 @@
     if (kind === 'transform') { if (fams['<transform>'] || fams['<transform-list>']) return; throw new TypeError("Invalid transform for property"); }
     return;
   }
-  function _zwOmDeclTextFromValue(prop, values) {
+  function _zwOmDeclTextFromValue(prop, values, sep) {
+    // list-valued 属性 set/append 顶层逗号并置（css-typed-om-1 §set/§append
+    // 列表值串形——'1s, 2s' 语料面）；其余单空格并置。
     var texts = [];
     for (var i = 0; i < values.length; i++) texts.push(_zwOmValueToText(values[i]));
-    return texts.join(' ');
+    return texts.join(sep || ' ');
   }
   // 非负属性集（declared/computed association 负值按 spec 包 CSSMathSum——
   // 语料面 assert_is_equal_with_range_handling 期望；清单自 36 个 range-
@@ -1666,24 +1702,118 @@
     'tab-size': 1, width: 1,
   };
 
+  // list-valued 属性集（css-typed-om-1 §append/set：仅 list-valued 属性可
+  // append 且 set 多值——文法顶层逗号重复族；清单取 common comma-repeated
+  // families，语料 set/append 面以 transition-duration 为代表靶）。简写属性
+  //（margin/background/transition 等）不入集——append 恒 TypeError。
+  var _zwOmListValuedProps = {
+    'animation-composition': 1, 'animation-delay': 1, 'animation-direction': 1,
+    'animation-duration': 1, 'animation-fill-mode': 1,
+    'animation-iteration-count': 1, 'animation-name': 1,
+    'animation-play-state': 1, 'animation-range-end': 1,
+    'animation-range-start': 1, 'animation-timeline': 1,
+    'animation-timing-function': 1,
+    'background-attachment': 1, 'background-blend-mode': 1,
+    'background-clip': 1, 'background-image': 1, 'background-origin': 1,
+    'background-position': 1, 'background-repeat': 1, 'background-size': 1,
+    'box-shadow': 1, 'font-family': 1, 'mask-composite': 1, 'mask-image': 1,
+    'mask-mode': 1, 'mask-origin': 1, 'mask-position': 1, 'mask-repeat': 1,
+    'mask-size': 1, 'scroll-margin-block': 1, 'scroll-margin-inline': 1,
+    'scroll-padding-block': 1, 'scroll-padding-inline': 1,
+    'text-shadow': 1, 'transition-behavior': 1, 'transition-delay': 1,
+    'transition-duration': 1, 'transition-property': 1,
+    'transition-timing-function': 1, 'will-change': 1,
+  };
+  function _zwOmIsListValued(p) {
+    return p.slice(0, 2) !== '--' && _zwOmListValuedProps[p] === 1;
+  }
+  // CSSUnparsedValue/var() 引用形（css-typed-om-1 §set 值裁决步：var 引用值
+  // 不得与其他值并置——append 恒拒，set 仅单值）。
+  function _zwOmIsUnparsedLike(v) {
+    if (v instanceof CSSUnparsedValue || v instanceof CSSVariableReferenceValue) return true;
+    return typeof v === 'string' && /(^|[^\w-])var\(/i.test(v);
+  }
+  // 数值 token 客观族裁决（invalid String 语料面 '10s'@width / '10px'@
+  // transition-duration）——仅数值形单 token 拒绝；keyword/函数/多 token 段
+  // 保持放行（语法表词汇覆盖面外，避免 min-content 等合法 keyword 误拒）。
+  // 无单位数字：number/integer 族可；length/percentage/angle 族收 unitless
+  // zero（css-values-4 §5 unitless-zero 面宽限）。
+  function _zwOmValidateNumericText(p, text) {
+    var table = _zwOmPropSyntax[p];
+    if (!table || table.length === 0) return; // 简写/无表：既有 token 门自理
+    var fams = {};
+    for (var i = 0; i < table.length; i++) if (table[i].charAt(0) === '<') fams[table[i]] = 1;
+    var um = /^([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)([a-zA-Z%]+)$/.exec(text);
+    if (um) {
+      var u = um[2].toLowerCase();
+      var inf = u === '%' ? ['percent'] : _zwOmUnitInfo(u);
+      var famName = inf ? inf[0] : null;
+      var want = {
+        length: ['<length>', '<length-percentage>'],
+        percent: ['<percentage>', '<length-percentage>'],
+        angle: ['<angle>'], time: ['<time>'], frequency: ['<frequency>'],
+        resolution: ['<resolution>'], flex: ['<flex>'],
+      }[famName] || [];
+      for (var j = 0; j < want.length; j++) if (fams[want[j]]) return;
+      throw new TypeError("Invalid unit for property");
+    }
+    if (/^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/.exec(text)) {
+      if (fams['<number>'] || fams['<integer>']) return;
+      if (fams['<length>'] || fams['<length-percentage>'] || fams['<percentage>'] || fams['<angle>']) return;
+      throw new TypeError("Invalid number for property");
+    }
+  }
   function _zwOmMakeStyleMap(readable, getStyleObj) {
     // getStyleObj(): 底层 CSSStyleDeclaration 面（el.style / rule.style）。
-    function mapGet(prop) {
+    function mapGetAll(prop) {
       var p = _zwOmPropName(prop);
       var text = '';
-      try { text = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eG) { return null; }
-      if (text === '') return null;
-      var v = _zwOmParseWithText(p, text);
-      // 非负属性负数值：association 语义包 Sum（testsuite range_handling 面）。
-      if (v instanceof CSSUnitValue && v.value < 0 && _zwOmNonNegativeProps[p]) v = new CSSMathSum([v]);
-      return v;
+      try { text = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eG) { return []; }
+      text = text.trim();
+      if (text === '') return [];
+      var table = _zwOmPropSyntax[p];
+      // 简写属性：无 typed 形态返基类实例（css-typed-om-1 §get 回落形态；
+      // 语料 get-shorthand 面 assert_class_string CSSStyleValue）——实例携
+      // 关联属性供 set 值裁决步错配门；css-wide keyword 保持 keyword 形。
+      // 含 var() 引用文本恒回落 CSSUnparsedValue（css-typed-om-1 §get 值
+      // 归一面：var() 引用值不分属性一律 unparsed 形——语料 properties/
+      // margin.html 等 'Can set ... to var() references' 面类断言）。
+      if (table && table.length === 0 && !_zwOmCssWide[text.toLowerCase()]) {
+        if (/(^|[^\w-])var\(/i.test(text)) {
+          return [new CSSUnparsedValue(_zwOmTokenizeVar(text))];
+        }
+        var sv = _zwOmOpaque();
+        sv._zwOmText = text;
+        sv.toString = function () { return this._zwOmText; };
+        sv._zwOmAssociatedProp = p;
+        return [sv];
+      }
+      // list-valued 属性：顶层逗号逐段解析（§get 取首值/§getAll 全量——
+      // 语料 get/getAll 面 'transition-duration: 1s, 2s' 语义）。
+      var segs = _zwOmIsListValued(p) ? _zwOmTopSplit(text, ',') : [text];
+      var out = [];
+      for (var i = 0; i < segs.length; i++) {
+        var seg = segs[i].trim();
+        if (seg === '') continue;
+        var v = _zwOmParseWithText(p, seg);
+        if (v == null) continue;
+        // 非负属性负数值：association 语义包 Sum（testsuite range_handling 面）。
+        if (v instanceof CSSUnitValue && v.value < 0 && _zwOmNonNegativeProps[p]) v = new CSSMathSum([v]);
+        out.push(v);
+      }
+      return out;
+    }
+    function mapGet(prop) {
+      // css-typed-om-1 §get：未设置属性返回 undefined（语料 get.html 面
+      // assert_equals(result, undefined)；has/getAll 走列表全量面）。
+      var vs = mapGetAll(prop);
+      return vs.length > 0 ? vs[0] : undefined;
     }
     var ReadOnly = {};
     Object.defineProperty(ReadOnly, 'get', { value: function (prop) { return mapGet(prop); }, writable: true, configurable: true });
     Object.defineProperty(ReadOnly, 'getAll', {
       value: function (prop) {
-        var v = mapGet(prop);
-        return v == null ? [] : [v];
+        return mapGetAll(prop);
       }, writable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'has', { value: function (prop) { return mapGet(prop) != null; }, writable: true, configurable: true });
@@ -1723,8 +1853,21 @@
         var p = _zwOmPropName(prop);
         var vals = Array.prototype.slice.call(arguments, 1);
         if (vals.length === 0) throw new TypeError("set requires a value");
+        var custom = p.slice(0, 2) === '--';
+        var listValued = _zwOmIsListValued(p);
+        // css-typed-om-1 §set 值裁决步：非 list-valued 属性仅接受单值
+        //（语料 'Setting a non list-valued property with multiple arguments'
+        // 面）；var 引用/CSSUnparsedValue 不得与其他值并置（语料 'with a
+        // CSSUnparsedValue and other values'/'with a var ref() and other
+        // values' 面）。自定义属性豁免（spec custom properties 面）。
+        if (!listValued && !custom && vals.length > 1) throw new TypeError("Cannot set multiple values on a non list-valued property");
         for (var i = 0; i < vals.length; i++) _zwOmValidateSet(p, vals[i]);
-        var text = _zwOmDeclTextFromValue(p, vals);
+        if (!custom && vals.length > 1) {
+          for (var iu = 0; iu < vals.length; iu++) {
+            if (_zwOmIsUnparsedLike(vals[iu])) throw new TypeError("Cannot set a CSSUnparsedValue or var reference with other values");
+          }
+        }
+        var text = _zwOmDeclTextFromValue(p, vals, listValued && !custom ? ', ' : ' ');
         try {
           getStyleObj().setProperty(p, text);
           _zwOmExpandShorthand(getStyleObj(), p, text);
@@ -1734,11 +1877,35 @@
     Object.defineProperty(ReadOnly, 'append', {
       value: function (prop, value) {
         var p = _zwOmPropName(prop);
+        var vals = Array.prototype.slice.call(arguments, 1);
+        if (vals.length === 0) throw new TypeError("append requires a value");
+        var custom = p.slice(0, 2) === '--';
+        if (!custom) {
+          // css-typed-om-1 §append 步 1-2：仅 list-valued 属性可 append
+          //（非 list/简写属性 TypeError——语料 'a property that is not list
+          // valued'/'a shorthand property' 面）；值逐个过 set 值裁决（语料
+          // unsupported/invalid value 面面）；CSSUnparsedValue/var 引用恒拒
+          //（语料 'with a CSSUnparsedValue'/'with a var ref' 面）。
+          if (!_zwOmIsListValued(p)) throw new TypeError("Cannot append to a non list-valued property");
+          for (var i = 0; i < vals.length; i++) _zwOmValidateSet(p, vals[i]);
+          for (var iu = 0; iu < vals.length; iu++) {
+            if (_zwOmIsUnparsedLike(vals[iu])) throw new TypeError("Cannot append a CSSUnparsedValue or var reference");
+          }
+        }
         var prev = '';
-        try { prev = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eA) {}
-        var text = _zwOmDeclTextFromValue(p, [value]);
-        var next = prev ? prev + ' ' + text : text;
-        try { getStyleObj().setProperty(p, next); } catch (_eA2) {}
+        try { prev = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eA) { prev = ''; }
+        prev = prev.trim();
+        if (!custom) {
+          // CSS-wide keyword 恒值不得 append（crbug.com/1417176 面）；既有
+          // 列表含 var() 引用同理（declared append 语料 variable-reference 面）。
+          if (_zwOmCssWide[prev.toLowerCase()]) throw new TypeError("Cannot append to a CSS-wide keyword value");
+          if (/(^|[^\w-])var\(/i.test(prev)) throw new TypeError("Cannot append to a list containing a var reference");
+        }
+        var parts = [];
+        for (var iv = 0; iv < vals.length; iv++) parts.push(_zwOmValueToText(vals[iv]));
+        var text = parts.join(', ');
+        var next = prev !== '' ? prev + ', ' + text : text;
+        try { getStyleObj().setProperty(p, next); } catch (_eA2) { throw new TypeError("append failed"); }
       }, writable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'delete', {
