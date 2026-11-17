@@ -1118,7 +1118,8 @@ fn cmd_testharness_dom(options: &CliOptions, filter: Option<&str>) {
 /// 用例由 `fetch-selection-subset.sh` 按需拉到 `wpt-data/selection/`（gitignored）。
 /// 退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-dom 一致）。基线首跑
 /// 即便大量 Fail 也只用于记录通过率（agent 经 `--format json` 捕获后写 evidence/），
-/// 不作为 land 门禁。filter 按路径子串透传：make testharness-selection FILTER=getSelection。
+/// 不作为 land 门禁。filter 按路径子串透传（`|` 分隔多备选任一命中，editing-run
+/// 通道同款）：make testharness-selection FILTER=getSelection。
 fn cmd_testharness_selection(options: &CliOptions, filter: Option<&str>) {
     let wpt_root = options
         .wpt_data

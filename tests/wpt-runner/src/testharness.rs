@@ -1650,8 +1650,9 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
 /// （editing/contenteditable goal M1 / DC-1——Selection API 可观察面基线；
 /// 二期扩面后 `selection/` 根全域递归，跳过规则见 [`selection_case_skipped`]）。
 ///
-/// 仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
-/// `fetch-selection-subset.sh` / `scripts/goals/23-selection-compat.sh`
+/// 仅依赖 `testharness.js`。filter 按路径子串过滤，`|` 分隔多备选任一命中即收
+/// （testharness_editing_corpus / test262 通道同款——ci-shards 分片按族切域用）。
+/// 用例由 `fetch-selection-subset.sh` / `scripts/goals/23-selection-compat.sh`
 /// 按需拉取（wpt-data gitignored）。
 pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
@@ -1697,7 +1698,7 @@ fn collect_selection_flat_dir_cases(
             continue;
         }
         let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
-        if filter.is_some_and(|filter| !relative.contains(filter)) {
+        if filter.is_some_and(|filter| !filter.split('|').any(|part| relative.contains(part))) {
             continue;
         }
         // wptfyi-editing DC-2（2026-11-15）：plaintext-only/ 入域后 flat 扫描同受
@@ -1751,7 +1752,7 @@ fn collect_selection_dir_cases(
         if selection_case_skipped(&relative) {
             continue;
         }
-        if filter.is_some_and(|filter| !relative.contains(filter)) {
+        if filter.is_some_and(|filter| !filter.split('|').any(|part| relative.contains(part))) {
             continue;
         }
         let Ok(source) = read_corpus_to_string(&path) else {
