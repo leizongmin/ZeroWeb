@@ -3100,6 +3100,49 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Some(DeferredCommand::Message(Box::new(nav)))
     }
 
+    /// 把积压中的 AutomationRequest 提升为下一个派发对象（T79 二层：求值抢占）。
+    /// 返回提升/保序后的队首；`None` 仅当 `head` 为空且排干与积压中均无
+    /// AutomationRequest。见 [`promote_pending_automation_request`]。
+    fn promote_pending_automation_request(
+        head: Option<DeferredCommand>,
+        deferred: &mut VecDeque<DeferredCommand>,
+        mut drain_inbound: impl FnMut() -> Vec<IpcMessage>,
+    ) -> Option<DeferredCommand> {
+        // 队首已是求值：无需抢占（多条求值按 FIFO 依序处理，回执按消息 id 独立配对）。
+        if matches!(
+            head.as_ref(),
+            Some(DeferredCommand::Message(m)) if matches!(m.kind, IpcMessageKind::AutomationRequest(_))
+        ) {
+            return head;
+        }
+        for later in drain_inbound() {
+            deferred.push_back(DeferredCommand::Message(Box::new(later)));
+        }
+        let Some(idx) = deferred
+            .iter()
+            .position(|d| {
+                matches!(d, DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::AutomationRequest(_)))
+            })
+        else {
+            return head;
+        };
+        let request = match deferred.remove(idx).expect("idx 由 position 取得，必在界内") {
+            DeferredCommand::Message(m) => *m,
+            DeferredCommand::PostNav(_) => unreachable!("position 只匹配 Message 臂"),
+        };
+        // 求值不使任何消息陈旧（与导航「后到者胜」不同）：前置消息全部保到达序
+        // 回填，仅改派发次序、不丢弃消息。
+        let mut restored = Vec::new();
+        if let Some(head_cmd) = head {
+            restored.push(head_cmd);
+        }
+        restored.extend(deferred.drain(..idx));
+        for cmd in restored.into_iter().rev() {
+            deferred.push_front(cmd);
+        }
+        Some(DeferredCommand::Message(Box::new(request)))
+    }
+
     fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<DeferredCommand>, String> {
         let mut head = if let Some(cmd) = self.deferred_inbound.pop_front() {
             Some(cmd)
@@ -3122,6 +3165,25 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             && !matches!(msg.kind, IpcMessageKind::Navigate(_))
         {
             head = Self::promote_pending_navigation(head, &mut self.deferred_inbound, || {
+                let mut drained = Vec::new();
+                while let Ok(later) = self.inbound_rx.try_recv() {
+                    drained.push(later);
+                }
+                drained
+            });
+        }
+        // T79 二层：载入洪流下 AutomationRequest 与渲染消息同队 FIFO，主循环每轮
+        // 派发一条消息且每条经 run_frame_transaction 全量重排版，消费节拍 ~16ms/条
+        // ——bilibili 载入积压下求值排队 22s（§399 判别：AutomationRequest 无优先
+        // 权），headless automation_request 35s 磨窗超时冻 mux。队首非 Navigate/
+        // 求值时非阻塞排干入站通道（保持到达序），取最早的 AutomationRequest 提前
+        // 派发，其余消息相对顺序不变。Navigate 优先于求值：队首为 Navigate 或导航
+        // 抢占已命中时不再提升——在即将被替换的文档上求值无意义；求值不使任何
+        // 消息陈旧（fix#14 的导航陈旧丢弃语义不适用），前置消息仅回队不丢弃。
+        if let Some(DeferredCommand::Message(msg)) = head.as_ref()
+            && !matches!(msg.kind, IpcMessageKind::Navigate(_) | IpcMessageKind::AutomationRequest(_))
+        {
+            head = Self::promote_pending_automation_request(head, &mut self.deferred_inbound, || {
                 let mut drained = Vec::new();
                 while let Ok(later) = self.inbound_rx.try_recv() {
                     drained.push(later);
