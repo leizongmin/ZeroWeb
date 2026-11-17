@@ -871,6 +871,75 @@ impl RenderPrimitives {
             && self.transforms.is_empty()
     }
 
+    /// 保留驻留字节估算（T78 域账面仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：各 typed Vec 按 `capacity() × size_of::<T>()` 计容量持有面；堆内嵌
+    /// payload 单独累加——path 顶点 `vertices` 容量、glyph `GlyphSource.text`
+    /// 与 `font_variations` 的 `Arc` 堆面（按唯一指针去重，反映 fragment 文本
+    /// 共享）。`ClipPrimitive` 等纯 Copy 集合无堆 payload。估算服务域级归因
+    /// （MB 量级排序），非 allocator 级精确核算。
+    pub fn estimated_resident_bytes(&self) -> u64 {
+        fn vec_cap<T>(v: &Vec<T>) -> u64 {
+            (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+        }
+        let mut total = 0u64;
+        total += vec_cap(&self.clips);
+        total += vec_cap(&self.fills);
+        total += vec_cap(&self.rounded_rects);
+        total += vec_cap(&self.path_fills);
+        total += vec_cap(&self.path_strokes);
+        total += vec_cap(&self.strokes);
+        total += vec_cap(&self.gradients);
+        total += vec_cap(&self.shadows);
+        total += vec_cap(&self.images);
+        total += vec_cap(&self.glyphs);
+        total += vec_cap(&self.font_variations);
+        total += vec_cap(&self.text_control_boundaries);
+        total += vec_cap(&self.filters);
+        total += vec_cap(&self.blend_modes);
+        total += vec_cap(&self.transforms);
+        total += vec_cap(&self.draw_order);
+        // path 顶点堆 payload（f32 × 4 字节容量）
+        for p in &self.path_fills {
+            total += (p.vertices.capacity().saturating_mul(4)) as u64;
+        }
+        for p in &self.path_strokes {
+            total += (p.vertices.capacity().saturating_mul(4)) as u64;
+        }
+        // gradient/filter 嵌套 Vec 堆 payload（stops/filters/clip_polygon 列表容量）
+        for g in &self.gradients {
+            total += vec_cap(&g.stops);
+        }
+        for f in &self.filters {
+            total += vec_cap(&f.filters);
+            if let Some(poly) = &f.clip_polygon {
+                total += vec_cap(poly);
+            }
+        }
+        // glyph 源文本 Arc 堆面（fragment 共享：唯一指针计一次）
+        let mut seen_text: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for g in &self.glyphs {
+            if let Some(src) = &g.source {
+                let key = std::sync::Arc::as_ptr(&src.text) as *const u8 as usize;
+                if seen_text.insert(key) {
+                    total += src.text.len() as u64;
+                }
+            }
+        }
+        // variation axis vector Arc 堆面（帧内去重表：唯一指针计一次）
+        let mut seen_var: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for v in &self.font_variations {
+            let key = std::sync::Arc::as_ptr(v) as *const u8 as usize;
+            if seen_var.insert(key) {
+                total += (v
+                    .len()
+                    .saturating_mul(std::mem::size_of::<crate::font::OpenTypeVariation>()))
+                    as u64;
+            }
+        }
+        total
+    }
+
     /// 添加变换图元。
     pub fn add_transform(&mut self, transform: TransformPrimitive) {
         let idx = self.transforms.len();

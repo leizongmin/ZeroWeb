@@ -1564,6 +1564,34 @@ impl RendererRuntime {
         ) = {
             let wv = self.webview.as_ref().expect("webview");
             let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+            // T78 域账面（读数式）：发布点录数——最新帧的分域保留字节，alloc-trace
+            // dump 的 `ledger` 段消费（与 PSS/alloc 采样互校定位常驻构成）。在快照
+            // 块内直读活缓存——快照 duplicate_for_snapshot 丢动画帧且不拷 svg 表，
+            // 经快照读 animation/svg 两域结构性恒零（返修 df-F1：未测≠测得零）；
+            // armed 门与 alloc_trace 同源；产品构建（无 feature）整块零代码。
+            #[cfg(feature = "alloc-trace")]
+            if crate::alloc_trace::armed() {
+                let canvas_bytes = wv
+                    .pending_canvas_images()
+                    .iter()
+                    .map(|(_, _, _, rgba, _)| rgba.len() as u64)
+                    .sum::<u64>();
+                let cache = wv.image_cache_ref();
+                crate::mem_ledger::record(&[
+                    ("render_primitives_bytes", render.primitives.estimated_resident_bytes()),
+                    ("image_cache_bytes", cache.total_bytes() as u64),
+                    ("image_cache_entries", cache.len() as u64),
+                    ("svg_rasterized_entries", cache.svg_rasterized_len() as u64),
+                    ("animation_frames_bytes", cache.animation_frames_bytes() as u64),
+                    ("canvas_images_bytes", canvas_bytes),
+                    (
+                        "runtime_cached_text_bytes",
+                        (self.cached_html.len() + self.cached_css.len()) as u64,
+                    ),
+                    ("webview_cached_text_bytes", wv.cached_text_bytes()),
+                    ("font_data_bytes", self.font_loader.font_data_bytes() as u64),
+                ]);
+            }
             (
                 self.viewport.0,
                 self.viewport.1,

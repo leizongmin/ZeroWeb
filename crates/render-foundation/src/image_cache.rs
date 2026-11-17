@@ -1520,6 +1520,17 @@ impl ImageCache {
         self.entries.values().map(|e| e.data.byte_size()).sum()
     }
 
+    /// 动画图片全帧常驻字节估算（T78 域账面仪拍：`total_bytes` 只计每条目当前帧，
+    /// 动画条目的 [`AnimationData`] 全帧序列（解码期 4096 帧帽）是独立保留面——
+    /// GIF/WebP 长动画的全帧快照按本读数归账）。env 门测量读数，非行为路径。
+    pub fn animation_frames_bytes(&self) -> usize {
+        self.entries
+            .values()
+            .filter_map(|e| e.animation.as_ref())
+            .map(|anim| anim.frames.iter().map(|f| f.byte_size()).sum::<usize>())
+            .sum()
+    }
+
     /// 当前世代
     pub fn generation(&self) -> u64 {
         self.current_gen
