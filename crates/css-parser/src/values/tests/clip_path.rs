@@ -887,3 +887,53 @@ fn test_clip_path_specified_polygon_and_path() {
     assert_eq!(canon("ray(0deg)"), None);
     assert_eq!(canon("inset()"), None);
 }
+
+#[test]
+fn test_clip_path_specified_shape_text_physical_drops() {
+    // 物理单位 guard 形（AST 折 px 不可用）的 shape() 文本级缺省补刀：
+    // arc small/零 rotate、控制点缺省参考系（by 形 from start / to 形
+    // from origin）丢省；单位与 token 大小写保形。语料钉面：
+    // shape-function-valid 3F + clip-path-shape-parsing 2F。
+    use parse_basic_shape::canonicalize_shape_fn_text_physical as canon;
+    // by 形第二控制点 from start 丢省、第一控制点 from origin 非缺省保形
+    assert_eq!(
+        canon("shape(from 20px 40px, curve by 20% 20em with 10.3% 30px from origin / 12pt 5.4% from start)").as_deref(),
+        Some("shape(from 20px 40px, curve by 20% 20em with 10.3% 30px from origin / 12pt 5.4%)")
+    );
+    // smooth by 形 from start 丢省
+    assert_eq!(
+        canon("shape(from 20px 40px, smooth by 20pt 20px with 12px 32px from start)").as_deref(),
+        Some("shape(from 20px 40px, smooth by 20pt 20px with 12px 32px)")
+    );
+    // arc 零 rotate 对丢省
+    assert_eq!(
+        canon("shape(from 20px 40px, arc by 20% 20pt of 10% rotate 0deg)").as_deref(),
+        Some("shape(from 20px 40px, arc by 20% 20pt of 10%)")
+    );
+    // arc small + 零 rotate 双修饰丢省（双半径与单半径形）
+    assert_eq!(
+        canon("shape(from 10px 10px, arc to 50px 1pt of 10px 10px small rotate 0deg)").as_deref(),
+        Some("shape(from 10px 10px, arc to 50px 1pt of 10px 10px)")
+    );
+    assert_eq!(
+        canon("shape(from 10px 10px, arc to 50px 1pt of 10px small rotate 0deg)").as_deref(),
+        Some("shape(from 10px 10px, arc to 50px 1pt of 10px)")
+    );
+    // 非零 rotate / cw large / from end 保形——无丢弃 None（原文 passthrough）
+    assert_eq!(
+        canon("shape(from 10% 1rem, arc to 50px 1pt of 20% cw large rotate 25deg)"),
+        None
+    );
+    assert_eq!(
+        canon("shape(from 20px 40px, curve to 20em 20pt with 10vw 30vh from end)"),
+        None
+    );
+    // to 形 from origin 丢省（缺省参考系同规）
+    assert_eq!(
+        canon("shape(from 20px 40px, smooth to 50px 20px with 12px 32px from origin)").as_deref(),
+        Some("shape(from 20px 40px, smooth to 50px 20px with 12px 32px)")
+    );
+    // 无物理单位形与本函数无关（AST 通道裁决）——仍按文本规则处置但语料
+    // 不触达；非 shape() 函数形 None。
+    assert_eq!(canon("circle(4% at 1pt 2pt)"), None);
+}

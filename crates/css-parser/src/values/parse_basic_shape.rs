@@ -1490,6 +1490,129 @@ pub fn canonicalize_clip_path_specified(value: &str) -> Option<String> {
     Some(body)
 }
 
+/// 物理单位 guard 形（含 pt/pc/cm/mm/in/Q——AST 通道 parse 期折 px 丢单位，
+/// clip-path 臂对这类值回落原文通道）的 shape() 声明值文本级缺省补刀：
+/// 仅做三丢省——arc `small` 修饰词（缺省弧向）、零值 `rotate <angle>` 对
+/// （缺省 0 角，同 parse_arc_modifiers `*rad != 0.0` 过滤）、控制点缺省
+/// 参考系（by 形 `from start` / to 形 `from origin`，与 AST 串化
+/// push_control_point 缺省省略同规；css-shapes-2 §shape-function 修饰词
+/// `||` 组缺省省略）。调用方先以 `parse_clip_path` 门裁形（拒收形不进
+/// 手术）；未发生任何丢弃返回 None（passthrough 原文，单位/token 大小写
+/// 保形）。发生丢弃的命令段按单空白重建（canonical 串化形）；from 段与
+/// 未变更段原文保形。
+pub fn canonicalize_shape_fn_text_physical(v: &str) -> Option<String> {
+    let inner = v.trim().strip_prefix("shape(")?.strip_suffix(')')?;
+    let segments = split_top_level_commas_always(inner);
+    // from 段 + ≥1 命令段（与 parse_shape_function 入口同构）
+    if segments.len() < 2 {
+        return None;
+    }
+    let mut changed = false;
+    let mut out = String::new();
+    for (i, seg) in segments.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        let seg_text = seg.trim();
+        let toks = split_top_ws_depth(seg_text);
+        if toks.is_empty() {
+            return None;
+        }
+        match canonicalize_shape_command_text(&toks) {
+            Some(r) => {
+                changed = true;
+                out.push_str(&r);
+            }
+            None => out.push_str(seg_text),
+        }
+    }
+    if !changed {
+        return None;
+    }
+    Some(format!("shape({out})"))
+}
+
+/// 单命令段文本级缺省丢弃（token 视角；无丢弃 None）。arc 走 `of` 后
+/// 修饰词区，curve/smooth 走 `with` 后控制点 run；move/line/hline/vline/
+/// close 无缺省修饰 passthrough。
+fn canonicalize_shape_command_text(toks: &[&str]) -> Option<String> {
+    if toks.len() < 3 {
+        return None;
+    }
+    let head = toks[0].to_ascii_lowercase();
+    if head == "close" {
+        return None;
+    }
+    let is_by = toks[1].eq_ignore_ascii_case("by");
+    let mut drops: Vec<(usize, usize)> = Vec::new();
+    // arc：`of` 后修饰词区丢 `small` 与零值 `rotate` 对（修饰词区起点 =
+    // of 后首个修饰词 token；parse 门保证 of 后为 1-2 个 len-pct 半径段）
+    if head == "arc" {
+        if let Some(of_idx) = toks.iter().position(|t| t.eq_ignore_ascii_case("of")) {
+            if let Some(mz) = toks[of_idx + 1..]
+                .iter()
+                .position(|t| is_arc_modifier(t))
+                .map(|j| of_idx + 1 + j)
+            {
+                let mut i = mz;
+                while i < toks.len() {
+                    let t = toks[i].to_ascii_lowercase();
+                    if t == "small" {
+                        drops.push((i, i + 1));
+                        i += 1;
+                    } else if t == "rotate"
+                        && i + 1 < toks.len()
+                        && parse_shape_angle(toks[i + 1]).is_some_and(|(rad, _)| rad == 0.0)
+                    {
+                        drops.push((i, i + 2));
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+        }
+    }
+    // curve/smooth：`with` 后控制点 run 尾部缺省参考系丢省（run 边界 =
+    // `/` 分隔的第二控制点；`from end` 两形均非缺省保形）
+    if let Some(with_idx) = toks.iter().position(|t| t.eq_ignore_ascii_case("with")) {
+        let default_ref = if is_by { "start" } else { "origin" };
+        let mut i = with_idx + 1;
+        while i < toks.len() {
+            let end = toks[i..].iter().position(|t| *t == "/").map_or(toks.len(), |j| i + j);
+            if end >= i + 2
+                && toks[end - 2].eq_ignore_ascii_case("from")
+                && toks[end - 1].eq_ignore_ascii_case(default_ref)
+            {
+                drops.push((end - 2, end));
+            }
+            i = end + 1;
+        }
+    }
+    if drops.is_empty() {
+        return None;
+    }
+    // 区间升序不相交（arc 无 with、curve/smooth 无 of），按待丢区间拼接
+    let mut out = String::new();
+    let mut k = 0usize;
+    let push = |out: &mut String, t: &str| {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(t);
+    };
+    for (s, e) in &drops {
+        for t in &toks[k..*s] {
+            push(&mut out, t);
+        }
+        k = *e;
+    }
+    for t in &toks[k..] {
+        push(&mut out, t);
+    }
+    Some(out)
+}
+
 /// 裸 box 关键字判定（大小写不敏感）。
 fn is_shape_box_keyword(tok: &str) -> bool {
     matches!(

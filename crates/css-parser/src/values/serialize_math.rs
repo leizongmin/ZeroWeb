@@ -1258,6 +1258,14 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
                 return super::parse_extended_border::parse_clip_path(v)
                     .and_then(|c| super::parse_basic_shape::clip_path_value_to_css(&c));
             }
+            // 物理单位 shape() 形：AST 往返折 px 丢单位不可用；parse 门裁形
+            // 后走文本级缺省补刀（arc small/rotate 0/控制点缺省参考系丢省
+            // ——shape-function-valid + clip-path-shape-parsing 语料钉面），
+            // 拒收形与无丢弃形 None passthrough。
+            // https://drafts.csswg.org/css-shapes-2/#shape-function
+            if super::parse_extended_border::parse_clip_path(v).is_some() {
+                return super::parse_basic_shape::canonicalize_shape_fn_text_physical(v);
+            }
             None
         }
         // css-shapes-1 §shape-outside-property 声明值 canonical 串化（wptfyi-css
