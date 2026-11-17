@@ -788,13 +788,67 @@
       n = n.parentNode;
     }
     // "For each item in items, normalize sublists of item."
+    // （https://w3c.github.io/editing/execCommand.html#the-indent-command）
+    // Chrome delta（ol 域尾区刀，2026-11-18）：item 最后一个 ol/ul 直接子之后
+    // 的尾区整体含选区两端时跳过 normalize——indent.html
+    // `<ol><li>foo<ol><li>bar</ol>[baz]</ol>` 录形新壳整包 li#1
+    // （`<ol><ol><li>foo<ol><li>bar</li></ol>baz</li></ol></ol>`），normalize
+    // else 臂（尾区非 ws 内容迁新 li）会把 baz 迁出并 hoist 内层 ol，wrap 姊妹
+    // criteria 再并回内层 ol（got 形）。选区在前导文本（`<ol><li>[foo]<ol>
+    // <li>bar</ol>baz</ol>`）、内层列表（`<ol><li>foo<ol><li>[bar]</ol>baz</ol>`）
+    // 或跨两者形时 normalize 照跑（语料拆分形 exp 实证）；ol 为末子形
+    // （`<ol><li>foo<ol><li>[bar]<li>baz</ol><li>quz</ol>`）两端不在尾区亦照跑。
+    // 仅 indent items 臂收口；sib-normalize 与 outdent 复用臂不涉。
     var i;
     for (i = 0; i < items.length; i++) {
-      _zwListNormalizeSublists(items[i]);
+      var itLi = items[i];
+      var lastList = null;
+      var k;
+      for (k = itLi.childNodes ? itLi.childNodes.length - 1 : -1; k >= 0; k--) {
+        if (_zwJusIsHtmlElement(itLi.childNodes[k], ['ol', 'ul'])) {
+          lastList = itLi.childNodes[k];
+          break;
+        }
+      }
+      if (lastList) {
+        var lpLen = _zwJusNodeLength(lastList);
+        if (_zwJusBpCompare(range.startContainer, range.startOffset, lastList, lpLen) > 0
+            && _zwJusBpCompare(range.endContainer, range.endOffset, lastList, lpLen) > 0) {
+          continue;
+        }
+      }
+      _zwListNormalizeSublists(itLi);
     }
 
     // "Block-extend the active range, and let new range be the result."
     var newRange = _zwJusBlockExtend(range, false);
+    // Chrome delta（li 单项锚定收口，2026-11-18）：原始选区两端同锚最近一个
+    // li 时，块扩展收口在该 li 的列表父界 (parent, i)..(parent, i+1)——
+    // indent.html `<ol><li>foo<ol><li>bar</ol>[baz]</ol>` 录形新壳整包 li#1
+    // （`<ol><ol><li>foo<ol><li>bar</li></ol>baz</li></ol></ol>`）；不收口时
+    // sole-li 形 (list, i+1) 非 block end point，尾 do-loop 越出列表宿主
+    // （(div,1)），contained 收整列表 → bq 整包（语料 got）。多 li 选区
+    // （`<ol><li>[foo<ol><li>bar</ol><li>baz]</ol>` bq 形）与无 li 面不涉，
+    // 保持 spec 爬升；多子列表形同锚收口与现路径 contained 恒同（child 界
+    // ≡ 边界等价点，g-foo-br/k2/t-inner-bar 形实证）。
+    // https://w3c.github.io/editing/execCommand.html#the-indent-command
+    var liS = null;
+    var liE = null;
+    var nnUp = range.startContainer;
+    while (nnUp) {
+      if (_zwJusIsHtmlElement(nnUp, 'li')) { liS = nnUp; break; }
+      nnUp = nnUp.parentNode;
+    }
+    nnUp = range.endContainer;
+    while (nnUp) {
+      if (_zwJusIsHtmlElement(nnUp, 'li')) { liE = nnUp; break; }
+      nnUp = nnUp.parentNode;
+    }
+    if (liS && liS === liE && liS.parentNode) {
+      var liIdx = _zwJusNodeIndex(liS);
+      newRange.setStart(liS.parentNode, liIdx);
+      newRange.setEnd(liS.parentNode, liIdx + 1);
+    }
     // "For each node node contained in new range, if node is editable and is
     // an allowed child of "div" or "ol" ..., append node to node list."
     // （https://w3c.github.io/editing/execCommand.html#the-indent-command）
