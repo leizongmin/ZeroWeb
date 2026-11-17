@@ -16,7 +16,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 | 改动入口 | 必读条目 |
 |---|---|
-| CSS parser / shorthand | #1–2、#10、#21；触碰热路径加 #23 |
+| CSS parser / shorthand | #1–2、#10、#21、#41；触碰热路径加 #23 |
 | 字体 / shaping / 缓存 | #3–5、#8；性能改动加 #11 |
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17、#36 |
 | 布局 / 后处理 pass | #18、#29、#34、#36 |
@@ -32,7 +32,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂、#35 归因采样协议、#36 代理判据阈值校准与多门成对改、#37 切片伪影与真债判别、#39 判读恰集化可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂、#35 归因采样协议、#36 代理判据阈值校准与多门成对改、#37 切片伪影与真债判别、#39 判读恰集化可先单跑看方向、#41 通道探查与挂点核对可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21、#31（信任边界与数据丢失）。
@@ -255,3 +255,9 @@ paint/layout 常用可测量代理（盒高、inline 高度和）近似不可直
 js_dom_shim 暴露给页面 JS 的全局平台对象（navigator/location/history/storage 家族及后续新增接口）一律 `Object.create(<Interface>.prototype)` 构造，不得只建值平面对象：平面对象的原型链直通 `Object.prototype`，页面 SDK 的原型定向写（从根对象沿 `.p` 行走 s 步存 canary 的混淆 opcode 是实测形态）会落成 `Object.prototype` 可枚举数据属性，污染面是**所有**页面对象——页面代码对继承键的 `for-in` 消费在远处爆 TypeError，又被页面自身 try/catch 静默吞掉，写入点与爆点跨脚本分离，症状（cookie 链断、SDK init 停摆、feed 满窗空）无法从现场回溯到落点。标准面三件套：接口对象（无 [Constructor] 时 `throw new TypeError("Illegal constructor")`）、`Symbol.toStringTag` 品牌注记（w/e 缺省 false 与 WebIDL 形一致）、实例经 `Object.create(接口原型)`；判别读数 `Object.prototype.toString.call(obj)` 须报 `[object Navigator]` 类品牌而非 `[object Object]`。本条是页面契约形制约束、无验证成本，不属于信任边界/防数据丢失，也不是可在原型阶段放宽的验证类——任何阶段默认生效。
 
 依据：[平面对象 navigator 被原型定向写污染 Object.prototype](../../../docs/learnings/bugs/2026-11/2026-11-13-navigator-interface-prototype-absorbs-proto-writes.md)。
+
+### 41. CSS 值判定有多条互不知情通道：动刀前先追断言读哪条，门挂到该通道分派枢纽
+
+setProperty shim 写面（宽收落库、回显即断言面）、CSS.supports（known-properties 白名单 + apply oracle 真跑）、cascade 求值面（apply.rs 门）互不知情，只改/只挂其中一条，其余通道行为不变：校验门挂 cascade 面、靶页断言读 CSSOM 写面回显 → 实现正确、单测全绿、靶页零位移；Rust parse 已放宽、插值页仍全灭于 supports 前置门（初始归因误诊成 parse 缺面）。新属性刀动手前先追靶页断言读什么（`cssRules[].cssText`/getter 回显/supports 门）反推执行通道，把门挂到该通道既有分派枢纽（`_zwNormalizeDeclValue`/`__zw_validate_decl_value`/`__zw_style_shorthand_expand`，优先白名单接入 + 分派臂，不新开通道）；白名单接入 = 该属性值首次进入全部通用前置门（random/sibling-index/math/css-wide），接入前用语料最野合法值（非 ASCII/转义/calc）跑全通道探针，不能只测新写的分派臂。本条属探查/挂点核对类验证纪律：原型阶段可先单通道看方向，合入前双通道核全。
+
+依据：[CSSOM 写面 vs cascade 面通道分离——校验门挂错通道零位移](../../../docs/learnings/bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md)、[CSS.supports 与 setProperty 双通道文法分叉](../../../docs/learnings/patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md)。

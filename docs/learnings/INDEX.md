@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（294）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（296）
 
+- 2026-11-18 [CSS 校验门挂在 cascade 面、WPT 页走 CSSOM 写面导致"实现完成零位移"](bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md) — style-system, engine
+- 2026-11-17 [JS DOM 桥 wrapper 家族 appendChild 语义二分：序列化拷贝 vs 真移动——摘原须按 childNodes indexOf 判位](bugs/2026-11/2026-11-17-js-dom-wrapper-family-copy-vs-move.md) — zero-engine
 - 2026-11-15 [workflow validator 必须随 rev 持续跑——潜伏缺陷跨 rev 复制放大，delivery 回执引用与信封契约三缺陷连爆](bugs/2026-11/2026-11-15-workflow-validator-per-rev-latent-defect.md) — site_optimizer
 - 2026-11-15 [共享树多条 make test 链互踩尽灭——disk-guard rm 并发竞争与指纹撞写](bugs/2026-11/2026-11-15-shared-tree-multi-chain-maketest-mutual-kill.md) — make test, target-disk-guard, rally 无人值守执行流程
 - 2026-11-15 [运行账本单副本灭失与变异面失控——v3 整树重建后的灾备与写纪律](bugs/2026-11/2026-11-15-ledger-single-copy-and-mutation-discipline.md) — site_optimizer
