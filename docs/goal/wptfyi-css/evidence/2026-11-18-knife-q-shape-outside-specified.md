@@ -46,19 +46,33 @@ md5 `c0bbdb62`（canonicalizer 无 center 混合形）；p2 探针 bin md5 `76b7
 **净清 396F（逐页探针实测 416F 含镜像页重复计）**，inline 面全清；余 fail 全为
 engine computed 读出通道（gCS）域。
 
-## 余面分解（p2 候选，engine 域）
+## 余面分解（p2 候选，engine 域；探针实测分类定谳）
 
-- **B 精度**：`format_num`（computed_style.rs:2092）3 位小数 vs oracle
-  `parseFloat(n.toPrecision(6))` 6 位有效数字——`66.66666…`→我方 `66.667` vs
-  oracle `66.6667`（ellipse-004 63F 样本实证）。全局影响需 A/B 计账。
-- **C-computed**：inset 多半径截断（ClipPathValue::Inset 单 ClipPathRadius，
-  parse 期丢垂直组）240F，需 AST 改型，与对端动画域 clip-path 插值高碰撞，
-  PARKED 协调后另刀。
-- **D calc 非 Px 叶**：`length_to_css` Calc 臂 `calc_computed_to_css(...).unwrap_or_default()`
-  求值失败返空串（`circle(at 50% calc(100% - 896px))` → `circle(at 50% )`）。
-- **E vmax 半值谜团**：plain `circle(at top 160vmax…)` 期望 1280px 我方 640px
-  （uniform ×0.5），静态追踪穷尽未定位，需插桩定谳。
-- **F ch 度量**：oracle ch=16px（Ahem 1em），我方 fallback 0.5em=8px。
+- **B 精度（88F）**：`format_num`（computed_style.rs:2092）3 位小数 vs oracle
+  `parseFloat(n.toPrecision(6))` 6 位有效数字——pt 形 `66.66666…`→我方 `66.667` vs
+  oracle `66.6667`（circle/ellipse-004 各 23F）、mm 形 `37.7953` vs `37.795`
+  （inset-003 42F）；calc 串内同病（`calc(100% - 93.333px)` 缺第 4 位）。
+  全局影响需 A/B 计账。
+- **C-computed（198F，PARKED）**：inset 多半径截断（ClipPathValue::Inset 单
+  ClipPathRadius，parse 期丢垂直组）——`inset(80px round 80px / 80px 160px)`
+  → 我方 `inset(80px round 80px)`；需 AST 改型，与对端动画域 clip-path
+  插值高碰撞，协调后另刀。
+- **D calc 非 Px 叶 drop（40F）**：Ex/Ch 叶在 calc 求值失败 →
+  `length_to_css` Calc 臂 `calc_computed_to_css(...).unwrap_or_default()` 返
+  空串——`circle(at bottom 70ex left 50%)` → 我方 `circle(at 50% )`
+  （oracle `circle(at 50% calc(100% - 896px))`，896 = 70×12.8px）。
+  circle/ellipse-004 各 20F（ch-calc 10 + ex-calc 10）。
+- **F ch 度量（40F 直接形）**：oracle 1ch = Ahem '0' 字 advance = 1em =
+  16px，我方 fallback 0.5em = 8px——`circle(at 50ch)` 期望 `800px` 我方
+  `400px`（恰 ×0.5）。circle/ellipse-004 各 20F。
+- **vmax 假说撤销**：此前「plain 160vmax 期望 1280px 我方 640px（uniform
+  ×0.5）」观察出自状态串误解析期伪账；p1/p2 探针权威数据 circle-004 与
+  ellipse-004 各 60 个 vmax 子测全 Pass，vmax 单位解析无缺陷。×0.5 形态实
+  为 ch 度量面（50ch 800→400）伪移植，谜团消解，无需插桩。
+
+合计非 parked 靶面 **168F**（88 精度 + 40 ch 直接 + 40 calc-drop，探针页计）；
+D 与 F 需联动修（calc 叶解析依赖正确 ex/ch→px 度量：ex=0.8em=12.8px、
+ch='0' 字 advance）。
 
 ## 门禁
 
