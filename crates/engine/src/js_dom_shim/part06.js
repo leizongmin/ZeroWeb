@@ -3146,6 +3146,58 @@
     }
     return null;
   }
+  // EVT-REJECT 刀（editing census 2026-11-17，证据
+  // docs/goal/editing-compat/evidence/2026-11-17-fb-event-census.md）：值拒绝
+  // 路径按形补派 input——Chrome-160 master event.html 三真差异键（fontSize
+  // "15px"/formatBlock "quasit"/insertImage ""：Chrome 派 1 input、我方 0）。
+  // 补派形按 Chrome 行为分域：CSS 长度形 fontSize、剥壳后非空标签形
+  // formatBlock、空值形 insertImage；其余拒绝形保持零事件（fontSize ""/quasit
+  // ＋formatBlock ""：Chrome-160 report.json 同红实证，补派即制造反向 delta）。
+  // ret 与树形零改动（录形 ret [false]＋树不变断言在册：formatblock.js
+  // :872/:1117/:1455 quasit、insertimage.js :20 空值；fontSize "15px" 全语料
+  // 零 ret/树面）。beforeinput 不补（无测试证据要求；input-events 基线在册
+  // 防回归）。wpt.fyi chrome 160.0.8166.0 master 739652a308 report 逐子测：
+  // fontSize "15px"/formatBlock "quasit"/insertImage "" PASS，fontSize
+  // ""/quasit＋formatBlock "" FAIL。
+  // enabled 面（选区端点出可编辑域，fontname tt 录形）不补派——零事件在册。
+  var _zwExecCmdCssLenRe = /^[0-9]*\.?[0-9]+(px|pt|pc|in|cm|mm|q|em|rem|ex|ch|vw|vh|vmin|vmax|%)$/i;
+  function _zwExecCmdRejectFire(cmd, value, rng) {
+    var boundE = function (n) {
+      return !!n && ((typeof _zwJusIsEditingHost === 'function'
+                        && _zwJusIsEditingHost(n))
+                      || (typeof _zwJusIsEditable === 'function'
+                          && _zwJusIsEditable(n)));
+    };
+    if (rng && (!boundE(rng.startContainer) || !boundE(rng.endContainer))) {
+      return false;
+    }
+    var c = String(cmd == null ? '' : cmd).toLowerCase();
+    var v = value == null ? '' : String(value);
+    if (c === 'fontsize') return _zwExecCmdCssLenRe.test(v);
+    if (c === 'formatblock') {
+      var tag = v;
+      if (/^<.*>$/.test(tag)) tag = tag.slice(1, -1);
+      return tag.toLowerCase() !== '';
+    }
+    if (c === 'insertimage') return v === '';
+    return false;
+  }
+  function _zwExecCmdFireRejectInput(cmd, value, host) {
+    try {
+      var inputR = new InputEvent('input', {
+        bubbles: true, cancelable: false, composed: true,
+        data: _zwExecCmdEventData(cmd, value),
+        inputType: _zwExecCmdInputType[cmd], isComposing: false
+      });
+      // R312 UA 通道印记（与正常臂 input2 同款）：isTrusted=true 一次性。
+      try {
+        Object.defineProperty(inputR, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+        inputR._zwUaDispatch = true;
+      } catch (_eTrr) {}
+      host.dispatchEvent(inputR);
+      try { inputR._zwUaDispatch = false; } catch (_eTrr2) {}
+    } catch (_eFr) {}
+  }
   // R3254-M3 切片 1：format 命令 → inline 包裹标签（Chromium 语义——bold→<b> 而非
   // <span style=font-weight>；其余 format 族 hilitecolor/backcolor 等 CSS 化 defer）。
   // editing-compat multitest 状态命令族（2026-11-01）：补 subscript/superscript——
@@ -6547,20 +6599,26 @@
           if (host2 && inHost2 && typeof host2.dispatchEvent === 'function') {
             // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令
             // （fontsize/fontname/forecolor/backcolor/hilitecolor）无效值校验前置
-            // ——action 校验失败在事件前拒绝（Chrome 口径：零事件、execCommand
-            // 返 false，vendored implementation.js :3265/:3380 action 同序）。
+            // ——action 校验失败在事件前拒绝（execCommand 返 false，vendored
+            // implementation.js :3265/:3380 action 同序；EVT-REJECT 刀修订——
+            // 「零事件」口径对 CSS 长度形不成立，见 _zwExecCmdRejectFire 注）。
             // https://w3c.github.io/editing/execCommand.html#value-of-the-command
             if (typeof globalThis.__zw_ce_value_validate === 'function') {
               try {
                 if (globalThis.__zw_ce_value_validate(cmd, arguments[2]) === false) {
+                  // EVT-REJECT 刀：CSS 长度形补派 input 后仍拒（ret false 树不变）。
+                  if (_zwExecCmdRejectFire(cmd, arguments[2], rng2) && host2) {
+                    _zwExecCmdFireRejectInput(cmd, arguments[2], host2);
+                  }
                   return false;
                 }
               } catch (_eVaV) {}
             }
             // editing-compat 四命令零应用族（2026-11-07）：formatBlock 非法值与
-            // insertImage 空值前置拒绝（Chrome 口径：零事件、execCommand 返 false
-            // ——语料 <del>/<dl>/<li>/<quasit> 等变体 [false] + 树不变录音实证；
-            // spec value 白名单/空值判定，校验器在 part01g）。
+            // insertImage 空值前置拒绝（execCommand 返 false——语料
+            // <del>/<dl>/<li>/<quasit> 等变体 [false] + 树不变录音实证；
+            // spec value 白名单/空值判定，校验器在 part01g；EVT-REJECT 刀修订
+            // ——非空标签形/空值形补派 input，见 _zwExecCmdRejectFire 注）。
             if ((cmd === 'formatblock'
                   && typeof globalThis.__zw_ce_fb_value_valid === 'function')
                 || (cmd === 'insertimage'
@@ -6569,7 +6627,13 @@
                 var fbvOk = (cmd === 'formatblock')
                   ? globalThis.__zw_ce_fb_value_valid(arguments[2])
                   : globalThis.__zw_ce_img_value_valid(arguments[2]);
-                if (fbvOk === false) return false;
+                if (fbvOk === false) {
+                  // EVT-REJECT 刀：非空标签形/空值形补派 input 后仍拒。
+                  if (_zwExecCmdRejectFire(cmd, arguments[2], rng2) && host2) {
+                    _zwExecCmdFireRejectInput(cmd, arguments[2], host2);
+                  }
+                  return false;
+                }
               } catch (_eFbV2) {}
             }
             // B1 切片 3（editing goal d29，2026-11-15）：unlink 不派 beforeinput
