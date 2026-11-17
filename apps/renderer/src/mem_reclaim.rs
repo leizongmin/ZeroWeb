@@ -18,6 +18,46 @@ pub(crate) fn nav_trim_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZEROWEB_NAV_TRIM")
 }
 
+/// T79 S9：分配器滞留策略调参开关——`ZEROWEB_MALLOC_TUNE=0` 关（缺省开）。
+pub(crate) fn malloc_tune_enabled() -> bool {
+    zero_runtime_config::enabled_by_default("ZEROWEB_MALLOC_TUNE")
+}
+
+/// T79 S9：glibc 分配器滞留收敛（启动单次调用，零热路径；仅 linux-gnu glibc）。
+/// bin 作用域经 lib.rs 单符号 re-export 调用。
+///
+/// 劈分证据（run.md §397）：五站加载后残留 648MB 全为分配器持有面，其中
+/// arena 空闲滞留 364MB = 41.5% PSS——16 核默认 arena 上限 8×16=128 把空闲页
+/// 摊薄成跨 arena 小碎片，[`malloc_trim`](crate::mem_reclaim::malloc_trim_now)
+/// 只能 madvise 完全空闲页段收不回；动态 mmap 阈值随大块复用上浮，让瞬时大块
+/// 落进 arena 与常驻对象交错驻留。三调参（均 glibc 惯用收敛值）：
+/// - `M_ARENA_MAX=4`：收敛 arena 数量，释放/复用在少而大的堆段内合并成整页段；
+/// - `M_MMAP_THRESHOLD=128KiB`（冻结动态阈值）：瞬时大块（响应体/解码缓冲等）
+///   走 mmap，free 即归还内核，不再与常驻交错污染 arena；
+/// - `M_TRIM_THRESHOLD=128KiB`（同步冻结）：free 触发的堆顶归还阈值不上浮。
+///
+/// 尽早调用（arena 生成前语义最完整）；mallopt 返回值记 tracing（0=未生效，
+/// 如 musl/非 glibc 编译不达此路径）。
+pub fn tune_malloc_retention_policy() {
+    if !malloc_tune_enabled() {
+        return;
+    }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: `mallopt` 只调整分配器策略参数，无指针语义；glibc 内部自持锁。
+        let arena = unsafe { libc::mallopt(libc::M_ARENA_MAX, 4) };
+        let mmap = unsafe { libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024) };
+        let trim = unsafe { libc::mallopt(libc::M_TRIM_THRESHOLD, 128 * 1024) };
+        tracing::info!(
+            target: "mem_reclaim",
+            arena_max_ok = arena == 1,
+            mmap_threshold_ok = mmap == 1,
+            trim_threshold_ok = trim == 1,
+            "malloc retention policy tuned"
+        );
+    }
+}
+
 /// T13 S7：内存探针——`ZEROWEB_MEM_PROBE=1` 开（缺省关；观测腿不进判据样本）。
 pub(crate) fn mem_probe_enabled() -> bool {
     zero_runtime_config::enabled_when_true("ZEROWEB_MEM_PROBE")
@@ -152,6 +192,15 @@ pub(crate) fn test_trim_lock() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T79 S9：调参幂等可重入且 gate 关闭时零 mallopt（早退路径）。
+    #[test]
+    fn malloc_tune_is_idempotent_and_gate_gated() {
+        // 缺省开启：gnu 下两次调用不 panic（mallopt 可重入）；非 glibc 零操作。
+        crate::mem_reclaim::tune_malloc_retention_policy();
+        crate::mem_reclaim::tune_malloc_retention_policy();
+    }
+
 
     /// T13 R1 TV-F4 调度门钉（1/3）：布防后 D 内不触发——绕过延迟（同步触发）必红。
     #[test]

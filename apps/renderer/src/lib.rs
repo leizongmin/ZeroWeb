@@ -42,6 +42,10 @@ pub use runtime::run_android_role;
 #[cfg(feature = "alloc-trace")]
 pub mod alloc_trace;
 
+/// T79 S9：分配器滞留收敛单符号导出（bin 最早时机调用；[`mem_reclaim`] 模块
+/// 本体保持私有）。
+pub use mem_reclaim::tune_malloc_retention_policy;
+
 // T78 域账面（读数式）：发布点录数 + dump 点快照，随 alloc-trace dump 落盘。
 // 同 feature 门（ armed 与 alloc_trace 同源），产品构建零代码。
 #[cfg(feature = "alloc-trace")]
