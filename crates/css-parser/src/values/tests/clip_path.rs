@@ -937,3 +937,26 @@ fn test_clip_path_specified_shape_text_physical_drops() {
     // 不触达；非 shape() 函数形 None。
     assert_eq!(canon("circle(4% at 1pt 2pt)"), None);
 }
+
+#[test]
+fn test_clip_path_specified_invalid_no_repair() {
+    // invalid 形不得被 canonical 静默修整（clip-path-invalid 语料钉面：
+    // inset 裸 round / circle·ellipse 裸 at / ellipse 单半径误套 circle
+    // 缺省省略——写面门（刀 R）前置文本通道严格性）
+    use parse_basic_shape::canonicalize_clip_path_specified as canon;
+    assert_eq!(canon("inset(0px round)"), None);
+    assert_eq!(canon("circle(at)"), None);
+    assert_eq!(canon("ellipse(farthest-side at)"), None);
+    assert_eq!(canon("ellipse(closest-side)"), None);
+    // 半径数裁形（circle 0|1、ellipse 0|2）超数同拒
+    assert_eq!(canon("circle(1px 2px)"), None);
+    assert_eq!(canon("ellipse(1px 2px 3px)"), None);
+    // 合法形零漂移对照
+    assert_eq!(canon("circle(closest-side)").as_deref(), Some("circle()"));
+    assert_eq!(
+        canon("ellipse(closest-side closest-side)").as_deref(),
+        Some("ellipse()")
+    );
+    assert_eq!(canon("circle(at 10% 20%)"), None);
+    assert_eq!(canon("circle(4% at 8% 9%)"), None);
+}

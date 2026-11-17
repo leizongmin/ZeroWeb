@@ -1663,9 +1663,18 @@ fn canonicalize_clip_circle_ellipse(name: &str, inner: &str, _drop_default: bool
     let toks = split_top_ws_depth(inner);
     let at_idx = toks.iter().position(|t| t.eq_ignore_ascii_case("at"));
     let (radius_toks, pos_toks) = match at_idx {
-        Some(i) => (&toks[..i], Some(&toks[i + 1..])),
+        // 裸 `at`（无位置参数）拒收——`circle(at)` invalid 语料钉面（此前
+        // 静默修整为 `circle()`）
+        Some(i) if i + 1 < toks.len() => (&toks[..i], Some(&toks[i + 1..])),
+        Some(_) => return None,
         None => (&toks[..], None),
     };
+    // 半径数裁形：circle 0|1、ellipse 0|2（`ellipse(closest-side)` 单半径
+    // 误套 circle 缺省省略修整为 `ellipse()` invalid 语料钉面；超数形同拒）
+    let max_radii = if name == "ellipse" { 2 } else { 1 };
+    if radius_toks.len() > max_radii || (name == "ellipse" && radius_toks.len() == 1) {
+        return None;
+    }
     // 缺省半径：全部 token 均为 closest-side（1-2 个）→ 省略。
     let drop = !radius_toks.is_empty()
         && radius_toks.len() <= 2
@@ -1713,17 +1722,21 @@ fn canonicalize_clip_inset(inner: &str) -> Option<String> {
     let mut out = String::from("inset(");
     out.push_str(&args_toks.iter().map(|t| norm_zero_tok(t)).collect::<Vec<_>>().join(" "));
     if let Some(r) = radii {
-        if !r.is_empty() {
-            let r_toks = split_tokens_with_slash(r);
-            out.push_str(" round ");
-            out.push_str(
-                &r_toks
-                    .iter()
-                    .map(|t| if *t == "/" { "/".to_string() } else { norm_zero_tok(t) })
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            );
+        // 裸 `round`（无半径）拒收——`inset(0px round)` invalid 语料钉面
+        //（此前静默修整为 `inset(0px)`；AST 臂 parse_clip_round_list 空
+        // 串本就 None，此为文本通道单侧缺口）
+        if r.is_empty() {
+            return None;
         }
+        let r_toks = split_tokens_with_slash(r);
+        out.push_str(" round ");
+        out.push_str(
+            &r_toks
+                .iter()
+                .map(|t| if *t == "/" { "/".to_string() } else { norm_zero_tok(t) })
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
     }
     out.push(')');
     Some(out)
