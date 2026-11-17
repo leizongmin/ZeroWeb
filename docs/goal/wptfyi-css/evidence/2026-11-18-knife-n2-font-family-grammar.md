@@ -54,7 +54,7 @@ setter），不经过 cascade，原文落库回显即 Fail（一期 fonts corpus
 ## 伴生修复：extract_random_args byte-slice panic
 
 font-family 入白名单后通用 random 门对 valid 语料 `納豆嫌い`/简写形
-`16px 紳豆嫌い` 崩溃（`&lower[i..i+7]` str 切片窗口**终点**落多字节
+`16px 納豆嫌い` 崩溃（`&lower[i..i+7]` str 切片窗口**终点**落多字节
 字符中间——起点 ASCII 守卫不够，`16px 納豆嫌い` 的 end=7 落 '納'
 bytes 5..8 内，两次探针实证）。修复：byte 切片比较
 `&bytes[i..i+7] != b"random("`（`[u8]` 切片无 char boundary 约束，
