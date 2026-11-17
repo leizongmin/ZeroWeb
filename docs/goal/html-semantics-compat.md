@@ -2,64 +2,89 @@
 
 **版本**: v2.0
 **日期**: 2026-11-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 544 收口（**守成巡
-查轻覆盖轮 + leg2 污染作废单腿重跑先例**：
-pull 零携入零码变零换代，码态 f4ca3f641 持位
-，runner 127779560 恒同码四轮连持——首轮
-leg2（4:53 慢腿）在对端复燃交叠窗（load 5min
-峰 20.05）劣化＝10T（+5 整文件 Timeout 键）
-+ 61 子测 Pass 键被吞，甄别作废；leg1 验干净
-保留（vs s543 leg1 位移全落族带），浸泡门重
-跑 leg2b 2:33 常态）——join **stable 8509（
-stable canon 8305P/198F/5T/1U）disagree 2 +
-l1only 0 + l2only 3**；vs s543 stable **NEW 0
-+ GONE 4 + flips 0——位移全落族键摆动带**：
-GONE 4 = 族 non-detailed 4 子测键双腿异相出
-位（l1 全吞 / l2b 发射 3 键 F 形 + PageDown
-双腿吞），两整文件键双腿 F/T 异相 disagree
-出位（本轮新形）；**P 集 stable 口径 8305P 两
-轮恒等**（全集口径双腿双 8307P 第 12 轮），
-惰载 5 键稳定 Timeout 带定性，非族非哨键零
-位移逐键恒等；账本 evidence/2026-11-17-
-m2s544-leg2-contaminated-rerun.md。picker 刀
-增益键第 67 轮保持，checkmark 恒 F 带形不变
-。flaky 键双腿双 Pass——零新例第 33 轮（
-s512 时钟顺延）。onblur 哨组双腿 join 零
-flip（8P/2F 红池照常）；dialog-overlay 哨第
-73 轮零翻红；**modulepreload 哨 15 键双腿零
-flip——转常规连轮计数第 6 轮零翻红**。全桥绿
-窗 **1682P/0F guard rc=0 清单 set 恒等**（NEW
-0/GONE 0，diff SET-IDENTICAL 实证，b543.k→
-b544.k，test 阶段 32.32s）。**focus-dynamic
-收窗后第 26 轮零再现**（121 键双腿全 Pass）。
-窗净判定：首轮 05:45:00 判净 HEAD=c3a170f53
-钉扎；重跑窗 06:33:54 clean-soaked。工法沉淀
-：慢腿甄别规程（整文件 T 键形 + 子测键成批
-被吞 + 慢 2 分钟三信号联判，验他腿干净则单
-腿重跑、树态变则整轮重跑）；LC_ALL=C 前缀
-调用固化后首用零踩坑。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）+
-s137（s445 已提示，不重复通知）。hang 观察
-项静默哨维持。下一步：**守成巡查**（对账基
-线换 s544 stable 8509——族键基线形换「4 子
-测键出位观察形（本轮双腿异相）+ 两整文件键
-F/T 异相出位形（本轮新形）」：异相/出位按形
-谱记账、Pass 形首现按 NEW 记账；全桥清单基
-线 b544.k 1682 持位；flaky 键零新例时钟顺延
-；**mpreload 哨常规连轮计数第 7 轮**；他流入
-树归因轮或轻覆盖；**起腿一律 v3.1 浸泡门；
-慢腿/劣化腿按甄别规程处置**；对端刀信号持
-续：ZW-3 d49 写面 WIP 落树后按他流刀归因轮
-+ d47 刀体 + editing 流 B4-S2 残面刀（dwuf
-八变体端点规范化未接臂/during-and-after
--dispatch 与克隆门互斥 1F）+ rendering dialog
-16 红块协同面 + css 文法刀后续刀（shapepos
-残面队列余项：位置串化规范刀 ~498F/round 列
-表完整建模/inline inherit/path() 命令级插值
-/calc 代数插值）+ wptfyi-css 残面（B3 残面
-348F 余项、jsanim flip Steps(Start) 等），
-join 实测为准）+ 候门决项等待用户拍板
-（video P1+P2 立项 / 簇 D A2 立项 / s137）；
+**状态**: Active——M2 切片 545 收口（**他流刀
+归因轮 + runner 爆栈归因修复轮（先例）**：
+pull 携入六刀窗，码态 f4ca3f641→1baacb05e，
+runner 三代 51fbb16b→5d1d4e1e→2524d01f
+——上 session 429 断线夜 waiter 自动起腿双
+双 runner 栈溢出 fatal abort（0 结果行，工件
+crash-* 在册一票作废）：三级诊断链归因到他
+流 css 刀 D rule-inset（ef6f2cf5a）加深
+style/gCS 帧 × runner 并行道欠账——
+`parallel_map` rayon 池（testharness/reftest
+/oracle/struct-sweep 五调用点共用）默认
+2MiB 栈，RUST_MIN_STACK=256MB 实证全语料
+恢复后补 `.stack_size(256MB)` 固化入码（与
+main.rs:406 主道 256MB 先例同规格，同族类：
+shadow-dom 999 层嵌套 case；bisect 工法注
+记：探针 good 判据必须绑定正向完成证据，
+仅「无崩溃」不构成 good——f3b8480e0 假
+good 作废）——修复后 v3.1 浸泡门重跑双腿
+常态全绿（leg1 2:32/leg2 2:42 常态 rc=2 惯
+例 0 爆栈，runner 2524d01f 恒同码双腿零重
+编，判净 09:51:35 HEAD=1baacb05e 钉扎）
+——join **stable 8510（stable canon 8305P
+/198F/6T/1U）disagree 1 + l1only 3 +
+l2only 0**；vs s544 stable **NEW 1 + GONE 0
++ flips 0——位移全落族键摆动带**：NEW 1 =
+族 non-detailed 整文件键 T/T 同相入 stable
+（Timeout 形 NEW 记账，s544 F 形出位回归）
+，disagree 1 = 族 detailed 整文件键 T/F 异
+相（s544 F/T 反向形复现），l1only 3 = 族 3
+子测键 F 形 l1 单腿发射（s544 l2b 同形镜像
+）+ PageDown 双腿吞持续；**P 集 stable 口
+径 8305P 第三轮恒等**（全集口径双腿双
+8307P 第 13 轮），惰载 5 键 stable T 带持
+位（T 5→6 = +1 族键 T 形），非族非哨键零
+位移逐键恒等零新 Pass 形零新 Fail 形；账本
+evidence/2026-11-17-m2s545-runner-stack-
+overflow-attribution.md。「申报=实测」谱系
+第三十三例（六刀窗零语义位移清偿：刀 D
++1545/刀 E CSSA +3260/刀 F neutral +47/
+d49 input-events +75/ILB-SELTBL 十族全清
+/T78 内存仪拍）。picker 刀增益键第 68 轮保
+持，checkmark 恒 F 带形不变。flaky 键双腿
+双 Pass——零新例第 34 轮（s512 时钟顺延
+）。onblur 哨组双腿 join 零 flip（8P/2F 红
+池照常）；dialog-overlay 哨第 74 轮零翻红
+；**modulepreload 哨 15 键双腿零 flip——常
+规连轮计数第 7 轮零翻红**（s544 排程兑现
+）。全桥绿窗 **1690P/0F guard rc=0 清单
+NEW 8 GONE 0——NEW 8 全归属刀窗**（6×
+刀 D rule-inset + 1× ILB-SELDEL + 1×
+ILB-SELTBL/part131，b544.k→b545.k，test
+阶段 21.62s）。**focus-dynamic 收窗后第 27
+轮零再现**（121 键双腿全 Pass）。工法沉淀
+：fatal abort 形一票作废（rc=2 惯例形与
+rc=2+fatal 形靠日志 grep 区分）；runner 爆
+栈诊断链五步法（HEAD 复现→小域探针→
+bisect 窗→RUST_MIN_STACK 实证→池级固化
+）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137（s445 已提示，
+不重复通知）。hang 观察项静默哨维持。下一
+步：**守成巡查**（对账基线换 s545 stable
+8510——族键基线形换「non-detailed 整文件
+键 T 持位形 + detailed 整文件键异相观察形
+（本轮 T/F 向）+ 3 子测键单腿发射带 +
+PageDown 双腿吞带」：异相/出位按形谱记账
+、Pass 形首现按 NEW 记账；全桥清单基线
+b545.k 1690 持位；flaky 键零新例时钟顺延
+；**mpreload 哨常规连轮计数第 8 轮**；他流
+入树归因轮或轻覆盖；**起腿一律 v3.1 浸泡
+门；慢腿/劣化腿按 s544 甄别规程处置、
+fatal abort 形按本轮一票作废处置**；对端刀
+信号持续：css 文法刀后续刀（shapepos 残面
+队列余项：位置串化规范刀 ~498F/round 列表
+完整建模/inline inherit/path() 命令级插值
+/calc 代数插值）+ wptfyi-css 残面（mask-
+border 家族支持门定谳、B3 残面 348F 余项
+、jsanim flip Steps(Start)）+ wptfyi-editing
+d49 后续 + ZW-3 d47 刀体 + editing 流
+B4-S2 残面刀（dwuf 八变体端点规范化未接臂
+/during-and-after-dispatch 与克隆门互斥 1F
+）+ rendering dialog 16 红块协同面，join
+实测为准）+ 候门决项等待用户拍板（video
+P1+P2 立项 / 簇 D A2 立项 / s137）；
 rendering 流 dialog 16 红块协同面（归
 rendering 流记账）。门开随批落预案不变：簇
 D 开 → customizable-select-styles.css ×47
