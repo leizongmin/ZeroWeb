@@ -13790,6 +13790,25 @@
         if (bucket.addedSet) bucket.addedSet.delete(nd);
         continue;
       }
+      // d53（wptfyi-editing 占位 br 换代幽灵滤除，2026-11-17）：占位 br 条目跨
+      // 代际不并入——R382 的 ghost 确认以「handle 在宿主快照」为准，rebake 换结构
+      // 后占位 br handle 已不在快照 → 恒并入（live 融合视图 R5355 收缩后无跨代际
+      // 桶级跳并）→ 视图残影毒化下游 join/占位几何（zz-probe-d53k 序贯实证，dil
+      // B 族 6 面 P2F）。占位 br 创建时以 `__zwPbrGenByHandle` 记账（part01
+      // `_zwCePlaceholderBr` append 后 handle 即读），此处按记账代际滤除：同代
+      // 条目（占位动作本 turn 内可见性读）照并，跨代条目剔除（节点他处 re-append
+      // 会以新代际重登记，与 R382 同款不回检）。
+      if (nd.__zwHandle && typeof globalThis.__zwPbrGenByHandle === 'object'
+          && globalThis.__zwPbrGenByHandle) {
+        var _pbrGen53 = globalThis.__zwPbrGenByHandle[String(nd.__zwHandle)];
+        if (_pbrGen53 != null
+          && _pbrGen53 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)) {
+          var _pbrI53 = bucket.added.indexOf(nd);
+          if (_pbrI53 >= 0) bucket.added.splice(_pbrI53, 1);
+          if (bucket.addedSet) bucket.addedSet.delete(nd);
+          continue;
+        }
+      }
       // R182：sel 子**重定位**语义——快照内既有节点被移到新位置（同父移动：旧位剔除
       // + 新位插入；seen 检查会使快照旧位永远胜出——WPT insertAdjacentElement 的
       // beforebegin 同父移动形态）。handle 子保持 seen 跳过（快照不含 pending 节点，

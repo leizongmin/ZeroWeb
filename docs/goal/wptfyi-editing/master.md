@@ -1,6 +1,9 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-17 · Active**。**d52 join 缝空白序言刀（d51 停车场塌方收口，input-events 核心 +9）**：JoinMutate 提取序言——跨容器块界 join 的源行首文本节点**前导折叠空白在提取前摘除**（守卫 `srcParent !== dst` + 双侧 normal 域 + 落位块元素；先摘后提，C-strip 头部支自然 no-op）。**根因（zz-probe-d52a 形状隔离 + J0-J5 shim trace 一轮，backup 零残回退）**：塌方唯一判别面 = 提取源行首文本节点带前导折叠空白（T5 `<li>def[]</li>` + `  ghi` 单独复现 content `<div>ghi</div>`）；shim 侧全程正确（takeLine n=1、shellDst=LI、ser sel=li beforeend），塌方在**引擎侧 drain**——removeChild(前导空白文本子) + insertAdjacent wire 序被引擎解释为前序内容整体摘除；去前导空白后同 wire 序恒正确。**A/B（base=61ebaf369）：backspace 79→81P（caret-after-ul ws 形 content ×2，bi=2 双派 promise 键持位 ③）、forwarddelete 98→100P（def[] ws 形 content ×2）、non-collapsed 101→106P（列表选区面 ×3 + `<p>abc   [</p>]   def` 块界选区 ×2）、joining-dl 1174 共键恒等，全腿 P2F=0**。哨兵：enginelib 4134P/0F；selection CE 414 全同；suite 对 d51 净差 F2P=20/P2F=0（核心 +9 + 探针镜像自增 11）。探针九面 content 全契约形（T1 bi=0 首位鬼持位 ③）。证据见
+**2026-11-18 · Active**。**d53 列表项选删归一＋占位 br 换代幽灵滤除刀（dil 四 variant 净 +72）**：part01.js +83/−5——①`_sdLiKid` 列表容器元素锚单 li 跨度归一（sc===ec ul/ol 跨恰一 li：有后继摘 li 壳、无后继保壳＋占位 br，gtr 随动作形）②BS/FD 文内臂塌缩门（重读覆盖限 `range.collapsed`，非塌缩 `[list-item1]` 全文形不再删坍成 1 单元）③文内臂整节点摘除占位（清空所在块 → `<ul><li><br></li></ul>` 期望形）④`_zwCePlaceholderBr` 换代记账门（`__zwPbrGenByHandle`，handle 持久而 expando 被 set trap 丢弃——d53b 序贯毒化定谳）+ part05 +19（融合视图并桶点跨代占位 br 条目滤除，dil B 族 6 面 P2F 清零）。**A/B（base=old-base 9404d6d41）**：dil 四 variant 232P→304P **F2P=72/P2F=0**，backspace/forwarddelete/non-collapsed/joining-dl 共键全恒等；input-events 全套件（1500s 完整轮）F2P=108/P2F=0，对 HEAD 净树（e4fb2c42e suite）共键 6475 恒等 F2P=199/P2F=0；selection 全语料 53,317 键 F2P=6/P2F=0；editing/other F2P=1/P2F=0；editing/run 全量四分片共键 99,474 F2P=0/P2F=0（new/gone 全为分片尾截断伪影）；enginelib 4137P/0F。**③ 域持位**：LI 幽灵跨代并入在册域不动（本刀只滤占位 br 记账条目）。证据见
+[evidence/2026-11-17-d53-listitem-selectdelete-and-placeholder-ghost.md](evidence/2026-11-17-d53-listitem-selectdelete-and-placeholder-ghost.md)。
+
+**d52 join 缝空白序言刀（d51 停车场塌方收口，input-events 核心 +9）**：JoinMutate 提取序言——跨容器块界 join 的源行首文本节点**前导折叠空白在提取前摘除**（守卫 `srcParent !== dst` + 双侧 normal 域 + 落位块元素；先摘后提，C-strip 头部支自然 no-op）。**根因（zz-probe-d52a 形状隔离 + J0-J5 shim trace 一轮，backup 零残回退）**：塌方唯一判别面 = 提取源行首文本节点带前导折叠空白（T5 `<li>def[]</li>` + `  ghi` 单独复现 content `<div>ghi</div>`）；shim 侧全程正确（takeLine n=1、shellDst=LI、ser sel=li beforeend），塌方在**引擎侧 drain**——removeChild(前导空白文本子) + insertAdjacent wire 序被引擎解释为前序内容整体摘除；去前导空白后同 wire 序恒正确。**A/B（base=61ebaf369）：backspace 79→81P（caret-after-ul ws 形 content ×2，bi=2 双派 promise 键持位 ③）、forwarddelete 98→100P（def[] ws 形 content ×2）、non-collapsed 101→106P（列表选区面 ×3 + `<p>abc   [</p>]   def` 块界选区 ×2）、joining-dl 1174 共键恒等，全腿 P2F=0**。哨兵：enginelib 4134P/0F；selection CE 414 全同；suite 对 d51 净差 F2P=20/P2F=0（核心 +9 + 探针镜像自增 11）。探针九面 content 全契约形（T1 bi=0 首位鬼持位 ③）。证据见
 [evidence/2026-11-17-d52-join-seam-ws-prelude.md](evidence/2026-11-17-d52-join-seam-ws-prelude.md)。
 
 **d51 列表壳溶解收口 + join 界规范化刀（input-events 核心净 +6）**：part01.js 三处——FD 溶解闭包 takeLineFrom 重写（直挂 insertBefore 跨容器移动 shim 内抛 HierarchyRequest＝BS 臂 T7/T8 探针实证的 li 连行带走根因，改引擎 takeLine 提取后逆序挂回）+ B2 双臂 join 界终文本锚前向规范化（`_gtrEndF1` 非 collapsed 跨容器 / `_gtrEndF` collapsed 块界：JoinEndOf 裸 (leaf,0) 对后邻前导折叠空白欠账，元素锚不变 preserve/preLine 自守恒）。**A/B（base=45051c160）：backspace 主文件 78→79P（F2P=1 ws 面 innerHTML）；forwarddelete 主文件 96→98P（F2P=2 `def[]` ws 形 promise 键）；non-collapsed 对 d50 wip 98→101P（F2P=3 ?Delete 列表选区 content——FD 溶解臂在保守 join bail 前截获，`<div>abcdefghi</div>`/二 li 保留形全对）；全腿 P2F=0**。探针 zz-probe-d51a：T8 列表界 repeat 位语料契约全对（takeLine 路径合流派发下兑现）；T7/T9 首位鬼（T9 entry `(t"",3)` 陈旧代际）归 ③。列表面残余分型入册：plain 形 bi=0 鬼 + ws 形 bi=2 双派簇（d40-II 族，溶解臂使新面进入停场簇、无新增红键）+ FD ws 形块界 join 内容塌方（content `<div>ghi</div>` base 继承逐字同消息、共享 JoinApply 96P 高危挂停车场）。哨兵：enginelib 4131P/0F；selection CE 过滤 414 共键全同 F2P=0/P2F=0；input-events 全套件对 d50 wip 净差 F2P=12/P2F=0（核心 +6 + zz-probe 镜像面自增 6）。证据见
@@ -107,7 +110,7 @@ insertHTML ws 四域 +4；P2F=4 = Backspace/Delete/execCommand 两阶段变体
 [d46 typing-replace-arm](evidence/2026-11-16-d46-typing-replace-arm.md)。
 
 **卡点** 无阻塞。口径持位：11-12 快照三目录合计 130,245、距 146,184 差
-15,939；d48 后预估 ~143.9k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
+15,939；d53 后预估 ~144.0k（跨口径不直加，正式落账待 DC-3 快照统一口径）。
 环境记档：main 有一处 fmt 既有漂移（`crates/dom/src/tests/
 tests_9_query_coverage.rs`，并行流 3eddbadbb 带入，非本流写面，未触碰）；
 runner console 通道仅 `ZW_SHAPED_ADVANCE_TRACE=1` 下可见（tracing subscriber
@@ -116,6 +119,8 @@ runner console 通道仅 `ZW_SHAPED_ADVANCE_TRACE=1` 下可见（tracing subscri
 **下一步** ①**B4-S2 第三刀候选（d48 后残余簇，见 d48/d46 证据遗留节）**：
 (a) ~~join 壳吸收深化~~ **已由 d48 收**（A+B1+B2 落树净 +223；残留 = B1 两
 p 形 `Delete at "<p>abc[]<br></p><p>def</p>"` F→F 未解 + B3 判不落移③）；
+(a') ~~dil 列表项选删归一＋占位 br 换代幽灵~~ **已由 d53 收**（净 +72；
+LI 幽灵跨代并入仍挂③）；
 (b) backspace/fd 主文件 243F：跨元素边界 caret
 join（`<p>a<span>b</span>[]c</p>` bi=0）+ 文首空删 beforeinput 形；(c) TypingA
 残余 43F 中可独立修面：`{<hr>}` 纯元素选区核拒收（bi=0，核放行臂缺口）——
@@ -127,7 +132,8 @@ child-block gtr 端点规范化持位——Typing 变体 24F 已由 d46 清偿�
 d46 非空锚守卫是键入面局部免疫；**d48 B3 同块占位 br +8/−2 与 8 键
 `[list-item1]` 全选形并入此域；d50 ④ 臂 hr 形派发鬼（content 正确 bi=0、
 重锚 `(t"",3)` 陈旧代际）并入此域；d51 列表面派发分型（plain bi=0 鬼、
-ws 形 bi=2 双派入簇、T7/T9 首位鬼探针）并入此域**）④B3 text-control execCommand 期望
+ws 形 bi=2 双派入簇、T7/T9 首位鬼探针）并入此域；**d53 占位 br 换代记账
+滤除已落树（br 条目子域清偿、LI 幽灵与重锚陈旧代际仍在册）**）④B3 text-control execCommand 期望
 矩阵（~474F，修前逐命令核对语料期望表）→ B5 小簇；⑤DC-3 周跑快照同口径
 对账（净增 ≥130,000 + 邻域回退核对；face 哨兵探针清单见 d39 前账）。
 

@@ -12156,14 +12156,26 @@
     return false;
   }
   // 摘空块容器占位 br（深入唯一摘空块子链到底——br 落最深空块壳）。
+  // d53 换代幽灵过滤（2026-11-17，zz-probe-d53b/c 序贯定谳）：同页前测遗留的
+  // 占位 br 经 stale pending-added 桶再并入读取视图（li 包装对象跨 rebake 复用
+  // 且自定义 expando 被 set trap 丢弃、`__zwHandle` 持久），毒化「尚有可见内容
+  // → 不占位」门（d48 B3 判负同根）。占位 br 创建时以 handle→代际记账（
+  // `__zwPbrGenByHandle`，挂 globalThis 供 part05 融合视图并桶点同款滤除——
+  // 记账点 = append 后 handle 已assign；门跳过跨代记账 br：同代占位 br 与上游
+  // 解析 br（无记账）不受影响。
   function _zwCePlaceholderBr(cont) {
     if (!cont || cont.nodeType !== 1) return;
+    var _pbrGen = globalThis._zwApplyGeneration ? globalThis._zwApplyGeneration() : null;
+    var _pbrMap = (typeof globalThis.__zwPbrGenByHandle === 'object' && globalThis.__zwPbrGenByHandle) || null;
     var guard = 0, cur = cont;
     while (guard++ < 8) {
       var kids = cur.childNodes || [];
       var vis = 0, sole = null;
       for (var i = 0; i < kids.length; i++) {
         var k = kids[i];
+        if (_pbrGen != null && _pbrMap && k.__zwHandle != null
+          && _pbrMap[String(k.__zwHandle)] != null
+          && _pbrMap[String(k.__zwHandle)] !== _pbrGen) continue;
         if (k.nodeType === 3 && /^\s*$/.test(String(k.nodeValue || ''))) continue;
         vis++; sole = k;
       }
@@ -12174,10 +12186,20 @@
     var kk = cur.childNodes || [];
     for (var j = 0; j < kk.length; j++) {
       var n2 = kk[j];
+      if (_pbrGen != null && _pbrMap && n2.__zwHandle != null
+        && _pbrMap[String(n2.__zwHandle)] != null
+        && _pbrMap[String(n2.__zwHandle)] !== _pbrGen) continue;
       if (n2.nodeType === 3 && /^\s*$/.test(String(n2.nodeValue || ''))) continue;
       return; // 尚有可见内容（非摘空）→ 不占位
     }
-    try { cur.appendChild(document.createElement('br')); } catch (_ePbr) {}
+    var _pbrBr = document.createElement('br');
+    try { cur.appendChild(_pbrBr); } catch (_ePbr) {}
+    try {
+      if (_pbrGen != null && _pbrBr.__zwHandle != null) {
+        if (!_pbrMap) { _pbrMap = globalThis.__zwPbrGenByHandle = {}; }
+        _pbrMap[String(_pbrBr.__zwHandle)] = _pbrGen;
+      }
+    } catch (_ePbrG) {}
   }
   // d45 第 4 参 typingData（键入替换面，wptfyi-editing 2026-11-16）：非塌缩选区
   // 键入 = 替换（input-events non-collapsed-selection?TypingA 语料定谳缺口——
@@ -12218,14 +12240,43 @@
     // 嵌套包含拒收只辖深层锚（FIXME(nested-list-deep)）：ec 锚右块自身或右块
     // 文本边界（_sdRbTextEdge）时包含形放行交 join 臂（d43 2026-11-16）。
     if (_sdContained && ec !== rightBlock && !_sdRbTextEdge) return false;
-    // B2：边界规范化端点快照 + beforeinput（变更前，摘除/join 单派）
+    // B2：边界规范化端点快照 + beforeinput（变更前，摘除/join 单派）。
+    // d53 列表项选删归一（deleting-in-list-items 2026-11-17）：sc===ec 列表
+    // 容器元素锚**单 li 跨度**——摘空后按后继兄弟定形：有后继（跳过折叠空白
+    // 文本后的元素兄弟，li 或非 li）→ li 壳摘除（caret 流后继项；语料
+    // `{<li>list-item1</li>}<li>list-item2` 期望 `<ul><li>list-item2</li></ul>`
+    // 实证）；无后继 → 壳留 + 占位 br（尾面 `{<li>list-item2</li>}`/孤立面
+    // `{<li>list-item1</li>}` 期望 `<li><br></li>` 实证）。gtr 随动作形：
+    // 摘壳面元素锚跨度 (sc,so)-(sc,so+1)，保壳面双端降首/尾文本叶（语料
+    // text-text 形）。多 li 跨度与非 ul/ol 父不在本刀域（现章程保持）。
+    var _sdLiKid = null, _sdLiPrune = false;
+    if (sc === ec && sc.nodeType === 1) {
+      var _sdKs = sc.childNodes || [];
+      var _sdCf = so | 0, _sdCt = eo | 0;
+      if (_sdCt === _sdCf + 1 && _sdKs[_sdCf] && _sdKs[_sdCf].nodeType === 1
+        && String(_sdKs[_sdCf].nodeName || '').toLowerCase() === 'li'
+        && (String(sc.nodeName || '').toLowerCase() === 'ul'
+          || String(sc.nodeName || '').toLowerCase() === 'ol')) {
+        _sdLiKid = _sdKs[_sdCf];
+        _sdLiPrune = !!_zwCeSkipWs(_sdLiKid.nextSibling);
+      }
+    }
     var cs = _zwCeCanonGtrStart(sc, so), ce = _zwCeCanonGtrEnd(ec, eo);
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true,
       data: typingData ? typingData.data : null,
       inputType: inputType, isComposing: false
     });
-    before._zwTargetRanges = [_zwCeTargetRange(cs.node, cs.offset, ce.node, ce.offset)];
+    var _sdLiGtr = null;
+    if (_sdLiKid) {
+      var _sdLeafS = _zwCeDeepLeaf(_sdLiKid, false);
+      var _sdLeafE = _zwCeDeepLeaf(_sdLiKid, true);
+      _sdLiGtr = (!_sdLiPrune && _sdLeafS && (_sdLeafS.nodeType === 3 || _sdLeafS.__zwIsText)
+        && _sdLeafE && (_sdLeafE.nodeType === 3 || _sdLeafE.__zwIsText))
+        ? [_zwCeTargetRange(_sdLeafS, 0, _sdLeafE, String(_sdLeafE.nodeValue || '').length, false)]
+        : [_zwCeTargetRange(sc, so, sc, (so | 0) + 1, false)];
+    }
+    before._zwTargetRanges = _sdLiGtr || [_zwCeTargetRange(cs.node, cs.offset, ce.node, ce.offset)];
     if (el.dispatchEvent(before) === false) return true;
     // —— 摘除（spec deleteContents 爬升形）——
     // ① 文本端点部分覆盖截断
@@ -12251,6 +12302,12 @@
           var ksk = Array.prototype.slice.call(kS.childNodes);
           for (var ik = 0; ik < ksk.length; ik++) {
             if (ksk[ik].parentNode === kS) kS.removeChild(ksk[ik]);
+          }
+          // d53 列表项选删归一（上文 _sdLiKid 形，2026-11-17）：摘空 li 壳按
+          // 后继定形——有后继摘壳、无后继占位 br（gtr 随动作形同步）。
+          if (kS === _sdLiKid) {
+            if (_sdLiPrune) { try { sc.removeChild(kS); } catch (_eSdLiP) {} }
+            else _zwCePlaceholderBr(kS);
           }
         } else {
           sc.removeChild(kS);
@@ -13223,8 +13280,12 @@
     // 被截节点，报告随原位截断读 post-value；传播中改选区触发替换承载时快照
     // 引用随机制被分离的节点——d43 观测该形 1F（期望读分离原节点 pre-value），
     // 接受（与克隆门互斥，不可能两全）。
+    // d53 塌缩门（deleting-in-list-items 2026-11-17）：重读覆盖只辖**塌缩域**
+    // ——非塌缩选区（`[list-item1]` 全文形）默认动作删选区而非重读位单单元，
+    // 覆盖会把区间删坍成 1 单元（语料 got `ist-item1` 实证）；重读改位语义
+    //（during-and-after-dispatch 语料）全是塌缩 caret 面，域门不缺。
     var fr = globalThis.__zw_ce_caret_range(el);
-    if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
+    if (range.collapsed && fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
       && (fr.startOffset | 0) > 0) {
       sc = fr.startContainer;
       v = String(sc.nodeValue || '');
@@ -13249,6 +13310,14 @@
       start = _gtrS; end = _gtrE;
     }
     sc.nodeValue = v.slice(0, start) + v.slice(end);
+    // d53 摘空块占位（deleting-in-list-items 2026-11-17）：文内臂整节点摘除
+    // 使所在块可见内容清零 → 占位 br（`<ul><li>[list-item1]</li></ul>` 期望
+    // `<ul><li><br></li></ul>`；select-delete 同块臂 _zwCePlaceholderBr 同口径
+    // ——空文本子不计可见，innerHTML 序列化不受影响）。整叶壳面自带剪枝收尾
+    // 不入（_bsWholeShell 分支）。
+    if (!_bsWholeShell && start === 0 && end >= v.length) {
+      _zwCePlaceholderBr(_zwCeNearestBlock(sc, el));
+    }
     if (_bsWholeShell) {
       // 空壳剪枝 + caret 落被摘壳原位（B 族 BS：`a<span>b[]</span>c` → `ac`
       // caret (p,1) 壳父位）。
@@ -13820,8 +13889,11 @@
     // 传播后重读选区（同 __zw_ce_delete 文内臂注记：ranges 快照固定、默认动作按
     // 改后选区应用——ForwardDelete 删新位**后**一单元，代理对安全同上）。
     // 端点 live 分流同 backspace 文内臂（_zwCeTargetRange 注记）。
+    // d53 塌缩门（同 backspace 文内臂 2026-11-17）：重读覆盖只辖塌缩域——非塌
+    // 缩选区（`[list-item1]` 全文形）覆盖会把区间删坍成 1 单元（语料 got
+    // `ist-item1` 实证）。
     var fr = globalThis.__zw_ce_caret_range(el);
-    if (fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
+    if (range.collapsed && fr && fr.startContainer && (fr.startContainer.nodeType === 3 || fr.startContainer.__zwIsText)
       && (fr.startOffset | 0) < String(fr.startContainer.nodeValue || '').length) {
       sc = fr.startContainer;
       v = String(sc.nodeValue || '');
@@ -13846,6 +13918,12 @@
       end = _fdGrp ? _fdGrp.mutEnd : _gtrE; // 组形变异端 ≠ gtr 端（双组续展形）
     }
     sc.nodeValue = v.slice(0, start) + v.slice(end);
+    // d53 摘空块占位（backspace 文内臂镜像 2026-11-17）：整节点摘除清空所在块
+    // → 占位 br（`<ul><li>[list-item1]</li></ul>` + Delete 期望 `<ul><li><br>
+    // </li></ul>` 形）；整叶壳面不入（_fdWholeShell 自带剪枝收尾）。
+    if (!_fdWholeShell && start === 0 && end >= v.length) {
+      _zwCePlaceholderBr(_zwCeNearestBlock(sc, el));
+    }
     if (_fdWholeShell) {
       // 空壳剪枝 + caret 落被摘壳原位（B 族 FD 镜像 BS：`a<span>b[]</span>c`
       // → `ac` caret (p,1) 壳父位）。
