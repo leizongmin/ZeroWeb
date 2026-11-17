@@ -11851,6 +11851,24 @@
     }
     var _jsBoundary = _zwCeIsBlockEl(startNode)
       || (_jsN && _jsN.nodeType === 1 && _zwCeIsBlockEl(_jsN));
+    // d52 引擎缝空白序言（wptfyi-editing 2026-11-17）：跨容器块界 join 的源行
+    // 首文本节点前导折叠空白在**提取前**摘除（双侧 normal 域、落位块元素）——
+    // 提取 wire 的 removeChild 对前导空白文本子会让后续 insertAdjacent 批在
+    // 引擎侧塌方（zz-probe-d52a T5/T7/T8/T9 实证 content `<div>ghi</div>`；
+    // 同 wire 序去前导空白后 T2 形恒正确）。与 C-strip 头部摘除同域同界，先摘
+    // 后提后该支自然 no-op；preserve/pre-line 域空白可见不摘。
+    if (srcParent !== dst && startNode && (startNode.nodeType === 3 || startNode.__zwIsText)) {
+      var _psCtxS = _zwCeWsCtx(startNode.parentNode || srcParent);
+      var _psCtxD = _zwCeWsCtx(dst);
+      if (!_psCtxS.preserve && !_psCtxS.preLine && !_psCtxD.preserve && !_psCtxD.preLine
+        && _zwCeIsBlockEl(dst)) {
+        var _psV = String(startNode.nodeValue || '');
+        var _psCut = _zwCeWsRunLen(_psV, 0, true, false);
+        if (_psCut > 0) {
+          try { startNode.nodeValue = _psV.slice(_psCut); } catch (_ePsStrip) {}
+        }
+      }
+    }
     var r = _zwCeTakeLineFrom(srcParent, startNode);
     if (!r.nodes.length) return false;
     if (_jsBoundary) {

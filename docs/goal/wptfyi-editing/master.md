@@ -1,6 +1,9 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-17 · Active**。**d51 列表壳溶解收口 + join 界规范化刀（input-events 核心净 +6）**：part01.js 三处——FD 溶解闭包 takeLineFrom 重写（直挂 insertBefore 跨容器移动 shim 内抛 HierarchyRequest＝BS 臂 T7/T8 探针实证的 li 连行带走根因，改引擎 takeLine 提取后逆序挂回）+ B2 双臂 join 界终文本锚前向规范化（`_gtrEndF1` 非 collapsed 跨容器 / `_gtrEndF` collapsed 块界：JoinEndOf 裸 (leaf,0) 对后邻前导折叠空白欠账，元素锚不变 preserve/preLine 自守恒）。**A/B（base=45051c160）：backspace 主文件 78→79P（F2P=1 ws 面 innerHTML）；forwarddelete 主文件 96→98P（F2P=2 `def[]` ws 形 promise 键）；non-collapsed 对 d50 wip 98→101P（F2P=3 ?Delete 列表选区 content——FD 溶解臂在保守 join bail 前截获，`<div>abcdefghi</div>`/二 li 保留形全对）；全腿 P2F=0**。探针 zz-probe-d51a：T8 列表界 repeat 位语料契约全对（takeLine 路径合流派发下兑现）；T7/T9 首位鬼（T9 entry `(t"",3)` 陈旧代际）归 ③。列表面残余分型入册：plain 形 bi=0 鬼 + ws 形 bi=2 双派簇（d40-II 族，溶解臂使新面进入停场簇、无新增红键）+ FD ws 形块界 join 内容塌方（content `<div>ghi</div>` base 继承逐字同消息、共享 JoinApply 96P 高危挂停车场）。哨兵：enginelib 4131P/0F；selection CE 过滤 414 共键全同 F2P=0/P2F=0；input-events 全套件对 d50 wip 净差 F2P=12/P2F=0（核心 +6 + zz-probe 镜像面自增 6）。证据见
+**2026-11-17 · Active**。**d52 join 缝空白序言刀（d51 停车场塌方收口，input-events 核心 +9）**：JoinMutate 提取序言——跨容器块界 join 的源行首文本节点**前导折叠空白在提取前摘除**（守卫 `srcParent !== dst` + 双侧 normal 域 + 落位块元素；先摘后提，C-strip 头部支自然 no-op）。**根因（zz-probe-d52a 形状隔离 + J0-J5 shim trace 一轮，backup 零残回退）**：塌方唯一判别面 = 提取源行首文本节点带前导折叠空白（T5 `<li>def[]</li>` + `  ghi` 单独复现 content `<div>ghi</div>`）；shim 侧全程正确（takeLine n=1、shellDst=LI、ser sel=li beforeend），塌方在**引擎侧 drain**——removeChild(前导空白文本子) + insertAdjacent wire 序被引擎解释为前序内容整体摘除；去前导空白后同 wire 序恒正确。**A/B（base=61ebaf369）：backspace 79→81P（caret-after-ul ws 形 content ×2，bi=2 双派 promise 键持位 ③）、forwarddelete 98→100P（def[] ws 形 content ×2）、non-collapsed 101→106P（列表选区面 ×3 + `<p>abc   [</p>]   def` 块界选区 ×2）、joining-dl 1174 共键恒等，全腿 P2F=0**。哨兵：enginelib 4134P/0F；selection CE 414 全同；suite 对 d51 净差 F2P=20/P2F=0（核心 +9 + 探针镜像自增 11）。探针九面 content 全契约形（T1 bi=0 首位鬼持位 ③）。证据见
+[evidence/2026-11-17-d52-join-seam-ws-prelude.md](evidence/2026-11-17-d52-join-seam-ws-prelude.md)。
+
+**d51 列表壳溶解收口 + join 界规范化刀（input-events 核心净 +6）**：part01.js 三处——FD 溶解闭包 takeLineFrom 重写（直挂 insertBefore 跨容器移动 shim 内抛 HierarchyRequest＝BS 臂 T7/T8 探针实证的 li 连行带走根因，改引擎 takeLine 提取后逆序挂回）+ B2 双臂 join 界终文本锚前向规范化（`_gtrEndF1` 非 collapsed 跨容器 / `_gtrEndF` collapsed 块界：JoinEndOf 裸 (leaf,0) 对后邻前导折叠空白欠账，元素锚不变 preserve/preLine 自守恒）。**A/B（base=45051c160）：backspace 主文件 78→79P（F2P=1 ws 面 innerHTML）；forwarddelete 主文件 96→98P（F2P=2 `def[]` ws 形 promise 键）；non-collapsed 对 d50 wip 98→101P（F2P=3 ?Delete 列表选区 content——FD 溶解臂在保守 join bail 前截获，`<div>abcdefghi</div>`/二 li 保留形全对）；全腿 P2F=0**。探针 zz-probe-d51a：T8 列表界 repeat 位语料契约全对（takeLine 路径合流派发下兑现）；T7/T9 首位鬼（T9 entry `(t"",3)` 陈旧代际）归 ③。列表面残余分型入册：plain 形 bi=0 鬼 + ws 形 bi=2 双派簇（d40-II 族，溶解臂使新面进入停场簇、无新增红键）+ FD ws 形块界 join 内容塌方（content `<div>ghi</div>` base 继承逐字同消息、共享 JoinApply 96P 高危挂停车场）。哨兵：enginelib 4131P/0F；selection CE 过滤 414 共键全同 F2P=0/P2F=0；input-events 全套件对 d50 wip 净差 F2P=12/P2F=0（核心 +6 + zz-probe 镜像面自增 6）。证据见
 [evidence/2026-11-17-d51-list-dissolve-gtr-canonical.md](evidence/2026-11-17-d51-list-dissolve-gtr-canonical.md)。
 
 **d50 select-boundary 中段原子/空白带刀落树（non-collapsed 双变体净 +10）**：part01.js +82/−2——④ 空界选区臂「run 中段」保守 bail（BS 13034/FD 镜像 13330）替换为带消费：sc/ec 同容器文本、带内限非块元素+折叠空白文本（normal 域）、摘带+缝规范化（gtr 起跳尾随/终跳前导折叠空白，`(abc,3)-(def,1)` 契约形）+双端原位截断 live 端点。**A/B：non-collapsed Backspace 29→34P、Delete 29→34P（F2P=10/P2F=0，共键 207 全同）；backspace/fd 主文件与 joining-dl 共键逐键恒等零翻面**。F2P=img 形全键 ×2 变体 + hr 三形 content 子测 ×2；**hr 形主键残余 bi=0 = 派发鬼（content 变异正确、事件不达页监听）——探针定谳 hr 形重锚产物陈旧代际（`(t"",3)` 鬼锚）、img 形引擎视图全活，同臂同路径差异仅在宿主代际解析，归 ③**；元素锚 `(div,1)-(div,2)` 形 sc-out-of-host 维持停场；TypingA 变体走 insertText 路径不入 delete 臂恒等。哨兵：enginelib 4125P/0F；selection 全套件（跑完）CE 过滤共键 414 恒等 F2P=0/P2F=0；input-events 全套件共键 5442 P2F=0；hs 可达性论证（语料 6 文件含 CE 无键删路径）+ CE 切片腿跑通无 crash。证据见
@@ -140,8 +143,9 @@ input-events 桶 = B4-S1 select-delete 残余形（d43 主臂落树后名义账 
 → 剩左块尾随 `<br>` 消费/嵌套深锚/dwuf gtr 期望 +22 等，见 d43 证据遗留节；
 d50 后 non-collapsed 三 hr 形主键 bi=0 派发鬼挂 ③ + TypingA 带形归 insert
 路径另开面，见 d50 证据；d51 列表面派发分型挂 ③ + FD ws 形块界 join
-内容塌方（content `<div>ghi</div>` base 继承、promise 键已翻 P，共享
-JoinApply 96P 高危挂停车场，见 d51 证据）
+内容塌方（**d52 缝空白序言刀已收口：塌方根因 = 提取 wire 对前导空白文本
+子的引擎侧解释，见 d52 证据**；promise 键已 d51 翻 P、content 键 d52 清偿，
+caret-after-ul bi=2 双派 promise 键持位 ③）
 + 修饰组合词删
 （deleteWordBackward/Forward）+ range-exceptions 构造器 targetRanges dict +
 IndexSizeError（4F）+ typing DELETE join-walk 分离 sc 崩点守卫（4 笔
