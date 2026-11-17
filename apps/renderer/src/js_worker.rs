@@ -1297,13 +1297,14 @@ fn prio_snapshot_barrier_seq(cmd: &JsWorkerCommand) -> Option<u64> {
 }
 
 /// r2946（F1 返修）：非阻塞 drain 普通通道，切出「屏障前缀」。优先命令 picked 时，
-/// 普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用；同通道 FIFO 即
-/// 提交序，故不重排桶内元素，直接把 drain 序列在**最后一个**此类快照处切成两段：
-/// `prefix` = 截至该快照的全部命令（通道原序，须先于优先命令派发——前缀内的普通命令
-/// 提交序先于屏障快照，由屏障的不变式传递性地也须先于优先命令）；
-/// `post` = 其后命令（提交序晚于屏障快照，优先先取语义保持——不因屏障阻塞它们，
-/// 优先通道清空后补跑，长回调级联不重新压住优先派发）。
-/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，置于序列头部。
+/// 普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用。T79 起 prefix
+/// 收窄为这些快照本身（按通道原序）：快照间序保持「先提交先应用」，其余普通命令
+/// （ResolveAsyncCallback 等页面任务）进 `post` 补跑——它们与优先命令的相对序无
+/// 约束（event-loop 竞态面），不再连坐进 prefix（此前实现按最后一个早快照整体
+/// 切前缀，页面回包臂洪流把求值压数十秒，§399）。
+/// `post` = 其余命令（优先通道清空后补跑，长回调级联不重新压住优先派发）。
+/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，随
+/// drain 序列一并参与收窄判定（搁置快照同样进 prefix）。
 /// 无此类快照时 prefix 为空、post 即整个 drain，优先命令照常立即派发。
 /// 通道 try_recv 失败（空/断连）即停止——断连由阻塞 recv 路径统一处理。
 fn take_snapshot_barrier(
@@ -1312,22 +1313,22 @@ fn take_snapshot_barrier(
     held: Option<JsWorkerCommand>,
 ) -> (VecDeque<JsWorkerCommand>, VecDeque<JsWorkerCommand>) {
     let seq: VecDeque<JsWorkerCommand> = held.into_iter().chain(cmd_rx.try_iter()).collect();
-    // rposition 取最后一个更早快照作切点：其前（含自身）全部进 prefix，其后进 post。
-    // 已入通道的匹配快照不可能落到切点之后（rposition 语义）；真实的退化窗是
-    // 「扫描时尚未入通道的更晚发送快照」——跨发送方 fetch_add→send 间隙使其对本轮
-    // 扫描不可见，优先命令越过它先跑，与屏障前行为一致。反向错位（seq/通道序交错）
-    // 只会把 seq≥prio_seq 的命令过度拉入 prefix，仅扩大屏障窗、FIFO 仍安全。
-    // 两个方向都不劣于屏障前，不为此引入跨线程定序。
-    let Some(split) = seq
-        .iter()
-        .rposition(|c| matches!(c, JsWorkerCommand::SetDomSnapshot { seq, .. } if *seq < prio_seq))
-    else {
-        return (VecDeque::new(), seq);
-    };
+    // T79: prefix 收窄为「更早提交的普通快照序列」——屏障不变式只要求快照先于
+    // 优先命令应用（r2946：fire-and-forget 生命周期派发不得在未安装快照的空 DOM
+    // 上执行）；此前实现按「最后一个更早快照」整体切前缀，把夹在快照之间的
+    // ResolveAsyncCallback 等页面任务一并连坐进 prefix——页面回包臂洪流（bilibili
+    // 真实执行形态：单臂秒级、busy=99% 连绵，见 run.md §399）使自动化求值的
+    // 前置快照把数十秒积压切进 prefix，求值排队 27-50s，headless 35s 磨窗超时、
+    // mux 单线程循环整段冻结。回包与优先命令的相对序本无约束（fetch resolve
+    // 回调读 DOM 与渲染帧交错本就是 event-loop 竞态面，WHATWG HTML
+    // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model：
+    // 任务让路渲染机会帧），后置一拍执行与真实浏览器同构。跨发送方
+    // fetch_add→send 间隙的退化窗语义不变：扫描不可见的更晚快照被优先命令
+    // 越过，与屏障前行为一致。
     let mut prefix = VecDeque::new();
     let mut post = VecDeque::new();
-    for (i, cmd) in seq.into_iter().enumerate() {
-        if i <= split {
+    for cmd in seq {
+        if matches!(cmd, JsWorkerCommand::SetDomSnapshot { seq, .. } if seq < prio_seq) {
             prefix.push_back(cmd);
         } else {
             post.push_back(cmd);
@@ -1790,9 +1791,11 @@ fn js_worker_main(
     // 的空 DOM 上跑一次即被钉死，<body onload> 永不触发（r2946 单测全量腿实证：
     // solo 0.06s 恒过、239 连跑必挂 30s 窗）。屏障在 worker 端恢复「同提交序」不变式，
     // 一个 guard 覆盖全部 fire-and-forget 优先派发（生命周期/资源/字体/动画/过渡）。
-    // F1 返修：屏障不只是快照本身——是 drain 序列截至最后一个更早快照的**前缀**
-    // （含此前提交的普通命令，通道原序；跨轮再归并 deferred_normal 于头部），随后
-    // 才是 barrier_prio；post 部分（提交序晚于屏障）保持优先先取。
+    // F1 返修：屏障恢复「同提交序」不变式。T79 收窄：prefix 只含更早提交的普通
+    // 快照本身（通道原序；跨轮再归并 deferred_normal 于头部），页面任务（回包等）
+    // 不再连坐进 prefix——快照安装序不变式保住的同时，回包臂洪流不再压住求值
+    // （§399：bilibili 真实执行形态下求值曾被连坐 27-50s）；随后才是 barrier_prio；
+    // post 部分（其余普通命令）保持优先先取。
     let mut barrier_prefix: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut barrier_prio: Option<JsWorkerCommand> = None;
     // t2-pb1 F1：复位臂存活的滞留命令本地续派队列。不经通道回送（fix#20 的自馈送
@@ -1806,8 +1809,8 @@ fn js_worker_main(
             if let Some(cmd) = retained_after_reset.pop_front() {
                 break 'dispatch Some(cmd);
             }
-            // r2946 屏障前缀：更早提交的普通通道快照及其之前的普通命令（通道原序）
-            // 先应用/执行，随后才是被屏障让位的优先命令。
+            // r2946 屏障前缀：更早提交的普通通道快照（T79 收窄：仅快照本身，通道
+            // 原序）先应用，随后才是被屏障让位的优先命令。
             if let Some(cmd) = barrier_prefix.pop_front() {
                 break 'dispatch Some(cmd);
             }
