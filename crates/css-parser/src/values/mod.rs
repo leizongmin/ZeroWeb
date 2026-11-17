@@ -26,6 +26,7 @@ pub mod random;
 pub mod serialize_gradient;
 pub mod serialize_math;
 pub mod serialize_position;
+pub mod serialize_transitions;
 mod transform_helpers;
 pub mod types;
 

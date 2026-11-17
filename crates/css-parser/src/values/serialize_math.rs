@@ -1195,6 +1195,12 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }
+        // css-transitions-1 transition 族声明值 canonical（刀 U：timing 步进
+        // 缺省省略 + step-* 关键字展开、property 关键字归一小写——css-transitions
+        // parsing valid 语料钉面）；identity/invalid 形 None 保留原文零漂移。
+        // https://drafts.csswg.org/css-transitions-1/#transition-timing-function-property
+        "transition-timing-function" => super::serialize_transitions::canonicalize_timing_function_specified(v),
+        "transition-property" => super::serialize_transitions::canonicalize_transition_property_specified(v),
         // left 槽仅 sibling 树串化（`sibling-index( )` 空白归一；非 sibling
         // calc 形不折叠——inline store 原文行为零漂移，% 树布局依赖保留）。
         "left" => {
