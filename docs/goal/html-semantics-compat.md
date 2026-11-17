@@ -93,6 +93,25 @@ video P1+P2 立项 / 簇 D A2 立项 / s137）
 rendering 流记账）。门开随批落预案不变：
 簇 D 开 → customizable-select-styles.css
 ×47 随批落。
+> **◆ 更正三（2026-11-17 s551 push 阶段）——pull
+> --rebase 捕获 evt-reject 刀落窗（59d286cb6
+> fix(editing)：part06.js _zwExecCmdRejectFire
+> 值拒绝路径按形补派 1 input＋边界门（
+> fontSize CSS 长度形/formatBlock/insertImage
+> 三真差异键翻绿）+ js_dom_bridge_tests.rs +
+> part133_evt_reject_pins.rs 新钉测 9 形；
+> 伴笔 baf41cb14 docs-only 收口）：s551 窗
+> （码态 ad487ea89 恒，钉扎 052748af4）不含
+> 此刀、s552 窗首次纳入——s552 起腿前
+> provenance 预判：runner 必换代归因 evt-reject
+> 刀（part06.js 经 zero-engine 依赖链入
+> runner 链接）；**全桥清单预判 NEW（part133
+> 钉测经 js_dom_bridge 面注册）＝s552 对
+> b551.k 非 SET-IDENTICAL 轮、b552.k 基线
+> 预期增长 9**（part06 本体在 shim 面）；hs
+> 面 execCommand 值拒绝路径与 testharness
+> 键关联、对账以 join 实测为准。
+
 > **◆ 更正二（2026-11-17 s549 push 阶段）——pull
 > --rebase 捕获刀 H 落窗（ad487ea89
 > fix(engine) 刀 H typed-om shim 认领落地：
