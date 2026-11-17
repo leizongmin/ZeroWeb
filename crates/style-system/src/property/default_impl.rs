@@ -14,6 +14,9 @@ impl Default for ComputedStyle {
             custom_properties: ComputedStyle::empty_custom_properties(),
             // CSS Values 5 §9.3 random % 叶保留形（计算值表；缺省空）。
             random_computed: std::collections::HashMap::new(),
+            // 刀 I important-tier：级联 !important 胜出属性集（缺省空集；compute
+            // 期自 CascadeOutcome 派生注入）。
+            important_won_props: Default::default(),
             // 盒模型
             display: DisplayValue::Inline,
             position: PositionValue::Static,

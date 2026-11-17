@@ -3005,10 +3005,21 @@ impl StyleSystem {
                 // 后保持稳定，旁表按键名对齐）。
                 let (cascaded, cascade_orders) =
                     cascade::cascade_with_orders(declarations, quirks_mode == QuirksMode::Quirks);
+                // 刀 I important-tier（css-cascade-4 §importance）：胜者 order 带
+                // `!important` 的属性集——动画声明排序低于 important 声明，
+                // `AnimationClock::apply_to_computed_style` 施值门数据源。
+                let mut important_won_props: Vec<String> = cascade_orders
+                    .iter()
+                    .filter(|(_, order)| order.important)
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                important_won_props.sort();
+                important_won_props.dedup();
                 let produced = std::sync::Arc::new(CascadeOutcome {
                     expanded: expanded_with_layer,
                     cascaded,
                     orders: cascade_orders,
+                    important_won_props: std::sync::Arc::new(important_won_props),
                 });
                 // attr 活跃元素：替换后值逐元素异（键=声明文本），不入共享缓存防毒化。
                 if !author_attr_active {
@@ -3245,6 +3256,10 @@ impl StyleSystem {
         // g21：random % 叶 fixed-echo 保留形挂表（compute 期承载；非继承，
         // 每元素独立——gCS 序列化直读，见 4.7 步）。
         style.random_computed = random_computed;
+        // 刀 I important-tier（css-cascade-4 §importance）：级联 important 胜出
+        // 属性集挂表（Arc 共享 CascadeOutcome 派生面；动画施值门数据源，
+        // animation.rs `apply_to_computed_style` 消费）。
+        style.important_won_props = std::sync::Arc::clone(&outcome.important_won_props);
 
         // 6. 解析计算值（相对单位转换）
         // 提取父元素的计算 font-size，用于子元素 font-size 的 em 解析
@@ -4432,6 +4447,10 @@ struct CascadeOutcome {
     /// `cascade_with_orders` 输出（步骤 4 起按 `&` 消费，Arc 共享不可变安全）。
     cascaded: HashMap<String, String>,
     orders: HashMap<String, CascadeOrder>,
+    /// 刀 I important-tier（css-cascade-4 §importance）：胜出声明带 `!important`
+    /// 的属性名集（升序——HashMap 迭代序不定，排序保 PartialEq 确定性）。
+    /// 纯函数于 `orders` 派生一次，组合缓存共享，元素侧 `Arc` 克隆零拷贝。
+    important_won_props: std::sync::Arc<Vec<String>>,
 }
 
 /// s220：自定义属性 gather 组合缓存容量上界（FIFO 逐出）。

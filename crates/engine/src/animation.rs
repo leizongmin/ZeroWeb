@@ -1769,7 +1769,7 @@ impl AnimationClock {
 
     /// 注册 @keyframes 规则。
     pub fn register_keyframes(&mut self, rule: &KeyframesRule) {
-        let mut points: Vec<KeyframePoint> = rule.keyframes.iter().map(block_to_point).collect();
+        let mut points: Vec<KeyframePoint> = rule.keyframes.iter().flat_map(block_to_points).collect();
 
         // 按 offset 排序
         points.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
@@ -2141,6 +2141,30 @@ impl AnimationClock {
     /// 只修改可动画属性，不改变不可动画的属性。
     pub fn apply_to_computed_style(props: &[InterpolatedProperty], style: &mut ComputedStyle) {
         for prop in props {
+            // 刀 I important-tier（css-cascade-4 §importance）：级联排序中 animation
+            // declarations 低于 important 声明（important author/user/UA 全部在其上）
+            // ——级联 `!important` 胜出的属性跳过动画施值。简写按**写达 longhand**
+            // 对位（与 apply_single_property 简写臂写面同源：R3882 `background` 只写
+            // background-color；刀 I D 臂 `border-color` 写四边 color 槽；其余臂名即
+            // longhand）。渲染 stamping（pipeline `apply_animation_overrides`）与 gCS
+            // 咨询（js_anim/cssa 共享的 `canonicalize`）同通道过本门，单点覆盖；跳过
+            // 即恒等 → canonicalize 返 None 回落级联序列化（零回归方向）。
+            // https://drafts.csswg.org/css-cascade/#importance
+            if style.important_won_props.iter().any(|w| {
+                w.eq_ignore_ascii_case(&prop.name)
+                    || (prop.name.eq_ignore_ascii_case("background") && w.eq_ignore_ascii_case("background-color"))
+                    || (prop.name.eq_ignore_ascii_case("border-color")
+                        && matches!(
+                            w.as_str(),
+                            "border-color"
+                                | "border-top-color"
+                                | "border-right-color"
+                                | "border-bottom-color"
+                                | "border-left-color"
+                        ))
+            }) {
+                continue;
+            }
             apply_single_property(&prop.name, &prop.value, style);
         }
     }
@@ -2227,34 +2251,32 @@ impl AnimationClock {
     }
 }
 
-/// 将 KeyframeBlock 转为 KeyframePoint。
-fn block_to_point(block: &KeyframeBlock) -> KeyframePoint {
-    let offset = if block.selectors.len() == 1 {
-        match &block.selectors[0] {
-            KeyframeSelector::From => 0.0,
-            KeyframeSelector::To => 1.0,
-            KeyframeSelector::Percentage(p) => *p / 100.0,
-        }
-    } else {
-        // 多选择器取第一个
-        block
-            .selectors
-            .first()
-            .map(|s| match s {
-                KeyframeSelector::From => 0.0,
-                KeyframeSelector::To => 1.0,
-                KeyframeSelector::Percentage(p) => *p / 100.0,
-            })
-            .unwrap_or(0.0)
+/// 将 KeyframeBlock 转为 KeyframePoint 集。css-animations-1 §keyframes：逗号分隔
+/// 选择器列表每项各产出**一个关键帧**（`from, to {...}` → 0% 与 100% 两帧同声明集）
+/// ——旧实现折叠取首个选择器，`from, to` 形丢失 100% 帧、由 `register_keyframes`
+/// 合成空边界帧（刀 I 回归 important-prop 的缺陷 A 面：刀 F 通用 underlying 臂把
+/// 该空帧填成计算值，动画从恒定输出漂移为渐变面）。
+/// https://drafts.csswg.org/css-animations-1/#keyframes
+fn block_to_points(block: &KeyframeBlock) -> Vec<KeyframePoint> {
+    let offset_for = |sel: &KeyframeSelector| match sel {
+        KeyframeSelector::From => 0.0,
+        KeyframeSelector::To => 1.0,
+        KeyframeSelector::Percentage(p) => *p / 100.0,
     };
 
     // R3883：帧内 `animation-timing-function` 是**段 timing**（应用于本帧→下一帧），
     // 不是可插值属性——从 properties 剥离单独存储，避免落入插值/应用名单被丢弃或误用。
     // 值解析失败（畸形 timing）→ None（回落动画全局 timing）。
+    // 刀 I（C 面）：css-animations-1 §keyframes——关键帧声明中的 `!important`
+    // **无效，按未声明丢弃**（keyframes 非级联上下文，重要度标志不产生任何排序
+    // 效果；driving：important-prop `border-color: red !important` 不得覆盖同块
+    // 前条 `border-color: green`）。
+    // https://drafts.csswg.org/css-animations-1/#keyframes
     let mut timing = None;
     let properties: HashMap<String, String> = block
         .declarations
         .iter()
+        .filter(|d| !d.important)
         .filter(|d| {
             if d.property.eq_ignore_ascii_case("animation-timing-function") {
                 timing = zero_css_parser::values::parse_timing_function(d.value.trim());
@@ -2265,11 +2287,15 @@ fn block_to_point(block: &KeyframeBlock) -> KeyframePoint {
         .map(|d| (d.property.clone(), d.value.clone()))
         .collect();
 
-    KeyframePoint {
-        offset,
-        properties,
-        timing,
-    }
+    block
+        .selectors
+        .iter()
+        .map(|sel| KeyframePoint {
+            offset: offset_for(sel),
+            properties: properties.clone(),
+            timing: timing.clone(),
+        })
+        .collect()
 }
 
 /// 应用动画方向。
@@ -2394,6 +2420,18 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "color" => {
             let (r, g, b, a) = parse_color(value);
             style.color = ColorValue::Rgba(r as u8, g as u8, b as u8, (a * 255.0) as u8);
+        }
+        // 刀 I D 臂（css-animations applier 补缺）：border-color 写达四边 color 槽
+        // ——与静态声明 apply 同语义。此前无臂 → 动画 border-color 输出静默丢弃
+        // （important-prop 边框面根因：keyframe green 落不了盘，元素 `border:10px
+        // solid red` 持位）。
+        "border-color" => {
+            let (r, g, b, a) = parse_color(value);
+            let c = ColorValue::Rgba(r as u8, g as u8, b as u8, (a * 255.0) as u8);
+            style.border_top_color = c.clone();
+            style.border_right_color = c.clone();
+            style.border_bottom_color = c.clone();
+            style.border_left_color = c;
         }
         "width" => {
             let px = parse_px(value);
@@ -3545,7 +3583,7 @@ mod tests {
     /// R3883：帧内 `animation-timing-function` 声明从可插值 properties 剥离
     ///（它不是动画属性——旧实现落入 properties 后被插值/应用名单静默丢弃）。
     #[test]
-    fn test_block_to_point_strips_timing_declaration() {
+    fn test_block_to_points_strips_timing_declaration() {
         let block = KeyframeBlock {
             selectors: vec![KeyframeSelector::Percentage(10.0)],
             declarations: vec![
@@ -3561,7 +3599,9 @@ mod tests {
                 },
             ],
         };
-        let pt = block_to_point(&block);
+        let pts = block_to_points(&block);
+        assert_eq!(pts.len(), 1, "single selector → one point");
+        let pt = &pts[0];
         assert!(
             !pt.properties.contains_key("animation-timing-function"),
             "timing must be stripped"
@@ -3571,6 +3611,173 @@ mod tests {
             Some("rgb(200, 0, 0)")
         );
         assert_eq!(pt.timing, Some(TimingFunctionValue::CubicBezier(0.0, 1.0, 1.0, 0.0)));
+    }
+
+    /// 刀 I（A 面）：css-animations-1 §keyframes——逗号分隔选择器列表每项各产出
+    /// 一个关键帧。`from, to` 块展开为 0%/100% 两帧同声明集（旧实现折叠取首选择器
+    /// → 丢 100% 帧 → 合成空边界帧 → 刀 F 通用臂填入计算值漂移）。
+    #[test]
+    fn test_block_to_points_multi_selector_expansion() {
+        let block = KeyframeBlock {
+            selectors: vec![KeyframeSelector::From, KeyframeSelector::To],
+            declarations: vec![Declaration {
+                property: "color".to_string(),
+                value: "green".to_string(),
+                important: false,
+            }],
+        };
+        let pts = block_to_points(&block);
+        assert_eq!(pts.len(), 2, "from, to → two points");
+        assert_eq!(pts[0].offset, 0.0);
+        assert_eq!(pts[1].offset, 1.0);
+        for pt in &pts {
+            assert_eq!(pt.properties.get("color").map(String::as_str), Some("green"));
+        }
+
+        // 百分比列表 `50%, 75%` 同展开（旧实现丢 75% 档）。
+        let pct_block = KeyframeBlock {
+            selectors: vec![KeyframeSelector::Percentage(50.0), KeyframeSelector::Percentage(75.0)],
+            declarations: vec![Declaration {
+                property: "opacity".to_string(),
+                value: "0.5".to_string(),
+                important: false,
+            }],
+        };
+        let pts = block_to_points(&pct_block);
+        assert_eq!(pts.len(), 2);
+        assert!((pts[0].offset - 0.5).abs() < 1e-9);
+        assert!((pts[1].offset - 0.75).abs() < 1e-9);
+    }
+
+    /// 刀 I（C 面）：css-animations-1 §keyframes——关键帧声明 `!important` 无效，
+    /// 按未声明丢弃；同块前条同属性合法声明保留（HashMap 收集序即声明序）。
+    #[test]
+    fn test_block_to_points_drops_important_declarations() {
+        let block = KeyframeBlock {
+            selectors: vec![KeyframeSelector::From],
+            declarations: vec![
+                Declaration {
+                    property: "border-color".to_string(),
+                    value: "green".to_string(),
+                    important: false,
+                },
+                Declaration {
+                    property: "border-color".to_string(),
+                    value: "red".to_string(),
+                    important: true,
+                },
+                Declaration {
+                    property: "color".to_string(),
+                    value: "blue".to_string(),
+                    important: true,
+                },
+            ],
+        };
+        let pts = block_to_points(&block);
+        assert_eq!(pts.len(), 1);
+        assert_eq!(
+            pts[0].properties.get("border-color").map(String::as_str),
+            Some("green"),
+            "!important keyframe declaration dropped, valid declaration kept"
+        );
+        assert!(
+            !pts[0].properties.contains_key("color"),
+            "fully-important property dropped"
+        );
+    }
+
+    /// 刀 I（B 面）：css-cascade-4 §importance——级联 `!important` 胜出属性跳过
+    /// 动画施值；其余属性照常应用。渲染 stamping 与 gCS canonicalize 共享本门。
+    #[test]
+    fn test_animation_skips_important_won_props() {
+        let mut style = ComputedStyle::default();
+        style.color = zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255);
+        style.opacity = 1.0;
+        style.important_won_props = std::sync::Arc::new(vec!["color".to_string()]);
+
+        AnimationClock::apply_to_computed_style(
+            &[
+                InterpolatedProperty {
+                    name: "color".to_string(),
+                    value: "rgb(255, 0, 0)".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "opacity".to_string(),
+                    value: "0.5".to_string(),
+                },
+            ],
+            &mut style,
+        );
+        assert_eq!(
+            style.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255),
+            "important-won property must not be overridden by animation"
+        );
+        assert!(
+            (style.opacity - 0.5).abs() < 1e-9,
+            "non-important property still applies"
+        );
+
+        // 简写写达对位（R3882 同源）：keyframe `background` 简写撞 longhand
+        // background-color important 面——门按写达槽位拦截（important-prop
+        // 背景面：div `background-color:green !important` 胜 keyframe
+        // `background:#f00`）。
+        let mut style = ComputedStyle::default();
+        style.background_color = zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255);
+        style.important_won_props = std::sync::Arc::new(vec!["background-color".to_string()]);
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "background".to_string(),
+                value: "#f00".to_string(),
+            }],
+            &mut style,
+        );
+        assert_eq!(
+            style.background_color,
+            zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255),
+            "shorthand animation must not bypass longhand important tier"
+        );
+    }
+
+    /// 刀 I（D 臂）：动画 border-color 写达四边 color 槽（此前无臂静默丢弃）。
+    #[test]
+    fn test_animation_border_color_applies_four_slots() {
+        let mut style = ComputedStyle::default();
+        style.border_top_color = zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255);
+        AnimationClock::apply_to_computed_style(
+            &[InterpolatedProperty {
+                name: "border-color".to_string(),
+                value: "green".to_string(),
+            }],
+            &mut style,
+        );
+        let green = zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255);
+        assert_eq!(style.border_top_color, green);
+        assert_eq!(style.border_right_color, green);
+        assert_eq!(style.border_bottom_color, green);
+        assert_eq!(style.border_left_color, green);
+    }
+
+    /// 刀 I（A 面经 register_keyframes 全链）：`from, to` 多选择器块展开后两端点
+    /// 均持声明，不再触发空边界帧合成（旧行为：仅 0% 帧 → 合成空 100% 帧）。
+    #[test]
+    fn test_register_keyframes_multi_selector_no_synth_boundaries() {
+        let css = "@keyframes k{from,to{color:green}}";
+        let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let rule = sheet.rules.into_iter().find_map(|r| match r {
+            zero_css_parser::ast::Rule::Keyframes(kf) => Some(kf),
+            _ => None,
+        });
+        let Some(rule) = rule else {
+            panic!("keyframes rule must parse");
+        };
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&rule);
+        let points = clock.keyframes_registry.get("k").expect("registered");
+        assert_eq!(points.len(), 2, "no synthetic boundary frames");
+        assert_eq!(points[0].offset, 0.0);
+        assert_eq!(points[1].offset, 1.0);
+        assert!(points.iter().all(|p| p.properties.contains_key("color")));
     }
 
     // ── 颜色解析测试 ──

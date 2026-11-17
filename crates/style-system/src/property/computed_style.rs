@@ -788,6 +788,13 @@ pub struct ComputedStyle {
     /// 每元素重算（seed 含元素标识，跨元素不同——sharing §9.4 语义）。
     /// <https://drafts.csswg.org/css-values-5/#random-evaluating>
     pub random_computed: std::collections::HashMap<String, String>,
+    /// 刀 I important-tier（css-cascade-4 §importance）：级联胜出声明带 `!important`
+    /// 的属性名集（升序去重）。级联排序中 animation declarations 低于 important
+    /// 声明——`AnimationClock::apply_to_computed_style` 施值时按此跳过（渲染
+    /// stamping 与 gCS canonicalize 同通道共享该门）。Arc 共享自 `CascadeOutcome`
+    /// 组合缓存派生（同声明输入逐元素同集）；空集为常态。非可观察 CSS 值：
+    /// 双路径同走 `cascade_with_orders` 单点纯函数派生，结构相等契约不受影响。
+    pub important_won_props: std::sync::Arc<Vec<String>>,
 }
 
 /// `anchor-size()` 尺寸槽声明原文集（css-anchor-position-1 §4；见
