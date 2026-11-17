@@ -151,6 +151,17 @@ pub(crate) fn register_from_style_change(
             }
             continue;
         }
+        // 显式声明与 `all` 通配同清单口径（css-transitions §2 可过渡属性面）：
+        // 清单外不登记过渡。A/B 定谳 2026-11-18（刀 A1）：mask-image 显式声明
+        // 无门登记 = P2F 30 形——其 WAAPI/CSSA applier 臂激活后端点快照环境
+        // 扰动（neutral→url 取前块值/inherit 取 none），离散翻转 at<0.5 全灭；
+        // 清单外静态跳终值 = B0 通过正形。transition-behavior:allow-discrete
+        // 离散对面（style-system 未建模 behavior 字段）挂账 A1b 与字段一起
+        // 接入，不在此处半开半闭。
+        // https://drafts.csswg.org/css-transitions/#starting-of-transitions
+        if !TRANSITIONABLE_PROPERTIES.contains(&property.as_str()) {
+            continue;
+        }
         register_property_if_changed(
             world,
             identity,
@@ -171,7 +182,7 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 65] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 72] = [
     "backdrop-filter",
     "background",
     "background-color",
@@ -208,6 +219,20 @@ const TRANSITIONABLE_PROPERTIES: [&str; 65] = [
     "mask-border-slice",
     "mask-border-source",
     "mask-border-width",
+    // mask 长手族（css-masking-1 §5.3–5.6；严格臂 刀 MI 已挂，清单补齐＝
+    // 清单 ⊆ strict 臂全集不变量，transition 显式声明与 all 通配同口径）。
+    // 例外：mask-image 虽在 strict 臂（离散面）但**不入清单**——其 transition
+    // 面端点快照跨块陈旧（A/B 定谳 2026-11-18：neutral→url 取前块 stripes、
+    // inherit 未解析取 none，REGRESSED=60 形态），保持清单外 = 过渡不启动 =
+    // 静态跳终值（B0 通过面），增益全部走 WAAPI/CSSA applier 臂通道。
+    // https://drafts.fxtf.org/css-masking-1/#the-mask-image
+    "mask-clip",
+    "mask-composite",
+    "mask-mode",
+    "mask-origin",
+    "mask-position",
+    "mask-repeat",
+    "mask-size",
     "min-height",
     "min-width",
     "offset-anchor",

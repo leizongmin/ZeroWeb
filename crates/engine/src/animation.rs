@@ -2022,26 +2022,31 @@ fn parse_len_pair_pct(s: &str) -> Option<((f64, String), (f64, String))> {
     Some((parse_len_pct_val(parts[0])?, parse_len_pct_val(parts[1])?))
 }
 
-// ── mask-position 插值（css-masking-1 §5.3，wptfyi-css 刀 MI）──────────────
-// 轴分量归一为 `(pct 系数, px 系数)` 对：left/top→(0,0)、center→(50,0)、
-// right/bottom→(100,0)、Percent(p)→(p,0)、Px(v)→(0,v)、EdgeOffset 左/上基
-// offset 本身、右/下基 (100,−off)（resolve 翻转同语义）；Calc 端点不插值。
+// ── mask-position 插值（css-masking-1 §5.3，wptfyi-css 刀 MI/A1）───────────
+// 轴分量归一为 `(pct 系数, px 系数, 是否含 % 项)` 三元组：left/top→(0,0)、
+// center→(50,0)、right/bottom→(100,0)、Percent(p)→(p,0)、Px(v)→(0,v)、
+// EdgeOffset 左/上缘基 offset 本身（纯 px offset 不含 % 项——Chromium 把该
+// 形 resolve 成纯 length，语料 top 0px left 0px 块钉）、右/下缘基 (100,−off)
+//（resolve 翻转同语义，缘百分比恒在场故含 % 项）；Calc 端点不插值。
 // 逐层列表 LCM 循环展开（语料 mismatched-cases 判例 2 层 vs 3 层→6 层），
-// 系数线性 lerp 后串化：px 系数 0 → 纯 `P%`（端点简化），否则 `calc(P% ± Xpx)`
-//（css-values-4 §8.5.6；两侧经 shim roundNumbers 归一同通道比对）。任一层
-// 解析失败 → None（调用方离散翻转回落）。
+// 系数线性 lerp 后串化：两端点均纯 length → 纯 `Xpx`（length↔length 插值
+// 产物仍是 length 不引入 calc——px↔px 语料块期望元素 inline 纯 px，calc
+// 系数形会落不可解析 % Calc 轴空串）；任一端点含 % 项时 px 系数 0 → 纯
+// `P%`（端点简化），否则 `calc(P% ± Xpx)`（css-values-4 §8.5.6；两侧经
+// shim roundNumbers 归一同通道比对）。任一层解析失败 → None（调用方离散
+// 翻转回落）。
 
-/// 轴分量→(pct, px) 系数对。
-type MaskPosComp = (f64, f64);
+/// 轴分量→(pct 系数, px 系数, 是否含 % 项)。
+type MaskPosComp = (f64, f64, bool);
 
 fn mask_pos_comp(v: &zero_css_parser::values::BackgroundPositionValue) -> Option<MaskPosComp> {
     use zero_css_parser::values::{BackgroundEdge, BackgroundPositionValue as Bpv};
     match v {
-        Bpv::Center => Some((50.0, 0.0)),
-        Bpv::Left | Bpv::Top | Bpv::XStart | Bpv::YStart => Some((0.0, 0.0)),
-        Bpv::Right | Bpv::Bottom | Bpv::XEnd | Bpv::YEnd => Some((100.0, 0.0)),
-        Bpv::Percent(p) => Some((*p as f64, 0.0)),
-        Bpv::Length(LengthValue::Px(p)) => Some((0.0, *p as f64)),
+        Bpv::Center => Some((50.0, 0.0, true)),
+        Bpv::Left | Bpv::Top | Bpv::XStart | Bpv::YStart => Some((0.0, 0.0, true)),
+        Bpv::Right | Bpv::Bottom | Bpv::XEnd | Bpv::YEnd => Some((100.0, 0.0, true)),
+        Bpv::Percent(p) => Some((*p as f64, 0.0, true)),
+        Bpv::Length(LengthValue::Px(p)) => Some((0.0, (*p), false)),
         Bpv::EdgeOffset { side, offset } => {
             let (bp, bx) = match side {
                 BackgroundEdge::Left | BackgroundEdge::XStart | BackgroundEdge::Top | BackgroundEdge::YStart => {
@@ -2051,8 +2056,12 @@ fn mask_pos_comp(v: &zero_css_parser::values::BackgroundPositionValue) -> Option
                     (100.0, 0.0)
                 }
             };
-            let (op, ox) = mask_pos_comp(offset)?;
-            Some((bp + op, bx + ox))
+            let edge_pct = matches!(
+                side,
+                BackgroundEdge::Right | BackgroundEdge::XEnd | BackgroundEdge::Bottom | BackgroundEdge::YEnd
+            );
+            let (op, ox, opct) = mask_pos_comp(offset)?;
+            Some((bp + op, bx + ox, edge_pct || opct))
         }
         _ => None,
     }
@@ -2066,15 +2075,20 @@ fn mask_pos_layer(v: &zero_css_parser::values::BackgroundPositionValue) -> Optio
         Bpv::Calc(_) => None,
         single => {
             let x = mask_pos_comp(single)?;
-            Some((x, (50.0, 0.0)))
+            Some((x, (50.0, 0.0, true)))
         }
     }
 }
 
-/// (pct, px) lerp 后串化（px 系数 0 → 纯 P%；否则 calc(P% ± Xpx)）。
-fn mask_pos_fmt((fp, fx): MaskPosComp, (tp, tx): MaskPosComp, t: f64) -> String {
+/// (pct, px) 系数 lerp 后串化：两端点均纯 length → 纯 `Xpx`（length↔length
+/// 插值产物仍是 length，不引入 calc——calc 系数形落不可解析 % Calc 轴空
+/// 串）；含 % 项时 px 系数 0 → 纯 `P%`（端点简化），否则 `calc(P% ± Xpx)`。
+fn mask_pos_fmt((fp, fx, fpct): MaskPosComp, (tp, tx, tpct): MaskPosComp, t: f64) -> String {
     let pct = (1.0 - t) * fp + t * tp;
     let px = (1.0 - t) * fx + t * tx;
+    if !fpct && !tpct {
+        return format!("{:.2}px", px);
+    }
     if px.abs() < 1e-9 {
         format!("{:.2}%", pct)
     } else if px < 0.0 {
@@ -3063,6 +3077,18 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                     OffsetPositionValue::Position(offset_len_from(x, &xu), offset_len_from(y, &yu))
                 })
             };
+        }
+        // ── wptfyi-css mask 长手族 applier 臂（2026-11-18 刀 A1）──
+        // css-masking-1 §5.3–5.6 长手动画回写：委托 style-system apply_advanced
+        // 写值通道八臂（刀 MI 已挂插值/gCS 串化，本函数缺臂致 canonicalize
+        // ser1≡ser0 恒 None 回落基值——animations/mask-position 插值页 186F、
+        // mask-image 页 168F 根因；与 clip-path 臂 2026-11-16 同病同治）。
+        // 解析失败不动样式（回落方向）。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-image" | "mask-mode" | "mask-position" | "mask-size" | "mask-repeat" | "mask-clip" | "mask-origin"
+        | "mask-composite" => {
+            let _ =
+                zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
         }
         // ── wptfyi-css 基本形状族 applier 臂（2026-11-16 二十一轮）──
         // css-shapes-2 §basic-shape-interpolation：动画插值后的 clip-path 全族
