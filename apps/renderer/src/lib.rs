@@ -10,6 +10,9 @@ mod ipc_service_worker;
 pub mod js_worker;
 #[cfg(target_os = "macos")]
 mod macos_app;
+// T79 返修：唯一调用方（runtime.rs 录数块）在 alloc-trace feature 内——模块随
+// feature 门控（与 mem_ledger 同形制），default 构建零 dead_code 警告。
+#[cfg(feature = "alloc-trace")]
 mod malloc_stats;
 mod mem_reclaim;
 mod page_scripts;
