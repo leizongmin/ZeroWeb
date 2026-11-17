@@ -51,8 +51,13 @@ r15 门禁后 indent 残 17F（全 compare innerHTML 型）分类：
   failset 差量恰 −3＝A 族三键（idx37/40/41），零新增红（comm 对 r15-indent.log
   实证）。
 
-## 门禁批
+## 门禁批 zw-r16 ALL-DONE（2026-11-18T01:50:45+0800）
 
-zw-r16（发射后补记）：期望 indent 1315/14 fresh 锚＋fb 5043/3／fs 2419/3／
-img 962/0／event 176/4／ie SET-IDENTICAL／mt 10090/2 X37 恒一（ViaHtml 复用臂
-为 indent/list/ip 多命令共享面，mt 为共享面回归哨）。
+八腿全绿 @b5fcb2da1 bin 6689b49a 全程恒一（wall 63.5min 含 load_wait）：
+
+- indent 1315/14/0（19s）翻绿恰刀面 3 键 idx37/40/41＋零新增红（comm 实证）。
+- fb 5043/3＋fs 2419/3＋img 962/0＋event 176/4＋ie 1476/1852/3 Fail/T 集全部
+  SET-IDENTICAL 对 r15 fresh 锚恒一。
+- lib 4164P/0F pin-in 6/6（含本刀 indent_merge_dedup）。
+- mt 10090/2/0 X37 双键恒一零暴露（multiplier2 终审，1828s）＝ViaHtml 复用臂
+  共享面（indent/list/ip）零扰动双哨（fb 直通臂＋mt 组合态）兑现。
