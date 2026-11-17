@@ -4394,7 +4394,10 @@ pub fn register_dom_callbacks(
     // 声明串（`n: v; ...` attribute 原文域）重组 gap-rule/inset 家族简写 specified
     // 串（`10px 20px / 10px 20px` 全形 / 全等塌缩单值 / 双轴等值模型）。缺任一
     // longhand / 不可重组 / 非家族名返空串（shim 判空回落空值语义）。委托
-    // [`gap_rule_shorthand_reconstruct_from_style`]。纯函数，无 DOM 状态。
+    // [`gap_rule_shorthand_reconstruct_from_style`]。刀 N 三期：`font` 名分派
+    // [`css_style_declaration::font_shorthand_reconstruct_from_style`]（shim
+    // readProp font 旁路臂同回调——防逐出裁决 + canonical 串化单点）。纯函数，
+    // 无 DOM 状态。
     sandbox.register_callback(
         "__zw_style_shorthand_reconstruct",
         Box::new(|args: &[String]| -> String {
@@ -4405,7 +4408,15 @@ pub fn register_dom_callbacks(
             // 同口径」先例一致（R5334）。
             #[cfg(feature = "v8")]
             {
-                crate::dom_bindings::css_style_declaration::gap_rule_shorthand_reconstruct_from_style(raw, prop)
+                let gap =
+                    crate::dom_bindings::css_style_declaration::gap_rule_shorthand_reconstruct_from_style(raw, prop);
+                if !gap.is_empty() {
+                    return gap;
+                }
+                if prop.eq_ignore_ascii_case("font") {
+                    return crate::dom_bindings::css_style_declaration::font_shorthand_reconstruct_from_style(raw);
+                }
+                String::new()
             }
             #[cfg(not(feature = "v8"))]
             {

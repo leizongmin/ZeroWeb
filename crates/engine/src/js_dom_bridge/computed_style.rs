@@ -30,15 +30,16 @@ use zero_style_system::{
     CaretColorComputedValue, CaretShapeComputedValue, ColumnCountComputedValue, ColumnFillComputedValue,
     ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
     ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
-    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontKerningValue, FontSizeAdjustBasis,
-    FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantCapsValue,
-    FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
-    ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
-    ListStyleImageComputedValue, MaskClipComputedValue, MaskCompositeComputedValue, MaskGeometryBoxComputedValue,
-    MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue,
-    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue,
-    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontFeatureSettingsValue, FontKerningValue,
+    FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantCapsValue,
+    FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue, FontVariationSettingsValue,
+    GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue,
+    JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MaskClipComputedValue,
+    MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue,
+    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
+    TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
     TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
     UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
@@ -2749,6 +2750,25 @@ fn font_family_to_css(families: &[String]) -> String {
 /// <family>`，省初值（style normal / weight 400 / line-height normal）。Chromium 150 oracle：
 /// `font:italic bold 14px/1.5 Arial`→`"italic 700 14px / 21px Arial"`、默认→`"16px \"Times New Roman\""`。
 fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
+    // 刀 N 三期（css-fonts-4 §font-prop serialization-prevention，computed 面）：
+    // 简写不可表达的长手计算值 → font 计算串恒空（WPT
+    // font-shorthand-serialization-prevention computed 半边驱动；css-wide
+    // keyword 覆写经 computed 解析已归位，无关键字形态可拦）。
+    if style.font_size_adjust != FontSizeAdjustValue::None
+        || style.font_kerning != FontKerningValue::Auto
+        || style.font_variant_ligatures.common.is_some()
+        || style.font_variant_ligatures.discretionary.is_some()
+        || style.font_variant_ligatures.historical.is_some()
+        || style.font_variant_ligatures.contextual.is_some()
+        || style.font_variant_position != FontVariantPositionValue::Normal
+        || style.font_variant_numeric != FontVariantNumericValue::Normal
+        || style.font_variant_alternates != FontVariantAlternatesValue::Normal
+        || style.font_variant_east_asian != FontVariantEastAsianValue::Normal
+        || style.font_feature_settings != FontFeatureSettingsValue::Normal
+        || style.font_variation_settings != FontVariationSettingsValue::Normal
+    {
+        return String::new();
+    }
     let mut parts = Vec::new();
     let fs = font_style_str(&style.font_style);
     if fs != "normal" {
@@ -2756,7 +2776,11 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     }
     // 刀 N：font-variant 位（css-fonts-4 §font-prop 简写语法 <font-variant-css21>；
     // small-caps 形计算串化保留——font-computed.html canonical 驱动）。
+    // 刀 N 三期：位超 CSS2 子集（all-small-caps 等简写不可表达）→ 整串防逐出。
     if style.font_variant_caps != FontVariantCapsValue::Normal {
+        if style.font_variant_caps != FontVariantCapsValue::SmallCaps {
+            return String::new();
+        }
         parts.push(font_variant_caps_str(&style.font_variant_caps));
     }
     let fw = font_weight_str(&style.font_weight);
@@ -2764,8 +2788,23 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
         parts.push(fw);
     }
     // 刀 N：stretch 关键字 canonical 形（css-fonts-4 §font-width-prop 关键字
-    // ↔百分比映射反查——`parse_font_stretch` 同表单源；表外百分比保 % 形）。
+    // ↔百分比映射反查——`parse_font_stretch` 同表单源）。刀 N 三期：表外
+    // 百分比（95% 等）简写位不可表达 → 整串防逐出（% 保形臂撤——
+    // serialization-prevention computed 面 95% 拒串化驱动）。
     if (style.font_stretch - 100.0).abs() > f32::EPSILON {
+        if !matches!(
+            style.font_stretch,
+            p if (p - 50.0).abs() < 0.01
+                || (p - 62.5).abs() < 0.01
+                || (p - 75.0).abs() < 0.01
+                || (p - 87.5).abs() < 0.01
+                || (p - 112.5).abs() < 0.01
+                || (p - 125.0).abs() < 0.01
+                || (p - 150.0).abs() < 0.01
+                || (p - 200.0).abs() < 0.01
+        ) {
+            return String::new();
+        }
         parts.push(font_stretch_keyword_str(style.font_stretch));
     }
     // size 恒显；line-height 非 normal 显作 "size / lh"。

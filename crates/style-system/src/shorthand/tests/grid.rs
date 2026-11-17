@@ -817,7 +817,9 @@ fn test_shorthand_border_radius_two_values() {
 /// font 简写展开：bold 16px/1.5 sans-serif → font-weight, font-size, line-height, font-family
 fn test_shorthand_font_bold_size_line_family() {
     let result = expand_one("font", "bold 16px/1.5 sans-serif", false, (0, 0, 1));
-    assert_eq!(result.len(), 13);
+    // 16 槽：core 5 + variant/stretch/kerning reset + css-fonts-4 §font-prop
+    // 子属性复位（size-adjust/feature-settings/variation-settings）。
+    assert_eq!(result.len(), 16);
     assert_eq!(result[0].0, "font-style");
     assert_eq!(result[0].1, "normal");
     assert_eq!(result[1].0, "font-weight");
@@ -838,7 +840,7 @@ fn test_shorthand_font_bold_size_line_family() {
 ///（math 函数内部空白/逗号不是组件边界；CSS Fonts §4 size 接受 <length-percentage> math）。
 fn r3752_font_spaced_math_size() {
     let result = expand_one("font", "min(10px, 2em) serif", false, (0, 0, 1));
-    assert_eq!(result.len(), 13);
+    assert_eq!(result.len(), 16); // 复位集扩展见 test_shorthand_font_bold_size_line_family
     assert_eq!(result[2].0, "font-size");
     assert_eq!(result[2].1, "min(10px, 2em)");
     assert_eq!(result[4].0, "font-family");
@@ -849,7 +851,7 @@ fn r3752_font_spaced_math_size() {
 /// R3752：`font: calc(2em + 4px)/1.5 serif` attached math size / line-height。
 fn r3752_font_attached_math_size_line_height() {
     let result = expand_one("font", "calc(2em + 4px)/1.5 serif", false, (0, 0, 1));
-    assert_eq!(result.len(), 13);
+    assert_eq!(result.len(), 16); // 复位集扩展见 test_shorthand_font_bold_size_line_family
     assert_eq!(result[2].1, "calc(2em + 4px)");
     assert_eq!(result[3].0, "line-height");
     assert_eq!(result[3].1, "1.5");
@@ -860,7 +862,7 @@ fn r3752_font_attached_math_size_line_height() {
 /// R3752：`font: bold clamp(1em, 2vw, 20px) / 2 sans-serif` spaced slash + math size。
 fn r3752_font_spaced_slash_math_size() {
     let result = expand_one("font", "bold clamp(1em, 2vw, 20px) / 2 sans-serif", false, (0, 0, 1));
-    assert_eq!(result.len(), 13);
+    assert_eq!(result.len(), 16); // 复位集扩展见 test_shorthand_font_bold_size_line_family
     assert_eq!(result[1].1, "bold");
     assert_eq!(result[2].1, "clamp(1em, 2vw, 20px)");
     assert_eq!(result[3].1, "2");

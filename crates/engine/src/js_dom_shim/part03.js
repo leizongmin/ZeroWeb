@@ -23293,6 +23293,16 @@
       return found;
     };
     var readProp = function (name) {
+      // 刀 N 三期：font 简写读旁路（css-fonts-4 §font-prop serialization）——raw
+      // `font:` 声明与旁路 longhand 覆写声明共存（写面原文落库单点不变），宿主
+      // 回调整体裁决（位解析 + 防逐出 + canonical 串化，`font_shorthand_
+      // reconstruct_from_style` 单点）：空串 = 不可串化（spec shorthand getter
+      // 空值语义）直返，不回落 raw 声明读。quickjs 腿回调恒空串（v8 门控惯例，
+      // gap-rule 臂同口径）。
+      if (_styleDeclName(name) === 'font'
+          && typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        return String(globalThis.__zw_style_shorthand_reconstruct(readRaw(), 'font'));
+      }
       var v = readDeclValue(name);
       if (v != null) return _styleValueAndPriority(v).value;
       // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 简写读重组（T50 面同
@@ -31060,6 +31070,13 @@ return e;
       return v == null ? '' : _styleValueAndPriority(v).value;
     };
     var readProp = function(name) {
+      // 刀 N 三期：font 简写读旁路（css-fonts-4 §font-prop serialization）——
+      // 同 _zwMStyleProxy 面 font 臂：宿主回调整体裁决（防逐出 + canonical
+      // 串化），空串按 spec 空值语义直返。quickjs 腿回调恒空串（惯例同上）。
+      if (_styleDeclName(name) === 'font'
+          && typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        return String(globalThis.__zw_style_shorthand_reconstruct(readRaw(), 'font'));
+      }
       if (_styleDeclName(name) === 'position-try') {
         var tO = readLonghand('position-try-order');
         var tF = readLonghand('position-try-fallbacks');

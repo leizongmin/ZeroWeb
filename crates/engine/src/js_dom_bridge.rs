@@ -6289,6 +6289,16 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
         }
         return zero_css_parser::values::parse_counter_list_grammar(val).is_some();
     }
+    // 刀 N 三期：`font` 简写 supports 门前置——known_properties 注册表只列长手
+    // （无 `font` 简写项），尾部注册表门恒假使 style-system apply font oracle
+    // 臂（刀 N 一期，apply_property_value_with_quirks font 臂 →
+    // font_shorthand_supported 文法单源）成死码；此处直调该臂恢复生效。驱动：
+    // font-computed.html `CSS.supports('font', …)` 前置门 309F + system-fonts
+    // interpolation 页 from/to 门 588F。
+    // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+    if prop == "font" {
+        return zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false, Some((1, 1)));
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
         // tree-counting 页 `CSS.supports('z-index', 'calc(2 * sibling-index())')`

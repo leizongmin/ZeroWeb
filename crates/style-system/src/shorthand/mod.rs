@@ -3019,29 +3019,15 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 "font-variant-alternates",
                 "font-stretch",
                 "font-kerning",
+                // css-fonts-4 §font-prop：简写 set 先复位全部子属性（同 bits 臂）。
+                "font-size-adjust",
+                "font-feature-settings",
+                "font-variation-settings",
             ],
             important,
             specificity,
         );
     }
-
-    let mut weight = "normal".to_string();
-    let mut style = "normal".to_string();
-    // R3890：font 简写的 font-variant 位（CSS2.1 语法仅 normal | small-caps；
-    // Fonts 4 将其扩展为 <'font-variant-caps'> 值域）。
-    let mut variant_caps: Option<String> = None;
-    // 刀 N（css-fonts-4 §font-prop 语法）：font-stretch 位（<font-stretch-css3>
-    // = normal | 九关键字；% 形仅 longhand 文法，简写位不收）。
-    let mut stretch: Option<String> = None;
-    // 刀 N：非 normal 值逐位至多一次（css-fonts-4 `||` 组合器语义；normal 是
-    // 四位各自合法值、可多次出现作占位——font-computed.html 排列空间驱动）。
-    let mut style_seen = false;
-    let mut variant_seen = false;
-    let mut weight_seen = false;
-    let mut stretch_seen = false;
-    let mut size = "medium".to_string();
-    let mut line_height = "normal".to_string();
-    let mut family = String::new();
 
     let system_fonts = ["caption", "icon", "menu", "message-box", "small-caption", "status-bar"];
     if system_fonts.contains(&value.to_ascii_lowercase().as_str()) {
@@ -3060,8 +3046,90 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             mk("font-variant-alternates", "normal"),
             mk("font-stretch", "normal"),
             mk("font-kerning", "auto"),
+            // css-fonts-4 §font-prop：简写 set 先复位全部子属性。
+            mk("font-size-adjust", "none"),
+            mk("font-feature-settings", "normal"),
+            mk("font-variation-settings", "normal"),
         ];
     }
+
+    // 刀 N 三期：位解析单源抽出（[parse_font_shorthand_parts]——展开面与
+    // inline specified 重组面（engine font_shorthand_reconstruct）共用位模型）。
+    let Some(bits) = parse_font_shorthand_parts(value) else {
+        return vec![];
+    };
+
+    vec![
+        mk("font-style", &bits.style),
+        mk("font-weight", &bits.weight),
+        mk("font-size", &bits.size),
+        mk("line-height", &bits.line_height),
+        mk("font-family", &bits.family),
+        // CSS Fonts 4 §4: font shorthand resets font-variant, font-stretch, and font-kerning.
+        mk("font-variant-ligatures", "normal"),
+        // R3890：font-variant 位存在时以其值覆盖 reset（否则保持 reset 到 normal）。
+        mk("font-variant-caps", bits.variant_caps.as_deref().unwrap_or("normal")),
+        mk("font-variant-numeric", "normal"),
+        mk("font-variant-east-asian", "normal"),
+        mk("font-variant-position", "normal"),
+        mk("font-variant-alternates", "normal"),
+        // 刀 N：font-stretch 位存在时以其关键字值覆盖 reset（否则 reset 到 normal）。
+        mk("font-stretch", bits.stretch.as_deref().unwrap_or("normal")),
+        mk("font-kerning", "auto"),
+        // css-fonts-4 §font-prop：简写 set 先复位全部子属性（"All subproperties
+        // of the font property are first reset to their initial values"）。
+        // FIXME: font-synthesis(+weight/style/small-caps/position) 与 font-width
+        // 亦属复位集，apply 面接受形未验证，暂缓。
+        mk("font-size-adjust", "none"),
+        mk("font-feature-settings", "normal"),
+        mk("font-variation-settings", "normal"),
+    ]
+}
+
+/// font 简写 declared 值位结构（[parse_font_shorthand_parts] 产物）。
+/// 位值均为 declared 原文形（不归一不计算），展开面与 inline specified
+/// 重组面（engine `font_shorthand_reconstruct`）共用同一份位语义。
+pub struct FontShorthandParts {
+    /// font-style 位（italic/oblique 原文；`normal` = 未出现占位）。
+    pub style: String,
+    /// font-variant 位（<'font-variant-caps'> 单 token 原文；`None` = 未出现）。
+    pub variant_caps: Option<String>,
+    /// font-weight 位（normal/bold/bolder/lighter/100–900 原文）。
+    pub weight: String,
+    /// font-stretch 位（九关键字原文；`None` = 未出现）。
+    pub stretch: Option<String>,
+    /// font-size 位（必填；关键字/长度/math 函数原文）。
+    pub size: String,
+    /// line-height 位（`normal` = 未出现占位）。
+    pub line_height: String,
+    /// font-family 位（必填；文法校验后的原文）。
+    pub family: String,
+}
+
+/// font 简写值文法解析（位提取，css-fonts-4 §font-prop 文法单源）。
+/// 文法门与 [expand_font] 展开判定完全同源：size/family 必填、非 normal
+/// 值逐位至多一次（`||` 组合器）、family 位委托
+/// [crate::property::parse::parse_font_family]（含刀 N 二期 CSS-wide
+/// keyword 列表拒收门）。system font 关键字与整条 CSS-wide keyword 声明
+/// 由调用方前置臂处理，不在本文法内。`None` = 文法 invalid。
+pub fn parse_font_shorthand_parts(value: &str) -> Option<FontShorthandParts> {
+    let mut weight = "normal".to_string();
+    let mut style = "normal".to_string();
+    // R3890：font 简写的 font-variant 位（CSS2.1 语法仅 normal | small-caps；
+    // Fonts 4 将其扩展为 <'font-variant-caps'> 值域）。
+    let mut variant_caps: Option<String> = None;
+    // 刀 N（css-fonts-4 §font-prop 语法）：font-stretch 位（<font-stretch-css3>
+    // = normal | 九关键字；% 形仅 longhand 文法，简写位不收）。
+    let mut stretch: Option<String> = None;
+    // 刀 N：非 normal 值逐位至多一次（css-fonts-4 `||` 组合器语义；normal 是
+    // 四位各自合法值、可多次出现作占位——font-computed.html 排列空间驱动）。
+    let mut style_seen = false;
+    let mut variant_seen = false;
+    let mut weight_seen = false;
+    let mut stretch_seen = false;
+    let mut size = "medium".to_string();
+    let mut line_height = "normal".to_string();
+    let mut family = String::new();
 
     let is_weight = |s: &str| {
         matches!(
@@ -3145,16 +3213,14 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                     | LengthValue::Ic(v)
                     | LengthValue::Ric(v)
                     | LengthValue::Percentage(v)
-                ) if v >= 0.0
+            ) if v >= 0.0
         ) || zero_css_parser::values::parse_math_function(s).is_some()
     };
 
     // 找到 size 部分：包含数字或者带 / 的部分。
     // R3752：math 函数内部空白不是组件边界（`font: min(10px, 2em) serif`、
     // `font: calc(2em + 4px)/1.5 serif`）——括号/引号感知顶层空白切分。
-    let Some(parts) = split_top_level_whitespace(value) else {
-        return vec![];
-    };
+    let parts = split_top_level_whitespace(value)?;
     let mut size_found = false;
     let mut family_parts: Vec<&str> = Vec::new();
 
@@ -3186,7 +3252,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             // attached size/line-height 格式
             let sub: Vec<&str> = part.splitn(2, '/').collect();
             if !is_font_size(sub[0]) {
-                return vec![];
+                return None;
             }
             size = sub[0].to_string();
             if sub.len() > 1 {
@@ -3212,7 +3278,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             stretch = Some(part.to_string());
             stretch_seen = true;
         } else {
-            return vec![];
+            return None;
         }
     }
 
@@ -3224,13 +3290,13 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // 如果没有找到 size 部分，声明无效（除非是系统字体关键字）
     if !size_found {
         // 无效的 font 简写声明
-        return vec![];
+        return None;
     }
     // 刀 N：font-family 亦为必填位（css-fonts-4 §font-prop：<'font-size'>
     // 与 <'font-family'> 不可省；`font: 16px` 形此前落入空 family 声明
     // 半展开——font-invalid 拒面）。
     if family_parts.is_empty() {
-        return vec![];
+        return None;
     }
     // 刀 N：family 文法校验委托 longhand 单源（[`parse_font_family`]——ident
     // 字符集/引号形同一裁决，css-fonts-4 §family-name-value）。简写 family 位
@@ -3246,34 +3312,25 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     if crate::property::parse::font_family_list_has_css_wide_keyword(&family)
         || crate::property::parse::parse_font_family(&family).is_empty()
     {
-        return vec![];
+        return None;
     }
 
     // CSS 规范：font 简写中 line-height 为负值时，整个声明无效
     // CSS Fonts §3.7: "Values have the same meanings as for their non-shorthand equivalents.
     // Negative <line-height> values are illegal."
     if line_height.starts_with('-') {
-        return vec![];
+        return None;
     }
 
-    vec![
-        mk("font-style", &style),
-        mk("font-weight", &weight),
-        mk("font-size", &size),
-        mk("line-height", &line_height),
-        mk("font-family", &family),
-        // CSS Fonts 4 §4: font shorthand resets font-variant, font-stretch, and font-kerning.
-        mk("font-variant-ligatures", "normal"),
-        // R3890：font-variant 位存在时以其值覆盖 reset（否则保持 reset 到 normal）。
-        mk("font-variant-caps", variant_caps.as_deref().unwrap_or("normal")),
-        mk("font-variant-numeric", "normal"),
-        mk("font-variant-east-asian", "normal"),
-        mk("font-variant-position", "normal"),
-        mk("font-variant-alternates", "normal"),
-        // 刀 N：font-stretch 位存在时以其关键字值覆盖 reset（否则 reset 到 normal）。
-        mk("font-stretch", stretch.as_deref().unwrap_or("normal")),
-        mk("font-kerning", "auto"),
-    ]
+    Some(FontShorthandParts {
+        style,
+        variant_caps,
+        weight,
+        stretch,
+        size,
+        line_height,
+        family,
+    })
 }
 
 /// 展开 text-decoration 简写。

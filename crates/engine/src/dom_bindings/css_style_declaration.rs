@@ -420,6 +420,203 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
     gap_rule_reconstruct(&decls, prop).unwrap_or_default()
 }
 
+/// 刀 N 三期：font 简写 inline specified 读重组（css-fonts-4 §font-prop
+/// serialization 面——shorthand getter 串化）。写面原文落库单点不变（
+/// raw `font:` 声明 + 旁路 longhand 覆写声明共存），本函数从 style
+/// attribute 原文域整体裁决：
+/// - system font 关键字（caption 族）与整条 CSS-wide keyword 声明原样回显
+///   （specified 面保留关键字形态，Blink 同形）。
+/// - 位解析走 style-system [`zero_style_system::parse_font_shorthand_parts`]
+///   文法单源（刀 N 三期抽出——与 expand_font 展开判定同源）。
+/// - 旁路 longhand 覆写合并（core 位替换；`font-variant` 简写覆写按位
+///   解释）；CSS-wide keyword 落在任一 core 覆写 → 空串（specified 面防逐出）。
+/// - 防逐出门（简写不可表达 → 空串）：reset 长手非初始（size-adjust/
+///   kerning/ligatures/position/numeric/alternates/east-asian/feature-settings/
+///   variation-settings/language-override/optical-sizing/emoji/synthesis）、
+///   variant 位超 CSS2 子集（仅 normal|small-caps 可串化）、stretch 位
+///   非关键字（% 形简写位不收——css-fonts-4 §font-width-prop）。
+/// - canonical 序 = style variant-caps weight stretch size [/ lh] family
+///   （normal 位省略；非 normal lh 用 ` / ` 间隔——font-valid.html canonical
+///   面驱动；序列化顺序与 [font_shorthand_to_css] computed 面一致）。
+///
+/// 非 font 名由调用方分派；无 `font` 声明 / 文法 invalid / 防逐出命中 →
+/// 空串（shim 判空按 spec 空值语义直返）。
+/// <https://drafts.csswg.org/css-fonts-4/#font-prop>
+pub(crate) fn font_shorthand_reconstruct_from_style(raw: &str) -> String {
+    // 1. 声明串解析（`n: v; n2: v2` attr 原文域；名 lowercase 兜底未归一源形；
+    //    值剥 `!important`（priority 不参与位模型）；last-wins（R3213 同口径）。
+    //    刀 N 三期 b2：段序仲裁——attr 串序即声明序，font 之后的覆写才生效
+    //    （CSSOM 简写 set 复位子属性：font 前的旧长手声明被简写覆写屏蔽；
+    //    font 之后的长手覆写合法获胜）。驱动：test_font_family_parsing.html
+    //    102F——fontFamily setter 先行落库的旧 font-family 覆盖简写位。
+    let mut font_value: Option<String> = None;
+    let mut font_idx: usize = usize::MAX;
+    let mut overrides: Vec<(String, String, usize)> = Vec::new();
+    for (idx, seg) in raw.split(';').enumerate() {
+        let seg = seg.trim();
+        if seg.is_empty() {
+            continue;
+        }
+        let Some((name, val)) = seg.split_once(':') else {
+            continue;
+        };
+        let name = name.trim().to_ascii_lowercase();
+        if name.is_empty() {
+            continue;
+        }
+        let (core, _) = split_priority(val.trim());
+        if name == "font" {
+            font_value = Some(core);
+            font_idx = idx;
+        } else {
+            overrides.push((name, core, idx));
+        }
+    }
+    let Some(font_value) = font_value else {
+        return String::new();
+    };
+    let lower = font_value.to_ascii_lowercase();
+    // system font 关键字：原样回显。
+    const SYSTEM_FONTS: [&str; 6] = ["caption", "icon", "menu", "message-box", "small-caption", "status-bar"];
+    if SYSTEM_FONTS.contains(&lower.as_str()) {
+        return font_value;
+    }
+    // 整条 CSS-wide keyword 声明：原样回显（cssom-1 §serialize 惯例）。
+    if matches!(
+        lower.as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "default"
+    ) {
+        return font_value;
+    }
+    // 2. 位解析（style-system 文法单源）。
+    let mut bits = match zero_style_system::parse_font_shorthand_parts(&font_value) {
+        Some(bits) => bits,
+        None => return String::new(),
+    };
+    // 3. 旁路覆写合并 + 防逐出门（仅 font 声明之后的段参与；段序仲裁见 1）。
+    let mut ligatures_nonnormal = false;
+    for (name, value, idx) in &overrides {
+        if *idx <= font_idx {
+            continue;
+        }
+        let vl = value.to_ascii_lowercase();
+        // CSS-wide keyword 落任一覆写 → specified 面不可串化（css-cascade-5
+        // §css-wide-keywords：shorthand getter 无关键字整体形可表达）。
+        if matches!(
+            vl.as_str(),
+            "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "default"
+        ) {
+            return String::new();
+        }
+        match name.as_str() {
+            // core 位替换（verbatim declared 文本）。
+            "font-style" => bits.style = value.clone(),
+            "font-weight" => bits.weight = value.clone(),
+            "font-size" => bits.size = value.clone(),
+            "line-height" => bits.line_height = value.clone(),
+            "font-family" => bits.family = value.clone(),
+            "font-variant-caps" => bits.variant_caps = Some(value.clone()),
+            "font-stretch" => bits.stretch = Some(value.clone()),
+            // `font-variant` 简写覆写按位解释（css-fonts-4 §font-variant-prop）：
+            // normal = 全 normal；none = ligatures none；单 token caps 位 →
+            // variant 位；其余复合形态简写不可表达 → 空串。
+            "font-variant" => {
+                if vl == "none" {
+                    ligatures_nonnormal = true;
+                } else if vl != "normal" {
+                    let caps_table = [
+                        "small-caps",
+                        "all-small-caps",
+                        "petite-caps",
+                        "all-petite-caps",
+                        "unicase",
+                        "titling-caps",
+                    ];
+                    if !caps_table.contains(&vl.as_str()) {
+                        return String::new();
+                    }
+                    bits.variant_caps = Some(value.clone());
+                }
+            }
+            // reset 长手非初始 → 防逐出（css-fonts-4 §font-prop serialization：
+            // 简写不可表达的长手值阻止 shorthand getter 串化）。
+            "font-size-adjust" if vl != "none" => return String::new(),
+            "font-kerning" if vl != "auto" => return String::new(),
+            "font-variant-ligatures" if vl != "normal" => return String::new(),
+            "font-variant-position"
+            | "font-variant-numeric"
+            | "font-variant-alternates"
+            | "font-variant-east-asian"
+            | "font-variant-emoji"
+            | "font-feature-settings"
+            | "font-variation-settings"
+            | "font-language-override"
+            | "font-synthesis"
+            | "font-synthesis-weight"
+            | "font-synthesis-style"
+            | "font-synthesis-small-caps"
+            | "font-synthesis-position"
+                if vl != "normal" && vl != "auto" =>
+            {
+                return String::new();
+            }
+            "font-optical-sizing" if vl != "auto" => return String::new(),
+            _ => {}
+        }
+    }
+    if ligatures_nonnormal {
+        return String::new();
+    }
+    // 4. 位门：variant 位 CSS2 子集（css-fonts-4 §font-prop <font-variant-css21>）
+    //    与 stretch 位关键字（九关键字；% 形不可串化）。
+    if let Some(caps) = &bits.variant_caps
+        && !matches!(caps.to_ascii_lowercase().as_str(), "normal" | "small-caps")
+    {
+        return String::new();
+    }
+    if let Some(stretch) = &bits.stretch
+        && !matches!(
+            stretch.to_ascii_lowercase().as_str(),
+            "normal"
+                | "ultra-condensed"
+                | "extra-condensed"
+                | "condensed"
+                | "semi-condensed"
+                | "semi-expanded"
+                | "expanded"
+                | "extra-expanded"
+                | "ultra-expanded"
+        )
+    {
+        return String::new();
+    }
+    // 5. canonical 组合（normal 位省略；declared 原文 verbatim）。
+    let mut parts: Vec<String> = Vec::new();
+    if bits.style != "normal" {
+        parts.push(bits.style);
+    }
+    if let Some(caps) = &bits.variant_caps
+        && caps != "normal"
+    {
+        parts.push(caps.clone());
+    }
+    if bits.weight != "normal" {
+        parts.push(bits.weight);
+    }
+    if let Some(stretch) = &bits.stretch
+        && stretch != "normal"
+    {
+        parts.push(stretch.clone());
+    }
+    if bits.line_height != "normal" {
+        parts.push(format!("{} / {}", bits.size, bits.line_height));
+    } else {
+        parts.push(bits.size);
+    }
+    parts.push(bits.family);
+    parts.join(" ")
+}
+
 /// 三维段联合重组：逐维 top-level 逗号拆段、段数全等才联合；段结构（Plain /
 /// repeat head+循环长）逐段一致；单段形初始分量省略（style none / color
 /// currentcolor / width medium——其余全省时保 width 锚，语料 valid 页钉）。
