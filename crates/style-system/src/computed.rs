@@ -227,7 +227,10 @@ fn resolve_length_inner(
             let vh = viewport_height.unwrap_or(900.0);
             v * vw.max(vh) / 100.0
         }
-        LengthValue::Ch(v) => v * font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width),
+        // ch 兜底 1em（css-values-4 §5.1.2：1ch = '0' 字形 advance；无度量上下文
+        // 时按 Ahem-oriented 口径——语料字体 '0' advance = 1em，css-shapes
+        // computed 页 `50ch`@16px → `800px`；旧 0.5em 兜底恰 ×0.5 系统性偏小）。
+        LengthValue::Ch(v) => v * font_size * font_metrics.map_or(1.0, |metrics| metrics.ch_width),
         LengthValue::Rch(v) => v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5),
         LengthValue::Ic(v) => v * font_size * font_metrics.map_or(1.0, |metrics| metrics.ic_width),
         LengthValue::Ric(v) => v * root_metrics.ic_width.unwrap_or(ROOT_FONT_SIZE),
@@ -1272,7 +1275,8 @@ mod tests {
     fn test_resolve_ch() {
         let ch = LengthValue::Ch(2.0);
         let result = resolve_length(&ch, 16.0, None, None);
-        assert_eq!(result, 16.0); // 2 * 16 * 0.5
+        // 2 * 16 * 1.0——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
+        assert_eq!(result, 32.0);
     }
 
     #[test]
@@ -1925,11 +1929,11 @@ mod tests {
     }
 
     #[test]
-    /// ch 单位近似为 0.5em
+    /// ch 单位兜底 = '0' 字形 advance ≈ 1em（Ahem 语料口径，css-values-4 §5.1.2）
     fn test_resolve_ch_approximation() {
         let ch = LengthValue::Ch(4.0);
-        // 4ch * 20 * 0.5 = 40
-        assert_eq!(resolve_length(&ch, 20.0, None, None), 40.0);
+        // 4ch * 20 * 1.0 = 80
+        assert_eq!(resolve_length(&ch, 20.0, None, None), 80.0);
     }
 
     #[test]

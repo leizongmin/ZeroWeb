@@ -399,9 +399,10 @@ fn test_apply_property_border_image_width_length_units() {
         style.border_image_width.top,
         BorderImageWidthComputedComponent::Length(16.0)
     );
+    // 2ch@16px = 32px——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
     assert_eq!(
         style.border_image_width.right,
-        BorderImageWidthComputedComponent::Length(16.0)
+        BorderImageWidthComputedComponent::Length(32.0)
     );
 }
 
@@ -570,9 +571,10 @@ fn test_apply_property_border_image_outset_length_units() {
         style.border_image_outset.top,
         BorderImageOutsetComputedComponent::Length(16.0)
     );
+    // 2ch@16px = 32px——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
     assert_eq!(
         style.border_image_outset.right,
-        BorderImageOutsetComputedComponent::Length(16.0)
+        BorderImageOutsetComputedComponent::Length(32.0)
     );
 }
 
@@ -657,7 +659,8 @@ fn test_apply_text_shadow_accepts_length_units() {
     assert!(apply_property_value(&mut style, "text-shadow", "1em 2ch 3px red"));
     let s = &style.text_shadow[0];
     assert_eq!(s.offset_x, 16.0);
-    assert_eq!(s.offset_y, 16.0);
+    // 2ch@16px = 32px——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
+    assert_eq!(s.offset_y, 32.0);
     assert_eq!(s.blur_radius, 3.0);
 }
 
@@ -744,7 +747,8 @@ fn test_apply_box_shadow_accepts_length_units() {
     assert!(apply_property_value(&mut style, "box-shadow", "1em 2ch 3px 0.5em blue"));
     let s = &style.box_shadow[0];
     assert_eq!(s.offset_x, 16.0);
-    assert_eq!(s.offset_y, 16.0);
+    // 2ch@16px = 32px——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
+    assert_eq!(s.offset_y, 32.0);
     assert_eq!(s.blur_radius, 3.0);
     assert_eq!(s.spread_radius, 8.0);
 }
@@ -1387,7 +1391,8 @@ fn test_apply_border_spacing_accepts_length_units() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "border-spacing", "1em 2ch"));
     assert_eq!(style.border_spacing.horizontal, 16.0);
-    assert_eq!(style.border_spacing.vertical, 16.0);
+    // 2ch@16px = 32px——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
+    assert_eq!(style.border_spacing.vertical, 32.0);
 }
 
 /// 验证 border-spacing 对无效值返回 false。

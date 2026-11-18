@@ -2127,14 +2127,29 @@ fn image_rendering_str(r: &ImageRenderingValue) -> String {
 }
 
 /// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。
-/// 整数无小数点（`16px`/`50%`/`0px`），小数去尾零（`19.2px`）。四舍五入到 1e-3 抑制
-/// f64 累积噪声（如 em 解析 `1.2 * 16 = 19.200000000000003` → `19.2px`）。
+/// Chromium 侧数值串为 6 位有效数字、去尾零（CSSOM serialize decimal 精度口径，
+/// 语料驱动：css-shapes computed 页 `50pt`→`66.6667px`、`1pt`→`1.33333px`——
+/// 旧千分位 `66.667px`/`1.333px` 与 oracle 串不等）；整数无小数点
+/// （`16px`/`50%`/`0px`）。6 位有效舍入同时抑制 f64 累积噪声（如 em 解析
+/// `1.2 * 16 = 19.200000000000003` → `19.2px`）。≥1e6 数量级保留全整数位
+/// （语料无大数量级驱动，FIXME: %.6g 科学计数口径挂账）。
 pub(crate) fn format_num(v: f64, suffix: &str) -> String {
-    let r = (v * 1000.0).round() / 1000.0;
+    let r = if v == 0.0 || !v.is_finite() {
+        v
+    } else {
+        let decimals = (5 - v.abs().log10().floor() as i32).max(0);
+        let f = 10f64.powi(decimals);
+        (v * f).round() / f
+    };
     if r == r.trunc() {
         format!("{}{}", r as i64, suffix)
     } else {
-        format!("{r}{suffix}")
+        let decimals = (5 - r.abs().log10().floor() as i32).max(0) as usize;
+        format!("{:.*}", decimals, r)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+            + suffix
     }
 }
 
@@ -2211,6 +2226,13 @@ fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64
         root_font_size: Some(16.0),
         viewport_width: Some(gcs_vw),
         viewport_height: Some(gcs_vh),
+        // 静态度量兜底（同 style-system `resolve_length_inner` ex 0.8 / ch 1.0
+        // Ahem-oriented 口径）：桥层无字体度量，不填则 Ex/Ch 静态叶 eval None
+        // → 整串 `''`（css-shapes computed 页 `calc(70ex)`→`896px` 驱动；
+        // css-values-4 §5.1.1 ex=x-height、§5.1.2 ch='0' advance，Ahem 两度量
+        // 分别 0.8em/1em）。
+        x_height: Some(font_size_px * 0.8),
+        ch_width: Some(font_size_px),
         sibling_ordinal: sibling.map(|(o, _)| o),
         sibling_count: sibling.map(|(_, c)| c),
         ..Default::default()
@@ -5305,7 +5327,7 @@ mod computed_calc_serialize_tests {
     //! 语料驱动：calc-mix-serialize.tentative / calc-mix-computed.tentative
     //! （挂账 43F 桶 Tier 1 面；width used %-形挂 layout 桶不在本面）。
 
-    use super::{calc_computed_to_css, length_to_css};
+    use super::{calc_computed_to_css, format_num, length_to_css};
     use zero_css_parser::values::{
         CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, LengthValue, TreeCountingFn, UnaryMathOp,
     };
@@ -5452,6 +5474,36 @@ mod computed_calc_serialize_tests {
         );
         // 多参含 % 不项化（fail-closed，语料无驱动）→ ''。
         assert_eq!(length_to_css(&calc(CalcExpr::Min(vec![px(1.5), pct(10.0)])), 16.0), "");
+    }
+
+    #[test]
+    fn calc_static_ex_ch_leaves_resolve_to_px() {
+        // 桥层 CalcContext 静态度量兜底（ex 0.8em / ch 1em，Ahem 口径）——
+        // 未填则 Ex/Ch 静态叶 eval None → 整串 `''`。css-shapes computed 页
+        // `calc(70ex)`→`896px` 驱动（css-values-4 §5.1.1 ex=x-height、
+        // §5.1.2 ch='0' advance，Ahem 两度量分别 0.8em/1em）。
+        assert_eq!(
+            calc_computed_to_css(&CalcExpr::Length(LengthValue::Ex(70.0)), 16.0, None),
+            Some("896px".to_string())
+        );
+        assert_eq!(
+            length_to_css(&calc(add(CalcExpr::Length(LengthValue::Ch(10.0)), px(1.0))), 16.0),
+            "161px"
+        );
+    }
+
+    #[test]
+    fn format_num_six_significant_digits() {
+        // Chromium 6 位有效数字去尾零（CSSOM serialize decimal 精度口径）：
+        // css-shapes computed 页 `50pt`→`66.6667px`、`1pt`→`1.33333px`；
+        // 1234.5678 落 `1234.57px`；≤3 位小数形旧新同串（19.2/16/0.5）。
+        assert_eq!(format_num(66.666_666_66, "px"), "66.6667px");
+        assert_eq!(format_num(4.0 / 3.0, "px"), "1.33333px");
+        assert_eq!(format_num(1234.5678, "px"), "1234.57px");
+        assert_eq!(format_num(19.200_000_000_000_003, "px"), "19.2px");
+        assert_eq!(format_num(16.0, "px"), "16px");
+        assert_eq!(format_num(0.5, "%"), "0.5%");
+        assert_eq!(format_num(0.0, "px"), "0px");
     }
 
     #[test]
