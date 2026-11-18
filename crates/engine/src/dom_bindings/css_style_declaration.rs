@@ -936,6 +936,7 @@ fn ts_family_value(props: &[StyleDecl], prop: &str) -> Option<String> {
 ///   自清形——简写键本车道不落声明位（展开臂先清后落），清键即无残留，净效果
 ///   ＝ spec 声明忽略（invalid set 留原声明不动：单声明位净空两形态等价）；
 /// - 合法 → (名, canonical 值) 名单 longhand JSON（shim 逐名落库，简写键清除）。
+///
 /// 宿主回调 `__zw_style_shorthand_expand`（callbacks.rs 站）经
 /// [`gap_rule_shorthand_expand_json`] 分派消费。
 pub(crate) fn transition_shorthand_expand_json(value: &str) -> String {

@@ -1447,8 +1447,12 @@ impl WorkerMemTrace {
         };
         let before = crate::malloc_stats::mallinfo2_snapshot();
         // SAFETY: `malloc_trim(0)` 只对 malloc 空闲页 madvise 归还，无指针语义、
-        // 不触碰活对象；多线程下 glibc 自带 arena 锁。
+        // 不触碰活对象；多线程下 glibc 自带 arena 锁。符号仅 linux-gnu glibc
+        // 提供，其余目标编译为 no-op（与 mallinfo2_snapshot 同 gate，恒记 false）。
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         let released = unsafe { libc::malloc_trim(0) };
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        let released = 0;
         let after = crate::malloc_stats::mallinfo2_snapshot();
         let line = format!(
             "worker-trim t={ts} released={} before=[{}] after=[{}]",
