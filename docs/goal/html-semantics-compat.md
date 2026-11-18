@@ -2,105 +2,98 @@
 
 **版本**: v2.0
 **日期**: 2026-11-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 567 收口（**守成
-巡查轮 + 三刀+RP1 窗换代零非带位移轮 +
-onblur following-label 双键首现腿间分歧
-挂账轮 + 族带发射分劈摆动轮 + 全桥 +2 换
-代申报轮 + 4h waiter 自治半链收养＋错链
-s566 复跑自纠轮**）——join **stable 8509
-（8303P/200F/5T/1U）disagree 3 + l1only 2
- + l2only 1**（raw 双腿 8516/8515）；vs
-s566 stable（8514）**NEW 0 + GONE 5 +
-flips 0（基线侧状态核对零翻转）**：GONE 5
-全落已知谱摆动族＝**窗内码刀 ×4 非带非哨
-键零位移，刀 G 归因不触发**——onblur
-following-label 双键 s566 双 P→s567 leg1
-P/leg2 F **首现腿间分歧挂账**（时序形预
-注记：s568 回归双 P 按 dialog key2 先例
-一次性结案）＋族带 home-end End/Home 双
-F 持位、PageDown/PageUp leg1-only（leg2
-整页 Timeout 抑制子测行）＋detailed 整文
-件键 F/F→T/F disagree（T 形摆动延续）；
-P 8305→**8303**（-2＝onblur 双键）；F
-203→**200**（-3＝族带三键）；T **5** 恒
-；U 恒 1。runner 40aa6344/128,308,072→
-**7aeb232e/128,363,376 leg1 换代**（pre≠
-mid=post，css-parser→…→zero-wpt-runner
-全链 Compiling，s566 必换代预判兑现；
-窗 73cd58b2e→f566ee431 16 commit＝code
-×4〔×10 批三刀＋**RP1 4c5d59491 批外追
-加**〕＋docs ×10＋CI ×2）——**4h waiter
-自治半链收养**：上轮 session 23:45 五小时
-限额 429 第二例亡故，22:19 v3.2 4h waiter
-亡故期间自治判净 00:28:22＋双腿 00:28–
-00:34；**错链自纠**：20:28 首布 chain 残
-留 /tmp/s566 调用路径，00:34 legs.done 后
-残留版链抢先复跑 s566 旧日志 analyze+
-bridge（确定性恒等无害）而 s567 自身
-analyze 未执行，本 session 01:16 滚入开工
-pull --rebase 捕获批 ×38（详 更正十四）
-后人工补跑收口；00:37 桥测三重 provenance
-核验（runner md5 7aeb232e＝腿同二进制＋
-Compiling ×6＋1713P/0F）确证 s567 树桥测
-回填在册。全桥 **1713P/0F guard rc=0
-（filtered 2476 恒）**，b567.keys（1713）
-＝b566（1711）**+NEW 2＋GONE 0**＝
-indent 桥测钉 d51bc6d55＋RP1 严格门钉
-4c5d59491 申报；**fv1 7effb5d25 未带桥测
-钉＝预判对账关闭**。七哨复核：dialog 哨
-结案转常规连轮**新计第 1 轮 key1/key2 双
-P**；password 哨第 6 轮持位兑现（270 行
-双腿恒全 P／45 password 键双腿 0F／整文
-件键 0）；onblur 组 F 集（parent-label
-双键）stable F/F 恒 ≡ s559 本轮同形逐字
-节 IDENT（d81ad29e 免剥列直比）＋
-following-label 双键分歧挂账如上；mpreload
-哨 15 键双 P 第 29 轮零翻红；waapi 哨
-picker-icon 双 P 第 88 轮/checkmark F/F
-恒形；focus-dynamic 121 键双 P 第 47 轮
-零再现；族带 End/Home 持位＋三键发射分
-劈摆动（退场/回潮不单轮挂账）；双发伪影
-2 键双腿各 ×2 恒照旧在册；rc=2/2 惯例
-stack overflow 计数 0/0。**挂用户门维持**
+**状态**: Active——M2 切片 568 收口（**守成
+巡查轮 + 全谱收敛全赞同轮 + onblur
+following-label 双键回归双 P 结案轮 + 全
+带回潮轮 + 429 亡故全链自治收养轮 + 全桥
++13 换代申报轮 + ipI4 pin 已知因红修复
+补验轮**）——join **stable 8514
+（8305P/202F/6T/1U）disagree 0 + l1only 0
+ + l2only 0**（raw 双腿 8516/8516）＝**全
+赞同轮**；vs s567 stable（8509）**NEW 5 +
+GONE 0 + flips 0（基线侧零翻转）**：NEW 5
+全落 s567 挂账谱摆动族＝**全谱收敛零新分
+歧**——onblur following-label 双键 s566
+双 P→s567 P/F 首现分歧→s568 **双 P 回归
+按 dialog key2 先例一次性结案**（组红池
+余 parent-label 双键 F/F ≡ s559 IDENT）
+＋族带 PageDown/PageUp F/F 回潮＋detailed
+整文件键 T/T 回潮＝**族带全 5 键齐现
+stable 全带回潮形**（End/Home 双 F 持位
+）；P 8303→**8305**（+2＝onblur 双键）
+；F 200→**202**（+2＝PageDown/PageUp）
+；T 5→**6**（+1＝detailed）；U 恒 1。
+runner 7aeb232e/128,363,376→**c535f800/
+128,447,176 leg1 换代 ×3 连兑现**（pre≠
+mid=post，+83,800 bytes，c535f800 与
+rendering 流 R5808 kb49「39代」同 md5
+跨流互证）——**429 第三例亡故全链自治
+收养**：上轮 session 01:35 布置 waiter+
+chain 全链后 04:10 五小时限额 429 亡故；
+03:41:33 判净 HEAD=c2a979534 钉扎起腿→
+leg1 03:41–03:44 Compiling ×17 换代形→
+leg2 Fresh 形→03:47:30 analyze 自治→
+04:25:47 桥测判净→04:26:04 chain.done
+全链无人在场完成，本 session 06:15 开工
+pull ×14（详 s569 窗账）后收养收口。全桥
+**1725P/1F guard rc=101（Fresh 形
+filtered 2479）**＝**test_ip_island_li_dd
+_pins 已知因红**（窗内 a763e74b1 d55 误
+删 ip I4 ⑩ CE-island 臂+sepTag 门＝跨域
+editing 2 键 P2F 同因，修复刀 1cbcb7420
+已落 origin）——**HEAD e3a72c83d 补验
+1727P/0F rc=0（ipI4 pin ok）修复面闭环
+**＋NEW exec 门钉 s569 基线预申报；清单
+b568.keys（1726）＝b567（1713）**+NEW 13
+＋GONE 0**＝TD1 syntax_of_roundtrip＋
+ipI4 li_dd pins＋T79 s41 批 memo/npo
+×11（批外追加申报）。七哨复核：dialog 哨
+常规连轮第 2 轮双 P；password 哨第 7 轮
+持位兑现（270 行恒全 P／password 键 0F）
+；onblur 组 10 键 8P/2F（F 集 ≡ s559 逐
+字节 IDENT＋following-label 双键结案）；
+mpreload 哨 15 键双 P 第 30 轮零翻红；
+waapi 哨 picker-icon 双 P 第 89 轮/
+checkmark F/F 恒形；focus-dynamic 121 键
+双 P 第 48 轮零再现；族带 End/Home 双 F
+持位＋全带回潮形；双发伪影 2 键双腿各
+×2 恒照旧在册；rc=2/2 惯例 stack
+overflow 计数 0/0。**挂用户门维持**
 ：GB-20261114-VIDEO + GB-20261031（簇 D）
 + s137＋对端 ZRG-2026-11-18-01（不重复
-通知；GB 巡检 0a3d1e4d7 已将 video/s137
-转 4 天正式征询，两流账面一致）。下一步：
-**守成巡查 s568**（**对账基线换 s567
-stable 8509**：**runner 必换代预判窗×2
-连**——开工 pull 批 ×38 含 engine 码刀
-dc732f1d0 RC calc／a763e74b1 d55 块尾 br／c7a18fb7a TD1
-StylePropertyMap／b86912191 ip I4／
-742c51b3f animation clip-path＋style-system
-cdff181b9 TP/085fbb42e R2＋renderer/net
-/memory T79 系，leg1 预期 Compiling/换代
-pre≠post，主嫌归因面排序 TD1 shim/桥面
-＞ip I4 shim＞RC calc＞其余 renderer/net
-/memory 面；若出非带非哨键位移→刀 G 工
-法对照码面定归因；**onblur following-label
-双键分歧挂账预注记：回归双 P 则一次性
-结案，再分歧则升 flaky 谱族记账**；族带
-End/Home 持位续记＋PageDown/PageUp/
-detailed/optional 整文件四键回潮形观察
-（退场/回潮不单轮挂账）；dialog 常规连轮
-第 2 轮；password 哨第 7 轮持位；族带三
-形谱摆动常态记账延续；全桥清单基线
-b567.k 1713 持位（TD1/ipI4 若带桥测钉则
-NEW 对账 c7a18fb7a/b86912191 申报）；
-mpreload 哨常规连轮计数第 30 轮；waapi
-哨第 89 轮；focus-dynamic 第 48 轮；push
-阶段 pull --rebase 捕获批须全列核实
-（range 行≠commit 数），起腿一律 v3.1 浸
-泡门（waiter 绝对路径＋v3.2 comm 匹配版
-脚本）＋**轮脚本复制后 grep 旧轮路径残
-留为零校验（本轮错链教训入规）**）+ 候门
-决项等待用户拍板（video P1+P2 立项 /
-簇 D A2 立项 / s137；对端 ZRG-2026-11-18
--01 归用户）；rendering 流 dialog 16 红块
-协同面（归 rendering 流记账）。门开随批落
-预案不变：簇 D 开 →
+通知）。下一步：**守成巡查 s569**（**对
+账基线换 s568 stable 8514**：**runner 必
+换代预判 ×4 连**——本 session 开工 pull
+批 ×14（c2a979534→e3a72c83d 全列核实＝
+merge 7b17c6dd6 PR#312＋code ×7：
+8adbf44fc 刀 TS transition 简写 CSSOM 双
+车道＋917378f05 刀 ANIMCOMP S1＋
+1383ac371 exec2/exec3 双门＋a871866b6 帧
+指纹缓存双界＋1cbcb7420 ip I4 ⑩ 臂恢复
+＋1150187f5 malloc_trim linux-gnu 门控＋
+0b049213e clippy＋docs ×6），leg1 预期
+Compiling/换代 pre≠post；主嫌归因面排
+序 TS shim/桥面＞ANIMCOMP＞exec 门＞帧
+指纹＞ipI4 臂恢复＞malloc_trim 门控；若
+出非带非哨键位移→刀 G 工法对照码面定归
+因；onblur 组结案转常规连轮新计第 1 轮
+；dialog 常规连轮第 3 轮；password 哨第
+8 轮持位；mpreload 哨第 31 轮；waapi 哨
+第 90 轮；focus-dynamic 第 49 轮；族带
+全带回潮形续记（End/Home 持位＋
+PageDown/PageUp F/F＋detailed T/T 回潮
+形稳定性观察，退场/回潮不单轮挂账）；
+全桥清单基线换新 b569 候 1727（exec 门
+钉在册申报）；双发伪影恒；push 阶段
+pull --rebase 捕获批须全列核实（range
+行≠commit 数）；起腿一律 v3.1 浸泡门＋
+轮脚本复制后 grep 旧轮路径残留为零校验
+）+ 候门决项等待用户拍板（video P1+P2
+立项 / 簇 D A2 立项 / s137；对端
+ZRG-2026-11-18-01 归用户）；rendering 流
+dialog 16 红块协同面（归 rendering 流
+记账）。门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47 随批落
-
 > **◆ 更正十四（2026-11-19 s567 push 阶段
 > 开工）——pull --rebase 捕获批 ×38 全列
 > 核实（f566ee431→900a445e4，对端多流混
