@@ -365,6 +365,17 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
             if !border_image_length_is_valid(token, &len) {
                 return None;
             }
+            // css-values-4 §5.2 双文法（<length>|<number>）裸 0 消歧：unitless 0 收
+            // <number> 槽（computed 串化 "0"）——css-backgrounds border-image-outset-
+            // computed 页 oracle 期望 "0 30px 3 0px"（裸 0=number、calc 零=length）钉面；
+            // 与 mask-border-outset 初值站 Number(0) 同形（css-masking
+            // mask-shorthand-subproperties-reset 页 initialValue 与 reset 读回自比较
+            // 恒等驱动，"0px" 形会判 Fail）。带单位 "0px" 与 calc 零叶仍 Length。
+            // https://drafts.csswg.org/css-values-4/#unitless-zero
+            if matches!(len, LengthValue::Px(x) if x == 0.0) && token.parse::<f32>() == Ok(0.0) {
+                components.push(BorderImageOutsetComponent::Number(0.0));
+                continue;
+            }
             components.push(BorderImageOutsetComponent::Length(len));
         } else {
             let n: f32 = lower.parse().ok()?;
@@ -617,6 +628,12 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
         // clip-path 槽无 <time> 文法位——Time 叶无效（parse_time_calc 门控
         // 之外本不可达，fail-closed 兜底）。
         CalcExpr::Time(_) => None,
+        // clip-path 槽无 <resolution> 文法位（css-values-4 §6.4 维度族与
+        // clip 形状求值域正交，parse_resolution_calc 门控之外本不可达，
+        // fail-closed 兜底）。
+        CalcExpr::Resolution(_) => None,
+        // progress() 恒产出 <number>（css-values-5 §progress——静态可求值）。
+        CalcExpr::Progress { .. } => Some(ClipPathCalcType::Number),
         CalcExpr::BinaryOp(left, CalcOp::Add | CalcOp::Subtract, right) => {
             same_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
         }
@@ -633,6 +650,9 @@ fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
         // clip-path 槽无 tree-counting 文法位（DOM 兄弟序依赖、parse 期
         // opaque 无语料驱动案）——fail-closed 兜底。
         CalcExpr::TreeCounting(_) => None,
+        // clip-path 槽无 anchor()/anchor-size() 文法位（inset/size 族函数）
+        // ——fail-closed 兜底。
+        CalcExpr::Anchor { .. } => None,
         CalcExpr::Min(args) | CalcExpr::Max(args) => same_clip_path_calc_types(args),
         CalcExpr::Clamp { min, val, max } => {
             let ty = clip_path_calc_type(min)?;
@@ -775,6 +795,18 @@ pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     if let Some(rest) = strip_basic_shape_prefix(v, "polygon") {
         return parse_clip_polygon(rest);
     }
+    if let Some(rest) = strip_basic_shape_prefix(v, "shape") {
+        return super::parse_basic_shape::parse_shape_function(rest);
+    }
+    if let Some(rest) = strip_basic_shape_prefix(v, "path") {
+        return super::parse_basic_shape::parse_path_function(rest);
+    }
+    if let Some(rest) = strip_basic_shape_prefix(v, "rect") {
+        return super::parse_basic_shape::parse_rect_function(rest);
+    }
+    if let Some(rest) = strip_basic_shape_prefix(v, "xywh") {
+        return super::parse_basic_shape::parse_xywh_function(rest);
+    }
     None
 }
 
@@ -903,6 +935,13 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
         (inner, None)
     };
 
+    // calc 化偏移形（`inset(0px calc(100% - 20px) 2% 3em)`）在此拒收——
+    // 朴素切分把 calc 内空格切断（4 值列表算成 6 值）。这是伪通过池保位
+    // 纪律的接受面边界（二十一轮定谳：期望串含 calc 时本机 setProperty 拒收
+    // → expected 落回静态值；b1v6/b1v7 两轮实证括号感知使该形可解析后动画
+    // 通道回落链断裂 −2 至 −6），非文法终态。
+    // FIXME(残面⑤ calc 代数插值刀)：落地后括号感知切分一并清 inset calc
+    // 偏移拒收面（语料 inset-function-valid/008/computed 四案 + 动画 t=1 对）。
     let values: Vec<&str> = split_comma_or_space(inset_part);
     if !(1..=4).contains(&values.len()) {
         return None;
@@ -922,7 +961,7 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
         .unwrap_or_else(|| right.clone());
 
     let round_val = match round {
-        Some(value) => Some(parse_clip_radius_single(value)?),
+        Some(value) => Some(parse_clip_round_list(value, true)?),
         None => None,
     };
 
@@ -997,6 +1036,13 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
         if after.starts_with(',') {
             fill_rule = PolygonFillRule::NonZero;
             after.strip_prefix(',').unwrap().trim()
+        } else if strip_polygon_fill_rule(after, "round").is_some() {
+            // fill-rule 与 round 前缀无逗号直接相邻（`polygon(nonzero round
+            // 1px, …)`，css-shapes-1 round 修饰语文法）——受理 fill-rule，
+            // 余段交由下方 round 前缀臂切分；fill-rule 后接坐标形仍走原
+            // 路径（points 切分拒收）。
+            fill_rule = PolygonFillRule::NonZero;
+            after
         } else {
             inner
         }
@@ -1005,11 +1051,41 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
         if after.starts_with(',') {
             fill_rule = PolygonFillRule::EvenOdd;
             after.strip_prefix(',').unwrap().trim()
+        } else if strip_polygon_fill_rule(after, "round").is_some() {
+            fill_rule = PolygonFillRule::EvenOdd;
+            after
         } else {
             inner
         }
     } else {
         inner
+    };
+
+    // css-shapes-1 §funcdef-basic-shape-polygon round 参量文法门（前缀 +
+    // 尾缀两臂）：radius 组走 parse_clip_round_list（<radius>{1,4}
+    // [/ <radius>{1,4}]?）。存储有损忽略（Polygon 槽位无 round 字段，
+    // FIXME 列表建模刀另行收口）——写面门与 apply 只要求 parse 判定；非
+    // 法 round 形（空参/5+ 半径/负半径）整拒。
+    // 前缀臂：`polygon( [<'fill-rule'> ||] round <radius-list> , <pairs> )`
+    // ——radius 组止于首个顶层逗号（calc 内逗号不触发），坐标对从其后继续；
+    // 无逗号（`round 1px 1px 2px`）整拒。
+    let points_str = match strip_polygon_fill_rule(points_str, "round") {
+        Some(after) => {
+            let rest = after.trim_start();
+            let ci = find_top_level_comma(rest)?;
+            parse_clip_round_list(&rest[..ci], false)?;
+            rest[ci + 1..].trim()
+        }
+        None => points_str,
+    };
+    // 尾缀臂：`<pairs> round <radius-list>`（此前缀臂先行，此处首个顶层
+    // round 只可能为尾缀位）。
+    let points_str = match find_keyword_pos(points_str, "round") {
+        Some(idx) => {
+            parse_clip_round_list(points_str[idx + "round".len()..].trim(), false)?;
+            points_str[..idx].trim_end()
+        }
+        None => points_str,
     };
 
     let mut points = Vec::new();
@@ -1033,6 +1109,25 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
     }
 
     Some(ClipPathValue::Polygon { fill_rule, points })
+}
+
+/// 首个顶层逗号的字节位（括号内逗号不计，calc/min() 等数学函数安全）。
+fn find_top_level_comma(s: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn split_top_level_commas(s: &str) -> Option<Vec<&str>> {
@@ -1090,9 +1185,56 @@ fn parse_clip_radius(value: &str) -> Option<ClipPathRadius> {
     parse_clip_length(v, false).map(ClipPathRadius::Length)
 }
 
-/// 解析单个圆角半径（用于 inset 的 round 参数）。
-fn parse_clip_radius_single(value: &str) -> Option<ClipPathRadius> {
-    parse_clip_radius(value)
+/// inset()/polygon() round 参量文法（css-shapes-1 §funcdef-inset /
+/// §funcdef-basic-shape-polygon）：`<'border-radius'>` 简写全形
+/// `<radius>{1,4} [/ <radius>{1,4}]?`（斜杠分隔水平/垂直半径组）。解析仅作文
+/// 法门（accept/reject 供写面门与 apply 裁决），存储有损取水平首半径——
+/// `ClipPathValue::Inset.round` 为单半径槽位、Polygon 槽位无 round 字段，
+/// 列表建模 FIXME 另行收口（round 形 computed 此前 apply 恒拒 = none，有损
+/// 存储不产生新串化行为面；写面门只要求 parse 判定——valid 页原文回显）。
+/// `allow_percentage`：inset round 依 border-radius 文法收 `<percentage>`；
+/// polygon round 按 Chrome 语料契约拒收（round-invalid 域 `polygon(round
+/// 1%, …)` 实证 invalid，本引擎比 Chrome 宽则 invalid 页翻红）。
+/// https://drafts.csswg.org/css-shapes/#funcdef-basic-shape-inset
+fn parse_clip_round_list(value: &str, allow_percentage: bool) -> Option<ClipPathRadius> {
+    let v = value.trim();
+    let (h, vpart) = match v.split_once('/') {
+        Some((h, r)) => (h.trim(), Some(r.trim())),
+        None => (v, None),
+    };
+    let hs = super::parse_extended_visual::split_top_level_whitespace(h);
+    if hs.is_empty() || hs.len() > 4 {
+        return None;
+    }
+    let first = parse_clip_radius(&hs[0])?;
+    if !allow_percentage && radius_is_percentage(&first) {
+        return None;
+    }
+    for t in &hs[1..] {
+        let r = parse_clip_radius(t)?;
+        if !allow_percentage && radius_is_percentage(&r) {
+            return None;
+        }
+    }
+    if let Some(vp) = vpart {
+        let vs = super::parse_extended_visual::split_top_level_whitespace(vp);
+        if vs.is_empty() || vs.len() > 4 {
+            return None;
+        }
+        for t in &vs {
+            let r = parse_clip_radius(t)?;
+            if !allow_percentage && radius_is_percentage(&r) {
+                return None;
+            }
+        }
+    }
+    Some(first)
+}
+
+/// round 半径是否百分比形（`<length-percentage>` 的百分比分支，calc 内百
+/// 分比不在此判域——语料无该形证据，不作宽拒）。
+fn radius_is_percentage(r: &ClipPathRadius) -> bool {
+    matches!(r, ClipPathRadius::Length(LengthValue::Percentage(_)))
 }
 
 /// 在字符串中查找关键字的位置（大小写不敏感，要求完整单词匹配）。
@@ -1131,26 +1273,111 @@ fn parse_shape_position(inner: &str) -> Option<(&str, Option<(LengthValue, Lengt
 /// 解析位置对 "x y" 或 "center" 等。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
     let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() == 4 {
+        // css-values-4 §position 4 值 edge-offset 形 `<edge> <offset> <edge>
+        // <offset>`（css-shapes-1 at <position> circle/ellipse 语料主形态，
+        // inset-001/circle-004 页）。首词定轴序，同轴双对拒收；
+        // `right/bottom o` 语义 100% − o 以 Calc 形存储（style-system
+        // parse_origin_edge_offsets 同构，shape() 通道
+        // shape_axis_comp_resolved Edge 臂同型）。
+        // <https://drafts.csswg.org/css-values-4/#typedef-position>
+        let kw = |t: &str| match t.to_ascii_lowercase().as_str() {
+            "left" => Some((0u8, 0.0f64)),
+            "right" => Some((0, 100.0)),
+            "top" => Some((1, 0.0)),
+            "bottom" => Some((1, 100.0)),
+            _ => None,
+        };
+        let (axis1, edge1) = kw(parts[0])?;
+        let (axis2, edge2) = kw(parts[2])?;
+        if axis1 == axis2 {
+            return None;
+        }
+        let off1 = parse_clip_length(parts[1], true)?;
+        let off2 = parse_clip_length(parts[3], true)?;
+        let resolve = |edge_pct: f64, off: LengthValue| {
+            if edge_pct == 0.0 {
+                off
+            } else if let LengthValue::Percentage(p) = off {
+                // 百分比缘偏移折数代数精确（100% − p%），直接补数百分比存储
+                // （chrome computed 串形 `bottom 70%` → `30%` 语料钉面
+                // circle-004/ellipse-004；长度偏移保 Calc 形——computed
+                // `bottom 1120px` → `calc(100% - 1120px)` 不可声明期折算）。
+                LengthValue::Percentage(edge_pct - p)
+            } else {
+                LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+                    Box::new(CalcExpr::Length(LengthValue::Percentage(edge_pct))),
+                    CalcOp::Subtract,
+                    Box::new(CalcExpr::Length(off)),
+                )))
+            }
+        };
+        return Some(if axis1 == 1 {
+            (resolve(edge2, off2), resolve(edge1, off1))
+        } else {
+            (resolve(edge1, off1), resolve(edge2, off2))
+        });
+    }
     if parts.is_empty() || parts.len() > 2 {
         return None;
     }
-    let x = if parts[0].eq_ignore_ascii_case("center") {
-        LengthValue::Percentage(50.0)
-    } else if parts[0].eq_ignore_ascii_case("left") {
-        LengthValue::Percentage(0.0)
-    } else if parts[0].eq_ignore_ascii_case("right") {
-        LengthValue::Percentage(100.0)
-    } else {
-        parse_clip_length(parts[0], true)?
+    // css-values-4 §position 轴别严格文法（css-shapes-1 circle/ellipse at
+    // 语料 oracle：parsing-utils.js invalidPositions 拒收表 `50% left`/
+    // `top 50%`/`bottom 70%` 等 + validPositions `top left` y 首词对换
+    // x-first canon）：
+    // 2 值形合法组合——[<lp>|x-edge] [<lp>|y-edge|center]、center 填任意缺轴、
+    // y-edge 首词仅可接 x-edge/center（对换存储）；[lp|x-edge][x-edge]、
+    // [y-edge][lp|y-edge] 混轴/同轴双关键字拒收（`50% left`/`top 50%`/
+    // `left right` 语料钉面）。3 词混搭形已由 len>2 早退拒收。
+    // <https://drafts.csswg.org/css-values-4/#typedef-position>
+    // 注：本严格文法按 css-shapes-1 WPT 语料所载 Chrome 契约实现——现代
+    // css-values-4 的 2 词 `[edge] <offset>` 缘偏移形（`top 50%`/`bottom
+    // 70px`）在该语料属 invalidPositions 拒收域，此处不收（语料计分契约
+    // 优先）。FIXME(规格演进)：语料换代后按现代文法补 2 词缘偏移臂。
+    enum PosComp {
+        Len(LengthValue),
+        XEdge(f64),
+        YEdge(f64),
+        Center,
+    }
+    let comp = |t: &str| -> Option<PosComp> {
+        match t.to_ascii_lowercase().as_str() {
+            "left" => Some(PosComp::XEdge(0.0)),
+            "right" => Some(PosComp::XEdge(100.0)),
+            "top" => Some(PosComp::YEdge(0.0)),
+            "bottom" => Some(PosComp::YEdge(100.0)),
+            "center" => Some(PosComp::Center),
+            _ => parse_clip_length(t, true).map(PosComp::Len),
+        }
     };
-    let y = if parts.len() < 2 || parts[1].eq_ignore_ascii_case("center") {
-        LengthValue::Percentage(50.0)
-    } else if parts[1].eq_ignore_ascii_case("top") {
-        LengthValue::Percentage(0.0)
-    } else if parts[1].eq_ignore_ascii_case("bottom") {
-        LengthValue::Percentage(100.0)
+    let to_len = |c: PosComp| match c {
+        PosComp::Len(lv) => lv,
+        PosComp::XEdge(p) | PosComp::YEdge(p) => LengthValue::Percentage(p),
+        PosComp::Center => LengthValue::Percentage(50.0),
+    };
+    let first = comp(parts[0])?;
+    let (x, y) = if parts.len() == 1 {
+        // 1 值形：关键字或 lp 定 x、y 缺省 center（`top` → 50% 0% 语料钉面）。
+        match first {
+            PosComp::YEdge(p) => (LengthValue::Percentage(50.0), LengthValue::Percentage(p)),
+            other => (to_len(other), LengthValue::Percentage(50.0)),
+        }
     } else {
-        parse_clip_length(parts[1], true)?
+        let second = comp(parts[1])?;
+        match (first, second) {
+            // y 首词关键字对 / center+x-edge 对——canon x-first 对换存储
+            // （`top left`/`top center`/`center left` 语料钉面）。
+            (PosComp::YEdge(p), PosComp::XEdge(q)) => (LengthValue::Percentage(q), LengthValue::Percentage(p)),
+            (PosComp::YEdge(p), PosComp::Center) => (LengthValue::Percentage(50.0), LengthValue::Percentage(p)),
+            (PosComp::Center, PosComp::XEdge(p)) => (LengthValue::Percentage(p), LengthValue::Percentage(50.0)),
+            // 混轴/同轴双关键字拒收：[lp|x-edge][x-edge]、[y-edge][lp]、
+            // [y-edge][y-edge]。
+            (PosComp::Len(_), PosComp::XEdge(_))
+            | (PosComp::XEdge(_), PosComp::XEdge(_))
+            | (PosComp::YEdge(_), PosComp::Len(_))
+            | (PosComp::YEdge(_), PosComp::YEdge(_)) => return None,
+            (f, s) => (to_len(f), to_len(s)),
+        }
     };
     Some((x, y))
 }

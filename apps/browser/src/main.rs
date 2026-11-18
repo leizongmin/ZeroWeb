@@ -2012,6 +2012,11 @@ fn main() {
                 tracing::debug!("Window resized: {width}x{height}");
                 app::resize_trace("browser", format!("resized {width}x{height}"));
                 app.physical_size = (width, height);
+                // ui_driver 流程首个 shot 位于 claim 冻结窗内：窗口定型时预创建
+                // 离屏捕获渲染器，把创建成本移出关键窗（幂等，尺寸变更时重建）。
+                if ui_driver.is_some() {
+                    app.prewarm_capture_renderer();
+                }
                 if let Some(ref win) = window {
                     let scale_factor = scale_override.unwrap_or_else(|| normalized_window_scale(win.scale_factor()));
                     let logical_size = (

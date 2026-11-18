@@ -86,6 +86,13 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
             resolve_relative_color(spec, origin)
         }
         ColorValue::Rgba(r, g, b, a) => Color::rgba(*r, *g, *b, *a),
+        // color() 预定义空间：paint 回退 gamma sRGB（R2288 无色彩管理管线；computed
+        // 序列化保真由 computed_style 读原始变体，本臂只供渲染）。未知空间 parse
+        // 期白名单已拒，此处 None 不可达，防御性回落黑。
+        ColorValue::ColorFunction(f) => match f.to_srgb_rgba() {
+            Some((r, g, b, a)) => Color::rgba(r, g, b, a),
+            None => Color::rgba(0, 0, 0, 255),
+        },
         ColorValue::Transparent => Color::rgba(0, 0, 0, 0),
         ColorValue::Named(name) => named_color_to_render(name),
         ColorValue::Hsla(h, s, l, a) => hsla_to_rgba(*h, *s, *l, *a),

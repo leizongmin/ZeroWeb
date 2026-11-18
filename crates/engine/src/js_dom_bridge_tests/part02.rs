@@ -765,6 +765,50 @@ fn test_css_escape_supports_r2785() {
             .value,
         "true|true|true|true"
     );
+    // backdrop-filter 五站全在（apply/gCS/插值/写回/初始，R2762/R4272）但
+    // known_properties 白名单缺串即 supports 短路假——filter-effects 语料
+    // 以 `CSS.supports('backdrop-filter', …)` 前置门，整页翻红。
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('backdrop-filter','blur(2px)') + '|' + CSS.supports('backdrop-filter','bogusxyz')")
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // column-rule 简写：gCS 重组（computed_style.rs:805 R2755）与 cascade 展开
+    // （shorthand expand_column_rule）本在，缺 apply 简写臂（decl_supported 的
+    // apply oracle 对简写恒假）+ 白名单缺串 → multicol 语料 supports 门整组
+    // 连坐（css-multicol parsing 列 rule 页实证）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('column-rule','medium solid currentcolor') + '|' + \
+                 CSS.supports('column-rule','10px') + '|' + \
+                 CSS.supports('column-rule','dotted') + '|' + \
+                 CSS.supports('column-rule','bogusxyz') + '|' + \
+                 CSS.supports('column-rule','red medium green')"
+            )
+            .unwrap()
+            .value,
+        "true|true|true|false|false"
+    );
+    // shape-margin / shape-image-threshold（css-shapes-1 刀）：同 backdrop 形
+    // ——五站在而白名单缺串即 supports 短路假，shape-* 语料 `assert_true:
+    // 'from'/'to' value should be supported` 前置门整页翻红。shape-margin 拒
+    // auto 关键字（非 <length-percentage>）；threshold 非法值假。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('shape-margin','10px') + '|' + \
+                 CSS.supports('shape-margin','auto') + '|' + \
+                 CSS.supports('shape-image-threshold','0.5') + '|' + \
+                 CSS.supports('shape-image-threshold','80%') + '|' + \
+                 CSS.supports('shape-image-threshold','bogusxyz')"
+            )
+            .unwrap()
+            .value,
+        "true|false|true|true|false"
+    );
     // CSS.supports 单参：括号条件 / 声明 / not。
     assert_eq!(
         sandbox
@@ -1716,12 +1760,15 @@ fn test_anchor_click_target_hit_descendant_walk_s29() {
 
 #[test]
 fn test_script_call_form_reset_r3050() {
-    // R3050：script_call_form_reset 生成调 form.reset() 的 shim 脚本。
-    // 选择器安全嵌入（引号转义）；form 不存在/reset 非函数 → no-op guard。
+    // R3050：script_call_form_reset 生成调 R3048 reset 闭包的 shim 脚本。
+    // s433：主通道经 Symbol.for('zw-form-reset')（named-first 后 `name=reset` 控件
+    // 遮蔽 `f.reset` 属性——[OverrideBuiltins]）；typeof f.reset 仅作回落 guard。
+    // 选择器安全嵌入（引号转义）；form 不存在/两者均非函数 → no-op guard。
     let s = script_call_form_reset("#myform");
     assert!(s.contains("querySelector('#myform')"), "脚本含 querySelector('#myform')\n{s}");
-    assert!(s.contains("f.reset()"), "脚本调 f.reset()\n{s}");
-    assert!(s.contains("typeof f.reset==='function'"), "含 reset 函数 guard（防 throw）\n{s}");
+    assert!(s.contains("Symbol.for('zw-form-reset')"), "主通道 Symbol 内部直调\n{s}");
+    assert!(s.contains("typeof r==='function'"), "Symbol 通道函数 guard\n{s}");
+    assert!(s.contains("typeof f.reset==='function'"), "含回落 reset 函数 guard（防 throw）\n{s}");
     // 选择器转义：嵌入引号经 escape_js_string 转义（不破坏 JS 串）。
     let s2 = script_call_form_reset("#a'b");
     assert!(s2.contains("\\'#a\\'b'") || !s2.contains("'#a'b'"), "选择器引号转义（不裸含 '#a'b'）\n{s2}");

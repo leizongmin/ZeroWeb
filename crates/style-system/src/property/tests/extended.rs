@@ -991,29 +991,83 @@ fn test_contain_initial_value() {
 
 #[test]
 /// CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
+/// css-gaps-1 列表模型：纯色 = 单段列表。
 fn test_column_rule_color_default() {
     let style = ComputedStyle::default();
-    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+    assert_eq!(
+        style.column_rule_color,
+        vec![zero_css_parser::values::RuleColorSegment::Plain(
+            ColorValue::CurrentColor
+        )]
+    );
 }
 
 #[test]
-/// column-rule-color 应用颜色值
+/// column-rule-color 应用颜色值（css-gaps-1 列表模型：纯色 = 单段平色列表）
 fn test_apply_column_rule_color() {
+    use zero_css_parser::values::RuleColorSegment;
     let mut style = ComputedStyle::default();
 
     assert!(apply_property_value(&mut style, "column-rule-color", "red"));
-    assert_eq!(style.column_rule_color, ColorValue::Rgba(255, 0, 0, 255));
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::Rgba(255, 0, 0, 255))]
+    );
 
     assert!(apply_property_value(&mut style, "column-rule-color", "#00ff00"));
-    assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 255, 0, 255));
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::Rgba(0, 255, 0, 255))]
+    );
 
     assert!(apply_property_value(&mut style, "column-rule-color", "transparent"));
-    assert_eq!(style.column_rule_color, ColorValue::Transparent);
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::Transparent)]
+    );
 
     assert!(apply_property_value(&mut style, "column-rule-color", "currentColor"));
-    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+    assert_eq!(
+        style.column_rule_color,
+        vec![RuleColorSegment::Plain(ColorValue::CurrentColor)]
+    );
+
+    // css-gaps-1 列表形（repeat 循环 + 逗号列表）
+    assert!(apply_property_value(&mut style, "column-rule-color", "repeat(4, blue)"));
+    assert_eq!(style.column_rule_color.len(), 1);
+    assert!(apply_property_value(&mut style, "column-rule-color", "red, blue"));
+    assert_eq!(style.column_rule_color.len(), 2);
 
     assert!(!apply_property_value(&mut style, "column-rule-color", "not-a-color"));
+    // invalid 页形：空格分隔 / repeat(0) / 双 auto
+    assert!(!apply_property_value(&mut style, "column-rule-color", "red blue"));
+    assert!(!apply_property_value(&mut style, "column-rule-color", "repeat(0, red)"));
+    assert!(!apply_property_value(
+        &mut style,
+        "column-rule-color",
+        "repeat(auto, red), repeat(auto, blue)"
+    ));
+}
+
+#[test]
+/// rule-color 简写 apply 臂（css-gaps-1 §rule-shorthand-properties）：同值写入
+/// row/column 双 rule-color（十七轮 column-rule 简写 apply 臂同型）；非法值
+/// 展开空拒收。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn test_apply_rule_color_shorthand() {
+    let mut style = ComputedStyle::default();
+
+    assert!(apply_property_value(&mut style, "rule-color", "repeat(2, red)"));
+    assert_eq!(style.row_rule_color.len(), 1);
+    assert_eq!(style.column_rule_color.len(), 1);
+
+    assert!(apply_property_value(&mut style, "rule-color", "red, green, blue"));
+    assert_eq!(style.row_rule_color.len(), 3);
+    assert_eq!(style.column_rule_color.len(), 3);
+
+    // invalid 形：展开空拒收。
+    assert!(!apply_property_value(&mut style, "rule-color", "red blue"));
+    assert!(!apply_property_value(&mut style, "rule-color", "repeat(0, red)"));
 }
 
 #[test]
@@ -1033,11 +1087,19 @@ fn test_column_rule_color_in_known_properties() {
 /// column-rule-color 有 initial_value
 fn test_column_rule_color_initial_value() {
     assert!(PropertyRegistry::initial_value("column-rule-color").is_some());
+    assert!(PropertyRegistry::initial_value("row-rule-color").is_some());
     let mut style = ComputedStyle::default();
-    style.column_rule_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.column_rule_color = vec![zero_css_parser::values::RuleColorSegment::Plain(ColorValue::Rgba(
+        255, 0, 0, 255,
+    ))];
     assert!(apply_initial_value(&mut style, "column-rule-color"));
-    // CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
-    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+    // CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）；列表模型单段。
+    assert_eq!(
+        style.column_rule_color,
+        vec![zero_css_parser::values::RuleColorSegment::Plain(
+            ColorValue::CurrentColor
+        )]
+    );
 }
 
 // ── appearance 属性测试 ──
@@ -2103,4 +2165,82 @@ fn test_apply_background_position_y_patches_existing_x() {
 fn test_apply_background_position_x_wrong_axis_rejected() {
     let mut style = ComputedStyle::default();
     assert!(!apply_property_value(&mut style, "background-position-x", "top 5px"));
+}
+
+// ── css-anchor-position-1 §4 anchor-size() 尺寸槽原文承载（g38）──────────
+
+#[test]
+fn anchor_size_sizing_slot_raw_capture() {
+    // 承载：原文小写入槽 + 槽位保持初始 Auto（布局期 anchor_pos pass 求值
+    // used 值——样式解析面无锚几何 fail-closed）。
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "width", "anchor-size(--a1 width)"));
+    let slots = style.anchor_size_slots.as_ref().expect("slots 置位");
+    assert_eq!(slots.width.as_deref(), Some("anchor-size(--a1 width)"));
+    assert_eq!(style.width, LengthValue::Auto);
+    assert!(apply_property_value(&mut style, "height", "Anchor-Size(--A1 HEIGHT)"));
+    let slots = style.anchor_size_slots.as_ref().expect("slots 置位");
+    assert_eq!(slots.height.as_deref(), Some("anchor-size(--a1 height)"));
+    // min/max 四槽。
+    for (prop, key, raw) in [
+        ("min-width", "min_width", "anchor-size(--a1 width)"),
+        ("min-height", "min_height", "anchor-size(--a1 height)"),
+        ("max-width", "max_width", "anchor-size(--a1 width)"),
+        ("max-height", "max_height", "anchor-size(--a1 height)"),
+    ] {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, prop, raw), "{prop}");
+        let slots = style.anchor_size_slots.as_ref().expect("slots 置位");
+        let got = match key {
+            "min_width" => &slots.min_width,
+            "min_height" => &slots.min_height,
+            "max_width" => &slots.max_width,
+            _ => &slots.max_height,
+        };
+        assert_eq!(got.as_deref(), Some(raw), "{prop}");
+    }
+    // 无 anchor-size 普通值 → slots 不置位。
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "width", "10px"));
+    assert!(style.anchor_size_slots.is_none());
+}
+
+#[test]
+fn anchor_size_sizing_slot_override_clears_stale_capture() {
+    // 后声明胜出：anchor-size 承载后普通长度路径清槽（stale 槽防回灌——布局
+    // 期不再按已失效声明覆写 used 值）。max-*.none 早退臂同清。
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "width", "anchor-size(--a1 width)"));
+    assert!(apply_property_value(&mut style, "width", "10px"));
+    assert_eq!(style.width, LengthValue::Px(10.0));
+    assert!(style.anchor_size_slots.as_ref().expect("槽组仍在").width.is_none());
+    assert!(apply_property_value(&mut style, "max-width", "anchor-size(--a1 width)"));
+    assert!(apply_property_value(&mut style, "max-width", "none"));
+    assert!(style.anchor_size_slots.as_ref().expect("槽组仍在").max_width.is_none());
+}
+
+#[test]
+fn anchor_size_unbalanced_form_rejected() {
+    // 未闭括号形（语料 anchor-size-001 上游 typo `anchor-size(--a1 width"`）
+    // CSS parse 面即声明无效 → 不承载（声明拒，槽位不置位）。
+    let mut style = ComputedStyle::default();
+    assert!(!apply_property_value(&mut style, "width", "anchor-size(--a1 width"));
+    assert!(style.anchor_size_slots.is_none());
+}
+
+#[test]
+fn anchor_size_inset_slot_dual_form_capture() {
+    // inset 槽双形并查：anchor()（既有）与 anchor-size()（g38 扩面）均承载，
+    // 槽位暂存 Auto；普通长度路径清承载槽（stale 槽防回灌）。
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "left", "anchor-size(--a1 width)"));
+    assert_eq!(style.anchor_inset_left.as_deref(), Some("anchor-size(--a1 width)"));
+    assert_eq!(style.left, LengthValue::Auto);
+    assert!(apply_property_value(&mut style, "left", "20px"));
+    assert_eq!(style.left, LengthValue::Px(20.0));
+    assert!(style.anchor_inset_left.is_none());
+    assert!(apply_property_value(&mut style, "top", "anchor(--a top)"));
+    assert!(style.anchor_inset_top.is_some());
+    assert!(apply_property_value(&mut style, "top", "auto"));
+    assert!(style.anchor_inset_top.is_none());
 }

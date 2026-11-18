@@ -8,7 +8,7 @@
 //   fetch() scheme-fetch 同语义；miss/跨源 → error）；bare-origin http(s)（路径空
 //   或仅 /）→ 合成空 text/html 嵌套上下文（FIXME 服务端目录语义）；
 // - window.length（object-fallback-failed-cross-origin-navigation 2F 根因）：
-//   LegacyUnforgeable getter——iframe（_iframeDocCache win 有且未 destroy）+
+//   [Replaceable] getter——iframe（_iframeDocCache win 有且未 destroy）+
 //   object（_zwObjectNavCache win 有且元素连接）计数；error 态/移除不计。
 // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
 // https://html.spec.whatwg.org/multipage/window-object.html#dom-length
@@ -159,10 +159,13 @@ fn s400_blob_url(sandbox: &mut zero_script_sandbox::V8Sandbox) -> String {
     sandbox.execute("globalThis.__s400bD").unwrap().value
 }
 
-/// 钉③：window.length LegacyUnforgeable getter 计数面 + bare-origin 合成——
+/// 钉③：window.length [Replaceable] getter 计数面 + bare-origin 合成——
 /// 0（初始）→ 1（iframe win 物化）→ 2（object data:text/html）→ 3（bare-origin
 /// object 合成 doc）→ error 态 object 不计 → 移除 object 递减 → 移除 iframe
-///（destroyed 印记）递减；descriptor enumerable/configurable:false 钉。
+///（destroyed 印记）递减；descriptor enumerable/configurable:true 钉（
+/// [Replaceable] own accessor——非 [LegacyUnforgeable]，四真 unforgeable 为
+/// window/document/location/top；configurable:false 曾致页级 `function length(){}`
+/// 重声明 SyntaxError 整页崩，cssom serialize-values.html 533→0 回归根因）。
 #[test]
 fn window_length_count_faces_s400() {
     use std::sync::{Arc, Mutex};
@@ -257,8 +260,8 @@ fn window_length_count_faces_s400() {
     assert_eq!(s400_read(&mut sandbox, "errFace"), "true/true", "(L3) 404 error 态无嵌套 navigable——不计入 length");
     assert_eq!(
         s400_read(&mut sandbox, "desc"),
-        "true/true/false/true",
-        "(L4) LegacyUnforgeable descriptor：getter + enumerable:true + configurable:false + 访问器无 writable"
+        "true/true/true/true",
+        "(L4) [Replaceable] descriptor：getter + enumerable:true + configurable:true + 访问器无 writable"
     );
     assert_eq!(s400_read(&mut sandbox, "in"), "true", "(L5) 'length' in window");
     // 第三段：移除 data:text/html object + iframe（destroyed 印记）。

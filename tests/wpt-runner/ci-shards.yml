@@ -38,10 +38,26 @@ shards:
   # editing/ + editing/other（SELECTION_TEST_SUBDIRS）——fetch 须带 fetch-wpt-editing
   # 供后两目录；与 editing-run 11 片 / editing-other catch-all 的路径重叠由
   # 对账器按路径 max 语义去重（merge_zw_results 最完整一次执行胜出，不双记）。
+  # 2026-11-15 wptfyi-editing DC-2：whitespaces/ 拆独立片（selection-ws，大文件
+  # delete/forwarddelete/inserttext chrome-compat 1,409 子测试负载单独预算），
+  # 本片 filter 排除 whitespaces；plaintext-only/ 留本片。
   - name: selection-face
     suites: "selection"
     fetch: "fetch-wpt-selection fetch-wpt-editing"
     fetch_scripts: ""
+    filter: "selection/|editing/other|editing/event.html|editing/plaintext-only"
+    script_timeout: 300000
+    case_timeout: 300
+    time_limit: 7200
+  # 2026-11-15 wptfyi-editing DC-2：editing/whitespaces 专片——11-14 对账分母
+  # 1,655 子测试全未覆盖（delete/forwarddelete/inserttext chrome-compat 三文件
+  # 三家浏览器满通过），与 selection 同通道（suite=selection）仅 filter 切域。
+  - name: selection-ws
+    suites: "selection"
+    fetch: "fetch-wpt-selection fetch-wpt-editing"
+    fetch_scripts: ""
+    filter: "editing/whitespaces"
+    result_tag: sws
     script_timeout: 300000
     case_timeout: 300
     time_limit: 7200
@@ -354,7 +370,7 @@ shards:
     suites: "editing-run"
     fetch: "fetch-wpt-editing"
     fetch_scripts: ""
-    filter: "editing/run/delete.html|editing/run/delete-list-items-in-table-cell.html|editing/run/delete-to-make-editing-host-empty.html|editing/run/misc.html|editing/run/unlink.html|editing/run/insert-list-items-in-table-cell.html|editing/run/undo-redo-after-mutation.html|editing/run/typing-text-in-direct-child-of-editing-host.html"
+    filter: "editing/run/delete.html|editing/run/delete-list-items-in-table-cell.html|editing/run/delete-to-make-editing-host-empty.html|editing/run/misc.html|editing/run/unlink.html|editing/run/insert-list-items-in-table-cell.html|editing/run/undo-redo-after-mutation.html|editing/run/undo-redo.html|editing/run/typing-text-in-direct-child-of-editing-host.html"
     result_tag: er2
     script_timeout: 300000
     case_timeout: 3600

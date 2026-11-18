@@ -661,6 +661,16 @@ fn line_height_length_is_valid(value: &LengthValue) -> bool {
 ///
 /// https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
 pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
+    parse_font_size_adjust_with_font(value, None)
+}
+
+/// [`parse_font_size_adjust`] 字体 ctx 变体：basis math 形的 font 相对单位
+/// eval 以 font_size 为基准（css-properties-values-api
+/// #dependency-cycles-via-relative-units——font-* 属性的 font 相对单位按父级
+/// 字体解析；font-property-unit-cycles `font-size-adjust: calc(1 * tan(atan2(1em,
+/// 1px)))` 腿驱动）。`None` = 旧口径（`eval_calc` 无 ctx，em/ex 等相对叶
+/// fail-closed None）。
+pub fn parse_font_size_adjust_with_font(value: &str, font_size: Option<f64>) -> Option<FontSizeAdjustValue> {
     let value = value.trim().to_ascii_lowercase();
     if value == "none" {
         return Some(FontSizeAdjustValue::None);
@@ -684,16 +694,34 @@ pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
     let basis = if basis_text == "from-font" {
         FontSizeAdjustBasis::FromFont
     } else {
-        let number = basis_text
-            .parse::<f64>()
-            .ok()
-            .or_else(|| values::parse_math_function(basis_text).and_then(|expr| values::eval_calc(&expr, None)))?;
+        let number = basis_text.parse::<f64>().ok().or_else(|| {
+            values::parse_math_function(basis_text).and_then(|expr| match font_size {
+                Some(fs) => values::eval_calc_with_context(&expr, &font_slot_calc_context(fs)),
+                None => values::eval_calc(&expr, None),
+            })
+        })?;
         if !number.is_finite() || number < 0.0 {
             return None;
         }
         FontSizeAdjustBasis::Number(number)
     };
     Some(FontSizeAdjustValue::Adjust { metric, basis })
+}
+
+/// font 槽 math eval 的 CalcContext（font 相对单位按父级字体基准，
+/// css-properties-values-api #dependency-cycles-via-relative-units）：度量
+/// 派生比同 resolve_length_inner 合成口径（ex/cap 0.8、ch 0.5、ic 1.0——
+/// font-property-unit-cycles 期望 em 30/ex 24/cap 24/ch 15/ic 30 钉面）。
+pub(crate) fn font_slot_calc_context(font_size: f64) -> values::CalcContext {
+    values::CalcContext {
+        font_size: Some(font_size),
+        root_font_size: Some(font_size),
+        x_height: Some(font_size * 0.8),
+        cap_height: Some(font_size * 0.8),
+        ch_width: Some(font_size * 0.5),
+        ic_width: Some(font_size * 1.0),
+        ..Default::default()
+    }
 }
 
 /// 解析 CSS text-align 值。
@@ -1306,6 +1334,16 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
     let Some(parts) = split_font_family_list(value) else {
         return Vec::new();
     };
+    // 刀 N 二期：CSS-wide keyword 只能整条声明（css-values-4 §css-wide-keywords）
+    // ——逗号列表任段为单个 css-wide keyword（`inherit, simple` 组）→ 整条无效。
+    // 单段单 keyword 是整条 CSS-wide keyword 声明（`font-family: inherit` 合法），
+    // 由 cascade 前置臂处理，此处不动（问段数，与简写 family 位门不同——简写带
+    // size 位时单段 keyword 亦拒）。driving: test_font_family_parsing keyword
+    // 混排组（`inherit, simple`/`simple, inherit` 等 8 形 ×2 通道）。
+    // https://drafts.csswg.org/css-values-4/#css-wide-keywords
+    if parts.len() > 1 && font_family_list_has_css_wide_keyword(value) {
+        return Vec::new();
+    }
     for part in parts {
         let s = part.trim();
         if s.is_empty() {
@@ -1330,6 +1368,30 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
         }
     }
     result
+}
+
+/// font-family 值（或 font 简写 family 位）列表中是否出现 CSS-wide keyword 段：
+/// 顶层逗号切段后任段为**单个** css-wide keyword token（unquoted）→ true。
+/// `default simple`（段内 ident 序列，单段双 token）是合法 family 名不命中；
+/// quoted 段 `"inherit"` 是字符串名（css-fonts-4 §family-name-value `<string>`
+/// 分支不受 custom-ident 排除集约束）不命中。六键含 `default`（css-cascade-4
+/// §7 与 Chrome oracle 一致——test_font_family_parsing keyword 组以六键全列
+/// invalid）。消费方：`parse_font_family` 本体列表门（问段数）与
+/// [`crate::shorthand::expand_font`] family 位门（不问段数）。
+/// https://drafts.csswg.org/css-values-4/#css-wide-keywords
+pub(crate) fn font_family_list_has_css_wide_keyword(value: &str) -> bool {
+    const CSS_WIDE_KEYWORDS: [&str; 6] = ["inherit", "initial", "unset", "revert", "revert-layer", "default"];
+    let Some(parts) = split_font_family_list(value) else {
+        return false;
+    };
+    parts.iter().any(|p| {
+        let s = p.trim();
+        !s.is_empty()
+            && !s.starts_with('"')
+            && !s.starts_with('\'')
+            && s.split_ascii_whitespace().count() == 1
+            && CSS_WIDE_KEYWORDS.iter().any(|kw| s.eq_ignore_ascii_case(kw))
+    })
 }
 
 /// CSS ident 语法最小校验（css-syntax-3 §4）：首字符为字母/`_`/≥U+0080，或 `-`
@@ -1392,6 +1454,35 @@ mod tests {
 
     fn adjust(metric: Option<FontSizeAdjustMetric>, basis: FontSizeAdjustBasis) -> FontSizeAdjustValue {
         FontSizeAdjustValue::Adjust { metric, basis }
+    }
+
+    // 刀 N 二期：CSS-wide keyword 列表位拒收（css-values-4 §css-wide-keywords；
+    // test_font_family_parsing keyword 混排组 driving）。
+    #[test]
+    fn parse_font_family_css_wide_keyword_list_rejected() {
+        // 列表任段单个 keyword → 整条无效（大小写不敏感）
+        assert!(parse_font_family("inherit, simple").is_empty());
+        assert!(parse_font_family("simple, inherit").is_empty());
+        assert!(parse_font_family("DEFAULT, simple").is_empty());
+        assert!(parse_font_family("simple, unset").is_empty());
+        assert!(parse_font_family("revert-layer, simple").is_empty());
+        // 段内 ident 序列（单段双 token）是合法 family 名，不拒
+        assert_eq!(parse_font_family("default simple"), vec!["default simple".to_string()]);
+        assert_eq!(parse_font_family("inherit simple"), vec!["inherit simple".to_string()]);
+        // quoted 段是字符串名（<string> 分支不受 custom-ident 排除集约束）
+        assert_eq!(parse_font_family("\"inherit\""), vec!["\"inherit\"".to_string()]);
+        // 整条单 keyword 是 CSS-wide keyword 声明，本函数不裁（cascade 前置臂）
+        assert_eq!(parse_font_family("inherit"), vec!["inherit".to_string()]);
+    }
+
+    #[test]
+    fn font_family_list_css_wide_keyword_detector() {
+        assert!(font_family_list_has_css_wide_keyword("inherit, simple"));
+        assert!(font_family_list_has_css_wide_keyword("inherit"));
+        // 段内双 token / quoted 段 / 非 keyword 单段不命中
+        assert!(!font_family_list_has_css_wide_keyword("default simple"));
+        assert!(!font_family_list_has_css_wide_keyword("\"inherit\""));
+        assert!(!font_family_list_has_css_wide_keyword("arial, helvetica"));
     }
 
     #[test]

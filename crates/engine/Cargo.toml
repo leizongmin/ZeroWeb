@@ -23,6 +23,9 @@ zero-canvas = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-script-sandbox = { workspace = true, optional = true }
+# wptfyi-css 动画值进 gCS 刀（js_anim_registry）：WAAPI 注册 spec JSON 解析。
+# 原 dev-dependencies 条目保留（测试面独立引用）。
+serde_json = { workspace = true }
 simplecss = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
@@ -63,6 +66,7 @@ ed25519-dalek = { workspace = true }
 x25519-dalek = { workspace = true }
 getrandom = { workspace = true }
 png = { workspace = true }
+jpeg-encoder = { workspace = true }
 flate2 = "1"
 unicode-bidi = { workspace = true }
 # encoding-compat M2：TextDecoder legacy 解码 + labels 标签表（encoding 标准 tables——

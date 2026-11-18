@@ -67,6 +67,32 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_kerning = parent.font_kerning;
             true
         }
+        // 刀 O（css-fonts-4 §font-prop）：`font` 简写关键字通道（`font: inherit`/
+        // `all: inherit` 级联）——按 expand_font 展开清单拷父 13 长手槽位（style/
+        // weight/size/line-height/family/variant 五面/stretch/kerning），委托各
+        // longhand 臂保单源。`font` 本身非继承属性（is_inherited 不含），本臂仅
+        // 显式关键字声明可达。
+        // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+        "font" => {
+            for p in [
+                "font-style",
+                "font-weight",
+                "font-size",
+                "line-height",
+                "font-family",
+                "font-variant-ligatures",
+                "font-variant-caps",
+                "font-variant-numeric",
+                "font-variant-east-asian",
+                "font-variant-position",
+                "font-variant-alternates",
+                "font-stretch",
+                "font-kerning",
+            ] {
+                inherit_property(parent, child, p);
+            }
+            true
+        }
         "font-synthesis" => {
             child.font_synthesis = parent.font_synthesis;
             true
@@ -195,6 +221,13 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_stretch = parent.font_stretch;
             true
         }
+        // css-fonts-4 §font-width-prop：font-width 为 font-stretch legacy alias，
+        // 同字段同继承语义（级联槽位经 canonical_property_name 并入 font-stretch，
+        // 本臂仅承接显式 inherit 关键字直应用面）。
+        "font-width" => {
+            child.font_stretch = parent.font_stretch;
+            true
+        }
         "direction" => {
             child.direction = parent.direction.clone();
             true
@@ -285,6 +318,42 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "background-position" => {
             child.background_position = parent.background_position.clone();
+            true
+        }
+        // wptfyi-css 刀 A1d（css-backgrounds-4 §2.4）：单轴 longhand 独立继承——
+        // 只补丁目标轴（child 另一轴保己值），父轴列表循环取模（层重复语义
+        // css-backgrounds-3 §3，与 apply_advanced x/y 列表臂同模型）。
+        "background-position-x" | "background-position-y" => {
+            use BackgroundPositionComputedValue as Bpc;
+            let horizontal = property == "background-position-x";
+            if parent.background_position.is_empty() {
+                return false;
+            }
+            let old = std::mem::take(&mut child.background_position);
+            let child_base = if old.is_empty() {
+                vec![Bpc::TwoValue(Box::new(Bpc::Percent(0.0)), Box::new(Bpc::Percent(0.0)))]
+            } else {
+                old
+            };
+            let other_axis = |layer: &Bpc| -> (Bpc, Bpc) {
+                match layer {
+                    Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
+                    Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
+                    single => (single.clone(), Bpc::Center),
+                }
+            };
+            let count = child_base.len().max(parent.background_position.len());
+            child.background_position = (0..count)
+                .map(|i| {
+                    let (x, y) = other_axis(&child_base[i % child_base.len()]);
+                    let (px, py) = other_axis(&parent.background_position[i % parent.background_position.len()]);
+                    if horizontal {
+                        Bpc::TwoValue(Box::new(px), Box::new(y))
+                    } else {
+                        Bpc::TwoValue(Box::new(x), Box::new(py))
+                    }
+                })
+                .collect();
             true
         }
         "background-repeat" => {
@@ -553,8 +622,57 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.column_rule_color = parent.column_rule_color.clone();
             true
         }
+        "row-rule-color" => {
+            child.row_rule_color = parent.row_rule_color.clone();
+            true
+        }
+        "row-rule-width" => {
+            child.row_rule_width = parent.row_rule_width.clone();
+            true
+        }
+        "row-rule-style" => {
+            child.row_rule_style = parent.row_rule_style.clone();
+            true
+        }
         "column-rule-style" => {
             child.column_rule_style = parent.column_rule_style.clone();
+            true
+        }
+        // rule-inset 8 longhand `inherit` 关键字臂（css-gaps-1 §inset）：非继承属性
+        // 的显式 `inherit` = 复制父 computed 槽值（css-cascade-4 §7.3 关键字解析
+        // 与 inherited-ness 无关——语料 interpolation 页 trans inherit→10px
+        // from=20px 期望 px lerp 实证）。
+        // https://drafts.csswg.org/css-cascade-4/#defaulting-keywords
+        "column-rule-inset-cap-start" => {
+            child.column_rule_inset_cap_start = parent.column_rule_inset_cap_start.clone();
+            true
+        }
+        "column-rule-inset-cap-end" => {
+            child.column_rule_inset_cap_end = parent.column_rule_inset_cap_end.clone();
+            true
+        }
+        "column-rule-inset-junction-start" => {
+            child.column_rule_inset_junction_start = parent.column_rule_inset_junction_start.clone();
+            true
+        }
+        "column-rule-inset-junction-end" => {
+            child.column_rule_inset_junction_end = parent.column_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-cap-start" => {
+            child.row_rule_inset_cap_start = parent.row_rule_inset_cap_start.clone();
+            true
+        }
+        "row-rule-inset-cap-end" => {
+            child.row_rule_inset_cap_end = parent.row_rule_inset_cap_end.clone();
+            true
+        }
+        "row-rule-inset-junction-start" => {
+            child.row_rule_inset_junction_start = parent.row_rule_inset_junction_start.clone();
+            true
+        }
+        "row-rule-inset-junction-end" => {
+            child.row_rule_inset_junction_end = parent.row_rule_inset_junction_end.clone();
             true
         }
         "column-fill" => {
@@ -599,6 +717,59 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         // 而非按子字号重解析声明值）。
         "transform" => {
             child.transform = parent.transform.clone();
+            true
+        }
+        // mask-border-* 五长手（css-masking-1 §3.4–3.9，Inherited: no）遇显式
+        // `inherit` 关键字复制父元素计算值（css-cascade-4 §inherit：inherit 对任何
+        // 属性强制继承；transform 臂同口径先例）。此前无臂 → fallback false（无
+        // 操作）→ 子保持旧值，inheritance.sub 页 does-not-inherit 的 target
+        // inherit 步读回旧值即 Fail。
+        // https://drafts.fxtf.org/css-masking/#the-mask-border
+        "mask-border-source" => {
+            child.mask_border_source = parent.mask_border_source.clone();
+            true
+        }
+        "mask-border-slice" => {
+            child.mask_border_slice = parent.mask_border_slice.clone();
+            true
+        }
+        "mask-border-width" => {
+            child.mask_border_width = parent.mask_border_width.clone();
+            true
+        }
+        "mask-border-repeat" => {
+            child.mask_border_repeat = parent.mask_border_repeat.clone();
+            true
+        }
+        "mask-border-outset" => {
+            child.mask_border_outset = parent.mask_border_outset.clone();
+            true
+        }
+        // css-masking-1 §5.3–5.6 六长手全部非继承（Inherited: no），显式
+        // `inherit` 关键字仍强制拷父计算值（css-cascade-4 §inherit；
+        // mask-border-* 五长手臂同口径先例）。
+        "mask-position" => {
+            child.mask_position = parent.mask_position.clone();
+            true
+        }
+        "mask-size" => {
+            child.mask_size = parent.mask_size.clone();
+            true
+        }
+        "mask-repeat" => {
+            child.mask_repeat = parent.mask_repeat.clone();
+            true
+        }
+        "mask-clip" => {
+            child.mask_clip = parent.mask_clip.clone();
+            true
+        }
+        "mask-origin" => {
+            child.mask_origin = parent.mask_origin.clone();
+            true
+        }
+        "mask-composite" => {
+            child.mask_composite = parent.mask_composite.clone();
             true
         }
         "transform-origin" => {
@@ -865,6 +1036,30 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-kerning" => {
             style.font_kerning = default_style.font_kerning;
+            true
+        }
+        // 刀 O（css-fonts-4 §font-prop）：`font` 简写关键字通道（`font: initial`/
+        // `all: initial` 级联）——按 expand_font 展开清单重置 13 长手槽位（同
+        // inherit 臂委托各 longhand 臂保单源）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+        "font" => {
+            for p in [
+                "font-style",
+                "font-weight",
+                "font-size",
+                "line-height",
+                "font-family",
+                "font-variant-ligatures",
+                "font-variant-caps",
+                "font-variant-numeric",
+                "font-variant-east-asian",
+                "font-variant-position",
+                "font-variant-alternates",
+                "font-stretch",
+                "font-kerning",
+            ] {
+                apply_initial_value(style, p);
+            }
             true
         }
         "font-synthesis" => {
@@ -1168,6 +1363,28 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.individual_scale = None;
             true
         }
+        // CSS Motion Path offset 簇（css-motion-1，非继承）spec 初始：
+        // path none / distance 0 / rotate auto / anchor auto。
+        "offset-path" => {
+            style.offset_path = None;
+            true
+        }
+        "offset-distance" => {
+            style.offset_distance = Some(LengthValue::Px(0.0));
+            true
+        }
+        "offset-rotate" => {
+            style.offset_rotate = Some(OffsetRotateValue::Auto);
+            true
+        }
+        "offset-anchor" => {
+            style.offset_anchor = None;
+            true
+        }
+        "offset-position" => {
+            style.offset_position = Some(OffsetPositionValue::Normal);
+            true
+        }
         "perspective" => {
             style.perspective = default_style.perspective;
             true
@@ -1200,6 +1417,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "transition-delay" => {
             style.transition_delay = default_style.transition_delay;
+            true
+        }
+        "transition-behavior" => {
+            style.transition_behavior = default_style.transition_behavior;
             true
         }
         // Animations
@@ -1361,12 +1582,201 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         // Column Rule
+        // 简写 `initial`/`unset`：三子属性槽一起回落（CSS Multicol §6.2）。
+        "column-rule" => {
+            style.column_rule_width = default_style.column_rule_width;
+            style.column_rule_style = default_style.column_rule_style;
+            style.column_rule_color = default_style.column_rule_color.clone();
+            true
+        }
+        // rule-color 简写 `initial`/`unset`：row/column 双 rule-color 一起回落
+        //（css-gaps-1 §rule-shorthand-properties，column-rule 臂同款）。
+        "rule-color" => {
+            style.row_rule_color = default_style.row_rule_color.clone();
+            style.column_rule_color = default_style.column_rule_color.clone();
+            true
+        }
+        // rule / row-rule 简写 `initial`/`unset`：全部子属性槽一起回落
+        //（css-gaps-1 §rule-shorthand-properties，rule-color 臂同款）。
+        "rule" => {
+            style.column_rule_width = default_style.column_rule_width.clone();
+            style.column_rule_style = default_style.column_rule_style.clone();
+            style.column_rule_color = default_style.column_rule_color.clone();
+            style.row_rule_width = default_style.row_rule_width.clone();
+            style.row_rule_style = default_style.row_rule_style.clone();
+            style.row_rule_color = default_style.row_rule_color.clone();
+            true
+        }
+        "row-rule" => {
+            style.row_rule_width = default_style.row_rule_width.clone();
+            style.row_rule_style = default_style.row_rule_style.clone();
+            style.row_rule_color = default_style.row_rule_color.clone();
+            true
+        }
+        "rule-width" => {
+            style.row_rule_width = default_style.row_rule_width.clone();
+            style.column_rule_width = default_style.column_rule_width.clone();
+            true
+        }
+        "rule-style" => {
+            style.row_rule_style = default_style.row_rule_style.clone();
+            style.column_rule_style = default_style.column_rule_style.clone();
+            true
+        }
+        // rule-inset 简写族复位（css-gaps-1 §inset，15 简写）：目标槽按简写投影
+        // 精准回落各槽初值（cap 0px / junction 0%——default_impl 口径；
+        // rule-width/rule-style 臂同模板）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "rule-inset" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "rule-inset-cap" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            true
+        }
+        "rule-inset-junction" => {
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "rule-inset-start" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            true
+        }
+        "rule-inset-end" => {
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "column-rule-inset" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "column-rule-inset-cap" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            true
+        }
+        "column-rule-inset-junction" => {
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "column-rule-inset-start" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            true
+        }
+        "column-rule-inset-end" => {
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-cap" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            true
+        }
+        "row-rule-inset-junction" => {
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-start" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            true
+        }
+        "row-rule-inset-end" => {
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        // rule-inset 8 longhand 槽复位（初值 0px 非继承，逐名精准回落）。
+        "column-rule-inset-cap-start" => {
+            style.column_rule_inset_cap_start = default_style.column_rule_inset_cap_start.clone();
+            true
+        }
+        "column-rule-inset-cap-end" => {
+            style.column_rule_inset_cap_end = default_style.column_rule_inset_cap_end.clone();
+            true
+        }
+        "column-rule-inset-junction-start" => {
+            style.column_rule_inset_junction_start = default_style.column_rule_inset_junction_start.clone();
+            true
+        }
+        "column-rule-inset-junction-end" => {
+            style.column_rule_inset_junction_end = default_style.column_rule_inset_junction_end.clone();
+            true
+        }
+        "row-rule-inset-cap-start" => {
+            style.row_rule_inset_cap_start = default_style.row_rule_inset_cap_start.clone();
+            true
+        }
+        "row-rule-inset-cap-end" => {
+            style.row_rule_inset_cap_end = default_style.row_rule_inset_cap_end.clone();
+            true
+        }
+        "row-rule-inset-junction-start" => {
+            style.row_rule_inset_junction_start = default_style.row_rule_inset_junction_start.clone();
+            true
+        }
+        "row-rule-inset-junction-end" => {
+            style.row_rule_inset_junction_end = default_style.row_rule_inset_junction_end.clone();
+            true
+        }
+        // shape-margin / shape-image-threshold（css-shapes-1）：白名单串复位
+        // 臂补齐（二十三轮刀白名单接入时遗漏，initial_value 完整性测试钉面）。
+        "shape-margin" => {
+            style.shape_margin = default_style.shape_margin.clone();
+            true
+        }
+        "shape-image-threshold" => {
+            style.shape_image_threshold = default_style.shape_image_threshold;
+            true
+        }
         "column-rule-width" => {
             style.column_rule_width = default_style.column_rule_width;
             true
         }
         "column-rule-style" => {
             style.column_rule_style = default_style.column_rule_style;
+            true
+        }
+        "row-rule-width" => {
+            style.row_rule_width = default_style.row_rule_width;
+            true
+        }
+        "row-rule-style" => {
+            style.row_rule_style = default_style.row_rule_style;
             true
         }
         "overscroll-behavior-x" => {
@@ -1419,6 +1829,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "font-stretch" => {
+            style.font_stretch = default_style.font_stretch;
+            true
+        }
+        // css-fonts-4 §font-width-prop：font-width 为 font-stretch legacy alias，
+        // 同字段同初始值。
+        "font-width" => {
             style.font_stretch = default_style.font_stretch;
             true
         }
@@ -1497,7 +1913,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         // Column Rule Color
         "column-rule-color" => {
-            style.column_rule_color = default_style.column_rule_color;
+            style.column_rule_color = default_style.column_rule_color.clone();
+            true
+        }
+        // Row Rule Color（css-gaps-1，与 column 同族非继承回落）
+        "row-rule-color" => {
+            style.row_rule_color = default_style.row_rule_color.clone();
             true
         }
         // Contain
@@ -1622,6 +2043,29 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.border_image_outset = default_style.border_image_outset;
             true
         }
+        // mask-border-* 五长手（css-masking-1 §3.4–3.9，Inherited: no）：初值臂
+        // 同 border-image-* 口径（default_style 置初值——apply_initial_value 到达
+        // 路径 = 未声明非继承填充 / initial / unset / revert 关键字，置初值正确）。
+        "mask-border-source" => {
+            style.mask_border_source = default_style.mask_border_source;
+            true
+        }
+        "mask-border-slice" => {
+            style.mask_border_slice = default_style.mask_border_slice;
+            true
+        }
+        "mask-border-width" => {
+            style.mask_border_width = default_style.mask_border_width;
+            true
+        }
+        "mask-border-repeat" => {
+            style.mask_border_repeat = default_style.mask_border_repeat;
+            true
+        }
+        "mask-border-outset" => {
+            style.mask_border_outset = default_style.mask_border_outset;
+            true
+        }
         "text-shadow" => {
             style.text_shadow = default_style.text_shadow.clone();
             true
@@ -1632,6 +2076,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "clip-path" => {
             style.clip_path = default_style.clip_path;
+            true
+        }
+        "shape-outside" => {
+            style.shape_outside = default_style.shape_outside.clone();
             true
         }
         "border-shape" => {
@@ -1648,6 +2096,31 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "mask-mode" => {
             style.mask_mode = default_style.mask_mode;
+            true
+        }
+        // css-masking-1 §5.3–5.6 六长手全部非继承，reset 初值。
+        "mask-position" => {
+            style.mask_position = default_style.mask_position;
+            true
+        }
+        "mask-size" => {
+            style.mask_size = default_style.mask_size;
+            true
+        }
+        "mask-repeat" => {
+            style.mask_repeat = default_style.mask_repeat;
+            true
+        }
+        "mask-clip" => {
+            style.mask_clip = default_style.mask_clip;
+            true
+        }
+        "mask-origin" => {
+            style.mask_origin = default_style.mask_origin;
+            true
+        }
+        "mask-composite" => {
+            style.mask_composite = default_style.mask_composite;
             true
         }
         "justify-items" => {

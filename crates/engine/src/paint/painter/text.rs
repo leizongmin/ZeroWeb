@@ -149,6 +149,8 @@ pub(super) fn bg_clip_text_solid_color(
             }
             // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
             BackgroundImageComputedValue::Filtered { .. } => continue,
+            // g45：image-set() 无单一纯色可提取（选源图像集，同 url 形跳过）。
+            BackgroundImageComputedValue::ImageSet(_) => continue,
         };
         layers.push((i, c));
     }

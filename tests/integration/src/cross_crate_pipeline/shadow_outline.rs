@@ -1012,17 +1012,21 @@ fn test_column_rule_render_pipeline() {
     );
     assert!(
         matches!(
-            div_style.column_rule_style,
-            zero_style_system::ColumnRuleStyleComputedValue::Solid
+            div_style.column_rule_style.as_slice(),
+            [zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::Solid
+            )]
         ),
-        "column-rule-style 应为 Solid"
+        "column-rule-style 应为单段 Solid 列表"
     );
     assert!(
         matches!(
-            div_style.column_rule_width,
-            zero_style_system::ColumnRuleWidthComputedValue::Length(LengthValue::Px(w)) if (w - 2.0).abs() < 0.01
+            div_style.column_rule_width.as_slice(),
+            [zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(w))
+            )] if (w - 2.0).abs() < 0.01
         ),
-        "column-rule-width 应为 2px"
+        "column-rule-width 应为单段 2px"
     );
 
     // 渲染管线端到端

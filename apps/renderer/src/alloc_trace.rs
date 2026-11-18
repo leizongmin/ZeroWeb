@@ -341,6 +341,11 @@ pub(crate) fn init_with_config(config: TraceConfig, enabled: bool) {
     }
 }
 
+/// 进程级启用位查询（T78 域账面发布点录数共用同一门；未初始化 = 关）。
+pub(crate) fn armed() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
 /// 进程快照初始化（`zero-renderer` bin 入口在最早时机调用一次；幂等）。
 ///
 /// 默认构建（无 `alloc-trace` feature）本函数不存在，产品路径零变化。
@@ -755,6 +760,10 @@ fn snapshot_json(config: &TraceConfig, reason: &str) -> String {
         },
         "traffic_top": traffic_top,
         "live_top": live_top,
+        // T78 域账面（读数式）：发布点录数的分域保留字节快照（与 PSS/alloc
+        // 采样互校定位常驻构成；未录数 = null，分析侧判「无读数」）。V8 cage
+        // 不经 System 分配器，账外——smaps 差分归因。
+        "ledger": crate::mem_ledger::snapshot_value(),
     })
     .to_string()
 }

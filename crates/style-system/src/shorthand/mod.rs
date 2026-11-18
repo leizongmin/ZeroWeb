@@ -186,14 +186,32 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
         "text-emphasis" => &["text-emphasis-style", "text-emphasis-color"],
         "list-style" => &["list-style-image", "list-style-position", "list-style-type"],
         "outline" => &["outline-width", "outline-style", "outline-color"],
-        "columns" => &["column-count", "column-width"],
+        "columns" => &["column-count", "column-width", "column-height"],
         "column-rule" => &["column-rule-width", "column-rule-style", "column-rule-color"],
+        "row-rule" => &["row-rule-width", "row-rule-style", "row-rule-color"],
+        "rule" => &[
+            "column-rule-width",
+            "row-rule-width",
+            "column-rule-style",
+            "row-rule-style",
+            "column-rule-color",
+            "row-rule-color",
+        ],
+        "rule-width" => &["column-rule-width", "row-rule-width"],
+        "rule-style" => &["column-rule-style", "row-rule-style"],
         "border-image" => &[
             "border-image-source",
             "border-image-slice",
             "border-image-width",
             "border-image-outset",
             "border-image-repeat",
+        ],
+        "mask-border" => &[
+            "mask-border-source",
+            "mask-border-slice",
+            "mask-border-width",
+            "mask-border-outset",
+            "mask-border-repeat",
         ],
         "animation" => &[
             "animation-name",
@@ -914,10 +932,55 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── column-rule 简写 ──
         // column-rule: [width] [style] [color]
         // 与 outline 类似，各部分顺序无关
-        "column-rule" => expand_column_rule(value, important, specificity),
+        // css-gaps-1：升级为 <gap-rule-list> 联合列表展开（expand_gap_rule）。
+        "column-rule" => expand_gap_rule(value, important, specificity, GapRuleTarget::Column),
+
+        // ── row-rule 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 与 column-rule 同 <gap-rule-list> 文法，写 row-rule-* 三 longhand。
+        "row-rule" => expand_gap_rule(value, important, specificity, GapRuleTarget::Row),
+
+        // ── rule 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 同值写 row/column 六 longhand（shorthand.html rule_properties.rule 钉）。
+        "rule" => expand_gap_rule(value, important, specificity, GapRuleTarget::Both),
+
+        // ── rule-color 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 同值写入 row-rule-color + column-rule-color（列表文法合法性由
+        // parse_rule_color_list 裁决）；css-wide 关键字透传双子属性。
+        "rule-color" => expand_rule_color(value, important, specificity),
+
+        // ── rule-width / rule-style 简写（css-gaps-1 §rule-shorthand-properties）──
+        // 同值双写 row/column 对应 longhand（expand_rule_color 同模板）。
+        "rule-width" => expand_rule_dimension(value, important, specificity, "rule-width"),
+        "rule-style" => expand_rule_dimension(value, important, specificity, "rule-style"),
+
+        // ── rule-inset 简写族（css-gaps-1 §inset，15 简写）──
+        // 四槽解析单点 parse_rule_inset_quad + 槽位投影展开（expand_rule_inset，
+        // 目标表 rule_inset_targets 按简写名查）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "rule-inset"
+        | "column-rule-inset"
+        | "row-rule-inset"
+        | "rule-inset-cap"
+        | "column-rule-inset-cap"
+        | "row-rule-inset-cap"
+        | "rule-inset-junction"
+        | "column-rule-inset-junction"
+        | "row-rule-inset-junction"
+        | "rule-inset-start"
+        | "column-rule-inset-start"
+        | "row-rule-inset-start"
+        | "rule-inset-end"
+        | "column-rule-inset-end"
+        | "row-rule-inset-end" => expand_rule_inset(value, important, specificity, property),
 
         // ── border-image 简写 ──
         "border-image" => expand_border_image(value, important, specificity),
+
+        // ── mask-border 简写（css-masking-1 §3.4）──
+        "mask-border" => expand_mask_border(value, important, specificity),
+
+        // ── mask 简写（css-masking-1 §3.10）──
+        "mask" => expand_mask(value, important, specificity),
 
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
@@ -950,19 +1013,63 @@ fn is_gradient_source_token(t: &str) -> bool {
 /// - 若值含 url(...) 或渐变函数 → 提取为 source（R3909：渐变同为 <image>）
 /// - 解析 slice、width（/ 后第一组）、outset（/ 后第二组）、repeat 关键字
 fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    expand_image_border_shorthand_core(value, important, specificity, &BORDER_IMAGE_SHORTHAND)
+}
+
+/// border-image / mask-border 简写共享规格（css-backgrounds-3 §5.1 与
+/// css-masking-1 §3.4 文法同构：`source || slice [ / width? [ / outset? ]? ]? || repeat`，
+/// 差异仅在五属性名与 slice/width 初值——css-masking-1 §3.5 slice 初值 `0`
+/// （border-image 为 `100%`）、§3.6 width 初值 `auto`（border-image 为 `1`））。
+struct ImageBorderShorthandSpec {
+    source: &'static str,
+    slice: &'static str,
+    width: &'static str,
+    outset: &'static str,
+    repeat: &'static str,
+    initial_slice: &'static str,
+    initial_width: &'static str,
+    initial_outset: &'static str,
+    initial_repeat: &'static str,
+}
+
+const BORDER_IMAGE_SHORTHAND: ImageBorderShorthandSpec = ImageBorderShorthandSpec {
+    source: "border-image-source",
+    slice: "border-image-slice",
+    width: "border-image-width",
+    outset: "border-image-outset",
+    repeat: "border-image-repeat",
+    initial_slice: "100%",
+    initial_width: "1",
+    initial_outset: "0",
+    initial_repeat: "stretch",
+};
+
+/// mask-border 简写规格（css-masking-1 §3.4）。
+const MASK_BORDER_SHORTHAND: ImageBorderShorthandSpec = ImageBorderShorthandSpec {
+    source: "mask-border-source",
+    slice: "mask-border-slice",
+    width: "mask-border-width",
+    outset: "mask-border-outset",
+    repeat: "mask-border-repeat",
+    initial_slice: "0",
+    initial_width: "auto",
+    initial_outset: "0",
+    initial_repeat: "stretch",
+};
+
+fn expand_image_border_shorthand_core(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+    spec: &ImageBorderShorthandSpec,
+) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     if matches_css_wide_keyword(value) {
         return wide_keyword_to_longhands(
             value,
-            &[
-                "border-image-source",
-                "border-image-slice",
-                "border-image-width",
-                "border-image-outset",
-                "border-image-repeat",
-            ],
+            &[spec.source, spec.slice, spec.width, spec.outset, spec.repeat],
             important,
             specificity,
         );
@@ -1082,32 +1189,80 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
     // css-cascade-4 §6.4：简写声明的省略分量 = 重置为初值，前置 longhand 不得穿越简写
     // 继续生效（driving: border-image-shorthand-003 —— `border-image-width: 3` 后接
     // `border-image: … / / 2 stretch`，width 未被重置 → 3×border-width 角厚渲染）。
-    // 初值出处：slice `100%`（css-backgrounds-3 §5.2）/ width `1`（§7.3）/ outset `0`
-    //（§8.2）/ repeat `stretch`（§6）。
+    // 初值出处：border-image slice `100%`（css-backgrounds-3 §5.2）/ width `1`（§7.3）/
+    // outset `0`（§8.2）/ repeat `stretch`（§6）；mask-border slice `0`（css-masking-1
+    // §3.5）/ width `auto`（§3.6）/ outset `0`（§3.7）/ repeat `stretch`（§3.8）。
     if slice_val.is_empty() {
-        slice_val = "100%".to_string();
+        slice_val = spec.initial_slice.to_string();
     }
     if width_val.is_empty() {
-        width_val = "1".to_string();
+        width_val = spec.initial_width.to_string();
     }
     if outset_val.is_empty() {
-        outset_val = "0".to_string();
+        outset_val = spec.initial_outset.to_string();
     }
     if repeat_val.is_empty() {
-        repeat_val = "stretch".to_string();
+        repeat_val = spec.initial_repeat.to_string();
     }
 
     vec![
-        mk("border-image-source", &source_val),
-        mk("border-image-slice", &slice_val),
-        mk("border-image-width", &width_val),
-        mk("border-image-outset", &outset_val),
-        mk("border-image-repeat", &repeat_val),
+        mk(spec.source, &source_val),
+        mk(spec.slice, &slice_val),
+        mk(spec.width, &width_val),
+        mk(spec.outset, &outset_val),
+        mk(spec.repeat, &repeat_val),
+    ]
+}
+
+/// 展开 mask-border 简写（css-masking-1 §3.4：文法与 border-image 同构，
+/// 共享内核 [`expand_image_border_shorthand_core`]）。
+fn expand_mask_border(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    expand_image_border_shorthand_core(value, important, specificity, &MASK_BORDER_SHORTHAND)
+}
+
+/// mask 简写展开（css-masking-1 §3.10）。当前仅支持单值 `<mask-reference>` 形
+/// （none | <image>，复用 parse_mask_image 单值门，`url("#mask")` 等单 url/渐变
+/// 形接受）；position/size/repeat/clip/origin/composite/mode 组合形与多层 `#`
+/// FIXME(mask-shorthand-grammar) 拒收（展开失败=声明丢弃，与简写不可解析惯例一致）。
+///
+/// §3.10 reset 语义：mask 声明把全部 mask 长手与 mask-border-\* 五长手重置为
+/// 初值——展开即全投影。mask-mode 与 mask-border-\* 五长手有完整 apply 通道；
+/// 六长手（mask-position/size/repeat/clip/origin/composite）目前仅初值/reset
+/// 通道生效（registry 初值臂 + apply_initial_value 臂），写值 apply 通道
+/// FIXME(mask-longhands-unimplemented) 未实现——投影 reset 真、写值不生效。
+fn expand_mask(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    if zero_css_parser::values::parse_mask_image(value).is_none() {
+        return Vec::new();
+    }
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    vec![
+        mk("mask-image", value),
+        // §3.10 reset 名单：mask 长手初值（css-masking-1 §3.3–3.9 各属性初值）。
+        mk("mask-mode", "match-source"),
+        mk("mask-position", "0% 0%"),
+        mk("mask-size", "auto"),
+        mk("mask-repeat", "repeat"),
+        mk("mask-origin", "border-box"),
+        mk("mask-clip", "border-box"),
+        mk("mask-composite", "add"),
+        // mask-border-* 五长手初值（§3.4–3.9；slice/width 初值与 border-image
+        // 简写不同——100%/1 vs 0/auto，同 MASK_BORDER_SHORTHAND）。
+        mk("mask-border-source", "none"),
+        mk("mask-border-slice", "0"),
+        mk("mask-border-width", "auto"),
+        mk("mask-border-outset", "0"),
+        mk("mask-border-repeat", "stretch"),
     ]
 }
 
 pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
     !expand_border_image(value, false, (0, 0, 0)).is_empty()
+}
+
+/// mask-border 简写支持面（css-masking-1 §3.4，共享内核同款 supported 门）。
+pub(crate) fn mask_border_shorthand_supported(value: &str) -> bool {
+    !expand_mask_border(value, false, (0, 0, 0)).is_empty()
 }
 
 /// 解析 4 边简写的值部分。
@@ -2375,8 +2530,15 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
+    // css-multicol-2 §4.5：columns 声明同时复位 column-wrap（ED 2026-02）。
+    // css-wide 关键字经 wide 通道落全部四 longhand。
     if matches_css_wide_keyword(value) {
-        return wide_keyword_to_longhands(value, &["column-width", "column-count"], important, specificity);
+        return wide_keyword_to_longhands(
+            value,
+            &["column-width", "column-count", "column-height", "column-wrap"],
+            important,
+            specificity,
+        );
     }
 
     /// 检查值是否为有效的 column-count 值（正整数或 auto）。
@@ -2431,21 +2593,83 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     }
 
     // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
+    // css-multicol-2 §4.5：文法扩为 `[ <'column-width'> || <'column-count'> ]
+    // [ / <'column-height'> ]?`——斜杠段（若在）为 column-height 单值。先按
+    // 括号外空白切分（calc 内 '/' 不碎），再对含 '/' 的括号外段补拆（CSS
+    // tokenization 中 '/' 自成 token、空白可选：'10/100px' ≡ '10 / 100px'）。
     let Some(parts) = split_top_level_whitespace(value) else {
         return vec![];
     };
-    match parts.len() {
+    let mut tokens: Vec<&str> = Vec::new();
+    let mut slash_count = 0usize;
+    for part in parts {
+        if part.contains('(') {
+            // 函数形整体保留（calc 内斜杠是运算符不是分隔符）
+            tokens.push(part);
+        } else if part.contains('/') {
+            // CSS tokenization：'/' 自成 token、与相邻 token 空白可选——'10/100px'
+            // （粘连）、'12em/ 14em'（左粘）、'/14em'（右粘）、'12em / 14em'
+            //（'/' 单独成段）四形同构。split 的段首/段尾空 segment 是粘连边界
+            // 产物（跳过），中段空（'a//b'）残缺拒收。
+            let segs: Vec<&str> = part.split('/').collect();
+            let n = segs.len();
+            if n > 2 && segs[1..n - 1].iter().any(|s| s.is_empty()) {
+                return vec![]; // 'a//b' 连续斜杠残缺
+            }
+            let mut first = true;
+            for (i, seg) in segs.iter().enumerate() {
+                if !first {
+                    tokens.push("/");
+                    slash_count += 1;
+                }
+                first = false;
+                if seg.is_empty() {
+                    if i == 0 || i == n - 1 {
+                        continue; // 粘连边界空段
+                    }
+                    return vec![];
+                }
+                tokens.push(seg);
+            }
+        } else {
+            tokens.push(part);
+        }
+    }
+    if slash_count > 1 {
+        return vec![]; // 文法仅容一个斜杠段
+    }
+    let slash_pos = tokens.iter().position(|t| *t == "/");
+    let (pre, height_seg) = match slash_pos {
+        Some(pos) => {
+            let height_seg = &tokens[pos + 1..];
+            if height_seg.len() != 1 {
+                return vec![]; // 斜杠后须恰一个 column-height 值
+            }
+            (&tokens[..pos], Some(height_seg[0]))
+        }
+        None => (&tokens[..], None),
+    };
+    // column-height 文法 = auto | <length [0,∞]>（css-multicol-2 §4.2）——与
+    // column-width 同形，共用 [`is_valid_column_width`] 文法门。
+    if let Some(h) = height_seg {
+        if !is_valid_column_width(h) {
+            return vec![];
+        }
+    }
+    let mut longhands = match pre.len() {
+        // 斜杠前 width||count 组为文法必选（无 `?`）——空 pre（如 `columns: / 20px`）无效。
+        0 => return vec![],
         1 => {
             // 单值：判断是正整数（column-count）还是长度（column-width）。
             // 0 非正整数 → 归 column-width（CSS Multicol §3.2：column-count 须 ≥1）。
-            let is_positive_int = parts[0].parse::<u32>().is_ok_and(|n| n >= 1);
-            if is_positive_int || parts[0] == "auto" {
-                vec![mk("column-count", parts[0]), mk("column-width", "auto")]
-            } else if is_valid_column_width(parts[0]) {
-                vec![mk("column-count", "auto"), mk("column-width", parts[0])]
+            let is_positive_int = pre[0].parse::<u32>().is_ok_and(|n| n >= 1);
+            if is_positive_int || pre[0] == "auto" {
+                vec![mk("column-count", pre[0]), mk("column-width", "auto")]
+            } else if is_valid_column_width(pre[0]) {
+                vec![mk("column-count", "auto"), mk("column-width", pre[0])]
             } else {
                 // 无效值 — 整个声明无效
-                vec![]
+                return vec![];
             }
         }
         2 => {
@@ -2454,95 +2678,295 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             // R1425 修复：旧逻辑 `parts[0]=="auto"` 把 auto 当 count 指示，致 `auto 6` 误解析为
             // column-count:auto + column-width:6（应 column-count:6 + column-width:auto），使
             // `columns: auto N` 案（如 multicol-columns-007）列数变 auto → 退回 column-width 驱动。
-            let p0_int = parts[0].parse::<u32>().is_ok_and(|n| n >= 1);
-            let p1_int = parts[1].parse::<u32>().is_ok_and(|n| n >= 1);
+            let p0_int = pre[0].parse::<u32>().is_ok_and(|n| n >= 1);
+            let p1_int = pre[1].parse::<u32>().is_ok_and(|n| n >= 1);
             let (count_val, width_val) = if p0_int {
-                (parts[0], parts[1])
+                (pre[0], pre[1])
             } else if p1_int {
-                (parts[1], parts[0])
-            } else if is_valid_column_width(parts[0]) && !parts[0].eq_ignore_ascii_case("auto") {
-                // parts[0] 是长度 → width，parts[1]（auto 或长度）→ count
-                (parts[1], parts[0])
+                (pre[1], pre[0])
+            } else if is_valid_column_width(pre[0]) && !pre[0].eq_ignore_ascii_case("auto") {
+                // pre[0] 是长度 → width，pre[1]（auto 或长度）→ count
+                (pre[1], pre[0])
             } else {
-                // parts[0] 非 int/length（即 auto）→ count，parts[1] → width
-                (parts[0], parts[1])
+                // pre[0] 非 int/length（即 auto）→ count，pre[1] → width
+                (pre[0], pre[1])
             };
             // 验证两个值都有效：count 必须是整数/auto，width 必须是长度/auto
             if is_valid_column_count(count_val) && is_valid_column_width(width_val) {
                 vec![mk("column-count", count_val), mk("column-width", width_val)]
             } else {
                 // 无效值（如 "8 normal"）— 整个声明无效，不覆盖先前值
-                vec![]
+                return vec![];
             }
         }
-        _ => vec![],
-    }
+        _ => return vec![],
+    };
+    // column-height 是 columns 文法内 longhand（css-multicol-2 §4.5）——省略段
+    // 按简写语义落初值 auto（css-cascade 简写规则：文法内省略组件 = initial）。
+    longhands.push(mk("column-height", height_seg.unwrap_or("auto")));
+    // 有效 columns 声明复位 column-wrap 初值（css-multicol-2 §4.5 明文；
+    // column-wrap 不在文法内，同节明文规定复位）。
+    longhands.push(mk("column-wrap", "auto"));
+    longhands
 }
 
-/// 展开 column-rule 简写。
-///
-/// CSS `column-rule` 简写格式为：
-/// `column-rule: [width] [style] [color]`
-///
-/// 各部分顺序无关，未指定的部分使用初始值。
-fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+/// rule-color 简写展开（css-gaps-1 §rule-shorthand-properties）：同值写入
+/// row/column 双 rule-color。列表文法裁决单点 parse_rule_color_list
+///（css-wide 关键字先判透传，column-rule 臂同款）。非法值空 Vec = 展开拒。
+/// driving: css-gaps 语料 gap-decorations-color-{valid,invalid} rule-color 槽。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn expand_rule_color(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     if matches_css_wide_keyword(value) {
-        return wide_keyword_to_longhands(
-            value,
-            &["column-rule-width", "column-rule-style", "column-rule-color"],
-            important,
-            specificity,
-        );
+        return wide_keyword_to_longhands(value, &["row-rule-color", "column-rule-color"], important, specificity);
     }
 
-    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
-    let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
-    let mut width = "medium".to_string();
-    let mut style = "none".to_string();
-    let mut color = "currentcolor".to_string();
-    let mut seen_width = false;
-    let mut seen_style = false;
-    let mut seen_color = false;
+    if zero_css_parser::values::parse_rule_color_list(value).is_none() {
+        return vec![];
+    }
+    vec![mk("row-rule-color", value), mk("column-rule-color", value)]
+}
 
-    for part in parts {
-        if is_border_style_keyword(part) {
-            if seen_style {
-                return vec![];
-            }
-            seen_style = true;
-            style = part.to_string();
-        } else if looks_like_length(part) {
-            // R5090：同 border——<line-width> 非负（css-ui-3 §outline-width）。
-            // OPTIMIZATION: 负号先行短路——env 读取仅在罕见负 token 路径。
-            if part.trim_start().starts_with('-')
-                && std::env::var("ZW_SHORTHAND_NEG_WIDTH_INVALID").as_deref() != Ok("0")
-            {
-                return vec![];
-            }
-            if seen_width {
-                return vec![];
-            }
-            seen_width = true;
-            width = part.to_string();
-        } else if looks_like_color(part) {
-            if seen_color {
-                return vec![];
-            }
-            seen_color = true;
-            color = part.to_string();
-        } else {
-            return vec![];
-        }
+/// rule-width / rule-style 简写展开（css-gaps-1 §rule-shorthand-properties）：
+/// 同值双写 row/column 对应 longhand（expand_rule_color 同模板）。列表文法
+/// 裁决单点（width `parse_rule_width_list` / style `parse_rule_style_list`）。
+/// css-wide 关键字透传双子属性。
+/// driving: css-gaps 语料 gap-decorations-{width,style}-{valid,computed} 槽。
+fn expand_rule_dimension(value: &str, important: bool, specificity: (u32, u32, u32), dim: &str) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let (row_prop, col_prop) = (format!("row-{dim}"), format!("column-{dim}"));
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(value, &[&row_prop, &col_prop], important, specificity);
     }
 
-    vec![
-        mk("column-rule-width", &width),
-        mk("column-rule-style", &style),
-        mk("column-rule-color", &color),
-    ]
+    let ok = match dim {
+        "rule-width" => zero_css_parser::values::parse_rule_width_list(value).is_some(),
+        _ => zero_css_parser::values::parse_rule_style_list(value).is_some(),
+    };
+    if !ok {
+        return vec![];
+    }
+    vec![mk(&row_prop, value), mk(&col_prop, value)]
+}
+
+// ── css-gaps-1 §inset：rule-inset 简写族展开 ──────────────────────────────
+
+/// rule-inset 四槽位（quad 投影键）。
+#[derive(Clone, Copy, PartialEq)]
+enum RuleInsetSlot {
+    /// cap 侧 start 槽。
+    CapStart,
+    /// cap 侧 end 槽。
+    CapEnd,
+    /// junction 侧 start 槽。
+    JunctionStart,
+    /// junction 侧 end 槽。
+    JunctionEnd,
+}
+
+/// 简写名 → 覆盖 (longhand, 槽位) 目标表（css-gaps-1 §inset 15 简写；
+/// shorthand-testcommon rule_properties 映射同源）。
+fn rule_inset_targets(prop: &str) -> Option<&'static [(&'static str, RuleInsetSlot)]> {
+    use RuleInsetSlot::*;
+    match prop {
+        "rule-inset" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "column-rule-inset" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "row-rule-inset" => Some(&[
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "rule-inset-cap" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+        ]),
+        "column-rule-inset-cap" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-cap-end", CapEnd),
+        ]),
+        "row-rule-inset-cap" => Some(&[
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-cap-end", CapEnd),
+        ]),
+        "rule-inset-junction" => Some(&[
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "column-rule-inset-junction" => Some(&[
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("column-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "row-rule-inset-junction" => Some(&[
+            ("row-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "rule-inset-start" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-junction-start", JunctionStart),
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-junction-start", JunctionStart),
+        ]),
+        "column-rule-inset-start" => Some(&[
+            ("column-rule-inset-cap-start", CapStart),
+            ("column-rule-inset-junction-start", JunctionStart),
+        ]),
+        "row-rule-inset-start" => Some(&[
+            ("row-rule-inset-cap-start", CapStart),
+            ("row-rule-inset-junction-start", JunctionStart),
+        ]),
+        "rule-inset-end" => Some(&[
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-end", JunctionEnd),
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "column-rule-inset-end" => Some(&[
+            ("column-rule-inset-cap-end", CapEnd),
+            ("column-rule-inset-junction-end", JunctionEnd),
+        ]),
+        "row-rule-inset-end" => Some(&[
+            ("row-rule-inset-cap-end", CapEnd),
+            ("row-rule-inset-junction-end", JunctionEnd),
+        ]),
+        _ => None,
+    }
+}
+
+/// rule-inset 简写族展开（css-gaps-1 §inset）：全值解析单点
+/// `parse_rule_inset_quad`（双侧 `/` 结构与 {1,2} 复制语义单点），目标表槽位
+/// 投影落 canonical 槽文本（`rule_inset_component_to_css`——裸零折 `0px`、
+/// 单位保形）。非法值空 Vec = 展开拒。css-wide 关键字透传目标 longhand。
+/// driving: css-gaps 语料 rule-inset-{valid,invalid,shorthand,…} 20 页。
+/// https://drafts.csswg.org/css-gaps-1/#inset
+fn expand_rule_inset(value: &str, important: bool, specificity: (u32, u32, u32), prop: &str) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let Some(targets) = rule_inset_targets(prop) else {
+        return vec![];
+    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        let names: Vec<&str> = targets.iter().map(|(name, _)| *name).collect();
+        return wide_keyword_to_longhands(value, &names, important, specificity);
+    }
+
+    let Some(quad) = zero_css_parser::values::parse_rule_inset_quad(value) else {
+        return vec![];
+    };
+    let slot_value = |slot: RuleInsetSlot| -> Option<String> {
+        let c = match slot {
+            RuleInsetSlot::CapStart => &quad.cap_start,
+            RuleInsetSlot::CapEnd => &quad.cap_end,
+            RuleInsetSlot::JunctionStart => &quad.junction_start,
+            RuleInsetSlot::JunctionEnd => &quad.junction_end,
+        };
+        zero_css_parser::values::rule_inset_component_to_css(c)
+    };
+    let Some(decls) = targets
+        .iter()
+        .map(|(name, slot)| slot_value(*slot).map(|v| mk(name, &v)))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return vec![];
+    };
+    decls
+}
+
+/// gap-rule 联合简写展开目标（column-rule / row-rule / rule 三简写共享）。
+#[derive(Clone, Copy, PartialEq)]
+enum GapRuleTarget {
+    /// 写 column-rule-{width,style,color}。
+    Column,
+    /// 写 row-rule-{width,style,color}。
+    Row,
+    /// 同值写 row/column 六 longhand。
+    Both,
+}
+
+/// gap-rule 联合简写展开（css-gaps-1 §rule-shorthand-properties `<gap-rule-list>`）：
+/// `column-rule` / `row-rule` / `rule` 共享。段模型三维度顺序无关（`||`），缺省
+/// 分量展开期补初值（width→medium、style→none、color→currentcolor——shorthand.html
+/// 页 `dashed` → width 'medium' 钉）；repeat 结构保形逐维对齐。联合文法裁决单点
+/// `parse_gap_rule_list` + 投影 `project_{widths,styles,colors}`（specified 原文）。
+/// css-wide 关键字透传全部目标 longhand。
+/// driving: css-gaps 语料 gap-decorations-rule-shorthand{,-valid,-invalid,-computed}。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn expand_gap_rule(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+    target: GapRuleTarget,
+) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let parts: [&str; 6] = match target {
+        GapRuleTarget::Column => [
+            "column-rule-width",
+            "column-rule-style",
+            "column-rule-color",
+            "",
+            "",
+            "",
+        ],
+        GapRuleTarget::Row => ["row-rule-width", "row-rule-style", "row-rule-color", "", "", ""],
+        GapRuleTarget::Both => [
+            "column-rule-width",
+            "column-rule-style",
+            "column-rule-color",
+            "row-rule-width",
+            "row-rule-style",
+            "row-rule-color",
+        ],
+    };
+    let n = if target == GapRuleTarget::Both { 6 } else { 3 };
+
+    if matches_css_wide_keyword(value) {
+        let names: Vec<&str> = parts[..n].to_vec();
+        return wide_keyword_to_longhands(value, &names, important, specificity);
+    }
+
+    let Some(gap_parts) = zero_css_parser::values::parse_gap_rule_list(value) else {
+        return vec![];
+    };
+    let Some(w) = zero_css_parser::values::project_widths(&gap_parts) else {
+        return vec![];
+    };
+    let Some(s) = zero_css_parser::values::project_styles(&gap_parts) else {
+        return vec![];
+    };
+    let Some(c) = zero_css_parser::values::project_colors(&gap_parts) else {
+        return vec![];
+    };
+    let triples = [w, s, c];
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        out.push(mk(parts[i], triples[i % 3].as_str()));
+    }
+    out
 }
 
 /// @supports 求值用：`font` 简写值是否合法可解析（CSS Conditional §7：声明 supported
@@ -2595,20 +3019,15 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 "font-variant-alternates",
                 "font-stretch",
                 "font-kerning",
+                // css-fonts-4 §font-prop：简写 set 先复位全部子属性（同 bits 臂）。
+                "font-size-adjust",
+                "font-feature-settings",
+                "font-variation-settings",
             ],
             important,
             specificity,
         );
     }
-
-    let mut weight = "normal".to_string();
-    let mut style = "normal".to_string();
-    // R3890：font 简写的 font-variant 位（CSS2.1 语法仅 normal | small-caps；
-    // Fonts 4 将其扩展为 <'font-variant-caps'> 值域）。
-    let mut variant_caps: Option<String> = None;
-    let mut size = "medium".to_string();
-    let mut line_height = "normal".to_string();
-    let mut family = String::new();
 
     let system_fonts = ["caption", "icon", "menu", "message-box", "small-caption", "status-bar"];
     if system_fonts.contains(&value.to_ascii_lowercase().as_str()) {
@@ -2627,8 +3046,90 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             mk("font-variant-alternates", "normal"),
             mk("font-stretch", "normal"),
             mk("font-kerning", "auto"),
+            // css-fonts-4 §font-prop：简写 set 先复位全部子属性。
+            mk("font-size-adjust", "none"),
+            mk("font-feature-settings", "normal"),
+            mk("font-variation-settings", "normal"),
         ];
     }
+
+    // 刀 N 三期：位解析单源抽出（[parse_font_shorthand_parts]——展开面与
+    // inline specified 重组面（engine font_shorthand_reconstruct）共用位模型）。
+    let Some(bits) = parse_font_shorthand_parts(value) else {
+        return vec![];
+    };
+
+    vec![
+        mk("font-style", &bits.style),
+        mk("font-weight", &bits.weight),
+        mk("font-size", &bits.size),
+        mk("line-height", &bits.line_height),
+        mk("font-family", &bits.family),
+        // CSS Fonts 4 §4: font shorthand resets font-variant, font-stretch, and font-kerning.
+        mk("font-variant-ligatures", "normal"),
+        // R3890：font-variant 位存在时以其值覆盖 reset（否则保持 reset 到 normal）。
+        mk("font-variant-caps", bits.variant_caps.as_deref().unwrap_or("normal")),
+        mk("font-variant-numeric", "normal"),
+        mk("font-variant-east-asian", "normal"),
+        mk("font-variant-position", "normal"),
+        mk("font-variant-alternates", "normal"),
+        // 刀 N：font-stretch 位存在时以其关键字值覆盖 reset（否则 reset 到 normal）。
+        mk("font-stretch", bits.stretch.as_deref().unwrap_or("normal")),
+        mk("font-kerning", "auto"),
+        // css-fonts-4 §font-prop：简写 set 先复位全部子属性（"All subproperties
+        // of the font property are first reset to their initial values"）。
+        // FIXME: font-synthesis(+weight/style/small-caps/position) 与 font-width
+        // 亦属复位集，apply 面接受形未验证，暂缓。
+        mk("font-size-adjust", "none"),
+        mk("font-feature-settings", "normal"),
+        mk("font-variation-settings", "normal"),
+    ]
+}
+
+/// font 简写 declared 值位结构（[parse_font_shorthand_parts] 产物）。
+/// 位值均为 declared 原文形（不归一不计算），展开面与 inline specified
+/// 重组面（engine `font_shorthand_reconstruct`）共用同一份位语义。
+pub struct FontShorthandParts {
+    /// font-style 位（italic/oblique 原文；`normal` = 未出现占位）。
+    pub style: String,
+    /// font-variant 位（<'font-variant-caps'> 单 token 原文；`None` = 未出现）。
+    pub variant_caps: Option<String>,
+    /// font-weight 位（normal/bold/bolder/lighter/100–900 原文）。
+    pub weight: String,
+    /// font-stretch 位（九关键字原文；`None` = 未出现）。
+    pub stretch: Option<String>,
+    /// font-size 位（必填；关键字/长度/math 函数原文）。
+    pub size: String,
+    /// line-height 位（`normal` = 未出现占位）。
+    pub line_height: String,
+    /// font-family 位（必填；文法校验后的原文）。
+    pub family: String,
+}
+
+/// font 简写值文法解析（位提取，css-fonts-4 §font-prop 文法单源）。
+/// 文法门与 [expand_font] 展开判定完全同源：size/family 必填、非 normal
+/// 值逐位至多一次（`||` 组合器）、family 位委托
+/// [crate::property::parse::parse_font_family]（含刀 N 二期 CSS-wide
+/// keyword 列表拒收门）。system font 关键字与整条 CSS-wide keyword 声明
+/// 由调用方前置臂处理，不在本文法内。`None` = 文法 invalid。
+pub fn parse_font_shorthand_parts(value: &str) -> Option<FontShorthandParts> {
+    let mut weight = "normal".to_string();
+    let mut style = "normal".to_string();
+    // R3890：font 简写的 font-variant 位（CSS2.1 语法仅 normal | small-caps；
+    // Fonts 4 将其扩展为 <'font-variant-caps'> 值域）。
+    let mut variant_caps: Option<String> = None;
+    // 刀 N（css-fonts-4 §font-prop 语法）：font-stretch 位（<font-stretch-css3>
+    // = normal | 九关键字；% 形仅 longhand 文法，简写位不收）。
+    let mut stretch: Option<String> = None;
+    // 刀 N：非 normal 值逐位至多一次（css-fonts-4 `||` 组合器语义；normal 是
+    // 四位各自合法值、可多次出现作占位——font-computed.html 排列空间驱动）。
+    let mut style_seen = false;
+    let mut variant_seen = false;
+    let mut weight_seen = false;
+    let mut stretch_seen = false;
+    let mut size = "medium".to_string();
+    let mut line_height = "normal".to_string();
+    let mut family = String::new();
 
     let is_weight = |s: &str| {
         matches!(
@@ -2649,7 +3150,23 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         )
     };
 
-    let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "normal" | "italic" | "oblique");
+    let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "italic" | "oblique");
+    // 刀 N：font-stretch 位文法（<font-stretch-css3> = normal | 九关键字）——
+    // 复用 [`zero_css_parser::values::parse_font_stretch`] 关键字表（同一映射
+    // 单源；% 形简写位拒收，longhand 才收 css-fonts-4 §font-width-prop）。
+    let is_stretch = |s: &str| {
+        matches!(
+            s.to_ascii_lowercase().as_str(),
+            "ultra-condensed"
+                | "extra-condensed"
+                | "condensed"
+                | "semi-condensed"
+                | "semi-expanded"
+                | "expanded"
+                | "extra-expanded"
+                | "ultra-expanded"
+        )
+    };
     // R3890：font 简写 font-variant 位可接受的 token——CSS2.1 为 normal | small-caps；
     // Fonts 4 扩展为 <'font-variant-caps'> 全值域（与 expand_font_variant 的 caps 臂同表）。
     let is_variant_caps_token = |s: &str| {
@@ -2696,16 +3213,14 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                     | LengthValue::Ic(v)
                     | LengthValue::Ric(v)
                     | LengthValue::Percentage(v)
-                ) if v >= 0.0
+            ) if v >= 0.0
         ) || zero_css_parser::values::parse_math_function(s).is_some()
     };
 
     // 找到 size 部分：包含数字或者带 / 的部分。
     // R3752：math 函数内部空白不是组件边界（`font: min(10px, 2em) serif`、
     // `font: calc(2em + 4px)/1.5 serif`）——括号/引号感知顶层空白切分。
-    let Some(parts) = split_top_level_whitespace(value) else {
-        return vec![];
-    };
+    let parts = split_top_level_whitespace(value)?;
     let mut size_found = false;
     let mut family_parts: Vec<&str> = Vec::new();
 
@@ -2727,11 +3242,17 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             } else {
                 family_parts.push(part);
             }
+        } else if part.eq_ignore_ascii_case("normal") {
+            // 刀 N：`normal` 是 style/variant/weight/stretch 四位各自合法值，
+            // 可多次出现作占位（css-fonts-4 `||` 组合器；font-computed.html
+            // 排列空间 'normal normal normal italic 10px/normal Menu' 驱动）
+            // ——不占槽位直接略过，缺省值已为 normal。
+            continue;
         } else if part.contains('/') {
             // attached size/line-height 格式
             let sub: Vec<&str> = part.splitn(2, '/').collect();
             if !is_font_size(sub[0]) {
-                return vec![];
+                return None;
             }
             size = sub[0].to_string();
             if sub.len() > 1 {
@@ -2741,17 +3262,23 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         } else if !size_found && is_font_size(part) {
             size = part.to_string();
             size_found = true;
-        } else if !size_found && is_weight(part) {
+        } else if !size_found && is_weight(part) && !weight_seen {
             weight = part.to_string();
-        } else if !size_found && is_style(part) {
+            weight_seen = true;
+        } else if !size_found && is_style(part) && !style_seen {
             style = part.to_string();
-        } else if variant_caps.is_none() && is_variant_caps_token(part) {
+            style_seen = true;
+        } else if variant_caps.is_none() && is_variant_caps_token(part) && !variant_seen {
             // R3890：font 简写的 font-variant 位（CSS2.1 §15.8 语法位 [normal | small-caps]）。
             // 旧实现未知 token 直接丢弃整条声明——font-011..015 族
             // （`font: italic small-caps bold 1in Ahem`）整简写失效。
             variant_caps = Some(part.to_string());
+            variant_seen = true;
+        } else if !size_found && is_stretch(part) && !stretch_seen {
+            stretch = Some(part.to_string());
+            stretch_seen = true;
         } else {
-            return vec![];
+            return None;
         }
     }
 
@@ -2763,33 +3290,47 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // 如果没有找到 size 部分，声明无效（除非是系统字体关键字）
     if !size_found {
         // 无效的 font 简写声明
-        return vec![];
+        return None;
+    }
+    // 刀 N：font-family 亦为必填位（css-fonts-4 §font-prop：<'font-size'>
+    // 与 <'font-family'> 不可省；`font: 16px` 形此前落入空 family 声明
+    // 半展开——font-invalid 拒面）。
+    if family_parts.is_empty() {
+        return None;
+    }
+    // 刀 N：family 文法校验委托 longhand 单源（[`parse_font_family`]——ident
+    // 字符集/引号形同一裁决，css-fonts-4 §family-name-value）。简写 family 位
+    // 是 `<family-name>#` 逗号列表（css-fonts-4 §font-prop——`font: 14px Arial,
+    // sans-serif` 合法，test_font_shorthand_supported_valid/字体栈语料锚定）；
+    // 解析空 Vec（含非法字符如 `font: 16px 0simple`）整条拒收。
+    // 刀 N 二期：family 位出现 CSS-wide keyword 段（`font: 16px inherit`）拒收
+    // ——简写带 size 位必非整条 CSS-wide keyword 声明，keyword 出现在
+    // `<family-name>#` 槽位恒非法（css-values-4 §custom-idents 排除集；不问段
+    // 数——单段 `inherit` 同拒，与 longhand 本体「仅列表多段拒」门不同）。
+    // driving: test_font_family_parsing `16px inherit`/`16px inherit, simple`
+    // 简写组 556F。
+    if crate::property::parse::font_family_list_has_css_wide_keyword(&family)
+        || crate::property::parse::parse_font_family(&family).is_empty()
+    {
+        return None;
     }
 
     // CSS 规范：font 简写中 line-height 为负值时，整个声明无效
     // CSS Fonts §3.7: "Values have the same meanings as for their non-shorthand equivalents.
     // Negative <line-height> values are illegal."
     if line_height.starts_with('-') {
-        return vec![];
+        return None;
     }
 
-    vec![
-        mk("font-style", &style),
-        mk("font-weight", &weight),
-        mk("font-size", &size),
-        mk("line-height", &line_height),
-        mk("font-family", &family),
-        // CSS Fonts 4 §4: font shorthand resets font-variant, font-stretch, and font-kerning.
-        mk("font-variant-ligatures", "normal"),
-        // R3890：font-variant 位存在时以其值覆盖 reset（否则保持 reset 到 normal）。
-        mk("font-variant-caps", variant_caps.as_deref().unwrap_or("normal")),
-        mk("font-variant-numeric", "normal"),
-        mk("font-variant-east-asian", "normal"),
-        mk("font-variant-position", "normal"),
-        mk("font-variant-alternates", "normal"),
-        mk("font-stretch", "normal"),
-        mk("font-kerning", "auto"),
-    ]
+    Some(FontShorthandParts {
+        style,
+        variant_caps,
+        weight,
+        stretch,
+        size,
+        line_height,
+        family,
+    })
 }
 
 /// 展开 text-decoration 简写。

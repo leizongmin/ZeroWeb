@@ -1118,7 +1118,8 @@ fn cmd_testharness_dom(options: &CliOptions, filter: Option<&str>) {
 /// 用例由 `fetch-selection-subset.sh` 按需拉到 `wpt-data/selection/`（gitignored）。
 /// 退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-dom 一致）。基线首跑
 /// 即便大量 Fail 也只用于记录通过率（agent 经 `--format json` 捕获后写 evidence/），
-/// 不作为 land 门禁。filter 按路径子串透传：make testharness-selection FILTER=getSelection。
+/// 不作为 land 门禁。filter 按路径子串透传（`|` 分隔多备选任一命中，editing-run
+/// 通道同款）：make testharness-selection FILTER=getSelection。
 fn cmd_testharness_selection(options: &CliOptions, filter: Option<&str>) {
     let wpt_root = options
         .wpt_data
@@ -4593,6 +4594,11 @@ where
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(jobs)
+        // 与 main 的 256MB 大栈执行道同规格（见 main 注释）：worker 默认 2MiB
+        // 栈，深树 style 递归（compute_styles_recursive）同类爆栈——2026-11-17
+        // css 刀 D rule-inset（ef6f2cf5a）加深 gCS/style 帧后 html-semantics
+        // 全语料确定性爆栈，RUST_MIN_STACK=256MB 实证全语料恢复，此处固化。
+        .stack_size(256 * 1024 * 1024)
         .build()
         .expect("failed to build WPT runner thread pool");
 

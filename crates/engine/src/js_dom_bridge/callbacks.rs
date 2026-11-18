@@ -581,6 +581,19 @@ pub fn register_dom_callbacks(
     // 一律不复用；覆盖 webview 文档换代就地 clear 不 bump MUT_DRAIN_GEN 的例外与
     // 同线程先后多沙箱隔离，见 computed_style_cache 模块注释）。
     crate::js_dom_bridge::clear_generation_cache();
+    // WAAPI JS 动画注册表随代际槽同生命周期（导航/新 WebView 装新快照，旧页
+    // 动画不跨文档泄漏；同页多次注册不清——动画跨 execute/timer 存活语义）。
+    crate::js_dom_bridge::js_anim_registry::clear_all();
+    // CSS Transition 同步读注册表同生命周期（wptfyi-css Transition 通道刀，2026-11-16）
+    // ——导航/新 WebView 装新快照清表，旧页过渡不跨文档泄漏。
+    crate::js_dom_bridge::transition_registry::clear_all();
+    // CSS Animations 声明式同步读注册表同生命周期（刀 E）——同清表约束；注意
+    // keyframes registry 在 CLOCK 内，同点清零（新页 stylesheet 重建重喂）。
+    crate::js_dom_bridge::cssa_registry::clear_all();
+    // CSS.registerProperty 运行时注册表同生命周期（css-properties-values-api-1 刀，
+    // 2026-11-17）——文档作用域注册（spec §register-a-custom-property），旧页注册
+    // 不跨导航泄漏。
+    crate::js_dom_bridge::registered_properties::clear_all();
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
     // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
@@ -769,6 +782,42 @@ pub fn register_dom_callbacks(
                     return format!("{x},{y},{w},{h}");
                 }
                 return String::new();
+            }
+            // s423：selector 身份 pending 臂——mutation pending 窗口（队列长 > applied
+            // 游标）内，基座既有元素的 rect 走有效视图现算布局（
+            // [`computed_style_cache::pending_view_selector_rect`]）。CSSOM View：rect
+            // 读须先 update the style and layout steps——旧 selector 路径只读渲染后
+            // 快照，testharness 单脚本 turn 内 `el.style.X = v` → 同 turn
+            // offsetWidth/offsetLeft/gBCR 全体读到写前几何（css-anchor-position
+            // position-area 族 ~190F 根因：write→read 同 turn，drain 只在 execute_script
+            // 尾）。miss 回落快照旧行为（零回归）。
+            // 门控收窄：pending 区间须全为 inline style 族变更（
+            // [`DomMutation::is_inline_style_family`]）——类/textContent/结构性变更
+            // 下现算视图等值性无实证（真态缺口在册：writing-mode 组合 anchor 不变式
+            // ~864F、position-try fallback 状态机 ~131F，探针 zz-g36probe-wm001-drain
+            // 证基线该群全为陈旧读伪通过），门关闭回落快照旧行为不扩大暴露面；
+            // position-area 语料写形（`style.positionArea = v`）为纯 style 族放行。
+            // len 直读免大队列 clone——仅 pending 窗口内才 clone 重放。
+            // https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+            let style_version = rs_mut.lock().map(|l| l.len()).unwrap_or(0);
+            let applied_cursor = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+            let style_family_only = style_version > applied_cursor
+                && rs_mut
+                    .lock()
+                    .map(|l| l[applied_cursor..].iter().all(DomMutation::is_inline_style_family))
+                    .unwrap_or(false);
+            if style_family_only
+                && let Some((x, y, w, h)) = super::computed_style_cache::pending_view_selector_rect(
+                    &rs_html.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                    MUT_DRAIN_GEN.load(Ordering::Relaxed),
+                    style_version,
+                    DOM_VIEW_GEN.load(Ordering::Relaxed),
+                    applied_cursor,
+                    sel,
+                    || rs_mut.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                )
+            {
+                return format!("{x},{y},{w},{h}");
             }
             // selector → NodeId：live doc 优先（进程内 webview 常驻发布），
             // miss 回落查询快照 re-parse（与 __zw_query_match 同源逻辑）。
@@ -2437,6 +2486,27 @@ pub fn register_dom_callbacks(
             // 同 selector 命中 → 直接 serialize（O(1)）——g19：带 populate 时缓存的
             // sibling 位（同元素多次查询逐次带 ctx，tree-counting 叶不 fail-soft）。
             if let Some((style, sibling)) = map.get(sel) {
+                // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）
+                // ——命中返回插值覆盖值（缓存基样式零污染）；表空 O(1) None 落
+                // 既有级联序列化零干扰。位置同 M2-S2a query_style_override 镜像：
+                // 动画值整体替代该属性，不与底层级联混合。
+                if let Some(v) = super::js_anim_registry::query_override_for_sel(sel, prop, style, *sibling) {
+                    return v;
+                }
+                // CSS Transition 咨询（wptfyi-css Transition 通道刀，2026-11-16）——同
+                // jsanim consult 位镜像：活跃过渡条目按墙钟插值覆盖，表空 O(1) None。
+                if let Some(v) = super::transition_registry::query_override_for_sel(sel, prop, style, *sibling) {
+                    return v;
+                }
+                // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
+                // @keyframes + animation-* 的同步读通道（cssa_registry 模块注释）；
+                // 无 animation-name 元素 O(1) None 零干扰。parent=None（刀 K1）：
+                // animation-name 写入 bump style_version 清 per-selector map，start
+                // 锚定恒落下方 miss 路径（doc+styles 在场传父 computed）；本命中
+                // 臂 ENTRIES 已锚 start 不再消费 parent。
+                if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style, None) {
+                    return v;
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2455,18 +2525,63 @@ pub fn register_dom_callbacks(
                     find_by_selector(doc, sel).and_then(|node| {
                         styles.get(&node).map(|style| {
                             let sibling = Some(zero_style_system::sibling_position(doc, node));
+                            // CSS Transition 登记（wptfyi-css Transition 通道刀，
+                            // 2026-11-16）：前值取 per-identity 最近 gCS 观测
+                            //（css-transitions §2 before-change style；per-selector
+                            // map 换代即清，会被 harness 两阶段穿插读清掉前值——
+                            // per-identity 快照只在本元素读点更新，穿插写零干扰）。
+                            // 登记期严格门过滤非插值对，echo 池零扰动。
+                            if let Some(prev) =
+                                super::transition_registry::take_last_style(super::transition_registry::World::Gen, sel)
+                            {
+                                super::transition_registry::register_from_style_change(
+                                    super::transition_registry::World::Gen,
+                                    sel,
+                                    &prev,
+                                    style,
+                                    doc,
+                                    node,
+                                );
+                            }
+                            super::transition_registry::store_last_style(
+                                super::transition_registry::World::Gen,
+                                sel,
+                                style,
+                            );
                             (
                                 serialize_computed_property_with_sibling(style, prop, sibling),
                                 (style.clone(), sibling),
+                                // 刀 K1：父元素 computed 快照（animation-name 写入
+                                // bump style_version 清 map → start 锚定恒落本
+                                // miss 路径，此处 doc+styles 在场可解析）。
+                                doc.parent_node(node).and_then(|pid| styles.get(&pid)).cloned(),
                             )
                         })
                     })
                 },
             );
-            let Some((value, entry)) = hit else {
+            let Some((value, entry, parent_style)) = hit else {
                 return String::new();
             };
+            // WAAPI JS 动画注册表咨询（同 cache-hit 臂）——以新算基样式查覆盖值，
+            // 条目照常入缓存（基样式缓存零污染）。
+            let anim_override = super::js_anim_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
+            // CSS Transition 咨询（同 cache-hit 臂镜像）——以新算基样式查覆盖值。
+            let trans_override = super::transition_registry::query_override_for_sel(sel, prop, &entry.0, entry.1);
+            // CSS Animations 声明式咨询（同 cache-hit 臂镜像，刀 E）；刀 K1 传父
+            // computed（'inherit' 端点解析源）。
+            let cssa_override =
+                super::cssa_registry::query_override_for_sel(sel, prop, &entry.0, parent_style.as_ref());
             map.insert((*sel).clone(), entry);
+            if let Some(v) = anim_override {
+                return v;
+            }
+            if let Some(v) = trans_override {
+                return v;
+            }
+            if let Some(v) = cssa_override {
+                return v;
+            }
             value
         }),
     );
@@ -2496,6 +2611,112 @@ pub fn register_dom_callbacks(
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
                 |doc, styles| super::computed_style::innertext_bulk_styles_doc(doc, styles, root_sel),
             )
+        }),
+    );
+
+    // WAAPI JS 动画注册表回调（wptfyi-css 动画值进 gCS 刀，2026-11-15）——shim
+    // `Animation` 播放态引擎侧登记（part03 _makeAnimation/currentTime/pause/play/
+    // cancel 通知），gCS 两通道咨询见上方 `__zw_get_computed_style` 序列化点与
+    // computed_style_cache handle 通道。表空时全部 O(1) 零干扰。
+    // spec：Web Animations §5.5 Element.animate / §5.1 Animation。
+    // https://drafts.csswg.org/web-animations-1/
+    sandbox.register_callback(
+        "__zw_js_anim_register",
+        Box::new(move |args| {
+            if args.len() < 3 {
+                return String::new();
+            }
+            let id = super::js_anim_registry::register(
+                if args[0].is_empty() {
+                    None
+                } else {
+                    Some(args[0].as_str())
+                },
+                if args[1].is_empty() {
+                    None
+                } else {
+                    Some(args[1].as_str())
+                },
+                &args[2],
+            );
+            id.to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_js_anim_seek",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return String::new();
+            }
+            let Ok(id) = args[0].parse::<u64>() else {
+                return String::new();
+            };
+            super::js_anim_registry::seek(id, &args[1]);
+            String::new()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_js_anim_playpause",
+        Box::new(move |args| {
+            if args.len() < 3 {
+                return String::new();
+            }
+            let Ok(id) = args[0].parse::<u64>() else {
+                return String::new();
+            };
+            super::js_anim_registry::play_pause(id, &args[1], &args[2]);
+            String::new()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_js_anim_cancel",
+        Box::new(move |args| {
+            if let Some(id) = args.first().and_then(|s| s.parse::<u64>().ok()) {
+                super::js_anim_registry::cancel(id);
+            }
+            String::new()
+        }),
+    );
+
+    // `CSS.registerProperty(desc)`——css-properties-values-api-1 刀（2026-11-17）。
+    // shim 完成字典转换（TypeError 面）后传六参：name / syntax（缺省空串→"normal"）/
+    // inherits_present / inherits / initial_present / initial。Rust 侧 spec 校验+
+    // 存储；Ok 返空串，Err 返 `kind|message`（shim 映射 DOMException/TypeError）。
+    // 消费面：gCS `--` 分支串化 + 动画插值 `--` 臂（registered_properties 模块文档）。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-method
+    sandbox.register_callback(
+        "__zw_register_property",
+        Box::new(|args: &[String]| -> String {
+            if args.len() < 6 {
+                return "TypeError|not enough arguments".into();
+            }
+            let syntax = if args[1].is_empty() {
+                None
+            } else {
+                Some(args[1].as_str())
+            };
+            let ip = args[2] == "1";
+            let inh = args[3] == "1";
+            let pp = args[4] == "1";
+            let initial = if args[5].is_empty() {
+                None
+            } else {
+                Some(args[5].as_str())
+            };
+            match super::registered_properties::register(&args[0], syntax, ip, inh, pp, initial) {
+                Ok(()) => String::new(),
+                Err((kind, msg)) => format!(
+                    "{}|{}",
+                    match kind {
+                        super::registered_properties::RegErrorKind::Type => "TypeError",
+                        super::registered_properties::RegErrorKind::Syntax => "SyntaxError",
+                        super::registered_properties::RegErrorKind::InvalidModification => {
+                            "InvalidModificationError"
+                        }
+                    },
+                    msg
+                ),
+            }
         }),
     );
 
@@ -3892,6 +4113,27 @@ pub fn register_dom_callbacks(
                 "ok".into()
             }),
         );
+        // editing goal d23（B1 切片 3）：sel-path 定位 insertAdjacentHTML（plain 域
+        // 选区锚的结构面宿主落地——变体文档见 [`DomMutation::InsertAdjacentHtmlByPath`]）。
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_insert_adjacent_html_path",
+            Box::new(move |args| {
+                if args.len() >= 4
+                    && let Some(path) = parse_child_index_path(&args[1])
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::InsertAdjacentHtmlByPath {
+                            anchor_selector: args[0].clone(),
+                            path,
+                            position: args[2].clone(),
+                            html: args[3].clone(),
+                        });
+                }
+                "ok".into()
+            }),
+        );
     }
 
     let html = Arc::clone(dom_html);
@@ -4148,6 +4390,70 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
+    // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
+    // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`
+    // 列表（canonical 文本：裸零折 0px / 单侧复制 / `/` 全形；css-wide 逐 longhand
+    // 透传）；空值返 `(名, "")` remove 列表；非家族简写名 / 展开失败返空串（shim
+    // 判空回落通用写路径零漂移，position-try split 臂同约定）。实现委托
+    // [`dom_bindings::css_style_declaration::gap_rule_shorthand_expand_json`]
+    // （与 native 绑定 setter 单实现双通道）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_style_shorthand_expand",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落空串（shim 判空
+            // 回落通用写路径，本回调自身契约），与 grid `__zw_grid_normalize_decl`
+            // 「双引擎缺席回落同口径」先例一致（R5334）。
+            #[cfg(feature = "v8")]
+            {
+                crate::dom_bindings::css_style_declaration::gap_rule_shorthand_expand_json(prop, value)
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                String::new()
+            }
+        }),
+    );
+
+    // 刀 D inline 站读重组（[`gap_rule_shorthand_expand_json`] 对偶面）：从 style
+    // 声明串（`n: v; ...` attribute 原文域）重组 gap-rule/inset 家族简写 specified
+    // 串（`10px 20px / 10px 20px` 全形 / 全等塌缩单值 / 双轴等值模型）。缺任一
+    // longhand / 不可重组 / 非家族名返空串（shim 判空回落空值语义）。委托
+    // [`gap_rule_shorthand_reconstruct_from_style`]。刀 N 三期：`font` 名分派
+    // [`css_style_declaration::font_shorthand_reconstruct_from_style`]（shim
+    // readProp font 旁路臂同回调——防逐出裁决 + canonical 串化单点）。纯函数，
+    // 无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_style_shorthand_reconstruct",
+        Box::new(|args: &[String]| -> String {
+            let raw = args.first().map(String::as_str).unwrap_or("");
+            let prop = args.get(1).map(String::as_str).unwrap_or("");
+            // `dom_bindings` 为 v8 门控（lib.rs）；quickjs 腿回落空串（shim 判空
+            // 回落空值语义），与 grid `__zw_grid_normalize_decl`「双引擎缺席回落
+            // 同口径」先例一致（R5334）。
+            #[cfg(feature = "v8")]
+            {
+                let gap =
+                    crate::dom_bindings::css_style_declaration::gap_rule_shorthand_reconstruct_from_style(raw, prop);
+                if !gap.is_empty() {
+                    return gap;
+                }
+                if prop.eq_ignore_ascii_case("font") {
+                    return crate::dom_bindings::css_style_declaration::font_shorthand_reconstruct_from_style(raw);
+                }
+                String::new()
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (raw, prop);
+                String::new()
+            }
+        }),
+    );
+
     // S194（html-semantics M2）：`input type=email` 值清洗的域部 IDN 转换臂
     //（HTML §4.10.5.5 E-mail state；WPT forms/the-input-element/email-value-idn.html
     // 钉态）。入参为 email 值最后一个 '@' 之后的域部原串；合成 http:// 前缀
@@ -4268,6 +4574,68 @@ pub fn register_dom_callbacks(
             {
                 let _ = (prop, value);
                 "null".to_string()
+            }
+        }),
+    );
+
+    // g41（css-images-4 §serializing-gradients）：background-image 渐变声明值
+    // canonical 串化整值委托（shim `_zwNormalizeDeclValue` 臂消费，grid_cssom
+    // G1 单实现双通道同型）。实现
+    // [`zero_css_parser::values::canonicalize_background_image_specified`]——
+    // 非渐变面（none/url/image-set/filter/light-dark/多层混合）Rust 侧原文
+    // passthrough。g43 补拒写语义：渐变前缀但文法 invalid（
+    // [`zero_css_parser::values::background_image_decl_invalid`]）返 "null"
+    // 哨兵，shim 臂丢弃赋值（grid/anchor 同款约定）——invalid 不再回显原文。
+    // 纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_gradient_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                // g45：cursor 文法无 <image>（css-ui-4 #cursor：
+                // `[ <url> [ <x> <y> ]? , ]* [ auto | … ]`），值含 image-set
+                // 恒拒收（shim 门同款子串判定后传 prop，混列形同拒）。
+                if prop == "cursor" {
+                    return if value.to_ascii_lowercase().contains("image-set(") {
+                        "null".to_string()
+                    } else {
+                        value.to_string()
+                    };
+                }
+                // g47：object-position 文法 = <position> 全谱（css-backgrounds-3
+                // #object-position / css-values-4 #position），写值语法失败拒收
+                //（shim 写面此前零校验，object-position-invalid 组 13 案全接受），
+                // 合法值 canonical 序列化（水平先行、缺省轴补 center；sound 数组
+                // 语料钉 `bottom right`→`right bottom`、`10%`→`10% center`）。
+                // var() 声明期不校验（替换后语义）；CSS-wide 关键字放行（与
+                // background-image 臂同型透传）。
+                if prop == "object-position" {
+                    let lower = value.trim().to_ascii_lowercase();
+                    if lower.contains("var(")
+                        || matches!(
+                            lower.as_str(),
+                            "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+                        )
+                    {
+                        return value.to_string();
+                    }
+                    return match zero_css_parser::values::canonicalize_position_decl(value) {
+                        Some(s) => s,
+                        None => "null".to_string(),
+                    };
+                }
+                if zero_css_parser::values::background_image_decl_invalid(value) {
+                    return "null".to_string();
+                }
+                zero_css_parser::values::canonicalize_background_image_specified(value)
+                    .unwrap_or_else(|| value.to_string())
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = prop;
+                value.to_string()
             }
         }),
     );

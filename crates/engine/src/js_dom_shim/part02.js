@@ -9427,7 +9427,38 @@
   var _zwPermSetState = null;
   var _zwClipStoreWrite = null;
 
-  globalThis.navigator = {
+  // T66（site-optimizer perf-mem T66）：Navigator 平台对象语义——`window.Navigator`
+  // 接口对象 + navigator 平面对象（原型链 navigator → Navigator.prototype →
+  // Object.prototype，品牌 Object.prototype.toString.call(navigator) === '[object
+  // Navigator]'）。此前 navigator 无接口原型，站点风控 SDK「从根沿原型走 s 步再
+  // 存储」的反篡改 canary 写落 Object.prototype 变可枚举属性，页面 for-in 写循环
+  // 枚举到继承键后 TypeError 被静默吞（T65 判据③定谳，运行目录 evidence/
+  // t65-diagnosis.md）——补标准面落点（Navigator.prototype 吸收，页面对象原型链
+  // 不可见，Chrome 同落点语义），非 UA 伪装、非站点特判。
+  // spec：HTML §the-navigator-object（Navigator 接口对象暴露为 window.Navigator）、
+  // WebIDL §interface-object（接口无 [Constructor] 不可 new，TypeError「Illegal
+  // constructor」，Chrome 同语义）、§interface-prototype-object（接口原型
+  // @@toStringTag {writable:false, enumerable:false, configurable:true}——w/e 经
+  // defineProperty 缺省 false 与 WebIDL 形一致，Blob/Headers 同款先例）。
+  // https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
+  // https://webidl.spec.whatwg.org/#interface-object
+  // https://webidl.spec.whatwg.org/#interface-prototype-object
+  if (!globalThis.Navigator) {
+    var _zwNavigatorIface = function Navigator() {
+      throw new TypeError("Illegal constructor");
+    };
+    Object.defineProperty(_zwNavigatorIface.prototype, Symbol.toStringTag, {
+      value: 'Navigator',
+      configurable: true,
+    });
+    globalThis.Navigator = _zwNavigatorIface;
+  }
+
+  // navigator 平台对象构造：字面量外层属性全为 own 数据属性（无访问器/展开），经
+  // Object.create 挂 Navigator.prototype 后 Object.assign 逐键复制——own 面
+  //（键序/可枚举性/值）与原字面量恒等，仅 [[Prototype]] 换 Navigator.prototype
+  //（WebIDL 平台对象品牌语义）。
+  globalThis.navigator = Object.assign(Object.create(globalThis.Navigator.prototype), {
     // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-useragent
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/__ZERO_BUILD_VERSION__ Chrome/120.0.0.0',
     appName: 'Netscape',
@@ -11553,7 +11584,7 @@
       });
       return _container;
     })()
-  };
+  });
 
   // R3256：console 桥接宿主——page console.log/warn/error 等经 `__zw_console_log(level,msg)` 回调转发到宿主日志
   //（tracing）。旧实现全 no-op（page console 输出完全丢失，排障/WPT console 断言不可见）。序列化：string 直传，

@@ -1,0 +1,464 @@
+{
+ "url": "/css/css-backgrounds/box-shadow-table-border-collapse-001.html",
+ "title": "CSS Box-shadow Test: an HTML <table> with 'border-collapse: collapse'",
+ "html": {
+  "tag": "html",
+  "rect": {
+   "x": 0,
+   "y": 0,
+   "w": 800,
+   "h": 236
+  },
+  "client": {
+   "w": 800,
+   "h": 600
+  },
+  "offset": {
+   "w": 800,
+   "h": 236
+  },
+  "border": {
+   "width": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "style": [
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "color": [
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)"
+   ]
+  },
+  "padding": [
+   "0px",
+   "0px",
+   "0px",
+   "0px"
+  ],
+  "borderCollapse": "separate",
+  "display": "block"
+ },
+ "body": {
+  "tag": "body",
+  "rect": {
+   "x": 8,
+   "y": 16,
+   "w": 784,
+   "h": 212
+  },
+  "client": {
+   "w": 784,
+   "h": 212
+  },
+  "offset": {
+   "w": 784,
+   "h": 212
+  },
+  "border": {
+   "width": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "style": [
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "color": [
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)"
+   ]
+  },
+  "padding": [
+   "0px",
+   "0px",
+   "0px",
+   "0px"
+  ],
+  "borderCollapse": "separate",
+  "display": "block"
+ },
+ "boxes": [
+  {
+   "tag": "table",
+   "rect": {
+    "x": 8,
+    "y": 68,
+    "w": 160,
+    "h": 160
+   },
+   "client": {
+    "w": 160,
+    "h": 160
+   },
+   "offset": {
+    "w": 160,
+    "h": 160
+   },
+   "border": {
+    "width": [
+     "29px",
+     "29px",
+     "29px",
+     "29px"
+    ],
+    "style": [
+     "solid",
+     "solid",
+     "solid",
+     "solid"
+    ],
+    "color": [
+     "rgb(255, 0, 0)",
+     "rgb(255, 0, 0)",
+     "rgb(255, 0, 0)",
+     "rgb(255, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table"
+  },
+  {
+   "tag": "tbody",
+   "rect": {
+    "x": 23,
+    "y": 83,
+    "w": 130,
+    "h": 130
+   },
+   "client": {
+    "w": 130,
+    "h": 130
+   },
+   "offset": {
+    "w": 130,
+    "h": 130
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(255, 0, 0)",
+     "rgb(255, 0, 0)",
+     "rgb(255, 0, 0)",
+     "rgb(255, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-row-group"
+  },
+  {
+   "tag": "tr",
+   "id": "top-row",
+   "rect": {
+    "x": 23,
+    "y": 83,
+    "w": 130,
+    "h": 65
+   },
+   "client": {
+    "w": 130,
+    "h": 65
+   },
+   "offset": {
+    "w": 130,
+    "h": 65
+   },
+   "border": {
+    "width": [
+     "30px",
+     "30px",
+     "0px",
+     "30px"
+    ],
+    "style": [
+     "solid",
+     "solid",
+     "solid",
+     "solid"
+    ],
+    "color": [
+     "rgb(0, 0, 255)",
+     "rgb(0, 0, 255)",
+     "rgb(0, 0, 255)",
+     "rgb(0, 0, 255)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-row"
+  },
+  {
+   "tag": "td",
+   "rect": {
+    "x": 23,
+    "y": 83,
+    "w": 65,
+    "h": 65
+   },
+   "client": {
+    "w": 50,
+    "h": 50
+   },
+   "offset": {
+    "w": 65,
+    "h": 65
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  },
+  {
+   "tag": "td",
+   "rect": {
+    "x": 88,
+    "y": 83,
+    "w": 65,
+    "h": 65
+   },
+   "client": {
+    "w": 50,
+    "h": 50
+   },
+   "offset": {
+    "w": 65,
+    "h": 65
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  },
+  {
+   "tag": "tr",
+   "id": "bottom-row",
+   "rect": {
+    "x": 23,
+    "y": 148,
+    "w": 130,
+    "h": 65
+   },
+   "client": {
+    "w": 130,
+    "h": 65
+   },
+   "offset": {
+    "w": 130,
+    "h": 65
+   },
+   "border": {
+    "width": [
+     "0px",
+     "30px",
+     "30px",
+     "30px"
+    ],
+    "style": [
+     "solid",
+     "solid",
+     "solid",
+     "solid"
+    ],
+    "color": [
+     "rgb(0, 0, 255)",
+     "rgb(0, 0, 255)",
+     "rgb(0, 0, 255)",
+     "rgb(0, 0, 255)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-row"
+  },
+  {
+   "tag": "td",
+   "rect": {
+    "x": 23,
+    "y": 148,
+    "w": 65,
+    "h": 65
+   },
+   "client": {
+    "w": 50,
+    "h": 50
+   },
+   "offset": {
+    "w": 65,
+    "h": 65
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  },
+  {
+   "tag": "td",
+   "rect": {
+    "x": 88,
+    "y": 148,
+    "w": 65,
+    "h": 65
+   },
+   "client": {
+    "w": 50,
+    "h": 50
+   },
+   "offset": {
+    "w": 65,
+    "h": 65
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)",
+     "rgb(255, 165, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  }
+ ],
+ "doc": {
+  "clientW": 800,
+  "clientH": 600,
+  "scrollW": 800,
+  "scrollH": 600
+ }
+}

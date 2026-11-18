@@ -696,7 +696,11 @@ fn test_response_body_readable_stream_r2967() {
         "body 次 read done=true（单 chunk 后 close）"
     );
 
-    // 网络错误响应（ok:false）body=null（spec：network error 无 body）。
+    // 网络错误 → fetch promise reject TypeError（fetch spec network error：promise
+    // 恒不 resolve status-0 伪对象；c6dcbce0a http-cache M2 起 error wire 硬 reject
+    // ——request-cache 语料 response:"error" 臂 assert_throws_js(TypeError) 同判据；
+    // 旧前提「resolve ok:false 响应 body=null」为过时伪对象语义）。
+    //   https://fetch.spec.whatwg.org/#concept-network-error
     let cap2: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     let cap2c = Arc::clone(&cap2);
     sandbox.register_callback(
@@ -709,17 +713,17 @@ fn test_response_body_readable_stream_r2967() {
         }),
     );
     sandbox
-        .execute("fetch('http://test.local/err').then(function(r){ globalThis.__respErr = r; });")
+        .execute(
+            "fetch('http://test.local/err').then(function(r){ globalThis.__respErr = 'resolved:' + r.status; },\
+             function(e){ globalThis.__respErr = (e instanceof TypeError) ? 'rejected:TypeError' : 'rejected:' + e; });",
+        )
         .unwrap();
     let id2 = cap2.lock().unwrap().clone();
     sandbox.resolve_async_callback(&id2, "__zw_fetch_error:network");
-    sandbox
-        .execute("globalThis.__errBody = (globalThis.__respErr.body === null ? 'null' : 'stream');")
-        .unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__errBody)").unwrap().value,
-        "null",
-        "网络错误响应 body=null（spec network error）"
+        sandbox.execute("String(globalThis.__respErr)").unwrap().value,
+        "rejected:TypeError",
+        "网络错误 → fetch reject TypeError（spec network error）"
     );
 }
 
@@ -2573,8 +2577,13 @@ fn test_fetch_filtered_response_type_matrix() {
         Box::new(move |args| {
             let url = args.get(2).cloned().unwrap_or_default();
             if url.contains("redirect.txt") {
+                // M3 redirect 步序（f021e11fb 起）：cors check 先于 manual→opaqueredirect
+                // 转换（fetch spec HTTP-network-or-cache fetch——无 ACAO 的跨源重定向
+                // 响应须 network error 而非 opaqueredirect）。mock 302 须带 ACAO `*`
+                // 过 cors check 才落 opaqueredirect 面。
+                //   https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
                 return format!(
-                    "__zwfr:302\u{001f}Found\u{001f}Location\u{001e}https://remote.example/final.txt\u{001e}X-Zero-Final-URL\u{001e}{url}\u{001f}redirect"
+                    "__zwfr:302\u{001f}Found\u{001f}Location\u{001e}https://remote.example/final.txt\u{001e}Access-Control-Allow-Origin\u{001e}*\u{001e}X-Zero-Final-URL\u{001e}{url}\u{001f}redirect"
                 );
             }
             if url.contains("remote.example") {

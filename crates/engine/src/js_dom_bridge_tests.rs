@@ -168,3 +168,104 @@ include!("js_dom_bridge_tests/part111_s421_pending_handle_rect.rs");
 // t-g2b R6 innerText 批量样式通道：记录流端到端渲染感知语义 + 动态节点逐元素
 // 回落钉面。
 include!("js_dom_bridge_tests/part112_g2b_innertext_bulk.rs");
+
+// s422 constraint validation candidate 门：object/fieldset/output 非 candidate
+// （object-constraint-validation 1F 根因——setCustomValidity 后 checkValidity
+// 恒应 true，candidacy 门缺失 customError 落穿）。
+include!("js_dom_bridge_tests/part112_s422_object_constraint_validation.rs");
+
+// 编辑命令兼容 Form A 小刀：splitText 头截断欠发射面双向钉测（D2 v1 形复现，
+// 红=欠发射复发按流归因 / 绿=已被 B1/D1/E1 吸收转常驻正期望）。
+include!("js_dom_bridge_tests/part111_form_a_splittrim_probe.rs");
+
+// 编辑命令兼容 ihtml 轴二行内壳刀：inserthtml 宿主直子文本门对选区锚在行内壳
+// /rawtext 容器内的静默 bail 修复双向钉测（styled 壳溶解 / rawtext 壳内拼接 /
+// pre 块载荷解包 / xmp markup 载荷 parser 事实钉）。
+include!("js_dom_bridge_tests/part112_ihtml_shell_sel_probe.rs");
+
+// 编辑命令兼容 ip 206 M1 主桶探针：insertParagraph 拆分边界 inline formatting
+// element 复制/丢弃语义三形钉测（b 壳/span 壳 caret 拆分 + 壳全含选区空壳丢弃）。
+include!("js_dom_bridge_tests/part113_ip_inline_shell_split_probe.rs");
+
+// s423 canvas 导出编码格式面：toBlob/toDataURL type 参数接通（toBlob.jpeg 1F
+// 根因——type 忽略恒产 png Blob；png+jpeg 白名单，其余 PNG fallback）。
+include!("js_dom_bridge_tests/part113_s423_canvas_export_format.rs");
+
+// T68 sel/handle 双族注册表 sync 常驻钉：t67-minrepro 复现页核心四案例语义
+//（class 形态 QSA 归并 / removeChild 序列化空串 / drain 后 identity 反查 /
+// fragment 视图 handle 族子宿主 wire 双臂）。
+include!("js_dom_bridge_tests/part114_t68_selhandle_registry_sync.rs");
+
+// 编辑命令兼容 ip 残 99F M3-A 探针：可编辑根层非首行裸文本 caret insertParagraph
+// 拆分左段裸留语义五形钉测（行中尾位/词中切片/行首补 br/首行 wrap guard/dPS p）。
+include!("js_dom_bridge_tests/part114_ip_root_bare_text_split_probe.rs");
+
+// s423 pending 视图 selector rect：gBCR selector 身份在 mutation pending 窗口内
+// 走有效视图现算布局（CSSOM View update the style and layout steps）——testharness
+// 单脚本 turn 内 style 写 → offsetWidth/offsetLeft 同 turn 断言面（position-area
+// 族 ~190F 根因）双向钉测（写读同值 + drain 后快照旧行为）。
+include!("js_dom_bridge_tests/part115_s423_pending_selector_rect.rs");
+
+// 编辑命令兼容 ip 残 99F M3-C C4 刀钉测：块边界拆分块级后随兄弟止步不入新块 +
+// bare-br 行界双空块物化（表跨选区/bare-br 尾·首侧·尾随块级/行中窄门 guard/
+// 整块选删 host 级 caret，dPS div·p 双面）。
+include!("js_dom_bridge_tests/part116_c4_block_boundary_pins.rs");
+
+// 编辑命令兼容 ip 残 59F M3-B B 族刀钉测：拆点块界空白/nbsp 归一（② sep2 同型
+// 块拆臂行界折叠空格翻 `&nbsp;`/whitespace-only 段退化占位/单侧退化跳过对侧 +
+// ⑦ 宿主元素边界臂尾侧 whitespace-only 留宿主、首文本行界翻 `&nbsp;`）。
+include!("js_dom_bridge_tests/part117_b_split_boundary_ws_pins.rs");
+include!("js_dom_bridge_tests/part118_shell_carry_pins.rs");
+// T72（site-optimizer perf-mem T72/P42）：iframe win.navigator 平面对象语义常驻钉
+//（part05 _zwMakeIframeWin 工厂面——原型链/品牌/Illegal constructor 双臂/
+// serviceWorker 槽恒一/走链吸收五断言面；T66 主窗面钉在 part95.rs）。
+include!("js_dom_bridge_tests/part119_t72_iframe_navigator_pins.rs");
+include!("js_dom_bridge_tests/part119_c1_order_pins.rs");
+include!("js_dom_bridge_tests/part120_ip_atomic_rawtext_pins.rs");
+
+// ip C4 容器链垫/劈裂刀钉测（2026-11-15）：垫底 br 持行豁免——空 dt 拆分垫
+// `<dt><br></dt>` 保全 + blockquote/ul 容器链尾新块物化 + 控制键恒一。
+include!("js_dom_bridge_tests/part121_ip_c4_container_pad_pins.rs");
+
+// ip C5 根层裸 br break-out 刀钉测（2026-11-15）：宿主唯一子 div 选区删净面
+// div 解包（`<div>[abc]</div>` exp `<br><div><br></div>`）+ 标签 p/宿主多块
+// 双控制键现役绿形恒一。
+include!("js_dom_bridge_tests/part122_ip_c5_root_bare_br_pins.rs");
+
+// ip I5 pre 换行归一刀钉测（2026-11-16）：pre 劈裂空右块垫 br 臂认左块尾字面
+// \n 持行已足（免视守卫 white-space 感知）→ 单 br 垫新空行免三行形 + 裸尾
+// 双 br/nxt 存在四控制键现役绿形恒一。
+include!("js_dom_bridge_tests/part123_ip_i5_pre_lf_pins.rs");
+include!("js_dom_bridge_tests/part124_ihtml_block_pins.rs");
+include!("js_dom_bridge_tests/part125_ihtml_residual_pins.rs");
+// ilb C+F 外迁族刀钉测（2026-11-17）：dt/dd/pre 元素 caret 行断 br 落容器
+// 内不外迁＋li 现役绿形控制键。
+include!("js_dom_bridge_tests/part126_ilb_dt_dd_pre_pins.rs");
+// ilb A 壳尾计数族刀钉测（2026-11-17）：壳尾可见性补断 v2 落位＋现役绿形
+// 控制键。
+include!("js_dom_bridge_tests/part127_ilb_shell_tail_vispad_pins.rs");
+// ilb H+J 归一域刀钉测（2026-11-17）：行断面空白归一三则落位＋退化头/
+// nbsp-first 控制键。
+include!("js_dom_bridge_tests/part128_ilb_wscanon_pins.rs");
+// ilb I flex/grid br 元素面刀钉测（2026-11-17）：声明 pre 系坍缩行断 <br>
+// 占位落位＋非坍缩行断控制键。
+include!("js_dom_bridge_tests/part129_ilb_flexbr_pins.rs");
+// ilb B+G+E 选区删除域刀钉测（2026-11-17）：同节点元素容器下钻＋后删元素
+// caret 入壳＋块界补断细化＋rawtext no-op 守卫＋现役绿形控制键。
+include!("js_dom_bridge_tests/part130_ilb_seldel_pins.rs");
+include!("js_dom_bridge_tests/part131_ilb_seltbl_pins.rs");
+include!("js_dom_bridge_tests/part132_img_breakout_pins.rs");
+include!("js_dom_bridge_tests/part133_evt_reject_pins.rs");
+include!("js_dom_bridge_tests/part134_r13_cefalse_wrap_pins.rs");
+include!("js_dom_bridge_tests/part129_kd_rule_inset_inline_pins.rs");
+include!("js_dom_bridge_tests/part135_fs_br_pins.rs");
+// indent br 边界刀钉测（2026-11-17）：块边界相邻唯一行界 br 消费（尾侧摘除
+// 删／首侧直形·行内壳尾链删，run=1 判据）＋run4/caret 前 br 三守卫现绿恒一。
+include!("js_dom_bridge_tests/part136_indent_br_pins.rs");
+// indent 邻居合并去重刀钉测（2026-11-18 A 族刀）：ViaHtml 邻居复用臂
+// prefix/suffix 复本缺陷修复＋post-rebuild 次邻合并臂（三形）。
+include!("js_dom_bridge_tests/part137_indent_merge_dedup_pins.rs");
+include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
+include!("js_dom_bridge_tests/part139_indent_ws_merge_pins.rs");
+include!("js_dom_bridge_tests/part140_indent_ol_tail_pins.rs");
+include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");

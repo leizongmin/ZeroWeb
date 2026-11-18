@@ -30,6 +30,12 @@ pub enum BackgroundImageComputedValue {
     /// 序列化 `image(rgba(0, 0, 0, 0))`；与顶层 none（序列化 `none`）分野）。
     /// 选支展开在 cascade 期完成，故本变体只由 light-dark 支内语义产生。
     TransparentImage,
+    /// image-set() — CSS Images 4 图像集（https://drafts.csswg.org/css-images-4/#image-set-nota）。
+    /// g45：声明期暂存 options AST（url/渐变/分辨率/type()），computed 串化期
+    /// 分辨率归一 dppx（x/dppx 恒等、dpi ÷96、dpcm ×2.54/96——css-values-4
+    /// §6.4 仓库既定约定）、url 引号化、type() 重引号置后；`-webkit-` 别名
+    /// parse 期已剥除。
+    ImageSet(zero_css_parser::values::ImageSetValue),
 }
 
 impl BackgroundImageComputedValue {
@@ -315,4 +321,47 @@ pub enum ListStyleImageComputedValue {
     /// image(rgba(0, 0, 0, 0)) — light-dark() 支内 none 的 computed 展开
     ///（css-color-5 #valdef-light-dark-none，同 BackgroundImageComputedValue::TransparentImage）。
     TransparentImage,
+}
+
+/// CSS mask-clip / mask-origin 的 `<geometry-box>` 计算值（css-masking-1 §5.4/§5.5；
+/// mask-clip 额外收 `no-clip`）。与 background-clip/origin 的 box 枚举独立——
+/// masking 侧含 SVG 几何盒（fill/stroke/view-box）且 no-clip 仅 mask-clip 有。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskGeometryBoxComputedValue {
+    /// border-box（默认）。
+    BorderBox,
+    /// padding-box。
+    PaddingBox,
+    /// content-box。
+    ContentBox,
+    /// margin-box。
+    MarginBox,
+    /// fill-box。
+    FillBox,
+    /// stroke-box。
+    StrokeBox,
+    /// view-box。
+    ViewBox,
+}
+
+/// CSS mask-clip 计算值（css-masking-1 §5.4）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskClipComputedValue {
+    /// `<geometry-box>`。
+    Box(MaskGeometryBoxComputedValue),
+    /// no-clip——不裁剪（无对应背景值）。
+    NoClip,
+}
+
+/// CSS mask-composite 计算值（css-masking-1 §5.6 合成算子）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskCompositeComputedValue {
+    /// add（默认）——源上层。
+    Add,
+    /// subtract——源减去下层。
+    Subtract,
+    /// intersect——交集。
+    Intersect,
+    /// exclude——非重叠部分。
+    Exclude,
 }

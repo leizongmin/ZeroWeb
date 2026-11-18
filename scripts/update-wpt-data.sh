@@ -181,6 +181,15 @@
 #     已按同 pin 从上游 gh api contents 原件补入 75B（md5
 #     63ccc3fdd572090b5c0beb3c3137f262，2026-11-12）——升级新 ref 后需
 #     重新补。goal 脚本 ③段已挂 fetch_raw 常驻重拉条目）
+#   - common/rendering-utils.js 缺失（waitForAtLeastOneFrame 唯一定义件；
+#     渲染 reftest 树 78 页引用（html/semantics 另 5 页）——缺席时引用页
+#     ReferenceError → scroll/mutation 等帧序列不起 → reftest-wait 超时回退
+#     截变更前帧恒 F。R5762 勘根定性 incremental-scroll.html 回集 3/3F 为
+#     本缺件非引擎缺陷：单案 A/B 密封（补入 → ✓0.00% ×3；移除 → ✗1.63%
+#     复现，签名与 R5414 在册 flake 同形）；已从 raw.githubusercontent wpt
+#     pin efcaa5bb87 取件补入 559B（md5 d81e85338193ca37cde14532e14b3a16，
+#     2026-11-17；HTTPS git clone 降级窗走 raw CDN 单文件通道）——升级新
+#     ref 后需重新补）
 
 set -euo pipefail
 

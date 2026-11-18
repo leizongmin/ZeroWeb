@@ -28,10 +28,22 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "line-clamp" | "-webkit-line-clamp" => values::parse_line_clamp(value).is_some(),
         // https://drafts.csswg.org/css-images-4/#the-object-fit
         "object-fit" => values::parse_object_fit(value).is_some(),
-        "object-position" => values::parse_background_position(value).is_some(),
+        // g47：object-position = 严格 <position>（css-values-5 §4.2），与 apply
+        // 同文法（3 值形禁、缘偏移对全有全无、逻辑关键字）
+        "object-position" => values::parse_position_strict(value).is_some(),
         // https://drafts.fxtf.org/css-masking-1/#the-mask-image
         "mask-image" => values::parse_mask_image_layers(value).is_some(),
         "mask-mode" => values::parse_mask_mode(value).is_some(),
+        // css-masking-1 §5.3–5.6 六长手：position/size/repeat 文法同 background
+        // 同构属性（复用其 list parser）；clip/origin/composite 为 masking 侧
+        // 枚举（fill/stroke/view-box/no-clip/compositing-operator）。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-position" => values::parse_background_position_list(value).is_some(),
+        "mask-size" => values::parse_background_size_list(value).is_some(),
+        "mask-repeat" => values::parse_background_repeat_list(value).is_some(),
+        "mask-clip" => values::parse_mask_clip_layers(value).is_some(),
+        "mask-origin" => values::parse_mask_origin_layers(value).is_some(),
+        "mask-composite" => values::parse_mask_composite_layers(value).is_some(),
         // https://drafts.fxtf.org/filter-effects-1/
         "filter" | "backdrop-filter" => values::parse_filter_list(value).is_some(),
         // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers
@@ -146,6 +158,14 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "border-image-width" => values::parse_border_image_width(value).is_some(),
         "border-image-repeat" => values::parse_border_image_repeat(value).is_some(),
         "border-image-outset" => values::parse_border_image_outset(value).is_some(),
+        // https://drafts.fxtf.org/css-masking-1/#masking-with-border-image （css-masking-1
+        // §3.4–3.9：文法与 border-image 同构，复用解析器；简写走共享内核 supported）
+        "mask-border" => crate::shorthand::mask_border_shorthand_supported(value),
+        "mask-border-source" => values::parse_border_image_source(value).is_some(),
+        "mask-border-slice" => values::parse_border_image_slice(value).is_some(),
+        "mask-border-width" => values::parse_border_image_width(value).is_some(),
+        "mask-border-repeat" => values::parse_border_image_repeat(value).is_some(),
+        "mask-border-outset" => values::parse_border_image_outset(value).is_some(),
         // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
         "transform-origin" | "perspective-origin" => origin_pair_supported(value),
         "perspective" => perspective_supported(value),

@@ -103,6 +103,10 @@ pub struct AttrCall {
     pub fallback: Option<String>,
     /// 实参含 var()/env() 替换函数（延迟形——compute 期代入后重裁）。
     pub has_substitution: bool,
+    /// parse 期实参部数（顶层逗号切分，1 = 无 fallback 槽）——结构冻结
+    /// 基准：var 代入只能填槽不得新增实参分隔（argument-grammar sub8 形
+    /// 钉面——声明无 fallback、代入产出 fallback → IACVT）。
+    pub arg_parts: usize,
 }
 
 /// 值内全部 attr() 调用文法裁决（CSS Values 5 §attr-notations 写面门——
@@ -307,6 +311,7 @@ pub(crate) fn parse_attr_call(args: &str) -> AttrScanResult {
         type_sel,
         fallback,
         has_substitution,
+        arg_parts: parts.len(),
     })
 }
 
@@ -717,15 +722,64 @@ pub fn substitute_attr_values_checked<'a>(
     value: &'a str,
     reader: &dyn Fn(&str) -> Option<String>,
 ) -> Option<(Cow<'a, str>, bool)> {
+    substitute_attr_values_impl(value, reader, Mode::Strict).map(|(v, t, _)| (v, t))
+}
+
+/// [`substitute_attr_values_checked`] 的延迟形容错变体：实参含 var()/env()
+/// 的 attr() 调用（`parse_attr_call` deferred 形）不求值不拒——调用原文保留
+///（var 代入后由级联后置 attr 重裁站重评）；其余调用（具体形）同
+/// [`substitute_attr_values_checked`] 文法裁决 + 求值。全部调用 deferred /
+/// 无真替换 → `Cow::Borrowed` 原文保留（调用方不得丢声明）。第三返回值 =
+/// 各延迟调用在扫描序上的 parse 实参部数（结构冻结档案，供
+/// [`substitute_attr_values_readjudicate`] 复检）。
+/// <https://drafts.csswg.org/css-values-5/#attr-notations>
+pub fn substitute_attr_values_deferring<'a>(
+    value: &'a str,
+    reader: &dyn Fn(&str) -> Option<String>,
+) -> Option<(Cow<'a, str>, bool, Vec<usize>)> {
+    substitute_attr_values_impl(value, reader, Mode::Defer)
+}
+
+/// 延迟形重裁变体（var 代入后）：按 [`substitute_attr_values_deferring`
+/// 记录的实参部数档案逐调用结构冻结——第 i 个 attr 调用 re-parse 部数 ≠
+/// 档案 → IACVT（substitution 不得新增实参分隔）；档案外调用（var 代入
+/// 自 custom property 值注入的 attr 文本等）不受约束按严格语义求值。
+/// 调用序对齐假设：var 代入不改 attr( token 相对序（var 值含 attr( 文本
+/// 的注入形档案失配——保守向误拒，FIXME 随 corpus 扩面再定档案键）。
+/// <https://drafts.csswg.org/css-values-5/#attr-notations>
+pub fn substitute_attr_values_readjudicate<'a>(
+    value: &'a str,
+    reader: &dyn Fn(&str) -> Option<String>,
+    expected_parts: &[usize],
+) -> Option<(Cow<'a, str>, bool)> {
+    substitute_attr_values_impl(value, reader, Mode::Readjudicate(expected_parts)).map(|(v, t, _)| (v, t))
+}
+
+enum Mode<'m> {
+    /// 写面/后置站：deferred 即 IACVT。
+    Strict,
+    /// 预级联站：deferred 原文保留 + 档案部数（第三返回值承载）。
+    Defer,
+    /// var 代入后重裁：档案部数结构冻结 + 严格求值。
+    Readjudicate(&'m [usize]),
+}
+
+fn substitute_attr_values_impl<'a>(
+    value: &'a str,
+    reader: &dyn Fn(&str) -> Option<String>,
+    mode: Mode<'_>,
+) -> Option<(Cow<'a, str>, bool, Vec<usize>)> {
     if !has_attr_word(value) {
-        return Some((Cow::Borrowed(value), false));
+        return Some((Cow::Borrowed(value), false, Vec::new()));
     }
     let lower = value.to_ascii_lowercase();
     let mut out = String::with_capacity(value.len());
     let mut last = 0usize;
     let mut replaced = false;
     let mut tainted = false;
+    let mut deferred_parts: Vec<usize> = Vec::new();
     let mut in_string: Option<char> = None;
+    let mut call_ordinal = 0usize;
     let mut chars = value.char_indices().peekable();
     while let Some((pos, ch)) = chars.next() {
         if let Some(q) = in_string {
@@ -753,6 +807,29 @@ pub fn substitute_attr_values_checked<'a>(
         };
         // 单遍：文法裁决 + 求值（任一 invalid / IACVT → 整值 None）。
         let call = parse_attr_call(&value[open_abs + 1..inner_end]).ok()?;
+        let ordinal = call_ordinal;
+        call_ordinal += 1;
+        match mode {
+            Mode::Strict => {}
+            Mode::Defer => {
+                if call.has_substitution {
+                    // 延迟形：原文保留（last 不推进，span 由下轮/收尾拷贝
+                    // ——嵌套具体 attr 调用仍会被扫描替换，替换序递归语义）
+                    // + 档案 parse 部数。
+                    deferred_parts.push(call.arg_parts);
+                    continue;
+                }
+            }
+            Mode::Readjudicate(expected_parts) => {
+                if let Some(&exp) = expected_parts.get(ordinal) {
+                    if call.arg_parts != exp {
+                        // 结构冻结违反：substitution 新增/移除实参分隔
+                        //（argument-grammar sub8 形）→ 整值 IACVT。
+                        return None;
+                    }
+                }
+            }
+        }
         let repl = eval_attr_call(&call, reader)?;
         out.push_str(&value[last..pos]);
         out.push_str(&repl);
@@ -765,10 +842,10 @@ pub fn substitute_attr_values_checked<'a>(
     }
     if !replaced {
         // 词假阳（字面内 attr( 等）——值不变。
-        return Some((Cow::Borrowed(value), false));
+        return Some((Cow::Borrowed(value), false, deferred_parts));
     }
     out.push_str(&value[last..]);
-    Some((Cow::Owned(out), tainted))
+    Some((Cow::Owned(out), tainted, deferred_parts))
 }
 
 /// 取 URL 属性清单（css-values-5 §attr security：替换产物携带 url 时声明
@@ -845,6 +922,57 @@ mod tests {
 
     fn reader_missing(_name: &str) -> Option<String> {
         None
+    }
+
+    #[test]
+    fn substitute_deferring_keeps_var_forms() {
+        // 延迟形（实参含 var()/env()）：不求值不拒——原文保留，交 var 代入后
+        // 的级联后置重裁站。
+        let r = |n: &str| if n == "data-foo" { Some("10".into()) } else { None };
+        let (v, t, parts) = substitute_attr_values_deferring("attr(var(--x))", &r).unwrap();
+        assert_eq!((v.as_ref(), t, parts), ("attr(var(--x))", false, vec![1]));
+        let (_, _, parts) = substitute_attr_values_deferring("attr(var(--x) type(<number>))", &r).unwrap();
+        assert_eq!(parts, vec![1]);
+        let (_, _, parts) = substitute_attr_values_deferring("attr(data-foo var(--t))", &r).unwrap();
+        assert_eq!(parts, vec![1]);
+        // 声明自带 fallback 槽（attr(var(--x), 10) 语料 sub2 形）→ 部数 2。
+        let (_, _, parts) = substitute_attr_values_deferring("attr(var(--x), 10)", &r).unwrap();
+        assert_eq!(parts, vec![2]);
+        // env() 同口径。
+        let (v, _, _) = substitute_attr_values_deferring("attr(env(--x))", &r).unwrap();
+        assert_eq!(v, "attr(env(--x))");
+        // 混合形：具体调用照常替换，延迟调用原文保留。
+        let (v, _, parts) = substitute_attr_values_deferring("attr(data-foo number) attr(var(--x))", &r).unwrap();
+        assert_eq!((v.as_ref(), parts), ("10 attr(var(--x))", vec![1]));
+        // 具体形 IACVT（reader miss 无 fallback）仍整值拒——延迟容错不豁免
+        // 文法 invalid。
+        assert!(substitute_attr_values_deferring("attr(data-bar number)", &r).is_none());
+        assert!(substitute_attr_values_deferring("attr(!)", &r).is_none());
+        // 对照：严格变体对延迟形整值拒（写面/后置站语义）。
+        assert!(substitute_attr_values_checked("attr(var(--x))", &r).is_none());
+    }
+
+    #[test]
+    fn readjudicate_freezes_argument_structure() {
+        // 结构冻结（argument-grammar sub8 形）：声明无 fallback（部数 1）、
+        // var 代入产出 fallback（re-parse 部数 2）→ IACVT。
+        let r = |n: &str| if n == "data-foo" { Some("10".into()) } else { None };
+        // 声明 `attr(var(--x))` + --x: data-foo type(<number>), 10 → 代入后
+        // 文本与 sub2（声明自带 fallback，部数 2）产物相同——冻结按档案
+        // 区分：部数 1 拒、部数 2 放行求值 "10"。
+        let substituted = "attr(data-foo type(<number>), 10)";
+        assert!(substitute_attr_values_readjudicate(substituted, &r, &[1]).is_none());
+        let (v, _) = substitute_attr_values_readjudicate(substituted, &r, &[2]).unwrap();
+        assert_eq!(v, "10");
+        // 档案吻合的合法代入（sub0 形）：部数 1 → 部数 1，求值。
+        let (v, _) = substitute_attr_values_readjudicate("attr(data-foo type(<number>))", &r, &[1]).unwrap();
+        assert_eq!(v, "10");
+        // 档案外调用（var 代入自 custom property 值注入的 attr 文本）不受
+        // 约束，按严格语义。
+        let (v, _) = substitute_attr_values_readjudicate("attr(data-foo number)", &r, &[]).unwrap();
+        assert_eq!(v, "10");
+        // 文法 invalid 在重裁站照常拒。
+        assert!(substitute_attr_values_readjudicate("attr(!)", &r, &[1]).is_none());
     }
 
     #[test]

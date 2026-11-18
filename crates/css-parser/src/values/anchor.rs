@@ -129,6 +129,43 @@ fn canonicalize_arg_chunk(chunk: &str) -> String {
     chunk.to_string()
 }
 
+/// anchor()/anchor-size() 单调用实参 canonical 归一（CalcParser anchor 叶
+/// parse 期消费）：顶层逗号分块 ≤2、`anchor()` 空参拒（`anchor-size()` 隐式
+/// 空参合法）；首块参数序换位（锚元素 dashed-ident 前置）；fallback 块走
+/// [`canonicalize_fallback_chunk`]。非法形返 `None`（调用方 parse 拒）。
+pub fn canonicalize_anchor_call_args(seg: &str, is_size: bool) -> Option<String> {
+    let (chunks, seps) = split_top_level_commas(seg);
+    if chunks.len() > 2 {
+        return None;
+    }
+    let head = chunks[0].trim();
+    if head.is_empty() && !is_size {
+        // anchor() 空参无语料收（anchor-size-parse-valid implicit 段仅
+        // anchor-size 隐式形）——parse 拒。
+        return None;
+    }
+    let mut rebuilt = canonicalize_arg_chunk(head);
+    if let Some(fb) = chunks.get(1) {
+        rebuilt.push_str(seps[0]);
+        rebuilt.push(' ');
+        rebuilt.push_str(&canonicalize_fallback_chunk(fb));
+    }
+    Some(rebuilt)
+}
+
+/// fallback 块 canonical（css-anchor-1 §3/§4 fallback `<length-percentage>`
+/// 位）：无单位数字补 px（type 归一——`anchor(--foo left, 0)` →
+/// `anchor(--foo left, 0px)`，anchor-parse-valid 语料 canonical 钉面）；
+/// % /维度/calc/嵌套调用保形（嵌套 anchor 序换位递归）。
+fn canonicalize_fallback_chunk(chunk: &str) -> String {
+    let c = chunk.trim();
+    if !c.is_empty() && c.parse::<f64>().is_ok() {
+        format!("{}px", c)
+    } else {
+        canonicalize_anchor_functions(c)
+    }
+}
+
 /// Canonicalize anchor()/anchor-size() argument order in a declared CSS value
 /// （css-anchor-1 parse-valid canonical serialization——WPT
 /// `css/css-anchor-position/anchor-size-parse-valid.html` 断言形态：
@@ -143,11 +180,14 @@ pub fn canonicalize_anchor_functions(value: &str) -> String {
     while let Some((start, end)) = find_anchor_function(value, cursor) {
         let content = &value[start..end];
         let (chunks, seps) = split_top_level_commas(content);
-        // 首块：参数序换位（换位输出以单空格重排）；其余块：递归（fallback 嵌套）。
+        // 首块：参数序换位（换位输出以单空格重排）；其余块：fallback canonical
+        //（无单位数字补 px / 嵌套调用递归）——发射保留逗号后原空白结构。
         let mut rebuilt = canonicalize_arg_chunk(chunks[0]);
         for (k, chunk) in chunks.iter().enumerate().skip(1) {
             rebuilt.push_str(seps[k - 1]);
-            rebuilt.push_str(&canonicalize_anchor_functions(chunk));
+            let lead_ws_len = chunk.len() - chunk.trim_start().len();
+            rebuilt.push_str(&chunk[..lead_ws_len]);
+            rebuilt.push_str(&canonicalize_fallback_chunk(chunk));
         }
         // `value[copied..start]` 含函数名、名后空白与左括号，原样保留。
         out.push_str(&value[copied..start]);
@@ -262,5 +302,37 @@ mod tests {
     fn idempotent_on_canonical_input() {
         let canonical = "anchor-size(--foo width, anchor-size(--bar block))";
         assert_eq!(canonicalize_anchor_functions(canonical), canonical);
+    }
+
+    #[test]
+    fn fallback_unitless_number_gets_px() {
+        // css-anchor-1 §3/§4 fallback <length-percentage> type 归一
+        //（anchor-parse-valid / anchor-size-parse-valid 语料 canonical 钉面：
+        // `anchor(--foo left, 0)` → `anchor(--foo left, 0px)`）。% /维度/calc
+        // 保形；幂等。
+        assert_eq!(
+            canonicalize_anchor_functions("anchor(--foo left, 0)"),
+            "anchor(--foo left, 0px)"
+        );
+        assert_eq!(
+            canonicalize_anchor_functions("anchor-size(--foo width, 0)"),
+            "anchor-size(--foo width, 0px)"
+        );
+        assert_eq!(
+            canonicalize_anchor_functions("anchor(--foo left, 1px)"),
+            "anchor(--foo left, 1px)"
+        );
+        assert_eq!(
+            canonicalize_anchor_functions("anchor(--foo left, 50%)"),
+            "anchor(--foo left, 50%)"
+        );
+        assert_eq!(
+            canonicalize_anchor_functions("anchor(--foo left, calc(0.5 * (1px + 1em)))"),
+            "anchor(--foo left, calc(0.5 * (1px + 1em)))"
+        );
+        assert_eq!(
+            canonicalize_anchor_functions("anchor(--foo left, 0px)"),
+            "anchor(--foo left, 0px)"
+        );
     }
 }

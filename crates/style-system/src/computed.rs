@@ -8,7 +8,7 @@ use zero_css_parser::values::{CalcExpr, LengthValue};
 use zero_css_parser::{Token, Tokenizer};
 
 use crate::property::ComputedStyle;
-use crate::property::types::{ColumnRuleWidthComputedValue, FlexBasisValue, LineHeightValue};
+use crate::property::types::{ColumnHeightComputedValue, ColumnWidthComputedValue, FlexBasisValue, LineHeightValue};
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -86,6 +86,28 @@ pub(crate) fn adjusted_font_relative_metrics(
         metrics.ic_width *= scale;
         metrics
     })
+}
+
+// apply 期视口真值 thread_local 单源（g50）。
+//
+// [`StyleSystem::set_viewport`](crate::StyleSystem::set_viewport) 每次落地时镜像；
+// apply 路径的自由函数（如 apply_advanced 的 border-spacing/box-shadow 急切 px 化臂）
+// 无 viewport 上下文参数，经 [`active_viewport`] 读取。未 set 过（纯单测/独立
+// resolve_length 调用方）保持 `None` → resolve_length 既有回落（1440×900）不变。
+// 每线程独立：Rust 测试并行各线程互不污染；生产单线程计算路径以最后一次
+// set_viewport 为准（与 s421 PENDING_VIEWPORT / g49 gcs_viewport_dims 同型）。
+thread_local! {
+    static ACTIVE_VIEWPORT: std::cell::RefCell<Option<(f64, f64)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 读当前线程的 apply 期视口真值。
+pub(crate) fn active_viewport() -> (Option<f64>, Option<f64>) {
+    ACTIVE_VIEWPORT.with(|cell| cell.borrow().map(|(w, h)| (Some(w), Some(h))).unwrap_or((None, None)))
+}
+
+/// 落地当前线程的 apply 期视口真值（由 [`crate::StyleSystem::set_viewport`] 调用）。
+pub(crate) fn set_active_viewport(width: f64, height: f64) {
+    ACTIVE_VIEWPORT.with(|cell| *cell.borrow_mut() = Some((width, height)));
 }
 
 /// 将相对长度转换为绝对像素值。
@@ -205,7 +227,10 @@ fn resolve_length_inner(
             let vh = viewport_height.unwrap_or(900.0);
             v * vw.max(vh) / 100.0
         }
-        LengthValue::Ch(v) => v * font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width),
+        // ch 兜底 1em（css-values-4 §5.1.2：1ch = '0' 字形 advance；无度量上下文
+        // 时按 Ahem-oriented 口径——语料字体 '0' advance = 1em，css-shapes
+        // computed 页 `50ch`@16px → `800px`；旧 0.5em 兜底恰 ×0.5 系统性偏小）。
+        LengthValue::Ch(v) => v * font_size * font_metrics.map_or(1.0, |metrics| metrics.ch_width),
         LengthValue::Rch(v) => v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5),
         LengthValue::Ic(v) => v * font_size * font_metrics.map_or(1.0, |metrics| metrics.ic_width),
         LengthValue::Ric(v) => v * root_metrics.ic_width.unwrap_or(ROOT_FONT_SIZE),
@@ -850,10 +875,46 @@ pub fn resolve_computed_style_with_container(
     // 不在上方 resolve_length_field 列表内。其 Length 内部值（如 1em）须解析为 Px，
     // 否则 paint（painter/text.rs::paint_column_rules rule_w match）仅匹配 Length(Px)，
     // em 案落入 `_ => 1.0` → column-rule-width:1em 渲染为 1px（应按 element font-size）。
-    if let ColumnRuleWidthComputedValue::Length(lv) = &resolved.column_rule_width.clone() {
-        let mut lv = lv.clone();
-        resolve_field(&mut lv);
-        resolved.column_rule_width = ColumnRuleWidthComputedValue::Length(lv);
+    // css-gaps-1 列表模型：逐段 Length 臂就地解析（R907 同模式，row 同文法）；
+    // <length [0,∞]> 槽负计算值 clamp 0（`calc(10px - 0.5em)` → `0px`，width
+    // computed 页钉）。
+    for seg in resolved
+        .column_rule_width
+        .iter_mut()
+        .chain(resolved.row_rule_width.iter_mut())
+    {
+        if let zero_css_parser::values::RuleWidthSegment::Plain(
+            zero_css_parser::values::ColumnRuleWidthValue::Length(lv),
+        ) = seg
+        {
+            resolve_field(lv);
+            if let LengthValue::Px(v) = lv {
+                if *v < 0.0 {
+                    *v = 0.0;
+                }
+            }
+        }
+    }
+    // column-width/column-height 是枚举包裹的 <length [0,∞]>（css-multicol-2
+    // §3.1/§4.2），不在 resolve_length_field 列表内——em 族就地解析为 Px（R907
+    // 同模式：paint/动画/gCS 消费端仅匹配 Length(Px)，em 不解析则静默丢失）。
+    // 负计算值 clamp 0（值域 [0,∞]，上方 rule-width 臂同款）。
+    // https://drafts.csswg.org/css-multicol-2/#cw / #ch
+    if let ColumnWidthComputedValue::Length(lv) = &mut resolved.column_width {
+        resolve_field(lv);
+        if let LengthValue::Px(v) = lv {
+            if *v < 0.0 {
+                *v = 0.0;
+            }
+        }
+    }
+    if let ColumnHeightComputedValue::Length(lv) = &mut resolved.column_height {
+        resolve_field(lv);
+        if let LengthValue::Px(v) = lv {
+            if *v < 0.0 {
+                *v = 0.0;
+            }
+        }
     }
     resolve_field(&mut resolved.letter_spacing);
     resolve_field(&mut resolved.word_spacing);
@@ -1032,10 +1093,14 @@ fn resolve_length_field(
 /// property 写面文法门复用（transform-origin-z `<length>` 位的 % 排除）。
 pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
     match expr {
+        // anchor()/anchor-size() 叶求值需布局锚几何——保留布局层（computed
+        // 期 fail-closed，与 converter 侧同口径）。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
-        // Time 叶无百分比（time 槽专用原子，length 槽解析不可达）。
-        CalcExpr::Time(_) => false,
+        // Time/Resolution 叶无百分比（time/resolution 槽专用原子，length 槽
+        // 解析不可达）。
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_contains_percentage(left) || calc_contains_percentage(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_contains_percentage),
         CalcExpr::Clamp { min, val, max } => {
@@ -1048,6 +1113,10 @@ pub(crate) fn calc_contains_percentage(expr: &CalcExpr) -> bool {
         CalcExpr::Mix(items) => items.iter().any(|it| calc_contains_percentage(&it.value)),
         // tree-counting 叶是 DOM 序号产出（无百分比；求值桥挂账期 eval 返
         // None 由消费方 fail 策略兜底）。
+        // progress() 恒产出 <number>（css-values-5 §progress）——实参 % 在
+        // 函数内比值消解不外泄，不构成 computed 期布局依赖（与 css-parser
+        // expr_has_percentage_leaf_outside_progress 同口径）。
+        CalcExpr::Progress { .. } => false,
         CalcExpr::TreeCounting(_) => false,
     }
 }
@@ -1097,9 +1166,16 @@ mod tests {
         let BackgroundImageComputedValue::Gradient(GradientValue::Conic(g)) = &layers[0] else {
             panic!("应为 conic 渐变");
         };
+        // g48（930541747）后 1 值位形按 CSS 语义 x=该值、缺省轴补 center
+        //（旧 x=y=该值 是 computed 18F 主根因），cq 解析断言随迁 x 轴。
         assert!(
-            matches!(g.position_y, LengthValue::Px(p) if (p - 30.0).abs() < 0.01),
-            "conic at 10cqh @300px 容器应解析 30px，got {:?}",
+            matches!(g.position_x, LengthValue::Px(p) if (p - 30.0).abs() < 0.01),
+            "conic at 10cqh @300px 容器 x 轴应解析 30px，got {:?}",
+            g.position_x
+        );
+        assert!(
+            matches!(g.position_y, LengthValue::Percentage(p) if (p - 50.0).abs() < 0.01),
+            "conic at 10cqh 缺省 y 轴应保 center 50%，got {:?}",
             g.position_y
         );
 
@@ -1199,7 +1275,8 @@ mod tests {
     fn test_resolve_ch() {
         let ch = LengthValue::Ch(2.0);
         let result = resolve_length(&ch, 16.0, None, None);
-        assert_eq!(result, 16.0); // 2 * 16 * 0.5
+        // 2 * 16 * 1.0——ch 兜底 = '0' advance 1em（css-values-4 §5.1.2）。
+        assert_eq!(result, 32.0);
     }
 
     #[test]
@@ -1734,21 +1811,33 @@ mod tests {
         // R907：column-rule-width 的 em 应按 element font-size 解析为 px。
         // 旧实现 Length(Em) 不 resolve → paint paint_column_rules rule_w 仅匹配 Length(Px)，
         // em 落入 `_ => 1.0` → column-rule-width:1em 渲染为 1px（应 20px @ font-size 20）。
+        // css-gaps-1 列表模型：单段 Plain(Length) 逐段解析（R907 同模式）。
         let mut style = ComputedStyle::default();
         style.font_size = LengthValue::Px(20.0);
-        style.column_rule_width = ColumnRuleWidthComputedValue::Length(LengthValue::Em(1.0));
+        style.column_rule_width = vec![zero_css_parser::values::RuleWidthSegment::Plain(
+            zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Em(1.0)),
+        )];
 
         let custom = HashMap::new();
         let resolved = resolve_computed_style(&style, &custom, None, None, Some(20.0));
         assert_eq!(
             resolved.column_rule_width,
-            ColumnRuleWidthComputedValue::Length(LengthValue::Px(20.0))
+            vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(20.0))
+            )]
         );
         // 关键字 Medium 不受影响。
         let mut style_kw = ComputedStyle::default();
-        style_kw.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+        style_kw.column_rule_width = vec![zero_css_parser::values::RuleWidthSegment::Plain(
+            zero_css_parser::values::ColumnRuleWidthValue::Medium,
+        )];
         let resolved_kw = resolve_computed_style(&style_kw, &HashMap::new(), None, None, None);
-        assert_eq!(resolved_kw.column_rule_width, ColumnRuleWidthComputedValue::Medium);
+        assert_eq!(
+            resolved_kw.column_rule_width,
+            vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium
+            )]
+        );
     }
 
     #[test]
@@ -1840,11 +1929,11 @@ mod tests {
     }
 
     #[test]
-    /// ch 单位近似为 0.5em
+    /// ch 单位兜底 = '0' 字形 advance ≈ 1em（Ahem 语料口径，css-values-4 §5.1.2）
     fn test_resolve_ch_approximation() {
         let ch = LengthValue::Ch(4.0);
-        // 4ch * 20 * 0.5 = 40
-        assert_eq!(resolve_length(&ch, 20.0, None, None), 40.0);
+        // 4ch * 20 * 1.0 = 80
+        assert_eq!(resolve_length(&ch, 20.0, None, None), 80.0);
     }
 
     #[test]

@@ -1004,6 +1004,61 @@ fn test_parse_background_position_invalid() {
     assert_eq!(parse_background_position("invalid"), None);
 }
 
+// ── g47：`<position>` 分面文法（css-values-5 §4.2 + csswg#2140 后行为）——
+// bg 面（<bg-position> 宽容）与严格面（object-position / 渐变 at）分治 ──
+
+#[test]
+fn test_parse_background_position_vertical_keyword_leading_offset_rejected() {
+    // 两值形：垂直关键字在前 + 偏移在后（#2140 弃形；两文法同拒——
+    // `<bg-position>` arm2 首槽亦不含垂直关键字）
+    assert_eq!(parse_background_position("top 0px"), None);
+    assert_eq!(parse_background_position("bottom 10%"), None);
+    assert_eq!(parse_position_strict("top 0px"), None);
+    assert_eq!(parse_position_strict("bottom 10%"), None);
+}
+
+#[test]
+fn test_parse_position_strict_offset_pair_all_or_nothing() {
+    // 严格 <position> 面：无 3 值形 + 偏移对 all-or-nothing——裸边缘关键字或
+    // center 与偏移对混用全拒（object-position-invalid 语料钉）
+    assert_eq!(parse_position_strict("left 4px top"), None);
+    assert_eq!(parse_position_strict("right top 5px"), None);
+    assert_eq!(parse_position_strict("bottom 7% left"), None);
+    assert_eq!(parse_position_strict("bottom right 8%"), None);
+    assert_eq!(parse_position_strict("center left 1px"), None);
+    assert_eq!(parse_position_strict("center top 2px"), None);
+    assert_eq!(parse_position_strict("right 3% center"), None);
+    assert_eq!(parse_position_strict("bottom 6% center"), None);
+    // 合法对照：双偏移对（`right 20% bottom 10%`）与双裸关键字序重排维持
+    assert!(parse_position_strict("right 20% bottom 10%").is_some());
+    assert!(parse_position_strict("left 25px bottom 75%").is_some());
+    assert!(parse_position_strict("center left").is_some());
+    assert!(parse_position_strict("top left").is_some());
+}
+
+#[test]
+fn test_parse_background_position_permissive_face_mixed_forms() {
+    // g47 分面回归锚：bg 面（css-backgrounds-3 `<bg-position>`）混搭形合法——
+    // background-position-valid.html / R2478 reftest 双向实钉（Chrome 通过）。
+    assert!(parse_background_position("left 50px center").is_some());
+    assert!(parse_background_position("right 11% bottom").is_some());
+    assert!(parse_background_position("right top 14%").is_some());
+    assert!(parse_background_position("center top 8px").is_some());
+    assert!(parse_background_position("bottom 16% left").is_some());
+    assert!(parse_background_position("top 17px right 18px").is_some());
+    // 逻辑关键字属 <position>（css-values-5 §4.2），bg 面拒收
+    assert_eq!(parse_background_position("x-start"), None);
+    assert_eq!(parse_background_position("y-end 10px"), None);
+    assert_eq!(parse_background_position("left 10px y-start 20%"), None);
+    // 严格面收录逻辑关键字（position-valid.tentative.html 语料钉：
+    // `x-start`、`left 10px y-start 20%`、`10px y-end` 均 valid）
+    assert!(parse_position_strict("x-start").is_some());
+    assert!(parse_position_strict("left 10px y-start 20%").is_some());
+    assert!(parse_position_strict("10px y-end").is_some());
+    // `y-end 10px` 同 `bottom 10%` 弃形（垂直缘前导偏移，invalid 语料钉）两文法同拒
+    assert_eq!(parse_position_strict("y-end 10px"), None);
+}
+
 // ── background-repeat 解析测试 ──
 
 #[test]

@@ -344,6 +344,39 @@ fn get_property_value(style: &ComputedStyle, property: &str) -> String {
         "padding-right" => length_value_to_string(&style.padding_right),
         "padding-bottom" => length_value_to_string(&style.padding_bottom),
         "padding-left" => length_value_to_string(&style.padding_left),
+        // wptfyi-css 基本形状族刀：clip-path 旧/新值 canonical 串化比较
+        //（差异才启动过渡——无臂时两侧同空串恒不启动，transitions 通道死）。
+        "clip-path" => {
+            let font = match style.font_size {
+                LengthValue::Px(v) => v,
+                _ => 16.0,
+            };
+            crate::js_dom_bridge::computed_style::clip_path_to_css(&style.clip_path, font)
+        }
+        // wptfyi-css shape-outside 刀：同 clip-path canonical 串化比较
+        //（css-shapes-1 §shape-outside 同 basic-shape 族 + 裸 <shape-box>，
+        // 差异才启动过渡）。
+        "shape-outside" => {
+            let font = match style.font_size {
+                LengthValue::Px(v) => v,
+                _ => 16.0,
+            };
+            crate::js_dom_bridge::computed_style::shape_outside_to_css(&style.shape_outside, font)
+        }
+        // wptfyi-css shape-margin/threshold 刀：canonical 串化比较（差异才启动
+        // 过渡——无臂时两侧同空串恒不启动；gCS 臂同口径）。
+        "shape-margin" => {
+            let font = match style.font_size {
+                LengthValue::Px(v) => v,
+                _ => 16.0,
+            };
+            crate::js_dom_bridge::computed_style::shape_margin_to_css(&style.shape_margin, font)
+        }
+        "shape-image-threshold" => style.shape_image_threshold.to_string(),
+        // wptfyi-css 基本形状族刀：offset-path 旧/新值 verbatim 比较（差异才
+        // 启动过渡——无臂时两侧同空串恒不启动；gCS offset-path 臂同 verbatim
+        // 口径，neutral 端点组 007 页 transitions 通道 t<0.5 行依赖 from 保持）。
+        "offset-path" => style.offset_path.clone().unwrap_or_else(|| "none".to_string()),
         "all" => String::new(), // "all" 不参与单个属性比较
         _ => String::new(),
     }
@@ -363,6 +396,14 @@ fn color_value_to_string(color: &ColorValue) -> String {
         ColorValue::RelativeColor(_) => "rgb(from …)".to_string(),
         // contrast-color() 在 transition 串化中罕见，回退为占位（对比色求值 defer）。
         ColorValue::ContrastColor(_) => "contrast-color(…)".to_string(),
+        // color() 预定义空间：按 canonical 形串化（css-color-4 §9.1；alpha 1 省略）。
+        ColorValue::ColorFunction(f) => {
+            let mut s = format!("color({} {} {} {})", f.space, f.comps[0], f.comps[1], f.comps[2]);
+            if f.alpha < 1.0 {
+                s.push_str(&format!(" / {}", f.alpha));
+            }
+            s
+        }
     }
 }
 

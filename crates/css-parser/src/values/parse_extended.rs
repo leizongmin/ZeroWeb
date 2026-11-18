@@ -436,9 +436,11 @@ pub fn parse_counter_action(input: &str) -> Option<CounterActionValue> {
 }
 
 fn is_counter_name(name: &str) -> bool {
+    // `default` 保留（css-counter-styles-3 §counter-style-name；counter-increment
+    // invalid 语料 `default 1` 拒形驱动，valid 语料零 default 名形）。
     if matches!(
         name.to_ascii_lowercase().as_str(),
-        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "default"
     ) {
         return false;
     }
@@ -508,7 +510,10 @@ pub fn parse_counter_list_with_sibling(input: &str, sibling: Option<(u64, u64)>)
                 iter.next();
                 t.parse::<i64>().ok()
             }
-            Some(t) => {
+            // math 形守卫：函数形必含 `(`，custom-ident 不含——名后跟名形
+            // （counter-increment-computed `myCounter otherCounter -8`）此前
+            // 误吞名 token 送 parse_math_function 整拒。
+            Some(t) if t.contains('(') => {
                 let expr = parse_math_function(t)?;
                 if !calc_expr_is_number(&expr) {
                     return None;
@@ -530,11 +535,64 @@ pub fn parse_counter_list_with_sibling(input: &str, sibling: Option<(u64, u64)>)
                 iter.next();
                 Some(v.round() as i64)
             }
-            None => None,
+            // 名后跟名形：整数位缺省，名 token 留给下一轮。
+            Some(_) | None => None,
         };
         result.push(CounterActionValue {
             name: name.to_string(),
             value,
+        });
+    }
+    if result.is_empty() {
+        return None;
+    }
+    Some(result)
+}
+
+/// counter-increment 写面文法门：仅文法裁决、不求值（CSS Lists 3 §counter-increment
+/// `[ <counter-name> <integer>? ]#`，<https://drafts.csswg.org/css-lists-3/#counter-increment>）。
+/// 名 = <custom-ident>（[`is_counter_name`]——css-wide 关键字与 `none` 排除），
+/// 整数位 = <integer> 字面或 <math-function> 形（型别 <number>；求值延后到 apply
+/// 站——supports/写面门无容器 ctx，eval fail-closed 会误拒 `sign(2cqw - 10px)`
+/// 类合法形）。`none` 单置返空列表。非法形返 None：`none chapter`（none 非单置）、
+/// `reversed(chapter)`（counter-reset 专属；custom-ident 文法不含括号）、首位非名
+/// （`3`/`99 imagenum`）、顶层逗号分隔（`section -1, imagenum 99`）、非整数槽
+/// （`section 3.14`）、css-wide 关键字带后缀（`inherit 1`）。
+pub fn parse_counter_list_grammar(input: &str) -> Option<Vec<CounterActionValue>> {
+    let input = input.trim();
+    if input.eq_ignore_ascii_case("none") {
+        return Some(vec![]);
+    }
+    let tokens = super::transform_helpers::split_top_level_whitespace_args(input)?;
+    // counter 文法无逗号分隔；math 形内逗号合法（`min(1px, 2px)` 括号内
+    // 不分词单 token，`(` 存在豁免）。
+    if tokens.iter().any(|t| !t.contains('(') && t.contains(',')) {
+        return None;
+    }
+    let mut result = Vec::new();
+    let mut iter = tokens.iter().copied().peekable();
+    while let Some(name) = iter.next() {
+        if !is_counter_name(name) {
+            return None;
+        }
+        // 整数位文法（不消费求值）：字面 <integer> 或 math 形（型别 <number>，
+        // `reversed(chapter)` 等非数学函数名单形拒）。
+        if let Some(t) = iter.peek().copied() {
+            if t.parse::<i64>().is_ok() || t.contains('(') {
+                if t.contains('(') {
+                    let expr = parse_math_function(t)?;
+                    if !calc_expr_is_number(&expr) {
+                        return None;
+                    }
+                }
+                iter.next();
+            }
+        }
+        // 文法门不求值：value 位 None（求值在 apply 站
+        // [`parse_counter_list_with_sibling`]）。
+        result.push(CounterActionValue {
+            name: name.to_string(),
+            value: None,
         });
     }
     if result.is_empty() {
@@ -582,6 +640,11 @@ pub enum ContentValue {
     /// 渐变是 image 的子类型）。元素 content:\<gradient\> → element-becomes-replaced-with-
     /// gradient，按 content 盒绘制渐变。
     Gradient(crate::values::parse_transform::GradientValue),
+    /// image-set() 响应式图像（css-content-3 #content-property：content-list
+    /// 接受 `<image>`，image-set 是 image 子型；g46 content×image-set 支持门刀）。
+    /// 内层复用 background-image 同一选项文法单实现点
+    ///（[`parse_extended_visual::parse_image_set_value`]）。
+    ImageSet(crate::values::ImageSetValue),
     /// filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1 #FilterCSSImageValue，
     /// R5022）——content 接受 \<image\>，filter() 是 image 的函数形态。内层限 url/gradient/
     /// filter（\<image\> 语法域）；滤镜列表空 = 无滤镜等价内层图像。
@@ -759,14 +822,25 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     {
         return Some(ContentValue::Gradient(g));
     }
+    // image-set() 响应式图像（g46，css-content-3 #content-property：content-list
+    // 接受 `<image>`）：复用 background-image 选项文法单实现点；`-webkit-` 别名
+    // parse 期剥除。置于渐变分支后（image-set 非渐变函数，parse_gradient 返 None
+    // 不冲突）。
+    if let Some(is) = super::parse_extended_visual::parse_image_set_value(input) {
+        return Some(ContentValue::ImageSet(is));
+    }
     None
 }
 
 /// 解析 content 的 \<image\> 语法域（filter() 图像函数内层递归用）：仅 url/gradient/
-/// filter 合法，其余 content 值（string/counter/attr/none/normal/list）非图像拒收。
+/// image-set/filter 合法，其余 content 值（string/counter/attr/none/normal/list）
+/// 非图像拒收。
 fn parse_content_image(input: &str) -> Option<ContentValue> {
     match parse_content(input)? {
-        v @ ContentValue::Url(_) | v @ ContentValue::Gradient(_) | v @ ContentValue::Filtered { .. } => Some(v),
+        v @ ContentValue::Url(_)
+        | v @ ContentValue::Gradient(_)
+        | v @ ContentValue::ImageSet(_)
+        | v @ ContentValue::Filtered { .. } => Some(v),
         _ => None,
     }
 }
@@ -1207,12 +1281,15 @@ pub enum CalcMathType {
     Angle,
     /// `<time>`（css-values-4 §6.3；CalcExpr::Time 叶秒值承载）。
     Time,
+    /// `<resolution>`（css-values-4 §6.4；CalcExpr::Resolution 叶 dppx 承载）。
+    Resolution,
     /// 型别不一致（混族/实参型别不符）——整式无效。
     Invalid,
 }
 
 use CalcMathType::{
-    Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber, Time as MTTime,
+    Angle as MTAngle, Invalid as MTInvalid, LengthPercentage as MTLength, Number as MTNumber,
+    Resolution as MTResolution, Time as MTTime,
 };
 
 /// CSS Values 4 §10.5 型别表：递归计算 math 式的结果文法族。
@@ -1228,7 +1305,11 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
     match expr {
         CalcExpr::Number(_) => MTNumber,
         CalcExpr::Length(_) => MTLength,
+        // anchor()/anchor-size() 产出 <length-percentage>（css-anchor-1 §3/§4
+        // 型别表）——% 槽/长度槽同族可混。
+        CalcExpr::Anchor { .. } => MTLength,
         CalcExpr::Time(_) => MTTime,
+        CalcExpr::Resolution(_) => MTResolution,
         CalcExpr::BinaryOp(left, op, right) => {
             let lt = calc_expr_math_type(left);
             let rt = calc_expr_math_type(right);
@@ -1248,12 +1329,14 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                     (MTNumber, MTLength) | (MTLength, MTNumber) => MTLength,
                     (MTNumber, MTAngle) | (MTAngle, MTNumber) => MTAngle,
                     (MTNumber, MTTime) | (MTTime, MTNumber) => MTTime,
+                    (MTNumber, MTResolution) | (MTResolution, MTNumber) => MTResolution,
                     _ => MTInvalid, // length²/angle²/length·angle 无量纲型别，§8.1 无效
                 },
                 CalcOp::Divide => match (lt, rt) {
                     (MTNumber, MTNumber) => MTNumber,
                     (MTLength, MTNumber) | (MTAngle, MTNumber) => lt,
                     (MTTime, MTNumber) => MTTime,
+                    (MTResolution, MTNumber) => MTResolution,
                     // FIXME: 同族相除（length/length→number 比值）未支持，无驱动案。
                     _ => MTInvalid,
                 },
@@ -1305,15 +1388,22 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                 UnaryMathOp::Abs => it,
                 // sign(X) 结果恒 <number>，实参任意型别（§10.5）。
                 UnaryMathOp::Sign => MTNumber,
-                // sqrt/exp/log + trig：实参仅 <number>（trig 角度实参 parse 期
-                // 已弧度 Number 化），结果 <number>。
-                UnaryMathOp::Sqrt
-                | UnaryMathOp::Exp
-                | UnaryMathOp::Log
-                | UnaryMathOp::Sin
-                | UnaryMathOp::Cos
-                | UnaryMathOp::Tan => {
+                // sqrt/exp/log：实参仅 <number>，结果 <number>。sin/cos/tan
+                //（css-values-4 §10.6 <https://drafts.csswg.org/css-values-4/#funcdef-sin>）
+                // 实参 <number> 或 <angle>：字面角度 parse 期已弧度 Number 化，
+                // atan2/asin 族与角度算术复合产出 <angle> 型子树（两形 eval 同为
+                // 弧度 f64，型别门此前误拒后者）——font-property-unit-cycles
+                // `calc(1px * tan(atan2(1em, 1px)))` 与 acos-asin-atan-atan2-computed
+                // `atan(tan(180deg * …))` 页面族驱动。
+                UnaryMathOp::Sqrt | UnaryMathOp::Exp | UnaryMathOp::Log => {
                     if it == MTNumber {
+                        MTNumber
+                    } else {
+                        MTInvalid
+                    }
+                }
+                UnaryMathOp::Sin | UnaryMathOp::Cos | UnaryMathOp::Tan => {
+                    if it == MTNumber || it == MTAngle {
                         MTNumber
                     } else {
                         MTInvalid
@@ -1360,6 +1450,17 @@ pub fn calc_expr_math_type(expr: &CalcExpr) -> CalcMathType {
                 }
             }
         }
+        // progress()：三实参同族（number/dimension/percentage——% 与维度同
+        // length-percentage 族可混），结果恒 <number>（css-values-5 §progress；
+        // parse 期已先裁不一致形，此处树内复核）。
+        CalcExpr::Progress { value, start, end, .. } => {
+            let vt = calc_expr_math_type(value);
+            if vt != MTInvalid && calc_expr_math_type(start) == vt && calc_expr_math_type(end) == vt {
+                MTNumber
+            } else {
+                MTInvalid
+            }
+        }
     }
 }
 
@@ -1382,8 +1483,10 @@ pub fn calc_expr_is_number(expr: &CalcExpr) -> bool {
 pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Length(_) => true,
+        // anchor()/anchor-size() 产出 <length-percentage>（§3/§4 型别表）。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
-        CalcExpr::Time(_) => false,
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
         CalcExpr::Clamp { min, val, max } => {
@@ -1397,6 +1500,13 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
         }),
         // tree-counting 叶是 DOM 序号产出（无维度单位，非 <length>）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 节点恒产出 <number>（css-values-5 §progress）——实参维度
+        // 在函数内比值消解不外泄单位，树级 length 性只看节点外叶子：
+        // `opacity: progress(100px, 0px, 100px)` 须过 Number 位折叠（语料
+        // progress-serialize 钉面）。实参型别一致性由 parse 期型别门裁决
+        //（try_parse_progress），混合实参树不可达此处。
+        // https://drafts.csswg.org/css-values-5/#progress
+        CalcExpr::Progress { .. } => false,
     }
 }
 
@@ -1423,12 +1533,34 @@ pub fn calc_expr_has_angle_result(expr: &CalcExpr) -> bool {
     }
 }
 
+/// 判断 math 表达式是否含 anchor()/anchor-size() 叶（css-anchor-1 §3/§4）——
+/// Length 位纯 anchor 树 dimension_suffix 缺维度叶的放行门与 canonical 串化
+/// 臂的拦截谓词。
+pub fn calc_expr_has_anchor(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Anchor { .. } => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_has_anchor(left) || calc_expr_has_anchor(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_anchor),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_anchor(min) || calc_expr_has_anchor(val) || calc_expr_has_anchor(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_has_anchor(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => calc_expr_has_anchor(left) || calc_expr_has_anchor(right),
+        CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_has_anchor(&it.value)),
+        CalcExpr::Progress { value, start, end, .. } => {
+            calc_expr_has_anchor(value) || calc_expr_has_anchor(start) || calc_expr_has_anchor(end)
+        }
+        _ => false,
+    }
+}
+
 /// 判断 math 表达式是否含 tree-counting 叶（sibling-index()/sibling-count()）——
 /// 写面门分派与 canonical 串化臂的拦截谓词。
 pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::TreeCounting(_) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_tree_counting(left) || calc_expr_has_tree_counting(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_tree_counting),
         CalcExpr::Clamp { min, val, max } => {
@@ -1441,6 +1573,13 @@ pub fn calc_expr_has_tree_counting(expr: &CalcExpr) -> bool {
         // calc-mix() 项/权重内 sibling 叶：serialize 通道走 fold_mix_dimension
         // 既有原文保留口径，不在本谓词拦截面（写面门对 mix 形放行挂账）。
         CalcExpr::Mix(_) => false,
+        // anchor()/anchor-size() 叶非 sibling。
+        CalcExpr::Anchor { .. } => false,
+        // progress() 实参内 sibling 叶（`progress(sibling-index(), 1, 3)` 形）
+        // ——递归上报。
+        CalcExpr::Progress { value, start, end, .. } => {
+            calc_expr_has_tree_counting(value) || calc_expr_has_tree_counting(start) || calc_expr_has_tree_counting(end)
+        }
     }
 }
 
@@ -1460,6 +1599,10 @@ pub fn tree_counting_slot_valid(prop: &str, expr: &CalcExpr) -> bool {
             matches!(
                 prop,
                 "width" | "margin-left" | "text-indent" | "transform-origin-z" | "left"
+                    // text-size-adjust 为 <percentage> 槽（css-size-adjust-1）——
+                    // % 叶经 LengthPercentage 归 MTLength（text-size-adjust-valid
+                    // `calc(10% * sibling-index())` 接受腿驱动）。
+                    | "text-size-adjust"
             )
         }
         MTTime => matches!(
@@ -1467,5 +1610,8 @@ pub fn tree_counting_slot_valid(prop: &str, expr: &CalcExpr) -> bool {
             "transition-delay" | "transition-duration" | "animation-delay" | "animation-duration"
         ),
         MTAngle => matches!(prop, "rotate"),
+        // tree-counting 槽无 <resolution> 文法位（css-values-5 §tree-counting
+        // 属性槽清单不含分辨率族）——fail-closed。
+        MTResolution => false,
     }
 }

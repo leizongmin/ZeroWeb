@@ -58,6 +58,30 @@ fn test_transition_shorthand_with_cubic_bezier() {
 }
 
 #[test]
+/// 刀 A1c ①：transition 简写带 allow-discrete 槽——5 longhand 展开，behavior
+/// 位（normal|allow-discrete）在 property 位之前识别；省略槽默认 normal。
+/// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
+fn test_transition_shorthand_allow_discrete() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("transition", "margin 2s allow-discrete")]);
+    assert_eq!(s.transition_property, vec!["margin".to_string()]);
+    assert_eq!(s.transition_behavior, vec!["allow-discrete".to_string()]);
+    // 省略 behavior 槽 → normal
+    let s = compute_style(&doc, div, &[("transition", "opacity 1s")]);
+    assert_eq!(s.transition_behavior, vec!["normal".to_string()]);
+    // 多条目：behavior 逐条对齐（逗号列表逐位）
+    let s = compute_style(&doc, div, &[("transition", "margin 2s allow-discrete, opacity 1s")]);
+    assert_eq!(s.transition_property, vec!["margin".to_string(), "opacity".to_string()]);
+    assert_eq!(
+        s.transition_behavior,
+        vec!["allow-discrete".to_string(), "normal".to_string()]
+    );
+    // 未知 behavior 关键字 → 整条丢弃（既非 behavior 也非已知 property 位识别失败）
+    let s = compute_style(&doc, div, &[("transition", "margin 2s instant")]);
+    assert!(s.transition_property.is_empty());
+}
+
+#[test]
 /// animation 简写使用名称和持续时间
 fn test_animation_shorthand_with_name_and_duration() {
     let (doc, _html, _body, div, _p) = make_test_dom();
@@ -77,6 +101,81 @@ fn test_columns_shorthand_with_width_and_count() {
     assert_eq!(
         s.column_width,
         crate::property::types::ColumnWidthComputedValue::Length(LengthValue::Px(200.0))
+    );
+}
+
+#[test]
+/// columns 简写斜杠段写 column-height（css-multicol-2 §4.5
+/// `[ <'column-width'> || <'column-count'> ] [ / <'column-height'> ]?`）：
+/// `12em / 14em`（font-size 16px → width 192px、height 224px）。
+fn test_columns_shorthand_slash_column_height() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("columns", "12em / 14em")]);
+    assert_eq!(
+        s.column_width,
+        crate::property::types::ColumnWidthComputedValue::Length(LengthValue::Px(192.0))
+    );
+    assert_eq!(
+        s.column_height,
+        crate::property::types::ColumnHeightComputedValue::Length(LengthValue::Px(224.0))
+    );
+    assert_eq!(s.column_count, crate::property::types::ColumnCountComputedValue::Auto);
+    // 有效 columns 声明复位 column-wrap 初值（css-multicol-2 §4.5）。
+    assert_eq!(s.column_wrap, crate::property::types::ColumnWrapComputedValue::Auto);
+}
+
+#[test]
+/// columns 斜杠形 count-only + 粘连 '/' token（CSS tokenization '/' 自成
+/// token、空白可选）：`2/100px` ≡ `2 / 100px`。
+fn test_columns_shorthand_slash_glued_token() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("columns", "2/100px")]);
+    assert_eq!(
+        s.column_count,
+        crate::property::types::ColumnCountComputedValue::Number(2)
+    );
+    assert_eq!(
+        s.column_height,
+        crate::property::types::ColumnHeightComputedValue::Length(LengthValue::Px(100.0))
+    );
+    assert_eq!(s.column_width, crate::property::types::ColumnWidthComputedValue::Auto);
+}
+
+#[test]
+/// columns 斜杠段非法值（负长度非 <length [0,∞]>）整声明无效——width/count
+/// 不落盘（保持初值），wrap 不复位。
+fn test_columns_shorthand_slash_invalid_height() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("columns", "10px / -4px")]);
+    assert_eq!(s.column_width, crate::property::types::ColumnWidthComputedValue::Auto);
+    assert_eq!(s.column_height, crate::property::types::ColumnHeightComputedValue::Auto);
+}
+
+#[test]
+/// columns 斜杠段 height 继承 column-width 文法域：auto 槽合法（css-multicol-2
+/// §4.5 `<'column-height'>` 全文法含 auto）。
+fn test_columns_shorthand_slash_auto_height() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("columns", "20 200px / auto")]);
+    assert_eq!(
+        s.column_count,
+        crate::property::types::ColumnCountComputedValue::Number(20)
+    );
+    assert_eq!(
+        s.column_width,
+        crate::property::types::ColumnWidthComputedValue::Length(LengthValue::Px(200.0))
+    );
+    assert_eq!(s.column_height, crate::property::types::ColumnHeightComputedValue::Auto);
+}
+
+#[test]
+/// column-height longhand 直落（css-multicol-2 §4.2 auto | <length [0,∞]>）。
+fn test_column_height_longhand() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("column-height", "10em")]);
+    assert_eq!(
+        s.column_height,
+        crate::property::types::ColumnHeightComputedValue::Length(LengthValue::Px(160.0))
     );
 }
 

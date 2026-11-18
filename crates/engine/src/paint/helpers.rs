@@ -551,7 +551,7 @@ pub fn round_band_uniform_border(style: &ComputedStyle, box_node: &LayoutBox) ->
 /// 才是规范口径，均匀半径下二者等价（f·r = 半边长），非均匀单角大半径（100% 单角
 /// = 四分之一圆）此前被过度钳制致与 px 半径不同形（background-clip-*-with-
 /// border-radius-002 %/px 两侧不对称实证）。
-fn resolve_radius_length(v: &LengthValue, box_w: f32, font_size_px: f64) -> f32 {
+pub(crate) fn resolve_radius_length(v: &LengthValue, box_w: f32, font_size_px: f64) -> f32 {
     match v {
         LengthValue::Px(p) => *p as f32,
         LengthValue::Percentage(pct) => ((pct / 100.0) * box_w as f64) as f32,

@@ -1392,6 +1392,11 @@
     var shellCap = (ar.collapsed && typeof globalThis.__zw_ce_capture_shell_carry === 'function')
       ? globalThis.__zw_ce_capture_shell_carry(ar, forward) : null;
     if (!ar.collapsed) {
+      // C5 刀（2026-11-15）：delete 前双 CharData 边界捕获——deleteContents
+      // 重锚活区后原文本引用已失，尾消解壳爬升必败（全删净面无幸存壳接锚）；
+      // 部分覆盖面由消解 kids 可见幸存/宿主级 sibs 守卫挡。
+      var arTxt = ar.startContainer.nodeType === 3
+        && ar.endContainer.nodeType === 3;
       _zwDelDeleteSelection();
     } else if (forward) {
       _zwDelForwardDeleteAction();
@@ -1424,7 +1429,7 @@
     // （collapsed delete/fd 无消解语义诉求）；482 blockquote 反例由 helper
     // tag 收窄挡。消解保节点身份，上方 override 重锚不失效。
     if (!ar.collapsed && typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function') {
-      try { globalThis.__zw_ce_dissolve_emptied_div_tail(ar); } catch (_eA1Tail) {}
+      try { globalThis.__zw_ce_dissolve_emptied_div_tail(ar, arTxt); } catch (_eA1Tail) {}
     }
     return true;
   };
@@ -1470,6 +1475,91 @@
     return '';
   }
 
+  // B 族刀（2026-11-14）：折叠空白串判 + 拆点块界归一 + white-space 显著判
+  //（part01.js `_zwCeIsCollapsibleWsOnly` / `_zwCeSplitBoundaryNormalize` /
+  // `_zwCeWsDeclared` / `_zwCeWsSignificant` 同构——该文件 IIFE 私有作用域
+  // 不可达，本地复制，同 `_zwIparaIsVoidTag` 惯例）。
+  function _zwIparaIsCollapsibleWsOnly(sv) {
+    var v = String(sv);
+    if (v === '') return false;
+    for (var i = 0; i < v.length; i++) {
+      var c = v.charAt(i);
+      if (c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r' && c !== '\f') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function _zwIparaSplitBoundaryNormalize(head, tail, headStructural) {
+    var H = String(head);
+    var T = String(tail);
+    // headDeg：头侧退化完全由调用方侧扫描裁定（headStructural=false = 侧内
+    // 无元素且文本全折叠空白/全空）——字串级判据不足：caret 块内容起点形
+    //（`[] abc`）H 空串非 ws-only，但 Chrome exp 不翻尾侧（` abc`/`  abc`
+    // 保留或吞空格，绝不 nbsp；ipm3-b-v4-ip.log P2F 实录）；头侧有结构内容
+    //（CE-false 跨行形）才放行 T 翻转。
+    var headDeg = !headStructural;
+    var tailDeg = _zwIparaIsCollapsibleWsOnly(T);
+    if (headDeg) H = '';
+    if (tailDeg) T = '';
+    // 门=双侧非退化。
+    if (!headDeg && !tailDeg) {
+      var tailWs = 0;
+      while (tailWs < H.length) {
+        var cH = H.charAt(H.length - 1 - tailWs);
+        if (cH !== ' ' && cH !== '\u00a0') break;
+        tailWs++;
+      }
+      if (tailWs > 0 && H.charAt(H.length - 1) === ' ') {
+        H = H.slice(0, H.length - 1) + '\u00a0';
+      }
+      var leadWs = 0;
+      while (leadWs < T.length) {
+        var cT = T.charAt(leadWs);
+        if (cT !== ' ' && cT !== '\u00a0') break;
+        leadWs++;
+      }
+      if (leadWs > 0) {
+        var lead = '\u00a0';
+        for (var ri = 1; ri < leadWs; ri++) {
+          lead += (T.charAt(ri) === '\u00a0') ? ' ' : T.charAt(ri);
+        }
+        T = lead + T.slice(leadWs);
+      }
+    }
+    return [H, T];
+  }
+
+  function _zwIparaWsDeclaredOf(el) {
+    try {
+      if (el.style && typeof el.style.whiteSpace === 'string'
+          && el.style.whiteSpace !== '') {
+        return String(el.style.whiteSpace);
+      }
+    } catch (_eWsD1) {}
+    try {
+      var stWs = el.getAttribute && el.getAttribute('style');
+      if (stWs) {
+        var mWs = String(stWs).match(/white-space\s*:\s*([a-z-]+)/i);
+        if (mWs) return mWs[1];
+      }
+    } catch (_eWsD2) {}
+    return null;
+  }
+
+  function _zwIparaWsSignificantOf(from, host) {
+    var n = (from && from.nodeType === 1) ? from : (from ? from.parentNode : null);
+    var g = 0;
+    while (n && g++ < 256) {
+      var ws = _zwIparaWsDeclaredOf(n);
+      if (ws != null) return ws === 'pre' || ws === 'pre-line' || ws === 'pre-wrap';
+      if (n === host) break;
+      n = n.parentNode;
+    }
+    return false;
+  }
+
   function _zwIparaIsSingleLineContainer(node) {
     // "A single-line container is either a non-list single-line container, or
     // an HTML element with local name li, dt, or dd."
@@ -1477,6 +1567,15 @@
     return _zwJusIsHtmlElement(node, ['address', 'div', 'h1', 'h2', 'h3', 'h4',
         'h5', 'h6', 'listing', 'p', 'pre', 'xmp'])
       || _zwJusIsHtmlElement(node, ['li', 'dt', 'dd']);
+  }
+
+  // IP-M1 刀（2026-11-13）：拆分边界 inline 格式壳判定——fmt 表 + span（语料
+  // 实证裸 span 与带样式 span 均按壳开合：`<span>foobar</span>baz` caret 中点
+  // expect 新块 `<span>bar</span>baz` 重开、`<span style=color>[bar]</span>`
+  // 删除致空壳 expect 丢弃）；`<a>` 不在集内（拆分界永不重开链接壳，census
+  // `<a href>` 簇 expect 新块裸 br）。
+  function _zwIparaIsFmtShellTag(tn) {
+    return tn === 'span' || !!_zwDelFmtTags[tn];
   }
 
   function _zwIparaDeleteData(node, off, count) {
@@ -1519,6 +1618,15 @@
       var t = n ? n.nodeType : 0;
       return t === 3 || t === 4 || t === 7 || t === 8;
     };
+    // C3 刀（2026-11-15）：可切片 CharData 仅 Text/CDATA——Comment/PI 原子
+    // 节点走切片语义（cloneSlice+deleteData）会把原节点原地清空残 `<!---->`
+    // 空壳（corpus `<p>foo[]<!--bar-->` 2 键 got 实录），contained/sc===ec
+    // 子级面改走先摘后挂 move（spec contained 子 remove+append 同型）。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    var isSplittableCd = function (n) {
+      var t = n ? n.nodeType : 0;
+      return t === 3 || t === 4;
+    };
     var moveIn = function (kid, into) {
       if (!kid) return;
       var op = kid.parentNode;
@@ -1549,7 +1657,7 @@
             throw new (globalThis.DOMException || Error)(
               'The range includes a DocumentType node.', 'HierarchyRequestError');
           }
-          if (isCd(snap[i])) {
+          if (isSplittableCd(snap[i])) {
             var d = String(snap[i].nodeValue == null ? '' : snap[i].nodeValue);
             f.appendChild(cloneSlice(snap[i], 0, d.length));
             _zwIparaDeleteData(snap[i], 0, d.length);
@@ -1607,7 +1715,7 @@
         throw new (globalThis.DOMException || Error)(
           'The range includes a DocumentType node.', 'HierarchyRequestError');
       }
-      if (isCd(contained[k])) {
+      if (isSplittableCd(contained[k])) {
         var d2 = String(contained[k].nodeValue == null ? '' : contained[k].nodeValue);
         f.appendChild(cloneSlice(contained[k], 0, d2.length));
         _zwIparaDeleteData(contained[k], 0, d2.length);
@@ -1819,6 +1927,12 @@
       }
       if (!_zwIpCol) {
         var _zwIpAr0 = _zwVaGetActiveRange();
+        // C5 刀（2026-11-15）：delete 前双 CharData 边界捕获——deleteContents
+        // 重锚活区后原文本引用已失，尾消解壳爬升必败（全删净面无幸存壳接锚）；
+        // 部分覆盖面由消解 kids 可见幸存/宿主级 sibs 守卫挡。
+        var _zwIpAr0Txt = _zwIpAr0
+          && _zwIpAr0.startContainer.nodeType === 3
+          && _zwIpAr0.endContainer.nodeType === 3;
         _zwDelDeleteSelection();
         // ⑦ A1（2026-11-09 host-div-wrap 姊妹面，mt 487）：前导 delete 全删
         // 空宿主唯一元素子 div 时 Chrome 消解壳提宿主（caret 提壳链首）——
@@ -1827,7 +1941,31 @@
         // paragraph_split_at` ① 宿主级臂（同 ipara_wants=false 让位路径）。
         // fireEvents=false——beforeinput/input 已由 part06 ip 臂事件序派发。
         if (typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function'
-            && globalThis.__zw_ce_dissolve_emptied_div_tail(_zwIpAr0)) {
+            && globalThis.__zw_ce_dissolve_emptied_div_tail(_zwIpAr0, _zwIpAr0Txt)) {
+          // C5 刀尾随归一（2026-11-15）：消解提宿主后宿主唯一子恰为垫 br 时
+          // 移除并落 (host,0)——① 宿主级臂把 br 视行内容包块产双 div 形（探
+          // 针 dLog d(true)=true 后 htmlFinal 双 div 实证），空宿主 caret 才
+          // 走 A2 裸 br 垫＋sepTag 新块（语料 :2102/:2107 `<br><div><br></div>`
+          // /`<br><p><br></p>` Chrome 录制形，垫 br 身份换 ① 臂重垫标记 br，
+          // 语料仅核 innerHTML 无观察面）。delete 调用点不经此（宿主留 `<br>`
+          // 即 Chrome 全删空形）；消解提壳面（mt 483/485/487 hoist `<b></b>`）
+          // 唯一子非 br 不入此臂。
+          try {
+            var _zwC5Host = _zwListEditingHostOf(
+              _zwVaGetActiveRange().startContainer);
+            if (_zwC5Host && _zwC5Host.childNodes
+                && _zwC5Host.childNodes.length === 1
+                && _zwJusTag(_zwC5Host.firstChild) === 'br') {
+              _zwC5Host.removeChild(_zwC5Host.firstChild);
+              var _zwC5Nr = document.createRange();
+              _zwC5Nr.setStart(_zwC5Host, 0);
+              _zwC5Nr.collapse(true);
+              if (typeof _getSelection === 'function') {
+                _getSelection()._ranges = [_zwC5Nr];
+              }
+              try { globalThis.getSelection().collapse(_zwC5Host, 0); } catch (_eC5Cl) {}
+            }
+          } catch (_eC5Norm) {}
           var _zwIpHostA1 = null;
           try {
             _zwIpHostA1 = _zwListEditingHostOf(_zwVaGetActiveRange().startContainer);
@@ -1854,6 +1992,11 @@
       // deleteData）与 _zwIparaInsertNode 原生消化，语义等价 spec 归一。
       var node = ar0.startContainer;
       var offset = ar0.startOffset;
+      // IP-M1 刀 piece 3 用：归一前拆分位（壳内 caret 保留文本宿主，壳链
+      // 重开判定以上溯该位的祖先壳为准；归一后 node 已提升到壳外）。
+      var ipM1OrigNode = node;
+      // piece 3 存活判据用：同点捕获拆分位偏移（归一提升后 offset 已换义）。
+      var ipM1OrigOff = offset;
       if (node.nodeType === 3 && offset == _zwJusNodeLength(node)) {
         offset = 1 + _zwJusNodeIndex(node);
         node = node.parentNode;
@@ -1894,6 +2037,227 @@
       if (!_zwJusIsEditable(container)
           || !_zwListInSameEditingHost(container, node)
           || !_zwIparaIsSingleLineContainer(container)) {
+        // IP-M1 刀窄门（2026-11-13）：宿主直子 inline 壳链 caret（M1 主桶：
+        // b/span 壳内中点、壳尾边界、删除致空壳）直构拆分，不经 _zwJusWrap+
+        // 主拆分抽管——v3 探针实证 wrap 生成块上 extract 管线 cloneSlice/
+        // moveIn 序列化分叉（fragKids=2 而树含嵌套自含 div、左块全空），且
+        // wrap 后 live 重折叠对 delete 残余 caret 有害（(span,0) 触发 host 级
+        // while 提升把整块卷入 frag）。Chrome 语义 = 左块壳链闭合 + 右块壳链
+        // 重开（`<a>` 不重开，census `<a href>` 簇）+ 删除致空壳丢弃 + 壳外兄
+        // 弟随侧归块。只用页级恒等原语：cloneNode(false) / createTextNode /
+        // 先摘后挂 move（F2/legacy ① 臂同集合）；原文节点随链根整体摘除，中
+        // 点切片走新文本节点，不触 deleteData/splitText 双态面。门 = node→
+        // container 祖先链全部为 fmt/span/a 壳且 container 本体为壳（climb 停
+        // 在壳 = 宿主直子链）；其余 wrap 形维持原径。
+        var ipM1GateC = false;
+        var ipM1ChainC = [];
+        (function () {
+          var ipW = node;
+          var ipG = 0;
+          while (ipW && ipG++ < 32) {
+            if (ipW === container) {
+              var ipT = _zwJusTag(ipW);
+              // C6 刀（2026-11-15）：rawtext 壳 script 入表——宿主直子 script
+              // 链 caret（corpus `<script>foo[]bar</script>baz` 2 键）此前落
+              // wrap 面， nodeList 含宿主直子文本成员触发 _zwJusWrapViaHtml
+              // 整树重建，拆分位引用脱挂 → c1InDom 兜底退化空拆分（got 全文
+              // 留左块 + 空垫块）。gate 直构走先摘后挂切片 + wired 写，与 b/
+              // span 壳同径；script display:none 面由 `_zwJusIsVisible` 不可
+              // 见门垫左块 br（corpus exp `<script>foo</script><br>` 形）。
+              if (ipT === 'a' || _zwIparaIsFmtShellTag(ipT) || ipT === 'script') {
+                ipM1ChainC.push(ipW);
+                ipM1GateC = ipM1ChainC.length > 0;
+              }
+              return;
+            }
+            if (ipW.nodeType === 1) {
+              var ipT2 = _zwJusTag(ipW);
+              if (ipT2 !== 'a' && !_zwIparaIsFmtShellTag(ipT2)) return;
+              ipM1ChainC.push(ipW);
+            }
+            ipW = ipW.parentNode;
+          }
+        })();
+        if (ipM1GateC) {
+          var ipTagC = _zwIpWrapTag || sep;
+          var ipLC = document.createElement(ipTagC);
+          var ipRC = document.createElement(ipTagC);
+          var ipCurL = [];
+          var ipCurR = [];
+          var ipPathC = node;
+          var ipMidC = node.nodeType === 3;
+          var ipLtC = '';
+          var ipRtC = '';
+          if (ipMidC) {
+            var ipDC = String(node.nodeValue == null ? '' : node.nodeValue);
+            ipLtC = ipDC.slice(0, offset);
+            ipRtC = ipDC.slice(offset);
+          }
+          // C6 刀（2026-11-15）：shim script 元素包装缺 cloneNode（探针实录
+          // `typeof s.cloneNode === 'undefined'`——基座 Element 接口未覆盖
+          // rawtext 壳；appendChild/removeChild/setAttribute/attr 迭代在
+          // wire 上齐备）。rawtext 壳克隆改 createElement('script') + 业务
+          // attr 平移等价 shallow clone；其余壳 cloneNode(false) 原径。
+          var ipCloneShellC = function (ipEl) {
+            if (_zwJusTag(ipEl) !== 'script') return ipEl.cloneNode(false);
+            var ipNs = document.createElement('script');
+            var ipAt = ipEl.attributes || [];
+            for (var ipAi = 0; ipAi < ipAt.length; ipAi++) {
+              try { ipNs.setAttribute(ipAt[ipAi].name, ipAt[ipAi].value); } catch (_eAcC) {}
+            }
+            return ipNs;
+          };
+          for (var ipI = 0; ipI < ipM1ChainC.length; ipI++) {
+            var ipE = ipM1ChainC[ipI];
+            var ipTN = _zwJusTag(ipE);
+            var ipKids = [].slice.call(ipE.childNodes || []);
+            // B 族根因修复（2026-11-14）：caret 归一提升到壳本体（壳首 0 位文
+            // 本/壳尾越界位）时 ipPathC === ipE，indexOf 恒 -1 误落壳尾拆分
+            // （整壳随左块，`<b>[]bar</b>` 形 P2F）——拆分位改取 caret 在壳内
+            // offset，路径位直子随右块。
+            var ipPi = ipPathC === ipE ? offset
+              : (ipPathC ? ipKids.indexOf(ipPathC) : -1);
+            if (ipPi < 0) ipPi = ipKids.length;
+            var ipLE = ipCloneShellC(ipE);
+            // C 族根因修复（2026-11-14）：右壳重开剥 id（Chrome 实录右半壳仅
+            // 存业务 attr，如 `<b class=y>bar</b>`，id 随左半）。
+            var ipRE = ipCloneShellC(ipE);
+            try { ipRE.removeAttribute('id'); } catch (_eRsC) {}
+            var ipLK = [];
+            var ipRK = [];
+            for (var ipJ = 0; ipJ < ipKids.length; ipJ++) {
+              var ipK = ipKids[ipJ];
+              try { if (ipK.parentNode === ipE) ipE.removeChild(ipK); } catch (_eMk) {}
+              if (ipJ < ipPi) ipLK.push(ipK);
+              else if (ipJ > ipPi || (ipJ === ipPi && ipPathC === ipE)) {
+                ipRK.push(ipK);
+              }
+            }
+            // 左半序：直子左段 → 内层左内容（路径位左半）→ 中点左切片；
+            // 右半序：中点右切片 → 内层右内容 → 直子右段。右壳含 `<a>` 层恒
+            // 重开（2026-11-14 A 裸壳族 corpus 实录 `<a href>foo[]bar</a>` 双
+            // 侧带 a，v2 右内容上抛形 P2F）；右链空置由空壳丢弃摘除（含空
+            // a，壳尾 caret 新块裸 br 形）。
+            for (var ipLa = 0; ipLa < ipLK.length; ipLa++) ipLE.appendChild(ipLK[ipLa]);
+            for (var ipLb = 0; ipLb < ipCurL.length; ipLb++) ipLE.appendChild(ipCurL[ipLb]);
+            if (ipI === 0 && ipMidC && ipLtC) {
+              ipLE.appendChild(document.createTextNode(ipLtC));
+            }
+            var ipRNew = [];
+            if (ipI === 0 && ipMidC && ipRtC) {
+              ipRNew.push(document.createTextNode(ipRtC));
+            }
+            for (var ipRb = 0; ipRb < ipCurR.length; ipRb++) ipRNew.push(ipCurR[ipRb]);
+            for (var ipRc = 0; ipRc < ipRK.length; ipRc++) ipRNew.push(ipRK[ipRc]);
+            for (var ipRd = 0; ipRd < ipRNew.length; ipRd++) ipRE.appendChild(ipRNew[ipRd]);
+            ipCurR = [ipRE];
+            ipCurL = [ipLE];
+            ipPathC = ipE;
+          }
+          // 链根（=container）整体摘除，兄弟按侧归块（先摘后挂 wire move）。
+          var ipParC = container.parentNode;
+          var ipPreC = [];
+          var ipPostC = [];
+          var ipAfterC = false;
+          var ipAllC = [].slice.call(ipParC.childNodes || []);
+          for (var ipSa = 0; ipSa < ipAllC.length; ipSa++) {
+            var ipS = ipAllC[ipSa];
+            if (ipS === container) {
+              ipAfterC = true;
+              continue;
+            }
+            try { if (ipS.parentNode === ipParC) ipParC.removeChild(ipS); } catch (_eMs) {}
+            if (!ipAfterC) ipPreC.push(ipS); else ipPostC.push(ipS);
+          }
+          try { if (container.parentNode === ipParC) ipParC.removeChild(container); } catch (_eMc2) {}
+          for (var ipPc = 0; ipPc < ipPreC.length; ipPc++) ipLC.appendChild(ipPreC[ipPc]);
+          for (var ipLd = 0; ipLd < ipCurL.length; ipLd++) ipLC.appendChild(ipCurL[ipLd]);
+          for (var ipRe = 0; ipRe < ipCurR.length; ipRe++) ipRC.appendChild(ipCurR[ipRe]);
+          for (var ipPe = 0; ipPe < ipPostC.length; ipPe++) ipRC.appendChild(ipPostC[ipPe]);
+          // 空壳丢弃（piece-2 同语义内联）：双块子树零子 fmt/span 壳摘除至
+          // 不动点；空 `<a>` 同摘（2026-11-14 gate 右链 a 恒重开配套——壳尾
+          // caret 右链空 a 落裸 br 形；piece-2 面仍保守不动）。
+          (function () {
+            var ipGD = 0;
+            var ipChD = true;
+            while (ipChD && ipGD++ < 16) {
+              ipChD = false;
+              var ipRoots = [ipLC, ipRC];
+              for (var ipRi = 0; ipRi < ipRoots.length; ipRi++) {
+                var ipDesc = _zwIparaGetDescendants(ipRoots[ipRi]);
+                for (var ipDi = 0; ipDi < ipDesc.length; ipDi++) {
+                  var ipDn = ipDesc[ipDi];
+                  if (ipDn.nodeType === 1 && !ipDn.firstChild) {
+                    var ipDT = _zwJusTag(ipDn);
+                    if (ipDT === 'a' || _zwIparaIsFmtShellTag(ipDT)) {
+                      try {
+                        ipDn.parentNode.removeChild(ipDn);
+                        ipChD = true;
+                      } catch (_eDp2) {}
+                    }
+                  }
+                }
+              }
+            }
+          })();
+          // br 垫底：左块裸 br（同 container 臂）；右块占位 br 带
+          // `__zwPlaceholderBr` 标记（typed 段进场后消费，A3 typing 面不回归），
+          // 前导壳链存在时 br 入链内首（census M1b `<b><br></b>` 形）。
+          if (!_zwIparaHasVisibleChild(ipLC)) {
+            ipLC.appendChild(document.createElement('br'));
+          }
+          var ipShellC = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
+            ? globalThis.__zw_ce_caret_in_leading_shell(ipRC) : null;
+          var ipPadR = false;
+          if (!_zwIparaHasVisibleChild(ipRC)) {
+            var ipBrR = document.createElement('br');
+            ipBrR.__zwPlaceholderBr = true;
+            if (ipShellC) ipShellC[0].appendChild(ipBrR);
+            else ipRC.appendChild(ipBrR);
+            ipPadR = true;
+          }
+          // 宿主落位经 wired write（2026-11-14 桥级定谳）：直构含 parse 家族原
+          // 节点先摘后挂 move，细粒度 mutation 流不可表达 plain move（摘除有
+          // RC 记录、重挂无记录）——宿主 base+overlay 视图滞留旧位（baz 残留
+          // 宿主首）且 apply 镜像丢节点；SetInnerHtml 单域替换是编辑命令既有
+          // 桥面契约（ihtml 臂 part112 同面），序列化直构块整域重排。页级
+          // innerHTML= 重建宿主子树语义等价（fixture 五形 + 语料门禁复核）；
+          // 占位 br 标记随重解析丢失，写后重打。
+          var ipWiredC = false;
+          try {
+            var ipHtmlW = String(ipLC.outerHTML || '') + String(ipRC.outerHTML || '');
+            if (ipHtmlW !== '') {
+              ipParC.innerHTML = ipHtmlW;
+              ipWiredC = true;
+            }
+          } catch (_eWwG) {}
+          if (!ipWiredC) {
+            ipParC.appendChild(ipLC);
+            ipParC.appendChild(ipRC);
+            try {
+              if (ipShellC) globalThis.getSelection().collapse(ipShellC[0], ipShellC[1]);
+              else globalThis.getSelection().collapse(ipRC, 0);
+            } catch (_eClG) {}
+            return true;
+          }
+          // 重解析后 caret 重锚（rebuild 换代）：右块 = 宿主末子，前导壳链入壳
+          // 否则块首；占位 br 标记重打（A3 typing 消费面依赖）。
+          try {
+            var ipRB2 = ipParC.lastChild;
+            var ipShell2 = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
+              ? globalThis.__zw_ce_caret_in_leading_shell(ipRB2) : null;
+            if (ipShell2) globalThis.getSelection().collapse(ipShell2[0], ipShell2[1]);
+            else globalThis.getSelection().collapse(ipRB2, 0);
+            if (ipPadR) {
+              var ipBr2 = ipShell2 ? ipShell2[0].firstChild : ipRB2.firstChild;
+              if (ipBr2 && ipBr2.nodeType === 1
+                  && String(ipBr2.tagName || '').toLowerCase() === 'br') {
+                ipBr2.__zwPlaceholderBr = true;
+              }
+            }
+          } catch (_eReG) {}
+          return true;
+        }
         var newRange = _zwJusBlockExtend(_zwVaGetActiveRange());
         var nodeList = _zwJusGetContainedNodes(newRange, function (n) {
           return _zwJusIsAllowedChild(n, 'p');
@@ -1925,8 +2289,20 @@
         try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl3) {}
         var nxt = _zwJusNextNode(br);
         if (!nxt || !_zwJusIsAncestorOf(container, nxt)) {
-          _zwIparaInsertNode(_zwVaGetActiveRange(), document.createElement('br'));
-          try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl4) {}
+          // I5 pre 换行归一（2026-11-16）：pre 格式化容器左块尾字面 \n 已持
+          // 行——语料 insertparagraph.js :367 `<pre>foo&#10;[]</pre>` 尾 \n 隐
+          // 行（语料注释 "trailing linefeed is invisible"），单 br 足垫新空
+          // 行，双 br 产三行形。address 等折叠 white-space 面 \n 不持行，
+          // 双 br 维持。
+          var wsI5 = _zwJusWhiteSpaceOf(container);
+          var prevI5 = br.previousSibling;
+          var heldI5 = (wsI5 === 'pre' || wsI5 === 'pre-wrap' || wsI5 === 'pre-line')
+            && !!prevI5 && prevI5.nodeType === 3
+            && /\n$/.test(String(prevI5.nodeValue || ''));
+          if (!heldI5) {
+            _zwIparaInsertNode(_zwVaGetActiveRange(), document.createElement('br'));
+            try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl4) {}
+          }
         }
         return true;
       }
@@ -1957,10 +2333,198 @@
         _zwListFixDisallowedAncestors(container);
         return true;
       }
+      // M2-A flex/grid item 块化（2026-11-14）：container 为 flex/grid 布局容器
+      // 时子元素块级化（CSS flex/grid item 语义）——insertParagraph 拆分发生在
+      // item（行内壳链根）层而非容器层，容器保持完整。corpus 24 键实录三 caret
+      // 位 exp 全形：`[]abc` 前插空 item `<span><br></span>`、`a[]bc` item 对半
+      // `<span>a</span><span>bc</span>`、`abc[]` 尾插空 item（flex/inline-flex/
+      // grid/inline-grid × dps 双面恒一）。门 = node→container 祖先链全为 fmt/
+      // span/a 壳（item 链根为 container 直子）；链含非壳关门落回主拆分（匿名
+      // item 面无语料锚保守不动）。半链构造与 IP-M1 窄门同源（拆分位文本切片、
+      // 右壳重开剥 id），挂载改 container 原位替换；落位经 wired write（桥级
+      // 定谳同 M1：SetInnerHtml 单域替换契约，container 域整域重排），空侧壳链
+      // 内垫 br（左不标记/右带 `__zwPlaceholderBr` 标记写后重打）。
+      if (container.nodeType === 1) {
+        var ipFxD = '';
+        try { ipFxD = String(_zwJusCs(container, 'display') || ''); } catch (_eFxD) {}
+        if (ipFxD === 'flex' || ipFxD === 'inline-flex'
+            || ipFxD === 'grid' || ipFxD === 'inline-grid') {
+          var ipFxChain = [];
+          var ipFxOk = true;
+          (function () {
+            var ipW = node;
+            var ipG = 0;
+            while (ipW && ipG++ < 32) {
+              if (ipW === container) return;
+              if (ipW.nodeType === 1) {
+                var ipT = _zwJusTag(ipW);
+                if (ipT !== 'a' && !_zwIparaIsFmtShellTag(ipT)) {
+                  ipFxOk = false;
+                  return;
+                }
+                ipFxChain.push(ipW);
+              }
+              ipW = ipW.parentNode;
+            }
+            ipFxOk = false;
+          })();
+          if (ipFxOk && ipFxChain.length) {
+            var ipCurL = [];
+            var ipCurR = [];
+            var ipPathC = node;
+            var ipMidC = node.nodeType === 3;
+            var ipLtC = '';
+            var ipRtC = '';
+            if (ipMidC) {
+              var ipDC = String(node.nodeValue == null ? '' : node.nodeValue);
+              ipLtC = ipDC.slice(0, offset);
+              ipRtC = ipDC.slice(offset);
+            }
+            for (var ipI = 0; ipI < ipFxChain.length; ipI++) {
+              var ipE = ipFxChain[ipI];
+              var ipKids = [].slice.call(ipE.childNodes || []);
+              var ipPi = ipPathC === ipE ? offset
+                : (ipPathC ? ipKids.indexOf(ipPathC) : -1);
+              if (ipPi < 0) ipPi = ipKids.length;
+              var ipLE = ipE.cloneNode(false);
+              var ipRE = ipE.cloneNode(false);
+              try { ipRE.removeAttribute('id'); } catch (_eRsF) {}
+              var ipLK = [];
+              var ipRK = [];
+              for (var ipJ = 0; ipJ < ipKids.length; ipJ++) {
+                var ipK = ipKids[ipJ];
+                try { if (ipK.parentNode === ipE) ipE.removeChild(ipK); } catch (_eMkF) {}
+                if (ipJ < ipPi) ipLK.push(ipK);
+                else if (ipJ > ipPi || (ipJ === ipPi && ipPathC === ipE)) {
+                  ipRK.push(ipK);
+                }
+              }
+              for (var ipLa = 0; ipLa < ipLK.length; ipLa++) ipLE.appendChild(ipLK[ipLa]);
+              for (var ipLb = 0; ipLb < ipCurL.length; ipLb++) ipLE.appendChild(ipCurL[ipLb]);
+              if (ipI === 0 && ipMidC && ipLtC) {
+                ipLE.appendChild(document.createTextNode(ipLtC));
+              }
+              var ipRNew = [];
+              if (ipI === 0 && ipMidC && ipRtC) {
+                ipRNew.push(document.createTextNode(ipRtC));
+              }
+              for (var ipRb = 0; ipRb < ipCurR.length; ipRb++) ipRNew.push(ipCurR[ipRb]);
+              for (var ipRc = 0; ipRc < ipRK.length; ipRc++) ipRNew.push(ipRK[ipRc]);
+              for (var ipRd = 0; ipRd < ipRNew.length; ipRd++) ipRE.appendChild(ipRNew[ipRd]);
+              ipCurR = [ipRE];
+              ipCurL = [ipLE];
+              ipPathC = ipE;
+            }
+            var ipFxLE = ipCurL[0];
+            var ipFxRE = ipCurR[0];
+            // 空侧壳链内垫 br：链根下钻 innermost 空壳（左不标记/右标记）。
+            var ipFxPadL = !_zwIparaHasVisibleChild(ipFxLE);
+            if (ipFxPadL) {
+              var ipFxDeepL = ipFxLE;
+              var ipFxGL = 0;
+              while (ipFxGL++ < 16) {
+                var ipFxFL = ipFxDeepL.firstChild;
+                if (ipFxFL && ipFxFL.nodeType === 1 && !ipFxFL.firstChild
+                    && _zwIparaIsFmtShellTag(_zwJusTag(ipFxFL))) {
+                  ipFxDeepL = ipFxFL;
+                  continue;
+                }
+                break;
+              }
+              ipFxDeepL.appendChild(document.createElement('br'));
+            }
+            var ipFxPadR = !_zwIparaHasVisibleChild(ipFxRE);
+            if (ipFxPadR) {
+              var ipFxDeepR = ipFxRE;
+              var ipFxGR = 0;
+              while (ipFxGR++ < 16) {
+                var ipFxFR = ipFxDeepR.firstChild;
+                if (ipFxFR && ipFxFR.nodeType === 1 && !ipFxFR.firstChild
+                    && _zwIparaIsFmtShellTag(_zwJusTag(ipFxFR))) {
+                  ipFxDeepR = ipFxFR;
+                  continue;
+                }
+                break;
+              }
+              var ipFxBrR = document.createElement('br');
+              ipFxBrR.__zwPlaceholderBr = true;
+              ipFxDeepR.appendChild(ipFxBrR);
+            }
+            // wired write（container 域）：item 根位次替换双半，兄弟 item 原序
+            // 随侧保位；序列化整域重排后 caret 重锚右半前导壳链 + 占位 br 重打。
+            var ipFxRoot = ipFxChain[ipFxChain.length - 1];
+            var ipFxIdx = -1;
+            var ipFxSibs = [].slice.call(container.childNodes || []);
+            for (var ipFs = 0; ipFs < ipFxSibs.length; ipFs++) {
+              if (ipFxSibs[ipFs] === ipFxRoot) { ipFxIdx = ipFs; break; }
+            }
+            if (ipFxIdx < 0) ipFxIdx = ipFxSibs.length;
+            try { if (ipFxRoot.parentNode === container) {
+              container.removeChild(ipFxRoot);
+            } } catch (_eFxR) {}
+            var ipFxHtml = '';
+            for (var ipFh = 0; ipFh < ipFxSibs.length; ipFh++) {
+              if (ipFh === ipFxIdx) {
+                ipFxHtml += String(ipFxLE.outerHTML || '')
+                  + String(ipFxRE.outerHTML || '');
+              } else {
+                ipFxHtml += String(ipFxSibs[ipFh].outerHTML || '');
+              }
+            }
+            var ipFxWired = false;
+            try {
+              if (ipFxHtml !== '') {
+                container.innerHTML = ipFxHtml;
+                ipFxWired = true;
+              }
+            } catch (_eFxW) {}
+            if (!ipFxWired) {
+              // wired write 不可用兜底：双半先摘后挂回原位（mutation 流面）。
+              container.insertBefore(ipFxLE, container.childNodes[ipFxIdx] || null);
+              container.insertBefore(ipFxRE, container.childNodes[ipFxIdx + 1] || null);
+            }
+            try {
+              var ipFxRE2 = container.childNodes[ipFxIdx + 1] || container.lastChild;
+              var ipFxShell2 = (typeof globalThis.__zw_ce_caret_in_leading_shell
+                === 'function') ? globalThis.__zw_ce_caret_in_leading_shell(ipFxRE2) : null;
+              if (ipFxShell2) globalThis.getSelection().collapse(ipFxShell2[0], ipFxShell2[1]);
+              else globalThis.getSelection().collapse(ipFxRE2, 0);
+              if (ipFxPadR) {
+                var ipFxBr2 = ipFxShell2 ? ipFxShell2[0].firstChild : ipFxRE2.firstChild;
+                if (ipFxBr2 && ipFxBr2.nodeType === 1
+                    && String(ipFxBr2.tagName || '').toLowerCase() === 'br') {
+                  ipFxBr2.__zwPlaceholderBr = true;
+                }
+              }
+            } catch (_eFxC) {}
+            return true;
+          }
+        }
+      }
       // 主拆分支：newLineRange 归一提边（0 位升父 / 尾位升父，遇禁段落子止）。
       var arMain = _zwVaGetActiveRange();
       var newLineRange = document.createRange();
-      newLineRange.setStart(arMain.startContainer, arMain.startOffset);
+      // C1 刀（2026-11-15）：caret 文本尾位入口归一（上方文本尾 lift + collapse
+      // 到祖先块界）之后 wrap 面把 container 重指新建包裹块——arMain 起点留在
+      // container 域外（祖先块界位）。域外起点使 extract 把 container 当
+      // lastPartial 整体克隆携内容入新块并 deleteData 清空原块（corpus C1 8 键
+      // got：空块居前 + Arm L 误垫左块 + 禁段落子下钻展平嵌套克隆；探针定谳
+      // COLLAPSE 序 + MUT 序 + 时序快照全闭环）。spec 该步起点恒在 container
+      // 域内（爬升先于 range 构造、无 wrap 改指）；本仓 wrap 面分叉处改用归一
+      // 前拆分位（ipM1OrigNode/ipM1OrigOff，piece-3 同源捕获）——wrap 后拆分位
+      // 节点随内容入包裹块，域内性恢复；下方归一两 while 恒能从原位重放出提升
+      // 位（prohibited 止步），SLC 无 wrap 面起点域内恒等不受扰。拆分位被摘
+      // （parentNode null）或域外（delete 落块界形）时收拢 (container, len)
+      // ——行尾面语义：左段原文保留、新块空垫底。
+      var c1InDom = false;
+      for (var c1N = ipM1OrigNode; c1N; c1N = c1N.parentNode) {
+        if (c1N === container) { c1InDom = true; break; }
+      }
+      if (ipM1OrigNode.parentNode && c1InDom) {
+        newLineRange.setStart(ipM1OrigNode, ipM1OrigOff);
+      } else {
+        newLineRange.setStart(container, _zwJusNodeLength(container));
+      }
       newLineRange.setEnd(container, _zwJusNodeLength(container));
       while (newLineRange.startOffset == 0
           && newLineRange.startContainer.parentNode
@@ -1973,6 +2537,27 @@
           && !_zwListIsProhibitedParagraphChild(newLineRange.startContainer)) {
         newLineRange.setStart(newLineRange.startContainer.parentNode,
           1 + _zwJusNodeIndex(newLineRange.startContainer));
+      }
+      // C4 刀（2026-11-14）：host 级 caret 拆分右段块级兄弟止步——container
+      // 为编辑宿主且 newLineRange 相含集含块级元素时 extract 收窄到首块级
+      // 相含节点前（Chrome 新块只收行内连续段；corpus `{<h1>…}</p>` 整选删后
+      // caret (host,1) 面 got 卷 p 入新块成 `<div><p>baz</p></div>` 嵌套违规
+      // 形，exp `<div><br></div><p>baz</p>`——空新块 pad 由下方不可见面垫底
+      // 臂承担）。非宿主 container（p/li/dt 链）不收——[29]/[50]/[12] 语料
+      // 面归 list/容器链刀域不越界。
+      if (typeof _zwListEditingHostOf === 'function'
+          && _zwListEditingHostOf(arMain.startContainer) === container) {
+        var c4ContHost = _zwJusCollectContainedNodes(newLineRange, null, false);
+        for (var c4ci = 0; c4ci < c4ContHost.length; c4ci++) {
+          if (_zwCeBlockishForSplit(c4ContHost[c4ci])) {
+            var c4Cut = c4ContHost[c4ci];
+            var c4CutPar = c4Cut.parentNode;
+            if (c4CutPar) {
+              newLineRange.setEnd(c4CutPar, _zwJusNodeIndex(c4Cut));
+            }
+            break;
+          }
+        }
       }
       var containedInNewLineRange = _zwJusCollectContainedNodes(newLineRange, null, false);
       // spec 的 endOfLine 以 splitText 后尾段成整 contained 节点为前提；本仓
@@ -2013,6 +2598,311 @@
         }
       }
       newContainer.appendChild(frag);
+      // IP-M1 刀 piece 2（2026-11-13）：拆分边界空壳丢弃——删除致空 inline 格式
+      // 壳（fmt 表 + span）经归一 contained 整体落 frag（X3/X4 探针 fragKids=2
+      // 形；census M1a 12键 span-style 簇 + [8键] 混合簇 expect 无残壳）。逐新
+      // 块子树摘零子壳至不动点（嵌套空链 `<span><b></b></span>` 全摘；`<a>` 不
+      // 入集——链接壳空置语义无语料锚，保守不动）。
+      (function () {
+        var guardD = 0;
+        var changedD = true;
+        while (changedD && guardD++ < 16) {
+          changedD = false;
+          var descD = _zwIparaGetDescendants(newContainer);
+          for (var di2 = 0; di2 < descD.length; di2++) {
+            var dnC = descD[di2];
+            if (dnC.nodeType === 1 && !dnC.firstChild
+                && _zwIparaIsFmtShellTag(_zwJusTag(dnC))) {
+              try {
+                dnC.parentNode.removeChild(dnC);
+                changedD = true;
+              } catch (_eDp) {}
+            }
+          }
+        }
+      })();
+      // IP-M1 刀 piece 3（2026-11-13）：拆分边界壳链重开——caret 落壳尾/壳边界
+      // 时抽取为空或新块无前导壳（X5 探针 fragKids=0 形；census M1b `<b><br></b>`
+      // 簇、带样式 span 重开簇实录 `<span style><br></span>`），Chrome 新块重开
+      // 拆分位祖先壳链、后随内容（含壳外兄弟 br）整体入链。链 = 归一前拆分位
+      // 上溯 container 的 fmt+span 壳，cloneNode(false) 保 attrs；跳过 `<a>`
+      // （census `<a href>` 簇 expect 新块裸 br）与左半无可见内容的壳（删除致
+      // 空壳不重开，M1a 同判）；guard：新块已有前导壳链（中壳 caret partial
+      // extract 形）不重建防双裹。重建链即占位面：链内无可见内容时 br 垫链内
+      // 首（带 `__zwPlaceholderBr` 标记，typed 段进场后插入消费扫描摘除——
+      // A3 typing 面 mt 486/488 不回归，part01 消费扫描只认标记）。
+      var ipChainC = [];
+      var ipRebuiltInnerC = null;
+      var ipBrInRebuiltC = false;
+      // 重开判据（2026-11-14 v3.2 corpus 真值表两维合取）：拆分位有后随内容
+      // （本位余量或任一祖先层 nextSibling）时壳链全量重开含 a（`<a href>
+      // foo[]bar</a>` 双侧 a 形实录）；纯壳尾（无后随）时结构∧文本双门——
+      // 结构门：仅 walk 已过 `a` 层（seenA，`<b><a>foo[]</a></b>` 外层 b 实录
+      // `<b><br></b>` data/insertparagraph.js:1082）或链内无 a 的 fmt/span 壳
+      // 重开；文本门：a 链内拆分位紧邻前字符非 \xa0（`<b><a>foo&nbsp;[]</a>
+      // </b>` nbsp 尾实录裸 br :1126，与 :1082 同结构仅文本差——v3.1 单文本
+      // 面 / v3.2 首版单结构面各对一半，合取全表对账 part113 m1r1-m1r4）。
+      // 未过 `a` 层的壳（`<a><b>foo[]</b></a>`、`<a><b>foo&nbsp;[]</b></a>`
+      // 两簇实录 `<p><br></p>` 裸 br，gate v3 P2F 2 键）与 a 本体不重开。
+      // 无 a 链维持全量重开（census M1b `<b><br></b>`、带样式 span 重开簇）。
+      // a 本体仅后随内容面重开（spec special element boundary 语义）。
+      (function () {
+        var ipWalkC = ipM1OrigNode;
+        // 链含 a 预扫（壳尾不重开判据用，先于 walk 定全局）。
+        var ipHasAC = false;
+        (function (n) {
+          var g = 0;
+          while (n && g++ < 64) {
+            if (n === container) break;
+            if (n.nodeType === 1 && _zwJusTag(n) === 'a') {
+              ipHasAC = true;
+              return;
+            }
+            n = n.parentNode;
+          }
+        })(ipM1OrigNode);
+        // 文本门：拆分位紧邻前字符 \xa0 判（a 链壳尾 nbsp 尾不重开，corpus
+        // :1126 vs :1082 同构分叉实录）。
+        var ipNbspC = ipM1OrigNode.nodeType === 3 && ipM1OrigOff > 0
+          && String(ipM1OrigNode.nodeValue || '').charCodeAt(ipM1OrigOff - 1) === 0xa0;
+        var ipSurvC = ipM1OrigOff < _zwJusNodeLength(ipM1OrigNode)
+          || !!ipM1OrigNode.nextSibling;
+        var ipSeenAC = false;
+        var guardC = 0;
+        while (ipWalkC && guardC++ < 64) {
+          if (ipWalkC === container) break;
+          if (ipWalkC.nodeType === 1) {
+            var itnC = _zwJusTag(ipWalkC);
+            var ipSurvHereC = ipSurvC || !!ipWalkC.nextSibling;
+            var ipPushC = false;
+            if (itnC === 'a') {
+              ipPushC = ipSurvHereC;
+            } else if (_zwIparaIsFmtShellTag(itnC)) {
+              ipPushC = _zwIparaHasVisibleChild(ipWalkC)
+                && (ipSurvHereC
+                    || ((ipSeenAC || !ipHasAC) && (!ipHasAC || !ipNbspC)));
+            }
+            if (ipPushC) ipChainC.push(ipWalkC);
+            if (itnC === 'a') ipSeenAC = true;
+            ipSurvC = ipSurvHereC;
+          }
+          ipWalkC = ipWalkC.parentNode;
+        }
+      })();
+      // guard（2026-11-14 A-mid 族）：新块首元素已是 fmt/span/a 壳（中壳
+      // caret partial extract 全链落 frag 形）不重建防双裹——v2 用
+      // __zw_ce_caret_in_leading_shell 仅认 fmt 表，a/span 前导漏检。
+      var ipLeadSkipC = false;
+      if (newContainer.firstChild && newContainer.firstChild.nodeType === 1) {
+        var ipLeadTagC = _zwJusTag(newContainer.firstChild);
+        if (ipLeadTagC === 'a' || ipLeadTagC === 'span'
+            || _zwIparaIsFmtShellTag(ipLeadTagC)) {
+          ipLeadSkipC = true;
+        }
+      }
+      if (ipChainC.length && !ipLeadSkipC) {
+        var ipInnerPrevC = null;
+        for (var ciC = 0; ciC < ipChainC.length; ciC++) {
+          var ipCloneC = ipChainC[ciC].cloneNode(false);
+          try { ipCloneC.removeAttribute('id'); } catch (_eRsP3) {}
+          if (ipInnerPrevC) {
+            ipCloneC.appendChild(ipInnerPrevC);
+          } else {
+            while (newContainer.firstChild) {
+              ipCloneC.appendChild(newContainer.firstChild);
+            }
+            for (var biC = 0; biC < ipCloneC.childNodes.length; biC++) {
+              if (ipCloneC.childNodes[biC].nodeType === 1
+                  && _zwJusTag(ipCloneC.childNodes[biC]) === 'br') {
+                ipBrInRebuiltC = true;
+              }
+            }
+          }
+          ipInnerPrevC = ipCloneC;
+        }
+        ipRebuiltInnerC = ipInnerPrevC;
+        newContainer.appendChild(ipInnerPrevC);
+      }
+      // B 族刀（2026-11-14）：拆点块界空白/nbsp 归一（corpus B 族 spec 移植面
+      // 14 键实录 ipm3-c4-v3-ip.log census——宿主级 CE-false 跨行 1 键同径）。
+      // Chrome 块界拆分归一折叠空白：行界折叠空格翻 `&nbsp;`（`a[] b`→
+      // `a`/`&nbsp;b`、`a []b`→`a&nbsp;`/`b`）、行首空白串首字翻 nbsp 余位
+      // nbsp→空格（` \u00a0b` 形→`\u00a0 b`）、单侧 whitespace-only 整段退化
+      // 摘除（`abc[] `→新块空走下方垫底 br、` [] abc`→原块空垫底且对侧不翻
+      // ——单侧退化跳过归一）、新块尾端折叠空白文本出块留原层（CE-false 跨行
+      // exp 尾 ` ` 在新块 `</div>` 后实录）。white-space 显著面（pre/pre-line/
+      // pre-wrap，I5 pre 换行族域）原样维持。位置在 M1 piece2/3 之后双面垫底
+      // 之前：退化摘除后既有 !hasVisibleChild 垫底面自然补位。
+      (function () {
+        var bHostC = _zwListEditingHostOf(container) || container;
+        if (_zwIparaWsSignificantOf(container, bHostC)) return;
+        var bTailTextC = null;
+        (function walk(n) {
+          var ks = n.childNodes || [];
+          for (var i = 0; i < ks.length; i++) {
+            if (ks[i].nodeType === 3 && !bTailTextC) { bTailTextC = ks[i]; }
+            walk(ks[i]);
+          }
+        })(newContainer);
+        var bHeadTextC = null;
+        (function walkH(n) {
+          var ks = n.childNodes || [];
+          for (var i = ks.length - 1; i >= 0; i--) {
+            if (ks[i].nodeType === 3 && !bHeadTextC) { bHeadTextC = ks[i]; }
+            walkH(ks[i]);
+          }
+        })(container);
+        // 侧整段 whitespace-only 判：无元素后代且文本后代全折叠空白（退化面）。
+        // 空串文本节点（offset 0 拆分左半残根，探针 containerKids=1 k0=3:""
+        // 实录）不破退化判——isWsOnly('')=false 是字串级判据，此处节点级
+        // 全空等价空白（ipm3-b-v5-ip.log P2F=2 复翻实录）。
+        var bSideWsOnlyC = function (root) {
+          var hasEl = false;
+          var allWs = true;
+          (function walkW(n) {
+            var ksW = n.childNodes || [];
+            for (var iW = 0; iW < ksW.length; iW++) {
+              if (ksW[iW].nodeType === 1) { hasEl = true; }
+              else if (ksW[iW].nodeType === 3
+                  && String(ksW[iW].nodeValue || '') !== ''
+                  && !_zwIparaIsCollapsibleWsOnly(String(ksW[iW].nodeValue || ''))) {
+                allWs = false;
+              }
+              if (hasEl || !allWs) return;
+              walkW(ksW[iW]);
+            }
+          })(root);
+          return !hasEl && allWs;
+        };
+        // 头侧退化判据含全空侧（无文本无元素空真）——caret 块内容起点形
+        //（`[] abc`）尾侧不翻（` abc` exp 接受形，ipm3-b-v4-ip.log P2F 实录）。
+        var bHeadWsC = bSideWsOnlyC(container);
+        var bTailWsC = bTailTextC ? bSideWsOnlyC(newContainer) : false;
+        var bPairC = _zwIparaSplitBoundaryNormalize(
+          bHeadTextC ? String(bHeadTextC.nodeValue || '') : '',
+          bTailTextC ? String(bTailTextC.nodeValue || '') : '',
+          !bHeadWsC);
+        if (bHeadTextC) bHeadTextC.nodeValue = bPairC[0];
+        if (bTailTextC) bTailTextC.nodeValue = bPairC[1];
+        var bStripWsC = function (root) {
+          (function walkS(n) {
+            var ksS = (n.childNodes || []).slice();
+            for (var iS = 0; iS < ksS.length; iS++) {
+              var cS = ksS[iS];
+              if (cS.nodeType === 3
+                  && _zwIparaIsCollapsibleWsOnly(String(cS.nodeValue || ''))) {
+                try { n.removeChild(cS); } catch (_eBsw) {}
+              } else {
+                walkS(cS);
+              }
+            }
+          })(root);
+        };
+        if (bHeadWsC) bStripWsC(container);
+        if (bTailWsC) bStripWsC(newContainer);
+        // 新块尾端折叠空白文本出块留原层（退化整段面已在上方摘除，此处只接
+        // 尾端连续段）——保序插原后继位前。
+        var bTrailWsC = [];
+        while (newContainer.lastChild && newContainer.lastChild.nodeType === 3
+            && _zwIparaIsCollapsibleWsOnly(String(newContainer.lastChild.nodeValue || ''))) {
+          bTrailWsC.unshift(newContainer.lastChild);
+          newContainer.removeChild(newContainer.lastChild);
+        }
+        if (bTrailWsC.length) {
+          // 重挂新建 textNode（同 part01 wrap 臂：经 engine 块两跳摘挂的原节点
+          // 直插宿主静默半挂实录；bRefC 固定后继位 + 正序迭代保序）。
+          var bRefC = newContainer.nextSibling;
+          for (var btiC = 0; btiC < bTrailWsC.length; btiC++) {
+            newContainer.parentNode.insertBefore(
+              document.createTextNode(bTrailWsC[btiC].nodeValue || ''), bRefC);
+          }
+        }
+      })();
+      // C2/F/I6 方向性壳携刀（2026-11-15）右臂：右空块前导壳链归一——extract
+      // 携带链面（piece-3 重建被 ipLeadSkipC guard 跳过的形，探针定谳 F/I6 族
+      // brCreated=0 携带实录）。方向性语义（census 16 键 got/exp 全解析，Chrome
+      // 录音三族收敛 + corpus FYI「链接样式不入新段落、空段落不裹壳」）：空块
+      // 垫底 br 壳链 = 样式壳携全链、`<a>` 弃携。仅零可见内容空块面；非空块
+      // a 携内容不扰（`<a href>foo[]bar</a>` 双侧 a 形照落）。
+      (function () {
+        if (_zwIparaHasVisibleChild(newContainer)) return;
+        var ipSpineR = [];
+        var ipScanR = newContainer;
+        var ipGR = 0;
+        while (ipScanR && ipGR++ < 32) {
+          var ipFcR = ipScanR.firstChild;
+          if (!ipFcR || ipFcR.nodeType !== 1) break;
+          var ipTR = _zwJusTag(ipFcR);
+          if (ipTR !== 'a' && !_zwIparaIsFmtShellTag(ipTR)) break;
+          ipSpineR.push(ipFcR);
+          ipScanR = ipFcR;
+        }
+        if (!ipSpineR.length) return;
+        // F 族（6 键，`foo&nbsp;[]<br>` a/b 链全弃）：携带 spine 含 a → spine
+        // 根整棵摘除（内裹 br 同弃），空块交下方垫底臂裸垫（exp 两备选右块均
+        // 裸 `<p><br></p>`；a-outer/b-outer 两方向同弃）。
+        var ipHasAR = false;
+        for (var ipSi = 0; ipSi < ipSpineR.length; ipSi++) {
+          if (_zwJusTag(ipSpineR[ipSi]) === 'a') { ipHasAR = true; break; }
+        }
+        if (ipHasAR) {
+          try { newContainer.removeChild(ipSpineR[0]); } catch (_eSr) {}
+          return;
+        }
+        // I6 族（2 键，styled span 半携）：纯样式携带链浅于拆分位祖先样式链
+        // （extract 尾克隆只携 caret 后层，caret 所在壳空置被 piece-2 摘）时
+        // 重建全链裹垫底 br（exp `<span color><span bg><br></span></span>`）。
+        // 链含 a 不扩（a 毒化无空块携链锚，保守不扰）；spine 非 want 前缀
+        //（tag+attrs 逐层等值）不扩。
+        var ipWantR = [];
+        (function () {
+          var ipWR = ipM1OrigNode;
+          var ipGR2 = 0;
+          while (ipWR && ipWR !== container && ipGR2++ < 32) {
+            if (ipWR.nodeType === 1) {
+              var ipTW = _zwJusTag(ipWR);
+              if (ipTW === 'a') { ipWantR = []; return; }
+              if (_zwIparaIsFmtShellTag(ipTW)) ipWantR.push(ipWR);
+            }
+            ipWR = ipWR.parentNode;
+          }
+        })();
+        if (!ipWantR.length || ipWantR.length <= ipSpineR.length) return;
+        var ipAttrEqR = function (x, y) {
+          var ax = x.attributes || [], ay = y.attributes || [];
+          if (ax.length !== ay.length) return false;
+          for (var ix = 0; ix < ax.length; ix++) {
+            var ipF = false;
+            for (var jx = 0; jx < ay.length; jx++) {
+              if (ax[ix].name === ay[jx].name && ax[ix].value === ay[jx].value) {
+                ipF = true;
+                break;
+              }
+            }
+            if (!ipF) return false;
+          }
+          return true;
+        };
+        for (var ipPi = 0; ipPi < ipSpineR.length; ipPi++) {
+          var ipWvR = ipWantR[ipWantR.length - 1 - ipPi];
+          if (_zwJusTag(ipSpineR[ipPi]) !== _zwJusTag(ipWvR)
+              || !ipAttrEqR(ipSpineR[ipPi], ipWvR)) {
+            return;
+          }
+        }
+        try { newContainer.removeChild(ipSpineR[0]); } catch (_eSr2) {}
+        var ipInnerR = document.createElement('br');
+        ipInnerR.__zwPlaceholderBr = true;
+        // 收集序内→外，正序包裹＝内层先包 br（保持输入链方向，带占位标记，
+        // typed 消费面同 M1b 重建链垫底惯例）。
+        for (var ipWi = 0; ipWi < ipWantR.length; ipWi++) {
+          var ipCloneR = ipWantR[ipWi].cloneNode(false);
+          try { ipCloneR.removeAttribute('id'); } catch (_eRsR) {}
+          ipCloneR.appendChild(ipInnerR);
+          ipInnerR = ipCloneR;
+        }
+        try { newContainer.appendChild(ipInnerR); } catch (_eAr) {}
+      })();
       // 双面禁段落子下钻 + 不可见面 br 垫底。
       while (_zwListIsProhibitedParagraphChild(container.lastChild)) {
         container = container.lastChild;
@@ -2021,7 +2911,59 @@
         newContainer = newContainer.lastChild;
       }
       if (!_zwIparaHasVisibleChild(container)) {
-        container.appendChild(document.createElement('br'));
+        // C2/F/I6 方向性壳携刀（2026-11-15）左臂：左空块垫底 br 携 caret 祖先
+        // 样式壳链（fmt+span 逐层 cloneNode(false) 保 attrs）。语料精化定谳
+        // （v1 批 L1 judge P2F 双键 + insertparagraph.js 1072/1092 对照）：携集
+        // ＝祖先链最外层 `a` 之上的壳——`<b><a>[]foo</a></b>` 携 b（:1092 exp
+        // `<p><b><br></b></p>`）、`<a><b>[]foo</b></a>` 裸垫 `<p><br></p>`（:1072
+        // exp），a 及其内层全弃；无 a 携全链。左块携链不带 v3.2 重开门（offset-0
+        // 形壳左半恒空置仍携，与右块重开判据分向；右臂凡链含 a 即全裸，左右
+        // 不对称属实）。探针定谳：本臂 br 新建（ipm3-b-v6-ip.log 16 键
+        // brCreated=1 栈行 2732 实录）。
+        var ipPadChainL = [];
+        (function () {
+          var ipWL = ipM1OrigNode;
+          var ipGL = 0;
+          while (ipWL && ipWL !== container && ipGL++ < 32) {
+            if (ipWL.nodeType === 1) {
+              var ipTL = _zwJusTag(ipWL);
+              if (ipTL !== 'a' && _zwIparaIsFmtShellTag(ipTL)) {
+                ipPadChainL.push(ipWL);
+              }
+            }
+            ipWL = ipWL.parentNode;
+          }
+        })();
+        // 携集精化门：收集链最外层之上扫 `a`，命中即清链裸垫（a-outer 形
+        // `<a><b>[]foo</b></a>` 携集恒空；b-outer 形 `<b><a>[]</a></b>` 最外层
+        // b 之上无 a 不触发）。
+        if (ipPadChainL.length) {
+          var ipAL = ipPadChainL[ipPadChainL.length - 1].parentNode;
+          var ipGL2 = 0;
+          while (ipAL && ipAL !== container && ipGL2++ < 32) {
+            if (ipAL.nodeType === 1 && _zwJusTag(ipAL) === 'a') {
+              ipPadChainL.length = 0;
+              break;
+            }
+            ipAL = ipAL.parentNode;
+          }
+        }
+        var ipBrL = document.createElement('br');
+        if (ipPadChainL.length) {
+          // 收集序内→外，正序包裹＝内层先包 br 外层逐层套（保持输入链方向，
+          // `<b><i>` 重建 `<b><i><br></i></b>` 非 `<i><b>`）；attrs 原样，id
+          // 剥除同 piece-3 惯例。
+          var ipInnerL = ipBrL;
+          for (var ipLi = 0; ipLi < ipPadChainL.length; ipLi++) {
+            var ipCloneL = ipPadChainL[ipLi].cloneNode(false);
+            try { ipCloneL.removeAttribute('id'); } catch (_eRsL) {}
+            ipCloneL.appendChild(ipInnerL);
+            ipInnerL = ipCloneL;
+          }
+          container.appendChild(ipInnerL);
+        } else {
+          container.appendChild(ipBrL);
+        }
       }
       // 处方 b 壳链判定提前（A3 共用）：新块头 inline 壳链（fmt 壳表）。
       var _zwIpShell = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
@@ -2030,8 +2972,57 @@
       // 垫尾 br（exp `<div>abc</div><div><b>d</b></div>`；got `<div><b>d</b>
       // <br></div>` = 空壳判不可见误垫）。垫底收窄为真空壳面（无头壳链）；
       // caret 随处方 b 入壳链首，typed 段填壳。
-      if (!_zwIparaHasVisibleChild(newContainer) && !_zwIpShell) {
-        newContainer.appendChild(document.createElement('br'));
+      // IP-M1 刀（2026-11-13）：真空壳面 br 位随壳——census M1b 簇 expect
+      // `<p><b><br></b></p>`（X5 探针形）、带样式 span 重开簇 `<span style>
+      // <br></span>`。三档：重建链内首 > fmt 壳链内首 > 裸块尾；带
+      // `__zwPlaceholderBr` 标记（typed 段进场后 part01 插入消费扫描摘除，
+      // 序列化不可见，corpus ip 面 `<b><br></b>` 实录不回归）。
+      // M2-B 壳尾 br 去重（2026-11-14）：`ipBrInRebuiltC` 只覆盖 piece-3 重建
+      // 路径——extract 前导壳携带 br 形（caret 壳尾、壳随 frag 整体落新块）重建
+      // 被 ipLeadSkipC guard 跳过后旗标恒 false，pad 再裸垫第二 br（corpus
+      // assert_in_array 三接受形皆单 br，⑭ 探针 got `<span><br></span><br>`）。
+      // 前导壳链 firstChild 脊下钻探 br，已携即免垫。
+      var ipBrAlreadyC = ipBrInRebuiltC;
+      if (!ipBrAlreadyC) {
+        var ipScanC = newContainer;
+        var ipGSB = 0;
+        while (ipScanC && ipGSB++ < 16) {
+          var ipFcB = ipScanC.firstChild;
+          if (!ipFcB || ipFcB.nodeType !== 1) break;
+          if (_zwJusTag(ipFcB) === 'br') {
+            ipBrAlreadyC = true;
+            break;
+          }
+          if (_zwJusTag(ipFcB) !== 'a' && !_zwIparaIsFmtShellTag(_zwJusTag(ipFcB))) {
+            break;
+          }
+          ipScanC = ipFcB;
+        }
+      }
+      if (!_zwIparaHasVisibleChild(newContainer) && !ipBrAlreadyC) {
+        var ipBrC = document.createElement('br');
+        ipBrC.__zwPlaceholderBr = true;
+        if (ipRebuiltInnerC) {
+          // M2-C 多层壳链 br 下钻（2026-11-14）：重建链根为最外层壳，占位 br
+          // 落链根尾致 `<span></span><br></span>`（corpus got）；Chrome 入链内
+          // 首（最深壳），链空置面下钻 innermost 空壳垫底。
+          var ipDeepC = ipRebuiltInnerC;
+          var ipGDC = 0;
+          while (ipGDC++ < 16) {
+            var ipFcC = ipDeepC.firstChild;
+            if (ipFcC && ipFcC.nodeType === 1 && !ipFcC.firstChild
+                && _zwIparaIsFmtShellTag(_zwJusTag(ipFcC))) {
+              ipDeepC = ipFcC;
+              continue;
+            }
+            break;
+          }
+          ipDeepC.appendChild(ipBrC);
+        } else if (_zwIpShell) {
+          _zwIpShell[0].appendChild(ipBrC);
+        } else {
+          newContainer.appendChild(ipBrC);
+        }
       }
       try {
         if (_zwIpShell) globalThis.getSelection().collapse(_zwIpShell[0], _zwIpShell[1]);

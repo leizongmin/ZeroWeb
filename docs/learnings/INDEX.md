@@ -5,12 +5,32 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（276）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（296）
 
+- 2026-11-18 [CSS 校验门挂在 cascade 面、WPT 页走 CSSOM 写面导致"实现完成零位移"](bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md) — style-system, engine
+- 2026-11-17 [JS DOM 桥 wrapper 家族 appendChild 语义二分：序列化拷贝 vs 真移动——摘原须按 childNodes indexOf 判位](bugs/2026-11/2026-11-17-js-dom-wrapper-family-copy-vs-move.md) — zero-engine
+- 2026-11-15 [workflow validator 必须随 rev 持续跑——潜伏缺陷跨 rev 复制放大，delivery 回执引用与信封契约三缺陷连爆](bugs/2026-11/2026-11-15-workflow-validator-per-rev-latent-defect.md) — site_optimizer
+- 2026-11-15 [共享树多条 make test 链互踩尽灭——disk-guard rm 并发竞争与指纹撞写](bugs/2026-11/2026-11-15-shared-tree-multi-chain-maketest-mutual-kill.md) — make test, target-disk-guard, rally 无人值守执行流程
+- 2026-11-15 [运行账本单副本灭失与变异面失控——v3 整树重建后的灾备与写纪律](bugs/2026-11/2026-11-15-ledger-single-copy-and-mutation-discipline.md) — site_optimizer
+- 2026-11-15 [在飞批脚本冻结纪律与裸腿日志独立判读：脚本文件被并发改写后 bash 按偏移错位执行，批内判读行不可作终态依据](bugs/2026-11/2026-11-15-inflight-script-freeze-and-raw-log-rejudge.md) — .acceptance/dps,tests/wpt-runner
+- 2026-11-15 [换 CP 候选必须同步重绑 gate 报告——verify-run 的 Gate report subject 硬校验](bugs/2026-11/2026-11-15-gate-report-subject-rebind-contract.md) — site_optimizer
+- 2026-11-15 [corpus A/B 基线目录陈旧：跨刀复用旧 results 目录把已落库增益错记进本刀](bugs/2026-11/2026-11-15-corpus-ab-stale-baseline-results.md) — wpt-runner, testing
+- 2026-11-15 [comm 对比 sweep 产物必须显式 LC_ALL=C，否则 collation 差产出成百伪 GONE/NEW](bugs/2026-11/2026-11-15-comm-collation-false-diff.md) — zero-wpt-runner
+- 2026-11-15 [批级 census 的稳定残红可能是窗切伪影：无窗单页复放配方定谳](bugs/2026-11/2026-11-15-census-window-artifact-windowless-replay.md) — engine,testing
+- 2026-11-15 [AnimationClock.tick 会烧死 fill-forwards 状态——端点捕获必须走无副作用路径](bugs/2026-11/2026-11-15-animation-clock-tick-burns-state.md) — engine/animation, wpt-runner
+- 2026-11-14 [shim 双族 DOM 的 JS 视图/宿主注册表分裂：一个缺口六张脸，判读先分面再动手](bugs/2026-11/2026-11-14-selhandle-registry-sync-split-faces.md) — engine
+- 2026-11-14 [序列上下文 range 位移槽与面值脱钩——同值公开 API 重锚修复](bugs/2026-11/2026-11-14-range-slot-desync-reanchor.md) — engine
+- 2026-11-14 [账本 migration rev 的「intended 恰 N」断言必须查 prev 快照——连撞六撞后固化](bugs/2026-11/2026-11-14-ledger-migration-assert-prev-snapshot.md) — site_optimizer
+- 2026-11-14 [无宿主定时器环境下轮询自链饿死 _deferBudget：img load 红表象离 SMIL 泵根因极远](bugs/2026-11/2026-11-14-hostless-polling-microtask-starvation-defer-budget.md) — engine
+- 2026-11-14 [经 engine 块两跳摘挂的节点回插宿主静默半挂——重挂一律新建节点](bugs/2026-11/2026-11-14-engine-block-detour-node-remount-silent-half-mount.md) — engine
+- 2026-11-14 [done 任务须携带 task.evidence 终态证据——T66 隐式传承 T68 重撞](bugs/2026-11/2026-11-14-done-task-evidence-contract.md) — site_optimizer
+- 2026-11-14 [debug 单测 SIGILL：先 cargo clean -p 排增量缓存毒化，再查逻辑](bugs/2026-11/2026-11-14-debug-test-sigill-incremental-cache.md) — css-parser
 - 2026-11-13 [wpt editing 语料红账判读：切片伪失败与期望形真值源](bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md) — engine,tests
+- 2026-11-13 [暴露给页面 JS 的平台对象必须带接口原型——平面对象让原型定向写污染 Object.prototype](bugs/2026-11/2026-11-13-navigator-interface-prototype-absorbs-proto-writes.md) — engine
 - 2026-11-13 [plain 树 mutator 缺 R263 插入补偿致 live-range 塌缩](bugs/2026-11/2026-11-13-live-range-insert-compensation-plain-mutators.md) — engine
 - 2026-11-13 [不变式补写类修复的最终形态必须由 corpus 全量 A/B 定谳——四门全绿仍拦出确定性真回归](bugs/2026-11/2026-11-13-invariant-backfill-write-gated-by-corpus-ab.md) — layout-engine
 - 2026-11-13 [forceValue 的 'normal' 是合法 ADD 面参数，不能当移除面拦截](bugs/2026-11/2026-11-13-forcevalue-normal-is-valid-add-face-param.md) — engine
+- 2026-11-13 [WebIDL nullable 字符串参数经 ToString 的 null 毒化——双 face 同病 cleanup 失效](bugs/2026-11/2026-11-13-cssom-nullable-string-arg-tostring-poison.md) — engine, js-dom-shim
 - 2026-11-12 [门禁批 judge 伪绿两形：页滤空转 rows=0 与 grep 捕获 test result 摘要行](bugs/2026-11/2026-11-12-gate-judge-vacuous-rows-and-summary-line-capture.md) — tooling,testing
 - 2026-11-11 [复合命令里 `git stash pop` 不能无条件执行：push 失败后 pop 弹出陈年旧 stash](bugs/2026-11/2026-11-11-stash-pop-unconditional-compound-command.md) — tooling
 - 2026-11-11 [审查报告的 evidence 引用必须是 {path, sha256} 对象形态，字符串形态在账本绑定日爆断](bugs/2026-11/2026-11-11-review-report-evidence-ref-object-form.md) — site_optimizer
@@ -284,8 +304,18 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（37）
+## Patterns — 可复用代码模式与最佳实践（47）
 
+- 2026-11-16 [跨进程仪拍锚提取：时间线归属法与 stderr 前缀伪影](patterns/2026-11/2026-11-16-trace-anchor-timeline-attribution.md) — apps/renderer,apps/compositor,bench
+- 2026-11-16 [CSS.supports 与 setProperty 双通道文法分叉](patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md) — engine,style-system
+- 2026-11-15 [shim 写面刀须双世界同落：handle 世界才是 corpus 活跃写面](patterns/2026-11/2026-11-15-shim-write-face-knife-dual-world.md) — engine, css-parser
+- 2026-11-15 [corpus 快照二进制 A/B 的内容差法证与增益三桶归因](patterns/2026-11/2026-11-15-corpus-ab-binary-provenance-ledger-split.md) — wpt-runner, engine, testing
+- 2026-11-14 [roster/thd 漂移归因三板斧：逐名 diff → log -S 溯源 → is-ancestor 窗口归属](patterns/2026-11/2026-11-14-roster-drift-attribution.md) — testing, engineering
+- 2026-11-14 [审查角色报告链形制：recheck 锚定首轮六键，artifacts 只列当前链身份](patterns/2026-11/2026-11-14-review-report-chain-anchoring.md) — engineering, review
+- 2026-11-14 [切任务分支前先 fetch 定 tip——并行波次会翻动冲突面与门禁基线](patterns/2026-11/2026-11-14-parallel-wave-branch-baseline-recheck.md) — site_optimizer
+- 2026-11-14 [集成 judge 正则盲区误报时改编译判读产物为独立附记，不改编证据原件](patterns/2026-11/2026-11-14-judge-regex-defect-addendum.md) — engine, webview, testing
+- 2026-11-14 [done 链 evidence pin：task→done 同 rev 必带 {path,sha256}，漏项重建走存证+零漂移断言](patterns/2026-11/2026-11-14-done-chain-evidence-pin.md) — engineering, workflow
+- 2026-11-14 [before/after ledger 的二进制归属核验：include_str! 拼接串子串比对](patterns/2026-11/2026-11-14-before-after-ledger-binary-attribution.md) — wpt-runner, js-dom-shim
 - 2026-11-12 [rustfmt 规范形等价判定——「机械格式化零行为变化」归因的确定性判法](patterns/2026-11/2026-11-12-rustfmt-canonical-form-byte-equivalence-judgment.md) — crates/dom
 - 2026-11-12 [集成 roster 提取算法——取最后一个 `^failures:$` 块到 `test result:` 行收口](patterns/2026-11/2026-11-12-integration-roster-extraction-last-failures-block.md) — site-optimizer verify, cargo libtest
 - 2026-11-11 [竖排 rtl 行内轴镜像与 run 内字形序的 parity 结构](patterns/2026-11/2026-11-11-vertical-rtl-inline-mirror-glyph-order-parity.md) — layout-engine
@@ -376,8 +406,12 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（54）
+## Platform — 平台与环境相关经验（58）
 
+- 2026-11-15 [systemd-run --scope 不支持 -p TimeoutSec——Unknown assignment 立即失败，超时兜底须放脚本内](platform/2026-11/2026-11-15-systemd-run-scope-no-timeoutsec.md) — tooling
+- 2026-11-15 [巡查 join 管线必须全链 LC_ALL=C](platform/2026-11/2026-11-15-patrol-join-lc-all-c-collation.md) — wpt-runner,engineering-practice
+- 2026-11-15 [长批唯一可靠载体是 systemd --user service；setsid 与后台 Bash 都会被拆树或到点杀](platform/2026-11/2026-11-15-long-batch-detachment-systemd-user-service.md) — .acceptance/dps,tests/wpt-runner
+- 2026-11-15 [git diff pathspec 按 cwd 相对解析——子目录里跑仓库根路径 pathspec 静默伪空](platform/2026-11/2026-11-15-git-pathspec-cwd-relative-empty.md) — tooling
 - 2026-11-12 [review 类 intent 的 expectedStage 约束——implementing 态直派必被拒](platform/2026-11/2026-11-12-verify-review-intent-expected-stage-constraint.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-11-12 [verifyPresentation 的 visible 归一化包含校验与历史报告行渲染规则](platform/2026-11/2026-11-12-verify-presentation-visible-includes-and-history-rows.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-11-12 [校验器 exit 2 暂时性判读协议——直调探针取真错 + CLI 重跑双过=暂时，确定性复现=断链](platform/2026-11/2026-11-12-validator-transient-exit2-adjudication-protocol.md) — site-optimizer verify-review.mjs, github-web

@@ -184,6 +184,12 @@ fn tree_counting_slot_valid_matrix() {
         &parse("calc(0.1 * sibling-index())")
     ));
     assert!(tree_counting_slot_valid("scale", &parse("calc(2 * sibling-count())")));
+    // text-size-adjust <percentage> 槽（css-size-adjust-1）：% 叶经
+    // LengthPercentage 归 MTLength（text-size-adjust-valid 接受腿驱动）。
+    assert!(tree_counting_slot_valid(
+        "text-size-adjust",
+        &parse("calc(10% * sibling-index())")
+    ));
     assert!(tree_counting_slot_valid("z-index", &parse("calc(sibling-index())")));
     assert!(tree_counting_slot_valid(
         "animation-duration",

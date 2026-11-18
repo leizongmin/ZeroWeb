@@ -181,6 +181,7 @@ fn test_paint_opacity_affects_gradient() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -868,6 +869,7 @@ fn test_gradient_to_primitive_single_color_stop() {
     let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
     let gradient = GradientValue::Linear(LinearGradient {
         interpolation: Default::default(),
+        specified: None,
         direction: GradientDirection::ToRight,
         stops: vec![GradientColorStop {
             color: ColorValue::Rgba(128, 128, 128, 255),

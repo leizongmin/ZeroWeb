@@ -513,6 +513,34 @@ pub enum TransformBoxValue {
     ViewBox,
 }
 
+/// `offset-rotate` 属性值（CSS Motion Path L1 §offset-rotate，非继承；初始 auto）。
+/// 角度分量存 deg（正 = 顺时针，与 transform rotate 同向）。
+/// https://drafts.fxtf.org/motion-1/#OffsetRotateValue
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OffsetRotateValue {
+    /// auto — 渲染时取路径切线方向（计算值串 "auto"）。
+    Auto,
+    /// reverse — 切线方向 + 180°（计算值串 "reverse"）。
+    Reverse,
+    /// 固定角度（`<angle>`，deg）。
+    Angle(f64),
+    /// `auto <angle>` — 切线方向再加偏移角（deg）。
+    AutoAngle(f64),
+}
+
+/// `offset-position` 属性值（CSS Motion Path L1 §offset-position，非继承；初始
+/// normal）。<position> 分量与 transform-origin 同构（% 保留渲染期）。
+/// https://drafts.fxtf.org/motion-1/#OffsetPositionValue
+#[derive(Debug, Clone, PartialEq)]
+pub enum OffsetPositionValue {
+    /// normal — 默认定位行为（spec 初始，计算值串 "normal"）。
+    Normal,
+    /// auto — 静态位置由 offset-anchor 决定（计算值串 "auto"）。
+    Auto,
+    /// `<position>` 对（css-shapes-3 §position，含 edge-offset/calc 形）。
+    Position(LengthValue, LengthValue),
+}
+
 /// CSS word-break 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordBreakValue {
@@ -1523,6 +1551,10 @@ pub enum ContentComputedValue {
     /// 渐变函数（R4045，CSS Content 3：content 接受 \<image\>）。元素 content:\<gradient\>
     /// → element-becomes-replaced-with-gradient，paint 按内容盒绘制渐变。
     Gradient(values::GradientValue),
+    /// image-set() 响应式图像（g46，css-content-3 #content-property：content-list
+    /// 接受 `<image>`）。复用 css-parser [`values::ImageSetValue`] 直通（分辨率/
+    /// 选项文法同一模型）；渲染面 FIXME: 替换图像绘制挂账（computed 串化已通）。
+    ImageSet(values::ImageSetValue),
     /// 多 item 混合内容序列（`"Chapter " counter(c) ": "`）。复用 css-parser
     /// 的 ContentListItem（Str/Counter）；paint 期逐 item 解析拼文本。
     List(Vec<values::ContentListItem>),
@@ -1811,10 +1843,14 @@ pub enum PropertyValue {
     BreakBefore(BreakValue),
     /// break-after 值。
     BreakAfter(BreakValue),
-    /// column-rule-width 值。
-    ColumnRuleWidth(ColumnRuleWidthComputedValue),
-    /// column-rule-style 值。
-    ColumnRuleStyle(ColumnRuleStyleComputedValue),
+    /// column-rule-width 值（css-gaps-1 `<line-width-list>`；纯值 = 单段列表）。
+    ColumnRuleWidth(Vec<zero_css_parser::values::RuleWidthSegment>),
+    /// row-rule-width 值（css-gaps-1 §column-row-rule-width，与 column 同文法）。
+    RowRuleWidth(Vec<zero_css_parser::values::RuleWidthSegment>),
+    /// column-rule-style 值（css-gaps-1 `<line-style-list>`；纯关键字 = 单段列表）。
+    ColumnRuleStyle(Vec<zero_css_parser::values::RuleStyleSegment>),
+    /// row-rule-style 值（css-gaps-1 §column-row-rule-style，与 column 同文法）。
+    RowRuleStyle(Vec<zero_css_parser::values::RuleStyleSegment>),
     /// overscroll-behavior 值。
     OverscrollBehavior(OverscrollBehaviorValue),
     /// touch-action 值。
@@ -1875,8 +1911,28 @@ pub enum PropertyValue {
     Filter(Vec<FilterComputedValue>),
     /// contain 值。
     Contain(ContainComputedValue),
-    /// column-rule-color 值。
-    ColumnRuleColor(ColorValue),
+    /// column-rule-color 值（css-gaps-1 `<line-color-list>`；纯色 = 单段列表）。
+    ColumnRuleColor(Vec<zero_css_parser::values::RuleColorSegment>),
+    /// row-rule-color 值（css-gaps-1 §column-row-rule-color，与 column 同文法）。
+    RowRuleColor(Vec<zero_css_parser::values::RuleColorSegment>),
+    // css-gaps-1 §inset：8 longhand 槽值（`overlap-join | <length-percentage>`，
+    // 初值 0px 非继承）。
+    /// column-rule-inset-cap-start 值。
+    ColumnRuleInsetCapStart(zero_css_parser::values::RuleInsetComponent),
+    /// column-rule-inset-cap-end 值。
+    ColumnRuleInsetCapEnd(zero_css_parser::values::RuleInsetComponent),
+    /// column-rule-inset-junction-start 值。
+    ColumnRuleInsetJunctionStart(zero_css_parser::values::RuleInsetComponent),
+    /// column-rule-inset-junction-end 值。
+    ColumnRuleInsetJunctionEnd(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-cap-start 值。
+    RowRuleInsetCapStart(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-cap-end 值。
+    RowRuleInsetCapEnd(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-junction-start 值。
+    RowRuleInsetJunctionStart(zero_css_parser::values::RuleInsetComponent),
+    /// row-rule-inset-junction-end 值。
+    RowRuleInsetJunctionEnd(zero_css_parser::values::RuleInsetComponent),
     /// appearance 值。
     Appearance(AppearanceComputedValue),
     /// accent-color 值。
@@ -1932,6 +1988,12 @@ pub enum PropertyValue {
     BoxShadow(Vec<BoxShadowComputedValue>),
     /// clip-path 值。
     ClipPath(ClipPathComputedValue),
+    /// shape-outside 值（css-shapes-1 §3：`none | <basic-shape>`，与 clip-path
+    /// 同 basic-shape 族共享文法）。
+    ShapeOutside(ShapeOutsideComputedValue),
+    /// shape-margin 值（css-shapes-1 §shape-margin-property：非负
+    /// `<length-percentage>`，em/物理单位 apply 期折 px、% 保留）。
+    ShapeMargin(LengthValue),
     /// border-shape 值（css-borders-4 §7，R4534）。
     BorderShape(BorderShapeComputedValue),
     /// clip 属性值（已弃用的 CSS2 裁剪属性）。
@@ -1940,6 +2002,18 @@ pub enum PropertyValue {
     MaskImage(Vec<BackgroundImageComputedValue>),
     /// mask-mode 值。
     MaskMode(MaskModeComputedValue),
+    /// mask-position 值（css-masking-1 §5.3，复用 background-position 形）。
+    MaskPosition(Vec<BackgroundPositionComputedValue>),
+    /// mask-size 值（css-masking-1 §5.3，复用 background-size 形）。
+    MaskSize(Vec<BackgroundSizeComputedValue>),
+    /// mask-repeat 值（css-masking-1 §5.3，复用 background-repeat 形）。
+    MaskRepeat(Vec<BackgroundRepeatComputedValue>),
+    /// mask-clip 值（css-masking-1 §5.4）。
+    MaskClip(Vec<MaskClipComputedValue>),
+    /// mask-origin 值（css-masking-1 §5.5）。
+    MaskOrigin(Vec<MaskGeometryBoxComputedValue>),
+    /// mask-composite 值（css-masking-1 §5.6）。
+    MaskComposite(Vec<MaskCompositeComputedValue>),
     /// justify-items 值。
     JustifyItems(JustifyItemsValue),
     /// justify-self 值。
@@ -2093,6 +2167,49 @@ pub enum FilterComputedValue {
 /// 直接复用 css-parser 的 ClipPathValue 类型，
 /// 因为计算阶段不需要额外转换。
 pub type ClipPathComputedValue = zero_css_parser::values::ClipPathValue;
+
+/// shape-outside 计算值（css-shapes-1 §shape-outside：
+/// `none | [ <basic-shape> || <shape-box> ]`）。
+///
+/// 独立 wrapper 而非 [`ClipPathComputedValue`] 别名：文法比 clip-path 多出
+/// 裸 `<shape-box>` 形态（margin-box 等），共享枚举不加变体以免波及
+/// clip-path paint/interp 面；`<basic-shape>` 分支复用 parse_clip_path
+/// 裁决单点。FIXME: `<basic-shape> <shape-box>` 后缀组合形未建模（corpus 现值均为裸形态）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShapeOutsideComputedValue {
+    /// none — 浮动元素无避让形状（默认值）。
+    None,
+    /// `<basic-shape>`（inset/circle/ellipse/polygon/shape/path/rect/xywh）。
+    Shape(zero_css_parser::values::ClipPathValue),
+    /// 裸 `<shape-box>` 关键字——避让形状即引用盒本身。
+    Box(ShapeOutsideBoxKind),
+}
+
+/// shape-outside `<shape-box>` 关键字（css-shapes-1 §shape-box-value；
+/// 不含 clip-path geometry-box 的 bound-border-box 等扩展）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeOutsideBoxKind {
+    /// content-box。
+    ContentBox,
+    /// padding-box。
+    PaddingBox,
+    /// border-box。
+    BorderBox,
+    /// margin-box。
+    MarginBox,
+}
+
+impl ShapeOutsideBoxKind {
+    /// CSS 关键字原文（计算值串化即此形）。
+    pub fn as_css_str(self) -> &'static str {
+        match self {
+            ShapeOutsideBoxKind::ContentBox => "content-box",
+            ShapeOutsideBoxKind::PaddingBox => "padding-box",
+            ShapeOutsideBoxKind::BorderBox => "border-box",
+            ShapeOutsideBoxKind::MarginBox => "margin-box",
+        }
+    }
+}
 
 /// R4248（CSS Borders 4 §corner-shaping）：corner-shape 计算值。
 pub type CornerShapeComputedValue = zero_css_parser::values::CornerShapeValue;

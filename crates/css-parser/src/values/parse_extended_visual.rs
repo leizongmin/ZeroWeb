@@ -731,6 +731,61 @@ pub enum BackgroundImageValue {
         /// dark 支图像（按 used scheme 为 dark 时选中）。
         dark: Box<BackgroundImageValue>,
     },
+    /// image-set() — CSS Images 4 图像集函数
+    ///（https://drafts.csswg.org/css-images-4/#image-set-nota）。`-webkit-image-set()`
+    /// 解析期别名归并（同 AST，css-images-4 #deprecated 前缀 parse 期剥除——canonical
+    /// 串化恒落标准形）。g45 语料驱动（image-set-parsing/computed）。
+    ImageSet(ImageSetValue),
+}
+
+/// image-set() 值：逗号分隔选项表（≥1）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageSetValue {
+    /// 选项表。
+    pub options: Vec<ImageSetOptionValue>,
+}
+
+/// image-set() 单选项（css-images-4 §image-set-nota
+/// `<image-set-option> = <image> [ <resolution> || <string(type())> ]?`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageSetOptionValue {
+    /// 选项图像（url()/字符串/渐变；嵌套 image-set 与 none 非法——语料钉面）。
+    pub image: Box<BackgroundImageValue>,
+    /// 分辨率（缺省 → 指定/计算两串化面各补 `1x`/`1dppx`）。
+    pub resolution: Option<ImageSetResolution>,
+    /// type(<mime-string>) MIME 提示（引号剥离后原串）。
+    pub mime: Option<String>,
+}
+
+/// image-set() 选项分辨率。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImageSetResolution {
+    /// 明文字面（`1x`/`2dppx`/`192dpi`/`1dpcm`……负字面非法——语料钉面）。
+    /// `text` 指定面原文保形；`dppx` 计算值（x/dppx 恒等、dpi ÷96、
+    /// dpcm ×2.54/96——css-values-4 §6.4 同款约定）。
+    Plain {
+        /// as-written 原文（`3.5x`/`192dpi`——指定面保形发射）。
+        text: String,
+        /// dppx 基计算值（x/dppx 恒等、dpi ÷96、dpcm ×2.54/96）。
+        dppx: f64,
+    },
+    /// calc(<resolution>)（css-images-4 §image-set-nota）：`text` 原文保形；
+    /// `folded_dppx` 字面树折叠到 dppx 基（折叠内件
+    /// `serialize_math::fold_resolution_to_dppx`——共享 resolution-calc 通道；
+    /// 非纯 resolution 树/含 sibling-index() 等不折叠 → None 保原文）。
+    Calc {
+        /// calc(...) 含首尾括号原文。
+        text: String,
+        /// 字面树 dppx 基折叠值（NaN/±∞ 保留——发射走 §10.6 canonical）。
+        folded_dppx: Option<f64>,
+    },
+}
+
+/// image-set() 头识别（大小写不敏感；含 `-webkit-` 别名前缀）。
+pub fn is_image_set_prefixed(value: &str) -> bool {
+    let v = value.trim_start();
+    let lower = v.to_ascii_lowercase();
+    lower.starts_with("image-set(") || lower.starts_with("-webkit-image-set(")
 }
 
 impl BackgroundImageValue {
@@ -808,6 +863,356 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
         });
     }
 
+    // image-set() / -webkit-image-set()（css-images-4 §image-set-nota）：前缀别名
+    // parse 期剥除（canonical 恒落标准形），选项文法见 [`parse_image_set_options`]。
+    if let Some(is) = parse_image_set_value(value) {
+        return Some(BackgroundImageValue::ImageSet(is));
+    }
+
+    None
+}
+
+/// 解析单 image-set() 调用为选项表（css-images-4 §image-set-nota）：标准形与
+/// `-webkit-` 别名（parse 期剥除，canonical 恒落标准形）。
+///
+/// background-image 层表与 content `<image>` 语法域共用单实现点
+///（css-content-3 #content-property：content-list 接受 `<image>`）。
+pub fn parse_image_set_value(value: &str) -> Option<ImageSetValue> {
+    let value = value.trim();
+    if !is_image_set_prefixed(value) {
+        return None;
+    }
+    let lower = value.to_ascii_lowercase();
+    let head = if lower.starts_with("-webkit-image-set(") {
+        "-webkit-image-set(".len()
+    } else {
+        "image-set(".len()
+    };
+    if !value.ends_with(')') {
+        return None;
+    }
+    let args = &value[head..value.len() - 1];
+    let options = parse_image_set_options(args)?;
+    Some(ImageSetValue { options })
+}
+
+/// 解析 image-set() 实参为选项表（css-images-4 §image-set-nota）。
+///
+/// 顶层逗号分隔 ≥1 选项；空参（`image-set()`）拒收。逐选项
+/// `<image> [ <resolution> || <type()> ]?`：image 为 url()/字符串/渐变
+///（嵌套 image-set、none、image() 自然拒）；resolution 明文字面负值非法、
+/// calc 走 [`super::parse_transform`]-侧 resolution 折叠通道（非纯树保原文）；
+/// type() 恰一引号串。多余片段（双 resolution/双 type/杂 token）拒收——语料
+/// `url(example.png) 1x url(example.jpeg)`/`1x 2x`/重复 type 钉面。
+pub fn parse_image_set_options(args: &str) -> Option<Vec<ImageSetOptionValue>> {
+    let mut options = Vec::new();
+    for part in split_top_commas_all(args) {
+        let opt = parse_image_set_option(part.trim())?;
+        options.push(opt);
+    }
+    if options.is_empty() {
+        return None;
+    }
+    Some(options)
+}
+
+/// 顶层逗号全拆分（括号配平、引号内逗号不计、引号内 `\` 转义跳过——
+/// [`split_top_level_comma`](self) 单拆分语义的多拆分版；字节态机口径同
+/// serialize_math `fold_image_set_specified`）。
+fn split_top_commas_all(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut last = 0usize;
+    let mut in_quote: Option<u8> = None;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = in_quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == q {
+                in_quote = None;
+            }
+        } else {
+            match b {
+                b'"' | b'\'' => in_quote = Some(b),
+                b'(' => depth += 1,
+                b')' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => {
+                    parts.push(&s[last..i]);
+                    last = i + 1;
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    parts.push(&s[last..]);
+    parts
+}
+
+/// 解析单选项 `<image> [ <resolution> || <type()> ]?`。
+fn parse_image_set_option(opt: &str) -> Option<ImageSetOptionValue> {
+    let (image, rest) = consume_image_set_image(opt)?;
+    let mut resolution: Option<ImageSetResolution> = None;
+    let mut mime: Option<String> = None;
+    let mut rest = rest.trim();
+    while !rest.is_empty() {
+        let lower = rest.to_ascii_lowercase();
+        if lower.starts_with("type(") {
+            if mime.is_some() {
+                return None; // 双 type 拒收（语料钉面）。
+            }
+            let (m, r) = consume_balanced_fn(rest)?;
+            mime = Some(parse_image_set_mime(m)?);
+            rest = r.trim();
+        } else {
+            if resolution.is_some() {
+                return None; // 双 resolution 拒收（`1x 2x` 语料钉面）。
+            }
+            // calc(...) 内含空白（`calc(2x * 3)`）——括号配平消费；明文
+            // dimension token 单词消费。
+            let (r_token, r) = if lower.starts_with("calc(") {
+                consume_balanced_fn(rest)?
+            } else {
+                consume_token(rest)
+            };
+            resolution = Some(parse_image_set_resolution(r_token)?);
+            rest = r.trim();
+        }
+    }
+    Some(ImageSetOptionValue {
+        image: Box::new(image),
+        resolution,
+        mime,
+    })
+}
+
+/// 消费选项图像前缀（css-images-4 `<image>`）：
+/// - `url(...)`：括号配平取 span；载荷引号串（可空串——`url("")` 合法，语料
+///   calc-infinity-nan 钉面）或非空裸 token；
+/// - 引号串：`'…'`/`"…"` → 字符串图像（`\X` 转义去壳）；
+/// - 渐变函数：前缀识别 + 括号配平，递归走 [`parse_background_image`]
+///   （复用 g41-g44 渐变文法位与 canonical 捕获）。
+///
+/// 嵌套 `image-set(` / `none` / 其他函数（`image()`、`filter()`……）不消费；
+/// 返回（图像, 余文）。
+fn consume_image_set_image(s: &str) -> Option<(BackgroundImageValue, &str)> {
+    let s = s.trim_start();
+    let lower = s.to_ascii_lowercase();
+    if lower.starts_with("url(") {
+        let (span, rest) = consume_balanced_fn(s)?;
+        let inner = span.get(4..span.len() - 1)?.trim();
+        let url = parse_image_set_url_payload(inner)?;
+        return Some((BackgroundImageValue::Url(url), rest));
+    }
+    let first = s.as_bytes().first()?;
+    if *first == b'"' || *first == b'\'' {
+        let (content, rest) = consume_quoted_string(s)?;
+        return Some((BackgroundImageValue::Url(content), rest));
+    }
+    if super::serialize_gradient::is_gradient_prefixed(s) {
+        let (span, rest) = consume_balanced_fn(s)?;
+        let g = match parse_background_image(span.trim())? {
+            BackgroundImageValue::Gradient(g) => g,
+            _ => return None,
+        };
+        return Some((BackgroundImageValue::Gradient(g), rest));
+    }
+    None
+}
+
+/// image-set() 选项 url 载荷：引号串（可空——css-images-4 `<url>` 串形态；
+/// 裸 token 非空。转义闭包校验沿 [`parse_css_url_payload`] 口径但放宽空串）。
+fn parse_image_set_url_payload(inner: &str) -> Option<String> {
+    if let Some(q) = inner.as_bytes().first().filter(|q| **q == b'"' || **q == b'\'') {
+        let q = *q as char;
+        let body = inner.strip_prefix(q)?.strip_suffix(q)?;
+        return Some(unescape_css_string(body));
+    }
+    let url = inner.trim();
+    if url.is_empty() || url.contains('"') || url.contains('\'') {
+        return None;
+    }
+    Some(url.to_string())
+}
+
+/// 消费引号串前缀（`\X` 逐对跳过；未闭合拒）。返回（去壳转义后内容, 余文）。
+fn consume_quoted_string(s: &str) -> Option<(String, &str)> {
+    let q = *s.as_bytes().first()?;
+    let mut chars = s.char_indices();
+    chars.next()?;
+    let mut body = String::new();
+    while let Some((i, ch)) = chars.next() {
+        match ch {
+            '\\' => {
+                let (_, esc) = chars.next()?;
+                body.push(esc);
+            }
+            c if c as u8 == q => {
+                return Some((body, &s[i + 1..]));
+            }
+            c => body.push(c),
+        }
+    }
+    None
+}
+
+/// css 字符串转义还原（`\X` → X；孤反斜杠按字面——语料仅 `\"` 驱动）。
+fn unescape_css_string(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some(e) => out.push(e),
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// 括号配平消费 `fn(...)` 前缀（引号内括号/转义不计深；未闭合拒）。
+/// 返回（含首尾括号整 span, 余文）。
+fn consume_balanced_fn(s: &str) -> Option<(&str, &str)> {
+    let open = s.find('(')?;
+    let bytes = s.as_bytes();
+    let mut depth = 1usize;
+    let mut in_quote: Option<u8> = None;
+    let mut j = open + 1;
+    while j < bytes.len() {
+        let b = bytes[j];
+        if let Some(q) = in_quote {
+            if b == b'\\' {
+                j += 2;
+                continue;
+            }
+            if b == q {
+                in_quote = None;
+            }
+        } else if b == b'"' || b == b'\'' {
+            in_quote = Some(b);
+        } else if b == b'(' {
+            depth += 1;
+        } else if b == b')' {
+            depth -= 1;
+            if depth == 0 {
+                return Some((&s[..=j], &s[j + 1..]));
+            }
+        }
+        j += 1;
+    }
+    None
+}
+
+/// 消费一个空白界定的裸 token（引号/calc 等括号配平不可跨——调用方先按
+/// 前缀分流）。返回（token, 余文）。
+fn consume_token(s: &str) -> (&str, &str) {
+    let end = s
+        .char_indices()
+        .find(|(_, ch)| ch.is_whitespace())
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    (&s[..end], &s[end..])
+}
+
+/// 解析选项分辨率：明文字面 `<number> <unit>`（unit ∈ x/dppx/dpi/dpcm 大小写
+/// 不敏感；负字面拒收——语料 `-1x`/`-96dpi` 钉面，零合法；bogus unit/
+/// token 胶连 `1xtype(...)` 拒收）或 `calc(<resolution>)`（解析走共享
+/// resolution-calc 通道，纯树折叠 dppx 基、非纯树保原文）。
+fn parse_image_set_resolution(token: &str) -> Option<ImageSetResolution> {
+    let token = token.trim();
+    if token.to_ascii_lowercase().starts_with("calc(") {
+        if !token.ends_with(')') {
+            return None;
+        }
+        let inner = &token[5..token.len() - 1]; // `calc(` 5 字节剥壳。
+        // 三态：None = 文法/型别 invalid（number-only `calc(3 * 4)`/混型
+        // `calc(2x - 1)` 语料钉面）；Some(None) = 静态不可折叠合法树保形；
+        // Some(Some(n)) = dppx 基折叠值。
+        let folded = super::serialize_math::fold_resolution_typed(inner)?;
+        return Some(ImageSetResolution::Calc {
+            text: token.to_string(),
+            folded_dppx: folded,
+        });
+    }
+    let (num, unit) = split_number_unit(token)?;
+    if num.starts_with('-') {
+        return None; // 负字面 resolution 非法（css-values-4 §6.4；calc 可负——语料钉面）。
+    }
+    let value: f64 = num.parse().ok()?;
+    let dppx = match unit.to_ascii_lowercase().as_str() {
+        "x" | "dppx" => value,
+        "dpi" => value / 96.0,
+        "dpcm" => value * 2.54 / 96.0,
+        _ => return None,
+    };
+    Some(ImageSetResolution::Plain {
+        text: token.to_string(),
+        dppx,
+    })
+}
+
+/// 明文 dimension token 拆（数值位 + 单位位；单位非 ASCII 字母起即拒——
+/// `1invalidResUnit`/`92pid` 拒、`1x` 收）。
+fn split_number_unit(token: &str) -> Option<(&str, &str)> {
+    let bytes = token.as_bytes();
+    let mut i = 0usize;
+    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
+        i += 1;
+    }
+    let mut seen_digit = false;
+    let mut seen_dot = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_digit() {
+            seen_digit = true;
+            i += 1;
+        } else if b == b'.' && !seen_dot {
+            seen_dot = true;
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    if !seen_digit || i >= bytes.len() {
+        return None;
+    }
+    let unit = &token[i..];
+    if !unit.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return None;
+    }
+    Some((&token[..i], unit))
+}
+
+/// 解析 type() 实参：恰一引号串（裸 ident `type(image/png)`/双串/空参拒收
+/// ——语料钉面）。返回 MIME 引号内原文保形（转义序列不还原——发射面重引号
+/// 原样回放，`type("a\"")` round-trip 恒等）。
+fn parse_image_set_mime(span: &str) -> Option<String> {
+    let inner = span.get(5..span.len().saturating_sub(1))?.trim();
+    let q = *inner.as_bytes().first().filter(|q| **q == b'"' || **q == b'\'')?;
+    // 首个未转义闭引号（`\X` 跳过）须为末字符——其后杂料（双串）拒收。
+    let bytes = inner.as_bytes();
+    let mut i = 1usize;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == q {
+            if i != bytes.len() - 1 {
+                return None;
+            }
+            return Some(inner[1..i].to_string());
+        }
+        i += 1;
+    }
     None
 }
 
@@ -965,6 +1370,108 @@ pub fn parse_mask_image_layers(value: &str) -> Option<Vec<BackgroundImageValue>>
     parse_background_image_layers(value)
 }
 
+/// CSS mask-clip / mask-origin 的 `<geometry-box>` 值（css-masking-1 §5.4/§5.5；
+/// 与 CSS Shapes 的 `<shape-box>` 互补——masking 侧含 SVG 几何盒三形）。
+/// https://drafts.fxtf.org/css-masking-1/#valdef-mask-clip-geometry-box
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskGeometryBoxValue {
+    /// border-box。
+    BorderBox,
+    /// padding-box。
+    PaddingBox,
+    /// content-box。
+    ContentBox,
+    /// margin-box。
+    MarginBox,
+    /// fill-box。
+    FillBox,
+    /// stroke-box。
+    StrokeBox,
+    /// view-box。
+    ViewBox,
+}
+
+/// CSS mask-clip 值（css-masking-1 §5.4）：`<geometry-box> | no-clip`。
+/// https://drafts.fxtf.org/css-masking-1/#valdef-mask-clip-no-clip
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskClipValue {
+    /// `<geometry-box>`。
+    Box(MaskGeometryBoxValue),
+    /// no-clip——不裁剪。
+    NoClip,
+}
+
+/// CSS mask-composite 值（css-masking-1 §5.6 `<compositing-operator>`）。
+/// https://drafts.fxtf.org/css-masking-1/#valdef-mask-composite-add
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MaskCompositeValue {
+    /// add。
+    Add,
+    /// subtract。
+    Subtract,
+    /// intersect。
+    Intersect,
+    /// exclude。
+    Exclude,
+}
+
+/// 单层 `<geometry-box>` 解析（css-masking-1 §5.4/§5.5）。
+pub fn parse_mask_geometry_box(value: &str) -> Option<MaskGeometryBoxValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "border-box" => Some(MaskGeometryBoxValue::BorderBox),
+        "padding-box" => Some(MaskGeometryBoxValue::PaddingBox),
+        "content-box" => Some(MaskGeometryBoxValue::ContentBox),
+        "margin-box" => Some(MaskGeometryBoxValue::MarginBox),
+        // css-masking-1 §5.4：SVG 几何盒三形（CSS Shapes `<shape-box>` 无此三形）。
+        "fill-box" => Some(MaskGeometryBoxValue::FillBox),
+        "stroke-box" => Some(MaskGeometryBoxValue::StrokeBox),
+        "view-box" => Some(MaskGeometryBoxValue::ViewBox),
+        _ => None,
+    }
+}
+
+/// 解析 mask-clip 多图层值（顶层逗号分隔，css-masking-1 §5.4——单层
+/// `<geometry-box> | no-clip`）。任一层失败 → None；空输入 → None。
+pub fn parse_mask_clip_layers(value: &str) -> Option<Vec<MaskClipValue>> {
+    let mut list = Vec::new();
+    for part in split_background_layers(value)? {
+        let lower = part.trim().to_ascii_lowercase();
+        if lower == "no-clip" {
+            list.push(MaskClipValue::NoClip);
+            continue;
+        }
+        list.push(MaskClipValue::Box(parse_mask_geometry_box(part)?));
+    }
+    (!list.is_empty()).then_some(list)
+}
+
+/// 解析 mask-origin 多图层值（顶层逗号分隔，css-masking-1 §5.5——单层
+/// `<geometry-box>`，无 no-clip）。任一层失败 → None；空输入 → None。
+pub fn parse_mask_origin_layers(value: &str) -> Option<Vec<MaskGeometryBoxValue>> {
+    let mut list = Vec::new();
+    for part in split_background_layers(value)? {
+        list.push(parse_mask_geometry_box(part)?);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
+/// 解析 mask-composite 多图层值（顶层逗号分隔，css-masking-1 §5.6——单层
+/// `<compositing-operator>`）。任一层失败 → None；空输入 → None。
+pub fn parse_mask_composite_layers(value: &str) -> Option<Vec<MaskCompositeValue>> {
+    let mut list = Vec::new();
+    for part in split_background_layers(value)? {
+        let v = match part.trim().to_ascii_lowercase().as_str() {
+            "add" => MaskCompositeValue::Add,
+            "subtract" => MaskCompositeValue::Subtract,
+            "intersect" => MaskCompositeValue::Intersect,
+            "exclude" => MaskCompositeValue::Exclude,
+            _ => return None,
+        };
+        list.push(v);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
 /// CSS background-position 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundPositionValue {
@@ -978,6 +1485,16 @@ pub enum BackgroundPositionValue {
     Top,
     /// bottom。
     Bottom,
+    // css-values-5 §4.2 逻辑边缘关键字（g47：仅严格 `<position>` 面收——object-position /
+    // 渐变 `at`；`<bg-position>` 文法不含，parse_background_position 出口拒）。
+    /// x-start（flow-relative，htb/ltr 写入模式 ≡ left）。
+    XStart,
+    /// x-end（htb/ltr ≡ right）。
+    XEnd,
+    /// y-start（htb/ltr ≡ top）。
+    YStart,
+    /// y-end（htb/ltr ≡ bottom）。
+    YEnd,
     /// 长度值（任意单位，px/em/rem/ex/vh/vw 等；em/rem 等相对单位在 style-system apply
     /// 时按元素 font-size/viewport 解析为 px）。R1417：此前仅 px（Length(f32)），致
     /// `background-position: <em/rem/ex>` 解析失败（parse_length 返回 Em/Rem 而非 Px，
@@ -1006,7 +1523,9 @@ pub enum BackgroundPositionValue {
 /// R2478：background-position / object-position 3/4 值语法的参考边缘（CSS Backgrounds §3.6）。
 ///
 /// left/right = 水平轴；top/bottom = 垂直轴。带偏移时（`right 25px`），偏移从该边缘度量；
-/// resolve 期 right/bottom 翻转（位置 = (container-image) - offset）。
+/// resolve 期 right/bottom 翻转（位置 = (container-image) - offset）。g47 增逻辑边缘
+/// XStart/XEnd/YStart/YEnd（css-values-5 §4.2，仅严格 `<position>` 面产出；htb/ltr
+/// 写入模式下物理映射 x-start→left / x-end→right / y-start→top / y-end→bottom）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackgroundEdge {
     /// 左边缘（偏移从左度量 = offset 本身）。
@@ -1017,12 +1536,52 @@ pub enum BackgroundEdge {
     Top,
     /// 下边缘（偏移从下度量 = (container-image) - offset）。
     Bottom,
+    /// 逻辑 x-start（≡ Left @ htb/ltr）。
+    XStart,
+    /// 逻辑 x-end（≡ Right @ htb/ltr）。
+    XEnd,
+    /// 逻辑 y-start（≡ Top @ htb/ltr）。
+    YStart,
+    /// 逻辑 y-end（≡ Bottom @ htb/ltr）。
+    YEnd,
 }
 
-/// 解析 CSS background-position 属性值。
+/// 解析 CSS background-position 属性值（css-backgrounds-3 `<bg-position>` 宽容文法）。
 ///
-/// 支持单个关键字、长度/百分比，以及两个值的组合（水平 垂直）。
+/// 支持单个关键字、长度/百分比，以及两个值的组合（水平 垂直）；3/4 值「边缘+偏移」
+/// 对允许与裸关键字/center 混搭（`left 50px center`、`right top 14%`——R2478 reftest
+/// 与 css-backgrounds parsing 语料双向实钉）。逻辑关键字（x-start 等）属
+/// `<position>`（css-values-5 §4.2），本面拒收——需用 [`parse_position_strict`]。
 pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue> {
+    parse_position_impl(value).filter(|v| !position_has_logical(v))
+}
+
+/// 解析严格 `<position>`（css-values-5 §4.2：object-position / 渐变 `at` 面）。
+///
+/// 与 [`parse_background_position`] 的文法差异（csswg#2140 后行为，三面语料钉）：
+/// 3 值形禁（spec 注记：3 值形仅 background-position 例外保留，通用 `<position>`
+/// 因文法歧义移除）；缘偏移对全有全无（pair 与裸关键字/center 混搭禁，如
+/// `right 3% center`）；逻辑关键字 x-start/x-end/y-start/y-end 收录。
+pub fn parse_position_strict(value: &str) -> Option<BackgroundPositionValue> {
+    let parts = split_top_level_whitespace(value.trim().to_ascii_lowercase().as_str());
+    // <position> 无 3 值形（css-values-5 §4.2 注记）
+    if parts.len() == 3 {
+        return None;
+    }
+    parse_position_impl(value).and_then(|v| {
+        // 缘偏移对 all-or-nothing：任一轴为 EdgeOffset 时另一轴必须同为 EdgeOffset
+        if let BackgroundPositionValue::TwoValue(h, v2) = &v {
+            let pair = |s: &BackgroundPositionValue| matches!(s, BackgroundPositionValue::EdgeOffset { .. });
+            if pair(h) != pair(v2) {
+                return None;
+            }
+        }
+        Some(v)
+    })
+}
+
+/// 两面共享的位置文法实现（不做面专属裁决）。
+fn parse_position_impl(value: &str) -> Option<BackgroundPositionValue> {
     let value = value.trim();
     let lower = value.to_ascii_lowercase();
 
@@ -1031,24 +1590,35 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
     let parts = split_top_level_whitespace(&lower);
     // R2478：3/4 值语法（CSS Backgrounds §3.6）= 一个或两个「边缘+偏移」对（`left 50px center`、
     // `right 25px top 75%`）。改前 parts.len()∈{3,4} 落单值分支 → None → 声明丢。
-    // R2478：3/4 值语法（CSS Backgrounds §3.6）= 一个或两个「边缘+偏移」对（`left 50px center`、
-    // `right 25px top 75%`）。改前 parts.len()∈{3,4} 落单值分支 → None → 声明丢。
     if parts.len() == 3 || parts.len() == 4 {
         return parse_position_three_four(&parts);
     }
     if parts.len() == 2 {
         let first = parse_position_component(&parts[0])?;
         let second = parse_position_component(&parts[1])?;
-        let first_horizontal = matches!(first, BackgroundPositionValue::Left | BackgroundPositionValue::Right);
-        let first_vertical = matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom);
-        let second_horizontal = matches!(second, BackgroundPositionValue::Left | BackgroundPositionValue::Right);
-        let second_vertical = matches!(second, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom);
+        let first_horizontal = matches!(first, BackgroundPositionValue::Left | BackgroundPositionValue::Right)
+            || is_logical_horizontal(&first);
+        let first_vertical = matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom)
+            || is_logical_vertical(&first);
+        let second_horizontal = matches!(second, BackgroundPositionValue::Left | BackgroundPositionValue::Right)
+            || is_logical_horizontal(&second);
+        let second_vertical = matches!(second, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom)
+            || is_logical_vertical(&second);
         if (first_horizontal && second_horizontal) || (first_vertical && second_vertical) {
             return None;
         }
+        // g47（语料钉 gradient-position-invalid `at top 0px` / object-position-invalid
+        // `bottom 10%`）：垂直关键字在前 + 偏移在后非法——<position> 两值文法第一槽
+        // 只收 `[left | center | right | <length-percentage>]`（css-values-4 #position），
+        // 偏移必须跟在水平关键字后（3/4 值「边缘+偏移」形）。水平关键字在前 + 偏移
+        //（`left 0px` = 距左偏移）与 `0px top`（偏移 + 垂直关键字）维持接受。
+        if first_vertical && is_offset_only(&second) {
+            return None;
+        }
         // CSS background-position 两值语法（CSS Backgrounds §3.6）：关键字顺序无关——
-        // 水平专属（left/right）→ x，垂直专属（top/bottom）→ y，center 兼容两轴。
-        // 故须交换当：第一值是垂直专属（top/bottom），或第二值是水平专属（left/right）。
+        // 水平专属（left/right/x-start/x-end）→ x，垂直专属（top/bottom/y-start/y-end）
+        // → y，center 兼容两轴。
+        // 故须交换当：第一值是垂直专属，或第二值是水平专属。
         // R508 仅覆盖前者；R2048 补后者——"center left" 应为 x=left/y=center，否则
         // resolve 把 Left 当 y 解析致 background-position-145/146 图像错位。
         let (x, y) = if first_vertical || second_horizontal {
@@ -1066,6 +1636,10 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
         "right" => return Some(BackgroundPositionValue::Right),
         "top" => return Some(BackgroundPositionValue::Top),
         "bottom" => return Some(BackgroundPositionValue::Bottom),
+        "x-start" => return Some(BackgroundPositionValue::XStart),
+        "x-end" => return Some(BackgroundPositionValue::XEnd),
+        "y-start" => return Some(BackgroundPositionValue::YStart),
+        "y-end" => return Some(BackgroundPositionValue::YEnd),
         _ => {}
     }
 
@@ -1130,6 +1704,12 @@ fn parse_position_component(s: &str) -> Option<BackgroundPositionValue> {
         "right" => Some(BackgroundPositionValue::Right),
         "top" => Some(BackgroundPositionValue::Top),
         "bottom" => Some(BackgroundPositionValue::Bottom),
+        // g47：逻辑边缘关键字（css-values-5 §4.2；严格面收录，bg 面由
+        // parse_background_position 出口 has_logical 滤除）。
+        "x-start" => Some(BackgroundPositionValue::XStart),
+        "x-end" => Some(BackgroundPositionValue::XEnd),
+        "y-start" => Some(BackgroundPositionValue::YStart),
+        "y-end" => Some(BackgroundPositionValue::YEnd),
         _ => {
             // R2313：calc/min/max/clamp 单分量数学函数 → Calc。
             let t = s.trim();
@@ -1187,22 +1767,35 @@ fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue
                     offset: Box::new(offset),
                 };
                 match side {
-                    BackgroundEdge::Left | BackgroundEdge::Right => assign(&mut h, edge)?,
-                    BackgroundEdge::Top | BackgroundEdge::Bottom => assign(&mut v, edge)?,
+                    BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd => {
+                        assign(&mut h, edge)?
+                    }
+                    BackgroundEdge::Top | BackgroundEdge::Bottom | BackgroundEdge::YStart | BackgroundEdge::YEnd => {
+                        assign(&mut v, edge)?
+                    }
                 }
                 i += 2;
                 continue;
             }
-            // 裸边缘关键字（无偏移）= 该轴的 0%/100%（left/top=0、right/bottom=100%）
+            // 裸边缘关键字（无偏移）= 该轴的 0%/100%（left/top=0、right/bottom=100%；
+            // 逻辑边缘按 htb/ltr 映射同物理侧，specified 序列化保形逻辑关键字）
             let kw = match side {
                 BackgroundEdge::Left => BackgroundPositionValue::Left,
                 BackgroundEdge::Right => BackgroundPositionValue::Right,
                 BackgroundEdge::Top => BackgroundPositionValue::Top,
                 BackgroundEdge::Bottom => BackgroundPositionValue::Bottom,
+                BackgroundEdge::XStart => BackgroundPositionValue::XStart,
+                BackgroundEdge::XEnd => BackgroundPositionValue::XEnd,
+                BackgroundEdge::YStart => BackgroundPositionValue::YStart,
+                BackgroundEdge::YEnd => BackgroundPositionValue::YEnd,
             };
             match side {
-                BackgroundEdge::Left | BackgroundEdge::Right => assign(&mut h, kw)?,
-                BackgroundEdge::Top | BackgroundEdge::Bottom => assign(&mut v, kw)?,
+                BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd => {
+                    assign(&mut h, kw)?
+                }
+                BackgroundEdge::Top | BackgroundEdge::Bottom | BackgroundEdge::YStart | BackgroundEdge::YEnd => {
+                    assign(&mut v, kw)?
+                }
             }
             i += 1;
             continue;
@@ -1223,6 +1816,9 @@ fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue
         return None;
     }
 
+    // g47 分面：all-or-nothing 裁决移入 parse_position_strict（css-values-5
+    // `<position>` 面专属；bg 面 `<bg-position>` 宽容文法允许 pair+裸关键字混搭，
+    // css-backgrounds parsing 语料与 R2478 reftest 双向实钉）。
     let h = h.unwrap_or(BackgroundPositionValue::Center);
     let v = v.unwrap_or(BackgroundPositionValue::Center);
     Some(BackgroundPositionValue::TwoValue(Box::new(h), Box::new(v)))
@@ -1237,9 +1833,15 @@ pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<B
     match parts.as_slice() {
         [single] => {
             let v = parse_position_component(single)?;
+            // g47：逻辑关键字属 <position>（css-values-5 §4.2），css-backgrounds-4
+            // 单轴 longhand 文法为物理边缘，拒收。
             let axis_ok = match v {
                 BackgroundPositionValue::Left | BackgroundPositionValue::Right => horizontal,
                 BackgroundPositionValue::Top | BackgroundPositionValue::Bottom => !horizontal,
+                BackgroundPositionValue::XStart
+                | BackgroundPositionValue::XEnd
+                | BackgroundPositionValue::YStart
+                | BackgroundPositionValue::YEnd => false,
                 _ => true,
             };
             axis_ok.then_some(v)
@@ -1249,6 +1851,7 @@ pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<B
             let axis_ok = match side {
                 BackgroundEdge::Left | BackgroundEdge::Right => horizontal,
                 BackgroundEdge::Top | BackgroundEdge::Bottom => !horizontal,
+                BackgroundEdge::XStart | BackgroundEdge::XEnd | BackgroundEdge::YStart | BackgroundEdge::YEnd => false,
             };
             if !axis_ok {
                 return None;
@@ -1266,15 +1869,48 @@ pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<B
     }
 }
 
-/// 解析 background-position 边缘关键字为 BackgroundEdge（left/right/top/bottom）。
-/// center 不算边缘（不可带偏移）。
+/// 解析 background-position 边缘关键字为 BackgroundEdge（left/right/top/bottom
+/// + 逻辑 x-start/x-end/y-start/y-end）。center 不算边缘（不可带偏移）。
 fn parse_background_edge(s: &str) -> Option<BackgroundEdge> {
     match s {
         "left" => Some(BackgroundEdge::Left),
         "right" => Some(BackgroundEdge::Right),
         "top" => Some(BackgroundEdge::Top),
         "bottom" => Some(BackgroundEdge::Bottom),
+        "x-start" => Some(BackgroundEdge::XStart),
+        "x-end" => Some(BackgroundEdge::XEnd),
+        "y-start" => Some(BackgroundEdge::YStart),
+        "y-end" => Some(BackgroundEdge::YEnd),
         _ => None,
+    }
+}
+
+/// g47：逻辑边缘（css-values-5 §4.2）水平轴判定。
+fn is_logical_horizontal(v: &BackgroundPositionValue) -> bool {
+    matches!(v, BackgroundPositionValue::XStart | BackgroundPositionValue::XEnd)
+}
+
+/// g47：逻辑边缘垂直轴判定。
+fn is_logical_vertical(v: &BackgroundPositionValue) -> bool {
+    matches!(v, BackgroundPositionValue::YStart | BackgroundPositionValue::YEnd)
+}
+
+/// g47：树中含逻辑关键字（`<bg-position>` 文法不含，bg 面据此拒收）。
+fn position_has_logical(v: &BackgroundPositionValue) -> bool {
+    match v {
+        BackgroundPositionValue::XStart
+        | BackgroundPositionValue::XEnd
+        | BackgroundPositionValue::YStart
+        | BackgroundPositionValue::YEnd => true,
+        BackgroundPositionValue::EdgeOffset { side, offset } => {
+            // 逻辑缘（`y-start 20%`）同样属 <position> 面：side 与 offset 都要查
+            matches!(
+                side,
+                BackgroundEdge::XStart | BackgroundEdge::XEnd | BackgroundEdge::YStart | BackgroundEdge::YEnd
+            ) || position_has_logical(offset)
+        }
+        BackgroundPositionValue::TwoValue(h, v2) => position_has_logical(h) || position_has_logical(v2),
+        _ => false,
     }
 }
 

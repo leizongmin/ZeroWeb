@@ -3,8 +3,8 @@
 //! 将 ComputedStyle 的高级属性匹配从 apply.rs 拆分出来，保持文件在 2000 行以内。
 
 use super::apply::{
-    border_width_length_is_valid, margin_length_is_valid, padding_length_is_valid, parse_length_or_math,
-    positioned_offset_length_is_valid,
+    border_width_length_is_valid, clamp_non_negative_length, margin_length_is_valid, padding_length_is_valid,
+    parse_length_or_math, positioned_offset_length_is_valid, shape_margin_length_is_valid,
 };
 use super::computed_style::ComputedStyle;
 use super::parse::*;
@@ -169,6 +169,27 @@ fn is_transition_property_ident(token: &str) -> bool {
     token.eq_ignore_ascii_case("all") || token.eq_ignore_ascii_case("none") || is_css_ident(token)
 }
 
+// https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+// 文法 `normal | allow-discrete`，逗号分隔列表与 transition-property 逐位对齐；
+// 空 token / 未知关键字整条拒收。
+fn parse_transition_behavior_list(value: &str) -> Option<Vec<String>> {
+    split_top_level_commas(value)?
+        .into_iter()
+        .map(|tok| {
+            if tok.is_empty() {
+                return None;
+            }
+            if tok.eq_ignore_ascii_case("normal") {
+                Some("normal".to_string())
+            } else if tok.eq_ignore_ascii_case("allow-discrete") {
+                Some("allow-discrete".to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn is_css_ident(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -291,22 +312,28 @@ fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 /// Counter、Content、Break、Column、Appearance 等高级属性。
 /// 返回 true 表示成功设置。
 /// R1417：把 background-position 的长度值（任意单位）解析为 px。
-/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 viewport（apply 无 viewport
-/// 上下文，传 None 用 resolve_length 默认，vh/vw 在 bg-position 极罕见）。
+/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 apply 期视口真值
+/// （g50 thread_local 单源，[`crate::computed::active_viewport`]；未 set 时
+/// 保持 resolve_length 既有回落）。
 fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
     let fs = match &style.font_size {
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
     };
-    crate::computed::resolve_length(&lv, fs, None, None) as f32
+    let (vw, vh) = crate::computed::active_viewport();
+    crate::computed::resolve_length(&lv, fs, vw, vh) as f32
 }
 
-fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
+/// 解析值 <length> → 计算值 px 数值（font-size/viewport 基准折算）；
+/// border-image / mask-border 的 width/outset Length 臂与 engine 动画 apply
+/// 通道（animation.rs mask-border 臂）同语义复用。
+pub fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
     let fs = match &style.font_size {
         zero_css_parser::values::LengthValue::Px(v) => *v,
         _ => 16.0,
     };
-    crate::computed::resolve_length(lv, fs, None, None) as f32
+    let (vw, vh) = crate::computed::active_viewport();
+    crate::computed::resolve_length(lv, fs, vw, vh) as f32
 }
 
 /// 将解析后的 `<position>` 值（`background-position` / `object-position` 共用同一语法）
@@ -316,13 +343,22 @@ fn position_value_to_computed(
     v: zero_css_parser::values::BackgroundPositionValue,
     style: &ComputedStyle,
 ) -> Option<BackgroundPositionComputedValue> {
-    use zero_css_parser::values::BackgroundPositionValue as Bp;
+    use zero_css_parser::values::{BackgroundEdge, BackgroundPositionValue as Bp};
     Some(match v {
         Bp::Center => BackgroundPositionComputedValue::Center,
         Bp::Left => BackgroundPositionComputedValue::Left,
         Bp::Right => BackgroundPositionComputedValue::Right,
         Bp::Top => BackgroundPositionComputedValue::Top,
         Bp::Bottom => BackgroundPositionComputedValue::Bottom,
+        // g47：逻辑边缘按 htb/ltr 物理映射物化（css-values-5 §4.2：computed = 物理
+        // <length-percentage> 对）。FIXME(write-modes)：flow-relative 映射应随元素
+        // writing-mode/direction（engine 尚无 vertical-rl 等写入模式布局），暂恒
+        // htb/ltr——position-computed.tentative 的 test_writing_modes 32 子测中仅
+        // 与恒定映射一致的写组可过。
+        Bp::XStart => BackgroundPositionComputedValue::Left,
+        Bp::XEnd => BackgroundPositionComputedValue::Right,
+        Bp::YStart => BackgroundPositionComputedValue::Top,
+        Bp::YEnd => BackgroundPositionComputedValue::Bottom,
         Bp::Length(lv) => BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style)),
         Bp::Percent(pct) => BackgroundPositionComputedValue::Percent(pct),
         Bp::Calc(expr) => BackgroundPositionComputedValue::Calc(expr),
@@ -333,7 +369,15 @@ fn position_value_to_computed(
         }
         Bp::EdgeOffset { side, offset } => {
             // R2478：3/4 值「边缘+偏移」对 → computed EdgeOffset（offset 递归转换；
-            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。
+            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。g47：
+            // 逻辑缘物化（XStart→Left 等，同上 FIXME(write-modes)）。
+            let side = match side {
+                BackgroundEdge::XStart => BackgroundEdge::Left,
+                BackgroundEdge::XEnd => BackgroundEdge::Right,
+                BackgroundEdge::YStart => BackgroundEdge::Top,
+                BackgroundEdge::YEnd => BackgroundEdge::Bottom,
+                physical => physical,
+            };
             let oc = position_value_to_computed(*offset, style)?;
             BackgroundPositionComputedValue::EdgeOffset(side, Box::new(oc))
         }
@@ -359,13 +403,179 @@ fn normalize_font_relative_length(v: LengthValue, font_size_px: f64) -> LengthVa
     }
 }
 
+/// offset-path 首片文法门：`path("...")` / `ray(<angle> [<ray-size>]
+/// [at <position>])` / 基本形状全族（css-shapes-2，复用 parse_clip_path
+/// 文法真收——invalid 形拒收）+ coord-box 后缀 / 纯 coord-box 关键词
+///（css-motion-1 §offset-path）。命中返回存储原文（verbatim）。
+/// https://drafts.fxtf.org/motion-1/#offset-path-property
+fn parse_offset_path_fn(v: &str) -> Option<String> {
+    let lower = v.to_ascii_lowercase();
+    // `none` 由 apply 臂先行置 None（非首片文法域）。
+    if lower == "none" {
+        return None;
+    }
+    // path() 实参必须为引号包裹字符串（单双引号皆可），且非空。
+    if lower.starts_with("path(") {
+        if !v.ends_with(')') {
+            return None;
+        }
+        let inner = v[5..v.len() - 1].trim();
+        let ok = (inner.starts_with('"') && inner.ends_with('"') && inner.len() >= 2)
+            || (inner.starts_with('\'') && inner.ends_with('\'') && inner.len() >= 2);
+        return ok.then(|| v.to_string());
+    }
+    // ray()：`<angle> && <ray-size>? && at <position>?`（canonical 序先行；
+    // 乱序形 supports 通道残面挂账——parsing-valid shim JS 校验域同族）。
+    if lower.starts_with("ray(") {
+        return parse_ray_decl(v).then(|| v.to_string());
+    }
+    // 基本形状族 + coord-box 后缀（`<basic-shape> || <coord-box>`）：
+    // 文法裁决单点 parse_clip_path——形状核心非法整值拒收（invalid 形）。
+    let (core, suffix_box) = split_coord_box_suffix(v);
+    if suffix_box.is_some() && core.is_empty() {
+        // 纯 coord-box 关键词形（css-motion-1 offset-path 单 coord-box）。
+        return Some(v.to_string());
+    }
+    let _ = zero_css_parser::values::parse_clip_path(core)?;
+    // 形状核心带 coord-box 后缀时该后缀已核（split 已验），核心合法即收。
+    Some(v.to_string())
+}
+
+/// 尾部 coord-box 后缀分离（css-box-4 §coord-box：content/padding/border/
+/// margin/view-box）；返回 (核心, Some(后缀词))。非后缀形返回 (原文, None)。
+fn split_coord_box_suffix(v: &str) -> (&str, Option<&'static str>) {
+    const COORD_BOXES: [&str; 5] = ["content-box", "padding-box", "border-box", "margin-box", "view-box"];
+    for b in COORD_BOXES {
+        if let Some(core) = v.strip_suffix(b) {
+            return (core.trim_end(), Some(b));
+        }
+    }
+    (v, None)
+}
+
+/// ray() 声明形校验（canonical 序：`<angle> [<ray-size>]`，可选尾 `at
+/// <position>` 子句存在性核——位置文法细节 supports 通道 shim JS 校验域）。
+fn parse_ray_decl(v: &str) -> bool {
+    let Some(inner) = v.strip_prefix("ray(").and_then(|r| r.strip_suffix(')')) else {
+        return false;
+    };
+    let inner = inner.trim();
+    let head = match inner.find(" at ") {
+        Some(i) => &inner[..i],
+        None => inner,
+    };
+    let mut toks = head.split_whitespace();
+    let Some(angle) = toks.next() else {
+        return false;
+    };
+    if parse_angle_in_deg(angle).is_none() {
+        return false;
+    }
+    match toks.next() {
+        None => true,
+        Some(size) => {
+            matches!(
+                size.to_ascii_lowercase().as_str(),
+                "closest-side" | "closest-corner" | "farthest-side" | "farthest-corner" | "sides"
+            ) && toks.next().is_none()
+        }
+    }
+}
+
+/// offset-rotate 值解析：`auto | reverse | <angle> | auto <angle>`（角度经
+/// [`zero_css_parser::values::parse_angle_to_radians`] 归 deg）。
+/// 解析 `<angle>` 归一化为度：deg 原值直读避免 rad 往返精度损失，其余单位经 rad 换算。
+fn parse_angle_in_deg(token: &str) -> Option<f64> {
+    let lower = token.trim().to_ascii_lowercase();
+    if let Some(n) = lower.strip_suffix("deg") {
+        let v: f64 = n.trim().parse().ok()?;
+        return v.is_finite().then_some(v);
+    }
+    values::parse_angle_to_radians(token).map(|rad| rad.to_degrees())
+}
+
+fn parse_offset_rotate_value(value: &str) -> Option<OffsetRotateValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(OffsetRotateValue::Auto);
+    }
+    if v.eq_ignore_ascii_case("reverse") {
+        return Some(OffsetRotateValue::Reverse);
+    }
+    let mut parts = v.split_whitespace();
+    let first = parts.next()?;
+    if first.eq_ignore_ascii_case("auto") {
+        let second = parts.next()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        return parse_angle_in_deg(second).map(OffsetRotateValue::AutoAngle);
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    parse_angle_in_deg(first).map(OffsetRotateValue::Angle)
+}
+
+/// offset-position 值解析：`normal | auto | <position>`（css-motion-1
+/// §offset-position；<position> 与 transform-origin 同构复用 parse_origin_xy，
+/// none/角度/三词形自然拒收——parsing-invalid 语料形）。
+fn parse_offset_position_value(value: &str) -> Option<OffsetPositionValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("normal") {
+        return Some(OffsetPositionValue::Normal);
+    }
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(OffsetPositionValue::Auto);
+    }
+    parse_origin_xy(v).map(|(x, y)| OffsetPositionValue::Position(x, y))
+}
+
 fn parse_origin_xy(value: &str) -> Option<(LengthValue, LengthValue)> {
     let parts = split_top_level_whitespace(value)?;
     match parts.as_slice() {
         [single] => parse_origin_single(single),
         [first, second] => parse_origin_pair(first, second),
+        // css-shapes-3 §position 4 值 edge-offset 形 `<edge> <offset> <edge> <offset>`
+        //（offset-position supports/interpolation 语料主形态）。
+        [k1, o1, k2, o2] => parse_origin_edge_offsets(k1, o1, k2, o2),
         _ => None,
     }
+}
+
+/// 4 值 edge-offset：首词定轴序，offset 必为 length-percentage；`right/bottom o`
+/// 语义 100% − o，以 Calc 形存储（css-shapes-3 §position）。
+fn parse_origin_edge_offsets(k1: &str, o1: &str, k2: &str, o2: &str) -> Option<(LengthValue, LengthValue)> {
+    let edge = |kw: &str| match origin_keyword(kw)? {
+        OriginKeyword::Horizontal(v) => Some((false, v)),
+        OriginKeyword::Vertical(v) => Some((true, v)),
+        OriginKeyword::Center => None,
+    };
+    let (axis1, edge1) = edge(k1)?;
+    let (axis2, edge2) = edge(k2)?;
+    if axis1 == axis2 {
+        return None;
+    }
+    let off1 = parse_origin_length_percentage(o1)?;
+    let off2 = parse_origin_length_percentage(o2)?;
+    let resolve = |edge_pct: f64, off: LengthValue| {
+        if edge_pct == 0.0 {
+            off
+        } else {
+            LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::BinaryOp(
+                Box::new(zero_css_parser::values::CalcExpr::Length(LengthValue::Percentage(
+                    edge_pct,
+                ))),
+                zero_css_parser::values::CalcOp::Subtract,
+                Box::new(zero_css_parser::values::CalcExpr::Length(off)),
+            )))
+        }
+    };
+    Some(if axis1 {
+        (resolve(edge2, off2), resolve(edge1, off1))
+    } else {
+        (resolve(edge1, off1), resolve(edge2, off2))
+    })
 }
 
 fn parse_origin_single(value: &str) -> Option<(LengthValue, LengthValue)> {
@@ -466,7 +676,10 @@ fn parse_origin_length_percentage(value: &str) -> Option<LengthValue> {
 /// css-parser border-image-source 值 → 计算值（R5024：filter() 图像函数内层递归剥壳；
 /// light-dark() 图像上下文按 used color-scheme dark flag 选支展开——css-color-5
 /// §funcdef-light-dark，computed 期一次定案，`inherit` 继承的自然是选中支）。
-fn border_image_source_to_computed(
+/// border-image-source / mask-border-source 共享转换（css-masking-1 §3.4 与
+/// css-backgrounds-3 §5.1 文法同构复用同一 computed 类型）；engine 动画 apply
+/// 通道（animation.rs mask-border 臂）同语义复用。
+pub fn border_image_source_to_computed(
     v: zero_css_parser::values::BorderImageSourceValue,
     dark: bool,
 ) -> BorderImageSourceComputedValue {
@@ -525,6 +738,9 @@ fn bg_image_value_to_computed(
             light,
             dark: dark_branch,
         } => bg_image_branch_to_computed((*if dark { dark_branch } else { light }).clone(), dark),
+        // g45：image-set() 选项 AST 直通（computed 串化期归一——分辨率 dppx、
+        // url 引号化；选项图像文法 parse 期已限 url/字符串/渐变）。
+        zero_css_parser::values::BackgroundImageValue::ImageSet(is) => BackgroundImageComputedValue::ImageSet(is),
     }
 }
 
@@ -557,6 +773,8 @@ fn content_value_to_computed(v: zero_css_parser::values::ContentValue) -> Conten
         ContentValue::Counters { name, separator, style } => ContentComputedValue::Counters { name, separator, style },
         ContentValue::Url(u) => ContentComputedValue::Url(u),
         ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
+        // g46：image-set 直通（`<image>` 域，filter() 内层递归同型）。
+        ContentValue::ImageSet(is) => ContentComputedValue::ImageSet(is),
         ContentValue::List(items) => ContentComputedValue::List(items),
         ContentValue::Filtered { image, filters } => ContentComputedValue::Filtered {
             image: Box::new(content_value_to_computed(*image)),
@@ -584,6 +802,8 @@ fn filter_value_to_computed(v: zero_css_parser::values::FilterValue) -> FilterCo
     }
 }
 
+/// 高级属性（transform/filter/counter 等）声明值 → computed 槽的分发 apply；
+/// 返回该属性是否被本模块消费。供样式应用主通道与 engine 动画 apply 通道共用。
 pub fn apply_advanced_property_value(
     style: &mut ComputedStyle,
     property: &str,
@@ -639,6 +859,55 @@ pub fn apply_advanced_property_value(
             }
             if let Some(f) = values::parse_individual_scale(value) {
                 style.individual_scale = Some(f);
+                return true;
+            }
+        }
+        // CSS Motion Path offset 簇（css-motion-1，非继承；wptfyi-css offset-* 刀）。
+        // `offset-path: none | <offset-path-value>`——首片收 none 与 path()（原文存储，
+        // 渲染消费与 ray()/基本形状后置）。
+        "offset-path" => {
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("none") {
+                style.offset_path = None;
+                return true;
+            }
+            if let Some(inner) = parse_offset_path_fn(v) {
+                style.offset_path = Some(inner);
+                return true;
+            }
+        }
+        // `offset-distance: <length-percentage>`——font 相对长度按所属元素字号绝对化
+        //（同 transform-origin R5193 语义），% 保留到渲染期。
+        "offset-distance" => {
+            if let Some(v) = parse_length_or_math(value) {
+                style.offset_distance = Some(normalize_font_relative_length(v, own_font_size_px(style)));
+                return true;
+            }
+        }
+        // `offset-rotate: auto | reverse | <angle> | auto <angle>`（角度存 deg）。
+        "offset-rotate" => {
+            if let Some(v) = parse_offset_rotate_value(value) {
+                style.offset_rotate = Some(v);
+                return true;
+            }
+        }
+        // `offset-anchor: auto | <position>`——<position> 文法与 transform-origin 同构，
+        // 复用 parse_origin_xy（% 保留）。
+        "offset-anchor" => {
+            if value.trim().eq_ignore_ascii_case("auto") {
+                style.offset_anchor = None;
+                return true;
+            }
+            if let Some((x, y)) = parse_origin_xy(value) {
+                style.offset_anchor = Some((x, y));
+                return true;
+            }
+        }
+        // `offset-position: normal | auto | <position>`（css-motion-1 §offset-position，
+        // 初始 normal；<position> 复用 parse_origin_xy 含 edge-offset/calc 形）。
+        "offset-position" => {
+            if let Some(v) = parse_offset_position_value(value) {
+                style.offset_position = Some(v);
                 return true;
             }
         }
@@ -733,6 +1002,13 @@ pub fn apply_advanced_property_value(
                 return false;
             };
             style.transition_delay = delays;
+            return true;
+        }
+        "transition-behavior" => {
+            let Some(behaviors) = parse_transition_behavior_list(value) else {
+                return false;
+            };
+            style.transition_behavior = behaviors;
             return true;
         }
 
@@ -1001,6 +1277,9 @@ pub fn apply_advanced_property_value(
                     }
                     ContentValue::Url(u) => ContentComputedValue::Url(u),
                     ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
+                    // g46：image-set 直通（分辨率/选项模型恒等，css-content-3
+                    // content-list `<image>` 域）。
+                    ContentValue::ImageSet(is) => ContentComputedValue::ImageSet(is),
                     ContentValue::List(items) => ContentComputedValue::List(items),
                     // R5022：filter() 图像函数——内层递归映射（parser 已限 \<image\> 语法域）。
                     ContentValue::Filtered { image, filters } => ContentComputedValue::Filtered {
@@ -1138,32 +1417,155 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // ── Column Rule 属性 ──
-        "column-rule-width" => {
-            if let Some(v) = values::parse_column_rule_width(value) {
-                style.column_rule_width = match v {
-                    zero_css_parser::values::ColumnRuleWidthValue::Medium => ColumnRuleWidthComputedValue::Medium,
-                    zero_css_parser::values::ColumnRuleWidthValue::Thin => ColumnRuleWidthComputedValue::Thin,
-                    zero_css_parser::values::ColumnRuleWidthValue::Thick => ColumnRuleWidthComputedValue::Thick,
-                    zero_css_parser::values::ColumnRuleWidthValue::Length(l) => ColumnRuleWidthComputedValue::Length(l),
-                };
+        // ── Column-rule 简写属性 ──
+        // column-rule: <line-width> || <line-style> || <line-color>
+        //（css-multicol-1 §cr——`||` 组合文法各组件至多一次、任意序、缺省槽补
+        // 初始值）。apply 链此前无展开臂——decl_supported（CSS.supports 前置门）
+        // 的 apply oracle 对简写恒假，css-multicol parsing 列 rule 页整组连坐。
+        // 展开复用 cascade 层同一展开器（shorthand::expand_shorthands →
+        // expand_column_rule，`||` 文法与重复组件裁决单点——@supports 样式表路径
+        // matcher/supports.rs shorthand_supported 同判据），产出 longhand 逐条
+        // 递归 apply 全过才落值（与 cascade 展开→apply 同构；递归只落 longhand
+        // 臂无环）。
+        "column-rule" => {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 1))];
+            let decls = crate::shorthand::expand_shorthands(&decl);
+            if !decls.is_empty()
+                && decls
+                    .iter()
+                    .all(|(p, v, _, _)| super::apply_advanced::apply_advanced_property_value(style, p, v, sibling))
+            {
                 return true;
             }
         }
-        "column-rule-style" => {
-            if let Some(v) = values::parse_column_rule_style(value) {
-                style.column_rule_style = match v {
-                    zero_css_parser::values::ColumnRuleStyleValue::None => ColumnRuleStyleComputedValue::None,
-                    zero_css_parser::values::ColumnRuleStyleValue::Hidden => ColumnRuleStyleComputedValue::Hidden,
-                    zero_css_parser::values::ColumnRuleStyleValue::Dotted => ColumnRuleStyleComputedValue::Dotted,
-                    zero_css_parser::values::ColumnRuleStyleValue::Dashed => ColumnRuleStyleComputedValue::Dashed,
-                    zero_css_parser::values::ColumnRuleStyleValue::Solid => ColumnRuleStyleComputedValue::Solid,
-                    zero_css_parser::values::ColumnRuleStyleValue::Double => ColumnRuleStyleComputedValue::Double,
-                    zero_css_parser::values::ColumnRuleStyleValue::Groove => ColumnRuleStyleComputedValue::Groove,
-                    zero_css_parser::values::ColumnRuleStyleValue::Ridge => ColumnRuleStyleComputedValue::Ridge,
-                    zero_css_parser::values::ColumnRuleStyleValue::Inset => ColumnRuleStyleComputedValue::Inset,
-                    zero_css_parser::values::ColumnRuleStyleValue::Outset => ColumnRuleStyleComputedValue::Outset,
-                };
+        // rule-color 简写 apply 臂（css-gaps-1 §rule-shorthand-properties）：
+        // decl_supported = 白名单 + apply oracle 两 conjunct，简写无独立 apply
+        // 臂则后者恒假（十七轮 column-rule 刀同型缺口——supports 前置门整组
+        // 连坐）。复用 cascade 同一展开器 expand_rule_color，row/column 双
+        // longhand 逐条递归 apply 全过才落 true。rule-width/rule-style/rule/
+        // row-rule 同族展开器（expand_gap_rule 家族）同模板。
+        // https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+        "rule-color" | "rule-width" | "rule-style" | "rule" | "row-rule" => {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 1))];
+            let decls = crate::shorthand::expand_shorthands(&decl);
+            if !decls.is_empty()
+                && decls
+                    .iter()
+                    .all(|(p, v, _, _)| super::apply_advanced::apply_advanced_property_value(style, p, v, sibling))
+            {
+                return true;
+            }
+        }
+        // rule-inset 简写族 apply 臂（css-gaps-1 §inset）：15 简写经 cascade
+        // 同一展开器 expand_rule_inset 投影落槽 canonical 文本，逐条递归 apply
+        // 全过才落 true（rule-color 臂同模板）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "rule-inset"
+        | "column-rule-inset"
+        | "row-rule-inset"
+        | "rule-inset-cap"
+        | "column-rule-inset-cap"
+        | "row-rule-inset-cap"
+        | "rule-inset-junction"
+        | "column-rule-inset-junction"
+        | "row-rule-inset-junction"
+        | "rule-inset-start"
+        | "column-rule-inset-start"
+        | "row-rule-inset-start"
+        | "rule-inset-end"
+        | "column-rule-inset-end"
+        | "row-rule-inset-end" => {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 1))];
+            let decls = crate::shorthand::expand_shorthands(&decl);
+            if !decls.is_empty()
+                && decls
+                    .iter()
+                    .all(|(p, v, _, _)| super::apply_advanced::apply_advanced_property_value(style, p, v, sibling))
+            {
+                return true;
+            }
+        }
+        // rule-inset 8 longhand 槽 apply 臂（css-gaps-1 §inset）：单槽文法裁决
+        // 单点 parse_rule_inset_component（`overlap-join | <length-percentage>`）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "column-rule-inset-cap-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_cap_start = c;
+                return true;
+            }
+        }
+        "column-rule-inset-cap-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_cap_end = c;
+                return true;
+            }
+        }
+        "column-rule-inset-junction-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_junction_start = c;
+                return true;
+            }
+        }
+        "column-rule-inset-junction-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.column_rule_inset_junction_end = c;
+                return true;
+            }
+        }
+        "row-rule-inset-cap-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_cap_start = c;
+                return true;
+            }
+        }
+        "row-rule-inset-cap-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_cap_end = c;
+                return true;
+            }
+        }
+        "row-rule-inset-junction-start" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_junction_start = c;
+                return true;
+            }
+        }
+        "row-rule-inset-junction-end" => {
+            if let Some(c) = values::parse_rule_inset_component(value) {
+                style.row_rule_inset_junction_end = c;
+                return true;
+            }
+        }
+        // ── Column Rule 属性（css-gaps-1 列表文法：width/style 重定义为段列表，
+        // 纯值 = 单段列表 multicol 保形；row-rule-* 同文法新臂）──
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+        "column-rule-width" | "row-rule-width" => {
+            if let Some(segs) = values::parse_rule_width_list(value) {
+                if property == "column-rule-width" {
+                    style.column_rule_width = segs;
+                } else {
+                    style.row_rule_width = segs;
+                }
+                return true;
+            }
+        }
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-style
+        "column-rule-style" | "row-rule-style" => {
+            if let Some(segs) = values::parse_rule_style_list(value) {
+                if property == "column-rule-style" {
+                    style.column_rule_style = segs;
+                } else {
+                    style.row_rule_style = segs;
+                }
                 return true;
             }
         }
@@ -1410,6 +1812,22 @@ pub fn apply_advanced_property_value(
                 style.font_stretch = pct;
                 return true;
             }
+            // math 函数形（css-fonts-4 + css-values-4 §10.5 calc-containing；
+            // font-property-unit-cycles `font-stretch: calc(1% * tan(atan2(1em, 1px)))`
+            // 5 腿驱动——font 相对单位按父级字体解析，合成期 style.font_size
+            // 已继承父值）。% 保持型 eval 产出百分数数值；域按 computed-value
+            // clamp 语义收口 <percentage [0,∞)>（css-values-4 §10.5：calc 形
+            // 解析期不 clamp——`calc(-100%)` valid（font-width-valid 钉），computed
+            // 钳 0（font-width-computed 0% 腿驱动）；字面负 % 仍由
+            // parse_font_stretch 域门拒）。
+            if let Some(pct) =
+                super::apply::eval_font_slot_math_percentage(value, super::apply::font_slot_font_px(style))
+            {
+                if pct.is_finite() {
+                    style.font_stretch = pct.max(0.0) as f32;
+                    return true;
+                }
+            }
         }
         // ── Direction 属性 ──
         "direction" => {
@@ -1645,12 +2063,21 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // ── Column Rule Color 属性 ──
+        // ── Column/Row Rule Color 属性（css-gaps-1 §column-row-rule-color）──
+        // 列表文法 `<line-color-list> | <auto-line-color-list>`（repeat 循环 +
+        // auto 段），纯色 = 单段列表（multicol 纯色声明串化/paint 保形）。
+        // dark 传播：system color 关键字按 used scheme 取面板（与 color 臂
+        // parse_color_fn 同口径——system-color-compute 页 Menu 差分驱动）。
+        // driving: css-gaps 语料 gap-decorations-color-{valid,computed,invalid}。
         "column-rule-color" => {
-            // dark 传播：system color 关键字按 used scheme 取面板（与 color 臂
-            // parse_color_fn 同口径——system-color-compute 页 Menu 差分驱动）。
-            if let Some(v) = values::parse_color_with_scheme(value, style.color_scheme_dark) {
+            if let Some(v) = values::parse_rule_color_list_with_scheme(value, style.color_scheme_dark) {
                 style.column_rule_color = v;
+                return true;
+            }
+        }
+        "row-rule-color" => {
+            if let Some(v) = values::parse_rule_color_list_with_scheme(value, style.color_scheme_dark) {
+                style.row_rule_color = v;
                 return true;
             }
         }
@@ -1956,6 +2383,102 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // css-masking-1 §5.3–5.6 六长手写值通道：position/size/repeat 文法与
+        // computed 形同 background 同构属性（复用 parser 与映射）；clip/origin/
+        // composite 为 masking 侧枚举（fill/stroke/view-box/no-clip/
+        // compositing-operator）。多层逗号列表逐层映射，任一层失败则整条不应用。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-position" => {
+            // css-masking-1 §5.3：`<bg-position>#`，逐层经 position_value_to_computed
+            //（writing-mode aware），任一层失败则整条不应用（background-position 同形）。
+            if let Some(list) = values::parse_background_position_list(value) {
+                let mut computed = Vec::with_capacity(list.len());
+                let mut ok = true;
+                for v in list {
+                    match position_value_to_computed(v, style) {
+                        Some(c) => computed.push(c),
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if ok {
+                    style.mask_position = computed;
+                    return true;
+                }
+            }
+        }
+        "mask-size" => {
+            // css-masking-1 §5.3：`<bg-size>#`，映射同 background-size。
+            if let Some(list) = values::parse_background_size_list(value) {
+                style.mask_size = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::BackgroundSizeValue::Auto => BackgroundSizeComputedValue::Auto,
+                        zero_css_parser::values::BackgroundSizeValue::Cover => BackgroundSizeComputedValue::Cover,
+                        zero_css_parser::values::BackgroundSizeValue::Contain => BackgroundSizeComputedValue::Contain,
+                        zero_css_parser::values::BackgroundSizeValue::Length(n) => {
+                            BackgroundSizeComputedValue::Length(n)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::Percent(n) => {
+                            BackgroundSizeComputedValue::Percent(n)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::Calc(expr) => {
+                            BackgroundSizeComputedValue::Calc(*expr)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::TwoValue(cw, ch) => {
+                            BackgroundSizeComputedValue::TwoValue(map_bg_size_comp(cw), map_bg_size_comp(ch))
+                        }
+                    })
+                    .collect();
+                return true;
+            }
+        }
+        "mask-repeat" => {
+            // css-masking-1 §5.3：`<repeat-style>#`，映射同 background-repeat。
+            if let Some(list) = values::parse_background_repeat_list(value) {
+                style.mask_repeat = list.into_iter().map(map_bg_repeat_comp).collect();
+                return true;
+            }
+        }
+        "mask-clip" => {
+            // css-masking-1 §5.4：`<geometry-box> | no-clip` 多层列表。
+            if let Some(list) = values::parse_mask_clip_layers(value) {
+                style.mask_clip = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::MaskClipValue::Box(b) => {
+                            MaskClipComputedValue::Box(map_mask_geometry_box(b))
+                        }
+                        zero_css_parser::values::MaskClipValue::NoClip => MaskClipComputedValue::NoClip,
+                    })
+                    .collect();
+                return true;
+            }
+        }
+        "mask-origin" => {
+            // css-masking-1 §5.5：`<geometry-box>` 多层列表。
+            if let Some(list) = values::parse_mask_origin_layers(value) {
+                style.mask_origin = list.into_iter().map(map_mask_geometry_box).collect();
+                return true;
+            }
+        }
+        "mask-composite" => {
+            // css-masking-1 §5.6：`<compositing-operator>` 多层列表。
+            if let Some(list) = values::parse_mask_composite_layers(value) {
+                style.mask_composite = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::MaskCompositeValue::Add => MaskCompositeComputedValue::Add,
+                        zero_css_parser::values::MaskCompositeValue::Subtract => MaskCompositeComputedValue::Subtract,
+                        zero_css_parser::values::MaskCompositeValue::Intersect => MaskCompositeComputedValue::Intersect,
+                        zero_css_parser::values::MaskCompositeValue::Exclude => MaskCompositeComputedValue::Exclude,
+                    })
+                    .collect();
+                return true;
+            }
+        }
         "background-position" => {
             // R2311：多层 `<position>#`（逗号分隔），逐层经 position_value_to_computed（writing-mode
             // aware），任一层失败则整条不应用。单层 byte-identical（1 项 Vec）。
@@ -1977,39 +2500,65 @@ pub fn apply_advanced_property_value(
                 }
             }
         }
-        // R5185（css-backgrounds-4 §2.4）：background-position-x / -y 单轴 longhand——
-        // 单值应用到全部层（cyclic 1 项；多层逗号列表 FIXME 挂账）。层位置归一
-        // TwoValue 后补丁目标轴：单值层按 resolve_background_position 同语义拆轴
-        //（垂直关键字 → (center, v)，其余 → (v, center)）。
+        // R5185（css-backgrounds-4 §2.4）：background-position-x / -y 单轴 longhand。
+        // 刀 A1d：单轴多层逗号列表（`<position-x>#`）——逐层解析，层 i 取
+        // list[i mod n]（cyclic；css-backgrounds-3 §3 层重复语义），层数扩到
+        // max(既有层, 列表长)——既有层位循环拷贝补齐（新层继承同 index 旧层 y 轴）。
+        // 任一层解析失败整条拒收保旧值（supports 门 CSS.supports 同通道）。
+        // 单值应用到全部层（cyclic 1 项）。层位置归一 TwoValue 后补丁目标轴：
+        // 单值层按 resolve_background_position 同语义拆轴（垂直关键字 →
+        // (center, v)，其余 → (v, center)）。
         // clip-border-area-border-shape-background-position 判例 `background-position-x:
         // right 100px` / `-y: bottom 100px`（边关键字+偏移）。
         "background-position-x" | "background-position-y" => {
             let horizontal = property == "background-position-x";
-            if let Some(comp) = values::parse_background_position_axis(value, horizontal)
-                .and_then(|v| position_value_to_computed(v, style))
-            {
-                use BackgroundPositionComputedValue as Bpc;
-                let patch = |layer: &Bpc| -> Bpc {
-                    let (x, y) = match layer {
-                        Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
-                        Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
-                        single => (single.clone(), Bpc::Center),
-                    };
-                    if horizontal {
-                        Bpc::TwoValue(Box::new(comp.clone()), Box::new(y))
-                    } else {
-                        Bpc::TwoValue(Box::new(x), Box::new(comp.clone()))
-                    }
-                };
-                style.background_position = style.background_position.iter().map(patch).collect();
-                return true;
+            let Some(parts) = split_top_level_commas(value) else {
+                return false;
+            };
+            let comps: Option<Vec<BackgroundPositionComputedValue>> = parts
+                .into_iter()
+                .map(|lv| {
+                    values::parse_background_position_axis(lv, horizontal)
+                        .and_then(|v| position_value_to_computed(v, style))
+                })
+                .collect();
+            let Some(comps) = comps else { return false };
+            if comps.is_empty() {
+                return false;
             }
+            use BackgroundPositionComputedValue as Bpc;
+            let patch = |layer: &Bpc, comp: &Bpc| -> Bpc {
+                let (x, y) = match layer {
+                    Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
+                    Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
+                    single => (single.clone(), Bpc::Center),
+                };
+                if horizontal {
+                    Bpc::TwoValue(Box::new(comp.clone()), Box::new(y))
+                } else {
+                    Bpc::TwoValue(Box::new(x), Box::new(comp.clone()))
+                }
+            };
+            let old = std::mem::take(&mut style.background_position);
+            let base = if old.is_empty() {
+                vec![Bpc::TwoValue(Box::new(Bpc::Percent(0.0)), Box::new(Bpc::Percent(0.0)))]
+            } else {
+                old
+            };
+            let n = comps.len();
+            let count = base.len().max(n);
+            style.background_position = (0..count)
+                .map(|i| patch(&base[i % base.len()], &comps[i % n]))
+                .collect();
+            return true;
         }
-        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法同
-        // background-position（<position>）。默认 50% 50%（Center）。R2303 补——旧 impl
-        // 完全缺该属性，object-fit 的 compute_object_fit_rect 恒居中。
+        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法为
+        // 严格 `<position>`（css-values-5 §4.2——3 值形禁、缘偏移对全有全无、逻辑
+        // 关键字；csswg#2140 后行为，object-position 语料三页钉）。默认 50% 50%
+        //（Center）。R2303 补——旧 impl 完全缺该属性，object-fit 的
+        // compute_object_fit_rect 恒居中。
         "object-position" => {
-            if let Some(v) = values::parse_background_position(value) {
+            if let Some(v) = values::parse_position_strict(value) {
                 if let Some(c) = position_value_to_computed(v, style) {
                     style.object_position = c;
                     return true;
@@ -2287,6 +2836,101 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // mask-border 五长手（css-masking-1 §3.4–3.9）：文法与 border-image 同构，
+        // 复用 parse_border_image_* 解析器与 computed 类型（TRBL 展开/负值拒绝/初值
+        // 差异只影响初值表与串化，不影响解析）。
+        "mask-border-source" => {
+            if let Some(v) = values::parse_border_image_source(value) {
+                let dark = style.color_scheme_dark;
+                style.mask_border_source = border_image_source_to_computed(v, dark);
+                return true;
+            }
+        }
+        "mask-border-slice" => {
+            if let Some(v) = values::parse_border_image_slice(value) {
+                fn convert_comp(
+                    c: &zero_css_parser::values::BorderImageSliceComponent,
+                ) -> BorderImageSliceComputedComponent {
+                    match c {
+                        zero_css_parser::values::BorderImageSliceComponent::Number(n) => {
+                            BorderImageSliceComputedComponent::Number(*n)
+                        }
+                        zero_css_parser::values::BorderImageSliceComponent::Percent(p) => {
+                            BorderImageSliceComputedComponent::Percent(*p)
+                        }
+                    }
+                }
+                style.mask_border_slice = BorderImageSliceComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                    fill: v.fill,
+                };
+                return true;
+            }
+        }
+        "mask-border-width" => {
+            if let Some(v) = values::parse_border_image_width(value) {
+                let convert_comp = |c: &zero_css_parser::values::BorderImageWidthComponent| match c {
+                    zero_css_parser::values::BorderImageWidthComponent::Auto => BorderImageWidthComputedComponent::Auto,
+                    zero_css_parser::values::BorderImageWidthComponent::Number(n) => {
+                        BorderImageWidthComputedComponent::Number(*n)
+                    }
+                    zero_css_parser::values::BorderImageWidthComponent::Length(lv) => {
+                        BorderImageWidthComputedComponent::Length(resolve_effect_length(lv, style))
+                    }
+                    zero_css_parser::values::BorderImageWidthComponent::Percent(p) => {
+                        BorderImageWidthComputedComponent::Percent(*p)
+                    }
+                };
+                style.mask_border_width = BorderImageWidthComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                };
+                return true;
+            }
+        }
+        "mask-border-repeat" => {
+            if let Some(v) = values::parse_border_image_repeat(value) {
+                fn convert_mode(m: &zero_css_parser::values::BorderImageRepeatMode) -> BorderImageRepeatComputedMode {
+                    match m {
+                        zero_css_parser::values::BorderImageRepeatMode::Stretch => {
+                            BorderImageRepeatComputedMode::Stretch
+                        }
+                        zero_css_parser::values::BorderImageRepeatMode::Repeat => BorderImageRepeatComputedMode::Repeat,
+                        zero_css_parser::values::BorderImageRepeatMode::Round => BorderImageRepeatComputedMode::Round,
+                        zero_css_parser::values::BorderImageRepeatMode::Space => BorderImageRepeatComputedMode::Space,
+                    }
+                }
+                style.mask_border_repeat = BorderImageRepeatComputedValue {
+                    horizontal: convert_mode(&v.horizontal),
+                    vertical: convert_mode(&v.vertical),
+                };
+                return true;
+            }
+        }
+        "mask-border-outset" => {
+            if let Some(v) = values::parse_border_image_outset(value) {
+                let convert_comp = |c: &zero_css_parser::values::BorderImageOutsetComponent| match c {
+                    zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
+                        BorderImageOutsetComputedComponent::Number(*n)
+                    }
+                    zero_css_parser::values::BorderImageOutsetComponent::Length(lv) => {
+                        BorderImageOutsetComputedComponent::Length(resolve_effect_length(lv, style))
+                    }
+                };
+                style.mask_border_outset = BorderImageOutsetComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                };
+                return true;
+            }
+        }
         "text-shadow" => {
             if let Some(list) = zero_css_parser::values::parse_text_shadow_list(value, style.color_scheme_dark) {
                 style.text_shadow = list
@@ -2321,6 +2965,55 @@ pub fn apply_advanced_property_value(
         "clip-path" => {
             if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
                 style.clip_path = v;
+                return true;
+            }
+        }
+        "shape-outside" => {
+            // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
+            // ——<basic-shape> 复用 parse_clip_path 裁决单点（basic-shape 族
+            // 共享解析器）；裸 <shape-box> 关键字独立受理（clip-path 无此
+            // 形态）。FIXME: <basic-shape> <shape-box> 后缀组合形未建模。
+            if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
+                style.shape_outside = match v {
+                    zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
+                    v => ShapeOutsideComputedValue::Shape(v),
+                };
+                return true;
+            }
+            let lower = value.trim().to_ascii_lowercase();
+            let box_kind = match lower.as_str() {
+                "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
+                "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
+                "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
+                "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
+                _ => None,
+            };
+            if let Some(k) = box_kind {
+                style.shape_outside = ShapeOutsideComputedValue::Box(k);
+                return true;
+            }
+        }
+        // css-shapes-1 §shape-margin-property：非负 `<length-percentage>`——em 按
+        // 所属元素字号绝对化（offset-distance 同款），% 保留到 gCS；负值钳 0
+        //（spec「Values on this property are clamped to be non-negative」，语料
+        // computed 页 `calc(10px - 0.5em)` → `0px`；Calc 形负钳在 gCS 求值层）。
+        // https://drafts.csswg.org/css-shapes/#shape-margin-property
+        "shape-margin" => {
+            if let Some(v) = parse_length_or_math(value) {
+                if shape_margin_length_is_valid(value, &v) {
+                    let v = normalize_font_relative_length(v, own_font_size_px(style));
+                    style.shape_margin = clamp_non_negative_length(v);
+                    return true;
+                }
+            }
+        }
+        // css-shapes-1 §shape-image-threshold-property：`<number> | <percentage>`，
+        // computed 钳 [0,1] 且 percentage 折算 /100——parse_opacity 语义恰同
+        //（number/pct → /100 → 钳 [0,1]；invalid 形 `auto`/`10px` parse 拒）。
+        // https://drafts.csswg.org/css-shapes/#shape-image-threshold-property
+        "shape-image-threshold" => {
+            if let Some(v) = values::parse_opacity(value) {
+                style.shape_image_threshold = v;
                 return true;
             }
         }
@@ -2721,6 +3414,39 @@ fn map_bg_size_comp(c: zero_css_parser::values::BgSizeComponent) -> BgSizeCompon
     }
 }
 
+/// `<repeat-style>` 值→computed 映射（background-repeat 与 mask-repeat 共享
+/// 同一文法与 computed 形——css-masking-1 §5.3 文法引用 css-backgrounds-3）。
+fn map_bg_repeat_comp(v: zero_css_parser::values::BackgroundRepeatValue) -> BackgroundRepeatComputedValue {
+    use zero_css_parser::values::BackgroundRepeatValue as V;
+    match v {
+        V::Repeat => BackgroundRepeatComputedValue::Repeat,
+        V::RepeatX => BackgroundRepeatComputedValue::RepeatX,
+        V::RepeatY => BackgroundRepeatComputedValue::RepeatY,
+        V::NoRepeat => BackgroundRepeatComputedValue::NoRepeat,
+        V::Space => BackgroundRepeatComputedValue::Space,
+        V::Round => BackgroundRepeatComputedValue::Round,
+        // R3926：two-keyword 形（第一关键字 x 轴、第二 y 轴）；repeat-x/y 不参与
+        // 组合（parser 保证）。
+        V::TwoValue(x, y) => {
+            BackgroundRepeatComputedValue::TwoValue(Box::new(map_bg_repeat_comp(*x)), Box::new(map_bg_repeat_comp(*y)))
+        }
+    }
+}
+
+/// masking 侧 `<geometry-box>` 值→computed 映射（css-masking-1 §5.4/§5.5）。
+fn map_mask_geometry_box(v: zero_css_parser::values::MaskGeometryBoxValue) -> MaskGeometryBoxComputedValue {
+    use zero_css_parser::values::MaskGeometryBoxValue as V;
+    match v {
+        V::BorderBox => MaskGeometryBoxComputedValue::BorderBox,
+        V::PaddingBox => MaskGeometryBoxComputedValue::PaddingBox,
+        V::ContentBox => MaskGeometryBoxComputedValue::ContentBox,
+        V::MarginBox => MaskGeometryBoxComputedValue::MarginBox,
+        V::FillBox => MaskGeometryBoxComputedValue::FillBox,
+        V::StrokeBox => MaskGeometryBoxComputedValue::StrokeBox,
+        V::ViewBox => MaskGeometryBoxComputedValue::ViewBox,
+    }
+}
+
 #[cfg(test)]
 mod r4534_border_shape_tests {
     use super::*;
@@ -2752,6 +3478,350 @@ mod r4534_border_shape_tests {
         assert!(matches!(
             style.border_shape,
             zero_css_parser::values::BorderShapeValue::Fill { .. }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod g50_viewport_slot_tests {
+    use super::*;
+
+    /// g50：急切 px 化臂视口真值——set_viewport 后 border-spacing `10vw`/`10vh`
+    /// 折 800×600 真值（driving: viewport-units-css2-001 border-spacing 4 腿，
+    /// 旧实现走 None 回落 1440×900 折 144/90）。
+    #[test]
+    fn border_spacing_resolves_viewport_truth() {
+        let mut sys = crate::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut style = ComputedStyle::default();
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vw",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 80.0);
+        assert_eq!(style.border_spacing.vertical, 80.0);
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vh",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 60.0);
+        // vmin/vmax 按 min/max 轴
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "10vmin 10vmax",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 60.0);
+        assert_eq!(style.border_spacing.vertical, 80.0);
+        // px 直通不受影响
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "border-spacing",
+            "5px 10px",
+            None
+        ));
+        assert_eq!(style.border_spacing.horizontal, 5.0);
+        assert_eq!(style.border_spacing.vertical, 10.0);
+    }
+
+    /// g50：box-shadow 偏移同走 resolve_effect_length——vw 真值生效。
+    #[test]
+    fn box_shadow_offset_resolves_viewport_truth() {
+        let mut sys = crate::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut style = ComputedStyle::default();
+        assert!(super::apply_advanced_property_value(
+            &mut style,
+            "box-shadow",
+            "10vw 10vh 0 0 red",
+            None
+        ));
+        assert_eq!(style.box_shadow.len(), 1);
+        assert_eq!(style.box_shadow[0].offset_x, 80.0);
+        assert_eq!(style.box_shadow[0].offset_y, 60.0);
+    }
+}
+
+#[cfg(test)]
+mod offset_props_tests {
+    //! CSS Motion Path offset 簇解析/施加单测（wptfyi-css offset-* 刀）。
+    use super::ComputedStyle;
+    use super::{LengthValue, OffsetRotateValue};
+    use super::{apply_advanced_property_value, parse_offset_path_fn, parse_offset_rotate_value};
+
+    fn applied(prop: &str, value: &str) -> ComputedStyle {
+        let mut style = ComputedStyle::default();
+        assert!(
+            apply_advanced_property_value(&mut style, prop, value, None),
+            "{prop}: {value} 应可 apply"
+        );
+        style
+    }
+
+    #[test]
+    fn offset_path_none_and_path_forms() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_advanced_property_value(&mut style, "offset-path", "none", None));
+        assert!(style.offset_path.is_none());
+        let s = applied("offset-path", r#"path("M 0 0 L 100 100")"#);
+        assert_eq!(s.offset_path.as_deref(), Some(r#"path("M 0 0 L 100 100")"#));
+        // ray()/基本形状首片真收（基本形状文法族刀；invalid 形仍拒收）。
+        let s = applied("offset-path", "ray(45deg)");
+        assert_eq!(s.offset_path.as_deref(), Some("ray(45deg)"));
+        let s = applied("offset-path", "circle(50%)");
+        assert_eq!(s.offset_path.as_deref(), Some("circle(50%)"));
+        let mut style2 = ComputedStyle::default();
+        assert!(!apply_advanced_property_value(
+            &mut style2,
+            "offset-path",
+            "circle(bogus)",
+            None
+        ));
+        assert!(!apply_advanced_property_value(
+            &mut style2,
+            "offset-path",
+            "url(#clip)",
+            None
+        ));
+    }
+
+    #[test]
+    fn offset_rotate_four_forms() {
+        assert_eq!(parse_offset_rotate_value("auto"), Some(OffsetRotateValue::Auto));
+        assert_eq!(parse_offset_rotate_value("reverse"), Some(OffsetRotateValue::Reverse));
+        assert_eq!(parse_offset_rotate_value("45deg"), Some(OffsetRotateValue::Angle(45.0)));
+        assert_eq!(
+            parse_offset_rotate_value("auto -30deg"),
+            Some(OffsetRotateValue::AutoAngle(-30.0))
+        );
+        assert_eq!(parse_offset_rotate_value("bogus"), None);
+        let s = applied("offset-rotate", "auto 90deg");
+        assert_eq!(s.offset_rotate, Some(OffsetRotateValue::AutoAngle(90.0)));
+    }
+
+    #[test]
+    fn offset_distance_and_anchor() {
+        let s = applied("offset-distance", "20px");
+        assert_eq!(s.offset_distance, Some(LengthValue::Px(20.0)));
+        let s = applied("offset-distance", "30%");
+        assert_eq!(s.offset_distance, Some(LengthValue::Percentage(30.0)));
+        // em 按元素字号绝对化（默认样式字号 Px → px 存储同 transform-origin R5193）。
+        let s = applied("offset-distance", "2em");
+        assert!(matches!(s.offset_distance, Some(LengthValue::Px(_))));
+        let s = applied("offset-anchor", "auto");
+        assert!(s.offset_anchor.is_none());
+        let s = applied("offset-anchor", "10px 20%");
+        assert_eq!(
+            s.offset_anchor,
+            Some((LengthValue::Px(10.0), LengthValue::Percentage(20.0)))
+        );
+    }
+
+    #[test]
+    fn offset_path_fn_validator() {
+        assert!(parse_offset_path_fn(r#"path("M 0 0")"#).is_some());
+        assert!(parse_offset_path_fn("path(M 0 0)").is_none());
+        assert!(parse_offset_path_fn("none").is_none());
+        assert!(parse_offset_path_fn("path()").is_none());
+        // ray()：canonical 序 `<angle> [<ray-size>] [at <position>]`。
+        assert!(parse_offset_path_fn("ray(45deg)").is_some());
+        assert!(parse_offset_path_fn("ray(45deg closest-side)").is_some());
+        assert!(
+            parse_offset_path_fn("ray(-90deg farthest-corner at 10px 20px)").is_some(),
+            "ray at 子句存在性核"
+        );
+        assert!(parse_offset_path_fn("ray(foo)").is_none(), "非法角拒收");
+        assert!(parse_offset_path_fn("ray(45deg bogus-size)").is_none());
+        assert!(parse_offset_path_fn("ray()").is_none());
+        // 基本形状全族经 parse_clip_path 文法真收。
+        assert!(parse_offset_path_fn("circle(50%)").is_some());
+        assert!(parse_offset_path_fn("inset(10px 20px)").is_some());
+        assert!(parse_offset_path_fn("shape(from 0px 0px, line to 10px 10px, close)").is_some());
+        assert!(parse_offset_path_fn("shape(from center)").is_none(), "无命令拒收");
+        assert!(parse_offset_path_fn("xywh(0px 0px 10px 20px)").is_some());
+        assert!(parse_offset_path_fn("rect(0px auto 10px 20px)").is_some());
+        assert!(parse_offset_path_fn("circle(bogus)").is_none());
+        // coord-box：纯关键词与形状 + 后缀形；非法核心拒收。
+        assert!(parse_offset_path_fn("border-box").is_some());
+        assert!(parse_offset_path_fn("view-box").is_some());
+        assert!(parse_offset_path_fn("circle(10px) border-box").is_some());
+        assert!(parse_offset_path_fn("circle(bogus) border-box").is_none());
+    }
+
+    #[test]
+    fn offset_position_forms() {
+        use super::OffsetPositionValue;
+        let s = applied("offset-position", "normal");
+        assert_eq!(s.offset_position, Some(OffsetPositionValue::Normal));
+        let s = applied("offset-position", "auto");
+        assert_eq!(s.offset_position, Some(OffsetPositionValue::Auto));
+        let s = applied("offset-position", "220px 240px");
+        assert_eq!(
+            s.offset_position,
+            Some(OffsetPositionValue::Position(
+                LengthValue::Px(220.0),
+                LengthValue::Px(240.0)
+            ))
+        );
+        let s = applied("offset-position", "10px 20%");
+        assert_eq!(
+            s.offset_position,
+            Some(OffsetPositionValue::Position(
+                LengthValue::Px(10.0),
+                LengthValue::Percentage(20.0)
+            ))
+        );
+        // 4 值 edge-offset：left/top 原样，right/bottom → calc(100% - o)。
+        let s = applied("offset-position", "right 10px top 20%");
+        match s.offset_position {
+            Some(OffsetPositionValue::Position(LengthValue::Calc(_), LengthValue::Percentage(20.0))) => {}
+            other => panic!("right 10px top 20% 应落 (Calc, 20%)，得 {other:?}"),
+        }
+        // calc 形。
+        let s = applied("offset-position", "calc(5em + 20%) center");
+        assert!(matches!(
+            s.offset_position,
+            Some(OffsetPositionValue::Position(
+                LengthValue::Calc(_),
+                LengthValue::Percentage(50.0)
+            ))
+        ));
+        // invalid 形拒收（parsing-invalid 语料）。
+        for bad in ["none", "30deg", "left 10% top"] {
+            let mut style = ComputedStyle::default();
+            assert!(
+                !apply_advanced_property_value(&mut style, "offset-position", bad, None),
+                "offset-position: {bad} 应拒收"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod mask_longhands_apply_tests {
+    use super::*;
+
+    /// css-masking-1 §5.3–5.6 六长手写值通道钉测：声明 → computed 字段，
+    /// 驱动页 css/css-masking/inheritance.sub.html（does-not-inherit 模板
+    /// other 步写值读回）与 parsing 面 mask-position/size/repeat-valid。
+    #[test]
+    fn mask_longhands_apply_and_reject() {
+        let mut style = ComputedStyle::default();
+
+        // mask-position：长度对、单值、多层。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-position",
+            "10px 20px",
+            None
+        ));
+        assert_eq!(style.mask_position.len(), 1);
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-position",
+            "3px, 50% 50%",
+            None
+        ));
+        assert_eq!(style.mask_position.len(), 2);
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-position",
+            "bogus",
+            None
+        ));
+
+        // mask-size。
+        assert!(apply_advanced_property_value(&mut style, "mask-size", "50%", None));
+        assert_eq!(style.mask_size.len(), 1);
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-size",
+            "10px auto, cover",
+            None
+        ));
+        assert_eq!(style.mask_size.len(), 2);
+
+        // mask-repeat：two-keyword 组合形。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-repeat",
+            "no-repeat",
+            None
+        ));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-repeat",
+            "repeat-x, space round",
+            None
+        ));
+        assert_eq!(style.mask_repeat.len(), 2);
+
+        // mask-clip：geometry-box 与 no-clip。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "border-box",
+            None
+        ));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "content-box, no-clip",
+            None
+        ));
+        assert_eq!(style.mask_clip.len(), 2);
+        assert!(
+            !apply_advanced_property_value(&mut style, "mask-clip", "fill-box", None).eq(&false) || {
+                // fill-box 合法（SVG 几何盒）——上式恒真占位，真实断言下一行。
+                true
+            }
+        );
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "fill-box, view-box",
+            None
+        ));
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-clip",
+            "bogus-box",
+            None
+        ));
+
+        // mask-origin：无 no-clip。
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-origin",
+            "padding-box",
+            None
+        ));
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-origin",
+            "no-clip",
+            None
+        ));
+
+        // mask-composite：compositing-operator 四枚举。
+        assert!(apply_advanced_property_value(&mut style, "mask-composite", "add", None));
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "mask-composite",
+            "subtract, intersect, exclude",
+            None
+        ));
+        assert_eq!(style.mask_composite.len(), 3);
+        assert!(!apply_advanced_property_value(
+            &mut style,
+            "mask-composite",
+            "bogus",
+            None
         ));
     }
 }

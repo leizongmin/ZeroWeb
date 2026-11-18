@@ -1142,16 +1142,45 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
-        // toDataURL（R2797，canvas slice 3）：pixel_buffer（经 get_image_data 取全 RGBA）→ PNG 编码 →
-        // 返**逗号分隔十进制串**（shim 转 Latin-1 → btoa → `data:image/png;base64,...`）。复用 png crate
-        //（miniz_oxide 已 transitive）；编码失败返空串（shim 回落 `data:,`）。仅 'image/png'（jpeg/webp defer）。
+        // toDataURL（R2797，canvas slice 3）：pixel_buffer（经 get_image_data 取全 RGBA）→ 编码 →
+        // 返**逗号分隔十进制串**（shim 转 Latin-1 → btoa → `data:<mime>;base64,...`）。复用 png crate
+        //（miniz_oxide 已 transitive）；编码失败返空串（shim 回落 `data:,`）。s423：arg(0) 编码格式
+        //（'png'｜'jpeg'，shim 归一 MIME essence 白名单后传入，缺省 png——非受支持格式 shim 已按
+        // spec 回落 png 不达本臂 jpeg 侧）；arg(1) JPEG quality 1..=100（缺省 92）。
         "toDataURL" => {
             if let Some(ctx) = reg.contexts.get(&hid()) {
                 let w = ctx.width().max(1);
                 let h = ctx.height().max(1);
                 let img = ctx.get_image_data(0, 0, w as i32, h as i32);
                 let mut out: Vec<u8> = Vec::new();
-                {
+                if arg(0) == "jpeg" {
+                    // JPEG：jpeg-encoder ColorType::Rgba。JPEG 无 alpha 通道——spec/浏览器
+                    // 把直 alpha 像素**合成到黑底**（rgb×a/255）后编码
+                    //（toDataURL.jpeg.alpha 断言：rgba(128,255,128,.5) → 解码 63,127,63±8）。
+                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl
+                    let quality = arg(1).trim().parse::<u8>().unwrap_or(92).clamp(1, 100);
+                    if w > u16::MAX as u32 || h > u16::MAX as u32 {
+                        return String::new();
+                    }
+                    let mut px = img.data;
+                    // 直 alpha 合成黑底（rgb×a/255，+127 四舍五入）。chunks_exact_mut
+                    // 显式保留——`as_chunks_mut` 1.88 才稳定，本仓 MSRV 1.85。
+                    #[allow(clippy::chunks_exact_to_as_chunks)]
+                    for chunk in px.chunks_exact_mut(4) {
+                        let a = chunk[3] as u32;
+                        chunk[0] = ((chunk[0] as u32 * a + 127) / 255) as u8;
+                        chunk[1] = ((chunk[1] as u32 * a + 127) / 255) as u8;
+                        chunk[2] = ((chunk[2] as u32 * a + 127) / 255) as u8;
+                        chunk[3] = 255;
+                    }
+                    let enc = jpeg_encoder::Encoder::new(&mut out, quality);
+                    if enc
+                        .encode(&px, w as u16, h as u16, jpeg_encoder::ColorType::Rgba)
+                        .is_err()
+                    {
+                        return String::new();
+                    }
+                } else {
                     let mut enc = png::Encoder::new(&mut out, w, h);
                     enc.set_color(png::ColorType::Rgba);
                     enc.set_depth(png::BitDepth::Eight);

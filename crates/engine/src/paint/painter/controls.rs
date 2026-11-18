@@ -280,6 +280,14 @@ impl super::Painter {
             None => return,
         }
 
+        // s428：listbox 形态（multiple/size>1）不绘 selected value 标签——option 行
+        // 自身渲染，multiple listbox 无单值标签面（HTML 渲染规范 the-select-element-2）。
+        // 谓词与 layout 侧 tree.rs 抑制臂同判据（`crate::tree` gate 合入版复用；
+        // `ZW_SELECT_LISTBOX_FORM=0` 回退形态盲抑制后恢复恒绘）。
+        if zero_layout_engine::tree::select_listbox_render_enabled(doc, node_id) {
+            return;
+        }
+
         let label = match select_selected_option_label(doc, node_id) {
             Some(l) if !l.is_empty() => l,
             _ => return,

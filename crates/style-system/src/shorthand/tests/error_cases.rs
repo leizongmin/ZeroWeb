@@ -346,33 +346,45 @@ fn test_text_decoration_blink() {
 /// columns auto 值
 fn test_columns_auto() {
     let result = expand_one("columns", "auto", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// columns 单个长度值带单位
 fn test_columns_length_units() {
     let result = expand_one("columns", "2em", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "2em");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// columns 双值第二个是 auto
 fn test_columns_second_auto() {
     let result = expand_one("columns", "3 auto", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "column-count");
     assert_eq!(result[0].1, "3");
     assert_eq!(result[1].0, "column-width");
     assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].0, "column-height");
+    assert_eq!(result[2].1, "auto");
+    assert_eq!(result[3].0, "column-wrap");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
@@ -566,21 +578,14 @@ fn test_background_url_only() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-/// font 仅 size
+/// font 仅 size：css-fonts-4 §font-prop 语法要求 <'font-family'> 必填
+///（`font = [ <'font-style'> || <font-variant-css21>? || <'font-weight'> ||
+/// <font-width-css3>? ]? <'font-size'> [ / <'line-height'> ]? <'font-family'>`），
+/// 缺 family 整条无效（chrome `font: 16px` 拒收；WPT font-invalid.html 面驱动，
+/// 旧半展开形已随刀 N 文法严格化撤除）。
 fn test_font_size_only() {
     let result = expand_one("font", "16px", false, (0, 0, 1));
-    assert_eq!(result.len(), 13);
-    assert_eq!(result[0].0, "font-style");
-    assert_eq!(result[0].1, "normal");
-    assert_eq!(result[1].0, "font-weight");
-    assert_eq!(result[1].1, "normal");
-    assert_eq!(result[2].0, "font-size");
-    assert_eq!(result[2].1, "16px");
-    assert_eq!(result[3].0, "line-height");
-    assert_eq!(result[3].1, "normal");
-    assert_eq!(result[4].0, "font-family");
-    assert_eq!(result[4].1, "");
-    assert!(result.iter().any(|item| item.0 == "font-kerning" && item.1 == "auto"));
+    assert!(result.is_empty(), "缺 font-family 的 font 简写应整条拒收");
 }
 
 #[test]
@@ -644,12 +649,17 @@ fn test_font_rejects_unknown_presize_token_and_bare_nonzero_size() {
 }
 
 #[test]
-/// font size/line-height 分隔符带空格
+/// font size/line-height 分隔符带空格：`<'font-family'>` 必填（css-fonts-4
+/// §font-prop），缺 family 整条无效——`16px / 1.5` 无论分隔符空格形均拒收。
 fn test_font_size_line_spacing_with_spaces() {
     let result = expand_one("font", "16px / 1.5", false, (0, 0, 1));
-    // 验证至少展开了 font-size
-    let has_size = result.iter().any(|(p, _, _, _)| p == "font-size");
-    assert!(has_size, "应包含 font-size");
+    assert!(result.is_empty(), "缺 font-family 的 font 简写应整条拒收");
+    // 带 family 的同形（空格分隔符）仍合法展开（css-fonts-4 `/` 前后空格可选）。
+    let with_family = expand_one("font", "16px / 1.5 serif", false, (0, 0, 1));
+    assert!(
+        with_family.iter().any(|(p, _, _, _)| p == "font-size"),
+        "带 family 的空格分隔形应包含 font-size"
+    );
 }
 
 #[test]
@@ -686,6 +696,55 @@ fn test_font_shorthand_supported_invalid() {
         !font_shorthand_supported("16px/-2em serif"),
         "负 line-height 应 unsupported"
     );
+}
+
+#[test]
+/// 刀 O（css-fonts-4 §font-prop）：`font` 简写注册面——`known_properties` 含
+/// `font`，decl_supported 尾门 `contains && apply_property_value_with_quirks`
+/// 经 apply oracle `font` 臂可达（oracle 臂无 style 副作用，纯文法裁决）。
+/// driving: system-fonts 588F from/to 门、font-computed 309F 排列空间前置门。
+/// <https://drafts.csswg.org/css-fonts-4/#font-prop>
+fn test_font_shorthand_registered_for_supports_gate() {
+    assert!(
+        crate::PropertyRegistry::known_properties().contains(&"font"),
+        "font 简写应在 known_properties（CSS.supports 尾门第一道）"
+    );
+    let mut style = crate::ComputedStyle::default();
+    // system-fonts.html from 值全形（style+weight+variant+stretch+size/line-height+family）。
+    assert!(crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "italic 100 small-caps ultra-expanded 100px / 100px Ahem",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+    // 六 system font keyword 独立形（system-fonts to 值门）。
+    assert!(crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "message-box",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+    // 非法形仍拒：缺 family / family 位 CSS-wide keyword（二期文法门同链可达）。
+    assert!(!crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "16px",
+        false,
+        false,
+        Some((1, 1)),
+    ));
+    assert!(!crate::apply_property_value_with_quirks(
+        &mut style,
+        "font",
+        "16px inherit",
+        false,
+        false,
+        Some((1, 1)),
+    ));
 }
 
 #[test]

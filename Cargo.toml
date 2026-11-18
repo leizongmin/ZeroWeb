@@ -214,6 +214,10 @@ getrandom = "0.3"
 # PNG 编码（canvas.toDataURL：pixel_buffer → PNG）
 png = "0.18"
 
+# JPEG 编码（canvas.toDataURL/toBlob 'image/jpeg' 面，s423：纯 Rust 零依赖编码器；
+# 解码面已有 jpeg-decoder——此处仅导出编码）
+jpeg-encoder = "0.6"
+
 # 媒体解码（media-playback M1a，RFC 路线 C：纯 Rust 零 C 依赖）
 matroska-demuxer = "0.8"
 rusty_vp9 = "0.1"

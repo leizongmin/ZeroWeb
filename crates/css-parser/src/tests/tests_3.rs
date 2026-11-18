@@ -66,7 +66,7 @@ fn test_media_query_multiple_conditions_eval() {
 /// 测试 parse_vertical_align 所有关键字：baseline、sub、super、top、text-top、
 /// middle、bottom、text-bottom，以及大小写不敏感和无效输入
 fn test_parse_vertical_align() {
-    use crate::values::{VerticalAlignValue, parse_vertical_align};
+    use crate::values::{LengthValue, VerticalAlignValue, parse_vertical_align};
     assert_eq!(parse_vertical_align("baseline"), Some(VerticalAlignValue::Baseline));
     assert_eq!(parse_vertical_align("sub"), Some(VerticalAlignValue::Sub));
     assert_eq!(parse_vertical_align("super"), Some(VerticalAlignValue::Super));
@@ -87,8 +87,33 @@ fn test_parse_vertical_align() {
     );
     // 无效值
     assert_eq!(parse_vertical_align("center"), None);
-    assert_eq!(parse_vertical_align("10px"), None);
     assert_eq!(parse_vertical_align(""), None);
+    // g50：`<length-percentage>` 臂（CSS 2.1 visudet propdef）——视口单位
+    // （viewport-units-css2-001 驱动）、百分比、负长度；旧枚举仅关键字时
+    // `10px` 钉 None，随文法扩面翻钉为 Length。
+    assert_eq!(
+        parse_vertical_align("10px"),
+        Some(VerticalAlignValue::Length(LengthValue::Px(10.0)))
+    );
+    assert_eq!(
+        parse_vertical_align("10vw"),
+        Some(VerticalAlignValue::Length(LengthValue::Vw(10.0)))
+    );
+    assert_eq!(
+        parse_vertical_align("50%"),
+        Some(VerticalAlignValue::Length(LengthValue::Percentage(50.0)))
+    );
+    assert_eq!(
+        parse_vertical_align("-3em"),
+        Some(VerticalAlignValue::Length(LengthValue::Em(-3.0)))
+    );
+    // 文法无 auto/thin/medium/stretch/min-content——parse_length 关键字臂
+    // 经数字开头前置门排除（`medium` 非法，不得折成 3px）。
+    assert_eq!(parse_vertical_align("auto"), None);
+    assert_eq!(parse_vertical_align("medium"), None);
+    assert_eq!(parse_vertical_align("thin"), None);
+    assert_eq!(parse_vertical_align("min-content"), None);
+    assert_eq!(parse_vertical_align("stretch"), None);
 }
 
 #[test]

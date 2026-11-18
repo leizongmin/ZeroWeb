@@ -8,7 +8,7 @@ use std::sync::mpsc;
 
 use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
+    BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, HandleRebindOutcome, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
     extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_sched, extract_script_credentials,
     extract_script_csp_info, extract_script_referrer_policies, extract_script_source_positions,
@@ -61,6 +61,30 @@ static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 /// 可反传 body cancel 的在册 in-process fetch 事件上限（FIFO 淘汰）。
 const SERVICE_WORKER_FETCH_EVENT_REGISTRY_CAP: usize = 256;
+/// T71（G1 Gap A）：应用史 ledger（handle→最后已知 selector）软上限——溢出清空
+///（shim `_zwEvictedIdentBySel` 同款收缩约定；防超长会话无界增长）。
+const HANDLE_SELECTOR_LEDGER_CAP: usize = 512;
+
+/// T71 返修（TV-1 可观测性）：handle 注册表换代侧的轻量原因分类计数器——
+/// lenient skip/掉项的分解构成，挂 [`Self::handle_registry_counters`] 读取，
+/// 不产生热路径日志（只有真掉项仍走既有聚合 warn）。
+#[derive(Debug, Default, Clone)]
+pub struct HandleRegistryCounters {
+    /// 换代后 ledger 补注册被豁免计数的掉项：本批合法移除（RemoveHandle 含子树
+    /// 后代柄 / `Remove { selector }` 反查命中，R2 语义钉钉⑤）。
+    pub rollover_legal_removal_exempt: u64,
+    /// 换代后真掉项（豁免后仍无落点的 ledger 键）——与聚合 warn 行数对应。
+    pub rollover_dropped: u64,
+    /// 补注册命中节点但被其他 handle 持久锚定（DF-1 所有权检查 lenient skip）。
+    pub reregister_claimed_by_other: u64,
+    /// 补注册 selector 无命中（死目标）——lenient skip。
+    pub reregister_dead_target: u64,
+    /// 补注册 selector 非唯一命中（editing-compat 守卫）——lenient skip。
+    pub reregister_non_unique: u64,
+    /// 补注册前置守卫跳过（selector_handle_map 无该键——drain 路径该表恒空，
+    /// ledger 项天然走不到 rebind）——lenient skip。
+    pub reregister_guard_skip: u64,
+}
 
 enum ServiceWorkerEvaluationResult {
     Evaluated,
@@ -538,6 +562,20 @@ pub struct WebView {
     /// merge/清空与倒置表同步维护——`__zw_selector_for_handle` 回调（testdriver stub
     /// 对 handle-identity 元素解析稳定选择器）读取。
     handle_selector_forward: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// T71（G1 Gap A 根修）：应用史 ledger——历批 apply 产出的 handle→唯一 selector
+    ///（`end_script_batch` 逐批并入，latest-wins；512 键软上限，溢出清空——shim
+    /// `_zwEvictedIdentBySel` 同款收缩约定）。换代重锚的跨批记忆：批内 apply 的
+    /// ephemeral 预植让存活子树每批自愈重锚，但换代批里被摘除的 handle 族子树
+    ///（R346 游离节点不产出 selector）从此不在任何批清单——同 sel 重挂后旧 handle
+    /// 永久失锚（T69 caseG 根因）。本表保留其最后已知锚点，导航清零（随身份表
+    /// 同点）。
+    handle_selector_ledger: std::collections::HashMap<String, String>,
+    /// T71 返修（R2/DF-2）：本 script batch 内合法移除的 handle 集（RemoveHandle
+    /// 含子树后代柄、`Remove { selector }` apply 前反查命中）——换代掉项 warn 的
+    /// 豁免集。`begin_script_batch` 清空，`end_script_batch` 取走消费。
+    batch_removed_handles: std::collections::HashSet<String>,
+    /// T71 返修（TV-1）：换代侧原因分类累计（跨批累加，诊断入口读取）。
+    handle_registry_counters: HandleRegistryCounters,
     /// js-dom M3 R100：**共享 append-only** mutations 队列（页面生命周期内单实例）。
     ///
     /// 所有 `register_dom_callbacks` 调用（run_page_scripts / execute_script_with_dom /
@@ -907,6 +945,9 @@ impl WebView {
             dom_bridge_host_armed: false,
             selector_handle_map: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            handle_selector_ledger: std::collections::HashMap::new(),
+            batch_removed_handles: std::collections::HashSet::new(),
+            handle_registry_counters: HandleRegistryCounters::default(),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
             dom_html_bridge: None,
@@ -1306,6 +1347,9 @@ impl WebView {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+        // T71（G1 Gap A）：应用史 ledger 随身份表同批清零（旧页 handle 对新页无效
+        // ——换代重锚的跨批记忆不得跨文档存活）。
+        self.handle_selector_ledger.clear();
         {
             let mut guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard.clear();
@@ -1507,6 +1551,26 @@ impl WebView {
         // t2-pb1 F2：批内 apply 置脏——`end_script_batch` 只在本批有变更时渲染。
         if self.script_batch_active && !mutations.is_empty() {
             self.script_batch_dirty = true;
+            // T71 返修（R2/DF-2）：apply **前**预解析本批合法移除的柄集（换代掉项
+            // warn 的豁免集）。`Remove`/`RemoveHandle` 应用后节点游离（R346 不产出
+            // selector），须趁节点仍在册/可寻时反查指名柄及其子树后代柄；非移除
+            // 变更零开销穿透。
+            for m in mutations {
+                match m {
+                    DomMutation::RemoveHandle { handle } => {
+                        self.batch_removed_handles.insert(handle.clone());
+                        for descendant in self.pipeline.handles_anchored_to_handle_subtree(handle) {
+                            self.batch_removed_handles.insert(descendant);
+                        }
+                    }
+                    DomMutation::Remove { selector } => {
+                        for anchored in self.pipeline.handles_anchored_to_selector_subtree(selector) {
+                            self.batch_removed_handles.insert(anchored);
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
         let (result, html_snapshot, handle_selectors) =
             self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
@@ -1556,6 +1620,7 @@ impl WebView {
         self.script_batch_active = true;
         self.script_batch_dirty = false;
         self.batch_handle_selectors.clear();
+        self.batch_removed_handles.clear();
         self.pipeline.set_defer_render(true);
     }
 
@@ -1568,14 +1633,32 @@ impl WebView {
         self.script_batch_active = false;
         self.pipeline.set_defer_render(false);
         let reanchor: Vec<(String, String)> = self.batch_handle_selectors.drain().collect();
+        // T71 返修（R2/DF-2）：取走本批合法移除豁免集（无论后续是否渲染都消费，
+        // 防残留跨批）。
+        let batch_removed = std::mem::take(&mut self.batch_removed_handles);
         if !self.script_batch_dirty || self.cached_html.is_empty() {
             return Ok(false);
         }
         self.script_batch_dirty = false;
         let html = self.cached_html.clone();
+        // T71（G1 Gap A 根修）：换代前在册快照——`render_html` 全量重建（slotmap
+        // 换代，R100）清 `persistent_handle_nodes`，快照用于补注册后判定「换代导致
+        // 注册表掉项」的实际掉项集（T69 §6.3 可观测性判定基础）。
+        let pre_registry = self.pipeline.registered_handle_ids();
         let result = self
             .pipeline
             .render_after_deferred_batch(&html, &self.cached_css, &reanchor);
+        // T71（G1 Gap A 根修）：本批 pairs 并入应用史 ledger，再按子树整体补注册
+        // 跨批失锚 handle（细节见 [`Self::reregister_handle_subtrees`]）。
+        for (handle, selector) in &reanchor {
+            if self.handle_selector_ledger.len() >= HANDLE_SELECTOR_LEDGER_CAP
+                && !self.handle_selector_ledger.contains_key(handle)
+            {
+                self.handle_selector_ledger.clear();
+            }
+            self.handle_selector_ledger.insert(handle.clone(), selector.clone());
+        }
+        self.reregister_handle_subtrees(&reanchor, &pre_registry, &batch_removed);
         if let Some(page_url) = self.current_url.clone() {
             let mut combined_css = self.cached_css.clone();
             combined_css.push('\n');
@@ -1595,6 +1678,102 @@ impl WebView {
         Ok(true)
     }
 
+    /// T71（G1 Gap A 根修）：换代后按应用史 ledger 补注册跨批失锚的 handle 子树
+    ///（DOM §4.2.2 concept-node-pre-insert adopted-children 语义——节点插入宿主
+    /// 子树后身份随子树存活，引擎换代（全量重解析）不得丢失其锚，
+    /// https://dom.spec.whatwg.org/#concept-node-pre-insert）。批内 apply 的
+    /// ephemeral 预植让存活子树每批自愈重锚；本补注册只处理「本批重锚后仍不在册」
+    /// 的失锚者——ledger 最后已知 selector 在新 doc 唯一命中才重绑
+    ///（rebind_handle_node 歧义跳过，不按猜测锚定），目标节点已被其他 handle
+    /// 持久锚定的候选跳过（T71 返修 DF-1：注册表唯一所有权，防双柄同锚）。
+    /// 重锚后仍不在册的换代前在册 handle 先豁免本批合法移除（`batch_removed`，
+    /// R2/DF-2），再聚合为单条 warn（T69 §6.3：换代导致注册表掉项须可观测，不再
+    /// 状态推断）；lenient skip 逐原因计数进 [`Self::handle_registry_counters`]
+    ///（TV-1 可观测性），仅真掉项或所有权冲突时发日志（死目标等高频噪声类只
+    /// 计数，防热路径日志洪水）。
+    // OPTIMIZATION：长期被移除永不重挂的 ledger 残项每批各付一次 selector 查询
+    // 失配成本；如活体探针显示热点，可加连续失配计数淘汰（现取最小实现）。
+    fn reregister_handle_subtrees(
+        &mut self,
+        batch_reanchor: &[(String, String)],
+        pre_registry: &[String],
+        batch_removed: &std::collections::HashSet<String>,
+    ) {
+        let batch_set: std::collections::HashSet<&str> = batch_reanchor.iter().map(|(h, _)| h.as_str()).collect();
+        let current: std::collections::HashSet<String> = self.pipeline.registered_handle_ids().into_iter().collect();
+        let mut candidates: Vec<(String, String)> = Vec::new();
+        let mut guard_skip = 0u64;
+        {
+            let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+            for (handle, selector) in &self.handle_selector_ledger {
+                if batch_set.contains(handle.as_str()) || current.contains(handle) {
+                    continue;
+                }
+                if sel_map.get(selector).is_some_and(|cur| cur != handle) {
+                    // 前置守卫跳过（flush 路径有效；drain 路径该表不 merge，ledger
+                    // 项天然走到 rebind 由 outcome 分类）。
+                    guard_skip += 1;
+                    continue;
+                }
+                candidates.push((handle.clone(), selector.clone()));
+            }
+        }
+        // 本批 skip 分类（warn 行用批内值——计数器是跨批累计，行内报累计会只增
+        // 不降、逐批不可读）。
+        let (mut dead_target, mut claimed_by_other, mut non_unique) = (0u64, 0u64, 0u64);
+        for (handle, selector) in &candidates {
+            match self.pipeline.rebind_handle_node(handle, selector) {
+                HandleRebindOutcome::Bound => {}
+                HandleRebindOutcome::TargetMissing => dead_target += 1,
+                HandleRebindOutcome::Ambiguous => non_unique += 1,
+                HandleRebindOutcome::ClaimedByOtherHandle => {
+                    // T71 返修（DF-1 根修）：唯一命中节点已被其他 handle 持久锚定
+                    // ——lenient skip（宁漏勿错），死引用写保持不可见基线。
+                    claimed_by_other += 1;
+                }
+            }
+        }
+        self.handle_registry_counters.reregister_guard_skip += guard_skip;
+        self.handle_registry_counters.reregister_dead_target += dead_target;
+        self.handle_registry_counters.reregister_claimed_by_other += claimed_by_other;
+        self.handle_registry_counters.reregister_non_unique += non_unique;
+        let final_registry: std::collections::HashSet<String> =
+            self.pipeline.registered_handle_ids().into_iter().collect();
+        // T71 返修（R2/DF-2）：换代掉项先豁免本批合法移除（RemoveHandle 含子树
+        // 后代柄 / `Remove { selector }` apply 前反查命中），只报真正无落点的掉项。
+        let mut dropped: Vec<&String> = Vec::new();
+        let mut exempt = 0u64;
+        for h in pre_registry.iter().filter(|h| !final_registry.contains(*h)) {
+            if batch_removed.contains(h) {
+                exempt += 1;
+            } else {
+                dropped.push(h);
+            }
+        }
+        self.handle_registry_counters.rollover_legal_removal_exempt += exempt;
+        self.handle_registry_counters.rollover_dropped += dropped.len() as u64;
+        if !dropped.is_empty() || claimed_by_other > 0 {
+            let sample = dropped.iter().take(5).map(|h| h.as_str()).collect::<Vec<_>>().join(",");
+            tracing::warn!(
+                "handle registry generation rollover dropped {} entries (legal-removal exempt {}; \
+                 ledger reregister skip: dead-target {} claimed-by-other {} non-unique {} guard {}); \
+                 sample: {sample}",
+                dropped.len(),
+                exempt,
+                dead_target,
+                claimed_by_other,
+                non_unique,
+                guard_skip
+            );
+        }
+    }
+
+    /// T71 返修（TV-1 可观测性）：换代侧 lenient skip / 掉项的原因分类累计
+    ///（跨批；诊断入口读取，逐批分解见 rollover warn 行的批内值）。
+    pub fn handle_registry_counters(&self) -> &HandleRegistryCounters {
+        &self.handle_registry_counters
+    }
+
     /// 中止脚本批量渲染边界（导航让路，P-B1）：解除 defer、丢弃累积的 handle
     /// 重锚表，但**不渲染**——剩余脚本已丢弃，旧文档即将被导航替换，批量边界
     /// 渲染是纯浪费。与 [`Self::end_script_batch`] 二选一配对 `begin_script_batch`。
@@ -1602,6 +1781,7 @@ impl WebView {
         self.script_batch_active = false;
         self.script_batch_dirty = false;
         self.batch_handle_selectors.clear();
+        self.batch_removed_handles.clear();
         self.pipeline.set_defer_render(false);
     }
 
@@ -2253,6 +2433,13 @@ impl WebView {
     /// 复制图片缓存供 UI 线程快照。
     pub fn snapshot_image_cache(&self) -> ImageCache {
         self.image_cache.duplicate_for_snapshot()
+    }
+
+    /// WebView 侧缓存文本常驻字节（T78 域账面仪拍：`cached_html` + `cached_css`
+    /// 全页副本——renderer runtime 另持同名副本，两处独立保留面分列读数）。
+    /// env 门测量读数，非行为路径。
+    pub fn cached_text_bytes(&self) -> u64 {
+        (self.cached_html.len() + self.cached_css.len()) as u64
     }
 
     /// 加载 URL（同步 HTTP GET）。
@@ -3128,6 +3315,11 @@ impl WebView {
                 Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
                 Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
                 Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+                Self::register_evicted_reanchor_callback(
+                    &self.selector_handle_map,
+                    &self.handle_selector_forward,
+                    &mut **sandbox,
+                );
             }
             self.dom_bridge_host_armed = true;
         }
@@ -3855,6 +4047,11 @@ impl WebView {
             Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
             Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
             Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+            Self::register_evicted_reanchor_callback(
+                &self.selector_handle_map,
+                &self.handle_selector_forward,
+                &mut **sandbox,
+            );
         }
 
         self.poll_pending_dynamic_imports();
@@ -4048,6 +4245,11 @@ impl WebView {
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
         Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+        Self::register_evicted_reanchor_callback(
+            &self.selector_handle_map,
+            &self.handle_selector_forward,
+            &mut **sandbox,
+        );
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
 
@@ -6113,6 +6315,11 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
         Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+        Self::register_evicted_reanchor_callback(
+            &self.selector_handle_map,
+            &self.handle_selector_forward,
+            &mut **sandbox,
+        );
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
         // R3295：改用共享 `ensure_js_shim` helper（与 `execute_script` 同款幂等语义）。
@@ -6218,6 +6425,50 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     .get(handle)
                     .cloned()
                     .unwrap_or_default()
+            }),
+        );
+    }
+
+    /// T70-R1（返修 DF-1 写丢失根修）：evict 双向清表（[`Self::evict_removed_identities`]）
+    /// 后，part05 `_zwQueryWrapIdentity` T70 回收臂在重挂态返回原 handle proxy——
+    /// 其写 journal `SetAttrOnHandle{死 handle}` 在 apply 翻译臂（js_dom_bridge
+    /// `persistent_sel`）miss → lenient warn+skip，写静默丢失、getAttribute 读空；
+    /// base 同查询返 sel proxy 写可落地，行为分叉（钉测
+    /// t70_evict_remount_recycled_proxy_write_lands 红检实证）。回收即重锚：把
+    /// sel↔handle 双表回填（键已存在不覆盖——同批重注册的新绑定优先，与 evict 的
+    /// batch 守卫同向），下一 apply 起 `apply_pending_shared_mutations` 构建的
+    /// `persistent`（本表倒置视图）恢复 handle→sel 翻译，全部 `*OnHandle` 写经
+    /// selector 变体命中当前持有该 sel 的重挂节点；journal 形态不变（读
+    /// latest-wins replay 与落地恒一致）。规范语义：DOM §4.4 childNodes
+    /// [SameObject]（https://dom.spec.whatwg.org/#interface-nodelist）+ §4.2.2
+    /// live 反射（https://dom.spec.whatwg.org/#collections）——evict→同 sel 重挂
+    /// 后旧 proxy 等价新 live proxy，写不可丢读不漂移（R5010「锚回同 sel 可能读
+    /// 到同位新元素」先例同款取舍）。仅回收臂调用（查询返回点，sel 此刻活）；
+    /// 空串参数 no-op。后续再次移除走既有 RemoveHandle 翻译+evict 生命周期闭环。
+    fn register_evicted_reanchor_callback(
+        sel_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        fwd_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    ) {
+        let re_sel_map = std::sync::Arc::clone(sel_map);
+        let re_fwd_map = std::sync::Arc::clone(fwd_map);
+        sandbox.register_callback(
+            "__zw_reanchor_evicted_handle",
+            Box::new(move |args: &[String]| -> String {
+                let handle = args.first().map(String::as_str).unwrap_or("");
+                let sel = args.get(1).map(String::as_str).unwrap_or("");
+                if !handle.is_empty() && !sel.is_empty() {
+                    let mut fwd = re_fwd_map.lock().unwrap_or_else(|e| e.into_inner());
+                    if !fwd.contains_key(handle) {
+                        fwd.insert(handle.to_string(), sel.to_string());
+                    }
+                    drop(fwd);
+                    let mut smap = re_sel_map.lock().unwrap_or_else(|e| e.into_inner());
+                    if !smap.contains_key(sel) {
+                        smap.insert(sel.to_string(), handle.to_string());
+                    }
+                }
+                "ok".into()
             }),
         );
     }
@@ -6364,8 +6615,9 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
     /// js-dom M3 R100：把 apply 返回的 handle→selector 映射 merge 进持久反查表
     /// （`selector_handle_map`，倒置）并发布正置表到 engine thread-local
     /// （`publish_forward_handle_map`——host 回调如 `__zw_get_tag_handle` 的跨
-    /// execute 回落查询源）。三个 apply 路径（run_page_scripts / dispatch_event /
-    /// execute_script_with_dom）统一走此 helper，保证任一路径建立的 handle 后续
+    /// execute 回落查询源）。apply 底座两路径（`apply_mutations_subset`——flush
+    /// 与 `execute_script_with_dom` 共用；`apply_pending_shared_mutations`——
+    /// pending 共享变更臂）统一走此 helper，保证任一路径建立的 handle 后续
     /// 可锚定。R145：正置镜像（`handle_selector_forward`）同批 merge——
     /// `__zw_selector_for_handle` 回调的读取源。
     fn merge_handle_selectors(&mut self, handles: &std::collections::HashMap<String, String>) {

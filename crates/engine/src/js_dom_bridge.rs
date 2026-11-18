@@ -33,6 +33,28 @@ pub use computed_style::*;
 mod computed_style_cache;
 pub use computed_style_cache::*;
 
+// WAAPI JS 动画注册表（wptfyi-css 动画值进 gCS 刀，2026-11-15）——Element.animate
+// 产物的引擎侧求值通道，gCS 两通道序列化前咨询。pub(crate)：callbacks 注册点与
+// computed_style_cache handle 通道消费。
+pub(crate) mod js_anim_registry;
+
+// CSS Transition 同步读注册表（wptfyi-css Transition 通道可见性刀，2026-11-16）——
+// transition-* 触发的属性过渡在 gCS 同步读窗口的求值通道，两通道序列化前咨询。
+// pub(crate)：callbacks 换代边界登记点与 computed_style_cache handle 通道消费。
+pub(crate) mod transition_registry;
+
+// CSS.registerProperty 运行时注册表（css-properties-values-api-1 刀，2026-11-17）——
+// shim JS API 经回调注入，gCS `--` 分支与动画插值通道按注册 syntax 分型消费。
+// pub(crate)：callbacks 注入/换代清表与 computed_style/animation 消费。
+pub(crate) mod registered_properties;
+
+// CSS Animations 声明式 @keyframes 同步读注册表（wptfyi-css 刀 E，2026-11-17）——
+// animation-* + @keyframes 的 gCS 同步读求值通道（transition_registry 同型镜像：
+// 渲染管线 AnimationClock 只进渲染层副本，corpus CSSA 测试同一脚本轮次写→读，
+// 泵帧不介入）。keyframes 经 computed_style_cache 代际重建喂入，per-identity
+// 动画状态首咨询锚 start。pub(crate)：消费点同 transition_registry。
+pub(crate) mod cssa_registry;
+
 // WebCrypto host 实现（R2973 从本文件拆出，控制主文件行数）。纯字节级 crypto，无 DOM/CSS 依赖。
 mod crypto;
 pub use crypto::*;
@@ -391,6 +413,23 @@ pub enum DomMutation {
         /// 自锚起的 child-index 下行路径（全节点序，终点为待移除节点）。
         path: Vec<u32>,
     },
+    /// editing goal d23（B1 切片 3）：sel-path 定位的 insertAdjacentHTML——定位 =
+    /// 锚 selector + child-index 下行路径（同 [`Self::SetChildTextByPath`]），
+    /// position/html 语义同 [`Self::InsertAdjacentHtml`]。plain 域选区锚（无身份
+    /// 章包装家族——CE execCommand 选区容器域）的结构面变更宿主侧落地：该家族
+    /// 的 insertBefore 不发树 wire（zz-probe-b1s3 实证 createLink wrap 后宿主
+    /// 侧 `<a>` 永不入引擎树），文本写面有 [`Self::SetChildTextByPath`] 通道而
+    /// 结构面此前无对等原语。
+    InsertAdjacentHtmlByPath {
+        /// 锚元素唯一选择器（解析子树的挂载点）。
+        anchor_selector: String,
+        /// 自锚起的 child-index 下行路径（全节点序，终点为插入参照节点）。
+        path: Vec<u32>,
+        /// 相对参照节点的插入位（beforebegin/afterbegin/beforeend/afterend）。
+        position: String,
+        /// HTML 片段（解析语义同 [`Self::InsertAdjacentHtml`]）。
+        html: String,
+    },
     /// 对 create 句柄设置 innerHTML。
     SetInnerHtmlOnHandle {
         /// 节点句柄。
@@ -625,6 +664,29 @@ pub enum DomMutation {
         /// 元素序路径：`-` 连接的 0-based 元素 index 逐跳下行（`"0"` = 根直接子）。
         child_path: String,
     },
+}
+
+impl DomMutation {
+    /// s423：该变更是否属 inline style 族（`el.style.prop = v` / `removeProperty` /
+    /// `style` 属性内容写入，sel 与 handle 两身份面）。rect 现算视图臂（
+    /// [`computed_style_cache`] pending view）以此作门控——纯 style 族 pending 下
+    /// 视图现算几何与渲染快照 drain 后真值一致（语料三形态探针实证：span-all/
+    /// none/top-left + wm 组合 anchor 几何逐值吻合）；类/textContent/结构性变更
+    /// 以下视图等值性无实证（真态缺口在册：writing-mode 组合 anchor 不变式、
+    /// position-try fallback 状态机），门关闭回落快照旧行为。
+    pub fn is_inline_style_family(&self) -> bool {
+        match self {
+            DomMutation::SetStyle { .. }
+            | DomMutation::RemoveStyle { .. }
+            | DomMutation::SetStyleOnHandle { .. }
+            | DomMutation::RemoveStyleOnHandle { .. } => true,
+            DomMutation::SetAttr { name, .. }
+            | DomMutation::RemoveAttr { name, .. }
+            | DomMutation::SetAttrOnHandle { name, .. }
+            | DomMutation::RemoveAttrOnHandle { name, .. } => name.eq_ignore_ascii_case("style"),
+            _ => false,
+        }
+    }
 }
 
 /// [`DomMutation::FocusChangedInShadow`] apply 臂铸造的 zwsh 地址在返回
@@ -1416,6 +1478,10 @@ fn rewrite_pending_id_selectors(
             | DomMutation::RemoveChildAtPath {
                 anchor_selector: selector,
                 ..
+            }
+            | DomMutation::InsertAdjacentHtmlByPath {
+                anchor_selector: selector,
+                ..
             } => selector,
             _ => continue,
         };
@@ -1592,6 +1658,14 @@ pub fn apply_dom_mutations_full(
     // NodeId（不随树态漂移），apply 失配时查表兜底；target 已被批内摘除（无父）时维持
     // skip——语义对齐 JS（ref 已脱离，insertBefore 本应抛错）。
     let mut ins_targets: std::collections::HashMap<String, NodeId> = std::collections::HashMap::new();
+    // d23（editing goal，2026-11-14）：同批摘/回插移动语义的 **tag 兜底清单**。
+    // RemoveChildAt/RemoveChildAtPath 变体无 child 身份字段——摘除前以 unique 串记账
+    // 批内 NodeId stash 后，回插（InsertAdjacentSelElement）child 失配且 child_selector
+    // 为裸 tag 时按摘除序 FIFO 消费本表（zz-probe-b1s3 S2 实证：typing-around-link 的
+    // removeChild(a)+insertBefore(a) 序两 stash 全 miss → a 永久丢失宿主（`<p>X</p>`）；
+    // 根因之一 RemoveChildAt 原**摘后**算键，s175 detached 门返 None，片段记账从未发生）。
+    // 同 tag 多子同批反序移动（remove a1,a2 → insert a2,a1）FIFO 错位——保留 warn 观测面。
+    let mut detached_by_tag: std::collections::HashMap<String, Vec<NodeId>> = std::collections::HashMap::new();
     for mutation in mutations {
         let selector = match mutation {
             DomMutation::InsertAdjacentHtml { selector, .. }
@@ -1854,6 +1928,14 @@ pub fn apply_dom_mutations_full(
                 if let Some(node) = find_by_selector(doc, &selector)
                     && let Some(parent) = doc.get(node).and_then(|n| n.parent)
                 {
+                    // d23（editing goal，2026-11-14）：tag 兜底记账（摘前取 local_name）——
+                    // shim R125 移除发射线章（`父sel > tag:nth-child(k)`，IP-M3 刀）作批内
+                    // stash 键，回插（R334b）child_selector 传身份章原串（`a`）键必 miss，
+                    // 裸 tag FIFO 兜底消费（zz-probe-b1s3 S2 实证 a 丢失宿主）。
+                    let tag_before = match doc.get(node).map(|n| &n.kind) {
+                        Some(NodeKind::Element(e)) => Some(e.local_name().to_ascii_lowercase()),
+                        _ => None,
+                    };
                     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
                     // R361：detached-stash 记账（selector → NodeId，本批内 insert 类
                     // 变体 child 失配时复用——同批 detach→insert = 同一节点移动）。
@@ -1862,6 +1944,9 @@ pub fn apply_dom_mutations_full(
                     // runner shim html 刷新触发的 render_html 间隔面）。
                     if let Some(stash) = detached.as_mut() {
                         stash.insert(selector.clone(), doc.outer_html(node));
+                    }
+                    if let Some(tag) = tag_before {
+                        detached_by_tag.entry(tag).or_default().push(node);
                     }
                 }
             }
@@ -1907,24 +1992,35 @@ pub fn apply_dom_mutations_full(
                 let Some(parent) = find_by_selector(doc, &parent_selector) else {
                     continue;
                 };
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
             }
             DomMutation::AppendChildByHandle {
                 parent_handle,
                 child_handle,
             } => {
-                let parent = handles
-                    .get(&parent_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：parent handle miss lenient warn+跳过（口径见
+                // SetAttrOnHandle 臂）——跨批 refresh 重建使 handle 容器 NodeId
+                // 换代清空是活体常态（掘金 feed 容器挂接 `unknown parent handle
+                // __n232` 等），旧硬错中止整批毒化批内全部后续 mutation。
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child_by_handle unresolvable parent handle {parent_handle} skipped"
+                    );
+                    continue;
+                };
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child_by_handle unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
             }
             // 45 号 M3：sel 子挂容器 handle 的 engine 落树（R97 noWire 缺口补全——
@@ -1970,10 +2066,13 @@ pub fn apply_dom_mutations_full(
                 let Some(parent) = walk_child_path(doc, anchor, &path) else {
                     continue;
                 };
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child_by_path unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
             }
             DomMutation::AppendChildBySelPath {
@@ -1987,10 +2086,13 @@ pub fn apply_dom_mutations_full(
                 let Some(parent) = walk_child_path(doc, anchor, &path) else {
                     continue;
                 };
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child_by_path unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
             }
             DomMutation::InsertBefore {
@@ -1999,54 +2101,75 @@ pub fn apply_dom_mutations_full(
                 ref_selector,
             } => {
                 // siteopt t4 P19：parent/ref selector 失配 lenient warn+跳过（不变式见
-                // SetAttr arm）；child 悬垂 handle 仍硬错。
+                // SetAttr arm）。T68 第六面：child 悬垂 handle 硬错同步 lenient 化——
+                // 跨批 refresh 重建后 handle 表换代清空是活体常态（口径见 SetAttrOnHandle
+                // 臂）；「child 悬垂=真 bug」的旧判据只覆盖同批 wire 失败场景，跨批失效
+                // 由 JS 视图权威 + warn 留证兜住。
                 let Some(parent) = find_by_selector(doc, &parent_selector) else {
                     tracing::warn!("apply DOM mutations: insert_before parent no match, skipped: {parent_selector}");
                     continue;
                 };
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_before unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 // s165：ref selector miss → handle 表回落——ref 为 handle-only 元素
                 //（createElement 产物无 selector，静态 sel 父 insertBefore(new, createdRef)
                 // 形态；shim 侧 ref 字段直接填 handle 字符串。selector 域不会与 handle
                 // 字面撞形，先 selector 后 handle 的次序无歧义。meta color-scheme 语料
-                // insert 文件「before existing in head」钉死；跨批引用同 handle 视图边界
-                // miss 跳过。
+                // insert 文件「before existing in head」钉死。
                 let ref_node = match find_by_selector(doc, &ref_selector) {
-                    Some(n) => n,
+                    Some(n) => Some(n),
                     // R4620 editing-compat 扩展：selector 失配（批内前序插入使
                     // `:nth-child` 索引漂移）→ 批前预解析 NodeId 兜底；ref 已被批内
-                    // 摘除（无父）时维持 skip——语义对齐 JS ref 脱离抛错。
+                    // 摘除（无父）时走下方降级——语义对齐 JS ref 脱离抛错。
                     None => match ins_targets.get(&ref_selector).copied() {
-                        Some(id) if doc.get(id).and_then(|n| n.parent).is_some() => id,
-                        _ => match handles.get(&ref_selector).copied() {
-                            Some(n) => n,
-                            None => {
-                                tracing::warn!(
-                                    "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
-                                );
-                                continue;
-                            }
-                        },
+                        Some(id) if doc.get(id).and_then(|n| n.parent).is_some() => Some(id),
+                        _ => handles.get(&ref_selector).copied(),
                     },
                 };
-                doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                match ref_node {
+                    Some(ref_node) => {
+                        doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                    }
+                    // T68 第五面（site-compat juejin feed 归因轮，2026-11-14）：ref 跨批
+                    // 失效（`refresh_if_html_changed` 全量重建后 handle 表换代清空）降级
+                    // **append 尾部**——与 [`DomMutation::InsertBeforeByHandleHandle`] 的
+                    // ref miss lenient 约定对齐（其文档注释「ref 不在树中的语义等价——
+                    // insertBefore(node, null) == appendChild」）。旧版 warn + skip 使
+                    // s165 形态的插入在跨批场景整条静默丢弃：活体掘金 feed 挂载 22 次
+                    // `insert_before ref no match, skipped: __n69`，宿主零落地而 JS 视图
+                    // 经 pending 桶（handle 子豁免 K3 清除）稳定呈现——视图/宿主分裂的
+                    // 最终一环。锚序损失接受（ref 不在树中本无锚序可保）。
+                    // https://dom.spec.whatwg.org/#concept-node-pre-insert
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: insert_before ref no match, degraded to append: ref={ref_selector} parent={parent_selector} child={child_handle}"
+                        );
+                        doc.append_child(parent, child).map_err(|e| e.to_string())?;
+                    }
+                }
             }
             DomMutation::InsertBeforeByHandle {
                 parent_handle,
                 child_handle,
                 ref_selector,
             } => {
-                let parent = handles
-                    .get(&parent_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：parent/child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_before_by_handle unresolvable parent handle {parent_handle} skipped"
+                    );
+                    continue;
+                };
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_before_by_handle unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 // s165：ref handle 回落同 [`DomMutation::InsertBefore`] arm（handle-only
                 // ref 形态对称面）。
                 let ref_node = match find_by_selector(doc, &ref_selector) {
@@ -2069,14 +2192,19 @@ pub fn apply_dom_mutations_full(
                 child_handle,
                 ref_handle,
             } => {
-                let parent = handles
-                    .get(&parent_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：parent/child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_before_by_handle_handle unresolvable parent handle {parent_handle} skipped"
+                    );
+                    continue;
+                };
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_before_by_handle_handle unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 match handles.get(&ref_handle).copied() {
                     Some(ref_node) => {
                         doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
@@ -2099,10 +2227,13 @@ pub fn apply_dom_mutations_full(
                     tracing::warn!("apply DOM mutations: insert_child_at parent no match, skipped: {parent_selector}");
                     continue;
                 };
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_child_at unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 let kids = doc.child_nodes(parent);
                 let result = match kids.get(child_index).copied() {
                     Some(ref_node) => doc.insert_before(parent, child, ref_node),
@@ -2111,17 +2242,24 @@ pub fn apply_dom_mutations_full(
                 result.map_err(|e| e.to_string())?;
             }
             DomMutation::SetAttrOnHandle { handle, name, value } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // T68 第六面（site-compat juejin feed 归因轮，2026-11-14）：handle miss
+                // lenient warn+跳过——对齐下方 SetTextOnHandle R100 口径（结构性 doc
+                // 重建后 handle 无法重锚是跨批常态非 bug；旧硬错中止整批，批内后续
+                // sel 域 mutation 全部丢弃，宿主/视图分裂放大——活体掘金 feed
+                // `unknown handle __n2224` x25 每次毒化一批）。JS 视图权威、宿主
+                // 属性缺就是缺，warn 留证。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!("apply DOM mutations: set_attr_on_handle unresolvable handle {handle} skipped");
+                    continue;
+                };
                 doc.set_attribute(node, &name, &value);
             }
             DomMutation::RemoveAttrOnHandle { handle, name } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // T68 第六面：同 [`DomMutation::SetAttrOnHandle`] lenient 口径。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!("apply DOM mutations: remove_attr_on_handle unresolvable handle {handle} skipped");
+                    continue;
+                };
                 doc.remove_attribute(node, &name);
             }
             DomMutation::SetTextOnHandle { handle, text } => {
@@ -2174,15 +2312,31 @@ pub fn apply_dom_mutations_full(
                 };
                 match doc.child_nodes(parent).get(child_index).copied() {
                     Some(child) => {
+                        // d23（editing goal，2026-11-14）：记账键必须在**摘除前**算——
+                        // detach 后 parent 链不达 root，s175 门返 None（原摘后算键形态
+                        // 片段记账从未发生，zz-probe-b1s3 S2 根因之一）。键同时记批内
+                        // NodeId stash（本批 insert 类 child 失配复用——R361 移动语义
+                        // 原 Only `Remove` 变体记账，RemoveChildAt 缺席）+ 跨批片段
+                        // stash（尾簇 4）+ tag 兜底清单（shim 身份章 `a` 与 engine
+                        // unique 串形态不同、键必 miss 的最终兜底）。
+                        let uniq_before = unique_selector_for_node(doc, child);
+                        let tag_before = match doc.get(child).map(|n| &n.kind) {
+                            Some(NodeKind::Element(e)) => Some(e.local_name().to_ascii_lowercase()),
+                            _ => None,
+                        };
                         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
                         // 尾簇 4：跨批片段记账——sel 元素移除走本变体（非 Remove），后续
                         // 批 re-insert（InsertAdjacentSelElement）child 失配时按子 selector
                         // 重解析片段插回（R361 移动语义跨批面）。无唯一 selector 的子
                         //（纯文本等）无法被 sel insert 引用，不记账。
-                        if let Some(child_sel) = unique_selector_for_node(doc, child)
-                            && let Some(stash) = detached.as_mut()
-                        {
-                            stash.insert(child_sel, doc.outer_html(child));
+                        if let Some(child_sel) = uniq_before {
+                            detached_stash.insert(child_sel.clone(), child);
+                            if let Some(stash) = detached.as_mut() {
+                                stash.insert(child_sel, doc.outer_html(child));
+                            }
+                        }
+                        if let Some(tag) = tag_before {
+                            detached_by_tag.entry(tag).or_default().push(child);
                         }
                     }
                     None => {
@@ -2231,11 +2385,22 @@ pub fn apply_dom_mutations_full(
                 match walk_child_path(doc, anchor, &path) {
                     Some(child) => {
                         if let Some(parent) = doc.get(child).and_then(|n| n.parent) {
+                            // d23：记账口径同 RemoveChildAt——键摘前算（s175 detached 门）、
+                            // 批内 NodeId + 片段 + tag 兜底三记。
+                            let uniq_before = unique_selector_for_node(doc, child);
+                            let tag_before = match doc.get(child).map(|n| &n.kind) {
+                                Some(NodeKind::Element(e)) => Some(e.local_name().to_ascii_lowercase()),
+                                _ => None,
+                            };
                             doc.remove_child(parent, child).map_err(|e| e.to_string())?;
-                            if let Some(child_sel) = unique_selector_for_node(doc, child)
-                                && let Some(stash) = detached.as_mut()
-                            {
-                                stash.insert(child_sel, doc.outer_html(child));
+                            if let Some(child_sel) = uniq_before {
+                                detached_stash.insert(child_sel.clone(), child);
+                                if let Some(stash) = detached.as_mut() {
+                                    stash.insert(child_sel, doc.outer_html(child));
+                                }
+                            }
+                            if let Some(tag) = tag_before {
+                                detached_by_tag.entry(tag).or_default().push(child);
                             }
                         }
                     }
@@ -2247,11 +2412,37 @@ pub fn apply_dom_mutations_full(
                     }
                 }
             }
+            // editing goal d23：sel-path 定位 insertAdjacentHTML（变体文档见枚举定义）。
+            DomMutation::InsertAdjacentHtmlByPath {
+                anchor_selector,
+                path,
+                position,
+                html,
+            } => {
+                let Some(anchor) = find_by_selector(doc, &anchor_selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_adjacent_html_path anchor no match, skipped: {anchor_selector}"
+                    );
+                    continue;
+                };
+                match walk_child_path(doc, anchor, &path) {
+                    Some(node) => insert_adjacent_html(doc, node, &position, &html)?,
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: insert_adjacent_html_path path out of range, skipped: {anchor_selector}[{}]",
+                            path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+                        );
+                    }
+                }
+            }
             DomMutation::SetInnerHtmlOnHandle { handle, html } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // T68 第六面：同 [`DomMutation::SetAttrOnHandle`] lenient 口径。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: set_inner_html_on_handle unresolvable handle {handle} skipped"
+                    );
+                    continue;
+                };
                 replace_inner_html(doc, node, &html)?;
             }
             DomMutation::SetInnerHtmlUnsafe { selector, html } => {
@@ -2264,10 +2455,13 @@ pub fn apply_dom_mutations_full(
                 replace_inner_html_unsafe(doc, node, &html)?;
             }
             DomMutation::SetInnerHtmlOnHandleUnsafe { handle, html } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // T68 第六面：同 [`DomMutation::SetAttrOnHandle`] lenient 口径。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: set_inner_html_on_handle_unsafe unresolvable handle {handle} skipped"
+                    );
+                    continue;
+                };
                 replace_inner_html_unsafe(doc, node, &html)?;
             }
             DomMutation::SetStyleOnHandle {
@@ -2275,17 +2469,19 @@ pub fn apply_dom_mutations_full(
                 property,
                 value,
             } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // T68 第六面：同 [`DomMutation::SetAttrOnHandle`] lenient 口径。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!("apply DOM mutations: set_style_on_handle unresolvable handle {handle} skipped");
+                    continue;
+                };
                 apply_style_property(doc, node, &property, &value);
             }
             DomMutation::RemoveStyleOnHandle { handle, property } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // T68 第六面：同 [`DomMutation::SetAttrOnHandle`] lenient 口径。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!("apply DOM mutations: remove_style_on_handle unresolvable handle {handle} skipped");
+                    continue;
+                };
                 apply_remove_style(doc, node, &property);
             }
             DomMutation::RemoveHandle { handle } => {
@@ -2388,10 +2584,13 @@ pub fn apply_dom_mutations_full(
                     );
                     continue;
                 };
-                let child = handles
-                    .get(&child_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // T68 第六面：child handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(child) = handles.get(&child_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_adjacent_element unresolvable child handle {child_handle} skipped"
+                    );
+                    continue;
+                };
                 // 复用 append_child 的自动 reparent（child 已挂载则从旧 parent 移除 → 移动语义）。
                 insert_nodes_at_position(doc, &[child], node, &position)?;
             }
@@ -2426,30 +2625,52 @@ pub fn apply_dom_mutations_full(
                     // 管线已全量重建，NodeId 失效）→ 跨批片段 stash 重解析插回。
                     None => match detached_stash.remove(child_selector.as_str()) {
                         Some(id) => id,
+                        // d23（editing goal，2026-11-14）：裸 tag 兜底——shim R334b 发射的
+                        // child_selector 是身份章原串（zz-probe-b1s3 实证 `a`），与 engine
+                        // 摘除记账键（unique 结构串）形态必 miss；child_selector 为裸 tag
+                        // 时按摘除序 FIFO 消费同 tag 批内清单（同 tag 多子同批反序移动
+                        // 会错位——保留下方 miss warn 观测面）。
                         None => {
-                            let frag_html = detached.as_mut().and_then(|stash| stash.take(child_selector.as_str()));
-                            match frag_html {
-                                Some(html) => {
-                                    let (context_ns, context_local) = match doc.get(node).map(|n| &n.kind) {
-                                        Some(NodeKind::Element(e)) => {
-                                            (e.namespace().to_string(), e.local_name().to_string())
-                                        }
-                                        _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
-                                    };
-                                    let frag_doc =
-                                        zero_dom::parse_html_fragment(html.trim(), &context_ns, &context_local);
-                                    let mut copied = Vec::new();
-                                    for frag_child in fragment_top_level_children(&frag_doc) {
-                                        copied.push(copy_subtree_from(doc, &frag_doc, frag_child));
-                                    }
-                                    insert_nodes_at_position(doc, &copied, node, &position)?;
-                                    continue;
-                                }
+                            let tag_key = child_selector.trim().to_ascii_lowercase();
+                            let bare_tag = !tag_key.is_empty()
+                                && tag_key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                                && tag_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+                            let tag_fallback = if bare_tag {
+                                detached_by_tag
+                                    .get_mut(&tag_key)
+                                    .and_then(|queue| if queue.is_empty() { None } else { Some(queue.remove(0)) })
+                            } else {
+                                None
+                            };
+                            match tag_fallback {
+                                Some(id) => id,
                                 None => {
-                                    tracing::warn!(
-                                        "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
-                                    );
-                                    continue;
+                                    let frag_html =
+                                        detached.as_mut().and_then(|stash| stash.take(child_selector.as_str()));
+                                    match frag_html {
+                                        Some(html) => {
+                                            let (context_ns, context_local) = match doc.get(node).map(|n| &n.kind) {
+                                                Some(NodeKind::Element(e)) => {
+                                                    (e.namespace().to_string(), e.local_name().to_string())
+                                                }
+                                                _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+                                            };
+                                            let frag_doc =
+                                                zero_dom::parse_html_fragment(html.trim(), &context_ns, &context_local);
+                                            let mut copied = Vec::new();
+                                            for frag_child in fragment_top_level_children(&frag_doc) {
+                                                copied.push(copy_subtree_from(doc, &frag_doc, frag_child));
+                                            }
+                                            insert_nodes_at_position(doc, &copied, node, &position)?;
+                                            continue;
+                                        }
+                                        None => {
+                                            tracing::warn!(
+                                                "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
+                                            );
+                                            continue;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2596,10 +2817,13 @@ pub fn apply_dom_mutations_full(
                 parent_handle,
                 fragment_handle,
             } => {
-                let parent = handles
-                    .get(&parent_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                // T68 第六面：parent handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_fragment_children_by_handle unresolvable parent handle {parent_handle} skipped"
+                    );
+                    continue;
+                };
                 move_fragment_children(doc, parent, &fragment_handle, None, &handles)?;
             }
             DomMutation::InsertFragmentBefore {
@@ -2626,10 +2850,13 @@ pub fn apply_dom_mutations_full(
                 fragment_handle,
                 ref_selector,
             } => {
-                let parent = handles
-                    .get(&parent_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                // T68 第六面：parent handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_fragment_before_by_handle unresolvable parent handle {parent_handle} skipped"
+                    );
+                    continue;
+                };
                 // siteopt t4 P19：ref selector 失配 lenient warn+跳过（不变式见 SetAttr arm）。
                 let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
                     tracing::warn!("apply DOM mutations: insert_fragment_before ref no match, skipped: {ref_selector}");
@@ -2642,10 +2869,13 @@ pub fn apply_dom_mutations_full(
                 fragment_handle,
                 ref_handle,
             } => {
-                let parent = handles
-                    .get(&parent_handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                // T68 第六面：parent handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）。
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_fragment_children_before_handle unresolvable parent handle {parent_handle} skipped"
+                    );
+                    continue;
+                };
                 // ref handle miss 降级 append 尾部（insertBefore(node, null) == appendChild
                 // 语义；与 InsertBeforeByHandleHandle arm 同一 lenient 约定）。
                 match handles.get(&ref_handle).copied() {
@@ -3200,10 +3430,12 @@ fn move_fragment_children(
     ref_node: Option<NodeId>,
     handles: &HashMap<String, NodeId>,
 ) -> Result<(), String> {
-    let fragment = handles
-        .get(fragment_handle)
-        .copied()
-        .ok_or_else(|| format!("unknown fragment handle {fragment_handle}"))?;
+    // T68 第六面：fragment handle miss 同 lenient 口径（见 SetAttrOnHandle 臂）——
+    // 跨批失效时子列表已随换代丢失，跳过本条不毒化整批。
+    let Some(fragment) = handles.get(fragment_handle).copied() else {
+        tracing::warn!("apply DOM mutations: unresolvable fragment handle {fragment_handle} skipped");
+        return Ok(());
+    };
     // 快照 fragment 子列表（移动过程中会从 fragment 移除，故先收集）。
     let kids: Vec<NodeId> = doc.get(fragment).map(|n| n.children.clone()).unwrap_or_default();
     for child in kids {
@@ -5954,6 +6186,20 @@ pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
 /// 声明是否被 ZW 支持（已知属性 + 值可 apply）。
 #[cfg(feature = "script-runtime")]
 fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val: &str) -> bool {
+    // CSS Cascade 5 §css-wide-keywords：`CSS.supports(prop, <css-wide keyword>)`
+    // 对任意已知属性恒真（inheritance/compute 通道解析，值文法无关——
+    // interpolation-testcommon `from [initial]`/`to [inherit]` 前置门驱动）。
+    // 置顶于各属性文法早退之前（counter-increment 等文法门对关键字值恒拒）。
+    // FIXME: position-area/anchor 族不在 known_properties()（注册表外裁决），
+    // 关键字值此处回落 false——canonicalize_decl 文法对关键字同拒，行为
+    // 与臂前置等价，待族属性入注册表时一并修。
+    // <https://drafts.csswg.org/css-cascade-5/#default-keyword>
+    if matches!(
+        val.trim().to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return zero_style_system::PropertyRegistry::known_properties().contains(&prop);
+    }
     // 组 F 批（css-anchor-position-1）：`position-area` 文法面由
     // [`dom_bindings::position_area`] 裁决（style-system 注册表不含该属性——
     // computed-testcommon 每 test 以 `CSS.supports('position-area', v)` 前置门）。
@@ -6030,6 +6276,28 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
                 }
             },
         };
+    }
+    // CSS Lists 3 §counter-increment：文法门（不求值——math 整数位 eval 需容器
+    // ctx，apply oracle sibling 哨兵 (1,1) 无 container_width，`sign(2cqw - 10px)`
+    // 类合法形 fail-closed 误拒；求值在 apply 站）。
+    // <https://drafts.csswg.org/css-lists-3/#counter-increment>
+    if prop == "counter-increment" {
+        // 转义 ident（`a\ 8 9` 转义空格名合法形）超 top-level 分词文法面判真
+        //（写面同款豁免；FIXME: custom-ident 转义序列词法挂账）。
+        if val.contains('\\') {
+            return true;
+        }
+        return zero_css_parser::values::parse_counter_list_grammar(val).is_some();
+    }
+    // 刀 N 三期：`font` 简写 supports 门前置——known_properties 注册表只列长手
+    // （无 `font` 简写项），尾部注册表门恒假使 style-system apply font oracle
+    // 臂（刀 N 一期，apply_property_value_with_quirks font 臂 →
+    // font_shorthand_supported 文法单源）成死码；此处直调该臂恢复生效。驱动：
+    // font-computed.html `CSS.supports('font', …)` 前置门 309F + system-fonts
+    // interpolation 页 from/to 门 588F。
+    // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+    if prop == "font" {
+        return zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false, Some((1, 1)));
     }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，

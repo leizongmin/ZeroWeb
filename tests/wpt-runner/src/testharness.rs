@@ -252,10 +252,19 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
 /// 与 `fetch-editing-subset.sh`（editing/，M1 切片 3——beforeinput/
 /// input 事件面 + editing/other 删除/插入行为基线，M2 前置）into
 /// `wpt-data/`（gitignored）。
-pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/other"];
+pub const SELECTION_TEST_SUBDIRS: &[&str] = &[
+    "selection",
+    "editing",
+    "editing/other",
+    // wptfyi-editing DC-2（2026-11-15）：whitespaces/（含 chrome-compat/ 嵌套，
+    // 递归扫）+ plaintext-only/（flat）——11-14 对账快照两目录分母 3,362 子测试
+    // 全未覆盖，接入同口径执行链。
+    "editing/whitespaces",
+    "editing/plaintext-only",
+];
 
 /// [`SELECTION_TEST_SUBDIRS`] 中递归扫描的根目录（其余条目保持一期 flat 扫描）。
-const SELECTION_RECURSIVE_ROOT: &str = "selection";
+const SELECTION_RECURSIVE_ROOTS: &[&str] = &["selection", "editing/whitespaces"];
 
 /// selection 二期扩面语料跳过规则（非静默丢弃——记入 evidence 导入清单）：
 /// - `*-manual.html`：需真实拖拽/指针硬件交互（uievents/clipboard/fullscreen 先例）
@@ -1641,8 +1650,9 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
 /// （editing/contenteditable goal M1 / DC-1——Selection API 可观察面基线；
 /// 二期扩面后 `selection/` 根全域递归，跳过规则见 [`selection_case_skipped`]）。
 ///
-/// 仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
-/// `fetch-selection-subset.sh` / `scripts/goals/23-selection-compat.sh`
+/// 仅依赖 `testharness.js`。filter 按路径子串过滤，`|` 分隔多备选任一命中即收
+/// （testharness_editing_corpus / test262 通道同款——ci-shards 分片按族切域用）。
+/// 用例由 `fetch-selection-subset.sh` / `scripts/goals/23-selection-compat.sh`
 /// 按需拉取（wpt-data gitignored）。
 pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
@@ -1661,7 +1671,7 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 
     let mut cases = Vec::new();
     for subdir in SELECTION_TEST_SUBDIRS {
-        if *subdir == SELECTION_RECURSIVE_ROOT {
+        if SELECTION_RECURSIVE_ROOTS.contains(subdir) {
             collect_selection_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
         } else {
             collect_selection_flat_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
@@ -1688,7 +1698,13 @@ fn collect_selection_flat_dir_cases(
             continue;
         }
         let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
-        if filter.is_some_and(|filter| !relative.contains(filter)) {
+        if filter.is_some_and(|filter| !filter.split('|').any(|part| relative.contains(part))) {
+            continue;
+        }
+        // wptfyi-editing DC-2（2026-11-15）：plaintext-only/ 入域后 flat 扫描同受
+        // 跳过规则约束（-ref.html 参照页非 testharness 格式——recursive 收集器
+        // 已有同款，此前 flat 域无参照页文件未暴露）。
+        if selection_case_skipped(&relative) {
             continue;
         }
         let source = match read_corpus_to_string(&path) {
@@ -1736,7 +1752,7 @@ fn collect_selection_dir_cases(
         if selection_case_skipped(&relative) {
             continue;
         }
-        if filter.is_some_and(|filter| !relative.contains(filter)) {
+        if filter.is_some_and(|filter| !filter.split('|').any(|part| relative.contains(part))) {
             continue;
         }
         let Ok(source) = read_corpus_to_string(&path) else {
@@ -3734,8 +3750,23 @@ fn run_corpus_subdirs_ext(
             if case_skipped(&relative, &source) {
                 continue;
             }
-            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
-            cases.push((relative, results));
+            // variant 用例逐 query 跑（R329 同款；基础 URL 上游 harness 不注册 = 空转）。
+            // editing B2：input-events getTargetRanges 语料 4 文件 `<meta name=variant>`
+            // 矩阵（?Backspace/?Delete/…），页面 `location.search` 分派——query 缺席
+            // → "Unhandled variant" 恒崩假账；case 名带 query 与上游 dashboard 对齐。
+            let variants = case_variants(&source);
+            if variants.is_empty() {
+                let results =
+                    run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
+                cases.push((relative, results));
+                continue;
+            }
+            for variant in variants {
+                let case_name = format!("{relative}{variant}");
+                let results =
+                    run_testharness_html(wpt_root, &case_name, &source, &harness_source, corpus_case_timeout());
+                cases.push((case_name, results));
+            }
         }
     }
     cases
@@ -9882,6 +9913,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // keyup 清零）——后续可打印字符键识别为快捷键组合（copy/cut/paste/selectAll
     // 默认动作路由），不再落 InsertText。生命周期同 shift_sticky。
     let mut td_accel_sticky = false;
+    // B2（editing goal，2026-11-15）：Alt 粘滞位（同 accel 生命周期）——修饰组合
+    //（Alt + Backspace/Delete）在编辑键分流臂识别为修饰链 = 完全 no-op（语料
+    // get-target-ranges 修饰族期望 NOOP；词删/前删语义 FIXME 挂账 B2 后续刀）。
+    let mut td_alt_sticky = false;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -10031,6 +10066,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 &mut td_drag_mouse_suppressed,
                 &mut td_shift_sticky,
                 &mut td_accel_sticky,
+                &mut td_alt_sticky,
             );
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
@@ -11774,6 +11810,7 @@ fn apply_testdriver_command(
     drag_mouse_suppressed: &mut bool,
     shift_sticky: &mut bool,
     accel_sticky: &mut bool,
+    alt_sticky: &mut bool,
 ) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
@@ -12108,9 +12145,18 @@ fn apply_testdriver_command(
                 "\u{E016}" => Some("Insert"),
                 _ => None,
             };
+            // editing-compat B2（input-events getTargetRanges 面，2026-11-15）：编辑键
+            // 键名映射（Backspace/Delete）——事件 key 用 UI Events 键名（同
+            // nav_key_name 先例），默认动作路由见下方编辑键臂。
+            let edit_key_name = match key.as_str() {
+                "\u{E003}" => Some("Backspace"),
+                "\u{E017}" => Some("Delete"),
+                _ => None,
+            };
             let event_key = modifier_name
                 .map(String::from)
                 .or_else(|| nav_key_name.map(String::from))
+                .or_else(|| edit_key_name.map(String::from))
                 .unwrap_or_else(|| key.clone());
             // M2-S195：Shift 粘滞位——修饰键 keydown 置位/keyup 清零（页级状态，
             // 同链跨命令持续；Tab 步按位取方向 + 后续键事件 shiftKey 继承）。
@@ -12121,6 +12167,11 @@ fn apply_testdriver_command(
             // 生命周期）——后续可打印键识别为快捷键组合（下方 accel 路由）。
             if matches!(key.as_str(), "\u{E009}" | "\u{E03D}") {
                 *accel_sticky = event_type == "keydown";
+            }
+            // B2：Alt 粘滞位（同 shift_sticky 生命周期；Alt 无 accel 消费面，仅供
+            // 编辑键分流臂识别修饰链）。
+            if key == "\u{E00A}" {
+                *alt_sticky = event_type == "keydown";
             }
             let script = zero_engine::script_dispatch_dom_event(
                 &selector,
@@ -12245,6 +12296,36 @@ fn apply_testdriver_command(
                     }),
                 );
                 let _ = webview.execute_script(&keypress_ce);
+                return None;
+            }
+            // editing-compat B2（input-events getTargetRanges 面，2026-11-15）：Actions 链
+            // Backspace/Delete（\u{E003}/\u{E017}）默认动作 = 删除编辑——此前落
+            // InsertText（PUA 字面插入 + keypress，无删除效果），get-target-ranges 语料
+            // sendBackspaceKey/sendDeleteKey（Actions 路径）整面 F 的根因。分流到
+            // DeleteBackward/ForwardDelete（user_actions 侧 CE/文本控件与 send_keys
+            // 编辑键同汇）。编辑键不产字符、不派 keypress（UI Events：非字符键）。
+            // 事件本体（key=Backspace/Delete）已在上方派发，preventDefault 即无默认动作。
+            // 裸编辑键 keydown = 删除默认动作（keyup 步已在上方提前返回，恒无默认
+            // 动作）；修饰组合（Shift/Ctrl/Meta + 编辑键）= 完全 no-op——语料动态面
+            //（get-target-ranges-backspace/forwarddelete 修饰族）期望 NOOP：无删除、
+            // 无 InsertText 兜底（修饰组合跌落 InsertText 会插 PUA 字面 + 派
+            // beforeinput，动态面 "expected 0 but got N" 实证；探针 zz-probe-b2mod
+            // 定谳 HEAD 同位绿色本身是失步幻影 PUA——无事件、无可见变更）。
+            // FIXME: 编辑键修饰组合词删/前删语义（deleteWordBackward/
+            // deleteWordForward inputType 面，delete-selection.html 期望）挂账 B2
+            // 后续刀。
+            if matches!(key.as_str(), "\u{E003}" | "\u{E017}") {
+                if *shift_sticky || *accel_sticky || *alt_sticky {
+                    return None;
+                }
+                let action = if key.as_str() == "\u{E003}" {
+                    HtmlUserAction::DeleteBackward
+                } else {
+                    HtmlUserAction::ForwardDelete
+                };
+                if let Some(error) = dispatch_action(webview, target, action) {
+                    return Some(error);
+                }
                 return None;
             }
             // selection-compat M2（2026-11-04）：accel（Ctrl/Meta）粘滞位下的可打印
@@ -12408,7 +12489,22 @@ fn apply_testdriver_command(
                                 .map(|v| v.trim() == "true")
                                 .unwrap_or(false)
                         };
-                        if !select_consumed && !text_caret_consumed {
+                        // B1 切片 3（editing goal d23，2026-11-14）：CE 宿主 caret
+                        // 消费门——目标是 contenteditable 编辑宿主时 ArrowLeft/Right
+                        // 与 Home/End 走 Selection.modify caret 移动（shim
+                        // `__zw_ce_caret_move`，宿主 scope 内建）而非滚动。s209 文本
+                        // 控件门同构；此前 CE 宿主上四键零 caret 移动（WPT
+                        // typing-around-link making-link 系列 Home/End/Arrow 键位形
+                        // 根因之一）。
+                        let ce_caret_consumed = if select_consumed || text_caret_consumed {
+                            false
+                        } else {
+                            webview
+                                .execute_script(&zero_engine::script_ce_caret_move(key_name))
+                                .map(|v| v.trim() == "1")
+                                .unwrap_or(false)
+                        };
+                        if !select_consumed && !text_caret_consumed && !ce_caret_consumed {
                             let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
                             let _ = webview.execute_script(&scroll_script);
                         }
@@ -15745,6 +15841,48 @@ async_test(function(test) {
         let empty = handler(&make_req("GET", None)).unwrap();
         assert_eq!(empty.status, 200);
         assert_eq!(empty.body, "");
+    }
+
+    #[test]
+    fn form_target_request_header_helper_py_channel_roundtrip() {
+        // form-target-request-header 端点臂（s431）：Content-Type 在场 → 'OK'、
+        // 缺席 → 'FAIL'；channelname 取 POST body 首 '=' 后段；回体 text/html
+        // 端点文档（BroadcastChannel postMessage）。
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let url = "https://wpt.test/html/semantics/forms/form-submission-target/resources/form-target-request-header-helper.py";
+        // Content-Type 在场（S4J POST 形——headersWire 带 enctype）。
+        let with_ct = handler(&zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "POST".to_string(),
+            headers: vec![(
+                "content-type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            )],
+            body: Some("channelname=tok_123".to_string()),
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+            cache: None,
+        })
+        .unwrap();
+        assert_eq!(with_ct.status, 200);
+        assert!(with_ct.body.contains("BroadcastChannel('tok_123')"), "channel wired");
+        assert!(with_ct.body.contains("postMessage('OK'"), "OK verdict");
+        // Content-Type 缺席 → FAIL 判定（上游 helper 同门）。
+        let no_ct = handler(&zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "POST".to_string(),
+            headers: Vec::new(),
+            body: Some("channelname=tok_456".to_string()),
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+            cache: None,
+        })
+        .unwrap();
+        assert!(no_ct.body.contains("postMessage('FAIL'"), "FAIL verdict");
     }
 
     #[test]

@@ -250,7 +250,10 @@
   // 2000 行锚定，④ 刀先例；同闭包复用 _zwDel*/_zwJus*/_zwList* 机具）。
   // 消解条件（482 blockquote 全删空**不消解**反例收窄）：
   //   ① caret 块为宿主直子 div（tag 收窄 div；blockquote/h1-6/p 不消解）；
-  //   ② 子全 inline 且无可见内容（空壳链；空 `<p></p>` 块子不提）；
+  //   ② 子全 inline 且无可见内容（空壳链；空 `<p></p>` 块子不提）；持行垫 br
+//      唯子面同消解（前导 delete 删净纯文本子后归一化垫 br——ip 语料
+//      :2102/:2107 C5 面，2026-11-15 扩臂，提 br 成根层裸 br 由调用点
+//      paragraph_split_at ① 臂接续）；
   //   ③ 宿主级无其他元素子/可见内容（消解后宿主只剩提壳链）。
   // 动作 = 子提宿主原位（保序）+ 块删除 + caret 塌缩提壳链首（处方 b 同款
   // `__zw_ce_caret_in_leading_shell`，typed 段入壳——483 typing `<b>a</b>`）。
@@ -259,7 +262,7 @@
   // 跨域摘挂纪律同 DC-4（plain removeChild 后挂载；子为 inline plain 节点，
   // host.insertBefore 同域安全）。
   // https://w3c.github.io/editing/execCommand.html#the-delete-command
-  globalThis.__zw_ce_dissolve_emptied_div_tail = function (ar0) {
+  globalThis.__zw_ce_dissolve_emptied_div_tail = function (ar0, ar0Txt) {
     try {
       var ar = _zwVaGetActiveRange();
       if (!ar || !ar.startContainer) return false;
@@ -272,26 +275,42 @@
       // → 消解提壳）；选区触及块边界（K3 `{abc}` div 子边界位）或尾越块界
       // 入宿主级（V3/D1/K1 `{abc</span><span>def</span>}` 形）→ 块为选区
       // 边界祖先，Chrome 保留块（exp `<div>gh</div>` 族）。
+      // ar0Txt 放行臂（2026-11-15 C5 刀）：调用点在 delete 前捕获双 CharData
+      // 边界——deleteContents 重锚活区后壳爬升必败（全删净面无幸存壳接锚，
+      // C5 纯文本面 `<div>[abc]</div>` 实证），按调用点捕获放行；K3 元素界
+      // 面捕获 false 维持原判。放行面是否全删净由下方 kids 检查裁决（部分
+      // 覆盖有可见幸存必 bail）。
       if (!ar0 || !ar0.startContainer || !ar0.endContainer) return false;
       var a1Shell = ar0.startContainer;
       while (a1Shell && a1Shell.parentNode !== blk) a1Shell = a1Shell.parentNode;
-      if (!a1Shell) return false;
+      if (!a1Shell && ar0Txt !== true) return false;
       var a1EndIn = false;
       var a1E = ar0.endContainer;
       while (a1E) {
         if (a1E === a1Shell) { a1EndIn = true; break; }
         a1E = a1E.parentNode;
       }
-      if (!a1EndIn) return false;
+      if (!a1EndIn && ar0Txt !== true) return false;
       // display 守卫（D1/D2 flex/grid 保留形同源）：非默认 display 块不消解
       // ——与 ① 臂 dispHost∈{'',block} 门同语义。
       var a1Disp = '';
       try { a1Disp = String(_zwJusCs(blk, 'display') || ''); } catch (_eA1d) {}
       if (a1Disp !== '' && a1Disp !== 'block') return false;
       var kids = blk.childNodes || [];
-      if (!kids.length) return false;
+      // 持行垫 br 免视（2026-11-15 C5 刀扩臂）：前导 delete 删净纯文本子后
+      // deleteSelection 归一化垫占位 br（探针 C5PROBE 实证：`<div>[abc]</div>`
+      // ip 语料 :2102/:2107 删后 `<div><br></div>`、blkKids=1，非零子空态），
+      // _zwJusIsVisible 按非冗余 br 判可见使原稿 kids 循环 bail、ipara port
+      // 续走 SLC wrap 臂产双空块形违语料（期望 div 解包＋根层裸 br＋sepTag
+      // 新块，Chrome 录制 delta）。仅收直父唯一子 br 形（C4 刀持行形状同款
+      // `_zwJusIsExtraneousLineBreak` 块级父唯一子臂）；多子 br 与壳幸存面
+      // （mt 483/485/487 typing 入壳）维持原判。垫 br 随消解提宿主成根层裸
+      // br，ipara 调用点随即 paragraph_split_at ① 宿主级臂接续（C4 持行豁免
+      // 免重垫）。delete/fd 语料无全删空面记录，delete_apply 调用点同受益
+      // （Chrome 全删空唯一块时壳消解、宿主留垫 br）。
       for (var i = 0; i < kids.length; i++) {
         if (!_zwJusIsInlineNode(kids[i])) return false;
+        if (_zwJusIsHtmlElement(kids[i], 'br') && kids.length === 1) continue;
         if (_zwJusIsVisible(kids[i])) return false;
       }
       var sibs = host.childNodes || [];
@@ -315,8 +334,12 @@
         ? globalThis.__zw_ce_caret_in_leading_shell(host) : null;
       if (shA1) {
         nrA1.setStart(shA1[0], shA1[1]);
-      } else {
+      } else if (first) {
         nrA1.setStart(first, 0);
+      } else {
+        // 零子臂：宿主空态 caret 挂宿主头（ipara 调用点随即 paragraph_split_at
+        // ① 宿主级臂垫 br＋建 sepTag 新块）。
+        nrA1.setStart(host, 0);
       }
       nrA1.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nrA1]; }

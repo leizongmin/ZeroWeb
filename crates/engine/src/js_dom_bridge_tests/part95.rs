@@ -470,6 +470,70 @@ fn navigator_pdf_viewer_enabled_t58() {
     );
 }
 
+// T66（site-optimizer perf-mem T66）：Navigator 平台对象语义常驻钉。T65 判据③定谳
+// （运行目录 evidence/t65-diagnosis.md）：navigator 此前为平面对象（无接口原型），
+// 站点风控 SDK「从根沿原型走 s 步再存储」的反篡改 canary 写落 Object.prototype 变
+// 可枚举属性，页面 for-in 写循环枚举到继承键后 TypeError 被静默吞→cookie 链断。
+// 修复面：window.Navigator 接口对象 + 原型链 navigator → Navigator.prototype →
+// Object.prototype + toString 品牌。钉四断言面（判据④）：构造器类型、原型恒等、
+// 品牌、Object.prototype 落点吸收（for-in 平面对象零继承键）。WPT 上游无单点用例
+// （原型/品牌面拆散于各接口 own-keys 测试），以等价本地沙箱钉常驻（T42 同款形制）。
+// https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
+// https://webidl.spec.whatwg.org/#interface-object
+#[test]
+fn navigator_platform_object_t66() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__r66 = [
+               typeof globalThis.Navigator,
+               typeof globalThis.Navigator.prototype,
+               String(Object.getPrototypeOf(navigator) === globalThis.Navigator.prototype),
+               Object.prototype.toString.call(navigator),
+               String(Object.getPrototypeOf(globalThis.Navigator.prototype) === Object.prototype),
+               String(navigator instanceof globalThis.Navigator),
+               String(Object.keys(globalThis.Navigator.prototype).length),
+               (function () { var ex = ''; try { new globalThis.Navigator(); } catch (e) { ex = e.constructor.name + ':' + e.message; } return ex; })(),
+               (function () { var ks = []; for (var k in {}) ks.push(k); return ks.join(','); })(),
+               Object.getOwnPropertyNames(navigator).slice(0, 3).join(','),
+             ].join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r66").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(
+        parts[0], "function",
+        "window.Navigator 构造器暴露（HTML §the-navigator-object）"
+    );
+    assert_eq!(parts[1], "object", "Navigator.prototype 接口原型对象在位");
+    assert_eq!(
+        parts[2], "true",
+        "getPrototypeOf(navigator) === Navigator.prototype（平台对象原型恒等）"
+    );
+    assert_eq!(parts[3], "[object Navigator]", "toString 品牌（原型 @@toStringTag）");
+    assert_eq!(
+        parts[4], "true",
+        "原型链 navigator → Navigator.prototype → Object.prototype"
+    );
+    assert_eq!(parts[5], "true", "navigator instanceof Navigator（品牌可判别）");
+    assert_eq!(
+        parts[6], "0",
+        "接口原型无可枚举 own 键（constructor/@@toStringTag 均不可枚举）"
+    );
+    assert_eq!(
+        parts[7], "TypeError:Illegal constructor",
+        "接口不可 new（WebIDL 无 [Constructor]，Chrome 同语义）"
+    );
+    assert_eq!(
+        parts[8], "",
+        "for-in 平面对象零继承键（T65 Object.prototype 污染形态不复发——canary 落点吸收面）"
+    );
+    assert_eq!(
+        parts[9], "userAgent,appName,appVersion",
+        "navigator own 键面不变（仅 [[Prototype]] 换位，worker 值镜像读数不变）"
+    );
+}
+
 // T43 B6 邻近变体（TV-F3）：iframe 包装路。part05.js IframeXMLHttpRequest 构造真实
 // XMLHttpRequest 实例（stamp _zwXhrBaseUrl/_zwXhrFetch own 属性）并共享主 realm 原型——
 // 原型委派不受实例自有附加属性遮蔽（委派器只查 this 的 _zwImpl_<name> 槽），wrapper

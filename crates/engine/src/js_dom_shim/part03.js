@@ -16283,6 +16283,10 @@
     if (self.currentTime == null || self._playState === 'finished') self.currentTime = 0;
     if (self._playState !== 'running') self._playState = 'running';
     self._resolveReady(self);
+    // 动画值进 gCS 刀：play 重锚引擎注册表墙钟（running 求值 = now − anchor）。
+    if (self._zwRegId != null && typeof __zw_js_anim_playpause === 'function') {
+      try { __zw_js_anim_playpause(self._zwRegId, '0', String(Date.now())); } catch (_eJsPlay) {}
+    }
     // headless 瞬间完成：microtask 后 finished + onfinish + 末态持久化。
     _defer(function () {
       if (!self._cancelled && self._playState === 'running') self._finishNow();
@@ -16290,11 +16294,21 @@
   };
   Animation.prototype.pause = function () {
     this._playState = 'paused';
+    // 动画值进 gCS 刀：pause 冻结引擎注册表求值点（fresh pause 冻结于当前相位，
+    // seek 后 hold 优先——harness「先 pause 后 seek」形态值域主通道）。
+    if (this._zwRegId != null && typeof __zw_js_anim_playpause === 'function') {
+      try { __zw_js_anim_playpause(this._zwRegId, '1', String(Date.now())); } catch (_eJsPz) {}
+    }
   };
   Animation.prototype.cancel = function () {
     this._cancelled = true;
     this._playState = 'idle';
     this.currentTime = null;
+    // 动画值进 gCS 刀：cancel 移除引擎注册表条目（gCS 咨询即回落 underlying）。
+    if (this._zwRegId != null && typeof __zw_js_anim_cancel === 'function') {
+      try { __zw_js_anim_cancel(this._zwRegId); } catch (_eJsCxl) {}
+    }
+    this._zwRegId = null;
     if (typeof this.oncancel === 'function') {
       try { this.oncancel({ type: 'cancel', target: this }); } catch (_e) {}
     }
@@ -16329,6 +16343,20 @@
     this._committed = true;
   };
   Animation.prototype.persist = function () {};
+  // 动画值进 gCS 刀：currentTime 改原型访问器——set 通知引擎注册表 seek（hold
+  // 冻结点，ms；Web Animations §5.1 currentTime）；get 返回 held 值（含 null）。
+  // 构造器/_finishNow/cancel 的 `this.currentTime = ...` 赋值经此路由，读面零漂移
+  //（enumerable:true 同原 own enumerable 属性 for...in 可见性）。
+  Object.defineProperty(Animation.prototype, 'currentTime', {
+    get: function () { return this._currentTime; },
+    set: function (v) {
+      this._currentTime = v == null ? null : Number(v);
+      if (this._zwRegId != null && this._currentTime != null && typeof __zw_js_anim_seek === 'function') {
+        try { __zw_js_anim_seek(this._zwRegId, String(this._currentTime)); } catch (_eSeekCt) {}
+      }
+    },
+    enumerable: true, configurable: true,
+  });
   Animation.prototype.getEffect = function () { return this._effect; };
   Object.defineProperty(Animation.prototype, 'effect', {
     get: function () { return this._effect; },
@@ -16389,7 +16417,420 @@
     anim.play();
     var _akey = _elKey(sel, handle);
     (_elementAnimations[_akey] || (_elementAnimations[_akey] = [])).push(anim);
+    // wptfyi-css 动画值进 gCS 刀（2026-11-15）：JS 动画引擎侧登记——harness
+    // Web Animations 方法 `animate(...)→pause()→currentTime=t` 后同步 gCS 读值
+    //（interpolation-testcommon 三方法值域主通道）。finished+fill forwards 终态
+    // 另有 _applyEndState inline 写通道（既有），本登记补 paused/seek 面值域。
+    // identity 双缺（裸元素无 sel 无 handle）跳过——gCS 无键可咨询，行为与刀前一致。
+    // FIXME(property-indexed)：属性索引形 keyframes（{opacity:[0,1]}）不登记（数组
+    // 值逐帧展开待补）；corpus 面为 keyframe 数组形不受影响。
+    // 形状守卫（2026-11-15 A/B 定谳）：引擎 interpolate_property_value 不支持的
+    // 形态不登记——读值回落级联/B0 通道，避免把既有通过面换成离散 fallback 裸串。
+    // ① composite add/accumulate → 预合成改写（composite-add 刀 2026-11-15：v1
+    //    整体不登记折损合成插值面 A/B -80/-21，现按 underlying ⊕ 端点预合成后
+    //    replace 登记；不可加/无身份维持不登记）；② calc-size()/random() 值
+    //    （peer calc-size 域，A/B -66/-1）；③ 尺寸/离散关键字端点（auto/
+    //    fit-content/min-content/max-content/stretch/normal——引擎关键字端点走
+    //    离散 fallback 裸串）。
+    var _zwUnsafe = false;
+    // zw-easing-flip-adopt-2026-11-15 刀标记（A/B provenance：本刀逻辑在引擎
+    // js_anim_registry 侧 easing 感知离散翻转采纳，shim 面零行为变化）。
+    // composite-add 刀（2026-11-15，wptfyi-css）：add/accumulate 语义 = 动画值与
+    // underlying 逐属性相加（Web Animations §5.4.4 combining values；单动画单迭代
+    // accumulate 与 add 同形）。harness 面先 inline 写 underlying 再 animate、
+    // paused+seek 下 underlying 恒定——注册前把 add 帧端点预合成
+    //（endpoint' = underlying ⊕ endpoint）后按 replace 语义登记：线性插值下
+    // lerp(U⊕F, U⊕T, p) ≡ U ⊕ lerp(F,T,p)（U 恒定时恒等）。仅改写注册 spec——
+    // KeyframeEffect 仍持原始 keyframes，getKeyframes()/effect JS 对象面零变化。
+    // 可加值域：<number> / px / <angle> 同单位对与 font-size-adjust
+    // `<metric> <number>` 同 metric 对（% 端点拒——引擎无 % 插值臂，登记会以
+    // 0px 垃圾值换 B0 fail；混合单位/calc/关键字/函数列表同拒）。underlying 经
+    // gCS 读取——引擎未覆盖序列化的属性读到空串解析失败天然不登记：
+    // border-*-width 族 B0 伪通过池（双侧空串恒等）由此保位。逐动画
+    // all-or-nothing：任一 add 帧任一属性不可预合成 → 整动画维持不登记（B0 回落）。
+    var _zwOptComp = (effectOptions && effectOptions.composite != null) ? String(effectOptions.composite) : '';
+    var _zwKfArr = Array.isArray(keyframes) ? keyframes
+      : ((keyframes && typeof keyframes === 'object') ? [keyframes] : null);
+    var _zwHasAdd = false;
+    if (_zwKfArr) {
+      for (var _aci = 0; _aci < _zwKfArr.length; _aci++) {
+        var _acf = _zwKfArr[_aci] || {};
+        var _acc = (_acf.composite != null) ? String(_acf.composite) : _zwOptComp;
+        if (_acc === 'add' || _acc === 'accumulate') { _zwHasAdd = true; break; }
+      }
+    }
+    var _zwKf = keyframes;
+    if (_zwHasAdd && (sel || handle) && _zwKfArr) {
+      var _zwComposed = null;
+      try { _zwComposed = _zwComposeAddKeyframes(_zwKfArr, _zwOptComp, sel, handle); } catch (_eCA) { _zwComposed = null; }
+      if (_zwComposed) { _zwKf = _zwComposed; }
+      else { _zwUnsafe = true; }
+    } else if (_zwOptComp !== '' && _zwOptComp !== 'replace' && _zwOptComp !== 'auto' &&
+               _zwOptComp !== 'add' && _zwOptComp !== 'accumulate') {
+      // options 级非可识别 composite（非法串）维持不登记（与 v1 blanket 守卫同形）。
+      _zwUnsafe = true;
+    }
+    if (!_zwUnsafe && Array.isArray(_zwKf)) {
+      for (var _zgi = 0; _zgi < _zwKf.length; _zgi++) {
+        var _zgf = _zwKf[_zgi] || {};
+        if (_zgf.composite && _zgf.composite !== 'replace' && _zgf.composite !== 'auto') { _zwUnsafe = true; break; }
+        for (var _zgk in _zgf) {
+          if (_zgk === 'offset' || _zgk === 'composite' || _zgk === 'easing') continue;
+          var _zgv = _zgf[_zgk];
+          if (typeof _zgv !== 'string') continue;
+          var _zgvT = _zgv.replace(/^\s+|\s+$/g, '');
+          if (_zgvT.indexOf('calc-size(') >= 0 || _zgvT.indexOf('random(') >= 0 ||
+              /^(auto|fit-content|min-content|max-content|stretch|normal|neutral)$/.test(_zgvT)) {
+            _zwUnsafe = true; break;
+          }
+        }
+        if (_zwUnsafe) break;
+      }
+      // ④ 混合单位端点对（v3，2026-11-15 merged transforms A/B 定谳）：translate
+      //    px↔% 对（got '960px 800px' 形）、transform px↔em 对（got
+      //    'translateX(-23px)' 形）——引擎跨单位长度插值退化为 px 数值插值，输出
+      //    值形与端点原文不符（fallback 回声检测不触发）且与 harness probe 期望
+      //    （calc 代数串/none）恒异 → REGRESSED 6 例。端点单位序列不一致的属性
+      //    不登记，回落 B0 通道（级联/终态 inline 写）。单位集一致（含无单位色值/
+      //    关键词对）零触及；calc() 混合单位两端点同集不误伤（v1 left/text-indent
+      //    calc 臂 GAIN 保持）。
+      if (!_zwUnsafe) {
+        var _zwPv = {};
+        for (var _zui = 0; _zui < _zwKf.length; _zui++) {
+          var _zuf = _zwKf[_zui] || {};
+          for (var _zuk in _zuf) {
+            if (_zuk === 'offset' || _zuk === 'composite' || _zuk === 'easing') continue;
+            var _zuv = _zuf[_zuk];
+            if (typeof _zuv !== 'string') continue;
+            var _zupn = _zwWaapiPropKebab(_zuk);
+            (_zwPv[_zupn] || (_zwPv[_zupn] = [])).push(_zuv);
+          }
+        }
+        for (var _zup in _zwPv) {
+          // rule-inset 8 longhand 跨单位（px↔%）例外：引擎插值器对 LP 槽产 calc
+          // 混合（css-values-4 §8.5.6 interpolation-calc，css-gaps interpolation
+          // 页 oracle），单位集失配不再判 unsafe（其余属性维持原门——离散 echo
+          // 回落噪声防线）。
+          var _zwMixable = _zwIsRuleInsetLonghand(_zup);
+          // 刀 A1b（css-masking/animations R3，2026-11-18）：position 族逗号列表
+          //（mask/background/object-position，css-masking-1 §5.3 文法同 bg-position）
+          // 帧间**层数失配**（2 层→1/3 层）被 ④ 整串单位 multiset 误杀——
+          // '0px 0px, 10px 10px'（px,px,px,px）≠ '20px 20px'（px,px）→ 动画不登记
+          //（WAAPI mismatched-layers 全 at 无覆盖；CSSA 同形正常实证 Rust apply
+          // 链无恙，唯 shim 门独病）。引擎 mix_mask_position 按列表重复规则 LCM
+          // 展开逐层插值（wptfyi-css 刀 A1 ③ 同通道），该族改比**逐层单位种类
+          // 集合**（顶层逗号分割、忽略层数）：各帧出现过的层单位种类一致（全纯
+          // px 等）放行；真单位种类失配（px↔% 层）维持 ④ 原判。无单位值
+          //（none/纯关键字值）仍不参判（原 continue 语义保形）。刀 A1e：单轴
+          // 长手 background-position-x/y（css-backgrounds-4 §2.4 <position-x>#）
+          // 同文法逗号列表入族——帧间层数失配（2 层→3 层）同样被 ④ 整串单位
+          // multiset 误杀（x/y-interp 页 WAAPI 7F 全 at 无覆盖、animate 根本未
+          // 到引擎 register 的探针实证 2026-11-18：21 BUILD-ENTRY = 前 3 blocks，
+          // multi-layer block 全缺）；引擎 mix_bg_position_axis LCM 逐层插值 +
+          // canonicalize 往返（刀 A1d 全链单元探针 probe_waapi_multilayer_chain
+          // 定谳全通），唯 shim 门独病同款。
+          var _zwPosList = _zup === 'mask-position' || _zup === 'background-position' || _zup === 'object-position'
+            || _zup === 'background-position-x' || _zup === 'background-position-y';
+          var _zwUs = null;
+          var _zwLayerKinds = null;
+          for (var _zuj = 0; _zuj < _zwPv[_zup].length; _zuj++) {
+            var _zwUv = String(_zwPv[_zup][_zuj]);
+            var _zwUm = _zwUv.match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || [];
+            if (_zwUm.length === 0) continue; // 无单位侧（none/无单位数值/色值）与任意单位插值合法——首版误门 none→X 臂实证 b3 transforms −21
+            if (_zwPosList) {
+              var _zwKinds = {};
+              var _zwDepth = 0, _zwCur = '', _zwLi;
+              for (_zwLi = 0; _zwLi <= _zwUv.length; _zwLi++) {
+                var _zwCh = _zwLi < _zwUv.length ? _zwUv.charAt(_zwLi) : ',';
+                if (_zwCh === '(') _zwDepth++;
+                if (_zwCh === ')' && _zwDepth > 0) _zwDepth--;
+                if (_zwCh === ',' && _zwDepth === 0) {
+                  _zwKinds[(String(_zwCur).match(/%|px|em\b|rem\b|vh\b|vw\b|vmin\b|vmax\b|deg\b|grad\b|rad\b|turn\b/g) || []).sort().join(' ')] = true;
+                  _zwCur = '';
+                } else { _zwCur += _zwCh; }
+              }
+              var _zwKindKey = Object.keys(_zwKinds).sort().join('|');
+              if (_zwLayerKinds === null) { _zwLayerKinds = _zwKindKey; }
+              else if (_zwLayerKinds !== _zwKindKey && !_zwMixable) { _zwUnsafe = true; break; }
+              continue;
+            }
+            var _zwUk = _zwUm.join(',');
+            if (_zwUs === null) { _zwUs = _zwUk; }
+            else if (_zwUs !== _zwUk && !_zwMixable) { _zwUnsafe = true; break; }
+          }
+          if (_zwUnsafe) break;
+        }
+      }
+    }
+    // spec：Web Animations §5.5 Element.animate / §3.6 KeyframeEffect。
+    // https://drafts.csswg.org/web-animations-1/
+    if ((sel || handle) && !_zwUnsafe && typeof __zw_js_anim_register === 'function') {
+      try {
+        var _zwSpec = {
+          kf: _zwWaapiSpecKeyframes(_zwKf),
+          dur: (effectOptions && typeof effectOptions.duration === 'number') ? effectOptions.duration : 0,
+          delay: (effectOptions && effectOptions.delay != null) ? Number(effectOptions.delay) || 0 : 0,
+          easing: (effectOptions && effectOptions.easing) || 'linear',
+          fill: (effectOptions && effectOptions.fill && effectOptions.fill !== 'auto') ? String(effectOptions.fill) : 'none',
+          iter: (effectOptions && effectOptions.iterations != null) ? effectOptions.iterations : 1,
+          dir: (effectOptions && effectOptions.direction) || 'normal',
+        };
+        // 帧端点 'inherit' 解析（刀 A1b R2，2026-11-18）：css-cascade-4 §inheritance /
+        // web-animations-1 §5.4.15 computed keyframes——关键帧 'inherit' = 父元素该
+        // 属性 computed value。Rust 侧 start_animation_with_underlying 的父链不可达
+        //（FIXME(kf-inherit-waapi)：js_anim 通道回落 'initial' 同式解析）→ from
+        // [inherit] 全 at 值域错（mask-position 页 7F）。shim 侧纯 sel 链解析：sel
+        //（handle-only 经 __zw_selector_for_handle 反查同源）→ `__zw_parent` 宿主
+        // 父选择器（parent_selector_for_doc，与 find_by_selector 同漏斗可解析——
+        // 元素 wrapper 的 __zwSelector 槽对模板克隆/类寻址元素为空不可用，探针
+        // R2C 实证）→ __zw_get_computed_style 读父 computed（与下方缺失端点合成
+        // 同通道）。父不可达/读值空保持 'inherit' 原文——Rust initial 回落兜底，
+        // 零回归方向。
+        // https://drafts.csswg.org/css-cascade-4/#defaulting
+        try {
+          var _zwHasInh = false;
+          var _zwRi, _zwRp0;
+          for (_zwRi = 0; _zwRi < _zwSpec.kf.length && !_zwHasInh; _zwRi++) {
+            _zwRp0 = _zwSpec.kf[_zwRi] && _zwSpec.kf[_zwRi].p;
+            for (var _zwRp0k in (_zwRp0 || {})) {
+              if (String(_zwRp0[_zwRp0k] || '').replace(/^\s+|\s+$/g, '').toLowerCase() === 'inherit') { _zwHasInh = true; break; }
+            }
+          }
+          if (_zwHasInh) {
+            // 父 identity 双形态：sel 面走 __zw_parent 父选择器 + sel 通道 gCS；
+            // handle-only（模板克隆/createElement 面——`__zw_selector_for_handle`
+            // 反解空、wrapper __zwSelector 槽空，探针 R2C 实证）走 _zwNodeParent
+            // 父 handle 反链（R5181，part01 同款上行链）+ handle 通道 gCS。
+            var _zwPsel = '';
+            if (sel && typeof __zw_parent === 'function') {
+              try { _zwPsel = String(__zw_parent(String(sel)) || ''); } catch (_zwPE) { _zwPsel = ''; }
+            }
+            // _zwNodeParent 反链（R5181）：值为 {parentSel, parentHandle, ...} 对象
+            //（MutationObserver childList added 批逐子镜像）——按字段提取，整对象
+            // 串化 "[object Object]" 垫空（首版命中性失效根因）。sel 面反解失败
+            //（corpus handle-only 面）也走反链，不限 !sel。
+            var _zwPhnd = '';
+            if (!_zwPsel && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && handle) {
+              var _zwLink = null;
+              try { _zwLink = _zwNodeParent[String(handle)] || null; } catch (_zwPHE) { _zwLink = null; }
+              if (_zwLink && typeof _zwLink === 'object') {
+                _zwPhnd = String(_zwLink.parentHandle || '');
+                if (!_zwPhnd) _zwPsel = String(_zwLink.parentSel || '');
+              }
+            }
+            if (_zwPsel || _zwPhnd) {
+              for (_zwRi = 0; _zwRi < _zwSpec.kf.length; _zwRi++) {
+                var _zwRp = _zwSpec.kf[_zwRi] && _zwSpec.kf[_zwRi].p;
+                if (!_zwRp) continue;
+                for (var _zwRprop in _zwRp) {
+                  if (String(_zwRp[_zwRprop] || '').replace(/^\s+|\s+$/g, '').toLowerCase() === 'inherit') {
+                    var _zwPv = '';
+                    try {
+                      _zwPv = _zwPsel
+                        ? String(__zw_get_computed_style(_zwPsel, _zwRprop) || '')
+                        : (typeof __zw_get_computed_style_by_handle === 'function'
+                          ? String(__zw_get_computed_style_by_handle(_zwPhnd, _zwRprop) || '')
+                          : '');
+                    } catch (_zwRE) { _zwPv = ''; }
+                    if (_zwPv) _zwRp[_zwRprop] = _zwPv;
+                  }
+                }
+              }
+            }
+          }
+        } catch (_zwROuterE) { /* 父链不可达保持 'inherit' 原文（Rust initial 回落兜底） */ }
+        // 端点合成（v3，2026-11-15 A/B 定谳）：neutral 单帧臂——interpolation
+        // harness（isNeutralKeyframe）跳过中性端点，spec kf 只剩 o=1 帧；时钟
+        // missing-endpoint 填 initial 值而非 underlying，at(0)/at(-0.3) 臂返回
+        // initial 串（v1 REGRESSED ≈28 例伪源：neutral→X 页 got '' / got
+        // 'rgba(0,0,0,1)' 形），css-values neutral→X 面整面 constant-end 塌陷。
+        // spec：Web Animations §5.4.15 缺失端点帧用 underlying computed value
+        // 合成。读 underlying 走 __zw_get_computed_style(sel, prop)——注册前本
+        // 动画不在表内无自递归；同元素更早注册动画按合成序计入（spec 近似一致）。
+        // handle-only 走 __zw_get_computed_style_by_handle 同形。
+        // https://drafts.csswg.org/web-animations-1/#keyframe-effect-computed-keyframes
+        try {
+          var _zwMs = { 0: true, 1: true };
+          var _zmi;
+          for (_zmi = 0; _zmi < _zwSpec.kf.length; _zmi++) {
+            if (_zwSpec.kf[_zmi].o === 0) _zwMs[0] = false;
+            if (_zwSpec.kf[_zmi].o === 1) _zwMs[1] = false;
+          }
+          if (_zwMs[0] || _zwMs[1]) {
+            var _zwPs = {};
+            for (_zmi = 0; _zmi < _zwSpec.kf.length; _zmi++) {
+              for (var _zmp in _zwSpec.kf[_zmi].p) _zwPs[_zmp] = true;
+            }
+            for (_zmi = 0; _zmi < 2; _zmi++) {
+              var _zmSide = _zmi === 0 ? 0 : 1;
+              if (!_zwMs[_zmSide]) continue;
+              var _zmFrame = { o: _zmSide, p: {} };
+              var _zmVal = '';
+              for (var _zmProp in _zwPs) {
+                try {
+                  _zmVal = (sel ? __zw_get_computed_style(String(sel), _zmProp)
+                    : (typeof __zw_get_computed_style_by_handle === 'function'
+                      ? __zw_get_computed_style_by_handle(String(handle), _zmProp) : '')) || '';
+                } catch (_zmE) { _zmVal = ''; }
+                if (_zmVal) _zmFrame.p[_zmProp] = _zmVal;
+              }
+              var _zmHas = false;
+              for (var _zmK in _zmFrame.p) { _zmHas = true; break; }
+              if (_zmHas) _zwSpec.kf.push(_zmFrame);
+            }
+          }
+        } catch (_zwSynE) { /* 合成失败按缺端点原样登记（v2 行为） */ }
+        anim._zwRegId = Number(__zw_js_anim_register(String(sel || ''), String(handle || ''), JSON.stringify(_zwSpec)) || 0) || null;
+      } catch (_eJsReg) { anim._zwRegId = null; }
+    }
     return anim;
+  }
+
+  // 动画值进 gCS 刀：keyframes 数组形规范为注册 spec（camelCase → kebab-case，
+  // -- 自定义属性保形；cssOffset/cssFloat 特名还原；offset 缺省均匀分布）。
+  function _zwWaapiPropKebab(name) {
+    var s = String(name);
+    if (s.slice(0, 2) === '--') return s;
+    if (s === 'cssOffset') return 'offset';
+    if (s === 'cssFloat') return 'float';
+    return s.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
+  }
+  // rule-inset 8 longhand 判别（kebab 原文或 camelCase 均收——WAAPI keyframes
+  // camelCase 入口先转 kebab 再判）。引擎对这 8 槽支持 px↔% calc 混合插值
+  //（css-gaps-1 §inset，css-values-4 §8.5.6），WAAPI 注册单位闸例外依据。
+  // A/B 快照二进制 provenance 指纹（zw-ruleinset-unitmix-2026-11-17）：刀 E shim
+  // 单位闸例外轮的源侧标记——strings 抽验新 shim 装载（include_str 全量入二进制）。
+  function _zwIsRuleInsetLonghand(name) {
+    var s = String(name).toLowerCase();
+    return /^(column|row)-rule-inset-(cap|junction)-(start|end)$/.test(s) || /^rule-inset-(cap|junction)-(start|end)$/.test(s);
+  }
+  function _zwWaapiSpecKeyframes(keyframes) {
+    var arr = Array.isArray(keyframes) ? keyframes : ((keyframes && typeof keyframes === 'object') ? [keyframes] : []);
+    var n = arr.length;
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var src = arr[i] || {};
+      var frame = { o: (src.offset != null ? Number(src.offset) : (n > 1 ? i / (n - 1) : 0)), p: {} };
+      for (var k in src) {
+        if (k === 'offset' || k === 'composite' || k === 'easing') continue;
+        if (Array.isArray(src[k]) || typeof src[k] === 'function') continue; // 属性索引形跳过该属性
+        frame.p[_zwWaapiPropKebab(k)] = String(src[k]);
+      }
+      out.push(frame);
+    }
+    return out;
+  }
+
+  // ── composite-add 刀（2026-11-15，wptfyi-css）：add/accumulate 端点预合成 ──
+  // 可加端点严格解析：<number> / Npx / <angle>(deg/grad/rad/turn) 单 token 与
+  // font-size-adjust `<metric> <number>`；% / em 等其他单位（引擎无对应插值臂）、
+  // calc / 关键字 / 函数列表（transform 等 MULTI 形）拒 → null。
+  function _zwAnimParseAddVal(s) {
+    var t = String(s).replace(/^\s+|\s+$/g, '');
+    var m = t.match(/^(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)(px|deg|grad|rad|turn)?$/);
+    if (m) return { n: parseFloat(m[1]), u: m[2] || '', mt: null };
+    m = t.match(/^(ex-height|cap-height|ch-width|ic-width|ic-height) (-?(?:\d+(?:\.\d+)?|\.\d+))$/);
+    if (m) return { n: parseFloat(m[2]), u: '', mt: m[1] };
+    return null;
+  }
+  // 合成数值串化（3 位小数去尾零，整数无小数点——与引擎 gCS format_num 同形；
+  // canonicalize 重序列化再规范化）。
+  function _zwAnimFmtAddNum(n) {
+    if (!isFinite(n)) return null;
+    var r = Math.round(n * 1000) / 1000;
+    if (r === Math.trunc(r)) return String(Math.trunc(r));
+    return String(r);
+  }
+  // underlying ⊕ endpoint：同单位相加；无单位 0 并入任意单位侧（css-values-4
+  // `<length> 0` 等价）；metric 形恒等回 `metric + ' ' + num`（同名 metric 对，
+  // 失配已在前置 mt 比较拒）；单位失配（px+deg 等）拒。
+  function _zwAnimAddValues(u, v) {
+    var a = _zwAnimParseAddVal(u), b = _zwAnimParseAddVal(v);
+    if (!a || !b || a.mt !== b.mt) return null;
+    if (a.mt !== null) {
+      var ms = _zwAnimFmtAddNum(a.n + b.n);
+      return ms === null ? null : a.mt + ' ' + ms;
+    }
+    if (a.u !== b.u) {
+      if (a.u === '' && a.n === 0) { a.u = b.u; }
+      else if (!(b.u === '' && b.n === 0)) { return null; }
+    }
+    var s = _zwAnimFmtAddNum(a.n + b.n);
+    return s === null ? null : s + a.u;
+  }
+  // add/accumulate 帧端点预合成（逐帧 effective composite = 帧 composite 覆盖
+  // options composite）：add/accumulate 帧逐属性读 underlying（gCS——注册前本动画
+  // 不在表内无自递归，帧间同值 memo）相加；replace/auto 帧原样透传；其余 composite
+  // 值（非法串）→ null 维持现状。任一 add 属性不可预合成（underlying 读空/值形
+  // 不可加/属性索引数组值）→ null（整动画 all-or-nothing 不登记）。变换帧删
+  // composite 键（replace 语义登记）。offset/easing 键保形（_zwWaapiSpecKeyframes
+  // 同消费）。
+  function _zwComposeAddKeyframes(frames, optComp, sel, handle) {
+    var out = [];
+    var _zwUc = {};
+    for (var i = 0; i < frames.length; i++) {
+      var src = frames[i] || {};
+      var comp = (src.composite != null) ? String(src.composite) : (optComp || 'replace');
+      var isAdd = comp === 'add' || comp === 'accumulate';
+      if (comp !== 'replace' && comp !== 'auto' && !isAdd) return null;
+      var dst = {};
+      for (var k in src) {
+        if (k === 'composite') continue;
+        if (isAdd && k !== 'offset' && k !== 'easing') {
+          var v = src[k];
+          if (Array.isArray(v) || typeof v !== 'string') return null;
+          var pk = _zwWaapiPropKebab(k);
+          if (typeof _zwUc[pk] !== 'string') {
+            try {
+              _zwUc[pk] = (sel ? __zw_get_computed_style(String(sel), pk)
+                : (typeof __zw_get_computed_style_by_handle === 'function'
+                  ? __zw_get_computed_style_by_handle(String(handle), pk) : '')) || '';
+            } catch (_eUc) { _zwUc[pk] = ''; }
+          }
+          var c = _zwAnimAddValues(_zwUc[pk], v);
+          if (c === null) return null;
+          dst[k] = c;
+        } else {
+          dst[k] = src[k];
+        }
+      }
+      out.push(dst);
+    }
+    return out;
+  }
+
+  // WAAPI 门刀（2026-11-15，wptfyi-css 插值 harness 337 页面）：harness 门在
+  // `'animate' in Element.prototype`（css/support/interpolation-testcommon.js
+  // webAnimationsInterpolation.isSupported）——R2965 animate/getAnimations 此前只在
+  // 实例 proxy get trap 面（part04），原型面 `'animate' in Element.prototype` 恒
+  // false，WAAPI 型插值子测整面不注册（B1 实测 11,020 门 fail）。原型方法
+  // this=元素 proxy，经内部身份槽解析 sel/handle（handle-only proxy 反查
+  // `__zw_selector_for_handle`，part04 R407 同形）后委托既有 `_makeAnimation`/
+  // 注册表——R2965/R3067 语义零改动。enumerable:false 同 HTMLElement.prototype
+  // .style 先例（proto 面 for...in 零进，R3046）。
+  // spec：Web Animations §5.5/§5.6 Element.animate/getAnimations。
+  // https://drafts.csswg.org/web-animations-1/#dom-element-animate
+  if (globalThis.Element && globalThis.Element.prototype) {
+    Object.defineProperty(globalThis.Element.prototype, 'animate', {
+      value: function (keyframes, options) {
+        var _sel = (this && this.__zwSelector) || null;
+        var _hnd = (this && this.__zwHandle) || null;
+        if (!_sel && _hnd && typeof __zw_selector_for_handle === 'function') {
+          try { _sel = String(__zw_selector_for_handle(_hnd) || '') || null; } catch (_ePAnim) { _sel = null; }
+        }
+        return _makeAnimation(keyframes, options, _sel, _hnd);
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(globalThis.Element.prototype, 'getAnimations', {
+      value: function () {
+        var _sel = (this && this.__zwSelector) || null;
+        var _hnd = (this && this.__zwHandle) || null;
+        var _anims = _elementAnimations[_elKey(_sel, _hnd)] || [];
+        return _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
   }
 
   // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
@@ -17381,7 +17822,7 @@
 
   // R154（js-dom M4）：元素是否有自身 activation behavior（HTML 各元素激活定义的静态
   // 近似——供 nearest-activation 止步判定）。checkbox/radio INPUT 由调用方先行处理
-  // （其 disabled/click() 语义特殊），此处枚举其余五类。
+  // （其 disabled/click() 语义特殊），此处枚举其余六类。
   function _zwHasOwnActivationBehavior(tag, sel, handle) {
     if (!tag) return false;
     if (tag === 'A' || tag === 'AREA') {
@@ -17390,6 +17831,13 @@
       return !!href;
     }
     if (tag === 'LABEL' || tag === 'DETAILS' || tag === 'SUMMARY') return true;
+    // R5530（html-semantics M2 切片 430）：OPTION 有 listbox 选中激活（HTML 渲染
+    // 规范 §the-select-element-2 listbox 形态；spec 未述 pick 激活正式定义，
+    // Chromium listbox 语义近似，语料 select-listbox-touch.optional 同标
+    // .optional）——nearest 止步后由 dispatch post 段 act:option 分支承接
+    // （UA 通道门内自检 select 归属/disabled，closed 形态 option 无布局盒
+    // （s428 抑制谓词）天然不入本判定）。
+    if (tag === 'OPTION') return true;
     if (tag === 'INPUT' || tag === 'BUTTON') {
       var ty = '';
       try { ty = handle ? __zw_get_attr_handle(handle, 'type') : (sel ? __zw_get_attr(sel, 'type') : null); } catch (_e2) { ty = ''; }
@@ -18545,6 +18993,34 @@
           // dismiss 案 test_driver.click(showmodalbutton) 断言面）。submit/reset
           // 仍不落本段——runner click 命令 S4J submit_script 承接，本段只补 invoker。
           try { _zwInvokerCommandActivate(_r112Act.sel, _r112Act.handle); } catch (_e4400b) {}
+        } else if (_r112Act.type === 'act:option' && event._zwUaDispatch === true) {
+          // R5530（html-semantics M2 切片 430）：UA 通道坐标点击落 listbox
+          // option——选中翻转激活（HTML 渲染规范 §the-select-element-2 listbox
+          // 形态；spec 未述 pick 激活正式定义，Chromium listbox 语义近似，语料
+          // select-listbox-touch.optional 同标 .optional——上游注明 touch 激活
+          // 行为 spec 未述）。toggle 经 option.selected IDL setter（R3908b
+          // selectedness+dirtiness 写面）——R3909 ask-for-reset 自带形态分：
+          // 非 multiple 互斥清兄弟、multiple 不清他人（本语料钉面）。实际翻转
+          // 才派 input+change 到所属 SELECT（镜像 __zw_select_key_action 派发
+          // 形）。无所属 select（datalist option）与 disabled option 不激活。
+          // FIXME: disabled 经 optgroup/fieldset 继承链未查（语料无钉面）。
+          try {
+            var _r5530Os = _zwOptNearestSelect(_r112Act.sel, _r112Act.handle);
+            if (_r5530Os) {
+              var _r5530Dis = '0';
+              try { _r5530Dis = _r112Act.handle ? __zw_has_attr_handle(_r112Act.handle, 'disabled') : __zw_has_attr(_r112Act.sel, 'disabled'); } catch (_e5530d) {}
+              if (_r5530Dis !== '1') {
+                var _r5530Opt = _makeProxy(_r112Act.sel, _r112Act.handle);
+                var _r5530Before = !!_r5530Opt.selected;
+                _r5530Opt.selected = !_r5530Before;
+                if (!!_r5530Opt.selected !== _r5530Before) {
+                  var _r5530Sel = _makeProxy(_r5530Os.sel, _r5530Os.hnd);
+                  _r5530Sel.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
+                  _r5530Sel.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+                }
+              }
+            }
+          } catch (_e5530a) {}
         } else if (_r112Act.type === 'act:a' || _r112Act.type === 'act:area') {
           // R5239（html-semantics M2 切片 37）：nearest activation target 是
           // A/AREA（target 为其后代——anchor-with-inline-element 语料：a[href]
@@ -19409,6 +19885,24 @@
   // SVGAElement.target SameObject 缓存（消费点 get trap target 分支——svgstring-1
   // 面；key = 元素 key，口径同 _zwSvgClsCache）。
   var _zwSvgTargetCache = {};
+  // s433（html-semantics）：FORM named-first gate 的 FORM-ness 判定缓存（_elKey →
+  // {g: apply 代际, f: 是否 FORM}）。gate 前置于通用反射臂（title/lang/dir 等），
+  // 元素 proxy 每属性读都要判 FORM-ness；直调 _realTag 在 P39r2 stamp 失配窗口
+  // 会打宿主 get_tag 往返（性能主源），故缓存 + apply 代际章（元素 tag 恒定，
+  // rebind 仅发生在 apply 时——代际推进即重判，失真窗口消除）。
+  var _zwFormNamedTag = {};
+  // s433：named/index 臂具名集合门控缓存（_elKey → {g: 代际, a/r: pending 记账
+  // 长度, e: attr 写纪元, s: 具名集合（收集期间 null 哨兵）}）——见 gate ⓪ 臂注。
+  var _zwFormNamedSet = {};
+  // s433：attr 写纪元——name/id 内容属性写（IDL 反射 setter / setAttribute /
+  // removeAttribute 三 funnel）即 bump，入 ⓪ 印章。具名集合的 live 语义含
+  // **attr 面变更**（form-nameditem past-names 案 `i1.name = "twiddled-name1"`
+  // 改名后新名须立即可 named 命中；R27/R28/R30 事件轨迹实证：n=1 收集发生在
+  // appendChild 机器内、`input.name = "x"` 之前，attr 写不动 pending 印章 →
+  // g.x 读服务陈旧空集 → ③ 被跳过）。全局纪元保守覆盖任意控件的 name/id 写
+  //（写罕见，读侧仅失配一次重建）。解析期 attr 与 pending 面（append/remove）
+  // 走既有三元组，不经本纪元。
+  var _zwFormAttrEpoch = 0;
   // SVG ns 判定：createElementNS 产物（handle 型）经 _nsHandles（R18/R80 登记的 ns）；
   // sel-based 解析元素经 _zwSelNs（R5000 foreign content 探测）。
   // 已知限制（PR #80 缺陷审查记档）：sel 型元素 detach 后 host query miss → 归一 ''，
@@ -20997,6 +21491,11 @@
     var node = this;
     var attrs = this[_zwAttrsSlotKey];
     n = String(n); var sv = v == null ? '' : String(v);
+    // g44（css-style-attr §2）：style 内容属性写面逐声明 invalid 渐变拒收——
+    // materialized createElement 产物 setAttribute 通道此前原文落库，invalid 渐变
+    // 经 getPropertyValue/cssText 回显伪成功（color-stops-parsing 60F 靶面）。
+    // 过滤语义见 part06 `_zwStyleAttrDeclFilter`（幸存声明原文保形，非重序列化）。
+    if (n.toLowerCase() === 'style') sv = _zwStyleAttrDeclFilter(sv);
     _zwMElQIdxInvalidate(node);
     var _r4100Had = null;
     if (n.toLowerCase() === 'open' || n.toLowerCase() === 'name') {
@@ -22896,8 +23395,27 @@
       return found;
     };
     var readProp = function (name) {
+      // 刀 N 三期：font 简写读旁路（css-fonts-4 §font-prop serialization）——raw
+      // `font:` 声明与旁路 longhand 覆写声明共存（写面原文落库单点不变），宿主
+      // 回调整体裁决（位解析 + 防逐出 + canonical 串化，`font_shorthand_
+      // reconstruct_from_style` 单点）：空串 = 不可串化（spec shorthand getter
+      // 空值语义）直返，不回落 raw 声明读。quickjs 腿回调恒空串（v8 门控惯例，
+      // gap-rule 臂同口径）。
+      if (_styleDeclName(name) === 'font'
+          && typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        return String(globalThis.__zw_style_shorthand_reconstruct(readRaw(), 'font'));
+      }
       var v = readDeclValue(name);
-      return v == null ? '' : _styleValueAndPriority(v).value;
+      if (v != null) return _styleValueAndPriority(v).value;
+      // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 简写读重组（T50 面同
+      // 回调同语义——直接声明 miss 时从名单 longhand 重组 specified 串；非家族名
+      // / 缺任一 longhand / 不可重组空串回落，回调未注册零漂移）。
+      if (typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        var gRec = String(globalThis.__zw_style_shorthand_reconstruct(
+          readRaw(), _styleDeclName(name)));
+        if (gRec) return gRec;
+      }
+      return '';
     };
     var propNames = function () {
       return readRaw().split(';').map(function (s) {
@@ -22951,16 +23469,68 @@
         // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
         if (core !== '' && typeof __zw_validate_decl_value === 'function'
             && __zw_validate_decl_value(want, core) === 'false') return;
+        // wptfyi-css css-gaps 刀 D inline 站（kd-inline-station M）：gap-rule/inset
+        // 简写家族展开落名单 longhand（与 T50 面同回调单源——cssom-1 简写语义 +
+        // test_shorthand_value style.length 记账，简写键不占声明位，Chromium cssText
+        // 同形态）。本面存储域 = style attribute 原文——直接字符串手术重排声明段
+        //（既有本名 + 家族 longhand 段滤除后回拼）。priority 逐名透传；非家族名 /
+        // 展开失败空串 → 回落通用写路径零漂移。
+        // https://drafts.csswg.org/cssom-1/#dom-cssstyledeclaration-setproperty
+        if (typeof globalThis.__zw_style_shorthand_expand === 'function') {
+          var gJson = String(globalThis.__zw_style_shorthand_expand(want, core));
+          if (gJson) {
+            var gDecls = null;
+            try { gDecls = JSON.parse(gJson); } catch (gErr) { gDecls = null; }
+            if (gDecls && gDecls.length) {
+              var gDrop = {};
+              for (var gi = 0; gi < gDecls.length; gi++) gDrop[gDecls[gi][0]] = true;
+              gDrop[want.toLowerCase()] = true;
+              var gParts = readRaw().split(';');
+              var gOut = [];
+              for (var gp = 0; gp < gParts.length; gp++) {
+                var gSeg = gParts[gp];
+                var gColon = gSeg.indexOf(':');
+                if (gColon < 0) { if (gSeg.trim()) gOut.push(gSeg.trim()); continue; }
+                var gName = gSeg.slice(0, gColon).trim().toLowerCase();
+                if (gName && (gName in gDrop)) continue;
+                gOut.push(gSeg.trim());
+              }
+              for (var gi2 = 0; gi2 < gDecls.length; gi2++) {
+                var gv = gDecls[gi2][1];
+                if (gv !== '') gOut.push(gDecls[gi2][0] + ': ' + (pri.priority ? gv + ' !important' : gv));
+              }
+              node.setAttribute('style', gOut.join('; '));
+              return true;
+            }
+          }
+        }
         v = pri.priority ? core + ' !important' : core;
       }
       var parts = readRaw().split(';');
       var out = [];
+      // 刀 D inline 站：gap-rule/inset 家族简写空值 = 名单 longhand 一并移除
+      //（cssom-1 简写 remove 语义；本面 removeProperty 委托空值写——T50 面空值臂
+      // 同形；宿主 expand 回调空值返 (名,"") 名单，未注册/非家族名零漂移）。
+      var gFamDrop = null;
+      if (v === '' && !custom && typeof globalThis.__zw_style_shorthand_expand === 'function') {
+        var geJson = String(globalThis.__zw_style_shorthand_expand(want, ''));
+        if (geJson) {
+          try { gFamDrop = JSON.parse(geJson); } catch (geErr) { gFamDrop = null; }
+          if (!(gFamDrop && gFamDrop.length)) gFamDrop = null;
+        }
+      }
       for (var i = 0; i < parts.length; i++) {
         var decl = parts[i];
         var colon = decl.indexOf(':');
         if (colon < 0) { if (decl.trim()) out.push(decl.trim()); continue; }
         var dname = decl.slice(0, colon).trim();
         var keep = custom ? dname !== want : dname.toLowerCase() !== want.toLowerCase();
+        if (keep && gFamDrop) {
+          var gDl = dname.toLowerCase();
+          for (var gfi = 0; gfi < gFamDrop.length; gfi++) {
+            if (gFamDrop[gfi][0] === gDl) { keep = false; break; }
+          }
+        }
         if (keep) out.push(decl.trim());
       }
       // T52：值参 trim 后回拼（IDL set trap 此前原文透传落库两侧空白，与 setProperty
@@ -25431,6 +26001,12 @@
       // body 视图零变化）。
       var hh179 = '';
       try { hh179 = String(_r179HeadHtml || ''); } catch (_e179h) {}
+      // T 切片（editing goal d34）：iframe 子文档 head 段（doc 槽 `_r159HeadHtml`
+      // ——part05 解析前剥离的原始整段，含 `<head>` 包裹）并入包装层——head
+      // 内容迁入 headEl 后 body 树序列化不再含 head 子，缺省补发保 R164
+      // detHtml 轮转查询视图（title/meta/script 查询命中）；普通 detached doc
+      // 无槽零变化。
+      try { if (!hh179 && doc._r159HeadHtml) hh179 = String(doc._r159HeadHtml); } catch (_e159hs) {}
       // R159：html/body 属性恢复到包装层（`<html id="html"><body id="body">`——
       // 查询树保真；普通 detached doc 无槽零变化）。
       if (ha || ba || hh179) {
@@ -25610,6 +26186,22 @@
       try {
         ensureTree();
         var realNode167 = _zwMFindRealNode(_tree, key);
+        if (!realNode167) {
+          // T 切片（editing goal d34）：headEl 视图真节点搜——iframe 子文档 head
+          // 段解析期迁入 headEl（part05 解析前剥离）后，R167 桥的 `_tree` 搜不再
+          // 覆盖 head 内容，JSON 往返命中 head 子时落 `_zwParseEl` wrapper 域
+          //（无 .remove——corpus removeResourceScriptElements TypeError 46F 实证）。
+          // 非元素伪根走 R307 fragment 同款（跳过自身登记只递归子）；host 已按
+          // 作用域裁决命中后才到此，body 作用域误命中不存在。真节点自登记同
+          // R166 方向（real 即桥对象）。
+          try {
+            var _hd167k = doc.head && doc.head.childNodes;
+            if (_hd167k && _hd167k.length) {
+              var _hd167 = _zwMFindRealNode({ childNodes: _hd167k }, key);
+              if (_hd167) { _zwBridgeSet(_hd167, _hd167); realNode167 = _hd167; }
+            }
+          } catch (_e167hd) {}
+        }
         if (realNode167) {
           var bridged167 = _zwBridgeGet(realNode167);
           if (bridged167) {
@@ -25773,6 +26365,13 @@
       // srcdoc_change_hash 经 contentDocument.body.innerText 断言。
       get innerText() { return this.textContent; },
       set innerText(v) { this.textContent = v; },
+      // R5520（editing d19）：detached/iframe 文档 body 视图的 focus()——DesignMode
+      // 编辑宿主（editor-test-utils.js setupEditingHost 的 `this.editingHost.focus()`
+      // 与 typing-around-link 的 `utils.document.body.focus()`）。合成树无布局
+      // 可聚焦性、视图对象未建 handle 域 activeElement/dispatchEvent 体系 →
+      // 轻量 no-op（消费面此前 TypeError）。
+      // https://html.spec.whatwg.org/#dom-focus
+      focus: function () {},
       querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
       querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode
@@ -26260,6 +26859,23 @@
       _r130WireSiblings(headEl.childNodes);
       return c;
     };
+    // B1 切片 2（editing goal d22，2026-11-14）：headEl **属性面**——s408 三件套
+    // 之后 headEl 仍无 set/removeAttribute（delete/insertparagraph-in-child-of-*
+    // corpus 尾步 `childDoc.head.setAttribute("style","display:block")` /
+    // `childDoc.head.removeAttribute("style")` TypeError → 整 promise_test
+    // unhandled rejection）。本地属性表存取（body 视图 R132 同款语义，但不入
+    // _tree——headEl 是独立视图，属性自持）。
+    // https://dom.spec.whatwg.org/#dom-element-setattribute
+    (function () {
+      var _s2HeadAttrs = {};
+      headEl.setAttribute = function (n, v) { _s2HeadAttrs[String(n).toLowerCase()] = v == null ? '' : String(v); };
+      headEl.getAttribute = function (n) {
+        var k = String(n == null ? '' : n).toLowerCase();
+        return Object.prototype.hasOwnProperty.call(_s2HeadAttrs, k) ? _s2HeadAttrs[k] : null;
+      };
+      headEl.hasAttribute = function (n) { return headEl.getAttribute(n) !== null; };
+      headEl.removeAttribute = function (n) { delete _s2HeadAttrs[String(n == null ? '' : n).toLowerCase()]; };
+    })();
     // R130：body 同款接线（HTMLBodyElement）。
     try {
       if (globalThis.HTMLBodyElement && globalThis.HTMLBodyElement.prototype) {
@@ -27910,7 +28526,17 @@ return e;
     // 其父为 doc）。WPT common.js `foreignDoc.body.appendChild(foreignPara1)` 后
     // `foreignDoc.contains(foreignPara1)` 沿 parentNode 链上行须命中 foreignDoc。body.parentNode
     // 原 null（R3017 detached root 注释——DOMPurify walk 用 parentNode 向上只多一级，不影响）。
-    headEl.parentNode = docEl;
+    // B1（editing goal d21，2026-11-14）：headEl/docEl 的 parentNode 写入须走 own
+    // defineProperty——R130 已把两者 setPrototypeOf 到 HTML*Element.prototype，而
+    // R3019 在 Element.prototype 挂了 getter-only parentNode 访问器（读 own 缺省
+    // null），plain 赋值静默失效 → own 属性不存在 → 上行链在 docEl 断（探针实证
+    // body→docEl 即止：getRootNode(body) 返 docEl 非 doc）。EditorTestUtils.sendKey
+    // 的 light-DOM 上行（editing/include/editor-test-utils.js）沿
+    // `e.getRootNode({composed:false}).host` 取 host → undefined → 下一轮
+    // `e.getRootNode` TypeError——delete/insertparagraph-in-child-of-* DesignMode
+    // 变体整簇 setup 崩（selection editing/other 146F）。spec
+    // https://dom.spec.whatwg.org/#dom-node-parentnode。
+    Object.defineProperty(headEl, 'parentNode', { value: docEl, writable: true, configurable: true });
     // R81：body.parentNode 已由上方 getter 承载（docEl），此处不再赋值（赋值会覆盖 getter 报错或失效）。
     docEl.childNodes = [headEl, body];
     docEl.children = [headEl, body];
@@ -27934,7 +28560,9 @@ return e;
     docEl.hasChildNodes = function () { return true; };
     docEl.contains = function (other) { return _zwNodeContains(docEl, other); };
     docEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(docEl, other); };
-    docEl.parentNode = doc;
+    // B1（editing goal d21）：同 headEl——R3019 访问器使 plain 赋值 no-op，改 own
+    // defineProperty（R223 健壮写同款；11251 先例）。
+    Object.defineProperty(docEl, 'parentNode', { value: doc, writable: true, configurable: true });
     // js-dom M4 R112：docEl/body 事件面（view 形态 _zwEvLs + tag 注册表——与 _zwParseEl
     // path 派发共享 fire 语义；WPT Event-dispatch-bubbles targets = [doc, docEl, body, ...]
     // 逐一 addEventListener）。tag 键经全局 _zwEvTagRegistry（part02 定义）注册，使解析
@@ -30544,6 +31172,13 @@ return e;
       return v == null ? '' : _styleValueAndPriority(v).value;
     };
     var readProp = function(name) {
+      // 刀 N 三期：font 简写读旁路（css-fonts-4 §font-prop serialization）——
+      // 同 _zwMStyleProxy 面 font 臂：宿主回调整体裁决（防逐出 + canonical
+      // 串化），空串按 spec 空值语义直返。quickjs 腿回调恒空串（惯例同上）。
+      if (_styleDeclName(name) === 'font'
+          && typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        return String(globalThis.__zw_style_shorthand_reconstruct(readRaw(), 'font'));
+      }
       if (_styleDeclName(name) === 'position-try') {
         var tO = readLonghand('position-try-order');
         var tF = readLonghand('position-try-fallbacks');
@@ -30553,7 +31188,19 @@ return e;
           _styleValueAndPriority(tF || 'none').value
         );
       }
-      return readLonghand(name);
+      var lv = readLonghand(name);
+      if (lv) return lv;
+      // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 简写读重组——直接声明
+      // miss 时宿主回调从名单 longhand 重组 specified 串（canonical `10px 20px /
+      // 10px 20px` 全形 / 全等塌缩单值 / 双轴等值模型，bidirectional-shorthands
+      // 页 oracle 同源）。非家族简写名 / 缺任一 longhand / 不可重组返空串 → 回落
+      // 空值语义（回调未注册零漂移，position-try 合成读同约定）。
+      if (typeof globalThis.__zw_style_shorthand_reconstruct === 'function') {
+        var gRec = String(globalThis.__zw_style_shorthand_reconstruct(
+          readRaw(), _styleDeclName(name)));
+        if (gRec) return gRec;
+      }
+      return lv;
     };
     var setProp = function(name, value) {
       // T50：写面名参接 `_styleDeclName`（与规则样式/声明文本面同函数，DF-1 同根收口）——
@@ -30647,6 +31294,35 @@ return e;
         // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
         if (core !== '' && typeof __zw_validate_decl_value === 'function'
             && __zw_validate_decl_value(prop, core) === 'false') return;
+        // wptfyi-css css-gaps 刀 D inline 站（kd-inline-station T50）：gap-rule/
+        // inset 简写家族展开落名单 longhand（cssom-1 简写语义 + test_shorthand_value
+        // style.length 记账——简写键不占声明位，Chromium cssText 同形态）。宿主回调
+        // 返 JSON (名,值) 列表（canonical 文本：裸零折 0px / 单侧复制 / `/` 全形；
+        // css-wide 逐 longhand 透传）；空值返 (名,"") 列表 = 名单逐名清声明（R3211
+        // 简写 remove 语义，native 面空值臂同形）；非家族简写名 / 展开失败返空串
+        // → 回落通用写路径零漂移（position-try split 臂同约定）。priority 逐名
+        // 透传（native 面 gap_rule_expand_decls 同语义）。实现单源
+        // dom_bindings::css_style_declaration（grid/position-area G1 同型）。
+        // https://drafts.csswg.org/cssom-1/#dom-cssstyledeclaration-setproperty
+        if (typeof globalThis.__zw_style_shorthand_expand === 'function') {
+          var gJson = String(globalThis.__zw_style_shorthand_expand(prop, core));
+          if (gJson) {
+            var gDecls = null;
+            try { gDecls = JSON.parse(gJson); } catch (gErr) { gDecls = null; }
+            if (gDecls && gDecls.length) {
+              if (handle) __zw_set_style_handle(handle, prop, '');
+              else __zw_set_style(sel, prop, '');
+              for (var gi = 0; gi < gDecls.length; gi++) {
+                var gv = gDecls[gi][1];
+                if (pri.priority && gv !== '') gv = gv + ' !important';
+                if (handle) __zw_set_style_handle(handle, gDecls[gi][0], gv);
+                else __zw_set_style(sel, gDecls[gi][0], gv);
+              }
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+              return;
+            }
+          }
+        }
         v = pri.priority ? core + ' !important' : core;
         // raw 影子（none 传播——见 _zwRawByHandle 注释块）：归一变形且原值含
         // none → 存原值。core 保 none 形（hsl/hwb % 剥除后仍含 none 字面）同样
@@ -30733,6 +31409,26 @@ return e;
               }
               _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
               return prev;
+            }
+            // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 家族简写 removeProperty
+            // = 名单 longhand 一并清除（cssom-1 简写 remove 语义——native 面 R3211
+            // 空值臂同形；写面展开臂的逆）。宿主 expand 回调空值返 (名,"") 名单；
+            // 未注册 / 非家族名 → 通用单名清除零漂移。
+            if (typeof globalThis.__zw_style_shorthand_expand === 'function') {
+              var gFamJson = String(globalThis.__zw_style_shorthand_expand(prop, ''));
+              if (gFamJson) {
+                var gFam = null;
+                try { gFam = JSON.parse(gFamJson); } catch (gErr2) { gFam = null; }
+                if (gFam && gFam.length) {
+                  for (var gf = 0; gf < gFam.length; gf++) {
+                    if (handle && typeof __zw_remove_style_handle === 'function') {
+                      __zw_remove_style_handle(handle, gFam[gf][0]);
+                    } else if (!handle && typeof __zw_remove_style === 'function') {
+                      __zw_remove_style(sel, gFam[gf][0]);
+                    }
+                  }
+                }
+              }
             }
             if (shadow) delete shadow[prop];
             if (handle && typeof __zw_remove_style_handle === 'function') {
@@ -30844,6 +31540,67 @@ return e;
     // download/cross-origin 面——WPT navigate-anchor-download / -cross-origin /
     // -same-origin-cross-document / -same-url 族）。
     else if (_r154Href && globalThis.location) {
+      // s432（html-semantics M3 links 面）：A/AREA target=_blank 臂——auxiliary
+      // browsing context 近似，复用 s431 form _blank 臂的合成 entry 管线（flags
+      // 通道 + part01 finish aux opener/close/referrer 预置 + BroadcastChannel
+      // 回投——同一 JS VM 跨 entry 天然可达）。spec 链：following hyperlinks 的
+      // target 缺省步（plan to navigate：元素 target 属性 → Document base
+      // target）+ window opening steps 的 _blank noopener 缺省强制 / noreferrer
+      // 逐 token 判定。rel 每次激活新鲜读（rel-attribute-clearing 钉面：IDL 写
+      // 改写 rel 后下击按新值判定，禁缓存）。target 读同 href 双通道（own
+      // expando 优先——`a.target = '_blank'` IDL 写可能落 expando；attr 回落）
+      // + base target 缺省（target_blank_implicit_noopener_base 钉面）。瞬态
+      // 激活消费同 form 臂（target_blank_useractivation 钉面：开窗后 isActive
+      // 须 false）。download 线程态清空后 return（不触达当前文档导航——语料
+      // file 级 Timeout 根因：endpoint 不存在 → BroadcastChannel 永不回投 →
+      // harness 挂起）。
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#window-opening-steps
+      var _r154Target = '';
+      try {
+        var _p154t = _makeProxy(sel, handle);
+        if (_p154t && Object.prototype.hasOwnProperty.call(_p154t, 'target')
+            && _p154t.target != null && _p154t.target !== '') {
+          _r154Target = String(_p154t.target);
+        }
+      } catch (_e154tg) {}
+      if (!_r154Target) {
+        try { _r154Target = handle ? __zw_get_attr_handle(handle, 'target') : (__zw_get_attr(sel, 'target') || ''); } catch (_e154ta) { _r154Target = ''; }
+      }
+      if (!_r154Target) {
+        try {
+          var _r154Bt = globalThis.document.querySelector('base');
+          if (_r154Bt) _r154Target = String(_r154Bt.getAttribute('target') || '');
+        } catch (_e154tb) {}
+      }
+      if (_r154Target === '_blank') {
+        var _r154Rel = ' ';
+        try {
+          var _p154r = _makeProxy(sel, handle);
+          var _r154RelRaw = _p154r ? _p154r.rel : undefined;
+          if (typeof _r154RelRaw !== 'string') {
+            _r154RelRaw = String(handle ? __zw_get_attr_handle(handle, 'rel') : (__zw_get_attr(sel, 'rel') || ''));
+          }
+          _r154Rel = ' ' + String(_r154RelRaw || '').toLowerCase().replace(/\s+/g, ' ').trim() + ' ';
+        } catch (_e154rr) {}
+        var _r154Noop = _r154Rel.indexOf(' noopener ') >= 0;
+        var _r154Noref = _r154Rel.indexOf(' noreferrer ') >= 0;
+        var _r154Opn = _r154Rel.indexOf(' opener ') >= 0;
+        var _r154Flags = {
+          aux: true,
+          opener: (_r154Noop || _r154Noref || !_r154Opn) ? null : globalThis,
+        };
+        if (_r154Noref) _r154Flags.referrer = '';
+        try {
+          var _r154BaseU = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL() : String(globalThis.location.href || 'about:blank');
+          var _r154Abs = new URL(String(_r154Href), _r154BaseU).href;
+          globalThis.__zwAnchorAuxSeq = (globalThis.__zwAnchorAuxSeq | 0) + 1;
+          _zwLoadIframeEntry('__zwAuxAnchor:' + globalThis.__zwAnchorAuxSeq, _r154Abs, _r154Flags);
+        } catch (_e154ax) {}
+        globalThis.__zwNavDownloadRequest = null;
+        _zwTransientActive = false;
+        return;
+      }
       var _r154Se = null;
       try { _r154Se = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se2) { _r154Se = null; }
       try {
@@ -32360,57 +33117,6 @@ return e;
             return prop === 'protocol' ? ':' : '';
           }
         }
-        // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
-        // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；
-        // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
-        // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
-        // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
-        // R3202：sel 路径改走 latest-wins（`__zw_get_attr_lw`）反映同批 `form.method=`/`setAttribute`（旧纯快照
-        // `__zw_get_attr` → `f.method='POST'; f.method` 读 stale 快照返 default 'get'，同 R3190/R3195 stale 模式）。
-        if (_realTag(sel, handle) === 'FORM' &&
-            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'encoding' || prop === 'target')) {
-          var fv = handle
-            ? __zw_get_attr_handle(handle, prop === 'encoding' ? 'enctype' : prop)
-            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop === 'encoding' ? 'enctype' : prop) : __zw_get_attr(sel, prop === 'encoding' ? 'enctype' : prop));
-          fv = fv || '';
-          // R5009 片 d（M4 片 d）：encoding 与 enctype 同 attr（domAttrName 映射——
-          // MAP 直读曾返原串无归一，WPT reflection-forms 'form.encoding
-          // setAttribute("multipart/form-data\0")' 期望 invalid → urlencoded）。
-          if (prop === 'method') {
-            fv = fv.toLowerCase();
-            if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
-          } else if (prop === 'enctype' || prop === 'encoding') {
-            // R5009 片 d：encoding 归一同 enctype（ASCII 小写 + invalid → urlencoded）。
-            fv = _zwASCIILower(fv);
-            if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
-              fv = 'application/x-www-form-urlencoded';
-            }
-          } else if (prop === 'action') {
-            // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
-            // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
-            // 期望解析绝对 URL）。与 A/AREA href 同用 `__zw_parse_url`。
-            // net-api M5-S7：非空值解析基 = 文档基 URL（<base href> 优先——spec form
-            // action 对 document base URL 解析）。
-            // s207：missing/空串特例（HTML §4.10.3 #dom-fs-action 反射例外——content
-            // attribute 缺失或空串时返 **node document's URL**，非文档基 URL，
-            // `<base href>` 不影响；WPT form-action-reflection-with-base-url 空/
-            // 缺失两断言面）。旧实现空值落解析分支被基 URL 吸走（返 <base>
-            // 解析值）；R5009 片 d 的「missing/空 → 文档 URL」仅活在
-            // `__zw_parse_url` 不可用回退分支，M5-S7 后成死路。
-            var _fActBase = (typeof globalThis._zwDocBaseURL === 'function')
-              ? globalThis._zwDocBaseURL()
-              : (globalThis.location ? globalThis.location.href : '');
-            if (fv === '') {
-              fv = _zwCurrentHref();
-            } else if (typeof __zw_parse_url === 'function') {
-              try {
-                var _fActJson = __zw_parse_url(fv, _fActBase);
-                if (_fActJson) fv = JSON.parse(_fActJson).href || _fActBase || fv;
-              } catch (_eFAct) {}
-            }
-          }
-          return fv;
-        }
         // `label.htmlFor`（HTMLLabelElement，R2840）——反射 `for` 属性（label↔control 关联，表单库读）。
         if (prop === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
           return (handle ? __zw_get_attr_handle(handle, 'for') : __zw_get_attr(sel, 'for')) || '';
@@ -33087,6 +33793,210 @@ return e;
             ? __zw_get_attr_handle(handle, 'id')
             : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id'));
         }
+        // R3254-K3 + s433（html-semantics）：FORM **named-first** named access（gate）。
+        // HTMLFormElement 带 [OverrideBuiltins]（https://html.spec.whatwg.org/multipage/
+        // forms.html#the-form-element），具名 listed 控件优先于接口原型成员——含本位置
+        // 之后的 title/lang/dir 反射臂、part04 侧 nodeName/nodeType/ownerDocument
+        // （3497 区）/addEventListener 族（6412 区）/elements/length/action 等 FORM IDL
+        // （12xxx 区）/CVA checkValidity/R3048 reset/requestSubmit/submit——仅 own
+        // expando 更优先（spec 序：non-configurable target own（invariant）→ own
+        // expando → named → past，https://heycam.github.io/webidl/#LegacyPlatformObject-
+        // GetOwnProperty）。本块原在 part04 form.elements 前置区（R3254-K3 时代），
+        // s433 前移至此（part04 3497 nodeName / 6412 addEventListener 分支先于原位
+        // 返回内建——solo form-nameditem「Named elements should override builtins」
+        // addEventListener 首断言挂证）。t2-pb1 fix#19 的 reset/requestSubmit/submit
+        // 豁免名单退役（「named properties 位于接口原型之下」判读漏读 OverrideBuiltins，
+        // Chrome 同遮蔽）；宿主/shim 内部复位通道改走 `Symbol.for('zw-form-reset')`
+        // 直调（script_gen R3050 + s134 asReset 臂）。item/namedItem 豁免保留：本 shim
+        // 不提供该二方法（form-nameditem「Forms should not have an item method」断言
+        // 面）。驱动用例：WPT implicit-submission.optional.html / form-nameditem.html。
+        if (typeof prop === 'string' && prop !== '' && prop !== 'item' && prop !== 'namedItem'
+            && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
+          var _fnf0 = _zwFormNamedTag[key];
+          var _fnfGen = (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0);
+          if (_fnf0 === undefined || _fnf0.g !== _fnfGen) {
+            _fnf0 = { g: _fnfGen, f: _realTag(sel, handle) === 'FORM' };
+            _zwFormNamedTag[key] = _fnf0;
+          }
+          if (_fnf0.f) {
+            // ⓪ named/index 成本门（s433 前移配套）——gate 原在 part04 12xxx 区，仅
+            // 罕见 prop 流经；前移到通用反射臂前之后 FORM 常规读（tagName/childNodes/
+            // id 等）全部进入，③⑤ 臂的 _formControls（host 视图往返 + 全子树 walk，
+            // walk 内子读又经本 gate）会变成每读成本 + walk×gate 互递归放大。故以
+            // per-form **具名集合缓存**门控：prop ∉ 集合 → 跳过 ③（⑤ 由 parseInt
+            // canonical 快筛自守）。章 = apply 代际 + pending 记账长度（_realTag 同款
+            // 三元组）——同 turn 增删控件（t8f hydration 面）即失效重收，live 语义
+            // 保留；收集期间 s === null 哨兵让递归重入（walk 内子读）落穿 miss，
+            // 不再放大。
+            var _fnSet = _zwFormNamedSet[key];
+            if (_fnSet === undefined || _fnSet.g !== _fnfGen
+                || _fnSet.a !== _zwPendingAdded.length || _fnSet.r !== _zwPendingRemoved.length
+                || _fnSet.e !== _zwFormAttrEpoch) {
+              _fnSet = { g: _fnfGen, a: _zwPendingAdded.length, r: _zwPendingRemoved.length,
+                         e: _zwFormAttrEpoch, s: null, l: false };
+              _zwFormNamedSet[key] = _fnSet;
+              // s433：**重建 collection 同置重入哨兵**（`l`）——嵌套收集（_zwLiveFormAncestor
+              // 等经 ④ past-names / ⑤ index / ③ named 臂的 `form.<prop>` 回读）在
+              // l=true 下统一落穿接口臂。此前仅 ③ lookup 设哨兵：重建期 l=false，
+              // ④ 的 `_formControls` 复核在收集内再开收集（每层宿主 `__zw_form_controls`
+              // 往返）无界嵌套 → form-nameditem 装载 Execution timeout（R20 逐读探针
+              // 与 solo 7P→0P 对照实证）。s === null（③ 门）与 l（③④⑤ 门）双保险。
+              _fnSet.l = true;
+              try {
+                var _fncs = _formControls(sel, handle);
+                var _fns0 = {};
+                for (var _fnq = 0; _fnq < _fncs.length; _fnq++) {
+                  var _fnc = _fncs[_fnq];
+                  if (!_fnc) continue;
+                  try {
+                    var _fnid = _fnc.id;
+                    if (_fnid) _fns0[_fnid] = 1;
+                    var _fnnm = _fnc.getAttribute ? _fnc.getAttribute('name') : null;
+                    if (_fnnm) _fns0[_fnnm] = 1;
+                  } catch (_efnq) {}
+                }
+                _fnSet.s = _fns0;
+              } finally {
+                _fnSet.l = false;
+              }
+            }
+            // ① invariant 臂——proxy target 上 non-configurable data property
+            //（defineProperty(form, k, {configurable:false}) 经 default trap 落 target）
+            // get trap 必须返回同值，否则 V8 TypeError invariant violation（WPT
+            // non-configurable expando 案失败消息即此）。
+            try {
+              var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
+              // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
+              // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
+              if (_fnd0 && _fnd0.configurable === false) return _t[prop];
+            } catch (_efnd0) {}
+            // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
+            // own property；WPT expando added later 案）。
+            var _fex0 = _expando[key];
+            if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+              return _fex0[prop];
+            }
+            // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态
+            // RadioNodeList（快照集合承载，item 越界 null/indexed/length/迭代 +
+            // `instanceof NodeList` 经 __zwNL 印记，_zwMakeCollection(false) 全提供）。
+            // ⓪ 具名集合门控：prop ∉ 集合直接 miss（省 _formControls 往返）。
+            // s433：③ **重入哨兵**（in-flight 期落穿 miss）——lookup 内部 _formControls
+            // （宿主列表 s390b/s391 门 + walk）经 _zwLiveFormAncestor 等 helper 回读
+            // FORM 接口成员（localName/tagName），named-first 下该读重入 ③ 再触发
+            // lookup → 互递归栈溢出（装载 hang，R17 栈实证：get③ → lookup →
+            // _formControls → _zwLiveFormAncestor → 读 form.localName → get③…）。
+            // 重入读走接口臂返回原值，sentinel 语义同 ⓪ 收集期 s:null。
+            var _fnh = null;
+            if (_fnSet.s && _fnSet.s[prop] && !_fnSet.l) {
+              _fnSet.l = true;
+              try {
+                _fnh = _zwFormNamedLookup(sel, handle, prop);
+              } finally {
+                _fnSet.l = false;
+              }
+            }
+            if (_fnh !== null) {
+              try {
+                var _fnpk = _elKey(sel, handle);
+                var _fnp = _zwFormPastNames[_fnpk] || (_zwFormPastNames[_fnpk] = {});
+                _fnp[prop] = _fnh;
+              } catch (_efnp) {}
+              return _fnh;
+            }
+            // ④ past names map 臂——曾命中过的名字在其元素**改名后**仍按 past 条目
+            // 返回，但元素**脱离 listed 集合后失效**（spec dom-form-nameditem past
+            // names map 步骤：条目值元素须仍是 listed 控件；WPT past names 案
+            // remove 后读 undefined、rename 后读原元素双面）。lazy 记账：named 命中
+            // 即写条目，miss 时回查 + listed 复核。改名/重组的条目清理不显式做
+            //（复核天然过滤；内存面：单 form 条目数 = 曾命中名数，可控）。
+            // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem
+            // s433：④ 同受 `_fnSet.l` **重入哨兵**——③ 命中写过 past 条目后，下一次
+            // lookup 收集期间（_zwLiveFormAncestor 等 helper）的 `form.<prop>` 回读会
+            // 落进 ④，其 `_formControls` 复核在收集内再开一次收集（每层一次宿主
+            // `__zw_form_controls` 往返），嵌套无界 → 分钟级假 hang（R20 逐读探针
+            // 实证：首读过、次读挂；L2/L3 marker 级联 + past 条目状态差二分定位）。
+            // in-flight 期（③⑤ 查询进行中）落穿接口臂，语义同 ⓪ s:null / ③ l。
+            var _fnpk2 = _elKey(sel, handle);
+            var _fnp2 = _zwFormPastNames[_fnpk2];
+            if (!_fnSet.l && _fnp2 && Object.prototype.hasOwnProperty.call(_fnp2, prop)) {
+              var _fpv = _fnp2[prop];
+              try {
+                var _fpl = _formControls(sel, handle);
+                for (var _fpi = 0; _fpi < _fpl.length; _fpi++) {
+                  if (_fpl[_fpi] === _fpv) return _fpv;
+                }
+              } catch (_efpl) {}
+            }
+            // s119：canonical 数字索引臂——HTMLFormElement 支持属性名含「无 id/name
+            // 的 listed 控件按 form.elements 集合序号」（031 execution-timing 语料面
+            // `document.forms[0][0].focus()` 形态；命名匹配先行，索引兜底同 spec 名单
+            // 序）。canonical 判据 parseInt + String 归一等（拒前导零/符号形）——
+            // ⓪ 数字快筛前置，canonical 数字才付 _formControls 往返。
+            // s433：⑤ 同受 `_fnSet.l` 重入哨兵（④ 同理——in-flight 期 _formControls
+            // 复核禁止，落穿接口臂）。
+            var _fni = parseInt(prop, 10);
+            if (!_fnSet.l && !isNaN(_fni) && String(_fni) === prop) {
+              var _fna = _formControls(sel, handle);
+              return _fna[_fni];
+            }
+          }
+        }
+        // s433：本臂自 gate 前（原 A/AREA href 臂之后）整体后移到 FORM named-first
+        // gate 之后——[OverrideBuiltins] 具名控件遮蔽全部接口成员（含 action/method/
+        // enctype/encoding/target IDL 反射；R26 探针实证 arm 序在 gate 前 → form.action
+        // 恒返 URL 串，「Named elements should override builtins」首组断言挂）。
+        // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
+        // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；
+        // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
+        // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
+        // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
+        // R3202：sel 路径改走 latest-wins（`__zw_get_attr_lw`）反映同批 `form.method=`/`setAttribute`（旧纯快照
+        // `__zw_get_attr` → `f.method='POST'; f.method` 读 stale 快照返 default 'get'，同 R3190/R3195 stale 模式）。
+        if (_realTag(sel, handle) === 'FORM' &&
+            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'encoding' || prop === 'target')) {
+          var fv = handle
+            ? __zw_get_attr_handle(handle, prop === 'encoding' ? 'enctype' : prop)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop === 'encoding' ? 'enctype' : prop) : __zw_get_attr(sel, prop === 'encoding' ? 'enctype' : prop));
+          fv = fv || '';
+          // R5009 片 d（M4 片 d）：encoding 与 enctype 同 attr（domAttrName 映射——
+          // MAP 直读曾返原串无归一，WPT reflection-forms 'form.encoding
+          // setAttribute("multipart/form-data\0")' 期望 invalid → urlencoded）。
+          if (prop === 'method') {
+            fv = fv.toLowerCase();
+            if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
+          } else if (prop === 'enctype' || prop === 'encoding') {
+            // R5009 片 d：encoding 归一同 enctype（ASCII 小写 + invalid → urlencoded）。
+            fv = _zwASCIILower(fv);
+            if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
+              fv = 'application/x-www-form-urlencoded';
+            }
+          } else if (prop === 'action') {
+            // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
+            // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
+            // 期望解析绝对 URL）。与 A/AREA href 同用 `__zw_parse_url`。
+            // net-api M5-S7：非空值解析基 = 文档基 URL（<base href> 优先——spec form
+            // action 对 document base URL 解析）。
+            // s207：missing/空串特例（HTML §4.10.3 #dom-fs-action 反射例外——content
+            // attribute 缺失或空串时返 **node document's URL**，非文档基 URL，
+            // `<base href>` 不影响；WPT form-action-reflection-with-base-url 空/
+            // 缺失两断言面）。旧实现空值落解析分支被基 URL 吸走（返 <base>
+            // 解析值）；R5009 片 d 的「missing/空 → 文档 URL」仅活在
+            // `__zw_parse_url` 不可用回退分支，M5-S7 后成死路。
+            var _fActBase = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : (globalThis.location ? globalThis.location.href : '');
+            if (fv === '') {
+              fv = _zwCurrentHref();
+            } else if (typeof __zw_parse_url === 'function') {
+              try {
+                var _fActJson = __zw_parse_url(fv, _fActBase);
+                if (_fActJson) fv = JSON.parse(_fActJson).href || _fActBase || fv;
+              } catch (_eFAct) {}
+            }
+          }
+          return fv;
+        }
+
         // reflected 字符串属性（title/lang）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
         // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。
         if (prop === 'title' || prop === 'lang') {

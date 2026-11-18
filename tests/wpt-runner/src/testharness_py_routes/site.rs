@@ -158,6 +158,37 @@ pub(crate) fn route_echo_content_escaped(
     }))
 }
 
+/// html/semantics/forms/form-submission-target/resources/
+/// form-target-request-header-helper.py 臂——form-target-request-header 的 POST
+/// 端点（s431）。上游 wptserve helper 行为等价：请求头含 Content-Type → 'OK'
+/// 否则 'FAIL'；channelname 取 POST body `channelname=<name>` 首个 '=' 后段；
+/// 回体为 BroadcastChannel postMessage 端点文档（text/html）。runner 的
+/// py_routes 不执行上游 .py（语料拉取面排除 .py），故按行为等价仿真。
+pub(crate) fn route_form_target_request_header(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let has_content_type = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("content-type"));
+    let result = if has_content_type { "OK" } else { "FAIL" };
+    let channel_name = req.body.as_deref().unwrap_or("").split('=').nth(1).unwrap_or("");
+    let body = format!(
+        "\n<script>\nconst channel = new BroadcastChannel('{}');\nchannel.postMessage('{}', '*');\nwindow.close();\n</script>\n",
+        channel_name, result
+    );
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/html".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }))
+}
+
 /// html/semantics/document-metadata/the-link-element/stylesheet.py 臂——注册表首批（切片二）迁移，体逐字节保持。
 pub(crate) fn route_link_element_stylesheet(
     ctx: &PyEndpointCtx,

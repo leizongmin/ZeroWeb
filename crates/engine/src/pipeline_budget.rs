@@ -219,7 +219,11 @@ impl RenderPipeline {
                 BudgetStep::Style => {
                     let doc = session.doc.as_ref().expect("parse must run before style");
                     let start = Instant::now();
-                    session.stylesheets = collect_stylesheets(doc, &session.css);
+                    session.stylesheets = collect_stylesheets(
+                        doc,
+                        &session.css,
+                        (self.viewport_width as f64, self.viewport_height as f64),
+                    );
                     self.style_system
                         .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
                     session.styles = self.style_system.compute_styles(doc, &session.stylesheets);
@@ -254,6 +258,7 @@ impl RenderPipeline {
                             &mut session.styles,
                             0.0,
                             session.export_set.as_ref(),
+                            session.doc.as_ref(),
                         ) {
                             let _ = (nid, kind);
                         }
@@ -452,7 +457,7 @@ impl RenderPipeline {
         doc.set_referrer(self.referrer.clone());
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
-        let stylesheets = collect_stylesheets(&doc, css);
+        let stylesheets = collect_stylesheets(&doc, css, (self.viewport_width as f64, self.viewport_height as f64));
         let style_start = Instant::now();
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);

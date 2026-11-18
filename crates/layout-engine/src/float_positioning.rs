@@ -415,6 +415,8 @@ pub(crate) fn shrink_pure_text_floats(
     }
     // R4920 Σ 臂开关在本臂前段（R5242 inline-table 早退门）也要消费，提前读一次。
     let float_inline_sum_on = std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0");
+    // R5517 §10.4 min/max 交叉约束钳开关（写回点消费，见下）。
+    let float_minmax_clamp_on = std::env::var("ZW_FLOAT_MINMAX_CLAMP").as_deref() != Ok("0");
     // 已有 block 级子元素的 float 由 adjust_float_positions 收缩分支处理，
     // 此处不重复（避免双重 shrink / 与 block 子宽度冲突）；t-trending 起 Σ 开时
     // inline 级 replaced 子不再算此列（见谓词内注）。
@@ -581,15 +583,28 @@ pub(crate) fn shrink_pure_text_floats(
         0.0
     };
     let content_max_w = text_max_w + non_text_w;
-    let shrink_border_box =
-        content_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    let frame_w = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    let shrink_border_box = content_max_w + frame_w;
     // 仅当内容确实更窄时才收缩（对内容更宽或显式宽度为 no-op）。扩臂开关已在 non_text_w
     // 处统一门控（关断 Σ=0 → `non_text_w > 0.0` 恒 false），此处不再重复读环境。
     let expanded_adjusted_text = adjusted_text_max_w.is_some() && shrink_border_box > box_node.width;
     let expand_inline_sum = adjusted_text_max_w.is_none() && non_text_w > 0.0 && shrink_border_box > box_node.width;
     if adjusted_text_max_w.is_some() || shrink_border_box < box_node.width || expand_inline_sum {
-        box_node.width = shrink_border_box;
-        box_node.content_width = content_max_w;
+        // R5517（CSS2 §10.4）：收缩值过自身 definite min/max-width 交叉约束——纯文本测量
+        //（text_content_max_width/Σ walk）不带 R5368 自身 min-width 地板/max cap 语义
+        //（那内嵌在 block_min/max_content_width 测量臂），converter taffy min_size 解出
+        // 的地板宽被本臂收缩值覆盖（box-sizing-content-box-003 ref 腿 float
+        // min-width:250px 收缩到词宽 9.8 实证）。先 cap 后 floor = §10.4 min 胳 max 序；
+        // 无 min/max（或 kill-switch `ZW_FLOAT_MINMAX_CLAMP=0`）时 clamp 恒等，行为
+        // 逐字节不变（content_width 同式回 `content_max_w`）。
+        let used_border_box = match styles.get(&dom_id) {
+            Some(s) if float_minmax_clamp_on => {
+                crate::intrinsic_sizing::clamp_used_width_cross_constraints(s, frame_w, shrink_border_box)
+            }
+            _ => shrink_border_box,
+        };
+        box_node.width = used_border_box;
+        box_node.content_width = (used_border_box - frame_w).max(0.0);
     }
     if expanded_adjusted_text {
         let (_, line_height) = crate::inline::resolve_font_metrics(styles.get(&dom_id));

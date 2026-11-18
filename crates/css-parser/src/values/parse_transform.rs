@@ -619,9 +619,14 @@ pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
             }
         }
         4 => {
-            let x: f64 = parts[0].parse().ok()?;
-            let y: f64 = parts[1].parse().ok()?;
-            let z: f64 = parts[2].parse().ok()?;
+            // R5192 口径对齐：分量文法位是纯 <number>，数学函数经
+            // [`parse_transform_number`]（= [`parse_finite_number_math`]）——
+            // 裸 `f64::parse` 使 `rotate3d(progress(21em, 1rem, 11em), …)`
+            // 整体无效（progress-computed 钉面；css-values-5 §progress
+            // progress() 恒产出 <number>，<number> 文法位合法）。
+            let x = parse_transform_number(parts[0])?;
+            let y = parse_transform_number(parts[1])?;
+            let z = parse_transform_number(parts[2])?;
             let angle = parse_angle_or_math(parts[3])?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
@@ -815,7 +820,11 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             let x = parse_transform_number(parts[0])?;
             let y = parse_transform_number(parts[1])?;
             let z = parse_transform_number(parts[2])?;
-            let angle = parse_angle(parts[3])?;
+            // CSS Values 4 §10.5：<angle> 文法位接受数学函数（与单参 rotate 臂同走
+            // [`parse_angle_or_math`] 求值口径）——`rotate3d(progress(…), …,
+            // calc(progress(…) * 2deg))` 第四参 calc 包裹 progress 被纯 parse_angle
+            // 拒收，整个 transform 按语法失效丢弃（progress-computed rotate3d 案）。
+            let angle = parse_angle_or_math(parts[3])?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         "perspective" => {
@@ -927,7 +936,12 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     if span_has_number_result_trig(s) && !calc_expr_has_angle_result(&expr) && !span_has_top_level_angle_unit(s) {
         return None;
     }
-    let value = eval_calc(&expr, None)?;
+    // 与 number 槽 [`parse_finite_number_math`] 同走 [`eval_calc_with_default_font`]
+    // 求值口径——`eval_calc(&expr, None)` 无 em/rem 基准，angle 槽 `calc(progress(11em,
+    // 1rem, 11em) * 2deg)` 型 length 叶求值 None → 整 transform 按语法失效丢弃
+    //（progress-computed rotate3d 案 X 探针钉面；calc_expr_has_length 已放行
+    // progress 节点，实参内 em 叶到 eval 才需要基准）。
+    let value = eval_calc_with_default_font(&expr)?;
     // 弧度 → 度的双 provenance（与 [`fold_math_specified`] Angle 臂同形）：
     // ①角度产出函数；②trig 实参外角度单位叶（parse_atom 把 `180deg` 平叶
     // Number 化为弧度，`calc(180deg)` 缺 ② 会折成 3.14159deg）。
@@ -942,18 +956,57 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。
+/// 分隔符只认**括号外**的逗号/空白——函数实参表内的逗号/空白不参与分词：
+/// `rotate: progress(21em, 1rem, 11em) …` 四元组数学分量位、`scale:
+/// calc(min(1, 2))` 型实参依赖完整 token（depth-0 盲拆把实参表撕成垃圾
+/// token，整体无效——individual rotate progress-computed 钉面）。
+/// 逗号段语义与旧实现一致：顶层逗号分隔的段 trim 后判空，空段（`1,,2`
+/// / `,1` / 尾逗号 / 纯空白段）拒收。
 fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
     let mut parts = Vec::new();
-    if args.contains(',') {
-        for item in args.split(',') {
-            let item = item.trim();
-            if item.is_empty() {
-                return None;
+    let mut depth = 0usize;
+    let mut start: Option<usize> = None;
+    let mut piece_has_token = false;
+    let mut saw_top_comma = false;
+    for (i, ch) in args.char_indices() {
+        match ch {
+            '(' => {
+                depth += 1;
+                start.get_or_insert(i);
             }
-            parts.extend(item.split_whitespace());
+            ')' => {
+                depth = depth.saturating_sub(1);
+                start.get_or_insert(i);
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                if let Some(s) = start.take() {
+                    parts.push(&args[s..i]);
+                    piece_has_token = true;
+                }
+            }
+            ',' if depth == 0 => {
+                // 空段判据：既无已推 token 也无待推 token（`,1` / `1,,2`）。
+                if start.is_none() && !piece_has_token {
+                    return None;
+                }
+                if let Some(s) = start.take() {
+                    parts.push(&args[s..i]);
+                }
+                piece_has_token = false;
+                saw_top_comma = true;
+            }
+            _ => {
+                start.get_or_insert(i);
+            }
         }
-    } else {
-        parts.extend(args.split_whitespace());
+    }
+    if let Some(s) = start {
+        parts.push(&args[s..]);
+        piece_has_token = true;
+    }
+    // 尾逗号空段拒收（`1,2,` → 末段空）。
+    if saw_top_comma && !piece_has_token {
+        return None;
     }
     if parts.is_empty() { None } else { Some(parts) }
 }
@@ -1085,9 +1138,11 @@ pub struct GradientColorStop {
 
 /// CSS Color 4 渐变颜色插值色彩空间（`gradient in <colorspace>`，R2289）。
 ///
-/// 与 `render-foundation::primitive::GradientColorSpace` 一一对应；engine 负责映射。
-/// wide-gamut（display-p3/xyz/rec2020/...）与未知空间在解析期归一为 Srgb（无色彩管理管线，
-/// 优雅回退）。
+/// 与 `render-foundation::primitive::GradientColorSpace` 对应；engine 负责映射。
+/// 渲染端 wide-gamut/hsl/hwb/xyz* 一律回退 Srgb（无色彩管理管线，R2288 口径不变）；
+/// g42 起解析模型保留 hsl/hwb/xyz-d50/xyz-d65 身份供 computed 序列化保真
+///（css-images gradient-interpolation-method-computed oracle），display-p3/a98-rgb/
+/// rec2020/prophoto-rgb 与未知空间仍解析期归一 Srgb。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ColorInterpolationSpace {
     /// gamma 编码 sRGB（默认）。
@@ -1103,6 +1158,14 @@ pub enum ColorInterpolationSpace {
     Lch,
     /// OKLCH（极坐标）。
     Oklch,
+    /// HSL（极坐标，css-color-4 §12.2 色相法合法）。渲染回退 Srgb（R2288）。
+    Hsl,
+    /// HWB（极坐标）。渲染回退 Srgb（R2288）。
+    Hwb,
+    /// XYZ D50（Bradford 适应）。渲染回退 Srgb（R2288）。
+    XyzD50,
+    /// XYZ D65（`in xyz`/`in xyz-d65`）。渲染回退 Srgb（R2288）。
+    XyzD65,
 }
 
 /// 极坐标色彩空间（LCH/OKLCH）的色相插值法（CSS Color 4 §13.5）。
@@ -1124,8 +1187,25 @@ pub enum ColorHueMethod {
 pub struct ColorInterpolation {
     /// 插值色彩空间。
     pub space: ColorInterpolationSpace,
-    /// 色相插值法（仅 Lch/Oklch 有意义）。
+    /// 色相插值法（仅极坐标空间有意义）。
     pub hue: ColorHueMethod,
+}
+
+/// 渐变声明值串化原料（css-images-4
+/// [§serializing-gradients](https://drafts.csswg.org/css-images-4/#serializing-gradients)
+/// 的 as-written 片段）：解析期捕获原文，串化期按 canonical 序重排（配置前置、
+/// `in <method>` 后置），色标段原样透传（FIXME: 色标级 canonical——颜色/位置
+/// 逐 token 归一——归 computed 串化刀，本切片仅配置序 + 方法归一）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradientSpecifiedParts {
+    /// 方向/形状配置原文（`in` 子句剥离后；None = 首参为色标或无配置）。
+    pub head: Option<Box<str>>,
+    /// 色标段原文（含 interpolation hint 站，顶层逗号已归一 `, `、参数内空白归一）。
+    pub body: Box<str>,
+    /// 已识别 `in <method>` 的 canonical 文本（含 `in ` 前缀、shorter hue 缺省
+    /// 省略、xyz→xyz-d65 别名展开）；None = 无 `in` 子句或空间未识别（未识别
+    /// → 整值串化 passthrough，R2288 保渐变渲染语义不变）。
+    pub method: Option<Box<str>>,
 }
 
 /// CSS linear-gradient() 值。
@@ -1139,6 +1219,8 @@ pub struct LinearGradient {
     pub repeating: bool,
     /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。默认 Srgb = 既有行为。
     pub interpolation: ColorInterpolation,
+    /// 声明值串化原料（程序化构造为 None → 串化 passthrough）。
+    pub specified: Option<GradientSpecifiedParts>,
 }
 
 /// CSS radial-gradient 形状。
@@ -1182,6 +1264,8 @@ pub struct RadialGradient {
     pub repeating: bool,
     /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。
     pub interpolation: ColorInterpolation,
+    /// 声明值串化原料（程序化构造为 None → 串化 passthrough）。
+    pub specified: Option<GradientSpecifiedParts>,
 }
 
 /// CSS conic-gradient() 值。
@@ -1199,6 +1283,8 @@ pub struct ConicGradient {
     pub repeating: bool,
     /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。
     pub interpolation: ColorInterpolation,
+    /// 声明值串化原料（程序化构造为 None → 串化 passthrough）。
+    pub specified: Option<GradientSpecifiedParts>,
 }
 
 /// CSS 渐变值（所有渐变类型的统一表示）。
@@ -1246,94 +1332,180 @@ fn split_function_call(value: &str) -> Option<(String, &str)> {
     Some((name.to_string(), inner))
 }
 
-/// 从渐变首参中剥离并解析 CSS Color 4 `in <colorspace> [<hue-method>]` 颜色插值提示。
-///
-/// 返回 `(剩余方向/形状部分, 解析得到的插值配置)`：
-/// - `"in oklab"` → `(None, Some(oklab))`
-/// - `"to right in srgb"` → `(Some("to right"), Some(srgb))`
-/// - `"circle at center in oklch longer hue"` → `(Some("circle at center"), Some(oklch, longer))`
-/// - `"in display-p3"` → `(None, Some(srgb))`（wide-gamut 无色彩管理，优雅回退 srgb）
-/// - 无 `in` 提示 → `(Some(orig), None)`
-///
-/// `Some(ColorInterpolation)` = 检测到 `in` 提示并解析（未知空间/hue 归一为 Srgb/Shorter
-/// 优雅回退，保留 R2288 不丢弃 gradient 的行为）。driving: css-images oklab/lch/oklch/
-/// srgb-linear gradient（R2289 render-math）。
-fn strip_interpolation_hint(arg: &str) -> (Option<&str>, Option<ColorInterpolation>) {
-    let arg = arg.trim();
-    let bytes = arg.as_bytes();
-
-    // 前缀 "in "（大小写不敏感）：整参为提示，无方向部分。
-    if bytes.len() >= 3
-        && (bytes[0] == b'i' || bytes[0] == b'I')
-        && (bytes[1] == b'n' || bytes[1] == b'N')
-        && bytes[2] == b' '
-    {
-        let interp = parse_color_interpolation(arg[3..].trim());
-        return (None, interp);
-    }
-
-    // 子串 " in "（大小写不敏感；空格 ASCII 单字节，切片边界安全）。
-    let mut i = 0;
-    while i + 4 <= bytes.len() {
-        if bytes[i] == b' '
-            && (bytes[i + 1] == b'i' || bytes[i + 1] == b'I')
-            && (bytes[i + 2] == b'n' || bytes[i + 2] == b'N')
-            && bytes[i + 3] == b' '
-        {
-            let dir = arg[..i].trim();
-            let interp = parse_color_interpolation(arg[i + 4..].trim());
-            return (if dir.is_empty() { None } else { Some(dir) }, interp);
-        }
-        i += 1;
-    }
-
-    (Some(arg), None)
+/// 渐变首参 `in <method>` 剥离结果。
+struct HintStrip {
+    /// 剥离后的方向/形状配置原文（None = 纯 `in` 子句或未命中 `in`）。
+    head: Option<Box<str>>,
+    /// 插值空间（渲染语义；wide-gamut/未知空间回退 Srgb，既有 R2288 口径不变）。
+    space: ColorInterpolationSpace,
+    /// 色相插值法（仅极坐标空间有意义）。
+    hue: ColorHueMethod,
+    /// 已识别方法的 canonical 文本（含 `in ` 前缀、shorter hue 缺省省略、
+    /// xyz→xyz-d65 别名展开）；None = 无 `in` 子句或空间/形态未识别
+    ///（未识别 → 串化 passthrough，渲染回退语义不变）。
+    method: Option<Box<str>>,
+    /// 首参是否含 `in` 子句（含未识别空间——首参消费/stop_start 推进依据）。
+    present: bool,
 }
 
-/// 解析 CSS Color 4 `<color-interpolation-method>` = `<colorspace> [<hue-method>]?`。
+/// 从渐变首参中剥离并解析 CSS Color 4 `in <color-interpolation-method>` 提示。
 ///
-/// 已知色彩空间：srgb / srgb-linear / lab / oklab / lch / oklch。极坐标空间（lch/oklch）
-/// 可选 hue 插值法（shorter/longer/increasing/decreasing hue）。wide-gamut（display-p3/
-/// a98-rgb/rec2020/prophoto-rgb/xyz[-d50/-d65]）与未知空间 → Srgb 优雅回退（无色彩管理）。
-fn parse_color_interpolation(s: &str) -> Option<ColorInterpolation> {
-    let lower = s.to_ascii_lowercase();
-    let parts: Vec<&str> = lower.split_whitespace().collect();
-    let first = *parts.first()?;
-    let space = match first {
+/// 形态（css-images-4
+/// [§color-interpolation-method](https://drafts.csswg.org/css-images-4/#grad-color-interpolation-method)）：
+/// - `"in oklab"` / `"in lab 30deg"` / `"30deg in lab"`——前缀或中缀边界；
+/// - `"in hsl decreasing hue from 30deg"`——方法贪心词法消费（空间 + 可选
+///   `<hue-method> hue`，仅极坐标空间 hsl/hwb/lch/oklch），余下 `from 30deg`
+///   回填配置原文；
+/// - `"in xyz"` → canonical 文本 `in xyz-d65`（css-color-4 §9.1 xyz ≡ xyz-d65）；
+/// - 未知空间/畸形 hue 形 → `method: None`（渲染回退 Srgb 保持 R2288 保渐变）。
+fn strip_interpolation_hint(arg: &str) -> HintStrip {
+    let arg = arg.trim();
+    let lower = arg.to_ascii_lowercase();
+
+    let (head, rest) = if lower.starts_with("in ") {
+        // 前缀 "in "：整参以提示开头，配置部分在方法词之后（如 `from 30deg`）。
+        (None, &arg[3..])
+    } else if let Some(i) = lower.find(" in ") {
+        // 中缀 " in "（空格 ASCII 单字节，切片边界安全）。
+        let h = arg[..i].trim();
+        (
+            if h.is_empty() {
+                None
+            } else {
+                Some(h.to_owned().into_boxed_str())
+            },
+            &arg[i + 4..],
+        )
+    } else {
+        return HintStrip {
+            head: Some(arg.to_owned().into_boxed_str()),
+            space: ColorInterpolationSpace::Srgb,
+            hue: ColorHueMethod::Shorter,
+            method: None,
+            present: false,
+        };
+    };
+
+    let (space, hue, method, leftover) = parse_interpolation_method(rest);
+    // 前缀形态（`in lab 30deg` / `in hsl decreasing hue from 30deg`）：方法词
+    // 之后的余量为方向/形状配置原文。中缀形态余量忽略（双侧配置为非法形态）。
+    let head = match head {
+        Some(h) => Some(h),
+        None => {
+            let l = leftover.trim();
+            if l.is_empty() {
+                None
+            } else {
+                Some(l.to_owned().into_boxed_str())
+            }
+        }
+    };
+    HintStrip {
+        head,
+        space,
+        hue,
+        method,
+        present: true,
+    }
+}
+
+/// 解析 `in` 后的 `<color-interpolation-method>` 词序列（css-color-4
+/// [§12.2](https://drafts.csswg.org/css-color-4/#interpolation-method)）：
+/// 返回 `(渲染空间, 色相法, canonical 文本, 方法词后余量)`；文本 None = 未识别
+///（余量仅在前缀形态、识别成功时有意义）。
+///
+/// 渲染空间对 wide-gamut（display-p3/a98-rgb/rec2020/prophoto-rgb/xyz*）与
+/// hsl/hwb 保持既有 Srgb gamma 回退（无色彩管理管线，R2288 口径）；canonical
+/// 文本按 spec 词形归一（xyz→xyz-d65）。
+fn parse_interpolation_method(rest: &str) -> (ColorInterpolationSpace, ColorHueMethod, Option<Box<str>>, String) {
+    let none = |space| (space, ColorHueMethod::Shorter, None, String::new());
+    let all: Vec<&str> = rest.split_whitespace().collect();
+    let Some(first_raw) = all.first() else {
+        return none(ColorInterpolationSpace::Srgb);
+    };
+    let first = first_raw.to_ascii_lowercase();
+    let space_text: &str = match first.as_str() {
+        "srgb" => "srgb",
+        "srgb-linear" => "srgb-linear",
+        "lab" => "lab",
+        "oklab" => "oklab",
+        "lch" => "lch",
+        "oklch" => "oklch",
+        "hsl" => "hsl",
+        "hwb" => "hwb",
+        "display-p3" => "display-p3",
+        "a98-rgb" => "a98-rgb",
+        "rec2020" => "rec2020",
+        "prophoto-rgb" => "prophoto-rgb",
+        // css-color-4 §9.1：`xyz` 为 `xyz-d65` 的别名，canonical 序列化展开。
+        "xyz" => "xyz-d65",
+        "xyz-d50" => "xyz-d50",
+        "xyz-d65" => "xyz-d65",
+        // 未知空间：R2288 保渐变（渲染回退 Srgb），串化 passthrough。
+        _ => return none(ColorInterpolationSpace::Srgb),
+    };
+    // 极坐标空间（色相法合法）：hsl/hwb/lch/oklch（css-color-4 §12.2）。
+    let polar = matches!(space_text, "hsl" | "hwb" | "lch" | "oklch");
+    let space = match space_text {
         "srgb" => ColorInterpolationSpace::Srgb,
         "srgb-linear" => ColorInterpolationSpace::SrgbLinear,
         "lab" => ColorInterpolationSpace::Lab,
         "oklab" => ColorInterpolationSpace::Oklab,
         "lch" => ColorInterpolationSpace::Lch,
         "oklch" => ColorInterpolationSpace::Oklch,
-        // wide-gamut / xyz：无色彩管理管线，优雅回退 srgb（gamma 插值）。
-        "display-p3" | "a98-rgb" | "rec2020" | "prophoto-rgb" | "xyz" | "xyz-d50" | "xyz-d65" => {
-            ColorInterpolationSpace::Srgb
-        }
-        // 未知空间：按 `in` 提示存在但无法识别处理 → Srgb 回退（不丢弃 gradient）。
+        // g42：hsl/hwb/xyz-d50/xyz-d65 模型身份保留（computed 序列化保真），
+        // 渲染端仍回退 Srgb（R2288 无色彩管理口径不变）。
+        "hsl" => ColorInterpolationSpace::Hsl,
+        "hwb" => ColorInterpolationSpace::Hwb,
+        "xyz-d50" => ColorInterpolationSpace::XyzD50,
+        "xyz-d65" => ColorInterpolationSpace::XyzD65,
+        // display-p3/a98-rgb/rec2020/prophoto-rgb 等余 wide-gamut：归一 Srgb
+        //（既有口径；computed 语料未驱动，身份保留 defer）。
         _ => ColorInterpolationSpace::Srgb,
     };
-    let mut hue = ColorHueMethod::default();
-    if matches!(space, ColorInterpolationSpace::Lch | ColorInterpolationSpace::Oklch) {
-        // 寻找 `<method> hue` 两词序列。
-        let mut it = parts.iter().skip(1);
-        while let Some(w) = it.next() {
-            let method = match *w {
+    let mut hue = ColorHueMethod::Shorter;
+    let mut hue_word: Option<String> = None;
+    let mut consumed = 1usize;
+    if polar {
+        if all.len() >= 2 {
+            let m0 = all[1].to_ascii_lowercase();
+            let known = match m0.as_str() {
                 "shorter" => Some(ColorHueMethod::Shorter),
                 "longer" => Some(ColorHueMethod::Longer),
                 "increasing" => Some(ColorHueMethod::Increasing),
                 "decreasing" => Some(ColorHueMethod::Decreasing),
                 _ => None,
             };
-            if let Some(m) = method
-                && matches!(it.next(), Some(next) if *next == "hue")
-            {
-                hue = m;
-                break;
+            match known {
+                Some(h) if all.len() >= 3 && all[2].eq_ignore_ascii_case("hue") => {
+                    hue = h;
+                    if h != ColorHueMethod::Shorter {
+                        hue_word = Some(m0.clone());
+                    }
+                    consumed = 3;
+                }
+                // 色相词缺 `hue`（`in lch longer`）→ 畸形，串化 passthrough。
+                Some(_) => return none(space),
+                // 非色相词（配置余量 `at ...`/角度等）→ 方法单空间词结束。
+                None => {}
             }
         }
+    } else if all[1..].iter().any(|w| {
+        matches!(
+            w.to_ascii_lowercase().as_str(),
+            "shorter" | "longer" | "increasing" | "decreasing" | "hue"
+        )
+    }) {
+        // 非极坐标空间不得带色相法词（css-color-4 §12.2 hue 只属极坐标）：
+        // 残留即未识别形态 → 串化 passthrough。
+        return none(space);
     }
-    Some(ColorInterpolation { space, hue })
+    let leftover = all[consumed..].join(" ");
+    let text = match hue_word {
+        Some(h) => format!("in {} {} hue", space_text, h),
+        None => format!("in {}", space_text),
+    };
+    (space, hue, Some(text.into_boxed_str()), leftover)
 }
 
 /// 解析 linear-gradient 内部参数。
@@ -1345,23 +1517,36 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
 
     let mut direction = GradientDirection::ToBottom;
     let mut stop_start = 0;
-    let mut interpolation = ColorInterpolation::default();
+    let mut head_raw: Option<Box<str>> = None;
 
     // 检查第一个参数是否为方向（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
-    let (dir_part, interp) = strip_interpolation_hint(first);
-    if let Some(i) = interp {
+    let hs = strip_interpolation_hint(first);
+    // css-images-4 文法：`in` 子句一旦出现必须携带合法
+    // <color-interpolation-method>——未知空间/极坐标缺 `hue` 后缀/`in` 后倒置
+    // 等畸形均为 invalid，整渐变拒收（g43 driving:
+    // gradient-interpolation-method-invalid in-子句族；此前宽松降级为无方法
+    // 渐变接受，写面回显原文伪装成功）。
+    if hs.present && hs.method.is_none() {
+        return None;
+    }
+    let interpolation = ColorInterpolation {
+        space: hs.space,
+        hue: hs.hue,
+    };
+    if hs.present {
         // 首参含 `in <colorspace>`：剥离后解析方向（无方向则用默认）
-        interpolation = i;
-        if let Some(dp) = dir_part
-            && let Some(dir) = parse_linear_direction(dp)
-        {
-            direction = dir;
+        if let Some(dp) = hs.head {
+            if let Some(dir) = parse_linear_direction(&dp) {
+                direction = dir;
+            }
+            head_raw = Some(normalize_decl_ws(&dp));
         }
         stop_start = 1;
     } else if let Some(dir) = parse_linear_direction(first) {
         direction = dir;
         stop_start = 1;
+        head_raw = Some(normalize_decl_ws(first));
     }
 
     let stops = parse_color_stops(&args[stop_start..], false)?;
@@ -1374,6 +1559,13 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         stops,
         repeating,
         interpolation,
+        // `in` 子句存在但方法未识别（未知空间/畸形 hue）→ specified 置 None，
+        // 串化 passthrough 保原文（R2288 渲染语义不受影响）。
+        specified: (hs.method.is_some() || !hs.present).then(|| GradientSpecifiedParts {
+            head: head_raw,
+            body: normalize_stops_body(&args[stop_start..]),
+            method: hs.method,
+        }),
     }))
 }
 
@@ -1410,21 +1602,45 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     let mut pos_x = LengthValue::Percentage(50.0);
     let mut pos_y = LengthValue::Percentage(50.0);
     let mut stop_start = 0;
-    let mut interpolation = ColorInterpolation::default();
+    let mut head_raw: Option<Box<str>> = None;
 
     // 第一个参数可能包含 shape/size/position（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
-    let (shape_part, interp) = strip_interpolation_hint(first);
-    let shape_src = shape_part.unwrap_or("");
+    let hs = strip_interpolation_hint(first);
+    // g43：`in` 子句畸形整渐变拒收（同 linear 分支注）。
+    if hs.present && hs.method.is_none() {
+        return None;
+    }
+    let interpolation = ColorInterpolation {
+        space: hs.space,
+        hue: hs.hue,
+    };
+    let shape_src = hs.head.as_deref().unwrap_or("");
     let shape_lower = shape_src.to_ascii_lowercase();
 
+    // 首参为 shape/size/position 配置的派发：关键字形（circle/ellipse/size 词/
+    // `at` 位）或纯长度尺寸形（css-images-4 `<length-percentage>{1,2}` size-only，
+    // g42 driving: gradient-interpolation-method computed `radial-gradient(50px,…)`）。
+    // 颜色名/函数永不命中 parse_length → 色标首参不误入。
+    let first_tok_is_length = shape_src
+        .split_whitespace()
+        .next()
+        .map(|t| parse_length(t).is_some())
+        .unwrap_or(false);
+    // g44：单 token 首参为纯百分比时不是合法 head 尺寸——circle 半径不接受 %、
+    // ellipse 尺寸需双值（css-images-4 §radial-gradients `<length [0,∞]> | <percentage>{2}`）
+    // ——落回色标段由 hint 位约束拒收。driving: color-stops-parsing
+    // `radial-gradient(0%, black, white)` invalid 面。
+    let single_pct_only = shape_src.split_whitespace().count() == 1
+        && matches!(parse_length(shape_src.trim()), Some(LengthValue::Percentage(_)));
     if !shape_src.is_empty()
         && (shape_lower.starts_with("circle")
             || shape_lower.starts_with("ellipse")
             || shape_lower.starts_with("closest")
             || shape_lower.starts_with("farthest")
             || shape_lower.starts_with("at ")
-            || shape_lower.contains(" at "))
+            || shape_lower.contains(" at ")
+            || (first_tok_is_length && !single_pct_only))
     {
         // 解析 shape + size + at position
         let (s, sz, px, py) = parse_radial_shape_and_position(shape_src)?;
@@ -1432,13 +1648,14 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         size = sz;
         pos_x = px;
         pos_y = py;
-        if let Some(i) = interp {
-            interpolation = i;
-        }
         stop_start = 1;
-    } else if let Some(i) = interp {
-        // 首参仅为 `in <colorspace>` 提示（无 shape），跳过用默认 shape
-        interpolation = i;
+        head_raw =
+            Some(canonicalize_at_clause(&canonicalize_radial_head(normalize_decl_ws(shape_src))).into_boxed_str());
+    } else if hs.present {
+        // 首参仅为 `in <colorspace>` 提示（或纯长度尺寸形），跳过用默认 shape
+        if let Some(h) = hs.head {
+            head_raw = Some(canonicalize_radial_head(normalize_decl_ws(&h)));
+        }
         stop_start = 1;
     }
 
@@ -1455,6 +1672,13 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         stops,
         repeating,
         interpolation,
+        // `in` 子句存在但方法未识别（未知空间/畸形 hue）→ specified 置 None，
+        // 串化 passthrough 保原文（R2288 渲染语义不受影响）。
+        specified: (hs.method.is_some() || !hs.present).then(|| GradientSpecifiedParts {
+            head: head_raw,
+            body: normalize_stops_body(&args[stop_start..]),
+            method: hs.method,
+        }),
     }))
 }
 
@@ -1489,6 +1713,32 @@ fn parse_radial_shape_and_position(s: &str) -> Option<(RadialShape, RadialSize, 
     Some((shape, size, pos_x, pos_y))
 }
 
+/// radial 配置原文 canonical：形状关键字由 size 隐含时省略（css-images-4
+/// [§serializing-gradients](https://drafts.csswg.org/css-images-4/#serializing-gradients)
+/// ）——`ellipse <length-percentage>{2}` 双长度形省略 `ellipse`（g42 driving:
+/// gradient-interpolation-method-valid `ellipse 50% 40em` → `50% 40em`）；
+/// `circle <length>` 单长度半径省略 `circle`（engine part04 computed oracle
+/// `circle 50px` → `50px`）。余下 token（含 `at` 位）原样保留。
+fn canonicalize_radial_head(head: Box<str>) -> Box<str> {
+    let mut toks = head.split_whitespace();
+    let first = match toks.next() {
+        Some(f) => f,
+        None => return head,
+    };
+    let rest: Vec<&str> = toks.collect();
+    let implied = if first.eq_ignore_ascii_case("ellipse") {
+        rest.len() >= 2 && parse_length(rest[0]).is_some() && parse_length(rest[1]).is_some()
+    } else if first.eq_ignore_ascii_case("circle") {
+        !rest.is_empty() && parse_length(rest[0]).is_some() && (rest.len() == 1 || rest[1].eq_ignore_ascii_case("at"))
+    } else {
+        false
+    };
+    if implied {
+        return rest.join(" ").into_boxed_str();
+    }
+    head
+}
+
 /// 解析 radial shape 和 size 关键字。
 fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSize) -> Option<()> {
     let lower = s.trim().to_ascii_lowercase();
@@ -1513,23 +1763,179 @@ fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSi
     Some(())
 }
 
-/// 解析位置对（如 "center center"、"50% 50%"、"left top"）。
+/// 解析位置对（如 "center center"、"50% 50%"、"left top"、"right 30% top 60px"）。
+///
+/// 文法按 css-values-4
+/// [§position](https://drafts.csswg.org/css-values-4/#typedef-position) 与
+/// [csswg#2140](https://github.com/w3c/csswg-drafts/issues/2140) 后行为（WPT
+/// gradient-position-invalid/valid/computed oracle 定谳）：
+/// - 1 值：裸垂直关键字 → y=该值 x=center（`top` → `50% 0%`）；余 → x=该值
+///   y=center（`10%` → `10% 50%`）
+/// - 2 值：H 侧（left/right/center/`<lp>`）+ V 侧（top/bottom/center/`<lp>`）
+///   原序（`right 40%` → `100% 40%`）；双裸关键字退化为 && 形任意序可换轴
+///   重排（`top left` → `left top`、`center left` → `left center`）；V 缘关键字
+///   + lp（`top 0px`，#2140 弃）与同轴双关键字（`left right`）拒收
+/// - 3 值：全禁（#2140 弃的混搭形，gradient-position-invalid 8 案 oracle）
+/// - 4 值：`[left|right] <lp> [top|bottom] <lp>` 双缘偏移对、序任意；right/
+///   bottom 百分比偏移按 100−x 折算（`right 30%` → `70%`）；长度偏移保原值
+///   FIXME: 缘锚定模型单 LengthValue 轴丢失（无缘相对偏移表达），渲染按
+///   左/上缘偏移近似；指定值 canonical 由 [`canonicalize_at_clause`] 重排保真。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
-    let s = s.trim();
     let parts: Vec<&str> = s.split_whitespace().collect();
-
     match parts.len() {
         1 => {
-            let p = parse_position_keyword(parts[0])?;
-            Some((p.clone(), p))
+            let al = parts[0].to_ascii_lowercase();
+            if matches!(al.as_str(), "top" | "bottom") {
+                Some((LengthValue::Percentage(50.0), parse_position_keyword(&al)?))
+            } else {
+                Some((parse_position_keyword(parts[0])?, LengthValue::Percentage(50.0)))
+            }
         }
-        2 => {
-            let px = parse_position_keyword(parts[0])?;
-            let py = parse_position_keyword(parts[1])?;
-            Some((px, py))
-        }
+        2 => parse_position_pair_two(parts[0], parts[1]),
+        // csswg#2140：3 值混搭形全禁（gradient-position-invalid oracle）
+        3 => None,
+        4 => parse_position_pair_four(&parts),
         _ => None,
     }
+}
+
+/// 2 值位形：H 侧 + V 侧原序，或双裸关键字退化 && 形换轴重排。
+fn parse_position_pair_two(a: &str, b: &str) -> Option<(LengthValue, LengthValue)> {
+    let al = a.to_ascii_lowercase();
+    let bl = b.to_ascii_lowercase();
+    let a_vert = matches!(al.as_str(), "top" | "bottom");
+    let b_horiz = matches!(bl.as_str(), "left" | "right");
+    // && 形退化（双裸关键字任意序）：V 缘关键字前导（`top left`）或 center +
+    // 缘关键字（`center left`）→ H V 重排；两臂均须裸关键字（lp 不可作缘偏移
+    // ——`top 0px` 不落此臂，落下方形二 V 前导拒收臂）。
+    if (al == "center" && b_horiz) || (a_vert && (b_horiz || bl == "center")) {
+        return Some((parse_position_keyword_only(&bl)?, parse_position_keyword_only(&al)?));
+    }
+    // 形二（H 侧 t1 + V 侧 t2）：t1 不得 top/bottom、t2 不得 left/right
+    //（`top 0px`、`left right` 拒）。
+    if a_vert || b_horiz {
+        return None;
+    }
+    Some((parse_position_keyword(a)?, parse_position_keyword(b)?))
+}
+
+/// 4 值位形：`[left|right] <lp> [top|bottom] <lp>` 双缘偏移对、序任意；偏移
+/// 必带且须为 `<lp>`（关键字/center 不可作偏移）；right/bottom 百分比偏移
+/// 按 100−x 折算，长度偏移保原值（FIXME 缘锚定模型丢失）。
+fn parse_position_pair_four(parts: &[&str]) -> Option<(LengthValue, LengthValue)> {
+    let mut x: Option<LengthValue> = None;
+    let mut y: Option<LengthValue> = None;
+    let mut i = 0usize;
+    while i < parts.len() {
+        let (slot, invert) = match parts[i].to_ascii_lowercase().as_str() {
+            "left" => (&mut x, false),
+            "right" => (&mut x, true),
+            "top" => (&mut y, false),
+            "bottom" => (&mut y, true),
+            _ => return None,
+        };
+        if slot.is_some() {
+            return None; // 同轴重复（`left 4px right 2px` 拒）
+        }
+        i += 1;
+        let offset = parse_length(parts.get(i)?)?;
+        let folded = match offset {
+            LengthValue::Percentage(p) if invert => LengthValue::Percentage(100.0 - p),
+            other => other,
+        };
+        *slot = Some(folded);
+        i += 1;
+    }
+    Some((x?, y?))
+}
+
+/// 仅关键字（不带 `<lp>` 回落）的位置分量。
+fn parse_position_keyword_only(s: &str) -> Option<LengthValue> {
+    match s.to_ascii_lowercase().as_str() {
+        "center" => Some(LengthValue::Percentage(50.0)),
+        "left" => Some(LengthValue::Percentage(0.0)),
+        "right" => Some(LengthValue::Percentage(100.0)),
+        "top" => Some(LengthValue::Percentage(0.0)),
+        "bottom" => Some(LengthValue::Percentage(100.0)),
+        _ => None,
+    }
+}
+
+/// at 位置子句 canonical（css-values-4
+/// [§position](https://drafts.csswg.org/css-values-4/#typedef-position) + WPT
+/// gradient-position-valid canonical/soundness 集）：
+/// - 2 值双裸关键字 V/center 前导 → H V 重排（`bottom right` → `right bottom`、
+///   `center left` → `left center`——as-written 形不在 soundness 集）
+/// - 4 值双缘偏移对 V 对前导 → H 对前置（`bottom 10% right 20%` →
+///   `right 20% bottom 10%`）
+/// - 其余（1 值、标准序 2 值、H 对前导 4 值）as-written（css-images-4
+///   serializing-gradients 保形 + soundness 集含原形；g42 4-token 透传口径）。
+///
+/// at 前缀段（shape/size 或 `from <angle>`）原样保留；含括号 token（calc 偏移）
+/// 不重排，透传保真。
+fn canonicalize_at_clause(head: &str) -> String {
+    fn tok_class(tok: &str) -> u8 {
+        // 位类：0=H 缘 / 1=V 缘 / 2=center / 3=`<lp>` / 4=其它（括号/未知）
+        match tok.to_ascii_lowercase().as_str() {
+            "left" | "right" => 0,
+            "top" | "bottom" => 1,
+            "center" => 2,
+            _ => {
+                if tok.contains('(') {
+                    4
+                } else {
+                    parse_length(tok).map(|_| 3u8).unwrap_or(4)
+                }
+            }
+        }
+    }
+    let lower = head.to_ascii_lowercase();
+    let at_idx = if lower.starts_with("at ") {
+        Some(0usize)
+    } else {
+        lower.find(" at ").map(|p| p + 1)
+    };
+    let Some(ai) = at_idx else {
+        return head.to_string();
+    };
+    let prefix = &head[..ai];
+    let at_text = head[ai + 2..].trim();
+    let toks: Vec<&str> = at_text.split_whitespace().collect();
+    let swapped = match toks.as_slice() {
+        [a, b] => {
+            let (ca, cb) = (tok_class(a), tok_class(b));
+            (ca == 2 && cb == 0) || (ca == 1 && (cb == 0 || cb == 2))
+        }
+        [a, _, _, _] => tok_class(a) == 1 && toks.iter().all(|t| tok_class(t) != 4),
+        _ => false,
+    };
+    if !swapped {
+        return head.to_string();
+    }
+    let mut out = prefix.to_string();
+    if !out.is_empty() {
+        out.push(' ');
+    }
+    out.push_str("at ");
+    match toks.as_slice() {
+        [a, b] => {
+            out.push_str(b);
+            out.push(' ');
+            out.push_str(a);
+        }
+        [v_e, v_o, h_e, h_o] => {
+            // [V 对, H 对] → H 对前 V 对后
+            out.push_str(h_e);
+            out.push(' ');
+            out.push_str(h_o);
+            out.push(' ');
+            out.push_str(v_e);
+            out.push(' ');
+            out.push_str(v_o);
+        }
+        _ => return head.to_string(),
+    }
+    out
 }
 
 /// 解析位置关键字为 LengthValue。
@@ -1555,11 +1961,19 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
     let mut pos_x = LengthValue::Percentage(50.0);
     let mut pos_y = LengthValue::Percentage(50.0);
     let mut stop_start = 0;
-    let mut interpolation = ColorInterpolation::default();
+    let mut head_raw: Option<Box<str>> = None;
 
     let first = args[0].trim();
-    let (config_part, interp) = strip_interpolation_hint(first);
-    let config_src = config_part.unwrap_or("");
+    let hs = strip_interpolation_hint(first);
+    // g43：`in` 子句畸形整渐变拒收（同 linear 分支注，conic `in from 90deg` 形）。
+    if hs.present && hs.method.is_none() {
+        return None;
+    }
+    let interpolation = ColorInterpolation {
+        space: hs.space,
+        hue: hs.hue,
+    };
+    let config_src = hs.head.as_deref().unwrap_or("");
     let config_lower = config_src.to_ascii_lowercase();
 
     if !config_src.is_empty()
@@ -1569,13 +1983,13 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
         from_angle = angle;
         pos_x = px;
         pos_y = py;
-        if let Some(i) = interp {
-            interpolation = i;
-        }
         stop_start = 1;
-    } else if let Some(i) = interp {
+        head_raw = Some(canonicalize_at_clause(&normalize_decl_ws(config_src)).into_boxed_str());
+    } else if hs.present {
         // 首参仅为 `in <colorspace>` 提示（无 from/at），跳过用默认配置
-        interpolation = i;
+        if let Some(h) = hs.head {
+            head_raw = Some(normalize_decl_ws(&h));
+        }
         stop_start = 1;
     }
 
@@ -1591,6 +2005,13 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
         stops,
         repeating,
         interpolation,
+        // `in` 子句存在但方法未识别（未知空间/畸形 hue）→ specified 置 None，
+        // 串化 passthrough 保原文（R2288 渲染语义不受影响）。
+        specified: (hs.method.is_some() || !hs.present).then(|| GradientSpecifiedParts {
+            head: head_raw,
+            body: normalize_stops_body(&args[stop_start..]),
+            method: hs.method,
+        }),
     }))
 }
 
@@ -1630,6 +2051,36 @@ fn parse_conic_config(s: &str) -> Option<(f64, LengthValue, LengthValue)> {
     }
 
     Some((angle, pos_x, pos_y))
+}
+
+/// 声明值片段空白归一：连续空白折叠为单空格、去首尾（css-images-4 §serializing
+/// 的 canonical 词间距）。
+pub(crate) fn normalize_decl_ws(s: &str) -> Box<str> {
+    let mut out = String::with_capacity(s.len());
+    let mut pending_ws = false;
+    for ch in s.chars() {
+        if ch.is_whitespace() {
+            pending_ws = !out.is_empty();
+        } else {
+            if pending_ws {
+                out.push(' ');
+                pending_ws = false;
+            }
+            out.push(ch);
+        }
+    }
+    out.into_boxed_str()
+}
+
+/// 色标段原文归一：逐参空白归一后以 `, ` 顶层连接（canonical 逗号间距）。
+pub(crate) fn normalize_stops_body(args: &[&str]) -> Box<str> {
+    args.iter()
+        // g47：色标内 calc canonical（顶层二元 + 百分比项在角度项前，
+        // conic-gradient-calc-angle-percentage-valid 语料钉）。
+        .map(|a| normalize_decl_ws(&super::calc_stop_gates::canonicalize_calc_stop_arg(a)))
+        .collect::<Vec<_>>()
+        .join(", ")
+        .into_boxed_str()
 }
 
 /// 将渐变参数按顶层逗号分割（不分割括号内的逗号）。
@@ -1674,10 +2125,15 @@ fn split_gradient_args(inner: &str) -> Option<Vec<&str>> {
 /// 解析色标列表。
 fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorStop>> {
     let mut stops = Vec::new();
+    // 上一段已消费 hint 且未被后续色标闭合（g44：hint 只允许夹在两色标之间）。
+    let mut pending_hint = false;
     for arg in args {
         let arg = arg.trim();
+        // 空段非法（css-images-4 §color-stop-syntax：<color-stop-list> 逗号分隔产生式
+        // 无空项）——`black, , white`、悬挂逗号 `,black, white`、整空 `linear-gradient()`。
+        // g44 前空段静默跳过 → 上述形伪接受（color-stops-parsing invalid 面）。
         if arg.is_empty() {
-            continue;
+            return None;
         }
         // CSS Images 4 §4.3.8：色标间的裸 <length-percentage> 是 color interpolation hint
         //（插值提示），指定相邻两色标的中点位置，本身不是色标。修复前裸 %/长度落
@@ -1685,19 +2141,45 @@ fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorS
         // 现正确识别并消费 hint（hint 必须有前导色标，首位裸长度/% 仍非法）。
         // 渲染侧暂用线性插值——hint 中点偏移为可选 follow-up（需 GradientColorStop 加
         // hint 字段 + 渲染器改动）；本切片仅 parse-compliance，与 R2204 CDO/CDC 同族。
-        if !stops.is_empty() && is_color_interpolation_hint(arg) {
+        if is_color_interpolation_hint(arg, is_conic) {
+            // g44 hint 文法位约束（css-images-4 §color-stop-syntax：hint 仅允许出现在
+            // 两色标之间）——首位色标前（`0%, black, white`）、连续两 hint
+            //（`black, 25%, 50%, white`）均拒收；尾悬挂由循环后 pending_hint 判。
+            // driving: wpt css-images gradient/color-stops-parsing invalid 面。
+            if stops.is_empty() || pending_hint {
+                return None;
+            }
+            pending_hint = true;
             continue;
         }
         stops.extend(parse_color_stop(arg, is_conic)?);
+        pending_hint = false;
+    }
+    // 尾 hint 悬挂（`black, white, 75%`）拒收；空色标表（`linear-gradient()`）拒收。
+    // 单色标表（`linear-gradient(black)`）合法——页面 valid 面钉（css-images-4 已
+    // 放宽单色标，非 css-images-3 `{2,}` 口径）。
+    if pending_hint || stops.is_empty() {
+        return None;
     }
     Some(stops)
 }
 
 /// 判断 arg 是否为 CSS Images 4 §4.3.8 color interpolation hint（色标间裸 <length-percentage>）：
 /// 能解析为色标位置（长度/%/calc/min/max/clamp）但不能解析为颜色（裸值，无 color 前缀）。
+/// g47：math 槽先过色标槽型别门（linear/radial 拒角度原子、conic 拒纯数字操作数），
+/// 槽型违规形不作 hint（落 parse_color_stop 拒整值）。
 /// driving: `linear-gradient(red, 30%, blue)` 中间的 `30%` / `20px` / `calc(25%)`。
-fn is_color_interpolation_hint(arg: &str) -> bool {
-    parse_stop_position(arg.trim()).is_some() && parse_color(arg.trim()).is_none()
+fn is_color_interpolation_hint(arg: &str, is_conic: bool) -> bool {
+    let t = arg.trim();
+    if super::calc_stop_gates::is_math_span(t) {
+        if !is_conic && span_has_top_level_angle_unit(&t.to_ascii_lowercase()) {
+            return false;
+        }
+        if is_conic && super::calc_stop_gates::span_has_top_level_number_operand(t) {
+            return false;
+        }
+    }
+    parse_stop_position(t).is_some() && parse_color(t).is_none()
 }
 
 /// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`、`red calc(1px / 0)`）。
@@ -1754,6 +2236,20 @@ fn parse_color_stop(s: &str, is_conic: bool) -> Option<Vec<GradientColorStop>> {
 
 /// 解析色标位置：先试长度/%/calc（[`parse_stop_position`]）；conic 额外接受裸 `<angle>`。
 fn parse_stop_position_maybe_angle(s: &str, is_conic: bool) -> Option<LengthValue> {
+    // g47（conic-gradient-calc-angle-percentage-invalid 语料钉，css-images-4
+    // §color-stop 位置槽型别）：math 函数槽 parse 前按族拒——linear/radial 色标
+    // <length-percentage> 不收角度原子（`calc(50% + 30deg)` 拒）；conic 色标
+    // <angle-percentage> 不收纯数字操作数（`calc(50% + 0)` 拒）。角度叶
+    // parse_atom 已 Number 化，CalcExpr 无法恢复型别，须按原文 provenance 判。
+    let t = s.trim();
+    if super::calc_stop_gates::is_math_span(t) {
+        if !is_conic && span_has_top_level_angle_unit(&t.to_ascii_lowercase()) {
+            return None;
+        }
+        if is_conic && super::calc_stop_gates::span_has_top_level_number_operand(t) {
+            return None;
+        }
+    }
     if let Some(lv) = parse_stop_position(s) {
         return Some(lv);
     }

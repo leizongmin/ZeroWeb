@@ -145,6 +145,14 @@ pub struct ComputedStyle {
     pub font_family: Vec<String>,
     /// font-size 属性。
     pub font_size: LengthValue,
+    /// font-* 槽数学形 eval 的 font 相对单位基准（父级 computed font-size
+    /// px；css-properties-values-api #dependency-cycles-via-relative-units
+    /// tentative 口径——font 属性的 font 相对单位按父级字体解析，与
+    /// font-size 属性同基准防循环；font-property-unit-cycles 期望 parent
+    /// em 30 与自身 font-size 10 分离驱动）。inheritance 预应用段注入；
+    /// 独立 apply 调用（CSSOM 写面/CSS.supports 哨兵）无父上下文为 None
+    /// → eval 回落 [`Self::font_size`]。
+    pub parent_font_size: Option<f32>,
     /// font-weight 属性。
     pub font_weight: FontWeightValue,
     /// font-style 属性。
@@ -335,6 +343,13 @@ pub struct ComputedStyle {
     /// `left: anchor(...)` 声明原文（同 [`ComputedStyle::anchor_inset_top`]）。
     /// 非继承。
     pub anchor_inset_left: Option<Box<str>>,
+    /// `anchor-size()` 尺寸槽声明原文按槽承载（css-anchor-position-1 §4；仅含
+    /// `anchor-size(` 平衡函数形的声明——布局期 anchor_pos pass 求值 used 值回填
+    /// 宽高，本槽置位时对应尺寸槽存初始 Auto。None = 页面无任何 anchor-size
+    /// 尺寸声明零成本）。margin 槽承载挂账（FIXME: gCS 读出静态路径
+    /// GENERATION_CACHE 级联无布局几何，used margin 回写需跨通道布线——
+    /// anchor-size-001 margin 段语料待专刀）。非继承。
+    pub anchor_size_slots: Option<Box<AnchorSizeSlots>>,
 
     // ── Overflow ──
     /// overflow-x 属性。
@@ -379,6 +394,23 @@ pub struct ComputedStyle {
     pub individual_rotate: Option<zero_css_parser::values::TransformFunction>,
     /// `scale` 属性（`none | <number> [<number> <number>?]?`）。
     pub individual_scale: Option<zero_css_parser::values::TransformFunction>,
+    // ── CSS Motion Path（css-motion-1 offset 簇，非继承；wptfyi-css offset-* 刀）──
+    /// `offset-path` 属性（`none | <offset-path-value>`；首片 none|path()，path 原文
+    /// 存储——ray()/基本形状文法 bail 解析失败回落 supports 假，后置刀）。
+    /// None = 未声明/none。
+    pub offset_path: Option<String>,
+    /// `offset-distance` 属性（`<length-percentage>`；计算值期 font 相对长度绝对化、
+    /// % 保留到渲染期）。None = 未声明（初始 0px）。
+    pub offset_distance: Option<LengthValue>,
+    /// `offset-rotate` 属性（`auto | reverse | <angle> | auto <angle>`）。None =
+    /// 未声明（初始 auto）。
+    pub offset_rotate: Option<OffsetRotateValue>,
+    /// `offset-anchor` 属性（`auto | <position>`；<position> 文法与 transform-origin
+    /// 同构，(x, y) 各一 LengthValue，% 保留）。None = 未声明/auto。
+    pub offset_anchor: Option<(LengthValue, LengthValue)>,
+    /// `offset-position` 属性（`normal | auto | <position>`，css-motion-1；初始
+    /// normal）。None = 未声明（初始 normal）。
+    pub offset_position: Option<OffsetPositionValue>,
     /// transform-box 值（CSS Transforms 1，非继承；默认 view-box）。
     pub transform_box: TransformBoxValue,
     /// stroke-width 值（SVG2 presentation，非继承；LengthValue，百分比/number 由消费侧按
@@ -410,6 +442,9 @@ pub struct ComputedStyle {
     pub transition_timing_function: Vec<zero_css_parser::values::TimingFunctionValue>,
     /// transition-delay 属性（逗号分隔的秒数列表）。
     pub transition_delay: Vec<f64>,
+    /// transition-behavior 属性（与 transition-property 逐位对齐的关键字列表）。
+    /// https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+    pub transition_behavior: Vec<String>,
 
     // ── Animations ──
     /// animation-name 属性（逗号分隔的动画名列表）。
@@ -499,12 +534,41 @@ pub struct ComputedStyle {
     pub break_after: BreakValue,
 
     // ── Column Rule ──
-    /// column-rule-width 属性。
-    pub column_rule_width: ColumnRuleWidthComputedValue,
-    /// column-rule-style 属性。
-    pub column_rule_style: ColumnRuleStyleComputedValue,
-    /// column-rule-color 属性。
-    pub column_rule_color: ColorValue,
+    /// column-rule-width 属性（css-gaps-1 重定义为 `<line-width-list>`；纯值 =
+    /// 单段列表，multicol 串化/paint 取单段平宽保形）。
+    pub column_rule_width: Vec<zero_css_parser::values::RuleWidthSegment>,
+    /// row-rule-width 属性（css-gaps-1 §column-row-rule-width，与 column 同文法）。
+    pub row_rule_width: Vec<zero_css_parser::values::RuleWidthSegment>,
+    /// column-rule-style 属性（css-gaps-1 重定义为 `<line-style-list>`；纯关键字 =
+    /// 单段列表，multicol 串化/paint 取单段平样式保形）。
+    pub column_rule_style: Vec<zero_css_parser::values::RuleStyleSegment>,
+    /// row-rule-style 属性（css-gaps-1 §column-row-rule-style，与 column 同文法）。
+    pub row_rule_style: Vec<zero_css_parser::values::RuleStyleSegment>,
+    /// column-rule-color 属性（css-gaps-1 重定义为 `<line-color-list>`；纯色 =
+    /// 单段列表，multicol 串化/paint 取单段平色保形）。
+    pub column_rule_color: Vec<zero_css_parser::values::RuleColorSegment>,
+    /// row-rule-color 属性（css-gaps-1 §column-row-rule-color，与 column 同文法）。
+    pub row_rule_color: Vec<zero_css_parser::values::RuleColorSegment>,
+
+    // ── Rule Inset（css-gaps-1 §inset）── 8 longhand 槽（初值 0px 非继承），
+    // 槽值 `overlap-join | <length-percentage>`（单位保形指定值，computed 期
+    // engine gCS 串化解析 px）。
+    /// column-rule-inset-cap-start 属性。
+    pub column_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent,
+    /// column-rule-inset-cap-end 属性。
+    pub column_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent,
+    /// column-rule-inset-junction-start 属性。
+    pub column_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent,
+    /// column-rule-inset-junction-end 属性。
+    pub column_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-cap-start 属性。
+    pub row_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-cap-end 属性。
+    pub row_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-junction-start 属性。
+    pub row_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent,
+    /// row-rule-inset-junction-end 属性。
+    pub row_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent,
 
     // ── Contain ──
     /// contain 属性。
@@ -656,18 +720,52 @@ pub struct ComputedStyle {
     pub border_image_repeat: BorderImageRepeatComputedValue,
     /// border-image-outset 属性。
     pub border_image_outset: BorderImageOutsetComputedValue,
+    /// mask-border-source 属性（css-masking-1 §3.4：`none | <image>`，非继承；
+    /// 文法与 border-image-source 同构，复用同一 computed 类型）。
+    pub mask_border_source: BorderImageSourceComputedValue,
+    /// mask-border-slice 属性（css-masking-1 §3.5：`[<length-percentage>|<number>]{1,4} && fill?`，
+    /// 非继承；初值 0，与 border-image-slice（100%）不同）。
+    pub mask_border_slice: BorderImageSliceComputedValue,
+    /// mask-border-width 属性（css-masking-1 §3.6：`[<length-percentage>|<number>|auto]{1,4}`，
+    /// 非继承；初值 auto，与 border-image-width（1）不同）。
+    pub mask_border_width: BorderImageWidthComputedValue,
+    /// mask-border-repeat 属性（css-masking-1 §3.8：`[stretch|repeat|round|space]{1,2}`，非继承）。
+    pub mask_border_repeat: BorderImageRepeatComputedValue,
+    /// mask-border-outset 属性（css-masking-1 §3.7：`[<length>|<number>]{1,4}`，非继承）。
+    pub mask_border_outset: BorderImageOutsetComputedValue,
     /// text-shadow 属性（CSS Text Decoration §3：`none | <shadow>#`，多阴影列表；空 Vec = none）。
     pub text_shadow: Vec<TextShadowComputedValue>,
     /// box-shadow 属性（CSS Backgrounds §7.2：<shadow>#，多阴影列表；空 Vec = none）。
     pub box_shadow: Vec<BoxShadowComputedValue>,
     /// clip-path 属性。
     pub clip_path: ClipPathComputedValue,
+    /// shape-outside 属性（css-shapes-1 §3：浮动周边环绕形状）。
+    pub shape_outside: ShapeOutsideComputedValue,
+    /// shape-margin 属性（css-shapes-1 §shape-margin-property：浮动元素形状
+    /// 外边距，非负 `<length-percentage>`，em 按字号绝对化、% 保留）。
+    pub shape_margin: LengthValue,
+    /// shape-image-threshold 属性（css-shapes-1 §shape-image-threshold-property：
+    /// 形状图阈值，`<number> | <percentage>`，computed 钳 [0,1]、pct 折算 /100）。
+    pub shape_image_threshold: f64,
     /// clip 属性（已弃用的 CSS2 裁剪属性，仅对绝对定位元素生效）。
     pub clip: ClipRectComputedValue,
     /// mask-image 属性（支持多图层，格式与 background-image 相同）。
     pub mask_image: Vec<BackgroundImageComputedValue>,
     /// mask-mode 属性（alpha/luminance/match-source）。
     pub mask_mode: MaskModeComputedValue,
+    /// mask-position 属性（css-masking-1 §5.3——文法同 background-position，
+    /// 复用其计算值类型与串化）。
+    pub mask_position: Vec<BackgroundPositionComputedValue>,
+    /// mask-size 属性（css-masking-1 §5.3——文法同 background-size）。
+    pub mask_size: Vec<BackgroundSizeComputedValue>,
+    /// mask-repeat 属性（css-masking-1 §5.3——文法同 background-repeat）。
+    pub mask_repeat: Vec<BackgroundRepeatComputedValue>,
+    /// mask-clip 属性（css-masking-1 §5.4——geometry-box | no-clip）。
+    pub mask_clip: Vec<MaskClipComputedValue>,
+    /// mask-origin 属性（css-masking-1 §5.5——geometry-box）。
+    pub mask_origin: Vec<MaskGeometryBoxComputedValue>,
+    /// mask-composite 属性（css-masking-1 §5.6 合成算子）。
+    pub mask_composite: Vec<MaskCompositeComputedValue>,
     /// `::before` 伪元素的计算样式（无匹配规则时为 None；由 style-system 计算，
     /// layout 据此在元素内容前合成生成盒）。伪元素不参与继承传播（继承构造全新 default）。
     pub before_pseudo: Option<Box<ComputedStyle>>,
@@ -719,6 +817,31 @@ pub struct ComputedStyle {
     /// 每元素重算（seed 含元素标识，跨元素不同——sharing §9.4 语义）。
     /// <https://drafts.csswg.org/css-values-5/#random-evaluating>
     pub random_computed: std::collections::HashMap<String, String>,
+    /// 刀 I important-tier（css-cascade-4 §importance）：级联胜出声明带 `!important`
+    /// 的属性名集（升序去重）。级联排序中 animation declarations 低于 important
+    /// 声明——`AnimationClock::apply_to_computed_style` 施值时按此跳过（渲染
+    /// stamping 与 gCS canonicalize 同通道共享该门）。Arc 共享自 `CascadeOutcome`
+    /// 组合缓存派生（同声明输入逐元素同集）；空集为常态。非可观察 CSS 值：
+    /// 双路径同走 `cascade_with_orders` 单点纯函数派生，结构相等契约不受影响。
+    pub important_won_props: std::sync::Arc<Vec<String>>,
+}
+
+/// `anchor-size()` 尺寸槽声明原文集（css-anchor-position-1 §4；见
+/// [`ComputedStyle::anchor_size_slots`]）。槽位名 = 物理尺寸属性名。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AnchorSizeSlots {
+    /// `width: anchor-size(...)` 声明原文（小写 trim）。
+    pub width: Option<Box<str>>,
+    /// `height: anchor-size(...)` 声明原文。
+    pub height: Option<Box<str>>,
+    /// `min-width: anchor-size(...)` 声明原文。
+    pub min_width: Option<Box<str>>,
+    /// `min-height: anchor-size(...)` 声明原文。
+    pub min_height: Option<Box<str>>,
+    /// `max-width: anchor-size(...)` 声明原文。
+    pub max_width: Option<Box<str>>,
+    /// `max-height: anchor-size(...)` 声明原文。
+    pub max_height: Option<Box<str>>,
 }
 
 /// 自定义属性共享表（不可变；父子链经 `Arc` 共享避免逐元素克隆）。

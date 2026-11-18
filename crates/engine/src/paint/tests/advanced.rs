@@ -281,6 +281,7 @@ fn test_paint_linear_gradient_to_bottom() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -327,6 +328,7 @@ fn test_paint_linear_gradient_to_right() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToRight,
             stops: vec![
                 GradientColorStop {
@@ -371,6 +373,7 @@ fn test_paint_linear_gradient_angle() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::Angle(90.0),
             stops: vec![
                 GradientColorStop {
@@ -410,6 +413,7 @@ fn test_paint_linear_gradient_color_stops() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -452,6 +456,7 @@ fn test_paint_linear_gradient_with_position() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -488,6 +493,7 @@ fn test_paint_linear_gradient_relative_length_stop_position() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -530,6 +536,7 @@ fn test_paint_radial_gradient_basic() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
         RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Circle,
             size: RadialSize::FarthestCorner,
             position_x: LengthValue::Percentage(50.0),
@@ -585,6 +592,7 @@ fn test_paint_radial_gradient_closest_side() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
         RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Circle,
             size: RadialSize::ClosestSide,
             position_x: LengthValue::Px(100.0),
@@ -632,6 +640,7 @@ fn test_paint_radial_gradient_custom_position() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
         RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Circle,
             size: RadialSize::FarthestCorner,
             position_x: LengthValue::Percentage(25.0),
@@ -674,6 +683,7 @@ fn test_paint_conic_gradient_no_primitive() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Conic(
         ConicGradient {
             interpolation: Default::default(),
+            specified: None,
             from_angle: 0.0,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -715,6 +725,7 @@ fn test_paint_gradient_with_background_color() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -774,6 +785,7 @@ fn test_paint_linear_gradient_to_top_left() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToTopLeft,
             stops: vec![
                 GradientColorStop {
@@ -818,6 +830,7 @@ fn test_paint_linear_gradient_to_bottom_right() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottomRight,
             stops: vec![
                 GradientColorStop {
@@ -862,6 +875,7 @@ fn test_paint_radial_gradient_length_size() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
         RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Circle,
             size: RadialSize::Length(LengthValue::Px(50.0)),
             position_x: LengthValue::Percentage(50.0),
@@ -903,6 +917,7 @@ fn test_paint_radial_gradient_relative_length_size() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
         RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Circle,
             size: RadialSize::Length(LengthValue::Em(2.0)),
             position_x: LengthValue::Percentage(50.0),
@@ -946,6 +961,7 @@ fn test_paint_linear_gradient_single_stop() {
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::Rgba(255, 0, 0, 255),

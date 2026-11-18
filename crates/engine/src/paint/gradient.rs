@@ -140,6 +140,12 @@ fn map_interpolation(i: ColorInterpolation) -> GradientInterpolation {
         ColorInterpolationSpace::Oklab => GradientColorSpace::Oklab,
         ColorInterpolationSpace::Lch => GradientColorSpace::Lch,
         ColorInterpolationSpace::Oklch => GradientColorSpace::Oklch,
+        // hsl/hwb/xyz*：渲染回退 Srgb（R2288 无色彩管理口径不变；g42 仅保留
+        // css-parser 模型身份供 computed 序列化保真）。
+        ColorInterpolationSpace::Hsl
+        | ColorInterpolationSpace::Hwb
+        | ColorInterpolationSpace::XyzD50
+        | ColorInterpolationSpace::XyzD65 => GradientColorSpace::Srgb,
     };
     let hue = match i.hue {
         ColorHueMethod::Shorter => HueMethod::Shorter,
@@ -297,6 +303,7 @@ mod tests {
     fn test_linear_gradient_to_primitive() {
         let grad = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::Rgba(255, 0, 0, 255),
@@ -319,6 +326,7 @@ mod tests {
     fn test_gradient_to_primitive_currentcolor_resolves_to_element_color() {
         let grad = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::CurrentColor,
@@ -340,6 +348,7 @@ mod tests {
     fn test_radial_gradient_to_primitive() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -366,6 +375,7 @@ mod tests {
     fn test_conic_gradient_to_primitive() {
         let grad = GradientValue::Conic(ConicGradient {
             interpolation: Default::default(),
+            specified: None,
             repeating: false,
             from_angle: 90.0,
             position_x: LengthValue::Percentage(50.0),
@@ -400,6 +410,7 @@ mod tests {
     fn test_radial_closest_side() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -429,6 +440,7 @@ mod tests {
     fn test_radial_farthest_side() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -452,6 +464,7 @@ mod tests {
     fn test_radial_length_size() {
         let grad = GradientValue::Radial(RadialGradient {
             interpolation: Default::default(),
+            specified: None,
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -510,6 +523,28 @@ mod tests {
         }
     }
 
+    /// g42：hsl/hwb/xyz 族 parse 保留模型身份（computed 序列化保真），渲染端
+    /// [`map_interpolation`] 仍回退 Srgb（R2288 无色彩管理口径不变）。
+    #[test]
+    fn test_g42_render_interpolation_fallback_srgb() {
+        for space in [
+            ColorInterpolationSpace::Hsl,
+            ColorInterpolationSpace::Hwb,
+            ColorInterpolationSpace::XyzD50,
+            ColorInterpolationSpace::XyzD65,
+        ] {
+            let mapped = map_interpolation(ColorInterpolation {
+                space,
+                hue: ColorHueMethod::Shorter,
+            });
+            assert_eq!(
+                mapped.space,
+                GradientColorSpace::Srgb,
+                "{space:?} must render via Srgb fallback"
+            );
+        }
+    }
+
     #[test]
     fn test_linear_direction_to_left() {
         let rect = Rect::new(0.0, 0.0, 100.0, 200.0);
@@ -530,6 +565,7 @@ mod tests {
     fn test_r5077_px_stops_normalize_to_gradient_line() {
         let grad = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![
                 GradientColorStop {
@@ -560,6 +596,7 @@ mod tests {
         // 百分比色标不参与归一（语义已相对线长）。
         let grad_pct = GradientValue::Linear(LinearGradient {
             interpolation: Default::default(),
+            specified: None,
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::Rgba(255, 0, 0, 255),

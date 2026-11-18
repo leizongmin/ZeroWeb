@@ -146,23 +146,38 @@
     var range = _zwVaGetActiveRange();
     if (!range) return true;
     // Chrome delta（可编辑链守卫）：起点叶子到编辑宿主链上遇不可编辑元素 →
-    // 拦（不应用，零树变更）但 **返 true**——该形 Chrome ret 录音 [true]（语料
-    // 条目 362 `{ <span cE=false>A/B/C }` 真意 wrap 不可编辑节点、本引擎不
-    // 具备该 wrap 能力只拦不报 false）；part06 :5187 返回值贯通（2026-11-09
-    // apply 内容模型边界刀）后返 false 会误翻 entry 362 ret 行（P2F）。
-    // `contenteditable=false` 宿主 + 内层 contenteditable 元素形（:1864/:1871/
-    // :1876）不走此守卫——链在内层 editing host 即截停，由下方宿主内容模型
-    // 守卫拒（ret=false 对齐 Chrome）。`<div><div contenteditable=false><div
-    // contenteditable>[foo]` 形链内层 div 可编辑不拦照 wrap（ret=true）。
-    // display:block span 岛形（条目 360）链全程可编辑不拦。
+    // 拦（不应用，零树变更）但 **返 true**——Chrome ret 录音 [true]；part06
+    // :5187 返回值贯通（2026-11-09 apply 内容模型边界刀）后返 false 会误翻
+    // ret 行（P2F）。R13 cE=false wrap 刀（2026-11-17）起守卫收窄：链上非可
+    // 编辑节点若被 active range 含界（含端等界）→ 不拦照走 wrap 臂（语料
+    // 条目 362 `{ <span cE=false>A/B/C }` compare 三形真 wrap， census 归域档
+    // docs/goal/editing-compat/evidence/2026-11-17-r13-cefalse-wrap-census.md；
+    // 下游 nodeList 收集臂经扩展过滤器纳入）；部分含/界外维持拦截（零树变更
+    // 返 true，既有保护面不变）。`contenteditable=false` 宿主 + 内层
+    // contenteditable 元素形（:1864/:1871/:1876）不走此守卫——链在内层
+    // editing host 即截停，由下方宿主内容模型守卫拒（ret=false 对齐 Chrome）。
+    // `<div><div contenteditable=false><div contenteditable>[foo]` 形链内层
+    // div 可编辑不拦照 wrap（ret=true）。display:block span 岛形（条目 360）
+    // 链全程可编辑不拦。
     var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset, false);
     if (!sl) return false;
+    // 守卫含界预判输入提升循环外（shim 循环不变量，zeroweb-guidelines #26）。
+    var fbqRsc = range.startContainer;
+    var fbqRec = range.endContainer;
+    var fbqRso = range.startOffset;
+    var fbqReo = range.endOffset;
+    var fbqRRoot = _zwJusGetRoot(fbqRsc);
     var cur = sl;
     var fbqHost = null;
     var g0 = 0;
     while (cur && g0++ < 256) {
       if (_zwJusIsEditingHost(cur)) { fbqHost = cur; break; }
-      if (!_zwJusIsEditable(cur)) return true;
+      if (!_zwJusIsEditable(cur)
+          && (_zwJusGetRoot(cur) !== fbqRRoot
+              || _zwJusBpCompare(cur, 0, fbqRsc, fbqRso) < 0
+              || _zwJusBpCompare(cur, _zwJusNodeLength(cur), fbqRec, fbqReo) > 0)) {
+        return true;
+      }
       cur = cur.parentNode;
     }
     // Chrome delta（宿主内容模型守卫）：新块物化在选区 editing host 内，host
@@ -195,8 +210,12 @@
     // if it is editable, ... node is either a non-list single-line container
     // or an allowed child of "p" or a dd or dt, and node is not the ancestor
     // of a prohibited paragraph child."
+    // （https://w3c.github.io/editing/execCommand.html#the-formatblock-command）
+    // Chrome delta（R13 cE=false wrap 刀，2026-11-17）：spec 「if it is
+    // editable」排除面收窄——fully-contained 非可编辑元素照纳入（Chrome 录音
+    // 语料条目 362 三 cE=false span 整体入新块；span ∈ p 允许子过第二谓词）。
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
-      return _zwJusIsEditable(node)
+      return (_zwJusIsEditable(node) || node.nodeType === 1)
         && (_zwFbqIsNonListSingleLineContainer(node)
             || _zwFbqIsWrapOnlyBlock(node)
             || _zwJusIsAllowedChild(node, 'p')
@@ -648,10 +667,17 @@
 
   // indentNodes（vendored implementation.js :5482-5517）。ol/ul 父臂同型
   // tag-wrap ∨ blockquote 包裹（simple indentation element 判据合并既有壳）。
-  // CSS-mode（styleWithCSS=true → margin div 臂）spec 仅在 isSimpleIndentation
-  // Element 合并面上有分叉，wrap 新建臂恒 blockquote；Chrome 录音（indent 语料
-  // qV after=''、blockquote 形）与 spec 臂一致，margin-div 臂未移植（FIXME）。
-  function _zwFbqIndentNodes(nodeList) {
+  // R13 cE=false wrap 刀（2026-11-17）：wrap 新建臂按 zwWebkitWrap 分叉容器
+  // 形——swcss=true 产 webkit-indent-blockquote 形（indent.html swcss=true
+  // 三行 accepted 皆收该形；p-margin/div-margin 形未被三行全收，见 census
+  // 档对账）；swcss=false 恒 plain blockquote（indent 语料 swcss=false 行
+  // accepted）。outdent 复用臂（:888/:890）不传旗标恒 plain——outdent.js
+  // swcss T/F 对行 accepted 恒同形 plain，Chrome 重缩进与 CSS 模式无关
+  // （idx 4/5 实证）。
+  // FIXME（Chrome delta）：CSS-mode margin-div 臂未移植（spec
+  // isSimpleIndentationElement 合并面分叉；swcss=true margin-div 族 ×2
+  // `<p>[abc]</p>` p-margin 形非本刀域）。
+  function _zwFbqIndentNodes(nodeList, zwWebkitWrap, zwConsumeBoundaryBr) {
     // "If node list is empty, do nothing and abort these steps."
     if (!nodeList.length) return;
     var firstNode = nodeList[0];
@@ -663,11 +689,75 @@
         function () { return firstNode.ownerDocument.createElement(tag); });
       return;
     }
+    // Chrome delta（br 边界刀，2026-11-17）：indent 新建块边界相邻 br 消费。
+    // spec blockExtend 把界 br 纳入 contained 集（isBlockStartPoint 计前邻
+    // br 而 isBlockEndPoint 不计后邻 br 的不对称），尾随 br 随包裹进块；
+    // Chrome 录形摘出后删除，且仅当该 br 是该边界的唯一行界（连续 br
+    // run=1：`foobar<br>[ba]z` idx30 单枚删除 vs `foobar<br><br><br><br>
+    // [ba]z` idx31 四枚全留）。录形四则：
+    // 尾侧 2——sublist 尾单 br 摘除并删（`foo[bar]<br>baz` idx28、
+    // `foo[bar]<br><br><br><br>baz` idx29）；首侧 2——包裹前单 br 删，
+    // 直形或行内壳尾链（idx30、`<span>foo<br>{}</span>bar` idx18）。
+    // 语料 145 条形（indent.html 全集）触发位仅 4 刀面键（idx18/28/29/30
+    // 现红恰刀面）；现绿 br＋blockquote 同现
+    // 9 条均非触发位（#15/#17 caret 前 br 形 sublist=[p]/[span]、#32/#45
+    // br 居 sublist 中段、#48/#50/#52 br 由合并臂插入）＝现绿面结构性
+    // 安全。仅 indent 臂启用（outdent 复用不传旗标恒 inert），list 臂
+    // 早退不受影响。可编辑门双查（尾成员＋首侧 leaf）＝非可编辑邻域
+    // 不消费（mods 键保护）。证据
+    // docs/goal/editing-compat/evidence/2026-11-17-indent-census.md
+    // 尾侧 pop 后须压制 _zwJusWrap 占位 br 拉入臂（尾成员非 br 且
+    // nextSibling 是 br 再拉一枚）——否则摘一枚又拉一枚（idx29 四 br 形
+    // pin 实证：bq 内 br 恒在、外侧少一枚）。仅 pop 发生时压制，其余
+    // 调用方拉臂默认开启零漂移。
+    var brPopped = false;
+    if (zwConsumeBoundaryBr) {
+      var lastNode = nodeList[nodeList.length - 1];
+      if (nodeList.length > 1
+          && _zwJusIsHtmlElement(lastNode, 'br')
+          && !_zwJusIsHtmlElement(nodeList[nodeList.length - 2], 'br')
+          && _zwJusIsEditable(lastNode)) {
+        nodeList.pop();
+        lastNode.parentNode.removeChild(lastNode);
+        brPopped = true;
+      }
+      var sib = firstNode.previousSibling;
+      var edgeBr = null;
+      var run = 0;
+      var gBr = 0;
+      while (sib && gBr++ < 16) {
+        var leaf = sib;
+        var gLeaf = 0;
+        while (_zwJusIsHtmlElement(leaf)
+            && !_zwJusIsHtmlElement(leaf, 'br')
+            && !_zwJusIsBlockNode(leaf)
+            && leaf.lastChild && gLeaf++ < 16) {
+          leaf = leaf.lastChild;
+        }
+        if (!_zwJusIsHtmlElement(leaf, 'br')) break;
+        run++;
+        edgeBr = leaf;
+        sib = sib.previousSibling;
+      }
+      if (run === 1 && edgeBr && _zwJusIsEditable(edgeBr)) {
+        edgeBr.parentNode.removeChild(edgeBr);
+      }
+    }
     // "Wrap node list, with sibling criteria returning true for a simple
     // indentation element ... new parent ... createElement("blockquote")..."
     var newParent = _zwJusWrap(nodeList,
       function (node) { return _zwListIsSimpleIndentationElement(node); },
-      function () { return firstNode.ownerDocument.createElement('blockquote'); });
+      zwWebkitWrap
+        ? function () {
+            var bq = firstNode.ownerDocument.createElement('blockquote');
+            bq.setAttribute('style',
+              'margin: 0 0 0 40px; border: none; padding: 0px;');
+            return bq;
+          }
+        : function () {
+            return firstNode.ownerDocument.createElement('blockquote');
+          },
+      false, brPopped);
     // "Fix disallowed ancestors of new parent."
     _zwListFixDisallowedAncestors(newParent);
   }
@@ -698,20 +788,179 @@
       n = n.parentNode;
     }
     // "For each item in items, normalize sublists of item."
+    // （https://w3c.github.io/editing/execCommand.html#the-indent-command）
+    // Chrome delta（ol 域尾区刀，2026-11-18）：item 最后一个 ol/ul 直接子之后
+    // 的尾区整体含选区两端时跳过 normalize——indent.html
+    // `<ol><li>foo<ol><li>bar</ol>[baz]</ol>` 录形新壳整包 li#1
+    // （`<ol><ol><li>foo<ol><li>bar</li></ol>baz</li></ol></ol>`），normalize
+    // else 臂（尾区非 ws 内容迁新 li）会把 baz 迁出并 hoist 内层 ol，wrap 姊妹
+    // criteria 再并回内层 ol（got 形）。选区在前导文本（`<ol><li>[foo]<ol>
+    // <li>bar</ol>baz</ol>`）、内层列表（`<ol><li>foo<ol><li>[bar]</ol>baz</ol>`）
+    // 或跨两者形时 normalize 照跑（语料拆分形 exp 实证）；ol 为末子形
+    // （`<ol><li>foo<ol><li>[bar]<li>baz</ol><li>quz</ol>`）两端不在尾区亦照跑。
+    // 仅 indent items 臂收口；sib-normalize 与 outdent 复用臂不涉。
     var i;
     for (i = 0; i < items.length; i++) {
-      _zwListNormalizeSublists(items[i]);
+      var itLi = items[i];
+      var lastList = null;
+      var k;
+      for (k = itLi.childNodes ? itLi.childNodes.length - 1 : -1; k >= 0; k--) {
+        if (_zwJusIsHtmlElement(itLi.childNodes[k], ['ol', 'ul'])) {
+          lastList = itLi.childNodes[k];
+          break;
+        }
+      }
+      if (lastList) {
+        var lpLen = _zwJusNodeLength(lastList);
+        if (_zwJusBpCompare(range.startContainer, range.startOffset, lastList, lpLen) > 0
+            && _zwJusBpCompare(range.endContainer, range.endOffset, lastList, lpLen) > 0) {
+          continue;
+        }
+      }
+      _zwListNormalizeSublists(itLi);
     }
 
     // "Block-extend the active range, and let new range be the result."
     var newRange = _zwJusBlockExtend(range, false);
+    // Chrome delta（li 单项锚定收口，2026-11-18）：原始选区两端同锚最近一个
+    // li 时，块扩展收口在该 li 的列表父界 (parent, i)..(parent, i+1)——
+    // indent.html `<ol><li>foo<ol><li>bar</ol>[baz]</ol>` 录形新壳整包 li#1
+    // （`<ol><ol><li>foo<ol><li>bar</li></ol>baz</li></ol></ol>`）；不收口时
+    // sole-li 形 (list, i+1) 非 block end point，尾 do-loop 越出列表宿主
+    // （(div,1)），contained 收整列表 → bq 整包（语料 got）。多 li 选区
+    // （`<ol><li>[foo<ol><li>bar</ol><li>baz]</ol>` bq 形）与无 li 面不涉，
+    // 保持 spec 爬升；多子列表形同锚收口与现路径 contained 恒同（child 界
+    // ≡ 边界等价点，g-foo-br/k2/t-inner-bar 形实证）。
+    // https://w3c.github.io/editing/execCommand.html#the-indent-command
+    var liS = null;
+    var liE = null;
+    var nnUp = range.startContainer;
+    while (nnUp) {
+      if (_zwJusIsHtmlElement(nnUp, 'li')) { liS = nnUp; break; }
+      nnUp = nnUp.parentNode;
+    }
+    nnUp = range.endContainer;
+    while (nnUp) {
+      if (_zwJusIsHtmlElement(nnUp, 'li')) { liE = nnUp; break; }
+      nnUp = nnUp.parentNode;
+    }
+    if (liS && liS === liE && liS.parentNode) {
+      var liIdx = _zwJusNodeIndex(liS);
+      newRange.setStart(liS.parentNode, liIdx);
+      newRange.setEnd(liS.parentNode, liIdx + 1);
+    }
     // "For each node node contained in new range, if node is editable and is
     // an allowed child of "div" or "ol" ..., append node to node list."
+    // （https://w3c.github.io/editing/execCommand.html#the-indent-command）
+    // Chrome delta（R13 cE=false wrap 刀，2026-11-17）：spec 「if node is
+    // editable」排除面收窄——fully-contained 非可编辑元素照纳入（Chrome 录音
+    // indent.html 三连形 `{ <span cE=false>A/B/C }` 整体单容器 wrap；刀前
+    // 只剩 ws 文本子被逐个包壳—— census 档 got 实证）。
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
-      return _zwJusIsEditable(node)
+      return (_zwJusIsEditable(node) || node.nodeType === 1)
         && (_zwJusIsAllowedChild(node, 'div')
             || _zwJusIsAllowedChild(node, 'ol'));
     });
+
+    // E-表 tbody 全覆盖整表升级（Chrome delta，2026-11-18）：行组端点形选区
+    // （data-start/end 语义 (tbody,0)-(tbody,1)）块扩展止于 (table,0)-(table,1)
+    // （两侧同容器＝条件尾爬升守卫不破），contained 顶层 tbody 被 wrap 过滤器
+    // 滤除退化为 cell 文本成员→逐 td 包壳（got 形）。Chrome 录形＝整表外包裹
+    // 单壳（"outermost possible location"——tr/td 壳不可落 tbody 内容模型）。
+    // 判据＝行组整体含于 newRange 且该表全部行组均覆盖；部分覆盖形（逐 td 壳，
+    // 语料 :134/:122 现绿）与表级端点形（nodeList=[table] 直包，:147/:154
+    // 现绿）不触发。升级后下游与 :147 同态（[table] 走既有 wrap 面）。
+    // https://w3c.github.io/editing/execCommand.html#indent
+    if (nodeList.length) {
+      for (var tg = 0; tg < nodeList.length; tg++) {
+        var rgT = nodeList[tg].parentNode;
+        while (rgT && !_zwJusIsHtmlElement(rgT, ['tbody', 'thead', 'tfoot'])) {
+          rgT = rgT.parentNode;
+        }
+        if (!rgT || !rgT.parentNode
+            || !_zwJusIsHtmlElement(rgT.parentNode, 'table')) {
+          continue;
+        }
+        var tabT = rgT.parentNode;
+        if (_zwJusBpCompare(newRange.startContainer, newRange.startOffset,
+                            rgT, 0) > 0
+            || _zwJusBpCompare(newRange.endContainer, newRange.endOffset,
+                               rgT, rgT.childNodes.length) < 0) {
+          continue;
+        }
+        var allRg = true;
+        for (var kRg = 0; kRg < tabT.childNodes.length; kRg++) {
+          var kidRg = tabT.childNodes[kRg];
+          if (!_zwJusIsHtmlElement(kidRg, ['tbody', 'thead', 'tfoot'])) {
+            continue;
+          }
+          if (_zwJusBpCompare(newRange.startContainer, newRange.startOffset,
+                              kidRg, 0) > 0
+              || _zwJusBpCompare(newRange.endContainer, newRange.endOffset,
+                                 kidRg, kidRg.childNodes.length) < 0) {
+            allRg = false;
+            break;
+          }
+        }
+        if (!allRg) continue;
+        // 升级：表内成员全数剔除（树序连续段），原首位插 table。
+        var firstIdx = -1;
+        for (var rT = nodeList.length - 1; rT >= 0; rT--) {
+          if (nodeList[rT] === tabT || _zwJusIsAncestorOf(tabT, nodeList[rT])) {
+            nodeList.splice(rT, 1);
+            firstIdx = rT;
+          }
+        }
+        nodeList.splice(firstIdx, 0, tabT);
+        break;
+      }
+    }
+
+    // B 族容器整体升级（Chrome delta，2026-11-18）：blockExtend do-while 两侧
+    // 同断于块容器 C 内侧边界（首尾子皆可见块 → (C,0) 为 block end point、
+    // (C,len) 为 block start point）时 newRange=(C,0)-(C,len)，contained 收
+    // C 的子代——indent 新壳嵌 C 内（语料 indent B 族 4 键＋E 族 div 键 got
+    // 实证：styled bq / webkit-indent-blockquote / div[dir] 三形）。Chrome
+    // 录形＝C 全部子代入选时容器整体入含域（新壳包 C 外，spec 注记
+    // "puts them at the outermost possible location"）；部分覆盖形（styled
+    // bq 内只选 p1 余 p2 残留，indent.html 现绿键）仍嵌内＝子代不全在
+    // nodeList 时不升级。spec 原文该面由 blockExtend 无条件尾爬升产生，但
+    // 那会越过宿主把宿主祖先链收进含域（宿主 div 入列→外包裹宿主，录音
+    // 不符）——Chrome 实为宿主天花板＋全覆盖判据，故收口在 node list 构建面。
+    // 列表域（ol/ul/li，li 臂两侧端点恒落 (ol,i)/(ol,i+1) 同容器形）与表格
+    // 结构（table 家族，E 族逐 td 录形）不升级。
+    // https://w3c.github.io/editing/execCommand.html#the-indent-command
+    if (nodeList.length) {
+      var hostChk = null;
+      var hnUp = nodeList[0];
+      while (hnUp) {
+        if (_zwJusIsEditingHost(hnUp)) { hostChk = hnUp; break; }
+        hnUp = hnUp.parentNode;
+      }
+      for (var up = 0; up < nodeList.length; up++) {
+        var cUp = nodeList[up].parentNode;
+        if (!cUp || cUp.nodeType !== 1 || !_zwJusIsEditable(cUp)
+            || cUp === hostChk
+            || _zwJusIsHtmlElement(cUp,
+                ['ol', 'ul', 'li', 'table', 'tbody', 'thead', 'tfoot',
+                 'tr', 'td', 'th'])
+            || !cUp.childNodes || !cUp.childNodes.length) {
+          continue;
+        }
+        var fullCov = true;
+        for (var kUp = 0; kUp < cUp.childNodes.length; kUp++) {
+          if (nodeList.indexOf(cUp.childNodes[kUp]) < 0) {
+            fullCov = false;
+            break;
+          }
+        }
+        if (!fullCov) continue;
+        // 升级：树序位上以 C 替换其子代连续段（子代全在列＝段连续）。
+        var runUp = nodeList.indexOf(cUp.childNodes[0]);
+        nodeList.splice(runUp, cUp.childNodes.length, cUp);
+        up = runUp;
+      }
+    }
 
     // "If the first visible member of node list is an li whose parent is an
     // ol or ul: ... If sibling is an li, normalize sublists of sibling."
@@ -737,7 +986,7 @@
           && nodeList[0] === sublist[sublist.length - 1].nextSibling) {
         sublist.push(nodeList.shift());
       }
-      _zwFbqIndentNodes(sublist);
+      _zwFbqIndentNodes(sublist, !!globalThis.__zwStyleWithCSS, true);
     }
     return true;
   };
@@ -1065,7 +1314,21 @@
     if (v === '') return false;
 
     // "Delete the selection, with strip wrappers false."
-    _zwDelDeleteSelection({ stripWrappers: false });
+    // IMG-SWCSS-GUARD（2026-11-17 insertimage 壳形刀）：本仓 deleteSelection
+    // 内部归一 collapse/extend 途经 _zwSync → F1'-B「选区变更清 swcss」，致
+    // restoreValues 跨块值载体选形（_zwVaCssFlag）读到已清值——语料
+    // stylewithcss(true) 跨块变体 exp 携 `<span style=color>` 载体、got 恒
+    // font（insertimage.html 2F）实证 Chrome 命令内部不清模式。守卫仅包本
+    // 调用（delete/hr/fb/typing 各自路径零扰动）；multitest 每案隔离的清点位
+    // ＝案 setup 的选区 API（dispatch 外），守卫不覆盖。FIXME: 语料出现
+    // [swcss(true)+结构命令+typing] 链形时改 presSw 快照回写（part06 F1'-B
+    // 注记同款预案），并把守卫提升为命令域通用面。
+    globalThis.__zwImgDelSelInternal = true;
+    try {
+      _zwDelDeleteSelection({ stripWrappers: false });
+    } finally {
+      globalThis.__zwImgDelSelInternal = false;
+    }
     var range = _zwVaGetActiveRange();
     if (!range) return true;
 
@@ -1085,11 +1348,111 @@
       range.startContainer.removeChild(range.startContainer.firstChild);
     }
 
+    // IMG-BREAKOUT（2026-11-17 insertimage 壳形刀）：Chrome 对象插入出壳——
+    // 折叠插入点先提离 inline 壳链（文本点提父级；逐层 inline 祖先在边界提
+    // 界、在腰点右半壳分裂），落块层等价边界后再插 img。vendored spec 无此
+    // 步（implementation.js :7316-7367 直插 range 起点，stripWrappers:false
+    // 留壳致 img 落壳内），形据＝insertimage.html 21 壳形 exp：foo<b>[bar]
+    // </b>baz→foo<img>baz、<div><b>A[]B</b></div>→<div><b>A</b><img><b>B</b>
+    // </div>、<span>foo[</span><span>]bar</span>→壳间落位、跨块 font 载体
+    // exp→img 落载体壳前块层。块层插入点恒等不受扰动（现役绿形
+    // <span>foo</span>{}<span>bar</span>、<div>{}<br></div> 等）。hr 同对象
+    // 插入现靠 stripWrappers:true 空壳摘除殊途同归（语料绿），FIXME: 出现
+    // 翻红再统一为共享出壳机具。
+    var zscI = range.startContainer;
+    var zsoI = range.startOffset;
+    if (zscI.nodeType === 3) {
+      var zpI = zscI.parentNode;
+      if (zsoI === 0) {
+        zsoI = _zwJusNodeIndex(zscI);
+      } else if (zsoI === _zwJusNodeLength(zscI)) {
+        zsoI = 1 + _zwJusNodeIndex(zscI);
+      } else {
+        // 中点拆分：优先节点自带 splitText（M 家族全同步 getter 视图——数据
+        // 截断+尾插入均发 mutation，宿主侧后续按索引的 mutation 才不失配；
+        // pin mid-shell 双 B 实证）；无该法的族（root-text 直子，zz-probe-fs4
+        // 实证）回落 _zwVaSplitText（JS 树拆分，靠后续宿主直子级插入的
+        // 子树重序列化承载）。
+        var ztailI = (typeof zscI.splitText === 'function')
+          ? zscI.splitText(zsoI)
+          : _zwVaSplitText(zscI, zsoI);
+        zsoI = _zwJusNodeIndex(ztailI);
+      }
+      zscI = zpI;
+      range.setStart(zscI, zsoI);
+    }
+    var zgI = 0;
+    // 提离目标＝inline 壳链顶（宿主/块级父层是落点非止步条件，v1 误作守卫
+    // 致空壳形/块内形零提升——pin 首轮 12/13 红根因）；同宿主门防跨宿主越界。
+    while (zscI.nodeType === 1 && _zwJusIsInlineNode(zscI)
+        && zscI.parentNode && _zwListInSameEditingHost(zscI, zscI.parentNode)
+        && zgI++ < 256) {
+      var zppI = zscI.parentNode;
+      if (zsoI === 0) {
+        zsoI = _zwJusNodeIndex(zscI);
+      } else if (zsoI === zscI.childNodes.length) {
+        zsoI = 1 + _zwJusNodeIndex(zscI);
+      } else {
+        // 腰点：右半壳分裂（工厂重建壳保属性形，cloneNode 产物在 stamped
+        // 家族有拒收先例——part06 d31 B1 切片 3），子逐个让位后插原壳后。
+        var zshellI = document.createElement(String(zscI.tagName || 'span'));
+        try {
+          var zaI = zscI.attributes;
+          for (var ziI = 0; ziI < zaI.length; ziI++) {
+            zshellI.setAttribute(String(zaI[ziI].name || ''),
+              String(zaI[ziI].value || ''));
+          }
+        } catch (_eZiI) {}
+        var zkI = zscI.childNodes[zsoI];
+        var zmovedI = [];
+        while (zkI) {
+          var zknI = zkI.nextSibling;
+          zshellI.appendChild(zkI);
+          zmovedI.push(zkI);
+          zkI = zknI;
+        }
+        // plain 家族对 createElement 产物壳的 appendChild 是序列化拷贝（副本
+        // 入壳、原节点滞留源 childNodes 且 parentNode 已指壳——mid-shell 双 B
+        // 实证）；镜像元素目标则真移动。按 indexOf 位置判定摘原：拷贝态在位
+        // 即摘（镜像 removeChild 按 indexOf 定位不受 parentNode 已切壳影响），
+        // 真移动态缺席自然跳过。
+        for (var zmI = 0; zmI < zmovedI.length; zmI++) {
+          var zkidsI = zscI.childNodes;
+          for (var znI2 = 0; znI2 < zkidsI.length; znI2++) {
+            if (zkidsI[znI2] === zmovedI[zmI]) {
+              zscI.removeChild(zmovedI[zmI]);
+              break;
+            }
+          }
+        }
+        zppI.insertBefore(zshellI, zscI.nextSibling);
+        zsoI = 1 + _zwJusNodeIndex(zscI);
+      }
+      zscI = zppI;
+      range.setStart(zscI, zsoI);
+    }
+
     // "Let img be ... createElement("img") ... setAttribute("src", value) ...
     // Run insertNode(img) on the range."
     var img = document.createElement('img');
     img.setAttribute('src', v);
     _zwFbqInsertAtRangeStart(img);
+
+    // IMG-BREAKOUT 收尾（同刀）：插入点后邻接空 inline 壳链全摘——
+    // stripWrappers:false 保留的空包裹（删除致空或 restoreValues 重发空壳）
+    // Chrome 不保留（foo{<b>bar</b>}baz→foo<img>baz、foo{<span style>…</span>}
+    // baz→foo<img>baz、双空样式壳链→foo<img>quz 等 exp 实证；<b><br></b> 非
+    // 空壳保留形 <div><img><b><br></b></div> 同族 exp 实证）。仅前向扫：本批
+    // 语料无 img 前向邻接空壳形，FIXME: 出现该形再补后向对称臂。
+    var zg2I = 0;
+    while (img.nextSibling && zg2I++ < 256) {
+      var znI = img.nextSibling;
+      if (znI.nodeType !== 1 || !_zwJusIsInlineNode(znI)
+          || znI.childNodes.length !== 0) {
+        break;
+      }
+      znI.parentNode.removeChild(znI);
+    }
 
     // "Run collapse() on the Selection, with first argument equal to the
     // parent of img and the second argument equal to one plus the index of

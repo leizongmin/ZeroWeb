@@ -123,6 +123,12 @@ fn test_get_computed_style_shorthands_r2755() {
         <div id=\"cn\" style=\"column-count: 3;\"></div>\
         <div id=\"cb\" style=\"columns: 200px 4;\"></div>\
         <div id=\"cb2\" style=\"columns: 5;\"></div>\
+        <div id=\"cbh\" style=\"columns: 10px / 100px;\"></div>\
+        <div id=\"cbha\" style=\"columns: auto / 100px;\"></div>\
+        <div id=\"cbhn\" style=\"columns: 2 / 100px;\"></div>\
+        <div id=\"cbhwn\" style=\"columns: 10px 2 / 100px;\"></div>\
+        <div id=\"cbhs\" style=\"columns: 10px / auto;\"></div>\
+        <div id=\"ch\" style=\"column-height: 100px;\"></div>\
         <div id=\"cr\" style=\"column-rule: thick double rgb(255, 0, 0);\"></div>\
         <div id=\"crp\" style=\"column-rule: 2px solid;\"></div>\
         <div id=\"crh\" style=\"column-rule-style: hidden;\"></div>\
@@ -140,6 +146,19 @@ fn test_get_computed_style_shorthands_r2755() {
     assert_eq!(computed_style_property(html, "#cn", "columns"), "3");
     assert_eq!(computed_style_property(html, "#cb", "columns"), "200px 4");
     assert_eq!(computed_style_property(html, "#cb2", "columns"), "5");
+    // css-multicol-2 §4.5 斜杠段：height 非 auto 时 slash 恒显；height auto 省；
+    // width/count auto 收敛单 "auto"（WPT columns-computed 语料锚定形）。
+    assert_eq!(computed_style_property(html, "#cbh", "columns"), "10px / 100px");
+    assert_eq!(computed_style_property(html, "#cbha", "columns"), "auto / 100px");
+    assert_eq!(computed_style_property(html, "#cbhn", "columns"), "2 / 100px");
+    assert_eq!(
+        computed_style_property(html, "#cbhwn", "columns"),
+        "10px 2 / 100px"
+    );
+    assert_eq!(computed_style_property(html, "#cbhs", "columns"), "10px");
+    // css-multicol-2 §4.2 column-height longhand gCS。
+    assert_eq!(computed_style_property(html, "#ch", "column-height"), "100px");
+    assert_eq!(computed_style_property(html, "#def", "column-height"), "auto");
     // column-rule 简写：style=none 省略（hidden 保留）；width 恒显；color 恒显。
     // #def 默认（style none）→"3px rgb(255, 0, 0)"（color=currentcolor→元素 red）。
     assert_eq!(
@@ -419,7 +438,9 @@ fn test_get_computed_style_font_shorthand_r2761() {
     // 经 longhand 设置（family Arial + size 14px，style/weight/line-height 全初值省）→"14px Arial"。
     assert_eq!(computed_style_property(html, "#f5", "font"), "14px Arial");
     assert_eq!(computed_style_property(html, "#f6", "font-stretch"), "75%");
-    assert_eq!(computed_style_property(html, "#f6", "font"), "75% 14px Arial");
+    // font 简写 stretch 位用关键字形（Chromium 156 oracle 复测：longhand 恒 %、
+    // 简写关键字 "condensed 14px Arial"；刀 N 一期 2d3e71d19 对齐）。
+    assert_eq!(computed_style_property(html, "#f6", "font"), "condensed 14px Arial");
     assert_eq!(
         computed_style_property(html, "#f7", "font-variant-alternates"),
         "historical-forms"

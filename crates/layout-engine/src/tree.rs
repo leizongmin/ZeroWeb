@@ -2815,6 +2815,10 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
 /// select 内 option/optgroup 元素判定——自身为 option/optgroup 且祖先链含
 /// `<select>`（option 经 optgroup 间接嵌套两形态均命中）。select 之外的 option
 ///（datalist 等无语料钉面）不在本谓词内。
+/// s428 listbox 形态 carve-out：上游 picker-none 子树包裹仅 closed 下拉形态——
+/// `<select multiple>` / `size>1` 恒以 inline listbox 渲染 option 行（HTML 渲染
+/// 规范 https://html.spec.whatwg.org/multipage/rendering.html#the-select-element-2
+/// ），不落入本谓词（kill-switch `ZW_SELECT_LISTBOX_FORM=0` 回退形态盲抑制）。
 fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
     let is_control_tag = doc.get(id).is_some_and(|n| {
         matches!(&n.kind, NodeKind::Element(e) if {
@@ -2831,6 +2835,10 @@ fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
             .get(pid)
             .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
         {
+            // listbox 形态（multiple/size>1）不抑制：option 行由盒面/IFC 正常承载。
+            if select_listbox_render_enabled(doc, pid) {
+                return false;
+            }
             return true;
         }
         cur = doc.parent_node(pid);
@@ -2843,6 +2851,34 @@ fn is_suppressed_select_control_child(doc: &Document, id: NodeId) -> bool {
 fn select_options_suppress_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0"))
+}
+
+/// select listbox 形态判定（HTML 渲染规范 §the-select-element-2）：listbox =
+/// `multiple` 属性在场，或 `size` 属性解析值 > 1；`size` 缺席或非 "valid
+/// non-negative integer"（trim 后全 ASCII 数字）按默认 1 计。driving: WPT
+/// select-listbox-touch.optional / select-multiple-resize（s388 判例①面）。
+pub fn select_is_listbox_form(doc: &Document, select_id: NodeId) -> bool {
+    if !doc
+        .get(select_id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")))
+    {
+        return false;
+    }
+    if doc.get_attribute(select_id, "multiple").is_some() {
+        return true;
+    }
+    doc.get_attribute(select_id, "size")
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .is_some_and(|size| size > 1)
+}
+
+/// listbox 形态渲染臂激活判定（gate 合入版，供 collect_items 谓词与 engine paint
+/// 侧复用——runtime_flags 为 pub(super) 不可跨 crate）：`ZW_SELECT_LISTBOX_FORM`
+/// gate-on 且 select 为 listbox 形态。R5346 纪律：OnceLock 进程级单读。
+pub fn select_listbox_render_enabled(doc: &Document, select_id: NodeId) -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let enabled = *ENABLED.get_or_init(|| std::env::var("ZW_SELECT_LISTBOX_FORM").as_deref() != Ok("0"));
+    enabled && select_is_listbox_form(doc, select_id)
 }
 
 /// R2439：元素 `content` 属性是否为 `url()`（element-replacement，CSS Content §content-property）。
@@ -3344,6 +3380,13 @@ fn row_in_table_context(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>,
     false
 }
 
+/// §17.4 匿名 cell margin 抑制 kill-switch 读取：`ZW_IMPLICIT_CELL_MARGIN_SUPPRESS=0`
+/// 回退（table-row 块级子 margin 恢复入账）。
+fn implicit_cell_margin_suppress_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_IMPLICIT_CELL_MARGIN_SUPPRESS").as_deref() != Ok("0"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -3400,6 +3443,35 @@ fn build_subtree(
 
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
+
+    // CSS2 §17.4 margin applies-to：table-row 的块级子按**匿名 table-cell** 入表
+    // 网格（§17.2.1 匿名盒规则；build_row 按列位收编，盒 display 仍 Block），
+    // margin 不应用。converter 的 is_margin_suppressed 按自身 display=TableCell
+    // 判，匿名 cell 旁路之：margin 全额入账（taffy 撑高 cell/行、首 cell
+    // margin-top 塌至表顶——anonymous-table-cell-margin-collapsing 表 150×109.6，
+    // 应 100×100）。taffy 输入源头清零与显式 cell 同口径；padding 不动（§17.5
+    // cell padding 始终应用）。仅限真表上下文内的行（R5243 row_in_table_context
+    // 同门，孤儿 row 子维持自身盒路径）；OOF（abspos margin 参与 §10.3.7 方程）
+    // 与 float 子（build_row 不收编、走 float 路径）不触发。
+    // kill-switch `ZW_IMPLICIT_CELL_MARGIN_SUPPRESS=0` 回退。
+    if implicit_cell_margin_suppress_enabled()
+        && matches!(computed.position, PositionValue::Static)
+        && matches!(computed.float, FloatValue::None)
+        && doc.parent_node(dom_id).is_some_and(|p| {
+            styles
+                .get(&p)
+                .is_some_and(|ps| matches!(ps.display, DisplayValue::TableRow) && row_in_table_context(doc, styles, p))
+        })
+    {
+        taffy_style.margin = taffy::geometry::Rect::zero();
+        // R5281 同口径：cell 立独立格式化上下文（子 margin 不与 cell 折叠）。
+        // 匿名 cell（display 仍 Block）旁路 converter 的 item_margins_isolated
+        // 臂：内层子 margin 塌穿 cell→row→table（首 cell margin 塌至表顶 +
+        // cell 高塌 0 → 行高分配错摊）。隔离后子 margin 定位留盒内，残差
+        // （taffy 盒高漏末子 margin-bottom）由 position_cells 的分配输入
+        // aware floor 对齐（table.rs content_row_heights R5516 注）。
+        taffy_style.item_margins_isolated = true;
+    }
 
     // R5154（css-align-3 §4.2 baseline fall-back）：grid item 的 align-self: last
     // baseline 在基线共享不可行时按 fallback alignment 定位——last baseline →

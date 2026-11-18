@@ -1049,6 +1049,18 @@
 
   var _scheduleTick = function (doc, st, delayMs) {
     if (st.tickTimer) return;
+    // 无宿主定时器（裸 sandbox/桥测试环境——`__zw_test_setTimeout`/`__zw_setTimeout`
+    // 双探针皆缺，part01 `_zwHostSetTimeout()` 同判据）不排轮询 tick：setTimeout
+    // 回落 = `_defer` microtask（part01 timers fallback），轮询自链不可终止——首个
+    // checkpoint 内烧尽 `_deferBudget`（单次脚本执行 microtask 派发上限 256；桥测试
+    // 环境 `__zw_begin_script` 不跑、预算无重置点）后，同环境一切 deferred 回调
+    // （img/svg load `_defer` 派发面——r5275/r5277 桥测试红根因）永久丢弃。轮询
+    // 语义 = task 粒度（模块头注 ⑦、guidelines 不变式 #30 禁 microtask 链），无任务调度的
+    // 环境下本就不成立；生产（webview `__zw_setTimeout`）与 runner（testharness
+    // stub `__zw_test_setTimeout`）双探针命中，行为零变化。seek 一次性扫描
+    // （`_scheduleSeekScan`）单发自终结、不烧预算，不守卫。
+    if (typeof globalThis.__zw_test_setTimeout !== 'function' &&
+        typeof globalThis.__zw_setTimeout !== 'function') return;
     st.tickTimer = setTimeout(function () {
       st.tickTimer = 0;
       _pumpTick(doc);

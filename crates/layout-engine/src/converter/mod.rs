@@ -1627,10 +1627,14 @@ fn extract_calc_definite_upper_bound(expr: &zero_css_parser::values::CalcExpr, v
 fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bool {
     use zero_css_parser::values::{CalcExpr, LengthValue};
     match expr {
+        // anchor()/anchor-size() 叶求值需布局锚几何（fallback % 槽轴基）——
+        // 保留布局期解析。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
-        // Time 叶无百分比（time 槽专用原子，length 槽解析不可达）。
-        CalcExpr::Time(_) => false,
+        // Time/Resolution 叶无百分比（time/resolution 槽专用原子，length 槽
+        // 解析不可达）。
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => {
             calc_expr_contains_percentage(left) || calc_expr_contains_percentage(right)
         }
@@ -1646,6 +1650,9 @@ fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bo
         CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_contains_percentage(&it.value)),
         // tree-counting 叶是 DOM 序号产出（无百分比）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 恒产出 <number>——实参 % 函数内比值消解不外泄，不构成
+        // 布局期解析依赖（与 style-system computed 同口径）。
+        CalcExpr::Progress { .. } => false,
     }
 }
 
@@ -1654,10 +1661,13 @@ fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bo
 fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
     use zero_css_parser::values::{CalcExpr, LengthValue};
     match expr {
+        // anchor()/anchor-size() 产出 <length-percentage>（css-anchor-1 §3/§4）。
+        CalcExpr::Anchor { .. } => true,
         CalcExpr::Number(_) => false,
         CalcExpr::Length(lv) => !matches!(lv, LengthValue::Percentage(_)),
-        // Time 叶非长度（time 槽专用原子，length 槽解析不可达）。
-        CalcExpr::Time(_) => false,
+        // Time/Resolution 叶非长度（time/resolution 槽专用原子，length 槽
+        // 解析不可达）。
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
         CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
         CalcExpr::Clamp { min, val, max } => {
@@ -1669,6 +1679,9 @@ fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
         CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_has_length(&it.value)),
         // tree-counting 叶是 DOM 序号产出（非 <length>）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 恒产出 <number>（实参维度函数内消解不外泄）——树级
+        // 长度性只看节点外叶子（与 css-parser calc_expr_has_length 同口径）。
+        CalcExpr::Progress { .. } => false,
     }
 }
 

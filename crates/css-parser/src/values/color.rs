@@ -172,6 +172,31 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         ) {
             return Some(ColorValue::Rgba(255, 255, 255, 255));
         }
+        // 表单族五键（system-color-consistency 页 dark 轮驱动）：UA 表单默认改
+        // 关键词声明（style-system R1396 臂）后，控件读数与作者 inline 声明两侧
+        // 同走本解析，dark 面板取值使两轮自洽成立。值对齐 engine shim
+        // _zwCCSystemDark 既有近似（buttonface 暗底 43/canvas 族 32,33,36、文本
+        // 白）；buttonborder shim 无既有钉面，取暗底按钮描边中灰近似（页两侧同
+        // 走本臂，自洽不依赖具体值）。light 面板 = named_colors 静态值不变。
+        // https://www.w3.org/TR/css-color-4/#css-system-colors
+        if matches!(l.as_str(), "buttonface" | "threedface" | "buttonhighlight") {
+            return Some(ColorValue::Rgba(43, 43, 43, 255));
+        }
+        if matches!(l.as_str(), "buttontext" | "buttonshadow") {
+            return Some(ColorValue::Rgba(255, 255, 255, 255));
+        }
+        if matches!(
+            l.as_str(),
+            "buttonborder" | "threeddarkshadow" | "threedhighlight" | "threedlightshadow"
+        ) {
+            return Some(ColorValue::Rgba(117, 117, 117, 255));
+        }
+        if matches!(l.as_str(), "field") {
+            return Some(ColorValue::Rgba(32, 33, 36, 255));
+        }
+        if matches!(l.as_str(), "fieldtext") {
+            return Some(ColorValue::Rgba(255, 255, 255, 255));
+        }
     }
 
     // 命名颜色
@@ -411,22 +436,50 @@ fn parse_color_function(value: &str) -> Option<ColorValue> {
     };
 
     let mut parts = main.split_whitespace();
-    let space = parts.next()?.to_ascii_lowercase();
+    let raw_space = parts.next()?.to_ascii_lowercase();
     let comps: Vec<&str> = parts.collect();
     if comps.len() != 3 {
         return None;
     }
-    let c0 = parse_color_number(comps[0])?;
-    let c1 = parse_color_number(comps[1])?;
-    let c2 = parse_color_number(comps[2])?;
+    // css-color-4 §9.1：`xyz` ≡ `xyz-d65`，canonical 空间名存取（computed 序列化
+    // 保真按 canonical 形）；白名单 = convert_predefined_to_srgb 全支持集（含
+    // 线性光变体，回归守护 test_parse_linear_color_spaces）；白名单外空间拒
+    //（fail-closed 同既有）。
+    let space: &str = match raw_space.as_str() {
+        "srgb" => "srgb",
+        "srgb-linear" => "srgb-linear",
+        "display-p3" => "display-p3",
+        "display-p3-linear" => "display-p3-linear",
+        "a98-rgb" => "a98-rgb",
+        "a98-rgb-linear" => "a98-rgb-linear",
+        "prophoto-rgb" => "prophoto-rgb",
+        "prophoto-rgb-linear" => "prophoto-rgb-linear",
+        "rec2020" => "rec2020",
+        "rec2020-linear" => "rec2020-linear",
+        "xyz" | "xyz-d65" => "xyz-d65",
+        "xyz-d50" => "xyz-d50",
+        _ => return None,
+    };
+    // 分量：number 原样 / percent→/100（css-color-4 §9.1 color() 分量域 0..1）；
+    // `none`→0（FIXME: none 分量保真序列化待 color 刀）。g42：不再 parse 期坍缩
+    // Rgba——空间与分量保留给 computed 序列化（css-images gradient-interpolation-
+    // method-computed `color(srgb 1 0 0)` 保真 oracle），paint 时按需回退。
+    let c0 = parse_scaled_component(comps[0], 1.0)?;
+    let c1 = parse_scaled_component(comps[1], 1.0)?;
+    let c2 = parse_scaled_component(comps[2], 1.0)?;
     let a = if let Some(ap) = slash_alpha {
         parse_finite_alpha_value(ap)?
     } else {
         1.0
     };
 
-    let (r, g, b) = convert_predefined_to_srgb(&space, c0, c1, c2)?;
-    Some(ColorValue::Rgba(r, g, b, (a * 255.0).round().clamp(0.0, 255.0) as u8))
+    Some(ColorValue::ColorFunction(Box::new(
+        crate::values::types::ColorFunctionSpec {
+            space: space.into(),
+            comps: [c0, c1, c2],
+            alpha: a,
+        },
+    )))
 }
 
 /// 提取 `<func>(...)` 内层（首个 `(` 到末个 `)`，去注释）。
@@ -544,24 +597,6 @@ fn parse_oklch(value: &str) -> Option<ColorValue> {
     let h_deg = parse_finite_hue_angle(comps[2])?;
     let (r, g, b) = oklch_to_srgb_u8(l, c, h_deg);
     Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)?))
-}
-
-/// 解析 color() 分量数字（0-1 浮点，可负/越界）；`none` → 0。
-fn parse_color_number(s: &str) -> Option<f64> {
-    let s = s.trim();
-    if s.eq_ignore_ascii_case("none") {
-        return Some(0.0);
-    }
-    // CSS Color 4：color() 预定义空间分量可为 <number>（0-1）或 <percentage>（0-100% → 0-1）。
-    // driving: css-color predefined-002（color(srgb 0% 60% 0%) ≡ #009900）。
-    // https://drafts.csswg.org/css-color-4/#color-function
-    // CSS numeric tokens do not admit NaN/Infinity; reject non-finite values before conversion.
-    let v = if let Some(pct) = s.strip_suffix('%') {
-        parse_color_number_value(pct)? / 100.0
-    } else {
-        parse_color_number_value(s)?
-    };
-    v.is_finite().then_some(v)
 }
 
 /// 解析 hsl() / hsla() 函数。
@@ -1467,23 +1502,41 @@ mod tests {
     fn test_r2324_color_function_percent_components() {
         // CSS Color 4：color() 分量可为 <number>（0-1）或 <percentage>（0-100% → 0-1）。
         // driving: css-color predefined-002（color(srgb 0% 60% 0%) ≡ #009900）。
-        // 此前 parse_color_number 仅 number → color(srgb 0% ...) None。
+        // g42 起 parse 保留 ColorFunction 模型（computed 序列化保真），percent/number
+        // 等价性改经分量域断言 + paint 回退转换断言（旧 parse 期 Rgba 坍缩等价断言）。
+        let pct_parsed = parse_color("color(srgb 0% 60% 0%)").unwrap();
+        let ColorValue::ColorFunction(pct_spec) = &pct_parsed else {
+            panic!("color(srgb …) must parse to ColorFunction, got {pct_parsed:?}");
+        };
+        assert_eq!(pct_spec.comps, [0.0, 0.6, 0.0], "percent comps normalized to 0-1");
         assert_eq!(
-            parse_color("color(srgb 0% 60% 0%)"),
-            parse_color("#009900"),
-            "color(srgb 0% 60% 0%) must equal #009900"
+            pct_spec.to_srgb_rgba(),
+            Some((0, 153, 0, 255)),
+            "color(srgb 0% 60% 0%) must render equal to #009900"
         );
-        // percent ≡ number（0-1）
-        assert_eq!(
-            parse_color("color(srgb 100% 100% 100%)"),
-            parse_color("color(srgb 1 1 1)")
-        );
-        assert_eq!(parse_color("color(srgb 0% 0% 0%)"), parse_color("color(srgb 0 0 0)"));
-        // 回归：number 语法 byte-identical
-        assert_eq!(
-            parse_color("color(srgb 0 0.6 0)"),
-            Some(ColorValue::Rgba(0, 153, 0, 255))
-        );
+        // percent ≡ number（0-1）分量域等价
+        let num_spec = match parse_color("color(srgb 1 1 1)") {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction, got {other:?}"),
+        };
+        let full_pct = match parse_color("color(srgb 100% 100% 100%)") {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction, got {other:?}"),
+        };
+        assert_eq!(num_spec.comps, full_pct.comps);
+        let zero = match parse_color("color(srgb 0% 0% 0%)") {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction, got {other:?}"),
+        };
+        assert_eq!(zero.comps, [0.0, 0.0, 0.0]);
+        // canonical 空间名保留（xyz → xyz-d65 别名展开，css-color-4 §9.1）
+        let xyz = match parse_color("color(xyz 0.5 0.5 0.5)") {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction, got {other:?}"),
+        };
+        assert_eq!(&*xyz.space, "xyz-d65");
+        // 白名单外空间拒（fail-closed 同既有）
+        assert_eq!(parse_color("color(unknown-space 1 0 0)"), None);
         // display-p3 percent 也接受（解析成功）
         assert!(parse_color("color(display-p3 0% 100% 0%)").is_some());
     }
@@ -1616,46 +1669,53 @@ mod tests {
 
     #[test]
     fn test_color_function_srgb() {
-        // srgb 空间 = 普通 sRGB 分量（0-1）
-        assert_eq!(parse_color("color(srgb 0 0 0)"), Some(ColorValue::Rgba(0, 0, 0, 255)));
-        assert_eq!(
-            parse_color("color(srgb 1 1 1)"),
-            Some(ColorValue::Rgba(255, 255, 255, 255))
-        );
-        assert_eq!(
-            parse_color("color(srgb 0 0.5 0)"),
-            Some(ColorValue::Rgba(0, 128, 0, 255))
-        );
+        // srgb 空间 = 普通 sRGB 分量（0-1）。g42 起 parse 保留 ColorFunction 模型
+        //（computed 序列化保真），渲染等价性经 to_srgb_rgba 断言（旧 parse 期
+        // Rgba 坍缩等价断言）。
+        let cf = |v: &str| match parse_color(v) {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction for {v}, got {other:?}"),
+        };
+        assert_eq!(cf("color(srgb 0 0 0)").to_srgb_rgba(), Some((0, 0, 0, 255)));
+        assert_eq!(cf("color(srgb 1 1 1)").to_srgb_rgba(), Some((255, 255, 255, 255)));
+        assert_eq!(cf("color(srgb 0 0.5 0)").to_srgb_rgba(), Some((0, 128, 0, 255)));
         // slash alpha
-        assert_eq!(
-            parse_color("color(srgb 1 0 0 / 0.5)"),
-            Some(ColorValue::Rgba(255, 0, 0, 128))
-        );
+        let alpha_spec = cf("color(srgb 1 0 0 / 0.5)");
+        assert_eq!(alpha_spec.alpha, 0.5);
+        assert_eq!(alpha_spec.to_srgb_rgba(), Some((255, 0, 0, 128)));
     }
 
     #[test]
     fn test_color_function_wide_gamut_round_trip() {
         // a98rgb-001 driving：sRGB green #008000 转 a98-rgb 坐标，转回应得 green。
-        let c = parse_color("color(a98-rgb 0.281363 0.498012 0.116746)").unwrap();
-        assert_eq!(c, ColorValue::Rgba(0, 128, 0, 255));
+        let cf = |v: &str| match parse_color(v) {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction for {v}, got {other:?}"),
+        };
+        let a98 = cf("color(a98-rgb 0.281363 0.498012 0.116746)");
+        assert_eq!(a98.space.as_ref(), "a98-rgb", "wide-gamut space identity preserved");
+        assert_eq!(a98.to_srgb_rgba(), Some((0, 128, 0, 255)));
         // display-p3 red (1,0,0) → sRGB red（钳制后 ≈ 255,0,0）
-        let c = parse_color("color(display-p3 1 0 0)").unwrap();
-        assert_eq!(c, ColorValue::Rgba(255, 0, 0, 255));
+        let p3 = cf("color(display-p3 1 0 0)");
+        assert_eq!(p3.space.as_ref(), "display-p3");
+        assert_eq!(p3.to_srgb_rgba(), Some((255, 0, 0, 255)));
     }
 
     #[test]
     fn test_color_function_unsupported_space() {
         // 未知空间 → None（color 声明被拒绝，cascade 丢弃）。rec2020/prophoto 已支持。
         assert_eq!(parse_color("color(unknown-space 0 0 0)"), None);
-        // rec2020/prophoto-rgb 黑色 round-trip → sRGB 黑
-        assert_eq!(
-            parse_color("color(rec2020 0 0 0)"),
-            Some(ColorValue::Rgba(0, 0, 0, 255))
-        );
-        assert_eq!(
-            parse_color("color(prophoto-rgb 0 0 0)"),
-            Some(ColorValue::Rgba(0, 0, 0, 255))
-        );
+        // rec2020/prophoto-rgb 黑色 round-trip → sRGB 黑（模型空间保留 + 渲染等价）
+        let cf = |v: &str| match parse_color(v) {
+            Some(ColorValue::ColorFunction(s)) => s,
+            other => panic!("expected ColorFunction for {v}, got {other:?}"),
+        };
+        let rec2020 = cf("color(rec2020 0 0 0)");
+        assert_eq!(rec2020.space.as_ref(), "rec2020");
+        assert_eq!(rec2020.to_srgb_rgba(), Some((0, 0, 0, 255)));
+        let prophoto = cf("color(prophoto-rgb 0 0 0)");
+        assert_eq!(prophoto.space.as_ref(), "prophoto-rgb");
+        assert_eq!(prophoto.to_srgb_rgba(), Some((0, 0, 0, 255)));
     }
 
     // ── light-dark()（CSS Color Adjust，R2259）───────────────────────────
@@ -2066,8 +2126,12 @@ mod tests {
         assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
         assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
         assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
-        assert_eq!(parse_font_weight("50"), None); // out of range
-        assert_eq!(parse_font_weight("950"), None); // out of range
+        // css-fonts-4 §font-weight-numeric 连续 <number [1,1000]>（旧 100-900
+        // 文法 out-of-range 断言更新——font-weight-valid 语料 `1`/`101` 同证）。
+        assert_eq!(parse_font_weight("50"), Some(FontWeightValue::Absolute(50)));
+        assert_eq!(parse_font_weight("950"), Some(FontWeightValue::Absolute(950)));
+        assert_eq!(parse_font_weight("0"), None);
+        assert_eq!(parse_font_weight("1001"), None);
     }
 
     // ── parse_font_style ────────────────────────────────────────────────

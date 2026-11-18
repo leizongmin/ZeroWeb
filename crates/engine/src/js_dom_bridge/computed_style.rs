@@ -6,14 +6,16 @@
 
 use std::collections::HashMap;
 
+use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
     BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
-    ClipPathValue, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient,
-    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
-    GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
-    PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue,
-    TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
+    ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue,
+    ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
+    FontWeightValue, GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue,
+    OverflowValue, PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition,
+    TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
+    parse_length,
 };
 use zero_dom::{Document, NodeId, NodeKind, parse_html};
 use zero_style_system::{
@@ -26,15 +28,17 @@ use zero_style_system::{
     BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
     BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
     CaretColorComputedValue, CaretShapeComputedValue, ColumnCountComputedValue, ColumnFillComputedValue,
-    ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue,
-    CounterActionValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
-    FontKerningValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
-    FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
-    ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
-    ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
+    ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
+    ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
+    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontFeatureSettingsValue, FontKerningValue,
+    FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantCapsValue,
+    FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue, FontVariationSettingsValue,
+    GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue,
+    JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MaskClipComputedValue,
+    MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue,
+    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
     TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
     TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
@@ -62,7 +66,8 @@ pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String
 
 /// 解析 html 并计算全文档样式，返回 `(Document, NodeId→ComputedStyle)`。供 getComputedStyle
 /// 回调的 per-snapshot 缓存：html 未变时复用此结果，避免每次属性查询重跑 parse+cascade
-/// （O(文档) + O(规则×节点)）。viewport 固定 1280×800（同 getComputedStyle 既有默认）。
+/// （O(文档) + O(规则×节点)）。viewport 取 pending 视图布局 viewport 真值
+///（g49：[`super::computed_style_cache::gcs_viewport_dims`]，未接线回落 1280×800）。
 pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, ComputedStyle>) {
     let doc = parse_html(html);
     // 纯快照路径：外部 CSS 恒空串（无 ambient 状态——WPT/测试语义不变；页面快照路径
@@ -71,7 +76,8 @@ pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, Compute
     (doc, styles)
 }
 
-/// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 1280×800）。
+/// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 取
+/// pending 视图布局 viewport 真值，g49 前恒 1280×800）。
 /// 供纯快照路径与 inline-style override 路径复用。`css` = 外部样式表文本（P9-9：与布局
 /// 管线同源注入；纯路径传空串）。返回 `(styles, sheets)`——sheets 随级联一并产出，供
 /// 代际槽缓存复用（全量兜底免二次 parse）。s161：handle 视图（动态元素 gCS 通道，
@@ -80,12 +86,14 @@ pub(super) fn compute_styles_for_doc(
     doc: &Document,
     css: &str,
 ) -> (HashMap<NodeId, ComputedStyle>, Vec<zero_css_parser::Stylesheet>) {
+    // 设 viewport（length/% 解析需要）。g49：pending 视图布局 viewport 真值——与渲染
+    // 管线/shim innerWidth 同源，未接线宿主回落 1280×800（gcs_viewport_dims）。
+    let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
     // 外部表经记忆化（R5107）：全量兜底路径每代重建，同 css 文本免重复 parse。
     let parsed = super::computed_style_cache::memoized_external_sheet(css);
-    let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref());
+    let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref(), (vw, vh));
     let mut sys = StyleSystem::new();
-    // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
-    sys.set_viewport(1280.0, 800.0);
+    sys.set_viewport(vw, vh);
     // s168（html-semantics M2）：shadow 作用域条目在场 → per-scope 全量级联（CSS
     // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
     // 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处融合全覆盖。
@@ -397,6 +405,23 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
     // 元素自身 custom_properties；环检测 resolve_var 既有）。未声明返 ''（同标准属性）。
     let raw_name = prop.trim();
     if raw_name.starts_with("--") {
+        // wptfyi-css css-properties-values-api-1 刀（2026-11-17）：CSS.registerProperty
+        // 注册属性按 syntax 分型串化（'green'+<color> → 'rgb(0, 128, 0)'）+ 未声明
+        // initial 兜底（§3 computation/computed-value-time）。var() 替换先行
+        // （css-variables-1 使用点解析），解析结果再入分型串化。未注册名落既有路径。
+        // <https://drafts.css-houdini.org/css-properties-values-api-1/#compute-the-value>
+        if super::registered_properties::registration_known(raw_name) {
+            let resolved = style
+                .custom_properties
+                .get(raw_name)
+                .map(|v| zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default());
+            let font_size_px = match &style.font_size {
+                LengthValue::Px(v) => *v,
+                _ => 16.0,
+            };
+            return super::registered_properties::computed_value(raw_name, resolved.as_deref(), font_size_px)
+                .unwrap_or_default();
+        }
         // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
         // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
         // 维持 resolve_var 现状（invalid → 初始/继承值）。
@@ -466,6 +491,36 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "border-right-color" => color_to_css(&crate::resolve_color_current(&style.border_right_color, element_color)),
         "border-bottom-color" => color_to_css(&crate::resolve_color_current(&style.border_bottom_color, element_color)),
         "border-left-color" => color_to_css(&crate::resolve_color_current(&style.border_left_color, element_color)),
+        // ── border-color 简写 gCS 读出 ── 四边聚合（此前读数缺位返 ''，
+        // system-color-consistency 页 getPropertyValue("border-color") 空串经
+        // computed-testcommon `if (!computed) computed = specified` 回落为字面
+        // 关键词致 ButtonBorder 桶 8F）。序列化按 CSSOM 简写最短形去重：l==r 时
+        // b==t 且 r==t → 1 值，b==t → 2 值「top right」，否则 3 值；l≠r → 4 值
+        //（top right bottom left 序）。各边独立 currentcolor 解析（与 longhand
+        // 臂同通道）。
+        // https://drafts.csswg.org/css-color-4/#css-system-colors
+        // https://drafts.csswg.org/cssom-1/#serialize-a-css-value
+        "border-color" => {
+            let sides = [
+                color_to_css(&crate::resolve_color_current(&style.border_top_color, element_color)),
+                color_to_css(&crate::resolve_color_current(&style.border_right_color, element_color)),
+                color_to_css(&crate::resolve_color_current(&style.border_bottom_color, element_color)),
+                color_to_css(&crate::resolve_color_current(&style.border_left_color, element_color)),
+            ];
+            if sides[3] == sides[1] {
+                if sides[2] == sides[0] {
+                    if sides[1] == sides[0] {
+                        sides[0].clone()
+                    } else {
+                        format!("{} {}", sides[0], sides[1])
+                    }
+                } else {
+                    format!("{} {} {}", sides[0], sides[1], sides[2])
+                }
+            } else {
+                sides.join(" ")
+            }
+        }
         "outline-color" => color_to_css(&crate::resolve_color_current(&style.outline_color, element_color)),
         // ── 长度族（计算值；resolve_computed_style 已把主要相对单位解析为 Px）──
         "width" => length(&style.width),
@@ -565,6 +620,20 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // 是多 helper 子工程 defer，避免混合层产生错列表）；空列表→none（初值）。
         "background-image" => image_layer_list_to_css(&style.background_image, element_color, font_size_px),
         "mask-image" => image_layer_list_to_css(&style.mask_image, element_color, font_size_px),
+        // mask 简写（css-masking-1 §3.10）：单层 image 形直通 mask-image 层串化
+        //（chrome 单层仅 image 非初值时输出短形）；组合形/多层串化
+        // FIXME(mask-shorthand-serialize)。
+        "mask" => image_layer_list_to_css(&style.mask_image, element_color, font_size_px),
+        // css-masking-1 §5.3–5.6 六长手：position/size/repeat 与 background 同构
+        //（同 computed 类型，复用其串化）；clip/origin/composite 为 masking 侧
+        // 枚举（fill/stroke/view-box/no-clip/compositing-operator）。
+        // https://drafts.fxtf.org/css-masking-1/#masking
+        "mask-position" => background_position_to_css(&style.mask_position, font_size_px),
+        "mask-size" => background_size_to_css(&style.mask_size),
+        "mask-repeat" => background_repeat_to_css(&style.mask_repeat),
+        "mask-clip" => mask_clip_to_css(&style.mask_clip),
+        "mask-origin" => mask_origin_to_css(&style.mask_origin),
+        "mask-composite" => mask_composite_to_css(&style.mask_composite),
         "text-align" => text_align_str(&style.text_align),
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
@@ -678,6 +747,29 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "rotate" => individual_opt_to_css(style.individual_rotate.as_ref()),
         "translate" => individual_opt_to_css(style.individual_translate.as_ref()),
         "scale" => individual_opt_to_css(style.individual_scale.as_ref()),
+        // ── CSS Motion Path offset 簇（css-motion-1；wptfyi-css offset-* 刀）──
+        // 计算值发射（缺臂即 gCS 读缺省——individual 先例同教训）；distance font
+        // 相对长度已在 apply 期绝对化，此处直接序列化；path 原文存储透传。
+        "offset-path" => style.offset_path.clone().unwrap_or_else(|| "none".to_string()),
+        "offset-distance" => match style.offset_distance.as_ref() {
+            Some(lv) => length_to_css(lv, font_size_px),
+            None => "0px".to_string(),
+        },
+        "offset-rotate" => offset_rotate_to_css(style.offset_rotate),
+        "offset-anchor" => match &style.offset_anchor {
+            Some((x, y)) => format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px)),
+            None => "auto".to_string(),
+        },
+        // `offset-position`（css-motion-1 §offset-position，初始 normal）：关键字形
+        // 直串；<position> 对经 length_to_css（calc 形 canonical 化同通道）。
+        "offset-position" => match style.offset_position.as_ref() {
+            Some(OffsetPositionValue::Normal) => "normal".to_string(),
+            Some(OffsetPositionValue::Auto) => "auto".to_string(),
+            Some(OffsetPositionValue::Position(x, y)) => {
+                format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
+            }
+            None => "normal".to_string(),
+        },
         // ── transform-origin（R2716）── 2 LengthValue 经 length_to_css，空格连接。
         "transform-origin" => {
             transform_origin_to_css(&style.transform_origin_x, &style.transform_origin_y, font_size_px)
@@ -703,10 +795,61 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "will-change" => will_change_to_css(&style.will_change),
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
+        // css-shapes-1 §shape-outside：同 basic-shape 族串化器 + 裸 <shape-box>。
+        "shape-outside" => shape_outside_to_css(&style.shape_outside, font_size_px),
+        // css-shapes-1 §shape-margin-property：非负 length-percentage computed
+        // 串化（em/物理单位 apply 期折 px、% 保形、Calc 静态项按字号求值 +
+        // 负钳 0——语料 computed 页 `calc(10px + 0.5em)` → `30px`、
+        // `calc(10px - 0.5em)` → `0px`）。
+        "shape-margin" => shape_margin_to_css(&style.shape_margin, font_size_px),
+        // css-shapes-1 §shape-image-threshold-property：number 直出（apply 期
+        // 已钳 [0,1] 且 pct 折算 /100；f64 Display 最短形整数省尾——语料期望
+        // `0`/`0.5`/`1`）。
+        "shape-image-threshold" => style.shape_image_threshold.to_string(),
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
         "content" => content_to_css(&style.content, element_color, font_size_px),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
-        "background-position" => background_position_to_css(&style.background_position),
+        "background-position" => background_position_to_css(&style.background_position, font_size_px),
+        // ── background-position-x / -y（刀 A1d，css-backgrounds-4 §2.4）──单轴
+        // longhand 计算值 = 各层轴分量投影（层列表与 background_position 同源
+        // ——R5185/A1d patch 模型；空层表 = 未建模态回 ''）。
+        "background-position-x" | "background-position-y" => {
+            use BackgroundPositionComputedValue as P;
+            let horizontal = p == "background-position-x";
+            if style.background_position.is_empty() {
+                String::new()
+            } else {
+                style
+                    .background_position
+                    .iter()
+                    .map(|layer| {
+                        let (x, y): (&P, &P) = match layer {
+                            P::TwoValue(h, v) => (h, v),
+                            P::Center => (&P::Center, &P::Center),
+                            P::Left | P::Right => (layer, &P::Center),
+                            P::Top | P::Bottom => (&P::Center, layer),
+                            P::Length(_) | P::Percent(_) => (layer, &P::Center),
+                            P::Calc(_) => (layer, &P::Center),
+                            P::EdgeOffset(edge, _) => {
+                                if matches!(
+                                    edge,
+                                    BackgroundEdge::Left
+                                        | BackgroundEdge::Right
+                                        | BackgroundEdge::XStart
+                                        | BackgroundEdge::XEnd
+                                ) {
+                                    (layer, &P::Center)
+                                } else {
+                                    (&P::Center, layer)
+                                }
+                            }
+                        };
+                        bg_position_axis_to_css(if horizontal { x } else { y }, font_size_px)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        }
         // ── background-size / background-repeat（R2725）── CSS Backgrounds 多层（逗号分隔）。
         "background-size" => background_size_to_css(&style.background_size),
         "background-repeat" => background_repeat_to_css(&style.background_repeat),
@@ -739,7 +882,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "hyphens" => hyphens_to_css(&style.hyphens),
         "line-break" => line_break_to_css(&style.line_break),
         // ── vertical-align / unicode-bidi / empty-cells（R2729）── 单值关键字枚举。
-        "vertical-align" => vertical_align_to_css(&style.vertical_align),
+        "vertical-align" => vertical_align_to_css(&style.vertical_align, font_size_px),
         "unicode-bidi" => unicode_bidi_to_css(&style.unicode_bidi),
         "empty-cells" => empty_cells_to_css(&style.empty_cells),
         // ── caret-color / accent-color（R2730）── CSS UI 颜色（auto | <color>，复用 R2705 颜色解析）。
@@ -786,28 +929,247 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "border-image-width" => border_image_width_to_css(&style.border_image_width),
         "border-image-outset" => border_image_outset_to_css(&style.border_image_outset),
         "border-image-repeat" => border_image_repeat_to_css(&style.border_image_repeat),
+        // ── mask-border 族（css-masking-1 §3.4–3.9）── 类型与 border-image 同构，
+        // 复用同一串化函数（box4 最小化折叠 R2764 Chromium oracle 同款）。
+        "mask-border-source" => border_image_source_to_css(&style.mask_border_source, element_color, font_size_px),
+        "mask-border-slice" => border_image_slice_to_css(&style.mask_border_slice),
+        "mask-border-width" => border_image_width_to_css(&style.mask_border_width),
+        "mask-border-outset" => border_image_outset_to_css(&style.mask_border_outset),
+        "mask-border-repeat" => border_image_repeat_to_css(&style.mask_border_repeat),
+        "mask-border" => mask_border_shorthand_to_css(style, element_color, font_size_px),
         // object-position：单 <position>，复用 R2724 background-position 的逐层序列化（默认 Center→50% 50%）。
-        "object-position" => bg_position_layer_to_css(&style.object_position),
+        "object-position" => bg_position_layer_to_css(&style.object_position, font_size_px),
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
         "quotes" => quotes_to_css(&style.quotes),
         // ── CSS Multi-column 簇（R2737）── column-gap 已覆（R2707 length 族）；补 rule/count/width/fill/span。
-        "column-rule-width" => {
-            column_rule_width_to_css(&style.column_rule_width, &style.column_rule_style, font_size_px)
-        }
-        "column-rule-style" => column_rule_style_str(&style.column_rule_style),
-        "column-rule-color" => color_to_css(&crate::resolve_color_current(&style.column_rule_color, element_color)),
+        // css-gaps-1 列表模型：width/style 走列表串化（单段平值保 multicol 串化零漂移）。
+        "column-rule-width" => rule_width_list_to_gcs_computed(&style.column_rule_width, font_size_px, false),
+        "column-rule-style" => rule_style_list_to_gcs(&style.column_rule_style),
+        "column-rule-color" => rule_color_list_to_gcs_computed(&style.column_rule_color, element_color),
+        // css-gaps-1 §column-row-rule-{color,width,style}：row 三属性同文法列表串化。
+        "row-rule-color" => rule_color_list_to_gcs_computed(&style.row_rule_color, element_color),
+        "row-rule-width" => rule_width_list_to_gcs_computed(&style.row_rule_width, font_size_px, true),
+        "row-rule-style" => rule_style_list_to_gcs(&style.row_rule_style),
         "column-count" => column_count_to_css(&style.column_count),
         "column-width" => column_width_to_css(&style.column_width, font_size_px),
+        // css-multicol-2 §4.2 column-height 串化（auto | 绝对长度 px）。
+        "column-height" => column_height_to_css(&style.column_height, font_size_px),
         "column-fill" => column_fill_str(&style.column_fill),
         "column-span" => column_span_str(&style.column_span),
         // ── columns / column-rule 简写（R2755）── longhand 早覆（上方）；简写 CSSOM 重组
         // （columns 省 auto / column-rule 省 none style），Chromium 150 oracle 锚定。
-        "columns" => columns_shorthand_to_css(&style.column_width, &style.column_count, font_size_px),
+        "columns" => columns_shorthand_to_css(
+            &style.column_width,
+            &style.column_count,
+            &style.column_height,
+            font_size_px,
+        ),
         "column-rule" => column_rule_shorthand_to_css(
             &style.column_rule_width,
             &style.column_rule_style,
             &style.column_rule_color,
             element_color,
+            font_size_px,
+        ),
+        // rule-color 简写 gCS（css-gaps-1 §rule-shorthand-properties）：row/column
+        // 计算串化全等 → 该值（简写经 inline 写入时双 longhand 同值）；否则简写
+        // 串化省略空串（Chrome shorthand serialization 同口径）。
+        "rule-color" => {
+            let r = rule_color_list_to_gcs_computed(&style.row_rule_color, element_color);
+            let c = rule_color_list_to_gcs_computed(&style.column_rule_color, element_color);
+            if r == c { r } else { String::new() }
+        }
+        // rule-width / rule-style 简写 gCS：row/column 串化全等 → 该值（rule-color 臂同口径）。
+        "rule-width" => {
+            let r = rule_width_list_to_gcs_computed(&style.row_rule_width, font_size_px, true);
+            let c = rule_width_list_to_gcs_computed(&style.column_rule_width, font_size_px, false);
+            if r == c { r } else { String::new() }
+        }
+        "rule-style" => {
+            let r = rule_style_list_to_gcs(&style.row_rule_style);
+            let c = rule_style_list_to_gcs(&style.column_rule_style);
+            if r == c { r } else { String::new() }
+        }
+        // row-rule / rule 简写 gCS：row-rule 重组 row 轴三 longhand；rule 先核
+        // row/column 两轴重组全等再取值（rule-color 臂同口径）。
+        "row-rule" => gap_rule_recomb_to_css(
+            &style.row_rule_width,
+            &style.row_rule_style,
+            &style.row_rule_color,
+            element_color,
+            font_size_px,
+        ),
+        "rule" => {
+            let r = gap_rule_recomb_to_css(
+                &style.row_rule_width,
+                &style.row_rule_style,
+                &style.row_rule_color,
+                element_color,
+                font_size_px,
+            );
+            let c = gap_rule_recomb_to_css(
+                &style.column_rule_width,
+                &style.column_rule_style,
+                &style.column_rule_color,
+                element_color,
+                font_size_px,
+            );
+            if r == c { r } else { String::new() }
+        }
+        // ── rule-inset 8 longhand（css-gaps-1 §inset）── 槽值 computed 串化
+        //（overlap-join 保关键字；LP em/vmin→px、纯 px calc 求值、% /含 % calc
+        // 保形——engine length_to_css 单源）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "column-rule-inset-cap-start" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_cap_start, font_size_px)
+        }
+        "column-rule-inset-cap-end" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_cap_end, font_size_px)
+        }
+        "column-rule-inset-junction-start" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_junction_start, font_size_px)
+        }
+        "column-rule-inset-junction-end" => {
+            rule_inset_component_to_gcs_computed(&style.column_rule_inset_junction_end, font_size_px)
+        }
+        "row-rule-inset-cap-start" => {
+            rule_inset_component_to_gcs_computed(&style.row_rule_inset_cap_start, font_size_px)
+        }
+        "row-rule-inset-cap-end" => rule_inset_component_to_gcs_computed(&style.row_rule_inset_cap_end, font_size_px),
+        "row-rule-inset-junction-start" => {
+            rule_inset_component_to_gcs_computed(&style.row_rule_inset_junction_start, font_size_px)
+        }
+        "row-rule-inset-junction-end" => {
+            rule_inset_component_to_gcs_computed(&style.row_rule_inset_junction_end, font_size_px)
+        }
+        // rule-inset 简写族 gCS（css-gaps-1 §inset canonical 形）：四槽全等 →
+        // 单值；否则恒 "cap-start cap-end / junction-start junction-end"（侧内
+        // 等值不折叠——语料 valid/computed 页钉）。双侧简写轴重组：轴内对重组
+        // （等值塌缩）后双轴全等 → 该值，否则空串（rule-color 简写臂同口径）。
+        "rule-inset" => {
+            // 全值简写（8 longhand）跨轴等值模型（bidirectional-shorthands 页钉）：
+            // column/row 各轴四槽重组后双轴全等 → 该值，否则空串（rule-inset-cap
+            // 臂同口径——target2 col≠row gCS 期望 ''）。
+            let c = rule_inset_quad_recomb_to_gcs(
+                &style.column_rule_inset_cap_start,
+                &style.column_rule_inset_cap_end,
+                &style.column_rule_inset_junction_start,
+                &style.column_rule_inset_junction_end,
+                font_size_px,
+            );
+            let r = rule_inset_quad_recomb_to_gcs(
+                &style.row_rule_inset_cap_start,
+                &style.row_rule_inset_cap_end,
+                &style.row_rule_inset_junction_start,
+                &style.row_rule_inset_junction_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset" => rule_inset_quad_recomb_to_gcs(
+            &style.column_rule_inset_cap_start,
+            &style.column_rule_inset_cap_end,
+            &style.column_rule_inset_junction_start,
+            &style.column_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "row-rule-inset" => rule_inset_quad_recomb_to_gcs(
+            &style.row_rule_inset_cap_start,
+            &style.row_rule_inset_cap_end,
+            &style.row_rule_inset_junction_start,
+            &style.row_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "rule-inset-cap" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_cap_start,
+                &style.column_rule_inset_cap_end,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_cap_start,
+                &style.row_rule_inset_cap_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-cap" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_cap_start,
+            &style.column_rule_inset_cap_end,
+            font_size_px,
+        ),
+        "row-rule-inset-cap" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_cap_start,
+            &style.row_rule_inset_cap_end,
+            font_size_px,
+        ),
+        "rule-inset-junction" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_junction_start,
+                &style.column_rule_inset_junction_end,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_junction_start,
+                &style.row_rule_inset_junction_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-junction" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_junction_start,
+            &style.column_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "row-rule-inset-junction" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_junction_start,
+            &style.row_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "rule-inset-start" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_cap_start,
+                &style.column_rule_inset_junction_start,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_cap_start,
+                &style.row_rule_inset_junction_start,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-start" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_cap_start,
+            &style.column_rule_inset_junction_start,
+            font_size_px,
+        ),
+        "row-rule-inset-start" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_cap_start,
+            &style.row_rule_inset_junction_start,
+            font_size_px,
+        ),
+        "rule-inset-end" => {
+            let c = rule_inset_pair_recomb_to_gcs(
+                &style.column_rule_inset_cap_end,
+                &style.column_rule_inset_junction_end,
+                font_size_px,
+            );
+            let r = rule_inset_pair_recomb_to_gcs(
+                &style.row_rule_inset_cap_end,
+                &style.row_rule_inset_junction_end,
+                font_size_px,
+            );
+            if c == r { c } else { String::new() }
+        }
+        "column-rule-inset-end" => rule_inset_pair_recomb_to_gcs(
+            &style.column_rule_inset_cap_end,
+            &style.column_rule_inset_junction_end,
+            font_size_px,
+        ),
+        "row-rule-inset-end" => rule_inset_pair_recomb_to_gcs(
+            &style.row_rule_inset_cap_end,
+            &style.row_rule_inset_junction_end,
             font_size_px,
         ),
         // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
@@ -901,6 +1263,8 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "transition-property" => string_list_to_css(&style.transition_property, "all"),
         "transition-duration" => time_list_to_css(&style.transition_duration, "0s", true),
         "transition-delay" => time_list_to_css(&style.transition_delay, "0s", false),
+        // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+        "transition-behavior" => string_list_to_css(&style.transition_behavior, "normal"),
         "animation-name" => string_list_to_css(&style.animation_name, "none"),
         "animation-duration" => time_list_to_css(&style.animation_duration, "0s", true),
         "animation-delay" => time_list_to_css(&style.animation_delay, "0s", false),
@@ -1223,7 +1587,7 @@ fn border_image_source_to_css(
 
 /// 4 值 CSSOM 最小化（字符串版，供 border-image slice/width/outset 复用）：
 /// 全等→1 / top==bottom&&right==left→2 / right==left→3 / 否则 4。
-fn box4_str_min(top: &str, right: &str, bottom: &str, left: &str) -> String {
+pub(crate) fn box4_str_min(top: &str, right: &str, bottom: &str, left: &str) -> String {
     if top == right && right == bottom && bottom == left {
         top.to_string()
     } else if top == bottom && right == left {
@@ -1305,6 +1669,22 @@ fn border_image_shorthand_to_css(style: &ComputedStyle, element_color: &ColorVal
     )
 }
 
+/// `mask-border` 简写：css-masking-1 §3.4 重组，同构复用 border-image 简写口径
+/// （source==none → 整值 "none"；否则全量 `"source slice / width / outset repeat"`）。
+fn mask_border_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue, font_size_px: f64) -> String {
+    if matches!(style.mask_border_source, BorderImageSourceComputedValue::None) {
+        return "none".to_string();
+    }
+    format!(
+        "{} {} / {} / {} {}",
+        border_image_source_to_css(&style.mask_border_source, element_color, font_size_px),
+        border_image_slice_to_css(&style.mask_border_slice),
+        border_image_width_to_css(&style.mask_border_width),
+        border_image_outset_to_css(&style.mask_border_outset),
+        border_image_repeat_to_css(&style.mask_border_repeat),
+    )
+}
+
 /// quotes：CSS Generated Content 引号。None→none；Auto（初值）→auto；Pairs→逐对开/闭串空格分隔
 /// 双引号化（复用 [`css_string_to_css`] 转义 `\`/`"`/换行），对齐 Chromium getComputedStyle
 ///（`quotes: "«" "»" "‹" "›"` → `"«" "»" "‹" "›"`）。
@@ -1323,38 +1703,262 @@ fn quotes_to_css(q: &QuotesComputedValue) -> String {
 // ── CSS Multi-column 簇（R2737）──────────────────────────────────────────
 // column-gap 已由 length 族（R2707）覆盖；此处补 rule-width/style/color + count/width/fill/span。
 
-/// column-rule-width：CSS Multi-column 分隔线宽度。Medium/Thin/Thick→对齐 Chromium used px
+/// column-rule-width 标量串化：CSS Multi-column 分隔线宽度。Medium/Thin/Thick→对齐 Chromium used px
 ///（3px/1px/5px，CSS Border 的常规 UA 初始值）；Length→px（经 length_to_css）。**column-rule-width 的
 /// computed 值独立于 column-rule-style**——Chromium 对 style=none/hidden 仍返 medium→3px（R2755 oracle
 /// 核实），与 border-width 的 none/hidden→used 0px 语义**不同**（R2737 曾误套 border-width 规则致 diverge）。
-fn column_rule_width_to_css(
-    w: &ColumnRuleWidthComputedValue,
-    _style: &ColumnRuleStyleComputedValue,
-    font_size_px: f64,
-) -> String {
+fn column_rule_width_to_css(w: &zero_css_parser::values::ColumnRuleWidthValue, font_size_px: f64) -> String {
     match w {
-        ColumnRuleWidthComputedValue::Medium => "3px".to_string(),
-        ColumnRuleWidthComputedValue::Thin => "1px".to_string(),
-        ColumnRuleWidthComputedValue::Thick => "5px".to_string(),
-        ColumnRuleWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
+        zero_css_parser::values::ColumnRuleWidthValue::Medium => "3px".to_string(),
+        zero_css_parser::values::ColumnRuleWidthValue::Thin => "1px".to_string(),
+        zero_css_parser::values::ColumnRuleWidthValue::Thick => "5px".to_string(),
+        zero_css_parser::values::ColumnRuleWidthValue::Length(l) => length_to_css(l, font_size_px),
     }
 }
 
-/// column-rule-style：CSS Multi-column 分隔线样式（10 关键字，同 border-style 语义但独立枚举）。
-fn column_rule_style_str(s: &ColumnRuleStyleComputedValue) -> String {
-    match s {
-        ColumnRuleStyleComputedValue::None => "none",
-        ColumnRuleStyleComputedValue::Hidden => "hidden",
-        ColumnRuleStyleComputedValue::Dotted => "dotted",
-        ColumnRuleStyleComputedValue::Dashed => "dashed",
-        ColumnRuleStyleComputedValue::Solid => "solid",
-        ColumnRuleStyleComputedValue::Double => "double",
-        ColumnRuleStyleComputedValue::Groove => "groove",
-        ColumnRuleStyleComputedValue::Ridge => "ridge",
-        ColumnRuleStyleComputedValue::Inset => "inset",
-        ColumnRuleStyleComputedValue::Outset => "outset",
+/// rule-width 列表 computed 串化（css-gaps-1 §column-row-rule-width）：单段
+/// 平宽走既有标量路径（multicol 纯宽声明串化零漂移）；列表/重复形结构串化
+///（逐段 resolve，repeat/auto/calc 计数保形折叠，css-parser 单点）。
+/// pub(crate)：animation 隐式边界帧 underlying 补键同源复用。
+/// https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+pub(crate) fn rule_width_list_to_gcs(
+    segments: &[zero_css_parser::values::RuleWidthSegment],
+    font_size_px: f64,
+) -> String {
+    if let Some(w) = zero_css_parser::values::rule_width_list_single_width(segments) {
+        return column_rule_width_to_css(w, font_size_px);
     }
-    .to_string()
+    zero_css_parser::values::rule_width_list_to_css(segments, &|w| column_rule_width_to_css(w, font_size_px))
+        .unwrap_or_default()
+}
+
+/// rule-width 列表 computed 串化（gCS 读面专用，css-gaps-1 §column-row-rule-width）：
+/// **静态 computed 值 repeat 结构保形**（gap-decorations-{width,color}-computed
+/// 解析页钉；"Repeaters should expand" 仅属过渡/动画插值输出臂——端点插值器
+/// split 展开有限 repeat，registry eased==1 rule 族回落臂输出展开形）。
+/// 本变体=列表项与 row 单值 px 取整（corpus 字面量钉：列表项 `22.5px`→`22px`、
+/// row 单值 `58.5px`→`58px`——column 单值小数保形，css-multicol
+/// column-rule-width-interpolation 页 `8.1px` 铁锚）。
+/// 指定值面（inline CSSOM 简写重组等）沿用 [`rule_width_list_to_gcs`] 原样。
+// https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+fn rule_width_list_to_gcs_computed(
+    segments: &[zero_css_parser::values::RuleWidthSegment],
+    font_size_px: f64,
+    is_row: bool,
+) -> String {
+    if let Some(w) = zero_css_parser::values::rule_width_list_single_width(segments) {
+        if is_row && let zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(p)) = w {
+            return format!("{}px", p.trunc());
+        }
+        return column_rule_width_to_css(w, font_size_px);
+    }
+    zero_css_parser::values::rule_width_list_to_css(segments, &|w| {
+        if let zero_css_parser::values::ColumnRuleWidthValue::Length(LengthValue::Px(p)) = w {
+            format!("{}px", p.trunc())
+        } else {
+            column_rule_width_to_css(w, font_size_px)
+        }
+    })
+    .unwrap_or_default()
+}
+
+/// rule-color 列表 computed 串化（gCS 读面专用）：静态 computed 值 repeat 结构
+/// 保形（同 [`rule_width_list_to_gcs_computed`] 头注口径——展开仅属插值输出）；
+/// 色值串化走 [`rule_color_list_to_gcs`]（rgba 舍入既有）。当前与本函数同构
+/// （色值无 px 取整面），独立成点保 computed 指定两面分叉位。
+fn rule_color_list_to_gcs_computed(
+    segments: &[zero_css_parser::values::RuleColorSegment],
+    element_color: &ColorValue,
+) -> String {
+    rule_color_list_to_gcs(segments, element_color)
+}
+
+// ── css-gaps-1 §inset：rule-inset 槽 gCS computed 串化 ────────────────────
+
+/// 单槽 computed 串化：overlap-join 保关键字；LP 经 [`length_to_css`] 单源
+///（em/vmin 等相对单位按字号/视口解析 px、纯 px calc 静态求值、% /含 % calc
+/// 保形——语料 computed 页 font 40px `0.5em`→`20px`、`calc(10px + 0.5em)`→
+/// `30px`、`calc(25% + 10px)` 保形钉）。
+/// https://drafts.csswg.org/css-gaps-1/#inset
+fn rule_inset_component_to_gcs_computed(c: &zero_css_parser::values::RuleInsetComponent, font_size_px: f64) -> String {
+    match c {
+        zero_css_parser::values::RuleInsetComponent::OverlapJoin => "overlap-join".to_string(),
+        zero_css_parser::values::RuleInsetComponent::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// 四槽 computed 重组（canonical 形）：四槽串化全等 → 单值；否则恒
+/// `cap-start cap-end / junction-start junction-end`（侧内等值不折叠，
+/// 语料 `10px / 20px` → `10px 10px / 20px 20px` 钉）。
+fn rule_inset_quad_recomb_to_gcs(
+    cap_start: &zero_css_parser::values::RuleInsetComponent,
+    cap_end: &zero_css_parser::values::RuleInsetComponent,
+    junction_start: &zero_css_parser::values::RuleInsetComponent,
+    junction_end: &zero_css_parser::values::RuleInsetComponent,
+    font_size_px: f64,
+) -> String {
+    let cs = rule_inset_component_to_gcs_computed(cap_start, font_size_px);
+    let ce = rule_inset_component_to_gcs_computed(cap_end, font_size_px);
+    let js = rule_inset_component_to_gcs_computed(junction_start, font_size_px);
+    let je = rule_inset_component_to_gcs_computed(junction_end, font_size_px);
+    if cs == ce && ce == js && js == je {
+        return cs;
+    }
+    format!("{cs} {ce} / {js} {je}")
+}
+
+/// 槽对 computed 重组（cap/junction/start/end 简写轴内）：等值 → 单值；
+/// 否则 `start end`。
+fn rule_inset_pair_recomb_to_gcs(
+    a: &zero_css_parser::values::RuleInsetComponent,
+    b: &zero_css_parser::values::RuleInsetComponent,
+    font_size_px: f64,
+) -> String {
+    let sa = rule_inset_component_to_gcs_computed(a, font_size_px);
+    let sb = rule_inset_component_to_gcs_computed(b, font_size_px);
+    if sa == sb { sa } else { format!("{sa} {sb}") }
+}
+
+/// rule-style 列表 computed 串化（css-gaps-1 §column-row-rule-style）：单段
+/// 平样式走既有关键字路径；列表/重复形结构串化。
+fn rule_style_list_to_gcs(segments: &[zero_css_parser::values::RuleStyleSegment]) -> String {
+    if let Some(s) = zero_css_parser::values::rule_style_list_single_style(segments) {
+        return column_rule_style_str(s);
+    }
+    zero_css_parser::values::rule_style_list_to_css(segments).unwrap_or_default()
+}
+
+/// 三维度列表结构对齐判定（css-gaps-1 简写重组前置门，csswg-drafts#12201）：
+/// 段数相等；逐段三维度同为 Plain，或同为 Repeat 且计数（折叠口径，
+/// `repeat(calc(5 + 3),…)` ≡ `repeat(8,…)`）与循环体长度全等。
+/// pub(crate)：inline CSSOM（css_style_declaration 读面重组）同规则复用。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+pub(crate) fn gap_rule_lists_aligned(
+    width: &[zero_css_parser::values::RuleWidthSegment],
+    style_val: &[zero_css_parser::values::RuleStyleSegment],
+    color: &[zero_css_parser::values::RuleColorSegment],
+) -> bool {
+    if width.len() != style_val.len() || width.len() != color.len() {
+        return false;
+    }
+    for i in 0..width.len() {
+        match (&width[i], &style_val[i], &color[i]) {
+            (
+                zero_css_parser::values::RuleWidthSegment::Plain(..),
+                zero_css_parser::values::RuleStyleSegment::Plain(..),
+                zero_css_parser::values::RuleColorSegment::Plain(..),
+            ) => {}
+            (
+                zero_css_parser::values::RuleWidthSegment::Repeat { count, widths },
+                zero_css_parser::values::RuleStyleSegment::Repeat { count: sc, styles },
+                zero_css_parser::values::RuleColorSegment::Repeat { count: cc, colors },
+            ) => {
+                let head = |c: &zero_css_parser::values::RuleRepeatCount| c.to_css_head().unwrap_or_default();
+                if head(count) != head(sc)
+                    || head(count) != head(cc)
+                    || widths.len() != styles.len()
+                    || widths.len() != colors.len()
+                {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// row-rule/rule 简写重组（css-gaps-1 §rule-shorthand-properties computed
+/// 形）：width/style/color 三维度列表逐段 zip，段内 `width style(!none)
+/// color` 空格拼接；repeat 结构保形（段循环体逐项拼接，WPT computed 页
+/// `repeat(auto, 5px solid rgb(0, 0, 255))` 恒等钉）。三 longhand 结构
+/// 不齐（longhand 各自覆写后）→ 简写空串（csswg#12201，非平铺）。
+/// https://drafts.csswg.org/css-gaps-1/#rule-shorthand-properties
+fn gap_rule_recomb_to_css(
+    width: &[zero_css_parser::values::RuleWidthSegment],
+    style_val: &[zero_css_parser::values::RuleStyleSegment],
+    color: &[zero_css_parser::values::RuleColorSegment],
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    if !gap_rule_lists_aligned(width, style_val, color) {
+        // 结构失配：三 longhand 无法恒等重组 → 简写空串（csswg#12201；
+        // WPT from-longhands 页 row 侧 6 钉——Plain/Repeat 混段、计数不齐、
+        // 循环体长度不齐均空串）。
+        return String::new();
+    }
+    let style_item = |s: &zero_css_parser::values::RuleStyleSegment| -> Option<String> {
+        let single = zero_css_parser::values::rule_style_list_single_style(std::slice::from_ref(s));
+        let first = single.or_else(|| zero_css_parser::values::rule_style_list_first_style(std::slice::from_ref(s)));
+        match first {
+            Some(zero_css_parser::values::ColumnRuleStyleValue::None) | None => None,
+            Some(_) => Some(rule_style_list_to_gcs(std::slice::from_ref(s))),
+        }
+    };
+    let color_item = |c: &zero_css_parser::values::RuleColorSegment| -> String {
+        rule_color_list_to_gcs(std::slice::from_ref(c), element_color)
+    };
+    let width_item = |w: &zero_css_parser::values::RuleWidthSegment| -> String {
+        rule_width_list_to_gcs(std::slice::from_ref(w), font_size_px)
+    };
+    let mut parts = Vec::with_capacity(width.len());
+    for (w, (s, c)) in width.iter().zip(style_val.iter().zip(color.iter())) {
+        match (w, s, c) {
+            (
+                zero_css_parser::values::RuleWidthSegment::Repeat { count, widths },
+                zero_css_parser::values::RuleStyleSegment::Repeat { count: sc, styles },
+                zero_css_parser::values::RuleColorSegment::Repeat { count: cc, colors },
+            ) if {
+                // 计数折叠口径（前置门已保证三维度可对齐；此处防 Calc/N
+                // 结构异形混段误入平值臂）。
+                let head = |c: &zero_css_parser::values::RuleRepeatCount| c.to_css_head().unwrap_or_default();
+                head(sc) == head(cc) && head(count) == head(sc)
+            } =>
+            {
+                // repeat 体逐项 `w s c` 拼接（体长取宽度维，style/color 截断对齐）。
+                let items: Vec<String> = widths
+                    .iter()
+                    .enumerate()
+                    .map(|(i, wi)| {
+                        let mut item = column_rule_width_to_css(wi, font_size_px);
+                        if let Some(sv) = styles
+                            .get(i)
+                            .filter(|sv| !matches!(sv, zero_css_parser::values::ColumnRuleStyleValue::None))
+                        {
+                            item.push(' ');
+                            item.push_str(&column_rule_style_str(sv));
+                        }
+                        if let Some(cv) = colors.get(i) {
+                            item.push(' ');
+                            item.push_str(&color_to_css(&crate::resolve_color_current(cv, element_color)));
+                        }
+                        item
+                    })
+                    .collect();
+                match count.to_css_head() {
+                    Some(head) => parts.push(format!("repeat({}, {})", head, items.join(", "))),
+                    None => return String::new(),
+                }
+            }
+            _ => {
+                let mut item = width_item(w);
+                if let Some(sv) = style_item(s) {
+                    item.push(' ');
+                    item.push_str(&sv);
+                }
+                item.push(' ');
+                item.push_str(&color_item(c));
+                parts.push(item);
+            }
+        }
+    }
+    parts.join(", ")
+}
+
+/// column-rule-style：CSS Multi-column 分隔线样式（10 关键字，同 border-style 语义；css-gaps-1
+/// 列表模型下计算字段直接携带 css-parser [`ColumnRuleStyleValue`]）。
+fn column_rule_style_str(s: &zero_css_parser::values::ColumnRuleStyleValue) -> String {
+    zero_css_parser::values::line_style_str(s).to_string()
 }
 
 /// column-count：CSS Multi-column 列数。Auto→auto；Number(n)→无单位正整数（对齐 Chromium）。
@@ -1370,6 +1974,14 @@ fn column_width_to_css(w: &ColumnWidthComputedValue, font_size_px: f64) -> Strin
     match w {
         ColumnWidthComputedValue::Auto => "auto".to_string(),
         ColumnWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
+    }
+}
+
+/// column-height：css-multicol-2 §4.2 列块向高。Auto→auto；Length→px（同 width 通道）。
+fn column_height_to_css(h: &ColumnHeightComputedValue, font_size_px: f64) -> String {
+    match h {
+        ColumnHeightComputedValue::Auto => "auto".to_string(),
+        ColumnHeightComputedValue::Length(l) => length_to_css(l, font_size_px),
     }
 }
 
@@ -1395,17 +2007,24 @@ fn column_span_str(s: &ColumnSpanComputedValue) -> String {
 // 复用上方 longhand helper 做 CSSOM 重组；oracle 锚定本地 Chromium 150（见
 // docs/learnings/patterns/2026-08/2026-08-05-local-chromium-getcomputedstyle-oracle.md）。
 
-/// `columns` 简写：`column-width || column-count`（CSS Multicol）。CSSOM 序列化省略 auto 值；
-/// 全 auto→`"auto"`。Chromium oracle：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、
+/// `columns` 简写：`[ <'column-width'> || <'column-count'> ] [ / <'column-height'> ]?`
+/// （CSS Multicol + css-multicol-2 §4.5）。CSSOM 序列化：width/count auto 各自省略，
+/// 全 auto→`"auto"`；column-height 非 auto 时 slash 段恒显（`"W / H"`/`"W N / H"`/
+/// `"N / H"`/`"auto / H"`），height auto 时整体省略。WPT columns-computed 语料锚定
+/// （font-size 40px）：`auto / 2.5em`→`"auto / 100px"`、`0.25em 2 / 2.5em`→
+/// `"10px 2 / 100px"`、`2 / 2.5em`→`"2 / 100px"`、`auto / auto`→`"auto"`。
+/// Chromium oracle（R2755）：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、
 /// `columns:12em`→`"192px"`（width 解析，count auto 省）、默认→`"auto"`。
 fn columns_shorthand_to_css(
     width: &ColumnWidthComputedValue,
     count: &ColumnCountComputedValue,
+    height: &ColumnHeightComputedValue,
     font_size_px: f64,
 ) -> String {
     let w_auto = matches!(width, ColumnWidthComputedValue::Auto);
     let c_auto = matches!(count, ColumnCountComputedValue::Auto);
-    match (w_auto, c_auto) {
+    let h = column_height_to_css(height, font_size_px);
+    let width_count = match (w_auto, c_auto) {
         (false, false) => {
             format!(
                 "{} {}",
@@ -1416,6 +2035,11 @@ fn columns_shorthand_to_css(
         (false, true) => column_width_to_css(width, font_size_px),
         (true, false) => column_count_to_css(count),
         (true, true) => "auto".to_string(),
+    };
+    if matches!(height, ColumnHeightComputedValue::Auto) {
+        width_count
+    } else {
+        format!("{} / {}", width_count, h)
     }
 }
 
@@ -1423,18 +2047,44 @@ fn columns_shorthand_to_css(
 /// width 恒显（独立于 style，见 [`column_rule_width_to_css`]），color 恒显。Chromium oracle：
 /// `column-rule:thick double red`→`"5px double rgb(255, 0, 0)"`、默认→`"3px rgb(0, 0,0)"`（style none 省）。
 fn column_rule_shorthand_to_css(
-    width: &ColumnRuleWidthComputedValue,
-    style_val: &ColumnRuleStyleComputedValue,
-    color: &ColorValue,
+    width: &[zero_css_parser::values::RuleWidthSegment],
+    style_val: &[zero_css_parser::values::RuleStyleSegment],
+    color: &[zero_css_parser::values::RuleColorSegment],
     element_color: &ColorValue,
     font_size_px: f64,
 ) -> String {
-    let mut parts = vec![column_rule_width_to_css(width, style_val, font_size_px)];
-    if !matches!(style_val, ColumnRuleStyleComputedValue::None) {
-        parts.push(column_rule_style_str(style_val));
+    if !gap_rule_lists_aligned(width, style_val, color) {
+        // css-gaps-1 列表模型：三 longhand 结构不齐 → 简写空串（csswg#12201，
+        // WPT from-longhands 页 column 侧 6 钉；单段 multicol 形恒对齐，
+        // R2755 oracle 串化不受影响）。
+        return String::new();
     }
-    parts.push(color_to_css(&crate::resolve_color_current(color, element_color)));
+    let mut parts = vec![rule_width_list_to_gcs(width, font_size_px)];
+    if !matches!(
+        zero_css_parser::values::rule_style_list_first_style(style_val),
+        Some(zero_css_parser::values::ColumnRuleStyleValue::None) | None
+    ) {
+        parts.push(rule_style_list_to_gcs(style_val));
+    }
+    parts.push(rule_color_list_to_gcs(color, element_color));
     parts.join(" ")
+}
+
+/// rule-color 列表 computed 串化（css-gaps-1 §column-row-rule-color）：单段平色
+/// 走既有 color_to_css 解析路径（multicol 纯色声明串化零漂移）；列表/重复形
+/// 结构串化（逐段 resolve，repeat/auto/calc 计数保形折叠，css-parser 单点）。
+/// https://drafts.csswg.org/css-gaps-1/#column-row-rule-color
+fn rule_color_list_to_gcs(
+    segments: &[zero_css_parser::values::RuleColorSegment],
+    element_color: &ColorValue,
+) -> String {
+    if let Some(c) = zero_css_parser::values::rule_color_list_single_color(segments) {
+        return color_to_css(&crate::resolve_color_current(c, element_color));
+    }
+    zero_css_parser::values::rule_color_list_to_css(segments, &|c: &ColorValue| {
+        color_to_css(&crate::resolve_color_current(c, element_color))
+    })
+    .unwrap_or_default()
 }
 
 /// `list-style` 简写：`position || image || type`（CSS Lists）。CSSOM 序列化恒 3 段 `"position image type"`。
@@ -1536,21 +2186,31 @@ fn image_rendering_str(r: &ImageRenderingValue) -> String {
 }
 
 /// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。
-/// 整数无小数点（`16px`/`50%`/`0px`），小数去尾零（`19.2px`）。四舍五入到 1e-3 抑制
-/// f64 累积噪声（如 em 解析 `1.2 * 16 = 19.200000000000003` → `19.2px`）。
-fn format_num(v: f64, suffix: &str) -> String {
-    let r = (v * 1000.0).round() / 1000.0;
+/// Chromium 侧数值串为 6 位有效数字、去尾零（CSSOM serialize decimal 精度口径，
+/// 语料驱动：css-shapes computed 页 `50pt`→`66.6667px`、`1pt`→`1.33333px`——
+/// 旧千分位 `66.667px`/`1.333px` 与 oracle 串不等）；整数无小数点
+/// （`16px`/`50%`/`0px`）。6 位有效舍入同时抑制 f64 累积噪声（如 em 解析
+/// `1.2 * 16 = 19.200000000000003` → `19.2px`）。≥1e6 数量级保留全整数位
+/// （语料无大数量级驱动，FIXME: %.6g 科学计数口径挂账）。
+pub(crate) fn format_num(v: f64, suffix: &str) -> String {
+    let r = if v == 0.0 || !v.is_finite() {
+        v
+    } else {
+        let decimals = (5 - v.abs().log10().floor() as i32).max(0);
+        let f = 10f64.powi(decimals);
+        (v * f).round() / f
+    };
     if r == r.trunc() {
         format!("{}{}", r as i64, suffix)
     } else {
-        format!("{r}{suffix}")
+        let decimals = (5 - r.abs().log10().floor() as i32).max(0) as usize;
+        format!("{:.*}", decimals, r)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+            + suffix
     }
 }
-
-/// getComputedStyle 视口基准，与 compute_document_styles 一致（默认 1280×800）——
-/// length_to_css 与 calc_computed_to_css 共用。
-const GCS_VIEWPORT_W: f64 = 1280.0;
-const GCS_VIEWPORT_H: f64 = 800.0;
 
 /// 把已计算的 [`LengthValue`] 序列化为 CSS 字符串（getComputedStyle 长度族）。
 ///
@@ -1569,7 +2229,20 @@ fn letter_spacing_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     }
 }
 
-fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+/// offset-rotate 计算值串（css-motion-1 §offset-rotate：auto | reverse |
+/// <angle> | auto <angle>；角度 deg 整数化输出——apply 期归 deg 存 f64）。
+fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
+    match v {
+        None | Some(OffsetRotateValue::Auto) => "auto".to_string(),
+        Some(OffsetRotateValue::Reverse) => "reverse".to_string(),
+        Some(OffsetRotateValue::Angle(deg)) => format_num(deg, "deg"),
+        Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {}", format_num(deg, "deg")),
+    }
+}
+
+/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
+/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
+pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),
         LengthValue::Percentage(v) => format_num(*v, "%"),
@@ -1582,10 +2255,13 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         // geometric used 通道 % 需 layout 解析（模块头 in-master 限制），该桶挂账。
         LengthValue::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
         // em/rem/vw/vh/vmin/vmax/ch：兜底解析残余相对单位为 px。
-        other => format_num(
-            zero_style_system::resolve_length(other, font_size_px, Some(GCS_VIEWPORT_W), Some(GCS_VIEWPORT_H)),
-            "px",
-        ),
+        other => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            format_num(
+                zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)),
+                "px",
+            )
+        }
     }
 }
 
@@ -1603,11 +2279,19 @@ fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// sibling-index()/sibling-count() 叶随注入求值；None fail-closed（主通道
 /// [`length_to_css`] 探测/无 DOM 视图口径）。
 fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
+    let (gcs_vw, gcs_vh) = super::computed_style_cache::gcs_viewport_dims();
     let ctx = CalcContext {
         font_size: Some(font_size_px),
         root_font_size: Some(16.0),
-        viewport_width: Some(GCS_VIEWPORT_W),
-        viewport_height: Some(GCS_VIEWPORT_H),
+        viewport_width: Some(gcs_vw),
+        viewport_height: Some(gcs_vh),
+        // 静态度量兜底（同 style-system `resolve_length_inner` ex 0.8 / ch 1.0
+        // Ahem-oriented 口径）：桥层无字体度量，不填则 Ex/Ch 静态叶 eval None
+        // → 整串 `''`（css-shapes computed 页 `calc(70ex)`→`896px` 驱动；
+        // css-values-4 §5.1.1 ex=x-height、§5.1.2 ch='0' advance，Ahem 两度量
+        // 分别 0.8em/1em）。
+        x_height: Some(font_size_px * 0.8),
+        ch_width: Some(font_size_px),
         sibling_ordinal: sibling.map(|(o, _)| o),
         sibling_count: sibling.map(|(_, c)| c),
         ..Default::default()
@@ -2189,17 +2873,62 @@ fn font_family_to_css(families: &[String]) -> String {
 /// <family>`，省初值（style normal / weight 400 / line-height normal）。Chromium 150 oracle：
 /// `font:italic bold 14px/1.5 Arial`→`"italic 700 14px / 21px Arial"`、默认→`"16px \"Times New Roman\""`。
 fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
+    // 刀 N 三期（css-fonts-4 §font-prop serialization-prevention，computed 面）：
+    // 简写不可表达的长手计算值 → font 计算串恒空（WPT
+    // font-shorthand-serialization-prevention computed 半边驱动；css-wide
+    // keyword 覆写经 computed 解析已归位，无关键字形态可拦）。
+    if style.font_size_adjust != FontSizeAdjustValue::None
+        || style.font_kerning != FontKerningValue::Auto
+        || style.font_variant_ligatures.common.is_some()
+        || style.font_variant_ligatures.discretionary.is_some()
+        || style.font_variant_ligatures.historical.is_some()
+        || style.font_variant_ligatures.contextual.is_some()
+        || style.font_variant_position != FontVariantPositionValue::Normal
+        || style.font_variant_numeric != FontVariantNumericValue::Normal
+        || style.font_variant_alternates != FontVariantAlternatesValue::Normal
+        || style.font_variant_east_asian != FontVariantEastAsianValue::Normal
+        || style.font_feature_settings != FontFeatureSettingsValue::Normal
+        || style.font_variation_settings != FontVariationSettingsValue::Normal
+    {
+        return String::new();
+    }
     let mut parts = Vec::new();
     let fs = font_style_str(&style.font_style);
     if fs != "normal" {
         parts.push(fs);
     }
+    // 刀 N：font-variant 位（css-fonts-4 §font-prop 简写语法 <font-variant-css21>；
+    // small-caps 形计算串化保留——font-computed.html canonical 驱动）。
+    // 刀 N 三期：位超 CSS2 子集（all-small-caps 等简写不可表达）→ 整串防逐出。
+    if style.font_variant_caps != FontVariantCapsValue::Normal {
+        if style.font_variant_caps != FontVariantCapsValue::SmallCaps {
+            return String::new();
+        }
+        parts.push(font_variant_caps_str(&style.font_variant_caps));
+    }
     let fw = font_weight_str(&style.font_weight);
     if fw != "400" {
         parts.push(fw);
     }
+    // 刀 N：stretch 关键字 canonical 形（css-fonts-4 §font-width-prop 关键字
+    // ↔百分比映射反查——`parse_font_stretch` 同表单源）。刀 N 三期：表外
+    // 百分比（95% 等）简写位不可表达 → 整串防逐出（% 保形臂撤——
+    // serialization-prevention computed 面 95% 拒串化驱动）。
     if (style.font_stretch - 100.0).abs() > f32::EPSILON {
-        parts.push(format_num(style.font_stretch as f64, "%"));
+        if !matches!(
+            style.font_stretch,
+            p if (p - 50.0).abs() < 0.01
+                || (p - 62.5).abs() < 0.01
+                || (p - 75.0).abs() < 0.01
+                || (p - 87.5).abs() < 0.01
+                || (p - 112.5).abs() < 0.01
+                || (p - 125.0).abs() < 0.01
+                || (p - 150.0).abs() < 0.01
+                || (p - 200.0).abs() < 0.01
+        ) {
+            return String::new();
+        }
+        parts.push(font_stretch_keyword_str(style.font_stretch));
     }
     // size 恒显；line-height 非 normal 显作 "size / lh"。
     let size = length_to_css(&style.font_size, font_size_px);
@@ -2209,8 +2938,54 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     } else {
         parts.push(size);
     }
-    parts.push(font_family_to_css(&style.font_family));
+    // 刀 N：简写 family 位多 ident 序列免引号（css-fonts-4 <family-name> =
+    // <custom-ident>+；font-computed.html canonical 以原文 verbatim 驱动）。
+    // 单 ident/需引号名维持既有 quote_font_family 判别。
+    let family = style
+        .font_family
+        .iter()
+        .map(|f| {
+            let bare = f.trim_matches('"').trim_matches('\'');
+            if bare.split_ascii_whitespace().all(is_css_ident) && !bare.is_empty() {
+                bare.to_string()
+            } else {
+                quote_font_family(bare)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    parts.push(family);
     parts.join(" ")
+}
+
+/// 刀 N：font-variant-caps 计算值串化（css-fonts-4 §font-variant-caps-prop；
+/// 简写位仅 <font-variant-css21>，全值域串化供 gCS 长手/未来扩展共用）。
+fn font_variant_caps_str(v: &FontVariantCapsValue) -> String {
+    match v {
+        FontVariantCapsValue::Normal => "normal".to_string(),
+        FontVariantCapsValue::SmallCaps => "small-caps".to_string(),
+        FontVariantCapsValue::AllSmallCaps => "all-small-caps".to_string(),
+        FontVariantCapsValue::PetiteCaps => "petite-caps".to_string(),
+        FontVariantCapsValue::AllPetiteCaps => "all-petite-caps".to_string(),
+        FontVariantCapsValue::Unicase => "unicase".to_string(),
+        FontVariantCapsValue::TitlingCaps => "titling-caps".to_string(),
+    }
+}
+
+/// 刀 N：font-stretch 百分比 → 关键字 canonical（css-fonts-4 §font-width-prop
+/// 映射反查，[`zero_css_parser::values::parse_font_stretch`] 同表；表外值保 %）。
+fn font_stretch_keyword_str(pct: f32) -> String {
+    match pct {
+        p if (p - 50.0).abs() < 0.01 => "ultra-condensed".to_string(),
+        p if (p - 62.5).abs() < 0.01 => "extra-condensed".to_string(),
+        p if (p - 75.0).abs() < 0.01 => "condensed".to_string(),
+        p if (p - 87.5).abs() < 0.01 => "semi-condensed".to_string(),
+        p if (p - 112.5).abs() < 0.01 => "semi-expanded".to_string(),
+        p if (p - 125.0).abs() < 0.01 => "expanded".to_string(),
+        p if (p - 150.0).abs() < 0.01 => "extra-expanded".to_string(),
+        p if (p - 200.0).abs() < 0.01 => "ultra-expanded".to_string(),
+        p => format_num(p as f64, "%"),
+    }
 }
 
 /// 族名是合法 CSS 标识符（非空、首字符非数字/`-数字`、仅 ident 字符）→ 不引号；否则双引号
@@ -2622,7 +3397,7 @@ fn will_change_to_css(list: &[WillChangeValue]) -> String {
 /// `None`→`none`；`inset()` 四内缩按 box 简写折叠（1/2/3/4 值，同 margin 语法）+ 可选 `round`；
 /// `circle()`/`ellipse()` 半径 + 可选 ` at <pos>`；`polygon()` 填充规则（仅 evenodd 输出）+ 逗号分隔顶点。
 /// 长度经 [`length_to_css`]；半径关键字 closest-side/farthest-side 原样。
-fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
+pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
     use ClipPathValue as C;
     match c {
         C::None => "none".to_string(),
@@ -2640,10 +3415,20 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
             format!("inset({inner})")
         }
         C::Circle { radius, position } => {
-            let mut inner = clip_path_radius_to_css(radius, font_size_px);
+            // css-shapes-1 computed 串形省缺省分量：缺省半径 closest-side
+            // 省略（chrome computed 语料 oracle：`circle(at 800px 50%)`
+            // 形；显式半径与非缺省关键字保留）。
+            let mut inner = match radius {
+                ClipPathRadius::ClosestSide => String::new(),
+                other => clip_path_radius_to_css(other, font_size_px),
+            };
             if let Some((x, y)) = position {
+                // 缺省半径省略后 inner 为空——分隔符不能是 ` at` 的前导空格
+                //（否则产出 `circle( at …)` 非法串形，circle-004 computed
+                // 语料 390F 单一根因）。
+                let sep = if inner.is_empty() { "" } else { " " };
                 inner.push_str(&format!(
-                    " at {} {}",
+                    "{sep}at {} {}",
                     length_to_css(x, font_size_px),
                     length_to_css(y, font_size_px)
                 ));
@@ -2651,14 +3436,23 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
             format!("circle({inner})")
         }
         C::Ellipse { rx, ry, position } => {
-            let mut inner = format!(
-                "{} {}",
-                clip_path_radius_to_css(rx, font_size_px),
-                clip_path_radius_to_css(ry, font_size_px)
-            );
+            // 双轴同缺省（closest-side closest-side）整体省略；单侧非缺省
+            // 形保双半径（省一值破坏 rx ry 位置文法）。
+            let both_default = matches!(rx, ClipPathRadius::ClosestSide) && matches!(ry, ClipPathRadius::ClosestSide);
+            let mut inner = if both_default {
+                String::new()
+            } else {
+                format!(
+                    "{} {}",
+                    clip_path_radius_to_css(rx, font_size_px),
+                    clip_path_radius_to_css(ry, font_size_px)
+                )
+            };
             if let Some((x, y)) = position {
+                // 同 circle 臂：空 inner 前导分隔符禁带空格。
+                let sep = if inner.is_empty() { "" } else { " " };
                 inner.push_str(&format!(
-                    " at {} {}",
+                    "{sep}at {} {}",
                     length_to_css(x, font_size_px),
                     length_to_css(y, font_size_px)
                 ));
@@ -2676,6 +3470,48 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
                 PolygonFillRule::EvenOdd => format!("polygon(evenodd, {pts})"),
             }
         }
+        // shape()/path()/rect()/xywh()：css-shapes-2 四兄弟走 css-parser
+        // canonical 串化。shape() 走 computed 级（位置关键字折 %、rotate 归
+        // deg——chrome computed 串形语料钉面）；path()/rect()/xywh() 声明级
+        // verbatim（path data 无单位、rect/xywh computed 折算后置挂账）。
+        C::Shape(s) => shape_to_css_computed(s),
+        C::Path(p) => path_to_css(p),
+        C::Rect(r) => rect_to_css(r),
+        C::Xywh(x) => xywh_to_css(x),
+    }
+}
+
+/// shape-outside 计算值串化（css-shapes-1 §shape-outside）：`<basic-shape>`
+/// 复用 [`clip_path_to_css`]；裸 `<shape-box>` 即关键字原文；none → `none`。
+pub(crate) fn shape_outside_to_css(v: &ShapeOutsideComputedValue, font_size_px: f64) -> String {
+    match v {
+        ShapeOutsideComputedValue::None => "none".to_string(),
+        ShapeOutsideComputedValue::Shape(c) => clip_path_to_css(c, font_size_px),
+        ShapeOutsideComputedValue::Box(k) => k.as_css_str().to_string(),
+    }
+}
+
+/// shape-margin 计算值串化（css-shapes-1 §shape-margin-property）：通用
+/// [`length_to_css`]（Calc 静态项按字号求值、% 保形）+ 非负钳（spec「clamped
+/// to be non-negative」；apply 站已钳字面负值，此处钳 Calc 求值负结果与
+/// 兜底形——语料 computed 页 `calc(10px - 0.5em)` → `0px`）。
+pub(crate) fn shape_margin_to_css(v: &LengthValue, font_size_px: f64) -> String {
+    match v {
+        LengthValue::Calc(_) => {
+            let s = length_to_css(v, font_size_px);
+            // Calc 静态求值出纯 px 串时负值钳 0px；含 % 项串保留（% 项 used
+            // 值依赖 layout，负号钳制语义挂账，语料未及）。
+            if s.strip_suffix("px")
+                .and_then(|num| num.parse::<f64>().ok())
+                .filter(|n| n.is_finite())
+                .filter(|n| *n < 0.0)
+                .is_some()
+            {
+                return "0px".to_string();
+            }
+            s
+        }
+        other => length_to_css(other, font_size_px),
     }
 }
 
@@ -2860,7 +3696,7 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
     };
     let attachment = background_attachment_to_css(&style.background_attachment);
     let position = {
-        let s = background_position_to_css(&style.background_position);
+        let s = background_position_to_css(&style.background_position, 16.0);
         if s.is_empty() { "0% 0%".to_string() } else { s }
     };
     let size = {
@@ -2873,10 +3709,11 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
 }
 
 /// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：
-/// 每条目 = property / duration / timing-function / delay，各 longhand 省初值；property=all 仅在
-/// 其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
-/// 默认（空列表）→`"all"`；`transition:none`→`"none"`。4 longhand 列表等长（`expand_transition`
-/// 保证），逐索引 zip 后逗号连接。
+/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值；property=all
+/// 仅在其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
+/// 默认（空列表）→`"all"`；`transition:none`→`"none"`。5 longhand 列表等长（`expand_transition`
+/// 保证），逐索引 zip 后逗号连接；behavior 非初值（`allow-discrete`）按文法序尾附。
+/// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
 fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
     let n = style.transition_property.len();
     if n == 0 {
@@ -2892,7 +3729,8 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
                 .map(timing_function_to_css)
                 .unwrap_or_else(|| "ease".to_string());
             let delay = format_num(style.transition_delay.get(i).copied().unwrap_or(0.0), "s");
-            let all_rest_initial = dur == "0s" && tf == "ease" && delay == "0s";
+            let behavior = style.transition_behavior.get(i).map(String::as_str).unwrap_or("normal");
+            let all_rest_initial = dur == "0s" && tf == "ease" && delay == "0s" && behavior == "normal";
             let mut parts = Vec::new();
             if prop != "all" || all_rest_initial {
                 parts.push(prop.to_string());
@@ -2905,6 +3743,9 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
             }
             if delay != "0s" {
                 parts.push(delay);
+            }
+            if behavior != "normal" {
+                parts.push(behavior.to_string());
             }
             parts.join(" ")
         })
@@ -3106,21 +3947,119 @@ fn image_layer_list_to_css(
                     format!("filter({inner}, {list})")
                 }
             }
+            // g45：image-set()——分辨率全归一 dppx（css-images-4 #image-set-unused
+            // computed oracle：`1x`→`1dppx`、`48dpi`→`0.5dppx`、`2400dpcm`→
+            // `63.5dppx`）、url 引号化、type() 重引号置后。
+            BackgroundImageComputedValue::ImageSet(is) => image_set_to_css(is, element_color, font_size_px),
         })
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-/// linear-gradient / repeating-linear-gradient：CSS Images 线性渐变序列化（对齐 Chromium）。
-/// `<prefix>(<dir>, [in <space>], <stop>, ...)`：dir `ToBottom` 初值省略 / `Angle(a)`→`adeg` /
-/// 角关键字 `to right` 等；插值 `Srgb` 初值省略、余 `in <space>`（极坐标 Lch/Oklch 非默认 hue
-/// 附 ` <hue-method>`）；色标 `<color>[ <pos>]`（color 经 currentcolor 解析，pos 经 length_to_css）。
-/// **已知限制**：无双位置/色标提示存储（ZeroWeb 模型单 pos/无 hint）；radial/conic defer。
+/// image-set() computed 串化（css-images-4 §image-set-nota）：选项图像（url
+/// 引号化/渐变 computed 串化）+ 分辨率归一 dppx（明文 x/dppx 恒等、dpi ÷96、
+/// dpcm ×2.54/96——css-values-4 §6.4 仓库既定约定；缺省补 `1dppx`；calc 字面
+/// 树折叠值同基发射，非折叠形 FIXME: 保原文——语料未驱动静态不可折叠 calc 的
+/// computed 面）+ type() 重引号置后。
+fn image_set_to_css(
+    is: &zero_css_parser::values::ImageSetValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    let mut out = String::from("image-set(");
+    for (idx, opt) in is.options.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&image_set_option_to_css(opt, element_color, font_size_px));
+    }
+    out.push(')');
+    out
+}
+
+/// image-set() 单选项 computed 串化。
+fn image_set_option_to_css(
+    opt: &zero_css_parser::values::ImageSetOptionValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    use zero_css_parser::values::{BackgroundImageValue, GradientValue, ImageSetResolution};
+    let mut out = match &*opt.image {
+        BackgroundImageValue::Url(u) => format!("url(\"{u}\")"),
+        BackgroundImageValue::Gradient(GradientValue::Linear(g)) => {
+            linear_gradient_to_css(g, element_color, font_size_px)
+        }
+        BackgroundImageValue::Gradient(GradientValue::Radial(g)) => {
+            radial_gradient_to_css(g, element_color, font_size_px)
+        }
+        BackgroundImageValue::Gradient(GradientValue::Conic(g)) => {
+            conic_gradient_to_css(g, element_color, font_size_px)
+        }
+        // 选项图像文法 parse 期已限 url/字符串/渐变，防御臂保穷尽。
+        _ => "none".to_string(),
+    };
+    let dppx = match &opt.resolution {
+        None => 1.0,
+        Some(ImageSetResolution::Plain { dppx, .. }) => *dppx,
+        Some(ImageSetResolution::Calc { text, folded_dppx, .. }) => match folded_dppx {
+            Some(n) => *n,
+            None => {
+                // 静态不可折叠 calc：computed 期原文保形（FIXME: 容器上下文
+                // 求值归 computed-value 期刀）。
+                out.push(' ');
+                out.push_str(text);
+                if let Some(mime) = &opt.mime {
+                    out.push_str(" type(\"");
+                    out.push_str(mime);
+                    out.push_str("\")");
+                }
+                return out;
+            }
+        },
+    };
+    // 负分辨率计算值钳 0（css-values-4 §6.4：`<resolution>` 无负值——WPT
+    // image-set-computed oracle `calc(-1 * 1x)` → `0dppx`；字面负值 parse 期
+    // 已拒，此处仅收 calc 折叠负值）。
+    let dppx = dppx.max(0.0);
+    out.push(' ');
+    out.push_str(&zero_css_parser::values::format_resolution_dppx(dppx));
+    if let Some(mime) = &opt.mime {
+        out.push_str(" type(\"");
+        out.push_str(mime);
+        out.push_str("\")");
+    }
+    out
+}
+
+/// linear-gradient / repeating-linear-gradient：CSS Images 线性渐变 computed 序列化
+/// （css-images-4
+/// [§serializing-gradients](https://drafts.csswg.org/css-images-4/#serializing-gradients)
+/// ，对齐 Chromium）。g42 起解析期带 as-written 配置（`specified`）的渐变走
+/// [`gradient_specified_prefix`] 骨架：配置头 canonical 原序（`to right bottom`
+/// 角词序保真）+ canonical `in <method>`（冗省/别名/hue 缺省）+ computed 色标；
+/// 程序化构造（specified None）回退模型枚举路径。
 fn linear_gradient_to_css(
     g: &zero_css_parser::values::LinearGradient,
     element_color: &ColorValue,
     font_size_px: f64,
 ) -> String {
+    let prefix = if g.repeating {
+        "repeating-linear-gradient"
+    } else {
+        "linear-gradient"
+    };
+    if let Some(parts) = &g.specified {
+        // computed 头部 as-written：角词序保真（WPT oracle `to right bottom` 不重排
+        // 为 `to bottom right`）、角度文本保真；linear 头部文法无长度分量，无单位解析。
+        return gradient_specified_to_css(
+            prefix,
+            parts.head.as_deref(),
+            parts.method.as_deref(),
+            &g.stops,
+            element_color,
+            font_size_px,
+        );
+    }
     let mut parts: Vec<String> = Vec::new();
     match g.direction {
         GradientDirection::ToBottom => {} // 初值，省略
@@ -3139,21 +4078,38 @@ fn linear_gradient_to_css(
     for s in &g.stops {
         parts.push(color_stop_to_css(s, element_color, font_size_px));
     }
-    let prefix = if g.repeating {
-        "repeating-linear-gradient"
-    } else {
-        "linear-gradient"
-    };
     format!("{}({})", prefix, parts.join(", "))
 }
 
-/// radial-gradient / repeating-radial-gradient：CSS Images 径向渐变序列化。
+/// radial-gradient / repeating-radial-gradient：CSS Images 径向渐变 computed 序列化。
+/// g42 起解析期带 as-written 配置（`specified`）的渐变走 [`gradient_specified_to_css`]
+/// 骨架（配置头经 [`radial_computed_head`]：size 单位归一、at 位置模型化）；程序化
+/// 构造回退下述模型枚举路径。
 /// 规则锚定 WPT `background-image-computed`/`gradient-position-computed` oracle：
 /// - 默认 `<ellipse> <farthest-corner> at center` 全省略 → `radial-gradient(stops)`
 /// - `circle`（默认 size）保留；非默认 size 关键字（closest-side 等）保留；`circle <kw>` 双保留
 /// - 显式半径 `Length(r)` → `r`（circle 关键字省略）；ellipse 双长度 ZeroWeb 仅存单 length（解析限制）
 /// - 非默认 position → `at <X> <Y>`（center/top/bottom/left/right 解析期已归一为 50%/0%/100%）
 fn radial_gradient_to_css(g: &RadialGradient, element_color: &ColorValue, font_size_px: f64) -> String {
+    let prefix = if g.repeating {
+        "repeating-radial-gradient"
+    } else {
+        "radial-gradient"
+    };
+    if let Some(parts) = &g.specified {
+        return gradient_specified_to_css(
+            prefix,
+            parts
+                .head
+                .as_deref()
+                .map(|h| radial_computed_head(h, &g.position_x, &g.position_y, font_size_px))
+                .as_deref(),
+            parts.method.as_deref(),
+            &g.stops,
+            element_color,
+            font_size_px,
+        );
+    }
     // config 组件：shape/size + position 空格连接（同 oracle「circle at 25% 40%」）。
     let mut config_inner: Vec<String> = Vec::new();
     match (&g.shape, &g.size) {
@@ -3182,11 +4138,6 @@ fn radial_gradient_to_css(g: &RadialGradient, element_color: &ColorValue, font_s
     for s in &g.stops {
         parts.push(color_stop_to_css(s, element_color, font_size_px));
     }
-    let prefix = if g.repeating {
-        "repeating-radial-gradient"
-    } else {
-        "radial-gradient"
-    };
     format!("{}({})", prefix, parts.join(", "))
 }
 
@@ -3204,10 +4155,32 @@ fn radial_size_str(size: &RadialSize, shape: &RadialShape) -> String {
     }
 }
 
-/// conic-gradient / repeating-conic-gradient：CSS Images 锥向渐变序列化（spec-aligned，无 WPT conic
-/// computed oracle，待 Chromium A/B 核实）。`<prefix>([from <angle>]? [at <pos>]?, stops)`：
-/// 默认 from 0deg + at center 全省略；非默认 from→`from <deg>deg`、position→`at <X> <Y>`。
+/// conic-gradient / repeating-conic-gradient：CSS Images 锥向渐变 computed 序列化。
+/// g42 起解析期带 as-written 配置（`specified`）的渐变走 [`gradient_specified_to_css`]
+/// 骨架（配置头经 [`conic_computed_head`]）；程序化构造回退下述模型枚举路径
+///（spec-aligned，无 WPT conic computed oracle，待 Chromium A/B 核实）。
+/// `<prefix>([from <angle>]? [at <pos>]?, stops)`：默认 from 0deg + at center 全省略；
+/// 非默认 from→`from <deg>deg`、position→`at <X> <Y>`。
 fn conic_gradient_to_css(g: &ConicGradient, element_color: &ColorValue, font_size_px: f64) -> String {
+    let prefix = if g.repeating {
+        "repeating-conic-gradient"
+    } else {
+        "conic-gradient"
+    };
+    if let Some(parts) = &g.specified {
+        return gradient_specified_to_css(
+            prefix,
+            parts
+                .head
+                .as_deref()
+                .map(|h| conic_computed_head(h, g.from_angle, &g.position_x, &g.position_y, font_size_px))
+                .as_deref(),
+            parts.method.as_deref(),
+            &g.stops,
+            element_color,
+            font_size_px,
+        );
+    }
     let mut config_inner: Vec<String> = Vec::new();
     if g.from_angle != 0.0 {
         config_inner.push(format!("from {}deg", format_num(g.from_angle, "")));
@@ -3230,11 +4203,6 @@ fn conic_gradient_to_css(g: &ConicGradient, element_color: &ColorValue, font_siz
     for s in &g.stops {
         parts.push(color_stop_to_css(s, element_color, font_size_px));
     }
-    let prefix = if g.repeating {
-        "repeating-conic-gradient"
-    } else {
-        "conic-gradient"
-    };
     format!("{}({})", prefix, parts.join(", "))
 }
 
@@ -3244,16 +4212,169 @@ fn is_center(x: &LengthValue, y: &LengthValue) -> bool {
 }
 
 /// 渐变色标：`<color>[ <position>]`（color 经 currentcolor 解析为 rgb/rgba；pos 经 length_to_css）。
+/// g42：`color()` 预定义空间站直接 canonical 串化（css-color-4 §9.1 computed 值
+/// 不坍缩 legacy rgb；分量是数字字面量与 currentColor 无关，无需解析上下文）。
 fn color_stop_to_css(s: &GradientColorStop, element_color: &ColorValue, font_size_px: f64) -> String {
-    let color = color_to_css(&crate::resolve_color_current(&s.color, element_color));
+    let color = match &s.color {
+        ColorValue::ColorFunction(f) => color_function_to_css(f),
+        _ => color_to_css(&crate::resolve_color_current(&s.color, element_color)),
+    };
     match &s.position {
         None => color,
         Some(pos) => format!("{} {}", color, length_to_css(pos, font_size_px)),
     }
 }
 
-/// 渐变颜色插值（CSS Color 4 `in <colorspace> [<hue-method>]`）。极坐标 Lch/Oklch 且 hue 非
-/// 默认 Shorter 时附 hue-method；否则仅 `in <space>`。
+/// `color()` canonical 串化（css-color-4 §9.1）：`color(<space> <c0> <c1> <c2>)`，
+/// alpha∈[0,1) 附 ` / <a>`；分量/alpha 按最短十进制（Chromium computed 口径：
+/// 1→`1`、0.5→`0.5`，同 [`format_num`]）。FIXME: `none` 分量保真 defer
+///（parse 期 none→0，css-color none-components 语料归 color 刀）。
+fn color_function_to_css(f: &ColorFunctionSpec) -> String {
+    let mut s = format!(
+        "color({} {} {} {})",
+        f.space,
+        format_num(f.comps[0], ""),
+        format_num(f.comps[1], ""),
+        format_num(f.comps[2], "")
+    );
+    if f.alpha < 1.0 {
+        s.push_str(&format!(" / {}", format_num(f.alpha, "")));
+    }
+    s
+}
+
+/// 渐变 computed 序列化公共骨架（css-images-4 §serializing-gradients）：canonical
+/// 配置头（调用方按渐变型别经 computed 头 helper 求得，非 as-written 盲拷）+
+/// canonical `in <method>`（冗省判定 [`gradient_method_redundant_default`]）+
+/// computed 色标段（legacy 色→rgb()、`color()` 站保真）。`<配置>[ <method>][, <stop>, ...]`。
+fn gradient_specified_to_css(
+    prefix: &str,
+    head: Option<&str>,
+    method: Option<&str>,
+    stops: &[GradientColorStop],
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    let mut out = String::from(prefix);
+    out.push('(');
+    let mut emitted = false;
+    // 空头（size/位置段全缺省省略后 radial_computed_head 返 ""）按无头处理，
+    // 防方法附着/分隔符吃进前导空格。
+    if let Some(h) = head.filter(|h| !h.is_empty()) {
+        out.push_str(h);
+        emitted = true;
+    }
+    if let Some(m) = method
+        && !gradient_method_redundant_default(m, stops)
+    {
+        if emitted {
+            out.push(' ');
+        }
+        out.push_str(m);
+        emitted = true;
+    }
+    let body = stops
+        .iter()
+        .map(|s| color_stop_to_css(s, element_color, font_size_px))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if emitted && !body.is_empty() {
+        out.push_str(", ");
+    }
+    out.push_str(&body);
+    out.push(')');
+    out
+}
+
+/// computed 通道方法冗省（css-images-4
+/// [#gradient-color-interpolation](https://drafts.csswg.org/css-images-4/#gradient-color-interpolation)
+/// ，与 declared 通道 serialize_gradient::method_is_redundant_default 同则）：
+/// 显式色相法恒非缺省；空间 ==（站含 predefined `color()` → oklab，否则 srgb）
+/// 时整子句省略。driving oracle：`50px in oklab` + `color(srgb…)` 站 → 省略。
+fn gradient_method_redundant_default(method: &str, stops: &[GradientColorStop]) -> bool {
+    let mut words = method.split_whitespace();
+    if words.next() != Some("in") {
+        return false;
+    }
+    let Some(space) = words.next() else {
+        return false;
+    };
+    if words.next().is_some() {
+        return false; // 显式 hue 法恒非缺省
+    }
+    let default = if stops.iter().any(|s| matches!(s.color, ColorValue::ColorFunction(_))) {
+        "oklab"
+    } else {
+        "srgb"
+    };
+    space == default
+}
+
+/// radial computed 配置头（css-images-4 §serializing-gradients computed 通道；
+/// WPT gradient-interpolation-method-computed specifiers oracle）：`ellipse` 双
+/// 长度形 parse 期已剥离；size 段 token 级解析（长度 → [`length_to_css`] 单位归一
+/// `40em`→`640px`、`50%` 保留，关键字 passthrough）+ `at` 位置段模型化
+/// （`at right center`→`at 100% 50%`、4-token 缘偏移对关键字剥离 →
+/// `at left 10px top 50em`→`at 10px 800px`）。缺省 center 位置省略（R2751
+/// 口径：显式 `at center` computed 同样缺省省略）。
+fn radial_computed_head(head: &str, pos_x: &LengthValue, pos_y: &LengthValue, font_size_px: f64) -> String {
+    let (size_text, at_text) = if let Some(rest) = head.strip_prefix("at ") {
+        ("", Some(rest))
+    } else if let Some((s, p)) = head.split_once(" at ") {
+        (s, Some(p))
+    } else {
+        (head, None)
+    };
+    let mut parts: Vec<String> = Vec::new();
+    let size = size_text
+        .split_whitespace()
+        .map(|t| match parse_length(t) {
+            Some(lv) => length_to_css(&lv, font_size_px),
+            None => t.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !size.is_empty() {
+        parts.push(size);
+    }
+    if at_text.is_some() && !is_center(pos_x, pos_y) {
+        parts.push(format!(
+            "at {} {}",
+            length_to_css(pos_x, font_size_px),
+            length_to_css(pos_y, font_size_px)
+        ));
+    }
+    parts.join(" ")
+}
+
+/// conic computed 配置头：`from <angle>` 段按模型角度（`0.5turn` 等归一 deg；
+/// 缺省 0deg 省略，R2751 口径）+ `at` 位置段同 [`radial_computed_head`]（head
+/// 无对应段或位置为缺省 center 时不发射）。
+fn conic_computed_head(
+    head: &str,
+    from_angle: f64,
+    pos_x: &LengthValue,
+    pos_y: &LengthValue,
+    font_size_px: f64,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if head.starts_with("from ") && from_angle != 0.0 {
+        parts.push(format!("from {}deg", format_num(from_angle, "")));
+    }
+    if (head.starts_with("at ") || head.contains(" at ")) && !is_center(pos_x, pos_y) {
+        parts.push(format!(
+            "at {} {}",
+            length_to_css(pos_x, font_size_px),
+            length_to_css(pos_y, font_size_px)
+        ));
+    }
+    parts.join(" ")
+}
+
+/// 渐变颜色插值（CSS Color 4 `in <colorspace> [<hue-method>]`）。极坐标
+///（Lch/Oklch/Hsl/Hwb，css-color-4 §12.2）且 hue 非默认 Shorter 时附 hue-method；
+/// 否则仅 `in <space>`。hsl/hwb/xyz-d50/xyz-d65 为 g42 模型身份（渲染仍回退
+/// Srgb，R2288），computed 序列化按 canonical 词形发射。
 fn color_interpolation_to_css(ci: &ColorInterpolation) -> String {
     let space = match ci.space {
         ColorInterpolationSpace::Srgb => "srgb",
@@ -3262,8 +4383,18 @@ fn color_interpolation_to_css(ci: &ColorInterpolation) -> String {
         ColorInterpolationSpace::Oklab => "oklab",
         ColorInterpolationSpace::Lch => "lch",
         ColorInterpolationSpace::Oklch => "oklch",
+        ColorInterpolationSpace::Hsl => "hsl",
+        ColorInterpolationSpace::Hwb => "hwb",
+        ColorInterpolationSpace::XyzD50 => "xyz-d50",
+        ColorInterpolationSpace::XyzD65 => "xyz-d65",
     };
-    let polar = matches!(ci.space, ColorInterpolationSpace::Lch | ColorInterpolationSpace::Oklch);
+    let polar = matches!(
+        ci.space,
+        ColorInterpolationSpace::Lch
+            | ColorInterpolationSpace::Oklch
+            | ColorInterpolationSpace::Hsl
+            | ColorInterpolationSpace::Hwb
+    );
     if polar && ci.hue != ColorHueMethod::Shorter {
         let hue = match ci.hue {
             ColorHueMethod::Shorter => "shorter hue",
@@ -3456,6 +4587,9 @@ fn content_to_css(c: &ContentComputedValue, element_color: &ColorValue, font_siz
         C::Gradient(GradientValue::Linear(g)) => linear_gradient_to_css(g, element_color, font_size_px),
         C::Gradient(GradientValue::Radial(g)) => radial_gradient_to_css(g, element_color, font_size_px),
         C::Gradient(GradientValue::Conic(g)) => conic_gradient_to_css(g, element_color, font_size_px),
+        // g46：image-set computed 串化复用 background-image 同一实现点（分辨率
+        // 归一 dppx、url 引号化、渐变 computed 形——css-content-3 `<image>` 域）。
+        C::ImageSet(is) => image_set_to_css(is, element_color, font_size_px),
         C::List(items) => items.iter().map(content_list_item_to_css).collect::<Vec<_>>().join(" "),
         // R5022：filter() 图像函数——`filter(<image>, <filter-list>?)`；列表空省略第二参。
         C::Filtered { image, filters } => {
@@ -3529,19 +4663,19 @@ fn css_string_to_css(s: &str) -> String {
 ///
 /// 关键字解析为百分比（center 50% / left 0% / right 100% / top 0% / bottom 100%），对齐 Chromium
 /// getComputedStyle（WPT background-computed.html）；单关键字/单长度按轴展开（缺省轴 = center 50%）。
-fn background_position_to_css(layers: &[BackgroundPositionComputedValue]) -> String {
+fn background_position_to_css(layers: &[BackgroundPositionComputedValue], font_size_px: f64) -> String {
     if layers.is_empty() {
         return String::new();
     }
     layers
         .iter()
-        .map(bg_position_layer_to_css)
+        .map(|l| bg_position_layer_to_css(l, font_size_px))
         .collect::<Vec<_>>()
         .join(", ")
 }
 
 /// 序列化单层 `<bg-position>`。单值按轴展开（缺省轴 center 50%）；TwoValue 两轴；EdgeOffset 边缘+偏移。
-fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
+fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue, font_size_px: f64) -> String {
     use BackgroundPositionComputedValue as P;
     match p {
         // 单关键字：按轴展开（水平关键字→垂直 center 50%；垂直关键字→水平 center 50%）。
@@ -3553,17 +4687,33 @@ fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
         // 单长度/百分比：水平 = 值，垂直缺省 center 50%。
         P::Length(f) => format!("{} 50%", format_num(*f as f64, "px")),
         P::Percent(f) => format!("{} 50%", format_num(*f as f64, "%")),
-        // % calc 无容器尺寸不可解析（非 % calc 已 resolve）→ ''。
-        P::Calc(_) => String::new(),
-        P::TwoValue(h, v) => format!("{} {}", bg_position_axis_to_css(h), bg_position_axis_to_css(v)),
+        // % calc：canonical 串化（css-values-4 §10.11——% 项保留、零 px 项丢弃；
+        // 刀 A1d：query 通道 canonicalize 往返靠此臂出混合形，''回退仅余
+        // 不可 canonical 化树）。
+        P::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
+        P::TwoValue(h, v) => format!(
+            "{} {}",
+            bg_position_axis_to_css(h, font_size_px),
+            bg_position_axis_to_css(v, font_size_px)
+        ),
+        // 单缘偏移对（单轴形）：折算同 axis 口径 + 缺省轴补 center（g47）。
         P::EdgeOffset(edge, offset) => {
-            format!("{} {}", bg_edge_to_str(edge), bg_position_axis_to_css(offset))
+            let axis = bg_position_axis_to_css(&P::EdgeOffset(*edge, offset.clone()), font_size_px);
+            if matches!(
+                edge,
+                BackgroundEdge::Left | BackgroundEdge::Right | BackgroundEdge::XStart | BackgroundEdge::XEnd
+            ) {
+                format!("{} 50%", axis)
+            } else {
+                format!("50% {}", axis)
+            }
         }
     }
 }
 
-/// 序列化 `<bg-position>` 单轴值（关键字→% / Length→px / Percent→%）。TwoValue/EdgeOffset 不应出现于轴位。
-fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
+/// 序列化 `<bg-position>` 单轴值（关键字→% / Length→px / Percent→% / 缘偏移对折算）。
+/// TwoValue 不应出现于轴位（防御空串）。
+fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue, font_size_px: f64) -> String {
     use BackgroundPositionComputedValue as P;
     match v {
         P::Center => "50%".to_string(),
@@ -3573,19 +4723,37 @@ fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
         P::Bottom => "100%".to_string(),
         P::Length(f) => format_num(*f as f64, "px"),
         P::Percent(f) => format_num(*f as f64, "%"),
-        P::Calc(_) => String::new(),
-        // 防御：轴位不应嵌套 TwoValue/EdgeOffset。
-        P::TwoValue(..) | P::EdgeOffset(..) => String::new(),
-    }
-}
-
-/// `<bg-position>` 边缘关键字（3/4 值 EdgeOffset 的 side）。
-fn bg_edge_to_str(e: &BackgroundEdge) -> &'static str {
-    match e {
-        BackgroundEdge::Left => "left",
-        BackgroundEdge::Right => "right",
-        BackgroundEdge::Top => "top",
-        BackgroundEdge::Bottom => "bottom",
+        // 刀 A1d：% calc canonical 串化（同 layer 臂口径——query 通道
+        // canonicalize 往返出混合形依赖此臂）。
+        P::Calc(expr) => calc_computed_to_css(expr, font_size_px, None).unwrap_or_default(),
+        // g47（object-position-computed / background-position-computed 语料双向钉，
+        // 两面共用同一 computed 折算模型）：缘偏移对折算——left/top 缘 = 偏移本身
+        //（`left 5%`→`5%`）；right/bottom 缘按 100−x 折算，百分比数值化
+        //（`right 30%`→`70%`、`bottom right 19%`→`81%`），px 长度保 calc 形，
+        // 负偏移翻转为加法形（`right -18px`→`calc(100% + 18px)`，css-backgrounds
+        // background-position-computed `top 17px right -18px` 案钉）。
+        // Length 在 apply 期已 resolve 为 Px，此处必为 px。
+        P::EdgeOffset(side, offset) => match side {
+            BackgroundEdge::Left
+            | BackgroundEdge::Top
+            // g47：逻辑缘防御臂（apply 期已物化为物理缘，正常不达）
+            | BackgroundEdge::XStart
+            | BackgroundEdge::YStart => bg_position_axis_to_css(offset, font_size_px),
+            BackgroundEdge::Right
+            | BackgroundEdge::Bottom
+            | BackgroundEdge::XEnd
+            | BackgroundEdge::YEnd => match offset.as_ref() {
+                P::Percent(p) => format_num((100.0 - *p) as f64, "%"),
+                P::Length(px) if *px < 0.0 => {
+                    format!("calc(100% + {})", format_num(-*px as f64, "px"))
+                }
+                P::Length(px) => format!("calc(100% - {})", format_num(*px as f64, "px")),
+                // FIXME: calc 偏移的缘折算（calc(100% - <calc>) 嵌套）无语料钉，暂空
+                _ => String::new(),
+            },
+        },
+        // 防御：轴位不应嵌套 TwoValue。
+        P::TwoValue(..) => String::new(),
     }
 }
 
@@ -3697,6 +4865,64 @@ fn background_origin_to_css(o: &BackgroundOriginComputedValue) -> String {
         BackgroundOriginComputedValue::ContentBox => "content-box",
     }
     .to_string()
+}
+
+/// mask-clip 层列表串化（css-masking-1 §5.4）：`<geometry-box> | no-clip`
+/// 逗号 join；空列表 → ''。
+fn mask_clip_to_css(layers: &[MaskClipComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|l| match l {
+            MaskClipComputedValue::Box(b) => mask_geometry_box_to_css(b).to_string(),
+            MaskClipComputedValue::NoClip => "no-clip".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// mask-origin 层列表串化（css-masking-1 §5.5）。
+fn mask_origin_to_css(layers: &[MaskGeometryBoxComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|b| mask_geometry_box_to_css(b).to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// masking 侧 `<geometry-box>` 串化（含 SVG 几何盒三形——CSS Shapes 版无）。
+fn mask_geometry_box_to_css(v: &MaskGeometryBoxComputedValue) -> &'static str {
+    match v {
+        MaskGeometryBoxComputedValue::BorderBox => "border-box",
+        MaskGeometryBoxComputedValue::PaddingBox => "padding-box",
+        MaskGeometryBoxComputedValue::ContentBox => "content-box",
+        MaskGeometryBoxComputedValue::MarginBox => "margin-box",
+        MaskGeometryBoxComputedValue::FillBox => "fill-box",
+        MaskGeometryBoxComputedValue::StrokeBox => "stroke-box",
+        MaskGeometryBoxComputedValue::ViewBox => "view-box",
+    }
+}
+
+/// mask-composite 层列表串化（css-masking-1 §5.6 `<compositing-operator>`）。
+fn mask_composite_to_css(layers: &[MaskCompositeComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|v| match v {
+            MaskCompositeComputedValue::Add => "add",
+            MaskCompositeComputedValue::Subtract => "subtract",
+            MaskCompositeComputedValue::Intersect => "intersect",
+            MaskCompositeComputedValue::Exclude => "exclude",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// align-content：CSS Box Alignment `<content-distribution>` 单值序列化。
@@ -3883,9 +5109,12 @@ fn line_break_to_css(l: &LineBreakValue) -> String {
 }
 
 /// vertical-align：CSS 行内/表格单元格垂直对齐单值序列化。初值 baseline。
-/// ZeroWeb enum 仅关键字（无 `<length>`/`<percentage>` 变体）——diverge：CSS 规范允许，Chromium 对
-/// `5px`/`50%` 返 used 值，ZeroWeb 无 length 变体存储故无法表达（解析层丢弃，本序列化如实反映枚举）。
-fn vertical_align_to_css(v: &VerticalAlignValue) -> String {
+/// g50 清偿既有 diverge（曾注「enum 仅关键字、length 形解析层丢弃」）：CSS 2.1
+/// propdef 允许 `<length-percentage>`（css2 visudet
+/// <https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align>），computed
+/// 按 [`length_to_css`] 口径——长度绝对化为 px（viewport 取 gcs_viewport_dims
+/// 真值）、百分比保持原形（对齐 Chromium oracle `50%`）。
+fn vertical_align_to_css(v: &VerticalAlignValue, font_size_px: f64) -> String {
     match v {
         VerticalAlignValue::Baseline => "baseline",
         VerticalAlignValue::Top => "top",
@@ -3895,6 +5124,7 @@ fn vertical_align_to_css(v: &VerticalAlignValue) -> String {
         VerticalAlignValue::TextBottom => "text-bottom",
         VerticalAlignValue::Sub => "sub",
         VerticalAlignValue::Super => "super",
+        VerticalAlignValue::Length(lv) => return length_to_css(lv, font_size_px),
     }
     .to_string()
 }
@@ -4156,7 +5386,7 @@ mod computed_calc_serialize_tests {
     //! 语料驱动：calc-mix-serialize.tentative / calc-mix-computed.tentative
     //! （挂账 43F 桶 Tier 1 面；width used %-形挂 layout 桶不在本面）。
 
-    use super::{calc_computed_to_css, length_to_css};
+    use super::{calc_computed_to_css, format_num, length_to_css};
     use zero_css_parser::values::{
         CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, LengthValue, TreeCountingFn, UnaryMathOp,
     };
@@ -4306,6 +5536,36 @@ mod computed_calc_serialize_tests {
     }
 
     #[test]
+    fn calc_static_ex_ch_leaves_resolve_to_px() {
+        // 桥层 CalcContext 静态度量兜底（ex 0.8em / ch 1em，Ahem 口径）——
+        // 未填则 Ex/Ch 静态叶 eval None → 整串 `''`。css-shapes computed 页
+        // `calc(70ex)`→`896px` 驱动（css-values-4 §5.1.1 ex=x-height、
+        // §5.1.2 ch='0' advance，Ahem 两度量分别 0.8em/1em）。
+        assert_eq!(
+            calc_computed_to_css(&CalcExpr::Length(LengthValue::Ex(70.0)), 16.0, None),
+            Some("896px".to_string())
+        );
+        assert_eq!(
+            length_to_css(&calc(add(CalcExpr::Length(LengthValue::Ch(10.0)), px(1.0))), 16.0),
+            "161px"
+        );
+    }
+
+    #[test]
+    fn format_num_six_significant_digits() {
+        // Chromium 6 位有效数字去尾零（CSSOM serialize decimal 精度口径）：
+        // css-shapes computed 页 `50pt`→`66.6667px`、`1pt`→`1.33333px`；
+        // 1234.5678 落 `1234.57px`；≤3 位小数形旧新同串（19.2/16/0.5）。
+        assert_eq!(format_num(66.666_666_66, "px"), "66.6667px");
+        assert_eq!(format_num(4.0 / 3.0, "px"), "1.33333px");
+        assert_eq!(format_num(1234.5678, "px"), "1234.57px");
+        assert_eq!(format_num(19.200_000_000_000_003, "px"), "19.2px");
+        assert_eq!(format_num(16.0, "px"), "16px");
+        assert_eq!(format_num(0.5, "%"), "0.5%");
+        assert_eq!(format_num(0.0, "px"), "0px");
+    }
+
+    #[test]
     fn abs_nonneg_terms_collapse_negative_bails() {
         // hypot(A) 单参形 parse 塌缩为 Abs（css-parser）：abs(0% + 772.333px)
         // → calc(0% + 772.333px)（hypot-pow-sqrt-computed 配对驱动）。
@@ -4326,5 +5586,619 @@ mod computed_calc_serialize_tests {
             ),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod g42_gradient_computed_serialize_tests {
+    //! css-images-4 §serializing-gradients computed 通道串化（g42，driving:
+    //! gradient-interpolation-method-computed 881F 面）。oracle 全部取自
+    //! tests/wpt-runner/wpt-data/css/css-images/parsing/gradient-interpolation-
+    //! method-computed.html 期望表：linear 角词序保真（`to right bottom` 不重排）、
+    //! radial size 单位归一（`40em`→`640px`）、位置模型化（`at right center`→
+    //! `at 100% 50%`、`at left 10px top 50em`→`at 10px 800px`）、`color()` 站保真、
+    //! 方法冗省（legacy 站 srgb / 预定义站 oklab）、xyz→xyz-d65 别名、shorter hue
+    //! 缺省省略。
+
+    use super::{conic_gradient_to_css, linear_gradient_to_css, radial_gradient_to_css};
+    use zero_css_parser::values::{ColorValue, GradientValue, parse_gradient};
+
+    /// 语料 driver：parse → 型别派发 → computed 串化（font_size 16px 基准，
+    /// element_color 占位——语料站无 currentcolor/相对色，不经该路径）。
+    fn computed_gradient(input: &str) -> String {
+        let ec = ColorValue::Rgba(0, 0, 0, 255);
+        match parse_gradient(input).expect("input must parse") {
+            GradientValue::Linear(g) => linear_gradient_to_css(&g, &ec, 16.0),
+            GradientValue::Radial(g) => radial_gradient_to_css(&g, &ec, 16.0),
+            GradientValue::Conic(g) => conic_gradient_to_css(&g, &ec, 16.0),
+        }
+    }
+
+    #[test]
+    fn g48_position_computed_keyword_folding() {
+        // g48：`at` 位置 computed 折算（oracle:
+        // gradient-position-computed.html）——1 值缺省轴补 center（`10%` →
+        // `10% 50%`）、裸垂直关键字轴向归位（`top` → `50% 0%`）、4 值缘偏移对
+        // right/bottom 100−x 折算（`right 30% top 60px` → `70% 60px`）、缺省
+        // center-center 省略 at 段。
+        assert_eq!(
+            computed_gradient("radial-gradient(at 10%, red, blue)"),
+            "radial-gradient(at 10% 50%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at top, red, blue)"),
+            "radial-gradient(at 50% 0%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at 40px top, red, blue)"),
+            "radial-gradient(at 40px 0%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at right 30% top 60px, red, blue)"),
+            "radial-gradient(at 70% 60px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at bottom 10% right 20%, red, blue)"),
+            "radial-gradient(at 80% 90%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at center, red, blue)"),
+            "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // conic 同面：双裸关键字换轴重排后折算（`top left` → `0% 0%`）。
+        assert_eq!(
+            computed_gradient("conic-gradient(at top left, red, blue)"),
+            "conic-gradient(at 0% 0%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(at bottom, red, blue)"),
+            "conic-gradient(at 50% 100%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn linear_head_passthrough_and_stops() {
+        // specifiers oracle：角度与角词序 as-written；legacy 站 computed → rgb()。
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg, red, blue)"),
+            "linear-gradient(30deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(to right bottom, red, blue)"),
+            "linear-gradient(to right bottom, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // `color()` 预定义站保真（css-color-4 §9.1 computed 不坍缩 legacy rgb）。
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg, color(srgb 1 0 0), blue)"),
+            "linear-gradient(30deg, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        // 角词序保真 + color() 站。
+        assert_eq!(
+            computed_gradient("linear-gradient(to right bottom, color(srgb 1 0 0), blue)"),
+            "linear-gradient(to right bottom, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn linear_method_attachment_and_redundancy() {
+        // 方法附着头后（`in` 后置空格附着）；lab 恒非缺省。
+        assert_eq!(
+            computed_gradient("linear-gradient(in lab, red, blue)"),
+            "linear-gradient(in lab, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg in oklab, red, blue)"),
+            "linear-gradient(30deg in oklab, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(to right bottom in srgb-linear, red, blue)"),
+            "linear-gradient(to right bottom in srgb-linear, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // 冗省：legacy 站 `in srgb` 省略 / 预定义站 `in oklab` 省略 / 预定义站
+        // `in srgb` 非缺省保留。
+        assert_eq!(
+            computed_gradient("linear-gradient(in srgb, red, blue)"),
+            "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg in srgb, red, blue)"),
+            "linear-gradient(30deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in oklab, color(srgb 1 0 0), blue)"),
+            "linear-gradient(color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in srgb, color(srgb 1 0 0), blue)"),
+            "linear-gradient(in srgb, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(30deg in oklab, color(srgb 1 0 0), blue)"),
+            "linear-gradient(30deg, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn linear_method_canonical_forms() {
+        // xyz 别名展开；hsl 模型身份保留；shorter hue 缺省省略 / longer 保留。
+        assert_eq!(
+            computed_gradient("linear-gradient(in xyz, red, blue)"),
+            "linear-gradient(in xyz-d65, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hsl, red, blue)"),
+            "linear-gradient(in hsl, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hsl shorter hue, red, blue)"),
+            "linear-gradient(in hsl, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hsl longer hue, red, blue)"),
+            "linear-gradient(in hsl longer hue, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("linear-gradient(in hwb increasing hue, red, blue)"),
+            "linear-gradient(in hwb increasing hue, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn radial_size_unit_resolution_and_position_model() {
+        // size-only 纯长度；ellipse 双长度省略形状 + em 归一（16px 基准 40em=640px）。
+        assert_eq!(
+            computed_gradient("radial-gradient(50px, red, blue)"),
+            "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(ellipse 50% 40em, red, blue)"),
+            "radial-gradient(50% 640px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // 位置模型化：关键字对 → %；4-token 缘偏移对关键字剥离 + em 归一。
+        assert_eq!(
+            computed_gradient("radial-gradient(at right center, color(srgb 1 0 0), blue)"),
+            "radial-gradient(at 100% 50%, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        // 方法附着与冗省（size-only 头 + method 组合）。
+        assert_eq!(
+            computed_gradient("radial-gradient(50px in lab, red, blue)"),
+            "radial-gradient(50px in lab, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(50px in srgb, red, blue)"),
+            "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(50px in oklab, color(srgb 1 0 0), blue)"),
+            "radial-gradient(50px, color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(in oklab, color(srgb 1 0 0), blue)"),
+            "radial-gradient(color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn conic_from_angle_and_position_pairs() {
+        // from 角度保真；4-token 位对模型化（关键字剥离 + em 归一）。
+        assert_eq!(
+            computed_gradient("conic-gradient(from 30deg, red, blue)"),
+            "conic-gradient(from 30deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(at left 10px top 50em, red, blue)"),
+            "conic-gradient(at 10px 800px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(from 30deg in srgb-linear, red, blue)"),
+            "conic-gradient(from 30deg in srgb-linear, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("conic-gradient(in oklab, color(srgb 1 0 0), blue)"),
+            "conic-gradient(color(srgb 1 0 0), rgb(0, 0, 255))"
+        );
+        // 无配置纯站形不发射缺省 from/at。
+        assert_eq!(
+            computed_gradient("conic-gradient(red, blue)"),
+            "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // 缺省形省略（R2751 getComputedStyle 口径）：`from 0deg` / `at center`。
+        assert_eq!(
+            computed_gradient("conic-gradient(from 0deg, red, blue)"),
+            "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(at center, red, blue)"),
+            "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+
+    #[test]
+    fn radial_legacy_config_forms_r2751_parity() {
+        // part04 getComputedStyle 既有 oracle 形（g42 computed 头 helper 与模型
+        // 路径同口径）：关键字 size 保形、circle 附非缺省位、circle 半径、
+        // farthest-side 关键字。
+        assert_eq!(
+            computed_gradient("radial-gradient(farthest-side, red, blue)"),
+            "radial-gradient(farthest-side, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        assert_eq!(
+            computed_gradient("radial-gradient(circle at 25% 40%, red, blue)"),
+            "radial-gradient(circle at 25% 40%, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+        // circle + 显式半径 → 半径（ending shape 由单长度隐含，`circle` 缺省省略，
+        // 与 parse 期 canonicalize_radial_head / part04 computed oracle 同口径）。
+        assert_eq!(
+            computed_gradient("radial-gradient(circle 50px, red, blue)"),
+            "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        );
+    }
+}
+
+#[cfg(test)]
+mod g47_position_computed_fold_tests {
+    //! `<position>` 缘偏移对 computed 折算（g47，driving: object-position-computed
+    //! 3F 面）。oracle 取自 tests/wpt-runner/wpt-data/css/css-images/parsing/
+    //! object-position-computed.html：双缘偏移对 right/bottom 缘按 100−x 折算
+    //!（% 数值化、px 保 calc 形），left/top 缘偏移原样。
+
+    use super::bg_position_layer_to_css;
+    use zero_css_parser::values::BackgroundEdge;
+    use zero_style_system::BackgroundPositionComputedValue as P;
+
+    fn two(h: P, v: P) -> P {
+        P::TwoValue(Box::new(h), Box::new(v))
+    }
+
+    #[test]
+    fn right_bottom_percent_folds_numerically() {
+        // `right 30% top 60px` → `70% 60px`；`right 20% bottom 10%` → `80% 90%`。
+        assert_eq!(
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(30.0))),
+                    P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(60.0))),
+                ),
+                16.0
+            ),
+            "70% 60px"
+        );
+        assert_eq!(
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Percent(20.0))),
+                    P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Percent(10.0))),
+                ),
+                16.0
+            ),
+            "80% 90%"
+        );
+    }
+
+    #[test]
+    fn right_bottom_px_folds_to_calc() {
+        // `right 20px bottom 10px` → `calc(100% - 20px) calc(100% - 10px)`。
+        assert_eq!(
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(20.0))),
+                    P::EdgeOffset(BackgroundEdge::Bottom, Box::new(P::Length(10.0))),
+                ),
+                16.0
+            ),
+            "calc(100% - 20px) calc(100% - 10px)"
+        );
+    }
+
+    #[test]
+    fn negative_offset_folds_to_addition_calc() {
+        // 负偏移翻转加法形：`top 17px right -18px` → `calc(100% + 18px) 17px`
+        //（css-backgrounds/parsing/background-position-computed 案钉，bg 面同
+        // 一折算模型）。
+        assert_eq!(
+            bg_position_layer_to_css(
+                &two(
+                    P::EdgeOffset(BackgroundEdge::Right, Box::new(P::Length(-18.0))),
+                    P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Length(17.0))),
+                ),
+                16.0
+            ),
+            "calc(100% + 18px) 17px"
+        );
+    }
+
+    #[test]
+    fn left_top_edges_keep_offset() {
+        // left/top 缘 = 偏移本身；单 EdgeOffset 顶层（单轴对形）同折算口径。
+        assert_eq!(
+            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Left, Box::new(P::Length(5.0))), 16.0),
+            "5px 50%"
+        );
+        assert_eq!(
+            bg_position_layer_to_css(&P::EdgeOffset(BackgroundEdge::Top, Box::new(P::Percent(25.0))), 16.0),
+            "50% 25%"
+        );
+    }
+}
+
+#[cfg(test)]
+mod g45_image_set_computed_serialize_tests {
+    //! image-set() computed 串化（g45，driving: image-set-computed 36F 面）。
+    //! oracle 全部取自 tests/wpt-runner/wpt-data/css/css-images/image-set/
+    //! image-set-computed.sub.html 期望表：分辨率全归一 dppx（`1x`→`1dppx`、
+    //! `48dpi`→`0.5dppx`、`2400dpcm`→`63.5dppx`——css-values-4 §6.4 ×2.54/96
+    //! 仓库既定约定）、url 引号化、字符串图像 url 化、渐变站 computed rgb()、
+    //! type() 重引号置后、`-webkit-` 别名 parse 期剥除。
+
+    use super::image_set_to_css;
+    use zero_css_parser::values::{BackgroundImageValue, ColorValue, parse_background_image};
+
+    fn computed_image_set(input: &str) -> String {
+        let ec = ColorValue::Rgba(0, 0, 0, 255);
+        match parse_background_image(input).expect("input must parse") {
+            BackgroundImageValue::ImageSet(is) => image_set_to_css(&is, &ec, 16.0),
+            _ => panic!("not image-set: {input}"),
+        }
+    }
+
+    #[test]
+    fn resolution_normalizes_to_dppx() {
+        // 1x/2x/3.5x → dppx 恒等值；dpi ÷96；dpcm ×2.54/96（语料 oracle 形）。
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) 1x)"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
+        );
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) 48dpi)"),
+            "image-set(url(\"http://{{host}}/example.png\") 0.5dppx)"
+        );
+        assert_eq!(
+            computed_image_set(
+                "image-set(url(http://{{host}}/example.png) 2400dpcm, 'http://{{host}}/example.png' 2x)"
+            ),
+            "image-set(url(\"http://{{host}}/example.png\") 63.5dppx, url(\"http://{{host}}/example.png\") 2dppx)"
+        );
+        assert_eq!(
+            computed_image_set(
+                "image-set('http://{{host}}/example.jpeg' 240dpi, url(http://{{host}}/example.png) 3.5x)"
+            ),
+            "image-set(url(\"http://{{host}}/example.jpeg\") 2.5dppx, url(\"http://{{host}}/example.png\") 3.5dppx)"
+        );
+        // 已 dppx 形恒等回放。
+        assert_eq!(
+            computed_image_set("image-set(url(\"http://{{host}}/example.png\") 1dppx)"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
+        );
+    }
+
+    #[test]
+    fn gradient_and_type_and_webkit_alias() {
+        // 渐变选项：computed 站 rgb() 展开（g42 computed 串化复用）。
+        assert_eq!(
+            computed_image_set("image-set(linear-gradient(black, white) 1x)"),
+            "image-set(linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255)) 1dppx)"
+        );
+        // type()：重引号双引号 + 置分辨率后。
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) 1x type('image/png'))"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx type(\"image/png\"))"
+        );
+        // `-webkit-` 别名：parse 期剥除，computed 恒标准形。
+        assert_eq!(
+            computed_image_set("-webkit-image-set(url(http://{{host}}/example.png) 1x)"),
+            "image-set(url(\"http://{{host}}/example.png\") 1dppx)"
+        );
+    }
+
+    #[test]
+    fn negative_calc_resolution_clamps_to_zero() {
+        // g46：负分辨率计算值钳 0（css-values-4 §6.4 无负 <resolution>；WPT
+        // image-set-computed oracle `calc(-1 * 1x)` → `0dppx`）。
+        assert_eq!(
+            computed_image_set("image-set(url(http://{{host}}/example.png) calc(-1 * 1x))"),
+            "image-set(url(\"http://{{host}}/example.png\") 0dppx)"
+        );
+        // canonical 存储形（`calc(-1dppx)`，g46 保族重写后回读可解析）同钳 0。
+        assert_eq!(
+            computed_image_set("image-set(url(\"http://{{host}}/example.png\") calc(-1dppx))"),
+            "image-set(url(\"http://{{host}}/example.png\") 0dppx)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod g46_content_image_set_tests {
+    //! content×image-set 支持门与 computed 串化（g46，driving: image-set-computed
+    //! content 2F）。oracle 取自 image-set-computed.sub.html:66。
+
+    use super::content_to_css;
+    use zero_css_parser::values::ColorValue;
+    use zero_css_parser::values::{parse_content, parse_extended_visual::parse_image_set_value};
+    use zero_style_system::property::types::ContentComputedValue;
+
+    #[test]
+    fn content_image_set_computed_serializes() {
+        let is = parse_image_set_value(
+            "image-set(url('http://{{host}}/example.png') 192dpi, linear-gradient(black, white) 1x)",
+        )
+        .expect("content image-set must parse");
+        let computed = content_to_css(
+            &ContentComputedValue::ImageSet(is),
+            &ColorValue::Rgba(0, 0, 0, 255),
+            16.0,
+        );
+        assert_eq!(
+            computed,
+            "image-set(url(\"http://{{host}}/example.png\") 2dppx, linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255)) 1dppx)"
+        );
+        // parse_content 与单实现点同源（支持门即此臂）。
+        assert!(matches!(
+            parse_content("image-set(url(a.png) 1x)"),
+            Some(zero_css_parser::values::ContentValue::ImageSet(_))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod rule_list_computed_tests {
+    //! css-gaps-1 computed 值域钉（wptfyi-css 刀 C）：静态 computed repeat 结构
+    //! 保形 + 列表项/row 单值 px 取整、column 单值小数保形。driving:
+    //! gap-decorations-{width,color}-computed 解析页（保形）+
+    //! rule-{width,color}-interpolation-{repeaters,multiple-values} 页字面量（取整）。
+
+    use super::{rule_color_list_to_gcs_computed, rule_width_list_to_gcs_computed};
+    use zero_css_parser::values::{ColorValue, parse_rule_color_list, parse_rule_width_list};
+
+    #[test]
+    fn repeat_preserves_structure_in_computed() {
+        let segs = parse_rule_width_list("10px, repeat(2, 20px, 20px), 20px").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, true),
+            "10px, repeat(2, 20px, 20px), 20px",
+            "有限 repeat 静态 computed 保形（解析页钉）"
+        );
+        let auto = parse_rule_width_list("repeat(auto, 20px, 20px)").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&auto, 16.0, false),
+            "repeat(auto, 20px, 20px)",
+            "auto 保形不展开"
+        );
+    }
+
+    #[test]
+    fn list_items_truncate_px() {
+        let segs = parse_rule_width_list("7.5px, 22.5px, 30px").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, false),
+            "7px, 22px, 30px",
+            "列表项 px 取整"
+        );
+    }
+
+    #[test]
+    fn single_value_row_truncates_column_preserves() {
+        let segs = parse_rule_width_list("22.5px").expect("parse");
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, true),
+            "22px",
+            "row 单值取整"
+        );
+        assert_eq!(
+            rule_width_list_to_gcs_computed(&segs, 16.0, false),
+            "22.5px",
+            "column 单值小数保形（multicol 铁锚）"
+        );
+    }
+
+    #[test]
+    fn color_repeat_preserves_structure() {
+        let segs = parse_rule_color_list("red, repeat(2, black, black), blue").expect("parse");
+        assert_eq!(
+            rule_color_list_to_gcs_computed(&segs, &ColorValue::Rgba(0, 0, 0, 255)),
+            "rgb(255, 0, 0), repeat(2, rgb(0, 0, 0), rgb(0, 0, 0)), rgb(0, 0, 255)",
+            "静态 computed repeat 保形（解析页钉）"
+        );
+    }
+}
+
+#[cfg(test)]
+mod rule_inset_gcs_serialization_tests {
+    //! wptfyi-css css-gaps 刀 D（css-gaps-1 §inset）：rule-inset 槽 gCS computed
+    //! 串化与简写重组钉面（语料 rule-inset-computed / valid 页 oracle 形）。
+
+    use super::{rule_inset_component_to_gcs_computed, rule_inset_pair_recomb_to_gcs, rule_inset_quad_recomb_to_gcs};
+    use zero_css_parser::values::{LengthValue, RuleInsetComponent};
+
+    #[test]
+    fn component_computed_resolves_relative_units() {
+        // computed 页钉（font 40px）：em 解析 px、% 保形、calc 纯 px 求值、
+        // overlap-join 保关键字。
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::Length(LengthValue::Em(0.5)), 40.0),
+            "20px"
+        );
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::Length(LengthValue::Percentage(5.0)), 16.0),
+            "5%"
+        );
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::Length(LengthValue::Px(10.0)), 16.0),
+            "10px"
+        );
+        assert_eq!(
+            rule_inset_component_to_gcs_computed(&RuleInsetComponent::OverlapJoin, 16.0),
+            "overlap-join"
+        );
+    }
+
+    #[test]
+    fn quad_recomb_collapses_all_equal_and_keeps_full_form() {
+        let px = |v: f64| RuleInsetComponent::Length(LengthValue::Px(v));
+        // 全等塌缩（valid 页 `-20px` → `-20px`、全 keyword → `overlap-join`）。
+        let oj = RuleInsetComponent::OverlapJoin;
+        assert_eq!(
+            rule_inset_quad_recomb_to_gcs(&px(-20.0), &px(-20.0), &px(-20.0), &px(-20.0), 16.0),
+            "-20px"
+        );
+        assert_eq!(rule_inset_quad_recomb_to_gcs(&oj, &oj, &oj, &oj, 16.0), "overlap-join");
+        // 侧内等值不折叠（valid 页 `10px / 20px` → `10px 10px / 20px 20px`）。
+        assert_eq!(
+            rule_inset_quad_recomb_to_gcs(&px(10.0), &px(10.0), &px(20.0), &px(20.0), 16.0),
+            "10px 10px / 20px 20px"
+        );
+        // 全形（`10px 20px` → `10px 20px / 10px 20px`）。
+        assert_eq!(
+            rule_inset_quad_recomb_to_gcs(&px(10.0), &px(20.0), &px(10.0), &px(20.0), 16.0),
+            "10px 20px / 10px 20px"
+        );
+    }
+
+    #[test]
+    fn pair_recomb_collapses_equal_pair() {
+        let px = |v: f64| RuleInsetComponent::Length(LengthValue::Px(v));
+        assert_eq!(rule_inset_pair_recomb_to_gcs(&px(10.0), &px(10.0), 16.0), "10px");
+        assert_eq!(rule_inset_pair_recomb_to_gcs(&px(10.0), &px(20.0), 16.0), "10px 20px");
+    }
+
+    #[test]
+    fn rule_inset_full_shorthand_cross_axis_equality() {
+        // bidirectional-shorthands 页钉（target1/target2）：全值简写 `rule-inset`
+        // gCS 跨轴等值模型——column/row 四槽重组全等 → 该值（全等塌缩保形），
+        // col≠row → 空串（不能从 longhand 重组）。
+        use super::serialize_computed_property;
+        use zero_style_system::property::ComputedStyle;
+        let px = |v: f64| RuleInsetComponent::Length(LengthValue::Px(v));
+        let mut st = ComputedStyle::default();
+        // target1：col = row = (10,5,10,5) → `10px 5px / 10px 5px`。
+        st.column_rule_inset_cap_start = px(10.0);
+        st.column_rule_inset_cap_end = px(5.0);
+        st.column_rule_inset_junction_start = px(10.0);
+        st.column_rule_inset_junction_end = px(5.0);
+        st.row_rule_inset_cap_start = px(10.0);
+        st.row_rule_inset_cap_end = px(5.0);
+        st.row_rule_inset_junction_start = px(10.0);
+        st.row_rule_inset_junction_end = px(5.0);
+        assert_eq!(serialize_computed_property(&st, "rule-inset"), "10px 5px / 10px 5px");
+        // target2：col=(5,15,25,35) ≠ row=(10,20,30,40) → `''`。
+        st.column_rule_inset_cap_start = px(5.0);
+        st.column_rule_inset_cap_end = px(15.0);
+        st.column_rule_inset_junction_start = px(25.0);
+        st.column_rule_inset_junction_end = px(35.0);
+        st.row_rule_inset_cap_start = px(10.0);
+        st.row_rule_inset_cap_end = px(20.0);
+        st.row_rule_inset_junction_start = px(30.0);
+        st.row_rule_inset_junction_end = px(40.0);
+        assert_eq!(serialize_computed_property(&st, "rule-inset"), "");
+        // 全 8 槽等值 → 单值塌缩。
+        let mut st = ComputedStyle::default();
+        st.column_rule_inset_cap_start = px(10.0);
+        st.column_rule_inset_cap_end = px(10.0);
+        st.column_rule_inset_junction_start = px(10.0);
+        st.column_rule_inset_junction_end = px(10.0);
+        st.row_rule_inset_cap_start = px(10.0);
+        st.row_rule_inset_cap_end = px(10.0);
+        st.row_rule_inset_junction_start = px(10.0);
+        st.row_rule_inset_junction_end = px(10.0);
+        assert_eq!(serialize_computed_property(&st, "rule-inset"), "10px");
     }
 }

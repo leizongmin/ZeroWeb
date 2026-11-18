@@ -283,6 +283,9 @@ fn flood_color_attrs(color: &ColorValue) -> Option<String> {
             let c = crate::paint::color::hsla_to_rgba(*h, *s, *l, *a);
             (c.r, c.g, c.b, c.a)
         }
+        // color() 预定义空间：paint 回退 sRGB u8（R2288；未知空间 parse 期白名单
+        // 已拒，None 不可达，防御性回落不透明黑）。
+        ColorValue::ColorFunction(f) => f.to_srgb_rgba().unwrap_or((0, 0, 0, 255u8)),
         ColorValue::CurrentColor | ColorValue::Mix(_) | ColorValue::RelativeColor(_) | ColorValue::ContrastColor(_) => {
             return None;
         }

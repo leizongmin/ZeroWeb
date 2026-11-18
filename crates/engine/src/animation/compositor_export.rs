@@ -601,13 +601,18 @@ mod tests {
     }
 
     #[test]
-    fn from_only_opacity_is_rejected() {
-        // 100% 边界帧缺 opacity（resolve_implicit_boundaries 只补 transform/individual）：
-        // 引擎 to 侧驱动零输出 → 导出拒绝（冻结同视觉）。
+    fn from_only_opacity_fills_underlying_and_exports() {
+        // R5018 通用化刀：100% 边界帧缺 opacity 经通用 gCS 串化臂补 underlying
+        //（默认 1）——css-animations-1 §keyframes neutral key 语义，插值全程
+        // 有定义 → 双端点 [0.0, 1.0] 正常导出（真淡入，替代缺口期冻结保守形）。
         let clock = registry_clock(vec![("fade", vec![(0.0, &[("opacity", "0.0")]), (1.0, &[])])]);
         let style = style_with_animation("fade", 2.0, 0.0);
         let (set, _) = export_one_elem(&clock, &style);
-        assert!(set.declarations.is_empty());
+        assert_eq!(set.declarations.len(), 1);
+        let kf = &set.declarations[0].keyframes;
+        assert_eq!(kf.len(), 2);
+        assert_eq!(kf[0].value, ExportedAnimationValue::Opacity(0.0));
+        assert_eq!(kf[1].value, ExportedAnimationValue::Opacity(1.0));
     }
 
     #[test]

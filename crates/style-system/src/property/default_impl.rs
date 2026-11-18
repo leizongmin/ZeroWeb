@@ -14,6 +14,9 @@ impl Default for ComputedStyle {
             custom_properties: ComputedStyle::empty_custom_properties(),
             // CSS Values 5 §9.3 random % 叶保留形（计算值表；缺省空）。
             random_computed: std::collections::HashMap::new(),
+            // 刀 I important-tier：级联 !important 胜出属性集（缺省空集；compute
+            // 期自 CascadeOutcome 派生注入）。
+            important_won_props: Default::default(),
             // 盒模型
             display: DisplayValue::Inline,
             position: PositionValue::Static,
@@ -97,6 +100,7 @@ impl Default for ComputedStyle {
             // 字体
             font_family: vec![],
             font_size: LengthValue::Px(16.0),
+            parent_font_size: None,
             font_weight: FontWeightValue::Normal,
             font_style: FontStyleValue::Normal,
             line_height: LineHeightValue::Normal,
@@ -193,6 +197,7 @@ impl Default for ComputedStyle {
             anchor_inset_right: None,
             anchor_inset_bottom: None,
             anchor_inset_left: None,
+            anchor_size_slots: None,
 
             // Overflow
             overflow_x: OverflowValue::Visible,
@@ -219,6 +224,14 @@ impl Default for ComputedStyle {
             individual_translate: None,
             individual_rotate: None,
             individual_scale: None,
+            // CSS Motion Path §offset 簇初始值（css-motion-1，非继承）：path none、
+            // distance 0、rotate auto、anchor auto、position normal——
+            // apply_initial_value 落实际初始。
+            offset_path: None,
+            offset_distance: None,
+            offset_rotate: None,
+            offset_anchor: None,
+            offset_position: None,
             // CSS Transforms 1 §transform-box：初始值 view-box（SVG 元素参考最近 viewport；
             // CSS 盒上 view-box 别名 border-box——由消费侧解释，存储保原值）。
             transform_box: TransformBoxValue::ViewBox,
@@ -239,6 +252,7 @@ impl Default for ComputedStyle {
             transition_duration: vec![],
             transition_timing_function: vec![],
             transition_delay: vec![],
+            transition_behavior: vec![],
 
             // Animations
             animation_name: vec![],
@@ -294,11 +308,53 @@ impl Default for ComputedStyle {
             break_after: BreakValue::Auto,
 
             // Column Rule
-            column_rule_width: ColumnRuleWidthComputedValue::Medium,
-            column_rule_style: ColumnRuleStyleComputedValue::None,
+            // css-gaps-1 列表模型：纯值 = 单段列表（width 初值 medium、style none）。
+            column_rule_width: vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )],
+            // css-gaps-1 §column-row-rule-width：row-rule-width 初值 medium 同 column。
+            row_rule_width: vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )],
+            column_rule_style: vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )],
+            // css-gaps-1 §column-row-rule-style：row-rule-style 初值 none 同 column。
+            row_rule_style: vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )],
             // CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
-            // paint 层（text_multicol）经 resolve_color_current(color, &style.color) 解析为元素自身 color。
-            column_rule_color: ColorValue::CurrentColor,
+            // css-gaps-1 列表模型下纯色 = 单段列表。paint 层（text_multicol）经
+            // resolve_color_current 解析为元素自身 color。
+            column_rule_color: vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )],
+            // css-gaps-1 §column-row-rule-color：row-rule-color 初始值 = currentcolor 同 column。
+            row_rule_color: vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )],
+
+            // Rule Inset（css-gaps-1 §inset）：8 longhand 槽初值非继承。cap 槽初值
+            // 0px；junction 槽初值 0%（语料 interpolation 页 junction initial→-40%
+            // 期望 % 线性 lerp 自 0%、cap initial→10px 期望 px 线性自 0px——
+            // Chromium oracle，css-gaps-1 §inset initial 表以活体语料为准）。
+            // https://drafts.csswg.org/css-gaps-1/#inset
+            column_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            column_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            column_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Percentage(0.0),
+            ),
+            column_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Percentage(0.0),
+            ),
+            row_rule_inset_cap_start: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            row_rule_inset_cap_end: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            row_rule_inset_junction_start: zero_css_parser::values::RuleInsetComponent::Length(
+                LengthValue::Percentage(0.0),
+            ),
+            row_rule_inset_junction_end: zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Percentage(
+                0.0,
+            )),
 
             // Contain
             contain: ContainComputedValue::None,
@@ -410,12 +466,54 @@ impl Default for ComputedStyle {
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             },
 
+            // Mask Border（css-masking-1 §3.4–3.9 五长手；文法与 border-image 同构
+            // 复用同一 computed 类型，初值差异：slice `0`（§3.5，border-image 为 100%）、
+            // width `auto`（§3.6，border-image 为 1）。
+            mask_border_source: BorderImageSourceComputedValue::None,
+            mask_border_slice: BorderImageSliceComputedValue {
+                top: BorderImageSliceComputedComponent::Number(0.0),
+                right: BorderImageSliceComputedComponent::Number(0.0),
+                bottom: BorderImageSliceComputedComponent::Number(0.0),
+                left: BorderImageSliceComputedComponent::Number(0.0),
+                fill: false,
+            },
+            mask_border_width: BorderImageWidthComputedValue {
+                top: BorderImageWidthComputedComponent::Auto,
+                right: BorderImageWidthComputedComponent::Auto,
+                bottom: BorderImageWidthComputedComponent::Auto,
+                left: BorderImageWidthComputedComponent::Auto,
+            },
+            mask_border_repeat: BorderImageRepeatComputedValue {
+                horizontal: BorderImageRepeatComputedMode::Stretch,
+                vertical: BorderImageRepeatComputedMode::Stretch,
+            },
+            mask_border_outset: BorderImageOutsetComputedValue {
+                top: BorderImageOutsetComputedComponent::Number(0.0),
+                right: BorderImageOutsetComputedComponent::Number(0.0),
+                bottom: BorderImageOutsetComputedComponent::Number(0.0),
+                left: BorderImageOutsetComputedComponent::Number(0.0),
+            },
+
             text_shadow: Vec::new(),
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
+            shape_outside: ShapeOutsideComputedValue::None,
+            shape_margin: LengthValue::Px(0.0),
+            shape_image_threshold: 0.0,
             clip: ClipRectComputedValue::Auto,
             mask_image: vec![],
             mask_mode: MaskModeComputedValue::MatchSource,
+            // css-masking-1 §5.3–5.6：position 0% 0%、size auto、repeat repeat、
+            // clip/origin border-box、composite add。
+            mask_position: vec![BackgroundPositionComputedValue::TwoValue(
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+            )],
+            mask_size: vec![BackgroundSizeComputedValue::Auto],
+            mask_repeat: vec![BackgroundRepeatComputedValue::Repeat],
+            mask_clip: vec![MaskClipComputedValue::Box(MaskGeometryBoxComputedValue::BorderBox)],
+            mask_origin: vec![MaskGeometryBoxComputedValue::BorderBox],
+            mask_composite: vec![MaskCompositeComputedValue::Add],
             before_pseudo: None,
             after_pseudo: None,
             marker_pseudo: None,

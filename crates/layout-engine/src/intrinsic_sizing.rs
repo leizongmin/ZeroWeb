@@ -1516,6 +1516,30 @@ fn clamp_box_max_contribution(
     w
 }
 
+/// R5517（CSS2 §10.4）：tentative used width（border-box）过自身 definite min/max-width
+/// 交叉约束——先 max cap 后 min floor（§10.4 序：min-width 胳 max-width，冲突时 min 胜）。
+/// `frame` = 水平 padding+border；box-sizing:border-box 时 min/max 本身即 border-box 值
+///（不加 frame）。max cap 只认 definite 长度——Calc 混合式含循环 % 不 cap（同
+/// [`clamp_box_max_contribution`] R5368 口径）；min 经 [`resolve_min_width_intrinsic_floor`]
+///（% / content 关键字 None 跳过，calc 取 px 部分）。纯文本 float 收缩臂消费
+///（float_positioning `shrink_pure_text_floats`）；block 系内在测量臂经 R5368 已内嵌
+/// min 地板/max cap（block_intrinsic_width_ex 1990 区），不走本函数。
+pub(crate) fn clamp_used_width_cross_constraints(style: &ComputedStyle, frame: f32, raw: f32) -> f32 {
+    let border_box_sizing = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+    let mut w = raw;
+    if !matches!(style.max_width, LengthValue::Calc(_))
+        && let Some(cap) = resolve_intrinsic_real_length(&style.max_width, style)
+    {
+        let cap = if border_box_sizing { cap } else { cap + frame };
+        w = w.min(cap.max(0.0));
+    }
+    if let Some(floor) = resolve_min_width_intrinsic_floor(&style.min_width, style) {
+        let floor = if border_box_sizing { floor } else { floor + frame };
+        w = w.max(floor.max(0.0));
+    }
+    w
+}
+
 /// `include_own_width = false`（R5037 content-only 口径）时不把自身 definite CSS 宽计入
 /// intrinsic（`own_explicit` 的 width 臂置 0）——containment CIS 替代与 aspect-ratio
 /// transferred 仍保留（同属内容基内在尺寸语义）。

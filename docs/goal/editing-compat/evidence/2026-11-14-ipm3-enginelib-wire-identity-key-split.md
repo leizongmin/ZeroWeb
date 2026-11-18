@@ -1,0 +1,149 @@
+# ip M3-A 门禁批 enginelib 五新红归因 ＋ 线章/身份章分离修复（2026-11-14）
+
+## 背景与批链谱系
+
+M3-A 刀体 266b45602（part01 `_zwCeParagraphMutate` host 边界臂 A 族分支 + part04 R125
+child 摘挂 fresh 章发射 + appendChild move-in 臂同类修 + part114 五形钉测）13:25:33 落树后，
+门禁批链 ipm3-gate-v1→v6 于 13:54–15:47 运行（写者会话 15:25 rate-limit 终止，批脱离会话
+存活完走）：
+
+| 批 | 终态 |
+|---|---|
+| v1 | L1 ip 绿（F2P=22 全 br）→ ABORT DOMAIN-DRIFT（在飞窗他流 pull 拉入非本域提交） |
+| v2 | 脚本 heredoc 引号缺陷 bash 解析崩（脚本缺陷非行为面） |
+| v4 | L0+L1 绿 → 发射会话死亡批 bash 被杀；ab 腿孤儿完走 10092/0/0 |
+| v5 | L0+L1 salvage 绿 → 运行中脚本被改写风险主动 TERM 止损（quarantined-hijack-editshift） |
+| tail-1/2/3 | ab 三次完走（两次 10092/0/0、一次预算沿 1T 伪影）、mt 1559-1711s 完走 judge 四零 |
+| v6 | L1 salvage / L2 ab / L3 mt 全绿 → **L4 enginelib ABORT：3944P/12F vs 基线 7** |
+
+v6 终态：ip salvage F 99→77 F2P=22（br=22，A 族恰值预期）；ab 10092/0/0；mt rows 10092
+F2P=0/P2F=0/po_fail=0/lost=0 残红恰 2（X37）；enginelib 五新红：
+
+- `named_access_subtree_descendant_unregister_s40`（part38）
+- `show_modal_fully_active_gate_r5250`（part79）
+- `t68_remove_child_fused_empty_serialization_case_c`（part114_t68，PR #302 新钉）
+- `test_media_pause_on_removal_m3b7`（part09）
+- `test_media_play_pending_and_removal_abort_m3x14`（part09）
+
+## 归因：A/B bisect 定谳 M3-A 刀域
+
+- 父树 `36de32a4d`（= e3b19fc44 代码态，R5530 仅 docs）全 lib：**3944P/7F，名册恰基线**
+  （e1-enginelib-failures-now.txt 七红逐名恒一）。
+- HEAD `266b45602`（v6 批域）：3944P/12F（+5）。
+- 6c8457a36..266b45602 引窗内 engine 域提交含 t68 PR #302 链、Selection 三笔、B1 切片 1、
+  M3-A；父树已含前四者 → **五新红全部归 M3-A**。
+
+统一签名：**移除发生后，既有 JS 代理仍判「在树」**——contains=true（t68）、named access
+stale 可解析（s40）、detached showModal 不抛（r5250）、media pause-on-removal tick 不落
+（m3b7/m3x14，`_rmStop` 的 `_zwIsRemovedNode(child)` 守卫 bail）。
+
+## 根因：TEMP 探针取证（part115_tmp_m3a_probe，判读后删除）
+
+t68c 场景（`<div id=t68c><p class=oldc>x</p></div>`，`w.removeChild(c)`）修复前现场：
+
+```
+__pre_c_sel  = "p.oldc"                     # 缓章是查询原串复合形，非结构路径！
+__removed_sels = "#t68c > p:nth-child(1)"   # M3-A 标记落 fresh 章键
+__post_c_sel = "p.oldc"                     # 写回失败：accessor 章赋值+defineProperty 双静默 no-op
+__contains   = "true"                       # 旧键不在 removed 表 → parentNode 不短路 → 全断
+Remove { selector: "#t68c > p:nth-child(1)" }  # engine wire 已携 fresh 章
+```
+
+三点定谳：
+
+1. `child.__zwSelector` 是**该代理被获取时的查询原串**（getElementById→`#w40`、
+   querySelector→`p.oldc`、物化→结构路径章），R125 旧实现从不改写它；
+2. M3-A 首版的 fresh 章写回（赋值 + defineProperty 兜底）对 parse 物化 accessor 章
+   **双静默 no-op**（「R191 同款教训」兜底自身同样失效——章属性 non-configurable）；
+3. 于是 `_zwMarkRemoved` 记 fresh 键，而全部既有代理（含预存变量、闭包捕获）持旧键——
+   `_zwIsRemovedNode`/`_zwIsRemoved`/parentNode 短路/showModal fully-active 门/media
+   pause tick 的 removed 判定**全数失配**。engine 侧 fresh 线章不受影响（corpus F2P=22
+   的真修复面是 wire 键，不是写回）。
+
+## 修复：线章/身份章分离（part04.js 两臂）
+
+- **engine wire 键 = fresh 章**（保持 M3-A corpus 语义）：R125 摘挂 `__zw_remove(_r125Wire)`、
+  move-in 臂 `__zw_remove(_mvWire)`；
+- **身份键 = 旧章不改写**：删除 `child.__zwSelector` 写回与 defineProperty 兜底，
+  `_zwMarkRemoved(_r125Sel)` 保持旧键（M3-A 前口径；旧位置章同批占位毒化由 pa2 apply
+  代际清表兜底——M3-A 前既有风险面，语料长期绿）；
+- **move-in append 配对**：新函数顶槽 `_mvWireSel` 传递 fresh 章到
+  `__zw_append_child_handle_sel(handle, _mvWireSel || String(child.__zwSelector))`——
+  Remove/AppendChildByHandleSel 同键才可复用 detached_stash NodeId（双现缺陷防线），
+  函数顶声明保证每调用重置防跨调用残留串键。
+
+## 验证
+
+- 五新红单测全绿（--exact 五名 5 passed）；
+- part114 M3-A 五形钉测 5/5 绿（corpus 增益面不回退）；
+- 全 lib `cargo test -p zero-engine --lib` **3949P/7F** 名册恰基线；
+- fmt --all 零 diff；
+- corpus 四腿（ip/ab/mt/enginelib）重跑 = 门禁批链 v1 → comb-r1（下节）。
+
+## 门禁批链终局（v1 → comb-r1，2026-11-14）
+
+### v1（@94883fbbe，bin 808f8ccba，16:41 发射）
+
+- L1 ip fresh **全绿**：rows 7195→7195，F 99→77，F2P=22（br=22，A 族恰值）、P2F=0、
+  lost=0、newF=0（wall 875s）——修复的 corpus 面定谳；
+- L2 ab **ABORT（T=1 环境伪影）**：P=10067/0F、wall 303s，丢失 25 行=基线序位
+  #10067-#10091 恰尾段（post 末行=序位 #10066）——300s 页预算耗尽尾截，非行为红
+  （10067 行全 Pass 零 Fail 零翻键）。同签名在两代二进制独立复现（本批 + v2 残跑
+  74321866 P=10059/T=1 wall 305s）+ 旧二进制 c4de0e4f 先例（挂账「丢行率账」累计
+  5 例）→ 环境归因（并发租户负载 × 页预算沿）定谳；
+- v2 脚本被同 session 并行轮竞写焚毁（bash 读偏移，v5 同款），换名 comb-r1 重射。
+
+### comb-r1（@330ba2b40 s433 组合态，bin 74321866，17:13 发射，18:18:59 ALL-DONE）
+
+| 腿 | 结果 |
+|---|---|
+| L0 | 构建 OK，修复特征串 8/8 |
+| L1 ip fresh | rows 7195→7195，F 99→77，**F2P=22（br=22）** P2F/lost/newF=0（wall 944s） |
+| L2 ab fresh | **10092/0/0 严格过**（wall 293s，load_wait 门防伪影生效） |
+| L3 mt fresh | rows 10092→10092，F 2→2，F2P=0/P2F=0/po_fail=0/lost=0，residF 恰 2（X37 除名维持）（wall 1713s） |
+| L4 enginelib | **3949P/7F 名册恰基线**（M3-A 五新红保持翻绿，新增/删除面均零） |
+
+组合态=inbound s433（4e3eea8f3 FORM named-first trap 面，改 part03/04/05，与本修复
+part04 臂区域不相交）落地后的真态。跨流独立确认双重：
+
+1. html-semantics s433 evidence 组合态 enginelib 复跑 1561P/7F——M3-A 五新红全数被
+   94883fbbe 清偿；
+2. 渲染流 R5533（3228154e9）组合态 corpus A/B 682F 持平、六翻动案 solo×3 全绿。
+
+**M3-A 刀正式收口。** 下一簇：M3-B/C 族选面（census 13 族档：C4 块边界垫缺 17 ＞
+B 拆点 nbsp 归一 15 ＞ C2/F 壳携 14 ＞ C1 序反转 8 ＞ 零散 15 ＞ qV 8）。
+
+## 门禁批 fix-gate-v1 终态（2026-11-14 16:41–17:01，@94883fbbe bin 808f8ccba）
+
+- **L1 ip 腿 fresh 全绿——修复 corpus 面定谳**：rows 7195 恒一，F 99→77，
+  **F2P=22（br=22，other=0，恰 A 族）**，P2P/P2F=0、lost=0、newF=0，residF=77，
+  wall 875s 零 Timeout。
+- **L2 ab 腿 T=1 ABORT（伪影归因，非修复回归）**：尾页 case ~10068/10092 处
+  300s 页预算耗尽截断，前 **10067 案全 Pass 零 Fail**（wall 303s）。归因：兄弟流
+  ZeroWeb-2 wptfyi-css g36 anchor A/B 并发租户恰在窗口内落盘（16:58 mtime，
+  loadavg 5min 3.20），其 runner 二进制名不在本批 ensure_solo watch 名单
+  （zero-wpt-runner/test-guard/cargo/rustc）→ 隐形重租户 × 跨页累积慢化 = spin2
+  时代已定谳的页预算尾截签名；同二进制 ip 7195 行零 T + enginelib 全绿佐证。
+- **跨流独立确认（enginelib 面）**：入站 s433（FORM named-first trap 面，
+  4e3eea8f3）push 时 pull --rebase 带入本修复，对方组合态复跑 **1561P/7F，
+  M3-A 五新红（s40/r5250/t68-case_c/m3b7/m3x14）全数清偿**
+  （[对方 evidence §241](../html-semantics-compat/evidence/2026-11-14-m2s433-form-named-first-override-builtins.md)）。
+- 后续：s433 改 shim part03/04/05 → corpus 四腿于组合态新锚 fresh 重射
+  batch-ipm3-fix-gate-v2（每 corpus 腿前 load-wait 门防伪影复现）。
+
+## fix-gate-v2 竞态焚毁 ＋ 二次 ab 尾截（2026-11-14 17:04–17:09）
+
+- **同名脚本竞态（Rally 同 session 并发轮）**：`batch-ipm3-fix-gate-v2.sh` 文件名
+  被同 session 的并行轮先建（salvage 版，锚 94883fbbe/bin 808f——写于 s433 入站前，
+  锚已过期）；本流 Write 覆盖同名文件后 launch，bash 首读拿到**对方字节**
+  （log 首行 pid=545290 却打印 salvage 锚＝读偏移错位执行实证，v5 同款风险）。
+  处置：545290 TERM 止损，验尸无孤儿腿；文件名焚毁，重发射换名
+  `batch-ipm3-fixgate-comb-r1`，launch 命令内嵌 md5 原子校验防再撞。
+- **二次 ab 尾截 T=1（混合二进制残跑，数据仅作签名参考）**：545290 以 salvage
+  字节跑到 L2 ab，实际执行的 runner 已是组合态二进制 74321866（target/ 共享，
+  本流预构建产物）——`ab rc=2 P=10059 F=0 T=1 wall=305s`，与 v1（bin 808f，
+  P=10067/0F/303s）**两个二进制独立复现同一尾页 300s 预算截断签名**，
+  且两次均在 loadavg ≥3 并发租户窗口内（本次 load 7.78）→ 环境伪影归因强化；
+  该腿数据不作门禁证据。
+- 协调信道：`batch-ipm3-fix-gate-v2.log`（对方字节进度＋二次尾截计数）留档
+  不删，供后续轮判读碰撞时序。

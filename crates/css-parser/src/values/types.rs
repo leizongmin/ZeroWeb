@@ -6,7 +6,7 @@
 use super::calc_mix::{
     CalcMixItem, CalcMixWeight, eval_mix, expr_has_percentage_leaf, literal_percentage, mix_math_type,
 };
-use super::parse_extended::{CalcMathType, calc_expr_is_number};
+use super::parse_extended::{CalcMathType, calc_expr_is_number, calc_expr_math_type};
 use super::serialize_math::span_has_top_level_angle_unit;
 
 /// CSS 长度值。
@@ -157,6 +157,35 @@ pub enum ColorValue {
     /// ——实参可为 currentColor；结果恒为不透明白或黑，对比算法 UA-defined，本实现取
     /// WCAG 相对亮度对比比较高者）。driving: css-color contrast-color-001。
     ContrastColor(Box<ColorValue>),
+    /// CSS Color 4 `color(<space> <c0> <c1> <c2> [ / <alpha>])` —— **未解析**保留
+    /// 预定义色彩空间与分量（computed 序列化保真 `color(srgb 1 0 0)`，css-color-4
+    /// §9.1：computed 值不坍缩 legacy rgb）；paint 时经 [`ColorFunctionSpec::to_srgb_rgba`]
+    /// 回退。空间名 parse 期 canonical（xyz→xyz-d65 别名展开，css-color-4 §9.1）。
+    /// driving: css-images gradient-interpolation-method-computed（g42）。
+    ColorFunction(Box<ColorFunctionSpec>),
+}
+
+/// `color()` 预定义色彩空间函数规格（CSS Color 4 §9）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorFunctionSpec {
+    /// canonical 空间名：`srgb` / `srgb-linear` / `display-p3` / `a98-rgb` /
+    /// `prophoto-rgb` / `rec2020` / `xyz-d50` / `xyz-d65`（`xyz` 输入已展开）。
+    pub space: Box<str>,
+    /// 三分量（number 或 percent→/100 归一、`none`→0）。
+    pub comps: [f64; 3],
+    /// alpha（0-1，缺省 1）。
+    pub alpha: f64,
+}
+
+impl ColorFunctionSpec {
+    /// 回退转换 gamma-encoded sRGB u8（R2288 无色彩管理管线口径；未知空间不可达
+    /// ——parse 期白名单校验）。分量按各空间域 clamp 后交给既有转换器。
+    pub fn to_srgb_rgba(&self) -> Option<(u8, u8, u8, u8)> {
+        let (r, g, b) =
+            super::color_math::convert_predefined_to_srgb(&self.space, self.comps[0], self.comps[1], self.comps[2])?;
+        let a = (self.alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
+        Some((r, g, b, a))
+    }
 }
 
 /// `color-mix()` 规范（CSS Color 4）。
@@ -885,6 +914,14 @@ pub enum CalcExpr {
     /// （parse_calc/parse_math_function 等）保持拒 time 原子，length/angle
     /// 消费方零行为漂移。
     Time(f64),
+    /// 分辨率值（dppx 基；css-values-4 §6.4 <resolution>：dppx/x 归一 dppx、
+    /// dpi ÷96、dpcm ×2.54/96）。仅 [`parse_resolution_calc`](Self) 的
+    /// allow_resolution 解析产出——共享 calc 入口保持拒 resolution 原子
+    ///（length/time 消费方零行为漂移）；现无属性收裸 <resolution>，消费方
+    /// 为 image-set() 声明值内 calc 折叠（css-images-4 §image-set-nota，
+    /// calc-infinity-nan-serialize-resolution 语料驱动）。
+    /// <https://drafts.csswg.org/css-values-4/#resolution>
+    Resolution(f64),
     /// 二元运算：left op right。
     BinaryOp(Box<CalcExpr>, CalcOp, Box<CalcExpr>),
     /// min() 函数：取所有参数中的最小值。
@@ -914,6 +951,44 @@ pub enum CalcExpr {
     /// 解析/型别/权重门参与求值不可达（[`CalcContext`] 无 DOM 视图返 None）。
     /// <https://drafts.csswg.org/css-values-5/#tree-counting>
     TreeCounting(TreeCountingFn),
+    /// css-anchor-1 anchor()/anchor-size() 函数叶（<length-percentage> 族
+    /// opaque）：求值需布局锚几何（FIXME: used 值面桥接挂账），parse 期完成
+    /// 实参 canonical（锚元素 dashed-ident 前置 + fallback 无单位数字补 px，
+    /// §3/§4 canonical serialization——anchor-parse-valid 语料钉面），存
+    /// canonical 实参文本；文法粗门（段数 ≤2、空参仅 anchor-size 隐式形
+    /// 合法）在此，side/fallback 细拒面由写文法门保底。
+    /// <https://drafts.csswg.org/css-anchor-1/#anchor>
+    Anchor {
+        /// anchor-size()（尺寸查询侧）否则 anchor()（inset 侧）。
+        is_size: bool,
+        /// canonical 实参文本（不含括号；空串 = anchor-size() 隐式形）。
+        args: String,
+    },
+    /// CSS Values 5 progress() 插值进度（§progress）——三实参 = progress
+    /// value / start / end（同族型别，% 与维度可混），结果 `<number>`：
+    /// `(V − S)/(E − S)`，默认 clamp [0,1]；S==E 简并时 clamped → 0、
+    /// no-clamp → V 与共享值比较给 0/−∞/+∞。
+    /// <https://drafts.csswg.org/css-values-5/#progress>
+    Progress {
+        /// `no-clamp` 关键字（仅合法于首实参前）——跳过 [0,1] clamp。
+        no_clamp: bool,
+        /// progress value（第一实参）。
+        value: Box<CalcExpr>,
+        /// progress start（第二实参）。
+        start: Box<CalcExpr>,
+        /// progress end（第三实参）。
+        end: Box<CalcExpr>,
+    },
+}
+
+impl CalcExpr {
+    /// 三实参元组视图（Progress 求值/串化/遍历共用）。
+    pub fn progress_args(&self) -> Option<[&CalcExpr; 3]> {
+        match self {
+            CalcExpr::Progress { value, start, end, .. } => Some([value, start, end]),
+            _ => None,
+        }
+    }
 }
 
 /// CSS Values 5 tree-counting 函数（tentative，§tree-counting）。
@@ -1080,6 +1155,16 @@ pub enum ClipPathValue {
         /// 顶点坐标列表。
         points: Vec<(LengthValue, LengthValue)>,
     },
+    /// shape() — 命令式基本形状（css-shapes-2 §shape-function；模型见
+    /// [`crate::values::parse_basic_shape::ShapeFunctionValue`]）。
+    /// 载荷 Box 化控制枚举尺寸（BorderShapeValue 内嵌三份 ClipPathValue）。
+    Shape(Box<crate::values::parse_basic_shape::ShapeFunctionValue>),
+    /// path() — SVG path data（css-shapes-2 §path-function）。
+    Path(Box<crate::values::parse_basic_shape::PathFunctionValue>),
+    /// rect() — css-shapes-2 §basic-shape-rect-notation。
+    Rect(Box<crate::values::parse_basic_shape::RectFunctionValue>),
+    /// xywh() — css-shapes-2 §basic-shape-rect-notation。
+    Xywh(Box<crate::values::parse_basic_shape::XywhFunctionValue>),
 }
 
 /// clip-path 半径值。
@@ -1222,6 +1307,11 @@ struct CalcParser<'a> {
     /// 仅 time 槽入口（[`parse_time_calc`]）置 true；共享 calc 入口恒 false，
     /// 避免 `calc(10s)` 经数值捷径在 length 槽变合法（spec 应 invalid）。
     allow_time: bool,
+    /// 允许 <resolution> 原子（dppx/dpi/dpcm/x → [`CalcExpr::Resolution`]，
+    /// css-values-4 §6.4）。仅 resolution 槽入口（[`parse_resolution_calc`]，
+    /// image-set() 声明折叠消费）置 true；共享 calc 入口恒 false（同
+    /// [`allow_time`] 口径——length 槽不得因数值捷径接受 `calc(1dppx)`）。
+    allow_resolution: bool,
 }
 
 /// 最大递归深度限制。
@@ -1302,6 +1392,50 @@ impl<'a> CalcParser<'a> {
             return None;
         }
         Some(CalcExpr::TreeCounting(f))
+    }
+
+    /// 尝试解析 css-anchor-1 anchor()/anchor-size() 函数叶（§3/§4）。
+    /// <https://drafts.csswg.org/css-anchor-1/#anchor>
+    ///
+    /// 文法 `anchor(<anchor-element>? <anchor-side>? <anchor-fallback>?)` /
+    /// `anchor-size(<anchor-element>? <anchor-size>? <anchor-size-fallback>?)`：
+    /// 实参平衡段整块消费（嵌套 calc()/anchor() 同面），canonical 归一委托
+    /// [`super::anchor::canonicalize_anchor_call_args`]（序换位 + fallback
+    /// 无单位数字补 px——anchor-parse-valid 语料 canonical 钉面）；归一失败
+    ///（段数 >2 / anchor() 空参 / 括号不平衡）返 None 不消费。side/fallback
+    /// 细拒面不在本层（写文法门 `__zw_anchor_func_check` 保底），合法形
+    /// canonical 后成叶。
+    fn try_parse_anchor_fn(&mut self) -> Option<CalcExpr> {
+        let is_size = if self.try_consume_function("anchor-size") {
+            true
+        } else if self.try_consume_function("anchor") {
+            false
+        } else {
+            return None;
+        };
+        if self.depth >= MAX_CALC_DEPTH {
+            return None;
+        }
+        // 平衡段扫描到闭括号（实参内嵌套函数已覆盖；CSS 字符串不在 anchor
+        // 实参文法内，不引入字符串感知）。
+        let bytes = self.input.as_bytes();
+        let mut depth = 1i32;
+        let mut j = self.pos;
+        while j < bytes.len() && depth > 0 {
+            match bytes[j] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        if depth != 0 {
+            return None;
+        }
+        let seg = self.input[self.pos..j - 1].to_string();
+        let args = super::anchor::canonicalize_anchor_call_args(&seg, is_size)?;
+        self.pos = j;
+        Some(CalcExpr::Anchor { is_size, args })
     }
 
     /// 解析顶层表达式（处理 + - 运算符，优先级较低）。
@@ -1451,10 +1585,18 @@ impl<'a> CalcParser<'a> {
             let items = self.parse_mix_args()?;
             self.depth -= 1;
             CalcExpr::Mix(items)
+        } else if let Some(p) = self.try_parse_progress() {
+            // CSS Values 5 progress() 三实参数学函数（§progress）——同族型别门
+            // 在 parse 期裁决（不一致即整式无效）。
+            p
         } else if let Some(f) = self.try_parse_tree_counting() {
             // CSS Values 5 tree-counting 叶（sibling-index()/sibling-count()，
             // 无实参形）——parse 期 opaque，型别 <integer>。
             f
+        } else if let Some(a) = self.try_parse_anchor_fn() {
+            // css-anchor-1 anchor()/anchor-size() 叶（<length-percentage> 族
+            // opaque）——parse 期实参 canonical 归一（序换位 + fallback 补 px）。
+            a
         } else if let Some(b) = self.try_parse_binary_math() {
             // CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
             b
@@ -1487,11 +1629,111 @@ impl<'a> CalcParser<'a> {
                     CalcOp::Subtract,
                     Box::new(expr),
                 ),
+                // Resolution 叶同 Length 保族重写 `0dppx - x`（css-values-4 §8
+                // 维度一元负号，如 image-set `calc(-1dppx)` 存储形回读）：纯
+                // Resolution 维度门认两侧 Resolution 叶，求值数值不变；字面
+                // `calc(0 - 1dppx)`（number−resolution 混型）不经本臂、门仍拒。
+                CalcExpr::Resolution(_) => {
+                    CalcExpr::BinaryOp(Box::new(CalcExpr::Resolution(0.0)), CalcOp::Subtract, Box::new(expr))
+                }
                 other => CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(other)),
             };
         }
 
         Some(expr)
+    }
+
+    /// 尝试解析 CSS Values 5 progress()（§progress）。
+    /// <https://drafts.csswg.org/css-values-5/#progress>
+    ///
+    /// 文法 `progress(no-clamp? <calc-sum>, <calc-sum>, <calc-sum>)`：`no-clamp`
+    /// 关键字仅合法于首实参前（后随空白与 calc-sum 才算命中——`no-clamp0px`
+    /// 为单 ident 不命中）；三实参顶层逗号分隔（恰好 3 个，多/少即无效）；
+    /// 实参型别须一致（[`calc_expr_math_type`] 同族——% 与维度同
+    /// length-percentage 族可混），不一致整式无效（progress-invalid 语料钉面：
+    /// 空参/单双参/尾逗号/`from`/`to` 非关键字/no-clamp 错位/混型/维度平方）。
+    /// 命中则消费整段返回 Progress；未命中不消费、返回 None。
+    fn try_parse_progress(&mut self) -> Option<CalcExpr> {
+        if !self.try_consume_function("progress") {
+            return None;
+        }
+        if self.depth >= MAX_CALC_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        self.skip_whitespace();
+        // no-clamp 关键字（ASCII CI，ident 边界 + 后随空白/实参起始符才算命中；
+        // `no-clamp,`/`no-clamp)` 依法度无效——calc-sum 不以逗号/右括号起始）。
+        let no_clamp = {
+            let rest = &self.input[self.pos..];
+            let kw = "no-clamp";
+            let hit = rest.len() >= kw.len()
+                && rest[..kw.len()].eq_ignore_ascii_case(kw)
+                // ident 边界：关键字后不得紧跟 ident 字符。
+                && rest[kw.len()..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+            if hit {
+                self.pos += kw.len();
+            }
+            hit
+        };
+        self.skip_whitespace();
+        let v_start = self.pos;
+        let value = self.parse_expr()?;
+        let v_end = self.pos;
+        self.skip_whitespace();
+        if !self.try_consume(",") {
+            return None;
+        }
+        self.skip_whitespace();
+        let s_start = self.pos;
+        let start = self.parse_expr()?;
+        let s_end = self.pos;
+        self.skip_whitespace();
+        if !self.try_consume(",") {
+            return None;
+        }
+        self.skip_whitespace();
+        let e_start = self.pos;
+        let end = self.parse_expr()?;
+        let e_end = self.pos;
+        self.skip_whitespace();
+        if !self.try_consume(")") {
+            return None;
+        }
+        self.depth -= 1;
+        // 型别一致门（§progress：三实参 consistent type，否则函数 invalid）。
+        let [vt, st, et] = [
+            calc_expr_math_type(&value),
+            calc_expr_math_type(&start),
+            calc_expr_math_type(&end),
+        ];
+        if vt == CalcMathType::Invalid || vt != st || st != et {
+            return None;
+        }
+        // 角度家族一致性（文本级 provenance 补裁）：角度单位叶 parse 期弧度化
+        // Number（型别标记丢失），树型别门区分不了 `progress(5, 0deg, 8deg)`
+        // 与纯 number 形——逐实参跨度扫顶层角度单位 token（trig 实参跨度
+        // 屏蔽，产出 number 不算角度家族），任一实参有而其余实参无 → 混族
+        // invalid（progress-invalid 语料 `progress(5, 0deg, 8deg)` 钉面；
+        // `progress(2rad, 1rad, 1rad)` 全命中放行）。
+        let arg_spans = [
+            &self.input[v_start..v_end],
+            &self.input[s_start..s_end],
+            &self.input[e_start..e_end],
+        ];
+        let angle_hits: [bool; 3] = arg_spans.map(|s| span_has_top_level_angle_unit(&s.to_ascii_lowercase()));
+        if angle_hits.iter().any(|h| *h) && angle_hits.iter().any(|h| !h) {
+            return None;
+        }
+        Some(CalcExpr::Progress {
+            no_clamp,
+            value: Box::new(value),
+            start: Box::new(start),
+            end: Box::new(end),
+        })
     }
 
     /// 尝试解析 CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log + trig sin/cos/tan/asin/acos/atan。
@@ -1796,6 +2038,33 @@ impl<'a> CalcParser<'a> {
             }
         }
 
+        // css-values-4 §6.4 <resolution> 原子（dppx/x 归一 dppx、dpi ÷96、
+        // dpcm ×2.54/96——1in = 96px = 2.54cm）——仅 allow_resolution 解析
+        //（parse_resolution_calc）接受；后缀判定 dppx 先于 x（`1dppx` 若先
+        // 剥 `x` 得 `1dpp` 恒败）。`1px`/`1ex` 剥 `x` 余部非数值 → 落 length
+        // 臂零漂移。非有限值拒（`infinity` 关键字走常量臂，无 `∞dppx` 形）。
+        // https://drafts.csswg.org/css-values-4/#resolution
+        if self.allow_resolution {
+            let lower = token.to_ascii_lowercase();
+            let dppx = if let Some(n) = lower.strip_suffix("dppx") {
+                n.trim().parse::<f64>().ok()
+            } else if let Some(n) = lower.strip_suffix("dpcm") {
+                n.trim().parse::<f64>().ok().map(|v| v * 2.54 / 96.0)
+            } else if let Some(n) = lower.strip_suffix("dpi") {
+                n.trim().parse::<f64>().ok().map(|v| v / 96.0)
+            } else if let Some(n) = lower.strip_suffix('x') {
+                n.trim().parse::<f64>().ok()
+            } else {
+                None
+            };
+            if let Some(v) = dppx {
+                if v.is_finite() {
+                    return Some(CalcExpr::Resolution(v));
+                }
+                return None;
+            }
+        }
+
         // 尝试解析为长度值
         if let Some(length) = parse_length(token) {
             return Some(CalcExpr::Length(length));
@@ -1821,6 +2090,7 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
 
     let expr = parser.parse_expr()?;
@@ -1846,6 +2116,7 @@ pub fn parse_time_calc(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: true,
+        allow_resolution: false,
     };
     let expr = parser.parse_expr()?;
     parser.skip_whitespace();
@@ -1861,7 +2132,9 @@ pub fn parse_time_calc(value: &str) -> Option<CalcExpr> {
 pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Time(_) => true,
-        CalcExpr::Number(_) | CalcExpr::Length(_) => false,
+        // anchor()/anchor-size() 叶 <length-percentage> 族非 <time>。
+        CalcExpr::Anchor { .. } => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Resolution(_) => false,
         CalcExpr::BinaryOp(left, op, right) => match op {
             CalcOp::Add | CalcOp::Subtract => calc_expr_is_pure_time(left) && calc_expr_is_pure_time(right),
             // css-values-4 §10.1 型检查：标量乘除 `<time> * <number>` /
@@ -1891,6 +2164,65 @@ pub fn calc_expr_is_pure_time(expr: &CalcExpr) -> bool {
         }),
         // tree-counting 叶产出 <integer>（非 <time>）。
         CalcExpr::TreeCounting(_) => false,
+        // progress() 结果 <number>（§progress 非 <time> 产出）——纯 time 树
+        // 判定按 false（同 tree-counting 口径；实参 time 族形无语料驱动）。
+        CalcExpr::Progress { .. } => false,
+    }
+}
+
+/// 解析 resolution 槽数学表达式（css-values-4 §10.5 over <resolution>）。
+///
+/// 与 [`parse_time_calc`] 同一解析器，但置 `allow_resolution` 旗标接受
+/// `dppx/dpi/dpcm/x` 原子（`calc(1x * NaN)`、`image-set(url("") calc(1dppx *
+/// infinity))` 等形）。产出须经 [`calc_expr_is_pure_resolution`] 类型门后
+/// 才能折叠消费——该门拒绝裸 Number 叶，`calc(1dppx + 1)` 等混型（spec
+/// invalid）不透。
+pub fn parse_resolution_calc(value: &str) -> Option<CalcExpr> {
+    let mut parser = CalcParser {
+        input: value.trim(),
+        pos: 0,
+        depth: 0,
+        allow_time: false,
+        allow_resolution: true,
+    };
+    let expr = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(expr)
+}
+
+/// 纯 Resolution 维度门（镜像 [`calc_expr_is_pure_time`] 口径）：仅
+/// [`CalcExpr::Resolution`] 叶与结构容器——裸 [`CalcExpr::Number`] 叶拒绝
+///（resolution±number 混型 spec invalid，css-values-4 §10.1 型检查），
+/// Length/Time 叶天然拒。标量乘除 `<resolution> * <number>` /
+/// `<resolution> / <number>`（乘法反向同）型别合法（§8.1 维度算术）。
+/// <https://drafts.csswg.org/css-values-4/#calc-type-checking>
+pub fn calc_expr_is_pure_resolution(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Resolution(_) => true,
+        CalcExpr::Anchor { .. } => false,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) => false,
+        CalcExpr::BinaryOp(left, op, right) => match op {
+            CalcOp::Add | CalcOp::Subtract => calc_expr_is_pure_resolution(left) && calc_expr_is_pure_resolution(right),
+            CalcOp::Multiply => {
+                (calc_expr_is_pure_resolution(left) && calc_expr_is_number(right))
+                    || (calc_expr_is_number(left) && calc_expr_is_pure_resolution(right))
+            }
+            CalcOp::Divide => calc_expr_is_pure_resolution(left) && calc_expr_is_number(right),
+        },
+        CalcExpr::BinaryMathOp(_, a, b) => calc_expr_is_pure_resolution(a) && calc_expr_is_pure_resolution(b),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_pure_resolution),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_pure_resolution(min) && calc_expr_is_pure_resolution(val) && calc_expr_is_pure_resolution(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_is_pure_resolution(inner),
+        // calc-mix 项族同型门在 parse_mix_args 已裁决 resolution 族树不可达
+        //（现无属性收 <resolution>，% 槽不混）——保守拒。
+        CalcExpr::Mix(_) => false,
+        CalcExpr::TreeCounting(_) => false,
+        CalcExpr::Progress { .. } => false,
     }
 }
 
@@ -1938,6 +2270,7 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
         || math_function_inner(value, "atan").is_some()
         || math_function_inner(value, "sibling-index").is_some()
         || math_function_inner(value, "sibling-count").is_some()
+        || math_function_inner(value, "progress").is_some()
     {
         // CSS Values 4 §11.3 裸数学函数（无 calc() 包裹——round/mod/rem/hypot/
         // pow/atan2、abs/sign/sqrt/exp/log、trig sin/cos/tan/asin/acos/atan，
@@ -1950,6 +2283,7 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
             pos: 0,
             depth: 0,
             allow_time: false,
+            allow_resolution: false,
         };
         let expr = parser.parse_expr()?;
         parser.skip_whitespace();
@@ -1966,6 +2300,7 @@ pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
             pos: 0,
             depth: 0,
             allow_time: false,
+            allow_resolution: false,
         };
         let expr = parser.parse_expr()?;
         parser.skip_whitespace();
@@ -2101,6 +2436,7 @@ pub fn parse_calc_mix(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let items = parser.parse_mix_args()?;
     Some(CalcExpr::Mix(items))
@@ -2113,9 +2449,9 @@ pub fn parse_calc_mix(value: &str) -> Option<CalcExpr> {
 pub fn is_math_function_value(value: &str) -> bool {
     let value = value.trim();
     // 与 parse_math_function 分派名单同步（含 calc 包裹与 §11.3 裸数学函数）。
-    const NAMES: [&str; 22] = [
+    const NAMES: [&str; 23] = [
         "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign", "sqrt", "exp",
-        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix",
+        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix", "progress",
     ];
     NAMES.iter().any(|n| math_function_inner(value, n).is_some())
 }
@@ -2149,6 +2485,7 @@ pub fn parse_min(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let args = parser.parse_comma_list()?;
     parser.skip_whitespace();
@@ -2171,6 +2508,7 @@ pub fn parse_max(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let args = parser.parse_comma_list()?;
     parser.skip_whitespace();
@@ -2193,6 +2531,7 @@ pub fn parse_clamp(value: &str) -> Option<CalcExpr> {
         pos: 0,
         depth: 0,
         allow_time: false,
+        allow_resolution: false,
     };
     let min = parser.parse_expr()?;
     parser.skip_whitespace();
@@ -2254,6 +2593,8 @@ pub fn eval_calc_with_default_font(expr: &CalcExpr) -> Option<f64> {
 /// 0（R3767 n=0 全裁 → 整页空白，driving：line-clamp-auto-030 `calc(4lh + 2*4px)`）。
 pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
     match expr {
+        // anchor()/anchor-size() 叶无 lh 叶不改写。
+        CalcExpr::Anchor { .. } => {}
         CalcExpr::Number(_) => {}
         CalcExpr::Length(lv) => {
             if let LengthValue::Lh(v) = lv {
@@ -2261,6 +2602,8 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
             }
         }
         CalcExpr::Time(_) => {}
+        // Resolution 叶无 lh 单位不改写。
+        CalcExpr::Resolution(_) => {}
         CalcExpr::BinaryOp(left, _, right) => {
             rewrite_calc_lh(left, used_line_height);
             rewrite_calc_lh(right, used_line_height);
@@ -2290,6 +2633,13 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
         }
         // tree-counting 叶无 lh 单位（DOM 序号），重写不可达。
         CalcExpr::TreeCounting(_) => {}
+        // progress() 三实参内 lh 叶照常重写（实参维度族可含 lh——与 min/max
+        // 实参同口径）。
+        CalcExpr::Progress { value, start, end, .. } => {
+            rewrite_calc_lh(value, used_line_height);
+            rewrite_calc_lh(start, used_line_height);
+            rewrite_calc_lh(end, used_line_height);
+        }
     }
 }
 
@@ -2297,10 +2647,16 @@ pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
 /// （如无上下文的 lh/百分比）返回 None——消费方自行决定 fail 策略。
 pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64> {
     match expr {
+        // anchor()/anchor-size() 叶需布局锚几何（css-anchor-1 §3/§4）——
+        // 求值期不可静态解析（FIXME: used 值面桥接挂账）。
+        CalcExpr::Anchor { .. } => None,
         CalcExpr::Number(n) => Some(*n),
         CalcExpr::Length(lv) => resolve_length_to_px(lv, ctx),
         // Time 叶按秒出数值（消费方为 time 槽——parse_time 纯 Time 叶门后到达）。
         CalcExpr::Time(v) => Some(*v),
+        // Resolution 叶按 dppx 出数值（消费方为 resolution 槽折叠——
+        // parse_resolution_calc 纯 Resolution 叶门后到达）。
+        CalcExpr::Resolution(v) => Some(*v),
         CalcExpr::BinaryOp(left, op, right) => {
             let lv = eval_calc_with_context(left, ctx)?;
             let rv = eval_calc_with_context(right, ctx)?;
@@ -2491,7 +2847,118 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
             TreeCountingFn::SiblingIndex => ctx.sibling_ordinal.map(|v| v as f64),
             TreeCountingFn::SiblingCount => ctx.sibling_count.map(|v| v as f64),
         },
+        // CSS Values 5 progress()（§progress）：`(V − S)/(E − S)`，默认 clamp
+        // [0,1]；S==E 简并 → clamped 0 / no-clamp 按比较给 0/−∞/+∞。任一实参
+        // NaN → NaN（§10.12 数学函数通则，先行毒化短路）。实参 % 叶无基准时
+        // 全树 % 族（进度比值与基准无关——%/维度符号解析）以参考基准重试，
+        // 混族（em 与 px 跨单位等）保持 None fail-closed（指定值期不折叠，
+        // progress(10em, 0px, 10em) specified 保原文语料钉面）。
+        // https://drafts.csswg.org/css-values-5/#progress
+        CalcExpr::Progress {
+            no_clamp,
+            value,
+            start,
+            end,
+        } => eval_progress(no_clamp, value, start, end, ctx),
     }
+}
+
+/// progress() 求值：①全实参 ctx 可解析 → 公式直算；②不可解析且全树 % 族
+/// → 符号基准重试（100 为任意基准，比值尺度不变）；③否则 None。
+fn eval_progress(
+    no_clamp: &bool,
+    value: &CalcExpr,
+    start: &CalcExpr,
+    end: &CalcExpr,
+    ctx: &CalcContext,
+) -> Option<f64> {
+    let eval_args = |basis: &CalcContext| -> Option<[f64; 3]> {
+        Some([
+            eval_calc_with_context(value, basis)?,
+            eval_calc_with_context(start, basis)?,
+            eval_calc_with_context(end, basis)?,
+        ])
+    };
+    let retry_basis = |basis: &CalcContext| -> Option<CalcContext> {
+        // % 族符号解析（无 ctx 基准的 % 叶——指定值折叠与 computed 期
+        // 基准无关比值共用此臂）。混族树（含 em/rem 等其他单位）不重试。
+        if !ctx.parent_length.is_some() && progress_is_percent_family([value, start, end]) {
+            Some(CalcContext {
+                parent_length: Some(100.0),
+                ..basis.clone()
+            })
+        } else {
+            None
+        }
+    };
+    let [v, s, e] = match eval_args(ctx) {
+        Some(args) => args,
+        None => match retry_basis(ctx).and_then(|b| eval_args(&b)) {
+            Some(args) => args,
+            None => {
+                // V 不可求值的部分求值臂（§10.12 简并先行）：S/E 可求值且
+                // S==E 时 clamped 恒 0——简并分母短路不依赖 V（`progress(0cqw,
+                // 0px, 0px)` 无容器基准钉面）。no-clamp 简并需 V 比较、比值需
+                // V 本体，均不可部分求值 → None（fail-closed）。S/E NaN →
+                // NaN 毒化（§10.12 任一实参 NaN）。
+                let [s, e] = match [eval_calc_with_context(start, ctx), eval_calc_with_context(end, ctx)] {
+                    [Some(s), Some(e)] => [s, e],
+                    _ => retry_basis(ctx).and_then(|b| {
+                        match [eval_calc_with_context(start, &b), eval_calc_with_context(end, &b)] {
+                            [Some(s), Some(e)] => Some([s, e]),
+                            _ => None,
+                        }
+                    })?,
+                };
+                if s.is_nan() || e.is_nan() {
+                    return Some(f64::NAN);
+                }
+                return (s == e && !*no_clamp).then_some(0.0);
+            }
+        },
+    };
+    // §10.12：任一实参 NaN → NaN（censor 到 0 由消费方既有管线承接）。
+    if v.is_nan() || s.is_nan() || e.is_nan() {
+        return Some(f64::NAN);
+    }
+    if s == e {
+        // 简并分母（S==E）：clamped 恒 0；no-clamp 按 V 与共享值比较。
+        Some(if !*no_clamp || v == s {
+            0.0
+        } else if v < s {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        })
+    } else {
+        let r = (v - s) / (e - s);
+        Some(if *no_clamp { r } else { r.clamp(0.0, 1.0) })
+    }
+}
+
+/// 三实参树是否全为「% 族」（长度叶全 %、无 time 叶；number/角度弧度化
+/// number 叶天然同族）——progress 比值与 % 基准无关的符号解析前提。
+fn progress_is_percent_family(exprs: [&CalcExpr; 3]) -> bool {
+    fn walk(expr: &CalcExpr) -> bool {
+        match expr {
+            // anchor()/anchor-size() 叶非 % 族符号解析（锚几何依赖）。
+            CalcExpr::Anchor { .. } => false,
+            CalcExpr::Number(_) => true,
+            // 长度叶仅 % 可符号解析（px 可解析但会与 % 基准空间混——
+            // progress(50%, 0px, 100px) 混形须真实基准，不在此臂）。
+            CalcExpr::Length(LengthValue::Percentage(_)) => true,
+            CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
+            CalcExpr::BinaryOp(l, _, r) => walk(l) && walk(r),
+            CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(walk),
+            CalcExpr::Clamp { min, val, max } => walk(min) && walk(val) && walk(max),
+            CalcExpr::UnaryOp(_, inner) => walk(inner),
+            CalcExpr::BinaryMathOp(_, a, b) => walk(a) && walk(b),
+            CalcExpr::Progress { value, start, end, .. } => walk(value) && walk(start) && walk(end),
+            // calc-mix/tree-counting 无驱动案——不进符号臂。
+            CalcExpr::Mix(_) | CalcExpr::TreeCounting(_) => false,
+        }
+    }
+    exprs.iter().all(|e| walk(e))
 }
 
 /// round 族 B=±∞（A 有限）的 ±0 结果：签号随 A（css-values-4 §round-func

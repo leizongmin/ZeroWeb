@@ -31,8 +31,13 @@ pub(crate) fn parse_length_or_math(value: &str) -> Option<LengthValue> {
     if let Some(v) = values::parse_length(value) {
         return Some(v);
     }
-    // 尝试解析 calc/min/max/clamp 数学表达式
-    values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
+    // 尝试解析 calc/min/max/clamp 数学表达式；含 anchor()/anchor-size() 叶的
+    // 式在样式解析面判无效（css-anchor-1 §3.3/§4：锚几何依赖 computed-value
+    // time 不可求值 → invalid → 声明无效回落初始值；inset 槽 anchor() 原文
+    // 承载臂在本函数之前拦截不达——布局期 anchor_pos pass 独立求值）。
+    values::parse_math_function(value)
+        .filter(|expr| !values::calc_expr_has_anchor(expr))
+        .map(|expr| LengthValue::Calc(Box::new(expr)))
 }
 
 /// 尝试解析 CSS 长度值（quirks mode）。
@@ -42,8 +47,39 @@ pub(crate) fn parse_length_or_math_quirks(value: &str) -> Option<LengthValue> {
     if let Some(v) = values::parse_length_quirks(value) {
         return Some(v);
     }
-    // 尝试解析 calc/min/max/clamp 数学表达式
-    values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
+    // 同 [`parse_length_or_math`]：anchor 叶式样式解析面判无效。
+    values::parse_math_function(value)
+        .filter(|expr| !values::calc_expr_has_anchor(expr))
+        .map(|expr| LengthValue::Calc(Box::new(expr)))
+}
+
+/// anchor-size() 尺寸槽原文捕获判定（css-anchor-position-1 §4）：值含
+/// `anchor-size(` 且括号平衡 → 小写原文承载（布局期 anchor_pos pass 求值
+/// used 值回填，槽位暂存初始 Auto——与 inset 槽 anchor() 承载臂同模式）。
+/// 样式解析面无锚几何 fail-closed；参数域/文法细拒面由写文法门
+/// `anchor_funcs_valid`（engine shim 链）保底。未闭括号形（语料
+/// anchor-size-001 上游 typo `anchor-size(--a1 width"`）CSS parse 面即声明
+/// 无效 → 不承载（返回 None 落既有 parse 拒面）。函数名左边界不设防与
+/// inset 承载臂同口径（`--anchor-size(` custom property 形值由调用方
+/// custom-property 臂先消费不达本函数）。
+fn anchor_size_slot_capture(value: &str) -> Option<Box<str>> {
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    if !lower.contains("anchor-size(") {
+        return None;
+    }
+    let mut depth = 0i32;
+    for ch in lower.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    Some(lower.into_boxed_str())
 }
 
 /// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
@@ -173,20 +209,37 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "width" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（布局期
+            // anchor_pos pass 求值 used 值，槽位暂存初始 Auto）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).width = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.width = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.width = None;
+                }
                 return true;
             }
         }
         "height" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).height = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.height = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.height = None;
+                }
                 return true;
             }
         }
@@ -292,26 +345,50 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "min-width" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).min_width = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.min_width = map_bare_fit_content_avail(value, v);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.min_width = None;
+                }
                 return true;
             }
         }
         "min-height" => {
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).min_height = Some(raw);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
                 style.min_height = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.min_height = None;
+                }
                 return true;
             }
         }
         "max-width" => {
             if value.eq_ignore_ascii_case("none") {
                 style.max_width = LengthValue::Px(f64::INFINITY);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_width = None;
+                }
+                return true;
+            }
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).max_width = Some(raw);
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
@@ -319,12 +396,23 @@ pub fn apply_property_value_with_quirks(
                     return false;
                 }
                 style.max_width = map_bare_fit_content_avail(value, v);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_width = None;
+                }
                 return true;
             }
         }
         "max-height" => {
             if value.eq_ignore_ascii_case("none") {
                 style.max_height = LengthValue::Px(f64::INFINITY);
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_height = None;
+                }
+                return true;
+            }
+            // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
+            if let Some(raw) = anchor_size_slot_capture(value) {
+                style.anchor_size_slots.get_or_insert_with(Box::default).max_height = Some(raw);
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
@@ -332,6 +420,9 @@ pub fn apply_property_value_with_quirks(
                     return false;
                 }
                 style.max_height = v;
+                if let Some(slots) = style.anchor_size_slots.as_mut() {
+                    slots.max_height = None;
+                }
                 return true;
             }
         }
@@ -599,6 +690,17 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // 刀 N（css-conditional-3 §supported）：`font` 简写 supports oracle——
+        // 声明 supported 充要条件 = 值可按 css-fonts-4 §font-prop 文法解析
+        // （[`crate::shorthand::expand_font`] 严格校验单源）。实际应用通道
+        // 在 cascade 前经 expand_shorthands 展开，长手应用不走本臂——本臂
+        // 纯 oracle 语义（columns 臂同型）。driving: font-computed.html
+        // `CSS.supports('font', …)` 前置门（排列空间 309F）。
+        "font" => {
+            if crate::shorthand::font_shorthand_supported(value) {
+                return true;
+            }
+        }
         "font-family" => {
             let families = parse_font_family(value);
             if !families.is_empty() {
@@ -624,6 +726,16 @@ pub fn apply_property_value_with_quirks(
                 style.font_weight = v;
                 return true;
             }
+            // math 函数形（css-fonts-4 §font-weight-numeric <number [1,1000]> +
+            // css-values-4 §10.5 calc-containing；font-property-unit-cycles
+            // `font-weight: calc(1 * tan(atan2(1em, 1px)))` 5 腿驱动——font 相对
+            // 单位按父级字体解析，合成期 style.font_size 已继承父值）。域检查
+            // 为 computed clamp 语义（css-fonts-4：calc 形值域 clamp——语料
+            // `calc(0)` valid、computed 1）。
+            if let Some(n) = eval_font_slot_math_number(value, font_slot_font_px(style)) {
+                style.font_weight = FontWeightValue::Absolute(n.clamp(1.0, 1000.0).round() as u16);
+                return true;
+            }
         }
         "font-style" => {
             if let Some(v) = values::parse_font_style(value) {
@@ -638,7 +750,9 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "font-size-adjust" => {
-            if let Some(v) = parse_font_size_adjust(value) {
+            // 字体 ctx 变体：basis math 形的 font 相对单位按父级字体 eval
+            //（font-property-unit-cycles 5 腿驱动，见 parse_font_size_adjust_with_font）。
+            if let Some(v) = parse_font_size_adjust_with_font(value, Some(font_slot_font_px(style))) {
                 style.font_size_adjust = v;
                 return true;
             }
@@ -1083,11 +1197,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "top" => {
-            // CSS Anchor Positioning §anchor()：inset 槽 anchor() 形原文承载
-            //（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位基线）。
-            // "anchor-size(" 无 "anchor(" 子串不误捕（inset 属性本不接受
-            // anchor-size，非法形走既有 parse 拒面）。
-            if value.contains("anchor(") {
+            // CSS Anchor Positioning §anchor()/§anchor-size()：inset 槽函数形
+            // 原文承载（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位
+            // 基线）。"anchor-size(" 无 "anchor(" 子串（anchor 与 `(` 间有 `-`），
+            // 双形并查；普通长度路径清承载槽（后声明胜出——stale 槽防回灌）。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_top = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.top = LengthValue::Auto;
                 return true;
@@ -1095,12 +1209,14 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.top = v;
+                    style.anchor_inset_top = None;
                     return true;
                 }
             }
         }
         "right" => {
-            if value.contains("anchor(") {
+            // 同 top 臂：anchor()/anchor-size() 双形并查 + 普通长度路径清承载槽。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_right = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.right = LengthValue::Auto;
                 return true;
@@ -1108,12 +1224,14 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.right = v;
+                    style.anchor_inset_right = None;
                     return true;
                 }
             }
         }
         "bottom" => {
-            if value.contains("anchor(") {
+            // 同 top 臂：anchor()/anchor-size() 双形并查 + 普通长度路径清承载槽。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_bottom = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.bottom = LengthValue::Auto;
                 return true;
@@ -1121,12 +1239,14 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.bottom = v;
+                    style.anchor_inset_bottom = None;
                     return true;
                 }
             }
         }
         "left" => {
-            if value.contains("anchor(") {
+            // 同 top 臂：anchor()/anchor-size() 双形并查 + 普通长度路径清承载槽。
+            if value.contains("anchor(") || value.contains("anchor-size(") {
                 style.anchor_inset_left = Some(value.trim().to_ascii_lowercase().into_boxed_str());
                 style.left = LengthValue::Auto;
                 return true;
@@ -1134,6 +1254,7 @@ pub fn apply_property_value_with_quirks(
             if let Some(v) = parse_length_fn(value) {
                 if positioned_offset_length_is_valid(value, &v) {
                     style.left = v;
+                    style.anchor_inset_left = None;
                     return true;
                 }
             }
@@ -1639,6 +1760,143 @@ fn font_size_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     padding_length_is_valid(raw, value)
 }
 
+/// font 槽数学 eval 的字体基准（px）：父级 computed font-size 优先
+///（css-properties-values-api #dependency-cycles-via-relative-units tentative
+/// 口径——font-* 属性 font 相对单位按父级字体解析，inheritance 预应用段
+/// 注入 [`ComputedStyle::parent_font_size`]）；独立 apply 调用（CSSOM 写面/
+/// CSS.supports 哨兵）回落自身 font_size、非解析形态兜底默认 16px。
+pub(crate) fn font_slot_font_px(style: &ComputedStyle) -> f64 {
+    if let Some(v) = style.parent_font_size {
+        return v as f64;
+    }
+    match style.font_size {
+        LengthValue::Px(v) => v,
+        _ => 16.0,
+    }
+}
+
+/// font 槽数学形 eval：<number> 型别门 + 父级字体基准（css-values-4 §10.5
+/// calc-containing + css-properties-values-api #dependency-cycles-via-relative-units
+/// ——font-* 属性的 font 相对单位按父元素字体解析，font-property-unit-cycles
+/// 30 腿驱动）。
+pub(crate) fn eval_font_slot_math_number(value: &str, font_size: f64) -> Option<f64> {
+    let expr = values::parse_math_function(value.trim())?;
+    if !values::calc_expr_is_number(&expr) {
+        return None;
+    }
+    values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))
+}
+
+/// font-stretch <percentage> 槽数学形 eval：% 保持型——Percentage 叶产出
+/// 百分数数值（`1%` → 1.0，对齐 parse_font_stretch 字面 % 存法），number 叶
+/// 产出数值；数学函数节点（tan/atan2 等，number 语义）走通用 eval、font
+/// ctx 解析实参内 font 相对单位。顶层算术树先过
+/// [`font_stretch_percentage_tree_valid`] 型别门（拒绝对长度叶与 % × %）。
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-stretch-prop
+/// https://drafts.csswg.org/css-values-4/#calc-containing
+pub(crate) fn eval_font_slot_math_percentage(value: &str, font_size: f64) -> Option<f64> {
+    let expr = values::parse_math_function(value.trim())?;
+    if !font_stretch_percentage_tree_valid(&expr, false) {
+        return None;
+    }
+    let ctx = super::parse::font_slot_calc_context(font_size);
+    eval_percentage_preserving(&expr, &ctx)
+}
+
+/// <percentage> 槽 calc 树型别门：跳过数学函数节点（UnaryOp/BinaryMathOp/
+/// Min/Max/Clamp/Mix/TreeCounting——实参域由 parse_math_function 独立型别
+/// 门管，如 `atan2(1em, 1px)` 长度比合法）后的可见叶只容 percentage/number；
+/// 乘法两侧不得同时含 % 叶（css-values-4 §10.5 乘法规则：<percentage> 只容
+/// 与 <number> 乘除）。
+///
+/// `percent_ctx` = 该子树位于 Add/Sub 且**兄弟侧含 % 叶**（css-values-4
+/// §10.5 型别统一：<percentage> 槽的 px+% 混合以 px 数值为锚归一——解析器
+/// 把 `-100%` 归一成 `0px - 100%`（font-width-valid `calc(-100%)` 钉面，
+/// WPT oracle computed 0%），故 Add/Sub 下与 % 同侧树的 Px 叶合法且按数值
+/// 参与；乘除/孤立 Px 仍拒（`calc(1px * 2)` 域外拒面回归钉）。
+fn font_stretch_percentage_tree_valid(expr: &values::CalcExpr, percent_ctx: bool) -> bool {
+    use values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::Number(_) => true,
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::Length(LengthValue::Px(_)) => percent_ctx,
+        // anchor()/anchor-size() 非 %/px 叶——font-stretch 槽拒（inset/size
+        // 族函数与字宽文法位正交）。
+        CalcExpr::Anchor { .. } => false,
+        CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(left, op, right) => {
+            match op {
+                // css-values-4 §10.5 乘法规则：% 只容与 number 乘（两侧不得
+                // 均含 % 叶）；乘除下子树脱离 % 锚上下文（px 叶拒）。
+                CalcOp::Multiply | CalcOp::Divide => {
+                    if has_percentage_leaf(left) && has_percentage_leaf(right) {
+                        return false;
+                    }
+                    if let CalcOp::Divide = op
+                        && has_percentage_leaf(right)
+                    {
+                        return false;
+                    }
+                    font_stretch_percentage_tree_valid(left, false) && font_stretch_percentage_tree_valid(right, false)
+                }
+                // Add/Sub：各侧以「另一侧含 % 叶」为 px 叶锚上下文。
+                CalcOp::Add | CalcOp::Subtract => {
+                    let l_pct = has_percentage_leaf(left);
+                    let r_pct = has_percentage_leaf(right);
+                    font_stretch_percentage_tree_valid(left, r_pct) && font_stretch_percentage_tree_valid(right, l_pct)
+                }
+            }
+        }
+        // 数学函数节点 opaque：实参域独立型别门。
+        CalcExpr::UnaryOp(..)
+        | CalcExpr::BinaryMathOp(..)
+        | CalcExpr::Min(..)
+        | CalcExpr::Max(..)
+        | CalcExpr::Clamp { .. }
+        | CalcExpr::Mix(..)
+        | CalcExpr::Progress { .. }
+        | CalcExpr::TreeCounting(_) => true,
+        CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
+    }
+}
+
+fn has_percentage_leaf(expr: &values::CalcExpr) -> bool {
+    use values::{CalcExpr, LengthValue};
+    match expr {
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::Number(_) | CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
+        CalcExpr::BinaryOp(l, _, r) => has_percentage_leaf(l) || has_percentage_leaf(r),
+        _ => false,
+    }
+}
+
+/// % 保持型递归 eval（型别已由 [`font_stretch_percentage_tree_valid`] 裁定）：
+/// Percentage 叶产出百分数数值，数学函数节点走 number 语义通用 eval。
+fn eval_percentage_preserving(expr: &values::CalcExpr, ctx: &values::CalcContext) -> Option<f64> {
+    use values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::Number(n) => Some(*n),
+        CalcExpr::Length(LengthValue::Percentage(p)) => Some(*p),
+        // Add/Sub 下与 % 同树的 px 叶按数值参与（css-values-4 §10.5 型别统一
+        // 锚语义——`0px - 100%` 归一伪影，font_stretch_percentage_tree_valid
+        // 已裁上下文，此处直出数值）。
+        CalcExpr::Length(LengthValue::Px(v)) => Some(*v),
+        CalcExpr::BinaryOp(left, op, right) => {
+            let lv = eval_percentage_preserving(left, ctx)?;
+            let rv = eval_percentage_preserving(right, ctx)?;
+            match op {
+                CalcOp::Add => Some(lv + rv),
+                CalcOp::Subtract => Some(lv - rv),
+                CalcOp::Multiply => Some(lv * rv),
+                // css-values-4 §10.6：除零 IEEE 语义（±∞/NaN），后续 clamp 域收口。
+                CalcOp::Divide => Some(lv / rv),
+            }
+        }
+        other => values::eval_calc_with_context(other, ctx),
+    }
+}
+
 pub(crate) fn border_width_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     let raw = raw.trim().to_ascii_lowercase();
     match raw.as_str() {
@@ -1900,6 +2158,44 @@ pub(crate) fn margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     positioned_offset_length_is_valid(raw, value)
 }
 
+/// shape-margin 长度域裁决（css-shapes-1 §shape-margin-property）：仅收
+/// `<length-percentage>`（px/em/ex/rem/物理单位/视口单位/%/calc）——margin 同族
+/// 关键字（`auto`/`thin`/`min-content`/`stretch` 等解析器副产形）全拒。
+pub(crate) fn shape_margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin"
+            | "medium"
+            | "thick"
+            | "min-content"
+            | "max-content"
+            | "fit-content"
+            | "auto"
+            | "stretch"
+            | "-webkit-fill-available"
+    ) {
+        return false;
+    }
+    !matches!(
+        value,
+        LengthValue::Auto
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_)
+            | LengthValue::Stretch
+    )
+}
+
+/// 非负长度钳（css-shapes-1 §shape-margin-property）：负 px/负 % 钳 0；Calc 形
+/// 保留（负钳在 gCS 求值层 [`shape_margin_to_css`]）。
+pub(crate) fn clamp_non_negative_length(value: LengthValue) -> LengthValue {
+    match value {
+        LengthValue::Px(n) if n < 0.0 => LengthValue::Px(0.0),
+        LengthValue::Percentage(n) if n < 0.0 => LengthValue::Percentage(0.0),
+        other => other,
+    }
+}
+
 /// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。
 ///
 /// used color-scheme 由属性声明的 scheme 列表与用户偏好（`prefers-color-scheme`）合成：
@@ -1945,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 13] = [
+    const VALIDATED_PROPERTIES: [&str; 58] = [
         "transform",
         "rotate",
         "scale",
@@ -1972,6 +2268,129 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
         // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
         "width",
+        // counter-increment 写面文法门（css-lists-3 §counter-increment）：invalid
+        // 页 13 形（`none chapter`/`reversed(chapter)`/`3`/`99 imagenum`/顶层逗号/
+        // `section 3.14`/css-wide 带后缀）此前白名单外放行 store；分派臂见
+        // [`validate_decl_value`] 中段（value_has_unimplemented_function 之前）。
+        "counter-increment",
+        // text-size-adjust 写面文法门（css-size-adjust-1 §text-size-adjust：
+        // `auto | none | <percentage>`，负 % invalid）：invalid 页 4 形
+        //（`reverse`/`0`/`10px`/`-100%`）此前白名单外放行 store；math 形经
+        // tree-counting 前置门 + 通用 math 门后放行 store（% 槽 canonical
+        // 折叠在 fold_decl_specified text-size-adjust 臂）。
+        "text-size-adjust",
+        // font-* 数值槽写面文法门（css-fonts-4 §font-weight-numeric
+        // `<number [1,1000]>` + §font-width-prop `normal | <percentage [0,∞]> |
+        // 关键字`；font-width 为 font-stretch legacy alias）：invalid 语料
+        //（font-weight-invalid `auto`/`bold 900`、字面负 %）此前白名单外放行
+        // store 原文；math 形放行 store（通用 math 门已裁文法），字面/关键字形
+        // apply oracle 兜底拒面（parse_font_weight 域门/parse_font_stretch
+        // 域门）；canonical 折叠在 fold_decl_specified font-* 臂。
+        "font-weight",
+        "font-stretch",
+        "font-width",
+        // font-size-adjust 写面文法门（css-fonts-5 §font-size-adjust-prop
+        // `none | [<metric>]? [from-font | <number [0,∞]>]`，metric ∈
+        // ex-height|cap-height|ch-width|ic-width|ic-height）：invalid 页 57 形
+        //（`auto`/负数/`0.5 ex-height` 反序/未知 metric `em`/`ch`/`ic`/裸
+        // metric/`<metric> none`/双 basis 三 token/`none`·`from-font` 带后缀）
+        // 此前白名单外放行 store 原文——apply 链 parse_font_size_adjust
+        // splitn 结构虽拒，shim CSSOM store 不经 apply，e.style 回显原文即
+        // Fail。math 整值形前置放行（通用 math 门裁语法）、metric + math
+        // basis 形逐 token 文法裁决，eval 留 apply 链带 font ctx。
+        "font-size-adjust",
+        // shape-outside 写面文法门（css-shapes-1 §shape-outside-property）：
+        // apply 链既有臂裁决（parse_clip_path `<basic-shape>` + 裸 `<shape-box>`
+        // 关键字，apply_advanced），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-shapes 语料 shape-outside-circle/ellipse-003 各 125F——
+        // invalid 位置形（`circle(at bottom 70% right 20%)` 轴混搭、3 词缘偏移
+        // 等语料 invalidPositions 域）此前白名单外放行 store 原文回显即 Fail）。
+        // 语料 url() `<image>` 形全在样式表声明路径（不经本 inline 门），不受
+        // apply 臂未建模 `<image>` 影响。
+        // https://drafts.csswg.org/css-shapes/#shape-outside-property
+        "shape-outside",
+        // shape-margin / shape-image-threshold 写面文法门（css-shapes-1
+        // §shape-margin-property 非负 <length-percentage> + §shape-image-threshold-
+        // property <number>|<percentage>）：apply 链既有臂裁决（parse_length_or_math
+        // + 域裁决 / parse_opacity），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-shapes 语料 shape-margin-invalid `none`/无单位 `10`、
+        // shape-image-threshold-invalid `auto`/`10px` 此前白名单外放行 store
+        // 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-shapes/#shape-margin-property
+        "shape-margin",
+        "shape-image-threshold",
+        // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
+        // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
+        // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
+        // 接入即启用 inline 写面 invalid 形拒收（driving: css-gaps 语料
+        // gap-decorations-color-invalid `auto`/空格分隔/repeat(0)/repeat(-1)/
+        // 双 auto 段此前白名单外放行 store 原文回显即 Fail；column-rule-color
+        // 既有宽收臂同刀收紧）。rule-color 简写裁决走 shorthand 展开（同
+        // column-rule 先例）。
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-color
+        "column-rule-color",
+        "row-rule-color",
+        "rule-color",
+        // rule-width / rule-style 族写面文法门（css-gaps-1 §column-row-rule-width
+        // / §column-row-rule-style：`<line-width-list>`/`<line-style-list>`，段模型
+        // 同 color 族）：apply 链既有臂裁决（parse_rule_width_list /
+        // parse_rule_style_list），白名单接入即启用 inline 写面 invalid 形拒收
+        //（driving: css-gaps 语料 gap-decorations-width-invalid `auto`/`30%`/
+        // 无单位数/负长/双 auto、gap-decorations-style-invalid `auto`/空格分隔/
+        // 双 auto 此前白名单外放行 store 原文回显即 Fail）。简写（rule-width/
+        // rule-style/rule/row-rule/column-rule）裁决走 shorthand 展开（同
+        // rule-color 先例，apply 臂 expand_shorthands 全过才落值）。
+        // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+        "column-rule-width",
+        "row-rule-width",
+        "rule-width",
+        "column-rule-style",
+        "row-rule-style",
+        "rule-style",
+        "row-rule",
+        "rule",
+        // rule-inset 族写面文法门（css-gaps-1 §inset：`overlap-join |
+        // <length-percentage>` 槽 × {1,2} × `/` 双侧，8 longhand + 15 简写）：
+        // apply 链既有臂裁决（parse_rule_inset_component / parse_rule_inset_quad），
+        // 白名单接入即启用 inline 写面 invalid 形拒收（driving: css-gaps 语料
+        // rule-inset-invalid `auto`/`none`/无单位 `10`/3 槽/双 `/`/前导 `/`
+        // 此前白名单外放行 store 原文回显即 Fail）。简写裁决走 shorthand 展开
+        //（同 rule-color 先例，apply 臂 expand_shorthands 全过才落值）。
+        // https://drafts.csswg.org/css-gaps-1/#inset
+        "column-rule-inset-cap-start",
+        "column-rule-inset-cap-end",
+        "column-rule-inset-junction-start",
+        "column-rule-inset-junction-end",
+        "row-rule-inset-cap-start",
+        "row-rule-inset-cap-end",
+        "row-rule-inset-junction-start",
+        "row-rule-inset-junction-end",
+        "rule-inset",
+        "column-rule-inset",
+        "row-rule-inset",
+        "rule-inset-cap",
+        "column-rule-inset-cap",
+        "row-rule-inset-cap",
+        "rule-inset-junction",
+        "column-rule-inset-junction",
+        "row-rule-inset-junction",
+        "rule-inset-start",
+        "column-rule-inset-start",
+        "row-rule-inset-start",
+        "rule-inset-end",
+        "column-rule-inset-end",
+        "row-rule-inset-end",
+        // 刀 N 二期写面文法门（css-fonts-4 §family-name-value + §font-prop）：
+        // font-family 值文法（custom-ident 序列/quoted 名/CSS-wide keyword 列表
+        // 位拒）与 font 简写整体文法（expand_font 单源校验）。分派臂见
+        // [`validate_decl_value`] 中段（counter-increment 臂前——`simple()` 形
+        // function token 会被未实现函数放行臂先行误放）。driving:
+        // test_font_family_parsing 608F（rule 形 + setter 形双通道，inline 写面
+        // 此前白名单外放行 store 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-fonts-4/#family-name-value
+        // https://drafts.csswg.org/css-fonts-4/#font-prop
+        "font-family",
+        "font",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2075,12 +2494,19 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 values::parse_math_function(v)
             };
             match parsed {
-                // 文法 invalid → 整拒；两豁免交 oracle 既有裁决（g22 零漂移）：
+                // 文法 invalid → 整拒；豁免三类交 oracle 既有裁决（g22 零漂移）：
                 // 非单函数平衡跨度（`calc(50%) calc(25%)` 双 calc 拐角语法——
                 // [`is_single_spanning_math_value`]，border-radius-002 钉面）、
                 // 未知函数实参（css-values-5 inherit() 类——
-                // [`has_unknown_function_token`]）。
+                // [`has_unknown_function_token`]）、数学形未配平残缺（
+                // `progress(5, 0%, sign(10px)`——外层 `(` 无配对 `)`，末尾 `)` 属
+                // 内层 sign；is_math_function_value 的 ends_with(')') 启发式只看
+                // 末字符，文法残缺非「复杂合法形」拒收——progress-invalid 语料
+                // 未闭合族钉面，配平豁免两形不受扰）。
                 None => {
+                    if math_value_paren_unbalanced(v) {
+                        return false;
+                    }
                     if is_single_spanning_math_value(v) && !has_unknown_function_token(v) {
                         return false;
                     }
@@ -2127,6 +2553,222 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         if had_random {
             return random_valid;
         }
+    }
+    // 刀 N 二期 font 族写面文法门（css-fonts-4 §family-name-value + §font-prop）
+    // ——置于 value_has_unimplemented_function 放行臂之前（`simple()` 形非法
+    // function token 不在该函数名单，放行臂会先行误放；counter-increment 臂
+    // `reversed(` 同序先例）。escape 词法（`\s imple`/`\1f4a9` 转义 ident——
+    // 该组全为 valid 语料）[`parse_font_family`] 的 is_css_ident 不支持转义，
+    // 放行保形零误拒（FIXME: font-family 转义序列词法挂账，挂上后收窄此臂）；
+    // 替换函数形（var()/attr()）放行 store 原文（counter 臂同口径——有效性
+    // computed 期替换重裁）。整条 CSS-wide keyword（`font: inherit`）在白名单
+    // 通用臂先行放行，不入本臂。
+    // driving: test_font_family_parsing 608F（rule 形 insertRule/规则样式 setter
+    // 经 shim `_zwNormalizeDeclValue` font 臂桥入本函数，inline setter 直入）。
+    // https://drafts.csswg.org/css-fonts-4/#family-name-value
+    // https://drafts.csswg.org/css-fonts-4/#font-prop
+    if prop == "font-family" {
+        if value_has_substitution_function(v) || v.contains('\\') {
+            return true;
+        }
+        return !parse_font_family(v).is_empty();
+    }
+    if prop == "font" {
+        if value_has_substitution_function(v) || v.contains('\\') {
+            return true;
+        }
+        return crate::shorthand::font_shorthand_supported(v);
+    }
+    // counter-increment 写面文法门（css-lists-3 §counter-increment：`none` 单置、
+    // 名 = <custom-ident>（css-wide/none 排除）、整数位 = <integer> 字面或
+    // <math-function> 形、无逗号分隔；文法裁决不求值——求值在 apply 站
+    // parse_counter_list_with_sibling，容器 ctx 依赖见 decl_supported counter
+    // 臂注）。置于 value_has_unimplemented_function 之前——`reversed(` 不在
+    // 已实现函数名单，未实现放行臂会先行误放 `reversed(chapter)`。
+    // <https://drafts.csswg.org/css-lists-3/#counter-increment>
+    if prop == "counter-increment" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——css-values-3 §3.3
+        // var() 在属性文法内恒语法合法，有效性延后 computed 期替换重裁（g24
+        // 洞 A 同型豁免；typed-om「Can set counter-increment to var()
+        // references」g27 门拒收回归根因）。
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        // 转义 ident（css-lists valid 语料 `a\ 8 9` 转义空格名）超 top-level
+        // 空白分词文法面，保留既有放行（store 原文——该形语料序列化恒等）。
+        // FIXME: custom-ident 转义序列词法挂账。
+        if v.contains('\\') {
+            return true;
+        }
+        return values::parse_counter_list_grammar(v).is_some();
+    }
+    // text-size-adjust 写面文法门（css-size-adjust-1 §text-size-adjust：
+    // `auto | none | <percentage>`，负百分比 invalid——invalid 语料
+    // `reverse`/`0`/`10px`/`-100%` 拒形）。math 形放行 store（tree-counting
+    // 前置门已裁 sibling 形槽族、通用 math 门已裁文法；% 槽 canonical 折叠
+    // 在 fold_decl_specified）。
+    // <https://drafts.csswg.org/css-size-adjust-1/#adjustment-property>
+    if prop == "text-size-adjust" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——同 counter-increment
+        // 臂豁免（css-values-3 §3.3；typed-om var() references 组 g28 门拒收
+        // 回归根因），有效性 computed 期替换重裁。
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if values::is_math_function_value(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        if lv == "auto" || lv == "none" {
+            return true;
+        }
+        return v.ends_with('%')
+            && v[..v.len() - 1]
+                .trim()
+                .parse::<f64>()
+                .map(|n| n.is_finite() && n >= 0.0)
+                .unwrap_or(false);
+    }
+    // font-* 数值槽写面文法门（css-fonts-4 §font-weight-numeric +
+    // §font-width-prop）：math 形放行 store（font-property-unit-cycles calc 形
+    // 15 腿通道——apply 臂 eval 接线，eval fail-closed 由 apply oracle 拒），
+    // 非 math 形 apply oracle 兜底（parse_font_weight 域 [1,1000]/
+    // parse_font_stretch 关键字 + <percentage [0,∞)>——font-weight-invalid
+    // `auto`/`bold 900` 拒面同源）。替换函数形（attr()/var() 等）同样放行
+    // store 原文——oracle 对替换前文本恒拒（attr-all-types font-weight attr
+    // 形写面 -8 回归根因：g29 本分支只放行 math 形，g29 连续域使 expected
+    // 侧 `10` 可解析打破 trigfix 双侧对称 400，attr 文本被拒回落初始 400
+    // 即 Fail），computed 期级联替换后按属性文法重裁。
+    // <https://drafts.csswg.org/css-fonts-4/#font-weight-numeric>
+    // <https://drafts.csswg.org/css-fonts-4/#font-width-prop>
+    if matches!(prop.as_str(), "font-weight" | "font-stretch" | "font-width") {
+        if values::is_math_function_value(v) || value_has_substitution_function(v) {
+            return true;
+        }
+        let mut scratch = ComputedStyle::default();
+        return apply_property_value(&mut scratch, &prop, v);
+    }
+    // font-size-adjust 写面文法门（css-fonts-5 §font-size-adjust-prop
+    // `none | [<metric>]? [from-font | <number [0,∞]>]`，metric ∈
+    // ex-height|cap-height|ch-width|ic-width|ic-height）：整值 math 前置放行
+    //（语法由通用 math 门裁，eval 留 apply 链带 font ctx）；其余按首个空白
+    // 剥 metric 前缀后 basis 复检——basis 为 from-font、非负字面数或 math
+    // 函数。反序 number+metric、未知 metric（`em`/`ch`/`ic`）、裸 metric、
+    // `none`/`from-font` 带任何后缀、三 token 双 basis 全拒
+    //（font-size-adjust-invalid 57 形此前白名单外放行 store 原文——apply 链
+    // parse_font_size_adjust splitn 结构虽拒，shim CSSOM store 不经 apply，
+    // e.style 回显原文即 Fail）。空白剥前缀不进 calc 内部切分，
+    // `ex-height calc(1 * tan(atan2(1em, 1px)))` 型多空格 math basis 保真。
+    // 字面 CSS `inf`/`nan` 经 f64 parse 后 is_finite 门拒。
+    // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+    if prop == "font-size-adjust" {
+        let lv = v.to_ascii_lowercase();
+        // 替换函数形放行 store 原文——basisOk 对 `attr(…)`/`var(…)` 文本恒拒，
+        // 同 font-* 分支口径（computed 期级联替换后重裁）。
+        if value_has_substitution_function(&lv) {
+            return true;
+        }
+        let basis_ok = |t: &str| {
+            t == "from-font"
+                || t.parse::<f64>().is_ok_and(|x| x.is_finite() && x >= 0.0)
+                || values::is_math_function_value(t)
+        };
+        if lv == "none" || basis_ok(&lv) {
+            return true;
+        }
+        return lv.split_once(char::is_whitespace).is_some_and(|(m, rest)| {
+            matches!(m, "ex-height" | "cap-height" | "ch-width" | "ic-width" | "ic-height") && basis_ok(rest.trim())
+        });
+    }
+    // shape-outside 写面文法门（css-shapes-1 §shape-outside-property：
+    // `none | [ <basic-shape> || <shape-box> ]`）——置于未实现函数放行臂之前
+    //（circle()/ellipse()/inset() 等形状函数不在 IMPLEMENTED_VALUE_FUNCTIONS
+    // 名单，放行臂会先行误放 invalid 位置形；counter-increment 臂同序先例）。
+    // 裁决单点复用 apply 臂同一解析器 parse_clip_path（strict 位置文法共享）；
+    // 裸 <shape-box> 关键字独立受理；替换函数形（var()/attr()）放行 store
+    // 原文——oracle 对替换前文本恒拒（computed 期级联替换后重裁，counter
+    // 臂同口径）。（driving: css-shapes 语料 shape-outside-circle/ellipse-003
+    // 各 125F invalid 形此前原文透传 store 回显即 Fail。）
+    // FIXME: <basic-shape> <shape-box> 后缀组合形与 url() <image> 形未建模，
+    // 本门同拒（语料现值该两形均走样式表声明路径或已属 unsupported 域）。
+    // https://drafts.csswg.org/css-shapes/#shape-outside-property
+    if prop == "shape-outside" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        if matches!(lv.as_str(), "content-box" | "padding-box" | "border-box" | "margin-box") {
+            return true;
+        }
+        return values::parse_clip_path(v).is_some();
+    }
+    // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
+    // `<length-percentage>`）——裁决单点复用 apply 臂同一解析器
+    // parse_length_or_math + 域裁决（margin 同族关键字 auto/thin/stretch 等
+    // 拒、无单位非零 parse 拒）；替换函数形放行 store 原文（shape-outside 臂
+    // 同口径）。（driving: css-shapes 语料 shape-margin-invalid `none`/`10`、
+    // shape-margin-computed calc 形此前白名单外放行 store 原文回显即 Fail。）
+    // https://drafts.csswg.org/css-shapes/#shape-margin-property
+    if prop == "shape-margin" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return parse_length_or_math(v).is_some_and(|lv| shape_margin_length_is_valid(v, &lv));
+    }
+    // shape-image-threshold 写面文法门（css-shapes-1 §shape-image-threshold-
+    // property：`<number> | <percentage>`，computed 钳 [0,1]）——裁决单点复用
+    // parse_opacity（number/pct → /100 → 钳，invalid 形 `auto`/`10px` parse 拒）；
+    // 替换函数形放行 store 原文（同上）。spec「as specified」级不钳（valid 页
+    // `-7`/`-100%` 原样 canonical），钳制只在 computed 站。
+    // https://drafts.csswg.org/css-shapes/#shape-image-threshold-property
+    if prop == "shape-image-threshold" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_opacity(v).is_some();
+    }
+    // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color）——置于
+    // 未实现函数放行臂之前（repeat()/color-mix() 形状函数名不在
+    // IMPLEMENTED_VALUE_FUNCTIONS 名单，放行臂会先行误放 invalid 形；
+    // shape-outside 臂同序先例）。三属性共享同一文法裁决单点
+    // parse_rule_color_list（纯色单段 + repeat 循环 + auto ≤1）；替换函数形
+    // 放行 store 原文（oracle 对替换前文本恒拒，computed 期级联替换后重裁，
+    // shape-outside 臂同口径）。（driving: css-gaps 语料 gap-decorations-
+    // color-invalid 6 形此前原文透传 store 回显即 Fail。）
+    // https://drafts.csswg.org/css-gaps-1/#column-row-rule-color
+    if matches!(prop.as_str(), "column-rule-color" | "row-rule-color" | "rule-color") {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_rule_color_list(v).is_some();
+    }
+    // rule-width / rule-style 族写面文法门（css-gaps-1 §column-row-rule-width /
+    // §column-row-rule-style）——rule-color 臂同序同口径（替换函数形放行 store，
+    // 段列表裁决单点 parse_rule_width_list / parse_rule_style_list）。简写
+    // （rule-width/rule-style/rule/row-rule/column-rule）走 expand_shorthands
+    // 裁决（展开空 = 不支持，font_shorthand_supported 同判据）。
+    // https://drafts.csswg.org/css-gaps-1/#column-row-rule-width
+    if matches!(
+        prop.as_str(),
+        "column-rule-width" | "row-rule-width" | "column-rule-style" | "row-rule-style"
+    ) {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if prop.ends_with("-width") {
+            return values::parse_rule_width_list(v).is_some();
+        }
+        return values::parse_rule_style_list(v).is_some();
+    }
+    if matches!(
+        prop.as_str(),
+        "rule-width" | "rule-style" | "rule" | "row-rule" | "column-rule"
+    ) {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let decl = vec![(prop.clone(), v.to_string(), false, (0, 0, 1))];
+        return !crate::shorthand::expand_shorthands(&decl).is_empty();
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -2208,7 +2850,7 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
 /// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
 /// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
 /// 未实现面放行。
-const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 39] = [
+const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 40] = [
     "calc",
     "min",
     "max",
@@ -2233,6 +2875,10 @@ const IMPLEMENTED_VALUE_FUNCTIONS: [&str; 39] = [
     // CSS Values 5 calc-mix()（tentative 实现面：parse/fold/eval 全链）——
     // 从 passthrough 集转入文法断言集（invalid 页空项/字面权重范围/跨型拒）。
     "calc-mix",
+    // CSS Values 5 progress()（tentative：parse 型别门/eval/canonical 保形
+    // 全链）——同 calc-mix 口径入文法断言集（progress-invalid 语料空参/错位
+    // no-clamp/混型拒）。
+    "progress",
     "matrix",
     "matrix3d",
     "translate",
@@ -2260,7 +2906,11 @@ fn extract_random_args(value: &str) -> Vec<String> {
     let bytes = lower.as_bytes();
     let mut i = 0;
     while i + 7 <= bytes.len() {
-        if &lower[i..i + 7] != "random(" {
+        // byte 切片比较（`random(` 是 ASCII 序列；`&lower[i..i+7]` str 切片要求
+        // char boundary，窗口**终点**会落进多字节字符中间——font-family 白名单
+        // 接入后 valid 语料 `16px 納豆嫌い` 触发 byte-slice panic，2026-11-18
+        // 刀 N 二期 A/B 探针实证。`[u8]` 切片无边界约束，逐字节比较语义等价）。
+        if &bytes[i..i + 7] != b"random(" {
             i += 1;
             continue;
         }
@@ -2304,13 +2954,16 @@ fn extract_random_args(value: &str) -> Vec<String> {
 /// calc-size()/url()（引擎未接线，写面 oracle/通道既有兜底）。子串扫描：
 /// math 形值无字符串字面量误报面（content 等槽非 math 形不达本门）。
 fn value_has_substitution_function(value: &str) -> bool {
-    const NEEDLES: [&str; 9] = [
+    // progress() 不在豁免集（g33：css-parser parse/eval/canonical 全链已落——
+    // parse 树可达，progress-invalid 语料空参/错位 no-clamp/混型由通用 math 门
+    // 文法裁决拒收；含 var()/attr() 等替换函数的组合形仍由其余 needle 豁免走
+    // 延迟替换语义）。
+    const NEEDLES: [&str; 8] = [
         "var(",
         "env(",
         "attr(",
         "random(",
         "random-item(",
-        "progress(",
         "if(",
         "calc-size(",
         "url(",
@@ -2325,10 +2978,10 @@ fn value_has_substitution_function(value: &str) -> bool {
 /// 前先经本函数收紧：配平点非整值末字符即多函数/混排形（getComputedStyle-
 /// border-radius-002 语料钉面），交 oracle 既有裁决。
 fn is_single_spanning_math_value(value: &str) -> bool {
-    // 与 css-parser `is_math_function_value` 分派名单同步（22 数学函数）。
-    const NAMES: [&str; 22] = [
+    // 与 css-parser `is_math_function_value` 分派名单同步（23 数学函数）。
+    const NAMES: [&str; 23] = [
         "calc", "min", "max", "clamp", "round", "mod", "rem", "hypot", "pow", "atan2", "abs", "sign", "sqrt", "exp",
-        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix",
+        "log", "sin", "cos", "tan", "asin", "acos", "atan", "calc-mix", "progress",
     ];
     let v = value.trim();
     let lower = v.to_ascii_lowercase();
@@ -2380,6 +3033,29 @@ fn has_unknown_function_token(value: &str) -> bool {
     false
 }
 
+/// math 形值括号配平扫描（写面未配平残缺拒）：净深度非 0 即残缺
+///（`progress(5, 0%, sign(10px)` 外层 `(` 无配对——末尾 `)` 属内层 sign）。
+/// 仅在通用 math 门 parse 失败臂调用——配平值走
+/// [`is_single_spanning_math_value`]/[`has_unknown_function_token`] 既有豁免，
+/// 不受本扫描影响。字符串字面 math 值不存在（math 形值法无 string token），
+/// 朴素计数安全。
+fn math_value_paren_unbalanced(value: &str) -> bool {
+    let mut depth = 0i32;
+    for b in value.bytes() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth != 0
+}
+
 /// number 槽文本级角度单位 token 扫描（§10.5 number 槽 angle-provenance
 /// 补面）：角度叶 parse 期弧度 Number 化（CalcParser 注——`0deg` 产出纯
 /// number 树），型别表失去角度 provenance，文本扫描补 `min(0deg)`/`round(1,
@@ -2393,10 +3069,13 @@ fn has_angle_unit_token(value: &str) -> bool {
 /// 剥离三角函数调用实参跨度（sin/cos/tan/asin/acos/atan/atan2 的括号平衡
 /// 段）——角度是其合法定义域（§trig-funcs：`sin(30deg)` 返回 <number>），
 /// [`has_angle_unit_token`] 扫描前先剥，避免误伤三角实参角
-/// （sin-cos-tan-serialize 语料 270P 面）；calc 族裸角度叶不受扰
-/// （`round(1, 0deg)` 仍拒）。非 ASCII 字节按原样保留（UTF-8 安全）。
+/// （sin-cos-tan-serialize 语料 270P 面）；progress( 同列——产出恒 <number>
+///（CSS Values 5 §progress），三实参族一致性（含角度族）由 parse 期
+/// 逐实参门自裁（progress-serialize `progress(2rad, 1rad, 1rad)` 语料钉面）；
+/// calc 族裸角度叶不受扰（`round(1, 0deg)` 仍拒）。非 ASCII 字节按原样保留
+///（UTF-8 安全）。
 fn strip_trig_argument_spans(value: &str) -> String {
-    const TRIG: [&str; 7] = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2"];
+    const TRIG: [&str; 8] = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "progress"];
     let lower = value.to_ascii_lowercase();
     let bytes = lower.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(value.len());
@@ -2629,6 +3308,26 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transform", "rotate(acos(2))"));
         assert!(!validate_decl_value("transform", "rotate(atan(45deg))"));
         assert!(!validate_decl_value("transform", "rotate(asin(90px))"));
+    }
+
+    #[test]
+    fn shape_outside_write_gate_verdicts() {
+        // shape-outside 写面门（css-shapes-1 §shape-outside-property，apply
+        // 既有臂 oracle 裁决）：合法 basic-shape/shape-box/css-wide 形放行；
+        // 语料 invalidPositions 域（2 词缘偏移 `bottom 70%`、轴混搭 `50% left`、
+        // 3 词混轴 `top left 3px`）拒收——css-shapes circle/ellipse-003 语料
+        // inline setProperty invalid 形驱动。
+        assert!(validate_decl_value("shape-outside", "none"));
+        assert!(validate_decl_value("shape-outside", "circle(50px at 25% 75%)"));
+        assert!(validate_decl_value("shape-outside", "circle()"));
+        assert!(validate_decl_value("shape-outside", "inset(10%)"));
+        assert!(validate_decl_value("shape-outside", "circle(at bottom 70% right 30%)"));
+        assert!(validate_decl_value("shape-outside", "border-box"));
+        assert!(validate_decl_value("shape-outside", "inherit"));
+        assert!(!validate_decl_value("shape-outside", "circle(at bottom 70%)"));
+        assert!(!validate_decl_value("shape-outside", "circle(at top 50%)"));
+        assert!(!validate_decl_value("shape-outside", "circle(at 50% left)"));
+        assert!(!validate_decl_value("shape-outside", "circle(at top left 3px)"));
     }
 
     #[test]
@@ -2992,6 +3691,120 @@ mod t54_validate_decl_value_tests {
     }
 
     #[test]
+    fn counter_increment_write_gate() {
+        // css-lists-3 §counter-increment 写面文法门：invalid 语料 13 形逐拒
+        //（`reversed(` 不在已实现函数名单——臂位于未实现放行门之前）。
+        assert!(!validate_decl_value("counter-increment", "none chapter"));
+        assert!(!validate_decl_value("counter-increment", "reversed(none)"));
+        assert!(!validate_decl_value("counter-increment", "reversed(chapter)"));
+        assert!(!validate_decl_value("counter-increment", "3"));
+        assert!(!validate_decl_value("counter-increment", "99 imagenum"));
+        assert!(!validate_decl_value("counter-increment", "section -1, imagenum 99"));
+        assert!(!validate_decl_value("counter-increment", "section 3.14"));
+        for kw in ["inherit", "initial", "unset", "default", "revert", "revert-layer"] {
+            assert!(!validate_decl_value("counter-increment", &format!("{kw} 1")), "{kw} 1");
+        }
+        // valid 面（含 math 形整数位——文法裁决不求值）；`none` 单置放行。
+        assert!(validate_decl_value("counter-increment", "none"));
+        assert!(validate_decl_value("counter-increment", "myCounter otherCounter -8"));
+        assert!(validate_decl_value(
+            "counter-increment",
+            "myCounter calc(10 + (sign(2cqw - 10px) * 5))"
+        ));
+        // 转义空格名（`a\ 8 9`）超 top-level 分词面保留既有放行
+        //（FIXME: custom-ident 转义序列词法挂账）。
+        assert!(validate_decl_value("counter-increment", "a\\ 8 9"));
+        // 替换函数形放行 store（css-values-3 §3.3，computed 期重裁）。
+        assert!(validate_decl_value("counter-increment", "var(--A)"));
+        assert!(validate_decl_value("counter-increment", "attr(data-n)"));
+        assert!(validate_decl_value("counter-increment", "chapter var(--step)"));
+        // css-wide 关键字裸形放行（Cascading 4 §7.3 上下文无关）。
+        assert!(validate_decl_value("counter-increment", "inherit"));
+    }
+
+    #[test]
+    fn text_size_adjust_write_gate() {
+        // css-size-adjust-1 §text-size-adjust 写面文法门：invalid 语料 4 形拒
+        //（非关键字/无单位数字/长度单位/负百分比）。
+        assert!(!validate_decl_value("text-size-adjust", "reverse"));
+        assert!(!validate_decl_value("text-size-adjust", "0"));
+        assert!(!validate_decl_value("text-size-adjust", "10px"));
+        assert!(!validate_decl_value("text-size-adjust", "-100%"));
+        // valid 语料形：关键字 + 非负百分比 + math 形（树形/同 % 加法）。
+        assert!(validate_decl_value("text-size-adjust", "auto"));
+        assert!(validate_decl_value("text-size-adjust", "none"));
+        assert!(validate_decl_value("text-size-adjust", "200%"));
+        assert!(validate_decl_value("text-size-adjust", "0%"));
+        assert!(validate_decl_value("text-size-adjust", "calc(10% + 5%)"));
+        assert!(validate_decl_value("text-size-adjust", "calc(10% * sibling-index())"));
+        // 替换函数形放行 store（css-values-3 §3.3，computed 期重裁）；负 %
+        // 字面形仍写面拒（css-size-adjust invalid 页 round-trip 断言）。
+        assert!(validate_decl_value("text-size-adjust", "var(--A)"));
+        assert!(validate_decl_value("text-size-adjust", "attr(data-zoom %)"));
+        // css-wide 关键字裸形放行。
+        assert!(validate_decl_value("text-size-adjust", "inherit"));
+    }
+
+    #[test]
+    fn font_size_adjust_write_gate() {
+        // css-fonts-5 §font-size-adjust-prop 写面文法门：invalid 语料 57 形拒
+        //——`auto`/负数/反序 number+metric/未知 metric（`em`/`ch`/`ic`）/
+        // 裸 metric/`<metric> none`/双 basis 三 token/`none`·`from-font`
+        // 带后缀/字面 inf·nan。
+        assert!(!validate_decl_value("font-size-adjust", "auto"));
+        assert!(!validate_decl_value("font-size-adjust", "-10"));
+        assert!(!validate_decl_value("font-size-adjust", "0.5 ex-height"));
+        assert!(!validate_decl_value("font-size-adjust", "em 1.0"));
+        assert!(!validate_decl_value("font-size-adjust", "ch 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "ic 1.0"));
+        for metric in ["ex-height", "cap-height", "ch-width", "ic-width", "ic-height"] {
+            assert!(!validate_decl_value("font-size-adjust", metric));
+            assert!(!validate_decl_value("font-size-adjust", &format!("{metric} none")));
+            assert!(!validate_decl_value("font-size-adjust", &format!("{metric} ex-height")));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} from-font 0.5")
+            ));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} 0.5 from-font")
+            ));
+            assert!(!validate_decl_value(
+                "font-size-adjust",
+                &format!("{metric} none from-font")
+            ));
+        }
+        assert!(!validate_decl_value("font-size-adjust", "none none"));
+        assert!(!validate_decl_value("font-size-adjust", "none 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "none from-font"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font none"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font 0.5"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font ex-height"));
+        assert!(!validate_decl_value("font-size-adjust", "from-font from-font"));
+        assert!(!validate_decl_value("font-size-adjust", "inf"));
+        assert!(!validate_decl_value("font-size-adjust", "nan"));
+        assert!(!validate_decl_value("font-size-adjust", "ex-height inf"));
+        // valid 语料形：none / 非负数 / from-font / metric 前缀两 token /
+        // math 整值 + metric + math basis（多空格 calc 保真——空白剥前缀不进
+        // calc 内部切分）。
+        assert!(validate_decl_value("font-size-adjust", "none"));
+        assert!(validate_decl_value("font-size-adjust", "0.5"));
+        assert!(validate_decl_value("font-size-adjust", "from-font"));
+        assert!(validate_decl_value("font-size-adjust", "ex-height 0.5"));
+        assert!(validate_decl_value("font-size-adjust", "cap-height from-font"));
+        assert!(validate_decl_value("font-size-adjust", "EX-HEIGHT 0.5"));
+        assert!(validate_decl_value("font-size-adjust", "calc(0.5)"));
+        assert!(validate_decl_value("font-size-adjust", "ex-height calc(0.5)"));
+        assert!(validate_decl_value("font-size-adjust", "cap-height calc(0.5 + 1)"));
+        assert!(validate_decl_value(
+            "font-size-adjust",
+            "ex-height calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        // css-wide 关键字裸形放行。
+        assert!(validate_decl_value("font-size-adjust", "inherit"));
+    }
+
+    #[test]
     fn sibling_apply_eval_with_truth() {
         // CSS Values 5 §tree-counting 真值求值：tree-counting 页断言形态
         //（#test 序 2 / 计 5）。
@@ -3048,6 +3861,137 @@ mod t54_validate_decl_value_tests {
             Some((2, 5))
         ));
         assert_eq!(style.order, -3);
+    }
+
+    #[test]
+    fn font_slot_math_write_gate() {
+        // css-fonts-4 + css-properties-values-api
+        // #dependency-cycles-via-relative-units：font-* 数值槽 math 形以父级
+        // 字体为 font 相对单位基准——合成期经 [`ComputedStyle::parent_font_size`]
+        // 注入（inheritance 预应用段，font-property-unit-cycles 期望 parent em
+        // 30 与自身 font-size 10 分离驱动）；独立 apply（无父上下文）回落自身
+        // font_size。容器 30px → em 30/ex·cap 24/ch 15/ic 30（派生度量
+        // 0.8/0.5/1.0）。tan(atan2(y, x)) = y/x（弧度无精度损失面）。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(10.0);
+        style.parent_font_size = Some(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-weight",
+            "calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(30));
+
+        // 无父上下文（CSSOM 写面/CSS.supports 哨兵）→ 回落自身 font_size。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-weight",
+            "calc(1 * tan(atan2(1em, 1px)))"
+        ));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(30));
+
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-weight",
+            "calc(1 * tan(atan2(1ch, 1px)))"
+        ));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(15));
+
+        // css-fonts-4 §font-weight-numeric：calc 形值域 clamp（语料 calc(0)
+        // valid、computed 1；calc(-100) → 1）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "calc(0)"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(1));
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "calc(-100)"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(1));
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "calc(100 + 100)"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(200));
+        // 非 number 型别 math 形拒（fail-closed）。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-weight", "calc(1px + 2px)"));
+
+        // font-size-adjust <number> 槽：basis math 形走 with_font eval
+        //（tan 浮点尾差，f64 直存容差断言）。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-size-adjust",
+            "calc(1 * tan(atan2(1ex, 1px)))"
+        ));
+        assert!(matches!(
+            &style.font_size_adjust,
+            FontSizeAdjustValue::Adjust { metric: None, basis: FontSizeAdjustBasis::Number(n) }
+                if (n - 24.0).abs() < 1e-9
+        ));
+
+        // font-stretch <percentage> 槽：% 保持型 eval（1% × 30 → 30）。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(30.0);
+        assert!(apply_property_value(
+            &mut style,
+            "font-stretch",
+            "calc(1% * tan(atan2(1em, 1px)))"
+        ));
+        assert_eq!(style.font_stretch, 30.0);
+        // 纯 % 算术与字面零漂移。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-stretch", "calc(50% + 25%)"));
+        assert_eq!(style.font_stretch, 75.0);
+        // % × % 型别不符拒（css-values-4 §10.5 乘法规则）。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-stretch", "calc(50% * 50%)"));
+        // 绝对长度叶拒（<percentage> 槽不容 px）。
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-stretch", "calc(1px * 2)"));
+
+        // css-fonts-4 §font-width-prop 文法 `normal | <percentage [0,∞]>`：
+        // 0% valid、负 % invalid；font-width legacy alias 同槽（known-properties
+        // 注册 → CSS.supports 前置门判真）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-stretch", "0%"));
+        assert_eq!(style.font_stretch, 0.0);
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-width", "234.5%"));
+        assert_eq!(style.font_stretch, 234.5);
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "font-width", "-100%"));
+        assert!(apply_property_value(&mut style, "font-width", "normal"));
+        // calc 负 %：解析期不 clamp（css-values-4 §10.5，font-width-valid 钉
+        // valid）、computed 钳 0（font-width-computed 0% 腿 oracle）。解析器
+        // 把 `-100%` 归一成 `0px - 100%`——Add/Sub 下与 % 同树的 px 叶按数值
+        // 参与（px 锚伪影）；乘除下孤立 px 仍拒（上 `calc(1px * 2)` 拒面）。
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-width", "calc(-100%)"));
+        assert_eq!(style.font_stretch, 0.0);
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-stretch", "calc(-100%)"));
+        assert_eq!(style.font_stretch, 0.0);
+
+        // font-* 写面文法门：invalid 语料拒（font-weight-invalid 页形）。
+        assert!(!validate_decl_value("font-weight", "auto"));
+        assert!(!validate_decl_value("font-weight", "bold 900"));
+        assert!(!validate_decl_value("font-stretch", "-100%"));
+        // math 形放行 store（apply 站 eval）。
+        assert!(validate_decl_value("font-weight", "calc(0)"));
+        assert!(validate_decl_value("font-stretch", "calc(100%)"));
+        // css-fonts-4 §font-weight-numeric 域外拒。
+        assert!(!validate_decl_value("font-weight", "1001"));
+        // 替换函数形放行 store 原文（attr-all-types font-weight attr 形写面
+        // -8 回归根因钉面：oracle 对替换前文本恒拒，computed 期级联替换后
+        // 重裁）。
+        // https://drafts.csswg.org/css-values-5/#attr-notations
+        assert!(validate_decl_value("font-weight", "attr(data-foo type(<number>))"));
+        assert!(validate_decl_value("font-weight", "attr(var(--x))"));
+        assert!(validate_decl_value("font-weight", "attr(data-foo number)"));
+        assert!(validate_decl_value("font-stretch", "attr(data-foo wdth)"));
+        assert!(validate_decl_value("font-size-adjust", "attr(data-foo type(<number>))"));
     }
 
     #[test]
@@ -3297,10 +4241,12 @@ mod t54_validate_decl_value_tests {
         assert!(!validate_decl_value("scale", "round(1, 0.5turn)"));
         assert!(!validate_decl_value("transition-duration", "min(0px)"));
         // 豁免面：替换函数/未接线函数 parse 树不可达交既有门；custom property
-        // 值任意文法（CSS Parsing 3）。
+        // 值任意文法（CSS Parsing 3）。progress 自 g33 起入文法断言集——实参
+        // 残缺形（单参 `progress(50%)`，§progress 三实参文法）不再走未知函数
+        // 豁免，文法门直拒（progress-invalid 语料 `progress(1)` 同族）。
         assert!(validate_decl_value("width", "calc(var(--x) + 1px)"));
         assert!(validate_decl_value("opacity", "var(--o)"));
-        assert!(validate_decl_value("margin-left", "calc(progress(50%) * 1px)"));
+        assert!(!validate_decl_value("margin-left", "calc(progress(50%) * 1px)"));
         assert!(validate_decl_value("width", "random(1px, 2px)"));
         assert!(validate_decl_value("--x", "min(1px, )"));
         // plain 值/非 math 形零漂移（gate 不触发）。
@@ -3322,5 +4268,27 @@ mod r4086_stretch_tests {
         let mut style2 = ComputedStyle::default();
         assert!(apply_property_value(&mut style2, "height", "-webkit-fill-available"));
         assert_eq!(style2.height, LengthValue::Stretch);
+    }
+
+    #[test]
+    fn progress_write_face_family_gate() {
+        // CSS Values 5 §progress 写面门（g33）。rad 角度族 opacity 槽放行：
+        // 角度叶 parse 期 Number 化，槽族 provenance 扫描对 progress 实参
+        // span 屏蔽（产出恒 <number>，实参族一致性由 parse 期逐实参门自裁）。
+        assert!(validate_decl_value("opacity", "progress(100px, 0px, 100px)"));
+        assert!(validate_decl_value("opacity", "progress(50%, 0px, 100px)"));
+        assert!(validate_decl_value("opacity", "progress(1, 0, 1)"));
+        assert!(validate_decl_value("opacity", "progress(2rad, 1rad, 1rad)"));
+        // calc 包裹 no-clamp 形（shim 折叠口径粘连保形透传交宿主 fold）。
+        assert!(validate_decl_value(
+            "opacity",
+            "calc(0.5 * progress(no-clamp 100px, 0px, 100px))"
+        ));
+        // 混型（number×angle）parse 期拒收后不落未知函数豁免。
+        assert!(!validate_decl_value("opacity", "progress(5, 0deg, 8deg)"));
+        // 未闭合 sign 形拒收：is_math_function_value ends_with(')') 启发式
+        // 只看末字符，外层 ( 永不配平（末尾 ) 属 sign），不得落
+        // is_single_spanning + unknown-function 双豁免误放行。
+        assert!(!validate_decl_value("opacity", "progress(5, 0%, sign(10px)"));
     }
 }

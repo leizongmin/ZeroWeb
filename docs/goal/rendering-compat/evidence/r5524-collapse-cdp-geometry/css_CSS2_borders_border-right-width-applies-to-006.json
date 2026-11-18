@@ -1,0 +1,516 @@
+{
+ "url": "/css/CSS2/borders/border-right-width-applies-to-006.xht",
+ "title": "CSS Test: Border-right-width applied to element with display table-column",
+ "html": {
+  "tag": "html",
+  "rect": {
+   "x": 0,
+   "y": 0,
+   "w": 800,
+   "h": 154
+  },
+  "client": {
+   "w": 800,
+   "h": 600
+  },
+  "offset": {
+   "w": 800,
+   "h": 154
+  },
+  "border": {
+   "width": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "style": [
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "color": [
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)"
+   ]
+  },
+  "padding": [
+   "0px",
+   "0px",
+   "0px",
+   "0px"
+  ],
+  "borderCollapse": "separate",
+  "display": "block"
+ },
+ "body": {
+  "tag": "body",
+  "rect": {
+   "x": 8,
+   "y": 16,
+   "w": 784,
+   "h": 130
+  },
+  "client": {
+   "w": 784,
+   "h": 130
+  },
+  "offset": {
+   "w": 784,
+   "h": 130
+  },
+  "border": {
+   "width": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "style": [
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "color": [
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)",
+    "rgb(0, 0, 0)"
+   ]
+  },
+  "padding": [
+   "0px",
+   "0px",
+   "0px",
+   "0px"
+  ],
+  "borderCollapse": "separate",
+  "display": "block"
+ },
+ "boxes": [
+  {
+   "tag": "div",
+   "id": "table",
+   "rect": {
+    "x": 8,
+    "y": 50,
+    "w": 96,
+    "h": 96
+   },
+   "client": {
+    "w": 96,
+    "h": 96
+   },
+   "offset": {
+    "w": 96,
+    "h": 96
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table"
+  },
+  {
+   "tag": "div",
+   "id": "test",
+   "rect": {
+    "x": 8,
+    "y": 50,
+    "w": 48,
+    "h": 96
+   },
+   "client": {
+    "w": 48,
+    "h": 96
+   },
+   "offset": {
+    "w": 48,
+    "h": 96
+   },
+   "border": {
+    "width": [
+     "0px",
+     "96px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "solid",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-column"
+  },
+  {
+   "tag": "div",
+   "cls": "column",
+   "rect": {
+    "x": 56,
+    "y": 50,
+    "w": 48,
+    "h": 96
+   },
+   "client": {
+    "w": 48,
+    "h": 96
+   },
+   "offset": {
+    "w": 48,
+    "h": 96
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-column"
+  },
+  {
+   "tag": "div",
+   "cls": "row",
+   "rect": {
+    "x": 8,
+    "y": 50,
+    "w": 96,
+    "h": 48
+   },
+   "client": {
+    "w": 96,
+    "h": 48
+   },
+   "offset": {
+    "w": 96,
+    "h": 48
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-row"
+  },
+  {
+   "tag": "div",
+   "cls": "cell",
+   "rect": {
+    "x": 8,
+    "y": 50,
+    "w": 48,
+    "h": 48
+   },
+   "client": {
+    "w": 0,
+    "h": 48
+   },
+   "offset": {
+    "w": 48,
+    "h": 48
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  },
+  {
+   "tag": "div",
+   "cls": "cell",
+   "rect": {
+    "x": 56,
+    "y": 50,
+    "w": 48,
+    "h": 48
+   },
+   "client": {
+    "w": 0,
+    "h": 48
+   },
+   "offset": {
+    "w": 48,
+    "h": 48
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  },
+  {
+   "tag": "div",
+   "cls": "row",
+   "rect": {
+    "x": 8,
+    "y": 98,
+    "w": 96,
+    "h": 48
+   },
+   "client": {
+    "w": 96,
+    "h": 48
+   },
+   "offset": {
+    "w": 96,
+    "h": 48
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-row"
+  },
+  {
+   "tag": "div",
+   "cls": "cell",
+   "rect": {
+    "x": 8,
+    "y": 98,
+    "w": 48,
+    "h": 48
+   },
+   "client": {
+    "w": 0,
+    "h": 48
+   },
+   "offset": {
+    "w": 48,
+    "h": 48
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  },
+  {
+   "tag": "div",
+   "cls": "cell",
+   "rect": {
+    "x": 56,
+    "y": 98,
+    "w": 48,
+    "h": 48
+   },
+   "client": {
+    "w": 0,
+    "h": 48
+   },
+   "offset": {
+    "w": 48,
+    "h": 48
+   },
+   "border": {
+    "width": [
+     "0px",
+     "0px",
+     "0px",
+     "0px"
+    ],
+    "style": [
+     "none",
+     "none",
+     "none",
+     "none"
+    ],
+    "color": [
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)",
+     "rgb(0, 0, 0)"
+    ]
+   },
+   "padding": [
+    "0px",
+    "0px",
+    "0px",
+    "0px"
+   ],
+   "borderCollapse": "collapse",
+   "display": "table-cell"
+  }
+ ],
+ "doc": {
+  "clientW": 800,
+  "clientH": 600,
+  "scrollW": 800,
+  "scrollH": 600
+ }
+}

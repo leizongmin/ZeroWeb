@@ -256,6 +256,35 @@ fetch_raw "html/semantics/embedded-content/the-img-element/image.png"
 # 动态 @import 事件臂，以本资产为 MIME 真形态基准。
 fetch_raw "html/semantics/document-metadata/the-style-element/support/css-red.txt"
 
+# ③k the-img-element relevant mutations 族助资产（s441）：relevant-mutations.html
+# 46 键 + relevant-mutations-lazy.html 1 键 + adoption.html 1 键引用
+# /images/green-2x2.png——上游 pin 在档（jsdelivr 301 落地 2×2 16-bit RGB 实测）。
+# s126 曾误判缺席而本地生成（gitignore 不入库），本树资源丢失后 48 键伪红潜伏
+# 10 天（11-05 s293 绿 → 11-14 s440 sweep 全红）才被全量 join 揭出。改走 fetch_raw
+# 常规通道后 fresh checkout / 资源丢失均由 make 前置 fetch 步自愈；断言面只看
+# load/error/currentSrc/naturalWidth，8-bit（旧本地版）与 16-bit（上游）字节差
+# 零波及（s441 solo 复验 121P/0F/0T）。
+fetch_raw "images/green-2x2.png"
+
+# ③l the-input-element color.window.js 助资产（s443 重落，s442 首落即撤）：
+# color.window.js META script 引 /css/support/color-testcommon.js——上游 pin
+# 在档（167 行 self-contained，jsdelivr 实测）。s442 曾以「solo hang ×4 →
+# 全量 sweep 毒化」假设撤落；s443 以实测翻案：同资源在场全量双腿干净跑通
+# （solo ×7 含 5/15/30s 三档 deadline 均零 hang，s442 的 4/4 hang 未再复现，
+# 判定为其时他流 reftest 重腿机器态绑定的一次性竞态，观察项挂账）。重落后
+# 预期键面位移 F−1（load support 假红消）+ P+196（s442 四跑 + s443 全量腿
+# 实证 196/196 全 Pass）。
+fetch_raw "css/support/color-testcommon.js"
+
+# ③m the-label-element label-forwarded-click-pointer-properties 助资产（s444）：
+# 该案外链 /pointerevents/pointerevent_support.js（getEvent 等事件助手）——资产缺
+# 席时两键 ReferenceError: getEvent is not defined 伪红（s227/s442/s443 同型第三
+# 例）。s442 曾把键 1 判「testdriver 真输入管道能力门」、键 2 判「疑引擎事件面」
+# ——均为资产遮蔽伪判据：资源就位后 solo 2/2 全 Pass（testdriver stub 健在、
+# isTrusted=false 转发面健全）。上游 pin 在档 19111 字节 self-contained，语料内
+# 唯一消费者即本案。
+fetch_raw "pointerevents/pointerevent_support.js"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

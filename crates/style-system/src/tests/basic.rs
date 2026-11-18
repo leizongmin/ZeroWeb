@@ -1445,3 +1445,107 @@ fn test_non_root_display_contents_stays_contents() {
     let div_style = styles.get(&div).expect("div 应该有样式");
     assert_eq!(div_style.display, DisplayValue::Contents);
 }
+
+/// css-values-4 §attr security：`--s: attr(href)` 替换产物经 var() 进入取
+/// URL 属性（background-image）→ 整条声明丢弃（IACVT 回落初值 none）。
+/// 驱动：WPT css-values attr-security-animation/transition/universal-selector
+/// 三页 `image-set(var(--s))` 链（g45 image-set 文法位放行后暴露）。
+/// <https://drafts.csswg.org/css-values-4/#attr-security>
+#[test]
+fn test_attr_taint_via_custom_property_drops_url_target() {
+    let (mut doc, _html, _body, div, _p) = make_test_dom();
+    doc.set_attribute(div, "href", "https://does-not-exist.test/404.png");
+    let mut sys = StyleSystem::new();
+
+    let decls = |property: &str, value: &str| Declaration {
+        property: property.to_string(),
+        value: value.to_string(),
+        important: false,
+    };
+    let rules = |declarations: Vec<Declaration>| Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations,
+        })],
+    };
+
+    let style = sys.compute_element_style(
+        &doc,
+        div,
+        &[rules(vec![
+            decls("--s", "attr(href)"),
+            decls("background-image", "image-set(var(--s))"),
+        ])],
+        None,
+    );
+    assert!(
+        style.background_image.is_empty(),
+        "attr() 污染经自定义项传播的 background-image 声明应整条丢弃，实际 {:?}",
+        style.background_image
+    );
+
+    // 负钉：未引用污染项的取 URL 属性不受牵连。
+    let style2 = sys.compute_element_style(
+        &doc,
+        div,
+        &[rules(vec![
+            decls("--s", "attr(href)"),
+            decls("background-image", "linear-gradient(red)"),
+        ])],
+        None,
+    );
+    assert!(
+        !style2.background_image.is_empty(),
+        "未引用污染项的 background-image 不应被丢弃，实际 {:?}",
+        style2.background_image
+    );
+}
+
+#[test]
+/// mask 简写 reset 级联语义（css-masking-1 §3.10）：先设 mask 长手与
+/// mask-border-* 五长手非初值，再设 mask 简写——expand_mask 的 13 声明在
+/// 源序后位（position 更大），级联胜出 = 全部长手回初值（驱动页：
+/// css/css-masking/mask-shorthand-subproperties-reset.html）。
+/// https://drafts.fxtf.org/css-masking/#the-mask
+fn test_mask_shorthand_reset_cascade_wins() {
+    use crate::cascade::{CascadeOrder, CascadedDeclaration, Origin, cascade};
+    // 18 声明照 cascade 真实 expand 输出序（5 显式长手 + mask 展开 13）
+    let d: Vec<(String, String)> = vec![
+        ("mask-border-outset".into(), "10px 20px 30px 40px".into()),
+        ("mask-border-repeat".into(), "round space".into()),
+        ("mask-border-slice".into(), "1 2 3 4 fill".into()),
+        ("mask-border-source".into(), "url(\"#mask-border\")".into()),
+        ("mask-border-width".into(), "10px 20px 30px 40px".into()),
+        ("mask-image".into(), "url(\"#mask\")".into()),
+        ("mask-mode".into(), "match-source".into()),
+        ("mask-position".into(), "0% 0%".into()),
+        ("mask-size".into(), "auto".into()),
+        ("mask-repeat".into(), "repeat".into()),
+        ("mask-origin".into(), "border-box".into()),
+        ("mask-clip".into(), "border-box".into()),
+        ("mask-composite".into(), "add".into()),
+        ("mask-border-source".into(), "none".into()),
+        ("mask-border-slice".into(), "0".into()),
+        ("mask-border-width".into(), "auto".into()),
+        ("mask-border-outset".into(), "0".into()),
+        ("mask-border-repeat".into(), "stretch".into()),
+    ];
+    let decls: Vec<CascadedDeclaration> = d
+        .iter()
+        .enumerate()
+        .map(|(i, (p, v))| CascadedDeclaration {
+            property: p.as_str(),
+            value: v.as_str(),
+            order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), i, false),
+        })
+        .collect();
+    let result = cascade(decls, false);
+    // 五 mask-border reset 胜出（初值串）
+    assert_eq!(result.get("mask-border-outset").map(String::as_str), Some("0"));
+    assert_eq!(result.get("mask-border-repeat").map(String::as_str), Some("stretch"));
+    assert_eq!(result.get("mask-border-slice").map(String::as_str), Some("0"));
+    assert_eq!(result.get("mask-border-source").map(String::as_str), Some("none"));
+    assert_eq!(result.get("mask-border-width").map(String::as_str), Some("auto"));
+    // mask-image 同胜（简写自身展开值保形）
+    assert_eq!(result.get("mask-image").map(String::as_str), Some("url(\"#mask\")"));
+}

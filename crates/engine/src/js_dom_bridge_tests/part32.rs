@@ -122,15 +122,18 @@ fn test_apply_append_child_by_path_lenient_miss_t7() {
         out, "<html><head></head><body><div id=\"host\"></div></body></html>",
         "锚 miss 应 lenient 跳过（树不变）\n{out}"
     );
-    // ③ 子 handle 悬垂 → 硬错（与 AppendChildByHandle 同口径）。
+    // ③ 子 handle 悬垂 → lenient skip（T68 第六面口径演进：原与 AppendChildByHandle
+    // 同硬错口径；跨批 refresh 重建使 handle 换代失效成活体常态，硬错毒批代价过大，
+    // 对齐 SetTextOnHandle R100 warn+跳过——条目跳过、树不变、不中止整批）。
     let mutations = vec![DomMutation::AppendChildBySelPath {
         parent_selector: "#host".into(),
         path: vec![],
         child_handle: "__ghost".into(),
     }];
-    assert!(
-        apply_mutations_to_html(html, &mutations).is_err(),
-        "子 handle 悬垂应硬错"
+    let out3 = apply_mutations_to_html(html, &mutations).expect("悬垂子条目应跳过而非中止整批");
+    assert_eq!(
+        out3, "<html><head></head><body><div id=\"host\"></div></body></html>",
+        "子 handle 悬垂应 lenient 跳过（树不变）\n{out3}"
     );
 }
 

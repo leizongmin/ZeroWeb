@@ -387,9 +387,10 @@ fn apply_runner_modal_state(
     with_descendants.sort_unstable();
     with_descendants.dedup();
     let mut sys = StyleSystem::new();
-    // 视口与全量/增量路径同源（compute_styles_for_doc / finish_generation_update 的
-    // 1280×800 默认）。
-    sys.set_viewport(1280.0, 800.0);
+    // 视口与全量/增量路径同源（g49：pending 视图布局 viewport 真值，未接线回落
+    // 1280×800——见 gcs_viewport_dims）。
+    let (vw, vh) = gcs_viewport_dims();
+    sys.set_viewport(vw, vh);
     if slot.10.is_empty() {
         sys.compute_styles_incremental(&slot.3, &slot.5, &with_descendants, &mut slot.4);
     } else {
@@ -727,7 +728,10 @@ fn finish_generation_update(
         sheets_dirty || slot.6 != css || slot.7 != adopted || slot.8 != entries || slot.9 != shadow_entries;
     if sheets_dirty {
         let parsed = memoized_external_sheet(&css);
-        slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref());
+        // g49：`<style media>` 门与 gCS length/% 解析同源——pending 视图布局 viewport
+        // 真值（未接线宿主回落 1280×800）。
+        let viewport = gcs_viewport_dims();
+        slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref(), viewport);
         slot.6 = css;
         slot.7 = adopted;
         slot.8 = entries;
@@ -745,8 +749,9 @@ fn finish_generation_update(
     // changed 集 → 注入后的重算覆盖目标元素。
     apply_runner_modal_state(slot, drain_gen, style_version);
     let mut sys = StyleSystem::new();
-    // 视口与全量路径同源（compute_styles_for_doc 的 1280×800 默认）。
-    sys.set_viewport(1280.0, 800.0);
+    // 视口与全量路径同源（g49：pending 视图布局 viewport 真值，未接线回落 1280×800）。
+    let (vw, vh) = gcs_viewport_dims();
+    sys.set_viewport(vw, vh);
     if slot.10.is_empty() {
         sys.compute_styles_incremental(&slot.3, &slot.5, &changed, &mut slot.4);
     } else {
@@ -863,97 +868,8 @@ pub(super) fn computed_style_by_handle(
     forward: Option<&Mutex<HashMap<String, String>>>,
     pending: impl FnOnce() -> Vec<DomMutation>,
 ) -> String {
-    let css = active_external_css();
-    let adopted = active_adopted_css();
-    let entries = active_external_css_entries();
-    let shadow_entries = active_shadow_css_entries();
+    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, pending);
     HANDLE_VIEW_CACHE.with(|cell| {
-        {
-            let mut slot = cell.borrow_mut();
-            let same = matches!(
-                &*slot,
-                Some((h, g, v, vg, ap, c, a, e, se, ..))
-                    if h == html
-                        && *g == drain_gen
-                        && *v == style_version
-                        && *vg == view_gen
-                        && *ap == applied
-                        && **c == *css
-                        && **a == *adopted
-                        && **e == *entries
-                        && **se == *shadow_entries
-            );
-            if !same {
-                let m = pending();
-                let start = applied.min(m.len());
-                let prefix_has_shadow = m[..start].iter().any(|mm| {
-                    matches!(
-                        mm,
-                        DomMutation::AttachShadow { .. } | DomMutation::AttachShadowOnHandle { .. }
-                    )
-                });
-                let base_has_marker = html.contains("shadowrootmode");
-                let mut doc;
-                let mut nodes: HashMap<String, NodeId> = HashMap::new();
-                if prefix_has_shadow && base_has_marker {
-                    // s402（html-semantics M2）：基座携声明式标记（drain 重序列化回环
-                    // 或探测环 dump——shim `_zwSrQualifies180` list 臂对命令式根恒收、
-                    // serializer ShadowRoot 臂同形；典型触发形态 = 队列已 drain 尽、
-                    // 窗口 [applied..count) 空）→ parse 物化的 shadow 树无 handle 身份
-                    //（序列化不带 handle 标记），森林 handle 全部落空。重建 = 基座剥
-                    // 声明式模板 span（parse 不物化，交给重放）+ 森林切片
-                    //（[`super::shadow_forest_mutations`]——最终归属闭包过滤的
-                    // [0..applied) 前缀）重放：Create*/attach/append 链在视图 doc
-                    // 重注册全部森林 handle。切片就地对 (m, start) 计算，无跨发布
-                    // 滞后；重放窗口 [applied..count) 照旧续放 pending 尾。
-                    // https://dom.spec.whatwg.org/#dom-element-attachshadow
-                    let forest = super::shadow_forest_mutations(&m, start);
-                    doc = parse_html(&super::strip_declarative_shadow_templates(html));
-                    // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
-                    // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
-                    // applier 内部）。两段调用共用 nodes 持久表：切片注册的 handle 供
-                    // 窗口段解析（applier 入口从 persistent_nodes 预植 ephemeral 表）。
-                    let _ = super::apply_dom_mutations_full(&mut doc, &forest, None, Some(&mut nodes), None, None);
-                    let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
-                } else {
-                    doc = parse_html(html);
-                    // s168（html-semantics M2）：attachShadow 已应用前缀 × 基座未携声明式
-                    // shadow → 全量重放。游标发布与基座换代非配对的宿主形态（testharness
-                    // runner 的 dom_html 注册期原文：游标已推进而基座不含 JS 落地效果）下，
-                    // parse(基座) 缺 [0..applied) 的 shadow 树状态，[applied..] 重放永不及物
-                    // ——shadow 树内 handle 全部落空。基座含声明式形态时（drain 重序列化
-                    // 回环，serializer ShadowRoot 臂 → parse 侧 materialize），shadow 树已在
-                    // 基座，维持 [applied..] 窗语义不变（生产 cached_html 形态，防双计）。
-                    // https://dom.spec.whatwg.org/#dom-element-attachshadow
-                    let start = if prefix_has_shadow && !base_has_marker {
-                        0
-                    } else {
-                        start
-                    };
-                    // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
-                    // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
-                    // applier 内部）。
-                    let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
-                }
-                // s168：compute_styles_for_doc 为三通道共汇点——shadow 条目融合在其内部。
-                let (mut styles, _) = compute_styles_for_doc(&doc, &css);
-                apply_intrinsic_size_overrides(&doc, &mut styles);
-                *slot = Some((
-                    html.to_string(),
-                    drain_gen,
-                    style_version,
-                    view_gen,
-                    applied,
-                    css,
-                    adopted,
-                    entries,
-                    shadow_entries,
-                    doc,
-                    nodes,
-                    styles,
-                ));
-            }
-        }
         let binding = cell.borrow();
         let Some((.., doc, nodes, styles)) = binding.as_ref() else {
             return String::new();
@@ -978,13 +894,162 @@ pub(super) fn computed_style_by_handle(
         };
         styles
             .get(&nid)
-            // g19：sibling ctx 注入（CSS Values 5 §tree-counting）——inset 槽
-            // sibling 叶 Calc 树求值（作用域有 doc+nid）。
             .map(|s| {
-                serialize_computed_property_with_sibling(s, prop, Some(zero_style_system::sibling_position(doc, nid)))
+                // CSS Transition 登记（wptfyi-css Transition 通道刀，2026-11-16）：
+                // 前值取 per-identity 最近 gCS 观测（css-transitions §2 before-change
+                // style；文档级槽 diff 会被 harness 两阶段穿插写重建到终态——
+                // per-identity 快照只在本元素读点更新，穿插写零干扰）。登记先于本读
+                // consult（同一脚本轮次 setProperty(to)→读：登记与咨询同读完成）。
+                // 登记期严格门过滤非插值对，echo 池零扰动。
+                if let Some(prev) =
+                    super::transition_registry::take_last_style(super::transition_registry::World::View, handle)
+                {
+                    super::transition_registry::register_from_style_change(
+                        super::transition_registry::World::View,
+                        handle,
+                        &prev,
+                        s,
+                        doc,
+                        nid,
+                    );
+                }
+                super::transition_registry::store_last_style(super::transition_registry::World::View, handle, s);
+                let sibling = Some(zero_style_system::sibling_position(doc, nid));
+                // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）——
+                // 动态元素（handle 身份，createElement 产物）gCS 通道同覆盖；未命中
+                // 回落级联序列化零漂移。rect 桥复用本通道（prop="width"）咨询恒
+                // None除非该 handle 真有动画——几何面零干扰。
+                super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
+                    .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
+                    // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
+                    // handle 通道同镜像；无动画 O(1) None。刀 K1：doc+styles 在场
+                    // 传父 computed（'inherit' 端点解析源；根元素父为 Document 无
+                    // 样式 → None 回落 initial 同式）。
+                    .or_else(|| {
+                        super::cssa_registry::query_override_for_handle(
+                            handle,
+                            prop,
+                            s,
+                            doc.parent_node(nid).and_then(|pid| styles.get(&pid)),
+                        )
+                    })
+                    .unwrap_or_else(|| serialize_computed_property_with_sibling(s, prop, sibling))
             })
             .unwrap_or_default()
     })
+}
+
+/// 视图槽代际对齐（s161 槽填充自 [`computed_style_by_handle`] 抽出共享）：基座
+/// parse + 权威 applier 重放 pending 区间 `[applied..count)` + 全文档级联 + 固有
+/// 尺寸覆盖。键（html, drain_gen, style_version, view_gen, applied + css/adopted/
+/// entries/shadow entries）不匹配才重建，同键命中零成本。handle gCS（
+/// [`computed_style_by_handle`]）与 selector rect（[`pending_view_selector_rect`]）
+/// 两通道同槽同视图。
+fn ensure_handle_view_slot(
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    view_gen: usize,
+    applied: usize,
+    pending: impl FnOnce() -> Vec<DomMutation>,
+) {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
+    HANDLE_VIEW_CACHE.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let same = matches!(
+            &*slot,
+            Some((h, g, v, vg, ap, c, a, e, se, ..))
+                if h == html
+                    && *g == drain_gen
+                    && *v == style_version
+                    && *vg == view_gen
+                    && *ap == applied
+                    && **c == *css
+                    && **a == *adopted
+                    && **e == *entries
+                    && **se == *shadow_entries
+        );
+        if same {
+            return;
+        }
+        {
+            let m = pending();
+            let start = applied.min(m.len());
+            let prefix_has_shadow = m[..start].iter().any(|mm| {
+                matches!(
+                    mm,
+                    DomMutation::AttachShadow { .. } | DomMutation::AttachShadowOnHandle { .. }
+                )
+            });
+            let base_has_marker = html.contains("shadowrootmode");
+            let mut doc;
+            let mut nodes: HashMap<String, NodeId> = HashMap::new();
+            if prefix_has_shadow && base_has_marker {
+                // s402（html-semantics M2）：基座携声明式标记（drain 重序列化回环
+                // 或探测环 dump——shim `_zwSrQualifies180` list 臂对命令式根恒收、
+                // serializer ShadowRoot 臂同形；典型触发形态 = 队列已 drain 尽、
+                // 窗口 [applied..count) 空）→ parse 物化的 shadow 树无 handle 身份
+                //（序列化不带 handle 标记），森林 handle 全部落空。重建 = 基座剥
+                // 声明式模板 span（parse 不物化，交给重放）+ 森林切片
+                //（[`super::shadow_forest_mutations`]——最终归属闭包过滤的
+                // [0..applied) 前缀）重放：Create*/attach/append 链在视图 doc
+                // 重注册全部森林 handle。切片就地对 (m, start) 计算，无跨发布
+                // 滞后；重放窗口 [applied..count) 照旧续放 pending 尾。
+                // https://dom.spec.whatwg.org/#dom-element-attachshadow
+                let forest = super::shadow_forest_mutations(&m, start);
+                doc = parse_html(&super::strip_declarative_shadow_templates(html));
+                // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
+                // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
+                // applier 内部）。两段调用共用 nodes 持久表：切片注册的 handle 供
+                // 窗口段解析（applier 入口从 persistent_nodes 预植 ephemeral 表）。
+                let _ = super::apply_dom_mutations_full(&mut doc, &forest, None, Some(&mut nodes), None, None);
+                let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
+            } else {
+                doc = parse_html(html);
+                // s168（html-semantics M2）：attachShadow 已应用前缀 × 基座未携声明式
+                // shadow → 全量重放。游标发布与基座换代非配对的宿主形态（testharness
+                // runner 的 dom_html 注册期原文：游标已推进而基座不含 JS 落地效果）下，
+                // parse(基座) 缺 [0..applied) 的 shadow 树状态，[applied..] 重放永不及物
+                // ——shadow 树内 handle 全部落空。基座含声明式形态时（drain 重序列化
+                // 回环，serializer ShadowRoot 臂 → parse 侧 materialize），shadow 树已在
+                // 基座，维持 [applied..] 窗语义不变（生产 cached_html 形态，防双计）。
+                // https://dom.spec.whatwg.org/#dom-element-attachshadow
+                let start = if prefix_has_shadow && !base_has_marker {
+                    0
+                } else {
+                    start
+                };
+                // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
+                // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
+                // applier 内部）。
+                let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
+            }
+            // s168：compute_styles_for_doc 为三通道共汇点——shadow 条目融合在其内部。
+            let (mut styles, sheets) = compute_styles_for_doc(&doc, &css);
+            apply_intrinsic_size_overrides(&doc, &mut styles);
+            // CSSA 声明式 keyframes 喂入（wptfyi-css 刀 E，2026-11-17）——视图槽
+            // 重建与代际槽同口径（handle 通道 createElement 动态元素 gCS 走本槽，
+            // interpolation corpus CSSA 元素即此形态——漏喂则 cssa 时钟空转全回落）。
+            super::cssa_registry::note_stylesheets(&sheets);
+            *slot = Some((
+                html.to_string(),
+                drain_gen,
+                style_version,
+                view_gen,
+                applied,
+                css,
+                adopted,
+                entries,
+                shadow_entries,
+                doc,
+                nodes,
+                styles,
+            ));
+        }
+    });
 }
 
 thread_local! {
@@ -1022,6 +1087,23 @@ thread_local! {
 /// cell，不经此）。
 pub fn set_pending_layout_viewport(width: u32, height: u32) {
     PENDING_VIEWPORT.with(|slot| *slot.borrow_mut() = (width, height));
+}
+
+/// g49：getComputedStyle 快照通道视口真值——进程内 webview 布局 viewport
+///（shim 安装期 [`set_pending_layout_viewport`] 同步 config 宽高，与渲染管线
+/// `RenderPipeline::new` 及 shim `innerWidth/innerHeight` 同源）。未同步
+///（测试线程/未接线宿主/多进程 renderer）回落 M3 约定 1280×800。gCS 级联与
+/// 串化通道据此与布局同视口——此前恒 1280×800 硬编码，runner 800×600 下
+/// vw/vh 族 computed 值系统性放大 1280/800 倍。注：本值 shim 安装后页内不变
+///（产品 resize 走 `__zw_user_resize` 不重置此槽），故 gCS 代际缓存键无需并入。
+pub(crate) fn gcs_viewport_dims() -> (f64, f64) {
+    PENDING_VIEWPORT.with(|slot| {
+        let (w, h) = *slot.borrow();
+        (
+            if w == 0 { 1280.0 } else { f64::from(w) },
+            if h == 0 { 800.0 } else { f64::from(h) },
+        )
+    })
 }
 
 /// s421：pending 视图 handle rect——`__zw_getBoundingClientRect` 对 `createElement`
@@ -1090,6 +1172,131 @@ pub(super) fn pending_view_handle_rect(
         }
         // 跨批（已 drain 物化进基座）handle——刻意不解析（见函数头注 s284 雷区）。
         let nid = *nodes.get(handle)?;
+        let key = crate::hit_test::node_id_to_u64(nid);
+        // rect 表命中 → O(1) 查表。
+        let cached = HANDLE_RECT_CACHE.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .filter(|(ch, cg, cv, cvg, cap, cw, cht, cc, ca, ce, cse, _)| {
+                    ch == html
+                        && *cg == drain_gen
+                        && *cv == style_version
+                        && *cvg == view_gen
+                        && *cap == applied
+                        && *cw == vw_raw
+                        && *cht == vh_raw
+                        && **cc == *css
+                        && **ca == *adopted
+                        && **ce == *entries
+                        && **cse == *shadow_entries
+                })
+                .and_then(|(_, _, _, _, _, _, _, _, _, _, _, map)| map.get(&key).copied())
+        });
+        if cached.is_some() {
+            return cached;
+        }
+        // miss → 视图布局（渲染管线同相位）+ rect 填表（生产渲染同语义）。
+        let mut engine = zero_layout_engine::LayoutEngine::new(vw, vh);
+        let layout = engine.compute(doc, styles);
+        let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, styles);
+        let store = crate::rect_bridge::new_layout_rect_snapshot();
+        cache.fill_layout_rect_snapshot(&store);
+        let map = store.lock().ok()?.clone();
+        HANDLE_RECT_CACHE.with(|cell| {
+            *cell.borrow_mut() = Some((
+                html.to_string(),
+                drain_gen,
+                style_version,
+                view_gen,
+                applied,
+                vw_raw,
+                vh_raw,
+                Arc::clone(&css),
+                Arc::clone(&adopted),
+                Arc::clone(&entries),
+                Arc::clone(&shadow_entries),
+                map,
+            ));
+        });
+        HANDLE_RECT_CACHE.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|(_, _, _, _, _, _, _, _, _, _, _, map)| map.get(&key).copied())
+        })
+    })
+}
+
+/// s423：pending 视图 selector rect——`__zw_getBoundingClientRect` selector 身份
+///（在文档元素，`#id` 形）在 mutation pending 窗口（队列长 > applied 游标）内的
+/// 真实几何。与 [`pending_view_handle_rect`] 同语义、同视图槽、同 rect 表——身份
+/// 面不同：handle 臂（s421）面向 `createElement` 产物（快照无从承载），本臂面向
+/// 基座既有元素。
+///
+/// CSSOM View：rect 读须先 update the style and layout steps（rect_bridge M3 同
+/// 注）。进程内 webview 的 rect 回调 selector 路径此前只读渲染后快照——testharness
+/// 单脚本 turn 内 `el.style.X = v` → 同 turn offsetWidth/offsetLeft/gBCR 全体读到
+/// 写前几何（css-anchor-position position-area 族 ~190F 根因：write→read 同 turn，
+/// drain 只在 execute_script 尾；drain 后快照才刷新）。视图 =
+/// [`ensure_handle_view_slot`]（handle gCS 同槽同键：parse 基座 + 权威 applier 重放
+/// pending 区间 `[applied..count)` + 全文档级联 + 固有尺寸覆盖），节点经
+/// `find_by_selector` 在视图 doc 解析，rect 表复用 [`HANDLE_RECT_CACHE`]（doc 级
+/// NodeId 表——gCS/handle 臂已填本代际视图时纯 O(1) 查表）。
+///
+/// **drain 后不进本臂**：调用方以 `style_version > applied` 门控（窗口外返回 None，
+/// 快照路径旧行为零回归）；s284 clone-img attr 期望面同由窗口门收窄——drain 后 img
+/// 几何仍由快照承载。
+/// https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+pub(super) fn pending_view_selector_rect(
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    view_gen: usize,
+    applied: usize,
+    selector: &str,
+    pending: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<(f32, f32, f32, f32)> {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
+    let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
+    let vw = if vw_raw == 0 { 1280.0 } else { vw_raw as f32 };
+    let vh = if vh_raw == 0 { 800.0 } else { vh_raw as f32 };
+    // 视图槽填充（同键命中零成本；重放只发生在换代分支）。
+    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, pending);
+    HANDLE_VIEW_CACHE.with(|view_cell| {
+        let view = view_cell.borrow();
+        let (h, g, v, vg, ap, c, a, e, se, doc, _, styles) = view.as_ref()?;
+        // 防御键比对（视图槽换代竞态理论上同线程同步不可达；键漂移即弃读不误供给）。
+        if h != html
+            || *g != drain_gen
+            || *v != style_version
+            || *vg != view_gen
+            || *ap != applied
+            || **c != *css
+            || **a != *adopted
+            || **e != *entries
+            || **se != *shadow_entries
+        {
+            return None;
+        }
+        // selector 在视图 doc 解析（基座既有元素——重放只叠加 pending 效果，不灭
+        // 既有节点；结构性 pending 变更下选择器位次语义与 drain 后快照一致）。
+        let nid = super::find_by_selector(doc, selector)?;
+        // s437：img 几何排除在现算视图之外——img 布局尺寸携带非 DOM 的资源态
+        // （解码固有尺寸，见 [`crate::pipeline::Pipeline::build_img_intrinsic_all`]，
+        // 由渲染泵按 image_sizes 注入），视图 re-parse 只有 DOM+CSS，`img` 无
+        // width/height 属性时退化成占位满填（语料实测 720×100 vs 快照 300/240，
+        // naturalWidth-naturalHeight-width-height 98 键伪红根因）。rect 快照在
+        // img 已加载后即渲染后真值（快照臂 = 父提交行为），img 面回落快照臂。
+        // FIXME(replaced-elements): object/embed 等其余替换元素的解码态几何同源
+        // 缺口未排除（s423 臂锚点查询面不含 img 之外替换元素，语料未见回归）。
+        if matches!(
+            doc.get(nid).map(|n| &n.kind),
+            Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "img"
+        ) {
+            return None;
+        }
         let key = crate::hit_test::node_id_to_u64(nid);
         // rect 表命中 → O(1) 查表。
         let cached = HANDLE_RECT_CACHE.with(|cell| {
@@ -1258,6 +1465,10 @@ pub fn with_cached_document_styles<T>(
                         // s168：compute_styles_for_doc 汇点内融合 shadow 条目（scope 感知）。
                         let (doc, styles, sheets) =
                             compute_document_styles_with_inline_overrides_css(html, mutations, &css);
+                        // CSSA 声明式 keyframes 喂入（wptfyi-css 刀 E，2026-11-17）——
+                        // 重建产物即当前代际权威 stylesheet 集，@keyframes 规则在此
+                        // 注册进 gCS 咨询时钟（insert-or-replace 幂等）。
+                        super::cssa_registry::note_stylesheets(&sheets);
                         // scopes 与槽键同步重建（派生缓存非键）：占位空表会让后续同代
                         // finish_generation_update 的 `slot.10.is_empty()` 分支谓词失真
                         //（shadow 页误入增量通道，shadow 树内变更退化走文档表级联）。
@@ -1305,6 +1516,8 @@ pub fn with_cached_document_styles<T>(
                     // compute_styles_for_doc 汇点内融合 shadow 条目）。
                     let (doc, styles, sheets) =
                         compute_document_styles_with_inline_overrides_css(html, mutations, &css);
+                    // CSSA 声明式 keyframes 喂入（刀 E，同 tree_dirty 分支）。
+                    super::cssa_registry::note_stylesheets(&sheets);
                     let shadow_scopes = crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
                     *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries, shadow_entries, shadow_scopes));
                 }

@@ -1016,7 +1016,9 @@
           var _nc5 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           _nc5.nonce = String(value);
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
-            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))
+            && (typeof _reflectedStringAttrOn === 'function'
+                ? _reflectedStringAttrOn(_realTag(sel, handle), p) === null
+                : _reflectedStringAttr(p) === null) && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))
             && !(p === 'name' && typeof _reflectedNameAttr === 'function' && _reflectedNameAttr(_realTag(sel, handle), p) != null)) {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
@@ -1026,6 +1028,8 @@
           // R5007 M3 片 c（html-syntax-compat）豁免：**reflected DOMString 属性收非原始值仍须反射**（WebIDL
           // DOMString 转换 null→"null"、对象走 ToPrimitive toString/valueOf——WPT reflection-* 'IDL set to
           // null/object' 簇 getAttribute() 断言；旧 expando 拦截使属性未写 → getAttribute null）。
+          // target expando 刀：`target` 经 [`_reflectedStringAttrOn`] tag 门——真反射 tag（a/area/form/link/base）
+          // 维持 R5007 反射，非反射 tag（div 等）放行 expando（real browser `container.target = el` 普通 expando）。
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
         } else if (p === 'src' && _realTag(sel, handle) === 'SCRIPT') {
@@ -1284,6 +1288,11 @@
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
+          // s433：name/id 反射写 bump FORM 具名集合 attr 纪元（`_zwFormAttrEpoch`，
+          // part03 声明处注记——改名后新名须立即可 named 命中，R27/R28 实证）。
+          if ((_refAttr === 'name' || _refAttr === 'id') && typeof _zwFormAttrEpoch === 'number') {
+            _zwFormAttrEpoch++;
+          }
           // s241：实例层同步（同 part04 value 族臂——reflected 直写臂不经
           // setAttribute，`_zwAttrInstSyncNoNs` 刷新实例层读侧种子记录）。
           _zwAttrInstSyncNoNs(key, _refAttr, _refVal);
@@ -1344,14 +1353,16 @@
         } else if (typeof prop === 'string' && prop !== ''
                    && _realTag(sel, handle) === 'FORM'
                    && prop !== 'item' && prop !== 'namedItem'
-                   && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
                    && _zwFormNamedLookup(sel, handle, prop) !== null) {
           // s137（html-semantics M2）：FORM named property 非 writable（legacy
           // named getter）——set 拒绝（严格上下文 TypeError / sloppy 静默，
           // trap 返 false 由引擎按赋值点严格性定）。WPT form-nameditem l1 案
           // `form["l1"] = 5`（sloppy 静默 + strict TypeError 断言面）。位于
-          // else-if 链末端：id/name/action 等反射 IDL 先行（fix#19c 偏离——
-          // 内建成员不被 named 遮蔽，写语义同侧）。
+          // else-if 链末端：id/name/action 等反射 IDL 先行——s433 退役 fix#19c
+          // 排除名单（reset/requestSubmit/submit 同为 supported property name
+          // 时具名属性 non-writable 拒写，spec/Chrome 同；已知近似：具名遮蔽的
+          // 反射名写面仍先落反射臂写内容属性——Chrome 拒写且零副作用，本 shim
+          // get 侧已 named-first 故读值一致，写侧副作用差异无语料面，记账）。
           // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
           return false;
         } else {
@@ -1434,6 +1445,13 @@
             || prop === 'children' || prop === 'firstElementChild' || prop === 'lastElementChild'
             || prop === 'childElementCount' || prop === 'previousElementSibling'
             || prop === 'nextElementSibling'
+            // WAAPI 门（插值 harness 解锁轮）：`'animate' in el` 实例面——R2965
+            // animate/R3067 getAnimations 函数在 get trap 面，has 白名单缺列使
+            // `in` 恒 false（interpolation-testcommon.js:179 以
+            // `'animate' in Element.prototype` 判 Web Animations face；原型面
+            // 定义在 part03 `_makeAnimation` 后置块）。R317/R152 同款先例形态。
+            // https://drafts.csswg.org/web-animations-1/#dom-animation-animate
+            || prop === 'animate' || prop === 'getAnimations'
             // media-elements M1 切片 3：HTMLMediaElement/HTMLTrackElement IDL 属性 `in` 可见性
             //（WPT crossOrigin.html 首断言 `'crossOrigin' in video`——has 白名单缺列使恒 false）。
             || prop === 'crossOrigin' || prop === 'defaultMuted' || prop === 'muted'
@@ -1586,14 +1604,15 @@
           if (_r184v !== undefined) return true;
         }
         // s137（html-semantics M2）：FORM named property `in` 可见性——named 是 own
-        // 属性（enumerable:false 仍命中 has）；排除名单与 get trap FORM gate 同款
-        //（`"namedItem" in form` 须 false——WPT namedItem 案）。invariant 末位：
+        // 属性（enumerable:false 仍命中 has）；item/namedItem 豁免保留（`"namedItem"
+        // in form` 须 false——WPT namedItem 案；shim 不提供该二方法）。s433 退役
+        // fix#19c 三名排除（reset/requestSubmit/submit 具名控件在场时 `in` 命中
+        // named——[OverrideBuiltins] named 为 own，spec/Chrome 同）。invariant 末位：
         // target own non-configurable 由 `prop in _t` 兜底（不可报 false）。
         // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
             && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           return true;
         }
@@ -1666,15 +1685,15 @@
         // 元素/RadioNodeList 集合、writable:false（仅 getter）、enumerable:false
         //（[LegacyUnenumerableNamedProperties]——ownKeys 不含、for-in 不可见）、
         // configurable:true（defineProperty 可覆写→需 false 臂配合，见下）。
-        // 排除名单与 get trap FORM gate 同款（fix#19c 偏离：内建方法名不被 named
-        // 遮蔽，gOPD 亦返 undefined——真实浏览器 gOPD(form,'reset') 是原型方法
-        // 非 own，own 描述符 undefined 同形）。WPT form-nameditem 三案描述符断言
-        //（value/writable/configurable/enumerable 逐字段）。
+        // s433 退役 fix#19c 三名排除：[OverrideBuiltins] 下具名属性为 own（named
+        // properties object 位于接口原型之上遮蔽内建——p08 断言面），具名控件在场时
+        // gOPD(form,'reset') 返 named 描述符（真实浏览器 gOPD(form,'reset') 无具名
+        // 控件时是原型方法 own 描述符 undefined 同形保留）。WPT form-nameditem 三案
+        // 描述符断言（value/writable/configurable/enumerable 逐字段）。
         // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
-            && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit') {
+            && prop !== 'item' && prop !== 'namedItem') {
           var _fnhD = _zwFormNamedLookup(sel, handle, prop);
           if (_fnhD !== null) {
             return { value: _fnhD, writable: false, enumerable: false, configurable: true };
@@ -1712,10 +1731,10 @@
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
             && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           // named 命中：non-writable validate 必败 → false（严格上下文 TypeError，
-          // WPT l1 案 Object.defineProperty(form,'l1',{value:5}) 断言面）。
+          // WPT l1 案 Object.defineProperty(form,'l1',{value:5}) 断言面）。s433
+          // 退役 fix#19c 三名排除（具名 reset/requestSubmit/submit 控件同 non-writable）。
           return false;
         }
         try { Object.defineProperty(_t, prop, desc); return true; } catch (_efdp) { return false; }
@@ -1745,11 +1764,12 @@
           var _fdelI = _formControls(sel, handle);
           if (Number(prop) < _fdelI.length) return false;
         }
-        // ③ FORM named 命中 → false（WPT l1 案 strict delete TypeError 面）。
+        // ③ FORM named 命中 → false（WPT l1 案 strict delete TypeError 面）。s433
+        // 退役 fix#19c 三名排除（具名 reset/requestSubmit/submit 控件同为 supported
+        // property name 不可删——[OverrideBuiltins] 序同 ②b indexed 先于 named）。
         if (typeof prop === 'string' && prop !== ''
             && _realTag(sel, handle) === 'FORM'
             && prop !== 'item' && prop !== 'namedItem'
-            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           return false;
         }
@@ -2015,6 +2035,44 @@
         }
       } catch (_e100) {}
     }
+    // T70（v4 跨批再挂 identity 回收——t69 诊断 caseH v4 面，spec #dom-node-
+    // childnodes [SameObject]）：正向桥在跨批 evict 后缺失，但 removeChild 时
+    // 逆向桥仍活——`_zwEvictedIdentBySel` 记下 sel→handle（part04 handle-child
+    // 移除臂写入）。同 sel 跨批重挂（宿主重建节点仅带 sel，原 handle 不再注册）
+    // 时在此回收原 proxy——`_wrapHandle` 同 handle 返缓存同对象，视图 identity
+    // 与重挂前连续。**不消费**（读后保留）：identity 须跨后续换代稳定（diag
+    // v4→v4.5 两代实证一次性回收会在下一代丢失）；与既有 sel-aliasing 模型一致
+    // （`_proxyCache['s:'+sel]` 对同 sel 新节点同样持续复用旧 proxy）。桥命中
+    // 路径（同批重注册/未 evict）不经过本臂。
+    try {
+      var _t70eh = globalThis._zwEvictedIdentBySel
+        ? globalThis._zwEvictedIdentBySel[sel] : null;
+      if (_t70eh) {
+        // T70-R1（返修 DF-1 写丢失根修）：此刻该 handle 已被 evict 双向清表
+        //（webview `evict_removed_identities`），只回收 proxy 不够——其写 journal
+        // `SetAttrOnHandle{死 handle}` 在 apply 翻译臂 persistent_sel miss →
+        // lenient warn+skip，setAttribute/style/text/removeAttribute 写静默丢
+        // 失、getAttribute 读空（base 同查询返 sel proxy 写可落地，行为分叉；
+        // 钉测 t70_evict_remount_recycled_proxy_write_lands 红检实证
+        // landed=false/readSync=true 分叉）。回收即重锚：host 侧
+        // `__zw_reanchor_evicted_handle` 把 sel↔handle 双表回填（键已存在不覆
+        // 盖——同批重注册新绑定优先），下一 apply 起 `persistent`
+        // （selector_handle_map 倒置视图）恢复 handle→sel 翻译，全部 `*OnHandle`
+        // 写经 selector 变体落到当前持有该 sel 的重挂节点；journal 形态不变，
+        // 读 latest-wins replay 与落地恒一致。规范语义：DOM §4.4 childNodes
+        // [SameObject]（https://dom.spec.whatwg.org/#interface-nodelist）+
+        // §4.2.2 live 反射（https://dom.spec.whatwg.org/#collections）——
+        // evict→同 sel 重挂后旧 proxy 等价新 live proxy，写不可丢（set an
+        // attribute value 落 live 元素）读不漂移（R5010「锚回同 sel 可能读到
+        // 同位新元素」先例同款取舍）。回收臂仅在查询返回点触发（sel 此刻活）。
+        // 未注册回调（旧 host）→ 原行为，零回归。
+        if (typeof __zw_reanchor_evicted_handle === 'function') {
+          __zw_reanchor_evicted_handle(String(_t70eh), sel);
+        }
+        _r100Remember(_t70eh, sel);
+        return _wrapHandle(_t70eh);
+      }
+    } catch (_eT70r) {}
     return _wrapSelector(sel);
   }
 
@@ -2389,7 +2447,12 @@
   // namespaceURI HTMLNS。文档模型复用 `_makeDetachedDocument`（查询/mutation/Range 全可用），
   // docEl.textContent 供用例 load 断言。
   function _zwMakeIframeDoc(kind, markup, charsetLabel) {
-    var doc = _makeDetachedDocument('');
+    // B1 切片 2（editing goal d22）：传 undefined（非 ''）——R130 title 合成分支
+    // 的门是 `title !== undefined`，'' 会给每个 iframe 文档的 headEl 视图塞一个
+    // 空壳 `<title></title>`（真实浏览器里 srcdoc 的 title 是解析产物，在 body
+    // 树提升路径序列化——docEl innerHTML 双 title 即此根因）。doc.title 读面不
+    // 变（headEl 无 title 后全树走查同落空，getter 恒 ''）。
+    var doc = _makeDetachedDocument(undefined);
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
     doc._zwMarkup = String(markup || '');
     doc.__r115SetWin = function (w) { _r115WinRef = w; };
@@ -2680,6 +2743,23 @@
           var _r159Bm = /<body\b([^>]*)>/i.exec(String(mEl[3] || ''));
           doc._r159BodyAttrs = _r159Bm ? String(_r159Bm[1] || '').trim() || null : null;
         } catch (_eA4) {}
+        // T 切片（editing goal d34，2026-11-15）：head 段**解析前剥离**——旧径
+        // head 段留在 bodyInner，body 上下文解析把 title/script 等元素提为 body
+        // 树顶层子（探针 D4 实证 body.innerHTML getter 返回
+        // `<title>iframe</title><br>`）；语料 setup `body.innerHTML = ''` 走
+        // setter 重置（_tree=null、bodyHtml=''）即毁 head 段——
+        // delete-in-child-of-html 18F title 门控根因。剥出整段存 doc 槽
+        //（detHtml 包装层补发保 R164 轮转查询视图 + docEl getter headElOut
+        // 接管），bodyInner 只留 body 段，body 视图与真浏览器同形。
+        // https://html.spec.whatwg.org/multipage/syntax.html#the-head-element
+        try {
+          var _r159Hh = /<head\b[^>]*>[\s\S]*?<\/head\s*>/i.exec(String(bodyInner || ''));
+          if (_r159Hh) {
+            doc._r159HeadHtml = _r159Hh[0];
+            bodyInner = bodyInner.slice(0, _r159Hh.index)
+              + bodyInner.slice(_r159Hh.index + _r159Hh[0].length);
+          }
+        } catch (_eT0) {}
       }
       } else {
         // R255（js-dom M4）：无显式 `<html>…</html>` 对的 HTML 子文档——
@@ -2770,6 +2850,170 @@
       try { Object.setPrototypeOf(_r177syntheticHtml, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e177p) {}
       docEl = _r177syntheticHtml;
     }
+    // R5520（editing d19）：docEl 属性**写侧** + focus 面——两条 docEl 路径
+    //（mEl 提取 R292 只读 get/hasAttribute、R177 合成无属性面）此前均无
+    // setAttribute（insertparagraph/delete-in-child-of-head tentative 族
+    // `contentDocument.documentElement.setAttribute("contenteditable","")`
+    // TypeError → 整 promise_test unhandled rejection）。写侧入本地覆盖表，
+    // get/has 读侧先查覆盖再回落既有实现（R292 惰性缓存 / undefined）。
+    // focus()/blur()：合成文档无聚焦转移可观测 → no-op（主窗/子窗/body
+    // 视图同语义，R5520 批）。
+    // https://html.spec.whatwg.org/#dom-focus
+    (function () {
+      var _r5520Attrs = {};
+      var _r5520Get = docEl.getAttribute;
+      docEl.setAttribute = function (n, v) { _r5520Attrs[String(n).toLowerCase()] = v == null ? '' : String(v); };
+      docEl.getAttribute = function (n) {
+        var k = String(n == null ? '' : n).toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(_r5520Attrs, k)) return _r5520Attrs[k];
+        return typeof _r5520Get === 'function' ? _r5520Get.call(docEl, n) : null;
+      };
+      docEl.hasAttribute = function (n) { return docEl.getAttribute(n) !== null; };
+      docEl.focus = function () {};
+      docEl.blur = function () {};
+      // B1 切片 2（editing goal d22，2026-11-14）：docEl **虚树读面**——子文档
+      // 运行时是双树（body 视图 _tree + headEl 独立视图，R220 教训：不把
+      // head/body 真实链入 docEl.childNodes——sim insertNode 路径 -158P 已试已
+      // 回退），而 delete/insertparagraph-in-child-of-{head,html} corpus 断言
+      // `childDoc.documentElement.innerHTML` 期望真浏览器形
+      // `<head>…</head><body>…</body>`（docEl 旧 innerHTML 读 undefined）。
+      // 此面**只读**：按 head 专属标签把 body 树顶层元素提升进 head 段（不移动
+      // 节点——Range 语料 body 视图偏移不变），headEl 子与 docEl 附加子按槽位
+      // 序列化。firstChild/childNodes 等 Node 路径保持原样（R220 纪律）。
+      // https://dom.spec.whatwg.org/#dom-element-innerhtml
+      var _b1HeadTags = { meta: 1, title: 1, style: 1, script: 1, link: 1, base: 1, template: 1 };
+      var _b1Void = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
+      function _b1Attrs(el) {
+        var out = '';
+        try {
+          var at = el.attributes;
+          if (at && typeof at.length === 'number') {
+            for (var i = 0; i < at.length; i++) {
+              if (!at[i]) continue;
+              out += ' ' + String(at[i].name) + '="' + String(at[i].value == null ? '' : at[i].value).replace(/"/g, '&quot;') + '"';
+            }
+            return out;
+          }
+          if (typeof el.getAttributeNames === 'function') {
+            var names = el.getAttributeNames();
+            for (var j = 0; j < names.length; j++) {
+              var v = el.getAttribute(names[j]);
+              out += ' ' + String(names[j]) + '="' + String(v == null ? '' : v).replace(/"/g, '&quot;') + '"';
+            }
+          }
+        } catch (_eB1at) {}
+        return out;
+      }
+      function _b1Ser(n) {
+        if (!n) return '';
+        var t = n.nodeType;
+        if (t === 3) return String(n.data == null ? '' : n.data);
+        if (t === 8) return '<!--' + String(n.data == null ? '' : n.data) + '-->';
+        if (t === 1) {
+          var tag = String(n.tagName || '').toLowerCase();
+          var kids = n.childNodes || [];
+          var inner = '';
+          for (var i = 0; i < kids.length; i++) inner += _b1Ser(kids[i]);
+          if (_b1Void[tag]) return '<' + tag + _b1Attrs(n) + '>';
+          return '<' + tag + _b1Attrs(n) + '>' + inner + '</' + tag + '>';
+        }
+        return '';
+      }
+      Object.defineProperty(docEl, 'innerHTML', {
+        configurable: true,
+        get: function () {
+          var promoted = '', bodyOut = '', headElOut = '', pre = '', post = '';
+          try {
+            var kids = doc.body ? (doc.body.childNodes || []) : [];
+            for (var i = 0; i < kids.length; i++) {
+              var k = kids[i];
+              if (k && k.nodeType === 1 && _b1HeadTags[String(k.tagName || '').toLowerCase()]) promoted += _b1Ser(k);
+              else bodyOut += _b1Ser(k);
+            }
+          } catch (_eB1ih1) {}
+          try {
+            if (doc.head) {
+              var hk = doc.head.childNodes || [];
+              for (var j = 0; j < hk.length; j++) headElOut += _b1Ser(hk[j]);
+            }
+          } catch (_eB1ih2) {}
+          try {
+            var extras = docEl.childNodes || [];
+            var between = '';
+            for (var x = 0; x < extras.length; x++) {
+              var ex = extras[x];
+              var slot = ex && ex.__zwB1Slot;
+              if (slot === 'before-head') pre += _b1Ser(ex);
+              else if (slot === 'before-body') between += _b1Ser(ex);
+              else post += _b1Ser(ex);
+            }
+          } catch (_eB1ih3) {}
+          return pre + '<head>' + promoted + headElOut + '</head>' + between + '<body>' + bodyOut + '</body>' + post;
+        },
+      });
+      // B1 切片 2：docEl insertBefore 接受 head/body 虚参照（delete-in-child-of-html
+      // `documentElement.insertBefore(div, childDoc.body/head)`——真浏览器 body/head
+      // 是 docEl 子；本仓双树形下 NotFoundError）。按槽位入 docEl.childNodes +
+      // __zwB1Slot 印记供 innerHTML 定位；Node 路径其余形态照旧（spec 步骤 2-3）。
+      function _b1SetParent(c, p) {
+        try { c.parentNode = p; return; } catch (_eB1pa) {}
+        try { Object.defineProperty(c, 'parentNode', { value: p, writable: true, configurable: true }); } catch (_eB1pb) {}
+      }
+      var _b1BaseAppend = docEl.appendChild;
+      docEl.appendChild = function (c) {
+        var r = _b1BaseAppend.call(docEl, c);
+        try { if (c && typeof c === 'object') c.__zwB1Slot = 'after'; } catch (_eB1sl) {}
+        return r;
+      };
+      docEl.insertBefore = function (c, ref) {
+        if (!c || typeof c.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node'.");
+        }
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eB1rm) {} }
+        var slot = 'after';
+        var idx = docEl.childNodes.length;
+        if (ref && ref.nodeType === 1 && (ref === doc.head || ref === doc.body)) {
+          slot = ref === doc.head ? 'before-head' : 'before-body';
+          idx = slot === 'before-head' ? 0 : docEl.childNodes.length;
+          // before-body 按插入序排在既有 before-body 之后
+          if (slot === 'before-body') {
+            idx = 0;
+            for (var i = 0; i < docEl.childNodes.length; i++) {
+              if (docEl.childNodes[i] && docEl.childNodes[i].__zwB1Slot === 'before-body') idx = i + 1;
+            }
+          }
+        } else if (ref == null) {
+          idx = docEl.childNodes.length;
+        } else {
+          var at = docEl.childNodes.indexOf(ref);
+          if (at < 0) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+              'NotFoundError');
+          }
+          slot = (ref && ref.__zwB1Slot) || 'after';
+          idx = at;
+        }
+        if (c.nodeType === 11) {
+          var fk = c.childNodes || [];
+          for (var fi = 0; fi < fk.length; fi++) docEl.insertBefore(fk[fi], ref);
+          return c;
+        }
+        _b1SetParent(c, docEl);
+        c.__zwB1Slot = slot;
+        // FIXME(d33): 跨文档收养未实现——DOM pre-insert 步骤要求插 HERE 时
+        // adopt 进宿主文档（ownerDocument 随换）。语料
+        // insertparagraph-in-child-of-html before-head 空体形用父文档工厂建
+        // div 再 insertBefore(div, doc.head)，真浏览器靠收养使 EditorTestUtils
+        // 的 window/selection 落子文档；本仓主文档工厂产物是引擎侧元素
+        // （ownerDocument 原生绑定，JS 赋值/defineProperty 均不可改，探针
+        // zz-diag D1 实证），该 8 形 setup 链断在 selection setter
+        // （rangeCount 0）——引擎级 adoptNode 支持后再接。
+        docEl.childNodes.splice(idx, 0, c);
+        return c;
+      };
+    })();
     // R255（js-dom M4）：docEl **own cloneNode(deep) 保真 head/body**——运行时
     // docEl.childNodes 是工厂空数组（body 内容在 doc.body 视图的 bodyHtml/_tree
     // 闭包），`documentElement.cloneNode(true)`（WPT restoreIframe 的
@@ -2792,6 +3036,57 @@
       return c255;
     };
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
+    // T 切片（editing goal d34）：head 段独立解析入 headEl（s408 trio 持真
+    // title）——`_zwMBuildBodyTree` body 上下文解析剥出的 head 内串，逐子
+    // appendChild（reparent + 兄弟接线），子树 R173 owner 溯源盖（ensureTree
+    // 同款——ownerDocument accessor 与 :lang 祖先沿槽读源 doc）。语料 setup
+    // `body.innerHTML =` 重置只触 body 树，head 段自此常驻。doc.title getter
+    // head 快道（part03 `_zwFindTitleElement` 先走 headEl）随之命中。
+    // https://html.spec.whatwg.org/multipage/dom.html#the-head-element
+    try {
+      var _t159hh = String(doc._r159HeadHtml || '');
+      var _t159hi = /<head\b[^>]*>([\s\S]*?)<\/head\s*>/i.exec(_t159hh);
+      if (_t159hi && _t159hi[1]) {
+        var _t159ht = _zwMBuildBodyTree(_t159hi[1], '', false);
+        // 快照迭代——appendChild reparent 会从源父 childNodes splice（活数组
+        // 正序迭代隔一跳一：探针实证 TITLE/META 落、STYLE/SCRIPT 跳）。
+        var _t159hk = ((_t159ht && _t159ht.childNodes) || []).slice();
+        for (var _t159i = 0; _t159i < _t159hk.length; _t159i++) {
+          var _t159c = _t159hk[_t159i];
+          if (!_t159c) continue;
+          try { doc.head.appendChild(_t159c); } catch (_eT2) {}
+          (function _t159Stamp(n) {
+            if (!n || n.nodeType !== 1) return;
+            try { n._zwOwnerTree = doc; } catch (_eT3) {}
+            var cs = n.childNodes || [];
+            for (var i = 0; i < cs.length; i++) _t159Stamp(cs[i]);
+          })(_t159c);
+        }
+      }
+    } catch (_eT1) {}
+    // B1 切片 2（editing goal d22，2026-11-14）：body 视图树根上行链接——解析树
+    // 顶层的 parentNode 链止于 body 树根（探针实证 title 爬升 BODY(parent:null)
+    // 即断），EditorTestUtils.sendKey 的 light-DOM 上行
+    // `e.getRootNode({composed:false}).host` 对 body 树内 editingHost（
+    // insertparagraph-in-child-of-head 的 title 等）得 undefined → 下一轮
+    // `e.getRootNode` TypeError（16 断言/变体文件）。把树根（parentNode 为空
+    // 的 body 形祖先）接回 body 视图（视图链经 part03 docEl 达 doc——切片 1
+    // 修复面），getRootNode(树内节点) 返回子文档。只加一条 parent 链，不移动
+    // 节点（Range 语料 body 视图偏移不变）。
+    // https://dom.spec.whatwg.org/#dom-node-getrootnode
+    try {
+      var _b1Tk = doc.body.childNodes || [];
+      if (_b1Tk.length && _b1Tk[0]) {
+        var _b1Root = _b1Tk[0].parentNode, _b1Guard = 0;
+        while (_b1Root && _b1Root.parentNode && _b1Guard++ < 32) _b1Root = _b1Root.parentNode;
+        if (_b1Root && !_b1Root.parentNode && _b1Root.nodeType === 1
+            && _b1Root !== doc.body && String(_b1Root.tagName || '').toUpperCase() === 'BODY') {
+          try { _b1Root.parentNode = doc.body; } catch (_eB1rp1) {
+            try { Object.defineProperty(_b1Root, 'parentNode', { value: doc.body, writable: true, configurable: true }); } catch (_eB1rp2) {}
+          }
+        }
+      }
+    } catch (_eB1rk) {}
     try {
       // R234（js-dom M4）：**动态 documentElement getter**——首个元素子优先，回落
       // 工厂 docEl。旧固定闭包返工厂 docEl：restoreIframe 清理循环摘除工厂 docEl
@@ -2961,6 +3256,77 @@
         var w = (typeof _r115WinRef !== 'undefined') ? _r115WinRef : null;
         return w ? w.getSelection() : null;
       } catch (_e3kDgs) { return null; }
+    };
+    // B1 切片 1（editing goal d21，2026-11-14）：**iframe 子文档 execCommand 薄面**——
+    // execCommand/queryCommand* 全族此前只挂主 document（part06 R3254-M2，耦合
+    // globalThis 主选区/主文档槽），子文档 factory 无该面 → corpus setup 首步
+    // `iframeElement.contentDocument.execCommand("defaultParagraphSeparator",…)`
+    // TypeError（delete/insertparagraph-in-child-of-{head,html} DesignMode
+    // 双变体整文件 unhandled rejection，selection editing/other 333F）。本薄面
+    // 只覆盖 corpus 实际调用集（六个子文档用例文件枚举：defaultParagraphSeparator
+    // setup + createLink——typing-around-link DesignMode 变体
+    // `utils.document.execCommand("createLink",…)`），per-doc 状态用工厂闭包槽
+    //（主文档的 __zw* 全局态不共享——spec 每个 Document 独立编辑状态）。
+    // delete/forwarddelete 非折叠臂走子选区 deleteContents；折叠臂经
+    // doc.__zwB1KeyFace hook 走键语义（B1 切片 2——test_driver IIFE 发布）。
+    // FIXME(B1 切片 3): execCommand insertParagraph 的 per-doc 分隔符消费仍缺
+    //（corpus 子文档 insertparagraph 走 ETU sendKey 键路径，已由 test_driver
+    // _b1Enter 承载；execCommand 直调臂未被语料消费）。spec
+    // https://w3c.github.io/editing/execCommand.html（legacy，Chrome 语义）。
+    var _zwCdDps = 'p'; // defaultParagraphSeparator per-doc 状态（spec 初始 'p'）
+    var _zwCdSwc = false; // styleWithCSS/usecss per-doc 状态
+    doc.execCommand = function (commandId /*, showUI, value*/) {
+      var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      var sel = null;
+      try { sel = doc.getSelection(); } catch (_eCdSel) { sel = null; }
+      if (cmd === 'defaultparagraphseparator') {
+        var dpsV = String(arguments[2] == null ? '' : arguments[2]).toLowerCase();
+        if (dpsV === 'p' || dpsV === 'div') { _zwCdDps = dpsV; return true; }
+        return false; // FIXME(spec): 非法值应抛 TypeError（editing spec ExecCommand）
+      }
+      if (cmd === 'stylewithcss' || cmd === 'usecss') {
+        _zwCdSwc = String(arguments[2] == null ? '' : arguments[2]).toLowerCase() !== 'false';
+        return true;
+      }
+      if (cmd === 'createlink') {
+        if (!sel || sel.rangeCount === 0) return false;
+        var clRng = sel.getRangeAt(0);
+        if (clRng.collapsed) return false; // 折叠选区 createlink 无动作（Chromium 同）
+        var clA = doc.createElement('a');
+        clA.setAttribute('href', String(arguments[2] == null ? '' : arguments[2]));
+        try {
+          var clFrag = clRng.extractContents();
+          clA.appendChild(clFrag);
+          clRng.insertNode(clA);
+          // spec：link 化后选区选中 link 内容（后续 collapse/typing 消费面）。
+          sel.removeAllRanges();
+          var clNr = doc.createRange();
+          clNr.selectNodeContents(clA);
+          sel.addRange(clNr);
+        } catch (_eCl) { return false; }
+        return true;
+      }
+      if (cmd === 'delete' || cmd === 'forwarddelete') {
+        if (!sel || sel.rangeCount === 0) return true;
+        var dRng = sel.getRangeAt(0);
+        if (!dRng.collapsed) {
+          dRng.deleteContents();
+          sel.removeAllRanges();
+          sel.addRange(dRng); // deleteContents 后边界同点（折叠）
+          return true;
+        }
+        // B1 切片 2（editing goal d22）：折叠臂 = 键语义（backspace/
+        // forwarddelete 键同路径——corpus ETU execCommand("delete") 变体与
+        // sendBackspaceKey 同期望表）。键面在 test_driver IIFE 闭包内，经
+        // win 槽 hook 到达（win 字面量构造时发布）。
+        var _b1Hook = doc.__zwB1KeyFace;
+        if (_b1Hook && typeof _b1Hook.del === 'function') {
+          _b1Hook.del(sel, cmd === 'forwarddelete');
+          return true;
+        }
+        return true;
+      }
+      return false; // 未覆盖命令（spec：unsupported 返 false）
     };
     // R3254-E2 切片 6（editing goal，2026-09-07）：iframe doc 的 **own createRange**——
     // common.js rangeFromEndpoints 经 ownerDocument(endpoints[0]).createRange() 建域；
@@ -3320,6 +3686,25 @@
       removeAttribute: function (n) {
         n = String(n);
         for (var i = el.attributes.length - 1; i >= 0; i--) { if (el.attributes[i].name === n) el.attributes.splice(i, 1); }
+      },
+      // B1 切片 2（editing goal d22，2026-11-14）：focus()/blur() no-op + isConnected
+      // 本地上行——工厂元素此前无 focus（insertparagraph-in-child-of-head 的
+      // style/script/div createElement 产物作 editingHost，ETU setupEditingHost
+      // `this.editingHost.focus()` TypeError）；isConnected 走 part04 host 树快照
+      // 对工厂树恒 false（delete-in-child-of-head 尾步
+      // `div1.isConnected ^ div2.isConnected` 期望 1——存留/移除判定）。
+      // isConnected 按 spec 走 parentNode 链上行至 Document（工厂树 plain 链可达）。
+      // https://html.spec.whatwg.org/#dom-focus
+      // https://dom.spec.whatwg.org/#dom-node-isconnected
+      focus: function () {},
+      blur: function () {},
+      get isConnected() {
+        var cur = el.parentNode, guard = 0;
+        while (cur && guard++ < 64) {
+          if (cur.nodeType === 9) return true;
+          try { cur = cur.parentNode; } catch (_eIcB1) { return false; }
+        }
+        return false;
       },
       // R179（js-dom M4）：`attachShadow` 轻量实现（spec `dom-element-attachshadow`
       // ——工厂元素无 sel/handle 不能走 part04 的 `_attachShadow` handle 容器）。
@@ -4845,6 +5230,13 @@
       // 子文档裸 `onpopstate =` 须落子窗才收局部遍历事件）。
       onmessage: null,
       onpopstate: null,
+      // R5520（editing d19）：子窗 focus()——typing-around-link DesignMode 变体
+      // `utils.window.focus()` / insertparagraph-in-child-of-head
+      // `iframeElement.contentWindow.focus()` 消费面（此前 TypeError → 整测试
+      // unhandled rejection）。headless 子窗无聚焦转移可观测 → no-op；主窗
+      // globalThis.focus（part01b R5520）同语义。
+      // https://html.spec.whatwg.org/multipage/interaction.html#dom-window-focus
+      focus: function () {},
       history: {
         // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
         // A same iframe element keeps its session history when a navigation creates a
@@ -4904,7 +5296,31 @@
         back: function() { this.go(-1); },
         forward: function() { this.go(1); }
       },
-      navigator: { serviceWorker: serviceWorker },
+      // T72（site-optimizer perf-mem T72/P42）：iframe win.navigator 平面对象语义——
+      // [[Prototype]] 挂 globalThis.Navigator.prototype（同 realm 单例，part02.js T66
+      // 建面），品牌 '[object Navigator]'；own 键面（serviceWorker）键序/可枚举性/值
+      // 与原字面量恒等，仅 [[Prototype]] 换位——站点风控 SDK 的原型定向写（T65 判据③
+      // 定谳：从根沿原型走 s 步再存储）落 Navigator.prototype 吸收，不再直透
+      // Object.prototype 共享可枚举面（主窗面 T66 已修，本处 iframe 面同缺陷 P42）。
+      // serviceWorker wrapper 实体与创建期 controller-on-load 时序
+      //（iframeServiceWorkerCreationControllerId）不变；userAgent/platform 等标准成员
+      // own 键面缺位是既有面，本切片不扩。规范锚注记同 part02.js T66 块。
+      // https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
+      // https://webidl.spec.whatwg.org/#interface-object
+      // https://webidl.spec.whatwg.org/#interface-prototype-object
+      // T72/R1 返修 DF-1：装配读取加卫（同函数 ServiceWorkerContainer/ServiceWorker/
+      // ServiceWorkerRegistration 三元卫惯例）——页面 delete/置 undefined/覆写
+      // globalThis.Navigator 为无 prototype 普通对象后，裸读 .prototype 抛 TypeError。
+      // 降级语义：全局 Navigator 被破坏时 iframe navigator 原型链降级
+      // Object.prototype、构造不抛、功能面（serviceWorker 槽）保留（part119 钉④）。
+      navigator: Object.assign(
+        Object.create(
+          globalThis.Navigator && globalThis.Navigator.prototype
+            ? globalThis.Navigator.prototype
+            : Object.prototype
+        ),
+        { serviceWorker: serviceWorker }
+      ),
       // R3254-E2 切片 6（editing goal，2026-09-07）：**per-iframe Selection 面**——
       // iframe win 此前无 getSelection（deleteFromDocument.html 经
       // `contentWindow.getSelection().addRange/removeAllRanges/deleteFromDocument`
@@ -4935,8 +5351,22 @@
             return ranges[i];
           },
           collapse: function (node, offset) {
+            // spec selection-api #dom-selection-collapse：空 selection **不抛**——
+            // 「If this's range is null, set it to a new range with start/end =
+            // (node, offset)」（Chrome/Firefox 同形；collapseToStart/End 才有
+            // InvalidStateError 门）。B1 切片 1（editing goal d21，2026-11-14）：
+            // delete/insertparagraph-in-child-of-{head,html} setup 在 fresh
+            // 子选区直调 `childDoc.getSelection().collapse(div.firstChild, 0)`
+            // ——旧实现 rangeCount 0 抛 InvalidStateError，setup 链断在
+            // execCommand 修复后的下一层。
             if (ranges.length === 0) {
-              throw new (globalThis.DOMException || Error)('collapse: InvalidStateError', 'InvalidStateError');
+              var _rCollapseNr = _makeRange();
+              try {
+                if (globalThis.Range && globalThis.Range.prototype) {
+                  Object.setPrototypeOf(_rCollapseNr, globalThis.Range.prototype);
+                }
+              } catch (_eCollapseNrP) {}
+              ranges.push(_rCollapseNr);
             }
             var r = ranges[0];
             r.setEnd(node, offset);
@@ -4984,6 +5414,948 @@
         win.__zwSelection = sel;
         return sel;
       },
+      // B1 切片 2（editing goal d22，2026-11-14）：**子窗 test_driver 面**——
+      // EditorTestUtils.sendKey 在子文档 editingHost 经 `this.window.test_driver`
+      // 路由键（typing/delete/insertparagraph-in-child-of-* 的 DesignMode 变体
+      // 整簇此前 `Cannot read properties of undefined (reading 'send_keys')`
+      // unhandled rejection）。iframe 子文档不经 webview 键管线（选区/树均在
+      // shim 工厂域）→ 键语义 shim 侧直 applied（per-iframe Selection / B1
+      // 切片 1 execCommand 薄面同域近似）。键面按 corpus 消费集：send_keys
+      //（无修饰键路径）+ Actions（修饰键路径）+ set_test_context（ETU 构造器
+      // 消费，no-op）。修饰键（shift/ctrl/alt/meta）粘滞忽略——字符字面已含
+      // 大小写（sendKey("X", kShift) 的 'X'）。
+      test_driver: (function () {
+        var docEl = doc.documentElement; // R234 首元素子（join doc 级序列用）
+        function _b1Sel() {
+          try { return win.__zwSelection || null; } catch (_eTdSel) { return null; }
+        }
+        function _b1Caret(sel) {
+          if (!sel || !sel.rangeCount) return null;
+          var r = sel.getRangeAt(0);
+          return { r: r, c: r.startContainer, o: r.startOffset };
+        }
+        function _b1SetCaret(sel, c, o) {
+          try { var r = sel.getRangeAt(0); r.setStart(c, o); r.setEnd(c, o); } catch (_eTdSc) {}
+        }
+        function _b1DataOf(n) { return String((n && n.data) != null ? n.data : ''); }
+        function _b1StyleOf(el, prop) {
+          try {
+            var st = String((el && el.getAttribute && el.getAttribute('style')) || '');
+            var m = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i').exec(st);
+            return m ? String(m[1]).trim().toLowerCase() : '';
+          } catch (_eTdSty) { return ''; }
+        }
+        var _b1FamTags = { meta: 1, title: 1, style: 1, script: 1, link: 1, base: 1, template: 1 };
+        function _b1Tag(el) { return String((el && el.tagName) || '').toLowerCase(); }
+        // 块级标签面（join 并块门）：子文档域 computed display 未接
+        // _zwJusIsBlockNode 的解析值判定会误收 inline，故按标签面直判。
+        var _b1BlockTags = { address: 1, article: 1, aside: 1, blockquote: 1, center: 1,
+          dd: 1, details: 1, dir: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1,
+          figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1,
+          header: 1, li: 1, main: 1, menu: 1, ol: 1, p: 1, pre: 1, section: 1,
+          table: 1, td: 1, th: 1, tr: 1, ul: 1, xmp: 1 };
+        // 不可见（join 可跨越）：head 专属标签且未显式 display:block（corpus
+        // visible script/title 用例 setAttribute("style","display:block") 形 →
+        // 可见 → join 门关）。
+        function _b1Invisible(el) {
+          if (!el || el.nodeType !== 1) return false;
+          if (!_b1FamTags[_b1Tag(el)]) return false;
+          return _b1StyleOf(el, 'display') !== 'block';
+        }
+        function _b1SetParent(c, p) {
+          try { c.parentNode = p; return; } catch (_eTdPa) {}
+          try { Object.defineProperty(c, 'parentNode', { value: p, writable: true, configurable: true }); } catch (_eTdPb) {}
+        }
+        function _b1CreateText(c, data) {
+          var tn = null;
+          try { tn = c.ownerDocument.createTextNode(String(data == null ? '' : data)); } catch (_eTdCt) {}
+          if (!tn) tn = { nodeType: 3, nodeName: '#text', data: String(data == null ? '' : data), parentNode: null, childNodes: [] };
+          return tn;
+        }
+        function _b1NearestLink(node) {
+          // 光标容器自身即链接（collapseToEnd 后 (a,1) 元素偏移落点）也算命中；
+          // 文本光标从父元素起爬。
+          var cur = node.nodeType === 3 ? node.parentNode : node;
+          var guard = 0;
+          while (cur && cur.nodeType === 1 && guard++ < 64) {
+            if (_b1Tag(cur) === 'a') return cur;
+            cur = cur.parentNode;
+          }
+          return null;
+        }
+        // el 子树最深首/末文本节点（文档序 DFS）
+        function _b1DeepestText(el, last) {
+          var cur = el;
+          var guard = 0;
+          while (cur && cur.nodeType === 1 && guard++ < 64) {
+            var kids = cur.childNodes || [];
+            var t = null;
+            var i;
+            if (last) { for (i = kids.length - 1; i >= 0; i--) { if (kids[i] && kids[i].nodeType === 3) { t = kids[i]; break; } } }
+            else { for (i = 0; i < kids.length; i++) { if (kids[i] && kids[i].nodeType === 3) { t = kids[i]; break; } } }
+            if (t) return t;
+            var e = null;
+            if (last) { for (i = kids.length - 1; i >= 0; i--) { if (kids[i] && kids[i].nodeType === 1) { e = kids[i]; break; } } }
+            else { for (i = 0; i < kids.length; i++) { if (kids[i] && kids[i].nodeType === 1) { e = kids[i]; break; } } }
+            if (!e) return null;
+            cur = e;
+          }
+          return null;
+        }
+        function _b1Unwrap(el) {
+          var p = el.parentNode;
+          if (!p) return;
+          var pk = p.childNodes || [];
+          var idx = pk.indexOf(el);
+          if (idx < 0) return;
+          var kids = (el.childNodes || []).slice();
+          for (var i = 0; i < kids.length; i++) _b1SetParent(kids[i], p);
+          pk.splice.apply(pk, [idx, 1].concat(kids));
+        }
+        // B1 切片 2（editing goal d22）：typing-around-link 边界面——光标在
+        // 链接文本端点（offset 0 首文本 / offset len 末文本）时键入**不扩进
+        // 链接**：文本落链接外侧；链接内层非链接行内链剥出后与新文本一并
+        // 重裹、置于链接原位（Chrome typing 行为，corpus
+        // typing-around-link-element-at-{collapsed,non-collapsed}-selection
+        // 期望形 `<a><b>[]abc</b></a>` → `<b>XY<a>abc</a></b>`）。
+        function _b1AroundLink(sel, linkEl, textNode, atStart, ch) {
+          // 原父槽先捕获、linkEl 先摘除——wrap 循环的 appendChild 会认领
+          // linkEl（parentNode 改链），后置捕获会错把克隆内槽当插入位（探针
+          // diag6 实证 `<p></p>` 全消失根因）。
+          var p0 = linkEl.parentNode;
+          if (!p0) return null;
+          var pk0 = p0.childNodes || [];
+          var idx0 = pk0.indexOf(linkEl);
+          if (idx0 < 0) return null;
+          var inner = [];
+          var cur = textNode.parentNode;
+          var guard = 0;
+          while (cur && cur !== linkEl && cur.nodeType === 1 && guard++ < 64) { inner.push(cur); cur = cur.parentNode; }
+          if (cur !== linkEl) inner = [];
+          var i;
+          for (i = 0; i < inner.length; i++) _b1Unwrap(inner[i]);
+          var newText = _b1CreateText(linkEl, ch);
+          var unit = atStart ? [newText, linkEl] : [linkEl, newText];
+          var j;
+          for (j = inner.length - 1; j >= 0; j--) {
+            var w = _b1CloneShallow(inner[j]);
+            for (var k2 = 0; k2 < unit.length; k2++) _b1AppendInto(w, unit[k2]);
+            unit = [w];
+          }
+          var at = pk0.indexOf(linkEl); // wrap 认领过则已不在（-1）；兜底手动路径仍在原位
+          if (at >= 0) pk0.splice(at, 1);
+          pk0.splice(idx0, 0, unit[0]);
+          if (unit.length > 1) pk0.splice.apply(pk0, [idx0 + 1, 0].concat(unit.slice(1)));
+          for (var m = 0; m < unit.length; m++) _b1SetParent(unit[m], p0);
+          _b1SetCaret(sel, newText, ch.length);
+          return { node: newText, off: ch.length };
+        }
+        // 光标点与链接端之间无内容（非空文本或元素）才算端点——中段光标
+        // （`z[]abc`）不触发边界面。
+        function _b1SideContent(node, dir, stopAt) {
+          var cur = node;
+          var guard = 0;
+          while (cur && cur !== stopAt && guard++ < 64) {
+            var sib = dir > 0 ? cur.nextSibling : cur.previousSibling;
+            while (sib) {
+              if (sib.nodeType === 3 && _b1DataOf(sib).length) return true;
+              if (sib.nodeType === 1) return true;
+              sib = dir > 0 ? sib.nextSibling : sib.previousSibling;
+            }
+            cur = cur.parentNode;
+          }
+          return false;
+        }
+        // 元素偏移光标的链接端点判定（createLink 重锚 (a,0)/(a,1) 与
+        // collapseToEnd 后落点同形）。返回沿内容侧的最深文本（inner 链
+        // 起点），空链接保守不触发（替换语义）。
+        function _b1LinkEdgeAt(linkEl, elem, off) {
+          var kids = elem.childNodes || [];
+          var i;
+          var k;
+          for (i = 0; i < off; i++) {
+            k = kids[i];
+            if (k && ((k.nodeType === 3 && _b1DataOf(k).length) || k.nodeType === 1)) break;
+          }
+          var headEmpty = i >= off;
+          for (i = off; i < kids.length; i++) {
+            k = kids[i];
+            if (k && ((k.nodeType === 3 && _b1DataOf(k).length) || k.nodeType === 1)) break;
+          }
+          var tailEmpty = i >= kids.length;
+          var atStart;
+          if (headEmpty && !tailEmpty) atStart = true;
+          else if (tailEmpty && !headEmpty) atStart = false;
+          else return null;
+          // 祖先侧（elem 至 linkEl 链上的兄弟方向）残留内容 = 非端点
+          if (_b1SideContent(elem, atStart ? -1 : 1, linkEl)) return null;
+          var t = atStart ? _b1DeepestText(linkEl, false) : _b1DeepestText(linkEl, true);
+          if (!t) return null;
+          return { atStart: atStart, text: t };
+        }
+        // 最近一次键入落点——同点续键（replace 后第二键 / 边界外移后续键）
+        // 不再触发边界面（Chrome typing 连续性；显式重定位光标后几何复位）。
+        var _b1TypedAt = null;
+        // —— 选区落点文本插入（工厂文本节点无 insertData，探针实证——data splice）——
+        function _b1InsertText(sel, ch) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          var wasReplace = false;
+          if (!cc.r.collapsed) {
+            try { cc.r.deleteContents(); } catch (_eTdDc) { return; }
+            cc.c = cc.r.startContainer; cc.o = cc.r.startOffset;
+            wasReplace = true; // 替换后首键落链接内（corpus "Replacing text" 期望形）
+          }
+          var cont = _b1TypedAt && _b1TypedAt.node === cc.c && _b1TypedAt.off === cc.o;
+          if (!wasReplace && !cont && cc.c.nodeType === 3) {
+            var d = _b1DataOf(cc.c);
+            var linkEl = d.length ? _b1NearestLink(cc.c) : null;
+            if (linkEl && (cc.o === 0 || cc.o === d.length)
+              && !_b1SideContent(cc.c, cc.o === 0 ? -1 : 1, linkEl)) {
+              var atStart = cc.o === 0;
+              var edgeText = atStart ? _b1DeepestText(linkEl, false) : _b1DeepestText(linkEl, true);
+              if (edgeText === cc.c) {
+                _b1TypedAt = _b1AroundLink(sel, linkEl, cc.c, atStart, ch);
+                return;
+              }
+            }
+          }
+          if (!wasReplace && !cont && cc.c.nodeType === 1) {
+            var elLink = _b1NearestLink(cc.c);
+            if (elLink) {
+              var edge = _b1LinkEdgeAt(elLink, cc.c, cc.o);
+              if (edge) {
+                _b1TypedAt = _b1AroundLink(sel, elLink, edge.text, edge.atStart, ch);
+                return;
+              }
+            }
+          }
+          if (cc.c.nodeType === 3) {
+            var d2 = _b1DataOf(cc.c);
+            cc.c.data = d2.slice(0, cc.o) + ch + d2.slice(cc.o);
+            _b1SetCaret(sel, cc.c, cc.o + 1);
+            _b1TypedAt = { node: cc.c, off: cc.o + 1 };
+          } else if (cc.c.nodeType === 1) {
+            var tn = _b1CreateText(cc.c, ch);
+            var kids = cc.c.childNodes || [];
+            _b1SetParent(tn, cc.c);
+            if (cc.o >= kids.length) kids.push(tn);
+            else kids.splice(cc.o, 0, tn);
+            _b1SetCaret(sel, tn, 1);
+            _b1TypedAt = { node: tn, off: 1 };
+          }
+        }
+        // —— 序列容器：headEl 视图 / body 视图 / docEl（虚树 doc 级）——
+        // 返回 caret 所属序列容器本身（headEl/body/docEl），成员 = 容器
+        // childNodes 直接子。
+        function _b1SeqRootOf(node) {
+          var cur = node;
+          var guard = 0;
+          while (cur && cur.parentNode && guard++ < 64) {
+            var p = cur.parentNode;
+            if (p === doc.head || p === doc.body || p === docEl || p === doc || p.nodeType === 9) return p;
+            cur = p;
+          }
+          // 树根镜像（BODY 标题、parentNode 空——body.innerHTML setter 每次
+          // 解析新建 _tree 根，parentNode 链不接视图）→ 视作 body 视图序列
+          if (cur && cur.nodeType === 1 && String(cur.tagName || '').toUpperCase() === 'BODY') return doc.body;
+          return cur;
+        }
+        // caret 上行到容器 childNodes 的直接成员。以 indexOf 命中为准——
+        // body 视图 childNodes 走 _tree 缓存树，解析节点 parentNode 链挂在
+        // 树根镜像（切片 2 Edit 4 接到 doc.body 视图），视图成员集合与
+        // parentNode 链不一一对应。
+        function _b1MemberOf(cont, root) {
+          var cur = cont;
+          var guard = 0;
+          while (cur && guard++ < 64) {
+            var kids = root.childNodes || [];
+            for (var i = 0; i < kids.length; i++) if (kids[i] === cur) return cur;
+            if (!cur.parentNode) return null;
+            cur = cur.parentNode;
+          }
+          return null;
+        }
+        function _b1BlockOf(cont) {
+          var root = _b1SeqRootOf(cont);
+          var seq = (root && root.childNodes) || [];
+          var block = root ? _b1MemberOf(cont, root) : null;
+          var idx = -1;
+          for (var i = 0; i < seq.length; i++) if (seq[i] === block) { idx = i; break; }
+          return { root: root, block: block, seq: seq, idx: idx };
+        }
+        // caret 是否在 member 内容的最前/最后沿（上行逐层首/末位 + caret
+        // 容器首层偏移；member 即 caret 容器时首层即命中，不穿树根镜像）。
+        function _b1AtEdgeInMember(cont, off, member, start) {
+          var cur = cont, o = off, guard = 0, first = true;
+          while (cur && guard++ < 64) {
+            if (cur === member) return true;
+            var p = cur.parentNode;
+            if (!p) return false;
+            var kids = p.childNodes || [];
+            var at = -1;
+            for (var i = 0; i < kids.length; i++) if (kids[i] === cur) { at = i; break; }
+            if (at < 0) return false;
+            if (start) {
+              if (at > 0) return false;
+              if (first && o > 0) return false;
+            } else {
+              if (at < kids.length - 1) return false;
+              if (first && (cur.nodeType === 3 ? o < _b1DataOf(cur).length
+                : o < (cur.childNodes || []).length)) return false;
+            }
+            first = false;
+            cur = p;
+          }
+          return false;
+        }
+        // doc 级组合序列（docEl 虚树）：before-head 附加子 + head（虚，不可见）+
+        // before-body 附加子 + body（虚，可并入）+ 其余附加子。条目 {kind, node}。
+        function _b1DocSeq() {
+          var out = [];
+          var extras = docEl.childNodes || [];
+          for (var i = 0; i < extras.length; i++) {
+            var e = extras[i];
+            var slot = e && e.__zwB1Slot;
+            if (slot === 'before-head') out.push({ kind: 'el', node: e });
+          }
+          out.push({ kind: 'head' });
+          for (var j = 0; j < extras.length; j++) {
+            var e2 = extras[j];
+            if (e2 && e2.__zwB1Slot === 'before-body') out.push({ kind: 'el', node: e2 });
+          }
+          out.push({ kind: 'body' });
+          for (var k = 0; k < extras.length; k++) {
+            var e3 = extras[k];
+            if (!e3 || !e3.__zwB1Slot || e3.__zwB1Slot === 'after') out.push({ kind: 'el', node: e3 });
+          }
+          return out;
+        }
+        // caret 祖先链落在 head 虚视图内（headEl 不在 docEl.childNodes，
+        // _b1MemberOf 解析不到）→ 返回 head 视图顶层元素成员（visible head
+        // join，delete-in-child-of-html forwarddelete 自 head 内块后沿形）
+        function _b1HeadMemberOf(n) {
+          var top = null, cur = n, guard = 0;
+          while (cur && guard++ < 32) {
+            if (cur === doc.head) return top;
+            top = cur;
+            try { cur = cur.parentNode; } catch (_eHmP) { return null; }
+          }
+          return null;
+        }
+        // visible head（display:block 等）边缘可见元素子作为同层 join 成员
+        // 参与（backspace 自体前块出发形）；fam 标签边缘（style/script 可见
+        // 形，corpus 期望不 join）与无可见元素子（不可见 head 跨越形）→ null
+        // 维持 invis 跨越。title 为 fam 默认 display:none，边缘扫描自然跳过。
+        function _b1HeadEdgeMember(forward) {
+          var hk = null;
+          try { hk = doc.head.childNodes || []; } catch (_eHeC) { return null; }
+          var pick = null;
+          for (var i = 0; i < hk.length && !pick; i++) {
+            var c = hk[forward ? i : hk.length - 1 - i];
+            if (c && c.nodeType === 1) {
+              try { if (!_b1Invisible(c)) pick = c; } catch (_eHeI) {}
+            }
+          }
+          if (!pick) return null;
+          try { if (_b1FamTags[_b1Tag(pick)]) return null; } catch (_eHeF) { return null; }
+          return pick;
+        }
+        // doc 级序列自 idx 沿方向首个可见块成员存在性（body-caret join 的换向
+        // 判据；fam 标签与不可见元素不计，body 虚项截停）
+        function _b1SeqHasVisible(seq, idx, forward) {
+          var step = forward ? 1 : -1;
+          for (var s = idx + step; s >= 0 && s < seq.length; s += step) {
+            var e = seq[s];
+            if (e.kind === 'body') return false;
+            if (e.kind === 'head' || !e.node) continue;
+            try { if (_b1Invisible(e.node)) continue; } catch (_eShv) {}
+            try { if (_b1FamTags[_b1Tag(e.node)]) return false; } catch (_eShv2) {}
+            return true;
+          }
+          return false;
+        }
+        function _b1RemoveChild(parent, c) {
+          try { parent.removeChild(c); return true; } catch (_eTdRm) { return false; }
+        }
+        function _b1AppendInto(parent, c) {
+          try { parent.appendChild(c); return; } catch (_eTdAp) {}
+          try {
+            if (c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eTdAp2) {} }
+            (parent.childNodes || []).push(c);
+            _b1SetParent(c, parent);
+          } catch (_eTdAp3) {}
+        }
+        function _b1InsertInto(parent, ref, c) {
+          try { parent.insertBefore(c, ref); return; } catch (_eTdIn) {}
+          try {
+            if (c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eTdIn2) {} }
+            var kids = parent.childNodes || [];
+            var at = ref ? kids.indexOf(ref) : -1;
+            if (at < 0) kids.push(c); else kids.splice(at, 0, c);
+            _b1SetParent(c, parent);
+          } catch (_eTdIn3) {}
+        }
+        // 子树文本字符总数（join 缝 caret 字符偏移计算）
+        function _b1TextChars(n) {
+          var tot = 0, stack = [n], guard = 0;
+          while (stack.length && guard++ < 256) {
+            var c = stack.pop();
+            if (!c) continue;
+            if (c.nodeType === 3) { tot += _b1DataOf(c).length; continue; }
+            var ks = c.childNodes || [];
+            for (var i = 0; i < ks.length; i++) stack.push(ks[i]);
+          }
+          return tot;
+        }
+        // 轻量序列化（doc 级附加元素 → HTML 片；body 吸收臂重写 body innerHTML
+        // 时拼接 src 内容用——工厂元素无 innerHTML getter，探针实证）
+        function _b1SerHtml(n) {
+          if (!n) return '';
+          if (n.nodeType === 3) {
+            return String(n.data == null ? '' : n.data)
+              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          if (n.nodeType !== 1) return '';
+          var tag = String(n.tagName || '').toLowerCase();
+          var ats = [];
+          try {
+            var list = n.attributes || [];
+            for (var i = 0; i < list.length; i++) {
+              if (!list[i]) continue;
+              ats.push(' ' + list[i].name + '="' + String(list[i].value == null ? '' : list[i].value)
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"');
+            }
+          } catch (_eSer) {}
+          var inner = '';
+          var ks2 = n.childNodes || [];
+          for (var j = 0; j < ks2.length; j++) inner += _b1SerHtml(ks2[j]);
+          return '<' + tag + ats.join('') + '>' + inner + '</' + tag + '>';
+        }
+        // 相邻文本节点合并（join 搬运后缝两侧同容器文本拼合——真实编辑器
+        // 语义，后续键以合并后的文本偏移继续）
+        function _b1CoalesceText(el) {
+          var kids = el.childNodes || [];
+          for (var i = 0; i < kids.length - 1; i++) {
+            var a = kids[i], b = kids[i + 1];
+            if (a && b && a.nodeType === 3 && b.nodeType === 3) {
+              a.data = _b1DataOf(a) + _b1DataOf(b);
+              kids.splice(i + 1, 1);
+              i = i - 1 < 0 ? -1 : i - 1;
+            }
+          }
+        }
+        // 块 children 搬运（保序）
+        function _b1MoveChildren(from, to, prepend) {
+          var kids = (from.childNodes || []).slice();
+          for (var i = 0; i < kids.length; i++) {
+            var c = kids[i];
+            if (prepend) _b1InsertInto(to, i === 0 ? (to.childNodes || [])[0] || null : null, c);
+            else _b1AppendInto(to, c);
+          }
+        }
+        // —— 块级 join（delete-in-child-of-{head,html} corpus）——
+        // backspace：与前一可见块并（靠前块存续、属性随靠前块）；forwarddelete：
+        // 与后一可见块并。join 缝上的不可见元素（族标签未显式 display:block）
+        // 移出合并块之后原序回插（corpus assert_in_array 前后两形皆收）。可见门：
+        // 相邻族标签显式 display:block → 不参与 join（visible script 用例 no-op）。
+        // caret 自身落在族标签元素内 → 整个 join no-op（title/style/script 删除
+        // 保持原状）。body 树恒存续（corpus 期望 `<body>abcdef</body>`——对侧
+        // children 并入 body 视图：对侧在 body 前 → prepend，在后 → append；
+        // 缝上不可见元素移到 body 之后）。
+        function _b1JoinMembers(sel, seq, idx, forward, caretIsBody) {
+          var caretNode = seq[idx].node;
+          if (caretNode && _b1FamTags[_b1Tag(caretNode)]) return;
+          var invis = [];
+          var target = null, tIsBody = false, tIdx = -1;
+          var step = forward ? 1 : -1;
+          for (var s = idx + step; s >= 0 && s < seq.length; s += step) {
+            var e = seq[s];
+            if (e.kind === 'head') {
+              // visible head 边缘成员 join（corpus S9：display:block head 内
+              // div 与体前 div 并合）；无边缘成员维持 invis 跨越（S8 形）
+              var hem = null;
+              try { hem = _b1HeadEdgeMember(forward); } catch (_eJmHe) {}
+              if (hem) { target = hem; tIdx = s; break; }
+              invis.push(e); continue;
+            }
+            if (e.kind === 'body') { tIsBody = true; tIdx = s; break; }
+            if (_b1Invisible(e.node)) { invis.push(e); continue; }
+            if (_b1FamTags[_b1Tag(e.node)]) break;
+            target = e.node; tIdx = s; break;
+          }
+          if (!target && !tIsBody) return;
+          if (tIsBody || caretIsBody) {
+            var src = caretIsBody ? target : caretNode;
+            var prepend = caretIsBody ? !forward : idx < tIdx;
+            // R220 纪律：body 视图 childNodes 是 _tree 镜像，节点搬运不走
+            // childNodes 补丁路径——经 innerHTML setter 重写（解析入 _tree，
+            // 解析器自动合并相邻文本）。src 解壳取内容（body 吸收对侧块）。
+            var srcChars = _b1TextChars(src);
+            var bodyChars = _b1TextChars(doc.body);
+            var srcInner = '';
+            try {
+              var sks = src.childNodes || [];
+              for (var si = 0; si < sks.length; si++) srcInner += _b1SerHtml(sks[si]);
+            } catch (_eSi) {}
+            var bodyHtml = '';
+            try { bodyHtml = String(doc.body.innerHTML || ''); } catch (_eBh) {}
+            // 空体占位 <br>（srcdoc 最小文档体尾占位；body 包装视图含 R159
+            // head 段，故形如 `<title>…</title><br>`）视同空串——吸收拼接不留
+            // 占位 br 在缝上（corpus 期望 `<body>abc</body>`，占位拼合会产
+            // `<br>abc` 形）。仅剥尾缀归一化形式，带属性 br 与中间 br 不动。
+            if (bodyHtml === '<br>') bodyHtml = '';
+            else if (bodyHtml.length > 4 && bodyHtml.slice(-4) === '<br>') {
+              bodyHtml = bodyHtml.slice(0, -4);
+            }
+            // J2 跨 body 边界块合并（wptfyi-editing d36，2026-11-15）：body 可见
+            // 内容恰为单块元素 B（其余仅空白文本/不可见/占位 br）且 src 亦为可见
+            // 块级元素 → 块并块（靠前块存续、属性随靠前块，同下方展平臂的
+            // innerHTML 重写路径——R220 纪律），替代展平拼接：div↔div 跨界形
+            // corpus 期望 `<body><div>abcdef</div></body>`，展平产
+            // `<div>abc</div>def` 形失账。delete 跨块边界并块语义
+            // https://w3c.github.io/editing/execCommand.html#deleting-text
+            var j2Html = null, j2Seam = 0, j2B = null;
+            if (src.nodeType === 1 && !_b1Invisible(src) && !_b1FamTags[_b1Tag(src)]
+              && _b1BlockTags[_b1Tag(src)]) {
+              var j2Bad = false;
+              var bks = doc.body.childNodes || [];
+              for (var bi = 0; bi < bks.length; bi++) {
+                var bn = bks[bi];
+                if (!bn) continue;
+                if (bn.nodeType === 3) {
+                  if (_b1DataOf(bn).replace(/\s+/g, '').length) { j2Bad = true; break; }
+                  continue;
+                }
+                if (bn.nodeType !== 1) { j2Bad = true; break; }
+                if (_b1Tag(bn) === 'br') continue; // 占位/垫 br 不作并块对象
+                try { if (_b1Invisible(bn)) continue; } catch (_eJ2i1) {}
+                if (_b1FamTags[_b1Tag(bn)] || j2B || !_b1BlockTags[_b1Tag(bn)]) { j2Bad = true; break; }
+                j2B = bn;
+              }
+              if (j2B && !j2Bad) {
+                // 靠前块存续：src 在 body 前 → src 壳为载体并入 B 位；src 在后 →
+                // B 壳吸收 src 内容原位存续。
+                var j2Early = prepend ? src : j2B;
+                var j2Late = prepend ? j2B : src;
+                var j2Tag = _b1Tag(j2Early);
+                var j2Attrs = '';
+                try {
+                  var jal = j2Early.attributes || [];
+                  for (var ja = 0; ja < jal.length; ja++) if (jal[ja])
+                    j2Attrs += ' ' + jal[ja].name + '="' + String(jal[ja].value == null ? '' : jal[ja].value)
+                      .replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+                } catch (_eJ2a) {}
+                var j2In = '';
+                try {
+                  var jek = j2Early.childNodes || [];
+                  for (var je = 0; je < jek.length; je++) j2In += _b1SerHtml(jek[je]);
+                  var jlk = j2Late.childNodes || [];
+                  for (var jl = 0; jl < jlk.length; jl++) j2In += _b1SerHtml(jlk[jl]);
+                } catch (_eJ2s) {}
+                j2Html = '<' + j2Tag + j2Attrs + '>' + j2In + '</' + j2Tag + '>';
+                j2Seam = prepend ? srcChars : _b1TextChars(j2B);
+              }
+            }
+            try {
+              if (j2Html != null) {
+                var j2Out = '';
+                var jok = doc.body.childNodes || [];
+                for (var jo = 0; jo < jok.length; jo++)
+                  j2Out += (jok[jo] === j2B ? j2Html : _b1SerHtml(jok[jo]));
+                doc.body.innerHTML = j2Out;
+              } else {
+                doc.body.innerHTML = prepend ? (srcInner + bodyHtml) : (bodyHtml + srcInner);
+              }
+            } catch (_eBw) {}
+            for (var iv = 0; iv < invis.length; iv++) {
+              var vn = invis[iv].node;
+              if (!vn) continue;
+              try { if (vn.parentNode) vn.parentNode.removeChild(vn); } catch (_eTdVn) {}
+              try { vn.__zwB1Slot = 'after'; (docEl.childNodes || []).push(vn); _b1SetParent(vn, docEl); } catch (_eTdVn2) { _b1AppendInto(docEl, vn); }
+            }
+            try { if (src.parentNode) src.parentNode.removeChild(src); } catch (_eTdSr) {}
+            var bt = doc.body.firstChild;
+            if (j2Html != null) {
+              // 缝 caret：并块内靠前块文本末端（解析器并合相邻文本后即缝位，
+              // 与展平臂 jkChars 口径同）；首文本缺失/越界落块首。
+              var j2T = null;
+              if (bt && bt.nodeType === 1) {
+                var jmk = bt.childNodes || [];
+                for (var jm = 0; jm < jmk.length; jm++)
+                  if (jmk[jm] && jmk[jm].nodeType === 3) { j2T = jmk[jm]; break; }
+              }
+              if (j2T && j2Seam <= _b1DataOf(j2T).length) _b1SetCaret(sel, j2T, j2Seam);
+              else _b1SetCaret(sel, doc.body, 0);
+            } else if (bt && bt.nodeType === 3) _b1SetCaret(sel, bt, prepend ? srcChars : bodyChars);
+            else _b1SetCaret(sel, doc.body, 0);
+            return;
+          }
+          var keep = forward ? caretNode : target;
+          var gone = forward ? target : caretNode;
+          var jkChars = 0;
+          var kco = keep.childNodes || [];
+          for (var q = 0; q < kco.length; q++) if (kco[q] && kco[q].nodeType === 3) jkChars += _b1DataOf(kco[q]).length;
+          _b1MoveChildren(gone, keep, false);
+          _b1CoalesceText(keep);
+          for (var m = 0; m < invis.length; m++) {
+            var im = invis[m];
+            if (!im.node) continue;
+            try { if (im.node.parentNode) im.node.parentNode.removeChild(im.node); } catch (_eTdIm) {}
+            var refN = null;
+            try {
+              var kp = keep.parentNode;
+              refN = kp.childNodes[kp.childNodes.indexOf(keep) + 1] || null;
+            } catch (_eTdRf) {}
+            _b1InsertInto(keep.parentNode, refN, im.node);
+          }
+          try { if (gone.parentNode) gone.parentNode.removeChild(gone); } catch (_eTdGo) {}
+          var kt = keep.firstChild;
+          if (kt && kt.nodeType === 3 && jkChars <= _b1DataOf(kt).length) {
+            _b1SetCaret(sel, kt, jkChars);
+          } else {
+            _b1SetCaret(sel, keep, (keep.childNodes || []).length);
+          }
+        }
+        function _b1Join(sel, forward) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          var root = _b1SeqRootOf(cc.c);
+          var member = root ? _b1MemberOf(cc.c, root) : null;
+          if (!member) {
+            if (cc.c === doc.body) {
+              // caret 直落 body 元素本体（空体落点，corpus 两方法同 caret
+              // collapse(body, 0)）：_b1SeqRootOf 对 body 本体返 docEl（虚树
+              // 停靠），_b1MemberOf 解析不到 → 直入 doc 级 join（caret 成员 =
+              // body 虚项）。方向侧无可见目标且对侧有 → 换对侧（空体两侧单边
+              // 内容，backspace/forwarddelete 同 caret 均期望并合）
+              var dseqB = _b1DocSeq();
+              for (var jb = 0; jb < dseqB.length; jb++) {
+                if (dseqB[jb].kind === 'body') {
+                  if (!_b1SeqHasVisible(dseqB, jb, forward)
+                    && _b1SeqHasVisible(dseqB, jb, !forward)) forward = !forward;
+                  _b1JoinMembers(sel, dseqB, jb, forward, true);
+                  break;
+                }
+              }
+              return;
+            }
+            return;
+          }
+          if (root === doc.head) {
+            // head 内成员（visible head join，forwarddelete 自 head 内块后沿
+            // 出发形）：head 边缘成员升级 doc 级 join（head 项挂内成员，对侧
+            // 在 doc 级序列上）；fam 内成员（title/style/script）由 join 核
+            // 首行 fam 门自守（corpus 期望 fam 边缘不 join）。非边缘维持
+            // head 内成员 join（title/div 边界不并形，head-file 既有面）
+            var hkids = root.childNodes || [];
+            var hidx = -1;
+            for (var ih = 0; ih < hkids.length; ih++) if (hkids[ih] === member) { hidx = ih; break; }
+            if (hidx < 0) return;
+            var atEdge = _b1AtEdgeInMember(cc.c, cc.o, member, !forward)
+              && (forward ? hidx === hkids.length - 1 : hidx === 0);
+            if (!atEdge) {
+              _b1JoinMembers(sel, hkids.map(function (n) { return { kind: 'el', node: n }; }), hidx, forward, false);
+              return;
+            }
+            var dseqH = _b1DocSeq();
+            for (var jh = 0; jh < dseqH.length; jh++) {
+              if (dseqH[jh].kind === 'head') {
+                dseqH[jh] = { kind: 'head', node: member };
+                _b1JoinMembers(sel, dseqH, jh, forward, false);
+                return;
+              }
+            }
+            return;
+          }
+          if (root === docEl) {
+            var dseq2 = _b1DocSeq();
+            var didx = -1;
+            for (var j2 = 0; j2 < dseq2.length; j2++) if (dseq2[j2].node === member) { didx = j2; break; }
+            if (didx >= 0) { _b1JoinMembers(sel, dseq2, didx, forward, false); }
+            return;
+          }
+          var seq = root.childNodes || [];
+          var idx = -1;
+          for (var i = 0; i < seq.length; i++) if (seq[i] === member) { idx = i; break; }
+          if (idx < 0) return;
+          if (root === doc.body) {
+            // 体边界（首成员前沿 backspace / 末成员后沿 forwarddelete）→ doc 级
+            // join（caret 成员 = body 虚）；否则体内成员 join。
+            var atBoundary = _b1AtEdgeInMember(cc.c, cc.o, member, !forward)
+              && (forward ? idx === seq.length - 1 : idx === 0);
+            if (!atBoundary) {
+              _b1JoinMembers(sel, seq.map(function (n) { return { kind: 'el', node: n }; }), idx, forward, false);
+              return;
+            }
+            var dseq = _b1DocSeq();
+            var bidx = -1;
+            for (var j = 0; j < dseq.length; j++) if (dseq[j].kind === 'body') { bidx = j; break; }
+            if (bidx < 0) return;
+            _b1JoinMembers(sel, dseq, bidx, forward, true);
+            return;
+          }
+          _b1JoinMembers(sel, seq.map(function (n) { return { kind: 'el', node: n }; }), idx, forward, false);
+        }
+        function _b1Delete(sel, forward) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          if (!cc.r.collapsed) {
+            try { cc.r.deleteContents(); } catch (_eTdDc2) {}
+            return;
+          }
+          var cont = cc.c, off = cc.o;
+          if (cont.nodeType === 3) {
+            var d = _b1DataOf(cont);
+            if (forward ? off < d.length : off > 0) {
+              cont.data = forward ? d.slice(0, off) + d.slice(off + 1) : d.slice(0, off - 1) + d.slice(off);
+              _b1SetCaret(sel, cont, forward ? off : off - 1);
+              return;
+            }
+            // 文本边界：若同容器有相邻文本块 → 文本合并；否则块级 join
+            var p = cont.parentNode;
+            if (p) {
+              var sib = null, sibOff = 0;
+              var kids = p.childNodes || [];
+              var at = kids.indexOf(cont);
+              var nAt = forward ? at + 1 : at - 1;
+              if (nAt >= 0 && nAt < kids.length && kids[nAt] && kids[nAt].nodeType === 3) {
+                sib = kids[nAt];
+                if (forward) {
+                  cont.data = d + _b1DataOf(sib);
+                  _b1RemoveChild(p, sib);
+                  _b1SetCaret(sel, cont, off);
+                } else {
+                  sib.data = _b1DataOf(sib) + d;
+                  _b1RemoveChild(p, cont);
+                  _b1SetCaret(sel, sib, _b1DataOf(sib).length - d.length);
+                }
+                return;
+              }
+            }
+            _b1Join(sel, forward);
+            return;
+          }
+          if (cont.nodeType === 1) {
+            // 元素容器落点：offset 处有文本子 → 文本边界语义；否则直接块 join
+            var kids2 = cont.childNodes || [];
+            var cand = kids2[forward ? off : off - 1];
+            if (cand && cand.nodeType === 3) {
+              var dd = _b1DataOf(cand);
+              if ((forward && dd.length > 0) || (!forward && dd.length > 0)) {
+                cand.data = forward ? dd.slice(1) : dd.slice(0, dd.length - 1);
+                _b1SetCaret(sel, cont, off);
+                return;
+              }
+            }
+            _b1Join(sel, forward);
+          }
+        }
+        // —— insertParagraph（insertparagraph-in-child-of-{head,html} corpus）——
+        // title/style/script 容器：pre（white-space pre 系）→ 空容器插 '\n\n'、
+        // 有文本插 '\n'；非 pre → no-op（corpus 期望 noop 合法）。块容器（div）→
+        // 块拆分：caret 位置切 children，右半入同标签克隆（corpus 形
+        // div→div，defaultParagraphSeparator 不改宿主标签）；空侧填 <br>
+        function _b1Preformatted(el) {
+          var ws = _b1StyleOf(el, 'white-space');
+          return ws === 'pre' || ws === 'pre-line' || ws === 'pre-wrap';
+        }
+        function _b1HasText(el) {
+          var kids = (el && el.childNodes) || [];
+          for (var i = 0; i < kids.length; i++) {
+            if (kids[i] && kids[i].nodeType === 3 && _b1DataOf(kids[i]).length) return true;
+          }
+          return false;
+        }
+        function _b1CloneShallow(el) {
+          var c = null;
+          try { c = el.cloneNode(false); } catch (_eTdCl) {}
+          if (!c || typeof c.nodeType !== 'number') {
+            c = { nodeType: 1, tagName: el.tagName, nodeName: el.nodeName, localName: el.localName,
+              namespaceURI: el.namespaceURI, ownerDocument: el.ownerDocument, childNodes: [], attributes: [], parentNode: null };
+            try {
+              var ats = el.attributes || [];
+              for (var i = 0; i < ats.length; i++) if (ats[i]) c.setAttribute(ats[i].name, ats[i].value);
+            } catch (_eTdCl2) {}
+          }
+          return c;
+        }
+        function _b1MakeBr(host) {
+          var b = null;
+          try { b = host.ownerDocument.createElement('br'); } catch (_eTdBr) {}
+          if (!b) b = { nodeType: 1, tagName: 'BR', nodeName: 'BR', localName: 'br', childNodes: [], attributes: [], parentNode: null };
+          return b;
+        }
+        function _b1Enter(sel) {
+          var cc = _b1Caret(sel);
+          if (!cc) return;
+          var loc = _b1BlockOf(cc.c);
+          var host = loc.block;
+          if (!host || host.nodeType !== 1) return;
+          var tag = _b1Tag(host);
+          if (tag === 'title' || tag === 'style' || tag === 'script') {
+            if (!_b1Preformatted(host)) return; // 非 pre：noop（期望表合法形）
+            var ins = _b1HasText(host) ? '\n' : '\n\n';
+            _b1InsertText(sel, ins);
+            return;
+          }
+          // 块拆分（div 等）：caret 位置切 children（caret 落在文本节点内 →
+          // 节点二分），右半入克隆；空侧填 <br>
+          var cont = cc.c, off = cc.o;
+          var cutAt; // host.childNodes 中的切点
+          if (cont === host) cutAt = off;
+          else if (cont.nodeType === 3) {
+            var dd = _b1DataOf(cont);
+            var rightTxt = dd.slice(off);
+            cont.data = dd.slice(0, off);
+            if (rightTxt) {
+              var rn = _b1CreateText(host, rightTxt);
+              var hk = host.childNodes || [];
+              hk.splice(hk.indexOf(cont) + 1, 0, rn);
+              _b1SetParent(rn, host);
+            }
+            cutAt = (host.childNodes || []).indexOf(cont) + 1;
+          } else {
+            cutAt = (host.childNodes || []).indexOf(cont);
+            if (cutAt < 0) cutAt = (host.childNodes || []).length;
+            else cutAt += 1;
+          }
+          var kids = (host.childNodes || []).slice();
+          var right = kids.slice(cutAt);
+          for (var r = 0; r < right.length; r++) _b1RemoveChild(host, right[r]);
+          var clone = _b1CloneShallow(host);
+          for (var m = 0; m < right.length; m++) _b1AppendInto(clone, right[m]);
+          var pre = _b1Preformatted(host);
+          if (!(host.childNodes || []).length) {
+            if (pre) _b1AppendInto(host, _b1CreateText(host, '\n'));
+            else _b1AppendInto(host, _b1MakeBr(host));
+          }
+          if (!(clone.childNodes || []).length) {
+            if (pre) _b1AppendInto(clone, _b1CreateText(host, '\n'));
+            else _b1AppendInto(clone, _b1MakeBr(clone));
+          }
+          if (host.parentNode === docEl) {
+            // doc 级成员（__zwB1Slot 槽位）拆半落位：host.nextSibling 在
+            // docEl 虚树恒 null（head/body 不在 childNodes），走 ref=null 会
+            // 落 'after' 槽（body 之后），corpus 期望 clone 与 host 紧邻——
+            // 直接按 childNodes 位次 +1 同槽位插（insertparagraph-in-child-of
+            // -html 全形拆半位）
+            var dks = docEl.childNodes || [];
+            var hAt = dks.indexOf(host);
+            if (hAt >= 0) {
+              clone.__zwB1Slot = host.__zwB1Slot || 'after';
+              _b1SetParent(clone, docEl);
+              dks.splice(hAt + 1, 0, clone);
+            } else {
+              _b1InsertInto(docEl, null, clone);
+            }
+          } else {
+            _b1InsertInto(host.parentNode, host.nextSibling || null, clone);
+          }
+          var ct = clone.firstChild;
+          if (ct && ct.nodeType === 3) _b1SetCaret(sel, ct, 0);
+          else _b1SetCaret(sel, clone, 0);
+        }
+        // PUA 键码映射与 runner send_keys 同形：\uE003→backward delete、
+        // \uE017→forward delete、\uE006/\uE007→enter、其余 PUA 拒绝（同
+        // runner unsupported 形）。吞掉：修饰键 \uE008/9/A、\uE03D（Actions
+        // 序字符面已含大小写，粘滞忽略）、cancel/help \uE001/2、escape
+        // \uE00C（子文档无 dialog）、tab \uE004（子文档无焦点导航）。
+        // B1 切片 2（editing goal d22）：方向/行端键光标移动（corpus
+        // sendArrowRightKey / sendEndKey / sendArrowLeftKey 消费面）。非折叠
+        // 选区一键先收拢（left/home→起点，right/end→终点，Chrome 视觉移动
+        // 语义）；折叠态字符步进（块宿主文本序 ±1），行端 = 块宿主内容端。
+        function _b1CaretMove(sel, key) {
+          var cc = _b1Caret(sel);
+          if (!cc || !cc.r) return;
+          var r = cc.r;
+          if (!r.collapsed) {
+            if (key === 'left' || key === 'home') _b1SetCaret(sel, r.startContainer, r.startOffset);
+            else _b1SetCaret(sel, r.endContainer, r.endOffset);
+            return;
+          }
+          var node = cc.c;
+          var host = _b1BlockOf(node).block || doc.body;
+          if (key === 'home' || key === 'end') {
+            var t = _b1DeepestText(host, key === 'end');
+            if (t) _b1SetCaret(sel, t, key === 'end' ? _b1DataOf(t).length : 0);
+            else _b1SetCaret(sel, host, key === 'end' ? (host.childNodes || []).length : 0);
+            return;
+          }
+          var texts = [];
+          (function dfs(n) {
+            var ks = (n.childNodes || []);
+            for (var i = 0; i < ks.length; i++) {
+              if (ks[i] && ks[i].nodeType === 3) texts.push(ks[i]);
+              else dfs(ks[i]);
+            }
+          })(host);
+          var idx = texts.indexOf(node);
+          if (idx < 0) return; // 元素偏移落点不步进（corpus 未消费）
+          var dl = _b1DataOf(node).length;
+          if (key === 'right') {
+            if (cc.o < dl) { _b1SetCaret(sel, node, cc.o + 1); return; }
+            if (idx + 1 < texts.length) _b1SetCaret(sel, texts[idx + 1], 1);
+          } else {
+            if (cc.o > 0) { _b1SetCaret(sel, node, cc.o - 1); return; }
+            if (idx > 0) _b1SetCaret(sel, texts[idx - 1], Math.max(_b1DataOf(texts[idx - 1]).length - 1, 0));
+          }
+        }
+        function applyKeys(keys) {
+          var s = String(keys == null ? '' : keys);
+          var sel = _b1Sel();
+          for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i);
+            var cu = s.charCodeAt(i);
+            if (cu === 0xE003) { _b1Delete(sel, false); continue; }
+            if (cu === 0xE017) { _b1Delete(sel, true); continue; }
+            if (cu === 0xE006 || cu === 0xE007) { _b1Enter(sel); continue; }
+            if (cu === 0xE012) { _b1CaretMove(sel, 'left'); continue; }
+            if (cu === 0xE014) { _b1CaretMove(sel, 'right'); continue; }
+            if (cu === 0xE010) { _b1CaretMove(sel, 'end'); continue; }
+            if (cu === 0xE011) { _b1CaretMove(sel, 'home'); continue; }
+            if (cu >= 0xE000 && cu <= 0xF8FF) {
+              if (cu === 0xE001 || cu === 0xE002 || cu === 0xE00C || cu === 0xE004
+                || cu === 0xE008 || cu === 0xE009 || cu === 0xE00A || cu === 0xE03D) continue;
+              // FIXME(B1 切片 3): 其余 PUA 键 corpus 未消费，同 runner 拒绝形
+              throw new Error('unsupported WebDriver key U+'
+                + ('000' + cu.toString(16).toUpperCase()).slice(-4));
+            }
+            _b1InsertText(sel, ch);
+          }
+        }
+        // doc.execCommand delete/forwarddelete 折叠臂消费面（键语义同源）
+        doc.__zwB1KeyFace = { del: _b1Delete };
+        return {
+          set_test_context: function () {},
+          send_keys: function (element, keys) {
+            try {
+              applyKeys(keys);
+              return Promise.resolve();
+            } catch (e) {
+              return Promise.reject(e);
+            }
+          },
+          Actions: function () {
+            var seq = [];
+            return {
+              keyDown: function (k) { seq.push(['down', k]); return this; },
+              keyUp: function (k) { seq.push(['up', k]); return this; },
+              click: function () { return this; },
+              send: function () {
+                try {
+                  for (var i = 0; i < seq.length; i++) {
+                    if (seq[i][0] === 'down') applyKeys(seq[i][1]);
+                  }
+                  return Promise.resolve();
+                } catch (e) {
+                  return Promise.reject(e);
+                }
+              },
+            };
+          },
+        };
+      })(),
       Element: globalThis.Element,
       // R3254-E2 切片 6：Selection 构造器转发（getSelection.html 的 iframe 内
       // 「window must have Selection property」sanity 前置）。
@@ -7361,7 +8733,15 @@
       // `#a,.b` 解析出 id 'a,'，s81 `_zwSelIdConstraint` 据此误剔 host 全部命中
       // → 逗号列表查询恒空；`\,` 转义仍走下方 escape 臂属 ident）。
       // https://drafts.csswg.org/selectors/#selector-list
-      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || ch === ',' || /[ \t\n\f\r]/.test(ch)) break;
+      // editing B2 切片 2：组合器字符 `+`/`>`/`~` 亦非 ident 字符（CSS Syntax
+      // <ident-token> 不含三者；`\+` 等转义经上方 escape 臂先行）——旧版缺此
+      // break，无空格链 `p+p>b` 被单 token 吞成伪 tag 'P+P>B' 的 supported
+      // compound → R322/R309 compound 臂恒 miss → qS/qSA null（P14 探针：空格
+      // 版 hit、无空格版 null 四象限恒定）。token 止于组合器 → 第二裸 token
+      // unsupported → complex 链臂（`_zwOverlayChainAll`）接管。
+      // https://drafts.csswg.org/css-syntax/#ident-token
+      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || ch === ','
+          || ch === '+' || ch === '>' || ch === '~' || /[ \t\n\f\r]/.test(ch)) break;
       if (ch === '\\') {
         var nc = text[i + 1];
         if (nc === undefined) { out += '\uFFFD'; i++; continue; } // EOF 反斜杠 → U+FFFD（spec 4.3.4）
@@ -7645,6 +9025,87 @@
       out.push(c);
     }
     return out.length ? { compounds: out, combinators: parts.combinators } : null;
+  }
+  // overlay 子树链匹配（editing goal B2 切片 2）：同 turn innerHTML 替换后 host
+  // 快照滞后（mutation 异步 apply），compound-only 归并臂（R309/R322）覆盖不了的
+  // 组合器选择器（`dl + dl > dt` / `P + p > b`）在 pending 域恒 miss → qS null →
+  // 语料 `.firstChild` 崩（input-events getTargetRanges joining-dl/forwarddelete
+  // 家族主因；P12 探针对照：同 turn null → 60ms 后 host apply 自愈命中）。
+  // 在 overlay 树上直接求值 complex 链（R309 同域：innerHTML 替换已置空基底，
+  // overlay 即全部新子；普通 append 域不接——host 快照有效，identity 双源风险）。
+  // chain = `_parseComplexOf` 产物 { compounds, combinators }，组合器四变体与
+  // DOM crate query.rs::Combinator 对齐（R3286）。返树序命中数组（空数组 = 0 命中，
+  // 合法结果非失败——调用方据返回是否为 array 判分支接住）。
+  // https://dom.spec.whatwg.org/#concept-scoped-root ; https://drafts.csswg.org/selectors/#complex
+  function _zwOverlayChainAll(kids, chain) {
+    var out = [];
+    if (!chain || !chain.compounds || !chain.compounds.length) return out;
+    // overlay 对象无 parentNode 引用——DFS 建父/前元素兄弟上下文表（解析代理
+    // 引用恒定可作 Map key）。
+    var parentOf = new Map(), prevElemOf = new Map();
+    (function _zwOcCtx(n) {
+      if (!n || !n.childNodes) return;
+      var prev = null;
+      var cs = n.childNodes;
+      for (var i = 0; i < cs.length; i++) {
+        var c = cs[i];
+        if (!c || c.nodeType !== 1) continue;
+        parentOf.set(c, n);
+        prevElemOf.set(c, prev);
+        prev = c;
+        _zwOcCtx(c);
+      }
+    })({ childNodes: kids });
+    var all = [];
+    (function _zwOcFlat(n) {
+      if (!n || !n.childNodes) return;
+      var cs = n.childNodes;
+      for (var i = 0; i < cs.length; i++) {
+        var c = cs[i];
+        if (!c || c.nodeType !== 1) continue;
+        all.push(c);
+        _zwOcFlat(c);
+      }
+    })({ childNodes: kids });
+    // hits[i]：全子树匹配 compounds[i] 的元素（树序）；valid[i]：匹配前缀链
+    // compounds[0..i] 的元素（段间按组合器锚定传递收窄——右到左验证的等价
+    // 左到右形态，免逐候选回溯）。
+    var valid = [];
+    for (var s = 0; s < chain.compounds.length; s++) {
+      var seg = [];
+      for (var h = 0; h < all.length; h++) {
+        try { if (_matchCompoundOf(all[h], chain.compounds[s])) seg.push(all[h]); } catch (_eOcM) {}
+      }
+      if (s === 0) { valid = seg; continue; }
+      var comb = chain.combinators[s - 1];
+      var next = [];
+      for (var v = 0; v < seg.length; v++) {
+        var el = seg[v];
+        var ok = false;
+        for (var a = 0; a < valid.length; a++) {
+          var an = valid[a];
+          if (comb === '>') { if (parentOf.get(el) === an) { ok = true; break; } }
+          else if (comb === '+') { if (prevElemOf.get(el) === an) { ok = true; break; } }
+          else if (comb === ' ') {
+            var p = parentOf.get(el);
+            while (p) { if (p === an) { ok = true; break; } p = parentOf.get(p); }
+            if (ok) break;
+          } else { // '~'
+            var ps = prevElemOf.get(el);
+            while (ps) { if (ps === an) { ok = true; break; } ps = prevElemOf.get(ps); }
+            if (ok) break;
+          }
+        }
+        if (ok) next.push(el);
+      }
+      valid = next;
+      if (!valid.length) break;
+    }
+    if (valid.length) {
+      var vs = new Set(valid);
+      for (var o = 0; o < all.length; o++) { if (vs.has(all[o])) out.push(all[o]); }
+    }
+    return out;
   }
   // 逗号列表拆分（跳过 `[...]` / `(...)` / 引号内逗号 / **CSS 转义**——js-dom M4 R118：
   // `\,` 是字面逗号 ident 字符不是组边界，WPT ParentNode-querySelector-escapes
@@ -8805,10 +10266,13 @@
       }
       return el._ctx;
     };
-    // toDataURL（R2797，canvas slice 3）：PNG 导出。host 编码 ctx.pixel_buffer → PNG（csv 字节）→
-    // shim 转 Latin-1 → btoa → `data:image/png;base64,...`（复用 btoa，无 base64 dep）。仅 'image/png'
-    //（type 参数忽略，jpeg/webp defer）；host 未注册 / 编码失败 → `data:,` 回落。无 ctx 时惰性创建。
-    el.toDataURL = function (_type) {
+    // toDataURL（R2797，canvas slice 3）：PNG/JPEG 导出。host 编码 ctx.pixel_buffer（csv 字节）→
+    // shim 转 Latin-1 → btoa → `data:<mime>;base64,...`（复用 btoa，无 base64 dep）。s423：type
+    // 参数接通（spec #dom-canvas-todataurl 步骤——parse as MIME type 按 essence 比较；本引擎
+    // 支持集 = image/png + image/jpeg，其余/非法回落 image/png，PNG fallback）。quality 仅
+    // jpeg 消费（0..1 映射 1..=100，NaN/越界 → 92）。host 未注册 / 编码失败 → `data:,` 回落。
+    // 无 ctx 时惰性创建。
+    el.toDataURL = function (_type, _quality) {
       if (typeof __zw_canvas_op !== 'function') return 'data:,';
       // R34xx（layers 目录）：层打开期间 toDataURL 抛 InvalidStateError
       //（2d.layer.malformed-operations）。
@@ -8820,6 +10284,10 @@
       if (el._ctx && el._ctx._zwUnclean) {
         throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
       }
+      // s423：导出格式归一（essence 小写；非受支持 → image/png）。
+      var _fmt = String(_type == null ? '' : _type).split(';')[0]
+        .replace(/^\s+|\s+$/g, '').toLowerCase();
+      if (_fmt !== 'image/jpeg') _fmt = 'image/png';
       // s329：bitmap 无像素（宽/高 0）→ 恒 'data:,'（spec 步骤 2，origin-clean 门之后、
       // 惰性建 ctx 之前；el.width/height getter 属性即时读——createElement 产物走本实例
       // 面而非 part04 trap，c.width=0 动态置零同臂）。toDataURL.zero 断言。
@@ -8827,17 +10295,23 @@
       if (el.width === 0 || el.height === 0) return 'data:,';
       if (!el._ctx) el.getContext('2d');
       if (!el._ctx) return 'data:,';
-      var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
+      var _q = (typeof _quality === 'number' && isFinite(_quality) &&
+        _quality >= 0 && _quality <= 1)
+        ? Math.min(100, Math.max(1, Math.round(_quality * 100))) : 92;
+      var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL',
+        _fmt === 'image/jpeg' ? 'jpeg' : 'png',
+        _fmt === 'image/jpeg' ? String(_q) : ''));
       if (!csv) return 'data:,';
       var nums = csv.split(',');
       var s = '';
       for (var i = 0; i < nums.length; i++) s += String.fromCharCode(+nums[i]);
-      return 'data:image/png;base64,' + btoa(s);
+      return 'data:' + _fmt + ';base64,' + btoa(s);
     };
-    // toBlob（R3296，HTMLCanvasElement）：异步 PNG Blob 导出。镜像 toDataURL 的 host 编码路径
-    //（`__zw_canvas_op(handle,'toDataURL')` → PNG CSV 字节），但产物为 `Blob`（type 'image/png'）经
-    // **回调**异步派发（spec：返 undefined，callback(blob|null) 在 microtask 触发，失败/无 ctx→callback(null)）。
-    // 复用 toDataURL 的 PNG 编码（仅 image/png；type/quality 参数 best-effort 与 toDataURL 同），无 ctx 惰性创建。
+    // toBlob（R3296，HTMLCanvasElement）：异步 PNG/JPEG Blob 导出。镜像 toDataURL 的 host 编码路径
+    //（`__zw_canvas_op(handle,'toDataURL',fmt,quality)` → CSV 字节），但产物为 `Blob`（type = 归一
+    // 格式）经**回调**异步派发（spec：返 undefined，callback(blob|null) 在 microtask 触发，失败/无
+    // ctx→callback(null)）。s423：type 参数接通（同 toDataURL 归一口径——image/png/image/jpeg
+    // 白名单，其余 PNG fallback；quality 仅 jpeg）。无 ctx 惰性创建。
     // 用途：canvas 导出库（html2canvas/fabric.js/Chart.js「Save as Image」）+ FormData 上传 + createObjectURL 预览。
     // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-canvas-toblob
     el.toBlob = function (callback, _type, _quality) {
@@ -8852,6 +10326,10 @@
       if (el._ctx && el._ctx._zwUnclean) {
         throw _zwDomException('toBlob on an origin-unclean canvas', 'SecurityError');
       }
+      // s423：导出格式归一（essence 小写；非受支持 → image/png）。
+      var _fmt = String(_type == null ? '' : _type).split(';')[0]
+        .replace(/^\s+|\s+$/g, '').toLowerCase();
+      if (_fmt !== 'image/jpeg') _fmt = 'image/png';
       // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
       var p = Promise.resolve().then(function () {
         if (typeof __zw_canvas_op !== 'function') return null;
@@ -8862,12 +10340,17 @@
         if (el.width === 0 || el.height === 0) return null;
         if (!el._ctx) el.getContext('2d');
         if (!el._ctx || !el._ctx._handle) return null; // 无 ctx → 无 bitmap
-        var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
+        var _q = (typeof _quality === 'number' && isFinite(_quality) &&
+          _quality >= 0 && _quality <= 1)
+          ? Math.min(100, Math.max(1, Math.round(_quality * 100))) : 92;
+        var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL',
+          _fmt === 'image/jpeg' ? 'jpeg' : 'png',
+          _fmt === 'image/jpeg' ? String(_q) : ''));
         if (!csv) return null;
         var nums = csv.split(',');
         var bytes = new Uint8Array(nums.length);
         for (var i = 0; i < nums.length; i++) bytes[i] = +nums[i];
-        return new Blob([bytes], { type: 'image/png' });
+        return new Blob([bytes], { type: _fmt });
       });
       if (typeof cb === 'function') p.then(function (blob) { cb(blob); });
       return undefined; // spec：toBlob 返 undefined（非 Promise）
@@ -11637,7 +13120,17 @@
   // parentNode=parentProxy）。文本节点无 selector，故用静态对象（nodeValue/textContent/data 只读）。
   function _wrapNodeEntry(entry, parentProxy) {
     if (!entry) return null;
-    if (entry.k === 'E') return _wrapSelector(entry.s);
+    // T68（site-compat juejin feed 归因轮，2026-11-14）：'E' 包装接 R331 identity 反查
+    //（`_zwQueryWrapIdentity`——querySelector 返回点既有语义）——handle 节点 apply 后
+    // 宿主 merge handle→selector，结构 wire drain 后本函数重建的基底 wrapper 若仍走
+    // 裸 `_wrapSelector`（新 sel proxy），childNodes/children 读链与页面持有的原
+    // handle proxy 身份分裂（t67-minrepro caseDAsync：drain 后 qsaFinds=true 而
+    // inChildNodes/inChildren=false——宿主已含子但 JS childNodes 的 indexOf 按对象
+    // 恒等判 miss）。spec live 集合语义：childNodes 成员与查询到的同一节点是**同一
+    // Node 对象**（https://dom.spec.whatwg.org/#concept-tree-child）。pending 窗口
+    // （apply 未落，merge 表未登记）反查 miss → 原行为零变化；命中时 `_proxyCache`
+    // 复用原 handle proxy（R331 注释同款）。
+    if (entry.k === 'E') return _zwQueryWrapIdentity(entry.s);
     var isComment = entry.k === 'C';
     var text = entry.v != null ? entry.v : '';
     // js-dom M4 R48：parsed 文本/注释节点的 CharacterData 方法（appendData/insertData/deleteData/
@@ -11955,11 +13448,26 @@
   // 换代），IIFE 内函数 host 侧不可达。
   globalThis._zwChildBaseInvalidateAll = function () {
     _zwChildBaseCache.clear();
-    // R140：live childNodes 承载数组同批失效（其 refresh 闭包捕获 sel/handle，跨换代
-    // 重查正确——但缓存 identity 跨换代保留会使同 turn 内旧数组被复用且 __zwTreeRef
-    // 等本地失效逻辑失真；统一清空最稳，WPT r55 重注册换代用例）。
-    if (globalThis._zwLiveNLCache) globalThis._zwLiveNLCache = {};
-    if (globalThis._zwLiveNLSync) globalThis._zwLiveNLSync = {};
+    // T70（t69 诊断 Gap B）：live childNodes 承载数组与 mutation 同步表**跨换代保留**
+    //（spec：Node.childNodes 返 live NodeList，https://dom.spec.whatwg.org/
+    // #dom-node-childnodes；同一 node 重复读返同一 collection 对象 = [SameObject]，
+    // 见 #interface-nodelist / #collections live 语义）。旧实现批量边界整表清空：
+    // ① 同节点换代后首读返新数组（identity 破，held 引用与 fresh 读分叉）；
+    // ② 持有引用失去 `_zwLiveNLSync` 钩子——树变更只刷新换代后的新数组，旧引用
+    // 冻结在旧视图（live 反射破，caseH v2/v4/v5 面）；③ mutation 入口的 sync 调用
+    // 全失联。保留后 refresh 闭包捕获 sel/handle 字符串，重查 `_childNodeList`
+    //（base cache 已在本函数清空 → 换代后首查回源 host，基底新鲜度不变——WPT r55
+    // 重注册换代用例只断言基底新鲜度，不受影响）；part03 `__zwDetDoc` detached-doc
+    // 条目自带 `__zwTreeRef === _tree` 守卫，跨树自愈。容量守卫镜像 `_zwChildBaseCache`
+    // 512 键软上限（超限两表同清，键位成对注册不会失配）。
+    // FIXME: 进程内路径 load_html 跨文档沿用同一保留（与 _proxyCache 持久化一致；
+    // handle 游标换代归零后 `@handle` 键跨页复用是既有暴露面）；renderer 路径每
+    // 文档重建 context，天然无跨文档残留。
+    if (globalThis._zwLiveNLCache
+        && Object.keys(globalThis._zwLiveNLCache).length > 512) {
+      globalThis._zwLiveNLCache = {};
+      globalThis._zwLiveNLSync = {};
+    }
   };
   function _childNodeList(sel, handle) {
     // R100 锚回（mm-regression 根修，2026-10-07）：handle-only proxy（`_zwQueryWrapIdentity`
@@ -12091,7 +13599,15 @@
           _r380Out += _r380n.outerHTML || '';
         }
       }
-      return _r380Out !== '' ? _r380Out : null;
+      // T68（site-compat juejin feed 归因轮，2026-11-14）：**空串是合法融合结果**——
+      // 桶门激活（同 turn 结构变更记账在册）且 walk 后子集为空（唯一子 removeChild 后）
+      // 时，旧 `!== '' → null` 折叠把空视图交回调用方 `||` 回落 host 直读，宿主快照
+      // （apply 未 drain）仍含已移除子 → innerHTML 读回陈旧内容（t67-minrepro caseC
+      // htmlGone=false：childNodesGone/qsaGone/contains 均 true 而序列化 stale）。
+      // spec 概念上序列化已确认为空（concept-node-remove 后父无子）——空串原样返回，
+      // 门未激活/catch 仍 null（调用方回落 host 零变化）。
+      // https://dom.spec.whatwg.org/#concept-node-remove
+      return _r380Out;
     } catch (_e380ih) { return null; /* 序列化失败回落 host 快照 */ }
   }
   // js-dom M4 R51：sel 父 childNodes 的 pending overlay——同步脚本内 mutation（insertBefore/
@@ -12273,6 +13789,25 @@
         if (_g382i >= 0) bucket.added.splice(_g382i, 1);
         if (bucket.addedSet) bucket.addedSet.delete(nd);
         continue;
+      }
+      // d53（wptfyi-editing 占位 br 换代幽灵滤除，2026-11-17）：占位 br 条目跨
+      // 代际不并入——R382 的 ghost 确认以「handle 在宿主快照」为准，rebake 换结构
+      // 后占位 br handle 已不在快照 → 恒并入（live 融合视图 R5355 收缩后无跨代际
+      // 桶级跳并）→ 视图残影毒化下游 join/占位几何（zz-probe-d53k 序贯实证，dil
+      // B 族 6 面 P2F）。占位 br 创建时以 `__zwPbrGenByHandle` 记账（part01
+      // `_zwCePlaceholderBr` append 后 handle 即读），此处按记账代际滤除：同代
+      // 条目（占位动作本 turn 内可见性读）照并，跨代条目剔除（节点他处 re-append
+      // 会以新代际重登记，与 R382 同款不回检）。
+      if (nd.__zwHandle && typeof globalThis.__zwPbrGenByHandle === 'object'
+          && globalThis.__zwPbrGenByHandle) {
+        var _pbrGen53 = globalThis.__zwPbrGenByHandle[String(nd.__zwHandle)];
+        if (_pbrGen53 != null
+          && _pbrGen53 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)) {
+          var _pbrI53 = bucket.added.indexOf(nd);
+          if (_pbrI53 >= 0) bucket.added.splice(_pbrI53, 1);
+          if (bucket.addedSet) bucket.addedSet.delete(nd);
+          continue;
+        }
       }
       // R182：sel 子**重定位**语义——快照内既有节点被移到新位置（同父移动：旧位剔除
       // + 新位插入；seen 检查会使快照旧位永远胜出——WPT insertAdjacentElement 的
@@ -12645,6 +14180,20 @@
       // null/undefined 视为 HTML 仅对 parsed / createElement 产物（registry 无记录）。
       if (el && el.__zwHandle && typeof _nsHandles !== 'undefined' && _nsHandles[el.__zwHandle]) {
         return _nsHandles[el.__zwHandle].namespace === 'http://www.w3.org/1999/xhtml';
+      }
+      // s433：payload 表优先 ns 读——FORM named-first（s433 gate）下 `el.namespaceURI`
+      // 代理读是毒化面（具名控件名命中接口成员时返回控件 proxy：form-nameditem 页
+      // `name=namespaceURI` 控件 → document.forms 的 HTML-ns 过滤把 form 判成非 HTML
+      // 整体丢弃，R6 探针实证）。_zwSelNsCache（''=HTML ns，_zwFilterByTagNameNS 同款
+      // 印章三元组）命中即权威；未命中（handle 型/未灌表）落回代理读保持原语义。
+      var _ihSel = null;
+      try { _ihSel = el && el.__zwSelector; } catch (_eIh) {}
+      if (_ihSel != null && _zwSelNsCache.map
+          && _zwSelNsCache.gen === (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
+          && _zwSelNsCache.added === _zwPendingAdded.length
+          && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+        var _ihNs = _zwSelNsCache.map.get(String(_ihSel));
+        if (_ihNs !== undefined) return _ihNs === '';
       }
       var ns = el.namespaceURI;
       return ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml';
@@ -15554,7 +17103,10 @@
       var outStar = [];
       for (var _si = 0; _si < els.length; _si++) {
         var _se = els[_si];
-        if (_se && _se.nodeType === 1) outStar.push(_se);
+        // s433：身份判定同主循环（proxy 恒元素；wrapper own nodeType 直读安全）。
+        var _sIsEl = false;
+        try { _sIsEl = (_se && ((_se.__zwSelector != null) || (_se.__zwHandle != null))); } catch (_eSis) { _sIsEl = false; }
+        if (_se && (_sIsEl || _se.nodeType === 1)) outStar.push(_se);
       }
       return outStar;
     }
@@ -15563,9 +17115,48 @@
     var needNs = !(nsMode && nsWant === '*');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
-      if (!el || el.nodeType !== 1) continue;
+      // s433（html-semantics）：nodeType 过滤改**身份判定**——_makeProxy/_wrapHandle
+      // 产物构造上恒元素（proxy 只为元素建，spec Element），proxy 上直读 nodeType 会撞
+      // FORM named-first gate（s433 具名控件遮蔽接口成员——控件名恰为 nodeType 时返
+      // 回控件对象被误滤掉，实证：R12 频度探针 gETB('form') 整体丢 form）；plain
+      // wrapper（文本/注释，_wrapNodeEntry 产物）的 nodeType 是 own 属性不经 trap，
+      // 直读安全。`__zwSelector`/`__zwHandle` 走 R351 顶部短路（内部键，named-first
+      // 不涉），读取零臂成本。
+      var _fIsEl = false;
+      try { _fIsEl = (el.__zwSelector != null) || (el.__zwHandle != null); } catch (_eFie) { _fIsEl = false; }
+      if (!_fIsEl && el.nodeType !== 1) continue;
+      // s433：ns/localName/tagName 内部读走 **payload 表快道**（_zwTagCache sel→tag +
+      // _zwSelNsCache sel→ns，`__zw_query_all_tagged` 灌注、印章同源——R-baidu3/t7
+      // 现成机制）。FORM named-first 下 proxy 读 namespaceURI/localName 会返回具名
+      // 控件（R7 探针实证 form.namespaceURI=控件代理）→ isHtml 误判 → HTML 大小写
+      // 折叠被跳过 → 'FORM' ≠ 'form' 文档级 gETB/document.forms 丢 form → 枚举结果
+      // 不稳定 → 装载期 settle 无限重试（N7 hang，gdb StackOverflow）。HTML ns 元素
+      // 的 tag/localName 值 payload 表即权威（宿主同源视图）；非 HTML ns 元素不经
+      // FORM gate（FORM 恒 HTML ns），proxy 回落无毒化面。payload miss（同 turn
+      // pending 代理等）回落 proxy 读——现状行为，残余毒化窗口同 turn 级，挂账。
+      var _fSel = null;
+      try { _fSel = el.__zwSelector || null; } catch (_eFs) { _fSel = null; }
+      var _fTag = null;
+      var _fNs = null;
+      if (_fSel != null && _zwTagCache && _zwSelNsCache) {
+        var _fGen = (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0);
+        if (_zwTagCache.gen === _fGen && _zwTagCache.added === _zwPendingAdded.length
+            && _zwTagCache.removed === _zwPendingRemoved.length
+            && _zwSelNsCache.gen === _fGen && _zwSelNsCache.added === _zwPendingAdded.length
+            && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+          if (_zwTagCache.map.has(_fSel) && _zwSelNsCache.map.has(_fSel)) {
+            _fTag = _zwTagCache.map.get(_fSel);
+            _fNs = _zwSelNsCache.map.get(_fSel);
+          }
+        }
+      }
       var ns = null;
-      if (needNs) { try { ns = el.namespaceURI; } catch (_e) {} }
+      if (needNs) {
+        if (_fNs != null) ns = (_fNs === '' ? 'http://www.w3.org/1999/xhtml' : _fNs);
+        else { try { ns = el.namespaceURI; } catch (_e) {} }
+      }
+      // isHtml 折叠：payload ns（'' 归一 HTML ns）与探测读同约定（t7 注）。
+      var isHtml = htmlDoc && ns === 'http://www.w3.org/1999/xhtml';
       // R330：HTML-ness 折叠只看查询上下文文档（htmlDoc）；元素的 ns 参与匹配
       // 语义——非 HTML ns 元素（含 createElementNS('', …) 的 no namespace）恒
       // 精确比较（'a' 不被 'A' 命中）。HTML ns 元素在 HTML 文档上下文才折叠；
@@ -15583,7 +17174,12 @@
         // namespace」双向期望；'AÇ' 同例）。
         if (input !== '*') {
           var ln = null;
-          try { ln = el.localName; } catch (_e2) {}
+          // s433：HTML ns 元素 localName = payload 小写 tag（host 同源视图）；非 HTML ns
+          // 元素不经 FORM gate，proxy 读回落。原样精确比较语义不变——payload tag 对
+          // HTML ns 恒小写（spec HTML 文档 localName 全小写，createElementNS 大写面走
+          // 非 HTML ns 臂原样比较）。
+          if (_fTag != null && ns === 'http://www.w3.org/1999/xhtml') ln = _fTag;
+          else { try { ln = el.localName; } catch (_e2) {} }
           if (ln == null) ln = '';
           if (String(ln) !== String(input)) continue;
         }
@@ -15595,12 +17191,18 @@
           // WPT「uppercase tagName never matches」期望 ('I')/('i') 都不命中——规则：
           // HTML ns 元素的 localName 非纯 ASCII 小写 → 永不匹配。
           if (isHtml) {
-            var lnH = null;
-            try { lnH = el.localName; } catch (_eL) {}
+            // s433：HTML ns 元素 payload 小写 tag 即 localName（纯小写恒过折叠门）；
+            // payload miss 回落 proxy 读。
+            var lnH = _fTag;
+            if (lnH == null) { try { lnH = el.localName; } catch (_eL) {} }
             if (lnH != null && _zwAsciiLower(String(lnH)) !== String(lnH)) continue;
           }
           var qn = null;
-          try { qn = el.tagName; } catch (_e3) {}
+          // s433：HTML ns 元素 qualifiedName = payload tag 大写化（host 小写 tag 存表，
+          // _realTag 同款 _zwAsciiUpper 口径）；非 HTML ns 元素 proxy 读原值（R330
+          // 原值精确比较语义不变，且不经 FORM gate）。
+          if (_fTag != null && isHtml) qn = _zwAsciiUpper(String(_fTag));
+          else { try { qn = el.tagName; } catch (_e3) {} }
           if (qn == null) continue;
           // R330：createElementNS 产物（_nsHandles）的 qualifiedName 原值优先——
           // wrapper tagName 经 htmlUpper 烘焙（HTML 文档创建时大写），移入 XML 文档
@@ -15672,7 +17274,12 @@
     var out = [];
     var seen = new Map();
     var push = function (el) {
-      if (!el || el.nodeType !== 1) return;
+      // s433（html-semantics）：身份判定替代 proxy nodeType 直读（_zwFilterByTagNameNS
+      // 同款——FORM named-first 下控件名恰为 nodeType 时 proxy 读返回控件对象，快照
+      // 段条目被误滤）。proxy 产物构造上恒元素；wrapper own 属性直读安全。
+      var _pIsEl = false;
+      try { _pIsEl = (el.__zwSelector != null) || (el.__zwHandle != null); } catch (_ePie) { _pIsEl = false; }
+      if (!el || (!_pIsEl && el.nodeType !== 1)) return;
       var k = el.__zwSelector || el.__zwHandle;
       if (k && seen.has(k)) return;
       if (k) seen.set(k, true);
@@ -16731,6 +18338,22 @@
     ['data', 'data', null], ['isComposing', 'isComposing', false],
     ['inputType', 'inputType', ''], ['dataTransfer', 'dataTransfer', null],
   ]);
+  // B2（editing goal，2026-11-15）：getTargetRanges——beforeinput 携带的「将受
+  // 影响」StaticRange 数组（引擎 CE 删除路径 dispatch 前挂实例 `_zwTargetRanges`
+  // 槽，见 part01 `__zwCePendingTargetRanges` 注记）。槽缺省返空数组——input
+  // 事件规范恒空。数组存实例不重算、不清除：dispatch 后传播、listener 改选区
+  // 后再读同值（input-events-get-target-ranges-during-and-after-dispatch 语料
+  // 三子测断言同值面）。
+  // https://w3c.github.io/input-events/#dom-inputevent-gettargetranges
+  try {
+    Object.defineProperty(InputEvent.prototype, 'getTargetRanges', {
+      value: function () {
+        var rs = this._zwTargetRanges;
+        return Array.isArray(rs) ? rs : [];
+      },
+      writable: true, configurable: true,
+    });
+  } catch (_eGtrDefine) {}
   // CompositionEvent（UI Events）：IME compositionstart/update/end 的 data。
   _defineEventSubclass('CompositionEvent', 'UIEvent', [
     ['data', 'data', ''], ['locale', 'locale', ''],

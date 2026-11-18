@@ -1261,10 +1261,41 @@ impl BrowserApp {
         (full, fb)
     }
 
+    /// ui_driver 流程包含 Step::Shot → 首个捕获必现离屏渲染器创建（实测 103-210ms，
+    /// T77 仪拍），且首个 shot 位于 claim 冻结窗内。ui_driver 模式下窗口 Resized 时
+    /// 调用本方法把创建成本预提升到窗外；shot 路径按尺寸命中复用，失败时 shot 处重试。
+    pub fn prewarm_capture_renderer(&mut self) {
+        let (width, height) = self.physical_size;
+        if width == 0 || height == 0 {
+            return;
+        }
+        // T77 双审查 DF1：设备丢失后丢弃缓存渲染器，走下方重建分支自愈
+        // （复用前不检测则死设备永久驻留；窗口主路径同款先例 R3281 #3）。
+        if self.capture_gpu_renderer.as_ref().is_some_and(GpuRenderer::is_device_lost) {
+            tracing::warn!("browser: capture GPU 设备丢失，丢弃离屏渲染器待重建");
+            self.capture_gpu_renderer = None;
+        }
+        if self.capture_gpu_renderer.is_some() && self.capture_gpu_size == (width, height) {
+            return;
+        }
+        match GpuRenderer::new_headless(width, height) {
+            Ok(renderer) => {
+                tracing::info!("GPU capture renderer prewarmed ({width}x{height})");
+                self.capture_gpu_renderer = Some(renderer);
+                self.capture_gpu_size = (width, height);
+            }
+            Err(error) => {
+                tracing::warn!("GPU capture renderer prewarm failed: {error}; will retry on shot");
+            }
+        }
+    }
+
     /// 对当前生产场景执行严格 GPU 离屏渲染并读回。
     ///
     /// 用于真实窗口 smoke：窗口 swapchain 先正常 present，再用相同多进程
     /// renderer/compositor/browser 场景做可断言的 GPU readback。失败不回退 CPU。
+    /// 离屏渲染器按尺寸持久复用（[Self::prewarm_capture_renderer] 可预创建）——
+    /// 每次新建 wgpu 上下文实测 103-210ms（T77 仪拍）。
     pub fn render_full_scene_gpu_capture(
         &mut self,
         width: u32,
@@ -1278,8 +1309,22 @@ impl BrowserApp {
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
         scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
-        let mut renderer =
-            GpuRenderer::new_headless(width, height).map_err(|error| format!("GPU capture init failed: {error}"))?;
+        // T77 双审查 DF1：设备丢失后丢弃缓存渲染器并按尺寸重建（此前丢失后
+        // readback 永久 Err；窗口主路径同款恢复先例 R3281 #3）。
+        if self.capture_gpu_renderer.as_ref().is_some_and(GpuRenderer::is_device_lost) {
+            tracing::warn!("browser: capture GPU 设备丢失，丢弃离屏渲染器待重建");
+            self.capture_gpu_renderer = None;
+        }
+        if self.capture_gpu_renderer.is_none() || self.capture_gpu_size != (width, height) {
+            let renderer = GpuRenderer::new_headless(width, height)
+                .map_err(|error| format!("GPU capture init failed: {error}"))?;
+            self.capture_gpu_renderer = Some(renderer);
+            self.capture_gpu_size = (width, height);
+        }
+        let renderer = self
+            .capture_gpu_renderer
+            .as_mut()
+            .expect("capture renderer initialized above");
         let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,

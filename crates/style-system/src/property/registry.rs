@@ -71,6 +71,11 @@ impl PropertyRegistry {
             "content-visibility" => Some(ContentVisibility(ContentVisibilityValue::Visible)),
 
             // 字体
+            // 刀 O：`font` 简写注册对应项——初值无独立标量（值空间 = 长手组合，
+            // 重置/拷贝语义在 apply_initial_value/inherit_property 的 `font` 委托
+            // 臂，展开清单 13 槽），占位 OptionalString(None) 仅满足注册表完整性
+            // 钉测（css-fonts-4 §font-prop）。
+            "font" => Some(OptionalString(None)),
             "font-family" => Some(StringList(vec![])),
             "font-size" => Some(Length(LengthValue::Px(16.0))),
             "font-weight" => Some(FontWeight(FontWeightValue::Normal)),
@@ -179,6 +184,9 @@ impl PropertyRegistry {
             "transition-property" => Some(StringList(vec![])),
             "transition-duration" | "transition-delay" => Some(Number(0.0)),
             "transition-timing-function" => Some(TimingFunctionList(vec![])),
+            // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+            // 初始值 normal，列表与 transition-property 逐位对齐
+            "transition-behavior" => Some(StringList(vec![])),
 
             // Animations
             "animation-name" => Some(StringList(vec![])),
@@ -206,6 +214,13 @@ impl PropertyRegistry {
             //（individual_* 字段置 None）。known_properties 白名单接入随
             // CSS.supports 门修复（js_dom_bridge decl_supported 前置）。
             "rotate" | "translate" | "scale" => Some(Transform(zero_css_parser::values::TransformValue::None)),
+            // CSS Motion Path offset 簇（css-motion-1，非继承；wptfyi-css offset-* 刀）：
+            // 借 Transform(None) 表义同 individual 先例，真实重置在 apply_initial_value
+            //（offset_path/distance/rotate/anchor/position 字段落 spec 初始
+            // none/0/auto/auto/normal）。
+            "offset-path" | "offset-distance" | "offset-rotate" | "offset-anchor" | "offset-position" => {
+                Some(Transform(zero_css_parser::values::TransformValue::None))
+            }
             "transform-origin" => Some(Length(LengthValue::Percentage(50.0))),
             "perspective" => Some(Length(LengthValue::Px(0.0))),
             "perspective-origin" => Some(Length(LengthValue::Percentage(50.0))),
@@ -255,8 +270,42 @@ impl PropertyRegistry {
             "break-after" => Some(BreakAfter(BreakValue::Auto)),
 
             // Column Rule
-            "column-rule-width" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
-            "column-rule-style" => Some(ColumnRuleStyle(ColumnRuleStyleComputedValue::None)),
+            // 简写初始值 = medium none currentcolor（CSS Multicol §6.2）；无聚合
+            // PropertyValue 变体，返回首子属性初始形（gap 简写臂同款先例）。
+            // css-gaps-1 列表模型：纯值 = 单段列表（width `<line-width-list>`、
+            // style `<line-style-list>`）。
+            "column-rule" => Some(ColumnRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            "column-rule-width" => Some(ColumnRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            // css-gaps-1 §column-row-rule-width：row-rule-width 初值 medium 同 column。
+            "row-rule-width" => Some(RowRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            // css-gaps-1 简写族：rule-width 同值双写 row/column（展开臂同款先例）。
+            "rule-width" => Some(RowRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            "column-rule-style" => Some(ColumnRuleStyle(vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )])),
+            // css-gaps-1 §column-row-rule-style：row-rule-style 初值 none 同 column。
+            "row-rule-style" => Some(RowRuleStyle(vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )])),
+            // css-gaps-1 简写族：rule-style 同值双写 row/column。
+            "rule-style" => Some(RowRuleStyle(vec![zero_css_parser::values::RuleStyleSegment::Plain(
+                zero_css_parser::values::ColumnRuleStyleValue::None,
+            )])),
+            // 简写 initial_value 臂：返回首子属性初始形（column-rule 臂同款先例）。
+            "row-rule" => Some(RowRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
+            "rule" => Some(ColumnRuleWidth(vec![zero_css_parser::values::RuleWidthSegment::Plain(
+                zero_css_parser::values::ColumnRuleWidthValue::Medium,
+            )])),
 
             // Interaction / Performance Hint
             "overscroll-behavior-x" | "overscroll-behavior-y" => {
@@ -277,6 +326,11 @@ impl PropertyRegistry {
             "font-variant-position" => Some(FontVariantPosition(FontVariantPositionValue::Normal)),
             "font-variant-alternates" => Some(FontVariantAlternates(FontVariantAlternatesValue::Normal)),
             "font-stretch" => Some(Length(LengthValue::Percentage(100.0))),
+            // css-fonts-4 §font-width-prop：font-width 为 font-stretch 的新名
+            //（同一属性同 computed 值），font-stretch 为 legacy alias——注册保持
+            // CSS.supports/decl_supported 通道可用；级联槽位经 canonical_property_name
+            // 并入 font-stretch（别名不独立占槽，继承填充循环跳过别名）。
+            "font-width" => Some(Length(LengthValue::Percentage(100.0))),
 
             // Writing Direction / Tab
             "direction" => Some(Direction(DirectionValue::Ltr)),
@@ -298,9 +352,68 @@ impl PropertyRegistry {
             // object-position 默认 50% 50%（Center），CSS Images §3。
             "object-position" => Some(ObjectPosition(BackgroundPositionComputedValue::Center)),
             "filter" => Some(Filter(Vec::new())),
+            // backdrop-filter 初始 = none（空表，Filter Effects-2）；与
+            // ComputedStyle::default()（backdrop_filter = Vec::new()）一致。
+            "backdrop-filter" => Some(Filter(Vec::new())),
 
             // Column Rule Color — CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
-            "column-rule-color" => Some(ColumnRuleColor(ColorValue::CurrentColor)),
+            // css-gaps-1 列表模型：纯色 = 单段列表；row-rule-color 同族同初值。
+            "column-rule-color" => Some(ColumnRuleColor(vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )])),
+            "row-rule-color" => Some(RowRuleColor(vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )])),
+            // 简写初始值 = 双子属性初值（无聚合变体，返回首子属性初始形，
+            // column-rule 简写臂同款先例）。
+            "rule-color" => Some(RowRuleColor(vec![zero_css_parser::values::RuleColorSegment::Plain(
+                ColorValue::CurrentColor,
+            )])),
+
+            // Rule Inset（css-gaps-1 §inset）：8 longhand 槽初值 0px（非继承）。
+            // https://drafts.csswg.org/css-gaps-1/#inset
+            "column-rule-inset-cap-start" => Some(PropertyValue::ColumnRuleInsetCapStart(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "column-rule-inset-cap-end" => Some(PropertyValue::ColumnRuleInsetCapEnd(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "column-rule-inset-junction-start" => Some(PropertyValue::ColumnRuleInsetJunctionStart(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "column-rule-inset-junction-end" => Some(PropertyValue::ColumnRuleInsetJunctionEnd(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "row-rule-inset-cap-start" => Some(PropertyValue::RowRuleInsetCapStart(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "row-rule-inset-cap-end" => Some(PropertyValue::RowRuleInsetCapEnd(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "row-rule-inset-junction-start" => Some(PropertyValue::RowRuleInsetJunctionStart(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            "row-rule-inset-junction-end" => Some(PropertyValue::RowRuleInsetJunctionEnd(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
+            // 简写 initial_value 臂：返回首子属性初始形（rule-color 臂同款先例）。
+            "rule-inset"
+            | "column-rule-inset"
+            | "row-rule-inset"
+            | "rule-inset-cap"
+            | "column-rule-inset-cap"
+            | "row-rule-inset-cap"
+            | "rule-inset-junction"
+            | "column-rule-inset-junction"
+            | "row-rule-inset-junction"
+            | "rule-inset-start"
+            | "column-rule-inset-start"
+            | "row-rule-inset-start"
+            | "rule-inset-end"
+            | "column-rule-inset-end"
+            | "row-rule-inset-end" => Some(PropertyValue::ColumnRuleInsetCapStart(
+                zero_css_parser::values::RuleInsetComponent::Length(LengthValue::Px(0.0)),
+            )),
 
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
@@ -373,11 +486,60 @@ impl PropertyRegistry {
                 bottom: BorderImageOutsetComputedComponent::Number(0.0),
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             })),
+
+            // Mask Border（css-masking-1 §3.4–3.9；文法与 border-image 同构复用同一
+            // PropertyValue 臂，初值差异 slice `0` §3.5 / width `auto` §3.6）
+            "mask-border-source" => Some(BorderImageSource(BorderImageSourceComputedValue::None)),
+            "mask-border-slice" => Some(BorderImageSlice(BorderImageSliceComputedValue {
+                top: BorderImageSliceComputedComponent::Number(0.0),
+                right: BorderImageSliceComputedComponent::Number(0.0),
+                bottom: BorderImageSliceComputedComponent::Number(0.0),
+                left: BorderImageSliceComputedComponent::Number(0.0),
+                fill: false,
+            })),
+            "mask-border-width" => Some(BorderImageWidth(BorderImageWidthComputedValue {
+                top: BorderImageWidthComputedComponent::Auto,
+                right: BorderImageWidthComputedComponent::Auto,
+                bottom: BorderImageWidthComputedComponent::Auto,
+                left: BorderImageWidthComputedComponent::Auto,
+            })),
+            "mask-border-repeat" => Some(BorderImageRepeat(BorderImageRepeatComputedValue {
+                horizontal: BorderImageRepeatComputedMode::Stretch,
+                vertical: BorderImageRepeatComputedMode::Stretch,
+            })),
+            "mask-border-outset" => Some(BorderImageOutset(BorderImageOutsetComputedValue {
+                top: BorderImageOutsetComputedComponent::Number(0.0),
+                right: BorderImageOutsetComputedComponent::Number(0.0),
+                bottom: BorderImageOutsetComputedComponent::Number(0.0),
+                left: BorderImageOutsetComputedComponent::Number(0.0),
+            })),
+            // css-masking-1 §5.3–5.6 mask 长手族初值（复用 background 变体形）。
+            "mask-image" => Some(MaskImage(Vec::new())),
+            "mask-mode" => Some(MaskMode(MaskModeComputedValue::MatchSource)),
+            "mask-position" => Some(MaskPosition(vec![BackgroundPositionComputedValue::TwoValue(
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+            )])),
+            "mask-size" => Some(MaskSize(vec![BackgroundSizeComputedValue::Auto])),
+            "mask-repeat" => Some(MaskRepeat(vec![BackgroundRepeatComputedValue::Repeat])),
+            "mask-clip" => Some(MaskClip(vec![MaskClipComputedValue::Box(
+                MaskGeometryBoxComputedValue::BorderBox,
+            )])),
+            "mask-origin" => Some(MaskOrigin(vec![MaskGeometryBoxComputedValue::BorderBox])),
+            "mask-composite" => Some(MaskComposite(vec![MaskCompositeComputedValue::Add])),
             "text-shadow" => Some(TextShadow(Vec::new())),
             "box-shadow" => Some(BoxShadow(Vec::new())),
 
             // Clip Path
             "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),
+
+            // Shape Outside（css-shapes-1 §3，与 clip-path 同 basic-shape 族）
+            "shape-outside" => Some(ShapeOutside(ShapeOutsideComputedValue::None)),
+
+            // Shape Margin / Shape Image Threshold（css-shapes-1 §shape-margin-property
+            // 初始 0px / §shape-image-threshold-property 初始 0，computed 钳 [0,1]）
+            "shape-margin" => Some(ShapeMargin(LengthValue::Px(0.0))),
+            "shape-image-threshold" => Some(Number(0.0)),
 
             // Border Shape（css-borders-4 §7，R4534）
             "border-shape" => Some(BorderShape(zero_css_parser::values::BorderShapeValue::None)),
@@ -434,6 +596,7 @@ impl PropertyRegistry {
                 | "font-variant-position"
                 | "font-variant-alternates"
                 | "font-stretch"
+                | "font-width"
                 | "direction"
                 | "tab-size"
                 | "text-underline-offset"
@@ -504,6 +667,16 @@ impl PropertyRegistry {
             "opacity",
             "visibility",
             "content-visibility",
+            // 刀 O（css-fonts-4 §font-prop）：`font` 简写支持面注册——decl_supported
+            // 尾门 `known_properties().contains(&prop) && apply_property_value_with_quirks`
+            // 走 apply oracle `font` 臂（expand_font 严格校验单源，oracle 臂无 style
+            // 副作用）。此前简写不在册 → `CSS.supports('font', …)` 恒 false，
+            // oracle 臂被 contains 短路永不可达（system-fonts 588F from/to 门、
+            // font-computed 309F 排列空间前置门驱动）。`all` 展开按本表逐属性
+            // 级联：`font` 条目经 wide-keyword 前置臂展开/直返 true 无副作用，
+            // 长手各自身在册语义不变。
+            // <https://drafts.csswg.org/css-fonts-4/#font-prop>
+            "font",
             "font-family",
             "font-size",
             "font-weight",
@@ -570,6 +743,7 @@ impl PropertyRegistry {
             "transition-duration",
             "transition-timing-function",
             "transition-delay",
+            "transition-behavior",
             "animation-name",
             "animation-duration",
             "animation-timing-function",
@@ -597,6 +771,11 @@ impl PropertyRegistry {
             "rotate",
             "translate",
             "scale",
+            "offset-path",
+            "offset-distance",
+            "offset-rotate",
+            "offset-anchor",
+            "offset-position",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",
@@ -640,6 +819,7 @@ impl PropertyRegistry {
             "break-after",
             "column-rule-width",
             "column-rule-style",
+            "column-rule",
             "overscroll-behavior-x",
             "overscroll-behavior-y",
             "touch-action",
@@ -654,6 +834,7 @@ impl PropertyRegistry {
             "font-variant-position",
             "font-variant-alternates",
             "font-stretch",
+            "font-width",
             "direction",
             "unicode-bidi",
             "tab-size",
@@ -667,7 +848,42 @@ impl PropertyRegistry {
             "object-fit",
             "object-position",
             "filter",
+            "backdrop-filter",
             "column-rule-color",
+            "row-rule-color",
+            "rule-color",
+            "column-rule-width",
+            "row-rule-width",
+            "rule-width",
+            "column-rule-style",
+            "row-rule-style",
+            "rule-style",
+            "row-rule",
+            "rule",
+            // Rule Inset 族（css-gaps-1 §inset）：8 longhand + 15 简写。
+            "column-rule-inset-cap-start",
+            "column-rule-inset-cap-end",
+            "column-rule-inset-junction-start",
+            "column-rule-inset-junction-end",
+            "row-rule-inset-cap-start",
+            "row-rule-inset-cap-end",
+            "row-rule-inset-junction-start",
+            "row-rule-inset-junction-end",
+            "rule-inset",
+            "column-rule-inset",
+            "row-rule-inset",
+            "rule-inset-cap",
+            "column-rule-inset-cap",
+            "row-rule-inset-cap",
+            "rule-inset-junction",
+            "column-rule-inset-junction",
+            "row-rule-inset-junction",
+            "rule-inset-start",
+            "column-rule-inset-start",
+            "row-rule-inset-start",
+            "rule-inset-end",
+            "column-rule-inset-end",
+            "row-rule-inset-end",
             "contain",
             "contain-intrinsic-size",
             "contain-intrinsic-width",
@@ -698,9 +914,25 @@ impl PropertyRegistry {
             "border-image-width",
             "border-image-repeat",
             "border-image-outset",
+            "mask-border-source",
+            "mask-border-slice",
+            "mask-border-width",
+            "mask-border-repeat",
+            "mask-border-outset",
+            "mask-image",
+            "mask-mode",
+            "mask-position",
+            "mask-size",
+            "mask-repeat",
+            "mask-clip",
+            "mask-origin",
+            "mask-composite",
             "text-shadow",
             "box-shadow",
             "clip-path",
+            "shape-outside",
+            "shape-margin",
+            "shape-image-threshold",
             "clip",
             "border-shape",
         ]

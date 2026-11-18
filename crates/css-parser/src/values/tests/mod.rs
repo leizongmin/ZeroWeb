@@ -6,3 +6,4 @@ mod coverage;
 mod infinity_nan;
 mod random;
 mod transform_coverage_final;
+mod transitions;

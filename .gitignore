@@ -64,6 +64,8 @@ coverage_report/
 # Node (chromium screenshot Oracle tooling, DC-14)
 # chromium Oracle 截图产物（可由 chromium-oracle-shot.mjs 重新生成，不入库）
 tests/wpt-runner/oracle-shots
+# chromium CDP 几何捕获产物（capture-collapse-geometry.mjs 原始输出；甄别后副本入 rendering-compat/evidence/）
+tests/wpt-runner/geometry-shots
 node_modules/
 
 .local/
