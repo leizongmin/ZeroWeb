@@ -86,7 +86,12 @@ IN-FORMS 翻 P。
   **F2P=0/P2F=0/other-flip=0**；gone=new=1＝selection-nested-video.html
   同文件名漂移非码面（d53 同谱）。select-delete 臂对 selection 面零扰动
   （d43 先例 F2P=+10 本轮未现——d54 剪枝域全在 input-events CE 面）。
-- editing/run（99k 键，base/wip 全量）：待回填。
+- editing/run（99k 键，base/wip 全量，8 分片 ×2 侧 2026-11-18 补齐）：
+  common 91,635 键 **F2P=0/P2F=0 净零**，双侧 P/F 恒等（各 90,671P/964F）
+  ——select-delete 臂剪枝对 execCommand 语料零扰动，与 selection 哨兵同向
+  互证。单向缺键 base=170/wip=158（长文件 delete/forwarddelete/
+  insertparagraph 等分片尾部枚举截断噪声，含 base 侧 7F+2T/wip 侧 1T，
+  共键零位移结论不受影响）。
 
 ## 残留与归域
 
@@ -108,8 +113,10 @@ IN-FORMS 翻 P。
 - /tmp/d54-get-target-ranges-{backspace,forwarddelete,
   non-collapsed-selection}-{base,wip}.json
 - /tmp/d54-suite-{base,wip}.json（全套件完整轮）、/tmp/d54-enginelib.log
-- /tmp/d54-selection-{base,wip}.json、/tmp/d54-editingrun-{base,wip}.json
-  （待回填腿）
+- /tmp/d54-selection-{base,wip}.json
+- editing/run 回填腿：/tmp/d54-er-sh{1..8}-{base,wip}.json（8 分片）＋
+  /tmp/d54-er2-status.txt；记账脚本 /tmp/d54-er-merge.py
+  （common 91,635 键 F2P=0/P2F=0，双侧 90,671P/964F 恒等）
 - 二进制：/tmp/d54-{base,wip}-runner（base=HEAD stash roundtrip）
 - 探针：zz-probe-d54{a,b,c}.html（wpt-data 本地不入树；a=计数面、b=派发
   链诊断、c=dl selection 形 IN-FORMS 判定）
