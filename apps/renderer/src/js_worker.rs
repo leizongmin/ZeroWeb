@@ -108,6 +108,19 @@ enum JsWorkerCommand {
         /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
         seq: u64,
     },
+    /// t-g2b R4：自动化求值原子命令——独立通道提交，分派环在屏障 drain 之前最先
+    /// 检查（retained 之后）：eval 不被屏障臂链 stash 饿死（p64 定谳：51 条气球臂
+    /// stash 期间 prio_rx 全程不被检查，eval 全窗死区）。`snapshot` 非 None 时单臂
+    /// 内 apply→execute（锚定提交时宿主视图，不依赖与快照命令的通道 FIFO 成对序）；
+    /// lazy-supersede 见 js_worker_main `automation_snapshot_seq`。交互路径
+    ///（HandleOp/点击族）仍走 prio 快照+执行对不变。
+    AutomationEval {
+        snapshot: Option<AutomationEvalSnapshot>,
+        script: String,
+        reply: Sender<Result<String, String>>,
+        /// 文档代际序号（同 [`JsWorkerCommand::Execute`]）——Reset 清队按代际存活。
+        seq: u64,
+    },
     /// P1b S1：跨线程异步回调 resolve（marshal channel）。任意线程经
     /// [`RendererJsWorker::async_resolver`] 投递 (id, result)，JS worker 收到后调
     /// `sandbox.resolve_async_callback`（执行 shim 的 `__zwResolveCallback` resolve Promise）。
@@ -173,6 +186,19 @@ enum JsWorkerCommand {
     Shutdown,
 }
 
+/// t-g2b R4：自动化求值的提交时宿主视图钉版——与 [`JsWorkerCommand::SetDomSnapshot`]
+/// 载荷同源（reply 除外）。由 [`RendererJsWorker::automation_eval_snapshot`] 组装
+///（外部 CSS 取发送时钉版，同代快照/脚本读到一致版本），随 AutomationEval 原子进
+/// worker：单臂内 apply→execute，锚定不依赖通道 FIFO 成对序。
+pub struct AutomationEvalSnapshot {
+    html: String,
+    url: String,
+    /// P9-9/R5107：本代外部样式表文本（钉版语义同 SetDomSnapshot）。
+    external_css: std::sync::Arc<str>,
+    /// s177：本代外链结构化条目（钉版语义同 SetDomSnapshot）。
+    external_css_entries: std::sync::Arc<Vec<(String, String)>>,
+}
+
 /// S14：fetch 观测记录 `(phase, seq, url, method, status)`——phase 0=request /
 /// 1=response / 2=finished|failed；seq 三阶段关联。
 pub type FetchObservedRecord = (u8, u64, String, String, u16, u64);
@@ -184,6 +210,10 @@ pub struct RendererJsWorker {
     /// （`set_dom_snapshot_priority` + `execute_script_direct_priority`），不排在页面
     /// 回调积压之后。
     prio_tx: Sender<JsWorkerCommand>,
+    /// t-g2b R4：自动化求值独立通道发送端——AutomationEval 原子命令（快照+脚本）
+    /// 专用入口，worker 分派环在屏障 drain 之前最先检查（js_worker_main step-2）；
+    /// 与 prio 交互对（HandleOp/点击族）通道分离，互不阻塞。
+    automation_tx: Sender<JsWorkerCommand>,
     /// t2-pb1 F1：文档代际序号源——文档类命令提交时在此分配单调 seq（宿主侧顺序即
     /// 代际顺序；ResetDocumentState 携带自己的 seq 作清队界）。
     cmd_seq: Arc<AtomicU64>,
@@ -386,6 +416,9 @@ impl RendererJsWorker {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         // t2-pb1 fix#5：优先通道——页面生命周期派发专用（见 js_worker_main 分派环注释）。
         let (prio_tx, prio_rx) = mpsc::channel();
+        // t-g2b R4：自动化求值独立通道——AutomationEval 原子命令专用（见
+        // JsWorkerCommand::AutomationEval 与分派环 step-2 注释）。
+        let (automation_tx, automation_rx) = mpsc::channel();
         // t2-pb1 F1：文档代际序号源（struct 方法与三个执行器闭包共享同一计数器）。
         let cmd_seq = Arc::new(AtomicU64::new(0));
         let seq_for_exec = Arc::clone(&cmd_seq);
@@ -429,6 +462,7 @@ impl RendererJsWorker {
                     cmd_rx,
                     cmd_for_worker,
                     prio_rx,
+                    automation_rx,
                     console_logs_for_worker,
                     script_errors_for_worker,
                     doc_write_settled_for_worker,
@@ -511,6 +545,7 @@ impl RendererJsWorker {
         Self {
             cmd_tx,
             prio_tx: prio_tx_for_struct,
+            automation_tx,
             cmd_seq,
             external_css: Arc::default(),
             external_css_entries: Arc::default(),
@@ -861,6 +896,73 @@ impl RendererJsWorker {
             reply: None,
             seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
         });
+    }
+
+    /// t-g2b R4：组装自动化求值的提交时快照（html/url + 外部 CSS 钉版）——与
+    /// [`Self::set_dom_snapshot`] 同源钉版语义，交 [`Self::execute_automation_eval`]
+    /// 族随命令原子进 worker。
+    pub fn automation_eval_snapshot(&self, html: &str, url: &str) -> AutomationEvalSnapshot {
+        AutomationEvalSnapshot {
+            html: html.to_string(),
+            url: url.to_string(),
+            external_css: self.pinned_external_css(),
+            external_css_entries: self.pinned_external_css_entries(),
+        }
+    }
+
+    /// t-g2b R4：自动化求值可挂起形态——AutomationEval 原子命令入独立通道（worker
+    /// 分派环在屏障 drain 之前最先检查，不被快照屏障臂链 stash 饿死；p64 定谳），
+    /// 有界等待超时把 reply 通道交还调用方挂起续答（语义同
+    /// [`Self::execute_script_priority_deferrable`]）。交互路径的 prio 对不经此入口。
+    pub fn execute_automation_eval_deferrable(
+        &self,
+        script: &str,
+        snapshot: Option<AutomationEvalSnapshot>,
+        timeout: std::time::Duration,
+    ) -> Result<Result<String, String>, mpsc::Receiver<Result<String, String>>> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        // 文档载荷提交——置位首文档踪迹（T9 返修 DF-F1 同款）。
+        self.document_started.store(true, Ordering::Relaxed);
+        if let Err(e) = self.automation_tx.send(JsWorkerCommand::AutomationEval {
+            snapshot,
+            script: script.to_string(),
+            reply: reply_tx,
+            seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+        }) {
+            return Ok(Err(format!("js worker automation send failed: {e}")));
+        }
+        // T8/P7 同款唤醒义务：分派环空闲时阻塞在普通通道 recv_timeout，独立通道
+        // 到达不会中断该等待——令牌经普通通道即时唤醒（picked 即 no-op 丢弃）。
+        let _ = self.cmd_tx.send(JsWorkerCommand::WakePrio);
+        match reply_rx.recv_timeout(timeout) {
+            Ok(result) => Ok(result),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(reply_rx),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Ok(Err("js worker dropped reply".to_string())),
+        }
+    }
+
+    /// t-g2b R4：自动化求值同步形态——独立通道提交后阻塞等待（超时面与
+    /// [`Self::execute_script_direct_priority`] 同：TAB_JS_CHANNEL_TIMEOUT 内未答
+    /// 即错误返回，脚本仍会在 worker 执行、结果晚至丢弃）。
+    pub fn execute_automation_eval(
+        &self,
+        script: &str,
+        snapshot: Option<AutomationEvalSnapshot>,
+    ) -> Result<String, String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.document_started.store(true, Ordering::Relaxed);
+        self.automation_tx
+            .send(JsWorkerCommand::AutomationEval {
+                snapshot,
+                script: script.to_string(),
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .map_err(|e| format!("js worker automation send failed: {e}"))?;
+        let _ = self.cmd_tx.send(JsWorkerCommand::WakePrio);
+        reply_rx
+            .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
+            .map_err(|e| e.to_string())?
     }
 
     /// 清除前一 document 留下的异步页面状态。
@@ -1238,7 +1340,7 @@ fn refresh_worker_native_dom_source(
 
 /// t2-pb1 F1：导航复位清队的存活判定——命令提交代际（seq）晚于本次复位（`seq >
 /// reset_seq`）即为新文档工作，存活；早于复位的文档类命令（Execute/ExecuteModule/
-/// SetDomSnapshot/更早的 Reset 之前的同类）随旧文档丢弃。ResolveAsyncCallback 一律
+/// SetDomSnapshot/AutomationEval/更早的 Reset 之前的同类）随旧文档丢弃。ResolveAsyncCallback 一律
 /// 丢弃：晚至的旧页回调解析在新 context 无对应 id（t8 返修既有语义；新页回调解析
 /// 恰入队的极端窗与其一同牺牲，与复位前行为一致）。其余为跨文档配置/生命周期命令
 /// （handler 注入、注册表、视口提示、IndexedDb 事件、Shutdown），一律存活。
@@ -1247,6 +1349,7 @@ fn survives_document_reset(cmd: &JsWorkerCommand, reset_seq: u64) -> bool {
         JsWorkerCommand::Execute { seq, .. }
         | JsWorkerCommand::ExecuteModule { seq, .. }
         | JsWorkerCommand::SetDomSnapshot { seq, .. }
+        | JsWorkerCommand::AutomationEval { seq, .. }
         | JsWorkerCommand::ResetDocumentState { seq, .. } => *seq > reset_seq,
         JsWorkerCommand::ResolveAsyncCallback { .. } => false,
         _ => true,
@@ -1257,6 +1360,8 @@ fn survives_document_reset(cmd: &JsWorkerCommand, reset_seq: u64) -> bool {
 /// `ResetDocumentState` 不适用：其复位臂自带按提交代际的清队判定（t2-pb1 F1），早于
 /// 复位的快照会被 `survives_document_reset` 正确丢弃，屏障反而会把旧文档快照提前应用。
 /// 其余优先命令（无 seq 的注入/注册类）不经本通道或无文档语义，返回 None 即跳过屏障。
+/// t-g2b R4：AutomationEval 不适用——独立通道提交 + 自带提交时快照（单臂内
+/// apply→execute），无「先提交普通快照先应用」依赖；分派环在屏障 drain 之前消费。
 fn prio_snapshot_barrier_seq(cmd: &JsWorkerCommand) -> Option<u64> {
     match cmd {
         JsWorkerCommand::Execute { seq, .. } | JsWorkerCommand::SetDomSnapshot { seq, .. } => Some(*seq),
@@ -1264,13 +1369,19 @@ fn prio_snapshot_barrier_seq(cmd: &JsWorkerCommand) -> Option<u64> {
     }
 }
 
-/// r2946（F1 返修）：非阻塞 drain 普通通道，切出「屏障前缀」。优先命令 picked 时，
-/// 普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用；同通道 FIFO 即
-/// 提交序，故不重排桶内元素，直接把 drain 序列在**最后一个**此类快照处切成两段：
-/// `prefix` = 截至该快照的全部命令（通道原序，须先于优先命令派发——前缀内的普通命令
-/// 提交序先于屏障快照，由屏障的不变式传递性地也须先于优先命令）；
-/// `post` = 其后命令（提交序晚于屏障快照，优先先取语义保持——不因屏障阻塞它们，
-/// 优先通道清空后补跑，长回调级联不重新压住优先派发）。
+/// r2946（F1 返修；t-g2b R1 修订）：非阻塞 drain 普通通道，切出「屏障前缀」。优先
+/// 命令 picked 时，普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用。
+/// 在**最后一个**此类快照（切点）处把 drain 序列切成两段：
+/// `prefix` = 仅切点快照本身（R1 修订前为「截至该快照的全部命令」——渲染循环持续发
+/// 快照的真实页面（github）上切点总在臂链尾部，全量前缀把优先 eval 压到 19-30s 级
+/// 页面脚本臂链之后 75s+（g9/g11 三轮实证），自动化求值全窗死区）。快照应用不被早
+/// 提交臂阻塞 = 宿主动作中间态语义（CDP Runtime.evaluate 同款，automation.rs 自动化
+/// 求值注释）；早提交普通命令的 mutation 在臂末收集、经宿主 drain 由后续快照回流，
+/// 不被切点快照覆盖丢失，反而消除「臂 mutation 未及 drain 即被快照清账」的既有窗口。
+/// `post` = 其余全部命令（**通道原序不变**：切点之前的早命令在前、切点之后的晚命令
+/// 在后），优先通道清空后补跑，长回调级联不重新压住优先派发。切点之前的中间快照
+/// 不进 post 而是直接跳过（R2 latest-wins：全量状态消息被切点快照覆盖，应用反而以
+/// 旧态覆盖新态）。
 /// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，置于序列头部。
 /// 无此类快照时 prefix 为空、post 即整个 drain，优先命令照常立即派发。
 /// 通道 try_recv 失败（空/断连）即停止——断连由阻塞 recv 路径统一处理。
@@ -1280,11 +1391,13 @@ fn take_snapshot_barrier(
     held: Option<JsWorkerCommand>,
 ) -> (VecDeque<JsWorkerCommand>, VecDeque<JsWorkerCommand>) {
     let seq: VecDeque<JsWorkerCommand> = held.into_iter().chain(cmd_rx.try_iter()).collect();
-    // rposition 取最后一个更早快照作切点：其前（含自身）全部进 prefix，其后进 post。
+    // rposition 取最后一个更早快照作切点。R1：prefix 仅收切点快照，其余命令原序进
+    // post；R2：切点之前的中间快照被切点（更晚提交的全量态）latest-wins 覆盖，跳过
+    // 不应用——落入 post 反而会在优先命令之后以旧态覆盖新态（DOM 回归窗）。
     // 已入通道的匹配快照不可能落到切点之后（rposition 语义）；真实的退化窗是
     // 「扫描时尚未入通道的更晚发送快照」——跨发送方 fetch_add→send 间隙使其对本轮
     // 扫描不可见，优先命令越过它先跑，与屏障前行为一致。反向错位（seq/通道序交错）
-    // 只会把 seq≥prio_seq 的命令过度拉入 prefix，仅扩大屏障窗、FIFO 仍安全。
+    // 只会把 seq≥prio_seq 的命令过度拉入切点之后，仅扩大屏障窗、原序仍安全。
     // 两个方向都不劣于屏障前，不为此引入跨线程定序。
     let Some(split) = seq
         .iter()
@@ -1295,7 +1408,15 @@ fn take_snapshot_barrier(
     let mut prefix = VecDeque::new();
     let mut post = VecDeque::new();
     for (i, cmd) in seq.into_iter().enumerate() {
-        if i <= split {
+        if i < split && matches!(cmd, JsWorkerCommand::SetDomSnapshot { .. }) {
+            // R2：切点前的中间快照是全量状态消息，被切点快照 latest-wins 覆盖
+            //（learning #13），跳过不应用；生命周期 fix#12 的语义锚 =「最后一个更早
+            // 快照」即切点，中间快照无独立消费面。
+            continue;
+        }
+        if i == split {
+            // R1：prefix 仅留切点快照本身——快照应用不被早提交臂阻塞（宿主动作
+            // 中间态语义），优先命令派发后其余命令按通道原序补跑。
             prefix.push_back(cmd);
         } else {
             post.push_back(cmd);
@@ -1362,6 +1483,7 @@ impl WorkerCensus {
             JsWorkerCommand::Execute { .. } => "Execute",
             JsWorkerCommand::ExecuteModule { .. } => "ExecuteModule",
             JsWorkerCommand::SetDomSnapshot { .. } => "SetDomSnapshot",
+            JsWorkerCommand::AutomationEval { .. } => "AutomationEval",
             // 响应派发按 payload 规模分桶——区分「少量巨大响应」与「每个响应都贵」。
             JsWorkerCommand::ResolveAsyncCallback { result, .. } => resolve_async_kind(result.len()),
             JsWorkerCommand::SetFetchHandler { .. } => "SetFetchHandler",
@@ -1465,11 +1587,333 @@ impl Drop for WorkerCensusGuard<'_> {
     }
 }
 
+/// t-g2b R4：Execute 臂体提取（AutomationEval 臂共用同一执行序列）——begin_script
+/// 包装、超时注解、慢执行告警、未捕获错误汇出与 reply 回信；census 由调用方守卫
+/// 入账，w-send 仪拍（ZW_AUTOMATION_TRACE 门控）随臂保留。
+fn run_script_arm(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    script: &str,
+    reply: Sender<Result<String, String>>,
+    seq: u64,
+    page_url: &Arc<std::sync::Mutex<String>>,
+    script_errors_for_worker: &Arc<std::sync::Mutex<Vec<zero_protocol::message::ScriptErrorParams>>>,
+) {
+    let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
+    let exec_started = std::time::Instant::now();
+    let result = sandbox
+        .execute(&full)
+        .map(|r| r.value)
+        .map_err(|e| annotate_timeout_error(&e.to_string(), script));
+    // P7b 可观测性：长执行（>1s）记耗时与脚本长度——页面回调超时定性
+    // 需要执行面数据（此前 ScriptErrorParams 只有页面 URL 无脚本上下文）。
+    if exec_started.elapsed() >= std::time::Duration::from_secs(1) {
+        tracing::warn!(
+            target: "js_worker",
+            elapsed_ms = exec_started.elapsed().as_millis() as u64,
+            script_len = script.len(),
+            "slow js execute"
+        );
+    }
+    // R-baidu2/P3：未捕获脚本错误统一在此汇出（页面脚本/定时器/事件回调
+    // 的异常都经某次 execute 的 Err 冒出）→ `Runtime.exceptionThrown`。
+    // P105 诊断：臂内分段计时——census 只见臂总耗时 30s，而
+    // ZW_HOST_CALL_TRACE 无慢宿主调用、tracing::warn 进 renderer stderr
+    // tail 缓冲不可见。execute / 收尾分段落盘 ZW_EXEC_TIMING，把 30s
+    // 归因到 execute 内还是臂内收尾段。
+    let exec_ms = exec_started.elapsed().as_millis() as u64;
+    let tail_started = std::time::Instant::now();
+    if let Err(ref message) = result {
+        let source = page_url.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
+        if let Ok(mut q) = script_errors_for_worker.lock() {
+            q.push(zero_protocol::message::ScriptErrorParams {
+                text: message.clone(),
+                source,
+                line_number: 0,
+                column_number: 0,
+            });
+        }
+    }
+    // R-baidu2/P3 slice-2：排空未捕获异常报告（promise-reject 回调收集）。
+    for (text, line, column) in sandbox.take_uncaught_reports() {
+        let source = page_url.lock().map(|g| g.clone()).unwrap_or_default();
+        if let Ok(mut q) = script_errors_for_worker.lock() {
+            q.push(zero_protocol::message::ScriptErrorParams {
+                text,
+                source,
+                line_number: line,
+                column_number: column,
+            });
+        }
+    }
+    let _ = reply.send(result);
+    // t-p106 诊断：worker reply.send 点仪拍（ZW_AUTOMATION_TRACE 门控，零默认
+    // 开销）——每臂一条（len+seq+head），与 renderer poll / headless 匹配点
+    // 时间轴对齐，锁定回复在哪一段丢失。
+    if crate::runtime::automation_trace_enabled() {
+        let head: String = script.chars().take(60).collect();
+        crate::runtime::automation_trace_line(&format!(
+            "[areply] t={} w-send seq={seq} len={} head={head:?}",
+            crate::runtime::automation_trace_epoch_ms(),
+            script.len(),
+        ));
+    }
+    // P105 诊断：分段落盘（见上注释）——≥1s 才写行，epoch 毫秒对齐。
+    {
+        let tail_ms = tail_started.elapsed().as_millis() as u64;
+        if exec_ms >= 1000 || tail_ms >= 1000 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default();
+            let line = format!(
+                "[exec-timing] t={now} exec={exec_ms}ms tail={tail_ms}ms len={} head={}\n",
+                script.len(),
+                script.chars().take(60).collect::<String>()
+            );
+            if let Ok(mut guard) = EXEC_TIMING_FILE.lock()
+                && let Some(file) = guard.as_mut()
+            {
+                use std::io::Write;
+                let _ = file.write_all(line.as_bytes());
+            }
+        }
+    }
+}
+
+/// t-g2b R4：SetDomSnapshot 臂体提取（AutomationEval 快照应用共用同一序列）——
+/// 外部 CSS 装填 → adopted 恢复 → import map 换代 → 视口校正 → 动态脚本旗标 →
+/// DOM 源刷新 → HTMLElement 桥重申 → 视图换代 → named access 重装 → page_url
+/// 换代与表单/history/handle 清理。快照应用回执由调用臂负责（lazy-supersede 跳过
+/// 路径同样要回执，释放有界等待）。
+#[allow(clippy::too_many_arguments)]
+fn apply_dom_snapshot_arm(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    html: String,
+    url: String,
+    external_css: std::sync::Arc<str>,
+    external_css_entries: std::sync::Arc<Vec<(String, String)>>,
+    import_map: &Arc<std::sync::Mutex<Option<ImportMap>>>,
+    viewport_hint: (u32, u32),
+    page_url: &Arc<std::sync::Mutex<String>>,
+    dom_html: &Arc<std::sync::Mutex<String>>,
+    handle_selector_map: &HandleSelectorMap,
+    native_installed: &mut bool,
+) {
+    // P9-9/R5107：装本代外部 CSS 线程局部——getComputedStyle 合成源
+    // （collect_stylesheets css 参数）与布局管线同源。每快照无条件覆盖
+    //（含清空，跨文档残留不可能存活）；先于同代 gCS（同通道 FIFO）。
+    // s177：条目非空走 entries 发布（collector 文档序交错装配——link 在
+    // `<style>` 之后的页同特异度后到后胜；派生 blob 同步装 blob 槽，回落
+    // 面不变，blob 字段被覆盖条目为权威源）。空表回落 blob 通道（既有
+    // 文档化回落：嵌入者 custom-css / LoadHtml 内联形态）。
+    if external_css_entries.is_empty() {
+        zero_engine::js_dom_bridge::set_active_external_css(&external_css);
+    } else {
+        zero_engine::js_dom_bridge::set_active_external_css_entries(external_css_entries.to_vec());
+    }
+    // R-t2qq 二轮返修 D2：adopted 槽随 SetDomSnapshot **恢复而非清空**。
+    // 防回归（为什么清空必须挂 Reset 而不是这里）：生产 renderer
+    // tick_observers_with（page_scripts.rs）**每帧**都发 SetDomSnapshot
+    //（runtime.rs publish_webview → tick_observers，real_rect_enabled 缺省
+    // true），首轮返修把清空挂本臂 ⇒ 页面设 document.adoptedStyleSheets 后
+    // 最多一帧即被清空（级联与 gCS 回落，qq.com 详情页复现）。SetDomSnapshot
+    // 主体是同文档快照刷新——sandbox 不重建、shim 闭包 `_zwDocAdoptedSheets`
+    // 仍持页面真值——故经 `__zw_adopted_restore` 宿主回调把 shim 汇总文本装回
+    // 进程槽；shim 已随 ResetDocumentState 重建时文本为空串 = 清空，跨代残留
+    // 同样闭合。真跨文档代际清空挂下方 ResetDocumentState 臂。钩子缺函数
+    //（旧 shim / shim eval 失败）→ 传空串保守清空（同旧行为）。
+    let _ = sandbox.execute(
+        "__zw_adopted_restore(typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : '');",
+    );
+    // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
+    // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
+    // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。
+    if let Ok(mut slot) = import_map.lock() {
+        *slot = parse_page_import_map(&html, &url);
+    }
+    // 视口提示校正：shim 缺省 innerWidth/innerHeight 1280x800 与真实视口失配时
+    // （首次 install 后必失配）按 hint 校正（幂等——匹配即 no-op，零事件噪声）。
+    if viewport_hint.0 > 0 && viewport_hint.1 > 0 {
+        let guard = format!(
+            "if (typeof __zw_user_resize === 'function' && (globalThis.innerWidth !== {w} || globalThis.innerHeight !== {h})) __zw_user_resize({w}, {h});",
+            w = viewport_hint.0,
+            h = viewport_hint.1
+        );
+        let _ = sandbox.execute(&guard);
+    }
+    // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：renderer 上下文
+    // 声明动态 src 脚本单点归属宿主管线——shim R387b 页面 fetch 通道（cors 语义）
+    // 整体跳过：no-cors classic script 在 cors 语义下恒败误派元素 error（跨域无
+    // ACAO CDN 脚本，AMD 加载器常态），同源则与 PendingDynamicScripts（no-cors
+    // IPC 取回，tick_dynamic_scripts）双通道双执行。幂等；每快照换代重设
+    //（reset_context 销毁重建后由下一快照重新置位，见本 arm 首行执行序）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+    let _ = sandbox.execute("globalThis.__zwHostOwnsDynamicScripts = true;");
+    // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
+    let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
+    let was_native_installed = *native_installed;
+    if let Ok(mut snap) = dom_html.lock() {
+        // js-dom R386：快照换代同步刷新原生绑定 DOM 源（native 路径与 polyfill
+        // 桥同源读到新快照；首代 bootstrap 已 install → 走 refresh 快路径）。
+        refresh_worker_native_dom_source(sandbox, &html, native_installed);
+        *snap = html;
+    }
+    // js-dom R384 不变式（github home exc1 根因修复，2026-10-09）：跨代际全量
+    // native install（上臂 `refresh_worker_native_dom_source` 走 install 分支）
+    // 之后**重申 shim HTMLElement ctor 桥**。native install 无条件
+    // `global.set("HTMLElement")`（html_element.rs build_and_register）覆盖
+    // reset 臂刚重放的 shim 桥 → 页面 `class X extends HTMLElement` 的
+    // super() 落到 native ctor（this 预分配 + polyfill 路径 upgrade ffi 空 →
+    // 新建 detached div 绑定），shim `_ceRunCtor` 丢弃构造产物 → ctor 体 own
+    // property（turbo FrameElement 的 delegate 等）全部落空 →
+    // `Object.getPrototypeOf(undefined)` TypeError。重申的是 reset 臂 shim
+    // eval 登记的**同一函数对象**（`__zwShimHTMLElementCtor`，见 part03.js
+    // 桥块）：同代唯一 closure，`_zwCeExisting` 消费与 WC-M1 分支语义原样
+    // 保留；不可用二次 eval 整体补装（`customElements || ` 存在守卫产生
+    // closure 割裂）。Event 等其余 native 全局覆盖与 bootstrap 序（native 先
+    // shim 后）一致，无需重申——R384 唯一必须 shim 独占的全局名就是
+    // HTMLElement（桥注释原文）。
+    if !was_native_installed {
+        let _ = sandbox.execute(
+            "if (typeof __zwShimHTMLElementCtor === 'function') globalThis.HTMLElement = __zwShimHTMLElementCtor;",
+        );
+    }
+    // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
+    // 防同 count 查询命中换代前解析的视图文档/备忘。
+    zero_engine::js_dom_bridge::bump_dom_view_gen();
+    // R358（js-dom M1）：快照换代即清 JS 侧 pending 记账（与 tab_js_worker 同款）。
+    // slice33（RP-3 跨文档残影）：清算必须先于下方 slice27 named access 重装——
+    // 旧序（重装 → 清算）把新装入 `_zwLiveCollections` 的集合随即抹除，注册表
+    // 恒空，slice32 live 维护（childList/id·name 变异同步 + dead 冻结）在 renderer
+    // 永不生效，集合成员冻结在安装时点视图上（残影放大器：安装后任何 stale
+    // 成员都无人再校正）。换代先清、重装后注册，集合才真正 live。
+    let _ = sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();");
+    // slice27（site-compat baidu 建议链 su 注册，2026-10-04）：**快照落地即同步
+    // Window named access**。shim 的 install 自调用仅发生在 shim eval——bootstrap
+    // 时 dom_html 恒空、reset 时读到的是**上一文档**快照——首载快照落地后无人
+    // 注册，`window.su`/`window.kw` 永不出现（活体 B 臂 702336f67 首载实测，
+    // baidu 建议链静默死）。此处于 `*snap = html` + 视图换代后执行注册，并维护
+    // 「本特性已注册面」登记（`__zwNamedAccessInstalled`，随 reset_context 重建
+    // 归零）：换代后消失的 id 元素全局回收（不留上一文档悬挂元素）；新 context
+    // 首快照（登记未建、页面脚本未跑）全量扫除元素全局后重注；脚本自建
+    // 同名全局不被遮蔽（spec：脚本 own property 位于 WindowProperties 命名属性
+    // 层之下）。与 shim eval 自调用互补，幂等；每次快照换代各执行一遍。
+    // slice28（RP-1）：`__zw_collect_ids` 同收 name 面（embed/form/img/
+    // object 非空 name；iframe 委托 shim R139）——本处 cur 登记/换代回收/
+    // install 全链路对 name 面自动生效，无须另改（登记口径 = collect 返回全集）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    let _ = sandbox.execute(
+        r#"(function () {
+  if (typeof __zw_collect_ids !== 'function') return;
+  var ids = __zw_collect_ids();
+  var cur = {};
+  if (ids) {
+    var parts = ids.split('|');
+    for (var i = 0; i < parts.length; i++) {
+      var id = parts[i];
+      if (id && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) cur[id] = true;
+    }
+  }
+  // slice30（RP-1）：named access 安装值判别——元素（nodeType 1）或多命中集合
+  //（HTMLCollection，__zwHC 内部标记）。换代回收/换代登记两口径同扩：集合无
+  // nodeType，修前不在回收扫描内 → 跨换代悬挂。
+  var _isNA = function (v) {
+    if (!v || typeof v !== 'object') return false;
+    if (v.nodeType === 1) return true;
+    try { return typeof v.__zwHC === 'function'; } catch (e) { return false; }
+  };
+  var installed = globalThis.__zwNamedAccessInstalled;
+  // slice30（RP-1）：集合值换代重装——登记在案的 named access 所有值中，①集合值
+  //（多命中安装）随快照换代必删，交由 install 重装（成员随新快照刷新；形态切换
+  // 多命中↔单命中同此闭合——旧集合不删则 install 的「不覆盖已存在全局」守卫跳过，
+  // 残留旧形态）；②仍在多命中清单的名重装（集合成员刷新）。单命中元素值保持
+  // slice27 口径（选择器 wrapper 再解析，不重装）。脚本自有全局（无登记）不动。
+  // slice32（RP-3）：同代内集合 live 语义已落地（shim liveSpec 设施：childList/
+  // id·name 属性变异同步维护 + 旧集合重装即 dead 冻结）；FIXME(live-collection)
+  // 收窄至**动态取值面**——安装时点不存在的名（脚本后建）window.N 不解析
+  //（WindowProperties 每读动态查找在数据属性安装全局上不可达，RP-3 池后续）。
+  try {
+    var mnames30 = typeof __zw_collect_ids_multi === 'function' ? __zw_collect_ids_multi() : '';
+    var multiNow = {};
+    if (mnames30) {
+      var mp30 = mnames30.split('|');
+      for (var mi30 = 0; mi30 < mp30.length; mi30++) if (mp30[mi30]) multiNow[mp30[mi30]] = true;
+    }
+    for (var k30 in cur) {
+      if (!(installed && installed[k30])) continue;
+      var ex30;
+      // slice37（NPO 收口）：安装值读面 = __zwNAGet（wired：backing own「本面登记值」
+      // 口径——globalThis 读经原型链也能解析，但脚本 expando 不得混入；quickjs 不接链：
+      // globalThis own raw 读，slice36 口径，引擎分叉见 part05 接线处申报）。
+      try { ex30 = __zwNAGet(k30); } catch (e30) { continue; }
+      if (!_isNA(ex30)) continue;
+      if (!(ex30.nodeType === 1) || multiNow[k30]) {
+        try { __zwNADelete(k30); } catch (e30d) {}
+      }
+    }
+  } catch (e30m) {}
+  if (!installed) {
+    // 新 context（reset 后首快照）：快照先于页面脚本执行，本 context 尚无脚本自建
+    // 全局——shim eval 自调用此刻登记的「上一文档」元素全局全部回收（否则跨站
+    // 导航/重载会把旧页元素残留进新文档，且 id 撞车时遮蔽新页注册）。
+    // slice37（NPO 收口）：枚举面 = __zwNAOwnKeys（wired：backing own keys——原
+    // for-in globalThis 在 NPO 化后枚举不到安装值；quickjs：getOwnPropertyNames
+    // globalThis own——较 slice36 的 for-in（仅可枚举）为安全方向放宽，多覆盖
+    // 非可枚举 own 残留，快照先于页面脚本故无越界回收面）。
+    var ks37 = typeof __zwNAOwnKeys === 'function' ? __zwNAOwnKeys() : [];
+    for (var ki37 = 0; ki37 < ks37.length; ki37++) {
+      var k = ks37[ki37];
+      if (cur[k]) continue;
+      var v0;
+      try { v0 = __zwNAGet(k); } catch (e) { continue; }
+      if (_isNA(v0)) {
+        try { __zwNADelete(k); } catch (e) {}
+      }
+    }
+  } else {
+    for (var k in installed) {
+      if (cur[k]) continue;
+      var old;
+      try { old = __zwNAGet(k); } catch (e) { continue; }
+      if (_isNA(old)) {
+        try { __zwNADelete(k); } catch (e) {}
+      }
+    }
+  }
+  if (typeof __zwInstallNamedAccess === 'function') __zwInstallNamedAccess();
+  var next = {};
+  for (var id in cur) {
+    var v;
+    try { v = __zwNAGet(id); } catch (e) { continue; }
+    if (_isNA(v)) next[id] = true;
+  }
+  globalThis.__zwNamedAccessInstalled = next;
+})()"#,
+    );
+    if let Ok(mut u) = page_url.lock() {
+        *u = url;
+    }
+    if url_changed {
+        let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
+        // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
+        // 读 page_url fallback（= 新文档 url），history.length=1。闭合 SPA-then-redirect stale。
+        let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");
+        // P1a gBCR path A：导航 → 旧页 handle 在新页无效，清 handle→selector map
+        // （apply 路径会在新页 createElement 时重新 merge）。
+        if let Ok(mut map) = handle_selector_map.lock() {
+            map.clear();
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
     prio_rx: Receiver<JsWorkerCommand>,
+    // t-g2b R4：自动化求值独立通道（AutomationEval 原子命令消费端；分派环 step-2
+    // 最先检查——屏障 drain 期间抢占执行，p64 定谳饿死面的结构性修复）。
+    automation_rx: Receiver<JsWorkerCommand>,
     console_logs_for_worker: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     script_errors_for_worker: Arc<std::sync::Mutex<Vec<zero_protocol::message::ScriptErrorParams>>>,
     doc_write_settled_for_worker: Arc<std::sync::Mutex<Vec<()>>>,
@@ -1755,17 +2199,29 @@ fn js_worker_main(
     // 超时放行后，快照滞留普通通道，而 fix#12 fire-and-forget 生命周期派发 + fix#18
     // 醒来再查让优先命令先于快照执行——body onload 反射（按页 URL 去重）在安装前
     // 的空 DOM 上跑一次即被钉死，<body onload> 永不触发（r2946 单测全量腿实证：
-    // solo 0.06s 恒过、239 连跑必挂 30s 窗）。屏障在 worker 端恢复「同提交序」不变式，
+    // solo 0.06s 恒过、239 连跑必挂 30s 窗）。屏障在 worker 端恢复「优先命令不越过
+    // 更早提交快照」不变式，
     // 一个 guard 覆盖全部 fire-and-forget 优先派发（生命周期/资源/字体/动画/过渡）。
     // F1 返修：屏障不只是快照本身——是 drain 序列截至最后一个更早快照的**前缀**
     // （含此前提交的普通命令，通道原序；跨轮再归并 deferred_normal 于头部），随后
     // 才是 barrier_prio；post 部分（提交序晚于屏障）保持优先先取。
+    // t-g2b R1+R2 修订（2026-11-13）：prefix 收缩为**仅切点快照本身**——切点前提交的
+    // 普通命令（Execute 臂链）改落 deferred_normal 原序补跑，切点前的中间快照按
+    // latest-wins 跳过（落 post 会在优先命令后以旧态覆盖新态）。F1 的全量前缀在
+    // 渲染循环持续发快照的真实页面（github）上把 prio eval 压到 19-30s 级臂链之后
+    // （g9/g11 三轮实证 75s+ 死区）；快照应用不被早提交臂阻塞 = DevTools 宿主动作
+    // 中间态语义。fix#12 生命周期语义不变（优先命令仍等**最新**早快照，r2946 单测钉）；
+    // 早臂 mutation 经臂末 drain 由后续快照回流，无覆盖丢失。
     let mut barrier_prefix: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut barrier_prio: Option<JsWorkerCommand> = None;
     // t2-pb1 F1：复位臂存活的滞留命令本地续派队列。不经通道回送（fix#20 的自馈送
     // 教训在此结构性免疫），且通道回送会让复位臂执行期间新到的命令插队到回送命令
     // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
     let mut retained_after_reset: VecDeque<JsWorkerCommand> = VecDeque::new();
+    // t-g2b R4：自动化求值快照的 lazy-supersede 标记——最近一次 AutomationEval
+    // 应用快照的提交代际。其后到达的更早提交 SetDomSnapshot 按 latest-wins 跳过
+    // 应用（eval 快照更新，旧快照落地会以旧态覆盖新态）；Reset 臂清零。
+    let mut automation_snapshot_seq: Option<u64> = None;
     let mut census = WorkerCensus::new();
     loop {
         let next_cmd = 'dispatch: loop {
@@ -1773,8 +2229,16 @@ fn js_worker_main(
             if let Some(cmd) = retained_after_reset.pop_front() {
                 break 'dispatch Some(cmd);
             }
-            // r2946 屏障前缀：更早提交的普通通道快照及其之前的普通命令（通道原序）
-            // 先应用/执行，随后才是被屏障让位的优先命令。
+            // t-g2b R4：自动化求值独立通道——retained 之后、屏障 drain 之前最先检查。
+            // p64 定谳：barrier_prefix 非空期间分派环每轮只 pop 一条臂即回顶，prio_rx
+            // 在整个 drain 期间不被检查（51 条 3.8-24.7s 气球臂 stash ≈200s 饿死后续
+            // eval）。求值自带提交时快照单臂内 apply→execute，此处抢占不被臂链阻塞；
+            // 交互路径（HandleOp/点击族）的 prio 对仍走既有屏障序不变。
+            if let Ok(cmd) = automation_rx.try_recv() {
+                break 'dispatch Some(cmd);
+            }
+            // r2946 屏障前缀（t-g2b R1）：仅切点快照本身先应用，随后才是被屏障让位
+            // 的优先命令；快照前提交的普通命令已随 post 归入 deferred_normal 原序补跑。
             if let Some(cmd) = barrier_prefix.pop_front() {
                 break 'dispatch Some(cmd);
             }
@@ -1815,6 +2279,13 @@ fn js_worker_main(
                     // 一轮，下一轮循环优先队列清空后在此处补跑。
                     // r2946：刚醒来的普通命令本身可能就是更早提交的快照——与通道 drain
                     // 内容一起切前缀，不落 held 单槽。
+                    // t-g2b R4：唤醒再查先让自动化求值（优先级高于 prio 对——屏障
+                    // drain 期间求值本就抢占）；醒来的普通命令搁置回 stash 尾，其
+                    // 提交序晚于 stash 既有内容，push_back 保持 FIFO 归并（DEF-1）。
+                    if let Ok(auto_cmd) = automation_rx.try_recv() {
+                        deferred_normal.push_back(cmd);
+                        break 'dispatch Some(auto_cmd);
+                    }
                     if let Ok(prio_cmd) = prio_rx.try_recv() {
                         if let Some(prio_seq) = prio_snapshot_barrier_seq(&prio_cmd) {
                             let (prefix, post) = take_snapshot_barrier(prio_seq, &cmd_rx, Some(cmd));
@@ -1844,11 +2315,13 @@ fn js_worker_main(
         // P102 诊断：Execute 臂起始即落脚本标识（len+head），完成时落耗时——
         // 30s 看门狗臂归因到提交方；start 无配对 done = 卡在原生宿主回调。
         let identity = match (&cmd, census.sink.is_some()) {
-            (JsWorkerCommand::Execute { script, .. }, true) => Some(execute_script_label(script)),
+            (JsWorkerCommand::Execute { script, .. } | JsWorkerCommand::AutomationEval { script, .. }, true) => {
+                Some(execute_script_label(script))
+            }
             _ => None,
         };
         if let Some(identity) = &identity {
-            census.write_sink(&format!("arm start Execute {identity}"));
+            census.write_sink(&format!("arm start {} {identity}", WorkerCensus::kind(&cmd)));
         }
         // t-p103 D2-1：批决议附加条目经 as_mut 入账，故需 mut。
         let mut _census = census.enabled.then(|| WorkerCensusGuard {
@@ -1864,86 +2337,40 @@ fn js_worker_main(
             JsWorkerCommand::Execute { script, reply, seq } => {
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
-                let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
-                let exec_started = std::time::Instant::now();
-                let result = sandbox
-                    .execute(&full)
-                    .map(|r| r.value)
-                    .map_err(|e| annotate_timeout_error(&e.to_string(), &script));
-                // P7b 可观测性：长执行（>1s）记耗时与脚本长度——页面回调超时定性
-                // 需要执行面数据（此前 ScriptErrorParams 只有页面 URL 无脚本上下文）。
-                if exec_started.elapsed() >= std::time::Duration::from_secs(1) {
-                    tracing::warn!(
-                        target: "js_worker",
-                        elapsed_ms = exec_started.elapsed().as_millis() as u64,
-                        script_len = script.len(),
-                        "slow js execute"
-                    );
-                }
-                // R-baidu2/P3：未捕获脚本错误统一在此汇出（页面脚本/定时器/事件回调
-                // 的异常都经某次 execute 的 Err 冒出）→ `Runtime.exceptionThrown`。
-                // P105 诊断：臂内分段计时——census 只见臂总耗时 30s，而
-                // ZW_HOST_CALL_TRACE 无慢宿主调用、tracing::warn 进 renderer stderr
-                // tail 缓冲不可见。execute / 收尾分段落盘 ZW_EXEC_TIMING，把 30s
-                // 归因到 execute 内还是臂内收尾段。
-                let exec_ms = exec_started.elapsed().as_millis() as u64;
-                let tail_started = std::time::Instant::now();
-                if let Err(ref message) = result {
-                    let source = page_url.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
-                    if let Ok(mut q) = script_errors_for_worker.lock() {
-                        q.push(zero_protocol::message::ScriptErrorParams {
-                            text: message.clone(),
-                            source,
-                            line_number: 0,
-                            column_number: 0,
-                        });
-                    }
-                }
-                // R-baidu2/P3 slice-2：排空未捕获异常报告（promise-reject 回调收集）。
-                for (text, line, column) in sandbox.take_uncaught_reports() {
-                    let source = page_url.lock().map(|g| g.clone()).unwrap_or_default();
-                    if let Ok(mut q) = script_errors_for_worker.lock() {
-                        q.push(zero_protocol::message::ScriptErrorParams {
-                            text,
-                            source,
-                            line_number: line,
-                            column_number: column,
-                        });
-                    }
-                }
-                let _ = reply.send(result);
-                // t-p106 诊断：worker reply.send 点仪拍（ZW_AUTOMATION_TRACE 门控，零默认
-                // 开销）——每臂一条（len+seq+head），与 renderer poll / headless 匹配点
-                // 时间轴对齐，锁定回复在哪一段丢失。
-                if crate::runtime::automation_trace_enabled() {
-                    let head: String = script.chars().take(60).collect();
-                    crate::runtime::automation_trace_line(&format!(
-                        "[areply] t={} w-send seq={seq} len={} head={head:?}",
-                        crate::runtime::automation_trace_epoch_ms(),
-                        script.len(),
-                    ));
-                }
-                // P105 诊断：分段落盘（见上注释）——≥1s 才写行，epoch 毫秒对齐。
+                run_script_arm(&mut *sandbox, &script, reply, seq, &page_url, &script_errors_for_worker);
+            }
+            JsWorkerCommand::AutomationEval {
+                snapshot,
+                script,
+                reply,
+                seq,
+            } => {
+                // t-g2b R4：单臂内 apply→execute 原子序——eval 锚定提交时宿主视图，
+                // 不依赖与快照命令的通道 FIFO 成对序（p64：屏障 drain 中抢占执行即
+                // 此语义）。快照应用置 lazy-supersede 标记（见 SetDomSnapshot 臂）。
+                if let Some(AutomationEvalSnapshot {
+                    html,
+                    url,
+                    external_css,
+                    external_css_entries,
+                }) = snapshot
                 {
-                    let tail_ms = tail_started.elapsed().as_millis() as u64;
-                    if exec_ms >= 1000 || tail_ms >= 1000 {
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_millis())
-                            .unwrap_or_default();
-                        let line = format!(
-                            "[exec-timing] t={now} exec={exec_ms}ms tail={tail_ms}ms len={} head={}\n",
-                            script.len(),
-                            script.chars().take(60).collect::<String>()
-                        );
-                        if let Ok(mut guard) = EXEC_TIMING_FILE.lock()
-                            && let Some(file) = guard.as_mut()
-                        {
-                            use std::io::Write;
-                            let _ = file.write_all(line.as_bytes());
-                        }
-                    }
+                    apply_dom_snapshot_arm(
+                        &mut *sandbox,
+                        html,
+                        url,
+                        external_css,
+                        external_css_entries,
+                        &import_map,
+                        viewport_hint,
+                        &page_url,
+                        &dom_html,
+                        &handle_selector_map,
+                        &mut native_installed,
+                    );
+                    automation_snapshot_seq = Some(seq);
                 }
+                run_script_arm(&mut *sandbox, &script, reply, seq, &page_url, &script_errors_for_worker);
             }
             JsWorkerCommand::ExecuteModule {
                 source,
@@ -1965,216 +2392,33 @@ fn js_worker_main(
                 external_css,
                 external_css_entries,
                 reply,
-                ..
+                seq,
             } => {
-                // P9-9/R5107：装本代外部 CSS 线程局部——getComputedStyle 合成源
-                // （collect_stylesheets css 参数）与布局管线同源。每快照无条件覆盖
-                //（含清空，跨文档残留不可能存活）；先于同代 gCS（同通道 FIFO）。
-                // s177：条目非空走 entries 发布（collector 文档序交错装配——link 在
-                // `<style>` 之后的页同特异度后到后胜；派生 blob 同步装 blob 槽，回落
-                // 面不变，blob 字段被覆盖条目为权威源）。空表回落 blob 通道（既有
-                // 文档化回落：嵌入者 custom-css / LoadHtml 内联形态）。
-                if external_css_entries.is_empty() {
-                    zero_engine::js_dom_bridge::set_active_external_css(&external_css);
-                } else {
-                    zero_engine::js_dom_bridge::set_active_external_css_entries(external_css_entries.to_vec());
-                }
-                // R-t2qq 二轮返修 D2：adopted 槽随 SetDomSnapshot **恢复而非清空**。
-                // 防回归（为什么清空必须挂 Reset 而不是这里）：生产 renderer
-                // tick_observers_with（page_scripts.rs）**每帧**都发 SetDomSnapshot
-                //（runtime.rs publish_webview → tick_observers，real_rect_enabled 缺省
-                // true），首轮返修把清空挂本臂 ⇒ 页面设 document.adoptedStyleSheets 后
-                // 最多一帧即被清空（级联与 gCS 回落，qq.com 详情页复现）。SetDomSnapshot
-                // 主体是同文档快照刷新——sandbox 不重建、shim 闭包 `_zwDocAdoptedSheets`
-                // 仍持页面真值——故经 `__zw_adopted_restore` 宿主回调把 shim 汇总文本装回
-                // 进程槽；shim 已随 ResetDocumentState 重建时文本为空串 = 清空，跨代残留
-                // 同样闭合。真跨文档代际清空挂下方 ResetDocumentState 臂。钩子缺函数
-                //（旧 shim / shim eval 失败）→ 传空串保守清空（同旧行为）。
-                let _ = sandbox.execute(
-                    "__zw_adopted_restore(typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : '');",
-                );
-                // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
-                // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
-                // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。
-                if let Ok(mut slot) = import_map.lock() {
-                    *slot = parse_page_import_map(&html, &url);
-                }
-                // 视口提示校正：shim 缺省 innerWidth/innerHeight 1280x800 与真实视口失配时
-                // （首次 install 后必失配）按 hint 校正（幂等——匹配即 no-op，零事件噪声）。
-                if viewport_hint.0 > 0 && viewport_hint.1 > 0 {
-                    let guard = format!(
-                        "if (typeof __zw_user_resize === 'function' && (globalThis.innerWidth !== {w} || globalThis.innerHeight !== {h})) __zw_user_resize({w}, {h});",
-                        w = viewport_hint.0,
-                        h = viewport_hint.1
-                    );
-                    let _ = sandbox.execute(&guard);
-                }
-                // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：renderer 上下文
-                // 声明动态 src 脚本单点归属宿主管线——shim R387b 页面 fetch 通道（cors 语义）
-                // 整体跳过：no-cors classic script 在 cors 语义下恒败误派元素 error（跨域无
-                // ACAO CDN 脚本，AMD 加载器常态），同源则与 PendingDynamicScripts（no-cors
-                // IPC 取回，tick_dynamic_scripts）双通道双执行。幂等；每快照换代重设
-                //（reset_context 销毁重建后由下一快照重新置位，见本 arm 首行执行序）。
-                // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
-                let _ = sandbox.execute("globalThis.__zwHostOwnsDynamicScripts = true;");
-                // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
-                let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
-                let was_native_installed = native_installed;
-                if let Ok(mut snap) = dom_html.lock() {
-                    // js-dom R386：快照换代同步刷新原生绑定 DOM 源（native 路径与 polyfill
-                    // 桥同源读到新快照；首代 bootstrap 已 install → 走 refresh 快路径）。
-                    refresh_worker_native_dom_source(&mut *sandbox, &html, &mut native_installed);
-                    *snap = html;
-                }
-                // js-dom R384 不变式（github home exc1 根因修复，2026-10-09）：跨代际全量
-                // native install（上臂 `refresh_worker_native_dom_source` 走 install 分支）
-                // 之后**重申 shim HTMLElement ctor 桥**。native install 无条件
-                // `global.set("HTMLElement")`（html_element.rs build_and_register）覆盖
-                // reset 臂刚重放的 shim 桥 → 页面 `class X extends HTMLElement` 的
-                // super() 落到 native ctor（this 预分配 + polyfill 路径 upgrade ffi 空 →
-                // 新建 detached div 绑定），shim `_ceRunCtor` 丢弃构造产物 → ctor 体 own
-                // property（turbo FrameElement 的 delegate 等）全部落空 →
-                // `Object.getPrototypeOf(undefined)` TypeError。重申的是 reset 臂 shim
-                // eval 登记的**同一函数对象**（`__zwShimHTMLElementCtor`，见 part03.js
-                // 桥块）：同代唯一 closure，`_zwCeExisting` 消费与 WC-M1 分支语义原样
-                // 保留；不可用二次 eval 整体补装（`customElements || ` 存在守卫产生
-                // closure 割裂）。Event 等其余 native 全局覆盖与 bootstrap 序（native 先
-                // shim 后）一致，无需重申——R384 唯一必须 shim 独占的全局名就是
-                // HTMLElement（桥注释原文）。
-                if !was_native_installed {
-                    let _ = sandbox.execute(
-                        "if (typeof __zwShimHTMLElementCtor === 'function') globalThis.HTMLElement = __zwShimHTMLElementCtor;",
-                    );
-                }
-                // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
-                // 防同 count 查询命中换代前解析的视图文档/备忘。
-                zero_engine::js_dom_bridge::bump_dom_view_gen();
-                // R358（js-dom M1）：快照换代即清 JS 侧 pending 记账（与 tab_js_worker 同款）。
-                // slice33（RP-3 跨文档残影）：清算必须先于下方 slice27 named access 重装——
-                // 旧序（重装 → 清算）把新装入 `_zwLiveCollections` 的集合随即抹除，注册表
-                // 恒空，slice32 live 维护（childList/id·name 变异同步 + dead 冻结）在 renderer
-                // 永不生效，集合成员冻结在安装时点视图上（残影放大器：安装后任何 stale
-                // 成员都无人再校正）。换代先清、重装后注册，集合才真正 live。
-                let _ = sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();");
-                // slice27（site-compat baidu 建议链 su 注册，2026-10-04）：**快照落地即同步
-                // Window named access**。shim 的 install 自调用仅发生在 shim eval——bootstrap
-                // 时 dom_html 恒空、reset 时读到的是**上一文档**快照——首载快照落地后无人
-                // 注册，`window.su`/`window.kw` 永不出现（活体 B 臂 702336f67 首载实测，
-                // baidu 建议链静默死）。此处于 `*snap = html` + 视图换代后执行注册，并维护
-                // 「本特性已注册面」登记（`__zwNamedAccessInstalled`，随 reset_context 重建
-                // 归零）：换代后消失的 id 元素全局回收（不留上一文档悬挂元素）；新 context
-                // 首快照（登记未建、页面脚本未跑）全量扫除元素全局后重注；脚本自建
-                // 同名全局不被遮蔽（spec：脚本 own property 位于 WindowProperties 命名属性
-                // 层之下）。与 shim eval 自调用互补，幂等；每次快照换代各执行一遍。
-                // slice28（RP-1）：`__zw_collect_ids` 同收 name 面（embed/form/img/
-                // object 非空 name；iframe 委托 shim R139）——本处 cur 登记/换代回收/
-                // install 全链路对 name 面自动生效，无须另改（登记口径 = collect 返回全集）。
-                // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
-                let _ = sandbox.execute(
-                    r#"(function () {
-  if (typeof __zw_collect_ids !== 'function') return;
-  var ids = __zw_collect_ids();
-  var cur = {};
-  if (ids) {
-    var parts = ids.split('|');
-    for (var i = 0; i < parts.length; i++) {
-      var id = parts[i];
-      if (id && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) cur[id] = true;
-    }
-  }
-  // slice30（RP-1）：named access 安装值判别——元素（nodeType 1）或多命中集合
-  //（HTMLCollection，__zwHC 内部标记）。换代回收/换代登记两口径同扩：集合无
-  // nodeType，修前不在回收扫描内 → 跨换代悬挂。
-  var _isNA = function (v) {
-    if (!v || typeof v !== 'object') return false;
-    if (v.nodeType === 1) return true;
-    try { return typeof v.__zwHC === 'function'; } catch (e) { return false; }
-  };
-  var installed = globalThis.__zwNamedAccessInstalled;
-  // slice30（RP-1）：集合值换代重装——登记在案的 named access 所有值中，①集合值
-  //（多命中安装）随快照换代必删，交由 install 重装（成员随新快照刷新；形态切换
-  // 多命中↔单命中同此闭合——旧集合不删则 install 的「不覆盖已存在全局」守卫跳过，
-  // 残留旧形态）；②仍在多命中清单的名重装（集合成员刷新）。单命中元素值保持
-  // slice27 口径（选择器 wrapper 再解析，不重装）。脚本自有全局（无登记）不动。
-  // slice32（RP-3）：同代内集合 live 语义已落地（shim liveSpec 设施：childList/
-  // id·name 属性变异同步维护 + 旧集合重装即 dead 冻结）；FIXME(live-collection)
-  // 收窄至**动态取值面**——安装时点不存在的名（脚本后建）window.N 不解析
-  //（WindowProperties 每读动态查找在数据属性安装全局上不可达，RP-3 池后续）。
-  try {
-    var mnames30 = typeof __zw_collect_ids_multi === 'function' ? __zw_collect_ids_multi() : '';
-    var multiNow = {};
-    if (mnames30) {
-      var mp30 = mnames30.split('|');
-      for (var mi30 = 0; mi30 < mp30.length; mi30++) if (mp30[mi30]) multiNow[mp30[mi30]] = true;
-    }
-    for (var k30 in cur) {
-      if (!(installed && installed[k30])) continue;
-      var ex30;
-      // slice37（NPO 收口）：安装值读面 = __zwNAGet（wired：backing own「本面登记值」
-      // 口径——globalThis 读经原型链也能解析，但脚本 expando 不得混入；quickjs 不接链：
-      // globalThis own raw 读，slice36 口径，引擎分叉见 part05 接线处申报）。
-      try { ex30 = __zwNAGet(k30); } catch (e30) { continue; }
-      if (!_isNA(ex30)) continue;
-      if (!(ex30.nodeType === 1) || multiNow[k30]) {
-        try { __zwNADelete(k30); } catch (e30d) {}
-      }
-    }
-  } catch (e30m) {}
-  if (!installed) {
-    // 新 context（reset 后首快照）：快照先于页面脚本执行，本 context 尚无脚本自建
-    // 全局——shim eval 自调用此刻登记的「上一文档」元素全局全部回收（否则跨站
-    // 导航/重载会把旧页元素残留进新文档，且 id 撞车时遮蔽新页注册）。
-    // slice37（NPO 收口）：枚举面 = __zwNAOwnKeys（wired：backing own keys——原
-    // for-in globalThis 在 NPO 化后枚举不到安装值；quickjs：getOwnPropertyNames
-    // globalThis own——较 slice36 的 for-in（仅可枚举）为安全方向放宽，多覆盖
-    // 非可枚举 own 残留，快照先于页面脚本故无越界回收面）。
-    var ks37 = typeof __zwNAOwnKeys === 'function' ? __zwNAOwnKeys() : [];
-    for (var ki37 = 0; ki37 < ks37.length; ki37++) {
-      var k = ks37[ki37];
-      if (cur[k]) continue;
-      var v0;
-      try { v0 = __zwNAGet(k); } catch (e) { continue; }
-      if (_isNA(v0)) {
-        try { __zwNADelete(k); } catch (e) {}
-      }
-    }
-  } else {
-    for (var k in installed) {
-      if (cur[k]) continue;
-      var old;
-      try { old = __zwNAGet(k); } catch (e) { continue; }
-      if (_isNA(old)) {
-        try { __zwNADelete(k); } catch (e) {}
-      }
-    }
-  }
-  if (typeof __zwInstallNamedAccess === 'function') __zwInstallNamedAccess();
-  var next = {};
-  for (var id in cur) {
-    var v;
-    try { v = __zwNAGet(id); } catch (e) { continue; }
-    if (_isNA(v)) next[id] = true;
-  }
-  globalThis.__zwNamedAccessInstalled = next;
-})()"#,
-                );
-                if let Ok(mut u) = page_url.lock() {
-                    *u = url;
-                }
-                if url_changed {
-                    let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
-                    // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
-                    // 读 page_url fallback（= 新文档 url），history.length=1。闭合 SPA-then-redirect stale。
-                    let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");
-                    // P1a gBCR path A：导航 → 旧页 handle 在新页无效，清 handle→selector map
-                    // （apply 路径会在新页 createElement 时重新 merge）。
-                    if let Ok(mut map) = handle_selector_map.lock() {
-                        map.clear();
+                // t-g2b R4 lazy supersede：更新代际的自动化快照已应用时，更早提交的
+                // 全量快照按 latest-wins 跳过应用（落地会以旧态覆盖新态）；有界等待
+                // 回执照发（fire-and-forget 优先快照无 reply，无释放义务）。
+                if automation_snapshot_seq.is_some_and(|mark| seq < mark) {
+                    if let Some(reply) = reply {
+                        let _ = reply.send(());
                     }
-                }
-                // t2-pb1 fix#21：快照应用完成回执（set_dom_snapshot 有界等待此应答）。
-                if let Some(reply) = reply {
-                    let _ = reply.send(());
+                } else {
+                    apply_dom_snapshot_arm(
+                        &mut *sandbox,
+                        html,
+                        url,
+                        external_css,
+                        external_css_entries,
+                        &import_map,
+                        viewport_hint,
+                        &page_url,
+                        &dom_html,
+                        &handle_selector_map,
+                        &mut native_installed,
+                    );
+                    // t2-pb1 fix#21：快照应用完成回执（set_dom_snapshot 有界等待此应答）。
+                    if let Some(reply) = reply {
+                        let _ = reply.send(());
+                    }
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
@@ -2272,6 +2516,15 @@ fn js_worker_main(
                         retained_after_reset.push_back(cmd);
                     }
                 }
+                // t-g2b R4：自动化通道同款清队——快照携带求值按提交代际存活/丢弃
+                //（新文档求值续派，旧文档求值连 reply 一起丢弃）；lazy-supersede
+                // 标记随文档代际清零（存活续派件经 AutomationEval 臂重新置位）。
+                while let Ok(cmd) = automation_rx.try_recv() {
+                    if survives_document_reset(&cmd, reset_seq) {
+                        retained_after_reset.push_back(cmd);
+                    }
+                }
+                automation_snapshot_seq = None;
                 // fix#18/r2946：搁置普通命令与快照屏障暂存命令（屏障前缀、被让位的
                 // 优先命令、drain 尾部）同属复位时刻的旧队列，按同代际判定
                 // 续派或丢弃——屏障不改变复位清队语义。
@@ -7106,6 +7359,185 @@ mod tests {
             .expect("复位后提交的新文档脚本须照常执行")
             .expect("新文档脚本须成功");
         assert_eq!(value, "42", "新文档快照+脚本须在滞留复位之后按序执行");
+    }
+
+    /// t-g2b R4：automation eval 独立通道 idle 往返——空闲 worker 经唤醒令牌
+    /// （WakePrio 经普通通道打断 recv_timeout 空轮询）亚秒级完成。
+    #[test]
+    fn automation_eval_idle_roundtrip() {
+        let worker = RendererJsWorker::spawn(90);
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
+        let started = std::time::Instant::now();
+        let value = worker.execute_automation_eval("1+2", None).expect("idle eval 完成");
+        assert_eq!(value, "3");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "idle 往返须亚秒级（唤醒令牌生效），实际 {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// t-g2b R4 核心序钉：气球臂执行期间提交的 automation eval 在臂结束后的分派环
+    /// step-2（retained 之后、prio/普通通道之前）抢占执行——先于被 r2946 快照屏障
+    /// 搁置的 prio 求值（pre-R4 同路径为 FIFO「b,p,a」）。p64 饿死面的结构性回归钉。
+    #[test]
+    fn automation_eval_preempts_barrier_stash() {
+        let worker = RendererJsWorker::spawn(91);
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
+        let (busy_tx, busy_rx) = mpsc::channel();
+        // B1 气球臂（普通通道）记录 'b' 并占住 worker（稠密循环 v8 ~1-2s）。
+        worker
+            .cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: "globalThis.__r4order='b';var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("气球臂入队");
+        std::thread::sleep(Duration::from_millis(120));
+        // S1 快照滞留普通通道（气球臂之后）；prio 求值 1ms 有界等待挂起（屏障搁置面）。
+        worker.set_dom_snapshot(
+            "<html><body><div id=m>old</div></body></html>",
+            "https://example.test/r4b",
+        );
+        let prio_rx = match worker.execute_script_priority_deferrable(
+            "globalThis.__r4order+='p';globalThis.__r4order",
+            Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            other => panic!("气球臂期间 prio 求值应挂起，实际 {other:?}"),
+        };
+        // automation 求值（无快照，记录 'a'）——臂后 step-2 抢占执行。
+        let auto_rx = match worker.execute_automation_eval_deferrable(
+            "globalThis.__r4order+='a';globalThis.__r4order",
+            None,
+            Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            other => panic!("气球臂期间 automation 求值应挂起，实际 {other:?}"),
+        };
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+        let auto_value = auto_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("automation 求值须在臂后执行")
+            .expect("automation 求值须成功");
+        assert_eq!(
+            auto_value, "ba",
+            "automation 求值须先于被屏障搁置的 prio 求值执行（pre-R4 FIFO 为 bpa）"
+        );
+        let prio_value = prio_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("prio 求值须照常执行")
+            .expect("prio 求值须成功");
+        assert_eq!(prio_value, "bap", "prio 求值不被抢占丢弃，序为 b,a,p");
+    }
+
+    /// t-g2b R4 lazy-supersede 钉：气球臂后 step-2 抢占的 eval#1 原子应用自身更新的
+    /// 快照 S2（e2）并置代际标记；其后从普通通道出队的更旧滞留快照 S1（e1，提交序
+    /// 更小）按 latest-wins 跳过应用——无标记时 S1 会以旧态覆盖新态，eval#2 将见 e1。
+    #[test]
+    fn automation_eval_lazy_supersede_skips_stale_snapshot() {
+        let worker = RendererJsWorker::spawn(92);
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
+        let (busy_tx, busy_rx) = mpsc::channel();
+        worker
+            .cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("气球臂入队");
+        std::thread::sleep(Duration::from_millis(120));
+        // S1（e1，提交序更小）滞留普通通道。
+        worker.set_dom_snapshot(
+            "<html><body><div id=m>e1</div></body></html>",
+            "https://example.test/r4c1",
+        );
+        // eval#1 原子携带更新的快照 S2（e2）。
+        let rx1 = match worker.execute_automation_eval_deferrable(
+            "document.getElementById('m').textContent",
+            Some(worker.automation_eval_snapshot(
+                "<html><body><div id=m>e2</div></body></html>",
+                "https://example.test/r4c2",
+            )),
+            Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            other => panic!("气球臂期间应挂起，实际 {other:?}"),
+        };
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+        let v1 = rx1
+            .recv_timeout(Duration::from_secs(10))
+            .expect("eval#1 须执行")
+            .expect("eval#1 须成功");
+        assert_eq!(v1, "e2", "eval#1 须见自身原子快照 S2（滞留的更旧 S1 不得先行应用）");
+        let v2 = worker
+            .execute_automation_eval("document.getElementById('m').textContent", None)
+            .expect("eval#2 完成");
+        assert_eq!(v2, "e2", "更旧滞留快照 S1 须被 latest-wins 跳过，终态保持 eval#1 的 e2");
+    }
+
+    /// t-g2b R4 复位语义钉：复位后快照+eval 跨通道成对与原子快照两条路径均正常；
+    /// 气球臂期间挂起的 automation eval 在复位前后均不被丢弃（step-2 先于 prio 复位
+    /// 出队，rx 必达不悬挂）。
+    #[test]
+    fn automation_eval_reset_semantics() {
+        let worker = RendererJsWorker::spawn(93);
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
+        worker.reset_document_state();
+        worker.set_dom_snapshot(
+            "<html><body><div id=m>e1</div></body></html>",
+            "https://example.test/r4d1",
+        );
+        let v1 = worker
+            .execute_automation_eval("document.getElementById('m').textContent", None)
+            .expect("复位后 eval 完成");
+        assert_eq!(v1, "e1", "复位后快照+eval 跨通道成对语义保持");
+        let v2 = worker
+            .execute_automation_eval(
+                "document.getElementById('m').textContent",
+                Some(worker.automation_eval_snapshot(
+                    "<html><body><div id=m>e2</div></body></html>",
+                    "https://example.test/r4d2",
+                )),
+            )
+            .expect("带快照 eval 完成");
+        assert_eq!(v2, "e2", "带快照 eval 单臂内原子应用并执行");
+        // 滞留 eval 必达：气球臂期间挂起的 eval 在复位提交后仍先于复位出队执行。
+        let (busy_tx, busy_rx) = mpsc::channel();
+        worker
+            .cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("气球臂入队");
+        std::thread::sleep(Duration::from_millis(120));
+        let rx = match worker.execute_automation_eval_deferrable(
+            "globalThis.__r4d='kept';globalThis.__r4d",
+            None,
+            Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            other => panic!("气球臂期间应挂起，实际 {other:?}"),
+        };
+        worker.reset_document_state();
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+        let value = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("滞留 eval 须送达（rx 必达不悬挂）")
+            .expect("滞留 eval 须成功");
+        assert_eq!(value, "kept");
     }
 
     /// t2-pb1 fix#20 断言级回归：复位清队的滞留配置命令须跨复位保留并生效、复位后

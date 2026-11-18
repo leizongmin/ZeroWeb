@@ -587,6 +587,9 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         shadow_scopes: &[ShadowScopeStylesheets],
     ) -> HashMap<NodeId, ComputedStyle> {
+        // P-g2b：祖先链键摘要装填（descendant/child 组合器 O(1) 预过滤，g18 诊断
+        // 真站全量 cascade 匹配成本主项）。守卫析构恢复先前槽值，嵌套 pass 安全。
+        let _pass_summaries = matcher::install_pass_ancestor_summaries(doc);
         let mut styles = if std::env::var("ZW_STYLE_MAP_EXACT_CAPACITY").as_deref() == Ok("0") {
             HashMap::new()
         } else {
@@ -642,6 +645,20 @@ impl StyleSystem {
             .iter()
             .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
             .any(|s| stylesheet_has_selection_rules(&s.rules));
+        // P-g2b：`::first-letter`/`::first-line`/`::marker` 规则在页扫描（S10 同型
+        // 门禁）——无则跳过每元素对应探针与伪计算（collect-空探测前移到每帧一次）。
+        let has_first_letter_rules = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_pseudo_element_rules(&s.rules, "first-letter"));
+        let has_first_line_rules = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_pseudo_element_rules(&s.rules, "first-line"));
+        let has_marker_rules = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_pseudo_element_rules(&s.rules, "marker"));
         // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）。
         // s168：键安全旗标保守并集（shadow 表含键外依赖时禁用缓存）。
         // g19：树计数规则页禁用 style_cache——StyleKey 同键兄弟（同 tag/class/id/
@@ -697,6 +714,9 @@ impl StyleSystem {
             has_pseudo_rules,
             has_scroll_button_rules,
             has_selection_rules,
+            has_first_letter_rules,
+            has_first_line_rules,
+            has_marker_rules,
             cache_safe,
             &mut style_cache,
             delay_parent_insert,
@@ -716,7 +736,9 @@ impl StyleSystem {
     ///   输入相同输出相同，写回无害；changed 重复时幂等）
     /// - 从变更节点调 `compute_styles_recursive`（含伪元素 ::before/::after 与
     ///   `<q>` 引号注入等既有完整逻辑）
-    /// - 样式表含 `:has()` 时退化全量（后代变化影响祖先匹配，增量不安全）
+    /// - 样式表含 `:has()` 时退化全量（后代变化影响祖先匹配，增量不安全）；
+    ///   零变更代例外——changed 空且既有样式非空时文档与样式表均无变化，级联输
+    ///   出恒等，跳过兜底重算、保持原 styles
     ///
     /// # 参数
     ///
@@ -728,7 +750,18 @@ impl StyleSystem {
         changed: &[NodeId],
         styles: &mut HashMap<NodeId, ComputedStyle>,
     ) {
-        if stylesheets.iter().any(|s| stylesheet_has_has_selector(&s.rules)) {
+        let has_has = stylesheets.iter().any(|s| stylesheet_has_has_selector(&s.rules));
+        if has_has {
+            // OPTIMIZATION：零变更代跳过 :has() 全量兜底。changed 空 = 后缀重放
+            // 零条目（文档未变），且调用方 finish_generation_update 仅在 sheets
+            // 未脏时保持 changed 为空（脏则推根入集）——级联输入 (doc, css) 恒
+            // 等，输出恒等，styles 保持原样即精确语义。否则 :has() 密集页的空
+            // 队列换代每代白付一次全文档 cascade（实测 github.com 首页 3-5s/次，
+            // 每轮 6-7 次，live 轻探针因此持续饿死）。styles 空仍是首次计算，
+            // 维持全量兜底。
+            if changed.is_empty() && !styles.is_empty() {
+                return;
+            }
             self.incremental_has_fallbacks += 1;
             *styles = self.compute_styles(doc, stylesheets);
             return;
@@ -778,6 +811,16 @@ impl StyleSystem {
         // R5054：`::selection` 规则在页扫描——通用元素 owner 伪样式存储的零成本门禁
         //（无规则页逐元素伪计算跳过；≡ has_scroll_button_rules S10 同型）。
         let has_selection_rules = stylesheets.iter().any(|s| stylesheet_has_selection_rules(&s.rules));
+        // P-g2b：first-letter/first-line/marker 门禁（增量链走伪挂载同路径，同款）。
+        let has_first_letter_rules = stylesheets
+            .iter()
+            .any(|s| stylesheet_has_pseudo_element_rules(&s.rules, "first-letter"));
+        let has_first_line_rules = stylesheets
+            .iter()
+            .any(|s| stylesheet_has_pseudo_element_rules(&s.rules, "first-line"));
+        let has_marker_rules = stylesheets
+            .iter()
+            .any(|s| stylesheet_has_pseudo_element_rules(&s.rules, "marker"));
         // g19：树计数规则页禁用 style_cache（同键兄弟序数敏感共享毒化——
         // compute_styles_with_shadow 全量入口同款；CSS Values 5 §tree-counting）。
         let tree_counting_active = stylesheets.iter().any(|s| stylesheet_has_tree_counting(&s.rules));
@@ -790,6 +833,8 @@ impl StyleSystem {
         // P124：增量路径同样预计算 @media 命中表。
         let media_ctx = self.media_ctx_for();
         let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
+        // P-g2b：增量路径同款摘要装填（changed 子树重算同样走祖先链组合器匹配）。
+        let _pass_summaries = matcher::install_pass_ancestor_summaries(doc);
         for &nid in changed {
             // 祖先链（父级及以上）单节点重算 → 恢复父 style + custom 继承链。
             let mut chain: Vec<NodeId> = Vec::new();
@@ -837,6 +882,9 @@ impl StyleSystem {
                     has_pseudo_rules,
                     has_scroll_button_rules,
                     has_selection_rules,
+                    has_first_letter_rules,
+                    has_first_line_rules,
+                    has_marker_rules,
                     // s168：增量路径无 shadow 作用域输入（shadow 封闭/宿主面变更入口
                     // 已退全量，见 :813 与 :732 注释）——伪元素 shadow 段在此不可达。
                     None,
@@ -876,6 +924,9 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                has_first_letter_rules,
+                has_first_line_rules,
+                has_marker_rules,
                 cache_safe,
                 &mut style_cache,
                 delay_parent_insert,
@@ -948,6 +999,9 @@ impl StyleSystem {
         has_pseudo_rules: bool,
         has_scroll_button_rules: bool,
         has_selection_rules: bool,
+        has_first_letter_rules: bool,
+        has_first_line_rules: bool,
+        has_marker_rules: bool,
         // 45 号 M2：shadow 作用域视图穿线——伪元素路径的宿主段（`:host::before`）
         // 与 slotted 段（`::slotted(x)::before`）收集依赖它定位 shadow 树 sheets。
         shadow_view: Option<&ShadowScopeView>,
@@ -1017,7 +1071,10 @@ impl StyleSystem {
                 &node_data.kind,
                 NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
             );
-            if is_li {
+            if is_li && has_marker_rules {
+                // P-g2b：门禁前置（S10 同型）——无 `::marker` 规则时 marker 伪样式
+                // 与元素继承态全等（content Normal、color/letter-spacing 继承），
+                // 存储 gate 恒 false，跳过逐点等价。
                 // R3867 帧体量纪律（R4261 深嵌套页测试实证临界）：持 Box 指针不解引用——
                 // `*compute` 会把 3.3KB ComputedStyle 落回本递归帧。
                 let marker = self.compute_element_style_internal(
@@ -1179,38 +1236,41 @@ impl StyleSystem {
                 // 不存储旧判。
                 let sel_value_differs =
                     sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent);
-                let sel_stored = sel_value_differs || {
-                    let media_ctx = match (self.viewport_width, self.viewport_height) {
-                        (Some(w), Some(h)) => {
-                            let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
-                            ctx.prefers_color_scheme = self.prefers_color_scheme;
-                            ctx.media_type = self.media_type;
-                            Some(ctx)
-                        }
-                        _ => None,
-                    };
-                    let container_ctx = container_context_from_chain(&self.container_chain);
-                    matcher::collect_pseudo_declarations_with_media(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        media_ctx.as_ref(),
-                        container_ctx.as_ref(),
-                        "selection",
-                    )
-                    .iter()
-                    // 只认 background 面的**字面 transparent 值**声明——探针返回
-                    // 未过滤的原始声明（未知属性 `foo: bar`、非法值
-                    // `background-color: bar`（active-selection-054）、`revert`
-                    // 回落 UA origin 都在列，级联期才丢弃），按名或按值域判存会
-                    // 复活 invalid/revert 族（corpus 实测 +2 红）；color/decoration
-                    // 面已有后值判据覆盖。
-                    .any(|(prop, value, ..)| {
-                        (prop == "background-color" || prop == "background")
-                            && value.trim().eq_ignore_ascii_case("transparent")
-                    })
-                };
+                // R5321 值歧义探针（P-g2b 门禁前置）：无 `::selection` 规则时探针
+                // collect 必空，sel_stored ≡ sel_value_differs——跳过逐点等价。
+                let sel_stored = sel_value_differs
+                    || (has_selection_rules && {
+                        let media_ctx = match (self.viewport_width, self.viewport_height) {
+                            (Some(w), Some(h)) => {
+                                let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                                ctx.prefers_color_scheme = self.prefers_color_scheme;
+                                ctx.media_type = self.media_type;
+                                Some(ctx)
+                            }
+                            _ => None,
+                        };
+                        let container_ctx = container_context_from_chain(&self.container_chain);
+                        matcher::collect_pseudo_declarations_with_media(
+                            doc,
+                            node,
+                            stylesheets,
+                            rule_index,
+                            media_ctx.as_ref(),
+                            container_ctx.as_ref(),
+                            "selection",
+                        )
+                        .iter()
+                        // 只认 background 面的**字面 transparent 值**声明——探针返回
+                        // 未过滤的原始声明（未知属性 `foo: bar`、非法值
+                        // `background-color: bar`（active-selection-054）、`revert`
+                        // 回落 UA origin 都在列，级联期才丢弃），按名或按值域判存会
+                        // 复活 invalid/revert 族（corpus 实测 +2 红）；color/decoration
+                        // 面已有后值判据覆盖。
+                        .any(|(prop, value, ..)| {
+                            (prop == "background-color" || prop == "background")
+                                && value.trim().eq_ignore_ascii_case("transparent")
+                        })
+                    });
                 if sel_stored {
                     computed.selection_pseudo = Some(sel);
                 }
@@ -1263,7 +1323,10 @@ impl StyleSystem {
             // 并入）。仅 content 非 normal 的方向生成按钮盒（零默认行为面）。Box 直持
             // 不解引用（R3867 帧体量纪律）。探针上下文与 compute_element_style_internal
             // 同构（媒体/容器链顶），@media/@container 内按钮规则不漏探。
-            let scroll_button_probe = {
+            // P-g2b：探针门禁前置——无规则页（has_scroll_button_rules=false）探针
+            // collect 必空，先判门再探测（旧形态探针先跑、门控后判，零规则页每
+            // 元素白付一轮全量候选匹配）。
+            let scroll_button_probe = has_scroll_button_rules && {
                 let media_ctx = match (self.viewport_width, self.viewport_height) {
                     (Some(w), Some(h)) => {
                         let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
@@ -1285,7 +1348,7 @@ impl StyleSystem {
                 )
                 .is_empty()
             };
-            if has_scroll_button_rules && scroll_button_probe {
+            if scroll_button_probe {
                 const SCROLL_BUTTON_DIRECTIONS: [&str; 4] = ["block-start", "block-end", "inline-start", "inline-end"];
                 let mut buttons = Vec::new();
                 for (slot, dir) in SCROLL_BUTTON_DIRECTIONS.iter().enumerate() {
@@ -1324,28 +1387,35 @@ impl StyleSystem {
             // 栈帧已 ~90KB（20 层嵌套即触 2MB 测试线程栈顶），帧内任何新增大局部（哪怕位于
             // 运行时不可达分支）都会把 test_pipeline_deeply_nested_html 推过临界。helper 的
             // 局部进 helper 自己的帧。
-            if let Some(fl) = self.compute_first_letter_pseudo(
-                doc,
-                node,
-                stylesheets,
-                rule_index,
-                &elem_style,
-                &saved_custom,
-                quirks_mode,
-            ) {
+            // P-g2b：门禁前置——无 `::first-letter` 规则时 collect-空探测必 None，
+            // 跳过逐点等价（探测成本前移到每帧一次的规则扫描）。
+            if has_first_letter_rules
+                && let Some(fl) = self.compute_first_letter_pseudo(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    &elem_style,
+                    &saved_custom,
+                    quirks_mode,
+                )
+            {
                 computed.first_letter_pseudo = Some(fl);
             }
             // R5258（CSS2 §5.12.1）：`::first-line` 伪样式存储——镜像 ::first-letter 同款
             // collect-空探测 + color 差异存储 gate（切片 1 只应用 color；bg/font 类挂账）。
-            if let Some(fline) = self.compute_first_line_pseudo(
-                doc,
-                node,
-                stylesheets,
-                rule_index,
-                &elem_style,
-                &saved_custom,
-                quirks_mode,
-            ) {
+            // P-g2b：同款门禁前置（`::first-line`）。
+            if has_first_line_rules
+                && let Some(fline) = self.compute_first_line_pseudo(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    &elem_style,
+                    &saved_custom,
+                    quirks_mode,
+                )
+            {
                 computed.first_line_pseudo = Some(fline);
             }
             self.custom_properties = saved_custom;
@@ -1433,6 +1503,9 @@ impl StyleSystem {
         has_pseudo_rules: bool,
         has_scroll_button_rules: bool,
         has_selection_rules: bool,
+        has_first_letter_rules: bool,
+        has_first_line_rules: bool,
+        has_marker_rules: bool,
         cache_safe: bool,
         style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
         delay_parent_insert: bool,
@@ -1527,6 +1600,9 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                has_first_letter_rules,
+                has_first_line_rules,
+                has_marker_rules,
                 // 45 号 M2：伪元素路径 shadow 段收集（:host::before / ::slotted(x)::before）。
                 Some(shadow_view),
             );
@@ -1628,6 +1704,9 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                has_first_letter_rules,
+                has_first_line_rules,
+                has_marker_rules,
                 cache_safe,
                 style_cache,
                 delay_parent_insert,
@@ -1668,6 +1747,9 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                has_first_letter_rules,
+                has_first_line_rules,
+                has_marker_rules,
                 child_cache_safe,
                 style_cache,
                 delay_parent_insert,
@@ -1813,6 +1895,8 @@ impl StyleSystem {
         // P124：单元素重算同样预计算 @media 命中表。
         let media_ctx = self.media_ctx_for();
         let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
+        // P-g2b：单元素路径同款摘要装填（容器 style() 查询等单点重算共享预过滤）。
+        let _pass_summaries = matcher::install_pass_ancestor_summaries(doc);
         *self.compute_element_style_internal(
             doc,
             element,
@@ -4670,6 +4754,35 @@ fn stylesheet_has_selection_rules(rules: &[zero_css_parser::ast::Rule]) -> bool 
             zero_css_parser::ast::Rule::At(at) => {
                 if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
                     && stylesheet_has_selection_rules(nested)
+                {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// 伪元素尾名规则在页扫描（S10 同型零成本门禁，P-g2b）：规则树是否含尾部
+/// 伪元素名等于 `tail` 的选择器（含嵌套 @块递归，与
+/// [`stylesheet_has_selection_rules`] 同口径）。无则每帧一次否定，每元素跳过
+/// 对应探针与伪计算——门闭 ⇒ 该尾 collect 候选必空 ⇒ 探测 None/false，逐点
+/// 等价（github.com ~1100 条 `:before/:after` 规则使 has_pseudo_rules 恒真，
+/// 零 first-letter/first-line/marker 规则页不再每元素白付探针 collect）。
+fn stylesheet_has_pseudo_element_rules(rules: &[zero_css_parser::ast::Rule], tail: &str) -> bool {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for selector in &style_rule.selectors {
+                    if matcher::selector_pseudo_element(selector).is_some_and(|p| p == tail) {
+                        return true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_pseudo_element_rules(nested, tail)
                 {
                     return true;
                 }

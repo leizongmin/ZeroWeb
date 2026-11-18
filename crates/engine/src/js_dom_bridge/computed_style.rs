@@ -15,7 +15,7 @@ use zero_css_parser::values::{
     PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue,
     TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
 };
-use zero_dom::{Document, NodeId, parse_html};
+use zero_dom::{Document, NodeId, NodeKind, parse_html};
 use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundImageComputedValue,
@@ -101,6 +101,65 @@ pub(super) fn compute_styles_for_doc(
         }
     };
     (styles, sheets)
+}
+
+/// t-g2b R6：innerText 批量样式记录流——子树全元素 display/visibility 一次宿主
+/// 往返（baidu `query_all_tagged_list_doc` 同型：O(n) 逐元素宿主读出循环，learning
+/// #26 trap 域成本）。与 `__zw_get_computed_style` 消费**同一** (doc, styles) 源与
+/// 同一序列化函数，批量值与逐元素查询逐位一致；动画覆盖（`query_style_override`）
+/// 同样先于级联值。记录 `sel\x1fdisplay\x1fvisibility`、`|` 连接（两分隔符均不出现在
+/// 引擎生成的唯一选择器中——query_all_tagged 同约定）。sibling 上下文传 None：仅
+/// left/top/right/bottom 的 calc 树计数消费 sibling（CSS Values 5 §tree-counting），
+/// display/visibility 无依赖。限定 light 子树：ShadowRoot 不属宿主 childNodes
+///（DOM §4.2 attachShadow），template 内容不属 light 树（HTML §4.12 template
+/// contents），两者不下行；synthetic 伪元素替身不属文档树（CSS Pseudo-Elements
+/// §1），跳过。style 缺失/元素不可寻址（detached）的记录以空 display/visibility
+/// 发出——shim 侧按「无法判定 → 保守包含」同语义消费。
+pub(super) fn innertext_bulk_styles_doc(
+    doc: &Document,
+    styles: &std::collections::HashMap<NodeId, ComputedStyle>,
+    root_sel: &str,
+) -> String {
+    let Some(root) = super::find_by_selector(doc, root_sel) else {
+        return String::new();
+    };
+    let mut out = String::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let Some(data) = doc.get(node) else { continue };
+        if data.synthetic {
+            continue;
+        }
+        let NodeKind::Element(el) = &data.kind else {
+            // ShadowRoot / DocumentFragment（template contents 等）不下行——非 light 子树。
+            continue;
+        };
+        if el.local_name() == "template" {
+            continue;
+        }
+        let sel = super::unique_selector_for_node(doc, node).unwrap_or_default();
+        if !sel.is_empty() {
+            let (display, visibility) = styles.get(&node).map_or((String::new(), String::new()), |style| {
+                let display = super::computed_style_cache::query_style_override(&sel, "display")
+                    .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "display", None));
+                let visibility = super::computed_style_cache::query_style_override(&sel, "visibility")
+                    .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "visibility", None));
+                (display, visibility)
+            });
+            if !out.is_empty() {
+                out.push('|');
+            }
+            out.push_str(&sel);
+            out.push('\x1f');
+            out.push_str(&display);
+            out.push('\x1f');
+            out.push_str(&visibility);
+        }
+        for &child in &data.children {
+            stack.push(child);
+        }
+    }
+    out
 }
 
 /// R3030：把 `mutations` 中影响元素 inline `style` 的子集顺序应用到 parsed `doc` 的匹配节点，

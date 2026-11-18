@@ -365,7 +365,14 @@ pub fn finish_page_load(
 /// 承载全部 pair 时，真实大页（github 15+ 对）在臂内撞 sandbox 30s 守卫被硬杀。6 对/片
 /// 按 cfix 轮观测的最差 ~1.4s/对留 3 倍以上裕量（6×1.4≈8.4s < 30s），同时把守卫击杀
 /// 的事件损失上界压到单片尾部。
-const LINK_EVENT_CHUNK: usize = 6;
+///
+/// t-g2b R3（2026-11-13）：6→1（单对一臂）。g9 轮实测 github 真实单对臂 ~3.7s（8000
+/// 元素 shim 文档上站点 handler 纯 JS 长臂，远超 cfix 的 1.4s 预算），6 对/片即 22-30s
+/// 臂、四片连续 75.5s 垄断 worker——prio 自动化 eval 即便过快照屏障（R1）也要等整臂
+/// 边界。单对一臂把臂边界等待上界压到最差单对 ~5.5s，远低于 30s 守卫（守卫安全裕量
+/// 反而扩大）；分片提交面成本 µs 级 ×N 可忽略（g10-B 面：shim 派发路径自身便宜）。
+/// 片臂总时长不变（臂内纯 JS 成本是 shim trap 域缺口，登记不修）。
+const LINK_EVENT_CHUNK: usize = 1;
 
 /// P104：link 事件按 [`LINK_EVENT_CHUNK`] 对/片保序切分（不重不漏）。抽纯函数供单测
 /// 钉分片形状（TV-2：回退整批或改片大小时变红）；「单片撞守卫只丢片尾」的上界语义
@@ -411,6 +418,9 @@ fn dispatch_resource_outcomes(
     // FIFO 保序不变；prio 留给里程碑/字体/交互请求，eval 插队即时应答。link load/
     // error 派发时点相对 window load 不再有先序保证——HTML link 处理模型的 load/error
     // 本按资源 settle 派发（迟到面见 `dispatch_late_resource_events`），语义可接受。
+    // t-g2b R1+R3：prio eval 的实际插队点由 js_worker 快照屏障决定——R1 把屏障前缀
+    // 收缩为切点快照本身后，eval 等待上界 = R3 单对臂边界（~5.5s），P105 的插队语义
+    // 在真实大页上重新成立（g9 实证 P105 曾被全量前缀结构性绕过）。
     let link_events = dedupe_link_events(&link_events);
     for chunk in build_link_event_chunks(&link_events) {
         let batch = script_dispatch_link_events_batch(&chunk);
@@ -1068,12 +1078,14 @@ fn apply_state_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
 ///
 /// https://w3c.github.io/webdriver/#execute-script
 pub fn execute_automation_script(ctx: &mut PageScriptContext<'_>, script: &str) -> Result<(String, bool), String> {
-    // t2-pb1 fix#9：自动化求值走优先通道（快照+执行成对，同通道 FIFO 保持顺序）——宿主
-    // 发起的求值（CDP evaluate / Playwright title 等）不排在页面回调积压之后（bilibili
-    // timer 臂级联曾把 title 求值压 17.5s，连带饿死其后的导航 IPC）。
-    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
+    // t2-pb1 fix#9 → t-g2b R4：自动化求值走独立通道原子命令（提交时快照单臂内
+    // apply→execute，分派环在屏障 drain 之前抢占）——宿主发起的求值（CDP evaluate /
+    // Playwright title 等）既不排在页面回调积压之后（bilibili timer 臂级联曾把 title
+    // 求值压 17.5s，连带饿死其后的导航 IPC），也不被快照屏障臂链 stash 饿死（p64：
+    // 51 条气球臂 ≈200s 期间 prio eval 全窗死区）。
+    let snapshot = ctx.js_worker.automation_eval_snapshot(ctx.html, ctx.url);
     ctx.js_worker.clear_mutations_fresh();
-    let value = ctx.js_worker.execute_script_direct_priority(script)?;
+    let value = ctx.js_worker.execute_automation_eval(script, Some(snapshot))?;
     let html_snapshot = ctx.html.clone();
     let changed = apply_recorded_mutations(ctx, &html_snapshot).is_some();
     Ok((value, changed))
@@ -1090,16 +1102,18 @@ pub enum AutomationEvalOutcome {
 /// t2-pb1 fix#15：[`execute_automation_script`] 的可挂起形态——宿主 Evaluate 家族
 /// （CDP evaluate / Playwright 注入与求值）专用。worker 被长臂（bilibili timer 回调
 /// 28-30s，纯 JS 执行墙）占住时，主循环至多等 [`zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT`]
-/// 即放行导航等 IPC；超时把 reply 通道交还（脚本已在优先队列，结果晚至；mutation
-/// 留待 checkpoint drain 落定，与异步回调同语义）。b1 旅程实测：settle 轮询 evaluate
-/// 在臂上同步等 21.6s，其后 0.2s 的 Navigate IPC 撞上 15s 看门狗（epoch2 ERR_FAILED）。
+/// 即放行导航等 IPC；超时把 reply 通道交还（脚本已在独立自动化通道，结果晚至；
+/// mutation 留待 checkpoint drain 落定，与异步回调同语义）。b1 旅程实测：settle 轮询
+/// evaluate 在臂上同步等 21.6s，其后 0.2s 的 Navigate IPC 撞上 15s 看门狗（epoch2
+/// ERR_FAILED）。t-g2b R4：快照随 AutomationEval 原子提交（不再 prio 快照+执行对）。
 pub fn execute_automation_script_deferrable(ctx: &mut PageScriptContext<'_>, script: &str) -> AutomationEvalOutcome {
-    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
+    let snapshot = ctx.js_worker.automation_eval_snapshot(ctx.html, ctx.url);
     ctx.js_worker.clear_mutations_fresh();
-    match ctx
-        .js_worker
-        .execute_script_priority_deferrable(script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
-    {
+    match ctx.js_worker.execute_automation_eval_deferrable(
+        script,
+        Some(snapshot),
+        zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+    ) {
         Ok(value) => {
             let html_snapshot = ctx.html.clone();
             let changed = apply_recorded_mutations(ctx, &html_snapshot).is_some();
@@ -2725,12 +2739,20 @@ mod tests {
         worker.shutdown();
     }
 
-    /// R2946 屏障 F1 返修回归（双审查缺陷轮反例）：跨轮扫描不得让新发现的屏障快照
-    /// 越过前轮 stash 中提交序更早的普通命令——同通道 FIFO 不因屏障破坏。
-    /// 反例（提交序）：S1 快照 → T1 优先（忙臂）→ R 普通 → S2 快照 → T2 优先。
-    /// T1 的扫描只见 S1（R/S2 未提交）；T2 的扫描见 [R, S2]——若把 S2 单独提为屏障
-    /// 而 R 落 stash，派发序变 S2, T2, R，R（提交先于 S2）在 html_2 快照之后执行。
-    /// 修复后屏障以「最后一个更早快照」切前缀：R 先于 S2，派发序 t1, r, t2。
+    /// R2946 屏障 F1 返修回归（双审查缺陷轮反例）+ t-g2b R1/R2 语义修订（2026-11-13）。
+    /// R1 前 F1 钉「跨轮扫描不得让新发现的屏障快照越过前轮 stash 中提交序更早的普通
+    /// 命令」（派发序 t1,r,t2）；R1 把屏障前缀收缩为仅切点快照本身后，该 FIFO 条款被
+    /// 显式修订：切点快照**之前的普通命令**（本测 R）不再先于快照应用，改落 post
+    /// 原序补跑、排在优先命令之后（宿主动作中间态语义，js_worker.rs 屏障注释）。
+    /// 本测改钉修订后仍成立的不变式：
+    /// ① 跨轮扫描**不丢**早提交普通命令——R 恰执行一次且在 T2 之后（post FIFO）；
+    /// ② 优先命令仍等最新早快照（fix#12 语义锚 = 切点快照）——由姊妹钉
+    ///   `snapshot_barrier_orders_priority_dispatch_after_pending_snapshot_r2946` 保持；
+    /// ③ 切点前中间快照被 latest-wins 跳过，不以旧态覆盖新态（R2）。
+    /// 场景（提交序）：S1 快照 → T1 优先（忙臂）→ R 普通 → S2 快照 → T2 优先。
+    /// T1 的扫描只见 S1；T2 的扫描见 [R, S2]——R1/R2 下派发序 S2, T2, R（R 在切点
+    /// 快照与优先命令之后原序补跑），__order_done='t1,t2,r'；回退 F1 全量前缀（R 先于
+    /// S2）得 't1,r,t2' 即红。
     /// 确定性节奏（sleep 定拍，裕量 ≥200ms）：500ms 忙臂占住 worker 让 S1/S2 的
     /// 250ms 有界等待必超时滞留；T1 自身 800ms 忙臂保证 R/S2/T2 都在 T1 执行窗内入队。
     #[test]
@@ -2754,10 +2776,12 @@ mod tests {
             .expect("submit T1");
         // ④ 定拍至 t0+750：T1 已被 picked（屏障扫描已跑完，只见 S1）。
         std::thread::sleep(std::time::Duration::from_millis(450));
-        // ⑤ R 普通（t0+750 提交，50ms 等待超时滞留）→ ⑥ S2（t0+800 提交，超时滞留）
-        //    → ⑦ T2 优先（t0+1100 提交，早于 T1 结束 t0+1300）。
+        // ⑤ R 普通（t0+750 提交，50ms 等待超时滞留；R1 后 R 派发于 T2 之后，故 R
+        //    自身刷新 __order_done 聚合值——旧序 R 先于 T2 时由 T2 的 join 带出）
+        //    → ⑥ S2（t0+800 提交，超时滞留）→ ⑦ T2 优先（t0+1100 提交，早于 T1 结束 t0+1300）。
         let _ = worker.execute_script_direct_bounded(
-            "globalThis.__order = (globalThis.__order || []).concat(['r'])",
+            "globalThis.__order = (globalThis.__order || []).concat(['r']); \
+             globalThis.__order_done = globalThis.__order.join(',');",
             std::time::Duration::from_millis(50),
         );
         worker.set_dom_snapshot("<html><body></body></html>", "https://example.com/f1-s2");
@@ -2767,11 +2791,12 @@ mod tests {
                  globalThis.__order_done = globalThis.__order.join(',');",
             )
             .expect("submit T2");
-        // ⑧ 缺陷版派发序 S2, T2, R → __order_done='t1,t2,r'；修复版 R,S2,T2 → 't1,r,t2'。
+        // ⑧ F1 全量前缀版派发序 R, S2, T2 → __order_done='t1,r,t2'；R1/R2 修订版
+        //    S2, T2, R → 't1,t2,r'（R 恰执行一次、post FIFO、不丢不重）。
         assert_eq!(
             wait_for_global(&worker, "__order_done", 30_000),
-            "t1,r,t2",
-            "跨轮扫描发现的新屏障快照不得越过前轮 stash 中提交序更早的普通命令（同通道 FIFO）"
+            "t1,t2,r",
+            "R1/R2 修订：切点快照先应用、优先命令次之，早提交普通命令 post 原序补跑恰一次"
         );
         worker.shutdown();
     }
@@ -2999,7 +3024,8 @@ mod tests {
         worker.shutdown();
     }
 
-    /// P102 mirror：同批多条 link 事件整批单臂派发——两条样式表各自 onload 触发且保序，
+    /// P102 mirror：同批多条 link 事件批派发（P104 起按 [`LINK_EVENT_CHUNK`] 分片提交，
+    /// t-g2b R3 起单对/片）——两条样式表各自 onload 触发且保序，
     /// 同 URL 重复条目去重后不重复触发（spec HTML：每元素 load 至多触发一次）。含单引号
     /// URL 条目钉住生成器转义（TV-3：`escape_js_string` 在最廉价层级无引擎级单测，此处
     /// 端到端兜底；RFC 3986 允许 `'` 入 path）。
@@ -3118,16 +3144,21 @@ mod tests {
         worker.shutdown();
     }
 
-    /// P104（TV-2）：分片形状钉——8 对拆 [6,2] 保序不重不漏；恰整除无空尾片。回退整批
-    /// 或改 [`LINK_EVENT_CHUNK`] 在此变红。守卫击杀上界语义由 release census 支撑
-    ///（单测无法模拟 sandbox 30s 守卫）。
+    /// P104（TV-2）：分片形状钉——8 对拆 8 单对片保序不重不漏；恰整除无空尾片。回退整批
+    /// 或改 [`LINK_EVENT_CHUNK`] 在此变红（t-g2b R3 起为单对/片：臂边界等待上界 =
+    /// 最差单对臂，prio eval 过屏障（R1）后的等待不再乘片内对数）。守卫击杀上界语义
+    /// 由 release census 支撑（单测无法模拟 sandbox 30s 守卫）。
     #[test]
     fn build_link_event_chunks_shapes_and_order_p104() {
         let pairs: Vec<(String, &'static str)> = (0..8)
             .map(|i| (format!("https://example.com/{i}.css"), "load"))
             .collect();
         let chunks = build_link_event_chunks(&pairs);
-        assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![6, 2]);
+        assert_eq!(
+            chunks.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![1, 1, 1, 1, 1, 1, 1, 1],
+            "t-g2b R3：单对/片"
+        );
         let flat: Vec<String> = chunks.concat().into_iter().map(|(u, _)| u).collect();
         let expect: Vec<String> = (0..8).map(|i| format!("https://example.com/{i}.css")).collect();
         assert_eq!(flat, expect, "跨片保序不重不漏");
@@ -3137,7 +3168,7 @@ mod tests {
                 .iter()
                 .map(Vec::len)
                 .collect::<Vec<_>>(),
-            vec![6, 6],
+            vec![1; 12],
             "恰整除时无空尾片"
         );
     }
@@ -3669,15 +3700,28 @@ mod tests {
     #[test]
     fn automation_deferrable_mutations_survive_until_answer_applies() {
         let mut worker = RendererJsWorker::spawn(82);
-        // 长臂占住 worker（公共 API：挂起的 deferrable 求值即臂）。
+        // 长臂占住 worker（公共 API：挂起的 deferrable 求值即臂）。2e9 次稠密循环
+        // （v8 ~6s，quickjs 30s 守卫截断同可）——必须确定性长于 USER_ACTION_SCRIPT_TIMEOUT
+        // （2s）+提交时点余量，否则快机上臂内求值在预算内完成、Deferred 前提落空。
         let busy_rx = match worker.execute_script_priority_deferrable(
-            "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)",
+            "var s=0;for(var i=0;i<2e9;i++)s+=i;String(s)",
             std::time::Duration::from_millis(1),
         ) {
             Err(rx) => rx,
             _ => panic!("长臂入队应挂起"),
         };
-        std::thread::sleep(std::time::Duration::from_millis(120));
+        // t-g2b R4：自动化 eval 在分派环 step-2 抢占执行——忙臂必须已被 picked 且在跑
+        // （execution_count 于臂起始置数），否则求值会越过未开跑的 prio 忙臂同步完成
+        // （bootstrap 窗口竞争），「长臂期间」前提落空。
+        let baseline = worker.execution_count_for_test();
+        let busy_started = std::time::Instant::now();
+        while worker.execution_count_for_test() == baseline {
+            assert!(
+                busy_started.elapsed() < std::time::Duration::from_secs(10),
+                "忙臂未在 10s 内开跑"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         let mut html = String::from("<html><body><div id='a'>t</div></body></html>");
         let mut ctx = PageScriptContext {
             html: &mut html,

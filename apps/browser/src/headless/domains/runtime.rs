@@ -10,8 +10,40 @@ use super::remote_object::{
     automation_value_to_remote_object, cdp_call_argument_to_automation_value, exception_details_response,
     parse_object_id,
 };
-use crate::headless::protocol::ProtocolError;
+use crate::headless::protocol::{ProtocolError, ServerResponse};
 use crate::headless::session::HeadlessSession;
+
+/// t-g2b R5：延迟求值完成面——AutomationResult → CDP 响应形状（与
+/// `cmd_runtime_evaluate` 同源成形：remoteObject / undefined / exceptionDetails）。
+/// `pub(in crate::headless)` 供 session.rs 的 renderer 消息路由调用（remote_object
+/// 助手为 domains 内可见）。
+pub(in crate::headless) fn shape_deferred_eval_response(
+    pending: crate::headless::session::PendingEval,
+    result: Result<AutomationResult, zero_protocol::message::AutomationError>,
+) -> ServerResponse {
+    match result {
+        Ok(AutomationResult::Value(value)) => ServerResponse {
+            id: pending.cdp_id,
+            result: Some(serde_json::json!({
+                "result": automation_value_to_remote_object(&value),
+            })),
+            error: None,
+            session_id: pending.cdp_session_id,
+        },
+        Ok(_) => ServerResponse {
+            id: pending.cdp_id,
+            result: Some(serde_json::json!({ "result": { "type": "undefined" } })),
+            error: None,
+            session_id: pending.cdp_session_id,
+        },
+        Err(err) => ServerResponse {
+            id: pending.cdp_id,
+            result: Some(exception_details_response(err.message)),
+            error: None,
+            session_id: pending.cdp_session_id,
+        },
+    }
+}
 
 impl HeadlessServer {
     /// Runtime.evaluate — remoteObject 形状返回（BiDi `script.evaluate` 的扁平字符串

@@ -329,6 +329,14 @@ impl HeadlessServer {
                 }
             }
             conns.retain(|conn| conn.alive);
+            // t-g2b R5：死连接的延迟求值登记/就绪响应清退——无连接可回写，滞留即泄漏。
+            #[cfg(not(test))]
+            {
+                let alive_peers: std::collections::HashSet<std::net::SocketAddr> =
+                    conns.iter().map(|c| c.peer).collect();
+                session.pending_evals.retain(|p| alive_peers.contains(&p.peer));
+                session.ready_evals.retain(|(p, _)| alive_peers.contains(p));
+            }
 
             std::thread::sleep(std::time::Duration::from_millis(3));
         }
@@ -463,7 +471,8 @@ impl HeadlessServer {
                     Ok(Message::Text(text)) => {
                         *idle_since = std::time::Instant::now();
                         // Network 域事件订阅登记（M2-N2）：按命令面更新连接订阅态
-                        if let Ok(req) = serde_json::from_str::<ClientRequest>(&text) {
+                        let req_opt = serde_json::from_str::<ClientRequest>(&text).ok();
+                        if let Some(req) = &req_opt {
                             match req.method.as_str() {
                                 "Network.enable" => *wants_network = true,
                                 "Network.disable" => *wants_network = false,
@@ -489,35 +498,47 @@ impl HeadlessServer {
                                 return;
                             }
                         }
-                        let (response, events) = self.handle_message_with_events_mode(session, &text, *page_direct);
-                        for event in events {
-                            // Network 域事件 → 主循环广播（订阅制）；其余 → 本连接
-                            if event.method.starts_with("Network.") {
-                                network_events.push(event);
-                                continue;
+                        // t-g2b R5：Runtime.evaluate 异步化——提交进 renderer 后本条
+                        // 消息不再走同步 dispatch（响应在完成匹配后经 flush_ready_evals
+                        // 回写）。p64 死亡链②：单条长求值的 renderer 往返阻塞单线程
+                        // 复用循环，期间其他连接的命令/事件/截图全部停摆。提交失败/
+                        // 非 evaluate/会话未附接回落同步路径（错误形状不变）。
+                        let deferred = self.try_defer_runtime_evaluate(session, req_opt.as_ref(), conn.peer);
+                        if !deferred {
+                            let (response, events) = self.handle_message_with_events_mode(session, &text, *page_direct);
+                            for event in events {
+                                // Network 域事件 → 主循环广播（订阅制）；其余 → 本连接
+                                if event.method.starts_with("Network.") {
+                                    network_events.push(event);
+                                    continue;
+                                }
+                                if let Ok(event_json) = serde_json::to_string(&event)
+                                    && let Err(e) = ws.write(Message::Text(event_json.into()))
+                                {
+                                    tracing::error!("Event push error: {e}");
+                                    conn.alive = false;
+                                    return;
+                                }
                             }
-                            if let Ok(event_json) = serde_json::to_string(&event)
-                                && let Err(e) = ws.write(Message::Text(event_json.into()))
-                            {
-                                tracing::error!("Event push error: {e}");
+                            let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
+                                format!(
+                                    "{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}"
+                                )
+                            });
+                            if let Err(e) = ws.write(Message::Text(response_json.into())) {
+                                tracing::error!("WebSocket write error: {e}");
                                 conn.alive = false;
                                 return;
                             }
+                            // tungstenite write() 对可入缓冲的小消息不保证落盘（should_flush=false），
+                            // 命令响应必须显式 flush，否则客户端收不到任何回包。
+                            if let Err(e) = ws.flush() {
+                                tracing::error!("WebSocket flush error: {e}");
+                                conn.alive = false;
+                            }
                         }
-                        let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
-                            format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}")
-                        });
-                        if let Err(e) = ws.write(Message::Text(response_json.into())) {
-                            tracing::error!("WebSocket write error: {e}");
-                            conn.alive = false;
-                            return;
-                        }
-                        // tungstenite write() 对可入缓冲的小消息不保证落盘（should_flush=false），
-                        // 命令响应必须显式 flush，否则客户端收不到任何回包。
-                        if let Err(e) = ws.flush() {
-                            tracing::error!("WebSocket flush error: {e}");
-                            conn.alive = false;
-                        }
+                        // t-g2b R5：就绪延迟响应回写 + 过期扫除（提交后每 tick 持续泵）。
+                        self.flush_ready_evals(session, ws, &conn.peer, &mut conn.alive);
                     }
                     Ok(Message::Close(_)) => {
                         tracing::info!("Client disconnected");
@@ -545,6 +566,8 @@ impl HeadlessServer {
                                 let _ = ws.flush();
                             }
                         }
+                        // t-g2b R5：空闲 tick 同样泵延迟求值完成面（回写 + 过期扫除）。
+                        self.flush_ready_evals(session, ws, &conn.peer, &mut conn.alive);
                         if idle_since.elapsed() > Self::WS_IDLE_DEADLINE {
                             tracing::info!("WebSocket idle deadline ({}s)", Self::WS_IDLE_DEADLINE.as_secs());
                             conn.alive = false;
@@ -655,6 +678,116 @@ impl HeadlessServer {
             });
         }
         events
+    }
+
+    /// t-g2b R5：Runtime.evaluate 异步化提交判定——evaluate 且带 expression 且会话
+    /// 已附接（校验同 handle_message_with_events_mode 的防串话拒绝）时提交进 renderer
+    /// 并登记在途；其余形态（参数缺失/会话未附接/发送失败）返回 false 回落同步路径。
+    #[cfg(not(test))]
+    fn try_defer_runtime_evaluate(
+        &self,
+        session: &mut HeadlessSession,
+        req: Option<&ClientRequest>,
+        peer: std::net::SocketAddr,
+    ) -> bool {
+        let Some(req) = req else { return false };
+        if req.method != "Runtime.evaluate" {
+            return false;
+        }
+        let Some(expression) = req.params.get("expression").and_then(|v| v.as_str()) else {
+            return false;
+        };
+        // 会话校验同同步路径：未附接的 sessionId 走同步拒绝（错误形状不变）。
+        if !req.session_id.as_ref().is_none_or(|sid| self.session_attached(sid)) {
+            return false;
+        }
+        let return_by_value = req
+            .params
+            .get("returnByValue")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let group = req
+            .params
+            .get("objectGroup")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        session.defer_runtime_evaluate(req.id, req.session_id.clone(), peer, expression, group, return_by_value)
+    }
+
+    /// t-g2b R5：测试构建无 renderer 通道——恒走同步路径。
+    #[cfg(test)]
+    fn try_defer_runtime_evaluate(
+        &self,
+        _session: &mut HeadlessSession,
+        _req: Option<&ClientRequest>,
+        _peer: std::net::SocketAddr,
+    ) -> bool {
+        false
+    }
+
+    /// t-g2b R5：延迟求值就绪响应回写 + 过期扫除。逐连接步进调用：peer 匹配的响应
+    /// 写本连接（显式 flush，同命令响应惯例），异连接条目留队待其连接步进；deadline
+    /// 过界的在途求值按 automation request timeout 即时错误应答（同
+    /// automation_request 等待窗语义），不悬挂客户端。
+    #[cfg(not(test))]
+    fn flush_ready_evals(
+        &self,
+        session: &mut HeadlessSession,
+        ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
+        peer: &std::net::SocketAddr,
+        alive: &mut bool,
+    ) {
+        // 过期扫除：deadline 过 → timeout 错误响应入就绪队列（peer 路由同正常完成）。
+        let now = std::time::Instant::now();
+        let mut i = 0;
+        while i < session.pending_evals.len() {
+            if now >= session.pending_evals[i].deadline {
+                let pending = session.pending_evals.remove(i);
+                let response = ServerResponse {
+                    id: pending.cdp_id,
+                    result: None,
+                    error: Some(ProtocolError {
+                        code: -32000,
+                        message: "automation request timeout".into(),
+                    }),
+                    session_id: pending.cdp_session_id,
+                };
+                session.ready_evals.push((pending.peer, response));
+            } else {
+                i += 1;
+            }
+        }
+        let mut keep: Vec<(std::net::SocketAddr, ServerResponse)> = Vec::new();
+        for (item_peer, response) in session.ready_evals.drain(..) {
+            if &item_peer == peer {
+                match serde_json::to_string(&response) {
+                    Ok(json) => {
+                        if let Err(e) = ws.write(Message::Text(json.into())) {
+                            tracing::error!("Deferred evaluate write error: {e}");
+                            *alive = false;
+                        } else if let Err(e) = ws.flush() {
+                            tracing::error!("Deferred evaluate flush error: {e}");
+                            *alive = false;
+                        }
+                    }
+                    Err(e) => tracing::error!("Deferred evaluate serialize: {e}"),
+                }
+            } else {
+                keep.push((item_peer, response));
+            }
+        }
+        session.ready_evals = keep;
+    }
+
+    /// t-g2b R5：测试构建无在途登记面——no-op。
+    #[cfg(test)]
+    fn flush_ready_evals(
+        &self,
+        _session: &mut HeadlessSession,
+        _ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
+        _peer: &std::net::SocketAddr,
+        _alive: &mut bool,
+    ) {
     }
 
     /// 处理单条客户端消息（向后兼容，不含事件）。

@@ -2471,6 +2471,34 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t-g2b R6：innerText 批量样式通道——子树全元素 display/visibility 一次往返
+    // （`innertext_bulk_styles_doc` 记录流约定见其文档）。与 `__zw_get_computed_style`
+    // 同一 (html, drain_gen, style_version, css/adopted/entries/shadow_entries) 代际
+    // 键与同一 [`with_cached_document_styles_lazy`] 汇点——批量值与逐元素查询逐位
+    // 一致；不动 per-selector `cs_cache`（本通道零消费，后续逐元素查询仍走其
+    // 代际命中短路）。重入契约同 gCS：`f` 体无 JS/宿主回流。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_innertext_styles",
+        Box::new(move |args| {
+            if args.is_empty() || args[0].is_empty() {
+                return String::new();
+            }
+            let root_sel = &args[0];
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let style_version = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+            super::computed_style_cache::with_cached_document_styles_lazy(
+                &snap,
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                |doc, styles| super::computed_style::innertext_bulk_styles_doc(doc, styles, root_sel),
+            )
+        }),
+    );
+
     // s161（html-semantics M2）：动态元素 handle gCS 通道——`getComputedStyle(el)` 对
     // `createElement` 产物（`__zwHandle` 身份，无 `__zwSelector`）的路由面。shim 侧
     // 无 sel 有 handle 时走本回调：host 在 handle 视图槽（[`HANDLE_VIEW_CACHE`]，键

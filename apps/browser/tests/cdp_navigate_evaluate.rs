@@ -540,3 +540,96 @@ fn cross_connection_stays_responsive_during_busy_navigation() {
         .wait_response(2, Duration::from_secs(15))
         .expect("conn A navigate response");
 }
+
+/// 钉 10：t-g2b R5——Runtime.evaluate 异步化后，单条长求值的 renderer 往返不再
+/// 阻塞 WS mux（p64 死亡链②串行转发墙：base 下 mux 卡在 conn A 的同步
+/// automation_request 自旋里，conn B 的消息在 A 的 RTT 窗内不被读取）。
+///
+/// conn A 提交 3s 忙循环求值（R5 下登记为 pending 后立即返回，不占 mux）；
+/// conn B 在 A 的 RTT 窗内提交 Page.captureScreenshot——纯浏览器进程本地渲染、
+/// 零 renderer IPC，base 必须 ~3s 后才应答（本钉 1.5s 判别窗必红）。
+/// B 的求值仍走 renderer automation 通道、排在 A 忙臂之后（worker 单线程，臂不可
+/// 抢占），故断言窗为「A 臂结束 + ε」；A 的响应按 id 匹配最终必达。
+#[test]
+fn screenshot_not_blocked_by_inflight_evaluate_on_other_connection() {
+    let site = TestSite::spawn();
+    let (port, _browser) = spawn_browser();
+    let mut conn_a = CdpClient::connect(port);
+    conn_a
+        .call("Page.enable", serde_json::json!({}), Duration::from_secs(10))
+        .expect("conn A Page.enable");
+    let mut conn_b = CdpClient::connect(port);
+    conn_b
+        .call("Page.enable", serde_json::json!({}), Duration::from_secs(10))
+        .expect("conn B Page.enable");
+
+    // 渲染面就绪：空起始页无 paint 快照（captureScreenshot 报 "No renderer frame
+    // available"），导航到简单页并轮询到首帧 paint 落地（有界 ~5s；预热发生在忙
+    // 求值提交前，不计入后面的判别窗）。
+    conn_a
+        .call(
+            "Page.navigate",
+            serde_json::json!({ "url": site.url("/plain") }),
+            Duration::from_secs(15),
+        )
+        .expect("navigate /plain");
+    let mut warmed = false;
+    for _ in 0..25 {
+        if let Ok(s) = conn_b.call("Page.captureScreenshot", serde_json::json!({}), Duration::from_secs(5)) {
+            // call 返回整个消息（{id, result:{data}}）——data 在 result 层。
+            if s.pointer("/result/data")
+                .and_then(Value::as_str)
+                .map(|d| !d.is_empty())
+                .unwrap_or(false)
+            {
+                warmed = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(warmed, "warmup screenshot must produce a frame after /plain navigation");
+
+    // conn A：3s 忙循环求值（真实占住 worker 忙臂；R5 下提交即返回，mux 保持可读）。
+    let busy_id = conn_a.send(
+        "Runtime.evaluate",
+        serde_json::json!({
+            "expression": "const t0=Date.now();while(Date.now()-t0<3000){} 42",
+            "returnByValue": true,
+        }),
+    );
+
+    // conn B：A 的 RTT 窗内截图必须走完请求-响应（判别窗 1.5s；base ≥3s 必红）。
+    let t0 = Instant::now();
+    let shot = conn_b
+        .call(
+            "Page.captureScreenshot",
+            serde_json::json!({}),
+            Duration::from_millis(1500),
+        )
+        .expect("conn B screenshot must answer while conn A evaluate is in flight");
+    let shot_elapsed = t0.elapsed();
+    assert!(
+        shot.pointer("/result/data")
+            .and_then(Value::as_str)
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
+        "screenshot must carry non-empty PNG data (shot_elapsed={shot_elapsed:?})"
+    );
+
+    // conn B 轻求值：automation 通道 FIFO，A 忙臂结束后紧跟执行（有界必达）。
+    let value = conn_b
+        .evaluate("1+1", Duration::from_secs(15))
+        .expect("conn B evaluate must answer after busy arm");
+    assert_eq!(value.as_f64(), Some(2.0));
+
+    // conn A 的长求值响应按 id 最终必达，且求值结果正确（异步路径形状回归）。
+    let resp = conn_a
+        .wait_response(busy_id, Duration::from_secs(20))
+        .expect("conn A busy evaluate response must arrive");
+    assert_eq!(
+        resp.pointer("/result/result/value").and_then(Value::as_f64),
+        Some(42.0),
+        "busy evaluate must return its expression value through the deferred path"
+    );
+}

@@ -93,6 +93,25 @@ pub(super) struct PendingNavigation {
     pub(super) started_confirmed: bool,
 }
 
+/// t-g2b R5：延迟 Runtime.evaluate 在途登记。提交时发 AutomationRequest（与同步
+/// 路径同 [`HeadlessSession::next_request_id`] 计数器）后立即返回，WS mux 不再被
+/// 单条求值的 renderer 往返阻塞（p64 死亡链②串行转发墙）；完成响应按 `ipc_id`
+/// 匹配（消费点：同步求值自旋的错配分支 / 探测自旋 / 空闲 drain，全部经
+/// handle_renderer_message 路由）成形入就绪队列。
+pub(super) struct PendingEval {
+    /// renderer 侧 IPC id（响应按 id 匹配）。
+    pub(super) ipc_id: u64,
+    /// CDP 请求 id（响应原样回带）。
+    pub(super) cdp_id: u64,
+    /// CDP 会话 id（响应回带；None = 浏览器级命令）。
+    pub(super) cdp_session_id: Option<String>,
+    /// 提交时连接标识（就绪响应按 peer 回写对应 WS）。
+    pub(super) peer: std::net::SocketAddr,
+    /// 等待窗上界（同 [`HeadlessSession::automation_request`]：worker 单臂 30s 上限
+    /// + 余量）。过界按 automation request timeout 错误应答，不悬挂客户端。
+    pub(super) deadline: std::time::Instant,
+}
+
 /// 浏览器会话。发布构建只持有 renderer IPC；进程内 WebView 仅用于单元测试。
 pub(super) struct HeadlessSession {
     /// 浏览器 shell（数据模型）。
@@ -125,6 +144,13 @@ pub(super) struct HeadlessSession {
     pub(super) doc_fetch_inflight: std::collections::HashMap<u64, String>,
     #[cfg(not(test))]
     pub(super) next_request_id: u64,
+    /// t-g2b R5：延迟 Runtime.evaluate 在途登记（ipc_id 匹配，见 [`PendingEval`]）。
+    #[cfg(not(test))]
+    pub(super) pending_evals: Vec<PendingEval>,
+    /// t-g2b R5：已成形待回写的延迟求值响应 `(peer, response)`——WS mux 逐连接
+    /// 步进时按 peer 回写，异连接条目留队。
+    #[cfg(not(test))]
+    pub(super) ready_evals: Vec<(std::net::SocketAddr, crate::headless::protocol::ServerResponse)>,
     /// addScriptToEvaluateOnNewDocument 注册的脚本（新文档加载后重放）。
     pub(super) injected_scripts: Vec<InjectedScript>,
     /// Cookie jar（Storage 域 + proxy_fetch 双向接线；与 WS [`zero_net::shared_cookie_store`] 同进程共享）。
@@ -310,6 +336,8 @@ impl HeadlessSession {
             last_document_url: None,
             doc_fetch_inflight: std::collections::HashMap::new(),
             next_request_id: 1,
+            pending_evals: Vec::new(),
+            ready_evals: Vec::new(),
             injected_scripts: Vec::new(),
             cookie_store: zero_net::shared_cookie_store(),
             user_agent_override: None,
@@ -500,6 +528,18 @@ impl HeadlessSession {
         message: IpcMessage,
     ) -> Result<Option<Result<(), String>>, String> {
         match message.kind {
+            // t-g2b R5：延迟求值完成匹配——命中在途登记即成形入就绪队列（同步求值
+            // 自旋的错配分支 / 探测自旋 / 空闲 drain 的 AutomationResponse 全部经本
+            // 入口路由）；未命中维持既有丢弃语义（无在途登记的错配响应无人消费）。
+            IpcMessageKind::AutomationResponse(response) => {
+                if let Some(pending) = self.take_pending_eval(message.id) {
+                    let ready_peer = pending.peer;
+                    let response =
+                        crate::headless::domains::runtime::shape_deferred_eval_response(pending, response.result);
+                    self.ready_evals.push((ready_peer, response));
+                }
+                Ok(None)
+            }
             IpcMessageKind::FetchRequest(params) => {
                 self.proxy_fetch(params)?;
                 Ok(None)
@@ -1398,6 +1438,65 @@ impl HeadlessSession {
             }
         };
         response.result.map_err(|error| error.message)
+    }
+
+    /// t-g2b R5：Runtime.evaluate 异步化提交面——发 AutomationRequest（与同步路径
+    /// 同 [`Self::next_request_id`] 计数器，响应按 id 匹配）后立即返回，不阻塞 WS
+    /// mux（p64 死亡链②：串行复用循环被单条求值的 renderer 往返占满，其他连接的
+    /// 命令/事件全部停摆）。完成面见 `handle_renderer_message` 的 AutomationResponse
+    /// 臂；等待窗登记 35s（同 [`Self::automation_request`]：worker 单臂 30s 上限 + 余量）。
+    /// 返回 false = 提交失败（发送错误），调用方回落同步路径给出错误响应。
+    #[cfg(not(test))]
+    pub(super) fn defer_runtime_evaluate(
+        &mut self,
+        cdp_id: u64,
+        cdp_session_id: Option<String>,
+        peer: std::net::SocketAddr,
+        expression: &str,
+        object_group: Option<String>,
+        return_by_value: bool,
+    ) -> bool {
+        let ipc_id = self.next_request_id;
+        self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+        // t-p106 同源仪拍：h-send（提交点）+ h-defer（异步化标记）。
+        if automation_trace_enabled() {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default();
+            automation_trace_line(&format!("[areply] t={t} h-send req={ipc_id} h-defer cdp={cdp_id}"));
+        }
+        if self
+            .renderer
+            .send(IpcMessage {
+                id: ipc_id,
+                kind: IpcMessageKind::AutomationRequest(AutomationRequest {
+                    operation: AutomationOperation::EvaluateRetaining {
+                        script: expression.to_string(),
+                        group: object_group,
+                        return_by_value,
+                    },
+                }),
+            })
+            .is_err()
+        {
+            return false;
+        }
+        self.pending_evals.push(PendingEval {
+            ipc_id,
+            cdp_id,
+            cdp_session_id,
+            peer,
+            deadline: std::time::Instant::now() + std::time::Duration::from_secs(35),
+        });
+        true
+    }
+
+    /// t-g2b R5：按 IPC id 取出在途延迟求值登记（命中即消费，防止重复匹配）。
+    #[cfg(not(test))]
+    pub(super) fn take_pending_eval(&mut self, ipc_id: u64) -> Option<PendingEval> {
+        let pos = self.pending_evals.iter().position(|p| p.ipc_id == ipc_id)?;
+        Some(self.pending_evals.remove(pos))
     }
 
     /// Page.navigate 事件族的 iframe 探测（slice21 eval-wedge 根因修复）。

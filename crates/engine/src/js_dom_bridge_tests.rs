@@ -164,3 +164,7 @@ include!("js_dom_bridge_tests/part110_s411_input_maxlength_number.rs");
 // pending 窗口内的真几何（embed-allowed-schemas 5F 根因——load 同 turn 派发先于
 // apply，快照无 rect 恒 0）。
 include!("js_dom_bridge_tests/part111_s421_pending_handle_rect.rs");
+
+// t-g2b R6 innerText 批量样式通道：记录流端到端渲染感知语义 + 动态节点逐元素
+// 回落钉面。
+include!("js_dom_bridge_tests/part112_g2b_innertext_bulk.rs");
