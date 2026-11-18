@@ -70,6 +70,27 @@ impl TypeKind {
         })
     }
 
+    /// `from_name` 逆映射（刀 TD1 syntax 串化消费；arm 集合须同 [`TypeKind::from_name`]）。
+    fn name(self) -> &'static str {
+        match self {
+            Self::Angle => "angle",
+            Self::Color => "color",
+            Self::Integer => "integer",
+            Self::Length => "length",
+            Self::LengthPercentage => "length-percentage",
+            Self::Number => "number",
+            Self::Percentage => "percentage",
+            Self::Resolution => "resolution",
+            Self::Time => "time",
+            Self::TransformFunction => "transform-function",
+            Self::TransformList => "transform-list",
+            Self::StringKind => "string",
+            Self::CustomIdent => "custom-ident",
+            Self::UrlKind => "url",
+            Self::ImageKind => "image",
+        }
+    }
+
     /// `<syntax-component-name>` 名集合——custom-ident 字面量禁用名（§support-syntax：
     /// 与任一 component-name 同名的 ident 字面量非法，`length` 裸写因此 SyntaxError）。
     fn is_component_name(name: &str) -> bool {
@@ -240,6 +261,40 @@ fn registration_of(name: &str) -> Option<(SyntaxDescriptor, Option<String>)> {
 /// 名是否已注册（gCS 分支路由判据，避免无条件克隆 syntax）。
 pub(crate) fn registration_known(name: &str) -> bool {
     REGISTRY.with(|r| r.borrow().contains_key(name))
+}
+
+/// 注册 syntax 描述符串化（刀 TD1：shim computed typed 重ify 分型 + registered
+/// append 门判据消费；未注册返 None）。Combined 形分量 `|` 并置，乘子直挂分量尾
+///（`<length>+` / `<url>#`）；ident 字面量保原文大小写（spec 字面量敏感）。
+pub(crate) fn syntax_of(name: &str) -> Option<String> {
+    fn component_text(c: &SyntaxComponent) -> String {
+        let mut s = match c.kind {
+            Some(k) => format!("<{}>", k.name()),
+            None => c.ident.clone(),
+        };
+        match c.list {
+            ListMarker::Space => s.push('+'),
+            ListMarker::Comma => s.push('#'),
+            ListMarker::Single => {}
+        }
+        s
+    }
+    REGISTRY.with(|r| {
+        r.borrow().get(name).map(|p| match &p.syntax {
+            SyntaxDescriptor::Universal => "*".to_string(),
+            SyntaxDescriptor::Normal => "normal".to_string(),
+            SyntaxDescriptor::Combined(comps) => comps.iter().map(component_text).collect::<Vec<_>>().join("|"),
+        })
+    })
+}
+
+/// 全注册名 JSON 清单（刀 TD1：computedStyleMap iteration 枚举消费；字典序
+/// 输出——HashMap 迭代序不定，确定性供测试比对）。
+pub(crate) fn names_json() -> String {
+    let mut names = REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>());
+    names.sort_unstable();
+    let items = names.iter().map(|n| format!("\"{}\"", n)).collect::<Vec<_>>().join(",");
+    format!("[{}]", items)
 }
 
 /// `<custom-property-name>` 校验：`--` 前缀（dashed-ident 的运行时最小面——语料
@@ -1884,6 +1939,31 @@ mod tests {
     /// 刀 RP1 注册门残面钉（register-property-syntax-parsing 语料锚定）——
     /// valid 群（曾拒今收：calc 分型/视口族/注释/转义 ident/虚线语法）与
     /// invalid 群（曾收今拒：CSS 宽关键字值/declaration 坏 token/typed 失配）。
+    #[test]
+    fn test_syntax_of_roundtrip() {
+        // 刀 TD1：syntax 串化（shim computed 重ify / append 门消费面）——乘子直挂
+        // 分量尾、ident 字面量保原文大小写、universal `*`、未注册 None。
+        clear_all();
+        assert!(register("--td1-a", Some("<length>+"), true, false, true, Some("10px")).is_ok());
+        assert_eq!(syntax_of("--td1-a").as_deref(), Some("<length>+"));
+        assert!(
+            register(
+                "--td1-b",
+                Some("thing1 | THING2 | <url>#"),
+                true,
+                false,
+                true,
+                Some("thing1")
+            )
+            .is_ok()
+        );
+        assert_eq!(syntax_of("--td1-b").as_deref(), Some("thing1|THING2|<url>#"));
+        assert!(register("--td1-c", Some("*"), true, false, false, None).is_ok());
+        assert_eq!(syntax_of("--td1-c").as_deref(), Some("*"));
+        assert_eq!(syntax_of("--td1-none"), None);
+        assert_eq!(names_json(), "[\"--td1-a\",\"--td1-b\",\"--td1-c\"]");
+    }
+
     #[test]
     fn test_register_gate_strict_faces() {
         clear_all();

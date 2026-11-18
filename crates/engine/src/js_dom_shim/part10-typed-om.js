@@ -1734,9 +1734,12 @@ return Ctor;
     if (kind === 'text') {
       // list-valued string 门（§set 值解析步：非 list-valued 属性值不得含
       // 顶层逗号——语料 'Setting a non list-valued property with list-valued
-      // string' 面）+ 单 token 数值形客观族裁决（'10s'@width 面）。
+      // string' 面）+ 单 token 数值形客观族裁决（'10s'@width 面）。自定义属性
+      // 豁免（spec 自定义属性任意串合法——css-properties-values-api-1
+      // typedom.html 'Specified string "10px, 11px" accepted by set() for
+      // syntax <length>#' 刀 TD1 面）。
       var segsV = _zwOmTopSplit(String(value).trim(), ',');
-      if (segsV.length > 1 && !_zwOmIsListValued(prop)) throw new TypeError("Cannot set a list of values on a non list-valued property");
+      if (segsV.length > 1 && !_zwOmIsListValued(prop) && prop.slice(0, 2) !== '--') throw new TypeError("Cannot set a list of values on a non list-valued property");
       for (var vi = 0; vi < segsV.length; vi++) {
         var segT = segsV[vi].trim();
         if (segT === '') throw new TypeError("Invalid value");
@@ -1744,8 +1747,15 @@ return Ctor;
       }
       return;
     }
-    if (kind === 'opaque' || kind === 'foreign' || kind === 'unparsed' || kind === 'varref' || kind === 'color') return;
-    if (prop.slice(0, 2) === '--') return;
+    if (kind === 'unparsed' || kind === 'varref') return;
+    if (prop.slice(0, 2) === '--') {
+      // css-typed-om-1 §set 值解析步：自定义属性仅受理 string/CSSUnparsedValue
+      //（含 var 引用）——分型 CSSStyleValue（keyword/unit/math/image/transform/
+      // opaque 基类）恒 TypeError（css-properties-values-api-1 typedom.html
+      // 'CSSUnitValue rejected by set()' 族，刀 TD1）。
+      throw new TypeError("Only strings and CSSUnparsedValues are accepted for custom properties");
+    }
+    if (kind === 'opaque' || kind === 'foreign' || kind === 'color') return;
     if (!table) return; // 已知但无表：opaque/keyword 面放行（css-wide 面已过）
     var t = value;
     // css-wide keyword 恒可。
@@ -1846,6 +1856,13 @@ return Ctor;
   function _zwOmIsListValued(p) {
     return p.slice(0, 2) !== '--' && _zwOmListValuedProps[p] === 1;
   }
+  // 注册表 syntax 查询（刀 TD1：host `__zw_registered_property_syntax`；未注册
+  // 返空串。engine 侧 thread_local 注册表，CSS.registerProperty 与 @property
+  // 规则同表）。
+  function _zwOmRegisteredSyntaxOf(p) {
+    if (typeof globalThis.__zw_registered_property_syntax !== 'function') return '';
+    try { return String(globalThis.__zw_registered_property_syntax(p) || ''); } catch (_eRS) { return ''; }
+  }
   // CSSUnparsedValue/var() 引用形（css-typed-om-1 §set 值裁决步：var 引用值
   // 不得与其他值并置——append 恒拒，set 仅单值）。
   function _zwOmIsUnparsedLike(v) {
@@ -1881,6 +1898,161 @@ return Ctor;
       if (fams['<length>'] || fams['<length-percentage>'] || fams['<percentage>'] || fams['<angle>']) return;
       throw new TypeError("Invalid number for property");
     }
+  }
+  // 刀 TD1：registered custom property computed 文本 → 分型值列表（css-
+  // properties-values-api-1 §reification）。syntax 乘子分段（`#` 顶层逗号 /
+  // `+` 空白），逐段过分型 arm；任一段无 arm 受理返 null（通用 unparsed 面）。
+  function _zwOmReifyRegisteredComputed(syntax, text, prop) {
+    var comps = String(syntax).split('|');
+    var bases = [];
+    var anyHash = false, anyPlus = false;
+    for (var i = 0; i < comps.length; i++) {
+      var c = comps[i].trim();
+      if (c === '') continue;
+      if (c.charAt(c.length - 1) === '#') { anyHash = true; c = c.slice(0, -1); }
+      else if (c.charAt(c.length - 1) === '+') { anyPlus = true; c = c.slice(0, -1); }
+      bases.push(c);
+    }
+    if (!bases.length) return null;
+    var t = String(text).trim();
+    if (t === '' || _zwOmCssWide[t.toLowerCase()]) return null;
+    var segs = anyHash ? _zwOmTopSplit(t, ',') : (anyPlus ? t.split(/\s+/) : [t]);
+    var out = [];
+    for (var s = 0; s < segs.length; s++) {
+      var seg = segs[s].trim();
+      if (seg === '') continue;
+      var v = _zwOmReifyRegisteredSegment(bases, seg, prop);
+      if (v === null) return null;
+      out.push(v);
+    }
+    return out.length > 0 ? out : null;
+  }
+  function _zwOmReifyRegisteredSegment(bases, seg, prop) {
+    // var() 引用残留段：unparsed 归面（registered computed 不保形）。
+    if (/(^|[^\w-])var\(/i.test(seg)) return null;
+    for (var i = 0; i < bases.length; i++) {
+      var b = bases[i];
+      if (b.charAt(0) === '<') {
+        var name = b.slice(1, -1).toLowerCase();
+        var mkOpaque = function () {
+          var o = _zwOmOpaque();
+          o._zwOmText = seg;
+          o.toString = function () { return this._zwOmText; };
+          o._zwOmAssociatedProp = prop;
+          return o;
+        };
+        // <color>/<url>/<string>/<transform-*>：无分型子类面（css-properties-
+        // values-api-1 reification 表——<url> 基类 opaque 非 CSSImageValue，
+        // 语料 'Computed <url> is reified as CSSStyleValue'）。
+        if (name === 'color' || name === 'url' || name === 'string'
+          || name === 'transform-function' || name === 'transform-list') return mkOpaque();
+        // <custom-ident>：任意 ident 关键字形（语料 'Computed <custom-ident> is
+        // reified as CSSKeywordValue'——'none'/'NULL'/'thing' 皆 CSSKeywordValue）。
+        if (name === 'custom-ident') {
+          var kv2 = new CSSKeywordValue(seg);
+          kv2._zwOmAssociatedProp = prop;
+          return kv2;
+        }
+        if (name === 'image') {
+          // 相对 url 按文档 baseURI 解析（<image> computed 绝对形——语料
+          // 'Computed <image> is reified as CSSImageValue by iterator' 期望
+          // `url("<abs>")`）。
+          var imgText = seg;
+          var um = /^\s*url\(\s*(['"]?)([^'")]*)\1\s*\)\s*$/i.exec(seg);
+          if (um && um[2] !== '' && typeof globalThis.URL === 'function') {
+            try {
+              var base = globalThis.document && globalThis.document.baseURI;
+              imgText = 'url("' + new globalThis.URL(um[2], base).href + '")';
+            } catch (_eU) { imgText = seg; }
+          }
+          var iv = new CSSImageValue(imgText);
+          iv._zwOmAssociatedProp = prop;
+          return iv;
+        }
+        var uv = _zwOmReifyRegisteredUnit(name, seg);
+        if (uv !== null) return uv;
+        continue;
+      }
+      // ident 字面量：case-sensitive 匹配（spec 字面量敏感——语料
+      // 'thing1 | THING2' THING2 形）。
+      if (seg === b) {
+        var kv = new CSSKeywordValue(seg);
+        kv._zwOmAssociatedProp = prop;
+        return kv;
+      }
+    }
+    return null;
+  }
+  // 数值族分段分型：单位族按 syntax 名裁决；calc/min/max/clamp 数学形走既有
+  // calc 树解析（<length-percentage> 混合形 CSSMathSum——语料 'Computed
+  // <length-percentage> [px + %] is reified as CSSMathSum'）。不匹配返 null。
+  function _zwOmReifyRegisteredUnit(name, seg) {
+    var famWant = {
+      'angle': ['angle'], 'length': ['length'], 'percentage': ['percent'],
+      'length-percentage': ['length', 'percent'], 'number': ['number'],
+      'integer': ['number'], 'time': ['time'], 'frequency': ['frequency'],
+      'resolution': ['resolution'], 'flex': ['flex'],
+    }[name];
+    if (!famWant) return null;
+    var m = /^([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)([a-zA-Z%]*)$/.exec(seg);
+    if (m) {
+      var u = (m[2] || 'number').toLowerCase();
+      var cu = _zwOmCanonUnit(u);
+      if (cu) u = cu;
+      var inf = u === 'number' ? ['number'] : _zwOmUnitInfo(u);
+      var fam = inf ? inf[0] : null;
+      if (fam !== null && famWant.indexOf(fam) >= 0) return new CSSUnitValue(parseFloat(m[1]), u);
+      // unitless zero 宽限（css-values-4 §5：length/percentage/angle 族 0 合法
+      // ——generate_property('<length>') initial '0' computed 形）。
+      if (fam === null && u === 'number' && parseFloat(m[1]) === 0) {
+        if (famWant.indexOf('length') >= 0) return new CSSUnitValue(0, 'px');
+        if (famWant.indexOf('angle') >= 0) return new CSSUnitValue(0, 'deg');
+        if (famWant.indexOf('percent') >= 0) return new CSSUnitValue(0, 'percent');
+      }
+      return null;
+    }
+    var low = seg.toLowerCase();
+    if (/^(calc|min|max|clamp|hypot|abs|sign|round|mod|rem)\(/.test(low)) {
+      try {
+        var p = new _zwOmCalcParser(seg);
+        var node = p.parseSum();
+        p.ws();
+        if (p.i < p.s.length) return null;
+        return node;
+      } catch (_eM) { return null; }
+    }
+    return null;
+  }
+  // computedStyleMap 枚举名单（刀 TD1）：inline declared 名单在前 + 注册表名单
+  //（去重；registered 名单由 host `__zw_registered_property_names` JSON 提供）。
+  // registered 属性恒有 computed 值（initial 兜底），逐名文本预检省略——页级
+  // 380+ 注册名 × 逐名 gCS 查询是页超时主因。缓存按 (el, inline 长度, 注册表
+  // JSON) 失效——item(i) 每下标重算枚举是二次方放大源，缓存后名单面 O(1)。
+  var _zwOmComputedEnumCache = { el: null, len: -1, json: '', names: [] };
+  function _zwOmComputedEnumNames(el) {
+    var slen = -1, json = '';
+    try { slen = el.style.length | 0; } catch (_eC0) {}
+    if (typeof globalThis.__zw_registered_property_names === 'function') {
+      try { json = String(globalThis.__zw_registered_property_names() || ''); } catch (_eC1) { json = ''; }
+    }
+    var c = _zwOmComputedEnumCache;
+    if (c.el === el && c.len === slen && c.json === json) return c.names;
+    var ks = [], seen = {};
+    try {
+      var st = el.style;
+      for (var i = 0; i < slen; i++) { var n = st.item(i); if (n && !seen[n]) { seen[n] = 1; ks.push(n); } }
+    } catch (_eE1) {}
+    if (json !== '') {
+      try {
+        var arr = JSON.parse(json);
+        for (var j = 0; j < arr.length; j++) {
+          var nm = String(arr[j]);
+          if (nm && !seen[nm]) { seen[nm] = 1; ks.push(nm); }
+        }
+      } catch (_eE3) {}
+    }
+    c.el = el; c.len = slen; c.json = json; c.names = ks;
+    return ks;
   }
   function _zwOmMakeStyleMap(readable, getStyleObj) {
     // getStyleObj(): 底层 CSSStyleDeclaration 面（el.style / rule.style）。
@@ -1918,6 +2090,19 @@ return Ctor;
         cv.toString = function () { return this._zwOmText; };
         cv._zwOmAssociatedProp = p;
         return [cv];
+      }
+      // 刀 TD1：registered custom property computed typed 重ify（css-properties-
+      // values-api-1 §reification：registered 属性 computed 值按注册 syntax 分型
+      // ——<angle> 族→CSSUnitValue/<custom-ident>/ident 字面量→CSSKeywordValue/
+      // <color>/<url>→opaque/<image>→CSSImageValue/calc 混合形→CSSMathSum 树；
+      // '*' 与解析失败保持 unparsed 回落。specified 面恒 unparsed——语料
+      // 'Specified <angle> is reified as CSSUnparsedValue from get/getAll'）。
+      if (computedFace && p.slice(0, 2) === '--') {
+        var syntaxR = _zwOmRegisteredSyntaxOf(p);
+        if (syntaxR !== '' && syntaxR !== '*') {
+          var valsR = _zwOmReifyRegisteredComputed(syntaxR, text, p);
+          if (valsR !== null) return valsR;
+        }
       }
       // list-valued 属性：顶层逗号逐段解析（§get 取首值/§getAll 全量——
       // 语料 get/getAll 面 'transition-duration: 1s, 2s' 语义）。
@@ -1959,24 +2144,32 @@ return Ctor;
       var idx = 0;
       return { next: function () { return idx < names.length ? { value: names[idx++], done: false } : { value: undefined, done: true }; } };
     }, writable: true, configurable: true });
+    // 刀 TD1（css-typed-om-1 §5.3 StylePropertyMapReadOnly
+    // iterable<DOMString, FrozenArray<CSSStyleValue>>）：values/entries 值形 =
+    // CSSStyleValue 列表（单值属性亦单元素列表——语料 stylepropertymap/inline/
+    // iterable `values[0]` = `[CSS.px(10)]` 形）；Symbol.iterator 挂 entries
+    //（Array.from 产 [name, list] 对——css-properties-values-api-1 typedom.html
+    // verify_map_iteration_unparsed `iter_value.length == 1` 面）。
+    function _zwOmMapNames() {
+      var ks = [];
+      try { var st = getStyleObj(); for (var i = 0; i < st.length; i++) ks.push(st.item(i)); } catch (_eN) {}
+      return ks;
+    }
     Object.defineProperty(ReadOnly, 'values', { value: function () {
-      var self = this; var ks = [];
-      try { var st = getStyleObj(); for (var i = 0; i < st.length; i++) ks.push(st.item(i)); } catch (_eV) {}
+      var self = this; var ks = _zwOmMapNames();
       var idx = 0;
-      return { next: function () { return idx < ks.length ? { value: self.get(ks[idx++]), done: false } : { value: undefined, done: true }; } };
+      return { next: function () { return idx < ks.length ? { value: self.getAll(ks[idx++]), done: false } : { value: undefined, done: true }; } };
     }, writable: true, configurable: true });
     Object.defineProperty(ReadOnly, 'entries', { value: function () {
-      var self = this; var ks = [];
-      try { var st = getStyleObj(); for (var i = 0; i < st.length; i++) ks.push(st.item(i)); } catch (_eE) {}
+      var self = this; var ks = _zwOmMapNames();
       var idx = 0;
-      return { next: function () { return idx < ks.length ? { value: [ks[idx], self.get(ks[idx++])], done: false } : { value: undefined, done: true }; } };
+      return { next: function () { return idx < ks.length ? { value: [ks[idx], self.getAll(ks[idx++])], done: false } : { value: undefined, done: true }; } };
     }, writable: true, configurable: true });
     Object.defineProperty(ReadOnly, 'forEach', { value: function (cb) {
-      var ks = [];
-      try { var st = getStyleObj(); for (var i = 0; i < st.length; i++) ks.push(st.item(i)); } catch (_eF) {}
-      for (var i = 0; i < ks.length; i++) cb(this.get(ks[i]), ks[i], this);
+      var ks = _zwOmMapNames();
+      for (var i = 0; i < ks.length; i++) cb(this.getAll(ks[i]), ks[i], this);
     }, writable: true, configurable: true });
-    ReadOnly[Symbol.iterator] = ReadOnly.values;
+    ReadOnly[Symbol.iterator] = ReadOnly.entries;
     if (readable) return ReadOnly;
     // Mutable 面
     Object.defineProperty(ReadOnly, 'set', {
@@ -2011,6 +2204,13 @@ return Ctor;
         var vals = Array.prototype.slice.call(arguments, 1);
         if (vals.length === 0) throw new TypeError("append requires a value");
         var custom = p.slice(0, 2) === '--';
+        if (custom && _zwOmRegisteredSyntaxOf(p) !== '') {
+          // css-properties-values-api-1 §reification：registered custom property
+          // append 恒 TypeError（单值/`+`/`#` syntax 皆然——语料 'Appending a
+          // string to * is not allowed' 族，刀 TD1；未注册自定义属性保持既有
+          // 逗号并置面）。
+          throw new TypeError("Cannot append to a registered custom property");
+        }
         if (!custom) {
           // css-typed-om-1 §append 步 1-2：仅 list-valued 属性可 append
           //（非 list/简写属性 TypeError——语料 'a property that is not list
@@ -2214,16 +2414,27 @@ return Ctor;
         return _zwOmMakeStyleMap(true, function () {
           // computed 面：host 计算串为主；host 未接属性（计算串空）回落 declared
           // 文本解析，保证 get 非 null 的 keyword/unit 面。
-          return {
+          var face = {
             __zwOmComputedFace: true,
             getPropertyValue: function (p) {
               var c = _zwOmComputedProp(self, p);
               if (c !== '') return c;
               try { return String((self.style && self.style.getPropertyValue(p)) || ''); } catch (_eD) { return ''; }
             },
-            length: 0,
-            item: function () { return ''; },
           };
+          // 刀 TD1 枚举面（css-typed-om-1 §computedStyleMap iteration）：inline
+          // declared 名单 + 注册表名单（registered 初始值属性 computed 必现——
+          // 语料 'Registered property with initial value show up on iteration
+          // of computedStyleMap'）。
+          Object.defineProperty(face, 'length', {
+            get: function () { return _zwOmComputedEnumNames(self).length; },
+            enumerable: true, configurable: true,
+          });
+          face.item = function (i) {
+            var ks = _zwOmComputedEnumNames(self);
+            return i >= 0 && i < ks.length ? ks[i] : '';
+          };
+          return face;
         });
       },
       writable: true,

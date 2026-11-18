@@ -2689,6 +2689,24 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 刀 TD1（css-properties-values-api-1 × css-typed-om-1 StylePropertyMap 面）：
+    // 注册表查询通道——syntax 描述符串（shim computed typed 重ify 分型 + registered
+    // append 门判据；未注册返空串）与注册名 JSON 清单（computedStyleMap iteration
+    // 枚举）。thread_local 直读（与 __zw_register_property 同代际同线程），无 doc 借用。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/#register-a-custom-property
+    sandbox.register_callback(
+        "__zw_registered_property_syntax",
+        Box::new(|args: &[String]| -> String {
+            args.first()
+                .and_then(|n| super::registered_properties::syntax_of(n))
+                .unwrap_or_default()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_registered_property_names",
+        Box::new(|_args: &[String]| -> String { super::registered_properties::names_json() }),
+    );
+
     // s161（html-semantics M2）：动态元素 handle gCS 通道——`getComputedStyle(el)` 对
     // `createElement` 产物（`__zwHandle` 身份，无 `__zwSelector`）的路由面。shim 侧
     // 无 sel 有 handle 时走本回调：host 在 handle 视图槽（[`HANDLE_VIEW_CACHE`]，键
