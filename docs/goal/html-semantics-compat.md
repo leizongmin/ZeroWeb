@@ -2,111 +2,147 @@
 
 **版本**: v2.0
 **日期**: 2026-11-18（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 560 收口（**多刀窗
-归因轮 + 族带退场镜像轮 + 全桥 DOA 钉测定谳
-修复轮（本流补 display apply 臂）**：窗内码面
-刀 ×20＋本流 fix(tests) ×1（s559 开工捕获
-×16＋s559 push 捕获 ×2＝更正六 d53 批＋s560
-开工捕获 ×32 全列核实——对端 rendering
-/wptfyi-css 流 ×15（含 css-parser ×5）：mask
-收敛轮/刀 N 二期/刀 O/刀 N 三期/刀 A1/刀 A1b
-/刀 P typed-om/刀 A1c transition-behavior/
-shape-outside/刀 S/clip-path 严格性/刀 U/刀
-T/刀 B1/刀 A1d；editing 流 ×5：indent
-merge-dedup/R18/R17/R19/d53；伴 docs-only
-×32 非触发器全列核实）——码态 a58a53964→
-aa4fb7200，runner 十六代 017e73f9/128,121,
-688→**十七代 0549269187**/128,341,408 换代
-（+219,720，leg1 Compiling/leg2 Fresh；md5
-与对端 R5784 申报同值＝跨 clone 收敛实证）
-——v3.2 浸泡门判净 08:28:47 HEAD=aa4fb7200
-钉扎起腿（首挂 05:36 起交互 agent 占载超时
-TIMEOUT_NO_CLEAN_WINDOW，删陈旧 judge 重挂
-一次如实记账），双腿常态全绿（leg1 4:02 含
-重编/leg2 3:00 Fresh 同二进制，rc=2 惯例 0
-爆栈）——join **stable 8511（8305P/199F/6T
-/1U）disagree 0 + l1only 0 + l2only 0**（raw
-双腿回归恒等 8513/8513 行）；vs s559 stable
-（8514）**NEW 1 + GONE 4 + flips 1，位移全落
-customizable-select home-end 族带＝s559 满
-发射形退场镜像**：non-det 变体整文件键回潮
-T 形入账（NEW 1）＋End/Home/PageDown/
-PageUp 四子测键出账（GONE 4）＝满发射形仅
-持位 1 轮退场（s555/s556 在册形对谱内摆动
-第二往返）；detailed 变体 T→F（90s
-0-declared 形在册）；listbox 变体 F/F 恒带形
-不变；**归因：二十刀语义面全域（CSS/编辑
-/CSSOM）与 base-select 键盘页无声明路径关
-联，对端 R5784 已认证四刀燃点批零位移
-SET-IDENTICAL 第十九轮；族带形对 s556 在册
-——判族带时序谱内摆动非码面，非带非哨键零
-位移＝刀群零位移清偿，「申报=实测」谱系第
-四十七例（二十刀窗）**；password 11 键
-stable 持位第 8 轮兑现。账本 evidence
-/2026-11-18-m2s560-multi-knife-band-mirror
--bridge-doa-pin-fix.md。stable counts：P
-**8305 恒**（第 8 轮恒等）；F 202→199（−4
-满发射四子测键出账）；T 6→7（non-det 整文
-件键回潮＋detailed T→F 对冲）；U 恒 1。
-flaky 键双腿双 Pass——零新例第 49 轮（
-disagree 0 全局＋onblur F 集与 s559 逐键
-IDENT 实证）；onblur 哨组 8P/2F parent
--label 红池照常；dialog-overlay 哨第 89 轮
-双键双腿双 P 常规持位；**modulepreload 哨
-15 键双腿全 P/P——常规连轮计数第 22 轮零翻
-红**；waapi 哨 picker-icon 双腿双 P（s478
-刀增益第 83 轮）/ checkmark F/F 恒 F 带形不
-变；focus-dynamic 121 键双腿全 Pass——收窗
-后第 42 轮零再现；双发发射伪影 2 键照旧在
-册。全桥**红窗发现→契约级定谳→修复轮**：
-首跑 1702P/2F guard rc=101（filtered 2470＝
-b559 树 2465＋窗内五钉）——双失败
-transition_registry 刀 A1c 双钉（:842/:889
-panic）；根因＝**刀 A1c 自家双钉 DOA**（
-ab7821b24，对端验证面 corpus＋style-system
-lib、zero-engine lib 钉测从未执行，本轮全
-桥为其首次执行窗）：①apply_single_property
-无 display 臂→canonicalize 往返 ser1==ser0
-恒 None（结构必败，窗内 A1d/B1 仅清单加项
-diff 实证非回归）②双 -75 位钉翻转终值与级
-联基值同形→canonicalize 契约性 None 回落级
-联（animation.rs 刀 I 注记在册）＝钉面
-demand Some 与契约冲突→本流修复：**补
-display apply 臂**（复用静态级联 values::
-parse_display 同源，css-display-3/css
--transitions-2 注）＋**双钉改 query-or
--cascade 有效值断言**（lenient 伪中值排除
-面保留）→隔离 2P/0F→复跑 **1704P/0F guard
-rc=0**，filtered 2470 恒，清单 NEW 3 + GONE
-0＝A1c 双钉 2（修复后绿）＋test_indent_ol
-_tail_pins 1（editing R19 伴钉），基线
-b559.k→**b560.k（1704）**；apply 面新增
-display 写达为共享面变更，碰头信号已发对端
-（lark），s561 腿 transitions/animation 域
-零 REG 专项核对。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇 D）+
-s137＋对端 ZRG-2026-11-18-01（不重复通知
-）。hang 观察项静默哨维持。下一步：**守成
-巡查**（**对账基线换 s560 stable 8511——族带
-位移常态记账延续（形对三形谱双向往返已实证
-，退场/回潮均不再单轮挂账）**：s561 若出非
-带非哨键位移→刀 G 工法查码面 diff 定归因
-；password 11 键 stable 持位确认（第 9 轮）
-；全桥清单基线 b560.k 1704 持位；flaky 键零
-新例时钟顺延第 50 轮；**mpreload 哨常规连轮
-计数第 23 轮**；dialog 哨常规持位（第 90 轮
-）；**display 臂 P2F 观察哨**（s561 腿 join
-后 transitions/animation 域零 REG 专项核对
-）；push 阶段 pull --rebase 捕获批须全列核
-实（range 行≠commit 数），起腿前 runner
-provenance 异常即查码面 diff（刀 G 工法）
-；起腿一律 v3.1 浸泡门（waiter 绝对路径＋
-v3.2 comm 匹配版脚本））+ 候门决项等待用户
-拍板（video P1+P2 立项 / 簇 D A2 立项 /
-s137）；rendering 流 dialog 16 红块协同面（
-归 rendering 流记账）。门开随批落预案不变：
-簇 D 开 → customizable-select-styles.css ×47
-随批落。
+**状态**: Active——M2 切片 561 收口（**守成
+巡查轮 + password 哨超时部分发射形探针定谳
+轮 + 全桥 SET-IDENTICAL 持位轮 + engine lib
+钉族首验刀 B1 钉 DOA 定谳轮（对端
+edb22edea 同契约先行适配，跨 clone 独立收
+敛，本流 commit 收敛 docs-only）**：窗内
+码刀 ×3＋docs ×4 全列核实——对端 刀 Z
+z-index 整数插值 b270f1bca＋刀 A1e
+bg-position 残面三修 c273180e1（更正七预
+注记兑现）＋本流
+4d82f45e4 s560 全桥 display 臂修复）——
+码态 aa4fb7200→**87cbe3e5b**（腿树恒），
+runner 十七代 0549269187/128,341,408→
+**69967b2e**/128,307,176 换代（leg1
+Compiling/leg2 Fresh；md5 与对端 R5788 申
+报 27 代同值＝跨 clone 收敛实证，更正七
+「runner 必换代」预判兑现）——v3.2 浸泡门
+判净 09:07:15 HEAD=87cbe3e5b 钉扎起腿，
+双腿常态全绿零爆栈（leg1 4:29 含重编/leg2
+3:14 Fresh 同二进制，stack overflow 计数
+0 实证）——join **stable 8505（8298P/200F
+/6T/1U）disagree 0 + l1only 0 + l2only 1**
+；vs s560 stable（8511）**NEW 1 + GONE 7
+，位移全落 password 哨文件 select-event
+.html＝整文件 Timeout 部分发射形**：整文
+件键双腿同相 NEW 1（s560 全 270 子测无整
+文件键→本轮双腿超时未完成）＋7 password
+子测键 GONE（out of range 族超时点后未报
+告；leg1 缺 7/leg2 缺 6）＋l2only 1 部分
+发射形腿间 1 键差——**探针定谳（kb22b
+recipe 同二进制静窗复跑）：select-event
+.html 270P/0F/0T 零整文件键、45 password
+键全 Pass（7 GONE 键逐键实证）＝harness
+时序谱内摆动非码面；password 哨第 9 轮持
+位破坏（8 轮持位终），按 s560 新规常态记
+账＋哨时钟重计**；**display 臂 P2F 观察哨
+兑现收哨**（位移集零 transitions/animation
+域键＋全桥 SET-IDENTICAL＋对端 kb28 零
+P2F R5788 第二十三轮）。账本 evidence
+/2026-11-18-m2s561-password-sentinel-
+timeout-form-bridge-pin-doa.md。stable
+counts：P 8305→**8298**（−7 password 子测
+键出账）；F 199→**200**（+1 整文件
+Timeout 键入账）；T 6 恒；U 恒 1。flaky
+键双腿双 Pass——零新例第 50 轮（disagree
+0 全局＋onblur F 集与 s559 逐键 IDENT 实
+证；password l2only 1 为部分发射形腿间差
+非翻转，s558 l2only 3 先例同账）；onblur
+哨组 8P/2F parent-label 红池照常；
+dialog-overlay 哨第 90 轮双键双腿双 P；
+**modulepreload 哨 15 键双腿全 P/P——常规
+连轮计数第 23 轮零翻红**；waapi 哨
+picker-icon 双腿双 P（s478 刀增益第 84 轮
+）/ checkmark F/F 恒形；focus-dynamic 121
+键双腿全 Pass——第 43 轮零再现；双发发射
+伪影 2 键（exact len／for=' WINdow）双腿
+恒照旧在册。全桥 **1704P/0F guard rc=0
+（filtered 2471＝+1 刀 Z 伴钉
+test_z_index_lerp 非桥面入族不执行），
+b561.k≡b560.k（1704）SET-IDENTICAL 持位
+**；**engine lib lerp 钉族首验（本流
+clone）：刀 Z/A2 钉 PASS＋刀 B1 钉 FAIL
+DOA**——刀 B1 自家钉 DOA 定谳（**申报≠
+实测缺口第二例**，刀 A1c 先例延续：补遗空
+串门与钉测断言同 commit b410cbcb3 出生互
+相矛盾，门为语料 10/12 全局最优刻意覆盖天
+然离散位、钉测仍断言门控前 0.3→'10%'；
+刀 B1 corpus 申报 +939 零 P2F、engine
+lib 钉测未执行＝出生即红）→**钉面契约适
+配由对端 edb22edea 先行落窗**（同一 DOA
+同契约双面钉 0.3→''＋0.0→'10%'，对端
+钉测补跑 31P/0F 销账；本流独立定谳同契
+约＝**跨 clone 独立收敛实证**，本流
+commit 收敛 docs-only 零残留）→本流
+clone 补验 lerp 族 **10P/0F** 同形实证
+。「申报=实测」谱系第四十八例（三
+刀窗，hs 面零语义位移）。**挂用户门维持
+**：GB-20261114-VIDEO + GB-20261031（簇 D
+）+ s137＋对端 ZRG-2026-11-18-01（不重复
+通知）。hang 观察项静默哨维持。下一步：
+**守成巡查 s562**（**对账基线换 s561
+stable 8505**：password 哨时钟重计第 1 轮
+持位确认（整文件 Timeout 部分发射形/满
+270P 形均为在册形，非双形谱翻红不挂账）
+；s562 窗首次纳入刀 A2（79b70dce2，更正
+八预注记在册）→起腿前 provenance 预判
+runner 必换代归因刀 A2，钉
+test_vertical_align_lerp 本流 clone 已首
+验 PASS；全桥清单基线 b561.k 1704 持位
+（B1 钉适配 tests-only 不影响桥面清单）
+；flaky 零新例时钟顺延第 51 轮；**mpreload
+哨常规连轮计数第 24 轮**；dialog 哨常规持
+位（第 91 轮）；若出非带非哨键位移→刀 G
+工法查码面 diff 定归因；push 阶段 pull
+--rebase 捕获批须全列核实（range 行≠
+commit 数），起腿一律 v3.1 浸泡门（waiter
+绝对路径＋v3.2 comm 匹配版脚本））+ 候门
+决项等待用户拍板（video P1+P2 立项 / 簇 D
+A2 立项 / s137；对端 ZRG-2026-11-18-01 归
+用户）；rendering 流 dialog 16 红块协同面
+（归 rendering 流记账）。门开随批落预案不
+变：簇 D 开 → customizable-select-styles
+.css ×47 随批落。
+
+> **◆ 更正九（2026-11-18 s561 push 阶段）
+> ——pull --rebase 捕获对端批落窗（
+> edb22edea test(engine) 刀 B1
+> border-image-width 钉测改判诚实形 t≠0
+> 空串＋t0 翻转——与本流独立定谳同契约
+> ＝跨 clone 独立收敛第二例，本流 commit
+> 收敛 docs-only 取对端版零残留；b50dc5f38
+> fix(editing) d54 跨容器 select-delete 摘
+> 空壳剪枝分形刀；伴笔 c7fcdb9a1/9f3a83801
+> docs-only ×2）：s562 窗首次纳入追加 ×4
+> ——起腿前 provenance 预判：runner 必换
+> 代归因 d54＋edb22edea（均经 zero-engine
+> 依赖链入 runner 链接）；hs 面 editing
+> d54 语义与 testharness 键关联以 join 实
+> 测为准（d51/d53 先例 s548/s560 实测零语
+> 义位移）；钉面 B1 双流同契约双销账（对
+> 端 31P/0F＋本流 lerp 族 10P/0F）。
+
+> **◆ 更正八（2026-11-18 s561 收口阶段）
+> ——pull --rebase 捕获对端刀 A2 批落窗（
+> 79b70dce2 fix(engine) 刀 A2 vertical-align
+> 插值三通道接入，对端申报净 +143 零 P2F
+> ；伴笔 a2289b9f3/R5787、23084c49f
+> editing R19 收口、0527f8a85 刀 A2 收口
+> 、2450bd0bf R5788 docs-only ×4）：s561
+> 窗（87cbe3e5b 恒）不含此批、s562 窗首
+> 次纳入——s562 起腿前 provenance 预判：
+> runner 必换代归因刀 A2（engine 刀经
+> zero-engine 依赖链入 runner 链接）；刀
+> A2 伴钉 test_vertical_align_lerp 本流
+> clone 已首验 PASS（s561 收口轮 engine
+> lib lerp 族 10P/0F 实证，先于对端申报
+> 核验）；hs 面 vertical-align 插值与
+> testharness 键无声明路径关联、对账以
+> join 实测为准（刀 Z/A1e 同域先例 s561
+> 实测零语义位移——位移集全落 password
+> 哨文件探针定谳谱内摆动）。
 
 
 
@@ -299,6 +335,25 @@ s137）；rendering 流 dialog 16 红块协同面（
 > b560.k（1704）绿窗，NEW 3＝A1c 双钉 2＋
 > editing R19 indent_ol_tail 伴钉 1，碰头信
 > 号已发对端。
+> ——s561 兑现：守成巡查轮（三刀窗：对端
+> 刀 Z/A1e＝更正七预注记兑现＋本流 display
+> 臂 fix，docs ×4），runner 十八代 69967b2e
+> 换代（md5 与对端 R5788 申报 27 代同值跨
+> clone 收敛），join stable 8505 disagree 0
+> ＋l2only 1——位移全落 password 哨文件
+> select-event.html＝整文件 Timeout 部分
+> 发射形（NEW 1 整文件键＋GONE 7 子测键）
+> ，探针同二进制静窗复跑 270P/0F/0T 定谳
+> 谱内摆动非码面（「申报=实测」谱系第四十
+> 八例），password 哨第 9 轮持位破坏常态记
+> 账＋哨时钟重计，display 臂 P2F 观察哨兑
+> 现收哨，flaky 零新例第 50 轮；全桥 b561.k
+> （1704）SET-IDENTICAL 绿窗＋engine lib
+> lerp 钉族首验发现刀 B1 钉 DOA（申报≠实
+> 测缺口第二例，同 commit 门/钉矛盾出生即
+> 红）→对端 edb22edea 同契约先行适配（跨
+> clone 独立收敛，本流 commit 收敛
+> docs-only），本流补验 10P/0F。
 > **▶ 承前（2026-11-17 M2 切片 556 收口）——双刀
 > 窗归因轮 + 族带谱内摆动探针定谳轮：窗内码面刀 ×2
 > （78d4f081f fix(wpt-runner) selection 通道 filter
