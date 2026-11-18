@@ -69,7 +69,7 @@ stack overflow 计数 0/0。**挂用户门维持**
 **守成巡查 s568**（**对账基线换 s567
 stable 8509**：**runner 必换代预判窗×2
 连**——开工 pull 批 ×38 含 engine 码刀
-dc732f1d0 RC calc／c7a18fb7a TD1
+dc732f1d0 RC calc／a763e74b1 d55 块尾 br／c7a18fb7a TD1
 StylePropertyMap／b86912191 ip I4／
 742c51b3f animation clip-path＋style-system
 cdff181b9 TP/085fbb42e R2＋renderer/net
@@ -134,6 +134,21 @@ customizable-select-styles.css ×47 随批落
 > runner 链接）；TD1/ipI4 若带桥测钉则
 > b568 NEW 对账申报（七语料/pva A/B 各
 > 归 wptfyi-css 与 editing 流）。
+> **◆ 更正十五（2026-11-19 s567 push 阶段
+> 收尾）——push 前 pull --rebase 捕获批 ×3
+> 全列核实（900a445e4→5bf6852da）：code
+> ×1＝a763e74b1 fix(engine) 刀 d55 块尾
+> br 序列化判定＋FD 列表壳溶解（fused 视
+> 图 ghost 叠影根修，input-events 刀净
+> +17，editing 域主靶归 editing 流）；
+> docs ×2＝c329bf8ff d54 evidence 回填＋
+> 5bf6852da R5807：s568 窗账更新＝×38 批
+> 之上追加 d55 刀（block 尾 br 序列化面与
+> s567 indent 尾 br 刀同族相邻码面），runner
+> 必换代预判不变；d55 若带桥测钉则 b568
+> NEW 对账追加申报 a763e74b1。本流 s567
+> 收口 commit 9804513db（rebase 于
+> 5bf6852da 之上推送）。
 
 > **◆ 更正十三（2026-11-18 s566 push 阶段
 > ）——pull --rebase 捕获批 ×10 全列核实
