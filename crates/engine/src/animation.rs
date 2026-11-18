@@ -6899,7 +6899,11 @@ mod tests {
         );
         assert_eq!(interpolate_property_value("border-image-width", "0px", "20px", -0.3), "0px");
         assert_eq!(interpolate_property_value("border-image-width", "0", "20", -0.3), "0");
-        assert_eq!(interpolate_property_value("border-image-width", "10%", "20px", 0.3), "10%");
+        // 跨型 %↔px（Block B 形）：t≠0 走 echo 保留门返回空串（canonicalize 恒等
+        // 回落 echo 位——B0 伪通过池在册机制，v3 电池 REG=0 实证）；t==0 豁免转
+        // 既有离散翻转位（from 可解析诚实通过，语料 at(0) 行）。
+        assert_eq!(interpolate_property_value("border-image-width", "10%", "20px", 0.3), "");
+        assert_eq!(interpolate_property_value("border-image-width", "10%", "20px", 0.0), "10%");
     }
 
     #[test]
