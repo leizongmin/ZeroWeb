@@ -1666,6 +1666,19 @@ impl RenderPipeline {
         self.persistent_handle_nodes.clear();
     }
 
+    /// T80 G4（峰域刀）：跨文档换代清 S1 帧指纹缓存（webview 文档换代时调用，
+    /// 与 [`Self::clear_persistent_handle_nodes`] 同一导航边界）。
+    ///
+    /// 条目为整帧深拷贝（文档纯净树 + 计算样式 + 样式表 + 布局结果），单条目
+    /// ~9 MiB 级、容量 4 ——键为内容寻址、跨文档不可达（新文档输入必异键），
+    /// 死文档条目仅纯滞留（diag 实证：C1→C2 交互期 4 entries 35.16 MiB 零增长，
+    /// 无一命中）。S1 同文档重渲染短路径不受影响：条目在文档代内照常读写，
+    /// 换代清空只斩跨文档滞留；同址重入由调用方与 canvas 代际门同门跳过
+    /// （同内容同键覆盖，滞留无害）。
+    pub fn clear_frame_fingerprint_cache(&mut self) {
+        self.frame_fingerprint_cache.clear();
+    }
+
     /// s80（html-semantics）：导航边界清跨批 id 改名 journal（旧文档的 selector
     /// 迁移史对新文档无意义——镜像 [`Self::clear_detached_sel_nodes`] 的清空点；
     /// 同页 `render_html` 重建不清——selector 空间延续，见字段文档）。
