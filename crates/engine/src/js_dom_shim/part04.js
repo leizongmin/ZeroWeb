@@ -14868,7 +14868,10 @@
           }
         }
         return undefined;
-      },
+        };
+        }
+        return _zwTrapGetBodyRef;
+      })(),
       set: function(_t, prop, value, receiver) {
         var p = String(prop);
         // R-t2qq（constructable stylesheets，siteopt qq-20261016-r1）：ShadowRoot

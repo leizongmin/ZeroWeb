@@ -14347,6 +14347,11 @@
     // slice36（RP-3 动态名面）：动态元素账本随快照换代清空（旧文档动态安装值由
     // renderer 登记·回收链路按 `__zwNamedAccessInstalled` 账本删全局，本表不跨文档）。
     globalThis.__zwNADynElsStore = {};
+    // T79：named-iframe 计数随快照换代重播种（置 null 回未播种态）——快照整体替换
+    // 可静默换入静态 named iframe，增量面只见过换代后的变异，静态存量唯全量枚举
+    // 可见；null 使首个 miss 读走一次真枚举重播种，播种前快道不放行。真导航
+    // reset_context 全新 shim 天然回到 null 初值，同口径。
+    try { if (typeof globalThis.__zwNPO !== 'undefined' && globalThis.__zwNPO) globalThis.__zwNPO.namedIfrCount = null; } catch (_eNPOrst) {}
     try { if (typeof _zwPendReselBySel !== 'undefined') _zwPendReselBySel.clear(); } catch (_eReselClr) {}
     _zwIdOverrides.clear();
     // R379/pa2a：移除标记纳入换代清理（pa1 审计 §2.4 实证「标记不在清桶范围」——
@@ -15983,6 +15988,25 @@
       delete _zwNADynEls[k36];
     }
   }
+  // T79 零 named-iframe 快道的增量计数面：树内得名（本函数 attr 面）与树插入
+  //（_zwNADynamicSync addFlat 循环）两挂点共用。只测**扫描所读的信号**——
+  // `getAttribute('name')` 非空 + IFRAME——与 _zwNPOIfrScan 枚举视野逐字同构，
+  // 故计数虚低不可能先于扫描漏见（扫描同样读不到的信号，计数不依赖）。
+  // 不做 in-doc 门：detached 赋名计数虚高 = 快道少放行 = 现状语义，保守方向。
+  // namedIfrCount 为 null（未播种）时跳过——首次枚举按当下真值播种，播种前增量
+  // 无意义；播种后的新增必经本面（两挂点与 bump 同漏斗：part01 _mo_notify childList
+  // 尾叫 + _zwNAAttrChanged/__zw_mo_notify_native attributes 臂）。
+  function _zwNPONoteIfr(el) {
+    var nmN = null;
+    try { nmN = el.getAttribute('name'); } catch (_eNn) { return; }
+    if (!nmN) return;
+    var tgN = '';
+    try { tgN = String(el.tagName || ''); } catch (_eNt) { return; }
+    if (tgN.toUpperCase() !== 'IFRAME') return;
+    try {
+      if (globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount !== null) globalThis.__zwNPO.namedIfrCount++;
+    } catch (_eNc) {}
+  }
   // attr 面尾叫：先注销（id 改名换轨 / name 失格），后按当下资格注册。连接性门用
   // `_zwDocContains36`（detached 元素赋名不注册——WPT basics "not reachable" 面）。
   // slice37：NPO iframe 名 live 扫描缓存随任何树/属性变异失配（bump 代数）。
@@ -15992,6 +16016,9 @@
     var cn36 = null;
     try { cn36 = _zwNACandidateName(el); } catch (_e36cc) { cn36 = null; }
     if (cn36 !== null && _zwDocContains36(el)) _zwNARegisterName(cn36, el);
+    // T79：树内得名挂点（iframe setAttribute/removeAttribute('name')、host 原生侧
+    // __zw_mo_notify_native id/name 臂均汇入本函数——JS/host 两路全覆盖）。
+    _zwNPONoteIfr(el);
     try { globalThis.__zwNPO.bump(); } catch (_e37ab) {}
   }
   // childList 面尾叫（part01 `_mo_notify` 反链记账后）：removed 逐个注销（真离树才
@@ -16031,6 +16058,12 @@
       for (i36 = 0; i36 < add36.length; i36++) {
         var an36 = add36[i36];
         if (!an36 || an36.nodeType !== 1) continue;
+        // T79：树插入挂点——addFlat 为全子树展开（_zwHCCollectSubtree 递归 parsed
+        // childNodes/sel pending 桶/_childNodeList 后代，innerHTML 深层 named iframe
+        // 不漏）；flats.inDoc 门继承（detached 插入不计数——当下不可扫，移入文档时
+        // 本面再触发）。shadow 插入经 inDoc 爬升臂计数虚高→慢路→扫描 qSA 不穿透
+        // shadow 返回 null=现状，保守方向。
+        _zwNPONoteIfr(an36);
         var cnA36 = null;
         try { cnA36 = _zwNACandidateName(an36); } catch (_e36ca) { cnA36 = null; }
         if (cnA36 !== null && names36.indexOf(cnA36) < 0) names36.push(cnA36);
@@ -19437,6 +19470,14 @@
       back: Object.create(null),
       ifrCache: Object.create(null),
       ifrGen: 0,
+      // T79 named-iframe 保守上界计数（零 named-iframe 快道）：null=未播种（文档
+      // 可能含静态 named iframe，快道不放行——首次真枚举播种）；0=全量枚举证零
+      // （快道放行：枚举必空，逐字等价返回 null）；>0=疑有（慢路=现状语义）。
+      // 增量面只增不减（虚高=白扫一次=现状；虚低=漏解析=语义 bug 故禁绝），落 0
+      // 唯一来源是一次**完成**的 IfrScan 枚举（逐元素过目）。快照整体替换可静默
+      // 换入静态 named iframe → `__zw_reset_pending_state` 置 null 重播种。增量
+      // 挂点与语义证明见 _zwNPONoteIfr / _zwNADynamicSync / _zwNAAttrDynamicSync。
+      namedIfrCount: null,
       // NPO 链是否已接主 window（引擎分叉——见接线处申报）。registry 三面与
       // renderer 助手按此分流：wired → backing/NPO；否则 slice36 globalThis own 面。
       wired: false,
@@ -19452,7 +19493,20 @@
   function _zwNPOIfrScan(name) {
     var c = _zwNPORef.ifrCache[name];
     if (c && c.gen === _zwNPORef.ifrGen) return c.hit ? c.val : null;
+    // T79 零 named-iframe 快道：namedIfrCount===0 ⇒ 本文档从未存在过 named iframe
+    // （0 唯一来源=一次完成的全量枚举；增量面只增不减），枚举必空 → 写 miss 缓存
+    // 返回 null 逐字等价（单次 append 管道 7 次未定义全局名读 × 每次全文档
+    // querySelectorAll 逐元素 trap 读的 O(n²) 风暴由此塌缩为每换代至多一次枚举）。
+    if (_zwNPORef.namedIfrCount === 0) {
+      _zwNPORef.ifrCache[name] = { gen: _zwNPORef.ifrGen, hit: false, val: null };
+      return null;
+    }
     var hitEl = null;
+    // T79 播种账：枚举**完整走完**（无异常中途退出；含 break 前缀——break 仅在
+    // 命中非空名时发生，前缀 tally≥1 恒保守下界）才落账；异常中途退出保持 null
+    //（未知）不落账，快道不放行。
+    var ifrTally37 = null;
+    var ifrDone37 = false;
     try {
       // t8g 修复（site-compat bilibili-20261002-r1）：iframe 名扫描改**静态枚举**
       // （querySelectorAll，零 _zwLiveCollections 注册）——旧实现每次 cache miss 都
@@ -19469,12 +19523,29 @@
       // 消费，不暴露页面；页面自身 gEBT 调用仍按 spec 各得新 live 集合。
       // https://html.spec.whatwg.org/multipage/dom.html#htmlcollection
       var fr = document.querySelectorAll('iframe');
+      ifrTally37 = 0;
       for (var i37 = 0; i37 < fr.length; i37++) {
         var nm37 = '';
         try { nm37 = String(fr[i37].getAttribute('name') || ''); } catch (_e37n) { continue; }
+        if (!nm37) continue;
+        ifrTally37++;
         if (nm37 === name) { hitEl = fr[i37]; break; }
       }
+      // 循环完整走完才置位（fr[i37] 索引读在 install 相曾抛——run44f 判别：
+      // q=2 可读但循环体零推进，异常在 try 外的索引读——中途退出 tally 已提前
+      // 赋 0，不置位则不落账）。
+      ifrDone37 = true;
     } catch (_e37s) { hitEl = null; }
+    // 播种：完整枚举的 named-iframes 数。T79 落账门：**枚举完整**且非 install 相
+    //（`__zwNAInstallProbe`——part06 `_installNamedAccess` 探测读挂标记，此相
+    // __zw_get_attr 回调未注册、属性读恒空，假证零）且（tally>0 或 documentElement
+    // 存在——shim bootstrap 早于 install 的空文档枚举证零无效）才落账（run44 判别：
+    // install 相固化 cnt=0 → 快道永久放行 → s33 静态 named iframe 首读恒 null 全盲；
+    // 测试沙箱链无 js_worker 的 reset 钩子调用，无重播种机会）。不落账保持 null=
+    // 下次读真枚举，虚 null 保守方向（生产链快照换代另有 reset 钩子重播种）。
+    if (!globalThis.__zwNAInstallProbe && ifrDone37 && (ifrTally37 > 0 || document.documentElement)) {
+      _zwNPORef.namedIfrCount = ifrTally37;
+    }
     var val37 = null;
     if (hitEl) {
       try { val37 = hitEl.contentWindow || null; } catch (_e37c) { val37 = null; }

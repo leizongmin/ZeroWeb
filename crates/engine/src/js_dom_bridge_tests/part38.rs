@@ -680,3 +680,114 @@ fn named_access_reset_registry_functional_s40() {
         "换代后注册面对新文档照常工作（换文档不聋化）"
     );
 }
+
+// ⑦T79 零 named-iframe 快道三钉（OP-080 生产刀）：`__zwNPO.namedIfrCount` 三态
+//（null=未播种快道不放行 / 0=全量枚举证零放行 / >0=慢路=现状语义）的可观测面。
+// 落账三门（part06 install 探测标记 __zwNAInstallProbe、part05 枚举完整标志、文档
+// 非空门）与增量挂点（_zwNPONoteIfr——attr/childList 双面）由 ⑦-1/2/3 逐面钉死；
+// 修复史判别证据 run44-run46（install 相假证零固化致 s33 全盲、memo 槽原型假命中）。
+// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+
+// ⑦-1 静态快照种子面：初始 HTML 含 named iframe → 首读慢路命中解析 + 播种 tally=1
+//（>0 恒不放行）。install 相枚举因探测标记不落账（属性回调未注册时 getAttribute
+// 恒空的假证零），页面相真枚举落账——run44 判别的回归钉。
+#[test]
+fn npo_fastpath_static_snapshot_seed_s41() {
+    let mut sandbox = s37_sandbox!("<html><body><iframe name='sx41'></iframe></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__r_hit = typeof window.sx41 !== 'undefined';
+             globalThis.__r_cnt = String(globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_hit").unwrap().value,
+        "true",
+        "静态快照 named iframe 首读解析（install 相假证零不固化，run44 回归）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_cnt").unwrap().value,
+        "1",
+        "播种 tally=1（>0 快道永不放行，保守语义）"
+    );
+}
+
+// ⑦-2 证零放行 + 动态插入即时解析：空文档枚举证零落账（0）→ 快道放行 miss 恒
+// null（塌缩语义，run42 判别刀的前提态）；动态 appendChild named iframe 经
+// _zwNPONoteIfr 增量（attr 面 + childList 面双挂点，只增不减）→ >0 后下次读走
+// 慢路解析——快道不吞树插入的 named iframe。
+#[test]
+fn npo_fastpath_zero_seed_dynamic_iframe_visible_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__r_miss = typeof window.dx41 !== 'undefined';
+             globalThis.__r_c0 = String(globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount);
+             var f = document.createElement('iframe');
+             f.setAttribute('name', 'dx41');
+             document.body.appendChild(f);
+             globalThis.__r_c1 = String(globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount > 0);
+             globalThis.__r_hit = typeof window.dx41 !== 'undefined';")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_miss").unwrap().value,
+        "false",
+        "空文档 miss（证零读，快道放行前基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c0").unwrap().value,
+        "0",
+        "全量枚举证零落账（快道放行唯一来源）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c1").unwrap().value,
+        "true",
+        "动态插入 named iframe 增量计数（_zwNPONoteIfr 双挂点，只增不减）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_hit").unwrap().value,
+        "true",
+        "证零后动态 named iframe 即时解析（增量破快道，不吞树插入）"
+    );
+}
+
+// ⑦-3 reset 重播种面：证零后 `__zw_reset_pending_state`（js_worker SetDomSnapshot
+// 生产链同款调用，apps/renderer/src/js_worker.rs:2223）置 null 回未播种态——快照
+// 换代换入静态 named iframe 的重播种钩子；null 态 miss 读走真枚举回落账，动态
+// 插入照常解析（换代不聋化）。
+#[test]
+fn npo_fastpath_reset_reseed_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "typeof window.rx41;
+             globalThis.__r_c0 = String(globalThis.__zwNPO.namedIfrCount);
+             __zw_reset_pending_state();
+             globalThis.__r_c1 = String(globalThis.__zwNPO.namedIfrCount);
+             typeof window.rx41;
+             globalThis.__r_c2 = String(globalThis.__zwNPO.namedIfrCount === null || globalThis.__zwNPO.namedIfrCount === 0);
+             var f = document.createElement('iframe');
+             f.setAttribute('name', 'rx41');
+             document.body.appendChild(f);
+             globalThis.__r_hit = typeof window.rx41 !== 'undefined';")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c0").unwrap().value,
+        "0",
+        "证零基线（快道放行态）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c1").unwrap().value,
+        "null",
+        "reset 钩子置 null 回未播种态（换代重播种）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c2").unwrap().value,
+        "true",
+        "null 态 miss 读保持未播种或重新证零（不固化错值——虚 null 保守重试）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_hit").unwrap().value,
+        "true",
+        "reset 后动态 named iframe 照常解析（换代不聋化）"
+    );
+}

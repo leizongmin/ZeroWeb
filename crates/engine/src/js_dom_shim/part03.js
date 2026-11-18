@@ -31692,6 +31692,13 @@ return e;
     } catch (_eLoF) { return null; }
     return null;
   }
+  // T79（shim 热路径，2026-11-18）：get trap 体载体——**模块级单实例**。首次
+  // _makeProxy 由 handler 字面量内 `_zwGetBodyCarrier` IIFE 回填；后续工厂调用
+  // 复用同一函数对象（micro-bench run8 教训：per-proxy 重建函数对象使 trap miss
+  // 调用点 megamorphic，trap 路径整体反优化——B2 渲染 200× 回退）。get trap 的
+  // memo miss 一跳本函数（原 trap 体逐字保真）。
+  var _zwTrapGetBodyRef = null;
+
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
@@ -31718,6 +31725,12 @@ return e;
     for (var _vi = 0; _vi < _fvProps.length; _vi++) {
       try { Object.defineProperty(_fvTarget, _fvProps[_vi], { configurable: true, value: undefined }); } catch (_e) {}
     }
+    // T79（shim 热路径，2026-11-18）：get trap 体载体引用——**调用时读模块级
+    // `_zwTrapGetBodyRef`**（carrier IIFE 在 handler 字面量求值时回填，即本调用
+    // 的 new Proxy 实参内）。勿在 _makeProxy 体内做局部值捕获：首个 proxy 创建时
+    // 回填尚未发生，捕获值钉死 null → 该 proxy 全属性读 TypeError（s36 NA 动态
+    // 注册静默全灭 21 测试，run43 判别）。模块变量回填后恒同一函数对象 → miss
+    // 调用点仍 monomorphic（run8 megamorphic 反优化教训见 _zwTrapGetBodyRef 处）。
     var proxy = new Proxy(_fvTarget, {
       has: function(_t, prop) {
         // R129 注：本键在 handler 字面量中**后被 part05 的 has 键覆盖**（JS 对象字面量
@@ -31731,6 +31744,34 @@ return e;
         return false;
       },
       get: function(_t, prop) {
+        // T79（shim 热路径，2026-11-18）：get trap 级 per-proxy **方法 memo**——
+        // micro-bench 定谳（run.md §409 / evidence/t79-op079-result.md）：热方法每读
+        // 重建闭包+重走全 trap 链（~0.85µs/读；页续体单 DOM op 15-20 次读 = 59µs
+        // append 主体成本之一）。本 wrapper 进 memo 查表，miss 一跳载体
+        // `_zwTrapGetBodyRef`
+        // 载体（原 trap 体逐字保真，闭合处见 part04 set 键前）；**仅缓存
+        // typeof==='function' 产物**——childNodes/style 等 live 值视图与一切值面仍
+        // 逐读现算。memo 存 target `__zwM` 槽（非枚举 own，随 proxy/target 同生命
+        // 周期——R52 purge/R4005 复活天然一致，无独立清局面）；方法身份从每读新建
+        // 变 per-proxy 稳定（真浏览器 `el.appendChild === el.appendChild` 同观测）。
+        // 载体引用调用时读模块级 `_zwTrapGetBodyRef`（见 31610 区注释，勿值捕获）。
+        var _zwMemo = _t.__zwM;
+        if (_zwMemo === undefined) {
+          // **无原型空对象**——有原型 `{}` 会在 miss 读上假命中 Object.prototype 继承
+          // 属性（`memo['constructor']` 未写入时直接返回 Object 构造器；toString/
+          // valueOf 同理），trap 面属性被静默顶替（r290/menu/wc 四钉实证，run46）。
+          _zwMemo = Object.create(null);
+          try { Object.defineProperty(_t, '__zwM', { value: _zwMemo, writable: true, configurable: true }); } catch (_eMemoInit) {}
+        }
+        var _zwHit = _zwMemo[prop];
+        if (_zwHit !== undefined) return _zwHit;
+        var _zwVal = _zwTrapGetBodyRef(sel, handle, key, proxy, _t, prop);
+        if (typeof _zwVal === 'function') _zwMemo[prop] = _zwVal;
+        return _zwVal;
+      },
+      _zwGetBodyCarrier: (function () {
+        if (_zwTrapGetBodyRef === null) {
+          _zwTrapGetBodyRef = function (sel, handle, key, proxy, _t, prop) {
         // R351（js-dom M4）：**shim 内部键顶部短路**——`__zwHandle`/`__zwSelector` 是
         // shim 私有锚定键（adjust 扫描、identity 桥、testdriver stub 的高频读取面）。
         // 此前它们落在 R98 分支（每字符串属性读先付 `Object.getPrototypeOf(_makeProxy(..))`

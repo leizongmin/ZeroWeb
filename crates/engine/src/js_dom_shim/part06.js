@@ -15040,6 +15040,13 @@
   // https://webidl.spec.whatwg.org/#WindowProperties
   function _installNamedAccess() {
     try {
+      // T79：install 相探测读挂标记——本函数的 `globalThis[id] !== undefined` 探测
+      // 读触发 NPO lookup → IfrScan 全量枚举。callbacks.rs:2206 的 install execute
+      // 先于 __zw_get_attr 回调注册（同文件 ~2211）→ 此相 getAttribute host 回调
+      // 尚不存在、属性读恒空 → 枚举 tally=0 是「属性账未就绪」中间态假证零，固化
+      // namedIfrCount=0 会闷死零 named-iframe 快道（s33 静态 named iframe 全盲，
+      // run44 判别）。标记内枚举不落账（保持 null 未播种，页面相真枚举重播种）。
+      globalThis.__zwNAInstallProbe = true;
       var ids = __zw_collect_ids();
       if (!ids) return;
       // 多命中名先装集合（≥2 named object 同名——`__zw_collect_ids_multi` 清单）。
@@ -15083,7 +15090,9 @@
         // part05 接线处申报——quickjs 不接链时本函数经 _zwNADefineNA 落 slice36 own 面。
         if (el) _zwNADefineNA(id, el);
       });
-    } catch (_e) {}
+    } catch (_e) {} finally {
+      globalThis.__zwNAInstallProbe = false;
+    }
   }
   globalThis.__zwInstallNamedAccess = _installNamedAccess;
   _installNamedAccess();
