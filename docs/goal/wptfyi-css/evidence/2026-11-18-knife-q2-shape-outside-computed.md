@@ -106,6 +106,10 @@ deterministic（探针档案 q2-probe-typed-om-delay/）——机制关联成立
 （后续刀可显式认领）。backgrounds +1＝background-computed.html
 bg-position-x calc 多层串化（fv1 serialize 域跨跑双向漂移已知页，A2/A3
 先例第三次）——solo b0 26P/13F == b1 26P/13F 恒等不重现，窗噪不认领。
+第二窗 solo（13:14，同名单独重跑覆写首窗档案，在档即第二窗，
+NOTES-knife-q2-second-window-probe.txt）b0 x 行 Fail（腐蚀串
+`12px, 50%, 30px, -7px`）/b1 x 行 Pass——b1 同 bin 跨窗 x 行
+Fail↔Pass 双向，判读不变加强。
 
 **全账零 P→F 零 lost——判据（shapes 主账 + 六腿零 REG 零 lost + 钉测
 常驻）全绿。**
