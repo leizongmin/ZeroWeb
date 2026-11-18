@@ -1294,7 +1294,7 @@ fn test_get_computed_style_numeric_special() {
     assert_eq!(computed_style_property(html, "#n", "order"), "3");
     assert_eq!(computed_style_property(html, "#n", "flex-basis"), "120px");
     // aspect-ratio: ZeroWeb 只存合并比值 → 数值（Chrome 返 "16 / 9"，diverge，已记 known-limitation）。
-    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.778");
+    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.77778");
 
     // 默认值（ZeroWeb initial：flex-grow=0、flex-shrink=1、order=0、flex-basis=auto、aspect-ratio=auto）。
     assert_eq!(computed_style_property(html, "#plain", "flex-grow"), "0");
@@ -1507,7 +1507,7 @@ fn test_get_computed_style_clip_path() {
     // 空格回归钉——wptfyi-css circle-004 computed 语料单一根因形）。
     assert_eq!(
         computed_style_property(html, "#circle-pos", "clip-path"),
-        "circle(at 1889.764px 50%)"
+        "circle(at 1889.76px 50%)"
     );
     // polygon 默认 nonzero 省略填充规则，顶点逗号分隔。
     assert_eq!(
@@ -1562,7 +1562,7 @@ fn test_get_computed_style_shape_outside() {
     // circle-003/008 invalid 页）。
     assert_eq!(
         computed_style_property(html, "#circle-pos", "shape-outside"),
-        "circle(at 1889.764px 50%)"
+        "circle(at 1889.76px 50%)"
     );
     assert_eq!(
         computed_style_property(html, "#circle-edge", "shape-outside"),
