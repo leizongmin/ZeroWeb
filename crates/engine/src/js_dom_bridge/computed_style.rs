@@ -8,14 +8,14 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
 use zero_css_parser::values::{
-    AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
-    BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
-    ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue,
-    ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
-    FontWeightValue, GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue,
-    OverflowValue, PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition,
-    TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
-    parse_length,
+    AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
+    AnimationPlayStateValue, BackgroundEdge, BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp,
+    ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation,
+    ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue,
+    FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue,
+    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, RadialGradient,
+    RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp,
+    VisibilityValue, eval_calc_with_context, parse_length,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -1212,6 +1212,8 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "animation-iteration-count" => iter_count_list_to_css(&style.animation_iteration_count),
         "animation-direction" => enum_list_to_css(&style.animation_direction, "normal", animation_direction_str),
         "animation-fill-mode" => enum_list_to_css(&style.animation_fill_mode, "none", animation_fill_mode_str),
+        // css-animations-2 §animation-composition：空列表回落初始 replace。
+        "animation-composition" => enum_list_to_css(&style.animation_composition, "replace", animation_composition_str),
         "animation-play-state" => enum_list_to_css(&style.animation_play_state, "running", animation_play_state_str),
         // ── transition/animation-timing-function（R2744）── Vec<TimingFunctionValue>，空→ease（初值）。
         "transition-timing-function" => {
@@ -3790,6 +3792,17 @@ fn animation_fill_mode_str(m: &AnimationFillModeValue) -> String {
         AnimationFillModeValue::Forwards => "forwards",
         AnimationFillModeValue::Backwards => "backwards",
         AnimationFillModeValue::Both => "both",
+    }
+    .to_string()
+}
+
+/// animation-composition：CSS Animations 合成操作（replace/add/accumulate，
+/// css-animations-2）。
+fn animation_composition_str(m: &AnimationCompositionValue) -> String {
+    match m {
+        AnimationCompositionValue::Replace => "replace",
+        AnimationCompositionValue::Add => "add",
+        AnimationCompositionValue::Accumulate => "accumulate",
     }
     .to_string()
 }

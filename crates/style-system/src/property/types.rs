@@ -1773,6 +1773,8 @@ pub enum PropertyValue {
     AnimationFillModeList(Vec<zero_css_parser::values::AnimationFillModeValue>),
     /// 动画播放状态列表（animation-play-state）。
     AnimationPlayStateList(Vec<zero_css_parser::values::AnimationPlayStateValue>),
+    /// 动画合成操作列表（animation-composition，css-animations-2）。
+    AnimationCompositionList(Vec<zero_css_parser::values::AnimationCompositionValue>),
     /// 可选浮点数列表（animation-iteration-count，None 表示 infinite）。
     OptionalNumberList(Vec<Option<f64>>),
     /// grid-auto-flow 值。

@@ -243,6 +243,15 @@ fn parse_animation_play_state_list(value: &str) -> Option<Vec<zero_css_parser::v
     Some(out)
 }
 
+// https://drafts.csswg.org/css-animations-2/#animation-composition
+fn parse_animation_composition_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationCompositionValue>> {
+    let mut out = Vec::new();
+    for part in split_top_level_commas(value)? {
+        out.push(values::parse_animation_composition(part)?);
+    }
+    Some(out)
+}
+
 enum ContainIntrinsicLonghand {
     None,
     Length(LengthValue),
@@ -1150,6 +1159,13 @@ pub fn apply_advanced_property_value(
                 return false;
             };
             style.animation_play_state = states;
+            return true;
+        }
+        "animation-composition" => {
+            let Some(comps) = parse_animation_composition_list(value) else {
+                return false;
+            };
+            style.animation_composition = comps;
             return true;
         }
         // ── Scroll Snap 属性 ──

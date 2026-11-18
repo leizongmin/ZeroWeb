@@ -464,6 +464,8 @@ pub struct ComputedStyle {
     pub animation_fill_mode: Vec<zero_css_parser::values::AnimationFillModeValue>,
     /// animation-play-state 属性（逗号分隔的播放状态列表）。
     pub animation_play_state: Vec<zero_css_parser::values::AnimationPlayStateValue>,
+    /// animation-composition 属性（逗号分隔的合成操作列表，css-animations-2）。
+    pub animation_composition: Vec<zero_css_parser::values::AnimationCompositionValue>,
 
     // ── Scroll Snap ──
     /// scroll-snap-type 属性。
@@ -981,7 +983,8 @@ impl ComputedStyle {
             .saturating_add(vec_cap(&self.animation_iteration_count))
             .saturating_add(vec_cap(&self.animation_direction))
             .saturating_add(vec_cap(&self.animation_fill_mode))
-            .saturating_add(vec_cap(&self.animation_play_state));
+            .saturating_add(vec_cap(&self.animation_play_state))
+            .saturating_add(vec_cap(&self.animation_composition));
         total = total.saturating_add(str_opt(&self.container_name));
         total = total
             .saturating_add(vec_cap(&self.counter_reset))

@@ -1456,6 +1456,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.animation_play_state = default_style.animation_play_state;
             true
         }
+        "animation-composition" => {
+            style.animation_composition = default_style.animation_composition;
+            true
+        }
         // Scroll Snap
         "scroll-snap-type" => {
             style.scroll_snap_type = default_style.scroll_snap_type;

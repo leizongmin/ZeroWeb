@@ -196,6 +196,10 @@ impl PropertyRegistry {
             "animation-direction" => Some(AnimationDirectionList(vec![])),
             "animation-fill-mode" => Some(AnimationFillModeList(vec![])),
             "animation-play-state" => Some(AnimationPlayStateList(vec![])),
+            // css-animations-2 §animation-composition：初始值 replace（列表
+            // 空 ⇒ computed 臂回落 "replace" 缺省，与兄弟列表属性同约定）
+            // https://drafts.csswg.org/css-animations-2/#animation-composition
+            "animation-composition" => Some(AnimationCompositionList(vec![])),
 
             // Grid
             "grid-template-columns" | "grid-template-rows" => Some(OptionalString(None)),
@@ -752,6 +756,7 @@ impl PropertyRegistry {
             "animation-direction",
             "animation-fill-mode",
             "animation-play-state",
+            "animation-composition",
             "grid-column-start",
             "grid-column-end",
             "grid-row-start",

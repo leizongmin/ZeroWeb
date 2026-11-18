@@ -263,6 +263,7 @@ impl Default for ComputedStyle {
             animation_direction: vec![],
             animation_fill_mode: vec![],
             animation_play_state: vec![],
+            animation_composition: vec![],
 
             // Scroll Snap
             scroll_snap_type: ScrollSnapType {

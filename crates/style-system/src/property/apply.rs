@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 65] = [
+    const VALIDATED_PROPERTIES: [&str; 66] = [
         "transform",
         "rotate",
         "scale",
@@ -2362,6 +2362,15 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 中段（transition-timing-function 臂后）。
         // https://drafts.csswg.org/css-transitions-1/#transition-property-property
         "transition-property",
+        // animation-composition 写面文法门（刀 ANIMCOMP S1，css-animations-2
+        // §animation-composition：`<single-animation-composition>#`——单项 =
+        // replace | add | accumulate；`auto`/单项空白多 token/css-wide
+        // keyword 列表成员拒——整值形上游 Cascading-4 §7.3 截获）。driving:
+        // css-animations/parsing/animation-composition-invalid 4 形此前原文
+        // 透传 store 即 Fail。分派臂见 [`validate_decl_value`] 中段
+        // （transition-property 臂后）。
+        // https://drafts.csswg.org/css-animations-2/#animation-composition
+        "animation-composition",
         // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
         // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
         // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
@@ -2909,6 +2918,31 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 }
                 transition_property_ident_valid(it)
             })
+        });
+    }
+    // animation-composition 写面文法门（刀 ANIMCOMP S1，css-animations-2
+    // §animation-composition：`<single-animation-composition>#`——单项 =
+    // replace | add | accumulate，逗号分层列表；`auto`、单项空白分隔多
+    // token、css-wide keyword/default 列表成员拒（整值形上游 Cascading-4
+    // §7.3 截获放行）。替换函数/转义形放行 store 原文（transition-property
+    // 臂同口径）。（driving: css-animations/parsing/animation-composition-
+    // invalid 4 形此前原文透传 store 即 Fail。）
+    // FIXME: `animation` 简写展开未重置本长手（css-animations-2 §animation-
+    // shorthand 简写重置语义挂池，S1 面无语料）。
+    // https://drafts.csswg.org/css-animations-2/#animation-composition
+    if prop == "animation-composition" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.contains('\\') {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        return super::apply_advanced::split_top_level_commas(&lv).is_some_and(|items| {
+            !items.is_empty()
+                && items
+                    .iter()
+                    .all(|item| matches!(item.trim(), "replace" | "add" | "accumulate"))
         });
     }
     // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
@@ -3864,6 +3898,31 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transform", "scale(progress(100px, 0px, 100px))"));
         assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
         assert!(validate_decl_value("transform", "scale(calc(sibling-index() * 1px))"));
+    }
+
+    #[test]
+    fn knife_animcomp_write_gate_verdicts() {
+        // 刀 ANIMCOMP S1 写面门钉测（animation-composition——语料驱动，与
+        // 分派臂同源裁决）。valid 页 4 形（css-animations/parsing/
+        // animation-composition-valid：replace/add/accumulate + 混合列表）
+        // 全在接受集；css-wide keyword 整值形上游 Cascading-4 §7.3 截获
+        // （非本臂面）；invalid 页 4 形（auto / `add replace` / `add,
+        // initial` / `initial, add`）拒。
+        assert!(validate_decl_value("animation-composition", "replace"));
+        assert!(validate_decl_value("animation-composition", "add"));
+        assert!(validate_decl_value("animation-composition", "accumulate"));
+        assert!(validate_decl_value("animation-composition", "replace, add, accumulate"));
+        assert!(validate_decl_value("animation-composition", "REPLACE, ADD"));
+        // css-wide keyword 整值形上游截获（非本臂面）。
+        assert!(validate_decl_value("animation-composition", "inherit"));
+        assert!(!validate_decl_value("animation-composition", "auto"));
+        assert!(!validate_decl_value("animation-composition", "add replace"));
+        assert!(!validate_decl_value("animation-composition", "add, initial"));
+        assert!(!validate_decl_value("animation-composition", "initial, add"));
+        assert!(!validate_decl_value("animation-composition", "replace,,add"));
+        // 空值=清除语义：上游截获恒真（放行），非本臂裁决面（empty 钉测试
+        // 首执抓红修正——PIN-DOA 纪律）。
+        assert!(validate_decl_value("animation-composition", ""));
     }
 
     #[test]
