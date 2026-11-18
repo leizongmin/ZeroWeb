@@ -1,6 +1,6 @@
 # indent E-表 tbody 全覆盖整表升级刀（R20 收口档）
 
-日期：2026-11-18 ｜ 刀体：`455db5508`（parent 2450bd0bf） ｜ 门禁批：r20b ALL-DONE 12:02:34 @bin `d87da808a92ebd50134bde160d424b5e`
+日期：2026-11-18 ｜ 刀体：验证树 `455db5508`（parent 2450bd0bf），push rebase 并入对端窗后定锚 `2d09bb0b3` ｜ 门禁批：r20b ALL-DONE 12:02:34 @bin `d87da808a92ebd50134bde160d424b5e`
 
 ## 根因与刀面
 
@@ -71,3 +71,18 @@ t134/t122 负断言＋防部分覆盖误升级断言）。
 
 账本：`.acceptance/dps/r20-ledger.md`（批脚本 r20-etbl.sh / r20b-etbl.sh，
 chmod 400 冻结＋发射器 exec 前 md5 断言）。
+
+## push 阶段订正（同日 12:1x）
+
+pull --rebase 并入对端窗（2450bd0bf..9818864e1＝rendering R5789-R5791＋刀 A3
+text-shadow `5f2fb94b0`〔animation.rs＋transition_registry＋part01.js +128
+shim 侧〕＋刀 B1 钉测改判 `edb22edea`＋s561 `b12aea40f`）：
+
+- 刀体换锚 455db5508 → **2d09bb0b3**（docs e1e49549c）；r20b 的 bin 锚
+  `d87da808…` 只绑定 rebase 前组合树，不描述推后组合。
+- 推后组合 spot check（12:14，非全门）：release 重建 bin **56faca37**（含刀 A3
+  shim），indent 腿 **1328/1/0**，failset 与 r20b 门禁终态逐字节恒等（恰残
+  F 族键）＝刀 A3 part01.js 与本刀 indent 域零交互实证。
+- 对端 `edb22edea` 已把 r20 L7 ABORT 那枚自带红（test_border_image_width_lerp）
+  改判诚实形修红——F 族小刀门禁 fresh 锚时可收回该 skip（lib 总数亦因刀 A3
+  钉测增长，期望值重测）。
