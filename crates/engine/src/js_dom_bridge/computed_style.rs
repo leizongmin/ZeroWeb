@@ -76,6 +76,32 @@ pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, Compute
     (doc, styles)
 }
 
+thread_local! {
+    /// t-g2b impl-005：跨代持久 [`StyleSystem`] 实例槽。旧实现每代 `StyleSystem::new()`
+    /// 冷启动，CascadeCache（声明组合→级联结果缓存）每代清零；`:has()` 页任何非空
+    /// changed 代都走全文档 compute，每元素 cascade 匹配全部付冷缓存常数（真站成本
+    /// 主项）。实例持久化后 CascadeCache 跨代/跨文档命中——语义安全由键完整性保证：
+    /// 键为六源声明组合完整比对（不含 NodeId、不含代数，样式表变化本身就在键里；
+    /// style-system CascadeCache 文档注释「跨帧/跨文档保留正确」）；环境态每 compute
+    /// 入口重推导/重置（registered_properties/font_feature_values 无条件重建、
+    /// document_color_scheme_dark 每入口重扫、root metrics 重置、set_viewport 每入口
+    /// 调用）。`clear_generation_cache` 同步清槽：页面导航/沙盒重注册复位冷启动。
+    pub(super) static PERSISTED_STYLE_SYSTEM: std::cell::RefCell<Option<StyleSystem>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 取走持久实例（槽空则冷启动新实例）。调用方 compute 完成后须经 [`stash_style_system`]
+/// 归还——两函数在每次 compute 调用边界成对，handle 视图/代际槽交替调用安全。
+pub(super) fn take_persisted_style_system() -> StyleSystem {
+    PERSISTED_STYLE_SYSTEM
+        .with(|slot| slot.borrow_mut().take())
+        .unwrap_or_default()
+}
+
+/// 归还 compute 完成的 [`StyleSystem`] 实例（保留 CascadeCache 等跨代缓存）。
+pub(super) fn stash_style_system(sys: StyleSystem) {
+    PERSISTED_STYLE_SYSTEM.with(|slot| *slot.borrow_mut() = Some(sys));
+}
+
 /// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 取
 /// pending 视图布局 viewport 真值，g49 前恒 1280×800）。
 /// 供纯快照路径与 inline-style override 路径复用。`css` = 外部样式表文本（P9-9：与布局
@@ -92,7 +118,8 @@ pub(super) fn compute_styles_for_doc(
     // 外部表经记忆化（R5107）：全量兜底路径每代重建，同 css 文本免重复 parse。
     let parsed = super::computed_style_cache::memoized_external_sheet(css);
     let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref(), (vw, vh));
-    let mut sys = StyleSystem::new();
+    // impl-005：持久实例（暖 CascadeCache 跨代命中）替代每代冷启动。
+    let mut sys = take_persisted_style_system();
     sys.set_viewport(vw, vh);
     // s168（html-semantics M2）：shadow 作用域条目在场 → per-scope 全量级联（CSS
     // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
@@ -108,6 +135,7 @@ pub(super) fn compute_styles_for_doc(
             sys.compute_styles_with_shadow(doc, &sheets, &scopes)
         }
     };
+    stash_style_system(sys);
     (styles, sheets)
 }
 

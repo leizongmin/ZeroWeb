@@ -269,3 +269,7 @@ include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
 include!("js_dom_bridge_tests/part139_indent_ws_merge_pins.rs");
 include!("js_dom_bridge_tests/part140_indent_ol_tail_pins.rs");
 include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");
+
+// t-g2b impl-005 持久 StyleSystem oracle 钉面：同代暖复跑/跨代暖增量 vs 冷全量
+// 逐位一致 + clear_generation_cache 复位语义（见文件头注）。
+include!("js_dom_bridge_tests/part113_g2b_persisted_style_system.rs");

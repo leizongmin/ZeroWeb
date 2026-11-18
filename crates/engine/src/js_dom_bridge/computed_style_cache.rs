@@ -748,7 +748,9 @@ fn finish_generation_update(
     // 态产出，断言消费 stale 值。模态态变化必经 open 属性 mutation → dialog 自身在
     // changed 集 → 注入后的重算覆盖目标元素。
     apply_runner_modal_state(slot, drain_gen, style_version);
-    let mut sys = StyleSystem::new();
+    // impl-005：持久实例（暖 CascadeCache 跨代命中）替代每代冷启动——增量臂与
+    // `:has()` 兜底全量 compute、shadow 全量同享。
+    let mut sys = super::computed_style::take_persisted_style_system();
     // 视口与全量路径同源（g49：pending 视图布局 viewport 真值，未接线回落 1280×800）。
     let (vw, vh) = gcs_viewport_dims();
     sys.set_viewport(vw, vh);
@@ -761,6 +763,7 @@ fn finish_generation_update(
         slot.4 = sys.compute_styles_with_shadow(&slot.3, &slot.5, &slot.10);
     }
     apply_intrinsic_size_overrides(&slot.3, &mut slot.4);
+    super::computed_style::stash_style_system(sys);
     slot.0.clear();
     slot.0.push_str(html);
     slot.1 = drain_gen;
@@ -803,6 +806,9 @@ pub fn clear_generation_cache() {
     GENERATION_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_VIEW_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_RECT_CACHE.with(|cell| *cell.borrow_mut() = None);
+    // impl-005：持久 StyleSystem 一并复位——页面导航/沙盒重注册回到冷启动，
+    // 防长会话跨页面累积缓存（CascadeCache 键虽跨文档正确，复位成本一次冷启动）。
+    super::computed_style::PERSISTED_STYLE_SYSTEM.with(|cell| *cell.borrow_mut() = None);
     if let Ok(mut r) = DRAIN_RECORD.lock() {
         *r = None;
     }
