@@ -95,9 +95,10 @@ knife-a3-account-1125.txt）。css-backgrounds +1 ＝ background-computed.html
 "Property background-position-y value 'calc(10px - 0.5em), -20%, bottom,
 15%'"——与 A2 的 +1（同页 bg-position-x calc 多层串化）同页族，fv1
 serialize.rs 域固有非确定性漂移，两 bin 共含其 WIP 代码，归其系不认领
-（A2 先例同判，第二次出现注记）。窗噪定性实证：b0 solo 复测该子测
-Pass（solo.bgcomputed.b0.json）而 battery b0 Fail/b1 Pass——跨跑双向
-漂移非刀面效应。animations/masking 双腿 SET-IDENTICAL
+（A2 先例同判，第二次出现注记）。窗噪定性实证（四跑）：battery b1
+单点 Pass，b0-solo/battery-b0/b1-solo 三跑全 Fail（探针
+solo.background-computed.{b0,b1}.json 在档）——跨跑双向漂移非刀面
+效应。animations/masking 双腿 SET-IDENTICAL
 （页集合+子测键全等）。
 
 ## 残面池（不认领，挂观测）
