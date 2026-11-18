@@ -3145,6 +3145,11 @@
   // R152（js-dom M4）：Document 侧 [Unscopable] 表（与 Element 侧 R134 表同源语义）。
   var DocumentUnscopables = { prepend: true, append: true, replaceChildren: true };
 
+  // DC-4 exec2 刀（2026-11-19）：execCommand 递归重入深度标记。1 = 本调用的
+  // 派发窗在飞（beforeinput→input 同步区间，listener 代码即在其中执行），
+  // 嵌套入口见 execCommand 头部注释；各派发臂 try/finally 同步清零。
+  var _zwExecCmdDepth = 0;
+
   // R3254-M2（editing goal M2 切片 1）：execCommand 编辑类命令 → beforeinput/input
   // inputType 映射（https://w3c.github.io/input-events/#interface-InputEvent-Types，
   // 「inputTypes for exCommands」对照表：format 族 formatXxx、insert 族 insertXxx、
@@ -6505,7 +6510,32 @@
     //（https://w3c.github.io/input-events/#event-order；WPT editing/event.html 主断言族：
     // 「number of input events fired expected 1/0」+ 事件属性八断言）。
     execCommand: function (commandId /*, showUI, value*/) {
+      // DC-4 exec2 刀（2026-11-19）：递归重入门——execCommand 派发窗内（监听
+      // 器同步执行栈）嵌套调用返 false 零效果零事件（w3c/editing#200 方向，
+      // Chrome 录音 recursive-exec-command-calls.tentative 断言 ret=false＋
+      // textContent 不变＋listener 计数不递增）。标记窗＝各派发臂 try 块
+      // （beforeinput→input 全程），finally 同步清零——无微任务依赖（沙箱
+      // 环境微任务排空时机不定，跨调用残留即假拒）。
+      if (_zwExecCmdDepth > 0) return false;
       var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      // DC-4 exec3 刀（2026-11-19）：未知命令入口即返 false——spec execCommand
+      // 步骤「command is not supported → return false」
+      //（https://w3c.github.io/editing/execCommand.html；Chrome 录音
+      // exec-command-never-throw-exceptions.tentative 断言 ret===false 不抛）。
+      // 已知集＝编辑类（_zwExecCmdInputType 表）∪ 剪贴板（copy/cut/paste，
+      // ClipboardEvent 臂）∪ 状态/历史/选区（dps/stylewithcss/usecss/undo/
+      // redo/selectAll/enableObjectResizing——各有分支臂或有意 no-op 返 true
+      // 面）。此前链尾 fall-through（`fbqRet2 !== false`）对表外命令恒返
+      // true——Chrome 录音 without-editable 语料 heading/increase/decrease
+      // FontSize 行 expectedResult:false 同证（qCS 读面已返 false 同型对齐；
+      // those 行 queryCommandSupported=false 被 continue 跳过不观察 ret）。
+      if (!_zwExecCmdInputType[cmd]
+          && cmd !== 'copy' && cmd !== 'cut' && cmd !== 'paste'
+          && cmd !== 'defaultparagraphseparator' && cmd !== 'stylewithcss'
+          && cmd !== 'usecss' && cmd !== 'selectall' && cmd !== 'undo'
+          && cmd !== 'redo' && cmd !== 'enableobjectresizing') {
+        return false;
+      }
       // editing-compat justify 簇（2026-11-01）：Chrome 的 queryCommandState
       // ("styleWithCSS") 滞后一拍——快照在每个 execCommand 入口从当前模式同步
       // （justifycenter 语料 250/250 行实测该模型：state_before 显式 stale 值，
@@ -6524,6 +6554,7 @@
       }
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
         try {
+          _zwExecCmdDepth = 1;
           // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：copy/cut 派发携带真 DataTransfer
           // 作 clipboardData（spec copy 时浏览器提供承载当前剪贴板载荷的 DataTransfer；此前
           // R2936 恒 null → handler 里 `ev.clipboardData.setData` TypeError）。defaultPrevented
@@ -6585,7 +6616,7 @@
               }
             } catch (_ePd) {}
           }
-        } catch (_e) {}
+        } catch (_e) {} finally { _zwExecCmdDepth = 0; }
       } else if ((cmd === 'inserthtml' || cmd === 'inserttext')
                  && (function () {
                    // R57（FV M1）前置判定：activeElement 为 text control 才走控件路径；
@@ -6601,6 +6632,7 @@
         // input-maxlength-emoji 的 ZWJ 序列 11 单元截 10 → 回退代理对 → 9）。
         var ins = String(arguments[2] == null ? '' : arguments[2]);
         try {
+          _zwExecCmdDepth = 1;
           var tgt = globalThis.document.activeElement;
           if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) {
             var cur = String(tgt.value || '');
@@ -6649,7 +6681,7 @@
             tgt.dispatchEvent(input57);
             try { input57._zwUaDispatch = false; } catch (_eTb57e) {}
           }
-        } catch (_e) {}
+        } catch (_e) {} finally { _zwExecCmdDepth = 0; }
       } else if (cmd === 'inserttext'
                  && (function () {
                    // 尾簇 33：CE 宿主（activeElement 在 contenteditable 内）的
@@ -6684,17 +6716,19 @@
                    } catch (_e57c) { return false; }
                  })()) {
         try {
+          _zwExecCmdDepth = 1;
           var tgtC = globalThis.document.activeElement;
           // 元素直传（动态创建宿主无 __zwSelector——__zw_ce_insert 兼容元素参）。
           if (tgtC && typeof globalThis.__zw_ce_insert === 'function') {
             globalThis.__zw_ce_insert(tgtC, String(arguments[2] == null ? '' : arguments[2]), false);
           }
-        } catch (_eC57) {}
+        } catch (_eC57) {} finally { _zwExecCmdDepth = 0; }
       } else if (typeof _zwExecCmdInputType[cmd] !== 'undefined') {
         // R3254-M2：编辑类命令（format 族/insert 族/delete 族/undo-redo）——editing host
         // 事件序。选区无 range 或起点不在任何 editing host 内 → no-op（WPT 断言 0 事件
         // + 内容不变）。inputType 映射见 _zwExecCmdInputType。
         try {
+          _zwExecCmdDepth = 1;
           var sel2 = (typeof _getSelection === 'function') ? _getSelection() : null;
           var rng2 = sel2 && sel2.rangeCount > 0 ? sel2._ranges[0] : null;
           var node2 = rng2 ? rng2.startContainer : null;
@@ -7562,7 +7596,7 @@
               try { input2._zwUaDispatch = false; } catch (_eTi2) {}
             }
           }
-        } catch (_eEdEv) {}
+        } catch (_eEdEv) {} finally { _zwExecCmdDepth = 0; }
       } else if (cmd === 'defaultparagraphseparator') {
         // editing-compat insertparagraph 簇（2026-10-30）：separator 状态存储——
         // 仅接受 div/p（spec：其余值不应用），供 __zw_ce_paragraph_split_at 拆分

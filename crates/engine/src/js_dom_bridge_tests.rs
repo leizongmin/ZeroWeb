@@ -271,3 +271,6 @@ include!("js_dom_bridge_tests/part142_indent_li_tail_br_pins.rs");
 // ip I4 族 CE-island host 本体 li/dd 拆分钉测（2026-11-18）：div 双块内嵌
 // 目标键×2＋h1/dt/span 行断退化＋ul 宿主兄弟拆分＋dps 未设 'p' 面控制键。
 include!("js_dom_bridge_tests/part143_ip_island_li_dd_pins.rs");
+// exec2/exec3 刀钉测（2026-11-19）：unknown-command 门表外 ret=false 零事件
+// 零 DOM＋递归重入门嵌套拒绝＋深度清零＋bold 已知命令控制键。
+include!("js_dom_bridge_tests/part144_exec_gate_pins.rs");
