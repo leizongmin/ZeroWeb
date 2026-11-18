@@ -71,11 +71,15 @@ stable 8514**：password 哨重计第 3 轮持
 ）；全桥清单基线 b563.k 1705 持位（indent
 伴钉已入族）；flaky 零新例时钟顺延第 53
 轮；**mpreload 哨常规连轮计数第 26 轮**；
-dialog 哨常规持位（第 93 轮）；对端 R5792
-申报 kb33 燃点在飞——pull 捕获新刀批须全
-列核实＋provenance 预判（新码刀经
-zero-engine 链则 runner 必换代）；若出非
-带非哨键位移→刀 G 工法查码面 diff 定归因
+dialog 哨常规持位（第 93 轮）；s564 窗首
+次纳入刀 Q2 双笔（1d69df3f5 shape-outside
+三修＋72e184ef1 钉测改判，更正十一预注记
+在册）→起腿前 provenance 预判 runner 必
+换代归因刀 Q2；kb33 燃点在飞（对端 R5792
+申报）——pull 捕获新刀批须全列核实＋
+provenance 预判（新码刀经 zero-engine 链
+则 runner 必换代）；若出非带非哨键位移→
+刀 G 工法查码面 diff 定归因
 ；push 阶段 pull --rebase 捕获批须全列核
 实（range 行≠commit 数），起腿一律 v3.1
 浸泡门（waiter 绝对路径＋v3.2 comm 匹配
@@ -86,6 +90,24 @@ dialog 16 红块协同面（归 rendering 流记
 账）。门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47 随批落
 。
+
+> **◆ 更正十一（2026-11-18 s563 push 阶段
+> ）——pull --rebase 捕获对端刀 Q2 批落窗
+> ×2（1d69df3f5 fix(engine) 刀 Q2
+> shape-outside computed 三修——format_num
+> 6 位有效＋calc Ex/Ch 静态叶＋ch 兜底
+> 1em，shapes 主靶 +238 零 P→F；
+> 72e184ef1 test(engine) 刀 Q2 钉测改判随
+> 码补齐——part03 aspect-ratio/circle 6-sig
+> 3 断言）：s564 窗首次纳入——起腿前
+> provenance 预判：runner 必换代归因刀 Q2
+> （fix 经 zero-engine 依赖链入 runner 链
+> 接）；hs 面 shape-outside 语义与
+> testharness 键关联以 join 实测为准（css
+> 插值/computed 域多刀先例实测零语义位移
+> ）；钉测改判 tests-only 不影响桥清单基
+> 线 b563.k 1705（若钉入 engine lib 桥面
+> 路径则下轮对账显形）。
 
 > **◆ 更正十（2026-11-18 s562 push 阶段）
 > ——pull --rebase 捕获对端批落窗 ×7（

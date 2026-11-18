@@ -143,7 +143,15 @@ s563 收口（守成巡查轮＋族带 detailed 腿
 c4d635a9 双刀归因（+36,936；md5 与对端
 R5792 申报 30 代不同值＝增量编译缓存链
 差异判据，join 零位移语义实证收口，不
-认异常如实记账）；浸泡门 v3.2 判净双腿
+认异常如实记账）。**push 阶段 pull
+捕获 ×2（s564 窗首次纳入预注记，master
+doc 更正十一在册）**：码刀 ×1＝
+1d69df3f5 刀 Q2 shape-outside computed
+三修（+238 零 P→F）＋tests-only ×1＝
+72e184ef1 钉测改判随码补齐（part03
+6-sig 3 断言）——s564 起腿前 provenance
+预判 runner 必换代归因刀 Q2，hs 面 join
+实测为准；浸泡门 v3.2 判净双腿
 常态全绿零爆栈；join stable 8514
 （8305P/202F/6T/1U）disagree 0＋l1only
 0＋l2only 0；vs s562 NEW 1＋GONE 0＋
