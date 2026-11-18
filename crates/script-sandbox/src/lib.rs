@@ -449,6 +449,15 @@ pub(crate) fn worker_timer_period_at(nesting: u64, period_ms: u64) -> u64 {
     if nesting > 5 && period_ms < 4 { 4 } else { period_ms }
 }
 
+/// JS 引擎堆用量快照（字节；内存归因仪拍用，纯观测）。
+#[derive(Debug, Clone, Copy)]
+pub struct JsHeapUsage {
+    /// JS 对象/值/字符串/形状等引擎簿记的活跃堆面。
+    pub memory_used_size: u64,
+    /// 引擎经分配器的总持有面（含空闲槽位等非活跃保留）。
+    pub malloc_size: u64,
+}
+
 /// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。
 ///
 /// 调用方用 `Box<dyn Sandbox>` 持有引擎无关的沙箱实例（cfg 选 V8/QuickJS）。
@@ -456,6 +465,11 @@ pub(crate) fn worker_timer_period_at(nesting: u64, period_ms: u64) -> u64 {
 pub trait Sandbox {
     /// 执行 JavaScript 代码，返回字符串结果。
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
+    /// 诊断：JS 引擎堆用量快照；实现不支持时 `None`（默认 no-op，纯观测不进热路径）。
+    /// `&mut self`：V8 侧 get_heap_statistics 需 `&mut isolate`。
+    fn js_heap_usage(&mut self) -> Option<JsHeapUsage> {
+        None
+    }
     /// s369（strict 车道 SCRIPT 直编译迁移）：classic 脚本直编译执行 + in-execute
     /// catch 面——体即 global code（GDI 原生 var/fn 提升、指令序言原生生效），抛错
     /// 时同一次 execute 内挂 `globalThis.__zw_e` → 运行 `catch_js`（错误吞没）→

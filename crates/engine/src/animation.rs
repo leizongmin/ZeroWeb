@@ -2449,8 +2449,8 @@ fn mask_pos_comp_calc(expr: &zero_css_parser::values::CalcExpr) -> Option<MaskPo
             let (rp, rx, rc) = mask_pos_comp_calc(r)?;
             Some((lp - rp, lx - rx, lc || rc))
         }
-        CE::Length(LengthValue::Percentage(p)) => Some((*p as f64, 0.0, true)),
-        CE::Length(LengthValue::Px(v)) => Some((0.0, *v as f64, false)),
+        CE::Length(LengthValue::Percentage(p)) => Some((*p, 0.0, true)),
+        CE::Length(LengthValue::Px(v)) => Some((0.0, *v, false)),
         _ => None,
     }
 }

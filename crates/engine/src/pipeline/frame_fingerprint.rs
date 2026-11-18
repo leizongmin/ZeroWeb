@@ -112,6 +112,65 @@ impl FrameFingerprintCache {
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
+
+    /// 条目数（T79 账外域仪拍读数；`len` 的非测试镜像）。
+    pub(crate) fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 缓存常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：条目表槽位 + 逐条目走查（见
+    /// [`CachedFrame::estimated_resident_bytes`]——条目为整帧深拷贝，本缓存是
+    /// 账外常驻的最大单一嫌疑面）。跨条目共享面：布局根 Arc 与
+    /// `custom_properties` Arc 分别按指针地址经 `seen_roots`/`seen_props` 去重
+    /// （管线活帧与缓存条目共享同一树/表时只计一次，集合由聚合侧贯通）。
+    pub(crate) fn estimated_resident_bytes(
+        &self,
+        seen_roots: &mut std::collections::HashSet<usize>,
+        seen_props: &mut std::collections::HashSet<usize>,
+    ) -> u64 {
+        let mut total: u64 =
+            (std::mem::size_of::<(u128, CachedFrame)>().saturating_mul(self.entries.capacity())) as u64;
+        for frame in self.entries.values() {
+            total = total.saturating_add(frame.estimated_resident_bytes(seen_roots, seen_props));
+        }
+        total = total.saturating_add((std::mem::size_of::<u128>().saturating_mul(self.order.capacity())) as u64);
+        total
+    }
+}
+
+/// T79 账外域仪拍：缓存条目常驻字节估算（env 门测量读数，非行为路径）。
+impl CachedFrame {
+    /// 条目常驻字节估算：文档纯净树快照 + 样式 map（槽位 + 堆承载去重）+
+    /// 样式表 AST + 动画导出集槽位 + 整帧渲染结果（布局树按根指针首次 sightings
+    /// 走查——跨条目/管线活帧共享同一 `Arc` 时只计一次）。
+    pub(crate) fn estimated_resident_bytes(
+        &self,
+        seen_roots: &mut std::collections::HashSet<usize>,
+        seen_props: &mut std::collections::HashSet<usize>,
+    ) -> u64 {
+        fn map_cap<K, V>(m: &HashMap<K, V>) -> u64 {
+            (std::mem::size_of::<K>()
+                .saturating_add(std::mem::size_of::<V>())
+                .saturating_mul(m.capacity())) as u64
+        }
+        let mut total = self.doc.estimated_resident_bytes();
+        total = total.saturating_add(map_cap(&self.styles));
+        for style in self.styles.values() {
+            total = total.saturating_add(style.estimated_heap_bytes_dedup(seen_props));
+        }
+        total = total
+            .saturating_add((std::mem::size_of::<Stylesheet>().saturating_mul(self.stylesheets.capacity())) as u64);
+        for sheet in &self.stylesheets {
+            total = total.saturating_add(sheet.estimated_resident_bytes());
+        }
+        if self.export_set.is_some() {
+            total = total.saturating_add(std::mem::size_of::<ExportedAnimationSet>() as u64);
+        }
+        total = total.saturating_add(self.result.estimated_resident_bytes(seen_roots));
+        total
+    }
 }
 
 /// kill-switch：`ZW_STYLE_FINGERPRINT_CACHE`（缺省开，仅 `0` 关——与
@@ -302,6 +361,24 @@ mod tests {
         assert!(cache.lookup(2).is_none(), "最旧未活跃条目被 FIFO 驱逐");
         assert!(cache.lookup(3).is_some());
         assert_eq!(cache.len(), 2, "容量上限保持");
+    }
+
+    #[test]
+    fn cache_readings_positive_and_layout_root_dedup() {
+        // T79 账外域仪拍：条目读数为正；同布局根两条目经共享 seen_roots 只走查
+        // 一次（第二条目的布局树面不计），entry_count 读数与条目数一致。
+        let mut cache = FrameFingerprintCache::new(4);
+        cache.insert(1, sample_frame(1));
+        let mut seen_roots = std::collections::HashSet::new();
+        let mut seen_props = std::collections::HashSet::new();
+        let one = cache.estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        assert!(one > 0, "single entry should report bytes");
+        cache.insert(2, sample_frame(2));
+        let two = cache.estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        assert!(two > one, "second entry grows readings");
+        assert_eq!(cache.entry_count(), 2);
+        // 样例帧各自建独立 LayoutResult（Arc::new per frame）——两根均应被走查。
+        assert_eq!(seen_roots.len(), 2, "distinct layout roots both counted");
     }
 
     #[test]

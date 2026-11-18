@@ -23,6 +23,10 @@ fn configured_log_level() -> tracing::Level {
 }
 
 fn main() {
+    // T79 S9：分配器滞留收敛（arena/mmap/trim 阈值，run.md §397 劈分证据）——
+    // 进程最早时机单次调用（arena 生成前语义最完整）；`ZEROWEB_MALLOC_TUNE=0` 关。
+    zero_renderer::tune_malloc_retention_policy();
+
     // T62/G4 alloc-trace 接线：feature 构建下以 TracingAllocator 为全局分配器
     // （bin 作用域，lib 下游不带），进程最早时机快照 env 开关与 dump 配置
     // （构造期读取范式，热路径无 getenv）；默认构建本调用不存在，产品路径

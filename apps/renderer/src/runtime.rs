@@ -1569,6 +1569,9 @@ impl RendererRuntime {
             // 块内直读活缓存——快照 duplicate_for_snapshot 丢动画帧且不拷 svg 表，
             // 经快照读 animation/svg 两域结构性恒零（返修 df-F1：未测≠测得零）；
             // armed 门与 alloc_trace 同源；产品构建（无 feature）整块零代码。
+            // T79 账外域仪拍：追加九域之外的管线保留面（DOM 树/样式/布局/taffy/
+            // 指纹缓存/样式表/三字体缓存）与 V8 已用堆自报（isolate 在 js worker
+            // 线程——ProbeHeap 命令边界采样，读数至多滞后一个队列深度）。
             #[cfg(feature = "alloc-trace")]
             if crate::alloc_trace::armed() {
                 let canvas_bytes = wv
@@ -1577,6 +1580,9 @@ impl RendererRuntime {
                     .map(|(_, _, _, rgba, _)| rgba.len() as u64)
                     .sum::<u64>();
                 let cache = wv.image_cache_ref();
+                let off = wv.offledger_readings();
+                let _ = self.js_worker.request_v8_heap_probe();
+                let ms = crate::malloc_stats::mallinfo2_snapshot().unwrap_or_default();
                 crate::mem_ledger::record(&[
                     ("render_primitives_bytes", render.primitives.estimated_resident_bytes()),
                     ("image_cache_bytes", cache.total_bytes() as u64),
@@ -1590,6 +1596,26 @@ impl RendererRuntime {
                     ),
                     ("webview_cached_text_bytes", wv.cached_text_bytes()),
                     ("font_data_bytes", self.font_loader.font_data_bytes() as u64),
+                    // T79 账外域（归因 ~87% PSS 的细分面）
+                    ("dom_tree_bytes", off.dom_tree_bytes),
+                    ("style_map_bytes", off.style_map_bytes),
+                    ("layout_result_bytes", off.layout_result_bytes),
+                    ("taffy_state_bytes", off.taffy_state_bytes),
+                    ("fingerprint_cache_bytes", off.fingerprint_cache_bytes),
+                    ("fingerprint_cache_entries", off.fingerprint_cache_entries),
+                    ("stylesheets_bytes", off.stylesheets_bytes),
+                    ("shape_cache_bytes", self.font_loader.shape_cache_bytes()),
+                    ("hmtx_cache_bytes", self.font_loader.hmtx_cache_bytes()),
+                    (
+                        "fallback_metrics_cache_bytes",
+                        self.font_loader.fallback_metrics_cache_bytes(),
+                    ),
+                    ("v8_heap_bytes", self.js_worker.latest_v8_heap_bytes().unwrap_or(0)),
+                    // T79 残留劈分（glibc 分配器簿记，与域读数共面——聚合侧不相加）
+                    ("malloc_arena_bytes", ms.arena_bytes),
+                    ("malloc_hblkhd_bytes", ms.hblkhd_bytes),
+                    ("malloc_in_use_bytes", ms.in_use_bytes),
+                    ("malloc_free_bytes", ms.free_bytes),
                 ]);
             }
             (
@@ -3062,6 +3088,46 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Some(DeferredCommand::Message(Box::new(nav)))
     }
 
+    /// 把积压中的 AutomationRequest 提升为下一个派发对象（T79 二层：求值抢占）。
+    /// 返回提升/保序后的队首；`None` 仅当 `head` 为空且排干与积压中均无
+    /// AutomationRequest。见 [`promote_pending_automation_request`]。
+    fn promote_pending_automation_request(
+        head: Option<DeferredCommand>,
+        deferred: &mut VecDeque<DeferredCommand>,
+        mut drain_inbound: impl FnMut() -> Vec<IpcMessage>,
+    ) -> Option<DeferredCommand> {
+        // 队首已是求值：无需抢占（多条求值按 FIFO 依序处理，回执按消息 id 独立配对）。
+        if matches!(
+            head.as_ref(),
+            Some(DeferredCommand::Message(m)) if matches!(m.kind, IpcMessageKind::AutomationRequest(_))
+        ) {
+            return head;
+        }
+        for later in drain_inbound() {
+            deferred.push_back(DeferredCommand::Message(Box::new(later)));
+        }
+        let Some(idx) = deferred.iter().position(
+            |d| matches!(d, DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::AutomationRequest(_))),
+        ) else {
+            return head;
+        };
+        let request = match deferred.remove(idx).expect("idx 由 position 取得，必在界内") {
+            DeferredCommand::Message(m) => *m,
+            DeferredCommand::PostNav(_) => unreachable!("position 只匹配 Message 臂"),
+        };
+        // 求值不使任何消息陈旧（与导航「后到者胜」不同）：前置消息全部保到达序
+        // 回填，仅改派发次序、不丢弃消息。
+        let mut restored = Vec::new();
+        if let Some(head_cmd) = head {
+            restored.push(head_cmd);
+        }
+        restored.extend(deferred.drain(..idx));
+        for cmd in restored.into_iter().rev() {
+            deferred.push_front(cmd);
+        }
+        Some(DeferredCommand::Message(Box::new(request)))
+    }
+
     fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<DeferredCommand>, String> {
         let mut head = if let Some(cmd) = self.deferred_inbound.pop_front() {
             Some(cmd)
@@ -3084,6 +3150,28 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             && !matches!(msg.kind, IpcMessageKind::Navigate(_))
         {
             head = Self::promote_pending_navigation(head, &mut self.deferred_inbound, || {
+                let mut drained = Vec::new();
+                while let Ok(later) = self.inbound_rx.try_recv() {
+                    drained.push(later);
+                }
+                drained
+            });
+        }
+        // T79 二层：载入洪流下 AutomationRequest 与渲染消息同队 FIFO，主循环每轮
+        // 派发一条消息且每条经 run_frame_transaction 全量重排版，消费节拍 ~16ms/条
+        // ——bilibili 载入积压下求值排队 22s（§399 判别：AutomationRequest 无优先
+        // 权），headless automation_request 35s 磨窗超时冻 mux。队首非 Navigate/
+        // 求值时非阻塞排干入站通道（保持到达序），取最早的 AutomationRequest 提前
+        // 派发，其余消息相对顺序不变。Navigate 优先于求值：队首为 Navigate 或导航
+        // 抢占已命中时不再提升——在即将被替换的文档上求值无意义；求值不使任何
+        // 消息陈旧（fix#14 的导航陈旧丢弃语义不适用），前置消息仅回队不丢弃。
+        if let Some(DeferredCommand::Message(msg)) = head.as_ref()
+            && !matches!(
+                msg.kind,
+                IpcMessageKind::Navigate(_) | IpcMessageKind::AutomationRequest(_)
+            )
+        {
+            head = Self::promote_pending_automation_request(head, &mut self.deferred_inbound, || {
                 let mut drained = Vec::new();
                 while let Ok(later) = self.inbound_rx.try_recv() {
                     drained.push(later);

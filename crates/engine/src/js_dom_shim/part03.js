@@ -31692,6 +31692,26 @@ return e;
     } catch (_eLoF) { return null; }
     return null;
   }
+  // T79（shim 热路径，2026-11-18）：get trap 体载体——**模块级单实例**。首次
+  // _makeProxy 由 handler 字面量内 `_zwGetBodyCarrier` IIFE 回填；后续工厂调用
+  // 复用同一函数对象（micro-bench run8 教训：per-proxy 重建函数对象使 trap miss
+  // 调用点 megamorphic，trap 路径整体反优化——B2 渲染 200× 回退）。get trap 的
+  // memo miss 一跳本函数（原 trap 体逐字保真）。
+  var _zwTrapGetBodyRef = null;
+  // T79 F1 返修（2026-11-18，PR #310 双首轮 F1/DF-01）：get trap memo 动态面禁缓存
+  // 标记栈——载体（原 trap 体）内可变 function 面（on* handler 重指派/R3042 expando
+  // 覆盖与删除/R93 原型走查含 CE 方法猴子补丁/R95 constructor/ShadowRoot accessor）
+  // 经 `_zwNoMemoMark()` 置位当前帧，wrapper 对标记帧的产物不入 `__zwM`（治 memo
+  // 命中先于载体全部动态分支、set/delete trap 与原型补丁均无失效通道的陈旧读回）。
+  // 数组栈而非模块单布尔：accessor getter 求值（`_pdesc.get.call(proxy)`）可递归
+  // 再入 trap/carrier，单标记会被内层复位污染；帧随 wrapper push/pop 配对，标记恒
+  // 写栈顶（当前载体自己的帧），内层读写不触外层帧。
+  var _zwDynMarks = [];
+  function _zwNoMemoMark() {
+    var _nmLen = _zwDynMarks.length;
+    if (_nmLen > 0) _zwDynMarks[_nmLen - 1] = true;
+  }
+
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
@@ -31718,6 +31738,12 @@ return e;
     for (var _vi = 0; _vi < _fvProps.length; _vi++) {
       try { Object.defineProperty(_fvTarget, _fvProps[_vi], { configurable: true, value: undefined }); } catch (_e) {}
     }
+    // T79（shim 热路径，2026-11-18）：get trap 体载体引用——**调用时读模块级
+    // `_zwTrapGetBodyRef`**（carrier IIFE 在 handler 字面量求值时回填，即本调用
+    // 的 new Proxy 实参内）。勿在 _makeProxy 体内做局部值捕获：首个 proxy 创建时
+    // 回填尚未发生，捕获值钉死 null → 该 proxy 全属性读 TypeError（s36 NA 动态
+    // 注册静默全灭 21 测试，run43 判别）。模块变量回填后恒同一函数对象 → miss
+    // 调用点仍 monomorphic（run8 megamorphic 反优化教训见 _zwTrapGetBodyRef 处）。
     var proxy = new Proxy(_fvTarget, {
       has: function(_t, prop) {
         // R129 注：本键在 handler 字面量中**后被 part05 的 has 键覆盖**（JS 对象字面量
@@ -31731,6 +31757,44 @@ return e;
         return false;
       },
       get: function(_t, prop) {
+        // T79（shim 热路径，2026-11-18）：get trap 级 per-proxy **方法 memo**——
+        // micro-bench 定谳（run.md §409 / evidence/t79-op079-result.md）：热方法每读
+        // 重建闭包+重走全 trap 链（~0.85µs/读；页续体单 DOM op 15-20 次读 = 59µs
+        // append 主体成本之一）。本 wrapper 进 memo 查表，miss 一跳载体
+        // `_zwTrapGetBodyRef`
+        // 载体（原 trap 体逐字保真，闭合处见 part04 set 键前）；**仅缓存
+        // typeof==='function' 产物**——childNodes/style 等 live 值视图与一切值面仍
+        // 逐读现算。memo 存 target `__zwM` 槽（非枚举 own，随 proxy/target 同生命
+        // 周期——R52 purge/R4005 复活天然一致，无独立清局面）；方法身份从每读新建
+        // 变 per-proxy 稳定（真浏览器 `el.appendChild === el.appendChild` 同观测）。
+        // 载体引用调用时读模块级 `_zwTrapGetBodyRef`（见 31610 区注释，勿值捕获）。
+        var _zwMemo = _t.__zwM;
+        if (_zwMemo === undefined) {
+          // **无原型空对象**——有原型 `{}` 会在 miss 读上假命中 Object.prototype 继承
+          // 属性（`memo['constructor']` 未写入时直接返回 Object 构造器；toString/
+          // valueOf 同理），trap 面属性被静默顶替（r290/menu/wc 四钉实证，run46）。
+          _zwMemo = Object.create(null);
+          try { Object.defineProperty(_t, '__zwM', { value: _zwMemo, writable: true, configurable: true }); } catch (_eMemoInit) {}
+        }
+        var _zwHit = _zwMemo[prop];
+        if (_zwHit !== undefined) return _zwHit;
+        // T79 F1 返修：miss 帧入栈→载体→出栈判定——载体内打标的动态 function 面产
+        // 物不入 memo（语义=改动前逐读现算），接口合成函数（addEventListener 等）
+        // 不打标、memo 身份稳定收益保留。finally 保栈完整：载体抛错不泄漏帧（异常
+        // 照旧透传，memo 写随跳过）。
+        _zwDynMarks.push(false);
+        var _zwVal;
+        try {
+          _zwVal = _zwTrapGetBodyRef(sel, handle, key, proxy, _t, prop);
+        } finally {
+          var _zwDyn = _zwDynMarks.pop();
+          if (typeof _zwVal === 'function' && !_zwDyn) _zwMemo[prop] = _zwVal;
+        }
+        return _zwVal;
+      },
+      _zwGetBodyCarrier: (function () {
+        if (_zwTrapGetBodyRef === null) {
+          _zwTrapGetBodyRef = function (sel, handle, key, proxy, _t, prop) {
         // R351（js-dom M4）：**shim 内部键顶部短路**——`__zwHandle`/`__zwSelector` 是
         // shim 私有锚定键（adjust 扫描、identity 桥、testdriver stub 的高频读取面）。
         // 此前它们落在 R98 分支（每字符串属性读先付 `Object.getPrototypeOf(_makeProxy(..))`
@@ -31766,7 +31830,8 @@ return e;
             try { _asrGDesc = Object.getOwnPropertyDescriptor(_asrGChain, 'adoptedStyleSheets'); } catch (_eAsrGd) { _asrGDesc = null; }
             if (_asrGDesc) {
               if (typeof _asrGDesc.get === 'function') {
-                try { return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
+                // T79 F1 返修：live 原型 accessor getter（getter 可被补丁/重定义）——禁 memo。
+                try { _zwNoMemoMark(); return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
               }
               break; // data property → 交回常规分支
             }
@@ -31785,7 +31850,8 @@ return e;
           var _cGuard = 0;
           while (_cChain && _cGuard < 8) {
             var _cDesc = Object.getOwnPropertyDescriptor(_cChain, 'constructor');
-            if (_cDesc) return _cDesc.value;
+            // T79 F1 返修：constructor 可被原型补丁/registry 重定义（live 值）——禁 memo。
+            if (_cDesc) { _zwNoMemoMark(); return _cDesc.value; }
             _cChain = Object.getPrototypeOf(_cChain);
             _cGuard++;
           }
@@ -31826,6 +31892,9 @@ return e;
               var _r98GDesc;
               try { _r98GDesc = Object.getOwnPropertyDescriptor(_r98m.p, prop); } catch (_e98g) { _r98GDesc = undefined; }
               if (_r98GDesc && typeof _r98GDesc.get === 'function') {
+                // T79 OP-086（RC-01）：CE 首层原型 accessor getter 产物可经 live setter
+                //（R98 set 侧派发）变异（lit createProperty 响应式形态），动态面禁缓存。
+                _zwNoMemoMark();
                 try { return _r98GDesc.get.call(_makeProxy(sel, handle)); } catch (_e98gc) { return undefined; }
               }
             }
@@ -32209,6 +32278,9 @@ return e;
         // 方向 'forward'，'none' 不落存储——textfieldselection-setSelectionRange setup() 自锚定
         // expected_direction_none + selection-not-application「assigning 'none' → 初始方向」断言面）。
         if (prop === 'setSelectionRange') {
+          // T79 OP-089（RC-04）：变体选择 READ 时实时读 type（_isTextControl），
+          // input.type 变异后 throw/no-throw 反转——动态面禁缓存。
+          _zwNoMemoMark();
           if (_isTextControl(sel, handle)) {
             return function(s, e, dir) {
               var len = _zwSelNormValue(sel, handle, key).length;
@@ -32254,6 +32326,8 @@ return e;
         //（缺省 preserve）。复用既有原语：`_controlValue` 读、`this.value=` setter 写（textarea 走 text-content、
         // input 走 attr + dirty 跟踪）、`_selObj` 选区。文本编辑库（auto-format / mask / undo 补全）高频。
         if (prop === 'setRangeText') {
+          // T79 OP-089（RC-04）：变体选择 READ 时实时读 type，动态面禁缓存。
+          _zwNoMemoMark();
           if (!_isTextControl(sel, handle)) {
             if (_realTag(sel, handle) === 'INPUT') {
               return function() { _throwDom('InvalidStateError', 'input type does not support text selection'); };
@@ -32329,6 +32403,9 @@ return e;
         // current_was_invalid 同面，见函数体内注）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-stepup
         if ((prop === 'stepUp' || prop === 'stepDown') && _realTag(sel, handle) === 'INPUT') {
+          // T79 OP-089（RC-04）：闭包捕获 suT/_suSteppable/步长表 READ 时冻结 type 域，
+          // input.type 变异后步进域与错误消息陈旧——动态面禁缓存。
+          _zwNoMemoMark();
           // 类型走枚举反射（缺省 Text 状态 / 非法回退 / ASCII 小写 / latest-wins——裸读
           // 缺 type 属性时 suT 为空串、IDL type= 写后读漏 pending，均已实证）。
           var suT = String(_reflectedTypeEnum(sel, handle) || '');
@@ -32442,6 +32519,9 @@ return e;
         //（show-picker-does-not-focus 断言面）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-showpicker
         if (prop === 'showPicker' && _realTag(sel, handle) === 'INPUT') {
+          // T79 OP-089（RC-04）：闭包捕获 spT/spRoApplies READ 时冻结 readonly 适用表，
+          // type 变异后「not mutable」抛错门陈旧——动态面禁缓存。
+          _zwNoMemoMark();
           // 类型走枚举反射（同 stepUp——缺省 Text / 非法回退 / ASCII 小写）。
           var spT = String(_reflectedTypeEnum(sel, handle) || '');
           // readonly 适用面（HTML §4.10.5 内容属性表 12 状态；WPT noReadonlySupport 10 类型之反面）。
@@ -33868,12 +33948,17 @@ return e;
               var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
               // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
               // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
-              if (_fnd0 && _fnd0.configurable === false) return _t[prop];
+              // T79 OP-086（RC-02①）：accessor 求值面动态、non-writable 变体可经直写
+              // 变值，禁缓存。
+              if (_fnd0 && _fnd0.configurable === false) { _zwNoMemoMark(); return _t[prop]; }
             } catch (_efnd0) {}
             // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
             // own property；WPT expando added later 案）。
             var _fex0 = _expando[key];
             if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+              // T79 OP-086（RC-02②）：FORM own expando 与已标 R3042 同一存值（set
+              // fallthrough 写/deleteProperty ② 臂删），且先于其执行——动态面禁缓存。
+              _zwNoMemoMark();
               return _fex0[prop];
             }
             // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态

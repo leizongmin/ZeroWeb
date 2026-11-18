@@ -680,3 +680,459 @@ fn named_access_reset_registry_functional_s40() {
         "换代后注册面对新文档照常工作（换文档不聋化）"
     );
 }
+
+// ⑦T79 零 named-iframe 快道三钉（OP-080 生产刀）：`__zwNPO.namedIfrCount` 三态
+//（null=未播种快道不放行 / 0=全量枚举证零放行 / >0=慢路=现状语义）的可观测面。
+// 落账三门（part06 install 探测标记 __zwNAInstallProbe、part05 枚举完整标志、文档
+// 非空门）与增量挂点（_zwNPONoteIfr——attr/childList 双面）由 ⑦-1/2/3 逐面钉死；
+// 修复史判别证据 run44-run46（install 相假证零固化致 s33 全盲、memo 槽原型假命中）。
+// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+
+// ⑦-1 静态快照种子面：初始 HTML 含 named iframe → 首读慢路命中解析 + 播种 tally=1
+//（>0 恒不放行）。install 相枚举因探测标记不落账（属性回调未注册时 getAttribute
+// 恒空的假证零），页面相真枚举落账——run44 判别的回归钉。
+#[test]
+fn npo_fastpath_static_snapshot_seed_s41() {
+    let mut sandbox = s37_sandbox!("<html><body><iframe name='sx41'></iframe></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__r_hit = typeof window.sx41 !== 'undefined';
+             globalThis.__r_cnt = String(globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_hit").unwrap().value,
+        "true",
+        "静态快照 named iframe 首读解析（install 相假证零不固化，run44 回归）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_cnt").unwrap().value,
+        "1",
+        "播种 tally=1（>0 快道永不放行，保守语义）"
+    );
+}
+
+// ⑦-2 证零放行 + 动态插入即时解析：空文档枚举证零落账（0）→ 快道放行 miss 恒
+// null（塌缩语义，run42 判别刀的前提态）；动态 appendChild named iframe 经
+// _zwNPONoteIfr 增量（attr 面 + childList 面双挂点，只增不减）→ >0 后下次读走
+// 慢路解析——快道不吞树插入的 named iframe。
+#[test]
+fn npo_fastpath_zero_seed_dynamic_iframe_visible_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__r_miss = typeof window.dx41 !== 'undefined';
+             globalThis.__r_c0 = String(globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount);
+             var f = document.createElement('iframe');
+             f.setAttribute('name', 'dx41');
+             document.body.appendChild(f);
+             globalThis.__r_c1 = String(globalThis.__zwNPO && globalThis.__zwNPO.namedIfrCount > 0);
+             globalThis.__r_hit = typeof window.dx41 !== 'undefined';")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_miss").unwrap().value,
+        "false",
+        "空文档 miss（证零读，快道放行前基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c0").unwrap().value,
+        "0",
+        "全量枚举证零落账（快道放行唯一来源）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c1").unwrap().value,
+        "true",
+        "动态插入 named iframe 增量计数（_zwNPONoteIfr 双挂点，只增不减）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_hit").unwrap().value,
+        "true",
+        "证零后动态 named iframe 即时解析（增量破快道，不吞树插入）"
+    );
+}
+
+// ⑦-3 reset 重播种面：证零后 `__zw_reset_pending_state`（js_worker SetDomSnapshot
+// 生产链同款调用，apps/renderer/src/js_worker.rs:2223）置 null 回未播种态——快照
+// 换代换入静态 named iframe 的重播种钩子；null 态 miss 读走真枚举回落账，动态
+// 插入照常解析（换代不聋化）。
+#[test]
+fn npo_fastpath_reset_reseed_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "typeof window.rx41;
+             globalThis.__r_c0 = String(globalThis.__zwNPO.namedIfrCount);
+             __zw_reset_pending_state();
+             globalThis.__r_c1 = String(globalThis.__zwNPO.namedIfrCount);
+             typeof window.rx41;
+             globalThis.__r_c2 = String(globalThis.__zwNPO.namedIfrCount === null || globalThis.__zwNPO.namedIfrCount === 0);
+             var f = document.createElement('iframe');
+             f.setAttribute('name', 'rx41');
+             document.body.appendChild(f);
+             globalThis.__r_hit = typeof window.rx41 !== 'undefined';")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c0").unwrap().value,
+        "0",
+        "证零基线（快道放行态）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c1").unwrap().value,
+        "null",
+        "reset 钩子置 null 回未播种态（换代重播种）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_c2").unwrap().value,
+        "true",
+        "null 态 miss 读保持未播种或重新证零（不固化错值——虚 null 保守重试）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_hit").unwrap().value,
+        "true",
+        "reset 后动态 named iframe 照常解析（换代不聋化）"
+    );
+}
+
+// T79 F1 返修常驻钉（PR #310 双首轮 F1/DF-01）：get trap memo 对可变 function 面
+// 的陈旧读回——on* handler 重指派、expando 函数覆盖/删除、CE 原型方法猴子补丁。
+// memo 命中先于载体全部动态分支且 `__zwM` 槽无任何失效通道（全 shim 仅 part03 三
+// 处读写），修复=动态面打禁缓存标（`_zwNoMemoMark` 栈式协议），接口合成函数 memo
+// 收益保留。三钉均「变后回读」断言现值——「设后单读」不判别（R337 形态：派发走
+// _listenerStore 直读，属性回读面零覆盖）。
+
+/// on* handler 重指派回读：设 fn1→读→重设 fn2→再读须返 fn2（spec HTML webappapis
+/// on-event handler IDL getter 返**当前** handler）。缺陷形态：首读 memo 化 fn1 后
+/// 重指派读回 fn1。
+#[test]
+fn memo_on_handler_reassign_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body><div id=\"m1\"></div></body></html>");
+    sandbox
+        .execute(
+            "var d = document.querySelector('#m1');\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.onclick = f1;\
+             globalThis.__r_1 = d.onclick === f1;\
+             d.onclick = f2;\
+             globalThis.__r_2 = d.onclick === f2;\
+             globalThis.__r_3 = d.onclick();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "首读返回当前 handler（set 存原始 fn，_onHandlers 读面基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "重设后再读返回新 handler（memo 不得钉死 fn1——DF-01 A 路）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "2",
+        "回读 handler 调用行为随重设更新（读回再调用面）"
+    );
+}
+
+/// expando 函数覆盖+删除回读：d.cbfn=f1→读→覆盖 f2→读返 f2；delete→读返
+/// undefined（R3042 expando 语义 + set generic fallthrough/deleteProperty ② 臂——
+/// deleteProperty 当初修 WPT new-name 的语义经 memo 对 function 值复活）。
+#[test]
+fn memo_expando_fn_reassign_delete_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body><div id=\"m2\"></div></body></html>");
+    sandbox
+        .execute(
+            "var d = document.querySelector('#m2');\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.cbfn = f1;\
+             globalThis.__r_1 = d.cbfn === f1;\
+             d.cbfn = f2;\
+             globalThis.__r_2 = d.cbfn === f2;\
+             delete d.cbfn;\
+             globalThis.__r_3 = d.cbfn === undefined;\
+             globalThis.__r_memo_kept = d.appendChild === d.appendChild;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "expando 函数首读返回存储值（R3042 基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "覆盖后再读返回新值（memo 不得钉死 f1——DF-01 B 路）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "删除后再读 undefined（memo 不得复活已删值——DF-01 C 路）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_memo_kept")
+            .unwrap()
+            .value,
+        "true",
+        "接口合成函数 memo 收益保留（append 身份稳定面不受返修影响）"
+    );
+}
+
+/// CE 原型方法猴子补丁回读：define→实例读方法（R93 原型走查命中）→补丁
+/// prototype.method→再读须返新函数（live 原型链——R93 修 `el.bump is not a
+/// function` 的本语义即沿链取当前值）。缺陷形态：首读 memo 化后补丁读回旧方法。
+#[test]
+fn memo_ce_proto_monkey_patch_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "class MpCE extends HTMLElement { bump() { return 1; } }\
+             customElements.define('mp-ce-s41', MpCE);\
+             var d = document.createElement('mp-ce-s41');\
+             document.body.appendChild(d);\
+             var orig = d.bump;\
+             globalThis.__r_1 = typeof orig === 'function' && orig === MpCE.prototype.bump;\
+             var f2 = function () { return 2; };\
+             MpCE.prototype.bump = f2;\
+             globalThis.__r_2 = d.bump === f2;\
+             globalThis.__r_3 = d.bump();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "实例方法沿原型链解析到用户类方法（R93 基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "原型补丁后实例读新方法（memo 不得钉死旧方法——DF-01 CE 变体）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "2",
+        "补丁后调用行为随补丁更新（live 原型链面）"
+    );
+}
+
+/// CE 原型 accessor（响应式 prop）换值回读：defineProperty get/set 装用户类
+/// prototype 首层（lit createProperty 形态）——设 callback fn1→读（R98 accessor
+/// getter 派发 part03）→经 live setter 换 fn2→再读须返 fn2。缺陷形态（OP-086
+/// RC-01）：R98 get 侧派发产物 memo 钉死旧值；方法简写钉走 R93 data 面，本钉
+/// 专覆盖 accessor 面（R98 臂先于 R93 走查执行）。
+#[test]
+fn memo_ce_accessor_reactive_prop_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "class AccCE extends HTMLElement {}\
+             Object.defineProperty(AccCE.prototype, 'onstep', {\
+               get: function () { return this.__accStore; },\
+               set: function (v) { this.__accStore = v; }\
+             });\
+             customElements.define('acc-ce-s41', AccCE);\
+             var d = document.createElement('acc-ce-s41');\
+             document.body.appendChild(d);\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.onstep = f1;\
+             globalThis.__r_1 = d.onstep === f1;\
+             d.onstep = f2;\
+             globalThis.__r_2 = d.onstep === f2;\
+             globalThis.__r_3 = d.onstep();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "CE accessor 首读返回当前值（R98 accessor 派发基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "live setter 换值后再读返回新值（memo 不得钉死 fn1——RC-01）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "2",
+        "换值后调用行为随更新（accessor 读回再调用面）"
+    );
+}
+
+/// FORM 元素 expando 函数覆盖+删除回读：FORM named-first 块（part03，先于已标
+/// R3042 臂执行）② own expando 臂读同一 _expando 存值——f.cbfn=f1→读→覆盖
+/// f2→读返 f2；delete→读返 undefined。缺陷形态（OP-086 RC-02）：FORM 上
+/// expando function 被 memo 化后覆盖/删除读回陈旧值。prop 取非具名集合成员
+///（③ 具名门只挡 named/index 臂，② 对全部 prop 开放）。
+#[test]
+fn memo_form_expando_fn_reassign_delete_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var f = document.createElement('form');\
+             document.body.appendChild(f);\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             f.cbfn = f1;\
+             globalThis.__r_1 = f.cbfn === f1;\
+             f.cbfn = f2;\
+             globalThis.__r_2 = f.cbfn === f2;\
+             delete f.cbfn;\
+             globalThis.__r_3 = f.cbfn === undefined;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "FORM expando 函数首读返回存储值（named-first ② 臂基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "覆盖后再读返回新值（memo 不得钉死 f1——RC-02②）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "删除后再读 undefined（memo 不得复活已删值——RC-02②）"
+    );
+}
+
+/// 非反射 tag 的 target expando 函数换值回读：div.target=f1→读（reflected-
+/// 'target' expando 臂 part04 读 _expando）→覆盖 f2→再读须返 fn2。缺陷形态
+///（OP-086 RC-03）：target 臂产物 memo 钉死旧值（反射 tag a/area/form/link/base
+/// 不经此臂，面=非反射元素单 prop）。删除腿按 carrier 语义断言：expando 删除
+/// 后回落 target 属性读空串（臂注释 miss 回落面），非 undefined。
+#[test]
+fn memo_target_expando_fn_reassign_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\
+             document.body.appendChild(d);\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.target = f1;\
+             globalThis.__r_1 = d.target === f1;\
+             d.target = f2;\
+             globalThis.__r_2 = d.target === f2;\
+             delete d.target;\
+             globalThis.__r_3 = d.target === '';")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "非反射 tag target expando 首读返回存储值（target 臂基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "覆盖后再读返回新值（memo 不得钉死 f1——RC-03）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "删除后回落属性读空串（memo 不得复活已删值——RC-03；carrier 语义=expando 删除后 miss 回落 target 属性读）"
+    );
+}
+
+/// INPUT type 变异变体回读（正向翻转，OP-089 RC-04）：text→setSelectionRange 工作变体
+/// 读+调、number→stepUp 可步进变体读+调、text+readonly→showPicker「not mutable」抛错
+/// 门——三面首读后 type 翻转为 'button'，再读调用须随新类型（调用面 throw 反转 /
+/// readonly 适用表不冻结）。缺陷形态：READ 时变体选择/闭包冻结产物 memo 钉死旧变体。
+#[test]
+fn memo_input_type_flip_variants_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var a = document.createElement('input');\
+             a.setAttribute('type', 'text');\
+             document.body.appendChild(a);\
+             a.setSelectionRange(0, 1);\
+             a.setAttribute('type', 'button');\
+             var c1 = null;\
+             try { a.setSelectionRange(0, 1); } catch (e) { c1 = e.name; }\
+             globalThis.__r_1 = c1;\
+             var b = document.createElement('input');\
+             b.setAttribute('type', 'number');\
+             b.setAttribute('value', '5');\
+             document.body.appendChild(b);\
+             globalThis.__r_2 = typeof b.stepUp;\
+             b.stepUp();\
+             var c3 = null;\
+             try { b.stepUp(); } catch (e) { c3 = e.name; }\
+             globalThis.__r_3 = c3 === null;\
+             b.setAttribute('type', 'button');\
+             var c4 = null;\
+             try { b.stepUp(); } catch (e) { c4 = e.name; }\
+             globalThis.__r_4 = c4;\
+             var c = document.createElement('input');\
+             c.setAttribute('type', 'text');\
+             c.setAttribute('readonly', 'readonly');\
+             document.body.appendChild(c);\
+             var c5 = null;\
+             try { c.showPicker(); } catch (e) { c5 = e.name; }\
+             globalThis.__r_5 = c5;\
+             c.setAttribute('type', 'button');\
+             var c6 = null;\
+             try { c.showPicker(); } catch (e) { c6 = e.name; }\
+             globalThis.__r_6 = c6;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "InvalidStateError",
+        "type=button 后 setSelectionRange 调用抛 InvalidStateError（memo 不得钉死 text 工作变体——RC-04）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "function",
+        "number 型 stepUp 可步进变体基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "number 型 stepUp 调用不抛基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_4").unwrap().value,
+        "InvalidStateError",
+        "type=button 后 stepUp 抛 InvalidStateError（闭包冻结 type 域不得陈旧——RC-04）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_5").unwrap().value,
+        "InvalidStateError",
+        "text+readonly 型 showPicker「not mutable」抛错门基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_6").unwrap().value,
+        "NotAllowedError",
+        "type=button 后 readonly 不适用跌落 gesture 门（readonly 适用表不得冻结——RC-04）"
+    );
+}
+
+/// INPUT type 反转变体回读（OP-089 RC-04，setRangeText 面）：type=button 首读恒抛
+/// 变体→type='text' 后再读调用须不抛。缺陷形态：memo 钉死恒抛变体，翻回文本后
+/// 正常编辑面失效。
+#[test]
+fn memo_input_type_flip_setrangetext_reverse_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var d = document.createElement('input');\
+             d.setAttribute('type', 'button');\
+             document.body.appendChild(d);\
+             var c1 = null;\
+             try { d.setRangeText('x'); } catch (e) { c1 = e.name; }\
+             globalThis.__r_1 = c1;\
+             d.setAttribute('type', 'text');\
+             var c2 = null;\
+             try { d.setRangeText('y'); } catch (e) { c2 = e.name; }\
+             globalThis.__r_2 = c2 === null;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "InvalidStateError",
+        "button 型 setRangeText 恒抛变体基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "翻回 text 后调用不抛（memo 不得钉死恒抛变体——RC-04）"
+    );
+}

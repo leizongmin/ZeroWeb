@@ -375,6 +375,36 @@ impl RenderResult {
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.display_list.primitives
     }
+
+    /// 整帧渲染结果常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：图元（[`RenderPrimitives::estimated_resident_bytes`]）与脏区域
+    /// 槽位、布局树（[`LayoutResult::estimated_resident_bytes`]，按布局根
+    /// `Arc` 指针经 `seen_roots` 去重——跨活帧/缓存条目共享同一树时只计一次）、
+    /// canvas 像素缓冲、动画声明/作用域槽位之和。timings/stats 为纯标量不计。
+    /// 图元/canvas 等深拷贝面是真实分配，逐份持有各自计数。
+    pub fn estimated_resident_bytes(&self, seen_roots: &mut std::collections::HashSet<usize>) -> u64 {
+        fn vec_cap<T>(v: &Vec<T>) -> u64 {
+            (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+        }
+        let mut total = self
+            .display_list
+            .primitives
+            .estimated_resident_bytes()
+            .saturating_add(vec_cap(&self.display_list.dirty_rects));
+        let root_ptr = std::sync::Arc::as_ptr(&self.layout.root) as usize;
+        if seen_roots.insert(root_ptr) {
+            total = total.saturating_add(self.layout.estimated_resident_bytes());
+        }
+        total = total.saturating_add(vec_cap(&self.canvas_images));
+        for (_, _, _, rgba) in &self.canvas_images {
+            total = total.saturating_add(rgba.capacity() as u64);
+        }
+        total = total
+            .saturating_add(vec_cap(&self.animation_declarations))
+            .saturating_add(vec_cap(&self.animation_scopes));
+        total
+    }
 }
 
 /// 从图元与脏区域组装 [`RenderResult`]（S1 DisplayList 契约）。
@@ -4586,6 +4616,87 @@ pub(crate) fn apply_animation_overrides(
             .map(|nid| (*nid, AnimationEventKind::Iteration, it.name, it.elapsed))
     }));
     events
+}
+
+/// 账外域读数集（T79 账外域仪拍）：T78 九域之外管线侧保留面的字节读数，
+/// 经 `WebView::offledger_readings` 直通 renderer 录数块。单位字节（计数域
+/// 除外）；估算口径见各域估算器文档——服务 MB 量级归因，非 allocator 级
+/// 精确核算。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OffLedgerReadings {
+    /// 活文档树（`cached_doc`）常驻字节。
+    pub dom_tree_bytes: u64,
+    /// 计算样式保留面字节：`cached_styles` + `pending_transition_baseline`
+    /// 两 map 槽位 + ComputedStyle 堆承载（custom_properties Arc 去重）。
+    pub style_map_bytes: u64,
+    /// 布局结果树字节（`cached_layout`；与指纹缓存条目共享 Arc 时去重计一次）。
+    pub layout_result_bytes: u64,
+    /// taffy 增量布局状态字节（`layout_engine.estimated_state_bytes`）。
+    pub taffy_state_bytes: u64,
+    /// 帧指纹缓存字节（整帧深拷条目：doc + styles + stylesheets + result）。
+    pub fingerprint_cache_bytes: u64,
+    /// 帧指纹缓存条目数。
+    pub fingerprint_cache_entries: u64,
+    /// 样式表缓存字节：`cached_stylesheets` AST + `cached_css_text` 原文。
+    pub stylesheets_bytes: u64,
+}
+
+/// T79 账外域仪拍：管线侧保留面读数（env 门测量读数，非行为路径）。
+impl RenderPipeline {
+    /// 聚合账外域读数。共享面去重：布局根 Arc（`cached_layout` 与指纹缓存
+    /// 条目常共享同一树）经 `seen_roots` 只走查一次；`custom_properties` Arc
+    /// 继承链共享经 `seen_props` 只计一次。
+    pub fn offledger_readings(&self) -> OffLedgerReadings {
+        let mut seen_roots = std::collections::HashSet::new();
+        let mut seen_props = std::collections::HashSet::new();
+        let dom_tree_bytes = self
+            .cached_doc
+            .as_ref()
+            .map_or(0, |doc| doc.borrow().estimated_resident_bytes());
+        fn style_map_slots(styles: &HashMap<NodeId, ComputedStyle>) -> u64 {
+            (std::mem::size_of::<NodeId>()
+                .saturating_add(std::mem::size_of::<ComputedStyle>())
+                .saturating_mul(styles.capacity())) as u64
+        }
+        let mut styles_slots: u64 = style_map_slots(&self.cached_styles);
+        if let Some(baseline) = &self.pending_transition_baseline {
+            styles_slots = styles_slots.saturating_add(style_map_slots(baseline));
+        }
+        for style in self.cached_styles.values() {
+            styles_slots = styles_slots.saturating_add(style.estimated_heap_bytes_dedup(&mut seen_props));
+        }
+        if let Some(baseline) = &self.pending_transition_baseline {
+            for style in baseline.values() {
+                styles_slots = styles_slots.saturating_add(style.estimated_heap_bytes_dedup(&mut seen_props));
+            }
+        }
+        let mut layout_result_bytes = 0u64;
+        if let Some(layout) = &self.cached_layout {
+            let root_ptr = std::sync::Arc::as_ptr(&layout.root) as usize;
+            if seen_roots.insert(root_ptr) {
+                layout_result_bytes = layout_result_bytes.saturating_add(layout.estimated_resident_bytes());
+            }
+        }
+        let mut stylesheets_bytes: u64 =
+            (std::mem::size_of::<Stylesheet>().saturating_mul(self.cached_stylesheets.capacity())) as u64;
+        for sheet in &self.cached_stylesheets {
+            stylesheets_bytes = stylesheets_bytes.saturating_add(sheet.estimated_resident_bytes());
+        }
+        stylesheets_bytes =
+            stylesheets_bytes.saturating_add(self.cached_css_text.as_ref().map_or(0, |s| s.len() as u64));
+        let fingerprint_cache_bytes = self
+            .frame_fingerprint_cache
+            .estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        OffLedgerReadings {
+            dom_tree_bytes,
+            style_map_bytes: styles_slots,
+            layout_result_bytes,
+            taffy_state_bytes: self.layout_engine.estimated_state_bytes(),
+            fingerprint_cache_bytes,
+            fingerprint_cache_entries: self.frame_fingerprint_cache.entry_count() as u64,
+            stylesheets_bytes,
+        }
+    }
 }
 
 #[cfg(test)]

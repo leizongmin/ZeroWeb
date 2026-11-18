@@ -170,6 +170,12 @@ enum JsWorkerCommand {
     DeferredReclaim {
         gens: u32,
     },
+    /// T79 账外域仪拍：isolate 线程自报 V8 已用堆——worker 命令边界调
+    /// `heap_used_bytes()` 写入共享槽（V8 cage 不经 System 分配器，dump 线程
+    /// 不触沙箱；主线程发布点读最近读数）。
+    ProbeHeap {
+        slot: Arc<AtomicU64>,
+    },
     Shutdown,
 }
 
@@ -213,6 +219,10 @@ pub struct RendererJsWorker {
     /// 三点），renderer 主循环节拍泵据此决定是否派发 `__zw_raf_tick`（镜像媒体泵门控；
     /// 无注册 rAF 时恒 0，泵零开销）。
     raf_interest: Arc<AtomicU64>,
+    /// T79 账外域仪拍：V8 isolate 线程自报槽——worker 线程在命令边界响应
+    /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
+    /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
+    heap_probe_slot: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -373,6 +383,9 @@ impl RendererJsWorker {
         // （`Page.loadEventFired` 族重发事件源）。
         let doc_write_settled: Arc<std::sync::Mutex<Vec<()>>> = Arc::default();
         let doc_write_settled_for_worker = Arc::clone(&doc_write_settled);
+        // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
+        // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
+        let heap_probe_slot = Arc::new(AtomicU64::new(0));
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -525,6 +538,7 @@ impl RendererJsWorker {
             fetch_observed,
             page_fetch_inflight,
             raf_interest,
+            heap_probe_slot,
             mutations,
             history_inbox,
             rect_snapshot,
@@ -638,6 +652,24 @@ impl RendererJsWorker {
         self.cmd_tx
             .send(JsWorkerCommand::DeferredReclaim { gens })
             .map_err(|e| e.to_string())
+    }
+
+    /// T79 账外域仪拍：请求 V8 已用堆自报（fire-and-forget——worker 命令边界
+    /// 执行 `heap_used_bytes()` 写共享槽；主线程随后读
+    /// [`Self::latest_v8_heap_bytes`]，读数至多滞后一个命令队列深度）。
+    pub fn request_v8_heap_probe(&self) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::ProbeHeap {
+                slot: Arc::clone(&self.heap_probe_slot),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// 最近一次 V8 已用堆读数（字节；`None` = 尚无读数——ProbeHeap 未达
+    /// isolate 线程或沙箱无堆统计）。
+    pub fn latest_v8_heap_bytes(&self) -> Option<u64> {
+        let v = self.heap_probe_slot.load(std::sync::atomic::Ordering::Relaxed);
+        (v != 0).then_some(v)
     }
 
     /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
@@ -1265,13 +1297,14 @@ fn prio_snapshot_barrier_seq(cmd: &JsWorkerCommand) -> Option<u64> {
 }
 
 /// r2946（F1 返修）：非阻塞 drain 普通通道，切出「屏障前缀」。优先命令 picked 时，
-/// 普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用；同通道 FIFO 即
-/// 提交序，故不重排桶内元素，直接把 drain 序列在**最后一个**此类快照处切成两段：
-/// `prefix` = 截至该快照的全部命令（通道原序，须先于优先命令派发——前缀内的普通命令
-/// 提交序先于屏障快照，由屏障的不变式传递性地也须先于优先命令）；
-/// `post` = 其后命令（提交序晚于屏障快照，优先先取语义保持——不因屏障阻塞它们，
-/// 优先通道清空后补跑，长回调级联不重新压住优先派发）。
-/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，置于序列头部。
+/// 普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用。T79 起 prefix
+/// 收窄为这些快照本身（按通道原序）：快照间序保持「先提交先应用」，其余普通命令
+/// （ResolveAsyncCallback 等页面任务）进 `post` 补跑——它们与优先命令的相对序无
+/// 约束（event-loop 竞态面），不再连坐进 prefix（此前实现按最后一个早快照整体
+/// 切前缀，页面回包臂洪流把求值压数十秒，§399）。
+/// `post` = 其余命令（优先通道清空后补跑，长回调级联不重新压住优先派发）。
+/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，随
+/// drain 序列一并参与收窄判定（搁置快照同样进 prefix）。
 /// 无此类快照时 prefix 为空、post 即整个 drain，优先命令照常立即派发。
 /// 通道 try_recv 失败（空/断连）即停止——断连由阻塞 recv 路径统一处理。
 fn take_snapshot_barrier(
@@ -1280,28 +1313,155 @@ fn take_snapshot_barrier(
     held: Option<JsWorkerCommand>,
 ) -> (VecDeque<JsWorkerCommand>, VecDeque<JsWorkerCommand>) {
     let seq: VecDeque<JsWorkerCommand> = held.into_iter().chain(cmd_rx.try_iter()).collect();
-    // rposition 取最后一个更早快照作切点：其前（含自身）全部进 prefix，其后进 post。
-    // 已入通道的匹配快照不可能落到切点之后（rposition 语义）；真实的退化窗是
-    // 「扫描时尚未入通道的更晚发送快照」——跨发送方 fetch_add→send 间隙使其对本轮
-    // 扫描不可见，优先命令越过它先跑，与屏障前行为一致。反向错位（seq/通道序交错）
-    // 只会把 seq≥prio_seq 的命令过度拉入 prefix，仅扩大屏障窗、FIFO 仍安全。
-    // 两个方向都不劣于屏障前，不为此引入跨线程定序。
-    let Some(split) = seq
-        .iter()
-        .rposition(|c| matches!(c, JsWorkerCommand::SetDomSnapshot { seq, .. } if *seq < prio_seq))
-    else {
-        return (VecDeque::new(), seq);
-    };
+    // T79: prefix 收窄为「更早提交的普通快照序列」——屏障不变式只要求快照先于
+    // 优先命令应用（r2946：fire-and-forget 生命周期派发不得在未安装快照的空 DOM
+    // 上执行）；此前实现按「最后一个更早快照」整体切前缀，把夹在快照之间的
+    // ResolveAsyncCallback 等页面任务一并连坐进 prefix——页面回包臂洪流（bilibili
+    // 真实执行形态：单臂秒级、busy=99% 连绵，见 run.md §399）使自动化求值的
+    // 前置快照把数十秒积压切进 prefix，求值排队 27-50s，headless 35s 磨窗超时、
+    // mux 单线程循环整段冻结。回包与优先命令的相对序本无约束（fetch resolve
+    // 回调读 DOM 与渲染帧交错本就是 event-loop 竞态面，WHATWG HTML
+    // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model：
+    // 任务让路渲染机会帧），后置一拍执行与真实浏览器同构。跨发送方
+    // fetch_add→send 间隙的退化窗语义不变：扫描不可见的更晚快照被优先命令
+    // 越过，与屏障前行为一致。
     let mut prefix = VecDeque::new();
     let mut post = VecDeque::new();
-    for (i, cmd) in seq.into_iter().enumerate() {
-        if i <= split {
+    for cmd in seq {
+        if matches!(cmd, JsWorkerCommand::SetDomSnapshot { seq, .. } if seq < prio_seq) {
             prefix.push_back(cmd);
         } else {
             post.push_back(cmd);
         }
     }
     (prefix, post)
+}
+
+/// T79 内存归因仪拍（`ZW_RENDERER_MEM_TRACE` 启用）：worker 循环每 ≥5s 窗一行——
+/// glibc mallinfo2（arena/hblkhd/in_use/free）+ JS 引擎堆用量（used/malloc），把
+/// C1 renderer 增量劈分到「JS 堆 vs 分配器持有面 vs 其余」。纯观测：默认关闭时
+/// 每轮仅一次 Instant 比较；值 `1`/`true` → tracing INFO；其余非空值 → 追加写
+/// 文件（诊断侧信道，与 [`WorkerCensus`] 同形制）。
+struct WorkerMemTrace {
+    enabled: bool,
+    sink: Option<std::path::PathBuf>,
+    window_start: std::time::Instant,
+    /// T79 诊断：周期 trim 窗（`ZW_RENDERER_MEM_TRIM_S` 非零秒数启用；诊断侧信
+    /// 道，非产品路径——量化 trim 后残量，产品刀仍走 T13 nav_trim 生命周期）。
+    trim_period: Option<std::time::Duration>,
+    last_trim: std::time::Instant,
+}
+
+impl WorkerMemTrace {
+    fn new() -> Self {
+        let value = zero_runtime_config::optional_string("ZW_RENDERER_MEM_TRACE");
+        let truthy = value
+            .as_deref()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        // 同 WorkerCensus：falsy 值与 truthy 值都不当作 sink 路径（`MEM_TRACE=0`
+        // 不落文件、`MEM_TRACE=1` 不在 cwd 留名为 `1` 的垃圾文件）。
+        let sink = value
+            .filter(|v| !truthy && !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")))
+            .map(std::path::PathBuf::from);
+        let trim_secs = zero_runtime_config::optional_string("ZW_RENDERER_MEM_TRIM_S")
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|s| *s > 0);
+        Self {
+            enabled: truthy || sink.is_some(),
+            sink,
+            window_start: std::time::Instant::now(),
+            trim_period: trim_secs.map(std::time::Duration::from_secs),
+            last_trim: std::time::Instant::now(),
+        }
+    }
+
+    fn write_sink(&self, line: &str) {
+        if let Some(path) = &self.sink
+            && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+        {
+            use std::io::Write as _;
+            if let Err(e) = writeln!(f, "{line}") {
+                // 诊断侧信道写失败可见化：静默吞错会掩盖 sink 病因（T79 trim
+                // 构建下 0 字节文件的归因线索）。
+                tracing::warn!(target: "js_worker_mem_trace", "sink write failed: {e}");
+            }
+        }
+    }
+
+    /// worker 循环每轮调用：窗口 ≥5s 落一行快照（mallinfo2 + JS 堆用量）。
+    /// t=epoch ms（与 ZW_AUTOMATION_TRACE 的 t= 同源，可跨文件对齐时间线）。
+    fn maybe_flush(&mut self, sandbox: &mut dyn zero_script_sandbox::Sandbox) {
+        if !self.enabled {
+            return;
+        }
+        self.maybe_trim();
+        if self.window_start.elapsed() < std::time::Duration::from_secs(5) {
+            return;
+        }
+        self.window_start = std::time::Instant::now();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let ms = crate::malloc_stats::mallinfo2_snapshot();
+        let js = sandbox.js_heap_usage();
+        let line = format!(
+            "worker-mem t={ts} mallinfo2={} js={}",
+            match &ms {
+                Some(s) => format!(
+                    "arena={}B hblkhd={}B in_use={}B free={}B",
+                    s.arena_bytes, s.hblkhd_bytes, s.in_use_bytes, s.free_bytes
+                ),
+                None => "n/a".to_string(),
+            },
+            match &js {
+                Some(u) => format!("used={}B malloc={}B", u.memory_used_size, u.malloc_size),
+                None => "n/a".to_string(),
+            },
+        );
+        if self.sink.is_some() {
+            self.write_sink(&line);
+        } else {
+            tracing::info!(target: "js_worker_mem_trace", "{line}");
+        }
+    }
+
+    /// 到点 `malloc_trim(0)`：trim 前后各落一行 mallinfo2（差 = 净让量；诊断
+    /// 量化用——trim 后残量即「部分空闲页段」收不回的部分，读数直读）。
+    fn maybe_trim(&mut self) {
+        let Some(period) = self.trim_period else { return };
+        if self.last_trim.elapsed() < period {
+            return;
+        }
+        self.last_trim = std::time::Instant::now();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let fmt = |s: Option<crate::malloc_stats::MallocSnapshot>| match s {
+            Some(s) => format!(
+                "arena={}B hblkhd={}B in_use={}B free={}B",
+                s.arena_bytes, s.hblkhd_bytes, s.in_use_bytes, s.free_bytes
+            ),
+            None => "n/a".to_string(),
+        };
+        let before = crate::malloc_stats::mallinfo2_snapshot();
+        // SAFETY: `malloc_trim(0)` 只对 malloc 空闲页 madvise 归还，无指针语义、
+        // 不触碰活对象；多线程下 glibc 自带 arena 锁。
+        let released = unsafe { libc::malloc_trim(0) };
+        let after = crate::malloc_stats::mallinfo2_snapshot();
+        let line = format!(
+            "worker-trim t={ts} released={} before=[{}] after=[{}]",
+            released == 1,
+            fmt(before),
+            fmt(after),
+        );
+        if self.sink.is_some() {
+            self.write_sink(&line);
+        } else {
+            tracing::info!(target: "js_worker_mem_trace", "{line}");
+        }
+    }
 }
 
 /// t7 诊断基座：js worker 命令成本普查（`ZW_JS_WORKER_CENSUS` 启用）。
@@ -1373,6 +1533,7 @@ impl WorkerCensus {
             JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
             JsWorkerCommand::WakePrio => "WakePrio",
             JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
+            JsWorkerCommand::ProbeHeap { .. } => "ProbeHeap",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -1757,9 +1918,11 @@ fn js_worker_main(
     // 的空 DOM 上跑一次即被钉死，<body onload> 永不触发（r2946 单测全量腿实证：
     // solo 0.06s 恒过、239 连跑必挂 30s 窗）。屏障在 worker 端恢复「同提交序」不变式，
     // 一个 guard 覆盖全部 fire-and-forget 优先派发（生命周期/资源/字体/动画/过渡）。
-    // F1 返修：屏障不只是快照本身——是 drain 序列截至最后一个更早快照的**前缀**
-    // （含此前提交的普通命令，通道原序；跨轮再归并 deferred_normal 于头部），随后
-    // 才是 barrier_prio；post 部分（提交序晚于屏障）保持优先先取。
+    // F1 返修：屏障恢复「同提交序」不变式。T79 收窄：prefix 只含更早提交的普通
+    // 快照本身（通道原序；跨轮再归并 deferred_normal 于头部），页面任务（回包等）
+    // 不再连坐进 prefix——快照安装序不变式保住的同时，回包臂洪流不再压住求值
+    // （§399：bilibili 真实执行形态下求值曾被连坐 27-50s）；随后才是 barrier_prio；
+    // post 部分（其余普通命令）保持优先先取。
     let mut barrier_prefix: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut barrier_prio: Option<JsWorkerCommand> = None;
     // t2-pb1 F1：复位臂存活的滞留命令本地续派队列。不经通道回送（fix#20 的自馈送
@@ -1767,14 +1930,16 @@ fn js_worker_main(
     // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
     let mut retained_after_reset: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut census = WorkerCensus::new();
+    let mut mem_trace = WorkerMemTrace::new();
     loop {
+        mem_trace.maybe_flush(sandbox.as_mut());
         let next_cmd = 'dispatch: loop {
             // F1：复位臂存活的滞留命令按原序先于一切新到命令续派。
             if let Some(cmd) = retained_after_reset.pop_front() {
                 break 'dispatch Some(cmd);
             }
-            // r2946 屏障前缀：更早提交的普通通道快照及其之前的普通命令（通道原序）
-            // 先应用/执行，随后才是被屏障让位的优先命令。
+            // r2946 屏障前缀：更早提交的普通通道快照（T79 收窄：仅快照本身，通道
+            // 原序）先应用，随后才是被屏障让位的优先命令。
             if let Some(cmd) = barrier_prefix.pop_front() {
                 break 'dispatch Some(cmd);
             }
@@ -2430,6 +2595,13 @@ fn js_worker_main(
                 // T13 S2：归还 glibc arena free 页（`ZEROWEB_NAV_TRIM=0` 关，token 全零）。
                 if crate::mem_reclaim::nav_trim_enabled() {
                     crate::mem_reclaim::malloc_trim_now("worker_trim", gens);
+                }
+            }
+            JsWorkerCommand::ProbeHeap { slot } => {
+                // T79 账外域仪拍：isolate 线程自报 V8 已用堆（heap_used_bytes 内部
+                // enter/exit 配对；quickjs 沙箱 trait 默认 None → 槽保持 0 = 无读数）。
+                if let Some(heap_bytes) = sandbox.heap_used_bytes() {
+                    slot.store(heap_bytes as u64, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             JsWorkerCommand::Shutdown => {

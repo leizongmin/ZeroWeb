@@ -421,6 +421,37 @@ impl LayoutEngine {
         }
     }
 
+    /// taffy 增量布局状态常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为
+    /// 路径）。`cached_state` 为 `None` 时 0。
+    ///
+    /// 口径：taffy 节点表槽位（[`TaffyTree::estimated_resident_bytes`]）+
+    /// 双向映射槽位 + R109 接线表槽位（fragment registry 内嵌 Vec 槽位含）。
+    pub fn estimated_state_bytes(&self) -> u64 {
+        let Some(state) = &self.cached_state else {
+            return 0;
+        };
+        fn map_cap<K, V>(m: &HashMap<K, V>) -> u64 {
+            (std::mem::size_of::<K>()
+                .saturating_add(std::mem::size_of::<V>())
+                .saturating_mul(m.capacity())) as u64
+        }
+        let mut total = state.taffy.estimated_resident_bytes();
+        total = total
+            .saturating_add(map_cap(&state.dom_to_taffy))
+            .saturating_add(map_cap(&state.taffy_to_dom));
+        // R109 接线：registry 槽位 + 内嵌 Vec 槽位 + 两个集合槽位。
+        total = total.saturating_add(map_cap(&state.r109.fragment_registry));
+        for frags in state.r109.fragment_registry.values() {
+            total = total.saturating_add((std::mem::size_of::<NodeId>().saturating_mul(frags.capacity())) as u64);
+        }
+        total = total
+            .saturating_add((std::mem::size_of::<NodeId>().saturating_mul(state.r109.split_parents.capacity())) as u64);
+        total = total.saturating_add(
+            (std::mem::size_of::<NodeId>().saturating_mul(state.r109.block_mixed_parents.capacity())) as u64,
+        );
+        total
+    }
+
     /// U1b-wiring（unified font stack）：注入 per-font 行度量提供者。
     ///
     /// 注入后 `compute_final_inline_layouts`（stored IFC 路径）把 provider 传给所构造的

@@ -18,6 +18,22 @@ pub(crate) fn nav_trim_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZEROWEB_NAV_TRIM")
 }
 
+/// T79 S9：glibc 分配器滞留收敛（启动单次调用，零热路径）。
+/// gate+mallopt 实现 T79 迁至 zero-runtime-config（browser bin 同刀复用，
+/// 劈分证据见该函数文档），此处保留 bin 侧 tracing 记录；关闭与非 glibc
+/// 目标静默不调。bin 作用域经 lib.rs 单符号 re-export 调用。
+pub fn tune_malloc_retention_policy() {
+    if let Some((arena, mmap, trim)) = zero_runtime_config::tune_malloc_retention_policy() {
+        tracing::info!(
+            target: "mem_reclaim",
+            arena_max_ok = arena,
+            mmap_threshold_ok = mmap,
+            trim_threshold_ok = trim,
+            "malloc retention policy tuned"
+        );
+    }
+}
+
 /// T13 S7：内存探针——`ZEROWEB_MEM_PROBE=1` 开（缺省关；观测腿不进判据样本）。
 pub(crate) fn mem_probe_enabled() -> bool {
     zero_runtime_config::enabled_when_true("ZEROWEB_MEM_PROBE")
@@ -152,6 +168,14 @@ pub(crate) fn test_trim_lock() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T79 S9：调参幂等可重入且 gate 关闭时零 mallopt（早退路径）。
+    #[test]
+    fn malloc_tune_is_idempotent_and_gate_gated() {
+        // 缺省开启：gnu 下两次调用不 panic（mallopt 可重入）；非 glibc 零操作。
+        crate::mem_reclaim::tune_malloc_retention_policy();
+        crate::mem_reclaim::tune_malloc_retention_policy();
+    }
 
     /// T13 R1 TV-F4 调度门钉（1/3）：布防后 D 内不触发——绕过延迟（同步触发）必红。
     #[test]

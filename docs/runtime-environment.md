@@ -51,6 +51,7 @@ switch there before consuming it in an application or library crate.
 | `ZW_MEDIA_HOST_BIN` | executable path | auto-discovery | Override the media-host executable. |
 | `ZW_DEVTOOLS_FRONTEND_DIR` | directory path | unset | Serve a devtools-frontend bundle over `/devtools/` on the CDP HTTP endpoint and point `devtoolsFrontendUrl` at it. Mutually exclusive with the default CDP auth token: the stock frontend's page-direct socket carries no token and is rejected; connect with a self-managed CDP client instead (token from the discovery endpoint). |
 | `ZEROWEB_NAV_TRIM` | `0` disables | enabled | Disable the deferred navigation-settle allocator reclaim (`nav_trim`/`worker_trim`); the deferred V8 GC hint is not gated by this switch. |
+| `ZEROWEB_MALLOC_TUNE` | `0` disables | enabled | Disable the glibc allocator retention-policy tune (T79 S9): arena cap convergence plus frozen mmap/trim thresholds, applied once at startup in both the browser and renderer processes. |
 | `ZEROWEB_MEM_PROBE` | `1` enables | disabled | Emit memory-fill/PSS probe logs (T13 observation leg; not part of judgment samples). |
 | `ZEROWEB_WARM_IDLE_REARM` | `1` enables | disabled | Automatically re-arm the warm spare after an idle reap (T13 S8 experimental arm). |
 

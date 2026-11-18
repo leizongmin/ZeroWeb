@@ -6379,6 +6379,11 @@
         // `on`+小写字母 = handler（generic，无白名单）。与 set trap 的 on* 路由对偶。
         // R2934：无 JS 设值时回落编译 inline on* 属性（<button onclick="...">）。
         if (typeof prop === 'string' && /^on[a-z]/.test(prop)) {
+          // T79 F1 返修（PR #310 DF-01 A 路）：on* 全臂禁 memo——注册 handler（set trap
+          // 重指派写 _onHandlers，part04 set 键）、window 转发臂（live window handler）、
+          // B5/s288 expando 读（可删可覆盖）均为可变面，缓存任一臂产物读回陈旧函数；
+          // null/undefined 臂本就不过 function 门，臂顶标记无副作用。
+          _zwNoMemoMark();
           var _gt = String(prop).slice(2);
           // js-dom M4 R113：prefixed handler getter 同 setter 映射（`onwebkitanimationend`
           // 的注册键是 camelCase `webkitAnimationEnd`——与 set trap 同一别名表）。
@@ -14683,7 +14688,8 @@
           if (prop === 'target' && typeof _reflectedStringAttrOn === 'function'
               && _reflectedStringAttrOn(_realTag(sel, handle), 'target') == null) {
             var _exTgt = _expando[key];
-            if (_exTgt && Object.prototype.hasOwnProperty.call(_exTgt, 'target')) return _exTgt.target;
+            // T79 OP-086（RC-03）：target expando 与已标 R3042 同一存值，动态面禁缓存。
+            if (_exTgt && Object.prototype.hasOwnProperty.call(_exTgt, 'target')) { _zwNoMemoMark(); return _exTgt.target; }
           }
           if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
@@ -14841,7 +14847,10 @@
         // R3042：expando 属性读（非原始值 setter 存于 per-element _expando map）。命中 → 返存储值（function/object
         // 等，real browser expando 语义）。仅 hasOwnProperty 命中才返（避免原型链污染）；未命中 fall through。
         var _exStore = _expando[key];
-        if (_exStore && Object.prototype.hasOwnProperty.call(_exStore, prop)) return _exStore[prop];
+        // T79 F1 返修（PR #310 DF-01 B/C 路）：expando 可经 set trap 覆盖（part05 generic
+        // fallthrough）/deleteProperty 删除（part05 ② 臂），两写删通道均不触 memo——禁
+        // 缓存读恒现算（改动前语义），防覆盖/删除后读回陈旧函数。
+        if (_exStore && Object.prototype.hasOwnProperty.call(_exStore, prop)) { _zwNoMemoMark(); return _exStore[prop]; }
         // js-dom M4 R80：未知属性回落**原型链**（getPrototypeOf trap 决定的链——target {} 的真实原型
         // 是 Object.prototype，Reflect.get 不可见 HTML*Element 链，故手动沿链查找）——旧恒返 undefined
         // 使 Node 接口常量（element.ELEMENT_NODE 等）不可见（WPT Document-createElementNS
@@ -14860,6 +14869,11 @@
           while (_pchain && _pguard < 8) {
             var _pdesc = Object.getOwnPropertyDescriptor(_pchain, prop);
             if (_pdesc) {
+              // T79 F1 返修（PR #310 DF-01 CE/lit 变体）：原型 own 命中是 live 链——方法/
+              // accessor 可被猴子补丁、registry 可重定义（R93 当初修 `el.bump is not a
+              // function` 的本语义即读新值），memo 化会钉死旧函数。标记覆盖 getter 与
+              // data 两 return；getter 求值可递归再入 trap，标记写栈顶（本帧）不受内层污染。
+              _zwNoMemoMark();
               if (_pdesc.get) return _pdesc.get.call(_makeProxy(sel, handle));
               return _pdesc.value;
             }
@@ -14868,7 +14882,10 @@
           }
         }
         return undefined;
-      },
+        };
+        }
+        return _zwTrapGetBodyRef;
+      })(),
       set: function(_t, prop, value, receiver) {
         var p = String(prop);
         // R-t2qq（constructable stylesheets，siteopt qq-20261016-r1）：ShadowRoot
