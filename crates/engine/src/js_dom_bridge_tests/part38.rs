@@ -912,3 +912,122 @@ fn memo_ce_proto_monkey_patch_readback_s41() {
         "补丁后调用行为随补丁更新（live 原型链面）"
     );
 }
+
+/// CE 原型 accessor（响应式 prop）换值回读：defineProperty get/set 装用户类
+/// prototype 首层（lit createProperty 形态）——设 callback fn1→读（R98 accessor
+/// getter 派发 part03）→经 live setter 换 fn2→再读须返 fn2。缺陷形态（OP-086
+/// RC-01）：R98 get 侧派发产物 memo 钉死旧值；方法简写钉走 R93 data 面，本钉
+/// 专覆盖 accessor 面（R98 臂先于 R93 走查执行）。
+#[test]
+fn memo_ce_accessor_reactive_prop_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "class AccCE extends HTMLElement {}\
+             Object.defineProperty(AccCE.prototype, 'onstep', {\
+               get: function () { return this.__accStore; },\
+               set: function (v) { this.__accStore = v; }\
+             });\
+             customElements.define('acc-ce-s41', AccCE);\
+             var d = document.createElement('acc-ce-s41');\
+             document.body.appendChild(d);\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.onstep = f1;\
+             globalThis.__r_1 = d.onstep === f1;\
+             d.onstep = f2;\
+             globalThis.__r_2 = d.onstep === f2;\
+             globalThis.__r_3 = d.onstep();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "CE accessor 首读返回当前值（R98 accessor 派发基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "live setter 换值后再读返回新值（memo 不得钉死 fn1——RC-01）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "2",
+        "换值后调用行为随更新（accessor 读回再调用面）"
+    );
+}
+
+/// FORM 元素 expando 函数覆盖+删除回读：FORM named-first 块（part03，先于已标
+/// R3042 臂执行）② own expando 臂读同一 _expando 存值——f.cbfn=f1→读→覆盖
+/// f2→读返 f2；delete→读返 undefined。缺陷形态（OP-086 RC-02）：FORM 上
+/// expando function 被 memo 化后覆盖/删除读回陈旧值。prop 取非具名集合成员
+///（③ 具名门只挡 named/index 臂，② 对全部 prop 开放）。
+#[test]
+fn memo_form_expando_fn_reassign_delete_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var f = document.createElement('form');\
+             document.body.appendChild(f);\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             f.cbfn = f1;\
+             globalThis.__r_1 = f.cbfn === f1;\
+             f.cbfn = f2;\
+             globalThis.__r_2 = f.cbfn === f2;\
+             delete f.cbfn;\
+             globalThis.__r_3 = f.cbfn === undefined;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "FORM expando 函数首读返回存储值（named-first ② 臂基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "覆盖后再读返回新值（memo 不得钉死 f1——RC-02②）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "删除后再读 undefined（memo 不得复活已删值——RC-02②）"
+    );
+}
+
+/// 非反射 tag 的 target expando 函数换值回读：div.target=f1→读（reflected-
+/// 'target' expando 臂 part04 读 _expando）→覆盖 f2→再读须返 fn2。缺陷形态
+///（OP-086 RC-03）：target 臂产物 memo 钉死旧值（反射 tag a/area/form/link/base
+/// 不经此臂，面=非反射元素单 prop）。删除腿按 carrier 语义断言：expando 删除
+/// 后回落 target 属性读空串（臂注释 miss 回落面），非 undefined。
+#[test]
+fn memo_target_expando_fn_reassign_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\
+             document.body.appendChild(d);\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.target = f1;\
+             globalThis.__r_1 = d.target === f1;\
+             d.target = f2;\
+             globalThis.__r_2 = d.target === f2;\
+             delete d.target;\
+             globalThis.__r_3 = d.target === '';")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "非反射 tag target expando 首读返回存储值（target 臂基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "覆盖后再读返回新值（memo 不得钉死 f1——RC-03）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "删除后回落属性读空串（memo 不得复活已删值——RC-03；carrier 语义=expando 删除后 miss 回落 target 属性读）"
+    );
+}

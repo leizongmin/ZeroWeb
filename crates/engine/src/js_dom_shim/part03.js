@@ -31892,6 +31892,9 @@ return e;
               var _r98GDesc;
               try { _r98GDesc = Object.getOwnPropertyDescriptor(_r98m.p, prop); } catch (_e98g) { _r98GDesc = undefined; }
               if (_r98GDesc && typeof _r98GDesc.get === 'function') {
+                // T79 OP-086（RC-01）：CE 首层原型 accessor getter 产物可经 live setter
+                //（R98 set 侧派发）变异（lit createProperty 响应式形态），动态面禁缓存。
+                _zwNoMemoMark();
                 try { return _r98GDesc.get.call(_makeProxy(sel, handle)); } catch (_e98gc) { return undefined; }
               }
             }
@@ -33934,12 +33937,17 @@ return e;
               var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
               // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
               // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
-              if (_fnd0 && _fnd0.configurable === false) return _t[prop];
+              // T79 OP-086（RC-02①）：accessor 求值面动态、non-writable 变体可经直写
+              // 变值，禁缓存。
+              if (_fnd0 && _fnd0.configurable === false) { _zwNoMemoMark(); return _t[prop]; }
             } catch (_efnd0) {}
             // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
             // own property；WPT expando added later 案）。
             var _fex0 = _expando[key];
             if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+              // T79 OP-086（RC-02②）：FORM own expando 与已标 R3042 同一存值（set
+              // fallthrough 写/deleteProperty ② 臂删），且先于其执行——动态面禁缓存。
+              _zwNoMemoMark();
               return _fex0[prop];
             }
             // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态

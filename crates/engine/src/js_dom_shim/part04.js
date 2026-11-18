@@ -14688,7 +14688,8 @@
           if (prop === 'target' && typeof _reflectedStringAttrOn === 'function'
               && _reflectedStringAttrOn(_realTag(sel, handle), 'target') == null) {
             var _exTgt = _expando[key];
-            if (_exTgt && Object.prototype.hasOwnProperty.call(_exTgt, 'target')) return _exTgt.target;
+            // T79 OP-086（RC-03）：target expando 与已标 R3042 同一存值，动态面禁缓存。
+            if (_exTgt && Object.prototype.hasOwnProperty.call(_exTgt, 'target')) { _zwNoMemoMark(); return _exTgt.target; }
           }
           if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
