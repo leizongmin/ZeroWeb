@@ -2651,9 +2651,10 @@ pub fn register_dom_callbacks(
     );
 
     // `CSS.registerProperty(desc)`——css-properties-values-api-1 刀（2026-11-17）。
-    // shim 完成字典转换（TypeError 面）后传六参：name / syntax（缺省空串→"normal"）/
-    // inherits_present / inherits / initial_present / initial。Rust 侧 spec 校验+
-    // 存储；Ok 返空串，Err 返 `kind|message`（shim 映射 DOMException/TypeError）。
+    // shim 完成字典转换（TypeError 面 + WebIDL syntax 缺省 '*'）后传六参：name /
+    // syntax（空串保真——parse 失败即 SyntaxError）/ inherits_present / inherits /
+    // initial_present / initial。Rust 侧 spec 校验+存储；Ok 返空串，Err 返
+    // `kind|message`（shim 映射 DOMException/TypeError）。
     // 消费面：gCS `--` 分支串化 + 动画插值 `--` 臂（registered_properties 模块文档）。
     // https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-method
     sandbox.register_callback(
@@ -2662,11 +2663,7 @@ pub fn register_dom_callbacks(
             if args.len() < 6 {
                 return "TypeError|not enough arguments".into();
             }
-            let syntax = if args[1].is_empty() {
-                None
-            } else {
-                Some(args[1].as_str())
-            };
+            let syntax = Some(args[1].as_str());
             let ip = args[2] == "1";
             let inh = args[3] == "1";
             let pp = args[4] == "1";

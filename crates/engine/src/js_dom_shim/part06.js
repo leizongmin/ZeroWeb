@@ -169,12 +169,16 @@
     if (!('name' in desc) || desc.name === undefined) {
       throw new TypeError("Failed to execute 'registerProperty' on 'CSS': required member name is undefined.");
     }
-    var hasSyntax = desc.syntax !== undefined && desc.syntax !== null;
-    var syntax = hasSyntax ? String(desc.syntax) : '';
+    // WebIDL 字典转换（刀 RP1）：syntax undefined（含缺席）→ 缺省 '*'（WebIDL
+    // PropertyDescriptor syntax = '*'）；null → DOMString "null"（语料
+    // register-property-syntax-parsing assert_valid(null,"null")——非缺省通道，
+    // 作普通 ident 文法参与裁决）。空串保真过 wire，host parse 判非法。
+    var hasSyntax = 'syntax' in desc && desc.syntax !== undefined;
+    var syntax = hasSyntax ? String(desc.syntax) : '*';
     var hasInherits = 'inherits' in desc && desc.inherits !== undefined;
     // typed/universal 形须显式 inherits（--inherit-test-3 TypeError 锚定）；
     // host 侧同判据双保险（此处先行使 TypeError 不落 Rust 字符串协议）。
-    if (!hasInherits && hasSyntax && syntax !== '' && syntax.trim() !== 'normal') {
+    if (!hasInherits && syntax.trim() !== 'normal') {
       throw new TypeError("Failed to execute 'registerProperty' on 'CSS': The inherits dictionary member is required for this syntax.");
     }
     var initial = desc.initialValue === undefined || desc.initialValue === null ? '' : String(desc.initialValue);
