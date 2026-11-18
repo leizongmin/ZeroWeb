@@ -16521,8 +16521,16 @@
           // 展开逐层插值（wptfyi-css 刀 A1 ③ 同通道），该族改比**逐层单位种类
           // 集合**（顶层逗号分割、忽略层数）：各帧出现过的层单位种类一致（全纯
           // px 等）放行；真单位种类失配（px↔% 层）维持 ④ 原判。无单位值
-          //（none/纯关键字值）仍不参判（原 continue 语义保形）。
-          var _zwPosList = _zup === 'mask-position' || _zup === 'background-position' || _zup === 'object-position';
+          //（none/纯关键字值）仍不参判（原 continue 语义保形）。刀 A1e：单轴
+          // 长手 background-position-x/y（css-backgrounds-4 §2.4 <position-x>#）
+          // 同文法逗号列表入族——帧间层数失配（2 层→3 层）同样被 ④ 整串单位
+          // multiset 误杀（x/y-interp 页 WAAPI 7F 全 at 无覆盖、animate 根本未
+          // 到引擎 register 的探针实证 2026-11-18：21 BUILD-ENTRY = 前 3 blocks，
+          // multi-layer block 全缺）；引擎 mix_bg_position_axis LCM 逐层插值 +
+          // canonicalize 往返（刀 A1d 全链单元探针 probe_waapi_multilayer_chain
+          // 定谳全通），唯 shim 门独病同款。
+          var _zwPosList = _zup === 'mask-position' || _zup === 'background-position' || _zup === 'object-position'
+            || _zup === 'background-position-x' || _zup === 'background-position-y';
           var _zwUs = null;
           var _zwLayerKinds = null;
           for (var _zuj = 0; _zuj < _zwPv[_zup].length; _zuj++) {

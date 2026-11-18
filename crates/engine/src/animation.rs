@@ -2309,9 +2309,19 @@ fn mask_pos_layer(v: &zero_css_parser::values::BackgroundPositionValue) -> Optio
     match v {
         Bpv::TwoValue(h, vert) => Some((mask_pos_comp(h)?, mask_pos_comp(vert)?)),
         Bpv::Calc(_) => None,
+        // 刀 A1e（css-backgrounds-3 §3 单值形）：单值形垂直关键字（top/bottom/
+        // start/end）属 **Y 轴**（`bottom` ≡ `center bottom`），x 缺省 center——
+        // 原臂恒入 X 致 `center`→`bottom` 对 x/y 分量交换（origin 页 CSSA+WAAPI
+        // 8F：期望 "50% 100%" got "100% 50%"）；水平关键字/长百分比单值形维持
+        // X 位 y=center（原语义，bg `bottom` 形语料钉面同改净 +8）。
         single => {
-            let x = mask_pos_comp(single)?;
-            Some((x, (50.0, 0.0, true)))
+            if matches!(single, Bpv::Top | Bpv::Bottom | Bpv::YStart | Bpv::YEnd) {
+                let y = mask_pos_comp(single)?;
+                Some(((50.0, 0.0, true), y))
+            } else {
+                let x = mask_pos_comp(single)?;
+                Some((x, (50.0, 0.0, true)))
+            }
         }
     }
 }

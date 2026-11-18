@@ -521,6 +521,15 @@ fn query_core(
         // `calc(0% + 20px)` 系数形、mismatched 层数对期望 LCM 展开形，echo 级联
         // 形欠混合/展开位（WAAPI 同形 at(1) 已走插值臂实证同通道正确）；纯 px
         // 对插值臂 t=1 与 echo 恒等零扰动。
+        // background-position(±x/y)/object-position 例外（刀 A1e R2，2026-11-18，
+        // css-backgrounds-3 §3.6 / css-backgrounds-4 §2.4 / css-images-3
+        // §object-position）：同 mask-position 文法族同病同治——initial/unset
+        // 端点 at(1) 期望 calc 系数形、mismatched 层数对期望 LCM 展开形、
+        // keyword-edge 端点（'center center'→'left 20px top 20px'）期望
+        // `calc(0% + 20px)` 混合位（origin 页 22F、main 页 6F、x/y 页 2F×2
+        // 全此类，echo 级联形恒欠）；WAAPI 同形 at(1) shim 门修后全过实证
+        // 插值臂 at(1) 正确；纯 px 同形对插值臂 t=1 经 canonicalize 归一与
+        // echo 恒等零扰动（mask-position 先例同参数）。
         if eased == 1.0
             && !matches!(
                 prop,
@@ -529,6 +538,10 @@ fn query_core(
                     | "column-rule-color"
                     | "row-rule-color"
                     | "mask-position"
+                    | "background-position"
+                    | "background-position-x"
+                    | "background-position-y"
+                    | "object-position"
                     | "column-rule-inset-cap-start"
                     | "column-rule-inset-cap-end"
                     | "column-rule-inset-junction-start"
