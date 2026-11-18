@@ -182,12 +182,11 @@ fn lerp_calc_same_shape(a: &CalcExpr, b: &CalcExpr, t: f64) -> Option<String> {
     use zero_css_parser::values::{CalcExpr as CE, CalcOp};
     /// `<percentage> <op> <length-percentage>` 同构形拆解。
     fn pct_op_off(e: &CE) -> Option<(f64, CalcOp, &LengthValue)> {
-        if let CE::BinaryOp(l, op, r) = e {
-            if matches!(op, CalcOp::Add | CalcOp::Subtract) {
-                if let (CE::Length(LengthValue::Percentage(p)), CE::Length(off)) = (&**l, &**r) {
-                    return Some((*p, op.clone(), off));
-                }
-            }
+        if let CE::BinaryOp(l, op, r) = e
+            && matches!(op, CalcOp::Add | CalcOp::Subtract)
+            && let (CE::Length(LengthValue::Percentage(p)), CE::Length(off)) = (&**l, &**r)
+        {
+            return Some((*p, op.clone(), off));
         }
         None
     }
