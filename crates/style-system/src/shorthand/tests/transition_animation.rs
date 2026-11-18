@@ -670,3 +670,33 @@ fn test_animation_rejects_negative_duration_only() {
     // duration 位为负、delay 位为负的组合同样拒绝（首时间位负）
     assert!(expand_one("animation", "fade -1s -2s", false, (0, 0, 1)).is_empty());
 }
+
+/// 刀 TS P2F 回归钉：css-wide keyword 组件位拒收（CSS Values 4 §custom-idents
+/// ——`<single-transition-property>` 的 custom-ident 排除 css-wide；WPT
+/// css-transitions/parsing/transition-invalid.html "initial 1s" should-not-set
+/// 锚定）。简写整值 css-wide（`inherit` 等）由 [`expand_transition`] 前置臂
+/// 放行不受扰。
+#[test]
+fn test_transition_rejects_css_wide_keyword_component() {
+    assert!(expand_one("transition", "initial 1s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "inherit 1s", false, (0, 0, 1)).is_empty());
+    // 整值 css-wide 仍合法（前置臂）
+    assert_eq!(expand_one("transition", "inherit", false, (0, 0, 1)).len(), 5);
+}
+
+/// 刀 TS P2F 回归钉：property 位缺省按初值 `all` 展开（css-transitions-1
+/// §transition-shorthand-property `<single-transition>` 中
+/// `<single-transition-property>` 可省；WPT transition-valid.html "1s"/
+/// "1s -3s"/"cubic-bezier(0, -2, 1, 3)" 锚定——读面 canonical 串化省略初值
+/// 组件由 engine 刀 TS 钉测覆盖，此处钉写面展开语义）。
+#[test]
+fn test_transition_property_less_form_defaults_all() {
+    let result = expand_one("transition", "1s", false, (0, 0, 1));
+    assert_eq!(result.len(), 5);
+    assert_eq!(result[0].0, "transition-property");
+    assert_eq!(result[0].1, "all");
+    assert_eq!(result[1].1, "1s");
+    let only_timing = expand_one("transition", "cubic-bezier(0, -2, 1, 3)", false, (0, 0, 1));
+    assert_eq!(only_timing[0].1, "all");
+    assert_eq!(only_timing[2].1, "cubic-bezier(0, -2, 1, 3)");
+}

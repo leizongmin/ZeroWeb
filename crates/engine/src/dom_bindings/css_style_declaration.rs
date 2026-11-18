@@ -374,6 +374,11 @@ fn gap_rule_reconstruct(props: &[StyleDecl], prop: &str) -> Option<String> {
 /// https://drafts.csswg.org/cssom-1/#serialize-a-css-declaration
 pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String {
     let value = value.trim();
+    // 刀 TS：transition 家族共用本站（shim T50 写面 miss 兜底链任意名直达，
+    // 本站内分派——font 臂回调内分派先例同型，免共享文件 callbacks.rs 编辑）。
+    if prop.eq_ignore_ascii_case("transition") {
+        return transition_shorthand_expand_json(value);
+    }
     if let Some(longhands) = gap_rule_shorthand_longhands(prop) {
         if value.is_empty() {
             // remove 语义：名单 longhand 逐名清（值空）。
@@ -393,12 +398,10 @@ pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String 
 /// 串。名比对 ASCII case-insensitive（attr 源名未归一形兜底）；值串剥
 /// `!important`（重组为值等值模型，priority 不参与比对）。非家族简写名 /
 /// 名单 longhand 缺任一 / 不可重组 → 空串（shim 判空回落空值语义）。
-pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -> String {
-    if gap_rule_shorthand_longhands(prop).is_none() {
-        return String::new();
-    }
-    let decls: Vec<StyleDecl> = raw
-        .split(';')
+/// style attribute 原文域（`n: v; n2: v2` 形）→ 声明列表（名 ASCII lowercase、
+/// 值剥 `!important`——gap/transition 两族读重组站共享解析）。
+fn style_attr_decls(raw: &str) -> Vec<StyleDecl> {
+    raw.split(';')
         .filter_map(|seg| {
             let seg = seg.trim();
             if seg.is_empty() {
@@ -416,7 +419,21 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
                 important: false,
             })
         })
-        .collect();
+        .collect()
+}
+
+pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -> String {
+    // 刀 TS：transition 家族读重组共用本站（shim readProp 通用 miss 兜底任意名
+    // 直达——raw attr `n: v; ...` 域解析与 gap 臂同源）。家族名简写 raw 存储
+    // 形（attr 车道原文）与展开存储形（CSSOM 写面展开落库）双兼容，
+    // [`ts_family_value`] 单源裁决。
+    if prop.eq_ignore_ascii_case("transition") {
+        return ts_family_value(&style_attr_decls(raw), "transition").unwrap_or_default();
+    }
+    if gap_rule_shorthand_longhands(prop).is_none() {
+        return String::new();
+    }
+    let decls: Vec<StyleDecl> = style_attr_decls(raw);
     gap_rule_reconstruct(&decls, prop).unwrap_or_default()
 }
 
@@ -725,6 +742,215 @@ pub(super) fn native_style_getter(
     rv.set(obj.into());
 }
 
+// ── 刀 TS：transition 简写族 CSSOM 车道（写面展开落 longhand + 读面 canonical 重组）──
+
+/// transition 简写所控 longhand 名单（css-transitions-1 §transition-property-property /
+/// §transition-duration-property / §transition-timing-function-property /
+/// §transition-delay-property + css-transitions-2 §transition-behavior-property）。
+const TRANSITION_LONGHANDS: [&str; 5] = [
+    "transition-property",
+    "transition-duration",
+    "transition-timing-function",
+    "transition-delay",
+    "transition-behavior",
+];
+
+/// css-wide keyword 判定（CSS Cascading-4 §7.3；本文件局部面用）。
+fn ts_is_css_wide_keyword(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+    )
+}
+
+/// transition 简写展开落 longhand（style-system `expand_shorthands` 单源，同
+/// [`gap_rule_expand_decls`] 形态）。展开空（`asdf display` 类非法形 / 重复
+/// 组件）→ `None`，调用方声明忽略（spec setProperty 语义）。
+fn ts_expand_decls(val: &str, important: bool) -> Option<Vec<StyleDecl>> {
+    let expanded =
+        zero_style_system::expand_shorthands(&[("transition".to_string(), val.to_string(), important, (0, 0, 0))]);
+    if expanded.is_empty() {
+        return None;
+    }
+    Some(
+        expanded
+            .into_iter()
+            .map(|(p, v, imp, _)| StyleDecl {
+                prop: p,
+                value: v,
+                important: imp,
+            })
+            .collect(),
+    )
+}
+
+/// 顶层逗号切分（paren-aware：cubic-bezier(...)/steps(...) 内部逗号保持一体；
+/// transition.rs 同款本地面）。
+fn ts_split_layers(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut current = String::new();
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                parts.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    parts.push(current.trim().to_string());
+    parts
+}
+
+fn ts_gcd(a: usize, b: usize) -> usize {
+    if b == 0 { a } else { ts_gcd(b, a % b) }
+}
+
+/// transition 简写 canonical 重组（css-transitions-1 §serializing-shorthand-values）：
+/// 每层 `<property> <duration> <timing> <delay> <behavior>`，等于初值的组件省略；
+/// 例外——delay 非零时 duration 即使 0s 也强制输出（消歧两个 `<time>` 位）；
+/// property 初值 `all` 同样省略，但当层全初值时保留（重组非空底座，"all"
+/// /"all, all" 形不减——WPT transition-valid 期望串锚定："1s"→"1s" 非
+/// "all 1s"、"all 1s"→"1s"）。
+/// 五 longhand 全等 css-wide keyword（简写 inherit 等展开存储形）→ 原样回。
+fn ts_serialize_from_longhands(props: &[StyleDecl]) -> Option<String> {
+    let get = |name: &str| {
+        props
+            .iter()
+            .find(|d| d.prop == name)
+            .map(|d| d.value.trim().to_string())
+    };
+    if TRANSITION_LONGHANDS.iter().all(|n| get(n).is_none()) {
+        return None;
+    }
+    let p = get("transition-property").unwrap_or_else(|| "all".into());
+    let d = get("transition-duration").unwrap_or_else(|| "0s".into());
+    let t = get("transition-timing-function").unwrap_or_else(|| "ease".into());
+    let de = get("transition-delay").unwrap_or_else(|| "0s".into());
+    let b = get("transition-behavior").unwrap_or_else(|| "normal".into());
+    let first = p.clone();
+    if [d.as_str(), t.as_str(), de.as_str(), b.as_str()]
+        .iter()
+        .all(|v| *v == first.as_str())
+        && ts_is_css_wide_keyword(&first)
+    {
+        return Some(first);
+    }
+    let (pl, dl, tl, del, bl) = (
+        ts_split_layers(&p),
+        ts_split_layers(&d),
+        ts_split_layers(&t),
+        ts_split_layers(&de),
+        ts_split_layers(&b),
+    );
+    // 逐层序列化：下标按各名单长度取模环绕（spec 列表 LCM 展开的最小实现——
+    // 各名单等长（简写展开形）时即逐层直取）。
+    let mut n = 1usize;
+    for len in [pl.len(), dl.len(), tl.len(), del.len(), bl.len()] {
+        n = n / ts_gcd(n, len) * len;
+    }
+    let layers = (0..n)
+        .map(|i| {
+            let pi = &pl[i % pl.len()];
+            let di = &dl[i % dl.len()];
+            let ti = &tl[i % tl.len()];
+            let dei = &del[i % del.len()];
+            let bi = &bl[i % bl.len()];
+            let pi_init = pi.eq_ignore_ascii_case("all");
+            let di_init = di.eq_ignore_ascii_case("0s");
+            let ti_init = ti.eq_ignore_ascii_case("ease");
+            let dei_init = dei.eq_ignore_ascii_case("0s");
+            let bi_init = bi.eq_ignore_ascii_case("normal");
+            // 初值组件一律省略（css-transitions-1 §serializing-shorthand-values；
+            // WPT transition-valid 实测 "all 1s"→"1s"、"1s -3s"→"1s -3s"）：property
+            // 初值 all 同省，唯全层皆初值时保留 all——空串不是合法 <single-transition>。
+            if pi_init && di_init && ti_init && dei_init && bi_init {
+                return pi.clone();
+            }
+            let mut parts: Vec<&str> = Vec::with_capacity(5);
+            if !pi_init {
+                parts.push(pi.as_str());
+            }
+            if !di_init || !dei_init {
+                // duration 非初值，或 delay 非初值时强制输出（两位 <time> 消歧）
+                parts.push(di.as_str());
+            }
+            if !ti_init {
+                parts.push(ti.as_str());
+            }
+            if !dei_init {
+                parts.push(dei.as_str());
+            }
+            if !bi_init {
+                parts.push(bi.as_str());
+            }
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(layers)
+}
+
+/// transition 简写族读面派生：简写名 → canonical 重组（raw 存储形优先展开同形，
+/// css-wide keyword 原样）；longhand 名 → 直查优先，本名落空且简写声明在时按
+/// 层序展开提取（spec：简写置后遮蔽 longhand，longhand 置后直查命中）。非本族
+/// 名 → `None` 调用方走通用臂。
+fn ts_family_value(props: &[StyleDecl], prop: &str) -> Option<String> {
+    let raw = props.iter().find(|d| d.prop == "transition");
+    if prop == "transition" {
+        if let Some(raw) = raw {
+            if ts_is_css_wide_keyword(raw.value.trim()) {
+                return Some(raw.value.clone());
+            }
+            // inline attr 车道（parse_style）raw 简写存储形 → 展开 canonical 重组
+            //（与 CSSOM 展开存储车道读回同形；attr 车道引擎侧级联展开不受此影响）。
+            let expanded = ts_expand_decls(raw.value.trim(), false)?;
+            return ts_serialize_from_longhands(&expanded);
+        }
+        return ts_serialize_from_longhands(props);
+    }
+    let idx = TRANSITION_LONGHANDS.iter().position(|&n| n == prop)?;
+    if let Some(found) = props.iter().find(|d| d.prop == prop) {
+        return Some(found.value.clone());
+    }
+    // longhand 直查落空 → raw 简写声明遮蔽展开按层提取。
+    let raw = raw?;
+    let expanded = ts_expand_decls(raw.value.trim(), false)?;
+    expanded.get(idx).map(|d| d.value.clone())
+}
+
+/// transition 简写家族 shim inline 通道展开（cssom-1 §dom-cssstyledeclaration-
+/// setproperty 简写语义 + css-transitions-1 §transition-shorthand-property，
+/// [`gap_rule_shorthand_expand_json`] 站同约定：空串 = 非家族回落通用写路径）。
+/// - 空值 → 名单 longhand 逐名清声明（R3211 remove 语义，gap 站同形 JSON）；
+/// - 非法形（[`ts_expand_decls`] 空，"asdf display" 类）→ `[["transition",""]]`
+///   自清形——简写键本车道不落声明位（展开臂先清后落），清键即无残留，净效果
+///   ＝ spec 声明忽略（invalid set 留原声明不动：单声明位净空两形态等价）；
+/// - 合法 → (名, canonical 值) 名单 longhand JSON（shim 逐名落库，简写键清除）。
+/// 宿主回调 `__zw_style_shorthand_expand`（callbacks.rs 站）经
+/// [`gap_rule_shorthand_expand_json`] 分派消费。
+pub(crate) fn transition_shorthand_expand_json(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        let pairs: Vec<(String, &str)> = TRANSITION_LONGHANDS.iter().map(|n| ((*n).to_string(), "")).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    if let Some(decls) = ts_expand_decls(value, false) {
+        let pairs: Vec<(String, String)> = decls.into_iter().map(|d| (d.prop, d.value)).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    serde_json::to_string(&[("transition".to_string(), "")]).unwrap_or_default()
+}
+
 // ── named-property-handler：拦 camelCase 动态属性 ──────────────────────
 
 /// reserved 名（模板方法/accessor）→ `kNo`（fallthrough）；非 string 名 → `kNo`。否则返该 CSS 属性值
@@ -749,6 +975,10 @@ fn native_style_named_getter(
     let prop = camel_to_kebab(&name);
     let val = with_dom(|d| {
         let props = current_props(d, owner);
+        // 刀 TS：transition 简写族读面（简写 canonical 重组 / longhand 遮蔽派生）。
+        if let Some(v) = ts_family_value(&props, &prop) {
+            return Some(v);
+        }
         if let Some(found) = props.iter().find(|d| d.prop == prop) {
             return Some(found.value.clone());
         }
@@ -815,6 +1045,21 @@ fn native_style_named_setter(
             write_props(d, owner, &props);
         });
         return v8::Intercepted::kYes;
+    } else if prop == "transition" {
+        // 刀 TS：transition 简写展开落 longhand（[`ts_expand_decls`] 单源，同
+        // css-gaps 刀 B 形态——简写名与其所控 longhand 旧声明一并让位）；非法值
+        //（"asdf display" 类展开空）→ 声明忽略（spec setProperty 语义）。
+        let Some(expanded) = ts_expand_decls(val.trim(), false) else {
+            return v8::Intercepted::kYes;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return v8::Intercepted::kYes;
     } else if super::grid_cssom::is_grid_family_prop(&prop) {
         match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
             Some(v) => v,
@@ -847,6 +1092,10 @@ fn native_style_named_setter(
             // 覆盖其所控 longhand）。
             if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
                 props.retain(|d| !longhands.contains(&d.prop.as_str()));
+            }
+            // 刀 TS：transition 简写空值 = 所控 longhand 一并复位（同上形态）。
+            if prop == "transition" {
+                props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
             }
         } else if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
             // upsert（已存在→更新值）；named setter 等价 setProperty(prop, value) 无 priority → 重置 important。
@@ -1009,6 +1258,10 @@ fn native_style_get_property_value_invoke(
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
     let val = with_dom(|d| {
         let props = current_props(d, owner);
+        // 刀 TS：transition 简写族读面（同 named getter 钩）。
+        if let Some(v) = ts_family_value(&props, &prop) {
+            return Some(v);
+        }
         if let Some(found) = props.iter().find(|d| d.prop == prop) {
             return Some(found.value.clone());
         }
@@ -1083,6 +1336,10 @@ fn native_style_set_property_invoke(
             if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
                 props.retain(|d| !longhands.contains(&d.prop.as_str()));
             }
+            // 刀 TS：transition 简写空值 = 所控 longhand 一并复位（同上形态）。
+            if prop == "transition" {
+                props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+            }
             write_props(d, owner, &props);
         });
         return;
@@ -1108,6 +1365,20 @@ fn native_style_set_property_invoke(
             if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
                 props.retain(|d| !longhands.contains(&d.prop.as_str()));
             }
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return;
+    } else if prop == "transition" {
+        // 刀 TS：transition 简写展开落 longhand（同 [`native_style_named_setter`]
+        // 展开臂，priority 经展开声明透传）。
+        let Some(expanded) = ts_expand_decls(val.trim(), important) else {
+            return;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
             props.extend(expanded);
             write_props(d, owner, &props);
         });
@@ -1161,14 +1432,29 @@ fn native_style_remove_property_invoke(
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
     let old = with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        let pos = props.iter().position(|d| d.prop == prop);
-        let old = pos
-            .and_then(|i| props.get(i).map(|d| d.value.clone()))
+        let old = props
+            .iter()
+            .find(|d| d.prop == prop)
+            .map(|d| d.value.clone())
+            .or_else(|| {
+                // 刀 TS：transition 简写族——本名无声明时旧值取读面同款重组形。
+                (prop == "transition")
+                    .then(|| ts_family_value(&props, "transition"))
+                    .flatten()
+            })
             .unwrap_or_default();
-        if pos.is_some() {
-            props.retain(|d| d.prop != prop);
-            write_props(d, owner, &props);
+        let had_longhands =
+            prop == "transition" && props.iter().any(|d| TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+        if old.is_empty() && !had_longhands {
+            return old;
         }
+        props.retain(|d| d.prop != prop);
+        // 刀 TS：简写 removeProperty 覆盖其所控 longhand（spec 简写 remove 语义，
+        // 同 css-gaps 刀 B 空值臂形态）。
+        if prop == "transition" {
+            props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+        }
+        write_props(d, owner, &props);
         old
     })
     .unwrap_or_default();
@@ -1399,6 +1685,227 @@ mod gap_rule_cssom_tests {
         assert_eq!(
             gap_rule_shorthand_reconstruct_from_style(raw, "column-rule"),
             "10px solid red"
+        );
+    }
+}
+
+#[cfg(test)]
+mod knife_ts_cssom_tests {
+    use super::*;
+
+    fn decl(prop: &str, value: &str) -> StyleDecl {
+        StyleDecl {
+            prop: prop.into(),
+            value: value.into(),
+            important: false,
+        }
+    }
+
+    /// 刀 TS 钉测：canonical 重组——缺省省略 + delay 非零 duration 强制 +
+    /// 多层环绕 + css-wide keyword 原样（WPT css-transitions/parsing/
+    /// transition-behavior.html 期望串逐形锚定，DOA 预核后落库）。
+    #[test]
+    fn knife_ts_shorthand_serialize_verdicts() {
+        let s = |props: &[StyleDecl]| ts_serialize_from_longhands(props);
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display"),
+                decl("transition-duration", "3s")
+            ])
+            .as_deref(),
+            Some("display 3s")
+        );
+        // duration 0s + delay 1s：duration 强制输出（两位 <time> 消歧）
+        assert_eq!(
+            s(&[decl("transition-property", "display"), decl("transition-delay", "1s")]).as_deref(),
+            Some("display 0s 1s")
+        );
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display"),
+                decl("transition-behavior", "allow-discrete")
+            ])
+            .as_deref(),
+            Some("display allow-discrete")
+        );
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display"),
+                decl("transition-duration", "3s"),
+                decl("transition-timing-function", "ease-in-out"),
+                decl("transition-delay", "1s"),
+                decl("transition-behavior", "allow-discrete"),
+            ])
+            .as_deref(),
+            Some("display 3s ease-in-out 1s allow-discrete")
+        );
+        // 多层：behavior 仅首层非初值；等长名单逐层直取
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display, opacity, color"),
+                decl("transition-behavior", "allow-discrete, normal, normal"),
+            ])
+            .as_deref(),
+            Some("display allow-discrete, opacity, color")
+        );
+        // 五 longhand 全等 css-wide keyword → 原样回
+        let inh: Vec<StyleDecl> = TRANSITION_LONGHANDS.iter().map(|n| decl(n, "inherit")).collect();
+        assert_eq!(s(&inh).as_deref(), Some("inherit"));
+        // 全缺 → None
+        assert_eq!(s(&[]), None);
+        // P2F 回归钉（电池 v2 实测）：property=初值 all 省略——部分组件形不回显 all
+        assert_eq!(s(&[decl("transition-duration", "1s")]).as_deref(), Some("1s"));
+        assert_eq!(
+            s(&[decl("transition-timing-function", "cubic-bezier(0, -2, 1, 3)")]).as_deref(),
+            Some("cubic-bezier(0, -2, 1, 3)")
+        );
+        assert_eq!(
+            s(&[decl("transition-duration", "1s"), decl("transition-delay", "-3s")]).as_deref(),
+            Some("1s -3s")
+        );
+        // 全层初值：保留 all（空串不是合法 <single-transition>）
+        assert_eq!(s(&[decl("transition-property", "all")]).as_deref(), Some("all"));
+        // 混层：首层全初值保 all、次层省略 all（LCM 取模两证）
+        assert_eq!(
+            s(&[
+                decl("transition-property", "all, top"),
+                decl("transition-duration", "0s, 2s"),
+            ])
+            .as_deref(),
+            Some("all, top 2s")
+        );
+    }
+
+    /// 刀 TS 钉测：读面派生——raw 展开重组 canonical / 层提取 / longhand 直查
+    /// 优先 / 非法形拒（WPT css-transitions/parsing/transition-shorthand.html
+    /// 形面锚定，DOA 预核后落库）。
+    #[test]
+    fn knife_ts_family_value_verdicts() {
+        let raw = |v: &str| vec![decl("transition", v)];
+        assert_eq!(
+            ts_family_value(&raw("allow-discrete display"), "transition").as_deref(),
+            Some("display allow-discrete")
+        );
+        // 任意序合法形 → canonical 同串（WPT behavior.html 期望串）
+        assert_eq!(
+            ts_family_value(&raw("display allow-discrete 3s ease-in-out 1s"), "transition").as_deref(),
+            Some("display 3s ease-in-out 1s allow-discrete")
+        );
+        // 非法形展开空 → None（setter 臂声明忽略的读面对偶）
+        assert_eq!(ts_family_value(&raw("asdf display"), "transition"), None);
+        // css-wide keyword raw 原样
+        assert_eq!(
+            ts_family_value(&raw("inherit"), "transition").as_deref(),
+            Some("inherit")
+        );
+        // 层提取：raw "1s -3s cubic-bezier(0, -2, 1, 3) top"（WPT shorthand.html 形）
+        let props = raw("1s -3s cubic-bezier(0, -2, 1, 3) top");
+        assert_eq!(ts_family_value(&props, "transition-property").as_deref(), Some("top"));
+        assert_eq!(ts_family_value(&props, "transition-duration").as_deref(), Some("1s"));
+        assert_eq!(ts_family_value(&props, "transition-delay").as_deref(), Some("-3s"));
+        assert_eq!(
+            ts_family_value(&props, "transition-timing-function").as_deref(),
+            Some("cubic-bezier(0, -2, 1, 3)")
+        );
+        assert_eq!(
+            ts_family_value(&props, "transition-behavior").as_deref(),
+            Some("normal")
+        );
+        // longhand 直查优先于 raw 遮蔽
+        let mixed = vec![decl("transition", "width 2s"), decl("transition-property", "color")];
+        assert_eq!(ts_family_value(&mixed, "transition-property").as_deref(), Some("color"));
+    }
+
+    /// 刀 TS 钉测：shim inline 通道展开站（`transition_shorthand_expand_json`，
+    /// WPT behavior.html/shorthand.html 形面锚定——写面 F2P 直通路）。
+    #[test]
+    fn knife_ts_expand_json_verdicts() {
+        // 合法形 → 名单 longhand canonical JSON（WPT shorthand.html 层期望串）
+        let j = transition_shorthand_expand_json("1s -3s cubic-bezier(0, -2, 1, 3) top");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).expect("json");
+        assert_eq!(pairs.len(), 5);
+        let get = |n: &str| pairs.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(get("transition-property"), Some("top"));
+        assert_eq!(get("transition-duration"), Some("1s"));
+        assert_eq!(get("transition-timing-function"), Some("cubic-bezier(0, -2, 1, 3)"));
+        assert_eq!(get("transition-delay"), Some("-3s"));
+        assert_eq!(get("transition-behavior"), Some("normal"));
+        // 任意序 behavior 形（WPT behavior.html）
+        let j2 = transition_shorthand_expand_json("allow-discrete display 3s ease-in-out 1s");
+        let pairs2: Vec<(String, String)> = serde_json::from_str(&j2).expect("json2");
+        let get2 = |n: &str| pairs2.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(get2("transition-property"), Some("display"));
+        assert_eq!(get2("transition-duration"), Some("3s"));
+        assert_eq!(get2("transition-timing-function"), Some("ease-in-out"));
+        assert_eq!(get2("transition-delay"), Some("1s"));
+        assert_eq!(get2("transition-behavior"), Some("allow-discrete"));
+        // 空值 → 名单逐名清（R3211 remove 语义）
+        let je = transition_shorthand_expand_json("");
+        let pe: Vec<(String, String)> = serde_json::from_str(&je).expect("json-empty");
+        assert_eq!(pe.len(), 5);
+        assert!(pe.iter().all(|(_, v)| v.is_empty()));
+        // 非法形 → 自清形（＝声明忽略净效果，expand 车道无 "[]" shim 契约改）
+        assert_eq!(
+            transition_shorthand_expand_json("asdf display"),
+            r#"[["transition",""]]"#
+        );
+        assert_eq!(
+            transition_shorthand_expand_json("display asdf"),
+            r#"[["transition",""]]"#
+        );
+        // css-wide keyword 仅整值形合法（WPT invalid 页 "initial 1s" should-not-set）：
+        // 混形组件展开 → 自清形（声明忽略），整值形原路 expand
+        assert_eq!(transition_shorthand_expand_json("initial 1s"), r#"[["transition",""]]"#);
+        assert_eq!(
+            transition_shorthand_expand_json("inherit top"),
+            r#"[["transition",""]]"#
+        );
+    }
+
+    /// 刀 TS 钉测：inline 读重组站 transition 臂（`gap_rule_shorthand_
+    /// reconstruct_from_style` 分派——raw attr 原文域双存储形兼容）。
+    #[test]
+    fn knife_ts_reconstruct_from_style_verdicts() {
+        // 展开存储形（CSSOM 写面落库后的 attr 原文）
+        let raw = "transition-property: top; transition-duration: 1s; transition-timing-function: \
+                   cubic-bezier(0, -2, 1, 3); transition-delay: -3s; transition-behavior: normal";
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style(raw, "transition"),
+            "top 1s cubic-bezier(0, -2, 1, 3) -3s"
+        );
+        // 简写 raw 存储形（attr 车道原文落库）→ 展开 canonical 重组
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("transition: allow-discrete display", "transition"),
+            "display allow-discrete"
+        );
+        // 全缺 → 空串（无简写语义）
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("color: red", "transition"),
+            ""
+        );
+        // 非本族名 → 空串（gap/font 臂不受扰）
+        assert_eq!(gap_rule_shorthand_reconstruct_from_style("color: red", "color"), "");
+        // omit-initial：property 初值 all 与其余初值组件一并省略（WPT valid 页
+        // "1s"→"1s"、"all 1s"→"1s" 显式期望串）；全初值时保留 all（空串非法）
+        let all_d = "transition-property: all; transition-duration: 1s; \
+                     transition-timing-function: ease; transition-delay: 0s; \
+                     transition-behavior: normal";
+        assert_eq!(gap_rule_shorthand_reconstruct_from_style(all_d, "transition"), "1s");
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("transition: all 1s", "transition"),
+            "1s"
+        );
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("transition: all", "transition"),
+            "all"
+        );
+        // 两位 <time>：duration+delay 均非初值全保留（WPT "1s -3s"→"1s -3s"）
+        let both_t = "transition-property: all; transition-duration: 1s; \
+                      transition-timing-function: ease; transition-delay: -3s; \
+                      transition-behavior: normal";
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style(both_t, "transition"),
+            "1s -3s"
         );
     }
 }

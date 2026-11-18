@@ -6299,6 +6299,17 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop == "font" {
         return zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false, Some((1, 1)));
     }
+    // 刀 TS：`transition` 简写 supports 门前置——known_properties 注册表只列
+    // 长手（font 臂同型），尾部注册表门对简写名恒假；支持性 = 简写可展开
+    //（matcher `shorthand_supported` 同源 oracle，expand_shorthands 单源——
+    // 行为首序/负 y 控制点/多层逗号列表全经 expand_transition 文法）。
+    // driving: transition-behavior.html computed 前置门 11F + shorthand 页
+    // unrelated-longhands 3F（CSS.supports 断言）。
+    // <https://drafts.csswg.org/css-transitions-1/#transition-shorthand-property>
+    if prop == "transition" {
+        return !zero_style_system::expand_shorthands(&[("transition".to_string(), val.to_string(), false, (0, 0, 0))])
+            .is_empty();
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
         // tree-counting 页 `CSS.supports('z-index', 'calc(2 * sibling-index())')`
