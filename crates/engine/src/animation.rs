@@ -640,6 +640,23 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ if t >= 0.5 => to.to_string(),
             _ => from.to_string(),
         },
+        // wptfyi-css 刀 A2：vertical-align 插值（css-inline-3 §vertical-align-propdef
+        // <https://drafts.csswg.org/css-inline-3/#propdef-vertical-align> +
+        // css-transitions-1 §Animations by computed value type）：<length-percentage>
+        // 端点对插值——px↔px、%↔% 线性；px↔% 跨单位 calc 混合（css-values-4
+        // §8.5.6 interpolation-calc，发射 px 系数在前的语料 canonical 形
+        // `calc(Xpx ± P%)`，px 系数 0 折叠纯 %——40px↔40% 语料 at(1) 期望 '40%'，
+        // at(0) 期望 'calc(40px + 0%)' % 零项保留）；`baseline` 端点按 0 长度参与
+        //（语料 initial/unset→<length> 对 at(0) 期望 '0px'，Chrome parity）；
+        // 关键字端点对（super 等）与解析失败对离散翻转（css-values-4 §8.5.6
+        // ≥0.5 → to）。canonicalize 往返由 applier 臂 + gCS
+        // [`vertical_align_to_css`] 承担（calc 混合形 parse 无 calc 槽回落级联，
+        // 该面 B0 伪通过池不属本刀 FIXME(va-calc-slot)）。
+        "vertical-align" => match (parse_va_endpoint(from), parse_va_endpoint(to)) {
+            (Some(f), Some(s)) => lerp_va_length(&f, &s, t),
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // columns 简写插值（css-multicol-2 §4.5 by computed value type）：组件
         // 存在集一致的端点对逐槽 lerp（width/height 钳 0、count 钳 1），存在集
         // 失配（auto 槽 vs 值槽形变）落 css-values-4 §8.5.6 离散翻转。序列化
@@ -1417,6 +1434,18 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         | "background-position-x"
         | "background-position-y"
         | "object-position" => Some(interpolate_property_value(property, from, to, t)),
+        // 刀 A2：vertical-align 严格门=真实可插值性——两端点解析成功（LP 或
+        // baseline≡0px）才 Some 委托 lenient。实测修正：语料
+        // vertical-align-interpolation.html 确有 test_no_interpolation 块
+        // （super→40%），恒 Some 委托会让 transitions 通道按 50% 翻转（-6F）。
+        "vertical-align" if parse_va_endpoint(from).is_some() && parse_va_endpoint(to).is_some() => {
+            Some(interpolate_property_value(property, from, to, t))
+        }
+        // 刀 A2：非插值对（关键字↔LP）恒 None——css-transitions-1
+        // §starting-of-transitions：不可插值对不启动过渡，值立即取终态
+        // （harness transitions 通道 expectFlip(from, to, -Infinity) 恒 to 形）；
+        // CSSA/WAAPI 通道不经本门，lenient 50% 离散翻转（expectFlip 0.5 形）不变。
+        "vertical-align" => None,
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
             let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
@@ -2107,6 +2136,62 @@ fn parse_f64(s: &str) -> Option<f64> {
 /// css-syntax 整数符号法一致）。
 fn parse_z_index_endpoint(s: &str) -> Option<i64> {
     s.trim().parse::<i64>().ok()
+}
+
+/// 刀 A2：vertical-align 插值端点解析——`<length-percentage>` 严格形（数字
+/// 前置门同 [`zero_css_parser::values::parse_vertical_align`]，防关键字臂误收）；
+/// `baseline` 按 0 长度参与（语料 initial/unset→<length> 对 at(0) 期望 '0px'，
+/// Chrome parity）；其余关键字（super/sub/middle 等）返 None 走离散翻转。
+fn parse_va_endpoint(s: &str) -> Option<zero_css_parser::values::LengthValue> {
+    let t = s.trim();
+    if t.eq_ignore_ascii_case("baseline") {
+        return Some(zero_css_parser::values::LengthValue::Px(0.0));
+    }
+    let first = t.as_bytes().first()?;
+    if !(first.is_ascii_digit() || *first == b'-' || *first == b'+' || *first == b'.') {
+        return None;
+    }
+    zero_css_parser::values::parse_length(t)
+}
+
+/// 刀 A2：vertical-align 长度对插值发射（css-values-4 §8.5.6 interpolation-calc
+/// 跨单位混合形）——同单位线性；px↔% 发射 px 系数在前的语料 canonical 形
+/// `calc(Xpx ± P%)`（40px↔40% at(-0.5) 期望 `calc(60px - 20%)`），px 系数 0
+/// 折叠纯 %（at(1) 期望 '40%'）；数字形 {:.2}（shim roundNumbers 双侧归一，
+/// blend_rule_inset_lp 同约定）。em/rem 等其余单位对空串（applier 解析必败
+/// 保旧值，调用方语义同离散回落基线）。
+fn lerp_va_length(
+    f: &zero_css_parser::values::LengthValue,
+    s: &zero_css_parser::values::LengthValue,
+    t: f64,
+) -> String {
+    use zero_css_parser::values::LengthValue as Lv;
+    match (f, s) {
+        (Lv::Px(a), Lv::Px(b)) => format!("{:.2}px", lerp(*a, *b, t)),
+        (Lv::Percentage(a), Lv::Percentage(b)) => format!("{:.2}%", lerp(*a, *b, t)),
+        (Lv::Px(a), Lv::Percentage(b)) => blend_va_lp(*a, "px", *b, "%", t),
+        (Lv::Percentage(a), Lv::Px(b)) => blend_va_lp(*a, "%", *b, "px", t),
+        _ => String::new(),
+    }
+}
+
+/// 刀 A2：vertical-align px↔% 跨单位系数混合（css-values-4 §8.5.6）——
+/// pct 系数 = (1-t)·from_pct + t·to_pct、px 系数同理（对侧单位分量恒 0）；
+/// px 系数 0 折叠纯 %（40px↔40% at(1) 期望 '40%'）；发射 px 在前
+/// `calc(Xpx ± P%)`（语料 canonical 形，blend_rule_inset_lp 的 % 前缀形
+/// 是 rule-inset 槽序、vertical-align 语料相反）。
+fn blend_va_lp(fv: f64, fu: &str, tv: f64, tu: &str, t: f64) -> String {
+    let pct = (1.0 - t) * if fu == "%" { fv } else { 0.0 } + t * if tu == "%" { tv } else { 0.0 };
+    let px = (1.0 - t) * if fu == "px" { fv } else { 0.0 } + t * if tu == "px" { tv } else { 0.0 };
+    if px.abs() < 1e-9 {
+        return format!("{:.2}%", pct);
+    }
+    let seg = if pct < 0.0 {
+        format!(" - {:.2}", -pct)
+    } else {
+        format!(" + {:.2}", pct)
+    };
+    format!("calc({:.2}px{}%)", px, seg)
 }
 
 /// 解析 px 值（如 "100px" → 100.0）。
@@ -3368,6 +3453,19 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "background-position" | "background-position-x" | "background-position-y" | "object-position" => {
             let _ =
                 zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
+        }
+        // ── wptfyi-css 刀 A2 applier 臂 ── css-inline-3 §vertical-align：动画插值
+        // 回写 VerticalAlignValue 槽（'30.00px'/'12%' 小数形经 parse_length、
+        // 关键字离散 echo 经关键字臂）。此前无臂致 canonicalize 往返 ser1≡ser0
+        // 恒 None 回落基值——vertical-align-interpolation 页 transitions 通道
+        // 静态 to 同 A1d 根因。calc 混合形（'calc(Xpx ± P%)'）parse 无 calc 槽
+        // 返 None 不动样式（canonicalize 恒等回落级联，该面挂残面池
+        // FIXME(va-calc-slot)）。
+        // https://drafts.csswg.org/css-inline-3/#propdef-vertical-align
+        "vertical-align" => {
+            if let Some(v) = zero_css_parser::values::parse_vertical_align(value) {
+                style.vertical_align = v;
+            }
         }
         // ── wptfyi-css 基本形状族 applier 臂（2026-11-16 二十一轮）──
         // css-shapes-2 §basic-shape-interpolation：动画插值后的 clip-path 全族
@@ -6857,5 +6955,71 @@ mod tests {
         );
         assert_eq!(interpolate_property_value_strict("z-index", "auto", "5", 0.5), None);
         assert_eq!(interpolate_property_value_strict("z-index", "3.14", "5", 0.5), None);
+    }
+
+    #[test]
+    /// 刀 A2：vertical-align 插值（css-inline-3 §vertical-align-propdef +
+    /// css-transitions-1 §animations by computed value type）——LP 对线性、
+    /// baseline 端点按 0 长度参与（语料 initial→100px at(0) 期望 '0px'）、
+    /// 关键字对离散 50% 翻转、px↔% 跨单位 calc 系数形（px 在前，语料
+    /// canonical）；strict 门=真实可插值性（非插值对 super→40% 恒 None：
+    /// transition 注册拒绝→无过渡立即跳终值，css-transitions-1
+    /// §starting-of-transitions；harness transitions 通道 expectFlip
+    /// -Infinity 形）。em/rem 等其余单位对空串回落离散基线。
+    fn test_vertical_align_lerp() {
+        // 同单位 LP 线性。
+        assert_eq!(
+            interpolate_property_value("vertical-align", "0px", "100px", 0.3),
+            "30.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("vertical-align", "10%", "30%", 0.5),
+            "20.00%"
+        );
+        // baseline 端点按 0 长度参与。
+        assert_eq!(
+            interpolate_property_value("vertical-align", "baseline", "100px", 0.0),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("vertical-align", "baseline", "100px", 0.3),
+            "30.00px"
+        );
+        // 关键字对/关键字↔LP 离散 50% 翻转（宽松臂；CSSA/WAAPI 通道语义）。
+        assert_eq!(
+            interpolate_property_value("vertical-align", "super", "sub", 0.3),
+            "super"
+        );
+        assert_eq!(interpolate_property_value("vertical-align", "super", "sub", 0.6), "sub");
+        assert_eq!(
+            interpolate_property_value("vertical-align", "super", "40%", 0.3),
+            "super"
+        );
+        // px↔% 跨单位 calc 系数形（px 在前；px 系数 0 折叠纯 %）。
+        assert_eq!(
+            interpolate_property_value("vertical-align", "40px", "40%", -0.5),
+            "calc(60.00px - 20.00%)"
+        );
+        assert_eq!(
+            interpolate_property_value("vertical-align", "40px", "40%", 1.0),
+            "40.00%"
+        );
+        // strict 门：可插值对 Some、非插值对恒 None。
+        assert_eq!(
+            interpolate_property_value_strict("vertical-align", "0px", "100px", 0.5),
+            Some("50.00px".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("vertical-align", "baseline", "40px", 0.5),
+            Some("20.00px".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("vertical-align", "super", "40%", 0.5),
+            None
+        );
+        assert_eq!(
+            interpolate_property_value_strict("vertical-align", "super", "sub", 0.5),
+            None
+        );
     }
 }

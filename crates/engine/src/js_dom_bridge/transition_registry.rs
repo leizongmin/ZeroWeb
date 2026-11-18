@@ -217,7 +217,7 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 80] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 81] = [
     "backdrop-filter",
     "background",
     "background-color",
@@ -309,6 +309,11 @@ const TRANSITIONABLE_PROPERTIES: [&str; 80] = [
     "top",
     "transform",
     "translate",
+    // 刀 A2：vertical-align（css-transitions-1 §animations by computed value
+    // type——<length-percentage> 槽插值、关键字对离散翻转；strict 委托恒 Some，
+    // baseline 端点按 0 长度参与——语料 initial/unset→<length> 对 at(0) 期望
+    // '0px'，Chrome parity）。
+    "vertical-align",
     "width",
     "word-spacing",
     // 刀 Z：z-index as <integer>（css-transitions-1 §animations；strict 门
