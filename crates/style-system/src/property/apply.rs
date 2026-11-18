@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 60] = [
+    const VALIDATED_PROPERTIES: [&str; 64] = [
         "transform",
         "rotate",
         "scale",
@@ -2329,6 +2329,29 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 分派臂见 [`validate_decl_value`] 中段（shape-image-threshold 臂后）。
         // https://drafts.fxtf.org/css-masking-1/#the-clip-path
         "clip-path",
+        // knife R2 扩面四属性（刀 R clip-path 同族余量，独立电池收账）：
+        // clip（css-masking-1 §clip-property：`auto | rect(<top>, <right>,
+        // <bottom>, <left>)`——逗号分隔恰 4 项、每项 <length>（含负）| auto、
+        // 百分比非法；driving: css-masking clip-invalid `none`/三参 rect/
+        // 百分比项/混合分隔形）、clip-rule（css-masking-1 §clip-rule-property：
+        // `nonzero | evenodd`；driving: clip-rule-invalid `auto`/`1`）、
+        // background-clip（css-backgrounds-3 §background-clip：`<bg-clip>#`
+        // 逗号分层 + css-backgrounds-4 border-area/text 与 `border-area text`
+        // 空白组合特形；driving: background-clip-invalid fill/margin/stroke-
+        // box/view-box/`border`）、transition-timing-function（css-transitions-1
+        // / css-easing-1：`<easing-function>#`——cubic-bezier x 域门/steps 整数
+        // 与 jump-none 步数门复用 parse_timing_function，linear() 停点文法
+        // linear_stops_valid 补裁决；driving: transition-timing-function-
+        // invalid 25 形）。分派臂见 [`validate_decl_value`] 中段（shape-margin
+        // 臂前）。transition-behavior 23F 归 transition 简写 canonicalization
+        // 池刀，本刀不含。
+        // https://drafts.fxtf.org/css-masking-1/#clip-property
+        // https://drafts.csswg.org/css-backgrounds-3/#background-clip
+        // https://drafts.csswg.org/css-transitions-1/#transition-timing-function-property
+        "clip",
+        "clip-rule",
+        "background-clip",
+        "transition-timing-function",
         // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
         // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
         // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
@@ -2732,6 +2755,111 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_clip_path(v).is_some();
+    }
+    // clip 写面文法门（css-masking-1 §clip-property：`auto | rect(<top>,
+    // <right>, <bottom>, <left>)`——逗号分隔恰 4 项，每项 <length>（含负值）
+    // | auto，百分比非法（CSS 2.1 文法维持；css-masking-1 已废 clip 属性但
+    // 解析门不放宽）。替换函数形放行 store 原文（counter 臂同口径）。
+    //（driving: css-masking/parsing/clip-invalid `none`/三参 rect/百分比项/
+    // 空逗混合分隔形。）
+    // https://drafts.fxtf.org/css-masking-1/#clip-property
+    if prop == "clip" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.eq_ignore_ascii_case("auto") {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        let Some(inner) = lv.strip_prefix("rect(").and_then(|s| s.strip_suffix(')')) else {
+            return false;
+        };
+        return super::apply_advanced::split_top_level_commas(inner).is_some_and(|args| {
+            args.len() == 4
+                && args.iter().all(|a| {
+                    let a = a.trim();
+                    // CSS 2.1 rect() 参数 = <length> | auto——百分比非法（
+                    // parse_length 兼容 <length-percentage> 面，此处显式拒
+                    // Percentage 分支；corpus `rect(10%, -20%, auto, auto)`）。
+                    a == "auto"
+                        || matches!(values::parse_length(a), Some(ref lv) if !matches!(
+                            lv,
+                            LengthValue::Percentage(_)
+                        ))
+                })
+        });
+    }
+    // clip-rule 写面文法门（css-masking-1 §clip-rule-property：
+    // `nonzero | evenodd`）。替换函数形放行 store 原文（counter 臂同口径）。
+    //（driving: css-masking/parsing/clip-rule-invalid `auto`/`1` 形。）
+    // https://drafts.fxtf.org/css-masking-1/#clip-rule-property
+    if prop == "clip-rule" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        return matches!(lv.as_str(), "nonzero" | "evenodd");
+    }
+    // background-clip 写面文法门（css-backgrounds-3 §background-clip：
+    // `<bg-clip>#` 逗号分层列表，bg-clip = border-box | padding-box |
+    // content-box；css-backgrounds-4 扩 border-area/text 与 `border-area
+    // text` 空白组合特形——语料 valid 页两序均设期望同串回显。<box> 裁决面
+    // 不含 geometry-box 超集关键字（fill/margin/stroke/view-box 归
+    // css-masking 面）。替换函数形放行 store 原文（counter 臂同口径）。
+    //（driving: css-backgrounds/parsing/background-clip-invalid
+    // fill/margin/stroke-box/view-box/`border` 形此前原文透传即 Fail。）
+    // https://drafts.csswg.org/css-backgrounds-3/#background-clip
+    if prop == "background-clip" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        let item_ok = |item: &str| {
+            matches!(
+                item,
+                "border-box" | "padding-box" | "content-box" | "border-area" | "text"
+            ) || matches!(item, "border-area text" | "text border-area")
+        };
+        return super::apply_advanced::split_top_level_commas(&lv)
+            .is_some_and(|items| items.iter().all(|it| item_ok(it.trim())));
+    }
+    // transition-timing-function 写面文法门（css-transitions-1 §transition-
+    // timing-function-property / css-easing-1 §easing-functions：
+    // `<easing-function>#` 逗号列表——列表切分括号感知（linear() 内部停点
+    // 逗号保真）。单项裁决复用 parse_timing_function（cubic-bezier x 域门/
+    // steps 整数门/jump-none 步数门全严）；css-easing-2 linear() 函数形
+    // parse_timing_function 未建模，此处补停点文法裁决（linear_stops_valid）
+    // ——apply 链 easing 求值面未接 linear()，接受面仅扩文法收窄 invalid
+    // 回显，不扩行为；steps() 内嵌 calc()/sibling-index() math/树计数形放行
+    // store 原文（apply 链 computed 期求值重裁，font-* 臂同口径）。替换函数
+    // 形（var()/attr()）同放行。（driving: css-transitions/parsing/
+    // transition-timing-function-invalid 25 形此前原文透传 store 回显即
+    // Fail。）
+    // FIXME: linear() 停点 <percentage> && 两序等价文法（现值按语料锚定
+    // number-then-percentage 序裁决）；steps() 参数内 math 文法细裁。
+    // https://drafts.csswg.org/css-transitions-1/#transition-timing-function-property
+    // https://drafts.csswg.org/css-easing-2/#linear-easing-functions
+    if prop == "transition-timing-function" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return super::apply_advanced::split_top_level_commas(v).is_some_and(|items| {
+            !items.is_empty()
+                && items.iter().all(|item| {
+                    let it = item.trim();
+                    if it.is_empty() {
+                        return false;
+                    }
+                    let lv = it.to_ascii_lowercase();
+                    if lv.contains("calc(") || lv.contains("sibling-index(") {
+                        return true;
+                    }
+                    if let Some(inner) = lv.strip_prefix("linear(").and_then(|s| s.strip_suffix(')')) {
+                        return linear_stops_valid(inner);
+                    }
+                    values::parse_timing_function(&lv).is_some()
+                })
+        });
     }
     // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
     // `<length-percentage>`）——裁决单点复用 apply 臂同一解析器
@@ -3351,6 +3479,41 @@ fn random_item_calls_valid(value: &str, lower: &str) -> bool {
     true
 }
 
+/// css-easing-2 linear() 停点文法：`<linear-stop>#`，停点 = <number> &&
+/// <percentage>?（白空格分隔，括号感知逗号项间分隔）。每停点必含恰一
+/// <number>、至多一 <percentage>；字面 `inf`/`nan`（f64 parse 可过）经
+/// is_finite 门拒。
+// https://drafts.csswg.org/css-easing-2/#linear-easing-functions
+fn linear_stops_valid(inner: &str) -> bool {
+    let Some(items) = super::apply_advanced::split_top_level_commas(inner) else {
+        return false;
+    };
+    if items.is_empty() {
+        return false;
+    }
+    items.iter().all(|item| {
+        let mut saw_number = false;
+        let mut saw_pct = false;
+        for tok in item.split_ascii_whitespace() {
+            let t = tok.to_ascii_lowercase();
+            if let Some(num) = t.strip_suffix('%') {
+                if saw_pct || !num.parse::<f64>().is_ok_and(|n| n.is_finite()) {
+                    return false;
+                }
+                saw_pct = true;
+            } else if t.parse::<f64>().is_ok_and(|n| n.is_finite()) {
+                if saw_number {
+                    return false;
+                }
+                saw_number = true;
+            } else {
+                return false;
+            }
+        }
+        saw_number
+    })
+}
+
 /// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；
 /// URL/字符串字面量内形态属未实现面，放行方向正确）。
 fn value_has_unimplemented_function(value: &str) -> bool {
@@ -3521,6 +3684,78 @@ mod t54_validate_decl_value_tests {
         assert!(stable("polygon(evenodd, 1px 2px, 3em 4em, 5pt 6%)"));
         assert!(stable("path(nonzero, \"M20,20h60 v60 h-60z M30,30 h40 v40 h-40z\")"));
         assert!(stable("url(https://example.com/)"));
+    }
+
+    #[test]
+    fn knife_r2_expansion_gate_verdicts() {
+        // knife R2 扩面四属性写面门钉测（clip/clip-rule/background-clip/
+        // transition-timing-function——语料驱动，与 dispatch 臂同源裁决）。
+        // clip（css-masking-1 §clip-property）：auto + rect() 逗号 4 项、负值
+        // 与 auto 混排合法；百分比项/三参/空逗混合分隔拒。
+        assert!(validate_decl_value("clip", "auto"));
+        assert!(validate_decl_value("clip", "rect(10px, -20px, auto, auto)"));
+        assert!(validate_decl_value("clip", "rect(0px, 0px, 0px, 0px)"));
+        assert!(!validate_decl_value("clip", "none"));
+        assert!(!validate_decl_value("clip", "rect(10%, -20%, auto, auto)"));
+        assert!(!validate_decl_value("clip", "rect(10px, 20px, 30px)"));
+        assert!(!validate_decl_value("clip", "rect(10px 20px, 30px 40px)"));
+        // clip-rule（css-masking-1 §clip-rule-property）。
+        assert!(validate_decl_value("clip-rule", "nonzero"));
+        assert!(validate_decl_value("clip-rule", "evenodd"));
+        assert!(validate_decl_value("clip-rule", "inherit"));
+        assert!(!validate_decl_value("clip-rule", "auto"));
+        assert!(!validate_decl_value("clip-rule", "1"));
+        // background-clip（css-backgrounds-3/4）：bg-clip 单值、两序空白组合
+        // 特形、逗号分层列表、替换函数形；<box> 裁决面外 geometry-box 超集
+        // 关键字与裸 `border` 拒。
+        assert!(validate_decl_value("background-clip", "border-box"));
+        assert!(validate_decl_value("background-clip", "border-area"));
+        assert!(validate_decl_value("background-clip", "text"));
+        assert!(validate_decl_value("background-clip", "border-area text"));
+        assert!(validate_decl_value("background-clip", "text border-area"));
+        assert!(validate_decl_value(
+            "background-clip",
+            "border-box, padding-box, content-box, border-area"
+        ));
+        assert!(validate_decl_value("background-clip", "var(--bc)"));
+        assert!(!validate_decl_value("background-clip", "fill-box"));
+        assert!(!validate_decl_value("background-clip", "view-box"));
+        assert!(!validate_decl_value("background-clip", "border"));
+        // transition-timing-function（css-easing-1/2）：关键字/cubic-bezier 域
+        // 门/steps 门/linear() 停点文法/逗号列表/math·树计数嵌套放行；列表内
+        // css-wide keyword 混入拒。
+        assert!(validate_decl_value("transition-timing-function", "linear"));
+        assert!(validate_decl_value("transition-timing-function", "steps(2, jump-both)"));
+        assert!(validate_decl_value(
+            "transition-timing-function",
+            "linear, ease, linear"
+        ));
+        assert!(validate_decl_value(
+            "transition-timing-function",
+            "linear(0 0%, 0.5 50%, 1 100%)"
+        ));
+        assert!(validate_decl_value("transition-timing-function", "linear(0)"));
+        assert!(validate_decl_value(
+            "transition-timing-function",
+            "steps(sibling-index(), jump-none)"
+        ));
+        assert!(validate_decl_value("transition-timing-function", "var(--tf)"));
+        assert!(!validate_decl_value("transition-timing-function", "auto"));
+        assert!(!validate_decl_value("transition-timing-function", "ease-in ease-out"));
+        assert!(!validate_decl_value(
+            "transition-timing-function",
+            "cubic-bezier(0.5, 0.1, 1.1, 0.9)"
+        ));
+        assert!(!validate_decl_value("transition-timing-function", "steps(3.3, end)"));
+        assert!(!validate_decl_value(
+            "transition-timing-function",
+            "steps(1, jump-none)"
+        ));
+        assert!(!validate_decl_value(
+            "transition-timing-function",
+            "initial, cubic-bezier(0, -2, 1, 3)"
+        ));
+        assert!(!validate_decl_value("transition-timing-function", "linear(0 0%,)"));
     }
 
     #[test]
