@@ -1,6 +1,9 @@
 # Editing、Selection 与 Input Events控制面
 
-**2026-11-19 · Active**。**d56 ⑩ CE-island li/dd host 恢复（rebase 误删回填定谳，+2 零 P2F；push 时与 editing-compat 流 1cbcb7420 恢复汇合，功能逐字节同，本流账转独立验证）**：上轮 429 中断期间并行流已把 ⑩ 落树（b86912191）——本流不知情下以 ⑩ 剥离树落 d55（a763e74b1），`pull --rebase` 重放把 ⑩ 两 hunk 静默移除（`git show -S arm1IslandLid` 计数变化实证；part143 钉测本流未触碰仍在 HEAD＝孤儿钉测）。本轮字节级恢复两 hunk（独立复核：对 b86912191 版本 diff 全为 d55 插入/改写行、⑩ 区域零出现＝逐字节恒等）；push 时发现 editing-compat 流 e23 批已按同语义恢复（1cbcb7420 带恢复注）——rebase 冲突两侧功能代码完全一致仅差注释，取远端侧收场，本提交收为纯文档。**A/B 纯净对**（base=HEAD 原生 stash roundtrip release /tmp/d56-head-runner，wip=恢复树 release /tmp/d56-wip0-runner，唯一源差＝两 hunk）：insertparagraph.html 共键 7195 **F2P=2/P2F=0**＝恰 ol>li(:1996)/dl>dd(:2008) 两 island 面（base 侧 d55-final-runner 第二轮 7195 键状态逐键恒等＝M1→M2 对本文件零漂移）；**全量 battery**（ER 八分片＋input-events 全套件＋editing-other＋selection 全语料，共键 95,935+53,363）**F2P=3/P2F=0**——sh4 两 island 面＋sh6 indent 1 面，indent 经 head-runner 归因腿（d55-final Fail×2 vs HEAD Pass×2）定谳归 M1→M2 并行流增量（367faeca9..0c8dd867d style-system/typed-om Rust 重构，⑩ 调用面核零 indent 触达），记并行流名下不入本刀账；enginelib **4205P/0F** 含 part143 孤儿钉测复活 ok。证据见
+**2026-11-19 · Active**。**d56b ①(b) 诊断定谳——单键 verbatim 隔离归因重构＋CE 键管线 wrapper 身份失稳（净页探针两轮结论勘误，零码变）**：上轮净页探针两份结论**作废**——v1 八形矩阵（T4 内容丢失净页复现、T7 p/p 直连基面无 join）系 caret 约定伪影（caret 用 `gEditor.children[1]…`，corpus 形状外层 div 嵌在 gEditor 内，caret 落空）；v2 修正 caret 后的 8-in-1 矩阵仍受同页跨测 ghost 污染（T5 挂＝前测 `<b>` ghost 毒读数、T8 形 corpus 不存在系合成变体，Pass 侧亦不可靠）。本轮改 **verbatim 单键隔离**（从 corpus 逐字抽取 promise_test 块、一键一页、d56 收口树基线 ×1-2 轮）20 失败键定谳：③ 页内毒化仅 2 键（bs-00/fd-00 隔离即 PP）；**bi=0 事件计数族 8 键**（T1/T5 形等，join 全部发生且形状正确、唯 beforeinput 计 0，PF）；**无 join 族 4 键**（T2/T6 形等，DOM 原样 bi=0，FF）；独立族 pre↔p ws ×2、hr、br+ws gtr、img 序列化、RTL。全 37 个嵌套 div 外形键（bs 22＋fd 15）×2 账项为 bi=0 族推定面。**机制链**（zz-diag-d56a–m 恒失败探针）：键时 Actions `__zw_ce_caret_range` 解析错锚 `#text:@0`（d56h）；绕过 Actions 直调 `__zw_ce_delete` join 完美（d56g）；probe 脚本无毒（d56i）；根子在 **wrapper 身份 churn**——initializeTest 监听器挂 W1，corpus 块前置读 `gEditor.querySelector("div")` 触发 canonical 切换 W1→W4（d56j2 身份代理实录；省去该读即无切换、join 复活，d56m/e1/e2），键时派发/删除落 W4、监听在 W1 → bi=0/无 join；纯 shim 层同一嵌套 div 的 parse 期 wrapper 与 canonical 并存、`qB.parentNode !== q1` 陈旧父指针（d56K/L）。与 2026-10-14 learning（多族 wrapper 结构属性、match-only 方针）合流：corpus harness 流是该方针残余缺口面。**零码变**（工作树 clean；探针/隔离页全在 gitignored wpt-data）。证据见
+[evidence/2026-11-19-d56b-ce-key-wrapper-identity-diagnosis.md](evidence/2026-11-19-d56b-ce-key-wrapper-identity-diagnosis.md)。
+
+**d56 ⑩ CE-island li/dd host 恢复（rebase 误删回填定谳，+2 零 P2F；push 时与 editing-compat 流 1cbcb7420 恢复汇合，功能逐字节同，本流账转独立验证）**：上轮 429 中断期间并行流已把 ⑩ 落树（b86912191）——本流不知情下以 ⑩ 剥离树落 d55（a763e74b1），`pull --rebase` 重放把 ⑩ 两 hunk 静默移除（`git show -S arm1IslandLid` 计数变化实证；part143 钉测本流未触碰仍在 HEAD＝孤儿钉测）。本轮字节级恢复两 hunk（独立复核：对 b86912191 版本 diff 全为 d55 插入/改写行、⑩ 区域零出现＝逐字节恒等）；push 时发现 editing-compat 流 e23 批已按同语义恢复（1cbcb7420 带恢复注）——rebase 冲突两侧功能代码完全一致仅差注释，取远端侧收场，本提交收为纯文档。**A/B 纯净对**（base=HEAD 原生 stash roundtrip release /tmp/d56-head-runner，wip=恢复树 release /tmp/d56-wip0-runner，唯一源差＝两 hunk）：insertparagraph.html 共键 7195 **F2P=2/P2F=0**＝恰 ol>li(:1996)/dl>dd(:2008) 两 island 面（base 侧 d55-final-runner 第二轮 7195 键状态逐键恒等＝M1→M2 对本文件零漂移）；**全量 battery**（ER 八分片＋input-events 全套件＋editing-other＋selection 全语料，共键 95,935+53,363）**F2P=3/P2F=0**——sh4 两 island 面＋sh6 indent 1 面，indent 经 head-runner 归因腿（d55-final Fail×2 vs HEAD Pass×2）定谳归 M1→M2 并行流增量（367faeca9..0c8dd867d style-system/typed-om Rust 重构，⑩ 调用面核零 indent 触达），记并行流名下不入本刀账；enginelib **4205P/0F** 含 part143 孤儿钉测复活 ok。证据见
 [evidence/2026-11-19-d56-ce-island-restore.md](evidence/2026-11-19-d56-ce-island-restore.md)。
 
 **d55 块尾 br 序列化判定＋FD 列表壳溶解刀（上轮 429 中断回填定谳，input-events 刀净 +17）**：part01.js +198/−28——①`_zwCeSerTailBrInfo` 块尾 br 序列化判定（block 的 innerHTML 序列化尾是 br＝真行尾，**引擎权威序**治 childNodes fused 视图跨案 pending ghost 叠影——zz-probe-d55a face 188 `fv=B/1@P` 实证 ghost 使行尾 br 臂恒不触发）＋`_zwCeSubtreeHasBr` 廉价预检跳过门（视图无 br 后代直接回落 JoinStartOf，免引擎 innerHTML 往返撞文件墙）②BS 块界 join 缝尾随 br 预消费（双 br 形 gtr 起点欠账 (p,1)→(p,2)；d55b ul/ol/dl 父域整门关断保 dil base 全绿）③BS/FD 非块壳 caret 解析（`<p><span>{}</span><br></p>` marker 摘后空壳上溯块祖先归 K 族）④FD 行尾 br 臂（元素锚 walk＋文本锚 walk 两处）换序列化行尾判据＋dst 归属修正（caret 块存活自收后邻首行）⑤FD 列表壳溶解 join 臂（`abc[]<ul><li>def</li></ul>ghi` li 首行溶入外层流，引擎 takeLine 准入路径）。**A/B（base=HEAD d54 终态 release stash roundtrip × wip=d55 终态 release）**：gt-backspace 81→86P **F2P=5**、gt-forwarddelete 共键 148 **F2P=12**（fin 轮 300s 尾截断伪影，wip8/release 双轮互证）、joining-dl 1176/jdle 880/dil 1264/nc 207 全恒等，全腿 **P2F=0**；input-events 全套件 common 6318 **F2P=34/P2F=0**。哨兵：selection 全语料 53,312 共键 **F2P=0/P2F=0**；enginelib **4187P/0F**（release 轮 4205P/0F，r2761 font 红已由并行流清偿）；editing/run 回填 8 分片共键 91,311 **F2P=0/P2F=0** 双侧 90,360P 恒等（回填轮 1 产物作废＝runner 拷贝前启动、轮 2 wip 侧早迭代二进制但共键零翻面互证，权威对＝轮 2 base×轮 3 wip，勘误入证据）。**⑩ CE-island li/dd host WIP 剥离持位**（上轮 429 前遗留未 A/B hunks，落树前剥离恢复与 release 内嵌 shim 逐字节一致，存 /tmp/d55-shi-wip-hunks.txt 待单独验证）。证据见
@@ -143,23 +146,25 @@ bi=2 双派族挂③不动（d47 别名刀判负后无入口级现成臂）；
 (c') ~~**⑩ CE-island li/dd host 直子文本中点 caret 拆分**~~ **已由 d56 收**
 （并行流 b86912191 落树被本流 rebase 误删，d56 字节级恢复回填＋纯净对
 F2P=2/P2F=0 定谳，/tmp/d55-shi-wip-hunks.txt 已作废）；
-**下一刀首选＝(b)**（d56 轮诊断地基，2026-11-19：bs/fd tentative 主文件
-当前账 **bs 86P/77F、fd 112P/64F**（对 d55 终态 F2P=0/P2F=0/new=0/gone=0
-零漂移＝⑩ 中性互证；/tmp/d56-bs-tent.json、/tmp/d56-fd-tent.json）。
-**净页探针矩阵**（/tmp/d56-probe-r{1,2}.json，探针页
-wpt-data/input-events/zz-probe-d56j.html 八形两轮逐位稳定）：T2
-`<div>abc<p><b>[]def</b></p></div>` 净页 **join 成功**（corpus 内同名键
-fail＝页内历史态毒化，③ 域）；T1/T3/T5/T6/T7/T8 净页全部**无 join
-silent**——含 **T7 `<div><p>abc</p><p>[]def</p></div>` p/p 直连基面**（块
-join 入口门对 bp/bn 支形判定的缺口比 corpus 账面显示的更宽）；**T4
-`<div>abc<p>[]def</p></div>` 净页即复现内容丢失**（got `<div><p>def</p>
-</div>`＝前邻文本 "abc" 整段被吃——bp=text/bn=block 支 JoinStartOf 误锚
-+JoinMutate 误摘，非 ③ 毒化）；corpus 内 T1 形 got `<div><b>abc</b></div>`
-（def 壳消失）＝D3「寻址失败静默→壳内容永 lost」同形塌方，净页不复现
-（页内历史态）。刀序建议：先修 T4 误摘（净页稳定复现、影响面清楚）＋
-T7/T5/T8 无 join 入口门支形，再攻 ③ 页内历史态毒化（决定 corpus 键
-翻面率的真根）。FD 镜像 64F 同谱（`abc[]<br>` 块界、pre/p 空白邻、
-`<p><b>abc[]</b></p>` 壳端点出块）。②dwuf 余臂（caret
+**下一刀首选＝(b)**，落刀面已由 d56b 诊断收窄（2026-11-19；**勘误**：本段
+原「净页探针矩阵」两轮结论作废——v1 T4 误摘/T7 基面无 join 系 caret
+伪影、v2 8-in-1 矩阵受同页跨测 ghost 污染，定谳以 verbatim 单键隔离为准，
+见
+[evidence/2026-11-19-d56b-ce-key-wrapper-identity-diagnosis.md](evidence/2026-11-19-d56b-ce-key-wrapper-identity-diagnosis.md)）：
+bs/fd tentative 主文件当前账 **bs 86P/77F、fd 112P/64F**（对 d55 终态
+F2P=0/P2F=0/new=0/gone=0 零漂移＝⑩ 中性互证；/tmp/d56-bs-tent.json、
+/tmp/d56-fd-tent.json）。**①(b) 刀重定向＝CE 键管线 wrapper 家族对齐**
+（最大桶＝bi=0 事件计数族，嵌套 div 外形 37 键 ×2 账项推定面）：按
+2026-10-14 match-only 方针补键管线事件面调和——派发面
+（`_zwCeJoinDispatch`/`_zwCeUnitApply` 的 el 解析）与 harness 监听面
+（initializeTest 时点解析的 gEditor）跨族错位；兼修 caret 错锚
+（anonymous 链 sel-path 落点 `#text:@0`）后无 join 侧（T2/T6 形 4 采样键）
+同批翻面。动 part01.js 前先以小探针收口事件可达性残余（d56m：join 活时
+canonical 新挂监听 biCount=0 vs d56c 混合页 harness 自挂 gBI=1 的
+时点×家族耦合）。③ 页内毒化收窄为 bs-00/fd-00 两键（隔离即 PP）维持
+不动；pre↔p ws ×2、hr、br+ws gtr、img 序列化、RTL 各族独立挂账逐族刀
+（fd 64F 同谱，`abc[]<br>` 块界、pre/p 空白邻、`<p><b>abc[]</b></p>` 壳
+端点出块）。②dwuf 余臂（caret
 join/deleteCommand 七变体）跨
 child-block gtr 端点规范化持位——Typing 变体 24F 已由 d46 清偿；
 ③generation-aware 归一刀重设计（d42 A/B 与 d47 查询返回点别名两处入口级
