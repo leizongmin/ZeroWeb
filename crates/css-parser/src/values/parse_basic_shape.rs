@@ -1141,7 +1141,7 @@ fn split_top_level_commas_always(s: &str) -> Vec<&str> {
 }
 
 /// 括号感知空白切分（calc(-4.5% - 6.5px) 内空白不下沉）。
-fn split_top_ws_depth(s: &str) -> Vec<&str> {
+pub(crate) fn split_top_ws_depth(s: &str) -> Vec<&str> {
     let bytes = s.as_bytes();
     let mut out = Vec::new();
     let mut depth = 0usize;

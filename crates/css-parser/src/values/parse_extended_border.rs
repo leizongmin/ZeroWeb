@@ -1272,7 +1272,13 @@ fn parse_shape_position(inner: &str) -> Option<(&str, Option<(LengthValue, Lengt
 
 /// 解析位置对 "x y" 或 "center" 等。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
-    let parts: Vec<&str> = s.split_whitespace().collect();
+    // 括号深度感知 token 切分——calc() 内空白不撕 token（`circle(at right
+    // calc(10% + 5px))` 朴素 split_whitespace 误裂成 4 token 撞 4 值臂
+    // `kw("+")` 拒收，basic-shape-circle-ellipse-serialization 语料钉面）；
+    // <position> 分量词法同 function-token 域（css-syntax-3），与 shape()
+    // 通道 [`crate::values::parse_basic_shape::split_top_ws_depth`] 同源。
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    let parts: Vec<&str> = super::parse_basic_shape::split_top_ws_depth(s);
     if parts.len() == 4 {
         // css-values-4 §position 4 值 edge-offset 形 `<edge> <offset> <edge>
         // <offset>`（css-shapes-1 at <position> circle/ellipse 语料主形态，
@@ -1512,6 +1518,21 @@ mod tests {
         assert!(parse_clip("rect(10px, 20px)").is_none());
         assert!(parse_clip("rect(calc(1), auto, 10px, 0px)").is_none());
         assert!(parse_clip("rect(0px, auto, 10px, 0px,)").is_none());
+    }
+
+    #[test]
+    fn test_clip_path_position_calc_token_boundary() {
+        // calc() 内空白不撕 <position> token（css-shapes-1 at <position>；
+        // basic-shape-circle-ellipse-serialization 语料 2/4 值缘偏移 calc 形
+        // 钉面——朴素空白切分误裂 `calc(10% + 5px)` 撞 4 值臂缘关键字裁决
+        // 拒收）。2 词缘偏移关键字形仍拒（parsing-utils invalidPositions
+        // 契约 `top 50%`/`bottom 70%` 钉面）。
+        assert!(parse_clip_path("circle(at right calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("ellipse(at right calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("circle(at right calc(10% + 5px) bottom calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("ellipse(at right calc(10% + 5px) bottom calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("circle(at top 50%)").is_none());
+        assert!(parse_clip_path("circle(at bottom 70%)").is_none());
     }
 }
 

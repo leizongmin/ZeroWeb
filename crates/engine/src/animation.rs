@@ -4771,12 +4771,15 @@ mod tests {
         );
     }
 
-    /// 二十一轮 echo 保留门钉：calc 端点 / rect 族跨形对返回空串（apply 必败
-    /// → 槽位不动 → canonicalize 恒等门回落 echo，B0 伪通过池保位）；真离散对
-    /// （none↔circle）不受门影响。
+    /// 二十一轮 echo 保留门钉：真不可插值对（rect 族跨形/单端不可解析）返回
+    /// 空串（apply 必败 → 槽位不动 → canonicalize 恒等门回落 echo，B0 伪通过
+    /// 池保位）；真离散对（none↔circle）不受门影响。calc 同构缘偏移对已由
+    /// lerp_calc_same_shape 臂兑现真插值（css-values-4 §8.5.6）——原「calc
+    /// 端点保 echo」断言随伪通过池兑现翻转（clip-lerp 臂，2026-11-18）。
     #[test]
     fn test_clip_pair_echo_preserve_gate() {
-        // calc 端点（edge-offset 位置）：期望串是 calc 代数插值形（共享残面）。
+        // calc 同构缘偏移对：真插值（原 B0 伪通过池——期望串写面拒收已随
+        // css-parser calc 位置词法修复解除，echo 保位翻真插值）。
         assert_eq!(
             interpolate_property_value(
                 "clip-path",
@@ -4784,8 +4787,8 @@ mod tests {
                 "circle(45% at right 25% bottom 35px)",
                 0.5
             ),
-            "",
-            "calc 端点对保 echo（空串）"
+            "circle(35% at 85% calc(100% - 25px))",
+            "calc 同构缘偏移对真插值"
         );
         // 门不过宽：左/上缘偏移归一为纯偏移（无 calc），同构真插值保留。
         assert_eq!(
