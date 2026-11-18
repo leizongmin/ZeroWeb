@@ -265,3 +265,6 @@ include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
 include!("js_dom_bridge_tests/part139_indent_ws_merge_pins.rs");
 include!("js_dom_bridge_tests/part140_indent_ol_tail_pins.rs");
 include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");
+// indent F 族 li 尾 br 尾位持行刀钉测（2026-11-18）：extraneous 判定尾位
+// 豁免后 li 内三形选区整 li 包裹双 br 全留＋无尾 br 基线控制键。
+include!("js_dom_bridge_tests/part142_indent_li_tail_br_pins.rs");

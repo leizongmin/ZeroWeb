@@ -866,6 +866,40 @@
 
   // —— 冗余行断清理（参考 1304-1376，isVisible/isExtraneous 近似件同上标注）——
 
+  // 尾位持行判别（2026-11-18 F 族刀，wrap 域局部；同日 v2 前邻界修订）：br
+  // 隐去塌高（＝持块尾空行，vendored :840 height 测量判非冗余）当且仅当前
+  // 邻可见内容本身止于行界——前邻可见节点是 br，或回走到含块/editing host
+  // 边界（br 是该块首行唯一持高者）。前邻是普通可见内联内容（文本/img/带
+  // 内容的内联壳）时 br 只终结该行，摘除行数不变＝extraneous 须摘（语料
+  // indent `<p>foo<br>{}</p><p>extra` 锚形：Chrome 摘尾 br 包 blockquote）。
+  // v1 仅判「无后继＋上溯无后继」把 foo<br> 形也豁免，门禁 L1 实证翻红该键。
+  // port precedes 近似过判面：块尾 br 前走出块爬升后 BlockStartPoint 看到的
+  // 前邻可见块正是 br 自在块，撞块边界报 true（如 li 内 a<br><br> 尾 br）。
+  // 仅 wrap 尾清理消费（见 _zwJusWrap 尾段）——不进共享 extraneous 判定：
+  // ip 拆壳/删除簇同形 br 靠现判定摘除（语料 :1163 caret 拆分形锚定），
+  // 语义按命令域分叉，全局豁免实证翻红 8 钉。守卫穷尽/游离 br 不豁免走原径。
+  // https://w3c.github.io/editing/execCommand.html#extraneous-line-breaks
+  function _zwJusBrHoldsTailLine(br) {
+    if (!_zwJusIsHtmlElement(br, 'br')) return false;
+    if (br.nextSibling) return false;
+    var tn = br;
+    var guard = 0;
+    while (tn && guard++ < 256) {
+      var prev = tn.previousSibling;
+      if (!prev) {
+        var tp = tn.parentNode;
+        if (!tp || _zwJusIsBlockNode(tp) || _zwJusIsEditingHost(tp)) return true;
+        tn = tp;
+        continue;
+      }
+      if (_zwJusIsBlockNode(prev) || _zwJusIsHtmlElement(prev, 'br')) return true;
+      if (!_zwJusIsInvisible(prev)) return false;
+      tn = prev;
+      while (_zwJusHasKids(tn)) tn = tn.lastChild;
+    }
+    return false;
+  }
+
   function _zwJusRemoveExtraneousLineBreaksBefore(node) {
     var ref = node.previousSibling;
     if (!ref) return;
@@ -1247,7 +1281,24 @@
       try { newParent.parentNode.removeChild(newParent.nextSibling); } catch (_eJmg) {}
     }
     _zwJusRemoveExtraneousLineBreaksBefore(newParent);
-    _zwJusRemoveExtraneousLineBreaksAtTheEndOf(newParent);
+    // F 族刀（2026-11-18）：AtTheEndOf 候选 br 持块尾行时跳过——共享
+    // extraneous 判定在块尾 br 形过判（precedes 前走撞自在块边界报 true，
+    // vendored :840 height 测量判非冗余），ip 拆壳/删除簇同形 br 靠现判定
+    // 摘除（语料 :1163 caret 拆分形锚定）故豁免只落 wrap 尾段（域局部），
+    // 判别见 _zwJusBrHoldsTailLine。候选定位镜像 AtTheEndOf 下钻＋隐形
+    // 回走。语料 indent :802 `<ul><li>a<br>{<br>}</li><li>b</li></ul>`
+    // 包 ul 后摘尾 br 实证（Chrome 录形双 br 全留）。
+    // https://w3c.github.io/editing/execCommand.html#extraneous-line-breaks
+    var tailRef = newParent;
+    while (_zwJusHasKids(tailRef)) tailRef = tailRef.lastChild;
+    var tailGuard = 0;
+    while (!_zwJusIsHtmlElement(tailRef, 'br') && tailRef !== newParent
+           && _zwJusIsInvisible(tailRef) && tailGuard++ < 256) {
+      tailRef = _zwJusPreviousNode(tailRef);
+    }
+    if (!_zwJusBrHoldsTailLine(tailRef)) {
+      _zwJusRemoveExtraneousLineBreaksAtTheEndOf(newParent);
+    }
     return newParent;
   }
 
