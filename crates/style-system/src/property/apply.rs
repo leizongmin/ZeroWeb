@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 64] = [
+    const VALIDATED_PROPERTIES: [&str; 65] = [
         "transform",
         "rotate",
         "scale",
@@ -2352,6 +2352,16 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "clip-rule",
         "background-clip",
         "transition-timing-function",
+        // knife TP 写面文法门（刀 R2 同族后继，独立电池收账）：
+        // transition-property（css-transitions-1 §transition-property-
+        // property：`none | <single-transition-property>#`，单项 = all |
+        // <custom-ident>；none 仅整值单置形合法，列表混入非法；css-wide
+        // keyword/default 列表成员拒——整值形上游 Cascading-4 §7.3 截获。
+        // driving: css-transitions/parsing/transition-property-invalid
+        // 15 形此前原文透传 store 即 Fail）。分派臂见 [`validate_decl_value`]
+        // 中段（transition-timing-function 臂后）。
+        // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+        "transition-property",
         // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
         // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
         // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
@@ -2859,6 +2869,46 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                     }
                     values::parse_timing_function(&lv).is_some()
                 })
+        });
+    }
+    // transition-property 写面文法门（css-transitions-1 §transition-property-
+    // property：`none | <single-transition-property>#`——单项 = all |
+    // <custom-ident>，逗号分层列表；none 仅整值单置形合法、列表混入非法；
+    // css-wide keyword/default 作列表成员拒（整值形由上游 Cascading-4 §7.3
+    // 截获放行，成员混入不可达该单值匹配 → 在此拒收）；单项空白分隔多
+    // token 非单 ident 拒；数字开头非 ident 拒。<custom-ident> 按识别文法
+    // 近似裁决（transition_property_ident_valid，转义序列超面放行——counter
+    // 臂同口径）。替换函数形放行 store 原文。（driving: css-transitions/
+    // parsing/transition-property-invalid 15 形此前原文透传 store 即 Fail。）
+    // FIXME: custom-ident 转义序列词法全谱挂账（`\` 形放行保底）。
+    // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+    if prop == "transition-property" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.contains('\\') {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        return super::apply_advanced::split_top_level_commas(&lv).is_some_and(|items| {
+            if items.is_empty() {
+                return false;
+            }
+            if items.len() == 1 && items[0].trim() == "none" {
+                return true;
+            }
+            items.iter().all(|item| {
+                let it = item.trim();
+                if it.is_empty()
+                    || matches!(
+                        it,
+                        "none" | "inherit" | "initial" | "unset" | "revert" | "revert-layer" | "default"
+                    )
+                {
+                    return false;
+                }
+                transition_property_ident_valid(it)
+            })
         });
     }
     // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
@@ -3479,6 +3529,22 @@ fn random_item_calls_valid(value: &str, lower: &str) -> bool {
     true
 }
 
+/// <custom-ident> 识别文法近似（css-values-4 §5.2 ident-token 子集）：起始
+/// [a-zA-Z_]或非 ASCII；余 [a-zA-Z0-9_-] 或非 ASCII。串内空白即多 token
+/// 非单 ident；转义/引号超面（调用方 `\` 存在即放行前置，counter-increment
+/// 臂同口径）。
+// https://drafts.csswg.org/css-values-4/#ident-token-diagram
+fn transition_property_ident_valid(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' || !c.is_ascii() => {}
+        _ => return false,
+    }
+    s.chars()
+        .skip(1)
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || !c.is_ascii())
+}
+
 /// css-easing-2 linear() 停点文法：`<linear-stop>#`，停点 = <number> &&
 /// <percentage>?（白空格分隔，括号感知逗号项间分隔）。每停点必含恰一
 /// <number>、至多一 <percentage>；字面 `inf`/`nan`（f64 parse 可过）经
@@ -3756,6 +3822,36 @@ mod t54_validate_decl_value_tests {
             "initial, cubic-bezier(0, -2, 1, 3)"
         ));
         assert!(!validate_decl_value("transition-timing-function", "linear(0 0%,)"));
+    }
+
+    #[test]
+    fn knife_tp_write_gate_verdicts() {
+        // knife TP 扩面写面门钉测（transition-property——语料驱动，与分派臂
+        // 同源裁决）。valid 页 7 形 + css-wide 整值上游截获 + invalid 15 形
+        // 代表形（全形覆盖见电池账）。
+        assert!(validate_decl_value("transition-property", "none"));
+        assert!(validate_decl_value("transition-property", "all"));
+        assert!(validate_decl_value("transition-property", "one"));
+        assert!(validate_decl_value("transition-property", "one-two-three"));
+        assert!(validate_decl_value("transition-property", "one, two, three"));
+        assert!(validate_decl_value("transition-property", "width, all"));
+        assert!(validate_decl_value("transition-property", "ALL, INVALID, SYNTAX, SRC"));
+        // css-wide keyword 整值形上游 Cascading-4 §7.3 截获（非本臂面）。
+        assert!(validate_decl_value("transition-property", "inherit"));
+        // 列表混入 css-wide keyword / none / default 拒；单项空白多 ident 拒；
+        // 数字开头 ident 拒。
+        assert!(!validate_decl_value("transition-property", "one two three"));
+        assert!(!validate_decl_value("transition-property", "1, 2, 3"));
+        assert!(!validate_decl_value("transition-property", "none, one"));
+        assert!(!validate_decl_value("transition-property", "initial, top"));
+        assert!(!validate_decl_value("transition-property", "top, initial"));
+        assert!(!validate_decl_value("transition-property", "inherit, top"));
+        assert!(!validate_decl_value("transition-property", "unset, top"));
+        assert!(!validate_decl_value("transition-property", "default, top"));
+        assert!(!validate_decl_value("transition-property", "top, default"));
+        assert!(!validate_decl_value("transition-property", "revert, top"));
+        assert!(!validate_decl_value("transition-property", "revert-layer, top"));
+        assert!(!validate_decl_value("transition-property", "top, revert-layer"));
     }
 
     #[test]
