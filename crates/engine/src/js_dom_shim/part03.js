@@ -32278,6 +32278,9 @@ return e;
         // 方向 'forward'，'none' 不落存储——textfieldselection-setSelectionRange setup() 自锚定
         // expected_direction_none + selection-not-application「assigning 'none' → 初始方向」断言面）。
         if (prop === 'setSelectionRange') {
+          // T79 OP-089（RC-04）：变体选择 READ 时实时读 type（_isTextControl），
+          // input.type 变异后 throw/no-throw 反转——动态面禁缓存。
+          _zwNoMemoMark();
           if (_isTextControl(sel, handle)) {
             return function(s, e, dir) {
               var len = _zwSelNormValue(sel, handle, key).length;
@@ -32323,6 +32326,8 @@ return e;
         //（缺省 preserve）。复用既有原语：`_controlValue` 读、`this.value=` setter 写（textarea 走 text-content、
         // input 走 attr + dirty 跟踪）、`_selObj` 选区。文本编辑库（auto-format / mask / undo 补全）高频。
         if (prop === 'setRangeText') {
+          // T79 OP-089（RC-04）：变体选择 READ 时实时读 type，动态面禁缓存。
+          _zwNoMemoMark();
           if (!_isTextControl(sel, handle)) {
             if (_realTag(sel, handle) === 'INPUT') {
               return function() { _throwDom('InvalidStateError', 'input type does not support text selection'); };
@@ -32398,6 +32403,9 @@ return e;
         // current_was_invalid 同面，见函数体内注）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-stepup
         if ((prop === 'stepUp' || prop === 'stepDown') && _realTag(sel, handle) === 'INPUT') {
+          // T79 OP-089（RC-04）：闭包捕获 suT/_suSteppable/步长表 READ 时冻结 type 域，
+          // input.type 变异后步进域与错误消息陈旧——动态面禁缓存。
+          _zwNoMemoMark();
           // 类型走枚举反射（缺省 Text 状态 / 非法回退 / ASCII 小写 / latest-wins——裸读
           // 缺 type 属性时 suT 为空串、IDL type= 写后读漏 pending，均已实证）。
           var suT = String(_reflectedTypeEnum(sel, handle) || '');
@@ -32511,6 +32519,9 @@ return e;
         //（show-picker-does-not-focus 断言面）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-showpicker
         if (prop === 'showPicker' && _realTag(sel, handle) === 'INPUT') {
+          // T79 OP-089（RC-04）：闭包捕获 spT/spRoApplies READ 时冻结 readonly 适用表，
+          // type 变异后「not mutable」抛错门陈旧——动态面禁缓存。
+          _zwNoMemoMark();
           // 类型走枚举反射（同 stepUp——缺省 Text / 非法回退 / ASCII 小写）。
           var spT = String(_reflectedTypeEnum(sel, handle) || '');
           // readonly 适用面（HTML §4.10.5 内容属性表 12 状态；WPT noReadonlySupport 10 类型之反面）。

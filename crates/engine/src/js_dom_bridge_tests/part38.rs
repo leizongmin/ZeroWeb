@@ -1031,3 +1031,108 @@ fn memo_target_expando_fn_reassign_readback_s41() {
         "删除后回落属性读空串（memo 不得复活已删值——RC-03；carrier 语义=expando 删除后 miss 回落 target 属性读）"
     );
 }
+
+/// INPUT type 变异变体回读（正向翻转，OP-089 RC-04）：text→setSelectionRange 工作变体
+/// 读+调、number→stepUp 可步进变体读+调、text+readonly→showPicker「not mutable」抛错
+/// 门——三面首读后 type 翻转为 'button'，再读调用须随新类型（调用面 throw 反转 /
+/// readonly 适用表不冻结）。缺陷形态：READ 时变体选择/闭包冻结产物 memo 钉死旧变体。
+#[test]
+fn memo_input_type_flip_variants_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var a = document.createElement('input');\
+             a.setAttribute('type', 'text');\
+             document.body.appendChild(a);\
+             a.setSelectionRange(0, 1);\
+             a.setAttribute('type', 'button');\
+             var c1 = null;\
+             try { a.setSelectionRange(0, 1); } catch (e) { c1 = e.name; }\
+             globalThis.__r_1 = c1;\
+             var b = document.createElement('input');\
+             b.setAttribute('type', 'number');\
+             b.setAttribute('value', '5');\
+             document.body.appendChild(b);\
+             globalThis.__r_2 = typeof b.stepUp;\
+             b.stepUp();\
+             var c3 = null;\
+             try { b.stepUp(); } catch (e) { c3 = e.name; }\
+             globalThis.__r_3 = c3 === null;\
+             b.setAttribute('type', 'button');\
+             var c4 = null;\
+             try { b.stepUp(); } catch (e) { c4 = e.name; }\
+             globalThis.__r_4 = c4;\
+             var c = document.createElement('input');\
+             c.setAttribute('type', 'text');\
+             c.setAttribute('readonly', 'readonly');\
+             document.body.appendChild(c);\
+             var c5 = null;\
+             try { c.showPicker(); } catch (e) { c5 = e.name; }\
+             globalThis.__r_5 = c5;\
+             c.setAttribute('type', 'button');\
+             var c6 = null;\
+             try { c.showPicker(); } catch (e) { c6 = e.name; }\
+             globalThis.__r_6 = c6;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "InvalidStateError",
+        "type=button 后 setSelectionRange 调用抛 InvalidStateError（memo 不得钉死 text 工作变体——RC-04）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "function",
+        "number 型 stepUp 可步进变体基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "number 型 stepUp 调用不抛基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_4").unwrap().value,
+        "InvalidStateError",
+        "type=button 后 stepUp 抛 InvalidStateError（闭包冻结 type 域不得陈旧——RC-04）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_5").unwrap().value,
+        "InvalidStateError",
+        "text+readonly 型 showPicker「not mutable」抛错门基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_6").unwrap().value,
+        "NotAllowedError",
+        "type=button 后 readonly 不适用跌落 gesture 门（readonly 适用表不得冻结——RC-04）"
+    );
+}
+
+/// INPUT type 反转变体回读（OP-089 RC-04，setRangeText 面）：type=button 首读恒抛
+/// 变体→type='text' 后再读调用须不抛。缺陷形态：memo 钉死恒抛变体，翻回文本后
+/// 正常编辑面失效。
+#[test]
+fn memo_input_type_flip_setrangetext_reverse_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var d = document.createElement('input');\
+             d.setAttribute('type', 'button');\
+             document.body.appendChild(d);\
+             var c1 = null;\
+             try { d.setRangeText('x'); } catch (e) { c1 = e.name; }\
+             globalThis.__r_1 = c1;\
+             d.setAttribute('type', 'text');\
+             var c2 = null;\
+             try { d.setRangeText('y'); } catch (e) { c2 = e.name; }\
+             globalThis.__r_2 = c2 === null;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "InvalidStateError",
+        "button 型 setRangeText 恒抛变体基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "翻回 text 后调用不抛（memo 不得钉死恒抛变体——RC-04）"
+    );
+}
