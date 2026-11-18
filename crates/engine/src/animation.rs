@@ -897,6 +897,82 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 from.to_string()
             }
         }
+        // wptfyi-css 刀 A3：text-shadow 阴影列表插值（css-text-decor-3 §text-shadow
+        // <https://drafts.csswg.org/css-text-decor-3/#text-shadow-property>：
+        // interpolated as a list of shadows——逐层组件插值：length 槽 px 域线性
+        //（em/rem 端点按根字号 16 近似，FIXME(text-shadow-em)，语料端点全 px）、
+        // color 槽 [`lerp_color`] 预乘空间（css-color-4 §15.1——语料 initial→绿
+        // at(0.3) 期望 'rgba(0, 128, 0, 0.3)' 预乘实证）。层数失配按零阴影补齐
+        //（none ≡ 空表 → 补 rgba(0,0,0,0) 0px 0px 0px 至对侧层数，语料 at(0) 期望
+        // 'rgba(0, 0, 0, 0) 0px 0px 0px'）；端点解析失败对离散翻转（css-values-4
+        // §8.5.6）。端点字符串为 gCS 串化形（currentcolor 已解析元素色；字面形落
+        // 黑底——rule-color 臂同契约）。blur 恒显（2 长手端点解析补 Px(0)，与 gCS
+        // [`text_shadow_to_css`] 恒显 blur 同构）；canonicalize 往返由 applier 臂
+        // 承担。
+        "text-shadow" => {
+            match (
+                zero_css_parser::values::parse_text_shadow_list(from, false),
+                zero_css_parser::values::parse_text_shadow_list(to, false),
+            ) {
+                (Some(fl), Some(tl)) => {
+                    use zero_css_parser::values::{ColorValue, TextShadowValue};
+                    let px = |lv: &LengthValue| -> f64 {
+                        match lv {
+                            LengthValue::Px(v) => *v,
+                            LengthValue::Em(v) | LengthValue::Rem(v) => *v * 16.0,
+                            _ => 0.0,
+                        }
+                    };
+                    let cv_rgba = |c: &ColorValue| -> Rgba {
+                        let resolved = crate::resolve_color_current(c, &ColorValue::CurrentColor);
+                        (
+                            resolved.r as f64,
+                            resolved.g as f64,
+                            resolved.b as f64,
+                            resolved.a as f64 / 255.0,
+                        )
+                    };
+                    let layer = |l: Option<&TextShadowValue>| -> (Rgba, f64, f64, f64) {
+                        match l {
+                            Some(s) => (cv_rgba(&s.color), px(&s.offset_x), px(&s.offset_y), px(&s.blur_radius)),
+                            None => ((0.0, 0.0, 0.0, 0.0), 0.0, 0.0, 0.0),
+                        }
+                    };
+                    let fmt = |(c, x, y, b): (Rgba, f64, f64, f64)| -> String {
+                        let (r, g, bl, a) = (c.0.round() as u8, c.1.round() as u8, c.2.round() as u8, c.3);
+                        let cs = if (a - 1.0).abs() < 1e-6 {
+                            format!("rgb({r}, {g}, {bl})")
+                        } else {
+                            format!("rgba({r}, {g}, {bl}, {a:.2})")
+                        };
+                        format!(
+                            "{cs} {} {} {}",
+                            crate::js_dom_bridge::computed_style::format_num(x, "px"),
+                            crate::js_dom_bridge::computed_style::format_num(y, "px"),
+                            crate::js_dom_bridge::computed_style::format_num(b, "px"),
+                        )
+                    };
+                    let n = fl.len().max(tl.len());
+                    (0..n)
+                        .map(|i| {
+                            let (fc, fx, fy, fb) = layer(fl.get(i));
+                            let (tc, tx, ty, tb) = layer(tl.get(i));
+                            fmt((
+                                lerp_color(fc, tc, t),
+                                lerp(fx, tx, t),
+                                lerp(fy, ty, t),
+                                // blur 非负域钳 0（css-text-decor-3 <length [0,∞]>——
+                                // 语料 black/orange 对 at(-0.3) 期望 '0px'；offset 不钳）。
+                                lerp(fb, tb, t).max(0.0),
+                            ))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
         // position（§5.3，文法同 bg-position）：逐层 (pct,px) 系数 lerp + LCM 循环
         //（mix_mask_position）；端点解析失败离散翻转回落。
         "mask-position" => match mix_mask_position(from, to, t) {
@@ -1446,6 +1522,19 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // （harness transitions 通道 expectFlip(from, to, -Infinity) 恒 to 形）；
         // CSSA/WAAPI 通道不经本门，lenient 50% 离散翻转（expectFlip 0.5 形）不变。
         "vertical-align" => None,
+        // wptfyi-css 刀 A3：text-shadow 严格门——两端点均为阴影列表（含 none=空表）
+        // 即真实可插值（css-text-decor-3 §text-shadow interpolation：层差零阴影
+        // 补齐，语料无关键字 no-interp 对形）；委托宽松臂。端点解析失败 None =
+        // 非 animatable 对不启动过渡、静态跳终值（css-transitions-1
+        // §starting-of-transitions，同 va 臂形）。
+        "text-shadow"
+            if zero_css_parser::values::parse_text_shadow_list(from, false).is_some()
+                && zero_css_parser::values::parse_text_shadow_list(to, false).is_some() =>
+        {
+            Some(interpolate_property_value(property, from, to, t))
+        }
+        // 刀 A3：畸形端点对恒 None（同上臂形）。
+        "text-shadow" => None,
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
             let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
@@ -3651,6 +3740,34 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                     bottom: comp(&v.bottom),
                     left: comp(&v.left),
                 };
+            }
+        }
+        // ── wptfyi-css 刀 A3 text-shadow applier 臂（css-text-decor-3 §text-shadow）──
+        // 镜像 apply_advanced 静态臂（resolve_effect_length em 域穿线、currentColor
+        // 槽内延迟解析由 gCS [`text_shadow_to_css`] 按元素色解析）。canonicalize
+        // apply→gCS 串化往返 ser1≠ser0 为 CSSA/WAAPI/transitions 三通道共因
+        //（刀 B1 探针谱系 v3 同证：缺臂 ⇒ ser1≡ser0 ⇒ 三通道回落级联静态）。
+        // https://drafts.csswg.org/css-text-decor-3/#text-shadow-property
+        "text-shadow" => {
+            if let Some(list) = zero_css_parser::values::parse_text_shadow_list(value, style.color_scheme_dark) {
+                style.text_shadow = list
+                    .into_iter()
+                    .map(|v| zero_style_system::property::types::TextShadowComputedValue {
+                        offset_x: zero_style_system::property::apply_advanced::resolve_effect_length(
+                            &v.offset_x,
+                            style,
+                        ),
+                        offset_y: zero_style_system::property::apply_advanced::resolve_effect_length(
+                            &v.offset_y,
+                            style,
+                        ),
+                        blur_radius: zero_style_system::property::apply_advanced::resolve_effect_length(
+                            &v.blur_radius,
+                            style,
+                        ),
+                        color: v.color,
+                    })
+                    .collect();
             }
         }
         // ── wptfyi-css 刀 B1 border-image 五槽 applier 臂（css-backgrounds-3 §3.5–3.9）──
@@ -7023,6 +7140,66 @@ mod tests {
         );
         assert_eq!(
             interpolate_property_value_strict("vertical-align", "super", "sub", 0.5),
+            None
+        );
+    }
+
+    /// 刀 A3 text-shadow 阴影列表插值钉测（css-text-decor-3 §text-shadow
+    /// interpolation）：逐层 length/color 组件 lerp（color 预乘空间）、none ≡
+    /// 空表按零阴影补齐至对侧层数、blur 恒显、外推钳（alpha [0,1]/blur 0）、
+    /// 多层逗号列表、解析失败对离散翻转；strict 门=双端点均阴影列表。
+    #[test]
+    fn test_text_shadow_lerp() {
+        // 同型组件 lerp：颜色预乘 + 三 length 槽（语料 neutral→绿 at(-0.3)）。
+        assert_eq!(
+            interpolate_property_value(
+                "text-shadow",
+                "rgb(255, 165, 0) 10px 30px 10px",
+                "rgb(0, 128, 0) 20px 20px 20px",
+                -0.3
+            ),
+            "rgb(255, 176, 0) 7px 33px 7px"
+        );
+        // none 空表零阴影补齐：at(0.3) 预乘 rgba(0,128,0,0.3)、at(0) 透明零阴影。
+        assert_eq!(
+            interpolate_property_value("text-shadow", "none", "rgb(0, 128, 0) 20px 20px 20px", 0.3),
+            "rgba(0, 128, 0, 0.30) 6px 6px 6px"
+        );
+        assert_eq!(
+            interpolate_property_value("text-shadow", "none", "rgb(0, 128, 0) 20px 20px 20px", 0.0),
+            "rgba(0, 0, 0, 0.00) 0px 0px 0px"
+        );
+        // 负外推钳：blur 5→25 at(-0.3) = -1 钳 0（语料 black/orange 对）。
+        assert_eq!(
+            interpolate_property_value(
+                "text-shadow",
+                "rgb(0, 0, 0) 15px 10px 5px",
+                "rgb(255, 165, 0) -15px -10px 25px",
+                -0.3
+            ),
+            "rgb(0, 0, 0) 24px 16px 0px"
+        );
+        // 多层列表逐层插值（层差补齐 + 逗号连接）：双不透明端点 rgb 形、
+        // 补齐层预乘半透明形。
+        assert_eq!(
+            interpolate_property_value(
+                "text-shadow",
+                "rgb(255, 0, 0) 1px 1px",
+                "rgb(0, 0, 255) 2px 2px 2px, rgb(0, 128, 0) 3px 3px 3px",
+                0.5
+            ),
+            "rgb(128, 0, 128) 1.5px 1.5px 1px, rgba(0, 128, 0, 0.50) 1.5px 1.5px 1.5px"
+        );
+        // 解析失败端点对离散翻转（宽松臂）。
+        assert_eq!(interpolate_property_value("text-shadow", "10px", "red", 0.3), "10px");
+        assert_eq!(interpolate_property_value("text-shadow", "10px", "red", 0.6), "red");
+        // strict 门：双端点阴影列表（含 none）Some 委托、畸形端点 None。
+        assert_eq!(
+            interpolate_property_value_strict("text-shadow", "rgb(0, 0, 0) 15px 10px 5px", "none", 0.5),
+            Some("rgba(0, 0, 0, 0.50) 7.5px 5px 2.5px".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("text-shadow", "10px", "red", 0.5),
             None
         );
     }

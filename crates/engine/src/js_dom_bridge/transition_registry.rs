@@ -217,7 +217,7 @@ pub(crate) fn register_from_style_change(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 81] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 82] = [
     "backdrop-filter",
     "background",
     "background-color",
@@ -306,6 +306,9 @@ const TRANSITIONABLE_PROPERTIES: [&str; 81] = [
     "shape-margin",
     "shape-outside",
     "text-indent",
+    // wptfyi-css 刀 A3：text-shadow 阴影列表插值（css-text-decor-3 §text-shadow
+    // interpolation——逐层 length/color 组件 lerp，层差零阴影补齐，none ≡ 空表）。
+    "text-shadow",
     "top",
     "transform",
     "translate",
