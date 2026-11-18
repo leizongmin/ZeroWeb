@@ -690,203 +690,224 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // 值域非负钳 0（语料 Non-negative 注释 at:-0.3→'0'）；repeat/source 纯离散。
         // 刀 B1：border-image-slice 同臂共享（css-backgrounds-3 §3.6——同 <number|
         // percentage>{1,4}+fill 文法同解析器同串化器，宽松通道 keyframes 离散兜底）。
-        "mask-border-slice" | "border-image-slice" => match (parse_border_image_slice(from), parse_border_image_slice(to)) {
-            (Some(f), Some(s)) if f.fill == s.fill => {
-                let cmp = |fc: &BorderImageSliceComponent, tc: &BorderImageSliceComponent| -> Option<String> {
-                    match (fc, tc) {
-                        (BorderImageSliceComponent::Number(a), BorderImageSliceComponent::Number(b)) => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, *b as f64, t).max(0.0),
-                                "",
-                            ))
+        "mask-border-slice" | "border-image-slice" => {
+            match (parse_border_image_slice(from), parse_border_image_slice(to)) {
+                (Some(f), Some(s)) if f.fill == s.fill => {
+                    let cmp = |fc: &BorderImageSliceComponent, tc: &BorderImageSliceComponent| -> Option<String> {
+                        match (fc, tc) {
+                            (BorderImageSliceComponent::Number(a), BorderImageSliceComponent::Number(b)) => {
+                                Some(crate::js_dom_bridge::computed_style::format_num(
+                                    lerp(*a as f64, *b as f64, t).max(0.0),
+                                    "",
+                                ))
+                            }
+                            (BorderImageSliceComponent::Percent(a), BorderImageSliceComponent::Percent(b)) => {
+                                Some(crate::js_dom_bridge::computed_style::format_num(
+                                    lerp(*a as f64, *b as f64, t).max(0.0),
+                                    "%",
+                                ))
+                            }
+                            _ => None,
                         }
-                        (BorderImageSliceComponent::Percent(a), BorderImageSliceComponent::Percent(b)) => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, *b as f64, t).max(0.0),
-                                "%",
-                            ))
+                    };
+                    let slots = [
+                        cmp(&f.top, &s.top),
+                        cmp(&f.right, &s.right),
+                        cmp(&f.bottom, &s.bottom),
+                        cmp(&f.left, &s.left),
+                    ];
+                    if slots.iter().all(|s| s.is_some()) {
+                        let ss: Vec<String> = slots.into_iter().flatten().collect();
+                        let mut out =
+                            crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3]);
+                        if f.fill {
+                            out.push_str(" fill");
                         }
-                        _ => None,
+                        out
+                    } else if t >= 0.5 {
+                        to.to_string()
+                    } else {
+                        from.to_string()
                     }
-                };
-                let slots = [
-                    cmp(&f.top, &s.top),
-                    cmp(&f.right, &s.right),
-                    cmp(&f.bottom, &s.bottom),
-                    cmp(&f.left, &s.left),
-                ];
-                if slots.iter().all(|s| s.is_some()) {
-                    let ss: Vec<String> = slots.into_iter().flatten().collect();
-                    let mut out = crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3]);
-                    if f.fill {
-                        out.push_str(" fill");
-                    }
-                    out
-                } else if t >= 0.5 {
-                    to.to_string()
-                } else {
-                    from.to_string()
                 }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
             }
-            _ if t >= 0.5 => to.to_string(),
-            _ => from.to_string(),
-        },
+        }
         // 刀 B1：border-image-width 同臂共享（css-backgrounds-3 §3.7 同文法；跨型
         // %↔length calc 混合语料期望 calc 系数形，严格通道同型门见 strict 臂注）。
-        "mask-border-width" | "border-image-width" => match (parse_border_image_width(from), parse_border_image_width(to)) {
-            (Some(f), Some(s)) => {
-                // 刀 B1 补遗：Length↔Percent 跨型槽 calc 领地 echo 保留门。border-image-width
-                // 语料 10%↔20px 对期望 `calc(13% + -6px)` 系数形——本机静态声明路径拒收
-                // calc → 期望元素 setProperty 落静态值（=initial）；刀前无臂恒 echo 与之
-                // 双巧合通过（B0 伪通过池，jsanim 十轮 / clip-path 二十一轮同款纪律：
-                // 不追真值保位，calc 面待整刀 FIXME(bi-cross-type-calc)）。返回空串 →
-                // applier 解析必败 → 槽位不动 → canonicalize 恒等门回落 echo。t==0 豁免
-                //（翻转移交既有离散位）：管线钳 t∈[0,1]，at(0) 期望=from 原形可解析
-                //（'10%' 诚实通过），at(-0.3) 期望=外推 calc 不可达走 echo——两行同以
-                // t=0.0 到达，状态less 臂唯一可行分工即端点翻转/中段 echo（10/12 全局
-                // 最优；t==1 豁免净 −1 不取）。仅门 border-image-width 名：
-                // mask-border-width 语料无此对形（A1c 落账翻转位零 REG），不扩。
-                // https://drafts.csswg.org/css-values-4/#interpolation-calc
-                if property == "border-image-width" && t != 0.0
-                    && [&f.top, &f.right, &f.bottom, &f.left]
-                        .iter()
-                        .zip([&s.top, &s.right, &s.bottom, &s.left])
-                        .any(|(a, b)| {
-                            matches!(
-                                (a, b),
-                                (BorderImageWidthComponent::Length(_), BorderImageWidthComponent::Percent(_))
-                                    | (BorderImageWidthComponent::Percent(_), BorderImageWidthComponent::Length(_))
-                            )
-                        })
-                {
-                    return String::new();
-                }
-                use crate::animation::clip_interp::lerp_len;
-                let cmp = |fc: &BorderImageWidthComponent, tc: &BorderImageWidthComponent| -> Option<String> {
-                    match (fc, tc) {
-                        (BorderImageWidthComponent::Auto, BorderImageWidthComponent::Auto) => Some("auto".to_string()),
-                        (BorderImageWidthComponent::Number(a), BorderImageWidthComponent::Number(b)) => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, *b as f64, t).max(0.0),
-                                "",
-                            ))
-                        }
-                        (BorderImageWidthComponent::Length(a), BorderImageWidthComponent::Length(b)) => {
-                            // 值域非负钳 0（css-masking-1 §3.6——语料 Non-negative
-                            // 注释 0px→20px at:-0.3 期望 '0px'）；px↔px 同构数值域
-                            // 钳制直通，其余单位组合走 calc 混合通道。
-                            match (a, b) {
-                                (LengthValue::Px(x), LengthValue::Px(y)) => Some(
-                                    crate::js_dom_bridge::computed_style::format_num(lerp(*x, *y, t).max(0.0), "px"),
-                                ),
-                                _ => lerp_len(a, b, t),
-                            }
-                        }
-                        // 裸无单位 0 双态歧义（css-values-4 §5.2：parser parse_length
-                        // 先收 Px(0)，对侧裸数收 Number）：数值恒 0 视作对侧 Number
-                        // 同型参与 lerp（语料 '0'→'20' at:0.3 期望 '6'，非离散）。
-                        (
-                            BorderImageWidthComponent::Length(LengthValue::Px(x)),
-                            BorderImageWidthComponent::Number(b),
-                        ) if *x == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
-                            lerp(0.0, *b as f64, t).max(0.0),
-                            "",
-                        )),
-                        (
-                            BorderImageWidthComponent::Number(a),
-                            BorderImageWidthComponent::Length(LengthValue::Px(y)),
-                        ) if *y == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
-                            lerp(*a as f64, 0.0, t).max(0.0),
-                            "",
-                        )),
-                        (BorderImageWidthComponent::Percent(a), BorderImageWidthComponent::Percent(b)) => {
-                            // % 同构臂同值域非负钳（0%→20% at:-0.3 期望 '0%'）。
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, *b as f64, t).max(0.0),
-                                "%",
-                            ))
-                        }
-                        _ => None,
+        "mask-border-width" | "border-image-width" => {
+            match (parse_border_image_width(from), parse_border_image_width(to)) {
+                (Some(f), Some(s)) => {
+                    // 刀 B1 补遗：Length↔Percent 跨型槽 calc 领地 echo 保留门。border-image-width
+                    // 语料 10%↔20px 对期望 `calc(13% + -6px)` 系数形——本机静态声明路径拒收
+                    // calc → 期望元素 setProperty 落静态值（=initial）；刀前无臂恒 echo 与之
+                    // 双巧合通过（B0 伪通过池，jsanim 十轮 / clip-path 二十一轮同款纪律：
+                    // 不追真值保位，calc 面待整刀 FIXME(bi-cross-type-calc)）。返回空串 →
+                    // applier 解析必败 → 槽位不动 → canonicalize 恒等门回落 echo。t==0 豁免
+                    //（翻转移交既有离散位）：管线钳 t∈[0,1]，at(0) 期望=from 原形可解析
+                    //（'10%' 诚实通过），at(-0.3) 期望=外推 calc 不可达走 echo——两行同以
+                    // t=0.0 到达，状态less 臂唯一可行分工即端点翻转/中段 echo（10/12 全局
+                    // 最优；t==1 豁免净 −1 不取）。仅门 border-image-width 名：
+                    // mask-border-width 语料无此对形（A1c 落账翻转位零 REG），不扩。
+                    // https://drafts.csswg.org/css-values-4/#interpolation-calc
+                    if property == "border-image-width"
+                        && t != 0.0
+                        && [&f.top, &f.right, &f.bottom, &f.left]
+                            .iter()
+                            .zip([&s.top, &s.right, &s.bottom, &s.left])
+                            .any(|(a, b)| {
+                                matches!(
+                                    (a, b),
+                                    (
+                                        BorderImageWidthComponent::Length(_),
+                                        BorderImageWidthComponent::Percent(_)
+                                    ) | (
+                                        BorderImageWidthComponent::Percent(_),
+                                        BorderImageWidthComponent::Length(_)
+                                    )
+                                )
+                            })
+                    {
+                        return String::new();
                     }
-                };
-                let slots = [
-                    cmp(&f.top, &s.top),
-                    cmp(&f.right, &s.right),
-                    cmp(&f.bottom, &s.bottom),
-                    cmp(&f.left, &s.left),
-                ];
-                if slots.iter().all(|s| s.is_some()) {
-                    let ss: Vec<String> = slots.into_iter().flatten().collect();
-                    crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
-                } else if t >= 0.5 {
-                    to.to_string()
-                } else {
-                    from.to_string()
+                    use crate::animation::clip_interp::lerp_len;
+                    let cmp = |fc: &BorderImageWidthComponent, tc: &BorderImageWidthComponent| -> Option<String> {
+                        match (fc, tc) {
+                            (BorderImageWidthComponent::Auto, BorderImageWidthComponent::Auto) => {
+                                Some("auto".to_string())
+                            }
+                            (BorderImageWidthComponent::Number(a), BorderImageWidthComponent::Number(b)) => {
+                                Some(crate::js_dom_bridge::computed_style::format_num(
+                                    lerp(*a as f64, *b as f64, t).max(0.0),
+                                    "",
+                                ))
+                            }
+                            (BorderImageWidthComponent::Length(a), BorderImageWidthComponent::Length(b)) => {
+                                // 值域非负钳 0（css-masking-1 §3.6——语料 Non-negative
+                                // 注释 0px→20px at:-0.3 期望 '0px'）；px↔px 同构数值域
+                                // 钳制直通，其余单位组合走 calc 混合通道。
+                                match (a, b) {
+                                    (LengthValue::Px(x), LengthValue::Px(y)) => {
+                                        Some(crate::js_dom_bridge::computed_style::format_num(
+                                            lerp(*x, *y, t).max(0.0),
+                                            "px",
+                                        ))
+                                    }
+                                    _ => lerp_len(a, b, t),
+                                }
+                            }
+                            // 裸无单位 0 双态歧义（css-values-4 §5.2：parser parse_length
+                            // 先收 Px(0)，对侧裸数收 Number）：数值恒 0 视作对侧 Number
+                            // 同型参与 lerp（语料 '0'→'20' at:0.3 期望 '6'，非离散）。
+                            (
+                                BorderImageWidthComponent::Length(LengthValue::Px(x)),
+                                BorderImageWidthComponent::Number(b),
+                            ) if *x == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(0.0, *b as f64, t).max(0.0),
+                                "",
+                            )),
+                            (
+                                BorderImageWidthComponent::Number(a),
+                                BorderImageWidthComponent::Length(LengthValue::Px(y)),
+                            ) if *y == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, 0.0, t).max(0.0),
+                                "",
+                            )),
+                            (BorderImageWidthComponent::Percent(a), BorderImageWidthComponent::Percent(b)) => {
+                                // % 同构臂同值域非负钳（0%→20% at:-0.3 期望 '0%'）。
+                                Some(crate::js_dom_bridge::computed_style::format_num(
+                                    lerp(*a as f64, *b as f64, t).max(0.0),
+                                    "%",
+                                ))
+                            }
+                            _ => None,
+                        }
+                    };
+                    let slots = [
+                        cmp(&f.top, &s.top),
+                        cmp(&f.right, &s.right),
+                        cmp(&f.bottom, &s.bottom),
+                        cmp(&f.left, &s.left),
+                    ];
+                    if slots.iter().all(|s| s.is_some()) {
+                        let ss: Vec<String> = slots.into_iter().flatten().collect();
+                        crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
+                    } else if t >= 0.5 {
+                        to.to_string()
+                    } else {
+                        from.to_string()
+                    }
                 }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
             }
-            _ if t >= 0.5 => to.to_string(),
-            _ => from.to_string(),
-        },
+        }
         // 刀 B1：border-image-outset 同臂共享（css-backgrounds-3 §3.9 同文法）。
-        "mask-border-outset" | "border-image-outset" => match (parse_border_image_outset(from), parse_border_image_outset(to)) {
-            (Some(f), Some(s)) => {
-                use crate::animation::clip_interp::lerp_len;
-                let cmp = |fc: &BorderImageOutsetComponent, tc: &BorderImageOutsetComponent| -> Option<String> {
-                    match (fc, tc) {
-                        (BorderImageOutsetComponent::Number(a), BorderImageOutsetComponent::Number(b)) => {
-                            Some(crate::js_dom_bridge::computed_style::format_num(
-                                lerp(*a as f64, *b as f64, t).max(0.0),
-                                "",
-                            ))
-                        }
-                        // <length> 值域非负钳 0（语料 Non-negative at:-0.3→'0'）：
-                        // px↔px 数值域钳制直通；其余单位组合走 calc 混合通道（outset
-                        // 文法无 %，实际仅 px 对出现）。
-                        (BorderImageOutsetComponent::Length(a), BorderImageOutsetComponent::Length(b)) => {
-                            match (a, b) {
-                                (LengthValue::Px(x), LengthValue::Px(y)) => Some(
-                                    crate::js_dom_bridge::computed_style::format_num(lerp(*x, *y, t).max(0.0), "px"),
-                                ),
-                                _ => lerp_len(a, b, t),
+        "mask-border-outset" | "border-image-outset" => {
+            match (parse_border_image_outset(from), parse_border_image_outset(to)) {
+                (Some(f), Some(s)) => {
+                    use crate::animation::clip_interp::lerp_len;
+                    let cmp = |fc: &BorderImageOutsetComponent, tc: &BorderImageOutsetComponent| -> Option<String> {
+                        match (fc, tc) {
+                            (BorderImageOutsetComponent::Number(a), BorderImageOutsetComponent::Number(b)) => {
+                                Some(crate::js_dom_bridge::computed_style::format_num(
+                                    lerp(*a as f64, *b as f64, t).max(0.0),
+                                    "",
+                                ))
                             }
+                            // <length> 值域非负钳 0（语料 Non-negative at:-0.3→'0'）：
+                            // px↔px 数值域钳制直通；其余单位组合走 calc 混合通道（outset
+                            // 文法无 %，实际仅 px 对出现）。
+                            (BorderImageOutsetComponent::Length(a), BorderImageOutsetComponent::Length(b)) => {
+                                match (a, b) {
+                                    (LengthValue::Px(x), LengthValue::Px(y)) => {
+                                        Some(crate::js_dom_bridge::computed_style::format_num(
+                                            lerp(*x, *y, t).max(0.0),
+                                            "px",
+                                        ))
+                                    }
+                                    _ => lerp_len(a, b, t),
+                                }
+                            }
+                            // 裸无单位 0 双态歧义同 width 臂（'0'→'1' at:0.3 期望
+                            // '0.3' 裸数，非离散）。
+                            (
+                                BorderImageOutsetComponent::Length(LengthValue::Px(x)),
+                                BorderImageOutsetComponent::Number(b),
+                            ) if *x == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(0.0, *b as f64, t).max(0.0),
+                                "",
+                            )),
+                            (
+                                BorderImageOutsetComponent::Number(a),
+                                BorderImageOutsetComponent::Length(LengthValue::Px(y)),
+                            ) if *y == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
+                                lerp(*a as f64, 0.0, t).max(0.0),
+                                "",
+                            )),
+                            _ => None,
                         }
-                        // 裸无单位 0 双态歧义同 width 臂（'0'→'1' at:0.3 期望
-                        // '0.3' 裸数，非离散）。
-                        (
-                            BorderImageOutsetComponent::Length(LengthValue::Px(x)),
-                            BorderImageOutsetComponent::Number(b),
-                        ) if *x == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
-                            lerp(0.0, *b as f64, t).max(0.0),
-                            "",
-                        )),
-                        (
-                            BorderImageOutsetComponent::Number(a),
-                            BorderImageOutsetComponent::Length(LengthValue::Px(y)),
-                        ) if *y == 0.0 => Some(crate::js_dom_bridge::computed_style::format_num(
-                            lerp(*a as f64, 0.0, t).max(0.0),
-                            "",
-                        )),
-                        _ => None,
+                    };
+                    let slots = [
+                        cmp(&f.top, &s.top),
+                        cmp(&f.right, &s.right),
+                        cmp(&f.bottom, &s.bottom),
+                        cmp(&f.left, &s.left),
+                    ];
+                    if slots.iter().all(|s| s.is_some()) {
+                        let ss: Vec<String> = slots.into_iter().flatten().collect();
+                        crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
+                    } else if t >= 0.5 {
+                        to.to_string()
+                    } else {
+                        from.to_string()
                     }
-                };
-                let slots = [
-                    cmp(&f.top, &s.top),
-                    cmp(&f.right, &s.right),
-                    cmp(&f.bottom, &s.bottom),
-                    cmp(&f.left, &s.left),
-                ];
-                if slots.iter().all(|s| s.is_some()) {
-                    let ss: Vec<String> = slots.into_iter().flatten().collect();
-                    crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
-                } else if t >= 0.5 {
-                    to.to_string()
-                } else {
-                    from.to_string()
                 }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
             }
-            _ if t >= 0.5 => to.to_string(),
-            _ => from.to_string(),
-        },
+        }
         // repeat（§3.8）/source（§3.4）离散属性：t≥0.5 翻转到 to（css-values-4 §8.5.6；
         // allow-discrete 启动门已随刀 A1c 接入 transition_registry.rs——本位声明
         // transition-behavior:allow-discrete 时离散对启动过渡，求值端翻转语义不变）。
@@ -1369,43 +1390,37 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
 /// 未接挂 FIXME(bi-cross-type-calc)。
 fn border_image_same_type_slots(property: &str, from: &str, to: &str) -> bool {
     match property {
-        "border-image-slice" => {
-            match (parse_border_image_slice(from), parse_border_image_slice(to)) {
-                (Some(f), Some(s)) if f.fill == s.fill => {
-                    slot_pair_same_type(&f.top, &s.top)
-                        && slot_pair_same_type(&f.right, &s.right)
-                        && slot_pair_same_type(&f.bottom, &s.bottom)
-                        && slot_pair_same_type(&f.left, &s.left)
-                }
-                _ => false,
+        "border-image-slice" => match (parse_border_image_slice(from), parse_border_image_slice(to)) {
+            (Some(f), Some(s)) if f.fill == s.fill => {
+                slot_pair_same_type(&f.top, &s.top)
+                    && slot_pair_same_type(&f.right, &s.right)
+                    && slot_pair_same_type(&f.bottom, &s.bottom)
+                    && slot_pair_same_type(&f.left, &s.left)
             }
-        }
-        "border-image-width" => {
-            match (parse_border_image_width(from), parse_border_image_width(to)) {
-                (Some(f), Some(s)) => [
-                    width_same_type(&f.top, &s.top),
-                    width_same_type(&f.right, &s.right),
-                    width_same_type(&f.bottom, &s.bottom),
-                    width_same_type(&f.left, &s.left),
-                ]
-                .into_iter()
-                .all(std::convert::identity),
-                _ => false,
-            }
-        }
-        "border-image-outset" => {
-            match (parse_border_image_outset(from), parse_border_image_outset(to)) {
-                (Some(f), Some(s)) => [
-                    outset_same_type(&f.top, &s.top),
-                    outset_same_type(&f.right, &s.right),
-                    outset_same_type(&f.bottom, &s.bottom),
-                    outset_same_type(&f.left, &s.left),
-                ]
-                .into_iter()
-                .all(std::convert::identity),
-                _ => false,
-            }
-        }
+            _ => false,
+        },
+        "border-image-width" => match (parse_border_image_width(from), parse_border_image_width(to)) {
+            (Some(f), Some(s)) => [
+                width_same_type(&f.top, &s.top),
+                width_same_type(&f.right, &s.right),
+                width_same_type(&f.bottom, &s.bottom),
+                width_same_type(&f.left, &s.left),
+            ]
+            .into_iter()
+            .all(std::convert::identity),
+            _ => false,
+        },
+        "border-image-outset" => match (parse_border_image_outset(from), parse_border_image_outset(to)) {
+            (Some(f), Some(s)) => [
+                outset_same_type(&f.top, &s.top),
+                outset_same_type(&f.right, &s.right),
+                outset_same_type(&f.bottom, &s.bottom),
+                outset_same_type(&f.left, &s.left),
+            ]
+            .into_iter()
+            .all(std::convert::identity),
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -1414,8 +1429,13 @@ fn border_image_same_type_slots(property: &str, from: &str, to: &str) -> bool {
 fn slot_pair_same_type(a: &BorderImageSliceComponent, b: &BorderImageSliceComponent) -> bool {
     matches!(
         (a, b),
-        (BorderImageSliceComponent::Number(_), BorderImageSliceComponent::Number(_))
-            | (BorderImageSliceComponent::Percent(_), BorderImageSliceComponent::Percent(_))
+        (
+            BorderImageSliceComponent::Number(_),
+            BorderImageSliceComponent::Number(_)
+        ) | (
+            BorderImageSliceComponent::Percent(_),
+            BorderImageSliceComponent::Percent(_)
+        )
     )
 }
 
@@ -1441,16 +1461,15 @@ fn width_same_type(a: &BorderImageWidthComponent, b: &BorderImageWidthComponent)
 /// outset 槽同型门：number↔number / length↔length；裸无单位 0 桥接同 width。
 fn outset_same_type(a: &BorderImageOutsetComponent, b: &BorderImageOutsetComponent) -> bool {
     use BorderImageOutsetComponent as O;
-    matches!(
-        (a, b),
-        (O::Number(_), O::Number(_)) | (O::Length(_), O::Length(_))
-    ) || matches!(
-        (a, b),
-        (O::Length(LengthValue::Px(x)), O::Number(_)) if *x == 0.0
-    ) || matches!(
-        (a, b),
-        (O::Number(_), O::Length(LengthValue::Px(y))) if *y == 0.0
-    )
+    matches!((a, b), (O::Number(_), O::Number(_)) | (O::Length(_), O::Length(_)))
+        || matches!(
+            (a, b),
+            (O::Length(LengthValue::Px(x)), O::Number(_)) if *x == 0.0
+        )
+        || matches!(
+            (a, b),
+            (O::Number(_), O::Length(LengthValue::Px(y))) if *y == 0.0
+        )
 }
 
 pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: &str, t: f64) -> Option<String> {
@@ -1491,8 +1510,7 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // border-image 语料 transitions 半面含关键字端点 no-interp 对（initial→20px
         // 期望恒 to），恒 Some 会把非可插值对登记成真过渡致 P2F。
         "border-image-slice" | "border-image-width" | "border-image-outset" => {
-            border_image_same_type_slots(property, from, to)
-                .then(|| interpolate_property_value(property, from, to, t))
+            border_image_same_type_slots(property, from, to).then(|| interpolate_property_value(property, from, to, t))
         }
         // wptfyi-css mask-interp 刀（css-masking-1 §5.3–5.6 + §3.10 简写）：同契约
         // 委托宽松臂——position 逐层系数 lerp、离散组/简写翻转（端点多层串
@@ -2723,6 +2741,57 @@ fn lerp_color(from: Rgba, to: Rgba, t: f64) -> Rgba {
     (chan(from.0, to.0), chan(from.1, to.1), chan(from.2, to.2), a)
 }
 
+// 刀 A3r（wptfyi-css，2026-11-18）：shadow 列表端点内嵌 currentcolor 的 start
+// 时预解析——interpolate_property_value 为纯字符串函数无元素上下文，
+// currentcolor 端点必须在 keyframe 装载时以元素 computed color 定死
+//（css-color-4 §5.4「currentcolor = color 属性的 computed value」）。仅当值
+// 含 currentcolor 时重写（返回 None = 保持原串走既有回退）；序列化契约与
+// computed_style::text_shadow_to_css 对齐（color-first、format_num 长度、
+// a≈1 出 rgb 形）。underlying=None（WAAPI 简化通道）不解析，同
+// FIXME(kf-inherit-waapi) 域。
+fn serialize_text_shadow_resolved(value: &str, style: &ComputedStyle) -> Option<String> {
+    use zero_css_parser::values::ColorValue;
+    let list = zero_css_parser::values::parse_text_shadow_list(value, false)?;
+    let has_cc = list.iter().any(|l| matches!(l.color, ColorValue::CurrentColor));
+    if !has_cc {
+        return None;
+    }
+    let color_str = |c: &ColorValue| -> String {
+        let resolved = crate::resolve_color_current(c, &style.color);
+        if resolved.a == 255 {
+            format!("rgb({}, {}, {})", resolved.r, resolved.g, resolved.b)
+        } else {
+            format!(
+                "rgba({}, {}, {}, {:.2})",
+                resolved.r,
+                resolved.g,
+                resolved.b,
+                resolved.a as f64 / 255.0
+            )
+        }
+    };
+    Some(
+        list.iter()
+            .map(|l| {
+                let len = |lv: &zero_css_parser::values::LengthValue| -> String {
+                    crate::js_dom_bridge::computed_style::format_num(
+                        zero_style_system::property::apply_advanced::resolve_effect_length(lv, style) as f64,
+                        "px",
+                    )
+                };
+                format!(
+                    "{} {} {} {}",
+                    color_str(&l.color),
+                    len(&l.offset_x),
+                    len(&l.offset_y),
+                    len(&l.blur_radius)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
 // ── AnimationClock 实现 ───────────────────────────────────────────────
 
 impl AnimationClock {
@@ -2818,7 +2887,12 @@ impl AnimationClock {
         for point in &mut keyframes {
             for (name, value) in point.properties.iter_mut() {
                 let v = value.trim();
-                if v.eq_ignore_ascii_case("initial") || v.eq_ignore_ascii_case("unset") {
+                // 刀 A3r（wptfyi-css，2026-11-18）css-cascade-4 §default：unset
+                // 级联向——inherited 属性取 inherit（父 computed）、其余取
+                // initial（修正刀 K1「unset 恒 initial」对 text-shadow 等继承
+                // 属性端点解析错基值）。is_inherited 表与 cascade 继承管线同源。
+                let inherited = zero_style_system::PropertyRegistry::is_inherited(name);
+                if v.eq_ignore_ascii_case("initial") || (v.eq_ignore_ascii_case("unset") && !inherited) {
                     let init = crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(
                         &ComputedStyle::default(),
                         name,
@@ -2827,13 +2901,26 @@ impl AnimationClock {
                     if !init.is_empty() {
                         *value = init;
                     }
-                } else if v.eq_ignore_ascii_case("inherit") {
+                } else if v.eq_ignore_ascii_case("inherit") || (v.eq_ignore_ascii_case("unset") && inherited) {
                     let fallback = ComputedStyle::default();
                     let src = parent.unwrap_or(&fallback);
                     let inh =
                         crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(src, name, None);
                     if !inh.is_empty() {
                         *value = inh;
+                    }
+                } else if let Some(style) = underlying {
+                    // 刀 A3r：值内嵌 currentcolor 的列表端点 start 时以元素
+                    // computed color 定死（css-color-4 §5.4；插值臂无元素
+                    // 上下文）。属性门=仅 text-shadow——parse_text_shadow 对
+                    // 裸长度列表默认 CurrentColor 色，不加门会把 background/
+                    // mask-position、border/mask-image outset/width 等属性
+                    // 的 "Npx Npx" 端点误判重写（A3r 电池 r2 110 P→F 回归
+                    // 实证）。None = 非 currentcolor 列表，保持原串。
+                    if name.eq_ignore_ascii_case("text-shadow")
+                        && let Some(resolved) = serialize_text_shadow_resolved(v, style)
+                    {
+                        *value = resolved;
                     }
                 }
             }
@@ -6991,14 +7078,26 @@ mod tests {
     /// slice 宽松臂共享验证（语料 initial→10% at:1.5 钳 '0%'、underlying 20%→10%
     /// at:0.3 期望 '17%'；跨型对离散翻转翻转点 0.5）。
     fn test_border_image_slice_lerp() {
-        assert_eq!(interpolate_property_value("border-image-slice", "100%", "10%", 1.5), "0%");
-        assert_eq!(interpolate_property_value("border-image-slice", "20%", "10%", 0.3), "17%");
+        assert_eq!(
+            interpolate_property_value("border-image-slice", "100%", "10%", 1.5),
+            "0%"
+        );
+        assert_eq!(
+            interpolate_property_value("border-image-slice", "20%", "10%", 0.3),
+            "17%"
+        );
         assert_eq!(
             interpolate_property_value("border-image-slice", "0% 10 20% 30 fill", "40% 50 60% 70 fill", 0.3),
             "12% 22 32% 42 fill"
         );
-        assert_eq!(interpolate_property_value("border-image-slice", "50%", "100", 0.3), "50%");
-        assert_eq!(interpolate_property_value("border-image-slice", "50%", "100", 0.6), "100");
+        assert_eq!(
+            interpolate_property_value("border-image-slice", "50%", "100", 0.3),
+            "50%"
+        );
+        assert_eq!(
+            interpolate_property_value("border-image-slice", "50%", "100", 0.6),
+            "100"
+        );
     }
 
     #[test]
@@ -7014,13 +7113,19 @@ mod tests {
             interpolate_property_value("border-image-width", "10px auto auto 20", "110px auto auto 120", -0.3),
             "0px auto auto 0"
         );
-        assert_eq!(interpolate_property_value("border-image-width", "0px", "20px", -0.3), "0px");
+        assert_eq!(
+            interpolate_property_value("border-image-width", "0px", "20px", -0.3),
+            "0px"
+        );
         assert_eq!(interpolate_property_value("border-image-width", "0", "20", -0.3), "0");
         // 跨型 %↔px（Block B 形）：t≠0 走 echo 保留门返回空串（canonicalize 恒等
         // 回落 echo 位——B0 伪通过池在册机制，v3 电池 REG=0 实证）；t==0 豁免转
         // 既有离散翻转位（from 可解析诚实通过，语料 at(0) 行）。
         assert_eq!(interpolate_property_value("border-image-width", "10%", "20px", 0.3), "");
-        assert_eq!(interpolate_property_value("border-image-width", "10%", "20px", 0.0), "10%");
+        assert_eq!(
+            interpolate_property_value("border-image-width", "10%", "20px", 0.0),
+            "10%"
+        );
     }
 
     #[test]
@@ -7028,7 +7133,10 @@ mod tests {
     /// at:0.3 期望 '1.3px'）。
     fn test_border_image_outset_lerp() {
         assert_eq!(interpolate_property_value("border-image-outset", "0", "2", -0.3), "0");
-        assert_eq!(interpolate_property_value("border-image-outset", "1px", "2px", 0.3), "1.3px");
+        assert_eq!(
+            interpolate_property_value("border-image-outset", "1px", "2px", 0.3),
+            "1.3px"
+        );
         assert_eq!(
             interpolate_property_value("border-image-outset", "1 2 3px 4px", "101 102 103px 104px", -0.3),
             "0 0 0px 0px"
@@ -7044,18 +7152,30 @@ mod tests {
             interpolate_property_value_strict("border-image-width", "10px", "20px", 0.5),
             Some("15px".to_string())
         );
-        assert_eq!(interpolate_property_value_strict("border-image-width", "1", "20px", 0.5), None);
-        assert_eq!(interpolate_property_value_strict("border-image-width", "10%", "20px", 0.5), None);
+        assert_eq!(
+            interpolate_property_value_strict("border-image-width", "1", "20px", 0.5),
+            None
+        );
+        assert_eq!(
+            interpolate_property_value_strict("border-image-width", "10%", "20px", 0.5),
+            None
+        );
         assert_eq!(
             interpolate_property_value_strict("border-image-slice", "20%", "10%", 0.5),
             Some("15%".to_string())
         );
-        assert_eq!(interpolate_property_value_strict("border-image-slice", "0% fill", "50%", 0.5), None);
+        assert_eq!(
+            interpolate_property_value_strict("border-image-slice", "0% fill", "50%", 0.5),
+            None
+        );
         assert_eq!(
             interpolate_property_value_strict("border-image-outset", "1", "2", 0.5),
             Some("1.5".to_string())
         );
-        assert_eq!(interpolate_property_value_strict("border-image-outset", "1", "2px", 0.5), None);
+        assert_eq!(
+            interpolate_property_value_strict("border-image-outset", "1", "2px", 0.5),
+            None
+        );
     }
 
     #[test]
@@ -7202,5 +7322,107 @@ mod tests {
             interpolate_property_value_strict("text-shadow", "10px", "red", 0.5),
             None
         );
+    }
+
+    /// 刀 A3r 钉（css-cascade-4 §default）：keyframe 'unset' 对 inherited 属性
+    /// （text-shadow）取父 computed 值——修正刀 K1「unset 恒 initial」。
+    #[test]
+    fn test_keyframe_unset_inherited_resolves_parent() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "tsunset",
+            vec![
+                (0.0, vec![("text-shadow", "unset")]),
+                (100.0, vec![("text-shadow", "rgb(0, 128, 0) 20px 20px 20px")]),
+            ],
+        ));
+        let mut parent = ComputedStyle::default();
+        parent.text_shadow = vec![zero_style_system::property::types::TextShadowComputedValue {
+            offset_x: 30.0,
+            offset_y: 10.0,
+            blur_radius: 30.0,
+            color: zero_css_parser::values::ColorValue::Rgba(255, 165, 0, 255),
+        }];
+        let config = AnimationConfig {
+            name: "tsunset".into(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, None, Some(&parent)));
+        let props = clock.tick(1, 0.5);
+        let got = props.iter().find(|p| p.name == "text-shadow").expect("ts update");
+        // t=0.25：orange(255,165,0)→green(0,128,0) 逐通道 lerp（b 双端 0→0）+ 30/10/30→20/20/20。
+        assert_eq!(got.value, "rgb(191, 156, 0) 27.5px 12.5px 27.5px", "unset→父值 lerp");
+    }
+
+    /// 刀 A3r 钉（css-color-4 §5.4）：keyframe 端点内嵌 currentcolor 以元素
+    /// computed color start 时定死（underlying 上下文）；非列表值不重写。
+    #[test]
+    fn test_keyframe_currentcolor_resolves_element_color() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "tscc",
+            vec![
+                (0.0, vec![("text-shadow", "rgb(0, 0, 0) 10px 10px 10px")]),
+                (100.0, vec![("text-shadow", "currentColor 10px 10px 10px")]),
+            ],
+        ));
+        let mut style = ComputedStyle::default();
+        style.color = zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255);
+        let config = AnimationConfig {
+            name: "tscc".into(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
+        let props = clock.tick(1, 1.0);
+        let got = props.iter().find(|p| p.name == "text-shadow").expect("ts update");
+        // t=0.5：black→green(currentcolor 解析) lerp，长度恒 10px。
+        assert_eq!(got.value, "rgb(0, 64, 0) 10px 10px 10px", "currentcolor→元素色 lerp");
+    }
+
+    /// 刀 A3r 回归钉（A3r 电池 r2 110 P→F 教训）：非 text-shadow 属性的裸
+    /// 长度列表端点不得被 currentcolor 预解析路径重写——parse_text_shadow
+    /// 对裸长度默认 CurrentColor，无属性门时 background-position 类
+    /// "40px 140px" 会被改写成阴影串致动画失效（gCS 透出 underlying）。
+    #[test]
+    fn test_keyframe_non_text_shadow_untouched_by_currentcolor_resolver() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "bgpos",
+            vec![
+                (0.0, vec![("background-position", "40px 140px")]),
+                (100.0, vec![("background-position", "80px 80px")]),
+            ],
+        ));
+        let style = ComputedStyle::default();
+        let config = AnimationConfig {
+            name: "bgpos".into(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
+        let props = clock.tick(1, 1.0);
+        let got = props
+            .iter()
+            .find(|p| p.name == "background-position")
+            .expect("bp update");
+        // t=0.5：端点未被改写、正常 lerp（40/140→80/80；bg-position 串化为两位小数约定）。
+        assert_eq!(got.value, "60.00px 110.00px", "非 text-shadow 端点不走 currentcolor 解析");
     }
 }
