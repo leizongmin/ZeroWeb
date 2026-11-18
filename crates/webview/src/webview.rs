@@ -2754,6 +2754,11 @@ impl WebView {
             }
             self.canvas_cleared_url = Some(page_url.to_string());
             tracing::info!(target: "mem_reclaim", "canvas_gen_clear");
+            // T80 G4（峰域刀）：跨文档换代清帧指纹缓存，与 canvas 代际门同门——
+            // 真跨文档才清（same_navigation 误判窗不清活文档热帧）；同址重入同键
+            // 覆盖，滞留无害。
+            self.pipeline.clear_frame_fingerprint_cache();
+            tracing::info!(target: "mem_reclaim", "frame_fingerprint_gen_clear");
         }
         // S1 指纹 canvas 基线：文档换代起点 registry 长度（上方清理/保留决策已定）。
         // 同址重入跳过清理时遗留死文档 context 计入基线——S1 键只对本文档代内新增
