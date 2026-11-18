@@ -194,3 +194,35 @@ P2F 零容忍。
   哨兵 pva 0/0/0。
 - parts.join 收口编辑自此入验证面；刀 TS 全链（v1 车道错接 → v2 P2F=3 →
   v2.1 修形 → v3 终账 GREEN → v4 face-verify GREEN）闭合。
+
+## Round B（02:48 发射，03:44 探针定谳收笔）
+
+电池 zw-knife-ts-rb-battery-0248（另一 fork）：b0=v4 存档 bin
+（md5 `a882801163f`）/ b1=整树构建（"树即 face"）。账面 F2P=0/P2F=0
+net=0 形 RED，但独立 fork 法证（NOTES-knife-ts-rb-forensics.txt 03:16）
+定谳 **null 账根因＝fix 未进被测二进制**：computed_style.rs
+duration-force 修形编辑 mtime 02:50:34 晚于 b1 构建收官（02:48:38）
+112 秒——"编辑撞构建窗"同形态再现。GONE=560＝腿窗他流编辑腿并发负载
+页级截断，重射需静窗。
+
+### 三值探针定谳（03:41，zz-rb-probe/2/3 三发，靶 a882801163f）
+
+- probe1/2（detached 元素）computed 读全空串——detach 短路 vs 引擎缺口
+  未定谳，corpus 零键依赖不入账，作废；probe3（appendChild 挂树）为准：
+- **写道 V1 Pass**：`transition: "0s 1s"` 展开 attr 落 delay+duration；
+- **store A-P2/A-P5/A-P6 Pass**：computed delay=1s / duration=0s /
+  property=all——传播链前两层齐全；
+- **A-P3（RB 靶面）got "1s"≠"0s 1s"**：简写道重组器**收到 delay** 但
+  省略 0s duration——duration-force 修形对症，预期 F2P=1 成立；
+- **A-P4 新缺口 got "all"**：长手道 `style.transitionDelay="1s"` 重组
+  输入传播断——独立缺口，RB 修形不覆盖，Round C 候选刀项。
+- 探针页三发即删（存档 .acceptance/wptfyi-css/*-saved.html）。
+
+### 重射前置门（03:42 实测）
+
+RIDE-21 现测 vs 02:47 s1 快照 ≥4 文件 md5 漂移（css-parser ATP 流
+推进中，03:37 九文件批量编辑在飞）——整树 b1 ≠ v4bin+单修形，多变量
+污染。**RB 重射等 ATP 流提交落库后执行**（届时整树 b1 需重新核背景
+恒定性）。教训入账：整树 b1 的单变量前提必须每次发射前以内容 md5
+对照快照实测，mtime 分代法证在共享树 rebase 后失效（autostash pop
+批量改写 mtime）。
