@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 59] = [
+    const VALIDATED_PROPERTIES: [&str; 60] = [
         "transform",
         "rotate",
         "scale",
@@ -2319,6 +2319,16 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // https://drafts.csswg.org/css-shapes/#shape-margin-property
         "shape-margin",
         "shape-image-threshold",
+        // clip-path 写面文法门（css-masking-1 §the-clip-path：`<clip-source> |
+        // [ <basic-shape> || <geometry-box> ] | none`）：apply 链既有臂裁决
+        // （parse_clip_path 八函数全量 + 刀 S 文本级 canonical store 单源），
+        // 白名单接入即启用 inline 写面 invalid 形拒收（driving: css-masking
+        // clip-path-invalid 48F + css-shapes shape-function-invalid 40F +
+        // rect/path-function-invalid 16F 此前白名单外放行 store 原文回显即
+        // Fail）。<clip-source> url()/裸 <geometry-box>/双序组合例外放行，
+        // 分派臂见 [`validate_decl_value`] 中段（shape-image-threshold 臂后）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+        "clip-path",
         // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
         // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
         // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
@@ -2748,6 +2758,48 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         }
         return values::parse_opacity(v).is_some();
     }
+    // clip-path 写面文法门（css-masking-1 §the-clip-path：`<clip-source> |
+    // [ <basic-shape> || <geometry-box> ] | none`）——置于未实现函数放行臂
+    // 之前（shape()/path() 等形状函数名不在 IMPLEMENTED_VALUE_FUNCTIONS
+    // 名单，放行臂会先行误放 invalid 形；shape-outside 臂同序先例）。裁决
+    // 单点复用 apply 臂同一解析器 parse_clip_path（<basic-shape> 八函数
+    // 全量：inset/circle/ellipse/polygon/shape/path/rect/xywh；空参
+    // circle()/ellipse() 默认臂同源）。<clip-source> url() 形与替换函数形
+    // （var()/attr()）放行 store 原文——SVG 引用域 apply 链未建模，oracle
+    // 对引用前文本恒拒（clip-path-valid 语料 url(https://example.com/)
+    // valid 形原文回显通道；shape-outside 文法无 <clip-source> 故其臂无
+    // url() 放行，两臂差异合规范）。裸 <geometry-box> 七关键字（含 SVG 侧
+    // fill-box/stroke-box/view-box——shape-outside 仅 content/padding/
+    // border/margin 四形）独立受理；<basic-shape> || <geometry-box> 双序
+    // 组合（词边界关键字剥除，[`strip_clip_path_geometry_box`]）。
+    // （driving: css-masking clip-path-invalid 48F + css-shapes
+    // shape-function-invalid 40F + rect/path-function-invalid 16F——invalid
+    // 形此前白名单外放行 store 原文回显即 Fail；valid 面三页 116P 经
+    // fold_decl_specified clip-path 臂 canonical store 与读回 canonical
+    // 同源（刀 S 文本级单源），幂等性钉测锚定。）
+    // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+    if prop == "clip-path" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        // <clip-source> = <url>（css-values-4 url token 语法形全受理）。
+        if lv.starts_with("url(") {
+            return true;
+        }
+        if matches!(
+            lv.as_str(),
+            "content-box" | "padding-box" | "border-box" | "margin-box" | "fill-box" | "stroke-box" | "view-box"
+        ) {
+            return true;
+        }
+        // 无 geometry-box 邻接：原值交 parse_clip_path 整体裁决（none/纯
+        // <basic-shape> 形——none 臂在解析器内，经剥除通道会漏判拒收）。
+        return match strip_clip_path_geometry_box(v) {
+            Some(rest) => values::parse_clip_path(rest.trim()).is_some(),
+            None => values::parse_clip_path(v).is_some(),
+        };
+    }
     // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color）——置于
     // 未实现函数放行臂之前（repeat()/color-mix() 形状函数名不在
     // IMPLEMENTED_VALUE_FUNCTIONS 名单，放行臂会先行误放 invalid 形；
@@ -2866,6 +2918,38 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     }
     let mut scratch = ComputedStyle::default();
     apply_property_value(&mut scratch, &prop, v)
+}
+
+/// clip-path `<basic-shape> || <geometry-box>` 双序组合剥除：值首或尾为
+/// geometry-box 关键字（词边界——关键字后须空白、关键字前须空白）时剥除，
+/// 返回余段交 parse_clip_path 裁决；无邻接关键字返回 None（调用方按原值
+/// 整体裁决）。ASCII ci 匹配、原文切片保 path() 数据大小写（`M`/`m` 语义
+/// 敏感，utf8 全 ASCII 属性名下原文/小写串字节长度恒等）。
+fn strip_clip_path_geometry_box(v: &str) -> Option<&str> {
+    const BOXES: [&str; 7] = [
+        "content-box",
+        "padding-box",
+        "border-box",
+        "margin-box",
+        "fill-box",
+        "stroke-box",
+        "view-box",
+    ];
+    let t = v.trim();
+    let lower = t.to_ascii_lowercase();
+    for b in BOXES {
+        if let Some(rest) = lower.strip_prefix(b) {
+            if rest.starts_with(char::is_whitespace) {
+                return Some(&t[b.len()..]);
+            }
+        }
+        if let Some(head) = lower.strip_suffix(b) {
+            if head.ends_with(char::is_whitespace) {
+                return Some(&t[..head.len()]);
+            }
+        }
+    }
+    None
 }
 
 /// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
@@ -3349,6 +3433,94 @@ mod t54_validate_decl_value_tests {
         assert!(!validate_decl_value("shape-outside", "circle(at top 50%)"));
         assert!(!validate_decl_value("shape-outside", "circle(at 50% left)"));
         assert!(!validate_decl_value("shape-outside", "circle(at top left 3px)"));
+    }
+
+    #[test]
+    fn clip_path_write_gate_verdicts() {
+        // clip-path 写面门（css-masking-1 §the-clip-path，parse_clip_path
+        // 单源裁决）：`<clip-source> | [ <basic-shape> || <geometry-box> ] |
+        // none` 全形——clip-path-valid/shape-function-valid/rect-function-
+        // valid 语料 valid 形放行 + clip-path-invalid/shape-function-invalid
+        // 语料 invalid 形拒收。
+        // valid：none / 空参 circle() / <basic-shape> || <geometry-box> 双序 /
+        // 裸 SVG 侧 geometry-box / url() clip-source / 替换函数形 / css-wide。
+        assert!(validate_decl_value("clip-path", "none"));
+        assert!(validate_decl_value("clip-path", "circle()"));
+        assert!(validate_decl_value("clip-path", "circle(7% at 8% 9%)"));
+        assert!(validate_decl_value(
+            "clip-path",
+            "ellipse(closest-side closest-side at 10% 20%)"
+        ));
+        assert!(validate_decl_value(
+            "clip-path",
+            "inset(10px round 20% / 0px 1px 2% 3em)"
+        ));
+        assert!(validate_decl_value(
+            "clip-path",
+            "polygon(evenodd, 1px 2px, 3em 4em, 5pt 6%)"
+        ));
+        assert!(validate_decl_value(
+            "clip-path",
+            "shape(from 20px 40px, line to 20px 30px)"
+        ));
+        assert!(validate_decl_value("clip-path", "rect(10px auto 20px 30px round 100%)"));
+        assert!(validate_decl_value("clip-path", "xywh(0px 1% 2px 3em round 0 1px)"));
+        assert!(validate_decl_value("clip-path", "border-box"));
+        assert!(validate_decl_value("clip-path", "fill-box"));
+        assert!(validate_decl_value("clip-path", "view-box"));
+        assert!(validate_decl_value("clip-path", "circle(7% at 8% 9%) border-box"));
+        assert!(validate_decl_value("clip-path", "border-box circle(7% at 8% 9%)"));
+        assert!(validate_decl_value("clip-path", "url(https://example.com/)"));
+        assert!(validate_decl_value("clip-path", "url(\"clip.svg\")"));
+        assert!(validate_decl_value("clip-path", "var(--clip)"));
+        assert!(validate_decl_value("clip-path", "inherit"));
+        // invalid（语料驱动）：clip-path-invalid/shape-function-invalid 形。
+        assert!(!validate_decl_value("clip-path", "auto"));
+        assert!(!validate_decl_value("clip-path", "ray(0deg)"));
+        assert!(!validate_decl_value("clip-path", "inset()"));
+        assert!(!validate_decl_value("clip-path", "inset(123)"));
+        assert!(!validate_decl_value("clip-path", "inset(0px round)"));
+        assert!(!validate_decl_value("clip-path", "circle(10% 20%)"));
+        assert!(!validate_decl_value("clip-path", "circle(-10px at 20px 30px)"));
+        assert!(!validate_decl_value("clip-path", "ellipse(3%)"));
+        assert!(!validate_decl_value("clip-path", "polygon(1%)"));
+        assert!(!validate_decl_value("clip-path", "unknown-box"));
+        assert!(!validate_decl_value("clip-path", "path(nonzero)"));
+        assert!(!validate_decl_value("clip-path", "xywh(0px)"));
+        assert!(!validate_decl_value("clip-path", "rect(0px)"));
+        assert!(!validate_decl_value(
+            "clip-path",
+            "shape(from 20px 40px line to 20px 30px)"
+        ));
+        assert!(!validate_decl_value(
+            "clip-path",
+            "shape(from 20px 40px, move to 20px 30px, hline to top)"
+        ));
+        // 双 geometry-box / 复合语法位重复拒（|| 单序单现）。
+        assert!(!validate_decl_value("clip-path", "border-box border-box"));
+        assert!(!validate_decl_value("clip-path", "content-box border-box"));
+        // canonical store 稳定性（写面 fold_decl_specified clip-path 臂与读
+        // 回 canonical 同源——白名单接入后 valid 形 store 走 canonical，读
+        // 回再 canonical 必须零进一步漂移：identity 形 None passthrough 保
+        // 原文、非 identity 重 canonical 恒等，clip-path-valid 54P 零漂移
+        // 锚；fold 返 None 语义是「无需改写」非「值非法」）。
+        let stable = |v: &str| match values::fold_decl_specified("clip-path", v) {
+            Some(c) => match values::fold_decl_specified("clip-path", &c) {
+                None => true,
+                Some(c2) => c2 == c,
+            },
+            None => true,
+        };
+        assert!(stable("circle(7% at 8% 9%) border-box"));
+        assert!(stable("border-box circle(7% at 8% 9%)"));
+        assert!(stable("circle(closest-side)"));
+        assert!(stable(
+            "shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 12deg)"
+        ));
+        assert!(stable("inset(10px round 20% / 0px 1px 2% 3em)"));
+        assert!(stable("polygon(evenodd, 1px 2px, 3em 4em, 5pt 6%)"));
+        assert!(stable("path(nonzero, \"M20,20h60 v60 h-60z M30,30 h40 v40 h-40z\")"));
+        assert!(stable("url(https://example.com/)"));
     }
 
     #[test]
