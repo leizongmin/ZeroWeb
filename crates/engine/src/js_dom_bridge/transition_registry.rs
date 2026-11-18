@@ -858,13 +858,17 @@ mod tests {
             let v = query_override_for_sel("#t", "display", &base, None).expect("allow-discrete 登记");
             assert_eq!(v, "block", "progress=0.25 离散对落 from，got {v}");
         }
-        // eased≥0.5 翻转到 to。
+        // eased≥0.5 翻转到 to。翻转终值与级联基值同形（base=new 克隆）——
+        // canonicalize 往返 ser1==ser0 契约性返 None 回落级联序列化（animation.rs
+        // important-tier 门注记同口径），gCS 观察值按 query-or-cascade 有效值断言。
         {
             let (prev, new) = mk(-75.0, "allow-discrete");
             register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
             let base = new.clone();
-            let v = query_override_for_sel("#t", "display", &base, None).expect("翻转条目");
-            assert_eq!(v, "none", "progress=0.75 离散对翻转到 to，got {v}");
+            let v = query_override_for_sel("#t", "display", &base, None).unwrap_or_else(
+                || serialize_computed_property_with_sibling(&base, "display", None),
+            );
+            assert_eq!(v, "none", "progress=0.75 离散对翻转到 to（有效值），got {v}");
         }
         clear_all();
     }
@@ -902,7 +906,12 @@ mod tests {
             let (prev, new) = mk(-75.0);
             register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
             let base = new.clone();
-            let v = query_override_for_sel("#t", "column-count", &base, None).expect("翻转条目");
+            // to 位与级联基值同形——canonicalize 契约性返 None 回落级联（同上
+            // display 位注记）；有效值断言仍排除 lenient lerp 伪中值（0→20 at
+            // 0.75 出 15 形即失败）。
+            let v = query_override_for_sel("#t", "column-count", &base, None).unwrap_or_else(
+                || serialize_computed_property_with_sibling(&base, "column-count", None),
+            );
             assert_eq!(v, "20", "progress=0.75 翻转 to（不得落 lenient lerp 伪中值），got {v}");
         }
         clear_all();

@@ -3467,6 +3467,17 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.column_wrap = ColumnWrapComputedValue::Auto;
             }
         }
+        // s560 全桥红窗补臂：display 离散翻转端点写回 display 槽（css-display-3
+        // §2 关键字集；css-transitions-2 §transition-behavior-property allow-discrete
+        // 离散对 gCS 咨询经 canonicalize 往返——缺臂即 ser1==ser0 恒等回落级联，
+        // 过渡值静默丢失）。复用静态声明同款解析器（与 apply.rs 臂同语义）；解析
+        // 失败不动样式回落方向。
+        // https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+        "display" => {
+            if let Some(v) = zero_css_parser::values::parse_display(value) {
+                style.display = v;
+            }
+        }
         // wptfyi-css mask-border 刀：动画插值串写回五槽（css-masking-1 §3.4–3.9）。
         // 复用静态声明同款解析器/转换（与 apply_advanced 臂同语义）；解析失败不动
         // 样式回落方向。
