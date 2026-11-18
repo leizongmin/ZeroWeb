@@ -791,3 +791,124 @@ fn npo_fastpath_reset_reseed_s41() {
         "reset 后动态 named iframe 照常解析（换代不聋化）"
     );
 }
+
+// T79 F1 返修常驻钉（PR #310 双首轮 F1/DF-01）：get trap memo 对可变 function 面
+// 的陈旧读回——on* handler 重指派、expando 函数覆盖/删除、CE 原型方法猴子补丁。
+// memo 命中先于载体全部动态分支且 `__zwM` 槽无任何失效通道（全 shim 仅 part03 三
+// 处读写），修复=动态面打禁缓存标（`_zwNoMemoMark` 栈式协议），接口合成函数 memo
+// 收益保留。三钉均「变后回读」断言现值——「设后单读」不判别（R337 形态：派发走
+// _listenerStore 直读，属性回读面零覆盖）。
+
+/// on* handler 重指派回读：设 fn1→读→重设 fn2→再读须返 fn2（spec HTML webappapis
+/// on-event handler IDL getter 返**当前** handler）。缺陷形态：首读 memo 化 fn1 后
+/// 重指派读回 fn1。
+#[test]
+fn memo_on_handler_reassign_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body><div id=\"m1\"></div></body></html>");
+    sandbox
+        .execute(
+            "var d = document.querySelector('#m1');\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.onclick = f1;\
+             globalThis.__r_1 = d.onclick === f1;\
+             d.onclick = f2;\
+             globalThis.__r_2 = d.onclick === f2;\
+             globalThis.__r_3 = d.onclick();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "首读返回当前 handler（set 存原始 fn，_onHandlers 读面基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "重设后再读返回新 handler（memo 不得钉死 fn1——DF-01 A 路）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "2",
+        "回读 handler 调用行为随重设更新（读回再调用面）"
+    );
+}
+
+/// expando 函数覆盖+删除回读：d.cbfn=f1→读→覆盖 f2→读返 f2；delete→读返
+/// undefined（R3042 expando 语义 + set generic fallthrough/deleteProperty ② 臂——
+/// deleteProperty 当初修 WPT new-name 的语义经 memo 对 function 值复活）。
+#[test]
+fn memo_expando_fn_reassign_delete_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body><div id=\"m2\"></div></body></html>");
+    sandbox
+        .execute(
+            "var d = document.querySelector('#m2');\
+             var f1 = function () { return 1; };\
+             var f2 = function () { return 2; };\
+             d.cbfn = f1;\
+             globalThis.__r_1 = d.cbfn === f1;\
+             d.cbfn = f2;\
+             globalThis.__r_2 = d.cbfn === f2;\
+             delete d.cbfn;\
+             globalThis.__r_3 = d.cbfn === undefined;\
+             globalThis.__r_memo_kept = d.appendChild === d.appendChild;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "expando 函数首读返回存储值（R3042 基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "覆盖后再读返回新值（memo 不得钉死 f1——DF-01 B 路）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "true",
+        "删除后再读 undefined（memo 不得复活已删值——DF-01 C 路）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_memo_kept")
+            .unwrap()
+            .value,
+        "true",
+        "接口合成函数 memo 收益保留（append 身份稳定面不受返修影响）"
+    );
+}
+
+/// CE 原型方法猴子补丁回读：define→实例读方法（R93 原型走查命中）→补丁
+/// prototype.method→再读须返新函数（live 原型链——R93 修 `el.bump is not a
+/// function` 的本语义即沿链取当前值）。缺陷形态：首读 memo 化后补丁读回旧方法。
+#[test]
+fn memo_ce_proto_monkey_patch_readback_s41() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "class MpCE extends HTMLElement { bump() { return 1; } }\
+             customElements.define('mp-ce-s41', MpCE);\
+             var d = document.createElement('mp-ce-s41');\
+             document.body.appendChild(d);\
+             var orig = d.bump;\
+             globalThis.__r_1 = typeof orig === 'function' && orig === MpCE.prototype.bump;\
+             var f2 = function () { return 2; };\
+             MpCE.prototype.bump = f2;\
+             globalThis.__r_2 = d.bump === f2;\
+             globalThis.__r_3 = d.bump();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_1").unwrap().value,
+        "true",
+        "实例方法沿原型链解析到用户类方法（R93 基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_2").unwrap().value,
+        "true",
+        "原型补丁后实例读新方法（memo 不得钉死旧方法——DF-01 CE 变体）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_3").unwrap().value,
+        "2",
+        "补丁后调用行为随补丁更新（live 原型链面）"
+    );
+}

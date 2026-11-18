@@ -31698,6 +31698,19 @@ return e;
   // 调用点 megamorphic，trap 路径整体反优化——B2 渲染 200× 回退）。get trap 的
   // memo miss 一跳本函数（原 trap 体逐字保真）。
   var _zwTrapGetBodyRef = null;
+  // T79 F1 返修（2026-11-18，PR #310 双首轮 F1/DF-01）：get trap memo 动态面禁缓存
+  // 标记栈——载体（原 trap 体）内可变 function 面（on* handler 重指派/R3042 expando
+  // 覆盖与删除/R93 原型走查含 CE 方法猴子补丁/R95 constructor/ShadowRoot accessor）
+  // 经 `_zwNoMemoMark()` 置位当前帧，wrapper 对标记帧的产物不入 `__zwM`（治 memo
+  // 命中先于载体全部动态分支、set/delete trap 与原型补丁均无失效通道的陈旧读回）。
+  // 数组栈而非模块单布尔：accessor getter 求值（`_pdesc.get.call(proxy)`）可递归
+  // 再入 trap/carrier，单标记会被内层复位污染；帧随 wrapper push/pop 配对，标记恒
+  // 写栈顶（当前载体自己的帧），内层读写不触外层帧。
+  var _zwDynMarks = [];
+  function _zwNoMemoMark() {
+    var _nmLen = _zwDynMarks.length;
+    if (_nmLen > 0) _zwDynMarks[_nmLen - 1] = true;
+  }
 
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
@@ -31765,8 +31778,18 @@ return e;
         }
         var _zwHit = _zwMemo[prop];
         if (_zwHit !== undefined) return _zwHit;
-        var _zwVal = _zwTrapGetBodyRef(sel, handle, key, proxy, _t, prop);
-        if (typeof _zwVal === 'function') _zwMemo[prop] = _zwVal;
+        // T79 F1 返修：miss 帧入栈→载体→出栈判定——载体内打标的动态 function 面产
+        // 物不入 memo（语义=改动前逐读现算），接口合成函数（addEventListener 等）
+        // 不打标、memo 身份稳定收益保留。finally 保栈完整：载体抛错不泄漏帧（异常
+        // 照旧透传，memo 写随跳过）。
+        _zwDynMarks.push(false);
+        var _zwVal;
+        try {
+          _zwVal = _zwTrapGetBodyRef(sel, handle, key, proxy, _t, prop);
+        } finally {
+          var _zwDyn = _zwDynMarks.pop();
+          if (typeof _zwVal === 'function' && !_zwDyn) _zwMemo[prop] = _zwVal;
+        }
         return _zwVal;
       },
       _zwGetBodyCarrier: (function () {
@@ -31807,7 +31830,8 @@ return e;
             try { _asrGDesc = Object.getOwnPropertyDescriptor(_asrGChain, 'adoptedStyleSheets'); } catch (_eAsrGd) { _asrGDesc = null; }
             if (_asrGDesc) {
               if (typeof _asrGDesc.get === 'function') {
-                try { return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
+                // T79 F1 返修：live 原型 accessor getter（getter 可被补丁/重定义）——禁 memo。
+                try { _zwNoMemoMark(); return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
               }
               break; // data property → 交回常规分支
             }
@@ -31826,7 +31850,8 @@ return e;
           var _cGuard = 0;
           while (_cChain && _cGuard < 8) {
             var _cDesc = Object.getOwnPropertyDescriptor(_cChain, 'constructor');
-            if (_cDesc) return _cDesc.value;
+            // T79 F1 返修：constructor 可被原型补丁/registry 重定义（live 值）——禁 memo。
+            if (_cDesc) { _zwNoMemoMark(); return _cDesc.value; }
             _cChain = Object.getPrototypeOf(_cChain);
             _cGuard++;
           }
