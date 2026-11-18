@@ -46,4 +46,5 @@ b0=bin `6541c6d3` 存档副本；b1=bin `e625eff5`（电池前后 md5 双证未�
 - fmt：`cargo fmt --all -- --check` 14 处漂移（animation.rs 12 + registry 2）**全部先在于 HEAD**——git show HEAD 版 + config-path rustfmt 复核行位一一对应，全落本刀 hunks 区间外，上游窗口遗留不代修。
 - clippy：`cargo clippy -p zero-engine --lib` 零新增；余 3 处全既有提交态（`too_many_arguments` 8/7 对端挂账 + animation.rs:2345-6 f64 cast，HEAD:2260-1 同在）。
 - perf-gate：循刀 Z/刀 A1e 先例豁免——registry +1 条目 + match 臂新增，无热循环改动。
-- **行为重绑要求**：本账绑 bin `e625eff5`（源态＝applier 臂在 engine animation.rs）。电池收官后 A2 码面收敛（registry 注释 v1→v2、applier 臂迁 `style-system/src/property/apply.rs:1081` 同构臂、断言 rustfmt 化）——迁层后提交前以重建 bin solo 探针主靶页，期望 9F/173P 与 v2 终态同数（差>±1＝迁层行为分歧，回退或补账）。协议见 `.acceptance/wptfyi-css/NOTES-knife-a2-accounting.txt`。
+- **行为重绑已闭合**：码刀落库后重建 bin `aeba37e1c`（post-commit HEAD + fv1-s3 WIP 同扫，8 文件 provenance md5 在档 `a2-postcommit-fv1-s3.md5`）solo 探针主靶页 **173P/9F，Δ=0**＝v2 终态逐数复现（`a2-postcommit-probe.json` 09:32）——applier engine 路径在落库码上成立，回退臂未触发。apply.rs:1081 va 臂为 HEAD 既有臂（非本刀迁层面），A2 提交集维持两文件。
+- **+143/+144 双口径仲裁**（b-stream note 09:29）：提交标题 **+143**＝保守口径（all-interpolates +1 按刀 Z 先例归窗噪）；**账面以账目流 +144 为准**（registry 条目使 `all` 通配探测 va 的机制假设具体可证），机制标题不追改；主链 +127＋composition +16 两流一致。
