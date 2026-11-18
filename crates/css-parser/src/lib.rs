@@ -32,6 +32,7 @@ pub mod ast;
 pub mod media_query;
 pub mod parser;
 pub mod selector;
+pub mod serialize;
 pub mod supports_condition;
 pub mod tokenizer;
 pub mod values;

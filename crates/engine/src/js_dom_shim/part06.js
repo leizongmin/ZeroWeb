@@ -2520,6 +2520,28 @@
       var ptBody = ptRest.slice(ptBrace + 1).replace(/}\s*$/, '').trim();
       return _makePtRule(ptPrelude, ptBody, parentSheet, flushFn);
     }
+    // @font-feature-values 插入面（css-fonts-4 §font-feature-values +
+    // §font-feature-values-cssom；wptfyi-css knife-fv1：
+    // test_font_feature_values_parsing 294F 靶面）。`@font-feature-*` 前缀整族
+    // 进本臂——精确名交宿主单规则解析 + canonical cssText 裁决（lexer 转义解码
+    // `\6e` 形/族名文法/值定义个数上限单源），空返 = 整条非法 → SyntaxError
+    // DOMException（cssom-1 insertRule 非法规则文本语义，语料 invalid:true 形：
+    // 族列表缺失/畸形、`@font-feature-value`/`@font-features-values` typo 同臂
+    // 宿主拒）。非空 = type-14 规则物化（_makeFfvRule）。
+    // https://drafts.csswg.org/css-fonts-4/#font-feature-values-cssom
+    var ffvParse = /^@font-feature([\s\S]*)$/i.exec(t);
+    if (ffvParse) {
+      var ffvJson = null;
+      if (typeof __zw_parse_ffv_rule === 'function') {
+        try { ffvJson = JSON.parse(__zw_parse_ffv_rule(t) || ''); } catch (_eFfv) { ffvJson = null; }
+      }
+      if (!ffvJson || !ffvJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@font-feature-values' rule.",
+          'SyntaxError');
+      }
+      return _makeFfvRule(ffvJson, parentSheet);
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2557,6 +2579,27 @@
   }
   if (typeof globalThis.CSSPositionTryDescriptors !== 'function') {
     globalThis.CSSPositionTryDescriptors = function CSSPositionTryDescriptors() {};
+  }
+  // wptfyi-css knife-fv1：CSSFontFeatureValuesRule / CSSFontFeatureValuesMap
+  // 接口全局（css-fonts-4 §font-feature-values-cssom——CSSPositionTryRule
+  // 空壳模式；type 14 + fontFamily + 六类 maplike 值定义映射）。
+  // https://drafts.csswg.org/css-fonts-4/#font-feature-values-cssom
+  if (typeof globalThis.CSSFontFeatureValuesRule !== 'function') {
+    globalThis.CSSFontFeatureValuesRule = function CSSFontFeatureValuesRule() {};
+  }
+  if (typeof globalThis.CSSFontFeatureValuesMap !== 'function') {
+    globalThis.CSSFontFeatureValuesMap = function CSSFontFeatureValuesMap() {};
+    // maplike（css-fonts-4 §om-fontfeaturevalues）：实例本体是引擎 Map——
+    // 接口 prototype 挂 Map.prototype 之下保 entries/keys/values/forEach/
+    // @@iterator/has/delete/size 原生方法可见（_makeFfvRule 的 setPrototypeOf
+    // 会截断 Map 链，不在接口原型补链即全丢）。set 值归一化：`unsigned long`
+    // 标量按 spec 存单元素列表（map-live 语料 set(k,42)→get→[42] 钉）。
+    if (typeof Map === 'function' && typeof Object.setPrototypeOf === 'function') {
+      Object.setPrototypeOf(globalThis.CSSFontFeatureValuesMap.prototype, Map.prototype);
+      globalThis.CSSFontFeatureValuesMap.prototype.set = function (k, v) {
+        return Map.prototype.set.call(this, k, Array.isArray(v) ? v : [v]);
+      };
+    }
   }
   // @position-try 描述符白名单（css-anchor-position-1 §position-try-desc：
   // Chrome CSSPositionTryDescriptors allowed properties，at-position-try-cssom
@@ -2606,6 +2649,33 @@
     if (rule.style && globalThis.CSSPositionTryDescriptors &&
         typeof Object.setPrototypeOf === 'function') {
       Object.setPrototypeOf(rule.style, globalThis.CSSPositionTryDescriptors.prototype);
+    }
+    return rule;
+  }
+  // @font-feature-values 规则物化（css-fonts-4 §font-feature-values-cssom——
+  // `_makePtRule` 单实现双通道同型；knife-fv1 insertRule 写面）。type 14
+  //（CSSRule.FONT_FEATURE_VALUES_RULE，语料 kFontFeatureValuesRuleType 钉）+
+  // cssText canonical（宿主串化）+ fontFamily + 六类 CSSFontFeatureValuesMap
+  //（maplike <CSSOMString, sequence<unsigned long>>，构造期缓存同实例——
+  // map-live 语料「repeated retrieval same object」断言）。
+  function _makeFfvRule(ffvJson, parentSheet) {
+    var rule = Object.create((globalThis.CSSFontFeatureValuesRule &&
+      globalThis.CSSFontFeatureValuesRule.prototype) || Object.prototype);
+    rule.type = 14;
+    rule.cssText = ffvJson.cssText;
+    rule.fontFamily = ffvJson.families || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = null;
+    var defs = ffvJson.defs || {};
+    var kinds = ['styleset', 'stylistic', 'character-variant', 'swash', 'ornaments', 'annotation'];
+    for (var fi = 0; fi < kinds.length; fi++) {
+      var items = defs[kinds[fi]] || [];
+      var m = new Map();
+      for (var fj = 0; fj < items.length; fj++) m.set(items[fj][0], items[fj][1]);
+      if (globalThis.CSSFontFeatureValuesMap && typeof Object.setPrototypeOf === 'function') {
+        Object.setPrototypeOf(m, globalThis.CSSFontFeatureValuesMap.prototype);
+      }
+      rule[kinds[fi]] = m;
     }
     return rule;
   }
@@ -2704,6 +2774,19 @@
               var ptHi = ptLo >= 0 ? parts[1].lastIndexOf('}') : -1;
               var ptBody = ptLo >= 0 ? parts[1].slice(ptLo + 1, ptHi >= 0 ? ptHi : parts[1].length) : '';
               rulesCache.push(_makePtRule(parts[0].slice(14), ptBody, ss, flushToOwner));
+              continue;
+            }
+            // @font-feature-values wire 条目（css-fonts-4 §font-feature-values-cssom；
+            // knife-fv1：map-live/map_iteration cssRules 读面）——wire 标记字段
+            // `@font-feature-values`，cssText canonical 全文经 `__zw_parse_ffv_rule`
+            // 再解析物化（_makeFfvRule，与 insertRule 写面单实现双通道）。解析失败
+            // 跳过条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            if (parts[0] === '@font-feature-values') {
+              var ffvWJ = null;
+              if (typeof __zw_parse_ffv_rule === 'function') {
+                try { ffvWJ = JSON.parse(__zw_parse_ffv_rule(parts[1]) || ''); } catch (_eFfvW) { ffvWJ = null; }
+              }
+              if (ffvWJ && ffvWJ.cssText) rulesCache.push(_makeFfvRule(ffvWJ, ss));
               continue;
             }
             r = {

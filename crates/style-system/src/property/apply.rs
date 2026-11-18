@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 58] = [
+    const VALIDATED_PROPERTIES: [&str; 59] = [
         "transform",
         "rotate",
         "scale",
@@ -2391,6 +2391,16 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // https://drafts.csswg.org/css-fonts-4/#font-prop
         "font-family",
         "font",
+        // font-variant-alternates 写面文法门（css-fonts-4 §font-variant-alternates）：
+        // apply 链既有臂裁决（parse_font_variant_alternates——六类函数形单一
+        // <feature-name> 参数（styleset/character-variant 逗号列表）、keyword 形
+        // 仅 normal/historical-forms、同类函数形至多一次），白名单接入即启用
+        // inline 写面 invalid 形拒收（driving: css-fonts 语料
+        // font-variant-alternates-invalid 15F——`swash(a,b,c)`/`annotation()`/
+        // 裸 `swash`/双 `swash(one) swash(two)`/`historical-forms(argument)`
+        // 此前白名单外放行 store 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+        "font-variant-alternates",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2578,6 +2588,17 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return crate::shorthand::font_shorthand_supported(v);
+    }
+    // font-variant-alternates 写面文法门：替换函数形（var()/env()/attr()）放行
+    // store 原文（css-values-3 §3.3 语法恒合法，computed 期替换重裁——counter-
+    // increment 臂同型豁免）；其余整体走 parse_font_variant_alternates 文法裁决
+    //（apply 链既有单源，stylesheet 路径同此裁决）。
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+    if prop == "font-variant-alternates" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_font_variant_alternates(v).is_some();
     }
     // counter-increment 写面文法门（css-lists-3 §counter-increment：`none` 单置、
     // 名 = <custom-ident>（css-wide/none 排除）、整数位 = <integer> 字面或

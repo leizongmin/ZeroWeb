@@ -155,11 +155,12 @@ pub(crate) fn resolve_font_variant_alternates(style: &mut ComputedStyle, registr
             }
         }
     }
-    if let Some(name) = &alternates.character_variant
-        && let Some(values) = lookup(FontFeatureValueKind::CharacterVariant, name)
-        && let Some(tag) = indexed_feature_tag(b"cv", values[0])
-    {
-        push(tag, values.get(1).copied().unwrap_or(1));
+    for name in &alternates.character_variant {
+        if let Some(values) = lookup(FontFeatureValueKind::CharacterVariant, name)
+            && let Some(tag) = indexed_feature_tag(b"cv", values[0])
+        {
+            push(tag, values.get(1).copied().unwrap_or(1));
+        }
     }
     if let Some(name) = &alternates.swash
         && let Some(values) = lookup(FontFeatureValueKind::Swash, name)

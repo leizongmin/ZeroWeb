@@ -241,6 +241,15 @@ pub fn style_rules_text(text: &str) -> String {
                 format!("@position-try {} {{ {} }}", name, decls)
             };
             entries.push(format!("@position-try {}\x1e{}", name, css_text));
+        } else if let zero_css_parser::Rule::FontFeatureValues(fvr) = rule {
+            // @font-feature-values wire 条目（css-fonts-4 §font-feature-values-cssom；
+            // wptfyi-css knife-fv1：map-live/map_iteration cssRules 读面）。
+            // selectorText 字段 = `@font-feature-values` 标记（真实选择器不可能以
+            // `@` 起头，shim 侧据此分派 CSSFontFeatureValuesRule 物化——host
+            // `__zw_parse_ffv_rule` 单源解析/串化，与 insertRule 写面单实现双通道）。
+            // cssText = canonical 全文（含族名列表）。
+            let css_text = zero_css_parser::serialize::serialize_font_feature_values_css_text(fvr);
+            entries.push(format!("@font-feature-values\x1e{}", css_text));
         }
         // 其余 @-rule / keyframes / @media defer（cssRules 读仅 StyleRule + position-try）
     }

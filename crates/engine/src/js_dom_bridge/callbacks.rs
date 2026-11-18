@@ -4362,6 +4362,52 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css knife-fv1（css-fonts-4 §font-feature-values-cssom）：@font-feature-values
+    // 单规则解析 + canonical cssText——shim `_ruleFromText` FFV 写面分支裁决：空返 =
+    // 整条非法（shim 抛 SyntaxError DOMException，cssom-1 insertRule 非法规则文本语义，
+    // 语料 invalid:true 形钉）；非空返 JSON `{cssText, families, defs}` 供 type-14
+    // 规则物化 + 六类 CSSFontFeatureValuesMap。解析/串化单源 [`zero_css_parser`]
+    // （lexer 转义解码 `\6e` 形、族名文法、值定义个数上限——insertRule 与 stylesheet
+    // 两通道同文法）。纯函数，无 DOM 状态。
+    // https://drafts.csswg.org/css-fonts-4/#font-feature-values-cssom
+    sandbox.register_callback(
+        "__zw_parse_ffv_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::FontFeatureValues(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            let kinds = [
+                (zero_css_parser::ast::FontFeatureValueKind::Styleset, "styleset"),
+                (zero_css_parser::ast::FontFeatureValueKind::Stylistic, "stylistic"),
+                (
+                    zero_css_parser::ast::FontFeatureValueKind::CharacterVariant,
+                    "character-variant",
+                ),
+                (zero_css_parser::ast::FontFeatureValueKind::Swash, "swash"),
+                (zero_css_parser::ast::FontFeatureValueKind::Ornaments, "ornaments"),
+                (zero_css_parser::ast::FontFeatureValueKind::Annotation, "annotation"),
+            ];
+            let mut defs = serde_json::Map::new();
+            for (kind, name) in kinds {
+                let items: Vec<serde_json::Value> = rule
+                    .definitions
+                    .iter()
+                    .filter(|d| d.kind == kind)
+                    .map(|d| serde_json::json!([d.name, d.values]))
+                    .collect();
+                defs.insert(name.to_string(), serde_json::Value::Array(items));
+            }
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_font_feature_values_css_text(rule),
+                "families": rule.families.join(", "),
+                "defs": defs,
+            })
+            .to_string()
+        }),
+    );
+
     // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
     // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
     // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`

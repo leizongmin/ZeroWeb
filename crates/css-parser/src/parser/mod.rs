@@ -31,6 +31,11 @@ pub struct Parser<'a> {
     ///（深度帽管长度，[`MAX_DESUGARED_SELECTORS`] 管每层数量——fuzz timeout-8480a917
     /// 实证仅有数量预算时深层链仍可到秒级）。
     style_rule_depth: usize,
+    /// 声明属性名大小写保形门（默认 false = keyword 归一小写；css-syntax-3
+    /// 关键字 ASCII 大小写不敏感）。`@font-feature-values` 值名是 custom-ident
+    ///——大小写显著（`Håkon` ≠ `håkon`，css-fonts-4 §font-feature-values +
+    /// wpt serialization 钉），消费窗口内置 true 保原书写形。
+    preserve_decl_case: bool,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -329,6 +334,7 @@ impl<'a> Parser<'a> {
             namespace_prefixes: std::collections::HashMap::new(),
             namespace_prologue_ended: false,
             style_rule_depth: 0,
+            preserve_decl_case: false,
         }
     }
 
@@ -2438,7 +2444,7 @@ impl<'a> Parser<'a> {
             // tokenizer 把 `--foo` 整体消费为单个 Ident（'-' 是 ident-start 字符），故
             // starts_with("--") 可区分。
             Token::Ident(name) => {
-                if name.starts_with("--") {
+                if name.starts_with("--") || self.preserve_decl_case {
                     name
                 } else {
                     name.to_ascii_lowercase()

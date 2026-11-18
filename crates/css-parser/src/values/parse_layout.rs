@@ -995,7 +995,7 @@ pub struct FontVariantAlternates {
     /// styleset(<feature-value-name>#)。
     pub styleset: Vec<String>,
     /// character-variant(<feature-value-name>)。
-    pub character_variant: Option<String>,
+    pub character_variant: Vec<String>,
     /// swash(<feature-value-name>)。
     pub swash: Option<String>,
     /// ornaments(<feature-value-name>)。
@@ -1050,8 +1050,12 @@ pub fn parse_font_variant_alternates(value: &str) -> Option<FontVariantAlternate
                 result.stylistic = args.into_iter().next();
             }
             "styleset" if result.styleset.is_empty() => result.styleset = args,
-            "character-variant" if args.len() == 1 && result.character_variant.is_none() => {
-                result.character_variant = args.into_iter().next();
+            // css-fonts-4 §font-variant-alternates-prop 文法 `character-variant(
+            // <feature-value-name>#)`——逗号列表与 styleset 同形（wpt
+            // font-variant-alternates-valid 钉 `character-variant(more, than, one)` 合法）；
+            // 恒一次函数形与同函数重复仍由空表守卫拒。
+            "character-variant" if result.character_variant.is_empty() => {
+                result.character_variant = args;
             }
             "swash" if args.len() == 1 && result.swash.is_none() => {
                 result.swash = args.into_iter().next();

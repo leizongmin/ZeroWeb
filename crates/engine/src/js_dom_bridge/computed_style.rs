@@ -2098,8 +2098,8 @@ fn font_variant_alternates_str(value: &FontVariantAlternatesValue) -> String {
     if !value.styleset.is_empty() {
         parts.push(format!("styleset({})", value.styleset.join(", ")));
     }
-    if let Some(name) = &value.character_variant {
-        parts.push(format!("character-variant({name})"));
+    if !value.character_variant.is_empty() {
+        parts.push(format!("character-variant({})", value.character_variant.join(", ")));
     }
     if let Some(name) = &value.swash {
         parts.push(format!("swash({name})"));

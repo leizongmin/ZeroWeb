@@ -212,6 +212,14 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek().clone() {
                 Token::Ident(name) if !quoted_family => {
+                    // css-fonts-4 §font-feature-values 族名列表：通配 family 关键字
+                    // 不能作未引号族名（引号形 "serif" 是合法自定义族——String 分支
+                    // 不受限）；`--` 前缀 custom-ident 同拒（wpt
+                    // test_font_feature_values_parsing family-names 段 invalid 形钉）。
+                    // https://drafts.csswg.org/css-fonts-4/#generic-family-value
+                    if Self::is_generic_family_keyword(&name) || name.starts_with("--") {
+                        return None;
+                    }
                     if !current_family.is_empty() {
                         current_family.push(' ');
                     }
@@ -255,10 +263,20 @@ impl<'a> Parser<'a> {
                     };
                     self.skip_whitespace();
                     if !matches!(self.peek(), Token::LBrace) {
-                        return None;
+                        // 畸形嵌套值 at-rule（`@styleset;`/`@styleset abc;`）：整条
+                        // FFV 规则不因此失败——与未知 at-rule 同路吞到 `;`/块尾
+                        //（css-syntax-3 §consume-an-at-rule 错误恢复；wpt
+                        // test_font_feature_values_parsing serializationNoValueDefn
+                        // 形钉：规则存活、仅值定义缺失）。
+                        let _ = self.consume_at_rule(name);
+                        continue;
                     }
                     self.advance();
+                    // 值名 custom-ident 大小写显著（`Håkon` ≠ `håkon`）——消费窗口
+                    // 置保形门，出窗恢复 keyword 归一小写默认。
+                    self.preserve_decl_case = true;
                     let declarations = self.consume_declaration_block();
+                    self.preserve_decl_case = false;
                     self.skip_whitespace();
                     if matches!(self.peek(), Token::RBrace) {
                         self.advance();
@@ -273,7 +291,26 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                _ => self.advance(),
+                _ => {
+                    // 裸 junk token 逐个推进；块形 junk（`styleset { blah: 1 }`
+                    // 无 @ 前缀）整体吞匹配块——逐 token 推进会把块内 `}` 误认
+                    // 外层闭合提前截断规则，吞掉后随合法值 at-rule（wpt
+                    // surrounding 段钉：invalid 块不吞后随 `@ornaments` 块）。
+                    if matches!(self.peek(), Token::LBrace) {
+                        self.advance();
+                        let mut junk_depth = 1;
+                        while junk_depth > 0 && !matches!(self.peek(), Token::Eof) {
+                            match self.peek() {
+                                Token::LBrace => junk_depth += 1,
+                                Token::RBrace => junk_depth -= 1,
+                                _ => {}
+                            }
+                            self.advance();
+                        }
+                    } else {
+                        self.advance();
+                    }
+                }
             }
         }
 
@@ -298,16 +335,36 @@ impl<'a> Parser<'a> {
             .map(str::parse)
             .collect::<Result<_, _>>()
             .ok()?;
+        // css-fonts-4 §font-feature-values：值定义为非负整数字面（负/小数/单位/
+        // 函数形已由 u32 解析拒）；上限仅在**个数**——styleset ≤20、
+        // character-variant ≤2、其余恰 1。wpt test_font_feature_values_parsing
+        // 「values ignored when used」段钉 `0`/`111`/`120 124`/19 值列表均存活
+        //（逐值 ≤99 旧门误杀），「limits on number of values」段钉个数上限。
         let valid = match kind {
-            FontFeatureValueKind::Styleset => !values.is_empty() && values.iter().all(|value| (1..=99).contains(value)),
-            FontFeatureValueKind::CharacterVariant => {
-                (1..=2).contains(&values.len())
-                    && (1..=99).contains(&values[0])
-                    && values.get(1).is_none_or(|value| *value <= 99)
-            }
-            _ => values.len() == 1 && values[0] <= 99,
+            FontFeatureValueKind::Styleset => !values.is_empty() && values.len() <= 20,
+            FontFeatureValueKind::CharacterVariant => (1..=2).contains(&values.len()),
+            _ => values.len() == 1,
         };
         valid.then_some(values)
+    }
+
+    /// css-fonts-4 `<generic-family>` 关键字集合（ASCII 大小写不敏感）——
+    /// @font-feature-values 未引号族名拒收集。
+    fn is_generic_family_keyword(name: &str) -> bool {
+        matches!(
+            name.to_ascii_lowercase().as_str(),
+            "serif"
+                | "sans-serif"
+                | "cursive"
+                | "fantasy"
+                | "monospace"
+                | "system-ui"
+                | "ui-serif"
+                | "ui-sans-serif"
+                | "ui-monospace"
+                | "ui-rounded"
+                | "math"
+        )
     }
 
     /// 解析 `@font-face` 的 `font-weight` 描述符为绝对权重（R2417 font-weight matching）。
