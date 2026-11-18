@@ -146,14 +146,20 @@ F2P=2/P2F=0 定谳，/tmp/d55-shi-wip-hunks.txt 已作废）；
 **下一刀首选＝(b)**（d56 轮诊断地基，2026-11-19：bs/fd tentative 主文件
 当前账 **bs 86P/77F、fd 112P/64F**（对 d55 终态 F2P=0/P2F=0/new=0/gone=0
 零漂移＝⑩ 中性互证；/tmp/d56-bs-tent.json、/tmp/d56-fd-tent.json）。
-最大子簇＝**J 族块界 join（dst=宿主级混排）塌方**：`<div><b>abc</b><p>
-<b>[]def</b></p></div>` got `<div><b>abc</b></div>`＝def 壳整体消失——
-JoinMutate 落位 wire（takeLine 提取 removeChild + insertAdjacentHTML
-beforebegin 序列化 copy）与 D3 注释「寻址失败静默→壳内容永 lost」失败族
-同形（`<div>abc</div><span>[]def</span>` → def 消失 363 案前例）；壳形
-`<p><i>abc</i></p><p><b>[]def</b></p>`（跨容器 bdst=左块）则是无 join
-silent return，与 J 族不同支。FD 镜像 64F 同谱（`abc[]<br>` 块界、pre/p
-空白邻、`<p><b>abc[]</b></p>` 壳端点出块）。②dwuf 余臂（caret
+**净页探针矩阵**（/tmp/d56-probe-r{1,2}.json，探针页
+wpt-data/input-events/zz-probe-d56j.html 八形两轮逐位稳定）：T2
+`<div>abc<p><b>[]def</b></p></div>` 净页 **join 成功**（corpus 内同名键
+fail＝页内历史态毒化，③ 域）；T1/T3/T5/T6/T7/T8 净页全部**无 join
+silent**——含 **T7 `<div><p>abc</p><p>[]def</p></div>` p/p 直连基面**（块
+join 入口门对 bp/bn 支形判定的缺口比 corpus 账面显示的更宽）；**T4
+`<div>abc<p>[]def</p></div>` 净页即复现内容丢失**（got `<div><p>def</p>
+</div>`＝前邻文本 "abc" 整段被吃——bp=text/bn=block 支 JoinStartOf 误锚
++JoinMutate 误摘，非 ③ 毒化）；corpus 内 T1 形 got `<div><b>abc</b></div>`
+（def 壳消失）＝D3「寻址失败静默→壳内容永 lost」同形塌方，净页不复现
+（页内历史态）。刀序建议：先修 T4 误摘（净页稳定复现、影响面清楚）＋
+T7/T5/T8 无 join 入口门支形，再攻 ③ 页内历史态毒化（决定 corpus 键
+翻面率的真根）。FD 镜像 64F 同谱（`abc[]<br>` 块界、pre/p 空白邻、
+`<p><b>abc[]</b></p>` 壳端点出块）。②dwuf 余臂（caret
 join/deleteCommand 七变体）跨
 child-block gtr 端点规范化持位——Typing 变体 24F 已由 d46 清偿；
 ③generation-aware 归一刀重设计（d42 A/B 与 d47 查询返回点别名两处入口级
