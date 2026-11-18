@@ -111,6 +111,28 @@ rendering 流记账）。门开随批落预案不变：
 簇 D 开 → customizable-select-styles.css
 ×47 随批落。
 
+> **◆ 更正十二（2026-11-18 s564 push 阶段
+> ）——pull --rebase 捕获对端批落窗 ×6（
+> c93818c37 fix(engine) 刀 A3r text-shadow
+> 残面——keyframe unset 级联向＋
+> currentcolor 预解析，主靶 +9 零 P2F；
+> 3e17845ad fix(engine) 刀 A3b transitions
+> 首帧量子剃刀——首帧守卫 R2 收窄
+> bezier-only＋对称中点解析臂＋4 钉，主靶
+> +12 零 P→F；伴 docs ×4＝81c468f98 三语
+> 料残面侦查＋a5b7cd5a4 落库 hash 补笔＋
+> 64ffa88f0 typed-om 侦查分类＋22a942c1e
+> 刀 Q2 残面池分类）：s565 窗首次纳入——
+> 起腿前 provenance 预判：runner 必换代归
+> 因刀 A3r＋刀 A3b（均经 zero-engine 依赖
+> 链入 runner 链接）；hs 面 text-shadow
+> keyframe 级联/transitions 首帧守卫与
+> testharness 键关联以 join 实测为准（刀
+> A3 同族 text-shadow 先例实测零语义位移
+> ；对端 kb33 燃点在飞无申报 md5 值可比则
+> 如实记账）；刀 A3b 4 钉若入 engine lib
+> 桥面路径则下轮对账显形。
+
 > **◆ 更正十一（2026-11-18 s563 push 阶段
 > ）——pull --rebase 捕获对端刀 Q2 批落窗
 > ×2（1d69df3f5 fix(engine) 刀 Q2
