@@ -14870,7 +14870,12 @@
     var cmdArmed1 = globalThis.__zwTypingCmdArmed === true;
     if (typeof globalThis.__zwDefaultParagraphSeparator !== 'string'
         && !hasPendingOvr && !cmdArmed1) {
-      sepTag = hostTag;
+      // ⑩ CE-island li/dd host（下方臂门扩域）回退同持产线缺省 'p'——li 同标签
+      // 回退落扩展门面会产 li 嵌 li 非法形；div host 双面制不变（⑩ 前本行仅 div
+      // 门消费，语义恒等）。恢复注：d55 刀（a763e74b1）误改 `sepTag = hostTag`
+      // 直通＋删 ⑩ 臂扩域，ip 语料 6001-7000 窗 2 键 P2F＋part143 钉测红，
+      // 2026-11-19 按原 I4 语义恢复（详见 ⑩ 臂门处恢复注）。
+      sepTag = (hostTag === 'div') ? 'div' : 'p';
     }
     // ⓪ void 元素 caret 拆分（editing-compat void 簇，2026-10-31）：collapsed caret
     // 落在 void 元素（br/img/hr/input/embed/wbr）上时，insertParagraph = 在 void
@@ -14946,7 +14951,26 @@
       && boundaryParent === host && so === 0
       && !_zwCeIsBlockTagName(String(boundaryNode.tagName || '').toLowerCase())
       && ![].some.call((boundaryNode.childNodes || []), _zwJusIsVisible);
-    if (!lineBreakOnly && (block === host || arm1EmptyShellEl) && hostTag === 'div'
+    // ⑩ CE-island host 本体 li/dd 直子文本中点 caret（editing-compat ip I4
+    // 族，2026-11-18）：caret 在 host 本体 li/dd（part06 host2 上溯最近
+    // CE≠false = 自身，block===host）直子内联文本中点——Chrome 录音内容拆
+    // div 块内嵌 li（dps=div 显式 :1996/:2008 `<li contenteditable><div>ab
+    // </div><div>cd</div></li>`）而非同标签兄弟拆分（父 CE=false 不可编辑，
+    // 兄弟 li 拆分越出编辑宿主）。h1/dt 非段落内容容器退化行断（corpus
+    // :1992/:2002 ab<br>cd 录音）不入门；span 行内宿主（:1972-:1990）
+    // block=li≠host 不入门；普通可编辑列表 host=ul/block=li 同不入门。窄门
+    // 只收折叠中点文本 caret——首/尾/元素 caret 与选区面无语料锚保守维持
+    // ③ 行断现径。机制复用 ① boundaryText 臂（头/尾双块嵌入 host、空侧垫
+    // br、caret 入新块首）。
+    // 恢复注（2026-11-19）：d55 刀（a763e74b1，input-events 域批面）误删本
+    // ⑩ 臂扩域＋sepTag 门直通化，ip 语料 6001-7000 窗 CE-island 两键 P2F＋
+    // part143 钉测红；e23 门禁批 L8 ABORT 捕获后按原 I4 语义恢复（d55 其余
+    // BS/FD 域改动不动）。
+    var arm1IslandLid = !lineBreakOnly && (hostTag === 'li' || hostTag === 'dd')
+      && isText && boundaryText && rng.collapsed
+      && boundaryOff > 0 && eo < _zwJusNodeLength(boundaryText);
+    if (!lineBreakOnly && (block === host || arm1EmptyShellEl)
+        && (hostTag === 'div' || arm1IslandLid)
         && (dispHost === '' || dispHost === 'block')
         && boundaryParent === host
         && (isText || boundaryNode === null || arm1EmptyShellEl)) {
