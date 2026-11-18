@@ -36,7 +36,7 @@ use zero_style_system::{
         BorderImageOutsetComputedComponent, BorderImageOutsetComputedValue, BorderImageRepeatComputedMode,
         BorderImageRepeatComputedValue, BorderImageSliceComputedComponent, BorderImageSliceComputedValue,
         BorderImageWidthComputedComponent, BorderImageWidthComputedValue, ColumnCountComputedValue,
-        ColumnHeightComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
+        ColumnHeightComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue, ZIndexValue,
     },
 };
 
@@ -628,6 +628,18 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             let to_n = parse_f64(to).unwrap_or(0.0);
             format!("{}", lerp(from_n, to_n, t).max(1.0).round() as i64)
         }
+        // wptfyi-css 刀 Z：z-index 整数插值（css-transitions-1 §Animations —
+        // z-index 插值 as <integer>；css-values-4 §8.1.2 整数插值 lerp 后
+        // round half towards +∞——f64 `.round()` 是 half-away-from-zero
+        //（-0.5→-1）不符，用 `(v+0.5).floor()`）。auto 或非整数端点任一 →
+        // 离散回落（css-values-4 §8.5.6 by computed value type）。
+        "z-index" => match (parse_z_index_endpoint(from), parse_z_index_endpoint(to)) {
+            (Some(f), Some(s)) => {
+                format!("{}", (lerp(f as f64, s as f64, t) + 0.5).floor() as i64)
+            }
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // columns 简写插值（css-multicol-2 §4.5 by computed value type）：组件
         // 存在集一致的端点对逐槽 lerp（width/height 钳 0、count 钳 1），存在集
         // 失配（auto 槽 vs 值槽形变）落 css-values-4 §8.5.6 离散翻转。序列化
@@ -1492,6 +1504,14 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             let ta = parse_f64(to)?;
             Some(format!("{}", lerp(fa, ta, t).max(1.0).round() as i64))
         }
+        // 刀 Z：strict 同型门——两端均 <integer> 才插值（css-transitions-1
+        // §animations：auto 或小数端点 None =非 animatable 对不登记，静态
+        // 跳终值；allow-discrete 对随刀 A1c 门在此 None 亦启动、求值端翻转）。
+        "z-index" => {
+            let fa = parse_z_index_endpoint(from)?;
+            let ta = parse_z_index_endpoint(to)?;
+            Some(format!("{}", (lerp(fa as f64, ta as f64, t) + 0.5).floor() as i64))
+        }
         "columns" => {
             let f = parse_columns_endpoint(from)?;
             let s = parse_columns_endpoint(to)?;
@@ -2080,6 +2100,13 @@ fn serialize_columns_components(w: Option<f64>, c: Option<f64>, h: Option<f64>) 
 /// 解析 f64 值。
 fn parse_f64(s: &str) -> Option<f64> {
     s.trim().parse().ok()
+}
+
+/// 刀 Z：z-index 端点整数解析——`<integer>` 语法严格（css-values-4 §8.1.2）：
+/// auto/小数/带单位形返 `None`（Rust `parse::<i64>` 接受前导 +/- 号与
+/// css-syntax 整数符号法一致）。
+fn parse_z_index_endpoint(s: &str) -> Option<i64> {
+    s.trim().parse::<i64>().ok()
 }
 
 /// 解析 px 值（如 "100px" → 100.0）。
@@ -3395,6 +3422,15 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.column_count = ColumnCountComputedValue::Auto;
             } else if let Some(n) = parse_f64(value) {
                 style.column_count = ColumnCountComputedValue::Number(n.max(1.0).round() as u32);
+            }
+        }
+        // 刀 Z：z-index 插值通道槽写入——离散回落 echo 串原样落槽，溢出
+        // i32 槽域保旧值（css-position-3 §z-index）。
+        "z-index" => {
+            if value.trim().eq_ignore_ascii_case("auto") {
+                style.z_index = ZIndexValue::Auto;
+            } else if let Ok(v) = value.trim().parse::<i32>() {
+                style.z_index = ZIndexValue::Integer(v);
             }
         }
         "column-height" => {
@@ -6780,5 +6816,25 @@ mod tests {
             Some("1.5".to_string())
         );
         assert_eq!(interpolate_property_value_strict("border-image-outset", "1", "2px", 0.5), None);
+    }
+
+    #[test]
+    /// 刀 Z：z-index 整数插值（css-values-4 §8.1.2 round half towards +∞，
+    /// 语料 z-index-interpolation from[-2]→to[5] at(0.3)=0 / at(-0.3)=-4）；
+    /// auto/小数端点离散回落、strict 同型门。
+    fn test_z_index_lerp() {
+        assert_eq!(interpolate_property_value("z-index", "-2", "5", 0.3), "0");
+        assert_eq!(interpolate_property_value("z-index", "-2", "5", -0.3), "-4");
+        assert_eq!(interpolate_property_value("z-index", "-2", "5", 0.5), "2");
+        assert_eq!(interpolate_property_value("z-index", "-2", "5", 1.0), "5");
+        assert_eq!(interpolate_property_value("z-index", "auto", "5", 0.4), "auto");
+        assert_eq!(interpolate_property_value("z-index", "auto", "5", 0.6), "5");
+        assert_eq!(interpolate_property_value("z-index", "3.14", "5", 0.3), "3.14");
+        assert_eq!(
+            interpolate_property_value_strict("z-index", "-2", "5", 0.5),
+            Some("2".to_string())
+        );
+        assert_eq!(interpolate_property_value_strict("z-index", "auto", "5", 0.5), None);
+        assert_eq!(interpolate_property_value_strict("z-index", "3.14", "5", 0.5), None);
     }
 }
