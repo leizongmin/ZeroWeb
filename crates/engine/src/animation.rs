@@ -7423,6 +7423,9 @@ mod tests {
             .find(|p| p.name == "background-position")
             .expect("bp update");
         // t=0.5：端点未被改写、正常 lerp（40/140→80/80；bg-position 串化为两位小数约定）。
-        assert_eq!(got.value, "60.00px 110.00px", "非 text-shadow 端点不走 currentcolor 解析");
+        assert_eq!(
+            got.value, "60.00px 110.00px",
+            "非 text-shadow 端点不走 currentcolor 解析"
+        );
     }
 }
