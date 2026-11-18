@@ -2590,8 +2590,9 @@ pub fn register_dom_callbacks(
     // （`innertext_bulk_styles_doc` 记录流约定见其文档）。与 `__zw_get_computed_style`
     // 同一 (html, drain_gen, style_version, css/adopted/entries/shadow_entries) 代际
     // 键与同一 [`with_cached_document_styles_lazy`] 汇点——批量值与逐元素查询逐位
-    // 一致；不动 per-selector `cs_cache`（本通道零消费，后续逐元素查询仍走其
-    // 代际命中短路）。重入契约同 gCS：`f` 体无 JS/宿主回流。
+    // 一致（含四层覆盖 consult 镜像：query_style_override/js_anim/transition/cssa +
+    // transition 观测登记）；不动 per-selector `cs_cache`（本通道零消费，后续逐元素
+    // 查询仍走其代际命中短路）。重入契约同 gCS：`f` 体无 JS/宿主回流。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     sandbox.register_callback(

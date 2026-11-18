@@ -615,3 +615,70 @@ fn inc01_container_context_preserved_on_chain_recompute() {
         Expectation::Equal,
     );
 }
+
+/// t-g2b 返修 fix-E 钉 ①：`:has()` 页空 changed 换代**确实走跳过分支**（cfg(test)
+/// 计数器递增），且 styles 按跳过语义原样保留——注入一个非真实级联值的「陈旧
+/// 探针值」，空代调用后探针值仍在场。这正是缺陷 minor#2 挂账的媒体/视口漂移
+/// 吸收窗形状：视口/媒体态漂移后仅有无效果 mutation 的换代不重算，styles 保留
+/// 旧媒体态计算结果至下一次非空 changed 换代（与非 :has() 页既有增量语义对齐；
+/// 本钉把该边界固化为显式契约，后续若补媒体态失效面应翻新本断言）。
+#[test]
+fn fix_e_has_empty_gen_skip_counts_and_preserves() {
+    let (doc, elements, _f) = build_main_fixture();
+    let sheets = vec![CssParser::parse_stylesheet(CSS_WITH_HAS)];
+    let mut sys = StyleSystem::new();
+    let mut styles = HashMap::new();
+    sys.compute_styles_incremental(&doc, &sheets, &[], &mut styles);
+    assert!(!styles.is_empty(), "首帧空 changed 仍走全量兜底（首次计算）");
+    let before = crate::read_has_empty_gen_skips();
+    // 陈旧探针：污染 card-a 的 padding 为不可达值——真实级联（8px/16px）下不可能。
+    let probe = elements.iter().copied().nth(2).expect("card-a");
+    if let Some(style) = styles.get_mut(&probe) {
+        style.padding_top = zero_css_parser::values::LengthValue::Px(999.0);
+    } else {
+        panic!("首帧全量后 card-a 必有 computed style");
+    }
+    sys.compute_styles_incremental(&doc, &sheets, &[], &mut styles);
+    assert!(
+        crate::read_has_empty_gen_skips() > before,
+        "空 changed + 非空 styles 必须走跳过分支（计数器递增）"
+    );
+    let after = styles.get(&probe).expect("跳过不得丢弃 styles");
+    assert_eq!(
+        after.padding_top,
+        zero_css_parser::values::LengthValue::Px(999.0),
+        "跳过语义：styles 原样保留（探针值在场 = 未重算；minor#2 吸收窗固化）"
+    );
+}
+
+/// t-g2b 返修 fix-E 钉 ②：sheets 脏（CSSOM 变更，调用方按契约推根入 changed）
+/// 时**不走**跳过分支——:has() 规则变化必须重算可见（fallback 全量路径）。
+/// 探针：CSSOM 同帧删 :has 规则 + changed=[card-a] → padding 回落 8px（探针
+/// 999px 被真实级联替换），跳过计数器不动。
+#[test]
+fn fix_e_has_sheet_dirty_bypasses_skip() {
+    let (doc, elements, f) = build_main_fixture();
+    let sheets = vec![CssParser::parse_stylesheet(CSS_WITH_HAS)];
+    let mut sys = StyleSystem::new();
+    let mut styles = HashMap::new();
+    sys.compute_styles_incremental(&doc, &sheets, &[], &mut styles);
+    let probe = f.card_a;
+    if let Some(style) = styles.get_mut(&probe) {
+        style.padding_top = zero_css_parser::values::LengthValue::Px(999.0);
+    }
+    let before = crate::read_has_empty_gen_skips();
+    // sheets 脏形状：规则删除（:has 不再匹配）+ 调用方推根 → changed 非空。
+    let fresh = vec![CssParser::parse_stylesheet(BASE_CSS)];
+    sys.compute_styles_incremental(&doc, &fresh, &[probe], &mut styles);
+    assert_eq!(
+        crate::read_has_empty_gen_skips(),
+        before,
+        "changed 非空不得走跳过分支（sheets 脏必重算）"
+    );
+    let after = styles.get(&probe).expect("重算后 card-a 在场");
+    assert_eq!(
+        after.padding_top,
+        zero_css_parser::values::LengthValue::Px(8.0),
+        ":has 规则删除经重算可见：padding 回落 8px（.card 基线规则）"
+    );
+}

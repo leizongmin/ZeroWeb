@@ -114,8 +114,9 @@ pub(super) fn compute_styles_for_doc(
 /// t-g2b R6：innerText 批量样式记录流——子树全元素 display/visibility 一次宿主
 /// 往返（baidu `query_all_tagged_list_doc` 同型：O(n) 逐元素宿主读出循环，learning
 /// #26 trap 域成本）。与 `__zw_get_computed_style` 消费**同一** (doc, styles) 源与
-/// 同一序列化函数，批量值与逐元素查询逐位一致；动画覆盖（`query_style_override`）
-/// 同样先于级联值。记录 `sel\x1fdisplay\x1fvisibility`、`|` 连接（两分隔符均不出现在
+/// 同一序列化函数，且镜像其四层覆盖 consult（query_style_override → js_anim →
+/// transition → cssa，含 transition before-change style 观测登记）——批量值与逐元素
+/// 查询在级联与动画/过渡覆盖面上逐位一致。记录 `sel\x1fdisplay\x1fvisibility`、`|` 连接（两分隔符均不出现在
 /// 引擎生成的唯一选择器中——query_all_tagged 同约定）。sibling 上下文传 None：仅
 /// left/top/right/bottom 的 calc 树计数消费 sibling（CSS Values 5 §tree-counting），
 /// display/visibility 无依赖。限定 light 子树：ShadowRoot 不属宿主 childNodes
@@ -147,12 +148,58 @@ pub(super) fn innertext_bulk_styles_doc(
         }
         let sel = super::unique_selector_for_node(doc, node).unwrap_or_default();
         if !sel.is_empty() {
+            // 逐元素 gCS 四层 consult 镜像（`__zw_get_computed_style` 顶部
+            // query_style_override → cache-hit/miss 臂 js_anim → transition → cssa
+            // → 级联 serialize，callbacks.rs 同序）：任一覆盖命中即整体替代该属性，
+            // 与逐元素查询逐位一致（动画/过渡进行中 display/visibility 批量值 =
+            // 插值覆盖值，非级联端值）。sibling 传 None：本通道仅 display/visibility，
+            // 无 calc tree-counting 消费（CSS Values 5 §tree-counting 仅 left/top/
+            // right/bottom 分支）。cssa 传父 computed（'inherit' 端点解析源，miss 臂
+            // 同款——批量基样式来自共享汇点即「新算基样式」语义）。
+            // OPTIMIZATION: 借用而非克隆父 computed——子树逐元素克隆整个
+            // ComputedStyle 是可测开销（g22 live 短批量调用 +36%），共享借用
+            // 与下方 styles.get(&node) 同域共存（learning #10 大对象优先借用）。
+            let parent_style = doc.parent_node(node).and_then(|pid| styles.get(&pid));
+            let gcs_consult =
+                |sel: &str, prop: &str, style: &ComputedStyle, parent: Option<&ComputedStyle>| -> Option<String> {
+                    if let Some(v) = super::computed_style_cache::query_style_override(sel, prop) {
+                        return Some(v);
+                    }
+                    if let Some(v) = super::js_anim_registry::query_override_for_sel(sel, prop, style, None) {
+                        return Some(v);
+                    }
+                    if let Some(v) = super::transition_registry::query_override_for_sel(sel, prop, style, None) {
+                        return Some(v);
+                    }
+                    if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style, parent) {
+                        return Some(v);
+                    }
+                    None
+                };
             let (display, visibility) = styles.get(&node).map_or((String::new(), String::new()), |style| {
-                let display = super::computed_style_cache::query_style_override(&sel, "display")
-                    .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "display", None));
-                let visibility = super::computed_style_cache::query_style_override(&sel, "visibility")
-                    .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "visibility", None));
-                (display, visibility)
+                // transition before-change style 观测链——与逐元素 miss 臂同序同源
+                //（每元素一次、prop 无关；css-transitions §2）：bulk 读与 base 上
+                // innerText 逐元素 gCS 遍历产生同一登记序列，后续过渡的前值观测
+                // 不因批量通道缺席。
+                if let Some(prev) =
+                    super::transition_registry::take_last_style(super::transition_registry::World::Gen, &sel)
+                {
+                    super::transition_registry::register_from_style_change(
+                        super::transition_registry::World::Gen,
+                        &sel,
+                        &prev,
+                        style,
+                        doc,
+                        node,
+                    );
+                }
+                super::transition_registry::store_last_style(super::transition_registry::World::Gen, &sel, style);
+                (
+                    gcs_consult(&sel, "display", style, parent_style)
+                        .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "display", None)),
+                    gcs_consult(&sel, "visibility", style, parent_style)
+                        .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "visibility", None)),
+                )
             });
             if !out.is_empty() {
                 out.push('|');

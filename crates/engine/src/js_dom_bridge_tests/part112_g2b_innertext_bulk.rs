@@ -125,3 +125,155 @@ fn p112_innertext_bulk_miss_falls_back_per_element() {
         "动态 display:none 子树经 handle gCS 回落判定排除（与逐元素查询同语义）"
     );
 }
+
+// part112 动画覆盖面一致性（双首轮返修钉）：批量通道与逐元素 gCS 在**动画/过渡
+// 覆盖进行中**逐位一致——批量臂镜像四层 consult（query_style_override → js_anim →
+// transition → cssa）+ transition before-change style 观测登记。
+// 引擎现实与测试分型：canonicalize applier（animation.rs apply_single_property）
+// 未覆盖 display/visibility → js_anim/cssa 两通道覆盖值恒 None（双端同回落级联，
+// 守卫钉防记录流缺元素/值漂移，consult 位镜像保证 applier 扩展后自动一致）；
+// 唯一有产出的歧视形状是 transition allow-discrete display 离散对——覆盖值
+// "block" 反向于级联 "none"，缺 consult 的批量臂落级联端值即判红。
+
+/// part112 批量/逐元素记录比对 helper：从 bulk 记录流取 sel 段的 (display, visibility)。
+fn p112_bulk_record<'a>(bulk: &'a str, sel: &str) -> Option<( &'a str, &'a str)> {
+    bulk.split('|').find_map(|rec| {
+        let mut parts = rec.split('\x1f');
+        let s = parts.next()?;
+        (s == sel).then(|| (parts.next().unwrap_or_default(), parts.next().unwrap_or_default()))
+    })
+}
+
+/// WAAPI JS 动画面（守卫钉）：引擎面预置活跃动画条目（`js_anim_registry::register`，
+/// 同 `__zw_js_anim_register` 引擎侧入口）。引擎现实：canonicalize 的 applier
+/// （animation.rs `apply_single_property`）未覆盖 display/visibility → 两通道对
+/// visibility 动画均无覆盖值、同回落级联——本钉防的是该边界下 bulk 记录流缺元素/
+/// 值漂移；consult 位镜像（computed_style.rs 批量闭包与 gCS 同序）保证 applier
+/// 扩展支持后覆盖值自动两通道一致。有产出的歧视形状由 transition display 离散对
+/// 测试承担。
+#[test]
+fn p112_bulk_matches_gcs_under_js_animation() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = p112_sandbox(
+        "https://wpt.test/g2b/innertext-bulk-jsanim.html",
+        "<html><body><p id=\"t\">animtext</p></body></html>",
+    );
+    crate::js_dom_bridge::js_anim_registry::register(
+        Some("#t"),
+        None,
+        r#"{"kf":[{"o":0,"p":{"visibility":"hidden"}},{"o":1,"p":{"visibility":"visible"}}],"dur":10000,"fill":"both"}"#,
+    );
+    let out = sandbox
+        .execute(
+            "var el = document.getElementById('t');\
+             var gcs = getComputedStyle(el).visibility;\
+             var bulk = __zw_innertext_styles('body');\
+             var rec = bulk.split('|').map(function(r){return r.split('\\u001f');}).find(function(p){return p[0] === '#t';});\
+             JSON.stringify({gcs: gcs, recVis: rec ? rec[2] : null})",
+        )
+        .unwrap()
+        .value;
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(
+        parsed["gcs"], serde_json::json!("visible"),
+        "applier 未覆盖 visibility：gCS 动画窗内回落级联（canonicalize 能力边界）"
+    );
+    assert_eq!(
+        parsed["recVis"], serde_json::json!("visible"),
+        "批量记录 visibility == gCS（consult 双 None 一致；记录流不缺动画元素）"
+    );
+}
+
+/// CSS transition 面（引擎面预置，同 transition_registry 自测装置）：display
+/// Block→None + allow-discrete 离散对，负 delay 打 progress 0.25 落 from。批量
+/// 记录 display == 逐元素 gCS（覆盖值 "block"，级联已 "none"）——visibility 线
+/// 写形态不采用：visibility 关键字在开区间走 fallback 不采纳通道（两通道同为
+/// None，一致性行为已由 js_anim/cssa 面钉），display 离散对是引擎有产出的
+/// 歧视形状。
+#[test]
+fn p112_bulk_matches_gcs_under_css_transition() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    use zero_style_system::ComputedStyle;
+    let mut sandbox = p112_sandbox(
+        "https://wpt.test/g2b/innertext-bulk-transition.html",
+        "<html><body><p id=\"t\">tdis</p></body></html>",
+    );
+    let doc = zero_dom::parse_html("<html><body><p id=\"t\">tdis</p></body></html>");
+    let nid = crate::find_by_selector(&doc, "#t").expect("target");
+    let mut prev = ComputedStyle::default();
+    let mut new = ComputedStyle::default();
+    prev.display = zero_css_parser::values::DisplayValue::Block;
+    new.display = zero_css_parser::values::DisplayValue::None;
+    new.transition_property = vec!["display".to_string()];
+    new.transition_duration = vec![100.0];
+    new.transition_delay = vec![-25.0];
+    new.transition_timing_function = vec![zero_css_parser::values::TimingFunctionValue::Linear];
+    new.transition_behavior = vec!["allow-discrete".to_string()];
+    crate::js_dom_bridge::transition_registry::register_from_style_change(
+        crate::js_dom_bridge::transition_registry::World::Gen,
+        "#t",
+        &prev,
+        &new,
+        &doc,
+        nid,
+    );
+    let out = sandbox
+        .execute(
+            "var el = document.getElementById('t');\
+             var gcs = getComputedStyle(el).display;\
+             var bulk = __zw_innertext_styles('body');\
+             var rec = bulk.split('|').map(function(r){return r.split('\\u001f');}).find(function(p){return p[0] === '#t';});\
+             JSON.stringify({gcs: gcs, recDisp: rec ? rec[1] : null})",
+        )
+        .unwrap()
+        .value;
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(
+        parsed["gcs"], serde_json::json!("block"),
+        "allow-discrete display 过渡 progress=0.25 落 from（级联已 none）"
+    );
+    assert_eq!(
+        parsed["recDisp"], serde_json::json!("block"),
+        "批量 display == gCS 过渡覆盖值（transition consult 镜像；缺 consult 会落级联 none 判红）"
+    );
+}
+
+/// CSS @keyframes 面（守卫钉）：animation-name 级联铺面（animationName 非 none，
+/// 钉 note_stylesheets → cascade 活性链）+ 动画窗内批量记录 == 逐元素 gCS。
+/// 引擎现实同 js_anim 面：canonicalize applier 未覆盖 visibility，cssa 覆盖值
+/// None 两通道同回落级联；cssa consult 位镜像保证 applier 扩展后自动一致。
+#[test]
+fn p112_bulk_matches_gcs_under_css_animation() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = p112_sandbox(
+        "https://wpt.test/g2b/innertext-bulk-cssa.html",
+        "<html><head><style>\
+         @keyframes p112kf{from{visibility:hidden}to{visibility:hidden}}\
+         .ca{animation:p112kf 10s linear both}\
+         </style></head><body><p class=\"ca\">catext</p></body></html>",
+    );
+    let out = sandbox
+        .execute(
+            "var el = document.querySelector('.ca');\
+             var gcs = getComputedStyle(el).visibility;\
+             var an = getComputedStyle(el).animationName;\
+             var bulk = __zw_innertext_styles('body');\
+             var rec = bulk.split('|').map(function(r){return r.split('\\u001f');}).find(function(p){return p[0] === el.__zwSelector;});\
+             JSON.stringify({gcs: gcs, an: an, recVis: rec ? rec[2] : null})",
+        )
+        .unwrap()
+        .value;
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(
+        parsed["an"], serde_json::json!("p112kf"),
+        "@keyframes 级联铺面（note → cascade 链活性）"
+    );
+    assert_eq!(
+        parsed["gcs"], serde_json::json!("visible"),
+        "applier 未覆盖 visibility：gCS 动画窗内回落级联（canonicalize 能力边界）"
+    );
+    assert_eq!(
+        parsed["recVis"], serde_json::json!("visible"),
+        "批量记录 visibility == gCS（consult 双 None 一致；记录流不缺动画元素）"
+    );
+}

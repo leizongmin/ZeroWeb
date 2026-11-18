@@ -1408,10 +1408,17 @@ fn take_snapshot_barrier(
     let mut prefix = VecDeque::new();
     let mut post = VecDeque::new();
     for (i, cmd) in seq.into_iter().enumerate() {
-        if i < split && matches!(cmd, JsWorkerCommand::SetDomSnapshot { .. }) {
+        if i < split
+            && let JsWorkerCommand::SetDomSnapshot { reply, .. } = cmd
+        {
             // R2：切点前的中间快照是全量状态消息，被切点快照 latest-wins 覆盖
             //（learning #13），跳过不应用；生命周期 fix#12 的语义锚 =「最后一个更早
-            // 快照」即切点，中间快照无独立消费面。
+            // 快照」即切点，中间快照无独立消费面。fix#21 回执义务同步（与
+            // SetDomSnapshot 臂 lazy-supersede 分支同语义）：跳过快照照发 reply，
+            // 有界等待方立即释放，不白等跑满 250ms 窗。
+            if let Some(reply) = reply {
+                let _ = reply.send(());
+            }
             continue;
         }
         if i == split {
@@ -4884,13 +4891,19 @@ mod tests {
 
     #[test]
     fn renderer_js_worker_fetch_without_handler_resolves_error() {
-        // 未注入 handler 时 __zw_fetch resolve 错误标记 → Response.ok=false（不悬挂）。
+        // 未注入 handler 时 __zw_fetch resolve `__zw_fetch_error:no-handler` wire →
+        // settleFetch network-error 语义（http-cache goal M2 起 fetch promise 恒不
+        // resolve status-0 伪对象）→ 以 TypeError('Failed to fetch') rejection settle，
+        // 不悬挂（fetch spec HTTP-network fetch failure → TypeError）。
+        // 注：本测 P1b S3 时代断言 r.ok=false（当时错误 wire resolve status-0
+        // response）；语义修正后 rejection handler 必须在位——fulfilled 分支为守卫。
         let mut worker = RendererJsWorker::spawn(5);
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker
             .execute_script_direct(
                 // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
-                "fetch('https://wpt.test/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });",
+                "fetch('https://wpt.test/x').then(function(r){ globalThis.__result = 'FUL:ok=' + r.ok; },\
+                 function(e){ globalThis.__result = (e && e.constructor && e.constructor.name === 'TypeError') ? 'ERR' : 'ERR:' + e; });",
             )
             .unwrap();
         let r = wait_for_global(&worker, "__result", 1000);
@@ -7434,6 +7447,60 @@ mod tests {
             .expect("prio 求值须照常执行")
             .expect("prio 求值须成功");
         assert_eq!(prio_value, "bap", "prio 求值不被抢占丢弃，序为 b,a,p");
+    }
+
+    /// t-g2b 返修 fix-B 钉：take_snapshot_barrier R2 分支跳过的中间快照必须消费
+    /// reply（与 SetDomSnapshot 臂 lazy-supersede 分支同语义 fix#21 回执义务）——
+    /// set_dom_snapshot 有界等待方立即释放，不白等跑满 250ms 窗。
+    #[test]
+    fn snapshot_barrier_r2_skip_consumes_reply() {
+        let (tx, rx) = mpsc::channel();
+        let (mid_tx, mid_rx) = mpsc::channel();
+        let (cut_tx, cut_rx) = mpsc::channel();
+        // 中间快照（seq 1，带 reply）→ 切点快照（seq 2）→ 尾随命令；屏障 prio_seq=5
+        // 越过两者，rposition 切点 = seq2 快照。
+        tx.send(JsWorkerCommand::SetDomSnapshot {
+            html: "<html><body><div id=m>mid</div></body></html>".to_string(),
+            url: "https://example.test/r2mid".to_string(),
+            external_css: std::sync::Arc::from(""),
+            external_css_entries: std::sync::Arc::new(vec![]),
+            reply: Some(mid_tx),
+            seq: 1,
+        })
+        .expect("中间快照入队");
+        tx.send(JsWorkerCommand::SetDomSnapshot {
+            html: "<html><body><div id=m>cut</div></body></html>".to_string(),
+            url: "https://example.test/r2cut".to_string(),
+            external_css: std::sync::Arc::from(""),
+            external_css_entries: std::sync::Arc::new(vec![]),
+            reply: Some(cut_tx),
+            seq: 2,
+        })
+        .expect("切点快照入队");
+        tx.send(JsWorkerCommand::Execute {
+            script: "1".to_string(),
+            reply: mpsc::channel().0,
+            seq: 3,
+        })
+        .expect("尾随命令入队");
+        let (prefix, post) = take_snapshot_barrier(5, &rx, None);
+        // R2 跳过的中间快照 reply 已同步消费（扫描期发送，不待任何应用）。
+        mid_rx
+            .recv_timeout(Duration::from_millis(200))
+            .expect("R2 跳过的中间快照必须照发 reply（fix#21 回执义务）");
+        // prefix 仅含切点快照（R1）；其 reply 未被扫描代发（由应用臂发送）。
+        assert_eq!(prefix.len(), 1, "prefix 仅切点快照");
+        assert!(
+            matches!(prefix.front(), Some(JsWorkerCommand::SetDomSnapshot { seq: 2, .. })),
+            "切点快照入 prefix"
+        );
+        assert!(cut_rx.try_recv().is_err(), "切点快照 reply 由应用臂发送，扫描不代发");
+        // post 保持尾随命令原序（Execute seq3）。
+        assert_eq!(post.len(), 1, "post 含切点后命令");
+        assert!(
+            matches!(post.front(), Some(JsWorkerCommand::Execute { seq: 3, .. })),
+            "尾随命令原序入 post"
+        );
     }
 
     /// t-g2b R4 lazy-supersede 钉：气球臂后 step-2 抢占的 eval#1 原子应用自身更新的

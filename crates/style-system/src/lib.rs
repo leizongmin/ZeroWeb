@@ -60,6 +60,20 @@ pub struct ShadowScopeStylesheets {
     pub sheets: Vec<Stylesheet>,
 }
 
+// cfg(test) 钉面观测：`:has()` 空代跳过发生计数（t-g2b 返修 fix-E）。thread_local
+// 与 `Document` 的单线程使用语义对齐，测试线程天然隔离；消费方
+// [`read_has_empty_gen_skips`]。
+#[cfg(test)]
+thread_local! {
+    static HAS_EMPTY_GEN_SKIPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// 读 [`HAS_EMPTY_GEN_SKIPS`] 当前值（cfg(test) 钉面）。
+#[cfg(test)]
+pub(crate) fn read_has_empty_gen_skips() -> u64 {
+    HAS_EMPTY_GEN_SKIPS.with(|c| c.get())
+}
+
 /// s168：走查期作用域视图——scopes 与预建索引的并行表 + 空表兜底（无记录
 /// shadow root = UA + host 继承）。生命周期：一次 compute 调用内。
 struct ShadowScopeView<'a> {
@@ -789,6 +803,8 @@ impl StyleSystem {
             // 每轮 6-7 次，live 轻探针因此持续饿死）。styles 空仍是首次计算，
             // 维持全量兜底。
             if changed.is_empty() && !styles.is_empty() {
+                #[cfg(test)]
+                HAS_EMPTY_GEN_SKIPS.with(|c| c.set(c.get() + 1));
                 return;
             }
             self.incremental_has_fallbacks += 1;
