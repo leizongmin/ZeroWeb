@@ -178,3 +178,19 @@ P2F 零容忍。
   现，改判**负载敏感形 flake**（5000ms 时序页，刀 TP 已档同签名；与审计
   fork 02:25 判读一致，solo 对拍单例不足定谳真回归，两全腿跑满为终态
   证据）。上述「二分下一步」无对象，撤案。
+
+### v4 face-verify（02:47 收口笔——提交面==验证面红线兑现）
+
+提交链落库（`917378f05` ANIMCOMP 十件 + `8adbf44fc` TS 四件 + `78294481d`/
+`1b8fc7c85` docs）后，docs/commit fork 以当前树（=提交面 + ATP 孤儿 WIP
+恒定背景）重建 b1（md5 `a88280116`，含 02:11:30 parts.join 收口态与 doc
+注——终账电池 b1 `54ab4fbb` 为 ts3 face 02:06:05 patch，两者差 parts.join
+收口与文档注，css-wide 前置门已不在树）单侧腿 face-verify
+（results-knife-ts-v4-faceverify，b0 对照沿用 v2 存档 JSON）：
+
+- **css-transitions F2P=57 / P2F=0 / net=+57**，逐页 shorthand 18 +
+  behavior 23 + computed 8 + invalid 5 + valid 3 与终账电池逐键一致；
+  cancel-003 pass（第 5 腿独立复现＝b1v2 solo fail 负载敏感 flake 终证）；
+  哨兵 pva 0/0/0。
+- parts.join 收口编辑自此入验证面；刀 TS 全链（v1 车道错接 → v2 P2F=3 →
+  v2.1 修形 → v3 终账 GREEN → v4 face-verify GREEN）闭合。
