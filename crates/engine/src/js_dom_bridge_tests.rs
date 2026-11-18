@@ -264,3 +264,4 @@ include!("js_dom_bridge_tests/part137_indent_merge_dedup_pins.rs");
 include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
 include!("js_dom_bridge_tests/part139_indent_ws_merge_pins.rs");
 include!("js_dom_bridge_tests/part140_indent_ol_tail_pins.rs");
+include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");

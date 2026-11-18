@@ -862,6 +862,60 @@
             || _zwJusIsAllowedChild(node, 'ol'));
     });
 
+    // E-表 tbody 全覆盖整表升级（Chrome delta，2026-11-18）：行组端点形选区
+    // （data-start/end 语义 (tbody,0)-(tbody,1)）块扩展止于 (table,0)-(table,1)
+    // （两侧同容器＝条件尾爬升守卫不破），contained 顶层 tbody 被 wrap 过滤器
+    // 滤除退化为 cell 文本成员→逐 td 包壳（got 形）。Chrome 录形＝整表外包裹
+    // 单壳（"outermost possible location"——tr/td 壳不可落 tbody 内容模型）。
+    // 判据＝行组整体含于 newRange 且该表全部行组均覆盖；部分覆盖形（逐 td 壳，
+    // 语料 :134/:122 现绿）与表级端点形（nodeList=[table] 直包，:147/:154
+    // 现绿）不触发。升级后下游与 :147 同态（[table] 走既有 wrap 面）。
+    // https://w3c.github.io/editing/execCommand.html#indent
+    if (nodeList.length) {
+      for (var tg = 0; tg < nodeList.length; tg++) {
+        var rgT = nodeList[tg].parentNode;
+        while (rgT && !_zwJusIsHtmlElement(rgT, ['tbody', 'thead', 'tfoot'])) {
+          rgT = rgT.parentNode;
+        }
+        if (!rgT || !rgT.parentNode
+            || !_zwJusIsHtmlElement(rgT.parentNode, 'table')) {
+          continue;
+        }
+        var tabT = rgT.parentNode;
+        if (_zwJusBpCompare(newRange.startContainer, newRange.startOffset,
+                            rgT, 0) > 0
+            || _zwJusBpCompare(newRange.endContainer, newRange.endOffset,
+                               rgT, rgT.childNodes.length) < 0) {
+          continue;
+        }
+        var allRg = true;
+        for (var kRg = 0; kRg < tabT.childNodes.length; kRg++) {
+          var kidRg = tabT.childNodes[kRg];
+          if (!_zwJusIsHtmlElement(kidRg, ['tbody', 'thead', 'tfoot'])) {
+            continue;
+          }
+          if (_zwJusBpCompare(newRange.startContainer, newRange.startOffset,
+                              kidRg, 0) > 0
+              || _zwJusBpCompare(newRange.endContainer, newRange.endOffset,
+                                 kidRg, kidRg.childNodes.length) < 0) {
+            allRg = false;
+            break;
+          }
+        }
+        if (!allRg) continue;
+        // 升级：表内成员全数剔除（树序连续段），原首位插 table。
+        var firstIdx = -1;
+        for (var rT = nodeList.length - 1; rT >= 0; rT--) {
+          if (nodeList[rT] === tabT || _zwJusIsAncestorOf(tabT, nodeList[rT])) {
+            nodeList.splice(rT, 1);
+            firstIdx = rT;
+          }
+        }
+        nodeList.splice(firstIdx, 0, tabT);
+        break;
+      }
+    }
+
     // B 族容器整体升级（Chrome delta，2026-11-18）：blockExtend do-while 两侧
     // 同断于块容器 C 内侧边界（首尾子皆可见块 → (C,0) 为 block end point、
     // (C,len) 为 block start point）时 newRange=(C,0)-(C,len)，contained 收
