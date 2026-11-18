@@ -268,3 +268,6 @@ include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");
 // indent F 族 li 尾 br 尾位持行刀钉测（2026-11-18）：extraneous 判定尾位
 // 豁免后 li 内三形选区整 li 包裹双 br 全留＋无尾 br 基线控制键。
 include!("js_dom_bridge_tests/part142_indent_li_tail_br_pins.rs");
+// ip I4 族 CE-island host 本体 li/dd 拆分钉测（2026-11-18）：div 双块内嵌
+// 目标键×2＋h1/dt/span 行断退化＋ul 宿主兄弟拆分＋dps 未设 'p' 面控制键。
+include!("js_dom_bridge_tests/part143_ip_island_li_dd_pins.rs");
