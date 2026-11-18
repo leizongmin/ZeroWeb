@@ -130,10 +130,11 @@ fn p112_innertext_bulk_miss_falls_back_per_element() {
 // 覆盖进行中**逐位一致——批量臂镜像四层 consult（query_style_override → js_anim →
 // transition → cssa）+ transition before-change style 观测登记。
 // 引擎现实与测试分型：canonicalize applier（animation.rs apply_single_property）
-// 未覆盖 display/visibility → js_anim/cssa 两通道覆盖值恒 None（双端同回落级联，
-// 守卫钉防记录流缺元素/值漂移，consult 位镜像保证 applier 扩展后自动一致）；
-// 唯一有产出的歧视形状是 transition allow-discrete display 离散对——覆盖值
-// "block" 反向于级联 "none"，缺 consult 的批量臂落级联端值即判红。
+// 已覆盖 display（s560 全桥补臂）、未覆盖 visibility → js_anim/cssa 两通道对
+// visibility 覆盖值恒 None（双端同回落级联，守卫钉防记录流缺元素/值漂移，consult
+// 位镜像保证 applier 扩展后自动一致）；有产出的歧视形状是 transition
+// allow-discrete display 离散对——覆盖值 "block" 反向于级联 "none"（fixture 样式
+// 表钉级联），缺 consult 的批量臂落级联端值即判红。
 
 /// part112 批量/逐元素记录比对 helper：从 bulk 记录流取 sel 段的 (display, visibility)。
 fn p112_bulk_record<'a>(bulk: &'a str, sel: &str) -> Option<( &'a str, &'a str)> {
@@ -146,7 +147,8 @@ fn p112_bulk_record<'a>(bulk: &'a str, sel: &str) -> Option<( &'a str, &'a str)>
 
 /// WAAPI JS 动画面（守卫钉）：引擎面预置活跃动画条目（`js_anim_registry::register`，
 /// 同 `__zw_js_anim_register` 引擎侧入口）。引擎现实：canonicalize 的 applier
-/// （animation.rs `apply_single_property`）未覆盖 display/visibility → 两通道对
+/// （animation.rs `apply_single_property`）display 已有 s560 补臂、未覆盖
+/// visibility → 两通道对
 /// visibility 动画均无覆盖值、同回落级联——本钉防的是该边界下 bulk 记录流缺元素/
 /// 值漂移；consult 位镜像（computed_style.rs 批量闭包与 gCS 同序）保证 applier
 /// 扩展支持后覆盖值自动两通道一致。有产出的歧视形状由 transition display 离散对
@@ -185,28 +187,35 @@ fn p112_bulk_matches_gcs_under_js_animation() {
 }
 
 /// CSS transition 面（引擎面预置，同 transition_registry 自测装置）：display
-/// Block→None + allow-discrete 离散对，负 delay 打 progress 0.25 落 from。批量
-/// 记录 display == 逐元素 gCS（覆盖值 "block"，级联已 "none"）——visibility 线
-/// 写形态不采用：visibility 关键字在开区间走 fallback 不采纳通道（两通道同为
-/// None，一致性行为已由 js_anim/cssa 面钉），display 离散对是引擎有产出的
-/// 歧视形状。
+/// Block→None + allow-discrete 离散对。fixture 样式表把 #t 级联钉在 display:none
+/// （after-change 端点与活级联一致），过渡覆盖值 "block" 反向于级联 "none"——
+/// 缺 transition consult 的批量臂落级联端值 "none" 即判红（歧视力承重面；级联
+/// 为 UA 默认 Block 时覆盖 raw=from 与级联同值，canonicalize 恒 None、歧视力
+/// 为零，recheck#1 major）。负 delay 大量级（-25s/100s）打 progress≈0.25 落
+/// from，秒级窗口对执行延迟不敏感。visibility 线写形态不采用：visibility
+/// 关键字在开区间走 fallback 不采纳通道（两通道同为 None，一致性行为已由
+/// js_anim/cssa 面钉），display 离散对是引擎有产出的歧视形状。
 #[test]
 fn p112_bulk_matches_gcs_under_css_transition() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     use zero_style_system::ComputedStyle;
     let mut sandbox = p112_sandbox(
         "https://wpt.test/g2b/innertext-bulk-transition.html",
-        "<html><body><p id=\"t\">tdis</p></body></html>",
+        "<html><head><style>#t{display:none}</style></head><body><p id=\"t\">tdis</p></body></html>",
     );
-    let doc = zero_dom::parse_html("<html><body><p id=\"t\">tdis</p></body></html>");
+    let doc = zero_dom::parse_html(
+        "<html><head><style>#t{display:none}</style></head><body><p id=\"t\">tdis</p></body></html>",
+    );
     let nid = crate::find_by_selector(&doc, "#t").expect("target");
     let mut prev = ComputedStyle::default();
     let mut new = ComputedStyle::default();
     prev.display = zero_css_parser::values::DisplayValue::Block;
     new.display = zero_css_parser::values::DisplayValue::None;
     new.transition_property = vec!["display".to_string()];
-    new.transition_duration = vec![100.0];
-    new.transition_delay = vec![-25.0];
+    // 大量级时窗（100s/-25s）：progress≈0.25 对登记→JS 查询间隔秒级不敏感；
+    // 短窗（100ms/-25ms）在间隔落 75ms 外时过渡已完、确定性翻红（recheck#1 flake 面）。
+    new.transition_duration = vec![100000.0];
+    new.transition_delay = vec![-25000.0];
     new.transition_timing_function = vec![zero_css_parser::values::TimingFunctionValue::Linear];
     new.transition_behavior = vec!["allow-discrete".to_string()];
     crate::js_dom_bridge::transition_registry::register_from_style_change(
@@ -230,11 +239,11 @@ fn p112_bulk_matches_gcs_under_css_transition() {
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("json");
     assert_eq!(
         parsed["gcs"], serde_json::json!("block"),
-        "allow-discrete display 过渡 progress=0.25 落 from（级联已 none）"
+        "allow-discrete display 过渡 progress≈0.25 落 from——逐元素 gCS 返回覆盖值而非级联 none（级联由 fixture 样式表钉死）"
     );
     assert_eq!(
         parsed["recDisp"], serde_json::json!("block"),
-        "批量 display == gCS 过渡覆盖值（transition consult 镜像；缺 consult 会落级联 none 判红）"
+        "批量 display == gCS 过渡覆盖值（transition consult 镜像；覆盖值 block 反向于级联 none，缺 consult 落级联判红）"
     );
 }
 
