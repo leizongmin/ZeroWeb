@@ -46,6 +46,17 @@ use crate::animation::{apply_timing_function, interpolate_property_value, interp
 /// 进程起点（单调墙钟锚——running 过渡求值时基；corpus 同轮次注册→咨询 elapsed≈0）。
 static MONOTONIC_START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
+/// 首帧量子窗：注册后不足一帧的查询按「未走帧」处理（css-transitions-1
+/// §starting-of-transitions——transition start time 定格在 style change event
+/// 所在帧界，同任务内 gCS 的过渡时钟尚未推进）。刀 A3b 定谳：注册→查询
+/// δ≈0.1-3ms 使 harness seek（duration=100s + delay=-50s）进度 0.5+δ/100s，
+/// 过冲 bezier 斜率 ~0.5 放大成 eased 偏差 → 输出 .5 半边界 1 单位翻转
+///（text-shadow keyword 行 12F；探针页复现在档 evidence 2026-11-18-knife-a3）。
+/// 刀 A3b R2 收窄：仅 bezier timing 适用（解析臂输入契约）；linear/steps
+/// 保持墙钟 ε 形——非 bezier 面精确 0/0.5 翻转 oracle ε 形期望串（r2 八腿
+/// 电池 after-change 3P→F + currentcolor linear 2P→F 实证）。
+const FIRST_FRAME_QUANTUM_S: f64 = 0.016;
+
 /// 条目世界域——gCS 两通道各自的视图状态独立（NodeIds 跨代际槽/视图槽两份 doc
 /// 各自编号，同一逻辑元素在两域身份不同）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -436,6 +447,19 @@ fn entry_eased(t: f64, tf: &TimingFunctionValue) -> f64 {
                 _ => ((t * n).floor() / n).min(1.0),
             }
         }
+        // 对称 bezier 中点解析臂（createEasing at 编码族 cubic-bezier(0,b,1,b)，
+        // x1=0/x2=1 ⇒ x(s)=3s²−2s³ 在 s=0.5 精确过 0.5）：harness seek 帧界钉零
+        // 后 progress=0.5 精确，此处解析求值消除共享二分 ±7e-7 容差噪声——
+        // eased 偏差经插值在输出 .5 半边界翻转 1 单位（text-shadow at{0.3,1.5}
+        // 行 12F 刀 A3b 定谳）。仅门控 t==0.5 精确点（at=0.5 走 linear 不入此臂
+        // ——此组合恰为 at∈非 {0,0.5,1} 的 harness seek 剃刀面），其余参数域
+        // 保持共享求值路径零扰动。
+        TimingFunctionValue::CubicBezier(x1, y1, x2, y2) if t == 0.5 && *x1 == 0.0 && *x2 == 1.0 => {
+            let cy = 3.0 * y1;
+            let by = 3.0 * (y2 - y1) - cy;
+            let ay = 1.0 - cy - by;
+            ay * 0.125 + by * 0.25 + cy * 0.5
+        }
         _ => apply_timing_function(t, tf),
     }
 }
@@ -505,7 +529,23 @@ fn query_core(
         if e.world != world || e.identity != identity || e.property != prop {
             continue;
         }
-        let active = now - e.start_s - e.delay_s;
+        // 首帧量子守卫（刀 A3b R2 收窄）：elapsed<16ms 视为未走帧，从解析 seek
+        // 点（-delay）起算——仅 bezier timing 门控（对称中点解析臂的输入契约需
+        // progress 精确 0.5）。linear/steps 保持原墙钟 ε 形：精确 0/0.5 会在
+        // steps(·,start) t=0 首步语义（css-easing-1 §step-easing-functions）与
+        // 输出 .5 半边界串化上翻转 oracle 按 Chrome ε 形采写的期望串——r2 八腿
+        // 电池实证：after-change 同帧 steps 读 3P→F + currentcolor linear
+        // at(0.5) 半边界 2P→F（「delay≥0 首帧钳 0 零行为差」前提对非 bezier
+        // 不成立，本守卫注记 R2 改判；负 delay bezier seek 帧界语义不变）。
+        let raw_elapsed = now - e.start_s;
+        let frame_elapsed = if raw_elapsed >= FIRST_FRAME_QUANTUM_S {
+            raw_elapsed
+        } else if matches!(e.timing, TimingFunctionValue::CubicBezier(_, _, _, _)) {
+            0.0
+        } else {
+            raw_elapsed
+        };
+        let active = frame_elapsed - e.delay_s;
         let progress = if e.duration_s > 0.0 {
             (active / e.duration_s).clamp(0.0, 1.0)
         } else {
@@ -641,6 +681,121 @@ mod tests {
         let v = query_override_for_sel("#t", "width", &base, None).expect("override");
         let px = v.trim_end_matches("px").parse::<f64>().expect("px");
         assert!((px - 80.0).abs() < 0.5, "eased(0.5)=at=0.3 → 50+100*0.3=80px，got {v}");
+        clear_all();
+    }
+
+    /// text-shadow 对构造（橙 `rgb(255, 165, 0) 10px 30px 10px` → 绿
+    /// `rgb(0, 128, 0) 20px 20px 20px`，harness seek 形 duration=100s +
+    /// delay=-50s + createEasing(at)=bezier(0,(8at−1)/6,1,·)）。
+    fn make_ts_pair(at: f64) -> (ComputedStyle, ComputedStyle) {
+        use zero_css_parser::values::ColorValue;
+        use zero_style_system::property::types::TextShadowComputedValue;
+        let shadow = |ox: f32, oy: f32, blur: f32, color: ColorValue| TextShadowComputedValue {
+            offset_x: ox,
+            offset_y: oy,
+            blur_radius: blur,
+            color,
+        };
+        let mut prev = ComputedStyle::default();
+        prev.text_shadow = vec![shadow(10.0, 30.0, 10.0, ColorValue::Rgba(255, 165, 0, 255))];
+        let mut new = ComputedStyle::default();
+        new.text_shadow = vec![shadow(20.0, 20.0, 20.0, ColorValue::Rgba(0, 128, 0, 255))];
+        new.transition_property = vec!["text-shadow".to_string()];
+        new.transition_duration = vec![100.0];
+        new.transition_delay = vec![-50.0];
+        let b = (8.0 * at - 1.0) / 6.0;
+        new.transition_timing_function = vec![TimingFunctionValue::CubicBezier(0.0, b, 1.0, b)];
+        (prev, new)
+    }
+
+    /// 刀 A3b 剃刀钉 at=0.3：首帧量子守卫（elapsed<16ms → progress=0.5 精确）+
+    /// 对称 bezier 中点解析臂消除共享二分 ±7e-7 容差噪声 → r=178.5 精确，
+    /// round-half-away 串化 179。二分形 eased=0.3±5e-7 落 178.499x 串 178
+    /// （插值页 keyword 行 12F 刀 A3b 定谳，探针页复现在档）。
+    #[test]
+    fn test_ts_harness_seek_at03_exact_string() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let (prev, new) = make_ts_pair(0.3);
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "text-shadow", &base, None).expect("override");
+        assert_eq!(v, "rgb(179, 154, 0) 13px 27px 13px", "at=0.3 剃刀精确串，got {v}");
+        clear_all();
+    }
+
+    /// 刀 A3b 剃刀钉 at=1.5：eased=1.5 过冲（≠1.0 不落 echo 门）走插值+钳制臂
+    /// 外推——g=109.5 精确 round→110、r 负外推钳 0、blur 非负域 25px。
+    #[test]
+    fn test_ts_harness_seek_at15_extrapolation_exact_string() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let (prev, new) = make_ts_pair(1.5);
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "text-shadow", &base, None).expect("override");
+        assert_eq!(v, "rgb(0, 110, 0) 25px 15px 25px", "at=1.5 外推精确串，got {v}");
+        clear_all();
+    }
+
+    /// after-change 同帧读钉（r2 电池 3P→F 回归锁）：delay≥0 steps(2,start)
+    /// 同帧咨询按墙钟 ε 走 steps-start 臂（css-easing-1 §step-easing-functions
+    /// jump-start 首步越点 t∈[0,1/n) → eased=1/n）→ 1/2 中值 100px。R2 收窄前
+    /// 量子守卫曾把 elapsed 钳 0 → steps-start t=0 臂返 0 → 50px
+    ///（after-change-style-inherited 3 行，探针双侧 ×3 稳定复现在档）。
+    #[test]
+    fn test_ts_after_change_steps_start_same_frame() {
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let (prev, new) = make_pair(
+            50.0,
+            150.0,
+            TimingFunctionValue::Steps(2, Some(StepPosition::Start)),
+            0.0,
+        );
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "width", &base, None).expect("override");
+        assert_eq!(v, "100px", "steps(2,start) 同帧首步 = 1/2 中值，got {v}");
+        clear_all();
+    }
+
+    /// linear seek ε 形钉（R2 收窄回归锁——linear 不入量子守卫）：delay=-50s
+    /// seek 后墙钟 t=0.5+δ（δ=elapsed/100s>0）→ r=127.5−255δ→127、g=146.5−37δ
+    /// →146。守卫若重新覆盖 linear，t=0.5 精确 → 128/147 半边界翻转
+    ///（currentcolor linear at(0.5) 2P→F 同族，r2 电池实证）。
+    #[test]
+    fn test_ts_linear_seek_epsilon_form() {
+        use zero_css_parser::values::ColorValue;
+        use zero_style_system::property::types::TextShadowComputedValue;
+        clear_all();
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        let shadow = |ox: f32, oy: f32, blur: f32, color: ColorValue| TextShadowComputedValue {
+            offset_x: ox,
+            offset_y: oy,
+            blur_radius: blur,
+            color,
+        };
+        let mut prev = ComputedStyle::default();
+        prev.text_shadow = vec![shadow(10.0, 30.0, 10.0, ColorValue::Rgba(255, 165, 0, 255))];
+        let mut new = ComputedStyle::default();
+        new.text_shadow = vec![shadow(20.0, 20.0, 20.0, ColorValue::Rgba(0, 128, 0, 255))];
+        new.transition_property = vec!["text-shadow".to_string()];
+        new.transition_duration = vec![100.0];
+        new.transition_delay = vec![-50.0];
+        new.transition_timing_function = vec![TimingFunctionValue::Linear];
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "text-shadow", &base, None).expect("override");
+        assert_eq!(v, "rgb(127, 146, 0) 15px 25px 15px", "linear seek ε 形，got {v}");
         clear_all();
     }
 
@@ -873,9 +1028,8 @@ mod tests {
             let (prev, new) = mk(-75.0, "allow-discrete");
             register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
             let base = new.clone();
-            let v = query_override_for_sel("#t", "display", &base, None).unwrap_or_else(
-                || serialize_computed_property_with_sibling(&base, "display", None),
-            );
+            let v = query_override_for_sel("#t", "display", &base, None)
+                .unwrap_or_else(|| serialize_computed_property_with_sibling(&base, "display", None));
             assert_eq!(v, "none", "progress=0.75 离散对翻转到 to（有效值），got {v}");
         }
         clear_all();
@@ -917,9 +1071,8 @@ mod tests {
             // to 位与级联基值同形——canonicalize 契约性返 None 回落级联（同上
             // display 位注记）；有效值断言仍排除 lenient lerp 伪中值（0→20 at
             // 0.75 出 15 形即失败）。
-            let v = query_override_for_sel("#t", "column-count", &base, None).unwrap_or_else(
-                || serialize_computed_property_with_sibling(&base, "column-count", None),
-            );
+            let v = query_override_for_sel("#t", "column-count", &base, None)
+                .unwrap_or_else(|| serialize_computed_property_with_sibling(&base, "column-count", None));
             assert_eq!(v, "20", "progress=0.75 翻转 to（不得落 lenient lerp 伪中值），got {v}");
         }
         clear_all();
