@@ -12201,6 +12201,27 @@
       }
     } catch (_ePbrG) {}
   }
+  // d54 深摘空判定（wptfyi-editing 2026-11-18，joining-dl `[` 起始 selection
+  // 语料定谳）：子树无可见内容——折叠空白文本子与「自身深摘空」的元素子链
+  //（dl>dt、ul>li 空壳链）不计可见；br 计可见（占位语义，与旧直子判空口径
+  // 一致，防占位壳被剪）；img/hr/input 等可见空元素计可见。depth 限深防病
+  // 态嵌套。
+  function _zwCeDeepEmpty(n, depth) {
+    if (!n) return true;
+    if (n.nodeType === 3) return /^\s*$/.test(String(n.nodeValue || ''));
+    if (n.nodeType !== 1) return true;
+    var tn = String(n.nodeName || '').toLowerCase();
+    if (tn === 'img' || tn === 'br' || tn === 'hr' || tn === 'input'
+      || tn === 'textarea' || tn === 'select' || tn === 'iframe'
+      || tn === 'video' || tn === 'audio' || tn === 'canvas'
+      || tn === 'svg' || tn === 'embed' || tn === 'object') return false;
+    if (depth > 8) return false;
+    var ks = n.childNodes || [];
+    for (var i = 0; i < ks.length; i++) {
+      if (!_zwCeDeepEmpty(ks[i], depth + 1)) return false;
+    }
+    return true;
+  }
   // d45 第 4 参 typingData（键入替换面，wptfyi-editing 2026-11-16）：非塌缩选区
   // 键入 = 替换（input-events non-collapsed-selection?TypingA 语料定谳缺口——
   // `<p>{abc}</p>` + 'a' 期望 `<p>a</p>`，基线 `<p>aabc</p>` 只插不删）。真时
@@ -12456,6 +12477,10 @@
         // ——包裹块保留，实证）。
         // 宿主级右内容形（`]` 直落宿主层）：rightBlock 解析为 el 自身，无父可
         // take——startNode 取 end 位后宿主首内容节点（ec===el 时 childNodes[eo]）。
+        // d54 序修正：右链剪枝捕获点提前到 join 变异前——join/take-line 摘壳
+        // 后 rightBlock.parentNode 恒 null，旧尾置捕获使右链剪枝对 `list-item1[
+        // + list-item2]` 形从未生效（dl2 空壳残留 zz-probe-d54c 实证）。
+        var _sdRtPrune = rightBlock.parentNode || null;
         var joined = false;
         if (_sdContained && ec === rightBlock) {
           var _snC = (rightBlock.childNodes || [])[eo] || null;
@@ -12478,55 +12503,104 @@
         } else if (rightBlock.parentNode && rightBlock !== leftBlock) {
           joined = _zwCeJoinMutate(el, leftBlock, rightBlock.parentNode, rightBlock, inputType, !!typingData);
         }
-        // 摘空右侧祖先块剪枝（跨 dl join 期望单列表实证）——至 lca/el 为止
-        var prune = rightBlock.parentNode, gP = 0;
+        // 摘空右侧祖先块剪枝（跨 dl join 期望单列表实证）——至 lca/el 为止。
+        // d54：捕获点已前置（_sdRtPrune）＋判空换深摘空（dl>dt 空壳链计空，
+        // `list-item1[ + list-item2]` 形 dt2 摘后 dl2 整剪；1_2 形 dt3 持位
+        // 自止——语料期望 `<dl><dt>list-item1</dt></dl><dl><dt>list-item3
+        // </dt></dl>` 实证）。join 后 rightBlock 已脱离时链首 detached（up
+        // 为 null 自然止），caret join 既有全摘形不受影响。
+        var prune = _sdRtPrune, gP = 0;
         while (prune && prune !== el && prune !== lca && gP++ < 16) {
           var up = prune.parentNode;
-          var empty = true, pk = prune.childNodes || [];
-          for (var ip = 0; ip < pk.length; ip++) {
-            if (pk[ip].nodeType === 3 && /^\s*$/.test(String(pk[ip].nodeValue || ''))) continue;
-            empty = false; break;
+          if (_zwCeDeepEmpty(prune, 0) && up) {
+            try { up.removeChild(prune); } catch (_ePrune) {}
           }
-          if (empty && up) { try { up.removeChild(prune); } catch (_ePrune) {} }
           prune = up;
         }
         if (!joined) _sdFinish(leftBlock, (leftBlock.childNodes || []).length);
         else if (typingData && joined.node) _sdFinish(joined.node, joined.offset);
         return true;
       }
-      // 左侧无残余：摘空左块移除（dt→dd 全选形），右侧残余原位保留。
+      // 左侧无残余：摘空左块分形处置（右侧残余原位保留）。
       // d48 B2（左空摘除按可见内容判空 2026-11-17）：摘除核对文本端点只截
       // nodeValue 不移除节点——截空后壳留空文本子，childNodes.length 门不中
       //（`<dl><dt>[list-item1</dt></dl><dl><dt>}list-item2</dt></dl>` 期望左
       // dl+dt 整体剪除，基线空壳残留 F 实证）。判空改「无可见内容」（空/纯
-      // 空白文本子不计），命中先摘空文本子再摘壳，随后左向上剪枝（同核右剪
-      // 枝循环镜像，剪至 lca/el 为止）。
+      // 空白文本子不计）。
+      // d54 分形（joining-dl 1_1/1_2 `[` 起始 selection 语料 2026-11-18，
+      // zz-probe-d54c 三 MISS 定谳＋序 bug：旧码 `leftBlock.parentNode.
+      // removeChild` 后取 `.parentNode` 恒 null，左向上剪枝从未生效）。按
+      // ec 锚形两分（键入替换面维持旧单摘行为不入两分）：
+      // ①ec 元素锚（`}list-item2`/`}list-item3` 形，跨容器界在删除跨度内）
+      // → 容器并界：摘空左块移除＋左向上深摘空剪枝（dl1 随 dt1 摘除，语料
+      // 期望 `<dl><dt>list-item2</dt></dl>` 单容器实证）＋右容器链中位深摘
+      // 空 item 壳清理（`}list-item3` 形 dt2 摘除，dt3 持位实证）。
+      // ②ec 文本锚（`list-item2]` 形）→ 左摘空壳保位＋占位 br（Chrome 形
+      // `<dl><dt><br></dt></dl>` 实证，dt1 不剪）；右深摘空尾链剪除（1_1 全
+      // 摘形 dl2+dt2 整剪；1_2 形 dl2 因 dt3 持位自止、仅 dt2 摘）。
       if (leftBlock !== el && leftBlock.parentNode) {
-        var _lbEmpty = true, _lbk = leftBlock.childNodes || [];
-        for (var _lbi = 0; _lbi < _lbk.length; _lbi++) {
-          var _lbn = _lbk[_lbi];
-          if (_lbn.nodeType === 3 && /^\s*$/.test(String(_lbn.nodeValue || ''))) continue;
-          _lbEmpty = false; break;
-        }
-        if (_lbEmpty) {
-          for (var _lbj = _lbk.length - 1; _lbj >= 0; _lbj--) {
-            if (_lbk[_lbj].parentNode === leftBlock) {
-              try { leftBlock.removeChild(_lbk[_lbj]); } catch (_eLbT) {}
+        var _lbEmpty = _zwCeDeepEmpty(leftBlock, 0);
+        var _sdElemEnd = !!(ec && ec.nodeType === 1);
+        if (_lbEmpty && _sdElemEnd && !typingData) {
+          for (var _lbj = (leftBlock.childNodes || []).length - 1; _lbj >= 0; _lbj--) {
+            var _lbk2 = leftBlock.childNodes[_lbj];
+            if (_lbk2.parentNode === leftBlock) {
+              try { leftBlock.removeChild(_lbk2); } catch (_eLbT) {}
             }
           }
-          try { leftBlock.parentNode.removeChild(leftBlock); } catch (_eLb) {}
           var _lpr = leftBlock.parentNode, _lpg = 0;
+          try { _lpr.removeChild(leftBlock); } catch (_eLb) {}
           while (_lpr && _lpr !== el && _lpr !== lca && _lpg++ < 16) {
             var _lup = _lpr.parentNode;
-            var _lprE = true, _lpk = _lpr.childNodes || [];
-            for (var _lpi = 0; _lpi < _lpk.length; _lpi++) {
-              var _lpn = _lpk[_lpi];
-              if (_lpn.nodeType === 3 && /^\s*$/.test(String(_lpn.nodeValue || ''))) continue;
-              _lprE = false; break;
+            if (_zwCeDeepEmpty(_lpr, 0) && _lup) {
+              try { _lup.removeChild(_lpr); } catch (_eLPr) {}
             }
-            if (_lprE && _lup) { try { _lup.removeChild(_lpr); } catch (_eLPr) {} }
             _lpr = _lup;
           }
+          // 右容器链中位深摘空 item 壳清理（}list-item3 形 dt2）：右块所在
+          // 容器至 lca 的链上，深摘空的 dt/dd/li 子代摘除（持位兄弟不动）。
+          var _rc = rightBlock.parentNode, _rg = 0;
+          while (_rc && _rc !== el && _rc !== lca && _rg++ < 16) {
+            var _rks = Array.prototype.slice.call(_rc.childNodes || []);
+            for (var _ri = 0; _ri < _rks.length; _ri++) {
+              var _rk = _rks[_ri];
+              if (_rk.nodeType !== 1 || _rk === rightBlock) continue;
+              var _rn = String(_rk.nodeName || '').toLowerCase();
+              if ((_rn === 'dt' || _rn === 'dd' || _rn === 'li')
+                && _zwCeDeepEmpty(_rk, 0)) {
+                try { _rc.removeChild(_rk); } catch (_eRk) {}
+              }
+            }
+            _rc = _rc.parentNode;
+          }
+        } else if (_lbEmpty && !typingData) {
+          // ②左保位＋占位 br（dt1 留壳，`<dl><dt><br></dt></dl>` 形；br 计
+          // 可见故占位 descend 不会落 br 套 br）。
+          _zwCePlaceholderBr(leftBlock);
+          // 右深摘空尾链剪除：rightBlock 深摘空 → 摘块＋向上深摘空剪枝
+          //（1_1 全摘形 dl2 整剪；1_2 形 dl2 因 dt3 持位自止）。
+          if (rightBlock && rightBlock !== el && rightBlock.parentNode
+            && rightBlock !== leftBlock && _zwCeDeepEmpty(rightBlock, 0)) {
+            var _rup = rightBlock.parentNode, _rg2 = 0;
+            try { _rup.removeChild(rightBlock); } catch (_eRb) {}
+            while (_rup && _rup !== el && _rup !== lca && _rg2++ < 16) {
+              var _rup2 = _rup.parentNode;
+              if (_zwCeDeepEmpty(_rup, 0) && _rup2) {
+                try { _rup2.removeChild(_rup); } catch (_eRu) {}
+              }
+              _rup = _rup2;
+            }
+          }
+        } else if (_lbEmpty) {
+          // 键入替换面（d45/d46）：维持旧单摘行为（摘空左块移除、无链剪枝）
+          // ——插入随即填块，占位与并界剪除均不入。
+          for (var _lbj2 = (leftBlock.childNodes || []).length - 1; _lbj2 >= 0; _lbj2--) {
+            var _lbk3 = leftBlock.childNodes[_lbj2];
+            if (_lbk3.parentNode === leftBlock) {
+              try { leftBlock.removeChild(_lbk3); } catch (_eLbT2) {}
+            }
+          }
+          try { leftBlock.parentNode.removeChild(leftBlock); } catch (_eLb2) {}
         }
       }
       _sdFinish(ec, 0);
