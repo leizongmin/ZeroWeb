@@ -110,6 +110,28 @@ s137）；rendering 流 dialog 16 红块协同面（
 
 
 
+> **◆ 更正七（2026-11-18 s560 push 阶段）——pull
+> --rebase 捕获对端双刀落窗（c273180e1
+> fix(engine) 刀 A1e bg-position 残面三修
+> WAAPI shim 门 x/y 入族＋transitions echo
+> 展开＋单值形轴向修正，对端申报净 +46 零
+> P2F；＋刀 Z z-index 整数插值三通道净
+> +158 零 P2F；伴笔 f4afac03e/R5785/R5786
+> 等docs-only ×3）：s560 窗（aa4fb7200 恒）
+> 不含此批、s561 窗首次纳入——s561 起腿前
+> provenance 预判：runner 必换代归因双刀（
+> 经 zero-engine 依赖链入 runner 链接）；
+> 全桥清单预判：双刀伴钉若含 engine lib
+> 钉测则 b561.k 预期增长（b560.k 1704 对账
+> 以实测为准）；**display 臂 P2F 观察哨仍
+> 挂**（刀 A1e 与本流 s560 补臂同域
+> transitions/animation 面——join 后专项核
+> 对零 REG；两刀属性面正交 x/y·z-index vs
+> display 无写达交叠）；hs 面 testharness
+> 键与 bg-position/z-index 插值无声明路径
+> 关联，对账以 join 实测为准（刀 A1d 同域
+> 先例 s560 实测零位移）。
+
 > **◆ 更正六（2026-11-18 s559 push 阶段）——pull
 > --rebase 捕获 d53 刀落窗（1d5044761
 > fix(editing)：d53 列表项选删归一＋占位 br
