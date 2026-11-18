@@ -116,9 +116,26 @@ Fail↔Pass 双向，判读不变加强。
 
 ## 残面池（不认领，挂观测）
 
-- **css-shapes 腿残 1599F**（b1 计）：本刀三类靶面外（box/value 解析面、
-  shape-* 相邻属性、reference-box 组合面），维持 Q p1 池口径，后续刀另行
-  侦查分类。
+- **css-shapes 腿残 1599F**（b1 计，81 页）——13:4x 电池 JSON 页级侦查分类
+  （刀 Q3 备靶图）：
+  - **round 圆角槽串化族 ~310F（单机制，刀 Q3 首选靶）**：inset-002 36F、
+    inset-003 234F（180 纯 round + 54 cm/mm/pc×round）、inset-006 18F
+    （round×+sign）、inset-009 22F（round×calc-in-round）——`inset(…
+    round <radii-box4>)` 子句 computed/inline 串化缺失或失真，engine
+    computed_style.rs shape 串化域（本刀同文件面）。
+  - **插值/组合动画族 868F**：shape-outside-interpolation 406F（284 跨函数
+    inset→rect 离散 + 42 rect( + 42 xywh( 新函数＝css-shapes-2 面 + 23
+    neutral circle + 12 calc）、shape-interpolation 168F、path-interpolation
+    141F、composition 129F、shape-margin-composition 24F——animation.rs
+    插值通道域，A3r 流在飞避让（NOTES 归属声明）。
+  - **invalid/解析族 79F**：shape-function-invalid 40F＋rect-function-invalid
+    14F（刀 R apply.rs 白名单门靶面，fv1 同文件待落账）＋
+    shape-outside-computed 25F（calc-in-rect 8、path() 8、circle+box 4 等）。
+  - **inline 串化零碎族 ~155F**：calc(10in) inline style 面 ~87F
+    （inset-008 23、ellipse-010 22、ellipse-011 22、polygon-006 20）疑触
+    css-parser serialize 域（fv1 在飞避让）；+sign 前缀 ~52F（ellipse-006
+    24、circle-006 16、circle-009 12，`+10px` 保号串化）；shape-box-pair
+    16F（box 关键字对）。
 - **background-computed calc 多层串化漂移家族**：A2（bg-position-x）、A3
   （bg-position-y）、本轮（bg-position-x）三次出现，fv1 serialize.rs 域
   固有非确定性，跨跑双向漂移不认领。
