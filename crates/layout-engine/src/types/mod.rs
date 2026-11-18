@@ -1183,20 +1183,17 @@ impl LayoutBox {
             for line in lines {
                 total = total.saturating_add(vec_cap(&line.fragments));
                 for frag in &line.fragments {
-                    total = total
-                        .saturating_add(frag.text.len() as u64)
-                        .saturating_add(
-                            frag.source
-                                .as_ref()
-                                .map_or(0, |_| std::mem::size_of::<crate::inline::TextFragmentSource>() as u64),
-                        );
+                    total = total.saturating_add(frag.text.len() as u64).saturating_add(
+                        frag.source
+                            .as_ref()
+                            .map_or(0, |_| std::mem::size_of::<crate::inline::TextFragmentSource>() as u64),
+                    );
                 }
             }
         }
         if let Some(b) = &self.inline_relpos_shifts {
             total = total.saturating_add(
-                (std::mem::size_of::<NodeId>() + std::mem::size_of::<(f32, f32)>())
-                    .saturating_mul(b.capacity()) as u64,
+                (std::mem::size_of::<NodeId>() + std::mem::size_of::<(f32, f32)>()).saturating_mul(b.capacity()) as u64,
             );
         }
         total = total.saturating_add(
@@ -1204,17 +1201,15 @@ impl LayoutBox {
                 .saturating_mul(self.text_node_ascent_ratios.capacity()) as u64,
         );
         if let Some(b) = &self.path_bidi_nodes {
-            let set_slots = std::mem::size_of::<NodeId>().saturating_mul(
-                b.plaintext.capacity().saturating_add(b.isolated.capacity()),
-            ) as u64;
+            let set_slots = std::mem::size_of::<NodeId>()
+                .saturating_mul(b.plaintext.capacity().saturating_add(b.isolated.capacity()))
+                as u64;
             total = total
                 .saturating_add(std::mem::size_of::<PathBidiNodes>() as u64)
                 .saturating_add(set_slots);
         }
         if let Some(b) = &self.inline_flow_block_child_nodes {
-            total = total.saturating_add(
-                std::mem::size_of::<NodeId>().saturating_mul(b.capacity()) as u64,
-            );
+            total = total.saturating_add(std::mem::size_of::<NodeId>().saturating_mul(b.capacity()) as u64);
         }
         {
             let slots = (std::mem::size_of::<NodeId>() + std::mem::size_of::<Vec<String>>())
@@ -1231,8 +1226,7 @@ impl LayoutBox {
         }
         if let Some(b) = &self.inline_element_paddings {
             total = total.saturating_add(
-                (std::mem::size_of::<NodeId>() + std::mem::size_of::<(f32, f32)>())
-                    .saturating_mul(b.capacity()) as u64,
+                (std::mem::size_of::<NodeId>() + std::mem::size_of::<(f32, f32)>()).saturating_mul(b.capacity()) as u64,
             );
         }
         if let Some(v) = &self.fragment_node_ids {
@@ -1252,10 +1246,8 @@ impl LayoutResult {
     /// 指纹缓存/返回值共享）只读数一次（Arc 去重在聚合侧按指针处理）。
     pub fn estimated_resident_bytes(&self) -> u64 {
         let mut total = self.root.estimated_resident_bytes();
-        total = total.saturating_add(
-            (std::mem::size_of::<NodeId>()
-                .saturating_mul(self.paint_skip_node_ids.capacity())) as u64,
-        );
+        total = total
+            .saturating_add((std::mem::size_of::<NodeId>().saturating_mul(self.paint_skip_node_ids.capacity())) as u64);
         total
     }
 }

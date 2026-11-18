@@ -126,7 +126,12 @@ impl FontLoader {
         total = total.saturating_add(slot_bytes(&cache.grouped));
         // 键内 face 链 Arc 目标缓冲（len × 4B + 头部）：跨 flat/grouped 去重。
         let mut chains: Vec<*const [u32]> = Vec::new();
-        for key in cache.flat.keys().map(|k| &k.0).chain(cache.grouped.keys().map(|k| &k.0)) {
+        for key in cache
+            .flat
+            .keys()
+            .map(|k| &k.0)
+            .chain(cache.grouped.keys().map(|k| &k.0))
+        {
             let ptr = Arc::as_ptr(key);
             if chains.iter().all(|seen| !std::ptr::eq(*seen, ptr)) {
                 chains.push(ptr);

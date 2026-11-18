@@ -177,7 +177,6 @@ mod tests {
         crate::mem_reclaim::tune_malloc_retention_policy();
     }
 
-
     /// T13 R1 TV-F4 调度门钉（1/3）：布防后 D 内不触发——绕过延迟（同步触发）必红。
     #[test]
     fn scheduler_does_not_fire_before_delay() {

@@ -88,10 +88,7 @@ impl FontLoader {
     /// ——链 Arc 与调用方共享，只计本缓存持有的键引用面）。无字节上限（仅失效
     /// clear），估算服务域级归因（MB 量级排序），非 allocator 级精确核算。
     pub fn fallback_metrics_cache_bytes(&self) -> u64 {
-        let cache = self
-            .fallback_metrics_cache
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let cache = self.fallback_metrics_cache.lock().unwrap_or_else(|e| e.into_inner());
         let mut total: u64 = (std::mem::size_of::<FontMetricsKey>()
             .saturating_add(std::mem::size_of::<Option<(f32, f32, f32)>>())
             .saturating_mul(cache.per_font.capacity()))

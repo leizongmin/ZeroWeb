@@ -288,8 +288,7 @@ impl Document {
                 .saturating_add(std::mem::size_of::<V>())
                 .saturating_mul(m.capacity())) as u64
         }
-        let mut total: u64 =
-            (std::mem::size_of::<NodeData>().saturating_mul(self.nodes.capacity())) as u64;
+        let mut total: u64 = (std::mem::size_of::<NodeData>().saturating_mul(self.nodes.capacity())) as u64;
         total = total
             .saturating_add(map_cap(&self.id_map))
             .saturating_add(self.id_map.keys().map(|k| k.len() as u64).sum::<u64>());
@@ -3004,7 +3003,10 @@ mod t79_resident_bytes_tests {
         assert!(empty_bytes > 0, "empty doc slotmap root should count");
         let doc = parse_html("<html><body><p id=a class=x>hello</p></body></html>");
         let bytes = doc.estimated_resident_bytes();
-        assert!(bytes > empty_bytes, "parsed doc should exceed empty: {bytes} vs {empty_bytes}");
+        assert!(
+            bytes > empty_bytes,
+            "parsed doc should exceed empty: {bytes} vs {empty_bytes}"
+        );
         let mut grown = parse_html("<html><body><p id=a class=x>hello</p></body></html>");
         let text = grown.create_text_node(&"0123456789".repeat(64));
         let _ = grown.append_child(grown.root(), text);

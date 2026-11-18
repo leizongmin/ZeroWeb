@@ -620,13 +620,12 @@ fn rule_vec_bytes(rules: &Vec<Rule>) -> u64 {
         (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
     }
     fn decl_bytes(decls: &Vec<Declaration>) -> u64 {
-        vec_cap(decls)
-            .saturating_add(
-                decls
-                    .iter()
-                    .map(|d| d.property.len() as u64 + d.value.len() as u64)
-                    .sum::<u64>(),
-            )
+        vec_cap(decls).saturating_add(
+            decls
+                .iter()
+                .map(|d| d.property.len() as u64 + d.value.len() as u64)
+                .sum::<u64>(),
+        )
     }
     let mut total: u64 = vec_cap(rules);
     for rule in rules {

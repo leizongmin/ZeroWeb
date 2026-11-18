@@ -4677,16 +4677,16 @@ impl RenderPipeline {
                 layout_result_bytes = layout_result_bytes.saturating_add(layout.estimated_resident_bytes());
             }
         }
-        let mut stylesheets_bytes: u64 = (std::mem::size_of::<Stylesheet>()
-            .saturating_mul(self.cached_stylesheets.capacity())) as u64;
+        let mut stylesheets_bytes: u64 =
+            (std::mem::size_of::<Stylesheet>().saturating_mul(self.cached_stylesheets.capacity())) as u64;
         for sheet in &self.cached_stylesheets {
             stylesheets_bytes = stylesheets_bytes.saturating_add(sheet.estimated_resident_bytes());
         }
-        stylesheets_bytes = stylesheets_bytes
-            .saturating_add(self.cached_css_text.as_ref().map_or(0, |s| s.len() as u64));
-        let fingerprint_cache_bytes =
-            self.frame_fingerprint_cache
-                .estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        stylesheets_bytes =
+            stylesheets_bytes.saturating_add(self.cached_css_text.as_ref().map_or(0, |s| s.len() as u64));
+        let fingerprint_cache_bytes = self
+            .frame_fingerprint_cache
+            .estimated_resident_bytes(&mut seen_roots, &mut seen_props);
         OffLedgerReadings {
             dom_tree_bytes,
             style_map_bytes: styles_slots,

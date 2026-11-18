@@ -130,13 +130,12 @@ impl FrameFingerprintCache {
         seen_roots: &mut std::collections::HashSet<usize>,
         seen_props: &mut std::collections::HashSet<usize>,
     ) -> u64 {
-        let mut total: u64 = (std::mem::size_of::<(u128, CachedFrame)>()
-            .saturating_mul(self.entries.capacity())) as u64;
+        let mut total: u64 =
+            (std::mem::size_of::<(u128, CachedFrame)>().saturating_mul(self.entries.capacity())) as u64;
         for frame in self.entries.values() {
             total = total.saturating_add(frame.estimated_resident_bytes(seen_roots, seen_props));
         }
-        total = total.saturating_add((std::mem::size_of::<u128>()
-            .saturating_mul(self.order.capacity())) as u64);
+        total = total.saturating_add((std::mem::size_of::<u128>().saturating_mul(self.order.capacity())) as u64);
         total
     }
 }
@@ -161,17 +160,15 @@ impl CachedFrame {
         for style in self.styles.values() {
             total = total.saturating_add(style.estimated_heap_bytes_dedup(seen_props));
         }
-        total = total.saturating_add((std::mem::size_of::<Stylesheet>()
-            .saturating_mul(self.stylesheets.capacity())) as u64);
+        total = total
+            .saturating_add((std::mem::size_of::<Stylesheet>().saturating_mul(self.stylesheets.capacity())) as u64);
         for sheet in &self.stylesheets {
             total = total.saturating_add(sheet.estimated_resident_bytes());
         }
         if self.export_set.is_some() {
-            total = total
-                .saturating_add(std::mem::size_of::<ExportedAnimationSet>() as u64);
+            total = total.saturating_add(std::mem::size_of::<ExportedAnimationSet>() as u64);
         }
-        total = total
-            .saturating_add(self.result.estimated_resident_bytes(seen_roots));
+        total = total.saturating_add(self.result.estimated_resident_bytes(seen_roots));
         total
     }
 }

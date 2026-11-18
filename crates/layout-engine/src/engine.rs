@@ -442,17 +442,12 @@ impl LayoutEngine {
         // R109 接线：registry 槽位 + 内嵌 Vec 槽位 + 两个集合槽位。
         total = total.saturating_add(map_cap(&state.r109.fragment_registry));
         for frags in state.r109.fragment_registry.values() {
-            total = total.saturating_add(
-                (std::mem::size_of::<NodeId>().saturating_mul(frags.capacity())) as u64,
-            );
+            total = total.saturating_add((std::mem::size_of::<NodeId>().saturating_mul(frags.capacity())) as u64);
         }
+        total = total
+            .saturating_add((std::mem::size_of::<NodeId>().saturating_mul(state.r109.split_parents.capacity())) as u64);
         total = total.saturating_add(
-            (std::mem::size_of::<NodeId>()
-                .saturating_mul(state.r109.split_parents.capacity())) as u64,
-        );
-        total = total.saturating_add(
-            (std::mem::size_of::<NodeId>()
-                .saturating_mul(state.r109.block_mixed_parents.capacity())) as u64,
+            (std::mem::size_of::<NodeId>().saturating_mul(state.r109.block_mixed_parents.capacity())) as u64,
         );
         total
     }

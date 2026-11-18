@@ -1602,27 +1602,15 @@ impl RendererRuntime {
                     ("layout_result_bytes", off.layout_result_bytes),
                     ("taffy_state_bytes", off.taffy_state_bytes),
                     ("fingerprint_cache_bytes", off.fingerprint_cache_bytes),
-                    (
-                        "fingerprint_cache_entries",
-                        off.fingerprint_cache_entries,
-                    ),
+                    ("fingerprint_cache_entries", off.fingerprint_cache_entries),
                     ("stylesheets_bytes", off.stylesheets_bytes),
-                    (
-                        "shape_cache_bytes",
-                        self.font_loader.shape_cache_bytes(),
-                    ),
-                    (
-                        "hmtx_cache_bytes",
-                        self.font_loader.hmtx_cache_bytes(),
-                    ),
+                    ("shape_cache_bytes", self.font_loader.shape_cache_bytes()),
+                    ("hmtx_cache_bytes", self.font_loader.hmtx_cache_bytes()),
                     (
                         "fallback_metrics_cache_bytes",
                         self.font_loader.fallback_metrics_cache_bytes(),
                     ),
-                    (
-                        "v8_heap_bytes",
-                        self.js_worker.latest_v8_heap_bytes().unwrap_or(0),
-                    ),
+                    ("v8_heap_bytes", self.js_worker.latest_v8_heap_bytes().unwrap_or(0)),
                     // T79 残留劈分（glibc 分配器簿记，与域读数共面——聚合侧不相加）
                     ("malloc_arena_bytes", ms.arena_bytes),
                     ("malloc_hblkhd_bytes", ms.hblkhd_bytes),
@@ -3118,12 +3106,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         for later in drain_inbound() {
             deferred.push_back(DeferredCommand::Message(Box::new(later)));
         }
-        let Some(idx) = deferred
-            .iter()
-            .position(|d| {
-                matches!(d, DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::AutomationRequest(_)))
-            })
-        else {
+        let Some(idx) = deferred.iter().position(
+            |d| matches!(d, DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::AutomationRequest(_))),
+        ) else {
             return head;
         };
         let request = match deferred.remove(idx).expect("idx 由 position 取得，必在界内") {
@@ -3181,7 +3166,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // 抢占已命中时不再提升——在即将被替换的文档上求值无意义；求值不使任何
         // 消息陈旧（fix#14 的导航陈旧丢弃语义不适用），前置消息仅回队不丢弃。
         if let Some(DeferredCommand::Message(msg)) = head.as_ref()
-            && !matches!(msg.kind, IpcMessageKind::Navigate(_) | IpcMessageKind::AutomationRequest(_))
+            && !matches!(
+                msg.kind,
+                IpcMessageKind::Navigate(_) | IpcMessageKind::AutomationRequest(_)
+            )
         {
             head = Self::promote_pending_automation_request(head, &mut self.deferred_inbound, || {
                 let mut drained = Vec::new();

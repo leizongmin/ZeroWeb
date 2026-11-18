@@ -924,8 +924,7 @@ impl ComputedStyle {
             s.as_ref().map_or(0, |s| s.len() as u64)
         }
         fn vec_strings(v: &Vec<String>) -> u64 {
-            (std::mem::size_of::<String>()
-                .saturating_mul(v.capacity()) as u64)
+            (std::mem::size_of::<String>().saturating_mul(v.capacity()) as u64)
                 .saturating_add(v.iter().map(|s| s.len() as u64).sum::<u64>())
         }
         let mut total: u64 = 0;
@@ -1020,9 +1019,7 @@ impl ComputedStyle {
                     .unwrap_or(u64::MAX),
             );
             for (k, v) in props.iter() {
-                total = total
-                    .saturating_add(k.len() as u64)
-                    .saturating_add(v.len() as u64);
+                total = total.saturating_add(k.len() as u64).saturating_add(v.len() as u64);
             }
         }
         total = total.saturating_add(
@@ -1032,9 +1029,7 @@ impl ComputedStyle {
                 .unwrap_or(u64::MAX),
         );
         for (k, v) in &self.random_computed {
-            total = total
-                .saturating_add(k.len() as u64)
-                .saturating_add(v.len() as u64);
+            total = total.saturating_add(k.len() as u64).saturating_add(v.len() as u64);
         }
         // 伪元素递归：Box 目标的 inline 面与其堆承载面。
         for p in [
