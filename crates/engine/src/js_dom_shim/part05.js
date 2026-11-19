@@ -1296,6 +1296,16 @@
           // s241：实例层同步（同 part04 value 族臂——reflected 直写臂不经
           // setAttribute，`_zwAttrInstSyncNoNs` 刷新实例层读侧种子记录）。
           _zwAttrInstSyncNoNs(key, _refAttr, _refVal);
+          // T84（R2 F1）：name/id 反射直写臂补登 named 候选集——本臂不经
+          // setAttribute/removeAttribute 尾钩也不经 `_zwPAIdAdd`，pending 元素
+          // 同 turn 授名（`form.name= 'x'` 等）后 `_zwNACollectMatches` 候选集
+          // 扫不到（基础全量扫描可命中）。登记对象走 `_makeProxy`（本臂 sel/handle
+          // 是选择器键/handle 键，非元素 proxy——pending 集合按 proxy 身份记账）；
+          // 须在实例层同步之后读（读侧种子 latest-wins），登记点契约见
+          // `_zwPANamedPending` 声明；非 pending 元素由 `_zwPANameMark` 滤除。
+          if (_refAttr === 'name' || _refAttr === 'id') {
+            _zwPANameMark(_makeProxy(sel, handle));
+          }
           // R4100（html-semantics M2 切片 21）：details name IDL 写面 → given-prong
           // 互斥（spec attribute change steps name 分支「closing the given element」
           // ——subject open 且组内已有 open → 自身让位；同 setAttribute('name') 尾钩
@@ -2255,6 +2265,17 @@
     var meta = _attrNSMeta[key] || (_attrNSMeta[key] = {});
     meta[qname] = { ns: ns, prefix: prefix, local: local };
     _zwAttrInstUpsert(key, qname, ns, prefix, local, _r122Val);
+    // T84（R2 F1）：setAttributeNode/setNamedItem 族授名补登 named 候选集——本
+    // 核心直写 host/绑定表不经 setAttribute 尾钩，pending 元素同 turn 经游离
+    // Attr（createAttribute → value= → setAttributeNode）授 id/name 后
+    // `_zwNACollectMatches` 候选集扫不到（基础全量扫描可命中）。namespaced 属性
+    // 不参与 named access（spec named access 仅无命名空间属性），ns 非空不登记；
+    // 已绑定 Attr 的 `value=` 写传播走 `setAttribute`（R122 setter）已有尾钩覆盖。
+    // 登记对象走 `_makeProxy`（本核心 sel/handle 是选择器键/handle 键——pending
+    // 集合按 proxy 身份记账），登记点契约见 `_zwPANamedPending` 声明。
+    if (ns == null && (local === 'name' || local === 'id')) {
+      _zwPANameMark(_makeProxy(sel, handle));
+    }
     bind.set(qname, attr);
     try { attr.ownerElement = _makeProxy(sel, handle); } catch (_eO) {}
     // WC-M1 切片 3（spec custom-element-reactions）：setAttributeNode 族亦 CEReactions——
@@ -13766,6 +13787,11 @@
   // pending added（_zwNodeParent 反向链父 sel 匹配）按 nextSibling 定位插入；pending removed
   // 剔除。无匹配 nextSibling（append 到尾 / nextSibling 也是 pending）→ 尾部追加（保守）。
   function _zwOverlayPendingChildNodes(out, sel, parent) {
+    // T84（perf-mem bilibili hydration 归因轮，2026-11-19）：种子源 token——R5273 命中
+    // 时记录种子条目 identity + nodes 长度（part04 R5356b live-list 同步会对 nodes
+    // 原地 splice/push 而不换条目对象，长度是唯一廉价结构信号），供下方 `_oc` 增量
+    // 缓存判「种子贡献未变」。未命中保持 null——种子出现/消失即 token 翻转触发重建。
+    var _ocSeedTok = null, _ocSeedN = -1;
     // R5273（html-semantics M2 切片 66）：sel 形注册文本视图并入——textContent=（setter
     // 经 _zwRegisterTextEl 落 `_zwTextElsBySel` 注册表）后 spec「string replace all」
     // 状态恰为单文本子；firstChild 走 _zwLocalChildNodes 直读注册表（R49），childNodes
@@ -13804,6 +13830,8 @@
         // "{}" 文本 → removeNode parentElement=null 抛）。遮蔽风险由注册面叶内容门
         // 收敛（part04 同名注记——含容器元素的片段不登记，健全基座域无种子）。
         if (!_r5356seedStale) {
+          _ocSeedTok = _r5273e;
+          _ocSeedN = _r5273e.nodes ? _r5273e.nodes.length : -1;
           out = _r5273e.nodes
             ? _r5273e.nodes.filter(function (_r5356n) { return _r5356n && _r5356n.parentNode != null; })
             : [_r5273e.node];
@@ -13863,46 +13891,99 @@
     if (_zwSerSkipCrossGen
         && globalThis._zwApplyGeneration && bucket.stamp !== globalThis._zwApplyGeneration()
         && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv())) return out;
-    var res = out.slice();
-    // 剔除 pending removed（identity 匹配）。
-    // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：bulk 移除下
-    // bucket.removed 随 removal 累积（第 k 次 remove 时已 k 条），旧逐条逆序扫对已不在
-    // res 的陈旧条目每次全扫 O(res)——tape v3 实测探针 w2（2000 removals）rmMs
-    // 639-729ms（rmN=1.0M 条·窗）。removedSet 与 removed 数组由记账侧恒成对维护
-    // （_zwHCLiveInvalidate push/add、splice/delete、512 压实三处；桶构造器恒建），
-    // 单遍 has 过滤重建成员与序等价——res 条目 identity 唯一（基底 wrapper 唯一 +
-    // 并入 seen/R182 去重），旧逆序首见剔除恰 = 剔除属于 removed 集的条目。Set 缺失
-    // （防御口径，现无此形态）回落旧循环。
-    if (bucket.removedSet) {
-      // 原地压缩（读指针写回），免第二份分配——成员与序与过滤重建逐位一致。
-      var _rmSet = bucket.removedSet, _w = 0;
-      for (var r = 0; r < res.length; r++) {
-        if (!_rmSet.has(res[r])) res[_w++] = res[r];
-      }
-      res.length = _w;
-    } else {
-      for (var r = 0; r < bucket.removed.length; r++) {
-        var rm = bucket.removed[r];
-        for (var ri = res.length - 1; ri >= 0; ri--) {
-          if (res[ri] === rm) { res.splice(ri, 1); break; }
+    // T84（perf-mem bilibili hydration 归因轮，2026-11-19）：**桶级增量合并缓存**——
+    // 热病理实证（t84 沙箱 bench，RUN/bench/results/t84/fix bench7-8）：handle-form
+    // 无基底缓存，pending 桶承载整张子列表，每次视图读（每 mutation ~4-6 次：R140
+    // live NL 刷新、R301 prev/nextSibling 视图、append 记账 kidsBefore）全量重放
+    // bucket.added——每条 link 解析 + R382/d53 门 + seen/定位扫单条 ~7µs → 单 turn
+    // O(mutations × bucket) 超线性（500 warm move：cl_total 7.1s，99.4% 在下方 merge
+    // 循环；bilibili 实页 hydration 同形 2819ms/2000 op，与 chrome 差 20-100×）。
+    // 本桶挂 `_oc` 缓存（res/seen/merged 三镜像 + added/removed 双水位）：apply 代际
+    // 不变（生产 webview apply 与 bump 成对、engine 纯测试环境基底恒原始位——host
+    // 快照 gen 内冻结，R383a 注记同口径）+ 种子源/长度不变（上方 `_ocSeedTok/N`）+
+    // 水位不越界（桶数组 splice/压实缩长 → 保守全量重建）时，只剔新增 removed、只并
+    // 新增 added；无新增的重复读（每 mutation 4-6 读的主力）O(1) 直用缓存。语义
+    // 等价：合并按桶序进行，水位前条目已并入且索引未移（缩长即重建；同父 move 的
+    // 「对冲摘位 + 尾插重登记」净果 = 桶序把该子移到末位，在 _zwHCLiveInvalidate
+    // 重登记点同步摘缓存旧位并回退水位——见该处 T84 注记），水位后增量合并与全量
+    // 重放逐位同序。res/seen/merged 恒镜像（插入即 add、剔除即 delete），对外返回
+    // 拷贝（调用方原地写不得污染缓存，R55 同款纪律）。
+    var _ocSerWalk = _zwSerSkipCrossGen || false;
+    var _ocGen = (typeof _zwApplyGeneration === 'function') ? _zwApplyGeneration() : 0;
+    var _oc = bucket._oc;
+    var _ocFresh = !!(_oc && _oc.gen === _ocGen && _oc.seedTok === _ocSeedTok
+        && _oc.seedN === _ocSeedN && _oc.serWalk === _ocSerWalk
+        && _oc.ai <= bucket.added.length && _oc.ri <= bucket.removed.length
+        // 批量新 removed（innerHTML 整体重设静态容器）走全量臂更便宜：后缀逐条
+        // 逆序扫 O(k×res)，removedSet 单遍过滤 O(res)——k 大即放弃增量。
+        && bucket.removed.length - _oc.ri <= 64);
+    var res, _resSeen, _ocMerged, _aStart;
+    if (_ocFresh) {
+      // 增量臂：缓存 res 原地推进（缓存即最新视图），只处理两水位增量段。
+      res = _oc.res;
+      _ocMerged = _oc.merged;
+      _resSeen = _oc.seen;
+      for (var _ocr = _oc.ri; _ocr < bucket.removed.length; _ocr++) {
+        var _ocrm = bucket.removed[_ocr];
+        for (var _ocri = res.length - 1; _ocri >= 0; _ocri--) {
+          if (res[_ocri] === _ocrm) {
+            res.splice(_ocri, 1);
+            if (_resSeen) _resSeen.delete(_ocrm);
+            _ocMerged.delete(_ocrm);
+            break;
+          }
         }
       }
+      if (!_resSeen && bucket.added.length) {
+        _resSeen = new Set();
+        for (var _orsi = 0; _orsi < res.length; _orsi++) _resSeen.add(res[_orsi]);
+      }
+      _aStart = _oc.ai;
+    } else {
+      // 全量重建臂（原路径：基底拷贝 + removedSet 单遍过滤 + seen 全量重建）。
+      res = out.slice();
+      _ocMerged = new Set();
+      _aStart = 0;
+      // 剔除 pending removed（identity 匹配）。
+      // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：bulk 移除下
+      // bucket.removed 随 removal 累积（第 k 次 remove 时已 k 条），旧逐条逆序扫对已不在
+      // res 的陈旧条目每次全扫 O(res)——tape v3 实测探针 w2（2000 removals）rmMs
+      // 639-729ms（rmN=1.0M 条·窗）。removedSet 与 removed 数组由记账侧恒成对维护
+      // （_zwHCLiveInvalidate push/add、splice/delete、512 压实三处；桶构造器恒建），
+      // 单遍 has 过滤重建成员与序等价——res 条目 identity 唯一（基底 wrapper 唯一 +
+      // 并入 seen/R182 去重），旧逆序首见剔除恰 = 剔除属于 removed 集的条目。Set 缺失
+      // （防御口径，现无此形态）回落旧循环。
+      if (bucket.removedSet) {
+        // 原地压缩（读指针写回），免第二份分配——成员与序与过滤重建逐位一致。
+        var _rmSet = bucket.removedSet, _w = 0;
+        for (var r = 0; r < res.length; r++) {
+          if (!_rmSet.has(res[r])) res[_w++] = res[r];
+        }
+        res.length = _w;
+      } else {
+        for (var r = 0; r < bucket.removed.length; r++) {
+          var rm = bucket.removed[r];
+          for (var ri = res.length - 1; ri >= 0; ri--) {
+            if (res[ri] === rm) { res.splice(ri, 1); break; }
+          }
+        }
+      }
+      // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
+      // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：逐条 added 的
+      // seen 检查与 nextSibling 定位各 O(res) 线性扫，bulk 视图（added ~n × res ~n）单次
+      // 调用 O(added×res)——tape v3 实测探针 w2 addMs 2,548-2,704ms（addN=4.0M 条·窗，
+      // 墙钟主项 ~70%）。进循环前建一次 res identity Set：seen 判定 O(1)；nextSibling 先
+      // O(1) 成员判定、命中才做原定位扫——miss = 旧扫空落尾插（res.length），等价且省
+      // 全扫。插入即 add，Set 与 res 成员恒一致（R182 重定位摘旧位后立即回插，其间无
+      // has 消费；条目经 addedSet 记账去重，identity 唯一）。added 空不建 Set（纯基底读
+      // 快路径零新增成本）。
+      _resSeen = null;
+      if (bucket.added.length) {
+        _resSeen = new Set();
+        for (var _rsi = 0; _rsi < res.length; _rsi++) _resSeen.add(res[_rsi]);
+      }
     }
-    // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
-    // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：逐条 added 的
-    // seen 检查与 nextSibling 定位各 O(res) 线性扫，bulk 视图（added ~n × res ~n）单次
-    // 调用 O(added×res)——tape v3 实测探针 w2 addMs 2,548-2,704ms（addN=4.0M 条·窗，
-    // 墙钟主项 ~70%）。进循环前建一次 res identity Set：seen 判定 O(1)；nextSibling 先
-    // O(1) 成员判定、命中才做原定位扫——miss = 旧扫空落尾插（res.length），等价且省
-    // 全扫。插入即 add，Set 与 res 成员恒一致（R182 重定位摘旧位后立即回插，其间无
-    // has 消费；条目经 addedSet 记账去重，identity 唯一）。added 空不建 Set（纯基底读
-    // 快路径零新增成本）。
-    var _resSeen = null;
-    if (bucket.added.length) {
-      _resSeen = new Set();
-      for (var _rsi = 0; _rsi < res.length; _rsi++) _resSeen.add(res[_rsi]);
-    }
-    for (var a = 0; a < bucket.added.length; a++) {
+    for (var a = _aStart; a < bucket.added.length; a++) {
       var nd = bucket.added[a];
       // R182（js-dom M4）：sel 子形态（静态页面元素的同步移动——insertAdjacentElement
       // 的 #testN 形态）。无 __zwHandle，反链经 `_zwSelPendingParent` 槽（insertAdjacent
@@ -13936,7 +14017,9 @@
           && typeof _zwHandleInHostSnapshot === 'function'
           && _zwHandleInHostSnapshot(nd.__zwHandle)) {
         var _g382i = bucket.added.indexOf(nd);
-        if (_g382i >= 0) bucket.added.splice(_g382i, 1);
+        // T84：摘位使右侧条目前移一位，a-- 保其在本轮 merge 循环被访（缓存终水位
+        // =终长，本轮漏访且被计「已并」即增量臂永漏）；ghost 未并镜像无需摘。
+        if (_g382i >= 0) { bucket.added.splice(_g382i, 1); a--; }
         if (bucket.addedSet) bucket.addedSet.delete(nd);
         continue;
       }
@@ -13954,7 +14037,8 @@
         if (_pbrGen53 != null
           && _pbrGen53 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)) {
           var _pbrI53 = bucket.added.indexOf(nd);
-          if (_pbrI53 >= 0) bucket.added.splice(_pbrI53, 1);
+          // T84：同 R382 摘位臂——a-- 保右侧前移条目本轮被访。
+          if (_pbrI53 >= 0) { bucket.added.splice(_pbrI53, 1); a--; }
           if (bucket.addedSet) bucket.addedSet.delete(nd);
           continue;
         }
@@ -14005,8 +14089,12 @@
       // ——splice(pos,0,nd) 在 pos===res.length 时与 push 逐位等价。
       if (pos >= res.length) res.push(nd); else res.splice(pos, 0, nd);
       if (_resSeen) _resSeen.add(nd); // OPTIMIZATION：Set 与 res 成员同步（上注）
+      _ocMerged.add(nd); // T84：并入缓存镜像——增量臂水位前条目 merged 已含即不再重放
     }
-    return res;
+    bucket._oc = { res: res, seen: _resSeen, merged: _ocMerged, ai: bucket.added.length,
+        ri: bucket.removed.length, gen: _ocGen, seedTok: _ocSeedTok, seedN: _ocSeedN,
+        serWalk: _ocSerWalk };
+    return res.slice();
   }
 
   // R3033：把元素数组包成 spec 集合——补 `.item(i)`（HTMLCollection/NodeList 共有），`htmlCollection=true`
@@ -14492,6 +14580,7 @@
     _zwPendingRemoved.length = 0;
     _zwPendingAddedSet = null;
     _zwPendingRemovedSet = null;
+    _zwPANamedPending.clear(); // T84：named 候选集随换代清空（旧 pending 条目全失真）
     _zwPendingByParent.clear();
     _zwPendingAddedById.clear();
     // slice36（RP-3 动态名面）：动态元素账本随快照换代清空（旧文档动态安装值由
@@ -14583,7 +14672,8 @@
         var _r3kB = _zwPendingByParent.get(_r3kLink && _r3kLink.parentSel ? _r3kLink.parentSel : '_h:' + String(_r3kLink && _r3kLink.parentHandle == null ? '' : _r3kLink && _r3kLink.parentHandle));
         if (_r3kB) {
           var _r3ki = _r3kB.added.indexOf(_r3kStale[_r3ks]);
-          if (_r3ki >= 0) _r3kB.added.splice(_r3ki, 1);
+          // T84：定点摘位走水位维护（helper 头注）。
+          if (_r3ki >= 0) { _zwOcSpliceMaint(_r3kB, _r3ki, _r3kStale[_r3ks]); _r3kB.added.splice(_r3ki, 1); }
           _r3kB.addedSet && _r3kB.addedSet.delete(_r3kStale[_r3ks]);
         }
         if (_r3kMatLink) {
@@ -14608,6 +14698,8 @@
         _zwPendingByParent.forEach(function (_ghB) {
           var _ghi = _ghB.added.indexOf(_ghn);
           if (_ghi >= 0) {
+            // T84：定点摘位走水位维护（helper 头注）。
+            _zwOcSpliceMaint(_ghB, _ghi, _ghn);
             _ghB.added.splice(_ghi, 1);
             if (_ghB.addedSet) _ghB.addedSet.delete(_ghn);
           }
@@ -14655,6 +14747,30 @@
   // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
   // 记账时维护——added 入对桶、对冲剔除时同步删）。
   var _zwPendingAddedById = new Map();
+  // OPTIMIZATION（T84 归因轮，2026-11-19）：pending added **named 候选集**——id 或 name
+  // 属性非空的 pending 元素超集。消费方 `_zwNACollectMatches` 的 pending 命中扫描原先
+  // 遍历全量 `_zwPendingAdded`（每条目两条 attr 读）判 id/name 命中，pending 千级时
+  // 每次名注册付 O(pending)（a4 形态探针：500 次带 id 子移动 × ~4000 pending 条目
+  // ≈ 7.1s，随 pending 增长线性放大——bilibili 加载期 pending 持续累积即平方总量）。
+  // 未得名条目对任意名恒不命中，收窄到候选集扫描面等价。登记点：invalidate push
+  //（`_zwPANameMark`）、`_zwPAIdAdd`（id 属性授予）、`_zwNAAttrChanged`/
+  // `_zwNAAttrDynamicSync`（id/name 属性授予）。不做定点注销：remove 面只减不增
+  //（负向 verdict 不会出新命中），失真条目由扫描时 `_zwPASet().has` 现场过滤、
+  // `__zw_reset_pending_state` 整集清空兜底。
+  var _zwPANamedPending = new Set();
+  function _zwPANameMark(nd) {
+    if (!nd || nd.nodeType !== 1) return;
+    // T84（R2 F1）：仅 pending 元素入集——反射直写/setAttributeNode 臂对已 flush
+    // 元素也调本函数，非 pending 条目对采集恒不命中（扫描面以 `_zwPASet().has`
+    // 现场过滤），不设防会让候选集随全文档授名无界增长（重走本刀要消的超线性）。
+    if (!_zwPASet().has(nd)) return;
+    var nm84 = '';
+    try { nm84 = nd.id != null ? String(nd.id) : ''; } catch (_e84mi) { nm84 = ''; }
+    if (!nm84) {
+      try { nm84 = (nd.getAttribute && nd.getAttribute('name')) || ''; } catch (_e84mn) { nm84 = ''; }
+    }
+    if (nm84) _zwPANamedPending.add(nd);
+  }
   // js-dom M4 R125：sel-based 元素 id 的 latest-wins 覆盖表（elKey → 新 id | null）。
   // host 快照不反映同 execute 的 setAttribute('id')/removeAttribute('id')/Attr.value=/
   // innerHTML 清除——querySelector('[id=…]') 命中 stale id 或漏新 id（WPT
@@ -14684,6 +14800,9 @@
     var id = '';
     try { id = nd && nd.id != null ? String(nd.id) : ''; } catch (_e) { id = ''; }
     if (!id) return;
+    // T84：属性期得名（push 后 id 授予）补登 named 候选集——`_zwNACollectMatches`
+    // pending 扫描面以此集收窄（登记点契约见 `_zwPANamedPending` 声明）。
+    _zwPANamedPending.add(nd);
     // slice45：登记时盖 id 戳——登记点的 attr 读链可用（同 turn 队列未 drain，
     // `__zw_get_attr_handle` latest-wins 命中 SetAttrOnHandle）；remove 侧（跨 apply）
     // 读链落空（队列已 drain，attr 无 history/快照回落）→ `_zwPAIdRemove` 回退读戳。
@@ -14770,6 +14889,44 @@
     // 扫描，testharness 数千 iteration 线性增速的另一来源。Set 判重 + 数组保序。
     if (!b) { b = { added: [], removed: [], addedSet: new Set(), removedSet: new Set() }; _zwPendingByParent.set(key, b); }
     return b;
+  }
+  // T84（perf-mem bilibili hydration 修复轮，2026-11-19）：桶 added 中部定点摘位的
+  // 增量缓存水位维护（对冲稀疏臂 / part04 R334·R301 move retract / R3k stale 清除 /
+  // s143 flatten 鬼影共用）。`_oc` 增量臂以 ai 水位切「已并区 [0,ai) / 增量区 [ai,)」，
+  // 摘位使右侧条目前移一位：i < ai 时 ai 必回退——槽位占用与 merged 与否无关（无
+  // link、parentSel 不匹配、seen 命中跳并的条目同样占 < ai 槽；t84 r309 臂实证：
+  // merged-skip 条目摘位不回退水位 → 重登记新子落入 freed 槽被当已并跳过 → 视图
+  // 永久缺元素，second= 空回归）。merged 命中再同步摘 res/seen/merged 三镜像（该
+  // 条目在当前视图真实存在；未 merged 条目不在镜像里，无需摘）。i >= ai（未并区
+  // 内部摘位）不动水位——增量区右端点（终长）吸收位移。
+  function _zwOcSpliceMaint(b, i, nd) {
+    var oc = b._oc;
+    if (!oc) return;
+    if (i < oc.ai) oc.ai--;
+    if (oc.merged && oc.merged.has(nd)) {
+      var res = oc.res;
+      for (var k = res.length - 1; k >= 0; k--) {
+        if (res[k] === nd) { res.splice(k, 1); break; }
+      }
+      oc.merged.delete(nd);
+      if (oc.seen) oc.seen.delete(nd);
+    }
+  }
+  // T84：反链锚改写检出 → 桶增量缓存作废。`_oc` 缓存视图序 = 上次合并时的锚快照，
+  // 锚改写（childList record 反链登记把 prev/next 换锚，如 insertBefore 前插移动）
+  // 不经桶数组变异，水位判据探不到——树序消费面（R4006 gEBI 多候选 `_r4006TreeCmp`
+  // 的 `childNodes` 位次比较等）会拿到陈旧序（r4005 W3：前插 f5 的 gEBI 命中旧位
+  // f4）。仅当该子已并入当前缓存（`merged.has`）时作废；未并条目、锚未变（同位
+  // 重复 append 的 prev 恒等——a4 形态逐 op 零作废）零成本放行。
+  function _zwOcInvalidateAnchorKey(key, nd) {
+    var b = key != null ? _zwPendingByParent.get(key) : null;
+    var oc = b && b._oc;
+    if (oc && oc.merged && oc.merged.has(nd)) b._oc = null;
+  }
+  function _zwOcInvalidateAnchorLink(link, nd) {
+    if (!link) return;
+    if (link.parentSel != null) _zwOcInvalidateAnchorKey(link.parentSel, nd);
+    if (link.parentHandle != null) _zwOcInvalidateAnchorKey('_h:' + link.parentHandle, nd);
   }
   // R3254-E2 切片 8（editing goal，2026-09-07）：**子树 pending 脏判定**——R380 融合
   // 序列化门以「读目标自身桶非空」为前提；子树深层 mutation（deleteContents 的
@@ -15149,6 +15306,9 @@
         }
         _pb.removed = _bc;
         _pb.removedSet = new Set(_bc);
+        // T84：压实缩 removed 数组（死 handle-only 条目丢弃）——ri 水位按旧索引进，
+        // 压实后 < ri 的未滤条目前移会滑出 suffix 滤区（低位丢失个数为界），保守作废。
+        _pb._oc = null;
       }
       // OPTIMIZATION（editing-compat 簇 A 归因轮，2026-10-31）：bulk 对冲密集时逐命中
       // indexOf+splice 是 O(桶²)（innerHTML 整体重设 4000 remFlat 全命中 4000 桶 added
@@ -15189,6 +15349,9 @@
         if (!_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }
       }
       if (_pbHitN >= 8) {
+        // T84：密集 filter 重建改写整个 added 数组（索引全变），增量缓存水位不可
+        // 逐命中吸收（收集点无下标）——保守作废，下次读全量重建（bulk 对冲低频）。
+        _pb._oc = null;
         var _pbHitSet = new Set(_pbHits);
         var _pbKept = [];
         for (var pb1b = 0; pb1b < _pb.added.length; pb1b++) {
@@ -15198,7 +15361,9 @@
       } else if (_pbHits) {
         for (var pb1c = 0; pb1c < _pbHits.length; pb1c++) {
           var _pai = _pb.added.indexOf(_pbHits[pb1c]);
-          if (_pai >= 0) _pb.added.splice(_pai, 1);
+          // T84：稀疏定点摘位走 `_zwOcSpliceMaint`——i < ai 回退水位（槽位占用与
+          // merged 无关），merged 命中同步摘 res/seen/merged（helper 头注）。
+          if (_pai >= 0) { _zwOcSpliceMaint(_pb, _pai, _pbHits[pb1c]); _pb.added.splice(_pai, 1); }
         }
       }
       for (var pb2 = 0; pb2 < addFlat.length; pb2++) {
@@ -15212,7 +15377,14 @@
         if (_pb.removedSet.has(_pa)) {
           _pb.removedSet.delete(_pa);
           var _pri = _pb.removed.indexOf(_pa);
-          if (_pri >= 0) _pb.removed.splice(_pri, 1);
+          if (_pri >= 0) {
+            // T84：un-remove 缩 removed 数组——i < ri 时 ri 水位同步回退（已滤区
+            // [0,ri) 端点对齐），>= ri 不动（未滤区内部位移由右端点吸收）。滞后则
+            // 下一读 suffix 滤区漏盖右移进 [ri-?] 的未滤条目 → 视图残影。
+            var _t84oc3 = _pb._oc;
+            if (_t84oc3 && _pri < _t84oc3.ri) _t84oc3.ri--;
+            _pb.removed.splice(_pri, 1);
+          }
         }
       }
     }
@@ -15347,7 +15519,7 @@
       for (var a1 = 0; a1 < addFlat.length; a1++) {
         var nd0 = addFlat[a1];
         if (!nd0) continue;
-        if (!_zwPASet().has(nd0)) { _zwPendingAdded.push(nd0); _zwPendingAddedSet.add(nd0); _zwPAIdAdd(nd0); }
+        if (!_zwPASet().has(nd0)) { _zwPendingAdded.push(nd0); _zwPendingAddedSet.add(nd0); _zwPAIdAdd(nd0); _zwPANameMark(nd0); }
         // R51c：removed 剔除不再全表重建——Set 命中才 splice（多数 mutation 不命中，零分配）。
         if (_zwPendingRemovedSet && _zwPendingRemovedSet.has(nd0)) {
           var ri = _zwPendingRemoved.indexOf(nd0);
@@ -15878,6 +16050,9 @@
   // 新中末位并入），随后全局形态跟随。每次 setAttribute/removeAttribute('id'/'name')
   // 各 O(NA 集合数 × 成员数)，named access 集合个位数常态，无热路径风险。
   function _zwNAAttrChanged(el) {
+    // T84：pending 元素 push 后经属性写得名（setAttribute/removeAttribute 'id'/'name'）
+    // → 补登 named 候选集（`_zwNACollectMatches` pending 扫描面契约，见其声明）。
+    if (el && el.nodeType === 1 && _zwPASet().has(el)) _zwPANamedPending.add(el);
     for (var i32 = 0; i32 < _zwLiveCollections.length; i32++) {
       var lc32 = _zwLiveCollections[i32];
       if (!lc32 || !lc32.naName || lc32.dead) continue;
@@ -16004,12 +16179,19 @@
       els36.push(e36);
     };
     try { push36(globalThis.document.getElementById(name)); } catch (_e36ge) {}
-    for (var p36 = 0; p36 < _zwPendingAdded.length; p36++) {
-      var nd36 = _zwPendingAdded[p36];
-      if (!nd36 || nd36.nodeType !== 1) continue;
-      var m36 = false;
-      try { m36 = _zwNAElemMatches(name, nd36); } catch (_e36nm) { m36 = false; }
-      if (m36) push36(nd36);
+    // OPTIMIZATION（T84 归因轮）：pending 命中采集收窄到 named 候选集（`_zwPANamedPending`，
+    // 登记点契约见其声明）——全量 `_zwPendingAdded` 逐条 `_zwNAElemMatches` 在 pending
+    // 千级时每次注册 O(pending)，候选集只含 id/name 非空条目，扫描面等价（未得名条目
+    // 恒不命中）。集合无定点注销，已离 pending 条目经 `_zwPASet().has` 现场过滤；遍历
+    // 序与数组序的差异由末端树序排序归一（spec concept-collection 树序）。
+    if (_zwPANamedPending.size) {
+      var _cmPA36 = _zwPASet();
+      _zwPANamedPending.forEach(function (nd36) {
+        if (!_cmPA36.has(nd36)) return;
+        var m36 = false;
+        try { m36 = _zwNAElemMatches(name, nd36); } catch (_e36nm) { m36 = false; }
+        if (m36) push36(nd36);
+      });
     }
     if (extra) push36(extra);
     // 树序（spec：集合成员按树序）——DOCUMENT_POSITION_FOLLOWING=4（R2815 常量）。
@@ -16162,6 +16344,9 @@
   // slice37：NPO iframe 名 live 扫描缓存随任何树/属性变异失配（bump 代数）。
   function _zwNAAttrDynamicSync(el) {
     if (!el || el.nodeType !== 1) return;
+    // T84：pending 元素 push 后经属性写得名（notify attributes 臂）→ 补登 named 候选集
+    //（`_zwNACollectMatches` pending 扫描面契约，见其声明）。
+    if (_zwPASet().has(el)) _zwPANamedPending.add(el);
     _zwNAUnregisterEl(el);
     var cn36 = null;
     try { cn36 = _zwNACandidateName(el); } catch (_e36cc) { cn36 = null; }

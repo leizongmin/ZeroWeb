@@ -22203,9 +22203,18 @@
       }
     };
     var _scTail = function () { _zwScAttrTailM(node, n); };
-    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); return; } }
+    // T84（R2 RF1）：M 域（`_zwMEl` plain 树）授名补登 named 候选集——本域
+    // setAttribute 不经 pending 世界的属性尾钩（`_zwNAAttrChanged`），noWire 槽/
+    // 下钻臂 plain 返回持有的解析产物事后授 id/name 后 `_zwNACollectMatches`
+    // 候选集扫不到（基础全量扫描经槽读可命中）。非 pending 元素由
+    // `_zwPANameMark` pending 闸滤除（扫描面同款现场过滤，无副作用漂移）。
+    // 登记点契约见 `_zwPANamedPending` 声明。
+    var _naTail = function () {
+      if (n.toLowerCase() === 'id' || n.toLowerCase() === 'name') _zwPANameMark(node);
+    };
+    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); _naTail(); return; } }
     attrs.push({ name: n, value: sv });
-    _fsTail(); _scTail();
+    _fsTail(); _scTail(); _naTail();
   }
   // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
   function _zwMElRemoveAttribute(n) {
@@ -23946,10 +23955,19 @@
     var sv = v == null ? '' : String(v);
     var attrs = this[_zwAttrsSlotKey];
     _zwMElQIdxInvalidate(this);
+    // T84（R3 RF2）：M 域 plain 产物 IDL `.id=` 直写臂补登 named 候选集——
+    // 本臂属性槽直写不经 setAttribute（`_naTail` 不可达），下钻臂/noWire 槽/
+    // CE-hit plain 返回持有的解析产物事后 `.id=` 授名后 `_zwNACollectMatches`
+    // 候选集扫不到（基础全量扫描经同槽 getAttribute 可命中）。两写端尾调
+    // `_zwPANameMark`，非 pending 元素由其 pending 闸滤除（构造期 `snap.id`
+    // 重赋值同经本 setter，彼时未入 pending 集，闸即空转）。`.name=` 无 plain
+    // accessor（原型面访问器经 setAttribute 已覆盖），id 是唯一 IDL 直写面。
+    // 登记点契约见 `_zwPANamedPending` 声明。
     for (var i = 0; i < attrs.length; i++) {
-      if (attrs[i].name === 'id') { attrs[i].value = sv; return; }
+      if (attrs[i].name === 'id') { attrs[i].value = sv; _zwPANameMark(this); return; }
     }
     attrs.push({ name: 'id', value: sv });
+    _zwPANameMark(this);
   }
   function _zwClassNameGet() {
     var attrs = this[_zwAttrsSlotKey];

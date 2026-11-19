@@ -8952,13 +8952,23 @@
             // 倒序 → selectedness 走查翻转实证）。批内子锚 = 邻位子（首子 prev 接
             // record 锚、末子 next 接 record 锚），spec 兄弟语义本就如此；锚按节点
             // identity 消费（R5450 同口径，文本邻位同样可定位）。
+            var _t84nn = (_npI + 1 < _npA.length && _npA[_npI + 1])
+              ? _npA[_npI + 1] : (baseRecord.nextSibling || null);
+            var _t84np = (_npI > 0 && _npA[_npI - 1])
+              ? _npA[_npI - 1] : (baseRecord.previousSibling || null);
+            var _t84ol = _zwNodeParent[_npC.__zwHandle];
             _zwNodeParent[_npC.__zwHandle] = {
               parentSel: sel || null, parentHandle: handle || null,
-              nextSibling: (_npI + 1 < _npA.length && _npA[_npI + 1])
-                ? _npA[_npI + 1] : (baseRecord.nextSibling || null),
-              prevSibling: (_npI > 0 && _npA[_npI - 1])
-                ? _npA[_npI - 1] : (baseRecord.previousSibling || null)
+              nextSibling: _t84nn, prevSibling: _t84np
             };
+            // T84：锚改写检出（新旧 prev/next identity 比对）→ 桶增量缓存作废——
+            // 视图序快照随锚失效（`_zwOcInvalidateAnchor*` part05，r4005 W3 实证）。
+            // 同位重复 append（prev/next 恒等）零成本放行。
+            if (typeof _zwOcInvalidateAnchorKey === 'function'
+                && (!_t84ol || _t84ol.nextSibling !== _t84nn || _t84ol.prevSibling !== _t84np)) {
+              _zwOcInvalidateAnchorLink(_t84ol, _npC);
+              _zwOcInvalidateAnchorKey(sel != null ? sel : (handle != null ? '_h:' + handle : null), _npC);
+            }
           }
         }
       }
@@ -8993,11 +9003,24 @@
               if (!_npLn) continue;
               if (_npLn.nextSibling && _npRset.has(_npLn.nextSibling)
                   && baseRecord.nextSibling !== undefined && !_npRset.has(baseRecord.nextSibling)) {
-                _npLn.nextSibling = baseRecord.nextSibling || null;
+                var _t84rn = baseRecord.nextSibling || null;
+                // T84：锚重定向写出新值 → 桶增量缓存作废（同 `added` 臂锚改写检出）。
+                if (_npLn.nextSibling !== _t84rn) {
+                  _npLn.nextSibling = _t84rn;
+                  if (typeof _zwOcInvalidateAnchorKey === 'function') {
+                    _zwOcInvalidateAnchorKey(sel != null ? sel : (handle != null ? '_h:' + handle : null), _npE);
+                  }
+                }
               }
               if (_npLn.prevSibling && _npRset.has(_npLn.prevSibling)
                   && baseRecord.previousSibling !== undefined && !_npRset.has(baseRecord.previousSibling)) {
-                _npLn.prevSibling = baseRecord.previousSibling || null;
+                var _t84rp = baseRecord.previousSibling || null;
+                if (_npLn.prevSibling !== _t84rp) {
+                  _npLn.prevSibling = _t84rp;
+                  if (typeof _zwOcInvalidateAnchorKey === 'function') {
+                    _zwOcInvalidateAnchorKey(sel != null ? sel : (handle != null ? '_h:' + handle : null), _npE);
+                  }
+                }
               }
             }
           }

@@ -8321,7 +8321,12 @@
               }
               if (_r334OB) {
                 for (var _r334oba = _r334OB.added.length - 1; _r334oba >= 0; _r334oba--) {
-                  if (_r334OB.added[_r334oba] === child) { _r334OB.added.splice(_r334oba, 1); break; }
+                  if (_r334OB.added[_r334oba] === child) {
+                    // T84：定点摘位走 `_zwOcSpliceMaint`（part05 helper 头注——i < ai
+                    // 回退水位，merged 命中同步摘镜像）。
+                    _zwOcSpliceMaint(_r334OB, _r334oba, child);
+                    _r334OB.added.splice(_r334oba, 1); break;
+                  }
                 }
                 if (!_r334OB.removedSet || !_r334OB.removedSet.has(child)) {
                   if (_r334OB.removedSet) _r334OB.removedSet.add(child);
@@ -8481,7 +8486,11 @@
                   }
                   if (_mvB) {
                     for (var _mva = _mvB.added.length - 1; _mva >= 0; _mva--) {
-                      if (_mvB.added[_mva] === child) { _mvB.added.splice(_mva, 1); break; }
+                      if (_mvB.added[_mva] === child) {
+                        // T84：定点摘位走 `_zwOcSpliceMaint`（part05 helper 头注）。
+                        _zwOcSpliceMaint(_mvB, _mva, child);
+                        _mvB.added.splice(_mva, 1); break;
+                      }
                     }
                     if (!_mvB.removedSet || !_mvB.removedSet.has(child)) {
                       if (_mvB.removedSet) _mvB.removedSet.add(child);
@@ -9457,7 +9466,11 @@
                 }
                 if (_pvB) {
                   for (var _pva = _pvB.added.length - 1; _pva >= 0; _pva--) {
-                    if (_pvB.added[_pva] === child) { _pvB.added.splice(_pva, 1); break; }
+                    if (_pvB.added[_pva] === child) {
+                      // T84：定点摘位走 `_zwOcSpliceMaint`（part05 helper 头注）。
+                      _zwOcSpliceMaint(_pvB, _pva, child);
+                      _pvB.added.splice(_pva, 1); break;
+                    }
                   }
                   if (!_pvB.removedSet || !_pvB.removedSet.has(child)) {
                     if (_pvB.removedSet) _pvB.removedSet.add(child);
@@ -11801,8 +11814,15 @@
                   var _r371src = _zwPendingByParent.get(sel);
                   var _r371dst = _zwPendingByParent.get(_r371ParentSel);
                   if (_r371src && _r371src.added.length) {
-                    if (!_r371dst) { _r371dst = _r371src; _zwPendingByParent.set(_r371ParentSel, _r371dst); }
-                    else {
+                    if (!_r371dst) {
+                      _r371dst = _r371src;
+                      // T84：桶整体换键（res/镜像按旧父 overlay 语义构建），作废增量缓存。
+                      _r371dst._oc = null;
+                      _zwPendingByParent.set(_r371ParentSel, _r371dst);
+                    } else {
+                      // T84：跨桶迁移 + 下方反链重锚改写已并条目的 link 锚点（缓存 res
+                      // 位置按旧锚冻结）——作废两桶增量缓存。
+                      _r371dst._oc = null; _r371src._oc = null;
                       for (var _r371i = 0; _r371i < _r371src.added.length; _r371i++) {
                         var _r371n = _r371src.added[_r371i];
                         if (_r371n && !_r371dst.addedSet.has(_r371n)) { _r371dst.added.push(_r371n); _r371dst.addedSet.add(_r371n); }
@@ -12701,6 +12721,9 @@
                             // 物化（CE ctor 可同步执行页面代码）后写前校验桶槽未被重入
                             // 改动——重入 splice/清空时按物化前索引写会腐化无关条目。
                             if (_r322bq.added[_r322qa] !== _r322qn) continue;
+                            // T84：槽内 identity 替换（缓存 res/merged 镜像持旧 wrapper，
+                            // ai 水位不缩不换）——保守作废，下次读全量重建（CE 物化低频）。
+                            _r322bq._oc = null;
                             _r322bq.added[_r322qa] = _r322mw;
                             if (_r322bq.addedSet) { _r322bq.addedSet.delete(_r322qn); _r322bq.addedSet.add(_r322mw); }
                             var _r322gi = _zwPendingAdded.indexOf(_r322qn);
@@ -12708,6 +12731,17 @@
                             if (_zwPendingAddedSet) { _zwPendingAddedSet.delete(_r322qn); _zwPendingAddedSet.add(_r322mw); }
                             _zwPAIdRemove(_r322qn);
                             _zwPAIdAdd(_r322mw);
+                            // T84（R2 RF1）：物化置换补登 named 候选集——解析期已得名的
+                            // 代理经 push 期 `_zwPANameMark` 入集，本置换换 identity 后旧
+                            // 条目孤儿化（扫描 `_zwPASet().has` 现场滤除），置换点仅
+                            // `_zwPAIdAdd`（空 id 在候选集登记前早退，part05）→ name-only
+                            // wrapper 新 identity 漏登记，`_zwNACollectMatches` 扫不到
+                            // （基础全量扫描扫置换后 wrapper 可命中）。须在上方 pending 集
+                            // 换 identity 之后调——物化期 `_wcRebuildAsHandle` 的 attr 复制
+                            // 虽走 setAttribute 尾钩，彼时 wrapper 未入 pending 集被
+                            // `_zwPANameMark` pending 闸滤除。登记点契约见
+                            // `_zwPANamedPending` 声明。
+                            _zwPANameMark(_r322mw);
                             _r322mw._zwMatParsed = true;
                             if (_zwNodeParent) {
                               _zwNodeParent[_r322mw.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: _r322qn._zwSelPendingParent.nextSibling || null };
