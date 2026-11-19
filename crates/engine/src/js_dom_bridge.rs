@@ -5139,6 +5139,67 @@ pub fn element_attribute_names_lw(html: &str, mutations: &[DomMutation], selecto
     names.join("|")
 }
 
+/// sel 元素属性基底名值对（文档序，纯快照无 pending）——
+/// [`element_attribute_map_lw_doc`] 与 `__zw_get_attr_map_lw` 回调共用基底。
+fn element_attr_base_doc(doc: &Document, selector: &str) -> Vec<(String, String)> {
+    let Some(node) = find_by_selector(doc, selector) else {
+        return Vec::new();
+    };
+    match doc.get(node) {
+        Some(n) => match &n.kind {
+            NodeKind::Element(e) => e
+                .attributes
+                .iter()
+                .map(|a| match a.name.prefix.as_ref() {
+                    Some(p) => (format!("{}:{}", &**p, &*a.name.local), a.value.to_string()),
+                    None => (a.name.local.to_string(), a.value.to_string()),
+                })
+                .collect(),
+            _ => Vec::new(),
+        },
+        None => Vec::new(),
+    }
+}
+
+/// sel 元素属性基底上正序单遍应用 pending SetAttr/RemoveAttr（latest-wins，
+/// O(list) 一次）——[`element_attribute_map_lw_doc`] 与 `__zw_get_attr_map_lw`
+/// 回调共用应用段（锁序：调用方不得持 m 锁进视图闭包）。
+fn apply_attr_map_overrides(map: &mut Vec<(String, String)>, mutations: &[DomMutation], selector: &str) {
+    for m in mutations {
+        match m {
+            DomMutation::SetAttr {
+                selector: s,
+                name,
+                value,
+            } if s == selector => {
+                if let Some(slot) = map.iter_mut().find(|(n, _)| n == name) {
+                    slot.1 = value.clone();
+                } else {
+                    map.push((name.clone(), value.clone()));
+                }
+            }
+            DomMutation::RemoveAttr { selector: s, name } if s == selector => {
+                map.retain(|(n, _)| n != name);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 元素全部属性名值映射（JSON `[["name","value"],…]`，文档序基底），**latest-wins**——
+/// 基底上正序单遍应用 pending `SetAttr`/`RemoveAttr`（同 [`element_attribute_names_lw`]
+/// 的名字面语义，本函数带值）。供 `__zw_get_attr_map_lw` 回调 → shim 属性探测快照层
+/// （t-g2b impl-008：页面 JS 全文档审计逐条 `__zw_get_attr_lw`/`__zw_has_attr_lw` 往返
+/// 洪峰的取数底座，g26 link 臂窗 265,903 次 ×~24µs）。**absent 名不入列**——R3190
+/// 缺省返 null 由调用点从「名不在列」推导（宿主 get 返 `''`/has 返 `'0'` 契约不变）。
+/// `doc` 由调用方经视图文档缓存提供（禁每调用 re-parse——8.5k 元素逐个 parse 是
+/// 二次放大）；`mutations` 正序单遍 O(list)，禁 per-name 逆序扫（names×list 放大）。
+pub fn element_attribute_map_lw_doc(doc: &Document, mutations: &[DomMutation], selector: &str) -> String {
+    let mut map = element_attr_base_doc(doc, selector);
+    apply_attr_map_overrides(&mut map, mutations, selector);
+    serde_json::to_string(&map).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// P1a checkbox：判定元素是否为 `<input type=checkbox>`。
 pub fn is_checkbox(html: &str, selector: &str) -> bool {
     query_tag_from_html(html, selector).eq_ignore_ascii_case("input")

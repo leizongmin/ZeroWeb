@@ -281,3 +281,7 @@ include!("js_dom_bridge_tests/part114_g2b_batch_attrs.rs");
 
 // t-g2b impl-007 画像 scratch（非钉面，定去留）：bulk innertext 冷/热构成分解。
 include!("js_dom_bridge_tests/part115_bulk_profile_scratch.rs");
+
+// t-g2b impl-008 属性/ns 探测快照层钉面：map 回调 wire 形状 + shim wrap 生效
+// （overlay 同批一致/removeAttribute absent/四象限/视图戳失效/get_ns 快照）。
+include!("js_dom_bridge_tests/part116_attr_snapshot.rs");

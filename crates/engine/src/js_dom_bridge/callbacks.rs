@@ -2859,6 +2859,31 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t-g2b impl-008：sel 元素全属性映射一次往返——页面 JS 全文档审计/水合逐条
+    // `__zw_get_attr_lw`/`__zw_has_attr_lw` 探测洪峰（g26：link 臂窗 265,903 次
+    // ×~24µs≈2.5-6.5s/臂）的快照取数底座。wire = JSON `[["name","value"],…]`
+    // （present 名值对，absent 名不入列——R3190 缺省返 null 由调用点从「名不在列」
+    // 推导，宿主 get 返 `''`/has 返 `'0'` 契约不变）。基底经 [`with_query_view_doc`]
+    // （与 `__zw_get_attr_lw` 回落路径同源、视图文档缓存 O(1) 命中），pending 单遍
+    // 正序应用与 [`sel_attr_override`] 同底（锁序：视图闭包内部自锁 m，闭包返回后
+    // 再锁 list——不得持 m 锁进 with_query_view_doc，重入死锁面同 get_attr_lw 的
+    // drop(list) 纪律）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_attr_map_lw",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let mut base: Vec<(String, String)> = Vec::new();
+            with_query_view_doc(&html, &m, |doc, _| {
+                base = element_attr_base_doc(doc, &sel);
+            });
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            apply_attr_map_overrides(&mut base, &list, &sel);
+            serde_json::to_string(&base).unwrap_or_else(|_| "[]".to_string())
+        }),
+    );
+
     // 元素全部属性名（`|` 分隔）→ shim `getAttributeNames`/`hasAttributes`/`dataset` 枚举。R3002：latest-wins
     // ——在快照基底上应用 pending SetAttr/RemoveAttr（同 sel），反映同批 setAttribute/removeAttribute/dataset 设删
     // （旧纯快照 → stale，R2995 限制 ③）。
