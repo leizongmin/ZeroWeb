@@ -10096,6 +10096,10 @@
               try {
                 __zw_insert_adjacent_text(refNode.__zwSelector, 'beforebegin',
                   String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
+                // d58（wptfyi-editing 刀 D，2026-11-19）：AdjacentText wire 已落引擎的
+                // 打记——part01 join D3 序列化 copy 守卫消费防双插（plain 摘离树 join
+                // 时 R5450 wire 与 copy 同位双插，语料 `abcdefdef` 复制形 18 键 P2F）。
+                newNode.__zwAdjTextWired = true;
               } catch (_eTxtMvW) {}
               try {
                 var _txtMvKids = _childNodeList(sel, handle);
@@ -10674,6 +10678,8 @@
                   try {
                     __zw_insert_adjacent_text(sel, 'beforeend',
                       String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
+                    // d58：同上——appendChild 变体 wire 打记（copy 守卫消费防双插）。
+                    newNode.__zwAdjTextWired = true;
                   } catch (_eTxtApW) {}
                   try {
                     var _txtApKids = _childNodeList(sel, handle);

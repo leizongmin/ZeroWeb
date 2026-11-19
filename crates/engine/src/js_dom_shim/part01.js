@@ -12028,6 +12028,14 @@
         } catch (_eShellPos) {
           try { _shellDst.appendChild(_shP); } catch (_eShellPos2) { return false; }
         }
+        // d58（wptfyi-editing 刀 D，2026-11-19）：R5450 AdjacentText wire 打记消费——
+        // plain 摘离树 join（C-view world-sync 重建的补偿子树）里文本壳经摘离
+        //（tombstone）再落位时，本地 insertBefore/appendChild 的 R5450 跨父移动臂
+        // **已**按同位记 AdjacentText wire；此处序列化 copy 再插即引擎侧复制形
+        //（input-events join 族 `abcdefdef` 18 键 P2F，d58 wire 批实证 op6+op7
+        // 同位同文）。打记由 part04 两个 R5450 wire 臂置位、本处消费即清；fresh
+        // 文本/元素壳无打记，copy 照旧（left-paragraph-and-right-line 363 案域）。
+        if (_shP.__zwAdjTextWired === true) { _shP.__zwAdjTextWired = false; continue; }
         if (_shP.__zwHandle || _shP.__zwSelector
           || typeof _zwPosSelOf !== 'function' || typeof __zw_insert_adjacent_html !== 'function') continue;
         // 等值降级裸文本壳（2026-10-31）：shim 文本节点无 outerHTML（此前空串
