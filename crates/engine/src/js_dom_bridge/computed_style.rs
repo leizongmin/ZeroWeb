@@ -3652,19 +3652,30 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
 }
 
 /// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：
-/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值；property=all
-/// 仅在其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
+/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值
+/// （delay 非初值时 duration 位强制输出 `0s`——两位 `<time>` 消歧，否则单 `1s`
+/// 会重解析为 duration）；property=all 仅在其余 longhand 全初值时显（避免空串）。
+/// `transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
 /// 默认（空列表）→`"all"`；`transition:none`→`"none"`。5 longhand 列表等长（`expand_transition`
 /// 保证），逐索引 zip 后逗号连接；behavior 非初值（`allow-discrete`）按文法序尾附。
 /// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
 fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
-    let n = style.transition_property.len();
+    // 五 longhand 列表可不等长（如仅设 transition-delay——computed 列表相互独立），
+    // 按最长列表逐索引 zip，缺位取各 longhand 初值（css-transitions-1 §2 longhand
+    // 定义 + §serializing-shorthand-values）。
+    let n = style
+        .transition_property
+        .len()
+        .max(style.transition_duration.len())
+        .max(style.transition_timing_function.len())
+        .max(style.transition_delay.len())
+        .max(style.transition_behavior.len());
     if n == 0 {
         return "all".to_string();
     }
     (0..n)
         .map(|i| {
-            let prop = style.transition_property[i].as_str();
+            let prop = style.transition_property.get(i).map(String::as_str).unwrap_or("all");
             let dur = format_num(style.transition_duration.get(i).copied().unwrap_or(0.0), "s");
             let tf = style
                 .transition_timing_function
@@ -3678,7 +3689,9 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
             if prop != "all" || all_rest_initial {
                 parts.push(prop.to_string());
             }
-            if dur != "0s" {
+            // delay 非初值时 duration 位强制（0s）：<time> 位序消歧
+            // <https://drafts.csswg.org/css-transitions-1/#serializing-shorthand-values>
+            if dur != "0s" || delay != "0s" {
                 parts.push(dur);
             }
             if tf != "ease" {
