@@ -2,84 +2,72 @@
 
 **版本**: v2.0
 **日期**: 2026-11-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 570 收口（**守成
-巡查轮 + 基线恒等第 2 连 NEW 0/GONE 0/
-flips 0 + s569 全桥收养定谳轮 b569 预
-判精确兑现 + 同值重建判代新证轮
-Compiling ×6 字节恒 + 七哨全持位轮**
-）——join **stable 8514（8305P/202F/6T
-/1U）disagree 0 + l1only 0 + l2only 0
-**（raw 双腿 8516/8516）；vs 基线
-s569 stable（8514）**NEW 0 + GONE 0 +
-flips 0＝基线恒等第 2 连**（s569 第 1
-连）＝纯 docs 窗行为面零位移。**s569
-全桥收养定谳**：wait-bridge4h 让位窗
-72 min 后 10:06:39 判净，b569＝**
-1727P/0F rc=0（filtered 2487）＝预判
-b568（1726）+NEW 1（exec 门钉
-1383ac371 在窗核实）+GONE 0 精确兑现
-**，刀 G 归因不触发，bridge.runner
-md5 f0ebaf5b 恒同二进制，**全桥基线
-换 b569 实测值**。**runner 判代新证
-（本流首例）**：窗 code ×0 纯 docs
-（s570 窗 5ca52641c→d120efc18 15
-commit 全列核实）但 leg1 Compiling
-×6（product-version→net→
-page-runtime→webview→runner）——
-pre=mid=post **全恒 f0ebaf5b
-/128,508,616 字节恒＝同值重建非换代
-**，根因＝product_version.rs
-rerun-if-changed=.git/HEAD|logs/HEAD
-（HEAD docs-only 位移触发 build.rs 重
-跑）＋ZERO_BUILD_COMMIT 常量不被
-runner 链接图引用（链接期死代码剥离
-，二进制内嵌串双 hash 0 命中实证）——
-**判代规则精化入规：换代以 mid md5
-为准，Compiling 行数≠换代；「必换代
-」预判只按 code 面触链接图，docs-only
-窗预期＝同值重建**（与 rendering 流
-kb52 对偶观察跨流互证；开工「不重编
-」预判表述作废如实记账）。七哨复核
-全持位：dialog 哨常规连轮第 4 轮双 P
-；password 哨第 9 轮持位（select-event
-279 键 8 非 P 形与 s569 同口径全同，
-password 键 0F/整文件键 0）；onblur
-组常规连轮第 2 轮 8P/2F（F 集 ≡
-s559 IDENT）；mpreload 哨第 32 轮零
-翻红；waapi 哨 picker-icon P 第 91 轮
-/checkmark F/F 恒形；focus-dynamic
-121 键第 50 轮零再现；族带全 5 键回
-潮形第 3 轮持位（detailed T＋End/Home
-/PageDown/PageUp F×4）；双发伪影 2
-键双腿各 ×2 恒；rc=2/2 惯例 stack
-overflow 0/0。本轮流程记号：waiter
-绝对路径启动＋grep 旧轮路径残留为零
-校验＋chmod +x 核验三件套照规。
-**挂用户门维持**：GB-20261114-VIDEO
-+ GB-20261031（簇 D）+ s137＋对端
-ZRG-2026-11-18-01（不重复通知）。
-下一步：**守成巡查 s571**（**对账基线
-换 s570 stable 8514**：s571 开工 pull
-捕获批全列核实，runner 预判按 code 面
-重估（docs-only 窗＝同值重建形；code
-刀窗＝必换代）＋若带 js_dom_bridge
-新钉则全桥 NEW/GONE 对账（基线 b569
-1727P/0F）；dialog 常规连轮第 5 轮；
-password 哨第 10 轮；mpreload 哨第 33
-轮；waapi 哨第 92 轮；focus-dynamic
-第 51 轮；onblur 组第 3 轮；族带第 4
-轮观察；双发伪影恒；爆栈 0/0 惯例；
-起腿一律 v3.1 浸泡门＋grep 旧轮路径
-残留为零校验＋chmod +x 核验）+ 候门
-决项等待用户拍板（video P1+P2 立项 /
-簇 D A2 立项 / s137；对端
-ZRG-2026-11-18-01 归用户）；
-rendering 流 dialog 16 红块协同面（归
-rendering 流记账）。门开随批落预案不
-变：簇 D 开 → customizable-select-
-styles.css ×47 随批落。账本=evidence/
-2026-11-19-m2s570-bridge-adopted-
-baseline-identical-samevalue-rebuild.md
+**状态**: Active——M2 切片 571 收口（**空窗
+巡查轮 pull 零捕获 0 commit + 同值重建
+判代新规首用申报=实测轮 Compiling ×6
+字节恒 f0ebaf5b + 族带单腿吞形归因轮
+GONE 4 全落带内 solo ×2 回位定谳 + 六
+哨持位轮**）——join **stable 8510
+（8305P/198F/6T/1U）disagree 0 +
+l1only 1 + l2only 4**（raw 双腿
+8513/8516）；vs s570 stable（8514）
+**GONE 4 + NEW 0 + flips 0＝位移全落
+族带 optional 变体子测键，非带非哨键
+逐键零差**。**归因三证**：①同二进制
+runner pre=mid=post 恒 f0ebaf5b
+/128,508,616 ②空窗 code ×0（s571 窗
+＝4b513af17 钉扎空窗，本流推送后对端
+未落窗首例）③solo ×2 全数回位（4 子
+测键 Fail 红池形＝s553 在册形）——leg1
+发射形＝**harness-no-report 超时形
+（pending:4 零报告）**＝s554 在册四形
+谱成员，**判族带时序谱内单腿相位非码
+面非新极形**，升级路径不触发。**同值
+重建新规首用申报=实测**：HEAD 两 docs
+commit 位移预判 Compiling ×N＋md5 恒
+，实测 leg1 Compiling ×6＋pre=mid=post
+恒 f0ebaf5b、leg2 Fresh ×0（BUILD_COMMIT
+常量死代码剥离不入字节，判代以 mid
+md5 为准）。流程记号：**sed 基线误引
+坑第二次复现被开跑前校验拦下**（两侧
+基线名同改致 comm/join 左右同源，净版
+修正；s569 同类教训），起腿三件套照
+规。七哨复核：六哨全持位——dialog 第
+5 轮双 P；password 第 10 轮持位
+（279 键 8 非 P 形恒）；onblur 组第 3
+轮 8P/2F（F 集 ≡ s559 IDENT）；
+mpreload 第 33 轮零翻红；waapi 第 92
+轮 picker P/checkmark F 恒形；
+focus-dynamic 第 51 轮 121/121 零再现
+；族带**分裂形第 1 轮**（detailed T 持
+位 stable＋optional 4 子测 stable 外，
+回潮判定挂 s572）；双发伪影 2 键双腿
+各 ×2 恒；rc=2/2 惯例 stack overflow
+0/0。**挂用户门维持**：GB-20261114-
+VIDEO + GB-20261031（簇 D）+ s137＋
+对端 ZRG-2026-11-18-01（不重复通知
+）。下一步：**守成巡查 s572**（**对账
+基线换 s571 stable 8510**：开工 pull
+捕获批全列核实（空窗后首个新窗），
+runner 预判按 code 面＋同值重建规重
+估，若窗带 js_dom_bridge 新钉则全桥
+NEW/GONE 对账（基线 b569 1727P/0F）
+；dialog 第 6 轮；password 第 11 轮；
+mpreload 第 34 轮；waapi 第 93 轮；
+focus-dynamic 第 52 轮；onblur 组第 4
+轮；**族带第 5 轮＝分裂形回潮判定**
+（optional 4 子测回 stable＝回潮形）；
+双发伪影恒；爆栈 0/0 惯例；起腿三件
+套＋sed 复制后 grep 基线引用面两侧核
+对开跑前执行）+ 候门决项等待用户拍板
+（video P1+P2 立项 / 簇 D A2 立项 /
+s137；对端 ZRG-2026-11-18-01 归用户
+）；rendering 流 dialog 16 红块协同面
+（归 rendering 流记账）。门开随批落预
+案不变：簇 D 开 → customizable-
+select-styles.css ×47 随批落。账本=
+evidence/2026-11-19-m2s571-empty-
+window-band-single-leg-swallow.md
 > **◆ 更正十四（2026-11-19 s567 push 阶段
 > 开工）——pull --rebase 捕获批 ×38 全列
 > 核实（f566ee431→900a445e4，对端多流混
