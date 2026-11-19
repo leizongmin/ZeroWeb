@@ -2,100 +2,101 @@
 
 **版本**: v2.0
 **日期**: 2026-11-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 573 收口（**同
-session 连轮（s572 收口即布置接管）+
-runner 必换代 ×2 连兑现轮（Compiling
-×6 86389795→e0015ad4）+ 族带谱内回
-摆兑现轮（optional 4 子测 Fail 双腿回
-带＝红池形回归 NEW 4、双整文件键
-GONE、detailed 整文件键首现 disagree
-）+ 全桥 b570 持位轮 + 七哨全持位轮*
-*）——join **stable 8513（8305P/202F
-/5T/1U）disagree 1 + l1only 0 +
-l2only 0**（raw 双腿 8516/8516）；vs
-s572 stable（8511）**NEW 4 + GONE 2 +
-flips 0＝位移全落族带 home-end 族，
-非带非哨键逐键零差**。**窗底账**：
-s573 窗＝a38a020f6→c61abb750＝pull
-捕获 ×6（code ×1＝925a921c4
-fix(engine) getAnimations 浮出面＋
-transition 管辖归并/取消收窄＋
-float/position 离散接入＋js_dom_shim
-part04/05 运行面；docs ×5）＋本流
-s572 两 docs commit。**runner 必换代
-×2 连兑现**：leg1 Compiling ×6
-（product-version→net→engine→
-page-runtime→webview→runner，单
-crate 码面与 925a921c4 一致）pre
-86389795→mid=post **e0015ad4**；leg2
-Fresh ×0。**零桥测钉**（925a921c4 桥
-测 diff ×0）→ 全桥对账不触发，
-**b570（1728P/0F）基线持位**。**族带
-第 6 轮＝谱内回摆兑现**：s572 预判三
-形中「optional 子测键回带＝谱内回摆
-」精确兑现——4 子测键（band566 在册
-「Behavior of」族）双腿 **Fail** 回带
-＝红池形回归（s553/s570 在册形），
-optional 整文件键双腿零发射（GONE）
-；multiple:/single: 2 子测键跨轮持位
-恒；**新扭＝detailed 整文件键首现
-disagree**（leg1 Timeout × leg2 Fail
-，多轮 stable T 持位后首次异相）——
-s574 起挂 solo 定相观察（s476/s480
-先例：持续两轮异相则 solo 双跑定相
-）。**非码面判定**：窗码面全在
-transition/getAnimations/shim JS 面，
-零 select/keyboard 面；非带键逐键零
-差自证，升级路径不触发。流程记号：
-**sed 基线误引坑第三次复现于布置阶
-段被开跑前校验拦下**（换装规则自噬
-刚换好的基线名致左右同源，净版直写
-analyze.sh 修正；三现定规：**基线换
-装一律净版直写，不再增量 sed**），
+**状态**: Active——M2 切片 574 收口（**同
+session 第三轮连跑 + runner 必换代 ×3
+连兑现轮（Compiling ×6 e0015ad4→
+41ce096c）+ 族带再分裂轮（leg1 红池
+×leg2 整文件＝l1only 4+l2only 1）+
+detailed 异相第 2 连→solo 定相兑现轮
+（detailed ×2 确定性红池＝腿形
+sweep 上下文相位非码面）+ 44536e067
+三零回归跨流互证 + 七哨全持位轮**）
+——join **stable 8509（8305P/198F/5T
+/1U）disagree 1 + l1only 4 + l2only
+1**（raw 双腿 8516/8513 不对称＝分
+裂形）；vs s573 stable（8513）**NEW
+0 + GONE 4（＝4 子测键出带）+ flips
+0，非带非哨键逐键零差**。**窗底账**
+：s574 窗＝c61abb750→41b87ac23＝
+pull 捕获 ×2（code ×1＝44536e067
+feat(engine) d57 刀 C-view 查询粘性
+canonical＋刀 A 重放，对端 editing
+流；docs ×1＝R5824）＋本流 s573 两
+docs commit。**runner 必换代 ×3 连兑
+现**：Compiling ×6（product-version
+→net→engine→page-runtime→webview→
+wpt-runner）pre e0015ad4→mid=post
+**41ce096c**；leg2 Fresh ×0。**零桥
+测钉**（44536e067 桥测 diff ×0）→
+**b570（1728P/0F）基线持位**；
+**44536e067 行为面＝非带键零位移＝
+对端「三零回归」跨流互证**。**族带
+第 7 轮＝再分裂**：s573 红池形单轮
+寿命未持住，leg1 红池 6 子测 Fail ×
+leg2 整文件 Timeout+部分子测（s572
+形）；multiple:/single: 2 键双腿恒
+跨三轮持位；**detailed 整文件键异相
+第 2 连且同相序**（两轮均 leg1 T×
+leg2 F）→ **solo 定相兑现**：
+detailed ×2＝确定性完整 4 子测 Fail
+（红池形，两跑逐字节同形）＝**腿上
+整文件 T/F 两形 solo 均不重现＝
+sweep 8-job 并发上下文相位，非码面
+非文件内在行为**；optional ×3＝2 静
+默退出（仅启动一行 rc=1）+1 完整 4
+子测 Fail（s571 solo 同形）＝**solo
+语境自身不稳，静默形≈s554 0-declared
+谱内候选**挂 s575 复现观察。**判决
+：族带全形在册谱内摆动＋solo 定谳非
+码面，升级路径（单页探针＋对端
+pre-knife 反事实 A/B 前置申请）暂不
+触发——s575 再分裂持续则作候门决项
+呈报用户，不自主升级**。流程记号：
+**基线换装净版直写定规首次使用即干
+净**（analyze.sh 逐行重写，路径 sed
+仅涉三无基名脚本；误引坑未复现），
 起腿三件套照规。七哨复核：七哨全持
-位——dialog 第 7 轮双 P；password
-第 12 轮持位（select-event 279 键 8
-非 P 恒形）；onblur 组第 5 轮 8P/2F
+位——dialog 第 8 轮双 P；password
+第 13 轮持位（select-event 279 键 8
+非 P 恒形）；onblur 组第 6 轮 8P/2F
 （F 集 ≡ s559 IDENT）；mpreload 第
-35 轮零翻红；waapi 第 94 轮 picker
-P/checkmark F 恒形（**getAnimations
-浮出面窗零位移**＝shim 行为面未及
-哨键）；focus-dynamic 第 53 轮
-121/121 零再现；族带**回摆形第 1 轮
-＋detailed 异相第 1 轮**（持位判定挂
-s574）；双发伪影 2 键双腿各 ×2 恒；
+36 轮零翻红；waapi 第 95 轮 picker
+P/checkmark F 恒形；focus-dynamic
+第 54 轮 121/121 零再现；族带**分裂
+形持续第 2 轮＋detailed 异相第 2 轮
+＋solo 定相新证**（持位/升级判定挂
+s575）；双发伪影 2 键双腿各 ×2 恒；
 rc=2/2 惯例 stack overflow 0/0。
 **挂用户门维持**：GB-20261114-VIDEO
 + GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
-下一步：**守成巡查 s574**（**对账基
-线换 s573 stable 8513＋全桥基线 b570
+下一步：**守成巡查 s575**（**对账基
+线换 s574 stable 8509＋全桥基线 b570
 1728P/0F 持位**：开工 pull 捕获批全
 列核实，runner 预判按 code 面＋同值
 重建规重估，若窗带 js_dom_bridge 新
-钉则全桥 NEW/GONE 对账（基线 b570，
-键基线 b570.keys 在 /tmp/s572）；
-dialog 第 8 轮；password 第 13 轮；
-mpreload 第 36 轮；waapi 第 95 轮；
-focus-dynamic 第 54 轮；onblur 组第
-6 轮；**族带第 7 轮＝回摆后形态判定
-**（4 子测 Fail 双腿恒＝红池形持位
-确立；整文件键回带＝谱内再摆；
-**detailed 整文件键第 2 轮异相观察
-，持续则 solo 双跑定相**）；双发伪
-影恒；爆栈 0/0 惯例；起腿三件套＋
-sed 复制后 grep 基线引用面两侧核对
-开跑前执行（基线误引坑三现，**净版
-直写为首选**））+ 候门决项等待用户
-拍板（video P1+P2 立项 / 簇 D A2 立
-项 / s137；对端 ZRG-2026-11-18-01
-归用户）；rendering 流 dialog 16 红
-块协同面（归 rendering 流记账）。门
-开随批落预案不变：簇 D 开 →
-customizable-select-styles.css ×47
-随批落。账本=evidence/2026-11-19-
-m2s573-band-subtest-swing-back-
-detailed-first-disagree.md
+钉则全桥 NEW/GONE 对账（基线 b570
+，键基线 b570.keys 在 /tmp/s572）；
+dialog 第 9 轮；password 第 14 轮；
+mpreload 第 37 轮；waapi 第 96 轮；
+focus-dynamic 第 55 轮；onblur 组第
+7 轮；**族带第 8 轮＝分裂形持续判定
+**（再分裂持续两轮→升级路径前置申
+请作候门决项呈报用户，不自主升级）
+；**optional solo 静默形复现观察**
+（solo 复跑 ×2 记形）；双发伪影恒
+；爆栈 0/0 惯例；起腿三件套照规（
+基线换装净版直写为首选））+ 候门决
+项等待用户拍板（video P1+P2 立项 /
+簇 D A2 立项 / s137；对端
+ZRG-2026-11-18-01 归用户）；
+rendering 流 dialog 16 红块协同面（
+归 rendering 流记账）。门开随批落预
+案不变：簇 D 开 → customizable-
+select-styles.css ×47 随批落。账本=
+evidence/2026-11-19-m2s574-band-
+resplit-solo-phasing-detailed-
+deterministic.md
 > **◆ 补账（2026-11-19 s573 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×2
 > 全列核实（c61abb750→44536e067）：
