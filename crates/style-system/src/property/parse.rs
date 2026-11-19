@@ -325,9 +325,18 @@ fn grid_content_track_keyword(value: &str) -> bool {
     value.eq_ignore_ascii_case("min-content") || value.eq_ignore_ascii_case("max-content")
 }
 
-/// CSS Grid track breadths accept non-negative length-percentage values.
+/// CSS Grid track breadth 的 <length-percentage> 文法位（含 calc() 臂）。
 /// https://drafts.csswg.org/css-grid-2/#typedef-track-breadth
 /// https://drafts.csswg.org/css-values-4/#lengths
+///
+/// 负值在 parse 期接受（css-grid-2 `<track-breadth>` 文法本身允许负
+/// <length-percentage>——与 <flex> 显式非负不同，后者仍走
+/// [`grid_non_negative_number_with_suffix`] 门），used/computed 期按
+/// range handling 钳制（WPT css-typed-om grid-template-columns-rows /
+/// grid-auto-columns-rows 页负长/负百分形，声明面期望保留、computed
+/// 期钳 0）。layout 侧 [`crate::property::parse`] 的字串再解析消费方
+/// （layout-engine converter）有独立更严门，负值轨道在其回退 auto，
+/// 不产生渲染面越界。
 fn grid_length_percentage_supported(value: &str) -> bool {
     // css-grid-2 §7.2 `<track-breadth>` 只接受 <length-percentage>/<flex>/内容关键字/auto；
     // 共享 parse_length 会把 border-width 关键字 thin/medium/thick 映射为 Px(1/3/5)
@@ -335,6 +344,12 @@ fn grid_length_percentage_supported(value: &str) -> bool {
     // 的 `*_length_is_valid` 模式），避免 `grid-template-columns: medium 1fr` 被误接受。
     if matches!(value.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
         return false;
+    }
+    // calc() 臂（css-values-4 §10.10 math 函数在 <length-percentage> 文法位按
+    // 结果型别裁决，parse 期不解析具体数值）：'calc(0px + 0em)' 形 WPT
+    // css-typed-om grid 两页实测面。
+    if values::parse_calc(value).is_some_and(|expr| values::calc_expr_is_length_percentage(&expr)) {
+        return true;
     }
     let Some(length) = values::parse_length(value) else {
         return false;
@@ -347,7 +362,7 @@ fn grid_length_percentage_supported(value: &str) -> bool {
         | LengthValue::Vw(number)
         | LengthValue::Vmin(number)
         | LengthValue::Vmax(number)
-        | LengthValue::Percentage(number) => number.is_finite() && number >= 0.0,
+        | LengthValue::Percentage(number) => number.is_finite(),
         _ => false,
     }
 }
@@ -1682,5 +1697,29 @@ mod tests {
         );
         assert!(parse_grid_template_track_list("[auto] 1fr").is_none());
         assert!(parse_grid_template_track_list("[span] 1fr").is_none());
+    }
+
+    /// 刀 TO-GRID face B（css-grid-2 §track-breadth）：负 <length-percentage>
+    /// parse 期合法（used/computed 期钳制，WPT typed-om range handling）；calc()
+    /// <length-percentage> 臂（css-values-4 §10.10）。<flex> 负值恒拒不变。
+    #[test]
+    fn parse_grid_track_list_negative_and_calc_togrid() {
+        assert!(parse_grid_template_track_list("-3.14em").is_some());
+        assert!(parse_grid_template_track_list("-3.14%").is_some());
+        assert!(parse_grid_template_track_list("calc(0px + 0em)").is_some());
+        assert!(parse_grid_auto_track_list("-3.14em").is_some());
+        assert!(parse_grid_auto_track_list("calc(0% + 0%)").is_some());
+        assert!(parse_grid_auto_track_list("minmax(-5px, 1fr)").is_some());
+        assert!(parse_grid_template_track_list("fit-content(calc(10px + 2%))").is_some());
+        // <flex> 负值恒拒（css-grid-1 §7.2.3 fr 非负）。
+        assert!(parse_grid_template_track_list("-3.14fr").is_none());
+        // 混型 calc 恒拒（角度/纯 number 不是 <length-percentage>）。
+        assert!(parse_grid_template_track_list("calc(10deg + 1turn)").is_none());
+        assert!(parse_grid_template_track_list("calc(1 + 2)").is_none());
+        // 病态 calc 恒拒。
+        assert!(parse_grid_template_track_list("calc(nonsense)").is_none());
+        // 合法正值与既有拒绝面不回退。
+        assert!(parse_grid_template_track_list("10px 1fr").is_some());
+        assert!(parse_grid_template_track_list("medium 1fr").is_none());
     }
 }

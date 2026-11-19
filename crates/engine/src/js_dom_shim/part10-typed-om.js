@@ -1476,6 +1476,13 @@ return Ctor;
     // fit-content() 形不在 typed 分型域，get 走 opaque 回落）。
     'grid-auto-columns':['auto','min-content','max-content','<length>','<percentage>','<flex>'],
     'grid-auto-rows':['auto','min-content','max-content','<length>','<percentage>','<flex>'],
+    // 刀 TO-GRID face B（css-grid-2 §track-sizing）：template 轨道表——'none'
+    // 关键字 + <length>/<percentage>/<flex> typed 分型（WPT grid-template-
+    // columns-rows 页 runPropertyTests 全集）；line-name/repeat 组合走 opaque
+    // 往返（set 侧 kind=opaque 恒放行 + CSSOM parse 期接受）。负 flex 由
+    // _zwOmValidateSet 通用负 flex 门拒（表无 <negative-flex>）。
+    'grid-template-columns':['none','<length>','<percentage>','<flex>'],
+    'grid-template-rows':['none','<length>','<percentage>','<flex>'],
     'grid-auto-flow':['row','column'],
     // grid 行列放置长手（css-grid-2 §line-placement；WPT css-typed-om
     // grid-start-end 页仅 auto 入 typed 分型域，<grid-line> 其余形 opaque）。
@@ -1711,7 +1718,11 @@ return Ctor;
     'scroll-padding-block-end':['<percentage>','<length>']
   };
   // 已知属性扩面（opaque roundtrip set 面；语料 225 之外常见属性）。
-  var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'grid-template-columns': 1, 'grid-template-rows': 1, transition: 1, animation: 1 };
+  // 刀 TO-GRID face B：grid-template-columns/rows 升级白名单表（typed 分型面
+  // ——WPT grid-template-columns-rows 页 CSSUnitValue/CSSKeywordValue 期望）；
+  // scroll-padding 简写入集（testUnsupportedValue opaque 往返面——多分量值
+  // Chrome 同形不解析）。
+  var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'scroll-padding': 1, transition: 1, animation: 1 };
 
   // ===== 12. StylePropertyMap =====
   // A/B 快照二进制 provenance 指纹（zw-typedom-listvalued-2026-11-17-r2）：刀 H
