@@ -398,6 +398,54 @@ fn t84_named_access_late_attribute_grant() {
         "setAttribute('id') 授名的元素须在 window.<name> 集合中，实测 {pf_d:?}"
     );
 
+    // R3 复核 RF2 钉 e：M 域 plain 产物 IDL `.id=` 直写（`_zwIdSet` 属性槽直写，
+    // 不经 setAttribute）事后授名——同族漏登记。取面同钉 d（子树下钻臂 plain
+    // 返回，路由钉 `__peKind`）。`.name=` 无 plain accessor（原型面经
+    // setAttribute 已由钉 d 覆盖），id 是唯一残余直写面。
+    run(
+        &mut wv,
+        r#"
+        function collHas(c, el) {
+            for (var i = 0; i < c.length; i++) { if (c.item(i) === el) return true; }
+            return false;
+        }
+        var fd84 = document.getElementById('feed');
+        fd84.innerHTML = '<div data-k="wrap84b"><span data-k="pe84"></span></div>';
+        var pe = fd84.querySelector('div[data-k="wrap84b"] span[data-k="pe84"]');
+        globalThis.__peKind = pe ? (pe.__zwHandle ? 'handle' : 'plain') : 'null';
+        pe.id = 'pid84';
+        var d7 = document.createElement('div');
+        document.body.appendChild(d7);
+        d7.setAttribute('id', 'pid84');
+        var c5 = window.pid84;
+        globalThis.__peLen = c5 == null ? 0 : (c5.length != null ? c5.length : 1);
+        globalThis.__peHasP = c5 ? collHas(c5, pe) : false;
+        globalThis.__peHasD = c5 ? collHas(c5, d7) : false;
+        globalThis.__pe = pe;
+        globalThis.__d7 = d7;
+        "#,
+    );
+    let pe_kind = probe(&mut wv, "__peKind");
+    assert_eq!(
+        pe_kind, "plain",
+        "子树下钻臂命中须按 plain 代理返回（RF2 路由钉），实测 {pe_kind:?}"
+    );
+    let pe_len = probe(&mut wv, "__peLen");
+    assert_eq!(
+        pe_len, "2",
+        "下钻臂 plain 代理 IDL .id= 授名 + 竞名须双元素集合，实测 {pe_len:?}"
+    );
+    let pe_f = probe(&mut wv, "__peHasP");
+    assert_eq!(
+        pe_f, "true",
+        "plain 代理须在 window.<id> 集合中（IDL 直写尾登记），实测 {pe_f:?}"
+    );
+    let pe_d = probe(&mut wv, "__peHasD");
+    assert_eq!(
+        pe_d, "true",
+        "setAttribute('id') 授名的元素须在 window.<id> 集合中，实测 {pe_d:?}"
+    );
+
     // flush 后语义保持（落 host 后 named 解析不受 materialize 影响）。
     wv.flush_pending_shared_mutations().expect("flush 落 host 成功");
     let after = run(
@@ -419,6 +467,13 @@ fn t84_named_access_late_attribute_grant() {
           && (function () {
               for (var i = 0; i < window.pfname84.length; i++) {
                 if (String(window.pfname84.item(i).tagName || '').toUpperCase() === 'FORM') return true;
+              }
+              return false;
+            })()
+          && collHas(window.pid84, globalThis.__d7)
+          && (function () {
+              for (var i = 0; i < window.pid84.length; i++) {
+                if (String(window.pid84.item(i).tagName || '').toUpperCase() === 'SPAN') return true;
               }
               return false;
             })()

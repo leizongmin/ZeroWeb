@@ -23269,10 +23269,19 @@
     var sv = v == null ? '' : String(v);
     var attrs = this[_zwAttrsSlotKey];
     _zwMElQIdxInvalidate(this);
+    // T84（R3 RF2）：M 域 plain 产物 IDL `.id=` 直写臂补登 named 候选集——
+    // 本臂属性槽直写不经 setAttribute（`_naTail` 不可达），下钻臂/noWire 槽/
+    // CE-hit plain 返回持有的解析产物事后 `.id=` 授名后 `_zwNACollectMatches`
+    // 候选集扫不到（基础全量扫描经同槽 getAttribute 可命中）。两写端尾调
+    // `_zwPANameMark`，非 pending 元素由其 pending 闸滤除（构造期 `snap.id`
+    // 重赋值同经本 setter，彼时未入 pending 集，闸即空转）。`.name=` 无 plain
+    // accessor（原型面访问器经 setAttribute 已覆盖），id 是唯一 IDL 直写面。
+    // 登记点契约见 `_zwPANamedPending` 声明。
     for (var i = 0; i < attrs.length; i++) {
-      if (attrs[i].name === 'id') { attrs[i].value = sv; return; }
+      if (attrs[i].name === 'id') { attrs[i].value = sv; _zwPANameMark(this); return; }
     }
     attrs.push({ name: 'id', value: sv });
+    _zwPANameMark(this);
   }
   function _zwClassNameGet() {
     var attrs = this[_zwAttrsSlotKey];
