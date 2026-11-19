@@ -92,6 +92,40 @@ rendering 流记账）。门开随批落预案不变：
 簇 D 开 → customizable-select-styles.css
 ×47 随批落。账本=
 evidence/2026-11-20-m2s582-zero-displacement-split-hold2-a528acd8-convergence5-mpreload-hold7.md
+> **◆ 补账（2026-11-20 s583 接管续核）
+> ——跨 session 接管开工核（pull 已
+> 最新；05:18 捕获后窗再进 ×7，全列
+> 核实 9008424b7→ad9f5f579）：code
+> ×2＝8d947bf96 M 域 IDL .id= 直写
+> 臂 named 候选集登记（part03 +11）
+> ＋7dae507ef 刀 SV2 typed-om 矩阵
+> 面（part05 +4/part10-typed-om
+> +199）；docs ×4＝c0e71b8c4
+> learnings 重建＋fffb6c0e4/3fe3a845d
+> wptfyi-css 刀 SV2 收账两笔＋
+> （merge 复合）21b93a5a9/ad9f5f579
+> PR #313 merge ×2。**s583 全窗扩定
+> ＝2483ee96e→ad9f5f579：18 commits
+> （non-merge ×16＝code ×6＋test ×1
+> ＋docs ×9＋merge ×2）**＝重码窗
+> （6 笔 engine fix：overlay 增量合
+> 并/NA 收窄 ×1、named 候选集登记
+> ×3、WAAPI face ×1、typed-om 矩阵
+> ×1）＝**runner 必换代维持且 Comp
+> iling 档数预期高于纯 shim 小刀**；
+> named 候选集/overlay 修复落
+> DOM 授名面＝**本轮 sweep 对 s582
+> stable 8510 可能真位移（NEW/GONE
+> /flips 不再预期逐零）**；shim JS
+> 面×6 全不触 js_dom_bridge.rs＝
+> 全桥 b582 零噪声预期维持。基线/哨
+> 资产核对 diff 0（8510 keys＝
+> 8305P/198F/6T/1U、b582 1731、
+> band 5、mpreload 15、se.577 8、
+> ob.s559 2、fd121 121 全数合）；
+> waiter 在循未开窗（05:15 臂，
+> deadline≈07:45，对端 runner 压
+> load≈3.2），超时按 s580 预案重臂。
 > **◆ 补账（2026-11-20 s583 开工捕获）
 > ——开工 pull --rebase 捕获批 ×2
 > 全列核实（5093035fc→9008424b7，
