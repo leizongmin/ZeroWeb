@@ -10505,16 +10505,132 @@
   if (!globalThis.CSS) globalThis.CSS = {};
   if (!CSS.percent) CSS.percent = function (v) { return { value: +v, unit: 'percent' }; };
   if (!CSS.deg) CSS.deg = function (v) { return { value: +v, unit: 'deg' }; };
+  // 刀 CO：Typed OM 色值通道验证/归一（css-typed-om-1 §cssrgb/§csshsl/§csshwb/
+  // §csslch/§csslab 构造步与属性步；判据逐行钉自语料 stylevalue-subclasses
+  // css{RGB,HSL,HWB,LCH,OKLCH,Lab,OKLab}.html 页源）。kind 语义：
+  //   numPct     — <number>|<percentage>：裸数归一 percent(×100)；CSS.number/
+  //                percent/math（叶子单位 ⊆ number|percent）保形；角度/长度/
+  //                undefined/非对象 SyntaxError（cssRGB invalid 全形）
+  //   pctOnly    — <percentage>：裸数归一 percent(×100)；percent 保形；
+  //                CSS.number/其他单位 SyntaxError（s/l/w/b/l/c/alpha 全面）
+  //   numPctKeep — <number>|<percentage>：裸数保 number（Lab a/b 面）
+  //   hueHsl     — 裸数 → deg；角度单位保形；长度/percent/CSS.number
+  //                SyntaxError；undefined → CSSKeywordValue('undefined')
+  //                （cssHSL hue 面）
+  //   hueStrict  — 仅角度 CSSNumericValue（HWB h）：裸数/undefined/非对象
+  //                TypeError（语料 assert_throws_js）；错单位 SyntaxError
+  //   hueNumAng  — 裸数 → deg；角度单位保形；CSS.number/长度/percent
+  //                SyntaxError（LCH h 面：CSS.number 拒）
+  // math 判定递归 values 叶子单位；DOMException SyntaxError 走 part10 同款
+  // `new (DOMException||Error)(msg,'SyntaxError')` 形。
+  if (!globalThis.__zwOmColorChannel) {
+    var _zwOmIsMathVal = function (v) {
+      return v != null && typeof v === 'object' && typeof v._zwOmKind === 'function' && v._zwOmKind() === 'math';
+    };
+    var _zwOmMathLeavesOk = function (v, ok) {
+      var vals = v.values;
+      if (!vals || !vals.length) return false;
+      for (var i = 0; i < vals.length; i++) {
+        var it = vals[i];
+        if (_zwOmIsMathVal(it)) { if (!_zwOmMathLeavesOk(it, ok)) return false; continue; }
+        if (it == null || typeof it.unit !== 'string' || ok.indexOf(it.unit.toLowerCase()) < 0) return false;
+      }
+      return true;
+    };
+    var _zwOmIsAngleU = function (u) { return u === 'deg' || u === 'rad' || u === 'grad' || u === 'turn'; };
+    globalThis.__zwOmColorChannel = function (kind, v) {
+      var synErr = function () {
+        throw new (globalThis.DOMException || Error)('Invalid color channel', 'SyntaxError');
+      };
+      if (kind === 'hueStrict') {
+        // HWB h：<angle> 必需（css-typed-om-1 §csshwb 构造步；语料裸数/undefined
+        // TypeError、px SyntaxError 面）。
+        if (typeof v === 'number' || v == null) throw new TypeError('CSSHWB h must be an angle CSSNumericValue');
+        if (_zwOmIsMathVal(v)) {
+          if (!_zwOmMathLeavesOk(v, ['deg', 'rad', 'grad', 'turn'])) synErr();
+          return v;
+        }
+        if (typeof v === 'object' && typeof v.unit === 'string' && _zwOmIsAngleU(v.unit.toLowerCase())) return v;
+        if (typeof v === 'object' && typeof v.unit === 'string') synErr();
+        throw new TypeError('CSSHWB h must be an angle CSSNumericValue');
+      }
+      if (kind === 'hueHsl' || kind === 'hueNumAng') {
+        if (v === undefined) {
+          // h 缺省 → CSSKeywordValue('undefined')（cssHSL hue 面钉定；LCH 同型
+          // optional-hue IDL 面 Chrome 同判，corpus 无 3 参 LCH 钉定取同臂）。
+          return new globalThis.CSSKeywordValue('undefined');
+        }
+        if (typeof v === 'number') return new globalThis.CSSUnitValue(v, 'deg');
+        if (_zwOmIsMathVal(v)) {
+          if (!_zwOmMathLeavesOk(v, ['number', 'deg', 'rad', 'grad', 'turn'])) synErr();
+          return v;
+        }
+        if (typeof v === 'object' && typeof v.unit === 'string') {
+          var hu = v.unit.toLowerCase();
+          if (_zwOmIsAngleU(hu)) return v;
+          return synErr();
+        }
+        return synErr();
+      }
+      if (typeof v === 'number') {
+        if (kind === 'numPctKeep') return new globalThis.CSSUnitValue(v, 'number');
+        return new globalThis.CSSUnitValue(v * 100, 'percent'); // numPct/pctOnly 裸数归一
+      }
+      if (_zwOmIsMathVal(v)) {
+        if (!_zwOmMathLeavesOk(v, ['number', 'percent'])) synErr();
+        return v;
+      }
+      if (typeof v === 'object' && typeof v.unit === 'string') {
+        var u = v.unit.toLowerCase();
+        if (u === 'percent') return v;
+        if (kind !== 'pctOnly' && u === 'number') return v;
+        return synErr();
+      }
+      return synErr();
+    };
+  }
+  // 色值构造器重写（刀 CO）：通道 accessor 带验证 setter（属性步非法赋值抛
+  // SyntaxError 且保值——cssRGB/cssHSL/cssHWB/cssLCH/cssLab 更新面）；alpha 缺省
+  // percent(100)（css-typed-om-1 三参构造 alpha 100% 面）。鸭子面兼容：字段仍可
+  // 经 `ch()` 读取（{value, unit} 形），part05 canvas fillStyle colorObject 消费
+  // 不变（_zwColorObjectToString）。
   if (!globalThis.CSSRGB) {
-    globalThis.CSSRGB = function (r, g, b, alpha) {
-      this.r = r; this.g = g; this.b = b; this.alpha = alpha != null ? alpha : 1;
+    globalThis.CSSRGB = function CSSRGB(r, g, b, alpha) {
+      this._zwOmR = globalThis.__zwOmColorChannel('numPct', r);
+      this._zwOmG = globalThis.__zwOmColorChannel('numPct', g);
+      this._zwOmB = globalThis.__zwOmColorChannel('numPct', b);
+      this._zwOmAlpha = alpha === undefined
+        ? new globalThis.CSSUnitValue(100, 'percent')
+        : globalThis.__zwOmColorChannel('pctOnly', alpha);
     };
   }
   if (!globalThis.CSSHSL) {
-    globalThis.CSSHSL = function (h, s, l, alpha) {
-      this.h = h; this.s = s; this.l = l; this.alpha = alpha != null ? alpha : 1;
+    globalThis.CSSHSL = function CSSHSL(h, s, l, alpha) {
+      this._zwOmH = globalThis.__zwOmColorChannel('hueHsl', h);
+      this._zwOmS = globalThis.__zwOmColorChannel('pctOnly', s);
+      this._zwOmL = globalThis.__zwOmColorChannel('pctOnly', l);
+      this._zwOmAlpha = alpha === undefined
+        ? new globalThis.CSSUnitValue(100, 'percent')
+        : globalThis.__zwOmColorChannel('pctOnly', alpha);
     };
   }
+  (function () {
+    var colorCtors = [
+      [globalThis.CSSRGB, [['r', '_zwOmR', 'numPct'], ['g', '_zwOmG', 'numPct'], ['b', '_zwOmB', 'numPct'], ['alpha', '_zwOmAlpha', 'pctOnly']]],
+      [globalThis.CSSHSL, [['h', '_zwOmH', 'hueHsl'], ['s', '_zwOmS', 'pctOnly'], ['l', '_zwOmL', 'pctOnly'], ['alpha', '_zwOmAlpha', 'pctOnly']]],
+    ];
+    for (var ci = 0; ci < colorCtors.length; ci++) {
+      var proto = colorCtors[ci][0].prototype;
+      var chans = colorCtors[ci][1];
+      for (var pi = 0; pi < chans.length; pi++) (function (prop, store, kind) {
+        Object.defineProperty(proto, prop, {
+          get: function () { return this[store]; },
+          set: function (v) { this[store] = globalThis.__zwOmColorChannel(kind, v); },
+          enumerable: true, configurable: true,
+        });
+      })(chans[pi][0], chans[pi][1], chans[pi][2]);
+    }
+  })();
   // color object → 规范化颜色串（null = 非对象不可转换）。分量语义：CSSRGB 通道 0-1 浮点 /
   // CSS.percent(v)（v/100）；CSSHSL h 角度（deg 原值）、s/l 0-1 浮点或 percent。alpha 越界钳
   // [0,1]（2d.fillStyle.colorObject.transparency 的 a:-1 → 全透明）。

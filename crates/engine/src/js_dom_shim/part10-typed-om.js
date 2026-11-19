@@ -903,31 +903,39 @@ return Ctor;
 
   // part05 已有 CSSRGB/CSSHSL（color 内部鸭子面）——不覆盖；本批补齐其余
   // 色值构造器（语料 stylevalue-subclasses 直接构造断言通道/序列化面）。
+  // 刀 CO：fields 升 [名, kind] 对——构造/赋值双走 part05 `__zwOmColorChannel`
+  // 验证归一（css-typed-om-1 §csshwb/§csslch/§csslab 构造步与属性步；kind 表
+  // 注释见 part05 色值段）。alpha 缺省 percent(100)（三参构造 alpha 100% 面）。
   function _zwOmColorCtor(name, fields) {
     if (globalThis[name]) return globalThis[name];
     function Ctor() {
       var args = Array.prototype.slice.call(arguments);
       for (var i = 0; i < fields.length; i++) {
+        var f = fields[i][0], kind = fields[i][1];
         var v = args[i];
-        if (typeof v === 'number') v = new CSSUnitValue(v, 'number');
-        this['_' + fields[i]] = v;
+        if (f === 'alpha' && v === undefined) v = new CSSUnitValue(100, 'percent');
+        this['_' + f] = globalThis.__zwOmColorChannel(kind, v);
       }
     }
     Object.defineProperty(Ctor, 'name', { value: name, configurable: true });
     Ctor.prototype = Object.create(CSSStyleValue.prototype);
     Ctor.prototype.constructor = Ctor;
     Ctor.prototype._zwOmKind = function () { return 'color'; };
-    for (var i = 0; i < fields.length; i++) (function (f) {
-      Object.defineProperty(Ctor.prototype, f, { get: function () { return this['_' + f]; }, enumerable: true, configurable: true });
-    })(fields[i]);
+    for (var i = 0; i < fields.length; i++) (function (f, kind) {
+      Object.defineProperty(Ctor.prototype, f, {
+        get: function () { return this['_' + f]; },
+        set: function (v) { this['_' + f] = globalThis.__zwOmColorChannel(kind, v); },
+        enumerable: true, configurable: true,
+      });
+    })(fields[i][0], fields[i][1]);
     globalThis[name] = Ctor;
     return Ctor;
   }
-  _zwOmColorCtor('CSSHWB', ['h', 'w', 'b', 'alpha']);
-  _zwOmColorCtor('CSSLCH', ['l', 'c', 'h', 'alpha']);
-  _zwOmColorCtor('CSSLab', ['l', 'a', 'b', 'alpha']);
-  _zwOmColorCtor('CSSOKLCH', ['l', 'c', 'h', 'alpha']);
-  _zwOmColorCtor('CSSOKLab', ['l', 'a', 'b', 'alpha']);
+  _zwOmColorCtor('CSSHWB', [['h', 'hueStrict'], ['w', 'pctOnly'], ['b', 'pctOnly'], ['alpha', 'pctOnly']]);
+  _zwOmColorCtor('CSSLCH', [['l', 'pctOnly'], ['c', 'pctOnly'], ['h', 'hueNumAng'], ['alpha', 'pctOnly']]);
+  _zwOmColorCtor('CSSLab', [['l', 'pctOnly'], ['a', 'numPctKeep'], ['b', 'numPctKeep'], ['alpha', 'pctOnly']]);
+  _zwOmColorCtor('CSSOKLCH', [['l', 'pctOnly'], ['c', 'pctOnly'], ['h', 'hueNumAng'], ['alpha', 'pctOnly']]);
+  _zwOmColorCtor('CSSOKLab', [['l', 'pctOnly'], ['a', 'numPctKeep'], ['b', 'numPctKeep'], ['alpha', 'pctOnly']]);
   if (!globalThis.CSSColorValue) globalThis.CSSColorValue = function CSSColorValue() {};
 
   // ===== 8. CSS 命名空间数值工厂 =====
