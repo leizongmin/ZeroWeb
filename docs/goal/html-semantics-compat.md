@@ -97,6 +97,26 @@ select-styles.css ×47 随批落。账本=
 evidence/2026-11-19-m2s574-band-
 resplit-solo-phasing-detailed-
 deterministic.md
+> **◆ 补账（2026-11-19 s574 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×5
+> 全列核实（44536e067→b50817198）：
+> code ×2＝cabfb6ce6 fix(engine) font
+> 车道三面（keyframe 简写展开＋
+> stretch/style/lh 插值臂＋registry
+> 挂表）＋dc3a5e01b fix(style-system,
+> engine,css-parser) typed-om grid/
+> logical+break 写门扩面 face A——**双
+> 零桥测钉**＝s575 全桥对账不触发
+> （b570 基线持位），engine＋
+> style-system＋css-parser 三 crate 码
+> 面在链接链＝**s575 runner 必换代预
+> 判（本轮窗以来最大码面批，预期
+> Compiling ×9 全链档）**，font/
+> typed-om 行为面位移归 s575 join 对
+> 账捕获；docs ×3＝rendering
+> R5825/R5825b＋wptfyi-css FI 落账。
+> 本流 s574 收口 commit rebase 后＝
+> c54653a45。
 > **◆ 补账（2026-11-19 s573 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×2
 > 全列核实（c61abb750→44536e067）：
