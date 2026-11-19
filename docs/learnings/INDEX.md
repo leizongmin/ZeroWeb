@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（297）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（298）
 
+- 2026-11-20 [typed-om 组件 toString 参与 WPT 子测试命名——序列化变更伪装成全语料大面积回归](bugs/2026-11/2026-11-20-typedom-tostring-subtest-rename-masquerade.md) — engine,tests/wpt-runner
 - 2026-11-18 [编译断窗落库的钉测首执即 DOA——断言必须以实证行为为准](bugs/2026-11/2026-11-18-pin-tests-doa-when-compile-broken.md) — zero-engine, style-system
 - 2026-11-18 [CSS 校验门挂在 cascade 面、WPT 页走 CSSOM 写面导致"实现完成零位移"](bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md) — style-system, engine
 - 2026-11-17 [JS DOM 桥 wrapper 家族 appendChild 语义二分：序列化拷贝 vs 真移动——摘原须按 childNodes indexOf 判位](bugs/2026-11/2026-11-17-js-dom-wrapper-family-copy-vs-move.md) — zero-engine
@@ -305,8 +306,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（48）
+## Patterns — 可复用代码模式与最佳实践（49）
 
+- 2026-11-20 [电池中断后用冻结二进制补腿，不重跑整批](patterns/2026-11/2026-11-20-frozen-binary-battery-completion.md) — wpt-runner
 - 2026-11-18 [V8Sandbox 钉测 JSON.stringify 快照断言的 Debug 双层转义](patterns/2026-11/2026-11-18-v8s-sandbox-pin-json-debug-escaping.md) — crates/engine
 - 2026-11-16 [跨进程仪拍锚提取：时间线归属法与 stderr 前缀伪影](patterns/2026-11/2026-11-16-trace-anchor-timeline-attribution.md) — apps/renderer,apps/compositor,bench
 - 2026-11-16 [CSS.supports 与 setProperty 双通道文法分叉](patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md) — engine,style-system
