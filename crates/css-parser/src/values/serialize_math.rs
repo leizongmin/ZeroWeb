@@ -1195,6 +1195,22 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         "transition-duration" | "transition-delay" | "animation-duration" | "animation-delay" => {
             fold_math_specified(v, MathFoldKind::Time)
         }
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range
+        // start/end 侧指定值 canonical 串化（css-animations/parsing
+        // animation-range-* 语料 valid 页驱动：`cover 0%` → `cover`
+        // 侧别省略形、`0` → `0px` 裸数补全、calc percent-first
+        // [`fold_math_specified`] 复用；`50% exit` 名后置文法形整拒在
+        // [`crate::values::validate_decl_value` 写面门，fold 对非文法形
+        // None 保留原文零漂移）。
+        // https://drafts.csswg.org/scroll-animations-1/#view-timelines-ranges
+        "animation-range-start" | "animation-range-end" => {
+            let side = if prop == "animation-range-start" {
+                super::parse_animation_range::AnimationRangeSide::Start
+            } else {
+                super::parse_animation_range::AnimationRangeSide::End
+            };
+            super::parse_animation_range::fold_animation_range_specified(v, side)
+        }
         // css-transitions-1 transition 族声明值 canonical（刀 U：timing 步进
         // 缺省省略 + step-* 关键字展开、property 关键字归一小写——css-transitions
         // parsing valid 语料钉面）；identity/invalid 形 None 保留原文零漂移。

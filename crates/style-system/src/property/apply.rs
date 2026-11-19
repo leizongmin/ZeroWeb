@@ -2241,7 +2241,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 66] = [
+    const VALIDATED_PROPERTIES: [&str; 68] = [
         "transform",
         "rotate",
         "scale",
@@ -2265,6 +2265,16 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "transition-duration",
         "animation-delay",
         "animation-duration",
+        // animation-range start/end 写面文法门（css-scroll-animations-1
+        // §view-timelines-ranges：`normal | [ <timeline-range-name>
+        // <length-percentage>? ]#`，名前偏移后、normal 独占）：invalid 页 25 形
+        //（'50% exit' 名后置/'contain contain' 双名/'none'/'normal 10px'/
+        // 双 range 单段）此前白名单外放行 store；valid 页 canonical 省略形
+        //（'cover 0%' → 'cover'、'0' → '0px'、calc percent-first）在
+        // fold_decl_specified animation-range 臂。分派臂见
+        // [`validate_decl_value`] 中段（animation-duration 臂邻域）。
+        "animation-range-start",
+        "animation-range-end",
         // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
         // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
         "width",
@@ -3083,6 +3093,25 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 apply_property_value(&mut scratch, &prop, v)
             }
         };
+    }
+    // animation-range start/end 写面文法门（css-scroll-animations-1
+    // §view-timelines-ranges）：单源 [`values::parse_animation_range_side`]
+    // 文法裁决（名前偏移后、normal 独占、顶层逗号列表、偏移 <length-percentage>
+    // 裸数补 px/calc 形 [`fold_math_specified`] canonical）——invalid 页 25 形
+    // 拒收；substitution 函数形（var()/attr()）放行 store 原文（counter 臂
+    // 同口径——有效性 computed 期替换重裁）；canonical 省略形串化在
+    // fold_decl_specified animation-range 臂（写面四站共享）。
+    // https://drafts.csswg.org/scroll-animations-1/#view-timelines-ranges
+    if matches!(prop.as_str(), "animation-range-start" | "animation-range-end") {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let side = if prop == "animation-range-start" {
+            values::AnimationRangeSide::Start
+        } else {
+            values::AnimationRangeSide::End
+        };
+        return values::parse_animation_range_side(v, side).is_some();
     }
     // text-indent 关键字形（css-text-3 §text-indent：`<length-percentage> && hanging?
     // && each-line?`——`&&` 组合分量任意序、关键字各至多一次）。apply 链 TextIndent

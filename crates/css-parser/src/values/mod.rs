@@ -21,6 +21,7 @@ pub mod parse_rule_color;
 pub mod parse_rule_inset;
 pub mod parse_rule_style;
 pub mod parse_rule_width;
+pub mod parse_animation_range;
 pub mod parse_transform;
 pub mod random;
 pub mod serialize_gradient;
@@ -32,6 +33,10 @@ pub mod types;
 
 // Re-export all public items.
 pub use anchor::*;
+pub use parse_animation_range::{
+    fold_animation_range_specified, parse_animation_range_side, AnimationRangeItem,
+    AnimationRangeName, AnimationRangeShape, AnimationRangeSide,
+};
 pub use attr::{
     attr_calls_valid, attr_target_fetches_url, eval_attr_call, has_attr_call, has_attr_word, substitute_attr_values,
     substitute_attr_values_checked, substitute_attr_values_deferring, substitute_attr_values_readjudicate,

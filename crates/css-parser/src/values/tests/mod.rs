@@ -1,4 +1,5 @@
 mod advanced;
+mod animation_range;
 mod basic;
 mod calc_mix;
 mod clip_path;
