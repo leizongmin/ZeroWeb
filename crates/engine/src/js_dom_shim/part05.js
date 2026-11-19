@@ -9447,6 +9447,10 @@
     return _domMatrixMultiply(this, _domMatrixFromRotateZ((+rx || 0) * Math.PI / 180));
   };
   DOMMatrix.prototype.rotateSelf = function (rx, ry, rz) { this._m = this.rotate(rx, ry, rz)._m; return this; };
+  // translateSelf/scaleSelf（spec DOMMatrix §transformation-methods mutable 形；
+  // cssTransformValue-toMatrix 语料 expectedMatrix 链消费）。
+  DOMMatrix.prototype.translateSelf = function (tx, ty, tz) { this._m = this.translate(tx, ty, tz)._m; return this; };
+  DOMMatrix.prototype.scaleSelf = function (sx, sy, sz) { this._m = this.scale(sx, sy, sz)._m; return this; };
   DOMMatrix.prototype.transformPoint = function (pt) {
     var x = (pt && pt.x != null) ? +pt.x : 0, y = (pt && pt.y != null) ? +pt.y : 0, z = (pt && pt.z != null) ? +pt.z : 0, w = (pt && pt.w != null) ? +pt.w : 1;
     var m = this._m;

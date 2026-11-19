@@ -104,8 +104,10 @@
       // 自定义属性非空文本恒 CSSUnparsedValue。
       if (prop.slice(0, 2) === '--') return new CSSUnparsedValue(_zwOmTokenizeVar(t));
       // 简写：逐 token 语法校验（margin '10deg' → TypeError），过校验按
-      // CSSUnparsedValue。
+      // CSSUnparsedValue；值含 var() 引用时无法静态校验（css-typed-om-1
+      // §normalize-tokens：简写值 var → 词元形，normalize-tokens 语料面）。
       if (inTable && _zwOmPropSyntax[prop].length === 0) {
+        if (/var\(/i.test(t)) return new CSSUnparsedValue(_zwOmTokenizeVar(t));
         _zwOmCheckShorthandTokens(t);
         return new CSSUnparsedValue([t]);
       }
@@ -701,6 +703,79 @@ return Ctor;
     })(_zwMi2);
     _zwDomMRP.toFloat64Array = function () { return new Float64Array(this._m); };
     _zwDomMRP.toString = function () { return 'matrix(' + this._m.slice(0, 6).join(', ') + ')'; };
+    // 变换方法族（stylevalue-subclasses toMatrix 展平语料 expectedMatrix 侧消费；
+    // spec DOMMatrixReadOnly §transformation-methods。列主序 _m 与 part05
+    // DOMMatrix 同存储约定，乘法同形——自洽后乘：identity × T）。
+    var _zwOmMRIdentity = function () { return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; };
+    // 4×4 列主序乘法（与 part05 _domMatrixMultiply 同索引形；IIFE 内共享，
+    // 组件/容器 toMatrix 合成同源）。
+    var _zwOmMatMul16 = function (a, b) {
+      var r = new Array(16);
+      for (var col = 0; col < 4; col++) {
+        for (var row = 0; row < 4; row++) {
+          r[col * 4 + row] = a[row] * b[col * 4] + a[4 + row] * b[col * 4 + 1] + a[8 + row] * b[col * 4 + 2] + a[12 + row] * b[col * 4 + 3];
+        }
+      }
+      return r;
+    };
+    // FIXME(sv-compose): 乘积序为 other×self（与 part05 _domMatrixMultiply 同族
+    // 约定，行向量 p·M 语义下相当于先 other 后 self）。toMatrix 语料期望侧
+    // （part05 Self 族链）与组件侧同族相消故两侧恒一致；绝对序修正须与
+    // part05 同步换序，不得单侧改序。
+    var _zwOmMRWrap = function (m16) { return new globalThis.DOMMatrixReadOnly(m16); };
+    var _zwOmAngleRad = function (v) {
+      var u = v.unit, val = v.value;
+      if (u === 'deg') return val * Math.PI / 180;
+      if (u === 'grad') return val * Math.PI / 200;
+      if (u === 'turn') return val * Math.PI * 2;
+      return val; // rad 及其余按弧度数值直取
+    };
+    _zwDomMRP.multiply = function (other) { return _zwOmMRWrap(_zwOmMatMul16(this._m, other._m)); };
+    // 不可变变换方法族（spec geometry-1 §DOMMatrixReadOnly transformation-methods：
+    // 返回 this × 变换基阵的新矩阵，不修改 this；乘积序随 _zwOmMatMul16 族约定）。
+    _zwDomMRP.translate = function (tx, ty, tz) {
+      var t = _zwOmMRIdentity();
+      t[12] = +tx || 0; t[13] = +ty || 0; t[14] = +tz || 0;
+      return _zwOmMRWrap(_zwOmMatMul16(this._m, t));
+    };
+    _zwDomMRP.scale = function (sx, sy, sz) {
+      var x = (sx == null) ? 1 : +sx, y = (sy == null) ? x : +sy, z = (sz == null) ? 1 : +sz;
+      var s = _zwOmMRIdentity();
+      s[0] = x; s[5] = y; s[10] = z;
+      return _zwOmMRWrap(_zwOmMatMul16(this._m, s));
+    };
+    _zwDomMRP.skewX = function (ax) {
+      var m = _zwOmMRIdentity();
+      m[4] = Math.tan((+ax || 0) * Math.PI / 180);
+      return _zwOmMRWrap(_zwOmMatMul16(this._m, m));
+    };
+    _zwDomMRP.skewY = function (ay) {
+      var m = _zwOmMRIdentity();
+      m[1] = Math.tan((+ay || 0) * Math.PI / 180);
+      return _zwOmMRWrap(_zwOmMatMul16(this._m, m));
+    };
+    // Rodrigues（spec DOMMatrix rotateAxisAngle；轴 (0,0,0) 退化为绕 z）。
+    _zwDomMRP.rotateAxisAngle = function (rx, ry, rz, angle) {
+      var x = +rx || 0, y = +ry || 0, z = +rz || 0;
+      var len = Math.sqrt(x * x + y * y + z * z);
+      if (len === 0) { x = 0; y = 0; z = 1; } else { x /= len; y /= len; z /= len; }
+      var rad = (+angle || 0) * Math.PI / 180;
+      var c = Math.cos(rad), s = Math.sin(rad), t = 1 - c;
+      var m = _zwOmMRIdentity();
+      m[0] = t * x * x + c; m[4] = t * x * y - s * z; m[8] = t * x * z + s * y;
+      m[1] = t * x * y + s * z; m[5] = t * y * y + c; m[9] = t * y * z - s * x;
+      m[2] = t * x * z - s * y; m[6] = t * y * z + s * x; m[10] = t * z * z + c;
+      return _zwOmMRWrap(_zwOmMatMul16(this._m, m));
+    };
+    // spec geometry-1 §rotate：仅 rx → rotateAxisAngle(0,0,1,rx)；否则绕
+    // z/x/y 三轴依次合成（undefined 按 0）。
+    _zwDomMRP.rotate = function (rx, ry, rz) {
+      if (ry === undefined && rz === undefined) return this.rotateAxisAngle(0, 0, 1, rx);
+      var m = this.rotateAxisAngle(0, 0, 1, rx);
+      m = m.rotateAxisAngle(1, 0, 0, ry === undefined ? 0 : ry);
+      m = m.rotateAxisAngle(0, 1, 0, rz === undefined ? 0 : rz);
+      return m;
+    };
   }
 
   function CSSTransformComponent() {}
@@ -904,7 +979,16 @@ return Ctor;
   CSSMatrixComponent.prototype = Object.create(CSSTransformComponent.prototype);
   CSSMatrixComponent.prototype.constructor = CSSMatrixComponent;
   Object.defineProperty(CSSMatrixComponent.prototype, 'matrix', { get: function () { return this._matrix; }, set: function (m) { if (typeof m !== 'object') throw new TypeError("Invalid matrix"); this._matrix = m; }, enumerable: true, configurable: true });
-  Object.defineProperty(CSSMatrixComponent.prototype, 'is2D', { get: function () { return !!(this._options && this._options.is2D); }, enumerable: true, configurable: true });
+  Object.defineProperty(CSSMatrixComponent.prototype, 'is2D', {
+    get: function () { return !!(this._options && this._options.is2D); },
+    // is2D 可写（spec CSSMatrixComponent is2D attribute；cssTransformValue-toMatrix
+    // 语料 'respects is2D changes' 赋值面——仅 getter 时 setter 缺失赋值抛 strict 错）。
+    set: function (v) {
+      if (!this._options) this._options = {};
+      this._options.is2D = !!v;
+    },
+    enumerable: true, configurable: true,
+  });
   CSSMatrixComponent.prototype.toString = function () {
     var m = this._matrix && this._matrix._m ? this._matrix._m : null;
     if (m && this.is2D !== false) return 'matrix(' + m[0] + ', ' + m[1] + ', ' + m[4] + ', ' + m[5] + ', ' + m[12] + ', ' + m[13] + ')';
@@ -913,6 +997,99 @@ return Ctor;
   };
   CSSMatrixComponent.prototype._zwOmKind = function () { return 'transform-comp'; };
   globalThis.CSSMatrixComponent = CSSMatrixComponent;
+
+  // ===== 组件 toMatrix 族（css-typed-om-1 §dom-csstransformcomponent-tomatrix；
+  // cssTransformComponent-toMatrix / cssTransformValue-toMatrix 语料）。
+  // 列主序 16 元素（与 part05 DOMMatrix / DOMMatrixReadOnly 同约定），is2D
+  // 槽消费：true 面 2D 形（第三行/列恒等），false 面含 z/轴向量。
+  function _zwOmDomRO(m16) { return new (globalThis.DOMMatrixReadOnly || globalThis.DOMMatrix)(m16); }
+  var _zwOmAngleRadOf = function (v) {
+    var u = v.unit, val = v.value;
+    if (u === 'deg') return val * Math.PI / 180;
+    if (u === 'grad') return val * Math.PI / 200;
+    if (u === 'turn') return val * Math.PI * 2;
+    return val; // rad 及其余按弧度数值直取
+  };
+  function _zwOmRotateMatrix(axisX, axisY, axisZ, rad) {
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var len = Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
+    var x = axisX, y = axisY, z = axisZ;
+    if (len === 0) { x = 0; y = 0; z = 1; } else { x /= len; y /= len; z /= len; }
+    var c = Math.cos(rad), s = Math.sin(rad), t = 1 - c;
+    m[0] = t * x * x + c; m[4] = t * x * y - s * z; m[8] = t * x * z + s * y;
+    m[1] = t * x * y + s * z; m[5] = t * y * y + c; m[9] = t * y * z - s * x;
+    m[2] = t * x * z - s * y; m[6] = t * y * z + s * x; m[10] = t * z * z + c;
+    return m;
+  }
+  // toMatrix 相对单位守门（spec css-typed-om-1 §CSSTranslate.toMatrix /
+  // §CSSPerspective.toMatrix：组件含相对长度（em/ex/ch/rem/vw/vh 等）或
+  // 百分比 → TypeError；仅绝对长度可无布局上下文解析为矩阵）。
+  function _zwOmAbsLen(v) {
+    return v instanceof CSSUnitValue && ['px', 'cm', 'mm', 'q', 'in', 'pt', 'pc'].indexOf(v.unit) !== -1;
+  }
+  CSSTranslate.prototype.toMatrix = function () {
+    if (!_zwOmAbsLen(this._x) || !_zwOmAbsLen(this._y) || (this._z && !_zwOmAbsLen(this._z))) {
+      throw new TypeError('CSSTranslate.toMatrix: relative length or percentage component');
+    }
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    m[12] = this._x.value; m[13] = this._y.value;
+    if (!this._is2D) m[14] = this._z.value;
+    return _zwOmDomRO(m);
+  };
+  CSSRotate.prototype.toMatrix = function () {
+    var rad = _zwOmAngleRadOf(this._angle);
+    var m;
+    if (this._is2D) {
+      // is2D 面：轴向量忽略，绕 z（spec cssrotate is2D 语义）。
+      m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      m[0] = Math.cos(rad); m[1] = Math.sin(rad); m[4] = -Math.sin(rad); m[5] = Math.cos(rad);
+    } else {
+      m = _zwOmRotateMatrix(this._x.value, this._y.value, this._z.value, rad);
+    }
+    return _zwOmDomRO(m);
+  };
+  CSSScale.prototype.toMatrix = function () {
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    m[0] = this._x.value; m[5] = this._y.value;
+    if (!this._is2D) m[10] = this._z.value;
+    return _zwOmDomRO(m);
+  };
+  CSSSkew.prototype.toMatrix = function () {
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    m[4] = Math.tan(_zwOmAngleRadOf(this._ax));
+    m[1] = Math.tan(_zwOmAngleRadOf(this._ay));
+    return _zwOmDomRO(m);
+  };
+  CSSSkewX.prototype.toMatrix = function () {
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    m[4] = Math.tan(_zwOmAngleRadOf(this._ax));
+    return _zwOmDomRO(m);
+  };
+  CSSSkewY.prototype.toMatrix = function () {
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    m[1] = Math.tan(_zwOmAngleRadOf(this._ay));
+    return _zwOmDomRO(m);
+  };
+  CSSPerspective.prototype.toMatrix = function () {
+    if (this._length instanceof CSSUnitValue && !_zwOmAbsLen(this._length)) {
+      throw new TypeError('CSSPerspective.toMatrix: relative length component');
+    }
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    if (this._length instanceof CSSUnitValue) m[11] = -1 / Math.max(1, this._length.value);
+    return _zwOmDomRO(m); // 'none' keyword → identity
+  };
+  CSSMatrixComponent.prototype.toMatrix = function () {
+    var mx = this._matrix;
+    var m = mx && mx._m ? mx._m.slice() : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    if (this.is2D) {
+      // is2D 强制 → 2D 投影（m11/m12/m21/m22/m41/m42，余恒等——
+      // cssTransformValue-toMatrix 'respects is2D changes' 期望形）。
+      var p = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      p[0] = m[0]; p[1] = m[1]; p[4] = m[4]; p[5] = m[5]; p[12] = m[12]; p[13] = m[13];
+      m = p;
+    }
+    return _zwOmDomRO(m);
+  };
 
   function CSSTransformValue(components) {
     // components 为必备序列且非空（缺参/空表 → TypeError——语料
@@ -938,8 +1115,14 @@ return Ctor;
     enumerable: true, configurable: true,
   });
   CSSTransformValue.prototype.toMatrix = function () {
-    // 语料消费 is2D/长度断言为主——恒等矩阵起步（FIXME: 全分量矩阵合成）。
-    return new (globalThis.DOMMatrixReadOnly || globalThis.DOMMatrix)([1, 0, 0, 1, 0, 0]);
+    // 逐分量 toMatrix 按序后乘（css-typed-om-1 §dom-csstransformvalue-tomatrix；
+    // cssTransformValue-toMatrix 语料：expectedMatrix = 期望组件链 multiplySelf
+    // 同序——列向量约定 M = M1 × M2 × … × Mn）。
+    var m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    for (var i = 0; i < this.length; i++) {
+      m = _zwOmMatMul16(m, this[i].toMatrix()._m);
+    }
+    return _zwOmDomRO(m);
   };
   CSSTransformValue.prototype.toString = function () {
     var out = [];
@@ -1161,7 +1344,9 @@ return Ctor;
         var fbSegs = _zwOmTokenizeVar(fb);
         var fbArr = [];
         for (var k = 0; k < fbSegs.length; k++) fbArr.push(fbSegs[k]);
-        ref._zwOmFallback = fbArr.length === 1 && typeof fbArr[0] === 'string' ? fbArr[0].trim() : new CSSUnparsedValue(fbArr);
+        // fallback 恒 CSSUnparsedValue 且保原文空白（css-typed-om-1
+        // §normalize-tokens：'var(--A, 1em)' fallback = CSSUnparsedValue([' 1em'])）。
+        ref._zwOmFallback = new CSSUnparsedValue(fbArr);
       }
       segments.push(ref);
       i += j;
@@ -1270,7 +1455,9 @@ return Ctor;
     if (t === '') return null;
     if (_zwOmCssWide[t.toLowerCase()]) return new CSSKeywordValue(t.toLowerCase());
     var lower = t.toLowerCase();
-    if (lower.slice(0, 4) === 'var(' && /[{(;,\s:]var\(/i.test(' ' + lower)) {
+    if (/var\(/i.test(lower)) {
+      // 值含 var() 引用 → 词元形（css-typed-om-1 §normalize-tokens；中间位
+      // var（calc 包 var）同走此道，normalize-tokens 语料 calc 面）。
       var segs = _zwOmTokenizeVar(t);
       return new CSSUnparsedValue(segs);
     }
