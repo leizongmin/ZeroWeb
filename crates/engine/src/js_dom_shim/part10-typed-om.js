@@ -2032,9 +2032,14 @@ return Ctor;
       throw new TypeError("Invalid keyword for property");
     }
     if (kind === 'unit') {
-      var fam = _zwOmUnitType(t.unit);
-      var famName = null;
-      for (var d in { length: 1, angle: 1, time: 1, frequency: 1, resolution: 1, flex: 1, percent: 1, number: 1 }) if (fam[d] === 1) famName = d;
+      // 刀 G2-a：famName 从 unit 名直取（_zwOmUnitFamily 族表 [0]）——旧法
+      // _zwOmUnitType map 迭代（fam[d]===1）在 ARITH 刀零指数键省略形状下对
+      // number 产 {} → famName=null → want=[] 恒 throw（css-properties-values-
+      // api-1 'to a number' 断言面全灭：opacity/flex-grow/flex-shrink/order/
+      // column-count/line-height/border-image-*/fill|flood|stop|stroke-opacity
+      // 等 <number> 族页；HEAD 考古 pre-face 同炸＝旧债非 ARITH 回归）。
+      var uinfo = _zwOmUnitInfo(t.unit);
+      var famName = uinfo ? uinfo[0] : null;
       // 负 flex 值门（css-grid-1 §7.2.3 <flex> 负值非法——track sizing fr
       // breadth 非负；testsuite <negative-flex> 面期望 CSSUnitValue(-3,'fr')
       // set 恒 TypeError，表中无 <negative-flex> 语法即拒）。
