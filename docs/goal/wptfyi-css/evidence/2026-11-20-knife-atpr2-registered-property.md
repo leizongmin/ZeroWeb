@@ -38,6 +38,14 @@ initial 兜底亦过 canonicalize → 全页空串。修复 = 计算门列表切
 `split_value_items`（与注册门单源）；修复后两页回 P=1（≥b0），且
 registered-property-computation 再 +2（64→66，声明值列表形串化解锁）。
 
+## 首发 A/B 电池（knife-atpr2-battery-2352）
+
+RIDE 23 文件（S1/S3 md5 census 零扰动，ride-files.txt 存档）；b0 md5
+`0101bb8e`，b1 md5 `ec826b2f`（M2 异双证）；build 49.97s/49.82s。首发
+reconcile：gained=79 lost=2 regressed=2。污染拦截缺口：S1/S3 census 只覆盖
+ride 文件，face 文件内捎带改动不可见——教训：face patch 生成基必须晚于全部
+在飞落库，发射前以落库后 HEAD 重生成复核。
+
 ## 电池账（b0 vs b1fix 全六语料，gained=81 lost=0 regressed=0 pages_gain=14）
 
 - css-properties-values-api **+50**（7 页）：registered-property-computation
