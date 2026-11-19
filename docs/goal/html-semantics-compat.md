@@ -2,129 +2,96 @@
 
 **版本**: v2.0
 **日期**: 2026-11-20（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 581 收口（**band
-分裂新组合轮（族带第 14 轮第 2 连未
-达成：leg1 并存形 vs leg2 双整文件 T
-形双腿错开＝stable 保留 detailed T、
-optional 4 子测 GONE 4、optional.html
-整文件键 l2only＝谱内摆动结案维持，
-码面无对应方向）+ 全桥回绿兑现轮（
-对端 part17 适配 57aa5e0be 落窗：keys
-1731 fail=0＝s580 桥测红收口，NEW
-+3 全部定性＝s582 起基线换装 b581）
-+ runner 必换代 ×10 连兑现轮（pre
-0b5c2914→mid=post 95926afc；engine+
-css-parser ×9 档精确兑现；跨 clone
-收敛候选挂对端 kb82 54代 申报）+ 压
-窗接管轮（前 session 02:36 臂，bursty
-load 压窗 47 分钟 03:23:11 自放）+
-solo 谱形第 5 形未现轮（2/2 发射形
-IDENT 复现第 3 连）+ 七哨持位轮（
-mpreload 第 6 连）**）——join
+**状态**: Active——M2 切片 582 收口（**完全
+零位移轮（stable 集逐字节恒 s581＝NEW 0
+/GONE 0/flips 0）+ band 错开分裂持位第 2
+连兑现轮（leg1 并存形 vs leg2 双整文件 T
+形逐腿复刻 s581）+ b581 全桥基线首战零位
+移轮（keys 1731 fail=0 NEW=0 GONE=0）+
+runner 必换代 ×11 连兑现＋跨 clone 收敛第
+五实例确认轮（pre 95926afc→mid=post
+a528acd8 ≡ 对端 kb83 重建值）+ solo 发射
+形复现第 4 连轮（第 5 形未现）+ 七哨持位
+轮（mpreload 第 7 连兑现）**）——join
 **stable 8510（8305P/198F/6T/1U）
 disagree 0 + l1only 4 + l2only 1**
-；vs s580 stable（8514，8305P/202F
-/6T/1U）**NEW 0 + GONE 4 + flips 0**
-＝位移全落 band 4 键、非带键逐键零
-位移。
-**窗底账**：s581 窗＝92d248d34→
-57aa5e0be（12 commits：code ×3＝对
-端 wptfyi-css 三码刀（a8a8686ee 刀
-TD typed-om transform shim part10
-+187／bd4a07036 刀 KF keyframes
-CSSOM css-parser 三面／7698ea352 刀
-ATP-R2 registered-property＋
-animation-range 文法门，js_dom_bridge
-.rs +10＝**新钉**）＋test ×1＝
-**57aa5e0be part17 适配落地**（+41＝
-s580 桥测红对端修复）＋docs ×7）。
-开工 pull 捕获 ×12 全列核实＋master
-下一步预判同步改判（Fresh→必换代＋
-桥测回绿激活，均兑现）。
-**族带第 14 轮＝错开分裂新组合**：
-leg1 并存形（detailed T＋optional 4
-子测 Fail＝s580 持位形）vs leg2 双
-整文件 T 形（detailed T＋
-optional.html 整文件 T＝s554
-harness-no-report 形 4 子测未发射，
-s577/s578 leg1 持位形再现）＝谱形并
-存轮转；stable 保留 detailed T（双
-腿恒＝stable 锚），optional 4 子测
-GONE 4。第 4 形双腿零再现。**全桥
-回绿兑现**：keys 1731（b570 1728）
-NEW +3／GONE 0／FAIL 0（rcb=0，
-1731 passed 20.00s）——NEW 三键全部
-定性（animation_range ×2＝s580 窗
-4e35a2d9c 继承＋
-computed_font_settings_canonical
-_form＝57aa5e0be 新钉）；s582 起对
-账基线换装 b570→b581（1731P/0F 全
-绿集），b570 保留历史锚位。**runner
-必换代 ×10 连兑现**：pre 0b5c2914
-（128480488）→mid=post **95926afc
-（128665024，+184536）**；leg1
-Compiling ×9／leg2 Fresh ×0；爆栈
-0/0；rc=2/2 惯例。**optional solo
-2/2 发射形 IDENT**（4 子测 Fail ≡
-sweep leg1 键，rc=2 ×2，57s+38s）＝
-发射形复现第 3 连，谱形轮转第 5 形
-未现。七哨复核：dialog 第 15 轮双 P
-；password 第 20 轮持位（select-event
-279 键 8F F 集 ≡ se.577 双腿 IDENT
-＋password 225 键 0F）；onblur 组第
-13 轮 8P/2F（F 集 ≡ ob.s559 双腿
-IDENT）；**mpreload 第 43 轮 15/15
-双 P＝持位第 6 连兑现**；waapi 第
-102 轮 picker P/checkmark F 恒形；
-focus-dynamic 第 61 轮 121/121 零再
-现；双发伪影 2 键双腿各 ×2 恒（
-dup-key 法证＋analyze2 dup 计数行
-首战兑现，s580 探针文案修正后 n=2
-/n=2 正确读取）。**挂用户门维持**：
-GB-20261114-VIDEO + GB-20261031（簇
-D）+ s137＋对端 ZRG-2026-11-18-01
-（不重复通知）。下一步：**守成巡查
-s582**（**对账基线换 s581 stable
-8510（带键 4 键不在基线内＝detailed
-T 持位观察）＋全桥基线换装 b581
-1731P/0F**：开工 pull 捕获全列核实
-（窗＝57aa5e0be→s582 legs HEAD，
-本笔 push 捕获归 s582 开工续核），
-s582 开工捕获批 ×4 全列核实
-（57aa5e0be→710d84cf3：code ×1＝
-d70660fae cargo fmt 全树格式化（
-css-parser 等 7 crate 文件）＋merge
-577780490（site-opt fmt PR #314）＝
-**runner 必换代预判改判（fmt 重编
-非 Fresh，对端 kb83 fmt 笔重建预测
-同向）**；docs ×3＝rendering R5841
-（**kb82 54代 判代批兑现＝runs
-95926afc ×3 恒＝本轮 mid=post 同值
-＝跨 clone 收敛第四实例确认**）＋
-wptfyi-css ffix2 发射窗注记＋
-part17 落库订正。窗带 js_dom_bridge
-新钉则全桥 NEW/GONE 对账（键基线
-b581.keys 在 /tmp/s582）；dialog 第
-16 轮；password 第 21 轮；**mpreload
-第 44 轮＝持位第 7 连观察**；waapi
-第 103 轮；focus-dynamic 第 62 轮；
-onblur 组第 14 轮；**族带第 15 轮＝
-分裂后聚合观察**（双腿恒回并存形＝
-持位信号；detailed T 恒＝stable 锚
-持位）；solo ×2 记形续（FILTER= 定
-规）；第 4 形语境追踪续；双发伪影
-恒；爆栈 0/0 惯例；起腿三件套照规
-（waiter 超时按 s580 预案重臂，kill
-旧实例防 double-fire））+ 候门决项
-等待用户拍板维持（video P1+P2 立项
-/ 簇 D A2 立项 / s137；对端 ZRG-
-2026-11-18-01 归用户）；rendering
-流 dialog 16 红块协同面（归
-rendering 流记账）。门开随批落预案
-不变：簇 D 开 →
-customizable-select-styles.css ×47
-随批落。账本=
-evidence/2026-11-20-m2s581-band-split-half-forms-bridge-green-mpreload-hold6.md
+；vs s581 stable（8510）**NEW 0 + GONE 0
++ flips 0＝完全零位移，stable.keys cmp 逐
+字节恒（最强持位表述）**。
+**窗底账**：s582 窗＝57aa5e0be→
+2483ee96e（12 commits：code ×1＝
+d70660fae cargo fmt（10 文件 79+/55−：
+css-parser ×6＋style-system apply.rs＋
+engine grid_cssom.rs＝必换代兑现）＋
+docs ×11＝本流 s581 收口＋push 补账＋对
+端 rendering R5841–R5844 四笔＋wptfyi-css
+四笔＋PR #314 merge；test ×0）。开工
+pull 捕获 ×12 全列核实（必换代改判＋
+a528acd8 收敛预判，均兑现）。
+**族带第 15 轮＝错开分裂持位第 2 连**：
+leg1 并存形（detailed T＋optional 4 子测
+Fail＝5 hits）vs leg2 双整文件 T 形（
+detailed T＋optional.html 整文件 T＝
+band566 grep 1 hit＋l2only）＝逐腿复刻
+s581；聚合信号未现、分裂形本身逐腿恒＝
+错开形持位信号；detailed T 双腿恒＝
+stable 锚；第 4 形零再现。**全桥 b581 首
+战**：keys 1731 NEW 0／GONE 0／FAIL 0
+（rcb=0，1731 passed 34.22s）＝换装基线
+零噪声；fmt 笔码面桥键零响应（纯格式无
+语义）。**runner 必换代 ×11 连**：pre
+95926afc（128665024）→mid=post
+**a528acd8（128664848，−176）**；leg1
+Compiling ×9／leg2 Fresh ×0；爆栈 0/0；
+rc=2/2 惯例；**跨 clone 收敛第五实例确认
+**（a528acd8 ≡ 对端 kb83 重建值 R5842
+×3 恒/R5843/R5844 ×4 恒；序列 s561
+69967b2e／s579 f37f570e／s580 0b5c2914
+／s581 95926afc／s582 a528acd8）。
+**optional solo 2/2 发射形 IDENT**（4 子测
+Fail ≡ sweep leg1 键，rc=2 ×2，39s+43s）
+＝发射形复现第 4 连，第 5 形未现。七哨复
+核：dialog 第 16 轮双 P；password 第 21
+轮持位（select-event 279 键 8F F 集 ≡
+se.577 双腿 IDENT＋password 225 键 0F）
+；onblur 组第 14 轮 8P/2F（F 集 ≡
+ob.s559 双腿 IDENT）；**mpreload 第 44 轮
+15/15 双 P＝持位第 7 连兑现**；waapi 第
+103 轮 picker P/checkmark F 恒形；
+focus-dynamic 第 62 轮 121/121 零再现；
+双发伪影 2 键双腿各 ×2 恒（dup 计数行核
+）。**挂用户门维持**：GB-20261114-VIDEO +
+GB-20261031（簇 D）+ s137＋对端 ZRG-
+2026-11-18-01（不重复通知）。下一步：
+**守成巡查 s583**（**对账基线持 s582
+stable 8510（逐字节恒无需换装）＋全桥基
+线换装 b582（1731P/0F，与 b581 同值预期
+零噪声）**：开工 pull 捕获全列核实（窗＝
+2483ee96e→s583 legs HEAD，本笔 push 捕获
+归 s583 开工续核），runner 预判 **Fresh**
+（2483ee96e 纯 docs；对端 kb86 候窗＝54
+代 持位＋ZW-3 css_wire dirty=4 扩，若发
+码刀改判必换代——开工捕获后定谳），窗带
+js_dom_bridge 新钉则全桥 NEW/GONE 对账
+（键基线 b582.keys 在 /tmp/s583）；dialog
+第 17 轮；password 第 22 轮；**mpreload
+第 45 轮＝持位第 8 连观察**；waapi 第
+104 轮；focus-dynamic 第 63 轮；onblur
+组第 15 轮；**族带第 16 轮＝错开分裂聚合
+观察**（双腿恒回并存形＝聚合信号；错开
+形第 3 连＝分裂持位续证；detailed T 恒＝
+stable 锚持位）；solo ×2 记形续（FILTER=
+定规）；第 4 形语境追踪续；双发伪影恒；
+爆栈 0/0 惯例；起腿三件套照规（waiter
+超时按 s580 预案重臂，kill 旧实例防
+double-fire））+ 候门决项等待用户拍板维
+持（video P1+P2 立项 / 簇 D A2 立项 /
+s137；对端 ZRG-2026-11-18-01 归用户）；
+rendering 流 dialog 16 红块协同面（归
+rendering 流记账）。门开随批落预案不变：
+簇 D 开 → customizable-select-styles.css
+×47 随批落。账本=
+evidence/2026-11-20-m2s582-zero-displacement-split-hold2-a528acd8-convergence5-mpreload-hold7.md
 > **◆ 补账（2026-11-20 s581 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×4
 > 全列核实（57aa5e0be→710d84cf3，
