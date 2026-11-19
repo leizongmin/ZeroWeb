@@ -677,17 +677,31 @@ impl<'a> Parser<'a> {
 
         self.skip_whitespace();
 
-        // 读取动画名称
+        // 读取动画名称（<keyframes-name> = <custom-ident> | <string>）——
+        // custom-ident 排除 CSS-wide 关键字 + none（大小写不敏感）；string
+        // 排除空串（"" 语料钉形）。此臂 None 时 body 未消费，走 dispatch
+        // 共享 skip_malformed_qualified_rule 残余消耗（同非 Ident/String 臂）。
+        // https://drafts.csswg.org/css-animations-1/#typedef-keyframes-name
+        // https://drafts.csswg.org/css-values-4/#identifier-value
+        let mut name_is_string = false;
         let name = match self.peek().clone() {
             Token::Ident(s) => {
-                let n = s.clone();
+                if matches!(
+                    s.to_ascii_lowercase().as_str(),
+                    "none" | "default" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+                ) {
+                    return None;
+                }
                 self.advance();
-                n
+                s
             }
             Token::String(s) => {
-                let n = s.clone();
+                if s.is_empty() {
+                    return None;
+                }
                 self.advance();
-                n
+                name_is_string = true;
+                s
             }
             _ => return None,
         };
@@ -778,7 +792,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        Some(KeyframesRule { name, keyframes })
+        Some(KeyframesRule { name, name_is_string, keyframes })
     }
 
     fn skip_malformed_keyframe_block(&mut self) {

@@ -4783,6 +4783,7 @@ mod tests {
     fn make_keyframes(name: &str, blocks: Vec<(f64, Vec<(&str, &str)>)>) -> KeyframesRule {
         KeyframesRule {
             name: name.to_string(),
+            name_is_string: false,
             keyframes: blocks
                 .into_iter()
                 .map(|(pct, decls)| KeyframeBlock {

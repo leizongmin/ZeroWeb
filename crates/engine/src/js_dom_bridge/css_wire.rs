@@ -329,8 +329,21 @@ pub fn style_rules_text(text: &str) -> String {
             // https://drafts.css-houdini.org/css-properties-values-api-1/
             let css_text = zero_css_parser::serialize::serialize_property_rule_css_text(pr);
             entries.push(format!("@property\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::Keyframes(kfr) = rule {
+            // @keyframes wire 条目（css-animations-1 §at-ruledef-keyframes +
+            // cssom-1 CSSKeyframesRule；wptfyi-css 刀 KF：keyframes-name-valid
+            // 39F cssRules 读面——此前 keyframes 显式 defer，规则不入 wire 即
+            // sheet.cssRules 恒缺位，valid 页全页空 Rao / invalid 页 vacuous 过）。
+            // selectorText 字段 = `@keyframes` 标记（真实选择器不可能以 `@` 起头，
+            // shim 侧据此分派 CSSKeyframesRule 物化——host `__zw_parse_keyframes_rule`
+            // 单源解析/串化，与 insertRule 写面单实现双通道，property-rule 同型）。
+            // cssText = canonical 全文（`@keyframes <name> { <sel> { decls } }`）。
+            // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+            let css_text = zero_css_parser::serialize::serialize_keyframes_css_text(kfr);
+            entries.push(format!("@keyframes\x1e{}", css_text));
         }
-        // 其余 @-rule / keyframes / @media defer（cssRules 读仅 StyleRule + position-try）
+        // 其余 @-rule / @media defer（cssRules 读 = StyleRule + position-try +
+        // font-feature-values + property + keyframes）
     }
     entries.join("\x1f")
 }

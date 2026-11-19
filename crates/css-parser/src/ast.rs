@@ -249,6 +249,10 @@ pub struct CounterStyleRule {
 pub struct KeyframesRule {
     /// 动画名称。
     pub name: String,
+    /// 名称 token 形（css-animations-1 §typedef-keyframes-name：<custom-ident> |
+    /// <string>；CSSOM 串化保形——string 形名带引号重排（`"none"` 重解析归
+    /// String token 绕 custom-ident CSS-wide 排除），ident 形裸排。刀 KF）。
+    pub name_is_string: bool,
     /// 关键帧列表。
     pub keyframes: Vec<KeyframeBlock>,
 }

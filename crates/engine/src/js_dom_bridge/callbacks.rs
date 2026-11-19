@@ -4490,6 +4490,49 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 KF：@keyframes 规则 wire 物化单源回调（css-animations-1
+    // §at-ruledef-keyframes + cssom-1 CSSKeyframesRule——shim cssRules 读面
+    // wire cssText 再解析 + insertRule 写面共用，`__zw_parse_property_rule`
+    // 单实现双通道同型）。解析/串化单源 [`zero_css_parser`]（名 <custom-ident>
+    // | <string> 文法门在解析站裁决——CSS-wide 关键字/none/空串拒）。纯函数，
+    // 无 DOM 状态。
+    // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+    sandbox.register_callback(
+        "__zw_parse_keyframes_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::Keyframes(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_keyframes_css_text(rule),
+                "name": rule.name,
+                "keyframes": rule
+                    .keyframes
+                    .iter()
+                    .map(|kf| serde_json::json!({
+                        "keyText": zero_css_parser::serialize::serialize_keyframe_selectors(&kf.selectors),
+                        "cssText": format!(
+                            "{} {{ {} }}",
+                            zero_css_parser::serialize::serialize_keyframe_selectors(&kf.selectors),
+                            kf.declarations
+                                .iter()
+                                .map(|d| if d.important {
+                                    format!("{}: {} !important;", d.property, d.value)
+                                } else {
+                                    format!("{}: {};", d.property, d.value)
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ),
+                    }))
+                    .collect::<Vec<_>>(),
+            })
+            .to_string()
+        }),
+    );
+
     // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
     // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
     // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`

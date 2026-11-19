@@ -139,3 +139,85 @@ fn kind_css_name(kind: FontFeatureValueKind) -> &'static str {
         FontFeatureValueKind::Annotation => "annotation",
     }
 }
+
+/// 关键帧选择器列表 canonical 串化：from/to 保词、百分比整数去小数尾
+///（`50%`；非整数保 f64 最短形），列表 `, ` 连（css-animations-1
+/// §CSSKeyframeRule keyText 串化形——`serialize-a-keyframe-selector`）。
+/// https://drafts.csswg.org/css-animations-1/#csskeyframerule
+pub fn serialize_keyframe_selectors(
+    selectors: &[crate::ast::KeyframeSelector],
+) -> String {
+    selectors
+        .iter()
+        .map(|s| match s {
+            crate::ast::KeyframeSelector::From => "from".to_string(),
+            crate::ast::KeyframeSelector::To => "to".to_string(),
+            crate::ast::KeyframeSelector::Percentage(p) => {
+                if p.fract() == 0.0 {
+                    format!("{}%", *p as i64)
+                } else {
+                    format!("{}%", p)
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `@keyframes` 规则 canonical cssText（css-animations-1 §at-ruledef-keyframes +
+/// cssom-1 serializing；wptfyi-css 刀 KF：cssRules 读面 wire cssText 与 insertRule
+/// 写面经 `__zw_parse_keyframes_rule` 单源共用，property-rule 同型）。形：
+/// `@keyframes <name> { <sel-list> { decls } }`——名按 [`serialize_css_ident`]
+/// 重转义；声明 `p: v;`（`!important` 保形）空格连；空关键帧 `@keyframes n { }`
+/// 单空格形（Chrome 同形，property-rule 空块钉同型）。
+/// https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+pub fn serialize_keyframes_css_text(rule: &crate::ast::KeyframesRule) -> String {
+    let mut out = String::with_capacity(48);
+    out.push_str("@keyframes ");
+    if rule.name_is_string {
+        // string 形名带引号重排（css-animations-1 §typedef-keyframes-name <string>
+        // 支——`\`/`"` 转义保 round-trip 再解析归 String token，绕 custom-ident
+        // CSS-wide 排除——`"none"` 名规则 cssRules 读面不断链）。
+        let mut quoted = String::with_capacity(rule.name.len() + 2);
+        quoted.push('"');
+        for ch in rule.name.chars() {
+            match ch {
+                '"' | '\\' => {
+                    quoted.push('\\');
+                    quoted.push(ch);
+                }
+                _ => quoted.push(ch),
+            }
+        }
+        quoted.push('"');
+        out.push_str(&quoted);
+    } else {
+        out.push_str(&serialize_css_ident(&rule.name));
+    }
+    out.push_str(" {");
+    for kf in &rule.keyframes {
+        out.push(' ');
+        out.push_str(&serialize_keyframe_selectors(&kf.selectors));
+        out.push_str(" {");
+        if !kf.declarations.is_empty() {
+            let decls = kf
+                .declarations
+                .iter()
+                .map(|d| {
+                    if d.important {
+                        format!("{}: {} !important;", d.property, d.value)
+                    } else {
+                        format!("{}: {};", d.property, d.value)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.push(' ');
+            out.push_str(&decls);
+            out.push(' ');
+        }
+        out.push('}');
+    }
+    out.push_str(" }");
+    out
+}
