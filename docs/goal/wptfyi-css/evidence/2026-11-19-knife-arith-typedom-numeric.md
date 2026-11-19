@@ -71,9 +71,48 @@ cssMathNegate-type.any 2F（~78F，CSSNumericValue 算术/型别 API 族）。
   patch 生成基（HEAD）与校验基（在飞叠合态）错位；trap 归一回
   b1 树态，b0/b1 零构建零语料腿。faceC 面（先行在树）已由
   results-knife-facec 电池独立全额验证（+209/0/0），与本刀页域零交叠。
-- 重发计划：faceC 先 pathspec 落库后，combined 中剥出 arithmetic
-  纯 face patch（基线=faceC 落库后 HEAD），b0=HEAD、b1=HEAD+arith，
-  复用 knife-arith-battery.sh 配方换 patch 名重发。
+- 重发执行（r2）：faceC 落库（`d46855659`）后从 combined 剥出纯
+  arithmetic patch `knife-arith-face2.patch`（4 hunks / 247 行，生成法：
+  checkout faceC 前态 → apply combined → `git diff HEAD` 对 faceC 基），
+  `git apply --check` 过；电池 `knife-arith2-battery.sh`（results-knife-arith2，
+  systemd zw-arith2-battery）16:30:44 发射。
+- **16:55:57 GATE-DONE rc=0**：b0 bin ed41a1d2（42.4s）/ b1 md5
+  685b895c（30.0s）M2 区分成立，ride census S1/S3 恒定零扰动
+  （RIDE=es_module+part115 双侧同态相消）。**RECONCILE：gained=84
+  lost=0 regressed=0，pages_gain=6** 全落 numeric-objects：arithmetic
+  .tentative 20→59 +39（残 8F）、add-two-types 2→28 +26（全额）、
+  create-a-type +8、cssnumericvalue-multiply-two-types +6、
+  cssMathInvert-type +3、cssMathNegate-type +2——与 14:36 arfb b1 污染
+  窗实测 +53 六页同页域互证（差额 = 避让剥回时窗内第三段部分态）。
+  哨兵四语料逐页零位移。工作树 face 态 = face2.patch 逐字节相等
+  （`git diff HEAD` 对比），b1 bin provenance 闭环。
+
+## r2 电池收官（knife-arith2，16:30 发射，16:55:57 GATE-DONE rc=0）
+
+faceC 落库 `d46855659` 后剥纯 arithmetic patch
+（knife-arith-face2.patch，247 行 4 hunk——与 NOTES 14:1x 在飞态
+行数完全一致；生成法：checkout faceC 前基 → apply combined →
+`git diff HEAD` 得算术净 face；apply --check 过）。双腿 ×5 corpus，
+ride=es_module+part115 双文件 census S1/S3 恒定零扰动，b0 bin
+ed41a1d2（42.40s）/ b1 bin 685b895c（29.99s）M2 区分成立，trap
+归一 b1 树态（worktree=HEAD+arith face，即提交态）。
+
+**RECONCILE：gained=84 lost=0 regressed=0，pages_gain=6**，全落
+numeric-objects 主靶，四哨兵语料逐页零位移：
+
+- add-two-types.tentative +26（P 2→28，预测全额）
+- arithmetic.tentative +39（P 20→59；残 8F 后述）
+- create-a-type.tentative +8（P 0→8——type() 零键省略自愈红利，
+  与 arfb 电池污染窗 +53 分解中该页 +8 一致）
+- cssMathInvert-type +3 / cssMathNegate-type +2（预测全额）
+- cssnumericvalue-multiply-two-types.tentative +6（预测全额）
+
+> 目标 ~78F 超额兑现（+84）；arfb 污染分解的 +53 六页与本 r2 六页
+> 逐页对齐（arithmetic 页 14:08 半额 +8 → 全 face +39）。
+
+残面：arithmetic.tentative 残 8F（div 除零 RangeError 面等，
+后探针定谳）；cssMathValue 序列化/构造器直构页零位移（Negate/
+Invert 构造器不动的设计保形验证）。
 
 ## 预期与残面
 

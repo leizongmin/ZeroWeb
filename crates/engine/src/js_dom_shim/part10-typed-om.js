@@ -513,8 +513,8 @@
     // number 面单位省略（canonical：'2' 非 '2number'）；percent 用 '%'。
     return _zwOmNumStr(this._zwOmValue) + (this._zwOmUnit === 'percent' ? '%' : (this._zwOmUnit === 'number' ? '' : this._zwOmUnit));
   };
-  // type()：数值类型记录（assert_numeric_type_equals 消费形状：length/angle/
-  // time/frequency/resolution/flex/percent 0|1 + percentHint）。
+  // type()：数值类型记录（css-typed-om-1 §cssnumericvalue-type；形状为仅非零
+  // 指数键 + percentHint——零键省略，见 _zwOmUnitType）。
   CSSUnitValue.prototype.type = function () { return _zwOmUnitType(this._zwOmUnit); };
   try { CSSUnitValue.prototype[Symbol.toStringTag] = 'CSSUnitValue'; } catch (_eT) {}
   globalThis.CSSUnitValue = CSSUnitValue;
@@ -542,6 +542,14 @@
         if (typeof v === 'number') v = new CSSUnitValue(v, 'number');
         if (!(v instanceof CSSStyleValue)) throw new TypeError("Invalid value");
         list.push(v);
+      }
+      // 加法型构造器逐对消解校验（css-typed-om-1 §add-two-types：同族指数相等、
+      // percent 归并/hint 一致；Sum/Min/Max/Hypot 面；clamp 另走 _zwOmClampCompat
+      // 非-相等兼容面）。文法面（calc 解析器）经 _zwOmCtorStrict 旗标绕过——
+      // 可加性在解析期裁决，构造期不重复抛。
+      if (_zwOmCtorStrict && (operator === 'sum' || operator === 'min' || operator === 'max' || operator === 'hypot')) {
+        var accT = _zwOmTypeOfVal(list[0]);
+        for (var vi = 1; vi < list.length; vi++) accT = _zwOmTypeAdd(accT, _zwOmTypeOfVal(list[vi]), true);
       }
       if (wrap) wrap.call(this, list); // wrap 可裁移成员（Clamp/Invert），冻结在后
       this._zwOmValues = Object.freeze ? Object.freeze(list) : list;
@@ -1359,39 +1367,94 @@ return Ctor;
   };
 
   // ===== 10. 数值类型记录 =====
+  // 类型 map 只保留非零指数键（css-typed-om-1 §cssnumericvalue-type；语料
+  // assert_numeric_type_equals 逐键 assert_equals——零指数键缺省语义，键须省略
+  // 而非 0）。percentHint 仅在加法消解归并时出现（Unit 型 percent 无 hint）。
   function _zwOmUnitType(unit) {
-    var info = _zwOmUnitInfo(unit);
-    var t = { length: 0, angle: 0, time: 0, frequency: 0, resolution: 0, flex: 0, percent: 0, percentHint: null };
+    var t = {};
     if (unit === 'percent') { t.percent = 1; return t; }
-    if (info) {
-      var fam = info[0];
-      if (fam === 'percentHint') t.percentHint = 'percent';
-      if (t[fam] !== undefined) t[fam] = 1;
-    }
+    var info = _zwOmUnitInfo(unit);
+    if (info && info[0] !== 'number') t[info[0]] = 1;
     return t;
   }
+  function _zwOmTypeOfVal(v) {
+    return (v instanceof CSSMathValue) ? v.type()
+      : _zwOmUnitType(v instanceof CSSUnitValue ? v._zwOmUnit : 'number');
+  }
+  // 加法消解（css-typed-om-1 §add-two-types）：同族指数须逐键相等；percent +
+  // 指数 1 单具体族 → percentHint 归并（族键保留、percent 键吸收）；% + number
+  // → percent 保形；双侧 % 指数相等保留；hint 冲突/指数不等/任一键缺于一侧
+  // （number↔具体族、跨族）→ strict 抛 TypeError；宽容面（type() 恒不抛）并集
+  // 近似。
+  function _zwOmTypeAdd(a, b, strict) {
+    var ha = a.percentHint || null, hb = b.percentHint || null;
+    var pa = a.percent || 0, pb = b.percent || 0;
+    var k;
+    function bestEffort() {
+      var m = {};
+      for (k in a) if (k !== 'percentHint' && a[k]) m[k] = a[k];
+      for (k in b) if (k !== 'percentHint' && b[k] && !m[k]) m[k] = b[k];
+      if (ha || hb) m.percentHint = ha || hb;
+      return m;
+    }
+    if (ha && hb && ha !== hb) {
+      if (strict) throw new TypeError("percent hints must match");
+      return bestEffort();
+    }
+    var fams = {}, count = 0, single = null;
+    for (k in a) if (k !== 'percent' && k !== 'percentHint' && a[k]) { fams[k] = a[k]; count++; single = k; }
+    for (k in b) if (k !== 'percent' && k !== 'percentHint' && b[k]) { if (!fams[k]) { count++; single = k; } fams[k] = b[k]; }
+    for (k in a) if (a[k] && b[k] && k !== 'percent' && k !== 'percentHint' && a[k] !== b[k]) {
+      if (strict) throw new TypeError("type exponents must match");
+      return bestEffort();
+    }
+    var hint = ha || hb, out = {};
+    if (pa > 0 && pb > 0) {
+      if (count > 0 || pa !== pb) { if (strict) throw new TypeError("percent types are not addable"); return bestEffort(); }
+      out.percent = pa;
+    } else if (pa > 0 || pb > 0) {
+      if (count === 1 && fams[single] === 1) { out[single] = 1; if (!hint) hint = single; }
+      else if (count === 0) out.percent = (pa > 0 ? pa : pb);
+      else { if (strict) throw new TypeError("percent types are not addable"); return bestEffort(); }
+    } else {
+      // 无 percent：任一键缺于一侧即不可加（count 为并集键数）
+      var aCount = 0;
+      for (k in a) if (k !== 'percent' && k !== 'percentHint' && a[k]) aCount++;
+      if (aCount !== count) { if (strict) throw new TypeError("types are not addable"); return bestEffort(); }
+      for (k in fams) out[k] = fams[k];
+    }
+    if (hint) out.percentHint = hint;
+    return out;
+  }
+  // CSSMathValue 型（css-typed-om-1 §type-of-a-cssmathvalue）：negate 保形、
+  // invert 指数取负、product 指数累加；sum/min/max/clamp/hypot/abs 逐对加法
+  // 消解（不可加已由构造器 strict 面与解析期检查挡住，type() 恒不抛）。
   function _zwOmMathType(node) {
-    var t = { length: 0, angle: 0, time: 0, frequency: 0, resolution: 0, flex: 0, percent: 0, percentHint: null };
-    var members = node._zwOmValues || [];
-    // Clamp/Negate/Invert/Abs/Sign：单值域；Sum/Min/Max/Hypot：成员域并。
     var op = node.operator;
-    for (var i = 0; i < members.length; i++) {
-      var mt = members[i] instanceof CSSMathValue ? members[i].type() : _zwOmUnitType(members[i] instanceof CSSUnitValue ? members[i].unit : 'number');
-      for (var k in t) {
-        if (k === 'percentHint') continue;
-        if (op === 'product') t[k] += mt[k]; // 粗粒度：乘法指数累计（FIXME: 除法消解）
-        else if (op === 'invert') t[k] -= mt[k];
-        else t[k] = Math.max(t[k], mt[k]);
+    var members = node._zwOmValues || [];
+    var i, k;
+    if (op === 'sign') return {};
+    if (op === 'negate') return _zwOmTypeOfVal(members[0]);
+    if (op === 'invert') {
+      var inv = _zwOmTypeOfVal(members[0]);
+      var neg = {};
+      for (k in inv) if (k !== 'percentHint') neg[k] = -inv[k];
+      if (inv.percentHint) neg.percentHint = inv.percentHint;
+      return neg;
+    }
+    if (op === 'product') {
+      var prod = {}, hint = null;
+      for (i = 0; i < members.length; i++) {
+        var mt = _zwOmTypeOfVal(members[i]);
+        if (mt.percentHint) hint = mt.percentHint;
+        for (k in mt) if (k !== 'percentHint') prod[k] = (prod[k] || 0) + mt[k];
       }
+      if (hint) prod.percentHint = hint;
+      return prod;
     }
-    // percentHint：percent 与另一具体维并现时取该维。
-    var concrete = [];
-    for (var d in { length: 1, angle: 1, time: 1, frequency: 1, resolution: 1, flex: 1 }) if (t[d] > 0) concrete.push(d);
-    if (t.percent > 0) {
-      if (concrete.length === 1) t.percentHint = concrete[0];
-      else if (concrete.length === 0) t.percentHint = 'percent';
-    }
-    return t;
+    var acc = {};
+    for (i = 0; i < members.length; i++) acc = _zwOmTypeAdd(acc, _zwOmTypeOfVal(members[i]), false);
+    return acc;
   }
   // CSSMathValue 序列化（css-typed-om-1 § calc-serialization，语料
   // stylevalue-serialization 面）：顶层 calc()/min()/max()/clamp() 包裹；嵌套
@@ -1448,18 +1511,94 @@ return Ctor;
   function _zwOmValStr(v, ctx) {
     return (v && typeof v.operator === 'string') ? _zwOmMathStr(v, ctx) : String(v);
   }
+  // 算术 API（css-typed-om-1 §dom-cssnumericvalue-add/sub/mul/div/min/max）：
+  // 无参恒等返回 this；numberish 展开；sum/sub/min/max 逐对加法消解（不可加
+  // TypeError）；mul/div 乘除消解（percentHint 冲突 TypeError；div 除数 number
+  // 型 0 值 RangeError）。UnitValue 全体时按运算化简：加/减/取小取大同单位、
+  // mul 非 number 成员至多一个、div 除数全 number 型。sub 逐参取负（Unit 直取
+  // 负、Negate 剥壳——双重取负抵消）；div 逐参取倒（number 直取倒数、Invert
+  // 剥壳）。
   function _zwOmArith(mode, self, args) {
+    if (args.length === 0) return self;
     var list = [self];
     for (var i = 0; i < args.length; i++) {
       var v = args[i];
       if (typeof v === 'number') v = new CSSUnitValue(v, 'number');
       list.push(v);
     }
+    var i2;
+    if (mode === 'div') {
+      // 除数 number 型 0 值恒 RangeError（css-typed-om-1 divide 步；语料零除面）
+      for (i2 = 1; i2 < list.length; i2++) {
+        if (list[i2] instanceof CSSUnitValue && list[i2]._zwOmUnit === 'number' && list[i2]._zwOmValue === 0) throw new RangeError("Cannot divide by zero");
+      }
+    }
+    if (mode === 'sum' || mode === 'sub' || mode === 'min' || mode === 'max') {
+      var accT = _zwOmTypeOfVal(list[0]);
+      for (i2 = 1; i2 < list.length; i2++) accT = _zwOmTypeAdd(accT, _zwOmTypeOfVal(list[i2]), true);
+    } else {
+      // mul/div 乘除消解：族指数任并，percentHint 冲突才 TypeError
+      // （css-typed-om-1 §multiply-two-types/§divide-two-types）
+      var hint = null;
+      for (i2 = 0; i2 < list.length; i2++) {
+        var h = _zwOmTypeOfVal(list[i2]).percentHint;
+        if (h) { if (hint && hint !== h) throw new TypeError("percent hints must match"); hint = h; }
+      }
+    }
+    var allUnit = true;
+    for (i2 = 0; i2 < list.length; i2++) if (!(list[i2] instanceof CSSUnitValue)) { allUnit = false; break; }
+    if (allUnit) {
+      var fold = true, resUnit = list[0]._zwOmUnit;
+      if (mode === 'sum' || mode === 'sub' || mode === 'min' || mode === 'max') {
+        for (i2 = 1; i2 < list.length; i2++) if (list[i2]._zwOmUnit !== resUnit) { fold = false; break; }
+      } else if (mode === 'mul') {
+        var nonNums = 0;
+        for (i2 = 0; i2 < list.length; i2++) {
+          if (list[i2]._zwOmUnit !== 'number') { nonNums++; resUnit = list[i2]._zwOmUnit; }
+        }
+        fold = nonNums <= 1;
+      } else { // div：除数全 number 型才化简（商单位即 self 单位）
+        for (i2 = 1; i2 < list.length; i2++) if (list[i2]._zwOmUnit !== 'number') { fold = false; break; }
+      }
+      if (fold) {
+        var acc = list[0]._zwOmValue;
+        for (i2 = 1; i2 < list.length; i2++) {
+          var mv = list[i2]._zwOmValue;
+          if (mode === 'sum') acc += mv;
+          else if (mode === 'sub') acc -= mv;
+          else if (mode === 'mul') acc *= mv;
+          else if (mode === 'div') acc /= mv;
+          else if (mode === 'min') acc = Math.min(acc, mv);
+          else acc = Math.max(acc, mv);
+        }
+        return new CSSUnitValue(_zwOmNumClean(acc), resUnit);
+      }
+    }
     switch (mode) {
       case 'sum': return new CSSMathSum(list);
-      case 'sub': return new CSSMathSum([list[0]].concat(list.slice(1).map(function (v) { return new CSSMathNegate(v); })));
+      case 'sub': {
+        var negs = [list[0]];
+        for (i2 = 1; i2 < list.length; i2++) {
+          var sv = list[i2];
+          if (sv instanceof CSSUnitValue) sv = new CSSUnitValue(-sv._zwOmValue, sv._zwOmUnit);
+          else if (sv instanceof CSSMathValue && sv.operator === 'negate') sv = sv._zwOmValues[0];
+          else sv = new CSSMathNegate(sv);
+          negs.push(sv);
+        }
+        return new CSSMathSum(negs);
+      }
       case 'mul': return new CSSMathProduct(list);
-      case 'div': return new CSSMathProduct([list[0]].concat(list.slice(1).map(function (v) { return new CSSMathInvert(v); })));
+      case 'div': {
+        var invs = [list[0]];
+        for (i2 = 1; i2 < list.length; i2++) {
+          var dv = list[i2];
+          if (dv instanceof CSSUnitValue && dv._zwOmUnit === 'number') dv = new CSSUnitValue(1 / dv._zwOmValue, 'number');
+          else if (dv instanceof CSSMathValue && dv.operator === 'invert') dv = dv._zwOmValues[0];
+          else dv = new CSSMathInvert(dv);
+          invs.push(dv);
+        }
+        return new CSSMathProduct(invs);
+      }
       case 'min': return new CSSMathMin(list);
       case 'max': return new CSSMathMax(list);
     }
