@@ -1,0 +1,538 @@
+diff --git a/crates/engine/src/js_dom_bridge/callbacks.rs b/crates/engine/src/js_dom_bridge/callbacks.rs
+index cf19650ee..f1ab8c99f 100644
+--- a/crates/engine/src/js_dom_bridge/callbacks.rs
++++ b/crates/engine/src/js_dom_bridge/callbacks.rs
+@@ -849,6 +849,46 @@ pub fn register_dom_callbacks(
+         }),
+     );
+ 
++    // d56r（input-events ①(b) 刀，2026-11-19）：`__zw_node_id(key)`——key→NodeId 桥，
++    // shim 监听器注册/派发面的节点 id 桶调和用（part04 元素臂双写、part03
++    // `_dispatchToListeners` 合并，见该两处 d56r 注记）。key 与 `_elKey` 产物同形：
++    // sel 串——canonical 串与原始查询串同为该节点的引擎可反查定位串（d56 轮定谳：
++    // 两族 wrapper 同指一节点）。解析与 gBCR 同源：LIVE_QUERY_DOC 优先、miss 回落
++    // 查询快照 re-parse；handle 键（'@' 前缀）不解析（detach 世界无双写需求，返空串
++    // = 注册面不双写、派发面不合并，零行为变化）。未命中返空串。
++    let nid_html = Arc::clone(dom_html);
++    let nid_mut = Arc::clone(mutations);
++    sandbox.register_callback(
++        "__zw_node_id",
++        Box::new(move |args: &[String]| -> String {
++            let key = args.first().map(String::as_str).unwrap_or("");
++            if key.is_empty() || key.starts_with('@') {
++                return String::new();
++            }
++            let node_id = LIVE_QUERY_DOC.with(|slot| {
++                slot.borrow()
++                    .as_ref()
++                    .and_then(|rc| rc.try_borrow().ok())
++                    .and_then(|doc| {
++                        crate::js_dom_bridge::find_by_selector(&doc, key).map(crate::hit_test::node_id_to_u64)
++                    })
++            });
++            let node_id = match node_id {
++                Some(id) => id,
++                None => {
++                    let hit = with_query_view_doc(&nid_html, &nid_mut, |doc, _| {
++                        crate::js_dom_bridge::find_by_selector(doc, key).map(crate::hit_test::node_id_to_u64)
++                    });
++                    match hit {
++                        Some(id) => id,
++                        None => return String::new(),
++                    }
++                }
++            };
++            node_id.to_string()
++        }),
++    );
++
+     // s284（html-semantics M2）：handle→selector 正置表查询——img 机具 shim 侧
+     //（lazy 视口判定 / being-rendered / sizes auto 臂）对 script 创建 img
+     //（identity = handle `__n{n}`）自解析 identity 后走既有 selector 面 rect
+diff --git a/crates/engine/src/js_dom_shim/part01.js b/crates/engine/src/js_dom_shim/part01.js
+index 2ffbc40d2..634e2165f 100644
+--- a/crates/engine/src/js_dom_shim/part01.js
++++ b/crates/engine/src/js_dom_shim/part01.js
+@@ -54,6 +54,17 @@
+     return _out.join('');
+   };
+   var _listenerStore = {};
++  // d56r（input-events ①(b) 刀，2026-11-19）：节点 id 桶——监听器跨 wrapper 家族调和
++  //（match-only，不统一 wrapper）。同一原生节点可被不同 wrapper 家族各自包装入桶
++  //（attach 键 = 引擎 canonical 串，CE 键链派发站键 = 原始查询串——d56 轮诊断
++  // 四轮定谳的换代面），派发按包装键点火落空 = bi=0 族根因。元素臂注册面把 record
++  // 同引用双写进 `id:<NodeId>` 键桶（record 带 `_zwNid` 印记），派发面
++  // `_dispatchToListeners` 按 station key 反查 NodeId 合并；remove/once/signal-abort
++  // 三处同步跨桶清理。`__zwNidCount` 兼零成本门：0 时派发面零额外开销。spec：
++  // dispatch 以 event path 节点为单位 invoke listener 表，wrapper 家族身份不参与——
++  // https://dom.spec.whatwg.org/#concept-event-dispatch
++  var _zwNidBuckets = {};
++  var __zwNidCount = 0;
+   // R2933 element 级 IDL on-event handler 存储（per-element-key → { eventType: fn }）。on* setter 把 fn
+   // 同时记此 + 注册进 _listenerStore[key]（使 dispatchEvent 触发）；getter 返此存储 fn（或 null）。
+   var _onHandlers = {};
+@@ -512,6 +523,25 @@
+   // 仅非原始值（real attr setter 永不收 function/object → 零回归风险，string/number/boolean 保持 generic fallthrough）。
+   // 限制：无 deleteProperty trap → `delete el.expando` 不清此 map（罕见，documented）。导航经 __zw_reset_form_state 清空。
+   var _expando = {};
++  // d56r（input-events ①(b) 刀，2026-11-19）：expando 桶键节点稳定化——同节点的不同
++  // wrapper 家族各自持键（attach 键 = canonical 串，churn 后查询/派发键 = 原始查询串，
++  // d56 轮诊断定谳的换代面），wrapper 键桶使页面对元素的 expando（如 harness 的
++  // isListeningToInputEvents 守卫旗）跨族读空 → 守卫失效 → 重复注册/状态丢失。spec：
++  // expando 属元素对象本身，同节点同对象同属性——跨族读写须同桶。键基切换：sel 键经
++  // `__zw_node_id` 反查 NodeId 共享桶（首访问解析一次后缓存，命中路径零宿主往返——
++  // trap 成本方针）；`@` handle 键与引擎不可反查键回落 wrapper 键（detach 世界零行为
++  // 变化）。真实浏览器下节点替换后为新对象、expando 不延续——NodeId 换代后旧桶自然
++  // 孤儿化，与该语义一致。
++  var _zwKeyNidCache = {};
++  function _zwExpandoKey(key) {
++    var c = _zwKeyNidCache[key];
++    if (c !== undefined) return c;
++    var nid = '';
++    try { nid = globalThis.__zw_node_id(String(key)) || ''; } catch (_eXk) {}
++    c = nid || key;
++    _zwKeyNidCache[key] = c;
++    return c;
++  }
+   // R3067：Web Animations API per-element 动画注册表。elKey → [Animation, ...]（创建序）。_makeAnimation 入注册表，
+   // Element.getAnimations() / Document.getAnimations() 读。spec：返「current/in effect」动画——cancelled（playState='idle'）
+   // 排除；finished 仍返（headless 瞬间完成，finished 动画仍可查询/commitStyles）。导航经 __zw_reset_form_state 清空（per-page）。
+diff --git a/crates/engine/src/js_dom_shim/part03.js b/crates/engine/src/js_dom_shim/part03.js
+index fc2c59bed..2400dc72e 100644
+--- a/crates/engine/src/js_dom_shim/part03.js
++++ b/crates/engine/src/js_dom_shim/part03.js
+@@ -17332,8 +17332,41 @@
+   // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
+   function _dispatchToListeners(key, event, phase, thisObj, slot, asyncDrain) {
+     var listeners = _listenerStore[key];
+-    if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
+-    var list = listeners[event.type];
++    // d56r（input-events ①(b) 刀，2026-11-19）：station 桶为空也可能有跨族注册——
++    // 合并须在早退之前。按 station key 反查 NodeId 取 nid 桶（part04 元素臂双写），
++    // record 按引用去重后并入本站点火列表。`__zwNidCount === 0`（页面无 nid 注册）
++    // 或 NodeId 不可解析 → `_zwNidKey` 空 → `_zwStationList` 零开销直返 station 桶
++    //（零行为变化）。spec：dispatch 以 event path 节点为单位 invoke listener 表，
++    // wrapper 家族身份不参与——https://dom.spec.whatwg.org/#concept-event-dispatch。
++    // R331 各段重克隆语义由 `_zwStationList()` 每次实时取两桶当前内容承载。
++    var _zwNidKey = '';
++    if (__zwNidCount > 0) {
++      try { _zwNidKey = globalThis.__zw_node_id(String(key)) || ''; } catch (_eNidA) {}
++      if (!(_zwNidKey && _zwNidBuckets[_zwNidKey] && _zwNidBuckets[_zwNidKey][event.type])) _zwNidKey = '';
++    }
++    var _zwStationList = function() {
++      var cur = (listeners && listeners[event.type]) || [];
++      if (!_zwNidKey) return cur;
++      var nl = _zwNidBuckets[_zwNidKey][event.type];
++      var out = cur.slice();
++      for (var _zwMi = 0; _zwMi < nl.length; _zwMi++) {
++        var _zwE = nl[_zwMi];
++        if (out.indexOf(_zwE) >= 0) continue;
++        // d56r：fn+capture 同型去重——同一 fn 可经多族 wrapper 各注册一次（R143
++        // 去重是 per 桶的，跨桶并存两 record），合并面只保留本站已有 record，否则
++        // 同一次派发触发两次同型 listener。spec：同一 EventTarget 上同 type/
++        // callback/capture 只有一个 listener record——
++        // https://dom.spec.whatwg.org/#add-an-event-listener（步骤 4）。
++        var _zwDup = false;
++        for (var _zwDj = 0; _zwDj < out.length; _zwDj++) {
++          if (out[_zwDj].fn === _zwE.fn && out[_zwDj].capture === _zwE.capture) { _zwDup = true; break; }
++        }
++        if (!_zwDup) out.push(_zwE);
++      }
++      return out;
++    };
++    if ((!listeners || !listeners[event.type]) && !_zwNidKey) return !event._defaultPrevented;
++    var list = _zwStationList();
+     // js-dom M4 R40：槽位过滤——document/window listener 与 html 元素 listener 共存于 _elKey('html') key
+     //（三合一，postMessage/onerror/inline-handler 依赖）。entry.tgt 标记注册目标（'doc'/'win'/undefined=html
+     // 元素注册）。派发虚站（document 站只触发 tgt==='doc'，window 站只触发 tgt==='win'，html 站只触发
+@@ -17375,13 +17408,31 @@
+     // is dispatched"）。旧实现恒 `entry.fn.call(...)`，对象 listener 抛（对象无 call）→ WPT
+     // EventListener-handleEvent fail。
+     var fire = function(entry) {
++      // d56r：跨族合并的 per-dispatch 去重——同一逻辑节点可经 wrapper 家族复制出现为
++      // 多个派发站点（target 原始串站 + walk canonical 站，多族 wrapper 结构属性，
++      // match-only 方针不统一 wrapper），nid 合并后同一 record 会在两站各点火一次。
++      // spec：listener 每次派发对同一节点至多触发一次——
++      // https://dom.spec.whatwg.org/#concept-event-dispatch（inner invoke 按 path 节点
++      // 逐站，同节点只一站）。仅约束 nid 印记 record；`_zwNidFired` 于
++      // _dispatchWithBubble 入口复位。
++      if (entry._zwNid) {
++        if (event._zwNidFired && event._zwNidFired.indexOf(entry) >= 0) return;
++        if (!event._zwNidFired) event._zwNidFired = [];
++        event._zwNidFired.push(entry);
++      }
+       // js-dom M4 R111：spec inner invoke 步骤 4——once listener **调用前**移除（remove
+       // listener then call）。调用后移除不够：listener 内嵌套 dispatchEvent 时新 dispatch
+       // 的快照仍含本 listener → 无限递归（WPT remove-all-listeners "Nested usage of once
+       // listeners"）。firedOnce 仍记录（dispatch 尾部的批量过滤路径保留，双保险）。
+-      if (entry.once && listeners[event.type]) {
++      if (entry.once && listeners && listeners[event.type]) {
+         listeners[event.type] = listeners[event.type].filter(function(e) { return e !== entry; });
+       }
++      // d56r：once 移除跨桶（合并 record 的注册桶是 nid 桶；R111 双桶一致）。
++      if (entry.once && entry._zwNid && _zwNidBuckets[entry._zwNid] && _zwNidBuckets[entry._zwNid][event.type]) {
++        var _zwNol = _zwNidBuckets[entry._zwNid][event.type];
++        var _zwNoi = _zwNol.indexOf(entry);
++        if (_zwNoi >= 0) { _zwNol.splice(_zwNoi, 1); __zwNidCount--; }
++      }
+       var fn = entry.fn;
+       var callable = fn;
+       // R187：安全读 listener 的 realm 印记——revoked Proxy 上属性 Get 抛，一律 try
+@@ -17492,6 +17543,15 @@
+     // 下一致止上溯/止同节点后续 listener。immediate flag 同理（`_immediateStopped` polyfill / `__zw_stop_immediate` native）。
+     var stopped = function() { return event._propagationStopped || event.__zw_stop === true; };
+     var immediateStopped = function() { return event._immediateStopped || event.__zw_stop_immediate === true; };
++    // d56r：R111「removed 则跳过」检查跨桶化——合并 record 的注册桶是 nid 桶，
++    // 仅查 station 桶会把活 record 误判为已移除而跳火。station 桶命中即短路
++    //（无 nid 注册的页面零额外成本）。
++    var _zwLive = function(entry) {
++      var cur = listeners && listeners[event.type];
++      if (cur && cur.indexOf(entry) >= 0) return true;
++      return !!(entry._zwNid && _zwNidBuckets[entry._zwNid] && _zwNidBuckets[entry._zwNid][event.type]
++        && _zwNidBuckets[entry._zwNid][event.type].indexOf(entry) >= 0);
++    };
+     if (asyncDrain) {
+       // s336 R3（逐 listener 微任务检查点）：WebIDL call-a-user-objects-operation 尾
+       // clean-up-after-running-script——invoke 返回后 JS 执行上下文栈为空即
+@@ -17509,9 +17569,11 @@
+       }
+       if (phase !== 'capture') {
+         // R331：target 段重取当时快照（capture 段内 swap 可见）+ slot 过滤。
+-        var tSnap = (slot === undefined ? listeners[event.type] : (slot === null
+-          ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
+-          : listeners[event.type].filter(function(e) { return e.tgt === slot; })));
++        // d56r：快照经 `_zwStationList()` 取（station∪nid 合并面）。
++        var _zwSLt = _zwStationList();
++        var tSnap = (slot === undefined ? _zwSLt : (slot === null
++          ? _zwSLt.filter(function(e) { return e.tgt === undefined; })
++          : _zwSLt.filter(function(e) { return e.tgt === slot; })));
+         for (var dJ = 0; dJ < tSnap.length; dJ++) if (!tSnap[dJ].capture) drainSeq.push(tSnap[dJ]);
+       }
+       var dK = 0;
+@@ -17519,19 +17581,19 @@
+         if (dK >= drainSeq.length || immediateStopped()) {
+           // once 批滤兜底（eventPhase/currentTarget 复位归 _dispatchWithBubble finally——
+           // 与同步路径零偏差）。
+-          if (firedOnce) {
++          if (firedOnce && listeners) {
+             listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
+           }
+           return;
+         }
+         var entry = drainSeq[dK++];
+         // R111：快照迭代期间被 removeEventListener 移除的 listener 跳过（原 for 同款）。
+-        if (!(listeners[event.type] && listeners[event.type].indexOf(entry) >= 0)) { drainNext(); return; }
++        if (!_zwLive(entry)) { drainNext(); return; }
+         fire(entry);
+         if (immediateStopped()) { drainNext(); return; }
+         if (stopped() && capOnly) {
+           // capture 段 stopPropagation：target 子序不跑（原 stopped 门同款）。
+-          if (firedOnce) {
++          if (firedOnce && listeners) {
+             listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
+           }
+           return;
+@@ -17548,7 +17610,7 @@
+           // 快照迭代期间被 removeEventListener 移除的 listener 跳过（WPT
+           // remove-all-listeners "Removing all listeners and then adding a new one"：
+           // listener1 内移除 listener2，listener2 不得触发）。
+-          if (listeners[event.type] && listeners[event.type].indexOf(snap[i]) < 0) continue;
++          if (!_zwLive(snap[i])) continue;
+           fire(snap[i]);
+           if (immediateStopped()) break;
+         }
+@@ -17561,7 +17623,7 @@
+       // stopPropagation 止同元素 bubble handler）。'bubble' phase（祖先冒泡）正常 stopped()=false 不受影响。
+       // stopImmediatePropagation 止当前节点剩余 + 后续节点（更强，已在每 listener 后检查）。
+       if (stopped()) {
+-        if (firedOnce) {
++        if (firedOnce && listeners) {
+           listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
+         }
+         return !event._defaultPrevented;
+@@ -17570,19 +17632,22 @@
+       // capture 段 listener 内的 swap（remove+add）在本段可见；同段内 swap 仍受本段快照约束。
+       // slot 过滤同步应用（html/doc/win 三站共存 _elKey('html') key——新 add 的 listener 若是
+       // 本站身份才进快照；未过滤时 doc/win 虚站会把 html 站新 add 的 listener 误触发，R40 门）。
+-      snap = (slot === undefined ? listeners[event.type] : (slot === null
+-        ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
+-        : listeners[event.type].filter(function(e) { return e.tgt === slot; }))).slice();
++      // d56r：快照经 `_zwStationList()` 取（station∪nid 合并面，跨族注册的 bubble
++      // 段同可见）。
++      var _zwSLb = _zwStationList();
++      snap = (slot === undefined ? _zwSLb : (slot === null
++        ? _zwSLb.filter(function(e) { return e.tgt === undefined; })
++        : _zwSLb.filter(function(e) { return e.tgt === slot; }))).slice();
+       for (var j = 0; j < snap.length; j++) {
+         if (!snap[j].capture) {
+           // R111：同 capture 分支——派发中被移除的 listener 跳过。
+-          if (listeners[event.type] && listeners[event.type].indexOf(snap[j]) < 0) continue;
++          if (!_zwLive(snap[j])) continue;
+           fire(snap[j]);
+           if (immediateStopped()) break;
+         }
+       }
+     }
+-    if (firedOnce) {
++    if (firedOnce && listeners) {
+       // R40：once 移除须从原始 store 数组过滤（slot 过滤下 list 可能是子集副本，直接写回会丢
+       // 其他槽位的注册）。firedOnce 引用原始 entry 对象，indexOf 匹配安全。
+       listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
+@@ -18180,6 +18245,9 @@
+   }
+ 
+   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy, asyncDrain) {
++    // d56r：跨族合并的 per-dispatch 去重印记复位——同一 event 对象重复 dispatchEvent
++    // 须重新计次（spec 每次派发独立 invoke）。
++    if (event && event._zwNidFired) event._zwNidFired = null;
+     var target = _makeProxy(targetSel, targetHandle);
+     // WC-M3 切片 8 第九增量（web-components goal）：**receiver identity 保持**——
+     // dispatchEvent 的接收者本身是页面持有的 proxy；R52 消零清 `_proxyCache` 后
+@@ -33954,7 +34022,7 @@ return e;
+             } catch (_efnd0) {}
+             // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
+             // own property；WPT expando added later 案）。
+-            var _fex0 = _expando[key];
++            var _fex0 = _expando[_zwExpandoKey(key)];
+             if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+               // T79 OP-086（RC-02②）：FORM own expando 与已标 R3042 同一存值（set
+               // fallthrough 写/deleteProperty ② 臂删），且先于其执行——动态面禁缓存。
+diff --git a/crates/engine/src/js_dom_shim/part04.js b/crates/engine/src/js_dom_shim/part04.js
+index 9a899a674..ced90b6e1 100644
+--- a/crates/engine/src/js_dom_shim/part04.js
++++ b/crates/engine/src/js_dom_shim/part04.js
+@@ -2648,7 +2648,7 @@
+           // 上游 _zwIsRemoved 短路（返 null 优先，spec remove() 后 parentNode null）。
+           try {
+             var _xlPending = null;
+-            var _xlEx = _expando[key];
++            var _xlEx = _expando[_zwExpandoKey(key)];
+             if (_xlEx && _xlEx._zwSelPendingParent) _xlPending = _xlEx._zwSelPendingParent;
+             if (!_xlPending) {
+               try { _xlPending = this._zwSelPendingParent || null; } catch (_eXlT) {}
+@@ -2685,7 +2685,7 @@
+           //（spec parentElement 对非元素父跳过且无更上层可达——直接 null）。dual
+           // 槽（parentSel 并存，R97 noWire 形态）父是 sel 元素，不在此列。
+           try {
+-            var _pe5241Ex = _expando[key];
++            var _pe5241Ex = _expando[_zwExpandoKey(key)];
+             var _pe5241 = (_pe5241Ex && _pe5241Ex._zwSelPendingParent) || this._zwSelPendingParent || null;
+             if (_pe5241 && _pe5241.parentHandle && !_pe5241.parentSel) return null;
+           } catch (_ePe5241) {}
+@@ -2901,7 +2901,7 @@
+           if (sel) {
+             var _r5240GateKids = null;
+             try {
+-              var _r5240Ex = _expando[key];
++              var _r5240Ex = _expando[_zwExpandoKey(key)];
+               var _r5240Slot = (_r5240Ex && _r5240Ex._zwSelPendingParent) ? _r5240Ex._zwSelPendingParent : null;
+               if (!_r5240Slot) { try { _r5240Slot = this._zwSelPendingParent || null; } catch (_e5240t) {} }
+               if (_r5240Slot && _r5240Slot.parentSel) {
+@@ -5883,7 +5883,7 @@
+         // getter 返存储值（默认 ''，spec 空 dialog returnValue 为 ''）。直接 setAttribute 不可达（IDL 属性 setter
+         // 不反射内容属性——dialog 无 returnValue 内容属性，仅 IDL），故存 _expando。setter 任意值 → 串。
+         // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-returnvalue
+-        if (prop === 'returnValue' && _realTag(sel, handle) === 'DIALOG') return _expando[key + '::returnValue'] || '';
++        if (prop === 'returnValue' && _realTag(sel, handle) === 'DIALOG') return _expando[_zwExpandoKey(key) + '::returnValue'] || '';
+         if (prop === 'scrollTo' || prop === 'scrollBy') {
+           var _ss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
+           var _byM = prop === 'scrollBy';
+@@ -6394,7 +6394,7 @@
+           // handler 名（真浏览器落 expando、读 undefined——事件派发不触达；
+           // custom-events/event-listeners 定谳面）。
+           if (globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[_gt]) {
+-            var _sB5ExG = _expando[key];
++            var _sB5ExG = _expando[_zwExpandoKey(key)];
+             if (_sB5ExG && Object.prototype.hasOwnProperty.call(_sB5ExG, prop)) { return _sB5ExG[prop]; }
+             return undefined;
+           }
+@@ -6413,7 +6413,7 @@
+           if (globalThis._ZW_NON_ELEMENT_ON && globalThis._ZW_NON_ELEMENT_ON[_gt]
+               && !(globalThis._ZW_NON_ELEMENT_ON_MEDIA && globalThis._ZW_NON_ELEMENT_ON_MEDIA[_gt]
+                   && (_r107Tag === 'AUDIO' || _r107Tag === 'VIDEO'))) {
+-            var _s288ExG = _expando[key];
++            var _s288ExG = _expando[_zwExpandoKey(key)];
+             if (_s288ExG && Object.prototype.hasOwnProperty.call(_s288ExG, prop)) { return _s288ExG[prop]; }
+             return undefined;
+           }
+@@ -6469,13 +6469,43 @@
+             if (_r4200sig && typeof _r4200sig === 'object' && _r4200sig.aborted) return;
+             var _r4200rec = { fn: fn, capture: _r143Cap, once: _optOnce(opts), passive: _p105, signal: _r4200sig || undefined };
+             _listenerStore[key][type].push(_r4200rec);
++            // d56r（input-events ①(b) 刀）：节点 id 桶双写——本 wrapper 家族键入
++            // `_listenerStore[key]`，同节点的其他 wrapper 家族派发站键不同（换代面，
++            // 见 _dispatchToListeners d56r 注记）。record 同引用双写（派发面按引用
++            // 去重）+ `_zwNid` 印记（remove/once/abort 跨桶清理定位）。R143 同款
++            // fn+capture 去重；NodeId 未解析（引擎不可反查）静默跳过 = 零行为变化。
++            // spec：listener 属节点的 listener 表——
++            // https://dom.spec.whatwg.org/#concept-event-listener
++            var _zwNid = '';
++            try { _zwNid = globalThis.__zw_node_id(String(key)) || ''; } catch (_eNid0) {}
++            if (_zwNid) {
++              if (!_zwNidBuckets[_zwNid]) _zwNidBuckets[_zwNid] = {};
++              if (!_zwNidBuckets[_zwNid][type]) _zwNidBuckets[_zwNid][type] = [];
++              var _zwNlst = _zwNidBuckets[_zwNid][type];
++              var _zwNdup = false;
++              for (var _zwNdi = 0; _zwNdi < _zwNlst.length; _zwNdi++) {
++                if (_zwNlst[_zwNdi].fn === fn && _zwNlst[_zwNdi].capture === _r143Cap) { _zwNdup = true; break; }
++              }
++              if (!_zwNdup) {
++                _r4200rec._zwNid = _zwNid;
++                _zwNlst.push(_r4200rec);
++                __zwNidCount++;
++              }
++            }
+             if (_r4200sig && typeof _r4200sig === 'object' && typeof _r4200sig.addEventListener === 'function') {
+               try {
+                 _r4200sig.addEventListener('abort', function () {
+                   var _r4200lst = _listenerStore[key] && _listenerStore[key][type];
+-                  if (!_r4200lst) return;
+-                  var _r4200i = _r4200lst.indexOf(_r4200rec);
+-                  if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
++                  if (_r4200lst) {
++                    var _r4200i = _r4200lst.indexOf(_r4200rec);
++                    if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
++                  }
++                  // d56r：nid 桶同步清理（abort 移除须双桶一致）。
++                  if (_r4200rec._zwNid && _zwNidBuckets[_r4200rec._zwNid] && _zwNidBuckets[_r4200rec._zwNid][type]) {
++                    var _r4200nl = _zwNidBuckets[_r4200rec._zwNid][type];
++                    var _r4200ni = _r4200nl.indexOf(_r4200rec);
++                    if (_r4200ni >= 0) { _r4200nl.splice(_r4200ni, 1); __zwNidCount--; }
++                  }
+                 });
+               } catch (_e4200sig) {}
+             }
+@@ -6485,9 +6515,20 @@
+           return function(type, fn, opts) {
+             if (!_listenerStore[key] || !_listenerStore[key][type]) return;
+             var cap = _optCapture(opts);
++            // d56r：移除记录收集——nid 桶同引用同步清理（双桶一致，__zwNidCount 回落）。
++            var _zwRemoved = [];
+             _listenerStore[key][type] = _listenerStore[key][type].filter(function(l) {
+-              return !(l.fn === fn && l.capture === cap);
++              if (l.fn === fn && l.capture === cap) { _zwRemoved.push(l); return false; }
++              return true;
+             });
++            for (var _zwRi = 0; _zwRi < _zwRemoved.length; _zwRi++) {
++              var _zwNid = _zwRemoved[_zwRi]._zwNid;
++              if (_zwNid && _zwNidBuckets[_zwNid] && _zwNidBuckets[_zwNid][type]) {
++                var _zwNlst = _zwNidBuckets[_zwNid][type];
++                var _zwNix = _zwNlst.indexOf(_zwRemoved[_zwRi]);
++                if (_zwNix >= 0) { _zwNlst.splice(_zwNix, 1); __zwNidCount--; }
++              }
++            }
+           };
+         }
+         if (prop === 'attachEvent') {
+@@ -14687,7 +14728,7 @@
+           // 'target' 时与属性读恒等。
+           if (prop === 'target' && typeof _reflectedStringAttrOn === 'function'
+               && _reflectedStringAttrOn(_realTag(sel, handle), 'target') == null) {
+-            var _exTgt = _expando[key];
++            var _exTgt = _expando[_zwExpandoKey(key)];
+             // T79 OP-086（RC-03）：target expando 与已标 R3042 同一存值，动态面禁缓存。
+             if (_exTgt && Object.prototype.hasOwnProperty.call(_exTgt, 'target')) { _zwNoMemoMark(); return _exTgt.target; }
+           }
+@@ -14846,7 +14887,7 @@
+         }
+         // R3042：expando 属性读（非原始值 setter 存于 per-element _expando map）。命中 → 返存储值（function/object
+         // 等，real browser expando 语义）。仅 hasOwnProperty 命中才返（避免原型链污染）；未命中 fall through。
+-        var _exStore = _expando[key];
++        var _exStore = _expando[_zwExpandoKey(key)];
+         // T79 F1 返修（PR #310 DF-01 B/C 路）：expando 可经 set trap 覆盖（part05 generic
+         // fallthrough）/deleteProperty 删除（part05 ② 臂），两写删通道均不触 memo——禁
+         // 缓存读恒现算（改动前语义），防覆盖/删除后读回陈旧函数。
+@@ -14948,7 +14989,7 @@
+         // 把 String(symbol) 当属性名写 host attr，值丢失（首渲染插值空串实证）。get trap 的
+         // R3042 expando 读（_exStore[prop]，symbol key 经 hasOwnProperty 命中）已覆盖读回。
+         if (typeof prop === 'symbol') {
+-          var _exSym = _expando[key] || (_expando[key] = {});
++          var _exSym = _expando[_zwExpandoKey(key)] || (_expando[_zwExpandoKey(key)] = {});
+           _exSym[prop] = value;
+           return true;
+         }
+@@ -15133,7 +15174,7 @@
+           // onend 互相驱逐（后写者从 _listenerStore 移除先写者）。须先于下方
+           // BASE_TO_TYPE 映射检查——onend 映射成 endEvent 后会误入本门。
+           if (globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[_ot]) {
+-            var _sB5ExS = _expando[key] || (_expando[key] = {});
++            var _sB5ExS = _expando[_zwExpandoKey(key)] || (_expando[_zwExpandoKey(key)] = {});
+             _sB5ExS[prop] = value;
+             return true;
+           }
+@@ -15152,7 +15193,7 @@
+           if (globalThis._ZW_NON_ELEMENT_ON && globalThis._ZW_NON_ELEMENT_ON[_ot]
+               && !(globalThis._ZW_NON_ELEMENT_ON_MEDIA && globalThis._ZW_NON_ELEMENT_ON_MEDIA[_ot]
+                   && (_r107sTag === 'AUDIO' || _r107sTag === 'VIDEO'))) {
+-            var _s288ExS = _expando[key] || (_expando[key] = {});
++            var _s288ExS = _expando[_zwExpandoKey(key)] || (_expando[_zwExpandoKey(key)] = {});
+             _s288ExS[prop] = value;
+             return true;
+           }
+@@ -16162,7 +16203,7 @@
+           // 例外：undefined → ''（纯 WebIDL 应 "undefined"，但 dialog-form-submission
+           // 「calling form.submit() in click handler」测 `= undefined` 后断言 ''；
+           // 与 dialog-return-value 的 null→'null' 共同钉住，兼容性取舍）。
+-          _expando[key + '::returnValue'] = (value === undefined) ? '' : String(value);
++          _expando[_zwExpandoKey(key) + '::returnValue'] = (value === undefined) ? '' : String(value);
+         } else if (p === 'popover') {
+           // R3071：popover enumerated setter。spec：null → removeAttribute（清 popover 元素身份）；余 → setAttribute
+           //（getter 经 `_zwReadPopover` 映射 invalid→manual，real browser 一致）。不写 _reflectedAttrs 缓存
+diff --git a/crates/engine/src/js_dom_shim/part05.js b/crates/engine/src/js_dom_shim/part05.js
+index 89207ef3a..da69aa91e 100644
+--- a/crates/engine/src/js_dom_shim/part05.js
++++ b/crates/engine/src/js_dom_shim/part05.js
+@@ -1030,7 +1030,7 @@
+           // null/object' 簇 getAttribute() 断言；旧 expando 拦截使属性未写 → getAttribute null）。
+           // target expando 刀：`target` 经 [`_reflectedStringAttrOn`] tag 门——真反射 tag（a/area/form/link/base）
+           // 维持 R5007 反射，非反射 tag（div 等）放行 expando（real browser `container.target = el` 普通 expando）。
+-          var _ex = _expando[key] || (_expando[key] = {});
++          var _ex = _expando[_zwExpandoKey(key)] || (_expando[_zwExpandoKey(key)] = {});
+           _ex[p] = value;
+         } else if (p === 'src' && _realTag(sel, handle) === 'SCRIPT') {
+           // s96 刀②（html-semantics M2 切片 96）：script.src IDL setter——反射写 src
+@@ -1370,7 +1370,7 @@
+           // IDL 读回真值。旧 generic fallthrough 写内容属性但 get trap 无分支读 → 读返 undefined（correctness bug：
+           // `el.flag='x'; el.flag` → undefined）。改存 _expando（get trap part04.js:1277 已读 _expando）。存 raw value
+           // 保类型（number/boolean 非 string）。不发 attributes MO（expando 非内容属性）；不写属性（real browser 亦不写）。
+-          var _ex2 = _expando[key] || (_expando[key] = {});
++          var _ex2 = _expando[_zwExpandoKey(key)] || (_expando[_zwExpandoKey(key)] = {});
+           _ex2[p] = value;
+         }
+         // js-dom M4 R45：携带写入前捕获的 oldValue（part04 set trap 头预捕获 _moOldVal——仅 id/class/
+@@ -1417,7 +1417,7 @@
+       // 非 expando 落 default（`prop in _t` / target 自身键 [] / undefined）——real reflected/special 属性经 get trap
+       // 读但非 target own，`'id' in el` 仍 false（pre-existing，documented）。has/ownKeys 不变量：target {} 无 own → 无约束。
+       has: function(_t, prop) {
+-        var _exH = _expando[key];
++        var _exH = _expando[_zwExpandoKey(key)];
+         if (_exH && Object.prototype.hasOwnProperty.call(_exH, prop)) return true;
+         // R129（js-dom M4）：`'remove' in textNode` 等 CharacterData/ChildNode 方法存在性
+         //（WPT CharacterData-remove "should support remove()"——get trap 提供的方法面在
+@@ -1648,7 +1648,7 @@
+         return prop in _t;
+       },
+       ownKeys: function() {
+-        var _exO = _expando[key];
++        var _exO = _expando[_zwExpandoKey(key)];
+         return _exO ? Object.keys(_exO) : [];
+       },
+       getOwnPropertyDescriptor: function(_t, prop) {
+@@ -1661,7 +1661,7 @@
+           var _fndD = Object.getOwnPropertyDescriptor(_t, prop);
+           if (_fndD && _fndD.configurable === false) return _fndD;
+         } catch (_efndD) {}
+-        var _exD = _expando[key];
++        var _exD = _expando[_zwExpandoKey(key)];
+         if (_exD && Object.prototype.hasOwnProperty.call(_exD, prop)) {
+           return { value: _exD[prop], writable: true, enumerable: true, configurable: true };
+         }
+@@ -1748,7 +1748,7 @@
+         } catch (_efdel0) {}
+         // ② expando store own → 真删（WPT new-name 案：delete 后读落 named 元素
+         // ——default delete 只打 target，store 键残留致读恒 expando 旧值）。
+-        var _fdelE = _expando[key];
++        var _fdelE = _expando[_zwExpandoKey(key)];
+         if (_fdelE && Object.prototype.hasOwnProperty.call(_fdelE, prop)) {
+           delete _fdelE[prop];
+           return true;
