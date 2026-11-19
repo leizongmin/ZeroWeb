@@ -1296,6 +1296,16 @@
           // s241：实例层同步（同 part04 value 族臂——reflected 直写臂不经
           // setAttribute，`_zwAttrInstSyncNoNs` 刷新实例层读侧种子记录）。
           _zwAttrInstSyncNoNs(key, _refAttr, _refVal);
+          // T84（R2 F1）：name/id 反射直写臂补登 named 候选集——本臂不经
+          // setAttribute/removeAttribute 尾钩也不经 `_zwPAIdAdd`，pending 元素
+          // 同 turn 授名（`form.name= 'x'` 等）后 `_zwNACollectMatches` 候选集
+          // 扫不到（基础全量扫描可命中）。登记对象走 `_makeProxy`（本臂 sel/handle
+          // 是选择器键/handle 键，非元素 proxy——pending 集合按 proxy 身份记账）；
+          // 须在实例层同步之后读（读侧种子 latest-wins），登记点契约见
+          // `_zwPANamedPending` 声明；非 pending 元素由 `_zwPANameMark` 滤除。
+          if (_refAttr === 'name' || _refAttr === 'id') {
+            _zwPANameMark(_makeProxy(sel, handle));
+          }
           // R4100（html-semantics M2 切片 21）：details name IDL 写面 → given-prong
           // 互斥（spec attribute change steps name 分支「closing the given element」
           // ——subject open 且组内已有 open → 自身让位；同 setAttribute('name') 尾钩
@@ -2255,6 +2265,17 @@
     var meta = _attrNSMeta[key] || (_attrNSMeta[key] = {});
     meta[qname] = { ns: ns, prefix: prefix, local: local };
     _zwAttrInstUpsert(key, qname, ns, prefix, local, _r122Val);
+    // T84（R2 F1）：setAttributeNode/setNamedItem 族授名补登 named 候选集——本
+    // 核心直写 host/绑定表不经 setAttribute 尾钩，pending 元素同 turn 经游离
+    // Attr（createAttribute → value= → setAttributeNode）授 id/name 后
+    // `_zwNACollectMatches` 候选集扫不到（基础全量扫描可命中）。namespaced 属性
+    // 不参与 named access（spec named access 仅无命名空间属性），ns 非空不登记；
+    // 已绑定 Attr 的 `value=` 写传播走 `setAttribute`（R122 setter）已有尾钩覆盖。
+    // 登记对象走 `_makeProxy`（本核心 sel/handle 是选择器键/handle 键——pending
+    // 集合按 proxy 身份记账），登记点契约见 `_zwPANamedPending` 声明。
+    if (ns == null && (local === 'name' || local === 'id')) {
+      _zwPANameMark(_makeProxy(sel, handle));
+    }
     bind.set(qname, attr);
     try { attr.ownerElement = _makeProxy(sel, handle); } catch (_eO) {}
     // WC-M1 切片 3（spec custom-element-reactions）：setAttributeNode 族亦 CEReactions——
@@ -14589,6 +14610,10 @@
   var _zwPANamedPending = new Set();
   function _zwPANameMark(nd) {
     if (!nd || nd.nodeType !== 1) return;
+    // T84（R2 F1）：仅 pending 元素入集——反射直写/setAttributeNode 臂对已 flush
+    // 元素也调本函数，非 pending 条目对采集恒不命中（扫描面以 `_zwPASet().has`
+    // 现场过滤），不设防会让候选集随全文档授名无界增长（重走本刀要消的超线性）。
+    if (!_zwPASet().has(nd)) return;
     var nm84 = '';
     try { nm84 = nd.id != null ? String(nd.id) : ''; } catch (_e84mi) { nm84 = ''; }
     if (!nm84) {

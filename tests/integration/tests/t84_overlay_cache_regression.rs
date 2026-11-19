@@ -165,7 +165,9 @@ fn t84_pending_splice_view_consistency() {
 /// 钉③：pending 条目后补 id / name 属性（named 候选集迟到登记路径）后，
 /// Window named access 仍须解析。交付面语义：setAttribute('id'/'name') 走
 /// `_zwNAAttrChanged` 同步尾叫（同 turn 安装）。无 name/id 的条目不得误命中
-/// 任意名。
+/// 任意名。R2 F1 补钉：IDL `.name=` 反射直写与游离 Attr `setAttributeNode`
+/// 两条授名路径同 turn 亦须入候选集（修复前候选集漏登记 → 竞名集合少元素，
+/// 基础全量扫描可命中的条目丢失）。
 #[test]
 #[serial_test::serial]
 fn t84_named_access_late_attribute_grant() {
@@ -209,11 +211,105 @@ fn t84_named_access_late_attribute_grant() {
         "无 id/name 的 pending 条目不得被 named access 误命中，实测 {miss:?}"
     );
 
+    // R2 F1 钉 a：IDL `.name=` 反射直写（part04→part05 set trap R3069 臂，
+    // 不经 setAttribute 尾钩）。同 turn 竞名（另一元素 setAttribute('id') 触发
+    // `_zwNARegisterName`）后，window.<name> 须为双元素集合（基础全量扫描口径）；
+    // 候选集漏登记则只剩 setAttribute 一侧（修复前实测 is_d3=true / 长度 1）。
+    run(
+        &mut wv,
+        r#"
+        function collHas(c, el) {
+            for (var i = 0; i < c.length; i++) { if (c.item(i) === el) return true; }
+            return false;
+        }
+        var f2 = document.createElement('form');
+        document.body.appendChild(f2);
+        f2.name = 'reflName84';
+        var d3 = document.createElement('div');
+        document.body.appendChild(d3);
+        d3.setAttribute('id', 'reflName84');
+        var c1 = window.reflName84;
+        globalThis.__reflLen = c1 ? c1.length : -1;
+        globalThis.__reflHasF = c1 ? collHas(c1, f2) : false;
+        globalThis.__reflHasD = c1 ? collHas(c1, d3) : false;
+        globalThis.__f2 = f2;
+        globalThis.__d3 = d3;
+        "#,
+    );
+    let refl_len = probe(&mut wv, "__reflLen");
+    assert_eq!(
+        refl_len, "2",
+        "IDL .name= 反射直写 + setAttribute('id') 竞名后 window.<name> 须双元素集合，实测 {refl_len:?}"
+    );
+    let refl_f = probe(&mut wv, "__reflHasF");
+    assert_eq!(
+        refl_f, "true",
+        "反射直写授名的 form 须在 window.<name> 集合中（候选集登记），实测 {refl_f:?}"
+    );
+    let refl_d = probe(&mut wv, "__reflHasD");
+    assert_eq!(
+        refl_d, "true",
+        "setAttribute('id') 授名的元素须在 window.<name> 集合中，实测 {refl_d:?}"
+    );
+
+    // R2 F1 钉 b：游离 Attr 授名（createAttribute → value= → setAttributeNode，
+    // `_zwSetAttributeNodeCore` 直写面）同 turn 竞名亦须入集合。
+    run(
+        &mut wv,
+        r#"
+        function collHas(c, el) {
+            for (var i = 0; i < c.length; i++) { if (c.item(i) === el) return true; }
+            return false;
+        }
+        var f3 = document.createElement('form');
+        document.body.appendChild(f3);
+        var at = document.createAttribute('name');
+        at.value = 'attrNode84';
+        f3.setAttributeNode(at);
+        var d4 = document.createElement('div');
+        document.body.appendChild(d4);
+        d4.setAttribute('id', 'attrNode84');
+        var c2 = window.attrNode84;
+        globalThis.__anLen = c2 ? c2.length : -1;
+        globalThis.__anHasF = c2 ? collHas(c2, f3) : false;
+        globalThis.__anHasD = c2 ? collHas(c2, d4) : false;
+        globalThis.__f3 = f3;
+        globalThis.__d4 = d4;
+        "#,
+    );
+    let an_len = probe(&mut wv, "__anLen");
+    assert_eq!(
+        an_len, "2",
+        "游离 Attr setAttributeNode 授名 + setAttribute('id') 竞名后 window.<name> 须双元素集合，实测 {an_len:?}"
+    );
+    let an_f = probe(&mut wv, "__anHasF");
+    assert_eq!(
+        an_f, "true",
+        "setAttributeNode 授名的 form 须在 window.<name> 集合中（候选集登记），实测 {an_f:?}"
+    );
+    let an_d = probe(&mut wv, "__anHasD");
+    assert_eq!(
+        an_d, "true",
+        "setAttribute('id') 授名的元素须在 window.<name> 集合中，实测 {an_d:?}"
+    );
+
     // flush 后语义保持（落 host 后 named 解析不受 materialize 影响）。
     wv.flush_pending_shared_mutations().expect("flush 落 host 成功");
     let after = run(
         &mut wv,
-        "(window.lateId84 === globalThis.__d1) && (window.lateForm84 === globalThis.__fm) ? 'ok' : 'broken'",
+        r#"
+        function collHas(c, el) {
+            for (var i = 0; i < c.length; i++) { if (c.item(i) === el) return true; }
+            return false;
+        }
+        (window.lateId84 === globalThis.__d1)
+          && (window.lateForm84 === globalThis.__fm)
+          && collHas(window.reflName84, globalThis.__f2)
+          && collHas(window.reflName84, globalThis.__d3)
+          && collHas(window.attrNode84, globalThis.__f3)
+          && collHas(window.attrNode84, globalThis.__d4)
+          ? 'ok' : 'broken'
+        "#,
     );
     assert_eq!(after, "ok", "flush 后 named access 语义保持，实测 {after:?}");
     // 已知既有缺口（非本修复引入，stash 三角定位 itest5-base 双侧同败）：IDL `.id=`
