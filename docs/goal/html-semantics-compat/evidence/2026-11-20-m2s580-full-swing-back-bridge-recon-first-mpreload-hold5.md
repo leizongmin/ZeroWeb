@@ -62,8 +62,11 @@ load<3 3×45s）HEAD=c66508ec8 钉扎
   ）＝engine+css-parser+style-system
   三 crate 码面闭包精确兑现；leg2
   Fresh ×0；爆栈 0/0；rc=2/2 惯例。
-  跨 clone 收敛候选：0b5c2914 待对
-  端 kb79 53代 判代批申报核对。
+  跨 clone 收敛第三实例确认：
+  ≡ 对端 kb79 53代 判代批申报值
+  （R5838 runs 0b5c2914 ×3 恒，
+  s561 69967b2e／s579 f37f570e 先例
+  后第三例）。
 
 ## 双腿 join（HEAD c66508ec8 树）
 

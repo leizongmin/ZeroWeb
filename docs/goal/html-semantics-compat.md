@@ -80,8 +80,10 @@ style-system/layout-engine/engine/
 page-runtime/webview/wpt-runner）＝
 三 crate 码面闭包精确兑现；leg2
 Fresh ×0；爆栈 0/0；rc=2/2 惯例；
-0b5c2914 待对端 kb79 53代 判代批
-申报核对（跨 clone 收敛候选）。
+0b5c2914 ≡ 对端 kb79 53代 判代
+批申报值（R5838 ×3 恒）＝跨 clone
+收敛第三实例确认（push 阶段捕获
+核实，见补账）。
 **族带第 13 轮＝出带后首轮回带**：
 band 5 键双腿全回 stable＝**并存形
 回持**（detailed 整文件 Timeout＋
@@ -143,6 +145,19 @@ rendering 流记账）。门开随批落预案
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s580-full-swing-back-bridge-recon-first-mpreload-hold5.md
+> **◆ 补账（2026-11-20 s580 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×2
+> 全列核实（c66508ec8→c4b39dd2a，
+> rebase 换代归 s581 开工续核）：
+> docs ×2＝rendering R5838（**kb79
+> 53代 判代首验批兑现＝runs 0b5c2914
+> ×3 恒＝本轮 mid=post 同值＝跨
+> clone 收敛第三实例确认**）＋R5839
+> 前瞻注记（kb80 探针先录）。零
+> code＝s581 runner Fresh 预判维持；
+> 对端 part17 适配未落窗＝s581 桥测
+> 红持续预判（FAIL 键待其 pathspec
+> 落地收口）。
 > **◆ 补账（2026-11-19 s578 收口）
 > ——跨 session 限额断点接管轮（前
 > 轮 17:27 布置 s578＋17:29 判净起
