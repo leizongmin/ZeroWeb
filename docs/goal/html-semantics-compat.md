@@ -61,9 +61,12 @@ GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：**守成巡查 s577**（**对账基
 线换 s576 stable 8509＋全桥基线 b570
-1728P/0F 持位**：**窗开局批 ×2 已捕
-获在案（4f1964625 fix(engine) d59 刀
-E＋3ce325c59 docs）——s577 开工
+1728P/0F 持位**：**窗开局批 ×3 已捕
+获在案（code ×1＝4f1964625 fix
+(engine) d59 刀 E＋docs ×2＝
+3ce325c59 rendering R5828＋
+9bcf7bb4b wptfyi-css 落库号）
+——s577 开工
 pull 续捕获全列核实**，runner 预判
 ＝**必换代（engine 单 crate 码面，
 非全链档预期）**，4f1964625 shim 行
@@ -107,7 +110,10 @@ evidence/2026-11-19-m2s576-mpreload-return-band-transient-confirmed-band-resplit
 > ，sel 域键入/替换行为面位移归 s577
 > join 对账捕获；docs ×1＝rendering
 > R5828（kb69 45代 换代批兑现＋kb70
-> 46代 定谳）。
+> 46代 定谳）。**push 阶段续捕获 ×1
+> ＝9bcf7bb4b docs（wptfyi-css 落库
+> 号 rebase 四代换代）＝s577 窗开局
+> 批累计 ×3（code ×1＋docs ×2）**。
 > **◆ 补账（2026-11-19 s575 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×10
 > 全列核实（55b61dd84→f49b3c026）：
