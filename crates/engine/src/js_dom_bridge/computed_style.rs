@@ -588,17 +588,21 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         },
         "font-variation-settings" => match &style.font_variation_settings {
             FontVariationSettingsValue::Normal => "normal".to_string(),
-            FontVariationSettingsValue::Settings(settings) => settings
-                .iter()
-                .map(|setting| {
-                    format!(
-                        "\"{}\" {}",
-                        String::from_utf8_lossy(&setting.tag),
-                        format_num(setting.value as f64, "")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", "),
+            FontVariationSettingsValue::Settings(settings) => settings_computed_join(
+                settings
+                    .iter()
+                    .map(|setting| {
+                        (
+                            setting.tag,
+                            format!(
+                                "\"{}\" {}",
+                                String::from_utf8_lossy(&setting.tag),
+                                format_num(setting.value as f64, "")
+                            ),
+                        )
+                    })
+                    .collect(),
+            ),
         },
         // font-feature-settings longhand gCS 回显（css-fonts-4
         // §font-feature-settings-prop 序列化 `"tag" <integer>` 列表）——此前
@@ -606,11 +610,21 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // calc(…)` 10 腿）parseFloat 恒 NaN。
         "font-feature-settings" => match &style.font_feature_settings {
             FontFeatureSettingsValue::Normal => "normal".to_string(),
-            FontFeatureSettingsValue::Features(features) => features
-                .iter()
-                .map(|setting| format!("\"{}\" {}", String::from_utf8_lossy(&setting.tag), setting.value))
-                .collect::<Vec<_>>()
-                .join(", "),
+            FontFeatureSettingsValue::Features(features) => settings_computed_join(
+                features
+                    .iter()
+                    // css-fonts-4 #font-feature-settings-prop：`on` = 隐式整数 1，
+                    // 计算值串化省略（非 1 显式保留）。
+                    .map(|setting| {
+                        let rendered = if setting.value == 1 {
+                            format!("\"{}\"", String::from_utf8_lossy(&setting.tag))
+                        } else {
+                            format!("\"{}\" {}", String::from_utf8_lossy(&setting.tag), setting.value)
+                        };
+                        (setting.tag, rendered)
+                    })
+                    .collect(),
+            ),
         },
         "font-variant-alternates" => font_variant_alternates_str(&style.font_variant_alternates),
         "line-height" => line_height_str(&style.line_height, font_size_px),
@@ -2671,6 +2685,23 @@ fn font_style_str(s: &FontStyleValue) -> String {
         FontStyleValue::Oblique(None) => "oblique".to_string(),
         FontStyleValue::Oblique(Some(deg)) => format!("oblique {deg}deg"),
     }
+}
+
+/// css-fonts-4 settings 类属性（font-feature-settings / font-variation-settings）
+/// computed 规范形（ffs/fvs 回显共享）：同 tag 右值胜出去重 + tag 字节序升序
+/// 排序。判据源（上游页注记）："duplicate values should be removed, keeping
+/// the rightmost occurrence" / "values should be sorted alphabetically by tag"。
+/// <https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop>
+fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
+    let mut deduped: Vec<([u8; 4], String)> = Vec::with_capacity(items.len());
+    for (tag, rendered) in items {
+        match deduped.iter_mut().find(|(t, _)| *t == tag) {
+            Some(slot) => slot.1 = rendered,
+            None => deduped.push((tag, rendered)),
+        }
+    }
+    deduped.sort_by(|a, b| a.0.cmp(&b.0));
+    deduped.into_iter().map(|(_, rendered)| rendered).collect::<Vec<_>>().join(", ")
 }
 
 /// line-height：normal→`normal`；number→解析为 used px（`font-size × number`，对齐 Chromium
