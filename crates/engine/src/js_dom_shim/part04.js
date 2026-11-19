@@ -8261,6 +8261,15 @@
                 if (typeof _zwAriaSyncParent !== 'undefined') delete _zwAriaSyncParent[String(child.__zwSelector)];
               } catch (_e334asp) {}
               var _r334ChildSel = child.__zwSelector;
+              // d61 T1 dead-anchor（见 R125 stamp 注）：removed 标记仍活的重插窗口把
+              // 回插 child_selector 改发摘挂 wire 章（引擎 R361 stash 键对齐——移动
+              // 语义复用被摘 NodeId）；同父 move（尾簇 5，不走 _zwMarkRemoved）与
+              // 常态挂载不入新径，维持身份章零行为变化。身份章仅 wire 发射换章，
+              // unmark/槽位/record 等簿记键不变。
+              var _r334WireChildSel = (typeof _zwIsRemoved === 'function' && _zwIsRemoved(_r334ChildSel)
+                && typeof child.__zwLastRemoveWireSel === 'string' && child.__zwLastRemoveWireSel)
+                ? child.__zwLastRemoveWireSel : _r334ChildSel;
+              if (_r334WireChildSel !== _r334ChildSel) child.__zwLastRemoveWireSel = null;
               // M3 扩批 XLV（2026-09-04）：旧父在 wire 前读（wire 的 reparent 之后读
               // 会被 removed 标记/槽未设干扰返 null——record 的 removed 归旧父语义丢失）。
               var _r334OldSel = null;
@@ -8286,7 +8295,7 @@
                   }
                 }
               } catch (_eRe334) {}
-              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
+              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334WireChildSel); } catch (_e334w) {}
               try {
                 // 尾簇 6c：wire 落点记录——up 内变异 post-up 结算的目标身份（本 turn
                 // 内宿主布局滞后，几何命中测试不可见——zwprobe-attach [hit=null] 实证）。
@@ -9786,6 +9795,16 @@
               }
               try { if (typeof __zw_remove === 'function') __zw_remove(_r125Wire); } catch (_eR125r) {}
               _zwMarkRemoved(_r125Sel);
+              // d61（wptfyi-editing T1 dead-anchor，2026-11-19）：摘挂 wire 章 stamp——
+              // CE 域线章重算后摘挂键（`父 > tag:nth-child(k)`）与身份章分叉；同批
+              // 摘→重插（join 移动面）的回插 child_selector 若仍用身份章，引擎 R361
+              // detached-stash 按**摘挂章**记账、按 child_selector 查表必 miss → 移动
+              // no-op → 内容丢失（bold 壳 join `def` 丢失，zz-diag-bs15 T1 wire 批
+              // op4 Remove{p > b:nth-child(1)} vs op6 child_selector{身份章} 实证）。
+              // stamp 摘挂 wire 键，R334 重插臂在 removed 标记仍活（= 本臂摘除后的
+              // 重插窗口；所有插入路径出口都会 unmark）时消费改发摘挂章，命中 R361
+              // stash 复用 NodeId（移动语义）。
+              try { child.__zwLastRemoveWireSel = _r125Wire; } catch (_eR125ws) {}
               // R188（js-dom M4）：childList record 的 sibling 字段——移除前从 child proxy
               // 读 previousSibling/nextSibling（spec mutation record 语义；WPT
               // MutationObserver-document "removal of parent" 断言 previousSibling 是
@@ -10145,6 +10164,13 @@
                 throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
               }
               var _r334bChildSel = newNode.__zwSelector;
+              // d61 T1 dead-anchor（见 R125 stamp 注）：removed 标记仍活的重插窗口把
+              // 回插 child_selector 改发摘挂 wire 章（引擎 R361 stash 键对齐）；非摘挂
+              // 窗口维持身份章零行为变化。R4600 unmark 等簿记仍用身份章不变。
+              var _r334bWireChildSel = (typeof _zwIsRemoved === 'function' && _zwIsRemoved(_r334bChildSel)
+                && typeof newNode.__zwLastRemoveWireSel === 'string' && newNode.__zwLastRemoveWireSel)
+                ? newNode.__zwLastRemoveWireSel : _r334bChildSel;
+              if (_r334bWireChildSel !== _r334bChildSel) newNode.__zwLastRemoveWireSel = null;
               // R334：removed record 的兄弟字段——wire 移动前的兄弟 getter 快照。
               var _r334bRprev = null, _r334bRnext = null;
               try {
@@ -10157,8 +10183,8 @@
                 _r334bPos = 'beforebegin';
               }
               try {
-                if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bChildSel);
-                else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bChildSel);
+                if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bWireChildSel);
+                else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bWireChildSel);
               } catch (_e334bw) {
                 // T68（吞错显式化）：宿主 wire 失败不中断 DOM 操作语义（JS 侧
                 // `_zwSelPendingParent`/record 记账继续，spec pre-insert 的视图变更不
