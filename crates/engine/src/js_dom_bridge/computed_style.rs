@@ -152,10 +152,18 @@ pub(super) fn compute_styles_for_doc(
 /// contents），两者不下行；synthetic 伪元素替身不属文档树（CSS Pseudo-Elements
 /// §1），跳过。style 缺失/元素不可寻址（detached）的记录以空 display/visibility
 /// 发出——shim 侧按「无法判定 → 保守包含」同语义消费。
+///
+/// t-g2b impl-009：`ctx` 供循环内 [`super::unique_selector_for_node_cached`]——
+/// 无 memo 版唯一性门每元素 `query_selector_all` 全文档扫描是 O(n²)（8.5k 元素页
+/// 单次调用秒级，g28 live 定谳 5.9-6.5s 主项）；cached 变体 DocUniqIndex 每代一次
+/// O(n) 走查 + O(1) 门查 + (视图代, node) memo，v16/t-p126 worker handle 物化通道
+/// 同型先例。bulk 遍历内 doc 与代际恒定 ⇒ ctx 五元组稳定，memo/索引键有效；输出
+/// 与无 memo 版逐位一致（part94 三形态 parity 钉面 + p115 画像 wire_len 断言）。
 pub(super) fn innertext_bulk_styles_doc(
     doc: &Document,
     styles: &std::collections::HashMap<NodeId, ComputedStyle>,
     root_sel: &str,
+    ctx: crate::js_dom_bridge::UniqSelCtx,
 ) -> String {
     let Some(root) = super::find_by_selector(doc, root_sel) else {
         return String::new();
@@ -174,7 +182,7 @@ pub(super) fn innertext_bulk_styles_doc(
         if el.local_name() == "template" {
             continue;
         }
-        let sel = super::unique_selector_for_node(doc, node).unwrap_or_default();
+        let sel = super::unique_selector_for_node_cached(doc, ctx, node).unwrap_or_default();
         if !sel.is_empty() {
             // 逐元素 gCS 四层 consult 镜像（`__zw_get_computed_style` 顶部
             // query_style_override → cache-hit/miss 臂 js_anim → transition → cssa

@@ -2658,7 +2658,14 @@ pub fn register_dom_callbacks(
                 doc_drain_gen,
                 style_version,
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
-                |doc, styles| super::computed_style::innertext_bulk_styles_doc(doc, styles, root_sel),
+                |doc, styles| {
+                    // t-g2b impl-009：bulk 遍历唯一性门接 S1c cached 变体（无 memo 版
+                    // 每元素 query_selector_all 全文档扫描 O(n²)，g28 live 定谳主项）。
+                    // bulk 遍历内 doc 与代际恒定 ⇒ ctx 稳定；stale 恒 false（快照直连
+                    // 路径，不服务退避窗 stale 快照）。
+                    let ctx = uniq_sel_ctx(&html, &m, doc, false);
+                    super::computed_style::innertext_bulk_styles_doc(doc, styles, root_sel, ctx)
+                },
             )
         }),
     );
