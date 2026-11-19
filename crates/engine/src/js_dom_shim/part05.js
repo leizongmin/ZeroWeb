@@ -13215,6 +13215,36 @@
             }
           }
         } catch (_eWidx) {}
+        // d59（wptfyi-editing 刀 E，2026-11-19）：全 miss 后消费 pending slot——
+        // 构造时 parentSel 是**冻结快照**：R5450 跨父移动臂（part04）wire＋簿记
+        //（_zwSelPendingParent.parentSel＝新父）后节点引擎位已迁，构造时 parentSel
+        // 下 identity/戳槽/data 三重全 miss（TypingA 替换面 `abc[<p>]def` + 'a'：
+        // join 搬 def 入 div 后 _sdFinish 拼接 'a' 按陈旧 parentSel="p"+戳 0 写，
+        // SetChildText{p,0} 打在引擎 ghi 上＝内容毁形，语料 non-collapsed?TypingA
+        // /d46b?TypingA 2 键）。pending slot 即移动后权威位簿记——按新父重查
+        //（identity 优先，data 回退同口径）；命中即改写本闭包 parentSel（后续
+        // 写同址）。全 miss 保持旧回退（戳）零行为变化；pending.parentSel 同父
+        //（R97 重注册形）不入新径。
+        if (_wIdx == null && node._zwSelPendingParent
+          && node._zwSelPendingParent.parentSel
+          && node._zwSelPendingParent.parentSel !== parentSel) {
+          try {
+            var _wPendSel = node._zwSelPendingParent.parentSel;
+            var _wPKids = _childNodeList(_wPendSel, null);
+            if (_wPKids && _wPKids.length) {
+              for (var _wPQ = 0; _wPQ < _wPKids.length; _wPQ++) {
+                if (_wPKids[_wPQ] === node) { _wIdx = _wPQ; break; }
+              }
+              if (_wIdx == null) {
+                for (var _wPQ2 = 0; _wPQ2 < _wPKids.length; _wPQ2++) {
+                  var _wPW = _wPKids[_wPQ2];
+                  if (_wPW && _wPW.nodeType === 3 && String(_wPW.data) === _pre) { _wIdx = _wPQ2; break; }
+                }
+              }
+              if (_wIdx != null) parentSel = _wPendSel;
+            }
+          } catch (_eWpend) {}
+        }
         // textContent 不在此回写（下方 R260 accessor 化后 setter 会再进 _write——互递归）；
         // accessor getter 读 __nv，视图一致。
         node.__nv = nv; node.length = nv.length;
