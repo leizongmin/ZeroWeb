@@ -69,13 +69,12 @@ be09352a）/b1 40.29s（bin 3295cee6）M2 区分过；钉测双绿（style togri
 **typed-om gained=48 lost=0 regressed=0**（pages_gain=2）：
 grid-template-columns-rows 14→58（+44）/ scroll-padding 204→208（+4）；
 grid-auto-columns-rows 零位移。pva/masking/transitions/animations 哨兵
-四面逐页零差异（全语料 ab-compare 仅 2 靶页出现位移，regressed=0），
-GATE-DONE rc=0 trap 归一 b1 树态（TRAP-RESTORE applied）。哨兵 pva/masking/transitions/animations
-四面全语料级零差异（全目录 ab-compare TOTAL gained=48 lost=0
-regressed=0 即四面零贡献，收账 13:31:57 独立复跑实证）。电池
-GATE-DONE 13:31:57、battery rc=0、trap TRAP-RESTORE applied
-(state=done rc=0) 归一 b1 树态。本节前段「13:05→13:32」时间戳与
-「全语料 rc 全 1」在 13:24 预写、13:31:57 实测核账兑现一致。
+四面逐页零差异（全目录 ab-compare 仅 2 靶页位移；四面 Pass 集双侧逐腿
+相等：pva 899 / masking 4866 / transitions 994 / animations 555——十腿
+全非空防空真绿）；电池 GATE-DONE 13:31:57、battery rc=0、trap
+TRAP-RESTORE applied (state=done rc=0) 归一 b1 树态。本节前段
+「13:05→13:32」时间戳与「全语料 rc 全 1」在 13:24 预写、13:31:57
+实测核账兑现一致。
 
 ## 预期偏差与残面改判（+56 → +48）
 
