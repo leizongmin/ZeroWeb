@@ -34,8 +34,8 @@ use std::collections::{HashMap, HashSet};
 
 use slotmap::Key;
 use zero_css_parser::values::{
-    AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, TimingFunctionValue, TransformFunction,
-    TransformValue, parse_transform,
+    AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue,
+    TimingFunctionValue, TransformFunction, TransformValue, parse_transform,
 };
 use zero_dom::{Document, NodeId};
 use zero_style_system::{ComputedStyle, MixBlendModeComputedValue};
@@ -247,6 +247,14 @@ pub fn export_composable_animations(
                     .unwrap_or(AnimationFillModeValue::None),
                 // t=0 求值域：导出声明的时钟域 start 恒 0（`start_time_s`）。
                 current_time: 0.0,
+                // 刀 ANIMCOMP S2：合成操作对位（导出面 opacity/transform 通道不消费
+                // add 合成，登记保持与 CSSA 通道一致）
+                composition: style
+                    .animation_composition
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or(AnimationCompositionValue::Replace),
+                underlying_values: std::collections::HashMap::new(),
             };
             export_one(
                 &mut set,
@@ -517,6 +525,7 @@ mod tests {
                             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
                             .collect(),
                         timing: None,
+                        composition: None,
                     })
                     .collect(),
             );
@@ -765,11 +774,13 @@ mod tests {
                     offset: 0.0,
                     properties: [("opacity".to_string(), "0.0".to_string())].into_iter().collect(),
                     timing: Some(TimingFunctionValue::EaseIn),
+                    composition: None,
                 },
                 KeyframePoint {
                     offset: 1.0,
                     properties: [("opacity".to_string(), "1.0".to_string())].into_iter().collect(),
                     timing: None,
+                    composition: None,
                 },
             ],
         );

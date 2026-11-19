@@ -16460,17 +16460,62 @@
       }
     }
     var _zwKf = keyframes;
+    // 刀 ANIMCOMP S2（2026-11-19，wptfyi-css）：均匀 add 影族引擎合成模式。逐属性
+    // op 分类后，全部 add 属性 ∈ {text-shadow, box-shadow} 且各自全帧同 op（同一
+    // op 串）→ keyframes 原样登记（spec.comp 动画级 op + spec.und shim gCS 预读
+    // underlying），合成在引擎 start/tick 期做（影列表追加 = 字符串级，无多影端点
+    // 插值依赖；text/box-shadow-composition 均匀 add 面 CSSA/WAAPI 双车道驱动）。
+    // vertical-align 不入门（WAAPI px 加法预合成既有通道已覆盖；px↔% 端点对维持
+    // ④ 拒登）。分类不含其它属性面——任一 add 属性出影族或 op 不均匀 → 原
+    // _zwComposeAddKeyframes 预合成路径（混合 op 影族拼接臂见该函数）。
+    var _zwEngComp = '';
+    var _zwEngUnd = null;
     if (_zwHasAdd && (sel || handle) && _zwKfArr) {
-      var _zwComposed = null;
-      try { _zwComposed = _zwComposeAddKeyframes(_zwKfArr, _zwOptComp, sel, handle); } catch (_eCA) { _zwComposed = null; }
-      if (_zwComposed) { _zwKf = _zwComposed; }
-      else { _zwUnsafe = true; }
+      var _zwPropOps = {};
+      for (var _zi = 0; _zi < _zwKfArr.length; _zi++) {
+        var _zf = _zwKfArr[_zi] || {};
+        var _zc = (_zf.composite != null) ? String(_zf.composite) : (_zwOptComp || 'replace');
+        for (var _zk in _zf) {
+          if (_zk === 'offset' || _zk === 'composite' || _zk === 'easing') continue;
+          (_zwPropOps[_zwWaapiPropKebab(_zk)] || (_zwPropOps[_zwWaapiPropKebab(_zk)] = [])).push(_zc);
+        }
+      }
+      var _zwUniOp = '';
+      var _zwEngOk = true;
+      for (var _zp in _zwPropOps) {
+        var _ops = _zwPropOps[_zp];
+        if (_ops.indexOf('add') < 0 && _ops.indexOf('accumulate') < 0) continue;
+        if (_zp !== 'text-shadow' && _zp !== 'box-shadow') { _zwEngOk = false; break; }
+        var _u = _ops[0];
+        for (var _oi = 1; _oi < _ops.length; _oi++) { if (_ops[_oi] !== _u) { _u = ''; break; } }
+        if (_u !== 'add' && _u !== 'accumulate') { _zwEngOk = false; break; }
+        if (_zwUniOp === '') { _zwUniOp = _u; }
+        else if (_zwUniOp !== _u) { _zwEngOk = false; break; }
+      }
+      if (_zwEngOk && _zwUniOp !== '') {
+        _zwEngComp = _zwUniOp;
+        _zwEngUnd = {};
+        for (var _zp2 in _zwPropOps) {
+          try {
+            _zwEngUnd[_zp2] = (sel ? __zw_get_computed_style(String(sel), _zp2)
+              : (typeof __zw_get_computed_style_by_handle === 'function'
+                ? __zw_get_computed_style_by_handle(String(handle), _zp2) : '')) || '';
+          } catch (_eEU) { _zwEngUnd[_zp2] = ''; }
+        }
+      } else {
+        var _zwComposed = null;
+        try { _zwComposed = _zwComposeAddKeyframes(_zwKfArr, _zwOptComp, sel, handle); } catch (_eCA) { _zwComposed = null; }
+        if (_zwComposed) { _zwKf = _zwComposed; }
+        else { _zwUnsafe = true; }
+      }
     } else if (_zwOptComp !== '' && _zwOptComp !== 'replace' && _zwOptComp !== 'auto' &&
                _zwOptComp !== 'add' && _zwOptComp !== 'accumulate') {
       // options 级非可识别 composite（非法串）维持不登记（与 v1 blanket 守卫同形）。
       _zwUnsafe = true;
     }
-    if (!_zwUnsafe && Array.isArray(_zwKf)) {
+    // 引擎合成模式跳过 ④/单位集守卫：keyframes 为原文端点（影族 px/色值面，无
+    // 关键字/calc-size 风险），composite 元键由 _zwWaapiSpecKeyframes 层剥离。
+    if (!_zwUnsafe && !_zwEngComp && Array.isArray(_zwKf)) {
       for (var _zgi = 0; _zgi < _zwKf.length; _zgi++) {
         var _zgf = _zwKf[_zgi] || {};
         if (_zgf.composite && _zgf.composite !== 'replace' && _zgf.composite !== 'auto') { _zwUnsafe = true; break; }
@@ -16574,6 +16619,10 @@
           fill: (effectOptions && effectOptions.fill && effectOptions.fill !== 'auto') ? String(effectOptions.fill) : 'none',
           iter: (effectOptions && effectOptions.iterations != null) ? effectOptions.iterations : 1,
           dir: (effectOptions && effectOptions.direction) || 'normal',
+          // 刀 ANIMCOMP S2：引擎合成模式（均匀 add 影族）——comp/und 仅此模式非空，
+          // JSON 序列化丢弃 undefined（rs 侧缺省 replace，刀前行为恒等）。
+          comp: _zwEngComp || undefined,
+          und: _zwEngUnd || undefined,
         };
         // 帧端点 'inherit' 解析（刀 A1b R2，2026-11-18）：css-cascade-4 §inheritance /
         // web-animations-1 §5.4.15 computed keyframes——关键帧 'inherit' = 父元素该
@@ -16768,6 +16817,19 @@
   function _zwComposeAddKeyframes(frames, optComp, sel, handle) {
     var out = [];
     var _zwUc = {};
+    // 刀 ANIMCOMP S2：逐属性 op 集——影族（text/box-shadow）仅混合 op 面（同属性
+    // replace 帧在场）走拼接臂；均匀 add 面拒入（多影端点插值未证，引擎合成模式
+    // 兜底，此处 null → 不登记回落 B0）。
+    var _zwOps = {};
+    for (var _i0 = 0; _i0 < frames.length; _i0++) {
+      var _src0 = frames[_i0] || {};
+      var _comp0 = (_src0.composite != null) ? String(_src0.composite) : (optComp || 'replace');
+      for (var _k0 in _src0) {
+        if (_k0 === 'offset' || _k0 === 'composite' || _k0 === 'easing') continue;
+        var _pk0 = _zwWaapiPropKebab(_k0);
+        (_zwOps[_pk0] || (_zwOps[_pk0] = [])).push(_comp0);
+      }
+    }
     for (var i = 0; i < frames.length; i++) {
       var src = frames[i] || {};
       var comp = (src.composite != null) ? String(src.composite) : (optComp || 'replace');
@@ -16780,6 +16842,21 @@
           var v = src[k];
           if (Array.isArray(v) || typeof v !== 'string') return null;
           var pk = _zwWaapiPropKebab(k);
+          if (pk === 'text-shadow' || pk === 'box-shadow') {
+            var _ops1 = _zwOps[pk] || [];
+            if (_ops1.indexOf('replace') < 0) return null; // 均匀 add 影族不预合成
+            if (typeof _zwUc[pk] !== 'string') {
+              try {
+                _zwUc[pk] = (sel ? __zw_get_computed_style(String(sel), pk)
+                  : (typeof __zw_get_computed_style_by_handle === 'function'
+                    ? __zw_get_computed_style_by_handle(String(handle), pk) : '')) || '';
+              } catch (_eUc) { _zwUc[pk] = ''; }
+            }
+            var _cu = String(_zwUc[pk]).replace(/^\s+|\s+$/g, '');
+            // 影列表 add = 追加（web-animations-1 §5.4.4）；none/空 = 单位元恒等。
+            dst[k] = (_cu === '' || _cu.toLowerCase() === 'none') ? v : (_cu + ', ' + v);
+            continue;
+          }
           if (typeof _zwUc[pk] !== 'string') {
             try {
               _zwUc[pk] = (sel ? __zw_get_computed_style(String(sel), pk)
