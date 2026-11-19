@@ -130,6 +130,13 @@ pub(crate) fn store_last_style(world: World, identity: &str, style: &ComputedSty
 /// `transition-property` 声明且值变化的属性登记过渡条目。非插值对 / duration≤0 /
 /// `none` 属性 / 端点序列化同值或空值一律跳过（= 刀前行为，echo 池零扰动）；
 /// `all` 按可插值清单通配展开（css-transitions §2）。
+///
+/// FIXME(lazy-before-change): 纯样式表驱动且元素从未 gCS 读的形（如
+/// transition-behavior.html S1：frames → classList.add → getAnimations）在
+/// lazy 登记模型下无 before-change style 可 diff——哨兵首问即首读，
+/// `take_last_style` None 只存不登（transition-behavior.html S1 残红，
+/// 探针 t1 共形实证）。转正需 push/seed 模型（真浏览器在 style-update
+/// 时点启动过渡），非本刀范围。
 pub(crate) fn register_from_style_change(
     world: World,
     identity: &str,
@@ -138,10 +145,23 @@ pub(crate) fn register_from_style_change(
     doc: &Document,
     nid: zero_dom::NodeId,
 ) {
+    // 管辖层归并表：属性 → (层位, allow_discrete, duration, delay, timing)。
+    type Governing<'a> = HashMap<&'a str, (usize, bool, f64, f64, TimingFunctionValue)>;
     if new.transition_property.is_empty() {
+        // transition-property 全空（`none`/未声明）：运行中条目不取消——已启动
+        // 过渡与后续声明解耦（css-transitions changing-while-004「Unsetting
+        // transition should not affect in-flight transitions」锚定；修复前此分支
+        // 全取消＝004 P2F 根因）。仅新端点变化不再登记（直接早退）。
         return;
     }
     let sibling = Some(zero_style_system::sibling_position(doc, nid));
+
+    // 管辖归并（css-transitions-1 §starting-of-transitions：属性 P 的过渡参数取
+    // transition-property 列表中**末个**匹配 P 的项——`all` 通配或精确同名皆算
+    // 匹配，后位覆盖前位。刀 TB overlap 定谳：[all(normal), float(allow-discrete)]
+    // float 取末位 float 层启动；[all(allow-discrete), float(normal)] float 取末位
+    // normal 层不启动（前位 all 衍生条目由取消面摘除））。
+    let mut governing: Governing = HashMap::new();
     for (i, property) in new.transition_property.iter().enumerate() {
         if property == "none" || property.is_empty() {
             continue;
@@ -153,60 +173,43 @@ pub(crate) fn register_from_style_change(
             .transition_behavior
             .get(i)
             .is_some_and(|b| b.eq_ignore_ascii_case("allow-discrete"));
-        // `all` 通配（css-transitions §2：`all` 匹配一切可过渡 longhand）——按
-        // 可插值属性清单逐项探测端点变化并各自登记（duration/delay/timing 取
-        // `all` 项自身位）。非插值对/端点同值在逐项门过滤，echo 池零扰动。
-        // 本位 allow-discrete 时探针集扩入离散型属性（[`DISCRETE_TRANSITIONABLE`]）。
+        let dur = new.transition_duration.get(i).copied().unwrap_or(0.0);
+        let del = new.transition_delay.get(i).copied().unwrap_or(0.0);
+        let tf = new
+            .transition_timing_function
+            .get(i)
+            .cloned()
+            .unwrap_or(TimingFunctionValue::Ease);
         if property == "all" {
+            // `all` 通配（css-transitions §2：`all` 匹配一切可过渡 longhand）——
+            // 可插值清单全量并入管辖；本位 allow-discrete 时探针集扩入离散型
+            // 属性（[`DISCRETE_TRANSITIONABLE`]）。
             for prop in TRANSITIONABLE_PROPERTIES {
-                register_property_if_changed(
-                    world,
-                    identity,
-                    prop,
-                    prev,
-                    new,
-                    sibling,
-                    new.transition_duration.get(i).copied().unwrap_or(0.0),
-                    new.transition_delay.get(i).copied().unwrap_or(0.0),
-                    new.transition_timing_function
-                        .get(i)
-                        .cloned()
-                        .unwrap_or(TimingFunctionValue::Ease),
-                    allow_discrete,
-                );
+                governing.insert(prop, (i, allow_discrete, dur, del, tf.clone()));
             }
             if allow_discrete {
                 for prop in DISCRETE_TRANSITIONABLE {
-                    register_property_if_changed(
-                        world,
-                        identity,
-                        prop,
-                        prev,
-                        new,
-                        sibling,
-                        new.transition_duration.get(i).copied().unwrap_or(0.0),
-                        new.transition_delay.get(i).copied().unwrap_or(0.0),
-                        new.transition_timing_function
-                            .get(i)
-                            .cloned()
-                            .unwrap_or(TimingFunctionValue::Ease),
-                        true,
-                    );
+                    governing.insert(prop, (i, true, dur, del, tf.clone()));
                 }
             }
             continue;
         }
-        // 显式声明与 `all` 通配同清单口径（css-transitions §2 可过渡属性面）：
-        // 清单外不登记过渡。A/B 定谳 2026-11-18（刀 A1）：mask-image 显式声明
-        // 无门登记 = P2F 30 形——其 WAAPI/CSSA applier 臂激活后端点快照环境
-        // 扰动（neutral→url 取前块值/inherit 取 none），离散翻转 at<0.5 全灭；
-        // 清单外静态跳终值 = B0 通过正形。本位 allow-discrete 例外（css-transitions-2
-        // §transition-behavior-property：离散型属性也启动过渡）——列表门放开，
-        // 逐项门 [`register_property_if_changed`] 内 strict 探针同步豁免。
-        // https://drafts.csswg.org/css-transitions/#starting-of-transitions
-        if !TRANSITIONABLE_PROPERTIES.contains(&property.as_str()) && !allow_discrete {
+        // 显式声明清单外属性 plain 位不登记＝过渡不启动＝静态跳终值
+        // （css-transitions-1 §starting-of-transitions：离散对无 allow-discrete
+        // 不启动；清单外 strict 离散面如 mask-image 端点快照跨块陈旧——A/B
+        // 定谳 2026-11-18 neutral→url 取前块 stripes REGRESSED=60 形，本门
+        // 即 knife-decomp masking 腿 P2F=30 清偿）。allow-discrete 位照常登记
+        // （css-transitions-2 §transition-behavior-property 豁免面）。
+        if !allow_discrete && !TRANSITIONABLE_PROPERTIES.contains(&property.as_str()) {
             continue;
         }
+        governing.insert(property.as_str(), (i, allow_discrete, dur, del, tf));
+    }
+
+    // 登记面：管辖属性逐项探测端点变化（端点同值/非插值对在
+    // [`register_property_if_changed`] 逐项门过滤，echo 池零扰动；显式声明清单外
+    // 属性 allow-discrete 豁免同前——A/B 定谳 2026-11-18 刀 A1 mask-image 形）。
+    for (property, (_i, allow_discrete, dur, del, tf)) in governing.iter() {
         register_property_if_changed(
             world,
             identity,
@@ -214,15 +217,39 @@ pub(crate) fn register_from_style_change(
             prev,
             new,
             sibling,
-            new.transition_duration.get(i).copied().unwrap_or(0.0),
-            new.transition_delay.get(i).copied().unwrap_or(0.0),
-            new.transition_timing_function
-                .get(i)
-                .cloned()
-                .unwrap_or(TimingFunctionValue::Ease),
-            allow_discrete,
+            *dur,
+            *del,
+            tf.clone(),
+            *allow_discrete,
         );
     }
+
+    // 取消面（transition-behavior.html S4/S6「behavior 翻转取消运行中离散过渡」
+    // 断言面）：只摘管辖位仍在但已不容的条目——离散条目 behavior 翻回 normal /
+    // duration≤0。失管辖（属性不再被任何 transition-property 项匹配）不取消
+    //（css-transitions changing-while-004 锚定；fix E——修复前 jurisdiction-loss
+    // 取消＝过度取消面）。
+    cancel_disqualified_entries(world, identity, &governing);
+}
+
+/// 取消管辖位仍在但已失容的运行中条目。保留条件：失管辖（`governing` 无此属性
+/// 位）→ 保留；管辖位在 ∧ duration>0 ∧（非离散条目 ∨ 本位 allow-discrete）。
+fn cancel_disqualified_entries(
+    world: World,
+    identity: &str,
+    governing: &HashMap<&str, (usize, bool, f64, f64, TimingFunctionValue)>,
+) {
+    ENTRIES.with(|cell| {
+        cell.borrow_mut().retain(|e| {
+            if e.world != world || e.identity != identity {
+                return true;
+            }
+            match governing.get(e.property.as_str()) {
+                None => true,
+                Some((_i, ad, dur, _del, _tf)) => *dur > 0.0 && (!e.discrete || *ad),
+            }
+        });
+    });
 }
 
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
@@ -342,7 +369,7 @@ const TRANSITIONABLE_PROPERTIES: [&str; 82] = [
 /// mask-image 此前 A/B 定谳不入 [`TRANSITIONABLE_PROPERTIES`]（plain 面端点跨块
 /// 陈旧），allow-discrete 面按本表显式接入——plain 面清单不变。
 /// <https://drafts.fxtf.org/css-masking-1/#the-mask-image>
-const DISCRETE_TRANSITIONABLE: [&str; 8] = [
+const DISCRETE_TRANSITIONABLE: [&str; 10] = [
     "mask",
     "mask-image",
     "font-size-adjust",
@@ -351,6 +378,11 @@ const DISCRETE_TRANSITIONABLE: [&str; 8] = [
     "column-rule-style",
     "column-span",
     "column-wrap",
+    // 刀 TB（transition-behavior.html 五子测残面）：float/position 为 discrete-only
+    // 布局属性（css-transitions-1 §animations 中非 animatable，仅 allow-discrete
+    // 可过渡）——本表只在本位 allow-discrete 时并入探测集，plain 面清单不变。
+    "float",
+    "position",
 ];
 
 /// 单属性登记（显式声明与 `all` 通配展开共用）：duration≤0 / 端点空串同值 /
@@ -404,6 +436,51 @@ fn register_property_if_changed(
     });
 }
 
+/// getAnimations 浮出哨兵属性名——shim `el.getAnimations()` 经既有 gCS 通道
+/// （`__zw_get_computed_style` / `__zw_get_computed_style_by_handle`）以本名咨询，
+/// 该元素运行中的过渡条目快照按记录序返回。缓存代际机制（style_version /
+/// drain_gen 键）使哨兵咨询与取值读同一条重算路径：改动后首问即触发
+/// `register_from_style_change` 重算 + 登记，快照恒新鲜（css-transitions-1
+/// §getAnimations：元素上运行中的 CSSTransition 与 Animation 一并返回）。
+/// 内部哨兵名，真实页面不读该属性。
+pub const SURFACE_SENTINEL: &str = "__zw_transitions";
+
+/// 活跃过渡条目快照（getAnimations 浮出面，刀 TB）。仅含未完结条目
+///（css-transitions-1 §animations：local time ≥ delay+duration 即 finish——
+/// getAnimations 不再列出；gCS 终态由 echo 承担）。记录形
+/// `prop\x1Ffrom\x1Fto\x1Fduration\x1Fdelay\x1Fstart\x1Fdiscrete`，条目间 `\x1E`
+/// 分隔（gCS 序列化值不含控制字符，分隔无歧义）。空表返空串。
+fn snapshot_active(world: World, identity: &str) -> String {
+    let now = MONOTONIC_START.elapsed().as_secs_f64();
+    let entries = ENTRIES.with(|cell| cell.borrow().clone());
+    let mut out = String::new();
+    for e in entries.iter() {
+        if e.world != world || e.identity != identity {
+            continue;
+        }
+        if now - e.start_s >= e.delay_s + e.duration_s {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\x1e');
+        }
+        out.push_str(&e.property);
+        out.push('\x1f');
+        out.push_str(&e.from);
+        out.push('\x1f');
+        out.push_str(&e.to);
+        out.push('\x1f');
+        out.push_str(&format!("{}", e.duration_s));
+        out.push('\x1f');
+        out.push_str(&format!("{}", e.delay_s));
+        out.push('\x1f');
+        out.push_str(&format!("{}", e.start_s));
+        out.push('\x1f');
+        out.push_str(if e.discrete { "1" } else { "0" });
+    }
+    out
+}
+
 /// gCS selector 通道咨询（`__zw_get_computed_style` 序列化点，jsanim consult 位旁）。
 pub fn query_override_for_sel(
     sel: &str,
@@ -411,6 +488,9 @@ pub fn query_override_for_sel(
     base: &ComputedStyle,
     sibling: Option<(u64, u64)>,
 ) -> Option<String> {
+    if prop == SURFACE_SENTINEL {
+        return Some(snapshot_active(World::Gen, sel));
+    }
     query_core(World::Gen, sel, prop, base, sibling)
 }
 
@@ -421,6 +501,9 @@ pub fn query_override_for_handle(
     base: &ComputedStyle,
     sibling: Option<(u64, u64)>,
 ) -> Option<String> {
+    if prop == SURFACE_SENTINEL {
+        return Some(snapshot_active(World::View, hnd));
+    }
     query_core(World::View, hnd, prop, base, sibling)
 }
 

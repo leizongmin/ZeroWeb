@@ -7091,10 +7091,67 @@
         }
         // R3067：`el.getAnimations()`（Web Animations API）——返本元素动画（cancelled/idle 排除；finished 含）。
         // 读注册表在调用时（非 get-trap 时）以反映 reset 后空态 + 后续新增动画。返副本数组（防调用方 mutate 注册表）。
+        // 刀 TB：CSS transition 浮出面（css-transitions-1 §getAnimations——运行中的
+        // CSSTransition 与 Animation 一并返回）。引擎注册表活跃条目经既有 gCS 通道
+        // 哨兵咨询取回（`__zw_transitions` 名，transition_registry::SURFACE_SENTINEL）；
+        // 缓存代际键使哨兵首问即触发登记重算，快照恒新鲜。记录形
+        // `prop\x1Ffrom\x1Fto\x1Fdur\x1Fdelay\x1Fstart\x1Fdisc`，条目间 `\x1E`。
+        // typeof 守卫——通道缺席时零扰动回落（cancelled 条目本地摘除集防重复浮出）。
         if (prop === 'getAnimations') {
           return function () {
             var _anims = _elementAnimations[key] || [];
-            return _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+            var _out = _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+            // 双身份路由（s161 同款）：sel 通道（Gen world）优先，handle 通道
+            // （View world，createElement 产物无 __zwSelector）回落。
+            var _tsRaw = '';
+            try {
+              if (typeof __zw_get_computed_style === 'function' && sel) {
+                _tsRaw = __zw_get_computed_style(sel, '__zw_transitions');
+              } else if (typeof __zw_get_computed_style_by_handle === 'function' && handle) {
+                _tsRaw = __zw_get_computed_style_by_handle(handle, '__zw_transitions');
+              }
+              if (_tsRaw) {
+                  var _recs = _tsRaw.split('\x1e');
+                  var _cxKey = '_zwTsCx_' + key;
+                  var _cxed = globalThis[_cxKey];
+                  // 每记录工厂（函数作用域捕获——var 循环变量闭包共享末位绑定的
+                  // 经典坑：多属性并存时 cancel 串键，此处逐记录独立闭包）。
+                  var _mkRec = function (tKey, cxKey, tProp, ctMs, durMs) {
+                    return {
+                      transitionProperty: tProp,
+                      playState: 'running',
+                      currentTime: ctMs,
+                      // cancel()（css-transitions-1 §canceling：CSSTransition.cancel 摘除）
+                      // ——引擎条目存活期由登记/取消面管理，本侧只记摘除键防重复浮出。
+                      cancel: function () {
+                        var _set = globalThis[cxKey] || (globalThis[cxKey] = []);
+                        if (_set.indexOf(tKey) === -1) _set.push(tKey);
+                        this.playState = 'idle';
+                      },
+                      effect: {
+                        getComputedTiming: function () {
+                          return { duration: durMs, activeDuration: durMs, endTime: durMs };
+                        }
+                      }
+                    };
+                  };
+                  for (var _ti = 0; _ti < _recs.length; _ti++) {
+                    var _f = _recs[_ti].split('\x1f');
+                    if (_f.length < 7 || !_f[0]) continue;
+                    var _tKey = _f[0] + '\x1f' + _f[5];
+                    if (_cxed && _cxed.indexOf(_tKey) !== -1) continue;
+                    var _dur = parseFloat(_f[3]) || 0;
+                    var _delay = parseFloat(_f[4]) || 0;
+                    var _start = parseFloat(_f[5]) || 0;
+                    // currentTime 按墙钟推算（毫秒，active interval 内钳界——Web Animations
+                    // §currentTime：local time − delay，[0, duration] 之外经 playState 表达）。
+                    var _local = (Date.now() / 1000 - _start - _delay) * 1000;
+                    var _ct = Math.max(0, Math.min(_local, _dur * 1000));
+                    _out.push(_mkRec(_tKey, _cxKey, _f[0], _ct, _dur * 1000));
+                  }
+                }
+              } catch (_eTs) {}
+            return _out;
           };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：

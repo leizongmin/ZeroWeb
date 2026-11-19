@@ -18717,6 +18717,12 @@
   });
   _defineEventSubclass('TransitionEvent', 'Event', [
     ['propertyName', 'propertyName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
+    // 刀 TB：TransitionEventInit.animation（css-transitions-2 §the-transitionevent-interface——
+    // `readonly attribute Animation? animation`，init dict 同名成员缺省 null）。getAnimations
+    // 浮出面（part04 SURFACE_SENTINEL）前该成员断言为空洞通过（anim=undefined 对 undefined）；
+    // 浮出后 CSSTransition 记录真对象暴露缺成员——init 透传即清偿 transitionevent-interface
+    // 「TransitionEventInit animation property sets value」。
+    ['animation', 'animation', null],
   ]);
 
   // net-api M4-S19：FormDataEvent（HTML spec §the-formdataevent-interface）——'formdata'
