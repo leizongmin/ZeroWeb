@@ -92,6 +92,25 @@ rendering 流记账）。门开随批落预案不变：
 簇 D 开 → customizable-select-styles.css
 ×47 随批落。账本=
 evidence/2026-11-20-m2s582-zero-displacement-split-hold2-a528acd8-convergence5-mpreload-hold7.md
+> **◆ 补账（2026-11-20 s582 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×2
+> 全列核实（2483ee96e→d4179058a，
+> rebase 换代 e372a2cab 归 s583 开工
+> 续核）：docs ×2＝rendering R5845
+> （**kb86 54代 守成批兑现＝
+> a528acd8 ×4 恒＝本轮 mid=post 同值
+> ＝跨 clone 收敛第五实例对端侧
+> 落账确认**；kb87 已部署候窗＝
+> wptfyi WA face canonical 待发射
+> IGNITION 支升格）＋e1cdba1d3 全仓
+> docs 对账（CHANGELOG 五批补记＋
+> ROADMAP/architecture 口径刷新）。
+> 两笔均纯 docs＝**s583 runner
+> Fresh 预判维持**；若 s583 窗带
+> WA face 码刀则改判必换代（开工
+> 捕获后定谳）。全桥 b582 基线装载
+> /tmp/s583（=s582.bridge.keys
+> 1731P/0F）。
 > **◆ 补账（2026-11-20 s581 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×4
 > 全列核实（57aa5e0be→710d84cf3，
