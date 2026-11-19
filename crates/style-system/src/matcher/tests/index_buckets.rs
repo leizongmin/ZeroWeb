@@ -278,3 +278,111 @@ fn p11_index_stats() {
         eprintln!("el={el:?} candidates={n}");
     }
 }
+
+// ── P-g2b 第二级 hinted 桶差分（2026-11-19，t-g2b impl-007 leg①）──
+//
+// 右端键 × 祖先提示复合桶的专用差分：hinted 只改候选来源、不改变匹配与级联序
+// （必要条件论证见 RuleListBuckets::hinted 桶注）。除逐声明差分外，显式断言
+// hinted 桶实际吃到形状（差分可能空转绿——选择器从未入 hinted 桶则本改动未被
+// 测试覆盖），并钉互斥边界：sibling 组合器（`+`/`~`）与 `:not(.x)` 前置复合
+// 留平桶，裸 id 前置复合（无 class/tag 可挖）留平桶。
+#[test]
+fn p_g2b_hinted_bucket_differential() {
+    let css = r#"
+.wrap .item { color: red; }
+.wrap > .item { color: green; }
+div > span { color: blue; }
+.hov:hover .item { color: olive; }
+.w2 #it { color: purple; }
+.a + .item { color: cyan; }
+.a ~ span { color: magenta; }
+:not(.x) .item { color: black; }
+#only .item { color: brown; }
+@media all { .wrap .m2 { color: navy; } }
+.wrap .item::before { content: "b"; }
+"#;
+    let html = r#"<html><body>
+<div class="wrap"><div class="mid"><span class="item">in</span><b class="m2">n</b></div></div>
+<span class="item orphan">out</span>
+<div id="only"><p class="item">po</p></div>
+<div class="a"><span class="item">first</span><em class="item">next</em></div>
+<div class="hov"><span class="item">hov</span></div>
+<div class="w2"><b id="it">x</b></div>
+</body></html>"#;
+    let sheet = Parser::parse_stylesheet(css);
+    let sheets = vec![sheet];
+    let index = build_stylesheet_index(&sheets);
+
+    // 桶形状：顶层 hinted 恰四键（descendant class-hint 双选择器共桶 / tag-hint /
+    // :hover 提示 / id 右端 + class 提示）；sibling、:not、裸 id 前置不入 hinted。
+    let top = &index.sheets[0].buckets;
+    let k_item_wrap = ((b'c', "item".to_string()), (b'c', "wrap".to_string()));
+    let k_span_div = ((b't', "span".to_string()), (b't', "div".to_string()));
+    let k_item_hov = ((b'c', "item".to_string()), (b'c', "hov".to_string()));
+    let k_it_w2 = ((b'i', "it".to_string()), (b'c', "w2".to_string()));
+    assert_eq!(
+        {
+            let mut ks: Vec<_> = top.hinted.keys().cloned().collect();
+            ks.sort();
+            ks
+        },
+        {
+            let mut ks = vec![
+                k_item_wrap.clone(),
+                k_span_div.clone(),
+                k_item_hov.clone(),
+                k_it_w2.clone(),
+            ];
+            ks.sort();
+            ks
+        },
+        "顶层 hinted 桶键集漂移: {:?}",
+        top.hinted.keys().collect::<Vec<_>>()
+    );
+    // 同键三候选：`.wrap .item` / `.wrap > .item`，外加 `.wrap .item::before`
+    // 的主体（伪元素尾选择器按既有行为同入主桶，仅桶域随提示平移——常规 pass
+    // 由精确匹配拒绝，语义不变）。
+    assert_eq!(top.hinted[&k_item_wrap].len(), 3, "同键候选数漂移");
+    // 伪元素尾镜像桶同吃 hinted 形状。
+    let before_mirror = index.sheets[0]
+        .pseudo_by_tail
+        .get("before")
+        .expect("::before 镜像桶缺失");
+    assert!(
+        before_mirror.hinted.contains_key(&k_item_wrap),
+        "伪元素镜像 hinted 未入桶: {:?}",
+        before_mirror.hinted.keys().collect::<Vec<_>>()
+    );
+    // @media 嵌套块内 hinted 规则随递归建索引入桶。
+    let media_nested = index.sheets[0].nested.values().next().expect("@media 嵌套缺失");
+    assert!(
+        media_nested
+            .index
+            .buckets
+            .hinted
+            .contains_key(&((b'c', "m2".to_string()), (b'c', "wrap".to_string()))),
+        "@media 内 hinted 未入桶"
+    );
+
+    // 逐声明差分（常规 + ::before，无上下文变体——桶路由与媒体/容器正交）。
+    let doc = parse_html(html);
+    let els = elements_by_tags(&doc, &["div", "span", "p", "b", "em"]);
+    assert!(els.len() >= 10, "样本元素过少: {}", els.len());
+    for el in els {
+        let desc = format!("{el:?}");
+        let indexed = collect_matching_declarations_with_media(&doc, el, &sheets, &index, None, None);
+        let full = full_scan(&doc, el, &sheets, None, None, None);
+        assert_eq!(
+            indexed, full,
+            "hinted 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            indexed, full
+        );
+        let ip = collect_pseudo_declarations_with_media(&doc, el, &sheets, &index, None, None, "before");
+        let fp = full_scan(&doc, el, &sheets, None, None, Some("before"));
+        assert_eq!(
+            ip, fp,
+            "hinted ::before 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            ip, fp
+        );
+    }
+}

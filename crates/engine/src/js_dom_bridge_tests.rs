@@ -278,3 +278,6 @@ include!("js_dom_bridge_tests/part113_g2b_persisted_style_system.rs");
 // 相对 URL 绝对化 + `__zw_dispatch_element_event` 批量路径派发语义（相对命中/
 // 多元素同 URL 全派发/无匹配零派发，见文件头注）。
 include!("js_dom_bridge_tests/part114_g2b_batch_attrs.rs");
+
+// t-g2b impl-007 画像 scratch（非钉面，定去留）：bulk innertext 冷/热构成分解。
+include!("js_dom_bridge_tests/part115_bulk_profile_scratch.rs");

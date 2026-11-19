@@ -3069,6 +3069,17 @@ fn matches_selector_for_pseudo(doc: &Document, element: NodeId, selector: &Selec
 /// - `&`（Nesting）、`[attr]`、裸伪类等无 id/class/tag 主键 → universal 桶。
 /// - 每个选择器恰好进一个桶（主键唯一）→ 候选天然无重复，按 (规则, 选择器)
 ///   升序拼接即为源码序。
+///
+/// P-g2b 第二级（2026-11-19，t-g2b impl-007 leg①）：右端键 × 祖先提示复合桶
+/// [`Self::hinted`]——右端主键桶仍可能巨型（github 形态 `span`/通用 class 桶
+/// 数千条目，p115 差分臂实测候选数×单次固定开销为级联臂主项、nth 逐位扫描与
+/// 命中声明处理皆非主项）。当组合器为 descendant/child 时，前置复合选择器的
+/// 首个 class（无 class 则其 type tag）是匹配的**祖先链必要条件**：child 限
+/// 父、descendant 限任一祖先，按元素祖先链全部 (tag, class) 枚举查询即保守
+/// 超集，不漏候选；提示复合上的其余条件（`:hover`/`[attr]`/`:has` 等）仍由
+/// 精确匹配裁决（过包含只多尝试，不改变结果）。sibling 组合器（`+`/`~`）的
+/// 前置复合约束在**兄弟**而非祖先，不适用祖先枚举，留平桶。桶互斥性不变：
+/// 每选择器恰进 hinted 或平桶之一。
 #[derive(Default)]
 struct RuleListBuckets {
     /// 最右含 `#id`（无更高优先级键时）：id → 候选 (规则下标, 选择器下标)。
@@ -3079,6 +3090,11 @@ struct RuleListBuckets {
     tagged: std::collections::HashMap<String, Vec<(usize, usize)>>,
     /// 无 id/class/tag 主键 → 任意元素候选。
     universal: Vec<(usize, usize)>,
+    /// P-g2b 第二级：右端键 × 祖先提示复合桶。键 = ((右端键种别, 名), (提示种别, 名))，
+    /// 种别 `b'c'` = class / `b't'` = tag（小写）。仅 descendant/child 组合器且前置
+    /// 复合含 class 或 tag 时入桶（判据见 [`selector_hint_keys`]），其余选择器走上方
+    /// 平桶——两域互斥。
+    hinted: std::collections::HashMap<((u8, String), (u8, String)), Vec<(usize, usize)>>,
 }
 
 /// 带内层规则表的块（@media/@layer/@supports/@container）的预建索引。
@@ -3179,12 +3195,75 @@ fn selector_rightmost_key(selector: &zero_css_parser::ast::Selector) -> Rightmos
     }
 }
 
+/// 右端主键 → hinted 桶键编码（`b'i'`=id / `b'c'`=class / `b't'`=tag，小写）。
+/// `RightmostKey::None`（无主键）返 None——提示桶只收有主键的选择器。
+fn rightmost_key_str(key: &RightmostKey) -> Option<(u8, String)> {
+    match key {
+        RightmostKey::Id(s) => Some((b'i', s.clone())),
+        RightmostKey::Class(s) => Some((b'c', s.clone())),
+        RightmostKey::Tag(s) => Some((b't', s.clone())),
+        RightmostKey::None => None,
+    }
+}
+
+/// P-g2b 第二级：选择器的右端键 × 祖先提示可提取性。
+///
+/// 判据（必要条件语义，见 [`RuleListBuckets.hinted`] 桶注）：
+/// - 链长 ≥ 2 且前置复合到最右复合的组合器为 `Descendant`/`Child`——组合器挂在
+///   左 part 上（`parts[i].1` 连接 `parts[i]` 与 `parts[i+1]`，matches_selector
+///   同向），即 `parts[len-2].1`。提示约束落在祖先链上（child 限父 ⊂ 任一祖先）；
+///   `NextSibling`/`SubsequentSibling` 约束在兄弟，返 None（留平桶）。
+/// - 提示 = 前置复合的**直接**首个 class，无 class 则其 type tag（含非空命名
+///   空本地名，与 [`selector_rightmost_key`] 同语义）；`:not(.x)`/`:is(.x)`
+///   参数内 class 不挖（同平桶纪律——非匹配必要条件）；前置复合全无 → None。
+/// - 右端键须有主键（id/class/tag）。
+///
+/// 提示是过包含必要条件：提示复合的其余条件（`:hover`/`[attr]`/`:has`、其余
+/// class）在候选尝试时由精确匹配裁决，桶只减少候选、不改变匹配结果。
+fn selector_hint_keys(selector: &Selector) -> Option<((u8, String), (u8, String))> {
+    let parts = &selector.complex.parts;
+    if parts.len() < 2 {
+        return None;
+    }
+    match parts[parts.len() - 2].1 {
+        Some(Combinator::Descendant) | Some(Combinator::Child) => {}
+        _ => return None,
+    }
+    let right = rightmost_key_str(&selector_rightmost_key(selector))?;
+    let prev = &parts[parts.len() - 2].0;
+    let hint = prev
+        .subclass_selectors
+        .iter()
+        .find_map(|sub| match sub {
+            SubclassSelector::Class(c) => Some((b'c', c.clone())),
+            _ => None,
+        })
+        .or_else(|| match &prev.type_selector {
+            Some(TypeSelector::Tag(tag)) => Some((b't', tag.to_ascii_lowercase())),
+            Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => Some((b't', name.to_ascii_lowercase())),
+            Some(TypeSelector::Universal) | Some(TypeSelector::Namespaced { .. }) | None => None,
+        })?;
+    Some((right, hint))
+}
+
+/// 选择器入桶（平桶与 hinted 镜像共用）：有祖先提示 → hinted 复合桶；否则按
+/// 主键进平桶。每选择器恰进一桶（hinted 与平桶互斥）→ 候选无重复不变。
+fn push_selector_bucket(b: &mut RuleListBuckets, selector: &Selector, pair: (usize, usize)) {
+    if let Some((right, hint)) = selector_hint_keys(selector) {
+        b.hinted.entry((right, hint)).or_default().push(pair);
+        return;
+    }
+    match selector_rightmost_key(selector) {
+        RightmostKey::Id(id) => b.ids.entry(id).or_default().push(pair),
+        RightmostKey::Class(cls) => b.classes.entry(cls).or_default().push(pair),
+        RightmostKey::Tag(tag) => b.tagged.entry(tag).or_default().push(pair),
+        RightmostKey::None => b.universal.push(pair),
+    }
+}
+
 /// 构建单一规则列表的索引（含嵌套块递归；O(规则 × 选择器)，每帧一次）。
 fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex {
-    let mut ids: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
-    let mut classes: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
-    let mut tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
-    let mut universal: Vec<(usize, usize)> = Vec::new();
+    let mut buckets = RuleListBuckets::default();
     // P124 追加、P-g2b 分区：伪元素尾规则的镜像桶（pseudo pass 候选源，
     // 见 RuleListIndex.pseudo_by_tail）。
     let mut pseudo_by_tail: std::collections::HashMap<String, RuleListBuckets> = std::collections::HashMap::new();
@@ -3299,12 +3378,9 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             pseudo_rule_set.push(ri);
         }
         for (si, selector) in style_rule.selectors.iter().enumerate() {
-            match selector_rightmost_key(selector) {
-                RightmostKey::Id(id) => ids.entry(id).or_default().push((ri, si)),
-                RightmostKey::Class(cls) => classes.entry(cls).or_default().push((ri, si)),
-                RightmostKey::Tag(tag) => tagged.entry(tag).or_default().push((ri, si)),
-                RightmostKey::None => universal.push((ri, si)),
-            }
+            // P-g2b 第二级：有祖先提示 → hinted 复合桶；否则平桶（见
+            // push_selector_bucket——两域互斥，候选无重复不变）。
+            push_selector_bucket(&mut buckets, selector, (ri, si));
             // P-g2b：仅伪元素尾选择器入分区桶（键 = 尾名基础名，函数伪元素去参）。
             // 同规则多选择器异尾各自入桶（(ri, si) 精确到选择器）。无尾选择器不进
             // 任何分区桶——旧镜像桶对它们白收（matches_selector_for_pseudo 尾判
@@ -3314,30 +3390,32 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
                     Some((base, _)) => base,
                     None => tail.as_str(),
                 };
-                let buckets = pseudo_by_tail.entry(key.to_string()).or_default();
-                match selector_rightmost_key(selector) {
-                    RightmostKey::Id(id) => buckets.ids.entry(id).or_default().push((ri, si)),
-                    RightmostKey::Class(cls) => buckets.classes.entry(cls).or_default().push((ri, si)),
-                    RightmostKey::Tag(tag) => buckets.tagged.entry(tag).or_default().push((ri, si)),
-                    RightmostKey::None => buckets.universal.push((ri, si)),
-                }
+                let mirror = pseudo_by_tail.entry(key.to_string()).or_default();
+                push_selector_bucket(mirror, selector, (ri, si));
             }
         }
     }
-    for bucket in ids.values_mut().chain(classes.values_mut()).chain(tagged.values_mut()) {
+    for bucket in buckets
+        .ids
+        .values_mut()
+        .chain(buckets.classes.values_mut())
+        .chain(buckets.tagged.values_mut())
+        .chain(buckets.hinted.values_mut())
+    {
         bucket.sort_unstable();
     }
-    universal.sort_unstable();
-    for buckets in pseudo_by_tail.values_mut() {
-        for bucket in buckets
+    buckets.universal.sort_unstable();
+    for mirror in pseudo_by_tail.values_mut() {
+        for bucket in mirror
             .ids
             .values_mut()
-            .chain(buckets.classes.values_mut())
-            .chain(buckets.tagged.values_mut())
+            .chain(mirror.classes.values_mut())
+            .chain(mirror.tagged.values_mut())
+            .chain(mirror.hinted.values_mut())
         {
             bucket.sort_unstable();
         }
-        buckets.universal.sort_unstable();
+        mirror.universal.sort_unstable();
     }
     // P124：候选驱动走查的访问集（升序）——嵌套块下标 ∪ 空 @layer 语句下标
     //（`@layer a, b;` / 匿名空层不在 nested，但走查时承担层序注册副作用 R4246，
@@ -3352,12 +3430,7 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
     }
     walk_ris.sort_unstable();
     RuleListIndex {
-        buckets: RuleListBuckets {
-            ids,
-            classes,
-            tagged,
-            universal,
-        },
+        buckets,
         pseudo_by_tail,
         nested,
         media_hits: std::collections::HashMap::new(),
@@ -3483,6 +3556,44 @@ fn element_candidates(buckets: &RuleListBuckets, doc: &Document, element: NodeId
     }
     if let Some(b) = buckets.tagged.get(&elem_tag) {
         candidates.extend_from_slice(b);
+    }
+    // P-g2b 第二级：右端键 × 祖先提示桶。提示必要条件在祖先链上（descendant：
+    // 任一祖先；child：父 ⊂ 任一祖先）——枚举祖先链全部 (tag, class) 作提示查询
+    // 是保守超集，不漏候选；桶与平桶互斥（每选择器恰进一桶）→ 候选无重复不变。
+    // 提示复合的其余条件（:hover/[attr]/:has 等）由候选尝试的精确匹配裁决。
+    if !buckets.hinted.is_empty() {
+        let mut hints: Vec<(u8, String)> = Vec::new();
+        let mut cur = doc.parent_node(element);
+        while let Some(a) = cur {
+            if let Some(NodeKind::Element(anc)) = doc.get(a).map(|n| &n.kind) {
+                if let Some(tag) = element_tag_name(doc, a) {
+                    hints.push((b't', tag));
+                }
+                for cls in &anc.class_list {
+                    hints.push((b'c', cls.clone()));
+                }
+            }
+            cur = doc.parent_node(a);
+        }
+        hints.sort_unstable();
+        hints.dedup();
+        let mut rkeys: Vec<(u8, String)> = Vec::with_capacity(elem_classes.len() + 2);
+        if let Some(id) = &elem_id {
+            rkeys.push((b'i', id.to_string()));
+        }
+        for cls in elem_classes {
+            rkeys.push((b'c', cls.clone()));
+        }
+        if !elem_tag.is_empty() {
+            rkeys.push((b't', elem_tag.clone()));
+        }
+        for right in &rkeys {
+            for hint in &hints {
+                if let Some(b) = buckets.hinted.get(&(right.clone(), hint.clone())) {
+                    candidates.extend_from_slice(b);
+                }
+            }
+        }
     }
     candidates.extend_from_slice(buckets.universal.as_slice());
     candidates.sort_unstable();
