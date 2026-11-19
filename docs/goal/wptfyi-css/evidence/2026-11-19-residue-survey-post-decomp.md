@@ -129,3 +129,24 @@ computation 簇→atpr2 在飞（registered_properties/computed_style 等 5 文�
 - 口径警示：五语料 b1 JSON 含 RIDE 在飞 hunks（ffix2 animation.rs、
   atpr2 registered_properties +455、KF part06 等），对应域残面计数在其
   落库后会收缩，认领前按当树 b0/b1 重探。
+
+### 批三 recon 附注：池①失败形分类（knife-g b1 JSON message 抽样，23:4x）
+
+- **cssColorValue 20F 全形 `CSSColorValue.parse is not a function`**——
+  静态方法整体缺位，单根因；实现需保留分量类型（rgb→`<number>` 0-255、
+  hsl→hue `<angle>` + s/l `<percentage>`、hwb、hex→CSSRGB、color()），
+  现有宿主钩子 `__zw_parse_color_rgba`（part01 同源 zero_css_parser
+  parse_color）只出 rgba 终值，typed 面需新钩子或 shim 侧按文法子集解析。
+- **颜色子类构造器（cssRGB 28F 为代表，HWB/HSL/LCH/OKLab/OKLCH 同构）**：
+  `assert_throws` did-not-throw 形——通道类型门缺（angle 入色通道须
+  TypeError、undefined 通道 SyntaxError、alpha 数/百分互斥门、CSSMathValue
+  `<number>` 匹配门）+ setter 同门 + 6 行属性值规一化 assert_equals。
+- **transform 子类（cssRotate 23F 为代表，Skew/Scale/Translate/Perspective
+  同构）**：构造器 angle/number 类型门 + 属性更新门（expected CSSUnitValue
+  but got Number＝setter 未把 raw number 归一化为 CSSUnitValue）。
+- **toMatrix 8F 双因**：skew/skewX/skewY 的 component.toMatrix 未实现 +
+  DOMMatrix shim 缺 translate/scale/skewX/skewY 方法（rotate 臂 Invalid
+  axis）。
+- **normalize-tokens 10F**：normalize() 对 `var()` 返回 String，期望
+  CSSVariableReferenceValue（无 fallback）/CSSUnparsedValue（有 fallback）
+  ——归一化分道缺 var 识别臂。
