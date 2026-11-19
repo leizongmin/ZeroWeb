@@ -11,6 +11,8 @@ use crate::computed::contains_var_function;
 type MatchingDecl = (String, String, bool, (u32, u32, u32));
 pub(crate) mod background;
 use background::expand_background;
+mod mask;
+use mask::expand_mask;
 mod transition;
 use transition::{expand_animation, expand_transition};
 
@@ -1220,41 +1222,8 @@ fn expand_mask_border(value: &str, important: bool, specificity: (u32, u32, u32)
     expand_image_border_shorthand_core(value, important, specificity, &MASK_BORDER_SHORTHAND)
 }
 
-/// mask 简写展开（css-masking-1 §3.10）。当前仅支持单值 `<mask-reference>` 形
-/// （none | <image>，复用 parse_mask_image 单值门，`url("#mask")` 等单 url/渐变
-/// 形接受）；position/size/repeat/clip/origin/composite/mode 组合形与多层 `#`
-/// FIXME(mask-shorthand-grammar) 拒收（展开失败=声明丢弃，与简写不可解析惯例一致）。
-///
-/// §3.10 reset 语义：mask 声明把全部 mask 长手与 mask-border-\* 五长手重置为
-/// 初值——展开即全投影。mask-mode 与 mask-border-\* 五长手有完整 apply 通道；
-/// 六长手（mask-position/size/repeat/clip/origin/composite）目前仅初值/reset
-/// 通道生效（registry 初值臂 + apply_initial_value 臂），写值 apply 通道
-/// FIXME(mask-longhands-unimplemented) 未实现——投影 reset 真、写值不生效。
-fn expand_mask(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
-    let value = value.trim();
-    if zero_css_parser::values::parse_mask_image(value).is_none() {
-        return Vec::new();
-    }
-    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
-    vec![
-        mk("mask-image", value),
-        // §3.10 reset 名单：mask 长手初值（css-masking-1 §3.3–3.9 各属性初值）。
-        mk("mask-mode", "match-source"),
-        mk("mask-position", "0% 0%"),
-        mk("mask-size", "auto"),
-        mk("mask-repeat", "repeat"),
-        mk("mask-origin", "border-box"),
-        mk("mask-clip", "border-box"),
-        mk("mask-composite", "add"),
-        // mask-border-* 五长手初值（§3.4–3.9；slice/width 初值与 border-image
-        // 简写不同——100%/1 vs 0/auto，同 MASK_BORDER_SHORTHAND）。
-        mk("mask-border-source", "none"),
-        mk("mask-border-slice", "0"),
-        mk("mask-border-width", "auto"),
-        mk("mask-border-outset", "0"),
-        mk("mask-border-repeat", "stretch"),
-    ]
-}
+// mask 简写展开移至 [`mask`] 模块（刀 MK 全文法重构——`<mask-layer>#` 逐层
+// 解析 + 13 形拒收集 + 多层逐 longhand 投影）。
 
 pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
     !expand_border_image(value, false, (0, 0, 0)).is_empty()

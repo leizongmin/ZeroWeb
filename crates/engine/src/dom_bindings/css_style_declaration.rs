@@ -379,6 +379,11 @@ pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String 
     if prop.eq_ignore_ascii_case("transition") {
         return transition_shorthand_expand_json(value);
     }
+    // 刀 MK：mask 家族共用本站（shim 写面 miss 兜底链任意名直达，本站内分派
+    // ——transition 臂同型，免共享文件 callbacks.rs 编辑）。
+    if prop.eq_ignore_ascii_case("mask") {
+        return mask_shorthand_expand_json(value);
+    }
     if let Some(longhands) = gap_rule_shorthand_longhands(prop) {
         if value.is_empty() {
             // remove 语义：名单 longhand 逐名清（值空）。
@@ -429,6 +434,12 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
     // [`ts_family_value`] 单源裁决。
     if prop.eq_ignore_ascii_case("transition") {
         return ts_family_value(&style_attr_decls(raw), "transition").unwrap_or_default();
+    }
+    // 刀 MK：mask 家族读重组共用本站（shim readProp 通用 miss 兜底任意名直达
+    // ——raw attr `n: v; ...` 域解析与 gap/transition 臂同源）。raw 简写存储形
+    //（attr 车道原文）与展开存储形（CSSOM 写面展开落库）双兼容。
+    if prop.eq_ignore_ascii_case("mask") {
+        return mask_family_value(&style_attr_decls(raw), "mask").unwrap_or_default();
     }
     if gap_rule_shorthand_longhands(prop).is_none() {
         return String::new();
@@ -952,6 +963,229 @@ pub(crate) fn transition_shorthand_expand_json(value: &str) -> String {
     serde_json::to_string(&[("transition".to_string(), "")]).unwrap_or_default()
 }
 
+// ── 刀 MK：mask 简写 inline 通道（css-masking-1 §3.10）────────────────
+
+/// mask 简写 8 列表长手（层化逗号列表；读面重组名单——style-system
+/// `expand_mask` 文法单源的投影子集）。
+const MASK_FAMILY_LONGHANDS: [&str; 8] = [
+    "mask-image",
+    "mask-position",
+    "mask-size",
+    "mask-repeat",
+    "mask-origin",
+    "mask-clip",
+    "mask-composite",
+    "mask-mode",
+];
+
+/// mask 声明 reset 名单全量（css-masking-1 §3.10：8 列表长手 + mask-border
+/// 五件套初值；写面 retain/清名单，与 style-system 投影名单同形）。
+const MASK_RESET_LONGHANDS: [&str; 13] = [
+    "mask-image",
+    "mask-position",
+    "mask-size",
+    "mask-repeat",
+    "mask-origin",
+    "mask-clip",
+    "mask-composite",
+    "mask-mode",
+    "mask-border-source",
+    "mask-border-slice",
+    "mask-border-width",
+    "mask-border-outset",
+    "mask-border-repeat",
+];
+
+/// mask 简写展开落 longhand（style-system `expand_shorthands` 单源，同
+/// [`ts_expand_decls`] 形）。非法形（`add intersect` 双 composite 类）→ None。
+fn mask_expand_decls(val: &str, important: bool) -> Option<Vec<StyleDecl>> {
+    let expanded = zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), important, (0, 0, 0))]);
+    if expanded.is_empty() {
+        return None;
+    }
+    Some(
+        expanded
+            .into_iter()
+            .map(|(p, v, imp, _)| StyleDecl {
+                prop: p,
+                value: v,
+                important: imp,
+            })
+            .collect(),
+    )
+}
+
+/// mask 简写 canonical 重组（css-masking-1 §3.10 serializing，语料
+/// mask-valid.sub.html 期望串锚定）。每层槽序 `image position [/ size] repeat
+/// origin [clip|no-clip] composite mode`，初值组件省略（image none /
+/// position `0% 0%` / size auto / repeat repeat / composite add / mode
+/// match-source）；origin==clip 折叠单写（`stroke-box stroke-box` →
+/// `stroke-box`）；双盒异值恒双写（`border-box content-box` 折叠单写会令
+/// 重解析把 origin 折到 clip 位——有损，语料钉）；clip `no-clip` 单写
+/// （origin 初值省略，`border-box no-clip` → `no-clip`——`no-clip` 不触发
+/// 单盒 origin+clip 同置语义，回读无损）；层全初值 → `none`（空串非合法
+/// `<mask-layer>`）。8 列表长手全等 css-wide keyword（简写 inherit 展开
+/// 存储形）→ 原样回。
+fn mask_serialize_from_longhands(props: &[StyleDecl]) -> Option<String> {
+    let get = |name: &str| {
+        props
+            .iter()
+            .find(|d| d.prop == name)
+            .map(|d| d.value.trim().to_string())
+    };
+    if MASK_FAMILY_LONGHANDS.iter().all(|n| get(n).is_none()) {
+        return None;
+    }
+    let image = get("mask-image").unwrap_or_else(|| "none".into());
+    let position = get("mask-position").unwrap_or_else(|| "0% 0%".into());
+    let size = get("mask-size").unwrap_or_else(|| "auto".into());
+    let repeat = get("mask-repeat").unwrap_or_else(|| "repeat".into());
+    let origin = get("mask-origin").unwrap_or_else(|| "border-box".into());
+    let clip = get("mask-clip").unwrap_or_else(|| "border-box".into());
+    let composite = get("mask-composite").unwrap_or_else(|| "add".into());
+    let mode = get("mask-mode").unwrap_or_else(|| "match-source".into());
+    let first = image.clone();
+    if [
+        position.as_str(),
+        size.as_str(),
+        repeat.as_str(),
+        origin.as_str(),
+        clip.as_str(),
+        composite.as_str(),
+        mode.as_str(),
+    ]
+    .iter()
+    .all(|v| *v == first.as_str())
+        && ts_is_css_wide_keyword(&first)
+    {
+        return Some(first);
+    }
+    let (il, pl, sl, rl, ol, cl, ml, col) = (
+        ts_split_layers(&image),
+        ts_split_layers(&position),
+        ts_split_layers(&size),
+        ts_split_layers(&repeat),
+        ts_split_layers(&origin),
+        ts_split_layers(&clip),
+        ts_split_layers(&mode),
+        ts_split_layers(&composite),
+    );
+    // 逐层序列化：下标按各名单长度取模环绕（spec 列表 LCM 展开的最小实现，
+    // ts_serialize_from_longhands 同型——展开存储形各名单等长时即逐层直取）。
+    let mut n = 1usize;
+    for len in [
+        il.len(),
+        pl.len(),
+        sl.len(),
+        rl.len(),
+        ol.len(),
+        cl.len(),
+        ml.len(),
+        col.len(),
+    ] {
+        n = n / ts_gcd(n, len) * len;
+    }
+    let layers = (0..n)
+        .map(|i| {
+            let img = &il[i % il.len()];
+            let pos = &pl[i % pl.len()];
+            let sz = &sl[i % sl.len()];
+            let rep = &rl[i % rl.len()];
+            let ori = &ol[i % ol.len()];
+            let clp = &cl[i % cl.len()];
+            let md = &ml[i % ml.len()];
+            let cmp = &col[i % col.len()];
+            let mut parts: Vec<&str> = Vec::with_capacity(8);
+            if !img.eq_ignore_ascii_case("none") {
+                parts.push(img.as_str());
+            }
+            let pos_init = pos.eq_ignore_ascii_case("0% 0%");
+            let size_init = sz.eq_ignore_ascii_case("auto");
+            // size 位附 position（文法 `position [/ size]` 无裸 size 位——size
+            // 非初值时 position 即使初值也强制输出锚定 `/` 结构）。
+            let pos_sz = if size_init {
+                pos.clone()
+            } else {
+                format!("{pos} / {sz}")
+            };
+            if !pos_init || !size_init {
+                parts.push(pos_sz.as_str());
+            }
+            if !rep.eq_ignore_ascii_case("repeat") {
+                parts.push(rep.as_str());
+            }
+            // origin/clip 配对（语料锚定形）：no-clip 单写（origin 初值省）；
+            // origin==clip 折叠单写；异值恒双写（防重解析折叠，见函数注）。
+            let clip_noclip = clp.eq_ignore_ascii_case("no-clip");
+            if clip_noclip {
+                if !ori.eq_ignore_ascii_case("border-box") {
+                    parts.push(ori.as_str());
+                }
+                parts.push(clp.as_str());
+            } else if ori.eq_ignore_ascii_case(clp) {
+                if !ori.eq_ignore_ascii_case("border-box") {
+                    parts.push(ori.as_str());
+                }
+            } else {
+                parts.push(ori.as_str());
+                parts.push(clp.as_str());
+            }
+            if !cmp.eq_ignore_ascii_case("add") {
+                parts.push(cmp.as_str());
+            }
+            if !md.eq_ignore_ascii_case("match-source") {
+                parts.push(md.as_str());
+            }
+            if parts.is_empty() {
+                return img.clone();
+            }
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(layers)
+}
+
+/// mask 简写族读面派生（[`ts_family_value`] 同型）：简写名 → canonical 重组
+///（raw 存储形优先展开同形，css-wide 原样）；非本族名 → None 调用方走通用臂
+///（8 长手名直查由调用方既有 find 臂承担）。
+fn mask_family_value(props: &[StyleDecl], prop: &str) -> Option<String> {
+    if prop != "mask" {
+        return None;
+    }
+    if let Some(raw) = props.iter().find(|d| d.prop == "mask") {
+        if ts_is_css_wide_keyword(raw.value.trim()) {
+            return Some(raw.value.clone());
+        }
+        // attr 车道 raw 简写存储形 → 展开后 canonical 重组（与 CSSOM 展开存储
+        // 车道读回同形；var() 替换函数形展开回落单声明 → 8 长手全缺 → None，
+        // 调用方回落 raw 直读保形）。
+        let expanded = mask_expand_decls(raw.value.trim(), false)?;
+        return mask_serialize_from_longhands(&expanded);
+    }
+    mask_serialize_from_longhands(props)
+}
+
+/// mask 简写家族 shim inline 通道展开（cssom-1 §dom-cssstyledeclaration-
+/// setproperty 简写语义，[`transition_shorthand_expand_json`] 站同约定）。
+/// - 空值 → reset 名单 13 长手逐名清声明（§3.10 reset + R3211 remove 语义）；
+/// - 非法形（`add intersect` 类）→ `[["mask",""]]` 自清形（声明忽略净效果，
+///   TS 站同形）；var() 替换函数形 → `[["mask", 原文]]`（style-system 放行
+///   单声明，store 原文）；
+/// - 合法 → (名, canonical 值) 13 长手 JSON（shim 逐名落库，简写键清除）。
+pub(crate) fn mask_shorthand_expand_json(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        let pairs: Vec<(String, &str)> = MASK_RESET_LONGHANDS.iter().map(|n| ((*n).to_string(), "")).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    if let Some(decls) = mask_expand_decls(value, false) {
+        let pairs: Vec<(String, String)> = decls.into_iter().map(|d| (d.prop, d.value)).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    serde_json::to_string(&[("mask".to_string(), "")]).unwrap_or_default()
+}
+
 // ── named-property-handler：拦 camelCase 动态属性 ──────────────────────
 
 /// reserved 名（模板方法/accessor）→ `kNo`（fallthrough）；非 string 名 → `kNo`。否则返该 CSS 属性值
@@ -978,6 +1212,11 @@ fn native_style_named_getter(
         let props = current_props(d, owner);
         // 刀 TS：transition 简写族读面（简写 canonical 重组 / longhand 遮蔽派生）。
         if let Some(v) = ts_family_value(&props, &prop) {
+            return Some(v);
+        }
+        // 刀 MK：mask 简写读面 canonical 重组（简写名重组 / 展开存储形长手直查
+        // 由下方 find 臂承担，ts 臂同分工）。
+        if let Some(v) = mask_family_value(&props, &prop) {
             return Some(v);
         }
         if let Some(found) = props.iter().find(|d| d.prop == prop) {
@@ -1057,6 +1296,22 @@ fn native_style_named_setter(
             let mut props = current_props(d, owner);
             props.retain(|d| d.prop != prop);
             props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return v8::Intercepted::kYes;
+    } else if prop == "mask" {
+        // 刀 MK：mask 简写展开落 13 长手（css-masking-1 §3.10 reset 名单，
+        // [`mask_expand_decls`] 单源——transition 臂同形态）；非法值 → 声明
+        // 忽略；css-wide 逐长手透传、var() 替换函数形单声明原文放行
+        //（style-system expand_mask 口径）。
+        let Some(expanded) = mask_expand_decls(val.trim(), false) else {
+            return v8::Intercepted::kYes;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            props.retain(|d| !MASK_RESET_LONGHANDS.contains(&d.prop.as_str()));
             props.extend(expanded);
             write_props(d, owner, &props);
         });
@@ -1907,6 +2162,123 @@ mod knife_ts_cssom_tests {
         assert_eq!(
             gap_rule_shorthand_reconstruct_from_style(both_t, "transition"),
             "1s -3s"
+        );
+    }
+}
+
+/// 刀 MK 钉测：mask 简写 CSSOM 双通道（expand_json 写站 + reconstruct 读站），
+/// 语料 mask-valid.sub.html canonical 期望串锚定（语料 26 断言逐形抽取）。
+#[cfg(test)]
+mod knife_mk_cssom_tests {
+    use super::*;
+
+    /// 写站：合法形 → 13 长手 JSON；invalid 形自清；空值 13 清；css-wide 透传。
+    #[test]
+    fn knife_mk_expand_json_verdicts() {
+        // 双盒异值（语料 'border-box content-box' 原样锚定）。
+        let j = mask_shorthand_expand_json("border-box content-box");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).expect("json");
+        assert_eq!(pairs.len(), 13);
+        let get = |n: &str| pairs.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(get("mask-image"), Some("none"));
+        assert_eq!(get("mask-origin"), Some("border-box"));
+        assert_eq!(get("mask-clip"), Some("content-box"));
+        assert_eq!(get("mask-border-width"), Some("auto"));
+        // 复杂双层（语料 canonical 期望串锚定形的展开存储域）。
+        let j2 = mask_shorthand_expand_json(
+            "url(\"https://x/\") 1px 2px / contain, linear-gradient(to left bottom, red, blue) stroke-box",
+        );
+        let pairs2: Vec<(String, String)> = serde_json::from_str(&j2).expect("json2");
+        let get2 = |n: &str| pairs2.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(
+            get2("mask-image"),
+            Some("url(\"https://x/\"), linear-gradient(to left bottom, red, blue)")
+        );
+        assert_eq!(get2("mask-position"), Some("1px 2px, 0% 0%"));
+        assert_eq!(get2("mask-size"), Some("contain, auto"));
+        assert_eq!(get2("mask-origin"), Some("border-box, stroke-box"));
+        assert_eq!(get2("mask-clip"), Some("border-box, stroke-box"));
+        // 空值 → reset 名单 13 逐名清。
+        let je = mask_shorthand_expand_json("");
+        let pe: Vec<(String, String)> = serde_json::from_str(&je).expect("json-empty");
+        assert_eq!(pe.len(), 13);
+        assert!(pe.iter().all(|(_, v)| v.is_empty()));
+        // 非法形 → 自清形（声明忽略净效果，TS 站同形）。
+        assert_eq!(mask_shorthand_expand_json("add intersect"), r#"[["mask",""]]"#);
+        assert_eq!(mask_shorthand_expand_json("margin-box"), r#"[["mask",""]]"#);
+        assert_eq!(mask_shorthand_expand_json("1px 2px 3px"), r#"[["mask",""]]"#);
+        // css-wide → 逐长手透传（gap 站同口径）。
+        let ji = mask_shorthand_expand_json("inherit");
+        let pi: Vec<(String, String)> = serde_json::from_str(&ji).expect("json-inherit");
+        assert_eq!(pi.len(), 13);
+        assert!(pi.iter().all(|(_, v)| v == "inherit"));
+    }
+
+    /// 读站：展开存储形 → canonical 重组（语料期望串逐形锚定）。
+    #[test]
+    fn knife_mk_reconstruct_verdicts() {
+        let s = |props: &[StyleDecl]| mask_serialize_from_longhands(props);
+        let d = |p: &str, v: &str| StyleDecl {
+            prop: p.to_string(),
+            value: v.to_string(),
+            important: false,
+        };
+        // 全初值 → none。
+        let all_init = vec![d("mask-image", "none")];
+        assert_eq!(s(&all_init).as_deref(), Some("none"));
+        // origin==clip 折叠（'content-box content-box' → 'content-box'）。
+        let collapse = vec![
+            d("mask-image", "none"),
+            d("mask-origin", "content-box"),
+            d("mask-clip", "content-box"),
+        ];
+        assert_eq!(s(&collapse).as_deref(), Some("content-box"));
+        // 双盒异值恒双写（'border-box content-box'，防重解析折叠）。
+        let two_box = vec![
+            d("mask-image", "none"),
+            d("mask-origin", "border-box"),
+            d("mask-clip", "content-box"),
+        ];
+        assert_eq!(s(&two_box).as_deref(), Some("border-box content-box"));
+        // no-clip 单写（origin 初值省，'border-box no-clip' → 'no-clip'）。
+        let noclip = vec![
+            d("mask-image", "none"),
+            d("mask-origin", "border-box"),
+            d("mask-clip", "no-clip"),
+        ];
+        assert_eq!(s(&noclip).as_deref(), Some("no-clip"));
+        // composite/mode 初值省（'url(...) add' → 'url(...)'、'none alpha' → 'alpha'）。
+        let add = vec![d("mask-image", "url(\"https://x/\")"), d("mask-composite", "add")];
+        assert_eq!(s(&add).as_deref(), Some("url(\"https://x/\")"));
+        let alpha = vec![d("mask-image", "none"), d("mask-mode", "alpha")];
+        assert_eq!(s(&alpha).as_deref(), Some("alpha"));
+        // 语料复杂双层 canonical 全形。
+        let complex = vec![
+            d("mask-image", "none, linear-gradient(to left bottom, red, blue)"),
+            d("mask-position", "1px 2px, 0% 0%"),
+            d("mask-size", "contain, auto"),
+            d("mask-repeat", "space round, repeat"),
+            d("mask-origin", "view-box, stroke-box"),
+            d("mask-clip", "no-clip, stroke-box"),
+            d("mask-composite", "intersect, add"),
+            d("mask-mode", "match-source, luminance"),
+        ];
+        assert_eq!(
+            s(&complex).as_deref(),
+            Some(
+                "1px 2px / contain space round view-box no-clip intersect, \
+                 linear-gradient(to left bottom, red, blue) stroke-box luminance"
+            )
+        );
+        // 长手直查落空时 raw 简写声明遮蔽展开（attr 车道原文域）。
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("mask: url(\"https://x/\") add", "mask"),
+            "url(\"https://x/\")"
+        );
+        // css-wide 原样回。
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("mask: inherit", "mask"),
+            "inherit"
         );
     }
 }

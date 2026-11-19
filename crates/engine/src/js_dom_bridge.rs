@@ -6310,6 +6310,15 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
         return !zero_style_system::expand_shorthands(&[("transition".to_string(), val.to_string(), false, (0, 0, 0))])
             .is_empty();
     }
+    // 刀 MK：`mask` 简写 supports 门前置（transition 臂同型——known_properties
+    // 注册表只列长手，尾部注册表门对简写名恒假；支持性 = 简写可展开，
+    // expand_mask `<mask-layer>#` 文法单源——组合形/多层逗号列表全经该文法）。
+    // driving: css-masking parsing 页 supports 前置门。
+    // <https://drafts.csswg.org/css-masking-1/#the-mask>
+    if prop == "mask" {
+        return !zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), false, (0, 0, 0))])
+            .is_empty();
+    }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
         // tree-counting 页 `CSS.supports('z-index', 'calc(2 * sibling-index())')`
