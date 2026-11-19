@@ -224,12 +224,12 @@ fn t84_named_access_late_attribute_grant() {
 /// perf 护栏（a3 形态超线性钉）：在树 sel 父（#feed）内 500 次新子 append，
 /// pending 积压 0→500 递增，分段计墙钟（首窗 1-100 / 中窗 101-450 / 末窗
 /// 451-500）。修复前 overlay 全量重放 + NA 全量扫描随积压线性放大 → 总墙钟
-/// O(n²)：本测 base 实测（itest5-base-run.log，stash 三角定位）early=181ms /
-/// mid=2072ms / late=537ms / total=2790ms（末窗单 op ≈ 首窗 5.9 倍）；修复后
-/// 增量合并 + 候选集扫描近似常数（itest7 实测 early=46ms / mid=111ms /
-/// late=8ms / total=165ms，分离 ≈ 17 倍）。判据：末窗 ≤ 6 × 首窗 + 80ms
-/// （形状护栏——base 2.96 倍不过此门，真判别靠总墙钟）且总墙钟 < 1200ms
-/// （修复后 7× 余量、base 2.3× 超出；debug profile 口径）。
+/// O(n²)：提交版文件 base 实测（itest11-realbase，checkout merge-base 三角
+/// 定位）early=149ms / mid=1733ms / late=420ms / total=2303ms；修复后增量
+/// 合并 + 候选集扫描近似常数（itest9 实测 early=33ms / mid=97ms / late=8ms /
+/// total=138ms，分离 ≈ 17 倍；早期 itest5/itest7 口径 2790→165 同序）。
+/// 判据：末窗 ≤ 6 × 首窗 + 80ms（形状护栏——base 2.8 倍不过此门，真判别靠
+/// 总墙钟）且总墙钟 < 1200ms（修复后 ~9× 余量、base ~2× 超出；debug 口径）。
 #[test]
 #[serial_test::serial]
 fn t84_pending_overlay_append_superlinearity_ceiling() {
@@ -270,5 +270,54 @@ fn t84_pending_overlay_append_superlinearity_ceiling() {
     assert!(
         total < 1200.0,
         "append 序列总墙钟超上限：{total}ms（首窗 {t_early} + 中窗 {t_mid} + 末窗 {t_late}，防失控回退）"
+    );
+}
+
+/// perf 护栏（NA 采集面钉，双审查 R1-medium 补测）：3000 条未得名 pending 积压
+/// 上 200 次「先 setAttribute('id') 后 append」注册（每次注册触发 named 命中
+/// 采集）。修复前每次注册全量扫描 `_zwPendingAdded`（O(积压)×`getAttribute`
+/// 逐条比对）；修复后扫描收窄到 named 候选集（≤ 注册数）。判别面 = 总墙钟
+/// （两侧均近似平坦，早/末窗比值无判别力）：提交版文件实测 base 25197.1ms
+/// （itest11-realbase，checkout merge-base 三角定位）→ 修复后 205ms（itest9，
+/// ≈123 倍）。判据：total < 700ms（修复后 ~3.4× 余量、base ~36× 超出）；末尾
+/// named 解析正确性随测核对（`window.na84_<末条>` 命中，语义面由钉③承担）。
+#[test]
+#[serial_test::serial]
+fn t84_named_register_backlog_perf_ceiling() {
+    let mut wv = wv();
+    wv.load_html(PAGE, None);
+
+    run(
+        &mut wv,
+        &format!(
+            r#"
+            {CLK_JS}
+            var host = document.getElementById('container');
+            for (var i = 0; i < 3000; i++) {{
+                var b = document.createElement('span'); b.textContent = 'bg' + i; host.appendChild(b);
+            }}
+            var t0 = globalThis.__clk();
+            for (var i = 0; i < 200; i++) {{
+                var x = document.createElement('span');
+                x.setAttribute('id', 'na84_' + i);
+                x.textContent = 'n' + i;
+                host.appendChild(x);
+            }}
+            globalThis.__tNa = globalThis.__clk() - t0;
+            globalThis.__naHit = (window.na84_199 && window.na84_199.textContent === 'n199') ? 'ok' : 'broken';
+            String(Math.round(globalThis.__tNa))
+            "#,
+        ),
+    );
+    let t_na: f64 = probe(&mut wv, "__tNa").trim().parse().expect("NA 注册墙钟可解析");
+    let na_hit = probe(&mut wv, "__naHit");
+    assert_eq!(
+        na_hit, "ok",
+        "积压下注册的 named 条目须可解析（采集语义不因收窄受损），实测 {na_hit:?}"
+    );
+    println!("t84 na-perf: total={t_na}ms");
+    assert!(
+        t_na < 700.0,
+        "大积压 named 注册墙钟超上限：{t_na}ms（NA 采集全量扫描回归——候选集收窄失效）"
     );
 }
