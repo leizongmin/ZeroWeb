@@ -15747,14 +15747,22 @@
   function _zwEffComputedTiming(t) {
     var duration = (t.duration === 'auto' || t.duration === undefined || t.duration === null) ? 0 : t.duration;
     var iterations = t.iterations;
-    var activeDuration = duration * iterations;
-    var endTime = t.delay + activeDuration + t.endDelay;
+    // §4.5.2 active duration：iteration duration × iteration count，但任一为零时
+    // active duration 即零（0 × Infinity = 0 而非 NaN——零时长无限迭代 endTime/activeDuration）。
+    var activeDuration = (duration === 0 || iterations === 0) ? 0 : duration * iterations;
+    // §endTime = max(start delay + active duration + end delay, 0)（负 delay 大于
+    // active duration 时钳 0——「finishes before its startTime」）。
+    var endTime = Math.max(t.delay + activeDuration + t.endDelay, 0);
     var fill = (t.fill === 'auto') ? 'none' : t.fill;
 
     var localTime = null;
     var anim = t._animation || null;
     if (anim && anim.currentTime != null) {
-      localTime = anim.currentTime - (anim.startTime == null ? 0 : anim.startTime);
+      // CSS 动画槽位 startTime 为 timeline 秒、currentTime 为毫秒（shim 约定）——
+      // localTime 统一毫秒口径；构造 Animation 依调用方单位原样。
+      var st = anim.startTime;
+      if (st != null && anim._zwTlSec) st = st * 1000;
+      localTime = anim.currentTime - (st == null ? 0 : st);
     }
 
     // §4.9.2 active time：before/after 相位仅 fill backwards/forwards/both 提供
@@ -15766,29 +15774,38 @@
         if (fill === 'backwards' || fill === 'both') activeTime = 0;
       } else if (localTime < t.delay + activeDuration) {
         activeTime = localTime - t.delay;
-      } else if (localTime < endTime) {
-        if (fill === 'forwards' || fill === 'both') activeTime = activeDuration;
       } else {
         if (fill === 'forwards' || fill === 'both') activeTime = activeDuration;
       }
     }
 
-    // §4.9.3 overall/iteration progress + §4.9.4 current iteration。
+    // §4.9.3 overall progress 统一模型：before→iterationStart / active→
+    // activeTime/duration + iterationStart / after→iterationStart + iterations
+    //（零时长无 active 相位——activeDuration 0 时 localTime ≥ delay 即 after）；
+    // §4.9.3 整数 overall progress 的迭代进度为 1（边界）；§4.9.4 current
+    // iteration：after 相位 = ceil(iterationStart + iterations) − 1（无限迭代 →
+    // Infinity），迭代数 0 → iterationStart 取整，active 相位 = floor(overall)。
     var progress = null;
     var currentIteration = null;
     if (activeTime !== null) {
-      if (activeDuration === 0) {
-        // 零时长/零迭代：进度取 iterationStart 小数部（§zero-iterations play state）。
-        var startFrac = t.iterationStart % 1;
-        progress = (t.iterations === 0 && fill === 'none') ? null : startFrac;
-        currentIteration = Math.floor(t.iterationStart) + ((t.iterations === 0) ? 0 : (localTime >= t.delay ? t.iterations : 0));
+      var overall;
+      var isAfter = (localTime >= t.delay + activeDuration);
+      if (localTime < t.delay) {
+        overall = t.iterationStart;
+      } else if (isAfter) {
+        overall = t.iterationStart + t.iterations;
       } else {
-        var overall = (activeTime / duration) + t.iterationStart;
+        overall = (activeTime / duration) + t.iterationStart;
+      }
+      if (isAfter && iterations === Infinity) {
+        // 无限迭代 after 相位极限：进度 1、迭代索引 Infinity（零时长无限迭代页）。
+        progress = 1;
+        currentIteration = Infinity;
+      } else {
         var idx = Math.floor(overall);
         var frac = overall - idx;
-        // 方向（§4.9.3 directed progress；alternate 按迭代索引奇偶）。
-        var dir = t.direction;
         var directed = frac;
+        var dir = t.direction;
         if (dir === 'reverse') {
           directed = 1 - frac;
         } else if (dir === 'alternate' || dir === 'alternate-reverse') {
@@ -15796,10 +15813,13 @@
           if (dir === 'alternate') directed = even ? frac : 1 - frac;
           else directed = even ? 1 - frac : frac;
         }
-        progress = (frac === 0 && activeTime > 0) ? 1 : directed;
-        // 边界：activeTime == activeDuration（after 相位 fill 门）→ 末迭代索引
-        // iterations − 1（§4.9.4 overallProgress 恰为 iterations 时索引取 iterations−1）。
-        currentIteration = (activeTime >= activeDuration) ? Math.max(iterations - 1, 0) : idx;
+        progress = (frac === 0 && overall > 0) ? 1 : directed;
+        if (isAfter) {
+          if (iterations === 0) currentIteration = Math.floor(t.iterationStart);
+          else currentIteration = Math.ceil(t.iterationStart + iterations) - 1;
+        } else {
+          currentIteration = idx;
+        }
       }
     }
 
@@ -16079,6 +16099,13 @@
   KeyframeEffect.prototype.getTarget = function () { return this._timing.target || null; };
   KeyframeEffect.prototype.getTiming = function () {
     var t = this._timing;
+    // css-animations-2 §updateTiming 联动：CSS 动画 effect timing 与 animation-*
+    // 属性活跃同步——API 已设字段（_zwOvr）不被样式覆盖，其余在咨询点回读样式
+    //（updateTiming 页无 getAnimations 重询，样式改动后直接 getTiming/getComputedTiming）。
+    var a5 = t && t._animation;
+    if (a5 && typeof a5._zwTimingRefresh === 'function') {
+      try { a5._zwTimingRefresh(); } catch (_eRf5) {}
+    }
     return {
       delay: t.delay, endDelay: t.endDelay, fill: t.fill,
       iterationStart: t.iterationStart, iterations: t.iterations,
@@ -16086,7 +16113,12 @@
     };
   };
   KeyframeEffect.prototype.getComputedTiming = function () {
-    return _zwEffComputedTiming(this._timing);
+    var t6 = this._timing;
+    var a6 = t6 && t6._animation;
+    if (a6 && typeof a6._zwTimingRefresh === 'function') {
+      try { a6._zwTimingRefresh(); } catch (_eRf6) {}
+    }
+    return _zwEffComputedTiming(t6);
   };
   KeyframeEffect.prototype.getKeyframes = function () {
     // 输出快照（spec：每次新对象；computedOffset 必有）。
@@ -16140,14 +16172,17 @@
           throw new TypeError('duration must be a non-negative number');
         }
       }
-      if (options.delay != null) this._timing.delay = Number(options.delay);
-      if (options.endDelay != null) this._timing.endDelay = Number(options.endDelay);
-      if (options.fill != null) this._timing.fill = String(options.fill);
-      if (options.iterationStart != null) this._timing.iterationStart = Number(options.iterationStart);
-      if (options.iterations != null) this._timing.iterations = Number(options.iterations);
-      if (options.duration != null) this._timing.duration = (options.duration === 'auto') ? 'auto' : Number(options.duration);
-      if (options.direction != null) this._timing.direction = String(options.direction);
-      if (options.easing != null) this._timing.easing = String(options.easing);
+      // css-animations-2 §updateTiming：显式设置过的字段不再与 animation-* 属性
+      // 同步（错误抛出在全部赋值之前——上抛调用零字段落 _zwOvr）。
+      var ovr = this._timing._zwOvr || (this._timing._zwOvr = {});
+      if (options.delay != null) { this._timing.delay = Number(options.delay); ovr.delay = 1; }
+      if (options.endDelay != null) { this._timing.endDelay = Number(options.endDelay); ovr.endDelay = 1; }
+      if (options.fill != null) { this._timing.fill = String(options.fill); ovr.fill = 1; }
+      if (options.iterationStart != null) { this._timing.iterationStart = Number(options.iterationStart); ovr.iterationStart = 1; }
+      if (options.iterations != null) { this._timing.iterations = Number(options.iterations); ovr.iterations = 1; }
+      if (options.duration != null) { this._timing.duration = (options.duration === 'auto') ? 'auto' : Number(options.duration); ovr.duration = 1; }
+      if (options.direction != null) { this._timing.direction = String(options.direction); ovr.direction = 1; }
+      if (options.easing != null) { this._timing.easing = String(options.easing); ovr.easing = 1; }
     }
     return this.getTiming();
   };
@@ -17168,7 +17203,10 @@
           duration: durMs, delay: delayMs, endDelay: 0,
           fill: fillV || 'none', iterationStart: 0,
           iterations: iterV, direction: dirV || 'normal',
-          easing: elemEasing,
+          // css-animations：animation-timing-function 只作用于关键帧间（keyframe
+          // easing，_zwCssAnimFramesFor(elemEasing)），effect 级 easing 恒 'linear'
+          //（getComputedTiming().easing 初始值断言）。
+          easing: 'linear',
         };
         var frames = _zwCssAnimFramesFor(slot.name, elemEasing, gcs, gcsVar);
         if (frames == null) return; // 规则中途移除 → 本调用无动画
@@ -17178,8 +17216,25 @@
           eff._keyframes = frames;
           anim = new Animation(eff, timeline);
           slot.anim = anim;
+          // startTime 为 timeline 秒（_zwTlSec：getComputedTiming localTime 毫秒口径换算）。
+          anim._zwTlSec = true;
           try { Object.defineProperty(anim, Symbol.toStringTag, { value: 'CSSAnimation' }); } catch (_eT) {}
           Object.defineProperty(anim, 'animationName', { get: function () { return slot.name; } });
+          // css-animations-2 §updateTiming 联动：effect timing 与 animation-* 属性
+          // 活跃同步（getTiming/getComputedTiming 咨询点回读），API 已设字段
+          //（_timing._zwOvr）不被样式覆盖；easing 为 effect 级恒 linear 不在同步列。
+          anim._zwTimingRefresh = function () {
+            var t2 = eff._timing;
+            var ov2 = t2._zwOvr || null;
+            var i4 = slot.idx || 0;
+            var aset = function (k4, v4) { if (!(ov2 && ov2[k4]) && v4 != null) { try { t2[k4] = v4; } catch (_eTs2) {} } };
+            aset('duration', _zwCssAnimTimeMs(pick(_zwCssSplitList(gcs('animation-duration')), i4, '0s')));
+            aset('delay', _zwCssAnimTimeMs(pick(_zwCssSplitList(gcs('animation-delay')), i4, '0s')));
+            aset('fill', pick(_zwCssSplitList(gcs('animation-fill-mode')), i4, 'none') || 'none');
+            var ir4 = pick(_zwCssSplitList(gcs('animation-iteration-count')), i4, '1');
+            aset('iterations', (String(ir4).replace(/^\s+|\s+$/g, '') === 'infinite') ? Infinity : (parseFloat(ir4) || 0));
+            aset('direction', pick(_zwCssSplitList(gcs('animation-direction')), i4, 'normal'));
+          };
           // 槽位状态写回（pause/finish/cancel 显式面——play 走 headless 瞬间
           // 完成语义外的自有路径，CSS 动画时长由样式驱动不 auto-finish）。
           anim.pause = function () {
@@ -17200,19 +17255,27 @@
           anim.finish = function () {
             slot.finishedX = true;
             Animation.prototype.finish.call(this);
+            // spec finish()：seek 活跃期末（localTime = delay + activeDuration——
+            // 非 integral 迭代数 after 相位 currentIteration ceil 律依赖）。
+            if (iterV !== Infinity) {
+              try { this.currentTime = delayMs + durMs * iterV; } catch (_eFs) {}
+            }
           };
           anim.cancel = function () {
             slot.canceled = true;
             Animation.prototype.cancel.call(this);
           };
           // 新槽 play-pending：startTime=null，ready 微任务内赋冻结时间戳
-          //（同调用共享 nowS——「老动画 startTime 相等」断言）后 resolve。
+          //（同调用共享 nowS——「老动画 startTime 相等」断言）后 resolve；
+          // currentTime 与之对齐（§5.4.1 play-pending hold time 0——
+          // getComputedTiming localTime=0 进度/迭代断言族依赖）。
           if (slot.startTime == null) {
             _defer(function () {
               if (slot.canceled) return;
               if (slot.startTime == null) {
                 slot.startTime = nowS;
                 anim.startTime = slot.startTime;
+                anim.currentTime = 0;
               }
               try { anim._resolveReady(anim); } catch (_eRdy) {}
             });
@@ -17220,8 +17283,13 @@
             try { anim._resolveReady(anim); } catch (_eRdy2) {}
           }
         } else {
-          // 身份保持：timing/frames 刷新（duration 改写面）。
-          for (var tk in timing) { try { anim._effect._timing[tk] = timing[tk]; } catch (_eTm) {} }
+          // 身份保持：timing/frames 刷新（duration 改写面）。API 覆盖字段
+          //（_zwOvr）不回写——updateTiming override 律。
+          var ovTk = anim._effect._timing._zwOvr || null;
+          for (var tk in timing) {
+            if (ovTk && ovTk[tk]) continue;
+            try { anim._effect._timing[tk] = timing[tk]; } catch (_eTm) {}
+          }
           try { anim._effect._keyframes = frames; } catch (_eFk) {}
           if (slot.startTime == null) {
             _defer(function () {
@@ -17229,6 +17297,7 @@
               if (slot.startTime == null) {
                 slot.startTime = nowS;
                 anim.startTime = slot.startTime;
+                anim.currentTime = 0;
               }
               try { anim._resolveReady(anim); } catch (_eRdy3) {}
             });
@@ -17246,10 +17315,16 @@
         anim._playState = ps;
         // currentTime（毫秒，shim WAAPI 惯例；startTime 为 timeline 秒——
         // localTime 混单位为 shim 既有约定，getComputedTiming 静态面不触及）。
-        if (!slot.finishedX && ps === 'running' && slot.startTime != null) {
-          var ct = Math.max(0, localMs);
-          if (iterV !== Infinity && ct > totalMs - delayMs) ct = Math.max(0, totalMs - delayMs);
-          anim.currentTime = ct;
+        if (!slot.finishedX && ps === 'running') {
+          if (slot.startTime != null) {
+            var ct = Math.max(0, localMs);
+            if (iterV !== Infinity && ct > totalMs - delayMs) ct = Math.max(0, totalMs - delayMs);
+            anim.currentTime = ct;
+          } else {
+            // play-pending hold time 0（web-animations §5.4.1：startTime 未 resolve
+            // 时 hold time 0——getComputedTiming localTime=0 初始断言依赖）。
+            anim.currentTime = 0;
+          }
         }
         // finished 且非填充（forwards/both）→ 移出 getAnimations 面
         //（css-animations §finished animations 排除语义）。
