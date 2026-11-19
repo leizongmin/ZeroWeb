@@ -10,6 +10,7 @@ pub mod calc_stop_gates;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;
+pub mod parse_animation_range;
 pub mod parse_basic_shape;
 pub mod parse_extended;
 pub mod parse_extended_border;
@@ -21,7 +22,6 @@ pub mod parse_rule_color;
 pub mod parse_rule_inset;
 pub mod parse_rule_style;
 pub mod parse_rule_width;
-pub mod parse_animation_range;
 pub mod parse_transform;
 pub mod random;
 pub mod serialize_gradient;
@@ -33,11 +33,6 @@ pub mod types;
 
 // Re-export all public items.
 pub use anchor::*;
-pub use parse_animation_range::{
-    animation_range_segments, fold_animation_range_specified, parse_animation_range_shorthand,
-    parse_animation_range_side, range_offset_elides, serialize_animation_range_shorthand,
-    AnimationRangeItem, AnimationRangeName, AnimationRangeShape, AnimationRangeSide,
-};
 pub use attr::{
     attr_calls_valid, attr_target_fetches_url, eval_attr_call, has_attr_call, has_attr_word, substitute_attr_values,
     substitute_attr_values_checked, substitute_attr_values_deferring, substitute_attr_values_readjudicate,
@@ -46,6 +41,11 @@ pub use calc_mix::{CalcMixItem, CalcMixWeight};
 pub use color::*;
 pub use color_math::*;
 pub use named_colors::*;
+pub use parse_animation_range::{
+    AnimationRangeItem, AnimationRangeName, AnimationRangeShape, AnimationRangeSide, animation_range_segments,
+    fold_animation_range_specified, parse_animation_range_shorthand, parse_animation_range_side, range_offset_elides,
+    serialize_animation_range_shorthand,
+};
 pub use parse_extended::*;
 pub use parse_extended_border::*;
 pub use parse_extended_visual::*;

@@ -3,9 +3,7 @@
 //! animation-range-* 八页 valid/invalid 断言形逐条对映——canonical 逻辑
 //! 单源 [`fold_decl_specified`]，写面裁决单源 [`parse_animation_range_side`]）。
 
-use crate::values::parse_animation_range::{
-    parse_animation_range_side, AnimationRangeSide,
-};
+use crate::values::parse_animation_range::{AnimationRangeSide, parse_animation_range_side};
 use crate::values::serialize_math::fold_decl_specified;
 
 fn fold_start(v: &str) -> Option<String> {
@@ -64,7 +62,10 @@ fn animation_range_start_calc_canonical() {
         fold_start("cover calc(sign(100em - 1px) * 1%)").as_deref(),
         Some("cover calc(1% * sign(100em - 1px))")
     );
-    assert_eq!(fold_start("contain calc(10% - 10%)").as_deref(), Some("contain calc(0%)"));
+    assert_eq!(
+        fold_start("contain calc(10% - 10%)").as_deref(),
+        Some("contain calc(0%)")
+    );
 }
 
 #[test]
@@ -91,11 +92,7 @@ fn animation_range_end_valid_canonical() {
         ("exit", "exit"),
     ];
     for (input, expected) in cases {
-        assert_eq!(
-            fold_end(input).as_deref(),
-            Some(*expected),
-            "end canonical {input:?}"
-        );
+        assert_eq!(fold_end(input).as_deref(), Some(*expected), "end canonical {input:?}");
     }
 }
 
@@ -144,7 +141,11 @@ fn animation_range_segments_storage() {
     use crate::values::animation_range_segments;
     assert_eq!(
         animation_range_segments("exit 1%, cover 2%, contain 0%", AnimationRangeSide::Start),
-        Some(vec!["exit 1%".to_string(), "cover 2%".to_string(), "contain".to_string()])
+        Some(vec![
+            "exit 1%".to_string(),
+            "cover 2%".to_string(),
+            "contain".to_string()
+        ])
     );
     assert_eq!(
         animation_range_segments("contain 100%", AnimationRangeSide::End),
@@ -247,9 +248,6 @@ fn animation_range_shorthand_invalid_reject() {
         "normal normal 100%",
     ];
     for v in invalid {
-        assert!(
-            parse_animation_range_shorthand(v).is_none(),
-            "shorthand invalid {v:?}"
-        );
+        assert!(parse_animation_range_shorthand(v).is_none(), "shorthand invalid {v:?}");
     }
 }

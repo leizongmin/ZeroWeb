@@ -1164,10 +1164,7 @@ pub fn parse_font_feature_settings(value: &str) -> Option<FontFeatureSettingsVal
 /// （em/ex/ch/ic/cap）按给定字号解析——font-* 槽传父级 computed font-size
 ///（css-properties-values-api #dependency-cycles-via-relative-units），
 /// None 保持纯字面解析（无基准不可求值）。
-pub fn parse_font_feature_settings_with_font(
-    value: &str,
-    font_size: Option<f64>,
-) -> Option<FontFeatureSettingsValue> {
+pub fn parse_font_feature_settings_with_font(value: &str, font_size: Option<f64>) -> Option<FontFeatureSettingsValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("normal") {
         return Some(FontFeatureSettingsValue::Normal);

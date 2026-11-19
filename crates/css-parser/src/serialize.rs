@@ -144,9 +144,7 @@ fn kind_css_name(kind: FontFeatureValueKind) -> &'static str {
 ///（`50%`；非整数保 f64 最短形），列表 `, ` 连（css-animations-1
 /// §CSSKeyframeRule keyText 串化形——`serialize-a-keyframe-selector`）。
 /// https://drafts.csswg.org/css-animations-1/#csskeyframerule
-pub fn serialize_keyframe_selectors(
-    selectors: &[crate::ast::KeyframeSelector],
-) -> String {
+pub fn serialize_keyframe_selectors(selectors: &[crate::ast::KeyframeSelector]) -> String {
     selectors
         .iter()
         .map(|s| match s {

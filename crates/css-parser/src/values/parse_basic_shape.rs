@@ -1372,8 +1372,7 @@ pub fn canonicalize_shape_outside_specified(value: &str) -> Option<String> {
             if has_physical_length_unit(v) {
                 return None;
             }
-            super::parse_extended_border::parse_clip_path(v)
-                .and_then(|cp| clip_path_value_to_css(&cp))?
+            super::parse_extended_border::parse_clip_path(v).and_then(|cp| clip_path_value_to_css(&cp))?
         }
         _ => return None,
     };

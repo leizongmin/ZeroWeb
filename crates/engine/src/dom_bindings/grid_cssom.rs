@@ -478,7 +478,10 @@ mod tests {
         );
         // <flex> 负值恒拒；混型 calc / 病态 token 恒拒。
         assert_eq!(canonicalize_grid_decl("grid-template-columns", "-3.14fr"), None);
-        assert_eq!(canonicalize_grid_decl("grid-template-columns", "calc(10deg + 1turn)"), None);
+        assert_eq!(
+            canonicalize_grid_decl("grid-template-columns", "calc(10deg + 1turn)"),
+            None
+        );
         assert_eq!(canonicalize_grid_decl("grid-template-columns", "calc(nonsense)"), None);
         assert_eq!(
             canonicalize_grid_decl("grid-template-columns", "[linename1] 100px [linename2 linename3]").as_deref(),

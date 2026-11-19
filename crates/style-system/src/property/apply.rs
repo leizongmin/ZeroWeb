@@ -1820,13 +1820,12 @@ fn eval_font_slot_math_oblique(value: &str, font_size: f64) -> Option<values::Fo
         _ => return None,
     }
     let rad = values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))?;
-    let deg = if values::calc_expr_has_angle_result(&expr)
-        || values::serialize_math::span_has_top_level_angle_unit(rest)
-    {
-        rad.to_degrees()
-    } else {
-        rad
-    };
+    let deg =
+        if values::calc_expr_has_angle_result(&expr) || values::serialize_math::span_has_top_level_angle_unit(rest) {
+            rad.to_degrees()
+        } else {
+            rad
+        };
     (!deg.is_infinite()).then_some(values::FontStyleValue::Oblique(Some(deg)))
 }
 
