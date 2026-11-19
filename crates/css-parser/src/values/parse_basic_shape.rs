@@ -231,8 +231,9 @@ pub struct PathFunctionValue {
     pub fill_rule: Option<FillRule>,
     /// path data 段列表（≥1；插值/engine 消费用）。
     pub segs: Vec<PathSeg>,
-    /// 声明级串化保真的原文 data（trim 后逐字；path data trivial
-    /// serialization 逐字回显，段级 canonical 归 engine computed 层）。
+    /// 声明级串化保真的原文 data（trim 后逐字；path_to_css 出口做 token
+    /// 规范（canonicalize_path_data，失败回落逐字），段级 canonical
+    /// （绝对化）归 engine computed 层）。
     pub raw: String,
 }
 
@@ -430,6 +431,13 @@ pub fn parse_xywh_function(rest: &str) -> Option<ClipPathValue> {
     let y = parse_shape_len(tok[1])?;
     let w = parse_shape_len(tok[2])?;
     let h = parse_shape_len(tok[3])?;
+    // 宽高非负文法门（css-shapes-2 §funcdef-xywh：x/y <length-percentage>
+    // 可负、w/h 非负——语料 xywh-function-invalid `xywh(0px 1px -2% 3em)`
+    // 钉面）。判定单点共享 [`is_definitely_negative`]（半径拒负同源；
+    // calc 形放行，负值判定归 calc 代数刀）。
+    if is_definitely_negative(&w) || is_definitely_negative(&h) {
+        return None;
+    }
     let round_val = match round {
         Some(section) => Some(parse_border_radius(section)?),
         None => None,
@@ -1283,6 +1291,20 @@ pub fn has_physical_length_unit(v: &str) -> bool {
 /// 已裁 invalid，本串化只见合法形；无法识别的合法形返 None 保留原文
 /// 零漂移（3 token 短 offset 形、长度先行序等无语料驱动不接入）。
 ///
+/// 刀 S-b 扩面（css-shapes-2 §serializing-basic-shape 全形状族，语料钉面）：
+/// - path：clip-path 臂单点复用（[`canonicalize_clip_path_fn`]——fill-rule
+///   nonzero 省略 + data token 规范 + 双引号承载；data 大小写敏感自原文
+///   重取）；
+/// - polygon：clip 臂复用（nonzero 省略、全零 round 组省略、坐标 0 补 px）；
+/// - xywh/rect：clip 臂复用（round 裸 0 补 px / 全零组省略）；
+/// - circle/ellipse：clip 臂复用（缺省 closest-side 半径省略；at 位置重排
+///   失败回落 token 保形回拼）；
+/// - inset：本函数内参数/半径裸 `0` 补 px（slash 等值折叠保留——本属性
+///   oracle 折 `/`，与 clip 语料保 slash 口径不同，两通道不共用）；
+/// - shape()：物理单位形 None passthrough（AST 折 px 丢单位），其余走
+///   AST 串化通道（[`super::parse_extended_border::parse_clip_path`] +
+///   [`clip_path_value_to_css`]，`from 0 0` → `from 0px 0px`）。
+///
 /// chrome 语料钉面规则（circle-002/004 全形清单）：
 /// - 单 token 位置补全：len/pct → `V center`、水平缘 → `V center`、
 ///   垂直缘 → `center V`、center → `center center`；
@@ -1332,9 +1354,27 @@ pub fn canonicalize_shape_outside_specified(value: &str) -> Option<String> {
     let open = core.find('(')?;
     let name = &core[..open];
     let inner = core.get(open + 1..)?.strip_suffix(')')?;
+    // path data 大小写敏感（SVG H/h 绝对/相对指令语义），自原文 v 重取
+    // inner——lower 小写副本不可用（to_ascii_lowercase 字节序 1:1，尾长
+    // 等长切片）。
+    let core_v = &v[v.len() - core.len()..];
     let body = match name {
-        "circle" | "ellipse" => canonicalize_circle_ellipse_inner(name, inner)?,
+        "circle" | "ellipse" => canonicalize_clip_circle_ellipse(name, inner, true)?,
         "inset" => canonicalize_inset_inner(inner)?,
+        "polygon" => canonicalize_clip_polygon(inner)?,
+        "path" => {
+            let open_v = core_v.find('(')?;
+            let inner_v = core_v.get(open_v + 1..)?.strip_suffix(')')?;
+            canonicalize_clip_path_fn(inner_v)?
+        }
+        "xywh" | "rect" => canonicalize_clip_xywh_rect(name, inner)?,
+        "shape" => {
+            if has_physical_length_unit(v) {
+                return None;
+            }
+            super::parse_extended_border::parse_clip_path(v)
+                .and_then(|cp| clip_path_value_to_css(&cp))?
+        }
         _ => return None,
     };
     Some(if prefix.is_empty() {
@@ -1342,22 +1382,6 @@ pub fn canonicalize_shape_outside_specified(value: &str) -> Option<String> {
     } else {
         format!("{prefix} {body}")
     })
-}
-
-/// circle()/ellipse() 位置子句 canonical：radius 段保形 + `at` 位置段
-/// token 重排（半径段无语料驱动面不重排；无 `at` 子句 passthrough——
-/// `circle(50px)` 位置省略形 oracle 串形未钉，不接入）。
-fn canonicalize_circle_ellipse_inner(name: &str, inner: &str) -> Option<String> {
-    let toks = split_top_ws_depth(inner);
-    let at_idx = toks.iter().position(|t| t.eq_ignore_ascii_case("at"))?;
-    let radius = toks[..at_idx].join(" ");
-    let position = canonicalize_at_position(&toks[at_idx + 1..])?;
-    let head = if radius.is_empty() {
-        String::new()
-    } else {
-        format!("{radius} ")
-    };
-    Some(format!("{name}({head}at {position})"))
 }
 
 /// at 位置段 canonical（见 [`canonicalize_shape_outside_specified`] 规则）：
@@ -1406,35 +1430,54 @@ fn canonicalize_at_position(toks: &[&str]) -> Option<String> {
 }
 
 /// inset() round 组 canonical：垂直组展开逐角等值于水平组（css-backgrounds-3
-/// §border-radius 1-4 值展开镜像规则）→ 省略 `/ <vertical>`；无 round 组或
-/// 非等值形 passthrough。insets 段保形（物理单位 oracle specified 保形）。
+/// §border-radius 1-4 值展开镜像规则）→ 省略 `/ <vertical>`；非等值组与
+/// 无 round 组保形。参数/半径 token 裸 `0` 补 px（css-shapes-2
+/// §serializing-basic-shape；`inset(0 1px)`/`inset(0px round 0 1px)` 语料
+/// 钉面；calc/%/物理单位形 [`norm_zero_tok`] 保形，单位保形同旧规）。
 /// 等值判定经共享解析器 parse 比对（`10px / 1em` 文本异而解析同值形亦折——
 /// 单位折算单点 parse_shape_len）。
 fn canonicalize_inset_inner(inner: &str) -> Option<String> {
-    let round_idx = find_keyword_pos(inner, "round")?;
-    let round = inner[round_idx + "round".len()..].trim();
+    let norm_join = |ts: &[&str]| -> String {
+        ts.iter()
+            .map(|t| if *t == "/" { "/".to_string() } else { norm_zero_tok(t) })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let round_idx = find_keyword_pos(inner, "round");
+    let args = inner[..round_idx.unwrap_or(inner.len())].trim();
+    if args.is_empty() {
+        return None;
+    }
+    let args_norm = split_top_ws_depth(args)
+        .iter()
+        .map(|t| norm_zero_tok(t))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let Some(round) = round_idx.map(|i| inner[i + "round".len()..].trim()) else {
+        return Some(format!("inset({args_norm})"));
+    };
     if round.is_empty() {
         return None;
     }
     let slash_toks = split_tokens_with_slash(round);
-    let slash_pos = slash_toks.iter().position(|t| *t == "/")?;
-    let h_toks = &slash_toks[..slash_pos];
-    let v_toks = &slash_toks[slash_pos + 1..];
+    let Some(p) = slash_toks.iter().position(|t| *t == "/") else {
+        // 单组 round：裸 0 补 px 保形（无折叠面）。
+        return Some(format!("inset({args_norm} round {})", norm_join(&slash_toks)));
+    };
+    let h_toks = &slash_toks[..p];
+    let v_toks = &slash_toks[p + 1..];
     if h_toks.is_empty() || v_toks.is_empty() || h_toks.len() > 4 || v_toks.len() > 4 {
         return None;
     }
     // 文法裁形（共享 border-radius 解析器单点；负半径已在其内拒）——解析
-    // 结果仅作等值判定，回拼保原 token 文本（单位保形）。
+    // 结果仅作等值判定，回拼补 px（单位保形）。
     let h_parsed = parse_radius_values(h_toks)?;
     let v_parsed = parse_radius_values(v_toks)?;
     if expand_radius(h_parsed) != expand_radius(v_parsed) {
-        return None;
+        // 非等值组保形（slash 保留，两侧 token 补 px）。
+        return Some(format!("inset({args_norm} round {})", norm_join(&slash_toks)));
     }
-    Some(format!(
-        "inset({} round {})",
-        inner[..round_idx].trim_end(),
-        h_toks.join(" ")
-    ))
+    Some(format!("inset({args_norm} round {})", norm_join(h_toks)))
 }
 
 /// clip-path 声明值 specified canonical（wptfyi-css 刀 S：css-masking
@@ -1859,9 +1902,12 @@ fn canonicalize_clip_path_fn(inner: &str) -> Option<String> {
         out.push_str(f);
         out.push_str(", ");
     }
-    out.push(quote);
+    // 双引号 canonical 承载（cssom-1 §serialize-a-css-path：路径数据串以
+    // U+0022 双引号括起；单引号输入 canonical 化——css-shapes 语料
+    // path-function-valid `path(evenodd, '…')` 钉面）。
+    out.push('"');
     out.push_str(&data);
-    out.push(quote);
+    out.push('"');
     out.push(')');
     Some(out)
 }
@@ -2150,13 +2196,15 @@ fn push_control_point(out: &mut String, c: &ShapeControlPoint, by: bool, compute
     }
 }
 
-/// path() 声明级串化：双引号承载、data 逐字回显（trivial serialization）、
-/// fill-rule（nonzero/缺省省略）。段级 canonical（绝对化+空格归一）归
-/// engine computed 层。
+/// path() 声明级串化：双引号承载、data token 规范（css-shapes-2
+/// §serializing-basic-shape / cssom-1 §serialize-a-css-path：逗号→空白、
+/// 命令字母间单空格、小写 z → Z，数值原文保形——computed gCS 通道
+/// path-function-computed 语料钉面）；canonical 失败回落 raw 逐字回显兜底。
 pub fn path_to_css(p: &PathFunctionValue) -> String {
+    let data = canonicalize_path_data(&p.raw).unwrap_or_else(|| p.raw.clone());
     match p.fill_rule {
-        Some(FillRule::Evenodd) => format!("path(evenodd, \"{}\")", p.raw),
-        _ => format!("path(\"{}\")", p.raw),
+        Some(FillRule::Evenodd) => format!("path(evenodd, \"{data}\")"),
+        _ => format!("path(\"{data}\")"),
     }
 }
 
