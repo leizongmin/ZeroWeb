@@ -792,7 +792,11 @@ impl<'a> Parser<'a> {
             });
         }
 
-        Some(KeyframesRule { name, name_is_string, keyframes })
+        Some(KeyframesRule {
+            name,
+            name_is_string,
+            keyframes,
+        })
     }
 
     fn skip_malformed_keyframe_block(&mut self) {

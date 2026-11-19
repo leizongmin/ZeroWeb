@@ -19,7 +19,7 @@
 //!    保留原文零漂移。
 
 use super::parse_rule_color::split_top_level_commas;
-use super::serialize_math::{fold_math_specified, MathFoldKind};
+use super::serialize_math::{MathFoldKind, fold_math_specified};
 
 /// range 侧别（省略规则随侧别不同：Start 省略 0%、End 省略 100%）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,19 +126,27 @@ fn parse_single_range_item(seg: &str) -> Option<AnimationRangeItem> {
         1 => {
             let one = lower[0].as_str();
             if one == "normal" {
-                return Some(AnimationRangeItem { shape: AnimationRangeShape::Normal });
+                return Some(AnimationRangeItem {
+                    shape: AnimationRangeShape::Normal,
+                });
             }
             if let Some(name) = AnimationRangeName::parse(one) {
-                return Some(AnimationRangeItem { shape: AnimationRangeShape::Name(name, None) });
+                return Some(AnimationRangeItem {
+                    shape: AnimationRangeShape::Name(name, None),
+                });
             }
             let offset = canonical_offset(one)?;
-            Some(AnimationRangeItem { shape: AnimationRangeShape::Offset(offset) })
+            Some(AnimationRangeItem {
+                shape: AnimationRangeShape::Offset(offset),
+            })
         }
         2 => {
             // 名必须在偏移前（'50% exit' 拒——首 token 非名即整段拒）。
             let name = AnimationRangeName::parse(&lower[0])?;
             let offset = canonical_offset(&lower[1])?;
-            Some(AnimationRangeItem { shape: AnimationRangeShape::Name(name, Some(offset)) })
+            Some(AnimationRangeItem {
+                shape: AnimationRangeShape::Name(name, Some(offset)),
+            })
         }
         _ => None,
     }
@@ -175,7 +183,15 @@ fn reorder_percent_product_front(v: &str) -> Option<String> {
     let inner = v.strip_prefix("calc(")?.strip_suffix(')')?;
     if inner.contains('(') {
         // 嵌套函数/括号形不适用（sign 树含内层括号——需按平衡深度切顶层积）。
-        let depth = inner.chars().fold(0i32, |d, c| d + if c == '(' { 1 } else if c == ')' { -1 } else { 0 });
+        let depth = inner.chars().fold(0i32, |d, c| {
+            d + if c == '(' {
+                1
+            } else if c == ')' {
+                -1
+            } else {
+                0
+            }
+        });
         if depth != 0 {
             return None;
         }
@@ -199,9 +215,8 @@ fn reorder_percent_product_front(v: &str) -> Option<String> {
     let star = star?;
     let left = inner[..star].trim();
     let right = inner[star + 1..].trim();
-    let is_bare_percent = |s: &str| -> bool {
-        matches!(split_number_unit(s), Some((_, "%"))) && !s.starts_with("calc(")
-    };
+    let is_bare_percent =
+        |s: &str| -> bool { matches!(split_number_unit(s), Some((_, "%"))) && !s.starts_with("calc(") };
     if is_bare_percent(right) && !is_bare_percent(left) {
         Some(format!("calc({right} * {left})"))
     } else if is_bare_percent(left) && !is_bare_percent(right) {
@@ -260,8 +275,21 @@ fn split_number_unit(tok: &str) -> Option<(&str, &str)> {
 fn is_length_percentage_unit(unit: &str) -> bool {
     matches!(
         unit,
-        "%" | "px" | "em" | "rem" | "ex" | "ch" | "cm" | "mm" | "in" | "pt" | "pc" | "q"
-            | "vw" | "vh" | "vmin" | "vmax"
+        "%" | "px"
+            | "em"
+            | "rem"
+            | "ex"
+            | "ch"
+            | "cm"
+            | "mm"
+            | "in"
+            | "pt"
+            | "pc"
+            | "q"
+            | "vw"
+            | "vh"
+            | "vmin"
+            | "vmax"
     )
 }
 
@@ -435,8 +463,7 @@ enum HalfState {
 /// token 于 WithOffset（'0% 100%'）半前开新半；未知 token（'thing'、
 /// '#ff0000'、'/'、时间）→ 整段拒。>2 半 → `None`。
 fn split_halves<'a>(toks: &'a [&'a str]) -> Option<Vec<Vec<&'a str>>> {
-    let is_range_name =
-        |t: &str| -> bool { AnimationRangeName::parse(&t.to_ascii_lowercase()).is_some() };
+    let is_range_name = |t: &str| -> bool { AnimationRangeName::parse(&t.to_ascii_lowercase()).is_some() };
     let mut halves: Vec<Vec<&str>> = Vec::new();
     let mut cur: Vec<&str> = Vec::new();
     let mut state = HalfState::Empty;
@@ -564,8 +591,8 @@ pub fn serialize_animation_range_shorthand(start_segs: &[String], end_segs: &[St
             }
         }
         let s_offset_only = !sv.contains(' ') && sv != "normal" && AnimationRangeName::parse(sv).is_none();
-        let end_defaultish = ev == "normal"
-            || (!ev.contains(' ') && AnimationRangeName::parse(ev).is_none() && ev == "100%");
+        let end_defaultish =
+            ev == "normal" || (!ev.contains(' ') && AnimationRangeName::parse(ev).is_none() && ev == "100%");
         if s_offset_only && end_defaultish {
             parts.push(sv.to_string());
         } else {

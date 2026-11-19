@@ -485,8 +485,7 @@ fn animation_range_shorthand_expand_json(value: &str) -> String {
         ])
         .unwrap_or_default();
     }
-    let Some((starts, ends)) = zero_css_parser::values::parse_animation_range_shorthand(value)
-    else {
+    let Some((starts, ends)) = zero_css_parser::values::parse_animation_range_shorthand(value) else {
         return String::new();
     };
     serde_json::to_string(&[
