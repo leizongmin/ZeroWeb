@@ -384,10 +384,31 @@ fn parse_shorthand_segment(seg: &str) -> Option<(String, String)> {
     let halves = split_halves(&toks)?;
     match halves.len() {
         1 => {
-            // 单值段：两侧同值（normal/名/裸偏移）；名+偏移单值段按 End 侧
-            // 阈值 canonical（corpus 无此形钉面，取与长手 end 存储一致口径）。
-            let h = canonical_half(&halves[0], AnimationRangeSide::End)?;
-            Some((h.clone(), h))
+            // 单值段展开（Chrome 实证，animation-range-shorthand.html
+            // test_shorthand_value 合同）：start 半按 Start 侧 canonical（0%
+            // 省略施 Start 阈值）；end 半按形——normal/裸名两侧同值，裸偏移
+            // 回 normal（'100px' → start '100px' end 'normal'），名+偏移剥
+            // 偏移取裸名（'exit calc(10% + 50px)' → start 同形 end 'exit'
+            // ——偏移整剥非侧别省略；对应塌回序列化见
+            // [`serialize_animation_range_shorthand`] 名前缀塌缩臂）。
+            let start = canonical_half(&halves[0], AnimationRangeSide::Start)?;
+            let end = match halves[0].len() {
+                // 名+偏移半：end 取裸名（偏移不随侧别省略——End 侧无省略阈值，
+                // 'cover 50%' → end 'cover' 而非 'cover 50%'）。
+                2 => AnimationRangeName::parse(&halves[0][0].to_ascii_lowercase())?
+                    .as_str()
+                    .to_string(),
+                // 单 token 半：normal/裸名两侧同值；裸偏移 end 缺省 normal。
+                _ => {
+                    let lower0 = halves[0][0].to_ascii_lowercase();
+                    if lower0 == "normal" || AnimationRangeName::parse(&lower0).is_some() {
+                        start.clone()
+                    } else {
+                        "normal".to_string()
+                    }
+                }
+            };
+            Some((start, end))
         }
         2 => {
             let start = canonical_half(&halves[0], AnimationRangeSide::Start)?;
@@ -506,8 +527,8 @@ fn canonical_half(half: &[&str], side: AnimationRangeSide) -> Option<String> {
 /// 保证），Chrome 实证序列化规则——
 /// 1. 两半 canonical 相等 → 单值（'cover cover'→'cover'）
 /// 2. start 半为裸偏移且 end 半 ∈ {'normal', 裸 '100%'} → 省 end
-///   （'10% normal'→'10%'、'0% 100%'→'0%'；'entry normal'→保双值——
-///   start 半带名不省）
+///    （'10% normal'→'10%'、'0% 100%'→'0%'；'entry normal'→保双值——
+///    start 半带名不省）
 /// 3. 其余 → `"{start} {end}"`；全空 → `normal`。
 pub fn serialize_animation_range_shorthand(start_segs: &[String], end_segs: &[String]) -> String {
     if start_segs.is_empty() && end_segs.is_empty() {
@@ -528,6 +549,19 @@ pub fn serialize_animation_range_shorthand(start_segs: &[String], end_segs: &[St
         if sv == ev {
             parts.push(sv.to_string());
             continue;
+        }
+        // 名+偏移单值段塌回（[`parse_shorthand_segment`] 单值段展开的对偶，
+        // Chrome 序列化最小化）：end 半 == start 半的裸名前缀 → 回读单值
+        //（'exit calc(10% + 50px)' 对 (start 'exit calc(10% + 50px)',
+        // end 'exit') → 'exit calc(10% + 50px)'；'cover 50%' 对
+        // (cover 50%, cover) → 'cover 50%'——重解析展开恒等该对，序列化
+        // 往返一致）。token 切分括号感知（calc 内空白不破名+偏移二形）。
+        if AnimationRangeName::parse(ev).is_some() {
+            let toks = split_ws_outside_parens(sv);
+            if toks.len() == 2 && toks[0].eq_ignore_ascii_case(ev) {
+                parts.push(sv.to_string());
+                continue;
+            }
         }
         let s_offset_only = !sv.contains(' ') && sv != "normal" && AnimationRangeName::parse(sv).is_none();
         let end_defaultish = ev == "normal"

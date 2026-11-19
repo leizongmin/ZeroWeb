@@ -16,7 +16,12 @@ fn test_atp_note_stylesheets_registry_pins() {
     assert!(rp::registration_known("--atp-pin"), "css-source rule must register");
     assert_eq!(rp::syntax_of("--atp-pin").as_deref(), Some("<color>"));
     assert_eq!(
-        rp::computed_value("--atp-pin", None, 16.0).as_deref(),
+        rp::computed_value(
+            "--atp-pin",
+            &std::collections::HashMap::new(),
+            rp::RegCtx::with_font(16.0)
+        )
+        .as_deref(),
         Some("rgb(255, 0, 0)"),
         "typed initial surfaces as gCS fallback in computed form (strict gate canonicalization)"
     );
@@ -26,7 +31,12 @@ fn test_atp_note_stylesheets_registry_pins() {
         Parser::parse_stylesheet("@property --atp-pin { syntax: \"<color>\"; inherits: false; initial-value: blue; }");
     rp::note_stylesheets(&[sheet2]);
     assert_eq!(
-        rp::computed_value("--atp-pin", None, 16.0).as_deref(),
+        rp::computed_value(
+            "--atp-pin",
+            &std::collections::HashMap::new(),
+            rp::RegCtx::with_font(16.0)
+        )
+        .as_deref(),
         Some("rgb(0, 0, 255)"),
         "re-declaration must replace (last wins)"
     );
@@ -42,7 +52,12 @@ fn test_atp_note_stylesheets_registry_pins() {
     );
     rp::note_stylesheets(&[str_rule]);
     assert_eq!(
-        rp::computed_value("--atp-str", None, 16.0).as_deref(),
+        rp::computed_value(
+            "--atp-str",
+            &std::collections::HashMap::new(),
+            rp::RegCtx::with_font(16.0)
+        )
+        .as_deref(),
         Some("\"foo\""),
         "string initial must re-serialize double-quoted"
     );
@@ -52,7 +67,11 @@ fn test_atp_note_stylesheets_registry_pins() {
     rp::note_stylesheets(&[uni]);
     assert!(rp::registration_known("--atp-u"));
     assert_eq!(
-        rp::computed_value("--atp-u", None, 16.0),
+        rp::computed_value(
+            "--atp-u",
+            &std::collections::HashMap::new(),
+            rp::RegCtx::with_font(16.0)
+        ),
         Some(String::new()),
         "guaranteed-invalid serializes empty (gCS unset registered property semantics)"
     );

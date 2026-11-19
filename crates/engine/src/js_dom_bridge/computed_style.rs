@@ -10,13 +10,13 @@ use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape
 use zero_css_parser::values::{
     AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
     AnimationPlayStateValue, AnimationRangeShape, AnimationRangeSide, BackgroundEdge, BoxSizingValue, CalcContext,
-    CalcExpr, CalcMixItem, CalcMixWeight, CalcOp,
-    ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation,
-    ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue,
-    FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue,
-    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, RadialGradient,
-    RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp,
-    VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc, parse_length, range_offset_elides,
+    CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec,
+    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem,
+    DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop,
+    GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule,
+    PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction,
+    TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc,
+    parse_length, range_offset_elides,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -352,23 +352,31 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // initial 兜底（§3 computation/computed-value-time）。var() 替换先行
         // （css-variables-1 使用点解析），解析结果再入分型串化。未注册名落既有路径。
         // <https://drafts.css-houdini.org/css-properties-values-api-1/#compute-the-value>
+        // 刀 ATP-R2（2026-11-19）：计算 ctx（真视口/lh）+ 替换视图（注册名以计算值
+        // 参与替换/未声明注入 initial 计算形）接入两端分支——未注册 `--x` 消费
+        // `var(--reg)` 亦读计算值（"Font-relative units are absolutized when
+        // substituting" 等锚定）。
+        let font_size_px = match &style.font_size {
+            LengthValue::Px(v) => *v,
+            _ => 16.0,
+        };
+        let ctx = super::registered_properties::RegCtx {
+            font_size_px,
+            line_height_px: line_height_px_of(&style.line_height, font_size_px),
+        };
         if super::registered_properties::registration_known(raw_name) {
-            let resolved = style
-                .custom_properties
-                .get(raw_name)
-                .map(|v| zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default());
-            let font_size_px = match &style.font_size {
-                LengthValue::Px(v) => *v,
-                _ => 16.0,
-            };
-            return super::registered_properties::computed_value(raw_name, resolved.as_deref(), font_size_px)
+            return super::registered_properties::computed_value(raw_name, &style.custom_properties, ctx)
                 .unwrap_or_default();
         }
         // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
         // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
         // 维持 resolve_var 现状（invalid → 初始/继承值）。
         return style.custom_properties.get(raw_name).map_or_else(String::new, |v| {
-            zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default()
+            zero_style_system::resolve_var_checked(
+                v,
+                &super::registered_properties::substitution_view(&style.custom_properties, ctx),
+            )
+            .unwrap_or_default()
         });
     }
     let p = raw_name.to_ascii_lowercase();
@@ -1297,9 +1305,7 @@ fn animation_range_computed_to_css(segs: &[String], side: AnimationRangeSide, fo
                         out.push(format!("{} {}", name.as_str(), computed));
                     }
                 }
-                AnimationRangeShape::Offset(off) => {
-                    out.push(animation_range_offset_computed(&off, font_size_px))
-                }
+                AnimationRangeShape::Offset(off) => out.push(animation_range_offset_computed(&off, font_size_px)),
             }
         }
     }
@@ -2321,7 +2327,7 @@ pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// `sibling`：源元素 `(兄弟序, 兄弟总数)`（CSS Values 5 §tree-counting），
 /// sibling-index()/sibling-count() 叶随注入求值；None fail-closed（主通道
 /// [`length_to_css`] 探测/无 DOM 视图口径）。
-fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
+pub(super) fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
     let (gcs_vw, gcs_vh) = super::computed_style_cache::gcs_viewport_dims();
     let ctx = CalcContext {
         font_size: Some(font_size_px),
@@ -2701,7 +2707,11 @@ fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
         }
     }
     deduped.sort_by(|a, b| a.0.cmp(&b.0));
-    deduped.into_iter().map(|(_, rendered)| rendered).collect::<Vec<_>>().join(", ")
+    deduped
+        .into_iter()
+        .map(|(_, rendered)| rendered)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// line-height：normal→`normal`；number→解析为 used px（`font-size × number`，对齐 Chromium
@@ -2711,6 +2721,21 @@ fn line_height_str(lh: &LineHeightValue, font_size_px: f64) -> String {
         LineHeightValue::Normal => "normal".to_string(),
         LineHeightValue::Number(n) => format_num(font_size_px * *n, "px"),
         LineHeightValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// 注册属性 lh 原子折算基准（刀 ATP-R2——`10lh`@line-height:20px → 200px 锚定）。
+/// Normal UA 近似 font×1.2 FIXME(regprop-lh-normal)：无 layout 字形度量，corpus
+/// 目标面仅显式长度行高锚定；Number 按 [`line_height_str`] 同口径折 px，Length
+/// 经 resolve_length（真视口）折算。
+fn line_height_px_of(lh: &LineHeightValue, font_size_px: f64) -> f64 {
+    match lh {
+        LineHeightValue::Normal => font_size_px * 1.2,
+        LineHeightValue::Number(n) => font_size_px * *n,
+        LineHeightValue::Length(lv) => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            zero_style_system::resolve_length(lv, font_size_px, Some(vw), Some(vh))
+        }
     }
 }
 
