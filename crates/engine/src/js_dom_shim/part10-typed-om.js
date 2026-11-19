@@ -184,8 +184,33 @@
   // to(unit)：绝对族跨单位换算；相对/不同族 TypeError。
   CSSNumericValue.prototype.to = function (unit) {
     var u = _zwOmCanonUnit(String(unit));
-    var a = _zwOmUnitInfo(this._zwOmUnit), b = u ? _zwOmUnitInfo(u) : null;
+    var b = u ? _zwOmUnitInfo(u) : null;
     if (!b) throw new TypeError("Invalid unit");
+    // 刀 face C part 1：math 值 to()（css-typed-om-1 §dom-cssnumericvalue-to：
+    // 展开逐成员按因子换算并加总，全成员可转换时返单 CSSUnitValue——语料
+    // to.tentative 'Converting a CSSMathSum to a single unit adds the values'
+    // + stylepropertymap 钳形回调 input.to('percent') 面；余量/异族成员
+    // TypeError 保留）。percent/number/flex 同名直取不加因子（与 Unit 路径同门）。
+    if (!(this instanceof CSSUnitValue)) {
+      var flatM;
+      try { flatM = _zwOmFlattenToUnits(this); } catch (_eTM) { throw new TypeError("Incompatible units"); }
+      var totalM = 0;
+      for (var mi = 0; mi < flatM.length; mi++) {
+        var minfo = _zwOmUnitInfo(flatM[mi].unit);
+        var mfam = minfo ? minfo[0] : null;
+        if (mfam !== b[0]) throw new TypeError("Incompatible units");
+        if (mfam === 'percent' || mfam === 'number' || mfam === 'flex') {
+          if (flatM[mi].unit !== u) throw new TypeError("Incompatible units");
+          totalM += flatM[mi].value;
+        } else if (minfo.length >= 2 && b.length >= 2) {
+          totalM += flatM[mi].value * minfo[1] / b[1];
+        } else {
+          throw new TypeError("Relative units can not be converted");
+        }
+      }
+      return new CSSUnitValue(_zwOmNumClean(totalM), u);
+    }
+    var a = _zwOmUnitInfo(this._zwOmUnit);
     if (!a || a[0] !== b[0]) throw new TypeError("Incompatible units");
     var factor = 1;
     if (a[0] !== 'percent' && a[0] !== 'number' && a[0] !== 'flex') {
@@ -360,6 +385,79 @@
   function _zwOmNumClean(x) {
     if (!isFinite(x)) return x;
     return parseFloat(x.toPrecision(12));
+  }
+  // ===== 刀 face C part 1：computed 面数值规范化 =====
+  // em/rem 解析因子（css-values-4 §6 相对长度 computed 期按元素 font-size
+  // 绝对化）——宿主 computed font-size 读 px 数；读取失败回落 16px 初始值。
+  function _zwOmFontSizePx(getStyleObj) {
+    try {
+      var fs = String(getStyleObj().getPropertyValue('font-size') || '').trim();
+      var m = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))px$/i.exec(fs);
+      if (m) return parseFloat(m[1]);
+    } catch (_eFS) {}
+    return 16;
+  }
+  // grid 轨道属性负百分钳零集（css-grid-2 §7.1.1 track breadth：负
+  // <percentage> 文法合法但 used/computed 期按 0 处理——testsuite
+  // assert_is_equal_with_clamping_percentage 期望 CSSUnitValue(0,'percent')）。
+  var _zwOmGridClampPctProps = {
+    'grid-template-columns': 1, 'grid-template-rows': 1,
+    'grid-auto-columns': 1, 'grid-auto-rows': 1,
+  };
+  // computed 值 typed-om reification：长度 computed 绝对化 px（em/rem 按宿主
+  // font-size、绝对族按因子）、同族 calc Sum 折叠（length→px / percent /
+  // angle→deg 三族；time 等宿主已 canonical 不折——P2F 收窄）、grid 负百分
+  // 钳零。语料五形族靶：'-3.14em'→Unit(px)、'3.14cm'→Unit(px)、
+  // 'calc(0px+0em)'→Unit(px)、'-3.14%'(grid)→Unit(0,'percent')、
+  // 'calc(0%+0%)'→Unit(0,'percent')。折叠不可达形原样返回。
+  function _zwOmComputedCanonicalize(p, v, getStyleObj) {
+    if (v instanceof CSSUnitValue) {
+      var uinfo = _zwOmUnitInfo(v._zwOmUnit);
+      if (uinfo && uinfo[0] === 'length') {
+        if (uinfo.length < 2) {
+          // 字号相对：语料面仅 em/rem 需求（ex/ch/viewport 无因子不折）。
+          if (v._zwOmUnit !== 'em' && v._zwOmUnit !== 'rem') return v;
+          v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue * _zwOmFontSizePx(getStyleObj)), 'px');
+        } else if (v._zwOmUnit !== 'px') {
+          v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue * uinfo[1]), 'px');
+        }
+      }
+      if (v._zwOmUnit === 'percent' && v._zwOmValue < 0 && _zwOmGridClampPctProps[p]) {
+        v = new CSSUnitValue(0, 'percent');
+      }
+      return v;
+    }
+    if (v instanceof CSSMathValue && v.operator === 'sum') {
+      var flat;
+      try { flat = _zwOmFlattenToUnits(v); } catch (_eCF) { return v; }
+      var baseUnit = { length: 'px', percent: 'percent', angle: 'deg' };
+      var total = 0, famName = null, fs2 = null;
+      for (var i = 0; i < flat.length; i++) {
+        var mi = _zwOmUnitInfo(flat[i].unit);
+        var mf = mi ? mi[0] : null;
+        var mv;
+        if (mf === 'percent') {
+          mv = flat[i].value;
+        } else if (mi && mi.length >= 2 && baseUnit[mf]) {
+          mv = flat[i].value * mi[1];
+        } else if (mf === 'length' && (flat[i].unit === 'em' || flat[i].unit === 'rem')) {
+          if (fs2 === null) fs2 = _zwOmFontSizePx(getStyleObj);
+          mv = flat[i].value * fs2;
+        } else {
+          return v;
+        }
+        if (famName === null) { famName = mf; total = mv; }
+        else if (famName === mf) { total += mv; }
+        else { return v; }
+      }
+      if (famName === null) return v;
+      var folded = new CSSUnitValue(_zwOmNumClean(total), baseUnit[famName]);
+      if (folded._zwOmUnit === 'percent' && folded._zwOmValue < 0 && _zwOmGridClampPctProps[p]) {
+        folded = new CSSUnitValue(0, 'percent');
+      }
+      return folded;
+    }
+    return v;
   }
   function _zwOmUnitTypeOf(v) {
     return (v && typeof v.type === 'function') ? v.type() : {};
@@ -1722,7 +1820,7 @@ return Ctor;
   // ——WPT grid-template-columns-rows 页 CSSUnitValue/CSSKeywordValue 期望）；
   // scroll-padding 简写入集（testUnsupportedValue opaque 往返面——多分量值
   // Chrome 同形不解析）。
-  var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'scroll-padding': 1, transition: 1, animation: 1 };
+  var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'scroll-padding': 1, 'scroll-margin': 1, transition: 1, animation: 1 };
 
   // ===== 12. StylePropertyMap =====
   // A/B 快照二进制 provenance 指纹（zw-typedom-listvalued-2026-11-17-r2）：刀 H
@@ -2142,10 +2240,21 @@ return Ctor;
       for (var i = 0; i < segs.length; i++) {
         var seg = segs[i].trim();
         if (seg === '') continue;
+        var isCalcSeg = /^calc\(/i.test(seg);
         var v = _zwOmParseWithText(p, seg);
         if (v == null) continue;
-        // 非负属性负数值：association 语义包 Sum（testsuite range_handling 面）。
-        if (v instanceof CSSUnitValue && v.value < 0 && _zwOmNonNegativeProps[p]) v = new CSSMathSum([v]);
+        // 刀 face C part 1：computed 面数值规范化（长度绝对化 px/同族 Sum
+        // 折叠/grid 负百分钳零——见 _zwOmComputedCanonicalize）。
+        if (computedFace) v = _zwOmComputedCanonicalize(p, v, getStyleObj);
+        // 非负属性负数值：association 语义包 Sum（testsuite range_handling
+        // 面）——仅 declared 面（computed 面断言期望裸 Unit 形）。
+        if (!computedFace && v instanceof CSSUnitValue && v.value < 0 && _zwOmNonNegativeProps[p]) v = new CSSMathSum([v]);
+        // 刀 face C part 1：declared 面单 term calc 保 Sum 壳（css-typed-om-1
+        // §parse a calc()：解析结果恒 math 节点，单值仍 Sum 包裹——与
+        // CSSNumericValue.parse 'calc(10px)'→Sum 同形；margin 简写页
+        // assert_is_calc_sum 面。引擎 declared 文本折叠 'calc(0% + 0%)'→
+        // 'calc(0%)' 后类断言期望 Sum 非裸 Unit）。
+        if (!computedFace && v instanceof CSSUnitValue && isCalcSeg) v = new CSSMathSum([v]);
         out.push(v);
       }
       return out;
