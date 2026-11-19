@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# editing-compat goal（docs/goal/editing-compat.md M1 / DC-2）：
+# editing-compat goal（docs/goal/archive/editing-compat.md M1 / DC-2）：
 # editing/run + editing/other 语料分片运行器（run-corpus 参数二选一）。
 #
 # 为何分片：runner 单进程跑全量时 RSS 线性累积（每案独立 WebView/V8 分配器
@@ -111,7 +111,7 @@ while read -r f; do
       # 且 runner 按案缓冲零行落盘（Timeout 记账假象）。other 面每变体页
       # CASE_TIMEOUT=10s 上限，系数取 15s/变体 + 150s 底（nv=0 对齐 run 面
       # 已知待记的 150s 下限形）。实证见
-      # docs/goal/editing-compat/evidence/2026-10-30-r5341-defect2-completion-wiring.md §3.1。
+      # docs/goal/archive/editing-compat/evidence/2026-10-30-r5341-defect2-completion-wiring.md §3.1。
       case_wall=$(( 60 + ${nv:-0} * 15 + 90 ))
     fi
   fi

@@ -25,7 +25,7 @@
 | zz-reset（sel 重设 ×2000） | ~85ms | S1 ×1（2000 roots） | 1/1/4ms | **同形扫 5-19× 便宜**——roots 是 plain `_zwMEl` wrapper（本地属性读） |
 | zz-ap（appendChild ×250） | 44ms | S6 ×251（1 root/次） | 2-3ms 合计 | 次要（~10µs/调用，含 wrapper/tape 开销） |
 
-S8 内部（walk.visits=2001，三读计时）：nodeType 1-6ms + tagName 4-7ms + childNodes 4-6ms ≈ 5µs/根，加根循环 `r.nodeType`（collect 外）~2.5µs/根 ≈ 9.5µs/根——全部是 **handle wrapper 的 trap 读**（t8r 物化产物为 identity proxy），与 [R350 先例](../../../../docs/learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md) #26 trap 域成本模型一致。**无 details 页 frag 恒空，scan 全程 no-op 但逐根 trap 照付**。
+S8 内部（walk.visits=2001，三读计时）：nodeType 1-6ms + tagName 4-7ms + childNodes 4-6ms ≈ 5µs/根，加根循环 `r.nodeType`（collect 外）~2.5µs/根 ≈ 9.5µs/根——全部是 **handle wrapper 的 trap 读**（t8r 物化产物为 identity proxy），与 [R350 先例](../../../../../docs/learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md) #26 trap 域成本模型一致。**无 details 页 frag 恒空，scan 全程 no-op 但逐根 trap 照付**。
 
 上轮地图「seg15 残余 ~30ms ≈ details 全树扫 15µs/子」据此**修正**：~15µs/子的口径把 `_ceApplyConn` walk 常数与 scan 合计摊到每子；本轮钉死 scan 自身 = 单次调用 ~19ms（≈9.5µs/根），CE 环其余为 `_ceApplyConn` 常数（无 host 往返，已净）。
 

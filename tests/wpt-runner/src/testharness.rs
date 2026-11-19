@@ -9636,7 +9636,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 有 phase===COMPLETE 再入守卫，与原生 listener 双标记幂等。write 注入路径不适用
     //（document.open 后 load 不重发，fetch 服务源 eval 尾直调维持原形态，见
     // HARNESS_LOADED_TAIL_CALL）。归因证据见
-    // docs/goal/editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md 簇 C。
+    // docs/goal/archive/editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md 簇 C。
     let _ = webview.execute_script(
         // R5000 片 d（html-syntax-compat，spec the-end）：生命周期三事件单 timer 任务
         // 内严格序 DCL → load → pageshow。①DCL 异步入队——defer 脚本已入队的 timer
@@ -14639,7 +14639,7 @@ promise_test(async function() {
         //（phase===COMPLETE）静默丢弃，本页只报 M1-a；修复后镜像原生
         // load+setTimeout(0) 时序，双声明全入账。用 vendored 真 harness（缺陷机制在真
         // Tests/all_done/complete 交互里，MINI_HARNESS 无 all_loaded 面）。探针形态
-        // 归档于 docs/goal/editing-compat/evidence/2026-10-30-load-handler-sync-test-probe.html。
+        // 归档于 docs/goal/archive/editing-compat/evidence/2026-10-30-load-handler-sync-test-probe.html。
         let html = r#"
 <div id=host contenteditable></div>
 <script src="/resources/testharness.js"></script>

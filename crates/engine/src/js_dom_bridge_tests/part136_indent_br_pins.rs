@@ -3,7 +3,7 @@
 // 尾单 br 摘除并删）、首侧 2 录形（idx30 直形／idx18 span 行内壳尾链形）；
 // run=4 守卫（idx31 四枚全留）＋caret 前 br 双守卫（idx15/17 现绿恒一：
 // br 留块内不消费）。list 臂早退＋outdent 复用不传旗标＝不触发。
-// 证据 docs/goal/editing-compat/evidence/2026-11-17-indent-census.md。
+// 证据 docs/goal/archive/editing-compat/evidence/2026-11-17-indent-census.md。
 #[test]
 fn test_indent_br_pins() {
     use std::sync::{Arc, Mutex};

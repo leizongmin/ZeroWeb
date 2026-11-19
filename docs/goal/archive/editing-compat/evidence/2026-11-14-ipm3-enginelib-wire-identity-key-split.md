@@ -127,7 +127,7 @@ B 拆点 nbsp 归一 15 ＞ C2/F 壳携 14 ＞ C1 序反转 8 ＞ 零散 15 ＞ 
 - **跨流独立确认（enginelib 面）**：入站 s433（FORM named-first trap 面，
   4e3eea8f3）push 时 pull --rebase 带入本修复，对方组合态复跑 **1561P/7F，
   M3-A 五新红（s40/r5250/t68-case_c/m3b7/m3x14）全数清偿**
-  （[对方 evidence §241](../html-semantics-compat/evidence/2026-11-14-m2s433-form-named-first-override-builtins.md)）。
+  （[对方 evidence §241](../../../html-semantics-compat/evidence/2026-11-14-m2s433-form-named-first-override-builtins.md)）。
 - 后续：s433 改 shim part03/04/05 → corpus 四腿于组合态新锚 fresh 重射
   batch-ipm3-fix-gate-v2（每 corpus 腿前 load-wait 门防伪影复现）。
 

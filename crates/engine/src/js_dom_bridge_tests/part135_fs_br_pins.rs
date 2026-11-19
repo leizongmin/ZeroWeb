@@ -4,7 +4,7 @@
 // "3" vs 载体 "4" → indeterminate，读侧刀④ _zwValIsFormattableQI 按未包裹
 // br 计值）。同选区 forecolor 等十命令录形均裹 br ＝命令特有 delta，forecolor
 // 反向钉防通用化（span color 载体含 br）。证据
-// docs/goal/editing-compat/evidence/2026-11-17-fs-census.md。
+// docs/goal/archive/editing-compat/evidence/2026-11-17-fs-census.md。
 #[test]
 fn test_fs_br_pins() {
     use std::sync::{Arc, Mutex};

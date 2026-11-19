@@ -7,7 +7,7 @@ modules: engine, testing
 
 > 2026-11-04 修订：本条初版把「插桩版永不完页」「V8 看门狗不可达自旋」
 > 当实证结论；构建行法证（编辑兼容 spin2 窗，evidence
-> docs/goal/editing-compat/evidence/2026-11-03-spin2-residual-hang-m670-guard.md）
+> docs/goal/archive/editing-compat/evidence/2026-11-03-spin2-residual-hang-m670-guard.md）
 > 证明早期对照数据混用二进制代际，两条推论证据失效，已改写。撕裂不变量
 > 与诊断形态纪律两条核心结论不受影响。
 

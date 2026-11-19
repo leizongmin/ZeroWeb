@@ -4,7 +4,7 @@
 // （fontSize ""/quasit＋formatBlock ""：Chrome 同红形，补派即反向 delta）。
 // ret 与树形零改动（语料录形 ret [false]＋树不变在册：formatblock.js
 // :872/:1117/:1455、insertimage.js :20）；enabled 面（端点出可编辑域）不补派。
-// 证据 docs/goal/editing-compat/evidence/2026-11-17-fb-event-census.md；
+// 证据 docs/goal/archive/editing-compat/evidence/2026-11-17-fb-event-census.md；
 // wpt.fyi chrome 160.0.8166.0 master 739652a308 report 逐子测定谳。
 #[test]
 fn test_evt_reject_pins() {

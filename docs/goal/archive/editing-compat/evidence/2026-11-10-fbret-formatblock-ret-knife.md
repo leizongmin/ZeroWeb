@@ -17,7 +17,7 @@ commit **d4823858c**（推送实体；哈希链 ac2b12294 → 3a307c259 → 0bc8
 | v2 | ac2b12294 构建 | 单二进制全链重射：**mt 20182/2 Timeout=0 judge 零翻越 VERDICT OK** + iol 1759 / iul 2061 行级恒一 OK + **ip 腿 ABORT**：test-guard 900s 截尾（webcrypto r5 lane 98.7% CPU 全程重叠，插入段历史墙钟本近帽沿）P=0 |
 | v3 | **0bc8d545b**（含 layout s5483 并入，二进制重建） | 现树全链重射（终判绑定推送字节纪律；ip 帽提 1800s）：**ALL-DONE 03:25:37 全绿**，02:13:07 发射，solo 窗（webcrypto DC-1 已收账） |
 
-并发席位让位记录：v1 ensure_solo 40min 帽 01:31 ABORT（零腿运行证据零污染，让位正确）；v1/v2 双脚本 flock 仲裁、多轮 pull --rebase 刀体重植字节恒一（八点 md5 锚逐代复读）均见 [ACTIVE-BATCH 账本](../../../../../.acceptance/dps/ACTIVE-BATCH.md)。
+并发席位让位记录：v1 ensure_solo 40min 帽 01:31 ABORT（零腿运行证据零污染，让位正确）；v1/v2 双脚本 flock 仲裁、多轮 pull --rebase 刀体重植字节恒一（八点 md5 锚逐代复读）均见 [ACTIVE-BATCH 账本](../../../../../../.acceptance/dps/ACTIVE-BATCH.md)。
 
 ## v3 判读（单干净二进制，全腿）
 

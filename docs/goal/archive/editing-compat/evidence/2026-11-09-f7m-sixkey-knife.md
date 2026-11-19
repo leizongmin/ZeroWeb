@@ -13,7 +13,7 @@ mt 残 15F（[delmerge 收口档](2026-11-09-f7-delmerge-knife.md) ⑦ 车道）
 
 ## 根因链
 
-- **A4 双层分歧**（探针 side-band trace 定谳，[learning](../../../learnings/bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md)）：spec visible 对 ws 文本走文档序**回看**（`_zwJusIsCollapsedWhitespaceNode` 前一路径遇非空白文本判行中可见），walk 先吃块尾 br 后 ws 回看命中块内正文误判行中 → walk cond4 下降进 ws → text 分支当字符单删即 return，跨块合并径不达；Chrome 按**前向**行界折叠。执行路径模型同样证伪：初版吸收臂落 walk 后 br-branch，trace 四变体全空——walk cond1 在 text 分支前已移除块尾 br，br-branch 对本形不可达，死臂撤除。
+- **A4 双层分歧**（探针 side-band trace 定谳，[learning](../../../../learnings/bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md)）：spec visible 对 ws 文本走文档序**回看**（`_zwJusIsCollapsedWhitespaceNode` 前一路径遇非空白文本判行中可见），walk 先吃块尾 br 后 ws 回看命中块内正文误判行中 → walk cond4 下降进 ws → text 分支当字符单删即 return，跨块合并径不达；Chrome 按**前向**行界折叠。执行路径模型同样证伪：初版吸收臂落 walk 后 br-branch，trace 四变体全空——walk cond1 在 text 分支前已移除块尾 br，br-branch 对本形不可达，死臂撤除。
 - **A1 边界祖先语义**（门禁批 v1 probe-f7 腿 2P/7F 归因）：初版消解条件缺选区几何门，把 ⑥ delmerge 边界祖先保留形（`<div style=display:flex><span>{abc</span><span>def</span>}</div>` 删除中间态 exp `<div …><span></span></div>` 族 + K3 `{abc}` div 子边界位 + K1/K2 尾越块界形）误消解（got `<span></span>`/`<b>gh</b>`）。Chrome 分界：删除前选区完全含于块内唯一内联壳子树（483 `[abc]` 文本位）→ 消解；选区触及块边界（子边界位）或尾越块界入宿主级 → 块为选区边界祖先，保留（exp `<div>gh</div>` 族）。修正 a8fb68673 补 ar0 containment + display 双门，ipara 调用点补前选区捕获。
 
 ## 探针迭代（zz-probe-f7m，faithful 权威面 + 直调 trace 不判）

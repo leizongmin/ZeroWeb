@@ -27,7 +27,7 @@
 ## 探针定谳（两笔）
 
 1. **序列化器无罪**：根层尾 ws-only 文本节点 innerHTML 读回原样保留（setup=读回逐字节等，lastChild=3:" "）——尾空格消失不在序列化层。
-2. **静默半挂（DC-4 Q6 s1 第三形）**：经 engine 块两跳摘挂（plain 宿主→engine 块 append→再摘）的原节点直插宿主，`insertBefore` 无异常但父指针已设而 view/childNodes 不动——节点对 childNodes/序列化全不可见（探针 nch=2 实录，尾空格凭空消失根因）。修复 = 重挂一律 `document.createTextNode(node.nodeValue)` 新建（fresh 节点物化先例：bNorm 文本、m3a head1）；行首侧节点从未摘挂，原位即挂载后首块之前，只从 wrap 集合排除、不重挂（重挂会双份空格实录）。沉淀 [learning](../../../learnings/bugs/2026-11/2026-11-14-engine-block-detour-node-remount-silent-half-mount.md)。
+2. **静默半挂（DC-4 Q6 s1 第三形）**：经 engine 块两跳摘挂（plain 宿主→engine 块 append→再摘）的原节点直插宿主，`insertBefore` 无异常但父指针已设而 view/childNodes 不动——节点对 childNodes/序列化全不可见（探针 nch=2 实录，尾空格凭空消失根因）。修复 = 重挂一律 `document.createTextNode(node.nodeValue)` 新建（fresh 节点物化先例：bNorm 文本、m3a head1）；行首侧节点从未摘挂，原位即挂载后首块之前，只从 wrap 集合排除、不重挂（重挂会双份空格实录）。沉淀 [learning](../../../../learnings/bugs/2026-11/2026-11-14-engine-block-detour-node-remount-silent-half-mount.md)。
 
 ## 钉测进展（六轮迭代）
 

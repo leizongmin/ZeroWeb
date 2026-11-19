@@ -1,6 +1,6 @@
 ---
 date: 2026-11-07
-modules: tests/wpt-runner, docs/goal/editing-compat
+modules: tests/wpt-runner, docs/goal/archive/editing-compat
 ---
 
 # 批脚本 md5 锚两陷阱：expect/got 配方必须同一函数；md5sum 行配方对路径标签敏感
@@ -29,6 +29,6 @@ knife11 gates 批（2026-11-07）pre 态核验假 ABORT：`PRE_EXPECT`（HEAD bl
   函数现算，不手拼内容摘要。
 - 引用/传递锚值时**随值携带口径**（配方 + 路径标签 + 基线 commit）；换基
   传递定谳走「刀体 hunk 与原 blob 逐字节对账 + 基座增量限无关区」链路
-  （见 `docs/goal/editing-compat/evidence/2026-11-07-knife11-anchor-rebase-399090bd.md`）。
+  （见 `docs/goal/archive/editing-compat/evidence/2026-11-07-knife11-anchor-rebase-399090bd.md`）。
 - 读数异常先复核自身口径再怀疑字节：blob 级 `git diff <锚对象> -- <文件>`
   零差即字节恒等，md5 差异优先找标签差。

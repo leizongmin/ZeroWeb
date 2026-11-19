@@ -1,10 +1,10 @@
 # F6b N 族 handoff 刀收口（2026-11-09，lane8 车道）
 
-handoff 重入（[F6b 三臂刀](2026-11-09-f6b-script-fontsize-carry-knife.md) DC-4 三分表 handoff 4 键：N1 outer font2 remap / N2 inner font3 hoist / N4 tail outer font2 remap / N5 tail inner font3 hoist）。重入条件「专项普查该四键语料期望序列化」在案（[f6b-census-keys.txt](../../../../.acceptance/dps/f6b-census-keys.txt)）；mt 残 9F（F7m 终态）降序首位。
+handoff 重入（[F6b 三臂刀](2026-11-09-f6b-script-fontsize-carry-knife.md) DC-4 三分表 handoff 4 键：N1 outer font2 remap / N2 inner font3 hoist / N4 tail outer font2 remap / N5 tail inner font3 hoist）。重入条件「专项普查该四键语料期望序列化」在案（[f6b-census-keys.txt](../../../../../.acceptance/dps/f6b-census-keys.txt)）；mt 残 9F（F7m 终态）降序首位。
 
 ## 定谳：非「语料形分歧」——shim appendChild 隐式 detach 缺口
 
-handoff 立项时判「引擎产出形与语料期望形分歧」（probe 17/0 而 mt 残红）。本刀 side-band trace（[f6bn-trace-r1.log](../../../../.acceptance/dps/f6bn-trace-r1.log)，zz-probe-f6bwin2 页面侧 wrapper 五件，零 shim 改动）推翻该读法：
+handoff 立项时判「引擎产出形与语料期望形分歧」（probe 17/0 而 mt 残红）。本刀 side-band trace（[f6bn-trace-r1.log](../../../../../.acceptance/dps/f6bn-trace-r1.log)，zz-probe-f6bwin2 页面侧 wrapper 五件，零 shim 改动）推翻该读法：
 
 - N1 全链单次 MUT、carry={bucket:1}/tags=[sub] 正确、POST-in 树 `foo<font size="2"><sub>a</sub></font>baz`（重映射前中间态正确）→ POST-out 树 `foo<font size="1"><sub>a</sub></font><sub>a</sub>baz`（重复尾在 post_insert 内部产生）。N2 同构（POST-in `foo<sub>a</sub>baz` → POST-out `foo<font size="3"><sub>a</sub></font><sub>a</sub>baz`）。
 - 根因＝`__zw_ce_f6b_post_insert` ② 异桶重放 `fontEl.appendChild(scriptEl)` 在 mt 顺序执行面不隐式 detach：typed 文本节点为 caret 锚节点态时 script 壳移动不脱旧亲链，元素双亲（font1 + host）被 innerHTML 序列化两次——got 形逐字复现（期望形+幽灵重复尾）。F6b 三臂（捕获/分账/路由/重映射）全正确，唯 DOM 写点非真移动。

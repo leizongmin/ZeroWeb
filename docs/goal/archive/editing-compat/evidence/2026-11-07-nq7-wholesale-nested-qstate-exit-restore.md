@@ -21,7 +21,7 @@
 
 ## 探针（zz-probe-nq7.html 十案，wpt-data 本地 gitignored）
 
-判读按 [全断言面纪律](../../../learnings/bugs/2026-11/2026-11-06-probe-assert-full-row-family.md)（树 + 选区 + qreads 三方对齐）：
+判读按 [全断言面纪律](../../../../learnings/bugs/2026-11/2026-11-06-probe-assert-full-row-family.md)（树 + 选区 + qreads 三方对齐）：
 
 | 案 | 判据 | 结果 |
 |---|---|---|

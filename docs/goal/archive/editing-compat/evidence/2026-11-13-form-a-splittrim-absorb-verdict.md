@@ -26,7 +26,7 @@ R196 裸臂静态读法（`handle` 为假时 `cur=''` 连 split 失败）属物�
 ## 验证（绿分支树面=纯测试新增，产品码零字节变化）
 
 - 目标钉测：test-guard 包裹 1 passed（3918 filtered，/tmp/form-a-probe-run1.log 当轮快照）；
-- 全 lib 名册腿：**3912P/7F/0I**（vs E1 r2 post 3911P/7F/0I：+1P=本钉测参与跑，L6 锚「passed 允许 +1=解钉测参与跑」明示通道）；失败名册逐名与 [E1 r2 档](../../../acceptance/dps/e1-enginelib-failures-now.txt) diff 恒一；
+- 全 lib 名册腿：**3912P/7F/0I**（vs E1 r2 post 3911P/7F/0I：+1P=本钉测参与跑，L6 锚「passed 允许 +1=解钉测参与跑」明示通道）；失败名册逐名与 [E1 r2 档](../../../../acceptance/dps/e1-enginelib-failures-now.txt) diff 恒一；
 - `cargo fmt --all -- --check` 零 diff；`cargo clippy -p zero-engine --all-targets -- -D warnings` 干净；
 - 语料腿不重跑：partNNN.js/js_dom_bridge.rs 零字节变化 ⟹ 语料读出与 E1 r2 post（batch-nested-e1-gate-v1-r2 01:35:41 ALL-DONE 八腿全绿）同域字节恒一，按质量门禁「按实际影响选择检查」收缩。
 

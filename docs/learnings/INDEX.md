@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（296）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（297）
 
+- 2026-11-18 [编译断窗落库的钉测首执即 DOA——断言必须以实证行为为准](bugs/2026-11/2026-11-18-pin-tests-doa-when-compile-broken.md) — zero-engine, style-system
 - 2026-11-18 [CSS 校验门挂在 cascade 面、WPT 页走 CSSOM 写面导致"实现完成零位移"](bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md) — style-system, engine
 - 2026-11-17 [JS DOM 桥 wrapper 家族 appendChild 语义二分：序列化拷贝 vs 真移动——摘原须按 childNodes indexOf 判位](bugs/2026-11/2026-11-17-js-dom-wrapper-family-copy-vs-move.md) — zero-engine
 - 2026-11-15 [workflow validator 必须随 rev 持续跑——潜伏缺陷跨 rev 复制放大，delivery 回执引用与信封契约三缺陷连爆](bugs/2026-11/2026-11-15-workflow-validator-per-rev-latent-defect.md) — site_optimizer
@@ -59,7 +60,7 @@
 - 2026-11-07 [layout 期行内几何修复不经 paint Path B 等价注入，像素必然不变](bugs/2026-11/2026-11-07-paint-path-b-rerun-eats-inline-geometry-fixes.md) — layout-engine, engine
 - 2026-11-07 [OOF 固有宽剪除的作用域：table 内部盒可剪，普通块盒剪不得（R5300 补测链依赖）](bugs/2026-11/2026-11-07-oof-intrinsic-prune-scope-table-internal-vs-abs-refill-chain.md) — layout-engine, testing
 - 2026-11-07 [§9.7 blockification 让 float span 算块级子：inline wrapper 谓词把离流盒计成块子（R5446 嵌套 float 域）](bugs/2026-11/2026-11-07-oof-float-blockification-predicate-leak.md) — layout-engine
-- 2026-11-07 [批脚本 md5 锚两陷阱：expect/got 配方必须同一函数；md5sum 行配方对路径标签敏感](bugs/2026-11/2026-11-07-md5-anchor-recipe-identity-and-path-label.md) — tests/wpt-runner, docs/goal/editing-compat
+- 2026-11-07 [批脚本 md5 锚两陷阱：expect/got 配方必须同一函数；md5sum 行配方对路径标签敏感](bugs/2026-11/2026-11-07-md5-anchor-recipe-identity-and-path-label.md) — tests/wpt-runner, docs/goal/archive/editing-compat
 - 2026-11-07 [单测钉红的归因必须 bisect 到提交；改动域轮次必须跑改动 crate 的 lib 全腿](bugs/2026-11/2026-11-07-lib-full-leg-and-commit-level-bisect-for-pin-reds.md) — layout-engine, testing
 - 2026-11-07 [内部按 _elKey 建链的 map 查找跨族落空——按元素 id 回落对齐](bugs/2026-11/2026-11-07-internal-chain-key-cross-family-id-fallback.md) — crates/engine
 - 2026-11-07 [element proxy 的 get trap 拦截全部属性读——原型侧 accessor 对 proxy 恒不可达](bugs/2026-11/2026-11-07-element-proxy-get-trap-intercepts-prototype-accessors.md) — crates/engine
@@ -304,8 +305,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（47）
+## Patterns — 可复用代码模式与最佳实践（48）
 
+- 2026-11-18 [V8Sandbox 钉测 JSON.stringify 快照断言的 Debug 双层转义](patterns/2026-11/2026-11-18-v8s-sandbox-pin-json-debug-escaping.md) — crates/engine
 - 2026-11-16 [跨进程仪拍锚提取：时间线归属法与 stderr 前缀伪影](patterns/2026-11/2026-11-16-trace-anchor-timeline-attribution.md) — apps/renderer,apps/compositor,bench
 - 2026-11-16 [CSS.supports 与 setProperty 双通道文法分叉](patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md) — engine,style-system
 - 2026-11-15 [shim 写面刀须双世界同落：handle 世界才是 corpus 活跃写面](patterns/2026-11/2026-11-15-shim-write-face-knife-dual-world.md) — engine, css-parser
@@ -321,7 +323,7 @@
 - 2026-11-11 [竖排 rtl 行内轴镜像与 run 内字形序的 parity 结构](patterns/2026-11/2026-11-11-vertical-rtl-inline-mirror-glyph-order-parity.md) — layout-engine
 - 2026-11-09 [样式 carry 刀的捕获三形分账与壳级缩放口径](patterns/2026-11/2026-11-09-style-carry-capture-consume-routing.md) — engine
 - 2026-11-08 [自源 reftest 争议语义定谳：ref 页行为语义 = ZW 自身对应实现，先读 ref 页写法再对 ZW 同路径数值](patterns/2026-11/2026-11-08-self-source-ref-page-semantics-equal-zw-implementation.md) — layout-engine,testing
-- 2026-11-07 [共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main](patterns/2026-11/2026-11-07-shared-tree-push-via-temp-worktree.md) — docs/goal/editing-compat
+- 2026-11-07 [共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main](patterns/2026-11/2026-11-07-shared-tree-push-via-temp-worktree.md) — docs/goal/archive/editing-compat
 - 2026-11-05 [自源探针「0.00% 通过」不可信——图元清单 + black-ref 强拆定谳伪绿](patterns/2026-11/2026-11-05-reftest-passing-page-primitive-forensics.md) — engine,testing
 - 2026-11-04 [Timeout 行不是挂死证明——判读前先做 solo/in-face 预算算术](patterns/2026-11/2026-11-04-timeout-line-budget-arithmetic-before-hang-verdict.md) — testing
 - 2026-11-03 [密码学语料期望值程序化解析取数，不手抄长 hex 串](patterns/2026-11/2026-11-03-corpus-expected-values-parse-not-transcribe.md) — tests/wpt-runner
@@ -406,8 +408,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（58）
+## Platform — 平台与环境相关经验（59）
 
+- 2026-11-18 [glibc 专属分配器符号要跟 libc 依赖用同一个 cfg 门](platform/2026-11/2026-11-18-glibc-symbol-cfg-parity.md) — apps/browser, apps/renderer, crates/runtime-config
 - 2026-11-15 [systemd-run --scope 不支持 -p TimeoutSec——Unknown assignment 立即失败，超时兜底须放脚本内](platform/2026-11/2026-11-15-systemd-run-scope-no-timeoutsec.md) — tooling
 - 2026-11-15 [巡查 join 管线必须全链 LC_ALL=C](platform/2026-11/2026-11-15-patrol-join-lc-all-c-collation.md) — wpt-runner,engineering-practice
 - 2026-11-15 [长批唯一可靠载体是 systemd --user service；setsid 与后台 Bash 都会被拆树或到点杀](platform/2026-11/2026-11-15-long-batch-detachment-systemd-user-service.md) — .acceptance/dps,tests/wpt-runner

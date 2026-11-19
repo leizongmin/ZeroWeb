@@ -1134,7 +1134,7 @@ testharness-css-writing-modes-one: fetch-wpt-css-testharness target-disk-guard t
 testharness-css-parity: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),600) -- bash tests/wpt-runner/scripts/verify-css-corpus-json-parity.sh $(or $(CORPUS),selectors) $(or $(FILTER),css/selectors/i18n/) ./target/release/zero-wpt-runner
 
-# editing-compat goal M1（docs/goal/editing-compat.md DC-2）：editing/run +
+# editing-compat goal M1（docs/goal/archive/editing-compat.md DC-2）：editing/run +
 # editing/other execCommand 语料 testharness 通道。用例 gitignored（goals/33 号
 # 脚本 GOAL_FETCH_DEEP=1 深拉，include/data 共享依赖随目录）。基线首跑只记录
 # 通过率，不设门禁（css corpus 先例）。全量走每案独立进程分片（同 css 通道

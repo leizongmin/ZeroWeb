@@ -80,7 +80,7 @@ exec1 474（exec-command-without-editable-element.tentative，iframe 排除
 ## 五、语料域残红面（记录，不阻塞 DC-5）
 
 - 语料独立跑语义 F=2878（delete 231、inserttext 227、forwarddelete 218、
-  removeformat 120、justify 四命令 209 等）＝[wptfyi-editing 流](../../wptfyi-editing/master.md)
+  removeformat 120、justify 四命令 209 等）＝[wptfyi-editing 流](../../../wptfyi-editing/master.md)
   在案域（d50-d56 轮系列逐键归因与刀序），非本 goal DC-4 三分表未归因键
   ——DC-4 验收账本口径为 gate 批腿面（multitest 窗），其终态
   「fb 3/fs 3/event 4/ip 10/mt 2 全 artifact 挂账＋exec1 handoff」

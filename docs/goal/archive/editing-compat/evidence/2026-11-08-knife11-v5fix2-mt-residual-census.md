@@ -34,7 +34,7 @@ DC-4 收敛定稿（残键数降序）立项下一刀；产出簇表 + #37 嫌�
   ——引擎 in-window 行为的隔离验证证据（探针等价）；同案 ?1001-2000 exec 窗
   compare 亦绿。
 
-处置：两键按[分窗切片伪影判据](../../../learnings/bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md)记 artifact
+处置：两键按[分窗切片伪影判据](../../../../learnings/bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md)记 artifact
 除名，不入引擎债账；sr2 轮先例同构（2026-11-06，iol/iul 除名 3 行零源码修改）。
 
 ## 簇表（main 残键降序；chains 为命令链签名 × 键数）

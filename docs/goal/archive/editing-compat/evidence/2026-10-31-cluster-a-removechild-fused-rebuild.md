@@ -9,7 +9,7 @@
 
 ## 1. 方法
 
-tape 插桩沿 [ring-registry 学习](../../../learnings/performance/2026-10/2026-10-30-ring-registry-length-gate-hidden-quadratic.md)
+tape 插桩沿 [ring-registry 学习](../../../../learnings/performance/2026-10/2026-10-30-ring-registry-length-gate-hidden-quadratic.md)
 的方法沉淀：shim 临时顺序 delta 段带 + 闭包持有逐调用累计（不走 globalThis 热路径，仅
 reset/dump 两读出函数挂 globalThis），`Date.now()`（µs 级段差在本轮 ~ms 级段上精度足够）。
 检查点 24 处：innerHTML setter 10-19（物化前/后、host set、CE 断连/连接、R304/R3k/stamp、

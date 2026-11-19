@@ -28,7 +28,7 @@
 
 ## enginelib 名册 7→0 翻绿归因（非本刀清偿）
 
-名册 7 红（img×2/svg settle/fetch_filtered/sw-iframe/stream/ws×2）翻绿系组合态入站 **1ef32fc4e**（html-semantics 流 s434「桥套件 7 红全树 bisect 归因清偿」）：一案引擎真 bug（SMIL 事件泵 `_scheduleTick` 无宿主定时器环境 `_defer` microtask 自链饿死 `_deferBudget(256)`，后续 deferred 回调含 img/svg load 派发永久丢弃，part09b 双探针守卫根修）+ 四测试前提对齐现行契约；bisect 账本见 [s434 evidence](../../html-semantics-compat/evidence/2026-11-14-m2s434-bridge-7red-bisect-attribution.md)。核验轮独立复跑：HEAD（含 s434+本刀）全 lib `cargo test -p zero-engine --lib` **3967P/0F** @21:19（有并发租户负载下），翻绿稳定非抖动；passed +18 对账闭合 = 9 本刀钉 + 2 s423 钉 + 7 名册翻绿。**后续 gate 名册基线更新 7→0**（新增红仍 ABORT，删除面归因后放行）。
+名册 7 红（img×2/svg settle/fetch_filtered/sw-iframe/stream/ws×2）翻绿系组合态入站 **1ef32fc4e**（html-semantics 流 s434「桥套件 7 红全树 bisect 归因清偿」）：一案引擎真 bug（SMIL 事件泵 `_scheduleTick` 无宿主定时器环境 `_defer` microtask 自链饿死 `_deferBudget(256)`，后续 deferred 回调含 img/svg load 派发永久丢弃，part09b 双探针守卫根修）+ 四测试前提对齐现行契约；bisect 账本见 [s434 evidence](../../../html-semantics-compat/evidence/2026-11-14-m2s434-bridge-7red-bisect-attribution.md)。核验轮独立复跑：HEAD（含 s434+本刀）全 lib `cargo test -p zero-engine --lib` **3967P/0F** @21:19（有并发租户负载下），翻绿稳定非抖动；passed +18 对账闭合 = 9 本刀钉 + 2 s423 钉 + 7 名册翻绿。**后续 gate 名册基线更新 7→0**（新增红仍 ABORT，删除面归因后放行）。
 
 ## ip 残 59F 族图（census 13 族档对账闭合）
 

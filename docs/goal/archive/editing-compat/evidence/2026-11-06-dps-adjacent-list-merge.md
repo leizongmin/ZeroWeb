@@ -17,7 +17,7 @@ div/p）+ iol qV-before ×1。本轮归因、修复、门禁与 qVb 面定谳。
    文本成员，part01c.js:1008-1014）；
 3. 重写臂成员扫描 `members.indexOf(kids[k])`（part01c.js:877）对空白文本节点
    失配——js_dom_shim 文本节点包装逐访问新建（[多族包装 identity
-   learning](../../../learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md)），
+   learning](../../../../learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md)），
    吸收时持有的包装与 `host.childNodes` 重访包装非同一对象；
 4. firstIdx 只锚 li → prevSib/nextSib 落在空白文本节点（nodeType≠1）→
    reusePrev/reuseNext 归并臂（part01c.js:912-927）不可达 → 恒新壳；

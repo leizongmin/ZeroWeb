@@ -4,7 +4,7 @@
 //! 独立模块而非并入 [`crate::testharness`]（2000 行约束，testharness_css_corpus
 //! 先例），经 `pub(crate)` 复用其执行底座（`run_testharness_html_inner` /
 //! `corpus_case_timeout`）。目标面是**编辑命令语义断言面**
-//! （goal 契约 docs/goal/editing-compat.md）；uievents/selection 归各自通道，
+//! （goal 契约 docs/goal/archive/editing-compat.md）；uievents/selection 归各自通道，
 //! 本通道不含渲染断言面。
 //!
 //! 用例由 `scripts/goals/33-editing-compat.sh`（GOAL_FETCH_DEEP=1 git trees

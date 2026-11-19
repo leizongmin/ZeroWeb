@@ -209,7 +209,7 @@ rc，按计数门判读）——唯一残红恰 `<pre>foo&#10;[]</pre>` compare 
 （真红 I5），bq-tail/ul-div-tail 的 compare·qV 行与 span-qV 行全数转绿：
 18:38-18:40 机制预测逐项命中，**窗伪影机制定谳实证完成**。残 15F 最终分解＝
 真红 5（C5 2＋I4 2＋I5 1）＋窗伪影 10（qV 8＋C4②③ 各 1，债账除名）。
-机制与无窗复放验证配方按 [经验沉淀流程](../../../engineering/learnings.md)
+机制与无窗复放验证配方按 [经验沉淀流程](../../../../engineering/learnings.md)
 入 docs/learnings/（2026-11-15 窗切 census 伪影篇，与 2026-11-07 行级审计
 先例互链）。
 
