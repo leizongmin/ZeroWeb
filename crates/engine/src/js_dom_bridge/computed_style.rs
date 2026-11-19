@@ -9,13 +9,14 @@ use std::collections::HashMap;
 use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
 use zero_css_parser::values::{
     AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
-    AnimationPlayStateValue, BackgroundEdge, BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp,
+    AnimationPlayStateValue, AnimationRangeShape, AnimationRangeSide, BackgroundEdge, BoxSizingValue, CalcContext,
+    CalcExpr, CalcMixItem, CalcMixWeight, CalcOp,
     ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation,
     ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue,
     FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue,
     ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, RadialGradient,
     RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp,
-    VisibilityValue, eval_calc_with_context, parse_length,
+    VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc, parse_length, range_offset_elides,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -1215,6 +1216,16 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // css-animations-2 §animation-composition：空列表回落初始 replace。
         "animation-composition" => enum_list_to_css(&style.animation_composition, "replace", animation_composition_str),
         "animation-play-state" => enum_list_to_css(&style.animation_play_state, "running", animation_play_state_str),
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range 侧槽
+        // computed——存储 canonical 指定段逐段变换（偏移经 length_to_css：
+        // em 等相对单位 resolve px、calc 同族折叠去壳、% 保留）+ 变换后侧别
+        // 省略重判；空槽回落初值 normal。
+        "animation-range-start" => {
+            animation_range_computed_to_css(&style.animation_range_start, AnimationRangeSide::Start, font_size_px)
+        }
+        "animation-range-end" => {
+            animation_range_computed_to_css(&style.animation_range_end, AnimationRangeSide::End, font_size_px)
+        }
         // ── transition/animation-timing-function（R2744）── Vec<TimingFunctionValue>，空→ease（初值）。
         "transition-timing-function" => {
             enum_list_to_css(&style.transition_timing_function, "ease", timing_function_to_css)
@@ -1227,6 +1238,64 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "transition" => transition_shorthand_to_css(style),
         "animation" => animation_shorthand_to_css(style),
         _ => String::new(),
+    }
+}
+
+/// animation-range 侧槽 computed 串化（css-scroll-animations-1
+/// §view-timelines-ranges + §animation-range-start/end computed 值）：
+/// 逐段偏移经 [`length_to_css`]（css-values-4 §8.5/§10.11——em 等相对单位
+/// resolve px、calc 同族折叠去壳、% 保留），变换后重判侧别省略（start
+/// 0%/end 100%——指定面 canonical 已省过一次，calc 折叠出新阈值形时
+/// 二次命中，如 'calc(10% - 10%)'→'calc(0%)'→'0%'→省）；裸偏移不省
+///（computed 页证据 '0%' 保留）；不可变换偏移 fail-soft 保原文。
+/// 空槽 → 初值 normal。
+fn animation_range_computed_to_css(segs: &[String], side: AnimationRangeSide, font_size_px: f64) -> String {
+    if segs.is_empty() {
+        return "normal".to_string();
+    }
+    let mut out: Vec<String> = Vec::with_capacity(segs.len());
+    for seg in segs {
+        let Some(items) = parse_animation_range_side(seg, side) else {
+            out.push(seg.clone());
+            continue;
+        };
+        for item in items {
+            match item.shape {
+                AnimationRangeShape::Normal => out.push("normal".to_string()),
+                AnimationRangeShape::Name(name, None) => out.push(name.as_str().to_string()),
+                AnimationRangeShape::Name(name, Some(off)) => {
+                    let computed = animation_range_offset_computed(&off, font_size_px);
+                    if range_offset_elides(&computed, side) {
+                        out.push(name.as_str().to_string());
+                    } else {
+                        out.push(format!("{} {}", name.as_str(), computed));
+                    }
+                }
+                AnimationRangeShape::Offset(off) => {
+                    out.push(animation_range_offset_computed(&off, font_size_px))
+                }
+            }
+        }
+    }
+    out.join(", ")
+}
+
+/// animation-range 偏移 computed 变换：calc 形（face A canonical 恒带壳）
+/// 走 [`parse_calc`]→[`LengthValue::Calc`]，其余走 [`parse_length`]（px/%/
+/// em 等单位原子）；序列化经 [`length_to_css`]（% 保留、calc 同族折叠
+/// 去壳、相对单位按 font-size resolve）。任一步不识别 → 保原文。
+fn animation_range_offset_computed(off: &str, font_size_px: f64) -> String {
+    let lv = if off.starts_with("calc(") {
+        parse_calc(off).map(|expr| LengthValue::Calc(Box::new(expr)))
+    } else {
+        parse_length(off)
+    };
+    match lv {
+        Some(lv) => {
+            let s = length_to_css(&lv, font_size_px);
+            if s.is_empty() { off.to_string() } else { s }
+        }
+        None => off.to_string(),
     }
 }
 
@@ -5249,6 +5318,64 @@ fn mixed_len(v: f64, is_pct: bool) -> String {
         format_num(v, "%")
     } else {
         format_num(v, "px")
+    }
+}
+
+#[cfg(test)]
+mod animation_range_computed_tests {
+    //! css-scroll-animations-1 §view-timelines-ranges：animation-range-start/end
+    //! computed 串化钉测（css-animations/parsing animation-range-*-computed 页
+    //! 断言形逐条对映——em→px、calc 同族折叠去壳、混族保壳、侧别省略重判、
+    //! 裸偏移不省、空槽回落 normal）。
+
+    use super::animation_range_computed_to_css;
+    use zero_css_parser::values::AnimationRangeSide;
+
+    #[test]
+    fn start_side_computed() {
+        // 指定面已省略形直传；em→px（页基准 1em=10px）。
+        let f = |segs: &[&str], font: f64| -> String {
+            let owned: Vec<String> = segs.iter().map(|s| s.to_string()).collect();
+            animation_range_computed_to_css(&owned, AnimationRangeSide::Start, font)
+        };
+        assert_eq!(f(&["cover"], 10.0), "cover");
+        assert_eq!(f(&["cover 0%"], 10.0), "cover");
+        assert_eq!(f(&["cover 100%"], 10.0), "cover 100%");
+        assert_eq!(f(&["entry 1em"], 10.0), "entry 10px");
+        assert_eq!(f(&["entry 42px"], 10.0), "entry 42px");
+        // calc 同族折叠去壳：'calc(41% + 1%)'→'42%'；'calc(1em + 10px)'→'20px'。
+        assert_eq!(f(&["exit calc(41% + 1%)"], 10.0), "exit 42%");
+        assert_eq!(f(&["exit calc(1em + 10px)"], 10.0), "exit 20px");
+        // 混族保壳：'calc(10% + 10px)' 原样（percent-first canonical 直传）。
+        assert_eq!(f(&["contain calc(10% + 10px)"], 10.0), "contain calc(10% + 10px)");
+        // 折叠出新阈值形二次省略：'calc(10% - 10%)' 指定 canonical 'calc(0%)'
+        // → computed '0%' → start 侧省略。
+        assert_eq!(f(&["entry calc(10% - 10%)"], 10.0), "entry");
+        // 裸偏移不省略；逐段列表 + 段内省略。
+        assert_eq!(f(&["0%"], 10.0), "0%");
+        assert_eq!(f(&["0px"], 10.0), "0px");
+        assert_eq!(
+            f(&["exit 1%", "cover 2%", "contain 0%"], 10.0),
+            "exit 1%, cover 2%, contain"
+        );
+        assert_eq!(f(&[], 10.0), "normal");
+    }
+
+    #[test]
+    fn end_side_computed() {
+        let f = |segs: &[&str], font: f64| -> String {
+            let owned: Vec<String> = segs.iter().map(|s| s.to_string()).collect();
+            animation_range_computed_to_css(&owned, AnimationRangeSide::End, font)
+        };
+        // end 侧省略 100%；0% 不省（仅 start 侧阈值）。
+        assert_eq!(f(&["contain 100%"], 10.0), "contain");
+        assert_eq!(f(&["cover 42%"], 10.0), "cover 42%");
+        assert_eq!(
+            f(&["exit 1%", "cover 2%", "contain 100%"], 10.0),
+            "exit 1%, cover 2%, contain"
+        );
+        assert_eq!(f(&["cover 0%"], 10.0), "cover 0%");
+        assert_eq!(f(&[], 10.0), "normal");
     }
 }
 

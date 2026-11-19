@@ -1168,6 +1168,27 @@ pub fn apply_advanced_property_value(
             style.animation_composition = comps;
             return true;
         }
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range-start/end
+        // 槽。写门（apply.rs VALIDATED_PROPERTIES + 文法裁决）已先行；本臂 storage
+        // 期单源复用 [`values::animation_range_segments`] 逐段 canonical 化存储
+        //（逗号剥离，gCS computed 通道逐段再变换）。
+        // https://drafts.csswg.org/css-scroll-animations-1/#view-timelines-ranges
+        "animation-range-start" | "animation-range-end" => {
+            let side = if property == "animation-range-start" {
+                values::AnimationRangeSide::Start
+            } else {
+                values::AnimationRangeSide::End
+            };
+            let Some(segs) = values::animation_range_segments(value, side) else {
+                return false;
+            };
+            if side == values::AnimationRangeSide::Start {
+                style.animation_range_start = segs;
+            } else {
+                style.animation_range_end = segs;
+            }
+            return true;
+        }
         // ── Scroll Snap 属性 ──
         "scroll-snap-type" => {
             if let Some(v) = parse_scroll_snap_type_computed(value) {

@@ -344,3 +344,199 @@ pub fn fold_animation_range_specified(v: &str, side: AnimationRangeSide) -> Opti
     let items = parse_animation_range_side(v, side)?;
     Some(animation_range_side_to_css(&items, side))
 }
+
+/// 整值解析并产出逐段 canonical 文本（style-system apply 存储槽用：
+/// `Vec<String>` 每元素一段——逗号语义已剥离，gCS computed 通道逐段
+/// 再做 em→px/calc 折叠变换后重判省略）。
+pub fn animation_range_segments(v: &str, side: AnimationRangeSide) -> Option<Vec<String>> {
+    let items = parse_animation_range_side(v, side)?;
+    Some(items.iter().map(|it| item_to_css(&it.shape, side)).collect())
+}
+
+/// animation-range 简写解析（css-scroll-animations-1 §animation-range）：
+/// `[ normal | <start-half> [<end-half>]? ]#`——每逗号段含至多两半，各半
+/// `[ <timeline-range-name>? <length-percentage>? ]`（名前偏移后、至多一
+/// 名一偏移；`normal` 只能独占一半不得带偏移）。单值段两侧同值（'cover'
+/// ⇒ start=end=cover）；双半段 start=前半 end=后半。
+///
+/// 返回 `(start 段列表, end 段列表)`（逐段 canonical，侧别省略已施）；
+/// 文法不符 → `None`。驱动语料：css-animations/parsing
+/// animation-range-shorthand.html（33 valid + 22 invalid）+
+/// animation-range-shorthand-end-zero-offset.html（6 valid）。
+pub fn parse_animation_range_shorthand(v: &str) -> Option<(Vec<String>, Vec<String>)> {
+    let segs = split_top_level_commas(v.trim())?;
+    let mut start_segs = Vec::with_capacity(segs.len());
+    let mut end_segs = Vec::with_capacity(segs.len());
+    for seg in segs {
+        let (start, end) = parse_shorthand_segment(seg)?;
+        start_segs.push(start);
+        end_segs.push(end);
+    }
+    Some((start_segs, end_segs))
+}
+
+/// 解析单段（无顶层逗号）：切半 → 各半 canonical（侧别省略随半侧）。
+fn parse_shorthand_segment(seg: &str) -> Option<(String, String)> {
+    let toks = split_ws_outside_parens(seg.trim());
+    if toks.is_empty() {
+        return None;
+    }
+    let halves = split_halves(&toks)?;
+    match halves.len() {
+        1 => {
+            // 单值段：两侧同值（normal/名/裸偏移）；名+偏移单值段按 End 侧
+            // 阈值 canonical（corpus 无此形钉面，取与长手 end 存储一致口径）。
+            let h = canonical_half(&halves[0], AnimationRangeSide::End)?;
+            Some((h.clone(), h))
+        }
+        2 => {
+            let start = canonical_half(&halves[0], AnimationRangeSide::Start)?;
+            let end = canonical_half(&halves[1], AnimationRangeSide::End)?;
+            Some((start, end))
+        }
+        _ => None,
+    }
+}
+
+/// 半进行态：Empty（未起半）/ NameOnly（一名，偏移可续）/ WithOffset
+///（名+偏移或裸偏移已完备，任何后续合法 token 开新半）。
+#[derive(Clone, Copy, PartialEq)]
+enum HalfState {
+    Empty,
+    NameOnly,
+    WithOffset,
+}
+
+/// 段内切半：token 流 → 至多两半（css-scroll-animations-1
+/// `<single-animation-range>`：`normal | [ <name> || <length-percentage> ]`
+/// 至多两组）。状态机：`normal` 独占半即时落盘；名 token 于 NameOnly
+///（'cover exit'）/WithOffset（'cover 50% exit 0%'）半前开新半；偏移
+/// token 于 WithOffset（'0% 100%'）半前开新半；未知 token（'thing'、
+/// '#ff0000'、'/'、时间）→ 整段拒。>2 半 → `None`。
+fn split_halves<'a>(toks: &'a [&'a str]) -> Option<Vec<Vec<&'a str>>> {
+    let is_range_name =
+        |t: &str| -> bool { AnimationRangeName::parse(&t.to_ascii_lowercase()).is_some() };
+    let mut halves: Vec<Vec<&str>> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    let mut state = HalfState::Empty;
+    for t in toks {
+        let lower = t.to_ascii_lowercase();
+        let kind = if lower == "normal" {
+            0u8
+        } else if is_range_name(t) {
+            1
+        } else if canonical_offset(&lower).is_some() {
+            2
+        } else {
+            return None;
+        };
+        match (kind, state) {
+            // normal 独占半：收尾当前半（若有）后自成一完备半。
+            (0, _) => {
+                if state != HalfState::Empty {
+                    halves.push(std::mem::take(&mut cur));
+                }
+                halves.push(vec![t]);
+                state = HalfState::Empty;
+            }
+            (1, HalfState::Empty) => {
+                cur.push(t);
+                state = HalfState::NameOnly;
+            }
+            (1, _) => {
+                halves.push(std::mem::take(&mut cur));
+                cur.push(t);
+                state = HalfState::NameOnly;
+            }
+            (2, HalfState::WithOffset) => {
+                halves.push(std::mem::take(&mut cur));
+                cur.push(t);
+                state = HalfState::WithOffset;
+            }
+            (2, _) => {
+                cur.push(t);
+                state = HalfState::WithOffset;
+            }
+            // kind 按构造只取 0/1/2（未知 token 已提前整段拒），此臂不可达，
+            // 仅为 match 穷尽性；语义与前置拒收一致。
+            _ => return None,
+        }
+    }
+    if state != HalfState::Empty {
+        halves.push(cur);
+    }
+    if halves.is_empty() || halves.len() > 2 {
+        return None;
+    }
+    Some(halves)
+}
+
+/// 半 canonical（css-scroll-animations-1 propdef 侧别缺省偏移：省略随
+/// [`AnimationRangeSide`]——start 侧 0%、end 侧 100%，与长手
+/// [`animation_range_side_to_css`] 同规；裸偏移不省）。返回 `None` = 半
+/// 非法（名后偏移序错误/偏移文法不符）。
+fn canonical_half(half: &[&str], side: AnimationRangeSide) -> Option<String> {
+    let lower: Vec<String> = half.iter().map(|t| t.to_ascii_lowercase()).collect();
+    match lower.len() {
+        1 => {
+            if lower[0] == "normal" {
+                return Some("normal".to_string());
+            }
+            if let Some(name) = AnimationRangeName::parse(&lower[0]) {
+                return Some(name.as_str().to_string());
+            }
+            canonical_offset(&lower[0])
+        }
+        2 => {
+            // 名前偏移后（face A parse_single_range_item 同规）。
+            let name = AnimationRangeName::parse(&lower[0])?;
+            let offset = canonical_offset(&lower[1])?;
+            if range_offset_elides(&offset, side) {
+                Some(name.as_str().to_string())
+            } else {
+                Some(format!("{} {}", name.as_str(), offset))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// animation-range 简写读回重组（CSD getPropertyValue 与 gCS 简写臂共用）：
+/// 逐索引 zip start/end 段（CSSOM 列表简写最小化口径，等长假设由展开
+/// 保证），Chrome 实证序列化规则——
+/// 1. 两半 canonical 相等 → 单值（'cover cover'→'cover'）
+/// 2. start 半为裸偏移且 end 半 ∈ {'normal', 裸 '100%'} → 省 end
+///   （'10% normal'→'10%'、'0% 100%'→'0%'；'entry normal'→保双值——
+///   start 半带名不省）
+/// 3. 其余 → `"{start} {end}"`；全空 → `normal`。
+pub fn serialize_animation_range_shorthand(start_segs: &[String], end_segs: &[String]) -> String {
+    if start_segs.is_empty() && end_segs.is_empty() {
+        return "normal".to_string();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let n = start_segs.len().max(end_segs.len());
+    for i in 0..n {
+        let s = start_segs.get(i);
+        let e = end_segs.get(i);
+        let (sv, ev) = match (s, e) {
+            (Some(s), Some(e)) => (s.as_str(), e.as_str()),
+            (Some(s), None) => (s.as_str(), "normal"),
+            (None, Some(e)) => ("normal", e.as_str()),
+            (None, None) => unreachable!(),
+        };
+        // 半 canonical 相等 → 塌缩。
+        if sv == ev {
+            parts.push(sv.to_string());
+            continue;
+        }
+        let s_offset_only = !sv.contains(' ') && sv != "normal" && AnimationRangeName::parse(sv).is_none();
+        let end_defaultish = ev == "normal"
+            || (!ev.contains(' ') && AnimationRangeName::parse(ev).is_none() && ev == "100%");
+        if s_offset_only && end_defaultish {
+            parts.push(sv.to_string());
+        } else {
+            parts.push(format!("{} {}", sv, ev));
+        }
+    }
+    parts.join(", ")
+}

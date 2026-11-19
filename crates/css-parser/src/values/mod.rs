@@ -34,8 +34,9 @@ pub mod types;
 // Re-export all public items.
 pub use anchor::*;
 pub use parse_animation_range::{
-    fold_animation_range_specified, parse_animation_range_side, AnimationRangeItem,
-    AnimationRangeName, AnimationRangeShape, AnimationRangeSide,
+    animation_range_segments, fold_animation_range_specified, parse_animation_range_shorthand,
+    parse_animation_range_side, range_offset_elides, serialize_animation_range_shorthand,
+    AnimationRangeItem, AnimationRangeName, AnimationRangeShape, AnimationRangeSide,
 };
 pub use attr::{
     attr_calls_valid, attr_target_fetches_url, eval_attr_call, has_attr_call, has_attr_word, substitute_attr_values,

@@ -200,6 +200,10 @@ impl PropertyRegistry {
             // 空 ⇒ computed 臂回落 "replace" 缺省，与兄弟列表属性同约定）
             // https://drafts.csswg.org/css-animations-2/#animation-composition
             "animation-composition" => Some(AnimationCompositionList(vec![])),
+            // css-scroll-animations-1 §animation-range-start/end：初始值
+            // normal（列表空 ⇒ computed 臂回落 "normal"，同上约定）
+            // https://drafts.csswg.org/css-scroll-animations-1/#view-timelines-ranges
+            "animation-range-start" | "animation-range-end" => Some(StringList(vec![])),
 
             // Grid
             "grid-template-columns" | "grid-template-rows" => Some(OptionalString(None)),
@@ -757,6 +761,8 @@ impl PropertyRegistry {
             "animation-fill-mode",
             "animation-play-state",
             "animation-composition",
+            "animation-range-start",
+            "animation-range-end",
             "grid-column-start",
             "grid-column-end",
             "grid-row-start",

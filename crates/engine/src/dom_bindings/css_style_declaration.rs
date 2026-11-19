@@ -384,6 +384,11 @@ pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String 
     if prop.eq_ignore_ascii_case("mask") {
         return mask_shorthand_expand_json(value);
     }
+    // 刀 AR：animation-range 简写共用本站（shim 写面 miss 兜底链任意名直达，
+    // 本站内分派——transition/mask 臂同型）。
+    if prop.eq_ignore_ascii_case("animation-range") {
+        return animation_range_shorthand_expand_json(value);
+    }
     if let Some(longhands) = gap_rule_shorthand_longhands(prop) {
         if value.is_empty() {
             // remove 语义：名单 longhand 逐名清（值空）。
@@ -441,11 +446,97 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
     if prop.eq_ignore_ascii_case("mask") {
         return mask_family_value(&style_attr_decls(raw), "mask").unwrap_or_default();
     }
+    // 刀 AR：animation-range 读重组共用本站（shim readProp 通用 miss 兜底
+    // 任意名直达——gap/transition/mask 臂同源）。raw 简写存储形（attr 车道
+    // 原文）与展开存储形（CSSOM 写面展开落库）双兼容。
+    if prop.eq_ignore_ascii_case("animation-range") {
+        return animation_range_shorthand_reconstruct(raw);
+    }
     if gap_rule_shorthand_longhands(prop).is_none() {
         return String::new();
     }
     let decls: Vec<StyleDecl> = style_attr_decls(raw);
     gap_rule_reconstruct(&decls, prop).unwrap_or_default()
+}
+
+/// 刀 AR：animation-range 简写展开（css-scroll-animations-1 §animation-range
+/// shim inline 通道）——[`zero_css_parser::values::parse_animation_range_shorthand`]
+/// 单源解析 → start/end 两 longhand canonical 逗号段 JSON（段内侧别省略已在
+/// 解析层施）。css-wide 关键字逐 longhand 透传（Cascading-4 §7.3）；非法值 →
+/// 空串（shim 判空回落通用写路径整拒）；空值 → 两 longhand 一并清（R3211
+/// 简写空值同约）。
+/// https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+fn animation_range_shorthand_expand_json(value: &str) -> String {
+    let value = value.trim();
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return serde_json::to_string(&[
+            ("animation-range-start".to_string(), value.to_string()),
+            ("animation-range-end".to_string(), value.to_string()),
+        ])
+        .unwrap_or_default();
+    }
+    if value.is_empty() {
+        return serde_json::to_string(&[
+            ("animation-range-start".to_string(), String::new()),
+            ("animation-range-end".to_string(), String::new()),
+        ])
+        .unwrap_or_default();
+    }
+    let Some((starts, ends)) = zero_css_parser::values::parse_animation_range_shorthand(value)
+    else {
+        return String::new();
+    };
+    serde_json::to_string(&[
+        ("animation-range-start".to_string(), starts.join(", ")),
+        ("animation-range-end".to_string(), ends.join(", ")),
+    ])
+    .unwrap_or_default()
+}
+
+/// 刀 AR：animation-range 简写读重组（[`animation_range_shorthand_expand_json`]
+/// 对偶面）：从 style 声明串收集 start/end longhand 逐段 canonical
+///（[`zero_css_parser::values::serialize_animation_range_shorthand`] zip 重组
+/// ——同形塌缩/offset-only start 的 end 缺省省略 Chrome 实证规则）；raw
+/// 简写形（attr 车道原文未经展开）兼容直解析。均缺 → 空串（shim 空值语义）。
+fn animation_range_shorthand_reconstruct(raw: &str) -> String {
+    let mut starts: Vec<String> = Vec::new();
+    let mut ends: Vec<String> = Vec::new();
+    let mut raw_shorthand: Option<String> = None;
+    for d in style_attr_decls(raw) {
+        match d.prop.as_str() {
+            "animation-range-start" => {
+                // 括号感知顶层逗号切分（calc()/min() 内逗号不破段）。
+                starts = zero_css_parser::values::split_top_level_commas(&d.value)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            "animation-range-end" => {
+                ends = zero_css_parser::values::split_top_level_commas(&d.value)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            "animation-range" => raw_shorthand = Some(d.value),
+            _ => {}
+        }
+    }
+    if starts.is_empty() && ends.is_empty() {
+        if let Some(v) = raw_shorthand {
+            if let Some((s, e)) = zero_css_parser::values::parse_animation_range_shorthand(&v) {
+                return zero_css_parser::values::serialize_animation_range_shorthand(&s, &e);
+            }
+        }
+        return String::new();
+    }
+    zero_css_parser::values::serialize_animation_range_shorthand(&starts, &ends)
 }
 
 /// 刀 N 三期：font 简写 inline specified 读重组（css-fonts-4 §font-prop
