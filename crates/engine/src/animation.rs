@@ -28,6 +28,7 @@ use zero_css_parser::values::{
     AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue, BorderImageOutsetComponent,
     BorderImageSliceComponent, BorderImageWidthComponent, LengthValue, StepPosition, TimingFunctionValue,
     TransformFunction, parse_border_image_outset, parse_border_image_slice, parse_border_image_width,
+    parse_font_feature_settings, parse_font_variation_settings,
 };
 use zero_style_system::{
     ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue, ShapeOutsideBoxKind,
@@ -4298,6 +4299,24 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "font-size-adjust" => {
             if let Some(v) = zero_style_system::property::parse::parse_font_size_adjust(value) {
                 style.font_size_adjust = v;
+            }
+        }
+        // 刀 fontcycle ffix（2026-11-19）：font-feature-settings 动画应用臂
+        // 缺失——apply_single_property 无臂时 js_anim_registry canonicalize 施加
+        // 后序列化恒等返 None 回落基 echo（css-animations/Web Animations 离散
+        // 翻转 ≥0.5 恒基值；基 echo 臂入库前恒空串，两侧空串比较掩蔽此缺口，
+        // echo 臂入库后 discrete-no-interpolation 8F P2F 暴露）。严格解析（失败
+        // 不动样式 → canonicalize None 回落，零回归方向）；串化经 gCS 回显臂
+        // 与期望元素同通道。font-variation-settings 同族补齐（transition_registry
+        // DISCRETE_TRANSITIONABLE 已在清单，应用端对齐）。
+        "font-feature-settings" => {
+            if let Some(v) = parse_font_feature_settings(value) {
+                style.font_feature_settings = v;
+            }
+        }
+        "font-variation-settings" => {
+            if let Some(v) = parse_font_variation_settings(value) {
+                style.font_variation_settings = v;
             }
         }
         "letter-spacing" => {

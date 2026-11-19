@@ -377,10 +377,15 @@ const TRANSITIONABLE_PROPERTIES: [&str; 85] = [
 /// mask-image 此前 A/B 定谳不入 [`TRANSITIONABLE_PROPERTIES`]（plain 面端点跨块
 /// 陈旧），allow-discrete 面按本表显式接入——plain 面清单不变。
 /// <https://drafts.fxtf.org/css-masking-1/#the-mask-image>
-const DISCRETE_TRANSITIONABLE: [&str; 10] = [
+const DISCRETE_TRANSITIONABLE: [&str; 11] = [
     "mask",
     "mask-image",
     "font-size-adjust",
+    // 刀 fontcycle ffix（2026-11-19）：css-fonts-4 #font-feature-settings-prop
+    // discrete-only 可过渡（css-transitions-2 §transition-behavior-property）——
+    // gCS echo 臂入库前端点恒空串逐项门自然滤除（本表在列亦不启动），入库后
+    // discrete-no-interpolation allow-discrete 6F P2F 暴露，与本补清单同批收口。
+    "font-feature-settings",
     "font-variation-settings",
     "column-fill",
     "column-rule-style",
