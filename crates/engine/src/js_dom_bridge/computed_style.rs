@@ -332,7 +332,14 @@ pub(super) fn compute_document_styles_with_inline_overrides_css(
     HashMap<NodeId, ComputedStyle>,
     Vec<zero_css_parser::Stylesheet>,
 ) {
+    // t-g2b impl-010：换代臂分段诊断——ZW_INNERTEXT_STAGE_MS 门控（OnceLock 边界
+    // 快照，learning #9 稳定开关禁热路径逐次 getenv），行为零变化；g30 live 分段
+    // 归因后按需保留为诊断设施或摘除。
+    static STAGE_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let diag = STAGE_DIAG.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+    let t_all = std::time::Instant::now();
     let mut doc = parse_html(html);
+    let t_parse = t_all.elapsed();
     // s165：树/文本级变异并入权威 applier 全量重放（旧 attr/style 四类子集对动态
     // 插入/移除失明——meta color-scheme 语料 insert/remove 钉死）。队列契约：快照
     // html 未含 pending 队列效果（drain 时重序列化换代、队列清空重长），故全队列
@@ -340,8 +347,23 @@ pub(super) fn compute_document_styles_with_inline_overrides_css(
     // Err = 批内失配（已 apply 前缀保留），视图近似不掩盖真 bug。
     let mut nodes: HashMap<String, NodeId> = HashMap::new();
     let _ = super::apply_dom_mutations_full(&mut doc, mutations, None, Some(&mut nodes), None, None);
+    let t_apply = t_all.elapsed() - t_parse;
+    let t0 = std::time::Instant::now();
     let (mut styles, sheets) = compute_styles_for_doc(&doc, css);
+    let t_cascade = t0.elapsed();
     apply_intrinsic_size_overrides(&doc, &mut styles);
+    if *diag {
+        eprintln!(
+            "[innertext-stage] full parse_ms={} apply_ms={} cascade_ms={} total_ms={} nodes={} muts={} css_bytes={}",
+            t_parse.as_millis(),
+            t_apply.as_millis(),
+            t_cascade.as_millis(),
+            t_all.elapsed().as_millis(),
+            doc.node_count(),
+            mutations.len(),
+            css.len()
+        );
+    }
     (doc, styles, sheets)
 }
 

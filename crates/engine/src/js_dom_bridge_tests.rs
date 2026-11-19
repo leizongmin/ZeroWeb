@@ -285,3 +285,7 @@ include!("js_dom_bridge_tests/part115_bulk_profile_scratch.rs");
 // t-g2b impl-008 属性/ns 探测快照层钉面：map 回调 wire 形状 + shim wrap 生效
 // （overlay 同批一致/removeAttribute absent/四象限/视图戳失效/get_ns 快照）。
 include!("js_dom_bridge_tests/part116_attr_snapshot.rs");
+
+// t-g2b impl-010 换代臂分段画像 scratch（定去留，P142_SNAPSHOT env 门控）：真页
+// 快照 parse/compute/bulk 三段 + 换代臂与轻臂模拟（生产 heavy 臂同链）。
+include!("js_dom_bridge_tests/part142_g2b_gh_stage_scratch.rs");

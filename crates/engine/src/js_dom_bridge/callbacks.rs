@@ -2653,7 +2653,23 @@ pub fn register_dom_callbacks(
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             let style_version = m.lock().unwrap_or_else(|e| e.into_inner()).len();
             let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
-            super::computed_style_cache::with_cached_document_styles_lazy(
+            // t-g2b impl-010：回调级 hit/miss+total 诊断（ZW_INNERTEXT_STAGE_MS 门控，
+            // OnceLock 边界快照——learning #9 稳定开关禁热路径逐次 getenv）。hit=
+            // generation_cache_matches 预检（同代际命中=轻臂）；total 含 lazy 预检
+            // clone 分支与换代臂全链，g30 live 分段归因用。
+            static CB_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let diag = CB_DIAG.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+            let hit = if *diag {
+                Some(super::computed_style_cache::generation_cache_matches(
+                    &snap,
+                    doc_drain_gen,
+                    style_version,
+                ))
+            } else {
+                None
+            };
+            let t_diag = std::time::Instant::now();
+            let out = super::computed_style_cache::with_cached_document_styles_lazy(
                 &snap,
                 doc_drain_gen,
                 style_version,
@@ -2666,7 +2682,16 @@ pub fn register_dom_callbacks(
                     let ctx = uniq_sel_ctx(&html, &m, doc, false);
                     super::computed_style::innertext_bulk_styles_doc(doc, styles, root_sel, ctx)
                 },
-            )
+            );
+            if *diag {
+                eprintln!(
+                    "[innertext-stage] cb hit={} total_ms={} wire_len={}",
+                    hit.unwrap_or(false),
+                    t_diag.elapsed().as_millis(),
+                    out.len()
+                );
+            }
+            out
         }),
     );
 
