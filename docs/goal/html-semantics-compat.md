@@ -98,6 +98,22 @@ customizable-select-styles.css ×47
 随批落。账本=evidence/2026-11-19-
 m2s572-nonempty-window-runner-regen-
 band-dual-wholefile-bridge-b570.md
+> **◆ 补账（2026-11-19 s572 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×6
+> 全列核实（a38a020f6→766a6f8d4）：
+> code ×1＝925a921c4 fix(engine)
+> getAnimations 浮出面＋transition 管
+> 辖归并/取消收窄＋float/position 离散
+> 接入（js_dom/transition_registry.rs
+> ＋js_dom_shim part04/05 运行面）——
+> 零桥测钉＝全桥对账不触发（b570 基
+> 线持位），engine 码面在链接链＝s573
+> runner 必换代预判，shim 行为面位移
+> 归 s573 join 对账捕获；docs ×5＝
+> wptfyi-css TB 补记＋rendering
+> R5822/R5823＋editing-compat R24/归
+> 档。本流 s572 收口 commit rebase 后
+> ＝393054cf7。
 > **◆ 更正十四（2026-11-19 s567 push 阶段
 > 开工）——pull --rebase 捕获批 ×38 全列
 > 核实（f566ee431→900a445e4，对端多流混
