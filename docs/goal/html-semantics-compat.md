@@ -92,6 +92,24 @@ rendering 流记账）。门开随批落预案不变：
 簇 D 开 → customizable-select-styles.css
 ×47 随批落。账本=
 evidence/2026-11-20-m2s582-zero-displacement-split-hold2-a528acd8-convergence5-mpreload-hold7.md
+> **◆ 补账（2026-11-20 s583 开工捕获）
+> ——开工 pull --rebase 捕获批 ×2
+> 全列核实（5093035fc→9008424b7，
+> waiter 在循未开窗＝s583 legs 将以
+> 新 HEAD 钉扎）：code ×1＝
+> **ea98cb8ae 刀 WA WAAPI interface
+> 簇 face**（engine js_dom_shim 四
+> 片 +571/−1＝part03 槽位注册表
+> +541/part04+06 getAnimations 浮出
+> /part05 AnimationEvent 接口行＝
+> **s583 runner 预判改判 Fresh→必
+> 换代**（engine 下游闭包重编，
+> Compiling 档数预期少于 s581 三码
+> 刀 ×9）；**js_dom_bridge 零触碰＝
+> 无新钉**＝全桥预期 b582 零噪声维
+> 持）＋docs ×1＝9008424b7 对端 WA
+> 收账（killed-0447 完整账 +73 与哨
+> 兵全零，face 落库 e7a1334b3）。
 > **◆ 补账（2026-11-20 s582 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×2
 > 全列核实（2483ee96e→d4179058a，
