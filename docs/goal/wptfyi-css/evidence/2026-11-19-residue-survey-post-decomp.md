@@ -43,3 +43,27 @@ a3 流已声明、FI 三属性臂=在飞 WIP）。本文件只列**未认领**�
 
 下批发射前按本表认领认领面 → 探针定谳 → 分解电池复用（battery 脚本
 face 清单替换）。批后 master.md 批账段的靶向注记由 docs 笔引用本文件。
+
+## 批二刷新（17:1x，arith2 b1 JSON 口径——face B/faceC/ARITH 三刀落库后）
+
+- **candidates #1 分解兑现**：animation-range 族已被 face A（+34）/face B
+  （+97）收清；typed-om 数值面被 faceC part 1（+209）+ ARITH（+84）收清。
+- **typed-om 残面改判**（stylepropertymap 页 b1 口径）：U 形 75F
+  「Invalid unit for property」＝已知属性 `<number>/<integer>` set 门残缺
+  （~25 页 ×3F）——**G2-a 修复在飞**（part10 工作树 8+/3−，17:0x 窗），
+  本流避让。G 形 175F「Unsupported property」＝白名单门缺属性域
+  （gap 28 / font-synthesis 24 / overflow 20 / marker 20 / vertical-align
+  16 / overscroll-behavior 16 / grid-area 7 / offset/grid-template/grid-gap/
+  font/font-variant/text-decoration/grid/font-family/flex-flow 3-6 各），
+  未认领；扩面配方同刀 P/R/R2（白名单+逐族文法臂+序列化往返）。
+- **新认领候选：registered-property computation 簇 ~84F**
+  （css-properties-values-api，style-system/engine registered_properties 域，
+  与 part10 零交叠）：registered-property-computation 32F（`<length>`
+  computed 空值根因待查——vw/vmin/calc/lh 全形）+
+  registered-property-initial 19F（calc 折叠 1in→96px、transform-list
+  canonical、url 相对→绝对、color 初始替换）+
+  registered-properties-inheritance 8F（invalid→inherit/initial 语义）+
+  unit-cycles 23F + var-reference-unit-cycles 2F（font-relative
+  em/ex/ch 引用 font-size 的 cycle 检测与 fallback）。
+- **避免**：font-property-unit-cycles.tentative 79F＝calc trig 数学面
+  （`tan(atan2(1em,1px))` 形），css-parser 位语 calc 热修流邻接。
