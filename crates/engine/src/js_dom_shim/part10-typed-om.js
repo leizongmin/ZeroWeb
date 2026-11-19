@@ -2605,10 +2605,16 @@ return Ctor;
   // 刀 P：computed 值 Typed OM L1 不支持面（css-backgrounds-3 §border-*-radius：
   // computed 为双值对，testsuite assert_is_unsupported 期望基类 opaque——
   // declared 面仍逐语法解析 equal；仅物理四角，logical.html 逻辑角 computed
-  // 走默认 equal 期望，不在此列）。
+  // 走默认 equal 期望，不在此列）。刀 G2-b：border-image-outset/slice/width/
+  // repeat computed 形（outset/width 数值缩放多值、slice '1 2 fill' 关键字
+  // 混排、repeat 关键字——css-backgrounds-3/border-image computed 语义
+  // Typed OM 无分型，页面 computed 臂 assert_is_unsupported 期望基类 opaque；
+  // 同页 declared 面仍 typed 解析 equal，未在本列）。
   var _zwOmComputedUnsupportedProps = {
     'border-top-left-radius': 1, 'border-top-right-radius': 1,
-    'border-bottom-left-radius': 1, 'border-bottom-right-radius': 1
+    'border-bottom-left-radius': 1, 'border-bottom-right-radius': 1,
+    'border-image-outset': 1, 'border-image-repeat': 1,
+    'border-image-slice': 1, 'border-image-width': 1
   };
   function _zwOmComputedProp(el, prop) {
     // 复用 part01 getComputedStyle 代理回调链（注册元素 sel/handle 路由由
