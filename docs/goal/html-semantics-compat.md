@@ -1,133 +1,148 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-11-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 579 收口（**出带
-回摆轮（族带第 12 轮第 3 连未达
-成：band 5 键全跌出 stable＝GONE
-5，leg1 双整文件 T 形 vs leg2 第
-4 形×发射形双腿分裂不收敛）+
-第 4 形 sweep 常规腿再现轮（leg2
-detailed 整文件 Fail＝page 级 90s
-Execution timeout；solo 窄语境 2/
-2 未再现）+ runner 必换代 ×8 连
-兑现轮（pre 8c621236→mid=post
-f37f570e；engine 单 crate ×6 档
-精确兑现；跨 clone 同值收敛 ≡
-rendering 流 R5833/R5834 申报值
-）+ 等窗接管轮（前轮 21:41 臂
-waiter，压窗等待 64 分钟
-22:45:05 开窗自放）+ solo 谱形第
-5 形未现轮（2/2 发射形 IDENT 复
-现，FILTER= 定规首执行）+ 七哨
-持位轮（mpreload 第 4 连）**）—
-—join **stable 8509（8305P/198F
-/5T/1U）disagree 1 + l1only 1 +
-l2only 4**；vs s578 stable（8514
+**日期**: 2026-11-20（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 580 收口（**完全
+回带轮（族带第 13 轮＝出带后首轮回带
+兑现：NEW 5 全落 band 5 键＝band 回持
+，双腿 raw 8516/8516 IDENT，s580
+stable 8514 ≡ s578 stable 逐键 diff 0
+＝谱内摆动结案维持＋码面相关性无新
+信号）+ 全桥对账首兑现轮（窗带
+js_dom_bridge 新钉 ×3＝s572 布防以来
+首触发：keys 1729（b570 1728）NEW
++2＝animation_range computed 双钉测
+，FAIL ×1＝computed_font_variation_
+settings_serializes_and_inherits＝
+对端 wptfyi-css 已知在飞适配面非新
+回归）+ runner 必换代 ×9 连兑现轮（
+pre f37f570e→mid=post 0b5c2914；
+engine+css-parser+style-system 三
+crate ×9 档精确兑现）+ waiter
+TIMEOUT 重臂接管轮（前轮 23:17 臂，
+01:47 超时未开窗＝对端构建风暴压窗
+；本 session 02:16 接管 02:17 重臂，
+02:20:12 clean-soaked 自放）+ solo
+谱形第 5 形未现轮（2/2 发射形 IDENT
+复现第 2 连，FILTER= 定规）+ 七哨
+持位轮（mpreload 第 5 连兑现）**）—
+—join **stable 8514（8305P/202F
+/6T/1U）disagree 0 + l1only 0 +
+l2only 0**；vs s578 stable（8514
 ，8305P/202F/6T/1U）**NEW 0 +
-GONE 5 + flips 0**＝位移全落
-band 5 键、非带键逐键零位移。
-**窗底账**：s579 窗＝bee607db9→
-0c14ef2e2（6 commits：code ×1＝
-2daef5ede fix(engine) 刀 G2-a set
-门 number-unit famName 族表直取
-（js_dom_shim/part10-typed-om.js
-，对端 wptfyi-css 流，css-typed-om
-净 +25）＝shim 行为面非桥测钉
-（零 js_dom_bridge 路径）→ 全桥
-对账不触发，b570（1728P/0F）基
-线持位；docs ×5＝本流 s578 收口
-＋rendering R5832/R5833/R5834＋
-wpt.fyi weekly snapshot）。
-**runner 必换代 ×8 连兑现**：pre
-8c621236（128538096）→mid=post
-**f37f570e（128538248）**；leg1
-Compiling ×6（product-version/
-net/engine/page-runtime/webview/
-wpt-runner）＝engine 单 crate 档
-精确兑现；leg2 Fresh ×0；爆栈
-0/0；rc=2/2 惯例。**族带第 12 轮
-＝出带回摆（持位止于第 2 连）
-**：leg1 band＝双整文件 T 形（
-detailed Timeout 持位＋optional
-整文件 Timeout s554 harness-no-
-report 形，4 子测未发射）；leg2
-band＝第 4 形×发射形并存（
-detailed 整文件 Fail page script
-threw Execution timeout:90000ms
-＋optional 4 子测 Fail 发射）—
-—band 5 键双腿全出 stable＝**回
-摆＝谱内摆动结案候选触发兑现**
-，d59 码面假设出局（子系统错配
-＋跨两代 runner 恒后第 3 代回摆
-）；**深化归因实验未执行＝双重
-依据结案**（第 3 连未触发＋
-pre-d59 工件核实无存档：/tmp 全
-存档扫描 0 匹配 29e1d30d/
-8ffe9a69，旧产物路径不可达）。
-**第 4 形追踪兑现**：detailed 整
-文件 Fail（page 级 90s Execution
-timeout）leg2 常规腿再现（s578
-leg3 计划外首现）＝sweep 语境在
-册形；solo 窄语境 2/2 未再现。
-**optional solo 2/2 发射形 IDENT
-**（4 子测 Fail ≡ sweep 键，rc=2
-×2，FILTER= select-home-end-
-pagedown-pageup.optional 变量传
-递定规首执行兑现）＝谱形轮转第
-5 形未现（发射形复现轮）。七哨
-复核：dialog 第 13 轮双 P；
-password 第 18 轮持位（
-select-event 279 键 8F 恒形 F 集
-≡ se.577 双腿 IDENT＋password
-225 键 0F）；onblur 组第 11 轮
-8P/2F（F 集 ≡ ob.s559 双腿
-IDENT）；**mpreload 第 41 轮 15/
-15 双 P＝持位第 4 连兑现**；
-waapi 第 100 轮 picker P/
-checkmark F 恒形；focus-dynamic
-第 59 轮 121/121 零再现；双发伪
-影 2 键双腿各 ×2 恒。**挂用户门
-维持**：GB-20261114-VIDEO +
-GB-20261031（簇 D）+ s137＋对端
-ZRG-2026-11-18-01（不重复通知
-）。下一步：**守成巡查 s580**（
-**对账基线换 s579 stable 8509（
-出带后首基线，带键不在基线内）
-＋全桥基线 b570 1728P/0F 持位
-**：开工 pull 捕获全列核实（窗＝
-0c14ef2e2→s580 legs HEAD，本笔
-push 捕获归 s580 开工续核），
-runner 预判 docs 面 Fresh 预期＋
-mtime churn 单列备注，窗带
-js_dom_bridge 新钉则全桥 NEW/
-GONE 对账（键基线 b570.keys 在
-/tmp/s572）；dialog 第 14 轮；
-password 第 19 轮；**mpreload 第
-42 轮＝持位第 5 连观察**；waapi
-第 101 轮；focus-dynamic 第 60
-轮；onblur 组第 12 轮；**族带第
-13 轮＝出带后首轮回带观察**（
-五谱形跟踪：s577 并存形回带／发
-射／s554 整文件 T／第 4 形／出
-带持位；双腿恒回带＝并存形回持
-信号，谱内摆动结案维持）；solo
-×2 记形续（FILTER= 变量传递定
-规）；第 4 形语境追踪续（solo 窄
-vs sweep 双腿）；双发伪影恒；
-爆栈 0/0 惯例；起腿三件套照规
-（基线换装净版直写；peer 构建
-风暴时按 s577 预案重臂 waiter，
-kill 旧实例防 double-fire））+
-候门决项等待用户拍板（video
-P1+P2 立项 / 簇 D A2 立项 / s137
-；对端 ZRG-2026-11-18-01 归用户
-）；rendering 流 dialog 16 红块协
-同面（归 rendering 流记账）。门开
-随批落预案不变：簇 D 开 →
+GONE 0 + flips 0＋键集 diff 0**＝
+完全回摆。
+**窗底账**：s580 窗＝0c14ef2e2→
+c66508ec8（26 commits：code ×8＝
+engine ×6（d7904355b 刀 CO typed-om
+色对象／3b3297310 刀 G 文法+opaque
+兜底／bbc048e95 刀 G2-b
+border-image／7d119d8ef font
+settings 串化规范形／4e35a2d9c
+font settings 动画应用臂／5aca335ba
+d61 刀 F T1 dead-anchor，对端
+wptfyi-css/editing 流）＋css-parser
+×1＝2fd814691 shapes-canonical＋
+style-system ×1＝8b70cb9fe
+fontcycle；docs ×18＝本流 s579 收
+口 ×1＋wptfyi-css ×11＋rendering ×
+4＋editing ×1＋GB 巡检 ×1）。开工
+pull 捕获批 ×12 全列核实（
+904eafa61→c66508ec8：code ×3＋
+docs ×9），前段 ×14＝前 session
+push 批本笔续核。
+**js_dom_bridge 新钉 ×3＝全桥对账
+首触发**：7d119d8ef computed_style.rs
++63／4e35a2d9c transition_registry.rs
++7／8b70cb9fe computed_style.rs +12。
+全桥 lib 测试 keys 1729（b570 1728）
+：**NEW +2**＝animation_range_
+computed_tests start/end_side_
+computed（4e35a2d9c 新钉测双双 P）
+；**FAIL ×1＝GONE −1**＝
+computed_font_variation_settings_
+serializes_and_inherits（part17.rs
+:109 期望旧序 `"wght" 600.7, "slnt"
+-12` vs 实际规范形 `"slnt" -12,
+"wght" 600.7`＝7d119d8ef tag 字节
+序升序兑现而期望未随改）＝**对端
+wptfyi-css 已知在飞面非新回归**
+（knife-echo-settings-canonical 在
+案：part17 钉测适配 39+/2− 在树待
+守卫后 pathspec 提交），main 桥测
+红归其适配收口；sob=0。
+**runner 必换代 ×9 连兑现**：pre
+f37f570e（128538248）→mid=post
+**0b5c2914（128480488，−57760）**
+；leg1 Compiling ×9（
+product-version/css-parser/net/
+style-system/layout-engine/engine/
+page-runtime/webview/wpt-runner）＝
+三 crate 码面闭包精确兑现；leg2
+Fresh ×0；爆栈 0/0；rc=2/2 惯例；
+0b5c2914 待对端 kb79 53代 判代批
+申报核对（跨 clone 收敛候选）。
+**族带第 13 轮＝出带后首轮回带**：
+band 5 键双腿全回 stable＝**并存形
+回持**（detailed 整文件 Timeout＋
+optional 4 子测 Fail＝s577/s578 持
+位形双腿 IDENT），发射相位延续（
+含 PageDown）；**s580 stable ≡
+s578 stable diff 0**＝完全回摆（
+s578 带→s579 出带→s580 回带＝谱
+内相位摆动结案维持）；第 4 形本轮
+sweep 双腿零再现。**optional solo
+2/2 发射形 IDENT**（4 子测 Fail ≡
+sweep 键，rc=2 ×2，44s+43s）＝发射
+形复现第 2 连，谱形轮转第 5 形未现
+。七哨复核：dialog 第 14 轮双 P；
+password 第 19 轮持位（select-event
+279 键 8F 恒形 F 集 ≡ se.577 双腿
+IDENT＋password 225 键 0F）；onblur
+组第 12 轮 8P/2F（F 集 ≡ ob.s559
+双腿 IDENT）；**mpreload 第 42 轮
+15/15 双 P＝持位第 5 连兑现**；
+waapi 第 101 轮 picker P/checkmark
+F 恒形；focus-dynamic 第 60 轮
+121/121 零再现；双发伪影 2 键双腿
+各 ×2 恒（dup-key 法证；analyze2
+wrapping 探针文案陈旧＝s581 脚本
+修正）。**挂用户门维持**：GB-20261114-
+VIDEO + GB-20261031（簇 D）+ s137＋
+对端 ZRG-2026-11-18-01（不重复通知
+）。下一步：**守成巡查 s581**（
+**对账基线换 s580 stable 8514（回带
+基线，band 5 键在基线内＝并存形持
+位观察）＋全桥 b570 1728P 持位注记
+（对端 part17 适配落窗则桥测回绿
+预判）**：开工 pull 捕获全列核实（窗＝
+c66508ec8→s581 legs HEAD，本笔
+push 捕获归 s581 开工续核），runner
+预判 docs 面 Fresh＋mtime churn 单
+列，窗带 js_dom_bridge 新钉则全桥
+NEW/GONE 对账（键基线 b570.keys 在
+/tmp/s572）；dialog 第 15 轮；
+password 第 20 轮；**mpreload 第
+43 轮＝持位第 6 连观察**；waapi 第
+102 轮；focus-dynamic 第 61 轮；
+onblur 组第 13 轮；**族带第 14 轮＝
+回带后持位观察**（五谱形跟踪：并存
+形持位／发射／s554 整文件 T／第 4
+形／出带；双腿恒＝并存形回持定谳
+）；solo ×2 记形续（FILTER= 定规）
+；第 4 形语境追踪续；双发伪影恒；
+爆栈 0/0 惯例；起腿三件套照规（
+waiter 超时按 s580 预案重臂，kill
+旧实例防 double-fire））+ 候门决项
+等待用户拍板维持（video P1+P2 立项
+/ 簇 D A2 立项 / s137；对端 ZRG-
+2026-11-18-01 归用户）；rendering
+流 dialog 16 红块协同面（归
+rendering 流记账）。门开随批落预案
+不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-19-m2s579-band-swing-out-4th-form-sweep-recur-mpreload-hold4.md
+evidence/2026-11-20-m2s580-full-swing-back-bridge-recon-first-mpreload-hold5.md
 > **◆ 补账（2026-11-19 s578 收口）
 > ——跨 session 限额断点接管轮（前
 > 轮 17:27 布置 s578＋17:29 判净起
