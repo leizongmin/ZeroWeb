@@ -2,121 +2,124 @@
 
 **版本**: v2.0
 **日期**: 2026-11-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 578 收口（**限额
-断点接管轮（前轮 17:46 API 限
-额断，本 session 21:16 接管续哨
-＋solo2＋收口）+ 完全零位移轮
-（vs s577 stable NEW 0/GONE 0/
-flips 0，双腿 raw 8516/8516
-IDENT）+ runner 必换代 ×7 连兑
-现轮（pre df57d278→mid=post
-8c621236；engine 单 crate ×6 档
-精确兑现，mtime churn 未触发）+
-族带第 11 轮并存形持位第 2 连兑
-现（跨代恒注记）+ solo 谱形轮转
-第 4 形兑现（整文件 T→发射形）+
-leg3 整文件 Fail 新第 4 形（page
-级 90s Execution timeout）+ 七哨
-持位轮**）——join **stable 8514
-（8305P/202F/6T/1U）disagree 0 +
-l1only 0 + l2only 0**；vs s577
-stable（8514）**NEW 0 + GONE 0 +
-flips 0**＝逐键完全零位移。**窗
-底账**：s578 窗＝3519e00ed→
-bee607db9（7 commits：code ×1＝
-b449da8f0 fix(engine) 刀 ARITH
-typed-om CSSNumericValue 算术
-API＋类型代数（js_dom_shim/
-part10-typed-om.js +197，对端
-wptfyi-css 流，numeric-objects 净
-+84）＝shim 行为面非桥测钉；docs
-×6＝rendering R5830/R5831＋
-wptfyi-css 五笔＋本流 s577 收口
-bee607db9）。**runner 必换代 ×7
-连兑现**：pre df57d278→mid=post
-**8c621236**；leg1 Compiling ×6
-（engine/net/page-runtime/
-product-version/webview/
-wpt-runner）＝engine 单 crate 非
-全链档精确命中；css-parser/
-style-system/layout-engine 零
-Compiling＝**mtime churn 未触发
-**（快进态 pull 无全树 checkout，
-s579 预判继续 code 面为主、
-mtime churn 单列备注）；leg2
-Fresh ×0。**零桥测钉**→**b570
-（1728P/0F）基线持位**。**族带
-第 11 轮＝并存形持位第 2 连**：
-双整文件键双腿恒延续（detailed
-整文件 Timeout×双腿＋optional 4
-子测 Fail×双腿，PageDown 双腿发
-射延续）；runner 换代（ARITH
-face）下 band 键形恒＝跨代持位
-注记，d59 码面归因弱化；**深化
-归因挂 s579 第 12 轮**（第 3 连→
-码面假设检验对照实验）。**optional
-solo 谱形轮转第 4 形兑现**：solo1
-整文件 Timeout（s554 形，
-harness-no-report state
-loaded:false/pending:4）→solo2
-narrow 发射形（4 子测 Fail ≡
-sweep 双腿键）——同 runner 同
-face 连跑两形＝solo 语境自身不稳
-定谳加强。**leg3 计划外全量第三
-跑**（solo2 首跑 FILTER 未透传记
-误，make 入口＋test-guard 包裹照
-规非裸跑）：8513 键 8307P/200F/
-5T/1U，band 双文件**整文件 Fail
-＝page 级 90s Execution timeout
-新第 4 形**（page script threw
-declared tests: 0，非 harness-
-no-report T 形），runner 同值重
-建恒等象（md5 不变）。**FILTER=
-变量传递定规**：make 裸 goal 参数
-不透传 FILTER，s579 起 filter 一
-律变量传递。七哨复核：dialog 第
-12 轮双 P；password 第 17 轮持位
-（select-event 279 键 8F 恒形＋
-password 225 键 0F）；onblur 组
-第 10 轮 8P/2F（F 集 ≡ s559
-IDENT 双腿）；**mpreload 第 40 轮
-15/15 双 P＝持位第 3 连**；waapi
-第 99 轮 picker P/checkmark F 恒
-形；focus-dynamic 第 58 轮 121/
-121 零再现；双发伪影 2 键双腿各
-×2 恒；rc=2/2 惯例 stack overflow
-0/0。**挂用户门维持**：GB-20261114-VIDEO +
+**状态**: Active——M2 切片 579 收口（**出带
+回摆轮（族带第 12 轮第 3 连未达
+成：band 5 键全跌出 stable＝GONE
+5，leg1 双整文件 T 形 vs leg2 第
+4 形×发射形双腿分裂不收敛）+
+第 4 形 sweep 常规腿再现轮（leg2
+detailed 整文件 Fail＝page 级 90s
+Execution timeout；solo 窄语境 2/
+2 未再现）+ runner 必换代 ×8 连
+兑现轮（pre 8c621236→mid=post
+f37f570e；engine 单 crate ×6 档
+精确兑现；跨 clone 同值收敛 ≡
+rendering 流 R5833/R5834 申报值
+）+ 等窗接管轮（前轮 21:41 臂
+waiter，压窗等待 64 分钟
+22:45:05 开窗自放）+ solo 谱形第
+5 形未现轮（2/2 发射形 IDENT 复
+现，FILTER= 定规首执行）+ 七哨
+持位轮（mpreload 第 4 连）**）—
+—join **stable 8509（8305P/198F
+/5T/1U）disagree 1 + l1only 1 +
+l2only 4**；vs s578 stable（8514
+，8305P/202F/6T/1U）**NEW 0 +
+GONE 5 + flips 0**＝位移全落
+band 5 键、非带键逐键零位移。
+**窗底账**：s579 窗＝bee607db9→
+0c14ef2e2（6 commits：code ×1＝
+2daef5ede fix(engine) 刀 G2-a set
+门 number-unit famName 族表直取
+（js_dom_shim/part10-typed-om.js
+，对端 wptfyi-css 流，css-typed-om
+净 +25）＝shim 行为面非桥测钉
+（零 js_dom_bridge 路径）→ 全桥
+对账不触发，b570（1728P/0F）基
+线持位；docs ×5＝本流 s578 收口
+＋rendering R5832/R5833/R5834＋
+wpt.fyi weekly snapshot）。
+**runner 必换代 ×8 连兑现**：pre
+8c621236（128538096）→mid=post
+**f37f570e（128538248）**；leg1
+Compiling ×6（product-version/
+net/engine/page-runtime/webview/
+wpt-runner）＝engine 单 crate 档
+精确兑现；leg2 Fresh ×0；爆栈
+0/0；rc=2/2 惯例。**族带第 12 轮
+＝出带回摆（持位止于第 2 连）
+**：leg1 band＝双整文件 T 形（
+detailed Timeout 持位＋optional
+整文件 Timeout s554 harness-no-
+report 形，4 子测未发射）；leg2
+band＝第 4 形×发射形并存（
+detailed 整文件 Fail page script
+threw Execution timeout:90000ms
+＋optional 4 子测 Fail 发射）—
+—band 5 键双腿全出 stable＝**回
+摆＝谱内摆动结案候选触发兑现**
+，d59 码面假设出局（子系统错配
+＋跨两代 runner 恒后第 3 代回摆
+）；**深化归因实验未执行＝双重
+依据结案**（第 3 连未触发＋
+pre-d59 工件核实无存档：/tmp 全
+存档扫描 0 匹配 29e1d30d/
+8ffe9a69，旧产物路径不可达）。
+**第 4 形追踪兑现**：detailed 整
+文件 Fail（page 级 90s Execution
+timeout）leg2 常规腿再现（s578
+leg3 计划外首现）＝sweep 语境在
+册形；solo 窄语境 2/2 未再现。
+**optional solo 2/2 发射形 IDENT
+**（4 子测 Fail ≡ sweep 键，rc=2
+×2，FILTER= select-home-end-
+pagedown-pageup.optional 变量传
+递定规首执行兑现）＝谱形轮转第
+5 形未现（发射形复现轮）。七哨
+复核：dialog 第 13 轮双 P；
+password 第 18 轮持位（
+select-event 279 键 8F 恒形 F 集
+≡ se.577 双腿 IDENT＋password
+225 键 0F）；onblur 组第 11 轮
+8P/2F（F 集 ≡ ob.s559 双腿
+IDENT）；**mpreload 第 41 轮 15/
+15 双 P＝持位第 4 连兑现**；
+waapi 第 100 轮 picker P/
+checkmark F 恒形；focus-dynamic
+第 59 轮 121/121 零再现；双发伪
+影 2 键双腿各 ×2 恒。**挂用户门
+维持**：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
-ZRG-2026-11-18-01（不重复通知）。
-下一步：**守成巡查 s579**（**对账基
-线换 s578 stable 8514＋全桥基线
-b570 1728P/0F 持位**：开工 pull
-捕获全列核实（窗＝bee607db9→
-s579 legs HEAD），runner 预判按
-code 面＋mtime churn 单列备注，
-窗带 js_dom_bridge 新钉则全桥
-NEW/GONE 对账（键基线 b570.keys
-在 /tmp/s572）；dialog 第 13 轮；
-password 第 18 轮；**mpreload 第
-41 轮＝持位第 4 连观察**；waapi
-第 100 轮；focus-dynamic 第 59 轮
-；onblur 组第 11 轮；**族带第 12
-轮＝并存形持位第 3 连判定＋深化
-归因启动**（双腿恒延续→码面假设
-检验对照实验：d59 pre-face
-runner 复跑 band 窄 filter 对照，
-复用旧产物不重编旧树；回摆＝谱
-内摆动结案候选；PageDown 发射持
-续观察）；**optional solo 复跑记
-形（窄 filter ×2，FILTER= 变量传
-递定规，谱形轮转第 5 形观察）**
-；**band 整文件 Fail（page 级 90s
-Execution timeout）形追踪**；双
-发伪影恒；爆栈 0/0 惯例；起腿三
-件套照规（基线换装净版直写；peer
-构建风暴时按 s577 预案重臂
-waiter，kill 旧实例防 double-fire
-））+ 候门决项等待用户拍板（video
+ZRG-2026-11-18-01（不重复通知
+）。下一步：**守成巡查 s580**（
+**对账基线换 s579 stable 8509（
+出带后首基线，带键不在基线内）
+＋全桥基线 b570 1728P/0F 持位
+**：开工 pull 捕获全列核实（窗＝
+0c14ef2e2→s580 legs HEAD，本笔
+push 捕获归 s580 开工续核），
+runner 预判 docs 面 Fresh 预期＋
+mtime churn 单列备注，窗带
+js_dom_bridge 新钉则全桥 NEW/
+GONE 对账（键基线 b570.keys 在
+/tmp/s572）；dialog 第 14 轮；
+password 第 19 轮；**mpreload 第
+42 轮＝持位第 5 连观察**；waapi
+第 101 轮；focus-dynamic 第 60
+轮；onblur 组第 12 轮；**族带第
+13 轮＝出带后首轮回带观察**（
+五谱形跟踪：s577 并存形回带／发
+射／s554 整文件 T／第 4 形／出
+带持位；双腿恒回带＝并存形回持
+信号，谱内摆动结案维持）；solo
+×2 记形续（FILTER= 变量传递定
+规）；第 4 形语境追踪续（solo 窄
+vs sweep 双腿）；双发伪影恒；
+爆栈 0/0 惯例；起腿三件套照规
+（基线换装净版直写；peer 构建
+风暴时按 s577 预案重臂 waiter，
+kill 旧实例防 double-fire））+
+候门决项等待用户拍板（video
 P1+P2 立项 / 簇 D A2 立项 / s137
 ；对端 ZRG-2026-11-18-01 归用户
 ）；rendering 流 dialog 16 红块协
@@ -124,7 +127,7 @@ P1+P2 立项 / 簇 D A2 立项 / s137
 随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-19-m2s578-zero-shift-band-second-hold-page-timeout-4th-form-solo-emission.md
+evidence/2026-11-19-m2s579-band-swing-out-4th-form-sweep-recur-mpreload-hold4.md
 > **◆ 补账（2026-11-19 s578 收口）
 > ——跨 session 限额断点接管轮（前
 > 轮 17:27 布置 s578＋17:29 判净起
