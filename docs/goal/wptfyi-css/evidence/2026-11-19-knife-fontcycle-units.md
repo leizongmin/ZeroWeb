@@ -88,9 +88,62 @@ marginBottom=1<unit> 读 gCS——margin 直解路径 1ch@30px → 30px（factor
 
 ## A/B 电池（results-knife-fontcycle）
 
-（发射后回填：双腿 × {pva, fonts, shapes, typed-om, transitions}，b0=
-face 剥除/b1=face，ride census S1/S2/S3，patch 按 hunk 行域拆分保
-face-C fork 在飞 WIP——git apply -R 剥除不用 git checkout。）
+21:21:50 发射（zw-fc-battery-2123），b0/b1 构建 1m21s/1m17s，legs
+21:24:30–21:49:37，GATE-DONE rc=0。b0 md5 `bc43363fd` / b1
+`ae57e492`（M2 双 bin 异 md5 ✓）。ride census 7 文件：S1/S2 零扰动；
+S3-MISMATCH 定谳＝唯一变动件 `docs/goal/wptfyi-css/master.md`（doc-only，
+不进编译输入）——账可收。patch 按 hunk 行域拆分保 face-C fork 在飞 WIP
+（apply.rs 残 +23）与 ATP-R2 RegCtx hunks（computed_style.rs 残 +63），
+git apply -R 剥除不用 git checkout。
+
+**RECONCILE：gained=30 lost=14 regressed=17 pages_gain=12 pages_loss=1。**
+剔除探针件（zzz-fontslot-probe，gitignored 仪表，不入账）后真账：
+
+- pva `font-property-unit-cycles.tentative.html` 20→30 **+10**（ch×6 +
+  cap/em/ex/ic×4，全数 "calc() with \<unit\> uses parent \<unit\>" 形＝
+  ch 兜底 1.0 + Calc ctx font 槽度量兑现；tan/atan2 三角腿残 49F）。
+- css-fonts 11 页 **+20**（font-style-parsing +6、font-variation-settings-calc
+  +3、parsing/feature+variation-settings-computed +3、font-parse-numeric
+  +2、serialization/inheritance/calc-in-variation/sign-function 各 +1）。
+- css-fonts `discrete-no-interpolation.html` **−14**（见 P2F 法证）。
+- shapes/typed-om/transitions 三哨兵零差异 ✓。
+- **净 +16**（+30 − 14）。
+
+## P2F 法证（14 行全数 discrete-no-interpolation.html font-feature-settings）
+
+**未遮蔽预存红（unmasked-vacuous），非本刀行为回归。** 机制链：
+
+1. 上游 harness `interpolation-testcommon.js:383-388` 的 expected 由
+   **本引擎自身 gCS 往返**派生（把原始串 set 到探针元素再读
+   getComputedStyle）；测试名 `should be ["smcp"]` 显示原始串。
+2. b0（无回显臂）：expected=`""`、actual=`""`——**空串对空串虚过**。
+3. b1（回显臂入库）：expected 变真值 `"smcp" 1`，actual 侧暴露两类
+   **预存**离散动画缺陷——CSS Animations/WAAPI 在 t≥0.5 仍产 from 值
+   `normal`（8 行）；transition-behavior:allow-discrete 在 t<0.5 产
+   to 值 `"smcp" 1`（6 行，同页 font-kerning/font-variant-\* 同形
+   预存真红旁证）。
+4. 本刀 plain 路径解析行为零变化（`*_with_font(None)` 纯委托）——
+   actual 侧机制未动，P→F 全由 expected 侧变真导致。
+
+**处置**：净 +16 入账（指标口径 −14 为诚实记账，这 14 行在 weekly 账面
+本属虚过）；兄弟 fork **ffix r2** 在飞（transition_registry
+DISCRETE_TRANSITIONABLE +font-feature-settings，收口 allow-discrete 6 行）；
+残 **Animations/WAAPI 8 行**＝动画 keyframe discrete 翻转机制域新刀候选
+（与 transitions 事件系统鲸面不同机制）。
+
+**ffix r2 并行验证结果（22:04 收，b0 vs r2b1＝face+ffix 组合态）**：
+css-fonts 单语料 **gained=146 lost=0 regressed=0**——本刀 14 行 P2F 全数
+回绿（registry 入列后离散翻转臂对 Animations/WAAPI 同样生效，8 行一并
+收口），另 font-variation-settings-interpolation +113、composition +11、
+zzz-fc-diag +2 归 ffix/animation-WIP 域（其流自账）。落库序：本刀
+`98d376f40` 先行，ffix 随后，fonts 侧合计 +30 零 P2F。
+
+## 仪表读数（zzz-fontslot-probe，不入账）
+
+b0→b1 三行值变化：oblique calc 两形 computed 由 `normal`→`oblique 10deg` /
+`oblique 29.99999999999993deg`（≈30＝容器 30px 基准正确，浮点噪声注记）；
+`"tnum" calc(…)` declared 已解析但 computed `""`→`normal`（apply 路径
+math 形仍落 Normal 兜底——settings math apply 臂残面）。
 
 ## 残面（让渡记）
 
