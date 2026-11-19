@@ -255,7 +255,7 @@ fn cancel_disqualified_entries(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 82] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 85] = [
     "backdrop-filter",
     "background",
     "background-color",
@@ -288,10 +288,18 @@ const TRANSITIONABLE_PROPERTIES: [&str; 82] = [
     "filter",
     "font-size",
     "font-size-adjust",
+    // 刀 FI：font 三通道（css-fonts-4 §font-width-prop 关键字↔% 数值 lerp、
+    // #font-style-animatable normal≡oblique 0deg/italic 离散、line-height as
+    // length px 域——strict 臂 animation.rs 刀 FI 同批；`normal` 端点对
+    // strict None 不登记，静态跳终值）。
+    "font-stretch",
+    "font-style",
     "font-weight",
     "height",
     "left",
     "letter-spacing",
+    // 刀 FI：line-height（css-transitions-1 §animatable-types as length）。
+    "line-height",
     "margin-bottom",
     "margin-left",
     "margin-right",

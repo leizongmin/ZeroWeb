@@ -661,6 +661,18 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         };
     }
     match property {
+        // 刀 FI 三属性宽松臂：委托严格臂（font-stretch 关键字↔%、font-style
+        // normal≡oblique 0deg/italic 离散、line-height px 域）；严格 None
+        // （`normal` 端点对、异族文法）回落离散翻转（css-values-4 §8.5.6
+        // ≥0.5 → to）——@keyframes 车道 `interpolate_between_with_timing`
+        // 走本臂，离散形在动画运行中中点切换。
+        "font-stretch" | "font-style" | "line-height" => {
+            match interpolate_property_value_strict(property, from, to, t) {
+                Some(v) => v,
+                None if t >= 0.5 => to.to_string(),
+                None => from.to_string(),
+            }
+        }
         "opacity" => {
             let from_f = parse_f64(from).unwrap_or(1.0);
             let to_f = parse_f64(to).unwrap_or(1.0);
@@ -1782,6 +1794,71 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
                     format_interp_num(lerp(fv, tv, t))
                 )
             })
+        }
+        // 刀 FI：font-stretch 数值插值（css-fonts-4 §font-width-prop——关键字↔% 单源
+        // [`zero_css_parser::values::parse_font_stretch`]，负 % 文法拒、0% 合法；
+        // 输出 % 整形与 gCS `format_num(font_stretch, "%")` 同形）。端点均非负时
+        // lerp 亦非负，无钳制；上界不钳（语料 `1.5`→250% 合法形）。
+        // https://drafts.csswg.org/css-fonts-4/#font-width-prop
+        "font-stretch" => {
+            let fa = zero_css_parser::values::parse_font_stretch(from)?;
+            let ta = zero_css_parser::values::parse_font_stretch(to)?;
+            Some(format!("{}%", format_interp_num(lerp(fa as f64, ta as f64, t))))
+        }
+        // 刀 FI：font-style 插值（css-fonts-4 #font-style-animatable——`normal` ≡
+        // `oblique 0deg`；italic 与 oblique/normal 异族离散；oblique `<angle>` 对
+        // 数值 lerp（负角合法）；t∈{0,1} 端点 verbatim——语料钉形 from [normal]
+        // at (0) = [normal]，0deg 数值形会串写 `oblique 0deg`；italic↔italic 同值
+        // 离散恒等）。输出经 apply 端 `parse_font_style` 角形直读。
+        // https://drafts.csswg.org/css-fonts-4/#font-style-animatable
+        "font-style" => {
+            if t == 0.0 {
+                Some(from.to_string())
+            } else if t == 1.0 {
+                Some(to.to_string())
+            } else {
+                let angle = |s: &str| -> Option<(bool, f64)> {
+                    let v = s.trim().to_ascii_lowercase();
+                    match v.as_str() {
+                        "normal" | "oblique" => Some((false, 0.0)),
+                        "italic" => Some((true, 0.0)),
+                        _ => v
+                            .strip_prefix("oblique")
+                            .and_then(|rest| rest.trim().strip_suffix("deg"))
+                            .and_then(|num| num.trim().parse::<f64>().ok())
+                            .map(|deg| (false, deg)),
+                    }
+                };
+                let (fi, ai) = angle(from)?;
+                let (ft, at) = angle(to)?;
+                if fi != ft {
+                    Some((if t >= 0.5 { to } else { from }).to_string())
+                } else if fi {
+                    Some(from.to_string())
+                } else {
+                    // 角值域门（css-fonts-4 #font-style-prop：oblique 角域
+                    // [-90deg, 90deg]，域外插值结果钳入——语料 -90↔90 对
+                    // at(-2)/(-1)/(1.5) 外推钉形）；插值恰 0deg 串化 `normal`
+                    //（`oblique 0deg` 规范等价 normal——语料 at(0.5) 期望
+                    // [normal] 钉形；t∈{0,1} 端点 verbatim 分支已先行）。
+                    // https://drafts.csswg.org/css-fonts-4/#font-style-prop
+                    let v = lerp(ai, at, t).clamp(-90.0, 90.0);
+                    if v == 0.0 {
+                        Some("normal".to_string())
+                    } else {
+                        Some(format!("oblique {}deg", format_interp_num(v)))
+                    }
+                }
+            }
+        }
+        // 刀 FI：line-height px 域插值（css-transitions-1 §animatable-types
+        // 「line-height: as length」；computed=gCS used-value px 形——R2761
+        // `line_height_str` number→used px 契约）；px↔px 数值 lerp，`normal`
+        // 端点对 parse 失败 None = 非 animatable 对不启动过渡。
+        "line-height" => {
+            let fa = parse_px_strict(from)?;
+            let ta = parse_px_strict(to)?;
+            Some(format!("{:.2}px", lerp(fa, ta, t)))
         }
         "text-indent" | "min-width" | "max-width" | "min-height" | "max-height" => {
             let fv = parse_px_strict(from)?;
@@ -3551,7 +3628,7 @@ fn block_to_points(block: &KeyframeBlock) -> Vec<KeyframePoint> {
     // 伪属性流入插值输出、apply 端 no-op）。畸形值（非 replace/add/accumulate）→ None
     // （回落动画级/replace）。
     let mut composition = None;
-    let properties: HashMap<String, String> = block
+    let mut properties: HashMap<String, String> = block
         .declarations
         .iter()
         .filter(|d| !d.important)
@@ -3568,6 +3645,24 @@ fn block_to_points(block: &KeyframeBlock) -> Vec<KeyframePoint> {
         })
         .map(|d| (d.property.clone(), d.value.clone()))
         .collect();
+
+    // 刀 FI：帧内 `font` 简写此前整条 no-op（[`AnimationClock::apply_to_computed_style`]
+    // 无 `font` 简写臂，[`apply_single_property`] 只有 size/weight/adjust 长手臂）→
+    // 长手全落 UA 默认（system-fonts 396F 根因）。ingest 侧经 style-system
+    // `expand_shorthands` 单源展开（`expand_font` 16 槽，css-fonts-4 §font-prop
+    // 「先复位全部子属性再覆盖」语义）。只扩 `font`：apply 端已有臂的简写
+    // （background/border-color/columns 等）在 ingest 展开会把「简写名进插值→简写臂」
+    // 改成逐 longhand 插值，css-animations 存量 P 面有 P2F 风险；`font` 无插值/简写
+    // 应用臂 = 零扰动展开（battery A/B 验证）。解析失败展开空 → 声明按原语义丢弃。
+    // https://drafts.csswg.org/css-fonts-4/#font-prop
+    let font_key = properties.keys().find(|k| k.eq_ignore_ascii_case("font")).cloned();
+    if let Some(font_key) = font_key
+        && let Some(font_value) = properties.remove(&font_key)
+    {
+        for (prop, val, _, _) in zero_style_system::expand_shorthands(&[(font_key, font_value, false, (0, 0, 0))]) {
+            properties.insert(prop, val);
+        }
+    }
 
     block
         .selectors
@@ -4305,6 +4400,29 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.row_rule_inset_junction_end = c;
             }
         }
+        // 刀 FI：keyframe `font` 简写展开长手写回臂（style-system apply 单声明
+        // 单源——family→`Vec<String>`、style→`FontStyleValue`（oblique 角形直读）、
+        // stretch→f32（关键字/% 同源 `parse_font_stretch`）、line-height→
+        // `LineHeightValue`，转换与静态声明面恒同）。展开集其余 reset 槽
+        // （ligatures/numeric/…）走不上动画覆盖面，无需臂。
+        "font-family" | "font-style" | "font-stretch" | "line-height" => {
+            zero_style_system::apply_property_value(style, name, value);
+        }
+        // variant-caps 无 style-system 单声明臂（apply.rs 零命中）——值域文法
+        // 直写（css-fonts-4 §font-variant-caps-prop，`<'font-variant-caps'>`
+        // 七关键字；无效值落 store 前门拒，动画覆盖面解析失败静默跳过）。
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-caps-prop
+        "font-variant-caps" => {
+            style.font_variant_caps = match value.trim().to_ascii_lowercase().as_str() {
+                "small-caps" => zero_style_system::FontVariantCapsValue::SmallCaps,
+                "all-small-caps" => zero_style_system::FontVariantCapsValue::AllSmallCaps,
+                "petite-caps" => zero_style_system::FontVariantCapsValue::PetiteCaps,
+                "all-petite-caps" => zero_style_system::FontVariantCapsValue::AllPetiteCaps,
+                "unicase" => zero_style_system::FontVariantCapsValue::Unicase,
+                "titling-caps" => zero_style_system::FontVariantCapsValue::TitlingCaps,
+                _ => zero_style_system::FontVariantCapsValue::Normal,
+            };
+        }
         _ => {
             // 其他属性暂不支持动画覆盖
         }
@@ -4339,6 +4457,185 @@ mod tests {
             interpolate_property_value("column-height", "100px", "200px", -1.0),
             "0.00px"
         );
+    }
+
+    // ── wptfyi-css 刀 FI font 车道钉测 ──────────────────────────────
+    // 三面：keyframe `font` 简写 ingest 展开（css-fonts-4 §font-prop）+
+    // stretch/style/line-height 插值臂 + apply 写回。期望形取 system-fonts
+    // 396F / font-stretch-interpolation 153F / font-style-interpolation 109F
+    // 语料钉（initialFont `italic 100 small-caps ultra-expanded 100px/100px
+    // Ahem` 长手全落默认根因）。
+
+    #[test]
+    /// keyframe `font` 简写 ingest 展开：block_to_points 落 16 槽（stretch 位
+    /// `ultra-expanded` 覆盖 reset、size/lh `100px/100px` 拆分、family 保真、
+    /// 简写名移除）。
+    fn test_knife_fi_keyframe_font_expansion() {
+        let block = KeyframeBlock {
+            selectors: vec![KeyframeSelector::Percentage(0.0)],
+            declarations: vec![Declaration {
+                property: "font".to_string(),
+                value: "italic 100 small-caps ultra-expanded 100px/100px Ahem".to_string(),
+                important: false,
+            }],
+        };
+        let points = block_to_points(&block);
+        assert_eq!(points.len(), 1);
+        let props = &points[0].properties;
+        assert_eq!(props.get("font-stretch").map(String::as_str), Some("ultra-expanded"));
+        assert_eq!(props.get("font-style").map(String::as_str), Some("italic"));
+        assert_eq!(props.get("font-weight").map(String::as_str), Some("100"));
+        assert_eq!(props.get("font-variant-caps").map(String::as_str), Some("small-caps"));
+        assert_eq!(props.get("font-size").map(String::as_str), Some("100px"));
+        assert_eq!(props.get("line-height").map(String::as_str), Some("100px"));
+        assert_eq!(props.get("font-family").map(String::as_str), Some("Ahem"));
+        assert!(!props.contains_key("font"));
+    }
+
+    #[test]
+    /// font-stretch 关键字↔% 数值插值（css-fonts-4 §font-width-prop 映射单源
+    /// `parse_font_stretch`；输出 % 整形、上界不钳）。
+    fn test_knife_fi_stretch_interpolation() {
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "50%", "150%", 0.5).as_deref(),
+            Some("100%")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "ultra-condensed", "ultra-expanded", 0.5).as_deref(),
+            Some("125%")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "100%", "200%", 1.5).as_deref(),
+            Some("250%")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "50%", "150%", 0.25).as_deref(),
+            Some("75%")
+        );
+        assert_eq!(
+            interpolate_property_value("font-stretch", "normal", "200%", 0.5),
+            "150%"
+        );
+    }
+
+    #[test]
+    /// font-style：t∈{0,1} 端点 verbatim（from [normal] at (0) = [normal] 钉形）、
+    /// normal≡oblique 0deg 数值 lerp、italic 异族离散中点翻转
+    ///（css-fonts-4 #font-style-animatable）。
+    fn test_knife_fi_style_interpolation() {
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "normal", "oblique 10deg", 0.0).as_deref(),
+            Some("normal")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "normal", "oblique 10deg", 1.0).as_deref(),
+            Some("oblique 10deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique 10deg", "oblique 20deg", 0.5).as_deref(),
+            Some("oblique 15deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "normal", "oblique 40deg", 0.5).as_deref(),
+            Some("oblique 20deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "italic", "oblique 20deg", 0.4).as_deref(),
+            Some("italic")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "italic", "oblique 20deg", 0.6).as_deref(),
+            Some("oblique 20deg")
+        );
+        assert_eq!(
+            interpolate_property_value("font-style", "italic", "normal", 0.7),
+            "normal"
+        );
+        // 角域门：外推钳 [-90deg, 90deg] + 恰 0deg 串化 normal（语料 -90↔90 对钉形）。
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique -90deg", "oblique 90deg", 0.5).as_deref(),
+            Some("normal")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique -90deg", "oblique 90deg", 1.5).as_deref(),
+            Some("oblique 90deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique -90deg", "oblique 90deg", -2.0).as_deref(),
+            Some("oblique -90deg")
+        );
+    }
+
+    #[test]
+    /// line-height px 域插值 + `normal` 端点对宽松臂离散翻转、严格臂 None
+    ///（css-transitions-1 as length；computed used-px 形——R2761 契约）。
+    fn test_knife_fi_line_height_interpolation() {
+        assert_eq!(
+            interpolate_property_value_strict("line-height", "10px", "20px", 0.25).as_deref(),
+            Some("12.50px")
+        );
+        assert_eq!(interpolate_property_value("line-height", "normal", "20px", 0.5), "20px");
+        assert_eq!(
+            interpolate_property_value("line-height", "normal", "20px", 0.4),
+            "normal"
+        );
+        assert_eq!(
+            interpolate_property_value_strict("line-height", "normal", "20px", 0.5),
+            None
+        );
+    }
+
+    #[test]
+    /// apply 写回：stretch %→f32 槽 + gCS round-trip、style oblique 角形、
+    /// variant-caps 关键字、family `Vec<String>`、line-height Length（FI 写回臂
+    /// 与 style-system apply/文法单源）。
+    fn test_knife_fi_apply_writeback() {
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[
+                InterpolatedProperty {
+                    name: "font-stretch".to_string(),
+                    value: "125%".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "font-style".to_string(),
+                    value: "oblique 15deg".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "font-variant-caps".to_string(),
+                    value: "small-caps".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "font-family".to_string(),
+                    value: "Ahem".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "line-height".to_string(),
+                    value: "24.00px".to_string(),
+                },
+            ],
+            &mut style,
+        );
+        assert!((style.font_stretch - 125.0).abs() < 1e-6);
+        assert_eq!(
+            style.font_style,
+            zero_css_parser::values::FontStyleValue::Oblique(Some(15.0))
+        );
+        assert_eq!(
+            style.font_variant_caps,
+            zero_style_system::FontVariantCapsValue::SmallCaps
+        );
+        assert_eq!(style.font_family, vec!["Ahem".to_string()]);
+        assert!(matches!(
+            style.line_height,
+            zero_style_system::LineHeightValue::Length(_)
+        ));
+        let ser = crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(
+            &style,
+            "font-stretch",
+            None,
+        );
+        assert_eq!(ser, "125%");
     }
 
     #[test]
