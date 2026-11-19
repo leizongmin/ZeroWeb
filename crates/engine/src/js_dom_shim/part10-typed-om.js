@@ -708,14 +708,9 @@ return Ctor;
   CSSTransformComponent.prototype._zwOmKind = function () { return 'transform-comp'; };
   globalThis.CSSTransformComponent = CSSTransformComponent;
 
-  // 组件构造器：实例 `_` 前缀存储槽 + 原型 accessor；数值入参按 CSSNumberish
-  // 归一（number → CSSUnitValue number 面）；各组件 is2D 按 spec 判据暴露
-  //（testhelper assert_style_value_equals 组件分派消费 x/y/z/is2D/angle）。
-  function _zwOmCoerceNumeric(v, name) {
-    if (typeof v === 'number') return new CSSUnitValue(v, 'number');
-    if (!(v instanceof CSSStyleValue)) throw new TypeError("Invalid " + name);
-    return v;
-  }
+  // 组件构造器：实例 `_` 前缀存储槽 + 原型 accessor；入参经 _zwOmTransSlot 校验
+  //（CSSNumberish 裸数按槽位组归一；型不匹配 TypeError）；is2D 经 store/fixed
+  // 两形暴露（testhelper assert_style_value_equals 组件分派消费 x/y/z/is2D/angle）。
   function _zwOmIsZeroNum(v) { return v instanceof CSSUnitValue && v.value === 0 && v.unit === 'number'; }
   function _zwOmIsOneNum(v) { return v instanceof CSSUnitValue && v.value === 1 && v.unit === 'number'; }
   function _zwOmCompProp(proto, f, coerce) {
@@ -725,110 +720,180 @@ return Ctor;
       enumerable: true, configurable: true,
     });
   }
-  function _zwOmIs2DProp(proto, calc) {
-    Object.defineProperty(proto, 'is2D', { get: calc, enumerable: true, configurable: true });
+  // ===== transform 组件槽位校验（css-typed-om-1 §cssrotate/§cssscale/
+  // §csstranslate/§cssskew/§cssperspective：构造与 setter 入参不匹配槽位型 →
+  // TypeError，setter 失败保旧值）。型判定复用 _zwOmTypeOfVal 的 math 消解
+  //（negate 保形/invert 指数取负/product 指数累加/sum 逐对加法），单位消去
+  //（CSSMathProduct(px, CSSMathInvert(px)) → 纯 <number>）随指数算术自然成立。
+  function _zwOmTransMatch(v, group) {
+    var t = _zwOmTypeOfVal(v), k, fams = [];
+    for (k in t) {
+      if (k === 'percentHint' || !t[k]) continue; // 零指数键（乘除消解残键）不计
+      fams.push(k);
+    }
+    if (group === 'number') return fams.length === 0;
+    if (fams.length !== 1) return false;
+    var fam = fams[0];
+    if (group === 'lengthPercent') {
+      // calc(px + %) 加法面经 percentHint 归并（§add-two-types）；percent 族不收 hint
+      return t[fam] === 1 && (fam === 'length' || (fam === 'percent' && !t.percentHint));
+    }
+    // 单族组（angle/length）：恰该族指数 1，无 pending percent（hint/percent 键）
+    return fam === group && t[fam] === 1 && !t.percentHint && !t.percent;
+  }
+  // 槽位写入（ctor 与 setter 同走）：裸数按组归一（<number> 保 number、
+  // length→px、angle→deg；skew/perspective 槽位不收裸数——语料 'a double'
+  // TypeError 钉）；keyword 仅 perspective 'none' 臂前置转换，其余拒。
+  function _zwOmTransSlot(v, group, name, numUnit) {
+    if (typeof v === 'number') {
+      if (!numUnit) throw new TypeError("Invalid " + name);
+      return new CSSUnitValue(v, numUnit);
+    }
+    if (!(v instanceof CSSUnitValue) && !(v instanceof CSSMathValue)) throw new TypeError("Invalid " + name);
+    if (!_zwOmTransMatch(v, group)) throw new TypeError("Invalid " + name);
+    return v;
+  }
+  // is2D：rotate/scale/translate 可写（spec is2D attribute；语料 'Modifying
+  // ... is2D can be updated to true or false'）；skew/perspective 固定形——
+  // 赋值 no-op 不抛（语料 'Modifying ... is2D is a no-op' 直赋面）。
+  function _zwOmIs2DStoreProp(proto) {
+    Object.defineProperty(proto, 'is2D', {
+      get: function () { return this._is2D; },
+      set: function (v) { this._is2D = !!v; },
+      enumerable: true, configurable: true,
+    });
+  }
+  function _zwOmIs2DFixedProp(proto, val) {
+    Object.defineProperty(proto, 'is2D', {
+      get: function () { return val; },
+      set: function () {},
+      enumerable: true, configurable: true,
+    });
   }
 
   function CSSTranslate(x, y, z) {
-    this._x = _zwOmCoerceNumeric(x, 'x');
-    this._y = _zwOmCoerceNumeric(y, 'y');
-    this._z = _zwOmCoerceNumeric(z == null ? 0 : z, 'z');
+    // x/y <length-percentage>、z <length>（% 拒——语料 z percent TypeError 钉）；
+    // is2D 按参数量定（2 参 true / 3 参 false，z=px(0) 直赋不改）。
+    this._x = _zwOmTransSlot(x, 'lengthPercent', 'x', 'px');
+    this._y = _zwOmTransSlot(y, 'lengthPercent', 'y', 'px');
+    this._z = _zwOmTransSlot(arguments.length > 2 ? z : 0, 'length', 'z', 'px');
+    this._is2D = arguments.length < 3;
   }
   CSSTranslate.prototype = Object.create(CSSTransformComponent.prototype);
   CSSTranslate.prototype.constructor = CSSTranslate;
-  _zwOmCompProp(CSSTranslate.prototype, 'x', function (v) { return _zwOmCoerceNumeric(v, 'x'); });
-  _zwOmCompProp(CSSTranslate.prototype, 'y', function (v) { return _zwOmCoerceNumeric(v, 'y'); });
-  _zwOmCompProp(CSSTranslate.prototype, 'z', function (v) { return _zwOmCoerceNumeric(v, 'z'); });
-  _zwOmIs2DProp(CSSTranslate.prototype, function () { return _zwOmIsZeroNum(this._z); });
+  _zwOmCompProp(CSSTranslate.prototype, 'x', function (v) { return _zwOmTransSlot(v, 'lengthPercent', 'x', 'px'); });
+  _zwOmCompProp(CSSTranslate.prototype, 'y', function (v) { return _zwOmTransSlot(v, 'lengthPercent', 'y', 'px'); });
+  _zwOmCompProp(CSSTranslate.prototype, 'z', function (v) { return _zwOmTransSlot(v, 'length', 'z', 'px'); });
+  _zwOmIs2DStoreProp(CSSTranslate.prototype);
   CSSTranslate.prototype.toString = function () {
+    // css-typed-om-1 §csstranslate serialization：is2D true → 两参形，false → 含 z。
     var s = 'translate(' + this._x + ', ' + this._y;
-    if (!_zwOmIsZeroNum(this._z)) s += ', ' + this._z;
+    if (!this._is2D) s += ', ' + this._z;
     return s + ')';
   };
   globalThis.CSSTranslate = CSSTranslate;
 
   function CSSRotate(xOrAngle, y, z, angle) {
     if (arguments.length <= 2) {
-      // CSSRotate(angle)：绕 z 轴。
-      this._x = 0; this._y = 0; this._z = 1;
-      this._angle = _zwOmCoerceNumeric(xOrAngle, 'angle');
+      // CSSRotate(angle)：绕 z 轴；x/y/z 归一 CSS.number（语料 number(0)/number(0)/
+      // number(1) 钉）。
+      this._x = new CSSUnitValue(0, 'number');
+      this._y = new CSSUnitValue(0, 'number');
+      this._z = new CSSUnitValue(1, 'number');
+      this._angle = _zwOmTransSlot(xOrAngle, 'angle', 'angle', 'deg');
     } else {
-      // CSSRotate(x, y, z, angle)：轴向量是 unrestricted double。
-      if (typeof xOrAngle !== 'number' || typeof y !== 'number' || typeof z !== 'number') throw new TypeError("Invalid axis");
-      this._x = xOrAngle; this._y = y; this._z = z;
-      this._angle = _zwOmCoerceNumeric(angle, 'angle');
+      // CSSRotate(x, y, z, angle)：轴向量 CSSNumberish <number>（裸数→CSS.number、
+      // CSS.number/math 直存——语料 'constructed from numberish coordinates' 钉）。
+      this._x = _zwOmTransSlot(xOrAngle, 'number', 'x', 'number');
+      this._y = _zwOmTransSlot(y, 'number', 'y', 'number');
+      this._z = _zwOmTransSlot(z, 'number', 'z', 'number');
+      this._angle = _zwOmTransSlot(angle, 'angle', 'angle', 'deg');
     }
+    this._is2D = _zwOmIsZeroNum(this._x) && _zwOmIsZeroNum(this._y);
   }
   CSSRotate.prototype = Object.create(CSSTransformComponent.prototype);
   CSSRotate.prototype.constructor = CSSRotate;
-  for (var _zwRi = 0; _zwRi < 3; _zwRi++) (function (f) {
-    Object.defineProperty(CSSRotate.prototype, f, {
-      get: function () { return this['_' + f]; },
-      set: function (v) { if (typeof v !== 'number') throw new TypeError("Invalid " + f); this['_' + f] = v; },
-      enumerable: true, configurable: true,
-    });
-  })(['x', 'y', 'z'][_zwRi]);
-  _zwOmCompProp(CSSRotate.prototype, 'angle', function (v) { return _zwOmCoerceNumeric(v, 'angle'); });
-  _zwOmIs2DProp(CSSRotate.prototype, function () { return this._x === 0 && this._y === 0; });
+  _zwOmCompProp(CSSRotate.prototype, 'x', function (v) { return _zwOmTransSlot(v, 'number', 'x', 'number'); });
+  _zwOmCompProp(CSSRotate.prototype, 'y', function (v) { return _zwOmTransSlot(v, 'number', 'y', 'number'); });
+  _zwOmCompProp(CSSRotate.prototype, 'z', function (v) { return _zwOmTransSlot(v, 'number', 'z', 'number'); });
+  _zwOmCompProp(CSSRotate.prototype, 'angle', function (v) { return _zwOmTransSlot(v, 'angle', 'angle', 'deg'); });
+  _zwOmIs2DStoreProp(CSSRotate.prototype);
   CSSRotate.prototype.toString = function () {
-    if (this._x === 0 && this._y === 0) return 'rotate(' + this._angle + ')';
-    if (this._x === 1 && this._y === 0 && this._z === 0) return 'rotatex(' + this._angle + ')';
-    if (this._x === 0 && this._y === 1 && this._z === 0) return 'rotatey(' + this._angle + ')';
+    if (_zwOmIsZeroNum(this._x) && _zwOmIsZeroNum(this._y)) return 'rotate(' + this._angle + ')';
+    if (_zwOmIsOneNum(this._x) && _zwOmIsZeroNum(this._y) && _zwOmIsZeroNum(this._z)) return 'rotatex(' + this._angle + ')';
+    if (_zwOmIsZeroNum(this._x) && _zwOmIsOneNum(this._y) && _zwOmIsZeroNum(this._z)) return 'rotatey(' + this._angle + ')';
     return 'rotate3d(' + this._x + ', ' + this._y + ', ' + this._z + ', ' + this._angle + ')';
   };
   globalThis.CSSRotate = CSSRotate;
 
   function CSSScale(x, y, z) {
-    this._x = _zwOmCoerceNumeric(x, 'x');
-    this._y = _zwOmCoerceNumeric(y, 'y');
-    this._z = _zwOmCoerceNumeric(z == null ? 1 : z, 'z');
+    // x/y/z <number>（CSSNumberish：裸数/CSS.number/number 型 math）；is2D 按参数量
+    //（2 参 true / 3 参 false——语料 CSSScale(-3.14, CSS.number(3.14)) true 钉）。
+    this._x = _zwOmTransSlot(x, 'number', 'x', 'number');
+    this._y = _zwOmTransSlot(y, 'number', 'y', 'number');
+    this._z = _zwOmTransSlot(arguments.length > 2 ? z : 1, 'number', 'z', 'number');
+    this._is2D = arguments.length < 3;
   }
   CSSScale.prototype = Object.create(CSSTransformComponent.prototype);
   CSSScale.prototype.constructor = CSSScale;
-  _zwOmCompProp(CSSScale.prototype, 'x', function (v) { return _zwOmCoerceNumeric(v, 'x'); });
-  _zwOmCompProp(CSSScale.prototype, 'y', function (v) { return _zwOmCoerceNumeric(v, 'y'); });
-  _zwOmCompProp(CSSScale.prototype, 'z', function (v) { return _zwOmCoerceNumeric(v, 'z'); });
-  _zwOmIs2DProp(CSSScale.prototype, function () { return _zwOmIsOneNum(this._z); });
+  _zwOmCompProp(CSSScale.prototype, 'x', function (v) { return _zwOmTransSlot(v, 'number', 'x', 'number'); });
+  _zwOmCompProp(CSSScale.prototype, 'y', function (v) { return _zwOmTransSlot(v, 'number', 'y', 'number'); });
+  _zwOmCompProp(CSSScale.prototype, 'z', function (v) { return _zwOmTransSlot(v, 'number', 'z', 'number'); });
+  _zwOmIs2DStoreProp(CSSScale.prototype);
   CSSScale.prototype.toString = function () {
+    // css-typed-om-1 §cssscale serialization：is2D true → 两参形，false → 含 z。
     var s = 'scale(' + this._x + ', ' + this._y;
-    if (!_zwOmIsOneNum(this._z)) s += ', ' + this._z;
+    if (!this._is2D) s += ', ' + this._z;
     return s + ')';
   };
   globalThis.CSSScale = CSSScale;
 
   function CSSSkew(ax, ay) {
-    this._ax = _zwOmCoerceNumeric(ax, 'ax');
-    this._ay = _zwOmCoerceNumeric(ay == null ? new CSSUnitValue(0, 'deg') : ay, 'ay');
+    // ax/ay <angle>（裸数/keyword/string 拒——语料 'a double' TypeError 钉）。
+    this._ax = _zwOmTransSlot(ax, 'angle', 'ax', null);
+    this._ay = _zwOmTransSlot(ay == null ? new CSSUnitValue(0, 'deg') : ay, 'angle', 'ay', null);
   }
   CSSSkew.prototype = Object.create(CSSTransformComponent.prototype);
   CSSSkew.prototype.constructor = CSSSkew;
-  _zwOmCompProp(CSSSkew.prototype, 'ax', function (v) { return _zwOmCoerceNumeric(v, 'ax'); });
-  _zwOmCompProp(CSSSkew.prototype, 'ay', function (v) { return _zwOmCoerceNumeric(v, 'ay'); });
-  _zwOmIs2DProp(CSSSkew.prototype, function () { return true; });
+  _zwOmCompProp(CSSSkew.prototype, 'ax', function (v) { return _zwOmTransSlot(v, 'angle', 'ax', null); });
+  _zwOmCompProp(CSSSkew.prototype, 'ay', function (v) { return _zwOmTransSlot(v, 'angle', 'ay', null); });
+  _zwOmIs2DFixedProp(CSSSkew.prototype, true);
   CSSSkew.prototype.toString = function () { return 'skew(' + this._ax + ', ' + this._ay + ')'; };
   globalThis.CSSSkew = CSSSkew;
 
-  function CSSSkewX(ax) { this._ax = _zwOmCoerceNumeric(ax, 'ax'); }
+  function CSSSkewX(ax) { this._ax = _zwOmTransSlot(ax, 'angle', 'ax', null); }
   CSSSkewX.prototype = Object.create(CSSTransformComponent.prototype);
   CSSSkewX.prototype.constructor = CSSSkewX;
-  _zwOmCompProp(CSSSkewX.prototype, 'ax', function (v) { return _zwOmCoerceNumeric(v, 'ax'); });
-  _zwOmIs2DProp(CSSSkewX.prototype, function () { return true; });
+  _zwOmCompProp(CSSSkewX.prototype, 'ax', function (v) { return _zwOmTransSlot(v, 'angle', 'ax', null); });
+  _zwOmIs2DFixedProp(CSSSkewX.prototype, true);
   CSSSkewX.prototype.toString = function () { return 'skewx(' + this._ax + ')'; };
   globalThis.CSSSkewX = CSSSkewX;
 
-  function CSSSkewY(ay) { this._ay = _zwOmCoerceNumeric(ay, 'ay'); }
+  function CSSSkewY(ay) { this._ay = _zwOmTransSlot(ay, 'angle', 'ay', null); }
   CSSSkewY.prototype = Object.create(CSSTransformComponent.prototype);
   CSSSkewY.prototype.constructor = CSSSkewY;
-  _zwOmCompProp(CSSSkewY.prototype, 'ay', function (v) { return _zwOmCoerceNumeric(v, 'ay'); });
-  _zwOmIs2DProp(CSSSkewY.prototype, function () { return true; });
+  _zwOmCompProp(CSSSkewY.prototype, 'ay', function (v) { return _zwOmTransSlot(v, 'angle', 'ay', null); });
+  _zwOmIs2DFixedProp(CSSSkewY.prototype, true);
   CSSSkewY.prototype.toString = function () { return 'skewy(' + this._ay + ')'; };
   globalThis.CSSSkewY = CSSSkewY;
 
-  function CSSPerspective(length) { this._length = _zwOmCoerceNumeric(length, 'length'); }
+  function CSSPerspective(length) {
+    // length <length> 或 keyword 'none'（'none' 字符串转换面——语料
+    // gConvertingValidTestCases）；裸数/单位数/其他 keyword 全拒。
+    this._length = _zwOmPerspSlot(length);
+  }
+  function _zwOmPerspSlot(v) {
+    if (v === 'none') v = new CSSKeywordValue('none');
+    if (v instanceof CSSKeywordValue) {
+      if (v.value === 'none') return v;
+      throw new TypeError("Invalid length");
+    }
+    return _zwOmTransSlot(v, 'length', 'length', null);
+  }
   CSSPerspective.prototype = Object.create(CSSTransformComponent.prototype);
   CSSPerspective.prototype.constructor = CSSPerspective;
-  _zwOmCompProp(CSSPerspective.prototype, 'length', function (v) { return _zwOmCoerceNumeric(v, 'length'); });
-  _zwOmIs2DProp(CSSPerspective.prototype, function () { return this._length instanceof CSSUnitValue && this._length.value === 0; });
+  _zwOmCompProp(CSSPerspective.prototype, 'length', function (v) { return _zwOmPerspSlot(v); });
+  _zwOmIs2DFixedProp(CSSPerspective.prototype, false);
   CSSPerspective.prototype.toString = function () { return 'perspective(' + this._length + ')'; };
   globalThis.CSSPerspective = CSSPerspective;
   function CSSMatrixComponent(matrix, options) {
@@ -850,8 +915,10 @@ return Ctor;
   globalThis.CSSMatrixComponent = CSSMatrixComponent;
 
   function CSSTransformValue(components) {
+    // components 为必备序列且非空（缺参/空表 → TypeError——语料
+    // 'Constructing a CSSTransformValue with no components throws TypeError'）。
     var list = components == null ? [] : components;
-    if (!Array.isArray(list)) throw new TypeError("Invalid components");
+    if (!Array.isArray(list) || list.length === 0) throw new TypeError("Invalid components");
     for (var i = 0; i < list.length; i++) {
       if (!(list[i] instanceof CSSTransformComponent)) throw new TypeError("Invalid transform component");
     }
