@@ -151,3 +151,28 @@ math 形仍落 Normal 兜底——settings math apply 臂残面）。
   computation 32F 同根因，其修复顺带本页 registered 腿）。
 - unit-cycles.html 23F + var-reference-unit-cycles 2F → computation 簇
   认领候选（var() cycle 检测 engine 域）。
+
+## ffix r2 canonical 收口（11-19 22:4x，r2 流记账）
+
+- 仪器：r2 solo 对账（NOTES 22:14 主流修订口径）＝6 corpus × b0-gen1
+  （pristine 副本，电池重跑已撤销）vs r2b1（face+ffix 组合态，
+  b1r2-runner target-v2b1）。脚本与输出：
+  `results-knife-fontcycle/r2-reconcile.{py,txt}`。
+- **账：净 +154**（gained=156 lost=0 regressed=0）＝pva +10
+  （unit-cycles 页 20→30 单页）+ fonts +144（interpolation +113 +
+  composition +11 + style-parsing +6 + calc +3 + parse-numeric +2）；
+  shapes/typed-om/transitions/animations 四哨兵全零。zzz-fc-diag 探针页
+  +2 gitignored（.gitignore:89）剔除不入账。
+- discrete-no-interpolation 459→459 计数恒：14 行 b0 空串虚过 → b1 真过
+  （apply 臂 + DISCRETE_TRANSITIONABLE 入列 + echo 真值全链闭环），
+  +30 −14 中间账被本口径取代。
+- 窗噪法证（三件全 P-diff NONE 页级＝蒸发子测试在 b0 全为 Fail，账向仅
+  少计失败，不染 +154）：transitions event-dispatch 30→12（G2-b 电池
+  并发窗）→15（solo 复测仍争窗）；animate-with-color-mix 5→4→5 复原；
+  animations display-none-dont-cancel Timeout +1 子测试。
+- 账面中性双测：echo 隐式 1 规范形缺席（gen1 电池）pva +10 ＝ 在席
+  （r2b1）pva +10 逐页同形。
+- 落库两笔：`4e35a2d9c`（主流先手：animation.rs apply_single_property
+  ffs/fvs 臂 +19 + DISCRETE_TRANSITIONABLE 10→11）+ `7d119d8ef`
+  （本流：settings 计算值规范形 settings_computed_join——隐式 1 省略 +
+  同 tag 右值胜出去重 + tag 字节序升序，pre-commit-guard PASS）。
