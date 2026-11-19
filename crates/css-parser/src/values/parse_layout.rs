@@ -501,6 +501,9 @@ pub enum BreakInsideValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// avoid-region（css-break-3 §break-between-and-inside，WPT css-typed-om
+    /// break 页 break-inside avoid-region 键）。
+    AvoidRegion,
 }
 
 /// CSS break-before / break-after 值。
@@ -518,6 +521,18 @@ pub enum BreakValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// region（WPT css-typed-om break 页 break-after/before region 关键字面；
+    /// 上游 WPT 语料将 region 列为合法关键字，corpus 即权威）。
+    Region,
+    /// left（css-break-3 §break-between `<break-before>` 关键字；WPT
+    /// css-typed-om break 页合法值面）。
+    Left,
+    /// right（css-break-3 §break-between）。
+    Right,
+    /// recto（css-break-3 §break-between）。
+    Recto,
+    /// verso（css-break-3 §break-between）。
+    Verso,
 }
 
 /// CSS column-rule-width 值。
@@ -565,6 +580,7 @@ pub fn parse_break_inside(value: &str) -> Option<BreakInsideValue> {
         "avoid" => Some(BreakInsideValue::Avoid),
         "avoid-page" => Some(BreakInsideValue::AvoidPage),
         "avoid-column" => Some(BreakInsideValue::AvoidColumn),
+        "avoid-region" => Some(BreakInsideValue::AvoidRegion),
         _ => None,
     }
 }
@@ -578,6 +594,11 @@ pub fn parse_break_before(value: &str) -> Option<BreakValue> {
         "page" => Some(BreakValue::Page),
         "avoid-page" => Some(BreakValue::AvoidPage),
         "avoid-column" => Some(BreakValue::AvoidColumn),
+        "region" => Some(BreakValue::Region),
+        "left" => Some(BreakValue::Left),
+        "right" => Some(BreakValue::Right),
+        "recto" => Some(BreakValue::Recto),
+        "verso" => Some(BreakValue::Verso),
         _ => None,
     }
 }
@@ -591,6 +612,11 @@ pub fn parse_break_after(value: &str) -> Option<BreakValue> {
         "page" => Some(BreakValue::Page),
         "avoid-page" => Some(BreakValue::AvoidPage),
         "avoid-column" => Some(BreakValue::AvoidColumn),
+        "region" => Some(BreakValue::Region),
+        "left" => Some(BreakValue::Left),
+        "right" => Some(BreakValue::Right),
+        "recto" => Some(BreakValue::Recto),
+        "verso" => Some(BreakValue::Verso),
         _ => None,
     }
 }
@@ -1128,6 +1154,17 @@ pub enum FontFeatureSettingsValue {
 ///
 /// https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop
 pub fn parse_font_feature_settings(value: &str) -> Option<FontFeatureSettingsValue> {
+    parse_font_feature_settings_with_font(value, None)
+}
+
+/// [`parse_font_feature_settings`] 的字体基准变体：整数值位接受顶层 math
+/// 函数形（css-values-4 §10.5 math function 可用于 <integer> 文法位，结果
+/// 非整数四舍五入；font-property-unit-cycles
+/// `"tnum" calc(1 * tan(atan2(1em, 1px)))` 10 腿驱动）。font 相对实参
+/// （em/ex/ch/ic/cap）按给定字号解析——font-* 槽传父级 computed font-size
+///（css-properties-values-api #dependency-cycles-via-relative-units），
+/// None 保持纯字面解析（无基准不可求值）。
+pub fn parse_font_feature_settings_with_font(value: &str, font_size: Option<f64>) -> Option<FontFeatureSettingsValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("normal") {
         return Some(FontFeatureSettingsValue::Normal);
@@ -1154,12 +1191,51 @@ pub fn parse_font_feature_settings(value: &str) -> Option<FontFeatureSettingsVal
             1
         } else if suffix.eq_ignore_ascii_case("off") {
             0
+        } else if let Some(v) = suffix.parse::<u32>().ok() {
+            v
         } else {
-            suffix.parse::<u32>().ok()?
+            font_slot_math_integer(suffix, font_size)?
         };
         features.push(FontFeatureSetting { tag, value: setting });
     }
     (!features.is_empty()).then_some(FontFeatureSettingsValue::Features(features))
+}
+
+/// settings 整数值位 math 求值（§10.5 <integer> 位 round 口径）。
+fn font_slot_math_integer(suffix: &str, font_size: Option<f64>) -> Option<u32> {
+    let font_size = font_size?;
+    let expr = parse_math_function(suffix)?;
+    if calc_expr_math_type(&expr) != CalcMathType::Number {
+        return None;
+    }
+    let v = eval_calc_with_context(&expr, &font_settings_calc_context(font_size))?;
+    v.is_finite().then(|| v.round() as u32)
+}
+
+/// settings 数值位 math 求值（<number> 位，f32 承载）。
+fn font_slot_math_number_f32(suffix: &str, font_size: Option<f64>) -> Option<f32> {
+    let font_size = font_size?;
+    let expr = parse_math_function(suffix)?;
+    if calc_expr_math_type(&expr) != CalcMathType::Number {
+        return None;
+    }
+    let v = eval_calc_with_context(&expr, &font_settings_calc_context(font_size))?;
+    v.is_finite().then_some(v as f32)
+}
+
+/// font settings math 实参求值的字体基准 CalcContext：度量派生比 ex/cap
+/// 0.8、ch/ic 1.0（ch 兜底 1em——css-values-4 §5.1.2 Ahem 口径，同
+/// style-system 合成 ctx；font-property-unit-cycles ch 腿期望 30 钉面）。
+fn font_settings_calc_context(font_size: f64) -> CalcContext {
+    CalcContext {
+        font_size: Some(font_size),
+        root_font_size: Some(font_size),
+        x_height: Some(font_size * 0.8),
+        cap_height: Some(font_size * 0.8),
+        ch_width: Some(font_size * 1.0),
+        ic_width: Some(font_size * 1.0),
+        ..Default::default()
+    }
 }
 
 /// CSS `font-variation-settings` 中的单个 OpenType variation axis。
@@ -1184,6 +1260,18 @@ pub enum FontVariationSettingsValue {
 ///
 /// https://drafts.csswg.org/css-fonts-4/#font-variation-settings-def
 pub fn parse_font_variation_settings(value: &str) -> Option<FontVariationSettingsValue> {
+    parse_font_variation_settings_with_font(value, None)
+}
+
+/// [`parse_font_variation_settings`] 的字体基准变体：坐标位接受顶层 math
+/// 函数形（css-fonts-4 §font-variation-settings-def <number> 位 + css-values-4
+/// §10.5；font-property-unit-cycles `"xhgt" calc(1 * tan(atan2(1em, 1px)))`
+/// 10 腿驱动）。font 相对实参按给定字号解析（dependency-cycles 口径，见
+/// [`parse_font_feature_settings_with_font`]）。
+pub fn parse_font_variation_settings_with_font(
+    value: &str,
+    font_size: Option<f64>,
+) -> Option<FontVariationSettingsValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("normal") {
         return Some(FontVariationSettingsValue::Normal);
@@ -1205,7 +1293,11 @@ pub fn parse_font_variation_settings(value: &str) -> Option<FontVariationSetting
         }
         let mut tag = [0; 4];
         tag.copy_from_slice(tag_text.as_bytes());
-        let value = item[close + 1..].trim().parse::<f32>().ok()?;
+        let value = item[close + 1..]
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .or_else(|| font_slot_math_number_f32(item[close + 1..].trim(), font_size))?;
         if !value.is_finite() {
             return None;
         }

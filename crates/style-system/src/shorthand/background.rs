@@ -502,7 +502,7 @@ fn bg_append(slot: &mut String, token: &str) {
 /// R2481：在 background 简写值中按 depth-0 `/` 分离 position 部分与 size 部分（CSS §3.4）。
 /// 返回 `(position_part, Option<size_part>)`。url(...) 内的 `/`（paren-depth≥1）不作为
 /// separator——如 `url(support/60x60-green.png)` 内的路径 `/` 被排除。
-fn split_bg_position_and_size(value: &str) -> (&str, Option<&str>) {
+pub(super) fn split_bg_position_and_size(value: &str) -> (&str, Option<&str>) {
     let mut depth = 0i32;
     for (i, ch) in value.char_indices() {
         match ch {
@@ -623,7 +623,7 @@ fn can_append_background_size(slots: &BgSlots) -> bool {
     crate::shorthand::split_top_level_whitespace(&slots.size).is_some_and(|parts| parts.len() < 2)
 }
 
-fn is_background_length_percentage(token: &str) -> bool {
+pub(super) fn is_background_length_percentage(token: &str) -> bool {
     use zero_css_parser::values::LengthValue;
 
     matches!(

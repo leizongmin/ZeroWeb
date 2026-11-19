@@ -10,6 +10,7 @@ pub mod calc_stop_gates;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;
+pub mod parse_animation_range;
 pub mod parse_basic_shape;
 pub mod parse_extended;
 pub mod parse_extended_border;
@@ -40,6 +41,11 @@ pub use calc_mix::{CalcMixItem, CalcMixWeight};
 pub use color::*;
 pub use color_math::*;
 pub use named_colors::*;
+pub use parse_animation_range::{
+    AnimationRangeItem, AnimationRangeName, AnimationRangeShape, AnimationRangeSide, animation_range_segments,
+    fold_animation_range_specified, parse_animation_range_shorthand, parse_animation_range_side, range_offset_elides,
+    serialize_animation_range_shorthand,
+};
 pub use parse_extended::*;
 pub use parse_extended_border::*;
 pub use parse_extended_visual::*;

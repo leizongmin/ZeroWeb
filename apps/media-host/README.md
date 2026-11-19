@@ -16,7 +16,7 @@ wire format 契约 = `zero-protocol` 的 `media` 模块（17 变体消息族，R
 - **回执 id 配对**（IF-002）— 请求响应以信封 `id` 配对：play 的即时 Playing 推送兼作回执，seek 回 `MediaSeekResult{request_id, resolved_ms}`；后续心跳/终态为自发推送面（id 0）；每源持单调 epoch（seek/replay 递增），旧代际推送由 renderer 侧丢弃
 - **握手与能力真值**（IF-001 / DC-4）— 连接后首发 `MediaReady{protocol_version, capabilities}`，capabilities 报内核实际路由真值，随 `decode-av1` / `decode-h264` feature 门控增删，不虚报
 - **stdio 双半传输**（`main.rs`）— stdin 读线程阻塞 recv → mpsc，主线程 `recv_timeout` 等消息（超时即 Idle——`IpcChannel` 的阻塞 recv 无超时面，是拆分根因）；stdout 写半承载回写；日志走 stderr（tracing，WARN 起）
-- **feature gate** — `decode-av1` / `decode-h264` 转发 `zero-media`（默认关，D-RFC-2/3 获批面），headless/CI 走默认面
+- **feature gate** — `decode-av1` / `decode-h264` / `audio-cpal` 转发 `zero-media`（默认关，D-RFC-2/3 获批面），headless/CI 走默认面；`audio-cpal` 启用本地音频输出并相应放宽 landlock（`/dev/snd` 读写）
 
 ## 使用示例
 

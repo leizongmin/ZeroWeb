@@ -51,10 +51,26 @@ fn test_mask_none_and_gradient() {
 }
 
 #[test]
-/// 组合形与多层形拒收（FIXME(mask-shorthand-grammar)——展开失败=声明丢弃）。
-fn test_mask_composite_and_multi_layer_rejected() {
-    assert!(expand_one("mask", "url(a) 10px 20px", false, (0, 0, 1)).is_empty());
-    assert!(expand_one("mask", "url(a) repeat", false, (0, 0, 1)).is_empty());
-    assert!(expand_one("mask", "url(a), url(b)", false, (0, 0, 1)).is_empty());
-    assert!(expand_one("mask", "10px 20px / 50%", false, (0, 0, 1)).is_empty());
+/// 组合形与多层形展开（刀 MK 全文法——原 FIXME(mask-shorthand-grammar)
+/// 限单值文法的拒收集由 `<mask-layer>#` 完整文法替换；语料
+/// mask-valid.sub.html 驱动：position/repeat/多层/position-size 位语全合法）。
+fn test_mask_composite_and_multi_layer_expand() {
+    // position 位语（语料 `linear-gradient(...) 1px 2px` 同族）。
+    let pos = expand_one("mask", "url(a) 10px 20px", false, (0, 0, 1));
+    assert_eq!(pos.len(), 13);
+    assert_eq!(pos[2].0, "mask-position");
+    assert_eq!(pos[2].1, "10px 20px");
+    // repeat 位语。
+    let rep = expand_one("mask", "url(a) repeat", false, (0, 0, 1));
+    assert_eq!(rep.len(), 13);
+    assert_eq!(rep[4].1, "repeat");
+    // 多层逗号列表逐 longhand join。
+    let multi = expand_one("mask", "url(a), url(b)", false, (0, 0, 1));
+    assert_eq!(multi.len(), 13);
+    assert_eq!(multi[0].1, "url(a), url(b)");
+    // position / size 位语（`/` 后单组件 size）。
+    let ps = expand_one("mask", "10px 20px / 50%", false, (0, 0, 1));
+    assert_eq!(ps.len(), 13);
+    assert_eq!(ps[2].1, "10px 20px");
+    assert_eq!(ps[3].1, "50%");
 }

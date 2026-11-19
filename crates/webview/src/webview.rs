@@ -1358,6 +1358,9 @@ impl WebView {
         // bump 的清队点——队列键消费方（HANDLE_TAG_MEMO 等）跨文档水位失明。视图
         // 缓存靠重注册新 dom_html Arc 免疫，队列键消费方必须靠代际。
         zero_engine::js_dom_bridge::bump_mut_drain_gen();
+        // d57（wptfyi-editing 刀 C-view）：查询粘性 canonical 表随文档换代清空
+        //（per-page 作用域，同上批导航清理语义；页面内 drain 不清）。
+        zero_engine::js_dom_bridge::reset_sticky_query();
         self.applied_mutations = 0;
         // s143：队列清空对齐桥侧已应用前缀镜像（新页查询视图重放自 0 起——见桥侧
         // MUT_APPLIED_CURSOR）。

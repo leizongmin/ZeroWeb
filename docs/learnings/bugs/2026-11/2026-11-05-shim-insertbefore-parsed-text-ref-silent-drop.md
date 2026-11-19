@@ -47,4 +47,4 @@ parent[...4 kids...]`，克隆刚插进去就没了）。
 `crates/engine/src/js_dom_shim/part04.js`（wire 分发）、`part03.js`
 （Node.prototype.insertBefore 派发）、`part01d.js` `_zwVaPeelOne`
 （本例修复面）；案例详录
-`docs/goal/editing-compat/evidence/2026-11-05-qv-peel-asym-recursion-break.md`。
+`docs/goal/archive/editing-compat/evidence/2026-11-05-qv-peel-asym-recursion-break.md`。

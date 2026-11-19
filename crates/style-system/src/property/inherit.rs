@@ -1460,6 +1460,16 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.animation_composition = default_style.animation_composition;
             true
         }
+        // css-scroll-animations-1 §animation-range-start/end：初值 normal（空列表
+        // ⇒ gCS 臂回落 "normal"）。
+        "animation-range-start" => {
+            style.animation_range_start = default_style.animation_range_start;
+            true
+        }
+        "animation-range-end" => {
+            style.animation_range_end = default_style.animation_range_end;
+            true
+        }
         // Scroll Snap
         "scroll-snap-type" => {
             style.scroll_snap_type = default_style.scroll_snap_type;

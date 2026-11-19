@@ -274,3 +274,8 @@ include!("js_dom_bridge_tests/part143_ip_island_li_dd_pins.rs");
 // exec2/exec3 刀钉测（2026-11-19）：unknown-command 门表外 ret=false 零事件
 // 零 DOM＋递归重入门嵌套拒绝＋深度清零＋bold 已知命令控制键。
 include!("js_dom_bridge_tests/part144_exec_gate_pins.rs");
+
+// 刀 ATP 恢复道钉测（2026-11-19）：CSS 源 @property 注册喂入（R2
+// note_stylesheets）＋同名重声明后者胜＋无效规则不注册＋string 值 canonical
+// 双引号重串化（R1 strict 门）＋universal 无 initial 兜底。
+include!("js_dom_bridge_tests/part145_atp_recovery_pins.rs");

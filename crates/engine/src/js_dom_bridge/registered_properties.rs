@@ -159,12 +159,90 @@ struct RegisteredProperty {
 
 thread_local! {
     /// 文档作用域注册表（线程亲和 = 渲染线程单文档语义，与 js_anim_registry ENTRIES 同形）。
+    /// JS `CSS.registerProperty` 通道——重名注册 InvalidModification 拒。
     static REGISTRY: RefCell<HashMap<String, RegisteredProperty>> = RefCell::new(HashMap::new());
+    /// CSS `@property` 规则通道——note_stylesheets 每代整体重建（clear+重喂），
+    /// 规则删除/样式表换代检测免费获得；同源 re-registration 后者胜
+    ///（§at-property-rule）。与 JS 通道分表：JS 注册不受样式表代际重建影响。
+    static RULE_REGISTRY: RefCell<HashMap<String, RegisteredProperty>> = RefCell::new(HashMap::new());
 }
 
 /// 注册表换代清空（导航/新 WebView；见 [`super::callbacks`] 装载序列）。
 pub(crate) fn clear_all() {
     REGISTRY.with(|r| r.borrow_mut().clear());
+    RULE_REGISTRY.with(|r| r.borrow_mut().clear());
+}
+
+/// 查注册条目（规则通道优先——CSS 源 re-registration 可覆盖 JS 注册；JS 通道
+/// 重名注册在 [`register`] 入口被 InvalidModification 拒，故合并视图无歧义）。
+fn lookup(name: &str) -> Option<RegisteredProperty> {
+    RULE_REGISTRY
+        .with(|r| r.borrow().get(name).cloned())
+        .or_else(|| REGISTRY.with(|r| r.borrow().get(name).cloned()))
+}
+
+/// stylesheet `@property` 规则喂入（computed_style_cache 代际重建三呼叫点与
+/// cssa_registry::note_stylesheets 同挂）——at-rule 通道写 [`RULE_REGISTRY`]
+///（刀 ATP R2：css-properties-values-api-1 §at-property-rule 规则注册面；
+/// gCS `--` 分支 typed 串化/initial 兜底与动画插值 `--` 臂自此对 CSS 源注册
+/// 生效）。整体重建语义：规则删除＝条目消失；同名重声明后者胜（CSS 源
+/// re-registration 语义；与 JS registerProperty 通道 InvalidModification 拒
+/// 重名分道）。规则有效性已在 css-parser 解析门（property_validate）裁决——
+/// 无效规则不进 AST；此处校验为防御性双门，note 侧失败跳过不注册＝
+/// "Rule not applied" 语义。
+/// <https://drafts.css-houdini.org/css-properties-values-api-1/>
+pub(crate) fn note_stylesheets(stylesheets: &[zero_css_parser::Stylesheet]) {
+    // 每代重建：先清再喂（fix C——修复前写共享 REGISTRY 且只增不删，
+    // 规则删除后注册残留、@property 离场语义失效）。
+    RULE_REGISTRY.with(|r| r.borrow_mut().clear());
+    for ss in stylesheets {
+        for rule in &ss.rules {
+            if let zero_css_parser::Rule::Property(pr) = rule {
+                note_property_rule(pr);
+            }
+        }
+    }
+}
+
+/// 单条 `@property` AST 规则 → 规则通道条目（syntax 剥引号走注册表语法门，
+/// initial 走严格门预解析计算形——JS 通道 register() 同型校验，WebIDL 字典
+/// 层缺省面此处分道：AST 门已保证 inherits/typed-initial 在场）。
+fn note_property_rule(pr: &zero_css_parser::PropertyRule) {
+    // syntax decl = string 字面（引号原文存储形）→ 内容剥取单源
+    //（css-parser `pub use property_validate::syntax_string_content`）。
+    let Some(content) = zero_css_parser::parser::syntax_string_content(&pr.syntax) else {
+        return;
+    };
+    let Some(syntax) = parse_syntax_descriptor(&content) else {
+        return;
+    };
+    let typed = matches!(syntax, SyntaxDescriptor::Combined(_));
+    let universal = matches!(syntax, SyntaxDescriptor::Universal);
+    let initial_computed = if typed {
+        let Some(iv) = pr.initial_value.as_deref().map(str::trim) else {
+            return;
+        };
+        validate_initial_strict(&syntax, iv)
+    } else if universal {
+        pr.initial_value
+            .as_deref()
+            .map(str::trim)
+            .and_then(|iv| validate_initial_strict(&syntax, iv))
+    } else {
+        None
+    };
+    RULE_REGISTRY.with(|r| {
+        r.borrow_mut().insert(
+            pr.name.clone(),
+            RegisteredProperty {
+                syntax,
+                inherits: pr.inherits,
+                // trim 对齐 JS register() 存储形。
+                initial: pr.initial_value.as_deref().map(str::trim).map(String::from),
+                initial_computed,
+            },
+        );
+    });
 }
 
 /// 注册入口（`__zw_register_property` 回调委托；WebIDL 字典转换面已在 shim 完成，
@@ -230,10 +308,11 @@ pub(crate) fn register(
     } else {
         None
     };
-    // 步骤 9：重名注册 InvalidModificationError（语料 --re-register 锚定）。
+    // 步骤 9：重名注册 InvalidModificationError（语料 --re-register 锚定；
+    // CSS 规则通道已注册同名同拒——§register-a-custom-property 对已注册名）。
     REGISTRY.with(|r| {
         let mut map = r.borrow_mut();
-        if map.contains_key(name) {
+        if map.contains_key(name) || RULE_REGISTRY.with(|rr| rr.borrow().contains_key(name)) {
             return Err((RegErrorKind::InvalidModification, "Property is already registered"));
         }
         map.insert(
@@ -249,18 +328,14 @@ pub(crate) fn register(
     })
 }
 
-/// 查注册条目（模块内插值/串化消费）：syntax 描述符 + initial 计算形。
+/// 查注册条目（模块内插值/串化消费；双通道合并视图）：syntax 描述符 + initial 计算形。
 fn registration_of(name: &str) -> Option<(SyntaxDescriptor, Option<String>)> {
-    REGISTRY.with(|r| {
-        r.borrow()
-            .get(name)
-            .map(|p| (p.syntax.clone(), p.initial_computed.clone()))
-    })
+    lookup(name).map(|p| (p.syntax, p.initial_computed))
 }
 
 /// 名是否已注册（gCS 分支路由判据，避免无条件克隆 syntax）。
 pub(crate) fn registration_known(name: &str) -> bool {
-    REGISTRY.with(|r| r.borrow().contains_key(name))
+    lookup(name).is_some()
 }
 
 /// 注册 syntax 描述符串化（刀 TD1：shim computed typed 重ify 分型 + registered
@@ -279,20 +354,20 @@ pub(crate) fn syntax_of(name: &str) -> Option<String> {
         }
         s
     }
-    REGISTRY.with(|r| {
-        r.borrow().get(name).map(|p| match &p.syntax {
-            SyntaxDescriptor::Universal => "*".to_string(),
-            SyntaxDescriptor::Normal => "normal".to_string(),
-            SyntaxDescriptor::Combined(comps) => comps.iter().map(component_text).collect::<Vec<_>>().join("|"),
-        })
+    lookup(name).map(|p| match &p.syntax {
+        SyntaxDescriptor::Universal => "*".to_string(),
+        SyntaxDescriptor::Normal => "normal".to_string(),
+        SyntaxDescriptor::Combined(comps) => comps.iter().map(component_text).collect::<Vec<_>>().join("|"),
     })
 }
 
 /// 全注册名 JSON 清单（刀 TD1：computedStyleMap iteration 枚举消费；字典序
-/// 输出——HashMap 迭代序不定，确定性供测试比对）。
+/// 输出——HashMap 迭代序不定，确定性供测试比对；双通道合并去重）。
 pub(crate) fn names_json() -> String {
-    let mut names = REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>());
+    let mut names = RULE_REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>());
+    names.extend(REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>()));
     names.sort_unstable();
+    names.dedup();
     let items = names.iter().map(|n| format!("\"{}\"", n)).collect::<Vec<_>>().join(",");
     format!("[{}]", items)
 }
@@ -451,33 +526,338 @@ fn parse_syntax_descriptor(s: &str) -> Option<SyntaxDescriptor> {
     Some(SyntaxDescriptor::Combined(components))
 }
 
+/// 计算阶段上下文（canonicalize/initial/替换面消费；注册门 strict face 不消费
+/// ——font-relative/视口在注册门恒拒。刀 ATP-R2 计算值通道引入：视口经
+/// `computed_style_cache::gcs_viewport_dims` 真值、lh 由调用方自元素 style 取）。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RegCtx {
+    /// 元素 font-size px（em/rem 折算基准）。
+    pub(crate) font_size_px: f64,
+    /// 元素 line-height px（lh 原子折算基准）。
+    pub(crate) line_height_px: f64,
+}
+
+impl RegCtx {
+    /// 仅 font ctx 的缺省形（lh 取 UA 近似 font×1.2——纯字体面调用方/Pin 测）。
+    pub(crate) fn with_font(font_size_px: f64) -> Self {
+        Self {
+            font_size_px,
+            line_height_px: font_size_px * 1.2,
+        }
+    }
+}
+
+/// 计算阶段裸形 length 原子（非 calc 形）：真视口/lh/em ctx 折算（css-values-4
+/// §6 单位基准）。与注册门 [`strict_length_atom`] 分道——名义视口/拒 font-relative
+/// 是注册面语义；计算面按元素上下文折算（`13vw`→104px @800×600、`10lh`→200px
+/// @line-height:20px 锚定）。绝对族已在 `parse_length` 折 px（`1in`→`LengthValue::Px(96)`）。
+fn computed_length_atom(s: &str, ctx: RegCtx, allow_pct: bool) -> Option<CalcAtom> {
+    use zero_css_parser::values::LengthValue as L;
+    let v = zero_css_parser::values::parse_length(s.trim())?;
+    let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+    Some(match v {
+        L::Px(n) => CalcAtom::Len(n),
+        L::Percentage(n) if allow_pct => CalcAtom::Pct(n),
+        L::Percentage(_) => return None,
+        L::Em(n) | L::Rem(n) => CalcAtom::Len(n * ctx.font_size_px),
+        L::Lh(n) => CalcAtom::Len(n * ctx.line_height_px),
+        // ex/ch 静态度量兜底（同 computed_style calc 通道 ex 0.8/ch 1.0 Ahem 口径）。
+        L::Ex(n) => CalcAtom::Len(n * ctx.font_size_px * 0.8),
+        L::Ch(n) => CalcAtom::Len(n * ctx.font_size_px),
+        L::Vw(n)
+        | L::Svw(n)
+        | L::Lvw(n)
+        | L::Dvw(n)
+        | L::Cqw(n)
+        | L::Cqi(n)
+        | L::Vi(n)
+        | L::Svi(n)
+        | L::Lvi(n)
+        | L::Dvi(n) => CalcAtom::Len(n * vw / 100.0),
+        L::Vh(n)
+        | L::Svh(n)
+        | L::Lvh(n)
+        | L::Dvh(n)
+        | L::Cqh(n)
+        | L::Cqb(n)
+        | L::Vb(n)
+        | L::Svb(n)
+        | L::Lvb(n)
+        | L::Dvb(n) => CalcAtom::Len(n * vh / 100.0),
+        L::Vmin(n) | L::Svmin(n) | L::Lvmin(n) | L::Dvmin(n) | L::Cqmin(n) => CalcAtom::Len(n * vw.min(vh) / 100.0),
+        L::Vmax(n) | L::Svmax(n) | L::Lvmax(n) | L::Dvmax(n) | L::Cqmax(n) => CalcAtom::Len(n * vw.max(vh) / 100.0),
+        // FIXME(regprop-lh-rest)：root 族（rex/rcap/rch/ric/rlh）与 cap/ic 计算
+        // 阶段折算未接（无 root 字体/字形度量 ctx；corpus 目标面无锚）。
+        _ => return None,
+    })
+}
+
+/// `<integer>` 计算舍入（css-values-4 §C 数值舍入：ties 朝 +∞——2.5→3、-2.5→-2；
+/// 修复前 `f64::round` 为 half-away-from-zero，负 ties 面错向）。
+/// <https://drafts.csswg.org/css-values-4/#combine-math>
+fn round_integer_ties_up(x: f64) -> i64 {
+    (x + 0.5).floor() as i64
+}
+
+/// 括号深度 0 处按分隔符切分（transform 函数表/参数表——嵌套 calc() 内分隔符
+/// 不切）。空输入返 None；切出项保留原文（调用方 trim）。
+fn split_top_level(s: &str, sep: u8) -> Option<Vec<&str>> {
+    let t = s.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let b = t.as_bytes();
+    let (mut depth, mut start) = (0usize, 0usize);
+    let mut parts = Vec::new();
+    for (i, &c) in b.iter().enumerate() {
+        match c {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 && c == sep => {
+                parts.push(&t[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&t[start..]);
+    Some(parts)
+}
+
+/// transform 函数参数族（css-transforms-1 §2 函数参数文法）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TransformParamKind {
+    /// length-percentage 参数（translate/translateX/Y）。
+    LenPct,
+    /// 纯 length 参数（translateZ/perspective——% 非法面）。
+    Length,
+    /// number 参数（scale 族/matrix 族/rotate3d 轴）。
+    Number,
+    /// angle 参数（rotate 族/skew 族）。
+    Angle,
+}
+
+/// transform 函数名 + 参数序 → 参数族（未知函数返 None = 整函数原文回显）。
+fn transform_param_kind(name: &str, idx: usize) -> Option<TransformParamKind> {
+    use TransformParamKind::*;
+    Some(match name.to_ascii_lowercase().as_str() {
+        "translate" | "translate3d" => match idx {
+            0 | 1 => LenPct,
+            2 => Length,
+            _ => return None,
+        },
+        "translatex" | "translatey" => LenPct,
+        "translatez" => Length,
+        "scale" | "scale3d" | "scalex" | "scaley" | "scalez" | "matrix" | "matrix3d" => Number,
+        "rotate" | "rotatex" | "rotatey" | "rotatez" | "skew" | "skewx" | "skewy" => Angle,
+        "rotate3d" if idx <= 2 => Number,
+        "rotate3d" if idx == 3 => Angle,
+        "perspective" => Length,
+        _ => return None,
+    })
+}
+
+/// transform 值计算串化（刀 ATP-R2）：逐函数逐参数按族路由——需计算参数
+/// （calc 形 / font-relative·视口族裸原子）折算重写，其余参数与未知函数整段
+/// 原文回显（fail-open——`rotate(42deg)`/`translateX(10%) scale(2)` passthrough
+/// 语料零漂移）。函数表按空白深度 0 切分（`matrix(1, 0, …)` 逗号+空白参数安全）。
+fn canonicalize_transform_value(v: &str, ctx: RegCtx) -> Option<String> {
+    let t = v.trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("none") {
+        return Some(t.to_string());
+    }
+    let funcs = split_top_level(t, b' ')?;
+    let mut changed = false;
+    let mut out = Vec::with_capacity(funcs.len());
+    for f in funcs {
+        match canonicalize_transform_function(f, ctx) {
+            Some(s) => {
+                changed = true;
+                out.push(s);
+            }
+            None => out.push(f.trim().to_string()),
+        }
+    }
+    Some(if changed { out.join(" ") } else { t.to_string() })
+}
+
+/// 单函数参数级串化：任一参数不可解析/无参数需重写 → None（调用方回退原文）。
+fn canonicalize_transform_function(f: &str, ctx: RegCtx) -> Option<String> {
+    let open = f.find('(')?;
+    if !f.ends_with(')') {
+        return None;
+    }
+    let name = f[..open].trim();
+    if name.is_empty() {
+        return None;
+    }
+    let args_raw = &f[open + 1..f.len() - 1];
+    let args = split_top_level(args_raw, b',')?;
+    let mut rewritten = false;
+    let mut parts = Vec::with_capacity(args.len());
+    for (idx, a) in args.iter().enumerate() {
+        let t = a.trim();
+        let kind = transform_param_kind(name, idx)?;
+        match rewrite_transform_arg(t, kind, ctx)? {
+            s if s == t => parts.push(t.to_string()),
+            s => {
+                rewritten = true;
+                parts.push(s);
+            }
+        }
+    }
+    if !rewritten {
+        return None;
+    }
+    Some(format!("{}({})", name, parts.join(", ")))
+}
+
+/// 单参数按族串化：calc 形按族分道（number/angle → 注册门求值器标量；
+/// lp/length → computed 通道 canonical）；font-relative/视口族裸原子经
+/// [`computed_length_atom`] 折算；其余裸 token 原样。参数族不合 → None。
+fn rewrite_transform_arg(t: &str, kind: TransformParamKind, ctx: RegCtx) -> Option<String> {
+    use TransformParamKind::*;
+    match kind {
+        Number => {
+            if let Some(CalcAtom::Num(n)) = calc_eval_strict(t) {
+                return Some(super::computed_style::format_num(n, ""));
+            }
+            if calc_eval_strict(t).is_some() {
+                return None; // calc 形但非 number 族 → 参数非法
+            }
+        }
+        Angle => {
+            if let Some(CalcAtom::Angle(d)) = calc_eval_strict(t) {
+                return Some(super::computed_style::format_num(d, "deg"));
+            }
+            if calc_eval_strict(t).is_some() {
+                return None;
+            }
+        }
+        LenPct | Length => {
+            if let Some(expr) = zero_css_parser::values::parse_calc(t) {
+                return super::computed_style::calc_computed_to_css(&expr, ctx.font_size_px, None);
+            }
+            if token_needs_length_compute(t) {
+                let a = computed_length_atom(t, ctx, kind == LenPct)?;
+                return Some(match a {
+                    CalcAtom::Len(n) => super::computed_style::format_num(n, "px"),
+                    CalcAtom::Pct(n) => super::computed_style::format_num(n, "%"),
+                    _ => return None,
+                });
+            }
+        }
+    }
+    Some(t.to_string())
+}
+
+/// 裸 token 是否 font-relative/视口族（计算必涉——非绝对/`%` 形即需折算）。
+fn token_needs_length_compute(t: &str) -> bool {
+    use zero_css_parser::values::LengthValue as L;
+    matches!(
+        zero_css_parser::values::parse_length(t),
+        Some(L::Em(_))
+            | Some(L::Ex(_))
+            | Some(L::Rem(_))
+            | Some(L::Ch(_))
+            | Some(L::Lh(_))
+            | Some(L::Vw(_))
+            | Some(L::Vh(_))
+            | Some(L::Vmin(_))
+            | Some(L::Vmax(_))
+            | Some(L::Svw(_))
+            | Some(L::Svh(_))
+            | Some(L::Svmin(_))
+            | Some(L::Svmax(_))
+            | Some(L::Lvw(_))
+            | Some(L::Lvh(_))
+            | Some(L::Lvmin(_))
+            | Some(L::Lvmax(_))
+            | Some(L::Dvw(_))
+            | Some(L::Dvh(_))
+            | Some(L::Dvmin(_))
+            | Some(L::Dvmax(_))
+            | Some(L::Cqw(_))
+            | Some(L::Cqh(_))
+            | Some(L::Cqi(_))
+            | Some(L::Cqb(_))
+            | Some(L::Cqmin(_))
+            | Some(L::Cqmax(_))
+            | Some(L::Vi(_))
+            | Some(L::Vb(_))
+            | Some(L::Svi(_))
+            | Some(L::Svb(_))
+            | Some(L::Lvi(_))
+            | Some(L::Lvb(_))
+            | Some(L::Dvi(_))
+            | Some(L::Dvb(_))
+    )
+}
+
 /// 按分量类型串化单值（canonical 计算形；不可解析返 None = guaranteed-invalid 面）。
-fn canonicalize_scalar(kind: TypeKind, value: &str, font_size_px: f64) -> Option<String> {
+fn canonicalize_scalar(kind: TypeKind, value: &str, ctx: RegCtx) -> Option<String> {
     let v = value.trim();
     match kind {
         TypeKind::Angle => {
+            // calc 路由先行（刀 ATP-R2——`calc(360deg + 400grad)`→`720deg`），
+            // 注册门求值器角度原子族自检（非 angle 族 calc → None）；退化裸形。
+            if let Some(CalcAtom::Angle(d)) = calc_eval_strict(v) {
+                return Some(super::computed_style::format_num(d, "deg"));
+            }
             let deg = parse_angle(v)?;
             Some(super::computed_style::format_num(deg, "deg"))
         }
         TypeKind::Time => {
+            if let Some(CalcAtom::Time(s)) = calc_eval_strict(v) {
+                return Some(super::computed_style::format_num(s, "s"));
+            }
             let s = parse_time(v)?;
             Some(super::computed_style::format_num(s, "s"))
         }
         TypeKind::Resolution => {
+            if let Some(CalcAtom::Res(dppx)) = calc_eval_strict(v) {
+                return Some(super::computed_style::format_num(dppx, "dppx"));
+            }
             let dppx = parse_resolution(v)?;
             Some(super::computed_style::format_num(dppx, "dppx"))
         }
-        TypeKind::Number => Some(super::computed_style::format_num(v.parse::<f64>().ok()?, "")),
-        TypeKind::Integer => Some(format!("{}", v.parse::<f64>().ok()?.round() as i64)),
+        TypeKind::Number => {
+            if let Some(CalcAtom::Num(n)) = calc_eval_strict(v) {
+                return Some(super::computed_style::format_num(n, ""));
+            }
+            Some(super::computed_style::format_num(v.parse::<f64>().ok()?, ""))
+        }
+        TypeKind::Integer => {
+            if let Some(CalcAtom::Num(n)) = calc_eval_strict(v) {
+                return Some(format!("{}", round_integer_ties_up(n)));
+            }
+            Some(format!("{}", round_integer_ties_up(v.parse::<f64>().ok()?)))
+        }
         TypeKind::Percentage => {
+            if let Some(CalcAtom::Pct(n)) = calc_eval_strict(v) {
+                return Some(super::computed_style::format_num(n, "%"));
+            }
             let n = v.strip_suffix('%')?.trim().parse::<f64>().ok()?;
             Some(super::computed_style::format_num(n, "%"))
         }
-        TypeKind::Length | TypeKind::LengthPercentage => match parse_lp(v, font_size_px)? {
-            (n, "px") => Some(super::computed_style::format_num(n, "px")),
-            (n, "%") => Some(super::computed_style::format_num(n, "%")),
-            _ => None,
-        },
+        TypeKind::Length | TypeKind::LengthPercentage => {
+            // calc 形：共享 computed 通道（computed_style `calc_computed_to_css`——
+            // css-values-4 §10.11 canonical 口径 + 真视口/font ctx；ref 元素
+            // min-height gCS 同机产出，期望值同源。刀 ATP-R2：修复前注册门
+            // 求值器拒 em 原子/按名义视口折算 → 空串/错值，registered-property-
+            // computation `calc(19em - 2%)`→`calc(-2% + 190px)` 全形锚定）。
+            if let Some(expr) = zero_css_parser::values::parse_calc(v) {
+                return super::computed_style::calc_computed_to_css(&expr, ctx.font_size_px, None);
+            }
+            // 裸形：真视口/lh ctx 折算（`13vw`→104px、`10lh`→200px 锚定）。
+            let allow_pct = kind == TypeKind::LengthPercentage;
+            let a = computed_length_atom(v, ctx, allow_pct)?;
+            match a {
+                CalcAtom::Len(n) => Some(super::computed_style::format_num(n, "px")),
+                CalcAtom::Pct(n) => Some(super::computed_style::format_num(n, "%")),
+                _ => None,
+            }
+        }
         TypeKind::Color => {
             // css-parser 全色面（命名色 green→rgb(0,128,0) 锚定）→ rgb/rgba
             // canonical（computed_style::color_to_css 同形，alpha 最短十进制）。
@@ -496,12 +876,21 @@ fn canonicalize_scalar(kind: TypeKind, value: &str, font_size_px: f64) -> Option
             }
         }
         TypeKind::TransformList | TypeKind::TransformFunction => {
-            // 计算值串化取解析形回写（插值走 transform_interp 通道）；空/none 原样。
-            Some(v.to_string())
+            // 参数级计算串化（刀 ATP-R2——`translateX(10em)`→`translateX(100px)`、
+            // `scale(calc(2 + 2))`→`scale(4)`；css-properties-values-api-1
+            // §computation-of-computed-values transform 参数面）。
+            canonicalize_transform_value(v, ctx)
         }
-        // 引号串/ident/url()/image 函数形：计算串化取原文（注册门裁决文法——
+        // ident/url()/image 函数形：计算串化取原文（注册门裁决文法——
         // 语料 `url(a)`/`linear-gradient(...)`/`light-dark(...)` 原样回显）。
-        TypeKind::StringKind | TypeKind::CustomIdent | TypeKind::UrlKind | TypeKind::ImageKind => Some(v.to_string()),
+        TypeKind::CustomIdent | TypeKind::UrlKind | TypeKind::ImageKind => Some(v.to_string()),
+        // 引号串：解码 token 后双引号重串化（同 strict_scalar StringKind 臂注）。
+        TypeKind::StringKind => match zero_css_parser::Tokenizer::new(v).collect_tokens().first() {
+            Some(zero_css_parser::Token::String(s)) => {
+                Some(format!("\"{}\"", zero_css_parser::tokenizer::escape_css_string(s)))
+            }
+            _ => Some(v.to_string()),
+        },
     }
 }
 
@@ -1521,11 +1910,23 @@ fn strict_scalar(kind: TypeKind, raw: &str) -> Option<String> {
                 _ => None,
             }
         }
-        // 色面复用 lenient 通道（parse_color 全色面 + rgb/rgba canonical 同形）。
-        TypeKind::Color => canonicalize_scalar(TypeKind::Color, v, 16.0),
+        // 色面复用 lenient 通道（parse_color 全色面 + rgb/rgba canonical 同形；
+        // 色串化不消费 font/lh ctx——缺省 ctx 形即可）。
+        TypeKind::Color => canonicalize_scalar(TypeKind::Color, v, RegCtx::with_font(16.0)),
         TypeKind::TransformFunction => valid_transform_function(v).then(|| v.to_string()),
         TypeKind::TransformList => valid_transform_list_value(v).then(|| v.to_string()),
-        TypeKind::StringKind => valid_string_token(v).then(|| v.to_string()),
+        TypeKind::StringKind => {
+            // 串 canonical：解码 token 后双引号重串化（css-syntax-3
+            // #serialize-a-string——CSS 源单引号形 `'foo'` 计算形 `"foo"`，
+            // corpus at-property.html `<string>+/#` 族钉形）。注册门引号文法
+            // 已保证首 token 为串，防御臂原样回落。
+            valid_string_token(v).then(|| match zero_css_parser::Tokenizer::new(v).collect_tokens().first() {
+                Some(zero_css_parser::Token::String(s)) => {
+                    format!("\"{}\"", zero_css_parser::tokenizer::escape_css_string(s))
+                }
+                _ => v.to_string(),
+            })
+        }
         TypeKind::CustomIdent => valid_custom_ident_value(v).then(|| v.to_string()),
         TypeKind::UrlKind => valid_url_value(v).then(|| v.to_string()),
         TypeKind::ImageKind => valid_image_value(v).then(|| v.to_string()),
@@ -1609,60 +2010,156 @@ fn validate_initial_strict(syntax: &SyntaxDescriptor, value: &str) -> Option<Str
     }
 }
 
-/// 注册属性计算值串化（gCS `--` 分支消费）：
-/// - 有声明值：按 syntax 分型解析串化；解析失败 → `Some("")`（§3.2 invalid at
-///   computed-value time → guaranteed-invalid，序列化空串）；
-/// - 无声明值：initial 兜底（`inherits: false` 元素重置语义近似——FIXME(regprop-inherit)：
-///   inherits:true 的祖先链传播与 inherits:false 的父值截断未做，依赖
-///   style-system gather 未接运行时注册表）。
+/// 注册名清单（`@property` 规则通道 ∪ JS 通道；规则通道优先语义在 [`lookup`]）。
+fn registered_names() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    RULE_REGISTRY.with(|r| out.extend(r.borrow().keys().cloned()));
+    REGISTRY.with(|r| {
+        for k in r.borrow().keys() {
+            if !out.iter().any(|x| x == k) {
+                out.push(k.clone());
+            }
+        }
+    });
+    out
+}
+
+/// var() 替换视图（刀 ATP-R2）：注册属性以计算值参与替换（css-properties-
+/// values-api-1 §computation——registered property substitutes as a token
+/// sequence equivalent to its computed value）：
+/// - 已声明且无 var：计算值覆盖（含 var 形保留原文——替换期经本视图递归，
+///   引用项已覆盖为计算值）；
+/// - 已声明计算失败（guaranteed-invalid）：移除（css-variables-1 undefined
+///   语义——consumer fallback 生效；"serialized as the empty string" 消费面
+///   同形锚定）；
+/// - 未声明：注入 initial 计算形（无 initial/guaranteed-invalid 不注入——
+///   `var(--123px, 6px)` → `123px` 非 fallback 锚定）。
+///
+/// 注册表空 → 原样克隆（零注册面零额外行为）。
+/// <https://drafts.css-houdini.org/css-properties-values-api-1/#computation-of-computed-values>
+pub(crate) fn substitution_view(
+    map: &std::collections::HashMap<String, String>,
+    ctx: RegCtx,
+) -> std::collections::HashMap<String, String> {
+    let mut out = map.clone();
+    let names = registered_names();
+    if names.is_empty() {
+        return out;
+    }
+    for name in names {
+        let Some(entry) = lookup(&name) else {
+            continue;
+        };
+        let raw = out.get(&name).cloned();
+        match raw.as_deref() {
+            Some(r) if !contains_var_function(r) => match canonicalize_value(&entry.syntax, r, ctx) {
+                Some(v) => {
+                    out.insert(name, v);
+                }
+                None => {
+                    out.remove(&name);
+                }
+            },
+            Some(_) => {}
+            None => {
+                if let Some(iv) = entry.initial_computed.as_deref()
+                    && let Some(v) = canonicalize_value(&entry.syntax, iv, ctx)
+                {
+                    out.insert(name, v);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 注册属性计算值串化（gCS `--` 分支消费；刀 ATP-R2 var() 替换面接入）：
+///
+/// 1. 替换视图（[`substitution_view`]）下 var() 完整替换（css-variables-1
+///    使用点解析——注册名以计算值参与替换，未声明注入 initial 计算形）；
+/// 2. 按 syntax 分型串化（§computation-of-computed-values）；
+/// 3. 兜底序（var-reference-registered-properties 页双锚定）：
+///    - 直 DECL 不合 syntax（无 var）→ guaranteed-invalid `''`；
+///    - 声明含 var、替换后不合 syntax / 替换失败（css-variables-1 invalid at
+///      computed-value time）→ initial 计算形兜底（inherits:false 口径；
+///      inherits:true 祖先链传播 FIXME(regprop-inherit) 同源挂账——
+///      `--registered-length-invalid` → initial `'15px'` 锚定）；
+///    - 无声明值 → initial 计算形（修复前 raw 回显）。
 ///
 /// 未注册返 None（调用方走既有未注册 `--` 路径）。
-pub(crate) fn computed_value(name: &str, declared: Option<&str>, font_size_px: f64) -> Option<String> {
+pub(crate) fn computed_value(
+    name: &str,
+    custom_properties: &std::collections::HashMap<String, String>,
+    ctx: RegCtx,
+) -> Option<String> {
     let (syntax, initial) = registration_of(name)?;
-    Some(match declared {
-        Some(v) if !v.trim().is_empty() => canonicalize_value(&syntax, v, font_size_px).unwrap_or_default(),
-        _ => initial.unwrap_or_default(),
+    let raw = custom_properties.get(name);
+    let resolved = raw.map(|v| {
+        zero_style_system::resolve_var_checked(v, &substitution_view(custom_properties, ctx)).unwrap_or_default()
+    });
+    let declared_has_var = raw.map(|v| contains_var_function(v)).unwrap_or(false);
+    Some(match resolved.as_deref() {
+        // 无声明值 / 替换失败（guaranteed-invalid）→ initial 计算形兜底。
+        None | Some("") => canonicalize_value(&syntax, initial.as_deref().unwrap_or(""), ctx).unwrap_or_default(),
+        Some(v) => match canonicalize_value(&syntax, v, ctx) {
+            Some(x) => x,
+            // 替换成功但不合 syntax：声明含 var → initial（invalid at
+            // computed-value time）；直 DECL → guaranteed-invalid `''`。
+            None if declared_has_var => {
+                canonicalize_value(&syntax, initial.as_deref().unwrap_or(""), ctx).unwrap_or_default()
+            }
+            None => String::new(),
+        },
     })
 }
 
 /// 值按 syntax 分型串化（含列表展开；`|` 组合按首个可解析的备选分型）。
-fn canonicalize_value(syntax: &SyntaxDescriptor, value: &str, font_size_px: f64) -> Option<String> {
+fn canonicalize_value(syntax: &SyntaxDescriptor, value: &str, ctx: RegCtx) -> Option<String> {
     match syntax {
         SyntaxDescriptor::Universal | SyntaxDescriptor::Normal => Some(value.trim().to_string()),
         SyntaxDescriptor::Combined(components) => components
             .iter()
-            .find_map(|comp| canonicalize_component(comp, value, font_size_px)),
+            .find_map(|comp| canonicalize_component(comp, value, ctx)),
     }
 }
 
 /// 单分量串化（含 +/# 列表展开）。
-fn canonicalize_component(comp: &SyntaxComponent, value: &str, font_size_px: f64) -> Option<String> {
+fn canonicalize_component(comp: &SyntaxComponent, value: &str, ctx: RegCtx) -> Option<String> {
     match comp.kind {
         None => {
             // ident 字面量：相等即原样；不等落下一备选。
             (value.trim() == comp.ident).then(|| value.trim().to_string())
         }
         Some(kind) => match comp.list {
-            ListMarker::Single => canonicalize_scalar(kind, value, font_size_px),
+            ListMarker::Single => canonicalize_scalar(kind, value, ctx),
+            // transform 空白列表走括号深度 0 切分（`matrix(1, 0, …)` 类函数内
+            // 空白不可切——`<transform-function>+` `translateX(10%) scale(2)` 形）。
+            ListMarker::Space if matches!(kind, TypeKind::TransformList | TypeKind::TransformFunction) => {
+                canonicalize_transform_value(value, ctx)
+            }
+            // 列表切分走 token 感知 [`split_value_items`]（与注册门
+            // [`strict_component`] 单源同刀 ATP-R2 P2F 根修——`<color>#`
+            // `rgb(255, 0, 0), rgb(0, 255, 0)` 函数内逗号/空白不可切，
+            // css-properties-values-api-1 §animation 列表分项语义）。
             ListMarker::Space => {
-                let parts: Vec<&str> = value.split_whitespace().collect();
+                let parts: Vec<&str> = split_value_items(value, false);
                 if parts.is_empty() {
                     return None;
                 }
                 parts
                     .iter()
-                    .map(|p| canonicalize_scalar(kind, p, font_size_px))
+                    .map(|p| canonicalize_scalar(kind, p, ctx))
                     .collect::<Option<Vec<_>>>()
                     .map(|v| v.join(" "))
             }
             ListMarker::Comma => {
-                let parts: Vec<&str> = value.split(',').collect();
+                let parts: Vec<&str> = split_value_items(value, true);
                 if parts.is_empty() {
                     return None;
                 }
                 parts
                     .iter()
-                    .map(|p| canonicalize_scalar(kind, p, font_size_px))
+                    .map(|p| canonicalize_scalar(kind, p, ctx))
                     .collect::<Option<Vec<_>>>()
                     .map(|v| v.join(", "))
             }
@@ -1843,6 +2340,15 @@ fn color_channels(s: &str) -> Option<(f64, f64, f64, f64)> {
 mod tests {
     use super::*;
 
+    /// 刀 ATP-R2 computed_value 新签名钉测便捷形：空 custom_properties +
+    /// 仅 font ctx（16px），declared None → 空表。
+    fn cv(name: &str, declared: Option<&str>) -> Option<String> {
+        let map = declared
+            .map(|v| std::collections::HashMap::from([(name.to_string(), v.to_string())]))
+            .unwrap_or_default();
+        computed_value(name, &map, RegCtx::with_font(16.0))
+    }
+
     #[test]
     fn test_syntax_grammar() {
         assert!(matches!(
@@ -1899,16 +2405,13 @@ mod tests {
     fn test_canonicalize_and_interpolate() {
         clear_all();
         assert!(register("--a", Some("<angle>"), true, false, true, Some("100deg")).is_ok());
-        assert_eq!(computed_value("--a", None, 16.0), Some("100deg".into()));
-        assert_eq!(computed_value("--a", Some("0.5turn"), 16.0), Some("180deg".into()));
+        assert_eq!(cv("--a", None), Some("100deg".into()));
+        assert_eq!(cv("--a", Some("0.5turn")), Some("180deg".into()));
         assert_eq!(interpolate("--a", "100deg", "200deg", 0.5, 16.0), Some("150deg".into()));
         clear_all();
         assert!(register("--c", Some("<color>"), true, false, true, Some("rgb(0, 0, 0)")).is_ok());
         // 命名色串化（register-property.html 锚定 'green'→'rgb(0, 128, 0)'）。
-        assert_eq!(
-            computed_value("--c", Some("green"), 16.0),
-            Some("rgb(0, 128, 0)".into())
-        );
+        assert_eq!(cv("--c", Some("green")), Some("rgb(0, 128, 0)".into()));
         assert_eq!(
             interpolate("--c", "rgb(0, 0, 0)", "rgb(255, 0, 0)", 0.5, 16.0),
             Some("rgb(128, 0, 0)".into())

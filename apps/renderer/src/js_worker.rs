@@ -1447,8 +1447,12 @@ impl WorkerMemTrace {
         };
         let before = crate::malloc_stats::mallinfo2_snapshot();
         // SAFETY: `malloc_trim(0)` 只对 malloc 空闲页 madvise 归还，无指针语义、
-        // 不触碰活对象；多线程下 glibc 自带 arena 锁。
+        // 不触碰活对象；多线程下 glibc 自带 arena 锁。符号仅 linux-gnu glibc
+        // 提供，其余目标编译为 no-op（与 mallinfo2_snapshot 同 gate，恒记 false）。
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         let released = unsafe { libc::malloc_trim(0) };
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        let released = 0;
         let after = crate::malloc_stats::mallinfo2_snapshot();
         let line = format!(
             "worker-trim t={ts} released={} before=[{}] after=[{}]",
@@ -2328,6 +2332,9 @@ fn js_worker_main(
                 }
                 if url_changed {
                     let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
+                    // d57（wptfyi-editing 刀 C-view）：查询粘性 canonical 表随导航清空
+                    //（engine thread_local 与 webview load_html 文档换代块同语义）。
+                    zero_engine::js_dom_bridge::reset_sticky_query();
                     // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
                     // 读 page_url fallback（= 新文档 url），history.length=1。闭合 SPA-then-redirect stale。
                     let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");

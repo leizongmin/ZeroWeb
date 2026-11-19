@@ -2546,6 +2546,44 @@
       }
       return _makeFfvRule(ffvJson, parentSheet);
     }
+    // @property 插入面（css-properties-values-api-1 §at-property-rule；刀 ATP）——
+    // 整条交宿主单规则解析 + 描述符有效门裁决（syntax 文法/inherits 严格/initial-value
+    // 独立性单源），空返 = 整条无效 → SyntaxError DOMException（cssom-1 insertRule
+    // 非法规则文本语义）。非空 = CSSPropertyRule 物化（_makePropertyRule）。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/
+    var pParse = /^@property([\s\S]*)$/i.exec(t);
+    if (pParse) {
+      var pJson = null;
+      if (typeof __zw_parse_property_rule === 'function') {
+        try { pJson = JSON.parse(__zw_parse_property_rule(t) || ''); } catch (_eP) { pJson = null; }
+      }
+      if (!pJson || !pJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@property' rule.",
+          'SyntaxError');
+      }
+      return _makePropertyRule(pJson, parentSheet);
+    }
+    // @keyframes 插入面（css-animations-1 §at-ruledef-keyframes；刀 KF）——
+    // 整条交宿主单规则解析（<keyframes-name> = <custom-ident> | <string> 文法
+    // 门 + 关键帧选择器门单源），空返 = 整条无效 → SyntaxError DOMException
+    //（cssom-1 insertRule 非法规则文本语义）。非空 = CSSKeyframesRule 物化
+    //（_makeKfRule）。`@keyframes-` 前缀异名 at-rule（tokenizer 单 ident）经
+    // 宿主解析非 Keyframes 规则 → 空返同臂拒。
+    // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+    var kfParse = /^@keyframes([\s\S]*)$/i.exec(t);
+    if (kfParse) {
+      var kfJson = null;
+      if (typeof __zw_parse_keyframes_rule === 'function') {
+        try { kfJson = JSON.parse(__zw_parse_keyframes_rule(t) || ''); } catch (_eKf) { kfJson = null; }
+      }
+      if (!kfJson || !kfJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@keyframes' rule.",
+          'SyntaxError');
+      }
+      return _makeKfRule(kfJson, parentSheet, flushFn);
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2683,6 +2721,114 @@
     }
     return rule;
   }
+  // wptfyi-css 刀 ATP：CSSPropertyRule 接口全局（css-properties-values-api-1
+  // §at-property-rule CSSOM 读面——CSSPositionTryRule 空壳模式；type 0
+  //（cssom-1 无专型常量缺省，corpus 'CSSRule.type returns 0' 钉）+ name/syntax/
+  // inherits/initialValue 四属性 + canonical cssText）。
+  // https://drafts.css-houdini.org/css-properties-values-api-1/
+  if (typeof globalThis.CSSPropertyRule !== 'function') {
+    globalThis.CSSPropertyRule = function CSSPropertyRule() {};
+  }
+  // @property 规则物化（`__zw_parse_property_rule` host 单源 JSON——wire 读面 +
+  // insertRule 写面共用构造，fv1 `_makeFfvRule` 单实现双通道同型）。
+  function _makePropertyRule(propJson, parentSheet) {
+    var rule = Object.create((globalThis.CSSPropertyRule &&
+      globalThis.CSSPropertyRule.prototype) || Object.prototype);
+    rule.type = 0;
+    rule.name = propJson.name || '';
+    rule.syntax = propJson.syntax != null ? propJson.syntax : '*';
+    rule.inherits = !!propJson.inherits;
+    rule.initialValue = propJson.initialValue != null ? propJson.initialValue : null;
+    rule.cssText = propJson.cssText || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = null;
+    return rule;
+  }
+  // wptfyi-css 刀 KF：CSSKeyframesRule/CSSKeyframeRule 接口全局（css-animations-1
+  // §CSSKeyframesRule/§CSSKeyframeRule CSSOM 读面——CSSPropertyRule 空壳模式；
+  // legacy CSSRule type 常量 KEYFRAMES_RULE=7 / KEYFRAME_RULE=8）。
+  // https://drafts.csswg.org/css-animations-1/#csskeyframesrule
+  if (typeof globalThis.CSSKeyframesRule !== 'function') {
+    globalThis.CSSKeyframesRule = function CSSKeyframesRule() {};
+  }
+  if (typeof globalThis.CSSKeyframeRule !== 'function') {
+    globalThis.CSSKeyframeRule = function CSSKeyframeRule() {};
+  }
+  // 关键帧选择器文法（css-animations-1 §typedef-keyframe-selector：single
+  // keyframe selector = `from` | `to` | <percentage>，逗号列表；appendRule
+  // 写面校验单源）。
+  var _KF_SEL_RE = /^(?:from|to|[+-]?(?:\d+|\d*\.\d+)%(?:\s*,\s*(?:from|to|[+-]?(?:\d+|\d*\.\d+)%))*)$/i;
+  // @keyframes 规则物化（`__zw_parse_keyframes_rule` host 单源 JSON——wire 读面 +
+  // insertRule 写面共用构造，_makePropertyRule 单实现双通道同型）。嵌套 cssRules =
+  // CSSKeyframeRule 列表（keyText + style 经 _makeRuleStyle——写面 rebuild 回写
+  // kr.cssText 后 _kfFlush 重算父规则 cssText 再 flush 上 sheet，flushToOwner
+  // join cssText 回写 `<style>` 文本引擎侧再解析归 Rule::Keyframes，往返稳定）；
+  // appendRule/deleteRule/findRule 操作同一列表。
+  // https://drafts.csswg.org/css-animations-1/#csskeyframesrule
+  function _makeKfRule(kfJson, parentSheet, flushFn) {
+    var rule = Object.create((globalThis.CSSKeyframesRule &&
+      globalThis.CSSKeyframesRule.prototype) || Object.prototype);
+    rule.type = 7; // CSSRule.KEYFRAMES_RULE
+    rule.name = kfJson.name || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.parentRule = null;
+    rule.style = null;
+    var krs = [];
+    function _kfFlush() {
+      var ps = [];
+      for (var fi = 0; fi < krs.length; fi++) ps.push(krs[fi].cssText);
+      rule.cssText = '@keyframes ' + rule.name + ' { ' + ps.join(' ') + ' }';
+      if (typeof flushFn === 'function') { try { flushFn(); } catch (_eKF) {} }
+    }
+    function _makeKr(kt, ct) {
+      var kr = Object.create((globalThis.CSSKeyframeRule &&
+        globalThis.CSSKeyframeRule.prototype) || Object.prototype);
+      kr.type = 8; // CSSRule.KEYFRAME_RULE
+      kr.keyText = kt;
+      kr.selectorText = kt;
+      kr.cssText = ct;
+      kr.parentRule = rule;
+      kr.parentStyleSheet = parentSheet;
+      kr.style = _makeRuleStyle(kr, _kfFlush);
+      return kr;
+    }
+    var blocks = kfJson.keyframes || [];
+    for (var ki = 0; ki < blocks.length; ki++) {
+      krs.push(_makeKr(blocks[ki].keyText || '', blocks[ki].cssText || (blocks[ki].keyText + ' { }')));
+    }
+    rule.cssRules = krs;
+    rule.appendRule = function (ruleText) {
+      var t = String(ruleText == null ? '' : ruleText).trim();
+      var lo = t.indexOf('{');
+      var kt = (lo >= 0 ? t.slice(0, lo) : t).trim();
+      if (!_KF_SEL_RE.test(kt)) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'appendRule' on 'CSSKeyframesRule': Invalid keyframe selector.",
+          'SyntaxError');
+      }
+      var body = lo >= 0 ? t.slice(lo + 1).replace(/}\s*$/, '').trim() : '';
+      krs.push(_makeKr(kt, kt + ' { ' + body + ' }'));
+      _kfFlush();
+    };
+    rule.findRule = function (key) {
+      var want = String(key == null ? '' : key).trim();
+      for (var fi = 0; fi < krs.length; fi++) {
+        if (krs[fi].keyText === want) return krs[fi];
+      }
+      return null;
+    };
+    rule.deleteRule = function (key) {
+      var want = String(key == null ? '' : key).trim();
+      for (var di = 0; di < krs.length; di++) {
+        if (krs[di].keyText === want) {
+          krs.splice(di, 1);
+          _kfFlush();
+          return;
+        }
+      }
+    };
+    return rule;
+  }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
   // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
   // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
@@ -2791,6 +2937,34 @@
                 try { ffvWJ = JSON.parse(__zw_parse_ffv_rule(parts[1]) || ''); } catch (_eFfvW) { ffvWJ = null; }
               }
               if (ffvWJ && ffvWJ.cssText) rulesCache.push(_makeFfvRule(ffvWJ, ss));
+              continue;
+            }
+            // @property wire 条目（css-properties-values-api-1 §at-property-rule；
+            // 刀 ATP：at-property/-cssom cssRules 读面）——wire 标记字段 `@property`，
+            // cssText canonical 全文经 `__zw_parse_property_rule` 再解析物化
+            //（_makePropertyRule，与 insertRule 写面单实现双通道）。解析失败跳过
+            // 条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            if (parts[0] === '@property') {
+              var pWJ = null;
+              if (typeof __zw_parse_property_rule === 'function') {
+                try { pWJ = JSON.parse(__zw_parse_property_rule(parts[1]) || ''); } catch (_ePw) { pWJ = null; }
+              }
+              if (pWJ && pWJ.cssText) rulesCache.push(_makePropertyRule(pWJ, ss));
+              continue;
+            }
+            // @keyframes wire 条目（css-animations-1 §at-ruledef-keyframes；
+            // 刀 KF：keyframes-name-valid 39F cssRules 读面——此前 keyframes
+            // 显式 defer，规则不入 wire 即 sheet.cssRules 恒缺位）——wire 标记
+            // 字段 `@keyframes`，cssText canonical 全文经 `__zw_parse_keyframes_rule`
+            // 再解析物化（_makeKfRule，与 insertRule 写面单实现双通道）。解析
+            // 失败跳过条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+            if (parts[0] === '@keyframes') {
+              var kfWJ = null;
+              if (typeof __zw_parse_keyframes_rule === 'function') {
+                try { kfWJ = JSON.parse(__zw_parse_keyframes_rule(parts[1]) || ''); } catch (_eKfW) { kfWJ = null; }
+              }
+              if (kfWJ && kfWJ.cssText) rulesCache.push(_makeKfRule(kfWJ, ss, flushToOwner));
               continue;
             }
             r = {
@@ -5834,6 +6008,23 @@
           if (a && a.playState !== 'idle') out.push(a);
         }
       }
+      // 刀 WA：CSS animation 浮出面（css-animations-2 §getAnimations on
+      // Document——全文档枚举 `__zw_query_all('*')` 逐元素收集 CSSAnimation；
+      // 文档序。伪元素动画不浮出。详 part03 _zwCssAnimationsForElement）。
+      try {
+        if (typeof _zwCssAnimationsForElement === 'function'
+            && typeof __zw_query_all === 'function' && typeof _wrapSelector === 'function') {
+          var _wire = __zw_query_all('*');
+          if (_wire) {
+            var _sels = String(_wire).split('|');
+            for (var _wi = 0; _wi < _sels.length; _wi++) {
+              if (!_sels[_wi]) continue;
+              var _cAnims = _zwCssAnimationsForElement(_sels[_wi], null);
+              for (var _ci = 0; _ci < _cAnims.length; _ci++) out.push(_cAnims[_ci]);
+            }
+          }
+        }
+      } catch (_eCssAnimsDoc) {}
       return out;
     },
     // M3-S1（Web Animations §6.2）：document.timeline 默认 DocumentTimeline 实例

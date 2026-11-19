@@ -8,7 +8,9 @@ use std::fmt::Write as _; // write! 直接写目标 String，免 format! 中间�
 
 mod at_rules;
 mod helpers;
+pub(crate) mod property_validate;
 pub use helpers::{resolve_page_margin_px, resolve_page_size_px};
+pub use property_validate::syntax_string_content;
 
 /// CSS 解析器。
 ///
@@ -446,7 +448,19 @@ impl<'a> Parser<'a> {
                 } else if name.eq_ignore_ascii_case("page") {
                     self.consume_page_rule().map(Rule::Page)
                 } else if name.eq_ignore_ascii_case("property") {
-                    self.consume_property_rule().map(Rule::Property)
+                    // 刀 ATP：@property 描述符有效门（property_validate）在
+                    // consume_property_rule 内整条 extent 消费完后裁决，None 时规则
+                    // 已在干净边界——共享 None 分支的 skip_malformed_qualified_rule
+                    // 面向「中途失败未消费 body」的 at-rule，这里再走会把后一条
+                    // 合法规则当残余吞掉（@font-face 臂同型；corpus cssom 页
+                    // --vALId 隔离存活、ws 后邻被吞钉形，probe T8 直证）。臂内
+                    // 自行收尾。
+                    // https://drafts.css-houdini.org/css-properties-values-api-1/
+                    self.namespace_prologue_ended = true;
+                    return match self.consume_property_rule() {
+                        Some(r) => vec![Rule::Property(r)],
+                        None => vec![],
+                    };
                 } else if name.eq_ignore_ascii_case("counter-style") {
                     self.consume_counter_style_rule().map(Rule::CounterStyle)
                 } else if name.eq_ignore_ascii_case("position-try") {

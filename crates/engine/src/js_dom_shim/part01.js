@@ -54,6 +54,17 @@
     return _out.join('');
   };
   var _listenerStore = {};
+  // d56r（input-events ①(b) 刀，2026-11-19）：节点 id 桶——监听器跨 wrapper 家族调和
+  //（match-only，不统一 wrapper）。同一原生节点可被不同 wrapper 家族各自包装入桶
+  //（attach 键 = 引擎 canonical 串，CE 键链派发站键 = 原始查询串——d56 轮诊断
+  // 四轮定谳的换代面），派发按包装键点火落空 = bi=0 族根因。元素臂注册面把 record
+  // 同引用双写进 `id:<NodeId>` 键桶（record 带 `_zwNid` 印记），派发面
+  // `_dispatchToListeners` 按 station key 反查 NodeId 合并；remove/once/signal-abort
+  // 三处同步跨桶清理。`__zwNidCount` 兼零成本门：0 时派发面零额外开销。spec：
+  // dispatch 以 event path 节点为单位 invoke listener 表，wrapper 家族身份不参与——
+  // https://dom.spec.whatwg.org/#concept-event-dispatch
+  var _zwNidBuckets = {};
+  var __zwNidCount = 0;
   // R2933 element 级 IDL on-event handler 存储（per-element-key → { eventType: fn }）。on* setter 把 fn
   // 同时记此 + 注册进 _listenerStore[key]（使 dispatchEvent 触发）；getter 返此存储 fn（或 null）。
   var _onHandlers = {};
@@ -12040,6 +12051,14 @@
         } catch (_eShellPos) {
           try { _shellDst.appendChild(_shP); } catch (_eShellPos2) { return false; }
         }
+        // d58（wptfyi-editing 刀 D，2026-11-19）：R5450 AdjacentText wire 打记消费——
+        // plain 摘离树 join（C-view world-sync 重建的补偿子树）里文本壳经摘离
+        //（tombstone）再落位时，本地 insertBefore/appendChild 的 R5450 跨父移动臂
+        // **已**按同位记 AdjacentText wire；此处序列化 copy 再插即引擎侧复制形
+        //（input-events join 族 `abcdefdef` 18 键 P2F，d58 wire 批实证 op6+op7
+        // 同位同文）。打记由 part04 两个 R5450 wire 臂置位、本处消费即清；fresh
+        // 文本/元素壳无打记，copy 照旧（left-paragraph-and-right-line 363 案域）。
+        if (_shP.__zwAdjTextWired === true) { _shP.__zwAdjTextWired = false; continue; }
         if (_shP.__zwHandle || _shP.__zwSelector
           || typeof _zwPosSelOf !== 'function' || typeof __zw_insert_adjacent_html !== 'function') continue;
         // 等值降级裸文本壳（2026-10-31）：shim 文本节点无 outerHTML（此前空串
@@ -14893,7 +14912,12 @@
     var cmdArmed1 = globalThis.__zwTypingCmdArmed === true;
     if (typeof globalThis.__zwDefaultParagraphSeparator !== 'string'
         && !hasPendingOvr && !cmdArmed1) {
-      sepTag = hostTag;
+      // ⑩ CE-island li/dd host（下方臂门扩域）回退同持产线缺省 'p'——li 同标签
+      // 回退落扩展门面会产 li 嵌 li 非法形；div host 双面制不变（⑩ 前本行仅 div
+      // 门消费，语义恒等）。恢复注：d55 刀（a763e74b1）误改 `sepTag = hostTag`
+      // 直通＋删 ⑩ 臂扩域，ip 语料 6001-7000 窗 2 键 P2F＋part143 钉测红，
+      // 2026-11-19 按原 I4 语义恢复（详见 ⑩ 臂门处恢复注）。
+      sepTag = (hostTag === 'div') ? 'div' : 'p';
     }
     // ⓪ void 元素 caret 拆分（editing-compat void 簇，2026-10-31）：collapsed caret
     // 落在 void 元素（br/img/hr/input/embed/wbr）上时，insertParagraph = 在 void
@@ -14969,7 +14993,26 @@
       && boundaryParent === host && so === 0
       && !_zwCeIsBlockTagName(String(boundaryNode.tagName || '').toLowerCase())
       && ![].some.call((boundaryNode.childNodes || []), _zwJusIsVisible);
-    if (!lineBreakOnly && (block === host || arm1EmptyShellEl) && hostTag === 'div'
+    // ⑩ CE-island host 本体 li/dd 直子文本中点 caret（editing-compat ip I4
+    // 族，2026-11-18）：caret 在 host 本体 li/dd（part06 host2 上溯最近
+    // CE≠false = 自身，block===host）直子内联文本中点——Chrome 录音内容拆
+    // div 块内嵌 li（dps=div 显式 :1996/:2008 `<li contenteditable><div>ab
+    // </div><div>cd</div></li>`）而非同标签兄弟拆分（父 CE=false 不可编辑，
+    // 兄弟 li 拆分越出编辑宿主）。h1/dt 非段落内容容器退化行断（corpus
+    // :1992/:2002 ab<br>cd 录音）不入门；span 行内宿主（:1972-:1990）
+    // block=li≠host 不入门；普通可编辑列表 host=ul/block=li 同不入门。窄门
+    // 只收折叠中点文本 caret——首/尾/元素 caret 与选区面无语料锚保守维持
+    // ③ 行断现径。机制复用 ① boundaryText 臂（头/尾双块嵌入 host、空侧垫
+    // br、caret 入新块首）。
+    // 恢复注（2026-11-19）：d55 刀（a763e74b1，input-events 域批面）误删本
+    // ⑩ 臂扩域＋sepTag 门直通化，ip 语料 6001-7000 窗 CE-island 两键 P2F＋
+    // part143 钉测红；e23 门禁批 L8 ABORT 捕获后按原 I4 语义恢复（d55 其余
+    // BS/FD 域改动不动）。
+    var arm1IslandLid = !lineBreakOnly && (hostTag === 'li' || hostTag === 'dd')
+      && isText && boundaryText && rng.collapsed
+      && boundaryOff > 0 && eo < _zwJusNodeLength(boundaryText);
+    if (!lineBreakOnly && (block === host || arm1EmptyShellEl)
+        && (hostTag === 'div' || arm1IslandLid)
         && (dispHost === '' || dispHost === 'block')
         && boundaryParent === host
         && (isText || boundaryNode === null || arm1EmptyShellEl)) {

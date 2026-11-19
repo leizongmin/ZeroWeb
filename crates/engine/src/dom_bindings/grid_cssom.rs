@@ -166,13 +166,29 @@ fn parse_grid_line_token(value: &str) -> Option<CssomGridLine> {
             }
             grid_line_custom_ident(t).map(CssomGridLine::Name)
         }
-        [first, rest @ ..] => {
-            let span = first.eq_ignore_ascii_case("span");
+        [first, ..] => {
+            // span && [<integer> || <custom-ident>]（css-grid-2 §grid-line：&&
+            // 组合无序约束——span 可居任意位，'5 somegridarea span' 形，WPT
+            // css-typed-om grid-start-end 页）。
+            let span_first = first.eq_ignore_ascii_case("span");
+            let span_at = if span_first {
+                None
+            } else {
+                tokens.iter().position(|t| t.eq_ignore_ascii_case("span"))
+            };
+            let span = span_first || span_at.is_some();
             if !span && first.eq_ignore_ascii_case("auto") {
                 return None;
             }
-            let rest: &[&str] = if span { rest } else { tokens.as_slice() };
-            match rest {
+            // 去 span 位后的余 token 序（span-first 时去首 token，等价原 rest）。
+            let others: Vec<&str> = tokens
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != 0 || !span_first)
+                .filter(|(i, _)| Some(*i) != span_at)
+                .map(|(_, t)| *t)
+                .collect();
+            match others.as_slice() {
                 [t] if span => {
                     if let Ok(n) = t.parse::<i64>() {
                         return (n > 0).then_some(CssomGridLine::Span(Some(n), None));
@@ -405,5 +421,71 @@ mod tests {
             Some("inherit")
         );
         assert_eq!(canonicalize_grid_decl("grid-auto-flow", "nonsense"), None);
+    }
+
+    // 刀 TO-GRID（css-grid-2 §grid-line）：span && [<integer> || <custom-ident>]
+    // 的 && 组合无序约束——span 可居任意位（WPT css-typed-om grid-start-end 页
+    // '5 somegridarea span' 形）。
+    #[test]
+    fn test_grid_line_span_any_order_canonical() {
+        assert_eq!(
+            canonicalize_grid_decl("grid-row-start", "5 somegridarea span").as_deref(),
+            Some("span 5 somegridarea")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-row-end", "somegridarea span").as_deref(),
+            Some("span somegridarea")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-column-start", "span 3").as_deref(),
+            Some("span 3")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-column-end", "3 somegridarea").as_deref(),
+            Some("3 somegridarea")
+        );
+        // 双整数 / 双 span / 非法 ident 恒拒。
+        assert_eq!(canonicalize_grid_decl("grid-row-start", "span 2 3"), None);
+        assert_eq!(canonicalize_grid_decl("grid-row-start", "span span"), None);
+        assert_eq!(canonicalize_grid_decl("grid-row-start", "5 2 span"), None);
+    }
+
+    // 刀 TO-GRID face B（css-grid-2 §track-breadth）：负 <length-percentage> 与
+    // calc() 在 CSSOM 写面 parse 期接受（used/computed 期钳制；WPT typed-om
+    // grid-template-columns-rows / grid-auto-columns-rows 页负长/负百分/calc
+    // 形，声明面期望保留）。<flex> 负值恒拒；line-name 组合不回退。
+    #[test]
+    fn test_grid_track_negative_and_calc_accepted() {
+        assert_eq!(
+            canonicalize_grid_decl("grid-template-columns", "-3.14em").as_deref(),
+            Some("-3.14em")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-template-rows", "-3.14%").as_deref(),
+            Some("-3.14%")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-auto-columns", "calc(0px + 0em)").as_deref(),
+            Some("calc(0px + 0em)")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-auto-rows", "calc(0% + 0%)").as_deref(),
+            Some("calc(0% + 0%)")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-template-columns", "100px -3.14em").as_deref(),
+            Some("100px -3.14em")
+        );
+        // <flex> 负值恒拒；混型 calc / 病态 token 恒拒。
+        assert_eq!(canonicalize_grid_decl("grid-template-columns", "-3.14fr"), None);
+        assert_eq!(
+            canonicalize_grid_decl("grid-template-columns", "calc(10deg + 1turn)"),
+            None
+        );
+        assert_eq!(canonicalize_grid_decl("grid-template-columns", "calc(nonsense)"), None);
+        assert_eq!(
+            canonicalize_grid_decl("grid-template-columns", "[linename1] 100px [linename2 linename3]").as_deref(),
+            Some("[linename1] 100px [linename2 linename3]")
+        );
     }
 }

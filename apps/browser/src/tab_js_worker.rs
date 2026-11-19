@@ -594,6 +594,9 @@ fn js_worker_main(
                     // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                     // 与 renderer 路径（js_worker.rs）一致——闭合 R3058/R3059 双路径 form-reset 不一致。
                     let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
+                    // d57（wptfyi-editing 刀 C-view）：查询粘性 canonical 表随导航清空
+                    //（engine thread_local 与 webview load_html 文档换代块同语义）。
+                    zero_engine::js_dom_bridge::reset_sticky_query();
                     // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
                     // 读 page_url fallback（= 新文档 url）。与 renderer 路径一致（闭合 SPA-then-redirect stale）。
                     let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");

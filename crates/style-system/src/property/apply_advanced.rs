@@ -1168,6 +1168,27 @@ pub fn apply_advanced_property_value(
             style.animation_composition = comps;
             return true;
         }
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range-start/end
+        // 槽。写门（apply.rs VALIDATED_PROPERTIES + 文法裁决）已先行；本臂 storage
+        // 期单源复用 [`values::animation_range_segments`] 逐段 canonical 化存储
+        //（逗号剥离，gCS computed 通道逐段再变换）。
+        // https://drafts.csswg.org/css-scroll-animations-1/#view-timelines-ranges
+        "animation-range-start" | "animation-range-end" => {
+            let side = if property == "animation-range-start" {
+                values::AnimationRangeSide::Start
+            } else {
+                values::AnimationRangeSide::End
+            };
+            let Some(segs) = values::animation_range_segments(value, side) else {
+                return false;
+            };
+            if side == values::AnimationRangeSide::Start {
+                style.animation_range_start = segs;
+            } else {
+                style.animation_range_end = segs;
+            }
+            return true;
+        }
         // ── Scroll Snap 属性 ──
         "scroll-snap-type" => {
             if let Some(v) = parse_scroll_snap_type_computed(value) {
@@ -1403,6 +1424,7 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakInsideValue::Avoid => BreakInsideValue::Avoid,
                     zero_css_parser::values::BreakInsideValue::AvoidPage => BreakInsideValue::AvoidPage,
                     zero_css_parser::values::BreakInsideValue::AvoidColumn => BreakInsideValue::AvoidColumn,
+                    zero_css_parser::values::BreakInsideValue::AvoidRegion => BreakInsideValue::AvoidRegion,
                 };
                 return true;
             }
@@ -1416,6 +1438,11 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakValue::Page => BreakValue::Page,
                     zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
                     zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                    zero_css_parser::values::BreakValue::Region => BreakValue::Region,
+                    zero_css_parser::values::BreakValue::Left => BreakValue::Left,
+                    zero_css_parser::values::BreakValue::Right => BreakValue::Right,
+                    zero_css_parser::values::BreakValue::Recto => BreakValue::Recto,
+                    zero_css_parser::values::BreakValue::Verso => BreakValue::Verso,
                 };
                 return true;
             }
@@ -1429,6 +1456,11 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakValue::Page => BreakValue::Page,
                     zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
                     zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                    zero_css_parser::values::BreakValue::Region => BreakValue::Region,
+                    zero_css_parser::values::BreakValue::Left => BreakValue::Left,
+                    zero_css_parser::values::BreakValue::Right => BreakValue::Right,
+                    zero_css_parser::values::BreakValue::Recto => BreakValue::Recto,
+                    zero_css_parser::values::BreakValue::Verso => BreakValue::Verso,
                 };
                 return true;
             }
@@ -1705,13 +1737,21 @@ pub fn apply_advanced_property_value(
         }
         // ── CSS Fonts feature 属性 ──
         "font-feature-settings" => {
-            if let Some(v) = values::parse_font_feature_settings(value) {
+            // 字体 ctx 变体：math 整数位按父级字体解析（css-values-4 §10.5
+            // <integer> 位；font-property-unit-cycles 10 腿驱动，见
+            // [`values::parse_font_feature_settings_with_font`]）。
+            if let Some(v) =
+                values::parse_font_feature_settings_with_font(value, Some(super::apply::font_slot_font_px(style)))
+            {
                 style.font_feature_settings = v;
                 return true;
             }
         }
         "font-variation-settings" => {
-            if let Some(v) = values::parse_font_variation_settings(value) {
+            // 同上：math 坐标位按父级字体解析（font-property-unit-cycles 10 腿）。
+            if let Some(v) =
+                values::parse_font_variation_settings_with_font(value, Some(super::apply::font_slot_font_px(style)))
+            {
                 style.font_variation_settings = v;
                 return true;
             }

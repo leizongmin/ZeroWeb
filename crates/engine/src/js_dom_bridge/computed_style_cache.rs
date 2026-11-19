@@ -1034,6 +1034,9 @@ fn ensure_handle_view_slot(
             // 重建与代际槽同口径（handle 通道 createElement 动态元素 gCS 走本槽，
             // interpolation corpus CSSA 元素即此形态——漏喂则 cssa 时钟空转全回落）。
             super::cssa_registry::note_stylesheets(&sheets);
+            // `@property` at-rule 注册喂入（刀 ATP R2：同槽同口径，漏喂则 CSS 源
+            // 注册属性对 gCS typed 串化/动画插值不可见）。
+            super::registered_properties::note_stylesheets(&sheets);
             *slot = Some((
                 html.to_string(),
                 drain_gen,
@@ -1469,6 +1472,9 @@ pub fn with_cached_document_styles<T>(
                         // 重建产物即当前代际权威 stylesheet 集，@keyframes 规则在此
                         // 注册进 gCS 咨询时钟（insert-or-replace 幂等）。
                         super::cssa_registry::note_stylesheets(&sheets);
+                        // `@property` at-rule 注册喂入（刀 ATP R2：同槽同口径
+                        // insert-or-replace，重声明后者胜）。
+                        super::registered_properties::note_stylesheets(&sheets);
                         // scopes 与槽键同步重建（派生缓存非键）：占位空表会让后续同代
                         // finish_generation_update 的 `slot.10.is_empty()` 分支谓词失真
                         //（shadow 页误入增量通道，shadow 树内变更退化走文档表级联）。
@@ -1518,6 +1524,8 @@ pub fn with_cached_document_styles<T>(
                         compute_document_styles_with_inline_overrides_css(html, mutations, &css);
                     // CSSA 声明式 keyframes 喂入（刀 E，同 tree_dirty 分支）。
                     super::cssa_registry::note_stylesheets(&sheets);
+                    // `@property` at-rule 注册喂入（刀 ATP R2，同上）。
+                    super::registered_properties::note_stylesheets(&sheets);
                     let shadow_scopes = crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
                     *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries, shadow_entries, shadow_scopes));
                 }

@@ -9,13 +9,14 @@ use std::collections::HashMap;
 use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
 use zero_css_parser::values::{
     AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
-    AnimationPlayStateValue, BackgroundEdge, BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp,
-    ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation,
-    ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue,
-    FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue,
-    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, RadialGradient,
-    RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp,
-    VisibilityValue, eval_calc_with_context, parse_length,
+    AnimationPlayStateValue, AnimationRangeShape, AnimationRangeSide, BackgroundEdge, BoxSizingValue, CalcContext,
+    CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec,
+    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem,
+    DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop,
+    GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule,
+    PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction,
+    TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc,
+    parse_length, range_offset_elides,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -351,23 +352,31 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // initial 兜底（§3 computation/computed-value-time）。var() 替换先行
         // （css-variables-1 使用点解析），解析结果再入分型串化。未注册名落既有路径。
         // <https://drafts.css-houdini.org/css-properties-values-api-1/#compute-the-value>
+        // 刀 ATP-R2（2026-11-19）：计算 ctx（真视口/lh）+ 替换视图（注册名以计算值
+        // 参与替换/未声明注入 initial 计算形）接入两端分支——未注册 `--x` 消费
+        // `var(--reg)` 亦读计算值（"Font-relative units are absolutized when
+        // substituting" 等锚定）。
+        let font_size_px = match &style.font_size {
+            LengthValue::Px(v) => *v,
+            _ => 16.0,
+        };
+        let ctx = super::registered_properties::RegCtx {
+            font_size_px,
+            line_height_px: line_height_px_of(&style.line_height, font_size_px),
+        };
         if super::registered_properties::registration_known(raw_name) {
-            let resolved = style
-                .custom_properties
-                .get(raw_name)
-                .map(|v| zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default());
-            let font_size_px = match &style.font_size {
-                LengthValue::Px(v) => *v,
-                _ => 16.0,
-            };
-            return super::registered_properties::computed_value(raw_name, resolved.as_deref(), font_size_px)
+            return super::registered_properties::computed_value(raw_name, &style.custom_properties, ctx)
                 .unwrap_or_default();
         }
         // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
         // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
         // 维持 resolve_var 现状（invalid → 初始/继承值）。
         return style.custom_properties.get(raw_name).map_or_else(String::new, |v| {
-            zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default()
+            zero_style_system::resolve_var_checked(
+                v,
+                &super::registered_properties::substitution_view(&style.custom_properties, ctx),
+            )
+            .unwrap_or_default()
         });
     }
     let p = raw_name.to_ascii_lowercase();
@@ -587,17 +596,43 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         },
         "font-variation-settings" => match &style.font_variation_settings {
             FontVariationSettingsValue::Normal => "normal".to_string(),
-            FontVariationSettingsValue::Settings(settings) => settings
-                .iter()
-                .map(|setting| {
-                    format!(
-                        "\"{}\" {}",
-                        String::from_utf8_lossy(&setting.tag),
-                        format_num(setting.value as f64, "")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", "),
+            FontVariationSettingsValue::Settings(settings) => settings_computed_join(
+                settings
+                    .iter()
+                    .map(|setting| {
+                        (
+                            setting.tag,
+                            format!(
+                                "\"{}\" {}",
+                                String::from_utf8_lossy(&setting.tag),
+                                format_num(setting.value as f64, "")
+                            ),
+                        )
+                    })
+                    .collect(),
+            ),
+        },
+        // font-feature-settings longhand gCS 回显（css-fonts-4
+        // §font-feature-settings-prop 序列化 `"tag" <integer>` 列表）——此前
+        // 无回显臂恒空串，math 整数位（font-property-unit-cycles `"tnum"
+        // calc(…)` 10 腿）parseFloat 恒 NaN。
+        "font-feature-settings" => match &style.font_feature_settings {
+            FontFeatureSettingsValue::Normal => "normal".to_string(),
+            FontFeatureSettingsValue::Features(features) => settings_computed_join(
+                features
+                    .iter()
+                    // css-fonts-4 #font-feature-settings-prop：`on` = 隐式整数 1，
+                    // 计算值串化省略（非 1 显式保留）。
+                    .map(|setting| {
+                        let rendered = if setting.value == 1 {
+                            format!("\"{}\"", String::from_utf8_lossy(&setting.tag))
+                        } else {
+                            format!("\"{}\" {}", String::from_utf8_lossy(&setting.tag), setting.value)
+                        };
+                        (setting.tag, rendered)
+                    })
+                    .collect(),
+            ),
         },
         "font-variant-alternates" => font_variant_alternates_str(&style.font_variant_alternates),
         "line-height" => line_height_str(&style.line_height, font_size_px),
@@ -1215,6 +1250,16 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // css-animations-2 §animation-composition：空列表回落初始 replace。
         "animation-composition" => enum_list_to_css(&style.animation_composition, "replace", animation_composition_str),
         "animation-play-state" => enum_list_to_css(&style.animation_play_state, "running", animation_play_state_str),
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range 侧槽
+        // computed——存储 canonical 指定段逐段变换（偏移经 length_to_css：
+        // em 等相对单位 resolve px、calc 同族折叠去壳、% 保留）+ 变换后侧别
+        // 省略重判；空槽回落初值 normal。
+        "animation-range-start" => {
+            animation_range_computed_to_css(&style.animation_range_start, AnimationRangeSide::Start, font_size_px)
+        }
+        "animation-range-end" => {
+            animation_range_computed_to_css(&style.animation_range_end, AnimationRangeSide::End, font_size_px)
+        }
         // ── transition/animation-timing-function（R2744）── Vec<TimingFunctionValue>，空→ease（初值）。
         "transition-timing-function" => {
             enum_list_to_css(&style.transition_timing_function, "ease", timing_function_to_css)
@@ -1227,6 +1272,62 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "transition" => transition_shorthand_to_css(style),
         "animation" => animation_shorthand_to_css(style),
         _ => String::new(),
+    }
+}
+
+/// animation-range 侧槽 computed 串化（css-scroll-animations-1
+/// §view-timelines-ranges + §animation-range-start/end computed 值）：
+/// 逐段偏移经 [`length_to_css`]（css-values-4 §8.5/§10.11——em 等相对单位
+/// resolve px、calc 同族折叠去壳、% 保留），变换后重判侧别省略（start
+/// 0%/end 100%——指定面 canonical 已省过一次，calc 折叠出新阈值形时
+/// 二次命中，如 'calc(10% - 10%)'→'calc(0%)'→'0%'→省）；裸偏移不省
+///（computed 页证据 '0%' 保留）；不可变换偏移 fail-soft 保原文。
+/// 空槽 → 初值 normal。
+fn animation_range_computed_to_css(segs: &[String], side: AnimationRangeSide, font_size_px: f64) -> String {
+    if segs.is_empty() {
+        return "normal".to_string();
+    }
+    let mut out: Vec<String> = Vec::with_capacity(segs.len());
+    for seg in segs {
+        let Some(items) = parse_animation_range_side(seg, side) else {
+            out.push(seg.clone());
+            continue;
+        };
+        for item in items {
+            match item.shape {
+                AnimationRangeShape::Normal => out.push("normal".to_string()),
+                AnimationRangeShape::Name(name, None) => out.push(name.as_str().to_string()),
+                AnimationRangeShape::Name(name, Some(off)) => {
+                    let computed = animation_range_offset_computed(&off, font_size_px);
+                    if range_offset_elides(&computed, side) {
+                        out.push(name.as_str().to_string());
+                    } else {
+                        out.push(format!("{} {}", name.as_str(), computed));
+                    }
+                }
+                AnimationRangeShape::Offset(off) => out.push(animation_range_offset_computed(&off, font_size_px)),
+            }
+        }
+    }
+    out.join(", ")
+}
+
+/// animation-range 偏移 computed 变换：calc 形（face A canonical 恒带壳）
+/// 走 [`parse_calc`]→[`LengthValue::Calc`]，其余走 [`parse_length`]（px/%/
+/// em 等单位原子）；序列化经 [`length_to_css`]（% 保留、calc 同族折叠
+/// 去壳、相对单位按 font-size resolve）。任一步不识别 → 保原文。
+fn animation_range_offset_computed(off: &str, font_size_px: f64) -> String {
+    let lv = if off.starts_with("calc(") {
+        parse_calc(off).map(|expr| LengthValue::Calc(Box::new(expr)))
+    } else {
+        parse_length(off)
+    };
+    match lv {
+        Some(lv) => {
+            let s = length_to_css(&lv, font_size_px);
+            if s.is_empty() { off.to_string() } else { s }
+        }
+        None => off.to_string(),
     }
 }
 
@@ -1387,8 +1488,7 @@ fn touch_action_to_css(t: &TouchActionValue) -> String {
 }
 
 /// break-before / break-after：CSS Fragmentation 单值序列化（共享 [`BreakValue`]）。
-/// 初值 auto。ZeroWeb enum 仅 6 变体（CSS 规范另含 recto/verso/left/right/region 等，未存储）。
-/// CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
+/// 初值 auto。CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
 fn break_value_to_css(b: &BreakValue) -> String {
     match b {
         BreakValue::Auto => "auto",
@@ -1397,6 +1497,11 @@ fn break_value_to_css(b: &BreakValue) -> String {
         BreakValue::Page => "page",
         BreakValue::AvoidPage => "avoid-page",
         BreakValue::AvoidColumn => "avoid-column",
+        BreakValue::Region => "region",
+        BreakValue::Left => "left",
+        BreakValue::Right => "right",
+        BreakValue::Recto => "recto",
+        BreakValue::Verso => "verso",
     }
     .to_string()
 }
@@ -1408,6 +1513,7 @@ fn break_inside_to_css(b: &BreakInsideValue) -> String {
         BreakInsideValue::Avoid => "avoid",
         BreakInsideValue::AvoidPage => "avoid-page",
         BreakInsideValue::AvoidColumn => "avoid-column",
+        BreakInsideValue::AvoidRegion => "avoid-region",
     }
     .to_string()
 }
@@ -2221,7 +2327,7 @@ pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// `sibling`：源元素 `(兄弟序, 兄弟总数)`（CSS Values 5 §tree-counting），
 /// sibling-index()/sibling-count() 叶随注入求值；None fail-closed（主通道
 /// [`length_to_css`] 探测/无 DOM 视图口径）。
-fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
+pub(super) fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
     let (gcs_vw, gcs_vh) = super::computed_style_cache::gcs_viewport_dims();
     let ctx = CalcContext {
         font_size: Some(font_size_px),
@@ -2587,6 +2693,27 @@ fn font_style_str(s: &FontStyleValue) -> String {
     }
 }
 
+/// css-fonts-4 settings 类属性（font-feature-settings / font-variation-settings）
+/// computed 规范形（ffs/fvs 回显共享）：同 tag 右值胜出去重 + tag 字节序升序
+/// 排序。判据源（上游页注记）："duplicate values should be removed, keeping
+/// the rightmost occurrence" / "values should be sorted alphabetically by tag"。
+/// <https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop>
+fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
+    let mut deduped: Vec<([u8; 4], String)> = Vec::with_capacity(items.len());
+    for (tag, rendered) in items {
+        match deduped.iter_mut().find(|(t, _)| *t == tag) {
+            Some(slot) => slot.1 = rendered,
+            None => deduped.push((tag, rendered)),
+        }
+    }
+    deduped.sort_by(|a, b| a.0.cmp(&b.0));
+    deduped
+        .into_iter()
+        .map(|(_, rendered)| rendered)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// line-height：normal→`normal`；number→解析为 used px（`font-size × number`，对齐 Chromium
 /// getComputedStyle 返 used 值，R2761 修旧返无单位数 diverge）；Length→px。
 fn line_height_str(lh: &LineHeightValue, font_size_px: f64) -> String {
@@ -2594,6 +2721,21 @@ fn line_height_str(lh: &LineHeightValue, font_size_px: f64) -> String {
         LineHeightValue::Normal => "normal".to_string(),
         LineHeightValue::Number(n) => format_num(font_size_px * *n, "px"),
         LineHeightValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// 注册属性 lh 原子折算基准（刀 ATP-R2——`10lh`@line-height:20px → 200px 锚定）。
+/// Normal UA 近似 font×1.2 FIXME(regprop-lh-normal)：无 layout 字形度量，corpus
+/// 目标面仅显式长度行高锚定；Number 按 [`line_height_str`] 同口径折 px，Length
+/// 经 resolve_length（真视口）折算。
+fn line_height_px_of(lh: &LineHeightValue, font_size_px: f64) -> f64 {
+    match lh {
+        LineHeightValue::Normal => font_size_px * 1.2,
+        LineHeightValue::Number(n) => font_size_px * *n,
+        LineHeightValue::Length(lv) => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            zero_style_system::resolve_length(lv, font_size_px, Some(vw), Some(vh))
+        }
     }
 }
 
@@ -3652,19 +3794,30 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
 }
 
 /// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：
-/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值；property=all
-/// 仅在其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
+/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值
+/// （delay 非初值时 duration 位强制输出 `0s`——两位 `<time>` 消歧，否则单 `1s`
+/// 会重解析为 duration）；property=all 仅在其余 longhand 全初值时显（避免空串）。
+/// `transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
 /// 默认（空列表）→`"all"`；`transition:none`→`"none"`。5 longhand 列表等长（`expand_transition`
 /// 保证），逐索引 zip 后逗号连接；behavior 非初值（`allow-discrete`）按文法序尾附。
 /// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
 fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
-    let n = style.transition_property.len();
+    // 五 longhand 列表可不等长（如仅设 transition-delay——computed 列表相互独立），
+    // 按最长列表逐索引 zip，缺位取各 longhand 初值（css-transitions-1 §2 longhand
+    // 定义 + §serializing-shorthand-values）。
+    let n = style
+        .transition_property
+        .len()
+        .max(style.transition_duration.len())
+        .max(style.transition_timing_function.len())
+        .max(style.transition_delay.len())
+        .max(style.transition_behavior.len());
     if n == 0 {
         return "all".to_string();
     }
     (0..n)
         .map(|i| {
-            let prop = style.transition_property[i].as_str();
+            let prop = style.transition_property.get(i).map(String::as_str).unwrap_or("all");
             let dur = format_num(style.transition_duration.get(i).copied().unwrap_or(0.0), "s");
             let tf = style
                 .transition_timing_function
@@ -3678,7 +3831,9 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
             if prop != "all" || all_rest_initial {
                 parts.push(prop.to_string());
             }
-            if dur != "0s" {
+            // delay 非初值时 duration 位强制（0s）：<time> 位序消歧
+            // <https://drafts.csswg.org/css-transitions-1/#serializing-shorthand-values>
+            if dur != "0s" || delay != "0s" {
                 parts.push(dur);
             }
             if tf != "ease" {
@@ -5231,6 +5386,64 @@ fn mixed_len(v: f64, is_pct: bool) -> String {
         format_num(v, "%")
     } else {
         format_num(v, "px")
+    }
+}
+
+#[cfg(test)]
+mod animation_range_computed_tests {
+    //! css-scroll-animations-1 §view-timelines-ranges：animation-range-start/end
+    //! computed 串化钉测（css-animations/parsing animation-range-*-computed 页
+    //! 断言形逐条对映——em→px、calc 同族折叠去壳、混族保壳、侧别省略重判、
+    //! 裸偏移不省、空槽回落 normal）。
+
+    use super::animation_range_computed_to_css;
+    use zero_css_parser::values::AnimationRangeSide;
+
+    #[test]
+    fn start_side_computed() {
+        // 指定面已省略形直传；em→px（页基准 1em=10px）。
+        let f = |segs: &[&str], font: f64| -> String {
+            let owned: Vec<String> = segs.iter().map(|s| s.to_string()).collect();
+            animation_range_computed_to_css(&owned, AnimationRangeSide::Start, font)
+        };
+        assert_eq!(f(&["cover"], 10.0), "cover");
+        assert_eq!(f(&["cover 0%"], 10.0), "cover");
+        assert_eq!(f(&["cover 100%"], 10.0), "cover 100%");
+        assert_eq!(f(&["entry 1em"], 10.0), "entry 10px");
+        assert_eq!(f(&["entry 42px"], 10.0), "entry 42px");
+        // calc 同族折叠去壳：'calc(41% + 1%)'→'42%'；'calc(1em + 10px)'→'20px'。
+        assert_eq!(f(&["exit calc(41% + 1%)"], 10.0), "exit 42%");
+        assert_eq!(f(&["exit calc(1em + 10px)"], 10.0), "exit 20px");
+        // 混族保壳：'calc(10% + 10px)' 原样（percent-first canonical 直传）。
+        assert_eq!(f(&["contain calc(10% + 10px)"], 10.0), "contain calc(10% + 10px)");
+        // 折叠出新阈值形二次省略：'calc(10% - 10%)' 指定 canonical 'calc(0%)'
+        // → computed '0%' → start 侧省略。
+        assert_eq!(f(&["entry calc(10% - 10%)"], 10.0), "entry");
+        // 裸偏移不省略；逐段列表 + 段内省略。
+        assert_eq!(f(&["0%"], 10.0), "0%");
+        assert_eq!(f(&["0px"], 10.0), "0px");
+        assert_eq!(
+            f(&["exit 1%", "cover 2%", "contain 0%"], 10.0),
+            "exit 1%, cover 2%, contain"
+        );
+        assert_eq!(f(&[], 10.0), "normal");
+    }
+
+    #[test]
+    fn end_side_computed() {
+        let f = |segs: &[&str], font: f64| -> String {
+            let owned: Vec<String> = segs.iter().map(|s| s.to_string()).collect();
+            animation_range_computed_to_css(&owned, AnimationRangeSide::End, font)
+        };
+        // end 侧省略 100%；0% 不省（仅 start 侧阈值）。
+        assert_eq!(f(&["contain 100%"], 10.0), "contain");
+        assert_eq!(f(&["cover 42%"], 10.0), "cover 42%");
+        assert_eq!(
+            f(&["exit 1%", "cover 2%", "contain 100%"], 10.0),
+            "exit 1%, cover 2%, contain"
+        );
+        assert_eq!(f(&["cover 0%"], 10.0), "cover 0%");
+        assert_eq!(f(&[], 10.0), "normal");
     }
 }
 

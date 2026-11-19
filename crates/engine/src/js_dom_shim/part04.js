@@ -6469,13 +6469,43 @@
             if (_r4200sig && typeof _r4200sig === 'object' && _r4200sig.aborted) return;
             var _r4200rec = { fn: fn, capture: _r143Cap, once: _optOnce(opts), passive: _p105, signal: _r4200sig || undefined };
             _listenerStore[key][type].push(_r4200rec);
+            // d56r（input-events ①(b) 刀）：节点 id 桶双写——本 wrapper 家族键入
+            // `_listenerStore[key]`，同节点的其他 wrapper 家族派发站键不同（换代面，
+            // 见 _dispatchToListeners d56r 注记）。record 同引用双写（派发面按引用
+            // 去重）+ `_zwNid` 印记（remove/once/abort 跨桶清理定位）。R143 同款
+            // fn+capture 去重；NodeId 未解析（引擎不可反查）静默跳过 = 零行为变化。
+            // spec：listener 属节点的 listener 表——
+            // https://dom.spec.whatwg.org/#concept-event-listener
+            var _zwNid = '';
+            try { _zwNid = globalThis.__zw_node_id(String(key)) || ''; } catch (_eNid0) {}
+            if (_zwNid) {
+              if (!_zwNidBuckets[_zwNid]) _zwNidBuckets[_zwNid] = {};
+              if (!_zwNidBuckets[_zwNid][type]) _zwNidBuckets[_zwNid][type] = [];
+              var _zwNlst = _zwNidBuckets[_zwNid][type];
+              var _zwNdup = false;
+              for (var _zwNdi = 0; _zwNdi < _zwNlst.length; _zwNdi++) {
+                if (_zwNlst[_zwNdi].fn === fn && _zwNlst[_zwNdi].capture === _r143Cap) { _zwNdup = true; break; }
+              }
+              if (!_zwNdup) {
+                _r4200rec._zwNid = _zwNid;
+                _zwNlst.push(_r4200rec);
+                __zwNidCount++;
+              }
+            }
             if (_r4200sig && typeof _r4200sig === 'object' && typeof _r4200sig.addEventListener === 'function') {
               try {
                 _r4200sig.addEventListener('abort', function () {
                   var _r4200lst = _listenerStore[key] && _listenerStore[key][type];
-                  if (!_r4200lst) return;
-                  var _r4200i = _r4200lst.indexOf(_r4200rec);
-                  if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
+                  if (_r4200lst) {
+                    var _r4200i = _r4200lst.indexOf(_r4200rec);
+                    if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
+                  }
+                  // d56r：nid 桶同步清理（abort 移除须双桶一致）。
+                  if (_r4200rec._zwNid && _zwNidBuckets[_r4200rec._zwNid] && _zwNidBuckets[_r4200rec._zwNid][type]) {
+                    var _r4200nl = _zwNidBuckets[_r4200rec._zwNid][type];
+                    var _r4200ni = _r4200nl.indexOf(_r4200rec);
+                    if (_r4200ni >= 0) { _r4200nl.splice(_r4200ni, 1); __zwNidCount--; }
+                  }
                 });
               } catch (_e4200sig) {}
             }
@@ -6485,9 +6515,20 @@
           return function(type, fn, opts) {
             if (!_listenerStore[key] || !_listenerStore[key][type]) return;
             var cap = _optCapture(opts);
+            // d56r：移除记录收集——nid 桶同引用同步清理（双桶一致，__zwNidCount 回落）。
+            var _zwRemoved = [];
             _listenerStore[key][type] = _listenerStore[key][type].filter(function(l) {
-              return !(l.fn === fn && l.capture === cap);
+              if (l.fn === fn && l.capture === cap) { _zwRemoved.push(l); return false; }
+              return true;
             });
+            for (var _zwRi = 0; _zwRi < _zwRemoved.length; _zwRi++) {
+              var _zwNid = _zwRemoved[_zwRi]._zwNid;
+              if (_zwNid && _zwNidBuckets[_zwNid] && _zwNidBuckets[_zwNid][type]) {
+                var _zwNlst = _zwNidBuckets[_zwNid][type];
+                var _zwNix = _zwNlst.indexOf(_zwRemoved[_zwRi]);
+                if (_zwNix >= 0) { _zwNlst.splice(_zwNix, 1); __zwNidCount--; }
+              }
+            }
           };
         }
         if (prop === 'attachEvent') {
@@ -7091,10 +7132,75 @@
         }
         // R3067：`el.getAnimations()`（Web Animations API）——返本元素动画（cancelled/idle 排除；finished 含）。
         // 读注册表在调用时（非 get-trap 时）以反映 reset 后空态 + 后续新增动画。返副本数组（防调用方 mutate 注册表）。
+        // 刀 TB：CSS transition 浮出面（css-transitions-1 §getAnimations——运行中的
+        // CSSTransition 与 Animation 一并返回）。引擎注册表活跃条目经既有 gCS 通道
+        // 哨兵咨询取回（`__zw_transitions` 名，transition_registry::SURFACE_SENTINEL）；
+        // 缓存代际键使哨兵首问即触发登记重算，快照恒新鲜。记录形
+        // `prop\x1Ffrom\x1Fto\x1Fdur\x1Fdelay\x1Fstart\x1Fdisc`，条目间 `\x1E`。
+        // typeof 守卫——通道缺席时零扰动回落（cancelled 条目本地摘除集防重复浮出）。
         if (prop === 'getAnimations') {
           return function () {
             var _anims = _elementAnimations[key] || [];
-            return _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+            var _out = _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+            // 双身份路由（s161 同款）：sel 通道（Gen world）优先，handle 通道
+            // （View world，createElement 产物无 __zwSelector）回落。
+            var _tsRaw = '';
+            try {
+              if (typeof __zw_get_computed_style === 'function' && sel) {
+                _tsRaw = __zw_get_computed_style(sel, '__zw_transitions');
+              } else if (typeof __zw_get_computed_style_by_handle === 'function' && handle) {
+                _tsRaw = __zw_get_computed_style_by_handle(handle, '__zw_transitions');
+              }
+              if (_tsRaw) {
+                  var _recs = _tsRaw.split('\x1e');
+                  var _cxKey = '_zwTsCx_' + key;
+                  var _cxed = globalThis[_cxKey];
+                  // 每记录工厂（函数作用域捕获——var 循环变量闭包共享末位绑定的
+                  // 经典坑：多属性并存时 cancel 串键，此处逐记录独立闭包）。
+                  var _mkRec = function (tKey, cxKey, tProp, ctMs, durMs) {
+                    return {
+                      transitionProperty: tProp,
+                      playState: 'running',
+                      currentTime: ctMs,
+                      // cancel()（css-transitions-1 §canceling：CSSTransition.cancel 摘除）
+                      // ——引擎条目存活期由登记/取消面管理，本侧只记摘除键防重复浮出。
+                      cancel: function () {
+                        var _set = globalThis[cxKey] || (globalThis[cxKey] = []);
+                        if (_set.indexOf(tKey) === -1) _set.push(tKey);
+                        this.playState = 'idle';
+                      },
+                      effect: {
+                        getComputedTiming: function () {
+                          return { duration: durMs, activeDuration: durMs, endTime: durMs };
+                        }
+                      }
+                    };
+                  };
+                  for (var _ti = 0; _ti < _recs.length; _ti++) {
+                    var _f = _recs[_ti].split('\x1f');
+                    if (_f.length < 7 || !_f[0]) continue;
+                    var _tKey = _f[0] + '\x1f' + _f[5];
+                    if (_cxed && _cxed.indexOf(_tKey) !== -1) continue;
+                    var _dur = parseFloat(_f[3]) || 0;
+                    var _delay = parseFloat(_f[4]) || 0;
+                    var _start = parseFloat(_f[5]) || 0;
+                    // currentTime 按墙钟推算（毫秒，active interval 内钳界——Web Animations
+                    // §currentTime：local time − delay，[0, duration] 之外经 playState 表达）。
+                    var _local = (Date.now() / 1000 - _start - _delay) * 1000;
+                    var _ct = Math.max(0, Math.min(_local, _dur * 1000));
+                    _out.push(_mkRec(_tKey, _cxKey, _f[0], _ct, _dur * 1000));
+                  }
+                }
+              } catch (_eTs) {}
+            // 刀 WA：CSS animation 浮出面（css-animations-2 §cssanimation——
+        // `animation:` 样式动画以 CSSAnimation 对象入列，JS 动画/CSSTransition
+        // 之后；interface 簇根因修复，详 part03 _zwCssAnimationsForElement）。
+        try {
+          var _cssAnims = (typeof _zwCssAnimationsForElement === 'function')
+            ? _zwCssAnimationsForElement(sel, handle) : [];
+          for (var _cai = 0; _cai < _cssAnims.length; _cai++) _out.push(_cssAnims[_cai]);
+        } catch (_eCssAnims) {}
+        return _out;
           };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
@@ -8163,6 +8269,15 @@
                 if (typeof _zwAriaSyncParent !== 'undefined') delete _zwAriaSyncParent[String(child.__zwSelector)];
               } catch (_e334asp) {}
               var _r334ChildSel = child.__zwSelector;
+              // d61 T1 dead-anchor（见 R125 stamp 注）：removed 标记仍活的重插窗口把
+              // 回插 child_selector 改发摘挂 wire 章（引擎 R361 stash 键对齐——移动
+              // 语义复用被摘 NodeId）；同父 move（尾簇 5，不走 _zwMarkRemoved）与
+              // 常态挂载不入新径，维持身份章零行为变化。身份章仅 wire 发射换章，
+              // unmark/槽位/record 等簿记键不变。
+              var _r334WireChildSel = (typeof _zwIsRemoved === 'function' && _zwIsRemoved(_r334ChildSel)
+                && typeof child.__zwLastRemoveWireSel === 'string' && child.__zwLastRemoveWireSel)
+                ? child.__zwLastRemoveWireSel : _r334ChildSel;
+              if (_r334WireChildSel !== _r334ChildSel) child.__zwLastRemoveWireSel = null;
               // M3 扩批 XLV（2026-09-04）：旧父在 wire 前读（wire 的 reparent 之后读
               // 会被 removed 标记/槽未设干扰返 null——record 的 removed 归旧父语义丢失）。
               var _r334OldSel = null;
@@ -8188,7 +8303,7 @@
                   }
                 }
               } catch (_eRe334) {}
-              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
+              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334WireChildSel); } catch (_e334w) {}
               try {
                 // 尾簇 6c：wire 落点记录——up 内变异 post-up 结算的目标身份（本 turn
                 // 内宿主布局滞后，几何命中测试不可见——zwprobe-attach [hit=null] 实证）。
@@ -9701,6 +9816,16 @@
               }
               try { if (typeof __zw_remove === 'function') __zw_remove(_r125Wire); } catch (_eR125r) {}
               _zwMarkRemoved(_r125Sel);
+              // d61（wptfyi-editing T1 dead-anchor，2026-11-19）：摘挂 wire 章 stamp——
+              // CE 域线章重算后摘挂键（`父 > tag:nth-child(k)`）与身份章分叉；同批
+              // 摘→重插（join 移动面）的回插 child_selector 若仍用身份章，引擎 R361
+              // detached-stash 按**摘挂章**记账、按 child_selector 查表必 miss → 移动
+              // no-op → 内容丢失（bold 壳 join `def` 丢失，zz-diag-bs15 T1 wire 批
+              // op4 Remove{p > b:nth-child(1)} vs op6 child_selector{身份章} 实证）。
+              // stamp 摘挂 wire 键，R334 重插臂在 removed 标记仍活（= 本臂摘除后的
+              // 重插窗口；所有插入路径出口都会 unmark）时消费改发摘挂章，命中 R361
+              // stash 复用 NodeId（移动语义）。
+              try { child.__zwLastRemoveWireSel = _r125Wire; } catch (_eR125ws) {}
               // R188（js-dom M4）：childList record 的 sibling 字段——移除前从 child proxy
               // 读 previousSibling/nextSibling（spec mutation record 语义；WPT
               // MutationObserver-document "removal of parent" 断言 previousSibling 是
@@ -10011,6 +10136,10 @@
               try {
                 __zw_insert_adjacent_text(refNode.__zwSelector, 'beforebegin',
                   String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
+                // d58（wptfyi-editing 刀 D，2026-11-19）：AdjacentText wire 已落引擎的
+                // 打记——part01 join D3 序列化 copy 守卫消费防双插（plain 摘离树 join
+                // 时 R5450 wire 与 copy 同位双插，语料 `abcdefdef` 复制形 18 键 P2F）。
+                newNode.__zwAdjTextWired = true;
               } catch (_eTxtMvW) {}
               try {
                 var _txtMvKids = _childNodeList(sel, handle);
@@ -10056,6 +10185,13 @@
                 throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
               }
               var _r334bChildSel = newNode.__zwSelector;
+              // d61 T1 dead-anchor（见 R125 stamp 注）：removed 标记仍活的重插窗口把
+              // 回插 child_selector 改发摘挂 wire 章（引擎 R361 stash 键对齐）；非摘挂
+              // 窗口维持身份章零行为变化。R4600 unmark 等簿记仍用身份章不变。
+              var _r334bWireChildSel = (typeof _zwIsRemoved === 'function' && _zwIsRemoved(_r334bChildSel)
+                && typeof newNode.__zwLastRemoveWireSel === 'string' && newNode.__zwLastRemoveWireSel)
+                ? newNode.__zwLastRemoveWireSel : _r334bChildSel;
+              if (_r334bWireChildSel !== _r334bChildSel) newNode.__zwLastRemoveWireSel = null;
               // R334：removed record 的兄弟字段——wire 移动前的兄弟 getter 快照。
               var _r334bRprev = null, _r334bRnext = null;
               try {
@@ -10068,8 +10204,8 @@
                 _r334bPos = 'beforebegin';
               }
               try {
-                if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bChildSel);
-                else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bChildSel);
+                if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bWireChildSel);
+                else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bWireChildSel);
               } catch (_e334bw) {
                 // T68（吞错显式化）：宿主 wire 失败不中断 DOM 操作语义（JS 侧
                 // `_zwSelPendingParent`/record 记账继续，spec pre-insert 的视图变更不
@@ -10589,6 +10725,8 @@
                   try {
                     __zw_insert_adjacent_text(sel, 'beforeend',
                       String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
+                    // d58：同上——appendChild 变体 wire 打记（copy 守卫消费防双插）。
+                    newNode.__zwAdjTextWired = true;
                   } catch (_eTxtApW) {}
                   try {
                     var _txtApKids = _childNodeList(sel, handle);

@@ -849,6 +849,46 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // d56r（input-events ①(b) 刀，2026-11-19）：`__zw_node_id(key)`——key→NodeId 桥，
+    // shim 监听器注册/派发面的节点 id 桶调和用（part04 元素臂双写、part03
+    // `_dispatchToListeners` 合并，见该两处 d56r 注记）。key 与 `_elKey` 产物同形：
+    // sel 串——canonical 串与原始查询串同为该节点的引擎可反查定位串（d56 轮定谳：
+    // 两族 wrapper 同指一节点）。解析与 gBCR 同源：LIVE_QUERY_DOC 优先、miss 回落
+    // 查询快照 re-parse；handle 键（'@' 前缀）不解析（detach 世界无双写需求，返空串
+    // = 注册面不双写、派发面不合并，零行为变化）。未命中返空串。
+    let nid_html = Arc::clone(dom_html);
+    let nid_mut = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_node_id",
+        Box::new(move |args: &[String]| -> String {
+            let key = args.first().map(String::as_str).unwrap_or("");
+            if key.is_empty() || key.starts_with('@') {
+                return String::new();
+            }
+            let node_id = LIVE_QUERY_DOC.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|rc| rc.try_borrow().ok())
+                    .and_then(|doc| {
+                        crate::js_dom_bridge::find_by_selector(&doc, key).map(crate::hit_test::node_id_to_u64)
+                    })
+            });
+            let node_id = match node_id {
+                Some(id) => id,
+                None => {
+                    let hit = with_query_view_doc(&nid_html, &nid_mut, |doc, _| {
+                        crate::js_dom_bridge::find_by_selector(doc, key).map(crate::hit_test::node_id_to_u64)
+                    });
+                    match hit {
+                        Some(id) => id,
+                        None => return String::new(),
+                    }
+                }
+            };
+            node_id.to_string()
+        }),
+    );
+
     // s284（html-semantics M2）：handle→selector 正置表查询——img 机具 shim 侧
     //（lazy 视口判定 / being-rendered / sizes auto 臂）对 script 创建 img
     //（identity = handle `__n{n}`）自解析 identity 后走既有 selector 面 rect
@@ -4418,6 +4458,76 @@ pub fn register_dom_callbacks(
                 "cssText": zero_css_parser::serialize::serialize_font_feature_values_css_text(rule),
                 "families": rule.families.join(", "),
                 "defs": defs,
+            })
+            .to_string()
+        }),
+    );
+
+    // wptfyi-css 刀 ATP：@property 规则 wire 物化单源回调（css-properties-values-api-1
+    // §at-property-rule + cssom-1 CSSPropertyRule——shim CSSPropertyRule.name/syntax/
+    // inherits/initialValue/cssText 读面 + insertRule 写面共用，fv1 `__zw_parse_ffv_rule`
+    // 单实现双通道同型）。解析/串化单源 [`zero_css_parser`]（描述符有效门 + canonical
+    // cssText 固定序）。纯函数，无 DOM 状态。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/
+    sandbox.register_callback(
+        "__zw_parse_property_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::Property(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            let syntax_content =
+                zero_css_parser::parser::syntax_string_content(&rule.syntax).unwrap_or_else(|| rule.syntax.clone());
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_property_rule_css_text(rule),
+                "name": rule.name,
+                "syntax": syntax_content,
+                "inherits": rule.inherits,
+                "initialValue": rule.initial_value,
+            })
+            .to_string()
+        }),
+    );
+
+    // wptfyi-css 刀 KF：@keyframes 规则 wire 物化单源回调（css-animations-1
+    // §at-ruledef-keyframes + cssom-1 CSSKeyframesRule——shim cssRules 读面
+    // wire cssText 再解析 + insertRule 写面共用，`__zw_parse_property_rule`
+    // 单实现双通道同型）。解析/串化单源 [`zero_css_parser`]（名 <custom-ident>
+    // | <string> 文法门在解析站裁决——CSS-wide 关键字/none/空串拒）。纯函数，
+    // 无 DOM 状态。
+    // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+    sandbox.register_callback(
+        "__zw_parse_keyframes_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::Keyframes(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_keyframes_css_text(rule),
+                "name": rule.name,
+                "keyframes": rule
+                    .keyframes
+                    .iter()
+                    .map(|kf| serde_json::json!({
+                        "keyText": zero_css_parser::serialize::serialize_keyframe_selectors(&kf.selectors),
+                        "cssText": format!(
+                            "{} {{ {} }}",
+                            zero_css_parser::serialize::serialize_keyframe_selectors(&kf.selectors),
+                            kf.declarations
+                                .iter()
+                                .map(|d| if d.important {
+                                    format!("{}: {} !important;", d.property, d.value)
+                                } else {
+                                    format!("{}: {};", d.property, d.value)
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ),
+                    }))
+                    .collect::<Vec<_>>(),
             })
             .to_string()
         }),

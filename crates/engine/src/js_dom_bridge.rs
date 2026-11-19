@@ -6214,6 +6214,16 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
             return false;
         }
     }
+    // css-scroll-animations-1：`animation-range` 简写文法面由
+    // [`values::parse_animation_range_shorthand`] 裁决（style-system 注册表
+    // 仅含 start/end longhand——简写本身表外；shorthand-testcommon/
+    // parsing-testcommon 每 test 以 `CSS.supports('animation-range', v)`
+    // 前置门，与写面 validate_decl_value 简写臂同一解析单点，
+    // position-area 先例同型）。
+    // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+    if prop.eq_ignore_ascii_case("animation-range") {
+        return zero_css_parser::values::parse_animation_range_shorthand(val).is_some();
+    }
     // 组 F 批：anchor 族七属性（position-anchor/position-visibility/position-try
     // 简写族/anchor-name/anchor-scope）文法面由 [`dom_bindings::anchor_props`]
     // 裁决（同上——style-system 注册表不含族属性，computed-testcommon 以
@@ -6308,6 +6318,15 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     // <https://drafts.csswg.org/css-transitions-1/#transition-shorthand-property>
     if prop == "transition" {
         return !zero_style_system::expand_shorthands(&[("transition".to_string(), val.to_string(), false, (0, 0, 0))])
+            .is_empty();
+    }
+    // 刀 MK：`mask` 简写 supports 门前置（transition 臂同型——known_properties
+    // 注册表只列长手，尾部注册表门对简写名恒假；支持性 = 简写可展开，
+    // expand_mask `<mask-layer>#` 文法单源——组合形/多层逗号列表全经该文法）。
+    // driving: css-masking parsing 页 supports 前置门。
+    // <https://drafts.csswg.org/css-masking-1/#the-mask>
+    if prop == "mask" {
+        return !zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), false, (0, 0, 0))])
             .is_empty();
     }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
