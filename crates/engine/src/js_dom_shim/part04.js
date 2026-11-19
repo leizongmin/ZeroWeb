@@ -12593,6 +12593,17 @@
                             if (_zwPendingAddedSet) { _zwPendingAddedSet.delete(_r322qn); _zwPendingAddedSet.add(_r322mw); }
                             _zwPAIdRemove(_r322qn);
                             _zwPAIdAdd(_r322mw);
+                            // T84（R2 RF1）：物化置换补登 named 候选集——解析期已得名的
+                            // 代理经 push 期 `_zwPANameMark` 入集，本置换换 identity 后旧
+                            // 条目孤儿化（扫描 `_zwPASet().has` 现场滤除），置换点仅
+                            // `_zwPAIdAdd`（空 id 在候选集登记前早退，part05）→ name-only
+                            // wrapper 新 identity 漏登记，`_zwNACollectMatches` 扫不到
+                            // （基础全量扫描扫置换后 wrapper 可命中）。须在上方 pending 集
+                            // 换 identity 之后调——物化期 `_wcRebuildAsHandle` 的 attr 复制
+                            // 虽走 setAttribute 尾钩，彼时 wrapper 未入 pending 集被
+                            // `_zwPANameMark` pending 闸滤除。登记点契约见
+                            // `_zwPANamedPending` 声明。
+                            _zwPANameMark(_r322mw);
                             _r322mw._zwMatParsed = true;
                             if (_zwNodeParent) {
                               _zwNodeParent[_r322mw.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: _r322qn._zwSelPendingParent.nextSibling || null };

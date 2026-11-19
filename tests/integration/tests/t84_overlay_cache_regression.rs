@@ -293,6 +293,111 @@ fn t84_named_access_late_attribute_grant() {
         "setAttribute('id') 授名的元素须在 window.<name> 集合中，实测 {an_d:?}"
     );
 
+    // R2 复核 RF1 钉 c：sel 路径容器 scoped qS 的 R322 host-miss 兜底——桶 added
+    // 解析顶层代理 compound 命中即 `_wcRebuildAsHandle` 物化并置换桶/全局 pending
+    // identity（part04 R322 臂；document 级 qS 走另一路 plain 返回不物化，子树
+    // 下钻臂同）。解析期已带 name，push 期得名入集后 identity 被置换孤儿化（扫描
+    // `_zwPASet().has` 现场滤除），置换点仅 `_zwPAIdAdd`（空 id 早退在候选集登记
+    // 之前）→ 新 identity 漏登记 → 竞名集合少成员（基础全量扫描扫置换后 wrapper
+    // 可命中）。
+    run(
+        &mut wv,
+        r#"
+        function collHas(c, el) {
+            for (var i = 0; i < c.length; i++) { if (c.item(i) === el) return true; }
+            return false;
+        }
+        var app84 = document.getElementById('app');
+        app84.innerHTML = '<form name="mat84"></form>';
+        var hit = app84.querySelector('form[name="mat84"]');
+        globalThis.__matHit = hit ? String(hit.tagName) : 'null';
+        globalThis.__matIsHandle = hit && hit.__zwHandle ? 'handle' : 'plain';
+        var d5 = document.createElement('div');
+        document.body.appendChild(d5);
+        d5.setAttribute('id', 'mat84');
+        var c3 = window.mat84;
+        globalThis.__matLen = c3 == null ? 0 : (c3.length != null ? c3.length : 1);
+        globalThis.__matHasHit = c3 ? collHas(c3, hit) : false;
+        globalThis.__matHasD = c3 ? collHas(c3, d5) : false;
+        globalThis.__hitEl = hit;
+        globalThis.__d5 = d5;
+        "#,
+    );
+    let mat_hit = probe(&mut wv, "__matHit");
+    assert_eq!(
+        mat_hit, "FORM",
+        "qS 须命中 pending parse 产物（物化面），实测 {mat_hit:?}"
+    );
+    let mat_handle = probe(&mut wv, "__matIsHandle");
+    assert_eq!(
+        mat_handle, "handle",
+        "顶层命中须走物化置换臂（RF1-B 路由钉），实测 {mat_handle:?}"
+    );
+    let mat_len = probe(&mut wv, "__matLen");
+    assert_eq!(
+        mat_len, "2",
+        "物化置换后的 name wrapper + setAttribute('id') 竞名须双元素集合，实测 {mat_len:?}"
+    );
+    let mat_f = probe(&mut wv, "__matHasHit");
+    assert_eq!(
+        mat_f, "true",
+        "物化 wrapper 须在 window.<name> 集合中（置换点候选集登记），实测 {mat_f:?}"
+    );
+    let mat_d = probe(&mut wv, "__matHasD");
+    assert_eq!(
+        mat_d, "true",
+        "setAttribute('id') 授名的元素须在 window.<name> 集合中，实测 {mat_d:?}"
+    );
+
+    // R2 复核 RF1 钉 d：M 域 plain 解析产物事后授名——`_zwMElSetAttribute` 无 NA
+    // 尾钩，候选集漏登记（基础全量扫描经槽读可命中）。取面走 scoped qS 子树下钻
+    // 臂（顶层不命中 compound、后代命中原样返回 plain 代理，不物化）；noWire/
+    // CE-hit plain 返回臂同一汇点，修复覆盖。解析产物不带 id/name：push 期得名
+    // （`_zwPANameMark` 空 nm84 不入集）不兜底，漏登记成立。
+    run(
+        &mut wv,
+        r#"
+        function collHas(c, el) {
+            for (var i = 0; i < c.length; i++) { if (c.item(i) === el) return true; }
+            return false;
+        }
+        var ct84 = document.getElementById('container');
+        ct84.innerHTML = '<div data-k="wrap84"><form data-k="pf84"></form></div>';
+        var pf = ct84.querySelector('div[data-k="wrap84"] form[data-k="pf84"]');
+        globalThis.__pfKind = pf ? (pf.__zwHandle ? 'handle' : 'plain') : 'null';
+        pf.setAttribute('name', 'pfname84');
+        var d6 = document.createElement('div');
+        document.body.appendChild(d6);
+        d6.setAttribute('id', 'pfname84');
+        var c4 = window.pfname84;
+        globalThis.__pfLen = c4 == null ? 0 : (c4.length != null ? c4.length : 1);
+        globalThis.__pfHasF = c4 ? collHas(c4, pf) : false;
+        globalThis.__pfHasD = c4 ? collHas(c4, d6) : false;
+        globalThis.__pf = pf;
+        globalThis.__d6 = d6;
+        "#,
+    );
+    let pf_kind = probe(&mut wv, "__pfKind");
+    assert_eq!(
+        pf_kind, "plain",
+        "子树下钻臂命中须按 plain 代理返回（RF1-A 路由钉），实测 {pf_kind:?}"
+    );
+    let pf_len = probe(&mut wv, "__pfLen");
+    assert_eq!(
+        pf_len, "2",
+        "下钻臂 plain 代理事后 setAttribute('name') + 竞名须双元素集合，实测 {pf_len:?}"
+    );
+    let pf_f = probe(&mut wv, "__pfHasF");
+    assert_eq!(
+        pf_f, "true",
+        "plain 代理须在 window.<name> 集合中（M 域授名尾钩登记），实测 {pf_f:?}"
+    );
+    let pf_d = probe(&mut wv, "__pfHasD");
+    assert_eq!(
+        pf_d, "true",
+        "setAttribute('id') 授名的元素须在 window.<name> 集合中，实测 {pf_d:?}"
+    );
+
     // flush 后语义保持（落 host 后 named 解析不受 materialize 影响）。
     wv.flush_pending_shared_mutations().expect("flush 落 host 成功");
     let after = run(
@@ -308,6 +413,15 @@ fn t84_named_access_late_attribute_grant() {
           && collHas(window.reflName84, globalThis.__d3)
           && collHas(window.attrNode84, globalThis.__f3)
           && collHas(window.attrNode84, globalThis.__d4)
+          && collHas(window.mat84, globalThis.__hitEl)
+          && collHas(window.mat84, globalThis.__d5)
+          && collHas(window.pfname84, globalThis.__d6)
+          && (function () {
+              for (var i = 0; i < window.pfname84.length; i++) {
+                if (String(window.pfname84.item(i).tagName || '').toUpperCase() === 'FORM') return true;
+              }
+              return false;
+            })()
           ? 'ok' : 'broken'
         "#,
     );

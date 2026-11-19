@@ -21517,9 +21517,18 @@
       }
     };
     var _scTail = function () { _zwScAttrTailM(node, n); };
-    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); return; } }
+    // T84（R2 RF1）：M 域（`_zwMEl` plain 树）授名补登 named 候选集——本域
+    // setAttribute 不经 pending 世界的属性尾钩（`_zwNAAttrChanged`），noWire 槽/
+    // 下钻臂 plain 返回持有的解析产物事后授 id/name 后 `_zwNACollectMatches`
+    // 候选集扫不到（基础全量扫描经槽读可命中）。非 pending 元素由
+    // `_zwPANameMark` pending 闸滤除（扫描面同款现场过滤，无副作用漂移）。
+    // 登记点契约见 `_zwPANamedPending` 声明。
+    var _naTail = function () {
+      if (n.toLowerCase() === 'id' || n.toLowerCase() === 'name') _zwPANameMark(node);
+    };
+    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); _naTail(); return; } }
     attrs.push({ name: n, value: sv });
-    _fsTail(); _scTail();
+    _fsTail(); _scTail(); _naTail();
   }
   // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
   function _zwMElRemoveAttribute(n) {
