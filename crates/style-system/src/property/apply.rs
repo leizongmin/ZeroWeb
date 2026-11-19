@@ -742,6 +742,15 @@ pub fn apply_property_value_with_quirks(
                 style.font_style = v;
                 return true;
             }
+            // math 形（oblique <math-function>）：css-values-4 §10.5 math
+            // function 可用于 <angle> 文法位——font-property-unit-cycles
+            // `oblique calc(1deg * tan(atan2(1em, 1px)))` 10 腿驱动。角度按
+            // 父级字体解析（dependency-cycles 口径，见
+            // [`eval_font_slot_math_number`]）。
+            if let Some(v) = eval_font_slot_math_oblique(value, font_slot_font_px(style)) {
+                style.font_style = v;
+                return true;
+            }
         }
         "line-height" => {
             if let Some(v) = parse_line_height(value) {
@@ -1785,6 +1794,40 @@ pub(crate) fn eval_font_slot_math_number(value: &str, font_size: f64) -> Option<
         return None;
     }
     values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))
+}
+
+/// font-style oblique 槽数学形 eval：<angle> 文法位 math 产出式（css-fonts-4
+/// §font-style-prop + css-values-4 §10.5；font-property-unit-cycles
+/// `oblique calc(1deg * tan(atan2(1em, 1px)))` 10 腿驱动）。型别门容
+/// number/angle 两族（`atan2(1em, 1px)` 型别 <angle>；`tan(·)` 型别
+/// <number>——角度平叶 parse_atom 期弧度 Number 化）。font 相对实参按
+/// 父级字体基准 eval；弧度结果按双 provenance 转度（反三角/atan2 产出
+/// 节点或顶层角度单位叶——与 rotate 槽 parse_angle_or_math 同形，
+/// `calc(180deg)` 缺 provenance 会折成 3.14159deg）。
+fn eval_font_slot_math_oblique(value: &str, font_size: f64) -> Option<values::FontStyleValue> {
+    use values::CalcMathType;
+    let rest = value.trim();
+    let lower = rest.to_ascii_lowercase();
+    let rest = if lower.starts_with("oblique") {
+        &rest["oblique".len()..]
+    } else {
+        return None;
+    };
+    let rest = rest.trim();
+    let expr = values::parse_math_function(rest)?;
+    match values::calc_expr_math_type(&expr) {
+        CalcMathType::Number | CalcMathType::Angle => {}
+        _ => return None,
+    }
+    let rad = values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))?;
+    let deg = if values::calc_expr_has_angle_result(&expr)
+        || values::serialize_math::span_has_top_level_angle_unit(rest)
+    {
+        rad.to_degrees()
+    } else {
+        rad
+    };
+    (!deg.is_infinite()).then_some(values::FontStyleValue::Oblique(Some(deg)))
 }
 
 /// font-stretch <percentage> 槽数学形 eval：% 保持型——Percentage 叶产出

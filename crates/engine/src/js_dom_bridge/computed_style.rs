@@ -600,6 +600,18 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
                 .collect::<Vec<_>>()
                 .join(", "),
         },
+        // font-feature-settings longhand gCS 回显（css-fonts-4
+        // §font-feature-settings-prop 序列化 `"tag" <integer>` 列表）——此前
+        // 无回显臂恒空串，math 整数位（font-property-unit-cycles `"tnum"
+        // calc(…)` 10 腿）parseFloat 恒 NaN。
+        "font-feature-settings" => match &style.font_feature_settings {
+            FontFeatureSettingsValue::Normal => "normal".to_string(),
+            FontFeatureSettingsValue::Features(features) => features
+                .iter()
+                .map(|setting| format!("\"{}\" {}", String::from_utf8_lossy(&setting.tag), setting.value))
+                .collect::<Vec<_>>()
+                .join(", "),
+        },
         "font-variant-alternates" => font_variant_alternates_str(&style.font_variant_alternates),
         "line-height" => line_height_str(&style.line_height, font_size_px),
         "z-index" => z_index_str(&style.z_index),

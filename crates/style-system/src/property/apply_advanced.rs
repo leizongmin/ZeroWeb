@@ -1737,13 +1737,21 @@ pub fn apply_advanced_property_value(
         }
         // ── CSS Fonts feature 属性 ──
         "font-feature-settings" => {
-            if let Some(v) = values::parse_font_feature_settings(value) {
+            // 字体 ctx 变体：math 整数位按父级字体解析（css-values-4 §10.5
+            // <integer> 位；font-property-unit-cycles 10 腿驱动，见
+            // [`values::parse_font_feature_settings_with_font`]）。
+            if let Some(v) =
+                values::parse_font_feature_settings_with_font(value, Some(super::apply::font_slot_font_px(style)))
+            {
                 style.font_feature_settings = v;
                 return true;
             }
         }
         "font-variation-settings" => {
-            if let Some(v) = values::parse_font_variation_settings(value) {
+            // 同上：math 坐标位按父级字体解析（font-property-unit-cycles 10 腿）。
+            if let Some(v) =
+                values::parse_font_variation_settings_with_font(value, Some(super::apply::font_slot_font_px(style)))
+            {
                 style.font_variation_settings = v;
                 return true;
             }

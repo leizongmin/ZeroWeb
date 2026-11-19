@@ -1715,8 +1715,9 @@ fn span_has_angle_unit(span: &str) -> bool {
 /// 实参内不代表结果是 `<angle>`（`tan(45deg)` 产出 number，按度直读即错）。
 /// 因此顶层判定须屏蔽 trig 调用实参跨度；非 trig 括号组照常扫入
 ///（`calc((45deg + 1))` 组内角度叶仍命中）。与 [`inverse_trig_arg_has_angle_unit`]
-/// 同构：函数名前平铺段先行判定，命中即返回。
-pub(crate) fn span_has_top_level_angle_unit(span: &str) -> bool {
+/// 同构：函数名前平铺段先行判定，命中即返回。跨 crate 消费：style-system
+/// font-style oblique 槽数学形弧度→度 provenance（font-property-unit-cycles）。
+pub fn span_has_top_level_angle_unit(span: &str) -> bool {
     // progress( 与三角同列屏蔽：产出恒 <number>（CSS Values 5 §progress），
     // 实参族一致性（含角度族）由 parse 期逐实参门自裁——嵌套 progress 实参
     //（progress-computed `progress(progress(1deg, 0deg, 1deg), ...)` 混族钉面）

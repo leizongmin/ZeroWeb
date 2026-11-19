@@ -734,15 +734,16 @@ pub fn parse_font_size_adjust_with_font(value: &str, font_size: Option<f64>) -> 
 
 /// font 槽 math eval 的 CalcContext（font 相对单位按父级字体基准，
 /// css-properties-values-api #dependency-cycles-via-relative-units）：度量
-/// 派生比同 resolve_length_inner 合成口径（ex/cap 0.8、ch 0.5、ic 1.0——
-/// font-property-unit-cycles 期望 em 30/ex 24/cap 24/ch 15/ic 30 钉面）。
+/// 派生比 ex/cap 0.8、ch/ic 1.0——font-property-unit-cycles 期望
+/// em 30/ex 24/cap 24/ch 30/ic 30 钉面（ch 兜底 1em，与 resolve_length
+/// 直解臂同口径——WPT 基线自指 margin 直解路径 1ch@30px → 30px）。
 pub(crate) fn font_slot_calc_context(font_size: f64) -> values::CalcContext {
     values::CalcContext {
         font_size: Some(font_size),
         root_font_size: Some(font_size),
         x_height: Some(font_size * 0.8),
         cap_height: Some(font_size * 0.8),
-        ch_width: Some(font_size * 0.5),
+        ch_width: Some(font_size * 1.0),
         ic_width: Some(font_size * 1.0),
         ..Default::default()
     }
