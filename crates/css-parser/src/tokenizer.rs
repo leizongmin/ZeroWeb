@@ -140,7 +140,8 @@ fn escape_css_string_for_url(s: &str) -> String {
 
 /// css-syntax-3 #serialize-a-string：字符串值序列化时转义 `\` 与 `"`（前缀 `\`）。
 /// 值内原始换行不存在（tokenizer 对裸换行终止字符串并报错），无需 `\a` 臂。
-fn escape_css_string(s: &str) -> String {
+/// 引出 pub 供引擎注册属性 `<string>` 计算值双引号重串化消费（刀 ATP）。
+pub fn escape_css_string(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len());
     for ch in s.chars() {
         if matches!(ch, '"' | '\\') {

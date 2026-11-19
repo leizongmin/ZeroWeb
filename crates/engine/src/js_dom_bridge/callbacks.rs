@@ -4423,6 +4423,33 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 ATP：@property 规则 wire 物化单源回调（css-properties-values-api-1
+    // §at-property-rule + cssom-1 CSSPropertyRule——shim CSSPropertyRule.name/syntax/
+    // inherits/initialValue/cssText 读面 + insertRule 写面共用，fv1 `__zw_parse_ffv_rule`
+    // 单实现双通道同型）。解析/串化单源 [`zero_css_parser`]（描述符有效门 + canonical
+    // cssText 固定序）。纯函数，无 DOM 状态。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/
+    sandbox.register_callback(
+        "__zw_parse_property_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::Property(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            let syntax_content =
+                zero_css_parser::parser::syntax_string_content(&rule.syntax).unwrap_or_else(|| rule.syntax.clone());
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_property_rule_css_text(rule),
+                "name": rule.name,
+                "syntax": syntax_content,
+                "inherits": rule.inherits,
+                "initialValue": rule.initial_value,
+            })
+            .to_string()
+        }),
+    );
+
     // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
     // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
     // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`

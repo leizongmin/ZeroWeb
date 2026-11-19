@@ -495,18 +495,27 @@ impl<'a> Parser<'a> {
 
     pub(super) fn consume_property_rule(&mut self) -> Option<PropertyRule> {
         self.skip_whitespace();
-        // prelude：自定义属性名（`--foo` 整体为单个 Ident token）。
+        // prelude：自定义属性名（`--foo` 整体为单个 Ident token；§at-property-rule
+        // 名须 <custom-property-name>——`foo`/`-foo` 非法规则整体丢弃，corpus
+        // 'Invalid property name does not parse' 钉）。
         let name = match self.peek().clone() {
             Token::Ident(s) if s.starts_with("--") => {
                 self.advance();
                 s
             }
-            _ => return None,
+            _ => {
+                // prelude 期失败 = extent 未消费——吞掉本条 at-rule 残余
+                //（prelude + {...} 块/`;` 语句边界）再返 None，防残余被按
+                // qualified rule 二次解析泄漏成 style rule（cssRules 多出幽灵条目）。
+                self.skip_malformed_qualified_rule();
+                return None;
+            }
         };
 
         self.skip_whitespace();
         if !matches!(self.peek(), Token::LBrace) {
-            // 非 `{`（如 `@property --foo;` 语句形式）：返回 None，上层消费残余。
+            // 非 `{`（如 `@property --foo;` 语句形式）：消费到语句边界再返 None。
+            self.skip_malformed_qualified_rule();
             return None;
         }
         self.advance(); // {
@@ -519,8 +528,8 @@ impl<'a> Parser<'a> {
         }
 
         let mut syntax = String::new();
-        let mut inherits = false;
         let mut inherits_seen = false;
+        let mut inherits_raw = String::new();
         let mut initial_value: Option<String> = None;
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("syntax") && syntax.is_empty() {
@@ -528,10 +537,26 @@ impl<'a> Parser<'a> {
             } else if decl.property.eq_ignore_ascii_case("inherits") && !inherits_seen {
                 // 取首个 inherits 描述符（@property 单一语义）。
                 inherits_seen = true;
-                inherits = decl.value.trim().eq_ignore_ascii_case("true");
+                inherits_raw = decl.value.trim().to_string();
             } else if decl.property.eq_ignore_ascii_case("initial-value") && initial_value.is_none() {
                 initial_value = Some(decl.value.trim().to_string());
             }
+        }
+
+        // 描述符有效门（css-properties-values-api-1 §at-property-rule：syntax/inherits
+        // 为必需描述符、initial-value 非 universal 必需且须 computationally independent
+        // ——无效规则整体丢弃，corpus at-property.html 'Rule not applied'/'makes the
+        // @property rule invalid' 钉面；刀 ATP）。校验细节见 property_validate。
+        // https://drafts.css-houdini.org/css-properties-values-api-1/
+        let syntax_content = super::property_validate::validate_syntax_declaration(&syntax)?;
+        let inherits = if inherits_seen {
+            super::property_validate::validate_inherits_declaration(&inherits_raw)?
+        } else {
+            // inherits 为必需描述符（§at-property-rule）——缺失即规则无效。
+            return None;
+        };
+        if !super::property_validate::validate_initial_gate(&syntax_content, initial_value.as_deref()) {
+            return None;
         }
 
         Some(PropertyRule {

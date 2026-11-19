@@ -2546,6 +2546,24 @@
       }
       return _makeFfvRule(ffvJson, parentSheet);
     }
+    // @property 插入面（css-properties-values-api-1 §at-property-rule；刀 ATP）——
+    // 整条交宿主单规则解析 + 描述符有效门裁决（syntax 文法/inherits 严格/initial-value
+    // 独立性单源），空返 = 整条无效 → SyntaxError DOMException（cssom-1 insertRule
+    // 非法规则文本语义）。非空 = CSSPropertyRule 物化（_makePropertyRule）。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/
+    var pParse = /^@property([\s\S]*)$/i.exec(t);
+    if (pParse) {
+      var pJson = null;
+      if (typeof __zw_parse_property_rule === 'function') {
+        try { pJson = JSON.parse(__zw_parse_property_rule(t) || ''); } catch (_eP) { pJson = null; }
+      }
+      if (!pJson || !pJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@property' rule.",
+          'SyntaxError');
+      }
+      return _makePropertyRule(pJson, parentSheet);
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2683,6 +2701,29 @@
     }
     return rule;
   }
+  // wptfyi-css 刀 ATP：CSSPropertyRule 接口全局（css-properties-values-api-1
+  // §at-property-rule CSSOM 读面——CSSPositionTryRule 空壳模式；type 0
+  //（cssom-1 无专型常量缺省，corpus 'CSSRule.type returns 0' 钉）+ name/syntax/
+  // inherits/initialValue 四属性 + canonical cssText）。
+  // https://drafts.css-houdini.org/css-properties-values-api-1/
+  if (typeof globalThis.CSSPropertyRule !== 'function') {
+    globalThis.CSSPropertyRule = function CSSPropertyRule() {};
+  }
+  // @property 规则物化（`__zw_parse_property_rule` host 单源 JSON——wire 读面 +
+  // insertRule 写面共用构造，fv1 `_makeFfvRule` 单实现双通道同型）。
+  function _makePropertyRule(propJson, parentSheet) {
+    var rule = Object.create((globalThis.CSSPropertyRule &&
+      globalThis.CSSPropertyRule.prototype) || Object.prototype);
+    rule.type = 0;
+    rule.name = propJson.name || '';
+    rule.syntax = propJson.syntax != null ? propJson.syntax : '*';
+    rule.inherits = !!propJson.inherits;
+    rule.initialValue = propJson.initialValue != null ? propJson.initialValue : null;
+    rule.cssText = propJson.cssText || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = null;
+    return rule;
+  }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
   // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
   // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
@@ -2791,6 +2832,19 @@
                 try { ffvWJ = JSON.parse(__zw_parse_ffv_rule(parts[1]) || ''); } catch (_eFfvW) { ffvWJ = null; }
               }
               if (ffvWJ && ffvWJ.cssText) rulesCache.push(_makeFfvRule(ffvWJ, ss));
+              continue;
+            }
+            // @property wire 条目（css-properties-values-api-1 §at-property-rule；
+            // 刀 ATP：at-property/-cssom cssRules 读面）——wire 标记字段 `@property`，
+            // cssText canonical 全文经 `__zw_parse_property_rule` 再解析物化
+            //（_makePropertyRule，与 insertRule 写面单实现双通道）。解析失败跳过
+            // 条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            if (parts[0] === '@property') {
+              var pWJ = null;
+              if (typeof __zw_parse_property_rule === 'function') {
+                try { pWJ = JSON.parse(__zw_parse_property_rule(parts[1]) || ''); } catch (_ePw) { pWJ = null; }
+              }
+              if (pWJ && pWJ.cssText) rulesCache.push(_makePropertyRule(pWJ, ss));
               continue;
             }
             r = {

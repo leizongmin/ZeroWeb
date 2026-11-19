@@ -159,12 +159,90 @@ struct RegisteredProperty {
 
 thread_local! {
     /// 文档作用域注册表（线程亲和 = 渲染线程单文档语义，与 js_anim_registry ENTRIES 同形）。
+    /// JS `CSS.registerProperty` 通道——重名注册 InvalidModification 拒。
     static REGISTRY: RefCell<HashMap<String, RegisteredProperty>> = RefCell::new(HashMap::new());
+    /// CSS `@property` 规则通道——note_stylesheets 每代整体重建（clear+重喂），
+    /// 规则删除/样式表换代检测免费获得；同源 re-registration 后者胜
+    ///（§at-property-rule）。与 JS 通道分表：JS 注册不受样式表代际重建影响。
+    static RULE_REGISTRY: RefCell<HashMap<String, RegisteredProperty>> = RefCell::new(HashMap::new());
 }
 
 /// 注册表换代清空（导航/新 WebView；见 [`super::callbacks`] 装载序列）。
 pub(crate) fn clear_all() {
     REGISTRY.with(|r| r.borrow_mut().clear());
+    RULE_REGISTRY.with(|r| r.borrow_mut().clear());
+}
+
+/// 查注册条目（规则通道优先——CSS 源 re-registration 可覆盖 JS 注册；JS 通道
+/// 重名注册在 [`register`] 入口被 InvalidModification 拒，故合并视图无歧义）。
+fn lookup(name: &str) -> Option<RegisteredProperty> {
+    RULE_REGISTRY
+        .with(|r| r.borrow().get(name).cloned())
+        .or_else(|| REGISTRY.with(|r| r.borrow().get(name).cloned()))
+}
+
+/// stylesheet `@property` 规则喂入（computed_style_cache 代际重建三呼叫点与
+/// cssa_registry::note_stylesheets 同挂）——at-rule 通道写 [`RULE_REGISTRY`]
+///（刀 ATP R2：css-properties-values-api-1 §at-property-rule 规则注册面；
+/// gCS `--` 分支 typed 串化/initial 兜底与动画插值 `--` 臂自此对 CSS 源注册
+/// 生效）。整体重建语义：规则删除＝条目消失；同名重声明后者胜（CSS 源
+/// re-registration 语义；与 JS registerProperty 通道 InvalidModification 拒
+/// 重名分道）。规则有效性已在 css-parser 解析门（property_validate）裁决——
+/// 无效规则不进 AST；此处校验为防御性双门，note 侧失败跳过不注册＝
+/// "Rule not applied" 语义。
+/// <https://drafts.css-houdini.org/css-properties-values-api-1/>
+pub(crate) fn note_stylesheets(stylesheets: &[zero_css_parser::Stylesheet]) {
+    // 每代重建：先清再喂（fix C——修复前写共享 REGISTRY 且只增不删，
+    // 规则删除后注册残留、@property 离场语义失效）。
+    RULE_REGISTRY.with(|r| r.borrow_mut().clear());
+    for ss in stylesheets {
+        for rule in &ss.rules {
+            if let zero_css_parser::Rule::Property(pr) = rule {
+                note_property_rule(pr);
+            }
+        }
+    }
+}
+
+/// 单条 `@property` AST 规则 → 规则通道条目（syntax 剥引号走注册表语法门，
+/// initial 走严格门预解析计算形——JS 通道 register() 同型校验，WebIDL 字典
+/// 层缺省面此处分道：AST 门已保证 inherits/typed-initial 在场）。
+fn note_property_rule(pr: &zero_css_parser::PropertyRule) {
+    // syntax decl = string 字面（引号原文存储形）→ 内容剥取单源
+    //（css-parser `pub use property_validate::syntax_string_content`）。
+    let Some(content) = zero_css_parser::parser::syntax_string_content(&pr.syntax) else {
+        return;
+    };
+    let Some(syntax) = parse_syntax_descriptor(&content) else {
+        return;
+    };
+    let typed = matches!(syntax, SyntaxDescriptor::Combined(_));
+    let universal = matches!(syntax, SyntaxDescriptor::Universal);
+    let initial_computed = if typed {
+        let Some(iv) = pr.initial_value.as_deref().map(str::trim) else {
+            return;
+        };
+        validate_initial_strict(&syntax, iv)
+    } else if universal {
+        pr.initial_value
+            .as_deref()
+            .map(str::trim)
+            .and_then(|iv| validate_initial_strict(&syntax, iv))
+    } else {
+        None
+    };
+    RULE_REGISTRY.with(|r| {
+        r.borrow_mut().insert(
+            pr.name.clone(),
+            RegisteredProperty {
+                syntax,
+                inherits: pr.inherits,
+                // trim 对齐 JS register() 存储形。
+                initial: pr.initial_value.as_deref().map(str::trim).map(String::from),
+                initial_computed,
+            },
+        );
+    });
 }
 
 /// 注册入口（`__zw_register_property` 回调委托；WebIDL 字典转换面已在 shim 完成，
@@ -230,10 +308,11 @@ pub(crate) fn register(
     } else {
         None
     };
-    // 步骤 9：重名注册 InvalidModificationError（语料 --re-register 锚定）。
+    // 步骤 9：重名注册 InvalidModificationError（语料 --re-register 锚定；
+    // CSS 规则通道已注册同名同拒——§register-a-custom-property 对已注册名）。
     REGISTRY.with(|r| {
         let mut map = r.borrow_mut();
-        if map.contains_key(name) {
+        if map.contains_key(name) || RULE_REGISTRY.with(|rr| rr.borrow().contains_key(name)) {
             return Err((RegErrorKind::InvalidModification, "Property is already registered"));
         }
         map.insert(
@@ -249,18 +328,14 @@ pub(crate) fn register(
     })
 }
 
-/// 查注册条目（模块内插值/串化消费）：syntax 描述符 + initial 计算形。
+/// 查注册条目（模块内插值/串化消费；双通道合并视图）：syntax 描述符 + initial 计算形。
 fn registration_of(name: &str) -> Option<(SyntaxDescriptor, Option<String>)> {
-    REGISTRY.with(|r| {
-        r.borrow()
-            .get(name)
-            .map(|p| (p.syntax.clone(), p.initial_computed.clone()))
-    })
+    lookup(name).map(|p| (p.syntax, p.initial_computed))
 }
 
 /// 名是否已注册（gCS 分支路由判据，避免无条件克隆 syntax）。
 pub(crate) fn registration_known(name: &str) -> bool {
-    REGISTRY.with(|r| r.borrow().contains_key(name))
+    lookup(name).is_some()
 }
 
 /// 注册 syntax 描述符串化（刀 TD1：shim computed typed 重ify 分型 + registered
@@ -279,20 +354,20 @@ pub(crate) fn syntax_of(name: &str) -> Option<String> {
         }
         s
     }
-    REGISTRY.with(|r| {
-        r.borrow().get(name).map(|p| match &p.syntax {
-            SyntaxDescriptor::Universal => "*".to_string(),
-            SyntaxDescriptor::Normal => "normal".to_string(),
-            SyntaxDescriptor::Combined(comps) => comps.iter().map(component_text).collect::<Vec<_>>().join("|"),
-        })
+    lookup(name).map(|p| match &p.syntax {
+        SyntaxDescriptor::Universal => "*".to_string(),
+        SyntaxDescriptor::Normal => "normal".to_string(),
+        SyntaxDescriptor::Combined(comps) => comps.iter().map(component_text).collect::<Vec<_>>().join("|"),
     })
 }
 
 /// 全注册名 JSON 清单（刀 TD1：computedStyleMap iteration 枚举消费；字典序
-/// 输出——HashMap 迭代序不定，确定性供测试比对）。
+/// 输出——HashMap 迭代序不定，确定性供测试比对；双通道合并去重）。
 pub(crate) fn names_json() -> String {
-    let mut names = REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>());
+    let mut names = RULE_REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>());
+    names.extend(REGISTRY.with(|r| r.borrow().keys().cloned().collect::<std::vec::Vec<String>>()));
     names.sort_unstable();
+    names.dedup();
     let items = names.iter().map(|n| format!("\"{}\"", n)).collect::<Vec<_>>().join(",");
     format!("[{}]", items)
 }
@@ -473,11 +548,26 @@ fn canonicalize_scalar(kind: TypeKind, value: &str, font_size_px: f64) -> Option
             let n = v.strip_suffix('%')?.trim().parse::<f64>().ok()?;
             Some(super::computed_style::format_num(n, "%"))
         }
-        TypeKind::Length | TypeKind::LengthPercentage => match parse_lp(v, font_size_px)? {
-            (n, "px") => Some(super::computed_style::format_num(n, "px")),
-            (n, "%") => Some(super::computed_style::format_num(n, "%")),
-            _ => None,
-        },
+        TypeKind::Length | TypeKind::LengthPercentage => {
+            // calc() 形镜像 strict_scalar：Len→px、Pct→%、LP 混合形保形原文
+            //（% 依布局不可折算——corpus at-property-computed-value `calc(10%)`
+            // 族锚定；修复前读回 ""）。
+            let allow_pct = kind == TypeKind::LengthPercentage;
+            let a = match calc_eval_strict(v) {
+                Some(a) => a,
+                None => match parse_lp(v, font_size_px)? {
+                    (n, "px") => CalcAtom::Len(n),
+                    (n, "%") => CalcAtom::Pct(n),
+                    _ => return None,
+                },
+            };
+            match a {
+                CalcAtom::Len(n) => Some(super::computed_style::format_num(n, "px")),
+                CalcAtom::Pct(n) => Some(super::computed_style::format_num(n, "%")),
+                CalcAtom::MixedLenPct(..) if allow_pct => Some(v.to_string()),
+                _ => None,
+            }
+        }
         TypeKind::Color => {
             // css-parser 全色面（命名色 green→rgb(0,128,0) 锚定）→ rgb/rgba
             // canonical（computed_style::color_to_css 同形，alpha 最短十进制）。
@@ -499,9 +589,16 @@ fn canonicalize_scalar(kind: TypeKind, value: &str, font_size_px: f64) -> Option
             // 计算值串化取解析形回写（插值走 transform_interp 通道）；空/none 原样。
             Some(v.to_string())
         }
-        // 引号串/ident/url()/image 函数形：计算串化取原文（注册门裁决文法——
+        // ident/url()/image 函数形：计算串化取原文（注册门裁决文法——
         // 语料 `url(a)`/`linear-gradient(...)`/`light-dark(...)` 原样回显）。
-        TypeKind::StringKind | TypeKind::CustomIdent | TypeKind::UrlKind | TypeKind::ImageKind => Some(v.to_string()),
+        TypeKind::CustomIdent | TypeKind::UrlKind | TypeKind::ImageKind => Some(v.to_string()),
+        // 引号串：解码 token 后双引号重串化（同 strict_scalar StringKind 臂注）。
+        TypeKind::StringKind => match zero_css_parser::Tokenizer::new(v).collect_tokens().first() {
+            Some(zero_css_parser::Token::String(s)) => {
+                Some(format!("\"{}\"", zero_css_parser::tokenizer::escape_css_string(s)))
+            }
+            _ => Some(v.to_string()),
+        },
     }
 }
 
@@ -1525,7 +1622,18 @@ fn strict_scalar(kind: TypeKind, raw: &str) -> Option<String> {
         TypeKind::Color => canonicalize_scalar(TypeKind::Color, v, 16.0),
         TypeKind::TransformFunction => valid_transform_function(v).then(|| v.to_string()),
         TypeKind::TransformList => valid_transform_list_value(v).then(|| v.to_string()),
-        TypeKind::StringKind => valid_string_token(v).then(|| v.to_string()),
+        TypeKind::StringKind => {
+            // 串 canonical：解码 token 后双引号重串化（css-syntax-3
+            // #serialize-a-string——CSS 源单引号形 `'foo'` 计算形 `"foo"`，
+            // corpus at-property.html `<string>+/#` 族钉形）。注册门引号文法
+            // 已保证首 token 为串，防御臂原样回落。
+            valid_string_token(v).then(|| match zero_css_parser::Tokenizer::new(v).collect_tokens().first() {
+                Some(zero_css_parser::Token::String(s)) => {
+                    format!("\"{}\"", zero_css_parser::tokenizer::escape_css_string(s))
+                }
+                _ => v.to_string(),
+            })
+        }
         TypeKind::CustomIdent => valid_custom_ident_value(v).then(|| v.to_string()),
         TypeKind::UrlKind => valid_url_value(v).then(|| v.to_string()),
         TypeKind::ImageKind => valid_image_value(v).then(|| v.to_string()),

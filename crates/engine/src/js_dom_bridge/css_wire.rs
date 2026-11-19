@@ -250,6 +250,16 @@ pub fn style_rules_text(text: &str) -> String {
             // cssText = canonical 全文（含族名列表）。
             let css_text = zero_css_parser::serialize::serialize_font_feature_values_css_text(fvr);
             entries.push(format!("@font-feature-values\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::Property(pr) = rule {
+            // @property wire 条目（css-properties-values-api-1 §at-property-rule +
+            // cssom-1 CSSPropertyRule；wptfyi-css 刀 ATP：at-property/-cssom cssRules
+            // 读面）——selectorText 字段 = `@property` 标记（真实选择器不可能以 `@`
+            // 起头，shim 侧据此分派 CSSPropertyRule 物化——host `__zw_parse_property_rule`
+            // 单源解析/串化，与 insertRule 写面单实现双通道，fv1 同型）。cssText =
+            // canonical 全文（描述符固定序）。
+            // https://drafts.css-houdini.org/css-properties-values-api-1/
+            let css_text = zero_css_parser::serialize::serialize_property_rule_css_text(pr);
+            entries.push(format!("@property\x1e{}", css_text));
         }
         // 其余 @-rule / keyframes / @media defer（cssRules 读仅 StyleRule + position-try）
     }
