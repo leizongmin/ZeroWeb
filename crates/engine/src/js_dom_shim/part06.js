@@ -6008,6 +6008,23 @@
           if (a && a.playState !== 'idle') out.push(a);
         }
       }
+      // 刀 WA：CSS animation 浮出面（css-animations-2 §getAnimations on
+      // Document——全文档枚举 `__zw_query_all('*')` 逐元素收集 CSSAnimation；
+      // 文档序。伪元素动画不浮出。详 part03 _zwCssAnimationsForElement）。
+      try {
+        if (typeof _zwCssAnimationsForElement === 'function'
+            && typeof __zw_query_all === 'function' && typeof _wrapSelector === 'function') {
+          var _wire = __zw_query_all('*');
+          if (_wire) {
+            var _sels = String(_wire).split('|');
+            for (var _wi = 0; _wi < _sels.length; _wi++) {
+              if (!_sels[_wi]) continue;
+              var _cAnims = _zwCssAnimationsForElement(_sels[_wi], null);
+              for (var _ci = 0; _ci < _cAnims.length; _ci++) out.push(_cAnims[_ci]);
+            }
+          }
+        }
+      } catch (_eCssAnimsDoc) {}
       return out;
     },
     // M3-S1（Web Animations §6.2）：document.timeline 默认 DocumentTimeline 实例

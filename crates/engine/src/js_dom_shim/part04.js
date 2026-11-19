@@ -7192,7 +7192,15 @@
                   }
                 }
               } catch (_eTs) {}
-            return _out;
+            // 刀 WA：CSS animation 浮出面（css-animations-2 §cssanimation——
+        // `animation:` 样式动画以 CSSAnimation 对象入列，JS 动画/CSSTransition
+        // 之后；interface 簇根因修复，详 part03 _zwCssAnimationsForElement）。
+        try {
+          var _cssAnims = (typeof _zwCssAnimationsForElement === 'function')
+            ? _zwCssAnimationsForElement(sel, handle) : [];
+          for (var _cai = 0; _cai < _cssAnims.length; _cai++) _out.push(_cssAnims[_cai]);
+        } catch (_eCssAnims) {}
+        return _out;
           };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：

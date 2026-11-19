@@ -18901,8 +18901,12 @@
   FormDataEvent.prototype.constructor = FormDataEvent;
   globalThis.FormDataEvent = globalThis.FormDataEvent || FormDataEvent;
 
+  // AnimationEvent.animation（css-animations-1 §AnimationEvent——init dict 第4
+  // 属性，指向派发动画对象）。事件派发属池④b，接口面先行：face 物化后
+  // animationevent-interface 的 AnimationEventInit animation 断言才非空洞。
   _defineEventSubclass('AnimationEvent', 'Event', [
     ['animationName', 'animationName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
+    ['animation', 'animation', null],
   ]);
   // R150（js-dom M4）：GamepadEvent（spec Gamepad §gamepadevent——Gamepad API 的连接/
   // 断开/按键事件）。构造面 + gamepad 属性（init dict 近似，headless 无真 gamepad
