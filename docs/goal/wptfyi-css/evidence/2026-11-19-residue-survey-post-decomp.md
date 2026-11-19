@@ -67,3 +67,65 @@ face 清单替换）。批后 master.md 批账段的靶向注记由 docs 笔引�
   em/ex/ch 引用 font-size 的 cycle 检测与 fallback）。
 - **避免**：font-property-unit-cycles.tentative 79F＝calc trig 数学面
   （`tan(atan2(1em,1px))` 形），css-parser 位语 calc 热修流邻接。
+
+## 批三刷新（23:3x，knife-g b1 五语料口径 + fonts fontcycle r1-pristine——刀 G 落库 `3b3297310` 后）
+
+五语料树态残面：typed-om 636F / animations 604F / pva 417F / masking
+1489F / transitions 501F，fonts 1949F（r1-pristine 口径，早于 ffix2/optical
+在飞面）。批二候选全部兑现或转在飞：G 形 175F→刀 G +152（残 23F＝gap
+`normal` keyword get 回形 5 + marker `<url>` opaque 18）；registered-property
+computation 簇→atpr2 在飞（registered_properties/computed_style 等 5 文件
+树内 hunks）；U 形已由 G2-a 收清。
+
+### 未认领候选池（按连贯度 × 体量排序）
+
+1. **typed-om stylevalue-subclasses 双池 ~240F**（单语料单文件域
+   part10-typed-om.js，刀 G 落库后同文件可续作）：transform 子类
+   ~101F（cssRotate 23 / cssSkew 16+SkewX 11+SkewY 11 / cssTranslate 14 /
+   cssPerspective 15 / cssScale 9 / toMatrix 8 / 2d-flattening 4）+ color
+   子类 ~139F（cssRGB 28 / cssColorValue 20 / cssHWB 18 / cssOKLCH 17 /
+   cssLCH 17 / cssHSL 15 / cssOKLab 14 / cssLab 14 / normalize-tokens 10）
+   ——构造器属性面 + `to()` 跨类型转换 + serialization 往返，配方承 face C
+   part 1 / ARITH（已落库数值面不重叠）。
+2. **mask-border composition/interpolation 簇 ~419F**（css-masking）：
+   mask-border width/slice/outset composition 93×3 + width-interpolation 66
+   + source-interpolation 42 + slice-interpolation 31——mask-border 长手
+   插值臂 + composition 通道，配方承 B1 border-image 动画族（+939 已落库，
+   border-image ≠ mask-border 族）。另有 clip-path 插值鲸面 ~780F 与
+   shapes 刀（parse_basic_shape/serialize/css_wire 在飞，23:27 电池在跑）
+   邻接，待其落库后再估插值引擎臂。
+3. **custom-property-animation 家族 ~150F**（css-properties-values-api）：
+   custom-property-transition-mismatched-list 24 + at-property-animation 18
+   + custom-property-animation-{type,number,integer,length,percentage,
+   angle,time,color,transform,resolution} × plain/space-list/comma-list
+   ~24 页 ×5F——@property syntax 感知插值/离散通道。邻接警示：
+   animation.rs 为 ffix2/optical 共享热文件（DISCRETE_TRANSITIONABLE 在飞），
+   发射前需与两流核窗口。
+4. **WAAPI interface 簇 ~150F**（animations+transitions 双语料）：
+   AnimationEffect-getComputedTiming 41+20 / event-dispatch 32+11 /
+   getAnimations 族 21+17+4+5+3+4 / CSSAnimation·CSSTransition·
+   KeyframeEffect 生命周期 ~40——shim 动画对象语义面。邻接警示：part06.js
+   为刀 KF 在飞 face（keyframes insertRule），KF 落库后开放。
+5. **fonts 插值/composition 鲸面 ~900F**（r1-pristine 口径）：size-adjust
+   composition 250 / variation-settings-interpolation 234 / palette-
+   interpolation 114 / variation-settings-composition 60 / size-composition
+   63 / size-adjust-interpolation 43——optical/ffix2 在飞同 corpus，等两刀
+   收账后按残面重估（composition 臂：interpolation 页 43F/363P 而
+   composition 页 250F/250P，插值已有 composition 缺，单根因候选）。
+6. **零散连贯小池**：text-decoration-inset-auto 49F（animations）/
+   scroll-padding 28 + cursor 18 + logical 16（typed-om TO-GRID 残）/
+   column-rule-width 12 + column-rule-style 10（typed-om）/
+   *-opacity 五属性 8F×5（typed-om 同构形）/ url-resolution 18（pva）/
+   text-shadow-composition 15 + vertical-align-composition 10 +
+   z-index 8（transitions composition 臂残，A2/A3/Z 已落库插值面的
+   composition 通道残）。
+
+### 占用面现状（避让）
+
+- transitions properties-value 族 263F＝事件系统鲸面在册；animations
+  parsing keyframes 族＝刀 KF 在飞；fonts synthesis/stretch/variant 臂＝
+  ffix2/optical 在飞；pva registered-property-*＝atpr2 在飞；es_module.rs
+  s419 模块语义＝script-sandbox 流在树 WIP（与本目标无关，census 对称）。
+- 口径警示：五语料 b1 JSON 含 RIDE 在飞 hunks（ffix2 animation.rs、
+  atpr2 registered_properties +455、KF part06 等），对应域残面计数在其
+  落库后会收缩，认领前按当树 b0/b1 重探。
