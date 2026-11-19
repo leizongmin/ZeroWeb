@@ -554,8 +554,9 @@ fn underlying_cascade_value(style: &ComputedStyle, name: &str) -> Option<String>
 /// - vertical-align：underlying 与动画值均 `<length>` px 严格可解析时数值相加
 ///   （串化经 [`format_interp_num`] 与 gCS 数字形态一致）；% / 关键字（baseline
 ///   等）/ 混合单位无定义加法 → 动画值原样（replace 回落）。
+///
 /// 其余属性 → 动画值原样。`op` 在单动画单迭代域 add ≡ accumulate
-///（web-animations-1 §5.4.4 accumulate 注记），参数保留供多迭代域扩展。
+/// （web-animations-1 §5.4.4 accumulate 注记），参数保留供多迭代域扩展。
 pub(crate) fn compose_animation_value(
     name: &str,
     op: &AnimationCompositionValue,
