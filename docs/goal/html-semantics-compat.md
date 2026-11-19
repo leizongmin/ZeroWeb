@@ -90,9 +90,20 @@ T 持位观察）＋全桥基线换装 b581
 1731P/0F**：开工 pull 捕获全列核实
 （窗＝57aa5e0be→s582 legs HEAD，
 本笔 push 捕获归 s582 开工续核），
-runner 预判 docs 面 Fresh＋mtime
-churn 单列，窗带 js_dom_bridge 新钉
-则全桥 NEW/GONE 对账（键基线
+s582 开工捕获批 ×4 全列核实
+（57aa5e0be→710d84cf3：code ×1＝
+d70660fae cargo fmt 全树格式化（
+css-parser 等 7 crate 文件）＋merge
+577780490（site-opt fmt PR #314）＝
+**runner 必换代预判改判（fmt 重编
+非 Fresh，对端 kb83 fmt 笔重建预测
+同向）**；docs ×3＝rendering R5841
+（**kb82 54代 判代批兑现＝runs
+95926afc ×3 恒＝本轮 mid=post 同值
+＝跨 clone 收敛第四实例确认**）＋
+wptfyi-css ffix2 发射窗注记＋
+part17 落库订正。窗带 js_dom_bridge
+新钉则全桥 NEW/GONE 对账（键基线
 b581.keys 在 /tmp/s582）；dialog 第
 16 轮；password 第 21 轮；**mpreload
 第 44 轮＝持位第 7 连观察**；waapi
@@ -114,6 +125,23 @@ rendering 流记账）。门开随批落预案
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s581-band-split-half-forms-bridge-green-mpreload-hold6.md
+> **◆ 补账（2026-11-20 s581 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×4
+> 全列核实（57aa5e0be→710d84cf3，
+> rebase 换代归 s582 开工续核）：code
+> ×1＝d70660fae cargo fmt 全树格式
+> 化＋merge 577780490（site-opt fmt
+> PR #314）＝s582 runner 必换代预判
+> 改判（fmt 重编非 Fresh，对端 kb83
+> fmt 笔重建预测同向）；docs ×3＝
+> rendering R5841（**kb82 54代 判代
+> 批兑现＝runs 95926afc ×3 恒＝本轮
+> mid=post 同值＝跨 clone 收敛第四
+> 实例确认**，s561 69967b2e／s579
+> f37f570e／s580 0b5c2914 先例后第
+> 四例）＋wptfyi-css ffix2 发射窗注
+> 记＋part17 落库订正。全桥 b581 基
+> 线已在 /tmp/s582 装载。
 > **◆ 补账（2026-11-20 s580 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×2
 > 全列核实（c66508ec8→c4b39dd2a，
