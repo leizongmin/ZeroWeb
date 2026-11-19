@@ -98,6 +98,31 @@ select-styles.css ×47 随批落。账本=
 evidence/2026-11-19-m2s575-band-dual
 -wholefile-return-mpreload-first-red
 -solo-transient.md
+> **◆ 补账（2026-11-19 s575 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×10
+> 全列核实（55b61dd84→f49b3c026）：
+> code ×3＝7e453b5fc fix(style-system,
+> engine) typed-om grid-template/
+> scroll-padding 负值/calc 写门 face B
+> ＋333e88683 fix(css-parser,
+> style-system) animation-range-start
+> /end 写门文法+canonical face A＋
+> 13a9290ee fix(engine) d58 刀 D join
+> 面 wire 批双插修复（input-events 净
+> +10，对端 editing 流）——**三零桥测
+> 钉**＝s576 全桥对账不触发（b570 基
+> 线持位），css-parser/style-system/
+> engine 三 crate 码面在链接链＝
+> **s576 runner 必换代预判（全链档
+> Compiling ×9 预期）**，grid/
+> animation-range/join 行为面位移归
+> s576 join 对账捕获；docs ×7＝
+> wptfyi-css 五轮（face A/B 收口行＋
+> 落库号 rebase 换代系）＋rendering
+> R5826/R5827（kb67 三码笔兑现＝
+> eab9ca64 跨流同 md5 互证＋kb68 守
+> 成）。本流 s575 收口 commit rebase
+> 后＝51c328f35。
 > **◆ 补账（2026-11-19 s574 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×5
 > 全列核实（44536e067→b50817198）：
