@@ -403,6 +403,8 @@
   var _zwOmGridClampPctProps = {
     'grid-template-columns': 1, 'grid-template-rows': 1,
     'grid-auto-columns': 1, 'grid-auto-rows': 1,
+    // 刀 G（css-align-3 §gap used/computed）：gap 负 % 与 grid 轨道同合同。
+    'column-gap': 1, 'row-gap': 1,
   };
   // computed 值 typed-om reification：长度 computed 绝对化 px（em/rem 按宿主
   // font-size、绝对族按因子）、同族 calc Sum 折叠（length→px / percent /
@@ -1659,6 +1661,9 @@ return Ctor;
     'color-interpolation':['auto','srgb','linearrgb'],
     'column-count':['auto','<number>'],
     'column-height':['auto','<length>'],
+    // 刀 G（css-box-gap/css-align-3 §gap）：非负 <length>|<percentage> ∨
+    // normal；负 % computed 期钳 0（_zwOmGridClampPctProps 同合同）。
+    'column-gap':['normal','<length>','<percentage>'],
     'column-rule-color':['currentcolor'],
     'column-rule-style':['none','hidden','dotted','dashed','solid','double','groove','ridge','inset','outset'],
     'column-rule-width':['thin','medium','thick','<length>'],
@@ -1699,6 +1704,12 @@ return Ctor;
     'font-size':['xx-small','x-small','small','medium','large','x-large','xx-large','xxx-large','larger','smaller','<length>','<percentage>'],
     'font-size-adjust':['none','<number>'],
     'font-stretch':['normal','ultra-condensed','extra-condensed','condensed','semi-condensed','semi-expanded','expanded','extra-expanded','ultra-expanded','<percentage>'],
+    // 刀 G（css-fonts-4 §font-synthesis）：简写三形 token 面走
+    // _zwOmCheckShorthandTokens（同 background 形），长手 auto|none。
+    'font-synthesis':[],
+    'font-synthesis-small-caps':['auto','none'],
+    'font-synthesis-style':['auto','none'],
+    'font-synthesis-weight':['auto','none'],
     'font-style':['normal','italic','oblique'],
     'font-variant-alternates':['normal','historical-forms'],
     'font-variant-caps':['normal','small-caps','all-small-caps','petite-caps','all-petite-caps','unicase','titling-caps'],
@@ -1770,6 +1781,13 @@ return Ctor;
     'overflow-anchor':['auto','none'],
     'overflow-clip-margin':['border-box','content-box','padding-box','<length>'],
     'overflow-wrap':['normal','break-word','break-spaces'],
+    // 刀 G（css-overflow-3 §overflow-control + css-overscroll-1
+    // §overscroll-behavior-properties）：longhand 关键字面；overflow 简写
+    // 既有 KnownExtra 不动。
+    'overflow-x':['visible','hidden','clip','scroll','auto'],
+    'overflow-y':['visible','hidden','clip','scroll','auto'],
+    'overscroll-behavior-x':['auto','contain','none'],
+    'overscroll-behavior-y':['auto','contain','none'],
     'page':['auto','custom-ident'],
     'paint-order':['normal','fill','stroke','markers'],
     'perspective':['none','<length>'],
@@ -1781,6 +1799,8 @@ return Ctor;
     'r':['<percentage>','<length>'],
     'resize':['none','both','horizontal','vertical'],
     'right':['auto','<percentage>','<length>'],
+    // 刀 G：row-gap 与 column-gap 同合同（css-box-gap）。
+    'row-gap':['normal','<length>','<percentage>'],
     'rx':['auto','<percentage>','<length>'],
     'ry':['auto','<percentage>','<length>'],
     'scroll-behavior':['auto','smooth'],
@@ -1959,7 +1979,14 @@ return Ctor;
   // ——WPT grid-template-columns-rows 页 CSSUnitValue/CSSKeywordValue 期望）；
   // scroll-padding 简写入集（testUnsupportedValue opaque 往返面——多分量值
   // Chrome 同形不解析）。
-  var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'scroll-padding': 1, 'scroll-margin': 1, transition: 1, animation: 1 };
+  var _zwOmKnownExtra = { color: 1, display: 1, background: 1, 'background-color': 1, 'background-image': 1, opacity: 1, visibility: 1, content: 1, transform: 1, 'z-index': 1, overflow: 1, cursor: 1, outline: 1, flex: 1, 'flex-direction': 1, 'scroll-padding': 1, 'scroll-margin': 1, transition: 1, animation: 1,
+    // 刀 G opaque 兜底面（testUnsupportedPropertyTests：computed 往返期望
+    // 基类 opaque——PropSyntax 优先命中，本表仅兜底；简写族 computed 多值
+    // 形 Typed OM L1 无分型）。
+    'marker': 1, 'grid-area': 1, 'offset': 1, 'grid-template': 1,
+    'grid-gap': 1, 'font': 1, 'font-variant': 1, 'text-decoration': 1,
+    'grid': 1, 'font-family': 1, 'flex-flow': 1, 'stroke': 1, 'mask': 1,
+    'fill': 1, 'vertical-align': 1 };
 
   // ===== 12. StylePropertyMap =====
   // A/B 快照二进制 provenance 指纹（zw-typedom-listvalued-2026-11-17-r2）：刀 H
