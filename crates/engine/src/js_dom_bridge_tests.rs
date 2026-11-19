@@ -273,3 +273,8 @@ include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");
 // t-g2b impl-005 持久 StyleSystem oracle 钉面：同代暖复跑/跨代暖增量 vs 冷全量
 // 逐位一致 + clear_generation_cache 复位语义（见文件头注）。
 include!("js_dom_bridge_tests/part113_g2b_persisted_style_system.rs");
+
+// t-g2b impl-006 批量属性读 oracle 钉面：`__zw_get_tag_attrs_resolved` wire 形状/
+// 相对 URL 绝对化 + `__zw_dispatch_element_event` 批量路径派发语义（相对命中/
+// 多元素同 URL 全派发/无匹配零派发，见文件头注）。
+include!("js_dom_bridge_tests/part114_g2b_batch_attrs.rs");

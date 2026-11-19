@@ -952,6 +952,54 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t-g2b impl-006：元素级资源事件派发的批量属性读——`__zw_dispatch_element_event`
+    // （shim part06）原每臂逐元素 `__zw_get_attr` + 相对 URL 逐条 `__zw_parse_url`，
+    // 真实大页（github 主页 link ×115）放大成 O(N) host 往返（每臂 4.2s，×10 link 臂
+    // + 13 script 臂连续占主线程，T+35s automation eval 插队被饿）。本回调一次往返
+    // 返回 `sel\x1fabsUrl|…`（`|` 元素分隔同 `__zw_query_all` 惯例；空 attr 跳过；
+    // 相对 URL 经 `parse_url_to_json` 同底层解析取 href，失败保留原值——镜像 shim 端
+    // `JSON.parse` catch 后 resolved=rawVal 的行为）。列表源/属性读/applied view 与
+    // `__zw_query_all` / `__zw_get_attr` 逐点同源。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let url = Arc::clone(page_url);
+    sandbox.register_callback(
+        "__zw_get_tag_attrs_resolved",
+        Box::new(move |args: &[String]| -> String {
+            let tag = args.first().map(String::as_str).unwrap_or("");
+            let attr = args.get(1).map(String::as_str).unwrap_or("");
+            if tag.is_empty() || attr.is_empty() {
+                return String::new();
+            }
+            let page_url = url.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut parts: Vec<String> = Vec::new();
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                let list = query_all_selector_list_doc_cached(doc, ctx, tag);
+                for sel in list.split('|').filter(|s| !s.is_empty()) {
+                    let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                    let raw = query_attr_from_html_doc_cached(doc, ctx, sel, attr);
+                    if raw.is_empty() {
+                        continue;
+                    }
+                    let resolved = if raw.contains("://") || page_url.is_empty() {
+                        raw.clone()
+                    } else {
+                        match serde_json::from_str::<serde_json::Value>(&parse_url_to_json(&raw, Some(&page_url)))
+                            .ok()
+                            .and_then(|v| v.get("href").and_then(|h| h.as_str()).map(String::from))
+                        {
+                            Some(href) if !href.is_empty() => href,
+                            _ => raw.clone(),
+                        }
+                    };
+                    parts.push(format!("{sel}\u{1f}{resolved}"));
+                }
+            });
+            parts.join("|")
+        }),
+    );
+
     // `DOMParser.parseFromString(str, type)`（R2790）——解析**任意 HTML 串**为只读 Document。
     // 与 `__zw_query_*`（基于 dom_html 快照）不同：html 从 arg[0] 取（DOMParser 解析的是传入串，
     // 非当前页面快照），selector 从 arg[1]，all 标志从 arg[2]（"1"=全部）。返 JSON 元素快照数组。

@@ -15124,22 +15124,50 @@
   };
 
   // R2943/R2944 `__zw_dispatch_element_event(tag, attr, absUrl, type)`——host 侧元素级 load/error 派发入口
-  //（img R2943 / link R2944 / script R2944 通用）。按 URL 绝对值匹配 `__zw_query_all(tag)` 返的元素 proxy：
-  // 读各元素的 `attr` 属性（src/href），相对值经 `__zw_parse_url` 解析为绝对，与 absUrl 比较，命中则用
-  // **该元素自身 selector** 经 `__zw_dispatch_event` 派发（保证 listener store key 与 page JS 经
+  //（img R2943 / link R2944 / script R2944 通用）。按 URL 绝对值匹配该 tag 全部元素：
+  // t-g2b impl-006：属性读改走 `__zw_get_tag_attrs_resolved` 批量宿主回调（一次往返返
+  // `sel\x1fabsUrl|…`，相对 URL host 端经同一 `parse_url_to_json` 底层解析）——原逐元素
+  // `__zw_get_attr` + 逐条 `__zw_parse_url` 在真实大页（github 主页 link ×115）放大成
+  // O(N) host 往返火车（每臂 4.2s ×10 link 臂）。命中元素用**该元素自身 selector** 经
+  // `__zw_dispatch_event` 派发（保证 listener store key 与 page JS 经
   // querySelectorAll/getElementsByTagName 获取 proxy 时一致 → onload/onerror + addEventListener 触发）。
   // 绕开 selector 歧义（不同取元素方式可能产生不同 selector）。**限制**：仅 DOM 内元素（不含动态创建）。
+  // 批量回调不可用（旧环境）时回落逐元素路径，行为不变。
   globalThis.__zw_dispatch_element_event = function (tag, attr, absUrl, type) {
     try {
-      if (typeof __zw_query_all !== 'function' || typeof __zw_dispatch_event !== 'function') return;
-      var sels = __zw_query_all(String(tag));
+      if (typeof __zw_dispatch_event !== 'function') return;
+      var target = String(absUrl == null ? '' : absUrl);
+      var tagS = String(tag), attrS = String(attr);
+      // t-g2b impl-006 批量路径：一次往返，本地匹配。
+      if (typeof __zw_get_tag_attrs_resolved === 'function') {
+        var wire = __zw_get_tag_attrs_resolved(tagS, attrS);
+        if (!wire) return;
+        var pairs = wire.split('|');
+        for (var i = 0; i < pairs.length; i++) {
+          var sep = pairs[i].indexOf('\u001f');
+          if (sep < 0) continue;
+          var sel = pairs[i].slice(0, sep);
+          var resolved = pairs[i].slice(sep + 1);
+          if (resolved === target) {
+            // 元素自身 selector → listener key 匹配。元素资源 load/error 按 spec 派在
+            // 元素自身、非 bubble 不可取消（https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
+            // 与 https://html.spec.whatwg.org/multipage/scripting.html#script-processing-model
+            // 的 load/error 走 fire an event 缺省 flags）。此前经泛型缺省 bubbles:true
+            // 冒泡到 window/document，误触页面全局 load 监听器（github.com 两张样式表
+            // 分发即因冒泡执行全局初始化重活被看门狗 30s 强停，见 P101 问题卡）。
+            __zw_dispatch_event(sel, type, { bubbles: false, cancelable: false });
+          }
+        }
+        return;
+      }
+      if (typeof __zw_query_all !== 'function') return;
+      var sels = __zw_query_all(tagS);
       if (!sels) return;
       var list = sels.split('|').filter(Boolean);
       var pageUrl = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '';
-      var target = String(absUrl == null ? '' : absUrl);
       for (var i = 0; i < list.length; i++) {
         var sel = list[i];
-        var rawVal = typeof __zw_get_attr === 'function' ? __zw_get_attr(sel, attr) : '';
+        var rawVal = typeof __zw_get_attr === 'function' ? __zw_get_attr(sel, attrS) : '';
         if (!rawVal) continue;
         var resolved = rawVal;
         // 相对 URL 解析为绝对（与 host 的 absUrl 同源同 base，url crate 规范化一致）。
