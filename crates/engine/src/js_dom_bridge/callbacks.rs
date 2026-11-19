@@ -849,6 +849,46 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // d56r（input-events ①(b) 刀，2026-11-19）：`__zw_node_id(key)`——key→NodeId 桥，
+    // shim 监听器注册/派发面的节点 id 桶调和用（part04 元素臂双写、part03
+    // `_dispatchToListeners` 合并，见该两处 d56r 注记）。key 与 `_elKey` 产物同形：
+    // sel 串——canonical 串与原始查询串同为该节点的引擎可反查定位串（d56 轮定谳：
+    // 两族 wrapper 同指一节点）。解析与 gBCR 同源：LIVE_QUERY_DOC 优先、miss 回落
+    // 查询快照 re-parse；handle 键（'@' 前缀）不解析（detach 世界无双写需求，返空串
+    // = 注册面不双写、派发面不合并，零行为变化）。未命中返空串。
+    let nid_html = Arc::clone(dom_html);
+    let nid_mut = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_node_id",
+        Box::new(move |args: &[String]| -> String {
+            let key = args.first().map(String::as_str).unwrap_or("");
+            if key.is_empty() || key.starts_with('@') {
+                return String::new();
+            }
+            let node_id = LIVE_QUERY_DOC.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|rc| rc.try_borrow().ok())
+                    .and_then(|doc| {
+                        crate::js_dom_bridge::find_by_selector(&doc, key).map(crate::hit_test::node_id_to_u64)
+                    })
+            });
+            let node_id = match node_id {
+                Some(id) => id,
+                None => {
+                    let hit = with_query_view_doc(&nid_html, &nid_mut, |doc, _| {
+                        crate::js_dom_bridge::find_by_selector(doc, key).map(crate::hit_test::node_id_to_u64)
+                    });
+                    match hit {
+                        Some(id) => id,
+                        None => return String::new(),
+                    }
+                }
+            };
+            node_id.to_string()
+        }),
+    );
+
     // s284（html-semantics M2）：handle→selector 正置表查询——img 机具 shim 侧
     //（lazy 视口判定 / being-rendered / sizes auto 臂）对 script 创建 img
     //（identity = handle `__n{n}`）自解析 identity 后走既有 selector 面 rect

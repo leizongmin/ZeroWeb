@@ -36,8 +36,77 @@ fn query_match_selector_doc_ctx(doc: &zero_dom::Document, ctx: Option<UniqSelCtx
         None => find_by_selector(doc, selector),
     };
     found
-        .and_then(|n| unique_selector_for_node_ctx(doc, ctx, n))
+        .map(|n| sticky_canonical_for_selector(doc, ctx, selector, n))
         .unwrap_or_default()
+}
+
+/// d57 刀 C-view（input-events goal，2026-11-19）：`__zw_query_match`（querySelector
+/// 返回点）canonical 粘性层——同查询串跨 mutation/materialize 稳定返回**首个物化**的
+/// canonical 形。
+///
+/// 病灶：canonical 形态随文档内容漂移（innerHTML 积 journal 后首键 materialize 使
+/// `tag` 最小形失去唯一性 → 重算翻成 `html:nth-child(1) > …` 结构路径）→ shim
+/// `_wrapSelector` 按串建 proxy，同节点两次查询返回不同 wrapper → 页面 `===` 身份
+/// 断言翻面（corpus harness churn 分支每测重挂、监听器孤儿化——evidence
+/// 2026-11-19-d56r §5 root root）。
+///
+/// 键设计（d57b 勘误）：按**原始查询串**粘性，不按 (html_ptr, NodeId)——快照
+/// mutation drain 重建 Arc/重派 NodeId，对象键跨 drain 必失；查询串键跨 drain 存续，
+/// 陈旧条目由命中时**自验证**淘汰（memo 经 `find_by_selector` 仍解析回本次找到的
+/// 节点才可信，否则重算刷新）。自验证保证服务串恒解析到服务节点（resolution 不变量
+/// ——canonical 需唯一性只是该不变量的实现捷径，不作为独立不变式维持；`div` 首匹配
+/// 仍是 wrapper 时歧义无害）。等价真浏览器「同一节点同一 JS 包装」的键稳定面。
+/// spec：DOM wrapper identity per node（同一 Node 返回同一 JS 对象）。
+fn sticky_canonical_for_selector(
+    doc: &zero_dom::Document,
+    ctx: Option<UniqSelCtx>,
+    selector: &str,
+    found: zero_dom::NodeId,
+) -> String {
+    if let Some(memo) = STICKY_QUERY.with(|m| m.borrow().get(selector).cloned()) {
+        let hit = match ctx {
+            Some(c) => find_by_selector_cached(doc, c, &memo),
+            None => find_by_selector(doc, &memo),
+        };
+        if hit == Some(found) {
+            return memo;
+        }
+    }
+    let canonical = unique_selector_for_node_ctx(doc, ctx, found).unwrap_or_default();
+    if !canonical.is_empty() {
+        STICKY_QUERY.with(|m| {
+            let mut map = m.borrow_mut();
+            // 封顶整体清空（与 UNIQ_MEMO_CAP 同模式；粘性丢失仅退回逐代重算语义，
+            // 自验证使陈旧条目无害，放大上限只损内存不损语义）。
+            if map.len() >= STICKY_QUERY_CAP {
+                map.clear();
+            }
+            map.insert(selector.to_string(), canonical.clone());
+        });
+    }
+    canonical
+}
+
+/// 粘性 canonical 封顶（见 [`sticky_canonical_for_selector`]）。
+const STICKY_QUERY_CAP: usize = 65536;
+
+/// d57 刀 C-view 配套：导航换页清粘性表（`load_html` 文档换代块与 renderer/browser
+/// `url_changed` 分支调用）——同查询串的 memo 不得跨文档存活：自验证只保证 memo 串
+/// 解析回本次节点（resolution 正确），不保证与新页全新计算同 canonical 形（旧页
+/// path-form 条目在新页验证通过但换 wrapper 家族键，下游家族敏感面——selection
+/// modify walk 跨非可编辑 span 跳位——行为翻转；wptfyi-editing d57 selce 套件
+/// modify-around-non-editable-span 4 键 P2F 实证）。页面内 mutation drain 不走此
+/// 钩子，粘性保持（d57a census 翻面消除依赖此点）。
+pub fn reset_sticky_query() {
+    STICKY_QUERY.with(|m| m.borrow_mut().clear());
+}
+
+thread_local! {
+    /// 原始查询串 → 首个物化 canonical。页面作用域（导航经 [`reset_sticky_query`]
+    /// 清空）；页面内 mutation drain 跨代存续，陈旧条目由命中自验证淘汰（memo 不再
+    /// 解析回本次找到的节点即重算）。
+    static STICKY_QUERY: std::cell::RefCell<HashMap<String, String>> =
+        std::cell::RefCell::new(HashMap::new());
 }
 
 /// CSS AttributeMatcher → 字符串片段（`[name]` 中的 `name` 之后部分）。供 [`css_selector_to_string`]。

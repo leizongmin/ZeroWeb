@@ -17409,8 +17409,41 @@
   // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
   function _dispatchToListeners(key, event, phase, thisObj, slot, asyncDrain) {
     var listeners = _listenerStore[key];
-    if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
-    var list = listeners[event.type];
+    // d56r（input-events ①(b) 刀，2026-11-19）：station 桶为空也可能有跨族注册——
+    // 合并须在早退之前。按 station key 反查 NodeId 取 nid 桶（part04 元素臂双写），
+    // record 按引用去重后并入本站点火列表。`__zwNidCount === 0`（页面无 nid 注册）
+    // 或 NodeId 不可解析 → `_zwNidKey` 空 → `_zwStationList` 零开销直返 station 桶
+    //（零行为变化）。spec：dispatch 以 event path 节点为单位 invoke listener 表，
+    // wrapper 家族身份不参与——https://dom.spec.whatwg.org/#concept-event-dispatch。
+    // R331 各段重克隆语义由 `_zwStationList()` 每次实时取两桶当前内容承载。
+    var _zwNidKey = '';
+    if (__zwNidCount > 0) {
+      try { _zwNidKey = globalThis.__zw_node_id(String(key)) || ''; } catch (_eNidA) {}
+      if (!(_zwNidKey && _zwNidBuckets[_zwNidKey] && _zwNidBuckets[_zwNidKey][event.type])) _zwNidKey = '';
+    }
+    var _zwStationList = function() {
+      var cur = (listeners && listeners[event.type]) || [];
+      if (!_zwNidKey) return cur;
+      var nl = _zwNidBuckets[_zwNidKey][event.type];
+      var out = cur.slice();
+      for (var _zwMi = 0; _zwMi < nl.length; _zwMi++) {
+        var _zwE = nl[_zwMi];
+        if (out.indexOf(_zwE) >= 0) continue;
+        // d56r：fn+capture 同型去重——同一 fn 可经多族 wrapper 各注册一次（R143
+        // 去重是 per 桶的，跨桶并存两 record），合并面只保留本站已有 record，否则
+        // 同一次派发触发两次同型 listener。spec：同一 EventTarget 上同 type/
+        // callback/capture 只有一个 listener record——
+        // https://dom.spec.whatwg.org/#add-an-event-listener（步骤 4）。
+        var _zwDup = false;
+        for (var _zwDj = 0; _zwDj < out.length; _zwDj++) {
+          if (out[_zwDj].fn === _zwE.fn && out[_zwDj].capture === _zwE.capture) { _zwDup = true; break; }
+        }
+        if (!_zwDup) out.push(_zwE);
+      }
+      return out;
+    };
+    if ((!listeners || !listeners[event.type]) && !_zwNidKey) return !event._defaultPrevented;
+    var list = _zwStationList();
     // js-dom M4 R40：槽位过滤——document/window listener 与 html 元素 listener 共存于 _elKey('html') key
     //（三合一，postMessage/onerror/inline-handler 依赖）。entry.tgt 标记注册目标（'doc'/'win'/undefined=html
     // 元素注册）。派发虚站（document 站只触发 tgt==='doc'，window 站只触发 tgt==='win'，html 站只触发
@@ -17452,12 +17485,30 @@
     // is dispatched"）。旧实现恒 `entry.fn.call(...)`，对象 listener 抛（对象无 call）→ WPT
     // EventListener-handleEvent fail。
     var fire = function(entry) {
+      // d56r：跨族合并的 per-dispatch 去重——同一逻辑节点可经 wrapper 家族复制出现为
+      // 多个派发站点（target 原始串站 + walk canonical 站，多族 wrapper 结构属性，
+      // match-only 方针不统一 wrapper），nid 合并后同一 record 会在两站各点火一次。
+      // spec：listener 每次派发对同一节点至多触发一次——
+      // https://dom.spec.whatwg.org/#concept-event-dispatch（inner invoke 按 path 节点
+      // 逐站，同节点只一站）。仅约束 nid 印记 record；`_zwNidFired` 于
+      // _dispatchWithBubble 入口复位。
+      if (entry._zwNid) {
+        if (event._zwNidFired && event._zwNidFired.indexOf(entry) >= 0) return;
+        if (!event._zwNidFired) event._zwNidFired = [];
+        event._zwNidFired.push(entry);
+      }
       // js-dom M4 R111：spec inner invoke 步骤 4——once listener **调用前**移除（remove
       // listener then call）。调用后移除不够：listener 内嵌套 dispatchEvent 时新 dispatch
       // 的快照仍含本 listener → 无限递归（WPT remove-all-listeners "Nested usage of once
       // listeners"）。firedOnce 仍记录（dispatch 尾部的批量过滤路径保留，双保险）。
-      if (entry.once && listeners[event.type]) {
+      if (entry.once && listeners && listeners[event.type]) {
         listeners[event.type] = listeners[event.type].filter(function(e) { return e !== entry; });
+      }
+      // d56r：once 移除跨桶（合并 record 的注册桶是 nid 桶；R111 双桶一致）。
+      if (entry.once && entry._zwNid && _zwNidBuckets[entry._zwNid] && _zwNidBuckets[entry._zwNid][event.type]) {
+        var _zwNol = _zwNidBuckets[entry._zwNid][event.type];
+        var _zwNoi = _zwNol.indexOf(entry);
+        if (_zwNoi >= 0) { _zwNol.splice(_zwNoi, 1); __zwNidCount--; }
       }
       var fn = entry.fn;
       var callable = fn;
@@ -17569,6 +17620,15 @@
     // 下一致止上溯/止同节点后续 listener。immediate flag 同理（`_immediateStopped` polyfill / `__zw_stop_immediate` native）。
     var stopped = function() { return event._propagationStopped || event.__zw_stop === true; };
     var immediateStopped = function() { return event._immediateStopped || event.__zw_stop_immediate === true; };
+    // d56r：R111「removed 则跳过」检查跨桶化——合并 record 的注册桶是 nid 桶，
+    // 仅查 station 桶会把活 record 误判为已移除而跳火。station 桶命中即短路
+    //（无 nid 注册的页面零额外成本）。
+    var _zwLive = function(entry) {
+      var cur = listeners && listeners[event.type];
+      if (cur && cur.indexOf(entry) >= 0) return true;
+      return !!(entry._zwNid && _zwNidBuckets[entry._zwNid] && _zwNidBuckets[entry._zwNid][event.type]
+        && _zwNidBuckets[entry._zwNid][event.type].indexOf(entry) >= 0);
+    };
     if (asyncDrain) {
       // s336 R3（逐 listener 微任务检查点）：WebIDL call-a-user-objects-operation 尾
       // clean-up-after-running-script——invoke 返回后 JS 执行上下文栈为空即
@@ -17586,9 +17646,11 @@
       }
       if (phase !== 'capture') {
         // R331：target 段重取当时快照（capture 段内 swap 可见）+ slot 过滤。
-        var tSnap = (slot === undefined ? listeners[event.type] : (slot === null
-          ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
-          : listeners[event.type].filter(function(e) { return e.tgt === slot; })));
+        // d56r：快照经 `_zwStationList()` 取（station∪nid 合并面）。
+        var _zwSLt = _zwStationList();
+        var tSnap = (slot === undefined ? _zwSLt : (slot === null
+          ? _zwSLt.filter(function(e) { return e.tgt === undefined; })
+          : _zwSLt.filter(function(e) { return e.tgt === slot; })));
         for (var dJ = 0; dJ < tSnap.length; dJ++) if (!tSnap[dJ].capture) drainSeq.push(tSnap[dJ]);
       }
       var dK = 0;
@@ -17596,19 +17658,19 @@
         if (dK >= drainSeq.length || immediateStopped()) {
           // once 批滤兜底（eventPhase/currentTarget 复位归 _dispatchWithBubble finally——
           // 与同步路径零偏差）。
-          if (firedOnce) {
+          if (firedOnce && listeners) {
             listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
           }
           return;
         }
         var entry = drainSeq[dK++];
         // R111：快照迭代期间被 removeEventListener 移除的 listener 跳过（原 for 同款）。
-        if (!(listeners[event.type] && listeners[event.type].indexOf(entry) >= 0)) { drainNext(); return; }
+        if (!_zwLive(entry)) { drainNext(); return; }
         fire(entry);
         if (immediateStopped()) { drainNext(); return; }
         if (stopped() && capOnly) {
           // capture 段 stopPropagation：target 子序不跑（原 stopped 门同款）。
-          if (firedOnce) {
+          if (firedOnce && listeners) {
             listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
           }
           return;
@@ -17625,7 +17687,7 @@
           // 快照迭代期间被 removeEventListener 移除的 listener 跳过（WPT
           // remove-all-listeners "Removing all listeners and then adding a new one"：
           // listener1 内移除 listener2，listener2 不得触发）。
-          if (listeners[event.type] && listeners[event.type].indexOf(snap[i]) < 0) continue;
+          if (!_zwLive(snap[i])) continue;
           fire(snap[i]);
           if (immediateStopped()) break;
         }
@@ -17638,7 +17700,7 @@
       // stopPropagation 止同元素 bubble handler）。'bubble' phase（祖先冒泡）正常 stopped()=false 不受影响。
       // stopImmediatePropagation 止当前节点剩余 + 后续节点（更强，已在每 listener 后检查）。
       if (stopped()) {
-        if (firedOnce) {
+        if (firedOnce && listeners) {
           listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
         }
         return !event._defaultPrevented;
@@ -17647,19 +17709,22 @@
       // capture 段 listener 内的 swap（remove+add）在本段可见；同段内 swap 仍受本段快照约束。
       // slot 过滤同步应用（html/doc/win 三站共存 _elKey('html') key——新 add 的 listener 若是
       // 本站身份才进快照；未过滤时 doc/win 虚站会把 html 站新 add 的 listener 误触发，R40 门）。
-      snap = (slot === undefined ? listeners[event.type] : (slot === null
-        ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
-        : listeners[event.type].filter(function(e) { return e.tgt === slot; }))).slice();
+      // d56r：快照经 `_zwStationList()` 取（station∪nid 合并面，跨族注册的 bubble
+      // 段同可见）。
+      var _zwSLb = _zwStationList();
+      snap = (slot === undefined ? _zwSLb : (slot === null
+        ? _zwSLb.filter(function(e) { return e.tgt === undefined; })
+        : _zwSLb.filter(function(e) { return e.tgt === slot; }))).slice();
       for (var j = 0; j < snap.length; j++) {
         if (!snap[j].capture) {
           // R111：同 capture 分支——派发中被移除的 listener 跳过。
-          if (listeners[event.type] && listeners[event.type].indexOf(snap[j]) < 0) continue;
+          if (!_zwLive(snap[j])) continue;
           fire(snap[j]);
           if (immediateStopped()) break;
         }
       }
     }
-    if (firedOnce) {
+    if (firedOnce && listeners) {
       // R40：once 移除须从原始 store 数组过滤（slot 过滤下 list 可能是子集副本，直接写回会丢
       // 其他槽位的注册）。firedOnce 引用原始 entry 对象，indexOf 匹配安全。
       listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
@@ -18257,6 +18322,9 @@
   }
 
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy, asyncDrain) {
+    // d56r：跨族合并的 per-dispatch 去重印记复位——同一 event 对象重复 dispatchEvent
+    // 须重新计次（spec 每次派发独立 invoke）。
+    if (event && event._zwNidFired) event._zwNidFired = null;
     var target = _makeProxy(targetSel, targetHandle);
     // WC-M3 切片 8 第九增量（web-components goal）：**receiver identity 保持**——
     // dispatchEvent 的接收者本身是页面持有的 proxy；R52 消零清 `_proxyCache` 后

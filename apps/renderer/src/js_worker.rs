@@ -2332,6 +2332,9 @@ fn js_worker_main(
                 }
                 if url_changed {
                     let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
+                    // d57（wptfyi-editing 刀 C-view）：查询粘性 canonical 表随导航清空
+                    //（engine thread_local 与 webview load_html 文档换代块同语义）。
+                    zero_engine::js_dom_bridge::reset_sticky_query();
                     // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
                     // 读 page_url fallback（= 新文档 url），history.length=1。闭合 SPA-then-redirect stale。
                     let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");

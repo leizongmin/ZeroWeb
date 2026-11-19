@@ -6469,13 +6469,43 @@
             if (_r4200sig && typeof _r4200sig === 'object' && _r4200sig.aborted) return;
             var _r4200rec = { fn: fn, capture: _r143Cap, once: _optOnce(opts), passive: _p105, signal: _r4200sig || undefined };
             _listenerStore[key][type].push(_r4200rec);
+            // d56r（input-events ①(b) 刀）：节点 id 桶双写——本 wrapper 家族键入
+            // `_listenerStore[key]`，同节点的其他 wrapper 家族派发站键不同（换代面，
+            // 见 _dispatchToListeners d56r 注记）。record 同引用双写（派发面按引用
+            // 去重）+ `_zwNid` 印记（remove/once/abort 跨桶清理定位）。R143 同款
+            // fn+capture 去重；NodeId 未解析（引擎不可反查）静默跳过 = 零行为变化。
+            // spec：listener 属节点的 listener 表——
+            // https://dom.spec.whatwg.org/#concept-event-listener
+            var _zwNid = '';
+            try { _zwNid = globalThis.__zw_node_id(String(key)) || ''; } catch (_eNid0) {}
+            if (_zwNid) {
+              if (!_zwNidBuckets[_zwNid]) _zwNidBuckets[_zwNid] = {};
+              if (!_zwNidBuckets[_zwNid][type]) _zwNidBuckets[_zwNid][type] = [];
+              var _zwNlst = _zwNidBuckets[_zwNid][type];
+              var _zwNdup = false;
+              for (var _zwNdi = 0; _zwNdi < _zwNlst.length; _zwNdi++) {
+                if (_zwNlst[_zwNdi].fn === fn && _zwNlst[_zwNdi].capture === _r143Cap) { _zwNdup = true; break; }
+              }
+              if (!_zwNdup) {
+                _r4200rec._zwNid = _zwNid;
+                _zwNlst.push(_r4200rec);
+                __zwNidCount++;
+              }
+            }
             if (_r4200sig && typeof _r4200sig === 'object' && typeof _r4200sig.addEventListener === 'function') {
               try {
                 _r4200sig.addEventListener('abort', function () {
                   var _r4200lst = _listenerStore[key] && _listenerStore[key][type];
-                  if (!_r4200lst) return;
-                  var _r4200i = _r4200lst.indexOf(_r4200rec);
-                  if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
+                  if (_r4200lst) {
+                    var _r4200i = _r4200lst.indexOf(_r4200rec);
+                    if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
+                  }
+                  // d56r：nid 桶同步清理（abort 移除须双桶一致）。
+                  if (_r4200rec._zwNid && _zwNidBuckets[_r4200rec._zwNid] && _zwNidBuckets[_r4200rec._zwNid][type]) {
+                    var _r4200nl = _zwNidBuckets[_r4200rec._zwNid][type];
+                    var _r4200ni = _r4200nl.indexOf(_r4200rec);
+                    if (_r4200ni >= 0) { _r4200nl.splice(_r4200ni, 1); __zwNidCount--; }
+                  }
                 });
               } catch (_e4200sig) {}
             }
@@ -6485,9 +6515,20 @@
           return function(type, fn, opts) {
             if (!_listenerStore[key] || !_listenerStore[key][type]) return;
             var cap = _optCapture(opts);
+            // d56r：移除记录收集——nid 桶同引用同步清理（双桶一致，__zwNidCount 回落）。
+            var _zwRemoved = [];
             _listenerStore[key][type] = _listenerStore[key][type].filter(function(l) {
-              return !(l.fn === fn && l.capture === cap);
+              if (l.fn === fn && l.capture === cap) { _zwRemoved.push(l); return false; }
+              return true;
             });
+            for (var _zwRi = 0; _zwRi < _zwRemoved.length; _zwRi++) {
+              var _zwNid = _zwRemoved[_zwRi]._zwNid;
+              if (_zwNid && _zwNidBuckets[_zwNid] && _zwNidBuckets[_zwNid][type]) {
+                var _zwNlst = _zwNidBuckets[_zwNid][type];
+                var _zwNix = _zwNlst.indexOf(_zwRemoved[_zwRi]);
+                if (_zwNix >= 0) { _zwNlst.splice(_zwNix, 1); __zwNidCount--; }
+              }
+            }
           };
         }
         if (prop === 'attachEvent') {

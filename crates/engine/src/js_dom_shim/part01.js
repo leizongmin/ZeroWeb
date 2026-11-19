@@ -54,6 +54,17 @@
     return _out.join('');
   };
   var _listenerStore = {};
+  // d56r（input-events ①(b) 刀，2026-11-19）：节点 id 桶——监听器跨 wrapper 家族调和
+  //（match-only，不统一 wrapper）。同一原生节点可被不同 wrapper 家族各自包装入桶
+  //（attach 键 = 引擎 canonical 串，CE 键链派发站键 = 原始查询串——d56 轮诊断
+  // 四轮定谳的换代面），派发按包装键点火落空 = bi=0 族根因。元素臂注册面把 record
+  // 同引用双写进 `id:<NodeId>` 键桶（record 带 `_zwNid` 印记），派发面
+  // `_dispatchToListeners` 按 station key 反查 NodeId 合并；remove/once/signal-abort
+  // 三处同步跨桶清理。`__zwNidCount` 兼零成本门：0 时派发面零额外开销。spec：
+  // dispatch 以 event path 节点为单位 invoke listener 表，wrapper 家族身份不参与——
+  // https://dom.spec.whatwg.org/#concept-event-dispatch
+  var _zwNidBuckets = {};
+  var __zwNidCount = 0;
   // R2933 element 级 IDL on-event handler 存储（per-element-key → { eventType: fn }）。on* setter 把 fn
   // 同时记此 + 注册进 _listenerStore[key]（使 dispatchEvent 触发）；getter 返此存储 fn（或 null）。
   var _onHandlers = {};
