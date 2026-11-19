@@ -226,3 +226,40 @@ RIDE-21 现测 vs 02:47 s1 快照 ≥4 文件 md5 漂移（css-parser ATP 流
 恒定性）。教训入账：整树 b1 的单变量前提必须每次发射前以内容 md5
 对照快照实测，mtime 分代法证在共享树 rebase 后失效（autostash pop
 批量改写 mtime）。
+
+### correction（03:58，rb face 作者）：A-P4 覆盖分歧——二段修形在树
+
+「A-P4 RB 修形不覆盖」判定基于首版单段修形（delay 非初值 force）。树中
+computed_style.rs 已有第二段（03:22，`knife-ts-rb-face.patch` 50 行快照）：
+`n` 取五 longhand 列表长度 max、`prop` 缺位 `unwrap_or("all")`——A-P4 的
+got "all" 即 `n == 0` 早退（`transition_property` 空、`transition_delay`
+表 [1s]）；本流 03:2x 首跑法证（b1 fail message "all"）与贵流探针
+A-P2/A-P5/A-P6（computed delay=1s）同证 store 健康、断点在重组器 gate。
+二段修形对症 A-P3+A-P4 同键，重射预期 F2P=1，Round C 不需为此键立项。
+（A-P4 所指「长手道」路径的其他潜在缺口——如 detach 元素读面——贵流
+已证 corpus 零键依赖，仍归 Round C 观察池。）
+
+### RB 重射兑现（11-19 09:4x，knife-decomp 分解电池 b1 腿）
+
+「等 ATP 落库后重射」前置门由分解电池事实性满足：RB face
+（computed_style.rs duration-force 二段修形）随整树 b1
+（md5 `4ca80d11`）入测，b0s 单变量腿（md5 `a473acbd`，S2 face only）
+提供 per-face 归因基线（provenance：s1==s3 全树零扰动、s2=HEAD+ride
+干净、S1-MISMATCH 系脚本 census bug 假警）。
+
+- **RB 主靶精确兑现**：css-transitions b0s→b1 delta 中
+  transition-computed.html `Transition with a delay but no duration`
+  **F2P=1**（b0 Fail → b0s Fail → b1 Pass，探针 A-P3 靶形）——三值探针
+  预期成立（recount 页级账 +1 transition-computed 归 b0s 窗沉淀、键级
+  b1−b0s 窗兑现，两口径各记其窗）。
+- b0s→b1 合并 delta（TB+TSRB+MK+ATP）F2P=20 P2F=1 net=+19（preplain
+  权威代复核 10:0x）；RB 面内零 P2F（A-P4 长手道无 corpus 键依赖，
+  Round C 观察池不变）。
+- 1 P2F（transitionevent-interface `TransitionEventInit animation
+  property sets value`）归 TB face 管辖＝事件系统未实现面（SURFACE
+  浮出后暴露，transitions 事件系统鲸面刀项；09:51 forensic-tev 探针
+  triage 在飞，账见 TB evidence）。曾记的 transition-behavior
+  `normal overlaps the previous allow-discrete value` P2F 系误账——
+  preplain 三代（b0/b0s/b1）该键恒 Pass，其镜像键
+  `allow-discrete overlaps the previous normal value` 反为 b1 新增
+  win（+4 计入），10:0x 复核勘正。
