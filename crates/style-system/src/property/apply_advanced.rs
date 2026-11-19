@@ -1403,6 +1403,7 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakInsideValue::Avoid => BreakInsideValue::Avoid,
                     zero_css_parser::values::BreakInsideValue::AvoidPage => BreakInsideValue::AvoidPage,
                     zero_css_parser::values::BreakInsideValue::AvoidColumn => BreakInsideValue::AvoidColumn,
+                    zero_css_parser::values::BreakInsideValue::AvoidRegion => BreakInsideValue::AvoidRegion,
                 };
                 return true;
             }
@@ -1416,6 +1417,11 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakValue::Page => BreakValue::Page,
                     zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
                     zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                    zero_css_parser::values::BreakValue::Region => BreakValue::Region,
+                    zero_css_parser::values::BreakValue::Left => BreakValue::Left,
+                    zero_css_parser::values::BreakValue::Right => BreakValue::Right,
+                    zero_css_parser::values::BreakValue::Recto => BreakValue::Recto,
+                    zero_css_parser::values::BreakValue::Verso => BreakValue::Verso,
                 };
                 return true;
             }
@@ -1429,6 +1435,11 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakValue::Page => BreakValue::Page,
                     zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
                     zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                    zero_css_parser::values::BreakValue::Region => BreakValue::Region,
+                    zero_css_parser::values::BreakValue::Left => BreakValue::Left,
+                    zero_css_parser::values::BreakValue::Right => BreakValue::Right,
+                    zero_css_parser::values::BreakValue::Recto => BreakValue::Recto,
+                    zero_css_parser::values::BreakValue::Verso => BreakValue::Verso,
                 };
                 return true;
             }

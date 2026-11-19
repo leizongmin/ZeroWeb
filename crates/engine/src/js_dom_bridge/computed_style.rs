@@ -1387,8 +1387,7 @@ fn touch_action_to_css(t: &TouchActionValue) -> String {
 }
 
 /// break-before / break-after：CSS Fragmentation 单值序列化（共享 [`BreakValue`]）。
-/// 初值 auto。ZeroWeb enum 仅 6 变体（CSS 规范另含 recto/verso/left/right/region 等，未存储）。
-/// CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
+/// 初值 auto。CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
 fn break_value_to_css(b: &BreakValue) -> String {
     match b {
         BreakValue::Auto => "auto",
@@ -1397,6 +1396,11 @@ fn break_value_to_css(b: &BreakValue) -> String {
         BreakValue::Page => "page",
         BreakValue::AvoidPage => "avoid-page",
         BreakValue::AvoidColumn => "avoid-column",
+        BreakValue::Region => "region",
+        BreakValue::Left => "left",
+        BreakValue::Right => "right",
+        BreakValue::Recto => "recto",
+        BreakValue::Verso => "verso",
     }
     .to_string()
 }
@@ -1408,6 +1412,7 @@ fn break_inside_to_css(b: &BreakInsideValue) -> String {
         BreakInsideValue::Avoid => "avoid",
         BreakInsideValue::AvoidPage => "avoid-page",
         BreakInsideValue::AvoidColumn => "avoid-column",
+        BreakInsideValue::AvoidRegion => "avoid-region",
     }
     .to_string()
 }

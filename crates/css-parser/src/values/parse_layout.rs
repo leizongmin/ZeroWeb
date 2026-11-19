@@ -501,6 +501,9 @@ pub enum BreakInsideValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// avoid-region（css-break-3 §break-between-and-inside，WPT css-typed-om
+    /// break 页 break-inside avoid-region 键）。
+    AvoidRegion,
 }
 
 /// CSS break-before / break-after 值。
@@ -518,6 +521,18 @@ pub enum BreakValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// region（WPT css-typed-om break 页 break-after/before region 关键字面；
+    /// 上游 WPT 语料将 region 列为合法关键字，corpus 即权威）。
+    Region,
+    /// left（css-break-3 §break-between `<break-before>` 关键字；WPT
+    /// css-typed-om break 页合法值面）。
+    Left,
+    /// right（css-break-3 §break-between）。
+    Right,
+    /// recto（css-break-3 §break-between）。
+    Recto,
+    /// verso（css-break-3 §break-between）。
+    Verso,
 }
 
 /// CSS column-rule-width 值。
@@ -565,6 +580,7 @@ pub fn parse_break_inside(value: &str) -> Option<BreakInsideValue> {
         "avoid" => Some(BreakInsideValue::Avoid),
         "avoid-page" => Some(BreakInsideValue::AvoidPage),
         "avoid-column" => Some(BreakInsideValue::AvoidColumn),
+        "avoid-region" => Some(BreakInsideValue::AvoidRegion),
         _ => None,
     }
 }
@@ -578,6 +594,11 @@ pub fn parse_break_before(value: &str) -> Option<BreakValue> {
         "page" => Some(BreakValue::Page),
         "avoid-page" => Some(BreakValue::AvoidPage),
         "avoid-column" => Some(BreakValue::AvoidColumn),
+        "region" => Some(BreakValue::Region),
+        "left" => Some(BreakValue::Left),
+        "right" => Some(BreakValue::Right),
+        "recto" => Some(BreakValue::Recto),
+        "verso" => Some(BreakValue::Verso),
         _ => None,
     }
 }
@@ -591,6 +612,11 @@ pub fn parse_break_after(value: &str) -> Option<BreakValue> {
         "page" => Some(BreakValue::Page),
         "avoid-page" => Some(BreakValue::AvoidPage),
         "avoid-column" => Some(BreakValue::AvoidColumn),
+        "region" => Some(BreakValue::Region),
+        "left" => Some(BreakValue::Left),
+        "right" => Some(BreakValue::Right),
+        "recto" => Some(BreakValue::Recto),
+        "verso" => Some(BreakValue::Verso),
         _ => None,
     }
 }

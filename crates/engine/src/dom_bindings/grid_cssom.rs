@@ -166,13 +166,29 @@ fn parse_grid_line_token(value: &str) -> Option<CssomGridLine> {
             }
             grid_line_custom_ident(t).map(CssomGridLine::Name)
         }
-        [first, rest @ ..] => {
-            let span = first.eq_ignore_ascii_case("span");
+        [first, ..] => {
+            // span && [<integer> || <custom-ident>]（css-grid-2 §grid-line：&&
+            // 组合无序约束——span 可居任意位，'5 somegridarea span' 形，WPT
+            // css-typed-om grid-start-end 页）。
+            let span_first = first.eq_ignore_ascii_case("span");
+            let span_at = if span_first {
+                None
+            } else {
+                tokens.iter().position(|t| t.eq_ignore_ascii_case("span"))
+            };
+            let span = span_first || span_at.is_some();
             if !span && first.eq_ignore_ascii_case("auto") {
                 return None;
             }
-            let rest: &[&str] = if span { rest } else { tokens.as_slice() };
-            match rest {
+            // 去 span 位后的余 token 序（span-first 时去首 token，等价原 rest）。
+            let others: Vec<&str> = tokens
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != 0 || !span_first)
+                .filter(|(i, _)| Some(*i) != span_at)
+                .map(|(_, t)| *t)
+                .collect();
+            match others.as_slice() {
                 [t] if span => {
                     if let Ok(n) = t.parse::<i64>() {
                         return (n > 0).then_some(CssomGridLine::Span(Some(n), None));
@@ -405,5 +421,32 @@ mod tests {
             Some("inherit")
         );
         assert_eq!(canonicalize_grid_decl("grid-auto-flow", "nonsense"), None);
+    }
+
+    // 刀 TO-GRID（css-grid-2 §grid-line）：span && [<integer> || <custom-ident>]
+    // 的 && 组合无序约束——span 可居任意位（WPT css-typed-om grid-start-end 页
+    // '5 somegridarea span' 形）。
+    #[test]
+    fn test_grid_line_span_any_order_canonical() {
+        assert_eq!(
+            canonicalize_grid_decl("grid-row-start", "5 somegridarea span").as_deref(),
+            Some("span 5 somegridarea")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-row-end", "somegridarea span").as_deref(),
+            Some("span somegridarea")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-column-start", "span 3").as_deref(),
+            Some("span 3")
+        );
+        assert_eq!(
+            canonicalize_grid_decl("grid-column-end", "3 somegridarea").as_deref(),
+            Some("3 somegridarea")
+        );
+        // 双整数 / 双 span / 非法 ident 恒拒。
+        assert_eq!(canonicalize_grid_decl("grid-row-start", "span 2 3"), None);
+        assert_eq!(canonicalize_grid_decl("grid-row-start", "span span"), None);
+        assert_eq!(canonicalize_grid_decl("grid-row-start", "5 2 span"), None);
     }
 }

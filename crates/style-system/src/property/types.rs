@@ -766,6 +766,9 @@ pub enum BreakInsideValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// avoid-region（css-break-3 §break-between-and-inside；WPT css-typed-om
+    /// break 页 break-inside 合法值面）。
+    AvoidRegion,
 }
 
 /// CSS break-before / break-after 属性值。
@@ -783,6 +786,16 @@ pub enum BreakValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// region（css-break-3 §break-between；WPT css-typed-om break 页）。
+    Region,
+    /// left（css-break-3 §break-between；WPT css-typed-om break 页）。
+    Left,
+    /// right（css-break-3 §break-between）。
+    Right,
+    /// recto（css-break-3 §break-between）。
+    Recto,
+    /// verso（css-break-3 §break-between）。
+    Verso,
 }
 
 /// CSS column-rule-width 属性值。

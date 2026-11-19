@@ -1407,6 +1407,10 @@ return Ctor;
     'bottom':['auto','<percentage>','<length>'],
     'box-shadow':['none'],
     'box-sizing':['content-box','border-box'],
+    // break-after/before 12 关键字面（css-break-3 §break-between；WPT
+    // css-typed-om break 页 runPropertyTests 全集）。
+    'break-after':['auto','avoid','avoid-column','avoid-page','avoid-region','column','left','page','recto','region','right','verso'],
+    'break-before':['auto','avoid','avoid-column','avoid-page','avoid-region','column','left','page','recto','region','right','verso'],
     'break-inside':['auto','avoid','avoid-column','avoid-page','avoid-region'],
     'caption-side':['top','bottom'],
     'caret-color':['currentcolor','auto'],
@@ -1467,7 +1471,18 @@ return Ctor;
     'font-variant-numeric':['normal','lining-nums','oldstyle-nums','proportional-nums','tabular-nums','diagonal-fractions','stacked-fractions','ordinal','slashed-zero'],
     'font-variation-settings':['normal'],
     'font-weight':['normal','bold','bolder','lighter','<number>'],
+    // grid-auto-columns/rows：auto track list 文法（css-grid-1 §7.4
+    // <track-size>#；WPT css-typed-om grid-auto-columns-rows 页——minmax()/
+    // fit-content() 形不在 typed 分型域，get 走 opaque 回落）。
+    'grid-auto-columns':['auto','min-content','max-content','<length>','<percentage>','<flex>'],
+    'grid-auto-rows':['auto','min-content','max-content','<length>','<percentage>','<flex>'],
     'grid-auto-flow':['row','column'],
+    // grid 行列放置长手（css-grid-2 §line-placement；WPT css-typed-om
+    // grid-start-end 页仅 auto 入 typed 分型域，<grid-line> 其余形 opaque）。
+    'grid-column-end':['auto'],
+    'grid-column-start':['auto'],
+    'grid-row-end':['auto'],
+    'grid-row-start':['auto'],
     'grid-template-areas':['none'],
     'height':['auto','<percentage>','<length>'],
     'hyphens':['none','manual','auto'],
@@ -1772,6 +1787,10 @@ return Ctor;
       var fam = _zwOmUnitType(t.unit);
       var famName = null;
       for (var d in { length: 1, angle: 1, time: 1, frequency: 1, resolution: 1, flex: 1, percent: 1, number: 1 }) if (fam[d] === 1) famName = d;
+      // 负 flex 值门（css-grid-1 §7.2.3 <flex> 负值非法——track sizing fr
+      // breadth 非负；testsuite <negative-flex> 面期望 CSSUnitValue(-3,'fr')
+      // set 恒 TypeError，表中无 <negative-flex> 语法即拒）。
+      if (famName === 'flex' && t.value < 0 && !fams['<negative-flex>']) throw new TypeError("Invalid negative flex for property");
       var map = { length: ['<length>', '<length-percentage>'], percent: ['<percentage>', '<length-percentage>'], angle: ['<angle>'], time: ['<time>'], frequency: ['<frequency>'], resolution: ['<resolution>'], flex: ['<flex>'], number: ['<number>', '<integer>'] };
       var want = map[famName] || [];
       for (var j = 0; j < want.length; j++) if (fams[want[j]]) return;
@@ -1845,7 +1864,8 @@ return Ctor;
     'background-attachment': 1, 'background-blend-mode': 1,
     'background-clip': 1, 'background-image': 1, 'background-origin': 1,
     'background-position': 1, 'background-repeat': 1, 'background-size': 1,
-    'box-shadow': 1, 'font-family': 1, 'mask-composite': 1, 'mask-image': 1,
+    'box-shadow': 1, 'font-family': 1, 'grid-auto-columns': 1, 'grid-auto-rows': 1,
+    'mask-composite': 1, 'mask-image': 1,
     'mask-mode': 1, 'mask-origin': 1, 'mask-position': 1, 'mask-repeat': 1,
     'mask-size': 1, 'scroll-margin-block': 1, 'scroll-margin-inline': 1,
     'scroll-padding-block': 1, 'scroll-padding-inline': 1,

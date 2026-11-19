@@ -84,12 +84,17 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
         }
         Some(t.to_string())
     };
-    if tokens[0].eq_ignore_ascii_case("span") {
-        // [ span && <integer>? && <custom-ident>? ]：span 后整数须为正（u16 域），
-        // 整数与 ident 各至多一组分，其余 token 整体拒绝。
+    // [ span && <integer>? && <custom-ident>? ]：span 按 && 任意序可居任意位
+    //（'span 2' / '2 span' / 'span a' / 'a span' / 'span 2 a' / '2 a span' 同形
+    // ——WPT css-typed-om grid-start-end 页 '5 somegridarea span' 形），整数
+    // 与 ident 各至多一组分，其余 token 整体拒绝。
+    if let Some(span_at) = tokens.iter().position(|t| t.eq_ignore_ascii_case("span")) {
         let mut count = None;
         let mut name = None;
-        for token in &tokens[1..] {
+        for (idx, token) in tokens.iter().enumerate() {
+            if idx == span_at {
+                continue;
+            }
             if let Some(n) = int_of(token) {
                 if count.is_some() {
                     return None;
@@ -205,7 +210,11 @@ fn parse_grid_track_list(value: &str, allow_repeat: bool) -> Option<String> {
             0
         } else if allow_repeat && grid_track_function_inner(token, "repeat").is_some() {
             parse_grid_repeat_track_count(token)?
-        } else if grid_single_track_supported(token, allow_repeat) {
+        // fit-content(<length-percentage>) 于 template 与 auto 两族 track-size
+        // 文法均合法（css-grid-2 §track-sizing：fit-content() 属 track-size，
+        // repeat() 才是 template 专属——原参复用把 auto 族 fit-content 误拒，
+        // WPT css-typed-om grid-auto-columns-rows 页 fit-content(400px) 形）。
+        } else if grid_single_track_supported(token, true) {
             1
         } else {
             return None;
@@ -1619,6 +1628,49 @@ mod tests {
             Some(Some("10px 1fr".to_string()))
         );
         assert!(parse_grid_template_track_list("50% 10em").is_some());
+    }
+
+    /// 刀 TO-GRID（css-grid-2 §grid-line）：span && [<integer> || <custom-ident>]
+    /// 的 && 组合无序约束——span 可居任意位（WPT css-typed-om grid-start-end 页
+    /// '5 somegridarea span' 形）；auto 族 track list fit-content() 合法
+    ///（css-grid-2 §track-sizing，WPT grid-auto-columns-rows 页）。
+    #[test]
+    fn parse_grid_line_span_any_order_togrid() {
+        assert!(parse_grid_line("5 somegridarea span").is_some());
+        assert!(parse_grid_line("somegridarea span").is_some());
+        assert!(parse_grid_line("2 span").is_some());
+        assert!(parse_grid_line("span 5 somegridarea").is_some());
+        assert!(parse_grid_line("5 somegridarea").is_some());
+        assert!(parse_grid_line("somegridarea 5").is_some());
+        // 双整数 / 双 span / 非法 ident 恒拒。
+        assert!(parse_grid_line("span 2 3").is_none());
+        assert!(parse_grid_line("span span").is_none());
+        assert!(parse_grid_line("5 2 span").is_none());
+        // auto 族 fit-content()（刀 TO-GRID 回归面）。
+        assert!(parse_grid_auto_track_list("fit-content(400px)").is_some());
+        assert!(parse_grid_auto_track_list("minmax(100px, auto)").is_some());
+        assert!(parse_grid_auto_track_list("3fr").is_some());
+        assert!(parse_grid_auto_track_list("fit-content(thin)").is_none());
+    }
+
+    /// 刀 TO-GRID（css-break-3 §break-between / §break-between-and-inside）：
+    /// region/left/right/recto/verso + avoid-region 关键字面（WPT css-typed-om
+    /// break 页 runPropertyTests 全集）。
+    #[test]
+    fn parse_break_fragmentation_keywords_togrid() {
+        use zero_css_parser::values::{BreakInsideValue, BreakValue};
+        assert_eq!(values::parse_break_after("region"), Some(BreakValue::Region));
+        assert_eq!(values::parse_break_after("left"), Some(BreakValue::Left));
+        assert_eq!(values::parse_break_after("right"), Some(BreakValue::Right));
+        assert_eq!(values::parse_break_before("recto"), Some(BreakValue::Recto));
+        assert_eq!(values::parse_break_before("verso"), Some(BreakValue::Verso));
+        assert_eq!(
+            values::parse_break_inside("avoid-region"),
+            Some(BreakInsideValue::AvoidRegion)
+        );
+        // 非法近似拼写仍拒。
+        assert_eq!(values::parse_break_after("regio"), None);
+        assert_eq!(values::parse_break_inside("avoid-regio"), None);
     }
 
     #[test]
