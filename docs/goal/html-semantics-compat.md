@@ -96,6 +96,23 @@ customizable-select-styles.css ×47
 随批落。账本=evidence/2026-11-19-
 m2s573-band-subtest-swing-back-
 detailed-first-disagree.md
+> **◆ 补账（2026-11-19 s573 push 阶段）
+> ——push 前 pull --rebase 捕获批 ×2
+> 全列核实（c61abb750→44536e067）：
+> code ×1＝44536e067 feat(engine) d57
+> 刀 C-view 查询粘性 canonical＋刀 A
+> 重放（input-events 净 +796、三哨兵
+> 零回归，对端 editing 流）——**零桥
+> 测钉**＝s574 全桥对账不触发（b570
+> 基线持位），engine 码面在链接链＝
+> s574 runner 必换代预判（engine→
+> page-runtime→webview→runner 系），
+> input-events 行为面位移归 s574 join
+> 对账捕获；docs ×1＝rendering R5824
+> （kb65 43代 预期批＝pre=c55a38ba→
+> runs=e0015ad4 跨流同 md5 二连互证
+> 。本流 s573 收口 commit rebase 后＝
+> a82443c0a。
 > **◆ 补账（2026-11-19 s572 push 阶段）
 > ——push 前 pull --rebase 捕获批 ×6
 > 全列核实（a38a020f6→766a6f8d4）：
