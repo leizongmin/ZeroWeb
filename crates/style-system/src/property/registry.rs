@@ -723,6 +723,18 @@ impl PropertyRegistry {
             "ruby-position",
             "transform-box",
             "stroke-width",
+            // SVG 几何/描边族（css-svg-2 §geometry properties + fill-stroke 描边
+            // 文法）：注册即 CSS.supports 门为真（写面求值臂在 apply 分批接线，
+            // RANDOM3a 刀——random-computed `random(10%, 30%)` supports 前置门）。
+            "cx",
+            "cy",
+            "r",
+            "rx",
+            "ry",
+            "x",
+            "y",
+            "stroke-dasharray",
+            "stroke-dashoffset",
             "text-transform",
             "letter-spacing",
             "word-spacing",
