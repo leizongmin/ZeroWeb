@@ -36,7 +36,7 @@ state 语义重写：
 - 无新失败族：innerHTML 族两轮恒 727（apply 面零扰动）；7 例
   `expected false but got true`（execCommand return value，
   contenteditable=false 门）与 zz-probe-tstyle F=1 两轮同在，均既有。
-- 见证探针 [zz-probe-fmtstate.html](../../../tests/wpt-runner/wpt-data/editing/run/zz-probe-fmtstate.html)
+- 见证探针 [zz-probe-fmtstate.html](../../../../../tests/wpt-runner/wpt-data/editing/run/zz-probe-fmtstate.html)
   D1–D7（style span computed style / UA 元素表 / part-not-all indeterm /
   600 cutoff / sub 嵌套）：修复二进制 7/7 Pass，HEAD 基线二进制 7/7 Fail。
 

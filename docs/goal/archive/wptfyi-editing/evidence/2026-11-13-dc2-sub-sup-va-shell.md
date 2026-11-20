@@ -109,4 +109,4 @@ Chrome removeInlineStyle（冲突 prop 直删 + 段抽取）建模。
 - 构建/运行全程独立 CARGO_TARGET_DIR（/tmp/d13tgt）+ systemd scope，
   与并行流 D1 的 workspace test+clippy 共享 build 锁零碰撞（承 d12 碰撞
   记录同法分流）。
-- 经验沉淀：[语料红账判读](../../../learnings/bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md)。
+- 经验沉淀：[语料红账判读](../../../../learnings/bugs/2026-11/2026-11-13-wpt-editing-corpus-truth-sources.md)。

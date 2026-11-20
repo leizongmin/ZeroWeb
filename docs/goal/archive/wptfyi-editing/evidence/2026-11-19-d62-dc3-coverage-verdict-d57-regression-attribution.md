@@ -3,7 +3,7 @@
 **2026-11-19 · d62 对账轮**。上轮 dispatch 的 DC-3 coverage 跑（weekly.yml
 `run_wptfyi_coverage=true`，run [44486440940](https://github.com/leizongmin/ZeroWeb/actions/runs/44486440940)，
 基 d59=4f1964625，2026-11-19T08:18–09:46Z success）产物已由 weekly cron 落库
-[coverage-2026-11-19.json](../../../compat/wptfyi/coverage-2026-11-19.json)/[.md](../../../compat/wptfyi/coverage-2026-11-19.md)。
+[coverage-2026-11-19.json](../../../../compat/wptfyi/coverage-2026-11-19.json)/[.md](../../../../compat/wptfyi/coverage-2026-11-19.md)。
 本轮下载两代 run 全部 editing/selection/ui-edit 分片原始 JSON（CI artifacts，
 11-17=run 44092733559 对照）逐键对账，完成 DC-3 判决与回归归因；同轮补验上会话
 中断遗留的 d61 刀 F WIP（工作树 part04.js，未提交）。

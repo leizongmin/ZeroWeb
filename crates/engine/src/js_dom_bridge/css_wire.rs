@@ -460,9 +460,6 @@ mod position_try_wire_tests {
     /// selectorText 字段 = `@font-face` 标记，shim 侧据以物化 CSSFontFaceRule。
     fn wire_font_face_rule_entry() {
         let w = style_rules_text("@font-face { font-family: F; src: url(f.woff); }");
-        assert_eq!(
-            w,
-            "@font-face\x1e@font-face { font-family: F; src: url(\"f.woff\"); }"
-        );
+        assert_eq!(w, "@font-face\x1e@font-face { font-family: F; src: url(\"f.woff\"); }");
     }
 }
