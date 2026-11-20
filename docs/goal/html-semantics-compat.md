@@ -1,70 +1,58 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 585 收口（**完全零位移第 2 连轮（
-stable 集逐字节恒 s584＝NEW 0/GONE 0/flips 0）+ band 聚合形
-持位第 2 连兑现轮（band8 hits=8×2 全 Fail，页级 T 零再现）+
-全桥 b584 零位移轮（keys 1731 fail=0＝b582/b583/b584 连续三
-轮零噪声；b585≡b584 逐字节恒）+ 零换代第 2 连轮（pre=mid=
-post ae5baec4；churn Compiling ×6 全同 md5）+ 空窗轮（窗＝
-c4d86bd8e→c4d86bd8e＝0 commits，legs HEAD＝本流 s584 收口
-笔）+ solo 发射形复现第 7 连轮（第 5 形未现）+ 双腿全同第 3
-连 + 七哨持位轮（mpreload 第 10 连兑现）**）——join
+**状态**: Active——M2 切片 586 收口（**完全零位移第 3 连轮（stable 集逐字节恒 s585＝engine 三码刀窗 sweep 语义面零响应）+ band 聚合形持位第 3 连兑现轮 + 全桥 b585 双钉零噪声轮（keys 1731 fail=0＝transition_registry+js_anim_registry 双钉未改键面，b582→b585 四连零噪声；b586≡b585 逐字节）+ 必换代兑现轮（pre ae5baec4→mid=post ff6e22cd −171,024）+ **收敛候选第七实例 MISMATCH 轮（本侧 ff6e22cd ≠ 对端 kb91 申报 93dc0be1＝六连收敛后首破，定谳挂对端 kb92 下笔对读）**+ waapi r107 恒形轮（composition 准入扩面翻形预判解消）+ solo 发射形复现第 8 连轮 + 双腿全同第 4 连 + 七哨持位轮（mpreload 第 11 连兑现）**）——join
 **stable 8517（8305P/206F/5T/1U）
 disagree 0 + l1only 0 + l2only 0**
-；vs s584 stable（8517）**NEW 0 + GONE 0 + flips 0，
-s585.stable.keys cmp 逐字节恒**。
-**窗底账**：s585 窗＝c4d86bd8e→
-c4d86bd8e（**空窗 0 commits**）。
-开窗 09:57:23（waiter 09:3x 臂，
-对端构建 load 12.8 压窗 ~50 分
-钟后自放）HEAD 钉扎；leg1/leg2/
-桥测 19.58s；solo ×2 11s+11s。
-**band 形态谱**：…s583 聚合形首
-现→s584 聚合形持位第 1 连→
-**s585 聚合形持位第 2 连（集级冻
-结 2 连）**；band8 在役。挂用户门
-维持：GB-20261114-VIDEO +
+；vs s585 stable（8517）**NEW 0 + GONE 0 + flips 0，
+s586.stable.keys cmp 逐字节恒**。
+**窗底账**：s586 窗＝c4d86bd8e→
+30358882b（14 commits：code ×3＝
+ffix2 discrete 三性＋WAC WAAPI
+composition 准入＋WA-3a r4-r6 对
+象时钟＝双桥钉；docs ×11＝对端
+rendering/wptfyi-css 九笔＋本流两
+笔）。开窗 10:18:10 HEAD 钉扎；
+leg1 2:24／桥测 20.48s；solo ×2。
+**band 形态谱**：…s583 聚合形首现
+→s584/s585/s586 聚合形持位 3 连
+（集级冻结）；band8 在役。挂用户
+门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s586**（**对账基线持
-s585 stable 8517（集内容三连逐字
+**守成巡查 s587**（**对账基线持
+s586 stable 8517（集内容四连逐字
 节同值，基线文件零变）＋全桥基线
-换装 b585（≡b584 1731，
-/tmp/s586 已预装载全套，哨 r 注记
+换装 b586（≡b585 1731，
+/tmp/s587 已预装载全套，哨 r 注记
 已 bump）**：开工 pull 捕获全列核
-实（窗＝c4d86bd8e→s586 legs
-HEAD），runner 预判按窗码面定（
-纯 docs＝Fresh/churn 同 md5；
-engine/下游码面＝必换代）；窗带
-js_dom_bridge 新钉则全桥 NEW/GONE
-对账（b585 基线）；dialog 第 20 轮；
-password 第 25 轮；select-event 第
-25 轮；mpreload 第 48 轮＝持位第 11
-连观察；waapi 第 107 轮；focus-
-dynamic 第 66 轮；onblur 组第 18 轮；
-**族带第 19 轮＝聚合形持位第 3 连
-观察**（8 子测 Fail 双腿恒＝聚合持
-位；页级 T 再现或新形＝谱内摆动重
-开）；solo ×2 记形续（FILTER= 定规
-；发射形第 8 连观察）；双发伪影恒；
-爆栈 0/0 惯例；起腿三件套照规
-（waiter 超时按 s580 预案重臂，kill
-旧实例防 double-fire））+ 候门决项等
-待用户拍板维持（video P1+P2 立项 /
-簇 D A2 立项 / s137；对端
-ZRG-2026-11-18-01 归用户）；
-rendering 流 dialog 16 红块协同面（归
-rendering 流记账）。门开随批落预案不
-变：簇 D 开 → customizable-select-
-styles.css ×47 随批落。账本=
-evidence/2026-11-20-m2s585-zero-displacement2-aggregate-hold2-empty-window-mpreload-hold10.md
-> **◆ 补账（2026-11-20 s583 接管续核二）
-> ——限额断点二度接管（前轮 07:46 已
-> 重臂 waiter 后 session 终止）：开工
-> pull --rebase 捕获 ×6 全列核实
-> （17d7c44bf→743e1bc59）：code ×3
+实（窗＝30358882b→s587 legs
+HEAD），runner 预判按窗码面定；
+**收敛对账挂起＝对端 kb92 下笔申
+报值 vs 本侧 ff6e22cd 对读定谳**
+；窗带 js_dom_bridge 新钉则全桥
+NEW/GONE 对账（b586 基线）；dialog
+第 21 轮；password 第 26 轮；
+select-event 第 26 轮；mpreload 第
+49 轮＝持位第 12 连观察；waapi 第
+108 轮；focus-dynamic 第 67 轮；
+onblur 组第 19 轮；**族带第 20 轮＝
+聚合形持位第 4 连观察**（页级 T 再
+现或新形＝谱内摆动重开）；solo ×2
+记形续（FILTER= 定规；发射形第 9
+连观察）；双发伪影恒；爆栈 0/0 惯
+例；起腿三件套照规（waiter 超时按
+s580 预案重臂，kill 旧实例防
+double-fire））+ 候门决项等待用户拍
+板维持（video P1+P2 立项 / 簇 D A2
+立项 / s137；对端 ZRG-2026-11-18-01
+归用户）；rendering 流 dialog 16 红
+块协同面（归 rendering 流记账）。门
+开随批落预案不变：簇 D 开 →
+customizable-select-styles.css ×47
+随批落。账本=
+evidence/2026-11-20-m2s586-zero-displacement3-regen-ff6e22cd-convergence-mismatch-bridge-hold4-mpreload-hold11.md
 > **◆ 补账（2026-11-20 s585 push 阶段）
 > ——push 前 pull --rebase 捕获 ×12
 > 全列核实（c4d86bd8e→231194007
@@ -100,6 +88,10 @@ evidence/2026-11-20-m2s585-zero-displacement2-aggregate-hold2-empty-window-mprel
 > 域），族带 r19 聚合形持位第 3 连观
 > 察照常（码刀不触 select 键盘域）。
 > **◆ 补账（2026-11-20 s583 接管续核二）
+> ——限额断点二度接管（前轮 07:46 已
+> 重臂 waiter 后 session 终止）：开工
+> pull --rebase 捕获 ×6 全列核实
+> （17d7c44bf→743e1bc59）：code ×3
 > ＝9996cbebf 刀 WA-2 computed
 > timing 面（part03.js +110/−35 八臂
 > getComputedTiming/updateTiming
