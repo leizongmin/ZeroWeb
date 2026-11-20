@@ -5286,6 +5286,29 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/webappapis/update-rendering",
     "html/webappapis/user-prompts",
     "html/webappapis/user-prompts/cannot-show-simple-dialogs",
+    // wptfyi-html DC-2 批五（docs/goal/wptfyi-html.md）：html/browsers 簇计分
+    // 目录——清单按 pin 31597693 git trees 与分母（wptfyi summary-chrome 4b26db8978）
+    // 逐键对齐（通道内 234 键 1,441 子测试：the-window-object 自有 84 键 629 +
+    // origin 150 键 812）。不计分面：named-access-on-the-window-object 归 DOM 套件
+    // slice28 既有记账域（防跨套件重复计账）、security-window pin 无目录（快照
+    // 漂移 124 子测试挂账）、open-close/non_automated 与 garbage-collection/
+    // non-automated 分母 0 键；resources/support 助资产目录只拉不扫（fetch 脚本
+    // 58 头注释）。
+    "html/browsers/the-window-object",
+    "html/browsers/the-window-object/accessing-other-browsing-contexts",
+    "html/browsers/the-window-object/garbage-collection-and-browsing-contexts",
+    "html/browsers/the-window-object/open-close",
+    "html/browsers/origin",
+    "html/browsers/origin/api",
+    "html/browsers/origin/cross-origin-objects",
+    "html/browsers/origin/inheritance",
+    "html/browsers/origin/origin-keyed-agent-clusters",
+    "html/browsers/origin/origin-keyed-agent-clusters/1-iframe",
+    "html/browsers/origin/origin-keyed-agent-clusters/2-iframes",
+    "html/browsers/origin/origin-keyed-agent-clusters/getter-special-cases",
+    "html/browsers/origin/origin-keyed-agent-clusters/iframe-navigation",
+    "html/browsers/origin/origin-keyed-agent-clusters/popups",
+    "html/browsers/origin/relaxing-the-same-origin-restriction",
 ];
 
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
@@ -5320,11 +5343,13 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     if relative == "html/dom/idlharness.https.html" {
         return false;
     }
-    // wptfyi-html DC-2 批四（docs/goal/wptfyi-html.md）：html/webappapis 簇 .https
-    // 命名面解锁——runner 恒 https://wpt.test、isSecureContext 恒真（idlharness
-    // carveout 同前提），protocol.https.html 等 8 键不落 .https 命名排除；
-    // reftest/idlharness 命名门与 iframe/worker 内容门不变，protocol-handler-* 非
-    // manual 案按 unsupported_testdriver_dependencies 整案 Unsupported 诚实记账。
+    // wptfyi-html DC-2 批四/批五（docs/goal/wptfyi-html.md）：html/webappapis 与
+    // html/browsers 簇 .https 命名面解锁——runner 恒 https://wpt.test、
+    // isSecureContext 恒真（idlharness carveout 同前提），webappapis
+    // protocol.https.html 等 8 键、browsers window-properties.https.html（178
+    // 子测试，批五最大单面）等不落 .https 命名排除；reftest/idlharness 命名门与
+    // iframe/worker 内容门不变，protocol-handler-* 非 manual 案按
+    // unsupported_testdriver_dependencies 整案 Unsupported 诚实记账。
     // -manual 命名门扩 `-manual.https.html` 复合形——wpt.fyi 分母不含 manual 案，
     // carveout 放行 .https 命名后 5 个 protocol-handler-*-manual 案整案 Timeout
     // 挂账（testdriver 等待无ManualRunner），首跑实证后收口。
@@ -5332,7 +5357,9 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
         || name.ends_with("-manual.https.html")
         || name.ends_with("-ref.html")
         || name.ends_with("-notref.html")
-        || (name.ends_with(".https.html") && !relative.starts_with("html/webappapis/"))
+        || (name.ends_with(".https.html")
+            && !relative.starts_with("html/webappapis/")
+            && !relative.starts_with("html/browsers/"))
         || name.starts_with("idlharness.")
     {
         return true;
@@ -13646,7 +13673,10 @@ mod tests {
             "html/webappapis/system-state-and-capabilities/the-navigator-object/protocol-handler-query-manual.https.html",
             r#"<script src="/resources/testharness.js"></script>"#,
         ));
-        assert!(html_syntax_case_skipped("html/syntax/parsing/secure-context-face.https.html", ""));
+        assert!(html_syntax_case_skipped(
+            "html/syntax/parsing/secure-context-face.https.html",
+            ""
+        ));
         // DC-2 批四：js 源 META: global= 收窄——window 在列不排除，worker-only 源
         // 不生成 window 形键；缺省（无 META 行）保持全全局语义。
         assert!(!html_syntax_case_skipped(
@@ -13660,6 +13690,17 @@ mod tests {
         assert!(html_syntax_case_skipped(
             "html/webappapis/scripting/processing-model-2/integration-with-the-javascript-agent-formalism/requires-success.any.js",
             "// META: global=dedicatedworker,sharedworker\ntest(() => {});",
+        ));
+        // DC-2 批五：browsers 簇 .https 命名面解锁（window-properties.https.html
+        // 178 子测试——批五最大单面）；簇外 .https（上方 syntax 断言）与簇内
+        // -manual 复合形（批四 webappapis 断言）仍排除，carveout 不跨门。
+        assert!(!html_syntax_case_skipped(
+            "html/browsers/the-window-object/window-properties.https.html",
+            r#"<script src="/resources/testharness.js"></script>"#,
+        ));
+        assert!(!html_syntax_case_skipped(
+            "html/browsers/origin/api/origin-from-string.any.js",
+            "test(() => {});",
         ));
         // 变体解析：双引号 content 保真（`(Document|Window)` 括号/管道字符原样入键）。
         let source = r#"<meta name="variant" content="?include=(Document|Window)">
