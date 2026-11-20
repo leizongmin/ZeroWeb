@@ -57,8 +57,12 @@ clone 同窗在他树在飞，零交集）。
 
 ## 残面
 
-`the-stylepropertymap/` 池余 **124F/52 页**（本电池 b1 实测，
-133F/55 页直减 9 靶 3 页；zz-* 遗留页零）：attribute-changed-callback
+`the-stylepropertymap/` 池余 **142F/62 页**（本电池 b1 实测，
+151F/65 页直减 9 靶 3 页；zz-* 遗留页零。2026-11-21 刀 OM-10 订正：
+原记 124F/52 页系对账脚本按 basename 键控把 inline/declared/computed
+三子目录同名页折叠少计 −18F/−10 页，142F/62 页为 b1 json 逐页复测；
+同因订正 OM-7 页脚 155F/66 页、OM-8 页脚 151F/65 页）：
+attribute-changed-callback
 9F、clip-path 8F（CLIP-URL 残面留核）、get-auto-min-size 6F、
 column-rule-width 6F、width/height 各 6F（负值 set 门——引擎 set 即拒收 vs 同族
 block-size/inline-size 引擎已收的 set 门不一致；OM-6 判 css-sizing-3

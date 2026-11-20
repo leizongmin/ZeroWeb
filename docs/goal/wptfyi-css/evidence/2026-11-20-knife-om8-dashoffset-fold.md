@@ -60,14 +60,16 @@ motion1-r2 电池同窗在他树在飞，零交集）。
 
 ## 残面
 
-`the-stylepropertymap/` 池余 **133F/55 页**（本电池 b1 实测，OM-8 b1
-json；zz-om7probe 遗留页清除后池口径）：attribute-changed-callback 9F、
+`the-stylepropertymap/` 池余 **151F/65 页**（本电池 b1 实测，OM-8 b1
+json；zz-om7probe 遗留页清除后池口径。2026-11-21 刀 OM-10 订正：原记
+133F/55 页系对账脚本按 basename 键控把三子目录同名页折叠少计
+−18F/−10 页，151F/65 页为 b1 json 逐页复测）：attribute-changed-callback 9F、
 clip-path 8F（CLIP-URL 残面留核）、get-auto-min-size 6F、
 column-rule-width 6F（−3.14em set 门＋does-not-support 声明面 origin
 缺口）、width/height 各 6F（负值 set 门规范拒收 STAY-FAIL）、
-iterable.tentative 5F、column-count/opacity/scroll-snap-align 各 4F、
+iterable.tentative 15F/3 页、column-count/opacity/scroll-snap-align 各 4F、
 block-size/flex-basis/inline-size 各 3F（池口径恒为 stylepropertymap
-子树过滤、不含遗留探针页；OM-7 页脚 137F/56 页与本笔 133F/55 页同口径
+子树过滤、不含遗留探针页；OM-7 页脚 155F/66 页与本笔 151F/65 页同口径
 直减 4 靶 1 页，遗留探针页只影响全语料 TOTAL F 线不影响池账）。
 
 [控制面](../master.md)

@@ -70,11 +70,13 @@ motion1 电池同窗在他树在飞，零交集）。
 
 ## 残面
 
-`the-stylepropertymap/` 池余 **137F/56 页**（本电池 b1 实测）：
-attribute-changed-callback 9F、clip-path 8F（CLIP-URL 刀已入组合态残面
+`the-stylepropertymap/` 池余 **155F/66 页**（本电池 b1 实测。
+2026-11-21 刀 OM-10 订正：原记 137F/56 页系对账脚本按 basename 键控把
+inline/declared/computed 三子目录同名页折叠少计 −18F/−10 页，155F/66 页
+为 b1 json 逐页复测）：attribute-changed-callback 9F、clip-path 8F（CLIP-URL 刀已入组合态残面
 留核）、get-auto-min-size 6F、column-rule-width 6F（−3.14em set 门＋
 does-not-support 声明面 origin 缺口）、width/height 各 6F（负值 set 门
-规范拒收 STAY-FAIL）、iterable.tentative 5F、column-count/opacity/
+规范拒收 STAY-FAIL）、iterable.tentative 15F/3 页、column-count/opacity/
 scroll-snap-align/stroke-dashoffset 各 4F（**stroke-dashoffset 同族
 OM-8 候选**——dasharray 同款 number 折 px＋负 % 钳合同）、block-size/
 flex-basis/inline-size 各 3F。
