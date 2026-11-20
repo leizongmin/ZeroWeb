@@ -384,7 +384,13 @@ pub fn style_rules_text(text: &str) -> String {
                     if i > 0 {
                         css_text.push(',');
                     }
-                    css_text.push_str(&format!(" url(\"{}\")", s.replace('\\', "\\\\").replace('"', "\\\"")));
+                    if s.starts_with("local(") {
+                        // css-fonts-4 §src-desc local 源形原样回拼——sources 以
+                        // `local(` 前缀判别（at_rules 提取侧约定，裸串=url 载荷）。
+                        css_text.push_str(&format!(" {s}"));
+                    } else {
+                        css_text.push_str(&format!(" url(\"{}\")", s.replace('\\', "\\\\").replace('"', "\\\"")));
+                    }
                 }
                 css_text.push(';');
             }
@@ -461,5 +467,22 @@ mod position_try_wire_tests {
     fn wire_font_face_rule_entry() {
         let w = style_rules_text("@font-face { font-family: F; src: url(f.woff); }");
         assert_eq!(w, "@font-face\x1e@font-face { font-family: F; src: url(\"f.woff\"); }");
+    }
+
+    #[test]
+    /// local() 源 face 不丢弃（css-fonts-4 §src-desc `local(<family-name>)`
+    /// 合法源形）——consume_font_face_rule 此前只认 url() 载荷，local-only
+    /// face 整条丢弃（FONT-1b：at-font-face-descriptors 静态 `<style>` 即
+    /// local-only src，88F wholesale 不翻的根因）。sources 以 `local(…)`
+    /// 形入列（`local(` 前缀判别约定），wire cssText 回拼；载荷字符串经
+    /// 声明 tokenizer 规范为 canonical 双引号形。
+    fn wire_font_face_local_source_entry() {
+        let w = style_rules_text(
+            "@font-face { font-family: Test; src: local('Courier New'), local('Courier'); }",
+        );
+        assert_eq!(
+            w,
+            "@font-face\x1e@font-face { font-family: Test; src: local(\"Courier New\"), local(\"Courier\"); }"
+        );
     }
 }

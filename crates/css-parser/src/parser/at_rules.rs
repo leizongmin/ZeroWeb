@@ -127,6 +127,15 @@ impl<'a> Parser<'a> {
                 for url in extract_urls_from_src(&decl.value) {
                     sources.push(url);
                 }
+                // css-fonts-4 §src-desc：local() 为合法源形——local-only face
+                // 不得整条丢弃（此前只认 url() 载荷，静态 local src 页
+                // at-font-face-descriptors 88F wholesale 形）。源项保
+                // `local(…)` 原样形入 sources（`local(` 前缀判别约定，
+                // css_wire 串化侧同约定回拼）。
+                // https://drafts.csswg.org/css-fonts-4/#descdef-font-face-src
+                for local in extract_local_sources_from_src(&decl.value) {
+                    sources.push(local);
+                }
             } else if decl.property.eq_ignore_ascii_case("font-weight") {
                 weight = Self::parse_font_face_weight(&decl.value);
             } else if decl.property.eq_ignore_ascii_case("font-style") {
