@@ -91,6 +91,29 @@ evidence/2026-11-20-m2s588-zero-displacement5-optical-gbx-regen-bridge-hold7-mpr
 > （如现，挂对端 kb97/kb98 后续申
 > 报值对读；s589 若恒 013b868e 则
 > 与 kb97 持位申报同值互证）。
+> **◆ 补账二（2026-11-20 s588 push
+> 阶段）——push 再拒非快进＝二次
+> pull --rebase 捕获 ×1（
+> d516f4e29→5fd4bda01 对端落笔）：
+> **code ×1＝5fd4bda01 刀 SH-A1
+> clip-path inset() round 组全模型
+> （css-parser ×3＋engine animation/
+> clip_interp/**js_dom_bridge/
+> computed_style.rs**/border_shape）
+> ＝**js_dom_bridge 面新钉＝s589
+> 全桥或现 NEW/GONE（b588 基线，
+> 改判 FAIL 不预期）**；engine/
+> css-parser 码面＝**s589 runner 预
+> 判改判回必换代已定（013b868e→
+> 新）**；候选第十实例＝s589 换代
+> 新值挂对端 kb98 判代批申报值对
+> 读（kb98 候窗 /tmp/r5858 部署时
+> 未含此刀，其下笔判代值即对读
+> 点）。s589 sweep 或真位移
+> （clip-path inset round 共享 engine
+> 面），哨键照察；族带 r22 聚合形
+> 持位第 6 连观察照常（码刀不触
+> select 键盘域）。
 > **◆ 补账（2026-11-20 s587 push 阶段）
 > ——push 前 pull --rebase 捕获 ×10
 > 全列核实（ee4ba1d45→4184d2513
