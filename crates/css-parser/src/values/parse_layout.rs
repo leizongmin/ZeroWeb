@@ -1191,7 +1191,7 @@ pub fn parse_font_feature_settings_with_font(value: &str, font_size: Option<f64>
             1
         } else if suffix.eq_ignore_ascii_case("off") {
             0
-        } else if let Some(v) = suffix.parse::<u32>().ok() {
+        } else if let Ok(v) = suffix.parse::<u32>() {
             v
         } else {
             font_slot_math_integer(suffix, font_size)?
