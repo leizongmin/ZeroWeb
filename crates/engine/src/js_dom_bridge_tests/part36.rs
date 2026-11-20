@@ -397,3 +397,93 @@ fn test_generation_cache_stale_record_falls_back_full_parse() {
         "不衔接记录兜底结果必须与权威一致"
     );
 }
+
+// 刀 3（t-g2b）链式消费钉：两次探针之间连续发布多批（github 水合期形状）——槽从
+// 当前代沿链逐批 replay 到最新代，零全量 parse；结果与权威全量逐位一致。
+// 并行测试共享全局 DRAIN_RECORDS，竞争只会把结果打向全量兜底方向——win 方向断言
+// （计数 0）用有界重试建立无干扰窗口；夹具带 k3 专属标记，防他测记录串链。
+#[test]
+fn test_generation_cache_drain_chain_sync_multi_batch() {
+    let html0 = "<html><body data-k3='0'><div class='c'>x</div><style>[data-k3] .c { color: green }</style></body></html>";
+    let html1 = "<html><body data-k3=\"1\"><div class='c'>x</div><style>[data-k3] .c { color: green }</style></body></html>";
+    let html2 = "<html><body data-k3=\"1\"><div class='c'>z</div><style>[data-k3] .c { color: green }</style></body></html>";
+    let batch1 = vec![DomMutation::SetAttr {
+        selector: "body".to_string(),
+        name: "data-k3".to_string(),
+        value: "1".to_string(),
+    }];
+    let batch2 = vec![DomMutation::SetText {
+        selector: ".c".to_string(),
+        text: "z".to_string(),
+    }];
+    let style_dbg = |doc: &zero_dom::Document,
+                     styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>| {
+        find_by_selector(doc, ".c")
+            .and_then(|node| styles.get(&node))
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default()
+    };
+    let mut after = None;
+    for _ in 0..16 {
+        crate::js_dom_bridge::clear_generation_cache();
+        with_cached_document_styles(html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+        crate::js_dom_bridge::publish_gcs_drain_record(html0, html1, &batch1);
+        crate::js_dom_bridge::publish_gcs_drain_record(html1, html2, &batch2);
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
+        let a = with_cached_document_styles(html2, 2, 0, &[], |doc, styles| style_dbg(doc, styles));
+        if GENERATION_FULL_PARSE_COUNT.with(|c| c.get()) == 0 {
+            after = Some(a);
+            break;
+        }
+    }
+    let after = after.expect("两批连续 drain 的链式同步必须在无干扰重试内零全量 parse");
+    let (doc, styles) = compute_document_styles_with_inline_overrides(html2, &[]);
+    assert_eq!(
+        after,
+        style_dbg(&doc, &styles),
+        "链式 replay 结果必须与全量重算逐位一致（批1 attr + 批2 text 都生效）"
+    );
+}
+
+// 刀 3 链断裂钉：链中批不衔接（批2 的 old ≠ 批1 的 new——cap 挤出 / 旁路序列化形状）
+// → 全量兜底 +1，正确性不依赖同步成功。
+#[test]
+fn test_generation_cache_drain_chain_broken_falls_back() {
+    let html0 = "<html><body data-k3='0'><div class='c'>x</div><style>[data-k3] .c { color: green }</style></body></html>";
+    let html1 = "<html><body data-k3=\"1\"><div class='c'>x</div><style>[data-k3] .c { color: green }</style></body></html>";
+    let html2 = "<html><body data-k3=\"1\"><div class='c2'>y</div><style>[data-k3] .c2 { color: red }</style></body></html>";
+    let batch1 = vec![DomMutation::SetAttr {
+        selector: "body".to_string(),
+        name: "data-k3".to_string(),
+        value: "1".to_string(),
+    }];
+    // 批2 的 old_html 与批1 的 new_html 无关 → 链断。
+    let batch2 = vec![DomMutation::SetText {
+        selector: ".c2".to_string(),
+        text: "y".to_string(),
+    }];
+    let style_dbg = |doc: &zero_dom::Document,
+                     styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>| {
+        find_by_selector(doc, ".c2")
+            .and_then(|node| styles.get(&node))
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default()
+    };
+    crate::js_dom_bridge::clear_generation_cache();
+    with_cached_document_styles(html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
+    crate::js_dom_bridge::publish_gcs_drain_record(html0, html1, &batch1);
+    crate::js_dom_bridge::publish_gcs_drain_record("<html><body data-k3b='1'></body></html>", html2, &batch2);
+    let after = with_cached_document_styles(html2, 2, 0, &[], |doc, styles| style_dbg(doc, styles));
+    assert_eq!(
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.get()),
+        1,
+        "链断裂必须被拒绝并走全量 parse 兜底"
+    );
+    let (doc, styles) = compute_document_styles_with_inline_overrides(html2, &[]);
+    assert_eq!(
+        after,
+        style_dbg(&doc, &styles),
+        "链断裂兜底结果必须与权威一致"
+    );
+}
