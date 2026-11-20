@@ -476,7 +476,10 @@
       // （svg2 §stroke-dasharray/§stroke-width：number 计算值按用户单位即
       // px 类——语料两页 number 臂 assert_is_unit('px')，值保值不钳；引擎
       // gCS 对 number 形保形回显 unit 'number'，探针 zz-om7probe 挂载态实证）。
-      if ((p === 'stroke-dasharray' || p === 'stroke-width') && v._zwOmUnit === 'number') {
+      // 刀 OM-8：stroke-dashoffset 同合同（svg2 §stroke-dashoffset——语料
+      // number 四臂 assert_equals unit 'px' got 'number'；percent/length
+      // 臂语料本就过、无钳合同，不入 clamp 表）。
+      if ((p === 'stroke-dasharray' || p === 'stroke-width' || p === 'stroke-dashoffset') && v._zwOmUnit === 'number') {
         var swPx = v._zwOmValue;
         v = new CSSUnitValue(swPx, 'px');
       }
@@ -534,8 +537,9 @@
         folded = new CSSUnitValue(_zwOmNumClean(folded._zwOmValue * _zwOmFontSizePx(getStyleObj) / 100), 'px');
       }
       // 刀 OM-7：折叠后同合同——stroke-* number 折 px、tab-size 负 number
-      // 钳 0（'calc(2 + 3)' 折 Unit(5,'number') 后与 Unit 臂同变换）。
-      if ((p === 'stroke-dasharray' || p === 'stroke-width') && folded._zwOmUnit === 'number') {
+      // 钳 0（'calc(2 + 3)' 折 Unit(5,'number') 后与 Unit 臂同变换）；
+      // 刀 OM-8 承 stroke-dashoffset 同合同。
+      if ((p === 'stroke-dasharray' || p === 'stroke-width' || p === 'stroke-dashoffset') && folded._zwOmUnit === 'number') {
         folded = new CSSUnitValue(folded._zwOmValue, 'px');
       }
       if (p === 'tab-size' && folded._zwOmUnit === 'number' && folded._zwOmValue < 0) {
