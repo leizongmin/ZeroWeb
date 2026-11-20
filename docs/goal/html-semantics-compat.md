@@ -57,6 +57,40 @@ double-fire））+ 候门决项等待用户拍
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s587-zero-displacement4-tev-knife-convergence-resolved-bridge-hold6-mpreload-hold12.md
+> **◆ 补账（2026-11-20 s587 push 阶段）
+> ——push 前 pull --rebase 捕获 ×10
+> 全列核实（ee4ba1d45→4184d2513
+> 前对端落笔）：code ×2＝413730881
+> 刀 optical 三性（animation.rs＋
+> **js_dom_bridge/transition_registry.rs
+> 钉**＋computed_style.rs）＋
+> 053cfecf0 刀 GBX clip-path
+> geometry-box（css-parser ×4＋
+> engine clip_interp/border_shape/
+> animation/computed_style＋
+> style-system matcher）＝**单桥钉
+> ＝s588 全桥对账或现 NEW/GONE
+> （改判，FAIL 不预期）**；engine/
+> css-parser/style-system 三 crate
+> 码面＝**s588 runner 必换代已定**
+> （5df356cc→新）；**收敛候选第八
+> 实例提前定谳 MATCH**＝对端 kb94
+> （R5853）判代首验批申报 TEV 刀
+> pre ff6e22cd→runs 5df356cc ×3 恒
+> ≡ 本侧（kb93 R5852 持位 ff6e22cd
+> ×4 恒＋kb95 R5854 59代 hold
+> 5df356cc ×3 恒）；**候选第九实例
+> ＝s588 本侧换代新值**（对端 kb96
+> 60代 判代首验批已部署，预期
+> pre=5df356cc→runs 新 md5）；
+> docs ×8＝对端 rendering
+> R5852/R5853/R5854＋R5854 补记
+> ＋wptfyi-css 光学/GBX 五笔＋
+> learnings 一笔。s588 sweep 或真
+> 位移（fonts 三性/clip-path GBX
+> 共享 engine 面），哨键照察；族带
+> r21 聚合形持位第 5 连观察照常
+> （码刀不触 select 键盘域）。
 > **◆ 补账（2026-11-20 s585 push 阶段）
 > ——push 前 pull --rebase 捕获 ×12
 > 全列核实（c4d86bd8e→231194007
