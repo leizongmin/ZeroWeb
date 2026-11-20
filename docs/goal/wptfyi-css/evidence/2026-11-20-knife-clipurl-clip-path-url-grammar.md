@@ -77,6 +77,17 @@ part10-typed-om.js cursor reify），其窗早于 OM-4；17 点差归 OM 流，�
   72F——calc 面整刀域）。
 - offset-path url("abc")（css-motion offset-path 文法，独立 parse 通道，5F 级）。
 
+## 归因修正（11-20 19:38 终证推翻笔）
+
+上文「borders corner-shape-interpolation −14＝CS-1c corner hunk ride 效应」
+被 NOTES-clipurl-fork-contamination-cs1c-window.md 回执点 6 终证推翻：子测级
+比对示该页两 b1 间同语义断言双向翻转（69 F→P / 52 P→F，如
+corner-top-right-shape from [notch] to [square] at (0) 同断言两侧各现），
+且本刀 b0 对 CS-1c b0 同向漂移 +20——该页 P 值在行为等价构建间摆幅 ≥17
+（probe2/3 已实证的 corner 槽 HashMap 迭代序跨进程非确定性）。−14 落噪声带
+内，不可归因任何 face hunk；按 flake 域口径双向不入账不记回归。CS-1c 证据
+页 −11 同判（待其 b2 孤立臂终谳）。masking +48 两页归因不受影响。
+
 ## 长账
 
 本刀局部账 +48（masking 两页）；周账 101,673→101,721/199,018。
