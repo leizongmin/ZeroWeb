@@ -15987,9 +15987,19 @@
         // 覆盖返 '' 曾使 computed cssFloat 空，WPT historical 'applet is not styled'
         // 期望 'none'；host 真值非空时不变）。
         // css-variables-1：`--` 起始 camelCase 属性访问同 getPropertyValue 免归一（R5114）。
-        var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
+        // APC-2 webkit-legacy-lowercase-get（CSSOM-1 §camel-cased-attribute webkit
+        // 遗留形）：plain get 同 has/getPropertyValue webkit 特例——小写 w 形
+        // （'webkitAppearance'）通用 _camelToKebab 产 'webkit-appearance'（丢前导
+        // '-'）host 查询落空串；大写 W 形 _camelToKebab('WebkitAppearance') 天然
+        // 产 '-webkit-appearance' 本已通。appearance-cssom-001 x160（Invalid 147/
+        // Compat 9/Values 4 computed 小写 w 读 ''）根因臂。
+        var _wkG = /^webkit([A-Z])(.*)$/.exec(p);
+        var _kpPlain = p.slice(0, 2) === '--' ? p
+          : _wkG ? '-webkit-' + _wkG[1].toLowerCase() + _camelToKebab(_wkG[2])
+          : _camelToKebab(p);
+        var _csV = query(_kpPlain);
         // DC-2 次批：宿主 partial-parse 抢答覆盖（同 getPropertyValue 臂注释）。
-        var _kpC = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
+        var _kpC = p.slice(0, 2) === '--' ? '' : _kpPlain;
         // wptfyi-css 组F：position-area 宿主回声覆盖（同 getPropertyValue 臂——
         // host 未设值 'initial'/'inherit' 字面量兜底短路 plain 臂，plain 优先）。
         // https://drafts.csswg.org/css-anchor-position-1/#position-area

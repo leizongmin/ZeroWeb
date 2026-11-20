@@ -4692,6 +4692,17 @@ pub fn register_dom_callbacks(
                 ) {
                     return core.to_ascii_lowercase();
                 }
+                // APC-2 cssom-write-gate（appearance-cssom-001 oracle 快照）：CSSOM
+                // setProperty 写门拒收页判 invalid 三值——parse_appearance/渲染管线
+                // 保留（css-ui-4 compat-special 关键字，paint/text.rs 按钮绘制消费，
+                // 语料全集仅 appearance-cssom-001 消费此三值），仅 CSSOM 写通道
+                // 与页口径一致（Invalid 环 specified ''+computed initial 天然成立）。
+                if matches!(
+                    core.to_ascii_lowercase().as_str(),
+                    "push-button" | "slider-horizontal" | "square-button"
+                ) {
+                    return "null".to_string();
+                }
                 match zero_css_parser::values::parse_extended_visual::parse_appearance(core) {
                     Some(_) => core.to_string(),
                     None => "null".to_string(),
