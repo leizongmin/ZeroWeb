@@ -2,7 +2,7 @@
 
 ## 收账结论
 
-- **A/B 净 +2（gained=2 lost=0 regressed=0）**，face 落库 `44b23ba11`（part04.js +84/−30，唯一 pathspec）。
+- **A/B 净 +2（gained=2 lost=0 regressed=0）**，face 落库 `61d17aa54`（part04.js +84/−30，唯一 pathspec；收账时原 hash `44b23ba11`，push 前两轮 rebase 换新）。
 - 局部账累计 +7529 → **+7531**。
 
 ## 三 fork 级联（NOTES-knife-wa3b-prep.txt 仲裁笔为凭）
