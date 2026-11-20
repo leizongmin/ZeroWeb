@@ -53,25 +53,40 @@ md5 f1aef7b7＝057764d3 链）；全桥
 全绿＝≡b595，/tmp/s597 预装载全
 套，哨 r 注记已 bump）**：开工
 pull 捕获全列核实（窗＝2bbed28b2
-→s597 legs HEAD）；窗码面已 ×1
-（本笔收账开工 pull 捕获 ×3＝
-6ce0ad06c 刀 CLIP-URL clip-path
-<clip-source> url() 文法面
-〔css-parser+engine+style-system
-三域，css-masking 净 +48〕＋
-77edaed27＋c83c065ff 对端
-wptfyi-css docs ×2）→ join 主预判
-零位移第 4 连（CLIP-URL 非
-semantics 结果面；UA 通道外溢
-继续观察）；runner 必换代
-a5b38f6e→新＝候选十七实例值
-（css-parser/engine/style-system
-入重编链观察）；**b597 对账分支
-命中＝条件观察**（6ce0ad06c 触
-js_dom_bridge computed_style.rs
-+4；b596 预判未兑现教训＝触点
-≠必新键不预判必然，b596 基线
-1734）；
+→s597 legs HEAD）；窗码面已 ×3
+（开工 pull ×3＝6ce0ad06c 刀
+CLIP-URL clip-path <clip-source>
+url() 文法面〔css-parser+engine+
+style-system 三域，css-masking 净
++48，触 js_dom_bridge computed_
+style.rs +4〕＋77edaed27＋
+c83c065ff 对端 wptfyi-css docs
+×2；push 补账 pull 再捕获 ×5＝
+721afbe0f DC-2 批三 wpt-runner
+window 变体源通道 forms 侧
+Pass +11＋b672ff24c OM-5 typed-om
+残面四臂 part10-typed-om.js
+css-typed-om +41＋77fe42fc9
+GB-20261120 巡检＋1c368bbba
+OM-5 收账＋a8061b01b hash 订正
+docs ×3）→ join 主预判零位移第
+4 连（CLIP-URL/OM-5 非 semantics
+结果面；**DC-2 批三 window 变体
+源 forms 通道外溢观察点**＝
+semantics sweep .window.js 若纳入
+变体展开则 NEW/GONE 逐键归因，
+照 s595 idlharness 观察点先例）；
+runner 必换代 a5b38f6e→新＝
+候选十七实例值（css-parser/engine/
+style-system/wpt-runner 四域入重
+编链）；**b597 对账分支命中＝
+条件观察**（仅 6ce0ad06c 触 js_
+dom_bridge computed_style.rs +4；
+OM-5 触 js_dom_shim 非 bridge、
+DC-2 批三触 wpt-runner 均已核实
+不触 bridge；b596 预判未兑现教
+训＝触点≠必新键不预判必然，
+b596 基线 1734）；
 **收敛对账挂起＝候选十六
 a5b38f6e 挂对端 kb111 后续申报
 值对读（kb110 双笔 168ff90e 异集
@@ -103,6 +118,44 @@ rendering 流 dialog 16 红块协同面
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s596-quadknife-zerodisplacement3-bridge-b596-hold-cand16-mpreload-hold21.md
+> **◆ 补账（2026-11-20 s596 push
+> 阶段）——push 前 pull --rebase
+> 两次捕获 ×5 全列核实（c83c065ff→
+> a8061b01b 对端落笔，rebase 本笔
+> 收账＝8d23b043c→565503540，
+> push non-fast-forward 两遇、自主
+> rebase 后 565503540 落远端）：
+> 码面 ×2＝721afbe0f feat(wpt-runner,
+> goal) wptfyi-html DC-2 批三
+> window 变体源通道 forms 侧
+> Pass +11（testharness.rs+
+> testharness_html_rendering.rs，
+> 不触 js_dom_bridge 已核实）＋
+> b672ff24c fix(engine) 刀 OM-5
+> typed-om 残面四臂 part10-typed-
+> om.js css-typed-om +41（js_dom_
+> shim 非 bridge，已核实不触 js_
+> dom_bridge）；docs ×3＝77fe42fc9
+> GB-20261120 巡检入账（48h 双提
+> 醒合并首发 CI 红定谳 Check
+> formatting 单根因）＋1c368bbba
+> OM-5 收账＋a8061b01b hash 订正。
+> **s597 预判更新＝窗码面 ×1→×3
+> （上列）→ join 主预判零位移第 4
+> 连维持＋DC-2 批三 window 变体
+> 源 forms 通道外溢升格观察点
+> （semantics sweep .window.js 若纳
+> 入变体展开则 NEW/GONE 逐键归
+> 因，照 s595 idlharness 观察点先
+> 例）＋runner 必换代 a5b38f6e→
+> 候选十七（css-parser/engine/
+> style-system/wpt-runner 四域入重
+> 编链）＋b597 对账分支命中维持
+> 仅 6ce0ad06c computed_style.rs
+> 条件观察（OM-5/DC-2 批三不触
+> bridge 已核实，b596 基线 1734）**；
+> s597 布防文本未竟处按本补账为
+> 准。
 > **◆ 补账（2026-11-20 s596 收账
 > push 阶段）——开工 pull 捕获 ×3
 > 全列核实（2bbed28b2→c83c065ff
