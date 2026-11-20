@@ -5256,7 +5256,8 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*-ref.html` / `-notref.html`（reftest ref 页）、`-manual.html`（用户交互面）、
 ///   `.https.html`（secure-context 面——usvstring-reflection）、`idlharness.*`
-///   （WebIDLParser build 期资产）——net-api/encoding 先例
+///   （WebIDLParser build 期资产——html/dom/idlharness.https.html 例外，见函数体
+///   wptfyi-html DC-2 解锁注记）——net-api/encoding 先例
 /// - `*/resources/`（helper 资产——html/dom/resources 子文档，不按案跑）
 /// - 无 `testharness.js` 引用页（legacy 自述式 foreign_content_* 11 案、索引页
 ///   reflection-original、crash 回归页 range-on-pi-*——非 testharness 形态）
@@ -5271,6 +5272,18 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
 /// - worker 执行面（net-api 先例；当前语料零命中，re-pin 增案防静默错跑）
 fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
+    // wptfyi-html DC-2（docs/goal/wptfyi-html.md）：html/dom IDL 接口面解锁——
+    // idlharness.https.html 3 variant（?include=(Document|Window) / ?include=HTML.+
+    // / ?exclude=(Document|Window|HTML.+)，wpt.fyi 分母同形三键）依赖 WebIDLParser.js
+    // + idlharness.js（resources/ 已在 corpus）+ idl_test 运行期
+    // fetch('/interfaces/html.idl')（webgl idlharness 先例——page fetch 静态文件
+    // 回退路径供给，fetch 脚本补拉）；页内 createElement('iframe') 是取 Document
+    // 对象的测试夹具（hidden iframe），R115 iframe 管道成熟可执行——不落 iframe/
+    // https/idlharness 三条排除（runner 恒 https://wpt.test，isSecureContext 恒真，
+    // .https 命名不设执行障碍）。
+    if relative == "html/dom/idlharness.https.html" {
+        return false;
+    }
     if name.ends_with("-manual.html")
         || name.ends_with("-ref.html")
         || name.ends_with("-notref.html")
@@ -5300,8 +5313,24 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
 /// （html-syntax-compat goal M1 / DC-1——解析树一致性/序列化/接口语义基线 + P5
 /// 文档级嗅探案面）。filter 按路径子串过滤（如 `serializing-html-fragments/`、
 /// `reflection-`——基线按域分类）。
+///
+/// wptfyi-html DC-2：`expand_variants` 开启（navigation-compat S4K 先例——变体键
+/// 替代基础键，wpt.fyi 分母 variant URL 独立键同形）。本 corpus 内变体页 =
+/// html/dom innertext-with-white-spaces.html（12 variant）、html/dom/
+/// idlharness.https.html（3 variant，同上解锁注记）、html5lib_url/write/
+/// write_single（write-mode 面，单 synthetic Fail 形态分母不变）。
 pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs(wpt_root, HTML_SYNTAX_CORPUS_SUBDIRS, filter, html_syntax_case_skipped)
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        HTML_SYNTAX_CORPUS_SUBDIRS,
+        filter,
+        html_syntax_case_skipped,
+        &[],
+        CorpusRunOptions {
+            expand_variants: true,
+            ..CorpusRunOptions::default()
+        },
+    )
 }
 
 // ── navigation-compat goal（docs/goal/archive/navigation-compat.md M1 / DC-1）：导航面
@@ -13523,6 +13552,34 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // wptfyi-html DC-2：html/dom idlharness.https.html 解锁例外（skip 规则提前返回）
+    // + 变体声明解析面（?include=/(exclude) 正则字符 content——expand_variants 展开输入）。
+    #[test]
+    fn html_syntax_skip_idlharness_carveout_and_variant_metas() {
+        // 解锁例外：https/idlharness/iframe 三条排除均不命中（page fetch 静态回退 +
+        // runner 恒 https://wpt.test + R115 iframe 管道——见 html_syntax_case_skipped 注记）。
+        assert!(!html_syntax_case_skipped(
+            "html/dom/idlharness.https.html",
+            r#"<script src="/resources/WebIDLParser.js"></script><iframe hidden></iframe>"#,
+        ));
+        // 例外不外溢：worker 变体形态（IDL worker 面，另行记账）与其余 idlharness
+        // 形、secure-context 命名页仍排除。
+        assert!(html_syntax_case_skipped("html/dom/idlharness.any.worker.html", ""));
+        assert!(html_syntax_case_skipped("html/dom/usvstring-reflection.https.html", ""));
+        // 变体解析：双引号 content 保真（`(Document|Window)` 括号/管道字符原样入键）。
+        let source = r#"<meta name="variant" content="?include=(Document|Window)">
+<meta name="variant" content="?include=HTML.+">
+<meta name="variant" content="?exclude=(Document|Window|HTML.+)">"#;
+        assert_eq!(
+            case_variants(source),
+            vec![
+                "?include=(Document|Window)".to_string(),
+                "?include=HTML.+".to_string(),
+                "?exclude=(Document|Window|HTML.+)".to_string(),
+            ]
+        );
+    }
 
     // runner-net-infra M2（D4）：any.js META 注释 variant 解析臂——websockets
     // 语料三形（?wss / ?default / ?wpt_flags=h2，M0 普查实测形态）全解析 +

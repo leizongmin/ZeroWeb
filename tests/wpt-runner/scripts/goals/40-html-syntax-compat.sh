@@ -45,6 +45,24 @@ fetch_raw "html/syntax/parsing/named-character-references-data.js"
 fetch_raw "html/dom/render-blocking/support/dummy-1.mjs"
 fetch_raw "html/dom/render-blocking/support/target-red.css"
 
+# wptfyi-html goal DC-2（docs/goal/wptfyi-html.md）：html/dom idlharness.https.html
+# 解锁面——idl_test 运行期 fetch('/interfaces/html.idl')，page fetch 静态文件回退
+# 路径供给（webgl idlharness 先例，webgl1/webgl2/dom.idl 同目录在册）；.idl 后缀
+# 不在 fetch_dir_html 拉取模式内，显式单文件。页面 dependencies 列 12 个依赖 IDL
+# （include/implements 解析用，不直接出测试），除 dom.idl 外逐个补拉。
+fetch_raw "interfaces/html.idl"
+fetch_raw "interfaces/wai-aria.idl"
+fetch_raw "interfaces/SVG.idl"
+fetch_raw "interfaces/cssom.idl"
+fetch_raw "interfaces/touch-events.idl"
+fetch_raw "interfaces/pointerevents.idl"
+fetch_raw "interfaces/uievents.idl"
+fetch_raw "interfaces/xhr.idl"
+fetch_raw "interfaces/FileAPI.idl"
+fetch_raw "interfaces/mediacapture-streams.idl"
+fetch_raw "interfaces/performance-timeline.idl"
+fetch_raw "interfaces/trusted-types.idl"
+
 # dom-expansion goal M1（docs/goal/archive/dom-expansion.md DC-1/DC-2）：html/dom 深层叶子
 # 目录补拉——34 号 deep 语料（git trees recursive）扩进来、runner 通道
 #（HTML_SYNTAX_CORPUS_SUBDIRS）同步扫描的面；fetch_dir_html depth<1 不达 depth-2，
