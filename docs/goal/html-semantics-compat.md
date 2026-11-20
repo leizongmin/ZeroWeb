@@ -44,20 +44,33 @@ md5 f1aef7b7＝057764d3 链）；全桥
 /tmp/s595 预装载全套，哨 r 注记
 已 bump）**：开工 pull 捕获全列核
 实（窗＝4b040933f→s595 legs
-HEAD）；join 预判 docs-only 窗 →
-NEW 0 GONE 0 FLIPS 0 零位移第 2
-连，码刀窗 → 对应面归因照规；
-runner 预判按窗码面定（docs-only
-＝恒 7cf6bfe1，捕获新码刀则必换
-代＝候选十五实例值）；
-**收敛对账挂起＝候选十四实例
-7cf6bfe1 挂对端 kb105 后续申报
-值对读；候选十五＝s595 换代新值
-（如现）；候选十二反证落账态
-（50e537da build-cache 态伪影）
-不再挂对读**；窗带 js_dom_bridge
-新钉则全桥 NEW/GONE 对账（b594
-基线 1733）；dialog 第 29 轮；
+HEAD）；**窗已码面 ×4（补账捕
+获＝4f06d6fad DC-2 wpt-runner
+html/dom variant 展开＋idlharness
+解锁净 +1,888 共享键＋a201ab290
+css-fonts local() 源链/oblique 界
+＋833f9fb55 appearance 族 CSSOM
+四臂 engine＋9e9ca5a31 corner 形
+法 C4+C1 css-parser）→ join 主预
+判零位移第 2 连（四刀非 semantics
+结果面；idlharness 解锁为观察
+点）＋runner 必换代 7cf6bfe1→新
+＝候选十五实例（css-parser 入重
+编链）；
+**收敛对账更新＝候选十四
+7cf6bfe1 挂对端 kb106 对读（
+R5863 kb105 64代 51194c1b ×3 恒
+＝T3D+DC-1 双面窗疑 OM-1 缺席
+树态异集、非断点信号；R5863 复
+记候选十三 MATCH 5f6dbefe 逐字
+节互证）；候选十五＝s595 换代新
+值挂对端后续申报对读；候选十二
+反证落账态（50e537da build-cache
+态伪影）不再挂对读**；b595 对账
+分支命中（窗触 js_dom_bridge
+callbacks/computed_style/css_wire
+＝appearance 面或新键，逐字节恒
+不再预判，b594 基线 1733）；
 password 第 34 轮；select-event 第
 34 轮；mpreload 第 57 轮＝持位第
 20 连观察；waapi 第 116 轮；
@@ -82,6 +95,43 @@ s137；对端 ZRG-2026-11-18-01 归
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s594-triple-knife-zerodisplacement9-cand14-bridge-b594-ident-mpreload-hold19.md
+> **◆ 补账（2026-11-20 s594 push
+> 阶段）——push 前 pull --rebase 捕
+> 获 ×5 全列核实（4b040933f→
+> 9e9ca5a31，rebase 本笔 s594 收账
+> ＝dfa2a2892→57ceecd0e）：码面
+> ×4＝4f06d6fad feat(wpt-runner)
+> DC-2 批一 html/dom variant 展开
+> ＋idlharness 解锁净 +1,888 共享
+> 键零回归＋a201ab290 fix(css)
+> @font-face local() 源链/oblique
+> ±90deg 界 css-fonts +34＋
+> 833f9fb55 fix(engine) appearance
+> 族 CSSOM 四臂 css-ui
+> appearance-cssom +163＋
+> 9e9ca5a31 fix(css) corner 形法
+> C4+C1 superellipse 参量内空白
+> +mega 组角解耦 css-borders +31；
+> docs ×1＝27a421967 对端 R5863。
+> **R5863 记录＝kb105 64代 判代兑
+> 现（T3D+DC-1 双面窗 pre
+> 5f6dbefe→runs 51194c1b ×3 恒）
+> ＝非候选十四值（其窗树态疑 OM-1
+> 缺席＝异集非断点）；kb106 持位
+> 首验批部署＝候选十四 7cf6bfe1
+> 对读点；R5863 复记候选十三
+> MATCH（5f6dbefe 逐字节）跨流互
+> 证＋tao-151 焦点臂缺席 ×3 换代
+> 伴生单发定谳＋瞬态 12 槽/11 键
+> 带大扩（归对端账）**。s595 窗预
+> 判改码面 ×4：runner 必换代（候
+> 选十五、css-parser 入重编链）、
+> join 主预判零位移（idlharness 解
+> 锁观察点）、b595 对账分支命中
+> （js_dom_bridge callbacks/
+> computed_style/css_wire 触点，
+> appearance 面或新键，逐字节恒
+> 不再预判）。
 > **◆ 补账（2026-11-20 s593 push
 > 阶段）——push 前 pull --rebase 捕
 > 获 ×5 全列核实（143a08c1d→
