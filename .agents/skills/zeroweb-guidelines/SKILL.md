@@ -244,11 +244,13 @@ paint/layout 常用可测量代理（盒高、inline 高度和）近似不可直
 
 依据：[match 判别式临时 MutexGuard 存活整个 match——臂内再锁自死锁](../../../docs/learnings/bugs/2026-11/2026-11-08-match-scrutinee-mutex-guard-deadlock.md)。
 
-### 39. 门禁判读必须恰集计数与键清单，存在性形门（EXIT=0、P>0、剥页名子串键）会放行空转与错面
+### 39. 门禁与 A/B 差分判读必须恰集计数与键清单——存在性形门放行空转，键域漂移与采样截断伪装回归
 
 凡判定批跑/腿/探针「是否跑对」的判读式，必须落在恰集上：`passed == N && N > 0`（N 用 preflight 实测定谳的期望用例数）、失败键恰集清单，判读键保留页名全前缀且与计数同域。存在性形判据只证「有东西通过」，不证「被测面完整执行且是目标面」，三类空溃在门下全部洗白成绿：libtest 对空匹配过滤器恒 EXIT=0（`--exact` 裸名/短前缀 → `0 passed; 3844 filtered out` 假绿，`--exact` 还须落在 `--` 之后）；探针页 include 链缺 `/common/subset-tests.js` 整页空转只剩探针本体 P=1，P>0 门放行刀体零覆盖；FILTER 子串匹配拉入探针页、judge 剥页名后探针键与语料键同形碰撞，误计 P2F/虚增 new-row。恰集门顺带防条目静默漂移：语料条目改名/删除立即使期望数失配红出，而非假绿。
 
-依据：[cargo test --exact 裸名 0P 假绿 EXIT=0](../../../docs/learnings/bugs/2026-11/2026-11-11-cargo-test-exact-needs-full-path.md)、[探针页缺 subset-tests.js 空转假绿](../../../docs/learnings/bugs/2026-11/2026-11-11-probe-missing-subset-tests-include-idle-false-green.md)、[FILTER 子串拉入探针页页键碰撞](../../../docs/learnings/bugs/2026-11/2026-11-11-filter-substring-pulls-probe-page-page-keyed-judge.md)——同日三例独立成文，构建侧同族先例见 #12。
+差分对账是同族纪律的假回归方向：A/B Pass 集比较默认两侧键集与采样深度同域，该假设破坏时键差全部记成 REGRESSED——子测名由序列化参与生成时，序列化变更=全语料改名，签名差呈大面积 REG 但逐页 gained/lost 完美配对且 Pass→Fail=0，先配对分解再定谳；页级墙钟截断使两侧到达深度随机不等，「未跑到」记成 REGRESSED，对可疑 REG 页双臂提高 CASE_WALL_S 复跑，SET-IDENTICAL 即窗口伪影，不转抄进收账。
+
+依据：[cargo test --exact 裸名 0P 假绿 EXIT=0](../../../docs/learnings/bugs/2026-11/2026-11-11-cargo-test-exact-needs-full-path.md)、[探针页缺 subset-tests.js 空转假绿](../../../docs/learnings/bugs/2026-11/2026-11-11-probe-missing-subset-tests-include-idle-false-green.md)、[FILTER 子串拉入探针页页键碰撞](../../../docs/learnings/bugs/2026-11/2026-11-11-filter-substring-pulls-probe-page-page-keyed-judge.md)——假绿三例同日独立成文；[typed-om toString 参与子测命名——序列化变更伪装全语料回归](../../../docs/learnings/bugs/2026-11/2026-11-20-typedom-tostring-subtest-rename-masquerade.md)、[CASE_WALL_S 截断窗假回归](../../../docs/learnings/bugs/2026-11/2026-11-20-wpt-case-wall-truncation-fake-regression.md)——假回归两例同日独立成文，两方向同族，构建侧先例见 #12。
 
 ### 40. shim 暴露给页面 JS 的平台对象必须挂接口原型，平面对象让原型定向写污染 Object.prototype
 
