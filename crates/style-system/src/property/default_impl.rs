@@ -501,6 +501,7 @@ impl Default for ComputedStyle {
             text_shadow: Vec::new(),
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
+            clip_rule: ClipRuleComputedValue::Nonzero,
             shape_outside: ShapeOutsideComputedValue::None,
             shape_margin: LengthValue::Px(0.0),
             shape_image_threshold: 0.0,

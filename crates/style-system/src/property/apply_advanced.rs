@@ -3033,6 +3033,21 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // clip-rule 写面（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
+        // inherited）。decl_supported 尾门 apply oracle 通道（CSS.supports 值臂，
+        // driving: clip-rule-computed 前置门 + clip-rule-no-interpolation 42
+        // 子测 'to' 值门）与关键帧/级联 apply 同臂承载槽位。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+        "clip-rule" => {
+            if value.eq_ignore_ascii_case("nonzero") {
+                style.clip_rule = ClipRuleComputedValue::Nonzero;
+                return true;
+            }
+            if value.eq_ignore_ascii_case("evenodd") {
+                style.clip_rule = ClipRuleComputedValue::Evenodd;
+                return true;
+            }
+        }
         "shape-outside" => {
             // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
             // ——<basic-shape> 复用 parse_clip_path 裁决单点（basic-shape 族

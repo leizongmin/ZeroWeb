@@ -777,6 +777,12 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "will-change" => will_change_to_css(&style.will_change),
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
+        // clip-rule：css-masking-1 §the-clip-rule 关键字计算值（`nonzero |
+        // evenodd`，初值 nonzero；driving: clip-rule-computed 2 子测 +
+        // clip-rule-no-interpolation 端点期望对账——期望侧同为引擎静态 apply
+        // 本串化器，字面恒等）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+        "clip-rule" => style.clip_rule.as_css_str().to_string(),
         // css-shapes-1 §shape-outside：同 basic-shape 族串化器 + 裸 <shape-box>。
         "shape-outside" => shape_outside_to_css(&style.shape_outside, font_size_px),
         // css-shapes-1 §shape-margin-property：非负 length-percentage computed

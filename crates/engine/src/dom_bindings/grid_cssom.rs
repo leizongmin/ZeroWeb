@@ -390,6 +390,12 @@ pub(crate) const SUPPORTED_STYLE_PROPS: &[&str] = &[
     "transition",
     "animation",
     "box-sizing",
+    // 刀 CLR：clip-rule 注册（style-system known_properties 同批）——
+    // css-conditional/js/CSS-supports-CSSStyleDeclaration 每 prop 断言
+    // `CSS.supports(prop,'inherit') === (camelCase in styledecl)`，probe 通道
+    // 翻真后本清单必须同步列名，否则该页 clip-rule 两子测（camel/dashed）
+    // 新增假红。语料驱动扩面（本清单头部注释口径）。
+    "clip-rule",
 ];
 
 #[cfg(test)]

@@ -31,8 +31,8 @@ use zero_css_parser::values::{
     parse_font_feature_settings, parse_font_variation_settings,
 };
 use zero_style_system::{
-    ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue, ShapeOutsideBoxKind,
-    ShapeOutsideComputedValue,
+    ClipRuleComputedValue, ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue,
+    ShapeOutsideBoxKind, ShapeOutsideComputedValue,
     property::types::{
         BorderImageOutsetComputedComponent, BorderImageOutsetComputedValue, BorderImageRepeatComputedMode,
         BorderImageRepeatComputedValue, BorderImageSliceComputedComponent, BorderImageSliceComputedValue,
@@ -4163,6 +4163,17 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "clip-path" => {
             if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
                 style.clip_path = v;
+            }
+        }
+        // clip-rule：css-masking-1 §the-clip-rule 关键字槽位写回——canonicalize
+        // 往返（apply + 串化变化判定）承载 cssAnimations/WAAPI 通道端点关键帧
+        //（driving: clip-rule-no-interpolation 42 子测 ≥0.5 翻转位）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+        "clip-rule" => {
+            if value.eq_ignore_ascii_case("nonzero") {
+                style.clip_rule = ClipRuleComputedValue::Nonzero;
+            } else if value.eq_ignore_ascii_case("evenodd") {
+                style.clip_rule = ClipRuleComputedValue::Evenodd;
             }
         }
         // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]

@@ -946,6 +946,15 @@ impl PropertyRegistry {
             "text-shadow",
             "box-shadow",
             "clip-path",
+            // css-masking-1 §the-clip-rule（`nonzero | evenodd`，初值 nonzero、
+            // inherited、非动画）：注册 known-properties 门（probe 通道）——
+            // 值文法门在 [`validate_decl_value`] clip-rule 臂（store 原文透传，
+            // 计算值通道未建模，与 clip-path-url 残面同层）。driving:
+            // css-masking/clip-rule/clip-rule-no-interpolation 42 子测全数在
+            // `CSS.supports('clip-rule', 'initial')` 前置门（decl_supported
+            // css-wide-keyword 臂查本清单）。
+            // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+            "clip-rule",
             "shape-outside",
             "shape-margin",
             "shape-image-threshold",

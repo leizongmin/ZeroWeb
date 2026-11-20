@@ -750,6 +750,9 @@ pub struct ComputedStyle {
     pub box_shadow: Vec<BoxShadowComputedValue>,
     /// clip-path 属性。
     pub clip_path: ClipPathComputedValue,
+    /// clip-rule 属性（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
+    /// inherited；计算值枚举，渲染联动未建模）。
+    pub clip_rule: ClipRuleComputedValue,
     /// shape-outside 属性（css-shapes-1 §3：浮动周边环绕形状）。
     pub shape_outside: ShapeOutsideComputedValue,
     /// shape-margin 属性（css-shapes-1 §shape-margin-property：浮动元素形状

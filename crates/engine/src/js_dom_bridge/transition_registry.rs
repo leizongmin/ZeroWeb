@@ -377,7 +377,7 @@ const TRANSITIONABLE_PROPERTIES: [&str; 85] = [
 /// mask-image 此前 A/B 定谳不入 [`TRANSITIONABLE_PROPERTIES`]（plain 面端点跨块
 /// 陈旧），allow-discrete 面按本表显式接入——plain 面清单不变。
 /// <https://drafts.fxtf.org/css-masking-1/#the-mask-image>
-const DISCRETE_TRANSITIONABLE: [&str; 16] = [
+const DISCRETE_TRANSITIONABLE: [&str; 17] = [
     "mask",
     "mask-image",
     "font-size-adjust",
@@ -412,6 +412,12 @@ const DISCRETE_TRANSITIONABLE: [&str; 16] = [
     // 可过渡）——本表只在本位 allow-discrete 时并入探测集，plain 面清单不变。
     "float",
     "position",
+    // 刀 CLR（2026-11-20）：css-masking-1 §the-clip-rule——clip-rule 非
+    // animatable（css-transitions-1 §animations animation-type: none），仅
+    // allow-discrete 可过渡；driving: clip-rule-no-interpolation 42 子测
+    // allow-discrete 通道（plain 通道清单外不启动＝静态跳终值，与本表无涉）。
+    // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+    "clip-rule",
 ];
 
 /// 单属性登记（显式声明与 `all` 通配展开共用）：duration≤0 / 端点空串同值 /
@@ -793,6 +799,52 @@ mod tests {
         let v = query_override_for_sel("#t", "width", &base, None).expect("override");
         let px = v.trim_end_matches("px").parse::<f64>().expect("px");
         assert!((px - 80.0).abs() < 0.5, "eased(0.5)=at=0.3 → 50+100*0.3=80px，got {v}");
+        clear_all();
+    }
+
+    /// 刀 CLR 端到端钉：clip-rule 离散对（allow-discrete 豁免登记）——登记→
+    /// 咨询→canonicalize 往返（apply_to_computed_style clip-rule 臂 + gCS 串化）
+    /// 全链。at=0.3 eased<0.5 回 from（'nonzero'），at=0.6 eased≥0.5 翻 to
+    ///（'evenodd'）；driving: clip-rule-no-interpolation 42 子测 allow-discrete
+    /// 通道（css-masking-1 §the-clip-rule）。
+    #[test]
+    fn test_clip_rule_discrete_flip_end_to_end() {
+        use zero_style_system::property::types::ClipRuleComputedValue;
+        let make_cr_pair = |at: f64| -> (ComputedStyle, ComputedStyle) {
+            let mut prev = ComputedStyle::default();
+            let mut new = ComputedStyle::default();
+            prev.clip_rule = ClipRuleComputedValue::Nonzero;
+            new.clip_rule = ClipRuleComputedValue::Evenodd;
+            new.transition_property = vec!["clip-rule".to_string()];
+            new.transition_behavior = vec!["allow-discrete".to_string()];
+            new.transition_duration = vec![100.0];
+            new.transition_delay = vec![-50.0];
+            let c = (8.0 * at - 1.0) / 6.0;
+            new.transition_timing_function = vec![TimingFunctionValue::CubicBezier(0.0, c, 1.0, c)];
+            (prev, new)
+        };
+        let html = r#"<html><body><div id="t"></div></body></html>"#;
+        let doc = parse_html(html);
+        let nid = crate::find_by_selector(&doc, "#t").expect("target");
+        // at=0.3：eased<0.5 → from='nonzero'（canonicalize apply 往返变化判定）。
+        clear_all();
+        let (prev, new) = make_cr_pair(0.3);
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "clip-rule", &base, None).expect("pre-flip override");
+        assert_eq!(v, "nonzero", "eased(0.5)=0.3<0.5 → 离散 from，got {v}");
+        clear_all();
+        // at=0.6：eased≥0.5 → to='evenodd'。终值巧合（动画值≡级联值）时
+        // canonicalize 往返变化判定按设计返 None（echo 池语义——回落级联同串，
+        // 查询侧可观察契约不变），两形态皆合法。
+        let (prev, new) = make_cr_pair(0.6);
+        register_from_style_change(World::Gen, "#t", &prev, &new, &doc, nid);
+        let base = new.clone();
+        let v = query_override_for_sel("#t", "clip-rule", &base, None);
+        assert!(
+            v.is_none() || v.as_deref() == Some("evenodd"),
+            "eased(0.5)=0.6≥0.5 → 离散 to 或终值巧合回落级联，got {v:?}"
+        );
         clear_all();
     }
 

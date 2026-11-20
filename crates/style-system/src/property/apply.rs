@@ -2757,28 +2757,49 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         let mut valid = !toks.is_empty();
         for t in &toks {
             match t.as_str() {
-                "normal" => { valid = false; break; }
+                "normal" => {
+                    valid = false;
+                    break;
+                }
                 "lining-nums" | "oldstyle-nums" => {
-                    if figure { valid = false; break; }
+                    if figure {
+                        valid = false;
+                        break;
+                    }
                     figure = true;
                 }
                 "proportional-nums" | "tabular-nums" => {
-                    if spacing { valid = false; break; }
+                    if spacing {
+                        valid = false;
+                        break;
+                    }
                     spacing = true;
                 }
                 "diagonal-fractions" | "stacked-fractions" => {
-                    if fraction { valid = false; break; }
+                    if fraction {
+                        valid = false;
+                        break;
+                    }
                     fraction = true;
                 }
                 "ordinal" => {
-                    if ordinal { valid = false; break; }
+                    if ordinal {
+                        valid = false;
+                        break;
+                    }
                     ordinal = true;
                 }
                 "slashed-zero" => {
-                    if slashed { valid = false; break; }
+                    if slashed {
+                        valid = false;
+                        break;
+                    }
                     slashed = true;
                 }
-                _ => { valid = false; break; }
+                _ => {
+                    valid = false;
+                    break;
+                }
             }
         }
         return valid;
@@ -3921,6 +3942,45 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("clip-rule", "inherit"));
         assert!(!validate_decl_value("clip-rule", "auto"));
         assert!(!validate_decl_value("clip-rule", "1"));
+        // 刀 CLR apply oracle 钉（css-masking-1 §the-clip-rule）：decl_supported
+        // 尾门 apply 通道（apply_property_value_with_quirks → apply_advanced 臂）
+        // 值臂翻真 + 槽位落位；CSS.supports('clip-rule', 值) 前置门驱动
+        //（clip-rule-computed 2 子测 + clip-rule-no-interpolation 42 子测）。
+        let mut s = ComputedStyle::default();
+        assert!(apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "nonzero",
+            false,
+            false,
+            None
+        ));
+        assert_eq!(s.clip_rule, ClipRuleComputedValue::Nonzero);
+        assert!(apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "EVENODD",
+            false,
+            false,
+            None
+        ));
+        assert_eq!(s.clip_rule, ClipRuleComputedValue::Evenodd);
+        assert!(!apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "auto",
+            false,
+            false,
+            None
+        ));
+        assert!(!apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "1",
+            false,
+            false,
+            None
+        ));
         // background-clip（css-backgrounds-3/4）：bg-clip 单值、两序空白组合
         // 特形、逗号分层列表、替换函数形；<box> 裁决面外 geometry-box 超集
         // 关键字与裸 `border` 拒。

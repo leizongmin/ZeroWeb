@@ -2240,6 +2240,28 @@ impl ShapeOutsideBoxKind {
     }
 }
 
+/// clip-rule 计算值（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
+/// 初值 nonzero、inherited）。计算值通道仅承载枚举（对 SVG 裁剪的渲染联动
+/// 未建模——FIXME: HTML 内容侧 fill-rule 语义挂账）。
+// https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipRuleComputedValue {
+    /// nonzero（默认值）。
+    Nonzero,
+    /// evenodd。
+    Evenodd,
+}
+
+impl ClipRuleComputedValue {
+    /// CSS 关键字原文（计算值串化即此形）。
+    pub fn as_css_str(self) -> &'static str {
+        match self {
+            ClipRuleComputedValue::Nonzero => "nonzero",
+            ClipRuleComputedValue::Evenodd => "evenodd",
+        }
+    }
+}
+
 /// R4248（CSS Borders 4 §corner-shaping）：corner-shape 计算值。
 pub type CornerShapeComputedValue = zero_css_parser::values::CornerShapeValue;
 /// border-shape 计算值（css-borders-4 §7，R4534）。
