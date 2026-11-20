@@ -869,6 +869,9 @@ fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEval
     // 数字节求值（canonical 文本 calc() 包裹解析——单 token 数字/维度与
     // lite 折叠结果同路）。
     let mut vals = Vec::with_capacity(parts.sections.len());
+    // color 族槽基数值化标位：任一节经 color 槽基求值即整调用出无单位
+    // Number 串（color 位 px 后缀非法——min/max 全节同族，混合族 parse 期已拒）。
+    let mut color_slot_numeric = false;
     for sec in &parts.sections {
         // Time 族走 allow_time 解析（<time> 原子仅 parse_time_calc 接受，
         // parse_math_function 默认拒）；其余族共用入口。
@@ -879,6 +882,23 @@ fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEval
             super::parse_math_function(&wrapped)?
         };
         if super::calc_mix::expr_has_percentage_leaf(&expr) {
+            // RANDOM3a color 族槽基数值化（css-color-4 分量/alpha 位 % 即 srgb
+            // fraction 口径，基 1 → pct/100）：color 槽 % 全域可解析——
+            // `rgb(225, 215, 0, random(30%, 10%))` 期望 `rgba(225, 215, 0,
+            // 0.3)`（random-computed 语料，min>max 钳制恒返 min = 0.3）。输出
+            // 按无单位 Number 串化（px 后缀在 color 位非法）。sign()/abs()
+            // 擦型位下 % 叶维持 §percentage-value 整计算 invalid 拒收界
+            //（calc_expr_has_pct_under_sign(_abs_erasure) 否决面同口径，不借
+            // 槽基复活）。槽外（width/transform 等 computed 保留 % 位）走
+            // 下方 fixed-echo 保留形不变。
+            // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+            if color_slot_pct_resolvable(property, &expr) {
+                if let Some(v) = super::eval_calc(&expr, Some(1.0)) {
+                    vals.push(v);
+                    color_slot_numeric = true;
+                    continue;
+                }
+            }
             // §9.3 unresolvable percentage：计算值保留 random()，key 换显式
             // `fixed <R>`——显式 fixed 原文回显；播种形以 base 值补显
             //（element-scoped 无元素视图仍 fail-closed）。
@@ -918,7 +938,30 @@ fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEval
         }
     };
     let v = eval_random_formula(base, min, max, step);
-    Some(serialize_random_result(v, parts.family))
+    // color 族槽基数值化调用整串无单位 Number（px 后缀在 color 位非法——
+    // `rgba(225, 215, 0, 0.3)` 口径）。
+    Some(serialize_random_result(
+        v,
+        if color_slot_numeric {
+            RandomFamily::Number
+        } else {
+            parts.family
+        },
+    ))
+}
+
+/// color 族属性槽 % 解析准入（RANDOM3a）：`color` 本名与 `*-color` 长手
+/// （background/border-*/outline/text-decoration/caret/column-rule/
+/// text-emphasis 色）——分量与 alpha 位 % 均按 srgb fraction 基（pct/100）
+/// 可解析；paint 系（fill/stroke <paint> 无 % 数值位）与几何位不入。
+/// sign()/abs() 擦型位 % 叶拒（§percentage-value 整计算 invalid——
+/// [`calc_expr_has_pct_under_sign`] / MATHFN 刀 abs 擦型否决面同口径）。
+fn color_slot_pct_resolvable(property: &str, expr: &super::types::CalcExpr) -> bool {
+    let p = property.trim().to_ascii_lowercase();
+    let is_color_slot = p == "color" || p.ends_with("-color");
+    is_color_slot
+        && !super::calc_expr_has_pct_under_sign(expr)
+        && !super::calc_expr_has_pct_under_sign_abs_erasure(expr)
 }
 
 /// key 是否元素相关（canonical 文本含 `element-scoped`——显式声明或 auto/

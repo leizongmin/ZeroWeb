@@ -753,6 +753,11 @@ pub struct ComputedStyle {
     /// clip-rule 属性（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
     /// inherited；计算值枚举，渲染联动未建模）。
     pub clip_rule: ClipRuleComputedValue,
+    /// SVG 几何/描边注册面存储（css-svg-2 §geometry cx/cy/r/rx/ry/x/y
+    /// `<length-percentage>` 初始 0 + fill-stroke stroke-dasharray 初始 none /
+    /// stroke-dashoffset 初始 0——RANDOM3a 刀 supports 注册面配套：initial/
+    /// apply_initial 合同承载，渲染联动未建模——FIXME: SVG 几何渲染挂账）。
+    pub svg_geometry: SvgGeometryComputed,
     /// shape-outside 属性（css-shapes-1 §3：浮动周边环绕形状）。
     pub shape_outside: ShapeOutsideComputedValue,
     /// shape-margin 属性（css-shapes-1 §shape-margin-property：浮动元素形状
@@ -856,6 +861,42 @@ pub struct AnchorSizeSlots {
     pub max_width: Option<Box<str>>,
     /// `max-height: anchor-size(...)` 声明原文。
     pub max_height: Option<Box<str>>,
+}
+
+/// SVG 几何/描边注册面计算值组（css-svg-2 §geometry + fill-stroke 描边——
+/// RANDOM3a 刀 supports 注册面配套存储；初始值全部为 css-svg-2 初始形，
+/// 渲染联动未建模——FIXME: SVG 几何渲染挂账）。
+// https://drafts.csswg.org/css-svg-2/#geometry-properties
+#[derive(Debug, Clone, PartialEq)]
+pub struct SvgGeometryComputed {
+    /// cx/cy/r/rx/ry/x/y `<length-percentage>`（初始 0）。
+    pub cx: LengthValue,
+    pub cy: LengthValue,
+    pub r: LengthValue,
+    pub rx: LengthValue,
+    pub ry: LengthValue,
+    pub x: LengthValue,
+    pub y: LengthValue,
+    /// stroke-dasharray（初始 none）。
+    pub stroke_dasharray: StrokeDashArrayComputedValue,
+    /// stroke-dashoffset（初始 0；inherited）。
+    pub stroke_dashoffset: LengthValue,
+}
+
+impl Default for SvgGeometryComputed {
+    fn default() -> Self {
+        Self {
+            cx: LengthValue::Px(0.0),
+            cy: LengthValue::Px(0.0),
+            r: LengthValue::Px(0.0),
+            rx: LengthValue::Px(0.0),
+            ry: LengthValue::Px(0.0),
+            x: LengthValue::Px(0.0),
+            y: LengthValue::Px(0.0),
+            stroke_dasharray: StrokeDashArrayComputedValue::None,
+            stroke_dashoffset: LengthValue::Px(0.0),
+        }
+    }
 }
 
 /// 自定义属性共享表（不可变；父子链经 `Arc` 共享避免逐元素克隆）。

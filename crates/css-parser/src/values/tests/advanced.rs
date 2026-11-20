@@ -245,7 +245,10 @@ fn test_parse_break_after_valid() {
 fn test_parse_break_before_after_invalid() {
     assert_eq!(parse_break_before("always"), None);
     assert_eq!(parse_break_before("invalid"), None);
-    assert_eq!(parse_break_after("left"), None);
+    // css-break-3 §property-index：left/right/recto/verso 是 break-after 合法值
+    //（parse_layout 富文法为活实现——旧 parse_basic 文法期望过期钉修正）。
+    // https://drafts.csswg.org/css-break-3/#break-values
+    assert_eq!(parse_break_after("left"), Some(BreakValue::Left));
     assert_eq!(parse_break_after(""), None);
 }
 

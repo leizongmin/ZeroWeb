@@ -2047,6 +2047,10 @@ pub enum PropertyValue {
     MaskRepeat(Vec<BackgroundRepeatComputedValue>),
     /// mask-clip 值（css-masking-1 §5.4）。
     MaskClip(Vec<MaskClipComputedValue>),
+    /// clip-rule 值（css-masking-1 §the-clip-rule——CLR 刀注册面初值补全）。
+    ClipRule(ClipRuleComputedValue),
+    /// stroke-dasharray 值（fill-stroke 描边文法——RANDOM3a 注册面初值补全）。
+    StrokeDashArray(StrokeDashArrayComputedValue),
     /// mask-origin 值（css-masking-1 §5.5）。
     MaskOrigin(Vec<MaskGeometryBoxComputedValue>),
     /// mask-composite 值（css-masking-1 §5.6）。
@@ -2268,6 +2272,18 @@ impl ClipRuleComputedValue {
             ClipRuleComputedValue::Evenodd => "evenodd",
         }
     }
+}
+
+/// stroke-dasharray 计算值（css-fill-strokes `stroke-dasharray`：初始 none、
+/// 值形 `<length-percentage>#`、非继承）。渲染联动未建模——FIXME: 描边虚线
+/// 渲染挂账（RANDOM3 后续刀接线 apply 臂）。
+// https://drafts.csswg.org/css-fill-strokes/#stroke-dasharray-property
+#[derive(Debug, Clone, PartialEq)]
+pub enum StrokeDashArrayComputedValue {
+    /// none（初始——实线描边）。
+    None,
+    /// `<length-percentage>#` 原文保留形（值臂未接线）。
+    Raw(String),
 }
 
 /// R4248（CSS Borders 4 §corner-shaping）：corner-shape 计算值。

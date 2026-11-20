@@ -4929,8 +4929,9 @@ mod t54_validate_decl_value_tests {
         // 字体为 font 相对单位基准——合成期经 [`ComputedStyle::parent_font_size`]
         // 注入（inheritance 预应用段，font-property-unit-cycles 期望 parent em
         // 30 与自身 font-size 10 分离驱动）；独立 apply（无父上下文）回落自身
-        // font_size。容器 30px → em 30/ex·cap 24/ch 15/ic 30（派生度量
-        // 0.8/0.5/1.0）。tan(atan2(y, x)) = y/x（弧度无精度损失面）。
+        // font_size。容器 30px → em 30/ex·cap 24/ch 30/ic 30（派生度量
+        // 0.8/1.0/1.0——ch 兜底 1em，8b70cb9fe）。tan(atan2(y, x)) = y/x
+        //（弧度无精度损失面）。
         let mut style = ComputedStyle::default();
         style.font_size = LengthValue::Px(10.0);
         style.parent_font_size = Some(30.0);
@@ -4951,6 +4952,8 @@ mod t54_validate_decl_value_tests {
         ));
         assert_eq!(style.font_weight, FontWeightValue::Absolute(30));
 
+        // ch 兜底 1em（8b70cb9fe fontcycle 刀——css-values-4 §5.1.2 Ahem 口径，
+        // calc 内 ch 叶与直解臂同口径不分裂）：1ch = 30px → weight 30。
         let mut style = ComputedStyle::default();
         style.font_size = LengthValue::Px(30.0);
         assert!(apply_property_value(
@@ -4958,7 +4961,7 @@ mod t54_validate_decl_value_tests {
             "font-weight",
             "calc(1 * tan(atan2(1ch, 1px)))"
         ));
-        assert_eq!(style.font_weight, FontWeightValue::Absolute(15));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(30));
 
         // css-fonts-4 §font-weight-numeric：calc 形值域 clamp（语料 calc(0)
         // valid、computed 1；calc(-100) → 1）。

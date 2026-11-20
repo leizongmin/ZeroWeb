@@ -1,6 +1,6 @@
 //! ComputedStyle 的 Default 实现。
 
-use super::computed_style::ComputedStyle;
+use super::computed_style::{ComputedStyle, SvgGeometryComputed};
 use super::types::*;
 
 impl Default for ComputedStyle {
@@ -502,6 +502,7 @@ impl Default for ComputedStyle {
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
             clip_rule: ClipRuleComputedValue::Nonzero,
+            svg_geometry: SvgGeometryComputed::default(),
             shape_outside: ShapeOutsideComputedValue::None,
             shape_margin: LengthValue::Px(0.0),
             shape_image_threshold: 0.0,

@@ -619,8 +619,8 @@ fn test_font_face_invalid_does_not_eat_next_rule() {
     // 两条 None 路径（src:local 无 url() → sources 空；非 `{` 语句形）都已消费完
     // 自身 extent，解析器位于干净边界——不得触发 caller 的 skip_malformed_qualified_rule
     // 吞掉下一条合法规则（github.com marketing.css：MonaSansFallback 后邻 face 被吞）。
-    // local-only face 后邻规则存活：
-    let css = "@font-face { font-family: Fallback; src: local(Arial); }\nbody { font-size: 32px; }";
+    // 真 invalid 形（缺 src——上方钉同因丢弃）只弃自身 extent，后邻规则存活：
+    let css = "@font-face { font-family: NoSrc; }\nbody { font-size: 32px; }";
     let ws = Parser::parse_stylesheet(css);
     assert_eq!(ws.rules.len(), 1, "style rule after invalid font-face survives: {ws:?}");
     match &ws.rules[0] {
@@ -630,6 +630,15 @@ fn test_font_face_invalid_does_not_eat_next_rule() {
         }
         other => panic!("expected StyleRule, got {other:?}"),
     }
+
+    // src 纯 local() 源链合法（css-fonts-4 <src># local 形——a201ab290 css-fonts
+    // +34 刀语义）：face 存活且不吞后邻（github.com marketing.css
+    // MonaSansFallback 形回归锚）。
+    let css = "@font-face { font-family: Fallback; src: local(Arial); }\nbody { font-size: 32px; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 2, "valid local face and next rule both survive: {ws:?}");
+    assert!(matches!(&ws.rules[0], Rule::FontFace(_)));
+    assert!(matches!(&ws.rules[1], Rule::Style(_)));
 
     // s23.css（github.com marketing.css）形状：url face + local face + url face +
     // local face + url face → 3 条 url face 全部存活（此前中间 local face 会吞邻）：
@@ -647,10 +656,11 @@ fn test_font_face_invalid_does_not_eat_next_rule() {
             _ => None,
         })
         .collect();
+    // a201ab290 后 local face（Fb/Fb2）亦合法——5 face 全存活。
     assert_eq!(
         faces,
-        vec!["A", "B", "C"],
-        "interleaved invalid faces drop only themselves"
+        vec!["A", "Fb", "B", "Fb2", "C"],
+        "interleaved faces all survive"
     );
 
     // 无 `{` 语句形（extent 已自行吃到 `;`）后邻规则同样存活：

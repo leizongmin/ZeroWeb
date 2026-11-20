@@ -2174,6 +2174,49 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.empty_cells = default_style.empty_cells;
             true
         }
+        // SVG 几何/描边族（css-svg-2 §geometry + fill-stroke——RANDOM3a 注册面
+        // initial 合同；渲染联动未建模）。stroke-dasharray/dashoffset inherited、
+        // 几何位非继承（继承接线随 apply 臂刀分批）。
+        "cx" => {
+            style.svg_geometry.cx = default_style.svg_geometry.cx;
+            true
+        }
+        "cy" => {
+            style.svg_geometry.cy = default_style.svg_geometry.cy;
+            true
+        }
+        "r" => {
+            style.svg_geometry.r = default_style.svg_geometry.r;
+            true
+        }
+        "rx" => {
+            style.svg_geometry.rx = default_style.svg_geometry.rx;
+            true
+        }
+        "ry" => {
+            style.svg_geometry.ry = default_style.svg_geometry.ry;
+            true
+        }
+        "x" => {
+            style.svg_geometry.x = default_style.svg_geometry.x;
+            true
+        }
+        "y" => {
+            style.svg_geometry.y = default_style.svg_geometry.y;
+            true
+        }
+        "stroke-dasharray" => {
+            style.svg_geometry.stroke_dasharray = default_style.svg_geometry.stroke_dasharray;
+            true
+        }
+        "stroke-dashoffset" => {
+            style.svg_geometry.stroke_dashoffset = default_style.svg_geometry.stroke_dashoffset;
+            true
+        }
+        "clip-rule" => {
+            style.clip_rule = default_style.clip_rule;
+            true
+        }
         "border-spacing" => {
             style.border_spacing = default_style.border_spacing;
             true

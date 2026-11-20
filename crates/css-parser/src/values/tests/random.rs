@@ -338,3 +338,50 @@ fn test_random_fold_decl_entry() {
     assert!(fold_decl_specified("width", "random(foo, 1px, 2px)").is_none());
     assert!(fold_decl_specified("width", "10px").is_none());
 }
+
+// ---- RANDOM3a：color 族槽基数值化（pct/100 srgb fraction 口径）----
+
+#[test]
+fn test_random_color_slot_pct_numeric_resolution() {
+    // background-color alpha 位：min>max 钳制恒返 min——30% → 0.3（无单位
+    // Number 串化，px 后缀在 color 位非法）。WPT random-computed
+    // `rgb(225, 215, 0, random(30%, 10%))` 期望 `rgba(225, 215, 0, 0.3)` 驱动。
+    let sub = substitute_random_values(
+        "rgb(225, 215, 0, random(30%, 10%))",
+        "background-color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert_eq!(sub, "rgb(225, 215, 0, 0.3)");
+    // color 本名位现代 slash alpha 形。
+    let sub = substitute_random_values(
+        "rgb(10 20 30 / random(50%, 10%))",
+        "color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert_eq!(sub, "rgb(10 20 30 / 0.5)");
+    // 槽外维持 fixed-echo 保留形（width computed 保留 % 位不变）。
+    let sub = substitute_random_values("random(30%, 10%)", "width", &RandomEvalContext::SENTINEL)
+        .expect("SENTINEL 出值");
+    assert!(sub.contains("random(fixed "), "width 位 % 叶保留形: {sub}");
+}
+
+#[test]
+fn test_random_color_slot_pct_under_sign_not_resolved() {
+    // sign()/abs() 擦型位 % 叶不借 color 槽基复活（§percentage-value 整计算
+    // invalid——MATHFN 刀拒收界保位）：fail-closed 或 fixed-echo 保留形，
+    // 两条都非数值化。
+    let sub = substitute_random_values(
+        "rgb(225, 215, 0, random(30%, calc(sign(20%) * 10%)))",
+        "background-color",
+        &RandomEvalContext::SENTINEL,
+    );
+    match sub {
+        Some(s) => assert!(
+            s.contains("random(fixed "),
+            "sign % 叶不得借 color 槽基数值化: {s}"
+        ),
+        None => {}
+    }
+}
